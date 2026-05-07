@@ -15,6 +15,7 @@ var terrain: TerrainType.TERRAIN = TerrainType.TERRAIN.OCEAN
 # --- 地貌附加信息 ---
 var has_river: bool = false        # 是否有河流流经
 var elevation: float = 0.0        # 归一化高度 [0, 1]，用于生成时的中间量
+var moisture: float = 0.5         # 归一化湿度 [0, 1]，由生成器写入，烘焙时上采样到湿度纹理
 
 # --- 通行性（由 terrain 决定，生成后缓存于此供外部快速读取）---
 var passable_land: bool = false
