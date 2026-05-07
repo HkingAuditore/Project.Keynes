@@ -21,18 +21,18 @@ enum TERRAIN {
 # passable_land  : 陆上单位（步兵、骑兵等）是否可进入
 # passable_sea   : 海上单位（船只等）是否可进入
 # move_cost      : 陆上单位进入该地块消耗的行动力（0 = 不可通行）
-# color          : 调试/占位渲染颜色
+# color          : 调试/占位渲染颜色（已优化协调性和辨识度）
 const _DATA: Dictionary = {
-	TERRAIN.OCEAN:     { "passable_land": false, "passable_sea": true,  "move_cost": 0, "color": Color(0.10, 0.20, 0.55) },
-	TERRAIN.COAST:     { "passable_land": false, "passable_sea": true,  "move_cost": 0, "color": Color(0.25, 0.45, 0.80) },
-	TERRAIN.PLAIN:     { "passable_land": true,  "passable_sea": false, "move_cost": 1, "color": Color(0.76, 0.85, 0.50) },
-	TERRAIN.GRASSLAND: { "passable_land": true,  "passable_sea": false, "move_cost": 1, "color": Color(0.40, 0.72, 0.30) },
-	TERRAIN.FOREST:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color(0.13, 0.45, 0.13) },
-	TERRAIN.HILL:      { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color(0.60, 0.50, 0.30) },
-	TERRAIN.MOUNTAIN:  { "passable_land": false, "passable_sea": false, "move_cost": 0, "color": Color(0.55, 0.55, 0.55) },
-	TERRAIN.DESERT:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color(0.90, 0.80, 0.45) },
-	TERRAIN.TUNDRA:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color(0.72, 0.80, 0.75) },
-	TERRAIN.SNOW:      { "passable_land": false, "passable_sea": false, "move_cost": 0, "color": Color(0.95, 0.97, 1.00) },
+	TERRAIN.OCEAN:     { "passable_land": false, "passable_sea": true,  "move_cost": 0, "color": Color("#0A2640") },
+	TERRAIN.COAST:     { "passable_land": false, "passable_sea": true,  "move_cost": 0, "color": Color("#3A8898") },
+	TERRAIN.PLAIN:     { "passable_land": true,  "passable_sea": false, "move_cost": 1, "color": Color("#B2A35E") },
+	TERRAIN.GRASSLAND: { "passable_land": true,  "passable_sea": false, "move_cost": 1, "color": Color("#668E42") },
+	TERRAIN.FOREST:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color("#28512D") },
+	TERRAIN.HILL:      { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color("#7A6D42") },
+	TERRAIN.MOUNTAIN:  { "passable_land": false, "passable_sea": false, "move_cost": 0, "color": Color("#706A60") },
+	TERRAIN.DESERT:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color("#CFB36A") },
+	TERRAIN.TUNDRA:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "color": Color("#85937C") },
+	TERRAIN.SNOW:      { "passable_land": false, "passable_sea": false, "move_cost": 0, "color": Color("#E5EAE8") },
 }
 
 # --- 静态查询方法 ---

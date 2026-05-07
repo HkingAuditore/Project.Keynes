@@ -13,7 +13,7 @@ extends Node2D
 @export var num_continents: int = 2
 @export var sea_level: float = 0.42
 @export var river_count: int = 8
-@export var hex_size: float = 18.0
+@export var hex_size: float = 22.0
 @export var initial_seed: int = 0   # 0 = 随机
 
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
@@ -43,11 +43,13 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var t0: int = Time.get_ticks_msec()
 	var generator := MapGenerator.new()
-	_current_map = generator.generate(cfg)
+	var result := generator.generate(cfg, hex_size)
+	_current_map = result["map"]
+	var world_data: WorldData = result["world_data"]
 	var elapsed: int = Time.get_ticks_msec() - t0
 
 	_renderer.hex_size = hex_size
-	_renderer.set_map(_current_map)
+	_renderer.set_map(_current_map, world_data)
 
 	# 设置摄像机边界并居中
 	_camera.set_world_bounds(_renderer.get_world_bounds())
@@ -56,9 +58,9 @@ func _generate_and_render(seed_val: int) -> void:
 	# 顶部信息
 	if _info_label != null:
 		var stats := _current_map.terrain_stats()
-		_info_label.text = "%dx%d  cells=%d  gen=%dms  [R] regenerate  [F] fit  RMB drag  Wheel zoom" % [
+		_info_label.text = "%dx%d  cells=%d  bake=%dms  [R] regenerate  [F] fit  RMB drag  Wheel zoom" % [
 			cfg.width, cfg.height, _current_map.cell_count(), elapsed
 		]
-		print("=== Map generated in %dms ===" % elapsed)
+		print("=== World baked in %dms ===" % elapsed)
 		for t in stats:
 			print("  %s: %d" % [TerrainType.terrain_name(t), stats[t]])
