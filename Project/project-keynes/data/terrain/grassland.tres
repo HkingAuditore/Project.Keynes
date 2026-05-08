@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 3
+display_name = "GRASSLAND"
+display_name_cn = "草地"
+passable_land = true
+passable_sea = false
+move_cost = 1
+base_color = Color(0.4, 0.556863, 0.258824, 1)

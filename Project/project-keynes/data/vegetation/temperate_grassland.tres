@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 9
+display_name_cn = "温带草原"
+transpiration = 0.3
+albedo = 0.22
+eco_score = 0.5
+ideal_temp = 0.5
+ideal_moist = 0.45
+temp_tolerance = 0.35
+moist_tolerance = 0.35
+next_richer = 11
+next_harsher = 10

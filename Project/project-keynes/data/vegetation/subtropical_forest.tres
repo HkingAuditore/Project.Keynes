@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 12
+display_name_cn = "亚热带森林"
+transpiration = 0.8
+albedo = 0.12
+eco_score = 1.1
+ideal_temp = 0.68
+ideal_moist = 0.7
+temp_tolerance = 0.28
+moist_tolerance = 0.28
+next_richer = 14
+next_harsher = 11

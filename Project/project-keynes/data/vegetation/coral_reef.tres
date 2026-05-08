@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 23
+display_name_cn = "珊瑚礁"
+transpiration = 0.0
+albedo = 0.18
+eco_score = 0.0
+ideal_temp = 0.78
+ideal_moist = 1.0
+temp_tolerance = 0.16
+moist_tolerance = 0.28
+next_richer = -1
+next_harsher = -1

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 6
+display_name_cn = "北方灌丛"
+transpiration = 0.3
+albedo = 0.18
+eco_score = 0.4
+ideal_temp = 0.3
+ideal_moist = 0.45
+temp_tolerance = 0.28
+moist_tolerance = 0.28
+next_richer = 5
+next_harsher = 2

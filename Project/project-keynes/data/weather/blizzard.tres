@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="WeatherProfile" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/weather_profile.gd" id="1"]
+[ext_resource type="Texture2D" path="res://textures/weather/snow_flake.png" id="2"]
+
+[resource]
+script = ExtResource("1")
+weather_type = 3
+display_name = "暴风雪"
+moisture_delta = 0.20
+temp_delta = -0.18
+can_form_snow = true
+can_form_flood = false
+has_particles = true
+particle_texture = ExtResource("2")
+particle_amount_min = 220
+particle_amount_max = 1100
+particle_density_per_px2 = 0.00055
+particle_lifetime = 4.0
+particle_direction = Vector3(0, 1, 0)
+particle_spread = 34.0
+particle_gravity = Vector3(0, 36, 0)
+particle_velocity_min = 12.0
+particle_velocity_max = 34.0
+particle_angular_velocity_min = -90.0
+particle_angular_velocity_max = 90.0
+particle_scale_min = 0.9
+particle_scale_max = 2.0
+particle_base_color = Color(1.00, 1.00, 1.00, 1.00)
+has_overlay = true
+overlay_color = Color(0.94, 0.97, 1.00, 1)
+overlay_base_alpha = 0.68
+has_cloud_shadow = true
+cloud_shadow_color = Color(0.92, 0.96, 1.00, 1)
+cloud_shadow_alpha_scale = 0.70
+enables_lightning = false
+enables_snow_grain = true
+enables_rain_streak = false
+enables_fog_breathe = false

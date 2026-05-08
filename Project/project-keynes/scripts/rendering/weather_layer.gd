@@ -1,0 +1,835 @@
+# weather_layer.gd v1
+# 独立的天气表现层（v9.split：从 world_map.gdshader 中拆出来）。
+#
+# 节点结构：
+#   WeatherLayer (Node2D, z_index=1，挂在 HexRenderer 之下）
+#   ├── _overlay_quad   MeshInstance2D + weather_overlay.gdshader  (z_index=0 in layer)
+#   ├── _shadow_root    Node2D（云阴影 Sprite2D 池，每 front 一个）  (z_index=1)
+#   └── _particles_root Node2D（GPUParticles2D 池，每 front 一个）   (z_index=2)
+#
+# 数据流：
+#   HexRenderer.set_weather_fronts(fronts) → WeatherLayer.set_weather_fronts(fronts)
+#       ├─ 写 overlay shader 的 weather_front_centers / types / count uniform
+#       ├─ 同步 cloud shadow Sprite2D 池（B5 实装）
+#       └─ 同步 GPUParticles2D 池（B6 实装）
+#
+# 与地形 shader 的分工：
+#   - DROUGHT / HEATWAVE 的 multiplicative 调色仍在 world_map.gdshader 内（地表本色变化）
+#   - 其余 RAIN / STORM / FOG / BLIZZARD / MONSOON 全部由本层负责
+
+class_name WeatherLayer
+extends Node2D
+
+const MAX_WEATHER_FRONTS := 16
+const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
+# 天气系统逻辑仍按“日”推进；表现层在两次逻辑快照之间做插值，消除云层/粒子跳帧。
+const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.35
+const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.05
+const _WEATHER_FRONT_MAX_BLEND_SEC: float = 1.0
+
+# 云阴影 sprite 的"原始半径"（生成的 ImageTexture 的半径，单位像素）。
+# 实际显示半径 = SHADOW_BASE_RADIUS_PX * sprite.scale，scale 由 front.radius 推算。
+const SHADOW_BASE_RADIUS_PX := 128
+
+# 任务 5：降水粒子密度制。每单位像素²粒子数，与覆盖面积相乘得到 amount。
+# 最小/最大数量 防止小 front 看不见雨 / 巨大 front 暗制 GPU。
+const _RAIN_DENSITY_PER_PX2: float = 0.00040  # 约 1 粒/50000 px²
+const _RAIN_AMOUNT_MIN: int = 80
+const _RAIN_AMOUNT_MAX: int = 640
+const _SNOW_DENSITY_PER_PX2: float = 0.00030
+const _SNOW_AMOUNT_MIN: int = 60
+const _SNOW_AMOUNT_MAX: int = 480
+# Pass 2（任务 5）：rain_density_boost_enabled=true 时的密度下限/上限
+# 以侍需求 5.1：amount_min 从 80 → 180，BLIZZARD 60 → 120。
+const _RAIN_AMOUNT_MIN_BOOST: int = 180
+const _RAIN_AMOUNT_MAX_BOOST: int = 900
+const _SNOW_AMOUNT_MIN_BOOST: int = 120
+const _SNOW_AMOUNT_MAX_BOOST: int = 720
+# WeatherType.WT id（与 weather_type.gd / weather_overlay.gdshader 严格一致）
+const _WT_CLEAR    := 0
+const _WT_RAIN     := 1
+const _WT_STORM    := 2
+const _WT_BLIZZARD := 3
+const _WT_DROUGHT  := 4
+const _WT_FOG      := 5
+const _WT_HEATWAVE := 6
+const _WT_MONSOON  := 7
+
+var _overlay_quad: MeshInstance2D
+var _overlay_mat: ShaderMaterial
+var _shadow_root: Node2D
+var _shadow_pool: Array[Sprite2D] = []   # 16 个 Sprite2D，按 front index 复用
+var _shadow_texture: ImageTexture        # 共享的 radial-fade alpha 圆盘
+var _shadow_material: CanvasItemMaterial # 共享的 BLEND_MUL 材质
+var _particles_root: Node2D
+var _particles_pool: Array[GPUParticles2D] = []  # 16 个，按 front index 复用
+# 缓存每个 slot 当前配置类型，避免每次 set_weather_fronts 都重建 process_material
+var _particles_type_cache: Array[int] = []
+# v-data-driven：每种 WeatherType 共享一份 ParticleProcessMaterial，避免 16 份各自触发
+# shader 编译。key = WeatherType.WT int；由 _get_or_build_process_material(wt) 懒加载。
+var _process_material_cache: Dictionary = {}
+# v-data-driven：profile.particle_texture 为 null 时的兜底白色贴图，避免空引用。
+var _fallback_particle_texture: ImageTexture
+
+var _world_bounds: Rect2 = Rect2()
+var _world_time: float = 0.0
+var _strength: float = 1.0
+# v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
+var _active_count: int = 0
+# 每日 WeatherFront 快照的表现层插值状态。这里存 Dictionary 快照，避免改 WeatherSystem 数据。
+var _front_start_snapshots: Array = []
+var _front_target_snapshots: Array = []
+var _front_visual_snapshots: Array = []
+var _front_blend_elapsed: float = 0.0
+var _front_blend_duration: float = 0.0
+var _last_front_snapshot_time: float = -1.0
+# 任务 5：STORM 闪电节拍——随 world_time 推进， < 1Hz 触发 80~120ms 的亮斑。
+# _storm_next_flash_t：下次开始的 world_time；_storm_flash_end_t：当前亮斑失效时间。
+var _storm_next_flash_t: float = 0.0
+var _storm_flash_end_t: float = 0.0
+var _storm_active: bool = false
+var _rng: RandomNumberGenerator
+
+func _ready() -> void:
+	z_as_relative = false
+	z_index = 1
+	# v9.perf：默认整层隐藏，set_weather_fronts() 来了再 visible=true，
+	# 在没有任何天气时省掉 overlay quad 的全屏 fragment + framebuffer blend
+	visible = false
+
+	_overlay_quad = MeshInstance2D.new()
+	_overlay_quad.name = "WeatherOverlayQuad"
+	_overlay_quad.z_as_relative = true
+	_overlay_quad.z_index = 0
+	add_child(_overlay_quad)
+
+	_shadow_root = Node2D.new()
+	_shadow_root.name = "CloudShadows"
+	_shadow_root.z_as_relative = true
+	_shadow_root.z_index = 1
+	add_child(_shadow_root)
+
+	_particles_root = Node2D.new()
+	_particles_root.name = "WeatherParticles"
+	_particles_root.z_as_relative = true
+	_particles_root.z_index = 2
+	add_child(_particles_root)
+
+	_load_overlay_shader()
+	_init_shadow_pool()
+	_init_particles_pool()
+	# 任务 5：STORM 闪电数值随机
+	_rng = RandomNumberGenerator.new()
+	_rng.randomize()
+	set_process(true)
+
+func _process(delta: float) -> void:
+	# v9.perf：没有活跃 weather 时整层隐藏，连 _process 都可以停掉
+	if _front_target_snapshots.is_empty() and _front_visual_snapshots.is_empty():
+		_active_count = 0
+		visible = false
+		return
+	# 任务 5：粒子/噪声时间推进受 WorldClock.paused 门控
+	# （不依赖 WorldClock 实例，而是看 SceneTree 的 paused 状态——与项目现有暂停机制兑齐）
+	if not _effective_running():
+		return
+	_world_time += delta
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("world_time", _world_time)
+	_update_weather_front_blend(delta)
+	# 任务 5：STORM 闪电推进
+	if _storm_active:
+		_update_storm_flash()
+
+# 暂停门控：由上层（main.gd 把 WorldClock.paused 同步给 WeatherLayer）写入。
+# 默认 true；外部写入 false 后停止 world_time 推进。
+var _clock_running: bool = true
+
+func set_clock_running(running: bool) -> void:
+	_clock_running = running
+
+func _effective_running() -> bool:
+	return _clock_running
+
+# 任务 5：按 world_time 驱动闪电亮斑，频率 < 1Hz，每次持续 80~120ms。
+# 在窗口内把 storm_flash uniform 抬到 1.0，窗口外恢复为 0。
+func _update_storm_flash() -> void:
+	if _overlay_mat == null:
+		return
+	if _world_time >= _storm_next_flash_t and _world_time > _storm_flash_end_t:
+		# 触发新一次亮斑：持续 80~120ms
+		var dur_ms: float = _rng.randf_range(80.0, 120.0)
+		_storm_flash_end_t = _world_time + dur_ms / 1000.0
+		# 下一次：间隔 1.2 ~ 3.0 秒 (< 1Hz)
+		_storm_next_flash_t = _storm_flash_end_t + _rng.randf_range(1.2, 3.0)
+	var flash: float = 0.0
+	if _world_time <= _storm_flash_end_t:
+		# 软过渡：从 1.0 线性掉到 0.4，避免硬断视觉上倍感氣凝重
+		flash = 1.0
+	_overlay_mat.set_shader_parameter("storm_flash", flash)
+
+# ─── 对外接口 ────────────────────────────────────────────────────────────
+
+# 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 enum_atlas + noise_tex。
+func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture) -> void:
+	_world_bounds = bounds
+	_reset_front_blend_state()
+	if _overlay_quad != null:
+		_overlay_quad.mesh = _build_full_quad(bounds)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("enum_atlas", enum_atlas)
+		_overlay_mat.set_shader_parameter("noise_tex", noise_tex)
+		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
+		_overlay_mat.set_shader_parameter("world_size", bounds.size)
+		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+		# 进入时把 fronts 数组清空，避免上一张地图的残留
+		_push_empty_fronts_to_overlay()
+		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
+		_push_weather_profile_uniforms_to_overlay()
+
+# 全局天气强度（与 HexRenderer.weather_strength 同步）
+func set_weather_strength(v: float) -> void:
+	_strength = clampf(v, 0.0, 1.0)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+
+# ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
+# 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部
+# 的分支会根据这些 uniform 决定是否执行对应特性。为使任务 1 本身"无视觉变化"，
+# shader 侧的实际分支会在任务 4~6 中接入。
+var _visual_quality: int = 2
+var _day_night_enabled: bool = true
+var _extreme_ground_enabled: bool = true
+
+func set_visual_quality(q: int) -> void:
+	_visual_quality = clampi(q, 0, 2)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+
+func set_day_night_enabled(v: bool) -> void:
+	_day_night_enabled = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+
+func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
+	_extreme_ground_enabled = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter(
+			"extreme_weather_ground_effect_enabled", _extreme_ground_enabled
+		)
+
+# 任务 2：昼夜相位转发。overlay shader 可用它调暗夜间云色 / 在夜晚
+# 把闪电/降水粒子的底色做冷蓝偏移（具体分支在任务 4~5 接入）。
+var _day_phase: float = 0.25
+
+func set_day_phase(v: float) -> void:
+	_day_phase = fposmod(v, 1.0)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+
+# ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
+# TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
+# 也跟着重新染色，达成“夜晚雨雪偏冷灰、白天偏暖白”的视觉一致性（需求 5.5 / 6.2）。
+var _tod_sun_color: Color = Color.WHITE
+var _tod_ambient_color: Color = Color(0.65, 0.68, 0.75)
+var _tod_night_factor: float = 0.0
+var _tod_exposure: float = 1.0
+
+func apply_tod(profile: TODProfile) -> void:
+	if profile == null:
+		return
+	_tod_sun_color = profile.sun_color
+	_tod_ambient_color = profile.ambient_color
+	_tod_night_factor = profile.night_factor
+	_tod_exposure = profile.exposure
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter(
+			"tod_sun_color",
+			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
+		)
+		_overlay_mat.set_shader_parameter(
+			"tod_ambient_color",
+			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
+		)
+		_overlay_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
+		_overlay_mat.set_shader_parameter("tod_exposure", profile.exposure)
+	# 任务 5：粒子 modulate 随 TOD 重新染色。
+	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
+	# 具体到每个 slot 仍用 intensity 控制 alpha，这里只保存“当前色因子”
+	# 供 _sync_particles_pool 读取。
+	# 云阴影：modulate.a *= (1 - 0.8 * night_factor)——注意需要在 _sync_shadow_pool 里乘
+	# 下，这里不再重制。
+
+# 任务 5：开关——是否提升粒子密度（默认开，关闭后回到上一轮的 amount 下限）
+var _rain_density_boost_enabled: bool = true
+
+func set_rain_density_boost_enabled(v: bool) -> void:
+	_rain_density_boost_enabled = v
+
+# 任务 6：云层 TOD 染色开关，仅同步到 overlay shader。
+var _cloud_tod_tint_enabled: bool = true
+
+func set_cloud_tod_tint_enabled(v: bool) -> void:
+	_cloud_tod_tint_enabled = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
+
+# fronts: Array[WeatherFront]（也接受 untyped Array，避免 caller 强转）
+func set_weather_fronts(fronts: Array) -> void:
+	var now_sec: float = float(Time.get_ticks_msec()) / 1000.0
+	var start_candidates := _front_visual_snapshots.duplicate(true)
+	var targets := _make_front_snapshots(fronts)
+	var aligned := _align_front_blend_snapshots(start_candidates, targets)
+	_front_start_snapshots = aligned[0]
+	_front_target_snapshots = aligned[1]
+	_front_blend_elapsed = 0.0
+	if _last_front_snapshot_time < 0.0:
+		_front_blend_duration = _WEATHER_FRONT_INITIAL_BLEND_SEC
+	else:
+		_front_blend_duration = clampf(
+			now_sec - _last_front_snapshot_time,
+			_WEATHER_FRONT_MIN_BLEND_SEC,
+			_WEATHER_FRONT_MAX_BLEND_SEC
+		)
+	_last_front_snapshot_time = now_sec
+
+	# 目标为空时保留当前视觉快照做淡出；如果也没有视觉快照则立即清空。
+	_update_weather_front_blend(0.0)
+
+	# 任务 5：识别是否有 STORM front（触发闪电节拍推进）
+	_storm_active = false
+	for i in range(_front_target_snapshots.size()):
+		if _front_intensity(_front_target_snapshots[i]) > 0.001 \
+				and _front_type(_front_target_snapshots[i]) == _WT_STORM:
+			_storm_active = true
+			break
+	if not _storm_active and _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("storm_flash", 0.0)
+
+# ─── overlay shader uniform 上传 ─────────────────────────────────────────
+
+func _push_fronts_to_overlay(fronts: Array) -> void:
+	if _overlay_mat == null:
+		return
+	var centers := PackedVector4Array()
+	var types := PackedFloat32Array()
+	centers.resize(MAX_WEATHER_FRONTS)
+	types.resize(MAX_WEATHER_FRONTS)
+	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
+	for i in range(MAX_WEATHER_FRONTS):
+		if i < n:
+			var f = fronts[i]
+			var c := _front_center(f)
+			centers[i] = Vector4(c.x, c.y, _front_radius(f), _front_intensity(f))
+			types[i] = float(_front_type(f))
+		else:
+			centers[i] = Vector4.ZERO
+			types[i] = -1.0
+	_overlay_mat.set_shader_parameter("weather_front_centers", centers)
+	_overlay_mat.set_shader_parameter("weather_front_types", types)
+	_overlay_mat.set_shader_parameter("weather_front_count", n)
+
+func _push_empty_fronts_to_overlay() -> void:
+	_push_fronts_to_overlay([])
+
+# v-data-driven：把 WeatherProfileRegistry 里 8 个 profile 的 overlay 颜色与 flags 位掩码
+# 推入 shader 的 uniform 数组。每局游戏只需调用一次（在 setup() 里）。
+# flags 位编码需与 weather_overlay.gdshader 中的 FLAG_* 常量严格一致：
+#   bit0 = has_overlay
+#   bit1 = enables_lightning
+#   bit2 = enables_snow_grain
+#   bit3 = enables_rain_streak
+#   bit4 = enables_fog_breathe
+const _FLAG_HAS_OVERLAY    := 1
+const _FLAG_LIGHTNING      := 2
+const _FLAG_SNOW_GRAIN     := 4
+const _FLAG_RAIN_STREAK    := 8
+const _FLAG_FOG_BREATHE    := 16
+const _MAX_WEATHER_TYPES   := 8
+
+func _push_weather_profile_uniforms_to_overlay() -> void:
+	if _overlay_mat == null:
+		return
+	var colors := PackedColorArray()
+	var flags := PackedInt32Array()
+	colors.resize(_MAX_WEATHER_TYPES)
+	flags.resize(_MAX_WEATHER_TYPES)
+	for wt in range(_MAX_WEATHER_TYPES):
+		var p := WeatherProfileRegistry.get_profile(wt)
+		if p == null:
+			colors[wt] = Color(0.0, 0.0, 0.0, 0.0)
+			flags[wt] = 0
+			continue
+		# rgb = overlay_color, a = overlay_base_alpha（shader 端直接当作 vec4 读）
+		colors[wt] = Color(
+			p.overlay_color.r, p.overlay_color.g, p.overlay_color.b,
+			p.overlay_base_alpha
+		)
+		var bits: int = 0
+		if p.has_overlay: bits |= _FLAG_HAS_OVERLAY
+		if p.enables_lightning: bits |= _FLAG_LIGHTNING
+		if p.enables_snow_grain: bits |= _FLAG_SNOW_GRAIN
+		if p.enables_rain_streak: bits |= _FLAG_RAIN_STREAK
+		if p.enables_fog_breathe: bits |= _FLAG_FOG_BREATHE
+		flags[wt] = bits
+	_overlay_mat.set_shader_parameter("weather_profile_colors", colors)
+	_overlay_mat.set_shader_parameter("weather_profile_flags", flags)
+
+# ─── 池子同步（B5 / B6 实装） ────────────────────────────────────────────
+
+func _sync_shadow_pool(fronts: Array) -> void:
+	if _shadow_pool.is_empty():
+		return
+	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
+	for i in range(MAX_WEATHER_FRONTS):
+		var sprite: Sprite2D = _shadow_pool[i]
+		if i >= n:
+			sprite.visible = false
+			continue
+		var f = fronts[i]
+		var wt: int = _front_type(f)
+		# v-data-driven：是否出云阴影完全来自 profile.has_cloud_shadow，
+		# 不再枚举 DROUGHT/HEATWAVE/FOG/CLEAR。
+		var profile := WeatherProfileRegistry.get_profile(wt)
+		if profile == null or not profile.has_cloud_shadow:
+			sprite.visible = false
+			continue
+		sprite.visible = true
+		sprite.position = _front_center(f)
+		# 显示半径 = front.radius；scale = front.radius / SHADOW_BASE_RADIUS_PX
+		var s: float = maxf(_front_radius(f), 1.0) / float(SHADOW_BASE_RADIUS_PX)
+		sprite.scale = Vector2(s, s)
+		# v-data-driven：颜色与 alpha 缩放全部来自 profile（BLIZZARD 偏白蓝、雨雷暗灰）。
+		# MIX 模式下 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
+		var modulate_col: Color = profile.cloud_shadow_color
+		# TOD：云阴影 modulate.a *= (1 - 0.55 * night_factor)——夜晚略微收敛，
+		# 但不能接近隐形，否则雨雪云影在夜晚几乎看不到。
+		var night_scale: float = 1.0 - _tod_night_factor * 0.55
+		var max_alpha: float = clampf(profile.cloud_shadow_alpha_scale, 0.0, 1.0)
+		var visual_intensity: float = _front_visual_intensity(_front_intensity(f))
+		modulate_col.a = clampf(
+			visual_intensity * max_alpha * _strength * night_scale, 0.0, max_alpha
+		)
+		sprite.modulate = modulate_col
+
+func _sync_particles_pool(fronts: Array) -> void:
+	if _particles_pool.is_empty():
+		return
+	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
+	for i in range(MAX_WEATHER_FRONTS):
+		var node: GPUParticles2D = _particles_pool[i]
+		if i >= n:
+			_disable_particle_slot(node, i)
+			continue
+		var f = fronts[i]
+		var wt: int = _front_type(f)
+		# v-data-driven：是否出粒子完全来自 profile.has_particles，不再判 type。
+		var profile := WeatherProfileRegistry.get_profile(wt)
+		if profile == null or not profile.has_particles:
+			_disable_particle_slot(node, i)
+			continue
+
+		# 类型变了才重新配置 process_material（避免每帧重建）
+		if _particles_type_cache[i] != wt:
+			_configure_particles_for_type(node, wt)
+			_particles_type_cache[i] = wt
+
+		# 每次都更新位置 / emitter 半径 / intensity 调强度
+		node.position = _front_center(f)
+		# v9.perf：每个 slot 自己设 visibility_rect = ±radius，让引擎能正确剂除而不是
+		# 默认那个 (-100,-100,200,200) 小框（front 半径常常远超 100）
+		var r: float = maxf(_front_radius(f), 1.0)
+		node.visibility_rect = Rect2(-r, -r, r * 2.0, r * 2.0)
+		# v-data-driven：降水密度制——amount 随覆盖面积缩放，所有阈值从 profile 取。
+		# _rain_density_boost_enabled=false 时回落到全局常量下限（上一轮更保守的数值）。
+		var area: float = PI * r * r
+		var lo: int
+		var hi: int
+		if _rain_density_boost_enabled:
+			lo = profile.particle_amount_min
+			hi = profile.particle_amount_max
+		else:
+			# 兼容：关闭 boost 时使用之前的保守上下限。
+			var is_snow_fallback: bool = (wt == _WT_BLIZZARD)
+			lo = _SNOW_AMOUNT_MIN if is_snow_fallback else _RAIN_AMOUNT_MIN
+			hi = _SNOW_AMOUNT_MAX if is_snow_fallback else _RAIN_AMOUNT_MAX
+		var desired: int = clampi(
+			int(ceil(area * profile.particle_density_per_px2)), lo, hi
+		)
+		if node.amount != desired:
+			node.amount = desired
+		# emission_sphere_radius 是 ParticleProcessMaterial 的属性，但因为现在同类型 front
+		# 共享一份材质，多个 slot 会互相覆盖。改用 sphere_radius=1 + 每个 slot 用 node.scale
+		# 放大到实际 radius；粒子被风/重力扩散后差几十像素肉眼看不出。
+		node.scale = Vector2(r, r)
+		# modulate.a 反映视觉强度；逻辑 intensity 仍保持原值，但表现层用非线性曲线
+		# 抬高中低强度天气，避免雨雪刚生成/衰减后几乎不可见。
+		var visual_intensity: float = _front_visual_intensity(_front_intensity(f))
+		var alpha_fade: float = clampf(visual_intensity / 0.12, 0.0, 1.0)
+		var alpha: float = clampf(0.62 + visual_intensity * 0.38, 0.0, 1.0) \
+				* alpha_fade * _strength
+		# TOD 染色：雨雪粒子是前景特效，不能像地表一样被夜晚二次压暗。
+		# 使用带下限的 TOD 色温，只保留昼夜冷暖倾向，保证午夜雨雪仍然可读。
+		var base_col: Color = profile.particle_base_color
+		var night_particle_scale: float = 1.0 - 0.18 * _tod_night_factor
+		var tint_r: float = _particle_tod_tint_component(_tod_sun_color.r, _tod_ambient_color.r)
+		var tint_g: float = _particle_tod_tint_component(_tod_sun_color.g, _tod_ambient_color.g)
+		var tint_b: float = _particle_tod_tint_component(_tod_sun_color.b, _tod_ambient_color.b)
+		node.modulate = Color(
+			clampf(base_col.r * tint_r * night_particle_scale * _tod_exposure, 0.0, 1.0),
+			clampf(base_col.g * tint_g * night_particle_scale * _tod_exposure, 0.0, 1.0),
+			clampf(base_col.b * tint_b * night_particle_scale * _tod_exposure, 0.0, 1.0),
+			alpha
+		)
+		node.visible = true
+		# v9.perf：从 DISABLED → INHERIT 才会真正开始 process / 渲染粒子
+		node.process_mode = Node.PROCESS_MODE_INHERIT
+		node.emitting = true
+# v9.perf：把 slot 完整地"睡眠"掉（不可见 + 不 process + 标记类型缓存清零）
+func _disable_particle_slot(node: GPUParticles2D, slot_idx: int) -> void:
+	if node.emitting:
+		node.emitting = false
+	if node.visible:
+		node.visible = false
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	_particles_type_cache[slot_idx] = _WT_CLEAR
+
+# ─── WeatherFront 表现层插值 ─────────────────────────────────────────────
+
+func _reset_front_blend_state() -> void:
+	_front_start_snapshots.clear()
+	_front_target_snapshots.clear()
+	_front_visual_snapshots.clear()
+	_front_blend_elapsed = 0.0
+	_front_blend_duration = 0.0
+	_last_front_snapshot_time = -1.0
+	_active_count = 0
+	visible = false
+	_push_empty_fronts_to_overlay()
+	_sync_shadow_pool([])
+	_sync_particles_pool([])
+
+func _make_front_snapshots(fronts: Array) -> Array:
+	var snapshots: Array = []
+	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
+	for i in range(n):
+		var f = fronts[i]
+		snapshots.append({
+			"center": _front_center(f),
+			"radius": _front_radius(f),
+			"type": _front_type(f),
+			"intensity": _front_intensity(f),
+		})
+	return snapshots
+
+func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Array:
+	var starts: Array = []
+	var aligned_targets: Array = []
+	var used: Array[bool] = []
+	used.resize(start_candidates.size())
+	for i in range(used.size()):
+		used[i] = false
+
+	for target in targets:
+		var best_idx: int = -1
+		var best_dist_sq: float = INF
+		var target_center: Vector2 = _front_center(target)
+		var target_radius: float = maxf(_front_radius(target), 1.0)
+		for i in range(start_candidates.size()):
+			if used[i]:
+				continue
+			var candidate = start_candidates[i]
+			if _front_type(candidate) != _front_type(target):
+				continue
+			var dist_sq: float = _front_center(candidate).distance_squared_to(target_center)
+			if dist_sq < best_dist_sq:
+				best_dist_sq = dist_sq
+				best_idx = i
+		var start
+		if best_idx >= 0 and best_dist_sq <= target_radius * target_radius * 2.25:
+			used[best_idx] = true
+			start = start_candidates[best_idx]
+		else:
+			start = target.duplicate(true)
+			start["intensity"] = 0.0
+		starts.append(start)
+		aligned_targets.append(target)
+
+	for i in range(start_candidates.size()):
+		if used[i]:
+			continue
+		var fading_start = start_candidates[i]
+		var fading_target = fading_start.duplicate(true)
+		fading_target["intensity"] = 0.0
+		starts.append(fading_start)
+		aligned_targets.append(fading_target)
+
+	return [starts, aligned_targets]
+
+func _update_weather_front_blend(delta: float) -> void:
+	_front_blend_elapsed += maxf(delta, 0.0)
+	var duration: float = maxf(_front_blend_duration, 0.0001)
+	var raw_t: float = clampf(_front_blend_elapsed / duration, 0.0, 1.0)
+	var t: float = smoothstep(0.0, 1.0, raw_t)
+	_front_visual_snapshots = _blend_front_snapshots(t)
+	if raw_t >= 1.0:
+		_front_target_snapshots = _filter_visible_front_snapshots(_front_target_snapshots)
+		_front_start_snapshots = _front_target_snapshots.duplicate(true)
+		_front_visual_snapshots = _front_target_snapshots.duplicate(true)
+		_front_blend_elapsed = _front_blend_duration
+		if _front_target_snapshots.is_empty():
+			_front_start_snapshots.clear()
+			_front_visual_snapshots.clear()
+			_front_blend_duration = 0.0
+	_active_count = mini(_front_visual_snapshots.size(), MAX_WEATHER_FRONTS)
+	visible = (_active_count > 0)
+	_push_fronts_to_overlay(_front_visual_snapshots)
+	_sync_shadow_pool(_front_visual_snapshots)
+	_sync_particles_pool(_front_visual_snapshots)
+
+func _filter_visible_front_snapshots(snapshots: Array) -> Array:
+	var filtered: Array = []
+	for snapshot in snapshots:
+		if _front_intensity(snapshot) > 0.001:
+			filtered.append(snapshot)
+	return filtered
+
+func _blend_front_snapshots(t: float) -> Array:
+	var visual: Array = []
+	var n: int = mini(
+		maxi(_front_start_snapshots.size(), _front_target_snapshots.size()),
+		MAX_WEATHER_FRONTS
+	)
+	for i in range(n):
+		var has_start: bool = i < _front_start_snapshots.size()
+		var has_target: bool = i < _front_target_snapshots.size()
+		if not has_start and not has_target:
+			continue
+		var start = _front_start_snapshots[i] if has_start else null
+		var target = _front_target_snapshots[i] if has_target else null
+		if start == null and target != null:
+			start = target.duplicate(true)
+			start["intensity"] = 0.0
+		elif target == null and start != null:
+			target = start.duplicate(true)
+			target["intensity"] = 0.0
+		var center: Vector2 = _front_center(start).lerp(_front_center(target), t)
+		var radius: float = lerpf(_front_radius(start), _front_radius(target), t)
+		var intensity: float = lerpf(_front_intensity(start), _front_intensity(target), t)
+		if intensity <= 0.001 and t >= 1.0:
+			continue
+		visual.append({
+			"center": center,
+			"radius": radius,
+			"type": _front_type(target),
+			"intensity": clampf(intensity, 0.0, 1.0),
+		})
+	return visual
+
+func _front_center(front) -> Vector2:
+	if front is Dictionary:
+		return front.get("center", Vector2.ZERO)
+	return front.center
+
+func _front_radius(front) -> float:
+	if front is Dictionary:
+		return float(front.get("radius", 0.0))
+	return float(front.radius)
+
+func _front_type(front) -> int:
+	if front is Dictionary:
+		return int(front.get("type", _WT_CLEAR))
+	return int(front.type)
+
+func _front_intensity(front) -> float:
+	if front is Dictionary:
+		return clampf(float(front.get("intensity", 0.0)), 0.0, 1.0)
+	return clampf(float(front.intensity), 0.0, 1.0)
+
+func _front_visual_intensity(raw_intensity: float) -> float:
+	var i: float = clampf(raw_intensity, 0.0, 1.0)
+	if i <= 0.0:
+		return 0.0
+	# 逻辑强度用于数值系统；视觉强度用幂曲线抬高中低段，同时在 0 附近
+	# 保持淡出，避免刚清空的 front 留下残影。
+	return clampf(pow(i, 0.55) * smoothstep(0.0, 0.08, i), 0.0, 1.0)
+
+func _particle_tod_tint_component(sun_component: float, ambient_component: float) -> float:
+	var night_t: float = clampf(_tod_night_factor, 0.0, 1.0)
+	var sun_visible: float = lerpf(clampf(sun_component, 0.0, 1.25), 1.0, 0.45)
+	var ambient_visible: float = lerpf(clampf(ambient_component, 0.0, 1.25), 1.0, 0.35)
+	var tint: float = lerpf(sun_visible, ambient_visible, night_t * 0.35)
+	var floor_value: float = lerpf(0.82, 0.58, night_t)
+	return clampf(maxf(tint, floor_value), 0.0, 1.15)
+
+# ─── 内部 ─────────────────────────────────────────────────────────────────
+
+func _load_overlay_shader() -> void:
+	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",
+		ResourceLoader.CACHE_MODE_IGNORE) as Shader
+	if shader == null:
+		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
+		return
+	_overlay_mat = ShaderMaterial.new()
+	_overlay_mat.shader = shader
+	_overlay_quad.material = _overlay_mat
+
+# ─── 云阴影池初始化 ──────────────────────────────────────────────────────
+# 生成一张共享的 radial-fade alpha 圆盘贴图（白色 RGB + 渐变 alpha），
+# 配合 BLEND_MIX 材质 + per-sprite 的半透明深色 modulate 实现"云投影压暗"效果。
+#
+# 历史坑（已修复）：原先用 BLEND_MODE_MUL。MUL 模式下 src.alpha 不参与混合，
+# Godot 会把 sprite.modulate.rgb 直接乘到纹理 RGB 上再乘底色，即使圆盘贴图四角
+# alpha=0，modulate 的暗色也会把整张 quad 的矩形包围盒范围压暗，
+# 在地图上就表现为醒目的"黑色透明矩形"。
+# 改为 MIX 后，四角 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
+
+func _init_shadow_pool() -> void:
+	_shadow_texture = _build_radial_fade_texture(SHADOW_BASE_RADIUS_PX)
+	_shadow_material = CanvasItemMaterial.new()
+	_shadow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_MIX
+	_shadow_pool.clear()
+	for i in range(MAX_WEATHER_FRONTS):
+		var sprite := Sprite2D.new()
+		sprite.name = "Shadow_%d" % i
+		sprite.texture = _shadow_texture
+		sprite.material = _shadow_material
+		sprite.centered = true
+		sprite.visible = false
+		sprite.z_as_relative = true
+		sprite.z_index = 0
+		_shadow_root.add_child(sprite)
+		_shadow_pool.append(sprite)
+
+# 生成 (2*radius_px) × (2*radius_px) 的 RGBA8 圆盘：
+#   - rgb 全白（被 sprite.modulate 染色）
+#   - alpha = smoothstep(1.0, 0.0, dist/radius)，圆心 1.0，圆边 0.0
+# v9.perf：用 PackedByteArray + create_from_data 一次性写完，
+# 替换之前 65k 次 Image.set_pixel(Color(...)) 的启动 hitch
+func _build_radial_fade_texture(radius_px: int) -> ImageTexture:
+	var size := radius_px * 2
+	var pixel_count := size * size
+	var data := PackedByteArray()
+	data.resize(pixel_count * 4)  # RGBA8
+	var center: float = float(radius_px) - 0.5
+	var inv_r := 1.0 / float(radius_px)
+	var idx := 0
+	for y in range(size):
+		var dy := float(y) - center
+		var dy2 := dy * dy
+		for x in range(size):
+			var dx := float(x) - center
+			var d := sqrt(dx * dx + dy2) * inv_r
+			var a: float = smoothstep(1.0, 0.0, d)
+			a = pow(a, 1.2)
+			var ai: int = int(clampf(a, 0.0, 1.0) * 255.0)
+			data[idx]     = 255
+			data[idx + 1] = 255
+			data[idx + 2] = 255
+			data[idx + 3] = ai
+			idx += 4
+	var img := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, data)
+	return ImageTexture.create_from_image(img)
+
+# ─── 粒子池初始化 ────────────────────────────────────────────────────────
+# 16 个 GPUParticles2D，每个有自己的 ParticleProcessMaterial（避免共享导致全部 front
+# 用一份配置）。process_material 的 emission_sphere_radius / direction / lifetime
+# 在 _sync_particles_pool 里根据 front type 调整。
+
+# v-data-driven：每种天气的 amount / lifetime / texture / process_material
+# 全部来自 WeatherProfile；不再在 _init_particles_pool 里写死。
+# _particles_pool 中每个节点保持未赋材质状态，由 _configure_particles_for_type 首次切换时赋值。
+
+func _init_particles_pool() -> void:
+	_fallback_particle_texture = _build_fallback_particle_texture()
+	_process_material_cache.clear()
+	_particles_pool.clear()
+	_particles_type_cache.clear()
+	for i in range(MAX_WEATHER_FRONTS):
+		var p := GPUParticles2D.new()
+		p.name = "Particles_%d" % i
+		p.amount = 80  # 占位，_configure_particles_for_type 会覆盖为 profile.particle_amount_min
+		p.lifetime = 1.6
+		p.preprocess = 0.0  # v9.perf：preprocess 启动时一次性 GPU 模拟，对每个 slot 都跑代价大；改为 0
+		p.one_shot = false
+		p.explosiveness = 0.0
+		p.emitting = false
+		p.visible = false
+		p.local_coords = false
+		p.z_as_relative = true
+		p.z_index = 0
+		# v9.perf：闲置粒子完全停 process，避免 16 个常驻 GPUParticles 每帧 GPU/CPU 开销
+		p.process_mode = Node.PROCESS_MODE_DISABLED
+		# 不预设 process_material / texture——首次 _configure_particles_for_type 才赋。
+		_particles_root.add_child(p)
+		_particles_pool.append(p)
+		_particles_type_cache.append(_WT_CLEAR)
+
+# v-data-driven：每个 slot 在第一次切换 type 时调用（避免每帧重建）。
+# 所有参数从 WeatherProfile 读取；process_material 按 wt 缓存，同类型复用。
+func _configure_particles_for_type(node: GPUParticles2D, wt: int) -> void:
+	var profile := WeatherProfileRegistry.get_profile(wt)
+	if profile == null:
+		return
+	node.amount = maxi(profile.particle_amount_min, 1)
+	node.lifetime = profile.particle_lifetime
+	node.process_material = _get_or_build_process_material(wt)
+	var tex: Texture2D = profile.particle_texture
+	if tex == null:
+		tex = _fallback_particle_texture
+	node.texture = tex
+
+# 构造 per-weather ParticleProcessMaterial，从 profile 字段逐一填入。
+# emission_sphere_radius 固定 1.0，由 _sync_particles_pool 用 node.scale 放大到实际半径
+# （多个 slot 共享同一 ProcessMaterial，不能 per-slot 改半径——保留原设计）。
+func _build_process_material_from_profile(profile: WeatherProfile) -> ParticleProcessMaterial:
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 1.0
+	pm.direction = profile.particle_direction
+	pm.spread = profile.particle_spread
+	pm.gravity = profile.particle_gravity
+	pm.initial_velocity_min = profile.particle_velocity_min
+	pm.initial_velocity_max = profile.particle_velocity_max
+	pm.angular_velocity_min = profile.particle_angular_velocity_min
+	pm.angular_velocity_max = profile.particle_angular_velocity_max
+	pm.scale_min = profile.particle_scale_min
+	pm.scale_max = profile.particle_scale_max
+	pm.color = profile.particle_base_color
+	return pm
+
+# 懒加载 + 缓存：每种 WeatherType 至多一份 ParticleProcessMaterial。
+func _get_or_build_process_material(wt: int) -> ParticleProcessMaterial:
+	if _process_material_cache.has(wt):
+		return _process_material_cache[wt]
+	var profile := WeatherProfileRegistry.get_profile(wt)
+	if profile == null or not profile.has_particles:
+		return null
+	var pm := _build_process_material_from_profile(profile)
+	_process_material_cache[wt] = pm
+	return pm
+
+# 兜底贴图：1×1 全白 RGBA8，当 profile.particle_texture 为 null 时使用，
+# 避免空引用崩溃（需求 3.5）。
+func _build_fallback_particle_texture() -> ImageTexture:
+	var data := PackedByteArray([255, 255, 255, 255])
+	var img := Image.create_from_data(1, 1, false, Image.FORMAT_RGBA8, data)
+	return ImageTexture.create_from_image(img)
+
+func _build_full_quad(bounds: Rect2) -> Mesh:
+	var p := bounds.position
+	var s := bounds.size
+	var verts := PackedVector2Array([
+		p,
+		p + Vector2(s.x, 0.0),
+		p + s,
+		p + Vector2(0.0, s.y),
+	])
+	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 7
+display_name_cn = "温带阔叶林"
+transpiration = 0.7
+albedo = 0.15
+eco_score = 1.0
+ideal_temp = 0.5
+ideal_moist = 0.65
+temp_tolerance = 0.28
+moist_tolerance = 0.28
+next_richer = -1
+next_harsher = 9
