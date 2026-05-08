@@ -70,7 +70,7 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 		if not front.is_alive():
 			continue
 		# 飘出地图边界 + 1 倍 radius 也算出图
-		if not _world_bounds.grow(front.radius).has_point(front.center):
+		if not _world_bounds.grow(front.bounding_radius()).has_point(front.center):
 			continue
 		alive.append(front)
 	_active_fronts = alive
@@ -138,6 +138,7 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 		WeatherType.WT.MONSOON:  radius_mul = _rng.randf_range(8.0, 14.0)
 		_:                       radius_mul = 8.0
 	front.radius = _hex_size * radius_mul
+	front.edge_seed = _rng.randf_range(0.0, 1000.0)
 	# 寿命与衰减：DROUGHT/HEATWAVE 较慢，雷暴较快
 	match wt:
 		WeatherType.WT.DROUGHT:
@@ -161,8 +162,46 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 	# 初始速度沿当前 spawn 点风向
 	var wind: Vector2 = world.sample_wind(spawn_pos)
 	if wind.length() > 0.05:
-		front.velocity = wind.normalized() * (front.radius * 0.4)
+		var wind_axis := wind.normalized()
+		front.axis = wind_axis
+		front.stable_axis = wind_axis
+		front.velocity = wind_axis * (front.radius * 0.4)
+	else:
+		var a := _rng.randf_range(0.0, TAU)
+		front.axis = Vector2(cos(a), sin(a))
+		front.stable_axis = front.axis
+	_apply_front_shape_by_type(front)
+	front.refresh_visual_lifecycle()
 	return front
+
+func _apply_front_shape_by_type(front: WeatherFront) -> void:
+	if front == null:
+		return
+	match front.type:
+		WeatherType.WT.RAIN:
+			front.major_scale = 1.65
+			front.minor_scale = 0.68
+		WeatherType.WT.STORM:
+			front.major_scale = 1.18
+			front.minor_scale = 0.72
+		WeatherType.WT.BLIZZARD:
+			front.major_scale = 1.85
+			front.minor_scale = 0.48
+		WeatherType.WT.DROUGHT:
+			front.major_scale = 1.42
+			front.minor_scale = 0.86
+		WeatherType.WT.FOG:
+			front.major_scale = 1.35
+			front.minor_scale = 1.05
+		WeatherType.WT.HEATWAVE:
+			front.major_scale = 1.55
+			front.minor_scale = 0.82
+		WeatherType.WT.MONSOON:
+			front.major_scale = 2.05
+			front.minor_scale = 0.56
+		_:
+			front.major_scale = 1.0
+			front.minor_scale = 1.0
 
 # 加权类型抽样：
 #   abs_lat ∈ [0, 1]：0=赤道, 1=极地
@@ -289,10 +328,26 @@ func query_at(world_pos: Vector2) -> Dictionary:
 func pack_to_uniforms() -> Dictionary:
 	var centers: Array = []
 	var types: Array = []
+	var shapes: Array = []
+	var visuals: Array = []
 	for front in _active_fronts:
 		centers.append(Vector4(front.center.x, front.center.y, front.radius, front.intensity))
 		types.append(int(front.type))
-	return {"centers": centers, "types": types, "count": _active_fronts.size()}
+		var ax := front.normalized_axis()
+		shapes.append(Vector4(ax.x, ax.y, front.major_scale, front.minor_scale))
+		visuals.append(Vector4(
+			front.cloud_amount,
+			front.precip_amount,
+			front.dissolve_amount,
+			front.life_progress
+		))
+	return {
+		"centers": centers,
+		"types": types,
+		"shapes": shapes,
+		"visuals": visuals,
+		"count": _active_fronts.size()
+	}
 
 func active_fronts() -> Array[WeatherFront]:
 	return _active_fronts

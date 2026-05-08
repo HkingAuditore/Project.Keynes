@@ -106,7 +106,7 @@ func _ready() -> void:
 	_shadow_root = Node2D.new()
 	_shadow_root.name = "CloudShadows"
 	_shadow_root.z_as_relative = true
-	_shadow_root.z_index = 1
+	_shadow_root.z_index = -1
 	add_child(_shadow_root)
 
 	_particles_root = Node2D.new()
@@ -312,8 +312,12 @@ func _push_fronts_to_overlay(fronts: Array) -> void:
 	if _overlay_mat == null:
 		return
 	var centers := PackedVector4Array()
+	var shapes := PackedVector4Array()
+	var visuals := PackedVector4Array()
 	var types := PackedFloat32Array()
 	centers.resize(MAX_WEATHER_FRONTS)
+	shapes.resize(MAX_WEATHER_FRONTS)
+	visuals.resize(MAX_WEATHER_FRONTS)
 	types.resize(MAX_WEATHER_FRONTS)
 	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
 	for i in range(MAX_WEATHER_FRONTS):
@@ -321,11 +325,23 @@ func _push_fronts_to_overlay(fronts: Array) -> void:
 			var f = fronts[i]
 			var c := _front_center(f)
 			centers[i] = Vector4(c.x, c.y, _front_radius(f), _front_intensity(f))
+			var ax := _front_axis(f)
+			shapes[i] = Vector4(ax.x, ax.y, _front_major_scale(f), _front_minor_scale(f))
+			visuals[i] = Vector4(
+				_front_cloud_amount(f),
+				_front_precip_amount(f),
+				_front_dissolve_amount(f),
+				_front_life_progress(f)
+			)
 			types[i] = float(_front_type(f))
 		else:
 			centers[i] = Vector4.ZERO
+			shapes[i] = Vector4(1.0, 0.0, 1.0, 1.0)
+			visuals[i] = Vector4.ZERO
 			types[i] = -1.0
 	_overlay_mat.set_shader_parameter("weather_front_centers", centers)
+	_overlay_mat.set_shader_parameter("weather_front_shapes", shapes)
+	_overlay_mat.set_shader_parameter("weather_front_visuals", visuals)
 	_overlay_mat.set_shader_parameter("weather_front_types", types)
 	_overlay_mat.set_shader_parameter("weather_front_count", n)
 
@@ -380,6 +396,11 @@ func _push_weather_profile_uniforms_to_overlay() -> void:
 func _sync_shadow_pool(fronts: Array) -> void:
 	if _shadow_pool.is_empty():
 		return
+	# Cloud shadows are now drawn in weather_overlay.gdshader from the same
+	# front coverage field, so the old sprite pool is kept disabled.
+	for sprite in _shadow_pool:
+		sprite.visible = false
+	return
 	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
 	for i in range(MAX_WEATHER_FRONTS):
 		var sprite: Sprite2D = _shadow_pool[i]
@@ -396,9 +417,10 @@ func _sync_shadow_pool(fronts: Array) -> void:
 			continue
 		sprite.visible = true
 		sprite.position = _front_center(f)
-		# 显示半径 = front.radius；scale = front.radius / SHADOW_BASE_RADIUS_PX
+		# 显示半径跟随锋面长短轴，圆盘贴图被拉成云影椭圆。
 		var s: float = maxf(_front_radius(f), 1.0) / float(SHADOW_BASE_RADIUS_PX)
-		sprite.scale = Vector2(s, s)
+		sprite.rotation = _front_axis(f).angle()
+		sprite.scale = Vector2(s * _front_major_scale(f), s * _front_minor_scale(f))
 		# v-data-driven：颜色与 alpha 缩放全部来自 profile（BLIZZARD 偏白蓝、雨雷暗灰）。
 		# MIX 模式下 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
 		var modulate_col: Color = profile.cloud_shadow_color
@@ -439,10 +461,11 @@ func _sync_particles_pool(fronts: Array) -> void:
 		# v9.perf：每个 slot 自己设 visibility_rect = ±radius，让引擎能正确剂除而不是
 		# 默认那个 (-100,-100,200,200) 小框（front 半径常常远超 100）
 		var r: float = maxf(_front_radius(f), 1.0)
-		node.visibility_rect = Rect2(-r, -r, r * 2.0, r * 2.0)
+		var bound_r: float = r * maxf(maxf(_front_major_scale(f), _front_minor_scale(f)), 1.0)
+		node.visibility_rect = Rect2(-bound_r, -bound_r, bound_r * 2.0, bound_r * 2.0)
 		# v-data-driven：降水密度制——amount 随覆盖面积缩放，所有阈值从 profile 取。
 		# _rain_density_boost_enabled=false 时回落到全局常量下限（上一轮更保守的数值）。
-		var area: float = PI * r * r
+		var area: float = PI * r * _front_major_scale(f) * r * _front_minor_scale(f)
 		var lo: int
 		var hi: int
 		if _rain_density_boost_enabled:
@@ -458,15 +481,32 @@ func _sync_particles_pool(fronts: Array) -> void:
 		)
 		if node.amount != desired:
 			node.amount = desired
-		# emission_sphere_radius 是 ParticleProcessMaterial 的属性，但因为现在同类型 front
-		# 共享一份材质，多个 slot 会互相覆盖。改用 sphere_radius=1 + 每个 slot 用 node.scale
-		# 放大到实际 radius；粒子被风/重力扩散后差几十像素肉眼看不出。
-		node.scale = Vector2(r, r)
+		var max_fall_speed: float = maxf(profile.particle_velocity_max, 1.0)
+		var local_fall_budget: float = r * _front_minor_scale(f) * 1.15
+		var bounded_lifetime: float = clampf(
+			local_fall_budget / max_fall_speed,
+			0.38,
+			profile.particle_lifetime
+		)
+		if not is_equal_approx(node.lifetime, bounded_lifetime):
+			node.lifetime = bounded_lifetime
+		var pm := node.process_material as ParticleProcessMaterial
+		if pm != null:
+			pm.emission_box_extents = Vector3(
+				r * _front_major_scale(f),
+				r * _front_minor_scale(f),
+				1.0
+			)
+		# 发射范围用材质的世界单位表达；节点只负责定位。
+		# 不再缩放 GPUParticles2D，否则粒子速度和贴图也会被放大，雨雪会飞出天气区域。
+		node.rotation = 0.0
+		node.scale = Vector2.ONE
 		# modulate.a 反映视觉强度；逻辑 intensity 仍保持原值，但表现层用非线性曲线
 		# 抬高中低强度天气，避免雨雪刚生成/衰减后几乎不可见。
 		var visual_intensity: float = _front_visual_intensity(_front_intensity(f))
-		var alpha_fade: float = clampf(visual_intensity / 0.12, 0.0, 1.0)
-		var alpha: float = clampf(0.62 + visual_intensity * 0.38, 0.0, 1.0) \
+		var precip_amount: float = _front_precip_amount(f)
+		var alpha_fade: float = clampf(maxf(visual_intensity, precip_amount) / 0.10, 0.0, 1.0)
+		var alpha: float = clampf(0.28 + precip_amount * 0.48, 0.0, 0.78) \
 				* alpha_fade * _strength
 		# TOD 染色：雨雪粒子是前景特效，不能像地表一样被夜晚二次压暗。
 		# 使用带下限的 TOD 色温，只保留昼夜冷暖倾向，保证午夜雨雪仍然可读。
@@ -479,7 +519,7 @@ func _sync_particles_pool(fronts: Array) -> void:
 			clampf(base_col.r * tint_r * night_particle_scale * _tod_exposure, 0.0, 1.0),
 			clampf(base_col.g * tint_g * night_particle_scale * _tod_exposure, 0.0, 1.0),
 			clampf(base_col.b * tint_b * night_particle_scale * _tod_exposure, 0.0, 1.0),
-			alpha
+			alpha * clampf(maxf(base_col.a, 0.72), 0.0, 1.0)
 		)
 		node.visible = true
 		# v9.perf：从 DISABLED → INHERIT 才会真正开始 process / 渲染粒子
@@ -519,6 +559,13 @@ func _make_front_snapshots(fronts: Array) -> Array:
 			"radius": _front_radius(f),
 			"type": _front_type(f),
 			"intensity": _front_intensity(f),
+			"axis": _front_axis(f),
+			"major_scale": _front_major_scale(f),
+			"minor_scale": _front_minor_scale(f),
+			"cloud_amount": _front_cloud_amount(f),
+			"precip_amount": _front_precip_amount(f),
+			"dissolve_amount": _front_dissolve_amount(f),
+			"life_progress": _front_life_progress(f),
 		})
 	return snapshots
 
@@ -616,6 +663,13 @@ func _blend_front_snapshots(t: float) -> Array:
 		var center: Vector2 = _front_center(start).lerp(_front_center(target), t)
 		var radius: float = lerpf(_front_radius(start), _front_radius(target), t)
 		var intensity: float = lerpf(_front_intensity(start), _front_intensity(target), t)
+		var axis := _blend_axis(_front_axis(start), _front_axis(target), t)
+		var major_scale: float = lerpf(_front_major_scale(start), _front_major_scale(target), t)
+		var minor_scale: float = lerpf(_front_minor_scale(start), _front_minor_scale(target), t)
+		var cloud_amount: float = lerpf(_front_cloud_amount(start), _front_cloud_amount(target), t)
+		var precip_amount: float = lerpf(_front_precip_amount(start), _front_precip_amount(target), t)
+		var dissolve_amount: float = lerpf(_front_dissolve_amount(start), _front_dissolve_amount(target), t)
+		var life_progress: float = lerpf(_front_life_progress(start), _front_life_progress(target), t)
 		if intensity <= 0.001 and t >= 1.0:
 			continue
 		visual.append({
@@ -623,6 +677,13 @@ func _blend_front_snapshots(t: float) -> Array:
 			"radius": radius,
 			"type": _front_type(target),
 			"intensity": clampf(intensity, 0.0, 1.0),
+			"axis": axis,
+			"major_scale": major_scale,
+			"minor_scale": minor_scale,
+			"cloud_amount": clampf(cloud_amount, 0.0, 1.0),
+			"precip_amount": clampf(precip_amount, 0.0, 1.0),
+			"dissolve_amount": clampf(dissolve_amount, 0.0, 1.0),
+			"life_progress": clampf(life_progress, 0.0, 1.0),
 		})
 	return visual
 
@@ -645,6 +706,56 @@ func _front_intensity(front) -> float:
 	if front is Dictionary:
 		return clampf(float(front.get("intensity", 0.0)), 0.0, 1.0)
 	return clampf(float(front.intensity), 0.0, 1.0)
+
+func _front_axis(front) -> Vector2:
+	var ax: Vector2 = Vector2.RIGHT
+	if front is Dictionary:
+		ax = front.get("axis", Vector2.RIGHT)
+	elif front.has_method("normalized_axis"):
+		ax = front.normalized_axis()
+	if ax.length_squared() <= 0.0001:
+		return Vector2.RIGHT
+	return ax.normalized()
+
+func _front_major_scale(front) -> float:
+	if front is Dictionary:
+		return maxf(float(front.get("major_scale", 1.0)), 0.05)
+	return maxf(float(front.major_scale), 0.05)
+
+func _front_minor_scale(front) -> float:
+	if front is Dictionary:
+		return maxf(float(front.get("minor_scale", 1.0)), 0.05)
+	return maxf(float(front.minor_scale), 0.05)
+
+func _front_cloud_amount(front) -> float:
+	if front is Dictionary:
+		return clampf(float(front.get("cloud_amount", _front_visual_intensity(_front_intensity(front)))), 0.0, 1.0)
+	return clampf(float(front.cloud_amount), 0.0, 1.0)
+
+func _front_precip_amount(front) -> float:
+	if front is Dictionary:
+		return clampf(float(front.get("precip_amount", _front_visual_intensity(_front_intensity(front)))), 0.0, 1.0)
+	return clampf(float(front.precip_amount), 0.0, 1.0)
+
+func _front_dissolve_amount(front) -> float:
+	if front is Dictionary:
+		return clampf(float(front.get("dissolve_amount", 0.0)), 0.0, 1.0)
+	return clampf(float(front.dissolve_amount), 0.0, 1.0)
+
+func _front_life_progress(front) -> float:
+	if front is Dictionary:
+		return clampf(float(front.get("life_progress", 0.0)), 0.0, 1.0)
+	return clampf(float(front.life_progress), 0.0, 1.0)
+
+func _blend_axis(a: Vector2, b: Vector2, t: float) -> Vector2:
+	var aa := a.normalized() if a.length_squared() > 0.0001 else Vector2.RIGHT
+	var bb := b.normalized() if b.length_squared() > 0.0001 else aa
+	if aa.dot(bb) < 0.0:
+		bb = -bb
+	var out := aa.lerp(bb, t)
+	if out.length_squared() <= 0.0001:
+		return aa
+	return out.normalized()
 
 func _front_visual_intensity(raw_intensity: float) -> float:
 	var i: float = clampf(raw_intensity, 0.0, 1.0)
@@ -701,9 +812,9 @@ func _init_shadow_pool() -> void:
 		_shadow_root.add_child(sprite)
 		_shadow_pool.append(sprite)
 
-# 生成 (2*radius_px) × (2*radius_px) 的 RGBA8 圆盘：
+# 生成 (2*radius_px) × (2*radius_px) 的 RGBA8 云影贴图：
 #   - rgb 全白（被 sprite.modulate 染色）
-#   - alpha = smoothstep(1.0, 0.0, dist/radius)，圆心 1.0，圆边 0.0
+#   - alpha = 低频团块噪声 × 径向软边，避免没有细节的圆盘阴影
 # v9.perf：用 PackedByteArray + create_from_data 一次性写完，
 # 替换之前 65k 次 Image.set_pixel(Color(...)) 的启动 hitch
 func _build_radial_fade_texture(radius_px: int) -> ImageTexture:
@@ -720,8 +831,15 @@ func _build_radial_fade_texture(radius_px: int) -> ImageTexture:
 		for x in range(size):
 			var dx := float(x) - center
 			var d := sqrt(dx * dx + dy2) * inv_r
-			var a: float = smoothstep(1.0, 0.0, d)
-			a = pow(a, 1.2)
+			var radial: float = smoothstep(1.0, 0.0, d)
+			var nx: float = float(x) / float(size)
+			var ny: float = float(y) / float(size)
+			var n1: float = _value_noise_2d(nx * 5.0 + 13.7, ny * 5.0 - 9.3)
+			var n2: float = _value_noise_2d(nx * 10.0 - 31.1, ny * 10.0 + 27.5)
+			var n3: float = _value_noise_2d(nx * 18.0 + 3.2, ny * 18.0 + 41.0)
+			var cloud: float = n1 * 0.58 + n2 * 0.30 + n3 * 0.12
+			cloud = smoothstep(0.34, 0.78, cloud)
+			var a: float = pow(radial, 1.35) * lerpf(0.34, 1.0, cloud)
 			var ai: int = int(clampf(a, 0.0, 1.0) * 255.0)
 			data[idx]     = 255
 			data[idx + 1] = 255
@@ -730,6 +848,25 @@ func _build_radial_fade_texture(radius_px: int) -> ImageTexture:
 			idx += 4
 	var img := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, data)
 	return ImageTexture.create_from_image(img)
+
+func _value_noise_2d(x: float, y: float) -> float:
+	var ix: int = floori(x)
+	var iy: int = floori(y)
+	var fx: float = x - float(ix)
+	var fy: float = y - float(iy)
+	var ux: float = fx * fx * (3.0 - 2.0 * fx)
+	var uy: float = fy * fy * (3.0 - 2.0 * fy)
+	var a: float = _hash_noise_2d(ix, iy)
+	var b: float = _hash_noise_2d(ix + 1, iy)
+	var c: float = _hash_noise_2d(ix, iy + 1)
+	var d: float = _hash_noise_2d(ix + 1, iy + 1)
+	return lerpf(lerpf(a, b, ux), lerpf(c, d, ux), uy)
+
+func _hash_noise_2d(ix: int, iy: int) -> float:
+	var n: int = ix * 374761393 + iy * 668265263
+	n = (n ^ (n >> 13)) * 1274126177
+	n = n ^ (n >> 16)
+	return float(n & 0x7fffffff) / 2147483647.0
 
 # ─── 粒子池初始化 ────────────────────────────────────────────────────────
 # 16 个 GPUParticles2D，每个有自己的 ParticleProcessMaterial（避免共享导致全部 front
@@ -766,26 +903,26 @@ func _init_particles_pool() -> void:
 		_particles_type_cache.append(_WT_CLEAR)
 
 # v-data-driven：每个 slot 在第一次切换 type 时调用（避免每帧重建）。
-# 所有参数从 WeatherProfile 读取；process_material 按 wt 缓存，同类型复用。
+# 所有参数从 WeatherProfile 读取；process_material 每个 slot 独立，
+# 这样 _sync_particles_pool 可以按 front 的长短轴写发射盒，互不覆盖。
 func _configure_particles_for_type(node: GPUParticles2D, wt: int) -> void:
 	var profile := WeatherProfileRegistry.get_profile(wt)
 	if profile == null:
 		return
 	node.amount = maxi(profile.particle_amount_min, 1)
 	node.lifetime = profile.particle_lifetime
-	node.process_material = _get_or_build_process_material(wt)
+	node.process_material = _build_process_material_from_profile(profile)
 	var tex: Texture2D = profile.particle_texture
 	if tex == null:
 		tex = _fallback_particle_texture
 	node.texture = tex
 
 # 构造 per-weather ParticleProcessMaterial，从 profile 字段逐一填入。
-# emission_sphere_radius 固定 1.0，由 _sync_particles_pool 用 node.scale 放大到实际半径
-# （多个 slot 共享同一 ProcessMaterial，不能 per-slot 改半径——保留原设计）。
+# emission_box_extents 由 _sync_particles_pool 按每个 front 的长短轴更新。
 func _build_process_material_from_profile(profile: WeatherProfile) -> ParticleProcessMaterial:
 	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	pm.emission_sphere_radius = 1.0
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3.ONE
 	pm.direction = profile.particle_direction
 	pm.spread = profile.particle_spread
 	pm.gravity = profile.particle_gravity
