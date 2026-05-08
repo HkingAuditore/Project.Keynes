@@ -75,6 +75,17 @@ float fbm(vec2 p, int octaves) {
 	return sum;
 }
 
+// Phase B：风场驱动的 domain warp。
+// 1) 沿 flow 方向做 advection（让云真正"飘"，不再原地抖）
+// 2) 再用两层错位低频 FBM 抖动坐标，让云团边缘破碎卷曲
+// freq 取 0.022 偏低频以适配 0.0085~0.062 多频段云形采样。
+vec2 wind_domain_warp(vec2 wp, vec2 flow, float t, float strength) {
+	vec2 advected = wp - flow * t;
+	float n1 = fbm(advected * 0.022 + vec2( t * 0.020,  t * 0.012), 2) - 0.5;
+	float n2 = fbm(advected * 0.022 + vec2(-t * 0.014,  t * 0.018) + vec2(37.0, 13.0), 2) - 0.5;
+	return advected + vec2(n1, n2) * strength;
+}
+
 vec2 front_axis(vec4 shape) {
 	vec2 ax = shape.xy;
 	if (dot(ax, ax) <= 0.0001) {
@@ -159,18 +170,32 @@ FrontField sample_front_field(vec2 wp) {
 		if (d > 1.72) continue;
 
 		vec2 ax = front_axis(shape);
-		vec2 flow = ax * world_time * mix(2.0, 5.5, precip_amount);
+		// Phase B：advection 速度提升到原来的 ~2.5×，让云团在 30s 内可见地"漂"过自身直径，
+		// 同时用 domain warp 让边缘破碎卷曲，而不是整体平移看起来很僵。
+		// FOG 的 flow 减半（雾流动比云慢、更接地）。
+		float flow_speed = (wt == WT_FOG)
+			? mix(3.0, 4.5, cloud_amount)
+			: mix(6.0, 13.0, max(precip_amount, cloud_amount));
+		vec2 flow = ax * flow_speed;
+		float warp_strength = (wt == WT_FOG) ? 5.0 : 9.0;
+		// 把 wp 转到 front 局部坐标（相对 center），然后做 domain warp。
+		// 这样 advection 不会让 fbm 采样越过相邻 front 的"势力范围"。
+		vec2 wp_local = wp - c.xy;
+		vec2 warped = wind_domain_warp(wp_local, flow, world_time, warp_strength);
+
 		float envelope = 1.0 - smoothstep(0.70, 1.38 + dissolve * 0.22, d);
 		float core = 1.0 - smoothstep(0.10, 0.58, d);
 		float edge = smoothstep(0.58, 1.02, d) * (1.0 - smoothstep(1.06, 1.52, d));
 
 		int q_oct = (weather_overlay_quality >= 2) ? 3 : 2;
-		float low = fbm((wp - flow + c.xy * 0.09) * 0.0085, q_oct);
-		float mid = fbm((wp - flow * 0.55 + vec2(41.0, -23.0)) * 0.024, 2);
+		// 三层频率共享同一个 warped 坐标，但乘不同频率：低频负责团块、中频负责轮廓、高频负责颗粒。
+		// 由于 warped 已经包含 advection + 抖动，所有频段会随风一起卷动，肉眼上是"自然流动的云"。
+		float low = fbm(warped * 0.0085, q_oct);
+		float mid = fbm(warped * 0.024 + vec2(41.0, -23.0), 2);
 		float high = (weather_overlay_quality >= 2)
-			? fbm((wp + c.xy * 0.17 - flow * 0.20) * 0.062, 1)
+			? fbm(warped * 0.062, 1)
 			: 0.5;
-		float edge_break = fbm((wp + c.xy * 0.13 + vec2(shape.z * 31.0, shape.w * -47.0)) * 0.017, 2);
+		float edge_break = fbm((warped + vec2(shape.z * 31.0, shape.w * -47.0)) * 0.017, 2);
 
 		float threshold = mix(0.54, 0.22, cloud_amount);
 		threshold += dissolve * 0.15;

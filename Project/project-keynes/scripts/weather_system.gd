@@ -34,6 +34,11 @@ var _active_fronts: Array[WeatherFront] = []
 var _world_bounds: Rect2 = Rect2()
 var _hex_size: float = 22.0
 var _day_counter: int = 0
+# Phase D：当前游戏季节相位（连续浮点，0=春 1=夏 2=秋 3=冬）。
+# 在 tick_one_day 里由调用方写入，用于动态计算季风偏置——
+# 静态烘焙的 wind_field_buffer 是夏季基线，加上当前季节的 monsoon offset
+# 才能让"夏吹向极、冬吹向赤道"的季风真正在 GPU/CPU 同步可见。
+var _season_phase: float = 1.0
 # Milestone 3：上次 tick 是否改写过任何 cell.cover（给 baker 决定要不要 rebake cover_tex）
 var _cover_dirty: bool = false
 
@@ -51,14 +56,27 @@ func init(seed_val: int, world_bounds: Rect2, hex_size: float) -> void:
 
 # season_idx: 0=春 1=夏 2=秋 3=冬
 # climate_anomaly: 全球长期温度偏移 [-0.2, +0.2]
+# season_phase: 连续浮点 [0,4)；如果 caller 不传则 fallback 到 season_idx + 0.5。
 # 返回当前活动 front 的快照（给 main / renderer 上传 shader uniform 用）
-func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> Array[WeatherFront]:
+func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
 	if map == null or world == null:
 		return _active_fronts
 	_day_counter += 1
+	# Phase D：缓存当前 season_phase 给 wind_fn / spawn 用。
+	# fallback：如果 caller 没提供（旧调用方兼容），按 season_idx 取季中点。
+	_season_phase = season_phase if season_phase >= 0.0 else float(season_idx) + 0.5
 
+	# Phase D：wind_fn 在静态 buffer 风的基础上叠加当季 monsoon 偏置。
+	# 这样 dry summer→winter 切换时，已存在的 MONSOON front 会立刻顺着新季风方向飘转，
+	# 而不是被困在夏季基线方向上。
+	var bounds := _world_bounds
+	var sp := _season_phase
 	var wind_fn := func(pos: Vector2) -> Vector2:
-		return world.sample_wind(pos)
+		var base: Vector2 = world.sample_wind(pos)
+		var ny: float = 0.5
+		if bounds.size.y > 0.001:
+			ny = clampf((pos.y - bounds.position.y) / bounds.size.y, 0.0, 1.0)
+		return base + WindBelt.monsoon_offset_at(ny, sp)
 
 	# 1) 推进所有 front
 	for front in _active_fronts:
@@ -160,7 +178,12 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 			front.ttl_days = _rng.randi_range(4, 8)
 			front.decay_per_day = 0.14
 	# 初始速度沿当前 spawn 点风向
-	var wind: Vector2 = world.sample_wind(spawn_pos)
+	# Phase D：与 wind_fn 同源——叠加当季 monsoon 偏置，让新生 MONSOON front
+	# 一出生就朝向真正的当季季风方向，而不是夏季基线方向。
+	var ny_spawn: float = 0.5
+	if size.y > 0.001:
+		ny_spawn = clampf((sy - origin.y) / size.y, 0.0, 1.0)
+	var wind: Vector2 = world.sample_wind(spawn_pos) + WindBelt.monsoon_offset_at(ny_spawn, _season_phase)
 	if wind.length() > 0.05:
 		var wind_axis := wind.normalized()
 		front.axis = wind_axis

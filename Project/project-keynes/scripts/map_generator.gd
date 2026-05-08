@@ -1847,11 +1847,12 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 #   3) 必要时改写 cell.cover（BLIZZARD → SNOW、STORM/MONSOON 低地 → FLOODING）
 #   4) 不重烘焙任何 tex（视觉层 weather overlay 走 shader uniform 数组路径，零 tex 上传）
 # 返回当前活跃 front 列表，main 拿去喂 renderer。
-func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> Array[WeatherFront]:
+func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
 	if _weather_system == null or map == null or world == null:
 		return [] as Array[WeatherFront]
 	# 1) 推进天气子系统（写 weather/intensity，必要时改写 cover）
-	var fronts := _weather_system.tick_one_day(map, world, season_idx, climate_anomaly)
+	# Phase D：把连续 season_phase 透传给 WeatherSystem，让季风方向逐日变化。
+	var fronts := _weather_system.tick_one_day(map, world, season_idx, climate_anomaly, season_phase)
 	# 2) Milestone 4：完整耦合反馈链（按因果顺序，前一 pass 的输出是后一 pass 的输入）
 	#    transpiration → albedo → vegetation_dynamics → succession_trigger
 	_apply_transpiration_pass(map)

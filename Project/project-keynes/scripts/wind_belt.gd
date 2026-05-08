@@ -90,6 +90,36 @@ static func wind_at(ny: float, season_phase: float, lat_jitter: float = 0.0) -> 
 		return Vector2(1.0, 0.0)
 	return w.normalized()
 
+# Phase D：单独提取"季节性季风偏置向量"（不含 base wind，未归一化）。
+# 给 weather_system 在 CPU 端动态融合 wind_field_buffer（夏季基线静态烘焙）+
+# 当前季节的 monsoon offset 用，让季风方向真正随季节切换。
+#
+# 同时把 monsoon_polarity 从单纯 sin(hemi*π/2) 升级为 cubic ease-in-out，
+# 在 spring/autumn 等分点附近梯度更平缓，让"夏 → 秋 → 冬"过渡看起来不像
+# 中间停顿一下又突然反向，而是连续渐变。
+#
+# 数学上：sin 在 hemi=0/2/4 处导数最大，肉眼上"过零点"瞬间方向变化最快；
+# 用 sin(x) * smoothstep(0, 1, |sin(x)|) 等价于 sin³ 形态——零附近更平、
+# 极点附近更稳。
+static func monsoon_offset_at(ny: float, season_phase: float) -> Vector2:
+	var lat_signed: float = (ny - 0.5) * 2.0
+	var abs_lat: float = absf(lat_signed)
+	if abs_lat >= TRADE_TOP:
+		return Vector2.ZERO  # 仅低纬度有季风
+	var sl: float = -1.0 if lat_signed < -0.001 else (1.0 if lat_signed > 0.001 else 1.0)
+	var hemi_phase: float = season_phase
+	if lat_signed < 0.0:
+		hemi_phase = fposmod(season_phase + 2.0, 4.0)
+	var raw_sin: float = sin(hemi_phase * 0.5 * PI)
+	# Cubic ease：保留 sign，但在中段 plateau，零附近更平。
+	var monsoon_polarity: float = raw_sin * raw_sin * raw_sin * 1.0 + raw_sin * 0.0
+	# 注意：raw_sin³ 已经是 [-1, 1]，比 raw_sin 在极点附近更平、零附近更平。
+	# 实际幅度比 sin 略小（max=1, mean 偏小），用 1.18 系数补偿。
+	monsoon_polarity = clampf(monsoon_polarity * 1.18, -1.0, 1.0)
+	var tropical_w: float = smoothstep(TRADE_TOP, ITCZ_HALF_WIDTH, abs_lat)
+	var y_offset: float = monsoon_polarity * tropical_w * MONSOON_AMP * sl
+	return Vector2(0.0, y_offset)
+
 # 给一个 Vector2 wind 找最接近的 hex 邻居方向（cube 坐标），用于雨影 lookback。
 # pointy-top hex：x = sqrt(3)·size·(q + r/2)，y = 1.5·size·r
 # 取 wind 的反方向当 upwind direction，然后在 6 个 cube 方向里找夹角最小的。
