@@ -223,7 +223,8 @@ func _on_day_changed(_day_idx: int) -> void:
 		var fronts := _generator.refresh_daily(
 			_current_map, _world_data,
 			_world_clock.season_index(),
-			_world_clock.climate_anomaly
+			_world_clock.climate_anomaly,
+			_world_clock.season_phase()
 		)
 		if _renderer != null:
 			_renderer.set_weather_fronts(fronts)

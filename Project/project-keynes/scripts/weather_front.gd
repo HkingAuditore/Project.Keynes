@@ -76,7 +76,12 @@ func refresh_visual_lifecycle() -> void:
 	dissolve_amount = smoothstep(0.58, 1.0, life_progress)
 
 	var visual_i: float = _visual_intensity(intensity)
-	var birth: float = smoothstep(0.0, 0.18, life_progress)
+	# Phase C 替代方案：把 birth 渐入区间从前 18% 拉宽到前 32% 寿命。
+	# 原值在 ttl=6 的 RAIN 上意味着第 1 天云量就跳到 ~0.85（肉眼上是"突现"）；
+	# 0.32 后第 1 天约 ~0.40，第 2 天 ~0.85，配合 0.18s 表现层 blend 与
+	# Phase B advection，新 front 看起来像"从远处飘进来"而非"原地空降"。
+	# 这是换季时位置不连续观感的主要修复点。
+	var birth: float = smoothstep(0.0, 0.32, life_progress)
 	var cloud_retire: float = 1.0 - smoothstep(0.78, 1.0, life_progress)
 	var precip_retire: float = 1.0 - smoothstep(0.56, 0.88, life_progress)
 

@@ -23,7 +23,9 @@ extends Node2D
 const MAX_WEATHER_FRONTS := 16
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
 # 天气系统逻辑仍按“日”推进；表现层在两次逻辑快照之间做插值，消除云层/粒子跳帧。
-const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.35
+# Phase A 止血：原 0.35s blend 在天气日切换瞬间观感像"卡一下"。
+# 缩短到 0.18s 让插值过渡更紧凑，肉眼上接近"真实流动"而非"逐日突变"。
+const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.18
 const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.05
 const _WEATHER_FRONT_MAX_BLEND_SEC: float = 1.0
 
@@ -65,6 +67,11 @@ var _particles_root: Node2D
 var _particles_pool: Array[GPUParticles2D] = []  # 16 个，按 front index 复用
 # 缓存每个 slot 当前配置类型，避免每次 set_weather_fronts 都重建 process_material
 var _particles_type_cache: Array[int] = []
+# Phase A 止血：缓存每个 slot 上一次写入的 amount / visibility_rect_radius，
+# 避免逐帧因 area 微动 ±1 触发 GPUParticles 内部缓冲重建（这是"一顿一顿"的主因之一）。
+# 仅当 |Δamount| > 5（约 3% 面积）或 radius 变化 > 5% 时才重写。
+var _particles_amount_cache: Array[int] = []
+var _particles_vis_radius_cache: Array[float] = []
 # v-data-driven：每种 WeatherType 共享一份 ParticleProcessMaterial，避免 16 份各自触发
 # shader 编译。key = WeatherType.WT int；由 _get_or_build_process_material(wt) 懒加载。
 var _process_material_cache: Dictionary = {}
@@ -455,14 +462,23 @@ func _sync_particles_pool(fronts: Array) -> void:
 		if _particles_type_cache[i] != wt:
 			_configure_particles_for_type(node, wt)
 			_particles_type_cache[i] = wt
+			# Phase A 止血：换类型后强制重新下发 amount / visibility_rect
+			# （新类型的合法范围可能与旧 cache 完全不同）
+			_particles_amount_cache[i] = -1
+			_particles_vis_radius_cache[i] = -1.0
 
 		# 每次都更新位置 / emitter 半径 / intensity 调强度
 		node.position = _front_center(f)
 		# v9.perf：每个 slot 自己设 visibility_rect = ±radius，让引擎能正确剂除而不是
 		# 默认那个 (-100,-100,200,200) 小框（front 半径常常远超 100）
+		# Phase A 止血：仅当 bound_r 相对缓存值变化 > 5% 时才重写 visibility_rect，
+		# 避免每帧因微小数值波动触发 Rect2 重新分配 / culler 重新评估。
 		var r: float = maxf(_front_radius(f), 1.0)
 		var bound_r: float = r * maxf(maxf(_front_major_scale(f), _front_minor_scale(f)), 1.0)
-		node.visibility_rect = Rect2(-bound_r, -bound_r, bound_r * 2.0, bound_r * 2.0)
+		var cached_vis_r: float = _particles_vis_radius_cache[i]
+		if cached_vis_r <= 0.0 or absf(bound_r - cached_vis_r) > cached_vis_r * 0.05:
+			node.visibility_rect = Rect2(-bound_r, -bound_r, bound_r * 2.0, bound_r * 2.0)
+			_particles_vis_radius_cache[i] = bound_r
 		# v-data-driven：降水密度制——amount 随覆盖面积缩放，所有阈值从 profile 取。
 		# _rain_density_boost_enabled=false 时回落到全局常量下限（上一轮更保守的数值）。
 		var area: float = PI * r * _front_major_scale(f) * r * _front_minor_scale(f)
@@ -479,8 +495,12 @@ func _sync_particles_pool(fronts: Array) -> void:
 		var desired: int = clampi(
 			int(ceil(area * profile.particle_density_per_px2)), lo, hi
 		)
-		if node.amount != desired:
+		# Phase A 止血：amount 每帧 ±1 振荡会触发 GPUParticles 内部缓冲重建（明显卡顿）。
+		# 仅当 |Δ| > 5 时才下发；这对应面积变化约 3%，肉眼不可察。
+		var cached_amt: int = _particles_amount_cache[i]
+		if cached_amt < 0 or absi(desired - cached_amt) > 5:
 			node.amount = desired
+			_particles_amount_cache[i] = desired
 		var max_fall_speed: float = maxf(profile.particle_velocity_max, 1.0)
 		var local_fall_budget: float = r * _front_minor_scale(f) * 1.15
 		var bounded_lifetime: float = clampf(
@@ -533,6 +553,9 @@ func _disable_particle_slot(node: GPUParticles2D, slot_idx: int) -> void:
 		node.visible = false
 	node.process_mode = Node.PROCESS_MODE_DISABLED
 	_particles_type_cache[slot_idx] = _WT_CLEAR
+	# Phase A 止血：slot 重新激活时强制下发 amount/visibility_rect。
+	_particles_amount_cache[slot_idx] = -1
+	_particles_vis_radius_cache[slot_idx] = -1.0
 
 # ─── WeatherFront 表现层插值 ─────────────────────────────────────────────
 
@@ -882,6 +905,8 @@ func _init_particles_pool() -> void:
 	_process_material_cache.clear()
 	_particles_pool.clear()
 	_particles_type_cache.clear()
+	_particles_amount_cache.clear()
+	_particles_vis_radius_cache.clear()
 	for i in range(MAX_WEATHER_FRONTS):
 		var p := GPUParticles2D.new()
 		p.name = "Particles_%d" % i
@@ -901,6 +926,8 @@ func _init_particles_pool() -> void:
 		_particles_root.add_child(p)
 		_particles_pool.append(p)
 		_particles_type_cache.append(_WT_CLEAR)
+		_particles_amount_cache.append(-1)        # -1 = 强制首次写入
+		_particles_vis_radius_cache.append(-1.0)  # 同上
 
 # v-data-driven：每个 slot 在第一次切换 type 时调用（避免每帧重建）。
 # 所有参数从 WeatherProfile 读取；process_material 每个 slot 独立，
