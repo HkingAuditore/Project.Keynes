@@ -77,6 +77,9 @@ extends Node2D
 @export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.70
 @export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.70
 @export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15
+@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75
+@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0
+@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65
 
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
@@ -388,6 +391,12 @@ func _push_visual_toggles() -> void:
 			_renderer.set_water_calm_noise_tint_strength(water_calm_noise_tint_strength)
 		if _renderer.has_method("set_water_biome_blend_radius"):
 			_renderer.set_water_biome_blend_radius(water_biome_blend_radius)
+		if _renderer.has_method("set_water_cartoon_color_strength"):
+			_renderer.set_water_cartoon_color_strength(water_cartoon_color_strength)
+		if _renderer.has_method("set_water_transition_softness"):
+			_renderer.set_water_transition_softness(water_transition_softness)
+		if _renderer.has_method("set_estuary_plume_strength"):
+			_renderer.set_estuary_plume_strength(estuary_plume_strength)
 
 # ─── Pass 2：TOD 中枢初始化与广播 ─────────────────────────────────────
 # 唯一一处构造 TODProfile 的地方。@export 参数校验：night_factor_min <0.35

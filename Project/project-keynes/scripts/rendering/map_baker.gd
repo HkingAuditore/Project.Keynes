@@ -825,7 +825,7 @@ func _trace_river_chain(map: MapData, start: HexCell, hex_size: float, visited: 
 	if water_nb != null:
 		var river_end := HexUtils.cube_to_world(current.q, current.r, hex_size)
 		var water_center := HexUtils.cube_to_world(water_nb.q, water_nb.r, hex_size)
-		chain.append(river_end.lerp(water_center, 0.5))
+		chain.append(river_end.lerp(water_center, 0.78))
 	return chain
 
 func _find_downhill_river_neighbor(map: MapData, cell: HexCell) -> HexCell:
@@ -1175,7 +1175,9 @@ func _bake_ocean_currents(map: MapData, hex_size: float, world: WorldData) -> Pa
 
 			# 是否海洋像素
 			var is_ocean := false
-			if hm_W == W and hm_H == H:
+			if world.biome_buffer.size() > idx:
+				is_ocean = _is_water(int(world.biome_buffer[idx]))
+			elif hm_W == W and hm_H == H:
 				is_ocean = height[idx] < sea
 			else:
 				var wp := Vector2(wx_base, wy_base)
@@ -1242,4 +1244,7 @@ static func _is_river_terminal_water(t: int) -> bool:
 			or t == TerrainType.TERRAIN.SEA_ICE
 
 static func _is_water(t: int) -> bool:
-	return t == TerrainType.TERRAIN.OCEAN or t == TerrainType.TERRAIN.COAST
+	return t == TerrainType.TERRAIN.OCEAN \
+			or t == TerrainType.TERRAIN.COAST \
+			or t == TerrainType.TERRAIN.REEF \
+			or t == TerrainType.TERRAIN.KELP
