@@ -1,0 +1,187 @@
+# world_clock.gd
+# 实时时间核心：游戏内时间持续推进，提供日/季/年三层信号 + 速度/暂停控制
+#
+# 设计：
+#   1 day = 1 game second × speed_multiplier。所以 x1 速度下，1 现实秒 = 1 游戏天，
+#   1 季 = 30 现实秒（默认），1 年 = 120 现实秒（4 季）。
+#   x5/x20 加速倍率简化等比缩放。
+#
+# 信号：
+#   day_changed(day_idx)        — 跨整数日触发
+#   season_changed(season_idx)  — 跨整数季触发（0=春 1=夏 2=秋 3=冬）
+#   year_changed(year_idx)      — 跨整数年触发
+#
+# Phase 4：year_changed 时长期 climate_anomaly 做随机游走漂移。
+# Phase 1：season_phase() 返回 [0, 4) 浮点，给 shader 做平滑插值。
+
+class_name WorldClock
+extends Node
+
+signal day_changed(day_idx: int)
+signal season_changed(season_idx: int)
+signal year_changed(year_idx: int)
+# 任务 2：昼夜相位信号。由 _process 默认逐帧发射；day_phase_emit_step > 0 时可选节流。
+# 1 游戏季 = 1 次完整昼夜循环，默认 days_per_season = 30 意味着 x1 速度下
+# 30 秒走完一次日出→正午→日落→午夜的循环。
+signal day_phase_changed(day_phase: float)
+
+# ─── 可调参数 ────────────────────────────────────────────────────────────
+# 一季有多少天。默认 30 → 1 年 120 天。
+@export var days_per_season: int = 30
+# 启动后立即自动推进；false 时进入暂停状态由 UI 唤醒
+@export var auto_start: bool = true
+# 启动初速（x1 倍）
+@export var initial_speed: float = 1.0
+
+# 长期气候漂移（Phase 4 用）：每年随机游走 [-RANDOM_DRIFT, +RANDOM_DRIFT]
+@export_range(0.0, 0.05, 0.001) var climate_random_drift: float = 0.01
+# 气候漂移上下限（防止累积失控）
+@export_range(0.0, 0.5, 0.01) var climate_anomaly_max: float = 0.20
+
+# 任务 2：day_phase 发射步长。默认 0.0 表示每帧发射，保证昼夜/TOD
+# 视觉过渡与帧率同步；如需调试 uniform 写入频率，可手动调高做节流。
+@export_range(0.0, 0.05, 0.0005) var day_phase_emit_step: float = 0.0
+
+# ─── 运行时状态 ──────────────────────────────────────────────────────────
+var current_day: float = 0.0   # 累积浮点天数
+var paused: bool = false
+var speed_multiplier: float = 1.0
+
+# Phase 4：长期气候异常值（游戏内"全球温度偏移"），shader 直接读
+var climate_anomaly: float = 0.0
+
+# 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
+# -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
+var _last_emit_day_phase: float = -1.0
+
+# ─── 内部 ────────────────────────────────────────────────────────────────
+var _last_day: int = -1
+var _last_season: int = -1
+var _last_year: int = -1
+var _rng: RandomNumberGenerator
+
+func _ready() -> void:
+	_rng = RandomNumberGenerator.new()
+	_rng.randomize()
+	speed_multiplier = initial_speed
+	paused = not auto_start
+	# 给订阅者一次"初始信号"，让 UI 立刻显示当前状态而不是等到下一日
+	call_deferred("_emit_initial_signals")
+
+func _emit_initial_signals() -> void:
+	var d := day_index()
+	var s := season_index()
+	var y := year_index()
+	_last_day = d
+	_last_season = s
+	_last_year = y
+	day_changed.emit(d)
+	season_changed.emit(s)
+	year_changed.emit(y)
+	# 任务 2：首次把 day_phase 也推一次，让 shader/UI 立即拿到初始时相
+	var dp := day_phase()
+	_last_emit_day_phase = dp
+	day_phase_changed.emit(dp)
+
+func _process(delta: float) -> void:
+	if paused or speed_multiplier <= 0.0:
+		return
+	current_day += delta * speed_multiplier
+	var d := day_index()
+	if d != _last_day:
+		_last_day = d
+		day_changed.emit(d)
+	var s := season_index()
+	if s != _last_season:
+		_last_season = s
+		season_changed.emit(s)
+	var y := year_index()
+	if y != _last_year:
+		_last_year = y
+		# Phase 4：年度气候漂移（pink-noise 风格随机游走）
+		climate_anomaly = clampf(
+			climate_anomaly + _rng.randf_range(-climate_random_drift, climate_random_drift),
+			-climate_anomaly_max, climate_anomaly_max
+		)
+		year_changed.emit(y)
+	# 任务 2：day_phase 节流发射
+	var dp := day_phase()
+	if _should_emit_day_phase(dp):
+		_last_emit_day_phase = dp
+		day_phase_changed.emit(dp)
+
+# ─── 派生查询 ────────────────────────────────────────────────────────────
+
+func days_per_year() -> int:
+	return days_per_season * 4
+
+func day_index() -> int:
+	return int(floor(current_day))
+
+func day_in_year() -> int:
+	return int(fposmod(current_day, float(days_per_year())))
+
+# 0=春 1=夏 2=秋 3=冬（整数）
+func season_index() -> int:
+	var dpy := days_per_year()
+	var day := fposmod(current_day, float(dpy))
+	return int(floor(day / float(days_per_season))) % 4
+
+func year_index() -> int:
+	return int(floor(current_day / float(days_per_year())))
+
+# 浮点季节相位 ∈ [0, 4)，给 shader 做平滑插值
+func season_phase() -> float:
+	var dpy := days_per_year()
+	var day := fposmod(current_day, float(dpy))
+	return day / float(days_per_season)
+
+# 任务 2：昼夜相位 ∈ [0, 1)
+# 映射：0.0=日出, 0.25=正午, 0.5=日落, 0.75=午夜。
+# 1 游戏季 = 1 次完整昼夜循环（关键决策 2）。
+func day_phase() -> float:
+	return fposmod(current_day, float(days_per_season)) / float(days_per_season)
+
+# 将 day_phase 映射为 0−24 小时（UI 仅用），精度到整小时。
+# 与 day_phase 约定对齐：0.0=06:00（日出），0.25=12:00（正午），
+# 0.5=18:00（日落），0.75=00:00（午夜）。
+func hour_of_day() -> int:
+	return int(floor(fposmod(day_phase() - 0.75, 1.0) * 24.0)) % 24
+
+# 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
+# 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。
+func _should_emit_day_phase(dp: float) -> bool:
+	if _last_emit_day_phase < 0.0:
+		return true
+	if day_phase_emit_step <= 0.0:
+		return true
+	var diff: float = absf(dp - _last_emit_day_phase)
+	# 跳回的临界情况：上次 0.99 + 这次 0.01，diff=0.98，仍会大于 step，正常发射
+	return diff >= day_phase_emit_step
+
+func season_name(idx: int) -> String:
+	match idx:
+		0: return "Spring"
+		1: return "Summer"
+		2: return "Autumn"
+		_: return "Winter"
+
+func season_name_cn(idx: int) -> String:
+	match idx:
+		0: return "春"
+		1: return "夏"
+		2: return "秋"
+		_: return "冬"
+
+# ─── 控制 ────────────────────────────────────────────────────────────────
+
+func set_speed(s: float) -> void:
+	speed_multiplier = maxf(s, 0.0)
+	if speed_multiplier > 0.0:
+		paused = false
+
+func toggle_pause() -> void:
+	paused = not paused
+
+func pause(v: bool) -> void:
+	paused = v

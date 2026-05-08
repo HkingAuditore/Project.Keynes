@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 5
+display_name_cn = "北方针叶林"
+transpiration = 0.55
+albedo = 0.1
+eco_score = 0.8
+ideal_temp = 0.28
+ideal_moist = 0.55
+temp_tolerance = 0.28
+moist_tolerance = 0.28
+next_richer = 8
+next_harsher = 6

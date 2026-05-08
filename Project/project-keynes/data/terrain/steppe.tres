@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 14
+display_name = "STEPPE"
+display_name_cn = "温带草原"
+passable_land = true
+passable_sea = false
+move_cost = 1
+base_color = Color(0.658824, 0.709804, 0.4, 1)

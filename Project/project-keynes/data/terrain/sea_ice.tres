@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 20
+display_name = "SEA_ICE"
+display_name_cn = "海冰"
+passable_land = true
+passable_sea = false
+move_cost = 3
+base_color = Color(0.847059, 0.898039, 0.933333, 1)

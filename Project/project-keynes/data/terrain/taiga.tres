@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 13
+display_name = "TAIGA"
+display_name_cn = "针叶林"
+passable_land = true
+passable_sea = false
+move_cost = 2
+base_color = Color(0.176471, 0.294118, 0.227451, 1)

@@ -9,9 +9,9 @@ var width: int  = 80    # 横向地块数
 var height: int = 60    # 纵向地块数
 
 # 大陆生成参数
-var num_continents: int   = 2      # 大陆核心数（影响大陆中心点数量）
-var sea_level: float      = 0.44   # 高度图阈值；低于此值为海洋，调高→陆地增多
-var continent_size: float = 0.6   # 大陆核心影响半径系数 [0.3, 0.8]
+var num_continents: int   = 3      # 大陆核心数（影响大陆中心点数量）
+var sea_level: float      = 0.64   # 高度图阈值；低于此值为海洋，调高→陆地增多
+var continent_size: float = 0.9   # 大陆核心影响半径系数 [0.3, 0.8]
 
 # 气候参数
 var polar_ratio: float = 0.15   # 极地占地图高度的比例（两端各占 polar_ratio）

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 16
+display_name = "MANGROVE"
+display_name_cn = "红树林"
+passable_land = true
+passable_sea = false
+move_cost = 3
+base_color = Color(0.2, 0.317647, 0.227451, 1)

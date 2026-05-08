@@ -15,10 +15,10 @@ extends Node2D
 
 # ─── Hypsometric 色阶（海陆双向，从深到浅） ──────────────────────────────
 @export_group("Hypsometric Colors")
-@export var color_deep_ocean: Color = Color(0.05, 0.10, 0.22)
-@export var color_mid_ocean: Color = Color(0.10, 0.18, 0.34)
-@export var color_shallow: Color = Color(0.22, 0.36, 0.50)
-@export var color_coast_water: Color = Color(0.32, 0.52, 0.62)
+@export var color_deep_ocean: Color = Color(0.055, 0.13, 0.30)
+@export var color_mid_ocean: Color = Color(0.11, 0.24, 0.42)
+@export var color_shallow: Color = Color(0.22, 0.42, 0.56)
+@export var color_coast_water: Color = Color(0.36, 0.62, 0.68)
 @export var color_beach: Color = Color(0.85, 0.78, 0.55)
 @export var color_lowland: Color = Color(0.62, 0.68, 0.42)
 @export var color_hill: Color = Color(0.66, 0.55, 0.32)
@@ -60,6 +60,79 @@ extends Node2D
 @export_range(0.0, 0.4, 0.01) var parchment_strength: float = 0.10
 @export_range(0.0, 0.2, 0.01) var paper_grain_strength: float = 0.05
 
+# ─── 季节 / 气候系统（每帧由 main.gd 通过 set_*_phase 推进） ─────────────
+@export_group("Climate")
+@export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.20
+@export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 0.85
+@export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
+@export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
+@export_range(0.0, 0.20, 0.01) var wind_streak_strength: float = 0.05
+
+# ─── Milestone 2：植被 / 覆盖物双通道（与 biome_tex 同分辨率，NEAREST 采样） ──
+# vegetation_axis_strength：HILL/MOUNTAIN/PLAIN 等"主色单一"的地形上，按真实
+# 植被 id 给 col 做轻度色相调制。0 关闭、1.0 完全替换成植被 tint × 原色。
+# cover_axis_strength：FLOODING/PERMAFROST/GLACIER 等覆盖物在 fragment 末尾的
+# 叠加强度（SNOW 仍走原 dynamic_snow 路径，避免与 snow_factor 双叠）。
+@export_group("Axes (Milestone 2)")
+@export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.35
+@export_range(0.0, 1.0, 0.01) var cover_axis_strength: float = 0.65
+
+# ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
+@export_group("Weather (Milestone 3)")
+@export_range(0.0, 1.0, 0.01) var weather_strength: float = 1.0
+
+# ─── Visual Overhaul（任务 1）：视觉总开关 ────────────────────────
+# 这组变量由 main.gd 通过 set_*() 推进；shader 分支逐步在任务 3~9 中接入。
+# 默认值与 main.gd 一致，保证 renderer 被单独调试时也有合理初值。
+@export_group("Visual Overhaul")
+@export_range(0, 2, 1) var visual_quality: int = 2
+@export var day_night_enabled: bool = true
+@export var water_effect_enabled: bool = true
+@export var ocean_current_enabled: bool = true
+@export var extreme_weather_ground_effect_enabled: bool = true
+@export var perf_sampler_enabled: bool = false
+
+# ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
+# 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
+# water_sparkle_enabled：水面高频粼光（任务 4）
+# rain_density_boost_enabled：粒子数量提升（任务 5，renderer 仅转发到 WeatherLayer）
+# cloud_tod_tint_enabled：云层 TOD 染色（任务 6）
+@export_group("Pass 2")
+@export var water_sparkle_enabled: bool = true
+@export var rain_density_boost_enabled: bool = true
+@export var cloud_tod_tint_enabled: bool = true
+
+# ─── Water Visual Overhaul（本轮）：水体细分开关与参数 ──────────────────
+# 所有字段直通 shader 同名 uniform；关闭即回退到上一轮（pass2）表现，
+# 总开关 water_effect_enabled=false 时整组子特性被 shader 端短路。
+@export_group("Water Overhaul")
+@export var water_waves_enabled: bool = true
+@export var water_fresnel_enabled: bool = true
+@export var river_flow_enabled: bool = true
+@export var caustics_enabled: bool = true
+@export var shallow_transparency_enabled: bool = true
+@export_range(4.0, 128.0, 0.5) var water_gloss: float = 34.0
+@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32
+@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75
+@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
+@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
+@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
+@export var lake_water_color: Color = Color(0.20, 0.48, 0.56)
+@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
+# ShaderToy 启发的视觉增强（软边过渡 + 柔和噪声层）
+# 说明：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
+#       "柔和噪声总开关/强度"（0 = 关，1 = 默认柔和层）。默认值刻意低于 1，
+#       避免水面重新出现密集条纹或高对比噪声。
+#       字段名保留是为了兼容旧 .tscn 序列化。
+@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 1.45
+@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70
+# 柔和噪声的两个独立细分强度：
+#   brightness   → 大尺度 fbm 亮度扰动层（默认约 ±5%）
+#   tint_strength → 低对比度色相 fbm 层（冷/暖 tint mix，默认约 ±2%）
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.70
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.70
+@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15
+
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
 @export_group("Legacy (Unused)")
 @export var hex_overscan: float = 1.45
@@ -85,17 +158,105 @@ extends Node2D
 
 var _world_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
+var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
 var _map: MapData = null
 var _world: WorldData = null
+
+# Phase 1：季节状态（每帧/每天由 WorldClock 推送）
+var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
+var _climate_anomaly: float = 0.0
+# Phase 3：洋流流纹动画累积时间
+var _world_time: float = 0.0
+# 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
+# 0.0=日出, 0.25=正午, 0.5=日落, 0.75=午夜。
+var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
+
+# Milestone 3：天气子系统数组上传
+# 与 shader 端 weather_front_centers[MAX_WEATHER_FRONTS] 长度严格一致；
+# 0 fronts 时仍填满 16 个 zero-vec，避免 shader 端越界采样。
+const MAX_WEATHER_FRONTS := 16
+
+# ─── 任务 1：性能采样器（30 秒窗口内 avg + P95） ───────────────────────
+# 统计窗口通过 ring buffer，不分配；每 REPORT_INTERVAL_SEC 打印一次结果。
+# 默认关闭，只有 perf_sampler_enabled == true 时才统计与打印。
+class PerfSampler:
+	const REPORT_INTERVAL_SEC: float = 30.0
+	const MAX_SAMPLES: int = 1800  # 30s × 60fps
+	var _samples: PackedFloat32Array
+	var _write_idx: int = 0
+	var _count: int = 0
+	var _elapsed: float = 0.0
+	var _label: String = "PerfSampler"
+
+	func _init() -> void:
+		_samples = PackedFloat32Array()
+		_samples.resize(MAX_SAMPLES)
+
+	func set_label(l: String) -> void:
+		_label = l
+
+	func push_frame_ms(frame_ms: float) -> void:
+		_samples[_write_idx] = frame_ms
+		_write_idx = (_write_idx + 1) % MAX_SAMPLES
+		if _count < MAX_SAMPLES:
+			_count += 1
+		_elapsed += frame_ms / 1000.0
+		if _elapsed >= REPORT_INTERVAL_SEC:
+			_report()
+			_elapsed = 0.0
+
+	func reset() -> void:
+		_write_idx = 0
+		_count = 0
+		_elapsed = 0.0
+
+	func _report() -> void:
+		if _count <= 0:
+			return
+		var sorted := PackedFloat32Array()
+		sorted.resize(_count)
+		for i in range(_count):
+			sorted[i] = _samples[i]
+		var arr := Array(sorted)
+		arr.sort()
+		var total: float = 0.0
+		for v in arr:
+			total += float(v)
+		var avg: float = total / float(_count)
+		var p95_idx: int = clampi(int(float(_count) * 0.95), 0, _count - 1)
+		var p95: float = float(arr[p95_idx])
+		var avg_fps: float = 1000.0 / maxf(avg, 0.001)
+		print_rich(
+			"[color=cyan][%s][/color] 30s samples=%d  avg=%.2fms (%.1f FPS)  P95=%.2fms" %
+			[_label, _count, avg, avg_fps, p95]
+		)
+
+var _perf_sampler: PerfSampler = null
 
 func _ready() -> void:
 	_world_quad = MeshInstance2D.new()
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
 	add_child(_world_quad)
+	# v9.split：天气表现层
+	_weather_layer = WeatherLayer.new()
+	_weather_layer.name = "WeatherLayer"
+	add_child(_weather_layer)
 	_load_shader()
 	if _map != null and _world != null:
 		_rebuild()
+	set_process(true)
+
+# 每帧把 world_time 推进给 shader（驱动洋流流纹）
+# 注意：这里只 push 一个 float uniform，几乎零开销
+func _process(delta: float) -> void:
+	if _shader_mat == null:
+		return
+	_world_time += delta
+	_shader_mat.set_shader_parameter("world_time", _world_time)
+	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
+	if _perf_sampler != null:
+		_perf_sampler.push_frame_ms(delta * 1000.0)
 
 func _load_shader() -> void:
 	var shader := ResourceLoader.load(shader_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
@@ -120,6 +281,276 @@ func get_world_bounds() -> Rect2:
 	if _map != null and _map.cell_count() > 0:
 		return MapBaker.compute_world_bounds(_map.width, _map.height, hex_size)
 	return Rect2()
+
+# Phase 1：让 main.gd 在 WorldClock day_changed 时推进 shader 季节相位
+func set_season_phase(phase: float) -> void:
+	_season_phase = phase
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("season_phase", _season_phase)
+
+func set_climate_anomaly(v: float) -> void:
+	_climate_anomaly = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("climate_anomaly", _climate_anomaly)
+
+# 任务 2：昼夜相位。由 main.gd 接收 WorldClock.day_phase_changed 信号后转发。
+# 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
+# 仅用于调整云色/闪电亮度，在任务 4 中接入）。
+func set_day_phase(v: float) -> void:
+	_day_phase = fposmod(v, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("day_phase", _day_phase)
+	if _weather_layer != null:
+		_weather_layer.set_day_phase(_day_phase)
+
+# ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
+# 全部 setter 共同约定：
+#   1) 把 @export 字段本身改掉，便于 Editor 监视；
+#   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
+#   3) 把开关同步给 WeatherLayer（如果该开关影响天气层）。
+func set_visual_quality(q: int) -> void:
+	visual_quality = clampi(q, 0, 2)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
+	if _weather_layer != null:
+		_weather_layer.set_visual_quality(visual_quality)
+
+func set_day_night_enabled(v: bool) -> void:
+	day_night_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
+	if _weather_layer != null:
+		_weather_layer.set_day_night_enabled(day_night_enabled)
+
+func set_water_effect_enabled(v: bool) -> void:
+	water_effect_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("water_effect_enabled", water_effect_enabled)
+
+func set_ocean_current_enabled(v: bool) -> void:
+	ocean_current_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
+
+# 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
+# debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
+# debug=false 回到正常低对比流线，视觉上与非 debug 模式无差异。
+var _ocean_current_debug: bool = false
+
+func set_ocean_current_debug(v: bool) -> void:
+	_ocean_current_debug = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
+
+func get_ocean_current_debug() -> bool:
+	return _ocean_current_debug
+
+func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
+	extreme_weather_ground_effect_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"extreme_weather_ground_effect_enabled",
+			extreme_weather_ground_effect_enabled
+		)
+	if _weather_layer != null:
+		_weather_layer.set_extreme_weather_ground_effect_enabled(
+			extreme_weather_ground_effect_enabled
+		)
+
+func set_perf_sampler_enabled(v: bool) -> void:
+	perf_sampler_enabled = v
+	if perf_sampler_enabled:
+		if _perf_sampler == null:
+			_perf_sampler = PerfSampler.new()
+			_perf_sampler.set_label("HexRenderer")
+		else:
+			_perf_sampler.reset()
+	else:
+		_perf_sampler = null
+
+# ─── Pass 2（任务 2）：apply_tod + 新增开关 setter ──────────────────────────
+# apply_tod 是“TOD 单一来源”的必经之路：把 TODProfile 的 6 个字段写到
+# 地表 shader 与 WeatherLayer 的 overlay shader。首帧必须显式调用以避免
+# shader 读到零值（需求 1.3 / 7.4）。
+func apply_tod(profile: TODProfile) -> void:
+	if profile == null:
+		return
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
+		_shader_mat.set_shader_parameter(
+			"tod_sun_color",
+			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
+		)
+		_shader_mat.set_shader_parameter(
+			"tod_ambient_color",
+			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
+		)
+		_shader_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
+		_shader_mat.set_shader_parameter("tod_exposure", profile.exposure)
+	if _weather_layer != null and _weather_layer.has_method("apply_tod"):
+		_weather_layer.apply_tod(profile)
+
+# Pass 2：水面高频粼光开关（任务 4）
+func set_water_sparkle_enabled(v: bool) -> void:
+	water_sparkle_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("water_sparkle_enabled", water_sparkle_enabled)
+
+# Pass 2：雨雪粒子密度提升开关（任务 5），仅 WeatherLayer 需要
+func set_rain_density_boost_enabled(v: bool) -> void:
+	if _weather_layer != null and _weather_layer.has_method("set_rain_density_boost_enabled"):
+		_weather_layer.set_rain_density_boost_enabled(v)
+
+# Pass 2：云层 TOD 染色开关（任务 6）
+func set_cloud_tod_tint_enabled(v: bool) -> void:
+	cloud_tod_tint_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
+	if _weather_layer != null and _weather_layer.has_method("set_cloud_tod_tint_enabled"):
+		_weather_layer.set_cloud_tod_tint_enabled(v)
+
+# ─── Water Visual Overhaul：子特性 setter 组 ──────────────────────────
+# 每个 setter 只做"字段写回 + shader uniform 同步"，让 main.gd 能逐个切换。
+func set_water_waves_enabled(v: bool) -> void:
+	water_waves_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("water_waves_enabled", water_waves_enabled)
+
+func set_water_fresnel_enabled(v: bool) -> void:
+	water_fresnel_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("water_fresnel_enabled", water_fresnel_enabled)
+
+func set_river_flow_enabled(v: bool) -> void:
+	river_flow_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("river_flow_enabled", river_flow_enabled)
+
+func set_caustics_enabled(v: bool) -> void:
+	caustics_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("caustics_enabled", caustics_enabled)
+
+func set_shallow_transparency_enabled(v: bool) -> void:
+	shallow_transparency_enabled = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"shallow_transparency_enabled",
+			shallow_transparency_enabled
+		)
+
+func set_water_gloss(v: float) -> void:
+	water_gloss = clampf(v, 4.0, 128.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("water_gloss", water_gloss)
+
+func set_water_reflection_strength(v: float) -> void:
+	water_reflection_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_reflection_strength",
+			water_reflection_strength
+		)
+
+func set_river_flow_speed(v: float) -> void:
+	river_flow_speed = clampf(v, 0.0, 4.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("river_flow_speed", river_flow_speed)
+
+func set_river_flow_freq(v: float) -> void:
+	river_flow_freq = clampf(v, 0.02, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("river_flow_freq", river_flow_freq)
+
+func set_caustics_strength(v: float) -> void:
+	caustics_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("caustics_strength", caustics_strength)
+
+func set_deep_ocean_contrast(v: float) -> void:
+	deep_ocean_contrast = clampf(v, 0.5, 3.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("deep_ocean_contrast", deep_ocean_contrast)
+
+func set_lake_water_color(c: Color) -> void:
+	lake_water_color = c
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("lake_water_color", lake_water_color)
+
+func set_shallow_transparency_factor(v: float) -> void:
+	shallow_transparency_factor = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"shallow_transparency_factor",
+			shallow_transparency_factor
+		)
+
+# ShaderToy 启发：三个新视觉 setter（域扭曲 / 风格化波痕 / biome 软混合）
+func set_water_domain_warp_strength(v: float) -> void:
+	water_domain_warp_strength = clampf(v, 0.0, 4.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_domain_warp_strength",
+			water_domain_warp_strength
+		)
+
+func set_water_wave_line_strength(v: float) -> void:
+	water_wave_line_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_wave_line_strength",
+			water_wave_line_strength
+		)
+
+func set_water_calm_noise_brightness(v: float) -> void:
+	water_calm_noise_brightness = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_calm_noise_brightness",
+			water_calm_noise_brightness
+		)
+
+func set_water_calm_noise_tint_strength(v: float) -> void:
+	water_calm_noise_tint_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_calm_noise_tint_strength",
+			water_calm_noise_tint_strength
+		)
+
+func set_water_biome_blend_radius(v: float) -> void:
+	water_biome_blend_radius = clampf(v, 0.0, 4.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(
+			"water_biome_blend_radius",
+			water_biome_blend_radius
+		)
+
+# Milestone 3：把当前活跃 weather_front 数组上传到 shader。
+# 入参 fronts 由 WeatherSystem.active_fronts() 提供。空数组 = 全部 CLEAR。
+# 数组长度被 pad 到 MAX_WEATHER_FRONTS（多出来的项 type=-1，shader 端识别后跳过）。
+func set_weather_fronts(fronts: Array) -> void:
+	# v9.split：地形 shader 仍要拿到 fronts 数组（DROUGHT/HEATWAVE multiplicative 调色），
+	#         同时把同一份 fronts 转发给 WeatherLayer 处理 RAIN/STORM/FOG/BLIZZARD/MONSOON。
+	if _shader_mat != null:
+		var centers := PackedVector4Array()
+		var types := PackedFloat32Array()
+		centers.resize(MAX_WEATHER_FRONTS)
+		types.resize(MAX_WEATHER_FRONTS)
+		var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
+		for i in range(MAX_WEATHER_FRONTS):
+			if i < n:
+				var f = fronts[i]
+				centers[i] = Vector4(f.center.x, f.center.y, f.radius, f.intensity)
+				types[i] = float(f.type)
+			else:
+				centers[i] = Vector4.ZERO
+				types[i] = -1.0  # sentinel：shader 看到 < 0 就跳过
+		_shader_mat.set_shader_parameter("weather_front_centers", centers)
+		_shader_mat.set_shader_parameter("weather_front_types", types)
+		_shader_mat.set_shader_parameter("weather_front_count", n)
+	if _weather_layer != null:
+		_weather_layer.set_weather_fronts(fronts)
 
 # ─── 重建 ─────────────────────────────────────────────────────────────────
 
@@ -157,17 +588,78 @@ func _apply_uniforms() -> void:
 	var sm := _shader_mat
 	var bounds := _world.world_bounds
 
-	# 4 张烤好的纹理
-	sm.set_shader_parameter("height_tex", _world.height_tex)
-	sm.set_shader_parameter("biome_tex", _world.biome_tex)
-	sm.set_shader_parameter("moisture_tex", _world.moisture_tex)
-	sm.set_shader_parameter("flow_tex", _world.flow_tex)
+	# v9.atlas：原 10 张 sampler 压成 4 张（height + 3 atlas）+ 共享 noise_tex
+	sm.set_shader_parameter("height_tex",   _world.height_tex)
+	sm.set_shader_parameter("enum_atlas",   _world.enum_atlas_tex)
+	sm.set_shader_parameter("scalar_atlas", _world.scalar_atlas_tex)
+	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
+	# v9.fbm-opt：把共享 noise_tex 喂给地形 shader，替换 value_noise 内部的 4× hash21
+	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)
 	sm.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
 	sm.set_shader_parameter("derived_resolution", Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("sea_level", _world.sea_level)
+
+	# 季节/气候 uniform（每次重建时同步初值，每天 / 每年由 main.gd 推进）
+	sm.set_shader_parameter("season_phase", _season_phase)
+	sm.set_shader_parameter("climate_anomaly", _climate_anomaly)
+	sm.set_shader_parameter("world_time", _world_time)
+	# 任务 2：把当前 day_phase 同步到新创建的材质上
+	sm.set_shader_parameter("day_phase", _day_phase)
+	sm.set_shader_parameter("season_temp_amp", season_temp_amp)
+	sm.set_shader_parameter("vegetation_season_strength", vegetation_season_strength)
+	sm.set_shader_parameter("dynamic_snow_strength", dynamic_snow_strength)
+	sm.set_shader_parameter("ocean_current_strength", ocean_current_strength)
+	sm.set_shader_parameter("wind_streak_strength", wind_streak_strength)
+	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
+	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
+
+	# Milestone 3：默认填空 weather 数组 + 设全局 weather 强度
+	sm.set_shader_parameter("weather_strength", weather_strength)
+
+	# 任务 1：视觉总开关 uniform（shader 端用 #define 风格 if 分支消费）
+	sm.set_shader_parameter("visual_quality", visual_quality)
+	sm.set_shader_parameter("day_night_enabled", day_night_enabled)
+	sm.set_shader_parameter("water_effect_enabled", water_effect_enabled)
+	sm.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
+	sm.set_shader_parameter(
+		"extreme_weather_ground_effect_enabled",
+		extreme_weather_ground_effect_enabled
+	)
+	# Pass 2（任务 2）：把 Pass 2 开关也同步到新建材质上
+	sm.set_shader_parameter("water_sparkle_enabled", water_sparkle_enabled)
+	sm.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
+	sm.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
+
+	# Water Visual Overhaul：首次建材质必须把本轮 uniform 全部初始化，
+	# 否则 main.gd 的 setter 在 _push_visual_toggles 之前的帧里会读到 0 值。
+	sm.set_shader_parameter("water_waves_enabled", water_waves_enabled)
+	sm.set_shader_parameter("water_fresnel_enabled", water_fresnel_enabled)
+	sm.set_shader_parameter("river_flow_enabled", river_flow_enabled)
+	sm.set_shader_parameter("caustics_enabled", caustics_enabled)
+	sm.set_shader_parameter("shallow_transparency_enabled", shallow_transparency_enabled)
+	sm.set_shader_parameter("water_gloss", water_gloss)
+	sm.set_shader_parameter("water_reflection_strength", water_reflection_strength)
+	sm.set_shader_parameter("river_flow_speed", river_flow_speed)
+	sm.set_shader_parameter("river_flow_freq", river_flow_freq)
+	sm.set_shader_parameter("caustics_strength", caustics_strength)
+	sm.set_shader_parameter("deep_ocean_contrast", deep_ocean_contrast)
+	sm.set_shader_parameter("lake_water_color", lake_water_color)
+	sm.set_shader_parameter("shallow_transparency_factor", shallow_transparency_factor)
+	sm.set_shader_parameter("water_domain_warp_strength", water_domain_warp_strength)
+	sm.set_shader_parameter("water_wave_line_strength", water_wave_line_strength)
+	sm.set_shader_parameter("water_calm_noise_brightness", water_calm_noise_brightness)
+	sm.set_shader_parameter("water_calm_noise_tint_strength", water_calm_noise_tint_strength)
+	sm.set_shader_parameter("water_biome_blend_radius", water_biome_blend_radius)
+
+	# v9.split：weather 表现层与地形 shader 共享同一组 weather uniform，
+	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
+	if _weather_layer != null:
+		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
+		_weather_layer.set_weather_strength(weather_strength)
+	set_weather_fronts([])
 
 	# Hypsometric 色阶
 	sm.set_shader_parameter("color_deep_ocean", color_deep_ocean)

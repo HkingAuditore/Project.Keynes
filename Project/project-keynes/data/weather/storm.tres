@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="WeatherProfile" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/weather_profile.gd" id="1"]
+[ext_resource type="Texture2D" path="res://textures/weather/rain_drop.png" id="2"]
+
+[resource]
+script = ExtResource("1")
+weather_type = 2
+display_name = "雷暴"
+moisture_delta = 0.30
+temp_delta = -0.06
+can_form_snow = false
+can_form_flood = true
+has_particles = true
+particle_texture = ExtResource("2")
+particle_amount_min = 340
+particle_amount_max = 1500
+particle_density_per_px2 = 0.00075
+particle_lifetime = 1.6
+particle_direction = Vector3(0.35, 1, 0)
+particle_spread = 8.0
+particle_gravity = Vector3(0, 280, 0)
+particle_velocity_min = 220.0
+particle_velocity_max = 320.0
+particle_angular_velocity_min = 0.0
+particle_angular_velocity_max = 0.0
+particle_scale_min = 1.15
+particle_scale_max = 1.9
+particle_base_color = Color(0.92, 0.95, 1.00, 0.98)
+has_overlay = true
+overlay_color = Color(0.18, 0.24, 0.36, 1)
+overlay_base_alpha = 0.62
+has_cloud_shadow = true
+cloud_shadow_color = Color(0.10, 0.12, 0.18, 1)
+cloud_shadow_alpha_scale = 0.82
+enables_lightning = true
+enables_snow_grain = false
+enables_rain_streak = true
+enables_fog_breathe = false

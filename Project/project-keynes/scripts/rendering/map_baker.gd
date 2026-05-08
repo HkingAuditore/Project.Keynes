@@ -16,8 +16,41 @@
 
 class_name MapBaker
 
+const WindBeltScript = preload("res://scripts/wind_belt.gd")
+
 # ─── 分辨率 ───────────────────────────────────────────────────────────────
 const HM_MAX_DIM := 1024  # hex-driven 模式下不需要 2048（hex 网格本身只 60×40，1024 已经远超）
+
+# ─── v9.fbm-opt：共享 noise 贴图（替换 shader 内 value_noise 的 4× hash21 计算） ──
+# 256×256 R8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
+# WorldData.noise_tex 都指向同一张 ImageTexture。shader 端 sampler 配置：
+#   filter_linear（bilinear ≈ value_noise 的 smoothstep mix，肉眼无法区分）
+#   repeat_enable（让 fbm 的多 octave 倍频采样自然 wrap）
+# 然后 value_noise(p) 实现退化为：texture(noise_tex, p / NOISE_TEX_SCALE).r。
+const NOISE_TEX_SIZE := 256
+const NOISE_TEX_SEED := 0xC0DECAFE
+static var _shared_noise_tex: ImageTexture = null
+
+static func get_or_build_shared_noise_tex() -> ImageTexture:
+	if _shared_noise_tex == null:
+		_shared_noise_tex = _build_noise_tex(NOISE_TEX_SIZE, NOISE_TEX_SEED)
+	return _shared_noise_tex
+
+static func _build_noise_tex(size: int, seed_val: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var data := PackedByteArray()
+	data.resize(size * size)
+	for i in range(size * size):
+		data[i] = rng.randi_range(0, 255)
+	# v9.perf：开启 mipmap。fbm 高 octave 在世界坐标里以 ~2.03^N 倍频采样这个 256² 贴图，
+	# 没 mip 时邻近像素跳到完全不同的 texel → cache 抖动 + 视觉 aliasing。
+	# 开 mip 后高频 fbm 自动落到低 mip 上（数据已被预滤波），既快又抗 aliasing。
+	# 注意：create_from_data 第 3 参 mipmaps=true 时要求 data 已包含全部 mip 级别的数据，
+	# 这里只提供了 base level，所以先传 false 建 base 图，再调用 generate_mipmaps() 生成后续级别。
+	var img := Image.create_from_data(size, size, false, Image.FORMAT_R8, data)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 # ─── Warp 参数 ────────────────────────────────────────────────────────────
 const WARP_AMP := 0.4           # 相对 hex_size，决定 hex 边界扭曲幅度
@@ -81,23 +114,33 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.hm_size = _resolve_hm_size(world.world_bounds)
 	world.derived_size = world.hm_size  # 统一分辨率
 	world.sea_level = cfg.sea_level
+	world.bake_seed = seed_val
 
 	var t_total := Time.get_ticks_msec()
 	print("MapBaker v6: hm=%s seed=%d" % [world.hm_size, seed_val])
 
-	# 一次循环同时算 heightmap + biome + moisture（共享 warp 计算）
+	# 一次循环同时算 heightmap + biome + moisture + vegetation + cover（共享 warp 计算）
+	# Milestone 2：vegetation_buf / cover_buf 与 biome_buf 完全同 warp、同 cube_round，
+	# shader 端用同一 uv 采样三张 R8 即可对齐。
 	var t := Time.get_ticks_msec()
+	var pix_count := world.hm_size.x * world.hm_size.y
 	var height_buf := PackedFloat32Array()
 	var biome_buf := PackedByteArray()
 	var moist_buf := PackedFloat32Array()
-	height_buf.resize(world.hm_size.x * world.hm_size.y)
-	biome_buf.resize(world.hm_size.x * world.hm_size.y)
-	moist_buf.resize(world.hm_size.x * world.hm_size.y)
-	_bake_height_biome_moisture(map, hex_size, world, height_buf, biome_buf, moist_buf)
+	var veg_buf := PackedByteArray()
+	var cover_buf := PackedByteArray()
+	height_buf.resize(pix_count)
+	biome_buf.resize(pix_count)
+	moist_buf.resize(pix_count)
+	veg_buf.resize(pix_count)
+	cover_buf.resize(pix_count)
+	_bake_height_biome_moisture(map, hex_size, world, height_buf, biome_buf, moist_buf, veg_buf, cover_buf)
 	world.height_buffer = height_buf
 	world.biome_buffer = biome_buf
 	world.moisture_buffer = moist_buf
-	print("  height+biome+moisture: %dms" % (Time.get_ticks_msec() - t))
+	world.vegetation_buffer = veg_buf
+	world.cover_buffer = cover_buf
+	print("  height+biome+moisture+veg+cover: %dms" % (Time.get_ticks_msec() - t))
 
 	# 轻度侵蚀，让 hex 边界进一步自然
 	t = Time.get_ticks_msec()
@@ -112,16 +155,235 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.flow_buffer = _bake_river_sdf(map, hex_size, world.world_bounds, world.derived_size)
 	print("  river SDF: %dms" % (Time.get_ticks_msec() - t))
 
-	# 编码纹理
+	# Phase 1：纬度纹理（每像素 ny），给 shader 算半球 + 季节温度偏移
+	t = Time.get_ticks_msec()
+	world.latitude_buffer = _bake_latitude_buffer(world.world_bounds, world.derived_size)
+	print("  latitude: %dms" % (Time.get_ticks_msec() - t))
+
+	# Phase 6：风带（每像素盛行风向，summer-default 当 baseline）
+	t = Time.get_ticks_msec()
+	world.wind_field_buffer = _bake_wind_field(world.world_bounds, world.derived_size, 1.0)
+	print("  wind field: %dms" % (Time.get_ticks_msec() - t))
+
+	# Phase 3：洋流向量场（RG8），仅海洋像素有意义。Phase 6 改为风驱动 + Ekman 偏转。
+	t = Time.get_ticks_msec()
+	world.ocean_current_buffer = _bake_ocean_currents(map, hex_size, world)
+	print("  ocean currents: %dms" % (Time.get_ticks_msec() - t))
+
+	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减
+	t = Time.get_ticks_msec()
+	world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
+	print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
+
+	# 编码纹理：v9.atlas → 9 张 derived 贴图合并成 3 张 atlas + 独立 height_tex
 	t = Time.get_ticks_msec()
 	world.height_tex = _encode_height_tex(world.height_buffer, world.hm_size)
-	world.moisture_tex = _encode_byte_tex_from_float(world.moisture_buffer, world.derived_size)
-	world.flow_tex = _encode_byte_tex_from_float(world.flow_buffer, world.derived_size)
-	world.biome_tex = _encode_biome_tex(world.biome_buffer, world.derived_size)
+	world.enum_atlas_tex = _encode_enum_atlas(
+		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+		world.derived_size
+	)
+	world.scalar_atlas_tex = _encode_scalar_atlas(
+		world.moisture_buffer, world.flow_buffer,
+		world.latitude_buffer, world.volcano_field_buffer,
+		world.derived_size
+	)
+	world.vector_atlas_tex = _encode_vector_atlas(
+		world.ocean_current_buffer, world.wind_field_buffer,
+		world.derived_size
+	)
+	# v9.fbm-opt：共享 noise 贴图（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
+	world.noise_tex = get_or_build_shared_noise_tex()
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
 	return world
+
+# ─── Phase 2：增量重新烘焙 biome_tex ────────────────────────────────────────
+# 季节切换时只需重画 biome（其他 buffer 不变），单次只跑 ~80ms。
+# 注意：调用此方法前必须保证 `_warp_noise_lo/hi` 等已 init（一般通过先跑过 bake_world）。
+# 若 baker 是新建的实例，请先调用 `_init_noise(seed_val)`。
+
+func rebake_biome_tex_only(map: MapData, world: WorldData, hex_size: float) -> void:
+	rebake_biome_axes_only(map, world, hex_size)
+
+# Milestone 3：仅重烘 cover_tex（biome/vegetation 不动），给 day-tick 用。
+# 跑同一遍 warp + cube_round，但只写 cover_buffer + 编码一张 R8 tex。
+# 比 rebake_biome_axes_only 快 ~3 倍（~25-30ms vs 80ms）。
+func rebake_cover_tex_only(map: MapData, world: WorldData, hex_size: float) -> void:
+	_rebake_single_axis(map, world, hex_size, "cover")
+
+# Milestone 4：仅重烘 vegetation_tex（biome/cover 不动），给植被演替触发用。
+# 同样的 warp + cube_round + 单 R8 编码路径，开销与 cover-only 相同。
+func rebake_vegetation_tex_only(map: MapData, world: WorldData, hex_size: float) -> void:
+	_rebake_single_axis(map, world, hex_size, "vegetation")
+
+# 抽出来的单轴 rebake 通用实现：axis ∈ {"cover", "vegetation"}
+# v9.perf：fast path 走 world.pixel_to_cell_lookup（每像素 → HexCell 引用）
+# 重写整张 buffer 只需 O(W*H) array indexing，~2-3ms。
+# fallback 路径（lookup 缺失，例如旧存档加载或 baker 不是 bake_world 跑出来的）
+# 仍保留原 warp + cube_round 全跑流程。
+func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: String) -> void:
+	if world == null:
+		return
+	var target_buf: PackedByteArray
+	var fallback_default: int
+	match axis:
+		"cover":
+			if world.cover_buffer.is_empty():
+				return
+			target_buf = world.cover_buffer
+			fallback_default = int(CoverType.CV.NONE)
+		"vegetation":
+			if world.vegetation_buffer.is_empty():
+				return
+			target_buf = world.vegetation_buffer
+			fallback_default = int(VegetationType.VEG.NONE)
+		_:
+			return
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var pix_count := W * H
+
+	# Fast path：lookup 存在且大小一致
+	if world.pixel_to_cell_lookup.size() == pix_count:
+		var lookup := world.pixel_to_cell_lookup
+		if axis == "cover":
+			for i in range(pix_count):
+				var c: HexCell = lookup[i]
+				target_buf[i] = (int(c.cover) if c != null else fallback_default) & 0xFF
+		else:
+			for i in range(pix_count):
+				var c2: HexCell = lookup[i]
+				target_buf[i] = (int(c2.vegetation) if c2 != null else fallback_default) & 0xFF
+		if axis == "cover":
+			world.cover_buffer = target_buf
+		else:
+			world.vegetation_buffer = target_buf
+		# v9.perf：复用已有 ImageTexture（避免每天重新 alloc GPU 资源）
+		world.enum_atlas_tex = _encode_enum_atlas(
+			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+			world.derived_size, world.enum_atlas_tex
+		)
+		return
+
+	# Slow fallback：完整重跑 warp + cube_round（保留兼容性，正常不会走到）
+	if _warp_noise_lo == null:
+		_init_noise(world.bake_seed)
+	var origin := world.world_bounds.position
+	var size := world.world_bounds.size
+	var step_x := size.x / float(W)
+	var step_y := size.y / float(H)
+	var warp_scale := hex_size * WARP_AMP
+
+	for y in range(H):
+		var wy_base := origin.y + (float(y) + 0.5) * step_y
+		var row := y * W
+		for x in range(W):
+			var wx_base := origin.x + (float(x) + 0.5) * step_x
+			var warp_x := _warp_noise_lo.get_noise_2d(wx_base, wy_base)
+			var warp_y := _warp_noise_lo.get_noise_2d(wx_base + 31.7, wy_base - 17.3)
+			var hi_x := _warp_noise_hi.get_noise_2d(wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO
+			var hi_y := _warp_noise_hi.get_noise_2d(wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO
+			var wx := wx_base + (warp_x + hi_x) * warp_scale
+			var wy := wy_base + (warp_y + hi_y) * warp_scale
+			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
+			var rounded := _cube_round(cube_f)
+			var self_cell: HexCell = map.get_cell_by_cube(rounded)
+			var v: int
+			if axis == "cover":
+				v = int(self_cell.cover) if self_cell != null else int(CoverType.CV.NONE)
+			else:
+				v = int(self_cell.vegetation) if self_cell != null else int(VegetationType.VEG.NONE)
+			target_buf[row + x] = v & 0xFF
+	if axis == "cover":
+		world.cover_buffer = target_buf
+	else:
+		world.vegetation_buffer = target_buf
+	world.enum_atlas_tex = _encode_enum_atlas(
+		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+		world.derived_size, world.enum_atlas_tex
+	)
+
+# Milestone 2：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
+# height / moisture / flow / latitude / wind / ocean / volcano 全部不动
+# （与季节相位无关），所以这里仍然只跑一遍 warp + cube_round。
+func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> void:
+	if world == null or world.biome_buffer.is_empty():
+		return
+	if _warp_noise_lo == null:
+		_init_noise(world.bake_seed)
+	_rewrite_axis_buffers(map, hex_size, world)
+	# v9.atlas：biome / vegetation / cover 三轴一次编入 enum_atlas
+	# v9.perf：复用现有 ImageTexture
+	world.enum_atlas_tex = _encode_enum_atlas(
+		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+		world.derived_size, world.enum_atlas_tex
+	)
+
+# 重写 biome / vegetation / cover 三个 buffer，但保持 height/moisture/flow 不动
+func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> void:
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var pix_count := W * H
+	var biome_buf := world.biome_buffer
+	var veg_buf := world.vegetation_buffer
+	var cover_buf := world.cover_buffer
+	if veg_buf.size() != pix_count:
+		veg_buf.resize(pix_count)
+	if cover_buf.size() != pix_count:
+		cover_buf.resize(pix_count)
+	if biome_buf.size() != pix_count:
+		biome_buf.resize(pix_count)
+
+	# v9.perf：fast path → 走 pixel_to_cell_lookup，避免 78 万次 noise + cube_round
+	if world.pixel_to_cell_lookup.size() == pix_count:
+		var lookup := world.pixel_to_cell_lookup
+		for i in range(pix_count):
+			var c: HexCell = lookup[i]
+			if c != null:
+				biome_buf[i] = int(c.terrain) & 0xFF
+				veg_buf[i] = int(c.vegetation) & 0xFF
+				cover_buf[i] = int(c.cover) & 0xFF
+			else:
+				biome_buf[i] = int(TerrainType.TERRAIN.OCEAN) & 0xFF
+				veg_buf[i] = int(VegetationType.VEG.NONE) & 0xFF
+				cover_buf[i] = int(CoverType.CV.NONE) & 0xFF
+		world.biome_buffer = biome_buf
+		world.vegetation_buffer = veg_buf
+		world.cover_buffer = cover_buf
+		return
+
+	# Slow fallback：完整重跑 warp + cube_round（兼容旧路径）
+	var origin := world.world_bounds.position
+	var size := world.world_bounds.size
+	var step_x := size.x / float(W)
+	var step_y := size.y / float(H)
+	var warp_scale := hex_size * WARP_AMP
+
+	for y in range(H):
+		var wy_base := origin.y + (float(y) + 0.5) * step_y
+		var row := y * W
+		for x in range(W):
+			var wx_base := origin.x + (float(x) + 0.5) * step_x
+			var warp_x := _warp_noise_lo.get_noise_2d(wx_base, wy_base)
+			var warp_y := _warp_noise_lo.get_noise_2d(wx_base + 31.7, wy_base - 17.3)
+			var hi_x := _warp_noise_hi.get_noise_2d(wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO
+			var hi_y := _warp_noise_hi.get_noise_2d(wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO
+			var wx := wx_base + (warp_x + hi_x) * warp_scale
+			var wy := wy_base + (warp_y + hi_y) * warp_scale
+			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
+			var rounded := _cube_round(cube_f)
+			var self_cell: HexCell = map.get_cell_by_cube(rounded)
+			var terrain_self: int = int(self_cell.terrain) if self_cell != null else int(TerrainType.TERRAIN.OCEAN)
+			var veg_self: int = int(self_cell.vegetation) if self_cell != null else int(VegetationType.VEG.NONE)
+			var cover_self: int = int(self_cell.cover) if self_cell != null else int(CoverType.CV.NONE)
+			var idx := row + x
+			biome_buf[idx] = terrain_self & 0xFF
+			veg_buf[idx] = veg_self & 0xFF
+			cover_buf[idx] = cover_self & 0xFF
+	world.biome_buffer = biome_buf
+	world.vegetation_buffer = veg_buf
+	world.cover_buffer = cover_buf
 
 # ─── 内部：分辨率 / 噪声初始化 ──────────────────────────────────────────
 
@@ -178,7 +440,9 @@ func _bake_height_biome_moisture(
 	world: WorldData,
 	height_buf: PackedFloat32Array,
 	biome_buf: PackedByteArray,
-	moist_buf: PackedFloat32Array
+	moist_buf: PackedFloat32Array,
+	veg_buf: PackedByteArray,
+	cover_buf: PackedByteArray
 ) -> void:
 	var W := world.hm_size.x
 	var H := world.hm_size.y
@@ -187,6 +451,13 @@ func _bake_height_biome_moisture(
 	var step_x := size.x / float(W)
 	var step_y := size.y / float(H)
 	var warp_scale := hex_size * WARP_AMP
+
+	# v9.perf：建立 pixel→HexCell lookup，让后续 rebake_*_only / rebake_biome_axes_only
+	# 不再需要重跑 noise + cube_round。这里只是 W*H 次引用赋值，开销 ~0
+	var pix_count := W * H
+	var lookup: Array = []
+	lookup.resize(pix_count)
+	world.pixel_to_cell_lookup = lookup
 
 	for y in range(H):
 		var wy_base := origin.y + (float(y) + 0.5) * step_y
@@ -238,6 +509,10 @@ func _bake_height_biome_moisture(
 			var moist_nb1: float = nb1_cell.moisture if nb1_cell != null else moist_self
 			var moist_nb2: float = nb2_cell.moisture if nb2_cell != null else moist_self
 			var terrain_self: int = int(self_cell.terrain) if self_cell != null else int(TerrainType.TERRAIN.OCEAN)
+			# Milestone 2：同 cube_round → 同源拿 vegetation / cover 三轴。
+			# self_cell.vegetation / cover 在 MapGenerator._sync_axes_for_map 中已经派生齐全。
+			var veg_self: int = int(self_cell.vegetation) if self_cell != null else int(VegetationType.VEG.NONE)
+			var cover_self: int = int(self_cell.cover) if self_cell != null else int(CoverType.CV.NONE)
 
 			# 6. Barycentric 插值 → 平滑 elevation/moisture
 			var elev_blend := elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2
@@ -259,6 +534,10 @@ func _bake_height_biome_moisture(
 			height_buf[idx] = clampf(elev_final, 0.0, 1.0)
 			biome_buf[idx] = terrain_self & 0xFF
 			moist_buf[idx] = clampf(moist_blend, 0.0, 1.0)
+			veg_buf[idx] = veg_self & 0xFF
+			cover_buf[idx] = cover_self & 0xFF
+			# v9.perf：缓存 cell 引用，rebake 时直接 lookup[idx].cover/vegetation
+			lookup[idx] = self_cell
 
 # ─── Hex 工具 ─────────────────────────────────────────────────────────────
 
@@ -510,7 +789,7 @@ func _trace_all_rivers(map: MapData, hex_size: float) -> Array:
 	var visited: Dictionary = {}
 	var chains: Array = []
 	for cell: HexCell in map.all_cells():
-		if not cell.has_river or _is_water(cell.terrain):
+		if not cell.has_river or _is_river_terminal_water(cell.terrain):
 			continue
 		var key := Vector3i(cell.q, cell.r, cell.s)
 		if visited.has(key):
@@ -527,30 +806,38 @@ func _trace_river_chain(map: MapData, start: HexCell, hex_size: float, visited: 
 
 	var current: HexCell = start
 	while true:
-		var nxt: HexCell = null
-		var lowest: float = current.elevation  # 关键：只走严格下坡的 has_river 邻居
-		for nb: HexCell in map.get_neighbors(current):
-			if not nb.has_river or _is_water(nb.terrain):
-				continue
-			var k := Vector3i(nb.q, nb.r, nb.s)
-			if visited.has(k):
-				continue
-			if nb.elevation < lowest:
-				lowest = nb.elevation
-				nxt = nb
+		var nxt: HexCell = _find_downhill_river_neighbor(map, current)
 		if nxt == null:
 			break
-		chain.append(HexUtils.cube_to_world(nxt.q, nxt.r, hex_size))
-		visited[Vector3i(nxt.q, nxt.r, nxt.s)] = true
-		current = nxt
 
-	# 尾巴伸入海里一半，避免河口在最后陆地 cell 中心硬截断
-	var water_nb := _find_water_neighbor(map, current)
+		# 如果支流流向一段已经烘焙过的主河道，仍然把合流点追加进当前折线。
+		# 旧逻辑会因为 visited 直接跳过该邻居，导致支流在合流前一格视觉断开。
+		chain.append(HexUtils.cube_to_world(nxt.q, nxt.r, hex_size))
+		var nxt_key := Vector3i(nxt.q, nxt.r, nxt.s)
+		current = nxt
+		if visited.has(nxt_key):
+			break
+		visited[nxt_key] = true
+
+	# 尾巴伸入终端水体一半，避免河口在最后陆地 cell 中心硬截断。
+	# 这里使用河流专用水体判断，包含湖泊；不要复用海洋洋流用的 _is_water()。
+	var water_nb := _find_river_terminal_water_neighbor(map, current)
 	if water_nb != null:
 		var river_end := HexUtils.cube_to_world(current.q, current.r, hex_size)
 		var water_center := HexUtils.cube_to_world(water_nb.q, water_nb.r, hex_size)
 		chain.append(river_end.lerp(water_center, 0.5))
 	return chain
+
+func _find_downhill_river_neighbor(map: MapData, cell: HexCell) -> HexCell:
+	var best: HexCell = null
+	var lowest: float = cell.elevation  # 关键：只走严格下坡的 has_river 邻居
+	for nb: HexCell in map.get_neighbors(cell):
+		if not nb.has_river or _is_river_terminal_water(nb.terrain):
+			continue
+		if nb.elevation < lowest:
+			lowest = nb.elevation
+			best = nb
+	return best
 
 # A：把已经 CR 平滑的河流密集点统一走一遍 warp 噪声场，让河道跟 hex 边界一起弯
 # 振幅 0.30 hex_size 给出明显的曲流感但不会大幅偏离原 cell 中心
@@ -566,10 +853,10 @@ func _warp_river_chain(chain: Array, hex_size: float) -> Array:
 		result.append(p + Vector2(wx_off, wy_off))
 	return result
 
-func _find_water_neighbor(map: MapData, cell: HexCell) -> HexCell:
+func _find_river_terminal_water_neighbor(map: MapData, cell: HexCell) -> HexCell:
 	var best: HexCell = null
 	for nb: HexCell in map.get_neighbors(cell):
-		if not _is_water(nb.terrain):
+		if not _is_river_terminal_water(nb.terrain):
 			continue
 		if best == null or nb.elevation < best.elevation:
 			best = nb
@@ -693,21 +980,266 @@ func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture
 	var img := Image.create_from_data(W, H, false, Image.FORMAT_RG8, data)
 	return ImageTexture.create_from_image(img)
 
-func _encode_byte_tex_from_float(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture:
+# ─── v9.atlas：合并通道编码 ─────────────────────────────────────────────
+# 把原先 9 张 derived 贴图（biome/veg/cover/moist/flow/lat/volcano/ocean/wind）
+# 按"采样模式 + 数据语义"分到 3 张 atlas，shader 端只需 3 次 texture() 即可
+# 拿到所有 derived 数据。height_tex 因分辨率/精度独立保留。
+
+# enum_atlas: RGB8 NEAREST  (R=biome, G=vegetation, B=cover)
+# v9.perf：existing 非 null 时走 ImageTexture.update() 复用 GPU RID，
+# 避免每天 rebake 时反复 alloc/free GPU buffer + 重新绑定 shader uniform
+func _encode_enum_atlas(biome_buf: PackedByteArray, veg_buf: PackedByteArray,
+		cover_buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null) -> ImageTexture:
 	var W := size.x
 	var H := size.y
+	var n := W * H
 	var data := PackedByteArray()
-	data.resize(W * H)
-	for i in range(W * H):
-		data[i] = int(round(clampf(buf[i], 0.0, 1.0) * 255.0))
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_R8, data)
+	data.resize(n * 3)
+	# veg / cover 可能在某些路径上没烤（兜底空数组当全 0）
+	var has_veg: bool = veg_buf.size() >= n
+	var has_cover: bool = cover_buf.size() >= n
+	for i in range(n):
+		var di := i * 3
+		data[di] = biome_buf[i] if i < biome_buf.size() else 0
+		data[di + 1] = veg_buf[i] if has_veg else 0
+		data[di + 2] = cover_buf[i] if has_cover else 0
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, data)
+	# ImageTexture.get_size() 返回 Vector2，而 W/H 是 int → 用 Vector2 比较
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+		return existing
 	return ImageTexture.create_from_image(img)
 
-func _encode_biome_tex(buf: PackedByteArray, size: Vector2i) -> ImageTexture:
-	var img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_R8, buf)
+# scalar_atlas: RGBA8 LINEAR (R=moisture, G=flow, B=latitude, A=volcano)
+# moisture/flow/latitude 是 [0,1] 的 float → quantize 到 byte
+# volcano 已经是 PackedByteArray，直接用
+func _encode_scalar_atlas(moist_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
+		lat_buf: PackedFloat32Array, volcano_buf: PackedByteArray,
+		size: Vector2i) -> ImageTexture:
+	var W := size.x
+	var H := size.y
+	var n := W * H
+	var data := PackedByteArray()
+	data.resize(n * 4)
+	var has_moist: bool = moist_buf.size() >= n
+	var has_flow: bool = flow_buf.size() >= n
+	var has_lat: bool = lat_buf.size() >= n
+	var has_volcano: bool = volcano_buf.size() >= n
+	for i in range(n):
+		var di := i * 4
+		data[di]     = int(round(clampf(moist_buf[i], 0.0, 1.0) * 255.0)) if has_moist else 0
+		data[di + 1] = int(round(clampf(flow_buf[i], 0.0, 1.0) * 255.0)) if has_flow else 0
+		data[di + 2] = int(round(clampf(lat_buf[i], 0.0, 1.0) * 255.0)) if has_lat else 0
+		data[di + 3] = volcano_buf[i] if has_volcano else 0
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
 	return ImageTexture.create_from_image(img)
+
+# vector_atlas: RGBA8 LINEAR (RG=ocean_current, BA=wind_field)
+# 两个源 buffer 都是 RG8 packed byte（每像素 2 字节）
+func _encode_vector_atlas(ocean_buf: PackedByteArray, wind_buf: PackedByteArray,
+		size: Vector2i) -> ImageTexture:
+	var W := size.x
+	var H := size.y
+	var n := W * H
+	var data := PackedByteArray()
+	data.resize(n * 4)
+	var has_ocean: bool = ocean_buf.size() >= n * 2
+	var has_wind: bool = wind_buf.size() >= n * 2
+	# 中性值：[-1,1] 的 0 → 字节 128
+	for i in range(n):
+		var di := i * 4
+		var oi := i * 2
+		data[di]     = ocean_buf[oi]     if has_ocean else 128
+		data[di + 1] = ocean_buf[oi + 1] if has_ocean else 128
+		data[di + 2] = wind_buf[oi]      if has_wind else 128
+		data[di + 3] = wind_buf[oi + 1]  if has_wind else 128
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
+	return ImageTexture.create_from_image(img)
+
+# ─── Phase 14：火山强度场（R8） ─────────────────────────────────────────────
+# 每像素 = sum_over_volcanoes( max(0, 1 - dist / glow_radius) )
+# glow_radius ≈ 3 × hex_size，让红光晕跨越自身 + 1-2 邻居。
+# 性能：O(W * H * N_volcanoes)，N ≤ 8，对 192×108 derived 来说 ~165k 操作，可忽略。
+
+func _bake_volcano_field(map: MapData, hex_size: float, world: WorldData) -> PackedByteArray:
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var origin := world.world_bounds.position
+	var size := world.world_bounds.size
+	var step_x := size.x / float(W)
+	var step_y := size.y / float(H)
+	var glow_radius := hex_size * 3.0
+	var inv_glow := 1.0 / glow_radius
+
+	# 收集火山中心
+	var volcano_centers: Array[Vector2] = []
+	for cell: HexCell in map.all_cells():
+		if cell.has_volcano:
+			volcano_centers.append(HexUtils.cube_to_world(cell.q, cell.r, hex_size))
+
+	var buf := PackedByteArray()
+	buf.resize(W * H)
+	if volcano_centers.is_empty():
+		return buf  # 全 0
+
+	for y in range(H):
+		var wy := origin.y + (float(y) + 0.5) * step_y
+		var row := y * W
+		for x in range(W):
+			var wx := origin.x + (float(x) + 0.5) * step_x
+			var intensity: float = 0.0
+			for c: Vector2 in volcano_centers:
+				var dx: float = wx - c.x
+				var dy: float = wy - c.y
+				var dist: float = sqrt(dx * dx + dy * dy)
+				var contrib: float = 1.0 - dist * inv_glow
+				if contrib > 0.0:
+					# 平方衰减让中心更亮、远端更柔
+					intensity += contrib * contrib
+			buf[row + x] = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
+	return buf
+
+# ─── Phase 1：纬度 buffer（每像素 ny ∈ [0, 1]） ──────────────────────────
+# shader 用来算半球（lat_signed = ny * 2 - 1）以及纬度温度钟形曲线。
+
+func _bake_latitude_buffer(bounds: Rect2, size: Vector2i) -> PackedFloat32Array:
+	var W := size.x
+	var H := size.y
+	var buf := PackedFloat32Array()
+	buf.resize(W * H)
+	for y in range(H):
+		var ny := float(y) / float(maxi(H - 1, 1))
+		for x in range(W):
+			buf[y * W + x] = ny
+	return buf
+
+# ─── Phase 6：风带 buffer（每像素盛行风向，RG8） ──────────────────────────
+# 用 WindBelt.wind_at(ny, season_phase, lat_jitter) 算每像素风向。
+# 加 _warp_noise_lo 给 ny 做小扰动（±0.04），避免风带边界呈现明显纬向条纹。
+# season_phase = 1.0 当 baseline（夏季视觉），后续如需季风变化由 shader 端的 season_phase uniform 自己处理（不重烤）。
+
+func _bake_wind_field(bounds: Rect2, size: Vector2i, season_phase: float) -> PackedByteArray:
+	var W := size.x
+	var H := size.y
+	var origin := bounds.position
+	var step_x := bounds.size.x / float(W)
+	var step_y := bounds.size.y / float(H)
+	var buf := PackedByteArray()
+	buf.resize(W * H * 2)
+	for y in range(H):
+		var ny := float(y) / float(maxi(H - 1, 1))
+		var wy_base := origin.y + (float(y) + 0.5) * step_y
+		for x in range(W):
+			var wx_base := origin.x + (float(x) + 0.5) * step_x
+			var jitter: float = _warp_noise_lo.get_noise_2d(wx_base * 0.3, wy_base * 0.3) * 0.04
+			var w: Vector2 = WindBeltScript.wind_at(ny, season_phase, jitter)
+			var idx := (y * W + x) * 2
+			buf[idx]     = clampi(int(round((w.x * 0.5 + 0.5) * 255.0)), 0, 255)
+			buf[idx + 1] = clampi(int(round((w.y * 0.5 + 0.5) * 255.0)), 0, 255)
+	return buf
+
+# ─── Phase 3 + Phase 6：洋流向量场（风驱动 + Ekman 偏转） ─────────────────
+# 现实里海面洋流方向 ≈ 风向旋转 ±45°（北半球右偏，南半球左偏）。
+# 算法：
+#   1) 读 wind_field_buffer 的盛行风向当主驱动力
+#   2) 按半球做 Ekman 偏转
+#   3) 大陆反射：靠近陆地的海面被推离陆地
+#   4) 噪声扰动
+# 仅海洋像素有意义；陆地像素填中性 (0.5, 0.5) = 零向量。
+# 编码：dx, dy ∈ [-1, 1] → 字节 [0, 255]。
+
+const EKMAN_DEFLECTION_RAD := 0.7854  # ~45°
+
+func _bake_ocean_currents(map: MapData, hex_size: float, world: WorldData) -> PackedByteArray:
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var origin := world.world_bounds.position
+	var size := world.world_bounds.size
+	var buf := PackedByteArray()
+	buf.resize(W * H * 2)
+
+	var sea := world.sea_level
+	var height := world.height_buffer
+	var hm_W := world.hm_size.x
+	var hm_H := world.hm_size.y
+	var wind_buf := world.wind_field_buffer
+	var has_wind: bool = not wind_buf.is_empty() and wind_buf.size() >= W * H * 2
+
+	for y in range(H):
+		var ny := float(y) / float(maxi(H - 1, 1))
+		var wy_base := origin.y + (float(y) + 0.5) * size.y / float(H)
+		for x in range(W):
+			var wx_base := origin.x + (float(x) + 0.5) * size.x / float(W)
+			var idx := y * W + x
+
+			# 是否海洋像素
+			var is_ocean := false
+			if hm_W == W and hm_H == H:
+				is_ocean = height[idx] < sea
+			else:
+				var wp := Vector2(wx_base, wy_base)
+				var cube_f := _world_to_cube_f(wp, hex_size)
+				var rounded := _cube_round(cube_f)
+				var c: HexCell = map.get_cell_by_cube(rounded)
+				is_ocean = c != null and _is_water(int(c.terrain))
+
+			if not is_ocean:
+				buf[idx * 2] = 128
+				buf[idx * 2 + 1] = 128
+				continue
+
+			# 1) 风驱动：读 wind_field 当主流向
+			var wind: Vector2
+			if has_wind:
+				var wb_idx := idx * 2
+				wind = Vector2(
+					float(wind_buf[wb_idx]) / 255.0 * 2.0 - 1.0,
+					float(wind_buf[wb_idx + 1]) / 255.0 * 2.0 - 1.0
+				)
+			else:
+				wind = Vector2(1.0, 0.0)
+
+			# 2) Ekman 偏转：北半球右偏（顺时针），南半球左偏（逆时针）
+			# 屏幕坐标 +y = 下 = 南，所以"右"在屏幕上是顺时针 = +x 旋转
+			# 北半球 lat_signed < 0：rot = +EKMAN_DEFLECTION_RAD
+			# 南半球 lat_signed > 0：rot = -EKMAN_DEFLECTION_RAD
+			var lat_signed := (ny - 0.5) * 2.0
+			var ekman_sign: float = -1.0 if lat_signed < 0.0 else 1.0
+			# 在 +y 朝下的屏幕系里，绕原点旋转 +θ 是顺时针。北半球应顺时针偏，所以用 -ekman_sign × θ
+			var rot_angle: float = -ekman_sign * EKMAN_DEFLECTION_RAD
+			var cur := wind.rotated(rot_angle)
+
+			# 3) 噪声扰动
+			cur.x += _detail_noise.get_noise_2d(wx_base * 0.6, wy_base * 0.6) * 0.30
+			cur.y += _detail_noise.get_noise_2d(wx_base * 0.6 + 91.0, wy_base * 0.6 - 17.0) * 0.30
+
+			# 4) 大陆反射：海拔梯度把洋流推离陆地
+			if hm_W == W and hm_H == H and x > 0 and x < W - 1 and y > 0 and y < H - 1:
+				var hl: float = height[idx - 1]
+				var hr: float = height[idx + 1]
+				var hu: float = height[idx - W]
+				var hd: float = height[idx + W]
+				var grad_x := maxf(hl - sea, 0.0) - maxf(hr - sea, 0.0)
+				var grad_y := maxf(hu - sea, 0.0) - maxf(hd - sea, 0.0)
+				cur.x += grad_x * 4.0
+				cur.y += grad_y * 4.0
+
+			if cur.length() > 1.0:
+				cur = cur.normalized()
+			buf[idx * 2]     = clampi(int(round((cur.x * 0.5 + 0.5) * 255.0)), 0, 255)
+			buf[idx * 2 + 1] = clampi(int(round((cur.y * 0.5 + 0.5) * 255.0)), 0, 255)
+	return buf
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────
+
+static func _is_river_terminal_water(t: int) -> bool:
+	return t == TerrainType.TERRAIN.OCEAN \
+			or t == TerrainType.TERRAIN.COAST \
+			or t == TerrainType.TERRAIN.LAKE \
+			or t == TerrainType.TERRAIN.REEF \
+			or t == TerrainType.TERRAIN.KELP \
+			or t == TerrainType.TERRAIN.SEA_ICE
 
 static func _is_water(t: int) -> bool:
 	return t == TerrainType.TERRAIN.OCEAN or t == TerrainType.TERRAIN.COAST
