@@ -89,12 +89,76 @@ extends Resource
 # compatibility; new ClimateProfile tres files may leave this at default.
 @export var prevailing_wind: Vector2 = Vector2(1.0, 0.2)
 
+## When true, WeatherSystem.advect / spawn samples the per-cell terrain-warped
+## wind (HexCell.wind_vector) instead of the latitude-only baseline
+## wind_field_buffer. This makes weather fronts feel mountains (deflection,
+## piling, slow-down) without changing the baker. Set false to fall back to
+## the legacy world.sample_wind() + monsoon_offset path for regression. Default true.
+@export var weather_advect_use_wind_vector: bool = true
+
 # ══════════════════════════════════════════════════════════════════════
 # [Seasons]
 # ══════════════════════════════════════════════════════════════════════
 
 # Per-season moisture scaler. Length must be 4 (Spring/Summer/Autumn/Winter).
 @export var seasonal_moisture_scale: Array[float] = [1.05, 1.20, 0.92, 0.78]
+
+# Seasonal temperature amplitude: peak |Δtemp| between summer-mid and
+# winter-mid (mid-latitudes, ny ≈ 0.5 → 0). Mirrors the shader-side
+# `season_temp_amp` constant in world_map.gdshader; keep both in sync.
+@export var season_temp_amp: float = 0.20
+
+# Master switch for daily-continuous climate refresh. When true, MapGenerator
+# updates each cell's current_state.temperature / moisture / snow_cover every
+# day along the continuous season_phase ∈ [0, 4) curve, instead of the
+# legacy "set once per season" hard step. Set false to fall back to the
+# original season-aligned behavior (debug / regression).
+@export var daily_climate_interpolation: bool = true
+
+# Stride (in days) for daily-continuous refresh: 1 = every day, N>1 = every
+# N days (cheap downgrade if profiling shows the per-day pass too costly).
+# Has no effect when daily_climate_interpolation == false.
+# Used by SUS RefreshClimateDailyJob via StridePolicy.
+@export var daily_climate_refresh_stride: int = 1
+
+# Stride (in days) for the sea-ice atlas GPU upload (SeaIceAtlasUploadJob).
+# Daily Sim SoA Refactor 阶段 1：把原先内嵌在 refresh_climate_daily 末尾、每日 ~105ms
+# 的 GPU 上传摘出，单独走这个 stride。海冰每日变化 < 5%，stride=2 玩家不可察觉延迟。
+# 1 = 每日上传（debug / regression）；2 = 每 2 日（推荐默认，吞吐 -50%）；
+# 4+ = 极慢 GPU / 远程显卡 fallback。
+@export_range(1, 8, 1) var sea_ice_atlas_upload_stride: int = 2
+
+# Fast-tick perf opt (A): stride for the weather / feedback chain in
+# MapGenerator.refresh_daily (_apply_transpiration_pass / _apply_albedo_pass /
+# _apply_vegetation_dynamics / _apply_weather_to_map_feedback_pass + GPU
+# rebakes). 1 = run every day (legacy), N>1 = run every N days and on skip
+# days reuse the last active fronts snapshot. Auto-adjusted by main.gd on
+# speed change (x1→1, x5→2, x20→4). Manual override via Inspector is allowed.
+# Used by SUS WeatherRefreshJob via StridePolicy.
+@export_range(1, 8, 1) var weather_refresh_stride: int = 1
+
+# DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
+# requirement 4.5). Field is kept on disk for save-file compatibility, but
+# MapGenerator emits a one-shot warning if it is set to anything other than
+# the default sentinel value (4) and otherwise ignores it. Use
+# `ocean_currents_period_ticks` / `ocean_currents_slice_count` below instead.
+@export_range(1, 4, 1) var ocean_current_refresh_seasons: int = 4
+
+# SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
+# Default 60 days ≈ two in-game months per round. Lower → fresher currents
+# at the cost of more frequent slices.
+@export_range(7, 240, 1) var ocean_currents_period_ticks: int = 60
+
+# SUS OceanCurrentsJob — number of slices each round is split into. Each
+# slice processes ⌈total_pixels / slice_count⌉ pixels. Default 60 slices
+# means one slice every 1 day for a 60-day period. Aim for per-slice
+# elapsed ≤ 30ms (ocean_currents_slice + upwelling_slice combined).
+#
+# 实测调优记录（1024×606 = 620k 像素）：
+#   - slice_count=10 → 每片 62k 像素 → 266ms（严重卡顿）
+#   - slice_count=60 → 每片 10k 像素 → ~44ms（可接受）
+#   - slice_count=120 → 每片 5k 像素 → ~22ms（更平滑）
+@export_range(1, 240, 1) var ocean_currents_slice_count: int = 60
 
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]
@@ -137,6 +201,12 @@ extends Resource
 @export var transpiration_outflow_rate: float = 0.025
 @export var transpiration_self_rate: float = 0.015
 
+## Elevation-based decay applied to vegetation→neighbor moisture donation in
+## _apply_vegetation_feedback. Effective factor = clampf(1 - elevation * decay,
+## 0.1, 1.0). 0 = legacy behavior (no decay); 0.5 = high mountains contribute
+## ~half as much as low-land forests of the same biome. Default 0.5.
+@export_range(0.0, 1.0, 0.05) var veg_feedback_elev_decay: float = 0.5
+
 # Albedo feedback: Δtemp = (reference_albedo - albedo) × albedo_temp_gain.
 # reference_albedo = 0.30 is the neutral "bare ground" reference.
 @export var reference_albedo: float = 0.30
@@ -149,18 +219,176 @@ extends Resource
 # consecutive days required to trigger succession up/down. Values mirror
 # the original Phase 8 / Milestone 4 constants in map_generator.gd.
 
-@export var vitality_change_rate: float = 0.012         # per day, at most ±0.012 (~83 days from 0 to 1)
-@export var vitality_low_threshold: float = 0.20        # below → downgrade streak（only truly dying cells count）
-@export var vitality_high_threshold: float = 0.85       # above → upgrade streak
-@export var succession_degrade_days: int = 90           # ~1 full season of low vitality
-@export var succession_upgrade_days: int = 120          # ~4 months of high vitality
+@export var vitality_change_rate: float = 0.004         # per day, at most ±0.004 (~250 days from 0 to 1)
+@export var vitality_low_threshold: float = 0.15        # below → downgrade streak（only truly dying cells count）
+@export var vitality_high_threshold: float = 0.90       # above → upgrade streak
+@export var succession_degrade_days: int = 180          # ~half a year of low vitality
+@export var succession_upgrade_days: int = 360          # ~1 full year of high vitality
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
-@export var compat_harshness: float = 1.2
+@export var compat_harshness: float = 0.8
 
 # Long-term base_moisture drift from eco_score (Phase 8).
 @export var eco_drift_amp: float = 0.012                # max ±0.012 / year
 @export var eco_score_clamp: float = 0.5                # calm-period dampener
+
+# ══════════════════════════════════════════════════════════════════════
+# [Emergent climate coupling — Phase E]
+# ══════════════════════════════════════════════════════════════════════
+# Master switches for the "Emergent Climate Coupling" rework. All four
+# default to true (new behavior). Flipping any one to false routes the
+# corresponding pass back to the legacy hard-coded path, so old saves and
+# regression baselines stay reproducible.
+#
+# 1. emergent_season_enabled
+#    When true, refresh_climate_daily uses a continuous insolation function
+#    (latitude × hemisphere × continuous day-length) driven by season_phase
+#    instead of branching on integer season_index. refresh_seasonal is
+#    triggered only when season_phase crosses an integer boundary, doing
+#    incremental biome refresh instead of "every 30 days hard rewrite".
+#    When false, falls back to the legacy season_index hard-step path.
+@export var emergent_season_enabled: bool = true
+
+# 2. enable_local_climate_coupling
+#    When true, refresh_climate_daily layers three local perturbations on
+#    top of the latitude/season baseline:
+#      • albedo  : -albedo_factor * snow_cover, -vegetation_cooling * foliage
+#      • coastal : +COASTAL_HEAT_LEAK * neighbor.ocean_current_anomaly
+#                  (×1.5 in winter phase)
+#      • landform: valley/basin diurnal amplification, modulated by phase
+#    Moisture also gets evaporation / transpiration / per-day rain-shadow.
+#    When false, climate_daily reverts to pure latitude/elevation/season.
+@export var enable_local_climate_coupling: bool = true
+
+# 3. emergent_weather_coupling
+#    When true, WeatherSystem advection reads WindBelt.wind_at(ny, phase)
+#    per day, decay scales by "front type vs local temp/moist band match",
+#    spawn probability is biased by local 1-ring temp/moisture gradient,
+#    and front type is jointly decided by (temp band, moisture band, phase).
+#    When false, falls back to uniform-random spawn / fixed-season velocity.
+@export var emergent_weather_coupling: bool = true
+
+# 4. fast_slow_layering_enabled
+#    When true, _apply_weather_to_map_feedback_pass runs at end of each day
+#    and accumulates daily weather effects into slow-layer feedback buffers
+#    (soil_moisture, vegetation_growth_pressure) with very small weights;
+#    refresh_seasonal consumes & decays these buffers. WeatherSystem is
+#    forbidden from writing base_* / landform / terrain / cover directly
+#    (enforced via MapData.sample_slow_layer in debug builds).
+#    When false, the feedback pass is skipped and base_* are only written
+#    by refresh_seasonal/yearly as in the legacy path.
+@export var fast_slow_layering_enabled: bool = true
+
+# Sub-knobs for the feedback pass (consumed by _apply_weather_to_map_feedback_pass
+# and refresh_seasonal). All values intentionally small to keep "weather → map"
+# coupling on a slow timescale.
+@export var weather_to_soil_gain: float = 0.008          # daily ↑ on soil_moisture per unit precip
+@export var weather_to_vegetation_gain: float = 0.005    # daily ↑ on growth_pressure per unit precip
+@export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
+@export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
+
+# Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
+@export var sea_ice_freeze_rate: float = 0.18            # k_freeze per "degree" below T_form
+@export var sea_ice_melt_rate: float = 0.22              # k_melt per "degree" above T_melt
+@export var sea_ice_terrain_threshold: float = 0.55      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.10     # flip back when frac < threshold - hyst
+@export var sea_ice_neighbor_contagion: float = 0.35     # extra k_freeze if any neighbor frac ≥ 0.6
+
+# Local-coupling tunables (consumed when enable_local_climate_coupling = true).
+@export var coastal_heat_leak_winter_boost: float = 1.5
+@export var snow_albedo_cooling: float = 0.04            # extra cooling per unit snow_cover
+@export var vegetation_cooling: float = 0.025            # extra cooling per unit foliage cover
+@export var evaporation_gain: float = 0.06               # moisture gain per warm water-neighbor
+@export var landform_diurnal_amp: float = 0.015          # valley/basin diurnal amplification
+
+# ── Ocean current → moisture coupling (cold-current coastal desert) ──
+# Multiplier applied to d_evap when neighbor water has cold/warm anomaly:
+# d_evap *= clampf(1 + ocean_moisture_coupling_gain * avg_neighbor_anomaly, 0.0, 2.0).
+# Cold current (anomaly < 0) → suppresses evaporation; warm current (anomaly > 0) → boosts.
+# Set 0.0 to disable (legacy behavior). Default 1.5 means a -0.2 anomaly gives ×0.7 d_evap.
+@export_range(0.0, 5.0, 0.05) var ocean_moisture_coupling_gain: float = 1.5
+
+# Long-term base_moisture drift driven by sustained ocean anomaly on the
+# coastal land cells. Per-day delta is clamped to ±feedback_per_day_clamp;
+# annual ceiling ≈ ocean_moisture_drift_gain × 365 ≈ 0.012 * 365 = sane.
+# This is what makes Atacama / Namib-type cold-coast biomes emerge over
+# years of in-game time without rewriting base_moisture every day.
+# Set 0.0 to disable (legacy behavior).
+@export_range(0.0, 0.05, 0.0005) var ocean_moisture_drift_gain: float = 0.004
+
+# Weather-event spawn bias from cold/warm coastal anomaly. When the spawn
+# candidate cell sees average neighbor-water anomaly < 0 (cold current),
+# RAIN/STORM/MONSOON spawn weight is multiplied by max(0.1, 1 + bias × anomaly);
+# warm anomaly boosts the same types up to ×(1 + bias). BLIZZARD/FOG are
+# unaffected. Set 0.0 to disable.
+@export_range(0.0, 3.0, 0.05) var ocean_weather_spawn_bias: float = 1.2
+
+# ══════════════════════════════════════════════════════════════════════
+# [Physical Wind & Ocean Circulation — hex-domain solver]
+# ══════════════════════════════════════════════════════════════════════
+# 把风场/洋流从纯 ny-only 像素函数升级为"二维海陆耦合 + 海盆环流"的
+# 物理化简化模型。求解粒度落在 hex 中心；像素 buffer 由 hex 场光栅化得到，
+# 与现有 shader (wind_field_buffer / ocean_current_buffer / sea_ice_tex / etc) 完全兼容。
+#
+# 1) physical_circulation_enabled
+#    总开关。true → MapBaker 在风场/洋流烘焙路径里启用 hex 物理求解器
+#    （SLP → 地转风 + 海陆季风 → ψ 求解 → 西边界强化 → 沿岸 Ekman 上升流 → 光栅化）。
+#    false → 走旧的 WindBelt.wind_at + Ekman ±45° + 海岸高度梯度 + 噪声路径，
+#    用于回归对照与低端硬件 fallback。默认 true。
+@export var physical_circulation_enabled: bool = true
+
+# 2) enable_terrain_aware_wind
+#    当 physical_circulation_enabled = true 时附加生效。true → 物理化风场求解器
+#    在山地 cell 处对结果向量做地形偏转修正（背风侧降压、山脊阻挡 + 转向），
+#    直接调制 cell.wind_vector，不新增独立 buffer。false → 跳过地形修正，
+#    只保留地转风 + 海陆季风。默认 true。
+@export var enable_terrain_aware_wind: bool = true
+
+# 3) enable_ocean_heat_transport
+#    当 physical_circulation_enabled = true 时附加生效。true → MapBaker 在水域
+#    hex 上用 SOR 迭代求解 ∇²ψ = -curl(τ)/β（β-plane Stommel 简化）+ 西边界强化，
+#    再 u = -∂ψ/∂y, v = ∂ψ/∂x 回算 cell.ocean_current，得到闭合海盆环流 + 黑潮 / 湾流型东岸强流。
+#    false → 跳过 ψ 求解，直接用纬度风场 + Ekman ±45° 写出 hex ocean_current
+#    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
+@export var enable_ocean_heat_transport: bool = true
+
+# ══════════════════════════════════════════════════════════════════════
+# [True insolation-driven climate — Phase F]
+# ══════════════════════════════════════════════════════════════════════
+# Switches the "season signal" upstream source from independent cosine
+# curves (one per subsystem) to a single physical quantity: insolation,
+# derived from a real sub-solar latitude that moves sinusoidally between
+# the tropics as year_progress sweeps [0, 1).
+#
+# When true_insolation_enabled == true:
+#   • Temperature seasonal offset in refresh_climate_daily uses
+#     insolation_season_gain × (insol_now − insol_annual_mean) × season_temp_amp
+#     instead of _season_temp_offset_phase's standalone cosine.
+#   • Sea-ice daily pass reads insol_dev = (insol_now − insol_mean)/insol_mean
+#     for its "winter strength" factor (replaces dist_to_winter cosine).
+#   • Moisture seasonal scale at _moisture_scale_at_phase is further modulated
+#     by (1 + 0.2 × insol_dev) so equator ≈ invariant, high-lat amplified.
+#   • Shader-side season_temp_offset() in world_map.gdshader is kept in sync
+#     via the same closed formula (CPU/GPU single source of truth).
+#
+# When false: all paths fall back to the legacy independent-cosine path
+# (seasonal-continuous-climate + emergent-climate-coupling baselines).
+@export var true_insolation_enabled: bool = true
+
+# Axial tilt (obliquity). 23.5° ≈ Earth. Lower values → milder seasons even
+# at high latitudes; higher → more extreme. Used to compute subsolar_lat.
+@export_range(0.0, 45.0, 0.5) var axial_tilt_deg: float = 23.5
+
+# Gain applied to (insol_now - insol_annual_mean) when deriving the temperature
+# seasonal offset. Default 1.0 keeps amplitude roughly aligned with legacy
+# season_temp_amp at mid-latitudes.
+@export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.0
+
+# Continuous day-length amplitude (how much the "day length" term modulates
+# insolation away from pure cos_zenith). 0 → pure sun-angle; higher → longer
+# summer days contribute more. Matches the existing _INSOLATION_DAYLEN_AMP
+# const, exposed here for per-profile tuning.
+@export_range(0.0, 1.0, 0.01) var insolation_daylen_amp: float = 0.35
 
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]

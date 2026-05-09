@@ -18,6 +18,13 @@
 #   wind.x > 0 = 向东，wind.x < 0 = 向西
 #   wind.y > 0 = 向南（屏幕下方），wind.y < 0 = 向北
 #
+# Plan B 日历对齐约定：
+#   season_phase = 0 → 1 月 1 日（北半球冬至；南半球夏至）
+#   season_phase = 2 → 7 月 1 日（北半球夏至；南半球冬至）
+#   hemi_phase 定义为本地季节语义（本地春=0、本地夏=1、本地秋=2、本地冬=3）：
+#     北半球 (lat_signed < 0): hemi_phase = fposmod(season_phase - 1, 4)
+#     南半球 (lat_signed >= 0): hemi_phase = fposmod(season_phase + 1, 4)
+#
 # 推导：
 #   北半球 (sl = -1) 信风：吹向 SW = (-1, +y)。y 应为正。-0.20 × sl = -0.20 × -1 = +0.20。✓
 #   南半球 (sl = +1) 信风：吹向 NW = (-1, -y)。y 应为负。-0.20 × +1 = -0.20。✓
@@ -43,8 +50,18 @@ const ITCZ_X := -0.20              # ITCZ 弱东向漂移
 # 季风强度：低纬度 y 分量在夏冬最多被加上 ±MONSOON_AMP
 const MONSOON_AMP := 0.6
 
+# 各风带的相对"强度系数"，仅供 wind_speed_at() 使用。
+# 注意：wind_at() 总是 normalize 后输出（服务于风向场 / 云 advection），
+# 所以"风速"语义不能从 wind_at() 反推。这里按照现实大气环流的相对量级硬编：
+#   西风带 > 信风带 ≈ 极地东风带 > ITCZ
+# 数值不是物理 m/s，只是相对量纲，配合 OverlayMode 的归一化色带显示。
+const SPEED_ITCZ := 0.15
+const SPEED_TRADE := 0.85
+const SPEED_WEST := 1.10
+const SPEED_POLAR := 0.65
+
 # 计算给定纬度 ny 处的盛行风向（已归一化）
-# season_phase ∈ [0, 4)：0=春 1=夏 2=秋 3=冬（北半球视角；南半球内部反相）
+# season_phase ∈ [0, 4)：0=1月 1=4月 2=7月 3=10月（Plan B 日历约定；北半球冬至在 phase=0）
 # lat_jitter：可选纬度扰动（+/- 0.05 量级），让风带边界不死板
 static func wind_at(ny: float, season_phase: float, lat_jitter: float = 0.0) -> Vector2:
 	var lat_signed: float = (ny - 0.5) * 2.0 + lat_jitter
@@ -52,23 +69,32 @@ static func wind_at(ny: float, season_phase: float, lat_jitter: float = 0.0) -> 
 	# sl: 半球符号；赤道附近用 +1 当默认避免 0 引发的方向歧义
 	var sl: float = -1.0 if lat_signed < -0.001 else (1.0 if lat_signed > 0.001 else 1.0)
 
-	var base: Vector2
-	if abs_lat < ITCZ_HALF_WIDTH:
-		base = Vector2(ITCZ_X, 0.0)
-	elif abs_lat < TRADE_TOP:
-		base = Vector2(TRADE_X, -TRADE_Y_AMP * sl)         # 信风：向赤道偏
-	elif abs_lat < WEST_TOP:
-		base = Vector2(WEST_X, +WEST_Y_AMP * sl)           # 西风：向极偏
-	else:
-		base = Vector2(POLAR_X, -POLAR_Y_AMP * sl)         # 极地东风：向赤道偏
+	# 2026-05 重构：把硬分段切换替换为 smoothstep 加权混合，让风带边界
+	# 不再"刀切"。过渡半宽 ~ 0.06 ny，比原 wind_speed_at 的 0.03~0.04 略宽，
+	# 避免方向场出现锯齿带；同时仍然能在 overlay 上看到清晰的"信风/西风/极地"
+	# 主带颜色。
+	var bbh: float = 0.06   # _BAND_BLEND_HALF
+	var w_itcz_b: float = 1.0 - smoothstep(ITCZ_HALF_WIDTH - bbh, ITCZ_HALF_WIDTH + bbh, abs_lat)
+	var w_trade_b: float = smoothstep(ITCZ_HALF_WIDTH - bbh, ITCZ_HALF_WIDTH + bbh, abs_lat) \
+		* (1.0 - smoothstep(TRADE_TOP - bbh, TRADE_TOP + bbh, abs_lat))
+	var w_west_b: float = smoothstep(TRADE_TOP - bbh, TRADE_TOP + bbh, abs_lat) \
+		* (1.0 - smoothstep(WEST_TOP - bbh, WEST_TOP + bbh, abs_lat))
+	var w_polar_b: float = smoothstep(WEST_TOP - bbh, WEST_TOP + bbh, abs_lat)
+	var v_itcz: Vector2 = Vector2(ITCZ_X, 0.0)
+	var v_trade: Vector2 = Vector2(TRADE_X, -TRADE_Y_AMP * sl)
+	var v_west: Vector2 = Vector2(WEST_X, +WEST_Y_AMP * sl)
+	var v_polar: Vector2 = Vector2(POLAR_X, -POLAR_Y_AMP * sl)
+	var base: Vector2 = w_itcz_b * v_itcz + w_trade_b * v_trade + w_west_b * v_west + w_polar_b * v_polar
 
 	# 季风 y 偏置（仅低纬度）：summer 时 polar-ward，winter 时 equator-ward
-	# 半球反相：与 shader hemi_phase 和 _season_temp_offset 保持同一约定
-	#   south hemi (lat_signed >= 0) 直接用 phase
-	#   north hemi (lat_signed < 0)  用 phase + 2
-	var hemi_phase: float = season_phase
+	# Plan B：hemi_phase 表示本地季节语义（本地春=0、本地夏=1、本地秋=2、本地冬=3）：
+	#   北半球 (lat_signed < 0): hemi_phase = fposmod(season_phase - 1, 4)
+	#   南半球 (lat_signed >= 0): hemi_phase = fposmod(season_phase + 1, 4)
+	var hemi_phase: float
 	if lat_signed < 0.0:
-		hemi_phase = fposmod(season_phase + 2.0, 4.0)
+		hemi_phase = fposmod(season_phase - 1.0, 4.0)
+	else:
+		hemi_phase = fposmod(season_phase + 1.0, 4.0)
 	# 季风极性：sin(hemi_phase × π/2)
 	#   spring(0) → 0, summer(1) → +1, autumn(2) → 0, winter(3) → -1
 	# +1 = local summer → polar-ward；-1 = local winter → equator-ward
@@ -107,9 +133,12 @@ static func monsoon_offset_at(ny: float, season_phase: float) -> Vector2:
 	if abs_lat >= TRADE_TOP:
 		return Vector2.ZERO  # 仅低纬度有季风
 	var sl: float = -1.0 if lat_signed < -0.001 else (1.0 if lat_signed > 0.001 else 1.0)
-	var hemi_phase: float = season_phase
+	# Plan B：hemi_phase 为本地季节语义，与 wind_at() 同源。
+	var hemi_phase: float
 	if lat_signed < 0.0:
-		hemi_phase = fposmod(season_phase + 2.0, 4.0)
+		hemi_phase = fposmod(season_phase - 1.0, 4.0)
+	else:
+		hemi_phase = fposmod(season_phase + 1.0, 4.0)
 	var raw_sin: float = sin(hemi_phase * 0.5 * PI)
 	# Cubic ease：保留 sign，但在中段 plateau，零附近更平。
 	var monsoon_polarity: float = raw_sin * raw_sin * raw_sin * 1.0 + raw_sin * 0.0
@@ -119,6 +148,35 @@ static func monsoon_offset_at(ny: float, season_phase: float) -> Vector2:
 	var tropical_w: float = smoothstep(TRADE_TOP, ITCZ_HALF_WIDTH, abs_lat)
 	var y_offset: float = monsoon_polarity * tropical_w * MONSOON_AMP * sl
 	return Vector2(0.0, y_offset)
+
+# Phase F：给 WIND_SPEED Overlay 用的"物理量级"风速场。
+#
+# wind_at() 始终 normalize（服务于 advection），不能反推风速；这里直接基于
+# 风带分类输出相对强度，再在带边界做平滑过渡，并叠加 monsoon 的 y 分量幅度。
+# 返回值未归一化，调用方按需 / WIND_SPEED_NORM_MAX 钳到 [0, 1]。
+#
+# 经验值域：约 [0.15, 1.7]（夏季信风+季风峰值最大）。
+static func wind_speed_at(ny: float, season_phase: float) -> float:
+	var lat_signed: float = (ny - 0.5) * 2.0
+	var abs_lat: float = absf(lat_signed)
+	# 风带基础强度（带边界用 smoothstep 平滑，避免硬条纹）。
+	# 用 0.04 半带宽过渡，比硬阈值好看，但带本身仍清晰可辨。
+	var w_itcz: float = 1.0 - smoothstep(ITCZ_HALF_WIDTH - 0.03, ITCZ_HALF_WIDTH + 0.03, abs_lat)
+	var w_trade: float = smoothstep(ITCZ_HALF_WIDTH - 0.03, ITCZ_HALF_WIDTH + 0.03, abs_lat) \
+		* (1.0 - smoothstep(TRADE_TOP - 0.04, TRADE_TOP + 0.04, abs_lat))
+	var w_west: float = smoothstep(TRADE_TOP - 0.04, TRADE_TOP + 0.04, abs_lat) \
+		* (1.0 - smoothstep(WEST_TOP - 0.04, WEST_TOP + 0.04, abs_lat))
+	var w_polar: float = smoothstep(WEST_TOP - 0.04, WEST_TOP + 0.04, abs_lat)
+	var base_speed: float = (
+		w_itcz * SPEED_ITCZ
+		+ w_trade * SPEED_TRADE
+		+ w_west * SPEED_WEST
+		+ w_polar * SPEED_POLAR
+	)
+	# 叠加季风 y 偏置幅度（只在低纬度有，最大 ≈ MONSOON_AMP * tropical_w）。
+	var monsoon: Vector2 = monsoon_offset_at(ny, season_phase)
+	# 现实里季风期会强化总风速；这里简单合成"基础速 + |季风分量|"。
+	return base_speed + absf(monsoon.y)
 
 # 给一个 Vector2 wind 找最接近的 hex 邻居方向（cube 坐标），用于雨影 lookback。
 # pointy-top hex：x = sqrt(3)·size·(q + r/2)，y = 1.5·size·r

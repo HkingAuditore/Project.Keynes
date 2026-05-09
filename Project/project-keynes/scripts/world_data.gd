@@ -29,12 +29,27 @@ var cover_buffer: PackedByteArray = PackedByteArray()
 var latitude_buffer: PackedFloat32Array = PackedFloat32Array()
 # Phase 3：每像素海洋洋流向量；陆地像素值无意义。RG 各编码 [-1, 1] → [0, 1]
 var ocean_current_buffer: PackedByteArray = PackedByteArray()  # RG8
+# Systemic Ocean Currents：每像素上升/下沉流强度。R8 编码：
+#   0   = 下沉流满强度（映射为 upwelling_strength = -1）
+#   128 = 无（0）
+#   255 = 上升流满强度（+1）
+# 产出自 MapBaker._bake_ocean_upwelling（高纬冷水汇点 + 沿岸 Ekman 抽吸识别）。
+# 陆地像素维持 128（0）。由 MapGenerator._compute_ocean_currents 回填到
+# HexCell.upwelling_strength，下游海冰 / 海洋生物 / 调试可视化共用。
+var ocean_upwelling_buffer: PackedByteArray = PackedByteArray()  # R8
 # Phase 6：每像素盛行风向（按纬度风带模型 + 大陆扰动 + 季风偏置）。RG8。
 # 海洋洋流通过 Ekman 偏转读它当主驱动力；shader 陆地端用它做风迹噪声。
 var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8
 # Phase 14：每像素火山强度（r 通道）。靠近火山中心 = 1.0，向外径向衰减。
 # shader 用来叠加红光晕 / 烟柱效果。
 var volcano_field_buffer: PackedByteArray = PackedByteArray()  # R8
+# Emergent Climate Coupling（海冰连续化）：每像素海冰覆盖率 ∈ [0, 1]。
+# 由 MapBaker.bake_sea_ice_fraction_only 从 HexCell.sea_ice_fraction 光栅化而来；
+# 每 stride 日由 SeaIceAtlasUploadJob 触发上传一次（Daily Sim SoA Refactor 阶段 1 之前
+# 是每日内嵌在 refresh_climate_daily 末尾）。
+# shader 端从独立的 sea_ice_tex.r 连续读取（原 scalar_atlas.a），用 smoothstep 做 0..1 过渡，
+# 不再依赖 biome==SEA_ICE 这种硬标签（彻底消除"高覆盖率却显示海洋 / 低覆盖率却显示冰"）。
+var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
 
 # ─── 元数据 ───────────────────────────────────────────────────────────────
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
@@ -53,10 +68,10 @@ var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复
 #   B = cover (CoverType.CV id)
 #
 # scalar_atlas_tex (RGBA8 LINEAR, derived_size)
-#   R = moisture        (原 moisture_tex)
-#   G = flow_accum      (原 flow_tex)
-#   B = latitude_norm   (原 latitude_tex)
-#   A = volcano_field   (原 volcano_field_tex)
+#   R = moisture              (原 moisture_tex)
+#   G = flow_accum            (原 flow_tex)
+#   B = latitude_norm         (原 latitude_tex)
+#   A = 0（保留，无语义；原先是 sea_ice_fraction，自 SoA 阶段 1 起拆为独立 sea_ice_tex）
 #
 # vector_atlas_tex (RGBA8 LINEAR, derived_size)
 #   RG = ocean_current  (原 ocean_current_tex，[-1,1] mapped from [0,1])
@@ -65,6 +80,17 @@ var height_tex: ImageTexture
 var enum_atlas_tex: ImageTexture
 var scalar_atlas_tex: ImageTexture
 var vector_atlas_tex: ImageTexture
+# 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
+# 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
+var volcano_field_tex: ImageTexture
+# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8 纹理（原先挤在 scalar_atlas.a）。
+# 由 SeaIceAtlasUploadJob 通过 MapBaker.bake_sea_ice_fraction_only 每 stride 日上传一次；
+# scalar_atlas 改回静态地形数据，bake_world 后永不变更，避免每日 RGBA8 整张回传。
+# shader 端 sample sea_ice_tex.r（替代原 scalar_atlas.a）。
+var sea_ice_tex: ImageTexture
+# Systemic Ocean Currents：独立的上升流 R8 纹理。仅调试可视化（F6 扩展）消费；
+# 主视觉路径不需要它。bake_world 与 rebake_ocean_currents 都会同步更新。
+var upwelling_tex: ImageTexture
 # v9.fbm-opt：共享的 tileable noise 贴图（256×256 R8，filter_linear + repeat_enable）。
 # shader 端用它替换原本 value_noise(p) 内部的 4×hash21 + smoothstep mix —— 单 octave
 # 从 ~30 ALU 降到 1 次 bilinear texture fetch（dedicated hardware，几乎免费）。
@@ -77,6 +103,27 @@ var noise_tex: ImageTexture
 # 只是 O(W*H) 的纯 array indexing + cell 字段读取（~2-3ms vs 重跑的 ~25-30ms）。
 # 注意：hex_size 改变会让 lookup 失效；MapBaker.bake_world 重跑时会重建。
 var pixel_to_cell_lookup: Array = []  # Array[HexCell]，null 表示该像素落在 map 外
+
+# Daily-sim perf opt：water cell → PackedInt32Array(像素 index 列表) 反向索引。
+# 在 _bake_height_biome_moisture 的同一次循环里，pixel_to_cell_lookup 写入时
+# 顺带按 cell 分桶。`bake_sea_ice_fraction_only` 据此**只遍历水格像素**，把
+# 全图 620k 像素循环降到 ~180k（水占 ~30%）；同时按 cell 量化字节后批量写入，
+# 而不是每像素重新读取 sea_ice_fraction → clampf → round。
+# - key   : HexCell 引用（仅 _is_water(terrain) 的格子；陆地恒 0 不需要写入像素）
+# - value : PackedInt32Array，元素是该 cell 在 derived buffer 中覆盖的像素 1D index
+# 当 bake_world 重跑时连同 pixel_to_cell_lookup 一起重建；其它路径只读。
+var water_cell_pixel_lists: Dictionary = {}
+
+# Daily-sim perf opt 阶段 P：**所有 cell**（含陆地） → PackedInt32Array 反向索引。
+# 与 water_cell_pixel_lists 同源构建（_bake_height_biome_moisture 的同一桶式分发），
+# 但覆盖整图所有非空 cell。给 rebake_cover_tex_only / rebake_vegetation_tex_only 用——
+# weather_system 每日翻 cover 的 cell 一般 < 30 个，而当前 fast path 仍需扫 614k 像素
+# 拷贝所有 byte。改造后逐 cell 比对 byte 缓存，只写真正变化的 cell 像素列表，典型日
+# 像素操作量从 614k 降到 < 5k（命中率 ~99% 跳过），与 ice_bake 完全同构。
+# - key   : HexCell 引用（包括陆地）
+# - value : PackedInt32Array，该 cell 在 derived buffer 中覆盖的像素 1D index
+# bake_world 重跑时与 pixel_to_cell_lookup 同步重建。
+var cell_pixel_lists: Dictionary = {}
 
 # ─── 采样接口（给 MapGenerator 在 hex 中心采样用） ────────────────────────
 
@@ -131,6 +178,21 @@ func sample_ocean_current(world_pos: Vector2) -> Vector2:
 	var r: float = float(ocean_current_buffer[idx]) / 255.0 * 2.0 - 1.0
 	var g: float = float(ocean_current_buffer[idx + 1]) / 255.0 * 2.0 - 1.0
 	return Vector2(r, g)
+
+# Systemic Ocean Currents：上升/下沉流采样（R8 解码回 [-1, 1]）。
+# 语义与 ocean_upwelling_buffer 字段注释一致。
+func sample_upwelling(world_pos: Vector2) -> float:
+	if ocean_upwelling_buffer.is_empty():
+		return 0.0
+	var uv := _world_to_uv(world_pos)
+	var W := derived_size.x
+	var H := derived_size.y
+	var x := clampi(int(round(uv.x * float(W - 1))), 0, W - 1)
+	var y := clampi(int(round(uv.y * float(H - 1))), 0, H - 1)
+	var idx := y * W + x
+	if idx >= ocean_upwelling_buffer.size():
+		return 0.0
+	return (float(ocean_upwelling_buffer[idx]) / 255.0) * 2.0 - 1.0
 
 # 任务 7：打包所有 is_water cell 的 ocean_current 为 PackedVector2Array（按主存储遥历顺序）。
 # 供渲染层纹理化（编码为 RG16F）上传给 water shader 做流线 scroll 使用。

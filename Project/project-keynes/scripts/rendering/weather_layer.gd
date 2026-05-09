@@ -20,14 +20,22 @@
 class_name WeatherLayer
 extends Node2D
 
+signal visual_fronts_changed(fronts: Array)
+
 const MAX_WEATHER_FRONTS := 16
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
-# 天气系统逻辑仍按“日”推进；表现层在两次逻辑快照之间做插值，消除云层/粒子跳帧。
-# Phase A 止血：原 0.35s blend 在天气日切换瞬间观感像"卡一下"。
-# 缩短到 0.18s 让插值过渡更紧凑，肉眼上接近"真实流动"而非"逐日突变"。
-const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.18
-const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.05
-const _WEATHER_FRONT_MAX_BLEND_SEC: float = 1.0
+# Weather simulation still advances by game day. The presentation layer follows
+# snapshots with a small lag so fronts keep moving between day ticks instead of
+# snapping once and then freezing until the next tick.
+# Phase E（方案 A）：sim 端寿命翻倍后，相邻快照之间的位置变化更大、间隔更长。
+# 把 MAX_BLEND 从 1.35s 抬到 2.5s、MAX_PREDICT 从 0.35d 抬到 1.0d，让表现层
+# 能在每两次 day-tick 之间持续外推前进，避免"两次快照之间冻住、第三次跳一下"。
+const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.65
+const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.35
+const _WEATHER_FRONT_MAX_BLEND_SEC: float = 2.5
+const _WEATHER_FRONT_BLEND_LAG_FACTOR: float = 1.15
+const _WEATHER_FRONT_DESPAWN_FADE_SEC: float = 0.85
+const _WEATHER_FRONT_MAX_PREDICT_DAYS: float = 1.0
 
 # 云阴影 sprite 的"原始半径"（生成的 ImageTexture 的半径，单位像素）。
 # 实际显示半径 = SHADOW_BASE_RADIUS_PX * sprite.scale，scale 由 front.radius 推算。
@@ -90,6 +98,7 @@ var _front_visual_snapshots: Array = []
 var _front_blend_elapsed: float = 0.0
 var _front_blend_duration: float = 0.0
 var _last_front_snapshot_time: float = -1.0
+var _front_snapshot_interval_sec: float = _WEATHER_FRONT_INITIAL_BLEND_SEC
 # 任务 5：STORM 闪电节拍——随 world_time 推进， < 1Hz 触发 80~120ms 的亮斑。
 # _storm_next_flash_t：下次开始的 world_time；_storm_flash_end_t：当前亮斑失效时间。
 var _storm_next_flash_t: float = 0.0
@@ -291,13 +300,17 @@ func set_weather_fronts(fronts: Array) -> void:
 	_front_target_snapshots = aligned[1]
 	_front_blend_elapsed = 0.0
 	if _last_front_snapshot_time < 0.0:
+		_front_snapshot_interval_sec = _WEATHER_FRONT_INITIAL_BLEND_SEC
 		_front_blend_duration = _WEATHER_FRONT_INITIAL_BLEND_SEC
 	else:
+		_front_snapshot_interval_sec = maxf(now_sec - _last_front_snapshot_time, 0.001)
 		_front_blend_duration = clampf(
-			now_sec - _last_front_snapshot_time,
+			_front_snapshot_interval_sec * _WEATHER_FRONT_BLEND_LAG_FACTOR,
 			_WEATHER_FRONT_MIN_BLEND_SEC,
 			_WEATHER_FRONT_MAX_BLEND_SEC
 		)
+		if targets.size() < start_candidates.size():
+			_front_blend_duration = maxf(_front_blend_duration, _WEATHER_FRONT_DESPAWN_FADE_SEC)
 	_last_front_snapshot_time = now_sec
 
 	# 目标为空时保留当前视觉快照做淡出；如果也没有视觉快照则立即清空。
@@ -566,11 +579,13 @@ func _reset_front_blend_state() -> void:
 	_front_blend_elapsed = 0.0
 	_front_blend_duration = 0.0
 	_last_front_snapshot_time = -1.0
+	_front_snapshot_interval_sec = _WEATHER_FRONT_INITIAL_BLEND_SEC
 	_active_count = 0
 	visible = false
 	_push_empty_fronts_to_overlay()
 	_sync_shadow_pool([])
 	_sync_particles_pool([])
+	visual_fronts_changed.emit([])
 
 func _make_front_snapshots(fronts: Array) -> Array:
 	var snapshots: Array = []
@@ -580,6 +595,7 @@ func _make_front_snapshots(fronts: Array) -> Array:
 		snapshots.append({
 			"center": _front_center(f),
 			"radius": _front_radius(f),
+			"velocity": _front_velocity(f),
 			"type": _front_type(f),
 			"intensity": _front_intensity(f),
 			"axis": _front_axis(f),
@@ -621,7 +637,7 @@ func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Ar
 			start = start_candidates[best_idx]
 		else:
 			start = target.duplicate(true)
-			start["intensity"] = 0.0
+			_fade_out_snapshot(start)
 		starts.append(start)
 		aligned_targets.append(target)
 
@@ -630,11 +646,18 @@ func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Ar
 			continue
 		var fading_start = start_candidates[i]
 		var fading_target = fading_start.duplicate(true)
-		fading_target["intensity"] = 0.0
+		_fade_out_snapshot(fading_target)
 		starts.append(fading_start)
 		aligned_targets.append(fading_target)
 
 	return [starts, aligned_targets]
+
+func _fade_out_snapshot(snapshot: Dictionary) -> void:
+	snapshot["intensity"] = 0.0
+	snapshot["cloud_amount"] = 0.0
+	snapshot["precip_amount"] = 0.0
+	snapshot["dissolve_amount"] = 1.0
+	snapshot["life_progress"] = 1.0
 
 func _update_weather_front_blend(delta: float) -> void:
 	_front_blend_elapsed += maxf(delta, 0.0)
@@ -646,16 +669,25 @@ func _update_weather_front_blend(delta: float) -> void:
 		_front_target_snapshots = _filter_visible_front_snapshots(_front_target_snapshots)
 		_front_start_snapshots = _front_target_snapshots.duplicate(true)
 		_front_visual_snapshots = _front_target_snapshots.duplicate(true)
-		_front_blend_elapsed = _front_blend_duration
 		if _front_target_snapshots.is_empty():
 			_front_start_snapshots.clear()
 			_front_visual_snapshots.clear()
+			_front_blend_elapsed = 0.0
 			_front_blend_duration = 0.0
+		else:
+			var extra_days: float = clampf(
+				(_front_blend_elapsed - _front_blend_duration) / maxf(_front_snapshot_interval_sec, 0.001),
+				0.0,
+				_WEATHER_FRONT_MAX_PREDICT_DAYS
+			)
+			if extra_days > 0.0:
+				_front_visual_snapshots = _predict_front_snapshots(_front_visual_snapshots, extra_days)
 	_active_count = mini(_front_visual_snapshots.size(), MAX_WEATHER_FRONTS)
 	visible = (_active_count > 0)
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_sync_shadow_pool(_front_visual_snapshots)
 	_sync_particles_pool(_front_visual_snapshots)
+	visual_fronts_changed.emit(_front_visual_snapshots)
 
 func _filter_visible_front_snapshots(snapshots: Array) -> Array:
 	var filtered: Array = []
@@ -685,6 +717,7 @@ func _blend_front_snapshots(t: float) -> Array:
 			target["intensity"] = 0.0
 		var center: Vector2 = _front_center(start).lerp(_front_center(target), t)
 		var radius: float = lerpf(_front_radius(start), _front_radius(target), t)
+		var velocity: Vector2 = _front_velocity(start).lerp(_front_velocity(target), t)
 		var intensity: float = lerpf(_front_intensity(start), _front_intensity(target), t)
 		var axis := _blend_axis(_front_axis(start), _front_axis(target), t)
 		var major_scale: float = lerpf(_front_major_scale(start), _front_major_scale(target), t)
@@ -698,6 +731,7 @@ func _blend_front_snapshots(t: float) -> Array:
 		visual.append({
 			"center": center,
 			"radius": radius,
+			"velocity": velocity,
 			"type": _front_type(target),
 			"intensity": clampf(intensity, 0.0, 1.0),
 			"axis": axis,
@@ -710,6 +744,14 @@ func _blend_front_snapshots(t: float) -> Array:
 		})
 	return visual
 
+func _predict_front_snapshots(snapshots: Array, prediction_days: float) -> Array:
+	var predicted: Array = []
+	for snapshot in snapshots:
+		var p = snapshot.duplicate(true)
+		p["center"] = _front_center(p) + _front_velocity(p) * prediction_days
+		predicted.append(p)
+	return predicted
+
 func _front_center(front) -> Vector2:
 	if front is Dictionary:
 		return front.get("center", Vector2.ZERO)
@@ -719,6 +761,11 @@ func _front_radius(front) -> float:
 	if front is Dictionary:
 		return float(front.get("radius", 0.0))
 	return float(front.radius)
+
+func _front_velocity(front) -> Vector2:
+	if front is Dictionary:
+		return front.get("velocity", Vector2.ZERO)
+	return front.velocity
 
 func _front_type(front) -> int:
 	if front is Dictionary:

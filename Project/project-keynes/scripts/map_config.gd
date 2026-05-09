@@ -22,6 +22,53 @@ var river_count: int = 5   # 尝试生成的河流数量
 # 随机种子（0 = 每次使用随机种子）
 var seed: int = 0
 
+# --- Systemic Ocean Currents 开关 ──────────────────────────────────────
+# 主开关：关闭时跳过 _apply_ocean_heat_transport_pass、海冰的洋流修正、
+# 海洋生物的 upwelling 放宽、F7 调试层。仅保留视觉洋流（旧行为）。
+var enable_ocean_heat_transport: bool = true
+
+# 可选：天气事件瞬时涡旋扰动（台风尾迹）。默认关闭，排期紧张时不阻塞主需求。
+var enable_cyclone_wake: bool = false
+
+# --- Systemic Ocean Currents 常量 ──────────────────────────────────────
+# 烘焙阶段的热盐驱动项权重：越大，南北经向分量越强（模拟 AMOC 趋势）。
+var THERMOHALINE_WEIGHT: float = 0.25
+# 高纬冷水下沉判定温度阈值（单位与 baked_temperature_buffer 一致）。
+var COLD_SINK_TEMP: float = -0.05
+
+# _apply_ocean_heat_transport_pass 参数：
+# 沿 -ocean_current 回溯的最大 cell 数（越大传播越远，但耗时线性增长）。
+var OCEAN_HEAT_ADVECT_STEPS: int = 3
+# 每步与上游温度的混合系数。
+var OCEAN_HEAT_MIX: float = 0.25
+# 沿岸水→陆热量泄漏权重（基础）；冬季相位会再 × 1.5。
+var COASTAL_HEAT_LEAK: float = 0.35
+
+# 海冰修正：暖流输运异常×此系数后加到有效温度上用于与结冰阈值比较。
+var OCEAN_CURRENT_ICE_DELAY: float = 1.0
+
+# --- Wind Temperature Coupling：风温耦合配置（对称复刻洋流热输运） ---
+# 沿 -wind_vector 回溯的最大 cell 数（越大传播越远，但耗时线性增长）。
+var WIND_HEAT_ADVECT_STEPS: int = 3
+# 每步与上游气团温度的混合系数。
+var WIND_HEAT_MIX: float = 0.25
+# 气团温度异常对下游气温的影响权重（基础）。
+var AIR_MASS_HEAT_LEAK: float = 0.35
+# 风温异常对海冰的影响系数。
+var WIND_CURRENT_ICE_DELAY: float = 1.0
+
+# 台风尾迹持续天数（仅当 enable_cyclone_wake = true 时生效）。
+var CYCLONE_WAKE_DAYS: int = 3
+
+# --- Physical Wind & Ocean Circulation：运行时引用（非持久化） ─────────
+# 由 MapGenerator 在初始化时把当前激活的 ClimateProfile 引用注入进来，
+# MapBaker / OceanCurrentsJob 等下游通过 cfg.climate_profile 读取
+# physical_circulation_enabled / enable_terrain_aware_wind /
+# enable_ocean_heat_transport 三个开关。不通过 @export 持久化——避免与
+# MapGenerator 上的 @export var climate_profile 出现两份配置不一致。
+# 默认 null 时下游走 ny-only 旧路径（最大化向后兼容）。
+var climate_profile: ClimateProfile = null
+
 # --- 便捷构造 ---
 static func make(w: int, h: int) -> MapConfig:
 	var cfg := MapConfig.new()

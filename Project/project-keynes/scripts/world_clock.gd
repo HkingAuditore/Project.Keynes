@@ -20,10 +20,14 @@ extends Node
 signal day_changed(day_idx: int)
 signal season_changed(season_idx: int)
 signal year_changed(year_idx: int)
+signal season_phase_changed(season_phase: float)
 # 任务 2：昼夜相位信号。由 _process 默认逐帧发射；day_phase_emit_step > 0 时可选节流。
 # 1 游戏季 = 1 次完整昼夜循环，默认 days_per_season = 30 意味着 x1 速度下
 # 30 秒走完一次日出→正午→日落→午夜的循环。
 signal day_phase_changed(day_phase: float)
+# Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
+# 实现 stride 自动调档、phase 节流自动调档等。
+signal speed_changed(new_speed: float)
 
 # ─── 可调参数 ────────────────────────────────────────────────────────────
 # 一季有多少天。默认 30 → 1 年 120 天。
@@ -42,6 +46,10 @@ signal day_phase_changed(day_phase: float)
 # 视觉过渡与帧率同步；如需调试 uniform 写入频率，可手动调高做节流。
 @export_range(0.0, 0.05, 0.0005) var day_phase_emit_step: float = 0.0
 
+# Fast-tick perf opt (D)：season_phase 发射步长。默认 0.0 每帧发射，
+# 加速档位下会自动调档（见 _apply_phase_step_for_speed）。
+@export_range(0.0, 0.05, 0.0005) var season_phase_emit_step: float = 0.0
+
 # ─── 运行时状态 ──────────────────────────────────────────────────────────
 var current_day: float = 0.0   # 累积浮点天数
 var paused: bool = false
@@ -53,6 +61,12 @@ var climate_anomaly: float = 0.0
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
 # -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
 var _last_emit_day_phase: float = -1.0
+# Fast-tick perf opt (D)：season_phase 同款哨兵。
+var _last_emit_season_phase: float = -1.0
+# Fast-tick perf opt (D)：用户是否在 Inspector 中显式手动指定了 phase 步长。
+# _ready 时若检测到初始 emit_step != 0 则置 true，之后 _apply_phase_step_for_speed
+# 跳过自动调档，避免覆盖用户意图。
+var _user_overridden_phase_step: bool = false
 
 # ─── 内部 ────────────────────────────────────────────────────────────────
 var _last_day: int = -1
@@ -65,6 +79,11 @@ func _ready() -> void:
 	_rng.randomize()
 	speed_multiplier = initial_speed
 	paused = not auto_start
+	# Fast-tick perf opt (D)：检测 Inspector 是否手动指定了 phase 节流步长。
+	# 任一字段为非 0 即视为用户显式覆盖，此后自动调档逻辑尊重用户设定。
+	_user_overridden_phase_step = (day_phase_emit_step != 0.0) or (season_phase_emit_step != 0.0)
+	# 按当前 initial_speed 调一次，保证启动即生效。
+	_apply_phase_step_for_speed(speed_multiplier)
 	# 给订阅者一次"初始信号"，让 UI 立刻显示当前状态而不是等到下一日
 	call_deferred("_emit_initial_signals")
 
@@ -82,6 +101,10 @@ func _emit_initial_signals() -> void:
 	var dp := day_phase()
 	_last_emit_day_phase = dp
 	day_phase_changed.emit(dp)
+	# Fast-tick perf opt (D)：season_phase 同样推一次初始值。
+	var sp := season_phase()
+	_last_emit_season_phase = sp
+	season_phase_changed.emit(sp)
 
 func _process(delta: float) -> void:
 	if paused or speed_multiplier <= 0.0:
@@ -109,6 +132,11 @@ func _process(delta: float) -> void:
 	if _should_emit_day_phase(dp):
 		_last_emit_day_phase = dp
 		day_phase_changed.emit(dp)
+	# Fast-tick perf opt (D)：season_phase 同款节流发射。
+	var sp := season_phase()
+	if _should_emit_season_phase(sp):
+		_last_emit_season_phase = sp
+		season_phase_changed.emit(sp)
 
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 
@@ -159,6 +187,16 @@ func _should_emit_day_phase(dp: float) -> bool:
 	# 跳回的临界情况：上次 0.99 + 这次 0.01，diff=0.98，仍会大于 step，正常发射
 	return diff >= day_phase_emit_step
 
+# Fast-tick perf opt (D)：season_phase 节流判定，语义同上。
+# season_phase ∈ [0, 4)，回绕临界情况同样会 diff 很大，自动通过阈值。
+func _should_emit_season_phase(sp: float) -> bool:
+	if _last_emit_season_phase < 0.0:
+		return true
+	if season_phase_emit_step <= 0.0:
+		return true
+	var diff: float = absf(sp - _last_emit_season_phase)
+	return diff >= season_phase_emit_step
+
 func season_name(idx: int) -> String:
 	match idx:
 		0: return "Spring"
@@ -176,9 +214,40 @@ func season_name_cn(idx: int) -> String:
 # ─── 控制 ────────────────────────────────────────────────────────────────
 
 func set_speed(s: float) -> void:
-	speed_multiplier = maxf(s, 0.0)
+	var new_speed: float = maxf(s, 0.0)
+	var changed: bool = not is_equal_approx(new_speed, speed_multiplier)
+	speed_multiplier = new_speed
 	if speed_multiplier > 0.0:
 		paused = false
+	# Fast-tick perf opt (D)：按速度档自动调 phase 节流步长（尊重 Inspector 覆盖）。
+	_apply_phase_step_for_speed(speed_multiplier)
+	if changed:
+		speed_changed.emit(speed_multiplier)
+
+# Fast-tick perf opt (D)：按速度档自动调 day_phase / season_phase emit step。
+# 用户在 Inspector 中手动指定过步长时（_user_overridden_phase_step），跳过自动调档，尊重用户设定。
+# 调整完后把哨兵重置为 -1.0，确保下一帧必发一次，避免节流临界导致视觉对齐滞后。
+func _apply_phase_step_for_speed(s: float) -> void:
+	if _user_overridden_phase_step:
+		return
+	var dps: float = 0.0
+	var sps: float = 0.0
+	if s >= 15.0:
+		# x20 档
+		dps = 0.02
+		sps = 0.01
+	elif s >= 3.0:
+		# x5 档
+		dps = 0.005
+		sps = 0.002
+	else:
+		# x1 / 低速档：每帧发射，保留原行为
+		dps = 0.0
+		sps = 0.0
+	day_phase_emit_step = dps
+	season_phase_emit_step = sps
+	_last_emit_day_phase = -1.0
+	_last_emit_season_phase = -1.0
 
 func toggle_pause() -> void:
 	paused = not paused
