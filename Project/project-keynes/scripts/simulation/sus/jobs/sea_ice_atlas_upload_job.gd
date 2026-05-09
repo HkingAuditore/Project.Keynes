@@ -41,9 +41,8 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	priority = 250
 	# 切片预算：单次完整一遍 lookup + 增量水格扫，~10-20ms。不强切片化。
 	slice_budget_ms = 25.0
-	# Daily-sim perf bugfix：海冰可视化是世界视觉关键链路，被 frame_budget 守卫
-	# 反复挡掉会导致玩家看到的海冰永久滞后。绕过 frame_budget 守卫，policy 仍生效。
-	must_run = true
+	# 海冰可视化允许滞后；不要让 atlas 上传绕过 frame_budget 造成主线程长尾。
+	must_run = false
 	baker = p_baker
 	map = p_map
 	world = p_world

@@ -89,6 +89,8 @@ const WeatherRefreshJobScript = preload("res://scripts/simulation/sus/jobs/weath
 # Daily Sim SoA Refactor 阶段 1：把 bake_sea_ice_fraction_only 从 refresh_climate_daily
 # 末尾拆出为独立 SUS Job，受 sea_ice_atlas_upload_stride 控制。
 const SeaIceAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/sea_ice_atlas_upload_job.gd")
+const EnumAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/enum_atlas_upload_job.gd")
+const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season_refresh_job.gd")
 
 # ─── 世界生成配置（数据驱动） ────────────────────────────────────────────
 # 所有原本散落在本文件顶部的 50+ 个调参 const 已迁移到 ClimateProfile 资源。
@@ -250,6 +252,13 @@ var _last_climate_breakdown: Dictionary = {}
 #       feedback_ms / total_ms / fronts 。
 # main.gd fast tick WARN 路径用它定位 weather_refresh 的哪一段慢。
 var _last_weather_breakdown: Dictionary = {}
+var _enum_atlas_cover_dirty: bool = false
+var _enum_atlas_vegetation_dirty: bool = false
+var _last_enum_atlas_upload_breakdown: Dictionary = {}
+var _pending_season_refresh: bool = false
+var _pending_season_idx: int = 0
+var _season_refresh_in_progress: bool = false
+var _last_season_refresh_breakdown: Dictionary = {}
 
 # True Insolation-Driven Climate（Phase F）：按纬度缓存的"一年平均日射" lookup。
 # key  = round(ny * _INSOL_MEAN_LUT_SIZE) ∈ [0, SIZE]
@@ -309,6 +318,8 @@ var _refresh_climate_daily_job: RefreshClimateDailyJob = null
 var _weather_refresh_job: WeatherRefreshJob = null
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传 Job。
 var _sea_ice_atlas_upload_job: SeaIceAtlasUploadJob = null
+var _enum_atlas_upload_job: EnumAtlasUploadJob = null
+var _season_refresh_job: SeasonRefreshJob = null
 # main.gd 在 _ready 末尾通过 set_world_clock_ref(world_clock) 注入，给
 # OceanCurrentsJob 的 season_phase getter 用。
 var _world_clock_ref = null
@@ -362,6 +373,12 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_last_hex_size = hex_size
 	_last_seed = effective_seed
 	_current_season = -1
+	_enum_atlas_cover_dirty = false
+	_enum_atlas_vegetation_dirty = false
+	_last_enum_atlas_upload_breakdown = {}
+	_pending_season_refresh = false
+	_season_refresh_in_progress = false
+	_last_season_refresh_breakdown = {}
 
 	var t_total := Time.get_ticks_msec()
 	var map := _generate_cells(cfg)
@@ -390,6 +407,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	if cfg != null:
 		cfg.climate_profile = _c()
 	var world := _baker.bake_world(map, cfg, hex_size, effective_seed)
+	if _baker.has_method("prewarm_dynamic_axis_caches"):
+		_baker.prewarm_dynamic_axis_caches(map, world)
 	_last_world = world
 	print("MapGenerator v7: bake %dms" % (Time.get_ticks_msec() - t_bake))
 
@@ -444,6 +463,18 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		# 暖流海岸促进。0 = legacy 行为；详见 weather_system._spawn_emergent_front。
 		if _weather_system.has_method("configure_ocean_spawn_bias"):
 			_weather_system.configure_ocean_spawn_bias(float(cp_ec.ocean_weather_spawn_bias))
+		if _weather_system.has_method("configure_weather_field"):
+			_weather_system.configure_weather_field(
+				bool(cp_ec.weather_field_enabled),
+				int(cp_ec.weather_field_advect_steps),
+				float(cp_ec.weather_field_diffusion),
+				float(cp_ec.weather_condensation_gain),
+				float(cp_ec.weather_precip_decay),
+				float(cp_ec.weather_orographic_lift_gain),
+				float(cp_ec.weather_convergence_gain),
+				float(cp_ec.weather_ocean_evap_gain),
+				int(cp_ec.weather_component_summary_limit)
+			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
 	# 此时所有 cell 已入库、terrain 已定型（包括河流、火山、湖泊、海冰首日
@@ -472,6 +503,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 创建一个全新 SUS 实例（regenerate 路径会让旧实例随 MapGenerator 一起被替换，
 	# 不需要手动 reset_all_progress）。
 	_sus = SlicedUpdateScheduler.new()
+	_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
+	_sus.register_job(_season_refresh_job)
 	# Deprecated 字段守门：旧 ClimateProfile 资源里 ocean_current_refresh_seasons
 	# 仍可能被序列化保存。打印一次 warning 提示作者迁移到 SUS 配置。
 	var cp := _c()
@@ -493,6 +526,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if cfg != null:
 		cfg.climate_profile = cp
 	_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+	_ocean_currents_job.depends_on.append(&"season_refresh")
 	# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
 	_ocean_currents_job.on_commit = func():
 		_compute_ocean_currents(map, world, hex_size)
@@ -515,7 +549,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _world_clock_ref != null:
 		climate_phase_getter = Callable(_world_clock_ref, "season_phase")
 	_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
+	_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 	_sus.register_job(_refresh_climate_daily_job)
+	_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+	_enum_atlas_upload_job.depends_on.append(&"season_refresh")
+	_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
 	var season_idx_getter := Callable()
 	var season_phase_getter := Callable()
@@ -533,15 +571,17 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		season_idx_getter, season_phase_getter, climate_anomaly_getter,
 		weather_stride
 	)
+	_weather_refresh_job.depends_on.append(&"season_refresh")
 	_sus.register_job(_weather_refresh_job)
 
 	# Daily Sim SoA Refactor 阶段 1：注册 SeaIceAtlasUploadJob。
 	# 把 bake_sea_ice_fraction_only 从 refresh_climate_daily 末尾摘出，独立 stride 控制。
-	# priority=250 保证晚于其它日级 Job；must_run=true 确保不被 frame_budget 守门反复挡掉。
+	# priority=250 保证晚于其它日级 Job；视觉上传允许被 frame_budget 守门延后一两天。
 	var sea_ice_stride: int = 2
 	if cp != null:
 		sea_ice_stride = max(1, int(cp.sea_ice_atlas_upload_stride))
 	_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
+	_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
 	_sus.register_job(_sea_ice_atlas_upload_job)
 
 
@@ -618,6 +658,172 @@ func sus_climate_breakdown() -> Dictionary:
 # 供 main.gd fast tick WARN 路径定位 weather_refresh 的生成/分发/反馈 8+ 段子耗时。
 func sus_weather_breakdown() -> Dictionary:
 	return _last_weather_breakdown.duplicate()
+
+
+func has_pending_enum_atlas_upload() -> bool:
+	return _enum_atlas_cover_dirty or _enum_atlas_vegetation_dirty
+
+
+func consume_pending_enum_atlas_axis() -> String:
+	if _enum_atlas_cover_dirty:
+		_enum_atlas_cover_dirty = false
+		return "cover"
+	if _enum_atlas_vegetation_dirty:
+		_enum_atlas_vegetation_dirty = false
+		return "vegetation"
+	return ""
+
+
+func record_enum_atlas_upload(axis: String, elapsed_ms: float) -> void:
+	_last_enum_atlas_upload_breakdown = {
+		"axis": axis,
+		"elapsed_ms": elapsed_ms,
+		"cover_pending": _enum_atlas_cover_dirty,
+		"vegetation_pending": _enum_atlas_vegetation_dirty,
+	}
+
+
+func sus_enum_atlas_breakdown() -> Dictionary:
+	return _last_enum_atlas_upload_breakdown.duplicate()
+
+
+func _mark_enum_atlas_dirty(cover_dirty: bool, vegetation_dirty: bool) -> void:
+	_enum_atlas_cover_dirty = _enum_atlas_cover_dirty or cover_dirty
+	_enum_atlas_vegetation_dirty = _enum_atlas_vegetation_dirty or vegetation_dirty
+
+
+func queue_season_refresh(season_idx: int) -> void:
+	_pending_season_idx = clampi(season_idx, 0, 3)
+	_pending_season_refresh = true
+
+
+func has_pending_season_refresh() -> bool:
+	return _pending_season_refresh or _season_refresh_in_progress
+
+
+func begin_pending_season_refresh() -> int:
+	_pending_season_refresh = false
+	_season_refresh_in_progress = true
+	_last_season_refresh_breakdown = {}
+	return _pending_season_idx
+
+
+func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, stage: int) -> void:
+	var t_us0: int = Time.get_ticks_usec()
+	var season := clampi(season_idx, 0, 3)
+	match stage:
+		0:
+			_last_world = world
+			_current_season = season
+			var cfg_local: MapConfig = _last_cfg
+			if cfg_local == null:
+				return
+			_ensure_row_tables(cfg_local, season)
+			var moist_scale: float = _c().seasonal_moisture_scale[season]
+			for cell: HexCell in map.all_cells():
+				if _is_water(cell.terrain):
+					cell.moisture = cell.base_moisture
+				else:
+					cell.moisture = clampf(cell.base_moisture * moist_scale, 0.0, 1.0)
+		1:
+			if _last_cfg != null:
+				_apply_rain_shadow_per_cell(map, _last_cfg, float(season) + 0.5)
+		2:
+			_seasonal_redecide_terrain(map, season)
+		3:
+			if _last_cfg != null:
+				_apply_river_ecology(map, _last_cfg)
+				_apply_vegetation_feedback(map, _last_cfg)
+		4:
+			if _last_cfg != null:
+				_apply_shrubland_pass(map, _last_cfg)
+				_apply_mangrove_pass(map, _last_cfg)
+				_apply_glacier_pass(map, _last_cfg)
+				_apply_swamp_pass(map, _last_cfg)
+		5:
+			_seasonal_sync_current_state(map, season)
+		6:
+			if world != null and _baker != null:
+				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
+			var cp_fb := _c()
+			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
+				_consume_feedback_buffers(map, cp_fb.feedback_decay)
+	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
+
+
+func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
+	_season_refresh_in_progress = false
+
+
+func sus_season_refresh_breakdown() -> Dictionary:
+	return _last_season_refresh_breakdown.duplicate()
+
+
+func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
+	if _last_cfg == null:
+		return
+	var cfg_local: MapConfig = _last_cfg
+	_ensure_row_tables(cfg_local, season)
+	var lat_tab: PackedFloat32Array = _row_lat_temp
+	var off_tab: PackedFloat32Array = _row_season_off
+	for cell: HexCell in map.all_cells():
+		if _is_water(cell.terrain):
+			continue
+		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
+				or cell.base_terrain == TerrainType.TERRAIN.SNOW
+		if is_permanent_climate:
+			cell.apply_terrain(cell.base_terrain)
+			continue
+		if _is_permanent_landform(cell.base_terrain):
+			cell.apply_terrain(cell.base_terrain)
+			continue
+		var r_idx: int = _cube_to_row(cell, cfg_local)
+		var lat_temp: float = lat_tab[r_idx]
+		var temp_year: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
+		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+		cell.apply_terrain(new_terrain)
+
+
+func _seasonal_sync_current_state(map: MapData, season: int) -> void:
+	if _last_cfg == null:
+		return
+	var cfg_local: MapConfig = _last_cfg
+	_ensure_row_tables(cfg_local, season)
+	var lat_tab: PackedFloat32Array = _row_lat_temp
+	var off_tab: PackedFloat32Array = _row_season_off
+	for cell: HexCell in map.all_cells():
+		var r_idx2: int = _cube_to_row(cell, cfg_local)
+		var lat_temp2: float = lat_tab[r_idx2]
+		var temp_year2: float = clampf(lat_temp2 - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_now2: float = clampf(temp_year2 + off_tab[r_idx2], 0.0, 1.0)
+		var land_h: float = (cell.elevation - cfg_local.sea_level) / maxf(1.0 - cfg_local.sea_level, 0.001)
+		var snow_cover: float = 0.0
+		if not _is_water(cell.terrain):
+			if cell.terrain == TerrainType.TERRAIN.SNOW:
+				snow_cover = 1.0
+			elif temp_now2 < 0.18:
+				snow_cover = clampf((0.18 - temp_now2) / 0.14, 0.0, 1.0) * 0.85
+			elif land_h > 0.45 and temp_now2 < 0.30:
+				var t1 := clampf((0.30 - temp_now2) / 0.20, 0.0, 1.0)
+				var t2 := smoothstep(0.45, 0.85, land_h)
+				snow_cover = t1 * t2
+		_sync_axes_for_cell(cell, cfg_local, snow_cover)
+		cell.current_state = {
+			"season": season,
+			"temperature": temp_now2,
+			"moisture": cell.moisture,
+			"snow_cover": snow_cover,
+			"biome": int(cell.terrain),
+			"landform": int(cell.landform),
+			"vegetation": int(cell.vegetation),
+			"cover": int(cell.cover),
+			"weather": int(cell.current_state.get("weather", WeatherType.WT.CLEAR)),
+			"weather_intensity": float(cell.current_state.get("weather_intensity", 0.0)),
+		}
+		cell.push_biome_history(int(cell.terrain))
+		cell.push_vegetation_history(int(cell.vegetation))
 
 
 # Daily-sim perf instrumentation：返回 SUS 上一 tick 的整体摘要
@@ -3377,12 +3583,18 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	var t_us0: int = Time.get_ticks_usec()
 	var fronts := _weather_system.tick_one_day(map, world, season_idx, climate_anomaly, season_phase)
 	var weather_tick_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	var cp_now := _c()
+	var weather_field_bake_ms: float = 0.0
+	if _baker != null and cp_now != null and bool(cp_now.weather_field_enabled) \
+			and _baker.has_method("bake_weather_field_only"):
+		t_us0 = Time.get_ticks_usec()
+		_baker.bake_weather_field_only(map, world)
+		weather_field_bake_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 	# 2) Milestone 4：完整耦合反馈链（按因果顺序，前一 pass 的输出是后一 pass 的输入）
 	#    transpiration → albedo → vegetation_dynamics → succession_trigger
 	# Emergent Climate Coupling：当 enable_local_climate_coupling 开启时，
 	# transpiration 已在 refresh_climate_daily 末尾、weather tick 之前执行过
 	# （形成"植被→湿度→天气"的单向因果），此处跳过避免双重蒸腾外溢。
-	var cp_now := _c()
 	var skip_transpiration: bool = cp_now != null and bool(cp_now.enable_local_climate_coupling)
 	var transp_ms: float = 0.0
 	if not skip_transpiration:
@@ -3400,13 +3612,9 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	var veg_rebake_ms: float = 0.0
 	if _baker != null:
 		if _weather_system.has_cover_dirty():
-			t_us0 = Time.get_ticks_usec()
-			_baker.rebake_cover_tex_only(map, world, _last_hex_size)
-			cover_rebake_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			_mark_enum_atlas_dirty(true, false)
 		if vegetation_dirty:
-			t_us0 = Time.get_ticks_usec()
-			_baker.rebake_vegetation_tex_only(map, world, _last_hex_size)
-			veg_rebake_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			_mark_enum_atlas_dirty(false, true)
 	# 4) Emergent Climate Coupling：天气 → 慢层小权重反馈
 	# 在每日 tick 末尾把 current_state.weather_intensity × precip 系数以
 	# ≤ 0.5% 基线的小权重累加到 cell.soil_moisture / vegetation_growth_pressure。
@@ -3433,6 +3641,7 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 		"spawn_ms": float(sub.get("spawn_ms", 0.0)),
 		"distribute_ms": float(sub.get("distribute_ms", 0.0)),
 		"cyclone_ms": float(sub.get("cyclone_ms", 0.0)),
+		"weather_field_bake_ms": weather_field_bake_ms,
 		"transp_ms": transp_ms,
 		"albedo_ms": albedo_ms,
 		"veg_dyn_ms": veg_dyn_ms,

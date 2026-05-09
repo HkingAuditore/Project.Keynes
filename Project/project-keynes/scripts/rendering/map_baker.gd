@@ -357,6 +357,35 @@ func rebake_cover_tex_only(map: MapData, world: WorldData, hex_size: float) -> v
 func rebake_vegetation_tex_only(map: MapData, world: WorldData, hex_size: float) -> void:
 	_rebake_single_axis(map, world, hex_size, "vegetation")
 
+
+func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
+	if map == null or world == null:
+		return
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var pix_count := W * H
+	if pix_count <= 0:
+		return
+	if world.cell_pixel_lists.is_empty():
+		return
+	if world.cover_buffer.size() != pix_count or world.vegetation_buffer.size() != pix_count:
+		return
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+		return
+
+	var cover_cache: Dictionary = {}
+	var vegetation_cache: Dictionary = {}
+	for cell_key in world.cell_pixel_lists.keys():
+		var cell: HexCell = cell_key
+		if cell == null:
+			continue
+		cover_cache[cell] = int(cell.cover) & 0xFF
+		vegetation_cache[cell] = int(cell.vegetation) & 0xFF
+	_last_cover_cell_bytes = cover_cache
+	_last_vegetation_cell_bytes = vegetation_cache
+	_cover_cache_size = Vector2i(W, H)
+	_vegetation_cache_size = Vector2i(W, H)
+
 # Systemic Ocean Currents：季节切换时重烘洋流 + 上升流 buffer。
 # 与夏季基线静态烘焙不同——调用方传入当前 season_phase ∈ [0, 4)，内部在读
 # wind_field_buffer 的每一像素后叠加 WindBelt.monsoon_offset_at(ny, phase)，
@@ -955,6 +984,7 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, world.enum_atlas_tex
 	)
+	prewarm_dynamic_axis_caches(map, world)
 
 # Milestone 2：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
 # height / moisture / flow / latitude / wind / ocean / volcano 全部不动
@@ -971,6 +1001,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, world.enum_atlas_tex
 	)
+	prewarm_dynamic_axis_caches(map, world)
 
 # 重写 biome / vegetation / cover 三个 buffer，但保持 height/moisture/flow 不动
 func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> void:
@@ -1914,6 +1945,44 @@ func bake_sea_ice_fraction_only(map: MapData, world: WorldData) -> void:
 		world.sea_ice_tex.update(img)
 	else:
 		world.sea_ice_tex = ImageTexture.create_from_image(img)
+
+func bake_weather_field_only(map: MapData, world: WorldData) -> void:
+	if world == null or map == null:
+		return
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var n := W * H
+	if n <= 0:
+		return
+	var lookup := world.pixel_to_cell_lookup
+	var buf := PackedByteArray()
+	buf.resize(n * 4)
+	if lookup.size() != n:
+		push_warning("MapBaker.bake_weather_field_only: pixel_to_cell_lookup missing; falling back to empty weather field")
+	else:
+		for i in range(n):
+			var cell: HexCell = lookup[i]
+			var di := i * 4
+			if cell == null:
+				buf[di] = 0
+				buf[di + 1] = 0
+				buf[di + 2] = 0
+				buf[di + 3] = 0
+				continue
+			var wt: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
+			var intensity: float = float(cell.current_state.get("weather_intensity", 0.0))
+			var cloud: float = float(cell.current_state.get("weather_cloud", 0.0))
+			var precip: float = float(cell.current_state.get("weather_precip", 0.0))
+			buf[di] = clampi(wt, 0, 255)
+			buf[di + 1] = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
+			buf[di + 2] = clampi(int(round(clampf(cloud, 0.0, 1.0) * 255.0)), 0, 255)
+			buf[di + 3] = clampi(int(round(clampf(precip, 0.0, 1.0) * 255.0)), 0, 255)
+	world.weather_field_buffer = buf
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf)
+	if world.weather_field_tex != null and world.weather_field_tex.get_size() == Vector2(float(W), float(H)):
+		world.weather_field_tex.update(img)
+	else:
+		world.weather_field_tex = ImageTexture.create_from_image(img)
 
 # ─── Phase 14：火山强度场（R8） ─────────────────────────────────────────────
 # 每像素 = sum_over_volcanoes( max(0, 1 - dist / glow_radius) )
