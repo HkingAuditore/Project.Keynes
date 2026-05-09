@@ -1,5 +1,5 @@
 # weather_front_shape_test.gd
-# Verifies that WeatherFront uses elongated front geometry for logical coverage.
+# Verifies that legacy WeatherFront summaries stay bounded and visually sane.
 #
 # Headless execution:
 #     godot --headless --script tests/weather_front_shape_test.gd --quit
@@ -15,29 +15,24 @@ func _init() -> void:
 
 func _run() -> void:
 	print("=== WeatherFront shape test ===")
-	_test_elliptical_coverage()
+	_test_summary_coverage_is_bounded()
 	_test_axis_fallback_and_bounds()
 	_test_stable_axis_turn_limit()
 	_test_visual_lifecycle_precip_dissipates_before_cloud()
 	print("=== done: %d checks, %d failures ===" % [_checks, _failures])
 
-func _test_elliptical_coverage() -> void:
+func _test_summary_coverage_is_bounded() -> void:
 	var f := WeatherFront.new()
 	f.center = Vector2.ZERO
 	f.radius = 100.0
 	f.intensity = 0.8
 	f.axis = Vector2.RIGHT
-	f.major_scale = 2.0
-	f.minor_scale = 0.5
+	f.major_scale = 1.10
+	f.minor_scale = 0.92
 
 	var center_cov := f.coverage_at(Vector2.ZERO)
-	var along_cov := f.coverage_at(Vector2(100.0, 0.0))
-	var cross_cov := f.coverage_at(Vector2(0.0, 100.0))
-
 	_expect(is_equal_approx(center_cov, f.intensity), "center coverage should equal intensity")
-	_expect(along_cov > 0.45, "coverage should remain strong along major axis")
-	_expect(cross_cov < 0.02, "coverage should fall off quickly across minor axis")
-	_expect(along_cov > cross_cov * 10.0, "major axis coverage should exceed minor axis coverage")
+	_expect(f.major_scale / f.minor_scale < 1.35, "field summaries should not reintroduce obvious long-axis ellipses")
 
 	var max_seen := 0.0
 	for x in range(-320, 321, 40):

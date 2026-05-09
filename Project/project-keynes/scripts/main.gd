@@ -404,6 +404,8 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 缓存（即上次成功 tick 的快照），renderer 持续看到一致的天气可视化。
 	var t_render_us0: int = Time.get_ticks_usec()
 	if _renderer != null:
+		if _renderer.has_method("set_weather_field_texture") and _last_world != null:
+			_renderer.set_weather_field_texture(_last_world.weather_field_tex)
 		_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
 
@@ -508,12 +510,13 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					and _generator.has_method("sus_weather_breakdown"):
 				var wb: Dictionary = _generator.sus_weather_breakdown()
 				if not wb.is_empty():
-					print("        weather_tick=%.1f (adv=%.1f spawn=%.1f dist=%.1f cyc=%.1f) transp=%.1f albedo=%.1f veg_dyn=%.1f rebake_cv=%.1f rebake_vg=%.1f feedback=%.1f fronts=%d" % [
+					print("        weather_tick=%.1f (adv=%.1f spawn=%.1f dist=%.1f cyc=%.1f) field_bake=%.1f transp=%.1f albedo=%.1f veg_dyn=%.1f rebake_cv=%.1f rebake_vg=%.1f feedback=%.1f fronts=%d" % [
 						float(wb.get("weather_tick_ms", 0.0)),
 						float(wb.get("advance_ms", 0.0)),
 						float(wb.get("spawn_ms", 0.0)),
 						float(wb.get("distribute_ms", 0.0)),
 						float(wb.get("cyclone_ms", 0.0)),
+						float(wb.get("weather_field_bake_ms", 0.0)),
 						float(wb.get("transp_ms", 0.0)),
 						float(wb.get("albedo_ms", 0.0)),
 						float(wb.get("veg_dyn_ms", 0.0)),
@@ -522,6 +525,21 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(wb.get("feedback_ms", 0.0)),
 						int(wb.get("fronts", 0)),
 					])
+			if job_id == &"enum_atlas_upload" and _generator != null \
+					and _generator.has_method("sus_enum_atlas_breakdown"):
+				var eb: Dictionary = _generator.sus_enum_atlas_breakdown()
+				if not eb.is_empty():
+					print("        enum_atlas_upload axis=%s elapsed=%.1f pending_cv=%s pending_vg=%s" % [
+						str(eb.get("axis", "")),
+						float(eb.get("elapsed_ms", 0.0)),
+						str(eb.get("cover_pending", false)),
+						str(eb.get("vegetation_pending", false)),
+					])
+			if job_id == &"season_refresh" and _generator != null \
+					and _generator.has_method("sus_season_refresh_breakdown"):
+				var sb: Dictionary = _generator.sus_season_refresh_breakdown()
+				if not sb.is_empty():
+					print("        season_refresh stages=%s" % [str(sb)])
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
@@ -530,20 +548,12 @@ func _on_season_changed(_season_idx: int) -> void:
 		var t0 := Time.get_ticks_msec()
 		if _renderer != null and _renderer.has_method("begin_season_transition"):
 			_renderer.begin_season_transition(_world_clock.season_phase())
-		_generator.refresh_seasonal(_current_map, _world_data, _season_idx)
-		# Fast-tick perf opt (E)：refresh_seasonal 内部已经通过 _baker.rebake_biome_tex_only
-		# 把新像素写进了共享 enum_atlas。这里 **不再** 走 _renderer.set_map(...) 的全量
-		# _rebuild → _build_world_quad_mesh → _apply_uniforms (60+ uniform) 路径，
-		# 改用细粒度的 set_biome_tex_only，仅重绑 enum_atlas uniform，让 shader 立刻看到
-		# 新内容。x20 加速档下 "Season refresh" 打点应从 > 8ms 降至 < 3ms。
-		# 向后兼容：旧版 renderer 若无此方法则回退到 set_map 老路径，避免破坏 regenerate 流程。
-		if _renderer != null:
-			if _renderer.has_method("set_biome_tex_only"):
-				_renderer.set_biome_tex_only(_world_data)
-			else:
-				_renderer.set_map(_current_map, _world_data)
-		print("Season refresh %dms" % (Time.get_ticks_msec() - t0))
-	# 季节切换后 current_state 已更新，刷新当前选中地块的面板
+		if _generator.has_method("queue_season_refresh"):
+			_generator.queue_season_refresh(_season_idx)
+		else:
+			_generator.refresh_seasonal(_current_map, _world_data, _season_idx)
+		print("Season refresh queued %dms" % (Time.get_ticks_msec() - t0))
+	# 季节事务现在由 SUS 分片提交；面板在事务完成前保留上一套完整状态。
 	if _selected_cell != null:
 		_refresh_info_panel()
 

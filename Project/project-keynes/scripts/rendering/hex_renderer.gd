@@ -645,6 +645,10 @@ func set_weather_fronts(fronts: Array) -> void:
 	else:
 		_push_weather_fronts_to_shader(fronts)
 
+func set_weather_field_texture(tex: Texture2D) -> void:
+	if _weather_layer != null and _weather_layer.has_method("set_weather_field_texture"):
+		_weather_layer.set_weather_field_texture(tex)
+
 func _on_weather_layer_visual_fronts_changed(fronts: Array) -> void:
 	_push_weather_fronts_to_shader(fronts)
 
@@ -864,6 +868,7 @@ func _apply_uniforms() -> void:
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
+		_weather_layer.set_weather_field_texture(_world.weather_field_tex)
 		_weather_layer.set_weather_strength(weather_strength)
 	set_weather_fronts([])
 

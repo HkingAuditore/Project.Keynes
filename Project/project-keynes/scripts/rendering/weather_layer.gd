@@ -89,6 +89,7 @@ var _fallback_particle_texture: ImageTexture
 var _world_bounds: Rect2 = Rect2()
 var _world_time: float = 0.0
 var _strength: float = 1.0
+var _weather_field_tex: Texture2D = null
 # v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
 var _active_count: int = 0
 # 每日 WeatherFront 快照的表现层插值状态。这里存 Dictionary 快照，避免改 WeatherSystem 数据。
@@ -141,7 +142,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	# v9.perf：没有活跃 weather 时整层隐藏，连 _process 都可以停掉
-	if _front_target_snapshots.is_empty() and _front_visual_snapshots.is_empty():
+	if _front_target_snapshots.is_empty() and _front_visual_snapshots.is_empty() and _weather_field_tex == null:
 		_active_count = 0
 		visible = false
 		return
@@ -198,6 +199,8 @@ func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture) -> 
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
+		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
@@ -208,6 +211,14 @@ func set_weather_strength(v: float) -> void:
 	_strength = clampf(v, 0.0, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+
+func set_weather_field_texture(tex: Texture2D) -> void:
+	_weather_field_tex = tex
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
+		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
+	if _weather_field_tex != null:
+		visible = true
 
 # ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
 # 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部
@@ -683,7 +694,7 @@ func _update_weather_front_blend(delta: float) -> void:
 			if extra_days > 0.0:
 				_front_visual_snapshots = _predict_front_snapshots(_front_visual_snapshots, extra_days)
 	_active_count = mini(_front_visual_snapshots.size(), MAX_WEATHER_FRONTS)
-	visible = (_active_count > 0)
+	visible = (_active_count > 0 or _weather_field_tex != null)
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_sync_shadow_pool(_front_visual_snapshots)
 	_sync_particles_pool(_front_visual_snapshots)

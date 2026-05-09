@@ -3,6 +3,8 @@ render_mode blend_mix;
 
 uniform sampler2D enum_atlas : filter_nearest, repeat_disable;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
+uniform sampler2D weather_field_tex : filter_nearest, repeat_disable;
+uniform bool weather_field_enabled = false;
 const float NOISE_TEX_SCALE = 256.0;
 
 uniform vec2 world_origin = vec2(0.0);
@@ -142,7 +144,53 @@ float type_cloud_bias(int wt) {
 	return 1.0;
 }
 
-FrontField sample_front_field(vec2 wp) {
+FrontField sample_weather_field(vec2 wp, vec2 uv) {
+	FrontField f = empty_field();
+	if (!weather_field_enabled) {
+		return f;
+	}
+	vec4 wf = texture(weather_field_tex, uv);
+	int wt = int(wf.r * 255.0 + 0.5);
+	float intensity = clamp(wf.g, 0.0, 1.0);
+	float cloud_amount = clamp(wf.b, 0.0, 1.0);
+	float precip_amount = clamp(wf.a, 0.0, 1.0);
+	if (intensity <= 0.015 || wt == WT_CLEAR || wt == WT_DROUGHT || wt == WT_HEATWAVE) {
+		return f;
+	}
+
+	vec2 axis = normalize(vec2(1.0, 0.22));
+	vec2 warped = wind_domain_warp(wp, axis * mix(4.0, 10.0, max(precip_amount, cloud_amount)), world_time, 7.0);
+	int q_oct = (weather_overlay_quality >= 2) ? 3 : 2;
+	float low = fbm(warped * 0.009, q_oct);
+	float mid = fbm(warped * 0.026 + vec2(41.0, -23.0), 2);
+	float edge_break = fbm(warped * 0.017 + vec2(11.0, 29.0), 2);
+	float threshold = mix(0.62, 0.28, cloud_amount);
+	float cloud_shape = smoothstep(threshold, threshold + 0.20, low * 0.62 + mid * 0.30 + edge_break * 0.08);
+	float cloud = clamp((cloud_shape * 0.82 + intensity * 0.20) * cloud_amount * type_cloud_bias(wt), 0.0, 1.0);
+	float precip_gate = clamp((cloud * 0.72 + intensity * 0.28) * precip_amount, 0.0, 1.0);
+	if (wt == WT_FOG) {
+		precip_gate = 0.0;
+		cloud = clamp((cloud_shape * 0.72 + low * 0.28) * max(cloud_amount, intensity), 0.0, 1.0);
+	}
+
+	f.color = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].rgb : vec3(0.0);
+	f.alpha = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].a : 0.0;
+	f.cloud = cloud;
+	f.precip = precip_gate;
+	f.shadow = clamp(cloud * 0.64 + intensity * 0.16, 0.0, 1.0);
+	f.core = clamp(max(precip_gate, intensity * 0.65), 0.0, 1.0);
+	f.edge = clamp(edge_break, 0.0, 1.0);
+	f.type = wt;
+	f.axis = axis;
+	return f;
+}
+
+FrontField sample_front_field(vec2 wp, vec2 uv) {
+	FrontField field_sample = sample_weather_field(wp, uv);
+	if (field_sample.cloud > 0.001 || field_sample.precip > 0.001) {
+		return field_sample;
+	}
+
 	FrontField best = empty_field();
 	float best_score = 0.0;
 
@@ -270,7 +318,7 @@ void vertex() {
 void fragment() {
 	vec2 wp = v_world;
 	vec2 uv = clamp((wp - world_origin) / world_size, vec2(0.0), vec2(1.0));
-	FrontField w = sample_front_field(wp);
+	FrontField w = sample_front_field(wp, uv);
 
 	if (w.cloud <= 0.001 && w.precip <= 0.001) {
 		COLOR = vec4(0.0);

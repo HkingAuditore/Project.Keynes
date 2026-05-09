@@ -323,6 +323,20 @@ extends Resource
 # unaffected. Set 0.0 to disable.
 @export_range(0.0, 3.0, 0.05) var ocean_weather_spawn_bias: float = 1.2
 
+# Grid weather field solver. When enabled, WeatherSystem computes per-hex
+# vapor/cloud/precip/instability fields and derives weather type directly from
+# local climate, terrain, wind and ocean signals. Legacy fronts remain only as a
+# visual/compatibility summary.
+@export var weather_field_enabled: bool = true
+@export_range(0, 6, 1) var weather_field_advect_steps: int = 2
+@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.08
+@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.55
+@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.35
+@export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
+@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
+@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
+@export_range(1, 16, 1) var weather_component_summary_limit: int = 16
+
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]
 # ══════════════════════════════════════════════════════════════════════
