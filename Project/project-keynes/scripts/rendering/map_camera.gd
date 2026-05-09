@@ -25,15 +25,28 @@ func center_on_bounds() -> void:
 		return
 	position = _world_bounds.position + _world_bounds.size * 0.5
 
-func fit_to_viewport(margin: float = 1.05) -> void:
+func fit_to_viewport(margin: float = 1.05, safe_area: Rect2 = Rect2()) -> void:
 	if _world_bounds.size == Vector2.ZERO:
 		return
-	var vp := get_viewport_rect().size
-	var sx := vp.x / (_world_bounds.size.x * margin)
-	var sy := vp.y / (_world_bounds.size.y * margin)
+	# 若未传入 safe_area，则退化到整块 viewport（兼容旧调用）；
+	# 否则用 UI 扣除后的"地图可见区域"算缩放，并把相机中心放到该区域中心，
+	# 避免缩放后地图被 TopBar/RightPanel 裁掉半边。
+	var vp_size := get_viewport_rect().size
+	var area: Rect2 = safe_area
+	if area.size.x <= 0.0 or area.size.y <= 0.0:
+		area = Rect2(Vector2.ZERO, vp_size)
+	var sx := area.size.x / (_world_bounds.size.x * margin)
+	var sy := area.size.y / (_world_bounds.size.y * margin)
 	var s := clampf(minf(sx, sy), zoom_min, zoom_max)
 	zoom = Vector2(s, s)
-	center_on_bounds()
+	# 让 safe_area 的中心对齐世界 bounds 的中心：
+	# 相机 position = 世界中心 - (safe_area 中心相对 viewport 中心的偏移 / zoom)
+	var world_center := _world_bounds.position + _world_bounds.size * 0.5
+	var vp_center := vp_size * 0.5
+	var area_center := area.position + area.size * 0.5
+	var screen_offset := area_center - vp_center
+	position = world_center - screen_offset / s
+	_clamp_position()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

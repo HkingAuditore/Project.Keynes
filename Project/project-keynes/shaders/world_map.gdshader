@@ -12,16 +12,26 @@ render_mode blend_mix;
 //                     R = moisture
 //                     G = flow_accum (log-scaled)
 //                     B = latitude_norm ∈ [0, 1]
-//                     A = volcano_field
+//                     A = 0（保留；Daily Sim SoA Refactor 阶段 1 起原 sea_ice 已拆到独立 sea_ice_tex）
 //   vector_atlas     (RGBA8, derived_size, LINEAR)
 //                     RG = ocean_current (-1..1 mapped from 0..1)
 //                     BA = wind_field    (-1..1 mapped from 0..1)
+//   volcano_field_tex (R8, derived_size, LINEAR)
+//                     R = 火山强度场（原 scalar_atlas.a）
+//   sea_ice_tex      (R8, derived_size, LINEAR)
+//                     R = sea_ice_fraction ∈ [0, 1]  （连续海冰覆盖率，
+//                                                   由 SeaIceAtlasUploadJob 每 stride 日上传一次）
 //
 // 不再有 hex 逻辑、不再做 domain warp。整张地图就是这 4 张连续纹理的合成。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform sampler2D enum_atlas   : filter_nearest, repeat_disable;
 uniform sampler2D scalar_atlas : filter_linear,  repeat_disable;
 uniform sampler2D vector_atlas : filter_linear,  repeat_disable;
+// 火山强度场独立 R8（原 scalar_atlas.a，已让位给 sea_ice_fraction）
+uniform sampler2D volcano_field_tex : filter_linear, repeat_disable;
+// Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a）。
+// 每 stride 日由 SeaIceAtlasUploadJob 上传一次；bake_world 后初始为全 0。
+uniform sampler2D sea_ice_tex : filter_linear, repeat_disable;
 // v9.fbm-opt：共享 noise 贴图（256×256 R8 tileable，由 MapBaker 烘焙）。
 // value_noise(p) 改用 texture(noise_tex, p / NOISE_TEX_SCALE).r 实现，
 // 单 octave 从"4× hash21 + smoothstep mix"降为 1 次 bilinear fetch（GPU 硬件加速）。
@@ -104,8 +114,8 @@ uniform float water_wave_line_strength   : hint_range(0.0, 1.0) = 0.70;
 // water_calm_noise_brightness  : 亮度扰动层（大尺度 fbm，默认约 ±5%）的强度系数
 // water_calm_noise_tint_strength: 色相扰动层（更低频 fbm 在冷/暖 tint 之间
 //                                 mix，默认约 ±2%）的强度系数
-uniform float water_calm_noise_brightness    : hint_range(0.0, 1.0) = 0.70;
-uniform float water_calm_noise_tint_strength : hint_range(0.0, 1.0) = 0.70;
+uniform float water_calm_noise_brightness    : hint_range(0.0, 1.0) = 0.95;
+uniform float water_calm_noise_tint_strength : hint_range(0.0, 1.0) = 0.95;
 // biome 软混合半径（世界坐标单位，越大过渡带越宽；0 = 关闭软混合，回退到硬切）
 uniform float water_biome_blend_radius   : hint_range(0.0, 4.0) = 3.15;
 
@@ -118,23 +128,52 @@ uniform bool extreme_weather_ground_effect_enabled = true;
 
 // 季节温度振幅。0.20 = 夏冬之间 ±20% 温度差，比较显著但不夸张
 uniform float season_temp_amp : hint_range(0.0, 0.4) = 0.20;
+// ─── True Insolation-Driven Climate（Phase F）: CPU/GPU 同源参数 ──────
+// 主开关 — 关闭时回退到 legacy hemi_phase + 余弦路径。
+uniform bool true_insolation_enabled = true;
+// 黄赤交角（弧度），23.5° ≈ 0.4101523
+uniform float axial_tilt_rad : hint_range(0.0, 0.7854) = 0.4101523;
+// 连续日长项幅度
+uniform float insolation_daylen_amp : hint_range(0.0, 1.0) = 0.35;
+// 把 (insol_now - insol_mean) 映射回温度偏移的增益
+uniform float insolation_season_gain : hint_range(0.0, 2.0) = 1.0;
 // 植被换色总开关与强度
 uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.85;
 // 动态雪量（季节性雪盖叠加在 biome SNOW 之外）总开关与强度
 uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
 // 洋流动画总开关与强度
 uniform float ocean_current_strength : hint_range(0.0, 1.0) = 0.88;
+
+// ─── Deep Ocean Layered Color（深海色彩层次感） ─────────────────────────
+// 总开关振幅。0 = 完全还原旧视觉；1 = 子层按各自默认振幅全量生效。
+uniform float deep_ocean_color_richness         : hint_range(0.0, 1.0) = 0.85;
+// 洋流冷/暖色偏：暖流（低纬→高纬）偏微暖，寒流（高纬→低纬）偏冷青。
+uniform float deep_ocean_current_tint_strength  : hint_range(0.0, 1.0) = 0.60;
+// 纬度/温度驱动色温带：热带翠绿—温带中性—极地冷青。
+uniform float deep_ocean_latitude_tint_strength : hint_range(0.0, 1.0) = 0.85;
+// 深渊幽冷：深海最深段加压暗与微蓝紫偏移，强化质感。
+uniform float deep_ocean_abyss_tint_strength    : hint_range(0.0, 1.0) = 0.60;
+// 海盆 gyre 色斑增强：放大半封闭海 vs 开阔腹地的色相差。
+uniform float deep_ocean_patch_boost            : hint_range(0.0, 1.0) = 0.50;
 // Phase 6：陆地风迹噪声（沿盛行风方向的轻微条纹，让风带可视化）
 uniform float wind_streak_strength : hint_range(0.0, 0.20) = 0.05;
 
 // ─── 任务 9：洋流/风带可视化 toggle ──────────────────────────────────────
 // ocean_current_debug：0 = 正常渲染（低对比流纹）；1 = 调试模式（高对比带箭头感流向）。
 uniform bool  ocean_current_debug = false;
+// Systemic Ocean Currents：独立 L8 纹理，编码 per-pixel 上升流强度（0=下沉 / 128=中性 / 255=上升）。
+// 主路径不采样；仅 ocean_current_debug 开启时作为彩色覆盖叠加。
+uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disable;
 // 季风陆地风纹增强倍率：在 MONSOON type 锋面覆盖区域，陆地的 wind_streak
 // 振幅 ×monsoon_wind_streak_boost（默认 3.0），将非主观风感提升为主体特征。
 uniform float monsoon_wind_streak_boost : hint_range(1.0, 6.0) = 3.0;
 uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.35;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
+// Seasonal terrain transition overlay. Main terrain stays opaque; the temporary
+// old-terrain layer dissolves out over early-season progress to avoid hard cuts.
+uniform bool season_transition_overlay = false;
+uniform float season_transition_progress : hint_range(0.0, 1.0) = 1.0;
+uniform float season_transition_softness : hint_range(0.02, 0.45) = 0.18;
 
 // ─── Milestone 3：天气子系统（最多 MAX_WEATHER_FRONTS 个活跃锋面） ──────
 //   weather_front_centers[i] = (center.x, center.y, radius, intensity ∈ [0,1])
@@ -150,10 +189,18 @@ uniform int weather_front_count = 0;
 uniform float weather_strength : hint_range(0.0, 1.0) = 1.0;
 
 // ─── Hypsometric 色阶（海陆双向，等高线设色） ────────────────────────────
-uniform vec3 color_deep_ocean   : source_color = vec3(0.055, 0.13, 0.30);
-uniform vec3 color_mid_ocean    : source_color = vec3(0.11, 0.24, 0.42);
-uniform vec3 color_shallow      : source_color = vec3(0.22, 0.42, 0.56);
-uniform vec3 color_coast_water  : source_color = vec3(0.36, 0.62, 0.68);
+// Open Ocean Color Rebalance v2：在 v1 基础上进一步收敛深/浅海亮度差。
+// 旧版 V 区间 0.30~0.66 (Δ=0.36) 在截图上观感是"浅海发亮、深海近黑"，
+// 现把 V 收敛到 0.34~0.56 (Δ=0.22)，对比柔化 ~39%，仍保持单调递增。
+// 旧值 (v1) / 新值 (v2) / 视觉影响：
+//   deep_ocean   (0.10, 0.18, 0.30) → (0.14, 0.22, 0.34)   深海抬亮，少几分黑洞感
+//   mid_ocean    (0.16, 0.28, 0.40) → (0.20, 0.30, 0.42)   中海域过渡更连续
+//   color_shallow(0.27, 0.45, 0.56) → (0.28, 0.42, 0.52)   浅海略压暗
+//   coast_water  (0.40, 0.62, 0.66) → (0.34, 0.50, 0.56)   海岸不再过亮、贴近浅海
+uniform vec3 color_deep_ocean   : source_color = vec3(0.14, 0.22, 0.34);
+uniform vec3 color_mid_ocean    : source_color = vec3(0.20, 0.30, 0.42);
+uniform vec3 color_shallow      : source_color = vec3(0.28, 0.42, 0.52);
+uniform vec3 color_coast_water  : source_color = vec3(0.34, 0.50, 0.56);
 uniform vec3 color_beach        : source_color = vec3(0.85, 0.78, 0.55);
 uniform vec3 color_lowland      : source_color = vec3(0.62, 0.68, 0.42);
 uniform vec3 color_hill         : source_color = vec3(0.66, 0.55, 0.32);
@@ -245,14 +292,15 @@ const int V_MARSH               = 21;
 const int V_KELP_FOREST         = 22;
 const int V_CORAL_REEF          = 23;
 
-// ─── Milestone 2：CoverType.CV id ────────────────────────────────────────
+// ─── Milestone 2：CoverType.CV id ────────────────────────
 const int CV_NONE       = 0;
 const int CV_SNOW       = 1;
 const int CV_GLACIER    = 2;
 const int CV_SEA_ICE    = 3;
 const int CV_PERMAFROST = 4;
 const int CV_FLOODING   = 5;
-
+// Systemic Ocean Currents：远洋华（浮游生物繁殖）
+const int CV_PELAGIC_BLOOM = 6;
 // ─── Milestone 3：WeatherType.WT id ──────────────────────────────────────
 const int WT_CLEAR    = 0;
 // 与 scripts/weather_type.gd 严格按 enum 顺序对齐。
@@ -353,11 +401,28 @@ vec3 water_depth_gradient(float offshore_t, float elev) {
 	float basin_t = smoothstep(0.56, 1.00, offshore_s);
 	float abyss_t = smoothstep(0.76, 1.00, offshore_s);
 
-	vec3 coast_col = mix(color_shallow, color_coast_water, 0.88) * vec3(0.96, 1.06, 1.08);
-	vec3 shelf_col = mix(color_coast_water, color_mid_ocean, 0.24) * vec3(0.82, 1.16, 1.18);
-	vec3 mid_col = mix(color_mid_ocean, color_deep_ocean, 0.18) * vec3(0.88, 1.05, 1.18);
-	vec3 basin_col = mix(color_mid_ocean, color_deep_ocean, 0.50) * vec3(0.76, 0.96, 1.22);
-	vec3 abyss_col = mix(color_deep_ocean * vec3(0.86, 0.98, 1.24), color_deep_ocean * vec3(0.58, 0.72, 1.08), contrast_t);
+	// Open Ocean Color Rebalance：把以下五个色阶的乘法系数往 vec3(1.0) 收敛，
+	// 去掉"加蓝压红"的塑料感。新基础调色板已自带合理冷暖差，无需再用大幅倍率。
+	// 旧值 / 新值 / 视觉影响：
+	//   coast_col  *(0.96,1.06,1.08) → *(1.00,1.04,1.04)  浅海保留蓝，但不再额外加蓝
+	//   shelf_col  *(0.82,1.16,1.18) → *(0.96,1.06,1.06)  陆架不再被推成纯青蓝
+	//   mid_col    *(0.88,1.05,1.18) → *(0.96,1.02,1.06)  中海域去过饱和
+	//   basin_tint mix(0.76,0.96,1.22)..(0.70,0.92,1.30) → mix(0.92,1.00,1.10)..(0.88,0.98,1.14)
+	//   abyss_warm *(0.86,0.98,1.24) → *(0.94,0.98,1.10)
+	//   abyss_cool mix(0.58,0.72,1.08)..(0.46,0.60,1.18) → mix(0.78,0.86,1.06)..(0.72,0.82,1.10)
+	vec3 coast_col = mix(color_shallow, color_coast_water, 0.88) * vec3(1.00, 1.04, 1.04);
+	vec3 shelf_col = mix(color_coast_water, color_mid_ocean, 0.24) * vec3(0.96, 1.06, 1.06);
+	vec3 mid_col = mix(color_mid_ocean, color_deep_ocean, 0.18) * vec3(0.96, 1.02, 1.06);
+	// Deep Ocean Layered Color: widen hue/sat span between basin and abyss so
+	// the deepest tiers read as "warm cobalt blue → cool indigo/violet" rather
+	// than a flat monochrome navy. basin pushes slightly warmer/bluer, abyss
+	// leans cooler with a violet bias.
+	float richness_t = clamp(deep_ocean_color_richness, 0.0, 1.0);
+	vec3 basin_tint = mix(vec3(0.92, 1.00, 1.10), vec3(0.88, 0.98, 1.14), richness_t);
+	vec3 basin_col = mix(color_mid_ocean, color_deep_ocean, 0.50) * basin_tint;
+	vec3 abyss_warm = color_deep_ocean * vec3(0.94, 0.98, 1.10);
+	vec3 abyss_cool = color_deep_ocean * mix(vec3(0.78, 0.86, 1.06), vec3(0.72, 0.82, 1.10), richness_t);
+	vec3 abyss_col = mix(abyss_warm, abyss_cool, contrast_t);
 
 	vec3 ocean_col = coast_col;
 	ocean_col = mix(ocean_col, shelf_col, shelf_t * 0.92);
@@ -366,13 +431,90 @@ vec3 water_depth_gradient(float offshore_t, float elev) {
 	ocean_col = mix(ocean_col, abyss_col, abyss_t * 0.58);
 
 	// Broad deep-water chroma drift keeps large oceans layered while staying calm.
-	vec3 blue_shift = mix(vec3(0.96, 1.02, 1.12), vec3(0.78, 0.92, 1.26), basin_t);
-	vec3 violet_shift = mix(vec3(1.0), vec3(0.90, 0.86, 1.18), abyss_t);
-	ocean_col *= mix(vec3(1.0), blue_shift, 0.20 * smoothstep(0.26, 1.0, offshore_s));
-	ocean_col *= mix(vec3(1.0), violet_shift, 0.12 * abyss_t);
+	// Open Ocean Color Rebalance：blue_shift/violet_shift 整体压幅，避免 basin/abyss
+	// 被乘法叠加再次推成纯蓝。旧 0.20 / 0.12 → 新 0.12 / 0.07。
+	vec3 blue_shift = mix(vec3(0.98, 1.01, 1.06), vec3(0.90, 0.96, 1.12), basin_t);
+	vec3 violet_shift = mix(vec3(1.0), vec3(0.94, 0.92, 1.10), abyss_t);
+	ocean_col *= mix(vec3(1.0), blue_shift, 0.12 * smoothstep(0.26, 1.0, offshore_s));
+	ocean_col *= mix(vec3(1.0), violet_shift, 0.07 * abyss_t);
 
 	vec3 shallow_lift = mix(shelf_col, coast_col, near_surface);
-	return mix(ocean_col, shallow_lift, (1.0 - smoothstep(0.12, 0.42, offshore_s)) * near_surface * 0.36);
+	vec3 result = mix(ocean_col, shallow_lift, (1.0 - smoothstep(0.12, 0.42, offshore_s)) * near_surface * 0.36);
+
+	// Safety band: gently pull extreme results back toward the deep-ocean base
+	// so newly-widened palette never drifts into a cartoony alien hue. Scales
+	// with richness_t so richness==0 is a no-op (旧视觉完全保留).
+	float pullback = 0.15 * richness_t * smoothstep(0.40, 1.0, offshore_s);
+	result = mix(result, color_deep_ocean, pullback);
+	return result;
+}
+
+// ─── Deep Ocean Layered Color 辅助函数 ──────────────────────────────────
+// Current tint: warm/cool bias along ocean currents. UV.y points "down" while
+// lat_signed is already oriented (north positive). A current flowing from low
+// to high |latitude| (warm current) biases toward warm aqua; the reverse
+// (cold current) biases toward cool cyan. Zero flow → identity.
+vec3 deep_ocean_current_tint(vec2 oc, float lat_signed, float flow_mag) {
+	if (!ocean_current_enabled) {
+		return vec3(1.0);
+	}
+	if (flow_mag < 0.05) {
+		return vec3(1.0);
+	}
+	// In Godot UV space y grows downward. North (lat_signed > 0) corresponds
+	// to decreasing UV.y, hence a current whose UV.y component moves *against*
+	// the hemisphere sign is heading poleward (warm current). The product
+	// (-oc.y * lat_signed) captures this: positive → warm, negative → cold.
+	float dir = clamp(-oc.y * lat_signed * 4.0, -1.0, 1.0);
+	// Open Ocean Color Rebalance：暖/寒流 ±6% 的方向系数与新去饱和 base palette
+	// 协同——在 strength 0.60 + cap 0.85 之下总幅度约 ±5%，flow_mag>0.2 区域仍
+	// 落在需求饱和度区间 [0.40, 0.62] 内，无需调整 warm/cold 数值。
+	vec3 warm = vec3(1.04, 1.02, 0.94);
+	vec3 cold = vec3(0.94, 1.00, 1.08);
+	vec3 tint = mix(vec3(1.0), (dir >= 0.0) ? warm : cold, abs(dir));
+	float amp = clamp(deep_ocean_current_tint_strength * deep_ocean_color_richness, 0.0, 1.0);
+	// Also scale by actual flow magnitude so weak eddies don't get loud tints.
+	amp *= smoothstep(0.05, 0.45, flow_mag);
+	// Cap overall excursion at ~±15%.
+	return mix(vec3(1.0), tint, amp * 0.85);
+}
+
+// Latitude tint: tropical teal-green, temperate neutral, polar cool-cyan.
+// current_temp (in [~0, ~1]) nudges the result slightly warmer when high so
+// seasonal swings bleed into ocean color naturally.
+vec3 deep_ocean_latitude_tint(float lat_signed, float current_temp) {
+	float abs_lat = clamp(abs(lat_signed), 0.0, 1.0);
+	float tropical_w = 1.0 - smoothstep(0.00, 0.35, abs_lat);
+	float polar_w    = smoothstep(0.55, 0.95, abs_lat);
+	// Open Ocean Color Rebalance：扩大热带 / 极地色相分离，让低纬偏青绿、
+	// 高纬偏冷青在新去饱和 base 上仍达成 Δhue ≥ 8°。
+	// 旧值 / 新值 / 视觉影响：
+	//   tropical (0.92, 1.08, 1.04) → (0.88, 1.10, 1.00)  低纬更明显偏青绿
+	//   polar    (0.96, 1.02, 1.12) → (0.96, 1.00, 1.16)  高纬更明显偏冷青
+	vec3 tropical = vec3(0.88, 1.10, 1.00);
+	vec3 polar    = vec3(0.96, 1.00, 1.16);
+	vec3 tint = mix(vec3(1.0), tropical, tropical_w);
+	tint = mix(tint, polar, polar_w);
+	// Temperature second-order nudge: warmer → slightly warmer tint (up to ±3%).
+	float temp_bias = clamp(current_temp - 0.5, -0.5, 0.5);
+	vec3 temp_tint = vec3(1.0 + temp_bias * 0.06, 1.0, 1.0 - temp_bias * 0.06);
+	tint *= temp_tint;
+	float amp = clamp(deep_ocean_latitude_tint_strength * deep_ocean_color_richness, 0.0, 1.0);
+	return mix(vec3(1.0), tint, amp);
+}
+
+// Abyss tint: darken + subtle blue/violet bias on the deepest water.
+vec3 deep_ocean_abyss_tint(float offshore_depth) {
+	float abyss_w = smoothstep(0.72, 1.00, clamp(offshore_depth, 0.0, 1.0));
+	// Open Ocean Color Rebalance：把外层 *0.90 抬到 *0.96，避免 abyss 段
+	// 在与 water_depth_gradient 内的 abyss_col + blue_shift 叠乘后变成"灰蓝压抑"。
+	// 旧值 / 新值 / 视觉影响：vec3(0.82,0.90,1.08)*0.90 → vec3(0.82,0.90,1.08)*0.96
+	// abyss 段相对 basin 仍下降但 ΔV 由 ~22% 收敛到 ~12%，保留冷偏方向不变。
+	vec3 base_abyss_tint = vec3(0.82, 0.90, 1.08) * 0.96;
+	vec3 tint = mix(vec3(1.0), base_abyss_tint, abyss_w);
+	float contrast_scale = clamp(deep_ocean_contrast / 0.96, 0.6, 1.4);
+	float amp = clamp(deep_ocean_abyss_tint_strength * deep_ocean_color_richness * contrast_scale, 0.0, 1.2);
+	return mix(vec3(1.0), tint, clamp(amp, 0.0, 1.0));
 }
 
 vec3 hypsometric_tint(float elev, bool is_water) {
@@ -429,15 +571,66 @@ vec3 biome_hue_modulate(vec3 base, int biome) {
 
 // ─── Phase 1：季节相位辅助 ───────────────────────────────────────────────
 
-// 半球翻转：北半球用原相位，南半球相位 + 2 → 季节互换
+// Plan B：hemi_phase() 把日历 season_phase（phase=0 = 1 月）映射成
+// "本地季节语义"（0=本地春, 1=本地夏, 2=本地秋, 3=本地冬），供
+// vegetation_seasonal_tint 等纯视觉函数使用。
+//   北半球（lat_signed < 0）: 本地春 = 4 月(sp=1) → eff = sp - 1
+//   南半球（lat_signed > 0）: 本地春 = 10 月(sp=3) → eff = sp + 1
+// 温度偏移走 season_temp_offset_legacy(lat_signed, phase)，不再经过本函数。
 float hemi_phase(float phase, float lat_signed) {
-	return (lat_signed >= 0.0) ? phase : mod(phase + 2.0, 4.0);
+	return (lat_signed < 0.0) ? mod(phase + 3.0, 4.0) : mod(phase + 1.0, 4.0);
 }
 
-// 季节温度偏移：cos((phase - 1) × π/2) × amp
-// phase=0(春) → 0；phase=1(夏) → +amp；phase=2(秋) → 0；phase=3(冬) → -amp
+// 季节温度偏移（Plan B 日历对齐）：cos((phase - 2) × π/2) × amp × hemi_sign
+// phase=0(1月) 北半球: -amp（冬）；phase=2(7月) 北半球: +amp（夏）
+// 【Legacy / 回退路径】：仅在 true_insolation_enabled == false 时使用。
 float season_temp_offset(float phase) {
-	return cos((phase - 1.0) * 1.5707963) * season_temp_amp;
+	return cos((phase - 2.0) * 1.5707963) * season_temp_amp;
+}
+
+float season_temp_offset_legacy(float lat_signed, float phase) {
+	float hemi_sign = (lat_signed < 0.0) ? 1.0 : ((lat_signed > 0.0) ? -1.0 : 0.0);
+	return cos((phase - 2.0) * 1.5707963) * season_temp_amp * hemi_sign;
+}
+
+// ─── True Insolation-Driven（Phase F）: CPU/GPU 同源公式 ────────────────
+// CPU 端 _compute_insolation / _insolation_season_offset 的 GLSL 镜像。
+// 为了单像素可接受的性能，年均 insolation 采用解析近似：
+//   insol_annual_mean(lat) ≈ cos(lat) · (1 − ε²/4)
+// 非极区误差 < 5%，极区稍大但视觉上不会被玩家察觉；真正的物理权威仍在 CPU。
+float compute_insolation_shader(float lat_rad, float phase) {
+	float year_progress = mod(phase, 4.0) / 4.0;
+	// Plan B：phase=0(1月) → +tilt（南向 subsolar，北半球冬至）；phase=2(7月) → -tilt。
+	float subsolar = axial_tilt_rad * cos(6.2831853 * year_progress);
+	float cos_zenith = max(cos(lat_rad - subsolar), 0.0);
+	float lat_sign = (lat_rad > 0.0) ? 1.0 : ((lat_rad < 0.0) ? -1.0 : 0.0);
+	// 与 subsolar 同相位：phase=2 时 cos=-1，北极 sign=-1 → 1 + amp（昼最长）。
+	float daylen = 1.0 - insolation_daylen_amp * cos(6.2831853 * year_progress) * lat_sign;
+	return clamp(cos_zenith * daylen, 0.0, 1.0);
+}
+
+float insolation_annual_mean_shader(float lat_rad) {
+	// cos(lat) × (1 − ε²/4) 的解析近似
+	float c = max(cos(lat_rad), 0.0);
+	return c * (1.0 - axial_tilt_rad * axial_tilt_rad * 0.25);
+}
+
+float insolation_season_offset_shader(float lat_signed, float phase) {
+	// lat_signed ∈ [-1, 1] → lat_rad ∈ [-π/2, π/2]
+	float lat_rad = lat_signed * 1.5707963;
+	float now_val = compute_insolation_shader(lat_rad, phase);
+	float mean_val = max(insolation_annual_mean_shader(lat_rad), 1e-4);
+	float dev = clamp((now_val - mean_val) / mean_val, -1.0, 1.5);
+	return insolation_season_gain * dev * season_temp_amp;
+}
+
+// 统一入口：true_insolation_enabled 打开时走 insolation 派生；
+// 关闭时走 legacy 日历对齐后的 cos 公式，保持旧画面完全一致。
+float season_offset_unified(float lat_signed, float phase) {
+	if (true_insolation_enabled) {
+		return insolation_season_offset_shader(lat_signed, phase);
+	}
+	return season_temp_offset_legacy(lat_signed, phase);
 }
 
 // 当前实时温度：[0, 1]。和 map_generator._compute_temperature 同公式：
@@ -527,6 +720,9 @@ vec4 cover_overlay(int cover) {
 	if (cover == CV_FLOODING)   return vec4(0.30, 0.45, 0.62, 0.45);
 	if (cover == CV_PERMAFROST) return vec4(0.74, 0.78, 0.82, 0.10);
 	if (cover == CV_GLACIER)    return vec4(0.86, 0.92, 0.96, 0.20);
+	// Systemic Ocean Currents：远洋华深海富营养标记——淡绿 tint，表示浮游生物繁殖。
+	// 不覆盖流纹动画，仅在最后混色中加一层成环境光影响。
+	if (cover == CV_PELAGIC_BLOOM) return vec4(0.28, 0.58, 0.42, 0.22);
 	return vec4(0.0);
 }
 
@@ -925,7 +1121,10 @@ void fragment() {
 	int cover = int(enums.b * 255.0 + 0.5);
 	float moist     = scals.r;
 	float lat_norm  = scals.b;
-	float vol_intensity_atlas = scals.a;
+	// Daily Sim SoA Refactor 阶段 1：sea_ice_fraction 从 scalar_atlas.a 拆到独立 sea_ice_tex。
+	// scalar_atlas.a 已为保留位（0）。vol_intensity 仍从独立 volcano_field_tex 采样。
+	float sea_ice_frac_px = texture(sea_ice_tex, uv).r;
+	float vol_intensity_atlas = texture(volcano_field_tex, uv).r;
 	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
 	vec2 wind_v          = vects.ba * 2.0 - 1.0;
 
@@ -935,8 +1134,10 @@ void fragment() {
 
 	// ─── Phase 1：季节相位 + 当前温度（每帧由 WorldClock 驱动） ───────────
 	float lat_signed = lat_norm * 2.0 - 1.0;            // [-1, 1]
+	// eff_phase 仅用于植被季节色相（vegetation_seasonal_tint）；温度偏移走 insolation 统一入口。
 	float eff_phase = hemi_phase(season_phase, lat_signed);
-	float season_offset = season_temp_offset(eff_phase);
+	// True Insolation-Driven：CPU / GPU 同源季节偏移（true_insolation_enabled == true 时走 insolation 派生）
+	float season_offset = season_offset_unified(lat_signed, season_phase);
 	float current_temp = compute_current_temp(elev, lat_signed, season_offset);
 
 	vec3 col = hypsometric_tint(elev, is_water);
@@ -1081,7 +1282,22 @@ void fragment() {
 		float w_lake = smoothstep(blend_entry, blend_full, bw.x);
 		float w_reef = smoothstep(blend_entry, blend_full, bw.y);
 		float w_kelp = smoothstep(blend_entry, blend_full, bw.z);
-		float w_ice  = smoothstep(blend_entry, blend_full, bw.w);
+		// Emergent Climate Coupling：海冰权重直接读 sea_ice_tex 的连续 sea_ice_fraction，
+		// 不再依赖 biome == SEA_ICE 的邻域计数（否则就会出现"80% 覆盖率却显示海洋 /
+		// 20% 却显示冰"的硬切错位）。同时对 3×3 邻域做平均，起到和旧实现一致的软边作用。
+		float ice_frac_avg = sea_ice_frac_px;
+		{
+			vec2 tx_ice = 1.0 / derived_resolution;
+			float acc_ice = sea_ice_frac_px;
+			for (int oy = -1; oy <= 1; oy++) {
+				for (int ox = -1; ox <= 1; ox++) {
+					if (ox == 0 && oy == 0) continue;
+					acc_ice += texture(sea_ice_tex, clamp(uv + vec2(float(ox), float(oy)) * tx_ice, vec2(0.0), vec2(1.0))).r;
+				}
+			}
+			ice_frac_avg = acc_ice / 9.0;
+		}
+		float w_ice = smoothstep(0.08, 0.85, ice_frac_avg);
 		// Keep stacked special-water weights bounded so overlapping borders stay soft
 		// without over-tinting or producing decal-like saturated seams.
 		float special_sum = max(w_lake + w_reef + w_kelp + w_ice, 1.0);
@@ -1104,14 +1320,61 @@ void fragment() {
 				gyre_b = fbm(wpw * 0.012 + vec2(world_time * 0.012, -world_time * 0.007), 2);
 			}
 			float gyre_mix = smoothstep(0.20, 0.86, gyre_a * 0.72 + gyre_b * 0.28);
-			vec3 cobalt_patch = vec3(0.018, 0.16, 0.48);
-			vec3 teal_patch = vec3(0.020, 0.32, 0.54);
-			vec3 violet_patch = vec3(0.045, 0.13, 0.52);
+			// Deep Ocean Layered Color: widen the hue/sat span of the gyre patch
+			// so half-enclosed seas read differently from the open-ocean interior.
+			// Open Ocean Color Rebalance：统一把 patch 与 boost 的饱和度往 base palette
+			// 看齐，避免 patch 比 base 更鲜艳；同时把混合权重区间从 (0.34,0.58) 扩到
+			// (0.42,0.66)，使大色块更可辨但仍属于"云影感"而不是"色块拼贴"。
+			float patch_boost = clamp(deep_ocean_patch_boost * deep_ocean_color_richness, 0.0, 1.0);
+			// 旧值 / 新值：cobalt(0.018,0.16,0.48)→(0.10,0.20,0.40) S 0.96→0.75
+			//             teal  (0.020,0.32,0.54)→(0.12,0.32,0.44) S 0.96→0.73
+			//             violet(0.045,0.13,0.52)→(0.14,0.16,0.42) S 0.91→0.67
+			vec3 cobalt_patch = vec3(0.10, 0.20, 0.40);
+			vec3 teal_patch = vec3(0.12, 0.32, 0.44);
+			vec3 violet_patch = vec3(0.14, 0.16, 0.42);
+			// Boosted variants push cobalt slightly deeper-blue, teal greener,
+			// violet toward indigo — same family, wider separation.
+			// 旧值 / 新值：cobalt_boost(0.010,0.12,0.56)→(0.08,0.16,0.46)
+			//             teal_boost  (0.012,0.40,0.50)→(0.10,0.42,0.42)
+			//             violet_boost(0.060,0.10,0.60)→(0.16,0.14,0.46)
+			vec3 cobalt_boost = vec3(0.08, 0.16, 0.46);
+			vec3 teal_boost   = vec3(0.10, 0.42, 0.42);
+			vec3 violet_boost = vec3(0.16, 0.14, 0.46);
+			cobalt_patch = mix(cobalt_patch, cobalt_boost, patch_boost);
+			teal_patch   = mix(teal_patch,   teal_boost,   patch_boost);
+			violet_patch = mix(violet_patch, violet_boost, patch_boost);
 			vec3 ocean_patch = mix(cobalt_patch, teal_patch, gyre_mix);
 			ocean_patch = mix(ocean_patch, violet_patch, smoothstep(0.70, 1.0, offshore_depth) * (1.0 - gyre_mix) * 0.55);
-			float patch_w = open_ocean_w * water_cartoon_color_strength * mix(0.34, 0.58, gyre_mix);
+			// 旧值 / 新值：mix(0.34, 0.58, gyre_mix) → mix(0.42, 0.66, gyre_mix)
+			float patch_w = open_ocean_w * water_cartoon_color_strength * mix(0.42, 0.66, gyre_mix);
 			col = mix(col, ocean_patch, patch_w);
 			col *= 1.0 + (gyre_mix - 0.5) * open_ocean_w * water_cartoon_color_strength * 0.18;
+		}
+
+		// ─── Deep Ocean Layered Color 整合层 ────────────────────────────
+		// 在 gyre patch 之后、LAKE/REEF/KELP/ICE 特征之前叠加三层色偏。
+		// 以 open_ocean_w 作 mask，浅海 / 湖 / 礁 / 藻 / 冰自然衰减至 0。
+		// 叠加顺序：latitude (色温带) → current (冷暖流) → abyss (幽冷)。
+		if (open_ocean_w > 0.001 && deep_ocean_color_richness > 0.001) {
+			// Latitude tint：visual_quality==0 仍启用静态版本。
+			vec3 lat_tint = deep_ocean_latitude_tint(lat_signed, current_temp);
+			col *= mix(vec3(1.0), lat_tint, open_ocean_w);
+
+			// Current tint：仅在 visual_quality>=1 且洋流向量足够明显时启用。
+			if (visual_quality >= 1) {
+				float flow_mag = length(ocean_current_v);
+				if (flow_mag > 0.05) {
+					vec3 cur_tint = deep_ocean_current_tint(ocean_current_v, lat_signed, flow_mag);
+					col *= mix(vec3(1.0), cur_tint, open_ocean_w * ocean_current_strength);
+				}
+			}
+
+			// Abyss tint：静态，所有画质等级都启用，只随 open_ocean_w 衰减。
+			vec3 ab_tint = deep_ocean_abyss_tint(offshore_depth);
+			col *= mix(vec3(1.0), ab_tint, open_ocean_w);
+
+			// Clamp to avoid over-exposure after stacked multiplicative tints.
+			col = clamp(col, vec3(0.0), vec3(1.6));
 		}
 
 		// (E) LAKE 特征叠加：平静、低对比、偏青绿的湖水层
@@ -1233,6 +1496,17 @@ void fragment() {
 			if (ocean_current_debug) {
 				vec3 dir_tint = vec3(0.5 + oc_dir.x * 0.5, 0.5 + oc_dir.y * 0.3, 0.5 - oc_dir.x * 0.5);
 				col = mix(col, dir_tint, 0.28 * ocean_current_strength * non_static);
+				// Systemic Ocean Currents：上升/下沉流彩色高亮。
+				// up_raw ∈ [0,1]，0.5 为中性；偏离 0.5 幅度越大越显色。
+				float up_raw = texture(ocean_upwelling_tex, uv).r;
+				float up_signed = up_raw * 2.0 - 1.0;            // [-1, 1]
+				float up_mag = abs(up_signed);
+				if (up_mag > 0.1) {
+					vec3 up_color = (up_signed > 0.0)
+						? vec3(1.00, 0.90, 0.15)                 // 上升：黄
+						: vec3(0.62, 0.25, 0.85);                // 下沉：紫
+					col = mix(col, up_color, 0.55 * up_mag * non_static);
+				}
 			}
 		}
 		float river_sdf_water = texture(scalar_atlas, uv).g;
@@ -1684,5 +1958,15 @@ void fragment() {
 		}
 	}
 
-	COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0);
+	float alpha = 1.0;
+	if (season_transition_overlay) {
+		float dissolve_noise = fbm(wp * 0.035 + vec2(17.0, -43.0), 2);
+		float edge = clamp(season_transition_progress, 0.0, 1.0);
+		float soft = max(season_transition_softness, 0.001);
+		float threshold = 1.0 - edge;
+		alpha = 1.0 - smoothstep(threshold - soft, threshold + soft, dissolve_noise);
+		alpha *= 1.0 - smoothstep(0.88, 1.0, edge);
+	}
+
+	COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), alpha);
 }

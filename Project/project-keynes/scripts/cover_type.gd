@@ -9,6 +9,7 @@
 #   SEA_ICE    — 季节性海冰（OCEAN/COAST 上面）
 #   PERMAFROST — 永久冻土（TUNDRA 下层，不可见但影响排水）
 #   FLOODING   — 季节性洪泛（雨季 SWAMP/DELTA）
+#   PELAGIC_BLOOM — 深海富营养华、浮游生物大量繁殖（Systemic Ocean Currents）
 
 class_name CoverType
 
@@ -19,6 +20,7 @@ enum CV {
 	SEA_ICE,
 	PERMAFROST,
 	FLOODING,
+	PELAGIC_BLOOM,
 }
 
 const _NAME_CN: Dictionary = {
@@ -28,9 +30,11 @@ const _NAME_CN: Dictionary = {
 	CV.SEA_ICE:    "海冰",
 	CV.PERMAFROST: "永久冻土",
 	CV.FLOODING:   "洪泛",
+	CV.PELAGIC_BLOOM: "远洋华",
 }
 
 # 雪/海冰/冻土上可通行；冰川封冻不可通行；洪泛季节淹没不可通行。
+# 远洋华标记仅当视觉 tint，本身仍是海面，通行性与下层水 cell 相同。
 const _PASSABLE: Dictionary = {
 	CV.NONE:       true,
 	CV.SNOW:       true,
@@ -38,6 +42,7 @@ const _PASSABLE: Dictionary = {
 	CV.SEA_ICE:    true,
 	CV.PERMAFROST: true,
 	CV.FLOODING:   false,
+	CV.PELAGIC_BLOOM: true,
 }
 
 static func name_cn(c: CV) -> String:
