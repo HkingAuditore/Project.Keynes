@@ -44,24 +44,15 @@ var ran_this_tick: bool = false
 # 历史背景：原 2-tick split 下 ran_this_tick 在 stage_a/stage_b 都为真，但
 # _last_fronts 只在 stage_b 翻新——所以引入这个标志区分"slice 跑了"与"fronts 真变了"，
 # 以避免在 stage_a tick 让 weather_layer 收到一份未变的 fronts → blend reset → 云冻结。
-# Frequency-fix（2026-05-10）：现在 stage_a/stage_b 合并在同 slice 跑完，
-# fronts_changed 与 ran_this_tick 同步置位。保留这个 API 以便：
+# Field-slice fix（2026-05-11）：weather field solver 可以跨多 tick 跑。
+# fronts_changed 只在 commit + stage_b 完成后置位。保留这个 API 以便：
 #   1) main.gd 与 weather_layer 接口语义清晰（"fronts 是否真变了"独立可查）
-#   2) 将来如重新引入切片时不必再翻这层结构
+#   2) 分片期间 renderer 继续使用上一轮完整 fronts，避免半更新。
 var _fronts_changed_this_tick: bool = false
 
-# Frequency-fix（2026-05-10）：原 2-tick split（stage_a 一 tick，stage_b 下一
-# tick）被 slice_budget_ms=8.0 强制——但 stage_a 本身就 50-60ms 远超 budget，
-# 所以单 slice 内一定 break，stage_b 必须等下一 tick。结果是：
-#   stride=1 下天气每 2 游戏日才完整推进一次，1× 速度下 = 2 秒一次
-#   stride=2（5×）= 4 游戏日一次；stride=4（20×）= 8 游戏日一次
-# 玩家在加速档下会感觉"几十天才更新一次天气"。
-#
-# 现在 stage_a + stage_b 合并在同一 slice 内跑完，run_slice 一次 return done=true。
-# 单次 tick 总耗时 55-75ms（vs 之前 50-60ms + 5-15ms 分两 tick），峰值略升但
-# 总吞吐相同；stride=1 下天气真正每 1 游戏日推进一次，玩家可见的更新频率翻倍。
-# _round_active / _round_stage / _round_fronts 保留为 no-op 状态字段，仅
-# reset_progress 时清理，避免破坏老快照逻辑（reset_progress 被外部调）。
+# Field solver 分三段：begin 初始化快照，run_slice 只算 N 个 cell，commit 才写回
+# HexCell.weather_*、重建 summary fronts 并运行 stage_b。_round_active 表示当前有
+# 未完成的天气场 round，should_run 会绕过 stride gate 继续推进下一片。
 var _round_active: bool = false
 var _round_stage: int = 0
 var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
@@ -74,10 +65,8 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 		p_stride: int) -> void:
 	id = &"weather_refresh"
 	priority = 150  # after refresh_climate_daily (100), before ocean_currents (200)
-	# Frequency-fix：合并 stage_a (~50-60ms) + stage_b (~5-15ms) 后单 slice 实测 55-75ms。
-	# slice_budget_ms 仅在 done=false 时生效；现在永远 done=true 所以不影响调度，但
-	# 保持数值真实以避免误导读者以为 weather 是个 8ms 的轻量 Job。
-	slice_budget_ms = 80.0
+	# Field solver now runs in cell slices; commit slice may add summary/stage_b.
+	slice_budget_ms = 12.0
 	# Daily-sim perf bugfix：weather 推进必须每日发生（受 stride 节流），否则
 	# 全图天气前沿冻结、降水/温度异常驱动失效。绕过 frame_budget 守卫，避免
 	# 因 climate Job 超预算而被 frame_budget_exhausted 全数跳过。
@@ -105,6 +94,8 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 func should_run(ctx: SusTickContext) -> bool:
 	if generator == null or map == null or world == null:
 		return false
+	if _round_active:
+		return true
 	return super.should_run(ctx)
 
 
@@ -114,9 +105,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		ran_this_tick = false
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0 }
 
-	# Frequency-fix（2026-05-10）：合并 stage_a + stage_b 在同 tick 跑完。
-	# 详见文件顶部 Frequency-fix 注释。原 2-tick split 在 1× 速度下让天气每 2 游戏日
-	# 才推进一次，玩家可见频率减半；高速档 stride×2 后差距更大，所以"感觉几十天才更新一次"。
 	var season_idx: int = 0
 	if season_index_getter.is_valid():
 		season_idx = int(season_index_getter.call())
@@ -126,6 +114,46 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var anomaly: float = 0.0
 	if climate_anomaly_getter.is_valid():
 		anomaly = float(climate_anomaly_getter.call())
+
+	var can_slice_field: bool = generator.has_method("weather_uses_field_solver") \
+		and bool(generator.weather_uses_field_solver()) \
+		and generator.has_method("begin_weather_refresh_stage_a") \
+		and generator.has_method("run_weather_refresh_stage_a_slice") \
+		and generator.has_method("commit_weather_refresh_stage_a")
+	if can_slice_field:
+		if not _round_active:
+			generator.begin_weather_refresh_stage_a(map, world, season_idx, anomaly, season_phase)
+			_round_active = true
+			_round_stage = 1
+			_round_fronts = _last_fronts
+		var cell_budget: int = 500
+		if generator.has_method("weather_field_slice_cells"):
+			cell_budget = int(generator.weather_field_slice_cells())
+		var slice_result: Dictionary = generator.run_weather_refresh_stage_a_slice(cell_budget)
+		var slice_done: bool = bool(slice_result.get("done", true))
+		if not slice_done:
+			var partial_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+			return {
+				"done": false,
+				"work_done": int(slice_result.get("work_done", 0)),
+				"elapsed_ms": partial_elapsed_ms,
+				"progress_ratio": float(slice_result.get("progress_ratio", 0.0)),
+			}
+		var sliced_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
+		generator.refresh_daily_stage_b(map, world)
+		_last_fronts = sliced_fronts
+		_round_fronts = sliced_fronts
+		_round_active = false
+		_round_stage = 0
+		ran_this_tick = true
+		_fronts_changed_this_tick = true
+		var sliced_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		return {
+			"done": true,
+			"work_done": int(slice_result.get("work_done", sliced_fronts.size())),
+			"elapsed_ms": sliced_elapsed_ms,
+			"progress_ratio": 1.0,
+		}
 
 	var fronts: Array[WeatherFront] = generator.refresh_daily_stage_a(map, world, season_idx, anomaly, season_phase)
 	generator.refresh_daily_stage_b(map, world)
