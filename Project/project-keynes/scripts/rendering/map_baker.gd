@@ -16,7 +16,7 @@
 
 class_name MapBaker
 
-const WindBeltScript = preload("res://scripts/wind_belt.gd")
+const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 # Physical Wind & Ocean Circulation：hex 域物理化求解器。当
 # ClimateProfile.physical_circulation_enabled = true 时，bake_world / 切片烘焙
 # 路径用它替换 ny-only 风场 + Ekman 洋流的旧实现，输出从 hex 字段（cell.wind_vector

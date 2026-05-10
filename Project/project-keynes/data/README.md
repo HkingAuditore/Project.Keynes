@@ -26,7 +26,7 @@
    | `move_cost` | 进入该地形的移动消耗（整数） | `2` |
    | `base_color` | Baker / debug 调色 | `Color(0.4, 0.8, 0.9)` |
 
-2. **在 `TerrainType.TERRAIN` 枚举加值**：打开 `res://scripts/terrain_type.gd`，在 `enum TERRAIN` 末尾追加：
+2. **在 `TerrainType.TERRAIN` 枚举加值**：打开 `res://scripts/geography/terrain_type.gd`，在 `enum TERRAIN` 末尾追加：
    ```gdscript
    HOT_SPRING = 26,
    ```
@@ -63,7 +63,7 @@
    | `next_richer` | 升级演替下家的 VEG 整数值；链尾填 `-1` | |
    | `next_harsher` | 退化演替下家的 VEG 整数值；链尾填 `-1` | |
 
-2. **在 `VegetationType.VEG` 枚举加值**：打开 `res://scripts/vegetation_type.gd`，在 `enum VEG` 末尾追加：
+2. **在 `VegetationType.VEG` 枚举加值**：打开 `res://scripts/geography/vegetation_type.gd`，在 `enum VEG` 末尾追加：
    ```gdscript
    ALPINE_BOG = 24,
    ```

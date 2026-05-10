@@ -71,7 +71,7 @@
 class_name MapGenerator
 
 # 显式 preload，避免新建 class_name 文件时 Godot 全局类注册表偶发未拾取的问题
-const WindBeltScript = preload("res://scripts/wind_belt.gd")
+const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 # 同理：ClimateProfile 在 @export 里被引用，冷启动/首次导入时全局类注册表可能
 # 尚未拾取，这里显式 preload 迫使先加载该脚本，避免
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。

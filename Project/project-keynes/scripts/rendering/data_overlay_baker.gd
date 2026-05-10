@@ -26,7 +26,7 @@
 class_name DataOverlayBaker
 
 # 风带采样靠静态函数；这里 preload 一次以避免每 cell 反复 load。
-const WindBeltScript = preload("res://scripts/wind_belt.gd")
+const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 
 # 降水估算时的归一化上限：base_moisture × seasonal_moisture_scale 理论极值 ~1.5
 # （base∈[0,1] × scale∈[0, ~1.3]），给一点余量避免长尾被 clip 到同色。
