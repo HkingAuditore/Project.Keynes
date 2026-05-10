@@ -85,13 +85,15 @@ var _ocean_spawn_bias: float = 0.0
 # each hex owns vapor/cloud/precip/instability/type/intensity, and legacy fronts
 # are rebuilt as a compact visual summary after the field solve.
 var _weather_field_enabled: bool = true
-var _field_advect_steps: int = 2
+var _field_advect_steps: int = 6
 var _field_diffusion: float = 0.08
-var _field_condensation_gain: float = 0.55
-var _field_precip_decay: float = 0.35
+var _field_condensation_gain: float = 0.28
+# 衰减系数：每天 precip 至少损失这么多比例（max 公式：保留率 = 1 - decay）
+# v5：再降到 0.82（保留 18%）+ 强风时几乎全部刷新 → 彻底打破 STORM 持留
+var _field_precip_decay: float = 0.82
 var _field_orographic_lift_gain: float = 0.35
 var _field_convergence_gain: float = 0.25
-var _field_ocean_evap_gain: float = 0.40
+var _field_ocean_evap_gain: float = 0.30
 var _field_summary_limit: int = MAX_FRONTS
 var _weather_field: Dictionary = {}
 var _last_map_for_query: MapData = null
@@ -106,6 +108,46 @@ var _current_map_for_tick: MapData = null
 # 字段：advance_ms / spawn_ms / distribute_ms / cyclone_ms
 var _last_breakdown: Dictionary = {}
 
+# Tick-scoped 预计算缓存：每次 _solve_weather_field 进入时一次性把全图 cell
+# 的世界坐标和 1 环邻居数组算好；helper 函数（_neighbor_aligned / _upstream_vapor /
+# _wind_convergence_for_cell / _orographic_lift_for_cell / _neighbor_average_vapor /
+# _avg_ocean_anomaly_at）通过下面两个 accessor 读取，避免在 ~2400 cell × 多次内层
+# 循环里反复调用 HexUtils.cube_to_world() 与 map.get_neighbors()。
+# tick 结束时清空，避免跨帧弱引用残留。
+var _tick_cell_pos: Dictionary = {}
+var _tick_cell_neighbors: Dictionary = {}
+
+# Continuity-fix（2026-05-10）：summary front 的跨 tick 身份继承状态。
+# 解决"前沿每 tick 重新出生 + 边界 cell 抖动 → 视觉跳变"的根因。
+#   _prev_summary_membership: HexCell → cluster_idx，记录上 tick flood-fill 时
+#                              每个 cell 的归属，给本 tick 的阈值滞回（hysteresis）
+#                              判定使用——上 tick 在某簇内的 cell 用 0.06 阈值
+#                              留在簇里，新加入的需要 ≥ 0.10 才能进簇。
+#   _prev_summary_seeds:       Array of {type, center, age, area}，记录上 tick 的
+#                              聚合中心，本 tick BFS 时优先以这些点为种子，让
+#                              cluster 在 split / merge / 边界漂移下仍保持身份。
+# 在 init() 与 setup 路径中清零；每次 _build_field_summary_fronts 末尾刷新。
+var _prev_summary_membership: Dictionary = {}
+var _prev_summary_seeds: Array = []
+
+# Drift-debug（2026-05-10）：set true 后每次 _build_field_summary_fronts 调用都打印
+# 顶 3 个 cluster 的 (type, prev_center → new_center, observed_drift, EMA velocity)。
+# 用于诊断"云不会动"——可以直观看到 sim 端是否真的产出了非零 velocity。
+# 验证完成后改回 false 关日志。
+const DRIFT_DEBUG_LOG: bool = true
+
+func _cell_world_pos(cell: HexCell) -> Vector2:
+	if _tick_cell_pos.has(cell):
+		return _tick_cell_pos[cell]
+	return HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+
+func _cell_neighbors(cell: HexCell, map: MapData) -> Array:
+	if _tick_cell_neighbors.has(cell):
+		return _tick_cell_neighbors[cell]
+	if map == null:
+		return []
+	return map.get_neighbors(cell)
+
 func last_breakdown() -> Dictionary:
 	return _last_breakdown
 
@@ -118,6 +160,10 @@ func init(seed_val: int, world_bounds: Rect2, hex_size: float) -> void:
 	_hex_size = hex_size
 	_active_fronts.clear()
 	_day_counter = 0
+	# Continuity-fix：换地图/重 init 时必须清掉跨 tick 继承状态，
+	# 否则旧地图的 HexCell 弱引用 + 旧 cluster 中心会污染新地图的首帧聚类。
+	_prev_summary_membership.clear()
+	_prev_summary_seeds.clear()
 
 # --- 每日 tick（由 MapGenerator.refresh_daily 调用） ---
 
@@ -176,6 +222,9 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 		}
 		_last_map_for_query = map
 		_current_map_for_tick = null
+		# Tick-scoped 缓存只服务本次 tick，结束时清掉避免跨 tick 持有 HexCell 弱引用。
+		_tick_cell_pos.clear()
+		_tick_cell_neighbors.clear()
 		return _active_fronts
 
 	# Daily-sim perf instrumentation：带埋点的 advance / spawn / distribute / cyclone 四段。
@@ -318,16 +367,19 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 			front.ttl_days = _rng.randi_range(12, 22)
 			front.decay_per_day = 1.0 / float(front.ttl_days) * 0.9
 		WeatherType.WT.STORM, WeatherType.WT.MONSOON:
-			front.ttl_days = _rng.randi_range(6, 11)
-			front.decay_per_day = 0.10
+			# 暴风/季风：原 6-11 天 → 4-8 天，避免单地连下一周
+			front.ttl_days = _rng.randi_range(4, 8)
+			front.decay_per_day = 0.14
 		WeatherType.WT.BLIZZARD:
-			front.ttl_days = _rng.randi_range(8, 14)
-			front.decay_per_day = 0.08
+			# 暴雪：原 8-14 天 → 5-10 天
+			front.ttl_days = _rng.randi_range(5, 10)
+			front.decay_per_day = 0.12
 		WeatherType.WT.FOG:
 			front.ttl_days = _rng.randi_range(5, 9)
 			front.decay_per_day = 0.15
 		_:
-			front.ttl_days = _rng.randi_range(10, 16)
+			# RAIN：原 10-16 天 → 6-11 天
+			front.ttl_days = _rng.randi_range(6, 11)
 			front.decay_per_day = 0.07
 	# 初始速度沿当前 spawn 点风向
 	# Phase D：与 wind_fn 同源——叠加当季 monsoon 偏置，让新生 MONSOON front
@@ -473,21 +525,37 @@ func _distribute_to_cells(map: MapData) -> void:
 		temp_now = clampf(temp_now + WeatherType.temp_delta(wt) * intensity, 0.0, 1.0)
 		cell.moisture = moist_now
 		cell.temperature = temp_now
-		# 临时覆盖物：BLIZZARD + 陆地 + 冷温 → SNOW；STORM/MONSOON + 低地 → FLOODING
-		# 只在天气足够强（intensity > 0.4）时改写，避免微弱天气频繁翻覆盖物
-		if intensity > 0.4 and not LandformType.is_water(cell.landform):
-			var new_cover: int = cell.cover
-			if WeatherType.can_form_snow(wt) and temp_now < 0.30:
-				new_cover = CoverType.CV.SNOW
-			elif WeatherType.can_form_flood(wt) and cell.elevation < 0.55 and moist_now > 0.65:
-				new_cover = CoverType.CV.FLOODING
-			if new_cover != cell.cover:
-				cell.cover = new_cover
-				cell.current_state["cover"] = int(cell.cover)
+		# 临时覆盖物：FLOODING 仍走即时写入；SNOW 改走 _apply_snow_accumulation 累积式
+		# 累积式好处：(1) 雪不再随单帧 BLIZZARD 闪烁出现；(2) 温升时按节律消融
+		if not LandformType.is_water(cell.landform):
+			# 1) 雪：累积 / 融化
+			if _apply_snow_accumulation(cell, wt, temp_now, intensity):
 				_cover_dirty = true
+			# 2) 洪涝：保留即时写入。放宽条件 + 高强度直接淹（让暴雨真的导致洪涝）
+			# 修：原条件 intensity>0.4 + elev<0.55 + moist>0.65 太严，从未触发
+			# 现：低洼+中强度，或任意海拔下的极端暴雨都能淹
+			if cell.cover != CoverType.CV.SNOW and WeatherType.can_form_flood(wt):
+				var precip_now: float = float(cell.current_state.get("weather_precip", 0.0))
+				var heavy_flood: bool = intensity > 0.55 and precip_now > 0.55  # 极端暴雨：任意海拔
+				var lowland_flood: bool = intensity > 0.32 and cell.elevation < 0.50 and moist_now > 0.60
+				if (heavy_flood or lowland_flood) and cell.cover != CoverType.CV.FLOODING:
+					cell.cover = CoverType.CV.FLOODING
+					cell.current_state["cover"] = int(cell.cover)
+					_cover_dirty = true
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
 	var cells: Array = map.all_cells()
+	# Tick-scoped 预计算：把每 cell 的世界坐标 + 1 环邻居数组算一次，
+	# 主循环 + helper（_neighbor_aligned / _wind_convergence_for_cell / ...）
+	# 全部走 _cell_world_pos / _cell_neighbors 读缓存，避免在 ~2400 cell × 多重
+	# 内层循环里反复调用 HexUtils.cube_to_world() 与 map.get_neighbors()。
+	# 实测前为 70+ms 的 advect 段，绝大多数时间花在这两个调用的累计开销。
+	_tick_cell_pos.clear()
+	_tick_cell_neighbors.clear()
+	for cell: HexCell in cells:
+		_tick_cell_pos[cell] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+		_tick_cell_neighbors[cell] = map.get_neighbors(cell)
+
 	var prev_vapor: Dictionary = {}
 	var prev_precip: Dictionary = {}
 	for cell: HexCell in cells:
@@ -497,7 +565,7 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 
 	var next_field: Dictionary = {}
 	for cell: HexCell in cells:
-		var pos: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+		var pos: Vector2 = _cell_world_pos(cell)
 		var temp: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
 		var base_m: float = clampf(cell.moisture, 0.0, 1.0)
 		var ocean_an: float = _avg_ocean_anomaly_at(cell, map)
@@ -513,10 +581,37 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 
 		var advected_vapor: float = _upstream_vapor(cell, map, prev_vapor, wind_dir)
 		var neighbor_vapor: float = _neighbor_average_vapor(cell, map, prev_vapor)
-		var vapor: float = lerpf(base_m, advected_vapor, 0.48)
+		# 修（v3）：advection 函数已修正为纯上游链。这里 lerp 权重对应"风带强度"
+		# wind 越强 → vapor 越像上游（advect 主导，雨云被吹走）
+		# wind 弱 → vapor 越像 base_moisture（静止湿度场，本地蒸发）
+		# 修（v5）：风权重再上调 → advect 主导更彻底
+		# wind_mag=1 时 advect_w=0.95（base 5%）；wind_mag=0 时 advect_w=0.65
+		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
+		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
+		# v9c：内陆湖面修复——LAKE 上风方向是陆地（vapor 低），
+		# 高 advect_w 把湖面 vapor 摊薄到陆地值 → 湖面没有云。
+		# 对 LAKE 大幅降权（最高 0.50），让 base_moisture 主导。
+		var is_lake: bool = int(cell.terrain) == TerrainType.TERRAIN.LAKE
+		# v9d：河流走温和路线——河流只占 cell 面积一小部分（陆地 + 河带），
+		# 给它湖泊那套强度会让"河流穿过的整片陆地"湿润化。
+		# 只做轻度 advect 降权（最低 0.55），让风仍能带走云但 base 也起作用。
+		var has_river: bool = (not is_lake) and cell.has_river and not on_water
+		if is_lake:
+			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
+		elif has_river:
+			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
+		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
 		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
 
-		var evap: float = _evaporation_for_cell(cell, map, temp, base_m, ocean_an, on_water)
+		# v9c：LAKE 没有 ocean_current → ocean_an=0 → ocean_mul 卡在 1.0；
+		# 给湖面一个虚拟正异常 +0.20 让 evap 略高于平均海面（湖泊夏季蒸发其实很强）。
+		# v9d：河流给一个更轻的虚拟异常 +0.08（河岸蒸发真实存在但远弱于湖面）。
+		var effective_ocean_an: float = ocean_an
+		if is_lake:
+			effective_ocean_an = 0.20
+		elif has_river:
+			effective_ocean_an = maxf(ocean_an, 0.08)
+		var evap: float = _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
 		vapor = clampf(vapor + evap, 0.0, 1.0)
 
 		var lift: float = _orographic_lift_for_cell(cell, map, wind_dir)
@@ -524,13 +619,21 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		if lift < 0.0:
 			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
 
-		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.76)
+		# 修（v9b）：v6 砍到 *1.8 + v7 lift 门控 (vapor-0.20) 双重削弱后，
+		# 雨云锐减——中等湿度（0.3-0.5）的常态海上区域几乎不再生云。
+		# 现在做两处回调：
+		#   - 凝结倍数 1.8 → 2.2（仍比 v5 的 *3.0 低 27%，紫带不会回归）
+		#   - lift 门控曲线放缓：(vapor-0.10)/0.40 → vapor=0.5 即拿满
+		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.74)
 		var humid_excess: float = maxf(vapor - saturation, 0.0)
+		# v9b：lift 门控曲线放缓——保留"vapor=0 不能生雨"的物理底线，
+		# 但中等湿度（0.3-0.5）已能拿到正常 lift 贡献。
+		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
 		var cloud: float = clampf(
-			humid_excess * _field_condensation_gain * 3.0
-			+ maxf(lift, 0.0) * _field_orographic_lift_gain
+			humid_excess * _field_condensation_gain * 2.2
+			+ lift_supply * _field_orographic_lift_gain
 			+ convergence * _field_convergence_gain
-			+ maxf(ocean_an, 0.0) * 0.18,
+			+ maxf(effective_ocean_an, 0.0) * 0.12,
 			0.0, 1.0
 		)
 		var instability: float = clampf(
@@ -538,13 +641,23 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 			+ vapor * 0.55
 			+ cloud * 0.35
 			+ convergence * _field_convergence_gain
-			+ maxf(lift, 0.0) * _field_orographic_lift_gain
-			+ maxf(ocean_an, 0.0) * 0.25,
+			+ lift_supply * _field_orographic_lift_gain
+			+ maxf(effective_ocean_an, 0.0) * 0.25,
 			0.0, 1.0
 		)
-		var precip_raw: float = cloud * (0.30 + instability * 0.70) + maxf(lift, 0.0) * 0.18 - maxf(-lift, 0.0) * 0.45
+		# v7：precip_raw 的 lift 直贡献也门控在 vapor 上（同上理由）。
+		# 同时把 max-decay 的 floor 改为乘 vapor——vapor 跌到 0 时旧 precip 必须放掉。
+		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
 		var old_precip: float = float(prev_precip.get(cell, 0.0))
-		var precip: float = clampf(maxf(precip_raw, old_precip * (1.0 - _field_precip_decay)), 0.0, 1.0)
+		# 修（v7+v9b）：decay 同时受风速与 vapor 双重加压：
+		#   - 强风带：保留率 ≈ 5%（继承 v3）
+		#   - vapor 跌到 0.10 以下：旧 precip 强制放空（断绝持留环路）
+		# v9b：曲线与 lift 门控同步放缓 (0.20→0.10 起步)，
+		# 避免常态海风带（vapor 0.3-0.5）的雨云被 floor 误掐。
+		var vapor_floor_factor: float = clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		var dyn_decay: float = _field_precip_decay + wind_mag * 0.25
+		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
+		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
 
 		var wt: int = _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
@@ -555,27 +668,153 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 			"instability": instability,
 			"type": wt,
 			"intensity": intensity,
+			# Cache convergence so _apply_frontal_convergence_boost can reuse
+			# the value computed here instead of recomputing per-cell.
+			"convergence": convergence,
 		}
 	_weather_field = next_field
+	# Phase 3b：锋面散度 + 温差升降级。
+	# 在主循环结束、_weather_field 已落定之后做一次"锋面后处理"：
+	#   - 对每个 cell 重读其周边温度差（max - min over neighbors），
+	#     用 wind_convergence 作为辐合强度 → 二者相乘得到 frontal_score
+	#   - 高 frontal_score（强辐合 + 大温差）：强制把 cloud / precip / instability
+	#     拉到 RAIN 以上阈值，并按温差判定升 STORM 或降 RAIN
+	#   - 这保证"锋面"在地图上是物理可见的：哪里有冷暖气流交汇，哪里就下雨
+	_apply_frontal_convergence_boost(map, cells, climate_anomaly)
+
+func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float) -> void:
+	# 锋面温差阈值（temperature 归一化为 [0,1]，0.28 ≈ 14°C，0.06 ≈ 3°C）。
+	# 修（v4）：v3 的 0.20/0.32 在中纬度风带几乎全境触发 → STORM 横贯地图。
+	# 现在大幅收紧：温差需 14°C 以上、辐合需更强，才进入"真正的锋面带"。
+	const STORM_TEMP_DIFF: float = 0.28
+	const WEAK_TEMP_DIFF: float = 0.06
+	const CONVERGENCE_THRESHOLD: float = 0.45
+	for cell: HexCell in cells:
+		var entry: Dictionary = _weather_field.get(cell, {})
+		if entry.is_empty():
+			continue
+		# Reuse the convergence already computed in _solve_weather_field's main
+		# loop (cached in next_field[cell].convergence). Falls back to recompute
+		# only if the cache key is missing (defensive; legacy paths).
+		var conv: float
+		if entry.has("convergence"):
+			conv = float(entry["convergence"])
+		else:
+			conv = _wind_convergence_for_cell(cell, map)
+		if conv < CONVERGENCE_THRESHOLD:
+			continue
+		# 计算 cell 邻域的温差 max - min（含 cell 自身）。
+		var t_self: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
+		var t_min: float = t_self
+		var t_max: float = t_self
+		for nb: HexCell in _cell_neighbors(cell, map):
+			if nb == null:
+				continue
+			var t_nb: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
+			if t_nb < t_min:
+				t_min = t_nb
+			if t_nb > t_max:
+				t_max = t_nb
+		var temp_diff: float = t_max - t_min
+		# frontal_score：辐合强度 × 温差强度（温差 0.20 时为 1.0）。
+		var frontal_score: float = clampf(
+			(conv - CONVERGENCE_THRESHOLD) / (1.0 - CONVERGENCE_THRESHOLD)
+			* clampf(temp_diff / STORM_TEMP_DIFF, 0.0, 1.0),
+			0.0, 1.0
+		)
+		if frontal_score < 0.45:
+			continue
+		# 修（v5）：boost 进一步弱化——只让锋面带"略多云"，不再硬推 precip / inst 过阈值
+		# 让 STORM 等强对流完全由 _classify 的物理条件决定，不再被锋面后处理强制锁
+		var cloud0: float = float(entry.get("cloud", 0.0))
+		var precip0: float = float(entry.get("precip", 0.0))
+		var inst0: float = float(entry.get("instability", 0.0))
+		var cloud1: float = clampf(maxf(cloud0, 0.25 + frontal_score * 0.20), 0.0, 1.0)
+		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0)
+		var inst1: float = clampf(maxf(inst0, 0.25 + frontal_score * 0.15), 0.0, 1.0)
+		entry["cloud"] = cloud1
+		entry["precip"] = precip1
+		entry["instability"] = inst1
+		# 修（v5）：彻底取消温差升级到 STORM/BLIZZARD 的锁定逻辑。
+		# 锋面只做云的"轻推"，不再改 type。强对流完全交给 classify 物理条件判断。
+		# 仅保留：温差极小时把残余 STORM/MONSOON 降级 RAIN（防止旧 STORM 持留）
+		var wt0: int = int(entry.get("type", WeatherType.WT.CLEAR))
+		var new_wt: int = wt0
+		if temp_diff < WEAK_TEMP_DIFF and (wt0 == WeatherType.WT.STORM or wt0 == WeatherType.WT.MONSOON):
+			new_wt = WeatherType.WT.RAIN
+		if new_wt != wt0:
+			entry["type"] = new_wt
+		# 重算 intensity（沿用同套公式，确保下游可视化一致）。
+		var ocean_an: float = _avg_ocean_anomaly_at(cell, map)
+		var vapor1: float = float(entry.get("vapor", cell.moisture))
+		entry["intensity"] = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
+		_weather_field[cell] = entry
+
+# Phase 3c：积雪累积与融化（共享方法）
+# ------------------------------------------------------------------------
+# 目的：把"BLIZZARD/SNOW 一发生立刻 cover=SNOW"换成累积式累计 + 温升融化。
+# 字段约定（hex_cell.gd 已新增）：
+#   accumulated_snow_days: int  —— 当前连续可降雪天数，>=SNOW_ACCUM_DAYS 时落地为 SNOW
+#   pre_snow_cover: int         —— 备份覆盖前的 cover；融化时恢复（-1 表示未备份）
+# 写入策略：
+#   1) 可降雪条件（can_form_snow 且 temp<冰点 且 intensity>0.4）→ accumulated_snow_days += 1
+#   2) 否则若 temp 高于解冻阈值 → accumulated_snow_days -= 1（不再降雪即缓慢消融）
+#   3) 累计达阈值且当前不是 SNOW → 备份原 cover，写 cover=SNOW
+#   4) 累计回零且当前是 SNOW 且有备份 → 恢复 cover=pre_snow_cover
+const SNOW_ACCUM_DAYS_REQ: int = 3      # 连续 N 天才落地积雪
+const SNOW_FREEZE_T: float = 0.30       # 低于此温度才算"可降雪冷度"
+const SNOW_MELT_T: float = 0.34         # 高于此温度开始消融（带一点滞回防抖）
+
+func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity: float) -> bool:
+	# 返回 true 表示本调用改写了 cell.cover（caller 据此设置 _cover_dirty）。
+	if LandformType.is_water(cell.landform):
+		return false
+	var changed: bool = false
+	var snowing: bool = WeatherType.can_form_snow(wt) and temp_now < SNOW_FREEZE_T and intensity > 0.4
+	if snowing:
+		cell.accumulated_snow_days += 1
+	elif temp_now > SNOW_MELT_T:
+		cell.accumulated_snow_days = max(0, cell.accumulated_snow_days - 1)
+	# 升级：累积够了且当前还不是 SNOW → 备份并覆盖
+	if cell.accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ and cell.cover != CoverType.CV.SNOW:
+		cell.pre_snow_cover = int(cell.cover)
+		cell.cover = CoverType.CV.SNOW
+		cell.current_state["cover"] = int(cell.cover)
+		changed = true
+	# 融化：累积清零且当前是 SNOW → 恢复（无备份则置 NONE）
+	elif cell.accumulated_snow_days <= 0 and cell.cover == CoverType.CV.SNOW:
+		var restored: int = cell.pre_snow_cover if cell.pre_snow_cover >= 0 else int(CoverType.CV.NONE)
+		cell.cover = restored
+		cell.current_state["cover"] = int(cell.cover)
+		cell.pre_snow_cover = -1
+		changed = true
+	return changed
 
 func _upstream_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary, wind_dir: Vector2) -> float:
+	# 修（v3）：原版以 cell 自身为锚（weight=1.0）+ 上游 1/2,1/3,1/4 → cell 自己占 48%
+	# → 上游链根本拽不动场，这是"风动不明显"的真凶（lerp 权重再高也救不回来）。
+	# 现在：完全不含自己，仅看上游链，权重高 → 远 → 低，让 vapor 真正随风迁移。
 	var current: HexCell = cell
-	var sum_v: float = float(prev_vapor.get(cell, cell.moisture))
-	var weight: float = 1.0
+	var sum_v: float = 0.0
+	var weight: float = 0.0
+	var w_decay: float = 1.0
 	for step in range(_field_advect_steps):
 		var upstream: HexCell = _neighbor_aligned(current, map, -wind_dir)
 		if upstream == null:
 			break
-		var w: float = 1.0 / float(step + 2)
-		sum_v += float(prev_vapor.get(upstream, upstream.moisture)) * w
-		weight += w
+		sum_v += float(prev_vapor.get(upstream, upstream.moisture)) * w_decay
+		weight += w_decay
+		w_decay *= 0.75  # 1.0 → 0.75 → 0.56 → 0.42 → 0.32 → 0.24，6 跳更长尾
 		current = upstream
-	return sum_v / maxf(weight, 0.001)
+	if weight < 0.001:
+		# 边缘格子无上游：fallback 到自身（避免 0 vapor）
+		return float(prev_vapor.get(cell, cell.moisture))
+	return sum_v / weight
 
 func _neighbor_average_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary) -> float:
 	var sum_v: float = float(prev_vapor.get(cell, cell.moisture))
 	var n: int = 1
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in _cell_neighbors(cell, map):
 		if nb == null:
 			continue
 		sum_v += float(prev_vapor.get(nb, nb.moisture))
@@ -587,7 +826,12 @@ func _evaporation_for_cell(cell: HexCell, map: MapData, temp: float, moisture: f
 	evap += maxf(moisture - 0.45, 0.0) * 0.018
 	evap += _vegetation_transpiration_factor(cell) * 0.012
 	if not on_water:
-		for nb: HexCell in map.get_neighbors(cell):
+		# v9d：自身有河 → 给固定 +0.012（比"邻居有水"的 +0.018 略低，
+		# 因为河只占 cell 面积一小部分）。这是叠加在 base 0.006 上，
+		# 让河流穿过的陆地实际 evap 接近 0.018，介于陆地与海面之间。
+		if cell.has_river:
+			evap += 0.012
+		for nb: HexCell in _cell_neighbors(cell, map):
 			if nb != null and _is_water_terrain(int(nb.terrain)):
 				evap += 0.018
 				break
@@ -619,13 +863,13 @@ func _orographic_lift_for_cell(cell: HexCell, map: MapData, wind_dir: Vector2) -
 	return 0.0
 
 func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
-	var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+	var self_wp: Vector2 = _cell_world_pos(cell)
 	var incoming: float = 0.0
 	var checked: int = 0
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in _cell_neighbors(cell, map):
 		if nb == null:
 			continue
-		var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _hex_size)
+		var nb_wp: Vector2 = _cell_world_pos(nb)
 		var dir_to_self: Vector2 = self_wp - nb_wp
 		if dir_to_self.length_squared() <= 0.0001:
 			continue
@@ -639,16 +883,19 @@ func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
 	return clampf(incoming / float(checked), 0.0, 1.0)
 
 func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
-	if cell == null or map == null or dir.length_squared() <= 0.0001:
+	if cell == null or dir.length_squared() <= 0.0001:
 		return null
-	var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+	var neighbors: Array = _cell_neighbors(cell, map)
+	if neighbors.is_empty():
+		return null
+	var self_wp: Vector2 = _cell_world_pos(cell)
 	var best: HexCell = null
 	var best_dot: float = 0.18
 	var ndir: Vector2 = dir.normalized()
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in neighbors:
 		if nb == null:
 			continue
-		var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _hex_size)
+		var nb_wp: Vector2 = _cell_world_pos(nb)
 		var to_nb: Vector2 = nb_wp - self_wp
 		if to_nb.length_squared() <= 0.0001:
 			continue
@@ -661,7 +908,7 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
 	var lat_abs: float = 0.5
 	if _world_bounds.size.y > 0.001:
-		var pos: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+		var pos: Vector2 = _cell_world_pos(cell)
 		lat_abs = absf(clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0) * 2.0 - 1.0)
 	var warm: bool = temp > 0.58
 	var cold: bool = temp < 0.32
@@ -669,13 +916,14 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 	var summerish: bool = (season_idx % 4) == 1
 	var low_lat: bool = lat_abs < 0.48
 
-	if cold and (precip > 0.18 or (cloud > 0.48 and vapor > 0.56)):
+	# 修（v5）：STORM 必须真正"猛"才触发，不再让中纬度风带普通湿天气也进 STORM
+	if cold and (precip > 0.50 or (cloud > 0.78 and vapor > 0.75)):
 		return WeatherType.WT.BLIZZARD
-	if warm and humid and instability > 0.68 and precip > 0.30:
+	if warm and humid and instability > 0.85 and precip > 0.58:
 		return WeatherType.WT.STORM
-	if warm and humid and low_lat and (summerish or _season_phase > 0.75 and _season_phase < 2.25) and precip > 0.24:
+	if warm and humid and low_lat and (summerish or _season_phase > 0.75 and _season_phase < 2.25) and precip > 0.48:
 		return WeatherType.WT.MONSOON
-	if precip > 0.20 or (cloud > 0.54 and vapor > 0.52):
+	if precip > 0.52 or (cloud > 0.82 and vapor > 0.72):
 		return WeatherType.WT.RAIN
 	if vapor > 0.58 and cloud > 0.28 and precip < 0.15 and temp < 0.50:
 		return WeatherType.WT.FOG
@@ -723,75 +971,113 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 		cell.moisture = moist_now
 		cell.temperature = temp_now
 
-		if intensity > 0.4 and not LandformType.is_water(cell.landform):
-			var new_cover: int = cell.cover
-			if WeatherType.can_form_snow(wt) and temp_now < 0.30:
-				new_cover = CoverType.CV.SNOW
-			elif WeatherType.can_form_flood(wt) and cell.elevation < 0.55 and moist_now > 0.65:
-				new_cover = CoverType.CV.FLOODING
-			if new_cover != cell.cover:
-				cell.cover = new_cover
-				cell.current_state["cover"] = int(cell.cover)
+		if not LandformType.is_water(cell.landform):
+			# 雪：累积式（同 fronts 路径，避免两条分支不一致）
+			if _apply_snow_accumulation(cell, wt, temp_now, intensity):
 				_cover_dirty = true
+			# 洪涝：放宽条件 + 高强度直接淹（与 fronts 路径同步）
+			if cell.cover != CoverType.CV.SNOW and WeatherType.can_form_flood(wt):
+				var heavy_flood: bool = intensity > 0.55 and precip > 0.55
+				var lowland_flood: bool = intensity > 0.32 and cell.elevation < 0.50 and moist_now > 0.60
+				if (heavy_flood or lowland_flood) and cell.cover != CoverType.CV.FLOODING:
+					cell.cover = CoverType.CV.FLOODING
+					cell.current_state["cover"] = int(cell.cover)
+					_cover_dirty = true
 
 func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[WeatherFront]:
+	# Continuity-fix（2026-05-10）：完全重写聚类阶段，根治"天气特效跳变"。
+	#
+	# 旧实现的问题：
+	#   1. 每 tick 都用 flood-fill 从零聚类，没有跨 tick 身份；视觉层只能靠
+	#      (type, 距离 ≤ 1.5×r) 反推同一性，split/merge/边界 cell 翻 type 时
+	#      匹配失败 → 旧 front 淡出 + 新 front 在另一处淡入 = 跳变。
+	#   2. 单一硬阈值 0.10 → 边界 cell 在 0.08~0.12 之间抖动 → 聚类形态每 tick 漂移。
+	#   3. summary front 的 velocity 字段从未填写 → weather_layer._predict 外推位移恒为 0
+	#      → 跳日间云完全静止，下次 snapshot 来时是位移阶跃。
+	#
+	# 现在的修法：
+	#   Step 1（C）以 _prev_summary_seeds 为优先种子做 BFS，让 cluster 跨 tick 保身份。
+	#   Step 2（D）阈值滞回：上 tick 在某簇内的 cell 用 _HOLD=0.06 留簇里；新加入需 ≥ _ENTER=0.10。
+	#   Step 3（A）给每个 front 设 velocity = axis × radius × 0.4（与 _spawn_random_front 同源），
+	#                   weather_layer 外推预测就能让云在跳日/blend 阶段顺风继续飘。
+	#   Step 4 inherited cluster 的 life_progress 按继承代数前进，让 birth/dissolve 曲线
+	#                   只在真正"新生云"上触发；老簇保持 mature 不再每 tick 复位为 0.2。
+	const _SUMMARY_INTENSITY_ENTER: float = 0.10
+	const _SUMMARY_INTENSITY_HOLD: float = 0.06
 	var components: Array = []
 	var visited: Dictionary = {}
-	for seed: HexCell in map.all_cells():
-		if visited.has(seed):
+	var new_membership: Dictionary = {}
+
+	# Step 1：先用上 tick 的 cluster 中心做 BFS 种子，保持身份。
+	# 按 area 降序处理：大 cluster 优先认领，避免被相邻的小 cluster 抢走中心 cell。
+	var prev_seed_list: Array = _prev_summary_seeds.duplicate()
+	prev_seed_list.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("area", 1)) > int(b.get("area", 1))
+	)
+	for prev in prev_seed_list:
+		var prev_type: int = int(prev.get("type", WeatherType.WT.CLEAR))
+		var prev_center: Vector2 = prev.get("center", Vector2.ZERO)
+		var cube := HexUtils.world_to_cube(prev_center, _hex_size)
+		var seed_cell: HexCell = map.get_cell_by_cube(cube)
+		if seed_cell == null:
 			continue
-		var sf: Dictionary = _weather_field.get(seed, {})
+		# 找到合格种子：优先 prev_center 所在 cell；若 type 改变或强度跌穿 hold，
+		# 再在 1 环邻居里寻找同型且 ≥ hold 阈值的 cell 作为继承种子。
+		var picked_seed: HexCell = _pick_inheritance_seed(
+			seed_cell, prev_type, map, visited,
+			_SUMMARY_INTENSITY_ENTER, _SUMMARY_INTENSITY_HOLD
+		)
+		if picked_seed == null:
+			continue
+		var component := _flood_fill_field_component(
+			picked_seed, prev_type, map, visited, new_membership, components.size(),
+			_SUMMARY_INTENSITY_ENTER, _SUMMARY_INTENSITY_HOLD
+		)
+		if not component.is_empty():
+			component["inherited_age"] = int(prev.get("age", 0)) + 1
+			# Drift-fix（2026-05-10）：把上 tick 的中心 + 速度透传给本 tick 的 component，
+			# 用于在 build front 阶段计算实测每-snapshot 位移（observed_drift）。
+			# 这是让"云会飘"真正生效的关键：之前 axis × radius × 0.4 是凭空给的常数，
+			# weather_layer 外推又跑不到，所以视觉位移恒为 0。
+			component["inherited_from_center"] = prev_center
+			component["inherited_from_velocity"] = prev.get("velocity", Vector2.ZERO)
+			components.append(component)
+
+	# Step 2：剩下未访问的 cell 自起新 cluster（age=0 → 走 birth 渐入曲线）。
+	for seed_cell: HexCell in map.all_cells():
+		if visited.has(seed_cell):
+			continue
+		var sf: Dictionary = _weather_field.get(seed_cell, {})
 		var wt: int = int(sf.get("type", WeatherType.WT.CLEAR))
 		var intensity: float = float(sf.get("intensity", 0.0))
-		if intensity < 0.18 or wt == WeatherType.WT.CLEAR:
-			visited[seed] = true
+		var thresh: float = _SUMMARY_INTENSITY_HOLD if _prev_summary_membership.has(seed_cell) else _SUMMARY_INTENSITY_ENTER
+		if intensity < thresh or wt == WeatherType.WT.CLEAR:
+			visited[seed_cell] = true
 			continue
-		var queue: Array = [seed]
-		visited[seed] = true
-		var cells: Array = []
-		var sum_pos := Vector2.ZERO
-		var sum_axis := Vector2.ZERO
-		var sum_cloud: float = 0.0
-		var sum_precip: float = 0.0
-		var max_i: float = 0.0
-		while not queue.is_empty():
-			var cell: HexCell = queue.pop_front()
-			var cf: Dictionary = _weather_field.get(cell, {})
-			var cwt: int = int(cf.get("type", WeatherType.WT.CLEAR))
-			var ci: float = float(cf.get("intensity", 0.0))
-			if cwt != wt or ci < 0.18:
-				continue
-			cells.append(cell)
-			sum_pos += HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
-			sum_axis += cell.wind_vector
-			sum_cloud += float(cf.get("cloud", 0.0))
-			sum_precip += float(cf.get("precip", 0.0))
-			max_i = maxf(max_i, ci)
-			for nb: HexCell in map.get_neighbors(cell):
-				if nb == null or visited.has(nb):
-					continue
-				var nf: Dictionary = _weather_field.get(nb, {})
-				if int(nf.get("type", WeatherType.WT.CLEAR)) == wt and float(nf.get("intensity", 0.0)) >= 0.18:
-					visited[nb] = true
-					queue.append(nb)
-		if cells.is_empty():
-			continue
-		var count: float = float(cells.size())
-		components.append({
-			"type": wt,
-			"center": sum_pos / count,
-			"axis": sum_axis / count,
-			"cloud": sum_cloud / count,
-			"precip": sum_precip / count,
-			"intensity": max_i,
-			"area": cells.size(),
-			"score": max_i * sqrt(count),
-		})
+		var component := _flood_fill_field_component(
+			seed_cell, wt, map, visited, new_membership, components.size(),
+			_SUMMARY_INTENSITY_ENTER, _SUMMARY_INTENSITY_HOLD
+		)
+		if not component.is_empty():
+			component["inherited_age"] = 0
+			components.append(component)
+
+	# 跨 tick 状态更新（在 _merge_nearby_components 重排前记录 cell 归属）。
+	_prev_summary_membership = new_membership
+
+	# dramatic-fx：同型相邻合并 pass。flood-fill 后仍可能存在"被一两格 CLEAR 隔开"
+	# 的同型团块（云之间的过渡空隙），这些在视觉上是连续的一片云，但作为两个 front
+	# 下发会被 shader 各自做包络衰减 → 边界处出现"双圆叠加 + 中间空"的诡异形态。
+	# 这里 O(n²) 扫一遍，把同型且圆心距 < (r1+r2)*0.65 的两个 component 合并，
+	# 中心按 area 加权平均、area 累加、intensity 取 max。
+	components = _merge_nearby_components(components)
+
 	components.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("score", 0.0)) > float(b.get("score", 0.0))
 	)
 
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
+	var next_seeds: Array = []
 	var limit: int = mini(_field_summary_limit, components.size())
 	for i in range(limit):
 		var c: Dictionary = components[i]
@@ -799,24 +1085,233 @@ func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[Weathe
 		front.type = int(c.get("type", WeatherType.WT.CLEAR))
 		front.center = c.get("center", Vector2.ZERO)
 		front.intensity = clampf(float(c.get("intensity", 0.0)), 0.0, 1.0)
-		front.radius = _hex_size * (1.35 + sqrt(float(c.get("area", 1))) * 0.78)
+		# dramatic-fx：sqrt(area) 系数 0.78 → 1.05；基底 1.35 → 1.6。
+		# 单 front 半径整体 +35%，配合下方拉长的 major_scale，覆盖面积约 ×2.
+		front.radius = _hex_size * (1.6 + sqrt(float(c.get("area", 1))) * 1.05)
 		var axis: Vector2 = c.get("axis", Vector2.RIGHT)
 		if axis.length_squared() <= 0.0001:
 			axis = Vector2.RIGHT
 		front.axis = axis.normalized()
 		front.stable_axis = front.axis
-		front.major_scale = 1.10
-		front.minor_scale = 0.92
-		front.ttl_days = 2
-		front.age_days = 0
+		# Drift-fix（2026-05-10，替代 Continuity-fix A）：
+		# velocity 改为"实测每-snapshot 位移"——继承 cluster 用 (new_center - prev_center)，
+		# 新生 cluster 用 avg_wind 作 fallback。weather_layer 在 set_weather_fronts 内
+		# 会用这个 velocity 给 lerp target 做 forward-bias，让 lerp 终点本身就是
+		# "下次 snapshot 到达时云应该在的位置"，避免回弹 + 让中间帧持续向前飘。
+		# EMA 平滑 (lerp 0.5)：单帧 BFS 抖动产生的伪位移会被前一 tick 的 velocity 拉回。
+		# 位移上限 = radius × 0.6：避免重聚类质心阶跃造成 visual 飞窜。
+		var fallback_velocity: Vector2 = front.axis * front.radius * 0.4
+		var measured_velocity: Vector2 = fallback_velocity
+		var debug_observed_drift: Vector2 = Vector2.ZERO
+		var debug_prev_center: Vector2 = Vector2.ZERO
+		var debug_inherited: bool = false
+		if c.has("inherited_from_center"):
+			debug_inherited = true
+			var prev_center_pos: Vector2 = c["inherited_from_center"]
+			debug_prev_center = prev_center_pos
+			var prev_velocity: Vector2 = c.get("inherited_from_velocity", Vector2.ZERO)
+			var observed_drift: Vector2 = front.center - prev_center_pos
+			var max_drift: float = front.radius * 0.6
+			if observed_drift.length() > max_drift:
+				observed_drift = observed_drift.normalized() * max_drift
+			debug_observed_drift = observed_drift
+			# EMA：50% 历史 + 50% 当前，缓和单 tick 的随机漂移
+			measured_velocity = prev_velocity.lerp(observed_drift, 0.5)
+		front.velocity = measured_velocity
+		if DRIFT_DEBUG_LOG and i < 3:
+			if debug_inherited:
+				print("[weather-drift] day=%d c%d type=%d r=%.0f prev=%s new=%s drift=%s |drift|=%.1f vel=%s |vel|=%.1f" % [
+					_day_counter, i, front.type, front.radius,
+					str(debug_prev_center.round()), str(front.center.round()),
+					str(debug_observed_drift.round()), debug_observed_drift.length(),
+					str(front.velocity.round()), front.velocity.length(),
+				])
+			else:
+				print("[weather-drift] day=%d c%d type=%d r=%.0f NEW center=%s vel(fallback)=%s |vel|=%.1f" % [
+					_day_counter, i, front.type, front.radius,
+					str(front.center.round()),
+					str(front.velocity.round()), front.velocity.length(),
+				])
+		# dramatic-fx：椭圆比从 1.10/0.92 改 1.30/0.85，让 front 沿风向拉长，
+		# 视觉上更像"风带云团"，不再是圆球。
+		front.major_scale = 1.30
+		front.minor_scale = 0.85
+		# Continuity-fix：用继承代数代替原来硬写的 ttl=2/age=0/life=0.2。
+		# 新生 cluster (age=0) → life=0.15，birth=smoothstep(0,0.32,0.15)≈0.30 渐入；
+		# 继承 ≥3 tick → life≈0.45，birth=1.0，已成熟、不再每 tick 复位为半透明。
+		# ttl 给个足够大的上限以避开 dissolve（smoothstep 起点 0.58）。
+		var inherited_age: int = int(c.get("inherited_age", 0))
+		front.age_days = inherited_age
+		front.ttl_days = maxi(inherited_age * 3 + 12, 12)
 		front.decay_per_day = 0.0
 		front.edge_seed = float((i + 1) * 37 + int(front.center.x) * 3 + int(front.center.y) * 5)
 		front.cloud_amount = clampf(float(c.get("cloud", 0.0)), 0.0, 1.0)
 		front.precip_amount = clampf(float(c.get("precip", 0.0)), 0.0, 1.0)
 		front.dissolve_amount = 0.0
-		front.life_progress = 0.2
+		front.life_progress = clampf(0.15 + float(inherited_age) * 0.08, 0.15, 0.45)
 		fronts.append(front)
+		next_seeds.append({
+			"type": front.type,
+			"center": front.center,
+			"age": inherited_age,
+			"area": int(c.get("area", 1)),
+			# Drift-fix：保存本 tick 实测速度，下 tick EMA 时作为历史项使用。
+			"velocity": front.velocity,
+		})
+	# 持久化下一 tick 的种子列表（仅顶部 limit 个；溢出 limit 的小 cluster 不再继承
+	# 给下 tick——避免 16 front 上限造成的"幽灵种子"持续抢 BFS 优先权）。
+	_prev_summary_seeds = next_seeds
 	return fronts
+
+# Continuity-fix：找到一个适合做"继承种子"的 cell。
+#   1. 若 prev_center 所在 cell 仍是同 type 且 ≥ hold 阈值 → 直接用
+#   2. 否则 1 环邻居里找一个同 type 且 ≥ hold 阈值的 cell
+#   3. 都没有 → 返回 null（这个 prev cluster 本 tick 死掉，让它进 fade-out 路径）
+# 注意：picked_seed 必须未被其它 cluster 抢占（visited.has 检查）。
+func _pick_inheritance_seed(
+		seed_cell: HexCell, prev_type: int, map: MapData,
+		visited: Dictionary, enter_thresh: float, hold_thresh: float) -> HexCell:
+	# prev_center 所在 cell 仍可用 → 直接用
+	if not visited.has(seed_cell):
+		var sf: Dictionary = _weather_field.get(seed_cell, {})
+		var swt: int = int(sf.get("type", WeatherType.WT.CLEAR))
+		var si: float = float(sf.get("intensity", 0.0))
+		var s_thresh: float = hold_thresh if _prev_summary_membership.has(seed_cell) else enter_thresh
+		if swt == prev_type and si >= s_thresh:
+			return seed_cell
+	# Fallback：1 环邻居（即使 seed_cell 本身被其它继承簇抢走，邻居仍可能可用，
+	# 这对应"两个 prev cluster 中心相邻、第二个被迫沿外缘扩展"的场景）。
+	for nb: HexCell in _cell_neighbors(seed_cell, map):
+		if nb == null or visited.has(nb):
+			continue
+		var nf: Dictionary = _weather_field.get(nb, {})
+		var nwt: int = int(nf.get("type", WeatherType.WT.CLEAR))
+		var ni: float = float(nf.get("intensity", 0.0))
+		var n_thresh: float = hold_thresh if _prev_summary_membership.has(nb) else enter_thresh
+		if nwt == prev_type and ni >= n_thresh:
+			return nb
+	return null
+
+# Continuity-fix：带 hysteresis 的 flood-fill。
+# 从 seed 起 BFS，把所有同 type 且 ≥ 个性化阈值（在上 tick 簇内则用 hold，否则用 enter）的
+# cell 收进同一 component。新成员的归属写到 new_membership[cell] = cluster_idx，
+# 供下 tick 的 hysteresis 判定使用。
+func _flood_fill_field_component(
+		seed: HexCell, wt: int, map: MapData,
+		visited: Dictionary, new_membership: Dictionary, cluster_idx: int,
+		enter_thresh: float, hold_thresh: float) -> Dictionary:
+	var queue: Array = [seed]
+	visited[seed] = true
+	var cells: Array = []
+	var sum_pos := Vector2.ZERO
+	var sum_axis := Vector2.ZERO
+	var sum_cloud: float = 0.0
+	var sum_precip: float = 0.0
+	var max_i: float = 0.0
+	while not queue.is_empty():
+		var cell: HexCell = queue.pop_front()
+		var cf: Dictionary = _weather_field.get(cell, {})
+		var cwt: int = int(cf.get("type", WeatherType.WT.CLEAR))
+		var ci: float = float(cf.get("intensity", 0.0))
+		var thresh_self: float = hold_thresh if _prev_summary_membership.has(cell) else enter_thresh
+		if cwt != wt or ci < thresh_self:
+			continue
+		cells.append(cell)
+		new_membership[cell] = cluster_idx
+		sum_pos += _cell_world_pos(cell)
+		sum_axis += cell.wind_vector
+		sum_cloud += float(cf.get("cloud", 0.0))
+		sum_precip += float(cf.get("precip", 0.0))
+		max_i = maxf(max_i, ci)
+		for nb: HexCell in _cell_neighbors(cell, map):
+			if nb == null or visited.has(nb):
+				continue
+			var nf: Dictionary = _weather_field.get(nb, {})
+			var nwt: int = int(nf.get("type", WeatherType.WT.CLEAR))
+			var ni: float = float(nf.get("intensity", 0.0))
+			var thresh_nb: float = hold_thresh if _prev_summary_membership.has(nb) else enter_thresh
+			if nwt == wt and ni >= thresh_nb:
+				visited[nb] = true
+				queue.append(nb)
+	if cells.is_empty():
+		return {}
+	var count: float = float(cells.size())
+	return {
+		"type": wt,
+		"center": sum_pos / count,
+		"axis": sum_axis / count,
+		"cloud": sum_cloud / count,
+		"precip": sum_precip / count,
+		"intensity": max_i,
+		"area": cells.size(),
+		"score": max_i * sqrt(count),
+	}
+
+# dramatic-fx：把同型 + 圆心距 < (r1+r2) * MERGE_RATIO 的 component 合并。
+# 用每 component 的"等效半径"（hex_size * sqrt(area) * 1.05）做距离阈值——
+# 与下方 build_front 的 radius 公式同源，避免阈值与最终视觉半径脱节。
+# 多轮迭代直到无可合并为止（典型 1-2 轮收敛）。
+func _merge_nearby_components(components: Array) -> Array:
+	const MERGE_RATIO: float = 0.65
+	var changed: bool = true
+	var rounds: int = 0
+	while changed and rounds < 4:
+		changed = false
+		rounds += 1
+		var n: int = components.size()
+		var merged_into: Array[int] = []
+		merged_into.resize(n)
+		for i in range(n):
+			merged_into[i] = -1
+		for i in range(n):
+			if merged_into[i] >= 0:
+				continue
+			var ci: Dictionary = components[i]
+			var ai: float = float(ci.get("area", 1))
+			var ri: float = _hex_size * sqrt(maxf(ai, 1.0)) * 1.05
+			var center_i: Vector2 = ci.get("center", Vector2.ZERO)
+			var type_i: int = int(ci.get("type", WeatherType.WT.CLEAR))
+			for j in range(i + 1, n):
+				if merged_into[j] >= 0:
+					continue
+				var cj: Dictionary = components[j]
+				if int(cj.get("type", WeatherType.WT.CLEAR)) != type_i:
+					continue
+				var aj: float = float(cj.get("area", 1))
+				var rj: float = _hex_size * sqrt(maxf(aj, 1.0)) * 1.05
+				var center_j: Vector2 = cj.get("center", Vector2.ZERO)
+				var dist: float = center_i.distance_to(center_j)
+				if dist > (ri + rj) * MERGE_RATIO:
+					continue
+				# 合并 j → i：area 加和、center 按 area 加权、强度取 max、
+				# cloud/precip 按 area 加权、axis 按 area 加权后归一化。
+				var total: float = ai + aj
+				ci["center"] = (center_i * ai + center_j * aj) / total
+				ci["axis"] = (Vector2(ci.get("axis", Vector2.ZERO)) * ai + Vector2(cj.get("axis", Vector2.ZERO)) * aj) / total
+				ci["cloud"] = (float(ci.get("cloud", 0.0)) * ai + float(cj.get("cloud", 0.0)) * aj) / total
+				ci["precip"] = (float(ci.get("precip", 0.0)) * ai + float(cj.get("precip", 0.0)) * aj) / total
+				ci["intensity"] = maxf(float(ci.get("intensity", 0.0)), float(cj.get("intensity", 0.0)))
+				ci["area"] = total
+				ci["score"] = float(ci.get("intensity", 0.0)) * sqrt(total)
+				# Continuity-fix：合并时取较大的继承代数，让"两个老簇合并"的结果
+				# 仍被视为成熟簇，而不是被新生分量拖回 birth 阶段。
+				ci["inherited_age"] = maxi(
+					int(ci.get("inherited_age", 0)),
+					int(cj.get("inherited_age", 0))
+				)
+				ai = total
+				ri = _hex_size * sqrt(maxf(ai, 1.0)) * 1.05
+				center_i = ci.get("center", Vector2.ZERO)
+				components[i] = ci
+				merged_into[j] = i
+				changed = true
+		# 把未被合并的 component 收集为新一轮 components
+		var next_components: Array = []
+		for i in range(n):
+			if merged_into[i] < 0:
+				next_components.append(components[i])
+		components = next_components
+	return components
 
 func has_cover_dirty() -> bool:
 	return _cover_dirty
@@ -1077,13 +1572,13 @@ func _front_orographic_precip_bonus(front: WeatherFront, cell: HexCell, map: Map
 		return 0.0
 	# 从本格向上风（-v）方向找最对齐邻居
 	var w_dir: Vector2 = -v.normalized()
-	var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+	var self_wp: Vector2 = _cell_world_pos(cell)
 	var best_nb: HexCell = null
 	var best_dot: float = 0.1
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in _cell_neighbors(cell, map):
 		if nb == null:
 			continue
-		var nbwp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _hex_size)
+		var nbwp: Vector2 = _cell_world_pos(nb)
 		var d: Vector2 = (nbwp - self_wp)
 		if d.length_squared() < 1e-6:
 			continue
@@ -1159,7 +1654,7 @@ func _local_temp_moist_gradient(cell: HexCell, map: MapData) -> float:
 	var m0: float = cell.moisture
 	var max_dt: float = 0.0
 	var max_dm: float = 0.0
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in _cell_neighbors(cell, map):
 		if nb == null:
 			continue
 		var dt: float = absf(nb.temperature - t0)
@@ -1268,14 +1763,14 @@ func _ocean_filter_precip(cell: HexCell, map: MapData, wt: int) -> int:
 # 取 cell 1 环邻水的平均 temperature_transport_anomaly。无水邻居返回 0。
 # 海面 cell 直接返回自身 anomaly（因为本身就是洋流体）。
 func _avg_ocean_anomaly_at(cell: HexCell, map: MapData) -> float:
-	if cell == null or map == null:
+	if cell == null:
 		return 0.0
 	# 海面 cell：直接读自身洋流偏差
 	if _is_water_terrain(int(cell.terrain)):
 		return cell.temperature_transport_anomaly
 	var sum_an: float = 0.0
 	var n_water: int = 0
-	for nb: HexCell in map.get_neighbors(cell):
+	for nb: HexCell in _cell_neighbors(cell, map):
 		if nb != null and _is_water_terrain(int(nb.terrain)):
 			sum_an += nb.temperature_transport_anomaly
 			n_water += 1
@@ -1311,16 +1806,19 @@ func _build_front_at(spawn_pos: Vector2, wt: int, world: WorldData) -> WeatherFr
 			front.ttl_days = _rng.randi_range(12, 22)
 			front.decay_per_day = 1.0 / float(front.ttl_days) * 0.9
 		WeatherType.WT.STORM, WeatherType.WT.MONSOON:
-			front.ttl_days = _rng.randi_range(6, 11)
-			front.decay_per_day = 0.10
+			# 暴风/季风：原 6-11 天 → 4-8 天，避免单地连下一周
+			front.ttl_days = _rng.randi_range(4, 8)
+			front.decay_per_day = 0.14
 		WeatherType.WT.BLIZZARD:
-			front.ttl_days = _rng.randi_range(8, 14)
-			front.decay_per_day = 0.08
+			# 暴雪：原 8-14 天 → 5-10 天
+			front.ttl_days = _rng.randi_range(5, 10)
+			front.decay_per_day = 0.12
 		WeatherType.WT.FOG:
 			front.ttl_days = _rng.randi_range(5, 9)
 			front.decay_per_day = 0.15
 		_:
-			front.ttl_days = _rng.randi_range(10, 16)
+			# RAIN：原 10-16 天 → 6-11 天
+			front.ttl_days = _rng.randi_range(6, 11)
 			front.decay_per_day = 0.07
 	var origin := _world_bounds.position
 	var size := _world_bounds.size

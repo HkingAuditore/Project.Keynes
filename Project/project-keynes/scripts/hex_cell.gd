@@ -59,6 +59,14 @@ var current_state: Dictionary = {}
 # moisture 已在上方声明为 float（第 27 行）；下面是从字典迁移过来的 7 个。
 var temperature: float = 0.0
 var snow_cover: float = 0.0
+# Phase 3c：积雪累积。
+# accumulated_snow_days：BLIZZARD 命中天数计数器（>=0）。每个有效降雪日 +1，
+#   温度高于 0.30（约 -2°C）时反向衰减（实际 -1）。
+# pre_snow_cover：被 SNOW 替换前的原 cover（CoverType.CV）；融化后恢复。-1 表示未触发过。
+# 阈值：accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ（3）时正式把 cover 升为 SNOW；
+# accumulated_snow_days <= 0 且 cover==SNOW 时融化恢复 pre_snow_cover。
+var accumulated_snow_days: int = 0
+var pre_snow_cover: int = -1
 # temp_baseline / temp_season_offset：refresh_climate_daily Pass A/B 写入，
 # temperature_breakdown 调试字典与 UI 面板读取。命名去掉旧字典键的前导下划线。
 var temp_baseline: float = 0.0

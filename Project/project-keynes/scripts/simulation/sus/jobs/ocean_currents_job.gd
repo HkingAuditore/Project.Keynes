@@ -36,6 +36,10 @@ var _phase_locked: float = 0.0
 # False until the very first slice of the very first round runs (we need to
 # know when to lock the phase fresh).
 var _round_active: bool = false
+# Phys Solve Sliced：物理化路径下，一轮 round 先做 N 个 slice 把 hex 求解（SLP /
+# wind / ψ / current / upwelling / wind raster）推到 DONE，再开始按像素区间光栅化。
+# True 表示求解阶段已完成，本轮余下 slice 全部用于像素切片。
+var _phys_solve_done: bool = false
 
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
@@ -80,6 +84,7 @@ func reset_progress() -> void:
 	_next_pixel_idx = 0
 	_total_pixels = 0
 	_round_active = false
+	_phys_solve_done = false
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
@@ -112,6 +117,26 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		else:
 			_phase_locked = ctx.season_phase
 		_round_active = true
+		# Phys Solve Sliced：新一轮起点 → 把 baker 的求解状态机复位（_phys_stage,
+		# _pending_phys_solved_phase 等），让接下来的 step_one 从 SLP 阶段重新跑。
+		# 旧路径（ny-only）下 _phys_solve_done 立即设为 true，本轮所有 slice 全用于像素工作。
+		_phys_solve_done = not baker._use_physical_circulation(cfg)
+		if not _phys_solve_done and baker.has_method("reset_physical_solve_state"):
+			baker.reset_physical_solve_state()
+
+	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
+	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
+	# `_PHYS_STAGE_*` 常量），因此一轮新增 7 个 slice；用 ContinuousSlicedPolicy
+	# 的 period_ticks/slice_count 决定每天跑几片即可。
+	if not _phys_solve_done:
+		_phys_solve_done = baker._physical_solve_step_one(map, world, hex_size, cfg, _phase_locked)
+		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		return {
+			"done": false,
+			"work_done": 0,
+			"elapsed_ms": elapsed_solve_ms,
+			"progress_ratio": 0.0,
+		}
 
 	var pps: int = _pixels_per_slice()
 	var s: int = _next_pixel_idx
@@ -129,8 +154,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			on_commit.call()
 		_round_active = false
 		_next_pixel_idx = 0
+		_phys_solve_done = false
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+	# H 诊断：单 slice > 25ms → 标注是 commit 那一片还是普通像素片，定位 78ms 尖峰来源。
+	if elapsed_ms > 25.0:
+		var marker: String = "commit" if done else "pixel"
+		print("  [ocean_currents] slow slice=%.1fms (%s, pixels=%d-%d / %d)" % [
+			elapsed_ms, marker, s, e, _total_pixels
+		])
 	var progress: float = 0.0
 	if _total_pixels > 0:
 		progress = float(_next_pixel_idx) / float(_total_pixels) if not done else 1.0

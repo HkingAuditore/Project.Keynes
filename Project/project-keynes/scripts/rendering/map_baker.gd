@@ -64,6 +64,12 @@ var _last_cover_cell_bytes: Dictionary = {}
 var _last_vegetation_cell_bytes: Dictionary = {}
 var _cover_cache_size: Vector2i = Vector2i.ZERO
 var _vegetation_cache_size: Vector2i = Vector2i.ZERO
+# J: biome（R 通道）增量缓存。stage 9 `rebake_biome_axes_only` 之前每季全图重烘
+# (~130ms / season)；接入与 cover/veg 同结构的 sig 比对后，多数季节切换只有少量 cell
+# 真正翻 terrain（_seasonal_redecide_terrain 的边界 cell），其余直接 byte 不变跳过。
+# bake_world / regenerate 时一并失效。
+var _last_biome_cell_bytes: Dictionary = {}
+var _biome_cache_size: Vector2i = Vector2i.ZERO
 
 # Daily-sim perf opt 阶段 P2：enum_atlas 的 RGB8 交错 data 持久缓存。
 # 旧路径每次 _encode_enum_atlas 都要跑 614400 次循环交错三个 byte 通道（~50ms）——
@@ -75,6 +81,25 @@ var _vegetation_cache_size: Vector2i = Vector2i.ZERO
 # bake_world 时一并失效。
 var _enum_atlas_data: PackedByteArray = PackedByteArray()
 var _enum_atlas_data_size: Vector2i = Vector2i.ZERO
+
+# Daily-sim perf opt：weather_field_tex 增量缓存。
+# 旧 bake_weather_field_only 每天扫 ~2400 cell × 4 通道，再写 ~250k–600k 像素
+# 字节，~27ms / tick。WeatherSystem 每日只让若干 cell 翻 weather/intensity/cloud/precip,
+# 大多数 cell 当天不变。缓存 cell 级 4-byte 签名（u32 packed），逐 cell 比对：
+#   - 不变 → 完全跳过（不读 cell_pixel_lists）
+#   - 变 → 把 4 byte 写到该 cell 的所有像素 + 更新 sig
+# 所有 cell 都没变 → 跳过 Image.create_from_data + texture.update。
+# 任何 cell 变了 → 触发整张 image update（GPU 上传不可避，但循环开销骤降）。
+# bake_world 时一并失效。
+var _weather_field_buf: PackedByteArray = PackedByteArray()
+var _weather_field_cache_size: Vector2i = Vector2i.ZERO
+var _last_weather_field_cell_sigs: Dictionary = {}  # HexCell → int (packed u32)
+# H 诊断：bake_weather_field_only 命中率统计。每 30 次调用打一次 dirty 比例 +
+# 跳过比例，确认 F 增量路径是否真的吃到便宜。重置时一并清。
+var _wf_diag_calls: int = 0
+var _wf_diag_dirty_sum: int = 0
+var _wf_diag_skipped_full: int = 0  # 整图跳过 Image.update 的次数
+var _wf_diag_total_cells: int = 0   # cell_pixel_lists.size()，最近一次记录
 
 static func get_or_build_shared_noise_tex() -> ImageTexture:
 	if _shared_noise_tex == null:
@@ -141,6 +166,12 @@ var _ridge_noise: FastNoiseLite
 # 半旧半新的撕裂条纹。
 var _pending_currents_buf: PackedByteArray = PackedByteArray()
 var _pending_upwelling_buf: PackedByteArray = PackedByteArray()
+# L: 持久 RGBA8 交错缓冲。pixel slices 在写 _pending_currents_buf / _pending_wind_buf
+# 时一并更新此 buf 的对应通道（RG=ocean, BA=wind），commit 时直接喂给 ImageTexture.update
+# 避免 620k × 4 字节的 GDScript 交错循环（30-50ms 砍到 ~3ms memcpy）。
+# bake_world / discard 时失效。size mismatch 时 commit 会重新整张 _encode_vector_atlas 兜底。
+var _vector_atlas_data: PackedByteArray = PackedByteArray()
+var _vector_atlas_data_size: Vector2i = Vector2i.ZERO
 # upwelling 切片专用：mask 按行 lazy build，避免首片一次性扫整图（~140ms）。
 # _pending_upwelling_mask: W*H byte，每像素 1=ocean / 0=land。
 # _pending_upwelling_row_built: H byte，行级"已构建"位图；某行第一次被任意切片
@@ -154,14 +185,46 @@ var _pending_phase: float = 0.0
 var _pending_size: Vector2i = Vector2i.ZERO
 
 # Physical Wind & Ocean Circulation：跨 slice 的 hex 求解状态（仅当
-# cfg.physical_circulation_enabled = true 时使用）。第一片调用时一次性求解全部
-# hex 字段（SLP / wind / curl / ψ / ocean_current / upwelling），并把"该轮的
-# 风场 buffer"也物理化重新生成（保存到 _pending_wind_buf，commit 时一并替换 world.wind_field_buffer
-# 让 shader 与 weather_system 都看到地形耦合后的风迹）。后续片只做"用
-# pixel_to_cell_lookup 把 hex 字段量化进区间 [s, e) 像素"的纯光栅化工作。
+# cfg.physical_circulation_enabled = true 时使用）。
+#
+# 旧设计：第一片调用 bake_ocean_currents_slice 时**一次性**求解全部 hex 字段
+# （SLP / wind / curl / ψ / ocean_current / upwelling）；ocean_currents 监控
+# 显示 max=200ms+ 的 tick，全部来自这条 fat 第一片。
+#
+# 新设计（Phys Solve Sliced）：把求解拆成 7 个阶段（_PHYS_STAGE_*），每个 stage
+# 5~30ms。OceanCurrentsJob 在每次 run_slice 先调 `_physical_solve_step_one`
+# 推进一阶，全部完成后再开始按像素区间光栅化。`_phys_stage` 跟踪当前阶段；
+# `_phys_psi_iters_done` 跟踪 SOR 迭代分摊进度（_PHYS_PSI_TOTAL_ITERS / _PER_STEP）。
+# 一次性入口 `_physical_solve_for_phase` 仍可用（loop 调 step_one），给 bake_world /
+# rebake_ocean_currents 等需要原子完成的路径使用。
 var _pending_phys_solved_phase: float = NAN
 var _pending_psi_state = null  # PhysicalCirculationSolver.PsiSolverState 或 null
 var _pending_wind_buf: PackedByteArray = PackedByteArray()
+
+# Phys Solve Sliced：求解状态机阶段。
+const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
+const _PHYS_STAGE_SLP: int = 1            # 解海陆压力场 ~5ms
+const _PHYS_STAGE_WIND: int = 2           # 解物理化风场 ~5ms
+const _PHYS_STAGE_PSI_INIT: int = 3       # 初始化 ψ 求解器（含 curl τ） ~3ms
+const _PHYS_STAGE_PSI_ITERS: int = 4      # 分摊 SOR 迭代；按 _PER_STEP 推进
+const _PHYS_STAGE_PSI_FINALIZE: int = 5   # ψ→ocean_current + commit_psi ~3ms
+const _PHYS_STAGE_UPWELLING: int = 6      # 解沿岸 Ekman + 高纬冷沉 ~3ms
+const _PHYS_STAGE_WIND_RASTER: int = 7    # NaN 守门 + 风场 RG8 光栅化 ~3ms
+const _PHYS_STAGE_DONE: int = 8
+
+# SOR 总迭代数（与 PhysicalCirculationSolver._PSI_DEFAULT_ITERS 对齐）+
+# 每次 step_one 推进的迭代量。8/40 → 5 个 step 完成 ψ；每个 step ~2ms（2400 cells
+# 中典型 ~1300 个水格 × 6 邻居 × 8 iter ≈ 60k 浮点）。
+const _PHYS_PSI_TOTAL_ITERS: int = 40
+const _PHYS_PSI_ITERS_PER_STEP: int = 8
+
+# Phys Solve Sliced：WIND_RASTER 阶段把"hex → W×H RGB8 风场 buffer"分多步写盘。
+# 30000 像素 × ~0.2us = ~6ms / step；典型 derived_size 256×256=65k → 3 步完成。
+const _PHYS_WIND_RASTER_PIXELS_PER_STEP: int = 30000
+
+var _phys_stage: int = _PHYS_STAGE_NONE
+var _phys_psi_iters_done: int = 0
+var _phys_wind_raster_idx: int = 0
 
 # ─── 公开接口 ─────────────────────────────────────────────────────────────
 
@@ -193,9 +256,19 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_last_vegetation_cell_bytes = {}
 	_cover_cache_size = Vector2i.ZERO
 	_vegetation_cache_size = Vector2i.ZERO
+	# J: biome 增量缓存随地图重生失效（首次 rebake_biome_axes_only 走 fallback 重建路径）
+	_last_biome_cell_bytes = {}
+	_biome_cache_size = Vector2i.ZERO
 	# 阶段 P2：enum_atlas 交错 data 缓存随地图重生失效（首次 _encode_enum_atlas 会重新填）
 	_enum_atlas_data = PackedByteArray()
 	_enum_atlas_data_size = Vector2i.ZERO
+	# weather_field 增量缓存：地图重生 → 缓冲与 sig 失效；首次 bake_weather_field_only 会重建。
+	_weather_field_buf = PackedByteArray()
+	_weather_field_cache_size = Vector2i.ZERO
+	_last_weather_field_cell_sigs = {}
+	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
+	_vector_atlas_data = PackedByteArray()
+	_vector_atlas_data_size = Vector2i.ZERO
 
 	var world := WorldData.new()
 	world.world_bounds = compute_world_bounds(map.width, map.height, hex_size)
@@ -375,16 +448,21 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 
 	var cover_cache: Dictionary = {}
 	var vegetation_cache: Dictionary = {}
+	# J: 同步预热 biome 缓存，让下一次 rebake_biome_axes_only 直接走增量路径
+	var biome_cache: Dictionary = {}
 	for cell_key in world.cell_pixel_lists.keys():
 		var cell: HexCell = cell_key
 		if cell == null:
 			continue
 		cover_cache[cell] = int(cell.cover) & 0xFF
 		vegetation_cache[cell] = int(cell.vegetation) & 0xFF
+		biome_cache[cell] = int(cell.terrain) & 0xFF
 	_last_cover_cell_bytes = cover_cache
 	_last_vegetation_cell_bytes = vegetation_cache
+	_last_biome_cell_bytes = biome_cache
 	_cover_cache_size = Vector2i(W, H)
 	_vegetation_cache_size = Vector2i(W, H)
+	_biome_cache_size = Vector2i(W, H)
 
 # Systemic Ocean Currents：季节切换时重烘洋流 + 上升流 buffer。
 # 与夏季基线静态烘焙不同——调用方传入当前 season_phase ∈ [0, 4)，内部在读
@@ -419,9 +497,11 @@ func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 		world.ocean_upwelling_buffer = up_buf
 		world.vector_atlas_tex = _encode_vector_atlas(
 			world.ocean_current_buffer, world.wind_field_buffer,
-			world.derived_size
+			world.derived_size, world.vector_atlas_tex
 		)
-		world.upwelling_tex = _encode_upwelling_tex(world.ocean_upwelling_buffer, world.derived_size)
+		world.upwelling_tex = _encode_upwelling_tex(
+			world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
+		)
 		# 清状态，让 OceanCurrentsJob 下一轮第一片重新触发求解
 		_pending_phys_solved_phase = NAN
 		_pending_psi_state = null
@@ -439,10 +519,12 @@ func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 	# 重编码 vector atlas（RGBA8：RG=ocean, BA=wind）。wind 维持夏季基线不变。
 	world.vector_atlas_tex = _encode_vector_atlas(
 		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size
+		world.derived_size, world.vector_atlas_tex
 	)
 	# Systemic Ocean Currents：同步重编码 upwelling R8 纹理（F6 调试层消费）
-	world.upwelling_tex = _encode_upwelling_tex(world.ocean_upwelling_buffer, world.derived_size)
+	world.upwelling_tex = _encode_upwelling_tex(
+		world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
+	)
 	print("  rebake_ocean_currents(phase=%.2f): currents=%dms upwelling=%dms" % [
 		season_phase, t_cur, t_up
 	])
@@ -466,6 +548,10 @@ func _ensure_pending_currents_size(world: WorldData) -> void:
 		_pending_currents_buf = PackedByteArray()
 		_pending_currents_buf.resize(need_size)
 		_pending_size = world.derived_size
+		# L: derived_size 变化 → vector atlas 缓存与 _pending_currents_buf 不再匹配。
+		# 标失效让下一次 commit 走 fallback 重建路径。
+		_vector_atlas_data = PackedByteArray()
+		_vector_atlas_data_size = Vector2i.ZERO
 
 func _ensure_pending_upwelling_size(world: WorldData) -> void:
 	var W := world.derived_size.x
@@ -523,9 +609,6 @@ func bake_ocean_currents_slice(map: MapData, world: WorldData, hex_size: float,
 	_ensure_pending_currents_size(world)
 	if start_idx == 0:
 		_pending_phase = season_phase
-		# Physical Wind & Ocean Circulation：新一轮起点 → 让 _physical_solve_for_phase 重新求解。
-		# （季节切换 / regenerate / 显式 reset 触发新一轮时通过 _pending_phase 同步重置）
-		_pending_phys_solved_phase = NAN
 	var W := world.derived_size.x
 	var H := world.derived_size.y
 	var total: int = W * H
@@ -534,11 +617,11 @@ func bake_ocean_currents_slice(map: MapData, world: WorldData, hex_size: float,
 	if s >= e:
 		return { "pixels_done": 0, "total_pixels": total }
 
-	# Physical Wind & Ocean Circulation 路径：第一片做完整 hex 求解（SLP/wind/ψ/current/upwelling）；
-	# 任意片只把 cell.ocean_current 通过 pixel_to_cell_lookup 量化进区间 [s, e)。
-	# 不再读 wind_field_buffer / 不再做像素级 Ekman / 海岸高度梯度 / 噪声扰动。
+	# Physical Wind & Ocean Circulation 路径：caller（OceanCurrentsJob 或一次性路径）
+	# 必须在调本片之前先把求解推进到 _PHYS_STAGE_DONE（通过 _physical_solve_step_one
+	# 或 _physical_solve_for_phase）。本片仅做"把 cell.ocean_current 通过
+	# pixel_to_cell_lookup 量化进区间 [s, e)"的纯光栅化工作。
 	if _use_physical_circulation(cfg):
-		_physical_solve_for_phase(map, world, hex_size, cfg, _pending_phase)
 		_rasterize_ocean_current_slice_from_hex(world, _pending_currents_buf, s, e)
 		return { "pixels_done": e - s, "total_pixels": total }
 
@@ -652,11 +735,9 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 		return { "pixels_done": 0, "total_pixels": total }
 
 	# Physical Wind & Ocean Circulation：upwelling 也走 hex → pixel 光栅化路径。
-	# 注意 currents_slice 已在第一片触发 _physical_solve_for_phase，这里 idempotent
-	# 调用一次（同 phase 直接 return）保证万一调用顺序倒置也能 self-heal。
+	# 同 currents_slice：caller 必须先把求解推到 _PHYS_STAGE_DONE。本片只光栅化。
 	# 旧路径需要的 lazy mask 也跳过——cell.terrain 直接给我们海陆判定。
 	if _use_physical_circulation(cfg):
-		_physical_solve_for_phase(map, world, hex_size, cfg, _pending_phase)
 		_rasterize_upwelling_slice_from_hex(world, _pending_upwelling_buf, s, e)
 		return { "pixels_done": e - s, "total_pixels": total }
 
@@ -770,11 +851,29 @@ func commit_ocean_buffers(world: WorldData) -> Dictionary:
 	# 为空，跳过。
 	if not _pending_wind_buf.is_empty():
 		world.wind_field_buffer = _pending_wind_buf
-	world.vector_atlas_tex = _encode_vector_atlas(
-		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size
+	# I + L: 复用 GPU 句柄 + 持久交错缓冲。
+	# Fast path（典型 round 收尾）：_vector_atlas_data 已被 pixel slices 同步更新到位 →
+	# 直接 Image.create_from_data + tex.update()，省掉 _encode_vector_atlas 的 620k×4 交错循环。
+	# Fallback：缓存未就绪（首次 commit / regenerate） → 走旧整张 _encode_vector_atlas 兜底，
+	# 顺便也把 _vector_atlas_data 填好让下次走快路径。
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var atlas_size_match: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+			and _vector_atlas_data.size() == W * H * 4 \
+			and world.vector_atlas_tex != null \
+			and world.vector_atlas_tex.get_size() == Vector2(float(W), float(H)))
+	if atlas_size_match:
+		var img_va := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
+		world.vector_atlas_tex.update(img_va)
+	else:
+		world.vector_atlas_tex = _encode_vector_atlas(
+			world.ocean_current_buffer, world.wind_field_buffer,
+			world.derived_size, world.vector_atlas_tex
+		)
+		_rebuild_vector_atlas_data_from_buffers(world)
+	world.upwelling_tex = _encode_upwelling_tex(
+		world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
 	)
-	world.upwelling_tex = _encode_upwelling_tex(world.ocean_upwelling_buffer, world.derived_size)
 	var t_commit := Time.get_ticks_msec() - t
 	# 清空 pending（下一轮重新分配，避免残留半旧数据）
 	_pending_currents_buf = PackedByteArray()
@@ -785,6 +884,9 @@ func commit_ocean_buffers(world: WorldData) -> Dictionary:
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	_pending_wind_buf = PackedByteArray()
+	# Phys Solve Sliced：commit 收尾 → 求解状态机一并复位，下一轮从 SLP 起步。
+	_phys_stage = _PHYS_STAGE_NONE
+	_phys_psi_iters_done = 0
 	return { "commit_ms": t_commit }
 
 ## 丢弃所有 pending 缓冲（地图重生成 / SUS reset_all_progress 调用）。
@@ -797,6 +899,12 @@ func discard_ocean_buffers() -> void:
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	_pending_wind_buf = PackedByteArray()
+	# L: vector atlas 缓存随 reset 失效；下一次 commit 会重新整张拼出来。
+	_vector_atlas_data = PackedByteArray()
+	_vector_atlas_data_size = Vector2i.ZERO
+	# Phys Solve Sliced：丢弃时也复位状态机，避免下一轮在错误阶段恢复。
+	_phys_stage = _PHYS_STAGE_NONE
+	_phys_psi_iters_done = 0
 
 # 抽出来的单轴 rebake 通用实现：axis ∈ {"cover", "vegetation"}
 # 阶段 P 增量路径：weather_system 每日翻 cover 的 cell 通常 < 30 个，旧 fast path
@@ -986,22 +1094,108 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 	)
 	prewarm_dynamic_axis_caches(map, world)
 
-# Milestone 2：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
-# height / moisture / flow / latitude / wind / ocean / volcano 全部不动
-# （与季节相位无关），所以这里仍然只跑一遍 warp + cube_round。
+# Milestone 2 / J 增量：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
+# height / moisture / flow / latitude / wind / ocean / volcano 全部不动。
+#
+# 旧路径（130ms / season）：完整 _rewrite_axis_buffers（620k 像素 × 3 byte）+
+# _encode_enum_atlas（620k 像素 × 3 byte 交错 + Image.create + tex.update）。
+#
+# J 新路径：与 _rebake_single_axis 同结构，把 biome / veg / cover 3 轴的 sig 缓存
+# 一起遍历。多数季节切换只翻少数边界 cell 的 terrain，veg / cover 在前序 stage 已
+# 部分更新，sig 不变直接跳过；变了才把 cell.pixel 列表批量写到 buf + 直写
+# `_enum_atlas_data` 对应通道。最后用 cached interleaved data 做 tex.update()。
 func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> void:
 	if world == null or world.biome_buffer.is_empty():
 		return
 	if _warp_noise_lo == null:
 		_init_noise(world.bake_seed)
-	_rewrite_axis_buffers(map, hex_size, world)
-	# v9.atlas：biome / vegetation / cover 三轴一次编入 enum_atlas
-	# v9.perf：复用现有 ImageTexture
-	world.enum_atlas_tex = _encode_enum_atlas(
-		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-		world.derived_size, world.enum_atlas_tex
-	)
-	prewarm_dynamic_axis_caches(map, world)
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	var pix_count := W * H
+	var has_lookup: bool = world.pixel_to_cell_lookup.size() == pix_count
+	var has_cell_lists: bool = not world.cell_pixel_lists.is_empty()
+
+	# Cache validity：3 轴 sig + interleaved data 都得齐才走增量。
+	var cache_valid: bool = (has_lookup \
+			and has_cell_lists \
+			and _biome_cache_size == Vector2i(W, H) \
+			and _vegetation_cache_size == Vector2i(W, H) \
+			and _cover_cache_size == Vector2i(W, H) \
+			and _enum_atlas_data_size == Vector2i(W, H) \
+			and _enum_atlas_data.size() == pix_count * 3 \
+			and not _last_biome_cell_bytes.is_empty() \
+			and not _last_vegetation_cell_bytes.is_empty() \
+			and not _last_cover_cell_bytes.is_empty() \
+			and world.biome_buffer.size() == pix_count \
+			and world.vegetation_buffer.size() == pix_count \
+			and world.cover_buffer.size() == pix_count)
+
+	if not cache_valid:
+		# Fallback：完整路径（首次 / 任意缓存失效）。同步顺便把 3 轴 sig + interleaved data 都建好。
+		_rewrite_axis_buffers(map, hex_size, world)
+		world.enum_atlas_tex = _encode_enum_atlas(
+			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+			world.derived_size, world.enum_atlas_tex
+		)
+		prewarm_dynamic_axis_caches(map, world)
+		return
+
+	# 增量路径：遍历 ~2400 cell，逐 cell 比 3 轴 byte。
+	var biome_buf := world.biome_buffer
+	var veg_buf := world.vegetation_buffer
+	var cover_buf := world.cover_buffer
+	var cell_lists: Dictionary = world.cell_pixel_lists
+	var biome_dirty: int = 0
+	var veg_dirty: int = 0
+	var cover_dirty: int = 0
+	for cell_key in cell_lists.keys():
+		var cell: HexCell = cell_key
+		if cell == null:
+			continue
+		var b_t: int = int(cell.terrain) & 0xFF
+		var b_v: int = int(cell.vegetation) & 0xFF
+		var b_c: int = int(cell.cover) & 0xFF
+		var prev_t: int = int(_last_biome_cell_bytes.get(cell, -1))
+		var prev_v: int = int(_last_vegetation_cell_bytes.get(cell, -1))
+		var prev_c: int = int(_last_cover_cell_bytes.get(cell, -1))
+		if b_t == prev_t and b_v == prev_v and b_c == prev_c:
+			continue
+		var pixels: PackedInt32Array = cell_lists[cell_key]
+		if b_t != prev_t:
+			_last_biome_cell_bytes[cell] = b_t
+			biome_dirty += 1
+			for px in pixels:
+				biome_buf[px] = b_t
+				_enum_atlas_data[px * 3] = b_t
+		if b_v != prev_v:
+			_last_vegetation_cell_bytes[cell] = b_v
+			veg_dirty += 1
+			for px in pixels:
+				veg_buf[px] = b_v
+				_enum_atlas_data[px * 3 + 1] = b_v
+		if b_c != prev_c:
+			_last_cover_cell_bytes[cell] = b_c
+			cover_dirty += 1
+			for px in pixels:
+				cover_buf[px] = b_c
+				_enum_atlas_data[px * 3 + 2] = b_c
+	world.biome_buffer = biome_buf
+	world.vegetation_buffer = veg_buf
+	world.cover_buffer = cover_buf
+
+	if biome_dirty + veg_dirty + cover_dirty == 0:
+		return  # 全 3 轴 byte 都没变 → 连 GPU 上传都跳过
+
+	# tex.update via cached interleaved data — 省掉 _encode_enum_atlas 内 620k × 3
+	# 的交错循环（30-50ms）。tex 句柄复用 → 避免驱动层重新分配。
+	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
+		var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+		world.enum_atlas_tex.update(img)
+	else:
+		world.enum_atlas_tex = _encode_enum_atlas(
+			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+			world.derived_size, world.enum_atlas_tex
+		)
 
 # 重写 biome / vegetation / cover 三个 buffer，但保持 height/moisture/flow 不动
 func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> void:
@@ -1743,7 +1937,7 @@ func _encode_scalar_atlas(moist_buf: PackedFloat32Array, flow_buf: PackedFloat32
 # vector_atlas: RGBA8 LINEAR (RG=ocean_current, BA=wind_field)
 # 两个源 buffer 都是 RG8 packed byte（每像素 2 字节）
 func _encode_vector_atlas(ocean_buf: PackedByteArray, wind_buf: PackedByteArray,
-		size: Vector2i) -> ImageTexture:
+		size: Vector2i, existing: ImageTexture = null) -> ImageTexture:
 	var W := size.x
 	var H := size.y
 	var n := W * H
@@ -1760,21 +1954,35 @@ func _encode_vector_atlas(ocean_buf: PackedByteArray, wind_buf: PackedByteArray,
 		data[di + 2] = wind_buf[oi]      if has_wind else 128
 		data[di + 3] = wind_buf[oi + 1]  if has_wind else 128
 	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
+	# I: commit_ocean_buffers 频繁触发；尺寸不变时复用 GPU 句柄，减 30-50ms 上传开销。
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+		return existing
 	return ImageTexture.create_from_image(img)
 
 # Systemic Ocean Currents：独立 R8 upwelling 纹理编码（L8 单通道，LINEAR 过滤）。
 # 源 buffer 编码：0 = 下沉满 / 128 = 中性 / 255 = 上升满。
 # shader 端只在 ocean_current_debug 开启时采样，主路径不读。
-func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i) -> ImageTexture:
+func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null) -> ImageTexture:
 	var W := size.x
 	var H := size.y
 	var n := W * H
-	var data := PackedByteArray()
-	data.resize(n)
-	var has_up: bool = upwelling_buf.size() >= n
-	for i in range(n):
-		data[i] = upwelling_buf[i] if has_up else 128
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
+	# I + L: size 匹配时直接把 upwelling_buf 喂给 Image.create_from_data，省掉 620k
+	# byte 的 GDScript 拷贝循环（~10-15ms）。size 不匹配（异常）才回退到补 128 的兜底。
+	var img: Image
+	if upwelling_buf.size() == n:
+		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, upwelling_buf)
+	else:
+		var data := PackedByteArray()
+		data.resize(n)
+		var has_up: bool = upwelling_buf.size() >= n
+		for i in range(n):
+			data[i] = upwelling_buf[i] if has_up else 128
+		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+		return existing
 	return ImageTexture.create_from_image(img)
 
 # 通用 R8 → ImageTexture 编码（L8 LINEAR）。传入 existing 会尝试原地 update 以复用 GPU 句柄，
@@ -1949,36 +2157,116 @@ func bake_sea_ice_fraction_only(map: MapData, world: WorldData) -> void:
 func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 	if world == null or map == null:
 		return
+	# Daily-sim perf opt（dirty 增量路径，与 bake_sea_ice_fraction_only / cover / vegetation
+	# 同构）：weather_field_tex 是 hex-constant 数据（每个 hex 内部颜色完全一致）。
+	#
+	# 旧路径：每天扫 ~2400 cell + 写整张 RGBA8（~250k–600k bytes，27ms）。
+	# 新路径：
+	#   1) 首次或 size 变化 → 完整重建 _weather_field_buf + 填 sig 缓存（一次性 ~27ms）；
+	#   2) 后续 → 遍历 ~2400 cell：sig 不变 ⇒ 直接 continue；变了才把 4 byte 写到那个
+	#      cell 的所有像素 + 更新 sig。典型日 < 50 个 cell 翻面 → 写盘 ~5k 字节。
+	#   3) 若任一 cell 翻面 → 触发整张 Image.create_from_data + tex.update（GPU 上传必经；
+	#      但循环 / 写盘开销骤降到 < 5ms）。全无变化 ⇒ 连 image 创建也省。
 	var W := world.derived_size.x
 	var H := world.derived_size.y
+	if W <= 0 or H <= 0:
+		return
 	var n := W * H
 	if n <= 0:
 		return
-	var lookup := world.pixel_to_cell_lookup
-	var buf := PackedByteArray()
-	buf.resize(n * 4)
-	if lookup.size() != n:
-		push_warning("MapBaker.bake_weather_field_only: pixel_to_cell_lookup missing; falling back to empty weather field")
-	else:
-		for i in range(n):
-			var cell: HexCell = lookup[i]
-			var di := i * 4
+	var cell_lists: Dictionary = world.cell_pixel_lists
+	if cell_lists.is_empty():
+		push_warning("MapBaker.bake_weather_field_only: cell_pixel_lists missing; weather field empty")
+		return
+
+	var need_bytes: int = n * 4
+	var cache_size_match: bool = (_weather_field_cache_size == Vector2i(W, H) \
+			and _weather_field_buf.size() == need_bytes \
+			and not _last_weather_field_cell_sigs.is_empty())
+
+	if not cache_size_match:
+		# 全重建路径：清状态 → 全图写一次 → 填 sig 缓存。
+		_weather_field_buf = PackedByteArray()
+		_weather_field_buf.resize(need_bytes)
+		_last_weather_field_cell_sigs = {}
+		_weather_field_cache_size = Vector2i(W, H)
+		for cell_key in cell_lists.keys():
+			var cell: HexCell = cell_key
 			if cell == null:
-				buf[di] = 0
-				buf[di + 1] = 0
-				buf[di + 2] = 0
-				buf[di + 3] = 0
 				continue
-			var wt: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
-			var intensity: float = float(cell.current_state.get("weather_intensity", 0.0))
-			var cloud: float = float(cell.current_state.get("weather_cloud", 0.0))
-			var precip: float = float(cell.current_state.get("weather_precip", 0.0))
-			buf[di] = clampi(wt, 0, 255)
-			buf[di + 1] = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
-			buf[di + 2] = clampi(int(round(clampf(cloud, 0.0, 1.0) * 255.0)), 0, 255)
-			buf[di + 3] = clampi(int(round(clampf(precip, 0.0, 1.0) * 255.0)), 0, 255)
-	world.weather_field_buffer = buf
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf)
+			var wt0: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
+			var intensity0: float = float(cell.current_state.get("weather_intensity", 0.0))
+			var cloud0: float = float(cell.current_state.get("weather_cloud", 0.0))
+			var precip0: float = float(cell.current_state.get("weather_precip", 0.0))
+			var b00: int = clampi(wt0, 0, 255)
+			var b10: int = clampi(int(round(clampf(intensity0, 0.0, 1.0) * 255.0)), 0, 255)
+			var b20: int = clampi(int(round(clampf(cloud0, 0.0, 1.0) * 255.0)), 0, 255)
+			var b30: int = clampi(int(round(clampf(precip0, 0.0, 1.0) * 255.0)), 0, 255)
+			var sig0: int = b00 | (b10 << 8) | (b20 << 16) | (b30 << 24)
+			_last_weather_field_cell_sigs[cell] = sig0
+			var pixels0: PackedInt32Array = cell_lists[cell_key]
+			for px in pixels0:
+				var di0: int = px * 4
+				_weather_field_buf[di0] = b00
+				_weather_field_buf[di0 + 1] = b10
+				_weather_field_buf[di0 + 2] = b20
+				_weather_field_buf[di0 + 3] = b30
+		world.weather_field_buffer = _weather_field_buf
+		var img0 := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _weather_field_buf)
+		if world.weather_field_tex != null and world.weather_field_tex.get_size() == Vector2(float(W), float(H)):
+			world.weather_field_tex.update(img0)
+		else:
+			world.weather_field_tex = ImageTexture.create_from_image(img0)
+		return
+
+	# 增量路径：遍历 cell，比 sig，仅写翻面的。
+	var dirty_count: int = 0
+	for cell_key in cell_lists.keys():
+		var cell: HexCell = cell_key
+		if cell == null:
+			continue
+		var wt: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
+		var intensity: float = float(cell.current_state.get("weather_intensity", 0.0))
+		var cloud: float = float(cell.current_state.get("weather_cloud", 0.0))
+		var precip: float = float(cell.current_state.get("weather_precip", 0.0))
+		var b0: int = clampi(wt, 0, 255)
+		var b1: int = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
+		var b2: int = clampi(int(round(clampf(cloud, 0.0, 1.0) * 255.0)), 0, 255)
+		var b3: int = clampi(int(round(clampf(precip, 0.0, 1.0) * 255.0)), 0, 255)
+		var sig: int = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+		var prev_sig_var = _last_weather_field_cell_sigs.get(cell, -1)
+		if int(prev_sig_var) == sig:
+			continue
+		_last_weather_field_cell_sigs[cell] = sig
+		var pixels: PackedInt32Array = cell_lists[cell_key]
+		for px in pixels:
+			var di: int = px * 4
+			_weather_field_buf[di] = b0
+			_weather_field_buf[di + 1] = b1
+			_weather_field_buf[di + 2] = b2
+			_weather_field_buf[di + 3] = b3
+		dirty_count += 1
+
+	world.weather_field_buffer = _weather_field_buf
+	# H 诊断：累计 dirty 比例。每 30 次调用打一行，命中率高于 80% 时考虑回滚 F。
+	_wf_diag_calls += 1
+	_wf_diag_dirty_sum += dirty_count
+	_wf_diag_total_cells = cell_lists.size()
+	if dirty_count == 0:
+		_wf_diag_skipped_full += 1
+	if _wf_diag_calls >= 30:
+		var avg_dirty: float = float(_wf_diag_dirty_sum) / float(_wf_diag_calls)
+		var dirty_ratio: float = avg_dirty / float(maxi(_wf_diag_total_cells, 1))
+		print("  [field_bake] last %d calls: avg dirty=%.0f/%d (%.1f%%), full-skip=%d" % [
+			_wf_diag_calls, avg_dirty, _wf_diag_total_cells, dirty_ratio * 100.0, _wf_diag_skipped_full
+		])
+		_wf_diag_calls = 0
+		_wf_diag_dirty_sum = 0
+		_wf_diag_skipped_full = 0
+	if dirty_count == 0:
+		# 全图无变化：连 Image.update 也省。weather_field_tex 维持上一帧不变。
+		return
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _weather_field_buf)
 	if world.weather_field_tex != null and world.weather_field_tex.get_size() == Vector2(float(W), float(H)):
 		world.weather_field_tex.update(img)
 	else:
@@ -2351,100 +2639,202 @@ func _use_physical_circulation(cfg: MapConfig) -> bool:
 		return false
 	return bool(cfg.climate_profile.physical_circulation_enabled)
 
-# 一次性求解 SLP / wind / ψ / ocean_current / upwelling，结果写进 HexCell 字段。
-# 同时把"风场像素 buffer"重新生成到 _pending_wind_buf（commit 时一并替换 world.wind_field_buffer）。
+# 强制下一次 _physical_solve_step_one 从 SLP 阶段重新开始。OceanCurrentsJob
+# 在新一轮（_round_active=false → true）转换时调一次，确保季节相位变更被
+# 重新求解；一次性入口 _physical_solve_for_phase 也调一次，避免和切片路径
+# 残留的 _phys_stage 冲突。
+func reset_physical_solve_state() -> void:
+	_phys_stage = _PHYS_STAGE_NONE
+	_phys_psi_iters_done = 0
+	_phys_wind_raster_idx = 0
+	_pending_phys_solved_phase = NAN
+	_pending_psi_state = null
+	_pending_wind_buf = PackedByteArray()
+
+# Phys Solve Sliced 入口 ② ：把 7 阶段求解推进 1 步，返回 true 表示本轮已彻底完成
+# （`_pending_phys_solved_phase = season_phase` 同时被设好）。
+#
+# OceanCurrentsJob 每个 run_slice 调一次 step_one，全部完成后再开始按像素区间
+# 光栅化。每个 stage 的耗时上界：
+#   SLP        ~5ms     —— 2400 cell × 6 邻居平滑 1 次 + 基线公式
+#   WIND       ~5ms     —— 2400 cell × (6 邻居梯度 + 山脉绕流)
+#   PSI_INIT   ~3ms     —— 标记水格 + 邻居索引 + curl τ
+#   PSI_ITERS  ~2ms × 5 —— 8 SOR/step × 5 step = 40 iters，与一次性路径等价
+#   PSI_FINAL  ~3ms     —— ψ → ocean_current + commit
+#   UPWELLING  ~3ms     —— 沿岸 Ekman + 高纬冷沉
+#   WIND_RASTER ~5ms    —— NaN 守门 + 风场 RG8 写盘
+# 第一片最坏 ~5ms（远低于一次性路径的 ~200ms 毛刺）。
+func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
+		cfg: MapConfig, season_phase: float) -> bool:
+	if world == null or map == null:
+		return true
+	# 同 phase 已求解过 → idempotent fast path（caller 不需要外层判断）。
+	if not is_nan(_pending_phys_solved_phase) \
+			and absf(_pending_phys_solved_phase - season_phase) < 0.001:
+		_phys_stage = _PHYS_STAGE_DONE
+		return true
+	if _phys_stage == _PHYS_STAGE_NONE:
+		_phys_stage = _PHYS_STAGE_SLP
+		_phys_psi_iters_done = 0
+		_pending_psi_state = null
+
+	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
+	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
+	var heat_transport: bool = profile.enable_ocean_heat_transport if profile != null else true
+	var bounds: Rect2 = world.world_bounds
+
+	match _phys_stage:
+		_PHYS_STAGE_SLP:
+			PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
+			_phys_stage = _PHYS_STAGE_WIND
+		_PHYS_STAGE_WIND:
+			PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
+			if heat_transport:
+				_phys_stage = _PHYS_STAGE_PSI_INIT
+			else:
+				# 跳过 ψ 求解，直接走 fallback ocean current；下一片做 upwelling。
+				_pending_psi_state = null
+				PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
+				_phys_stage = _PHYS_STAGE_UPWELLING
+		_PHYS_STAGE_PSI_INIT:
+			_pending_psi_state = PhysCircSolverScript.init_psi_solver(map, hex_size, bounds)
+			_phys_psi_iters_done = 0
+			_phys_stage = _PHYS_STAGE_PSI_ITERS
+		_PHYS_STAGE_PSI_ITERS:
+			var iters_to_do: int = mini(
+				_PHYS_PSI_ITERS_PER_STEP,
+				_PHYS_PSI_TOTAL_ITERS - _phys_psi_iters_done
+			)
+			if iters_to_do > 0 and _pending_psi_state != null:
+				PhysCircSolverScript.step_psi_solver(_pending_psi_state, iters_to_do)
+				_phys_psi_iters_done += iters_to_do
+			if _phys_psi_iters_done >= _PHYS_PSI_TOTAL_ITERS:
+				_phys_stage = _PHYS_STAGE_PSI_FINALIZE
+		_PHYS_STAGE_PSI_FINALIZE:
+			if _pending_psi_state != null:
+				PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg)
+				PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
+			_phys_stage = _PHYS_STAGE_UPWELLING
+		_PHYS_STAGE_UPWELLING:
+			PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
+			_phys_stage = _PHYS_STAGE_WIND_RASTER
+		_PHYS_STAGE_WIND_RASTER:
+			# 第一次进入 WIND_RASTER 时跑 NaN 守门 + 分配 buffer，之后每次推进
+			# 一片像素，全部写完才 _PHYS_STAGE_DONE。
+			var W := world.derived_size.x
+			var H := world.derived_size.y
+			var pix_total: int = W * H
+			if pix_total <= 0:
+				_pending_phys_solved_phase = season_phase
+				_phys_stage = _PHYS_STAGE_DONE
+				return true
+			if _phys_wind_raster_idx == 0:
+				# NaN/Inf 守门：若任一 cell 物理量异常，退回 fallback 路径覆写。
+				var n_bad: int = 0
+				for c: HexCell in map.all_cells():
+					if c == null:
+						continue
+					if not is_finite(c.wind_vector.x) or not is_finite(c.wind_vector.y) \
+							or not is_finite(c.wind_speed) \
+							or not is_finite(c.ocean_current.x) or not is_finite(c.ocean_current.y) \
+							or not is_finite(c.upwelling_strength):
+						n_bad += 1
+				if n_bad > 0:
+					push_warning("PhysicalCirculation: detected %d cells with NaN/Inf, falling back to ny-only solver" % n_bad)
+					PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
+					PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
+				_ensure_pending_wind_size(world)
+			var s_idx: int = _phys_wind_raster_idx
+			var e_idx: int = mini(pix_total, s_idx + _PHYS_WIND_RASTER_PIXELS_PER_STEP)
+			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, s_idx, e_idx)
+			_phys_wind_raster_idx = e_idx
+			if _phys_wind_raster_idx >= pix_total:
+				_pending_phys_solved_phase = season_phase
+				_phys_stage = _PHYS_STAGE_DONE
+				_phys_wind_raster_idx = 0
+				return true
+			# 还有像素要写 → 留在 WIND_RASTER stage，下次 step_one 续。
+			return false
+		_PHYS_STAGE_DONE:
+			return true
+		_:
+			# 未知状态 → 强制收尾（避免死循环）。
+			_pending_phys_solved_phase = season_phase
+			_phys_stage = _PHYS_STAGE_DONE
+			return true
+	return _phys_stage == _PHYS_STAGE_DONE
+
+
+# Phys Solve Sliced 入口 ① ：给一次性路径用的 wrapper。
+#
+# 一次性调用：把 SLP / wind / ψ / current / upwelling / wind raster 全部在
+# 一次函数调用中跑完。bake_world 与 rebake_ocean_currents 走这条；它们都需要
+# "调用返回时 hex 字段已就绪"的强语义。内部循环调 `_physical_solve_step_one`
+# 直到 `_PHYS_STAGE_DONE`，避免与切片路径双份维护求解逻辑。
 #
 # 重复调用同一 phase 时直接 return（_pending_phys_solved_phase 命中）。下一轮
-# 来临前 commit_ocean_buffers / discard_ocean_buffers / 切片重头开始（start_idx==0）
-# 都会把 _pending_phys_solved_phase 重置为 NAN，强制重算。
+# 来临前 commit_ocean_buffers / discard_ocean_buffers 都会把
+# _pending_phys_solved_phase + _phys_stage 重置，强制重算。
 func _physical_solve_for_phase(map: MapData, world: WorldData, hex_size: float,
 		cfg: MapConfig, season_phase: float) -> void:
 	if world == null or map == null:
 		return
-	# 已为本轮求解过 → 直接返回（切片中后续片复用第一片的 hex 字段）。
 	if not is_nan(_pending_phys_solved_phase) and absf(_pending_phys_solved_phase - season_phase) < 0.001:
 		return
-	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
-	var terrain_aware: bool = true
-	var heat_transport: bool = true
-	if profile != null:
-		terrain_aware = profile.enable_terrain_aware_wind
-		heat_transport = profile.enable_ocean_heat_transport
-	var bounds: Rect2 = world.world_bounds
 	var t0_total := Time.get_ticks_msec()
+	# 一次性路径必须从干净状态起步，避免和切片路径残留的 _phys_stage 冲突。
+	reset_physical_solve_state()
+	var stage_ms: Dictionary = {}  # stage_idx -> ms（diagnostic）
+	var stage_t0: int = Time.get_ticks_msec()
+	var prev_stage: int = _phys_stage
+	while not _physical_solve_step_one(map, world, hex_size, cfg, season_phase):
+		# 在每个 stage 切换处采样一次，方便日志比对老的 slp/wind/psi/up 拆分。
+		if _phys_stage != prev_stage:
+			stage_ms[prev_stage] = Time.get_ticks_msec() - stage_t0
+			stage_t0 = Time.get_ticks_msec()
+			prev_stage = _phys_stage
+	stage_ms[prev_stage] = Time.get_ticks_msec() - stage_t0
 
-	# 1) SLP
-	var t0 := Time.get_ticks_msec()
-	PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
-	var t_slp := Time.get_ticks_msec() - t0
-	# 2) Wind
-	t0 = Time.get_ticks_msec()
-	PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
-	var t_wind := Time.get_ticks_msec() - t0
-	# 3) Ocean current
-	t0 = Time.get_ticks_msec()
-	if heat_transport:
-		_pending_psi_state = PhysCircSolverScript.solve_psi_one_shot(map, hex_size, bounds)
-		PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg)
-		PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
-	else:
-		_pending_psi_state = null
-		PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
-	var t_psi := Time.get_ticks_msec() - t0
-	# 4) Upwelling
-	t0 = Time.get_ticks_msec()
-	PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
-	var t_up := Time.get_ticks_msec() - t0
-
-	# 5) NaN/Inf 守门：扫描 hex 物理量；任何异常 → 回退到 fallback 路径，避免 commit 把
-	# 全图 buffer 染坏。守门只看 wind_vector / ocean_current（最易引发 RG8 编码异常的两项）。
-	var n_bad: int = 0
-	for c: HexCell in map.all_cells():
-		if c == null:
-			continue
-		if not is_finite(c.wind_vector.x) or not is_finite(c.wind_vector.y) \
-				or not is_finite(c.wind_speed) \
-				or not is_finite(c.ocean_current.x) or not is_finite(c.ocean_current.y) \
-				or not is_finite(c.upwelling_strength):
-			n_bad += 1
-	if n_bad > 0:
-		push_warning("PhysicalCirculation: detected %d cells with NaN/Inf, falling back to ny-only solver" % n_bad)
-		# 回退：用 fallback solver 把异常字段写正确（仍是 hex 域，只是不解 ψ）
-		PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
-		PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
-
-	# 6) 把"风场像素 buffer"也物理化重写：不动 world.wind_field_buffer 本体，先攒到
-	# _pending_wind_buf，等 commit_ocean_buffers 时再原子替换。
-	var t_raster := Time.get_ticks_msec()
-	_pending_wind_buf = _rasterize_wind_field_from_hex(map, world)
-	var t_raster_ms := Time.get_ticks_msec() - t_raster
-
-	_pending_phys_solved_phase = season_phase
-
-	# 调度感知日志：第一片求解的总耗时；超出 25ms 给警告（仅观测，不强制切分）。
-	# OceanCurrentsJob 第一片的 slice_budget_ms = 4ms，但 must_run = true 确保即使
-	# 超预算也会跑完；超过 25ms 的话考虑把 _PSI_DEFAULT_ITERS 进一步调小。
 	var total_ms := Time.get_ticks_msec() - t0_total
-	var msg := "PhysicalCirculation solve@phase=%.2f total=%dms (slp=%dms wind=%dms psi+current=%dms upwelling=%dms wind_raster=%dms)" % [
-		season_phase, total_ms, t_slp, t_wind, t_psi, t_up, t_raster_ms
+	var msg := "PhysicalCirculation solve@phase=%.2f total=%dms (slp=%dms wind=%dms psi=%dms finalize=%dms upwelling=%dms wind_raster=%dms)" % [
+		season_phase, total_ms,
+		int(stage_ms.get(_PHYS_STAGE_SLP, 0)),
+		int(stage_ms.get(_PHYS_STAGE_WIND, 0)),
+		int(stage_ms.get(_PHYS_STAGE_PSI_INIT, 0)) + int(stage_ms.get(_PHYS_STAGE_PSI_ITERS, 0)),
+		int(stage_ms.get(_PHYS_STAGE_PSI_FINALIZE, 0)),
+		int(stage_ms.get(_PHYS_STAGE_UPWELLING, 0)),
+		int(stage_ms.get(_PHYS_STAGE_WIND_RASTER, 0)),
 	]
 	if total_ms > 25:
 		push_warning("%s — exceeds 25ms soft budget" % msg)
 	else:
 		print(msg)
 
-# 把 cell.wind_vector × wind_speed 量化进 RG8 buffer。使用 pixel_to_cell_lookup
-# 直接查最近 hex，零额外 cube_round 成本。
-func _rasterize_wind_field_from_hex(map: MapData, world: WorldData) -> PackedByteArray:
+# 确保 _pending_wind_buf 已按 W×H×2 字节就位（PackedByteArray 不在 size 一致时
+# 强制重分配，避免 GC 压力）。WIND_RASTER 阶段的第一次 step 调一次。
+func _ensure_pending_wind_size(world: WorldData) -> void:
 	var W := world.derived_size.x
 	var H := world.derived_size.y
-	var buf := PackedByteArray()
-	buf.resize(W * H * 2)
+	var need: int = W * H * 2
+	if _pending_wind_buf.size() != need:
+		_pending_wind_buf = PackedByteArray()
+		_pending_wind_buf.resize(need)
+
+# 把 cell.wind_vector 量化进区间 [s, e)（按像素索引）。s 必须是非负，e ≤ W*H。
+# 用 pixel_to_cell_lookup 直接查最近 hex，无 cube_round 成本。
+# wind_vector 已是单位向量，speed 不进 RG8（与现有 shader 一致）。
+# L: 同 ocean_current_slice，同步写持久 _vector_atlas_data 的 BA 通道（[idx*4+2, idx*4+3]）。
+func _rasterize_wind_slice_from_hex(world: WorldData, buf: PackedByteArray,
+		s: int, e: int) -> void:
+	if buf.is_empty() or s >= e:
+		return
+	var W := world.derived_size.x
+	var H := world.derived_size.y
 	var lookup: Array = world.pixel_to_cell_lookup
 	var has_lookup: bool = lookup.size() == W * H
-	# 风场归一化幅度：buffer 编码 [-1, 1] → [0, 255]。但 wind_vector 已是单位向量，
-	# 所以直接编码 wind_vector（方向正确即可）。speed 不进 RG8（与现有 shader 一致）。
-	for i in range(W * H):
+	var atlas_valid: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+			and _vector_atlas_data.size() == W * H * 4)
+	for i in range(s, e):
 		var cell: HexCell = null
 		if has_lookup:
 			cell = lookup[i]
@@ -2453,17 +2843,61 @@ func _rasterize_wind_field_from_hex(map: MapData, world: WorldData) -> PackedByt
 		if cell != null:
 			wx = cell.wind_vector.x
 			wy = cell.wind_vector.y
-		buf[i * 2]     = clampi(int(round((wx * 0.5 + 0.5) * 255.0)), 0, 255)
-		buf[i * 2 + 1] = clampi(int(round((wy * 0.5 + 0.5) * 255.0)), 0, 255)
-	return buf
+		var bx: int = clampi(int(round((wx * 0.5 + 0.5) * 255.0)), 0, 255)
+		var by: int = clampi(int(round((wy * 0.5 + 0.5) * 255.0)), 0, 255)
+		buf[i * 2]     = bx
+		buf[i * 2 + 1] = by
+		if atlas_valid:
+			_vector_atlas_data[i * 4 + 2] = bx
+			_vector_atlas_data[i * 4 + 3] = by
+
+# 一次性版本（bake_world / rebake_ocean_currents 用）：直接全图写入 _pending_wind_buf
+# 并返回它。等价于多次调 _rasterize_wind_slice_from_hex 拼成全图。
+func _rasterize_wind_field_from_hex(map: MapData, world: WorldData) -> PackedByteArray:
+	_ensure_pending_wind_size(world)
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	_rasterize_wind_slice_from_hex(world, _pending_wind_buf, 0, W * H)
+	return _pending_wind_buf
+
+# L: 从 world.ocean_current_buffer / wind_field_buffer 一次性拼出 RGBA8 交错缓冲。
+# fallback 路径（缓存未就绪）的 commit 末尾调一次，让下一次 commit 走 fast path。
+# 之后 pixel slices 在写 _pending_currents_buf / _pending_wind_buf 时同步维护此 buf。
+func _rebuild_vector_atlas_data_from_buffers(world: WorldData) -> void:
+	if world == null:
+		return
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	var need: int = n * 4
+	if _vector_atlas_data.size() != need:
+		_vector_atlas_data = PackedByteArray()
+		_vector_atlas_data.resize(need)
+	_vector_atlas_data_size = Vector2i(W, H)
+	var ocean_buf: PackedByteArray = world.ocean_current_buffer
+	var wind_buf: PackedByteArray = world.wind_field_buffer
+	var has_ocean: bool = ocean_buf.size() >= n * 2
+	var has_wind: bool = wind_buf.size() >= n * 2
+	for i in range(n):
+		var di: int = i * 4
+		var oi: int = i * 2
+		_vector_atlas_data[di]     = ocean_buf[oi]     if has_ocean else 128
+		_vector_atlas_data[di + 1] = ocean_buf[oi + 1] if has_ocean else 128
+		_vector_atlas_data[di + 2] = wind_buf[oi]      if has_wind else 128
+		_vector_atlas_data[di + 3] = wind_buf[oi + 1]  if has_wind else 128
 
 # 把 cell.ocean_current 量化进 RG8 像素区间 [s, e)。陆地像素填中性 (128, 128) = 零向量。
+# L: 同步把 RG 写到持久 _vector_atlas_data 的 [idx*4, idx*4+1] 通道（若 size 已就绪），
+# 让 commit_ocean_buffers 直接 Image.create_from_data(_vector_atlas_data) + tex.update，
+# 省掉 620k × 4 字节的全图交错循环（30-50ms → memcpy）。
 func _rasterize_ocean_current_slice_from_hex(world: WorldData, dst: PackedByteArray,
 		s: int, e: int) -> void:
 	var lookup: Array = world.pixel_to_cell_lookup
 	var W := world.derived_size.x
 	var H := world.derived_size.y
 	var has_lookup: bool = lookup.size() == W * H
+	var atlas_valid: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+			and _vector_atlas_data.size() == W * H * 4)
 	for i in range(s, e):
 		var cell: HexCell = null
 		if has_lookup:
@@ -2473,8 +2907,13 @@ func _rasterize_ocean_current_slice_from_hex(world: WorldData, dst: PackedByteAr
 		if cell != null and _is_water(int(cell.terrain)):
 			cur_x = cell.ocean_current.x
 			cur_y = cell.ocean_current.y
-		dst[i * 2]     = clampi(int(round((cur_x * 0.5 + 0.5) * 255.0)), 0, 255)
-		dst[i * 2 + 1] = clampi(int(round((cur_y * 0.5 + 0.5) * 255.0)), 0, 255)
+		var bx: int = clampi(int(round((cur_x * 0.5 + 0.5) * 255.0)), 0, 255)
+		var by: int = clampi(int(round((cur_y * 0.5 + 0.5) * 255.0)), 0, 255)
+		dst[i * 2]     = bx
+		dst[i * 2 + 1] = by
+		if atlas_valid:
+			_vector_atlas_data[i * 4]     = bx
+			_vector_atlas_data[i * 4 + 1] = by
 
 # 把 cell.upwelling_strength 量化进 R8 像素区间 [s, e)。陆地填 128（中性）。
 # 编码：strength ∈ [-1, 1] → byte ∈ [0, 255]，128 = 0；255 = +1（满上升）；0 = -1（满下沉）。

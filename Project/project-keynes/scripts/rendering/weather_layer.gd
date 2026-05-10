@@ -90,6 +90,9 @@ var _world_bounds: Rect2 = Rect2()
 var _world_time: float = 0.0
 var _strength: float = 1.0
 var _weather_field_tex: Texture2D = null
+# Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
+# overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
+var _vector_atlas_tex: Texture2D = null
 # v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
 var _active_count: int = 0
 # 每日 WeatherFront 快照的表现层插值状态。这里存 Dictionary 快照，避免改 WeatherSystem 数据。
@@ -106,6 +109,14 @@ var _storm_next_flash_t: float = 0.0
 var _storm_flash_end_t: float = 0.0
 var _storm_active: bool = false
 var _rng: RandomNumberGenerator
+
+# Drift-debug（2026-05-10）：set true 后：
+#   1) set_weather_fronts 入口打印 snapshot_interval / blend_duration / forward_bias
+#      + 每个 front 的 (raw center, velocity, biased target, start→target delta)
+#   2) _process 每秒打印 visual_snapshots[0] 的 center 看是否真的在变
+# 验证完成后改回 false 关日志。
+const DRIFT_DEBUG_LOG: bool = true
+var _drift_debug_last_log_time: float = -1.0
 
 func _ready() -> void:
 	z_as_relative = false
@@ -141,19 +152,58 @@ func _ready() -> void:
 	set_process(true)
 
 func _process(delta: float) -> void:
-	# v9.perf：没有活跃 weather 时整层隐藏，连 _process 都可以停掉
-	if _front_target_snapshots.is_empty() and _front_visual_snapshots.is_empty() and _weather_field_tex == null:
+	# ambient-shadow：先无条件推进 ambient_time + 推到 shader——这是装饰时钟，
+	# 与 game pause 解耦，让云影即使在暂停时也持续飘动+变形。
+	if _ambient_cloud_shadow_enabled and _overlay_mat != null:
+		_ambient_time += delta
+		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
+
+	# ambient-shadow：即使没有 weather，只要 ambient cloud shadow 开启，就要保持 overlay 可见。
+	var has_weather: bool = (not _front_target_snapshots.is_empty()) \
+			or (not _front_visual_snapshots.is_empty()) \
+			or (_weather_field_tex != null)
+	if not has_weather and not _ambient_cloud_shadow_enabled:
 		_active_count = 0
 		visible = false
 		return
 	# 任务 5：粒子/噪声时间推进受 WorldClock.paused 门控
 	# （不依赖 WorldClock 实例，而是看 SceneTree 的 paused 状态——与项目现有暂停机制兑齐）
+	# 注意：ambient_time 已在上面推进过了，这里 pause 仅冻结 weather 相关的 world_time。
 	if not _effective_running():
+		# 暂停时 ambient shadow 仍要保持 overlay 可见且能继续接收 ambient_time 更新，
+		# 仅刷一次可见性后退出（不动 fronts/particles/world_time）。
+		if _ambient_cloud_shadow_enabled:
+			_refresh_visibility()
 		return
 	_world_time += delta
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
-	_update_weather_front_blend(delta)
+	if has_weather:
+		_update_weather_front_blend(delta)
+		# Drift-debug：每秒采样 visual_snapshots[0] 的 center，看 lerp 是否真的在推进。
+		if DRIFT_DEBUG_LOG and _world_time - _drift_debug_last_log_time >= 1.0:
+			_drift_debug_last_log_time = _world_time
+			if _front_visual_snapshots.size() > 0:
+				var v0: Dictionary = _front_visual_snapshots[0]
+				var s0_c: Vector2 = Vector2.INF
+				var t0_c: Vector2 = Vector2.INF
+				if _front_start_snapshots.size() > 0:
+					s0_c = _front_center(_front_start_snapshots[0])
+				if _front_target_snapshots.size() > 0:
+					t0_c = _front_center(_front_target_snapshots[0])
+				var raw_t: float = 0.0
+				if _front_blend_duration > 0.0001:
+					raw_t = clampf(_front_blend_elapsed / _front_blend_duration, 0.0, 1.0)
+				print("[weather-layer-tick] t=%.2fs visual0=%s start0=%s target0=%s blend_t=%.2f vel=%s" % [
+					_world_time, str(_front_center(v0).round()),
+					str(s0_c.round()) if s0_c != Vector2.INF else "<none>",
+					str(t0_c.round()) if t0_c != Vector2.INF else "<none>",
+					raw_t, str(_front_velocity(v0).round()),
+				])
+	else:
+		# 没有天气但有 ambient shadow 时，跳过 fronts/particles/shadow 池同步，
+		# 仅靠推进 world_time 让 shader 自己刷 ambient FBM 飘动。
+		_refresh_visibility()
 	# 任务 5：STORM 闪电推进
 	if _storm_active:
 		_update_storm_flash()
@@ -201,10 +251,19 @@ func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture) -> 
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
 		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
+		# Phase 1：vector_atlas 重启地图时也要重写一次，避免上一张地图的残留风场。
+		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
+		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
 		_push_weather_profile_uniforms_to_overlay()
+		# ambient-shadow：把当前开关与强度推一次到 shader，避免 setup 后第一帧用默认值。
+		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", _ambient_cloud_shadow_enabled)
+		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
+		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
+	# ambient-shadow：setup 后立刻刷一次可见性，确保启用时在 reset_front_blend 之后还能看到影。
+	_refresh_visibility()
 
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
 func set_weather_strength(v: float) -> void:
@@ -217,8 +276,25 @@ func set_weather_field_texture(tex: Texture2D) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
 		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
-	if _weather_field_tex != null:
-		visible = true
+	_refresh_visibility()
+
+# ambient-shadow：可见性收敛点。任何一个条件成立就保持 overlay 可见：
+#  1) 有活跃 fronts（_active_count > 0）
+#  2) 有 weather_field_tex（按 cell 渲染天气场）
+#  3) ambient cloud shadow 启用（即使 clear 天气也要画影子）
+func _refresh_visibility() -> void:
+	visible = (_active_count > 0) \
+			or (_weather_field_tex != null) \
+			or _ambient_cloud_shadow_enabled
+
+# Phase 1：把 WorldData.vector_atlas_tex（RGBA8，BA = wind_field）注入 overlay shader。
+# 由 HexRenderer 在 setup 之后调用一次；后续 wind_field 由 MapBaker.rebake_*_only 路径
+# 重建 vector_atlas_tex 时也会回流到这里，shader 内的 advection 立即跟上。
+func set_vector_atlas_texture(tex: Texture2D) -> void:
+	_vector_atlas_tex = tex
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
+		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
 
 # ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
 # 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部
@@ -301,6 +377,24 @@ func set_cloud_tod_tint_enabled(v: bool) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
 
+# ambient-shadow：全图飘移云影。enabled=true 时即使无天气 overlay 也会保持可见，
+# 在地面上画一层缓慢漂动的灰影斑块，给地图加"晴天有云"的氛围。strength 控制浓度。
+# _ambient_time 与游戏 pause 解耦——云影是装饰，不跟着游戏停（区别于 _world_time）。
+var _ambient_cloud_shadow_enabled: bool = true
+var _ambient_cloud_shadow_strength: float = 0.75
+var _ambient_time: float = 0.0
+
+func set_ambient_cloud_shadow_enabled(v: bool) -> void:
+	_ambient_cloud_shadow_enabled = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", v)
+	_refresh_visibility()
+
+func set_ambient_cloud_shadow_strength(v: float) -> void:
+	_ambient_cloud_shadow_strength = clampf(v, 0.0, 1.0)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
+
 # fronts: Array[WeatherFront]（也接受 untyped Array，避免 caller 强转）
 func set_weather_fronts(fronts: Array) -> void:
 	var now_sec: float = float(Time.get_ticks_msec()) / 1000.0
@@ -323,6 +417,54 @@ func set_weather_fronts(fronts: Array) -> void:
 		if targets.size() < start_candidates.size():
 			_front_blend_duration = maxf(_front_blend_duration, _WEATHER_FRONT_DESPAWN_FADE_SEC)
 	_last_front_snapshot_time = now_sec
+
+	# Drift-fix（2026-05-10）：对 lerp target 做 forward-bias，让"云会飘"在
+	# 1× 速度也能可见。
+	#
+	# 背景：blend_duration ≈ 1.15 × snapshot_interval，意味着 lerp 完成时刻
+	# 比下次 snapshot 到达晚 15%——所以 raw_t >= 1.0 后的外推路径在正常游戏里
+	# 永远不到，老的 _predict_front_snapshots 是死代码。视觉位移完全靠
+	# "lerp(start, raw_target)" 提供，而 raw_target = 新 tick 的聚类质心，
+	# 在身份继承稳住了之后这个质心几乎不动 → 云就静止了。
+	#
+	# 修法：把 target.center 沿 front.velocity 向前推 forward_bias 个 snapshot。
+	# 这样 lerp 终点 = "下次 snapshot 到达时云应该在的位置"，每 frame 内
+	# lerp 都在持续向前推进。前后两 tick 的 forward-biased target 又能首尾相接，
+	# 所以不会出现"先飘到未来、新 snapshot 一来又被拉回当前"的回弹。
+	#
+	# forward_bias 的单位是 snapshot interval（与 front.velocity 单位匹配）。
+	# 1.15 = blend_duration / snapshot_interval：lerp 把视觉推到下次 snapshot
+	# 到达时的预期位置。clamp [0, 1.5] 防止 blend_duration 被 MIN 抬高时过冲。
+	var forward_bias: float = clampf(
+		_front_blend_duration / maxf(_front_snapshot_interval_sec, 0.001),
+		0.0, 1.5
+	)
+	if DRIFT_DEBUG_LOG:
+		print("[weather-layer] set_weather_fronts: n=%d snap_interval=%.3fs blend_dur=%.3fs forward_bias=%.3f starts=%d" % [
+			_front_target_snapshots.size(), _front_snapshot_interval_sec,
+			_front_blend_duration, forward_bias, _front_start_snapshots.size(),
+		])
+	if forward_bias > 0.0:
+		for i in range(_front_target_snapshots.size()):
+			var t: Dictionary = _front_target_snapshots[i]
+			var v: Vector2 = _front_velocity(t)
+			var raw_center: Vector2 = _front_center(t)
+			if v.length_squared() > 0.0001:
+				t["center"] = raw_center + v * forward_bias
+				_front_target_snapshots[i] = t
+			if DRIFT_DEBUG_LOG and i < 3:
+				var start_center: Vector2 = Vector2.INF
+				if i < _front_start_snapshots.size():
+					start_center = _front_center(_front_start_snapshots[i])
+				var target_center: Vector2 = _front_center(t)
+				var delta: Vector2 = target_center - start_center if start_center != Vector2.INF else Vector2.ZERO
+				print("[weather-layer]   front%d type=%d raw=%s vel=%s |vel|=%.1f bias=%s start=%s target=%s |Δ|=%.1f" % [
+					i, _front_type(t),
+					str(raw_center.round()), str(v.round()), v.length(),
+					str((v * forward_bias).round()),
+					str(start_center.round()) if start_center != Vector2.INF else "<none>",
+					str(target_center.round()), delta.length(),
+				])
 
 	# 目标为空时保留当前视觉快照做淡出；如果也没有视觉快照则立即清空。
 	_update_weather_front_blend(0.0)
@@ -592,7 +734,8 @@ func _reset_front_blend_state() -> void:
 	_last_front_snapshot_time = -1.0
 	_front_snapshot_interval_sec = _WEATHER_FRONT_INITIAL_BLEND_SEC
 	_active_count = 0
-	visible = false
+	# ambient-shadow：reset 也走统一可见性判定，启用时仍保持 visible 让影子继续画。
+	_refresh_visibility()
 	_push_empty_fronts_to_overlay()
 	_sync_shadow_pool([])
 	_sync_particles_pool([])
@@ -630,6 +773,7 @@ func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Ar
 	for target in targets:
 		var best_idx: int = -1
 		var best_dist_sq: float = INF
+		var best_candidate_radius: float = 0.0
 		var target_center: Vector2 = _front_center(target)
 		var target_radius: float = maxf(_front_radius(target), 1.0)
 		for i in range(start_candidates.size()):
@@ -642,8 +786,16 @@ func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Ar
 			if dist_sq < best_dist_sq:
 				best_dist_sq = dist_sq
 				best_idx = i
+				best_candidate_radius = maxf(_front_radius(candidate), 1.0)
 		var start
-		if best_idx >= 0 and best_dist_sq <= target_radius * target_radius * 2.25:
+		# Continuity-fix（B）：匹配阈值从 1.5 × target_radius 放宽到
+		# 2.5 × max(target_radius, candidate_radius)。
+		# 旧阈值在 cluster split / merge / wind advect 一天位移 (≈0.4 × radius) +
+		# 边界 cell 抖动（再 ±0.5 × radius）叠加后会顶不住——明明是同一朵云，
+		# 因为重新聚类的中心移动 1.6 × radius 就被判定为"不同 front"。
+		# 取 max 半径意味着大簇能拉近小簇做匹配，避免"split 出的小半"被误判为新生。
+		var match_radius: float = maxf(target_radius, best_candidate_radius) * 2.5
+		if best_idx >= 0 and best_dist_sq <= match_radius * match_radius:
 			used[best_idx] = true
 			start = start_candidates[best_idx]
 		else:
@@ -694,7 +846,7 @@ func _update_weather_front_blend(delta: float) -> void:
 			if extra_days > 0.0:
 				_front_visual_snapshots = _predict_front_snapshots(_front_visual_snapshots, extra_days)
 	_active_count = mini(_front_visual_snapshots.size(), MAX_WEATHER_FRONTS)
-	visible = (_active_count > 0 or _weather_field_tex != null)
+	_refresh_visibility()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_sync_shadow_pool(_front_visual_snapshots)
 	_sync_particles_pool(_front_visual_snapshots)
