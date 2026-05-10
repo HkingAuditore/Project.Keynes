@@ -93,10 +93,35 @@ var _field_condensation_gain: float = 0.28
 var _field_precip_decay: float = 0.82
 var _field_orographic_lift_gain: float = 0.35
 var _field_convergence_gain: float = 0.25
+var _field_convergence_refresh_stride: int = 4
+var _field_solve_tick: int = 0
 var _field_ocean_evap_gain: float = 0.30
 var _field_summary_limit: int = 12
 var _weather_field: Dictionary = {}
 var _last_map_for_query: MapData = null
+
+var _field_slice_active: bool = false
+var _field_slice_map: MapData = null
+var _field_slice_world: WorldData = null
+var _field_slice_season_idx: int = 0
+var _field_slice_climate_anomaly: float = 0.0
+var _field_slice_cursor: int = 0
+var _field_slice_refresh_convergence: bool = false
+var _field_slice_cells: Array = []
+var _field_slice_cell_pos: PackedVector2Array = PackedVector2Array()
+var _field_slice_neighbor_indices: PackedInt32Array = PackedInt32Array()
+var _field_slice_fast_indexed: bool = false
+var _field_slice_prev_vapor: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_prev_precip: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_vapor: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_cloud: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_precip: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_instability: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_intensity: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_convergence: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_type: PackedInt32Array = PackedInt32Array()
+var _field_slice_solve_ms: float = 0.0
+var _field_slice_last_ms: float = 0.0
 
 # v11 在 tick_one_day 期间缓存当前 MapData 引用，供同一 tick 内部的 spawn
 # 分支（_spawn_random_front / _build_front_at）复用，避免从调用链中到处透传。
@@ -194,38 +219,12 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 		return self_ref._sample_terrain_wind(map_ref, world, pos, ny, sp)
 
 	if _weather_field_enabled:
-		var t_us0_field: int = Time.get_ticks_usec()
-		_solve_weather_field(map, world, season_idx, climate_anomaly)
-		var solve_ms: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-		t_us0_field = Time.get_ticks_usec()
-		_distribute_weather_field_to_cells(map)
-		var distribute_ms_field: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-		t_us0_field = Time.get_ticks_usec()
-		_active_fronts = _build_field_summary_fronts(map, world)
-		var summary_ms: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-		var cyclone_ms_field: float = 0.0
-		if _cyclone_wake_enabled:
-			t_us0_field = Time.get_ticks_usec()
-			_tick_cyclone_wake(map)
-			cyclone_ms_field = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-		_last_breakdown = {
-			"advance_ms": solve_ms,
-			"spawn_ms": summary_ms,
-			"distribute_ms": distribute_ms_field,
-			"cyclone_ms": cyclone_ms_field,
-			"field_solve_ms": solve_ms,
-			"field_summary_ms": summary_ms,
-		}
-		_last_map_for_query = map
-		_current_map_for_tick = null
-		# Tick-scoped 缓存只服务本次 tick，结束时清掉避免跨 tick 持有 HexCell 弱引用。
-		_tick_cell_pos.clear()
-		_tick_cell_neighbors.clear()
-		return _active_fronts
+		begin_weather_field_solve(map, world, season_idx, climate_anomaly, _season_phase, false)
+		while true:
+			var slice_result: Dictionary = run_weather_field_solve_slice(2147483647)
+			if bool(slice_result.get("done", true)):
+				break
+		return commit_weather_field_solve()
 
 	# Daily-sim perf instrumentation：带埋点的 advance / spawn / distribute / cyclone 四段。
 	var t_us0: int = Time.get_ticks_usec()
@@ -543,7 +542,268 @@ func _distribute_to_cells(map: MapData) -> void:
 					cell.current_state["cover"] = int(cell.cover)
 					_cover_dirty = true
 
+func uses_weather_field() -> bool:
+	return _weather_field_enabled
+
+func is_weather_field_solve_active() -> bool:
+	return _field_slice_active
+
+func begin_weather_field_solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true) -> void:
+	_clear_weather_field_slice_state()
+	if map == null or world == null:
+		return
+	if count_day:
+		_day_counter += 1
+	_current_map_for_tick = map
+	_season_phase = season_phase if season_phase >= 0.0 else float(season_idx) + 0.5
+	_field_solve_tick += 1
+	_field_slice_active = true
+	_field_slice_map = map
+	_field_slice_world = world
+	_field_slice_season_idx = season_idx
+	_field_slice_climate_anomaly = climate_anomaly
+	_field_slice_cursor = 0
+	_field_slice_solve_ms = 0.0
+	_field_slice_last_ms = 0.0
+	_field_slice_refresh_convergence = ((_field_solve_tick - 1) % _field_convergence_refresh_stride) == 0
+	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = _field_slice_cells.size()
+	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
+	_field_slice_cell_pos = PackedVector2Array()
+	_field_slice_cell_pos.resize(n_cells)
+	_tick_cell_pos.clear()
+	_tick_cell_neighbors.clear()
+	for i in range(n_cells):
+		var cell: HexCell = _field_slice_cells[i]
+		_field_slice_cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+
+	_field_slice_prev_vapor = PackedFloat32Array()
+	_field_slice_prev_precip = PackedFloat32Array()
+	_field_slice_next_vapor = PackedFloat32Array()
+	_field_slice_next_cloud = PackedFloat32Array()
+	_field_slice_next_precip = PackedFloat32Array()
+	_field_slice_next_instability = PackedFloat32Array()
+	_field_slice_next_intensity = PackedFloat32Array()
+	_field_slice_next_convergence = PackedFloat32Array()
+	_field_slice_next_type = PackedInt32Array()
+	_field_slice_prev_vapor.resize(n_cells)
+	_field_slice_prev_precip.resize(n_cells)
+	_field_slice_next_vapor.resize(n_cells)
+	_field_slice_next_cloud.resize(n_cells)
+	_field_slice_next_precip.resize(n_cells)
+	_field_slice_next_instability.resize(n_cells)
+	_field_slice_next_intensity.resize(n_cells)
+	_field_slice_next_convergence.resize(n_cells)
+	_field_slice_next_type.resize(n_cells)
+	for i in range(n_cells):
+		var prev_cell: HexCell = _field_slice_cells[i]
+		_field_slice_prev_vapor[i] = prev_cell.weather_vapor if prev_cell.weather_field_initialized else prev_cell.moisture
+		_field_slice_prev_precip[i] = prev_cell.weather_precip if prev_cell.weather_field_initialized else 0.0
+
+func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
+	if not _field_slice_active:
+		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
+	var t_us0: int = Time.get_ticks_usec()
+	var map: MapData = _field_slice_map
+	var world: WorldData = _field_slice_world
+	var cells: Array = _field_slice_cells
+	var n_cells: int = cells.size()
+	var start_i: int = _field_slice_cursor
+	var end_i: int = mini(n_cells, start_i + maxi(1, cell_budget))
+	var cell_pos: PackedVector2Array = _field_slice_cell_pos
+	var neighbor_indices: PackedInt32Array = _field_slice_neighbor_indices
+	var fast_indexed: bool = _field_slice_fast_indexed
+	var prev_vapor: PackedFloat32Array = _field_slice_prev_vapor
+	var prev_precip: PackedFloat32Array = _field_slice_prev_precip
+	var next_vapor: PackedFloat32Array = _field_slice_next_vapor
+	var next_cloud: PackedFloat32Array = _field_slice_next_cloud
+	var next_precip: PackedFloat32Array = _field_slice_next_precip
+	var next_instability: PackedFloat32Array = _field_slice_next_instability
+	var next_intensity: PackedFloat32Array = _field_slice_next_intensity
+	var next_convergence: PackedFloat32Array = _field_slice_next_convergence
+	var next_type: PackedInt32Array = _field_slice_next_type
+	var season_idx: int = _field_slice_season_idx
+	var climate_anomaly: float = _field_slice_climate_anomaly
+	var refresh_convergence: bool = _field_slice_refresh_convergence
+	for i in range(start_i, end_i):
+		var cell: HexCell = cells[i]
+		var pos: Vector2 = cell_pos[i]
+		var temp: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
+		var base_m: float = clampf(cell.moisture, 0.0, 1.0)
+		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
+		var on_water: bool = _is_water_terrain(int(cell.terrain))
+
+		var wind: Vector2 = cell.wind_vector
+		if wind.length_squared() < 0.0001:
+			var ny: float = 0.5
+			if _world_bounds.size.y > 0.001:
+				ny = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
+			wind = _sample_terrain_wind(map, world, pos, ny, _season_phase)
+		var wind_dir: Vector2 = wind.normalized() if wind.length_squared() > 0.0001 else Vector2.RIGHT
+
+		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
+		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
+		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
+		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
+		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
+		var is_lake: bool = int(cell.terrain) == TerrainType.TERRAIN.LAKE
+		var has_river: bool = (not is_lake) and cell.has_river and not on_water
+		if is_lake:
+			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
+		elif has_river:
+			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
+		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
+		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
+
+		var effective_ocean_an: float = ocean_an
+		if is_lake:
+			effective_ocean_an = 0.20
+		elif has_river:
+			effective_ocean_an = maxf(ocean_an, 0.08)
+		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
+		vapor = clampf(vapor + evap, 0.0, 1.0)
+
+		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
+		var convergence: float = cell.weather_convergence
+		if refresh_convergence:
+			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
+		if lift < 0.0:
+			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
+
+		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.74)
+		var humid_excess: float = maxf(vapor - saturation, 0.0)
+		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		var cloud: float = clampf(
+			humid_excess * _field_condensation_gain * 2.2
+			+ lift_supply * _field_orographic_lift_gain
+			+ convergence * _field_convergence_gain
+			+ maxf(effective_ocean_an, 0.0) * 0.12,
+			0.0, 1.0
+		)
+		var instability: float = clampf(
+			(temp - 0.45) * 1.15
+			+ vapor * 0.55
+			+ cloud * 0.35
+			+ convergence * _field_convergence_gain
+			+ lift_supply * _field_orographic_lift_gain
+			+ maxf(effective_ocean_an, 0.0) * 0.25,
+			0.0, 1.0
+		)
+		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
+		var old_precip: float = prev_precip[i]
+		var vapor_floor_factor: float = clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		var dyn_decay: float = _field_precip_decay + wind_mag * 0.25
+		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
+		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
+
+		var wt: int = _classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
+		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
+		next_vapor[i] = vapor
+		next_cloud[i] = cloud
+		next_precip[i] = precip
+		next_instability[i] = instability
+		next_type[i] = wt
+		next_intensity[i] = intensity
+		next_convergence[i] = convergence
+	_field_slice_cursor = end_i
+	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	_field_slice_solve_ms += elapsed_ms
+	_field_slice_last_ms = elapsed_ms
+	return {
+		"done": _field_slice_cursor >= n_cells,
+		"work_done": end_i - start_i,
+		"elapsed_ms": elapsed_ms,
+		"progress_ratio": float(_field_slice_cursor) / float(maxi(n_cells, 1)),
+	}
+
+func commit_weather_field_solve() -> Array[WeatherFront]:
+	if not _field_slice_active:
+		return _active_fronts
+	var map: MapData = _field_slice_map
+	var world: WorldData = _field_slice_world
+	var cells: Array = _field_slice_cells
+	for i in range(cells.size()):
+		var out_cell: HexCell = cells[i]
+		out_cell.weather_field_initialized = true
+		out_cell.weather_vapor = _field_slice_next_vapor[i]
+		out_cell.weather_cloud = _field_slice_next_cloud[i]
+		out_cell.weather_precip = _field_slice_next_precip[i]
+		out_cell.weather_instability = _field_slice_next_instability[i]
+		out_cell.weather_type = _field_slice_next_type[i]
+		out_cell.weather_intensity = _field_slice_next_intensity[i]
+		out_cell.weather_convergence = _field_slice_next_convergence[i]
+	if _field_slice_refresh_convergence:
+		_apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
+
+	var t_us0_field: int = Time.get_ticks_usec()
+	_distribute_weather_field_to_cells(map)
+	var distribute_ms_field: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
+
+	t_us0_field = Time.get_ticks_usec()
+	_active_fronts = _build_field_summary_fronts(map, world)
+	var summary_ms: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
+
+	var cyclone_ms_field: float = 0.0
+	if _cyclone_wake_enabled:
+		t_us0_field = Time.get_ticks_usec()
+		_tick_cyclone_wake(map)
+		cyclone_ms_field = (Time.get_ticks_usec() - t_us0_field) / 1000.0
+
+	var solve_ms: float = _field_slice_solve_ms
+	var last_solve_ms: float = _field_slice_last_ms
+	_last_breakdown = {
+		"advance_ms": last_solve_ms,
+		"spawn_ms": summary_ms,
+		"distribute_ms": distribute_ms_field,
+		"cyclone_ms": cyclone_ms_field,
+		"field_solve_ms": last_solve_ms,
+		"field_solve_total_ms": solve_ms,
+		"field_summary_ms": summary_ms,
+		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
+	}
+	_last_map_for_query = map
+	_current_map_for_tick = null
+	_tick_cell_pos.clear()
+	_tick_cell_neighbors.clear()
+	_clear_weather_field_slice_state()
+	return _active_fronts
+
+func _clear_weather_field_slice_state() -> void:
+	_field_slice_active = false
+	_field_slice_map = null
+	_field_slice_world = null
+	_field_slice_season_idx = 0
+	_field_slice_climate_anomaly = 0.0
+	_field_slice_cursor = 0
+	_field_slice_refresh_convergence = false
+	_field_slice_fast_indexed = false
+	_field_slice_cells = []
+	_field_slice_cell_pos = PackedVector2Array()
+	_field_slice_neighbor_indices = PackedInt32Array()
+	_field_slice_prev_vapor = PackedFloat32Array()
+	_field_slice_prev_precip = PackedFloat32Array()
+	_field_slice_next_vapor = PackedFloat32Array()
+	_field_slice_next_cloud = PackedFloat32Array()
+	_field_slice_next_precip = PackedFloat32Array()
+	_field_slice_next_instability = PackedFloat32Array()
+	_field_slice_next_intensity = PackedFloat32Array()
+	_field_slice_next_convergence = PackedFloat32Array()
+	_field_slice_next_type = PackedInt32Array()
+	_field_slice_solve_ms = 0.0
+	_field_slice_last_ms = 0.0
+
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
+	begin_weather_field_solve(map, world, season_idx, climate_anomaly, _season_phase)
+	while true:
+		var slice_result: Dictionary = run_weather_field_solve_slice(2147483647)
+		if bool(slice_result.get("done", true)):
+			break
+	commit_weather_field_solve()
+	return
+
+	_field_solve_tick += 1
+	var refresh_convergence: bool = ((_field_solve_tick - 1) % _field_convergence_refresh_stride) == 0
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = cells.size()
 	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
@@ -634,7 +894,9 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		vapor = clampf(vapor + evap, 0.0, 1.0)
 
 		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
+		var convergence: float = cell.weather_convergence
+		if refresh_convergence:
+			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		if lift < 0.0:
 			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
 
@@ -704,7 +966,8 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 	#   - 高 frontal_score（强辐合 + 大温差）：强制把 cloud / precip / instability
 	#     拉到 RAIN 以上阈值，并按温差判定升 STORM 或降 RAIN
 	#   - 这保证"锋面"在地图上是物理可见的：哪里有冷暖气流交汇，哪里就下雨
-	_apply_frontal_convergence_boost(map, cells, climate_anomaly, neighbor_indices, fast_indexed)
+	if refresh_convergence:
+		_apply_frontal_convergence_boost(map, cells, climate_anomaly, neighbor_indices, fast_indexed)
 
 func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float, neighbor_indices: PackedInt32Array, fast_indexed: bool) -> void:
 	# 锋面温差阈值（temperature 归一化为 [0,1]，0.28 ≈ 14°C，0.06 ≈ 3°C）。
@@ -1646,7 +1909,8 @@ func configure_weather_field(
 		orographic_lift_gain: float,
 		convergence_gain: float,
 		ocean_evap_gain: float,
-		summary_limit: int) -> void:
+		summary_limit: int,
+		convergence_refresh_stride: int = 4) -> void:
 	_weather_field_enabled = enabled
 	_field_advect_steps = clampi(advect_steps, 0, 1)
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)
@@ -1654,6 +1918,7 @@ func configure_weather_field(
 	_field_precip_decay = clampf(precip_decay, 0.0, 1.0)
 	_field_orographic_lift_gain = maxf(0.0, orographic_lift_gain)
 	_field_convergence_gain = maxf(0.0, convergence_gain)
+	_field_convergence_refresh_stride = clampi(convergence_refresh_stride, 1, 12)
 	_field_ocean_evap_gain = maxf(0.0, ocean_evap_gain)
 	_field_summary_limit = clampi(summary_limit, 1, 12)
 	if not enabled:

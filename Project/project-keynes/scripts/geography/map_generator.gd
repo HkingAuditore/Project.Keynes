@@ -480,7 +480,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 				float(cp_ec.weather_orographic_lift_gain),
 				float(cp_ec.weather_convergence_gain),
 				float(cp_ec.weather_ocean_evap_gain),
-				mini(int(cp_ec.weather_component_summary_limit), 12)
+				mini(int(cp_ec.weather_component_summary_limit), 12),
+				int(cp_ec.weather_convergence_refresh_stride)
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -638,8 +639,8 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 	var weather_ran: bool = false
 	# Drift-fix（2026-05-10）：暴露"fronts 是否真的变了"标志。
-	# 与 weather_ran 区别：weather_ran=true 表示 SUS Job 跑了 slice（stage_a 或 stage_b 任一），
-	# fronts_changed=true 仅当 stage_b 完成、_last_fronts 重新赋值时成立。
+	# 与 weather_ran 区别：field 分片期间二者都保持 false；只有 commit + stage_b
+	# 完成、_last_fronts 重新赋值时才置位，避免 UI/renderer 读取半成品。
 	# main.gd 用它 gate renderer.set_weather_fronts 调用，避免每隔一 tick 重复推送
 	# 同一份 fronts 触发 weather_layer 内部的 blend reset → 云视觉冻结。
 	var fronts_changed: bool = false
@@ -3048,19 +3049,26 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var landform_phase_factor: float = (cos((phase_mod - 1.0) * 0.5 * PI) + 1.0) * 0.5  # ∈ [0, 1]
 
-	# 把当前快层温度先快照一份，避免 1 环采样被半途覆盖
-	# Fast-tick perf opt (C)：temperature 已是 HexCell 强类型成员，直接读。
-	var temp_snapshot: Dictionary = {}
-	for cell: HexCell in map.all_cells():
-		temp_snapshot[cell] = cell.temperature
-
-	# Daily-Sim SoA Refactor 阶段 2：抓底层邻居索引数组（fast-tick 内联用）。
-	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed()
-	var has_idx: bool = map.has_indices()
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
+	var temp_snapshot := PackedFloat32Array()
+	temp_snapshot.resize(n_cells)
+	var cell_pos := PackedVector2Array()
+	var need_cell_pos: bool = has_idx and rs_lookback > 0
+	if need_cell_pos:
+		cell_pos.resize(n_cells)
+	for i in range(n_cells):
+		var snap_cell: HexCell = cells[i]
+		temp_snapshot[i] = snap_cell.temperature
+		if need_cell_pos:
+			cell_pos[i] = HexUtils.cube_to_world(snap_cell.q, snap_cell.r, _last_hex_size)
 
 	# 按 cell 应用三项温度 + 三项湿度（其一在外部 transpiration pass）
-	for cell: HexCell in map.all_cells():
-		var temp_now: float = temp_snapshot[cell]
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
+		var temp_now: float = temp_snapshot[i]
 		# Fast-tick perf opt (C)：moisture / snow_cover 已升级为强类型成员。
 		var moisture_now: float = cell.moisture
 		var snow_cover: float = cell.snow_cover
@@ -3088,17 +3096,15 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 			# Daily-Sim SoA Refactor 阶段 2：通过 _neighbor_indices 直接索引，
 			# 避开 get_neighbors() 每次新建 6-元 Array 的 GC 压力。
 			if has_idx:
-				var ci: int = map.index_of(cell)
-				if ci >= 0:
-					var base: int = ci * 6
-					for d in range(6):
-						var ni: int = nb_idx_arr[base + d]
-						if ni == -1:
-							continue
-						var nb: HexCell = map.cell_at(ni)
-						if nb != null and _is_water(nb.terrain):
-							sum_anomaly += nb.temperature_transport_anomaly
-							n_water += 1
+				var base: int = i * 6
+				for d in range(6):
+					var ni: int = nb_idx_arr[base + d]
+					if ni < 0:
+						continue
+					var nb: HexCell = cells[ni]
+					if _is_water(nb.terrain):
+						sum_anomaly += nb.temperature_transport_anomaly
+						n_water += 1
 			else:
 				for nb: HexCell in map.get_neighbors(cell):
 					if nb != null and _is_water(nb.terrain):
@@ -3148,17 +3154,15 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 			var sum_water_anomaly: float = 0.0
 			# Daily-Sim SoA Refactor 阶段 2：邻居计数走索引数组。
 			if has_idx:
-				var ci2: int = map.index_of(cell)
-				if ci2 >= 0:
-					var base2: int = ci2 * 6
-					for d2 in range(6):
-						var ni2: int = nb_idx_arr[base2 + d2]
-						if ni2 == -1:
-							continue
-						var nb2: HexCell = map.cell_at(ni2)
-						if nb2 != null and _is_water(nb2.terrain):
-							water_neighbor_w += 1.0
-							sum_water_anomaly += nb2.temperature_transport_anomaly
+				var base2: int = i * 6
+				for d2 in range(6):
+					var ni2: int = nb_idx_arr[base2 + d2]
+					if ni2 < 0:
+						continue
+					var nb2: HexCell = cells[ni2]
+					if _is_water(nb2.terrain):
+						water_neighbor_w += 1.0
+						sum_water_anomaly += nb2.temperature_transport_anomaly
 			else:
 				for nb: HexCell in map.get_neighbors(cell):
 					if nb != null and _is_water(nb.terrain):
@@ -3197,49 +3201,52 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 			if wind.length_squared() > 1e-6:
 				var max_upwind_h: float = cell.elevation
 				var w_dir: Vector2 = wind.normalized()
-				var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 				# 沿 -w_dir 方向逐步采样上风邻居（最对齐者）
 				var probe: HexCell = cell
+				var probe_idx: int = i
 				for step in range(rs_lookback):
 					var best_nb: HexCell = null
+					var best_idx: int = -1
 					var best_dot: float = 0.1
-					var pwp: Vector2 = HexUtils.cube_to_world(probe.q, probe.r, _last_hex_size)
 					# Daily-Sim SoA Refactor 阶段 2：通过索引数组取邻居，避免每
 					# step 创建 6-元 Array。
 					if has_idx:
-						var pi: int = map.index_of(probe)
-						if pi >= 0:
-							var pbase: int = pi * 6
-							for d3 in range(6):
-								var ni3: int = nb_idx_arr[pbase + d3]
-								if ni3 == -1:
-									continue
-								var nb3: HexCell = map.cell_at(ni3)
-								if nb3 == null:
-									continue
-								var nbwp: Vector2 = HexUtils.cube_to_world(nb3.q, nb3.r, _last_hex_size)
-								var d: Vector2 = (pwp - nbwp)
-								if d.length_squared() < 1e-6:
-									continue
-								var dotv: float = d.normalized().dot(w_dir)
-								if dotv > best_dot:
-									best_dot = dotv
-									best_nb = nb3
-					else:
-						for nb2: HexCell in map.get_neighbors(probe):
-							if nb2 == null:
+						var pwp: Vector2 = cell_pos[probe_idx]
+						var pbase: int = probe_idx * 6
+						for d3 in range(6):
+							var ni3: int = nb_idx_arr[pbase + d3]
+							if ni3 < 0:
 								continue
-							var nbwp: Vector2 = HexUtils.cube_to_world(nb2.q, nb2.r, _last_hex_size)
+							var nbwp: Vector2 = cell_pos[ni3]
 							var d: Vector2 = (pwp - nbwp)
 							if d.length_squared() < 1e-6:
 								continue
 							var dotv: float = d.normalized().dot(w_dir)
 							if dotv > best_dot:
 								best_dot = dotv
+								best_idx = ni3
+					else:
+						var pwp_fb: Vector2 = HexUtils.cube_to_world(probe.q, probe.r, _last_hex_size)
+						for nb2: HexCell in map.get_neighbors(probe):
+							if nb2 == null:
+								continue
+							var nbwp: Vector2 = HexUtils.cube_to_world(nb2.q, nb2.r, _last_hex_size)
+							var d_fb: Vector2 = (pwp_fb - nbwp)
+							if d_fb.length_squared() < 1e-6:
+								continue
+							var dotv: float = d_fb.normalized().dot(w_dir)
+							if dotv > best_dot:
+								best_dot = dotv
 								best_nb = nb2
-					if best_nb == null:
-						break
-					probe = best_nb
+					if has_idx:
+						if best_idx < 0:
+							break
+						probe_idx = best_idx
+						probe = cells[probe_idx]
+					else:
+						if best_nb == null:
+							break
+						probe = best_nb
 					if probe.elevation > max_upwind_h:
 						max_upwind_h = probe.elevation
 				if max_upwind_h - cell.elevation >= rs_threshold:
@@ -3294,36 +3301,39 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	# Pass A：先把每个水体 cell 的"是否有冷邻居"快照（用前一日的 sea_ice_fraction）
 	# Daily-Sim SoA Refactor 阶段 2：通过 _neighbor_indices 直接索引，避免每帧
 	# 创建 N_water 个 6-元 Array。
-	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed()
-	var has_idx: bool = map.has_indices()
-	var has_cold_neighbor: Dictionary = {}
-	for cell: HexCell in map.all_cells():
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
+	var has_cold_neighbor := PackedByteArray()
+	has_cold_neighbor.resize(n_cells)
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
 		if not _is_water(cell.terrain):
 			continue
 		var any_cold: bool = false
 		if has_idx:
-			var ci: int = map.index_of(cell)
-			if ci >= 0:
-				var base: int = ci * 6
-				for d in range(6):
-					var ni: int = nb_idx_arr[base + d]
-					if ni == -1:
-						continue
-					var nb: HexCell = map.cell_at(ni)
-					if nb != null and _is_water(nb.terrain) and nb.sea_ice_fraction >= 0.6:
-						any_cold = true
-						break
+			var base: int = i * 6
+			for d in range(6):
+				var ni: int = nb_idx_arr[base + d]
+				if ni < 0:
+					continue
+				var nb: HexCell = cells[ni]
+				if _is_water(nb.terrain) and nb.sea_ice_fraction >= 0.6:
+					any_cold = true
+					break
 		else:
 			for nb: HexCell in map.get_neighbors(cell):
 				if nb != null and _is_water(nb.terrain) and nb.sea_ice_fraction >= 0.6:
 					any_cold = true
 					break
-		has_cold_neighbor[cell] = any_cold
+		has_cold_neighbor[i] = 1 if any_cold else 0
 
 	var water_count: int = 0
 	var flipped_count: int = 0
 
-	for cell: HexCell in map.all_cells():
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
 		if not _is_water(cell.terrain):
 			# 非水体 cell 强制保持 0
 			cell.sea_ice_fraction = 0.0
@@ -3346,7 +3356,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 		# 邻居传染：若 1 环存在已结冰邻居 → k_freeze ×（1 + contagion）
 		var k_freeze_eff: float = k_freeze
-		if has_cold_neighbor.get(cell, false):
+		if has_cold_neighbor[i] != 0:
 			k_freeze_eff = k_freeze * (1.0 + contagion)
 
 		# 路线 A（单一真值源）：海冰只看温度，不再乘 dev_ice。
@@ -3438,26 +3448,30 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 		return
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0)
-	# 基线温度缓存（per-cell 的 temp_year_at_cell，用于算 anomaly）。
-	# Fast-tick perf opt (C) 之后 cell.temp_baseline 在 Pass A 已经写过等值
-	# 数据，但 _ocean_water_pass 也可能从非切片 wrapper 直接进入（refresh
-	# 顺序变化时），所以这里独立重算一次，保证健壮。
-	var baseline: Dictionary = {}
-	for cell: HexCell in map.all_cells():
-		var ny: float = _cube_row_norm(cell, _last_cfg)
-		baseline[cell] = _compute_temperature(ny, cell.elevation)
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
+	var baseline := PackedFloat32Array()
+	var temp_before := PackedFloat32Array()
+	var cell_pos := PackedVector2Array()
+	baseline.resize(n_cells)
+	temp_before.resize(n_cells)
+	if has_idx:
+		cell_pos.resize(n_cells)
+	for i in range(n_cells):
+		var src_cell: HexCell = cells[i]
+		if src_cell._ema_initialized:
+			baseline[i] = src_cell.temp_baseline
+		else:
+			var ny: float = _cube_row_norm(src_cell, _last_cfg)
+			baseline[i] = _compute_temperature(ny, src_cell.elevation)
+		temp_before[i] = src_cell.temperature if src_cell.temperature > 0.0 else baseline[i]
+		if has_idx:
+			cell_pos[i] = HexUtils.cube_to_world(src_cell.q, src_cell.r, _last_hex_size)
 
-	# Daily-Sim SoA Refactor 阶段 2：抓底层邻居索引数组（两个 Pass 共用）。
-	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed()
-	var has_idx: bool = map.has_indices()
-	# 先把所有水 cell 的当前 current_state.temperature 拷贝出来（避免半途被覆盖）
-	# Fast-tick perf opt (C)：temperature 已升级为强类型成员，直接读。
-	var water_temp_before: Dictionary = {}
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			water_temp_before[cell] = cell.temperature if cell.temperature > 0.0 else float(baseline[cell])
-
-	for cell: HexCell in map.all_cells():
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
 		if not _is_water(cell.terrain):
 			continue
 		var cur: Vector2 = cell.ocean_current
@@ -3465,53 +3479,63 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 			cell.temperature_transport_anomaly = 0.0
 			continue
 		# 沿 -cur 方向回溯 advect_steps 步，每步选最对齐的水邻居
+		var upstream_idx: int = i
 		var upstream: HexCell = cell
 		var upstream_dir: Vector2 = -cur.normalized()
 		for step in range(advect_steps):
 			var best_nb: HexCell = null
+			var best_idx: int = -1
 			var best_dot: float = 0.1  # 需要最低对齐阈值，避免反向邻居被选
-			var self_wp: Vector2 = HexUtils.cube_to_world(upstream.q, upstream.r, _last_hex_size)
 			# Daily-Sim SoA Refactor 阶段 2：通过索引取邻居。
 			if has_idx:
-				var ui: int = map.index_of(upstream)
-				if ui >= 0:
-					var ubase: int = ui * 6
-					for d in range(6):
-						var ni: int = nb_idx_arr[ubase + d]
-						if ni == -1:
-							continue
-						var nb: HexCell = map.cell_at(ni)
-						if nb == null or not _is_water(nb.terrain):
-							continue
-						var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _last_hex_size)
-						var d_vec: Vector2 = (nb_wp - self_wp)
-						if d_vec.length_squared() < 1e-6:
-							continue
-						var dot_v: float = d_vec.normalized().dot(upstream_dir)
-						if dot_v > best_dot:
-							best_dot = dot_v
-							best_nb = nb
+				var self_wp: Vector2 = cell_pos[upstream_idx]
+				var ubase: int = upstream_idx * 6
+				for d in range(6):
+					var ni: int = nb_idx_arr[ubase + d]
+					if ni < 0:
+						continue
+					var nb: HexCell = cells[ni]
+					if not _is_water(nb.terrain):
+						continue
+					var d_vec: Vector2 = cell_pos[ni] - self_wp
+					if d_vec.length_squared() < 1e-6:
+						continue
+					var dot_v: float = d_vec.normalized().dot(upstream_dir)
+					if dot_v > best_dot:
+						best_dot = dot_v
+						best_idx = ni
 			else:
+				var self_wp_fb: Vector2 = HexUtils.cube_to_world(upstream.q, upstream.r, _last_hex_size)
 				for nb: HexCell in map.get_neighbors(upstream):
 					if nb == null or not _is_water(nb.terrain):
 						continue
 					var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _last_hex_size)
-					var d: Vector2 = (nb_wp - self_wp)
+					var d: Vector2 = (nb_wp - self_wp_fb)
 					if d.length_squared() < 1e-6:
 						continue
 					var dot_v: float = d.normalized().dot(upstream_dir)
 					if dot_v > best_dot:
 						best_dot = dot_v
 						best_nb = nb
-			if best_nb == null:
-				break
-			upstream = best_nb
-		var temp_self: float = water_temp_before.get(cell, baseline[cell])
-		var temp_up: float = water_temp_before.get(upstream, baseline.get(upstream, temp_self))
+			if has_idx:
+				if best_idx < 0:
+					break
+				upstream_idx = best_idx
+				upstream = cells[upstream_idx]
+			else:
+				if best_nb == null:
+					break
+				upstream = best_nb
+		var temp_self: float = temp_before[i]
+		var temp_up: float = temp_before[upstream_idx] if has_idx else temp_self
+		if not has_idx and upstream != cell:
+			var upstream_lookup: int = cells.find(upstream)
+			if upstream_lookup >= 0 and upstream_lookup < n_cells:
+				temp_up = temp_before[upstream_lookup]
 		var temp_mixed: float = lerpf(temp_self, temp_up, heat_mix)
 		# Fast-tick perf opt (C)：直接写强类型成员。
 		cell.temperature = clampf(temp_mixed, 0.0, 1.0)
-		cell.temperature_transport_anomaly = temp_mixed - baseline[cell]
+		cell.temperature_transport_anomaly = temp_mixed - baseline[i]
 
 # Daily Sim SoA Refactor 方向 X（A2）：洋流热输运的"陆段"——
 # 陆地 cell 从相邻水 cell 收集 temperature_transport_anomaly，按"邻水 cell 的
@@ -3529,48 +3553,46 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
 	var effective_leak: float = coast_leak * winter_boost
 
-	# baseline 在陆段也需要——用 cell.elevation + _cube_row_norm 重算，避免依赖
-	# 上一段的 Dictionary 字段（跨 sub-slice 时可能已被释放）。
-	var baseline: Dictionary = {}
-	for cell: HexCell in map.all_cells():
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
+	var cell_pos := PackedVector2Array()
+	if has_idx:
+		cell_pos.resize(n_cells)
+		for i_pos in range(n_cells):
+			var pos_cell: HexCell = cells[i_pos]
+			cell_pos[i_pos] = HexUtils.cube_to_world(pos_cell.q, pos_cell.r, _last_hex_size)
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
 		if _is_water(cell.terrain):
 			continue
-		var ny: float = _cube_row_norm(cell, _last_cfg)
-		baseline[cell] = _compute_temperature(ny, cell.elevation)
-
-	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed()
-	var has_idx: bool = map.has_indices()
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		var self_wp2: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
 		var weight_total: float = 0.0
 		# Daily-Sim SoA Refactor 阶段 2：同上。
 		if has_idx:
-			var ci: int = map.index_of(cell)
-			if ci >= 0:
-				var cbase: int = ci * 6
-				for d in range(6):
-					var ni: int = nb_idx_arr[cbase + d]
-					if ni == -1:
-						continue
-					var nb: HexCell = map.cell_at(ni)
-					if nb == null or not _is_water(nb.terrain):
-						continue
-					var cur_nb: Vector2 = nb.ocean_current
-					if cur_nb.length_squared() < 1e-6:
-						continue
-					var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _last_hex_size)
-					var dir_nb_to_self: Vector2 = (self_wp2 - nb_wp)
-					if dir_nb_to_self.length_squared() < 1e-6:
-						continue
-					var w_nb: float = maxf(0.0, dir_nb_to_self.normalized().dot(cur_nb))
-					if w_nb <= 0.0:
-						continue
-					weighted_sum += nb.temperature_transport_anomaly * w_nb
-					weight_total += w_nb
+			var self_wp2: Vector2 = cell_pos[i]
+			var cbase: int = i * 6
+			for d in range(6):
+				var ni: int = nb_idx_arr[cbase + d]
+				if ni < 0:
+					continue
+				var nb: HexCell = cells[ni]
+				if not _is_water(nb.terrain):
+					continue
+				var cur_nb: Vector2 = nb.ocean_current
+				if cur_nb.length_squared() < 1e-6:
+					continue
+				var dir_nb_to_self: Vector2 = self_wp2 - cell_pos[ni]
+				if dir_nb_to_self.length_squared() < 1e-6:
+					continue
+				var w_nb: float = maxf(0.0, dir_nb_to_self.normalized().dot(cur_nb))
+				if w_nb <= 0.0:
+					continue
+				weighted_sum += nb.temperature_transport_anomaly * w_nb
+				weight_total += w_nb
 		else:
+			var self_wp2_fb: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 			for nb: HexCell in map.get_neighbors(cell):
 				if nb == null or not _is_water(nb.terrain):
 					continue
@@ -3579,7 +3601,7 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 					continue
 				var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _last_hex_size)
 				# 邻居 → 本 cell 方向（迎流判断：若水 cell 的洋流正是流向陆地方向，权重最大）
-				var dir_nb_to_self: Vector2 = (self_wp2 - nb_wp)
+				var dir_nb_to_self: Vector2 = (self_wp2_fb - nb_wp)
 				if dir_nb_to_self.length_squared() < 1e-6:
 					continue
 				var w_nb: float = maxf(0.0, dir_nb_to_self.normalized().dot(cur_nb))
@@ -3593,7 +3615,11 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 		cell.temperature_transport_anomaly = anomaly_in
 		if absf(anomaly_in) > 1e-5:
 			# Fast-tick perf opt (C)：直接读写强类型成员。
-			var t_prev: float = cell.temperature if cell.temperature > 0.0 else float(baseline[cell])
+			var fallback_baseline: float = cell.temp_baseline
+			if not cell._ema_initialized:
+				var ny: float = _cube_row_norm(cell, _last_cfg)
+				fallback_baseline = _compute_temperature(ny, cell.elevation)
+			var t_prev: float = cell.temperature if cell.temperature > 0.0 else fallback_baseline
 			cell.temperature = clampf(t_prev + anomaly_in, 0.0, 1.0)
 
 # ─── Milestone 3：天气子系统每日推进 ────────────────────────────────────
@@ -3611,8 +3637,8 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	return fronts
 
 
-# Stage A：tick_one_day（advection / spawn / distribute / cyclone），57ms 大头不可拆。
-# 由 SUS WeatherRefreshJob 在 round 起点的 tick 跑；返回当日 fronts。
+# Stage A：tick_one_day（advection / spawn / distribute / cyclone）。
+# WeatherRefreshJob 可把 field solver 拆成多 tick；最后一片才返回当日 fronts。
 # 副作用：写入 cell.current_state（weather/intensity/cloud/precip）+ 更新 _last_world / _last_active_fronts。
 func refresh_daily_stage_a(map: MapData, world: WorldData, season_idx: int,
 		climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
@@ -3629,6 +3655,68 @@ func refresh_daily_stage_a(map: MapData, world: WorldData, season_idx: int,
 	return fronts
 
 
+func weather_uses_field_solver() -> bool:
+	return _weather_system != null \
+		and _weather_system.has_method("uses_weather_field") \
+		and bool(_weather_system.uses_weather_field())
+
+
+func weather_field_slice_cells() -> int:
+	var cp_now := _c()
+	if cp_now == null:
+		return 500
+	return clampi(int(cp_now.weather_field_slice_cells), 100, 2400)
+
+
+func begin_weather_refresh_stage_a(map: MapData, world: WorldData, season_idx: int,
+		climate_anomaly: float, season_phase: float = -1.0) -> void:
+	if _weather_system == null or map == null or world == null:
+		return
+	_last_world = world
+	_weather_round_t0_us = Time.get_ticks_usec()
+	if _weather_system.has_method("begin_weather_field_solve"):
+		_weather_system.begin_weather_field_solve(map, world, season_idx, climate_anomaly, season_phase)
+
+
+func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
+	if _weather_system == null or not _weather_system.has_method("run_weather_field_solve_slice"):
+		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
+	var result: Dictionary = _weather_system.run_weather_field_solve_slice(maxi(1, cell_budget))
+	var elapsed_ms: float = float(result.get("elapsed_ms", 0.0))
+	_last_weather_breakdown = {
+		"weather_tick_ms": elapsed_ms,
+		"advance_ms": elapsed_ms,
+		"spawn_ms": 0.0,
+		"distribute_ms": 0.0,
+		"cyclone_ms": 0.0,
+		"weather_field_bake_ms": 0.0,
+		"transp_ms": 0.0,
+		"albedo_ms": 0.0,
+		"veg_dyn_ms": 0.0,
+		"cover_rebake_ms": 0.0,
+		"veg_rebake_ms": 0.0,
+		"feedback_ms": 0.0,
+		"total_ms": (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0,
+		"fronts": _weather_round_fronts.size(),
+		"partial": not bool(result.get("done", true)),
+		"progress_ratio": float(result.get("progress_ratio", 0.0)),
+	}
+	return result
+
+
+func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[WeatherFront]:
+	if _weather_system == null or map == null or world == null:
+		return [] as Array[WeatherFront]
+	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
+	if _weather_system.has_method("commit_weather_field_solve"):
+		fronts = _weather_system.commit_weather_field_solve()
+	var sub: Dictionary = _weather_system.last_breakdown() if _weather_system.has_method("last_breakdown") else {}
+	_weather_round_tick_ms = float(sub.get("weather_tick_ms", sub.get("field_solve_ms", 0.0)))
+	_last_active_fronts = fronts
+	_weather_round_fronts = fronts
+	return fronts
+
+
 # Stage B：tick_one_day 之后的全部"派生 / 反馈"工作。
 # field_bake（F 之后 ~5ms 增量） + transpiration（多数情况下被 enable_local_climate_coupling 跳过）
 # + albedo + vegetation_dynamics + cover/veg dirty marks + weather→map feedback。
@@ -3638,9 +3726,9 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		return
 	var cp_now := _c()
 	_weather_stage_b_call_index += 1
-	var albedo_stride: int = maxi(1, int(cp_now.weather_albedo_stride)) if cp_now != null else 7
-	var veg_dyn_stride: int = maxi(1, int(cp_now.weather_vegetation_dynamics_stride)) if cp_now != null else 5
-	var feedback_stride: int = maxi(1, int(cp_now.weather_feedback_stride)) if cp_now != null else 3
+	var albedo_stride: int = maxi(1, int(cp_now.weather_albedo_stride)) if cp_now != null else 10
+	var veg_dyn_stride: int = maxi(1, int(cp_now.weather_vegetation_dynamics_stride)) if cp_now != null else 10
+	var feedback_stride: int = maxi(1, int(cp_now.weather_feedback_stride)) if cp_now != null else 10
 	var run_albedo: bool = (_weather_stage_b_call_index % albedo_stride) == 0
 	var run_veg_dyn: bool = (_weather_stage_b_call_index % veg_dyn_stride) == 0
 	var run_feedback: bool = (_weather_stage_b_call_index % feedback_stride) == 0
@@ -3768,8 +3856,12 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 	var scale: float = maxf(day_scale, 1.0)
 	var per_day_clamp: float = float(cp.feedback_per_day_clamp) * scale
 	var ocean_drift_gain: float = float(cp.ocean_moisture_drift_gain)
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var fast_indexed: bool = neighbor_indices.size() >= cells.size() * 6
 
-	for cell: HexCell in map.all_cells():
+	for i in range(cells.size()):
+		var cell: HexCell = cells[i]
 		if _is_water(cell.terrain):
 			# 水体不参与土壤 / 植被反馈（海冰已有自己的半慢层）
 			continue
@@ -3780,10 +3872,21 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 		if ocean_drift_gain > 0.0:
 			var sum_an: float = 0.0
 			var n_water: int = 0
-			for nb: HexCell in map.get_neighbors(cell):
-				if nb != null and _is_water(nb.terrain):
-					sum_an += nb.temperature_transport_anomaly
-					n_water += 1
+			if fast_indexed:
+				var base: int = i * 6
+				for d in range(6):
+					var nb_idx: int = neighbor_indices[base + d]
+					if nb_idx < 0:
+						continue
+					var nb: HexCell = cells[nb_idx]
+					if _is_water(nb.terrain):
+						sum_an += nb.temperature_transport_anomaly
+						n_water += 1
+			else:
+				for nb: HexCell in map.get_neighbors(cell):
+					if nb != null and _is_water(nb.terrain):
+						sum_an += nb.temperature_transport_anomaly
+						n_water += 1
 			if n_water > 0:
 				var avg_an: float = sum_an / float(n_water)
 				if absf(avg_an) > 0.005:
@@ -3830,8 +3933,14 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 # const TRANSPIRATION_SELF_RATE (migrated to ClimateProfile.transpiration_self_rate)      # 每天最多 1.5% moisture 留给自己（蒸腾闭环）
 func _apply_transpiration_pass(map: MapData) -> void:
 	# 阶段 1：算每 cell 的"输出额"（不立刻写）
-	var deltas: Dictionary = {}  # cell.cube → float
-	for cell: HexCell in map.all_cells():
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var fast_indexed: bool = neighbor_indices.size() >= n_cells * 6
+	var deltas := PackedFloat32Array()
+	deltas.resize(n_cells)
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
 		if LandformType.is_water(cell.landform):
 			continue
 		var trans: float = VegetationType.transpiration(cell.vegetation)
@@ -3843,20 +3952,31 @@ func _apply_transpiration_pass(map: MapData) -> void:
 		var output: float = trans * moist
 		var self_share: float = output * _c().transpiration_self_rate
 		var nb_share: float = output * _c().transpiration_outflow_rate / 6.0
-		var key_self := Vector3i(cell.q, cell.r, cell.s)
-		deltas[key_self] = float(deltas.get(key_self, 0.0)) + self_share
-		for nb: HexCell in map.get_neighbors(cell):
-			# 海面邻居不接受陆地蒸腾外溢（避免给海加湿）
-			if LandformType.is_water(nb.landform):
-				continue
-			var key_nb := Vector3i(nb.q, nb.r, nb.s)
-			deltas[key_nb] = float(deltas.get(key_nb, 0.0)) + nb_share
+		deltas[i] = deltas[i] + self_share
+		if fast_indexed:
+			var base: int = i * 6
+			for d_idx in range(6):
+				var nb_idx: int = neighbor_indices[base + d_idx]
+				if nb_idx < 0:
+					continue
+				var nb: HexCell = cells[nb_idx]
+				# 海面邻居不接受陆地蒸腾外溢（避免给海加湿）
+				if LandformType.is_water(nb.landform):
+					continue
+				deltas[nb_idx] = deltas[nb_idx] + nb_share
+		else:
+			for nb: HexCell in map.get_neighbors(cell):
+				if LandformType.is_water(nb.landform):
+					continue
+				var nb_idx_fallback: int = map.index_of(nb)
+				if nb_idx_fallback >= 0 and nb_idx_fallback < n_cells:
+					deltas[nb_idx_fallback] = deltas[nb_idx_fallback] + nb_share
 	# 阶段 2：把所有 delta 应用到 current_state.moisture（一次性，避免顺序敏感）
-	for cell: HexCell in map.all_cells():
-		var key := Vector3i(cell.q, cell.r, cell.s)
-		var d: float = float(deltas.get(key, 0.0))
+	for i in range(n_cells):
+		var d: float = deltas[i]
 		if d == 0.0:
 			continue
+		var cell: HexCell = cells[i]
 		# Fast-tick perf opt (C)：直接读写强类型成员。
 		cell.moisture = clampf(cell.moisture + d, 0.0, 1.0)
 
@@ -3867,7 +3987,8 @@ func _apply_transpiration_pass(map: MapData) -> void:
 # const REFERENCE_ALBEDO (migrated to ClimateProfile.reference_albedo)
 # const ALBEDO_TEMP_GAIN (migrated to ClimateProfile.albedo_temp_gain)  # 每"日"最大 ±0.005 温度调制
 func _apply_albedo_pass(map: MapData) -> void:
-	for cell: HexCell in map.all_cells():
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
 			continue
 		var alb: float = VegetationType.albedo(cell.vegetation)
@@ -3900,7 +4021,8 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 	var any_changed: bool = false
 	var scale: float = maxf(day_scale, 1.0)
 	var streak_days: int = maxi(1, int(round(scale)))
-	for cell: HexCell in map.all_cells():
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
 			continue
 		if cell.vegetation == VegetationType.VEG.NONE:

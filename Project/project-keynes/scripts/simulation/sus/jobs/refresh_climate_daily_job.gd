@@ -129,6 +129,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var local_coupling: bool = bool(cp.enable_local_climate_coupling)
 	var ocean_enabled: bool = bool(generator._last_cfg.enable_ocean_heat_transport)
 	var slice_elapsed_ms: float = 0.0
+	var ran_pass_id: int = -1
 
 	while _pass_cursor < _PASS_COUNT:
 		var pass_id: int = _pass_cursor
@@ -148,6 +149,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			continue
 		# 找到当前应执行的段——执行它并退出 while（每 tick 只跑 1 段）
 		_run_pass(pass_id)
+		ran_pass_id = pass_id
 		_pass_cursor += 1
 		slice_elapsed_ms = (Time.get_ticks_usec() - t_slice_us0) / 1000.0
 		break
@@ -156,6 +158,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var done: bool = _pass_cursor >= _PASS_COUNT
 	if done:
 		_finalize_round()
+	else:
+		_publish_partial_round(ran_pass_id, slice_elapsed_ms, float(_pass_cursor) / float(_PASS_COUNT))
 
 	var progress: float = float(_pass_cursor) / float(_PASS_COUNT)
 	return {
@@ -188,6 +192,27 @@ func _run_pass(pass_id: int) -> void:
 			generator._apply_transpiration_pass(map)
 			_round_t_transp_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 
+func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: float) -> void:
+	if generator == null:
+		return
+	var pass_name: String = ""
+	if pass_id >= 0 and pass_id < _PASS_NAMES.size():
+		pass_name = _PASS_NAMES[pass_id]
+	generator._last_climate_breakdown = {
+		"pass_a_ms": _round_t_pass_a_ms,
+		"pass_b_ms": _round_t_pass_b_ms,
+		"ocean_ms": _round_t_ocean_ms,
+		"sea_ice_ms": _round_t_sea_ice_ms,
+		"ice_bake_ms": 0.0,
+		"transp_ms": _round_t_transp_ms,
+		"total_ms": float(Time.get_ticks_msec() - _round_t_round_start_ms),
+		"cells": map.cell_count(),
+		"partial": true,
+		"current_pass": pass_name,
+		"slice_ms": slice_elapsed_ms,
+		"progress_ratio": progress,
+	}
+
 # ─── 内部：round 结束时把累积埋点写回 generator + 重置游标 ────────────────
 func _finalize_round() -> void:
 	# 与 wrapper 路径保持完全一致的 _last_climate_breakdown 字段集合，让 main.gd 直接复用
@@ -202,6 +227,9 @@ func _finalize_round() -> void:
 			"transp_ms": _round_t_transp_ms,
 			"total_ms": float(Time.get_ticks_msec() - _round_t_round_start_ms),
 			"cells": map.cell_count(),
+			"partial": false,
+			"current_pass": "done",
+			"progress_ratio": 1.0,
 		}
 		var n: int = generator._daily_climate_call_count
 		if n == 1 or (n % 365) == 0:

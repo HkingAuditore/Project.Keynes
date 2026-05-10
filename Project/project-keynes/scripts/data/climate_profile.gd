@@ -136,9 +136,9 @@ extends Resource
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
 @export_range(1, 8, 1) var weather_refresh_stride: int = 1
-@export_range(1, 30, 1) var weather_albedo_stride: int = 7
-@export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
-@export_range(1, 30, 1) var weather_feedback_stride: int = 3
+@export_range(1, 30, 1) var weather_albedo_stride: int = 10
+@export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 10
+@export_range(1, 30, 1) var weather_feedback_stride: int = 10
 
 # DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
 # requirement 4.5). Field is kept on disk for save-file compatibility, but
@@ -337,8 +337,10 @@ extends Resource
 @export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
+@export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 4
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
+@export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
 
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]

@@ -516,7 +516,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					and _generator.has_method("sus_climate_breakdown"):
 				var b: Dictionary = _generator.sus_climate_breakdown()
 				if not b.is_empty():
-					print("        A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f cells=%d" % [
+					print("        A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f cells=%d pass=%s partial=%s" % [
 						float(b.get("pass_a_ms", 0.0)),
 						float(b.get("pass_b_ms", 0.0)),
 						float(b.get("ocean_ms", 0.0)),
@@ -524,6 +524,8 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(b.get("ice_bake_ms", 0.0)),
 						float(b.get("transp_ms", 0.0)),
 						int(b.get("cells", 0)),
+						str(b.get("current_pass", "")),
+						str(b.get("partial", false)),
 					])
 			# Daily-sim perf instrumentation：weather_refresh 内部细分
 			# （weather_tick 包括 advance/spawn/distribute/cyclone 四段；
