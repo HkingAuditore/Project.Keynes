@@ -65,6 +65,8 @@ var _round_t_ocean_ms: float = 0.0   # 水段 + 陆段累积
 var _round_t_sea_ice_ms: float = 0.0
 var _round_t_transp_ms: float = 0.0
 var _round_t_round_start_ms: int = 0  # 用于算整 round total_ms
+var ran_this_tick: bool = false
+var _last_slice_elapsed_ms: float = 0.0
 
 func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int) -> void:
 	id = &"refresh_climate_daily"
@@ -97,6 +99,8 @@ func reset_progress() -> void:
 	_round_t_sea_ice_ms = 0.0
 	_round_t_transp_ms = 0.0
 	_round_t_round_start_ms = 0
+	ran_this_tick = false
+	_last_slice_elapsed_ms = 0.0
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	if generator == null or map == null:
@@ -160,6 +164,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_finalize_round()
 	else:
 		_publish_partial_round(ran_pass_id, slice_elapsed_ms, float(_pass_cursor) / float(_PASS_COUNT))
+	ran_this_tick = ran_pass_id >= 0
+	_last_slice_elapsed_ms = slice_elapsed_ms if ran_this_tick else 0.0
 
 	var progress: float = float(_pass_cursor) / float(_PASS_COUNT)
 	return {
@@ -247,3 +253,16 @@ func _finalize_round() -> void:
 func reconfigure(p_stride: int) -> void:
 	stride = max(1, p_stride)
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+
+
+func reset_run_flag() -> void:
+	ran_this_tick = false
+	_last_slice_elapsed_ms = 0.0
+
+
+func did_run_last_tick() -> bool:
+	return ran_this_tick
+
+
+func last_slice_elapsed_ms() -> float:
+	return _last_slice_elapsed_ms

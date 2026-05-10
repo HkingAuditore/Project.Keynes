@@ -23,6 +23,8 @@ class_name WeatherRefreshJob
 ## fronts from the last unsuppressed run. Behavior equivalent.
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 4.0
+const _MAX_CLIMATE_DEFER_STREAK: int = 2
 
 # External references — wired up by MapGenerator at registration time.
 var generator = null  # MapGenerator (untyped to avoid circular preload)
@@ -56,6 +58,7 @@ var _fronts_changed_this_tick: bool = false
 var _round_active: bool = false
 var _round_stage: int = 0
 var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
+var _climate_defer_streak: int = 0
 
 
 func _init(p_generator, p_map: MapData, p_world: WorldData,
@@ -94,9 +97,30 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 func should_run(ctx: SusTickContext) -> bool:
 	if generator == null or map == null or world == null:
 		return false
-	if _round_active:
-		return true
-	return super.should_run(ctx)
+	var base_should_run: bool = true if _round_active else super.should_run(ctx)
+	if not base_should_run:
+		return false
+	if _should_defer_after_climate_slice():
+		return false
+	_climate_defer_streak = 0
+	return true
+
+
+func _should_defer_after_climate_slice() -> bool:
+	if generator == null:
+		return false
+	if not generator.has_method("did_refresh_climate_run_this_tick") \
+			or not generator.has_method("last_refresh_climate_slice_ms"):
+		return false
+	if not bool(generator.did_refresh_climate_run_this_tick()):
+		return false
+	var climate_ms: float = float(generator.last_refresh_climate_slice_ms())
+	if climate_ms < _DEFER_AFTER_CLIMATE_SLICE_MS:
+		return false
+	if _climate_defer_streak >= _MAX_CLIMATE_DEFER_STREAK:
+		return false
+	_climate_defer_streak += 1
+	return true
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
@@ -218,3 +242,4 @@ func reset_progress() -> void:
 	_round_stage = 0
 	_round_fronts = [] as Array[WeatherFront]
 	_fronts_changed_this_tick = false
+	_climate_defer_streak = 0
