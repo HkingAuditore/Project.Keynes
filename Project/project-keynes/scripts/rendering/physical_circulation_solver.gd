@@ -25,8 +25,8 @@
 
 class_name PhysicalCirculationSolver
 
-const HexUtilsScript = preload("res://scripts/hex_utils.gd")
-const WindBeltScript = preload("res://scripts/wind_belt.gd")
+const HexUtilsScript = preload("res://scripts/geography/hex_utils.gd")
+const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 
 # ─── 几何常量：六个邻居方向在屏幕坐标系下的"世界向量"（pointy-top 六边形）─────
 # 对应 HexUtils.CUBE_DIRECTIONS 顺序：0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE
