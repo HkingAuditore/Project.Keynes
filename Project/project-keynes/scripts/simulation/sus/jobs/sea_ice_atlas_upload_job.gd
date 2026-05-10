@@ -43,6 +43,10 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	slice_budget_ms = 25.0
 	# 海冰可视化允许滞后；不要让 atlas 上传绕过 frame_budget 造成主线程长尾。
 	must_run = false
+	# Starvation 防护（2026-05-11）：海冰上传被 frame_budget_exhausted 长期饿死
+	# (ran=0 于 30 个 tick 中)，导致海冰可视化几十秒不刷新。阈值 8 ≈ 8 个 fast
+	# tick 后强制让步一次（仍然比每日刷新慢得多，能避免完全冻结）。
+	starvation_threshold = 8
 	baker = p_baker
 	map = p_map
 	world = p_world

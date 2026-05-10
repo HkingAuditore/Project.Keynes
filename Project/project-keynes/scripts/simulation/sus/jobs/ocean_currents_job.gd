@@ -57,6 +57,10 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# slices when the frame budget is already exhausted instead of forcing a
 	# fast-tick spike.
 	must_run = false
+	# Starvation 防护（2026-05-11）：连续被 frame_budget_exhausted 跳过 6 次后
+	# 强制让步一次。配合 ContinuousSlicedPolicy 的 period_ticks 节流，依然能
+	# 保证慢层视觉/物理推进不冻结。
+	starvation_threshold = 6
 	baker = p_baker
 	map = p_map
 	world = p_world

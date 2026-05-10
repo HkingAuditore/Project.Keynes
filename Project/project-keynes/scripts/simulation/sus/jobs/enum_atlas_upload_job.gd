@@ -18,6 +18,9 @@ func _init(p_generator, p_baker: MapBakerScript, p_map: MapData,
 	priority = 140
 	slice_budget_ms = 6.0
 	must_run = false
+	# Starvation 防护（2026-05-11）：cover/veg 纹理上传被 frame_budget_exhausted
+	# 频繁跳过（30 ticks 内 ran=2 / skipped=11）。阈值 6 保证地表变化能稳定可视化。
+	starvation_threshold = 6
 	generator = p_generator
 	baker = p_baker
 	map = p_map

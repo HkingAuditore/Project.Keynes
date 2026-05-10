@@ -130,11 +130,17 @@ func tick(ctx: SusTickContext) -> void:
 		# Daily-sim perf bugfix：must_run=true 的 Job 绕过此守卫——避免
 		# refresh_climate_daily 单 Job 超预算 → weather/ocean_currents 被全部
 		# frame_budget_exhausted 掉 → 天气/洋流冻结的硬故障。
+		# Starvation 防护（2026-05-11）：连续被 frame_budget_exhausted 跳过
+		# starvation_threshold 次的 Job，本 tick 强制绕过 budget 跑一次，避免
+		# sea_ice_atlas_upload / ocean_currents 这类低优先级 Job 长期饿死。
 		var elapsed_us_now: int = Time.get_ticks_usec() - tick_start_us
-		if elapsed_us_now >= budget_us and not bool(job.must_run):
+		var starving: bool = job.starvation_threshold > 0 \
+				and job._starvation_count >= job.starvation_threshold
+		if elapsed_us_now >= budget_us and not bool(job.must_run) and not starving:
 			report["skipped_reason"] = "frame_budget_exhausted"
 			_last_report[job.id] = report
 			_record_skipped(job.id, "frame_budget_exhausted")
+			job._starvation_count += 1
 			jobs_skipped += 1
 			continue
 
@@ -172,8 +178,11 @@ func tick(ctx: SusTickContext) -> void:
 			# Check global budget before *starting* another slice.
 			# Daily-sim perf bugfix：must_run Job 不被 frame_budget 中途打断，
 			# 避免 weather 推进半截留下不一致状态。
+			# Starvation 防护：饥饿 Job 只允许跑 1 slice 让步（确保推进 + 不雪崩 budget）。
 			elapsed_us_now = Time.get_ticks_usec() - tick_start_us
 			if slices_run > 0 and elapsed_us_now >= budget_us and not bool(job.must_run):
+				break
+			if starving and slices_run >= 1:
 				break
 
 			var slice_result: Dictionary = job.run_slice(ctx)
@@ -207,6 +216,8 @@ func tick(ctx: SusTickContext) -> void:
 
 		jobs_ran += 1
 		slices_total_this_tick += slices_run
+		# Starvation 防护：实际跑过即清零计数；下一次还会从 0 开始累计。
+		job._starvation_count = 0
 
 		if done:
 			job._in_flight = false

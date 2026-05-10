@@ -36,9 +36,21 @@ var depends_on: Array[StringName] = []
 ## 设计上只有"维持游戏世界正常推进必须执行"的 Job 才能开启。
 var must_run: bool = false
 
+## Starvation 防护（2026-05-11）：当 Job 被 frame_budget_exhausted 跳过的次数
+## 累积达到该阈值时，下一次 should_run/policy 通过的 tick 会绕过 budget 守卫
+## 强制跑至少 1 slice，避免 sea_ice_atlas_upload / ocean_currents 这类低优先级
+## Job 长期饿死。must_run=true 的 Job 不需要它（本就绕过 budget）。
+##  - <=0：禁用饥饿防护（保持旧行为）
+##  - 推荐 5–10：约相当于 5–10 个 fast tick 后强制让步一次
+var starvation_threshold: int = 0
+
 ## Set by SUS the first time the job runs in a tick where should_run = true,
 ## cleared when run_slice reports done = true. Used purely for diagnostics.
 var _in_flight: bool = false
+
+## Starvation counter（2026-05-11）：每次被 frame_budget_exhausted 跳过 +1，
+## 任意一次 run_slice 实际执行后清零。由 SUS 维护。
+var _starvation_count: int = 0
 
 
 ## Forward to policy.should_run by default. Subclasses can override for custom
@@ -61,3 +73,4 @@ func run_slice(_ctx: SusTickContext) -> Dictionary:
 ## map is regenerated. Subclasses override to clear pending double buffers etc.
 func reset_progress() -> void:
 	_in_flight = false
+	_starvation_count = 0
