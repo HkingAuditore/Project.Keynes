@@ -878,7 +878,7 @@ func _apply_uniforms() -> void:
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
-		_weather_layer.set_weather_field_texture(_world.weather_field_tex)
+		_weather_layer.set_weather_field_texture(null)
 		# Phase 1：把 vector_atlas（BA 通道为 wind_field）也喂给 weather overlay，
 		# 让云团按真实风场做 per-cell advection，而不是用全局常量 axis 整体平移。
 		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)

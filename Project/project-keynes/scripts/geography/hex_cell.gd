@@ -54,6 +54,17 @@ var base_vegetation: int = VegetationType.VEG.NONE
 #       强类型成员（见下），不再走字典（避免 GDScript 字典装箱/类型擦除的热路径开销）。
 var current_state: Dictionary = {}
 
+# Fast-tick weather-field cache. WeatherSystem writes these typed members first
+# and mirrors them into current_state for existing UI / baker consumers.
+var weather_field_initialized: bool = false
+var weather_type: int = 0
+var weather_intensity: float = 0.0
+var weather_cloud: float = 0.0
+var weather_precip: float = 0.0
+var weather_vapor: float = 0.0
+var weather_instability: float = 0.0
+var weather_convergence: float = 0.0
+
 # Fast-tick perf opt (C)：fast-tick 热路径高频读写字段升级为强类型成员，
 # 避免 current_state 字典的 hash 查找 + Variant 装箱开销。
 # moisture 已在上方声明为 float（第 27 行）；下面是从字典迁移过来的 7 个。

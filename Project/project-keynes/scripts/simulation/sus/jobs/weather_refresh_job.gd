@@ -5,8 +5,8 @@ class_name WeatherRefreshJob
 ## (MapGenerator.refresh_daily) under a StridePolicy. Single-slice per tick.
 ##
 ## Driven by: SUS daily tick (sourced from main.gd._on_day_changed).
-## Strategy:  StridePolicy(stride). x1→1, x5→2, x20→4 mapped from speed by
-##            main.gd._on_speed_changed (preserves legacy behavior).
+## Strategy:  StridePolicy(stride). x1→1, x5→4, x20→8 mapped from speed by
+##            main.gd._on_speed_changed.
 ##
 ## Why a Job instead of a direct call:
 ##   1. Centralizes stride configuration in SUS (single source of truth).

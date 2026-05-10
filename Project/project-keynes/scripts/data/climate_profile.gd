@@ -133,9 +133,12 @@ extends Resource
 # _apply_vegetation_dynamics / _apply_weather_to_map_feedback_pass + GPU
 # rebakes). 1 = run every day (legacy), N>1 = run every N days and on skip
 # days reuse the last active fronts snapshot. Auto-adjusted by main.gd on
-# speed change (x1→1, x5→2, x20→4). Manual override via Inspector is allowed.
+# speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
 @export_range(1, 8, 1) var weather_refresh_stride: int = 1
+@export_range(1, 30, 1) var weather_albedo_stride: int = 7
+@export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
+@export_range(1, 30, 1) var weather_feedback_stride: int = 3
 
 # DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
 # requirement 4.5). Field is kept on disk for save-file compatibility, but
@@ -145,20 +148,20 @@ extends Resource
 @export_range(1, 4, 1) var ocean_current_refresh_seasons: int = 4
 
 # SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
-# Default 60 days ≈ two in-game months per round. Lower → fresher currents
-# at the cost of more frequent slices.
-@export_range(7, 240, 1) var ocean_currents_period_ticks: int = 60
+# Default 240 days keeps currents on a seasonal/slow layer. Lower → fresher
+# currents at the cost of more frequent slices.
+@export_range(7, 360, 1) var ocean_currents_period_ticks: int = 240
 
 # SUS OceanCurrentsJob — number of slices each round is split into. Each
-# slice processes ⌈total_pixels / slice_count⌉ pixels. Default 60 slices
-# means one slice every 1 day for a 60-day period. Aim for per-slice
+# slice processes ⌈total_pixels / slice_count⌉ pixels. Default 120 slices
+# means one slice every 2 days for a 240-day period. Aim for per-slice
 # elapsed ≤ 30ms (ocean_currents_slice + upwelling_slice combined).
 #
 # 实测调优记录（1024×606 = 620k 像素）：
 #   - slice_count=10 → 每片 62k 像素 → 266ms（严重卡顿）
 #   - slice_count=60 → 每片 10k 像素 → ~44ms（可接受）
 #   - slice_count=120 → 每片 5k 像素 → ~22ms（更平滑）
-@export_range(1, 240, 1) var ocean_currents_slice_count: int = 60
+@export_range(1, 240, 1) var ocean_currents_slice_count: int = 120
 
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]
@@ -328,14 +331,14 @@ extends Resource
 # local climate, terrain, wind and ocean signals. Legacy fronts remain only as a
 # visual/compatibility summary.
 @export var weather_field_enabled: bool = true
-@export_range(0, 6, 1) var weather_field_advect_steps: int = 2
+@export_range(0, 1, 1) var weather_field_advect_steps: int = 1
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.08
 @export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.55
 @export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
-@export_range(1, 16, 1) var weather_component_summary_limit: int = 16
+@export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]

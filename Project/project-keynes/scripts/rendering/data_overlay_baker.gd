@@ -267,12 +267,8 @@ static func _sample_cell(
 				"valid": true,
 			}
 		OverlayMode.MODE.WEATHER:
-			var w: int = 0
-			var intensity: float = 0.0
-			if cell.current_state != null and cell.current_state.has("weather"):
-				w = int(cell.current_state["weather"])
-			if cell.current_state != null and cell.current_state.has("weather_intensity"):
-				intensity = float(cell.current_state["weather_intensity"])
+			var w: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
+			var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 			return {
 				"bucket": w,
 				"intensity": clampf(intensity, 0.0, 1.0),

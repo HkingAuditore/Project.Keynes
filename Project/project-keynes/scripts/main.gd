@@ -337,16 +337,16 @@ func _set_speed(s: float) -> void:
 	_sync_clock_running_to_weather_layer()
 
 # Fast-tick perf opt (A)：速度档变更回调——按档位把 weather_refresh_stride
-# 调成 x1→1 / x5→2 / x20→4，让加速档位下 refresh_daily 的反馈链 + 重烘焙
+# 调成 x1→1 / x5→4 / x20→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
 # 按 stride 跳日执行，显著降低单帧热路径开销。
 func _on_speed_changed(new_speed: float) -> void:
 	if _generator == null:
 		return
 	var stride: int = 1
 	if new_speed >= 15.0:
-		stride = 4
+		stride = 8
 	elif new_speed >= 3.0:
-		stride = 2
+		stride = 4
 	else:
 		stride = 1
 	_generator.set_weather_refresh_stride(stride)
@@ -413,8 +413,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	# (_front_blend_elapsed=0 + 重新计算 _front_blend_duration ≈ 0.35s)，跳日下
 	# 上次的视觉快照已经被 _predict_front_snapshots 沿 velocity 外推，再喂同一
 	# 份 cached fronts 作 target 会让云"被拉回原位 → 重新外推 → 再拉回"，肉
-	# 眼上是抽搐式振荡。weather_field_texture 仍每帧推（它本来就是 cell-wise，
-	# 没有 blend 状态可破坏）。
+	# weather_field_texture 已停用：天气场保留在 HexCell.weather_*，视觉层只吃 fronts。
 	#
 	# Drift-fix（2026-05-10）：从 weather_ran 改成 fronts_changed。
 	# WeatherRefreshJob 双 tick 切片（stage_a 计算 + stage_b 烘 field）中，weather_ran
@@ -424,15 +423,10 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 改用 fronts_changed 确保每两个游戏日才推一次（≈ 1× 速度下 2 秒一次），
 	# blend 在每次推送之间有完整 ~2.3s 平滑 lerp 时间，云能持续可见地飘。
 	var t_render_us0: int = Time.get_ticks_usec()
-	# Drift-debug（2026-05-10）：诊断 set_weather_fronts 是否真被触发。
-	print("[main] day=%d weather_ran=%s fronts_changed=%s n_fronts=%d renderer=%s" % [
-		_world_clock.day_index() if _world_clock != null else -1,
-		str(weather_ran), str(fronts_changed), fronts.size(),
-		"OK" if _renderer != null else "<null>",
-	])
+	# Drift debug stays silent during fast ticks; SUS WARN already reports front status.
 	if _renderer != null:
 		if _renderer.has_method("set_weather_field_texture") and _world_data != null:
-			_renderer.set_weather_field_texture(_world_data.weather_field_tex)
+			_renderer.set_weather_field_texture(null)
 		if fronts_changed:
 			_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
@@ -949,9 +943,8 @@ func _refresh_info_panel() -> void:
 func _refresh_weather_line() -> void:
 	if _selected_cell == null or _weather_label == null:
 		return
-	var cs: Dictionary = _selected_cell.current_state
-	var wt: int = int(cs.get("weather", WeatherType.WT.CLEAR))
-	var wi: float = float(cs.get("weather_intensity", 0.0))
+	var wt: int = _selected_cell.weather_type if _selected_cell.weather_field_initialized else WeatherType.WT.CLEAR
+	var wi: float = _selected_cell.weather_intensity if _selected_cell.weather_field_initialized else 0.0
 	if wt == WeatherType.WT.CLEAR or wi <= 0.05:
 		_weather_label.text = "天气：晴朗"
 	else:

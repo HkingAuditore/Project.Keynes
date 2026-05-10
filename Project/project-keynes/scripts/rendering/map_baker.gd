@@ -837,9 +837,9 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 	return { "pixels_done": e - s, "total_pixels": total }
 
 ## 切片全部完成后调用：把 _pending_currents_buf / _pending_upwelling_buf
-## 原子替换到 world，同步重编码 vector_atlas_tex / upwelling_tex，并清空
-## pending 状态。返回每件产物的 ms 耗时（用于 perf-report）。
-func commit_ocean_buffers(world: WorldData) -> Dictionary:
+## 原子替换到 world。update_textures 为 true 时同步重编码 vector_atlas_tex /
+## upwelling_tex；SUS fast tick 可传 false 避免 GPU 上传毛刺。返回耗时。
+func commit_ocean_buffers(world: WorldData, update_textures: bool = true) -> Dictionary:
 	if world == null:
 		return {}
 	var t := Time.get_ticks_msec()
@@ -851,29 +851,30 @@ func commit_ocean_buffers(world: WorldData) -> Dictionary:
 	# 为空，跳过。
 	if not _pending_wind_buf.is_empty():
 		world.wind_field_buffer = _pending_wind_buf
-	# I + L: 复用 GPU 句柄 + 持久交错缓冲。
-	# Fast path（典型 round 收尾）：_vector_atlas_data 已被 pixel slices 同步更新到位 →
-	# 直接 Image.create_from_data + tex.update()，省掉 _encode_vector_atlas 的 620k×4 交错循环。
-	# Fallback：缓存未就绪（首次 commit / regenerate） → 走旧整张 _encode_vector_atlas 兜底，
-	# 顺便也把 _vector_atlas_data 填好让下次走快路径。
-	var W: int = world.derived_size.x
-	var H: int = world.derived_size.y
-	var atlas_size_match: bool = (_vector_atlas_data_size == Vector2i(W, H) \
-			and _vector_atlas_data.size() == W * H * 4 \
-			and world.vector_atlas_tex != null \
-			and world.vector_atlas_tex.get_size() == Vector2(float(W), float(H)))
-	if atlas_size_match:
-		var img_va := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
-		world.vector_atlas_tex.update(img_va)
-	else:
-		world.vector_atlas_tex = _encode_vector_atlas(
-			world.ocean_current_buffer, world.wind_field_buffer,
-			world.derived_size, world.vector_atlas_tex
+	if update_textures:
+		# I + L: 复用 GPU 句柄 + 持久交错缓冲。
+		# Fast path（典型 round 收尾）：_vector_atlas_data 已被 pixel slices 同步更新到位 →
+		# 直接 Image.create_from_data + tex.update()，省掉 _encode_vector_atlas 的 620k×4 交错循环。
+		# Fallback：缓存未就绪（首次 commit / regenerate） → 走旧整张 _encode_vector_atlas 兜底，
+		# 顺便也把 _vector_atlas_data 填好让下次走快路径。
+		var W: int = world.derived_size.x
+		var H: int = world.derived_size.y
+		var atlas_size_match: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+				and _vector_atlas_data.size() == W * H * 4 \
+				and world.vector_atlas_tex != null \
+				and world.vector_atlas_tex.get_size() == Vector2(float(W), float(H)))
+		if atlas_size_match:
+			var img_va := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
+			world.vector_atlas_tex.update(img_va)
+		else:
+			world.vector_atlas_tex = _encode_vector_atlas(
+				world.ocean_current_buffer, world.wind_field_buffer,
+				world.derived_size, world.vector_atlas_tex
+			)
+			_rebuild_vector_atlas_data_from_buffers(world)
+		world.upwelling_tex = _encode_upwelling_tex(
+			world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
 		)
-		_rebuild_vector_atlas_data_from_buffers(world)
-	world.upwelling_tex = _encode_upwelling_tex(
-		world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
-	)
 	var t_commit := Time.get_ticks_msec() - t
 	# 清空 pending（下一轮重新分配，避免残留半旧数据）
 	_pending_currents_buf = PackedByteArray()
@@ -2194,10 +2195,10 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 			var cell: HexCell = cell_key
 			if cell == null:
 				continue
-			var wt0: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
-			var intensity0: float = float(cell.current_state.get("weather_intensity", 0.0))
-			var cloud0: float = float(cell.current_state.get("weather_cloud", 0.0))
-			var precip0: float = float(cell.current_state.get("weather_precip", 0.0))
+			var wt0: int = cell.weather_type if cell.weather_field_initialized else int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
+			var intensity0: float = cell.weather_intensity if cell.weather_field_initialized else float(cell.current_state.get("weather_intensity", 0.0))
+			var cloud0: float = cell.weather_cloud if cell.weather_field_initialized else float(cell.current_state.get("weather_cloud", 0.0))
+			var precip0: float = cell.weather_precip if cell.weather_field_initialized else float(cell.current_state.get("weather_precip", 0.0))
 			var b00: int = clampi(wt0, 0, 255)
 			var b10: int = clampi(int(round(clampf(intensity0, 0.0, 1.0) * 255.0)), 0, 255)
 			var b20: int = clampi(int(round(clampf(cloud0, 0.0, 1.0) * 255.0)), 0, 255)
@@ -2225,10 +2226,10 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 		var cell: HexCell = cell_key
 		if cell == null:
 			continue
-		var wt: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
-		var intensity: float = float(cell.current_state.get("weather_intensity", 0.0))
-		var cloud: float = float(cell.current_state.get("weather_cloud", 0.0))
-		var precip: float = float(cell.current_state.get("weather_precip", 0.0))
+		var wt: int = cell.weather_type if cell.weather_field_initialized else int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
+		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else float(cell.current_state.get("weather_intensity", 0.0))
+		var cloud: float = cell.weather_cloud if cell.weather_field_initialized else float(cell.current_state.get("weather_cloud", 0.0))
+		var precip: float = cell.weather_precip if cell.weather_field_initialized else float(cell.current_state.get("weather_precip", 0.0))
 		var b0: int = clampi(wt, 0, 255)
 		var b1: int = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
 		var b2: int = clampi(int(round(clampf(cloud, 0.0, 1.0) * 255.0)), 0, 255)

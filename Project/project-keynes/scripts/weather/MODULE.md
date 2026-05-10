@@ -59,7 +59,7 @@ cell.snow_cover            # [0,1]，给 shader 用
 
 `weather_system.gd` 内的 `v3 / v4 / v5 / v9b / v9c / v9d` 注释记录了关键常量的 rationale：
 
-- `_field_advect_steps = 6` (v5)
+- `_field_advect_steps = 1` (fast-tick cap)
 - `_field_condensation_gain = 0.32` → v9b 回调到 0.42（凝结倍数 *2.2）
 - `_field_precip_decay = 0.82` (v5)
 - `_apply_frontal_convergence_boost` 起跳门槛 `frontal_score > 0.45` (v5)
