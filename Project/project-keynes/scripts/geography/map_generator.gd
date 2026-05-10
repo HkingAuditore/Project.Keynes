@@ -632,6 +632,8 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 			ss = float(v)
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
+	if _refresh_climate_daily_job != null:
+		_refresh_climate_daily_job.reset_run_flag()
 	if _weather_refresh_job != null:
 		_weather_refresh_job.reset_run_flag()
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
@@ -667,6 +669,16 @@ func sus_report_last_tick() -> Dictionary:
 # 供 main.gd fast tick WARN / 详细日志路径定位 6 段子耗时。
 func sus_climate_breakdown() -> Dictionary:
 	return _last_climate_breakdown.duplicate()
+
+
+func did_refresh_climate_run_this_tick() -> bool:
+	return _refresh_climate_daily_job != null and _refresh_climate_daily_job.did_run_last_tick()
+
+
+func last_refresh_climate_slice_ms() -> float:
+	if _refresh_climate_daily_job == null:
+		return 0.0
+	return _refresh_climate_daily_job.last_slice_elapsed_ms()
 
 
 # Daily-sim perf instrumentation（weather）：返回上一次 refresh_daily 的子段拆解，
