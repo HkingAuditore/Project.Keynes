@@ -115,7 +115,7 @@ var _rng: RandomNumberGenerator
 #      + 每个 front 的 (raw center, velocity, biased target, start→target delta)
 #   2) _process 每秒打印 visual_snapshots[0] 的 center 看是否真的在变
 # 验证完成后改回 false 关日志。
-const DRIFT_DEBUG_LOG: bool = true
+const DRIFT_DEBUG_LOG: bool = false
 var _drift_debug_last_log_time: float = -1.0
 
 func _ready() -> void:

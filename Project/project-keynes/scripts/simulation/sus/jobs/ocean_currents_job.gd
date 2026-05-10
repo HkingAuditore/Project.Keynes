@@ -53,10 +53,10 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	id = &"ocean_currents"
 	priority = 200  # runs after refresh_climate_daily (100) / weather (150)
 	slice_budget_ms = 4.0
-	# Daily-sim perf bugfix：洋流切片每天最多跑 1/slice_count 的工作量（已切片化），
-	# 必须坚持推进否则一年也烘不完。绕过 frame_budget 守卫，避免被 climate Job
-	# 大预算饥饿掉。
-	must_run = true
+	# Ocean currents are a slow visual/simulation layer. Let the scheduler defer
+	# slices when the frame budget is already exhausted instead of forcing a
+	# fast-tick spike.
+	must_run = false
 	baker = p_baker
 	map = p_map
 	world = p_world
@@ -149,7 +149,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 
 	var done: bool = (_next_pixel_idx >= _total_pixels)
 	if done:
-		baker.commit_ocean_buffers(world)
+		# Daily fast ticks only need CPU buffers + HexCell.ocean_current for simulation.
+		# Texture/atlas uploads are expensive GPU work and caused 200ms+ commit spikes.
+		baker.commit_ocean_buffers(world, false)
 		if on_commit.is_valid():
 			on_commit.call()
 		_round_active = false

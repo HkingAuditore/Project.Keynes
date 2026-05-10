@@ -85,7 +85,7 @@ var _ocean_spawn_bias: float = 0.0
 # each hex owns vapor/cloud/precip/instability/type/intensity, and legacy fronts
 # are rebuilt as a compact visual summary after the field solve.
 var _weather_field_enabled: bool = true
-var _field_advect_steps: int = 6
+var _field_advect_steps: int = 1
 var _field_diffusion: float = 0.08
 var _field_condensation_gain: float = 0.28
 # 衰减系数：每天 precip 至少损失这么多比例（max 公式：保留率 = 1 - decay）
@@ -94,7 +94,7 @@ var _field_precip_decay: float = 0.82
 var _field_orographic_lift_gain: float = 0.35
 var _field_convergence_gain: float = 0.25
 var _field_ocean_evap_gain: float = 0.30
-var _field_summary_limit: int = MAX_FRONTS
+var _field_summary_limit: int = 12
 var _weather_field: Dictionary = {}
 var _last_map_for_query: MapData = null
 
@@ -134,7 +134,7 @@ var _prev_summary_seeds: Array = []
 # 顶 3 个 cluster 的 (type, prev_center → new_center, observed_drift, EMA velocity)。
 # 用于诊断"云不会动"——可以直观看到 sim 端是否真的产出了非零 velocity。
 # 验证完成后改回 false 关日志。
-const DRIFT_DEBUG_LOG: bool = true
+const DRIFT_DEBUG_LOG: bool = false
 
 func _cell_world_pos(cell: HexCell) -> Vector2:
 	if _tick_cell_pos.has(cell):
@@ -544,31 +544,49 @@ func _distribute_to_cells(map: MapData) -> void:
 					_cover_dirty = true
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
-	var cells: Array = map.all_cells()
-	# Tick-scoped 预计算：把每 cell 的世界坐标 + 1 环邻居数组算一次，
-	# 主循环 + helper（_neighbor_aligned / _wind_convergence_for_cell / ...）
-	# 全部走 _cell_world_pos / _cell_neighbors 读缓存，避免在 ~2400 cell × 多重
-	# 内层循环里反复调用 HexUtils.cube_to_world() 与 map.get_neighbors()。
-	# 实测前为 70+ms 的 advect 段，绝大多数时间花在这两个调用的累计开销。
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var fast_indexed: bool = neighbor_indices.size() >= n_cells * 6
+	var cell_pos := PackedVector2Array()
+	cell_pos.resize(n_cells)
+	# Solver hot path uses local indexed arrays. Avoid filling tick-scoped
+	# dictionaries here; summary/front code can fall back to direct helpers.
 	_tick_cell_pos.clear()
 	_tick_cell_neighbors.clear()
-	for cell: HexCell in cells:
-		_tick_cell_pos[cell] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
-		_tick_cell_neighbors[cell] = map.get_neighbors(cell)
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
+		cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
 
-	var prev_vapor: Dictionary = {}
-	var prev_precip: Dictionary = {}
-	for cell: HexCell in cells:
-		var prev: Dictionary = _weather_field.get(cell, {})
-		prev_vapor[cell] = float(prev.get("vapor", cell.moisture))
-		prev_precip[cell] = float(prev.get("precip", 0.0))
+	var prev_vapor := PackedFloat32Array()
+	var prev_precip := PackedFloat32Array()
+	var next_vapor := PackedFloat32Array()
+	var next_cloud := PackedFloat32Array()
+	var next_precip := PackedFloat32Array()
+	var next_instability := PackedFloat32Array()
+	var next_intensity := PackedFloat32Array()
+	var next_convergence := PackedFloat32Array()
+	var next_type := PackedInt32Array()
+	prev_vapor.resize(n_cells)
+	prev_precip.resize(n_cells)
+	next_vapor.resize(n_cells)
+	next_cloud.resize(n_cells)
+	next_precip.resize(n_cells)
+	next_instability.resize(n_cells)
+	next_intensity.resize(n_cells)
+	next_convergence.resize(n_cells)
+	next_type.resize(n_cells)
+	for i in range(n_cells):
+		var prev_cell: HexCell = cells[i]
+		prev_vapor[i] = prev_cell.weather_vapor if prev_cell.weather_field_initialized else prev_cell.moisture
+		prev_precip[i] = prev_cell.weather_precip if prev_cell.weather_field_initialized else 0.0
 
-	var next_field: Dictionary = {}
-	for cell: HexCell in cells:
-		var pos: Vector2 = _cell_world_pos(cell)
+	for i in range(n_cells):
+		var cell: HexCell = cells[i]
+		var pos: Vector2 = cell_pos[i]
 		var temp: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
 		var base_m: float = clampf(cell.moisture, 0.0, 1.0)
-		var ocean_an: float = _avg_ocean_anomaly_at(cell, map)
+		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
 		var on_water: bool = _is_water_terrain(int(cell.terrain))
 
 		var wind: Vector2 = cell.wind_vector
@@ -579,8 +597,9 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 			wind = _sample_terrain_wind(map, world, pos, ny, _season_phase)
 		var wind_dir: Vector2 = wind.normalized() if wind.length_squared() > 0.0001 else Vector2.RIGHT
 
-		var advected_vapor: float = _upstream_vapor(cell, map, prev_vapor, wind_dir)
-		var neighbor_vapor: float = _neighbor_average_vapor(cell, map, prev_vapor)
+		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
+		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
+		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
 		# 修（v3）：advection 函数已修正为纯上游链。这里 lerp 权重对应"风带强度"
 		# wind 越强 → vapor 越像上游（advect 主导，雨云被吹走）
 		# wind 弱 → vapor 越像 base_moisture（静止湿度场，本地蒸发）
@@ -611,11 +630,11 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 			effective_ocean_an = 0.20
 		elif has_river:
 			effective_ocean_an = maxf(ocean_an, 0.08)
-		var evap: float = _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
+		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
 		vapor = clampf(vapor + evap, 0.0, 1.0)
 
-		var lift: float = _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = _wind_convergence_for_cell(cell, map)
+		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
+		var convergence: float = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		if lift < 0.0:
 			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
 
@@ -648,7 +667,7 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		# v7：precip_raw 的 lift 直贡献也门控在 vapor 上（同上理由）。
 		# 同时把 max-decay 的 floor 改为乘 vapor——vapor 跌到 0 时旧 precip 必须放掉。
 		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
-		var old_precip: float = float(prev_precip.get(cell, 0.0))
+		var old_precip: float = prev_precip[i]
 		# 修（v7+v9b）：decay 同时受风速与 vapor 双重加压：
 		#   - 强风带：保留率 ≈ 5%（继承 v3）
 		#   - vapor 跌到 0.10 以下：旧 precip 强制放空（断绝持留环路）
@@ -659,20 +678,25 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
 		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
 
-		var wt: int = _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
+		var wt: int = _classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
-		next_field[cell] = {
-			"vapor": vapor,
-			"cloud": cloud,
-			"precip": precip,
-			"instability": instability,
-			"type": wt,
-			"intensity": intensity,
-			# Cache convergence so _apply_frontal_convergence_boost can reuse
-			# the value computed here instead of recomputing per-cell.
-			"convergence": convergence,
-		}
-	_weather_field = next_field
+		next_vapor[i] = vapor
+		next_cloud[i] = cloud
+		next_precip[i] = precip
+		next_instability[i] = instability
+		next_type[i] = wt
+		next_intensity[i] = intensity
+		next_convergence[i] = convergence
+	for i in range(n_cells):
+		var out_cell: HexCell = cells[i]
+		out_cell.weather_field_initialized = true
+		out_cell.weather_vapor = next_vapor[i]
+		out_cell.weather_cloud = next_cloud[i]
+		out_cell.weather_precip = next_precip[i]
+		out_cell.weather_instability = next_instability[i]
+		out_cell.weather_type = next_type[i]
+		out_cell.weather_intensity = next_intensity[i]
+		out_cell.weather_convergence = next_convergence[i]
 	# Phase 3b：锋面散度 + 温差升降级。
 	# 在主循环结束、_weather_field 已落定之后做一次"锋面后处理"：
 	#   - 对每个 cell 重读其周边温度差（max - min over neighbors），
@@ -680,41 +704,47 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 	#   - 高 frontal_score（强辐合 + 大温差）：强制把 cloud / precip / instability
 	#     拉到 RAIN 以上阈值，并按温差判定升 STORM 或降 RAIN
 	#   - 这保证"锋面"在地图上是物理可见的：哪里有冷暖气流交汇，哪里就下雨
-	_apply_frontal_convergence_boost(map, cells, climate_anomaly)
+	_apply_frontal_convergence_boost(map, cells, climate_anomaly, neighbor_indices, fast_indexed)
 
-func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float) -> void:
+func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float, neighbor_indices: PackedInt32Array, fast_indexed: bool) -> void:
 	# 锋面温差阈值（temperature 归一化为 [0,1]，0.28 ≈ 14°C，0.06 ≈ 3°C）。
 	# 修（v4）：v3 的 0.20/0.32 在中纬度风带几乎全境触发 → STORM 横贯地图。
 	# 现在大幅收紧：温差需 14°C 以上、辐合需更强，才进入"真正的锋面带"。
 	const STORM_TEMP_DIFF: float = 0.28
 	const WEAK_TEMP_DIFF: float = 0.06
 	const CONVERGENCE_THRESHOLD: float = 0.45
-	for cell: HexCell in cells:
-		var entry: Dictionary = _weather_field.get(cell, {})
-		if entry.is_empty():
+	for i in range(cells.size()):
+		var cell: HexCell = cells[i]
+		if not cell.weather_field_initialized:
 			continue
-		# Reuse the convergence already computed in _solve_weather_field's main
-		# loop (cached in next_field[cell].convergence). Falls back to recompute
-		# only if the cache key is missing (defensive; legacy paths).
-		var conv: float
-		if entry.has("convergence"):
-			conv = float(entry["convergence"])
-		else:
-			conv = _wind_convergence_for_cell(cell, map)
+		var conv: float = cell.weather_convergence
 		if conv < CONVERGENCE_THRESHOLD:
 			continue
 		# 计算 cell 邻域的温差 max - min（含 cell 自身）。
 		var t_self: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
 		var t_min: float = t_self
 		var t_max: float = t_self
-		for nb: HexCell in _cell_neighbors(cell, map):
-			if nb == null:
-				continue
-			var t_nb: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
-			if t_nb < t_min:
-				t_min = t_nb
-			if t_nb > t_max:
-				t_max = t_nb
+		if fast_indexed:
+			var base: int = i * 6
+			for d in range(6):
+				var nb_idx: int = neighbor_indices[base + d]
+				if nb_idx < 0:
+					continue
+				var nb: HexCell = cells[nb_idx]
+				var t_nb: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
+				if t_nb < t_min:
+					t_min = t_nb
+				if t_nb > t_max:
+					t_max = t_nb
+		else:
+			for nb: HexCell in _cell_neighbors(cell, map):
+				if nb == null:
+					continue
+				var t_nb: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
+				if t_nb < t_min:
+					t_min = t_nb
+				if t_nb > t_max:
+					t_max = t_nb
 		var temp_diff: float = t_max - t_min
 		# frontal_score：辐合强度 × 温差强度（温差 0.20 时为 1.0）。
 		var frontal_score: float = clampf(
@@ -726,29 +756,27 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 			continue
 		# 修（v5）：boost 进一步弱化——只让锋面带"略多云"，不再硬推 precip / inst 过阈值
 		# 让 STORM 等强对流完全由 _classify 的物理条件决定，不再被锋面后处理强制锁
-		var cloud0: float = float(entry.get("cloud", 0.0))
-		var precip0: float = float(entry.get("precip", 0.0))
-		var inst0: float = float(entry.get("instability", 0.0))
+		var cloud0: float = cell.weather_cloud
+		var precip0: float = cell.weather_precip
+		var inst0: float = cell.weather_instability
 		var cloud1: float = clampf(maxf(cloud0, 0.25 + frontal_score * 0.20), 0.0, 1.0)
 		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0)
 		var inst1: float = clampf(maxf(inst0, 0.25 + frontal_score * 0.15), 0.0, 1.0)
-		entry["cloud"] = cloud1
-		entry["precip"] = precip1
-		entry["instability"] = inst1
+		cell.weather_cloud = cloud1
+		cell.weather_precip = precip1
+		cell.weather_instability = inst1
 		# 修（v5）：彻底取消温差升级到 STORM/BLIZZARD 的锁定逻辑。
 		# 锋面只做云的"轻推"，不再改 type。强对流完全交给 classify 物理条件判断。
 		# 仅保留：温差极小时把残余 STORM/MONSOON 降级 RAIN（防止旧 STORM 持留）
-		var wt0: int = int(entry.get("type", WeatherType.WT.CLEAR))
+		var wt0: int = cell.weather_type
 		var new_wt: int = wt0
 		if temp_diff < WEAK_TEMP_DIFF and (wt0 == WeatherType.WT.STORM or wt0 == WeatherType.WT.MONSOON):
 			new_wt = WeatherType.WT.RAIN
-		if new_wt != wt0:
-			entry["type"] = new_wt
+		cell.weather_type = new_wt
 		# 重算 intensity（沿用同套公式，确保下游可视化一致）。
-		var ocean_an: float = _avg_ocean_anomaly_at(cell, map)
-		var vapor1: float = float(entry.get("vapor", cell.moisture))
-		entry["intensity"] = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
-		_weather_field[cell] = entry
+		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
+		var vapor1: float = cell.weather_vapor
+		cell.weather_intensity = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
 
 # Phase 3c：积雪累积与融化（共享方法）
 # ------------------------------------------------------------------------
@@ -821,6 +849,144 @@ func _neighbor_average_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary
 		n += 1
 	return sum_v / float(maxi(n, 1))
 
+func _prev_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array) -> float:
+	var idx: int = map.index_of(cell)
+	if idx >= 0 and idx < prev_vapor.size():
+		return prev_vapor[idx]
+	return cell.weather_vapor if cell.weather_field_initialized else cell.moisture
+
+func _upstream_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
+	var current: HexCell = cell
+	var sum_v: float = 0.0
+	var weight: float = 0.0
+	var w_decay: float = 1.0
+	for step in range(_field_advect_steps):
+		var upstream: HexCell = _neighbor_aligned(current, map, -wind_dir)
+		if upstream == null:
+			break
+		sum_v += _prev_vapor_cached(upstream, map, prev_vapor) * w_decay
+		weight += w_decay
+		w_decay *= 0.75
+		current = upstream
+	if weight < 0.001:
+		return _prev_vapor_cached(cell, map, prev_vapor)
+	return sum_v / weight
+
+func _neighbor_average_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array) -> float:
+	var sum_v: float = _prev_vapor_cached(cell, map, prev_vapor)
+	var n: int = 1
+	for nb: HexCell in _cell_neighbors(cell, map):
+		if nb == null:
+			continue
+		sum_v += _prev_vapor_cached(nb, map, prev_vapor)
+		n += 1
+	return sum_v / float(maxi(n, 1))
+
+func _neighbor_aligned_idx(idx: int, dir: Vector2, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> int:
+	if idx < 0 or idx >= cell_pos.size() or dir.length_squared() <= 0.0001:
+		return -1
+	var self_wp: Vector2 = cell_pos[idx]
+	var best_idx: int = -1
+	var best_dot: float = _hex_size * 0.31176915 # sqrt(3) * 0.18
+	var ndir: Vector2 = dir.normalized()
+	var base: int = idx * 6
+	for d in range(6):
+		var nb_idx: int = neighbor_indices[base + d]
+		if nb_idx < 0:
+			continue
+		var to_nb: Vector2 = cell_pos[nb_idx] - self_wp
+		var dot: float = to_nb.dot(ndir)
+		if dot > best_dot:
+			best_dot = dot
+			best_idx = nb_idx
+	return best_idx
+
+func _upstream_vapor_idx(idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
+	var current_idx: int = idx
+	var sum_v: float = 0.0
+	var weight: float = 0.0
+	var w_decay: float = 1.0
+	for step in range(_field_advect_steps):
+		var upstream_idx: int = _neighbor_aligned_idx(current_idx, -wind_dir, cell_pos, neighbor_indices)
+		if upstream_idx < 0:
+			break
+		sum_v += prev_vapor[upstream_idx] * w_decay
+		weight += w_decay
+		w_decay *= 0.75
+		current_idx = upstream_idx
+	if weight < 0.001:
+		return prev_vapor[idx]
+	return sum_v / weight
+
+func _upstream_vapor_idx_from_first(idx: int, first_upstream_idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
+	if first_upstream_idx < 0 or _field_advect_steps <= 0:
+		return prev_vapor[idx]
+	var current_idx: int = first_upstream_idx
+	var sum_v: float = prev_vapor[current_idx]
+	var weight: float = 1.0
+	var w_decay: float = 0.75
+	for step in range(1, _field_advect_steps):
+		var upstream_idx: int = _neighbor_aligned_idx(current_idx, -wind_dir, cell_pos, neighbor_indices)
+		if upstream_idx < 0:
+			break
+		sum_v += prev_vapor[upstream_idx] * w_decay
+		weight += w_decay
+		w_decay *= 0.75
+		current_idx = upstream_idx
+	return sum_v / weight
+
+func _neighbor_average_vapor_idx(idx: int, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array) -> float:
+	var sum_v: float = prev_vapor[idx]
+	var n: int = 1
+	var base: int = idx * 6
+	for d in range(6):
+		var nb_idx: int = neighbor_indices[base + d]
+		if nb_idx < 0:
+			continue
+		sum_v += prev_vapor[nb_idx]
+		n += 1
+	return sum_v / float(n)
+
+func _avg_ocean_anomaly_at_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array) -> float:
+	var cell: HexCell = cells[idx]
+	if _is_water_terrain(int(cell.terrain)):
+		return cell.temperature_transport_anomaly
+	var sum_an: float = 0.0
+	var n_water: int = 0
+	var base: int = idx * 6
+	for d in range(6):
+		var nb_idx: int = neighbor_indices[base + d]
+		if nb_idx < 0:
+			continue
+		var nb: HexCell = cells[nb_idx]
+		if _is_water_terrain(int(nb.terrain)):
+			sum_an += nb.temperature_transport_anomaly
+			n_water += 1
+	if n_water == 0:
+		return 0.0
+	return sum_an / float(n_water)
+
+func _evaporation_for_cell_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array, temp: float, moisture: float, ocean_an: float, on_water: bool) -> float:
+	var cell: HexCell = cells[idx]
+	var evap: float = 0.028 if on_water else 0.006
+	evap += maxf(moisture - 0.45, 0.0) * 0.018
+	evap += _vegetation_transpiration_factor(cell) * 0.012
+	if not on_water:
+		if cell.has_river:
+			evap += 0.012
+		var base: int = idx * 6
+		for d in range(6):
+			var nb_idx: int = neighbor_indices[base + d]
+			if nb_idx < 0:
+				continue
+			var nb: HexCell = cells[nb_idx]
+			if _is_water_terrain(int(nb.terrain)):
+				evap += 0.018
+				break
+	var ocean_mul: float = clampf(1.0 + _field_ocean_evap_gain * ocean_an, 0.20, 1.80)
+	var temp_mul: float = clampf(0.35 + temp * 1.05, 0.12, 1.35)
+	return evap * ocean_mul * temp_mul
+
 func _evaporation_for_cell(cell: HexCell, map: MapData, temp: float, moisture: float, ocean_an: float, on_water: bool) -> float:
 	var evap: float = 0.028 if on_water else 0.006
 	evap += maxf(moisture - 0.45, 0.0) * 0.018
@@ -862,6 +1028,31 @@ func _orographic_lift_for_cell(cell: HexCell, map: MapData, wind_dir: Vector2) -
 		return clampf(diff * 1.6, -1.0, 0.0)
 	return 0.0
 
+func _orographic_lift_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, wind_dir: Vector2) -> float:
+	var upstream_idx: int = _neighbor_aligned_idx(idx, -wind_dir, cell_pos, neighbor_indices)
+	if upstream_idx < 0:
+		return 0.0
+	var cell: HexCell = cells[idx]
+	var upstream: HexCell = cells[upstream_idx]
+	var diff: float = cell.elevation - upstream.elevation
+	if diff > 0.02:
+		return clampf(diff * 2.2, 0.0, 1.0)
+	if diff < -0.02:
+		return clampf(diff * 1.6, -1.0, 0.0)
+	return 0.0
+
+func _orographic_lift_from_upstream_idx(idx: int, upstream_idx: int, cells: Array) -> float:
+	if upstream_idx < 0:
+		return 0.0
+	var cell: HexCell = cells[idx]
+	var upstream: HexCell = cells[upstream_idx]
+	var diff: float = cell.elevation - upstream.elevation
+	if diff > 0.02:
+		return clampf(diff * 2.2, 0.0, 1.0)
+	if diff < -0.02:
+		return clampf(diff * 1.6, -1.0, 0.0)
+	return 0.0
+
 func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
 	var self_wp: Vector2 = _cell_world_pos(cell)
 	var incoming: float = 0.0
@@ -873,6 +1064,28 @@ func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
 		var dir_to_self: Vector2 = self_wp - nb_wp
 		if dir_to_self.length_squared() <= 0.0001:
 			continue
+		var wind: Vector2 = nb.wind_vector
+		if wind.length_squared() <= 0.0001:
+			continue
+		incoming += maxf(0.0, dir_to_self.normalized().dot(wind.normalized()))
+		checked += 1
+	if checked == 0:
+		return 0.0
+	return clampf(incoming / float(checked), 0.0, 1.0)
+
+func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> float:
+	var self_wp: Vector2 = cell_pos[idx]
+	var incoming: float = 0.0
+	var checked: int = 0
+	var base: int = idx * 6
+	for d in range(6):
+		var nb_idx: int = neighbor_indices[base + d]
+		if nb_idx < 0:
+			continue
+		var dir_to_self: Vector2 = self_wp - cell_pos[nb_idx]
+		if dir_to_self.length_squared() <= 0.0001:
+			continue
+		var nb: HexCell = cells[nb_idx]
 		var wind: Vector2 = nb.wind_vector
 		if wind.length_squared() <= 0.0001:
 			continue
@@ -904,6 +1117,32 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 			best_dot = d
 			best = nb
 	return best
+
+func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
+	var lat_abs: float = 0.5
+	if _world_bounds.size.y > 0.001:
+		lat_abs = absf(clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0) * 2.0 - 1.0)
+	var warm: bool = temp > 0.58
+	var cold: bool = temp < 0.32
+	var humid: bool = vapor > 0.55
+	var summerish: bool = (season_idx % 4) == 1
+	var low_lat: bool = lat_abs < 0.48
+
+	if cold and (precip > 0.50 or (cloud > 0.78 and vapor > 0.75)):
+		return WeatherType.WT.BLIZZARD
+	if warm and humid and instability > 0.85 and precip > 0.58:
+		return WeatherType.WT.STORM
+	if warm and humid and low_lat and (summerish or _season_phase > 0.75 and _season_phase < 2.25) and precip > 0.48:
+		return WeatherType.WT.MONSOON
+	if precip > 0.52 or (cloud > 0.82 and vapor > 0.72):
+		return WeatherType.WT.RAIN
+	if vapor > 0.58 and cloud > 0.28 and precip < 0.15 and temp < 0.50:
+		return WeatherType.WT.FOG
+	if temp > 0.73 and vapor < 0.35 and cloud < 0.20:
+		return WeatherType.WT.HEATWAVE
+	if vapor < 0.30 and cloud < 0.14 and (temp > 0.52 or ocean_an < -0.08):
+		return WeatherType.WT.DROUGHT
+	return WeatherType.WT.CLEAR
 
 func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
 	var lat_abs: float = 0.5
@@ -951,20 +1190,17 @@ func _field_intensity_for_type(wt: int, temp: float, vapor: float, cloud: float,
 
 func _distribute_weather_field_to_cells(map: MapData) -> void:
 	_cover_dirty = false
-	for cell: HexCell in map.all_cells():
-		var f: Dictionary = _weather_field.get(cell, {})
-		var wt: int = int(f.get("type", WeatherType.WT.CLEAR))
-		var intensity: float = float(f.get("intensity", 0.0))
-		var cloud: float = float(f.get("cloud", 0.0))
-		var precip: float = float(f.get("precip", 0.0))
-		var vapor: float = float(f.get("vapor", cell.moisture))
-		var instability: float = float(f.get("instability", 0.0))
-		cell.current_state["weather"] = wt
-		cell.current_state["weather_intensity"] = intensity
-		cell.current_state["weather_cloud"] = cloud
-		cell.current_state["weather_precip"] = precip
-		cell.current_state["weather_vapor"] = vapor
-		cell.current_state["weather_instability"] = instability
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in cells:
+		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
+		if wt == WeatherType.WT.CLEAR or intensity <= 0.001:
+			if not LandformType.is_water(cell.landform) \
+					and (cell.accumulated_snow_days > 0 or cell.cover == CoverType.CV.SNOW):
+				if _apply_snow_accumulation(cell, wt, cell.temperature, 0.0):
+					_cover_dirty = true
+			continue
+		var precip: float = cell.weather_precip if cell.weather_field_initialized else 0.0
 
 		var moist_now: float = clampf(cell.moisture + WeatherType.moisture_delta(wt) * intensity, 0.0, 1.0)
 		var temp_now: float = clampf(cell.temperature + WeatherType.temp_delta(wt) * intensity, 0.0, 1.0)
@@ -1007,6 +1243,7 @@ func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[Weathe
 	var components: Array = []
 	var visited: Dictionary = {}
 	var new_membership: Dictionary = {}
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 
 	# Step 1：先用上 tick 的 cluster 中心做 BFS 种子，保持身份。
 	# 按 area 降序处理：大 cluster 优先认领，避免被相邻的小 cluster 抢走中心 cell。
@@ -1044,12 +1281,11 @@ func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[Weathe
 			components.append(component)
 
 	# Step 2：剩下未访问的 cell 自起新 cluster（age=0 → 走 birth 渐入曲线）。
-	for seed_cell: HexCell in map.all_cells():
+	for seed_cell: HexCell in cells:
 		if visited.has(seed_cell):
 			continue
-		var sf: Dictionary = _weather_field.get(seed_cell, {})
-		var wt: int = int(sf.get("type", WeatherType.WT.CLEAR))
-		var intensity: float = float(sf.get("intensity", 0.0))
+		var wt: int = seed_cell.weather_type if seed_cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var intensity: float = seed_cell.weather_intensity if seed_cell.weather_field_initialized else 0.0
 		var thresh: float = _SUMMARY_INTENSITY_HOLD if _prev_summary_membership.has(seed_cell) else _SUMMARY_INTENSITY_ENTER
 		if intensity < thresh or wt == WeatherType.WT.CLEAR:
 			visited[seed_cell] = true
@@ -1173,9 +1409,8 @@ func _pick_inheritance_seed(
 		visited: Dictionary, enter_thresh: float, hold_thresh: float) -> HexCell:
 	# prev_center 所在 cell 仍可用 → 直接用
 	if not visited.has(seed_cell):
-		var sf: Dictionary = _weather_field.get(seed_cell, {})
-		var swt: int = int(sf.get("type", WeatherType.WT.CLEAR))
-		var si: float = float(sf.get("intensity", 0.0))
+		var swt: int = seed_cell.weather_type if seed_cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var si: float = seed_cell.weather_intensity if seed_cell.weather_field_initialized else 0.0
 		var s_thresh: float = hold_thresh if _prev_summary_membership.has(seed_cell) else enter_thresh
 		if swt == prev_type and si >= s_thresh:
 			return seed_cell
@@ -1184,9 +1419,8 @@ func _pick_inheritance_seed(
 	for nb: HexCell in _cell_neighbors(seed_cell, map):
 		if nb == null or visited.has(nb):
 			continue
-		var nf: Dictionary = _weather_field.get(nb, {})
-		var nwt: int = int(nf.get("type", WeatherType.WT.CLEAR))
-		var ni: float = float(nf.get("intensity", 0.0))
+		var nwt: int = nb.weather_type if nb.weather_field_initialized else WeatherType.WT.CLEAR
+		var ni: float = nb.weather_intensity if nb.weather_field_initialized else 0.0
 		var n_thresh: float = hold_thresh if _prev_summary_membership.has(nb) else enter_thresh
 		if nwt == prev_type and ni >= n_thresh:
 			return nb
@@ -1210,9 +1444,8 @@ func _flood_fill_field_component(
 	var max_i: float = 0.0
 	while not queue.is_empty():
 		var cell: HexCell = queue.pop_front()
-		var cf: Dictionary = _weather_field.get(cell, {})
-		var cwt: int = int(cf.get("type", WeatherType.WT.CLEAR))
-		var ci: float = float(cf.get("intensity", 0.0))
+		var cwt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var ci: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		var thresh_self: float = hold_thresh if _prev_summary_membership.has(cell) else enter_thresh
 		if cwt != wt or ci < thresh_self:
 			continue
@@ -1220,15 +1453,14 @@ func _flood_fill_field_component(
 		new_membership[cell] = cluster_idx
 		sum_pos += _cell_world_pos(cell)
 		sum_axis += cell.wind_vector
-		sum_cloud += float(cf.get("cloud", 0.0))
-		sum_precip += float(cf.get("precip", 0.0))
+		sum_cloud += cell.weather_cloud
+		sum_precip += cell.weather_precip
 		max_i = maxf(max_i, ci)
 		for nb: HexCell in _cell_neighbors(cell, map):
 			if nb == null or visited.has(nb):
 				continue
-			var nf: Dictionary = _weather_field.get(nb, {})
-			var nwt: int = int(nf.get("type", WeatherType.WT.CLEAR))
-			var ni: float = float(nf.get("intensity", 0.0))
+			var nwt: int = nb.weather_type if nb.weather_field_initialized else WeatherType.WT.CLEAR
+			var ni: float = nb.weather_intensity if nb.weather_field_initialized else 0.0
 			var thresh_nb: float = hold_thresh if _prev_summary_membership.has(nb) else enter_thresh
 			if nwt == wt and ni >= thresh_nb:
 				visited[nb] = true
@@ -1324,15 +1556,14 @@ func query_at(world_pos: Vector2) -> Dictionary:
 		if map_ref != null:
 			var cube := HexUtils.world_to_cube(world_pos, _hex_size)
 			var cell: HexCell = map_ref.get_cell_by_cube(cube)
-			if cell != null and _weather_field.has(cell):
-				var f: Dictionary = _weather_field[cell]
+			if cell != null and cell.weather_field_initialized:
 				return {
-					"type": int(f.get("type", WeatherType.WT.CLEAR)),
-					"intensity": float(f.get("intensity", 0.0)),
-					"cloud": float(f.get("cloud", 0.0)),
-					"precip": float(f.get("precip", 0.0)),
-					"vapor": float(f.get("vapor", 0.0)),
-					"instability": float(f.get("instability", 0.0)),
+					"type": cell.weather_type,
+					"intensity": cell.weather_intensity,
+					"cloud": cell.weather_cloud,
+					"precip": cell.weather_precip,
+					"vapor": cell.weather_vapor,
+					"instability": cell.weather_instability,
 				}
 	var best_type: int = WeatherType.WT.CLEAR
 	var best_intensity: float = 0.0
@@ -1417,14 +1648,14 @@ func configure_weather_field(
 		ocean_evap_gain: float,
 		summary_limit: int) -> void:
 	_weather_field_enabled = enabled
-	_field_advect_steps = clampi(advect_steps, 0, 6)
+	_field_advect_steps = clampi(advect_steps, 0, 1)
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)
 	_field_condensation_gain = maxf(0.0, condensation_gain)
 	_field_precip_decay = clampf(precip_decay, 0.0, 1.0)
 	_field_orographic_lift_gain = maxf(0.0, orographic_lift_gain)
 	_field_convergence_gain = maxf(0.0, convergence_gain)
 	_field_ocean_evap_gain = maxf(0.0, ocean_evap_gain)
-	_field_summary_limit = clampi(summary_limit, 1, MAX_FRONTS)
+	_field_summary_limit = clampi(summary_limit, 1, 12)
 	if not enabled:
 		_weather_field.clear()
 

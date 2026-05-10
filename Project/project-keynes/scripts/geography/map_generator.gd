@@ -309,6 +309,7 @@ var _weather_stride_logged: int = -1
 # MapGenerator 不直接引用 world_clock，main.gd 每日调用一次 refresh_daily，
 # 所以 call_index % stride 是 day_index % stride 的合法代理。
 var _refresh_daily_call_index: int = -1
+var _weather_stage_b_call_index: int = -1
 # Fast-tick perf opt (C)：HexCell 强类型成员主路径的一次性迁移/启动日志守门。
 # 首次 refresh_climate_daily 时做兜底迁移并打 [fastpath] HexCell typed fields active。
 var _typed_fields_migrated: bool = false
@@ -378,6 +379,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_last_hex_size = hex_size
 	_last_seed = effective_seed
 	_current_season = -1
+	_weather_stage_b_call_index = -1
 	_enum_atlas_cover_dirty = false
 	_enum_atlas_vegetation_dirty = false
 	_last_enum_atlas_upload_breakdown = {}
@@ -471,14 +473,14 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		if _weather_system.has_method("configure_weather_field"):
 			_weather_system.configure_weather_field(
 				bool(cp_ec.weather_field_enabled),
-				int(cp_ec.weather_field_advect_steps),
+				mini(int(cp_ec.weather_field_advect_steps), 1),
 				float(cp_ec.weather_field_diffusion),
 				float(cp_ec.weather_condensation_gain),
 				float(cp_ec.weather_precip_decay),
 				float(cp_ec.weather_orographic_lift_gain),
 				float(cp_ec.weather_convergence_gain),
 				float(cp_ec.weather_ocean_evap_gain),
-				int(cp_ec.weather_component_summary_limit)
+				mini(int(cp_ec.weather_component_summary_limit), 12)
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -855,8 +857,8 @@ func _seasonal_sync_current_state(map: MapData, season: int) -> void:
 			"landform": int(cell.landform),
 			"vegetation": int(cell.vegetation),
 			"cover": int(cell.cover),
-			"weather": int(cell.current_state.get("weather", WeatherType.WT.CLEAR)),
-			"weather_intensity": float(cell.current_state.get("weather_intensity", 0.0)),
+			"weather": cell.weather_type if cell.weather_field_initialized else int(WeatherType.WT.CLEAR),
+			"weather_intensity": cell.weather_intensity if cell.weather_field_initialized else 0.0,
 		}
 		cell.push_biome_history(int(cell.terrain))
 		cell.push_vegetation_history(int(cell.vegetation))
@@ -3635,13 +3637,20 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 	if _weather_system == null or map == null or world == null:
 		return
 	var cp_now := _c()
+	_weather_stage_b_call_index += 1
+	var albedo_stride: int = maxi(1, int(cp_now.weather_albedo_stride)) if cp_now != null else 7
+	var veg_dyn_stride: int = maxi(1, int(cp_now.weather_vegetation_dynamics_stride)) if cp_now != null else 5
+	var feedback_stride: int = maxi(1, int(cp_now.weather_feedback_stride)) if cp_now != null else 3
+	var run_albedo: bool = (_weather_stage_b_call_index % albedo_stride) == 0
+	var run_veg_dyn: bool = (_weather_stage_b_call_index % veg_dyn_stride) == 0
+	var run_feedback: bool = (_weather_stage_b_call_index % feedback_stride) == 0
 	var weather_field_bake_ms: float = 0.0
 	var t_us0: int = Time.get_ticks_usec()
-	if _baker != null and cp_now != null and bool(cp_now.weather_field_enabled) \
-			and _baker.has_method("bake_weather_field_only"):
-		t_us0 = Time.get_ticks_usec()
-		_baker.bake_weather_field_only(map, world)
-		weather_field_bake_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+	# Weather field data now lives on HexCell.weather_* and is consumed by CPU-side
+	# systems directly. Do not flatten it into a per-pixel texture each weather tick.
+	if world.weather_field_tex != null or not world.weather_field_buffer.is_empty():
+		world.weather_field_tex = null
+		world.weather_field_buffer = PackedByteArray()
 
 	# Emergent Climate Coupling：当 enable_local_climate_coupling 开启时，
 	# transpiration 已在 refresh_climate_daily 末尾、weather tick 之前执行过，此处跳过。
@@ -3651,12 +3660,17 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		t_us0 = Time.get_ticks_usec()
 		_apply_transpiration_pass(map)
 		transp_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
-	t_us0 = Time.get_ticks_usec()
-	_apply_albedo_pass(map)
-	var albedo_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
-	t_us0 = Time.get_ticks_usec()
-	var vegetation_dirty := _apply_vegetation_dynamics(map)
-	var veg_dyn_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	var albedo_ms: float = 0.0
+	if run_albedo:
+		t_us0 = Time.get_ticks_usec()
+		_apply_albedo_pass(map)
+		albedo_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+	var vegetation_dirty := false
+	var veg_dyn_ms: float = 0.0
+	if run_veg_dyn:
+		t_us0 = Time.get_ticks_usec()
+		vegetation_dirty = _apply_vegetation_dynamics(map, float(veg_dyn_stride))
+		veg_dyn_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 	var cover_rebake_ms: float = 0.0
 	var veg_rebake_ms: float = 0.0
 	if _baker != null:
@@ -3665,9 +3679,9 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		if vegetation_dirty:
 			_mark_enum_atlas_dirty(false, true)
 	var feedback_ms: float = 0.0
-	if cp_now != null and bool(cp_now.fast_slow_layering_enabled):
+	if cp_now != null and bool(cp_now.fast_slow_layering_enabled) and run_feedback:
 		t_us0 = Time.get_ticks_usec()
-		_apply_weather_to_map_feedback_pass(map)
+		_apply_weather_to_map_feedback_pass(map, float(feedback_stride))
 		feedback_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 
 	var total_ms: float = (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0
@@ -3689,6 +3703,9 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"feedback_ms": feedback_ms,
 		"total_ms": total_ms,
 		"fronts": _weather_round_fronts.size(),
+		"albedo_ran": run_albedo,
+		"veg_dyn_ran": run_veg_dyn,
+		"feedback_ran": run_feedback,
 	}
 
 # 给 UI / renderer 直接拿到当前天气快照（不触发 tick）
@@ -3740,7 +3757,7 @@ func set_daily_climate_refresh_stride(s: int) -> void:
 #
 # 受 ClimateProfile.fast_slow_layering_enabled 控制（调用方已检查）。
 # 全局 |Δ|/日 clamp：feedback_per_day_clamp（默认 0.005，即 0.5%）。
-func _apply_weather_to_map_feedback_pass(map: MapData) -> void:
+func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -> void:
 	if map == null:
 		return
 	var cp := _c()
@@ -3748,7 +3765,8 @@ func _apply_weather_to_map_feedback_pass(map: MapData) -> void:
 		return
 	var soil_gain: float = float(cp.weather_to_soil_gain)
 	var veg_gain: float = float(cp.weather_to_vegetation_gain)
-	var per_day_clamp: float = float(cp.feedback_per_day_clamp)
+	var scale: float = maxf(day_scale, 1.0)
+	var per_day_clamp: float = float(cp.feedback_per_day_clamp) * scale
 	var ocean_drift_gain: float = float(cp.ocean_moisture_drift_gain)
 
 	for cell: HexCell in map.all_cells():
@@ -3771,11 +3789,11 @@ func _apply_weather_to_map_feedback_pass(map: MapData) -> void:
 				if absf(avg_an) > 0.005:
 					# coastal_ratio 0..1：内陆为 0，半岛 ≈ 1
 					var coastal_ratio: float = clampf(float(n_water) / 6.0, 0.0, 1.0)
-					var d_base: float = clampf(ocean_drift_gain * avg_an * coastal_ratio,
+					var d_base: float = clampf(ocean_drift_gain * avg_an * coastal_ratio * scale,
 						-per_day_clamp, per_day_clamp)
 					cell.base_moisture = clampf(cell.base_moisture + d_base, 0.0, 1.0)
-		var wt: int = int(cell.current_state.get("weather", 0))  # 0 = CLEAR
-		var w_int: float = float(cell.current_state.get("weather_intensity", 0.0))
+		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var w_int: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		if w_int < 0.01:
 			continue
 		# 降水贡献（RAIN / STORM / MONSOON 正；DROUGHT / HEATWAVE 负）
@@ -3789,10 +3807,10 @@ func _apply_weather_to_map_feedback_pass(map: MapData) -> void:
 			WeatherType.WT.HEATWAVE: precip_contrib = -w_int * 0.4
 			_: precip_contrib = 0.0
 		# 累加到 soil_moisture（小权重）
-		var d_soil: float = clampf(soil_gain * precip_contrib, -per_day_clamp, per_day_clamp)
+		var d_soil: float = clampf(soil_gain * precip_contrib * scale, -per_day_clamp, per_day_clamp)
 		cell.soil_moisture = clampf(cell.soil_moisture + d_soil, -0.5, 0.5)
 		# 累加到 vegetation_growth_pressure（含温度协同：暖湿利于生长、热干压迫）
-		var d_veg: float = clampf(veg_gain * precip_contrib, -per_day_clamp, per_day_clamp)
+		var d_veg: float = clampf(veg_gain * precip_contrib * scale, -per_day_clamp, per_day_clamp)
 		cell.vegetation_growth_pressure = clampf(cell.vegetation_growth_pressure + d_veg, -0.5, 0.5)
 
 # ─── Milestone 4：完整耦合反馈 ───────────────────────────────────────────
@@ -3878,8 +3896,10 @@ const WEATHER_VITALITY_PENALTY: Dictionary = {
 	WeatherType.WT.STORM:    0.001,   # Minor storm damage from windthrow.
 	WeatherType.WT.MONSOON:  0.001,
 }
-func _apply_vegetation_dynamics(map: MapData) -> bool:
+func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 	var any_changed: bool = false
+	var scale: float = maxf(day_scale, 1.0)
+	var streak_days: int = maxi(1, int(round(scale)))
 	for cell: HexCell in map.all_cells():
 		if LandformType.is_water(cell.landform):
 			continue
@@ -3904,25 +3924,25 @@ func _apply_vegetation_dynamics(map: MapData) -> bool:
 				dv = -(0.5 - compat) * 2.0 * rate * _c().compat_harshness
 			# else: 死区保持 dv = 0
 		# weather 额外惩罚（方案 C：按植被抗性缩放 penalty *= (1 - resistance)）
-		var wt: int = int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
-		var wi: float = float(cell.current_state.get("weather_intensity", 0.0))
+		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
+		var wi: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		var base_penalty: float = float(WEATHER_VITALITY_PENALTY.get(wt, 0.0))
 		var resistance: float = VegetationType.weather_resistance(int(cell.vegetation), wt)
 		var penalty: float = base_penalty * wi * (1.0 - resistance)
 		dv -= penalty
-		cell.vegetation_vitality = clampf(cell.vegetation_vitality + dv, 0.0, 1.0)
+		cell.vegetation_vitality = clampf(cell.vegetation_vitality + dv * scale, 0.0, 1.0)
 
 		# Streak 计数：连续多少天处于演替触发区间
 		if cell.vegetation_vitality < _c().vitality_low_threshold:
-			cell._vitality_low_streak += 1
+			cell._vitality_low_streak += streak_days
 			cell._vitality_high_streak = 0
 		elif cell.vegetation_vitality > _c().vitality_high_threshold:
-			cell._vitality_high_streak += 1
+			cell._vitality_high_streak += streak_days
 			cell._vitality_low_streak = 0
 		else:
 			# 中性区间：streak 缓慢清零（避免极端事件遗留计数）
-			cell._vitality_low_streak = maxi(cell._vitality_low_streak - 1, 0)
-			cell._vitality_high_streak = maxi(cell._vitality_high_streak - 1, 0)
+			cell._vitality_low_streak = maxi(cell._vitality_low_streak - streak_days, 0)
+			cell._vitality_high_streak = maxi(cell._vitality_high_streak - streak_days, 0)
 
 		# 触发演替
 		if _trigger_succession(cell):
