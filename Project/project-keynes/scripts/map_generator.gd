@@ -252,6 +252,11 @@ var _last_climate_breakdown: Dictionary = {}
 #       feedback_ms / total_ms / fronts 。
 # main.gd fast tick WARN 路径用它定位 weather_refresh 的哪一段慢。
 var _last_weather_breakdown: Dictionary = {}
+# Weather refresh sliced：跨 stage_a / stage_b 共享当轮起点时间 + tick_ms + fronts，
+# 让 stage_b 收尾时算出的 total_ms 真正反映"第一片到第二片"完整跨 tick 耗时。
+var _weather_round_t0_us: int = 0
+var _weather_round_tick_ms: float = 0.0
+var _weather_round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _enum_atlas_cover_dirty: bool = false
 var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
@@ -630,10 +635,17 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 	_sus.tick(ctx)
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 	var weather_ran: bool = false
+	# Drift-fix（2026-05-10）：暴露"fronts 是否真的变了"标志。
+	# 与 weather_ran 区别：weather_ran=true 表示 SUS Job 跑了 slice（stage_a 或 stage_b 任一），
+	# fronts_changed=true 仅当 stage_b 完成、_last_fronts 重新赋值时成立。
+	# main.gd 用它 gate renderer.set_weather_fronts 调用，避免每隔一 tick 重复推送
+	# 同一份 fronts 触发 weather_layer 内部的 blend reset → 云视觉冻结。
+	var fronts_changed: bool = false
 	if _weather_refresh_job != null:
 		fronts = _weather_refresh_job.last_fronts()
 		weather_ran = _weather_refresh_job.did_run_last_tick()
-	return { "fronts": fronts, "weather_ran": weather_ran }
+		fronts_changed = _weather_refresh_job.did_change_fronts_last_tick()
+	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed }
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
@@ -709,6 +721,20 @@ func begin_pending_season_refresh() -> int:
 
 
 func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, stage: int) -> void:
+	# 11-stage 切片（原 7-stage），把 stage 4 的 4 个生态 pass 与 stage 6 的
+	# rebake_biome + consume_feedback 各自独立成 stage。每个 stage 的单帧上界
+	# 从原来 ~140ms 降到 ~30ms 量级。SeasonRefreshJob 的 done 判定按 11 同步。
+	#   0: moisture set
+	#   1: rain_shadow
+	#   2: redecide_terrain
+	#   3: river_ecology + vegetation_feedback
+	#   4: shrubland_pass
+	#   5: mangrove_pass
+	#   6: glacier_pass
+	#   7: swamp_pass
+	#   8: sync_current_state
+	#   9: rebake_biome_tex_only
+	#  10: consume_feedback_buffers
 	var t_us0: int = Time.get_ticks_usec()
 	var season := clampi(season_idx, 0, 3)
 	match stage:
@@ -737,19 +763,29 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 		4:
 			if _last_cfg != null:
 				_apply_shrubland_pass(map, _last_cfg)
-				_apply_mangrove_pass(map, _last_cfg)
-				_apply_glacier_pass(map, _last_cfg)
-				_apply_swamp_pass(map, _last_cfg)
 		5:
-			_seasonal_sync_current_state(map, season)
+			if _last_cfg != null:
+				_apply_mangrove_pass(map, _last_cfg)
 		6:
+			if _last_cfg != null:
+				_apply_glacier_pass(map, _last_cfg)
+		7:
+			if _last_cfg != null:
+				_apply_swamp_pass(map, _last_cfg)
+		8:
+			_seasonal_sync_current_state(map, season)
+		9:
 			if world != null and _baker != null:
 				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
+		10:
 			var cp_fb := _c()
 			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
 				_consume_feedback_buffers(map, cp_fb.feedback_decay)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
 	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
+	# H 诊断：单 stage > 30ms → 直接打点，定位 season_refresh max=128-141ms 的根因 stage。
+	if elapsed_ms > 30.0:
+		print("  [season_refresh] stage=%d slow=%.1fms (season=%d)" % [stage, elapsed_ms, season])
 
 
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
@@ -3566,35 +3602,49 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 #   4) 不重烘焙任何 tex（视觉层 weather overlay 走 shader uniform 数组路径，零 tex 上传）
 # 返回当前活跃 front 列表，main 拿去喂 renderer。
 func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
+	# 一次性入口：保留兼容性。内部分别调 _stage_a / _stage_b，等价于"Job 把整轮
+	# 在单 tick 跑完"。Job 的多 tick 切片路径走 `refresh_daily_stage_a / _stage_b`。
+	var fronts: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
+	refresh_daily_stage_b(map, world)
+	return fronts
+
+
+# Stage A：tick_one_day（advection / spawn / distribute / cyclone），57ms 大头不可拆。
+# 由 SUS WeatherRefreshJob 在 round 起点的 tick 跑；返回当日 fronts。
+# 副作用：写入 cell.current_state（weather/intensity/cloud/precip）+ 更新 _last_world / _last_active_fronts。
+func refresh_daily_stage_a(map: MapData, world: WorldData, season_idx: int,
+		climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
 	if _weather_system == null or map == null or world == null:
 		return [] as Array[WeatherFront]
-	# 任务 8：stride 跳日的语义已上移到 SUS WeatherRefreshJob.policy（StridePolicy）。
-	# 这里不再做内部 stride 自管——若仍做就会与 SUS Policy 形成双重 gate。
-	# `_refresh_daily_call_index` / `_last_active_fronts` 字段保留只为历史调用方
-	# 的二进制兼容，本函数路径已不再读它们。
-	# Emergent Climate Coupling：同步 _last_world（供 refresh_climate_daily 在后续调用时上传海冰 atlas）
 	_last_world = world
-	# Daily-sim perf instrumentation：refresh_daily 内部分段计时。
-	# 目的：把 weather_refresh 的 130-160ms 拆成 weather tick / transp / albedo /
-	# veg_dyn / rebake / feedback 多段，便于定位真正瓶颈（参见 sus_weather_breakdown）。
-	var t_total_us0: int = Time.get_ticks_usec()
-	# 1) 推进天气子系统（写 weather/intensity，必要时改写 cover）
-	# Phase D：把连续 season_phase 透传给 WeatherSystem，让季风方向逐日变化。
+	# 重置当轮分段计时；stage_b 完成后再写 total_ms / 各 ms。
+	_weather_round_t0_us = Time.get_ticks_usec()
 	var t_us0: int = Time.get_ticks_usec()
 	var fronts := _weather_system.tick_one_day(map, world, season_idx, climate_anomaly, season_phase)
-	var weather_tick_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	_weather_round_tick_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+	_last_active_fronts = fronts
+	_weather_round_fronts = fronts
+	return fronts
+
+
+# Stage B：tick_one_day 之后的全部"派生 / 反馈"工作。
+# field_bake（F 之后 ~5ms 增量） + transpiration（多数情况下被 enable_local_climate_coupling 跳过）
+# + albedo + vegetation_dynamics + cover/veg dirty marks + weather→map feedback。
+# 由 SUS WeatherRefreshJob 在 round 终点的 tick 跑（典型下一 tick）。
+func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
+	if _weather_system == null or map == null or world == null:
+		return
 	var cp_now := _c()
 	var weather_field_bake_ms: float = 0.0
+	var t_us0: int = Time.get_ticks_usec()
 	if _baker != null and cp_now != null and bool(cp_now.weather_field_enabled) \
 			and _baker.has_method("bake_weather_field_only"):
 		t_us0 = Time.get_ticks_usec()
 		_baker.bake_weather_field_only(map, world)
 		weather_field_bake_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
-	# 2) Milestone 4：完整耦合反馈链（按因果顺序，前一 pass 的输出是后一 pass 的输入）
-	#    transpiration → albedo → vegetation_dynamics → succession_trigger
+
 	# Emergent Climate Coupling：当 enable_local_climate_coupling 开启时，
-	# transpiration 已在 refresh_climate_daily 末尾、weather tick 之前执行过
-	# （形成"植被→湿度→天气"的单向因果），此处跳过避免双重蒸腾外溢。
+	# transpiration 已在 refresh_climate_daily 末尾、weather tick 之前执行过，此处跳过。
 	var skip_transpiration: bool = cp_now != null and bool(cp_now.enable_local_climate_coupling)
 	var transp_ms: float = 0.0
 	if not skip_transpiration:
@@ -3607,7 +3657,6 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	t_us0 = Time.get_ticks_usec()
 	var vegetation_dirty := _apply_vegetation_dynamics(map)
 	var veg_dyn_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
-	# 3) 增量重烘 GPU tex：分别看 cover 与 vegetation 是否被 dirty
 	var cover_rebake_ms: float = 0.0
 	var veg_rebake_ms: float = 0.0
 	if _baker != null:
@@ -3615,28 +3664,18 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 			_mark_enum_atlas_dirty(true, false)
 		if vegetation_dirty:
 			_mark_enum_atlas_dirty(false, true)
-	# 4) Emergent Climate Coupling：天气 → 慢层小权重反馈
-	# 在每日 tick 末尾把 current_state.weather_intensity × precip 系数以
-	# ≤ 0.5% 基线的小权重累加到 cell.soil_moisture / vegetation_growth_pressure。
-	# 受 fast_slow_layering_enabled 控制；关闭时跳过，反馈缓冲字段保持不变。
 	var feedback_ms: float = 0.0
 	if cp_now != null and bool(cp_now.fast_slow_layering_enabled):
 		t_us0 = Time.get_ticks_usec()
 		_apply_weather_to_map_feedback_pass(map)
 		feedback_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
-	# Fast-tick perf opt (A)：正常 tick 日——缓存这一天的活跃 fronts 作为后续跳日的快照。
-	_last_active_fronts = fronts
 
-	# Daily-sim perf instrumentation：写入 _last_weather_breakdown，main.gd 读出。
-	# weather_tick_ms 是 _weather_system.tick_one_day 的总耗时；其内部 advance/
-	# spawn/distribute 三段如需进一步细分，由 weather_system 自行暴露快照
-	# （current sliced metrics 已通过 _last_weather_subbreakdown 暴露 - 见下）。
-	var total_ms: float = (Time.get_ticks_usec() - t_total_us0) / 1000.0
+	var total_ms: float = (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0
 	var sub: Dictionary = {}
 	if _weather_system.has_method("last_breakdown"):
 		sub = _weather_system.last_breakdown()
 	_last_weather_breakdown = {
-		"weather_tick_ms": weather_tick_ms,
+		"weather_tick_ms": _weather_round_tick_ms,
 		"advance_ms": float(sub.get("advance_ms", 0.0)),
 		"spawn_ms": float(sub.get("spawn_ms", 0.0)),
 		"distribute_ms": float(sub.get("distribute_ms", 0.0)),
@@ -3649,9 +3688,8 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 		"veg_rebake_ms": veg_rebake_ms,
 		"feedback_ms": feedback_ms,
 		"total_ms": total_ms,
-		"fronts": fronts.size(),
+		"fronts": _weather_round_fronts.size(),
 	}
-	return fronts
 
 # 给 UI / renderer 直接拿到当前天气快照（不触发 tick）
 func active_weather_fronts() -> Array[WeatherFront]:

@@ -398,15 +398,43 @@ func _on_day_changed(_day_idx: int) -> void:
 	var weather_ran: bool = bool(sus_result.get("weather_ran", false))
 	var was_skipped_day: bool = not weather_ran
 	var fronts: Array[WeatherFront] = sus_result.get("fronts", [] as Array[WeatherFront])
+	# Drift-fix（2026-05-10）：weather_ran 在 SUS 双 tick 切片下，stage_a/stage_b 都为真——
+	# 但 _last_fronts 只在 stage_b 真正翻新。fronts_changed 区分了"slice 跑了"和
+	# "fronts 数据真的变了"。下方 set_weather_fronts gate 必须用 fronts_changed，
+	# 否则 stage_a tick 会把上一份 fronts 重推一次 → weather_layer reset blend +
+	# forward-bias 算出"起点≈终点"→ 云冻结。
+	var fronts_changed: bool = bool(sus_result.get("fronts_changed", false))
 	var t_sus_ms: float = (Time.get_ticks_usec() - t_sus_us0) / 1000.0
 
 	# Renderer 与 UI 同步：fronts 在跳日时会沿用 WeatherRefreshJob.last_fronts() 的
 	# 缓存（即上次成功 tick 的快照），renderer 持续看到一致的天气可视化。
+	# Continuity-fix（E，2026-05-10）：跳日（weather_ran=false）不再调
+	# set_weather_fronts。原因：set_weather_fronts 内部会无条件重置 blend
+	# (_front_blend_elapsed=0 + 重新计算 _front_blend_duration ≈ 0.35s)，跳日下
+	# 上次的视觉快照已经被 _predict_front_snapshots 沿 velocity 外推，再喂同一
+	# 份 cached fronts 作 target 会让云"被拉回原位 → 重新外推 → 再拉回"，肉
+	# 眼上是抽搐式振荡。weather_field_texture 仍每帧推（它本来就是 cell-wise，
+	# 没有 blend 状态可破坏）。
+	#
+	# Drift-fix（2026-05-10）：从 weather_ran 改成 fronts_changed。
+	# WeatherRefreshJob 双 tick 切片（stage_a 计算 + stage_b 烘 field）中，weather_ran
+	# 在两 tick 都为真，但 _last_fronts 只在 stage_b 翻新。用 weather_ran 当 gate 时，
+	# stage_a tick 会重推上一份 fronts → set_weather_fronts 内部 reset blend 让 lerp
+	# 起点≈终点 → 一半时间云完全冻结，根本看不到 forward-bias 带来的飘动。
+	# 改用 fronts_changed 确保每两个游戏日才推一次（≈ 1× 速度下 2 秒一次），
+	# blend 在每次推送之间有完整 ~2.3s 平滑 lerp 时间，云能持续可见地飘。
 	var t_render_us0: int = Time.get_ticks_usec()
+	# Drift-debug（2026-05-10）：诊断 set_weather_fronts 是否真被触发。
+	print("[main] day=%d weather_ran=%s fronts_changed=%s n_fronts=%d renderer=%s" % [
+		_world_clock.day_index() if _world_clock != null else -1,
+		str(weather_ran), str(fronts_changed), fronts.size(),
+		"OK" if _renderer != null else "<null>",
+	])
 	if _renderer != null:
-		if _renderer.has_method("set_weather_field_texture") and _last_world != null:
-			_renderer.set_weather_field_texture(_last_world.weather_field_tex)
-		_renderer.set_weather_fronts(fronts)
+		if _renderer.has_method("set_weather_field_texture") and _world_data != null:
+			_renderer.set_weather_field_texture(_world_data.weather_field_tex)
+		if fronts_changed:
+			_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
 
 	# 选中地块的 weather + vitality + 连续气候三行跟着每日推进刷新

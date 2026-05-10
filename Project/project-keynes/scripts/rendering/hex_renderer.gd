@@ -640,6 +640,11 @@ func set_estuary_plume_strength(v: float) -> void:
 
 # Upload active weather fronts to both the terrain shader and the weather layer.
 func set_weather_fronts(fronts: Array) -> void:
+	# Drift-debug（2026-05-10）：诊断 weather_layer logs 缺失。
+	print("[hex-renderer] set_weather_fronts(n=%d) layer=%s" % [
+		fronts.size(),
+		"WeatherLayer" if _weather_layer != null else "<null,fallback>",
+	])
 	if _weather_layer != null:
 		_weather_layer.set_weather_fronts(fronts)
 	else:
@@ -788,6 +793,11 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("enum_atlas",   _world.enum_atlas_tex)
 	sm.set_shader_parameter("scalar_atlas", _world.scalar_atlas_tex)
 	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
+	# Phase 1：vector_atlas 是地形 + weather 共享的风/洋流纹理。
+	# 每次 _apply_uniforms 重新推入时也要回流给 WeatherLayer，
+	# 避免 MapBaker.rebake_*_only 重建后 weather overlay 仍持有旧风场。
+	if _weather_layer != null:
+		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
 	# 火山强度场独立纹理（让位给 scalar_atlas.a 的连续 sea_ice_fraction）
 	sm.set_shader_parameter("volcano_field_tex", _world.volcano_field_tex)
 	# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a 已让位）。
@@ -869,6 +879,9 @@ func _apply_uniforms() -> void:
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
 		_weather_layer.set_weather_field_texture(_world.weather_field_tex)
+		# Phase 1：把 vector_atlas（BA 通道为 wind_field）也喂给 weather overlay，
+		# 让云团按真实风场做 per-cell advection，而不是用全局常量 axis 整体平移。
+		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
 		_weather_layer.set_weather_strength(weather_strength)
 	set_weather_fronts([])
 
