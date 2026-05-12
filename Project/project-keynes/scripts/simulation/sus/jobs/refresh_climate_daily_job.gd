@@ -430,6 +430,25 @@ func _finalize_round() -> void:
 	if generator != null:
 		var cp_for_flush = generator._c()
 		if cp_for_flush != null and bool(cp_for_flush.use_soa_pipeline) and map != null and map.has_soa():
+			# [DIAG 2026-05-12] round 末尾、flush 前打一次温度统计（前 8 round）。
+			# 与 Pass-A / Pass-B 末尾配对：若 round 末 mean ≈ 0 但 Pass-B 末尾正常
+			# → bug 在 ocean_water / ocean_land / sea_ice / transp 之一。
+			var _diag_n: int = int(generator._daily_climate_call_count)
+			if _diag_n <= 8:
+				var _ta: PackedFloat32Array = map.temp_arr
+				var _tmin: float = 1.0
+				var _tmax: float = 0.0
+				var _tsum: float = 0.0
+				var _tcnt: int = _ta.size()
+				for _ti in range(_tcnt):
+					var _tv: float = _ta[_ti]
+					if _tv < _tmin: _tmin = _tv
+					if _tv > _tmax: _tmax = _tv
+					_tsum += _tv
+				var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
+				print("[DIAG round_end ] day=%d phase=%.3f temp_arr min=%.4f max=%.4f mean=%.4f n=%d (pre-flush)" % [
+					_diag_n, _phase_locked, _tmin, _tmax, _tmean, _tcnt
+				])
 			map.flush_soa_to_cells()
 	_round_active = false
 	_pass_cursor = 0
