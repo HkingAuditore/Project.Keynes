@@ -118,7 +118,7 @@ static func bake(
 	for cell in cells:
 		if cell == null:
 			continue
-		var sample := _sample_cell(cell, mode, climate, season_phase, world, lat_buf, lat_buf_size)
+		var sample := _sample_cell(cell, mode, climate, season_phase, world, map, lat_buf, lat_buf_size)
 		var value: float = float(sample.get("value", 0.0))
 		var bucket: int = int(sample.get("bucket", 0))
 		var intensity: float = clampf(float(sample.get("intensity", 0.0)), 0.0, 1.0)
@@ -231,6 +231,7 @@ static func _sample_cell(
 	climate,
 	season_phase: float,
 	world,
+	map,
 	lat_buf: PackedFloat32Array,
 	lat_buf_size: int
 ) -> Dictionary:
@@ -417,6 +418,24 @@ static func _sample_cell(
 			var n_psi: float = 0.5 + clampf(psi_raw / 10.0, -0.5, 0.5)
 			return {
 				"value": n_psi,
+				"valid": true,
+			}
+		OverlayMode.MODE.DEMO_THERMAL_GRADIENT:
+			# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
+			# 采样 MapData.demo_thermal_gradient_arr[cell.index]——该字段由 C++
+			# _ext.run_thermal_gradient_pass + flush snapshot 填充；开关关闭时
+			# size=0，安全返回 valid=false 避免走错路。
+			if map == null:
+				return { "value": 0.0, "valid": false }
+			var dtg_arr: PackedFloat32Array = map.demo_thermal_gradient_arr
+			var dtg_n: int = dtg_arr.size()
+			if dtg_n <= 0:
+				return { "value": 0.0, "valid": false }
+			var dtg_idx: int = int(cell.index)
+			if dtg_idx < 0 or dtg_idx >= dtg_n:
+				return { "value": 0.0, "valid": false }
+			return {
+				"value": clampf(dtg_arr[dtg_idx], 0.0, 1.0),
 				"valid": true,
 			}
 		_:

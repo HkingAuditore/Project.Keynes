@@ -485,3 +485,85 @@ extends Resource
 @export var max_volcanoes: int = 8
 @export var volcano_min_dist: int = 6           # minimum hex-distance between volcanoes
 @export var volcano_min_land_h: float = 0.65    # minimum elevation to qualify as volcano
+
+# ══════════════════════════════════════════════════════════════════════
+# [Reference-impl demo channels — DO NOT use in real game logic]
+# ══════════════════════════════════════════════════════════════════════
+# These switches drive the C++/GDScript communication-contract reference
+# passes documented in `docs/performance-charter.md` §12.5 (Pass #1) and
+# §12.6 (Pass #2). They are **demo-only** — real climate / weather / biome
+# / vegetation / UI tooltip paths must never read the corresponding
+# `cell.demo.*` components. The default is false so that production runs
+# pay zero cost.
+
+# Pass #2 — `thermal_gradient_pass`
+#   true  → after the daily climate chain, run `_ext.run_thermal_gradient_pass`
+#           and surface the result through Overlay mode `DEMO_THERMAL_GRADIENT`.
+#   false → entire chain is no-op; the `cell.demo.thermal_gradient` slot is
+#           never even allocated, and the overlay dropdown hides the entry.
+@export var demo_thermal_gradient_enabled: bool = false
+
+# Pass #2/#3 dispatch path selector — picks how main.gd hands the C++ kernel
+# its work. Used as a reference / benchmark site for the DOTS upgrade tracks
+# documented in `docs/dots-experiment-report.md`. The output written to
+# `cell_demo_thermal_gradient` is bit-equal across LEGACY and ECS; the
+# ECS_ARCHETYPE path zeros out OCEAN cells by design and is therefore not
+# bit-equal — only used for visual / perf comparison.
+#   * LEGACY        → hand-coded direct call to `run_demo_complex_pass`.
+#                     Zero scheduler overhead. Pre-DOTS baseline. **Default**:
+#                     in single-pass scenarios the scheduler is pure overhead
+#                     with zero benefit (verified in
+#                     `bench_thermal_gradient_paths.gd`); the scheduler is
+#                     justified only when J ≥ ~10 with complex deps (see
+#                     `docs/dots-experiment-report.md` §3.6).
+#   * ECS           → DCEcsScheduler with one job declaring
+#                     reads=[CELL_TEMP, CELL_ELEVATION] /
+#                     writes=[CELL_DEMO_THERMAL_GRADIENT]. Bit-equal to LEGACY.
+#                     Real-jobs bench (J=8 mixed pipeline) measured +5.08%
+#                     scheduler overhead — well under the 25% red line.
+#   * ECS_ARCHETYPE → same scheduler, but the job uses
+#                     `run_demo_complex_pass_archetyped(target=LAND)` after
+#                     populating archetypes from `is_water_arr`. Demonstrates
+#                     archetype-as-logical-filter end-to-end. NOTE: OCEAN
+#                     cells are forced to 0.0 and excluded from min/max
+#                     normalization (see report §2.5) — visual divergence
+#                     vs LEGACY/ECS is by design, not a bug.
+enum DemoTGPath { LEGACY = 0, ECS = 1, ECS_ARCHETYPE = 2 }
+@export var demo_thermal_gradient_path: DemoTGPath = DemoTGPath.LEGACY
+
+# Pass #2 — elevation gain knob (1 + gain * elevation amplifies grad_mag).
+# Higher values exaggerate mountain edges; default 1.5 mirrors the spec.
+@export_range(0.0, 5.0, 0.1) var demo_thermal_gradient_elevation_gain: float = 1.5
+
+# Pass #2 — final normalize coefficient applied before clamp([0, 1]).
+# Tune up if the visualization looks washed out, down if it saturates.
+@export_range(0.0, 5.0, 0.05) var demo_thermal_gradient_normalize_k: float = 0.5
+
+# ── Pass #3 knobs (`run_demo_complex_pass`, charter §12.6.6) ─────────
+# These four knobs upgrade the Pass #2 kernel from a one-shot 4-neighbour
+# gradient to an iterated anisotropic-diffusion + multi-scale wind
+# approximation. They share `demo_thermal_gradient_enabled` as the master
+# switch — when that switch is OFF, none of these are read or applied.
+# Higher values = slower per tick but richer visual patterns.
+
+# Pass #3 — number of diffusion / advection iterations per tick.
+# Time-depth dial: more iterations let curls and fronts fully develop,
+# but cost scales linearly. Default 16 ≈ ~1ms on the default 60×40 grid.
+@export_range(1, 64, 1) var demo_complex_iterations: int = 16
+
+# Pass #3 — Gaussian smoothing kernel radius (full size = 2r+1).
+# Spatial-influence dial: r=1 → 3×3 stencil (cheap); r=5 → 11×11 (heavy).
+# Cost scales as (2r+1)² × iterations, so doubling r ~ quadruples cost.
+@export_range(1, 5, 1) var demo_complex_kernel_radius: int = 2
+
+# Pass #3 — Coriolis bias strength (-1 = full reversed, +1 = full standard).
+# Hemispheric-bias dial: signed by latitude (north ≠ south), drives the
+# rotation of the gradient vector before it feeds the flux divergence.
+# 0.0 disables the rotation (returns to pure diffusion).
+@export_range(-1.0, 1.0, 0.05) var demo_complex_coriolis_strength: float = 0.5
+
+# Pass #3 — terrain drag coefficient (mountains slow the diffusion).
+# Damping dial: damp = 1 - drag * elevation, so high elevation cells evolve
+# slower than low-lying ones, producing visible "shelter" patterns leeward
+# of mountain ranges. 0.0 disables the damping.
+@export_range(0.0, 1.0, 0.05) var demo_complex_terrain_drag: float = 0.6

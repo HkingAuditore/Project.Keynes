@@ -13,12 +13,15 @@
 > - 阶段性需求 → [`../.codebuddy/plan/dots-roadmap-to-gdextension/requirements.md`](../.codebuddy/plan/dots-roadmap-to-gdextension/requirements.md)
 > - 当前任务清单 → [`../.codebuddy/plan/dots-roadmap-to-gdextension/task-item.md`](../.codebuddy/plan/dots-roadmap-to-gdextension/task-item.md)
 > - 历史性能基线 → [`../.codebuddy/plan/dots-roadmap-to-gdextension/performance-baseline.md`](../.codebuddy/plan/dots-roadmap-to-gdextension/performance-baseline.md)
+> - **C++/GDScript 通信参考实现（Mode-B 模板）→ [§12](#12-cgdscript-通信参考实现reference-implementation)** — 面对一个新 hot-loop 请从这里拷模板
+> - **参考脚本代码** → [`../Project/project-keynes/tmp/bench_temp_drift.gd`](../Project/project-keynes/tmp/bench_temp_drift.gd)，对应 C++ 侧 [`run_temp_drift_pass`](../gdext/src/world_ext.cpp) / [`snapshot_f32`](../gdext/src/world_ext.cpp)
+> - **复杂度上限实测（迭代扩散 + Sobel + 科氏 + 阻尼）→ [§12.6.6](#1266-内核升级到迭代扩散后的性能预算实测2026-05-12-修订)** — 真实 pass 设计预算锚
 
 ---
 
-## 0. TL;DR — 三条铁律
+## 0. TL;DR — 四条铁律
 
-如果你只读三条，就读这三条。
+如果你只读四条，就读这四条。
 
 ### 🔴 铁律 1：跨语言调用次数 = 性能上限
 
@@ -73,6 +76,24 @@ ProjectKeynes 任何"我觉得 XXX 会快一点"的改动，**必须**先写 ≤
 - **2× ~ 5×** → 评估集成成本后再决定
 - **< 2×** → 通常不值（除非是关键 fast path）
 - **< 1×** → 立即停止，分析为何变慢
+
+### 🔴 铁律 4：GDExtension 没有零拷贝共享内存
+
+这不是优化选项，是 ABI 物理事实（完整推导见 §11.1）。
+
+一句话表述：只要 C++ 端对某个 `PackedArray` 调一次 `ptrw()`，那块 buffer 就会 CoW detach 成为 C++ 私有副本——GDScript 端仍指向旧 buffer。举体表现：
+
+| 你以为 | 实际 |
+|---|---|
+| `bind_map_data` 后 C++ 和 GDScript 共享 buffer | 仅首次如此，任何 ptrw() 后立刻分裂 |
+| 在 GDScript 里改 `map.temp_arr[i] = v` C++ 能看见 | 不能，需走 `world.write_f32_indexed` |
+| C++ 在 hot loop 里改了值，GDScript 能看见 | 不能，需 GDScript 侧主动 `snapshot_f32 + map.temp_arr = ...` flush |
+
+**唯一可靠的通信契约** = §12 里的 4 个角色：**C++ writer / snapshot_f32 / GDScript reader / flush 同步点**。
+
+· · ·
+
+面对新 hot-loop 请直接从 [§12.3](#123-标杆-pass-完整代码可复制模板) 复制模板。
 
 ---
 
@@ -789,6 +810,418 @@ arr            refcount ≥ 2  (GDScript prop + arr 局部)
 | 移动端 ≥ 4× 红线（§6）| **不动摇** |
 
 **根本原因**：DOTS 收益完全来自 C++ 内部的（① 消除 GDScript 解释器 ② 直接裸指针 ③ SoA cache 命中 ④ 编译器自动向量化 ⑤ 多核），与"边界要不要 alias"完全无关。
+
+---
+
+## 12. C++/GDScript 通信参考实现（Reference Implementation）
+
+> 本节是 §11 的**操作化模板**——把 §11 的"为什么"翻译成"怎么做"。
+> 面对一个新的 hot-loop pass，请直接复制本节的 §12.3 代码块，按 §12.4 的 7 步替换关键名即可。
+>
+> **配套代码**（活体最佳实践）：
+> - C++ 端：`gdext/src/world_ext.cpp` 的 `run_temp_drift_pass` / `snapshot_f32`
+> - GDScript 端：[`../Project/project-keynes/tmp/bench_temp_drift.gd`](../Project/project-keynes/tmp/bench_temp_drift.gd)
+>
+> 该 pass 在数学上是"全数组 += drift_amount"，简单到不可能出错——它的**唯一职责是验证通信契约**，不是 game feature。
+
+### 12.1 公理：GDExtension 没有零拷贝共享内存
+
+升格为铁律 4（已在 §0 写明）。一句话再说一遍：
+
+> C++ 与 GDScript 之间**没有**任何"双向共享 buffer"的配置可言。任何 ptrw() 都会让 C++ 持有私有副本；GDScript 端要看到 C++ 写入，**必须**主动 snapshot；C++ 要看到 GDScript 写入，**必须**走 `write_xxx`。
+
+### 12.2 Mode-B 通信契约的 4 个角色
+
+```
+┌────────────────────────┐    run_temp_drift_pass()         ┌──────────────────────┐
+│  GDScript caller       │ ────────────────────────────────▶│  C++ writer          │
+│  (climate / pop / ...) │                                  │  ptrw() tight loop   │
+└────────────────────────┘                                  └──────────┬───────────┘
+            ▲                                                          │ writes into
+            │                                                          ▼
+            │                                              ┌──────────────────────┐
+            │  flush_to_mapdata(ext, map)                  │ _slots[CELL_TEMP]    │
+            │  map.temp_arr = ext.snapshot_f32(cid)        │ .arr_f32   (Owned-   │
+            └──────────────────────────────────────────────│  by-C++ buffer)      │
+                       snapshot_f32() returns COW copy     └──────────────────────┘
+```
+
+| 角色 | 在哪里实现 | 职责 | 不应该做的事 |
+|---|---|---|---|
+| **C++ writer** | `void DCWorldExt::run_xxx_pass(...)` | 在 `_slots[].arr_f32.ptrw()` 上跑 tight loop | 在循环内调 `obj->set/get`、Variant 操作、push_back |
+| **snapshot API** | `PackedFloat32Array DCWorldExt::snapshot_f32(comp_id)` | 返回 `_slots[].arr_f32` 的 COW 值拷贝 | 返回裸指针；写时复制语义不被违反即可 |
+| **GDScript reader** | 任何调用 `map.temp_arr[i]` 的代码（UI / Baker / 调试） | 仅读，不写；读到的是上次 flush 后的快照 | 在 pass 跑到一半时读、依赖 alias 自动同步 |
+| **flush 同步点** | `flush_to_mapdata(ext, map)` | pass 结束后**显式**把 snapshot 拉回 `map.temp_arr` | 省略 flush；把 flush 当成"优化项"而非契约 |
+
+> **契约不是优化**：缺了 flush，GDScript 端读到的就是旧数据——这不是 bug 也不是性能问题，而是协议未完成。
+
+### 12.3 标杆 Pass 完整代码（可复制模板）
+
+下面贴的就是仓库里**正在跑**的代码（不是文档样例），保证文档与实现不脱节。
+
+#### 12.3.1 C++ 端：writer + snapshot
+
+```cpp
+// world_ext.cpp ── Mode-B reference implementation ────────────────────
+
+// (1) snapshot API：所有 hot-loop 都通过它把数据拉回 GDScript
+PackedFloat32Array DCWorldExt::snapshot_f32(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        return PackedFloat32Array();
+    }
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::F32) {
+        return PackedFloat32Array();
+    }
+    return s.arr_f32;          // PackedArray COW，不会泄漏裸指针
+}
+
+// (2) writer：tight loop，零 Variant 操作，零 obj->set() flush
+void DCWorldExt::run_temp_drift_pass(float drift_amount) {
+    const int sid = component_id(StringName("cell_temp"));
+    if (sid < 0) return;        // slot 未注册 → 安全 no-op
+    Slot &s = _slots.write[sid];
+    if (s.dtype != SlotDType::F32) return;
+    const int n = s.arr_f32.size();
+    if (n <= 0) return;
+
+    float * const __restrict p = s.arr_f32.ptrw();
+    for (int i = 0; i < n; ++i) {
+        p[i] += drift_amount;
+    }
+}
+
+// (3) _bind_methods() 注册（缺这一步 GDScript 调不到）
+void DCWorldExt::_bind_methods() {
+    // ... 其他绑定 ...
+    ClassDB::bind_method(D_METHOD("snapshot_f32", "comp_id"),
+                         &DCWorldExt::snapshot_f32);
+    ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"),
+                         &DCWorldExt::run_temp_drift_pass);
+}
+```
+
+#### 12.3.2 GDScript 端：caller + flush + 对照实现
+
+```gdscript
+# tmp/bench_temp_drift.gd ── Mode-B reference implementation ────────────
+
+# (1) caller：跑 pass + 显式 flush
+func path_cpp_full(ext: Object, map: MiniMap, drift: float, n_passes: int) -> void:
+    for k in range(n_passes):
+        ext.run_temp_drift_pass(drift)
+    flush_to_mapdata(ext, map)         # ← 缺它 GDScript 端读到的是旧数据
+
+# (2) flush 同步点：把 snapshot 拉回 GDScript 镜像字段
+func flush_to_mapdata(ext: Object, map: MiniMap) -> void:
+    var cid: int = int(ext.component_id("cell_temp"))
+    if cid < 0:
+        push_error("[flush_to_mapdata] cell_temp not registered on ext")
+        return
+    map.temp_arr = ext.snapshot_f32(cid)
+
+# (3) 对照实现：用作 ground-truth 与性能 reference
+func temp_drift_pass_gdscript(map: MiniMap, drift: float) -> void:
+    var n: int = map.temp_arr.size()
+    for i in range(n):
+        map.temp_arr[i] += drift
+```
+
+#### 12.3.3 验证脚本（端到端跑通 = 通信契约成立）
+
+完整 bench 见 [`../Project/project-keynes/tmp/bench_temp_drift.gd`](../Project/project-keynes/tmp/bench_temp_drift.gd)。在 Editor 里 File → Run 输出：
+
+```
+[bench_temp_drift] PASS — 1024 cells, 3 passes, all values match
+```
+
+判定：
+- 路径 A（C++ + flush）每 cell == 1.5 ✅
+- 路径 A 与 路径 B（纯 GDScript）**bit 精确相等** ✅
+- C++ 路径耗时 < 1 ms（跨界开销可忽略）✅
+
+### 12.4 用模板做下一个 pass — 7 步操作清单
+
+> 时间盒：30 分钟以内。超过这个时间说明你陷入业务逻辑细节而不是模板套用，**先停下来**。
+
+1. **C++ 头文件**：在 `world_ext.h` 添加方法声明：
+   ```cpp
+   void run_<your_pass_name>(/* 标量参数 */);
+   ```
+2. **C++ 实现**：复制 `run_temp_drift_pass` 整体框架，把 tight loop 内换成业务公式。**保持** `if (sid < 0) return;` 安全分支、`__restrict` 指针、零 Variant 操作。
+3. **C++ 注册**：在 `_bind_methods()` 加一行 `ClassDB::bind_method(D_METHOD(...), ...)`。
+4. **重新编译 GDExtension**：`scons platform=windows target=template_debug`（或对应平台）。
+5. **GDScript caller**：在调用方写 `for k in range(n_passes): ext.run_<your_pass_name>(...)` + **必加** `flush_to_mapdata(ext, map)`（如果该 pass 会被 GDScript 端读取的话）。
+6. **GDScript 对照实现**：写一份纯 GDScript 版本，在 bench 脚本里跑 bit-equal 比对。如果 pass 包含浮点乘法/除法，bit-equal 不再成立——改用 `is_equal_approx` 并设定容忍度（如 1e-5）。
+7. **micro-bench**：在 `tmp/bench_<your_pass_name>.gd` 模仿 `bench_temp_drift.gd` 跑 timing + correctness。**< 5× 加速**：参考 §0 铁律 3 重新评估。
+
+### 12.5 反模式黑名单（合入前必须 grep 确认无）
+
+| ❌ 反模式 | 为什么坏 | 正确做法 |
+|---|---|---|
+| C++ 端 hot loop 内调 `view_f32(comp_id)` | 每次跨界都触发 marshal + COW，O(N) 跨界开销 | 循环外**一次性**取 `Slot &s` + `ptrw()` |
+| 依赖 `bind_map_data` 后 alias 自动同步 | §11.1 已证明物理上做不到 | 显式 flush_to_mapdata |
+| GDScript 端在 pass 跑到一半时读 `map.temp_arr` | 此时 map.temp_arr 是过期快照 | flush 之后再读 |
+| C++ 端 hot loop 内调 `obj->set(prop, ...)` 或 `obj->get(prop)` | 每次跨界 ~200 ns × N，10 万 cell = 20 ms | 全部参数走方法签名标量 / PackedArray 入参 |
+| GDScript 端用 `var v := ext.view_f32(cid); v[i] = x` 期望写回 | view_f32 返回 COW 副本，写不回 _slots | `ext.write_f32(cid, i, x)` 或 `write_f32_indexed` |
+| 把 `view_f32` 用在新代码里 | 名字带"view"误导，实际是 snapshot | 新代码用 `snapshot_f32`；`view_f32` 保留兼容旧调用 |
+| 不写对照 GDScript 实现 | 没有 ground-truth，C++ bug 难定位 | bench 脚本里**永远**保留 GDScript fallback |
+| pass 没 micro-bench 就合入 | 违反铁律 3 | 哪怕 30 行也要写一个 |
+
+### 12.6 模板 #2：多输入 + 邻居访问 + 写新 component（`run_thermal_gradient_pass`）
+
+> §12.3 模板 #1 验证的是**通信契约本身**——单输入、in-place 修改自身、零分支。
+> 真实业务里几乎每个 hot-loop pass 都至少要做这四件事之一：
+> 1. 读 ≥ 2 个输入 SoA；
+> 2. 访问 4-/6-邻居；
+> 3. 写一个**新的** component 而不是改自身；
+> 4. 把结果接到 Overlay / UI 让人能直接观察。
+>
+> §12.6 把这四条复杂度一次性吃掉，给的是"接近真实业务"的可粘贴模板。
+>
+> **配套代码**：
+> - C++ 端：`gdext/src/world_ext.cpp` 的 `run_thermal_gradient_pass`
+> - GDScript 端 bench：[`../Project/project-keynes/tmp/bench_thermal_gradient.gd`](../Project/project-keynes/tmp/bench_thermal_gradient.gd)
+> - 主流程接入：[`../Project/project-keynes/scripts/main.gd`](../Project/project-keynes/scripts/main.gd) 的 `_run_demo_thermal_gradient_pass_if_enabled`
+> - Overlay 通道：`OverlayMode.MODE.DEMO_THERMAL_GRADIENT`（demo-only，永远以 `cell.demo.*` 命名空间隔离）
+
+#### 12.6.1 概述：本模板覆盖的 4 条复杂度
+
+| 维度 | 模板 #1 (`run_temp_drift_pass`) | 模板 #2 (`run_thermal_gradient_pass`) |
+|---|---|---|
+| 输入 SoA 数 | 1（`cell_temp`） | **2**（`cell_temp` + `cell_elevation`） |
+| 邻居访问 | 无 | **4-邻 clamp-to-edge** |
+| 输出位置 | 改回自身（in-place） | **写新 component** `cell_demo_thermal_gradient` |
+| Overlay 接入 | 否 | **是**（4 处：`OverlayMode` / `data_overlay_baker` / `data_overlay.gdshader` / `overlay_legend`） |
+| 主流程接入 | 否（只在 bench 里跑） | **是**（每日 tick 在 `sus_tick_daily` 之后调用） |
+
+> **这五条加起来**才是真实业务复杂度。会做模板 #2 = 会接入下一个真实的 hot-loop pass。
+
+#### 12.6.2 C++ 端：多输入 + 邻居 + 写新 component
+
+```cpp
+// ─── Pass #2: thermal_gradient_pass (reference impl with neighbour access) ──
+// Implements `out = clamp(|∇T| * (1 + gain*elev) * k, 0, 1)` over a 2-D grid
+// laid out row-major in the cell SoA arrays.
+void DCWorldExt::run_thermal_gradient_pass(int grid_w,
+                                           int grid_h,
+                                           float elevation_gain,
+                                           float normalize_k) {
+    // ─── 1. Resolve slot ids ONCE (zero string ops in the hot loop) ────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: missing slot — pass skipped");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning("[DCWorldExt] dtype mismatch — pass skipped");
+        return;
+    }
+
+    // ─── 2. Validate grid dimensions vs. SoA size (paranoia, not optimisation) ─
+    if (grid_w <= 0 || grid_h <= 0) return;
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning("[DCWorldExt] size mismatch — pass skipped");
+        return;
+    }
+
+    // ─── 3. Take ONE pointer per buffer (read + write) ──────────────────
+    const float * const __restrict T    = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+    float       * const __restrict OUT  = s_out.arr_f32.ptrw();
+
+    // ─── 4. Tight loop — neighbour access by integer index, clamp-to-edge ─
+    // Border discipline: substitute self-value for out-of-range neighbours
+    // (Neumann BC). NEVER use modulo-wrap. Branches only at the boundary
+    // (peeled prologue/epilogue) — the inner row body remains branch-free.
+    for (int y = 0; y < grid_h; ++y) {
+        const int row    = y * grid_w;
+        const int row_n  = (y > 0)            ? (row - grid_w) : row;
+        const int row_s  = (y < grid_h - 1)   ? (row + grid_w) : row;
+        for (int x = 0; x < grid_w; ++x) {
+            const int i  = row + x;
+            const int iw = (x > 0)            ? (i - 1) : i;
+            const int ie = (x < grid_w - 1)   ? (i + 1) : i;
+            const int in_ = row_n + x;
+            const int is = row_s + x;
+
+            const float gx = (T[ie] - T[iw]) * 0.5f;
+            const float gy = (T[is] - T[in_]) * 0.5f;
+            // Promote to double for sqrt then come back to float — mirrors
+            // GDScript `sqrt(float) → float`'s implicit-double behaviour so
+            // the two reference paths produce bit-equal results.
+            const float gmag = static_cast<float>(
+                Math::sqrt(static_cast<double>(gx * gx + gy * gy)));
+            const float amp  = 1.0f + elevation_gain * E[i];
+            float v = gmag * amp * normalize_k;
+            if (v < 0.0f) v = 0.0f;
+            else if (v > 1.0f) v = 1.0f;
+            OUT[i] = v;
+        }
+    }
+}
+```
+
+**关键纪律**：
+- **三个 slot id 一次解析**：循环内零 string / Variant 操作（铁律 1）。
+- **`__restrict` 指针 × 3**：编译器知道 `T`/`E`/`OUT` 不互相 alias，能放心 vectorize。
+- **clamp-to-edge by ternary**：不要用 `% h` 取模回卷（语义错误：本来不该有南北贯穿）。
+- **`OUT` 是 `cell_demo_thermal_gradient` 这个新 component 的 `ptrw()`**：和模板 #1 改自身相比，多了一次 slot lookup，没有任何额外跨界。
+- **`Math::sqrt(double)` 而非 `sqrtf`**：与 GDScript `sqrt()` 走同一条 IEEE754 路径，bench 才能 bit-equal。
+
+#### 12.6.3 GDScript 端：对照实现（粘贴即用的伪 PDE 模板）
+
+```gdscript
+# 与 C++ 端公式逐行同语义。bench_thermal_gradient.gd 直接用它做 ground-truth。
+func thermal_gradient_pass_gdscript(map: MiniMap, w: int, h: int,
+        elevation_gain: float, normalize_k: float) -> void:
+    var n: int = w * h
+    var temp: PackedFloat32Array = map.temp_arr
+    var elev: PackedFloat32Array = map.elevation_arr
+    var out: PackedFloat32Array = map.demo_thermal_gradient_arr
+    if temp.size() != n or elev.size() != n or out.size() != n:
+        push_error("size mismatch"); return
+    for y in range(h):
+        var row: int = y * w
+        var row_n: int = (row - w) if y > 0 else row
+        var row_s: int = (row + w) if y < h - 1 else row
+        for x in range(w):
+            var i: int = row + x
+            var iw: int = (i - 1) if x > 0 else i
+            var ie: int = (i + 1) if x < w - 1 else i
+            var in_: int = row_n + x
+            var is_: int = row_s + x
+            var gx: float = (temp[ie] - temp[iw]) * 0.5
+            var gy: float = (temp[is_] - temp[in_]) * 0.5
+            var gmag: float = sqrt(gx * gx + gy * gy)
+            var amp: float = 1.0 + elevation_gain * elev[i]
+            var v: float = gmag * amp * normalize_k
+            if v < 0.0: v = 0.0
+            elif v > 1.0: v = 1.0
+            out[i] = v
+    map.demo_thermal_gradient_arr = out
+```
+
+> **作用**：被 bench 当 ground-truth 跑一次，与 C++ 路径**逐元素 bit-equal**比较；C++ 端任何边界 bug 都会被立刻打出来。
+
+#### 12.6.4 用模板 #2 做下一个带邻居访问的真实 pass — 7 步清单
+
+| 步骤 | 文件 | 改什么 |
+|---|---|---|
+| 1. 建 component | `scripts/data_core/component_ids.gd` | `const CELL_<NAME>: StringName = &"cell.<name>"` |
+| 2. 加开关 | `scripts/data/climate_profile.gd` | `@export var <name>_enabled: bool = false` + 必要 tunable 参数 |
+| 3. 写 C++ pass | `gdext/src/world_ext.cpp/.h` | 复制 §12.6.2 → 改 slot 名 / 公式 / 边界条件；`_bind_methods` 里 `bind_method` 暴露 |
+| 4. 加 BIND_TABLE 入口 | 同上 | 在 `BIND_TABLE[]` 末尾加 `{"cell_<name>", "<name>_arr", SlotDType::F32}` |
+| 5. World/MapData 注册 slot | `scripts/data_core/world.gd` + `scripts/geography/map_data.gd` | 按开关 `_bind_register_and_attach`；`map_data` 加同名 `PackedFloat32Array` 字段 |
+| 6. 写 GDScript 对照 + bench | `tmp/bench_<name>.gd` | 复制 §12.6.3，按公式改；`@tool` + `_run()` 入口 |
+| 7. 接 Overlay（仅 demo）| `OverlayMode` / `data_overlay_baker` / `shader` / `overlay_legend` | 4 处加 `MODE.<NAME>` 分支；`baker` 用 `cell.index` 索引 SoA |
+| 8. 接主流程 | `scripts/main.gd` `_on_day_changed` | 在 `sus_tick_daily` 之后按开关调 `ext.run_<name>_pass(...)` + snapshot 回 map |
+| 9. 调试菜单守门 | `scripts/ui/debug_console.gd` | `ordered_modes()` 循环里按开关 skip 该 mode |
+
+> **30 分钟独立做出第 3 个 pass** 是这套模板的设计目标——拿 §12.6 一遍走完即可。
+> 真正落地的总改动 ≈ 9 个文件、150 行新增、零业务逻辑跨语言耦合。
+
+#### 12.6.5 反模式黑名单（除 §12.5 的 8 条以外，邻居 pass 还要单独避免）
+
+| ❌ 反模式 | 为什么坏 | 正确做法 |
+|---|---|---|
+| 边界用 `% h` 或 `% w` 回卷 | 语义错误：本来不连通的南北/东西被人为缝起来，结果场不对 | clamp-to-edge ternary：`(y > 0) ? (y-1) : y` |
+| inner loop 调 `view_f32(comp_id)` 取邻居 | 每次跨界 + COW 副本，性能比 GDScript 还差 | 循环外**一次** `s.arr_f32.ptr()` 拿裸指针 |
+| hard-code `grid_w` / `grid_h` 常量 | 切换地图尺寸时静默写错 SoA 边界 | 通过函数签名传入；C++ 内 `assert(w*h == arr.size())` |
+| 边界用条件分支 `if (x == 0) continue` | inner loop 出现分支，破坏 SIMD；语义还是错的（漏掉一列） | "自值替代"：`iw = (x > 0) ? (i-1) : i`，永远参与计算 |
+| 把 demo component 起名为 `cell.something_real` | 后续被真实游戏机制误读，污染存档 | `cell.demo.*` 命名空间 + 在 `component_ids.gd` 顶部明确"demo-only"约束 |
+| 主流程不按开关 gate，无脑 run pass | demo 通道泄漏到正式存档 / 关闭后仍消耗 CPU | `_run_demo_*_pass_if_enabled`：单点 gate，开关一关全链路静默 |
+
+#### 12.6.6 内核升级到迭代扩散后的性能预算实测（2026-05-12 修订）
+
+> **配套代码**：
+> - C++ 端：`gdext/src/world_ext.cpp` 的 `run_demo_complex_pass`（与 §12.6.2 的 `run_thermal_gradient_pass` **并列存在**，互不替换）
+> - GDScript bench：[`../Project/project-keynes/tmp/bench_demo_complex.gd`](../Project/project-keynes/tmp/bench_demo_complex.gd)
+> - 主流程接入：`scripts/main.gd::_run_demo_thermal_gradient_pass_if_enabled`（运行时优先调用 `run_demo_complex_pass`，缺方法时回退到 Pass #2 旧入口，保证向后兼容）
+> - 旋钮：`ClimateProfile` 的 `demo_complex_iterations / demo_complex_kernel_radius / demo_complex_coriolis_strength / demo_complex_terrain_drag` 四个 export 字段
+
+**12.6.6.a — 升级前后算子复杂度对比**
+
+| 量纲 | Pass #2 (`run_thermal_gradient_pass`) | Pass #3 (`run_demo_complex_pass`，默认 iter=16, kr=2) |
+|---|---|---|
+| 单 cell ops | 4 邻居一阶差分 + sqrt + clamp ≈ **~10 ops** | (2kr+1)² 高斯 smooth + Sobel 3×3 + 旋转 + 阻尼 + 演化 + 归一化 = iter × (25 + ~30) ≈ **~880 ops** |
+| 60×40 = 2400 cells 总 ops | ≈ 24 K ops | ≈ **2.1 M ops**（约 88×） |
+| 数值发散风险 | 零（一阶差分 + clamp 兜底） | 低（步长 0.05 + clamp-to-edge + 末尾归一化兜底；bench bit-equal 守住） |
+| 视觉花纹 | 低（梯度场低能） | 高（卷动 + 锋面增强 + 半球偏向 + 山脉阻尼） |
+
+**12.6.6.b — bench 9 组实测表（2026-05-12 实测，由 `tmp/bench_demo_complex.gd` 一次跑出）**
+
+> 测试硬件：用户当前机器（Windows / Godot 4.6.2 stable / gdext Release-with-debug）
+> bit-equal 验证组：`32×32 iter=4 kr=2`，`max_abs_diff = 6e-8`（< tolerance 1e-6 → PASS / 7 cells 在末尾舍入位差 1 ULP，源自 cos/sin libm 实现 + FMA 融合差异，工程上等价于 0.0）
+> 9 行性能对照（kr=2 固定，coriolis=0.5 / drag=0.6 / gain=1.5 / k=0.5）：
+
+```
+| grid       | iter | kr | C++ µs    | GDScript µs | speedup |
+|------------|------|----|-----------|-------------|---------|
+| 32x32      |    4 |  2 |       141 |        8877 |   63.0x |
+| 32x32      |   16 |  2 |       449 |       37264 |   83.0x |
+| 32x32      |   64 |  2 |      1708 |      146242 |   85.6x |
+| 64x64      |    4 |  2 |       389 |       47751 |  122.8x |
+| 64x64      |   16 |  2 |      1779 |      156279 |   87.8x |
+| 64x64      |   64 |  2 |      5627 |      720260 |  128.0x |
+| 128x128    |    4 |  2 |      2422 |      148150 |   61.2x |
+| 128x128    |   16 |  2 |      6001 |      636040 |  106.0x |
+| 128x128    |   64 |  2 |     33530 |     2677474 |   79.9x |
+→ projected at game-grid (60x40, iter=16, kr=2): C++ ~ 1042.4 µs (interpolated)
+```
+
+**12.6.6.b' — 三条经验定律（从上表归纳，给真实 climate pass 设计预算时直接套）**
+
+1. **C++/GDScript 加速比 ≈ 60–130×**：算子越复杂，C++ 优势越大（Pass #2 ~30×、Pass #3 ~80×）。**把热路径搬到 C++ 的红利在升级算法后是放大的，不是缩小**。这条直接否定了"算法已经够复杂、再优化收益不大"的直觉。
+2. **每 cell-iter 单价 ≈ 0.09–0.15 µs（kr=2，本机器）**：对 60×40 / iter=16 → 60·40·16·0.10 ≈ **960 µs**，与 bench 外推 1042 µs 误差 < 10%，可作为**未来真实 pass 的快速预算尺**。
+3. **L1 cache 转折点在 64×64**：32×32×3·4B ≈ 12 KB（L1D 完全装下）、64×64×3·4B ≈ 48 KB（卡边界，吞吐最优）、128×128×3·4B ≈ 192 KB（溢出 L1 进 L2，单价回升）。**真实地图 60×40 正好落在最佳区间**，未来若把网格放大到 ≥120 列必须重做预算。
+
+**12.6.6.c — 单 tick 游戏内实测（2026-05-12 实测，main.tscn 极端档采样 11 tick）**
+
+> 启动条件：`data/world/earth_like.tres → demo_thermal_gradient_enabled = true`，且 ClimateProfile 旋钮被推到极端档 `iter=64 / kr=5 / coriolis=1.0 / drag=1.0`（**远超默认**，目的就是探上限）。
+> 截图见用户附件——花纹明显呈现"半球暖团 + 山脉阻尼 + 海陆梯度"三特征，与 §12.6.6 算法描述一致。
+
+```
+[demo_complex] tick=#508..#518 w=60 h=40 iter=64 kr=5 coriolis=1.0 drag=1.0
+  cpp ∈ [10644, 15699] µs   (mean ~12.0 ms, p99 ~16 ms)
+  out[min=0.0, max≈0.83, mean≈0.34]   ← 输出稳态收敛
+```
+
+**对比默认档预测**（外推自 §12.6.6.b）：
+
+| 档位 | iter | kr | 单 cell ops 估算 | 单 tick 实测/外推 cpp |
+|---|---|---|---|---|
+| 默认 | 16 | 2 | ~880 | ~1.0 ms（外推，留 2× 安全边后预算 2 ms）|
+| 极端 | 64 | 5 | ~14000 | ~12.0 ms 实测（留 2× 安全边后预算 24 ms — **超 16 ms 帧预算 → 不可上线**）|
+
+> 结论：**极端档花纹好看但完全不可上线**（单 pass 就吃掉 80% 帧预算，留给其余 climate / weather / AI / render 的余量是负的）。默认档 `iter=16 / kr=2` 才是真实可用配置——这正是 ClimateProfile 把它设为默认的原因。
+
+**12.6.6.d — 如何把这张表用作真实 climate pass 的预算锚**
+
+1. 估算你的真实 pass 在每个 cell 的 ops 数（数加减乘除 / sqrt / 邻居访问，邻居访问按 ops×3 计入 cache 损失）。
+2. 在 §12.6.6.b 表里查最接近 ops/cell 的一档（比如真实 pass ~600 ops/cell ≈ 我们 iter=16 / kr=2 这一档），按 cell 数线性外推。
+3. **留 2× 安全边**：实机 cache miss / OS 调度 / 多 pass 串联会把单 pass 实测放大到 bench 数字的 1.5~2 倍，预算锚要按外推值 × 2 来做。**不留安全边的预算评估必然失败**。
+
+> ⚠️ 反模式：直接把 bench 数字当线上预算用 — bench 没有真实地图的 cache 干扰、没有同时跑的 weather/biome/AI、也没有 GC 压力。务必乘 2。
+
+
+### 12.7 这一节相对于 §11 的关系
+
+| 节 | 视角 | 给谁看 |
+|---|---|---|
+| §11 | "为什么 GDExtension 是这样" — ABI 物理层 | 怀疑契约可不可以绕开的人 |
+| §12 | "我现在要写一个 pass，照抄什么" — 操作模板 | 写下一个 pass 的人（含未来的我）|
+
+两节缺一不可：理解 §11 才能尊重 §12 的纪律；不抄 §12 模板就会重新踩 §11 列出的坑。
 
 ---
 

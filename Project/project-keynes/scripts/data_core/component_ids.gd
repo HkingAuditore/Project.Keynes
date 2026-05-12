@@ -81,6 +81,15 @@ const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/
 const CELL_EMA_INITIALIZED: StringName = &"cell.ema_initialized"             # u8 0/1
 const CELL_TEMP_SEASON_OFFSET: StringName = &"cell.temp_season_offset"       # f32
 
+# ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
+# 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用
+#   命名空间。任何真实游戏机制（climate / weather / biome / vegetation / UI
+#   tooltip 等）**禁止**读取或依赖该前缀下的字段。
+# 持久化纪律：该前缀下字段**不应进入永久存档**——它们由 demo pass 在每帧 /
+#   每日重算，存档恢复后立即被覆盖，没有保存价值。如果未来存档代码采用
+#   "扫描全部已注册 slot"的方式自动覆盖，须在存档加载侧显式跳过 `cell.demo.*`。
+const CELL_DEMO_THERMAL_GRADIENT: StringName = &"cell.demo.thermal_gradient" # f32, [0,1]
+
 ## 内置拓扑 component（HexNeighborTopology）— 由 bind_map_data() 自动注册。
 const TOPOLOGY_HEX_NEIGHBORS: StringName = &"topology.hex_neighbors"
 

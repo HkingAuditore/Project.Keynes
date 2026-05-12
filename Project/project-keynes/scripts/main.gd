@@ -9,6 +9,14 @@
 
 extends Node2D
 
+# ─── DOTS ECS scheduler — preload via const to bypass class_name scan order.
+# 用 preload 而不是裸 class_name DCEcsScheduler / DCEcsJob 是因为：
+#   * scripts/ecs/ 目录是后加的，class_name 注册依赖 .godot/global_script_class_cache.cfg
+#     刷新；首次启动尚未刷新时 main.gd 会 parse fail。
+#   * preload 常量在编辑器和运行时都立刻可用，不依赖任何全局扫描。
+const DCEcsScheduler := preload("res://scripts/ecs/dc_ecs_scheduler.gd")
+const DCEcsJob := preload("res://scripts/ecs/dc_ecs_job.gd")
+
 @export var map_width: int = 60
 @export var map_height: int = 40
 @export var num_continents: int = 2
@@ -441,6 +449,17 @@ func _on_day_changed(_day_idx: int) -> void:
 	var sus_result: Dictionary = {}
 	if _generator != null and _world_clock != null:
 		sus_result = _generator.sus_tick_daily(_world_clock)
+	# ───────────────────────────────────────────────────────────────────
+	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
+	# 仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时启用：
+	#   1) C++ 距 run_thermal_gradient_pass——读 cell_temp / cell_elevation，
+	#      写 cell_demo_thermal_gradient（都是 bind_map_data 阶段共享 CoW 的同一
+	#      块 buffer，无需额外 push）。
+	#   2) 为防 CoW 后续被 GDScript 侧 mutator 意外 detach，调用后用 snapshot_f32
+	#      拉一份赋回 map.demo_thermal_gradient_arr 以驱动 baker 重 bake。
+	# 开关为 false 时这里全部跳过，overlay 下拉菜单也不应呈现该项。
+	# ───────────────────────────────────────────────────────────────────
+	_run_demo_thermal_gradient_pass_if_enabled()
 	var weather_ran: bool = bool(sus_result.get("weather_ran", false))
 	var was_skipped_day: bool = not weather_ran
 	var fronts: Array[WeatherFront] = sus_result.get("fronts", [] as Array[WeatherFront])
@@ -752,6 +771,11 @@ func _generate_and_render(seed_val: int) -> void:
 	_current_map = result["map"]
 	_world_data = result["world_data"]
 	_last_seed = result.get("seed", seed_val)
+	# DOTS thermal-gradient: a new map means archetypes (LAND/OCEAN) must be
+	# re-synced from the freshly populated `is_water_arr`. The next entry into
+	# the ECS_ARCHETYPE path will re-do create_archetype + assign_archetype.
+	_dc_ecs_archetype_dirty = true
+	_dc_ecs_land_archetype_id = -1
 	# Sliced Update Scheduler（任务 4）：把 world_clock 入口注入给 SUS，
 	# OceanCurrentsJob 需要 season_phase 连续浮点作为 phase 输入。
 	if _world_clock != null:
@@ -1269,8 +1293,340 @@ func _sync_overlay_to_world() -> void:
 	_overlay_layer.set_alpha(_overlay_alpha)
 	_overlay_layer.set_mode(_overlay_mode)
 
+# ─── Reference-impl Pass #2 helpers (demo-only, performance-charter §12.6) ───
+# _is_demo_thermal_gradient_enabled / _run_demo_thermal_gradient_pass_if_enabled
+# 是参考实现的"接入主流程模板"。如果未来要把这套通信契约升级为真实游戏机制，
+# 应该在这里复制一套（替换为真实 component / pass / map field 名）。
+
+# 首次诊断打印去重表：每条 reason 仅打印一次，避免每帧刷屏。
+var _demo_tg_diag_seen: Dictionary = {}
+var _demo_tg_first_run_logged: bool = false
+# Pass #3：每 tick 耗时打印的单调计数器 + 过预算守门标志。
+var _demo_complex_tick_counter: int = 0
+var _demo_complex_over_budget_warned: bool = false
+
+# ─── DOTS thermal-gradient dispatch state ─────────────────────────────
+# Lazily constructed when ClimateProfile.demo_thermal_gradient_path != LEGACY.
+# `_dc_ecs_scheduler` is reused across ticks; jobs are rebuilt each tick (cheap)
+# because comp_ids and archetype filters can change after a map regenerate.
+# `_dc_ecs_archetype_dirty` flips to true after a map regenerate so the
+# ECS_ARCHETYPE path knows to re-create + reassign archetypes from
+# `_current_map.is_water_arr`. The scheduler itself is stateless across maps.
+var _dc_ecs_scheduler = null  # DCEcsScheduler
+var _dc_ecs_archetype_dirty: bool = true
+var _dc_ecs_land_archetype_id: int = -1
+var _dc_ecs_path_label_seen: Dictionary = {}
+
+func _demo_tg_diag_once(reason: String) -> void:
+	if _demo_tg_diag_seen.has(reason):
+		return
+	_demo_tg_diag_seen[reason] = true
+	push_warning("[demo_thermal_gradient] pass skipped — " + reason)
+
+func _is_demo_thermal_gradient_enabled() -> bool:
+	if _generator == null or not _generator.has_method("_c"):
+		return false
+	var cp = _generator._c()
+	if cp == null:
+		return false
+	if not ("demo_thermal_gradient_enabled" in cp):
+		return false
+	return bool(cp.demo_thermal_gradient_enabled)
+
+
+func _run_demo_thermal_gradient_pass_if_enabled() -> void:
+	if not _is_demo_thermal_gradient_enabled():
+		_demo_tg_diag_once("disabled (ClimateProfile.demo_thermal_gradient_enabled=false or no _c())")
+		return
+	if _current_map == null or _generator == null:
+		_demo_tg_diag_once("no current_map / generator")
+		return
+	if not _generator.has_method("get_data_core_world_ext"):
+		_demo_tg_diag_once("generator lacks get_data_core_world_ext (legacy build?)")
+		return
+	var ext = _generator.get_data_core_world_ext()
+	if ext == null:
+		_demo_tg_diag_once("DCWorldExt is null (gdext not loaded or use_data_core=false)")
+		return  # gdext 未加载（fallback 到纯 GDScript）；此 demo 无 GDScript fallback
+	# Pass #3：优先调用 run_demo_complex_pass；旧 .dll 不带新方法时回退到 Pass #2 老入口。
+	var has_complex: bool = ext.has_method("run_demo_complex_pass")
+	if not has_complex and not ext.has_method("run_thermal_gradient_pass"):
+		# C++ 端两条 pass 都不存在（极旧构建产物），静默跳过避免噪音
+		_demo_tg_diag_once("DCWorldExt missing both run_demo_complex_pass and run_thermal_gradient_pass (stale .dll)")
+		return
+	var cp = _generator._c()
+	var gain: float = float(cp.demo_thermal_gradient_elevation_gain) if cp != null else 1.5
+	var k: float = float(cp.demo_thermal_gradient_normalize_k) if cp != null else 0.5
+	# Pass #3 4 个新旋钮——cp 为空或字段不存在时 fallback 到 C++ 默认值。
+	var iter: int = 16
+	var kr: int = 2
+	var coriolis: float = 0.5
+	var drag: float = 0.6
+	if cp != null:
+		if "demo_complex_iterations" in cp:
+			iter = int(cp.demo_complex_iterations)
+		if "demo_complex_kernel_radius" in cp:
+			kr = int(cp.demo_complex_kernel_radius)
+		if "demo_complex_coriolis_strength" in cp:
+			coriolis = float(cp.demo_complex_coriolis_strength)
+		if "demo_complex_terrain_drag" in cp:
+			drag = float(cp.demo_complex_terrain_drag)
+	var w: int = int(_current_map.width)
+	var h: int = int(_current_map.height)
+	# ─── 关键：bind_map_data 之后 CoW 已分裂，C++ 端 s.arr_f32 与 GDScript 端
+	# map.temp_arr / elevation_arr 不再共享；按 docs/performance-charter §11
+	# 的官方契约，GDScript→C++ 必须用 write_f32_range 显式 push。
+	# 否则 C++ 永远读到 bind 那一瞬的初值（很可能全 0），输出也就全 0。
+	if ext.has_method("component_id") and ext.has_method("write_f32_range"):
+		var cid_t: int = int(ext.component_id(&"cell_temp"))
+		var cid_e: int = int(ext.component_id(&"cell_elevation"))
+		if cid_t >= 0:
+			ext.write_f32_range(cid_t, 0, _current_map.temp_arr)
+		if cid_e >= 0:
+			ext.write_f32_range(cid_e, 0, _current_map.elevation_arr)
+	# C++ 端读 cell_temp / cell_elevation slot（已由上面的 write_f32_range 同步），
+	# 写 cell_demo_thermal_gradient slot，pass 末尾通过 snapshot_f32 取回。
+	# Pass #3 测时用 Time.get_ticks_usec()，含 pass 主体 + 不含 snapshot 的两段。
+	#
+	# ─── DOTS path dispatch ───────────────────────────────────────────
+	# `demo_thermal_gradient_path` 三选一（详见 ClimateProfile.DemoTGPath）：
+	#   * LEGACY        → 旧手写直调，零调度开销，是 pre-DOTS 基线。
+	#   * ECS           → 用 DCEcsScheduler 单 job 跑同一个 kernel；输出与
+	#                     LEGACY 路径 bit-equal（kernel 完全相同，只是多一层
+	#                     拓扑排序 + Callable 调用）。
+	#   * ECS_ARCHETYPE → DCEcsScheduler + run_demo_complex_pass_archetyped
+	#                     (target=LAND)。OCEAN cells 输出被置 0；视觉上能
+	#                     看到水陆边界，性能差距和 vanilla 相比由 A1 实验
+	#                     描述（stencil 类算子收益 ≈ 0）。
+	var path_id: int = 0  # default LEGACY
+	if cp != null and "demo_thermal_gradient_path" in cp:
+		path_id = int(cp.demo_thermal_gradient_path)
+	var path_label: String = "legacy"
+	var t0_cpp: int = Time.get_ticks_usec()
+	if path_id == 0 or not has_complex:
+		# LEGACY (also used as fallback when run_demo_complex_pass is missing).
+		path_label = "legacy"
+		if has_complex:
+			ext.run_demo_complex_pass(w, h, iter, kr, coriolis, drag, gain, k)
+		else:
+			ext.run_thermal_gradient_pass(w, h, gain, k)
+	else:
+		# ECS / ECS_ARCHETYPE — both go through DCEcsScheduler.
+		path_label = "ecs" if path_id == 1 else "ecs_archetype"
+		_run_demo_tg_via_ecs(ext, w, h, iter, kr, coriolis, drag, gain, k, path_id)
+	var cpp_us: int = Time.get_ticks_usec() - t0_cpp
+	# 路径首次进入时打一行诊断，方便确认 ClimateProfile 配置生效。
+	if not _dc_ecs_path_label_seen.has(path_label):
+		_dc_ecs_path_label_seen[path_label] = true
+		print("[demo_thermal_gradient] dispatch path=%s (path_id=%d)" % [path_label, path_id])
+	# CoW 共享下 ptrw 已就地写入；再 snapshot 一次确保 GDScript 侧 detach 安全
+	# （避免 CoW 在被 GDScript mutate 后引用别处的副本）。开销 ~ 一次 memcpy。
+	if not ext.has_method("snapshot_f32") or not ext.has_method("component_id"):
+		_demo_tg_diag_once("DCWorldExt missing snapshot_f32 / component_id")
+		return
+	var cid: int = int(ext.component_id(&"cell_demo_thermal_gradient"))
+	if cid < 0:
+		_demo_tg_diag_once("component_id(cell_demo_thermal_gradient) < 0 — slot not registered")
+		return
+	var snap: PackedFloat32Array = ext.snapshot_f32(cid)
+	_current_map.demo_thermal_gradient_arr = snap
+	# ─── Pass #3 每 tick 耗时打印（紧凑诊断）─────────────────────────
+	# 第一次还多打一行 inputs 行（沿用 Pass #2 既有 _demo_tg_first_run_logged 守门）。
+	_demo_complex_tick_counter += 1
+	var s_n: int = snap.size()
+	var s_min: float = INF
+	var s_max: float = -INF
+	var s_sum: float = 0.0
+	for i in range(s_n):
+		var v: float = snap[i]
+		if v < s_min: s_min = v
+		if v > s_max: s_max = v
+		s_sum += v
+	var s_mean: float = (s_sum / float(s_n)) if s_n > 0 else 0.0
+	var kernel_label: String = "demo_complex" if has_complex else "demo_thermal_gradient"
+	var pass_label: String = kernel_label + "/" + path_label
+	print("[" + pass_label + "] tick=#" + str(_demo_complex_tick_counter)
+		+ " w=" + str(w) + " h=" + str(h)
+		+ " iter=" + str(iter) + " kr=" + str(kr)
+		+ " coriolis=" + String.num(coriolis, 3)
+		+ " drag=" + String.num(drag, 3)
+		+ " cpp=" + str(cpp_us) + " µs"
+		+ " out[min=" + String.num(s_min, 4)
+		+ " max=" + String.num(s_max, 4)
+		+ " mean=" + String.num(s_mean, 4) + "]")
+	# 过预算守门：单 tick > 16 ms 仅在第 1 次发生时 push_warning，避免每帧刷屏
+	if cpp_us > 16000 and not _demo_complex_over_budget_warned:
+		_demo_complex_over_budget_warned = true
+		push_warning("[" + pass_label + "] cpp=" + str(cpp_us)
+			+ " µs > 16 ms budget — consider lowering demo_complex_iterations or kernel_radius")
+	# 第一次跑完 pass 后看看输出范围 + 输入范围。
+	# 如果输出 max==0 但输入 cell_temp/cell_elevation 也是全 0，说明 climate Pass-A 没填温度场。
+	if not _demo_tg_first_run_logged:
+		_demo_tg_first_run_logged = true
+		# 输入端：从 _current_map 读 temp_arr / elevation_arr（这是 GDScript 端
+		# 的当前真值；上面已经用 write_f32_range 把它们推给 C++ slot，所以
+		# C++ pass 读到的就是这同一份数据）。
+		var t_arr: PackedFloat32Array = _current_map.temp_arr
+		var e_arr: PackedFloat32Array = _current_map.elevation_arr
+		var t_min: float = INF; var t_max: float = -INF; var t_sum: float = 0.0
+		for i in range(t_arr.size()):
+			var tv: float = t_arr[i]
+			if tv < t_min: t_min = tv
+			if tv > t_max: t_max = tv
+			t_sum += tv
+		var t_mean: float = (t_sum / float(t_arr.size())) if t_arr.size() > 0 else 0.0
+		var e_min: float = INF; var e_max: float = -INF; var e_sum: float = 0.0
+		for i in range(e_arr.size()):
+			var ev: float = e_arr[i]
+			if ev < e_min: e_min = ev
+			if ev > e_max: e_max = ev
+			e_sum += ev
+		var e_mean: float = (e_sum / float(e_arr.size())) if e_arr.size() > 0 else 0.0
+		print("[" + pass_label + "] first run OK — input temp[n=" + str(t_arr.size())
+			+ " min=" + String.num(t_min, 4) + " max=" + String.num(t_max, 4)
+			+ " mean=" + String.num(t_mean, 4) + "] elevation[n=" + str(e_arr.size())
+			+ " min=" + String.num(e_min, 4) + " max=" + String.num(e_max, 4)
+			+ " mean=" + String.num(e_mean, 4) + "]")
+
+
+# ─── DOTS thermal-gradient ECS dispatch helpers ───────────────────────
+# Build a one-shot scheduler with a single demo_thermal_gradient job and
+# tick it. The bit-equal contract is:
+#   * ECS path        ≡ LEGACY path (same kernel, scheduler is a pure shim).
+#   * ECS_ARCHETYPE   ≠ LEGACY (zeros OCEAN cells; only LAND-cells comparable
+#                       and even those are re-normalized — see A1 §2.3).
+#
+# `path_id` mapping mirrors ClimateProfile.DemoTGPath:
+#   1 → ECS, 2 → ECS_ARCHETYPE.
+func _run_demo_tg_via_ecs(ext: Object, w: int, h: int, iter_count: int, kr: int,
+		coriolis: float, drag: float, gain: float, k: float, path_id: int) -> void:
+	# Lazy scheduler instantiation — one shared instance across ticks.
+	if _dc_ecs_scheduler == null:
+		_dc_ecs_scheduler = DCEcsScheduler.new()
+
+	# ECS_ARCHETYPE: ensure archetypes exist + are assigned from the current
+	# water mask. We treat the assignment as one-shot per map (re-done when
+	# `_dc_ecs_archetype_dirty` is set externally on regenerate).
+	var land_arch_id: int = -1
+	if path_id == 2:
+		if not (ext.has_method("create_archetype") and ext.has_method("assign_archetype")):
+			_demo_tg_diag_once("ECS_ARCHETYPE: DCWorldExt missing create_archetype / assign_archetype — falling back to ECS")
+			path_id = 1
+		elif not ext.has_method("run_demo_complex_pass_archetyped"):
+			_demo_tg_diag_once("ECS_ARCHETYPE: DCWorldExt missing run_demo_complex_pass_archetyped — falling back to ECS")
+			path_id = 1
+		else:
+			if _dc_ecs_archetype_dirty or _dc_ecs_land_archetype_id < 0:
+				_dc_ecs_land_archetype_id = _dc_ecs_sync_archetypes(ext)
+				_dc_ecs_archetype_dirty = false
+			land_arch_id = _dc_ecs_land_archetype_id
+
+	# Build the single-job graph each tick: comp_ids are stable across ticks
+	# but cheap to look up; this keeps the path resilient to mid-game
+	# component re-registration if it ever happens.
+	var cid_temp: int = int(ext.component_id(&"cell_temp"))
+	var cid_elev: int = int(ext.component_id(&"cell_elevation"))
+	var cid_out: int = int(ext.component_id(&"cell_demo_thermal_gradient"))
+	if cid_temp < 0 or cid_elev < 0 or cid_out < 0:
+		_demo_tg_diag_once("ECS dispatch: component_id < 0 (temp=%d elev=%d out=%d)"
+			% [cid_temp, cid_elev, cid_out])
+		# Fall back to legacy direct call — never silently no-op.
+		ext.run_demo_complex_pass(w, h, iter_count, kr, coriolis, drag, gain, k)
+		return
+
+	_dc_ecs_scheduler.clear()
+	var runner: Callable
+	var arch_filter: int
+	if path_id == 2:
+		runner = Callable(self, "_dc_ecs_run_demo_complex_archetyped")
+		arch_filter = land_arch_id
+	else:
+		runner = Callable(self, "_dc_ecs_run_demo_complex")
+		arch_filter = -1
+
+	var job := DCEcsJob.new(
+		&"demo_thermal_gradient",
+		[cid_temp, cid_elev],
+		[cid_out],
+		runner,
+		arch_filter,
+		{}
+	)
+	_dc_ecs_scheduler.add_job(job)
+
+	var ctx: Dictionary = {
+		"ext": ext,
+		"w": w, "h": h,
+		"iter": iter_count, "kr": kr,
+		"coriolis": coriolis, "drag": drag,
+		"gain": gain, "k": k,
+	}
+	_dc_ecs_scheduler.tick(ctx)
+
+
+# Re-create archetypes (LAND, OCEAN) and assign every cell from
+# `_current_map.is_water_arr`. Returns the LAND archetype id.
+# Called only when `_dc_ecs_archetype_dirty` flips true (initial entry +
+# after map regenerate).
+func _dc_ecs_sync_archetypes(ext: Object) -> int:
+	var land_id: int = int(ext.create_archetype(&"LAND", []))
+	var ocean_id: int = int(ext.create_archetype(&"OCEAN", []))
+	if _current_map == null:
+		return land_id
+	var mask: PackedByteArray = _current_map.is_water_arr
+	var n: int = mask.size()
+	# ─── BUGFIX: C++-side `_entity_count` must be ≥ n before assign_archetype ───
+	# Production path never calls `ext.create_pool("cells", n)` (only the bench
+	# does). DCWorldExt::assign_archetype silently drops `idx >= _entity_count`,
+	# leaving `_entity_archetype` empty; the archetyped pass then early-returns
+	# with a `_entity_archetype size < n` warning and writes nothing → overlay
+	# all-zero. Top up entity_count to n here. `create_entities` is additive,
+	# so guard against the rare case where front-pool or future systems already
+	# pushed it past n.
+	var ec: int = int(ext.entity_count()) if ext.has_method("entity_count") else 0
+	if ec < n:
+		ext.create_entities(n - ec)
+	for i in range(n):
+		if mask[i] != 0:
+			ext.assign_archetype(i, ocean_id)
+		else:
+			ext.assign_archetype(i, land_id)
+	print("[demo_thermal_gradient/ecs_archetype] archetypes synced — "
+		+ "n=" + str(n)
+		+ " entity_count_before=" + str(ec)
+		+ " entity_count_after=" + str(ext.entity_count() if ext.has_method("entity_count") else -1)
+		+ " land_id=" + str(land_id) + " ocean_id=" + str(ocean_id))
+	return land_id
+
+
+# Job runners (Callable targets). Signature: (ctx, job) -> void.
+func _dc_ecs_run_demo_complex(ctx: Dictionary, _job) -> void:
+	var ext: Object = ctx["ext"]
+	ext.run_demo_complex_pass(
+		int(ctx["w"]), int(ctx["h"]),
+		int(ctx["iter"]), int(ctx["kr"]),
+		float(ctx["coriolis"]), float(ctx["drag"]),
+		float(ctx["gain"]), float(ctx["k"]))
+
+
+func _dc_ecs_run_demo_complex_archetyped(ctx: Dictionary, job) -> void:
+	var ext: Object = ctx["ext"]
+	ext.run_demo_complex_pass_archetyped(
+		int(ctx["w"]), int(ctx["h"]),
+		int(ctx["iter"]), int(ctx["kr"]),
+		float(ctx["coriolis"]), float(ctx["drag"]),
+		float(ctx["gain"]), float(ctx["k"]),
+		int(job.archetype_filter))
+
+
 func _apply_overlay_mode(mode: int) -> void:
 	# 需求 6.4：防止快速连切残留旧 uniform——每次切换都强制 bake + 重绑 tex。
+	# Reference-impl Pass #2 守门：DEMO_THERMAL_GRADIENT 开关关闭时，即便外部
+	# 强行调到该 mode（例如旧存档 / 调试脚本），也要降级回退到 NONE 避免画错。
+	if mode == OverlayMode.MODE.DEMO_THERMAL_GRADIENT \
+			and not _is_demo_thermal_gradient_enabled():
+		push_warning("[Overlay] DEMO_THERMAL_GRADIENT 开关已关，回退到 NONE")
+		mode = 0
 	_overlay_mode = mode
 	_overlay_error_msg = ""
 	if _overlay_layer == null:

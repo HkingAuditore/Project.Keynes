@@ -244,6 +244,11 @@ void fragment() {
 			} else if (overlay_mode == 17) { // OCEAN_PSI（Physical Circulation 调试）
 				// 双向：流函数 ψ 等高线 = 流线；颜色对比度让海盆环流可见
 				rgb = ramp_diverging(value);
+			} else if (overlay_mode == 18) { // DEMO_THERMAL_GRADIENT（Reference-impl Pass #2）
+				// 复用 cold→hot 色带：低梯度=冷色、高梯度=暖色，与 TEMPERATURE 通道
+				// 视觉上保持一致风格。这是 demo-only 通道（performance-charter §12.6），
+				// 真实游戏机制不应读取该字段。
+				rgb = ramp_cold_to_hot(value);
 			}
 
 			out_color = vec4(rgb, base_alpha * alpha_mul);

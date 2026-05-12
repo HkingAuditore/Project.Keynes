@@ -154,6 +154,12 @@ func _build_overlay_group(parent: VBoxContainer) -> void:
 	row_mode.add_child(mode_label)
 	_overlay_option_btn = OptionButton.new()
 	_overlay_option_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Pass #2 注意事项：早期版本曾在这里读 ClimateProfile.demo_thermal_gradient_enabled
+	# 决定是否注入 DEMO_THERMAL_GRADIENT 项，但 console._ready 跑得比 main 创建
+	# _generator 更早 — 那一刻 _generator == null，守门必然返回 false，导致下拉
+	# 框永久缺项（即使开关后来打开也不会重建）。
+	# 现在恒定注入所有 ordered_modes，防御交给 main._apply_overlay_mode：开关关闭
+	# 时仍选中 demo channel 会被运行时回退到 NONE 并 push_warning。
 	for mode in OverlayMode.ordered_modes():
 		_overlay_option_btn.add_item(OverlayMode.display_name(mode), mode)
 	_overlay_option_btn.item_selected.connect(_on_overlay_option_selected)
@@ -540,3 +546,15 @@ func _get_clock():
 	if _main.has_method("get_world_clock_ref"):
 		return _main.call("get_world_clock_ref")
 	return null
+
+
+# Reference-impl Pass #2 (demo-only)：通过 _main 反查 ClimateProfile 上的开关，
+# 决定是否在 OptionButton 里展示 DEMO_THERMAL_GRADIENT。
+# main.gd 已有 _is_demo_thermal_gradient_enabled()，这里走 has_method 间接调用，
+# 避免 console 直接耦合 ClimateProfile / generator。
+func _is_demo_thermal_gradient_enabled_via_main() -> bool:
+	if _main == null:
+		return false
+	if not _main.has_method("_is_demo_thermal_gradient_enabled"):
+		return false
+	return bool(_main.call("_is_demo_thermal_gradient_enabled"))

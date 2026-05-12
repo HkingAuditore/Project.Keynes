@@ -623,7 +623,15 @@ var _builtin_cell_ids: Dictionary = {}    # StringName → comp_id (int)
 ##
 ## 调用时机：bake_world / regenerate / 加载存档完成后调用一次。MapData 必须
 ## 已构建完 _build_indices() + rebuild_soa_from_cells()。
-func bind_map_data(map_data) -> void:
+##
+## 参数 demo_thermal_gradient_enabled（performance-charter §12.6 参考实现）：
+##   true  → 额外注册 CELL_DEMO_THERMAL_GRADIENT slot，并在挂入前将
+##           map_data.demo_thermal_gradient_arr resize 到 N（補上必要的
+##           存储）。
+##   false → 跳过该 slot——demo 字段保持 size=0，不占内存，下游 C++ pass
+##           调用时会看到 slot id < 0 并安全 no-op + push_warning（在未启用
+##           的路径上不应被调用，main.gd 会他同一开关跳过调用）。
+func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> void:
 	if map_data == null:
 		push_error("[DCWorld] bind_map_data: map_data is null")
 		return
@@ -702,6 +710,15 @@ func bind_map_data(map_data) -> void:
 	# 1 个 f32 (temp_season_offset)：Pass-A 当日季节偏移，UI breakdown 经 flush 读。
 	_bind_register_and_attach_u8(DCComponentIds.CELL_EMA_INITIALIZED, map_data.ema_initialized_arr)
 	_bind_register_and_attach(DCComponentIds.CELL_TEMP_SEASON_OFFSET, DCComponentIds.F32, false, map_data.temp_season_offset_arr)
+	# Reference-impl Pass #2（demo-only, performance-charter §12.6）—仅在开关打开时
+	# 才注册 CELL_DEMO_THERMAL_GRADIENT slot。关闭时 demo_thermal_gradient_arr 保持
+	# size=0，C++ 端 component_id() 会返回 -1，run_thermal_gradient_pass 安全 no-op。
+	# 开启时必须在 attach 之前先 resize 到 N，避免下面的长度一致性校验报错。
+	if demo_thermal_gradient_enabled:
+		if map_data.demo_thermal_gradient_arr.size() != n:
+			map_data.demo_thermal_gradient_arr.resize(n)
+			map_data.demo_thermal_gradient_arr.fill(0.0)
+		_bind_register_and_attach(DCComponentIds.CELL_DEMO_THERMAL_GRADIENT, DCComponentIds.F32, false, map_data.demo_thermal_gradient_arr)
 	# 4) 长度一致性校验
 	for slot in _slots:
 		if slot.external_ref:

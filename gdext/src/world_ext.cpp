@@ -4,10 +4,22 @@
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
+#include <godot_cpp/core/math.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
 #  include <immintrin.h>
@@ -18,7 +30,12 @@ namespace pk {
 using namespace godot;
 
 DCWorldExt::DCWorldExt() = default;
-DCWorldExt::~DCWorldExt() = default;
+DCWorldExt::~DCWorldExt() {
+    // EXPERIMENTAL: D-async — defensively join all worker threads before
+    // _slots / _entity_count etc. tear down. Safe to call even if no
+    // async_* method was ever invoked (shutdown_all is a no-op then).
+    async_climate_shutdown_all();
+}
 
 // ─── Component registry ────────────────────────────────────────────────────
 
@@ -140,6 +157,29 @@ PackedInt32Array DCWorldExt::view_i32(int comp_id) {
 PackedByteArray DCWorldExt::view_u8(int comp_id) {
     ERR_FAIL_INDEX_V(comp_id, _slots.size(), PackedByteArray());
     return _slots[comp_id].arr_u8;
+}
+
+// ─── Mode-B snapshot API ──────────────────────────────────────────────────
+//
+// Returns a value-copy of `_slots[comp_id].arr_f32`. Godot PackedArray COW
+// means we don't memcpy here — the returned handle bumps the refcount, and
+// the GDScript side gets a private copy on the first write.
+//
+// Contract:
+//   * Out-of-range comp_id     → empty PackedFloat32Array, no error.
+//   * Slot dtype != F32        → empty PackedFloat32Array, no error.
+//
+// This is the recommended Mode-B read path. `view_f32` is kept as a thin
+// alias for legacy call sites; new code should always call `snapshot_f32`.
+PackedFloat32Array DCWorldExt::snapshot_f32(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        return PackedFloat32Array();
+    }
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::F32) {
+        return PackedFloat32Array();
+    }
+    return s.arr_f32;
 }
 
 // ─── Hot-path writes ──────────────────────────────────────────────────────
@@ -438,6 +478,14 @@ static const BindEntry BIND_TABLE[] = {
     // ─── Phase 3a Step 2.1.a: Pass-A SoA fields (mirrors component_ids.gd) ──
     {"cell_ema_initialized",       "ema_initialized_arr",       SlotDType::U8},
     {"cell_temp_season_offset",    "temp_season_offset_arr",    SlotDType::F32},
+    // ─── Reference-impl Pass #2: thermal_gradient_pass (demo-only) ──────
+    // The MapData property `demo_thermal_gradient_arr` is only resized to N
+    // when ClimateProfile.demo_thermal_gradient_enabled == true; otherwise
+    // GDScript-side leaves it as size=0. The BIND_TABLE entry is harmless
+    // either way: bind_map_data() above gracefully skips slots whose
+    // property is NIL or empty (PackedFloat32Array of size 0 still binds,
+    // and the pass itself bails out on size mismatch with grid_w*grid_h).
+    {"cell_demo_thermal_gradient", "demo_thermal_gradient_arr", SlotDType::F32},
 };
 
 constexpr int BIND_TABLE_SIZE = sizeof(BIND_TABLE) / sizeof(BindEntry);
@@ -589,6 +637,592 @@ void DCWorldExt::assign_archetype(int idx, int arch_id) {
 // the bind_map_data CoW alias survives ptrw() writes, so the GDScript
 // renderer already sees C++-side mutations on `map.temp_arr[i]` etc. with
 // zero per-pass flush cost. This is the M2 hot-path pattern from charter §11.
+// ─── Mode-B reference implementation: temp_drift_pass ─────────────────────
+//
+// The minimal canonical example for the "Owned-by-C++ + GDScript snapshot"
+// communication contract documented in `docs/performance-charter.md` §12.
+// Behaviour: for every element in _slots[CELL_TEMP].arr_f32, add
+// `drift_amount`. Pure scalar, no SIMD, no threading — the goal is to
+// ship a template that is impossible to get wrong, not to be fast.
+//
+// Hot-loop discipline (copy this verbatim into new passes):
+//   * Resolve slot ids ONCE before the loop.
+//   * Take ONE ptrw() pointer per output buffer.
+//   * Loop body contains ZERO Variant / set() / get() / push_back calls.
+//   * NO obj.set() flush — Mode B says GDScript pulls via snapshot_f32,
+//     it does NOT rely on push-back aliasing.
+//
+// Safety: if `cell_temp` was never registered (e.g. unit-test run before
+// MapData binding), the call is a no-op. No crash, no error log spam.
+void DCWorldExt::run_temp_drift_pass(float drift_amount) {
+    const int sid = component_id(StringName("cell_temp"));
+    if (sid < 0) {
+        return; // slot not registered yet → safe no-op
+    }
+    Slot &s = _slots.write[sid];
+    if (s.dtype != SlotDType::F32) {
+        return; // type mismatch → safe no-op
+    }
+    const int n = s.arr_f32.size();
+    if (n <= 0) {
+        return;
+    }
+    float * const __restrict p = s.arr_f32.ptrw();
+    for (int i = 0; i < n; ++i) {
+        p[i] += drift_amount;
+    }
+}
+
+// ─── Pass #2: thermal_gradient_pass (reference impl with neighbour access) ──
+// Implements `out = clamp(|∇T| * (1 + gain*elev) * k, 0, 1)` over a 2-D grid
+// laid out row-major in the cell SoA arrays. Every step that could trip up
+// a copy-paste author is annotated inline so the doc in performance-charter
+// §12.6 can quote this code verbatim.
+void DCWorldExt::run_thermal_gradient_pass(int grid_w,
+                                           int grid_h,
+                                           float elevation_gain,
+                                           float normalize_k) {
+    // ─── 1. Resolve slot ids ONCE (zero string ops in the hot loop) ────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: missing slot (",
+            "cell_temp=", sid_temp,
+            ", cell_elevation=", sid_elev,
+            ", cell_demo_thermal_gradient=", sid_out,
+            ") — pass skipped (likely demo_thermal_gradient_enabled=false)");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: slot dtype mismatch — pass skipped");
+        return;
+    }
+
+    // ─── 2. Validate grid dimensions vs. SoA size (paranoia, not optimisation) ─
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // ─── 3. Take ONE pointer per buffer (read + write) ──────────────────
+    const float * const __restrict T    = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+    float       * const __restrict OUT  = s_out.arr_f32.ptrw();
+
+    // ─── 4. Tight loop — neighbour access by integer index, clamp-to-edge ─
+    // Border discipline: substitute self-value for out-of-range neighbours
+    // (Neumann BC). NEVER use modulo-wrap and NEVER branch inside the
+    // arithmetic — branches at the boundary are fine, the compiler handles
+    // them just like a peeled prologue/epilogue.
+    for (int y = 0; y < grid_h; ++y) {
+        const int row    = y * grid_w;
+        const int row_n  = (y > 0)            ? (row - grid_w) : row;
+        const int row_s  = (y < grid_h - 1)   ? (row + grid_w) : row;
+        for (int x = 0; x < grid_w; ++x) {
+            const int i  = row + x;
+            const int iw = (x > 0)            ? (i - 1) : i;
+            const int ie = (x < grid_w - 1)   ? (i + 1) : i;
+            const int in_ = row_n + x;
+            const int is = row_s + x;
+
+            // ── BIT-EQUAL DISCIPLINE ─────────────────────────────────────
+            // GDScript reads from PackedFloat32Array as `float`, which is a
+            // 64-bit double in GDScript. All intermediate arithmetic on the
+            // GDScript side therefore happens in double; the narrow back to
+            // float only occurs at the store. Mirror that here: promote to
+            // double on every load and narrow exactly once at the store.
+            // Without this, the float-domain (gx*gx + gy*gy) addition and
+            // the float gmag*amp*k product each round-off at a different
+            // bit than the GDScript path, yielding ~40% of cells diverging
+            // by 1 ULP. This is the canonical fix for Pass-#2 bit-equal.
+            const double t_ie = static_cast<double>(T[ie]);
+            const double t_iw = static_cast<double>(T[iw]);
+            const double t_is = static_cast<double>(T[is]);
+            const double t_in = static_cast<double>(T[in_]);
+            const double e_i  = static_cast<double>(E[i]);
+
+            const double gx = (t_ie - t_iw) * 0.5;
+            const double gy = (t_is - t_in) * 0.5;
+            const double gmag = Math::sqrt(gx * gx + gy * gy);
+            const double amp  = 1.0 + static_cast<double>(elevation_gain) * e_i;
+            double v = gmag * amp * static_cast<double>(normalize_k);
+            // clamp to [0, 1] so the result is overlay-ready (R8/R16F).
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            // Single narrow at the store — matches `out[i] = v` in GDScript.
+            OUT[i] = static_cast<float>(v);
+        }
+    }
+}
+
+// ─── Pass #3: demo_complex_pass (iterated diffusion + wind approx) ──────────
+// Algorithm spec lives next to the declaration in world_ext.h. This impl
+// keeps every line easily reviewable so performance-charter §12.6.6 can
+// quote it verbatim. The inner stencil is intentionally scalar — Pass #3
+// stresses *algorithmic* complexity, not SIMD/threading (per §0 铁律 2).
+void DCWorldExt::run_demo_complex_pass(int grid_w,
+                                       int grid_h,
+                                       int iterations,
+                                       int kernel_radius,
+                                       float coriolis_strength,
+                                       float terrain_drag,
+                                       float elevation_gain,
+                                       float normalize_k) {
+    // ─── 0. Knob clamps (single push_warning per process for each knob) ─
+    static bool _warned_iter = false;
+    static bool _warned_kr   = false;
+    static bool _warned_cor  = false;
+    static bool _warned_drag = false;
+    if (iterations < 1 || iterations > 64) {
+        if (!_warned_iter) {
+            _warned_iter = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: iterations out of [1,64], clamped (was ",
+                iterations, ")");
+        }
+        if (iterations < 1) iterations = 1;
+        if (iterations > 64) iterations = 64;
+    }
+    if (kernel_radius < 1 || kernel_radius > 5) {
+        if (!_warned_kr) {
+            _warned_kr = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: kernel_radius out of [1,5], clamped (was ",
+                kernel_radius, ")");
+        }
+        if (kernel_radius < 1) kernel_radius = 1;
+        if (kernel_radius > 5) kernel_radius = 5;
+    }
+    if (coriolis_strength < -1.0f || coriolis_strength > 1.0f) {
+        if (!_warned_cor) {
+            _warned_cor = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: coriolis_strength out of [-1,1], clamped");
+        }
+        if (coriolis_strength < -1.0f) coriolis_strength = -1.0f;
+        if (coriolis_strength > 1.0f)  coriolis_strength = 1.0f;
+    }
+    if (terrain_drag < 0.0f || terrain_drag > 1.0f) {
+        if (!_warned_drag) {
+            _warned_drag = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: terrain_drag out of [0,1], clamped");
+        }
+        if (terrain_drag < 0.0f) terrain_drag = 0.0f;
+        if (terrain_drag > 1.0f) terrain_drag = 1.0f;
+    }
+
+    // ─── 1. Resolve slot ids ONCE (zero string ops in the hot loop) ────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: missing slot (",
+            "cell_temp=", sid_temp,
+            ", cell_elevation=", sid_elev,
+            ", cell_demo_thermal_gradient=", sid_out,
+            ") — pass skipped");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: slot dtype mismatch — pass skipped");
+        return;
+    }
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // ─── 2. Take ONE pointer per buffer (read-only inputs) ──────────────
+    const float * const __restrict T_in = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+
+    // ─── 3. Pre-compute Gaussian kernel weights (one C-stack lookup) ────
+    //   Max radius = 5 → max kernel size = 11×11 = 121 entries.
+    //   Stored row-major over (dy = -kr..+kr) × (dx = -kr..+kr).
+    const int kr   = kernel_radius;
+    const int ksz  = 2 * kr + 1;
+    const int klen = ksz * ksz;
+    double kernel[121]; // 11*11 hard cap — enforced by knob clamp
+    double kernel_sum = 0.0;
+    for (int dy = -kr; dy <= kr; ++dy) {
+        for (int dx = -kr; dx <= kr; ++dx) {
+            // exp(-(dx²+dy²)/2) — fixed sigma=1 keeps the kernel compact
+            // and the GDScript port byte-for-byte easy to replicate.
+            const double w = std::exp(-(double)(dx * dx + dy * dy) * 0.5);
+            kernel[(dy + kr) * ksz + (dx + kr)] = w;
+            kernel_sum += w;
+        }
+    }
+    const double kernel_inv_sum = (kernel_sum > 0.0) ? (1.0 / kernel_sum) : 0.0;
+
+    // ─── 4. Allocate ping-pong buffers ONCE (outside iter loop) ─────────
+    // Stored as double to keep bit-equal discipline with GDScript port.
+    std::vector<double> buf_a(n);
+    std::vector<double> buf_b(n);
+    for (int i = 0; i < n; ++i) {
+        buf_a[i] = static_cast<double>(T_in[i]);
+    }
+
+    const double step_size = 0.05;       // fixed stability constant (see §12.6.6)
+    const double cor       = static_cast<double>(coriolis_strength);
+    const double drag      = static_cast<double>(terrain_drag);
+
+    // ─── 5. Iterate `iterations` steps (ping-pong) ──────────────────────
+    for (int it = 0; it < iterations; ++it) {
+        const std::vector<double> &src = (it & 1) ? buf_b : buf_a;
+        std::vector<double>       &dst = (it & 1) ? buf_a : buf_b;
+        const double *__restrict S = src.data();
+        double       *__restrict D = dst.data();
+
+        for (int y = 0; y < grid_h; ++y) {
+            // Latitude-dependent coriolis sign: north hemisphere → +1, south → -1
+            const double cor_sign = (y < grid_h / 2) ? -1.0 : 1.0;
+            const double rot_rad  = cor * cor_sign * 1.5707963267948966; // π/2
+
+            for (int x = 0; x < grid_w; ++x) {
+                const int i = y * grid_w + x;
+
+                // ─── 5.1 Gaussian-weighted smooth (2kr+1)² stencil ────
+                double accum = 0.0;
+                for (int dy = -kr; dy <= kr; ++dy) {
+                    int ny = y + dy;
+                    if (ny < 0)         ny = 0;
+                    else if (ny >= grid_h) ny = grid_h - 1;
+                    const int row = ny * grid_w;
+                    const double *kw_row = &kernel[(dy + kr) * ksz];
+                    for (int dx = -kr; dx <= kr; ++dx) {
+                        int nx = x + dx;
+                        if (nx < 0)         nx = 0;
+                        else if (nx >= grid_w) nx = grid_w - 1;
+                        accum += S[row + nx] * kw_row[dx + kr];
+                    }
+                }
+                const double smooth = accum * kernel_inv_sum;
+
+                // ─── 5.2 Sobel 3×3 gradient (clamp-to-edge) ───────────
+                const int xw = (x > 0)            ? (x - 1) : x;
+                const int xe = (x < grid_w - 1)   ? (x + 1) : x;
+                const int yn = (y > 0)            ? (y - 1) : y;
+                const int ys = (y < grid_h - 1)   ? (y + 1) : y;
+                const int row_n = yn * grid_w;
+                const int row_c = y  * grid_w;
+                const int row_s = ys * grid_w;
+                const double gx = (S[row_n + xe] + 2.0 * S[row_c + xe] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_c + xw] - S[row_s + xw]) * 0.125;
+                const double gy = (S[row_s + xw] + 2.0 * S[row_s + x ] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_n + x ] - S[row_n + xe]) * 0.125;
+
+                // ─── 5.3 Coriolis rotation (90° × cor_sign × strength) ─
+                const double cs = std::cos(rot_rad);
+                const double sn = std::sin(rot_rad);
+                const double gx_p = gx * cs - gy * sn;
+                const double gy_p = gx * sn + gy * cs;
+
+                // ─── 5.4 Terrain damping ─────────────────────────────
+                const double damp = 1.0 - drag * static_cast<double>(E[i]);
+
+                // ─── 5.5 Flux-driven evolution ───────────────────────
+                const double flux = gx_p + gy_p;
+                D[i] = smooth + flux * damp * step_size;
+            }
+        }
+    }
+
+    // ─── 6. Pick the final buffer ───────────────────────────────────────
+    const std::vector<double> &last = (iterations & 1) ? buf_b : buf_a;
+
+    // ─── 7. Normalize to [0,1] over the whole field ─────────────────────
+    double out_min =  std::numeric_limits<double>::infinity();
+    double out_max = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < n; ++i) {
+        const double v = last[i];
+        if (v < out_min) out_min = v;
+        if (v > out_max) out_max = v;
+    }
+    const double denom = (out_max - out_min) > 1.0e-6
+                       ? (out_max - out_min) : 1.0e-6;
+    const double inv_denom = 1.0 / denom;
+
+    // ─── 8. Apply (1 + gain·elev) · k + clamp to [0,1], narrow to float ─
+    float * const __restrict OUT = s_out.arr_f32.ptrw();
+    const double gain = static_cast<double>(elevation_gain);
+    const double k    = static_cast<double>(normalize_k);
+    for (int i = 0; i < n; ++i) {
+        const double norm = (last[i] - out_min) * inv_denom;
+        const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+        double v = norm * amp * k;
+        if (v < 0.0) v = 0.0;
+        else if (v > 1.0) v = 1.0;
+        OUT[i] = static_cast<float>(v);
+    }
+}
+
+// ─── DOTS-A1 EXPERIMENT: run_demo_complex_pass_archetyped ────────────────────
+// See world_ext.h for the contract. Implementation strategy:
+//
+//   * The iteration kernel itself runs on EVERY cell (so neighbour stencils
+//     stay valid — a LAND cell at the border of an OCEAN region must still
+//     read its OCEAN neighbours' temp values during the smoothing/sobel
+//     stage). This is the algorithmically faithful interpretation of
+//     "archetype filter": filter the *write*, not the neighbour-read.
+//
+//   * The post-iter normalize+output stage (steps 7+8 in vanilla) honours
+//     the archetype filter:
+//       - cells with arch != target → OUT[i] = 0.0f, skipped from min/max.
+//       - cells with arch == target → standard normalize + amp + clamp.
+//
+//   * `target_archetype < 0` is the "no filter" control row. It is
+//     algorithmically identical to vanilla `run_demo_complex_pass` — the
+//     bench uses this to confirm bit-equal with the vanilla pass and
+//     measure the "extra branch overhead" on its own.
+//
+// NOTE: We deliberately keep this implementation as a near-verbatim copy
+// of `run_demo_complex_pass`. Sharing code via a template/helper would
+// make the bench less useful (we'd be measuring the helper's call cost
+// rather than the archetype branch's cost on its own).
+void DCWorldExt::run_demo_complex_pass_archetyped(int grid_w,
+                                                  int grid_h,
+                                                  int iterations,
+                                                  int kernel_radius,
+                                                  float coriolis_strength,
+                                                  float terrain_drag,
+                                                  float elevation_gain,
+                                                  float normalize_k,
+                                                  int target_archetype) {
+    // ─── 0. Knob clamps (silent — vanilla version owns the warning prints) ─
+    if (iterations < 1)        iterations = 1;
+    if (iterations > 64)       iterations = 64;
+    if (kernel_radius < 1)     kernel_radius = 1;
+    if (kernel_radius > 5)     kernel_radius = 5;
+    if (coriolis_strength < -1.0f) coriolis_strength = -1.0f;
+    if (coriolis_strength >  1.0f) coriolis_strength =  1.0f;
+    if (terrain_drag < 0.0f)   terrain_drag = 0.0f;
+    if (terrain_drag > 1.0f)   terrain_drag = 1.0f;
+
+    // ─── 1. Resolve slot ids ONCE ──────────────────────────────────────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: missing slot");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: slot dtype mismatch — pass skipped");
+        return;
+    }
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // Archetype array bound check (only meaningful if filter is active).
+    const bool   filter_active = (target_archetype >= 0);
+    const int32_t * const __restrict ARCH = filter_active
+        ? _entity_archetype.ptr() : nullptr;
+    if (filter_active && _entity_archetype.size() < n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: _entity_archetype size ",
+            _entity_archetype.size(), " < n ", n,
+            " — assign_archetype not called for all cells; pass skipped");
+        return;
+    }
+
+    // ─── 2. Take ONE pointer per buffer (read-only inputs) ──────────────
+    const float * const __restrict T_in = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+
+    // ─── 3. Pre-compute Gaussian kernel weights ──────────────────────────
+    const int kr   = kernel_radius;
+    const int ksz  = 2 * kr + 1;
+    double kernel[121]; // 11*11 hard cap
+    double kernel_sum = 0.0;
+    for (int dy = -kr; dy <= kr; ++dy) {
+        for (int dx = -kr; dx <= kr; ++dx) {
+            const double w = std::exp(-(double)(dx * dx + dy * dy) * 0.5);
+            kernel[(dy + kr) * ksz + (dx + kr)] = w;
+            kernel_sum += w;
+        }
+    }
+    const double kernel_inv_sum = (kernel_sum > 0.0) ? (1.0 / kernel_sum) : 0.0;
+
+    // ─── 4. Allocate ping-pong buffers ONCE ──────────────────────────────
+    std::vector<double> buf_a(n);
+    std::vector<double> buf_b(n);
+    for (int i = 0; i < n; ++i) {
+        buf_a[i] = static_cast<double>(T_in[i]);
+    }
+
+    const double step_size = 0.05;
+    const double cor       = static_cast<double>(coriolis_strength);
+    const double drag      = static_cast<double>(terrain_drag);
+
+    // ─── 5. Iterate (every cell participates in the stencil — see banner) ─
+    for (int it = 0; it < iterations; ++it) {
+        const std::vector<double> &src = (it & 1) ? buf_b : buf_a;
+        std::vector<double>       &dst = (it & 1) ? buf_a : buf_b;
+        const double *__restrict S = src.data();
+        double       *__restrict D = dst.data();
+
+        for (int y = 0; y < grid_h; ++y) {
+            const double cor_sign = (y < grid_h / 2) ? -1.0 : 1.0;
+            const double rot_rad  = cor * cor_sign * 1.5707963267948966;
+
+            for (int x = 0; x < grid_w; ++x) {
+                const int i = y * grid_w + x;
+
+                double accum = 0.0;
+                for (int dy = -kr; dy <= kr; ++dy) {
+                    int ny = y + dy;
+                    if (ny < 0)            ny = 0;
+                    else if (ny >= grid_h) ny = grid_h - 1;
+                    const int row = ny * grid_w;
+                    const double *kw_row = &kernel[(dy + kr) * ksz];
+                    for (int dx = -kr; dx <= kr; ++dx) {
+                        int nx = x + dx;
+                        if (nx < 0)            nx = 0;
+                        else if (nx >= grid_w) nx = grid_w - 1;
+                        accum += S[row + nx] * kw_row[dx + kr];
+                    }
+                }
+                const double smooth = accum * kernel_inv_sum;
+
+                const int xw = (x > 0)            ? (x - 1) : x;
+                const int xe = (x < grid_w - 1)   ? (x + 1) : x;
+                const int yn = (y > 0)            ? (y - 1) : y;
+                const int ys = (y < grid_h - 1)   ? (y + 1) : y;
+                const int row_n = yn * grid_w;
+                const int row_c = y  * grid_w;
+                const int row_s = ys * grid_w;
+                const double gx = (S[row_n + xe] + 2.0 * S[row_c + xe] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_c + xw] - S[row_s + xw]) * 0.125;
+                const double gy = (S[row_s + xw] + 2.0 * S[row_s + x ] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_n + x ] - S[row_n + xe]) * 0.125;
+
+                const double cs = std::cos(rot_rad);
+                const double sn = std::sin(rot_rad);
+                const double gx_p = gx * cs - gy * sn;
+                const double gy_p = gx * sn + gy * cs;
+
+                const double damp = 1.0 - drag * static_cast<double>(E[i]);
+                const double flux = gx_p + gy_p;
+                D[i] = smooth + flux * damp * step_size;
+            }
+        }
+    }
+
+    const std::vector<double> &last = (iterations & 1) ? buf_b : buf_a;
+
+    // ─── 6+7. Archetype-aware normalization (only filtered-in cells count) ─
+    double out_min =  std::numeric_limits<double>::infinity();
+    double out_max = -std::numeric_limits<double>::infinity();
+    if (filter_active) {
+        for (int i = 0; i < n; ++i) {
+            if (ARCH[i] != target_archetype) continue;
+            const double v = last[i];
+            if (v < out_min) out_min = v;
+            if (v > out_max) out_max = v;
+        }
+        // Edge case: no cell matched the filter at all → leave OUT untouched
+        // for non-matching cells, write 0.0f. min/max never updated → guard.
+        if (!std::isfinite(out_min) || !std::isfinite(out_max)) {
+            float * const __restrict OUT = s_out.arr_f32.ptrw();
+            for (int i = 0; i < n; ++i) OUT[i] = 0.0f;
+            return;
+        }
+    } else {
+        for (int i = 0; i < n; ++i) {
+            const double v = last[i];
+            if (v < out_min) out_min = v;
+            if (v > out_max) out_max = v;
+        }
+    }
+    const double denom = (out_max - out_min) > 1.0e-6
+                       ? (out_max - out_min) : 1.0e-6;
+    const double inv_denom = 1.0 / denom;
+
+    // ─── 8. Write OUT (filtered-in: full formula; filtered-out: 0.0f) ─────
+    float * const __restrict OUT = s_out.arr_f32.ptrw();
+    const double gain = static_cast<double>(elevation_gain);
+    const double k    = static_cast<double>(normalize_k);
+    if (filter_active) {
+        for (int i = 0; i < n; ++i) {
+            if (ARCH[i] != target_archetype) {
+                OUT[i] = 0.0f;
+                continue;
+            }
+            const double norm = (last[i] - out_min) * inv_denom;
+            const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+            double v = norm * amp * k;
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            OUT[i] = static_cast<float>(v);
+        }
+    } else {
+        for (int i = 0; i < n; ++i) {
+            const double norm = (last[i] - out_min) * inv_denom;
+            const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+            double v = norm * amp * k;
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            OUT[i] = static_cast<float>(v);
+        }
+    }
+}
+
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
@@ -1298,6 +1932,485 @@ void DCWorldExt::bench_pass_a_indexed_thread(int comp_id,
     wtp->wait_for_group_task_completion(group_id);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// EXPERIMENTAL: D-async — long-lived worker thread + double buffering
+// ───────────────────────────────────────────────────────────────────────────
+//
+// IMPORTANT THREAD-SAFETY CONTRACT:
+//   * Worker threads run in the anonymous namespace below and only touch
+//     std::vector<float> / atomics / std::mutex / std::condition_variable.
+//   * They MUST NOT call any Godot API. The kernel `_demo_complex_kernel_pure`
+//     is a verbatim port of `run_demo_complex_pass` algorithm with all
+//     PackedFloat32Array / push_warning / etc. replaced by std::vector and
+//     silent clamps.
+//   * Errors are reported via atomic int `error_code`; the main thread
+//     translates them to push_warning inside async_climate_poll().
+
+namespace {
+
+// Error codes set by the worker (read by main thread in poll).
+// 0 = ok. Values must be stable — main thread translates them by switch.
+constexpr int PK_ASYNC_ERR_OK              = 0;
+constexpr int PK_ASYNC_ERR_INVALID_GRID    = 1;
+constexpr int PK_ASYNC_ERR_INPUT_SIZE      = 2;
+
+struct AsyncTask {
+    int task_id = 0;
+    std::thread worker;
+
+    // Inputs (main thread writes under mtx; worker copies to private buffers).
+    std::vector<float> in_temp;
+    std::vector<float> in_elev;
+
+    // Worker-private buffers (only touched on the worker thread).
+    std::vector<float> w_in_temp;
+    std::vector<float> w_in_elev;
+    std::vector<double> w_buf_a;
+    std::vector<double> w_buf_b;
+    std::vector<float>  w_out;
+
+    // Result buffer that main thread will memcpy out of in poll().
+    std::vector<float> result_buf;
+
+    // Pending request parameters (main writes under mtx; worker reads under mtx).
+    int   r_grid_w = 0, r_grid_h = 0;
+    int   r_iterations = 16, r_kernel_radius = 2;
+    float r_coriolis = 0.5f, r_drag = 0.6f, r_gain = 1.5f, r_k = 0.5f;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::atomic<bool> request_pending{false};
+    std::atomic<bool> result_ready{false};
+    std::atomic<bool> should_exit{false};
+
+    // Stats.
+    std::atomic<int64_t> last_worker_compute_us{0};
+    std::atomic<int64_t> last_worker_total_us{0};
+    std::atomic<int64_t> total_ticks{0};
+    std::atomic<int64_t> total_reused{0};
+    std::atomic<int>     error_code{PK_ASYNC_ERR_OK};
+};
+
+struct AsyncState {
+    std::unordered_map<int, std::unique_ptr<AsyncTask>> tasks;
+    std::mutex tasks_mtx;
+};
+
+// ── Pure-C++ kernel — algorithm verbatim from run_demo_complex_pass ────────
+// Inputs and outputs are std::vector<float>. Returns false on invalid inputs.
+// Knob clamps mirror the synchronous path silently (no push_warning here —
+// worker thread cannot call Godot API).
+static bool _demo_complex_kernel_pure(int grid_w, int grid_h,
+                                      int iterations, int kernel_radius,
+                                      float coriolis_strength,
+                                      float terrain_drag,
+                                      float elevation_gain,
+                                      float normalize_k,
+                                      const std::vector<float> &T_in_v,
+                                      const std::vector<float> &E_v,
+                                      std::vector<double> &buf_a,
+                                      std::vector<double> &buf_b,
+                                      std::vector<float>  &out_v) {
+    if (grid_w <= 0 || grid_h <= 0) return false;
+    const int n = grid_w * grid_h;
+    if ((int)T_in_v.size() != n || (int)E_v.size() != n) return false;
+
+    if (iterations < 1) iterations = 1;
+    if (iterations > 64) iterations = 64;
+    if (kernel_radius < 1) kernel_radius = 1;
+    if (kernel_radius > 5) kernel_radius = 5;
+    if (coriolis_strength < -1.0f) coriolis_strength = -1.0f;
+    if (coriolis_strength >  1.0f) coriolis_strength =  1.0f;
+    if (terrain_drag < 0.0f) terrain_drag = 0.0f;
+    if (terrain_drag > 1.0f) terrain_drag = 1.0f;
+
+    if ((int)buf_a.size() != n) buf_a.assign(n, 0.0);
+    if ((int)buf_b.size() != n) buf_b.assign(n, 0.0);
+    if ((int)out_v.size() != n) out_v.assign(n, 0.0f);
+
+    const float *__restrict T_in = T_in_v.data();
+    const float *__restrict E    = E_v.data();
+
+    const int kr   = kernel_radius;
+    const int ksz  = 2 * kr + 1;
+    double kernel[121];
+    double kernel_sum = 0.0;
+    for (int dy = -kr; dy <= kr; ++dy) {
+        for (int dx = -kr; dx <= kr; ++dx) {
+            const double w = std::exp(-(double)(dx*dx + dy*dy) * 0.5);
+            kernel[(dy+kr)*ksz + (dx+kr)] = w;
+            kernel_sum += w;
+        }
+    }
+    const double kernel_inv_sum = (kernel_sum > 0.0) ? (1.0 / kernel_sum) : 0.0;
+
+    for (int i = 0; i < n; ++i) buf_a[i] = (double)T_in[i];
+
+    const double step_size = 0.05;
+    const double cor  = (double)coriolis_strength;
+    const double drag = (double)terrain_drag;
+
+    for (int it = 0; it < iterations; ++it) {
+        const std::vector<double> &src = (it & 1) ? buf_b : buf_a;
+        std::vector<double>       &dst = (it & 1) ? buf_a : buf_b;
+        const double *__restrict S = src.data();
+        double       *__restrict D = dst.data();
+
+        for (int y = 0; y < grid_h; ++y) {
+            const double cor_sign = (y < grid_h / 2) ? -1.0 : 1.0;
+            const double rot_rad  = cor * cor_sign * 1.5707963267948966;
+
+            for (int x = 0; x < grid_w; ++x) {
+                const int i = y * grid_w + x;
+
+                double accum = 0.0;
+                for (int dy = -kr; dy <= kr; ++dy) {
+                    int ny = y + dy;
+                    if (ny < 0)         ny = 0;
+                    else if (ny >= grid_h) ny = grid_h - 1;
+                    const int row = ny * grid_w;
+                    const double *kw_row = &kernel[(dy + kr) * ksz];
+                    for (int dx = -kr; dx <= kr; ++dx) {
+                        int nx = x + dx;
+                        if (nx < 0)         nx = 0;
+                        else if (nx >= grid_w) nx = grid_w - 1;
+                        accum += S[row + nx] * kw_row[dx + kr];
+                    }
+                }
+                const double smooth = accum * kernel_inv_sum;
+
+                const int xw = (x > 0)            ? (x - 1) : x;
+                const int xe = (x < grid_w - 1)   ? (x + 1) : x;
+                const int yn = (y > 0)            ? (y - 1) : y;
+                const int ys = (y < grid_h - 1)   ? (y + 1) : y;
+                const int row_n = yn * grid_w;
+                const int row_c = y  * grid_w;
+                const int row_s = ys * grid_w;
+                const double gx = (S[row_n + xe] + 2.0*S[row_c + xe] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0*S[row_c + xw] - S[row_s + xw]) * 0.125;
+                const double gy = (S[row_s + xw] + 2.0*S[row_s + x ] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0*S[row_n + x ] - S[row_n + xe]) * 0.125;
+
+                const double cs = std::cos(rot_rad);
+                const double sn = std::sin(rot_rad);
+                const double gx_p = gx * cs - gy * sn;
+                const double gy_p = gx * sn + gy * cs;
+
+                const double damp = 1.0 - drag * (double)E[i];
+                const double flux = gx_p + gy_p;
+                D[i] = smooth + flux * damp * step_size;
+            }
+        }
+    }
+
+    const std::vector<double> &last = (iterations & 1) ? buf_b : buf_a;
+
+    double out_min =  std::numeric_limits<double>::infinity();
+    double out_max = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < n; ++i) {
+        const double v = last[i];
+        if (v < out_min) out_min = v;
+        if (v > out_max) out_max = v;
+    }
+    const double denom = (out_max - out_min) > 1.0e-6
+                       ? (out_max - out_min) : 1.0e-6;
+    const double inv_denom = 1.0 / denom;
+
+    const double gain = (double)elevation_gain;
+    const double k    = (double)normalize_k;
+    for (int i = 0; i < n; ++i) {
+        const double norm = (last[i] - out_min) * inv_denom;
+        const double amp  = 1.0 + gain * (double)E[i];
+        double v = norm * amp * k;
+        if (v < 0.0) v = 0.0;
+        else if (v > 1.0) v = 1.0;
+        out_v[i] = (float)v;
+    }
+    return true;
+}
+
+// ── Worker thread main loop ────────────────────────────────────────────────
+static void _async_worker_main(AsyncTask *t) {
+    using clock = std::chrono::steady_clock;
+
+    while (true) {
+        // Snapshot params under the lock, then release it during compute.
+        int   grid_w, grid_h, iters, kr;
+        float coriolis, drag, gain, k;
+        {
+            std::unique_lock<std::mutex> lk(t->mtx);
+            t->cv.wait(lk, [t]{
+                return t->request_pending.load(std::memory_order_acquire)
+                    || t->should_exit.load(std::memory_order_acquire);
+            });
+            if (t->should_exit.load(std::memory_order_acquire)) return;
+
+            // Copy inputs into worker-private buffers (cheap; ~9.6 KB at 60×40).
+            t->w_in_temp = t->in_temp;
+            t->w_in_elev = t->in_elev;
+            grid_w = t->r_grid_w;
+            grid_h = t->r_grid_h;
+            iters  = t->r_iterations;
+            kr     = t->r_kernel_radius;
+            coriolis = t->r_coriolis;
+            drag     = t->r_drag;
+            gain     = t->r_gain;
+            k        = t->r_k;
+        }
+
+        const auto t0 = clock::now();
+        const auto t_compute_start = clock::now();
+
+        const bool ok = _demo_complex_kernel_pure(
+            grid_w, grid_h, iters, kr,
+            coriolis, drag, gain, k,
+            t->w_in_temp, t->w_in_elev,
+            t->w_buf_a, t->w_buf_b, t->w_out);
+
+        const auto t_compute_end = clock::now();
+
+        if (!ok) {
+            // Set error code; do not modify result_buf (keep last good result).
+            t->error_code.store(PK_ASYNC_ERR_INPUT_SIZE,
+                                std::memory_order_release);
+        } else {
+            // Publish: copy w_out → result_buf under lock (so main-thread poll
+            // never sees a partially-written buffer).
+            std::lock_guard<std::mutex> lk(t->mtx);
+            t->result_buf.resize(t->w_out.size());
+            std::memcpy(t->result_buf.data(), t->w_out.data(),
+                        t->w_out.size() * sizeof(float));
+            t->error_code.store(PK_ASYNC_ERR_OK, std::memory_order_release);
+        }
+
+        const auto t1 = clock::now();
+        t->last_worker_compute_us.store(
+            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                t_compute_end - t_compute_start).count(),
+            std::memory_order_relaxed);
+        t->last_worker_total_us.store(
+            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                t1 - t0).count(),
+            std::memory_order_relaxed);
+        t->total_ticks.fetch_add(1, std::memory_order_relaxed);
+
+        t->request_pending.store(false, std::memory_order_release);
+        t->result_ready.store(true, std::memory_order_release);
+    }
+}
+
+inline AsyncState *_get_or_create_async_state(void *&slot) {
+    if (!slot) slot = new AsyncState();
+    return reinterpret_cast<AsyncState*>(slot);
+}
+
+inline AsyncState *_get_async_state(void *slot) {
+    return reinterpret_cast<AsyncState*>(slot);
+}
+
+} // namespace (anonymous)
+
+// ── Public API ────────────────────────────────────────────────────────────
+
+void DCWorldExt::async_climate_register_task(int task_id, int n_workers) {
+    (void)n_workers; // currently always 1 — multi-worker per task left for future
+    AsyncState *st = _get_or_create_async_state(_async_state);
+    std::lock_guard<std::mutex> g(st->tasks_mtx);
+    auto it = st->tasks.find(task_id);
+    if (it != st->tasks.end()) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt][async] task ", task_id,
+            " already registered; ignoring duplicate register");
+        return;
+    }
+    auto t = std::make_unique<AsyncTask>();
+    t->task_id = task_id;
+    AsyncTask *raw = t.get();
+    st->tasks.emplace(task_id, std::move(t));
+    raw->worker = std::thread(&_async_worker_main, raw);
+}
+
+void DCWorldExt::async_climate_set_inputs(int task_id,
+                                          const PackedFloat32Array &temp,
+                                          const PackedFloat32Array &elev) {
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) {
+        UtilityFunctions::push_warning("[DCWorldExt][async] set_inputs: no async state");
+        return;
+    }
+    AsyncTask *t = nullptr;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        auto it = st->tasks.find(task_id);
+        if (it == st->tasks.end()) {
+            UtilityFunctions::push_warning(
+                "[DCWorldExt][async] set_inputs: task ", task_id, " not registered");
+            return;
+        }
+        t = it->second.get();
+    }
+    const int n_t = temp.size();
+    const int n_e = elev.size();
+    std::lock_guard<std::mutex> lk(t->mtx);
+    t->in_temp.resize(n_t);
+    if (n_t > 0) std::memcpy(t->in_temp.data(), temp.ptr(), n_t * sizeof(float));
+    t->in_elev.resize(n_e);
+    if (n_e > 0) std::memcpy(t->in_elev.data(), elev.ptr(), n_e * sizeof(float));
+}
+
+void DCWorldExt::async_climate_request(int task_id,
+                                       int grid_w, int grid_h,
+                                       int iterations, int kernel_radius,
+                                       float coriolis_strength,
+                                       float terrain_drag,
+                                       float elevation_gain,
+                                       float normalize_k) {
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) {
+        UtilityFunctions::push_warning("[DCWorldExt][async] request: no async state");
+        return;
+    }
+    AsyncTask *t = nullptr;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        auto it = st->tasks.find(task_id);
+        if (it == st->tasks.end()) {
+            UtilityFunctions::push_warning(
+                "[DCWorldExt][async] request: task ", task_id, " not registered");
+            return;
+        }
+        t = it->second.get();
+    }
+    {
+        std::lock_guard<std::mutex> lk(t->mtx);
+        // If a previous request is still in flight or unread, count this main
+        // thread tick as a "reuse" frame (worker not keeping up). The main
+        // thread will keep using the last-published result until poll picks it.
+        if (t->request_pending.load(std::memory_order_acquire)) {
+            t->total_reused.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        t->r_grid_w = grid_w;
+        t->r_grid_h = grid_h;
+        t->r_iterations = iterations;
+        t->r_kernel_radius = kernel_radius;
+        t->r_coriolis = coriolis_strength;
+        t->r_drag = terrain_drag;
+        t->r_gain = elevation_gain;
+        t->r_k    = normalize_k;
+        t->request_pending.store(true, std::memory_order_release);
+    }
+    t->cv.notify_one();
+}
+
+bool DCWorldExt::async_climate_poll(int task_id) {
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) return false;
+    AsyncTask *t = nullptr;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        auto it = st->tasks.find(task_id);
+        if (it == st->tasks.end()) return false;
+        t = it->second.get();
+    }
+    if (!t->result_ready.load(std::memory_order_acquire)) return false;
+
+    // Translate any pending error from the worker into a single push_warning
+    // (called on the main thread → safe to call Godot API).
+    const int ec = t->error_code.exchange(PK_ASYNC_ERR_OK, std::memory_order_acq_rel);
+    if (ec != PK_ASYNC_ERR_OK) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt][async] worker error code=", ec, " (task ", task_id, ")");
+        // Do NOT consume result_ready on error; main thread sees stale result.
+        return false;
+    }
+
+    // Snapshot result_buf under lock; copy into _slots[CELL_DEMO_THERMAL_GRADIENT].
+    std::vector<float> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(t->mtx);
+        snapshot = t->result_buf;
+    }
+    t->result_ready.store(false, std::memory_order_release);
+
+    const int sid_out = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_out < 0) return true; // no output slot — client just got the timing info
+    Slot &s_out = _slots.write[sid_out];
+    if (s_out.dtype != SlotDType::F32) return true;
+    const int n_slot = s_out.arr_f32.size();
+    const int n_snap = (int)snapshot.size();
+    if (n_slot != n_snap || n_slot <= 0) return true;
+    float *p = s_out.arr_f32.ptrw();
+    std::memcpy(p, snapshot.data(), n_slot * sizeof(float));
+    return true;
+}
+
+Dictionary DCWorldExt::async_climate_stats(int task_id) {
+    Dictionary d;
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) {
+        d["registered"] = false;
+        return d;
+    }
+    AsyncTask *t = nullptr;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        auto it = st->tasks.find(task_id);
+        if (it == st->tasks.end()) {
+            d["registered"] = false;
+            return d;
+        }
+        t = it->second.get();
+    }
+    d["registered"] = true;
+    d["worker_compute_us"] = (int64_t)t->last_worker_compute_us.load(std::memory_order_relaxed);
+    d["worker_total_us"]   = (int64_t)t->last_worker_total_us.load(std::memory_order_relaxed);
+    d["total_ticks"]       = (int64_t)t->total_ticks.load(std::memory_order_relaxed);
+    d["total_reused"]      = (int64_t)t->total_reused.load(std::memory_order_relaxed);
+    d["request_pending"]   = t->request_pending.load(std::memory_order_acquire);
+    d["result_ready"]      = t->result_ready.load(std::memory_order_acquire);
+    return d;
+}
+
+void DCWorldExt::async_climate_shutdown_task(int task_id) {
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) return;
+    std::unique_ptr<AsyncTask> owned;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        auto it = st->tasks.find(task_id);
+        if (it == st->tasks.end()) return;
+        owned = std::move(it->second);
+        st->tasks.erase(it);
+    }
+    // Signal the worker to exit then join. cv.notify_one BEFORE join.
+    owned->should_exit.store(true, std::memory_order_release);
+    owned->cv.notify_all();
+    if (owned->worker.joinable()) owned->worker.join();
+}
+
+void DCWorldExt::async_climate_shutdown_all() {
+    AsyncState *st = _get_async_state(_async_state);
+    if (!st) return;
+    // Move out all tasks under lock so the destructors run unlocked.
+    std::vector<std::unique_ptr<AsyncTask>> dead;
+    {
+        std::lock_guard<std::mutex> g(st->tasks_mtx);
+        dead.reserve(st->tasks.size());
+        for (auto &kv : st->tasks) dead.push_back(std::move(kv.second));
+        st->tasks.clear();
+    }
+    for (auto &t : dead) {
+        t->should_exit.store(true, std::memory_order_release);
+        t->cv.notify_all();
+    }
+    for (auto &t : dead) {
+        if (t->worker.joinable()) t->worker.join();
+    }
+    delete st;
+    _async_state = nullptr;
+}
+
 // ─── Class binding ─────────────────────────────────────────────────────────
 
 void DCWorldExt::_bind_methods() {
@@ -1321,6 +2434,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("view_f32", "comp_id"), &DCWorldExt::view_f32);
     ClassDB::bind_method(D_METHOD("view_i32", "comp_id"), &DCWorldExt::view_i32);
     ClassDB::bind_method(D_METHOD("view_u8",  "comp_id"), &DCWorldExt::view_u8);
+
+    // Mode-B snapshot API (recommended; see performance-charter.md §12)
+    ClassDB::bind_method(D_METHOD("snapshot_f32", "comp_id"), &DCWorldExt::snapshot_f32);
 
     ClassDB::bind_method(D_METHOD("write_f32", "comp_id", "idx", "v"), &DCWorldExt::write_f32);
     ClassDB::bind_method(D_METHOD("write_i32", "comp_id", "idx", "v"), &DCWorldExt::write_i32);
@@ -1347,6 +2463,33 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("run_climate_pass_a", "cp_struct", "phase", "season_phase"),
                          &DCWorldExt::run_climate_pass_a);
 
+    // Mode-B reference implementation entry point (see performance-charter.md §12)
+    ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"), &DCWorldExt::run_temp_drift_pass);
+
+    // Pass #2 reference implementation entry point (see performance-charter.md §12.6)
+    ClassDB::bind_method(
+        D_METHOD("run_thermal_gradient_pass", "grid_w", "grid_h", "elevation_gain", "normalize_k"),
+        &DCWorldExt::run_thermal_gradient_pass);
+
+    // Pass #3 reference implementation entry point (see performance-charter.md §12.6.6)
+    ClassDB::bind_method(
+        D_METHOD("run_demo_complex_pass",
+                 "grid_w", "grid_h",
+                 "iterations", "kernel_radius",
+                 "coriolis_strength", "terrain_drag",
+                 "elevation_gain", "normalize_k"),
+        &DCWorldExt::run_demo_complex_pass);
+
+    // DOTS-A1 EXPERIMENT: archetype-filtered demo_complex (see world_ext.h)
+    ClassDB::bind_method(
+        D_METHOD("run_demo_complex_pass_archetyped",
+                 "grid_w", "grid_h",
+                 "iterations", "kernel_radius",
+                 "coriolis_strength", "terrain_drag",
+                 "elevation_gain", "normalize_k",
+                 "target_archetype"),
+        &DCWorldExt::run_demo_complex_pass_archetyped);
+
     // Phase 3a Step 0: alias spike (TEMPORARY)
     ClassDB::bind_method(D_METHOD("_spike_alias_v1_naive",          "obj", "prop", "idx", "sentinel"), &DCWorldExt::_spike_alias_v1_naive);
     ClassDB::bind_method(D_METHOD("_spike_alias_v2_release",        "obj", "prop", "idx", "sentinel"), &DCWorldExt::_spike_alias_v2_release);
@@ -1369,6 +2512,27 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::bench_pass_a_indexed_simd);
     ClassDB::bind_method(D_METHOD("bench_pass_a_indexed_thread", "comp_id", "dirty", "lat", "prev", "neighbors", "k1", "k2", "base", "season", "n_tasks"),
                          &DCWorldExt::bench_pass_a_indexed_thread);
+
+    // EXPERIMENTAL: D-async (long-lived worker thread + double buffering)
+    ClassDB::bind_method(D_METHOD("async_climate_register_task", "task_id", "n_workers"),
+                         &DCWorldExt::async_climate_register_task);
+    ClassDB::bind_method(D_METHOD("async_climate_set_inputs", "task_id", "temp", "elev"),
+                         &DCWorldExt::async_climate_set_inputs);
+    ClassDB::bind_method(
+        D_METHOD("async_climate_request",
+                 "task_id", "grid_w", "grid_h",
+                 "iterations", "kernel_radius",
+                 "coriolis_strength", "terrain_drag",
+                 "elevation_gain", "normalize_k"),
+        &DCWorldExt::async_climate_request);
+    ClassDB::bind_method(D_METHOD("async_climate_poll", "task_id"),
+                         &DCWorldExt::async_climate_poll);
+    ClassDB::bind_method(D_METHOD("async_climate_stats", "task_id"),
+                         &DCWorldExt::async_climate_stats);
+    ClassDB::bind_method(D_METHOD("async_climate_shutdown_task", "task_id"),
+                         &DCWorldExt::async_climate_shutdown_task);
+    ClassDB::bind_method(D_METHOD("async_climate_shutdown_all"),
+                         &DCWorldExt::async_climate_shutdown_all);
 }
 
 } // namespace pk
