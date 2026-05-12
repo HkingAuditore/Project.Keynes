@@ -364,6 +364,22 @@ func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 		return {}
 	if _refresh_climate_daily_job == null or not _refresh_climate_daily_job.data_core_ready():
 		return {}
+	# ── Path-C kill-switch（Phase 3a Step 2.0 hotfix · 2026-05-12）─────────
+	# 当 DCWorldExt（C++ co-processor）已 bind 但其 run_climate_pass_a 仍处于
+	# stub/fallback 阶段时，DCWorldExt::bind_map_data 内部对 map.<f32> 字段做的
+	# `set()` 推回会把 PackedFloat32Array 的 refcount 顶到 ≥3，导致 GDScript
+	# climate Pass 内 `arr[i] = v` 触发 CoW 写到一份临时 storage 上，函数退出
+	# 即销毁，map.temp_arr 永远是初值（→ 渲染层"温度全蓝"）。详见
+	# docs/performance-charter.md §11.4 第三行的 "GDScript 端整体赋值后必须
+	# bind_map_data" 反向对偶。
+	#
+	# 折中策略（路 C）：DCWorldExt 已 bind 时，climate Pass 暂时回退到 legacy
+	# 直读直写 map.<arr> 路径——绕开 view，避免 refcount 抬升 + CoW 自杀。
+	# C++ Pass-A 真正接管（run_climate_pass_a 返回 ≥0）后，整套 GDScript Pass
+	# 不再读写 cell-level 数组，此 kill-switch 自动失效（届时该函数返回的 view
+	# dict 也不会再被使用）。
+	if _data_core_world_ext != null:
+		return {}
 	var w = _data_core_world
 	var j = _refresh_climate_daily_job
 	# 25 个 cell-level view（key 命名 = SoA 字段后缀，方便读 sub-pass 时一一对照）
@@ -3107,7 +3123,23 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	# 任何 C++ 端异常 / -1 返回都让 GDScript 路径接管，不抛 error 不打 push_warning
 	# 以避免 frame 内日志炸开（首日由 _setup_sus 的 [DataCore] _data_core_world_ext
 	# bound 行体现整体路径状态）。
-	if cp.use_data_core_climate and _data_core_world_ext != null and map != null:
+	# [DIAG 2026-05-12] 临时禁用 C++ Pass-A 入口以二分定位"温度逐日累积全蓝"bug。
+	# 当 _DIAG_DISABLE_CPP_PASS_A=true 时整段短路 → 走 GDScript SoA fallback；
+	# 实测：禁用后仍然全蓝 → C++ Pass-A 不是元凶，bug 在 Pass-B / ocean / sea_ice。
+	# 已恢复 false 让 C++ 路径正常工作；保留闸门以备后续再次二分。
+	#
+	# [DIAG 2026-05-12 R2] 重新启用 kill-switch。新证据：
+	#   - DIAG 日志中 pass_a_end 仅在 day=0 出现一次，day=1..8 全部缺席
+	#     → C++ Pass-A 已接管（return >= 0），GDScript SoA Pass-A 不再执行；
+	#   - C++ Pass-A 写 _slots[].arr_f32（storage B），而 _climate_views_from_world
+	#     在 _data_core_world_ext != null 时返回空 dict（路 C kill-switch），
+	#     导致 ocean_water/ocean_land/Pass-B/sea_ice 全部回退写 map.temp_arr（storage A）；
+	#   - storage A 与 storage B 解耦后，没有任何 sub-pass 重置 map.temp_arr，
+	#     ocean transport 的 anomaly 单调累积 → temp_a 撑到 0/1 → 椒盐全蓝。
+	# 修复：暂时禁用 C++ Pass-A，让 GDScript SoA Pass-A 写 map.temp_arr，
+	# 闭合反馈回路。等 storage 同源（CoW alias）做实后再恢复 false。
+	const _DIAG_DISABLE_CPP_PASS_A: bool = true
+	if not _DIAG_DISABLE_CPP_PASS_A and cp.use_data_core_climate and _data_core_world_ext != null and map != null:
 		# Step 3b-1: 真实 cp_struct packing。
 		# 这些字段必须与 world_ext.cpp::run_climate_pass_a 第 3 节读取顺序一一对应。
 		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0，自动 fallback 到 legacy。
@@ -4125,6 +4157,24 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		_dm_global_yesterday = lerpf(_dm_global_yesterday, dm_today, _DRIFT_EMA_ALPHA)
 		_ds_global_yesterday = lerpf(_ds_global_yesterday, ds_today, _DRIFT_EMA_ALPHA)
 
+	# [DIAG 2026-05-12] 全蓝退化定位：Pass-A 末尾打 temp_a 全图 min/max/mean，
+	# 仅前 8 个 round 打一次。如果 Pass-A 末尾已是 mean ≈ 0.5 但其他 sub-pass 后 mean ≈ 0
+	# → bug 在后续 pass。如果 Pass-A 末尾 mean 已经 ≈ 0 → bug 在 Pass-A 内或 SoA view 错连。
+	if _daily_climate_call_count <= 8:
+		var _tmin: float = 1.0
+		var _tmax: float = 0.0
+		var _tsum: float = 0.0
+		var _tcnt: int = temp_a.size()
+		for _ti in range(_tcnt):
+			var _tv: float = temp_a[_ti]
+			if _tv < _tmin: _tmin = _tv
+			if _tv > _tmax: _tmax = _tv
+			_tsum += _tv
+		var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
+		print("[DIAG pass_a_end] day=%d phase=%.3f temp_a min=%.4f max=%.4f mean=%.4f n=%d" % [
+			_daily_climate_call_count, season_phase, _tmin, _tmax, _tmean, _tcnt
+		])
+
 func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	# 局部气候耦合 SoA 版本：在 SoA 上做 albedo / coastal / landform 温度修正 +
 	# evap / rain_shadow 湿度修正。复用 legacy 同段算法常量。
@@ -4338,6 +4388,24 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if moisture_final < 0.0: moisture_final = 0.0
 		elif moisture_final > 1.0: moisture_final = 1.0
 		moist_a[i] = moisture_final
+
+	# [DIAG 2026-05-12] Pass-B 末尾打 temp_a 全图统计（前 8 个 round）。
+	# 与 Pass-A 末尾配对解读：若 Pass-B 末尾 mean ≈ 0 但 Pass-A 末尾正常 → bug 在 Pass-B 内
+	# （albedo / coastal / landform 的 d_albedo / d_coastal / d_landform 累加错误）。
+	if _daily_climate_call_count <= 8:
+		var _tmin: float = 1.0
+		var _tmax: float = 0.0
+		var _tsum: float = 0.0
+		var _tcnt: int = temp_a.size()
+		for _ti in range(_tcnt):
+			var _tv: float = temp_a[_ti]
+			if _tv < _tmin: _tmin = _tv
+			if _tv > _tmax: _tmax = _tv
+			_tsum += _tv
+		var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
+		print("[DIAG pass_b_end] day=%d phase=%.3f temp_a min=%.4f max=%.4f mean=%.4f n=%d" % [
+			_daily_climate_call_count, season_phase, _tmin, _tmax, _tmean, _tcnt
+		])
 
 func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
