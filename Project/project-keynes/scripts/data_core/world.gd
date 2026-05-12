@@ -1,0 +1,1013 @@
+extends RefCounted
+class_name DCWorld
+
+## DataCore — World 容器（DOTS 风格数据架构基石的根）。
+##
+## 职责：
+##   1. Component 注册表：按类型 ID 存储 PackedArray 槽位（含 _prev 双缓冲）；
+##   2. Entity 计数器（首版直接 = MapData.cell_count() / front 池容量）；
+##   3. Query 工厂（DCQuery 池）—— 由 query.gd 在 Task 3 实现；
+##   4. CommandBuffer 入口 —— 由 command_buffer.gd 在 Task 5 实现；
+##   5. Archetype 逻辑分组 —— Task 6；
+##   6. bind_map_data() 桥接：把 MapData 25 个 PackedArray 按引用挂入 component 槽 —— Task 4。
+##
+## hot loop 设计原则：
+##   - get_component_array() / view_f32() / view_i32() / view_u8() 全部直接返回
+##     底层 PackedArray 引用，零拷贝；调用方在循环外取一次本地引用，循环内只
+##     做 `arr[i]` 索引，单次访问与 legacy `temp_arr[i]` 完全等价；
+##   - register_component() / create_entities() 等结构性操作只在启动 / regenerate
+##     时调用，不在 hot path 触发；
+##   - 移动平台兼容：纯 GDScript + Packed*Array，零 GDExtension 依赖。
+
+# ─── 内部数据结构 ─────────────────────────────────────────────
+# Component 槽位：每个槽位记录 dtype / track_prev / 主数组 / prev 镜像。
+#   - F32         → arr_f32 / arr_f32_prev (PackedFloat32Array)
+#   - I32         → arr_i32 (PackedInt32Array)（首版不双缓冲）
+#   - U8          → arr_u8  (PackedByteArray)（首版不双缓冲）
+#   - VEC2_F32    → arr_f32 = x 轴, arr_f32_y = y 轴
+#   - VEC3_F32    → arr_f32 = x 轴, arr_f32_y = y, arr_f32_z = z
+#
+# 注：把 vec2 / vec3 拆轴是因为 hot loop 用 stride>1 packed 索引会有 ~30% 损失；
+# 拆轴后内层循环可以直接 `xarr[i]` `yarr[i]` 读取，与 legacy 行为一致。
+class _Slot:
+	extends RefCounted
+	var name: StringName
+	var dtype: int
+	var stride: int = 1
+	var track_prev: bool = false
+	var external_ref: bool = false  # true = 由 bind_map_data() 挂入的外部数组（rebind 时刷新）
+	var arr_f32: PackedFloat32Array = PackedFloat32Array()
+	var arr_f32_prev: PackedFloat32Array = PackedFloat32Array()
+	var arr_f32_y: PackedFloat32Array = PackedFloat32Array()
+	var arr_f32_y_prev: PackedFloat32Array = PackedFloat32Array()
+	var arr_f32_z: PackedFloat32Array = PackedFloat32Array()
+	var arr_f32_z_prev: PackedFloat32Array = PackedFloat32Array()
+	var arr_i32: PackedInt32Array = PackedInt32Array()
+	var arr_u8: PackedByteArray = PackedByteArray()
+
+
+var _slots: Array = []                         # Array[_Slot]
+var _slot_by_name: Dictionary = {}             # StringName → comp_id (int)
+var _entity_count: int = 0
+
+# Bind 状态（Task 4 完整接入；首版仅占位）
+var _map_data = null                           # MapData 弱引用
+var _bound: bool = false
+
+# Pending sub-pass 计数（Task 2 swap 守卫用）。每个 sub-pass 开始时 +1，完成
+# -1；为 0 时才允许调用 swap_double_buffer / commit_round。
+var _pending_passes: int = 0
+
+# 调试：debug 构建下发出更严的告警。
+var _debug: bool = OS.is_debug_build()
+
+
+# ─── Task 1 — Component 注册 / 创建 entity / 基础访问 ───────────────────
+
+## 注册一个 component，返回 comp_id (int)。
+## 重复注册同名 component 视为幂等，直接返回已有 id。
+func register_component(name: StringName, dtype: int, stride: int = 1, track_prev: bool = false) -> int:
+	if _slot_by_name.has(name):
+		return int(_slot_by_name[name])
+	if not DCComponentIds.is_valid_dtype(dtype):
+		push_error("[DCWorld] register_component '%s': invalid dtype=%d" % [String(name), dtype])
+		return -1
+	if stride < 1:
+		push_error("[DCWorld] register_component '%s': stride must be >= 1, got %d" % [String(name), stride])
+		return -1
+	# stride>1 仅在 F32 上面允许（语义已经被 VEC2/VEC3 dtype 覆盖；这里允许业务侧用 stride 自行打包）
+	if (dtype == DCComponentIds.I32 or dtype == DCComponentIds.U8) and stride != 1:
+		push_error("[DCWorld] register_component '%s': I32/U8 dtype only supports stride=1" % String(name))
+		return -1
+	var slot := _Slot.new()
+	slot.name = name
+	slot.dtype = dtype
+	slot.stride = stride
+	slot.track_prev = track_prev
+	slot.external_ref = false
+	# 预分配到当前 entity_count（若尚未 create_entities，则保持空数组）
+	_slot_resize(slot, _entity_count)
+	_slots.append(slot)
+	var cid: int = _slots.size() - 1
+	_slot_by_name[name] = cid
+	return cid
+
+
+## 通过 StringName 查询 comp_id；不存在返回 -1。
+func component_id(name: StringName) -> int:
+	return int(_slot_by_name.get(name, -1))
+
+
+## 当前已注册 component 数量。
+func component_count() -> int:
+	return _slots.size()
+
+
+## 当前 entity 总数。
+func entity_count() -> int:
+	return _entity_count
+
+
+## 一次性把 entity 数量设为 count，并 resize 全部已注册 component。
+## 禁止单 entity push_back（GC 压力）。
+func create_entities(count: int) -> void:
+	if count < 0:
+		push_error("[DCWorld] create_entities: count must be >= 0, got %d" % count)
+		return
+	_entity_count = count
+	for slot in _slots:
+		# 外部引用槽位（bind_map_data 挂入）由 MapData 自己负责长度，World 不强制 resize
+		if not slot.external_ref:
+			_slot_resize(slot, count)
+
+
+## 全部 component 同步 resize 到 new_count（CommandBuffer 在 flush 时使用）。
+func resize_all(new_count: int) -> void:
+	create_entities(new_count)
+
+
+## 取底层 PackedArray 引用（hot loop 用）。dtype 不匹配时返回 null。
+##  - F32 / VEC2_F32 / VEC3_F32 → 返回 x 轴 PackedFloat32Array
+##  - I32 → PackedInt32Array
+##  - U8 → PackedByteArray
+func get_component_array(comp_id: int):
+	if comp_id < 0 or comp_id >= _slots.size():
+		push_error("[DCWorld] get_component_array: invalid comp_id=%d" % comp_id)
+		return null
+	var slot: _Slot = _slots[comp_id]
+	match slot.dtype:
+		DCComponentIds.F32, DCComponentIds.VEC2_F32, DCComponentIds.VEC3_F32:
+			return slot.arr_f32
+		DCComponentIds.I32:
+			return slot.arr_i32
+		DCComponentIds.U8:
+			return slot.arr_u8
+	return null
+
+
+# ─── 内部工具 ───────────────────────────────────────────────────
+
+func _slot_resize(slot: _Slot, n: int) -> void:
+	match slot.dtype:
+		DCComponentIds.F32:
+			slot.arr_f32.resize(n * slot.stride)
+			if slot.track_prev:
+				slot.arr_f32_prev.resize(n * slot.stride)
+		DCComponentIds.VEC2_F32:
+			slot.arr_f32.resize(n)
+			slot.arr_f32_y.resize(n)
+			if slot.track_prev:
+				slot.arr_f32_prev.resize(n)
+				slot.arr_f32_y_prev.resize(n)
+		DCComponentIds.VEC3_F32:
+			slot.arr_f32.resize(n)
+			slot.arr_f32_y.resize(n)
+			slot.arr_f32_z.resize(n)
+			if slot.track_prev:
+				slot.arr_f32_prev.resize(n)
+				slot.arr_f32_y_prev.resize(n)
+				slot.arr_f32_z_prev.resize(n)
+		DCComponentIds.I32:
+			slot.arr_i32.resize(n)
+		DCComponentIds.U8:
+			slot.arr_u8.resize(n)
+
+
+## 内部：取 _Slot（bind / view 等高级 API 用）。
+func _get_slot(comp_id: int) -> _Slot:
+	if comp_id < 0 or comp_id >= _slots.size():
+		return null
+	return _slots[comp_id]
+
+
+## 内部：调试日志（World 注册规模等）。
+func describe() -> Dictionary:
+	return {
+		"entity_count": _entity_count,
+		"component_count": _slots.size(),
+		"bound": _bound,
+	}
+
+
+# ─── Task 2 — ComponentView 访问器（hot loop 零拷贝） ───────────────────
+#
+# 所有 view_* API 都直接返回 _Slot 内部 PackedArray 引用，零拷贝；hot loop
+# 在循环外取一次本地引用，循环内只走 `arr[i]` 索引。
+#
+# 注意：Godot 4 的 PackedArray 是 COW（copy-on-write）值类型。当 GDScript 把
+# class member PackedArray 赋值到 local var 后，对 local var 的写仍能反向影响
+# class member（因为 share 同一份内部 buffer），直到任一方 size 发生结构性
+# 变化。这一约定对 hot loop 是透明的：调用方拿到 view 后只做 `arr[i] = x`，
+# 不会触发结构性 COW，性能与 legacy 一致。
+
+## 取 F32 component 主数组（hot loop 用）。
+func view_f32(comp_id: int) -> PackedFloat32Array:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_f32: invalid comp_id=%d" % comp_id)
+		return PackedFloat32Array()
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] view_f32: comp '%s' dtype=%s is not F32-compatible"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return PackedFloat32Array()
+	return slot.arr_f32
+
+
+## 取 F32 component 上一轮快照（要求 register 时 track_prev=true）。
+func view_f32_prev(comp_id: int) -> PackedFloat32Array:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_f32_prev: invalid comp_id=%d" % comp_id)
+		return PackedFloat32Array()
+	if not slot.track_prev:
+		push_error("[DCWorld] view_f32_prev: comp '%s' was not registered with track_prev=true" % String(slot.name))
+		return PackedFloat32Array()
+	return slot.arr_f32_prev
+
+
+## 取 I32 component 主数组。
+func view_i32(comp_id: int) -> PackedInt32Array:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_i32: invalid comp_id=%d" % comp_id)
+		return PackedInt32Array()
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] view_i32: comp '%s' dtype=%s is not I32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return PackedInt32Array()
+	return slot.arr_i32
+
+
+## 取 U8 component 主数组。
+func view_u8(comp_id: int) -> PackedByteArray:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_u8: invalid comp_id=%d" % comp_id)
+		return PackedByteArray()
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] view_u8: comp '%s' dtype=%s is not U8"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return PackedByteArray()
+	return slot.arr_u8
+
+
+# ─── Task 2.5 — Write API（DCWorldExt 等价路径） ──────────────────────
+#
+# 显式写回 API。DCWorld（GDScript）下 PackedArray 是 CoW 引用，原本用
+# `view_f32(c)[i] = v` 也能写回；但 DCWorldExt（C++/GDExtension）下
+# `view_*` 返回的是 Variant 拷贝，写不回内部 storage。为统一行为，所有
+# hot-loop 的 *写* 路径必须经 write_* 走，view_* 视为只读快照。
+#
+# 性能：在 GDScript fallback 下额外多一次方法调用 + slot 查表（_get_slot），
+# 单次开销 < 1us；调用方应在循环外缓存 comp_id，循环内直接调本方法。
+# 真正热的成段写应使用 write_*_range（一次调用搬一段）。
+
+## 单元素写入：F32 component。
+func write_f32(comp_id: int, idx: int, v: float) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_f32: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] write_f32: comp '%s' dtype=%s is not F32-compatible"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	if idx < 0 or idx >= slot.arr_f32.size():
+		push_error("[DCWorld] write_f32: idx=%d out of range [0,%d)" % [idx, slot.arr_f32.size()])
+		return
+	slot.arr_f32[idx] = v
+
+
+## 单元素写入：I32 component。
+func write_i32(comp_id: int, idx: int, v: int) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_i32: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] write_i32: comp '%s' dtype=%s is not I32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	if idx < 0 or idx >= slot.arr_i32.size():
+		push_error("[DCWorld] write_i32: idx=%d out of range [0,%d)" % [idx, slot.arr_i32.size()])
+		return
+	slot.arr_i32[idx] = v
+
+
+## 单元素写入：U8 component（int 入参，自动 & 0xFF 截断）。
+func write_u8(comp_id: int, idx: int, v: int) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_u8: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] write_u8: comp '%s' dtype=%s is not U8"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	if idx < 0 or idx >= slot.arr_u8.size():
+		push_error("[DCWorld] write_u8: idx=%d out of range [0,%d)" % [idx, slot.arr_u8.size()])
+		return
+	slot.arr_u8[idx] = v & 0xFF
+
+
+## 成段写入：F32 component。把 src[0..src.size()) 写到 arr[start..start+src.size())。
+func write_f32_range(comp_id: int, start: int, src: PackedFloat32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_f32_range: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] write_f32_range: comp '%s' dtype not F32-compatible" % String(slot.name))
+		return
+	var n: int = src.size()
+	if n <= 0:
+		return
+	if start < 0 or start + n > slot.arr_f32.size():
+		push_error("[DCWorld] write_f32_range: range [%d,%d) out of [0,%d)" % [start, start + n, slot.arr_f32.size()])
+		return
+	for i in range(n):
+		slot.arr_f32[start + i] = src[i]
+
+
+## 成段写入：I32 component。
+func write_i32_range(comp_id: int, start: int, src: PackedInt32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_i32_range: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] write_i32_range: comp '%s' dtype not I32" % String(slot.name))
+		return
+	var n: int = src.size()
+	if n <= 0:
+		return
+	if start < 0 or start + n > slot.arr_i32.size():
+		push_error("[DCWorld] write_i32_range: range [%d,%d) out of [0,%d)" % [start, start + n, slot.arr_i32.size()])
+		return
+	for i in range(n):
+		slot.arr_i32[start + i] = src[i]
+
+
+## 成段写入：U8 component。
+func write_u8_range(comp_id: int, start: int, src: PackedByteArray) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_u8_range: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] write_u8_range: comp '%s' dtype not U8" % String(slot.name))
+		return
+	var n: int = src.size()
+	if n <= 0:
+		return
+	if start < 0 or start + n > slot.arr_u8.size():
+		push_error("[DCWorld] write_u8_range: range [%d,%d) out of [0,%d)" % [start, start + n, slot.arr_u8.size()])
+		return
+	for i in range(n):
+		slot.arr_u8[start + i] = src[i]
+
+
+## 单元素读取：F32 component。冷路径（UI / baker / test / debug print）使用；
+## hot loop 应在循环外 `var arr := view_f32(cid)`，循环内直接 `arr[i]`。
+## 越界 / dtype 不匹配返回 0.0 并 push_error。
+func read_f32(comp_id: int, idx: int) -> float:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] read_f32: invalid comp_id=%d" % comp_id)
+		return 0.0
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] read_f32: comp '%s' dtype=%s is not F32-compatible"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return 0.0
+	if idx < 0 or idx >= slot.arr_f32.size():
+		push_error("[DCWorld] read_f32: idx=%d out of range [0,%d)" % [idx, slot.arr_f32.size()])
+		return 0.0
+	return slot.arr_f32[idx]
+
+
+## 单元素读取：I32 component。
+func read_i32(comp_id: int, idx: int) -> int:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] read_i32: invalid comp_id=%d" % comp_id)
+		return 0
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] read_i32: comp '%s' dtype=%s is not I32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return 0
+	if idx < 0 or idx >= slot.arr_i32.size():
+		push_error("[DCWorld] read_i32: idx=%d out of range [0,%d)" % [idx, slot.arr_i32.size()])
+		return 0
+	return slot.arr_i32[idx]
+
+
+## 单元素读取：U8 component（返回 0..255 的 int）。
+func read_u8(comp_id: int, idx: int) -> int:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] read_u8: invalid comp_id=%d" % comp_id)
+		return 0
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] read_u8: comp '%s' dtype=%s is not U8"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return 0
+	if idx < 0 or idx >= slot.arr_u8.size():
+		push_error("[DCWorld] read_u8: idx=%d out of range [0,%d)" % [idx, slot.arr_u8.size()])
+		return 0
+	return slot.arr_u8[idx]
+
+
+## 单元素读取：U8 component 当作 bool（> 0 即 true）。
+## D3-b：让"weather_field_initialized / _ema_initialized / has_river"等 0/1
+## 标志的调用方语义无感，对称 write_bool。
+func read_bool(comp_id: int, idx: int) -> bool:
+	return read_u8(comp_id, idx) > 0
+
+
+## 单元素写入：bool → U8 component（true=1, false=0），对称 read_bool。
+func write_bool(comp_id: int, idx: int, v: bool) -> void:
+	write_u8(comp_id, idx, 1 if v else 0)
+
+
+## 取 VEC2 component 拆轴视图：{ x: PackedFloat32Array, y: PackedFloat32Array }
+func view_vec2(comp_id: int) -> Dictionary:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_vec2: invalid comp_id=%d" % comp_id)
+		return {}
+	if slot.dtype != DCComponentIds.VEC2_F32:
+		push_error("[DCWorld] view_vec2: comp '%s' dtype=%s is not VEC2_F32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return {}
+	return { "x": slot.arr_f32, "y": slot.arr_f32_y }
+
+
+## 取 VEC2 component 上一轮快照拆轴视图。
+func view_vec2_prev(comp_id: int) -> Dictionary:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] view_vec2_prev: invalid comp_id=%d" % comp_id)
+		return {}
+	if slot.dtype != DCComponentIds.VEC2_F32:
+		push_error("[DCWorld] view_vec2_prev: comp '%s' dtype=%s is not VEC2_F32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return {}
+	if not slot.track_prev:
+		push_error("[DCWorld] view_vec2_prev: comp '%s' has no track_prev" % String(slot.name))
+		return {}
+	return { "x": slot.arr_f32_prev, "y": slot.arr_f32_y_prev }
+
+
+# ─── Task 2 — 双缓冲 swap ───────────────────────────────────────────
+#
+# 设计：swap 只交换 _Slot 内部"当前 / prev"PackedArray 引用，O(1)，无内存拷贝。
+# 由于 PackedArray 在 GDScript 里是值类型 (COW)，"swap 引用"在 GDScript 中通过
+# 临时变量赋值实现：
+#   var tmp = slot.arr_f32
+#   slot.arr_f32 = slot.arr_f32_prev
+#   slot.arr_f32_prev = tmp
+# 这是 ref-count 级别的赋值，不触发底层 buffer 拷贝。
+#
+# 守卫：`_pending_passes > 0` 时禁止 swap，避免 sub-pass 中途切片下游读到半成品。
+# 由 sub-pass 通过 begin_sub_pass() / end_sub_pass() 维护计数。
+
+## sub-pass 开始（计数 +1，用于 swap 守卫）。
+func begin_sub_pass() -> void:
+	_pending_passes += 1
+
+
+## sub-pass 结束（计数 -1）。负数视为编程错误。
+func end_sub_pass() -> void:
+	_pending_passes -= 1
+	if _pending_passes < 0:
+		push_error("[DCWorld] end_sub_pass: pending passes underflow (-> %d)" % _pending_passes)
+		_pending_passes = 0
+
+
+## 当前是否有 sub-pass 在飞。
+func has_pending_pass() -> bool:
+	return _pending_passes > 0
+
+
+## O(1) 交换一组 component 的 _arr / _arr_prev 引用。
+## 调用方必须保证所有 sub-pass 都已 end_sub_pass()，否则在 debug 构建 push_error 中止。
+func swap_double_buffer(comp_ids: Array) -> void:
+	if _pending_passes > 0:
+		push_error("[DCWorld] swap_double_buffer: %d sub-pass still in flight, refusing to swap" % _pending_passes)
+		return
+	for cid in comp_ids:
+		var slot: _Slot = _get_slot(int(cid))
+		if slot == null:
+			continue
+		if not slot.track_prev:
+			if _debug:
+				push_warning("[DCWorld] swap_double_buffer: comp '%s' has no prev buffer, skipped" % String(slot.name))
+			continue
+		match slot.dtype:
+			DCComponentIds.F32:
+				var tmp_f: PackedFloat32Array = slot.arr_f32
+				slot.arr_f32 = slot.arr_f32_prev
+				slot.arr_f32_prev = tmp_f
+			DCComponentIds.VEC2_F32:
+				var tmp_x: PackedFloat32Array = slot.arr_f32
+				slot.arr_f32 = slot.arr_f32_prev
+				slot.arr_f32_prev = tmp_x
+				var tmp_y: PackedFloat32Array = slot.arr_f32_y
+				slot.arr_f32_y = slot.arr_f32_y_prev
+				slot.arr_f32_y_prev = tmp_y
+			DCComponentIds.VEC3_F32:
+				var tmp_xx: PackedFloat32Array = slot.arr_f32
+				slot.arr_f32 = slot.arr_f32_prev
+				slot.arr_f32_prev = tmp_xx
+				var tmp_yy: PackedFloat32Array = slot.arr_f32_y
+				slot.arr_f32_y = slot.arr_f32_y_prev
+				slot.arr_f32_y_prev = tmp_yy
+				var tmp_zz: PackedFloat32Array = slot.arr_f32_z
+				slot.arr_f32_z = slot.arr_f32_z_prev
+				slot.arr_f32_z_prev = tmp_zz
+			_:
+				# I32 / U8 首版不双缓冲；track_prev=true 也忽略
+				pass
+
+
+## round 末"完成快照"：等价 swap_double_buffer，但语义上是"提交一轮"。
+## 阶段实现一致；后续若需要语义分化（例如 commit 不交换 ref 而是 memcpy 快照）再调整。
+func commit_round(comp_ids: Array) -> void:
+	swap_double_buffer(comp_ids)
+
+
+# ─── Task 3 — Query 工厂（预分配池，避免 hot path 分配） ────────────────
+
+# Query 池：World 内部维护若干 DCQuery 实例，query() 取一个、_release_query
+# 归还。首版池大小 4 已够 weather sub-pass + climate + ocean 同时用；不够时
+# 自动扩容，但日志 push_warning。
+var _query_pool: Array = []           # Array[DCQuery]
+var _query_in_use: Array = []         # Array[bool] —— 与 _query_pool 同 idx
+const _QUERY_POOL_INITIAL: int = 4
+const _QUERY_POOL_MAX: int = 32
+
+func _ensure_query_pool() -> void:
+	if _query_pool.size() == 0:
+		for i in range(_QUERY_POOL_INITIAL):
+			_query_pool.append(DCQuery.new())
+			_query_in_use.append(false)
+
+
+## 从池中取一个 query 实例并 reset 到初始状态。
+## 调用方按链式 DSL 配置后调用 for_each_index；执行完 release_query() 归还。
+func query() -> DCQuery:
+	_ensure_query_pool()
+	for i in range(_query_pool.size()):
+		if not _query_in_use[i]:
+			_query_in_use[i] = true
+			var q: DCQuery = _query_pool[i]
+			q._reset(self)
+			return q
+	# 池子用满了，扩容（罕见路径）
+	if _query_pool.size() >= _QUERY_POOL_MAX:
+		if _debug:
+			push_warning("[DCWorld] query pool reached max=%d; allocating extra query (no pool)" % _QUERY_POOL_MAX)
+		var qe: DCQuery = DCQuery.new()
+		qe._reset(self)
+		return qe
+	var qq: DCQuery = DCQuery.new()
+	_query_pool.append(qq)
+	_query_in_use.append(true)
+	qq._reset(self)
+	return qq
+
+
+## 把 query 归还池子。若 q 不在池中则忽略（兼容 max 之外临时分配的 query）。
+func release_query(q: DCQuery) -> void:
+	for i in range(_query_pool.size()):
+		if _query_pool[i] == q:
+			_query_in_use[i] = false
+			return
+
+
+# ─── Task 6 — Archetype 数据桩（query.with_archetype 依赖） ─────────────
+# 完整的 create_archetype / assign_archetype API 在 Task 6 加入；这里仅声明
+# entity_archetype 数组与访问器，让 query.with_archetype 能联调。
+var _archetypes: Array = []                      # Array[Dictionary]：archetype 描述
+var _archetype_by_name: Dictionary = {}          # StringName → arch_id
+var _entity_archetype: PackedInt32Array = PackedInt32Array()
+const _ARCH_NONE: int = -1
+
+
+## 取 entity → archetype 映射数组（DCQuery 使用）。
+## Task 6 之前可能尚未分配；此时返回空数组，DCQuery 自然跳过 archetype 过滤。
+func entity_archetype_array() -> PackedInt32Array:
+	return _entity_archetype
+
+
+# ─── Task 4 — Topology + bind_map_data ───────────────────────────
+#
+# 目标：把 MapData 现有的 25 个 PackedArray "认领"为 component（按引用，零拷贝），
+# 同时把 _neighbor_indices 注册成内置 HexNeighborTopology component。
+#
+# Godot 4 PackedArray COW 行为说明：把 MapData 的字段赋值给 _Slot.arr_f32 后，
+# 双方共享同一份内部 buffer；只有 size 发生变化（resize / push_back）才会分裂。
+# bind 完成后任意一方写 `arr[i]=x`（不改 size）对另一方都立即可见，满足"挂入"
+# 语义。MapData.rebuild_soa_from_cells() 内部会重新 resize 所有 PackedArray，这
+# 时必须调用 World.rebind_arrays() 重新刷新引用，否则 World 会持有旧 buffer。
+
+# Topology 槽位（独立于 _slots，固定一个）。
+var _topo_neighbors: PackedInt32Array = PackedInt32Array()  # 引用 MapData._neighbor_indices
+var _topo_built: bool = false
+
+# 内置 cell-level component id 映射表（bind 时填充）；供 weather_system / job 直接索引。
+var _builtin_cell_ids: Dictionary = {}    # StringName → comp_id (int)
+
+
+## 把 MapData 现有 SoA 字段注册成内置 component 并按引用挂入；同时挂入 topology。
+##
+## 调用时机：bake_world / regenerate / 加载存档完成后调用一次。MapData 必须
+## 已构建完 _build_indices() + rebuild_soa_from_cells()。
+func bind_map_data(map_data) -> void:
+	if map_data == null:
+		push_error("[DCWorld] bind_map_data: map_data is null")
+		return
+	_map_data = map_data
+	_bound = false
+	# 1) 校验前置条件
+	if not map_data.has_indices():
+		push_error("[DCWorld] bind_map_data: MapData._build_indices() must be called first")
+		return
+	if not map_data.has_soa():
+		push_error("[DCWorld] bind_map_data: MapData.rebuild_soa_from_cells() must be called first")
+		return
+	var n: int = map_data.cell_count()
+	# 2) 自动注册 cells pool（I2.A.4）。如已存在则校验容量。
+	#     首次 bind：_entity_count 暂设为 0，让 create_pool 内部以 start=0 注册，
+	#                 然后 create_pool → create_entities(n) 会把 _entity_count 拉到 n。
+	#     重复 bind：cells pool 已存在，跳过（容量校验通过即可）。
+	var cells_pid: int = pool_id(DCComponentIds.POOL_CELLS)
+	if cells_pid >= 0:
+		var existing: Dictionary = _pools[cells_pid]
+		if int(existing["start"]) != 0 or int(existing["count"]) != n:
+			push_error("[DCWorld] bind_map_data: existing 'cells' pool [%d, +%d) != cell_count=%d"
+				% [int(existing["start"]), int(existing["count"]), n])
+			return
+		# 重复 bind：保持 _entity_count = n（cells pool 已经占据 [0, n)）
+		_entity_count = n
+	else:
+		# 首次 bind：清零再让 create_pool 以 start=0 注册
+		_entity_count = 0
+		create_pool(DCComponentIds.POOL_CELLS, n)
+		# create_pool 已把 _entity_count 拉到 n（= 0 + capacity）
+	# 3) 内置 cell component 注册 / 挂入
+	#    （重复 bind 时 register_component 幂等；external_ref 标记避免 create_entities 误 resize）
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP, DCComponentIds.F32, true, map_data.temp_arr, map_data.temp_arr_prev)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_BASELINE, DCComponentIds.F32, false, map_data.temp_baseline_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_30D, DCComponentIds.F32, false, map_data.temp_30d_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_365D, DCComponentIds.F32, false, map_data.temp_365d_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_ANOMALY, DCComponentIds.F32, false, map_data.temp_anomaly_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_MOISTURE, DCComponentIds.F32, true, map_data.moisture_arr, map_data.moisture_arr_prev)
+	_bind_register_and_attach(DCComponentIds.CELL_SNOW_COVER, DCComponentIds.F32, true, map_data.snow_cover_arr, map_data.snow_cover_arr_prev)
+	_bind_register_and_attach(DCComponentIds.CELL_SEA_ICE_FRAC, DCComponentIds.F32, true, map_data.sea_ice_frac_arr, map_data.sea_ice_frac_arr_prev)
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_INTENSITY, DCComponentIds.F32, false, map_data.weather_intensity_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_CLOUD, DCComponentIds.F32, false, map_data.weather_cloud_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_PRECIP, DCComponentIds.F32, false, map_data.weather_precip_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_ELEVATION, DCComponentIds.F32, false, map_data.elevation_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_BASE_MOISTURE, DCComponentIds.F32, false, map_data.base_moisture_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_OCEAN_CURRENT_X, DCComponentIds.F32, false, map_data.ocean_current_x_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_OCEAN_CURRENT_Y, DCComponentIds.F32, false, map_data.ocean_current_y_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WIND_X, DCComponentIds.F32, false, map_data.wind_x_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WIND_Y, DCComponentIds.F32, false, map_data.wind_y_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_POS_X, DCComponentIds.F32, false, map_data.cell_pos_x_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_POS_Y, DCComponentIds.F32, false, map_data.cell_pos_y_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_LAT_NORM, DCComponentIds.F32, false, map_data.cell_lat_norm_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_BASELINE_YEAR, DCComponentIds.F32, false, map_data.temp_baseline_year_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_TERRAIN, map_data.terrain_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_LANDFORM, map_data.landform_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_VEGETATION, map_data.vegetation_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_COVER, map_data.cover_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_TYPE, map_data.weather_type_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_IS_WATER, map_data.is_water_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_CLIMATE_DIRTY, map_data.climate_dirty_mask)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_DIRTY, map_data.weather_dirty_mask)
+	# B-full Step-2：weather hot loop view_f32 化新增 6 个 component。
+	# 4 个 f32：weather_system.commit 写、hot loop 读 + renderer 在 round 末经 flush 拿一致快照。
+	# 1 个 u8 (field_init)：标记 cell 是否完成首次 weather 初始化。
+	# 1 个 f32 (air_mass_temp_anomaly)：climate pass 写、weather hot loop 读。
+	# 1 个 u8 (has_river)：地图生成期写、运行期纯读。
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_VAPOR, DCComponentIds.F32, false, map_data.weather_vapor_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_CONVERGENCE, DCComponentIds.F32, false, map_data.weather_convergence_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_INSTABILITY, DCComponentIds.F32, false, map_data.weather_instability_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_FIELD_INIT, map_data.weather_field_init_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY, DCComponentIds.F32, false, map_data.air_mass_temp_anomaly_arr)
+	_bind_register_and_attach_u8(DCComponentIds.CELL_HAS_RIVER, map_data.has_river_arr)
+	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个 component
+	# 1 个 u8 (ema_initialized)：Pass-A 冷启动判定，ocean_heat_transport_*_soa 读。
+	# 1 个 f32 (temp_season_offset)：Pass-A 当日季节偏移，UI breakdown 经 flush 读。
+	_bind_register_and_attach_u8(DCComponentIds.CELL_EMA_INITIALIZED, map_data.ema_initialized_arr)
+	_bind_register_and_attach(DCComponentIds.CELL_TEMP_SEASON_OFFSET, DCComponentIds.F32, false, map_data.temp_season_offset_arr)
+	# 4) 长度一致性校验
+	for slot in _slots:
+		if slot.external_ref:
+			var sz: int = 0
+			match slot.dtype:
+				DCComponentIds.F32:
+					sz = slot.arr_f32.size()
+				DCComponentIds.I32:
+					sz = slot.arr_i32.size()
+				DCComponentIds.U8:
+					sz = slot.arr_u8.size()
+			if sz != n:
+				push_error("[DCWorld] bind_map_data: comp '%s' size=%d != cell_count=%d"
+					% [String(slot.name), sz, n])
+				return
+	# 5) Topology 挂入
+	_topo_neighbors = map_data.neighbor_indices_packed()
+	_topo_built = true
+	_bound = true
+
+
+## 重新绑定（MapData.rebuild_soa_from_cells 之后必须调用）。
+## 仅刷新已挂入的 component 引用，不重新注册。
+func rebind_arrays() -> void:
+	if _map_data == null:
+		push_error("[DCWorld] rebind_arrays: no map_data bound")
+		return
+	# 直接走 bind_map_data 全量重绑（注册幂等；引用刷新）
+	bind_map_data(_map_data)
+
+
+## 查询是否已 bind。
+func is_bound() -> bool:
+	return _bound
+
+
+## 获取邻居拓扑（hex-grid）。
+##  - neighbor_index(idx, dir): 返回邻居 idx（无邻居返回 -1）
+##  - neighbors_packed(): 返回底层 PackedInt32Array (size = cell_count*6)
+func topology_neighbor_index(idx: int, dir: int) -> int:
+	if not _topo_built:
+		push_error("[DCWorld] topology not built; call bind_map_data first")
+		return -1
+	if idx < 0 or dir < 0 or dir > 5:
+		return -1
+	var base: int = idx * 6 + dir
+	if base >= _topo_neighbors.size():
+		return -1
+	return _topo_neighbors[base]
+
+
+func topology_neighbors_packed() -> PackedInt32Array:
+	if not _topo_built:
+		push_error("[DCWorld] topology not built; call bind_map_data first")
+		return PackedInt32Array()
+	return _topo_neighbors
+
+
+## 内部：注册 cell-level F32 component 并挂入引用（重复调用幂等）。
+func _bind_register_and_attach(name: StringName, dtype: int, track_prev: bool,
+		arr_ref: PackedFloat32Array, arr_prev_ref: PackedFloat32Array = PackedFloat32Array()) -> void:
+	var cid: int
+	if _slot_by_name.has(name):
+		cid = int(_slot_by_name[name])
+	else:
+		cid = register_component(name, dtype, 1, track_prev)
+		_builtin_cell_ids[name] = cid
+	if cid < 0:
+		return
+	var slot: _Slot = _slots[cid]
+	slot.external_ref = true
+	slot.arr_f32 = arr_ref
+	if track_prev and arr_prev_ref.size() > 0:
+		slot.arr_f32_prev = arr_prev_ref
+
+
+## 内部：注册 cell-level U8 component 并挂入引用。
+func _bind_register_and_attach_u8(name: StringName, arr_ref: PackedByteArray) -> void:
+	var cid: int
+	if _slot_by_name.has(name):
+		cid = int(_slot_by_name[name])
+	else:
+		cid = register_component(name, DCComponentIds.U8, 1, false)
+		_builtin_cell_ids[name] = cid
+	if cid < 0:
+		return
+	var slot: _Slot = _slots[cid]
+	slot.external_ref = true
+	slot.arr_u8 = arr_ref
+
+
+## 便捷：通过 StringName 直接拿内置 cell component 的 comp_id。
+func builtin_cell(name: StringName) -> int:
+	return int(_builtin_cell_ids.get(name, -1))
+
+
+# ─── Task 5 — CommandBuffer 单例工厂 ──────────────────────────────
+#
+# 首版策略：World 持有一个全局 CommandBuffer 实例（按需分配），调用方通过
+# command_buffer() 取出累积指令；调度器在 round 末调用 flush_command_buffer()。
+# 单线程串行使用即可，无需多 buffer。
+
+var _cmd_buffer: DCCommandBuffer = null
+
+func command_buffer() -> DCCommandBuffer:
+	if _cmd_buffer == null:
+		_cmd_buffer = DCCommandBuffer.new(self)
+	return _cmd_buffer
+
+
+func flush_command_buffer() -> void:
+	if _cmd_buffer == null:
+		return
+	_cmd_buffer.flush()
+
+
+# ─── Task 6 — Archetype 完整 API ─────────────────────────────────
+#
+# 首版（weather 迁移阶段）只做"逻辑分组" —— 维护 entity_archetype: PackedInt32Array
+# 标记位，query.with_archetype(arch_id) 在遍历时按位过滤。不做物理重排
+# （enable_archetype_sorting 仅暴露 API，未来阶段再实现）。
+#
+# Front 池设计：weather front 不是 cell；它们是 entity_count 之外的"扩展 entity"。
+# 首版做法是把 front 池也分配到同一个全局 entity 池里 —— 当 weather 启动时
+# 调用 world.create_entities(cell_count + max_front_count)，front 占用 [cell_count,
+# cell_count + max_front_count) 段。此举把"双 entity 池"的复杂度藏到调用方
+# （weather_system 决定 front_capacity）；World 仍是统一的扁平 ID 空间。
+
+var enable_archetype_sorting: bool = false  # 物理重排开关（首版不实现）
+
+
+## 创建 archetype，返回 arch_id (int)。
+## comp_ids 仅作记录；首版不做"必须 entity 拥有这些 component"强校验。
+func create_archetype(name: StringName, comp_ids: Array = []) -> int:
+	if _archetype_by_name.has(name):
+		return int(_archetype_by_name[name])
+	var arch_id: int = _archetypes.size()
+	_archetypes.append({ "name": name, "comp_ids": comp_ids })
+	_archetype_by_name[name] = arch_id
+	# 确保 _entity_archetype 长度 = entity_count，初值 _ARCH_NONE
+	if _entity_archetype.size() < _entity_count:
+		var old_size: int = _entity_archetype.size()
+		_entity_archetype.resize(_entity_count)
+		for i in range(old_size, _entity_count):
+			_entity_archetype[i] = _ARCH_NONE
+	return arch_id
+
+
+## 把 entity 分配到 archetype。idx 越界时自动扩容 _entity_archetype。
+func assign_archetype(idx: int, arch_id: int) -> void:
+	if idx < 0:
+		return
+	if idx >= _entity_archetype.size():
+		var old: int = _entity_archetype.size()
+		_entity_archetype.resize(idx + 1)
+		for i in range(old, idx + 1):
+			_entity_archetype[i] = _ARCH_NONE
+	_entity_archetype[idx] = arch_id
+
+
+## 取 entity 当前 archetype id；未赋值返回 _ARCH_NONE。
+func get_archetype(idx: int) -> int:
+	if idx < 0 or idx >= _entity_archetype.size():
+		return _ARCH_NONE
+	return _entity_archetype[idx]
+
+
+## archetype "无 / 无效"标记。
+func archetype_none() -> int:
+	return _ARCH_NONE
+
+
+## archetype 数量。
+func archetype_count() -> int:
+	return _archetypes.size()
+
+
+## archetype 名 → id；不存在返回 -1。
+func archetype_id(name: StringName) -> int:
+	return int(_archetype_by_name.get(name, -1))
+
+
+# ─── Task 7 — 多 Pool API（I2.A） ────────────────────────────────
+#
+# 目的：把"约定式 idx 段"升级为"显式 pool 注册"。所有子系统通过 pool_id
+# 声明自己的 entity 范围，Query 用 in_pool(pool_id) 过滤遍历。
+#
+# 实施背景：在 I2.A 之前，weather front 池是"约定式"占用 [cell_n, cell_n+16)
+# —— weather_refresh_job 写死偏移，未来加第三个 pool（unit/army/economy）
+# 必须修 weather_refresh_job，违反开闭原则。本段把 pool 抽象成一等公民。
+#
+# 数据结构约束：
+#   - _pools 严格按 create 顺序记录，pool 之间无空洞
+#   - 第 N 个 pool 的 start = 前 N-1 个 pool 的 (start + count) 之和
+#   - 删除 pool 不在本 plan 范围（destroy_pool 暂不实现）
+#
+# 与 GDExtension 同形：本段 API 形状与上游 dots-roadmap-to-gdextension 计划
+# 中 DCWorldExt::create_pool / pool_range 一致，I3.A 阶段 C++ 镜像零返工。
+
+var _pools: Array = []                          # Array[Dictionary]：{ name, start, count }
+var _pool_by_name: Dictionary = {}              # StringName → pool_id (int)
+# 每个 pool 的 free-list（栈式 LIFO），元素是绝对 entity idx。pool_id 与 _pools 同 idx。
+# I2.A.5：ECB pool-aware create/destroy 通过 _pool_alloc/_pool_free 借还 idx；
+# free-list 是 pool 内"空闲槽"的真值持有者。
+var _pool_free_lists: Array = []                # Array[PackedInt32Array]
+
+
+## 注册一个 pool，返回 pool_id (int)。
+##  - 同名 pool 已存在视为幂等，直接返回既有 id；容量不一致时 push_warning。
+##  - 新 pool 的 start = 当前 _entity_count；自动把 _entity_count 拉伸到
+##    start + capacity，并对所有已注册 component 同步 resize（external_ref
+##    槽位不动，由 bind_map_data 自行管理）。
+##  - I2.A.5：同时初始化该 pool 的 free-list（全部空闲）并把段内所有
+##    entity 的 archetype 预置为 _ARCH_NONE，让"未分配"与"已 destroy"语义统一。
+func create_pool(name: StringName, capacity: int) -> int:
+	if capacity < 0:
+		push_error("[DCWorld] create_pool '%s': capacity must be >= 0, got %d"
+			% [String(name), capacity])
+		return -1
+	if _pool_by_name.has(name):
+		var existing_id: int = int(_pool_by_name[name])
+		var existing: Dictionary = _pools[existing_id]
+		if int(existing["count"]) != capacity:
+			push_warning("[DCWorld] create_pool '%s': existing capacity=%d != requested=%d, returning existing id"
+				% [String(name), int(existing["count"]), capacity])
+		return existing_id
+	var start: int = _entity_count
+	var pool_id_new: int = _pools.size()
+	_pools.append({ "name": name, "start": start, "count": capacity })
+	_pool_by_name[name] = pool_id_new
+	# 拉伸 entity_count 并同步 component 槽位（create_entities 内部跳过 external_ref）
+	create_entities(start + capacity)
+	# 初始化 free-list（栈式 LIFO，pop_back 取最高 idx；高位先消耗、低位后消耗，
+	# 与扁平池约定无关，只要顺序自洽即可）。
+	var fl: PackedInt32Array = PackedInt32Array()
+	fl.resize(capacity)
+	for i in range(capacity):
+		fl[i] = start + i
+	_pool_free_lists.append(fl)
+	# 把段内所有 entity 的 archetype 预置为 ARCH_NONE。
+	# 注意：cells pool 调用此函数时 _entity_archetype 可能尚为空（archetype
+	# 数组按需扩容）；这里走 assign_archetype 触发首次扩容是安全且廉价的。
+	var arch_none: int = _ARCH_NONE
+	for j in range(start, start + capacity):
+		assign_archetype(j, arch_none)
+	return pool_id_new
+
+
+## I2.A.5：从指定 pool 的 free-list 借用一个 entity idx；池满返回 -1。
+## 仅供 ECB / 框架内部调用，业务代码不要直接调。
+func _pool_alloc(pid: int) -> int:
+	if pid < 0 or pid >= _pool_free_lists.size():
+		push_error("[DCWorld] _pool_alloc: invalid pool_id=%d" % pid)
+		return -1
+	var fl: PackedInt32Array = _pool_free_lists[pid]
+	var sz: int = fl.size()
+	if sz == 0:
+		return -1
+	var idx: int = fl[sz - 1]
+	fl.resize(sz - 1)
+	_pool_free_lists[pid] = fl  # COW 写回
+	return idx
+
+
+## I2.A.5：把 idx 归还指定 pool 的 free-list。
+## 调用方应保证 idx 确实属于该 pool 的范围；首版不做去重校验（debug 下校验）。
+func _pool_free(pid: int, idx: int) -> void:
+	if pid < 0 or pid >= _pool_free_lists.size():
+		push_error("[DCWorld] _pool_free: invalid pool_id=%d" % pid)
+		return
+	if _debug:
+		var p: Dictionary = _pools[pid]
+		var s: int = int(p["start"])
+		var c: int = int(p["count"])
+		if idx < s or idx >= s + c:
+			push_error("[DCWorld] _pool_free: idx=%d out of pool '%s' range [%d, %d)"
+				% [idx, String(p["name"]), s, s + c])
+			return
+	var fl: PackedInt32Array = _pool_free_lists[pid]
+	fl.append(idx)
+	_pool_free_lists[pid] = fl  # COW 写回
+
+
+## I2.A.5：当前 pool 内剩余可分配槽位数（debug 用）。
+func pool_free_count(pid: int) -> int:
+	if pid < 0 or pid >= _pool_free_lists.size():
+		return 0
+	return _pool_free_lists[pid].size()
+
+
+## 取 pool 的 [start, end) 范围。非法 pool_id 返回 Vector2i(-1, -1)。
+func pool_range(pid: int) -> Vector2i:
+	if pid < 0 or pid >= _pools.size():
+		push_error("[DCWorld] pool_range: invalid pool_id=%d" % pid)
+		return Vector2i(-1, -1)
+	var p: Dictionary = _pools[pid]
+	var s: int = int(p["start"])
+	var c: int = int(p["count"])
+	return Vector2i(s, s + c)
+
+
+## 取 pool 名 → pool_id；不存在返回 -1。
+func pool_id(name: StringName) -> int:
+	return int(_pool_by_name.get(name, -1))
+
+
+## 当前 pool 总数。
+func pool_count() -> int:
+	return _pools.size()

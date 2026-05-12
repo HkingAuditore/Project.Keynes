@@ -53,6 +53,30 @@ var _in_flight: bool = false
 var _starvation_count: int = 0
 
 
+## DataCore 接入（2026-05-11，dots-foundation-and-weather-migration）：
+## SUS 在 register_job 时把 World 注入到 job._world。job 通过 _world.query()...
+## 拿数据，跨 tick 切片用 SusJob cursor + World 双缓冲共同保证语义。
+##
+## queries 字段：仅作 hint —— job 可在初始化时把常用 query 链预 build 好放入此
+## 数组，运行时直接复用而不必每个 slice 重新 chain。首版无强校验。
+var _world = null    # DCWorld；类型省略以避免循环依赖
+var queries: Array = []
+
+
+## 由 SusScheduler.register_job 调用，注入当前 World 引用。
+## job 内部如需在 reset_progress 之前做一次性 prefetch（comp_id / archetype id），
+## 可在子类重写 _on_world_bound() 实现。
+func bind_world(w) -> void:
+	_world = w
+	_on_world_bound()
+
+
+## 子类重写：World 绑定后调用一次（注册 component / 解析 comp_id / 创建
+## archetype 等一次性初始化逻辑）。默认空实现。
+func _on_world_bound() -> void:
+	pass
+
+
 ## Forward to policy.should_run by default. Subclasses can override for custom
 ## gating logic (e.g. "only run if map is loaded").
 func should_run(ctx: SusTickContext) -> bool:

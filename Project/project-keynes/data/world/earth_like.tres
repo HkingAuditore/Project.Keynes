@@ -1,75 +1,16 @@
-[gd_resource type="Resource" script_class="ClimateProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="ClimateProfile" format=3 uid="uid://ckxckukjiqbhl"]
 
-[ext_resource type="Script" path="res://scripts/data/climate_profile.gd" id="1"]
+[ext_resource type="Script" uid="uid://c8gt72y6lui8l" path="res://scripts/data/climate_profile.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
-continent_warp_amp = 0.15
-dist_field_weight = 0.55
-noise_weight = 0.45
-ridge_boost_amp = 0.5
-meso_weight = 0.4
-offshore_amp = 0.45
-edge_falloff_start = 0.8
-edge_falloff_end = 0.95
-edge_falloff_depth = 0.55
-main_radius_min = 0.7
-main_radius_max = 0.9
-satellite_radius_min = 0.18
-satellite_radius_max = 0.4
-satellites_per_main = 3
-main_placement_min = 0.18
-main_placement_max = 0.82
-satellite_placement_min = 0.08
-satellite_placement_max = 0.92
-main_separation_factor = 0.85
-satellite_separation_factor = 0.55
-coastal_moisture_boost = 0.2
-orographic_boost = 1.5
-rain_shadow_threshold = 0.12
-rain_shadow_factor = 0.55
-rain_shadow_lookback = 2
-prevailing_wind = Vector2(1, 0.2)
-seasonal_moisture_scale = Array[float]([1.05, 1.2, 0.92, 0.78])
-river_flow_percentile = 0.78
-pit_fill_max_iters = 100
-lake_seed_freq = 0.18
-lake_seed_threshold = 0.55
-lake_seed_depth = 0.04
-lake_seed_min_interior = 0.12
-veg_forest_donor = 0.06
-veg_swamp_donor = 0.1
-veg_grassland_donor = 0.02
-veg_desert_donor = -0.04
-veg_jungle_donor = 0.08
-veg_taiga_donor = 0.05
-veg_savanna_donor = 0.02
-veg_oasis_donor = 0.08
-veg_delta_donor = 0.06
-veg_salt_flat_donor = -0.03
-transpiration_outflow_rate = 0.025
-transpiration_self_rate = 0.015
-reference_albedo = 0.3
-albedo_temp_gain = 0.025
-vitality_change_rate = 0.004
-vitality_low_threshold = 0.15
-vitality_high_threshold = 0.9
-succession_degrade_days = 180
-succession_upgrade_days = 360
-compat_harshness = 0.8
-eco_drift_amp = 0.012
-eco_score_clamp = 0.5
-sea_ice_form_threshold = 0.07
-sea_ice_melt_threshold = 0.12
-max_volcanoes = 8
-volcano_min_dist = 6
-volcano_min_land_h = 0.65
-weather_field_enabled = true
+use_data_core = true
+use_data_core_weather = true
+use_data_core_climate = true
+succession_upgrade_days = 361
 weather_field_advect_steps = 2
-weather_field_diffusion = 0.08
-weather_condensation_gain = 0.55
-weather_precip_decay = 0.35
-weather_orographic_lift_gain = 0.35
-weather_convergence_gain = 0.25
-weather_ocean_evap_gain = 0.4
 weather_component_summary_limit = 16
+use_soa_pipeline = true
+use_sparse_climate = true
+use_low_freq_ocean_psi = true
+use_partial_atlas_upload = true

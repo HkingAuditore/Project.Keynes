@@ -4,6 +4,19 @@ extends RefCounted
 
 const _MAX_AXIS_TURN_RADIANS: float = 0.383972  # 22 degrees per simulation day
 
+# I2.A.5（DataCore ECB pool-aware）：world_idx 是 WeatherFront 在 DCWorld
+# entity 池中的绝对 idx；由 weather_refresh_job 在 sync 阶段通过
+# CommandBuffer.create_in_pool 申请并写回。
+#
+# 【框架内部字段，业务代码禁止读】
+#   - 仅 weather_refresh_job 的 sync 路径（与未来的 query 消费者）允许读；
+#   - weather_system 的 spawn / advance / decay / coverage_at 等业务逻辑
+#     绝不许出现 `front.world_idx`；
+#   - 该字段在 P1-⑤ "WeatherFront 数据 SoA 化"阶段会升级为"瘦句柄"（届
+#     时业务代码会经由 world.view_*(comp)[front.world_idx] 合法引用），
+#     现在加这条纪律是为了避免未来反向 grep 出大量"业务代码污染"。
+#   - -1 表示尚未被 ECB 分配（首版只有 sync 函数会赋非 -1 值）。
+var world_idx: int = -1
 var center: Vector2 = Vector2.ZERO
 var radius: float = 200.0
 var velocity: Vector2 = Vector2.ZERO

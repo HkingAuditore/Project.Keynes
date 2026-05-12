@@ -1,0 +1,26 @@
+
+# SCons build artifacts
+*.os
+*.obj
+*.o
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.so
+*.dll
+*.dylib
+*.a
+.sconsign.dblite
+.scons_node
+.cache/
+
+# IDE / editor caches
+.vs/
+.vscode/
+.idea/
+*.user
+
+# godot-cpp build state (subrepo manages its own gitignore, but be safe)
+godot-cpp/bin/
+godot-cpp/gen/

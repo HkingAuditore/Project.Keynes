@@ -1,4 +1,4 @@
-﻿shader_type canvas_item;
+shader_type canvas_item;
 render_mode blend_mix;
 
 // world_map.gdshader v9.atlas：高分辨率地理仿真渲染

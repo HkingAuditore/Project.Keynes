@@ -152,6 +152,23 @@ var _last_seed: int = 0
 var _last_time_label_hour: int = -1
 # 当前选中地块（重新生成地图时清空，避免持有旧 MapData 的 cell 引用）
 var _selected_cell: HexCell = null
+
+# ─── DataCore CLI 缓存（dots-foundation-and-weather-migration） ────────
+# Override 优先级：CLI > ClimateProfile 默认值。值为 -1 表示"未通过 CLI 指定"。
+var _cli_data_core_override: int = -1            # -1 / 0 / 1
+var _cli_data_core_weather_override: int = -1    # -1 / 0 / 1
+var _cli_validate_weather: bool = false          # --validate-weather
+
+# ─── Validate-Weather 桶（dots-foundation-and-weather-migration / D-01） ──
+# 当 --validate-weather 启用，每次 weather breakdown 落地时按 path 累加：
+#   fronts / cloud_sum / precip_sum / temp_field_hash
+# 满 _validate_window_size 个采样且 legacy + data_core 两桶都达标时打印 diff，
+# 然后清零进入下一窗口（手动 F12 可随时打印当前累计快照）。
+# 注：窗口=10 时，按 weather_refresh 被 policy 节流的频率（约每 3~5 个 game day 一次），
+# 单桶约 30~50 game day 即可填满；A 路径填满后按 F9 切换 path，再等同样时长会自动打 diff。
+var _validate_window_size: int = 30
+var _validate_buckets: Dictionary = {}    # path -> { count, fronts, cloud, precip, hash_xor, hash_sum }
+var _validate_total_samples: int = 0
 # Emergent Climate Coupling：fast tick 性能打点计数（需求 6.2 合计耗时节流 WARN）
 var _fast_tick_count: int = 0
 var _fast_tick_warn_last_frame: int = 0
@@ -177,7 +194,16 @@ func _ready() -> void:
 	# Pass 2：TOD 中枢必须在 _generate_and_render 前实例化，
 	# 因为首次 set_map 会触发 _push_visual_toggles → apply_tod 首帧推送。
 	_init_tod_profile()
+	# DataCore CLI 解析（dots-foundation-and-weather-migration）：
+	# 在 _generate_and_render 之前应用 --data-core / --no-data-core /
+	# --data-core-weather / --no-data-core-weather / --validate-weather，
+	# 这些开关会写到 ClimateProfile（经 MapGenerator._c() 暴露）。
+	# 注：generator 此时尚未 new，先把 CLI 结果缓存，等 _generate_and_render
+	# 创建 generator 后立即应用。
+	_parse_data_core_cli()
 	_generate_and_render(initial_seed)
+	# DataCore CLI：generator 已创建，把 CLI 缓存覆盖到 ClimateProfile。
+	_apply_data_core_cli_to_profile()
 	# 把时钟信号接到 renderer + UI（在第一次生成完成后）
 	_world_clock.day_changed.connect(_on_day_changed)
 	_world_clock.season_changed.connect(_on_season_changed)
@@ -314,6 +340,26 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					print("[Ocean] F7 heat_debug: anomaly min=%.3f max=%.3f mean=%.4f | |a|>0.02: water=%d land=%d" % [
 						mn, mx, sm / float(cnt), hot_water, hot_land
 					])
+		KEY_F9:
+			# DataCore weather hot-toggle: switch use_data_core_weather at runtime.
+			# Used for A/B comparison without restarting the game.
+			# Effect is immediate: next weather_refresh slice reads cp.use_data_core_weather
+			# fresh from ClimateProfile and routes to legacy or data_core mirror.
+			_toggle_data_core_weather_runtime()
+		KEY_F10:
+			# DataCore master switch: toggle use_data_core. Auto-enables/disables
+			# use_data_core_weather to keep the dependency invariant. Note the
+			# DCWorld.bind_map_data() call only happens once at _setup_sus, so
+			# turning use_data_core back on at runtime keeps the existing binding
+			# (which is fine for compare runs in the same session).
+			_toggle_data_core_master_runtime()
+		KEY_F11:
+			# Print current DataCore flag snapshot for quick verification.
+			_print_data_core_flag_snapshot()
+		KEY_F12:
+			# Validate-weather: print current A/B bucket diff snapshot without
+			# clearing buckets. Useful for any-time inspection while sampling.
+			_validate_weather_print_snapshot()
 
 # ─── 时间 UI 绑定 ───────────────────────────────────────────────────────
 
@@ -516,7 +562,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					and _generator.has_method("sus_climate_breakdown"):
 				var b: Dictionary = _generator.sus_climate_breakdown()
 				if not b.is_empty():
-					print("        A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f cells=%d pass=%s partial=%s" % [
+					print("        A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f cells=%d pass=%s partial=%s dirty=%.2f visited=%.2f path=%s" % [
 						float(b.get("pass_a_ms", 0.0)),
 						float(b.get("pass_b_ms", 0.0)),
 						float(b.get("ocean_ms", 0.0)),
@@ -526,7 +572,37 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						int(b.get("cells", 0)),
 						str(b.get("current_pass", "")),
 						str(b.get("partial", false)),
+						float(b.get("dirty_ratio", 1.0)),
+						float(b.get("visited_ratio", 1.0)),
+						str(b.get("pass_b_path", "full")),
 					])
+					# DataCore: climate sub-pass 取数路径标识（B-1）
+					# 真相源 = ClimateProfile.use_data_core_climate（F11/CLI 切换的旗子）
+					# 不能用 data_core_ready()，那个一旦 comp_id 缓存好就不会回退，会让 F11
+					# 切到 legacy 之后 path 仍误报 data_core，导致 A/B 桶无法分流。
+					# 三态：
+					#   legacy                — 开关 off 或 World 没绑定，sub-pass 走 map.xxx_arr
+					#   data_core_cells_only  — 开关 on + World 已 bind，但 25 个 comp_id 还没缓存好
+					#   data_core             — 开关 on + World 已 bind + 25 个 comp_id 全部缓存
+					var _dcc_path: String = "legacy"
+					var _dcc_cp = _generator._c() if _generator.has_method("_c") else null
+					var _dcc_use_climate: bool = false
+					if _dcc_cp != null and "use_data_core_climate" in _dcc_cp:
+						_dcc_use_climate = bool(_dcc_cp.use_data_core_climate)
+					if _dcc_use_climate:
+						var _dcc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
+						if _dcc_w != null and _dcc_w.is_bound():
+							var _cjob = _generator._refresh_climate_daily_job if "_refresh_climate_daily_job" in _generator else null
+							if _cjob != null and _cjob.has_method("data_core_ready") and _cjob.data_core_ready():
+								_dcc_path = "data_core"
+							else:
+								_dcc_path = "data_core_cells_only"
+						else:
+							# Flag 开但 World 还没绑定（启动早期），按 legacy 算更安全
+							_dcc_path = "legacy"
+					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
+					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
+					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
 			# Daily-sim perf instrumentation：weather_refresh 内部细分
 			# （weather_tick 包括 advance/spawn/distribute/cyclone 四段；
 			#  之后是 transp/albedo/veg_dyn/cover_rebake/veg_rebake/feedback）
@@ -549,6 +625,30 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(wb.get("feedback_ms", 0.0)),
 						int(wb.get("fronts", 0)),
 					])
+					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
+					# 真相源 = ClimateProfile.use_data_core_weather（F9 实时切换的旗子）
+					# 不能用 data_core_ready()，那个一旦镜像挂上就不会回退，会让 F9 切到
+					# legacy 之后 path 仍误报 data_core，导致 A/B 桶无法分流。
+					var _dc_path: String = "legacy"
+					var _dc_cp = _generator._c() if _generator.has_method("_c") else null
+					var _dc_use_weather: bool = false
+					if _dc_cp != null and "use_data_core_weather" in _dc_cp:
+						_dc_use_weather = bool(_dc_cp.use_data_core_weather)
+					if _dc_use_weather:
+						var _dc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
+						if _dc_w != null and _dc_w.is_bound():
+							var _wjob = _generator._weather_refresh_job if "_weather_refresh_job" in _generator else null
+							if _wjob != null and _wjob.has_method("data_core_ready") and _wjob.data_core_ready():
+								_dc_path = "data_core"
+							else:
+								_dc_path = "data_core_cells_only"
+						else:
+							# Flag 开但 World 还没绑定（启动早期），按 legacy 算更安全
+							_dc_path = "legacy"
+					print("        weather path=%s" % _dc_path)
+					# D-01：validate-weather 采样（仅在 --validate-weather 启用时生效）
+					if _cli_validate_weather:
+						_validate_weather_collect(_dc_path, wb)
 			if job_id == &"enum_atlas_upload" and _generator != null \
 					and _generator.has_method("sus_enum_atlas_breakdown"):
 				var eb: Dictionary = _generator.sus_enum_atlas_breakdown()
@@ -1367,3 +1467,340 @@ func _update_overlay_pointer_for_cell() -> void:
 		_overlay_legend.clear_pointer()
 	else:
 		_overlay_legend.update_pointer(v)
+
+
+# ─── DataCore CLI Helpers（dots-foundation-and-weather-migration） ────────
+# 解析阶段：在 _ready 早期调用，把命令行参数解析成 _cli_* 缓存。不直接接触
+# ClimateProfile（generator 此时尚未 new）。
+func _parse_data_core_cli() -> void:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	# 同时接受工程 cmdline_args（编辑器测试 / Godot 启动参数）
+	for a in OS.get_cmdline_args():
+		args.append(a)
+	for arg in args:
+		match String(arg):
+			"--data-core":
+				_cli_data_core_override = 1
+			"--no-data-core":
+				_cli_data_core_override = 0
+			"--data-core-weather":
+				_cli_data_core_weather_override = 1
+			"--no-data-core-weather":
+				_cli_data_core_weather_override = 0
+			"--validate-weather":
+				_cli_validate_weather = true
+
+
+# 应用阶段：generator 已创建。把 CLI 缓存写到 ClimateProfile，并保证依赖关系：
+#   use_data_core_weather=true 必须 use_data_core=true，否则 World 未 bind front 池
+#   分配会 short-circuit 到 legacy。
+func _apply_data_core_cli_to_profile() -> void:
+	if _generator == null:
+		return
+	var cp = _generator._c()
+	if cp == null:
+		return
+	if _cli_data_core_override == 1:
+		cp.use_data_core = true
+	elif _cli_data_core_override == 0:
+		cp.use_data_core = false
+	if _cli_data_core_weather_override == 1:
+		cp.use_data_core_weather = true
+		# 依赖守卫
+		if not bool(cp.use_data_core):
+			print("[DataCore] --data-core-weather requires use_data_core=true; auto-enabling.")
+			cp.use_data_core = true
+	elif _cli_data_core_weather_override == 0:
+		cp.use_data_core_weather = false
+	# 启动期日志，方便诊断
+	print("[DataCore] flags after CLI: use_data_core=%s use_data_core_weather=%s validate_weather=%s"
+		% [str(cp.use_data_core), str(cp.use_data_core_weather), str(_cli_validate_weather)])
+	# Validate-weather 提示（单进程 A/B：F9 切 path 触发对照采样）
+	if _cli_validate_weather:
+		print("[DataCore] --validate-weather: in-process A/B mode (window=%d samples per bucket). " % _validate_window_size +
+			"Step 1) let current path fill its bucket (watch for '>>>VAL>>> window FULL ...'). " +
+			"Step 2) press F9 to flip path (legacy <-> data_core) and let the other bucket fill. " +
+			"Step 3) diff table prints automatically; F12 anytime for snapshot without reset.")
+
+
+## 调试 / Overlay：生成 DataCore 状态摘要供 SUS 周期日志附加。
+func data_core_status_dict() -> Dictionary:
+	var out: Dictionary = {
+		"world_entities": 0,
+		"world_components": 0,
+		"bound": false,
+	}
+	if _generator == null:
+		return out
+	if not _generator.has_method("get_data_core_world"):
+		return out
+	var w = _generator.get_data_core_world()
+	if w == null:
+		return out
+	out["world_entities"] = int(w.entity_count())
+	out["world_components"] = int(w.component_count())
+	out["bound"] = bool(w.is_bound())
+	return out
+
+
+# ─── DataCore Runtime Hot Toggles (F9 / F10 / F11) ───────────────────────
+# Replacement for the CLI flags so we can A/B compare in a single session.
+# The job code reads `cp.use_data_core_weather` per-slice, so a flag flip
+# takes effect on the very next weather_refresh slice (no restart needed).
+
+func _toggle_data_core_weather_runtime() -> void:
+	if _generator == null:
+		print("[DataCore] F9: generator not ready, ignored.")
+		return
+	var cp = _generator._c()
+	if cp == null:
+		print("[DataCore] F9: ClimateProfile missing, ignored.")
+		return
+	# Dependency guard: weather mirror requires the master switch on.
+	if not bool(cp.use_data_core):
+		cp.use_data_core = true
+	var new_state: bool = not bool(cp.use_data_core_weather)
+	cp.use_data_core_weather = new_state
+	print("[DataCore] F9 toggle: use_data_core_weather=%s (path=%s)" % [
+		str(new_state), ("data_core" if new_state else "legacy")
+	])
+
+func _toggle_data_core_master_runtime() -> void:
+	if _generator == null:
+		print("[DataCore] F10: generator not ready, ignored.")
+		return
+	var cp = _generator._c()
+	if cp == null:
+		print("[DataCore] F10: ClimateProfile missing, ignored.")
+		return
+	var new_state: bool = not bool(cp.use_data_core)
+	cp.use_data_core = new_state
+	# Keep the invariant: weather mirror cannot be on while master is off.
+	if not new_state and bool(cp.use_data_core_weather):
+		cp.use_data_core_weather = false
+		print("[DataCore] F10: master OFF → also disabled use_data_core_weather.")
+	print("[DataCore] F10 toggle: use_data_core=%s use_data_core_weather=%s" % [
+		str(cp.use_data_core), str(cp.use_data_core_weather)
+	])
+	# Note: DCWorld.bind_map_data() only runs once at _setup_sus. Flipping
+	# the master back on later in the same session keeps the existing bind,
+	# which is what we want for fair A/B comparison.
+
+func _print_data_core_flag_snapshot() -> void:
+	if _generator == null:
+		print("[DataCore] F11: generator not ready.")
+		return
+	var cp = _generator._c()
+	if cp == null:
+		print("[DataCore] F11: ClimateProfile missing.")
+		return
+	var status: Dictionary = data_core_status_dict()
+	print("[DataCore] F11 snapshot: use_data_core=%s use_data_core_weather=%s | world bound=%s entities=%d components=%d" % [
+		str(cp.use_data_core),
+		str(cp.use_data_core_weather),
+		str(status.get("bound", false)),
+		int(status.get("world_entities", 0)),
+		int(status.get("world_components", 0)),
+	])
+
+
+# ─── Validate-Weather (D-01) ───────────────────────────────────────────
+# 单进程内 A/B 对照：用户启动加 --validate-weather，运行期 F9 切 path 即可在
+# 同一进程内累积 legacy 桶 + data_core 桶；每窗口（默认 30 个采样点 / 桶）
+# 自动打印一次 diff 表，验收阈值：
+#   fronts_count diff ≤ 5%, cloud_sum diff ≤ 3%, precip_sum diff ≤ 3%,
+#   temp_field_hash 距离 ≤ 标定阈值（首版仅显示，不卡红线，原因见 SOP）。
+# F12 可随时打印当前累计快照；不影响 ClimateProfile 行为。
+
+func _validate_weather_collect(path: String, wb: Dictionary) -> void:
+	if _generator == null:
+		return
+	var bucket: Dictionary = _validate_buckets.get(path, {})
+	if bucket.is_empty():
+		bucket = {
+			"count": 0,
+			"fronts": 0.0,
+			"cloud": 0.0,
+			"precip": 0.0,
+			"temp_hash_xor": 0,
+			"temp_hash_sum": 0.0,
+		}
+	# fronts 来自 weather breakdown，云 / 降水 / 温度从 MapData 直接取（O(N) 累加）
+	var fronts: int = int(wb.get("fronts", 0))
+	var stats: Dictionary = _validate_compute_field_stats()
+	bucket["count"] = int(bucket["count"]) + 1
+	bucket["fronts"] = float(bucket["fronts"]) + float(fronts)
+	bucket["cloud"] = float(bucket["cloud"]) + float(stats.get("cloud_sum", 0.0))
+	bucket["precip"] = float(bucket["precip"]) + float(stats.get("precip_sum", 0.0))
+	bucket["temp_hash_xor"] = int(bucket["temp_hash_xor"]) ^ int(stats.get("temp_hash_xor", 0))
+	bucket["temp_hash_sum"] = float(bucket["temp_hash_sum"]) + float(stats.get("temp_hash_sum", 0.0))
+	_validate_buckets[path] = bucket
+	_validate_total_samples += 1
+	# 当任意一桶达到 window_size 且至少有两桶有数据，触发一次 diff 打印 + 清零
+	if int(bucket["count"]) >= _validate_window_size:
+		_validate_weather_try_emit_diff()
+
+
+func _validate_compute_field_stats() -> Dictionary:
+	# 采样源选择说明（重要）：
+	#   - temperature 走 SoA（climate 系统是 SoA-first，运行期权威值在 temp_arr）
+	#   - cloud / precip 走 HexCell（weather_system 仍是 HexCell-first 写回，
+	#     MapData.weather_cloud_arr / weather_precip_arr 只在启动 rebuild_soa_from_cells
+	#     时被填充，运行期不更新；如果直接读 SoA 永远是 0，diff 会假阳性 PASS）
+	#   2400 cells 的 O(N) 强类型字段累加，单次 < 0.5ms，game-day 间隔可承受。
+	# temp_hash 用轻量 xor + sum 双指标：
+	#   xor 对位翻转敏感（捕捉局部漂移），sum 对全局偏置敏感。
+	var out: Dictionary = {
+		"cloud_sum": 0.0,
+		"precip_sum": 0.0,
+		"temp_hash_xor": 0,
+		"temp_hash_sum": 0.0,
+	}
+	if _generator == null:
+		return out
+	var map: MapData = _current_map
+	if map == null:
+		return out
+	var temp: PackedFloat32Array = map.temp_arr
+	var cells: Array[HexCell] = map.iter_cells()
+	var n: int = mini(temp.size(), cells.size())
+	var cloud_sum: float = 0.0
+	var precip_sum: float = 0.0
+	var t_sum: float = 0.0
+	var t_xor: int = 0
+	for i in range(n):
+		var c: HexCell = cells[i]
+		cloud_sum += c.weather_cloud
+		precip_sum += c.weather_precip
+		var tv: float = temp[i]
+		t_sum += tv
+		# 量化到 1/1024 然后 xor，对小漂移抗噪、对真实漂移敏感
+		t_xor ^= int(tv * 1024.0) & 0xFFFFFFF
+	out["cloud_sum"] = cloud_sum
+	out["precip_sum"] = precip_sum
+	out["temp_hash_xor"] = t_xor
+	out["temp_hash_sum"] = t_sum
+	return out
+
+
+func _validate_weather_try_emit_diff() -> void:
+	# 至少需要两个 path 桶都达到 window_size，否则只是提示当前进度
+	var ready_paths: Array = []
+	for k in _validate_buckets.keys():
+		if int(_validate_buckets[k].get("count", 0)) >= _validate_window_size:
+			ready_paths.append(k)
+	if ready_paths.size() < 2:
+		# 只满了一桶，提示用户切 path 继续采样
+		var done_path: String = String(ready_paths[0]) if ready_paths.size() == 1 else ""
+		print("")
+		print(">>>VAL>>> ──────────────────────────────────────────────────────")
+		print(">>>VAL>>> window FULL  path=%s  n=%d  →  press F9/F10 to switch path" % [
+			done_path, _validate_window_size
+		])
+		print(">>>VAL>>> ──────────────────────────────────────────────────────")
+		print("")
+		return
+	# 两桶都满了 → 找出 legacy / data_core 这一对（如果有）作主对照
+	var primary_a: String = ""
+	var primary_b: String = ""
+	if _validate_buckets.has("legacy") and _validate_buckets.has("data_core"):
+		primary_a = "legacy"
+		primary_b = "data_core"
+	elif ready_paths.size() >= 2:
+		primary_a = String(ready_paths[0])
+		primary_b = String(ready_paths[1])
+	if primary_a == "" or primary_b == "":
+		return
+	_validate_weather_print_diff(primary_a, primary_b)
+	# 清零两个桶进入下一窗口；其它桶（cells_only 等）保留
+	_validate_buckets.erase(primary_a)
+	_validate_buckets.erase(primary_b)
+
+
+func _validate_weather_print_diff(a: String, b: String) -> void:
+	var ba: Dictionary = _validate_buckets.get(a, {})
+	var bb: Dictionary = _validate_buckets.get(b, {})
+	if ba.is_empty() or bb.is_empty():
+		return
+	var na: int = int(ba.get("count", 1))
+	var nb: int = int(bb.get("count", 1))
+	var fronts_a: float = float(ba["fronts"]) / float(na)
+	var fronts_b: float = float(bb["fronts"]) / float(nb)
+	var cloud_a: float = float(ba["cloud"]) / float(na)
+	var cloud_b: float = float(bb["cloud"]) / float(nb)
+	var precip_a: float = float(ba["precip"]) / float(na)
+	var precip_b: float = float(bb["precip"]) / float(nb)
+	var t_sum_a: float = float(ba["temp_hash_sum"]) / float(na)
+	var t_sum_b: float = float(bb["temp_hash_sum"]) / float(nb)
+	var fronts_pct: float = _validate_pct_diff(fronts_a, fronts_b)
+	var cloud_pct: float = _validate_pct_diff(cloud_a, cloud_b)
+	var precip_pct: float = _validate_pct_diff(precip_a, precip_b)
+	var t_sum_pct: float = _validate_pct_diff(t_sum_a, t_sum_b)
+	var fronts_ok: bool = abs(fronts_pct) <= 5.0
+	var cloud_ok: bool = abs(cloud_pct) <= 3.0
+	var precip_ok: bool = abs(precip_pct) <= 3.0
+	var t_sum_ok: bool = abs(t_sum_pct) <= 1.0
+	print("")
+	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
+	print(">>>VAL>>> A/B diff window  n=%d  (%s vs %s)" % [_validate_window_size, a, b])
+	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
+	print(">>>VAL>>> %-12s | %-10s avg | %-10s avg | diff %%  | OK?" % ["metric", a, b])
+	print(">>>VAL>>> fronts       | %10.3f | %10.3f | %+6.2f%% | %s (<=5%%)" % [
+		fronts_a, fronts_b, fronts_pct, ("PASS" if fronts_ok else "FAIL")
+	])
+	print(">>>VAL>>> cloud_sum    | %10.1f | %10.1f | %+6.2f%% | %s (<=3%%)" % [
+		cloud_a, cloud_b, cloud_pct, ("PASS" if cloud_ok else "FAIL")
+	])
+	print(">>>VAL>>> precip_sum   | %10.1f | %10.1f | %+6.2f%% | %s (<=3%%)" % [
+		precip_a, precip_b, precip_pct, ("PASS" if precip_ok else "FAIL")
+	])
+	print(">>>VAL>>> temp_hash_sum| %10.1f | %10.1f | %+6.2f%% | %s (<=1%%, ref)" % [
+		t_sum_a, t_sum_b, t_sum_pct, ("PASS" if t_sum_ok else "FAIL")
+	])
+	print(">>>VAL>>> temp_hash_xor| 0x%08x | 0x%08x | (xor distinct, info-only)" % [
+		int(ba["temp_hash_xor"]) & 0xFFFFFFFF,
+		int(bb["temp_hash_xor"]) & 0xFFFFFFFF,
+	])
+	var verdict: bool = fronts_ok and cloud_ok and precip_ok
+	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
+	print(">>>VAL>>> VERDICT: %s" % ("PASS" if verdict else "FAIL"))
+	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
+	print("")
+
+
+func _validate_weather_print_snapshot() -> void:
+	if not _cli_validate_weather:
+		print(">>>VAL>>> F12: --validate-weather not enabled at startup; nothing to show.")
+		return
+	if _validate_buckets.is_empty():
+		print(">>>VAL>>> F12: no samples yet (run a few weather_refresh rounds first).")
+		return
+	print("")
+	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
+	print(">>>VAL>>> F12 snapshot (no reset, total samples=%d)" % _validate_total_samples)
+	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
+	for k in _validate_buckets.keys():
+		var b: Dictionary = _validate_buckets[k]
+		var n: int = int(b.get("count", 0))
+		if n <= 0:
+			continue
+		print(">>>VAL>>> path=%s n=%d | fronts/avg=%.3f cloud/avg=%.1f precip/avg=%.1f temp_sum/avg=%.1f xor=0x%08x" % [
+			String(k), n,
+			float(b["fronts"]) / float(n),
+			float(b["cloud"]) / float(n),
+			float(b["precip"]) / float(n),
+			float(b["temp_hash_sum"]) / float(n),
+			int(b["temp_hash_xor"]) & 0xFFFFFFFF,
+		])
+	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
+	print("")
+	# 如果存在 legacy & data_core 都有样本，则显示当前部分 diff
+	if _validate_buckets.has("legacy") and _validate_buckets.has("data_core"):
+		_validate_weather_print_diff("legacy", "data_core")
+
+
+func _validate_pct_diff(a: float, b: float) -> float:
+	# 以 a 为基准的相对百分比；a==0 时回退到 0 防止 nan
+	if abs(a) < 1e-9:
+		return 0.0
+	return ((b - a) / a) * 100.0

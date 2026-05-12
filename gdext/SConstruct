@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+"""
+SConstruct for ProjectKeynes DOTS GDExtension (`dots_ext`).
+
+Targets Godot 4.6.x via godot-cpp master (pinned by submodule).
+
+Build commands (run from gdext/ directory in a VS 2022 x64 Native Tools Command Prompt):
+    scons platform=windows target=template_debug
+    scons platform=windows target=template_release
+    scons platform=linux   target=template_debug
+    scons platform=android target=template_release arch=arm64
+
+Output goes directly into the Godot project's addons/dots_ext/bin/<platform>/
+so no manual copy step is required after a build.
+"""
+import os
+
+# Inherit the godot-cpp environment (it sets up compiler flags, include paths,
+# and exposes env["platform"], env["suffix"], env["SHLIBSUFFIX"], etc.).
+env = SConscript("godot-cpp/SConstruct")
+
+# ---------------------------------------------------------------------------
+# Source layout
+# ---------------------------------------------------------------------------
+env.Append(CPPPATH=["src/"])
+
+# ---------------------------------------------------------------------------
+# SIMD / vectorisation flags (Phase 3 micro-bench — methods C: SIMD path).
+# Toggle off if you suspect AVX2 isn't available on a target machine.
+# AVX2 baseline = Intel Haswell (2013) / AMD Excavator (2015), ~ universal now.
+# Build with `scons platform=windows target=template_debug avx2=no` to disable.
+# ---------------------------------------------------------------------------
+opts = Variables()
+opts.Add(BoolVariable("avx2", "Enable AVX2 codegen for SIMD bench paths", True))
+opts.Update(env)
+
+if env["avx2"]:
+    if env["platform"] == "windows" and env.get("is_msvc", False):
+        # MSVC: /arch:AVX2 also implicitly enables FMA + BMI1/2.
+        env.Append(CCFLAGS=["/arch:AVX2"])
+        env.Append(CPPDEFINES=["PK_HAVE_AVX2=1"])
+    elif env["platform"] in ("linux", "linuxbsd", "macos"):
+        env.Append(CCFLAGS=["-mavx2", "-mfma"])
+        env.Append(CPPDEFINES=["PK_HAVE_AVX2=1"])
+    # else: skip on android/ios/web — those targets pick their own arch.
+else:
+    env.Append(CPPDEFINES=["PK_HAVE_AVX2=0"])
+
+sources = (
+    Glob("src/*.cpp")
+    + Glob("src/components/*.cpp")
+    + Glob("src/systems/*.cpp")
+    + Glob("src/profiles/*.cpp")
+)
+
+# ---------------------------------------------------------------------------
+# Output path: drop the shared library straight into the Godot addons folder.
+# Path is relative to gdext/, walking up one level to reach Project/...
+# ---------------------------------------------------------------------------
+addons_bin = "../Project/project-keynes/addons/dots_ext/bin/"
+
+platform = env["platform"]
+if platform == "windows":
+    output_path = addons_bin + "windows/dots_ext{}{}".format(
+        env["suffix"], env["SHLIBSUFFIX"]
+    )
+elif platform == "linux" or platform == "linuxbsd":
+    output_path = addons_bin + "linux/libdots_ext{}{}".format(
+        env["suffix"], env["SHLIBSUFFIX"]
+    )
+elif platform == "macos":
+    output_path = addons_bin + "macos/libdots_ext{}{}".format(
+        env["suffix"], env["SHLIBSUFFIX"]
+    )
+elif platform == "android":
+    output_path = addons_bin + "android/libdots_ext{}{}".format(
+        env["suffix"], env["SHLIBSUFFIX"]
+    )
+else:
+    raise ValueError("Unsupported platform for dots_ext: " + platform)
+
+library = env.SharedLibrary(output_path, source=sources)
+Default(library)

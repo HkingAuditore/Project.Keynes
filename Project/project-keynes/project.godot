@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="ProjectKeynes"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="uid://dhf6euvov4vx"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
@@ -19,6 +19,10 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=1600
 window/size/viewport_height=960
+
+[editor]
+
+run/main_run_args="--use_data_core --use_data_core_weather"
 
 [physics]
 

@@ -30,8 +30,9 @@ const _CLIMATE_DEFAULT_PATH: String = "res://data/world/earth_like.tres"
 
 # Convenience one-liner for boot-time invocation.
 static func run_once() -> void:
-	var inst := load("res://scripts/data/_registry_self_check.gd").new()
-	inst.run()
+	var script: GDScript = load("res://scripts/data/_registry_self_check.gd")
+	var inst: RefCounted = script.new()
+	inst.call("run")
 
 func run() -> void:
 	print("─── Registry self-check ─────────────────────────────")
