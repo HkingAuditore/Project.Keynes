@@ -662,7 +662,14 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		dc_enabled = bool(cp_dc.use_data_core)
 	_data_core_world = DCWorld.new()
 	if dc_enabled:
-		_data_core_world.bind_map_data(map)
+		# Reference-impl Pass #2 (performance-charter §12.6)：把 demo 开关透传，
+		# 使 DCWorld 在 bind 阶段注册 CELL_DEMO_THERMAL_GRADIENT slot 并把
+		# map.demo_thermal_gradient_arr resize 到 N。否则 baker 看到 size=0 全部
+		# invalid，overlay 全屏空白（典型现象：stats min/max/mean=0、invalid=N）。
+		var demo_tg_on: bool = false
+		if cp_dc != null and "demo_thermal_gradient_enabled" in cp_dc:
+			demo_tg_on = bool(cp_dc.demo_thermal_gradient_enabled)
+		_data_core_world.bind_map_data(map, demo_tg_on)
 	_sus.bind_world(_data_core_world)
 
 	# DataCore World — C++ co-processor（dots-roadmap-to-gdextension 务实 A）。

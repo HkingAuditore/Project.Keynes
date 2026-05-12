@@ -289,6 +289,9 @@ func _sample_ramp_color(mode: int, v: float) -> Color:
 			return _ramp_diverging(v)
 		OverlayMode.MODE.WIND_SPEED:
 			return _ramp_wind(v)
+		OverlayMode.MODE.DEMO_THERMAL_GRADIENT:
+			# Reference-impl Pass #2 复用 cold→hot 色带，与 shader 端保持一致。
+			return _ramp_cold_to_hot(v)
 		_:
 			return Color(0.45, 0.45, 0.45)
 

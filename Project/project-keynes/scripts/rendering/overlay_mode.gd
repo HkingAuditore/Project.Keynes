@@ -38,6 +38,11 @@ enum MODE {
 	SLP = 15,                    # 海平面压力（双向，0=中性；高压为暖色 / 低压为冷色）
 	WIND_STRESS_CURL = 16,       # 风应力旋度（双向，0=中性；正=逆时针 / 负=顺时针）
 	OCEAN_PSI = 17,              # 流函数 ψ（双向，高低表示反气旋 / 气旋环流）
+	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)：
+	#   仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时由 main.gd
+	#   主动注入到 UI 下拉菜单。开关关闭时 baker 仍然兼容（采样到 size=0 SoA
+	#   时直接画零），但下拉菜单不应展示该项以避免误导。
+	DEMO_THERMAL_GRADIENT = 18,  # 温度梯度热应力场（demo, 连续 [0,1]）
 }
 
 # VECTOR 类通道：方向用色相、强度用亮度。它们既不是离散调色板（DISCRETE）
@@ -73,6 +78,7 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.SLP: "海平压力",
 	MODE.WIND_STRESS_CURL: "风应力旋度",
 	MODE.OCEAN_PSI: "流函数 ψ",
+	MODE.DEMO_THERMAL_GRADIENT: "热梯度（demo）",
 }
 
 # 连续通道的数值两端标签（Legend 显示用）。离散通道留空。
@@ -90,6 +96,7 @@ const RANGE_LABEL: Dictionary = {
 	MODE.SLP: ["低压", "高压"],
 	MODE.WIND_STRESS_CURL: ["负涊", "正涊"],
 	MODE.OCEAN_PSI: ["顺时针", "逆时针"],
+	MODE.DEMO_THERMAL_GRADIENT: ["0.00", "1.00"],
 }
 
 const CATEGORY: Dictionary = {
@@ -114,6 +121,7 @@ const CATEGORY: Dictionary = {
 	MODE.SLP: CATEGORY_KIND.CONTINUOUS,
 	MODE.WIND_STRESS_CURL: CATEGORY_KIND.CONTINUOUS,
 	MODE.OCEAN_PSI: CATEGORY_KIND.CONTINUOUS,
+	MODE.DEMO_THERMAL_GRADIENT: CATEGORY_KIND.CONTINUOUS,
 }
 
 # 气候带离散档位（与 main.gd 的 _climate_zone_name 同口径：按 |ny-0.5| 分 5 档）。
@@ -239,6 +247,7 @@ static func ordered_modes() -> Array:
 		MODE.SLP,
 		MODE.WIND_STRESS_CURL,
 		MODE.OCEAN_PSI,
+		MODE.DEMO_THERMAL_GRADIENT,
 	]
 
 static func display_name(m: int) -> String:

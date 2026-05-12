@@ -14,3 +14,5 @@ use_soa_pipeline = true
 use_sparse_climate = true
 use_low_freq_ocean_psi = true
 use_partial_atlas_upload = true
+demo_thermal_gradient_enabled = true
+demo_thermal_gradient_path = 2
