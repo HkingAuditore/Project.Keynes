@@ -140,6 +140,30 @@ extends Resource
 @export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 10
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
 
+# ─── DataCore（dots-foundation-and-weather-migration） ─────────────
+# 类 DOTS 数据架构基石灰度开关，默认全 false（走 legacy 路径）。
+#  - use_data_core：是否在 _setup_sus 内调用 DCWorld.bind_map_data，把 MapData
+#    25 个 PackedArray 按引用挂入 World，作为 cell-level component。注意 bind
+#    本身零拷贝、无副作用，false 时 World 仍创建但不 bind，未来 system 通过
+#    world.is_bound() 判断走哪条路径。
+#  - use_data_core_weather：是否启用 weather_refresh 的 front-level 镜像同步
+#    （sync_fronts_to_world）。默认 false；ON 时 commit 末尾会把 _active_fronts
+#    镜像到 World 中的 front-level component，下游 system 可通过 query 遍历。
+#    依赖 use_data_core=true，否则 World 未 bind，front 池无法落位。
+#  - use_data_core_climate：在 use_data_core=true 的前提下，让 climate 4 个 SoA
+#    sub-pass（_climate_pass_a_soa / _b_soa / _ocean_water_pass_soa /
+#    _ocean_land_pass_soa）通过 DCWorld.view_f32/u8/i32(comp_id) 取 cell-level
+#    component 数组（替代 map.xxx_arr 直接字段访问）。本开关不改算法/数值，
+#    仅切换数据访问入口；行为应零回归（bind_map_data 保证 view 与 PackedArray
+#    同引用）。目的是统一所有 hot path 数据通道，为未来 C++/GDExtension 接管
+#    hot loop 扫前置。
+# CLI：main.gd 解析 --data-core / --no-data-core / --data-core-climate /
+# --no-data-core-climate，覆盖这三个开关；--validate-weather 用于做 30 day
+# 行为对照测试（legacy vs DataCore 镜像 baseline）。
+@export var use_data_core: bool = false
+@export var use_data_core_weather: bool = false
+@export var use_data_core_climate: bool = false
+
 # DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
 # requirement 4.5). Field is kept on disk for save-file compatibility, but
 # MapGenerator emits a one-shot warning if it is set to anything other than
@@ -402,6 +426,46 @@ extends Resource
 # seasonal offset. Default 1.0 keeps amplitude roughly aligned with legacy
 # season_temp_amp at mid-latitudes.
 @export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.0
+
+# ══════════════════════════════════════════════════════════════════════
+# [Climate-Weather 2ms Budget — governance switches]
+# ══════════════════════════════════════════════════════════════════════
+# 5 个独立总开关，分别控制 climate-weather-2ms-budget plan 的优化路径上线。
+# 全部默认 false → 走 legacy 路径，行为 0 漂移；任意一个翻 true → 在下一次
+# round 入口安全切换到 SoA / 稀疏 / 低频 / 部分上传新路径。
+#
+# 1) use_soa_pipeline
+#    总开关。true → climate Pass A/B、ocean_water/ocean_land、sea_ice、transp
+#    通过 MapData SoA 数组（temp_arr / moisture_arr / ...）读写而不是 cell.*；
+#    sub-pass 完成后由调度器调用 MapData.flush_soa_to_cells() 同步给 UI / Baker。
+#    false → 走原有 cell.temperature 等强类型成员路径（legacy）。
+#    依赖：MapData.has_soa() == true（rebuild_soa_from_cells 已被 bake_world 调用）。
+@export var use_soa_pipeline: bool = false
+
+# 2) use_sparse_climate
+#    在 use_soa_pipeline = true 的前提下启用 climate_dirty_mask 增量更新。
+#    Pass A 写温度时按 epsilon=1/512 自动标 dirty；Pass B / 下游稀疏 sub-pass
+#    仅遍历 dirty + 1 跳邻居。dirty_ratio 在 [50/N, 0.8] 之外时自动回退全图遍历。
+#    季节切换日 / 每 30 日强制全图 dirty。false → SoA 路径仍跑全图。
+@export var use_sparse_climate: bool = false
+
+# 3) use_sparse_weather
+#    与 use_sparse_climate 平行的 weather field 稀疏开关。weather_field_solver
+#    与 advect / distribute 仅跑 weather_dirty_mask 标记的 cell（由当日 fronts 的
+#    AABB 膨胀 N 跳生成）。false → weather 路径全图遍历不变。
+@export var use_sparse_weather: bool = false
+
+# 4) use_low_freq_ocean_psi
+#    OceanCurrentsJob 默认 stride 升到 30 个 game-day（约一月一次）；季节切换日
+#    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
+#    ocean_currents_period_ticks 设置（默认 240 + 120 切片）。
+@export var use_low_freq_ocean_psi: bool = false
+
+# 5) use_partial_atlas_upload
+#    enum_atlas_upload / sea_ice_atlas_upload 改 tile dirty 部分上传：
+#    维护 32×32 tile 粒度 tile_dirty_mask，仅上传变化 tile，单 tick 上限 8 tile。
+#    false → 维持现有整张纹理上传（legacy）。
+@export var use_partial_atlas_upload: bool = false
 
 # Continuous day-length amplitude (how much the "day length" term modulates
 # insolation away from pure cos_zenith). 0 → pure sun-angle; higher → longer

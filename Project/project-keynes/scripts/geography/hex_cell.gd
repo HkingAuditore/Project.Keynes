@@ -9,6 +9,14 @@ var q: int = 0
 var r: int = 0
 var s: int = 0  # 始终等于 -q - r，冗余存储以方便邻居计算
 
+# --- DOTS-native：SoA index（Phase 3a Step 2.1 / B-pragmatic） ───────────────
+# 由 MapData._build_indices() 在 bake/regenerate 末尾写入，等同 _cell_index[cell]。
+# DCWorld 所有 cell-level component 的 idx 即 cell.index。
+#   - hot loop（C++ / GDScript）：直接用 `arr[cell.index]`
+#   - cold path（UI/baker/test）：world.read_*(comp_id, cell.index) helper
+#   - -1 = 未通过 _build_indices 注册（断言用）
+var index: int = -1
+
 # --- 地形（兼容轴；Milestone 1 起为 derived 字段） ---
 # 仍是 baker / shader / 老 _apply_*_pass 的工作字段，
 # 但语义上已被 landform / vegetation / cover 三轴取代。

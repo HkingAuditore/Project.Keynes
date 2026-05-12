@@ -1,0 +1,4 @@
+[submodule "gdext/godot-cpp"]
+	path = gdext/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+	branch = master

@@ -53,10 +53,23 @@ var _last_tick_summary: Dictionary = {}
 ## Number of ticks dispatched since reset.
 var _tick_counter: int = 0
 
+## DataCore World 引用（2026-05-11，dots-foundation-and-weather-migration）。
+## main.gd 在 World 初始化完成后调用 bind_world(w)；SUS 把它注入到每个已注册
+## 与未来注册的 job._world，让 job 可以直接 _world.query()...for_each_index。
+## 默认 null —— 与 ClimateProfile.use_data_core=false 一致，job 走 legacy 路径。
+var world = null    # DCWorld
+
 
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
+
+## 注入 DataCore World 引用。已注册的 job 立刻 bind；之后 register_job 的也会自动 bind。
+func bind_world(w) -> void:
+	world = w
+	for j in _jobs:
+		j.bind_world(w)
+
 
 func register_job(job: SusJob) -> void:
 	if job == null:
@@ -73,6 +86,8 @@ func register_job(job: SusJob) -> void:
 		job.policy = SusPolicy.AlwaysPolicy.new()
 	_jobs.append(job)
 	_jobs.sort_custom(func(a, b): return a.priority < b.priority)
+	if world != null:
+		job.bind_world(world)
 
 
 func unregister_job(job_id: StringName) -> void:
@@ -348,3 +363,12 @@ func _emit_periodic_log() -> void:
 		s["slices_total"] = 0
 		s["skipped"] = {}
 		s["max_ms"] = 0.0
+	# DataCore 状态尾巴一行（dots-foundation-and-weather-migration 任务 10）。
+	# 仅在已 bind World 时打印；未 bind 时（默认 legacy）保持静默以减少 log 噪声。
+	if world != null:
+		var bound: bool = world.has_method("is_bound") and world.is_bound()
+		if bound:
+			var ent_n: int = int(world.entity_count()) if world.has_method("entity_count") else 0
+			var comp_n: int = int(world.component_count()) if world.has_method("component_count") else 0
+			var pool_n: int = int(world.pool_count()) if world.has_method("pool_count") else 0
+			print("[SUS] world: bound=true entities=%d components=%d pools=%d" % [ent_n, comp_n, pool_n])

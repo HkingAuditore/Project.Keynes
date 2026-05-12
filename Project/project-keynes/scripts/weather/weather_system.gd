@@ -596,10 +596,21 @@ func begin_weather_field_solve(map: MapData, world: WorldData, season_idx: int, 
 	_field_slice_next_intensity.resize(n_cells)
 	_field_slice_next_convergence.resize(n_cells)
 	_field_slice_next_type.resize(n_cells)
+	# B-full Step-2：prev 拷贝走 SoA 直读，消除每 cell 4 次 HexCell 字段访问。
+	# SoA 数组在 bake_world 时由 rebuild_soa_from_cells() alloc 并与 DCWorld view_f32
+	# 同引用；--data-core=true / false 行为完全一致，因为 SoA 始终被维护。
+	# 等价语义保留：未 init 的 cell（field_init==0）用 moisture 兜底，precip 当 0。
+	var soa_vapor_in: PackedFloat32Array = map.weather_vapor_arr
+	var soa_precip_in: PackedFloat32Array = map.weather_precip_arr
+	var soa_field_init: PackedByteArray = map.weather_field_init_arr
+	var soa_moisture: PackedFloat32Array = map.moisture_arr
 	for i in range(n_cells):
-		var prev_cell: HexCell = _field_slice_cells[i]
-		_field_slice_prev_vapor[i] = prev_cell.weather_vapor if prev_cell.weather_field_initialized else prev_cell.moisture
-		_field_slice_prev_precip[i] = prev_cell.weather_precip if prev_cell.weather_field_initialized else 0.0
+		if soa_field_init[i] > 0:
+			_field_slice_prev_vapor[i] = soa_vapor_in[i]
+			_field_slice_prev_precip[i] = soa_precip_in[i]
+		else:
+			_field_slice_prev_vapor[i] = soa_moisture[i]
+			_field_slice_prev_precip[i] = 0.0
 
 func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
 	if not _field_slice_active:
@@ -626,15 +637,27 @@ func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
 	var season_idx: int = _field_slice_season_idx
 	var climate_anomaly: float = _field_slice_climate_anomaly
 	var refresh_convergence: bool = _field_slice_refresh_convergence
+	# B-full Step-2：cell-loop 外一次性取 SoA 数组引用。SoA 与 DCWorld view_f32 同引用，
+	# 循环内全部走 PackedArray index 访问，消除 cell.xxx 强类型成员访问。
+	# 唯一保留 AoS 的字段是 temperature_transport_anomaly（在 _avg_ocean_anomaly_at_idx
+	# helper 中），不在本 plan 范围（属 climate ocean heat transport pass 改造）。
+	var soa_temp: PackedFloat32Array = map.temp_arr
+	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
+	var soa_moisture_loop: PackedFloat32Array = map.moisture_arr
+	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
+	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
+	var soa_terrain: PackedByteArray = map.terrain_arr
+	var soa_has_river: PackedByteArray = map.has_river_arr
+	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
 	for i in range(start_i, end_i):
 		var cell: HexCell = cells[i]
 		var pos: Vector2 = cell_pos[i]
-		var temp: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
-		var base_m: float = clampf(cell.moisture, 0.0, 1.0)
+		var temp: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
+		var base_m: float = clampf(soa_moisture_loop[i], 0.0, 1.0)
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var on_water: bool = _is_water_terrain(int(cell.terrain))
+		var on_water: bool = _is_water_terrain(int(soa_terrain[i]))
 
-		var wind: Vector2 = cell.wind_vector
+		var wind: Vector2 = Vector2(soa_wind_x[i], soa_wind_y[i])
 		if wind.length_squared() < 0.0001:
 			var ny: float = 0.5
 			if _world_bounds.size.y > 0.001:
@@ -647,8 +670,8 @@ func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
 		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
 		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
 		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
-		var is_lake: bool = int(cell.terrain) == TerrainType.TERRAIN.LAKE
-		var has_river: bool = (not is_lake) and cell.has_river and not on_water
+		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
+		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
 		if is_lake:
 			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
 		elif has_river:
@@ -665,7 +688,7 @@ func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
 		vapor = clampf(vapor + evap, 0.0, 1.0)
 
 		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = cell.weather_convergence
+		var convergence: float = soa_convergence_in[i]
 		if refresh_convergence:
 			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		if lift < 0.0:
@@ -723,16 +746,46 @@ func commit_weather_field_solve() -> Array[WeatherFront]:
 	var map: MapData = _field_slice_map
 	var world: WorldData = _field_slice_world
 	var cells: Array = _field_slice_cells
+	# v9c: 同时写 SoA 镜像数组，修复 flush_soa_to_cells() 用 SoA 反向覆盖 AoS
+	# 导致 weather_type 被周期性清回 CLEAR 的问题。SoA 数组已 bind 到 DataCore
+	# 的 CELL_WEATHER_INTENSITY/CLOUD/PRECIP/TYPE 4 个 component。
+	var soa_intensity: PackedFloat32Array = map.weather_intensity_arr
+	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
+	var soa_precip: PackedFloat32Array = map.weather_precip_arr
+	var soa_type: PackedByteArray = map.weather_type_arr
+	# B-full Step-2：4 个新 SoA（vapor/convergence/instability/field_init）一并写出。
+	# 与 weather_intensity/cloud/precip/type 一组，hot loop 自身的 11 个写入字段全部 SoA 化。
+	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
+	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
+	var soa_instability: PackedFloat32Array = map.weather_instability_arr
+	var soa_field_init: PackedByteArray = map.weather_field_init_arr
 	for i in range(cells.size()):
 		var out_cell: HexCell = cells[i]
+		var v_cloud: float = _field_slice_next_cloud[i]
+		var v_precip: float = _field_slice_next_precip[i]
+		var v_type: int = _field_slice_next_type[i]
+		var v_intensity: float = _field_slice_next_intensity[i]
+		var v_vapor: float = _field_slice_next_vapor[i]
+		var v_convergence: float = _field_slice_next_convergence[i]
+		var v_instability: float = _field_slice_next_instability[i]
 		out_cell.weather_field_initialized = true
-		out_cell.weather_vapor = _field_slice_next_vapor[i]
-		out_cell.weather_cloud = _field_slice_next_cloud[i]
-		out_cell.weather_precip = _field_slice_next_precip[i]
-		out_cell.weather_instability = _field_slice_next_instability[i]
-		out_cell.weather_type = _field_slice_next_type[i]
-		out_cell.weather_intensity = _field_slice_next_intensity[i]
-		out_cell.weather_convergence = _field_slice_next_convergence[i]
+		out_cell.weather_vapor = v_vapor
+		out_cell.weather_cloud = v_cloud
+		out_cell.weather_precip = v_precip
+		out_cell.weather_instability = v_instability
+		out_cell.weather_type = v_type
+		out_cell.weather_intensity = v_intensity
+		out_cell.weather_convergence = v_convergence
+		# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
+		# flush_soa_to_cells() 拿一致快照）
+		soa_intensity[i] = v_intensity
+		soa_cloud[i] = v_cloud
+		soa_precip[i] = v_precip
+		soa_type[i] = v_type & 0xFF
+		soa_vapor[i] = v_vapor
+		soa_convergence[i] = v_convergence
+		soa_instability[i] = v_instability
+		soa_field_init[i] = 1
 	if _field_slice_refresh_convergence:
 		_apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
 
@@ -949,16 +1002,30 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		next_type[i] = wt
 		next_intensity[i] = intensity
 		next_convergence[i] = convergence
+	# v9c: 同时写 SoA 镜像数组（与 commit_weather_field_solve 对称，legacy 路径）
+	var soa_intensity_l: PackedFloat32Array = map.weather_intensity_arr
+	var soa_cloud_l: PackedFloat32Array = map.weather_cloud_arr
+	var soa_precip_l: PackedFloat32Array = map.weather_precip_arr
+	var soa_type_l: PackedByteArray = map.weather_type_arr
 	for i in range(n_cells):
 		var out_cell: HexCell = cells[i]
+		var v_cloud_l: float = next_cloud[i]
+		var v_precip_l: float = next_precip[i]
+		var v_type_l: int = next_type[i]
+		var v_intensity_l: float = next_intensity[i]
 		out_cell.weather_field_initialized = true
 		out_cell.weather_vapor = next_vapor[i]
-		out_cell.weather_cloud = next_cloud[i]
-		out_cell.weather_precip = next_precip[i]
+		out_cell.weather_cloud = v_cloud_l
+		out_cell.weather_precip = v_precip_l
 		out_cell.weather_instability = next_instability[i]
-		out_cell.weather_type = next_type[i]
-		out_cell.weather_intensity = next_intensity[i]
+		out_cell.weather_type = v_type_l
+		out_cell.weather_intensity = v_intensity_l
 		out_cell.weather_convergence = next_convergence[i]
+		# SoA 镜像
+		soa_intensity_l[i] = v_intensity_l
+		soa_cloud_l[i] = v_cloud_l
+		soa_precip_l[i] = v_precip_l
+		soa_type_l[i] = v_type_l & 0xFF
 	# Phase 3b：锋面散度 + 温差升降级。
 	# 在主循环结束、_weather_field 已落定之后做一次"锋面后处理"：
 	#   - 对每个 cell 重读其周边温度差（max - min over neighbors），
@@ -976,15 +1043,28 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 	const STORM_TEMP_DIFF: float = 0.28
 	const WEAK_TEMP_DIFF: float = 0.06
 	const CONVERGENCE_THRESHOLD: float = 0.45
+	# B-full Step-2：循环外一次性取 SoA 数组引用（与 view_f32 同引用）。
+	# cell-level 字段全部走 PackedArray index 访问；只有 _avg_ocean_anomaly_at_idx
+	# 内部读 temperature_transport_anomaly 仍走 AoS（不在本 plan 范围）。
+	var soa_temp: PackedFloat32Array = map.temp_arr
+	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
+	var soa_field_init: PackedByteArray = map.weather_field_init_arr
+	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
+	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
+	var soa_precip: PackedFloat32Array = map.weather_precip_arr
+	var soa_instability: PackedFloat32Array = map.weather_instability_arr
+	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
+	var soa_type: PackedByteArray = map.weather_type_arr
+	var soa_intensity: PackedFloat32Array = map.weather_intensity_arr
 	for i in range(cells.size()):
 		var cell: HexCell = cells[i]
-		if not cell.weather_field_initialized:
+		if soa_field_init[i] == 0:
 			continue
-		var conv: float = cell.weather_convergence
+		var conv: float = soa_convergence[i]
 		if conv < CONVERGENCE_THRESHOLD:
 			continue
 		# 计算 cell 邻域的温差 max - min（含 cell 自身）。
-		var t_self: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
+		var t_self: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
 		var t_min: float = t_self
 		var t_max: float = t_self
 		if fast_indexed:
@@ -993,8 +1073,7 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 				var nb_idx: int = neighbor_indices[base + d]
 				if nb_idx < 0:
 					continue
-				var nb: HexCell = cells[nb_idx]
-				var t_nb: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
+				var t_nb: float = clampf(soa_temp[nb_idx] + climate_anomaly + soa_air_anomaly[nb_idx], 0.0, 1.0)
 				if t_nb < t_min:
 					t_min = t_nb
 				if t_nb > t_max:
@@ -1019,27 +1098,35 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 			continue
 		# 修（v5）：boost 进一步弱化——只让锋面带"略多云"，不再硬推 precip / inst 过阈值
 		# 让 STORM 等强对流完全由 _classify 的物理条件决定，不再被锋面后处理强制锁
-		var cloud0: float = cell.weather_cloud
-		var precip0: float = cell.weather_precip
-		var inst0: float = cell.weather_instability
+		var cloud0: float = soa_cloud[i]
+		var precip0: float = soa_precip[i]
+		var inst0: float = soa_instability[i]
 		var cloud1: float = clampf(maxf(cloud0, 0.25 + frontal_score * 0.20), 0.0, 1.0)
 		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0)
 		var inst1: float = clampf(maxf(inst0, 0.25 + frontal_score * 0.15), 0.0, 1.0)
+		# AoS 镜像写回（兼容 renderer 在 round 内未 flush 时直读 HexCell 字段）
 		cell.weather_cloud = cloud1
 		cell.weather_precip = precip1
 		cell.weather_instability = inst1
 		# 修（v5）：彻底取消温差升级到 STORM/BLIZZARD 的锁定逻辑。
 		# 锋面只做云的"轻推"，不再改 type。强对流完全交给 classify 物理条件判断。
 		# 仅保留：温差极小时把残余 STORM/MONSOON 降级 RAIN（防止旧 STORM 持留）
-		var wt0: int = cell.weather_type
+		var wt0: int = int(soa_type[i])
 		var new_wt: int = wt0
 		if temp_diff < WEAK_TEMP_DIFF and (wt0 == WeatherType.WT.STORM or wt0 == WeatherType.WT.MONSOON):
 			new_wt = WeatherType.WT.RAIN
 		cell.weather_type = new_wt
 		# 重算 intensity（沿用同套公式，确保下游可视化一致）。
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var vapor1: float = cell.weather_vapor
-		cell.weather_intensity = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
+		var vapor1: float = soa_vapor[i]
+		var new_intensity: float = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
+		cell.weather_intensity = new_intensity
+		# B-full Step-2：SoA 镜像（与 view_f32 同引用）—— 所有被本 pass 修改的字段都写出
+		soa_cloud[i] = cloud1
+		soa_precip[i] = precip1
+		soa_instability[i] = inst1
+		soa_intensity[i] = new_intensity
+		soa_type[i] = new_wt & 0xFF
 
 # Phase 3c：积雪累积与融化（共享方法）
 # ------------------------------------------------------------------------

@@ -1,0 +1,1813 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+Phase 13: 29 lake seeds
+Phase 13: 77 lake cells
+Phase 14: 8 volcanoes
+MapGenerator v7: per-cell 404ms (2400 cells)
+MapBaker v6: hm=(1024, 606) seed=2398118609
+  height+biome+moisture+veg+cover: 2689ms
+  light erosion: 71ms
+  river SDF: 221ms
+  latitude: 9ms
+WARNING: PhysicalCirculation solve@phase=2.00 total=245ms (slp=0ms wind=27ms psi=54ms finalize=2ms upwelling=7ms wind_raster=141ms) — exceeds 25ms soft budget
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _physical_solve_for_phase (res://scripts/rendering/map_baker.gd:2810)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:332)
+       [2] generate (res://scripts/geography/map_generator.gd:457)
+       [3] _generate_and_render (res://scripts/main.gd:724)
+       [4] _ready (res://scripts/main.gd:204)
+  wind field (physical-hex): 246ms
+  ocean currents (physical-hex): 224ms
+  ocean upwelling (physical-hex): 158ms
+  volcano field: 360ms
+  encode: 291ms
+MapBaker v6: total 4279ms
+MapGenerator v7: bake 4281ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[fastpath] HexCell typed fields active (SoA)
+[climate] insolation-driven path active (SoA): subsolar_lat=+23.5°, equator_annual_mean=0.958, tilt=23.5°
+_apply_sea_ice_daily_pass: 4ms (water=1251, flipped=0, phase=0.000)
+refresh_climate_daily #1: 72ms (cells=2400, phase=0.000) | A=5.5 B=6.6 ocean=3.6 wind=47.9 sea_ice=5.0 ice_bake=0.0 transp=3.4
+=== World baked in 4724ms ===
+  OCEAN: 1030
+  GLACIER: 62
+  SNOW: 53
+  COAST: 128
+  DELTA: 25
+  LAKE: 77
+  TUNDRA: 67
+  TAIGA: 65
+  STEPPE: 3
+  HILL: 316
+  MOUNTAIN: 219
+  SWAMP: 103
+  KELP: 40
+  GRASSLAND: 3
+  FOREST: 34
+  REEF: 53
+  JUNGLE: 95
+  SAVANNA: 24
+  SHRUBLAND: 2
+  BADLANDS: 1
+[DataCore] flags after CLI: use_data_core=true use_data_core_weather=true validate_weather=true
+[DataCore] --validate-weather: in-process A/B mode (window=10 samples per bucket). Step 1) let current path fill its bucket (watch for '[Validate] window full ...'). Step 2) press F9 to flip path (legacy <-> data_core) and let the other bucket fill. Step 3) diff table prints automatically; F12 anytime for snapshot without reset.
+[fastpath] weather_refresh_stride = 1
+fast tick #1: 25ms (sus=24.70 render=0.01 ui=0.00 skipped_day=true)
+Season refresh queued 5ms
+Yearly refresh 1ms
+[fastpath] weather_refresh_stride = 8
+_apply_sea_ice_daily_pass: 4ms (water=1251, flipped=0, phase=0.000)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 37ms > 12ms budget (frame=12, sus=31.89ms render=4.58ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #12 sus=31.89 render=4.58 ui=0.00 total=37ms skip_day=false
+    season_refresh ran=1.02ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.0, "stage_1_ms": 3.432, "stage_2_ms": 3.036, "stage_3_ms": 7.622, "stage_4_ms": 1.093, "stage_5_ms": 2.066, "stage_6_ms": 1.301, "stage_7_ms": 1.82, "stage_8_ms": 13.487, "stage_9_ms": 4.22, "stage_10_ms": 1.005 }
+    refresh_climate_daily ran=9.44ms slices=3 progress=1.00
+        A=2.7 B=4.8 ocean=4.0 sea_ice=4.4 ice_bake=0.0 transp=3.2 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=21.31ms slices=2 progress=1.00
+        weather_tick=8.5 (adv=2.5 spawn=4.2 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.7 veg_dyn=3.2 rebake_cv=0.0 rebake_vg=0.0 feedback=2.5 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.67ms p95=13.51ms max=13.51ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.95ms p95=11.20ms max=12.25ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.56ms p95=2.97ms max=2.97ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=13.62ms p95=21.31ms max=21.31ms slices=15 skipped[dep_pending=10,policy_gated=14]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=15.16ms p95=26.81ms max=26.81ms slices=4 skipped[frame_budget_exhausted=11,policy_gated=10,dep_pending=5]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=215.36ms p95=215.36ms max=215.36ms slices=1 skipped[frame_budget_exhausted=14,policy_gated=10,dep_pending=5]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=49, sus=20.47ms render=1.45ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #49 sus=20.47 render=1.45 ui=0.00 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.46ms slices=3 progress=0.50
+        A=2.6 B=4.6 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.91ms slices=1 progress=1.00
+        weather_tick=8.9 (adv=2.2 spawn=4.7 dist=2.1 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.61ms p95=12.45ms max=12.45ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.83ms p95=10.48ms max=10.61ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.44ms p95=2.88ms max=2.88ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.69ms p95=14.11ms max=14.11ms slices=10 skipped[policy_gated=24,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=8.35ms p95=9.48ms max=9.48ms slices=8 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.82ms max=0.82ms slices=2 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 30ms > 12ms budget (frame=81, sus=19.40ms render=10.76ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #81 sus=19.40 render=10.76 ui=0.00 total=30ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.32ms slices=3 progress=0.50
+        A=2.5 B=4.6 ocean=3.1 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=8.97ms slices=1 progress=1.00
+        weather_tick=8.0 (adv=2.1 spawn=4.2 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.78ms p95=14.02ms max=14.02ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.78ms p95=10.42ms max=10.55ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.28ms p95=2.79ms max=2.79ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=11.54ms p95=14.07ms max=14.07ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=6.71ms p95=7.26ms max=7.26ms slices=6 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.75ms p95=0.75ms max=0.75ms slices=1 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 9ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 20ms > 12ms budget (frame=113, sus=18.61ms render=1.32ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #113 sus=18.61 render=1.32 ui=0.00 total=20ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.21ms slices=3 progress=0.50
+        A=2.5 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=8.29ms slices=1 progress=1.00
+        weather_tick=7.4 (adv=2.1 spawn=3.7 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=12.45ms max=12.45ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.04ms p95=11.08ms max=12.44ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.39ms p95=2.85ms max=2.85ms slices=2 skipped[policy_gated=25,frame_budget_exhausted=3]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.25ms p95=13.93ms max=13.93ms slices=14 skipped[policy_gated=24,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=6.64ms p95=6.82ms max=6.82ms slices=4 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.82ms p95=0.82ms max=0.82ms slices=2 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+Yearly refresh 5ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 27ms > 12ms budget (frame=145, sus=25.56ms render=1.49ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #145 sus=25.56 render=1.49 ui=0.00 total=27ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.40ms slices=3 progress=0.50
+        A=2.6 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.03ms slices=2 progress=1.00
+        weather_tick=9.5 (adv=2.6 spawn=5.1 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.90ms p95=12.45ms max=12.45ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.28ms p95=11.19ms max=12.22ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.42ms p95=2.78ms max=2.78ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.66ms p95=16.57ms max=16.57ms slices=11 skipped[dep_pending=10,policy_gated=15]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=6.75ms p95=6.88ms max=6.88ms slices=6 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.89ms p95=0.89ms max=0.89ms slices=1 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 21ms > 12ms budget (frame=177, sus=20.08ms render=1.48ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #177 sus=20.08 render=1.48 ui=0.00 total=21ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.54ms slices=3 progress=0.50
+        A=2.9 B=4.3 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.44ms slices=1 progress=1.00
+        weather_tick=8.6 (adv=2.0 spawn=4.9 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.65ms p95=12.36ms max=12.36ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.95ms p95=10.66ms max=11.01ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.48ms p95=3.10ms max=3.10ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.18ms p95=15.30ms max=15.30ms slices=10 skipped[policy_gated=24,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=4.41ms p95=9.58ms max=9.58ms slices=8 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.78ms p95=0.86ms max=0.86ms slices=2 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 20ms > 12ms budget (frame=209, sus=19.02ms render=1.84ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #209 sus=19.02 render=1.84 ui=0.00 total=20ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.46ms slices=3 progress=0.50
+        A=2.6 B=4.4 ocean=3.4 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=8.46ms slices=1 progress=1.00
+        weather_tick=7.6 (adv=2.0 spawn=4.0 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.67ms p95=12.58ms max=12.58ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.94ms p95=10.86ms max=11.17ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.47ms p95=2.92ms max=2.92ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.45ms p95=14.80ms max=14.80ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.36ms p95=3.48ms max=3.48ms slices=5 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.58ms p95=0.58ms max=0.58ms slices=1 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 5ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.77ms p95=12.71ms max=12.71ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.91ms p95=10.81ms max=11.35ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.34ms p95=2.69ms max=2.69ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=11.84ms p95=14.41ms max=14.41ms slices=13 skipped[policy_gated=24,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.34ms p95=3.49ms max=3.49ms slices=6 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.60ms p95=0.60ms max=0.60ms slices=1 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+Yearly refresh 5ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 35ms > 12ms budget (frame=251, sus=33.66ms render=1.97ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #251 sus=33.66 render=1.97 ui=0.00 total=35ms skip_day=false
+    season_refresh ran=1.23ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.26, "stage_1_ms": 3.436, "stage_2_ms": 3.108, "stage_3_ms": 7.674, "stage_4_ms": 1.131, "stage_5_ms": 1.396, "stage_6_ms": 1.302, "stage_7_ms": 1.712, "stage_8_ms": 12.655, "stage_9_ms": 6.263, "stage_10_ms": 1.205 }
+    refresh_climate_daily ran=10.39ms slices=3 progress=0.50
+        A=2.5 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=21.90ms slices=2 progress=1.00
+        weather_tick=8.4 (adv=2.6 spawn=4.1 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.7 veg_dyn=3.6 rebake_cv=0.0 rebake_vg=0.0 feedback=2.6 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.76ms p95=12.68ms max=12.68ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.05ms p95=10.88ms max=10.90ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.54ms p95=3.37ms max=3.37ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=15.03ms p95=21.90ms max=21.90ms slices=12 skipped[dep_pending=10,policy_gated=15]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=4.17ms p95=6.90ms max=6.90ms slices=6 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.73ms p95=0.77ms max=0.77ms slices=2 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 25ms > 12ms budget (frame=289, sus=22.53ms render=2.01ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #289 sus=22.53 render=2.01 ui=0.00 total=25ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.34ms slices=3 progress=1.00
+        A=2.5 B=4.6 ocean=4.1 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=13.08ms slices=1 progress=1.00
+        weather_tick=12.1 (adv=2.1 spawn=7.8 dist=2.1 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.67ms p95=12.62ms max=12.62ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.09ms p95=11.11ms max=11.25ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.76ms p95=3.52ms max=3.52ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.66ms p95=14.77ms max=14.77ms slices=10 skipped[policy_gated=24,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.25ms p95=3.55ms max=3.55ms slices=6 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.77ms p95=0.77ms max=0.77ms slices=1 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 18ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 31ms > 12ms budget (frame=321, sus=20.02ms render=10.97ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #321 sus=20.02 render=10.97 ui=0.00 total=31ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.45ms slices=3 progress=1.00
+        A=2.6 B=4.5 ocean=3.9 sea_ice=4.0 ice_bake=0.0 transp=3.4 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.47ms slices=1 progress=1.00
+        weather_tick=9.7 (adv=2.1 spawn=6.0 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+[Validate] window full for path=data_core (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.65ms p95=12.58ms max=12.58ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.02ms p95=10.61ms max=13.18ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.34ms p95=3.07ms max=3.07ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.39ms p95=14.98ms max=14.98ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=3 avg=3.14ms p95=3.19ms max=3.19ms slices=3 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=11]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.81ms max=0.81ms slices=2 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 30ms > 12ms budget (frame=353, sus=18.34ms render=11.20ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #353 sus=18.34 render=11.20 ui=0.00 total=30ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.56ms slices=3 progress=1.00
+        A=2.6 B=4.4 ocean=3.9 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=8.67ms slices=1 progress=1.00
+        weather_tick=7.8 (adv=2.1 spawn=4.1 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+[Validate] window full for path=data_core (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=12.28ms max=12.28ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=10.86ms max=11.07ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.68ms p95=3.31ms max=3.31ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.76ms p95=14.45ms max=14.45ms slices=14 skipped[policy_gated=24,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.15ms p95=3.32ms max=3.32ms slices=5 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.88ms p95=0.88ms max=0.88ms slices=1 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+Yearly refresh 5ms
+fast tick #365: 1ms (sus=1.19 render=0.01 ui=0.00 skipped_day=true)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 31ms > 12ms budget (frame=385, sus=24.44ms render=6.89ms ui=0.00ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #385 sus=24.44 render=6.89 ui=0.00 total=31ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.15ms slices=3 progress=1.00
+        A=2.5 B=4.6 ocean=4.0 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.17ms slices=2 progress=1.00
+        weather_tick=9.9 (adv=2.5 spawn=5.5 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+[Validate] window full for path=data_core (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.68ms p95=12.43ms max=12.43ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.93ms p95=10.76ms max=10.88ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.51ms p95=3.00ms max=3.00ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.55ms p95=16.38ms max=16.38ms slices=11 skipped[dep_pending=10,policy_gated=15]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.06ms p95=3.19ms max=3.19ms slices=5 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.69ms p95=0.74ms max=0.74ms slices=2 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.43ms max=12.43ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.59ms p95=10.69ms max=10.82ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=1 avg=3.33ms p95=3.33ms max=3.33ms slices=1 skipped[policy_gated=28,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=2 avg=12.94ms p95=14.35ms max=14.35ms slices=5 skipped[policy_gated=26,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=8 avg=3.50ms p95=6.30ms max=6.30ms slices=9 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=4]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.77ms p95=0.87ms max=0.87ms slices=2 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=433, sus=21.22ms render=2.06ms ui=0.17ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #433 sus=21.22 render=2.06 ui=0.17 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.53ms slices=3 progress=0.50
+        A=2.7 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.58ms slices=1 progress=1.00
+        weather_tick=9.7 (adv=2.0 spawn=5.8 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=data_core
+[Validate] window full for path=data_core (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[DataCore] F9 toggle: use_data_core_weather=false (path=legacy)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=4.23ms p95=19.03ms max=19.03ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.04ms p95=10.83ms max=12.36ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.50ms p95=2.84ms max=2.84ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=13.12ms p95=15.97ms max=15.97ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.17ms p95=3.44ms max=3.44ms slices=5 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.73ms p95=0.73ms max=0.73ms slices=1 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 32ms > 12ms budget (frame=465, sus=21.27ms render=10.79ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #465 sus=21.27 render=10.79 ui=0.11 total=32ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.68ms slices=3 progress=0.50
+        A=2.8 B=4.6 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.48ms slices=1 progress=1.00
+        weather_tick=9.5 (adv=2.1 spawn=5.5 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=12.65ms max=12.65ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.86ms p95=11.24ms max=11.25ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=1.83ms p95=2.87ms max=2.87ms slices=3 skipped[policy_gated=21,dep_pending=5,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.69ms p95=14.33ms max=14.33ms slices=14 skipped[policy_gated=24,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.78ms p95=6.32ms max=6.32ms slices=6 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.65ms p95=0.65ms max=0.65ms slices=1 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 3ms
+Yearly refresh 5ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 34ms > 12ms budget (frame=497, sus=31.62ms render=1.97ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #497 sus=31.62 render=1.97 ui=0.10 total=34ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.27ms slices=3 progress=1.00
+        A=2.6 B=4.6 ocean=4.1 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=22.25ms slices=2 progress=1.00
+        weather_tick=8.9 (adv=2.5 spawn=4.6 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.8 veg_dyn=3.5 rebake_cv=0.0 rebake_vg=0.0 feedback=2.5 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.70ms p95=12.88ms max=12.88ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.02ms p95=10.72ms max=11.67ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.50ms p95=2.96ms max=2.96ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=14.05ms p95=22.25ms max=22.25ms slices=11 skipped[dep_pending=10,policy_gated=15]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.17ms p95=3.36ms max=3.36ms slices=5 skipped[policy_gated=11,dep_pending=5,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.69ms p95=0.69ms max=0.69ms slices=2 skipped[policy_gated=13,dep_pending=5,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+Season refresh queued 5ms
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=528, sus=20.64ms render=1.93ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #528 sus=20.64 render=1.93 ui=0.12 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.57ms slices=3 progress=0.50
+        A=2.8 B=4.4 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.96ms slices=1 progress=1.00
+        weather_tick=9.1 (adv=2.0 spawn=5.2 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 8ms
+[SUS] last 30 ticks: season_refresh ran=12 avg=3.43ms p95=12.59ms max=12.59ms slices=12 skipped[policy_gated=18]
+[SUS] last 30 ticks: refresh_climate_daily ran=19 avg=9.82ms p95=10.80ms max=10.80ms slices=57 skipped[dep_pending=11]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.49ms p95=3.06ms max=3.06ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.23ms p95=14.12ms max=14.12ms slices=10 skipped[policy_gated=24,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.07ms p95=3.21ms max=3.21ms slices=7 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.66ms p95=0.66ms max=0.66ms slices=1 skipped[policy_gated=12,dep_pending=5,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=560, sus=20.54ms render=1.44ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #560 sus=20.54 render=1.44 ui=0.10 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.20ms slices=3 progress=0.50
+        A=2.6 B=4.4 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.23ms slices=1 progress=1.00
+        weather_tick=9.3 (adv=2.1 spawn=5.6 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.57ms max=12.57ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.27ms p95=11.05ms max=11.72ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.37ms p95=3.05ms max=3.05ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=13.30ms p95=16.64ms max=16.64ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=3.12ms p95=3.26ms max=3.26ms slices=4 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=10]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.67ms p95=0.70ms max=0.70ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 27ms > 12ms budget (frame=592, sus=25.39ms render=1.48ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #592 sus=25.39 render=1.48 ui=0.10 total=27ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.76ms slices=3 progress=0.50
+        A=2.6 B=4.9 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=14.51ms slices=2 progress=1.00
+        weather_tick=8.7 (adv=2.6 spawn=4.3 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 4ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.70ms p95=12.44ms max=12.44ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.96ms p95=11.12ms max=11.50ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.52ms p95=3.20ms max=3.20ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.15ms p95=14.55ms max=14.55ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.11ms p95=3.15ms max=3.15ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.61ms p95=0.61ms max=0.61ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=624, sus=20.91ms render=1.43ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #624 sus=20.91 render=1.43 ui=0.10 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.43ms slices=3 progress=0.50
+        A=2.6 B=4.6 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.38ms slices=1 progress=1.00
+        weather_tick=9.4 (adv=2.0 spawn=5.4 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.16ms max=12.16ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.22ms p95=11.04ms max=12.80ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.32ms p95=2.79ms max=2.79ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.53ms p95=18.69ms max=18.69ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.19ms p95=3.34ms max=3.34ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=1.08ms p95=1.08ms max=1.08ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 24ms > 12ms budget (frame=656, sus=21.85ms render=2.16ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #656 sus=21.85 render=2.16 ui=0.11 total=24ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.17ms slices=3 progress=0.50
+        A=2.6 B=4.3 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=11.57ms slices=1 progress=1.00
+        weather_tick=10.7 (adv=2.2 spawn=6.5 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=13.68ms max=13.68ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.83ms p95=10.57ms max=10.67ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.43ms p95=3.00ms max=3.00ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.48ms p95=15.45ms max=15.45ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.15ms p95=3.32ms max=3.32ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.64ms p95=0.69ms max=0.69ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 28ms > 12ms budget (frame=688, sus=26.87ms render=1.48ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #688 sus=26.87 render=1.48 ui=0.11 total=28ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.56ms slices=3 progress=0.50
+        A=2.6 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=16.20ms slices=2 progress=1.00
+        weather_tick=10.4 (adv=2.6 spawn=6.2 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.39ms max=12.39ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.94ms p95=10.87ms max=10.97ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.23ms p95=2.94ms max=2.94ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.87ms p95=16.20ms max=16.20ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.28ms p95=3.35ms max=3.35ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.61ms p95=0.61ms max=0.61ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.68ms p95=12.33ms max=12.33ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.09ms p95=11.08ms max=11.92ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.38ms p95=2.81ms max=2.81ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.82ms p95=15.14ms max=15.14ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.37ms p95=3.46ms max=3.46ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.70ms p95=0.81ms max=0.81ms slices=2 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+fast tick #730: 23ms (sus=21.73 render=1.33 ui=0.10 skipped_day=false)
+WARNING: [fast tick] 23ms > 12ms budget (frame=730, sus=21.73ms render=1.33ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #730 sus=21.73 render=1.33 ui=0.10 total=23ms skip_day=false
+    season_refresh ran=1.11ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.195, "stage_1_ms": 3.576, "stage_2_ms": 3.004, "stage_3_ms": 7.997, "stage_4_ms": 1.156, "stage_5_ms": 1.519, "stage_6_ms": 1.394, "stage_7_ms": 1.67, "stage_8_ms": 13.416, "stage_9_ms": 5.714, "stage_10_ms": 1.092 }
+    refresh_climate_daily ran=10.11ms slices=3 progress=0.50
+        A=2.5 B=4.3 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.39ms slices=1 progress=1.00
+        weather_tick=9.6 (adv=2.1 spawn=5.5 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.81ms p95=13.44ms max=13.44ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.93ms p95=10.99ms max=11.12ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.33ms p95=2.94ms max=2.94ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=14.64ms p95=22.29ms max=22.29ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=8 avg=3.27ms p95=3.52ms max=3.52ms slices=11 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.72ms p95=0.72ms max=0.72ms slices=1 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=768, sus=20.88ms render=1.93ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #768 sus=20.88 render=1.93 ui=0.10 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.66ms slices=3 progress=0.50
+        A=2.8 B=4.6 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.12ms slices=1 progress=1.00
+        weather_tick=9.3 (adv=2.1 spawn=5.2 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] === A/B diff window n=10 ===
+           metric       | legacy     avg | data_core  avg | diff % | OK?
+           fronts       |     12.000 |     12.000 |  +0.00% | ✅ (≤5%)
+           cloud_sum    |      772.5 |      747.7 |  -3.22% | ❌ (≤3%)
+           precip_sum   |      549.1 |      516.3 |  -5.97% | ❌ (≤3%)
+           temp_hash_sum|      969.5 |      968.2 |  -0.14% | ✅ (≤1%, ref)
+           temp_hash_xor| 0x000007cf | 0x000004c6 | (xor distinct, info-only)
+           VERDICT: FAIL ❌
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.60ms max=12.60ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=11.37ms max=12.55ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.54ms p95=3.17ms max=3.17ms slices=2 skipped[policy_gated=25,frame_budget_exhausted=3]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.04ms p95=14.34ms max=14.34ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=11.53ms p95=27.45ms max=27.45ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.69ms p95=0.76ms max=0.76ms slices=2 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=800, sus=21.37ms render=1.94ms ui=0.13ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #800 sus=21.37 render=1.94 ui=0.13 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.48ms slices=3 progress=0.50
+        A=2.6 B=4.4 ocean=3.4 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.77ms slices=1 progress=1.00
+        weather_tick=9.8 (adv=2.1 spawn=5.9 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 3ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.57ms p95=12.21ms max=12.21ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.18ms p95=10.91ms max=12.73ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.50ms p95=3.00ms max=3.00ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.90ms p95=15.40ms max=15.40ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=8.40ms p95=9.43ms max=9.43ms slices=7 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.81ms p95=0.81ms max=0.81ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 27ms > 12ms budget (frame=832, sus=25.13ms render=1.41ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #832 sus=25.13 render=1.41 ui=0.10 total=27ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.53ms slices=3 progress=0.50
+        A=2.7 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=14.49ms slices=2 progress=1.00
+        weather_tick=8.8 (adv=2.6 spawn=4.6 dist=1.6 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.80ms p95=12.33ms max=12.33ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.95ms p95=10.71ms max=10.72ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.32ms p95=2.85ms max=2.85ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.18ms p95=14.49ms max=14.49ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=6.85ms p95=7.48ms max=7.48ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.79ms p95=0.81ms max=0.81ms slices=2 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 31ms > 12ms budget (frame=864, sus=20.43ms render=11.09ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #864 sus=20.43 render=11.09 ui=0.10 total=31ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.15ms slices=3 progress=0.50
+        A=2.6 B=4.3 ocean=3.1 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.16ms slices=1 progress=1.00
+        weather_tick=9.3 (adv=2.2 spawn=5.2 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.66ms p95=12.47ms max=12.47ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.82ms p95=10.53ms max=10.69ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.40ms p95=3.02ms max=3.02ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.06ms p95=16.91ms max=16.91ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=6.79ms p95=7.34ms max=7.34ms slices=7 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=1.15ms p95=1.15ms max=1.15ms slices=1 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=896, sus=20.51ms render=1.71ms ui=0.09ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #896 sus=20.51 render=1.71 ui=0.09 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.62ms slices=3 progress=0.50
+        A=2.7 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.79ms slices=1 progress=1.00
+        weather_tick=8.9 (adv=2.0 spawn=5.1 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 8ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.62ms p95=12.51ms max=12.51ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=10.68ms max=10.78ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.51ms p95=3.13ms max=3.13ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.17ms p95=15.52ms max=15.52ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=5.37ms p95=6.55ms max=6.55ms slices=8 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.80ms p95=0.80ms max=0.80ms slices=2 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 37ms > 12ms budget (frame=928, sus=26.15ms render=10.63ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #928 sus=26.15 render=10.63 ui=0.10 total=37ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.45ms slices=3 progress=0.50
+        A=2.7 B=4.6 ocean=3.1 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.58ms slices=2 progress=1.00
+        weather_tick=10.3 (adv=2.6 spawn=5.8 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.73ms p95=12.57ms max=12.57ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.16ms p95=11.05ms max=12.41ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.30ms p95=3.01ms max=3.01ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.99ms p95=15.58ms max=15.58ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.92ms p95=5.89ms max=5.89ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.67ms p95=0.67ms max=0.67ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.70ms p95=12.95ms max=12.95ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.75ms p95=11.10ms max=11.41ms slices=54 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.81ms p95=3.11ms max=3.11ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.72ms p95=14.41ms max=14.41ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=4.19ms p95=6.44ms max=6.44ms slices=4 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.75ms p95=0.75ms max=0.75ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=970, sus=21.36ms render=1.32ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #970 sus=21.36 render=1.32 ui=0.10 total=22ms skip_day=false
+    season_refresh ran=1.11ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.101, "stage_1_ms": 3.423, "stage_2_ms": 3.053, "stage_3_ms": 7.664, "stage_4_ms": 1.121, "stage_5_ms": 1.408, "stage_6_ms": 1.285, "stage_7_ms": 1.779, "stage_8_ms": 12.114, "stage_9_ms": 5.194, "stage_10_ms": 1.094 }
+    refresh_climate_daily ran=10.41ms slices=3 progress=0.50
+        A=2.5 B=4.4 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.71ms slices=1 progress=1.00
+        weather_tick=8.8 (adv=2.1 spawn=4.9 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.14ms max=12.14ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=10.71ms max=11.14ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.72ms p95=3.55ms max=3.55ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=14.02ms p95=22.48ms max=22.48ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.32ms p95=3.47ms max=3.47ms slices=7 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.78ms p95=0.79ms max=0.79ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1008, sus=20.70ms render=1.71ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1008 sus=20.70 render=1.71 ui=0.10 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.54ms slices=3 progress=0.50
+        A=2.7 B=4.4 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.05ms slices=1 progress=1.00
+        weather_tick=9.2 (adv=2.0 spawn=5.1 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.65ms p95=12.56ms max=12.56ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.97ms p95=10.59ms max=11.48ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.66ms p95=3.34ms max=3.34ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.05ms p95=14.37ms max=14.37ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.19ms p95=3.25ms max=3.25ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.68ms p95=0.68ms max=0.68ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=1040, sus=21.33ms render=1.69ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1040 sus=21.33 render=1.69 ui=0.12 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.31ms slices=3 progress=0.50
+        A=2.6 B=4.3 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.92ms slices=1 progress=1.00
+        weather_tick=10.0 (adv=2.1 spawn=6.2 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.56ms p95=12.43ms max=12.43ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.30ms p95=10.95ms max=16.06ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.28ms p95=2.92ms max=2.92ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.96ms p95=14.75ms max=14.75ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.13ms p95=3.20ms max=3.20ms slices=5 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.71ms p95=0.73ms max=0.73ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 28ms > 12ms budget (frame=1072, sus=25.88ms render=1.93ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1072 sus=25.88 render=1.93 ui=0.11 total=28ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.59ms slices=3 progress=0.50
+        A=2.7 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.16ms slices=2 progress=1.00
+        weather_tick=9.5 (adv=2.7 spawn=5.1 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 5ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.65ms p95=12.79ms max=12.79ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.05ms p95=10.88ms max=11.37ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.43ms p95=2.86ms max=2.86ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.37ms p95=15.16ms max=15.16ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.12ms p95=3.26ms max=3.26ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.74ms p95=0.74ms max=0.74ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+fast tick #1095: 27ms (sus=26.92 render=0.01 ui=0.00 skipped_day=true)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+refresh_climate_daily(sliced) #365: 41ms across sub-ticks (cells=2400, phase=0.807) | A=2.6 B=4.5 ocean=4.0 sea_ice=3.9 transp=3.3
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 24ms > 12ms budget (frame=1104, sus=21.98ms render=1.63ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1104 sus=21.98 render=1.63 ui=0.10 total=24ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=11.18ms slices=3 progress=1.00
+        A=2.6 B=4.5 ocean=4.0 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.70ms slices=1 progress=1.00
+        weather_tick=9.9 (adv=2.0 spawn=6.0 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+_apply_sea_ice_daily_pass: 4ms (water=1251, flipped=0, phase=0.879)
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.69ms p95=12.51ms max=12.51ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.94ms p95=12.41ms max=15.50ms slices=54 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.34ms p95=2.96ms max=2.96ms slices=3 skipped[policy_gated=23,frame_budget_exhausted=4]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.31ms p95=16.63ms max=16.63ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=4.30ms p95=6.48ms max=6.48ms slices=7 skipped[dep_pending=5,policy_gated=10,frame_budget_exhausted=10]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.83ms max=0.83ms slices=2 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=1136, sus=20.93ms render=1.92ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1136 sus=20.93 render=1.92 ui=0.11 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.15ms slices=3 progress=1.00
+        A=2.7 B=4.4 ocean=3.8 sea_ice=3.8 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=11.67ms slices=1 progress=1.00
+        weather_tick=10.8 (adv=2.0 spawn=7.1 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=4.22ms p95=13.32ms max=13.32ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.97ms p95=11.15ms max=13.99ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.74ms p95=3.34ms max=3.34ms slices=2 skipped[policy_gated=25,frame_budget_exhausted=3]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.39ms p95=15.40ms max=15.40ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.10ms p95=3.19ms max=3.19ms slices=5 skipped[dep_pending=4,policy_gated=12,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.65ms p95=0.65ms max=0.65ms slices=1 skipped[dep_pending=4,policy_gated=12,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 31ms > 12ms budget (frame=1168, sus=27.31ms render=3.14ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1168 sus=27.31 render=3.14 ui=0.10 total=31ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=11.29ms slices=3 progress=1.00
+        A=2.6 B=4.5 ocean=4.3 sea_ice=5.1 ice_bake=0.0 transp=3.6 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.87ms slices=2 progress=1.00
+        weather_tick=10.5 (adv=2.5 spawn=6.3 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.64ms p95=12.33ms max=12.33ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.90ms p95=10.58ms max=11.29ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.73ms p95=3.11ms max=3.11ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=13.08ms p95=15.87ms max=15.87ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.24ms p95=3.44ms max=3.44ms slices=5 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.73ms p95=0.74ms max=0.74ms slices=2 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+Yearly refresh 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.65ms p95=12.57ms max=12.57ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.55ms p95=10.61ms max=10.69ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.43ms p95=2.89ms max=2.89ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.38ms p95=14.80ms max=14.80ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=4.09ms p95=6.37ms max=6.37ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.80ms p95=0.80ms max=0.80ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 24ms > 12ms budget (frame=1210, sus=21.97ms render=1.78ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1210 sus=21.97 render=1.78 ui=0.11 total=24ms skip_day=false
+    season_refresh ran=1.10ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.084, "stage_1_ms": 3.355, "stage_2_ms": 2.998, "stage_3_ms": 7.602, "stage_4_ms": 1.095, "stage_5_ms": 1.398, "stage_6_ms": 1.549, "stage_7_ms": 1.706, "stage_8_ms": 12.846, "stage_9_ms": 5.483, "stage_10_ms": 1.074 }
+    refresh_climate_daily ran=10.43ms slices=3 progress=0.50
+        A=2.5 B=4.5 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.32ms slices=1 progress=1.00
+        weather_tick=9.4 (adv=2.1 spawn=5.0 dist=2.3 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.74ms p95=12.87ms max=12.87ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.18ms p95=10.69ms max=10.82ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.38ms p95=3.09ms max=3.09ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=14.17ms p95=22.71ms max=22.71ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.45ms p95=5.39ms max=5.39ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.67ms p95=0.69ms max=0.69ms slices=2 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=1248, sus=20.07ms render=2.45ms ui=0.22ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1248 sus=20.07 render=2.45 ui=0.22 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.48ms slices=3 progress=1.00
+        A=2.8 B=4.5 ocean=3.9 sea_ice=3.8 ice_bake=0.0 transp=3.5 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.47ms slices=1 progress=1.00
+        weather_tick=9.6 (adv=2.1 spawn=5.5 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[DataCore] F9 toggle: use_data_core_weather=true (path=data_core)
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.74ms p95=13.36ms max=13.36ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.62ms p95=10.73ms max=10.82ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.57ms p95=3.19ms max=3.19ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.27ms p95=14.21ms max=14.21ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.59ms p95=6.10ms max=6.10ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.69ms p95=0.69ms max=0.69ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[DataCore] F10: master OFF → also disabled use_data_core_weather.
+[DataCore] F10 toggle: use_data_core=false use_data_core_weather=false
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 38ms > 12ms budget (frame=1280, sus=26.38ms render=11.00ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1280 sus=26.38 render=11.00 ui=0.10 total=38ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.73ms slices=3 progress=1.00
+        A=2.6 B=4.5 ocean=4.0 sea_ice=5.1 ice_bake=0.0 transp=3.5 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.54ms slices=2 progress=1.00
+        weather_tick=10.1 (adv=2.7 spawn=5.6 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.59ms p95=12.38ms max=12.38ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.14ms p95=11.14ms max=12.46ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.61ms p95=3.11ms max=3.11ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.33ms p95=15.54ms max=15.54ms slices=10 skipped[policy_gated=25,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.34ms p95=4.62ms max=4.62ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.68ms p95=0.71ms max=0.71ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1312, sus=20.65ms render=1.53ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1312 sus=20.65 render=1.53 ui=0.10 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.78ms slices=3 progress=0.50
+        A=2.7 B=4.4 ocean=3.6 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.74ms slices=1 progress=1.00
+        weather_tick=8.8 (adv=2.1 spawn=4.9 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 6ms
+Yearly refresh 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.84ms p95=12.43ms max=12.43ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.88ms p95=11.13ms max=11.19ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.44ms p95=3.04ms max=3.04ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.59ms p95=15.08ms max=15.08ms slices=13 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.30ms p95=3.85ms max=3.85ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.66ms p95=0.66ms max=0.66ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 31ms > 12ms budget (frame=1344, sus=28.37ms render=1.98ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1344 sus=28.37 render=1.98 ui=0.12 total=31ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.27ms slices=3 progress=0.50
+        A=2.6 B=4.3 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=17.99ms slices=1 progress=1.00
+        weather_tick=9.5 (adv=2.0 spawn=5.4 dist=2.1 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.7 veg_dyn=3.4 rebake_cv=0.0 rebake_vg=0.0 feedback=2.5 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 9ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.76ms p95=12.34ms max=12.34ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.84ms p95=10.58ms max=10.61ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.36ms p95=3.11ms max=3.11ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=14.32ms p95=17.99ms max=17.99ms slices=12 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.18ms p95=3.25ms max=3.25ms slices=7 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.87ms p95=0.87ms max=0.87ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 27ms > 12ms budget (frame=1376, sus=25.36ms render=1.96ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1376 sus=25.36 render=1.96 ui=0.10 total=27ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.61ms slices=3 progress=0.50
+        A=2.7 B=4.4 ocean=3.4 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=14.63ms slices=2 progress=1.00
+        weather_tick=9.4 (adv=2.5 spawn=5.1 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.66ms p95=12.35ms max=12.35ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.94ms p95=10.67ms max=10.81ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.55ms p95=3.00ms max=3.00ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.97ms p95=14.63ms max=14.63ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.29ms p95=3.47ms max=3.47ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.71ms p95=0.80ms max=0.80ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=1408, sus=21.52ms render=1.35ms ui=0.09ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1408 sus=21.52 render=1.35 ui=0.09 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.48ms slices=3 progress=0.50
+        A=2.7 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.93ms slices=1 progress=1.00
+        weather_tick=10.0 (adv=2.1 spawn=6.2 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.68ms p95=12.32ms max=12.32ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.90ms p95=10.52ms max=10.79ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.32ms p95=2.97ms max=2.97ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.37ms p95=14.49ms max=14.49ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.34ms p95=3.41ms max=3.41ms slices=5 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=9]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.82ms p95=0.82ms max=0.82ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.74ms p95=12.60ms max=12.60ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.87ms p95=10.63ms max=10.73ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.38ms p95=2.92ms max=2.92ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.77ms p95=14.83ms max=14.83ms slices=14 skipped[policy_gated=23,dep_pending=2]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.37ms p95=3.43ms max=3.43ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.64ms p95=0.64ms max=0.64ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1450, sus=20.75ms render=1.51ms ui=0.09ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1450 sus=20.75 render=1.51 ui=0.09 total=22ms skip_day=false
+    season_refresh ran=1.08ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.108, "stage_1_ms": 3.324, "stage_2_ms": 3.176, "stage_3_ms": 8.133, "stage_4_ms": 1.075, "stage_5_ms": 1.432, "stage_6_ms": 1.303, "stage_7_ms": 1.769, "stage_8_ms": 12.936, "stage_9_ms": 5.285, "stage_10_ms": 1.057 }
+    refresh_climate_daily ran=10.29ms slices=3 progress=0.50
+        A=2.5 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.27ms slices=1 progress=1.00
+        weather_tick=8.4 (adv=2.0 spawn=4.5 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+fast tick #1460: 11ms (sus=10.43 render=0.01 ui=0.00 skipped_day=true)
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=12.96ms max=12.96ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=11.57ms max=12.58ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.27ms p95=2.81ms max=2.81ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.82ms p95=23.73ms max=23.73ms slices=11 skipped[dep_pending=9,policy_gated=16]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=8.25ms p95=27.36ms max=27.36ms slices=11 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.83ms max=0.83ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1488, sus=20.17ms render=2.00ms ui=0.09ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1488 sus=20.17 render=2.00 ui=0.09 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.87ms slices=3 progress=0.50
+        A=2.5 B=4.3 ocean=3.0 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.21ms slices=1 progress=1.00
+        weather_tick=9.4 (adv=2.0 spawn=5.4 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.70ms p95=12.05ms max=12.05ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.19ms p95=11.17ms max=11.58ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.75ms p95=3.24ms max=3.24ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=12.63ms p95=14.29ms max=14.29ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=9.49ms p95=9.84ms max=9.84ms slices=6 skipped[dep_pending=6,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.69ms p95=0.69ms max=0.69ms slices=1 skipped[dep_pending=6,policy_gated=11,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 28ms > 12ms budget (frame=1524, sus=26.95ms render=1.46ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1524 sus=26.95 render=1.46 ui=0.10 total=28ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.49ms slices=3 progress=0.50
+        A=2.8 B=4.5 ocean=3.1 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=16.36ms slices=2 progress=1.00
+        weather_tick=11.0 (adv=2.7 spawn=6.5 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=15 avg=3.66ms p95=12.21ms max=12.21ms slices=15 skipped[policy_gated=15]
+[SUS] last 30 ticks: refresh_climate_daily ran=16 avg=9.98ms p95=10.93ms max=10.93ms slices=48 skipped[dep_pending=14]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.45ms p95=2.97ms max=2.97ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.56ms p95=16.36ms max=16.36ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=5.87ms p95=6.96ms max=6.96ms slices=5 skipped[dep_pending=7,policy_gated=12,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.67ms p95=0.67ms max=0.67ms slices=1 skipped[dep_pending=7,policy_gated=12,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 3ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.63ms p95=12.37ms max=12.37ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.08ms p95=11.96ms max=12.55ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.41ms p95=2.90ms max=2.90ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.47ms p95=15.05ms max=15.05ms slices=14 skipped[dep_pending=6,policy_gated=19]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=6.64ms p95=7.06ms max=7.06ms slices=5 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.88ms max=0.88ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 24ms > 12ms budget (frame=1566, sus=21.96ms render=1.51ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1566 sus=21.96 render=1.51 ui=0.10 total=24ms skip_day=false
+    season_refresh ran=1.19ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.099, "stage_1_ms": 3.351, "stage_2_ms": 3.036, "stage_3_ms": 7.516, "stage_4_ms": 1.043, "stage_5_ms": 1.368, "stage_6_ms": 1.287, "stage_7_ms": 1.781, "stage_8_ms": 12.182, "stage_9_ms": 5.131, "stage_10_ms": 1.166 }
+    refresh_climate_daily ran=10.24ms slices=3 progress=0.50
+        A=2.5 B=4.6 ocean=3.1 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.41ms slices=1 progress=1.00
+        weather_tick=9.5 (adv=2.1 spawn=5.3 dist=2.1 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[DataCore] F9 toggle: use_data_core_weather=true (path=data_core)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.58ms p95=12.20ms max=12.20ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.86ms p95=10.98ms max=12.35ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.33ms p95=2.91ms max=2.91ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.49ms p95=14.71ms max=14.71ms slices=11 skipped[dep_pending=6,policy_gated=19]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=6.66ms p95=6.84ms max=6.84ms slices=7 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.82ms p95=0.82ms max=0.82ms slices=1 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=13]
+[SUS] world: bound=true entities=2416 components=37
+[DataCore] F10: master OFF → also disabled use_data_core_weather.
+[DataCore] F10 toggle: use_data_core=false use_data_core_weather=false
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 32ms > 12ms budget (frame=1604, sus=29.73ms render=2.04ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1604 sus=29.73 render=2.04 ui=0.12 total=32ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.81ms slices=3 progress=0.50
+        A=2.8 B=4.6 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=18.80ms slices=1 progress=1.00
+        weather_tick=10.0 (adv=2.1 spawn=5.5 dist=2.4 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.8 veg_dyn=3.5 rebake_cv=0.0 rebake_vg=0.0 feedback=2.6 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 8ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.60ms p95=12.28ms max=12.28ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=10.86ms max=12.68ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.55ms p95=3.25ms max=3.25ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=14.33ms p95=18.80ms max=18.80ms slices=10 skipped[policy_gated=25,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=6.07ms p95=7.15ms max=7.15ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.90ms p95=0.93ms max=0.93ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 24ms > 12ms budget (frame=1640, sus=22.80ms render=1.54ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1640 sus=22.80 render=1.54 ui=0.10 total=24ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.84ms slices=3 progress=0.50
+        A=2.6 B=4.7 ocean=3.5 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=11.84ms slices=1 progress=1.00
+        weather_tick=10.9 (adv=2.3 spawn=6.9 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=15 avg=3.74ms p95=12.72ms max=12.72ms slices=15 skipped[policy_gated=15]
+[SUS] last 30 ticks: refresh_climate_daily ran=16 avg=10.08ms p95=11.44ms max=11.44ms slices=48 skipped[dep_pending=14]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.50ms p95=3.04ms max=3.04ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=13.60ms p95=15.29ms max=15.29ms slices=10 skipped[policy_gated=25,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.73ms p95=5.04ms max=5.04ms slices=7 skipped[dep_pending=6,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.64ms p95=0.64ms max=0.64ms slices=1 skipped[dep_pending=6,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.69ms p95=12.49ms max=12.49ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.11ms p95=11.22ms max=11.46ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.66ms p95=3.39ms max=3.39ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.14ms p95=14.38ms max=14.38ms slices=13 skipped[policy_gated=16,dep_pending=9]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.35ms p95=3.44ms max=3.44ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.65ms p95=0.65ms max=0.65ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 29ms > 12ms budget (frame=1682, sus=27.15ms render=1.90ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1682 sus=27.15 render=1.90 ui=0.10 total=29ms skip_day=false
+    season_refresh ran=1.05ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.128, "stage_1_ms": 3.35, "stage_2_ms": 2.996, "stage_3_ms": 8.018, "stage_4_ms": 1.03, "stage_5_ms": 1.395, "stage_6_ms": 1.286, "stage_7_ms": 1.738, "stage_8_ms": 12.469, "stage_9_ms": 5.1, "stage_10_ms": 1.031 }
+    refresh_climate_daily ran=10.47ms slices=3 progress=0.50
+        A=2.5 B=4.6 ocean=3.3 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.51ms slices=2 progress=1.00
+        weather_tick=10.1 (adv=2.6 spawn=5.6 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.68ms p95=12.61ms max=12.61ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.11ms p95=11.29ms max=11.64ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.41ms p95=3.36ms max=3.36ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.59ms p95=15.51ms max=15.51ms slices=12 skipped[dep_pending=2,policy_gated=23]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.28ms p95=3.40ms max=3.40ms slices=7 skipped[dep_pending=5,frame_budget_exhausted=7,policy_gated=11]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.61ms p95=0.66ms max=0.66ms slices=2 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 26ms > 12ms budget (frame=1721, sus=23.96ms render=1.50ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1721 sus=23.96 render=1.50 ui=0.10 total=26ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=12.52ms slices=4 progress=1.00
+        A=3.3 B=4.7 ocean=3.9 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(frame_budget_exhausted)
+    weather_refresh ran=11.33ms slices=1 progress=1.00
+        weather_tick=10.5 (adv=2.4 spawn=5.7 dist=2.4 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 8ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.63ms p95=12.50ms max=12.50ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.11ms p95=11.36ms max=12.52ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.51ms p95=3.22ms max=3.22ms slices=2 skipped[policy_gated=26,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=15.36ms p95=22.61ms max=22.61ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.18ms p95=3.29ms max=3.29ms slices=6 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=6]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.65ms p95=0.65ms max=0.65ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1752, sus=19.54ms render=1.92ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1752 sus=19.54 render=1.92 ui=0.10 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.30ms slices=3 progress=0.50
+        A=2.5 B=4.4 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.13ms slices=1 progress=1.00
+        weather_tick=8.3 (adv=2.0 spawn=4.6 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.52ms p95=11.99ms max=11.99ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.82ms p95=10.43ms max=10.69ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.63ms p95=3.31ms max=3.31ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=12.39ms p95=14.82ms max=14.82ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.16ms p95=3.23ms max=3.23ms slices=6 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.78ms max=0.78ms slices=2 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 21ms > 12ms budget (frame=1784, sus=19.96ms render=1.65ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1784 sus=19.96 render=1.65 ui=0.11 total=21ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.48ms slices=3 progress=0.50
+        A=2.6 B=4.5 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.35ms slices=1 progress=1.00
+        weather_tick=8.5 (adv=2.1 spawn=4.6 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 5ms
+Yearly refresh 5ms
+[DataCore] F9 toggle: use_data_core_weather=true (path=data_core)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.70ms p95=12.21ms max=12.21ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.12ms p95=10.84ms max=10.92ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.77ms p95=3.23ms max=3.23ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=13.01ms p95=15.20ms max=15.20ms slices=14 skipped[policy_gated=16,dep_pending=9]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.07ms p95=3.14ms max=3.14ms slices=5 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.67ms p95=0.67ms max=0.67ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[DataCore] F10: master OFF → also disabled use_data_core_weather.
+[DataCore] F10 toggle: use_data_core=false use_data_core_weather=false
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 37ms > 12ms budget (frame=1816, sus=25.91ms render=11.16ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1816 sus=25.91 render=11.16 ui=0.10 total=37ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.29ms slices=3 progress=0.50
+        A=2.6 B=4.4 ocean=3.2 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.51ms slices=2 progress=1.00
+        weather_tick=10.0 (adv=2.6 spawn=5.6 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+fast tick #1825: 8ms (sus=7.89 render=0.01 ui=0.00 skipped_day=true)
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.69ms p95=12.78ms max=12.78ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.93ms p95=10.51ms max=10.52ms slices=59 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.39ms p95=3.11ms max=3.11ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.37ms p95=15.51ms max=15.51ms slices=11 skipped[dep_pending=2,policy_gated=23]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.50ms p95=6.36ms max=6.36ms slices=8 skipped[dep_pending=5,frame_budget_exhausted=7,policy_gated=11]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.79ms p95=0.79ms max=0.79ms slices=1 skipped[dep_pending=5,frame_budget_exhausted=12,policy_gated=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 30ms > 12ms budget (frame=1848, sus=28.24ms render=1.96ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1848 sus=28.24 render=1.96 ui=0.10 total=30ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.34ms slices=3 progress=1.00
+        A=2.6 B=4.4 ocean=3.8 sea_ice=3.9 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=18.78ms slices=1 progress=1.00
+        weather_tick=10.3 (adv=2.0 spawn=6.6 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=1.7 veg_dyn=3.7 rebake_cv=0.0 rebake_vg=0.0 feedback=2.5 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+Season refresh queued 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.73ms p95=12.62ms max=12.62ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.87ms p95=11.22ms max=11.33ms slices=58 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.62ms p95=3.35ms max=3.35ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=14.66ms p95=18.78ms max=18.78ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.20ms p95=3.29ms max=3.29ms slices=6 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.74ms p95=0.81ms max=0.81ms slices=2 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 22ms > 12ms budget (frame=1880, sus=20.25ms render=1.58ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1880 sus=20.25 render=1.58 ui=0.12 total=22ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.38ms slices=3 progress=1.00
+        A=2.7 B=4.6 ocean=3.8 sea_ice=4.0 ice_bake=0.0 transp=3.3 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=10.76ms slices=1 progress=1.00
+        weather_tick=9.9 (adv=2.1 spawn=6.2 dist=1.7 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 7ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.63ms p95=12.42ms max=12.42ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.08ms p95=10.95ms max=10.98ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.35ms p95=3.05ms max=3.05ms slices=3 skipped[policy_gated=26,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=14.04ms p95=19.78ms max=19.78ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=3.17ms p95=3.26ms max=3.26ms slices=4 skipped[dep_pending=5,policy_gated=11,frame_budget_exhausted=10]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.64ms p95=0.64ms max=0.64ms slices=1 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 6ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=4.77ms p95=20.79ms max=20.79ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.03ms p95=10.76ms max=10.77ms slices=60 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.88ms p95=3.65ms max=3.65ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.53ms p95=15.33ms max=15.33ms slices=13 skipped[policy_gated=16,dep_pending=9]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.11ms p95=3.25ms max=3.25ms slices=5 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=8]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.77ms p95=0.77ms max=0.77ms slices=1 skipped[dep_pending=5,policy_gated=14,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 26ms > 12ms budget (frame=1922, sus=24.52ms render=1.36ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1922 sus=24.52 render=1.36 ui=0.10 total=26ms skip_day=false
+    season_refresh ran=1.12ms slices=1 progress=1.00
+        season_refresh stages={ "stage_0_ms": 1.147, "stage_1_ms": 3.498, "stage_2_ms": 6.321, "stage_3_ms": 8.172, "stage_4_ms": 1.159, "stage_5_ms": 1.448, "stage_6_ms": 1.373, "stage_7_ms": 1.73, "stage_8_ms": 20.767, "stage_9_ms": 4.945, "stage_10_ms": 1.095 }
+    refresh_climate_daily ran=8.99ms slices=3 progress=1.00
+        A=2.6 B=4.6 ocean=3.9 sea_ice=3.8 ice_bake=0.0 transp=3.2 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=14.29ms slices=2 progress=1.00
+        weather_tick=8.9 (adv=2.5 spawn=4.6 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=4.23ms p95=12.58ms max=12.58ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.71ms p95=11.15ms max=13.50ms slices=56 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.39ms p95=3.08ms max=3.08ms slices=3 skipped[policy_gated=24,frame_budget_exhausted=3]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.74ms p95=14.75ms max=14.75ms slices=12 skipped[dep_pending=2,policy_gated=23]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=4.09ms p95=6.09ms max=6.09ms slices=7 skipped[dep_pending=4,frame_budget_exhausted=9,policy_gated=11]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.70ms p95=0.71ms max=0.71ms slices=2 skipped[dep_pending=4,policy_gated=12,frame_budget_exhausted=12]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 23ms > 12ms budget (frame=1960, sus=20.91ms render=1.99ms ui=0.11ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1960 sus=20.91 render=1.99 ui=0.11 total=23ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.33ms slices=3 progress=1.00
+        A=2.7 B=4.5 ocean=3.9 sea_ice=3.9 ice_bake=0.0 transp=3.4 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=11.46ms slices=1 progress=1.00
+        weather_tick=10.7 (adv=2.0 spawn=6.7 dist=2.0 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(policy_gated)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.81ms p95=12.99ms max=12.99ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.79ms p95=10.96ms max=10.96ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.75ms p95=3.22ms max=3.22ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=4 avg=16.46ms p95=26.66ms max=26.66ms slices=10 skipped[dep_pending=2,policy_gated=24]
+[SUS] last 30 ticks: ocean_currents ran=6 avg=3.74ms p95=6.92ms max=6.92ms slices=7 skipped[dep_pending=5,policy_gated=12,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.70ms p95=0.70ms max=0.70ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 27ms > 12ms budget (frame=1992, sus=25.42ms render=1.52ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #1992 sus=25.42 render=1.52 ui=0.10 total=27ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.07ms slices=3 progress=1.00
+        A=2.7 B=4.6 ocean=4.1 sea_ice=4.4 ice_bake=0.0 transp=3.5 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=15.23ms slices=2 progress=1.00
+        weather_tick=10.7 (adv=2.5 spawn=6.3 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 9ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.60ms p95=13.02ms max=13.02ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.31ms p95=10.90ms max=12.49ms slices=61 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=3 avg=2.42ms p95=3.36ms max=3.36ms slices=3 skipped[policy_gated=25,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=6 avg=13.18ms p95=15.23ms max=15.23ms slices=15 skipped[policy_gated=23,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=4 avg=3.17ms p95=3.22ms max=3.22ms slices=4 skipped[dep_pending=5,frame_budget_exhausted=11,policy_gated=10]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.79ms p95=0.91ms max=0.91ms slices=2 skipped[dep_pending=5,frame_budget_exhausted=13,policy_gated=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 17ms > 12ms budget (frame=2025, sus=14.86ms render=2.18ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #2025 sus=14.86 render=2.18 ui=0.10 total=17ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=5.00ms slices=1 progress=1.00
+        A=2.6 B=4.5 ocean=4.3 sea_ice=7.7 ice_bake=0.0 transp=3.6 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=9.74ms slices=1 progress=1.00
+        weather_tick=8.7 (adv=2.2 spawn=4.7 dist=1.8 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 4ms
+Yearly refresh 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.68ms p95=12.61ms max=12.61ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.75ms p95=10.96ms max=11.03ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.53ms p95=2.99ms max=2.99ms slices=2 skipped[policy_gated=27,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=5 avg=12.75ms p95=14.47ms max=14.47ms slices=13 skipped[policy_gated=16,dep_pending=9]
+[SUS] last 30 ticks: ocean_currents ran=5 avg=3.25ms p95=3.40ms max=3.40ms slices=5 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=7]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.70ms p95=0.70ms max=0.70ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.83ms p95=12.66ms max=12.66ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=10.53ms p95=15.39ms max=15.53ms slices=57 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=2 avg=2.80ms p95=3.53ms max=3.53ms slices=2 skipped[policy_gated=23,frame_budget_exhausted=5]
+[SUS] last 30 ticks: weather_refresh ran=3 avg=12.42ms p95=14.57ms max=14.57ms slices=7 skipped[dep_pending=2,policy_gated=25]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=3.73ms p95=6.40ms max=6.40ms slices=8 skipped[dep_pending=5,frame_budget_exhausted=8,policy_gated=10]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=2 avg=0.75ms p95=0.82ms max=0.82ms slices=2 skipped[dep_pending=5,frame_budget_exhausted=12,policy_gated=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 28ms > 12ms budget (frame=2080, sus=26.35ms render=1.39ms ui=0.10ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #2080 sus=26.35 render=1.39 ui=0.10 total=28ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=10.10ms slices=3 progress=1.00
+        A=2.6 B=4.9 ocean=4.3 sea_ice=4.3 ice_bake=0.0 transp=3.4 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=16.14ms slices=2 progress=1.00
+        weather_tick=10.4 (adv=2.6 spawn=5.7 dist=2.1 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.0 rebake_cv=0.0 rebake_vg=0.0 feedback=0.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+Season refresh queued 6ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.91ms p95=12.97ms max=12.97ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.56ms p95=11.34ms max=11.46ms slices=54 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=1 avg=3.29ms p95=3.29ms max=3.29ms slices=1 skipped[policy_gated=28,frame_budget_exhausted=1]
+[SUS] last 30 ticks: weather_refresh ran=2 avg=14.46ms p95=16.14ms max=16.14ms slices=5 skipped[dep_pending=2,policy_gated=26]
+[SUS] last 30 ticks: ocean_currents ran=8 avg=3.81ms p95=6.87ms max=6.87ms slices=9 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=4]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=0.73ms p95=0.73ms max=0.73ms slices=1 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=11]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 5ms
+[SUS] last 30 ticks: season_refresh ran=11 avg=3.72ms p95=12.53ms max=12.53ms slices=11 skipped[policy_gated=19]
+[SUS] last 30 ticks: refresh_climate_daily ran=20 avg=9.11ms p95=11.67ms max=12.58ms slices=48 skipped[dep_pending=10]
+[SUS] last 30 ticks: enum_atlas_upload ran=1 avg=4.99ms p95=4.99ms max=4.99ms slices=1 skipped[policy_gated=27,frame_budget_exhausted=2]
+[SUS] last 30 ticks: weather_refresh ran=2 avg=14.14ms p95=15.99ms max=15.99ms slices=5 skipped[policy_gated=27,dep_pending=1]
+[SUS] last 30 ticks: ocean_currents ran=7 avg=4.53ms p95=7.01ms max=7.01ms slices=9 skipped[dep_pending=5,policy_gated=13,frame_budget_exhausted=5]
+[SUS] last 30 ticks: sea_ice_atlas_upload ran=1 avg=1.63ms p95=1.63ms max=1.63ms slices=1 skipped[dep_pending=5,policy_gated=14,frame_budget_exhausted=10]
+[SUS] world: bound=true entities=2416 components=37
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+WARNING: [fast tick] 40ms > 12ms budget (frame=2136, sus=28.78ms render=10.87ms ui=0.12ms cells=2400)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _on_day_changed (res://scripts/main.gd:511)
+       [1] _process (res://scripts/geography/world_clock.gd:116)
+[fast tick WARN] #2136 sus=28.78 render=10.87 ui=0.12 total=40ms skip_day=false
+    season_refresh skipped(policy_gated)
+    refresh_climate_daily ran=9.59ms slices=3 progress=1.00
+        A=2.7 B=4.7 ocean=4.3 sea_ice=4.0 ice_bake=0.0 transp=3.4 cells=2400 pass=done partial=false dirty=1.00 visited=1.00 path=full
+    enum_atlas_upload skipped(policy_gated)
+    weather_refresh ran=19.07ms slices=1 progress=1.00
+        weather_tick=9.2 (adv=2.1 spawn=5.1 dist=1.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=2.0 veg_dyn=4.0 rebake_cv=0.0 rebake_vg=0.0 feedback=3.0 fronts=12
+        weather path=legacy
+[Validate] window full for path=legacy (n=10). Switch path with F9/F10 to fill the other bucket.
+    ocean_currents skipped(frame_budget_exhausted)
+    sea_ice_atlas_upload skipped(frame_budget_exhausted)
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+Season refresh queued 4ms
+Yearly refresh 6ms
+ERROR: 8 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+WARNING: 11 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:7505)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 20 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

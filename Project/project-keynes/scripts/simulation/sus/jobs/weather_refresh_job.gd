@@ -61,6 +61,419 @@ var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _climate_defer_streak: int = 0
 
 
+# ─── DataCore: weather component 注册与缓存（Task 8） ───────────────────
+# 由 SusScheduler.bind_world → SusJob.bind_world → _on_world_bound 链路触发。
+# 注册以下：
+#   cell-level component（CELL_WEATHER_INTENSITY/CLOUD/PRECIP/TYPE）—— 已由
+#     bind_map_data 自动挂入，本类只缓存 comp_id；
+#   front-level component（FRONT_POS_X/Y/VEL_X/Y/KIND/STRENGTH/RADIUS/AGE）——
+#     由 World 独立分配；首版以 max_front_count=MAX_FRONTS 一次性预留。
+#   archetype WEATHER_FRONT_ARCH 用于 query.with_archetype 过滤。
+#
+# 注意：本 step 1 仅完成"注册 + 缓存 + 镜像位预留"。step 2 才会让 sub-pass
+# 真正通过 query 读写这些 component。在 step 1 期间，WeatherSystem 仍是
+# AoS 实例数组的权威，World 中的 front-level component 处于"已注册但内容
+# 暂未同步"的状态；ClimateProfile.use_data_core_weather=true 时才开启镜像。
+
+# Cell-level comp_id 缓存
+var _comp_cell_intensity: int = -1
+var _comp_cell_cloud: int = -1
+var _comp_cell_precip: int = -1
+var _comp_cell_type: int = -1
+# B-full Step-2：weather hot loop view_f32 化新增 6 个缓存
+var _comp_cell_weather_vapor: int = -1
+var _comp_cell_weather_convergence: int = -1
+var _comp_cell_weather_instability: int = -1
+var _comp_cell_weather_field_init: int = -1
+var _comp_cell_air_mass_temp_anomaly: int = -1
+var _comp_cell_has_river: int = -1
+# B-full Step-2：weather hot loop 还要读 climate / 慢层 7 个 component；
+# 在 _on_world_bound 一并缓存，避免 hot loop 每 tick 反复查 component_id。
+var _comp_cell_temp: int = -1
+var _comp_cell_moisture: int = -1
+var _comp_cell_wind_x: int = -1
+var _comp_cell_wind_y: int = -1
+var _comp_cell_elevation: int = -1
+var _comp_cell_terrain: int = -1
+var _comp_cell_snow_cover: int = -1
+# Front-level comp_id 缓存（独立于 cell 的 entity 池）
+var _comp_front_pos_x: int = -1
+var _comp_front_pos_y: int = -1
+var _comp_front_vel_x: int = -1
+var _comp_front_vel_y: int = -1
+var _comp_front_kind: int = -1
+var _comp_front_strength: int = -1
+var _comp_front_radius: int = -1
+var _comp_front_age: int = -1
+# archetype id（front-level）
+var _arch_weather_front: int = -1
+# DataCore 路径状态
+var _data_core_components_ready: bool = false
+# Front entity 池在 World 全局 entity 空间内的起始 idx 与容量。
+# I2.A 改造（2026-05-11）：从"约定式偏移 cell_n + 16"升级为"显式 pool 注册"。
+# _pool_id_fronts 由 _on_world_bound 调 world.create_pool 时获得；
+# _front_pool_base 在同一时刻缓存自 world.pool_range(_pool_id_fronts).x，
+# 后续 hot path 调用方继续读这个字段，零侵入。
+const MAX_FRONTS_DC: int = 16  # 与 WeatherSystem.MAX_FRONTS 保持一致
+var _pool_id_fronts: int = -1
+var _front_pool_base: int = -1
+
+# C-01 dirty short-circuit 缓存：上次 sync 的 fronts 数量 + instance_id 异或哈希
+# + 内容指纹（pos/vel/intensity/age 加权和），用于跳过未变化的全量同步。
+# 适用场景：weather 路径每天 commit 1 次但 fronts 多日才显著变化时，
+# sync_fronts_to_world 直接 return，省掉 16×8 个 PackedArray 写。
+var _last_sync_n: int = -1
+var _last_sync_id_xor: int = 0
+var _last_sync_content_hash: float = 0.0
+
+# I2.A.5：ECB pool-aware sync 跟踪集。记录上一轮已在 World 里占据
+# entity 槽位的 front（中立仓库于 WeatherSystem._active_fronts）。本轮不在
+# active_fronts 中但在 _synced_fronts 中的 → ECB.destroy_in_pool；
+# 本轮在 active_fronts 但 world_idx==-1 的 → ECB.create_in_pool 并回写 world_idx。
+var _synced_fronts: Array[WeatherFront] = []
+# I2.A.5：本次 sync 中 ECB flush 耗时（ms），供调试 / SUS 面板读取。
+var _last_flush_ms: float = 0.0
+
+## 由 SUS 在 bind_world 时调用。完成 component / archetype 注册（幂等）。
+## 不做行为切换 —— 仅准备 comp_id；实际是否走 DataCore 路径由
+## use_data_core_weather 开关在 run_slice 内决定。
+func _on_world_bound() -> void:
+	if _world == null:
+		return
+	# Cell-level component：已由 DCWorld.bind_map_data() 注册并挂入 MapData。
+	# 这里仅查 comp_id；若 World 尚未 bind_map_data（即 use_data_core=false），
+	# comp_id 会是 -1，后续 sub-pass 会自动跳过 DataCore 路径。
+	_comp_cell_intensity = _world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
+	_comp_cell_cloud = _world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
+	_comp_cell_precip = _world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
+	_comp_cell_type = _world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+	# B-full Step-2：6 个新 component（weather 自身）
+	_comp_cell_weather_vapor = _world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
+	_comp_cell_weather_convergence = _world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
+	_comp_cell_weather_instability = _world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
+	_comp_cell_weather_field_init = _world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
+	_comp_cell_air_mass_temp_anomaly = _world.component_id(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY)
+	_comp_cell_has_river = _world.component_id(DCComponentIds.CELL_HAS_RIVER)
+	# B-full Step-2：weather hot loop 同时读的 climate + 慢层 7 个
+	_comp_cell_temp = _world.component_id(DCComponentIds.CELL_TEMP)
+	_comp_cell_moisture = _world.component_id(DCComponentIds.CELL_MOISTURE)
+	_comp_cell_wind_x = _world.component_id(DCComponentIds.CELL_WIND_X)
+	_comp_cell_wind_y = _world.component_id(DCComponentIds.CELL_WIND_Y)
+	_comp_cell_elevation = _world.component_id(DCComponentIds.CELL_ELEVATION)
+	_comp_cell_terrain = _world.component_id(DCComponentIds.CELL_TERRAIN)
+	_comp_cell_snow_cover = _world.component_id(DCComponentIds.CELL_SNOW_COVER)
+	# Front-level component：World 独立分配（不依赖 MapData）。track_prev=true
+	# 用于 advect 跨 tick 切片时下游读 prev。
+	_comp_front_pos_x = _world.register_component(DCComponentIds.FRONT_POS_X, DCComponentIds.F32, 1, true)
+	_comp_front_pos_y = _world.register_component(DCComponentIds.FRONT_POS_Y, DCComponentIds.F32, 1, true)
+	_comp_front_vel_x = _world.register_component(DCComponentIds.FRONT_VEL_X, DCComponentIds.F32, 1, false)
+	_comp_front_vel_y = _world.register_component(DCComponentIds.FRONT_VEL_Y, DCComponentIds.F32, 1, false)
+	_comp_front_kind = _world.register_component(DCComponentIds.FRONT_KIND, DCComponentIds.U8, 1, false)
+	_comp_front_strength = _world.register_component(DCComponentIds.FRONT_STRENGTH, DCComponentIds.F32, 1, false)
+	_comp_front_radius = _world.register_component(DCComponentIds.FRONT_RADIUS, DCComponentIds.F32, 1, false)
+	_comp_front_age = _world.register_component(DCComponentIds.FRONT_AGE, DCComponentIds.I32, 1, false)
+	# archetype（首版仅为分组标记）
+	_arch_weather_front = _world.create_archetype(DCComponentIds.ARCH_WEATHER_FRONT,
+		[_comp_front_pos_x, _comp_front_pos_y, _comp_front_vel_x, _comp_front_vel_y,
+		 _comp_front_kind, _comp_front_strength, _comp_front_radius, _comp_front_age])
+	# Front entity 池：通过 World 显式 Pool API（I2.A）注册。
+	# 仅在已 bind_map_data（cells pool 已建好，entity_count = cell_count）的情
+	# 况下创建。否则保持 entity_count=0，run_slice 时回退 legacy 路径。
+	if _world.is_bound() and _pool_id_fronts < 0:
+		_pool_id_fronts = _world.create_pool(DCComponentIds.POOL_WEATHER_FRONTS, MAX_FRONTS_DC)
+		var rng: Vector2i = _world.pool_range(_pool_id_fronts)
+		_front_pool_base = rng.x
+		# I2.A.5：create_pool 内部已将段内所有 entity 的 archetype 预置为
+		# ARCH_NONE，这里不再需要手动循环。
+	_data_core_components_ready = true
+
+
+## 是否所有 DataCore 组件都已 ready（cell + front + archetype 全有效）。
+## main.gd / generator 可调此函数判断是否真正在 DataCore 路径上跑。
+func data_core_ready() -> bool:
+	return _data_core_components_ready and _world != null and _world.is_bound() \
+		and _comp_cell_intensity >= 0 and _comp_front_pos_x >= 0
+
+
+## B-full Step-2：6 个新 weather component 是否全部 ready。
+## 给 weather_system 的 _is_dc_field_enabled() 做更严格的 gate；
+## 任一未挂入则 fallback 到 AoS（避免 view_f32 返回空）。
+func data_core_field_ready() -> bool:
+	return data_core_ready() \
+		and _comp_cell_weather_vapor >= 0 \
+		and _comp_cell_weather_convergence >= 0 \
+		and _comp_cell_weather_instability >= 0 \
+		and _comp_cell_weather_field_init >= 0 \
+		and _comp_cell_air_mass_temp_anomaly >= 0 \
+		and _comp_cell_has_river >= 0 \
+		and _comp_cell_temp >= 0 \
+		and _comp_cell_moisture >= 0 \
+		and _comp_cell_wind_x >= 0 \
+		and _comp_cell_wind_y >= 0 \
+		and _comp_cell_elevation >= 0 \
+		and _comp_cell_terrain >= 0 \
+		and _comp_cell_snow_cover >= 0
+
+
+## B-full Step-2：把 weather hot loop 需要的所有 view 一次性打包返回。
+## weather_system 在 begin / run_slice / commit 入口取一次即可，避免反复查
+## comp_id 与重复 view_* 调用。返回字典字段：
+##   vapor / convergence / instability ：Packed F32（hot loop 写）
+##   field_init                        ：Packed U8（0/1，hot loop 写）
+##   intensity / cloud / precip        ：Packed F32（hot loop 写）
+##   wtype                             ：Packed U8（hot loop 写）
+##   temp / moisture / snow_cover      ：Packed F32（climate pass 写、本路径只读）
+##   wind_x / wind_y / elevation       ：Packed F32（地图生成 / climate pass 写、本路径只读）
+##   terrain                           ：Packed U8（地图生成期写、本路径只读）
+##   air_anomaly                       ：Packed F32（climate pass 写、本路径只读）
+##   has_river                         ：Packed U8（地图生成期写、本路径只读）
+## 调用方应在 data_core_field_ready() == true 时使用；否则返回空 Dictionary。
+func data_core_views() -> Dictionary:
+	if not data_core_field_ready():
+		return {}
+	return {
+		# weather hot loop 自己写 / 自己读
+		"vapor": _world.view_f32(_comp_cell_weather_vapor),
+		"convergence": _world.view_f32(_comp_cell_weather_convergence),
+		"instability": _world.view_f32(_comp_cell_weather_instability),
+		"field_init": _world.view_u8(_comp_cell_weather_field_init),
+		"intensity": _world.view_f32(_comp_cell_intensity),
+		"cloud": _world.view_f32(_comp_cell_cloud),
+		"precip": _world.view_f32(_comp_cell_precip),
+		"wtype": _world.view_u8(_comp_cell_type),
+		# climate pass 写、weather hot loop 只读
+		"temp": _world.view_f32(_comp_cell_temp),
+		"moisture": _world.view_f32(_comp_cell_moisture),
+		"snow_cover": _world.view_f32(_comp_cell_snow_cover),
+		"air_anomaly": _world.view_f32(_comp_cell_air_mass_temp_anomaly),
+		# 地图生成 / climate pass 写、weather hot loop 只读
+		"wind_x": _world.view_f32(_comp_cell_wind_x),
+		"wind_y": _world.view_f32(_comp_cell_wind_y),
+		"elevation": _world.view_f32(_comp_cell_elevation),
+		"terrain": _world.view_u8(_comp_cell_terrain),
+		"has_river": _world.view_u8(_comp_cell_has_river),
+	}
+
+
+## Front 池起始 idx（World 全局 entity 空间内）。step 2 的 query.with_range
+## 用得到。
+func front_pool_base() -> int:
+	return _front_pool_base
+
+
+## Front 池容量。
+func front_pool_capacity() -> int:
+	return MAX_FRONTS_DC
+
+
+## archetype id。
+func weather_front_archetype() -> int:
+	return _arch_weather_front
+
+
+# ─── DataCore: front 镜像同步（step 1 末尾保留接口；step 2 实际写入） ────
+# 当 use_data_core_weather=true 时，每个 sub-pass commit 后调用此方法把
+# WeatherSystem._active_fronts 同步到 World 中的 front-level component。
+# step 1：方法已就位但默认不开启；调用方需确认 data_core_ready() 才调用。
+# C-01 优化（2026-05-11）：
+#   1) dirty short-circuit：fronts 大小+id 异或+内容指纹三者全等时直接 return；
+#   2) 类型分发：在入口判一次首元素是否 WeatherFront，快路径走零反射成员访问；
+#   3) archetype assign 仅在 free 段尾巴做差分；
+# 目标：常态调用 ≤0.05ms（dirty 短路）/ ≤0.15ms（全量），从原 ~0.4ms 降下。
+func sync_fronts_to_world(active_fronts: Array) -> void:
+	if not data_core_ready():
+		return
+	if _front_pool_base < 0:
+		return
+	var n: int = mini(active_fronts.size(), MAX_FRONTS_DC)
+
+	# C-01.1：dirty 指纹计算（轻量，不进入 PackedArray 写）。
+	# 指纹 = n + 前 n 个 front 的 instance_id 异或 + 内容加权和。
+	# is_first_object_typed 同时决定后续走哪条 path。
+	var id_xor: int = 0
+	var content_hash: float = 0.0
+	var is_first_object_typed: bool = n > 0 and active_fronts[0] is WeatherFront
+	if is_first_object_typed:
+		for i in range(n):
+			var f: WeatherFront = active_fronts[i]
+			if f == null:
+				continue
+			id_xor ^= f.get_instance_id()
+			content_hash += f.center.x + f.velocity.x * 7.31 + f.intensity * 19.7 + float(f.age_days)
+	else:
+		for i in range(n):
+			var f_any = active_fronts[i]
+			if f_any == null:
+				continue
+			if f_any is Object:
+				id_xor ^= f_any.get_instance_id()
+	if n == _last_sync_n and id_xor == _last_sync_id_xor \
+			and absf(content_hash - _last_sync_content_hash) < 1e-4:
+		return  # 指纹完全一致 → 跳过本次全量同步
+	_last_sync_n = n
+	_last_sync_id_xor = id_xor
+	_last_sync_content_hash = content_hash
+
+	# C-01.2：类型分发，走特化的快/慢路径
+	if is_first_object_typed:
+		_sync_fronts_object_path(active_fronts, n)
+	else:
+		_sync_fronts_dict_path(active_fronts, n)
+
+
+## C-01.2 强类型快路径：active_fronts 元素全为 WeatherFront 实例（≥99% 情形）。
+## 循环内零反射，全部走直接成员访问 + PackedArray index 写入。
+##
+## I2.A.5：ECB pool-aware。不再用 base + i 顺序占段，而是每个 front 持有
+## 自己的 world_idx（由 ECB 从 pool free-list 分配）。上轮在 _synced_fronts
+## 但本轮不在的 → destroy_in_pool；本轮新出现且 world_idx==-1 的 → create_in_pool。
+## flush 在函数尾调一次，把所有 archetype 变更 + free-list 互访一批处理完。
+##
+## I3.A.2：写入路径全部改走 _world.write_*（DCWorld / DCWorldExt 双兼容）。
+## DCWorldExt 下 view_* 是只读快照（拷贝），原本 `view_*(c)[i] = v` 会静默
+## 失效；统一为 write_* 后双路径行为一致。
+func _sync_fronts_object_path(active_fronts: Array, n: int) -> void:
+	var arch_id: int = _arch_weather_front
+	var ecb: DCCommandBuffer = _world.command_buffer()
+
+	# 1) 差分：计算本轮 active 集合（用 instance_id 进 Dictionary，O(n)）
+	var active_set: Dictionary = {}
+	for i in range(n):
+		var f: WeatherFront = active_fronts[i]
+		if f != null:
+			active_set[f.get_instance_id()] = f
+
+	# 2) destroy：上轮 _synced_fronts 中本轮不在的 → 走 ECB 归还 idx
+	for old_f in _synced_fronts:
+		if old_f == null:
+			continue
+		if active_set.has(old_f.get_instance_id()):
+			continue
+		if old_f.world_idx >= 0:
+			ecb.destroy_in_pool(_pool_id_fronts, old_f.world_idx)
+			old_f.world_idx = -1
+
+	# 3) create + 写入：本轮所有 front，未分配 idx 的先走 ECB 拿 idx
+	for i in range(n):
+		var f2: WeatherFront = active_fronts[i]
+		if f2 == null:
+			continue
+		if f2.world_idx < 0:
+			var new_idx: int = ecb.create_in_pool(_pool_id_fronts, arch_id)
+			if new_idx < 0:
+				# free-list 耗尽（front 池满）——跳过该 front 的写入。
+				# weather_system 本来有 MAX_FRONTS 守卫，进到这里代表与之不同步。
+				continue
+			f2.world_idx = new_idx
+		var slot_idx: int = f2.world_idx
+		_world.write_f32(_comp_front_pos_x, slot_idx, f2.center.x)
+		_world.write_f32(_comp_front_pos_y, slot_idx, f2.center.y)
+		_world.write_f32(_comp_front_vel_x, slot_idx, f2.velocity.x)
+		_world.write_f32(_comp_front_vel_y, slot_idx, f2.velocity.y)
+		_world.write_u8(_comp_front_kind, slot_idx, f2.type & 0xFF)
+		_world.write_f32(_comp_front_strength, slot_idx, f2.intensity)
+		_world.write_f32(_comp_front_radius, slot_idx, f2.radius)
+		_world.write_i32(_comp_front_age, slot_idx, f2.age_days)
+
+	# 4) flush ECB（archetype 批处理 + free-list 同步）。计时供调试。
+	var t_us0: int = Time.get_ticks_usec()
+	_world.flush_command_buffer()
+	_last_flush_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+
+	# 5) 更新跟踪集（浅拷贝 Array 即可，仅记录引用）
+	_synced_fronts.clear()
+	_synced_fronts.append_array(active_fronts.slice(0, n))
+
+
+## C-01.2 慢路径：兼容 Dictionary / 历史 alias 字段名（debug / mock 数据）。
+## 仅在首元素不是 WeatherFront 实例时才进入；保留原有反射兼容性，不优化。
+##
+## I2.A.5：mock 路径不走 ECB pool-aware（Dict 没有 world_idx 字段），继续使用
+## base+i 顺序占段与直接 assign_archetype。生产路径若误入此分支会被 push_warning 提醒。
+func _sync_fronts_dict_path(active_fronts: Array, n: int) -> void:
+	push_warning("[weather_refresh_job] _sync_fronts_dict_path: mock data path; ECB pool-aware path is bypassed. n=%d" % n)
+	for i in range(n):
+		var f = active_fronts[i]
+		if f == null:
+			continue
+		var slot_idx: int = _front_pool_base + i
+		var is_dict: bool = f is Dictionary
+		var c_val: Vector2 = Vector2.ZERO
+		if is_dict:
+			if f.has("center"):
+				c_val = f["center"]
+			elif f.has("position"):
+				c_val = f["position"]
+		else:
+			if "center" in f:
+				c_val = f.center
+			elif "position" in f:
+				c_val = f.position
+		_world.write_f32(_comp_front_pos_x, slot_idx, c_val.x)
+		_world.write_f32(_comp_front_pos_y, slot_idx, c_val.y)
+		var v_val: Vector2 = Vector2.ZERO
+		if is_dict:
+			if f.has("velocity"):
+				v_val = f["velocity"]
+			elif f.has("vel"):
+				v_val = f["vel"]
+		else:
+			if "velocity" in f:
+				v_val = f.velocity
+			elif "vel" in f:
+				v_val = f.vel
+		_world.write_f32(_comp_front_vel_x, slot_idx, v_val.x)
+		_world.write_f32(_comp_front_vel_y, slot_idx, v_val.y)
+		var k_int: int = 0
+		if is_dict:
+			if f.has("type"):
+				k_int = int(f["type"]) & 0xFF
+			elif f.has("weather_type"):
+				k_int = int(f["weather_type"]) & 0xFF
+		else:
+			if "type" in f:
+				k_int = int(f.type) & 0xFF
+			elif "weather_type" in f:
+				k_int = int(f.weather_type) & 0xFF
+		_world.write_u8(_comp_front_kind, slot_idx, k_int)
+		var s_val: float = 0.0
+		if is_dict:
+			if f.has("intensity"):
+				s_val = float(f["intensity"])
+			elif f.has("strength"):
+				s_val = float(f["strength"])
+		else:
+			if "intensity" in f:
+				s_val = float(f.intensity)
+			elif "strength" in f:
+				s_val = float(f.strength)
+		_world.write_f32(_comp_front_strength, slot_idx, s_val)
+		var r_val: float = 0.0
+		if is_dict:
+			if f.has("radius"):
+				r_val = float(f["radius"])
+		else:
+			if "radius" in f:
+				r_val = float(f.radius)
+		_world.write_f32(_comp_front_radius, slot_idx, r_val)
+		var age_val: int = 0
+		if is_dict:
+			if f.has("age_days"):
+				age_val = int(f["age_days"])
+			elif f.has("age"):
+				age_val = int(f["age"])
+		else:
+			if "age_days" in f:
+				age_val = int(f.age_days)
+			elif "age" in f:
+				age_val = int(f.age)
+		_world.write_i32(_comp_front_age, slot_idx, age_val)
+		_world.assign_archetype(slot_idx, _arch_weather_front)
+	var arch_none: int = _world.archetype_none()
+	for j in range(n, MAX_FRONTS_DC):
+		_world.assign_archetype(_front_pool_base + j, arch_none)
+
+
 func _init(p_generator, p_map: MapData, p_world: WorldData,
 		p_season_index_getter: Callable,
 		p_season_phase_getter: Callable,
@@ -139,6 +552,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if climate_anomaly_getter.is_valid():
 		anomaly = float(climate_anomaly_getter.call())
 
+	# C-02.3: 本次 run_slice 中是否启用 DataCore 镜像，仅查一次。
+	# 避免两个 commit site 重复查 ClimateProfile 与 data_core_ready。
+	var is_data_core_on: bool = _is_data_core_weather_enabled() and data_core_ready()
+
 	var can_slice_field: bool = generator.has_method("weather_uses_field_solver") \
 		and bool(generator.weather_uses_field_solver()) \
 		and generator.has_method("begin_weather_refresh_stage_a") \
@@ -171,6 +588,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_stage = 0
 		ran_this_tick = true
 		_fronts_changed_this_tick = true
+		# DataCore step 2：正路径 commit 完成，镜像 front 到 World（开关 ON 才生效）。
+		# C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
+		if is_data_core_on:
+			sync_fronts_to_world(sliced_fronts)
 		var sliced_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		return {
 			"done": true,
@@ -188,9 +609,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_round_active = false
 	_round_stage = 0
 	ran_this_tick = true
-	# 每次 run_slice 都把 _last_fronts 翻新，所以 fronts_changed 与 ran_this_tick 同步。
+	# 每次 run_slice 都把 _last_fronts 翻新，所以 fronts_changed 与 ran_this_tick 同步置位。
 	_fronts_changed_this_tick = true
-
+	# DataCore step 2：同步镜像。C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
+	if is_data_core_on:
+		sync_fronts_to_world(fronts)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	return {
 		"done": true,
@@ -203,6 +626,40 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 ## Read-only accessor for main.gd; cheap, no SUS state mutation.
 func last_fronts() -> Array[WeatherFront]:
 	return _last_fronts
+
+
+## DataCore step 2：构建一个用于遍历 active front entity 的 query。
+## 消费者（未来 visualization / debug / external system）可以调 for_each_index(callback)
+## 在 World 中拿到 front-level component view 进行数据访问。
+##
+## 示例：
+##   var q := job.query_active_fronts()
+##   var pos_x := world.view_f32(job._comp_front_pos_x)
+##   q.for_each_index(func(i): print(pos_x[i]))
+func query_active_fronts() -> DCQuery:
+	if not data_core_ready():
+		return null
+	var q: DCQuery = _world.query()
+	q.with(_comp_front_pos_x).with(_comp_front_pos_y).with(_comp_front_kind) \
+		.with_archetype(_arch_weather_front)
+	# I2.A：用 in_pool 取代手算 with_range。
+	if _pool_id_fronts >= 0:
+		q.in_pool(_pool_id_fronts)
+	else:
+		q.with_range(_front_pool_base, _front_pool_base + MAX_FRONTS_DC)
+	return q.build()
+
+
+## 内部：读取 ClimateProfile.use_data_core_weather 开关（Task 10 补齐字段）。
+func _is_data_core_weather_enabled() -> bool:
+	if generator == null:
+		return false
+	var cp = generator._c() if generator.has_method("_c") else null
+	if cp == null:
+		return false
+	if "use_data_core_weather" in cp:
+		return bool(cp.use_data_core_weather)
+	return false
 
 
 ## Was run_slice invoked on the most recent SUS.tick()? Used by main.gd to
