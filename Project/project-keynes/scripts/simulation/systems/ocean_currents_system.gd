@@ -78,3 +78,9 @@ func set_on_commit(cb: Callable) -> void:
 
 func set_season_phase_getter(cb: Callable) -> void:
 	_inner.season_phase_getter = cb
+
+
+# 暴露内部 SusJob 给 map_generator 等需要直接调用 OceanCurrentsJob 强类型
+# API 的 caller。0.4.1 use_dc_system_scheduler=true 路径用。
+func get_inner() -> _OceanCurrentsJobScript:
+	return _inner

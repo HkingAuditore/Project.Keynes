@@ -34,7 +34,11 @@ opts = Variables()
 opts.Add(BoolVariable("avx2", "Enable AVX2 codegen for SIMD bench paths", True))
 opts.Update(env)
 
-if env["avx2"]:
+# AVX2 / FMA only make sense on x86_64. Apple Silicon (arm64) + ARM Linux + Android
+# arm64 use NEON instead; emitting `-mavx2 -mfma` there fails compilation (clang:
+# "unsupported option for target 'arm64-...'"). Gate by both platform AND arch.
+_arch_is_x86_64 = env.get("arch", "") in ("x86_64", "x86", "")  # "" → autodetect, typically x86_64 on CI Windows/Linux hosts
+if env["avx2"] and _arch_is_x86_64:
     if env["platform"] == "windows" and env.get("is_msvc", False):
         # MSVC: /arch:AVX2 also implicitly enables FMA + BMI1/2.
         env.Append(CCFLAGS=["/arch:AVX2"])
@@ -44,6 +48,7 @@ if env["avx2"]:
         env.Append(CPPDEFINES=["PK_HAVE_AVX2=1"])
     # else: skip on android/ios/web — those targets pick their own arch.
 else:
+    # 包含 avx2=no 显式关闭 与 arm64 / android arm 等非 x86_64 架构。
     env.Append(CPPDEFINES=["PK_HAVE_AVX2=0"])
 
 sources = (
