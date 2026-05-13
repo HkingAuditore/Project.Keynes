@@ -489,6 +489,61 @@ func has_pending_pass() -> bool:
 	return _pending_passes > 0
 
 
+# ─── Phase C.2 / dots-migration-roadmap §3 A3：reads/writes 自动校验 hook ──
+#
+# DCSystemScheduler 在 system tick 前后调用 _debug_begin_pass / _debug_end_pass。
+# 当前实现是"声明记录器"——把当前 pass 声明的 writes / reads 列表记下来，
+# write_f32 / write_i32 / write_u8 / write_*_range / write_*_indexed 等写入
+# API 在 debug 构建下校验目标 component 是否在声明的 writes 内。违约时
+# push_error（不中止运行，避免 hot path 性能影响）。
+#
+# 当前 phase 仅记录 + 暴露 API；完整违约校验逻辑在 write_f32 等方法内
+# 接入是 future iteration——本 hook 让 DCSystemScheduler 调用面已经稳定，
+# 后续只需在写入函数中加一行 _debug_check_write(comp_id) 即可生效。
+var _debug_pass_active: bool = false
+var _debug_pass_writes: Array = []  # Array[StringName]
+var _debug_pass_reads: Array = []   # Array[StringName]
+var _debug_pass_id: StringName = &""
+
+
+## 由调度器在 system tick 前调用。仅 debug 构建生效。
+##  - writes: 本 pass 声明会写入的 component StringName 数组
+##  - reads:  本 pass 声明会读取的 component StringName 数组
+##  - pass_id: 调试日志用的 pass 名（system.id）
+func _debug_begin_pass(writes: Array, reads: Array, pass_id: StringName = &"") -> void:
+	if not _debug:
+		return
+	if _debug_pass_active:
+		push_warning("[DCWorld] _debug_begin_pass: previous pass '%s' not closed; auto-closing" % String(_debug_pass_id))
+	_debug_pass_active = true
+	_debug_pass_writes = writes
+	_debug_pass_reads = reads
+	_debug_pass_id = pass_id
+
+
+## 由调度器在 system tick 后调用。仅 debug 构建生效。
+func _debug_end_pass(_pass_id: StringName = &"") -> void:
+	if not _debug:
+		return
+	_debug_pass_active = false
+	_debug_pass_writes = []
+	_debug_pass_reads = []
+	_debug_pass_id = &""
+
+
+## 内部：write_* 入口可调本函数检查目标 component 是否已声明。当前未在
+## write_* 内插入调用以避免 hot path 开销；future iteration 会按需接入。
+func _debug_check_write(comp_id: int) -> void:
+	if not _debug or not _debug_pass_active:
+		return
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		return
+	if not _debug_pass_writes.has(slot.name):
+		push_error("[DCWorld] write violation in pass '%s': component '%s' not in declare_writes %s"
+			% [String(_debug_pass_id), String(slot.name), str(_debug_pass_writes)])
+
+
 ## O(1) 交换一组 component 的 _arr / _arr_prev 引用。
 ## 调用方必须保证所有 sub-pass 都已 end_sub_pass()，否则在 debug 构建 push_error 中止。
 func swap_double_buffer(comp_ids: Array) -> void:
@@ -663,62 +718,75 @@ func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> voi
 		_entity_count = 0
 		create_pool(DCComponentIds.POOL_CELLS, n)
 		# create_pool 已把 _entity_count 拉到 n（= 0 + capacity）
-	# 3) 内置 cell component 注册 / 挂入
-	#    （重复 bind 时 register_component 幂等；external_ref 标记避免 create_entities 误 resize）
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP, DCComponentIds.F32, true, map_data.temp_arr, map_data.temp_arr_prev)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_BASELINE, DCComponentIds.F32, false, map_data.temp_baseline_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_30D, DCComponentIds.F32, false, map_data.temp_30d_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_365D, DCComponentIds.F32, false, map_data.temp_365d_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_ANOMALY, DCComponentIds.F32, false, map_data.temp_anomaly_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_MOISTURE, DCComponentIds.F32, true, map_data.moisture_arr, map_data.moisture_arr_prev)
-	_bind_register_and_attach(DCComponentIds.CELL_SNOW_COVER, DCComponentIds.F32, true, map_data.snow_cover_arr, map_data.snow_cover_arr_prev)
-	_bind_register_and_attach(DCComponentIds.CELL_SEA_ICE_FRAC, DCComponentIds.F32, true, map_data.sea_ice_frac_arr, map_data.sea_ice_frac_arr_prev)
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_INTENSITY, DCComponentIds.F32, false, map_data.weather_intensity_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_CLOUD, DCComponentIds.F32, false, map_data.weather_cloud_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_PRECIP, DCComponentIds.F32, false, map_data.weather_precip_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_ELEVATION, DCComponentIds.F32, false, map_data.elevation_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_BASE_MOISTURE, DCComponentIds.F32, false, map_data.base_moisture_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_OCEAN_CURRENT_X, DCComponentIds.F32, false, map_data.ocean_current_x_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_OCEAN_CURRENT_Y, DCComponentIds.F32, false, map_data.ocean_current_y_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WIND_X, DCComponentIds.F32, false, map_data.wind_x_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WIND_Y, DCComponentIds.F32, false, map_data.wind_y_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_POS_X, DCComponentIds.F32, false, map_data.cell_pos_x_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_POS_Y, DCComponentIds.F32, false, map_data.cell_pos_y_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_LAT_NORM, DCComponentIds.F32, false, map_data.cell_lat_norm_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_BASELINE_YEAR, DCComponentIds.F32, false, map_data.temp_baseline_year_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_TERRAIN, map_data.terrain_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_LANDFORM, map_data.landform_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_VEGETATION, map_data.vegetation_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_COVER, map_data.cover_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_TYPE, map_data.weather_type_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_IS_WATER, map_data.is_water_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_CLIMATE_DIRTY, map_data.climate_dirty_mask)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_DIRTY, map_data.weather_dirty_mask)
-	# B-full Step-2：weather hot loop view_f32 化新增 6 个 component。
-	# 4 个 f32：weather_system.commit 写、hot loop 读 + renderer 在 round 末经 flush 拿一致快照。
-	# 1 个 u8 (field_init)：标记 cell 是否完成首次 weather 初始化。
-	# 1 个 f32 (air_mass_temp_anomaly)：climate pass 写、weather hot loop 读。
-	# 1 个 u8 (has_river)：地图生成期写、运行期纯读。
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_VAPOR, DCComponentIds.F32, false, map_data.weather_vapor_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_CONVERGENCE, DCComponentIds.F32, false, map_data.weather_convergence_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_WEATHER_INSTABILITY, DCComponentIds.F32, false, map_data.weather_instability_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_WEATHER_FIELD_INIT, map_data.weather_field_init_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY, DCComponentIds.F32, false, map_data.air_mass_temp_anomaly_arr)
-	_bind_register_and_attach_u8(DCComponentIds.CELL_HAS_RIVER, map_data.has_river_arr)
-	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个 component
-	# 1 个 u8 (ema_initialized)：Pass-A 冷启动判定，ocean_heat_transport_*_soa 读。
-	# 1 个 f32 (temp_season_offset)：Pass-A 当日季节偏移，UI breakdown 经 flush 读。
-	_bind_register_and_attach_u8(DCComponentIds.CELL_EMA_INITIALIZED, map_data.ema_initialized_arr)
-	_bind_register_and_attach(DCComponentIds.CELL_TEMP_SEASON_OFFSET, DCComponentIds.F32, false, map_data.temp_season_offset_arr)
-	# Reference-impl Pass #2（demo-only, performance-charter §12.6）—仅在开关打开时
-	# 才注册 CELL_DEMO_THERMAL_GRADIENT slot。关闭时 demo_thermal_gradient_arr 保持
-	# size=0，C++ 端 component_id() 会返回 -1，run_thermal_gradient_pass 安全 no-op。
-	# 开启时必须在 attach 之前先 resize 到 N，避免下面的长度一致性校验报错。
-	if demo_thermal_gradient_enabled:
-		if map_data.demo_thermal_gradient_arr.size() != n:
-			map_data.demo_thermal_gradient_arr.resize(n)
-			map_data.demo_thermal_gradient_arr.fill(0.0)
-		_bind_register_and_attach(DCComponentIds.CELL_DEMO_THERMAL_GRADIENT, DCComponentIds.F32, false, map_data.demo_thermal_gradient_arr)
+	# 3) 内置 cell component 注册 / 挂入（A1 / dots-migration-roadmap §3）
+	#
+	# 历史：本段曾是 38 行手写 `_bind_register_and_attach[_u8](...)`，每加
+	# 一个新 cell 字段要改 6 处（component_ids.gd / map_data.gd 的 SoA 字段
+	# / world.gd 这里 / job 的 _comp_cache / world_ext.cpp BIND_TABLE）。
+	# 现在统一从 `DCComponentSchema.CELL_SCHEMA` 单一源派生：
+	#   - GDScript 这一段从 schema 自动循环；
+	#   - C++ 端 `gdext/src/component_bind_table.gen.h` 由 codegen 脚本
+	#     `tools/codegen/gen_cpp_bind_table.py` 从同一份 schema 生成。
+	# 加新字段：在 component_schema.gd 加一行 → 跑 codegen → rebuild gdext。
+	# 详见 docs/dots-component-schema.md。
+	#
+	# Demo 条目（cell.demo.*）：仅在 demo_thermal_gradient_enabled=true 时
+	# 才 attach；为 false 时跳过（slot 不注册 → C++ pass component_id() 返回
+	# -1 → pass 内部安全 no-op）。开启时按 charter §12.6 约定先把 MapData
+	# 对应字段 resize 到 n，避免下面的长度一致性校验报错。
+	#
+	# 启动期 sanity check：让 schema 错误（typo / 缺字段 / dtype 非法）
+	# 在 bind 第一时间报出来，而不是 hot path 跑到一半静默失败。
+	if _debug:
+		var schema_err: String = DCComponentSchema.validate_all()
+		if schema_err != "":
+			push_error("[DCWorld] bind_map_data: schema invalid — %s" % schema_err)
+			return
+	for entry in DCComponentSchema.entries():
+		var is_demo: bool = bool(entry.get("demo", false))
+		if is_demo and not demo_thermal_gradient_enabled:
+			continue
+		var map_field: String = String(entry.map_field)
+		# Demo 条目按需 resize（与原 717-721 行行为等价）
+		if is_demo:
+			var arr_now: Variant = map_data.get(map_field)
+			if arr_now is PackedFloat32Array:
+				var pf: PackedFloat32Array = arr_now
+				if pf.size() != n:
+					pf.resize(n)
+					pf.fill(0.0)
+					map_data.set(map_field, pf)
+		var arr_v: Variant = map_data.get(map_field)
+		if arr_v == null or typeof(arr_v) == TYPE_NIL:
+			push_error("[DCWorld] bind_map_data: MapData.%s missing for component '%s'"
+				% [map_field, String(entry.name)])
+			return
+		match int(entry.dtype):
+			DCComponentIds.F32:
+				if not (arr_v is PackedFloat32Array):
+					push_error("[DCWorld] bind_map_data: MapData.%s expected PackedFloat32Array" % map_field)
+					return
+				var arr_f: PackedFloat32Array = arr_v
+				var arr_prev_f: PackedFloat32Array = PackedFloat32Array()
+				if bool(entry.get("track_prev", false)) and String(entry.prev_field) != "":
+					var prev_v: Variant = map_data.get(String(entry.prev_field))
+					if prev_v is PackedFloat32Array:
+						arr_prev_f = prev_v
+				_bind_register_and_attach(entry.name, DCComponentIds.F32,
+					bool(entry.get("track_prev", false)), arr_f, arr_prev_f)
+			DCComponentIds.U8:
+				if not (arr_v is PackedByteArray):
+					push_error("[DCWorld] bind_map_data: MapData.%s expected PackedByteArray" % map_field)
+					return
+				_bind_register_and_attach_u8(entry.name, arr_v)
+			DCComponentIds.I32:
+				# 当前 schema 没有 I32 cell 字段；保留分支以备未来扩展。
+				push_warning("[DCWorld] bind_map_data: I32 cell schema entry currently untested: '%s'"
+					% String(entry.name))
+			_:
+				push_error("[DCWorld] bind_map_data: unsupported dtype=%d for '%s'"
+					% [int(entry.dtype), String(entry.name)])
+				return
 	# 4) 长度一致性校验
 	for slot in _slots:
 		if slot.external_ref:

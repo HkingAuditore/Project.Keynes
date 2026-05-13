@@ -23,7 +23,13 @@ class_name WeatherRefreshJob
 ## fronts from the last unsuppressed run. Behavior equivalent.
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
-const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 4.0
+# Weather=0 fix Step B（2026-05-13）：原 _DEFER_AFTER_CLIMATE_SLICE_MS = 4.0
+# 在 climate 还是 80ms 单体怪兽时合理（climate 一跑 weather 必须让），但
+# 当前 climate 已切片到 6 个 sub-stage，每 stage 5-10ms，每次都触发 defer
+# → weather 30 tick 只跑 4 次（每 7.5 天 1 次）。
+# 提到 12ms：略高于典型 climate sub-stage 耗时，让 weather 不会因为 climate
+# 正常切片就饿死；只在 climate 真出现 spike（>12ms 的极端档）时才 defer。
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 12.0
 const _MAX_CLIMATE_DEFER_STREAK: int = 2
 
 # External references — wired up by MapGenerator at registration time.

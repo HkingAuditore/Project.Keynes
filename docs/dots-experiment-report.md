@@ -1,6 +1,11 @@
 
 # Project Keynes — DOTS 实验报告（A1 archetype filter / A2 ECS scheduler）
 
+> 🟢 **框架硬化 Phase A+B+C+D 已完成**（2026-05-13）：本文 §3.6 / §4 选项乙曾
+> 标注"production ECS 接入暂缓"，已升级为"已生产化"。详见 §3.6.4 注脚 +
+> [`dots-system-design.md`](./dots-system-design.md)（DCSystem + DCSystemScheduler
+> 完整设计）。本文余下作为决策依据保留。
+>
 > 文档定位：本文是一份**实验后报告**，记录 2026-05-12 在 GDScript 沙盒里
 > 完成的两组 DOTS 化探索实验（A1 + A2），并给出"是否值得正式立项 ECS"的
 > 工程结论。读者对象：未来要决定 production 是否走 ECS 路线的人，以及
@@ -265,6 +270,17 @@ A2-Stress 用的是 mock + no-op callable，回答的是"调度器算法本身�
 | 调度器在真实算子环境的信号-噪声比 | ✅ 调度器开销远小于一个真实算子的耗时 |
 
 **核心结论：调度器值得作为基建保留，但不强制接入生产**。
+
+> **更新（2026-05-13，框架硬化 Phase C 已落地）**：本节早期版本认为
+> "production ECS 接入暂缓，等 pass 数突破 10 个再立项"。Phase C.1-C.3 的
+> 框架硬化工作已经把这个"暂缓"切换为"已生产化"：
+>
+> - **调度器**：[`DCSystemScheduler`](../Project/project-keynes/scripts/data_core/dc_system_scheduler.gd) 把 SusScheduler 的 tick + budget + policy + starvation 与本节验证的 reads/writes 拓扑算法 **合并到一个调度器**，作为新基建上线（与原 SUS / DCEcsScheduler 并存，由 `use_dc_system_scheduler` flag 切换）。
+> - **6 个生产 system**：[`scripts/simulation/systems/`](../Project/project-keynes/scripts/simulation/systems/) 把 enum_atlas_upload / sea_ice_atlas_upload / season_refresh / ocean_currents / climate_daily / weather 6 个 SusJob 改写为 DCSystem（3 小型原生 + 3 大型 wrapper），声明 reads/writes，可被 DCSystemScheduler 接管。
+> - **设计文档**：完整内部机制 + 加新 system SOP 见 [`dots-system-design.md`](./dots-system-design.md)。
+>
+> 本节余下文字保留作"为什么这条路是对的"的实测论据（J=8 +5.08% overhead 红线
+> 之内的实测数据正是 production 化决策的依据）；但请把"暂缓"改读为"已落地"。
 
 - 当前 climate 流水线 pass 数 < 10（charter §11 也明确这个量级），手写 tick 顺序
   在 `main.gd` 完全够用，**不要**为了用 ECS 而用 ECS。

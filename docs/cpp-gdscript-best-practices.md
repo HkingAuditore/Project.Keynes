@@ -1,6 +1,11 @@
 
 # Project Keynes — C++/GDScript 协作最佳实践（面向新手）
 
+> 🟢 **框架硬化 Phase A+B+C+D 已完成**（2026-05-13）：本文档 §1 全局架构图已
+> 同步加 ViewAdapter / ComponentSchema 节点；新加入开发者建议先读
+> [`dots-framework-status.md`](./dots-framework-status.md) 了解框架现状，
+> 再读本文档学习具体写新 C++ pass 的步骤。
+>
 > 文档定位：你是第一次接触本项目 GDExtension（C++）通路、想搞清楚"什么时候该用 C++、怎么用、怎么不踩坑"的人。读完这份文档之后，你应该能自己开一个新的 C++ pass、跑通 bench、把结果叠到地图上，全程不需要别人陪同。
 >
 > 本文档是**操作手册**。它的事实数字和性能基线来自 [`docs/performance-charter.md`](./performance-charter.md) §12 系列章节——后者是**契约/规范**。两份文件配合阅读：charter 回答"我们承诺什么"，本文档回答"我具体怎么做"。
@@ -27,8 +32,17 @@
 │       │ snapshot_f32(comp_id)                        │                       │
 │       │  ⇣ 只读 PackedFloat32Array（CoW 拷贝）       │                       │
 │       │                                              │                       │
-│       └─► DataOverlayBaker ─► DataOverlayLayer ─► 屏幕上的彩色格子             │
-│                                                      │                       │
+│       │   ┌────────────────────────────┐             │                       │
+│       └──►│ DCViewAdapter (B2)         │◄────────────┘ view_f32(comp_id)     │
+│           │  ├─ Cell  (legacy 兼容)    │                                     │
+│           │  └─ World (DOTS, 默认走这条)│                                     │
+│           └──────────┬─────────────────┘                                     │
+│                      ▼                                                       │
+│              hex_renderer / map_baker / weather_layer / data_overlay_baker / │
+│              info_panel / debug_console（不直接读 cell.* / map.<field>_arr）│
+│                      ▼                                                       │
+│              DataOverlayLayer ─► 屏幕上的彩色格子                            │
+│                                                                              │
 └──────────────────────────────────────────────────────┼───────────────────────┘
                                                        │
                                                        ▼
@@ -37,6 +51,9 @@
 │    _slots[CELL_TEMP].arr_f32                ← cell_temp（输入）              │
 │    _slots[CELL_ELEVATION].arr_f32           ← cell_elevation（输入）         │
 │    _slots[CELL_DEMO_THERMAL_GRADIENT].arr_f32  ← demo 输出（pass 写入）      │
+│                                                                              │
+│    component_bind_table.gen.h ◄── codegen 自动派生 ◄─ component_schema.gd     │
+│                       (A1)         （单一源，加新字段一处改）                 │
 │                                                                              │
 │    run_thermal_gradient_pass(...)  ← 你新写的 pass 长这样                    │
 │    run_demo_complex_pass(...)      ← 复杂版本                                │
@@ -47,6 +64,8 @@
 **记忆要点：**
 - 所有 `_slots[].arr_f32` 这样的 SoA 大数组，**只在 C++ 端真实存在**。GDScript 看到的都是快照副本。
 - GDScript 调一次 C++ 函数（比如 `world_ext.run_thermal_gradient_pass(60, 40, 1.5, 0.5)`）就发生**一次跨语言边界过桥**。过桥本身有几微秒固定开销，所以**永远不要在 GDScript 里 for 循环按格子调 C++ 函数**——要传整个 `PackedFloat32Array` 一次过。
+- **ViewAdapter (B2)** 是读侧解耦层：UI / renderer / baker 不直接读 `cell.*` 或 `map.<field>_arr`，统一走 `adapter.get_<field>(idx)`。`Cell` 实现是 legacy 兼容（直读 HexCell），`World` 实现是 DOTS（缓存 view_f32 引用）；切换 implementation 对消费者透明。详见 [`dots-view-adapter-guide.md`](./dots-view-adapter-guide.md)（Phase B 完成后写入）。
+- **ComponentSchema (A1)** 是数据 schema 单一源：加新字段从原来的 6 处改动压缩到 1 处。GDScript bind_map_data 直接遍历 schema；C++ BIND_TABLE 由 `tools/codegen/gen_cpp_bind_table.py` 离线派生。详见 [`dots-component-schema.md`](./dots-component-schema.md)。
 
 ---
 
