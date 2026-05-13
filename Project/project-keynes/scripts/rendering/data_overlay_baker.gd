@@ -85,6 +85,16 @@ static func bake(
 	if derived.x <= 0 or derived.y <= 0:
 		return empty_result
 
+	# B.1 (dots-migration-roadmap §3 B2)：构造一份 CellViewAdapter，让本 baker
+	# 通过 adapter.get_<field>(cell.index) 读取 schema-mirrored 字段而非
+	# 直接 cell.<field>。CellViewAdapter 内部直读 HexCell 强类型成员，行为
+	# 与改造前完全等价；阶段 II 切换到 WorldViewAdapter 时本 baker 一行不动。
+	# 非 schema 字段（passable_sea / temperature_transport_anomaly /
+	# upwelling_strength / slp / wind_speed / wind_stress_curl / ocean_psi /
+	# vegetation_vitality）继续走 cell.<field>——它们没有 SoA 对位，本 phase
+	# 不在迁移范围内。
+	var adapter: DCViewAdapter = DCViewAdapter.Cell.new(map.iter_cells())
+
 	var total_px: int = derived.x * derived.y
 	var buf := PackedByteArray()
 	buf.resize(total_px * 4)
@@ -118,7 +128,7 @@ static func bake(
 	for cell in cells:
 		if cell == null:
 			continue
-		var sample := _sample_cell(cell, mode, climate, season_phase, world, map, lat_buf, lat_buf_size)
+		var sample := _sample_cell(cell, adapter, mode, climate, season_phase, world, map, lat_buf, lat_buf_size)
 		var value: float = float(sample.get("value", 0.0))
 		var bucket: int = int(sample.get("bucket", 0))
 		var intensity: float = clampf(float(sample.get("intensity", 0.0)), 0.0, 1.0)
@@ -227,6 +237,7 @@ static func bake(
 # intensity —— 仅 WEATHER 通道用于控制 alpha
 static func _sample_cell(
 	cell,
+	adapter: DCViewAdapter,
 	mode: int,
 	climate,
 	season_phase: float,
@@ -235,17 +246,21 @@ static func _sample_cell(
 	lat_buf: PackedFloat32Array,
 	lat_buf_size: int
 ) -> Dictionary:
+	# B.1：所有 schema-mirrored 字段从 adapter 读，cell.* 仅留 non-schema
+	# 字段（passable_sea / vegetation_vitality / temperature_transport_anomaly /
+	# upwelling_strength / slp / wind_speed / wind_stress_curl / ocean_psi）。
+	var idx: int = int(cell.index)
 	match mode:
 		OverlayMode.MODE.TEMPERATURE:
 			return {
-				"value": clampf(float(cell.temperature), 0.0, 1.0),
+				"value": clampf(adapter.get_temp(idx), 0.0, 1.0),
 				"valid": true,
 			}
 		OverlayMode.MODE.PRECIPITATION:
 			# 估算：base_moisture × 当前 season_phase 下的 moisture scale。
 			# climate.seasonal_moisture_scale 按 4 季离散存储；按 phase 线性插值。
 			var scale: float = _moisture_scale_at_phase(climate, season_phase)
-			var precip: float = float(cell.base_moisture) * scale
+			var precip: float = adapter.get_base_moisture(idx) * scale
 			return {
 				"value": clampf(precip / PRECIPITATION_NORM_MAX, 0.0, 1.0),
 				"valid": true,
@@ -264,12 +279,13 @@ static func _sample_cell(
 			}
 		OverlayMode.MODE.HUMIDITY:
 			return {
-				"value": clampf(float(cell.moisture), 0.0, 1.0),
+				"value": clampf(adapter.get_moisture(idx), 0.0, 1.0),
 				"valid": true,
 			}
 		OverlayMode.MODE.WEATHER:
-			var w: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
-			var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
+			var has_weather: bool = adapter.get_weather_field_init(idx)
+			var w: int = adapter.get_weather_type(idx) if has_weather else WeatherType.WT.CLEAR
+			var intensity: float = adapter.get_weather_intensity(idx) if has_weather else 0.0
 			return {
 				"bucket": w,
 				"intensity": clampf(intensity, 0.0, 1.0),
@@ -291,7 +307,7 @@ static func _sample_cell(
 			# 用 passable_sea 当水的 proxy（与 VEGETATION_VITALITY 同口径）。
 			if not bool(cell.passable_sea):
 				return { "value": 0.0, "valid": false }
-			var mag: float = float(cell.ocean_current.length())
+			var mag: float = adapter.get_ocean_current(idx).length()
 			return {
 				"value": clampf(mag / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0),
 				"valid": true,
@@ -332,7 +348,7 @@ static func _sample_cell(
 		OverlayMode.MODE.BIOME_GROUP:
 			# 把 cell.terrain（27 种）映射到 OverlayMode.TERRAIN_TO_BIOME_GROUP 的
 			# 10 个生态大类，避免离散调色板膨胀到难以辨认。
-			var t_b: int = int(cell.terrain)
+			var t_b: int = adapter.get_terrain(idx)
 			var bgroup: int = 9  # 默认 fallback：未分类
 			if t_b >= 0 and t_b < OverlayMode.TERRAIN_TO_BIOME_GROUP.size():
 				bgroup = int(OverlayMode.TERRAIN_TO_BIOME_GROUP[t_b])
@@ -342,7 +358,7 @@ static func _sample_cell(
 			}
 		OverlayMode.MODE.LANDFORM:
 			# 把 cell.terrain 映射到 6 档纯地理大类（深海/沿海/平原/丘陵/山/冰雪）。
-			var t_l: int = int(cell.terrain)
+			var t_l: int = adapter.get_terrain(idx)
 			var lform: int = 2  # 默认 fallback：平原
 			if t_l >= 0 and t_l < OverlayMode.TERRAIN_TO_LANDFORM.size():
 				lform = int(OverlayMode.TERRAIN_TO_LANDFORM[t_l])
@@ -353,7 +369,7 @@ static func _sample_cell(
 		OverlayMode.MODE.WIND_DIR:
 			# 方向型通道：hue = atan2(dy, dx) / (2π) + 0.5（[0,1]），value = mag/NORM_MAX
 			# 使用 cell.wind_vector（地形扰动后），全图都有效。
-			var wv: Vector2 = cell.wind_vector
+			var wv: Vector2 = adapter.get_wind_vector(idx)
 			var mag_w: float = wv.length()
 			if mag_w < 0.0001:
 				return { "value": 0.0, "valid": false }
@@ -373,7 +389,7 @@ static func _sample_cell(
 			# 仅水域有效；陆地无意义。复用 cell.ocean_current。
 			if not bool(cell.passable_sea):
 				return { "value": 0.0, "valid": false }
-			var oc: Vector2 = cell.ocean_current
+			var oc: Vector2 = adapter.get_ocean_current(idx)
 			var mag_o: float = oc.length()
 			if mag_o < 0.0001:
 				return { "value": 0.0, "valid": false }

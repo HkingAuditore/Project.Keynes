@@ -164,6 +164,38 @@ extends Resource
 @export var use_data_core_weather: bool = false
 @export var use_data_core_climate: bool = false
 
+# Phase B.3 / dots-migration-roadmap §3 B2：ViewAdapter 默认走 .Cell 实现
+# （直读 HexCell 强类型成员，与 legacy 行为完全等价）；为 true 时切到
+# .World 实现（从 DCWorld.view_f32 拿 PackedArray 引用）。
+# 依赖：use_data_core=true 才生效；否则 silently 退到 .Cell。
+# 详见 docs/dots-view-adapter-guide.md。
+@export var use_world_view_adapter: bool = false
+
+# Phase C.4 / dots-migration-roadmap §3 A3：调度器切换。
+# false（默认）：走既有 SlicedUpdateScheduler，6 个 SusJob 沿用既有路径
+# true        ：走 DCSystemScheduler，6 个 system 通过 DCSystem wrapper 注册，
+#                自动跑 reads/writes 拓扑排序 + debug 校验
+# 切换是非破坏性的（DCSystem wrapper 内部仍 forward 到原 SusJob 实现），
+# 主要价值是开启 reads/writes 自动校验 + 拓扑序统一。
+# 详见 docs/dots-system-design.md（C.5 文档）。
+@export var use_dc_system_scheduler: bool = false
+
+# ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
+#
+# 6 个 hot pass 的 C++ 化开关。每个 flag 默认 false（走 GDScript fallback）；
+# C++ stub 当前都返回 -1.0 → fallback 永远生效。后续 PR 填实际 C++ 算法 +
+# bit-equal 验收通过后，把对应 flag 切到 true 启用 C++ 路径。
+#
+# 与既有 use_gdext_climate（Pass-A C++ 化）配套；与 use_data_core_climate
+# 是不同维度（use_data_core 控制是否经 DCWorld，use_gdext_* 控制是否经 C++）。
+@export var use_gdext_weather_field: bool = false   # F.1 P0：13ms → < 2ms
+@export var use_gdext_ocean_water:  bool = false    # F.2a P1：3.4ms → < 0.5ms
+@export var use_gdext_ocean_land:   bool = false    # F.2b P1：3.4ms → < 0.5ms
+@export var use_gdext_climate_pass_b: bool = false  # F.3 P1：5.2ms → < 0.5ms
+@export var use_gdext_sea_ice:      bool = false    # F.4 P2：5.1ms → < 0.5ms
+@export var use_gdext_transpiration: bool = false   # F.5 P2：3.2ms → < 0.3ms
+@export var use_gdext_weather_front: bool = false   # F.6 P3：3.0ms → < 0.5ms
+
 # DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
 # requirement 4.5). Field is kept on disk for save-file compatibility, but
 # MapGenerator emits a one-shot warning if it is set to anything other than

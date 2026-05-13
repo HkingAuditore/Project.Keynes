@@ -1,5 +1,16 @@
 # Project.Keynes 彻底 DOTS 化 — 架构现状评估与缺口
 
+> 🟢 **框架硬化已完成**（2026-05-13）：本文档列出的 P0–P2 七条架构债已通过
+> dots-migration-roadmap §4 的 Phase A+B+C+D 四阶段落地（详见
+> [`module-ownership-map.md`](./module-ownership-map.md) +
+> [`dots-framework-status.md`](./dots-framework-status.md)）。本文档保留作"为什么
+> 这么做"的历史决策记录；新加入开发者请直接读 dots-framework-status.md 入门。
+>
+> **本文档定位**：现状评估 + 缺口盘点（"为什么要做"）。
+> **配套实施规划** → [`dots-migration-roadmap.md`](./dots-migration-roadmap.md)
+> （5 阶段路线图 + 单模块 7 步 SOP + 第一刀建议，"具体怎么做"）。
+> **onboarding 入口** → [`dots-framework-status.md`](./dots-framework-status.md)
+
 ## 一、当前架构的真实状态（实事求是）
 
 ### 1. DOTS 基础设施 — 已经搭起一个相当完整的 ECS 雏形

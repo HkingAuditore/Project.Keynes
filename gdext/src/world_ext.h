@@ -120,6 +120,16 @@ public:
     bool bind_map_data(godot::Object *map_data);
     bool is_bound() const { return _bound; }
 
+    // ─── CoW flush / refresh (performance-charter §11.2) ─────────────────
+    // After any C++ pass calls ptrw() on a slot, CoW detaches the buffer.
+    // flush_slots_to_map() pushes the (possibly-detached) C++ buffer back
+    // to the GDScript MapData property via obj->set() — O(1) ref-swap each.
+    // refresh_slots_from_map() does the reverse: pulls GDScript-side
+    // arrays back into the C++ slots (needed when GDScript code writes
+    // map.*_arr between C++ passes).
+    void flush_slots_to_map();
+    void refresh_slots_from_map();
+
     // ─── Archetype system (mirrors I2.B in GDScript) ─────────────────────
     int  create_archetype(const godot::StringName &name, const godot::Array &comp_ids);
     void assign_archetype(int idx, int arch_id);
@@ -130,6 +140,193 @@ public:
     // Returning -1.0 indicates "not implemented yet, fall back to GDScript".
     // GDScript-side caller checks `< 0` and routes to the legacy path.
     double run_climate_pass_a(const godot::Dictionary &cp_struct, double phase, double season_phase);
+
+    // ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ scaffolding ──
+    //
+    // 6 个待 C++ 化的 hot pass，本提交为 **stub**——每个函数 sig 已就位、
+    // _bind_methods 已注册、ClimateProfile 配套 use_gdext_<name> flag 已加，
+    // 函数体当前 return -1.0 → GDScript caller 走 fallback。
+    //
+    // 后续 PR 按 charter §12.4 七步 SOP + tools/migration_harness/template_bench.gd
+    // 逐个填充实际算法 + bit-equal 验收。每个 pass 顶部注释列出对应 GDScript
+    // 源文件 + 性能目标（charter §7）。
+    //
+    // 加入顺序按 charter §7 收益优先级：F.1 (P0) → F.2 (P1) → ... → F.6 (P3)。
+
+    // F.1 (P0): weather field solve (vapor / cloud / precip / instability /
+    //           intensity / convergence / type) — single-shot full pass.
+    //
+    //   GDScript 源：scripts/weather/weather_system.gd::run_weather_field_solve_slice
+    //                 (line 641+, "B-full Step-2" SoA-aware fast path)
+    //   ClimateProfile flag：use_gdext_weather_field
+    //   性能目标：13ms → < 2ms（charter §7 第一优先级）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包）：
+    //     标量： start_idx, end_idx, n_cells, season_idx (int)
+    //            climate_anomaly, season_phase (float)
+    //            world_bounds_pos_y, world_bounds_size_y (float)
+    //            field_advect_steps (int)
+    //            field_diffusion, field_condensation_gain,
+    //            field_orographic_lift_gain, field_convergence_gain,
+    //            field_ocean_evap_gain, field_precip_decay (float)
+    //            refresh_convergence (bool)
+    //     PackedArray（zero-copy read）：
+    //            cell_pos          : PackedVector2Array  (n_cells)
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            prev_vapor        : PackedFloat32Array  (n_cells)
+    //            prev_precip       : PackedFloat32Array  (n_cells)
+    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+    //              ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly
+    //                按 i 顺序提取（该字段尚未在 schema 中作 SoA 镜像；
+    //                F.x phase II 数据所有权下移 PR 中再迁移到 schema）
+    //
+    //   写：直接写到 cell_weather_{vapor/cloud/precip/instability/intensity/
+    //       convergence/type/field_init} slot 数组（=GDScript map.weather_*_arr
+    //       的 CoW alias）。GDScript 调用方在调用后再把这些 SoA 拷回
+    //       _field_slice_next_* 即可保持 commit_weather_field_solve() 不变。
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    //
+    //   bit-equal 容差：1e-4（含 sqrt + clamp + lerp 链）。
+    //   切片限制：本实现要求 start_idx == 0 且 end_idx == n_cells（即"全量"）。
+    //             因为多 slice 共享 SoA 写会污染下一 slice 的读，单元格预算 < n
+    //             一律 fallback。F.x 后续 PR 可加 dirty-flag 双缓冲解锁。
+    double run_weather_field_solve_pass(const godot::Dictionary &knobs);
+
+    // F.2 (P1): ocean water + land 两个独立 pass
+    //   GDScript 源：map_generator.gd::_ocean_water_pass_soa (line 4679+) +
+    //                ::_ocean_land_pass_soa (line 4762+)
+    //   ClimateProfile flag：use_gdext_ocean_water / use_gdext_ocean_land
+    //   性能目标：6.8ms → < 1ms (两个 pass 各 ~0.5ms)
+    //   依赖序：land_pass 必须在 water_pass 之后跑（land 读 water 写过的 anomaly）
+    //
+    //   入参 `knobs` Dictionary（与 F.1/F.3/F.5 同模板）：
+    //
+    //   --- run_ocean_water_pass(knobs) 字段 ---
+    //     标量： n_cells (int), advect_steps (int), heat_mix (float)
+    //     PackedArray（read-only 输入）：
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            baseline_arr      : PackedFloat32Array  (n_cells)
+    //                ↑ GDScript 预算：if ema_init[i]: temp_baseline[i],
+    //                                  else: _compute_temperature(_cube_row_norm, elev[i])
+    //            temp_before_arr   : PackedFloat32Array  (n_cells)
+    //                ↑ GDScript 预算：if temp[i] > 0: temp[i], else: baseline[i]
+    //            ocean_current_x_arr : PackedFloat32Array (n_cells)
+    //            ocean_current_y_arr : PackedFloat32Array (n_cells)
+    //                ↑ 必须！由 GDScript 从 cells[i].ocean_current.x/y 提取。
+    //                  schema 里的 cell_ocean_current_x/y SoA 镜像由
+    //                  rebuild_soa_from_cells 仅在世界生成时填一次；
+    //                  physical_circulation_solver 之后改的是 HexCell，
+    //                  从不回写 SoA。如果直接读 C++ slot，advect 方向用的
+    //                  是初始 (近 0) 值，cascading 全图温度雪崩。
+    //                  （Demo Complex Pass 类同问题，2026-05-13 用户验收时
+    //                   F.2 land 正反馈 + ocean_current stale 双重 bug 暴露。）
+    //     PackedArray（write 输出）：
+    //            anomaly_out      : PackedFloat32Array  (n_cells)
+    //                ↑ C++ 写每个 water cell 的 anomaly = temp_mixed - baseline
+    //                  （非 water cell 由 land pass 后续覆盖；初始可全 0）
+    //
+    //   --- run_ocean_land_pass(knobs) 字段 ---
+    //     标量： n_cells (int), effective_leak (float)
+    //     PackedArray（read-only 输入）：
+    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+    //            fallback_baseline_arr  : PackedFloat32Array  (n_cells)
+    //                ↑ 必填！T[i] <= 0 时 t_prev 的兜底值。
+    //            ocean_current_x_arr    : PackedFloat32Array  (n_cells)
+    //            ocean_current_y_arr    : PackedFloat32Array  (n_cells)
+    //                ↑ 必填！同 water pass 一样从 cells 提取（SoA stale 问题）
+    //     PackedArray（in/out）：
+    //            anomaly_inout    : PackedFloat32Array  (n_cells)
+    //                ↑ 既读（water 邻居的 anomaly，由 water pass 写入），
+    //                  也写（land cell 自身的 anomaly）
+    //
+    //   读：cell_temp, cell_is_water, cell_pos_x, cell_pos_y,
+    //       cell_ocean_current_x, cell_ocean_current_y
+    //   写：cell_temp（mix 后）+ knobs["anomaly_inout"]
+    //
+    //   返回：≥ 0.0 → 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-4（含 sqrt + lerp + dot product 链）
+    double run_ocean_water_pass(godot::Dictionary knobs);
+    double run_ocean_land_pass (godot::Dictionary knobs);
+
+    // F.3 (P1): climate Pass-B (local climate coupling)
+    //   GDScript 源：scripts/geography/map_generator.gd::_climate_pass_b_soa
+    //                 (line 4311+, SoA-aware fast path)
+    //   ClimateProfile flag：use_gdext_climate_pass_b
+    //   性能目标：5.2ms → < 0.5ms（charter §7 P1）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1/F.5 同模板）：
+    //     标量： n_cells (int)
+    //            winter_boost, snow_cool, veg_cool, diurnal_amp, evap_gain,
+    //            rs_threshold, rs_factor, t_freeze, coupling_gain, coast_leak,
+    //            landform_phase_factor, season_phase (float)
+    //            rs_lookback (int)
+    //            go_sparse (bool；本实现不支持稀疏路径，go_sparse=true 时
+    //                       直接 return -1.0 fallback；后续 PR 加 dirty mask
+    //                       处理后再启用)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices         : PackedInt32Array    (n_cells * 6)
+    //            temp_transport_anomaly   : PackedFloat32Array  (n_cells)
+    //                ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly 提取
+    //                  （schema 尚未为该字段建 SoA 镜像；同 F.1）
+    //            foliage_table            : PackedFloat32Array  (按 VegetationType.VEG
+    //                ↑ enum 顺序的 _vegetation_foliage_density 值，~24 个 float)
+    //
+    //   读：cell_temp, cell_moisture, cell_snow_cover, cell_is_water,
+    //       cell_landform, cell_vegetation, cell_elevation, cell_lat_norm,
+    //       cell_pos_x, cell_pos_y
+    //   写：cell_temp, cell_moisture
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)
+    //          < 0.0 → 任意先决条件不满足 / go_sparse=true，调用方走 GDScript
+    //
+    //   bit-equal 容差：1e-4（含 sqrt + sin + smoothstep + cos 链）
+    //   未支持的特性：
+    //     - go_sparse=true 时的稀疏路径 → fallback
+    //     - cell.temperature_breakdown UI 调试 dict 写入 → 不写入（GDScript
+    //       fallback 会写；F.3 ON 时 inspector 看选中 cell 的 breakdown 会空，
+    //       后续 PR 用 dirty selection list 单独补回 < 100 cells 的写入即可）
+    //     - [DIAG pass_b_end] 末尾统计 print（GDScript caller 在 C++ pass 之后
+    //       自己 dump SoA 即可，本 C++ 不打日志）
+    double run_climate_pass_b(const godot::Dictionary &knobs);
+
+    // F.4 (P2): sea ice daily pass
+    //   GDScript 源：scripts/simulation/sea_ice/daily_pass.gd
+    //                 (实际仍在 map_generator.gd line 3573)
+    //   ClimateProfile flag：use_gdext_sea_ice
+    //   性能目标：5.1ms → < 0.5ms
+    //   注：cell.terrain 翻转（罕触发）必须走 ECB（charter §2.5 STRUCT-001 反模式）
+    double run_sea_ice_daily_pass(const godot::Dictionary &knobs, float season_phase);
+
+    // F.5 (P2): transpiration pass
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_transpiration_pass (line 4938+)
+    //   ClimateProfile flag：use_gdext_transpiration
+    //   性能目标：3.2ms → < 0.3ms
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1 同模板）：
+    //     标量： n_cells (int)
+    //            outflow_rate, self_rate (float)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            donor_table       : PackedFloat32Array  (按 VegetationType.VEG enum 顺序，
+    //                                ~24 个 float；每项 = transpiration[VEG_id]，避免
+    //                                hot loop 反射 VegetationProfile)
+    //
+    //   读：cell_landform / cell_vegetation / cell_moisture
+    //   写：cell_moisture (clamp(m + delta, 0, 1))
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    double run_transpiration_pass(const godot::Dictionary &knobs);
+
+    // F.6 (P3): weather front advect (含 front pool DOTS 化)
+    //   GDScript 源：scripts/weather/front_advect.gd
+    //   ClimateProfile flag：use_gdext_weather_front
+    //   性能目标：3.0ms → < 0.5ms
+    //   前置：FRONT_POS_X/Y/VEL_X/Y/AGE/INTENSITY 6 个 component 升为权威而非镜像
+    //   N=16 fronts 不需要 SIMD
+    double run_weather_front_advect_pass(int n_fronts, float dt);
 
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++
@@ -431,6 +628,7 @@ private:
 
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
+    void _flush_slot_to_map(int comp_id);
 };
 
 } // namespace pk

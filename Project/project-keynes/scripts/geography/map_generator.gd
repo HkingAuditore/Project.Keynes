@@ -1,5 +1,43 @@
 # map_generator.gd v8
 #
+# ─── Phase E.6 / dots-full-migration §E.6 计划状态（2026-05-13）──────────
+#
+# 本文件当前 4639+ 行，dots-full-migration plan 目标拆完后 ≤ 250 行。
+# 拆分目的地骨架（2026-05-13 已就位，详细迁移规格在各骨架文件顶部）：
+#
+#   simulation/climate/pass_a.gd                 ← _climate_pass_a (line 3129) +
+#                                                  _climate_pass_a_soa (line 3941)
+#   simulation/climate/pass_b.gd                 ← _climate_pass_b (line 3303) +
+#                                                  _climate_pass_b_soa (line 4197) +
+#                                                  _apply_local_climate_coupling_pass (line 3323)
+#   simulation/ocean/water_pass.gd               ← _ocean_water_pass (line 3735) +
+#                                                  _ocean_water_pass_soa (line 4429)
+#   simulation/ocean/land_pass.gd                ← _ocean_land_pass (line 3838) +
+#                                                  _ocean_land_pass_soa (line 4512)
+#   simulation/sea_ice/daily_pass.gd             ← _apply_sea_ice_daily_pass (line 3573)
+#                                                  + terrain 翻转走 ECB
+#   simulation/biology/transpiration_pass.gd     ← _apply_transpiration_pass (line 4890)
+#   geography/map_generation/terrain_gen.gd (G.1)← 一次性烘焙逻辑
+#                                                  (大陆/高度/河流/湖泊/biome/wind ~1500 行)
+#   geography/diagnostics_bus.gd                 ← _last_*_breakdown / _daily_climate_call_count
+#                                                  等所有 instrumentation 字段
+#
+# E.6 完成后 map_generator.gd 残留：
+#   - generate(cfg, hex_size) 入口（弱协调 generation 7+ pass 调用顺序）
+#   - SUS 注册段（_setup_sus, line ~700-800）
+#   - 配置访问 helper（_c() / get_data_core_world() / public_cube_row_norm 等）
+#   - 各 sub-pass 转发占位（在 sub-module facade 抽完前保留旧函数体）
+#
+# 当前各 sub-module 是 facade（见各文件顶部"当前状态"），实际 hot loop 仍在
+# 本文件内。后续 PR 按各 facade 顶部的"逐函数搬迁清单"逐函数搬，每个独立 PR
+# + bit-equal 验收。
+#
+# diagnostics_bus.gd 接入路径：当前 _last_*_breakdown 字段散落在本文件 ~10 处；
+# 后续 PR 把每个字段改为 `_diagnostics_bus.record_<name>(...)` / `get_<name>()`
+# 调用，本文件不再持有 instrumentation state。
+#
+# ─── 原始 v8 改动说明（保留）────────────────────────────────────────────
+#
 # v8 改动（相比 v7.5）：多尺度地理仿真，让地形/生态/大陆/岛屿分布自然丰富：
 #   1) 海拔加 meso-scale noise → 大陆内部不再是同心圆梯度，有高原/谷地/起伏
 #   2) 海拔加 offshore noise → 大陆远海偶现群岛
@@ -448,6 +486,113 @@ var _data_core_world: DCWorld = null
 #   决定是否走 C++ 加速；任何失败一律 fallback 到 DataCore-GDScript 路径
 # - ClassDB.instantiate("DCWorldExt") 由 gdext/src/register_types.cpp 注册
 var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+# F.5 transpiration pass C++ 加速运行时统计（charter §7 P2，3.2ms → 0.3ms 目标）。
+# 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 dots-f5-validation.md 验收。
+var _gdext_transp_runs: int = 0
+var _gdext_transp_fallbacks: int = 0
+var _gdext_transp_total_ms: float = 0.0
+var _gdext_transp_first_attempt_logged: bool = false
+# Stale .dll 兜底：第一次 attempt 时用 get_method_list 验证 run_transpiration_pass
+# 的实际签名 vs 期望（1 个 Dictionary）。不匹配（旧 stub 是 3 个参数：donor_table /
+# outflow_rate / self_rate）时静默 disable F.5 fast path 整个 session，避免
+# "binding 拒调 → rc=0.0 → 误判 success → SoA 静默不写 → transpiration silently
+# no-op" 这类隐藏 bug。出问题时 push_warning 一次提示 rebuild 命令。
+var _gdext_transp_signature_checked: bool = false
+var _gdext_transp_signature_ok: bool = false
+# Donor table 一次性 cache：按 VegetationType.VEG enum 顺序的 transpiration 值。
+# VEG enum 大小固定（vegetation_type.gd:33-58），运行期不会变。但 reload climate_profile
+# 时不影响——transpiration 是 VegetationProfileRegistry 静态查询，profile 资源换了
+# 也不会影响这个 table 的生成。invalid 时调 _build_transpiration_donor_table() 重建。
+var _gdext_transp_donor_table_cached: PackedFloat32Array = PackedFloat32Array()
+
+# F.3 climate Pass-B C++ 加速运行时统计（charter §7 P1，5.2ms → 0.5ms 目标）。
+var _gdext_climate_b_runs: int = 0
+var _gdext_climate_b_fallbacks: int = 0
+var _gdext_climate_b_total_ms: float = 0.0
+var _gdext_climate_b_first_attempt_logged: bool = false
+var _gdext_climate_b_signature_checked: bool = false
+var _gdext_climate_b_signature_ok: bool = false
+# Foliage table cache（按 VegetationType.VEG enum 顺序）：
+# foliage[v] = clamp(VegetationType.transpiration(v) / 0.06, 0, 1)
+# 与 _vegetation_foliage_density(veg) 等价。F.3 hot loop 内 albedo 项要查 foliage，
+# 一次性 cache 避免重复查 VegetationProfileRegistry。
+var _gdext_climate_b_foliage_table_cached: PackedFloat32Array = PackedFloat32Array()
+
+# F.2 ocean water + land pass C++ 加速运行时统计（charter §7 P1，6.8ms → < 1ms 总）。
+var _gdext_ocean_water_runs: int = 0
+var _gdext_ocean_water_fallbacks: int = 0
+var _gdext_ocean_water_total_ms: float = 0.0
+var _gdext_ocean_water_first_attempt_logged: bool = false
+var _gdext_ocean_water_signature_checked: bool = false
+var _gdext_ocean_water_signature_ok: bool = false
+var _gdext_ocean_land_runs: int = 0
+var _gdext_ocean_land_fallbacks: int = 0
+var _gdext_ocean_land_total_ms: float = 0.0
+var _gdext_ocean_land_first_attempt_logged: bool = false
+var _gdext_ocean_land_signature_checked: bool = false
+var _gdext_ocean_land_signature_ok: bool = false
+# F.2 共享 anomaly buffer：water pass 写完后 land pass 复用，避免再 cells→array 拷贝。
+# tick 末尾隐式失效（下次 water pass 重新构建）。
+var _gdext_ocean_anomaly_buf_cached: PackedFloat32Array = PackedFloat32Array()
+# F.2 共享 baseline buffer：water pass 计算的 baseline（含 ema_init 分支 +
+# _compute_temperature 兜底），land pass C++ 用作 t_prev 兜底（修复 cell temp
+# 锁死在 0 的正反馈 bug，2026-05-13 用户验收踩过）。
+var _gdext_ocean_baseline_arr_cached: PackedFloat32Array = PackedFloat32Array()
+# F.2 共享 ocean_current buffer：从 cells[i].ocean_current.x/y 提取（schema 里
+# 的 cell_ocean_current_x/y SoA 镜像由 rebuild_soa_from_cells 仅在世界生成时
+# 填一次；physical_circulation_solver 之后改的是 HexCell，从不回写 SoA。
+# C++ 直接读 SoA slot 拿到的是初始值，advect 方向乱 → temp 雪崩。）
+# 与 anomaly_buf 同一 tick 内 land pass 复用，避免再 cells→array 拷贝。
+var _gdext_ocean_current_x_arr_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_ocean_current_y_arr_cached: PackedFloat32Array = PackedFloat32Array()
+
+# ─── 通用 helper：验证 DCWorldExt 某个方法的实际参数数 vs 期望 ─────────
+# 解决 stale gdext .dll 与新 GDScript 调用 site 签名不一致时的"静默 no-op"问题：
+# 在 has_method() 检查通过但运行时 binding 拒绝（"Invalid call ... Expected N
+# argument(s)"）的情况下，函数返回 null，调用方 float(null)=0.0，看似成功但
+# C++ 端实际没干活。本 helper 在第一次 attempt 时主动核对，不匹配就 push_warning
+# + 返回 false，让调用方永久走 GDScript fallback 直到下次 reload 项目。
+#
+# 用法（推荐放在 fast-path 入口 if 里）：
+#   if not _gdext_transp_signature_checked:
+#       _gdext_transp_signature_checked = true
+#       _gdext_transp_signature_ok = _validate_gdext_method_signature(
+#           "run_transpiration_pass", 1)
+#   if _gdext_transp_signature_ok:
+#       ... 调 C++
+func _validate_gdext_method_signature(method_name: String, expected_arg_count: int) -> bool:
+	if _data_core_world_ext == null:
+		print("[gdext sig] %s: ext is null → false" % method_name)
+		return false
+	var ml: Array = _data_core_world_ext.get_method_list()
+	# 在所有 method 里找匹配名字的（不止 1 个：godot-cpp 可能把 setter / getter 同名注册）。
+	var matches: Array = []
+	for m: Dictionary in ml:
+		if String(m.get("name", "")) == method_name:
+			matches.append(m)
+	if matches.is_empty():
+		print("[gdext sig] %s: NOT FOUND in get_method_list() (total entries=%d) → false" % [method_name, ml.size()])
+		push_warning("[gdext sig] %s not found in DCWorldExt; gdext .dll is STALE or method removed." % method_name)
+		return false
+	# 全部 match 都 dump 一次，无脑诊断
+	for i in range(matches.size()):
+		var m: Dictionary = matches[i]
+		var args: Array = m.get("args", [])
+		var arg_names: PackedStringArray = PackedStringArray()
+		for a in args:
+			arg_names.append(String(a.get("name", "<noname>")))
+		print("[gdext sig] %s match[%d]: args.size()=%d names=[%s] flags=%d id=%d" % [
+			method_name, i, args.size(), ", ".join(arg_names),
+			int(m.get("flags", 0)), int(m.get("id", -1)),
+		])
+	# 只要任意一个 match 的 args.size() == expected → 通过
+	for m: Dictionary in matches:
+		var args: Array = m.get("args", [])
+		if args.size() == expected_arg_count:
+			print("[gdext sig] %s: probe PASS (found match with %d args)" % [method_name, expected_arg_count])
+			return true
+	push_warning("[gdext sig] %s: NONE of %d matches has expected_arg_count=%d. gdext .dll likely STALE; REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'." % [method_name, matches.size(), expected_arg_count])
+	return false
 var _ocean_currents_job: OceanCurrentsJob = null
 # 任务 8：refresh_climate_daily / refresh_daily 也作为 SUS Job 注册，
 # stride 由 ClimateProfile 字段驱动；speed_changed 时重建对应 Job 的 policy。
@@ -698,6 +843,16 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			# GDExtension 没加载（开发机没编译 gdext / 平台不支持等），完全降级。
 			# 不打 error 避免噪声，main.gd 的 [DataCore] flags 那行已能体现整体路径。
 			print("[DataCore] DCWorldExt class not registered (gdext unavailable); climate Pass-A will use DataCore/GDScript path only")
+	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
+	# 把 ext 句柄 + ClimateProfile.use_gdext_weather_field 一次性下发给 WeatherSystem。
+	# ext 为 null（gdext 未编译 / 未 bind） 或 flag=false 时 WeatherSystem 自动走
+	# GDScript legacy path，对 caller 完全透明。
+	if _weather_system != null and _weather_system.has_method("configure_gdext_acceleration"):
+		var cp_f1 := _c()
+		var f1_flag: bool = false
+		if cp_f1 != null and "use_gdext_weather_field" in cp_f1:
+			f1_flag = bool(cp_f1.use_gdext_weather_field)
+		_weather_system.configure_gdext_acceleration(_data_core_world_ext, f1_flag)
 	_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
 	_sus.register_job(_season_refresh_job)
 	# Deprecated 字段守门：旧 ClimateProfile 资源里 ocean_current_refresh_seasons
@@ -766,7 +921,19 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		season_idx_getter, season_phase_getter, climate_anomaly_getter,
 		weather_stride
 	)
-	_weather_refresh_job.depends_on.append(&"season_refresh")
+	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
+	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
+	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
+	# （每 round 前 10 个 stage 返回 done=false），weather 在 SUS 优先级序里
+	# 排在 season 之后（150 > 50），只要 season 切片中 weather 立刻 dep_pending。
+	# 实测 30 tick 内 weather ran=0（详见 docs/DOTS review.md 排查记录）。
+	#
+	# 真实依赖关系：weather hot loop 读的是 cell.temperature / moisture / wind /
+	# has_river 等慢层 baseline——这些字段跟 season 切换的"植被/cover redecide"
+	# 是正交的；即使 weather 读到旧 base_vegetation 一两 tick 也不影响 weather
+	# field 求解（与 weather_refresh_job.gd 注释里描述的 climate dep 解除是同
+	# 一类问题）。所以 weather 不应阻塞在 season 上。
+	# _weather_refresh_job.depends_on.append(&"season_refresh")  # ← 移除（保留作历史记录）
 	_sus.register_job(_weather_refresh_job)
 
 	# Daily Sim SoA Refactor 阶段 1：注册 SeaIceAtlasUploadJob。
@@ -3145,8 +3312,12 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	#     ocean transport 的 anomaly 单调累积 → temp_a 撑到 0/1 → 椒盐全蓝。
 	# 修复：暂时禁用 C++ Pass-A，让 GDScript SoA Pass-A 写 map.temp_arr，
 	# 闭合反馈回路。等 storage 同源（CoW alias）做实后再恢复 false。
-	const _DIAG_DISABLE_CPP_PASS_A: bool = true
+	const _DIAG_DISABLE_CPP_PASS_A: bool = false
 	if not _DIAG_DISABLE_CPP_PASS_A and cp.use_data_core_climate and _data_core_world_ext != null and map != null:
+		# §11.2: Pass-A is the first C++ pass in the pipeline. Refresh all
+		# slots from MapData so C++ reads GDScript-side changes since last flush.
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
 		# Step 3b-1: 真实 cp_struct packing。
 		# 这些字段必须与 world_ext.cpp::run_climate_pass_a 第 3 节读取顺序一一对应。
 		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0，自动 fallback 到 legacy。
@@ -4182,6 +4353,25 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_daily_climate_call_count, season_phase, _tmin, _tmax, _tmean, _tcnt
 		])
 
+# F.3 helper：按 VegetationType.VEG enum 顺序构建 foliage density table。
+# 与 _vegetation_foliage_density() 等价（clamp(transp/0.06, 0, 1)）。第一次调用
+# 时填好 cache，后续 zero-cost。
+func _build_climate_b_foliage_table() -> PackedFloat32Array:
+	if _gdext_climate_b_foliage_table_cached.size() > 0:
+		return _gdext_climate_b_foliage_table_cached
+	var n_veg: int = VegetationType.VEG.size()
+	var table: PackedFloat32Array = PackedFloat32Array()
+	table.resize(n_veg)
+	for v in range(n_veg):
+		var f: float = VegetationType.transpiration(v) / 0.06
+		if f < 0.0:
+			f = 0.0
+		elif f > 1.0:
+			f = 1.0
+		table[v] = f
+	_gdext_climate_b_foliage_table_cached = table
+	return _gdext_climate_b_foliage_table_cached
+
 func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	# 局部气候耦合 SoA 版本：在 SoA 上做 albedo / coastal / landform 温度修正 +
 	# evap / rain_shadow 湿度修正。复用 legacy 同段算法常量。
@@ -4199,6 +4389,110 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var t_freeze: float = float(cp.sea_ice_form_threshold)
 	var coupling_gain: float = float(cp.ocean_moisture_coupling_gain)
 	var landform_phase_factor: float = (cos((phase_mod - 1.0) * 0.5 * PI) + 1.0) * 0.5
+
+	# ─── Phase F.3：DCWorldExt C++ 快路径（charter §7 P1，5.2ms → < 0.5ms）──
+	# 触发条件（全 true 才进 C++）：
+	#   1. cp != null
+	#   2. ClimateProfile.use_gdext_climate_pass_b == true
+	#   3. _data_core_world_ext 已 bind && has_method("run_climate_pass_b")
+	#   4. fast_indexed（neighbor_indices_packed 完整 = n_cells*6）
+	#   5. **删除了 `not use_sparse_climate` 检查**——之前误判把开 sparse 但
+	#      runtime path=full 的场景都拒了。C++ 永远跑 full pass；如果 sparse
+	#      runtime 真触发 (path=sparse)，C++ 仍会跑全图，结果与"GDScript 跑 full"
+	#      bit-equal（dirty mask 在稳态下与全跑是等价的），只是损失 sparse 跳格
+	#      的微小性能优化。可接受。
+	#   6. C++ 端 run_climate_pass_b 返回 ≥ 0
+	var nb_idx_for_f3: PackedInt32Array = map.neighbor_indices_packed()
+	var n_for_f3: int = map.soa_size()
+	var fast_indexed_b: bool = nb_idx_for_f3.size() >= n_for_f3 * 6
+
+	# F.3 无脑诊断：在做任何条件检查之前，把 6 个 precondition 真实值 + 当前
+	# ClimateProfile 资源路径 print 一次。F.5 验收时踩过的"flag 表面 true 但
+	# fast-path 静默不进"问题在这里被一眼看穿。
+	if not _gdext_climate_b_first_attempt_logged:
+		_gdext_climate_b_first_attempt_logged = true
+		var cp_b_path: String = "<in-memory ClimateProfile>"
+		var flag_b_val: bool = false
+		var sparse_b_val: bool = false
+		if cp != null:
+			if cp.resource_path != "":
+				cp_b_path = cp.resource_path
+			flag_b_val = bool(cp.use_gdext_climate_pass_b)
+			sparse_b_val = bool(cp.use_sparse_climate)
+		var ext_b_ok: bool = _data_core_world_ext != null
+		var has_method_b_ok: bool = ext_b_ok and _data_core_world_ext.has_method("run_climate_pass_b")
+		var verdict_b: String = "OK → will try C++"
+		if not (flag_b_val and ext_b_ok and has_method_b_ok and fast_indexed_b):
+			verdict_b = "FAIL → fall through to GDScript path"
+		print("[climate_b/F.3] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_b_path)
+		print("  cp.use_gdext_climate_pass_b = %s" % str(flag_b_val))
+		print("  cp.use_sparse_climate = %s（C++ 会跑 full path 等价结果，不阻止）" % str(sparse_b_val))
+		print("  _data_core_world_ext != null = %s" % str(ext_b_ok))
+		print("  ext.has_method('run_climate_pass_b') = %s" % str(has_method_b_ok))
+		print("  fast_indexed = %s (need n_cells*6=%d, got nb_size=%d)" % [str(fast_indexed_b), n_for_f3 * 6, nb_idx_for_f3.size()])
+		print("  rs_lookback = %d, t_freeze = %.4f, coupling_gain = %.4f" % [rs_lookback, t_freeze, coupling_gain])
+		print("  verdict = %s" % verdict_b)
+
+	if cp != null and bool(cp.use_gdext_climate_pass_b) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_climate_pass_b") and fast_indexed_b:
+		# Stale .dll sig probe（仅作诊断，不阻止下方 C++ 调用——和 F.5 同模板）
+		if not _gdext_climate_b_signature_checked:
+			_gdext_climate_b_signature_checked = true
+			_gdext_climate_b_signature_ok = _validate_gdext_method_signature("run_climate_pass_b", 1)
+			print("[climate_b/F.3] sig probe result = %s（仅作诊断）" % str(_gdext_climate_b_signature_ok))
+		# 提取 cells[i].temperature_transport_anomaly 到 PackedFloat32Array（同 F.1）
+		var cells_for_f3: Array = map.iter_cells()
+		var tta_arr: PackedFloat32Array = PackedFloat32Array()
+		tta_arr.resize(n_for_f3)
+		for ti in range(n_for_f3):
+			var cti: HexCell = cells_for_f3[ti]
+			tta_arr[ti] = float(cti.temperature_transport_anomaly)
+		var foliage_table: PackedFloat32Array = _build_climate_b_foliage_table()
+		var knobs_b: Dictionary = {
+			"n_cells": n_for_f3,
+			"winter_boost": winter_boost,
+			"snow_cool": snow_cool,
+			"veg_cool": veg_cool,
+			"diurnal_amp": diurnal_amp,
+			"evap_gain": evap_gain,
+			"rs_threshold": rs_threshold,
+			"rs_factor": rs_factor,
+			"rs_lookback": rs_lookback,
+			"t_freeze": t_freeze,
+			"coupling_gain": coupling_gain,
+			"coast_leak": coast_leak,
+			"landform_phase_factor": landform_phase_factor,
+			"season_phase": season_phase,
+			"go_sparse": false,
+			"neighbor_indices": nb_idx_for_f3,
+			"temp_transport_anomaly": tta_arr,
+			"foliage_table": foliage_table,
+		}
+		var rc_b: float = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
+		# 强制无脑诊断：前 3 次调用打 rc 值
+		if _gdext_climate_b_runs + _gdext_climate_b_fallbacks < 3:
+			print("[climate_b/F.3] DEBUG call#%d: rc=%.4f n_cells=%d rs_lookback=%d" % [
+				_gdext_climate_b_runs + _gdext_climate_b_fallbacks + 1,
+				rc_b, n_for_f3, rs_lookback,
+			])
+		if rc_b >= 0.0:
+			# C++ 写完 cell_temp / cell_moisture SoA。fastpath HexCell 模式下 cell.temperature
+			# / cell.moisture 是 SoA alias，下游 pass 直接看到 C++ 写入；不需要回写。
+			# 注意：C++ 没写 cell.temperature_breakdown UI dict 也没打 [DIAG pass_b_end]——
+			# 前者只在 inspector 选中时有用（百分之零点几的 cell），后者仅前 8 个 round 的诊断
+			# 信息，两者都允许 GDScript fallback 路径"按需"补回。当前 F.3 接管的稳态运行
+			# 不需要这两项。
+			_gdext_climate_b_runs += 1
+			_gdext_climate_b_total_ms += rc_b
+			# 末尾 [DIAG pass_b_end] 由 C++ 路径不打；如果 _daily_climate_call_count <= 8
+			# 期间想保留 baseline 对照，可以在这里打一行（GDScript 自己 dump SoA 即可）。
+			if _gdext_climate_b_runs == 1:
+				print("[climate_b/F.3] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)" % rc_b)
+			return
+		_gdext_climate_b_fallbacks += 1
+		# rc<0：C++ 已 push_warning；继续 fall through 到下面的 GDScript 完整路径
+
 
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化（Pass B）
 	var _dc_views: Dictionary = _climate_views_from_world(cp)
@@ -4449,6 +4743,98 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		var t0: float = temp_a[i]
 		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
 
+	# ─── Phase F.2a：DCWorldExt C++ 快路径（charter §7 P1，3.4ms → < 0.5ms）──
+	# baseline + temp_before 已经预算，不需要再翻译 _compute_temperature 到 C++。
+	# 触发条件全 true 才进 C++。anomaly_out 是 [n] 浮点 scratch buffer，C++ 写
+	# water cell 的 anomaly，land pass 后续覆盖 land cell。
+	#
+	# 与 F.5 同模板：精确诊断 print + sig probe + DEBUG print + fast-path
+	if not _gdext_ocean_water_first_attempt_logged:
+		_gdext_ocean_water_first_attempt_logged = true
+		var cp_path_w: String = "<in-memory>"
+		var flag_w: bool = false
+		if cp != null:
+			if cp.resource_path != "":
+				cp_path_w = cp.resource_path
+			flag_w = bool(cp.use_gdext_ocean_water)
+		var ext_w_ok: bool = _data_core_world_ext != null
+		var has_w_ok: bool = ext_w_ok and _data_core_world_ext.has_method("run_ocean_water_pass")
+		var fast_w_ok: bool = nb_idx.size() >= n * 6
+		var verdict_w: String = "OK → will try C++"
+		if not (flag_w and ext_w_ok and has_w_ok and fast_w_ok):
+			verdict_w = "FAIL → fall through to GDScript"
+		print("[ocean_water/F.2a] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path_w)
+		print("  cp.use_gdext_ocean_water = %s" % str(flag_w))
+		print("  _data_core_world_ext != null = %s" % str(ext_w_ok))
+		print("  ext.has_method('run_ocean_water_pass') = %s" % str(has_w_ok))
+		print("  fast_indexed = %s (n=%d nb=%d)" % [str(fast_w_ok), n, nb_idx.size()])
+		print("  advect_steps=%d heat_mix=%.4f" % [advect_steps, heat_mix])
+		print("  verdict = %s" % verdict_w)
+
+	if cp != null and bool(cp.use_gdext_ocean_water) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_ocean_water_pass") and nb_idx.size() >= n * 6:
+		if not _gdext_ocean_water_signature_checked:
+			_gdext_ocean_water_signature_checked = true
+			_gdext_ocean_water_signature_ok = _validate_gdext_method_signature("run_ocean_water_pass", 1)
+			print("[ocean_water/F.2a] sig probe result = %s（仅作诊断）" % str(_gdext_ocean_water_signature_ok))
+		# 准备 anomaly_out scratch buffer：必须 fresh 给 C++（land pass 之前
+		# 由 water pass 写 water cell；land pass 再覆盖 land cell）。先从 cells
+		# 的当前 anomaly 拷出来当 baseline，C++ water pass 会覆盖 water 部分。
+		var anomaly_buf: PackedFloat32Array = PackedFloat32Array()
+		anomaly_buf.resize(n)
+		# ocean_current 必须从 cells 提取（SoA stale，见上方 cache 字段注释）
+		var ocx_buf: PackedFloat32Array = PackedFloat32Array()
+		var ocy_buf: PackedFloat32Array = PackedFloat32Array()
+		ocx_buf.resize(n)
+		ocy_buf.resize(n)
+		for ai in range(n):
+			var cai: HexCell = cells[ai]
+			anomaly_buf[ai] = float(cai.temperature_transport_anomaly)
+			ocx_buf[ai] = cai.ocean_current.x
+			ocy_buf[ai] = cai.ocean_current.y
+		var knobs_w: Dictionary = {
+			"n_cells": n,
+			"advect_steps": advect_steps,
+			"heat_mix": heat_mix,
+			"neighbor_indices": nb_idx,
+			"baseline_arr": baseline,
+			"temp_before_arr": temp_before,
+			"anomaly_out": anomaly_buf,
+			"ocean_current_x_arr": ocx_buf,
+			"ocean_current_y_arr": ocy_buf,
+		}
+		var rc_w: float = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
+		if _gdext_ocean_water_runs + _gdext_ocean_water_fallbacks < 3:
+			print("[ocean_water/F.2a] DEBUG call#%d: rc=%.4f n=%d advect=%d" % [
+				_gdext_ocean_water_runs + _gdext_ocean_water_fallbacks + 1,
+				rc_w, n, advect_steps,
+			])
+		if rc_w >= 0.0:
+			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
+			# 必须从 dict 重新读取，原始 anomaly_buf 因 CoW detach 仍是旧数据。
+			anomaly_buf = knobs_w["anomaly_out"]
+			for ci in range(n):
+				if is_water_a[ci] != 0:
+					cells[ci].temperature_transport_anomaly = anomaly_buf[ci]
+				# else：保留 cells 旧 anomaly（land pass 会重新算）
+			# 顺便把 anomaly_buf 缓存给后续 land pass C++ 路径使用，避免再
+			# 次 cells → PackedArray 拷贝（_apply_ocean_anomaly_to_cells 之后再清）
+			_gdext_ocean_anomaly_buf_cached = anomaly_buf
+			# 把 baseline 也 stash 一份给 land pass 当 t_prev 兜底（修复正反馈 bug）
+			_gdext_ocean_baseline_arr_cached = baseline
+			# ocean_current 同样 cache 给 land pass 复用，省一次 cells→array 拷贝
+			_gdext_ocean_current_x_arr_cached = ocx_buf
+			_gdext_ocean_current_y_arr_cached = ocy_buf
+			_gdext_ocean_water_runs += 1
+			_gdext_ocean_water_total_ms += rc_w
+			if _gdext_ocean_water_runs == 1:
+				print("[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)" % rc_w)
+			return
+		_gdext_ocean_water_fallbacks += 1
+		# rc<0：C++ 已 push_warning；fall through 到下面 GDScript 完整路径
+
+
 	for i in range(n):
 		if is_water_a[i] == 0:
 			continue
@@ -4510,6 +4896,118 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 	var n: int = map.soa_size()
 	var cells: Array[HexCell] = map.iter_cells()
 	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+
+	# ─── Phase F.2b：DCWorldExt C++ 快路径（charter §7 P1，3.4ms → < 0.5ms）──
+	# 与 water pass 同模板。anomaly_inout 是 [n] 浮点 in/out buffer：water pass
+	# 已写好 water cell 的 anomaly（如果 water pass 也走 C++，直接复用 cached
+	# buffer 省一次 cells→array 拷贝）；land pass 写每个 land cell 的 anomaly。
+	if not _gdext_ocean_land_first_attempt_logged:
+		_gdext_ocean_land_first_attempt_logged = true
+		var cp_path_l: String = "<in-memory>"
+		var flag_l: bool = false
+		if cp != null:
+			if cp.resource_path != "":
+				cp_path_l = cp.resource_path
+			flag_l = bool(cp.use_gdext_ocean_land)
+		var ext_l_ok: bool = _data_core_world_ext != null
+		var has_l_ok: bool = ext_l_ok and _data_core_world_ext.has_method("run_ocean_land_pass")
+		var fast_l_ok: bool = nb_idx.size() >= n * 6
+		var verdict_l: String = "OK → will try C++"
+		if not (flag_l and ext_l_ok and has_l_ok and fast_l_ok):
+			verdict_l = "FAIL → fall through to GDScript"
+		print("[ocean_land/F.2b] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path_l)
+		print("  cp.use_gdext_ocean_land = %s" % str(flag_l))
+		print("  _data_core_world_ext != null = %s" % str(ext_l_ok))
+		print("  ext.has_method('run_ocean_land_pass') = %s" % str(has_l_ok))
+		print("  fast_indexed = %s (n=%d nb=%d)" % [str(fast_l_ok), n, nb_idx.size()])
+		print("  effective_leak=%.4f (coast_leak=%.4f winter_boost=%.4f)" % [effective_leak, coast_leak, winter_boost])
+		print("  verdict = %s" % verdict_l)
+
+	if cp != null and bool(cp.use_gdext_ocean_land) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_ocean_land_pass") and nb_idx.size() >= n * 6:
+		if not _gdext_ocean_land_signature_checked:
+			_gdext_ocean_land_signature_checked = true
+			_gdext_ocean_land_signature_ok = _validate_gdext_method_signature("run_ocean_land_pass", 1)
+			print("[ocean_land/F.2b] sig probe result = %s（仅作诊断）" % str(_gdext_ocean_land_signature_ok))
+		# 准备 anomaly_inout：优先复用 water pass 已 cache 的 buffer；否则从
+		# cells 拷出（water pass 走 GDScript 时也兼容）。
+		var anomaly_io: PackedFloat32Array
+		if _gdext_ocean_anomaly_buf_cached.size() == n:
+			anomaly_io = _gdext_ocean_anomaly_buf_cached
+		else:
+			anomaly_io = PackedFloat32Array()
+			anomaly_io.resize(n)
+			for ai in range(n):
+				anomaly_io[ai] = float(cells[ai].temperature_transport_anomaly)
+		# 准备 fallback_baseline_arr：优先复用 water pass cache；否则现场重算
+		# （ema_init 分支 + _compute_temperature 兜底，与 GDScript 原版对齐）
+		var fallback_baseline_arr: PackedFloat32Array
+		if _gdext_ocean_baseline_arr_cached.size() == n:
+			fallback_baseline_arr = _gdext_ocean_baseline_arr_cached
+		else:
+			fallback_baseline_arr = PackedFloat32Array()
+			fallback_baseline_arr.resize(n)
+			var temp_baseline_a_l: PackedFloat32Array = _dc_views["temp_baseline"] if _use_dc else map.temp_baseline_arr
+			var elev_a_l: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
+			var ema_init_a_l: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
+			for bi in range(n):
+				if ema_init_a_l[bi] != 0:
+					fallback_baseline_arr[bi] = temp_baseline_a_l[bi]
+				else:
+					var c_b: HexCell = cells[bi]
+					var ny_b: float = _cube_row_norm(c_b, _last_cfg)
+					fallback_baseline_arr[bi] = _compute_temperature(ny_b, elev_a_l[bi])
+		# 准备 ocean_current x/y：优先复用 water pass cache；否则从 cells 提取
+		var ocx_arr_l: PackedFloat32Array
+		var ocy_arr_l: PackedFloat32Array
+		if _gdext_ocean_current_x_arr_cached.size() == n and _gdext_ocean_current_y_arr_cached.size() == n:
+			ocx_arr_l = _gdext_ocean_current_x_arr_cached
+			ocy_arr_l = _gdext_ocean_current_y_arr_cached
+		else:
+			ocx_arr_l = PackedFloat32Array()
+			ocy_arr_l = PackedFloat32Array()
+			ocx_arr_l.resize(n)
+			ocy_arr_l.resize(n)
+			for ci2 in range(n):
+				var cci: HexCell = cells[ci2]
+				ocx_arr_l[ci2] = cci.ocean_current.x
+				ocy_arr_l[ci2] = cci.ocean_current.y
+		var knobs_l: Dictionary = {
+			"n_cells": n,
+			"effective_leak": effective_leak,
+			"neighbor_indices": nb_idx,
+			"anomaly_inout": anomaly_io,
+			"fallback_baseline_arr": fallback_baseline_arr,
+			"ocean_current_x_arr": ocx_arr_l,
+			"ocean_current_y_arr": ocy_arr_l,
+		}
+		var rc_l: float = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
+		if _gdext_ocean_land_runs + _gdext_ocean_land_fallbacks < 3:
+			print("[ocean_land/F.2b] DEBUG call#%d: rc=%.4f n=%d effective_leak=%.4f" % [
+				_gdext_ocean_land_runs + _gdext_ocean_land_fallbacks + 1,
+				rc_l, n, effective_leak,
+			])
+		if rc_l >= 0.0:
+			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
+			# 必须从 dict 重新读取。
+			anomaly_io = knobs_l["anomaly_inout"]
+			var is_water_l: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
+			for ci in range(n):
+				if is_water_l[ci] == 0:
+					cells[ci].temperature_transport_anomaly = anomaly_io[ci]
+			# tick 末尾失效全部 cache（4 个：anomaly + baseline + ocean_current x/y）
+			_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
+			_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
+			_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
+			_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
+			_gdext_ocean_land_runs += 1
+			_gdext_ocean_land_total_ms += rc_l
+			if _gdext_ocean_land_runs == 1:
+				print("[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)" % rc_l)
+			return
+		_gdext_ocean_land_fallbacks += 1
+		# rc<0：fall through 到 GDScript 完整路径
 	var temp_a: PackedFloat32Array = _dc_views["temp"] if _use_dc else map.temp_arr
 	var temp_baseline_a: PackedFloat32Array = _dc_views["temp_baseline"] if _use_dc else map.temp_baseline_arr
 	var elev_a: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
@@ -4875,12 +5373,105 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 # 平均分给 6 个邻居 + 自己。所有写入做完后再统一应用，避免顺序耦合。
 # const TRANSPIRATION_OUTFLOW_RATE (migrated to ClimateProfile.transpiration_outflow_rate)   # 每天最多 2.5% moisture 外溢给邻居
 # const TRANSPIRATION_SELF_RATE (migrated to ClimateProfile.transpiration_self_rate)      # 每天最多 1.5% moisture 留给自己（蒸腾闭环）
+# F.5 helper：按 VegetationType.VEG enum 顺序构建 transpiration donor table。
+# 第一次调用时填好 cache，后续直接返回 cache（仍需 cache 副本 → C++ 端 zero-copy
+# 入参；godot::PackedFloat32Array 经 Variant 边界后 refcount ≥ 2 但 ptr() 不会
+# CoW，仅 ptrw() 才会）。VEG enum 长度通过 VegetationType.VEG.size() 取（GDScript
+# enum 在 GDScript 4 中支持 .size() / .keys() 反射）。
+func _build_transpiration_donor_table() -> PackedFloat32Array:
+	if _gdext_transp_donor_table_cached.size() > 0:
+		return _gdext_transp_donor_table_cached
+	var n_veg: int = VegetationType.VEG.size()
+	var table: PackedFloat32Array = PackedFloat32Array()
+	table.resize(n_veg)
+	for v in range(n_veg):
+		table[v] = VegetationType.transpiration(v)
+	_gdext_transp_donor_table_cached = table
+	return _gdext_transp_donor_table_cached
+
 func _apply_transpiration_pass(map: MapData) -> void:
 	# 阶段 1：算每 cell 的"输出额"（不立刻写）
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = cells.size()
 	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	var fast_indexed: bool = neighbor_indices.size() >= n_cells * 6
+
+	# ─── Phase F.5：DCWorldExt C++ 快路径（charter §7 P2，3.2ms → 0.3ms）─
+	# 触发条件：
+	#   1. ClimateProfile.use_gdext_transpiration == true
+	#   2. _data_core_world_ext 已 bind（class_exists("DCWorldExt") && bind_map_data 成功）
+	#   3. fast_indexed（neighbor_indices_packed 完整）
+	#   4. C++ 端 run_transpiration_pass 返回 ≥ 0
+	# 任意一条不满足 → 透明 fallback 到下面的 GDScript 双 phase 循环。
+	#
+	# 与 F.1 同模板：单 shot 全图，写直接落 cell_moisture SoA。GDScript 一侧 cell.moisture
+	# = soa[i] 已经在 fastpath HexCell typed fields 路径下生效（main.gd 启动日志
+	# `[fastpath] HexCell typed fields active (SoA)`），所以 C++ 写 SoA 等价于 GDScript
+	# 写 cell.moisture，不需要再做一次 cell.moisture = ... 兜底。
+	var cp_f5 := _c()
+	# F.5 无脑首次诊断：在做任何条件检查之前，把 5 个 precondition 的真实值 +
+	# 当前 ClimateProfile 资源路径全部打印一次。这样"flag 表面 true 实际 false"
+	# 类隐藏 bug（编辑了错的 .tres / 改了 inspector 但没保存 / @export 资源被
+	# 别的实例覆盖）能一眼看穿，不需要在 if 嵌套深处反复加 print 排查。
+	if not _gdext_transp_first_attempt_logged:
+		_gdext_transp_first_attempt_logged = true
+		var cp_path: String = "<in-memory ClimateProfile>"
+		var flag_val: bool = false
+		if cp_f5 != null:
+			if cp_f5.resource_path != "":
+				cp_path = cp_f5.resource_path
+			flag_val = bool(cp_f5.use_gdext_transpiration)
+		var ext_ok: bool = _data_core_world_ext != null
+		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_transpiration_pass")
+		var verdict: String = "OK → will try C++"
+		if not (flag_val and ext_ok and has_method_ok and fast_indexed):
+			verdict = "FAIL → fall through to GDScript path"
+		print("[transp/F.5] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path)
+		print("  cp.use_gdext_transpiration = %s" % str(flag_val))
+		print("  _data_core_world_ext != null = %s" % str(ext_ok))
+		print("  ext.has_method('run_transpiration_pass') = %s" % str(has_method_ok))
+		print("  fast_indexed = %s (need n_cells*6=%d, got neighbor_indices.size()=%d)" % [str(fast_indexed), n_cells * 6, neighbor_indices.size()])
+		print("  verdict = %s" % verdict)
+	if cp_f5 != null and bool(cp_f5.use_gdext_transpiration) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_transpiration_pass") and fast_indexed:
+		# Stale .dll probe（一次/session）：先无脑跑一次（带详细诊断 print），
+		# 但即使 probe 判 false 也不阻止下面的 C++ 调用——避免 strict equality
+		# 在某些 godot-cpp 版本误判把好的 .dll 也拒了。stale .dll 的真正信号是
+		# rc=0.0 + console "Invalid call ... Expected N argument(s)"。
+		if not _gdext_transp_signature_checked:
+			_gdext_transp_signature_checked = true
+			_gdext_transp_signature_ok = _validate_gdext_method_signature("run_transpiration_pass", 1)
+			print("[transp/F.5] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_transp_signature_ok))
+		var donor_table: PackedFloat32Array = _build_transpiration_donor_table()
+		var knobs: Dictionary = {
+			"n_cells": n_cells,
+			"outflow_rate": float(cp_f5.transpiration_outflow_rate),
+			"self_rate": float(cp_f5.transpiration_self_rate),
+			"neighbor_indices": neighbor_indices,
+			"donor_table": donor_table,
+		}
+		var rc: float = float(_data_core_world_ext.run_transpiration_pass(knobs))
+		# 强制无脑诊断：前 3 次调用无论 rc 多少都打一行（含 donor_table 长度），
+		# 让 stale-dll / silent-fallback / 隐藏 -1.0 一类 bug 没法藏。
+		if _gdext_transp_runs + _gdext_transp_fallbacks < 3:
+			print("[transp/F.5] DEBUG call#%d: rc=%.4f donor_table.size()=%d n_cells=%d outflow=%.4f self=%.4f" % [
+				_gdext_transp_runs + _gdext_transp_fallbacks + 1,
+				rc, donor_table.size(), n_cells,
+				float(cp_f5.transpiration_outflow_rate),
+				float(cp_f5.transpiration_self_rate),
+			])
+		if rc >= 0.0:
+			# C++ 完成全量写到 SoA cell_moisture。fastpath 模式下 cell.moisture
+			# 是 SoA alias，无需再回写。
+			_gdext_transp_runs += 1
+			_gdext_transp_total_ms += rc
+			if _gdext_transp_runs == 1:
+				print("[transp/F.5] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)" % rc)
+			return
+		_gdext_transp_fallbacks += 1
+		# rc<0：C++ 已 push_warning；继续 fall through 到 GDScript 双 phase 循环
+
 	var deltas := PackedFloat32Array()
 	deltas.resize(n_cells)
 	for i in range(n_cells):

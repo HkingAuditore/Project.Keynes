@@ -1,5 +1,10 @@
 # Performance Charter — ProjectKeynes Hot-Loop 开发宪章
 
+> 🟢 **框架硬化 Phase A+B+C+D 已完成**（2026-05-13）：本宪章 §11 / §12 描述的
+> 通信契约保持不变；新加入开发者建议先读 [`dots-framework-status.md`](./dots-framework-status.md)
+> + [`dots-system-design.md`](./dots-system-design.md) 了解框架现状，再读本宪章
+> 学习 hot-loop 的硬性约束。
+>
 > **本文档是 ProjectKeynes 所有"大数据 / 大计算"系统的性能开发指导手册。**
 > 凡是涉及 ≥ 1k 元素的循环（cells、weather fronts、生物个体、单位、AI agents、
 > 经济市场单元、文明子系统等），新增或修改前**必须**先读完本文档第 0、1、2、5 节。
@@ -653,17 +658,24 @@ class SystemRefreshJob extends RefreshJob:
 
 ## 7. ProjectKeynes 当前 hot path 性能档案
 
-> 最近更新：2026-05-12（Phase 3b Step 3b-1 落地后）。N_cells=2400，stride=1。
+> 最近更新：2026-05-13（dots-full-migration Phase F.1-F.6 stub 落地后）。N_cells=2400，stride=1。
 
-| Pass | 当前实现 | 当前 avg | 目标 | 优化路线 |
+| Pass | 当前实现 | 当前 avg | 目标 | 优化路线 / C++ 入口状态 |
 |---|---|---|---|---|
 | climate Pass-A | **C++ M2 scalar** ✅ | **~0.0 ms**（< 0.05ms 显示为 0.0；spike 实测 0.04 ms） | < 0.5 ms | **已达标**（GDScript 4.1ms → C++ 0.0ms，Step 3b-1 完成） |
-| climate Pass-B | GDScript SoA | ~5.2 ms | < 0.5 ms | C++ scalar（Phase 3b 下一站） |
-| ocean water+land pass | GDScript | ~6.8 ms | < 0.5 ms | C++ scalar |
-| sea_ice pass | GDScript | ~5.1 ms | < 0.5 ms | C++ scalar |
-| transp pass | GDScript | ~3.2 ms | < 0.3 ms | C++ scalar |
-| weather front advect | GDScript | ~3.0 ms | < 0.5 ms | C++ scalar（fronts N=12，一并接管 spawn/dist） |
-| weather field solve | GDScript SoA | weather_tick 11~13 ms | < 2.0 ms | C++ scalar（最高优先级） |
+| climate Pass-B | GDScript SoA | ~5.2 ms | < 0.5 ms | F.3 stub 就位（`run_climate_pass_b` + `use_gdext_climate_pass_b` flag）；待算法填入 |
+| ocean water+land pass | GDScript | ~6.8 ms | < 0.5 ms | F.2 stub 就位（`run_ocean_water_pass` + `run_ocean_land_pass`）；待算法填入 |
+| sea_ice pass | GDScript | ~5.1 ms | < 0.5 ms | F.4 stub 就位（`run_sea_ice_daily_pass`，terrain 翻转走 ECB）；待算法填入 |
+| transp pass | GDScript | ~3.2 ms | < 0.3 ms | F.5 stub 就位（`run_transpiration_pass`，donor_table 入参）；待算法填入 |
+| weather front advect | GDScript | ~3.0 ms | < 0.5 ms | F.6 stub 就位（`run_weather_front_advect_pass`，含 front pool 升权）；待算法填入 |
+| weather field solve | GDScript SoA | weather_tick 11~13 ms | < 2.0 ms | F.1 stub 就位（`run_weather_field_solve_pass`，**P0 最高优先级**）；待算法填入 |
+
+**dots-full-migration Phase F 当前状态**（2026-05-13）：6 个 hot pass 的 C++ 入口
+签名 + bind_method + ClimateProfile flag + DCFeatureFlags 注册全部就位（详见
+[`world_ext.h`](../gdext/src/world_ext.h) `run_*_pass` 系列声明）。当前所有 stub
+返回 -1.0 → GDScript caller fallback。后续 PR 按 charter §12.4 七步 SOP +
+[`tools/migration_harness/template_bench.gd`](../Project/project-keynes/tools/migration_harness/template_bench.gd)
+跑 bit-equal + ≥5x 加速验收逐个填入实际算法。
 
 **预期总收益**（按 micro-bench 实测加速比 75-130× 折半保守估算）：
 - 当前 SUS 总和：~18 ms
@@ -727,6 +739,15 @@ class SystemRefreshJob extends RefreshJob:
 - 每次跑 micro-bench 拿到新数据，在 §0 / §8 更新决策快照
 - 反模式发现新 case 时，加入 §4
 - 任何新系统按 §5 模板分类后再开始设计
+- **新增模块/system 的工程流程** → 走 [`dots-migration-roadmap.md §5`](./dots-migration-roadmap.md#5-单模块-dots-迁移-sop7-步检查清单)
+  的 7 步 SOP；本宪章 §5 模板分类决定"该模块是否需要 C++ 化"，roadmap §5
+  决定"DOTS 迁移的工程步骤"，二者配合使用
+- **reads/writes 自动校验**（2026-05-13，框架硬化 Phase C 落地）：
+  新 system 应继承 `DCSystem`（[`dots-system-design.md`](./dots-system-design.md)），
+  声明 `declare_reads / declare_writes / declare_pools`。debug 构建下
+  `DCSystemScheduler` 会通过 `DCWorld._debug_*_pass` hook 检查是否有写到
+  非声明 component 的违约。这是除本宪章 §4 反模式 grep 之外的"自动防回归
+  手段"——与 §4 grep + §6.1 micro-bench + §6.2 SUS 日志监控构成四层防御。
 
 > **责任人**：本文档由 hot-loop 改动的 PR 提交者维护，每次涉及性能的合入必须确认本文档无需更新。
 
@@ -755,6 +776,17 @@ arr            refcount ≥ 2  (GDScript prop + arr 局部)
 **结论**：C++ 端任何 `ptrw()` 调用都会强制把 buffer 分裂成"C++ 私有副本"。因此**不存在让 C++ 写入直接被 GDScript 端看到的 alias**——这不是 bug，是 ABI 物理性。
 
 ### 11.2 真正的契约：snapshot + flush（单向，两条独立通路）
+
+> **更新（A1 / 2026-05-13，框架硬化 Phase A）**：本节早期版本曾警告
+> "GDScript-side `bind_map_data` 与 C++-side `BIND_TABLE` 是两份手写表，
+> 双重维护是反模式（已造成 `snow_arr` / `climate_dirty_arr` 等字段静默
+> 失同步）"。这一反模式已由 [`dots-component-schema.md`](./dots-component-schema.md)
+> 描述的 **ComponentSchema 单一源 + Python codegen** 消除：两侧从同一份
+> [`component_schema.gd`](../Project/project-keynes/scripts/data_core/component_schema.gd)
+> 派生（GDScript 直接遍历，C++ 由 [`tools/codegen/gen_cpp_bind_table.py`](../tools/codegen/gen_cpp_bind_table.py)
+> 离线生成 [`component_bind_table.gen.h`](../gdext/src/component_bind_table.gen.h)），
+> 命名 / dtype / property 字段任一偏离都在 codegen 阶段 fail。下文 snapshot
+> + flush 的物理事实仍然成立——只是注册侧不再有"两份手写表偏移"风险。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -943,6 +975,14 @@ func temp_drift_pass_gdscript(map: MiniMap, drift: float) -> void:
 ### 12.4 用模板做下一个 pass — 7 步操作清单
 
 > 时间盒：30 分钟以内。超过这个时间说明你陷入业务逻辑细节而不是模板套用，**先停下来**。
+>
+> **更新（A1 / 2026-05-13，框架硬化 Phase A）**：原本下面 7 步里没列出的"如果 pass
+> 写一个新 component slot"操作，从前需要分别改 GDScript `world.gd` 与 C++ `BIND_TABLE`
+> 两处（详见早期 §12.6.4 步骤 4-5）。现在只需在
+> [`component_schema.gd`](../Project/project-keynes/scripts/data_core/component_schema.gd)
+> 加一行 + 跑 codegen，两侧自动派生。详见
+> [`dots-component-schema.md`](./dots-component-schema.md) §3 的 5 步 SOP。
+> 下面 7 步只覆盖"已有 slot、写新 pass"的场景。
 
 1. **C++ 头文件**：在 `world_ext.h` 添加方法声明：
    ```cpp

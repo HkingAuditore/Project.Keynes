@@ -1,5 +1,40 @@
 # map_baker.gd v6
 #
+# ─── Phase G.2 / dots-full-migration §G.2 计划状态（2026-05-13）──────────
+#
+# 本文件当前 2583 行，dots-full-migration plan 目标拆完后 ≤ 200 行。
+# 拆分目的地骨架（B.2 已就位 + 详细迁移规格在各骨架文件顶部）：
+#
+#   rendering/bakers/baker_context.gd         ← 共享 ViewAdapter / dirty mask（已实现）
+#   rendering/bakers/atlas_encoders.gd        ← 6 个 _encode_*_tex / _encode_*_atlas
+#                                                helper（最易，先迁移；line 1866-2020）
+#   rendering/bakers/terrain_baker.gd         ← _bake_height_biome_moisture (line 1315) +
+#                                                _bake_river_sdf + _trace_* + _hydraulic_erosion
+#   rendering/bakers/climate_baker.gd         ← bake_sea_ice_fraction_only (line 2021) +
+#                                                climate atlas 编码段
+#   rendering/bakers/weather_baker.gd         ← bake_weather_field_only (line 2158) +
+#                                                _bake_wind_field (line 2338) +
+#                                                _rasterize_wind_*  (line 2828+)
+#   rendering/bakers/overlay_baker.gd         ← data overlay 通道（已部分由
+#                                                data_overlay_baker.gd 承担）
+#
+# G.2 完成后 map_baker.gd 残留：
+#   - bake_world(map, cfg, hex_size, seed_val) -> WorldData 入口（弱协调多 baker 调用）
+#   - 各 sub-baker 的 dispatch 函数（rebake_*_tex_only / rebake_ocean_currents 等）
+#   - 共享常量（NORM_MAX 等已属本文件）
+#
+# 当前各 sub-baker 是 placeholder（push_warning），actual function migration is
+# the work of subsequent PRs。
+#
+# **推荐迁移顺序**（每函数独立 PR + 截图像素 diff < 0.1% 验收）：
+#   1. atlas_encoders.gd 的 6 个 helper（最简单，纯 static func 搬动即可）
+#   2. terrain_baker.gd 的 _bake_river_sdf 系列（独立性强）
+#   3. climate_baker.gd 的 bake_sea_ice_fraction_only（独立 R8 atlas）
+#   4. weather_baker.gd 的 bake_weather_field_only
+#   5. terrain_baker.gd 的 _bake_height_biome_moisture（最大、最复杂）
+#
+# ─── 原始流程说明（保留）────────────────────────────────────────────────
+#
 # 把 MapData（per-hex 玩法层）涂抹成高分辨率 WorldData（视觉层）。
 # 设计原则：hex 是真理，烘焙只是"模糊化 + 加细节" 让 hex 边界看不出直边。
 #
