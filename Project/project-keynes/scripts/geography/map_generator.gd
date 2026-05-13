@@ -130,6 +130,20 @@ const SeaIceAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/se
 const EnumAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/enum_atlas_upload_job.gd")
 const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season_refresh_job.gd")
 
+# 0.4.1 — DCSystemScheduler 与 6 个 DCSystem wrapper 的 preload。
+# 当 ClimateProfile.use_dc_system_scheduler=true 时 `_setup_sus` 会创建
+# DCSystemScheduler 并 register_system 这 6 个 wrapper（其中 3 个是 delegate
+# wrapper：ClimateDailySystem / OceanCurrentsSystem / WeatherDCSystem；
+# 另 3 个 SeasonRefreshSystem / EnumAtlasUploadSystem / SeaIceAtlasUploadSystem
+# 是原生 DCSystem 实现）。flag=false 时维持既有 SusJob 直注册路径，零行为差异。
+const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
+const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
+const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocean_currents_system.gd")
+const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_system.gd")
+const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
+const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
+const SeaIceAtlasUploadSystemScript = preload("res://scripts/simulation/systems/sea_ice_atlas_upload_system.gd")
+
 # ─── 世界生成配置（数据驱动） ────────────────────────────────────────────
 # 所有原本散落在本文件顶部的 50+ 个调参 const 已迁移到 ClimateProfile 资源。
 # - 默认（nil）时，懒加载 res://data/world/earth_like.tres 作为兜底，效果与
@@ -472,7 +486,15 @@ var _typed_fields_migrated: bool = false
 
 # ─── Sliced Update Scheduler（任务 4：接入点 ① + ③）──────────────────────
 # SUS 实例由 generate() 末尾创建，把 baker 的 ocean currents bake 拆成每日切片。
-var _sus: SlicedUpdateScheduler = null
+# 0.4.1：_sus 改为 untyped 多态引用，可能是 SlicedUpdateScheduler（legacy）
+# 或 DCSystemScheduler（use_dc_system_scheduler=true）。两者 API 兼容：
+# bind_world / tick / reset_all_progress / report_last_tick / report_last_tick_summary
+# 同形；frame_budget_ms / log_interval_ticks 同名公共字段。
+var _sus = null
+# 0.4.1：是否走 DCSystemScheduler 新路径。在 _setup_sus 入口由
+# ClimateProfile.use_dc_system_scheduler 决定；用于 build_topology / register_system
+# 分支判定。
+var _use_dc_system_scheduler: bool = false
 # DataCore World（dots-foundation-and-weather-migration）：
 # 与 _sus 同生命周期，在 _setup_sus 内创建并按 ClimateProfile.use_data_core 决定
 # 是否 bind_map_data。job 通过 SUS.bind_world 自动注入。
@@ -596,12 +618,20 @@ func _validate_gdext_method_signature(method_name: String, expected_arg_count: i
 var _ocean_currents_job: OceanCurrentsJob = null
 # 任务 8：refresh_climate_daily / refresh_daily 也作为 SUS Job 注册，
 # stride 由 ClimateProfile 字段驱动；speed_changed 时重建对应 Job 的 policy。
-var _refresh_climate_daily_job: RefreshClimateDailyJob = null
+# W.1：RefreshClimateDailyJob 现已退化为 ClimateDailySystem 的薄壳。当
+# use_dc_system_scheduler=true 时 get_inner() 返回 ClimateDailySystem 自身；
+# 当 use_dc_system_scheduler=false 时直接 new RefreshClimateDailyJob（仍是
+# ClimateDailySystem 子类）。改 untyped 容纳两种返回类型。
+var _refresh_climate_daily_job = null
 var _weather_refresh_job: WeatherRefreshJob = null
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传 Job。
-var _sea_ice_atlas_upload_job: SeaIceAtlasUploadJob = null
-var _enum_atlas_upload_job: EnumAtlasUploadJob = null
-var _season_refresh_job: SeasonRefreshJob = null
+# 0.4.1：以下 3 个引用类型放宽为 untyped。原因：当 use_dc_system_scheduler=true
+# 时，这些字段会指向 SeaIceAtlasUploadSystem / EnumAtlasUploadSystem /
+# SeasonRefreshSystem 实例（DCSystem 子类，IS-A SusJob 但 NOT-A 原始 Job 类）。
+# 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
+var _sea_ice_atlas_upload_job = null
+var _enum_atlas_upload_job = null
+var _season_refresh_job = null
 # main.gd 在 _ready 末尾通过 set_world_clock_ref(world_clock) 注入，给
 # OceanCurrentsJob 的 season_phase getter 用。
 var _world_clock_ref = null
@@ -795,7 +825,22 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	# 创建一个全新 SUS 实例（regenerate 路径会让旧实例随 MapGenerator 一起被替换，
 	# 不需要手动 reset_all_progress）。
-	_sus = SlicedUpdateScheduler.new()
+	#
+	# 0.4.1：根据 ClimateProfile.use_dc_system_scheduler 选择调度器实现。
+	#   - false（默认）→ SlicedUpdateScheduler，6 个原始 SusJob 通过 register_job 注册
+	#   - true → DCSystemScheduler（内部仍用 SlicedUpdateScheduler 做 tick）；
+	#     6 个 DCSystem wrapper 通过 register_system 注册；最后 build_topology
+	#     用 reads/writes 重写 priority 实现拓扑序运行
+	# 调度器 API 同形：bind_world / tick / reset_all_progress / report_last_tick /
+	# report_last_tick_summary 同名同签名。
+	var cp_sched := _c()
+	_use_dc_system_scheduler = false
+	if cp_sched != null and "use_dc_system_scheduler" in cp_sched:
+		_use_dc_system_scheduler = bool(cp_sched.use_dc_system_scheduler)
+	if _use_dc_system_scheduler:
+		_sus = DCSystemSchedulerScript.new()
+	else:
+		_sus = SlicedUpdateScheduler.new()
 	# DataCore World 接入（dots-foundation-and-weather-migration）：
 	# 在 SUS 注册任何 job 前先把 World 实例创建出来并 bind 到 MapData，
 	# 这样所有 register_job 会自动被注入 world 引用。
@@ -853,8 +898,15 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		if cp_f1 != null and "use_gdext_weather_field" in cp_f1:
 			f1_flag = bool(cp_f1.use_gdext_weather_field)
 		_weather_system.configure_gdext_acceleration(_data_core_world_ext, f1_flag)
-	_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
-	_sus.register_job(_season_refresh_job)
+	# 0.4.1：use_dc_system_scheduler 决定用 System（native DCSystem，IS-A SusJob）
+	# 还是原 Job。两者业务逻辑等价（SeasonRefreshSystem.tick 与 SeasonRefreshJob.run_slice
+	# 同结构 11-stage）。
+	if _use_dc_system_scheduler:
+		_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
+		_sus.register_system(_season_refresh_job)
+	else:
+		_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
+		_sus.register_job(_season_refresh_job)
 	# Deprecated 字段守门：旧 ClimateProfile 资源里 ocean_current_refresh_seasons
 	# 仍可能被序列化保存。打印一次 warning 提示作者迁移到 SUS 配置。
 	var cp := _c()
@@ -875,15 +927,29 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 走 ny-only 旧路径。
 	if cfg != null:
 		cfg.climate_profile = cp
-	_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
-	_ocean_currents_job.depends_on.append(&"season_refresh")
-	# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
-	_ocean_currents_job.on_commit = func():
-		_compute_ocean_currents(map, world, hex_size)
-	# 若 main.gd 已经早一步注入 world_clock，更新 phase getter。
-	if _world_clock_ref != null:
-		_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
-	_sus.register_job(_ocean_currents_job)
+	# 0.4.1：use_dc_system_scheduler 时构造 wrapper（delegate 内嵌 OceanCurrentsJob）
+	# 并注册到 DCSystemScheduler；_ocean_currents_job 保持指向 wrapper._inner，让
+	# on_commit / season_phase_getter / depends_on 等 SusJob-面字段的既有写入路径
+	# 1:1 沿用。
+	if _use_dc_system_scheduler:
+		var ocean_sys = OceanCurrentsSystemScript.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+		_ocean_currents_job = ocean_sys.get_inner()
+		_ocean_currents_job.depends_on.append(&"season_refresh")
+		_ocean_currents_job.on_commit = func():
+			_compute_ocean_currents(map, world, hex_size)
+		if _world_clock_ref != null:
+			_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
+		_sus.register_system(ocean_sys)
+	else:
+		_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+		_ocean_currents_job.depends_on.append(&"season_refresh")
+		# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
+		_ocean_currents_job.on_commit = func():
+			_compute_ocean_currents(map, world, hex_size)
+		# 若 main.gd 已经早一步注入 world_clock，更新 phase getter。
+		if _world_clock_ref != null:
+			_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
+		_sus.register_job(_ocean_currents_job)
 
 	# 任务 8：注册 RefreshClimateDailyJob + WeatherRefreshJob。
 	# 两者的 stride 直接读 ClimateProfile，speed_changed 时由 main.gd 通过
@@ -898,12 +964,29 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	var climate_phase_getter := Callable()
 	if _world_clock_ref != null:
 		climate_phase_getter = Callable(_world_clock_ref, "season_phase")
-	_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
-	_refresh_climate_daily_job.depends_on.append(&"season_refresh")
-	_sus.register_job(_refresh_climate_daily_job)
-	_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
-	_enum_atlas_upload_job.depends_on.append(&"season_refresh")
-	_sus.register_job(_enum_atlas_upload_job)
+	# 0.4.1：use_dc_system_scheduler 时构造 ClimateDailySystem wrapper（delegate 到
+	# RefreshClimateDailyJob）；_refresh_climate_daily_job 保持指向 wrapper._inner
+	# 让现有 SusJob-面访问（reset_run_flag / did_run_last_tick / data_core_ready /
+	# season_phase_getter 写入 / reconfigure 等）零改动。
+	if _use_dc_system_scheduler:
+		var climate_sys = ClimateDailySystemScript.new(self, map, climate_phase_getter, climate_stride)
+		_refresh_climate_daily_job = climate_sys.get_inner()
+		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
+		_sus.register_system(climate_sys)
+	else:
+		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
+		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
+		_sus.register_job(_refresh_climate_daily_job)
+	# 0.4.1：use_dc_system_scheduler 时用 EnumAtlasUploadSystem（native DCSystem，
+	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
+	if _use_dc_system_scheduler:
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
+		_sus.register_system(_enum_atlas_upload_job)
+	else:
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
+		_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
 	var season_idx_getter := Callable()
 	var season_phase_getter := Callable()
@@ -916,11 +999,23 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var wc_ref = _world_clock_ref
 		climate_anomaly_getter = func() -> float:
 			return float(wc_ref.climate_anomaly)
-	_weather_refresh_job = WeatherRefreshJobScript.new(
-		self, map, world,
-		season_idx_getter, season_phase_getter, climate_anomaly_getter,
-		weather_stride
-	)
+	# 0.4.1：use_dc_system_scheduler 时构造 WeatherDCSystem wrapper（delegate 到
+	# WeatherRefreshJob）；_weather_refresh_job 仍指向 wrapper.get_inner() 保持
+	# 既有 last_fronts / did_change_fronts_last_tick 等访问路径不变。
+	var weather_dc_system = null
+	if _use_dc_system_scheduler:
+		weather_dc_system = WeatherDCSystemScript.new(
+			self, map, world,
+			season_idx_getter, season_phase_getter, climate_anomaly_getter,
+			weather_stride
+		)
+		_weather_refresh_job = weather_dc_system.get_inner()
+	else:
+		_weather_refresh_job = WeatherRefreshJobScript.new(
+			self, map, world,
+			season_idx_getter, season_phase_getter, climate_anomaly_getter,
+			weather_stride
+		)
 	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
 	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
@@ -934,7 +1029,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# field 求解（与 weather_refresh_job.gd 注释里描述的 climate dep 解除是同
 	# 一类问题）。所以 weather 不应阻塞在 season 上。
 	# _weather_refresh_job.depends_on.append(&"season_refresh")  # ← 移除（保留作历史记录）
-	_sus.register_job(_weather_refresh_job)
+	if _use_dc_system_scheduler:
+		_sus.register_system(weather_dc_system)
+	else:
+		_sus.register_job(_weather_refresh_job)
 
 	# Daily Sim SoA Refactor 阶段 1：注册 SeaIceAtlasUploadJob。
 	# 把 bake_sea_ice_fraction_only 从 refresh_climate_daily 末尾摘出，独立 stride 控制。
@@ -942,9 +1040,27 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	var sea_ice_stride: int = 2
 	if cp != null:
 		sea_ice_stride = max(1, int(cp.sea_ice_atlas_upload_stride))
-	_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
-	_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
-	_sus.register_job(_sea_ice_atlas_upload_job)
+	# 0.4.1：use_dc_system_scheduler 时用 SeaIceAtlasUploadSystem（native DCSystem，
+	# 业务逻辑与 SeaIceAtlasUploadJob 等价）。
+	if _use_dc_system_scheduler:
+		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
+		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
+		_sus.register_system(_sea_ice_atlas_upload_job)
+	else:
+		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
+		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
+		_sus.register_job(_sea_ice_atlas_upload_job)
+
+	# 0.4.1：DCSystemScheduler 路径必须在所有 register_system 之后调一次
+	# build_topology()。它按 declare_reads/writes 构造 DAG + Kahn 拓扑排序，
+	# 再把 system.priority 改写为 (100 + topo_index*10) 以让内部 SUS 按拓扑序
+	# 跑。有环时 push_error 并拒绝构建；调试构建会 print 拓扑序 system id 列表。
+	if _use_dc_system_scheduler:
+		var topo_ok: bool = _sus.build_topology()
+		if not topo_ok:
+			push_error("[map_generator] DCSystemScheduler.build_topology() failed (cycle detected); fast tick will not run")
+		elif OS.is_debug_build():
+			print("[map_generator] DCSystemScheduler topology built: %s" % str(_sus.topology_order_names()))
 
 
 ## main.gd 在 _ready 末尾调用，让 OceanCurrentsJob 拿到 season_phase 连续浮点。
@@ -3312,7 +3428,15 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	#     ocean transport 的 anomaly 单调累积 → temp_a 撑到 0/1 → 椒盐全蓝。
 	# 修复：暂时禁用 C++ Pass-A，让 GDScript SoA Pass-A 写 map.temp_arr，
 	# 闭合反馈回路。等 storage 同源（CoW alias）做实后再恢复 false。
-	const _DIAG_DISABLE_CPP_PASS_A: bool = false
+	#
+	# 2026-05-14（W.1 验证期）：重新启用 kill-switch。用户在 macOS arm64 + 0.4.1
+	# DCSystemScheduler 接入后报告"所有地方温度都是极寒"。诊断结论与 R2 一致：
+	# storage A / B 仍未同源（CoW alias 还没做实），ocean/Pass-B/sea_ice 写 storage A
+	# 但 view_adapter.World 读 DCWorld slot（可能命中 storage A 也可能 B，路径取决于
+	# bind_map_data 当时的 set_array_ref 实现）。临时禁用 C++ Pass-A 让 storage A
+	# 闭环。**注意**：禁用 C++ Pass-A 意味着 climate 性能损失（charter §7 P0 ~10x），
+	# 等存档/合并 storage 后必须翻回 false。
+	const _DIAG_DISABLE_CPP_PASS_A: bool = true
 	if not _DIAG_DISABLE_CPP_PASS_A and cp.use_data_core_climate and _data_core_world_ext != null and map != null:
 		# §11.2: Pass-A is the first C++ pass in the pipeline. Refresh all
 		# slots from MapData so C++ reads GDScript-side changes since last flush.

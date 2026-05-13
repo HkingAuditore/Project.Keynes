@@ -51,6 +51,13 @@ extends Node2D
 const DCEcsScheduler := preload("res://scripts/ecs/dc_ecs_scheduler.gd")
 const DCEcsJob := preload("res://scripts/ecs/dc_ecs_job.gd")
 
+# 0.4.2 — InfoPanelController 抽出（main.gd 拆分推荐顺序 step 1）。
+# ~340 行右侧地块信息面板（_refresh_info_panel 系列 + 5 个文字档位 helper +
+# 5 个 emergent_* 懒创建 Label）已搬至 ui/info_panel_controller.gd。
+# main.gd 的 6 个 _refresh_* / _ensure_emergent_labels 入口降级为 1 行 forward；
+# 5 个 _emergent_*_label 字段、5 个 _vitality_band 等 helper 均已删除。
+const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controller.gd")
+
 @export var map_width: int = 60
 @export var map_height: int = 40
 @export var num_continents: int = 2
@@ -179,13 +186,8 @@ var _tod_profile: TODProfile = null
 # 只在 _overlay_mode != NONE 时可见。mouse_filter=IGNORE，不拦截地图输入。
 @onready var _overlay_legend: PanelContainer = $UI/OverlayLegend
 
-# Emergent Climate Coupling：三行"涌现耦合"信息标签（运行时动态创建）
-var _emergent_temp_label: Label = null
-var _emergent_ice_label: Label = null
-var _emergent_feedback_label: Label = null
-# True Insolation-Driven（Phase F）：两行额外信息。
-var _emergent_sun_label: Label = null      # "太阳：直射点 ±XX.X°  日射相对年均 ±XX.X%"
-var _emergent_month_label: Label = null    # "月份 X 月 X 日 · 近30日距年均 ±X.XX"
+# 0.4.2 — 5 个 emergent_*_label 已搬到 InfoPanelController（懒创建仍在那里）。
+# main.gd 不再持有这些 Label 引用。
 
 var _current_map: MapData = null
 var _generator: MapGenerator = null
@@ -195,6 +197,9 @@ var _world_data: WorldData = null
 # 内部直读 HexCell 强类型成员，行为等价。每次 _current_map 重新赋值时
 # 同步 invalidate（_rebuild_view_adapter）。
 var _view_adapter: DCViewAdapter = null
+# 0.4.2 — info panel controller（_ready 时实例化；持有所有右侧面板 Label refs
+# + 5 个 emergent_* 懒创建 Label + refresh_* 方法）。
+var _info_panel_controller: InfoPanelControllerScript = null
 var _last_seed: int = 0
 var _last_time_label_hour: int = -1
 # 当前选中地块（重新生成地图时清空，避免持有旧 MapData 的 cell 引用）
@@ -238,6 +243,32 @@ var _overlay_error_msg: String = ""
 func _ready() -> void:
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
+
+	# 0.4.2 — info panel controller 实例化（在 _generate_and_render 之前，
+	# 否则首次重生成结束时如果 _select_cell 触发 refresh_info_panel 会 NRE）。
+	# 静态 Label refs 都已 @onready 完毕；动态上下文（map / generator / view_adapter）
+	# 在 _generate_and_render / _rebuild_view_adapter 末尾 push。
+	_info_panel_controller = InfoPanelControllerScript.new({
+		"right_panel": _right_panel,
+		"pos": _pos_label,
+		"elev": _elev_label,
+		"climate_zone": _climate_zone_label,
+		"temp": _temp_label,
+		"moist": _moist_label,
+		"precip": _precip_label,
+		"landform": _landform_label,
+		"vegetation": _vegetation_label,
+		"vitality": _vitality_label,
+		"cover": _cover_label,
+		"weather": _weather_label,
+		"feature": _feature_label,
+		"mobility": _mobility_label,
+		"history": _history_label,
+	})
+	_info_panel_controller.set_world_clock(_world_clock)
+	_info_panel_controller.set_sea_level(sea_level)
+	_info_panel_controller.set_hex_size(hex_size)
+
 	# Pass 2：TOD 中枢必须在 _generate_and_render 前实例化，
 	# 因为首次 set_map 会触发 _push_visual_toggles → apply_tod 首帧推送。
 	_init_tod_profile()
@@ -809,6 +840,12 @@ func _generate_and_render(seed_val: int) -> void:
 	var result := _generator.generate(cfg, hex_size)
 	_current_map = result["map"]
 	_world_data = result["world_data"]
+	# 0.4.2 — 新地图就位后立即把 map / generator / sea_level 推给 info panel
+	# controller。view_adapter 在 _rebuild_view_adapter 内部已 push。
+	if _info_panel_controller != null:
+		_info_panel_controller.set_current_map(_current_map)
+		_info_panel_controller.set_generator(_generator)
+		_info_panel_controller.set_sea_level(sea_level)
 	# B.1 / B.3：地图新生成 → 重建 ViewAdapter
 	# B.3：根据 DCFeatureFlags.use_world_view_adapter 决定走 .Cell（默认，legacy）
 	# 还是 .World（DOTS 路径）。World 实现要求 DCWorld 已 bind_map_data；
@@ -959,6 +996,9 @@ func _select_cell(cell: HexCell) -> void:
 	_selected_cell = cell
 	_highlight.set_cell(cell, hex_size)
 	_right_panel.visible = true
+	# 0.4.2 — controller 持有自己的 _selected_cell 副本；这里同步推一次。
+	if _info_panel_controller != null:
+		_info_panel_controller.set_selected_cell(cell)
 	_ensure_emergent_labels()
 	_refresh_info_panel()
 	# Legend 指针：选中后把当前 cell 的通道值映射到色带位置。
@@ -969,6 +1009,9 @@ func _select_cell(cell: HexCell) -> void:
 
 func _clear_selection() -> void:
 	_selected_cell = null
+	# 0.4.2 — 同步清掉 controller 的 selection（否则 refresh_* 会读到旧 cell 引用）
+	if _info_panel_controller != null:
+		_info_panel_controller.set_selected_cell(null)
 	if _highlight != null:
 		_highlight.clear()
 	if _right_panel != null:
@@ -994,346 +1037,48 @@ func _map_safe_area() -> Rect2:
 	var safe := Rect2(Vector2(0.0, top_h), Vector2(maxf(vp.x - right_w, 1.0), maxf(vp.y - top_h, 1.0)))
 	return safe
 
-# 把当前 _selected_cell 的所有信息写到右侧面板。
-# 字段全部从 cell 现成属性 + WorldClock + MapGenerator 派生，不引入新数据存储。
+# 0.4.2 — main.gd 拆分推荐顺序 step 1：refresh_info_panel 系列已搬到
+# [`ui/info_panel_controller.gd`](ui/info_panel_controller.gd)。
+# 6 个 forwarder 保留 main 命名空间内的旧 api（_refresh_info_panel /
+# _refresh_weather_line / _refresh_climate_line / _refresh_vitality_line /
+# _ensure_emergent_labels / _refresh_emergent_lines），其余 callsite 零改动。
+# 5 个文字档位 helper（_vitality_band / _elevation_band / _climate_zone_name /
+# _temperature_band / _moisture_band）+ 5 个 _emergent_* Label 字段已完全删除。
 func _refresh_info_panel() -> void:
-	if _selected_cell == null or _right_panel == null or _current_map == null:
+	if _info_panel_controller == null:
 		return
-	var cell := _selected_cell
-	var cfg_h: int = max(_current_map.height, 1)
+	_info_panel_controller.refresh_info_panel()
 
-	# ── 位置（cube + offset）
-	var off := HexUtils.cube_to_offset(cell.q, cell.r)
-	_pos_label.text = "位置：cube(%d,%d,%d)  offset(col=%d,row=%d)" % [
-		cell.q, cell.r, cell.s, off.x, off.y
-	]
 
-	# ── 海拔（归一化 + 陆上海拔比例 + 文字档位）
-	# B.1：通过 ViewAdapter 读 schema-mirrored 字段（cell.elevation）
-	var sea: float = sea_level
-	var elev: float = _view_adapter.get_elevation(cell.index) if _view_adapter != null else float(cell.elevation)
-	var land_h: float = (elev - sea) / maxf(1.0 - sea, 0.001)
-	_elev_label.text = "海拔：%.3f（%s）   陆上高度：%+.2f" % [
-		elev, _elevation_band(elev, sea), land_h
-	]
-
-	# ── 气候带（按纬度 |ny - 0.5| 推导）
-	var ny: float = float(off.y) / float(cfg_h - 1) if cfg_h > 1 else 0.5
-	var anomaly: float = _world_clock.climate_anomaly if _world_clock != null else 0.0
-	_climate_zone_label.text = "气候带：%s（纬度 %.2f）   气候异常：%+.2f" % [
-		_climate_zone_name(ny), ny, anomaly
-	]
-
-	# ── 当前温度 / 湿度 / 降水（B.1：走 ViewAdapter）
-	var cs: Dictionary = cell.current_state
-	var idx: int = int(cell.index)
-	var ad: DCViewAdapter = _view_adapter
-	var temp: float = ad.get_temp(idx) if ad != null else float(cell.temperature)
-	_temp_label.text = "当前温度：%.2f（%s）" % [temp, _temperature_band(temp)]
-
-	var moist: float = ad.get_moisture(idx) if ad != null else float(cell.moisture)
-	var base_moist: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-	_moist_label.text = "当前湿度：%.2f（%s）   年均基线：%.2f" % [
-		moist, _moisture_band(moist), base_moist
-	]
-
-	# Seasonal Continuous Climate：用 _moisture_scale_at_phase 取连续倍率，
-	# 与逐日刷新写入 current_state.moisture 的倍率严格一致，避免显示与实际脱节。
-	var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
-	var season: int = int(cs.get("season", fallback_season))
-	var season_phase_now: float = _world_clock.season_phase() if _world_clock != null else (float(season) + 0.5)
-	var scale: float = 1.0
-	if _generator != null:
-		var cp = _generator._c()
-		scale = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase_now)
-	var precip: float = scale * base_moist
-	_precip_label.text = "当季降水：%.2f（估算 = %s ×%.2f × 年均湿度 %.2f）" % [
-		precip, _world_clock.season_name_cn(season), scale, base_moist
-	]
-
-	# ── Milestone 1：三轴分栏（地形 / 植被 / 覆盖）
-	# B.1：landform / vegetation / cover / snow_cover 走 ViewAdapter（schema-mirrored）；
-	# base_vegetation / vegetation_history 仍直读 cell（HexCell-only 无 SoA 对位）。
-	var landform_v: int = ad.get_landform(idx) if ad != null else int(cell.landform)
-	_landform_label.text = "地形：%s" % LandformType.name_cn(landform_v)
-	var vegetation_v: int = ad.get_vegetation(idx) if ad != null else int(cell.vegetation)
-	var veg_now := VegetationType.name_cn(vegetation_v)
-	if vegetation_v != cell.base_vegetation:
-		var veg_base := VegetationType.name_cn(cell.base_vegetation)
-		_vegetation_label.text = "植被：%s   ⚠ 当季已演替（基线：%s）" % [veg_now, veg_base]
-	else:
-		_vegetation_label.text = "植被：%s" % veg_now
-	# Milestone 4：植被生命值 + 演替倒计时
-	_refresh_vitality_line()
-	var snow_v: float = ad.get_snow_cover(idx) if ad != null else float(cell.snow_cover)
-	var cover_v: int = ad.get_cover(idx) if ad != null else int(cell.cover)
-	var snow_pct: float = snow_v * 100.0
-	if snow_pct > 1.0:
-		_cover_label.text = "覆盖：%s（雪盖 %.0f%%）" % [CoverType.name_cn(cover_v), snow_pct]
-	else:
-		_cover_label.text = "覆盖：%s" % CoverType.name_cn(cover_v)
-
-	# Milestone 3：天气（每"日"由 weather 子系统更新；CLEAR 时不显示强度）
-	_refresh_weather_line()
-
-	# ── 地理特征（河流 / 火山 / 湖泊种子）—— 雪盖已迁到 CoverLabel 不再重复
-	# B.1：has_river 走 ViewAdapter；has_volcano / is_lake_seed 无 SoA 对位仍直读 cell。
-	var feats := PackedStringArray()
-	if (ad.get_has_river(idx) if ad != null else cell.has_river): feats.append("河流")
-	if cell.has_volcano: feats.append("火山")
-	if cell.is_lake_seed: feats.append("湖泊种子")
-	_feature_label.text = "地理特征：%s" % ("无" if feats.is_empty() else ", ".join(feats))
-
-	# ── 通行（基础通行 + 当季通行）
-	# B.1：is_water 通过 adapter（== !passable_land 的 SoA 镜像）；passable_sea
-	# 与 is_passable_in_season 无 SoA 对位仍直读 cell。
-	var passable_land_v: bool = (not ad.get_is_water(idx)) if ad != null else cell.passable_land
-	var terrain_v: int = ad.get_terrain(idx) if ad != null else int(cell.terrain)
-	_mobility_label.text = "通行：陆 %s / 海 %s   move_cost=%d   当季可通行：%s" % [
-		"是" if passable_land_v else "否",
-		"是" if cell.passable_sea else "否",
-		TerrainType.get_move_cost(terrain_v),
-		"是" if cell.is_passable_in_season(season) else "否",
-	]
-
-	# ── 近期植被演替（vegetation_history 环形缓冲，最近 8 季）
-	# Milestone 1：换源到独立植被轴，粒度更细；空缓冲时回退到 biome_history
-	var veg_history := cell.vegetation_history
-	if not veg_history.is_empty():
-		var names := PackedStringArray()
-		for i in range(veg_history.size()):
-			names.append(VegetationType.name_cn(int(veg_history[i])))
-		_history_label.text = "近期植被：%s" % " → ".join(names)
-	else:
-		var bio_history := cell.biome_history
-		if bio_history.is_empty():
-			_history_label.text = "近期植被：尚无记录"
-		else:
-			var names2 := PackedStringArray()
-			for i in range(bio_history.size()):
-				names2.append(TerrainType.terrain_name_cn(int(bio_history[i])))
-			_history_label.text = "近期植被：%s（兼容轴）" % " → ".join(names2)
-
-	# Emergent Climate Coupling：三行涌现耦合信息（温度分解 / 海冰覆盖度 / 反馈缓冲）
-	_refresh_emergent_lines()
-
-# Milestone 3：单独刷新天气行，避免每天 tick 时重画整面板
 func _refresh_weather_line() -> void:
-	if _selected_cell == null or _weather_label == null:
+	if _info_panel_controller == null:
 		return
-	# B.1：通过 ViewAdapter 读 weather schema-mirrored 字段
-	var sel_idx: int = int(_selected_cell.index)
-	var has_wf: bool = _view_adapter.get_weather_field_init(sel_idx) if _view_adapter != null else _selected_cell.weather_field_initialized
-	var wt: int = (_view_adapter.get_weather_type(sel_idx) if _view_adapter != null else _selected_cell.weather_type) if has_wf else WeatherType.WT.CLEAR
-	var wi: float = (_view_adapter.get_weather_intensity(sel_idx) if _view_adapter != null else _selected_cell.weather_intensity) if has_wf else 0.0
-	if wt == WeatherType.WT.CLEAR or wi <= 0.05:
-		_weather_label.text = "天气：晴朗"
-	else:
-		_weather_label.text = "天气：%s（强度 %.0f%%）" % [WeatherType.name_cn(wt), wi * 100.0]
+	_info_panel_controller.refresh_weather_line()
 
-# Seasonal Continuous Climate：单独刷新"当前温度 / 当前湿度 / 当季降水"三行，
-# 让玩家在选中地块时能逐日看到换季的渐进变化，而不必等到换季触发整面板重绘。
-# 与 _refresh_info_panel 中的同名计算保持一致（连续 moisture_scale + 余弦温度曲线）。
+
 func _refresh_climate_line() -> void:
-	if _selected_cell == null:
+	if _info_panel_controller == null:
 		return
-	var cell := _selected_cell
-	var cs: Dictionary = cell.current_state
+	_info_panel_controller.refresh_climate_line()
 
-	# B.1：通过 ViewAdapter 读 schema-mirrored 字段
-	var idx: int = int(cell.index)
-	var ad: DCViewAdapter = _view_adapter
 
-	# ── 当前温度
-	if _temp_label != null:
-		var temp: float = ad.get_temp(idx) if ad != null else float(cell.temperature)
-		_temp_label.text = "当前温度：%.2f（%s）" % [temp, _temperature_band(temp)]
-
-	# ── 当前湿度
-	if _moist_label != null:
-		var moist: float = ad.get_moisture(idx) if ad != null else float(cell.moisture)
-		var base_moist_2: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-		_moist_label.text = "当前湿度：%.2f（%s）   年均基线：%.2f" % [
-			moist, _moisture_band(moist), base_moist_2
-		]
-
-	# ── 当季降水（连续 moisture_scale × base_moisture，与逐日刷新同源）
-	if _precip_label != null:
-		var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
-		var season: int = int(cs.get("season", fallback_season))
-		var season_phase_now: float = _world_clock.season_phase() if _world_clock != null else (float(season) + 0.5)
-		var scale: float = 1.0
-		if _generator != null:
-			var cp = _generator._c()
-			scale = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase_now)
-		var base_moist_3: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-		var precip: float = scale * base_moist_3
-		_precip_label.text = "当季降水：%.2f（估算 = %s ×%.2f × 年均湿度 %.2f）" % [
-			precip, _world_clock.season_name_cn(season), scale, base_moist_3
-		]
-
-# Milestone 4：单独刷新植被生命值行（与 weather 一样按"日"高频刷新）
 func _refresh_vitality_line() -> void:
-	if _selected_cell == null or _vitality_label == null:
+	if _info_panel_controller == null:
 		return
-	var cell := _selected_cell
-	# B.1：landform 走 ViewAdapter
-	var lf_v: int = _view_adapter.get_landform(cell.index) if _view_adapter != null else int(cell.landform)
-	if LandformType.is_water(lf_v):
-		_vitality_label.text = "生命值：—（水域无植被生命值）"
-		return
-	var v: float = cell.vegetation_vitality
-	var band: String = _vitality_band(v)
-	# 演替倒计时：哪边 streak 接近触发就提示倒计时
-	var hint := ""
-	if cell._vitality_low_streak > 0:
-		var rem: int = (_generator._c().succession_degrade_days if _generator != null else 180) - cell._vitality_low_streak
-		if rem <= 0:
-			hint = "  ⚠ 即将退化"
-		elif rem <= 30:
-			hint = "  ⚠ 退化倒计时 %d 天" % rem
-	elif cell._vitality_high_streak > 0:
-		var rem2: int = (_generator._c().succession_upgrade_days if _generator != null else 360) - cell._vitality_high_streak
-		if rem2 <= 0:
-			hint = "  ✓ 即将升级"
-		elif rem2 <= 45:
-			hint = "  ✓ 升级倒计时 %d 天" % rem2
-	_vitality_label.text = "生命值：%.0f%%（%s）%s" % [v * 100.0, band, hint]
+	_info_panel_controller.refresh_vitality_line()
 
-# Emergent Climate Coupling：懒创建三行 UI 标签（首次选中 cell 时调用一次）
-# 动态挂到右侧面板 VBox 末尾，避免修改 .tscn。
+
 func _ensure_emergent_labels() -> void:
-	if _emergent_temp_label != null:
+	if _info_panel_controller == null:
 		return
-	var vbox: Node = _history_label.get_parent() if _history_label != null else null
-	if vbox == null:
-		return
-	_emergent_temp_label = Label.new()
-	_emergent_temp_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_emergent_temp_label)
-	_emergent_ice_label = Label.new()
-	_emergent_ice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_emergent_ice_label)
-	_emergent_feedback_label = Label.new()
-	_emergent_feedback_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_emergent_feedback_label)
-	# True Insolation-Driven：额外两行
-	_emergent_sun_label = Label.new()
-	_emergent_sun_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_emergent_sun_label)
-	_emergent_month_label = Label.new()
-	_emergent_month_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_emergent_month_label)
+	_info_panel_controller.ensure_emergent_labels()
 
-# Emergent Climate Coupling：刷新三行"涌现耦合"信息：
-#   行 1 陆地 cell 显示温度分解，水体 cell 显示海冰覆盖度；
-#   行 2 显示 soil_moisture / vegetation_growth_pressure 两个反馈缓冲；
-#   行 3 顶部"当前季节"名义 + 过渡百分比。
-# 缺字段时一次 WARN 后静默（通过 get(key, fallback) 兜底）。
+
 func _refresh_emergent_lines() -> void:
-	if _selected_cell == null:
+	if _info_panel_controller == null:
 		return
-	_ensure_emergent_labels()
-	var cell := _selected_cell
-	var cs: Dictionary = cell.current_state
+	_info_panel_controller.refresh_emergent_lines()
 
-	# 行 1：陆地 → 温度分解；水体 → 海冰覆盖度
-	# B.1：landform / sea_ice_fraction / temperature / temp_baseline 走 ViewAdapter
-	var em_idx: int = int(cell.index)
-	var em_ad: DCViewAdapter = _view_adapter
-	if _emergent_temp_label != null:
-		var em_lf: int = em_ad.get_landform(em_idx) if em_ad != null else int(cell.landform)
-		if LandformType.is_water(em_lf):
-			var ice_f: float = em_ad.get_sea_ice_frac(em_idx) if em_ad != null else float(cell.sea_ice_fraction)
-			_emergent_temp_label.text = "海冰覆盖：%.1f%%" % [ice_f * 100.0]
-		else:
-			var t_eff: float = em_ad.get_temp(em_idx) if em_ad != null else float(cell.temperature)
-			var t_base: float = em_ad.get_temp_baseline(em_idx) if em_ad != null else float(cell.temp_baseline)
-			_emergent_temp_label.text = "温度分解：基线 %.2f  叠加 %+.2f（含反照率/岸泄/地形）" % [t_base, t_eff - t_base]
-
-	# 行 2：土壤湿度反馈 / 植被生长压力（可能为 0）
-	if _emergent_feedback_label != null:
-		var sm: float = float(cell.get("soil_moisture"))
-		var vp: float = float(cell.get("vegetation_growth_pressure"))
-		_emergent_feedback_label.text = "反馈缓冲：土壤湿度 %+.3f  植被压力 %+.3f（本季累计）" % [sm, vp]
-
-	# 行 3：日历月份（显示给玩家看的是月份、而非春夏秋冬——因南北半球相反）
-	if _emergent_ice_label != null:
-		if _world_clock != null and _generator != null:
-			var phase: float = _world_clock.season_phase()
-			var cal: Dictionary = _generator.month_of_year(phase)
-			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/120 天）" % [int(cal.month), int(cal.day_of_month), int(cal.day_of_year)]
-		else:
-			_emergent_ice_label.text = "日历：—"
-
-	# 行 4：太阳直射点 + 日射相对年均（True Insolation-Driven 因果链可视化）
-	if _emergent_sun_label != null and _generator != null and _world_clock != null:
-		var phase_sun: float = _world_clock.season_phase()
-		var subsolar_rad: float = _generator._subsolar_lat_rad(phase_sun)
-		var subsolar_deg: float = rad_to_deg(subsolar_rad)
-		var ny_sun: float = _generator.cell_ny(cell)
-		var dev_sun: float = _generator._insol_dev(ny_sun, phase_sun)
-		_emergent_sun_label.text = "太阳：直射点 %+.1f°  日射距年均 %+.1f%%" % [subsolar_deg, dev_sun * 100.0]
-
-	# 行 5：观测月份（本地温度 EMA 距年均）——赤道显示"常年温暖"
-	if _emergent_month_label != null and _generator != null and _world_clock != null:
-		var phase_m: float = _world_clock.season_phase()
-		var obs: Dictionary = _generator.observe_local_month(cell, phase_m)
-		var dev_v: float = float(obs.dev)
-		var warmer = obs.warmer_than_annual
-		var obs_txt: String
-		if warmer == null:
-			obs_txt = "常年温暖"
-		elif bool(warmer):
-			obs_txt = "当前偏暖 %+.2f" % [dev_v]
-		else:
-			obs_txt = "当前偏冷 %+.2f" % [dev_v]
-		_emergent_month_label.text = "观测：%d 月 · %s（振幅 %.0f%%）" % [int(obs.calendar_month), obs_txt, float(obs.magnitude) * 100.0]
-
-func _vitality_band(v: float) -> String:
-	if v < 0.15: return "濒死"
-	if v < 0.40: return "枯萎"
-	if v < 0.70: return "亚健康"
-	if v < 0.90: return "健康"
-	return "繁茂"
-
-# ─── 文字档位 helper（仅 UI 用，不参与游戏逻辑） ─────────────────────────
-
-func _elevation_band(elev: float, sea: float) -> String:
-	if elev < sea * 0.30: return "深海"
-	if elev < sea * 0.85: return "近海"
-	if elev < sea: return "浅海"
-	var land := (elev - sea) / maxf(1.0 - sea, 0.001)
-	if land < 0.05: return "海岸 / 海滩"
-	if land < 0.30: return "低地平原"
-	if land < 0.55: return "丘陵"
-	if land < 0.80: return "山地"
-	if land < 0.95: return "高峰"
-	return "雪线以上"
-
-func _climate_zone_name(ny: float) -> String:
-	var d: float = absf(ny - 0.5)
-	if d < 0.10: return "热带"
-	if d < 0.20: return "副热带"
-	if d < 0.32: return "温带"
-	if d < 0.42: return "副极地"
-	return "极地"
-
-func _temperature_band(t: float) -> String:
-	if t < 0.06: return "极寒"
-	if t < 0.20: return "严寒"
-	if t < 0.30: return "寒冷"
-	if t < 0.40: return "凉爽"
-	if t < 0.55: return "温暖"
-	if t < 0.75: return "炎热"
-	return "酷热"
-
-func _moisture_band(m: float) -> String:
-	if m < 0.20: return "极干"
-	if m < 0.40: return "干燥"
-	if m < 0.60: return "适中"
-	if m < 0.80: return "湿润"
-	return "极湿"
 
 # ─── Data Overlay 接口 ─────────────────────────────────────────────────
 # 统一放在 main.gd 尾部：DebugConsole 通过这些公共方法控制 overlay，
@@ -2267,5 +2012,8 @@ func _rebuild_view_adapter() -> void:
 			_view_adapter = DCViewAdapter.Cell.new(_current_map.iter_cells())
 	else:
 		_view_adapter = DCViewAdapter.Cell.new(_current_map.iter_cells())
+	# 0.4.2 — view adapter 重建后同步推给 info panel controller。
+	if _info_panel_controller != null:
+		_info_panel_controller.set_view_adapter(_view_adapter)
 	if OS.is_debug_build():
 		print("[main] view adapter rebuilt: kind=%s | %s" % [adapter_kind, _view_adapter.describe()])
