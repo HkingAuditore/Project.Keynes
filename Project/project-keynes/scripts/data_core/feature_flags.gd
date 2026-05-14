@@ -154,63 +154,102 @@ const FLAGS: Array = [
 		description = "Phase B.3：true 时走 DCViewAdapter.World（DOTS）；false 时走 .Cell（legacy）。依赖 use_data_core",
 	},
 	{
+		name = &"use_hexcell_facade",
+		owner = "data_core.hex_cell_facade",
+		default = true,
+		resource = "ClimateProfile",
+		description = "PR-2.3b/任务 4：HexCell 21 个热字段 setter/getter 透传到 DCWorld SoA；启用后 cell.<field> = v 等价 world.write_f32(cid, idx, v)。依赖 use_data_core 已 bind world",
+	},
+	{
 		name = &"use_dc_system_scheduler",
 		owner = "data_core.scheduler",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "Phase C.4：true 时走 DCSystemScheduler；false 时走 SusScheduler 兼容路径",
+		description = "Phase C.4 / 任务 6：true 时走 DCSystemScheduler（reads/writes 拓扑校验）；false 时走 SusScheduler 兼容路径。earth_like.tres 已启用",
 	},
 	# ─── Phase F / dots-full-migration §F.1-F.6：6 hot pass C++ 化 flags ────
-	# 对应 DCWorldExt::run_<name>_pass stub。当前所有 stub 返回 -1.0 → fallback；
-	# 后续 PR 填实际算法 + bit-equal 验收通过后切 true。
+	# 任务 5（dots-completion）：7 个 hot pass flag 默认 false → true。
+	# C++ stub 返回 -1.0 时仍透明 fallback 到 GDScript；earth_like.tres 生产 profile 已验证。
 	{
 		name = &"use_gdext_weather_field",
 		owner = "weather.field_solver",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.1 (P0)：weather field solve C++ 化；目标 13ms → < 2ms",
 	},
 	{
 		name = &"use_gdext_ocean_water",
 		owner = "ocean.heat_transport",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.2a (P1)：ocean water pass C++ 化；目标 3.4ms → < 0.5ms",
 	},
 	{
 		name = &"use_gdext_ocean_land",
 		owner = "ocean.heat_transport",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.2b (P1)：ocean land pass C++ 化；目标 3.4ms → < 0.5ms",
 	},
 	{
 		name = &"use_gdext_climate_pass_b",
 		owner = "climate.pass_b",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.3 (P1)：climate Pass-B C++ 化；目标 5.2ms → < 0.5ms",
 	},
 	{
 		name = &"use_gdext_sea_ice",
 		owner = "climate.sea_ice",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.4 (P2)：sea ice daily pass C++ 化；目标 5.1ms → < 0.5ms；terrain 翻转走 ECB",
 	},
 	{
 		name = &"use_gdext_transpiration",
 		owner = "biology.transpiration",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.5 (P2)：transpiration pass C++ 化；目标 3.2ms → < 0.3ms",
 	},
 	{
 		name = &"use_gdext_weather_front",
 		owner = "weather.fronts",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "Phase F.6 (P3)：weather front advect C++ 化 + front pool DOTS 化；目标 3.0ms → < 0.5ms",
+	},
+	# ─── Weather Hot-Path C++ 化（dist + summary）：plan/weather-hotpath-cpp ───
+	# 把 _distribute_weather_field_to_cells（~11.6ms）与 _build_field_summary_fronts
+	# （~17.8ms）下沉到 DCWorldExt。两个 flag 独立切换；C++ 端持久化 prev_seeds /
+	# prev_membership 跨 tick 维护，flag 切换时通过 reset_weather_summary_state() 清空。
+	{
+		name = &"use_gdext_weather_distribute",
+		owner = "weather.distribute",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Weather hot-path：_distribute_weather_field_to_cells C++ 化；目标 11.6ms → < 1.5ms",
+	},
+	{
+		name = &"use_gdext_weather_summary",
+		owner = "weather.summary",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Weather hot-path：_build_field_summary_fronts C++ 化（含 BFS 继承 + EMA velocity）；目标 17.8ms → < 3.0ms",
+	},
+	{
+		name = &"use_gdext_climate_pass_a",
+		owner = "simulation.climate.pass_a",
+		default = false,
+		resource = "ClimateProfile",
+		description = "PR-2.passA-unblock：climate Pass-A C++ 化；目标 ~10ms → < 0.5ms。前置：PR-2.1.1 storage 同源验收通过",
+	},
+	{
+		name = &"use_gdext_wind_field",
+		owner = "simulation.ocean.wind_field",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Block B (P1)：wind field C++ 化；目标 p95 35.55ms → < 5ms。前置：C++ 实装（当前 stub 返回 -1）+ docs/dots-wind-validation.md A/B 通过",
 	},
 ]
 

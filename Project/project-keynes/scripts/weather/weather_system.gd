@@ -126,28 +126,10 @@ var _field_summary_limit: int = 12
 var _weather_field: Dictionary = {}
 var _last_map_for_query: MapData = null
 
-var _field_slice_active: bool = false
-var _field_slice_map: MapData = null
-var _field_slice_world: WorldData = null
-var _field_slice_season_idx: int = 0
-var _field_slice_climate_anomaly: float = 0.0
-var _field_slice_cursor: int = 0
-var _field_slice_refresh_convergence: bool = false
-var _field_slice_cells: Array = []
-var _field_slice_cell_pos: PackedVector2Array = PackedVector2Array()
-var _field_slice_neighbor_indices: PackedInt32Array = PackedInt32Array()
-var _field_slice_fast_indexed: bool = false
-var _field_slice_prev_vapor: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_prev_precip: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_vapor: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_cloud: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_precip: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_instability: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_intensity: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_convergence: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_next_type: PackedInt32Array = PackedInt32Array()
-var _field_slice_solve_ms: float = 0.0
-var _field_slice_last_ms: float = 0.0
+# dots-monolith-split §1.2 / PR-4：22 个切片状态字段已搬迁到
+# scripts/weather/field_solver.gd 的 region PR-4。weather_system 内残留的
+# begin / commit / solve 主体读写通过 _field_solver 间接访问；
+# PR-5 / PR-6 把 commit / solve 主体也搬过去后，访问会自然变成 self.* 内部字段。
 
 # ─── Phase F.1：DCWorldExt C++ 加速钩子（charter §7 第一优先级）───────
 # 通过 configure_gdext_acceleration() 注入；map_generator 在 _data_core_world_ext
@@ -159,6 +141,14 @@ var _data_core_world_ext: RefCounted = null
 # 第 4 个可选参数注入 GDScript DCWorld。null 时 fallback 到旧的 cell.* 直写
 # （保留双写是 PR-2.3 facade 化前的兼容路径）。详见 master 手册 §3.9。
 var _data_core_world = null  # DCWorld（GDScript）
+
+# 任务 2（dots-completion）：HexCell facade 启用时跳过 AoS 直写。
+# - false（default）：兼容路径，hot loop 仍写 out_cell.weather_*（setter 落到
+#   _backing；legacy reader 如 map_baker.gd 走 cell.weather_xxx 仍能取到值）。
+# - true（任务 4 启用）：所有 hot loop 跳过 16 行 AoS 写，cell 字段读全部走
+#   SoA（已由本函数末尾 write_f32_indexed/write_u8_indexed 批量写入）。
+# 由 map_generator / main 在 facade 切换时调 set_hexcell_facade_on(b)。
+var _hexcell_facade_on: bool = false
 
 var _use_gdext_weather_field: bool = false
 # F.1 运行时统计：cpp_runs / cpp_fallbacks / cpp_total_ms（_last_breakdown 暴露给上层 HUD）
@@ -174,6 +164,48 @@ var _gdext_field_first_attempt_logged: bool = false
 var _field_verify_enabled: bool = false
 var _field_verify_tol_f32: float = 1.0e-4
 var _field_verify_first_divergence_logged: bool = false
+
+# ─── Weather Hot-Path C++ 化（dist + summary）：plan/weather-hotpath-cpp ───
+# 与 F.1 同款套路：configure_gdext_acceleration 时按 ext.has_method + 签名 arg
+# 数检测能力，能力达成且 climate_profile 开关 true 时镜像置 true；STALE 时强降级。
+# 持久化 C++ 状态在 set_*_verify_mode / flag 切换时由 GDScript 调 ext.reset_*_state() 清空。
+var _use_gdext_weather_distribute: bool = false
+var _use_gdext_weather_summary: bool = false
+# dist 运行时统计与节流告警
+var _gdext_dist_runs: int = 0
+var _gdext_dist_fallbacks: int = 0
+var _gdext_dist_total_ms: float = 0.0
+var _gdext_dist_warned_fallback: bool = false
+var _gdext_dist_first_attempt_logged: bool = false
+# summary 运行时统计与节流告警
+var _gdext_summary_runs: int = 0
+var _gdext_summary_fallbacks: int = 0
+var _gdext_summary_total_ms: float = 0.0
+var _gdext_summary_warned_fallback: bool = false
+var _gdext_summary_first_attempt_logged: bool = false
+# A/B verify：dev 诊断开关 + 容差。开启后 commit 仍走 C++，verify 跑 GDScript shadow 对账。
+var _distribute_verify_enabled: bool = false
+var _distribute_verify_tol_f32: float = 1.0e-4
+var _distribute_verify_first_divergence_logged: bool = false
+var _summary_verify_enabled: bool = false
+var _summary_verify_tol_pos: float = 0.5      # px
+var _summary_verify_tol_intensity: float = 1.0e-3
+var _summary_verify_tol_velocity: float = 0.5  # px / snapshot
+var _summary_verify_first_divergence_logged: bool = false
+
+# ─── 任务 9：节流式回归告警 ───────────────────────────────────────────────
+# 各保留最近 5 个 elapsed_ms 样本；任一 pass 连续 5 tick 都超过门槛 2× 时
+# push_warning 一次（_*_regression_warned 节流，确保 60 tick 内最多 1 条）。
+# 阈值与 plan/weather-hotpath-cpp/requirements.md §4.6 同源：
+#   dist 门槛 1.5ms、summary 门槛 3.0ms。
+const _PERF_RING_SIZE: int = 5
+const _DIST_PERF_BUDGET_MS: float = 1.5
+const _SUMMARY_PERF_BUDGET_MS: float = 3.0
+const _PERF_BUDGET_MULTIPLIER: float = 2.0
+var _dist_recent_ms: PackedFloat32Array = PackedFloat32Array()
+var _summary_recent_ms: PackedFloat32Array = PackedFloat32Array()
+var _dist_regression_warned: bool = false
+var _summary_regression_warned: bool = false
 
 # ─── Phase F.6：DCWorldExt fronts advect C++ 加速钩子（charter §7 P3）───
 # 通过 configure_gdext_acceleration() 同时注入（同一 ext 实例 + ClimateProfile 引用）。
@@ -198,6 +230,15 @@ var _current_map_for_tick: MapData = null
 # main.gd / map_generator.refresh_daily 可调 last_breakdown() 读取。
 # 字段：advance_ms / spawn_ms / distribute_ms / cyclone_ms
 var _last_breakdown: Dictionary = {}
+
+# dots-monolith-split §1.1：weather sub-module 实例。
+# 由 init() 创建，tick_one_day 在对应阶段委派 hot pass 给 sub-module。
+# 当前已接入：_advect.tick_cyclone_wake() 替代原 _tick_cyclone_wake() 内联实现。
+var _advect: DCWeatherFrontAdvect = null
+# dots-monolith-split §1.2：field_solver 占位实例。
+# 当前 _solve_weather_field 主体仍在本文件，sub-module 提供稳定 facade 入口
+# 让后续逐函数搬迁可零摩擦切换调用点。
+var _field_solver: DCWeatherFieldSolver = null
 
 # Tick-scoped 预计算缓存：每次 _solve_weather_field 进入时一次性把全图 cell
 # 的世界坐标和 1 环邻居数组算好；helper 函数（_neighbor_aligned / _upstream_vapor /
@@ -255,6 +296,16 @@ func init(seed_val: int, world_bounds: Rect2, hex_size: float) -> void:
 	# 否则旧地图的 HexCell 弱引用 + 旧 cluster 中心会污染新地图的首帧聚类。
 	_prev_summary_membership.clear()
 	_prev_summary_seeds.clear()
+	# dots-monolith-split §1.1：sub-module 实例化（owner 引用 self，
+	# sub-module 通过 owner 访问 ocean_current_perturbation / _active_fronts /
+	# _hex_size / _cyclone_wake_days 等共享状态）。
+	if _advect == null:
+		_advect = DCWeatherFrontAdvect.new(self)
+	# dots-monolith-split §1.2：field_solver facade 实例化。当前仅占位，
+	# _solve_weather_field 主体仍在 weather_system；后续逐函数搬迁后由
+	# _field_solver.solve(...) 接管 hot loop。
+	if _field_solver == null:
+		_field_solver = DCWeatherFieldSolver.new(self)
 
 # --- 每日 tick（由 MapGenerator.refresh_daily 调用） ---
 
@@ -295,136 +346,11 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 	# Daily-sim perf instrumentation：带埋点的 advance / spawn / distribute / cyclone 四段。
 	var t_us0: int = Time.get_ticks_usec()
 
-	# 1) 推进所有 front
-	# Emergent Climate Coupling：推进前先按 front 当前中心 cell 的 local 状态
-	# 临时缩放本日衰减。类型与本地温湿带匹配 → ×0.7（长寿命）；
-	# 不匹配 → ×1.5（更快耗尽）。缩放只影响本次 advance_one_day 的 decay 消耗。
-	# 不持久化到 front.decay_per_day 自身，避免跨日连锁放大。
-	#
-	# ─── Phase F.6：DCWorldExt fronts advect C++ 快路径 ─────────────────
-	# 触发条件：cp.use_gdext_weather_front == true + ext != null + has_method
-	#         + active_fronts 不空。任一不满足走 GDScript fallback。
-	#
-	# 设计：emergent_coupling 的 decay_mul / precip_bonus 仍由 GDScript 预算
-	# （需要 map 查询）；C++ 端只接 batch advect 主循环（旋转 / center += vel /
-	# decay / age++ / refresh_visual_lifecycle）。wind_fn 采样在 GDScript 端
-	# 一次性 pre-compute 成 PackedVector2Array 传 C++。
-	var f6_did_fast_path: bool = false
-	var f6_active_fronts_size: int = _active_fronts.size()
-	var f6_flag_on: bool = false
-	if _cp_for_front_flag != null and "use_gdext_weather_front" in _cp_for_front_flag:
-		f6_flag_on = bool(_cp_for_front_flag.use_gdext_weather_front)
-	if f6_active_fronts_size > 0 and f6_flag_on \
-			and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("run_weather_front_advect_pass"):
-		# 一次性诊断
-		if not _gdext_front_first_attempt_logged:
-			_gdext_front_first_attempt_logged = true
-			print("[front/F.6] first attempt: n_active_fronts=%d flag=%s ext_ok=%s" % [
-				f6_active_fronts_size, str(f6_flag_on), str(_data_core_world_ext != null),
-			])
-		if not _gdext_front_signature_checked:
-			_gdext_front_signature_checked = true
-			var ml: Array = _data_core_world_ext.get_method_list()
-			for m: Dictionary in ml:
-				if String(m.get("name", "")) == "run_weather_front_advect_pass":
-					var args: Array = m.get("args", [])
-					_gdext_front_signature_ok = (args.size() == 1)
-					if not _gdext_front_signature_ok:
-						push_warning("[gdext sig] run_weather_front_advect_pass has %d args (expected 1); .dll STALE — REBUILD gdext" % args.size())
-					break
-			print("[front/F.6] sig probe = %s（仅作诊断，不阻止下方调用）" % str(_gdext_front_signature_ok))
-
-		# Phase 1: GDScript 预算 decay_mul / precip_bonus / wind_per_front
-		var saved_decays: PackedFloat32Array = PackedFloat32Array()
-		saved_decays.resize(f6_active_fronts_size)
-		var precip_bonuses: PackedFloat32Array = PackedFloat32Array()
-		precip_bonuses.resize(f6_active_fronts_size)
-		var wind_per_front: PackedVector2Array = PackedVector2Array()
-		wind_per_front.resize(f6_active_fronts_size)
-		for i_f6 in range(f6_active_fronts_size):
-			var f_f6: WeatherFront = _active_fronts[i_f6]
-			saved_decays[i_f6] = f_f6.decay_per_day
-			var decay_mul_f6: float = 1.0
-			var precip_bonus_f6: float = 0.0
-			if _emergent_coupling and map != null:
-				var cube_f6 := HexUtils.world_to_cube(f_f6.center, _hex_size)
-				var at_cell_f6: HexCell = map.get_cell_by_cube(cube_f6)
-				if at_cell_f6 != null:
-					decay_mul_f6 = _front_decay_modifier(f_f6, at_cell_f6)
-					precip_bonus_f6 = _front_orographic_precip_bonus(f_f6, at_cell_f6, map)
-			# 临时改 decay_per_day（C++ 端会读这个值）
-			f_f6.decay_per_day = saved_decays[i_f6] * decay_mul_f6
-			precip_bonuses[i_f6] = precip_bonus_f6
-			# Wind sample（callable 是合法的；这里在 fast-path 之外的 callable 也 OK）
-			if wind_fn.is_valid():
-				wind_per_front[i_f6] = wind_fn.call(f_f6.center) as Vector2
-			else:
-				wind_per_front[i_f6] = Vector2.ZERO
-
-		# Phase 2: pack + invoke C++
-		var batch: Dictionary = WeatherFront.pack_into_dict(_active_fronts)
-		batch["wind_per_front"] = wind_per_front
-		batch["max_axis_turn_rad"] = 0.383972  # 与 weather_front.gd::_MAX_AXIS_TURN_RADIANS 一致
-		var rc_f6: float = float(_data_core_world_ext.run_weather_front_advect_pass(batch))
-
-		if _gdext_front_runs + _gdext_front_fallbacks < 3:
-			print("[front/F.6] DEBUG call#%d: rc=%.4f n_active=%d emergent=%s" % [
-				_gdext_front_runs + _gdext_front_fallbacks + 1,
-				rc_f6, f6_active_fronts_size, str(_emergent_coupling),
-			])
-
-		if rc_f6 >= 0.0:
-			# Phase 3: apply batch back to OOP fronts + 恢复 decay + 应用 precip_bonus
-			WeatherFront.apply_dict_to_fronts(batch, _active_fronts)
-			for i_f6r in range(f6_active_fronts_size):
-				var f_f6r: WeatherFront = _active_fronts[i_f6r]
-				f_f6r.decay_per_day = saved_decays[i_f6r]  # 恢复（不持久化 emergent decay_mul）
-				var pb: float = precip_bonuses[i_f6r]
-				if pb > 0.0:
-					f_f6r.precip_amount = clampf(f_f6r.precip_amount + pb, 0.0, 1.0)
-
-			_gdext_front_runs += 1
-			_gdext_front_total_ms += rc_f6
-			if _gdext_front_runs == 1:
-				print("[front/F.6] gdext path ACTIVE — first run elapsed=%.3fms (legacy GDScript baseline ≈ 3.0ms; charter §7 target < 0.5ms)" % rc_f6)
-			f6_did_fast_path = true
-		else:
-			# rc<0：恢复 decay（不能保留 emergent 缩放进 fallback，否则 GDScript 路径再次乘）
-			for i_f6e in range(f6_active_fronts_size):
-				(_active_fronts[i_f6e] as WeatherFront).decay_per_day = saved_decays[i_f6e]
-			_gdext_front_fallbacks += 1
-			# fall through 到 GDScript advect 循环（重新走 emergent 评估）
-
-	if not f6_did_fast_path:
-		for front in _active_fronts:
-			var decay_mul: float = 1.0
-			var precip_bonus: float = 0.0
-			if _emergent_coupling and map != null:
-				var cube := HexUtils.world_to_cube(front.center, _hex_size)
-				var at_cell: HexCell = map.get_cell_by_cube(cube)
-				if at_cell != null:
-					decay_mul = _front_decay_modifier(front, at_cell)
-					precip_bonus = _front_orographic_precip_bonus(front, at_cell, map)
-			var saved_decay: float = front.decay_per_day
-			front.decay_per_day = saved_decay * decay_mul
-			front.advance_one_day(wind_fn)
-			front.decay_per_day = saved_decay
-			# 推进后如果地形给出迎风坡加成：把本日 precip_amount 拉高（视觉 + 后续分发用）
-			if precip_bonus > 0.0:
-				front.precip_amount = clampf(front.precip_amount + precip_bonus, 0.0, 1.0)
-
-	# 2) 回收 dead 与出图 front
-	var alive: Array[WeatherFront] = []
-	for front in _active_fronts:
-		if not front.is_alive():
-			continue
-		# 飘出地图边界 + 1 倍 radius 也算出图
-		if not _world_bounds.grow(front.bounding_radius()).has_point(front.center):
-			continue
-		alive.append(front)
-	_active_fronts = alive
-	var advance_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	# 1) 推进所有 front + 2) 回收 dead 与出图 front
+	# dots-monolith-split §1.1 第 2 步：130 行内联实现已迁出至
+	# scripts/weather/front_advect.gd::tick_advance_fronts(map, wind_fn)。
+	# 业务等价：emergent_coupling 预算 + F.6 C++ 快路径 + GDScript fallback + reap。
+	var advance_ms: float = _advect.tick_advance_fronts(map, wind_fn)
 
 	# 3) Spawn 新 front
 	t_us0 = Time.get_ticks_usec()
@@ -454,7 +380,8 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 	var cyclone_ms: float = 0.0
 	if _cyclone_wake_enabled:
 		t_us0 = Time.get_ticks_usec()
-		_tick_cyclone_wake(map)
+		# dots-monolith-split §1.1：cyclone_wake 已迁出至 DCWeatherFrontAdvect。
+		_advect.tick_cyclone_wake(map)
 		cyclone_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 
 	_last_breakdown = {
@@ -739,394 +666,24 @@ func uses_weather_field() -> bool:
 	return _weather_field_enabled
 
 func is_weather_field_solve_active() -> bool:
-	return _field_slice_active
+	return _field_solver._field_slice_active
 
 func begin_weather_field_solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true) -> void:
-	_clear_weather_field_slice_state()
-	if map == null or world == null:
-		return
-	if count_day:
-		_day_counter += 1
-	_current_map_for_tick = map
-	_season_phase = season_phase if season_phase >= 0.0 else float(season_idx) + 0.5
-	_field_solve_tick += 1
-	_field_slice_active = true
-	_field_slice_map = map
-	_field_slice_world = world
-	_field_slice_season_idx = season_idx
-	_field_slice_climate_anomaly = climate_anomaly
-	_field_slice_cursor = 0
-	_field_slice_solve_ms = 0.0
-	_field_slice_last_ms = 0.0
-	_field_slice_refresh_convergence = ((_field_solve_tick - 1) % _field_convergence_refresh_stride) == 0
-	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
-	var n_cells: int = _field_slice_cells.size()
-	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
-	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
-	_field_slice_cell_pos = PackedVector2Array()
-	_field_slice_cell_pos.resize(n_cells)
-	_tick_cell_pos.clear()
-	_tick_cell_neighbors.clear()
-	for i in range(n_cells):
-		var cell: HexCell = _field_slice_cells[i]
-		_field_slice_cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
-
-	_field_slice_prev_vapor = PackedFloat32Array()
-	_field_slice_prev_precip = PackedFloat32Array()
-	_field_slice_next_vapor = PackedFloat32Array()
-	_field_slice_next_cloud = PackedFloat32Array()
-	_field_slice_next_precip = PackedFloat32Array()
-	_field_slice_next_instability = PackedFloat32Array()
-	_field_slice_next_intensity = PackedFloat32Array()
-	_field_slice_next_convergence = PackedFloat32Array()
-	_field_slice_next_type = PackedInt32Array()
-	_field_slice_prev_vapor.resize(n_cells)
-	_field_slice_prev_precip.resize(n_cells)
-	_field_slice_next_vapor.resize(n_cells)
-	_field_slice_next_cloud.resize(n_cells)
-	_field_slice_next_precip.resize(n_cells)
-	_field_slice_next_instability.resize(n_cells)
-	_field_slice_next_intensity.resize(n_cells)
-	_field_slice_next_convergence.resize(n_cells)
-	_field_slice_next_type.resize(n_cells)
-	# B-full Step-2：prev 拷贝走 SoA 直读，消除每 cell 4 次 HexCell 字段访问。
-	# SoA 数组在 bake_world 时由 rebuild_soa_from_cells() alloc 并与 DCWorld view_f32
-	# 同引用；--data-core=true / false 行为完全一致，因为 SoA 始终被维护。
-	# 等价语义保留：未 init 的 cell（field_init==0）用 moisture 兜底，precip 当 0。
-	var soa_vapor_in: PackedFloat32Array = map.weather_vapor_arr
-	var soa_precip_in: PackedFloat32Array = map.weather_precip_arr
-	var soa_field_init: PackedByteArray = map.weather_field_init_arr
-	var soa_moisture: PackedFloat32Array = map.moisture_arr
-	for i in range(n_cells):
-		if soa_field_init[i] > 0:
-			_field_slice_prev_vapor[i] = soa_vapor_in[i]
-			_field_slice_prev_precip[i] = soa_precip_in[i]
-		else:
-			_field_slice_prev_vapor[i] = soa_moisture[i]
-			_field_slice_prev_precip[i] = 0.0
+	# dots-monolith-split §1.2 / PR-6：切片初始化主体已搬迁到
+	# scripts/weather/field_solver.gd::begin_slice()。本侧仅作为外部 caller
+	# (map_generator.gd / weather_refresh_job 等 SUS job) 的薄转发入口。
+	_field_solver.begin_slice(map, world, season_idx, climate_anomaly, season_phase, count_day)
 
 func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
-	if not _field_slice_active:
-		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
-	var t_us0: int = Time.get_ticks_usec()
-	var map: MapData = _field_slice_map
-	var world: WorldData = _field_slice_world
-	var cells: Array = _field_slice_cells
-	var n_cells: int = cells.size()
-	var start_i: int = _field_slice_cursor
-	var end_i: int = mini(n_cells, start_i + maxi(1, cell_budget))
-
-	# ─── Phase F.1：DCWorldExt C++ 单 shot 快路径 ───────────────────────
-	# 触发条件：
-	#   1. configure_gdext_acceleration(_data_core_world_ext, true) 已生效
-	#   2. 本次 slice 处于 fresh start（start_i == 0）——只要从 0 开始，
-	#      C++ 就一次性把 [0, n_cells) 全部跑完（覆盖 SUS 给的任何 cell_budget）。
-	#      C++ 全量约 < 2ms，永远塞得进 SUS 任何 budget。
-	#   3. _field_slice_fast_indexed（neighbor_indices_packed 完整）
-	#   4. C++ 端 run_weather_field_solve_pass 返回 ≥ 0
-	#
-	# 历史 bug（2026-05-13 用户 soak 暴露）：
-	#   早期版本要求 `start_i == 0 AND end_i >= n_cells`。SUS 调度按
-	#   cell_budget 切片（典型 1200 / slice），第 1 slice end_i=1200 < 2400，
-	#   F.1 永远 fallback。修复后只看 start_i == 0：从 0 开始就强制全量
-	#   跑完，cursor 跳到 n_cells，slice 标记 done，下个 tick 的 begin_*
-	#   会重置 cursor，weather_refresh.has_more=false 单 slice 完成。
-	if _use_gdext_weather_field and start_i == 0 \
-			and _field_slice_fast_indexed and _data_core_world_ext != null:
-		# 一次性诊断：第一次进入 fast path 时打一条日志，把 5 个 precondition
-		# 的真实状态以及 n_cells / cell_budget 全打出，方便排查。已成功跑过
-		# 一次后不再 spam。
-		if not _gdext_field_first_attempt_logged:
-			_gdext_field_first_attempt_logged = true
-			print("[weather/F.1] first fast-path attempt: n_cells=%d cell_budget=%d (would-end_i=%d) fast_indexed=%s ext_bound=%s" % [
-				n_cells, cell_budget, end_i, str(_field_slice_fast_indexed), str(_data_core_world_ext != null)
-			])
-		var rc: float = _try_run_weather_field_solve_gdext(map, world, n_cells)
-		if rc >= 0.0:
-			# C++ 完成全量。把 SoA 拷回 _field_slice_next_*，让 commit_* 看到一致
-			# 数据；cursor 推进到末尾，slice 标记为 done。
-			_pull_gdext_field_results_to_next(map, n_cells)
-			# A/B 验证（dev 诊断 only）：在 C++ 写完 SoA 之后，把 next_* 快照、
-			# 复位 SoA、跑一遍 GDScript loop 写到独立缓冲区，然后逐 cell 对账。
-			# 失败时 push_warning 并打首次发散位置；不影响本 tick commit（commit
-			# 仍走 C++ 结果——出 bug 时玩家肉眼能看到，verify 只是给 dev 抓证据）。
-			if _field_verify_enabled:
-				_verify_gdext_field_against_gdscript(map, world, n_cells)
-			_field_slice_cursor = n_cells
-			_field_slice_solve_ms += rc
-			_field_slice_last_ms = rc
-			_gdext_field_runs += 1
-			_gdext_field_total_ms += rc
-			# 一次性确认日志：第一次成功跑过 C++ 后打一条，后续静默
-			if _gdext_field_runs == 1:
-				print("[weather/F.1] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 13ms; charter §7 target < 2ms)" % rc)
-			return {
-				"done": true,
-				"work_done": n_cells,
-				"elapsed_ms": rc,
-				"progress_ratio": 1.0,
-			}
-		_gdext_field_fallbacks += 1
-		# rc<0 时 C++ 已经在 console push_warning 了，不需要再叠加日志。
-
-	var cell_pos: PackedVector2Array = _field_slice_cell_pos
-	var neighbor_indices: PackedInt32Array = _field_slice_neighbor_indices
-	var fast_indexed: bool = _field_slice_fast_indexed
-	var prev_vapor: PackedFloat32Array = _field_slice_prev_vapor
-	var prev_precip: PackedFloat32Array = _field_slice_prev_precip
-	var next_vapor: PackedFloat32Array = _field_slice_next_vapor
-	var next_cloud: PackedFloat32Array = _field_slice_next_cloud
-	var next_precip: PackedFloat32Array = _field_slice_next_precip
-	var next_instability: PackedFloat32Array = _field_slice_next_instability
-	var next_intensity: PackedFloat32Array = _field_slice_next_intensity
-	var next_convergence: PackedFloat32Array = _field_slice_next_convergence
-	var next_type: PackedInt32Array = _field_slice_next_type
-	var season_idx: int = _field_slice_season_idx
-	var climate_anomaly: float = _field_slice_climate_anomaly
-	var refresh_convergence: bool = _field_slice_refresh_convergence
-	# B-full Step-2：cell-loop 外一次性取 SoA 数组引用。SoA 与 DCWorld view_f32 同引用，
-	# 循环内全部走 PackedArray index 访问，消除 cell.xxx 强类型成员访问。
-	# 唯一保留 AoS 的字段是 temperature_transport_anomaly（在 _avg_ocean_anomaly_at_idx
-	# helper 中），不在本 plan 范围（属 climate ocean heat transport pass 改造）。
-	var soa_temp: PackedFloat32Array = map.temp_arr
-	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
-	var soa_moisture_loop: PackedFloat32Array = map.moisture_arr
-	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
-	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
-	var soa_terrain: PackedByteArray = map.terrain_arr
-	var soa_has_river: PackedByteArray = map.has_river_arr
-	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
-	for i in range(start_i, end_i):
-		var cell: HexCell = cells[i]
-		var pos: Vector2 = cell_pos[i]
-		var temp: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
-		var base_m: float = clampf(soa_moisture_loop[i], 0.0, 1.0)
-		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var on_water: bool = _is_water_terrain(int(soa_terrain[i]))
-
-		var wind: Vector2 = Vector2(soa_wind_x[i], soa_wind_y[i])
-		if wind.length_squared() < 0.0001:
-			var ny: float = 0.5
-			if _world_bounds.size.y > 0.001:
-				ny = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
-			wind = _sample_terrain_wind(map, world, pos, ny, _season_phase)
-		var wind_dir: Vector2 = wind.normalized() if wind.length_squared() > 0.0001 else Vector2.RIGHT
-
-		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
-		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
-		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
-		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
-		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
-		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
-		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
-		if is_lake:
-			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
-		elif has_river:
-			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
-		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
-		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
-
-		var effective_ocean_an: float = ocean_an
-		if is_lake:
-			effective_ocean_an = 0.20
-		elif has_river:
-			effective_ocean_an = maxf(ocean_an, 0.08)
-		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
-		vapor = clampf(vapor + evap, 0.0, 1.0)
-
-		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = soa_convergence_in[i]
-		if refresh_convergence:
-			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
-		if lift < 0.0:
-			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
-
-		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.74)
-		var humid_excess: float = maxf(vapor - saturation, 0.0)
-		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
-		var cloud: float = clampf(
-			humid_excess * _field_condensation_gain * 2.2
-			+ lift_supply * _field_orographic_lift_gain
-			+ convergence * _field_convergence_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.12,
-			0.0, 1.0
-		)
-		var instability: float = clampf(
-			(temp - 0.45) * 1.15
-			+ vapor * 0.55
-			+ cloud * 0.35
-			+ convergence * _field_convergence_gain
-			+ lift_supply * _field_orographic_lift_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.25,
-			0.0, 1.0
-		)
-		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
-		var old_precip: float = prev_precip[i]
-		var vapor_floor_factor: float = clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
-		var dyn_decay: float = _field_precip_decay + wind_mag * 0.25
-		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
-		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
-
-		var wt: int = _classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
-		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
-		next_vapor[i] = vapor
-		next_cloud[i] = cloud
-		next_precip[i] = precip
-		next_instability[i] = instability
-		next_type[i] = wt
-		next_intensity[i] = intensity
-		next_convergence[i] = convergence
-	_field_slice_cursor = end_i
-	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
-	_field_slice_solve_ms += elapsed_ms
-	_field_slice_last_ms = elapsed_ms
-	return {
-		"done": _field_slice_cursor >= n_cells,
-		"work_done": end_i - start_i,
-		"elapsed_ms": elapsed_ms,
-		"progress_ratio": float(_field_slice_cursor) / float(maxi(n_cells, 1)),
-	}
+	# dots-monolith-split §1.2 / PR-6：切片单步主体（含 DCWorldExt fast path
+	# 与 GDScript fallback hot loop）已搬迁到 scripts/weather/field_solver.gd::run_slice()。
+	return _field_solver.run_slice(cell_budget)
 
 func commit_weather_field_solve() -> Array[WeatherFront]:
-	if not _field_slice_active:
-		return _active_fronts
-	var map: MapData = _field_slice_map
-	var world: WorldData = _field_slice_world
-	var cells: Array = _field_slice_cells
-	# v9c: 同时写 SoA 镜像数组，修复 flush_soa_to_cells() 用 SoA 反向覆盖 AoS
-	# 导致 weather_type 被周期性清回 CLEAR 的问题。SoA 数组已 bind 到 DataCore
-	# 的 CELL_WEATHER_INTENSITY/CLOUD/PRECIP/TYPE 4 个 component。
-	var soa_intensity: PackedFloat32Array = map.weather_intensity_arr
-	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
-	var soa_precip: PackedFloat32Array = map.weather_precip_arr
-	var soa_type: PackedByteArray = map.weather_type_arr
-	# B-full Step-2：4 个新 SoA（vapor/convergence/instability/field_init）一并写出。
-	# 与 weather_intensity/cloud/precip/type 一组，hot loop 自身的 11 个写入字段全部 SoA 化。
-	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
-	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
-	var soa_instability: PackedFloat32Array = map.weather_instability_arr
-	var soa_field_init: PackedByteArray = map.weather_field_init_arr
-	# PR-2.1.6（weather field commit 写路径下移）：预分配 batch buffer。
-	# commit 阶段一次性写 7 个 f32 字段 + 2 个 u8 字段（weather_type / field_init 均为 U8）。
-	# 详见 master 手册 §3.9。
-	var _wf_n: int = cells.size()
-	var _wf_idx: PackedInt32Array = PackedInt32Array()
-	var _wf_intensity: PackedFloat32Array = PackedFloat32Array()
-	var _wf_cloud: PackedFloat32Array = PackedFloat32Array()
-	var _wf_precip: PackedFloat32Array = PackedFloat32Array()
-	var _wf_vapor: PackedFloat32Array = PackedFloat32Array()
-	var _wf_conv: PackedFloat32Array = PackedFloat32Array()
-	var _wf_inst: PackedFloat32Array = PackedFloat32Array()
-	var _wf_type: PackedByteArray = PackedByteArray()
-	var _wf_init: PackedByteArray = PackedByteArray()
-	_wf_idx.resize(_wf_n)
-	_wf_intensity.resize(_wf_n)
-	_wf_cloud.resize(_wf_n)
-	_wf_precip.resize(_wf_n)
-	_wf_vapor.resize(_wf_n)
-	_wf_conv.resize(_wf_n)
-	_wf_inst.resize(_wf_n)
-	_wf_type.resize(_wf_n)
-	_wf_init.resize(_wf_n)
-
-	for i in range(cells.size()):
-		var out_cell: HexCell = cells[i]
-		var v_cloud: float = _field_slice_next_cloud[i]
-		var v_precip: float = _field_slice_next_precip[i]
-		var v_type: int = _field_slice_next_type[i]
-		var v_intensity: float = _field_slice_next_intensity[i]
-		var v_vapor: float = _field_slice_next_vapor[i]
-		var v_convergence: float = _field_slice_next_convergence[i]
-		var v_instability: float = _field_slice_next_instability[i]
-		out_cell.weather_field_initialized = true
-		out_cell.weather_vapor = v_vapor
-		out_cell.weather_cloud = v_cloud
-		out_cell.weather_precip = v_precip
-		out_cell.weather_instability = v_instability
-		out_cell.weather_type = v_type
-		out_cell.weather_intensity = v_intensity
-		out_cell.weather_convergence = v_convergence
-		# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
-		# flush_soa_to_cells() 拿一致快照）
-		soa_intensity[i] = v_intensity
-		soa_cloud[i] = v_cloud
-		soa_precip[i] = v_precip
-		soa_type[i] = v_type & 0xFF
-		soa_vapor[i] = v_vapor
-		soa_convergence[i] = v_convergence
-		soa_instability[i] = v_instability
-		soa_field_init[i] = 1
-		# PR-2.1.6：收集 dirty entry 到 batch buffer
-		_wf_idx[i] = i
-		_wf_intensity[i] = v_intensity
-		_wf_cloud[i] = v_cloud
-		_wf_precip[i] = v_precip
-		_wf_vapor[i] = v_vapor
-		_wf_conv[i] = v_convergence
-		_wf_inst[i] = v_instability
-		_wf_type[i] = v_type & 0xFF
-		_wf_init[i] = 1
-	# PR-2.1.6：循环结束后批量提交 9 字段到 DCWorld SoA。
-	if _data_core_world != null and _wf_n > 0:
-		var _cid_wi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
-		if _cid_wi >= 0:
-			_data_core_world.write_f32_indexed(_cid_wi, _wf_idx, _wf_intensity)
-		var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
-		if _cid_wc >= 0:
-			_data_core_world.write_f32_indexed(_cid_wc, _wf_idx, _wf_cloud)
-		var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
-		if _cid_wp >= 0:
-			_data_core_world.write_f32_indexed(_cid_wp, _wf_idx, _wf_precip)
-		var _cid_wv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
-		if _cid_wv >= 0:
-			_data_core_world.write_f32_indexed(_cid_wv, _wf_idx, _wf_vapor)
-		var _cid_wcv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
-		if _cid_wcv >= 0:
-			_data_core_world.write_f32_indexed(_cid_wcv, _wf_idx, _wf_conv)
-		var _cid_wins: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
-		if _cid_wins >= 0:
-			_data_core_world.write_f32_indexed(_cid_wins, _wf_idx, _wf_inst)
-		var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
-		if _cid_wt >= 0:
-			_data_core_world.write_u8_indexed(_cid_wt, _wf_idx, _wf_type)
-		var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
-		if _cid_wfi >= 0:
-			_data_core_world.write_u8_indexed(_cid_wfi, _wf_idx, _wf_init)
-	if _field_slice_refresh_convergence:
-		_apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
-
-	var t_us0_field: int = Time.get_ticks_usec()
-	_distribute_weather_field_to_cells(map)
-	var distribute_ms_field: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-	t_us0_field = Time.get_ticks_usec()
-	_active_fronts = _build_field_summary_fronts(map, world)
-	var summary_ms: float = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-	var cyclone_ms_field: float = 0.0
-	if _cyclone_wake_enabled:
-		t_us0_field = Time.get_ticks_usec()
-		_tick_cyclone_wake(map)
-		cyclone_ms_field = (Time.get_ticks_usec() - t_us0_field) / 1000.0
-
-	var solve_ms: float = _field_slice_solve_ms
-	var last_solve_ms: float = _field_slice_last_ms
-	_last_breakdown = {
-		"advance_ms": last_solve_ms,
-		"spawn_ms": summary_ms,
-		"distribute_ms": distribute_ms_field,
-		"cyclone_ms": cyclone_ms_field,
-		"field_solve_ms": last_solve_ms,
-		"field_solve_total_ms": solve_ms,
-		"field_summary_ms": summary_ms,
-		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
-	}
-	_last_map_for_query = map
-	_current_map_for_tick = null
-	_tick_cell_pos.clear()
-	_tick_cell_neighbors.clear()
-	_clear_weather_field_slice_state()
-	return _active_fronts
+	# dots-monolith-split §1.2 / PR-5：149 行 commit 主体已整体搬迁到
+	# scripts/weather/field_solver.gd::commit()。weather_system 本侧末端仅作为
+	# tick_one_day 调用入口作薄转发，然后 PR-7 可考虑进一步清理。
+	return _field_solver.commit()
 
 # ─── Phase F.1：DCWorldExt 路径 helper ───────────────────────────────────
 # 把 GDScript 端的所有 cp/profile/_field_* 旋钮、世界边界、预先打包好的
@@ -1139,7 +696,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 	# 这里改一行：直接 map.temperature_transport_anomaly_arr 即可。
 	var temp_anom_arr: PackedFloat32Array = PackedFloat32Array()
 	temp_anom_arr.resize(n_cells)
-	var cells_l: Array = _field_slice_cells
+	var cells_l: Array = _field_solver._field_slice_cells
 	for i in range(n_cells):
 		var c: HexCell = cells_l[i]
 		temp_anom_arr[i] = float(c.temperature_transport_anomaly)
@@ -1147,12 +704,12 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 		"start_idx": 0,
 		"end_idx": n_cells,
 		"n_cells": n_cells,
-		"season_idx": _field_slice_season_idx,
-		"climate_anomaly": _field_slice_climate_anomaly,
+		"season_idx": _field_solver._field_slice_season_idx,
+		"climate_anomaly": _field_solver._field_slice_climate_anomaly,
 		"season_phase": _season_phase,
 		"world_bounds_pos_y": _world_bounds.position.y,
 		"world_bounds_size_y": _world_bounds.size.y,
-		"refresh_convergence": _field_slice_refresh_convergence,
+		"refresh_convergence": _field_solver._field_slice_refresh_convergence,
 		"hex_size": _hex_size,
 		"field_advect_steps": _field_advect_steps,
 		"field_diffusion": _field_diffusion,
@@ -1161,10 +718,10 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 		"field_convergence_gain": _field_convergence_gain,
 		"field_ocean_evap_gain": _field_ocean_evap_gain,
 		"field_precip_decay": _field_precip_decay,
-		"cell_pos": _field_slice_cell_pos,
-		"neighbor_indices": _field_slice_neighbor_indices,
-		"prev_vapor": _field_slice_prev_vapor,
-		"prev_precip": _field_slice_prev_precip,
+		"cell_pos": _field_solver._field_slice_cell_pos,
+		"neighbor_indices": _field_solver._field_slice_neighbor_indices,
+		"prev_vapor": _field_solver._field_slice_prev_vapor,
+		"prev_precip": _field_solver._field_slice_prev_precip,
 		"temp_transport_anomaly": temp_anom_arr,
 	}
 
@@ -1182,7 +739,242 @@ func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells:
 		push_warning("[weather] gdext run_weather_field_solve_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
 	return rc
 
-# C++ 完成后 SoA 已经写好，把 8 个数组的内容按 i 拷回 _field_slice_next_*
+# ─── Weather Hot-Path：dist GDExt 接入点（plan/weather-hotpath-cpp 任务 3）──
+# 与 F.1 同款套路：sig 校验 + knobs 构造 + try。任务 4 实装 C++ 主体后；本接入
+# 点立即生效。骨架期 C++ 返回 elapsed_ms = -1 → 自动 fallback 到 GDScript。
+func _validate_weather_distribute_signature(ext: RefCounted) -> bool:
+	if ext == null:
+		return false
+	if not ext.has_method("run_weather_distribute_pass"):
+		return false
+	var ml: Array = ext.get_method_list()
+	for m: Dictionary in ml:
+		if String(m.get("name", "")) == "run_weather_distribute_pass":
+			var args: Array = m.get("args", [])
+			if args.size() == 1:
+				return true
+			push_warning("[gdext sig] run_weather_distribute_pass has %d args (expected 1); gdext .dll is STALE. REBUILD: 'cd gdext && scons platform=windows target=template_debug dev_build=no -j8'." % args.size())
+			return false
+	return false
+
+func _validate_weather_summary_signature(ext: RefCounted) -> bool:
+	if ext == null:
+		return false
+	if not ext.has_method("run_weather_summary_fronts_pass"):
+		return false
+	var ml: Array = ext.get_method_list()
+	for m: Dictionary in ml:
+		if String(m.get("name", "")) == "run_weather_summary_fronts_pass":
+			var args: Array = m.get("args", [])
+			if args.size() == 1:
+				return true
+			push_warning("[gdext sig] run_weather_summary_fronts_pass has %d args (expected 1); gdext .dll is STALE. REBUILD: 'cd gdext && scons platform=windows target=template_debug dev_build=no -j8'." % args.size())
+			return false
+	return false
+
+func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
+	# 标量入参（snow / flood 阈值与 GDScript 版严格同源；任务 4 在 C++ 内消费）。
+	# SoA view 由 C++ 端通过 ext._map_data + 已绑定 schema 直接拿，无需 GDScript
+	# 显式传 PackedArray（与 F.1 一致）。
+	#
+	# 例外（无 SoA 镜像的 AoS 字段）：
+	#   - accumulated_snow_days：HexCell.int 字段，没在 component_schema 里。
+	#   - pre_snow_cover：HexCell.int 字段，同上。
+	# 这两个字段每帧打包成 PackedInt32Array 传入；C++ 写完后通过 CoW alias 透回。
+	#
+	# WeatherType / LandformType 静态查询：profile lookup 是 Resource access，
+	# C++ 拿不到。打包成 8-element PackedArray 按 WT 索引，C++ 内部 O(1) 查表。
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var acc_snow_days: PackedInt32Array = PackedInt32Array()
+	var pre_snow_cover: PackedInt32Array = PackedInt32Array()
+	acc_snow_days.resize(n_cells)
+	pre_snow_cover.resize(n_cells)
+	for i in range(n_cells):
+		var c: HexCell = cells[i]
+		acc_snow_days[i] = c.accumulated_snow_days
+		pre_snow_cover[i] = c.pre_snow_cover
+	# 8 个 WT 的 profile 静态值（temp_delta / moisture_delta / can_form_snow /
+	# can_form_flood）按 WT 索引。WT 枚举值 0..7（CLEAR..MONSOON）。
+	var temp_d: PackedFloat32Array = PackedFloat32Array()
+	var moist_d: PackedFloat32Array = PackedFloat32Array()
+	var cfs: PackedByteArray = PackedByteArray()
+	var cff: PackedByteArray = PackedByteArray()
+	temp_d.resize(8)
+	moist_d.resize(8)
+	cfs.resize(8)
+	cff.resize(8)
+	for w in range(8):
+		temp_d[w] = WeatherType.temp_delta(w)
+		moist_d[w] = WeatherType.moisture_delta(w)
+		cfs[w] = 1 if WeatherType.can_form_snow(w) else 0
+		cff[w] = 1 if WeatherType.can_form_flood(w) else 0
+	return {
+		"n_cells": n_cells,
+		# _apply_snow_accumulation 用到的 cover/温度阈值（任务 4 中 C++ 复刻 GDScript
+		# 同名函数；任意改动需保持双侧同步）。
+		"snow_min_intensity": 0.001,
+		"snow_freeze_t": 0.30,
+		"snow_melt_t": 0.34,
+		"snow_intensity_for_snowing": 0.4,
+		"snow_accum_days_req": 3,
+		"flood_heavy_intensity": 0.55,
+		"flood_heavy_precip": 0.55,
+		"flood_lowland_intensity": 0.32,
+		"flood_lowland_elev": 0.50,
+		"flood_lowland_moisture": 0.60,
+		# WT.CLEAR / SNOW / NONE / FLOODING 的 enum 值。GDScript 端用 Type.WT
+		# / Type.CV，C++ 不能直接引用，所以把数值传进去。
+		"wt_clear": int(WeatherType.WT.CLEAR),
+		"cv_snow": int(CoverType.CV.SNOW),
+		"cv_none": int(CoverType.CV.NONE),
+		"cv_flooding": int(CoverType.CV.FLOODING),
+		# AoS 字段 PackedArray（CoW shared via Dictionary 持有）。C++ 直接 ptrw 写回，
+		# GDScript 在 try 函数末尾用同样的 Packed 引用 lookup 写回 AoS。
+		"accumulated_snow_days": acc_snow_days,
+		"pre_snow_cover": pre_snow_cover,
+		# WeatherType 静态查询表（PackedArray 按 WT 索引，C++ 内部 O(1)）。
+		"temp_delta_arr": temp_d,
+		"moisture_delta_arr": moist_d,
+		"can_form_snow_arr": cfs,
+		"can_form_flood_arr": cff,
+	}
+
+# 调用 C++ 端 run_weather_distribute_pass。返回 Dictionary {"elapsed_ms", "cover_dirty",
+# "changed_cells"(PackedInt32Array), "accumulated_snow_days"/"pre_snow_cover"(已被 C++ 改写)}。
+# elapsed_ms < 0 表示 precondition 失败，调用方走 GDScript fallback。
+func _try_run_weather_distribute_gdext(map: MapData, n_cells: int) -> Dictionary:
+	if _data_core_world_ext == null:
+		return { "elapsed_ms": -1.0, "cover_dirty": false }
+	var knobs: Dictionary = _build_weather_distribute_knobs(map, n_cells)
+	var rc_dict: Dictionary = _data_core_world_ext.run_weather_distribute_pass(knobs)
+	var rc: float = float(rc_dict.get("elapsed_ms", -1.0))
+	if rc < 0.0:
+		if not _gdext_dist_warned_fallback:
+			_gdext_dist_warned_fallback = true
+			push_warning("[weather] gdext run_weather_distribute_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
+		return rc_dict
+	# C++ 已通过 PackedArray ptrw 把 acc_snow_days / pre_snow_cover 改写完成（CoW
+	# alias 透传）；这里把它们写回 cell.* AoS 字段。
+	# changed_cells 列表用于同步 cell.current_state["cover"]（dict 字段无 SoA 镜像）。
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var acc_after: PackedInt32Array = knobs.get("accumulated_snow_days", PackedInt32Array())
+	var pre_after: PackedInt32Array = knobs.get("pre_snow_cover", PackedInt32Array())
+	if acc_after.size() == n_cells and pre_after.size() == n_cells:
+		for i in range(n_cells):
+			var c: HexCell = cells[i]
+			c.accumulated_snow_days = acc_after[i]
+			c.pre_snow_cover = pre_after[i]
+	var changed: PackedInt32Array = rc_dict.get("changed_cells", PackedInt32Array())
+	for ci in changed:
+		var cc: HexCell = cells[ci]
+		# C++ 已经写好 cover_arr (SoA)；HexCell facade reader cell.cover 应当透读 SoA。
+		# 但 current_state["cover"] 是 dict 字段，需手动同步。
+		cc.current_state["cover"] = int(cc.cover)
+	return rc_dict
+
+# ─── Weather Hot-Path：summary fronts pass GDExt 接入（任务 6）────────────
+# C++ pass 要求的 SoA + 静态查表数据由 _build_weather_summary_knobs 一次构造。
+# 输出：Dictionary{ elapsed_ms: float, fronts: Array[Dictionary] }；GDScript 端
+# 把 Array[Dictionary] 解包为 Array[WeatherFront]（与原 _build_field_summary_fronts
+# 的返回签名严格一致），让 field_solver 调用方完全无感。
+# elapsed_ms < 0 → fallback 到 GDScript（push_warning 一次）。
+func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
+	var n_cells: int = map.cell_count()
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	# ─── 持久化字段：q/r 数组（cell 拓扑不变，C++ 端 lazy-cache；首次或 size
+	# 变化时 rebuild cube_to_idx hash）。每帧重传 PackedArray 引用是 O(1) 操作，
+	# CoW 不会拷贝底层数据。
+	# ─── q/r 没有 SoA 镜像，必须每帧从 cells 提取（或 C++ 端缓存）；这里固定
+	# 每帧打包一次，C++ 在 size 不变时跳过 hash rebuild。
+	var q_arr: PackedInt32Array = PackedInt32Array()
+	var r_arr: PackedInt32Array = PackedInt32Array()
+	q_arr.resize(n_cells)
+	r_arr.resize(n_cells)
+	for i in range(n_cells):
+		var c: HexCell = cells[i]
+		q_arr[i] = c.q
+		r_arr[i] = c.r
+	# wind_x / wind_y 已是 SoA（map.wind_x_arr / wind_y_arr）；C++ 通过 _slots
+	# 直接读，不必通过 knobs 传。
+	return {
+		"n_cells": n_cells,
+		"hex_size": _hex_size,
+		"summary_limit": _field_summary_limit,
+		# 阈值（与 _build_field_summary_fronts 内 const 严格同源）
+		"intensity_enter": 0.10,
+		"intensity_hold": 0.06,
+		# 合并相关
+		"merge_ratio": 0.65,
+		"merge_max_rounds": 4,
+		# WeatherFront radius 公式： size*(1.6 + sqrt(area)*1.05)；
+		# merge 距离阈值用的"等效半径"公式：size*sqrt(area)*1.05。
+		"radius_base": 1.6,
+		"radius_scale": 1.05,
+		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
+		"wt_clear": int(WeatherType.WT.CLEAR),
+		# Q/R 拓扑（C++ 端用于 cube_to_world / world_to_cube 反查）
+		"cell_q_arr": q_arr,
+		"cell_r_arr": r_arr,
+		# 邻居索引（n_cells*6，-1 表无邻居；C++ 端 BFS / pick_inheritance_seed 必需）
+		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+		# Drift 调试日志（C++ 路径下默认关闭，verify mode 不影响日志）
+		"drift_debug_log": false,
+		"day_counter": _day_counter,
+	}
+
+# 把 C++ 端返回的 fronts Dictionary 解包为 WeatherFront 实例。字段命名必须与
+# C++ 端 build_front_dict 保持 1:1，任何缺字段就退化到 WeatherFront 默认值。
+func _unpack_summary_dict_to_front(d: Dictionary) -> WeatherFront:
+	var f := WeatherFront.new()
+	f.type = int(d.get("type", WeatherType.WT.CLEAR))
+	f.center = d.get("center", Vector2.ZERO)
+	f.intensity = clampf(float(d.get("intensity", 0.0)), 0.0, 1.0)
+	f.radius = float(d.get("radius", 200.0))
+	var ax: Vector2 = d.get("axis", Vector2.RIGHT)
+	if ax.length_squared() <= 0.0001:
+		ax = Vector2.RIGHT
+	f.axis = ax.normalized()
+	f.stable_axis = d.get("stable_axis", f.axis)
+	f.velocity = d.get("velocity", Vector2.ZERO)
+	f.major_scale = float(d.get("major_scale", 1.30))
+	f.minor_scale = float(d.get("minor_scale", 0.85))
+	f.age_days = int(d.get("age_days", 0))
+	f.ttl_days = int(d.get("ttl_days", 12))
+	f.decay_per_day = float(d.get("decay_per_day", 0.0))
+	f.life_progress = clampf(float(d.get("life_progress", 0.15)), 0.0, 1.0)
+	f.cloud_amount = clampf(float(d.get("cloud_amount", 0.0)), 0.0, 1.0)
+	f.precip_amount = clampf(float(d.get("precip_amount", 0.0)), 0.0, 1.0)
+	f.dissolve_amount = float(d.get("dissolve_amount", 0.0))
+	f.edge_seed = float(d.get("edge_seed", 0.0))
+	return f
+
+# 调用 C++ pass。返回 Variant：
+#   Array[WeatherFront]  → 成功（替换原 _build_field_summary_fronts 的输出）
+#   null                 → 失败（GDScript fallback）
+# 同时把 elapsed_ms / runs / fallbacks 累计到节流告警状态。
+func _try_run_weather_summary_fronts_gdext(map: MapData, world: WorldData) -> Variant:
+	if _data_core_world_ext == null:
+		return null
+	var knobs: Dictionary = _build_weather_summary_knobs(map, world)
+	var rc_dict: Dictionary = _data_core_world_ext.run_weather_summary_fronts_pass(knobs)
+	var rc: float = float(rc_dict.get("elapsed_ms", -1.0))
+	if rc < 0.0:
+		_gdext_summary_fallbacks += 1
+		if not _gdext_summary_warned_fallback:
+			_gdext_summary_warned_fallback = true
+			push_warning("[weather/summary] gdext run_weather_summary_fronts_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
+		return null
+	_gdext_summary_runs += 1
+	_gdext_summary_total_ms += rc
+	if _gdext_summary_runs == 1:
+		print("[weather/summary] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 17.8ms; charter target < 3.0ms)" % rc)
+	var fronts_arr: Array = rc_dict.get("fronts", [])
+	var out: Array[WeatherFront] = [] as Array[WeatherFront]
+	for d in fronts_arr:
+		out.append(_unpack_summary_dict_to_front(d))
+	return out
+
+# C++ 完成后 SoA 已经写好，把 8 个数组的内容按 i 拷回 _field_solver._field_slice_next_*
 # 让 commit_weather_field_solve() 用同样的 GDScript 数据流 commit 回 cells +
 # fronts 等下游 sub-system，无需感知 C++ 路径的存在。
 func _pull_gdext_field_results_to_next(map: MapData, n_cells: int) -> void:
@@ -1194,23 +986,23 @@ func _pull_gdext_field_results_to_next(map: MapData, n_cells: int) -> void:
 	var soa_conv: PackedFloat32Array = map.weather_convergence_arr
 	var soa_type: PackedByteArray = map.weather_type_arr
 	for i in range(n_cells):
-		_field_slice_next_vapor[i] = soa_vapor[i]
-		_field_slice_next_cloud[i] = soa_cloud[i]
-		_field_slice_next_precip[i] = soa_precip[i]
-		_field_slice_next_instability[i] = soa_inst[i]
-		_field_slice_next_intensity[i] = soa_intens[i]
-		_field_slice_next_convergence[i] = soa_conv[i]
-		_field_slice_next_type[i] = int(soa_type[i])
+		_field_solver._field_slice_next_vapor[i] = soa_vapor[i]
+		_field_solver._field_slice_next_cloud[i] = soa_cloud[i]
+		_field_solver._field_slice_next_precip[i] = soa_precip[i]
+		_field_solver._field_slice_next_instability[i] = soa_inst[i]
+		_field_solver._field_slice_next_intensity[i] = soa_intens[i]
+		_field_solver._field_slice_next_convergence[i] = soa_conv[i]
+		_field_solver._field_slice_next_type[i] = int(soa_type[i])
 
 # ─── F.1 A/B 运行时验证 ───────────────────────────────────────────────────
 # 触发：set_field_verify_mode(true) 之后每次 C++ 路径成功 commit 前进入。
 # 步骤：
 #   1. 把 C++ 已写好的 8 个 SoA 字段快照成独立 PackedArray（CoW 复制；不影响
-#      _field_slice_next_* 已经持有的同一 SoA 引用）。
+#      _field_solver._field_slice_next_* 已经持有的同一 SoA 引用）。
 #   2. 把 SoA 反向回滚到本 tick 入口的 prev 状态（vapor/precip 用 prev_*；
 #      其余字段在 commit 之前不被本 pass 内部读，所以无需精确还原）。
-#   3. 把 GDScript 的 _field_slice_next_* 拷成另一组独立缓冲，再用 GDScript
-#      slice loop 重新写一遍——但这会污染 _field_slice_next_*，所以我们先用
+#   3. 把 GDScript 的 _field_solver._field_slice_next_* 拷成另一组独立缓冲，再用 GDScript
+#      slice loop 重新写一遍——但这会污染 _field_solver._field_slice_next_*，所以我们先用
 #      临时 var 备份再恢复。
 #   4. 对照 8 个字段逐 cell 比 abs(cpp - gdscript)，首次超过 tol 时打日志并
 #      记录 "_field_verify_first_divergence_logged = true"，避免 spam。
@@ -1219,30 +1011,30 @@ func _pull_gdext_field_results_to_next(map: MapData, n_cells: int) -> void:
 # slice 主循环做成独立函数，避免在 verify 路径里复制 600 行算法。
 func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cells: int) -> void:
 	# C++ 结果快照（dup() 保证 CoW，不和 SoA 引用别名）
-	var cpp_vapor: PackedFloat32Array = _field_slice_next_vapor.duplicate()
-	var cpp_cloud: PackedFloat32Array = _field_slice_next_cloud.duplicate()
-	var cpp_precip: PackedFloat32Array = _field_slice_next_precip.duplicate()
-	var cpp_inst: PackedFloat32Array = _field_slice_next_instability.duplicate()
-	var cpp_intens: PackedFloat32Array = _field_slice_next_intensity.duplicate()
-	var cpp_conv: PackedFloat32Array = _field_slice_next_convergence.duplicate()
-	var cpp_type: PackedInt32Array = _field_slice_next_type.duplicate()
+	var cpp_vapor: PackedFloat32Array = _field_solver._field_slice_next_vapor.duplicate()
+	var cpp_cloud: PackedFloat32Array = _field_solver._field_slice_next_cloud.duplicate()
+	var cpp_precip: PackedFloat32Array = _field_solver._field_slice_next_precip.duplicate()
+	var cpp_inst: PackedFloat32Array = _field_solver._field_slice_next_instability.duplicate()
+	var cpp_intens: PackedFloat32Array = _field_solver._field_slice_next_intensity.duplicate()
+	var cpp_conv: PackedFloat32Array = _field_solver._field_slice_next_convergence.duplicate()
+	var cpp_type: PackedInt32Array = _field_solver._field_slice_next_type.duplicate()
 
-	# 用 GDScript path 重写 _field_slice_next_*。复用现有 slice 循环主体最干净
+	# 用 GDScript path 重写 _field_solver._field_slice_next_*。复用现有 slice 循环主体最干净
 	# 的办法是：临时关掉 _use_gdext_weather_field、把 cursor reset 到 0、再调
 	# 一次 run_weather_field_solve_slice 走 GDScript 分支。
-	var saved_cursor: int = _field_slice_cursor
-	var saved_solve_ms: float = _field_slice_solve_ms
-	var saved_last_ms: float = _field_slice_last_ms
+	var saved_cursor: int = _field_solver._field_slice_cursor
+	var saved_solve_ms: float = _field_solver._field_slice_solve_ms
+	var saved_last_ms: float = _field_solver._field_slice_last_ms
 	var saved_use_gdext: bool = _use_gdext_weather_field
 	_use_gdext_weather_field = false
-	_field_slice_cursor = 0
+	_field_solver._field_slice_cursor = 0
 	_run_weather_field_gdscript_loop_inplace(map, world, n_cells)
-	_field_slice_cursor = saved_cursor
-	_field_slice_solve_ms = saved_solve_ms
-	_field_slice_last_ms = saved_last_ms
+	_field_solver._field_slice_cursor = saved_cursor
+	_field_solver._field_slice_solve_ms = saved_solve_ms
+	_field_solver._field_slice_last_ms = saved_last_ms
 	_use_gdext_weather_field = saved_use_gdext
 
-	# 此时 _field_slice_next_* = GDScript 版结果。逐 cell 比较。
+	# 此时 _field_solver._field_slice_next_* = GDScript 版结果。逐 cell 比较。
 	var max_dvap: float = 0.0
 	var max_dcld: float = 0.0
 	var max_dpre: float = 0.0
@@ -1255,42 +1047,42 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 	var first_div_cpp: float = 0.0
 	var first_div_gd: float = 0.0
 	for i in range(n_cells):
-		var dvap: float = absf(cpp_vapor[i] - _field_slice_next_vapor[i])
-		var dcld: float = absf(cpp_cloud[i] - _field_slice_next_cloud[i])
-		var dpre: float = absf(cpp_precip[i] - _field_slice_next_precip[i])
-		var dins: float = absf(cpp_inst[i] - _field_slice_next_instability[i])
-		var dint: float = absf(cpp_intens[i] - _field_slice_next_intensity[i])
-		var dcnv: float = absf(cpp_conv[i] - _field_slice_next_convergence[i])
+		var dvap: float = absf(cpp_vapor[i] - _field_solver._field_slice_next_vapor[i])
+		var dcld: float = absf(cpp_cloud[i] - _field_solver._field_slice_next_cloud[i])
+		var dpre: float = absf(cpp_precip[i] - _field_solver._field_slice_next_precip[i])
+		var dins: float = absf(cpp_inst[i] - _field_solver._field_slice_next_instability[i])
+		var dint: float = absf(cpp_intens[i] - _field_solver._field_slice_next_intensity[i])
+		var dcnv: float = absf(cpp_conv[i] - _field_solver._field_slice_next_convergence[i])
 		max_dvap = maxf(max_dvap, dvap)
 		max_dcld = maxf(max_dcld, dcld)
 		max_dpre = maxf(max_dpre, dpre)
 		max_dins = maxf(max_dins, dins)
 		max_dint = maxf(max_dint, dint)
 		max_dcnv = maxf(max_dcnv, dcnv)
-		if cpp_type[i] != _field_slice_next_type[i]:
+		if cpp_type[i] != _field_solver._field_slice_next_type[i]:
 			type_mismatches += 1
 		if first_div_idx < 0:
 			if dvap > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "vapor"; first_div_cpp = cpp_vapor[i]; first_div_gd = _field_slice_next_vapor[i]
+				first_div_idx = i; first_div_field = "vapor"; first_div_cpp = cpp_vapor[i]; first_div_gd = _field_solver._field_slice_next_vapor[i]
 			elif dcld > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "cloud"; first_div_cpp = cpp_cloud[i]; first_div_gd = _field_slice_next_cloud[i]
+				first_div_idx = i; first_div_field = "cloud"; first_div_cpp = cpp_cloud[i]; first_div_gd = _field_solver._field_slice_next_cloud[i]
 			elif dpre > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "precip"; first_div_cpp = cpp_precip[i]; first_div_gd = _field_slice_next_precip[i]
+				first_div_idx = i; first_div_field = "precip"; first_div_cpp = cpp_precip[i]; first_div_gd = _field_solver._field_slice_next_precip[i]
 			elif dins > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "instability"; first_div_cpp = cpp_inst[i]; first_div_gd = _field_slice_next_instability[i]
+				first_div_idx = i; first_div_field = "instability"; first_div_cpp = cpp_inst[i]; first_div_gd = _field_solver._field_slice_next_instability[i]
 			elif dint > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "intensity"; first_div_cpp = cpp_intens[i]; first_div_gd = _field_slice_next_intensity[i]
+				first_div_idx = i; first_div_field = "intensity"; first_div_cpp = cpp_intens[i]; first_div_gd = _field_solver._field_slice_next_intensity[i]
 			elif dcnv > _field_verify_tol_f32:
-				first_div_idx = i; first_div_field = "convergence"; first_div_cpp = cpp_conv[i]; first_div_gd = _field_slice_next_convergence[i]
+				first_div_idx = i; first_div_field = "convergence"; first_div_cpp = cpp_conv[i]; first_div_gd = _field_solver._field_slice_next_convergence[i]
 
-	# 把 _field_slice_next_* 还原成 C++ 结果（commit 才能拿到 C++ 路径数据）。
-	_field_slice_next_vapor = cpp_vapor
-	_field_slice_next_cloud = cpp_cloud
-	_field_slice_next_precip = cpp_precip
-	_field_slice_next_instability = cpp_inst
-	_field_slice_next_intensity = cpp_intens
-	_field_slice_next_convergence = cpp_conv
-	_field_slice_next_type = cpp_type
+	# 把 _field_solver._field_slice_next_* 还原成 C++ 结果（commit 才能拿到 C++ 路径数据）。
+	_field_solver._field_slice_next_vapor = cpp_vapor
+	_field_solver._field_slice_next_cloud = cpp_cloud
+	_field_solver._field_slice_next_precip = cpp_precip
+	_field_solver._field_slice_next_instability = cpp_inst
+	_field_solver._field_slice_next_intensity = cpp_intens
+	_field_solver._field_slice_next_convergence = cpp_conv
+	_field_solver._field_slice_next_type = cpp_type
 
 	if first_div_idx >= 0 and not _field_verify_first_divergence_logged:
 		_field_verify_first_divergence_logged = true
@@ -1310,22 +1102,22 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 # run_weather_field_solve_slice 的 GDScript-only 部分，但不再带 t_us0 / 返回
 # 字典，专用作 A/B 对照。
 func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_cells: int) -> void:
-	var cells: Array = _field_slice_cells
-	var cell_pos: PackedVector2Array = _field_slice_cell_pos
-	var neighbor_indices: PackedInt32Array = _field_slice_neighbor_indices
-	var fast_indexed: bool = _field_slice_fast_indexed
-	var prev_vapor: PackedFloat32Array = _field_slice_prev_vapor
-	var prev_precip: PackedFloat32Array = _field_slice_prev_precip
-	var next_vapor: PackedFloat32Array = _field_slice_next_vapor
-	var next_cloud: PackedFloat32Array = _field_slice_next_cloud
-	var next_precip: PackedFloat32Array = _field_slice_next_precip
-	var next_instability: PackedFloat32Array = _field_slice_next_instability
-	var next_intensity: PackedFloat32Array = _field_slice_next_intensity
-	var next_convergence: PackedFloat32Array = _field_slice_next_convergence
-	var next_type: PackedInt32Array = _field_slice_next_type
-	var season_idx: int = _field_slice_season_idx
-	var climate_anomaly: float = _field_slice_climate_anomaly
-	var refresh_convergence: bool = _field_slice_refresh_convergence
+	var cells: Array = _field_solver._field_slice_cells
+	var cell_pos: PackedVector2Array = _field_solver._field_slice_cell_pos
+	var neighbor_indices: PackedInt32Array = _field_solver._field_slice_neighbor_indices
+	var fast_indexed: bool = _field_solver._field_slice_fast_indexed
+	var prev_vapor: PackedFloat32Array = _field_solver._field_slice_prev_vapor
+	var prev_precip: PackedFloat32Array = _field_solver._field_slice_prev_precip
+	var next_vapor: PackedFloat32Array = _field_solver._field_slice_next_vapor
+	var next_cloud: PackedFloat32Array = _field_solver._field_slice_next_cloud
+	var next_precip: PackedFloat32Array = _field_solver._field_slice_next_precip
+	var next_instability: PackedFloat32Array = _field_solver._field_slice_next_instability
+	var next_intensity: PackedFloat32Array = _field_solver._field_slice_next_intensity
+	var next_convergence: PackedFloat32Array = _field_solver._field_slice_next_convergence
+	var next_type: PackedInt32Array = _field_solver._field_slice_next_type
+	var season_idx: int = _field_solver._field_slice_season_idx
+	var climate_anomaly: float = _field_solver._field_slice_climate_anomaly
+	var refresh_convergence: bool = _field_solver._field_slice_refresh_convergence
 	var soa_temp: PackedFloat32Array = map.temp_arr
 	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
 	var soa_moisture_loop: PackedFloat32Array = map.moisture_arr
@@ -1396,273 +1188,34 @@ func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_
 		next_convergence[i] = convergence
 
 func _clear_weather_field_slice_state() -> void:
-	_field_slice_active = false
-	_field_slice_map = null
-	_field_slice_world = null
-	_field_slice_season_idx = 0
-	_field_slice_climate_anomaly = 0.0
-	_field_slice_cursor = 0
-	_field_slice_refresh_convergence = false
-	_field_slice_fast_indexed = false
-	_field_slice_cells = []
-	_field_slice_cell_pos = PackedVector2Array()
-	_field_slice_neighbor_indices = PackedInt32Array()
-	_field_slice_prev_vapor = PackedFloat32Array()
-	_field_slice_prev_precip = PackedFloat32Array()
-	_field_slice_next_vapor = PackedFloat32Array()
-	_field_slice_next_cloud = PackedFloat32Array()
-	_field_slice_next_precip = PackedFloat32Array()
-	_field_slice_next_instability = PackedFloat32Array()
-	_field_slice_next_intensity = PackedFloat32Array()
-	_field_slice_next_convergence = PackedFloat32Array()
-	_field_slice_next_type = PackedInt32Array()
-	_field_slice_solve_ms = 0.0
-	_field_slice_last_ms = 0.0
+	_field_solver._field_slice_active = false
+	_field_solver._field_slice_map = null
+	_field_solver._field_slice_world = null
+	_field_solver._field_slice_season_idx = 0
+	_field_solver._field_slice_climate_anomaly = 0.0
+	_field_solver._field_slice_cursor = 0
+	_field_solver._field_slice_refresh_convergence = false
+	_field_solver._field_slice_fast_indexed = false
+	_field_solver._field_slice_cells = []
+	_field_solver._field_slice_cell_pos = PackedVector2Array()
+	_field_solver._field_slice_neighbor_indices = PackedInt32Array()
+	_field_solver._field_slice_prev_vapor = PackedFloat32Array()
+	_field_solver._field_slice_prev_precip = PackedFloat32Array()
+	_field_solver._field_slice_next_vapor = PackedFloat32Array()
+	_field_solver._field_slice_next_cloud = PackedFloat32Array()
+	_field_solver._field_slice_next_precip = PackedFloat32Array()
+	_field_solver._field_slice_next_instability = PackedFloat32Array()
+	_field_solver._field_slice_next_intensity = PackedFloat32Array()
+	_field_solver._field_slice_next_convergence = PackedFloat32Array()
+	_field_solver._field_slice_next_type = PackedInt32Array()
+	_field_solver._field_slice_solve_ms = 0.0
+	_field_solver._field_slice_last_ms = 0.0
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
-	begin_weather_field_solve(map, world, season_idx, climate_anomaly, _season_phase)
-	while true:
-		var slice_result: Dictionary = run_weather_field_solve_slice(2147483647)
-		if bool(slice_result.get("done", true)):
-			break
-	commit_weather_field_solve()
-	return
-
-	_field_solve_tick += 1
-	var refresh_convergence: bool = ((_field_solve_tick - 1) % _field_convergence_refresh_stride) == 0
-	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	var n_cells: int = cells.size()
-	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
-	var fast_indexed: bool = neighbor_indices.size() >= n_cells * 6
-	var cell_pos := PackedVector2Array()
-	cell_pos.resize(n_cells)
-	# Solver hot path uses local indexed arrays. Avoid filling tick-scoped
-	# dictionaries here; summary/front code can fall back to direct helpers.
-	_tick_cell_pos.clear()
-	_tick_cell_neighbors.clear()
-	for i in range(n_cells):
-		var cell: HexCell = cells[i]
-		cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
-
-	var prev_vapor := PackedFloat32Array()
-	var prev_precip := PackedFloat32Array()
-	var next_vapor := PackedFloat32Array()
-	var next_cloud := PackedFloat32Array()
-	var next_precip := PackedFloat32Array()
-	var next_instability := PackedFloat32Array()
-	var next_intensity := PackedFloat32Array()
-	var next_convergence := PackedFloat32Array()
-	var next_type := PackedInt32Array()
-	prev_vapor.resize(n_cells)
-	prev_precip.resize(n_cells)
-	next_vapor.resize(n_cells)
-	next_cloud.resize(n_cells)
-	next_precip.resize(n_cells)
-	next_instability.resize(n_cells)
-	next_intensity.resize(n_cells)
-	next_convergence.resize(n_cells)
-	next_type.resize(n_cells)
-	for i in range(n_cells):
-		var prev_cell: HexCell = cells[i]
-		prev_vapor[i] = prev_cell.weather_vapor if prev_cell.weather_field_initialized else prev_cell.moisture
-		prev_precip[i] = prev_cell.weather_precip if prev_cell.weather_field_initialized else 0.0
-
-	for i in range(n_cells):
-		var cell: HexCell = cells[i]
-		var pos: Vector2 = cell_pos[i]
-		var temp: float = clampf(cell.temperature + climate_anomaly + cell.air_mass_temp_anomaly, 0.0, 1.0)
-		var base_m: float = clampf(cell.moisture, 0.0, 1.0)
-		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var on_water: bool = _is_water_terrain(int(cell.terrain))
-
-		var wind: Vector2 = cell.wind_vector
-		if wind.length_squared() < 0.0001:
-			var ny: float = 0.5
-			if _world_bounds.size.y > 0.001:
-				ny = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
-			wind = _sample_terrain_wind(map, world, pos, ny, _season_phase)
-		var wind_dir: Vector2 = wind.normalized() if wind.length_squared() > 0.0001 else Vector2.RIGHT
-
-		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
-		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
-		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
-		# 修（v3）：advection 函数已修正为纯上游链。这里 lerp 权重对应"风带强度"
-		# wind 越强 → vapor 越像上游（advect 主导，雨云被吹走）
-		# wind 弱 → vapor 越像 base_moisture（静止湿度场，本地蒸发）
-		# 修（v5）：风权重再上调 → advect 主导更彻底
-		# wind_mag=1 时 advect_w=0.95（base 5%）；wind_mag=0 时 advect_w=0.65
-		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
-		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
-		# v9c：内陆湖面修复——LAKE 上风方向是陆地（vapor 低），
-		# 高 advect_w 把湖面 vapor 摊薄到陆地值 → 湖面没有云。
-		# 对 LAKE 大幅降权（最高 0.50），让 base_moisture 主导。
-		var is_lake: bool = int(cell.terrain) == TerrainType.TERRAIN.LAKE
-		# v9d：河流走温和路线——河流只占 cell 面积一小部分（陆地 + 河带），
-		# 给它湖泊那套强度会让"河流穿过的整片陆地"湿润化。
-		# 只做轻度 advect 降权（最低 0.55），让风仍能带走云但 base 也起作用。
-		var has_river: bool = (not is_lake) and cell.has_river and not on_water
-		if is_lake:
-			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
-		elif has_river:
-			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
-		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
-		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
-
-		# v9c：LAKE 没有 ocean_current → ocean_an=0 → ocean_mul 卡在 1.0；
-		# 给湖面一个虚拟正异常 +0.20 让 evap 略高于平均海面（湖泊夏季蒸发其实很强）。
-		# v9d：河流给一个更轻的虚拟异常 +0.08（河岸蒸发真实存在但远弱于湖面）。
-		var effective_ocean_an: float = ocean_an
-		if is_lake:
-			effective_ocean_an = 0.20
-		elif has_river:
-			effective_ocean_an = maxf(ocean_an, 0.08)
-		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
-		vapor = clampf(vapor + evap, 0.0, 1.0)
-
-		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = cell.weather_convergence
-		if refresh_convergence:
-			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
-		if lift < 0.0:
-			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
-
-		# 修（v9b）：v6 砍到 *1.8 + v7 lift 门控 (vapor-0.20) 双重削弱后，
-		# 雨云锐减——中等湿度（0.3-0.5）的常态海上区域几乎不再生云。
-		# 现在做两处回调：
-		#   - 凝结倍数 1.8 → 2.2（仍比 v5 的 *3.0 低 27%，紫带不会回归）
-		#   - lift 门控曲线放缓：(vapor-0.10)/0.40 → vapor=0.5 即拿满
-		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.74)
-		var humid_excess: float = maxf(vapor - saturation, 0.0)
-		# v9b：lift 门控曲线放缓——保留"vapor=0 不能生雨"的物理底线，
-		# 但中等湿度（0.3-0.5）已能拿到正常 lift 贡献。
-		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
-		var cloud: float = clampf(
-			humid_excess * _field_condensation_gain * 2.2
-			+ lift_supply * _field_orographic_lift_gain
-			+ convergence * _field_convergence_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.12,
-			0.0, 1.0
-		)
-		var instability: float = clampf(
-			(temp - 0.45) * 1.15
-			+ vapor * 0.55
-			+ cloud * 0.35
-			+ convergence * _field_convergence_gain
-			+ lift_supply * _field_orographic_lift_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.25,
-			0.0, 1.0
-		)
-		# v7：precip_raw 的 lift 直贡献也门控在 vapor 上（同上理由）。
-		# 同时把 max-decay 的 floor 改为乘 vapor——vapor 跌到 0 时旧 precip 必须放掉。
-		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
-		var old_precip: float = prev_precip[i]
-		# 修（v7+v9b）：decay 同时受风速与 vapor 双重加压：
-		#   - 强风带：保留率 ≈ 5%（继承 v3）
-		#   - vapor 跌到 0.10 以下：旧 precip 强制放空（断绝持留环路）
-		# v9b：曲线与 lift 门控同步放缓 (0.20→0.10 起步)，
-		# 避免常态海风带（vapor 0.3-0.5）的雨云被 floor 误掐。
-		var vapor_floor_factor: float = clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
-		var dyn_decay: float = _field_precip_decay + wind_mag * 0.25
-		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
-		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
-
-		var wt: int = _classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
-		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
-		next_vapor[i] = vapor
-		next_cloud[i] = cloud
-		next_precip[i] = precip
-		next_instability[i] = instability
-		next_type[i] = wt
-		next_intensity[i] = intensity
-		next_convergence[i] = convergence
-	# v9c: 同时写 SoA 镜像数组（与 commit_weather_field_solve 对称，legacy 路径）
-	var soa_intensity_l: PackedFloat32Array = map.weather_intensity_arr
-	var soa_cloud_l: PackedFloat32Array = map.weather_cloud_arr
-	var soa_precip_l: PackedFloat32Array = map.weather_precip_arr
-	var soa_type_l: PackedByteArray = map.weather_type_arr
-	# PR-2.1.6（weather field GDScript fallback 写路径下移）：与 commit 对称的 batch buffer。
-	var _wfl_idx: PackedInt32Array = PackedInt32Array()
-	var _wfl_intensity: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_cloud: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_precip: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_vapor: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_conv: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_inst: PackedFloat32Array = PackedFloat32Array()
-	var _wfl_type: PackedByteArray = PackedByteArray()
-	var _wfl_init: PackedByteArray = PackedByteArray()
-	_wfl_idx.resize(n_cells)
-	_wfl_intensity.resize(n_cells)
-	_wfl_cloud.resize(n_cells)
-	_wfl_precip.resize(n_cells)
-	_wfl_vapor.resize(n_cells)
-	_wfl_conv.resize(n_cells)
-	_wfl_inst.resize(n_cells)
-	_wfl_type.resize(n_cells)
-	_wfl_init.resize(n_cells)
-	for i in range(n_cells):
-		var out_cell: HexCell = cells[i]
-		var v_cloud_l: float = next_cloud[i]
-		var v_precip_l: float = next_precip[i]
-		var v_type_l: int = next_type[i]
-		var v_intensity_l: float = next_intensity[i]
-		out_cell.weather_field_initialized = true
-		out_cell.weather_vapor = next_vapor[i]
-		out_cell.weather_cloud = v_cloud_l
-		out_cell.weather_precip = v_precip_l
-		out_cell.weather_instability = next_instability[i]
-		out_cell.weather_type = v_type_l
-		out_cell.weather_intensity = v_intensity_l
-		out_cell.weather_convergence = next_convergence[i]
-		# SoA 镜像
-		soa_intensity_l[i] = v_intensity_l
-		soa_cloud_l[i] = v_cloud_l
-		soa_precip_l[i] = v_precip_l
-		soa_type_l[i] = v_type_l & 0xFF
-		# PR-2.1.6：收集 dirty entry
-		_wfl_idx[i] = i
-		_wfl_intensity[i] = v_intensity_l
-		_wfl_cloud[i] = v_cloud_l
-		_wfl_precip[i] = v_precip_l
-		_wfl_vapor[i] = next_vapor[i]
-		_wfl_conv[i] = next_convergence[i]
-		_wfl_inst[i] = next_instability[i]
-		_wfl_type[i] = v_type_l & 0xFF
-		_wfl_init[i] = 1
-	# PR-2.1.6：循环结束后批量提交到 DCWorld SoA。
-	if _data_core_world != null and n_cells > 0:
-		var _cid_wi_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
-		if _cid_wi_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wi_l, _wfl_idx, _wfl_intensity)
-		var _cid_wc_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
-		if _cid_wc_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wc_l, _wfl_idx, _wfl_cloud)
-		var _cid_wp_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
-		if _cid_wp_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wp_l, _wfl_idx, _wfl_precip)
-		var _cid_wv_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
-		if _cid_wv_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wv_l, _wfl_idx, _wfl_vapor)
-		var _cid_wcv_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
-		if _cid_wcv_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wcv_l, _wfl_idx, _wfl_conv)
-		var _cid_wins_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
-		if _cid_wins_l >= 0:
-			_data_core_world.write_f32_indexed(_cid_wins_l, _wfl_idx, _wfl_inst)
-		var _cid_wt_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
-		if _cid_wt_l >= 0:
-			_data_core_world.write_u8_indexed(_cid_wt_l, _wfl_idx, _wfl_type)
-		var _cid_wfi_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
-		if _cid_wfi_l >= 0:
-			_data_core_world.write_u8_indexed(_cid_wfi_l, _wfl_idx, _wfl_init)
-	# Phase 3b：锋面散度 + 温差升降级。
-	# 在主循环结束、_weather_field 已落定之后做一次"锋面后处理"：
-	#   - 对每个 cell 重读其周边温度差（max - min over neighbors），
-	#     用 wind_convergence 作为辐合强度 → 二者相乘得到 frontal_score
-	#   - 高 frontal_score（强辐合 + 大温差）：强制把 cloud / precip / instability
-	#     拉到 RAIN 以上阈值，并按温差判定升 STORM 或降 RAIN
-	#   - 这保证"锋面"在地图上是物理可见的：哪里有冷暖气流交汇，哪里就下雨
-	if refresh_convergence:
-		_apply_frontal_convergence_boost(map, cells, climate_anomaly, neighbor_indices, fast_indexed)
+	# dots-monolith-split §1.2 / PR-6：250 行 dead code 已删除；逻辑入口
+	# 整体下沉到 scripts/weather/field_solver.gd::solve()，内部走
+	# begin_slice → 循环 run_slice → commit。
+	_field_solver.solve(map, world, season_idx, climate_anomaly)
 
 func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float, neighbor_indices: PackedInt32Array, fast_indexed: bool) -> void:
 	# 锋面温差阈值（temperature 归一化为 [0,1]，0.28 ≈ 14°C，0.06 ≈ 3°C）。
@@ -1831,36 +1384,14 @@ func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity
 		changed = true
 	return changed
 
+# dots-monolith-split §1.2 / PR-1：搬迁到 field_solver.gd；本端保留薄转发以兼容
+# weather_system 内自我调用与外部 caller。实现入口见
+# scripts/weather/field_solver.gd 的 region PR-1。
 func _upstream_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary, wind_dir: Vector2) -> float:
-	# 修（v3）：原版以 cell 自身为锚（weight=1.0）+ 上游 1/2,1/3,1/4 → cell 自己占 48%
-	# → 上游链根本拽不动场，这是"风动不明显"的真凶（lerp 权重再高也救不回来）。
-	# 现在：完全不含自己，仅看上游链，权重高 → 远 → 低，让 vapor 真正随风迁移。
-	var current: HexCell = cell
-	var sum_v: float = 0.0
-	var weight: float = 0.0
-	var w_decay: float = 1.0
-	for step in range(_field_advect_steps):
-		var upstream: HexCell = _neighbor_aligned(current, map, -wind_dir)
-		if upstream == null:
-			break
-		sum_v += float(prev_vapor.get(upstream, upstream.moisture)) * w_decay
-		weight += w_decay
-		w_decay *= 0.75  # 1.0 → 0.75 → 0.56 → 0.42 → 0.32 → 0.24，6 跳更长尾
-		current = upstream
-	if weight < 0.001:
-		# 边缘格子无上游：fallback 到自身（避免 0 vapor）
-		return float(prev_vapor.get(cell, cell.moisture))
-	return sum_v / weight
+	return _field_solver._upstream_vapor(cell, map, prev_vapor, wind_dir)
 
 func _neighbor_average_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary) -> float:
-	var sum_v: float = float(prev_vapor.get(cell, cell.moisture))
-	var n: int = 1
-	for nb: HexCell in _cell_neighbors(cell, map):
-		if nb == null:
-			continue
-		sum_v += float(prev_vapor.get(nb, nb.moisture))
-		n += 1
-	return sum_v / float(maxi(n, 1))
+	return _field_solver._neighbor_average_vapor(cell, map, prev_vapor)
 
 func _prev_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array) -> float:
 	var idx: int = map.index_of(cell)
@@ -1868,116 +1399,29 @@ func _prev_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Ar
 		return prev_vapor[idx]
 	return cell.weather_vapor if cell.weather_field_initialized else cell.moisture
 
+# dots-monolith-split §1.2 / PR-1：搬迁到 field_solver.gd（薄转发）。
 func _upstream_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
-	var current: HexCell = cell
-	var sum_v: float = 0.0
-	var weight: float = 0.0
-	var w_decay: float = 1.0
-	for step in range(_field_advect_steps):
-		var upstream: HexCell = _neighbor_aligned(current, map, -wind_dir)
-		if upstream == null:
-			break
-		sum_v += _prev_vapor_cached(upstream, map, prev_vapor) * w_decay
-		weight += w_decay
-		w_decay *= 0.75
-		current = upstream
-	if weight < 0.001:
-		return _prev_vapor_cached(cell, map, prev_vapor)
-	return sum_v / weight
+	return _field_solver._upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
 
 func _neighbor_average_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array) -> float:
-	var sum_v: float = _prev_vapor_cached(cell, map, prev_vapor)
-	var n: int = 1
-	for nb: HexCell in _cell_neighbors(cell, map):
-		if nb == null:
-			continue
-		sum_v += _prev_vapor_cached(nb, map, prev_vapor)
-		n += 1
-	return sum_v / float(maxi(n, 1))
+	return _field_solver._neighbor_average_vapor_cached(cell, map, prev_vapor)
 
+# dots-monolith-split §1.2 / PR-1：搬迁到 field_solver.gd（薄转发）。
 func _neighbor_aligned_idx(idx: int, dir: Vector2, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> int:
-	if idx < 0 or idx >= cell_pos.size() or dir.length_squared() <= 0.0001:
-		return -1
-	var self_wp: Vector2 = cell_pos[idx]
-	var best_idx: int = -1
-	var best_dot: float = _hex_size * 0.31176915 # sqrt(3) * 0.18
-	var ndir: Vector2 = dir.normalized()
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		var to_nb: Vector2 = cell_pos[nb_idx] - self_wp
-		var dot: float = to_nb.dot(ndir)
-		if dot > best_dot:
-			best_dot = dot
-			best_idx = nb_idx
-	return best_idx
+	return _field_solver._neighbor_aligned_idx(idx, dir, cell_pos, neighbor_indices)
 
 func _upstream_vapor_idx(idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
-	var current_idx: int = idx
-	var sum_v: float = 0.0
-	var weight: float = 0.0
-	var w_decay: float = 1.0
-	for step in range(_field_advect_steps):
-		var upstream_idx: int = _neighbor_aligned_idx(current_idx, -wind_dir, cell_pos, neighbor_indices)
-		if upstream_idx < 0:
-			break
-		sum_v += prev_vapor[upstream_idx] * w_decay
-		weight += w_decay
-		w_decay *= 0.75
-		current_idx = upstream_idx
-	if weight < 0.001:
-		return prev_vapor[idx]
-	return sum_v / weight
+	return _field_solver._upstream_vapor_idx(idx, cell_pos, neighbor_indices, prev_vapor, wind_dir)
 
 func _upstream_vapor_idx_from_first(idx: int, first_upstream_idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
-	if first_upstream_idx < 0 or _field_advect_steps <= 0:
-		return prev_vapor[idx]
-	var current_idx: int = first_upstream_idx
-	var sum_v: float = prev_vapor[current_idx]
-	var weight: float = 1.0
-	var w_decay: float = 0.75
-	for step in range(1, _field_advect_steps):
-		var upstream_idx: int = _neighbor_aligned_idx(current_idx, -wind_dir, cell_pos, neighbor_indices)
-		if upstream_idx < 0:
-			break
-		sum_v += prev_vapor[upstream_idx] * w_decay
-		weight += w_decay
-		w_decay *= 0.75
-		current_idx = upstream_idx
-	return sum_v / weight
+	return _field_solver._upstream_vapor_idx_from_first(idx, first_upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir)
 
 func _neighbor_average_vapor_idx(idx: int, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array) -> float:
-	var sum_v: float = prev_vapor[idx]
-	var n: int = 1
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		sum_v += prev_vapor[nb_idx]
-		n += 1
-	return sum_v / float(n)
+	return _field_solver._neighbor_average_vapor_idx(idx, neighbor_indices, prev_vapor)
 
+# dots-monolith-split §1.2 / PR-3：搬迁到 field_solver.gd（薄转发）。
 func _avg_ocean_anomaly_at_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array) -> float:
-	var cell: HexCell = cells[idx]
-	if _is_water_terrain(int(cell.terrain)):
-		return cell.temperature_transport_anomaly
-	var sum_an: float = 0.0
-	var n_water: int = 0
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		var nb: HexCell = cells[nb_idx]
-		if _is_water_terrain(int(nb.terrain)):
-			sum_an += nb.temperature_transport_anomaly
-			n_water += 1
-	if n_water == 0:
-		return 0.0
-	return sum_an / float(n_water)
+	return _field_solver._avg_ocean_anomaly_at_idx(idx, cells, neighbor_indices)
 
 func _evaporation_for_cell_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array, temp: float, moisture: float, ocean_an: float, on_water: bool) -> float:
 	var cell: HexCell = cells[idx]
@@ -2030,106 +1474,25 @@ func _vegetation_transpiration_factor(cell: HexCell) -> float:
 		return 0.35
 	return 0.18
 
+# dots-monolith-split §1.2 / PR-2：搬迁到 field_solver.gd（薄转发）。
 func _orographic_lift_for_cell(cell: HexCell, map: MapData, wind_dir: Vector2) -> float:
-	var upstream: HexCell = _neighbor_aligned(cell, map, -wind_dir)
-	if upstream == null:
-		return 0.0
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
+	return _field_solver._orographic_lift_for_cell(cell, map, wind_dir)
 
 func _orographic_lift_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, wind_dir: Vector2) -> float:
-	var upstream_idx: int = _neighbor_aligned_idx(idx, -wind_dir, cell_pos, neighbor_indices)
-	if upstream_idx < 0:
-		return 0.0
-	var cell: HexCell = cells[idx]
-	var upstream: HexCell = cells[upstream_idx]
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
+	return _field_solver._orographic_lift_idx(idx, cells, cell_pos, neighbor_indices, wind_dir)
 
 func _orographic_lift_from_upstream_idx(idx: int, upstream_idx: int, cells: Array) -> float:
-	if upstream_idx < 0:
-		return 0.0
-	var cell: HexCell = cells[idx]
-	var upstream: HexCell = cells[upstream_idx]
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
+	return _field_solver._orographic_lift_from_upstream_idx(idx, upstream_idx, cells)
 
 func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
-	var self_wp: Vector2 = _cell_world_pos(cell)
-	var incoming: float = 0.0
-	var checked: int = 0
-	for nb: HexCell in _cell_neighbors(cell, map):
-		if nb == null:
-			continue
-		var nb_wp: Vector2 = _cell_world_pos(nb)
-		var dir_to_self: Vector2 = self_wp - nb_wp
-		if dir_to_self.length_squared() <= 0.0001:
-			continue
-		var wind: Vector2 = nb.wind_vector
-		if wind.length_squared() <= 0.0001:
-			continue
-		incoming += maxf(0.0, dir_to_self.normalized().dot(wind.normalized()))
-		checked += 1
-	if checked == 0:
-		return 0.0
-	return clampf(incoming / float(checked), 0.0, 1.0)
+	return _field_solver._wind_convergence_for_cell(cell, map)
 
 func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> float:
-	var self_wp: Vector2 = cell_pos[idx]
-	var incoming: float = 0.0
-	var checked: int = 0
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		var dir_to_self: Vector2 = self_wp - cell_pos[nb_idx]
-		if dir_to_self.length_squared() <= 0.0001:
-			continue
-		var nb: HexCell = cells[nb_idx]
-		var wind: Vector2 = nb.wind_vector
-		if wind.length_squared() <= 0.0001:
-			continue
-		incoming += maxf(0.0, dir_to_self.normalized().dot(wind.normalized()))
-		checked += 1
-	if checked == 0:
-		return 0.0
-	return clampf(incoming / float(checked), 0.0, 1.0)
+	return _field_solver._wind_convergence_idx(idx, cells, cell_pos, neighbor_indices)
 
+# dots-monolith-split §1.2 / PR-1：搬迁到 field_solver.gd（薄转发）。
 func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
-	if cell == null or dir.length_squared() <= 0.0001:
-		return null
-	var neighbors: Array = _cell_neighbors(cell, map)
-	if neighbors.is_empty():
-		return null
-	var self_wp: Vector2 = _cell_world_pos(cell)
-	var best: HexCell = null
-	var best_dot: float = 0.18
-	var ndir: Vector2 = dir.normalized()
-	for nb: HexCell in neighbors:
-		if nb == null:
-			continue
-		var nb_wp: Vector2 = _cell_world_pos(nb)
-		var to_nb: Vector2 = nb_wp - self_wp
-		if to_nb.length_squared() <= 0.0001:
-			continue
-		var d: float = to_nb.normalized().dot(ndir)
-		if d > best_dot:
-			best_dot = d
-			best = nb
-	return best
+	return _field_solver._neighbor_aligned(cell, map, dir)
 
 func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
 	var lat_abs: float = 0.5
@@ -2637,6 +2000,18 @@ func configure_cyclone_wake(enabled: bool, wake_days: int) -> void:
 #   ext != null 且 enabled == true   → 只要 slice 是全量 (cell_budget ≥ n)
 #                                       就尝试 C++ 单 shot 路径，失败则透明
 #                                       fallback 到 GDScript 完成本 tick
+
+
+# 任务 2（dots-completion）：HexCell facade 启用时关掉 hot loop AoS 双写。
+# - main / map_generator 在 ClimateProfile.use_hexcell_facade=true 时调用本方法。
+# - 启用后 commit_weather_field_solve / GDScript fallback 跳过 16 行 out_cell.weather_*=
+#   直写，cell 字段读全部走 SoA（DCWorld view_f32 / facade getter）。
+# - 关闭时退回到双写（兼容 facade=false 的 legacy reader）。
+# 该方法可在运行时反复调用；调用对下一次 tick 立即生效。
+func set_hexcell_facade_on(b: bool) -> void:
+	_hexcell_facade_on = b
+
+
 func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource = null, dc_world = null) -> void:
 	_data_core_world_ext = ext
 	# PR-2.1.6：注入 GDScript DCWorld 用于 commit/spawn 写路径下移（master 手册 §3.9）。
@@ -2659,6 +2034,46 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 		push_warning("[weather] gdext acceleration DISABLED for this session: stale .dll signature mismatch (rebuild gdext to enable)")
 	elif ext != null and enabled:
 		push_warning("[weather] gdext acceleration requested but ext lacks run_weather_field_solve_pass; staying on GDScript path")
+
+	# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）──────────────────
+	# dist + summary 两个 pass 的能力探测：方法存在 + 签名 arg-count = 1 + climate
+	# profile 开关 true。任一失败镜像 flag = false → 永远走 GDScript fallback。
+	# cp == null（旧 caller / 测试场景）默认 true 保留向后兼容。
+	var dist_cp_flag: bool = true
+	var summary_cp_flag: bool = true
+	if cp != null and "use_gdext_weather_distribute" in cp:
+		dist_cp_flag = bool(cp.use_gdext_weather_distribute)
+	if cp != null and "use_gdext_weather_summary" in cp:
+		summary_cp_flag = bool(cp.use_gdext_weather_summary)
+
+	var dist_sig_ok: bool = _validate_weather_distribute_signature(ext)
+	var summary_sig_ok: bool = _validate_weather_summary_signature(ext)
+	_use_gdext_weather_distribute = enabled and ext != null and dist_cp_flag \
+			and ext.has_method("run_weather_distribute_pass") and dist_sig_ok
+	_use_gdext_weather_summary = enabled and ext != null and summary_cp_flag \
+			and ext.has_method("run_weather_summary_fronts_pass") and summary_sig_ok
+	_gdext_dist_warned_fallback = false
+	_gdext_summary_warned_fallback = false
+	# Flag 切换时清空 C++ 端持久化 summary 状态，避免新旧实现互相污染。
+	if ext != null and ext.has_method("reset_weather_summary_state"):
+		ext.reset_weather_summary_state()
+
+	if _use_gdext_weather_distribute:
+		print("[weather] gdext distribute ON (use_gdext_weather_distribute=true)")
+	elif ext != null and enabled and dist_cp_flag and not dist_sig_ok:
+		push_warning("[weather] gdext distribute DISABLED: stale .dll signature mismatch")
+	if _use_gdext_weather_summary:
+		print("[weather] gdext summary ON (use_gdext_weather_summary=true)")
+	elif ext != null and enabled and summary_cp_flag and not summary_sig_ok:
+		push_warning("[weather] gdext summary DISABLED: stale .dll signature mismatch")
+
+	# 任务 4（dots-completion）：从 ClimateProfile.use_hexcell_facade 同步到本系统的
+	# _hexcell_facade_on 状态位。启用后 hot loop 跳过 16 行 AoS 双写（任务 2 已埋好分支）。
+	# cp 为 null（旧 caller / 测试场景）时保留默认 false，向后兼容。
+	if cp != null and "use_hexcell_facade" in cp:
+		_hexcell_facade_on = bool(cp.use_hexcell_facade)
+		if _hexcell_facade_on:
+			print("[weather] hexcell facade ON (skip AoS double-write in hot loop)")
 
 # Stale .dll probe：验证 run_weather_field_solve_pass 实际签名。旧 stub 6 参，新
 # 实装 1 参 (Dictionary knobs)。不匹配时 push_warning 一次 + 返回 false 让外层
@@ -2690,6 +2105,243 @@ func set_field_verify_mode(enabled: bool, tol_f32: float = 1.0e-4) -> void:
 	_field_verify_first_divergence_logged = false
 	if enabled:
 		print("[weather] field A/B verify ON (tol=%.1e); next tick will run both paths" % tol_f32)
+
+# ─── Weather Hot-Path：dist A/B verify mode（任务 5）─────────────────────
+# 流程：snapshot 5 个 SoA/AoS 字段 → C++ 跑（SoA 已写新值）→ 把 C++ 结果搬到
+# shadow → 复位 SoA/AoS → 跑 GDScript → 逐 cell 比对 → commit 走 C++（把
+# shadow 写回 SoA/AoS）。开启后整 pass 时间 ≈ 旧 × 2，仅 dev 模式短时使用。
+# 切换 verify mode 时清空 dist 节流告警状态，避免历史 fallback 状态污染。
+func set_distribute_verify_mode(enabled: bool, tol_f32: float = 1.0e-4) -> void:
+	_distribute_verify_enabled = enabled
+	_distribute_verify_tol_f32 = max(0.0, tol_f32)
+	_distribute_verify_first_divergence_logged = false
+	if enabled:
+		print("[weather] distribute A/B verify ON (tol=%.1e); next tick will run both paths" % tol_f32)
+
+# ─── Weather Hot-Path：summary A/B verify mode（任务 8 中实装比对主体；本处先
+# 提供 setter 给 dev 工具调用，避免任务 6/7 引用未定义符号）。──────────────
+func set_summary_verify_mode(enabled: bool,
+		tol_pos: float = 0.5, tol_intensity: float = 1.0e-3,
+		tol_velocity: float = 0.5) -> void:
+	_summary_verify_enabled = enabled
+	_summary_verify_tol_pos = max(0.0, tol_pos)
+	_summary_verify_tol_intensity = max(0.0, tol_intensity)
+	_summary_verify_tol_velocity = max(0.0, tol_velocity)
+	_summary_verify_first_divergence_logged = false
+	# 切换 verify 时清空 C++ 端持久化 summary 状态，避免新旧实现相互污染（与
+	# flag 切换走同一通路）。
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("reset_weather_summary_state"):
+		_data_core_world_ext.reset_weather_summary_state()
+	if enabled:
+		print("[weather] summary A/B verify ON (pos=%.2f intensity=%.1e velocity=%.2f)" % [
+			tol_pos, tol_intensity, tol_velocity
+		])
+
+# 触发：set_distribute_verify_mode(true) 之后每次 C++ dist 成功 commit 前进入。
+# 调用前置条件：C++ 已经把 dist 结果写入 SoA + acc/pre PackedArray。
+# 主流程把这些 commit 后的值快照到 shadow，复位 SoA/AoS 到 snapshot 入口状态，
+# 跑 GDScript 重新 dist，比较两侧最大 delta；最后把 shadow 重新塞回 SoA/AoS 让
+# commit 走 C++ 路径。
+func _verify_gdext_distribute_against_gdscript(map: MapData, n_cells: int, cpp_rc: Dictionary) -> void:
+	if not _distribute_verify_enabled:
+		return
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	# Step 1：把 C++ 已经 commit 的 5 个字段复制为 shadow（CoW dup 保证脱离 SoA 引用）。
+	var shadow_temp: PackedFloat32Array = map.temp_arr.duplicate()
+	var shadow_moist: PackedFloat32Array = map.moisture_arr.duplicate()
+	var shadow_cover: PackedByteArray = map.cover_arr.duplicate()
+	var shadow_acc: PackedInt32Array = PackedInt32Array()
+	var shadow_pre: PackedInt32Array = PackedInt32Array()
+	shadow_acc.resize(n_cells)
+	shadow_pre.resize(n_cells)
+	for i in range(n_cells):
+		var c: HexCell = cells[i]
+		shadow_acc[i] = c.accumulated_snow_days
+		shadow_pre[i] = c.pre_snow_cover
+
+	# Step 2：复位到本 tick 入口状态（cpp_rc 携带的 snapshot；调用方提供）。
+	# snapshot 字段名约定：snap_temp / snap_moist / snap_cover / snap_acc / snap_pre。
+	# 调用方在 fast-path 调度阶段已 dup 一份原始 SoA 传入。
+	var snap_temp: PackedFloat32Array = cpp_rc.get("snap_temp", PackedFloat32Array())
+	var snap_moist: PackedFloat32Array = cpp_rc.get("snap_moist", PackedFloat32Array())
+	var snap_cover: PackedByteArray = cpp_rc.get("snap_cover", PackedByteArray())
+	var snap_acc: PackedInt32Array = cpp_rc.get("snap_acc", PackedInt32Array())
+	var snap_pre: PackedInt32Array = cpp_rc.get("snap_pre", PackedInt32Array())
+	if snap_temp.size() != n_cells or snap_moist.size() != n_cells or \
+			snap_cover.size() != n_cells or snap_acc.size() != n_cells or \
+			snap_pre.size() != n_cells:
+		push_warning("[weather/dist verify] snapshot 不全或大小不匹配，跳过本 tick verify")
+		return
+	# 把 SoA 还原。facade=true 时 cell.cover/temperature/moisture 通过 setter 透写
+	# SoA；这里直接覆写 SoA arr 即可。
+	map.temp_arr = snap_temp.duplicate()
+	map.moisture_arr = snap_moist.duplicate()
+	map.cover_arr = snap_cover.duplicate()
+	for i in range(n_cells):
+		var c2: HexCell = cells[i]
+		c2.accumulated_snow_days = snap_acc[i]
+		c2.pre_snow_cover = snap_pre[i]
+		# current_state["cover"] 可能在 C++ commit 阶段被改过；同步回 snapshot。
+		c2.current_state["cover"] = int(snap_cover[i])
+
+	# Step 3：跑 GDScript 版 dist。它会读 cell.* 写 cell.* 同源覆盖。
+	_distribute_weather_field_to_cells(map)
+
+	# Step 4：逐 cell 比对（temp/moist 用 tol_f32；cover/acc/pre 严格相等）。
+	var max_dt: float = 0.0
+	var max_dm: float = 0.0
+	var first_div_idx: int = -1
+	var first_div_field: String = ""
+	for i in range(n_cells):
+		var dt: float = absf(shadow_temp[i] - map.temp_arr[i])
+		var dm: float = absf(shadow_moist[i] - map.moisture_arr[i])
+		if dt > max_dt:
+			max_dt = dt
+		if dm > max_dm:
+			max_dm = dm
+		if first_div_idx < 0 and (dt > _distribute_verify_tol_f32 or dm > _distribute_verify_tol_f32):
+			first_div_idx = i
+			first_div_field = "temperature" if dt > dm else "moisture"
+		if shadow_cover[i] != map.cover_arr[i] and first_div_idx < 0:
+			first_div_idx = i
+			first_div_field = "cover"
+		var c3: HexCell = cells[i]
+		if shadow_acc[i] != c3.accumulated_snow_days and first_div_idx < 0:
+			first_div_idx = i
+			first_div_field = "accumulated_snow_days"
+		if shadow_pre[i] != c3.pre_snow_cover and first_div_idx < 0:
+			first_div_idx = i
+			first_div_field = "pre_snow_cover"
+
+	if first_div_idx >= 0 and not _distribute_verify_first_divergence_logged:
+		_distribute_verify_first_divergence_logged = true
+		var c4: HexCell = cells[first_div_idx]
+		push_warning("[weather/dist verify] divergence at idx=%d field=%s cpp_temp=%.4f gd_temp=%.4f cpp_moist=%.4f gd_moist=%.4f cpp_cover=%d gd_cover=%d cpp_acc=%d gd_acc=%d (max_dt=%.4e max_dm=%.4e)" % [
+			first_div_idx, first_div_field,
+			shadow_temp[first_div_idx], map.temp_arr[first_div_idx],
+			shadow_moist[first_div_idx], map.moisture_arr[first_div_idx],
+			int(shadow_cover[first_div_idx]), int(map.cover_arr[first_div_idx]),
+			shadow_acc[first_div_idx], c4.accumulated_snow_days,
+			max_dt, max_dm
+		])
+
+	# Step 5：把 shadow（C++ 结果）写回 SoA/AoS，让 commit 走 C++ 路径。
+	map.temp_arr = shadow_temp
+	map.moisture_arr = shadow_moist
+	map.cover_arr = shadow_cover
+	for i in range(n_cells):
+		var c5: HexCell = cells[i]
+		c5.accumulated_snow_days = shadow_acc[i]
+		c5.pre_snow_cover = shadow_pre[i]
+		c5.current_state["cover"] = int(shadow_cover[i])
+
+# ─── Weather Hot-Path：summary fronts A/B verify（任务 8）─────────────────
+# 调用前提：set_summary_verify_mode(true) 之后，C++ summary pass 已成功跑过
+# 一次（fronts_cpp 已就位）；调用方把 fronts_cpp 与 cpp_state_snapshotted=true
+# 作为入参传入。本函数：
+#   1. 调 C++ restore_weather_summary_state() 把 prev_seeds/membership 还原到
+#      C++ pass 入口状态（snapshot 已在 fast-path 调度时由 caller 完成）；
+#   2. 跑 GDScript _build_field_summary_fronts → 得 fronts_gd；
+#   3. 同长度 + 字段容差比对（type 严格 / center 0.5px / intensity 1e-3 /
+#      velocity 0.5px），首个发散 push_warning 一次（_summary_verify_first_
+#      divergence_logged 节流）；
+#   4. 调用方把 fronts_cpp 写回 _active_fronts 完成 commit（本函数不动 commit）。
+#
+# 注意：GDScript 复跑 _build_field_summary_fronts 会改 _prev_summary_seeds /
+# _prev_summary_membership（GDScript 镜像）。这两个状态在 fast-path 模式下
+# 不被使用，但 verify off 切回 GDScript 路径时会被复用 —— 不算污染（GDScript
+# 路径下本来就由 _build_field_summary_fronts 自维护）。
+func _verify_gdext_summary_against_gdscript(map: MapData, world: WorldData,
+		fronts_cpp: Array[WeatherFront]) -> void:
+	if not _summary_verify_enabled:
+		return
+	if _data_core_world_ext == null:
+		return
+	# Step 1：C++ 端把 prev_seeds/membership restore 到本 tick 入口状态。
+	# 调用方应已在 fast-path 调度入口调用 snapshot_weather_summary_state()。
+	if _data_core_world_ext.has_method("restore_weather_summary_state"):
+		_data_core_world_ext.restore_weather_summary_state()
+	# Step 2：GDScript 复跑（注意 GDScript prev_seeds/membership 也会被改，
+	# 见函数说明）。
+	var fronts_gd: Array[WeatherFront] = _build_field_summary_fronts(map, world)
+	# Step 3：逐 front 容差比对。
+	var n_cpp: int = fronts_cpp.size()
+	var n_gd: int = fronts_gd.size()
+	if n_cpp != n_gd and not _summary_verify_first_divergence_logged:
+		_summary_verify_first_divergence_logged = true
+		push_warning("[weather/summary verify] front count mismatch: cpp=%d gd=%d" % [n_cpp, n_gd])
+		return
+	var n: int = mini(n_cpp, n_gd)
+	for i in range(n):
+		var fc: WeatherFront = fronts_cpp[i]
+		var fg: WeatherFront = fronts_gd[i]
+		if fc.type != fg.type and not _summary_verify_first_divergence_logged:
+			_summary_verify_first_divergence_logged = true
+			push_warning("[weather/summary verify] front[%d] type mismatch cpp=%d gd=%d" % [i, fc.type, fg.type])
+			return
+		var dpos: float = fc.center.distance_to(fg.center)
+		if dpos > _summary_verify_tol_pos and not _summary_verify_first_divergence_logged:
+			_summary_verify_first_divergence_logged = true
+			push_warning("[weather/summary verify] front[%d] center mismatch cpp=%s gd=%s |Δ|=%.2f (tol=%.2f)" % [
+				i, str(fc.center.round()), str(fg.center.round()), dpos, _summary_verify_tol_pos
+			])
+			return
+		if absf(fc.intensity - fg.intensity) > _summary_verify_tol_intensity and not _summary_verify_first_divergence_logged:
+			_summary_verify_first_divergence_logged = true
+			push_warning("[weather/summary verify] front[%d] intensity mismatch cpp=%.4f gd=%.4f (tol=%.1e)" % [
+				i, fc.intensity, fg.intensity, _summary_verify_tol_intensity
+			])
+			return
+		var dvel: float = fc.velocity.distance_to(fg.velocity)
+		if dvel > _summary_verify_tol_velocity and not _summary_verify_first_divergence_logged:
+			_summary_verify_first_divergence_logged = true
+			push_warning("[weather/summary verify] front[%d] velocity mismatch cpp=%s gd=%s |Δ|=%.2f (tol=%.2f)" % [
+				i, str(fc.velocity.round()), str(fg.velocity.round()), dvel, _summary_verify_tol_velocity
+			])
+			return
+
+# ─── 任务 9：节流式回归告警 ───────────────────────────────────────────────
+# field_solver 在 dist/summary commit 完成后分别调一次。维护最近 5 个 elapsed
+# 样本；连续 5 个都 > budget × 2 时 push_warning 一次（warned 节流防止刷屏）。
+# 一旦最近某次回到 budget 内，warned 重置回 false（性能恢复后可再警告）。
+func push_dist_perf_sample(elapsed_ms: float) -> void:
+	_dist_recent_ms.append(elapsed_ms)
+	if _dist_recent_ms.size() > _PERF_RING_SIZE:
+		_dist_recent_ms.remove_at(0)
+	var threshold: float = _DIST_PERF_BUDGET_MS * _PERF_BUDGET_MULTIPLIER
+	if _dist_recent_ms.size() >= _PERF_RING_SIZE:
+		var all_over: bool = true
+		for v in _dist_recent_ms:
+			if v <= threshold:
+				all_over = false
+				break
+		if all_over and not _dist_regression_warned:
+			_dist_regression_warned = true
+			push_warning("[weather/dist] perf regression: last %d ticks all > %.2fms (budget %.2fms × %.1f)" % [
+				_PERF_RING_SIZE, threshold, _DIST_PERF_BUDGET_MS, _PERF_BUDGET_MULTIPLIER
+			])
+		elif (not all_over) and _dist_regression_warned:
+			# 性能恢复，下次回归时还能再警告一次
+			_dist_regression_warned = false
+
+func push_summary_perf_sample(elapsed_ms: float) -> void:
+	_summary_recent_ms.append(elapsed_ms)
+	if _summary_recent_ms.size() > _PERF_RING_SIZE:
+		_summary_recent_ms.remove_at(0)
+	var threshold: float = _SUMMARY_PERF_BUDGET_MS * _PERF_BUDGET_MULTIPLIER
+	if _summary_recent_ms.size() >= _PERF_RING_SIZE:
+		var all_over: bool = true
+		for v in _summary_recent_ms:
+			if v <= threshold:
+				all_over = false
+				break
+		if all_over and not _summary_regression_warned:
+			_summary_regression_warned = true
+			push_warning("[weather/summary] perf regression: last %d ticks all > %.2fms (budget %.2fms × %.1f)" % [
+				_PERF_RING_SIZE, threshold, _SUMMARY_PERF_BUDGET_MS, _PERF_BUDGET_MULTIPLIER
+			])
+		elif (not all_over) and _summary_regression_warned:
+			_summary_regression_warned = false
 
 # Emergent Climate Coupling：由 MapGenerator 在 refresh_daily 之前调用。
 # 启用时 tick_one_day 内会做 4 项耦合：
@@ -2777,52 +2429,9 @@ func cell_perturbation(cell: HexCell) -> Vector2:
 #      vec 幅度按 days_left / init_days 线性衰减。
 #   2) 遍历当前活跃 front，找 STORM + on_water + intensity > 0.8 的"强海上风暴"，
 #      在其中心 cell 注入旋转扰动（与风速正交，按 intensity 缩放）。
-func _tick_cyclone_wake(map: MapData) -> void:
-	# 1) 衰减 / 移除
-	var to_remove: Array = []
-	for key in ocean_current_perturbation.keys():
-		var d: Dictionary = ocean_current_perturbation[key]
-		var days_left: int = int(d.get("days_left", 0)) - 1
-		if days_left <= 0:
-			to_remove.append(key)
-			continue
-		var init_days: int = int(d.get("init_days", _cyclone_wake_days))
-		var scale: float = float(days_left) / float(maxi(init_days, 1))
-		var vec0: Vector2 = d.get("vec_init", d.get("vec", Vector2.ZERO))
-		d["days_left"] = days_left
-		d["vec"] = vec0 * scale
-		ocean_current_perturbation[key] = d
-	for key in to_remove:
-		ocean_current_perturbation.erase(key)
-
-	# 2) 注入新的扰动（基于当前活跃 front）
-	for front in _active_fronts:
-		if front.type != WeatherType.WT.STORM:
-			continue
-		if front.intensity < 0.8:
-			continue
-		# 找 front 中心所在 cell
-		var center := front.center
-		var cube := HexUtils.world_to_cube(center, _hex_size)
-		var cell: HexCell = map.get_cell_by_cube(cube)
-		if cell == null:
-			continue
-		# 仅海面 cell 注入
-		if not _is_water_terrain(int(cell.terrain)):
-			continue
-		# 扰动向量：风向顺时针旋 90° 得切向，按 intensity 缩放到 [-0.6, 0.6] 范围
-		var wind: Vector2 = front.velocity
-		if wind.length_squared() < 1e-4:
-			wind = Vector2(1.0, 0.0)
-		var tangent := Vector2(-wind.y, wind.x).normalized()
-		var perturb := tangent * front.intensity * 0.6
-		var key2: int = cell.q * 10000 + cell.r
-		ocean_current_perturbation[key2] = {
-			"vec": perturb,
-			"vec_init": perturb,
-			"days_left": _cyclone_wake_days,
-			"init_days": _cyclone_wake_days,
-		}
+# dots-monolith-split §1.1：_tick_cyclone_wake 内联实现已迁出至
+# scripts/weather/front_advect.gd::tick_cyclone_wake(map)，本处不再保留函数体。
+# 静态 _is_water_terrain 仍在本文件保留（被 weather_field/distribute 等多处调用）。
 
 static func _is_water_terrain(t: int) -> bool:
 	return t == TerrainType.TERRAIN.OCEAN \
@@ -3073,21 +2682,9 @@ func _ocean_filter_precip(cell: HexCell, map: MapData, wt: int) -> int:
 
 # 取 cell 1 环邻水的平均 temperature_transport_anomaly。无水邻居返回 0。
 # 海面 cell 直接返回自身 anomaly（因为本身就是洋流体）。
+# dots-monolith-split §1.2 / PR-3：搬迁到 field_solver.gd（薄转发）。
 func _avg_ocean_anomaly_at(cell: HexCell, map: MapData) -> float:
-	if cell == null:
-		return 0.0
-	# 海面 cell：直接读自身洋流偏差
-	if _is_water_terrain(int(cell.terrain)):
-		return cell.temperature_transport_anomaly
-	var sum_an: float = 0.0
-	var n_water: int = 0
-	for nb: HexCell in _cell_neighbors(cell, map):
-		if nb != null and _is_water_terrain(int(nb.terrain)):
-			sum_an += nb.temperature_transport_anomaly
-			n_water += 1
-	if n_water == 0:
-		return 0.0
-	return sum_an / float(n_water)
+	return _field_solver._avg_ocean_anomaly_at(cell, map)
 
 # 基于给定 spawn_pos + 类型 wt 构造 front（从 _spawn_random_front 提炼），
 # 避免重复类型抽样逻辑。

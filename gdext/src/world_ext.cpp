@@ -31,12 +31,46 @@ namespace pk {
 
 using namespace godot;
 
+// ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）持久化状态 ────────
+// 提到 pk 命名空间顶部（而非匿名 namespace）的原因：DCWorldExt 析构函数会
+// `delete static_cast<WeatherSummaryState*>(_summary_state)`，要求该类型在析构
+// 函数定义点已可见。helpers (get_or_create_summary_state) 仍放在 anonymous
+// namespace 中（仅本翻译单元用），定义点位于 advect pass 实装末尾。
+struct PrevSummarySeed {
+    int     type   = 0;
+    float   center_x = 0.0f;
+    float   center_y = 0.0f;
+    int     age    = 0;
+    int     area   = 1;
+    float   velocity_x = 0.0f;
+    float   velocity_y = 0.0f;
+};
+
+struct WeatherSummaryState {
+    std::vector<PrevSummarySeed> prev_seeds;
+    // 长度 = n_cells（首次 reset / pass 入口 resize）；[i] = cluster idx 或 -1。
+    std::vector<int32_t>         prev_membership;
+};
+
 DCWorldExt::DCWorldExt() = default;
 DCWorldExt::~DCWorldExt() {
     // EXPERIMENTAL: D-async — defensively join all worker threads before
     // _slots / _entity_count etc. tear down. Safe to call even if no
     // async_* method was ever invoked (shutdown_all is a no-op then).
     async_climate_shutdown_all();
+
+    // Weather summary opaque state（plan/weather-hotpath-cpp）：lazy alloc 在
+    // run_weather_summary_fronts_pass / snapshot 处；析构时直接 delete。
+    // 实际类型 pk::WeatherSummaryState 在本 .cpp 文件下方定义于 pk 命名空间；
+    // void* → cast → delete 走 std::vector 析构，无 OS 句柄需要释放。
+    if (_summary_state != nullptr) {
+        delete static_cast<WeatherSummaryState *>(_summary_state);
+        _summary_state = nullptr;
+    }
+    if (_summary_state_snapshot != nullptr) {
+        delete static_cast<WeatherSummaryState *>(_summary_state_snapshot);
+        _summary_state_snapshot = nullptr;
+    }
 }
 
 // ─── Component registry ────────────────────────────────────────────────────
@@ -3772,6 +3806,741 @@ double DCWorldExt::run_weather_front_advect_pass(Dictionary knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+// ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）─────────────────────
+//
+// dist：_distribute_weather_field_to_cells C++ 化（任务 4 实装）
+// summary：_build_field_summary_fronts C++ 化（任务 7 实装）
+//
+// 本段（任务 2）只搭骨架：
+//   - 注册函数名与签名稳定，让 GDScript 端 has_method + 签名 arg-count
+//     检测能识别新方法；
+//   - elapsed_ms 返回 -1.0 → caller 永远走 GDScript fallback；
+//   - 持久化状态容器先 lazy alloc 占位（任务 7 实装时填）。
+// ───────────────────────────────────────────────────────────────────────────
+
+// 内部持久化状态结构（仅 .cpp 可见）已在文件顶部 pk 命名空间声明
+// （PrevSummarySeed / WeatherSummaryState）；本匿名 namespace 仅提供 helper。
+namespace {
+
+// 取/创建 opaque state（lazy alloc）。caller 不持有所有权。
+inline WeatherSummaryState *get_or_create_summary_state(void *&opaque) {
+    if (opaque == nullptr) {
+        opaque = new WeatherSummaryState();
+    }
+    return static_cast<WeatherSummaryState *>(opaque);
+}
+
+inline void destroy_summary_state(void *&opaque) {
+    if (opaque != nullptr) {
+        delete static_cast<WeatherSummaryState *>(opaque);
+        opaque = nullptr;
+    }
+}
+
+} // namespace
+
+Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["cover_dirty"] = false;
+    out["changed_cells"] = PackedInt32Array();
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_weather_distribute_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return out; }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── SoA slot resolve（一次性查 component_id）────────────────────────
+    const int sid_temp        = component_id(StringName("cell_temp"));
+    const int sid_moisture    = component_id(StringName("cell_moisture"));
+    const int sid_cover       = component_id(StringName("cell_cover"));
+    const int sid_landform    = component_id(StringName("cell_landform"));
+    const int sid_elevation   = component_id(StringName("cell_elevation"));
+    const int sid_w_intens    = component_id(StringName("cell_weather_intensity"));
+    const int sid_w_precip    = component_id(StringName("cell_weather_precip"));
+    const int sid_w_type      = component_id(StringName("cell_weather_type"));
+    const int sid_w_finit     = component_id(StringName("cell_weather_field_init"));
+    if (sid_temp     < 0 || sid_moisture  < 0 || sid_cover     < 0 ||
+        sid_landform < 0 || sid_elevation < 0 || sid_w_intens  < 0 ||
+        sid_w_precip < 0 || sid_w_type    < 0 || sid_w_finit   < 0) {
+        diag("missing slot id (some weather/cover/landform component not bound)");
+        return out;
+    }
+
+    // ─── knobs 校验 + 拉取 ──────────────────────────────────────────────
+    static const char * const required_keys[] = {
+        "n_cells", "snow_min_intensity",
+        "snow_freeze_t", "snow_melt_t", "snow_intensity_for_snowing",
+        "snow_accum_days_req",
+        "flood_heavy_intensity", "flood_heavy_precip",
+        "flood_lowland_intensity", "flood_lowland_elev", "flood_lowland_moisture",
+        "wt_clear", "cv_snow", "cv_none", "cv_flooding",
+        "accumulated_snow_days", "pre_snow_cover",
+        "temp_delta_arr", "moisture_delta_arr",
+        "can_form_snow_arr", "can_form_flood_arr",
+    };
+    for (const char *k : required_keys) {
+        if (!knobs.has(k)) {
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_weather_distribute_pass: missing key '", k, "'");
+            return out;
+        }
+    }
+
+    const int   n_cells              = int(knobs["n_cells"]);
+    const float snow_min_intensity   = float(knobs["snow_min_intensity"]);
+    const float snow_freeze_t        = float(knobs["snow_freeze_t"]);
+    const float snow_melt_t          = float(knobs["snow_melt_t"]);
+    const float snow_intensity_snow  = float(knobs["snow_intensity_for_snowing"]);
+    const int   snow_accum_days_req  = int(knobs["snow_accum_days_req"]);
+    const float flood_heavy_int      = float(knobs["flood_heavy_intensity"]);
+    const float flood_heavy_pre      = float(knobs["flood_heavy_precip"]);
+    const float flood_low_int        = float(knobs["flood_lowland_intensity"]);
+    const float flood_low_elev       = float(knobs["flood_lowland_elev"]);
+    const float flood_low_moist      = float(knobs["flood_lowland_moisture"]);
+    const int   wt_clear             = int(knobs["wt_clear"]);
+    const int   cv_snow              = int(knobs["cv_snow"]);
+    const int   cv_none              = int(knobs["cv_none"]);
+    const int   cv_flooding          = int(knobs["cv_flooding"]);
+
+    PackedInt32Array  acc_snow_days  = knobs["accumulated_snow_days"];
+    PackedInt32Array  pre_snow_cover = knobs["pre_snow_cover"];
+    PackedFloat32Array temp_delta_arr   = knobs["temp_delta_arr"];
+    PackedFloat32Array moist_delta_arr  = knobs["moisture_delta_arr"];
+    PackedByteArray   cfs_arr         = knobs["can_form_snow_arr"];
+    PackedByteArray   cff_arr         = knobs["can_form_flood_arr"];
+
+    if (n_cells <= 0) { diag("n_cells <= 0"); return out; }
+    if (acc_snow_days.size() != n_cells || pre_snow_cover.size() != n_cells) {
+        diag("acc_snow_days / pre_snow_cover size != n_cells");
+        return out;
+    }
+    if (temp_delta_arr.size() != 8 || moist_delta_arr.size() != 8 ||
+        cfs_arr.size() != 8 || cff_arr.size() != 8) {
+        diag("WeatherType profile arrays must be length 8");
+        return out;
+    }
+
+    // ─── SoA 直接走 _slots[id].arr_f32/arr_u8.ptrw（避免 local copy 触发 CoW
+    // detach 把本地数据脱离 _slots）。读端用 ptr() 同样直接走 _slots。
+    // 写端最后调 _flush_slot_to_map(sid) 把 CoW-detach 后的新 buffer 推回
+    // GDScript MapData property（与 F.1 / F.2 / F.3 等同模式）。──────────────
+    Slot &s_temp     = _slots.write[sid_temp];
+    Slot &s_moist    = _slots.write[sid_moisture];
+    Slot &s_cover    = _slots.write[sid_cover];
+    const Slot &s_lf       = _slots[sid_landform];
+    const Slot &s_elev     = _slots[sid_elevation];
+    const Slot &s_w_int    = _slots[sid_w_intens];
+    const Slot &s_w_pre    = _slots[sid_w_precip];
+    const Slot &s_w_typ    = _slots[sid_w_type];
+    const Slot &s_w_fin    = _slots[sid_w_finit];
+
+    if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
+        s_cover.arr_u8.size() < n_cells || s_lf.arr_u8.size() < n_cells ||
+        s_elev.arr_f32.size() < n_cells || s_w_int.arr_f32.size() < n_cells ||
+        s_w_pre.arr_f32.size() < n_cells || s_w_typ.arr_u8.size() < n_cells ||
+        s_w_fin.arr_u8.size() < n_cells) {
+        diag("SoA size < n_cells");
+        return out;
+    }
+
+    // ─── ptrw / ptr ────────────────────────────────────────────────────
+    float * const __restrict T   = s_temp.arr_f32.ptrw();
+    float * const __restrict M   = s_moist.arr_f32.ptrw();
+    uint8_t * const __restrict CV = s_cover.arr_u8.ptrw();
+    const uint8_t * const __restrict LF = s_lf.arr_u8.ptr();
+    const float * const __restrict EL = s_elev.arr_f32.ptr();
+    const float * const __restrict WI = s_w_int.arr_f32.ptr();
+    const float * const __restrict WP = s_w_pre.arr_f32.ptr();
+    const uint8_t * const __restrict WT_ = s_w_typ.arr_u8.ptr();
+    const uint8_t * const __restrict WFI = s_w_fin.arr_u8.ptr();
+    int32_t * const __restrict ACC = acc_snow_days.ptrw();
+    int32_t * const __restrict PRE = pre_snow_cover.ptrw();
+    const float * const __restrict TD = temp_delta_arr.ptr();
+    const float * const __restrict MD = moist_delta_arr.ptr();
+    const uint8_t * const __restrict CFS = cfs_arr.ptr();
+    const uint8_t * const __restrict CFF = cff_arr.ptr();
+
+    auto clamp01 = [](float v) -> float {
+        if (v < 0.0f) return 0.0f;
+        if (v > 1.0f) return 1.0f;
+        return v;
+    };
+
+    // LandformType.is_water：DEEP_OCEAN(0) / OCEAN(1) / COAST(2) / LAKE(3) → true
+    auto is_water_lf = [](uint8_t lf) -> bool {
+        return lf <= 3;
+    };
+
+    // ─── 主循环（1:1 复刻 _distribute_weather_field_to_cells + _apply_snow_accumulation）─
+    PackedInt32Array changed_cells;
+    bool cover_dirty = false;
+    for (int i = 0; i < n_cells; ++i) {
+        const bool field_init = WFI[i] != 0;
+        const int  wt        = field_init ? int(WT_[i]) : wt_clear;
+        const float intensity = field_init ? WI[i] : 0.0f;
+
+        // CLEAR / 低强度退化分支
+        if (wt == wt_clear || intensity <= snow_min_intensity) {
+            if (!is_water_lf(LF[i]) && (ACC[i] > 0 || CV[i] == cv_snow)) {
+                // _apply_snow_accumulation(cell, wt, cell.temperature, 0.0)
+                // intensity = 0 ⇒ snowing 永假；只有融化 / 升级判定可能触发。
+                const float temp_now = T[i];
+                if (temp_now > snow_melt_t) {
+                    int new_acc = ACC[i] - 1;
+                    if (new_acc < 0) new_acc = 0;
+                    ACC[i] = new_acc;
+                }
+                // 升级 / 融化（与下方主分支同算法）
+                if (ACC[i] >= snow_accum_days_req && CV[i] != cv_snow) {
+                    PRE[i] = int(CV[i]);
+                    CV[i] = uint8_t(cv_snow);
+                    changed_cells.append(i);
+                    cover_dirty = true;
+                } else if (ACC[i] <= 0 && CV[i] == cv_snow) {
+                    int restored = (PRE[i] >= 0) ? PRE[i] : cv_none;
+                    CV[i] = uint8_t(restored);
+                    PRE[i] = -1;
+                    changed_cells.append(i);
+                    cover_dirty = true;
+                }
+            }
+            continue;
+        }
+
+        const float precip = field_init ? WP[i] : 0.0f;
+        const float td_v = (wt >= 0 && wt < 8) ? TD[wt] : 0.0f;
+        const float md_v = (wt >= 0 && wt < 8) ? MD[wt] : 0.0f;
+        const float moist_now = clamp01(M[i] + md_v * intensity);
+        const float temp_now  = clamp01(T[i] + td_v * intensity);
+        M[i] = moist_now;
+        T[i] = temp_now;
+
+        if (!is_water_lf(LF[i])) {
+            // 雪：累积式 _apply_snow_accumulation(cell, wt, temp_now, intensity)
+            const bool can_snow = (wt >= 0 && wt < 8) && (CFS[wt] != 0);
+            const bool snowing  = can_snow && (temp_now < snow_freeze_t) && (intensity > snow_intensity_snow);
+            if (snowing) {
+                ACC[i] += 1;
+            } else if (temp_now > snow_melt_t) {
+                int new_acc = ACC[i] - 1;
+                if (new_acc < 0) new_acc = 0;
+                ACC[i] = new_acc;
+            }
+            if (ACC[i] >= snow_accum_days_req && CV[i] != cv_snow) {
+                PRE[i] = int(CV[i]);
+                CV[i] = uint8_t(cv_snow);
+                changed_cells.append(i);
+                cover_dirty = true;
+            } else if (ACC[i] <= 0 && CV[i] == cv_snow) {
+                int restored = (PRE[i] >= 0) ? PRE[i] : cv_none;
+                CV[i] = uint8_t(restored);
+                PRE[i] = -1;
+                changed_cells.append(i);
+                cover_dirty = true;
+            }
+
+            // 洪涝
+            const bool can_flood = (wt >= 0 && wt < 8) && (CFF[wt] != 0);
+            if (CV[i] != cv_snow && can_flood) {
+                const bool heavy_flood   = (intensity > flood_heavy_int) && (precip > flood_heavy_pre);
+                const bool lowland_flood = (intensity > flood_low_int) && (EL[i] < flood_low_elev) && (moist_now > flood_low_moist);
+                if ((heavy_flood || lowland_flood) && CV[i] != cv_flooding) {
+                    CV[i] = uint8_t(cv_flooding);
+                    changed_cells.append(i);
+                    cover_dirty = true;
+                }
+            }
+        }
+    }
+
+    // ─── §11.2 flush：把 CoW-detach 后的 temp/moisture/cover 推回 GDScript
+    // MapData property（与 F.1 / F.2 等同模式）。──────────────────────────
+    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_moisture);
+    _flush_slot_to_map(sid_cover);
+
+    // ─── 把改写后的 PackedInt32Array 通过 out Dictionary 返回（PackedArray ptrw
+    // 触发 CoW 后会重新分配 buffer，本地 acc_snow_days / pre_snow_cover 持有新
+    // buffer；knobs Dictionary 里仍是旧 buffer ref。所以必须放进 out 让 caller 取）─
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double elapsed = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = elapsed;
+    out["cover_dirty"] = cover_dirty;
+    out["changed_cells"] = changed_cells;
+    out["accumulated_snow_days"] = acc_snow_days;
+    out["pre_snow_cover"] = pre_snow_cover;
+    return out;
+}
+
+Dictionary DCWorldExt::run_weather_summary_fronts_pass(const Dictionary &knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+    using godot::Vector2;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fronts"] = Array();
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_weather_summary_fronts_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return out; }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── knobs ─────────────────────────────────────────────────────────
+    static const char * const required_keys[] = {
+        "n_cells", "hex_size", "summary_limit",
+        "intensity_enter", "intensity_hold",
+        "merge_ratio", "merge_max_rounds",
+        "radius_base", "radius_scale",
+        "wt_clear", "cell_q_arr", "cell_r_arr",
+        "neighbor_indices",
+    };
+    for (const char *k : required_keys) {
+        if (!knobs.has(k)) {
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_weather_summary_fronts_pass: missing key '", k, "'");
+            return out;
+        }
+    }
+
+    const int   n_cells          = int(knobs["n_cells"]);
+    const float hex_size         = float(knobs["hex_size"]);
+    const int   summary_limit    = int(knobs["summary_limit"]);
+    const float intensity_enter  = float(knobs["intensity_enter"]);
+    const float intensity_hold   = float(knobs["intensity_hold"]);
+    const float merge_ratio      = float(knobs["merge_ratio"]);
+    const int   merge_max_rounds = int(knobs["merge_max_rounds"]);
+    const float radius_base      = float(knobs["radius_base"]);
+    const float radius_scale     = float(knobs["radius_scale"]);
+    const int   wt_clear         = int(knobs["wt_clear"]);
+    PackedInt32Array cell_q = knobs["cell_q_arr"];
+    PackedInt32Array cell_r = knobs["cell_r_arr"];
+
+    if (n_cells <= 0) { diag("n_cells <= 0"); return out; }
+    if (cell_q.size() != n_cells || cell_r.size() != n_cells) {
+        diag("cell_q_arr / cell_r_arr size mismatch");
+        return out;
+    }
+
+    // ─── SoA slot resolve ──────────────────────────────────────────────
+    const int sid_w_intens  = component_id(StringName("cell_weather_intensity"));
+    const int sid_w_precip  = component_id(StringName("cell_weather_precip"));
+    const int sid_w_type    = component_id(StringName("cell_weather_type"));
+    const int sid_w_cloud   = component_id(StringName("cell_weather_cloud"));
+    const int sid_w_finit   = component_id(StringName("cell_weather_field_init"));
+    const int sid_wind_x    = component_id(StringName("cell_wind_x"));
+    const int sid_wind_y    = component_id(StringName("cell_wind_y"));
+    if (sid_w_intens < 0 || sid_w_precip < 0 || sid_w_type < 0 ||
+        sid_w_cloud  < 0 || sid_w_finit  < 0 || sid_wind_x < 0 || sid_wind_y < 0) {
+        diag("missing slot id (weather_*/wind_x/wind_y)");
+        return out;
+    }
+    const Slot &s_w_int   = _slots[sid_w_intens];
+    const Slot &s_w_pre   = _slots[sid_w_precip];
+    const Slot &s_w_typ   = _slots[sid_w_type];
+    const Slot &s_w_cloud = _slots[sid_w_cloud];
+    const Slot &s_w_fin   = _slots[sid_w_finit];
+    const Slot &s_wind_x  = _slots[sid_wind_x];
+    const Slot &s_wind_y  = _slots[sid_wind_y];
+    if (s_w_int.arr_f32.size()  < n_cells || s_w_pre.arr_f32.size() < n_cells ||
+        s_w_typ.arr_u8.size()   < n_cells || s_w_cloud.arr_f32.size() < n_cells ||
+        s_w_fin.arr_u8.size()   < n_cells || s_wind_x.arr_f32.size() < n_cells ||
+        s_wind_y.arr_f32.size() < n_cells) {
+        diag("SoA size < n_cells");
+        return out;
+    }
+    const float * const __restrict WI    = s_w_int.arr_f32.ptr();
+    const float * const __restrict WP    = s_w_pre.arr_f32.ptr();
+    const uint8_t * const __restrict WT_ = s_w_typ.arr_u8.ptr();
+    const float * const __restrict WCL   = s_w_cloud.arr_f32.ptr();
+    const uint8_t * const __restrict WFI = s_w_fin.arr_u8.ptr();
+    const float * const __restrict WX    = s_wind_x.arr_f32.ptr();
+    const float * const __restrict WY    = s_wind_y.arr_f32.ptr();
+
+    // ─── neighbor_indices (n_cells*6, -1 = no neighbor) ────────────────
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    if (nb_arr.size() < n_cells * 6) {
+        diag("neighbor_indices size < n_cells*6");
+        return out;
+    }
+    const int32_t * const __restrict NB = nb_arr.ptr();
+
+    // ─── q/r → idx hash (lazy rebuild on size change) ──────────────────
+    if (_summary_qr_to_idx_size != n_cells) {
+        _summary_qr_to_idx.clear();
+        _summary_qr_to_idx.reserve(n_cells * 2);
+        for (int i = 0; i < n_cells; ++i) {
+            const int64_t key = (int64_t(cell_q[i]) << 32) ^
+                                (uint32_t(cell_r[i]) & 0xFFFFFFFFu);
+            _summary_qr_to_idx[key] = i;
+        }
+        _summary_qr_to_idx_size = n_cells;
+    }
+    auto cube_to_idx = [&](int q, int r) -> int {
+        const int64_t key = (int64_t(q) << 32) ^ (uint32_t(r) & 0xFFFFFFFFu);
+        auto it = _summary_qr_to_idx.find(key);
+        return (it == _summary_qr_to_idx.end()) ? -1 : it->second;
+    };
+    // Pointy-top hex 屏幕坐标（与 hex_utils.gd 严格同源）
+    const double SQRT3 = 1.7320508075688772;
+    auto cube_to_world_xy = [&](int q, int r) -> Vector2 {
+        const double x = double(hex_size) * SQRT3 * (double(q) + double(r) * 0.5);
+        const double y = double(hex_size) * 1.5 * double(r);
+        return Vector2(float(x), float(y));
+    };
+    auto world_to_cube_idx = [&](Vector2 p) -> int {
+        const double q_f = (SQRT3 / 3.0 * double(p.x) - 1.0 / 3.0 * double(p.y)) / double(hex_size);
+        const double r_f = (2.0 / 3.0 * double(p.y)) / double(hex_size);
+        const double s_f = -q_f - r_f;
+        // _cube_round
+        int rq = int(std::lround(q_f));
+        int rr = int(std::lround(r_f));
+        int rs = int(std::lround(s_f));
+        const double dq = std::abs(double(rq) - q_f);
+        const double dr = std::abs(double(rr) - r_f);
+        const double ds = std::abs(double(rs) - s_f);
+        if (dq > dr && dq > ds) {
+            rq = -rr - rs;
+        } else if (dr > ds) {
+            rr = -rq - rs;
+        }
+        return cube_to_idx(rq, rr);
+    };
+
+    // ─── opaque state ──────────────────────────────────────────────────
+    auto *summary_state = get_or_create_summary_state(_summary_state);
+    std::vector<PrevSummarySeed> &prev_seeds = summary_state->prev_seeds;
+    std::vector<int32_t> &prev_membership = summary_state->prev_membership;
+    if (int(prev_membership.size()) != n_cells) {
+        prev_membership.assign(n_cells, -1);
+    }
+
+    // ─── 工作结构 ──────────────────────────────────────────────────────
+    struct Comp {
+        int   type;
+        Vector2 sum_pos;       // build 时 / sum_pos*count
+        Vector2 sum_axis;
+        float sum_cloud;
+        float sum_precip;
+        float max_intensity;
+        float area;            // 用 float 因为 merge 后会聚合权重
+        int   inherited_age;   // -1 表示 step 2 新生
+        bool  has_inherited_center;
+        Vector2 inherited_from_center;
+        Vector2 inherited_from_velocity;
+    };
+    std::vector<Comp> comps;
+    comps.reserve(64);
+
+    std::vector<uint8_t> visited(n_cells, 0);
+    std::vector<int32_t> new_membership(n_cells, -1);
+
+    auto threshold_for = [&](int idx) -> float {
+        return prev_membership[idx] >= 0 ? intensity_hold : intensity_enter;
+    };
+    auto cell_wt = [&](int idx) -> int {
+        return WFI[idx] != 0 ? int(WT_[idx]) : wt_clear;
+    };
+    auto cell_intensity = [&](int idx) -> float {
+        return WFI[idx] != 0 ? WI[idx] : 0.0f;
+    };
+
+    // BFS flood-fill：返回新增 component idx，cells 为空则不入。
+    std::vector<int32_t> bfs_queue;
+    bfs_queue.reserve(256);
+    auto flood_fill = [&](int seed, int wt, int cluster_idx) -> bool {
+        bfs_queue.clear();
+        bfs_queue.push_back(seed);
+        visited[seed] = 1;
+        Comp comp;
+        comp.type = wt;
+        comp.sum_pos = Vector2();
+        comp.sum_axis = Vector2();
+        comp.sum_cloud = 0.0f;
+        comp.sum_precip = 0.0f;
+        comp.max_intensity = 0.0f;
+        comp.area = 0.0f;
+        comp.inherited_age = 0;
+        comp.has_inherited_center = false;
+        size_t qi = 0;
+        while (qi < bfs_queue.size()) {
+            int idx = bfs_queue[qi++];
+            const int cwt = cell_wt(idx);
+            const float ci = cell_intensity(idx);
+            const float thresh_self = threshold_for(idx);
+            if (cwt != wt || ci < thresh_self) {
+                continue;
+            }
+            // 加入 cluster
+            new_membership[idx] = cluster_idx;
+            comp.sum_pos += cube_to_world_xy(cell_q[idx], cell_r[idx]);
+            comp.sum_axis += Vector2(WX[idx], WY[idx]);
+            comp.sum_cloud += WCL[idx];
+            comp.sum_precip += WP[idx];
+            if (ci > comp.max_intensity) comp.max_intensity = ci;
+            comp.area += 1.0f;
+            // 邻居
+            const int32_t *nb_row = NB + idx * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t nb = nb_row[d];
+                if (nb < 0 || visited[nb]) continue;
+                const int nwt = cell_wt(nb);
+                const float ni = cell_intensity(nb);
+                const float thresh_nb = threshold_for(nb);
+                if (nwt == wt && ni >= thresh_nb) {
+                    visited[nb] = 1;
+                    bfs_queue.push_back(nb);
+                }
+            }
+        }
+        if (comp.area <= 0.0f) {
+            return false;
+        }
+        comp.sum_pos = comp.sum_pos / comp.area;
+        comp.sum_axis = comp.sum_axis / comp.area;
+        comp.sum_cloud /= comp.area;
+        comp.sum_precip /= comp.area;
+        comps.push_back(comp);
+        return true;
+    };
+
+    // ─── Step 1：prev seeds 优先（按 area 降序，与 GDScript 一致）──────
+    std::vector<size_t> seed_order(prev_seeds.size());
+    for (size_t i = 0; i < seed_order.size(); ++i) seed_order[i] = i;
+    std::sort(seed_order.begin(), seed_order.end(), [&](size_t a, size_t b) {
+        return prev_seeds[a].area > prev_seeds[b].area;
+    });
+    auto pick_inheritance_seed = [&](int seed_idx, int prev_type) -> int {
+        // 1. seed_idx 本身可用？
+        if (!visited[seed_idx]) {
+            const int swt = cell_wt(seed_idx);
+            const float si = cell_intensity(seed_idx);
+            const float s_thresh = threshold_for(seed_idx);
+            if (swt == prev_type && si >= s_thresh) return seed_idx;
+        }
+        // 2. 1-ring 邻居
+        const int32_t *nb_row = NB + seed_idx * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nb = nb_row[d];
+            if (nb < 0 || visited[nb]) continue;
+            const int nwt = cell_wt(nb);
+            const float ni = cell_intensity(nb);
+            const float thresh_nb = threshold_for(nb);
+            if (nwt == prev_type && ni >= thresh_nb) return nb;
+        }
+        return -1;
+    };
+    for (size_t k : seed_order) {
+        const PrevSummarySeed &ps = prev_seeds[k];
+        const int seed_idx = world_to_cube_idx(Vector2(ps.center_x, ps.center_y));
+        if (seed_idx < 0) continue;
+        const int picked = pick_inheritance_seed(seed_idx, ps.type);
+        if (picked < 0) continue;
+        const int cluster_idx = int(comps.size());
+        if (flood_fill(picked, ps.type, cluster_idx)) {
+            Comp &c = comps.back();
+            c.inherited_age = ps.age + 1;
+            c.has_inherited_center = true;
+            c.inherited_from_center = Vector2(ps.center_x, ps.center_y);
+            c.inherited_from_velocity = Vector2(ps.velocity_x, ps.velocity_y);
+        }
+    }
+
+    // ─── Step 2：剩余 cell 自起新 cluster ─────────────────────────────
+    for (int i = 0; i < n_cells; ++i) {
+        if (visited[i]) continue;
+        const int wt = cell_wt(i);
+        const float ci = cell_intensity(i);
+        const float thresh = threshold_for(i);
+        if (ci < thresh || wt == wt_clear) {
+            visited[i] = 1;
+            continue;
+        }
+        const int cluster_idx = int(comps.size());
+        if (flood_fill(i, wt, cluster_idx)) {
+            comps.back().inherited_age = 0;
+        }
+    }
+
+    // 跨 tick 状态：在 merge 之前记录 cell→cluster 归属（与 GDScript 一致）。
+    prev_membership = new_membership;
+
+    // ─── Step 3：merge_nearby_components ───────────────────────────────
+    auto eq_radius = [&](float area) -> float {
+        return hex_size * std::sqrt(std::max(area, 1.0f)) * radius_scale;
+    };
+    bool changed = true;
+    int rounds = 0;
+    while (changed && rounds < merge_max_rounds) {
+        changed = false;
+        rounds += 1;
+        const int n = int(comps.size());
+        std::vector<int32_t> merged_into(n, -1);
+        for (int i = 0; i < n; ++i) {
+            if (merged_into[i] >= 0) continue;
+            float ai = comps[i].area;
+            float ri = eq_radius(ai);
+            Vector2 ci_center = comps[i].sum_pos;
+            const int type_i = comps[i].type;
+            for (int j = i + 1; j < n; ++j) {
+                if (merged_into[j] >= 0) continue;
+                if (comps[j].type != type_i) continue;
+                const float aj = comps[j].area;
+                const float rj = eq_radius(aj);
+                const Vector2 cj_center = comps[j].sum_pos;
+                const float dist = ci_center.distance_to(cj_center);
+                if (dist > (ri + rj) * merge_ratio) continue;
+                // merge j → i
+                const float total = ai + aj;
+                comps[i].sum_pos = (ci_center * ai + cj_center * aj) / total;
+                comps[i].sum_axis = (comps[i].sum_axis * ai + comps[j].sum_axis * aj) / total;
+                comps[i].sum_cloud = (comps[i].sum_cloud * ai + comps[j].sum_cloud * aj) / total;
+                comps[i].sum_precip = (comps[i].sum_precip * ai + comps[j].sum_precip * aj) / total;
+                comps[i].max_intensity = std::max(comps[i].max_intensity, comps[j].max_intensity);
+                comps[i].area = total;
+                comps[i].inherited_age = std::max(comps[i].inherited_age, comps[j].inherited_age);
+                // GDScript 用先合的"老" component 保留 inherited_from_*；这里保持 i 的字段不动
+                // （与 GDScript 同：i 在前，j 在后，j 被吸收到 i）。
+                ai = total;
+                ri = eq_radius(ai);
+                ci_center = comps[i].sum_pos;
+                merged_into[j] = i;
+                changed = true;
+            }
+        }
+        if (changed) {
+            std::vector<Comp> next;
+            next.reserve(comps.size());
+            for (int i = 0; i < n; ++i) {
+                if (merged_into[i] < 0) next.push_back(std::move(comps[i]));
+            }
+            comps = std::move(next);
+        }
+    }
+
+    // ─── Step 4：score 排序 + top-N + build front Dictionary ──────────
+    auto score_of = [](const Comp &c) -> float {
+        return c.max_intensity * std::sqrt(std::max(c.area, 1.0f));
+    };
+    std::sort(comps.begin(), comps.end(), [&](const Comp &a, const Comp &b) {
+        return score_of(a) > score_of(b);
+    });
+    const int limit = std::min(summary_limit, int(comps.size()));
+    Array fronts_out;
+    fronts_out.resize(limit);
+    std::vector<PrevSummarySeed> next_seeds;
+    next_seeds.reserve(limit);
+    for (int i = 0; i < limit; ++i) {
+        const Comp &c = comps[i];
+        Dictionary fd;
+        fd["type"] = int(c.type);
+        fd["center"] = c.sum_pos;
+        const float intensity = std::clamp(c.max_intensity, 0.0f, 1.0f);
+        fd["intensity"] = intensity;
+        const float area = std::max(c.area, 1.0f);
+        const float radius = hex_size * (radius_base + std::sqrt(area) * radius_scale);
+        fd["radius"] = radius;
+        Vector2 axis_v = c.sum_axis;
+        if (axis_v.length_squared() <= 0.0001f) {
+            axis_v = Vector2(1.0f, 0.0f);
+        }
+        const Vector2 axis = axis_v.normalized();
+        fd["axis"] = axis;
+        fd["stable_axis"] = axis;
+        // velocity = (inherited 模式) EMA(prev_velocity, observed_drift, 0.5)
+        //            (新生 模式)     axis * radius * 0.4
+        Vector2 measured_velocity = axis * radius * 0.4f;
+        if (c.has_inherited_center) {
+            Vector2 observed_drift = c.sum_pos - c.inherited_from_center;
+            const float max_drift = radius * 0.6f;
+            if (observed_drift.length() > max_drift) {
+                observed_drift = observed_drift.normalized() * max_drift;
+            }
+            measured_velocity = c.inherited_from_velocity.lerp(observed_drift, 0.5f);
+        }
+        fd["velocity"] = measured_velocity;
+        fd["major_scale"] = 1.30f;
+        fd["minor_scale"] = 0.85f;
+        const int inherited_age = std::max(c.inherited_age, 0);
+        fd["age_days"] = inherited_age;
+        fd["ttl_days"] = std::max(inherited_age * 3 + 12, 12);
+        fd["decay_per_day"] = 0.0f;
+        // edge_seed = (i+1)*37 + int(center.x)*3 + int(center.y)*5
+        const float edge_seed = float((i + 1) * 37 +
+                                       int(c.sum_pos.x) * 3 +
+                                       int(c.sum_pos.y) * 5);
+        fd["edge_seed"] = edge_seed;
+        fd["cloud_amount"] = std::clamp(c.sum_cloud, 0.0f, 1.0f);
+        fd["precip_amount"] = std::clamp(c.sum_precip, 0.0f, 1.0f);
+        fd["dissolve_amount"] = 0.0f;
+        // life_progress = clamp(0.15 + age*0.08, 0.15, 0.45)
+        const float life_progress = std::clamp(0.15f + float(inherited_age) * 0.08f, 0.15f, 0.45f);
+        fd["life_progress"] = life_progress;
+        fronts_out[i] = fd;
+        // next_seeds
+        PrevSummarySeed ns;
+        ns.type = c.type;
+        ns.center_x = c.sum_pos.x;
+        ns.center_y = c.sum_pos.y;
+        ns.age = inherited_age;
+        ns.area = int(area);
+        ns.velocity_x = measured_velocity.x;
+        ns.velocity_y = measured_velocity.y;
+        next_seeds.push_back(ns);
+    }
+    prev_seeds = std::move(next_seeds);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double elapsed = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = elapsed;
+    out["fronts"] = fronts_out;
+    return out;
+}
+
+void DCWorldExt::reset_weather_summary_state() {
+    if (_summary_state == nullptr) {
+        return;
+    }
+    auto *s = static_cast<WeatherSummaryState *>(_summary_state);
+    s->prev_seeds.clear();
+    s->prev_membership.clear();
+}
+
+void DCWorldExt::snapshot_weather_summary_state() {
+    auto *src = get_or_create_summary_state(_summary_state);
+    auto *dst = get_or_create_summary_state(_summary_state_snapshot);
+    dst->prev_seeds = src->prev_seeds;
+    dst->prev_membership = src->prev_membership;
+}
+
+void DCWorldExt::restore_weather_summary_state() {
+    if (_summary_state_snapshot == nullptr) {
+        return;
+    }
+    auto *src = static_cast<WeatherSummaryState *>(_summary_state_snapshot);
+    auto *dst = get_or_create_summary_state(_summary_state);
+    dst->prev_seeds = src->prev_seeds;
+    dst->prev_membership = src->prev_membership;
+}
+
 // ─── Block B helpers ────────────────────────────────────────────────────────
 namespace {
 
@@ -4954,6 +5723,25 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_weather_front_advect_pass", "knobs"),
         &DCWorldExt::run_weather_front_advect_pass);
+
+    // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）──────────────
+    // dist + summary 两个 pass + summary 状态管理三件套。骨架先返回 -1，
+    // 让 GDScript caller 永远 fallback。任务 4 / 7 实装算法主体。
+    ClassDB::bind_method(
+        D_METHOD("run_weather_distribute_pass", "knobs"),
+        &DCWorldExt::run_weather_distribute_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_weather_summary_fronts_pass", "knobs"),
+        &DCWorldExt::run_weather_summary_fronts_pass);
+    ClassDB::bind_method(
+        D_METHOD("reset_weather_summary_state"),
+        &DCWorldExt::reset_weather_summary_state);
+    ClassDB::bind_method(
+        D_METHOD("snapshot_weather_summary_state"),
+        &DCWorldExt::snapshot_weather_summary_state);
+    ClassDB::bind_method(
+        D_METHOD("restore_weather_summary_state"),
+        &DCWorldExt::restore_weather_summary_state);
 
     // Block B: ocean_currents wind solver (dots-wind-validation.md)
     ClassDB::bind_method(

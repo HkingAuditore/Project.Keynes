@@ -158,4 +158,22 @@
 
 ---
 
+## dots-monolith-split 进度（2026-05-14）
+
+本计划已开始执行实际"骨架 → 实质"搬迁。最新状态：
+
+| 子计划 | sub-module | 状态 | 说明 |
+|---|---|---|---|
+| §1.1 | `front_advect.gd` | 🟡→✅(部分) | `_tick_cyclone_wake` + fronts 推进段（含 F.6 C++ 快路径）已搬迁完成；wind_fn 闭包仍在 weather_system 内 |
+| §1.2 | `field_solver.gd` | ⏳→🟡 | 骨架 wire-up 完成（weather_system.init 实例化），主体 ~1500 行待逐函数搬迁 |
+| §1.3 | `precipitation_pipeline.gd / hydrology_runoff.gd` | ⏳ | 待启动 |
+| §1.4 | `biome_feedback.gd` | ⏳ | 待启动 |
+| §2.1-2.4 | `geo_*_pass.gd` × 8 | ⏳ | 待启动 |
+| §3.1-3.2 | `*_atlas_baker.gd` × 5 | ⏳ | 待启动 |
+| §4 | `bootstrap/*.gd` × 5 | ⏳ | 待启动 |
+
+更详细进度与 sub-PR 验收规则见 `dots-framework-status.md` §7 与 `.codebuddy/plan/dots-monolith-split/`。
+
+---
+
 **END of module-ownership-map.md.**

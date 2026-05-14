@@ -178,23 +178,35 @@ extends Resource
 # 切换是非破坏性的（DCSystem wrapper 内部仍 forward 到原 SusJob 实现），
 # 主要价值是开启 reads/writes 自动校验 + 拓扑序统一。
 # 详见 docs/dots-system-design.md（C.5 文档）。
-@export var use_dc_system_scheduler: bool = false
+#
+# 任务 6（dots-completion）：默认 false → true。earth_like.tres 生产 profile 已启用与验证。
+@export var use_dc_system_scheduler: bool = true
 
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
 #
-# 6 个 hot pass 的 C++ 化开关。每个 flag 默认 false（走 GDScript fallback）；
-# C++ stub 当前都返回 -1.0 → fallback 永远生效。后续 PR 填实际 C++ 算法 +
-# bit-equal 验收通过后，把对应 flag 切到 true 启用 C++ 路径。
+# 6 个 hot pass 的 C++ 化开关。
+#
+# 任务 5（dots-completion）：默认值从 false 升为 true（3 类高优先及 P2/P3）。
+# - earth_like.tres 生产 profile 实际上已全部启用（serialized override），本次仅同步
+#   默认值，让新建 ClimateProfile / 测试 profile 也默认走 C++ 路径。
+# - C++ stub 返回 -1.0 时，weather/ocean/sea_ice pass 会透明 fallback 到 GDScript。
+# - climate_pass_a / wind_field 仍为 false，原因详下方注释（前置未达成）。
 #
 # 与既有 use_gdext_climate（Pass-A C++ 化）配套；与 use_data_core_climate
 # 是不同维度（use_data_core 控制是否经 DCWorld，use_gdext_* 控制是否经 C++）。
-@export var use_gdext_weather_field: bool = false   # F.1 P0：13ms → < 2ms
-@export var use_gdext_ocean_water:  bool = false    # F.2a P1：3.4ms → < 0.5ms
-@export var use_gdext_ocean_land:   bool = false    # F.2b P1：3.4ms → < 0.5ms
-@export var use_gdext_climate_pass_b: bool = false  # F.3 P1：5.2ms → < 0.5ms
-@export var use_gdext_sea_ice:      bool = false    # F.4 P2：5.1ms → < 0.5ms
-@export var use_gdext_transpiration: bool = false   # F.5 P2：3.2ms → < 0.3ms
-@export var use_gdext_weather_front: bool = false   # F.6 P3：3.0ms → < 0.5ms
+@export var use_gdext_weather_field: bool = true   # F.1 P0：13ms → < 2ms
+@export var use_gdext_ocean_water:  bool = true    # F.2a P1：3.4ms → < 0.5ms
+@export var use_gdext_ocean_land:   bool = true    # F.2b P1：3.4ms → < 0.5ms
+@export var use_gdext_climate_pass_b: bool = true  # F.3 P1：5.2ms → < 0.5ms
+@export var use_gdext_sea_ice:      bool = true    # F.4 P2：5.1ms → < 0.5ms
+@export var use_gdext_transpiration: bool = true   # F.5 P2：3.2ms → < 0.3ms
+@export var use_gdext_weather_front: bool = true   # F.6 P3：3.0ms → < 0.5ms
+# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）─────────────────────
+# _distribute_weather_field_to_cells 与 _build_field_summary_fronts 下沉到
+# DCWorldExt。两条 flag 独立切换；C++ 端持久化 prev_seeds / prev_membership 跨
+# tick 维护，flag 切换时通过 reset_weather_summary_state() 清空避免新旧实现污染。
+@export var use_gdext_weather_distribute: bool = true  # dist：11.6ms → < 1.5ms
+@export var use_gdext_weather_summary: bool = true     # summary：17.8ms → < 3.0ms
 # Block B（Master 手册 §4）：ocean_currents wind solver C++ 化。
 # 当前 GDScript PhysicalCirculationSolver.solve_wind_field 在 SUS 切片下
 # p95=35.55ms（实测 dots-master-execution-handbook §3.3 ground truth）。
@@ -214,9 +226,13 @@ extends Resource
 # PR-2.3a HexCell facade（master 手册 §3.10.3）：
 # bake_world / 加载存档末尾给每个 cell 调用 cell.bind_world(world, use_hexcell_facade)。
 # 启用后，cell.<热字段> 的 setter 会同步到 world.write_*；getter 优先从 world 读。
-# 默认 false：facade infra 已就位但未启用，向后兼容。PR-2.3b 给 25 个热字段
-# 加 property setter/getter 后可灰度开启。完整 read/write 红线达成在 PR-2.3c。
-@export var use_hexcell_facade: bool = false
+#
+# 任务 4（dots-completion）：默认从 false → true。前置条件已满足：
+#   1. weather_system.gd 16 行 AoS 双写已包到 if not _hexcell_facade_on（任务 2）
+#   2. map_generator.gd bake/tick 路径已分类，tick 写入由 setter 透传 SoA（任务 3）
+#   3. hex_cell.gd 21 字段 setter/getter 透传 infra 已就位（PR-2.3b）
+# 启用后 hot path cell.<field>= 自动等价 world.write_f32(cid, idx, v)。
+@export var use_hexcell_facade: bool = true
 
 # DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
 # requirement 4.5). Field is kept on disk for save-file compatibility, but

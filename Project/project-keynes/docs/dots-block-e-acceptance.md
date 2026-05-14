@@ -138,6 +138,8 @@ worst field mean_diff 应低于 stochastic_field_threshold。
 
 - `docs/dots-master-execution-handbook.md` §8（Block E）
 - `docs/dots-wind-validation.md`（Block B 验收 protocol）
-- `docs/dots-framework-status.md`（最终升级目标）
+- `docs/dots-framework-status.md`（最终升级目标 + §7 dots-monolith-split 收官状态）
+- `.codebuddy/plan/dots-monolith-split/{requirements,task-item}.md`（4 巨石拆分实施计划）
+- `tests/dots_completion/dots_completion_gate.gd`（静态收官门禁脚本）
 - `tests/*` 全套 headless 验收
 - `tools/migration_harness/template_soak_test.gd`（每个模块拆分独立验收）
