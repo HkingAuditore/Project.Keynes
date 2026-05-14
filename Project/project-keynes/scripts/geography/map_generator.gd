@@ -3571,6 +3571,28 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 #   7) _apply_sea_ice_daily_pass — 海冰演替（必跑）
 #   8) _apply_transpiration_pass — 植被→湿度反馈（可选，与 Pass B 同开关）
 
+# PR-2.1.1 helper：把 [name → cid → write_*_indexed] 三步压成一行调用，封装
+# `_data_core_world == null` / `cid < 0` 双守卫。供 _climate_pass_a /
+# _climate_pass_a_soa 以及后续 PR-2.1.2/3/4 的 hot pass push 块复用。
+# 详见 docs/dots-master-execution-handbook.md §3.4.2.C / §9.2 模板 2。
+func _push_f32_to_world(name: StringName, indices: PackedInt32Array, values: PackedFloat32Array) -> void:
+	if _data_core_world == null:
+		return
+	var cid: int = _data_core_world.component_id(name)
+	if cid < 0:
+		return
+	_data_core_world.write_f32_indexed(cid, indices, values)
+
+
+func _push_u8_to_world(name: StringName, indices: PackedInt32Array, values: PackedByteArray) -> void:
+	if _data_core_world == null:
+		return
+	var cid: int = _data_core_world.component_id(name)
+	if cid < 0:
+		return
+	_data_core_world.write_u8_indexed(cid, indices, values)
+
+
 # Daily Sim SoA Refactor 方向 X：Pass A — 全 cell 写"裸基线 temp/moisture/
 # snow_cover + EMA"。读 cell.elevation/base_moisture/terrain（稳定字段），
 # 写 cell.temperature / moisture / snow_cover / temp_baseline / temp_season_offset
@@ -3785,8 +3807,9 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			_pa_ema_init[_pa_write_i] = 1  # 当前 cell 已经走过 init 分支或正常 EMA 更新，标记"已初始化"
 			_pa_write_i += 1
 
-	# PR-2.1.1：循环结束后批量提交 9 字段到 DCWorld SoA。
-	if _data_core_world != null and _pa_write_i > 0:
+	# PR-2.1.1：循环结束后批量提交 9 字段到 DCWorld SoA（helper 内部守卫
+	# _data_core_world / cid，故此处只判 write_i > 0）。
+	if _pa_write_i > 0:
 		_pa_indices.resize(_pa_write_i)
 		_pa_temp.resize(_pa_write_i)
 		_pa_moist.resize(_pa_write_i)
@@ -3797,34 +3820,16 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		_pa_temp_365d.resize(_pa_write_i)
 		_pa_temp_anom.resize(_pa_write_i)
 		_pa_ema_init.resize(_pa_write_i)
-		var _cid_temp: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
-		if _cid_temp >= 0:
-			_data_core_world.write_f32_indexed(_cid_temp, _pa_indices, _pa_temp)
-		var _cid_moist: int = _data_core_world.component_id(DCComponentIds.CELL_MOISTURE)
-		if _cid_moist >= 0:
-			_data_core_world.write_f32_indexed(_cid_moist, _pa_indices, _pa_moist)
-		var _cid_snow: int = _data_core_world.component_id(DCComponentIds.CELL_SNOW_COVER)
-		if _cid_snow >= 0:
-			_data_core_world.write_f32_indexed(_cid_snow, _pa_indices, _pa_snow)
-		# 长期均值字段：mean_diff ≤ 0.005 红线（master 手册 §3.4.3 规定的严格红线）
-		var _cid_baseline: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_BASELINE)
-		if _cid_baseline >= 0:
-			_data_core_world.write_f32_indexed(_cid_baseline, _pa_indices, _pa_temp_baseline)
-		var _cid_season_off: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_SEASON_OFFSET)
-		if _cid_season_off >= 0:
-			_data_core_world.write_f32_indexed(_cid_season_off, _pa_indices, _pa_temp_season_off)
-		var _cid_30d: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_30D)
-		if _cid_30d >= 0:
-			_data_core_world.write_f32_indexed(_cid_30d, _pa_indices, _pa_temp_30d)
-		var _cid_365d: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_365D)
-		if _cid_365d >= 0:
-			_data_core_world.write_f32_indexed(_cid_365d, _pa_indices, _pa_temp_365d)
-		var _cid_anom: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_ANOMALY)
-		if _cid_anom >= 0:
-			_data_core_world.write_f32_indexed(_cid_anom, _pa_indices, _pa_temp_anom)
-		var _cid_ema: int = _data_core_world.component_id(DCComponentIds.CELL_EMA_INITIALIZED)
-		if _cid_ema >= 0:
-			_data_core_world.write_u8_indexed(_cid_ema, _pa_indices, _pa_ema_init)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_indices, _pa_temp)
+		_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_indices, _pa_moist)
+		_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_indices, _pa_snow)
+		# 长期均值字段：mean_diff ≤ 0.005 红线（master 手册 §3.4.3）
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_indices, _pa_temp_baseline)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_indices, _pa_temp_season_off)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_indices, _pa_temp_30d)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_indices, _pa_temp_365d)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_indices, _pa_temp_anom)
+		_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_indices, _pa_ema_init)
 
 # Daily Sim SoA Refactor 方向 X：Pass B — 局部气候耦合。
 # 调用方负责守卫 enable_local_climate_coupling 开关。winter_boost 从 season_phase
@@ -4915,39 +4920,22 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# 当 _use_dc=false 但 _data_core_world != null 时这次写就是必须的（map.*_arr
 	# 与 DCWorld 不同源时唯一的 push 时机）。
 	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
-	if _data_core_world != null and n > 0:
+	# helper 内部守卫 _data_core_world / cid，故此处只判 n > 0。
+	if n > 0:
 		var _pa_soa_indices: PackedInt32Array = PackedInt32Array()
 		_pa_soa_indices.resize(n)
 		for _ki in range(n):
 			_pa_soa_indices[_ki] = _ki
-		var _cid_temp_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
-		if _cid_temp_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_temp_s, _pa_soa_indices, temp_a)
-		var _cid_moist_s: int = _data_core_world.component_id(DCComponentIds.CELL_MOISTURE)
-		if _cid_moist_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_moist_s, _pa_soa_indices, moist_a)
-		var _cid_snow_s: int = _data_core_world.component_id(DCComponentIds.CELL_SNOW_COVER)
-		if _cid_snow_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_snow_s, _pa_soa_indices, snow_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_soa_indices, temp_a)
+		_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_soa_indices, moist_a)
+		_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_soa_indices, snow_a)
 		# 长期均值字段（master 手册 §3.4.3 要求 mean_diff ≤ 0.005 的严格红线）
-		var _cid_baseline_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_BASELINE)
-		if _cid_baseline_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_baseline_s, _pa_soa_indices, temp_baseline_a)
-		var _cid_season_off_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_SEASON_OFFSET)
-		if _cid_season_off_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_season_off_s, _pa_soa_indices, season_off_a)
-		var _cid_30d_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_30D)
-		if _cid_30d_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_30d_s, _pa_soa_indices, temp_30d_a)
-		var _cid_365d_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_365D)
-		if _cid_365d_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_365d_s, _pa_soa_indices, temp_365d_a)
-		var _cid_anom_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_ANOMALY)
-		if _cid_anom_s >= 0:
-			_data_core_world.write_f32_indexed(_cid_anom_s, _pa_soa_indices, temp_anom_a)
-		var _cid_ema_s: int = _data_core_world.component_id(DCComponentIds.CELL_EMA_INITIALIZED)
-		if _cid_ema_s >= 0:
-			_data_core_world.write_u8_indexed(_cid_ema_s, _pa_soa_indices, ema_init_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_soa_indices, temp_baseline_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_soa_indices, season_off_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_soa_indices, temp_30d_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_soa_indices, temp_365d_a)
+		_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_soa_indices, temp_anom_a)
+		_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_soa_indices, ema_init_a)
 
 	# A.2.1.A2-fix — Pass A 完成：把本日全图 drift 写回 generator 成员，供下一日 epsilon 比对扣除。
 	# 用 EMA 平滑（α=0.3）避免单日噪声导致 drift 估计抖动；首次（drift_count_local==0）保持原值。
