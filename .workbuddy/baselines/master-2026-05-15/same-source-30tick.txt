@@ -1,0 +1,31 @@
+
+=================== DCSoakABRunner Report ===================
+  mode: SAME_SOURCE
+  A: [dc_on] user://soak/same_A_2026-05-15T03-10-34.tsv
+  B: [dc_on] user://soak/same_B_2026-05-15T03-10-34.tsv
+  paired entries: 1496   unpaired A:308  B:264
+  max mean_diff (paired ticks x fields, all fields): 3321941241.0
+  worst field: world.sea_ice_fraction_buffer_hash
+  --- SAME_SOURCE 多阈值评估 ---
+  scalar:    3321941241.0  (world.sea_ice_fraction_buffer_hash)  threshold=0.05
+  long-term: 0.0  ()  threshold=0.01
+  skipped (random spawn / 离散字段): 8 fields
+  verdict: FAIL (scalar or long-term exceeds tolerance)
+           ^ 长期均值(temp_30d/365d/anomaly)异常才是 storage bug 信号
+  --- Top-15 fields by max mean_diff ---
+      *** world.sea_ice_fraction_buffer_hash    3321941241.0
+      *** cell.climate_dirty_mask               1.0
+      *** cell.cover                            0.132916
+      *** cell.weather_type                     0.099166
+      *** cell.vegetation                       0.097084
+      *** cell.snow_cover                       0.082237
+          cell.moisture                         0.039643
+          cell.sea_ice_frac                     0.029047
+          cell.temp                             0.02068
+          cell.weather_instability              0.018131
+          cell.weather_intensity                0.011966
+          cell.weather_precip                   0.011439
+          cell.weather_vapor                    0.011245
+          cell.weather_cloud                    0.009507
+=============================================================
+
