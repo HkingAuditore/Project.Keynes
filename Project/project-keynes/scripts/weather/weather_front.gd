@@ -164,3 +164,157 @@ func _hash_noise_2d(ix: int, iy: int) -> float:
 	n = (n ^ (n >> 13)) * 1274126177
 	n = n ^ (n >> 16)
 	return float(n & 0x7fffffff) / 2147483647.0
+
+# ─── Phase 1.2 / dots-full-migration §F.6 SoA 化预备 ─────────────────────
+#
+# 静态 batch helpers：把 Array[WeatherFront] 与 SoA Dictionary 互相打包/解包。
+# F.6 C++ 实装（run_weather_front_advect_pass）将复用本对模式，每 tick：
+#   1. weather_system 调 pack_into_dict(_active_fronts) → batch
+#   2. C++ pass(batch) 写 batch 内的 PackedArray
+#   3. weather_system 调 apply_dict_to_fronts(batch, _active_fronts)
+# 即等同于 F.4 / F.2 处理 SoA 镜像缺失字段的 batch 提取模式。
+#
+# Schema 单一源：`scripts/data_core/fronts_schema.gd`（FRONTS_SCHEMA）。
+# 阶段 II 真正升权威时，本两个 helper 被 thin facade（getter 走 PackedArray,
+# by world_idx）取代；首版仍保留 OOP 双轨（OOP 权威，SoA 镜像）。
+
+## 把 `fronts` Array[WeatherFront] 打包成 Dictionary of PackedArrays。
+##
+## 输出 Dictionary key 命名约定（与 fronts_schema.gd FRONTS_SCHEMA cpp_name 一致）：
+##   front_center_x / front_center_y : PackedFloat32Array (size = n)
+##   front_velocity_x / ..._y       : PackedFloat32Array (size = n)
+##   front_axis_x / ..._y           : PackedFloat32Array (size = n)
+##   front_stable_axis_x / ..._y    : PackedFloat32Array (size = n)
+##   front_radius / front_intensity : PackedFloat32Array (size = n)
+##   front_major_scale / ..._minor_ : PackedFloat32Array (size = n)
+##   front_edge_seed                : PackedFloat32Array (size = n)
+##   front_decay_per_day            : PackedFloat32Array (size = n)
+##   front_life_progress            : PackedFloat32Array (size = n)
+##   front_cloud_amount             : PackedFloat32Array (size = n)
+##   front_precip_amount            : PackedFloat32Array (size = n)
+##   front_dissolve_amount          : PackedFloat32Array (size = n)
+##   front_world_idx / type / ttl_days / age_days : PackedInt32Array (size = n)
+##   front_alive                    : PackedByteArray (size = n; from is_alive())
+##   n_fronts                       : int
+##
+## 性能：全部使用 typed PackedArray，无 Variant 装箱；单次 pack ~5µs / 16 fronts。
+static func pack_into_dict(fronts: Array) -> Dictionary:
+	var n: int = fronts.size()
+	var center_x:        PackedFloat32Array = PackedFloat32Array(); center_x.resize(n)
+	var center_y:        PackedFloat32Array = PackedFloat32Array(); center_y.resize(n)
+	var velocity_x:      PackedFloat32Array = PackedFloat32Array(); velocity_x.resize(n)
+	var velocity_y:      PackedFloat32Array = PackedFloat32Array(); velocity_y.resize(n)
+	var axis_x:          PackedFloat32Array = PackedFloat32Array(); axis_x.resize(n)
+	var axis_y:          PackedFloat32Array = PackedFloat32Array(); axis_y.resize(n)
+	var stable_axis_x:   PackedFloat32Array = PackedFloat32Array(); stable_axis_x.resize(n)
+	var stable_axis_y:   PackedFloat32Array = PackedFloat32Array(); stable_axis_y.resize(n)
+	var radius_arr:      PackedFloat32Array = PackedFloat32Array(); radius_arr.resize(n)
+	var intensity_arr:   PackedFloat32Array = PackedFloat32Array(); intensity_arr.resize(n)
+	var major_scale_arr: PackedFloat32Array = PackedFloat32Array(); major_scale_arr.resize(n)
+	var minor_scale_arr: PackedFloat32Array = PackedFloat32Array(); minor_scale_arr.resize(n)
+	var edge_seed_arr:   PackedFloat32Array = PackedFloat32Array(); edge_seed_arr.resize(n)
+	var decay_arr:       PackedFloat32Array = PackedFloat32Array(); decay_arr.resize(n)
+	var life_progress_arr:    PackedFloat32Array = PackedFloat32Array(); life_progress_arr.resize(n)
+	var cloud_amount_arr:     PackedFloat32Array = PackedFloat32Array(); cloud_amount_arr.resize(n)
+	var precip_amount_arr:    PackedFloat32Array = PackedFloat32Array(); precip_amount_arr.resize(n)
+	var dissolve_amount_arr:  PackedFloat32Array = PackedFloat32Array(); dissolve_amount_arr.resize(n)
+	var world_idx_arr:        PackedInt32Array   = PackedInt32Array();   world_idx_arr.resize(n)
+	var type_arr:             PackedInt32Array   = PackedInt32Array();   type_arr.resize(n)
+	var ttl_days_arr:         PackedInt32Array   = PackedInt32Array();   ttl_days_arr.resize(n)
+	var age_days_arr:         PackedInt32Array   = PackedInt32Array();   age_days_arr.resize(n)
+	var alive_arr:            PackedByteArray    = PackedByteArray();    alive_arr.resize(n)
+
+	for i in range(n):
+		var f: WeatherFront = fronts[i]
+		center_x[i]        = f.center.x
+		center_y[i]        = f.center.y
+		velocity_x[i]      = f.velocity.x
+		velocity_y[i]      = f.velocity.y
+		axis_x[i]          = f.axis.x
+		axis_y[i]          = f.axis.y
+		stable_axis_x[i]   = f.stable_axis.x
+		stable_axis_y[i]   = f.stable_axis.y
+		radius_arr[i]      = f.radius
+		intensity_arr[i]   = f.intensity
+		major_scale_arr[i] = f.major_scale
+		minor_scale_arr[i] = f.minor_scale
+		edge_seed_arr[i]   = f.edge_seed
+		decay_arr[i]       = f.decay_per_day
+		life_progress_arr[i]   = f.life_progress
+		cloud_amount_arr[i]    = f.cloud_amount
+		precip_amount_arr[i]   = f.precip_amount
+		dissolve_amount_arr[i] = f.dissolve_amount
+		world_idx_arr[i]   = f.world_idx
+		type_arr[i]        = f.type
+		ttl_days_arr[i]    = f.ttl_days
+		age_days_arr[i]    = f.age_days
+		alive_arr[i]       = 1 if f.is_alive() else 0
+
+	return {
+		"n_fronts": n,
+		"front_center_x": center_x,
+		"front_center_y": center_y,
+		"front_velocity_x": velocity_x,
+		"front_velocity_y": velocity_y,
+		"front_axis_x": axis_x,
+		"front_axis_y": axis_y,
+		"front_stable_axis_x": stable_axis_x,
+		"front_stable_axis_y": stable_axis_y,
+		"front_radius": radius_arr,
+		"front_intensity": intensity_arr,
+		"front_major_scale": major_scale_arr,
+		"front_minor_scale": minor_scale_arr,
+		"front_edge_seed": edge_seed_arr,
+		"front_decay_per_day": decay_arr,
+		"front_life_progress": life_progress_arr,
+		"front_cloud_amount": cloud_amount_arr,
+		"front_precip_amount": precip_amount_arr,
+		"front_dissolve_amount": dissolve_amount_arr,
+		"front_world_idx": world_idx_arr,
+		"front_type": type_arr,
+		"front_ttl_days": ttl_days_arr,
+		"front_age_days": age_days_arr,
+		"front_alive": alive_arr,
+	}
+
+## 把 SoA Dictionary 应用回 `fronts` Array[WeatherFront]（按 idx 1:1 写回）。
+##
+## C++ pass 修改完 batch 内 PackedArray 后，调本方法把数值写回 OOP fronts。
+## 阶段 II OOP 退化为 facade 后本方法可删除（直接走 facade getter）。
+##
+## NOTE: alive=0 的 front 仍会被写回（未 pruning）；caller 应在调本方法
+##       之后手动 prune `_active_fronts`：`fronts = fronts.filter(func(f): return f.is_alive())`
+static func apply_dict_to_fronts(d: Dictionary, fronts: Array) -> void:
+	var n: int = fronts.size()
+	if d.get("n_fronts", -1) != n:
+		push_warning("[WeatherFront] apply_dict_to_fronts: n_fronts mismatch (dict=%s, fronts=%d) — abort" % [str(d.get("n_fronts")), n])
+		return
+	var center_x:        PackedFloat32Array = d.get("front_center_x", PackedFloat32Array())
+	var center_y:        PackedFloat32Array = d.get("front_center_y", PackedFloat32Array())
+	var velocity_x:      PackedFloat32Array = d.get("front_velocity_x", PackedFloat32Array())
+	var velocity_y:      PackedFloat32Array = d.get("front_velocity_y", PackedFloat32Array())
+	var axis_x:          PackedFloat32Array = d.get("front_axis_x", PackedFloat32Array())
+	var axis_y:          PackedFloat32Array = d.get("front_axis_y", PackedFloat32Array())
+	var stable_axis_x:   PackedFloat32Array = d.get("front_stable_axis_x", PackedFloat32Array())
+	var stable_axis_y:   PackedFloat32Array = d.get("front_stable_axis_y", PackedFloat32Array())
+	var intensity_arr:   PackedFloat32Array = d.get("front_intensity", PackedFloat32Array())
+	var life_progress_arr:    PackedFloat32Array = d.get("front_life_progress", PackedFloat32Array())
+	var cloud_amount_arr:     PackedFloat32Array = d.get("front_cloud_amount", PackedFloat32Array())
+	var precip_amount_arr:    PackedFloat32Array = d.get("front_precip_amount", PackedFloat32Array())
+	var dissolve_amount_arr:  PackedFloat32Array = d.get("front_dissolve_amount", PackedFloat32Array())
+	var age_days_arr:         PackedInt32Array   = d.get("front_age_days", PackedInt32Array())
+
+	for i in range(n):
+		var f: WeatherFront = fronts[i]
+		if center_x.size() == n: f.center = Vector2(center_x[i], center_y[i])
+		if velocity_x.size() == n: f.velocity = Vector2(velocity_x[i], velocity_y[i])
+		if axis_x.size() == n: f.axis = Vector2(axis_x[i], axis_y[i])
+		if stable_axis_x.size() == n: f.stable_axis = Vector2(stable_axis_x[i], stable_axis_y[i])
+		if intensity_arr.size() == n: f.intensity = intensity_arr[i]
+		if life_progress_arr.size() == n: f.life_progress = life_progress_arr[i]
+		if cloud_amount_arr.size() == n: f.cloud_amount = cloud_amount_arr[i]
+		if precip_amount_arr.size() == n: f.precip_amount = precip_amount_arr[i]
+		if dissolve_amount_arr.size() == n: f.dissolve_amount = dissolve_amount_arr[i]
+		if age_days_arr.size() == n: f.age_days = age_days_arr[i]
+	# NOTE: type / ttl_days / radius / major_scale / ... 这些在 advect 期间不变，
+	# 不需要写回。如果未来 C++ pass 改这些字段，把对应行加进上面的循环即可。

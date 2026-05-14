@@ -153,6 +153,13 @@ var _field_slice_last_ms: float = 0.0
 # 通过 configure_gdext_acceleration() 注入；map_generator 在 _data_core_world_ext
 # bind 完成后调一次。flag 关 / ext null 时所有 hot path 走 GDScript legacy。
 var _data_core_world_ext: RefCounted = null
+
+# PR-2.1.6（weather field 写路径下移）：weather field commit / spawn 反馈写位
+# 全部下移到 _data_core_world.write_f32_indexed。configure_gdext_acceleration()
+# 第 4 个可选参数注入 GDScript DCWorld。null 时 fallback 到旧的 cell.* 直写
+# （保留双写是 PR-2.3 facade 化前的兼容路径）。详见 master 手册 §3.9。
+var _data_core_world = null  # DCWorld（GDScript）
+
 var _use_gdext_weather_field: bool = false
 # F.1 运行时统计：cpp_runs / cpp_fallbacks / cpp_total_ms（_last_breakdown 暴露给上层 HUD）
 var _gdext_field_runs: int = 0
@@ -167,6 +174,20 @@ var _gdext_field_first_attempt_logged: bool = false
 var _field_verify_enabled: bool = false
 var _field_verify_tol_f32: float = 1.0e-4
 var _field_verify_first_divergence_logged: bool = false
+
+# ─── Phase F.6：DCWorldExt fronts advect C++ 加速钩子（charter §7 P3）───
+# 通过 configure_gdext_acceleration() 同时注入（同一 ext 实例 + ClimateProfile 引用）。
+# F.6 fast-path 在 tick_one_day fronts 推进段（line ~282）触发，详见
+# scripts/weather/weather_system.gd::tick_one_day "1) 推进所有 front" 注释。
+var _use_gdext_weather_front: bool = false
+var _gdext_front_runs: int = 0
+var _gdext_front_fallbacks: int = 0
+var _gdext_front_total_ms: float = 0.0
+var _gdext_front_first_attempt_logged: bool = false
+var _gdext_front_signature_checked: bool = false
+var _gdext_front_signature_ok: bool = false
+# F.6 ClimateProfile 引用（用于读 use_gdext_weather_front flag）。
+var _cp_for_front_flag: Resource = null
 
 # v11 在 tick_one_day 期间缓存当前 MapData 引用，供同一 tick 内部的 spawn
 # 分支（_spawn_random_front / _build_front_at）复用，避免从调用链中到处透传。
@@ -279,22 +300,119 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 	# 临时缩放本日衰减。类型与本地温湿带匹配 → ×0.7（长寿命）；
 	# 不匹配 → ×1.5（更快耗尽）。缩放只影响本次 advance_one_day 的 decay 消耗。
 	# 不持久化到 front.decay_per_day 自身，避免跨日连锁放大。
-	for front in _active_fronts:
-		var decay_mul: float = 1.0
-		var precip_bonus: float = 0.0
-		if _emergent_coupling and map != null:
-			var cube := HexUtils.world_to_cube(front.center, _hex_size)
-			var at_cell: HexCell = map.get_cell_by_cube(cube)
-			if at_cell != null:
-				decay_mul = _front_decay_modifier(front, at_cell)
-				precip_bonus = _front_orographic_precip_bonus(front, at_cell, map)
-		var saved_decay: float = front.decay_per_day
-		front.decay_per_day = saved_decay * decay_mul
-		front.advance_one_day(wind_fn)
-		front.decay_per_day = saved_decay
-		# 推进后如果地形给出迎风坡加成：把本日 precip_amount 拉高（视觉 + 后续分发用）
-		if precip_bonus > 0.0:
-			front.precip_amount = clampf(front.precip_amount + precip_bonus, 0.0, 1.0)
+	#
+	# ─── Phase F.6：DCWorldExt fronts advect C++ 快路径 ─────────────────
+	# 触发条件：cp.use_gdext_weather_front == true + ext != null + has_method
+	#         + active_fronts 不空。任一不满足走 GDScript fallback。
+	#
+	# 设计：emergent_coupling 的 decay_mul / precip_bonus 仍由 GDScript 预算
+	# （需要 map 查询）；C++ 端只接 batch advect 主循环（旋转 / center += vel /
+	# decay / age++ / refresh_visual_lifecycle）。wind_fn 采样在 GDScript 端
+	# 一次性 pre-compute 成 PackedVector2Array 传 C++。
+	var f6_did_fast_path: bool = false
+	var f6_active_fronts_size: int = _active_fronts.size()
+	var f6_flag_on: bool = false
+	if _cp_for_front_flag != null and "use_gdext_weather_front" in _cp_for_front_flag:
+		f6_flag_on = bool(_cp_for_front_flag.use_gdext_weather_front)
+	if f6_active_fronts_size > 0 and f6_flag_on \
+			and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_weather_front_advect_pass"):
+		# 一次性诊断
+		if not _gdext_front_first_attempt_logged:
+			_gdext_front_first_attempt_logged = true
+			print("[front/F.6] first attempt: n_active_fronts=%d flag=%s ext_ok=%s" % [
+				f6_active_fronts_size, str(f6_flag_on), str(_data_core_world_ext != null),
+			])
+		if not _gdext_front_signature_checked:
+			_gdext_front_signature_checked = true
+			var ml: Array = _data_core_world_ext.get_method_list()
+			for m: Dictionary in ml:
+				if String(m.get("name", "")) == "run_weather_front_advect_pass":
+					var args: Array = m.get("args", [])
+					_gdext_front_signature_ok = (args.size() == 1)
+					if not _gdext_front_signature_ok:
+						push_warning("[gdext sig] run_weather_front_advect_pass has %d args (expected 1); .dll STALE — REBUILD gdext" % args.size())
+					break
+			print("[front/F.6] sig probe = %s（仅作诊断，不阻止下方调用）" % str(_gdext_front_signature_ok))
+
+		# Phase 1: GDScript 预算 decay_mul / precip_bonus / wind_per_front
+		var saved_decays: PackedFloat32Array = PackedFloat32Array()
+		saved_decays.resize(f6_active_fronts_size)
+		var precip_bonuses: PackedFloat32Array = PackedFloat32Array()
+		precip_bonuses.resize(f6_active_fronts_size)
+		var wind_per_front: PackedVector2Array = PackedVector2Array()
+		wind_per_front.resize(f6_active_fronts_size)
+		for i_f6 in range(f6_active_fronts_size):
+			var f_f6: WeatherFront = _active_fronts[i_f6]
+			saved_decays[i_f6] = f_f6.decay_per_day
+			var decay_mul_f6: float = 1.0
+			var precip_bonus_f6: float = 0.0
+			if _emergent_coupling and map != null:
+				var cube_f6 := HexUtils.world_to_cube(f_f6.center, _hex_size)
+				var at_cell_f6: HexCell = map.get_cell_by_cube(cube_f6)
+				if at_cell_f6 != null:
+					decay_mul_f6 = _front_decay_modifier(f_f6, at_cell_f6)
+					precip_bonus_f6 = _front_orographic_precip_bonus(f_f6, at_cell_f6, map)
+			# 临时改 decay_per_day（C++ 端会读这个值）
+			f_f6.decay_per_day = saved_decays[i_f6] * decay_mul_f6
+			precip_bonuses[i_f6] = precip_bonus_f6
+			# Wind sample（callable 是合法的；这里在 fast-path 之外的 callable 也 OK）
+			if wind_fn.is_valid():
+				wind_per_front[i_f6] = wind_fn.call(f_f6.center) as Vector2
+			else:
+				wind_per_front[i_f6] = Vector2.ZERO
+
+		# Phase 2: pack + invoke C++
+		var batch: Dictionary = WeatherFront.pack_into_dict(_active_fronts)
+		batch["wind_per_front"] = wind_per_front
+		batch["max_axis_turn_rad"] = 0.383972  # 与 weather_front.gd::_MAX_AXIS_TURN_RADIANS 一致
+		var rc_f6: float = float(_data_core_world_ext.run_weather_front_advect_pass(batch))
+
+		if _gdext_front_runs + _gdext_front_fallbacks < 3:
+			print("[front/F.6] DEBUG call#%d: rc=%.4f n_active=%d emergent=%s" % [
+				_gdext_front_runs + _gdext_front_fallbacks + 1,
+				rc_f6, f6_active_fronts_size, str(_emergent_coupling),
+			])
+
+		if rc_f6 >= 0.0:
+			# Phase 3: apply batch back to OOP fronts + 恢复 decay + 应用 precip_bonus
+			WeatherFront.apply_dict_to_fronts(batch, _active_fronts)
+			for i_f6r in range(f6_active_fronts_size):
+				var f_f6r: WeatherFront = _active_fronts[i_f6r]
+				f_f6r.decay_per_day = saved_decays[i_f6r]  # 恢复（不持久化 emergent decay_mul）
+				var pb: float = precip_bonuses[i_f6r]
+				if pb > 0.0:
+					f_f6r.precip_amount = clampf(f_f6r.precip_amount + pb, 0.0, 1.0)
+
+			_gdext_front_runs += 1
+			_gdext_front_total_ms += rc_f6
+			if _gdext_front_runs == 1:
+				print("[front/F.6] gdext path ACTIVE — first run elapsed=%.3fms (legacy GDScript baseline ≈ 3.0ms; charter §7 target < 0.5ms)" % rc_f6)
+			f6_did_fast_path = true
+		else:
+			# rc<0：恢复 decay（不能保留 emergent 缩放进 fallback，否则 GDScript 路径再次乘）
+			for i_f6e in range(f6_active_fronts_size):
+				(_active_fronts[i_f6e] as WeatherFront).decay_per_day = saved_decays[i_f6e]
+			_gdext_front_fallbacks += 1
+			# fall through 到 GDScript advect 循环（重新走 emergent 评估）
+
+	if not f6_did_fast_path:
+		for front in _active_fronts:
+			var decay_mul: float = 1.0
+			var precip_bonus: float = 0.0
+			if _emergent_coupling and map != null:
+				var cube := HexUtils.world_to_cube(front.center, _hex_size)
+				var at_cell: HexCell = map.get_cell_by_cube(cube)
+				if at_cell != null:
+					decay_mul = _front_decay_modifier(front, at_cell)
+					precip_bonus = _front_orographic_precip_bonus(front, at_cell, map)
+			var saved_decay: float = front.decay_per_day
+			front.decay_per_day = saved_decay * decay_mul
+			front.advance_one_day(wind_fn)
+			front.decay_per_day = saved_decay
+			# 推进后如果地形给出迎风坡加成：把本日 precip_amount 拉高（视觉 + 后续分发用）
+			if precip_bonus > 0.0:
+				front.precip_amount = clampf(front.precip_amount + precip_bonus, 0.0, 1.0)
 
 	# 2) 回收 dead 与出图 front
 	var alive: Array[WeatherFront] = []
@@ -553,6 +671,18 @@ func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate
 
 func _distribute_to_cells(map: MapData) -> void:
 	_cover_dirty = false
+	# PR-2.1.6（weather → climate 反馈写路径下移）：预分配 batch buffer。
+	# distribute 段在 weather field commit 之后跑，把 weather 扰动叠加到 cell.moisture/temp。
+	# 详见 master 手册 §3.9.2 PR-2.1.6b。
+	var _wd_n: int = map.cell_count() if map.has_method("cell_count") else map.all_cells().size()
+	var _wd_idx: PackedInt32Array = PackedInt32Array()
+	var _wd_moist: PackedFloat32Array = PackedFloat32Array()
+	var _wd_temp: PackedFloat32Array = PackedFloat32Array()
+	_wd_idx.resize(_wd_n)
+	_wd_moist.resize(_wd_n)
+	_wd_temp.resize(_wd_n)
+	var _wd_w: int = 0
+
 	for cell: HexCell in map.all_cells():
 		var pos := HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
 		var result := query_at(pos)
@@ -569,6 +699,12 @@ func _distribute_to_cells(map: MapData) -> void:
 		temp_now = clampf(temp_now + WeatherType.temp_delta(wt) * intensity, 0.0, 1.0)
 		cell.moisture = moist_now
 		cell.temperature = temp_now
+		# PR-2.1.6：收集 dirty entry。
+		if cell.index >= 0 and _wd_w < _wd_n:
+			_wd_idx[_wd_w] = int(cell.index)
+			_wd_moist[_wd_w] = moist_now
+			_wd_temp[_wd_w] = temp_now
+			_wd_w += 1
 		# 临时覆盖物：FLOODING 仍走即时写入；SNOW 改走 _apply_snow_accumulation 累积式
 		# 累积式好处：(1) 雪不再随单帧 BLIZZARD 闪烁出现；(2) 温升时按节律消融
 		if not LandformType.is_water(cell.landform):
@@ -586,6 +722,18 @@ func _distribute_to_cells(map: MapData) -> void:
 					cell.cover = CoverType.CV.FLOODING
 					cell.current_state["cover"] = int(cell.cover)
 					_cover_dirty = true
+
+	# PR-2.1.6（weather → climate 反馈写路径下移）：循环结束后批量提交 cell.moisture / cell.temperature 到 DCWorld。
+	if _data_core_world != null and _wd_w > 0:
+		_wd_idx.resize(_wd_w)
+		_wd_moist.resize(_wd_w)
+		_wd_temp.resize(_wd_w)
+		var _cid_md: int = _data_core_world.component_id(DCComponentIds.CELL_MOISTURE)
+		if _cid_md >= 0:
+			_data_core_world.write_f32_indexed(_cid_md, _wd_idx, _wd_moist)
+		var _cid_td: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+		if _cid_td >= 0:
+			_data_core_world.write_f32_indexed(_cid_td, _wd_idx, _wd_temp)
 
 func uses_weather_field() -> bool:
 	return _weather_field_enabled
@@ -858,6 +1006,29 @@ func commit_weather_field_solve() -> Array[WeatherFront]:
 	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
 	var soa_instability: PackedFloat32Array = map.weather_instability_arr
 	var soa_field_init: PackedByteArray = map.weather_field_init_arr
+	# PR-2.1.6（weather field commit 写路径下移）：预分配 batch buffer。
+	# commit 阶段一次性写 7 个 f32 字段 + 2 个 u8 字段（weather_type / field_init 均为 U8）。
+	# 详见 master 手册 §3.9。
+	var _wf_n: int = cells.size()
+	var _wf_idx: PackedInt32Array = PackedInt32Array()
+	var _wf_intensity: PackedFloat32Array = PackedFloat32Array()
+	var _wf_cloud: PackedFloat32Array = PackedFloat32Array()
+	var _wf_precip: PackedFloat32Array = PackedFloat32Array()
+	var _wf_vapor: PackedFloat32Array = PackedFloat32Array()
+	var _wf_conv: PackedFloat32Array = PackedFloat32Array()
+	var _wf_inst: PackedFloat32Array = PackedFloat32Array()
+	var _wf_type: PackedByteArray = PackedByteArray()
+	var _wf_init: PackedByteArray = PackedByteArray()
+	_wf_idx.resize(_wf_n)
+	_wf_intensity.resize(_wf_n)
+	_wf_cloud.resize(_wf_n)
+	_wf_precip.resize(_wf_n)
+	_wf_vapor.resize(_wf_n)
+	_wf_conv.resize(_wf_n)
+	_wf_inst.resize(_wf_n)
+	_wf_type.resize(_wf_n)
+	_wf_init.resize(_wf_n)
+
 	for i in range(cells.size()):
 		var out_cell: HexCell = cells[i]
 		var v_cloud: float = _field_slice_next_cloud[i]
@@ -885,6 +1056,42 @@ func commit_weather_field_solve() -> Array[WeatherFront]:
 		soa_convergence[i] = v_convergence
 		soa_instability[i] = v_instability
 		soa_field_init[i] = 1
+		# PR-2.1.6：收集 dirty entry 到 batch buffer
+		_wf_idx[i] = i
+		_wf_intensity[i] = v_intensity
+		_wf_cloud[i] = v_cloud
+		_wf_precip[i] = v_precip
+		_wf_vapor[i] = v_vapor
+		_wf_conv[i] = v_convergence
+		_wf_inst[i] = v_instability
+		_wf_type[i] = v_type & 0xFF
+		_wf_init[i] = 1
+	# PR-2.1.6：循环结束后批量提交 9 字段到 DCWorld SoA。
+	if _data_core_world != null and _wf_n > 0:
+		var _cid_wi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
+		if _cid_wi >= 0:
+			_data_core_world.write_f32_indexed(_cid_wi, _wf_idx, _wf_intensity)
+		var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
+		if _cid_wc >= 0:
+			_data_core_world.write_f32_indexed(_cid_wc, _wf_idx, _wf_cloud)
+		var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
+		if _cid_wp >= 0:
+			_data_core_world.write_f32_indexed(_cid_wp, _wf_idx, _wf_precip)
+		var _cid_wv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
+		if _cid_wv >= 0:
+			_data_core_world.write_f32_indexed(_cid_wv, _wf_idx, _wf_vapor)
+		var _cid_wcv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
+		if _cid_wcv >= 0:
+			_data_core_world.write_f32_indexed(_cid_wcv, _wf_idx, _wf_conv)
+		var _cid_wins: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
+		if _cid_wins >= 0:
+			_data_core_world.write_f32_indexed(_cid_wins, _wf_idx, _wf_inst)
+		var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+		if _cid_wt >= 0:
+			_data_core_world.write_u8_indexed(_cid_wt, _wf_idx, _wf_type)
+		var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
+		if _cid_wfi >= 0:
+			_data_core_world.write_u8_indexed(_cid_wfi, _wf_idx, _wf_init)
 	if _field_slice_refresh_convergence:
 		_apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
 
@@ -1373,6 +1580,25 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 	var soa_cloud_l: PackedFloat32Array = map.weather_cloud_arr
 	var soa_precip_l: PackedFloat32Array = map.weather_precip_arr
 	var soa_type_l: PackedByteArray = map.weather_type_arr
+	# PR-2.1.6（weather field GDScript fallback 写路径下移）：与 commit 对称的 batch buffer。
+	var _wfl_idx: PackedInt32Array = PackedInt32Array()
+	var _wfl_intensity: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_cloud: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_precip: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_vapor: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_conv: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_inst: PackedFloat32Array = PackedFloat32Array()
+	var _wfl_type: PackedByteArray = PackedByteArray()
+	var _wfl_init: PackedByteArray = PackedByteArray()
+	_wfl_idx.resize(n_cells)
+	_wfl_intensity.resize(n_cells)
+	_wfl_cloud.resize(n_cells)
+	_wfl_precip.resize(n_cells)
+	_wfl_vapor.resize(n_cells)
+	_wfl_conv.resize(n_cells)
+	_wfl_inst.resize(n_cells)
+	_wfl_type.resize(n_cells)
+	_wfl_init.resize(n_cells)
 	for i in range(n_cells):
 		var out_cell: HexCell = cells[i]
 		var v_cloud_l: float = next_cloud[i]
@@ -1392,6 +1618,42 @@ func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, clima
 		soa_cloud_l[i] = v_cloud_l
 		soa_precip_l[i] = v_precip_l
 		soa_type_l[i] = v_type_l & 0xFF
+		# PR-2.1.6：收集 dirty entry
+		_wfl_idx[i] = i
+		_wfl_intensity[i] = v_intensity_l
+		_wfl_cloud[i] = v_cloud_l
+		_wfl_precip[i] = v_precip_l
+		_wfl_vapor[i] = next_vapor[i]
+		_wfl_conv[i] = next_convergence[i]
+		_wfl_inst[i] = next_instability[i]
+		_wfl_type[i] = v_type_l & 0xFF
+		_wfl_init[i] = 1
+	# PR-2.1.6：循环结束后批量提交到 DCWorld SoA。
+	if _data_core_world != null and n_cells > 0:
+		var _cid_wi_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
+		if _cid_wi_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wi_l, _wfl_idx, _wfl_intensity)
+		var _cid_wc_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
+		if _cid_wc_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wc_l, _wfl_idx, _wfl_cloud)
+		var _cid_wp_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
+		if _cid_wp_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wp_l, _wfl_idx, _wfl_precip)
+		var _cid_wv_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
+		if _cid_wv_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wv_l, _wfl_idx, _wfl_vapor)
+		var _cid_wcv_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
+		if _cid_wcv_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wcv_l, _wfl_idx, _wfl_conv)
+		var _cid_wins_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
+		if _cid_wins_l >= 0:
+			_data_core_world.write_f32_indexed(_cid_wins_l, _wfl_idx, _wfl_inst)
+		var _cid_wt_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+		if _cid_wt_l >= 0:
+			_data_core_world.write_u8_indexed(_cid_wt_l, _wfl_idx, _wfl_type)
+		var _cid_wfi_l: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
+		if _cid_wfi_l >= 0:
+			_data_core_world.write_u8_indexed(_cid_wfi_l, _wfl_idx, _wfl_init)
 	# Phase 3b：锋面散度 + 温差升降级。
 	# 在主循环结束、_weather_field 已落定之后做一次"锋面后处理"：
 	#   - 对每个 cell 重读其周边温度差（max - min over neighbors），
@@ -1422,6 +1684,15 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
 	var soa_type: PackedByteArray = map.weather_type_arr
 	var soa_intensity: PackedFloat32Array = map.weather_intensity_arr
+	# PR-2.1.6（frontal convergence boost 写路径下移）：dirty 收集。
+	var _fb_idx: PackedInt32Array = PackedInt32Array()
+	var _fb_cloud: PackedFloat32Array = PackedFloat32Array()
+	var _fb_precip: PackedFloat32Array = PackedFloat32Array()
+	var _fb_inst: PackedFloat32Array = PackedFloat32Array()
+	var _fb_intensity: PackedFloat32Array = PackedFloat32Array()
+	var _fb_type: PackedByteArray = PackedByteArray()
+	var _fb_w: int = 0
+
 	for i in range(cells.size()):
 		var cell: HexCell = cells[i]
 		if soa_field_init[i] == 0:
@@ -1493,6 +1764,32 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 		soa_instability[i] = inst1
 		soa_intensity[i] = new_intensity
 		soa_type[i] = new_wt & 0xFF
+		# PR-2.1.6：收集 dirty entry。
+		_fb_idx.append(i)
+		_fb_cloud.append(cloud1)
+		_fb_precip.append(precip1)
+		_fb_inst.append(inst1)
+		_fb_intensity.append(new_intensity)
+		_fb_type.append(new_wt & 0xFF)
+		_fb_w += 1
+
+	# PR-2.1.6（frontal convergence boost 写路径下移）：循环结束后批量提交到 DCWorld SoA。
+	if _data_core_world != null and _fb_w > 0:
+		var _cid_fbc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
+		if _cid_fbc >= 0:
+			_data_core_world.write_f32_indexed(_cid_fbc, _fb_idx, _fb_cloud)
+		var _cid_fbp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
+		if _cid_fbp >= 0:
+			_data_core_world.write_f32_indexed(_cid_fbp, _fb_idx, _fb_precip)
+		var _cid_fbi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
+		if _cid_fbi >= 0:
+			_data_core_world.write_f32_indexed(_cid_fbi, _fb_idx, _fb_inst)
+		var _cid_fbI: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
+		if _cid_fbI >= 0:
+			_data_core_world.write_f32_indexed(_cid_fbI, _fb_idx, _fb_intensity)
+		var _cid_fbt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+		if _cid_fbt >= 0:
+			_data_core_world.write_u8_indexed(_cid_fbt, _fb_idx, _fb_type)
 
 # Phase 3c：积雪累积与融化（共享方法）
 # ------------------------------------------------------------------------
@@ -2340,8 +2637,11 @@ func configure_cyclone_wake(enabled: bool, wake_days: int) -> void:
 #   ext != null 且 enabled == true   → 只要 slice 是全量 (cell_budget ≥ n)
 #                                       就尝试 C++ 单 shot 路径，失败则透明
 #                                       fallback 到 GDScript 完成本 tick
-func configure_gdext_acceleration(ext: RefCounted, enabled: bool) -> void:
+func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource = null, dc_world = null) -> void:
 	_data_core_world_ext = ext
+	# PR-2.1.6：注入 GDScript DCWorld 用于 commit/spawn 写路径下移（master 手册 §3.9）。
+	# 旧 caller（3 参数版）仍可用，dc_world 默认为 null → 仅维持现状双写不下移。
+	_data_core_world = dc_world
 	# has_method 仅检查方法名存在；旧 stub 签名是 (knobs, grid_w, grid_h, season_idx,
 	# climate_anomaly, season_phase) 6 参数，新签名只剩 (knobs) 1 参数。stale .dll
 	# 下 has_method=true 但 binding 拒调 → rc=null → float(null)=0.0 → 误判 success
@@ -2349,6 +2649,9 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool) -> void:
 	var sig_ok: bool = _validate_weather_field_signature(ext)
 	_use_gdext_weather_field = enabled and ext != null and ext.has_method("run_weather_field_solve_pass") and sig_ok
 	_gdext_field_warned_fallback = false
+	# F.6：cache cp reference 用于 advect 段动态读 use_gdext_weather_front。
+	# cp 为 null 时（旧 caller），F.6 fast-path 永远不触发（保持向后兼容）。
+	_cp_for_front_flag = cp
 	if _use_gdext_weather_field:
 		print("[weather] gdext acceleration ON (use_gdext_weather_field=true; class=DCWorldExt)")
 	elif ext != null and enabled and not sig_ok:

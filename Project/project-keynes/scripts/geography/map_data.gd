@@ -32,7 +32,8 @@ var _indices_built: bool = false
 # 25 个平行 PackedArray，长度恒等于 _cell_array.size()。所有热路径子段（climate
 # pass A/B、ocean_water/ocean_land、sea_ice、transp、weather field solver）将
 # 在阶段 A.3/B/C 切换到只读写下面的 SoA 数组，禁止再走 cell.* 强类型成员或字典。
-# round 末通过 flush_soa_to_cells() 一次性同步给 UI / Baker / Overlay 等只读消费者。
+# PR-2.3b/2.4：HexCell facade 让 cell.<field> getter 直接走 SoA read_f32，
+# 无需再做 SoA → cell 反向同步。round 末 UI / Baker 自动看到最新 SoA 值。
 #
 # 双缓冲设计（阶段 B.1 投入使用）：
 #   - 每个浮点字段同时维护 _arr（当前/写）与 _arr_prev（上一日/读）；阶段 A.3 仅
@@ -250,16 +251,13 @@ func neighbor_indices_packed() -> PackedInt32Array:
 	return _neighbor_indices
 
 # ─── Climate-Weather 2ms Budget — Phase A.1：SoA 构造 / 同步 API ─────────
-# 调用关系：
-#   - bake_world / 加载存档完成后调用 rebuild_soa_from_cells() 一次同步全部字段；
-#   - 任何 sub-pass 写入完成后由调度器调用 flush_soa_to_cells() 把 SoA 写回
-#     HexCell 强类型成员，供 UI / Baker / Overlay 等只读消费者继续用 cell.* 形式读；
+# 调用关系（PR-2.4 之后）：
+#   - bake_world / 加载存档完成后调用 rebuild_soa_from_cells() 一次同步全部字段
+#     （bake-time 初始化路径，不能删除——首次把 cells 内容 dump 到 SoA）；
+#   - 运行期 sub-pass 直接 write_*_indexed 到 SoA；HexCell facade getter 让
+#     UI / Baker / Overlay 自动看到最新值，**无需** flush_soa_to_cells（PR-2.4 已删）；
 #   - 跨 tick 切片场景下由 sub-pass 自己 swap _prev/_next 双缓冲（见 soa_swap_*
 #     系列），UI 通道始终读 _arr_prev 保证一致快照。
-#
-# 注意：本阶段（A.1）只是建立基础设施，不修改任何 sub-pass 的行为。所以
-# rebuild 在 bake_world 末尾执行后，flush 暂时不会被调度器主动触发；待
-# climate_pass_a/b_soa 等新路径上线（任务 1.3）后才进入活跃同步状态。
 func has_soa() -> bool:
 	return _soa_built
 
@@ -308,6 +306,12 @@ func _alloc_soa(n: int) -> void:
 	ema_initialized_arr.resize(n)
 	temp_season_offset_arr.resize(n)
 
+## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
+## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。
+## PR-2.3 HexCell facade 化完成后本函数可彻底删除，迁移到 _alloc_soa + 生成期一次性
+## write_f32_indexed 全字段 push to world（master 手册 §3.10.3 替代方案）。
+## 当前过渡期保留：HexCell 字段仍是强类型 var，bake 末仍需要从 cell.* 读取初值写入 SoA。
+##
 ## 从 HexCell 强类型成员单向 sync 到 SoA。在 bake_world / 加载存档 / regenerate
 ## 路径调用一次。运行期 sub-pass 完成后不要再调用本函数（会盖掉 SoA 写入）。
 func rebuild_soa_from_cells() -> void:
@@ -366,40 +370,13 @@ func rebuild_soa_from_cells() -> void:
 	# 这里仅置为未 bake 状态，bake_world 路径会立即调用 bake_lat_temp_year_lut()。
 	_lat_lut_baked = false
 
-## 把 SoA 当前数组（_arr，不是 _prev）一次性回写到 HexCell 强类型成员。
-## 仅由调度器在 round 末调用，UI/Baker 才能拿到一致快照。
-func flush_soa_to_cells() -> void:
-	if not _soa_built:
-		return
-	var n: int = _cell_array.size()
-	for i in range(n):
-		var c: HexCell = _cell_array[i]
-		c.temperature = temp_arr[i]
-		c.moisture = moisture_arr[i]
-		c.snow_cover = snow_cover_arr[i]
-		c.temp_baseline = temp_baseline_arr[i]
-		c.temp_30d_mean = temp_30d_arr[i]
-		c.temp_365d_mean = temp_365d_arr[i]
-		c.temp_dev_from_annual = temp_anomaly_arr[i]
-		c.sea_ice_fraction = sea_ice_frac_arr[i]
-		c.weather_intensity = weather_intensity_arr[i]
-		c.weather_cloud = weather_cloud_arr[i]
-		c.weather_precip = weather_precip_arr[i]
-		c.ocean_current.x = ocean_current_x_arr[i]
-		c.ocean_current.y = ocean_current_y_arr[i]
-		c.wind_vector.x = wind_x_arr[i]
-		c.wind_vector.y = wind_y_arr[i]
-		c.weather_type = int(weather_type_arr[i])
-		# B-full Step-2：4 个新 weather 字段 SoA → HexCell 写回
-		# air_mass_temp_anomaly / has_river 不写回（运行期 SoA 是权威，HexCell 字段
-		# 在地图生成期 / climate pass 时已被独立写入，无需反向写）。
-		c.weather_vapor = weather_vapor_arr[i]
-		c.weather_convergence = weather_convergence_arr[i]
-		c.weather_instability = weather_instability_arr[i]
-		c.weather_field_initialized = (weather_field_init_arr[i] > 0)
-		# Phase 3a Step 2.1.a：Pass-A SoA → cell 写回（UI breakdown / 调试 print 路径）
-		c._ema_initialized = (ema_initialized_arr[i] > 0)
-		c.temp_season_offset = temp_season_offset_arr[i]
+## REMOVED PR-2.4 (2026-05-14)：flush_soa_to_cells() 已删除。
+##
+## 历史背景：本函数曾用于"round 末把 SoA 反向同步给 HexCell 强类型成员"，
+## 让 UI / Baker / 旧 GDScript pass 直接读 cell.<field> 拿到最新值。
+## PR-2.3b HexCell facade 完成后，cell.<field> getter 直接走 SoA read_f32，
+## 反向同步不再必要——本函数因此被删除。
+## git history: scripts/geography/map_data.gd flush_soa_to_cells (line 389-424).
 
 ## B1-A：一次性烘焙 cell 归一化纬度 + 年均温度 LUT。
 ## 必须在 rebuild_soa_from_cells() 完成 + MapGenerator._last_cfg 就位之后调用。

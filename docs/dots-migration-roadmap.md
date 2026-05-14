@@ -2,6 +2,10 @@
 
 > 🟢 **框架硬化 Phase A+B+C+D 已完成**（2026-05-13）：阶段 0 + 阶段 I 全部落地，
 > 详见 §3 表格、§4.2 / §4.3 实际行数、§9 已迁移模块清单 + 配套文档
+>
+> 📋 **执行手册（2026-05-14 起）**：阶段 II / III / IV 完整 28 周方案见
+> [`dots-master-execution-handbook.md`](./dots-master-execution-handbook.md)
+> （取代了 5 份分散的 follow-up 文档）。本路线图保持"路线 + 现状 + SOP"的设计文档定位。
 > [`dots-framework-status.md`](./dots-framework-status.md) /
 > [`module-ownership-map.md`](./module-ownership-map.md) /
 > [`dots-component-schema.md`](./dots-component-schema.md) /
@@ -65,14 +69,19 @@
 
 ### 2.1 巨石模块挡住"按模块迁移"
 
-| 文件 | 行数 | 涉及职责数 |
-|---|---|---|
-| `map_generator.gd` | 4639 | 地图生成 + 6 个 daily climate sub-pass + ocean + sea_ice + transp |
-| `map_baker.gd` | 2583 | terrain baker + climate baker + weather baker + overlay baker |
-| `weather_system.gd` | 2142 | field solver + front advect + spawn + decay + feedback |
-| `main.gd` | 1901 | 启动 + 输入 + UI + SUS 注册 + ECS 注册 + 各 demo 接入 |
-| `weather_layer.gd` | 1209 | weather 渲染 + UI 上传 + 调试日志 |
-| `hex_renderer.gd` | 965 | 主渲染 + atlas 上传 + 多个 baker dispatch |
+> **行数 baseline 更新（2026-05-14 ground truth 调研）**：实际行数比本表标注大
+> ~3000 行；新行数见下表"实际"列。详见
+> [`dots-master-execution-handbook.md` §0.1](./dots-master-execution-handbook.md)。
+
+| 文件 | 历史标注 | **实际（2026-05-14）** | 涉及职责数 |
+|---|---|---|---|
+| `map_generator.gd` | 4639 | **6454** | 地图生成 + 6 个 daily climate sub-pass + ocean + sea_ice + transp + 日照数学 + 风温耦合 |
+| `map_baker.gd` | 2583 | **2973** | terrain baker + climate baker + weather baker + overlay baker + 物理求解 dispatch |
+| `weather_system.gd` | 2142 | **2964** | field solver + front advect + spawn + decay + feedback + summary builder |
+| `main.gd` | 1901 | **2114** | 启动 + 输入 + UI + SUS 注册 + ECS 注册 + 各 demo 接入 + soak hotkey |
+| `weather_layer.gd` | 1209 | — | weather 渲染 + UI 上传 + 调试日志 |
+| `hex_renderer.gd` | 965 | — | 主渲染 + atlas 上传 + 多个 baker dispatch |
+| `hex_cell.gd` 字段数 | 30 | **56** | 拆分时 ViewAdapter 已覆盖 35 hot 字段 + 21 冷字段保留强类型 |
 
 > 真正的工程瓶颈不是写新 system，是**拆旧巨石**。要把 `_climate_pass_b` 搬进
 > C++，连锁要改 `map_generator / refresh_climate_daily_job / map_data /

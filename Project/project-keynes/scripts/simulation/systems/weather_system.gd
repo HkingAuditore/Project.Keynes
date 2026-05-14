@@ -12,6 +12,30 @@ class_name WeatherDCSystem
 ## tick() 转发到 _inner.run_slice()。585 行的 field solver 三段式 + front pool
 ## ECB sync + dirty short-circuit 等内部状态无需立刻重写。
 ##
+## ─── Phase 1.5 inline TODO（参照 ClimateDailySystem 已完成的模板）─────
+##
+## **状态**：当前仍 wrapper；ClimateDailySystem 已 inline 完毕（路径 1/3）。
+##
+## inline 化步骤（参照 climate_daily_system.gd 1:1 镜像）：
+##   1. 把 WeatherRefreshJob 的 ~30 个成员变量复制到本类（generator / map /
+##      world / season_index_getter / season_phase_getter / climate_anomaly_getter /
+##      stride / field solver 三段式 cursor / _last_fronts / _ecb_drained_count 等）；
+##   2. 把 WeatherRefreshJob.run_slice() 的 ~250 行 stage_a/stage_b 切片逻辑
+##      1:1 搬到本类 `func run_slice(ctx) -> Dictionary`；
+##   3. 把 _on_world_bound() 内手写的 13+6 个 _comp_cell_* cache 删除——基类
+##      DCSystem.setup() 已通过 declare_reads()/_cid 字典自动 cache；
+##   4. 删除 _inner 字段 + 相关 forward 方法（tick / get_inner / depends_on append 等）；
+##   5. map_generator.gd 调用 site：
+##      a. _weather_refresh_job 改为指向本 system 自身；
+##      b. depends_on / on_commit / climate_anomaly_getter 直接赋值；
+##   6. 验收：跑 SUS 30-tick log，advance_ms / spawn_ms / distribute_ms / cyclone_ms
+##      与 wrapper 路径 ±3% 一致；fronts 数 / 视觉无 diff。
+##
+## 注意：Phase 1.3 F.6 fast-path 在 weather/weather_system.gd::tick_one_day 内（不在本
+## DCSystem wrapper 内），inline 化时 weather_system.gd 的 fast-path 不需要改。
+##
+## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
+##
 ## reads / writes 声明：
 ##   - reads:  weather hot loop 读 25+ component（climate / 慢层 / weather 自身）
 ##   - writes: cell.weather_intensity / .weather_cloud / .weather_precip /

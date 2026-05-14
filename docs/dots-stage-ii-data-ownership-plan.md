@@ -1,3 +1,8 @@
+> **DEPRECATED 2026-05-14**：本文档已被
+> [`dots-master-execution-handbook.md`](./dots-master-execution-handbook.md) §3 替代。
+> Phase 2 数据所有权下移完整方案（含 G.4/G.5 等价内容）现集中在 master 手册 §3。
+> 本文档保留以便 git history 追溯，**不再维护**。
+
 # Phase G.4 + G.5：数据所有权下移执行计划（deferred）
 
 > **当前状态**：scaffolding 就位，**等 F.1-F.6 填实际 C++ 算法 + bit-equal 验收

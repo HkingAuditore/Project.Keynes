@@ -25,10 +25,33 @@ class_name DCAtlasEncoders
 ##
 ## ─── 推荐迁移顺序（每个独立 PR，30 分钟内完成）───────────────────
 ## 1. _encode_height_tex — 最简单（单字段 → R8 编码）
-## 2. _encode_r8_tex     — 通用 R8 encoder（被多个调用方复用，迁移收益大）
+## 2. _encode_r8_tex     — 通用 R8 encoder（被多个调用方复用，迁移收益大） [PR-3.1.1 完成]
 ## 3. _encode_enum_atlas — 3 输入 → RGBA8（biome/veg/river）
 ## 4. _encode_scalar_atlas — 3 输入 → RGBA8（moist/flow/lat）
 ## 5. _encode_vector_atlas — 3 输入 → RGBA8（ocean/wind/upwelling）
 ## 6. _encode_upwelling_tex — 单输入 → RGBA8
 
-# 占位：实际 static func 等迁移过来
+
+# ═══════════════════════════════════════════════════════════════════════
+# 通用 R8 → ImageTexture 编码（L8 LINEAR）
+# ═══════════════════════════════════════════════════════════════════════
+#
+# PR-3.1.1（master 手册 §6.2）：从 map_baker.gd:_encode_r8_tex 整体搬迁。
+# caller 改一行：DCAtlasEncoders.encode_r8_tex(...)。
+#
+# 传入 existing（非 null + 同尺寸）会尝试原地 update 以复用 GPU 句柄，
+# 避免 refresh_climate_daily 每日创建新纹理带来的驱动层分配开销。
+static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(n)
+	var has_buf: bool = buf.size() >= n
+	for i in range(n):
+		data[i] = buf[i] if has_buf else 0
+	var img: Image = Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+		return existing
+	return ImageTexture.create_from_image(img)
