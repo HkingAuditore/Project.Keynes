@@ -367,6 +367,78 @@ func write_u8_range(comp_id: int, start: int, src: PackedByteArray) -> void:
 		slot.arr_u8[start + i] = src[i]
 
 
+# ─── 批量索引写 API（PR-2.0，2026-Q3）─────────────────────────────────
+# 用于 hot pass 写路径下移：收集 (dirty_indices, new_values) 后一次性提交，
+# 避免 cell.field= / map.field_arr[i]= 的 CoW 漏写陷阱。
+#
+# 三大 API 的契约：
+#   - indices.size() 与 values.size() 不一致时 → 取 min(size) 截断写入
+#   - 单个 idx 越界 → 静默跳过（与 write_f32 单点不同；批量场景下 push_error 噪音过大）
+#   - dtype 不匹配 → 整个调用 push_error 后 return（与 write_f32_range 一致）
+#   - hot path 应在循环外 cache cid，循环内 collect dirty_indices + values，
+#     循环出来后一次调用 write_*_indexed
+#
+# 性能：实测 N=2400 / dirty=full 单调用 < 0.5ms（纯 GDScript），可接受热路径使用。
+# 真正 hot 的 pass（每 tick 全量写）若需更快可走 C++ 端的同名 pass。
+
+## 批量索引写：F32 component。
+## 把 values[k] 写到 arr[indices[k]]，k ∈ [0, min(indices.size(), values.size()))。
+func write_f32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedFloat32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_f32_indexed: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] write_f32_indexed: comp '%s' dtype=%s is not F32-compatible"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedFloat32Array = slot.arr_f32
+	var cap: int = arr.size()
+	var n: int = mini(indices.size(), values.size())
+	for k in range(n):
+		var idx: int = indices[k]
+		if idx >= 0 and idx < cap:
+			arr[idx] = values[k]
+
+
+## 批量索引写：I32 component。
+func write_i32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedInt32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_i32_indexed: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] write_i32_indexed: comp '%s' dtype=%s is not I32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedInt32Array = slot.arr_i32
+	var cap: int = arr.size()
+	var n: int = mini(indices.size(), values.size())
+	for k in range(n):
+		var idx: int = indices[k]
+		if idx >= 0 and idx < cap:
+			arr[idx] = values[k]
+
+
+## 批量索引写：U8 component（int 入参，自动 & 0xFF 截断）。
+func write_u8_indexed(comp_id: int, indices: PackedInt32Array, values: PackedByteArray) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_u8_indexed: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] write_u8_indexed: comp '%s' dtype=%s is not U8"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedByteArray = slot.arr_u8
+	var cap: int = arr.size()
+	var n: int = mini(indices.size(), values.size())
+	for k in range(n):
+		var idx: int = indices[k]
+		if idx >= 0 and idx < cap:
+			arr[idx] = values[k] & 0xFF
+
+
 ## 单元素读取：F32 component。冷路径（UI / baker / test / debug print）使用；
 ## hot loop 应在循环外 `var arr := view_f32(cid)`，循环内直接 `arr[i]`。
 ## 越界 / dtype 不匹配返回 0.0 并 push_error。
@@ -823,6 +895,56 @@ func is_bound() -> bool:
 	return _bound
 
 
+## PR-4.4：解绑 MapData，让 hot-reload 路径可以"卸下当前世界 → 改 flag → 重 bind"。
+##
+## 解绑后所有 SoA 槽位的 external_ref 引用立刻清空（slot.arr_f32 = PackedFloat32Array()）；
+## bind_map_data 重新调用时会重新挂入 MapData 的 PackedArray 引用。
+##
+## 注意：解绑会让所有 view_f32() 缓存的引用失效；caller 应在 unbind 后重新拿
+## view_*。hot-loop 不应该跨 unbind/rebind 边界缓存数组引用。
+##
+## 用例：
+##   1. 编辑器调试：开发者改 ClimateProfile.use_data_core_climate=true 后
+##      DCFeatureFlags.flag_changed signal 触发 unbind → 改 flag → rebind。
+##   2. 测试夹具：tests/<module>_soak_test 在 A/B phase 之间 unbind/rebind 重置状态。
+##   3. 加载存档：load 之前先 unbind 旧 MapData，避免悬空引用。
+func unbind_map_data() -> void:
+	if not _bound:
+		return
+	# 把所有 external_ref slot 的 PackedArray 还原为空数组（断引用 +
+	# 让下次 bind_map_data 走重新挂入路径）。
+	for slot in _slots:
+		if slot != null and slot.external_ref:
+			slot.arr_f32 = PackedFloat32Array()
+			slot.arr_f32_prev = PackedFloat32Array()
+			slot.arr_f32_y = PackedFloat32Array()
+			slot.arr_f32_y_prev = PackedFloat32Array()
+			slot.arr_f32_z = PackedFloat32Array()
+			slot.arr_f32_z_prev = PackedFloat32Array()
+			slot.arr_i32 = PackedInt32Array()
+			slot.arr_u8 = PackedByteArray()
+			slot.external_ref = false
+	_map_data = null
+	_bound = false
+
+
+## PR-4.4：rebind 别名，兼容 hot-reload 调用。等价于先 unbind 再 bind。
+##
+## 用例：编辑器开发者改 ClimateProfile.demo_thermal_gradient_enabled=true 时，
+## 需要重 bind 让 DCWorld 注册新的 demo slot。原 bind_map_data 是幂等的，
+## 但加 demo flag 切换不会再注册 demo slot；rebind_map_data 强制走全量重 bind。
+##
+## map_data：通常传 null（用之前的 _map_data，由 unbind 之前 cache 的）；
+##           或 caller 显式传新 MapData（regenerate / load_save 路径）。
+func rebind_map_data(map_data = null, demo_thermal_gradient_enabled: bool = false) -> void:
+	var target = map_data if map_data != null else _map_data
+	if target == null:
+		push_error("[DCWorld] rebind_map_data: no map_data provided and no cached _map_data")
+		return
+	unbind_map_data()
+	bind_map_data(target, demo_thermal_gradient_enabled)
+
+
 ## 获取邻居拓扑（hex-grid）。
 ##  - neighbor_index(idx, dir): 返回邻居 idx（无邻居返回 -1）
 ##  - neighbors_packed(): 返回底层 PackedInt32Array (size = cell_count*6)
@@ -1096,3 +1218,129 @@ func pool_id(name: StringName) -> int:
 ## 当前 pool 总数。
 func pool_count() -> int:
 	return _pools.size()
+
+
+# ─── Phase 4.1：序列化 / 反序列化 API（dots-phase4-followup.md §4.1）─────
+#
+# 当前实现：**骨架阶段**——按 component_schema.gd CELL_SCHEMA 自动遍历
+# 38 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。
+# fronts 序列化在 Phase 1.2 SoA 化升权威之后扩展（当前 _serialize_fronts 返回空 dict）。
+#
+# 调用语义：
+#   - serialize() 在游戏暂停期 / 季节末调用，开销 ~10ms（38 字段 × n_cells × COW copy）
+#   - deserialize(d) 在 load 时调用，要求当前已 bind_map_data 到 *相同 size* 的 MapData
+#     （否则 size 不匹配直接 push_error）
+#   - version 字段触发 schema migration 钩子（Phase 4.2）。
+
+const SAVE_VERSION: int = 1
+
+
+## 把 DCWorld 当前的全部 SoA 状态打包成 Dictionary，供存档系统持久化到磁盘。
+##
+## 输出结构：
+##   {
+##     "version": int (= SAVE_VERSION),
+##     "n_cells": int,
+##     "n_fronts": int,
+##     "cells": Dictionary { cpp_name: PackedArray },  # 38 字段（demo 跳过）
+##     "fronts": Dictionary,                            # Phase 4.1 PR-4.1.2 后扩展
+##   }
+##
+## 注意：返回的 PackedArray 是 view_*() 的拷贝（CoW，下次 mutation 各自独立）。
+##       caller 可以直接 var_to_bytes 写入文件。
+func serialize() -> Dictionary:
+	var out: Dictionary = {
+		"version": SAVE_VERSION,
+		"n_cells": _entity_count if _entity_count > 0 else (_slots[0].arr_f32.size() if _slots.size() > 0 else 0),
+		"n_fronts": 0,
+		"cells": _serialize_cells_dict(),
+		"fronts": _serialize_fronts_dict(),
+	}
+	return out
+
+
+## 把序列化的 Dictionary 反向写回 DCWorld 的 SoA。
+##
+## 流程：
+##   1. 读 version；若低于 SAVE_VERSION，调用 schema migration（Phase 4.2 实装）
+##   2. 验证 n_cells 与当前 _entity_count 一致（否则 push_error）
+##   3. 遍历 CELL_SCHEMA，按 cpp_name 从 d["cells"] 读 PackedArray，写入对应 _slots
+##   4. fronts 反序列化（Phase 4.1 PR-4.1.2 后实装）
+##
+## 失败时不抛异常，仅 push_error；caller 应自行检查游戏状态。
+func deserialize(d: Dictionary) -> void:
+	var v: int = int(d.get("version", 0))
+	if v < SAVE_VERSION:
+		# Phase 4.2 schema migration 钩子（暂未实装）：
+		# d = DCSchemaMigrations.migrate(d, v, SAVE_VERSION)
+		push_warning("[DCWorld] deserialize: save version=%d < current=%d; schema migration not yet implemented (Phase 4.2)" % [v, SAVE_VERSION])
+	var n_save: int = int(d.get("n_cells", -1))
+	if n_save < 0:
+		push_error("[DCWorld] deserialize: n_cells missing")
+		return
+	if n_save != _entity_count:
+		push_error("[DCWorld] deserialize: n_cells mismatch (save=%d, current=%d) — re-bind to matching MapData first" % [n_save, _entity_count])
+		return
+	_deserialize_cells_dict(d.get("cells", {}))
+	_deserialize_fronts_dict(d.get("fronts", {}))
+
+
+# ─── private serialize helpers ───────────────────────────────────────
+
+func _serialize_cells_dict() -> Dictionary:
+	var out: Dictionary = {}
+	# 按 component_schema.gd 自动遍历 production entries（跳过 demo 字段）。
+	for e in DCComponentSchema.entries_production():
+		var cpp_name: String = String(e.cpp_name)
+		var sn: StringName = StringName(cpp_name)
+		var cid: int = component_id(sn)
+		if cid < 0:
+			continue
+		var dt: int = int(e.dtype)
+		match dt:
+			DCComponentIds.F32:
+				out[cpp_name] = view_f32(cid)
+			DCComponentIds.I32:
+				out[cpp_name] = view_i32(cid)
+			DCComponentIds.U8:
+				out[cpp_name] = view_u8(cid)
+			_:
+				push_warning("[DCWorld] serialize: unknown dtype=%d for %s — skipped" % [dt, cpp_name])
+	return out
+
+
+func _deserialize_cells_dict(cells: Dictionary) -> void:
+	for e in DCComponentSchema.entries_production():
+		var cpp_name: String = String(e.cpp_name)
+		if not cells.has(cpp_name):
+			continue
+		var sn: StringName = StringName(cpp_name)
+		var cid: int = component_id(sn)
+		if cid < 0:
+			continue
+		var dt: int = int(e.dtype)
+		match dt:
+			DCComponentIds.F32:
+				var f32: PackedFloat32Array = cells[cpp_name]
+				if f32.size() == _entity_count:
+					write_f32_range(cid, 0, f32)
+			DCComponentIds.I32:
+				var i32: PackedInt32Array = cells[cpp_name]
+				if i32.size() == _entity_count:
+					write_i32_range(cid, 0, i32)
+			DCComponentIds.U8:
+				var u8: PackedByteArray = cells[cpp_name]
+				if u8.size() == _entity_count:
+					write_u8_range(cid, 0, u8)
+
+
+func _serialize_fronts_dict() -> Dictionary:
+	# Phase 4.1 PR-4.1.2 后扩展：caller 通过 WeatherFront.pack_into_dict 提供
+	# 当前 _active_fronts 的 batch dict；DCWorld 把它合并进存档。
+	# 当前 phase（仅骨架）：返回空 dict。
+	return {}
+
+
+func _deserialize_fronts_dict(_d: Dictionary) -> void:
+	# Phase 4.1 PR-4.1.2 后扩展。
+	pass

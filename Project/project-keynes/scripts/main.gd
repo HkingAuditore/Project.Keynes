@@ -197,6 +197,8 @@ var _world_data: WorldData = null
 # 内部直读 HexCell 强类型成员，行为等价。每次 _current_map 重新赋值时
 # 同步 invalidate（_rebuild_view_adapter）。
 var _view_adapter: DCViewAdapter = null
+# PR-3.4.1（M4 拆分）：dots / DCFlagBus / DataCore wiring 委派给 bootstrap 类。
+var _dots_bootstrap: DCDotsBootstrap = null
 # 0.4.2 — info panel controller（_ready 时实例化；持有所有右侧面板 Label refs
 # + 5 个 emergent_* 懒创建 Label + refresh_* 方法）。
 var _info_panel_controller: InfoPanelControllerScript = null
@@ -210,6 +212,10 @@ var _selected_cell: HexCell = null
 var _cli_data_core_override: int = -1            # -1 / 0 / 1
 var _cli_data_core_weather_override: int = -1    # -1 / 0 / 1
 var _cli_validate_weather: bool = false          # --validate-weather
+# DCSoakDump CLI（dots-storage-同源紧急修复 2026-05-14）：
+# --soak-dump=N[:mode[:path]]，例如 --soak-dump=30 / --soak-dump=30:full /
+# --soak-dump=30:summary:user://soak/with_dc.tsv。空字符串=未启用。
+var _cli_soak_dump_arg: String = ""
 
 # ─── Validate-Weather 桶（dots-foundation-and-weather-migration / D-01） ──
 # 当 --validate-weather 启用，每次 weather breakdown 落地时按 path 累加：
@@ -307,6 +313,13 @@ func _ready() -> void:
 	# overlay_mode / fast_tick / climate_profile 字段的真值（需求 4.7）。
 	if _debug_console != null and _debug_console.has_method("set_main"):
 		_debug_console.set_main(self)
+
+	# PR-3.4.1（M4 拆分）：DCFlagBus 安装委托给 DCDotsBootstrap。
+	# main 节点不再持有 _on_dcflag_changed；hot-reload 回调由 bootstrap 类承担。
+	# bootstrap 实例必须保留（class member）以保持 connect 生命周期；否则 RefCounted
+	# 释放后 signal 断开。
+	_dots_bootstrap = DCDotsBootstrap.new(self)
+	_dots_bootstrap.bootstrap_flag_bus()
 
 # 左键点击选中地块。RightPanel.mouse_filter=STOP 已确保面板内的点击
 # 不会到这里，所以无需手动判断光标是否落在 UI 上。
@@ -431,6 +444,25 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# turning use_data_core back on at runtime keeps the existing binding
 			# (which is fine for compare runs in the same session).
 			_toggle_data_core_master_runtime()
+		KEY_F2:
+			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
+			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
+			# Plan 原文写 F10 hotkey，但 F10 已绑 use_data_core master toggle，
+			# 改用 F2（无歧义且与 F1 inspector / F8 ocean / F12 weather 同列）。
+			# 已在跑则忽略（避免互相覆盖）。
+			_soak_dump_hotkey_start()
+		KEY_F3:
+			# DCSoakABRunner 一键 A/B 对比（dots-storage-同源紧急修复 2026-05-14）：
+			#   F3        — SAME_SOURCE mode：A/B 都用当前 DataCore 状态（默认推荐）
+			#               验证 storage 在稳态下的可重复性，threshold=1e-4 期望 PASS
+			#   Shift+F3  — VS_LEGACY mode：A=current, B=toggle 后状态
+			#               对比 DataCore vs legacy 业务等价性，threshold=0.5
+			# 总耗时 ≈ 60 sim-ticks × 当前游戏速度（x1 ≈ 60s; x20 ≈ 3s）。
+			print("[soak-ab] F3 pressed (shift=%s)" % str(event.shift_pressed))
+			if event.shift_pressed:
+				_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
+			else:
+				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE)
 		KEY_F11:
 			# Print current DataCore flag snapshot for quick verification.
 			_print_data_core_flag_snapshot()
@@ -1656,7 +1688,8 @@ func _parse_data_core_cli() -> void:
 	for a in OS.get_cmdline_args():
 		args.append(a)
 	for arg in args:
-		match String(arg):
+		var s: String = String(arg)
+		match s:
 			"--data-core":
 				_cli_data_core_override = 1
 			"--no-data-core":
@@ -1667,6 +1700,10 @@ func _parse_data_core_cli() -> void:
 				_cli_data_core_weather_override = 0
 			"--validate-weather":
 				_cli_validate_weather = true
+			_:
+				# 形如 --soak-dump=30 / --soak-dump=30:full:user://x.jsonl
+				if s.begins_with("--soak-dump="):
+					_cli_soak_dump_arg = s.substr("--soak-dump=".length())
 
 
 # 应用阶段：generator 已创建。把 CLI 缓存写到 ClimateProfile，并保证依赖关系：
@@ -1693,6 +1730,15 @@ func _apply_data_core_cli_to_profile() -> void:
 	# 启动期日志，方便诊断
 	print("[DataCore] flags after CLI: use_data_core=%s use_data_core_weather=%s validate_weather=%s"
 		% [str(cp.use_data_core), str(cp.use_data_core_weather), str(_cli_validate_weather)])
+	# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：CLI 启动 N tick dump。
+	# generator 已经 _generate_and_render 完成，map / world 都就绪；hot path
+	# 第一次跑（climate_daily_system._finalize_round）就会写第一条记录。
+	if _cli_soak_dump_arg != "":
+		if DCSoakDump.instance == null:
+			DCSoakDump.instance = DCSoakDump.new()
+		var ok: bool = DCSoakDump.instance.start_from_arg(_cli_soak_dump_arg, _generator)
+		if not ok:
+			push_warning("[main] --soak-dump=%s failed to start (see prior errors)" % _cli_soak_dump_arg)
 	# Validate-weather 提示（单进程 A/B：F9 切 path 触发对照采样）
 	if _cli_validate_weather:
 		print("[DataCore] --validate-weather: in-process A/B mode (window=%d samples per bucket). " % _validate_window_size +
@@ -1719,6 +1765,60 @@ func data_core_status_dict() -> Dictionary:
 	out["world_components"] = int(w.component_count())
 	out["bound"] = bool(w.is_bound())
 	return out
+
+
+# ─── DCSoakDump Hotkey (F2) ──────────────────────────────────────────────
+# 一键启动 30 tick SUMMARY dump，写到 user://soak/manual_<timestamp>.tsv。
+# CLI 已启 → 忽略；已在跑 → 忽略（不打断当前会话）。
+func _soak_dump_hotkey_start() -> void:
+	if _generator == null:
+		print("[soak-dump] F2: generator not ready, ignored.")
+		return
+	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
+		print("[soak-dump] F2: already running, ignored. (active=%s)" % str(DCSoakDump.instance.is_active()))
+		return
+	if DCSoakDump.instance == null:
+		DCSoakDump.instance = DCSoakDump.new()
+	var ts: String = Time.get_datetime_string_from_system().replace(":", "-")
+	var path: String = "user://soak/manual_%s.tsv" % ts
+	var ok: bool = DCSoakDump.instance.start(30, DCSoakDump.Mode.SUMMARY, path, _generator)
+	if ok:
+		print("[soak-dump] F2 started: 30 ticks → %s" % path)
+	else:
+		push_warning("[soak-dump] F2 start failed (see prior errors)")
+
+
+# ─── DCSoakABRunner Hotkey (F3) ──────────────────────────────────────────
+# 一键完整 A/B 对比工作流：
+#   1) 用当前 DataCore 状态跑 30 tick → phase A.tsv
+#   2) toggle DataCore master
+#   3) 跑 30 tick → phase B.tsv
+#   4) 内置 diff 报告（max mean_diff per field, top-15）
+# 总耗时 ≈ 60 sim-ticks（按游戏速度档：x1 ≈ 60s, x5 ≈ 12s, x20 ≈ 3s）。
+# 已在跑则忽略；建议在游戏速度 ≥ x5 时按以缩短总耗时。
+func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE) -> void:
+	if _generator == null:
+		print("[soak-ab] F3: generator not ready, ignored.")
+		return
+	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
+		print("[soak-ab] F3: already running, ignored.")
+		return
+	if DCSoakABRunner.instance == null:
+		DCSoakABRunner.instance = DCSoakABRunner.new()
+	var ok: bool = DCSoakABRunner.instance.start(self, 30, mode)
+	if not ok:
+		push_warning("[soak-ab] F3 start failed (see prior errors)")
+
+
+## DCSoakABRunner 用 helper：返回当前 use_data_core 状态。
+## main.gd 暴露给 runner 用，避免 runner 自己解析 ClimateProfile。
+func is_data_core_on() -> bool:
+	if _generator == null or not _generator.has_method("_c"):
+		return false
+	var cp = _generator._c()
+	if cp == null or not "use_data_core" in cp:
+		return false
+	return bool(cp.use_data_core)
 
 
 # ─── DataCore Runtime Hot Toggles (F9 / F10 / F11) ───────────────────────
@@ -2005,7 +2105,10 @@ func _rebuild_view_adapter() -> void:
 	if cp != null and DCFeatureFlags.is_on(&"use_world_view_adapter", cp):
 		var dc_world = _generator.get_data_core_world() if _generator != null and _generator.has_method("get_data_core_world") else null
 		if dc_world != null and dc_world.has_method("is_bound") and dc_world.is_bound():
-			_view_adapter = DCViewAdapter.World.new(dc_world)
+			# 修复 A（2026-05-14）：传入 _current_map 让 adapter 直读 map.<field>，
+			# 避开 GDExtension CoW 后 view 缓存陈旧 → UI "极寒" bug。
+			# 详见 docs/dots-f4-validation.md §2.2.b storage A/B 同源契约。
+			_view_adapter = DCViewAdapter.World.new(dc_world, _current_map)
 			adapter_kind = "World"
 		else:
 			push_warning("[main] use_world_view_adapter=true but DCWorld not bound; falling back to Cell adapter")
@@ -2017,3 +2120,7 @@ func _rebuild_view_adapter() -> void:
 		_info_panel_controller.set_view_adapter(_view_adapter)
 	if OS.is_debug_build():
 		print("[main] view adapter rebuilt: kind=%s | %s" % [adapter_kind, _view_adapter.describe()])
+
+
+# PR-3.4.1（M4 拆分）：_on_dcflag_changed 已迁至 DCDotsBootstrap；
+# main 通过 _dots_bootstrap 委派持有 signal connection 生命周期。

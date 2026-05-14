@@ -27,8 +27,8 @@ class_name DCViewAdapter
 ##
 ## 性能：
 ##   - Cell 实现：每 getter 1 次数组索引 + 1 次属性读，~30ns
-##   - World 实现：每 getter 1 次数组索引，~10ns（拿到 PackedArray 后走原生
-##     操作，无 Variant 装箱）；setup() 调用一次缓存全部 view 引用
+##   - World 实现：每 getter 1 次属性读 + 1 次数组索引，~50ns（每次重新从
+##     MapData 拿当前 PackedArray 引用，避免 CoW 解耦后缓存陈旧的问题）
 ##
 ## hot-loop 纪律（与 performance-charter §4 对齐）：
 ##   ❌ for i in range(n): adapter.get_temp(i)             # 走 facade 一次有调用开销
@@ -39,6 +39,17 @@ class_name DCViewAdapter
 ##   var adapter: DCViewAdapter = DCViewAdapter.Cell.new(map.iter_cells())
 ##   for cell in selected_cells:
 ##       label.text = "T=%.2f" % adapter.get_temp(cell.index)
+##
+## ─── World 实现的 SoA 真值源（2026-05-14）────────────────────────────────
+##
+## 历史 W.1 实现一次性 setup() 把 world.view_f32(cid) 缓存到 _v_temp 等字段，
+## 但 GDExtension ABI 的 CoW 行为（charter §11）导致 C++ ptrw() 写后 slot 与
+## adapter 缓存的 view 解耦，UI 永远显示生成期 baseline（"极寒 bug"）。
+## 当前实现改为**不缓存 view**，每次 getter 直接从 _map_data.<map_field>
+## 读 PackedArray —— map.<field> 是 GDScript MapData 上的 var，一旦 GDScript
+## 写或 C++ _flush_slot_to_map 推回，引用会立刻反映最新 buffer。
+## 这是 SoA 真值源的最直接读法；不依赖 round 末 flush_soa_to_cells，也不
+## 依赖 DCWorld slot 与 map.<field> 是否仍 alias。
 
 
 # ─── 抽象基类 ─────────────────────────────────────────────────────────────
@@ -186,174 +197,121 @@ class Cell extends DCViewAdapter:
 
 # ─── 实现 2：World（DOTS）───────────────────────────────────────────────
 #
-# 在 setup() 一次性把 DCWorld 的全部 view_f32/view_u8 引用缓存到本实例字段。
-# getter 走原生 PackedArray[idx]，无 Variant 装箱；冷路径性能与 Cell 实现
-# 等价或更快，hot path 调用方应直接用缓存的 PackedArray（不走 adapter）。
+# 不缓存 PackedArray view（避免 GDExtension CoW 解耦后视图陈旧 bug，2026-05-14
+# "极寒 bug" 修复，详见 docs/dots-f4-validation.md §2.2.b 同源契约）。
+#
+# 每次 getter 直接从 MapData.<map_field> 读 PackedArray —— map.<field> 是
+# GDScript var，一旦 GDScript 写或 C++ _flush_slot_to_map 推回，引用即时反映
+# 最新 buffer。getter 仅服务于冷路径（UI panel / inspector / debug print），
+# hot loop 应继续在系统内部 cache `world.view_f32(cid)` 到局部变量直接索引。
 #
 # 用途：阶段 II 数据所有权下移到 DCWorld(Ext) 之后默认实现，让 UI/renderer
 # 不感知数据搬迁。
 class World extends DCViewAdapter:
-	var _world  # DCWorld（GDScript）or DCWorldExt（C++ via GDExtension）
+	var _world  # DCWorld（GDScript）or DCWorldExt（C++ via GDExtension）— 仅 describe 用
+	var _map_data  # MapData — SoA 权威数据源，每 getter 通过 _map_data.<field> 重取
 
-	# Cached views（PackedFloat32Array / PackedByteArray，CoW 引用）
-	var _v_temp:                PackedFloat32Array = PackedFloat32Array()
-	var _v_moisture:            PackedFloat32Array = PackedFloat32Array()
-	var _v_snow_cover:          PackedFloat32Array = PackedFloat32Array()
-	var _v_sea_ice_frac:        PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_baseline:       PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_30d:            PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_365d:           PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_anomaly:        PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_baseline_year:  PackedFloat32Array = PackedFloat32Array()
-	var _v_temp_season_offset:  PackedFloat32Array = PackedFloat32Array()
-	var _v_air_mass_temp_anom:  PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_intensity:   PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_cloud:       PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_precip:      PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_vapor:       PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_convergence: PackedFloat32Array = PackedFloat32Array()
-	var _v_weather_instability: PackedFloat32Array = PackedFloat32Array()
-	var _v_elevation:           PackedFloat32Array = PackedFloat32Array()
-	var _v_base_moisture:       PackedFloat32Array = PackedFloat32Array()
-	var _v_pos_x:               PackedFloat32Array = PackedFloat32Array()
-	var _v_pos_y:               PackedFloat32Array = PackedFloat32Array()
-	var _v_lat_norm:            PackedFloat32Array = PackedFloat32Array()
-	var _v_ocean_x:             PackedFloat32Array = PackedFloat32Array()
-	var _v_ocean_y:             PackedFloat32Array = PackedFloat32Array()
-	var _v_wind_x:              PackedFloat32Array = PackedFloat32Array()
-	var _v_wind_y:              PackedFloat32Array = PackedFloat32Array()
-	var _v_terrain:             PackedByteArray    = PackedByteArray()
-	var _v_landform:            PackedByteArray    = PackedByteArray()
-	var _v_vegetation:          PackedByteArray    = PackedByteArray()
-	var _v_cover:               PackedByteArray    = PackedByteArray()
-	var _v_weather_type:        PackedByteArray    = PackedByteArray()
-	var _v_is_water:            PackedByteArray    = PackedByteArray()
-	var _v_has_river:           PackedByteArray    = PackedByteArray()
-	var _v_weather_field_init:  PackedByteArray    = PackedByteArray()
-	var _v_ema_initialized:     PackedByteArray    = PackedByteArray()
-
-	func _init(world) -> void:
+	func _init(world, map_data = null) -> void:
 		_world = world
+		_map_data = map_data
+		# 兼容旧调用签名：DCViewAdapter.World.new(dc_world)（不传 map_data）
+		# 此时尝试从 dc_world._map_data 抓引用（DCWorld GDScript 实现暴露此字段）
+		if _map_data == null and _world != null:
+			if "_map_data" in _world:
+				_map_data = _world._map_data
 		setup()
 
 	func describe() -> String:
-		return "DCViewAdapter.World(n=%d, components=%d)" % [
-			int(_world.entity_count()) if _world.has_method("entity_count") else 0,
-			int(_world.component_count()) if _world.has_method("component_count") else 0,
-		]
+		var n_cells: int = 0
+		var n_components: int = 0
+		if _world != null:
+			if _world.has_method("entity_count"):
+				n_cells = int(_world.entity_count())
+			if _world.has_method("component_count"):
+				n_components = int(_world.component_count())
+		var src: String = "map_data" if _map_data != null else "world-only(no_map)"
+		return "DCViewAdapter.World(n=%d, components=%d, src=%s)" % [n_cells, n_components, src]
 
-	## 把全部 view 引用一次性缓存。bind_map_data / regenerate / 重 bind 后
-	## 调用方应重 new 一个 World adapter，或调用 setup() 重新刷新引用。
+	## 当前实现是 stateless（不缓存 view）：setup() 仅做参数 sanity check。
+	## bind_map_data / regenerate / 重 bind 后**不需要**重 new adapter—getter
+	## 每次都从 _map_data.<field> 取最新引用。保留 setup() 方法签名以兼容
+	## 阶段 II 之前的调用方式与抽象基类约定。
 	func setup() -> void:
 		if _world == null:
 			push_error("[DCViewAdapter.World] setup: world is null")
 			return
-		_v_temp                = _resolve_f32(DCComponentIds.CELL_TEMP)
-		_v_moisture            = _resolve_f32(DCComponentIds.CELL_MOISTURE)
-		_v_snow_cover          = _resolve_f32(DCComponentIds.CELL_SNOW_COVER)
-		_v_sea_ice_frac        = _resolve_f32(DCComponentIds.CELL_SEA_ICE_FRAC)
-		_v_temp_baseline       = _resolve_f32(DCComponentIds.CELL_TEMP_BASELINE)
-		_v_temp_30d            = _resolve_f32(DCComponentIds.CELL_TEMP_30D)
-		_v_temp_365d           = _resolve_f32(DCComponentIds.CELL_TEMP_365D)
-		_v_temp_anomaly        = _resolve_f32(DCComponentIds.CELL_TEMP_ANOMALY)
-		_v_temp_baseline_year  = _resolve_f32(DCComponentIds.CELL_TEMP_BASELINE_YEAR)
-		_v_temp_season_offset  = _resolve_f32(DCComponentIds.CELL_TEMP_SEASON_OFFSET)
-		_v_air_mass_temp_anom  = _resolve_f32(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY)
-		_v_weather_intensity   = _resolve_f32(DCComponentIds.CELL_WEATHER_INTENSITY)
-		_v_weather_cloud       = _resolve_f32(DCComponentIds.CELL_WEATHER_CLOUD)
-		_v_weather_precip      = _resolve_f32(DCComponentIds.CELL_WEATHER_PRECIP)
-		_v_weather_vapor       = _resolve_f32(DCComponentIds.CELL_WEATHER_VAPOR)
-		_v_weather_convergence = _resolve_f32(DCComponentIds.CELL_WEATHER_CONVERGENCE)
-		_v_weather_instability = _resolve_f32(DCComponentIds.CELL_WEATHER_INSTABILITY)
-		_v_elevation           = _resolve_f32(DCComponentIds.CELL_ELEVATION)
-		_v_base_moisture       = _resolve_f32(DCComponentIds.CELL_BASE_MOISTURE)
-		_v_pos_x               = _resolve_f32(DCComponentIds.CELL_POS_X)
-		_v_pos_y               = _resolve_f32(DCComponentIds.CELL_POS_Y)
-		_v_lat_norm            = _resolve_f32(DCComponentIds.CELL_LAT_NORM)
-		_v_ocean_x             = _resolve_f32(DCComponentIds.CELL_OCEAN_CURRENT_X)
-		_v_ocean_y             = _resolve_f32(DCComponentIds.CELL_OCEAN_CURRENT_Y)
-		_v_wind_x              = _resolve_f32(DCComponentIds.CELL_WIND_X)
-		_v_wind_y              = _resolve_f32(DCComponentIds.CELL_WIND_Y)
-		_v_terrain             = _resolve_u8(DCComponentIds.CELL_TERRAIN)
-		_v_landform            = _resolve_u8(DCComponentIds.CELL_LANDFORM)
-		_v_vegetation          = _resolve_u8(DCComponentIds.CELL_VEGETATION)
-		_v_cover               = _resolve_u8(DCComponentIds.CELL_COVER)
-		_v_weather_type        = _resolve_u8(DCComponentIds.CELL_WEATHER_TYPE)
-		_v_is_water            = _resolve_u8(DCComponentIds.CELL_IS_WATER)
-		_v_has_river           = _resolve_u8(DCComponentIds.CELL_HAS_RIVER)
-		_v_weather_field_init  = _resolve_u8(DCComponentIds.CELL_WEATHER_FIELD_INIT)
-		_v_ema_initialized     = _resolve_u8(DCComponentIds.CELL_EMA_INITIALIZED)
+		if _map_data == null:
+			push_warning("[DCViewAdapter.World] setup: map_data is null; getter will return zeros until rebind")
 
-	# 内部：取 F32 view（缺失时 push_warning 一次并返回空数组）
-	func _resolve_f32(comp_name: StringName) -> PackedFloat32Array:
-		var cid: int = int(_world.component_id(comp_name))
-		if cid < 0:
-			if OS.is_debug_build():
-				push_warning("[DCViewAdapter.World] component '%s' not registered; using empty view" % String(comp_name))
+	# 内部：从 _map_data.<map_field> 取 F32 PackedArray 当前引用
+	# 每次调用都重新走 GDScript var 访问，确保 CoW 解耦后取得最新 buffer
+	func _arr_f32(map_field: StringName) -> PackedFloat32Array:
+		if _map_data == null:
 			return PackedFloat32Array()
-		# DCWorld 与 DCWorldExt 都暴露 view_f32(comp_id) 方法（同名）
-		return _world.view_f32(cid)
+		var v = _map_data.get(map_field)
+		if v is PackedFloat32Array:
+			return v
+		return PackedFloat32Array()
 
-	func _resolve_u8(comp_name: StringName) -> PackedByteArray:
-		var cid: int = int(_world.component_id(comp_name))
-		if cid < 0:
-			if OS.is_debug_build():
-				push_warning("[DCViewAdapter.World] component '%s' not registered; using empty view" % String(comp_name))
+	func _arr_u8(map_field: StringName) -> PackedByteArray:
+		if _map_data == null:
 			return PackedByteArray()
-		return _world.view_u8(cid)
+		var v = _map_data.get(map_field)
+		if v is PackedByteArray:
+			return v
+		return PackedByteArray()
 
-	# 内部：安全 F32 索引（越界返回 0；冷路径用，hot path 应直接走数组）
-	func _f(view: PackedFloat32Array, idx: int) -> float:
-		if idx < 0 or idx >= view.size():
+	func _f(arr: PackedFloat32Array, idx: int) -> float:
+		if idx < 0 or idx >= arr.size():
 			return 0.0
-		return view[idx]
+		return arr[idx]
 
-	func _u(view: PackedByteArray, idx: int) -> int:
-		if idx < 0 or idx >= view.size():
+	func _u(arr: PackedByteArray, idx: int) -> int:
+		if idx < 0 or idx >= arr.size():
 			return 0
-		return view[idx]
+		return arr[idx]
 
 	# Climate scalar
-	func get_temp(idx: int) -> float:               return _f(_v_temp, idx)
-	func get_moisture(idx: int) -> float:           return _f(_v_moisture, idx)
-	func get_snow_cover(idx: int) -> float:         return _f(_v_snow_cover, idx)
-	func get_sea_ice_frac(idx: int) -> float:       return _f(_v_sea_ice_frac, idx)
-	func get_temp_baseline(idx: int) -> float:      return _f(_v_temp_baseline, idx)
-	func get_temp_30d(idx: int) -> float:           return _f(_v_temp_30d, idx)
-	func get_temp_365d(idx: int) -> float:          return _f(_v_temp_365d, idx)
-	func get_temp_anomaly(idx: int) -> float:       return _f(_v_temp_anomaly, idx)
-	func get_temp_baseline_year(idx: int) -> float: return _f(_v_temp_baseline_year, idx)
-	func get_temp_season_offset(idx: int) -> float: return _f(_v_temp_season_offset, idx)
-	func get_air_mass_temp_anomaly(idx: int) -> float: return _f(_v_air_mass_temp_anom, idx)
+	func get_temp(idx: int) -> float:               return _f(_arr_f32(&"temp_arr"), idx)
+	func get_moisture(idx: int) -> float:           return _f(_arr_f32(&"moisture_arr"), idx)
+	func get_snow_cover(idx: int) -> float:         return _f(_arr_f32(&"snow_cover_arr"), idx)
+	func get_sea_ice_frac(idx: int) -> float:       return _f(_arr_f32(&"sea_ice_frac_arr"), idx)
+	func get_temp_baseline(idx: int) -> float:      return _f(_arr_f32(&"temp_baseline_arr"), idx)
+	func get_temp_30d(idx: int) -> float:           return _f(_arr_f32(&"temp_30d_arr"), idx)
+	func get_temp_365d(idx: int) -> float:          return _f(_arr_f32(&"temp_365d_arr"), idx)
+	func get_temp_anomaly(idx: int) -> float:       return _f(_arr_f32(&"temp_anomaly_arr"), idx)
+	func get_temp_baseline_year(idx: int) -> float: return _f(_arr_f32(&"temp_baseline_year_arr"), idx)
+	func get_temp_season_offset(idx: int) -> float: return _f(_arr_f32(&"temp_season_offset_arr"), idx)
+	func get_air_mass_temp_anomaly(idx: int) -> float: return _f(_arr_f32(&"air_mass_temp_anomaly_arr"), idx)
 
 	# Weather scalar
-	func get_weather_intensity(idx: int) -> float:   return _f(_v_weather_intensity, idx)
-	func get_weather_cloud(idx: int) -> float:       return _f(_v_weather_cloud, idx)
-	func get_weather_precip(idx: int) -> float:      return _f(_v_weather_precip, idx)
-	func get_weather_vapor(idx: int) -> float:       return _f(_v_weather_vapor, idx)
-	func get_weather_convergence(idx: int) -> float: return _f(_v_weather_convergence, idx)
-	func get_weather_instability(idx: int) -> float: return _f(_v_weather_instability, idx)
+	func get_weather_intensity(idx: int) -> float:   return _f(_arr_f32(&"weather_intensity_arr"), idx)
+	func get_weather_cloud(idx: int) -> float:       return _f(_arr_f32(&"weather_cloud_arr"), idx)
+	func get_weather_precip(idx: int) -> float:      return _f(_arr_f32(&"weather_precip_arr"), idx)
+	func get_weather_vapor(idx: int) -> float:       return _f(_arr_f32(&"weather_vapor_arr"), idx)
+	func get_weather_convergence(idx: int) -> float: return _f(_arr_f32(&"weather_convergence_arr"), idx)
+	func get_weather_instability(idx: int) -> float: return _f(_arr_f32(&"weather_instability_arr"), idx)
 
 	# Static
-	func get_elevation(idx: int) -> float:        return _f(_v_elevation, idx)
-	func get_base_moisture(idx: int) -> float:    return _f(_v_base_moisture, idx)
-	func get_pos_x(idx: int) -> float:            return _f(_v_pos_x, idx)
-	func get_pos_y(idx: int) -> float:            return _f(_v_pos_y, idx)
-	func get_lat_norm(idx: int) -> float:         return _f(_v_lat_norm, idx)
-	func get_ocean_current_x(idx: int) -> float:  return _f(_v_ocean_x, idx)
-	func get_ocean_current_y(idx: int) -> float:  return _f(_v_ocean_y, idx)
-	func get_wind_x(idx: int) -> float:           return _f(_v_wind_x, idx)
-	func get_wind_y(idx: int) -> float:           return _f(_v_wind_y, idx)
+	func get_elevation(idx: int) -> float:        return _f(_arr_f32(&"elevation_arr"), idx)
+	func get_base_moisture(idx: int) -> float:    return _f(_arr_f32(&"base_moisture_arr"), idx)
+	func get_pos_x(idx: int) -> float:            return _f(_arr_f32(&"cell_pos_x_arr"), idx)
+	func get_pos_y(idx: int) -> float:            return _f(_arr_f32(&"cell_pos_y_arr"), idx)
+	func get_lat_norm(idx: int) -> float:         return _f(_arr_f32(&"cell_lat_norm_arr"), idx)
+	func get_ocean_current_x(idx: int) -> float:  return _f(_arr_f32(&"ocean_current_x_arr"), idx)
+	func get_ocean_current_y(idx: int) -> float:  return _f(_arr_f32(&"ocean_current_y_arr"), idx)
+	func get_wind_x(idx: int) -> float:           return _f(_arr_f32(&"wind_x_arr"), idx)
+	func get_wind_y(idx: int) -> float:           return _f(_arr_f32(&"wind_y_arr"), idx)
 
 	# Enums
-	func get_terrain(idx: int) -> int:       return _u(_v_terrain, idx)
-	func get_landform(idx: int) -> int:      return _u(_v_landform, idx)
-	func get_vegetation(idx: int) -> int:    return _u(_v_vegetation, idx)
-	func get_cover(idx: int) -> int:         return _u(_v_cover, idx)
-	func get_weather_type(idx: int) -> int:  return _u(_v_weather_type, idx)
+	func get_terrain(idx: int) -> int:       return _u(_arr_u8(&"terrain_arr"), idx)
+	func get_landform(idx: int) -> int:      return _u(_arr_u8(&"landform_arr"), idx)
+	func get_vegetation(idx: int) -> int:    return _u(_arr_u8(&"vegetation_arr"), idx)
+	func get_cover(idx: int) -> int:         return _u(_arr_u8(&"cover_arr"), idx)
+	func get_weather_type(idx: int) -> int:  return _u(_arr_u8(&"weather_type_arr"), idx)
 
 	# Booleans
-	func get_is_water(idx: int) -> bool:           return _u(_v_is_water, idx) > 0
-	func get_has_river(idx: int) -> bool:          return _u(_v_has_river, idx) > 0
-	func get_weather_field_init(idx: int) -> bool: return _u(_v_weather_field_init, idx) > 0
-	func get_ema_initialized(idx: int) -> bool:    return _u(_v_ema_initialized, idx) > 0
+	func get_is_water(idx: int) -> bool:           return _u(_arr_u8(&"is_water_arr"), idx) > 0
+	func get_has_river(idx: int) -> bool:          return _u(_arr_u8(&"has_river_arr"), idx) > 0
+	func get_weather_field_init(idx: int) -> bool: return _u(_arr_u8(&"weather_field_init_arr"), idx) > 0
+	func get_ema_initialized(idx: int) -> bool:    return _u(_arr_u8(&"ema_initialized_arr"), idx) > 0

@@ -292,12 +292,72 @@ public:
     double run_climate_pass_b(const godot::Dictionary &knobs);
 
     // F.4 (P2): sea ice daily pass
-    //   GDScript 源：scripts/simulation/sea_ice/daily_pass.gd
-    //                 (实际仍在 map_generator.gd line 3573)
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_sea_ice_daily_pass
+    //                 (line 3856+, 2-phase 算法)
     //   ClimateProfile flag：use_gdext_sea_ice
-    //   性能目标：5.1ms → < 0.5ms
-    //   注：cell.terrain 翻转（罕触发）必须走 ECB（charter §2.5 STRUCT-001 反模式）
-    double run_sea_ice_daily_pass(const godot::Dictionary &knobs, float season_phase);
+    //   性能目标：5.1ms → < 0.5ms（charter §7 P2）
+    //
+    //   算法结构（与 GDScript 1:1 镜像）：
+    //     Phase A — has_cold_neighbor 快照（用前一日 sea_ice_fraction）：
+    //       for each water cell：
+    //         如果任一邻居是 water 且 sea_ice_fraction >= 0.6 → has_cold_neighbor[i] = 1
+    //     Phase B — 主循环（fraction 增量更新 + 翻转候选收集）：
+    //       for each cell：
+    //         非 water → fraction = 0；continue
+    //         LAKE → fraction = 0；continue
+    //         t_eff = clamp(temp + ice_delay * max(0, transport_anomaly) -
+    //                       (upwelling > 0.3 ? 0.5 * upwelling : 0), 0, 1)
+    //         k_freeze_eff = k_freeze * (has_cold_neighbor ? 1 + contagion : 1)
+    //         delta = k_freeze_eff * max(0, t_form - t_eff) - k_melt * max(0, t_eff - t_melt)
+    //         new_frac = clamp(prev_frac + delta, 0, 1)
+    //         写 cell_sea_ice_frac[i] = new_frac
+    //         判断翻转候选：
+    //           prev terrain != SEA_ICE && new_frac >= threshold → flip_to_ice
+    //           prev terrain == SEA_ICE && new_frac < threshold - hysteresis →
+    //               flip_to_base（保留 base_terrain，base==SEA_ICE 时回退到 OCEAN）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，F.5 同模板）：
+    //     标量： n_cells (int)
+    //            k_freeze, k_melt, t_form, t_melt, contagion (float)
+    //            threshold, hysteresis (float)
+    //            ice_delay (float)
+    //            enable_ocean_heat_transport (bool)
+    //            terrain_lake_id, terrain_sea_ice_id, terrain_ocean_id (int)
+    //                ↑ TerrainType.LAKE / SEA_ICE / OCEAN 的 enum 值（C++ 不持有 enum）
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+    //            base_terrain_arr       : PackedByteArray     (n_cells)
+    //                ↑ cells[i].base_terrain；翻回时知道目标 terrain
+    //            water_terrain_ids      : PackedByteArray     (~6 entries)
+    //                ↑ 与 GDScript map_generator.gd::_is_water 1:1 对齐：
+    //                  OCEAN / COAST / LAKE / REEF / KELP / SEA_ICE 共 6 种 enum 值。
+    //                  C++ 端用作 256-entry is_water LUT，避免硬编码 enum。
+    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+    //                ↑ 必填（schema 尚未为该字段建 SoA 镜像，与 F.2 同问题）
+    //            upwelling_strength     : PackedFloat32Array  (n_cells)
+    //                ↑ 必填（同上）
+    //
+    //   读：cell_terrain (U8), cell_sea_ice_frac (F32, prev), cell_temp (F32)
+    //       + 入参 PackedArray
+    //   写：cell_sea_ice_frac slot；**不**写 cell_terrain slot（terrain 翻转走
+    //       GDScript 端 apply_terrain，保持 multi-axis 同步语义；charter §2.5
+    //       STRUCT-001 反模式规避）
+    //
+    //   knobs 输出回填（C++ 写 PackedInt32Array / PackedByteArray 进 knobs）：
+    //     flip_to_ice_list      : PackedInt32Array  — 当日跨过 threshold 的 cell idx
+    //     flip_to_base_list     : PackedInt32Array  — 当日跌回 threshold-hysteresis 的 cell idx
+    //     flip_to_base_terrain  : PackedByteArray   — 与 flip_to_base_list 同长，
+    //                                                 每项 = base_terrain（base==SEA_ICE 时 = OCEAN_id）
+    //     stat_water_count      : int  (写到 knobs，用 Variant int 存)
+    //     stat_flipped_count    : int  (写到 knobs)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-6（fraction 是简单 muladd / clamp，无 sqrt）
+    //
+    //   sig 设计：knobs 走 by-value（非 const&），让 C++ 端能写回 flip lists
+    //             给 GDScript caller。Godot Dictionary 是 RefCounted，by-value
+    //             实际是 ref 共享，写回是合法行为（与 F.2 ocean_water/land 同模式）。
+    double run_sea_ice_daily_pass(godot::Dictionary knobs, float season_phase);
 
     // F.5 (P2): transpiration pass
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_transpiration_pass (line 4938+)
@@ -320,13 +380,109 @@ public:
     //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
     double run_transpiration_pass(const godot::Dictionary &knobs);
 
-    // F.6 (P3): weather front advect (含 front pool DOTS 化)
-    //   GDScript 源：scripts/weather/front_advect.gd
+    // F.6 (P3): weather front advect (含 front pool 批量提取模式)
+    //   GDScript 源：scripts/weather/weather_front.gd::advance_one_day +
+    //                refresh_visual_lifecycle (line 74-127)
     //   ClimateProfile flag：use_gdext_weather_front
-    //   性能目标：3.0ms → < 0.5ms
-    //   前置：FRONT_POS_X/Y/VEL_X/Y/AGE/INTENSITY 6 个 component 升为权威而非镜像
-    //   N=16 fronts 不需要 SIMD
-    double run_weather_front_advect_pass(int n_fronts, float dt);
+    //   性能目标：3.0ms → < 0.5ms（charter §7 P3）
+    //   N=16 fronts，单线程足够
+    //
+    //   设计：fronts batch-extract 模式（Phase 1.2 / dots-full-migration §F.6）
+    //     - WeatherFront.pack_into_dict(_active_fronts) 输出 SoA Dictionary
+    //     - C++ pass(batch) 直接读写 batch 内 PackedArray
+    //     - WeatherFront.apply_dict_to_fronts(batch, _active_fronts) 写回 OOP
+    //     - emergent_coupling 的 decay_mul / precip_bonus 在 GDScript 端预算（map 查询），
+    //       caller 在 pack 之前已经把 decay_per_day 改过；C++ 只看修改后的 decay。
+    //     - wind 采样在 GDScript 端预算（一次 batch wind_per_front Vector2Array），
+    //       Vector2.ZERO 表示该 front 无风（C++ 跳过旋转）。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_fronts (int)
+    //            max_axis_turn_rad (float, =0.383972 = 22°/day)
+    //     PackedArray（in/out — read 旧值，write 新值）：
+    //            front_center_x / .._y       : F32 (n)  — write velocity 应用后
+    //            front_velocity_x / .._y     : F32 (n)  — write 重算后
+    //            front_axis_x / .._y         : F32 (n)  — write 旋转后
+    //            front_stable_axis_x / .._y  : F32 (n)  — write 旋转后
+    //            front_radius                : F32 (n)  — read only
+    //            front_intensity             : F32 (n)  — write decay 后
+    //            front_decay_per_day         : F32 (n)  — read（已含 emergent decay_mul）
+    //            front_age_days              : I32 (n)  — write age++
+    //            front_type                  : I32 (n)  — read only (refresh_visual_lifecycle 用)
+    //            front_ttl_days              : I32 (n)  — read only (refresh_visual_lifecycle 用)
+    //            front_life_progress         : F32 (n)  — write
+    //            front_cloud_amount          : F32 (n)  — write
+    //            front_precip_amount         : F32 (n)  — write
+    //            front_dissolve_amount       : F32 (n)  — write
+    //            front_alive                 : U8  (n)  — write (intensity > 0.01 && age < ttl)
+    //            wind_per_front              : PackedVector2Array (n)
+    //                ↑ caller 用 wind_fn(front.center) 预算；ZERO 表示无风
+    //
+    //   读：knobs 内的 PackedArray（CoW share with GDScript）
+    //   写：knobs 内的 PackedArray（in-place via ptrw）；不动任何 _slots[]
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-5（含 sin / cos / smoothstep 链）
+    //
+    //   sig 设计：knobs 走 by-value（非 const&），与 F.4 同模式（让 C++
+    //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
+    double run_weather_front_advect_pass(godot::Dictionary knobs);
+
+    // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
+    //
+    //   GDScript 源：scripts/rendering/physical_circulation_solver.gd::solve_wind_field
+    //                 (line 246-454, 195 行)
+    //   ClimateProfile flag：use_gdext_wind_field（默认 false；本 PR 完成 +
+    //                        SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后切 true）
+    //   性能目标：35.55ms p95 → < 5ms（charter §7 / dots-wind-validation.md）
+    //
+    //   算法结构（与 GDScript 1:1 镜像）：
+    //     Pass 0 — 海岸 BFS（≤ _WIND_MONSOON_MAX_DIST=5 步）：
+    //       识别每个陆地 cell 距海岸的格数 + 朝向海洋的单位向量
+    //     主循环 — 每 cell：
+    //       (a) 纬度基线 v_base = wind_belt_at(ny, season_phase)
+    //       (b) 6 邻域离散梯度 grad_slp = (1/3)*Σ(slp_nb-slp_self)*d_unit
+    //       (d) 科氏偏转：仅对 -grad_slp 做（北半球右偏 / 南半球左偏）
+    //       (c) 海陆季风附加：BFS 距离权重 × sea_dir × 季节符号
+    //       合成 v_sum = w_lat*v_base + w_grad*v_grad + w_monsoon*v_monsoon
+    //       (e) 地形/摩擦衰减 + 山脉绕流（mountain neighbor 切向偏转）
+    //       写 wind_x_arr[i], wind_y_arr[i], wind_speed_out[i]
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            hex_size (float)
+    //            season_phase (float)
+    //            terrain_aware (int 0/1)  — 见 ClimateProfile.enable_terrain_aware_wind
+    //            world_bounds_pos_y (float)
+    //            world_bounds_size_y (float)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices : PackedInt32Array (n_cells * 6)
+    //                ↑ 顺序与 HexUtils.CUBE_DIRECTIONS 一致
+    //                  (0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE)
+    //            slp_arr          : PackedFloat32Array (n_cells)
+    //                ↑ 必填！由 GDScript 从 cell.slp 提取
+    //                  （cell.slp 不在 schema 中）
+    //            water_terrain_ids: PackedByteArray (~4 entries)
+    //                ↑ TerrainType 枚举 OCEAN/COAST/REEF/KELP，
+    //                  与 _is_water_terrain 1:1 对齐
+    //            land_lf_mountain : int (knobs scalar) = LandformType.LF.MOUNTAIN
+    //            land_lf_peak     : int (knobs scalar) = LandformType.LF.PEAK
+    //            land_lf_hill     : int (knobs scalar) = LandformType.LF.HILL
+    //
+    //   读：cell_pos_y (lat 推导), cell_terrain (U8), cell_landform (U8) +
+    //       knobs["slp_arr"] + knobs["neighbor_indices"]
+    //   写：cell_wind_x slot (F32), cell_wind_y slot (F32) + flush_slot_to_map
+    //   knobs 输出：
+    //     wind_speed_out : PackedFloat32Array (n_cells)
+    //         ↑ caller 拿这个数组写每 cell.wind_speed
+    //         （cell.wind_speed 不在 schema）
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //         < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    //
+    //   bit-equal 容差：1e-4（含 sin/cos/sqrt/normalize 链）
+    //   未支持的特性：none（与 GDScript 算法 1:1 镜像）
+    double run_wind_field_pass(godot::Dictionary knobs);
 
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++

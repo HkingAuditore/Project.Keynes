@@ -6,7 +6,29 @@ class_name OceanCurrentsSystem
 ## 实现策略：当前版本是 **wrapper**——内部持一个 OceanCurrentsJob 实例，
 ## tick() 转发到 _inner.run_slice()。这让 declare_reads/writes 与
 ## DCSystemScheduler 调度立刻可用，而 181 行 ocean current 切片逻辑无需立刻
-## 重写。后续 PR 可逐步把 _inner 字段消费替换为本类直接持有相同字段。
+## 重写。
+##
+## ─── Phase 1.5 inline TODO（参照 ClimateDailySystem 已完成的模板）─────
+##
+## **状态**：当前仍 wrapper；ClimateDailySystem 已 inline 完毕（路径 1/3）。
+##
+## inline 化步骤（参照 climate_daily_system.gd 1:1 镜像）：
+##   1. 把 OceanCurrentsJob 的全部成员变量复制到本类（baker / map / world /
+##      cfg / hex_size / period_ticks / slice_count / _ocean_phase_locked /
+##      _slice_cursor / _round_active / _round_t_* 等）；
+##   2. 把 OceanCurrentsJob.run_slice() 的 ~100 行 sub-pass 推进逻辑 1:1
+##      搬到本类 `func run_slice(ctx) -> Dictionary`；
+##   3. 把 _on_world_bound() 中的 _comp_cell_* cache 删除——基类 DCSystem.setup()
+##      已通过 declare_reads()/_cid 字典自动 cache；
+##   4. 删除 _inner 字段 + 相关 forward 方法（tick / set_on_commit /
+##      set_season_phase_getter / get_inner）；
+##   5. map_generator.gd 调用 site：
+##      a. _ocean_currents_job 改为指向本 system 自身（不再 .get_inner()）；
+##      b. on_commit / season_phase_getter 直接赋值给本 system 的字段；
+##   6. 验收：跑 SUS 30-tick log，avg / p95 与 wrapper 路径 ±3% 一致；
+##      洋流贴图视觉无 diff（截图像素 < 0.1%）。
+##
+## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
 ##
 ## reads / writes 声明：
 ##   - reads:  cell.elevation / cell.is_water / cell.terrain（baker 烘焙洋流时

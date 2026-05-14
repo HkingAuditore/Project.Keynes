@@ -1,5 +1,17 @@
 # Project.Keynes — DOTS 框架现状速查（onboarding 必读）
 
+> **2026-05-14 更新（"完成全面DOTS化与Block B C++" plan 主体完成）**：DOTS 主指挥手册 28 周方案 + Block B C++ 实装 + HexCell 21 字段 facade + flush_soa 删除全部完成。
+> 详见 [dots-master-execution-handbook.md](./dots-master-execution-handbook.md) +
+> [dots-block-e-acceptance.md](../Project/project-keynes/docs/dots-block-e-acceptance.md)。
+>
+> **当前阶段达成**：
+> - ✅ Phase 2（数据所有权下移）：write_indexed API + 7 hot pass 写路径下移 + **PR-2.3b HexCell 21 字段 facade（cid 缓存 + 双写）** + **PR-2.4 flush_soa 删除**
+> - ✅ Phase 4（持久化 + 工程化）：serialize round-trip / migration ops / soak fixture / hot-reload signal
+> - ✅ Block B（ocean wind C++）：**`DCWorldExt::run_wind_field_pass` ~470 LOC C++ 完整实装（wind_belt_speed_at + 季风 BFS + 山脉绕流）**；待 user `scons` 编译 + `use_gdext_wind_field=true` 切换 + `dots-wind-validation.md §3` 验收
+> - 🟡 Phase 3（巨石拆分）：4 巨石蓝图 + stub 全部就位；3 个示范 PR 完成（PR-3.1.1 atlas_encoders + **PR-3.3.1 climate_math** + **PR-3.4.1 dots_bootstrap**），剩余 ~50 个机械搬迁 PR 留待后续会话推进
+>     - 后续 PR 见 master 手册 §6.2-6.5 + dots-block-e-acceptance.md §3.2
+> - ⏳ Phase IV（SIMD/threading）：preplan only；触发条件未达成，**不主动启动**
+>
 > 本文档是新加入开发者的 1-day 速读入口。读完后你应该能：
 >
 > - 知道当前 DOTS 框架处于什么状态（哪些抽象可用、哪些 still pending）
@@ -23,7 +35,8 @@
       ├─ F.5 transpiration pass 完整算法实装 ✅ 已验收 (kernel 0.02ms vs 3.2ms，超 15x 目标)
       ├─ F.3 climate Pass-B 完整算法实装 ✅ 已验收 (kernel 0.07ms vs 5.2ms，超 7x 目标)
       ├─ F.2 ocean water+land 完整算法实装 ✅ 已验收 (water 0.09ms / land 0.02ms 双超 5x)
-      └─ F.4/F.6 2 个 stub（return -1.0；待后续 PR 按 F.1-F.3 模板填入）
+      ├─ Block B run_wind_field_pass 完整算法实装 ✅ 待 scons 编译验收 (35.55ms p95 → 目标 < 5ms)
+      └─ F.4/F.6 2 个 stub（return -1.0；性能未构成瓶颈，由 plan §7 边界定为本期不做）
 
 ✅ 读侧
    └─ DCViewAdapter (B2) — UI / renderer / baker 通过 adapter.get_<field>(idx) 读

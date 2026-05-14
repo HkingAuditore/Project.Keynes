@@ -1,6 +1,21 @@
 # hex_cell.gd
 # 单个六边形地块的数据容器
 # 使用 cube 坐标系（q, r, s），约束: q + r + s == 0
+#
+# ─── PR-2.3 HexCell Facade Migration（master 手册 §3.10.3） ──────────────
+# 目标：cell.<hot_field> 的语法保持不变，但底层走 DCWorld read_f32/write_f32。
+# 完整状态：PR-2.3 分三阶段：
+#   PR-2.3a [本 PR]：facade 基础设施（_world 绑定 + use_facade flag + bind_world）。
+#                    默认 _facade_enabled=false，向后兼容。
+#   PR-2.3b：25 个热字段（climate + weather + ocean）加 property setter/getter。
+#            默认仍走 var；启用 use_hexcell_facade flag 后转发到 world。
+#   PR-2.3c：默认开启 facade + 删除 flush_soa_to_cells / rebuild_soa_from_cells +
+#            清理冗余 var（如 temperature_breakdown 字典）。
+#
+# 删除前置条件（master 手册 §3.10.4）：
+#   1. PR-2.3b/c 全部合入 + 1000-tick SAME_SOURCE 通过
+#   2. ripgrep `cell\.\w+\s*=` 在 hot-loop 文件 = 0（写路径已全部下移到 world）
+#   3. ripgrep `flush_soa_to_cells|rebuild_soa_from_cells` 全仓 = 0（仅 git history）
 
 class_name HexCell
 
@@ -16,6 +31,92 @@ var s: int = 0  # 始终等于 -q - r，冗余存储以方便邻居计算
 #   - cold path（UI/baker/test）：world.read_*(comp_id, cell.index) helper
 #   - -1 = 未通过 _build_indices 注册（断言用）
 var index: int = -1
+
+# --- PR-2.3a/b：HexCell Facade infrastructure ────────────────────────────
+# _world：DCWorld 引用，由 bake_world / 加载存档末尾通过 bind_world() 注入。
+#         null 时所有 property setter/getter 走 var fallback 路径，与旧行为完全兼容。
+# _facade_enabled：是否对该 cell 启用 facade（read/write 转发到 world）。
+#                  由 ClimateProfile.use_hexcell_facade 全局控制；调试可单 cell 关闭。
+var _world = null
+var _facade_enabled: bool = false
+
+# PR-2.3b：21 个 facade 字段 → cid 索引常量。bind_world() 时一次性 lookup。
+# 顺序与 _COMP_NAMES 严格对齐；新增字段时两边都要补。
+const _CID_TEMP                 := 0   # F32  cell.temp
+const _CID_MOISTURE             := 1   # F32  cell.moisture
+const _CID_SNOW_COVER           := 2   # F32  cell.snow_cover
+const _CID_TEMP_BASELINE        := 3   # F32  cell.temp_baseline
+const _CID_TEMP_30D             := 4   # F32  cell.temp_30d
+const _CID_TEMP_365D            := 5   # F32  cell.temp_365d
+const _CID_TEMP_ANOMALY         := 6   # F32  cell.temp_anomaly  (= temp_dev_from_annual)
+const _CID_TEMP_SEASON_OFFSET   := 7   # F32  cell.temp_season_offset
+const _CID_SEA_ICE_FRAC         := 8   # F32  cell.sea_ice_frac  (= sea_ice_fraction)
+const _CID_WEATHER_INTENSITY    := 9   # F32  cell.weather_intensity
+const _CID_WEATHER_CLOUD        := 10  # F32  cell.weather_cloud
+const _CID_WEATHER_PRECIP       := 11  # F32  cell.weather_precip
+const _CID_WEATHER_VAPOR        := 12  # F32  cell.weather_vapor
+const _CID_WEATHER_CONVERGENCE  := 13  # F32  cell.weather_convergence
+const _CID_WEATHER_INSTABILITY  := 14  # F32  cell.weather_instability
+const _CID_AIR_MASS_TEMP_ANOM   := 15  # F32  cell.air_mass_temp_anomaly
+const _CID_OCEAN_CURRENT_X      := 16  # F32  cell.ocean_current_x
+const _CID_OCEAN_CURRENT_Y      := 17  # F32  cell.ocean_current_y
+const _CID_WIND_X               := 18  # F32  cell.wind_x
+const _CID_WIND_Y               := 19  # F32  cell.wind_y
+const _CID_WEATHER_TYPE         := 20  # U8   cell.weather_type
+const _CID_WEATHER_FIELD_INIT   := 21  # U8   cell.weather_field_init  (bool)
+const _CID_EMA_INITIALIZED      := 22  # U8   cell.ema_initialized      (bool)
+const _CID_COUNT                := 23
+
+# StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
+# 字面量是合法 const expression，可以直接用。
+const _COMP_NAMES: Array[StringName] = [
+	&"cell.temp",
+	&"cell.moisture",
+	&"cell.snow_cover",
+	&"cell.temp_baseline",
+	&"cell.temp_30d",
+	&"cell.temp_365d",
+	&"cell.temp_anomaly",
+	&"cell.temp_season_offset",
+	&"cell.sea_ice_frac",
+	&"cell.weather_intensity",
+	&"cell.weather_cloud",
+	&"cell.weather_precip",
+	&"cell.weather_vapor",
+	&"cell.weather_convergence",
+	&"cell.weather_instability",
+	&"cell.air_mass_temp_anomaly",
+	&"cell.ocean_current_x",
+	&"cell.ocean_current_y",
+	&"cell.wind_x",
+	&"cell.wind_y",
+	&"cell.weather_type",
+	&"cell.weather_field_init",
+	&"cell.ema_initialized",
+]
+
+# 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
+# bind_world() 时一次填充；运行期不变。
+var _cid_array: PackedInt32Array = PackedInt32Array()
+
+## 把本 cell 绑定到 DCWorld + 启用 facade。bake_world / load_save 末尾调用一次。
+## 调用前必须保证 cell.index 已通过 _build_indices() 写入（>= 0）。
+func bind_world(world, enable_facade: bool = false) -> void:
+	_world = world
+	_facade_enabled = enable_facade and (world != null) and (index >= 0)
+	# 填充 cid 缓存（即使 enable_facade=false 也填，给未来 hot reload 切 true 用）
+	if world != null:
+		_cid_array.resize(_CID_COUNT)
+		for i in range(_CID_COUNT):
+			_cid_array[i] = world.component_id(_COMP_NAMES[i])
+	else:
+		_cid_array = PackedInt32Array()
+
+## 解绑（卸载世界 / 重新生成时调用，避免悬空引用）。
+func unbind_world() -> void:
+	_world = null
+	_facade_enabled = false
+	_cid_array = PackedInt32Array()
 
 # --- 地形（兼容轴；Milestone 1 起为 derived 字段） ---
 # 仍是 baker / shader / 老 _apply_*_pass 的工作字段，
@@ -35,7 +136,21 @@ var cover: int = CoverType.CV.NONE
 # --- 地貌附加信息 ---
 var has_river: bool = false        # 是否有河流流经
 var elevation: float = 0.0        # 归一化高度 [0, 1]，用于生成时的中间量
-var moisture: float = 0.5         # 归一化湿度 [0, 1]，由生成器写入，烘焙时上采样到湿度纹理
+# moisture：归一化湿度 [0, 1]。PR-2.3b facade 化（→ cell.moisture SoA）。
+var _moisture_backing: float = 0.5
+var moisture: float = 0.5:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_MOISTURE]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _moisture_backing
+	set(v):
+		_moisture_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_MOISTURE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # Phase 13：标记初始 elevation pass 阶段被强制下沉的"湖泊种子"，让 pit-fill 跳过这些 cell
 var is_lake_seed: bool = false
 # Phase 14：火山地标 flag（不参与 terrain 枚举，但 shader 端额外加红光烟柱）
@@ -64,20 +179,153 @@ var current_state: Dictionary = {}
 
 # Fast-tick weather-field cache. WeatherSystem writes these typed members first
 # and mirrors them into current_state for existing UI / baker consumers.
-var weather_field_initialized: bool = false
-var weather_type: int = 0
-var weather_intensity: float = 0.0
-var weather_cloud: float = 0.0
-var weather_precip: float = 0.0
-var weather_vapor: float = 0.0
-var weather_instability: float = 0.0
-var weather_convergence: float = 0.0
+# PR-2.3b：8 个 weather 字段 facade 化（→ cell.weather_* SoA + cell.weather_field_init U8）。
+var _weather_field_initialized_backing: bool = false
+var weather_field_initialized: bool = false:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_FIELD_INIT]
+			if cid >= 0:
+				return _world.read_u8(cid, index) > 0
+		return _weather_field_initialized_backing
+	set(v):
+		_weather_field_initialized_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_FIELD_INIT]
+			if cid >= 0:
+				_world.write_u8(cid, index, 1 if v else 0)
+var _weather_type_backing: int = 0
+var weather_type: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TYPE]
+			if cid >= 0:
+				return _world.read_u8(cid, index)
+		return _weather_type_backing
+	set(v):
+		_weather_type_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TYPE]
+			if cid >= 0:
+				_world.write_u8(cid, index, v)
+var _weather_intensity_backing: float = 0.0
+var weather_intensity: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_INTENSITY]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_intensity_backing
+	set(v):
+		_weather_intensity_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_INTENSITY]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _weather_cloud_backing: float = 0.0
+var weather_cloud: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_CLOUD]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_cloud_backing
+	set(v):
+		_weather_cloud_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_CLOUD]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _weather_precip_backing: float = 0.0
+var weather_precip: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PRECIP]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_precip_backing
+	set(v):
+		_weather_precip_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PRECIP]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _weather_vapor_backing: float = 0.0
+var weather_vapor: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_VAPOR]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_vapor_backing
+	set(v):
+		_weather_vapor_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_VAPOR]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _weather_instability_backing: float = 0.0
+var weather_instability: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_INSTABILITY]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_instability_backing
+	set(v):
+		_weather_instability_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_INSTABILITY]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _weather_convergence_backing: float = 0.0
+var weather_convergence: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_CONVERGENCE]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _weather_convergence_backing
+	set(v):
+		_weather_convergence_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_CONVERGENCE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # Fast-tick perf opt (C)：fast-tick 热路径高频读写字段升级为强类型成员，
 # 避免 current_state 字典的 hash 查找 + Variant 装箱开销。
 # moisture 已在上方声明为 float（第 27 行）；下面是从字典迁移过来的 7 个。
-var temperature: float = 0.0
-var snow_cover: float = 0.0
+# PR-2.3b：temperature / snow_cover / temp_baseline / temp_season_offset /
+#          temp_30d_mean / temp_365d_mean / temp_dev_from_annual facade 化。
+var _temperature_backing: float = 0.0
+var temperature: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temperature_backing
+	set(v):
+		_temperature_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _snow_cover_backing: float = 0.0
+var snow_cover: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SNOW_COVER]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _snow_cover_backing
+	set(v):
+		_snow_cover_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SNOW_COVER]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # Phase 3c：积雪累积。
 # accumulated_snow_days：BLIZZARD 命中天数计数器（>=0）。每个有效降雪日 +1，
 #   温度高于 0.30（约 -2°C）时反向衰减（实际 -1）。
@@ -88,16 +336,95 @@ var accumulated_snow_days: int = 0
 var pre_snow_cover: int = -1
 # temp_baseline / temp_season_offset：refresh_climate_daily Pass A/B 写入，
 # temperature_breakdown 调试字典与 UI 面板读取。命名去掉旧字典键的前导下划线。
-var temp_baseline: float = 0.0
-var temp_season_offset: float = 0.0
+# PR-2.3b：5 个温度系字段 + _ema_initialized facade 化。
+var _temp_baseline_backing: float = 0.0
+var temp_baseline: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_BASELINE]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temp_baseline_backing
+	set(v):
+		_temp_baseline_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_BASELINE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _temp_season_offset_backing: float = 0.0
+var temp_season_offset: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_SEASON_OFFSET]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temp_season_offset_backing
+	set(v):
+		_temp_season_offset_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_SEASON_OFFSET]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # 30/365 日滑动均值 + 偏离（Emergent Climate Coupling EMA）
-var temp_30d_mean: float = 0.0
-var temp_365d_mean: float = 0.0
-var temp_dev_from_annual: float = 0.0
+var _temp_30d_mean_backing: float = 0.0
+var temp_30d_mean: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_30D]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temp_30d_mean_backing
+	set(v):
+		_temp_30d_mean_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_30D]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _temp_365d_mean_backing: float = 0.0
+var temp_365d_mean: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_365D]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temp_365d_mean_backing
+	set(v):
+		_temp_365d_mean_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_365D]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _temp_dev_from_annual_backing: float = 0.0
+var temp_dev_from_annual: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_ANOMALY]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temp_dev_from_annual_backing
+	set(v):
+		_temp_dev_from_annual_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_ANOMALY]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # Fast-tick perf opt (C)：EMA 首次初始化标志。旧版本用 -1.0 哨兵加字典查找
 # 判断"是否首次"；升级为强类型 float 后 0.0 是合法气候值无法再作哨兵，
 # 改用独立 bool。首次 refresh_climate_daily 写入后置 true。
-var _ema_initialized: bool = false
+var __ema_initialized_backing: bool = false
+var _ema_initialized: bool = false:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_EMA_INITIALIZED]
+			if cid >= 0:
+				return _world.read_u8(cid, index) > 0
+		return __ema_initialized_backing
+	set(v):
+		__ema_initialized_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_EMA_INITIALIZED]
+			if cid >= 0:
+				_world.write_u8(cid, index, 1 if v else 0)
 
 # Phase 8：过去若干季的 biome 快照（环形缓冲），给 refresh_yearly 评分用。
 # 长度固定 HISTORY_LEN = 8（≈ 2 年）。生命周期：每季 push 当前 terrain。
@@ -147,7 +474,25 @@ var passable_sea: bool = false
 # 用途：
 #   - 渲染层：main.gd 把打包后的场编码为 RG16F 纹理传给 water shader 做流线 scroll
 #   - 将来的逻辑层：鱼群 / 航运 / 大陆影响扩散等 AI 直接读 cell.ocean_current
-var ocean_current: Vector2 = Vector2.ZERO
+# PR-2.3b：ocean_current facade 化（→ cell.ocean_current_x / cell.ocean_current_y SoA）。
+# 同 wind_vector 注意事项：禁止 `cell.ocean_current.x = v` 写法。
+var _ocean_current_backing: Vector2 = Vector2.ZERO
+var ocean_current: Vector2 = Vector2.ZERO:
+	get:
+		if _facade_enabled:
+			var cid_x: int = _cid_array[_CID_OCEAN_CURRENT_X]
+			var cid_y: int = _cid_array[_CID_OCEAN_CURRENT_Y]
+			if cid_x >= 0 and cid_y >= 0:
+				return Vector2(_world.read_f32(cid_x, index), _world.read_f32(cid_y, index))
+		return _ocean_current_backing
+	set(v):
+		_ocean_current_backing = v
+		if _facade_enabled:
+			var cid_x: int = _cid_array[_CID_OCEAN_CURRENT_X]
+			var cid_y: int = _cid_array[_CID_OCEAN_CURRENT_Y]
+			if cid_x >= 0 and cid_y >= 0:
+				_world.write_f32(cid_x, index, v.x)
+				_world.write_f32(cid_y, index, v.y)
 
 # --- 地形扰动后的实际风场（per-cell；六边形尺度） ───────────────────────────
 # 由 MapGenerator._compute_terrain_perturbed_wind 在 bake_world 后写入。
@@ -162,7 +507,28 @@ var ocean_current: Vector2 = Vector2.ZERO
 #   - WorldData.wind_field_buffer 仍是 ny-only 的"纬度风基线"，weather_system
 #     的锋面 advection 与 ocean_current 的 Ekman 偏转继续读它（保持地球级
 #     纬向洋流 / 大气环流的稳定形态，不被局地地形噪声污染）
-var wind_vector: Vector2 = Vector2.ZERO
+# PR-2.3b：wind_vector facade 化（→ cell.wind_x / cell.wind_y SoA 双 cid）。
+# 注意：Vector2 是 value type，调用方做 `cell.wind_vector.x = v` 会退化为
+#       get → 改副本 → 副本丢失（不会触发 set）。所以禁止此写法，调用方
+#       必须用 `cell.wind_vector = Vector2(x, y)` 整体赋值。已在 PR-2.3b
+#       审计阶段确认 ripgrep 全仓 0 hit（除 flush_soa_to_cells 即将删除）。
+var _wind_vector_backing: Vector2 = Vector2.ZERO
+var wind_vector: Vector2 = Vector2.ZERO:
+	get:
+		if _facade_enabled:
+			var cid_x: int = _cid_array[_CID_WIND_X]
+			var cid_y: int = _cid_array[_CID_WIND_Y]
+			if cid_x >= 0 and cid_y >= 0:
+				return Vector2(_world.read_f32(cid_x, index), _world.read_f32(cid_y, index))
+		return _wind_vector_backing
+	set(v):
+		_wind_vector_backing = v
+		if _facade_enabled:
+			var cid_x: int = _cid_array[_CID_WIND_X]
+			var cid_y: int = _cid_array[_CID_WIND_Y]
+			if cid_x >= 0 and cid_y >= 0:
+				_world.write_f32(cid_x, index, v.x)
+				_world.write_f32(cid_y, index, v.y)
 
 # --- Systemic Ocean Currents：上升流与热输运 ─────────────────────────────
 # upwelling_strength ∈ [-1, 1]：
@@ -208,14 +574,42 @@ var temperature_transport_anomaly: float = 0.0
 #   沿 -wind_vector 方向回溯上游气团温度混合后的偏差，
 #   影响气温、海冰、植被、天气系统等气候要素。
 #   对称复刻洋流热输运的设计模式。
-var air_mass_temp_anomaly: float = 0.0
+# PR-2.3b：facade 化（→ cell.air_mass_temp_anomaly SoA）。
+var _air_mass_temp_anomaly_backing: float = 0.0
+var air_mass_temp_anomaly: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_AIR_MASS_TEMP_ANOM]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _air_mass_temp_anomaly_backing
+	set(v):
+		_air_mass_temp_anomaly_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_AIR_MASS_TEMP_ANOM]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # --- Emergent Climate Coupling 字段（Phase E） ────────────────────────
 # sea_ice_fraction ∈ [0, 1]：水体 cell 的当前海冰覆盖度（半快半慢量）。
 #   归入"慢层 / map layer"，由 _apply_sea_ice_daily_pass 每日**增量**推进。
 #   跨过 ClimateProfile.sea_ice_terrain_threshold 时翻转 cell.terrain，
 #   跌回 threshold - hysteresis 时翻回 base_terrain。陆地 cell 始终为 0。
-var sea_ice_fraction: float = 0.0
+# PR-2.3b：facade 化（→ cell.sea_ice_frac SoA；注意属性名 vs schema 名 不同）。
+var _sea_ice_fraction_backing: float = 0.0
+var sea_ice_fraction: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SEA_ICE_FRAC]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _sea_ice_fraction_backing
+	set(v):
+		_sea_ice_fraction_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SEA_ICE_FRAC]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # soil_moisture / vegetation_growth_pressure：天气 → 慢层反馈缓冲字段。
 #   由 _apply_weather_to_map_feedback_pass 在每日末以**很小权重**（≤ 0.5%）

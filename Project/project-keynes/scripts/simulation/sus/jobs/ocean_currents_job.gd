@@ -135,6 +135,25 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if not _phys_solve_done:
 		_phys_solve_done = baker._physical_solve_step_one(map, world, hex_size, cfg, _phase_locked)
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 25ms → 打印来源 stage。
+		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
+		# return 漏掉了；ocean_currents p95 outlier 通常就是这里。
+		# 注意：函数内是"跑完当前 stage → 设为下一 stage"，所以返回时读 _phys_stage
+		# 拿到的是**下一**阶段的 id；这里要换算成"刚跑完的 stage"。
+		if elapsed_solve_ms > 25.0:
+			var next_stage_id: int = -1
+			if "_phys_stage" in baker:
+				next_stage_id = int(baker._phys_stage)
+			# next stage = 3 (PSI_INIT) → 刚跑完 = 2 (WIND)，依此类推
+			var just_done_id: int = max(0, next_stage_id - 1)
+			var stage_names: Array = ["NONE", "SLP", "WIND", "PSI_INIT", "PSI_ITERS",
+				"PSI_FINALIZE", "UPWELLING", "WIND_RASTER", "DONE"]
+			var just_done_name: String = "?"
+			if just_done_id >= 0 and just_done_id < stage_names.size():
+				just_done_name = String(stage_names[just_done_id])
+			print("  [ocean_currents] slow slice=%.1fms (just-finished stage=%d/%s, next=%d, round_done=%s)" % [
+				elapsed_solve_ms, just_done_id, just_done_name, next_stage_id, str(_phys_solve_done)
+			])
 		return {
 			"done": false,
 			"work_done": 0,

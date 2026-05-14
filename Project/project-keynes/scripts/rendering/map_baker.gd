@@ -235,6 +235,12 @@ var _pending_size: Vector2i = Vector2i.ZERO
 var _pending_phys_solved_phase: float = NAN
 var _pending_psi_state = null  # PhysicalCirculationSolver.PsiSolverState 或 null
 var _pending_wind_buf: PackedByteArray = PackedByteArray()
+# Block B（master 手册 §4）：DCWorldExt 引用，由 MapGenerator 在 bake_world / 加载存档
+# 末尾通过 set_world_ext() 注入。null 时所有 C++ hook 走 GDScript fallback。
+# 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
+var _world_ext = null
+# Block B (wind_field/B) 一次性诊断标记 — 仿 climate_b/F.3 / weather/F.1 路径。
+var _wind_b_first_run_logged: bool = false
 
 # Phys Solve Sliced：求解状态机阶段。
 const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
@@ -2021,22 +2027,11 @@ func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
 		return existing
 	return ImageTexture.create_from_image(img)
 
-# 通用 R8 → ImageTexture 编码（L8 LINEAR）。传入 existing 会尝试原地 update 以复用 GPU 句柄，
-# 避免 refresh_climate_daily 每日创建新纹理带来的驱动层分配开销。
+# PR-3.1.1（master 手册 §6.2）：_encode_r8_tex 已搬到 DCAtlasEncoders.encode_r8_tex。
+# 本 facade 保留作为 in-class shim，避免 caller 全部一次性改动。
+# 后续 PR 可逐步把 caller 改为 DCAtlasEncoders.encode_r8_tex 直调。
 func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture) -> ImageTexture:
-	var W := size.x
-	var H := size.y
-	var n := W * H
-	var data := PackedByteArray()
-	data.resize(n)
-	var has_buf: bool = buf.size() >= n
-	for i in range(n):
-		data[i] = buf[i] if has_buf else 0
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
-	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
-		existing.update(img)
-		return existing
-	return ImageTexture.create_from_image(img)
+	return DCAtlasEncoders.encode_r8_tex(buf, size, existing)
 
 # Emergent Climate Coupling：从 HexCell.sea_ice_fraction 把 per-cell 的连续海冰覆盖率
 # 光栅化为 derived-size 的 R8 buffer，并写到独立的 sea_ice_tex（原地 update）。
@@ -2679,6 +2674,11 @@ func _use_physical_circulation(cfg: MapConfig) -> bool:
 # 在新一轮（_round_active=false → true）转换时调一次，确保季节相位变更被
 # 重新求解；一次性入口 _physical_solve_for_phase 也调一次，避免和切片路径
 # 残留的 _phys_stage 冲突。
+## Block B（master 手册 §4）：MapGenerator 在 bake_world / 加载存档时注入 DCWorldExt。
+## ext == null 时所有 C++ hook 退化为 GDScript path，行为零回归。
+func set_world_ext(ext) -> void:
+	_world_ext = ext
+
 func reset_physical_solve_state() -> void:
 	_phys_stage = _PHYS_STAGE_NONE
 	_phys_psi_iters_done = 0
@@ -2724,7 +2724,63 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
-			PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
+			# Block B（master 手册 §4 / dots-wind-validation.md）：wind solver C++ 化 hook。
+			# 默认 _world_ext == null 或 use_gdext_wind_field=false → 走 GDScript fallback。
+			# 触发开启条件：SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后 ClimateProfile 切 true。
+			var _wind_done_by_cpp: bool = false
+			if profile != null and "use_gdext_wind_field" in profile \
+				and bool(profile.use_gdext_wind_field) \
+				and _world_ext != null and _world_ext.has_method("run_wind_field_pass"):
+				var cells_for_wind: Array = map.all_cells()
+				var n_wind: int = cells_for_wind.size()
+				var nb_idx_for_wind: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+				var fast_indexed_wind: bool = nb_idx_for_wind.size() >= n_wind * 6
+				if fast_indexed_wind and n_wind > 0:
+					# Pack cell.slp 到 PackedFloat32Array（cell.slp 不在 schema）
+					var slp_arr: PackedFloat32Array = PackedFloat32Array()
+					slp_arr.resize(n_wind)
+					for _i_slp in range(n_wind):
+						var _c_slp: HexCell = cells_for_wind[_i_slp]
+						slp_arr[_i_slp] = _c_slp.slp if _c_slp != null else 0.0
+					# water_terrain_ids：与 PhysicalCirculationSolver._is_water_terrain 1:1
+					var water_ids := PackedByteArray()
+					water_ids.append(int(TerrainType.TERRAIN.OCEAN))
+					water_ids.append(int(TerrainType.TERRAIN.COAST))
+					water_ids.append(int(TerrainType.TERRAIN.REEF))
+					water_ids.append(int(TerrainType.TERRAIN.KELP))
+					var knobs_wind := {
+						"n_cells": n_wind,
+						"hex_size": hex_size,
+						"season_phase": season_phase,
+						"terrain_aware": (1 if terrain_aware else 0),
+						"world_bounds_pos_y": bounds.position.y,
+						"world_bounds_size_y": bounds.size.y,
+						"neighbor_indices": nb_idx_for_wind,
+						"slp_arr": slp_arr,
+						"water_terrain_ids": water_ids,
+						"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
+						"land_lf_peak": int(LandformType.LF.PEAK),
+						"land_lf_hill": int(LandformType.LF.HILL),
+					}
+					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
+					if _rc_wind != null and float(_rc_wind) >= 0.0:
+						# Commit：从 SoA wind_x/y + wind_speed_out 写回每 cell。
+						var wx_arr: PackedFloat32Array = map.wind_x_arr
+						var wy_arr: PackedFloat32Array = map.wind_y_arr
+						var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
+						if wx_arr.size() == n_wind and wy_arr.size() == n_wind and wspd_arr.size() == n_wind:
+							for _i_w in range(n_wind):
+								var _c_w: HexCell = cells_for_wind[_i_w]
+								if _c_w == null:
+									continue
+								_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
+								_c_w.wind_speed = wspd_arr[_i_w]
+							_wind_done_by_cpp = true
+							if not _wind_b_first_run_logged:
+								_wind_b_first_run_logged = true
+								print("[wind_field/B] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 35ms; charter §7 / dots-wind-validation.md target < 5ms)" % float(_rc_wind))
+			if not _wind_done_by_cpp:
+				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
 			if heat_transport:
 				_phys_stage = _PHYS_STAGE_PSI_INIT
 			else:

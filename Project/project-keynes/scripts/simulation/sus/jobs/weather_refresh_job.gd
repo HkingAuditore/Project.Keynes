@@ -598,6 +598,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		# C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
 		if is_data_core_on:
 			sync_fronts_to_world(sliced_fronts)
+		_soak_dump_weather_phase(ctx, sliced_fronts.size())
 		var sliced_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		return {
 			"done": true,
@@ -620,6 +621,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# DataCore step 2：同步镜像。C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
 	if is_data_core_on:
 		sync_fronts_to_world(fronts)
+	_soak_dump_weather_phase(ctx, fronts.size())
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	return {
 		"done": true,
@@ -627,6 +629,22 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 1.0,
 	}
+
+
+# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：weather pipeline 末尾把
+# 当前 SoA 全字段（含 weather_intensity / cloud / precip 等）追加到 dump，与
+# climate phase 行成对，可在 SUMMARY 中按 phase_kind 列分桶 diff。
+# is_active() 失败时本函数是 nop。
+func _soak_dump_weather_phase(ctx: SusTickContext, fronts_count: int) -> void:
+	if DCSoakDump.instance == null or not DCSoakDump.instance.is_active():
+		return
+	if map == null:
+		return
+	var sim_day: int = 0
+	if generator != null and "_daily_climate_call_count" in generator:
+		sim_day = int(generator._daily_climate_call_count)
+	var sphase: float = ctx.season_phase
+	DCSoakDump.instance.record_tick("weather", sim_day, sphase, map, {"fronts_count": fronts_count})
 
 
 ## Read-only accessor for main.gd; cheap, no SUS state mutation.

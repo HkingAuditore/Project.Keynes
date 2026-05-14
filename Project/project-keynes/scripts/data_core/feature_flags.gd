@@ -2,6 +2,8 @@ extends RefCounted
 class_name DCFeatureFlags
 
 ## DataCore — FeatureFlagRegistry（B1 / dots-migration-roadmap §3）。
+## PR-4.4 hot-reload 走 DCFlagBus（独立 Node singleton + signal）；本类保持纯 static。
+##
 ##
 ## 集中索引项目中所有"双轨切换"性质的 feature flag。**本类不持有 flag 值
 ## 的权威**——值仍然由 ClimateProfile / MapConfig 等业务 Resource 持有；

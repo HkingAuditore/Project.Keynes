@@ -472,7 +472,17 @@ func _finalize_round() -> void:
 				print("[DIAG round_end ] day=%d phase=%.3f temp_arr min=%.4f max=%.4f mean=%.4f n=%d (pre-flush)" % [
 					_diag_n, _phase_locked, _tmin, _tmax, _tmean, _tcnt
 				])
-			map.flush_soa_to_cells()
+			# PR-2.4（2026-05-14）：flush_soa_to_cells 已删除。
+			# HexCell facade 让 cell.<field> getter 直接走 SoA，不再需要反向同步。
+			pass
+	# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：climate pipeline 末尾，
+	# 写一段 climate-phase 记录。is_active() 失败时本调用是 nop，不引入额外开销；
+	# 启动后会在 N tick 后自动 stop。
+	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
+		var sim_day: int = 0
+		if generator != null and "_daily_climate_call_count" in generator:
+			sim_day = int(generator._daily_climate_call_count)
+		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
 	_round_active = false
 	_pass_cursor = 0
 
