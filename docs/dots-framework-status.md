@@ -165,4 +165,35 @@ docs/
 
 ---
 
+## 7. DOTS 化收官状态（dots-monolith-split 计划，2026-05-14）
+
+完整计划详见 `.codebuddy/plan/dots-monolith-split/{requirements,task-item}.md`。
+
+**已完成**：
+- ✅ Stage 1（任务 1–6）：基线建立、hot-path 直写消灭、flag 默认全开、scheduler 接管、HexCell facade 启用
+- ✅ §1.1 weather sub-module 抽出第一批：`_tick_cyclone_wake` + fronts 推进段（含 F.6 C++ 快路径 + GDScript fallback + reap）从 weather_system.gd 搬到 [`scripts/weather/front_advect.gd`](../Project/project-keynes/scripts/weather/front_advect.gd)。weather_system.gd 行数 3186 → 3038。
+- ✅ §1.2 骨架 wire-up：weather_system 实例化 `DCWeatherFieldSolver` 占位，下个子 PR 起逐函数搬迁 ~1500 行 field-solver 主体。
+- ✅ §5 渲染/UI cell 直读迁移：经审计 `hex_renderer.gd / data_overlay_baker.gd / info_panel_controller.gd` 已全面 `DCViewAdapter.Cell` 化，残留 `cell.<field>` 均为 non-schema 字段（`passable_sea / vegetation_vitality / slp / wind_stress_curl / ocean_psi / ...`）或 adapter == null fallback；不存在 schema-mirrored 字段直读。
+- ✅ §6 Flag 注册收口：`climate_profile.gd` 全部 20 个 `@export var use_*: bool` 已 1:1 注册到 `feature_flags.gd::FLAGS`，`use_dc_system_scheduler / use_hexcell_facade / 7 个 use_gdext_*` 默认 true。
+- ✅ §7 静态门禁脚本：[`tests/dots_completion/dots_completion_gate.gd`](../Project/project-keynes/tests/dots_completion/dots_completion_gate.gd)。Headless 跑法：`godot --headless --script tests/dots_completion/dots_completion_gate.gd --quit`。
+
+**剩余工程项（按风险递增）**：
+
+| Plan ID | 巨石 | 当前行数 | 目标 | 待迁出 | 估计 sub-PR 数 |
+|---|---|---|---|---|---|
+| §1.2-1.4 | weather_system.gd | 3038 | ≤ 400 | ~2638 | 5–8（每个 ≤ 300 行 + bit-equal A/B） |
+| §2.1-2.4 | map_generator.gd | 6747 | ≤ 1500 | ~5247 | 8–12 |
+| §3.1-3.2 | map_baker.gd | 3028 | ≤ 800 | ~2228 | 5–7 |
+| §4 | main.gd | 2126 | ≤ 400 | ~1726 | 5 |
+
+**每个剩余 sub-PR 必须**：
+1. 范围 ≤ 300 行（含 owner 字段访问注入 / 调用点重写）
+2. 100 tick SAME_SOURCE A/B：旧路径 vs 新路径数值 bit-equal（atlas sha256 一致 / `mean_diff(field) < 0.01`）
+3. 跑 `dots_completion_gate.gd` 验证未引入新失败项
+4. commit message 引用 `dots-monolith-split §X.Y` 作为追溯锚点
+
+**HexCell 21 字段 setter 锁定（§6 第二项）状态**：当前 hot path 仍有 50 处 `cell.<field> = v` 命中（map_generator.gd 45 + weather_system.gd 5）。这些**经 facade 透传走 SoA**，非"直写 SoA bypass"。若要按计划改为 `assert(false, "facade write in hot path is forbidden")`，需先把所有 hot path 改为直接 `world.write_f32(cid, idx, v)`，破坏 `cell.temperature = v` 的源代码可读性设计。本项保留为后续设计权衡决策点，不在 monolith-split 计划范围内强制收口。
+
+---
+
 **END of dots-framework-status.md.**

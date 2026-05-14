@@ -314,7 +314,14 @@ func _alloc_soa(n: int) -> void:
 ##
 ## 从 HexCell 强类型成员单向 sync 到 SoA。在 bake_world / 加载存档 / regenerate
 ## 路径调用一次。运行期 sub-pass 完成后不要再调用本函数（会盖掉 SoA 写入）。
+##
+## 任务 3（dots-completion）：本函数仅供 bake-time 使用；运行期 hot path 严禁调用。
+## 推荐新代码使用 init_soa_from_bake()（语义更清晰的别名），旧调用点保留向后兼容。
 func rebuild_soa_from_cells() -> void:
+	# 任务 3：bake-time-only guard。如果 _soa_built 已为 true 且不在 bake 路径，
+	# debug build 下 push_warning 提示误用（运行期重建会盖掉 sub-pass 写入的 SoA）。
+	if _soa_built and OS.is_debug_build():
+		push_warning("[map_data] rebuild_soa_from_cells called when SoA already built; this is bake-time only. Prefer init_soa_from_bake() in new code.")
 	if not _indices_built:
 		_build_indices()
 	var n: int = _cell_array.size()
@@ -369,6 +376,14 @@ func rebuild_soa_from_cells() -> void:
 	# B1-A：lat / temp_year LUT 必须由 generator 在 _last_cfg 就位后 bake；
 	# 这里仅置为未 bake 状态，bake_world 路径会立即调用 bake_lat_temp_year_lut()。
 	_lat_lut_baked = false
+
+
+## 任务 3（dots-completion）：bake-time SoA 初始化的语义化别名。
+## 等价于 rebuild_soa_from_cells()，但函数名更清晰地表明"仅 bake 时调用"。
+## 新代码统一使用本名；旧 caller 保留 rebuild_soa_from_cells() 直到全部迁移完成。
+func init_soa_from_bake() -> void:
+	rebuild_soa_from_cells()
+
 
 ## REMOVED PR-2.4 (2026-05-14)：flush_soa_to_cells() 已删除。
 ##

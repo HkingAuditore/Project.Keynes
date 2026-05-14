@@ -18,6 +18,9 @@
 // Once that holds, I3.B can replace one sub-pass at a time with a C++
 // implementation behind `use_gdext_climate`.
 
+#include <cstdint>
+#include <unordered_map>
+
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
@@ -428,6 +431,73 @@ public:
     //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
     double run_weather_front_advect_pass(godot::Dictionary knobs);
 
+    // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
+    //
+    // dist：_distribute_weather_field_to_cells C++ 化
+    //   GDScript 源：scripts/weather/weather_system.gd::_distribute_weather_field_to_cells
+    //                 (line 1290+)
+    //   ClimateProfile flag：use_gdext_weather_distribute（默认 true）
+    //   性能目标：~11.6ms → < 1.5ms（n_cells = 2400 基线）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包）：
+    //     标量：n_cells (int)
+    //           snow_threshold_temp, snow_min_intensity, flood_heavy_intensity,
+    //           flood_heavy_precip, flood_lowland_intensity, flood_lowland_elev,
+    //           flood_lowland_moisture (float)
+    //     PackedArray（zero-copy read-write via SoA view）：
+    //           weather_type, weather_intensity, weather_precip,
+    //           weather_field_initialized,
+    //           moisture_arr, temp_arr, cover_arr, accumulated_snow_days_arr,
+    //           landform_arr, terrain_arr （详见 cpp 实装）
+    //
+    //   写：moisture / temperature / cover / current_state["cover"]（通过 schema
+    //       回写） / accumulated_snow_days；并通过 out 字段返回 cover_dirty bool。
+    //   返回：≥ 0.0 → 接管完成（=elapsed_ms）；< 0.0 → fallback。
+    //
+    //   sig 设计：返回 Dictionary 而非 double，包含 { "elapsed_ms", "cover_dirty" }。
+    //             elapsed_ms < 0 表示 precondition 失败。
+    godot::Dictionary run_weather_distribute_pass(const godot::Dictionary &knobs);
+
+    // summary：_build_field_summary_fronts C++ 化
+    //   GDScript 源：scripts/weather/weather_system.gd::_build_field_summary_fronts
+    //                 (line 1322+)
+    //   ClimateProfile flag：use_gdext_weather_summary（默认 true）
+    //   性能目标：~17.8ms → < 3.0ms（n_cells = 2400, field_summary_limit = 16）
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), field_summary_limit (int), hex_size (float)
+    //           summary_intensity_enter (float, =0.10),
+    //           summary_intensity_hold  (float, =0.06),
+    //           merge_ratio (float, =0.65), max_merge_rounds (int, =4)
+    //           day_counter (int, 仅 debug 用)
+    //     PackedArray（zero-copy read，SoA view）：
+    //           cell_pos, neighbor_indices,
+    //           weather_type, weather_intensity, weather_field_initialized,
+    //           weather_cloud, weather_precip, wind_x, wind_y
+    //     fallback：avg_wind_x, avg_wind_y (float, 新生 cluster 用)
+    //
+    //   读：上述 SoA + 持久化的 _prev_summary_seeds / _prev_summary_membership
+    //       （C++ 内部维护，跨 tick 存活）
+    //   写：返回 Dictionary { "elapsed_ms": float, "fronts": Array[Dictionary] }。
+    //       每个 front Dictionary 字段：type/center/intensity/radius/axis/
+    //       stable_axis/velocity/major_scale/minor_scale/age_days/ttl_days/
+    //       life_progress/edge_seed/cloud_amount/precip_amount。
+    //
+    //   sig 设计：返回 Dictionary，字段 elapsed_ms < 0 表示 precondition 失败；
+    //             此时 fronts 字段为空 Array，调用方 fallback 到 GDScript。
+    godot::Dictionary run_weather_summary_fronts_pass(const godot::Dictionary &knobs);
+
+    // 清空 C++ 端持久化的 summary 状态（_prev_summary_seeds / _prev_summary_membership）。
+    // 在 GDScript 切换 use_gdext_weather_summary flag、或开关 verify mode 时调用，
+    // 避免新旧实现互相污染。无副作用、O(1) 清空（vector::clear）。
+    void reset_weather_summary_state();
+
+    // verify 协议辅助：snapshot / restore 持久化状态。set_summary_verify_mode 在 dev
+    // 模式下要求"先跑 C++ 再跑 GDScript"两遍，跑 GDScript 之前必须把 C++ 写脏的状态
+    // 还原到本 tick 入口；这两个接口配合 GDScript 端的 prev_seeds shadow 完成往返。
+    void snapshot_weather_summary_state();
+    void restore_weather_summary_state();
+
     // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
     //
     //   GDScript 源：scripts/rendering/physical_circulation_solver.gd::solve_wind_field
@@ -781,6 +851,24 @@ private:
     // Holds the std::unordered_map<int, AsyncTask> and a global mutex.
     // Allocated lazily on first async_* call; freed in shutdown_all().
     void                                     *_async_state = nullptr;
+
+    // ---- Weather summary pass 持久化状态（plan/weather-hotpath-cpp）------
+    // GDScript 侧 _prev_summary_seeds (Array[Dictionary]) 与
+    // _prev_summary_membership (Dictionary[HexCell→cluster_idx]) 的 C++ 镜像：
+    //   _prev_summary_seeds_state：跨 tick 存活的 seed 列表（type/center/area/
+    //                              age/velocity）；按上 tick top-N 写入。
+    //   _prev_summary_membership_state：长度 n_cells，[i] = cluster_idx 或 -1。
+    //
+    // 通过 `void *` opaque 指针避免在 .h 引入 std::vector / 复杂结构体（与
+    // _async_state 同模式）；具体类型在 .cpp 内部 forward-declare 并 lazy alloc。
+    void                                     *_summary_state          = nullptr;
+    void                                     *_summary_state_snapshot = nullptr;
+
+    // q/r → cell idx 反查 hash（summary pass cube_to_idx 用）。lazy rebuild：
+    // 在 run_weather_summary_fronts_pass 内部，发现 _summary_qr_to_idx_size !=
+    // n_cells 时清空重建。size 不变（即 cell 拓扑稳定）时直接复用。
+    std::unordered_map<int64_t, int>          _summary_qr_to_idx;
+    int                                       _summary_qr_to_idx_size = -1;
 
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);

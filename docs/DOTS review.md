@@ -280,3 +280,17 @@ Renderer/baker 也一样——这一步做完后 flush_soa_to_cells 可整段砍
 但目前的"DOTS 化"集中在**数据移到 SoA + 部分 hot pass 移到 C++**这两件事上，缺一个**让"加一个新 system"变得机械、可重复、不易错**的统一抽象层（就是上面 P0/P1 几条）。否则项目越大越难维护，3 个 system 还能手写，10 个就会失控。
 
 如果你认同这条路线、想立刻开始动手，我建议先做 **P0-1 (Component Schema 单一源)** 一件事就好：它最不侵入运行期，做完之后你能用客观指标看到代码 boilerplate 缩减 ~60% 以上，给后续每一步都铺平了路。
+
+---
+
+## 五、2026-05-14 进度回填（dots-monolith-split 计划）
+
+本评估文档撰写后，项目已按建议路线完成阶段 I + 部分阶段 II：
+
+- **阶段 I 全部完成**：Component Schema、ViewAdapter、System Scheduler、HexCell facade（默认 ON），FLAGS Registry 1:1 同步 ClimateProfile 20 个 use_* flag。
+- **阶段 II 进行中**：
+  - II.4 HexCell facade write 已默认 ON（hot path 经 setter 透传到 SoA），尚未走到"只读 facade + assert(false) 写禁"——见 `dots-framework-status.md` §7 中的设计权衡说明。
+  - 4 巨石拆分：weather_system.gd 的 cyclone_wake + fronts advance 已搬至 `front_advect.gd`（首批 sub-PR 完成）；其余 ~13800 行待持续分 sub-PR 推进。
+- **阶段 III**：未启动（DCWorld serialize/deserialize 仍未实装）。
+
+详细计划与 sub-PR 验收规则见 `.codebuddy/plan/dots-monolith-split/{requirements,task-item}.md` 与 `tests/dots_completion/dots_completion_gate.gd`。

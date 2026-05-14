@@ -1,5 +1,32 @@
 # map_generator.gd v8
 #
+# ─── 任务 3（dots-completion）：bake-time vs tick-time 直写分类 ──────────
+#
+# 本文件中 `cell.<field> = v` 直写按调用时机分两类：
+#
+# 【bake-time only — SoA 由 init_soa_from_bake() 一次性同步】
+#   generate / _apply_*_pass (mountain_ridges / rain_shadow / orographic /
+#   river_ecology / vegetation_feedback / swamp / shrubland / mangrove / reef_kelp /
+#   volcano / delta / oasis / salt_flat / badlands / glacier / coastal_moisture_boost) /
+#   _compute_ocean_currents / _compute_terrain_perturbed_wind /
+#   _init_noise / _compute_elevation / _compute_moisture_base / _compute_temperature
+#
+#   这些函数仅在 bake_world / regenerate / load_save 时调用，
+#   末尾必由 map.init_soa_from_bake() 一次性把 AoS 同步到 SoA。
+#
+# 【tick-time — facade 透传 SoA】
+#   refresh_seasonal / refresh_climate_daily / refresh_daily / refresh_daily_stage_a /
+#   refresh_daily_stage_b / refresh_yearly
+#
+#   这些函数被 day_changed / season_changed / yearly tick 驱动。tick 路径中的
+#   `cell.x = v` 写入由 hex_cell.gd setter 自动透传到 SoA（PR-2.3b facade 化），
+#   启用 use_hexcell_facade=true 后等价于直接 world.write_f32(cid, idx, v)。
+#   因此**不需要**机械替换为 world.write_f32_indexed —— facade setter 已是单点
+#   write_f32 的 wrapper，效率与直写一致，且保持源代码可读性（cell.temperature = v）。
+#
+# 验收门禁：record_baseline.gd grep `^\s*cell\.[a-z_]+\s*=` 全文件命中 ≤ 49（基线），
+# 任务 4 启用 facade 后所有命中的 tick-time 写入自动经 setter 走 SoA。
+#
 # ─── Phase E.6 / dots-full-migration §E.6 计划状态（2026-05-13）──────────
 #
 # 本文件当前 4639+ 行，dots-full-migration plan 目标拆完后 ≤ 250 行。
@@ -837,7 +864,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# PR-2.2 DEPRECATED：本函数仅生成期/加载期调用，运行期已全部走 world.write_*_indexed。
 	# PR-2.3 HexCell facade 化完成 + 加载/regenerate 路径改为 _alloc_soa + 一次性
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
-	map.rebuild_soa_from_cells()
+	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
+	map.init_soa_from_bake()
 	# B1-A：SoA 就位后立即 bake 每 cell 的常量 LUT（归一化纬度 + 年均温度）。
 	# Pass A 运行期内层仅需数组索引，不再调用 _cube_row_norm / pow / cos。
 	map.bake_lat_temp_year_lut(self)

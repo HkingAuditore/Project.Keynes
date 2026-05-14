@@ -145,7 +145,8 @@ func _build_mini_map(n: int, rng: RandomNumberGenerator) -> MapData:
 		map.set_cell(c)
 	# bind_map_data prerequisites: indices + SoA built first.
 	map._build_indices()
-	map.rebuild_soa_from_cells()
+	# 任务 3（dots-completion）：改用语义化别名（test 上下文也是"bake-time"）。
+	map.init_soa_from_bake()
 	return map
 
 
