@@ -56,11 +56,20 @@ static func get_empty_texture() -> ImageTexture:
 	return _empty_tex
 
 # 核心烘焙入口。
-#   map          : MapData（all_cells / cell_pixel_lists 的数据源）
-#   world        : WorldData（提供 derived_size 与 cell_pixel_lists）
-#   mode         : OverlayMode.MODE
-#   climate      : ClimateProfile（用于 PRECIPITATION 的季节系数查询）
-#   season_phase : 当前季节相位 [0, 4)（0..1=春, 1..2=夏, ...）
+#   map             : MapData（all_cells / cell_pixel_lists 的数据源）
+#   world           : WorldData（提供 derived_size 与 cell_pixel_lists）
+#   mode            : OverlayMode.MODE
+#   climate         : ClimateProfile（用于 PRECIPITATION 的季节系数查询）
+#   season_phase    : 当前季节相位 [0, 4)（0..1=春, 1..2=夏, ...）
+#   adapter_override: 可选 DCViewAdapter 实例。若提供则 baker 直接使用它，
+#                     否则按 legacy 行为新建 DCViewAdapter.Cell。设计目的：
+#                     让 baker 与 info_panel / 其他 UI 共用 main._view_adapter
+#                     这个**唯一真值源**，避免 DOTS 中期阶段 Cell adapter
+#                     (cell.temperature, 走 facade → DCWorld slot) 与
+#                     World adapter (直读 map.temp_arr) 因 buffer drift
+#                     (C++ flush CoW / resize) 而产生的"overlay 颜色 vs
+#                     详情面板温度"不一致问题。详见 docs/dots-f4-validation
+#                     §2.2.b 与 view_adapter.gd 头部注释。
 # 返回上面注释中的 Dictionary；任一前置缺失都返回一个"空但有效"的结果，
 # 调用方据此把 overlay 退回 NONE 即可，不会污染 shader 参数。
 static func bake(
@@ -68,7 +77,8 @@ static func bake(
 	world,
 	mode: int,
 	climate,
-	season_phase: float
+	season_phase: float,
+	adapter_override: DCViewAdapter = null
 ) -> Dictionary:
 	var empty_result := {
 		"texture": get_empty_texture(),
@@ -93,7 +103,16 @@ static func bake(
 	# upwelling_strength / slp / wind_speed / wind_stress_curl / ocean_psi /
 	# vegetation_vitality）继续走 cell.<field>——它们没有 SoA 对位，本 phase
 	# 不在迁移范围内。
-	var adapter: DCViewAdapter = DCViewAdapter.Cell.new(map.iter_cells())
+	#
+	# 方案 A 修复（overlay vs info-panel 温度不一致）：
+	# 优先使用 adapter_override（main._view_adapter）。这样 overlay 烘焙与
+	# info_panel 详情面板共享同一 adapter 实例，避免在 DCFeatureFlags
+	# use_world_view_adapter=true 时一边走 Cell（cell.temperature → facade →
+	# DCWorld slot）一边走 World（直读 map.temp_arr），在 C++ flush CoW /
+	# resize 引发 buffer drift 时出现颜色与数字偏差。
+	var adapter: DCViewAdapter = adapter_override
+	if adapter == null:
+		adapter = DCViewAdapter.Cell.new(map.iter_cells())
 
 	var total_px: int = derived.x * derived.y
 	var buf := PackedByteArray()
