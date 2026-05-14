@@ -1508,7 +1508,7 @@ func _refresh_overlay_data() -> void:
 		_disable_overlay_due_to_error("DataOverlayBaker not loaded")
 		return
 	result = DataOverlayBaker.bake(
-		_current_map, _world_data, _overlay_mode, cp, phase
+		_current_map, _world_data, _overlay_mode, cp, phase, _view_adapter
 	)
 	_overlay_last_bake_ms = (Time.get_ticks_usec() - t0) / 1000.0
 	var tex = result.get("texture", null)
