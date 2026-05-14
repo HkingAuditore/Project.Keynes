@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 38
+// Schema entries: 44
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -48,6 +48,9 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_ocean_current_y",       "ocean_current_y_arr",       SlotDType::F32 },
     { "cell_wind_x",                "wind_x_arr",                SlotDType::F32 },
     { "cell_wind_y",                "wind_y_arr",                SlotDType::F32 },
+    { "cell_slp",                   "slp_arr",                   SlotDType::F32 },
+    { "cell_wind_speed",            "wind_speed_arr",            SlotDType::F32 },
+    { "cell_upwelling_strength",    "upwelling_strength_arr",    SlotDType::F32 },
     { "cell_pos_x",                 "cell_pos_x_arr",            SlotDType::F32 },
     { "cell_pos_y",                 "cell_pos_y_arr",            SlotDType::F32 },
     { "cell_lat_norm",              "cell_lat_norm_arr",         SlotDType::F32 },
@@ -55,6 +58,9 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_terrain",               "terrain_arr",               SlotDType::U8 },
     { "cell_landform",              "landform_arr",              SlotDType::U8 },
     { "cell_vegetation",            "vegetation_arr",            SlotDType::U8 },
+    { "cell_base_terrain",          "base_terrain_arr",          SlotDType::U8 },
+    { "cell_base_landform",         "base_landform_arr",         SlotDType::U8 },
+    { "cell_base_vegetation",       "base_vegetation_arr",       SlotDType::U8 },
     { "cell_cover",                 "cover_arr",                 SlotDType::U8 },
     { "cell_weather_type",          "weather_type_arr",          SlotDType::U8 },
     { "cell_is_water",              "is_water_arr",              SlotDType::U8 },

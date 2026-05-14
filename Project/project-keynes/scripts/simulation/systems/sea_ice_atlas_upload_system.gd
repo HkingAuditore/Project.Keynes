@@ -18,6 +18,8 @@ var baker: _MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null
 var stride: int = 2
+var _pending_upload: bool = false
+var _pending_prepare: Dictionary = {}
 
 
 func _init(p_baker: _MapBakerScript, p_map: MapData, p_world: WorldData,
@@ -49,6 +51,8 @@ func feature_flag() -> StringName:
 func should_run(ctx: SusTickContext) -> bool:
 	if baker == null or map == null or world_data == null:
 		return false
+	if _pending_upload:
+		return true
 	return super.should_run(ctx)
 
 
@@ -56,13 +60,40 @@ func tick(_ctx) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0}
-	baker.bake_sea_ice_fraction_only(map, world_data)
+	if _pending_upload:
+		var upload: Dictionary = baker.upload_prepared_sea_ice_fraction_atlas(world_data)
+		_pending_upload = false
+		var elapsed_upload_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": elapsed_upload_ms,
+			"progress_ratio": 1.0,
+			"phase": "upload",
+			"path": String(_pending_prepare.get("path", "unknown")),
+			"prepare_ms": float(_pending_prepare.get("prepare_ms", 0.0)),
+			"image_ms": float(upload.get("image_ms", 0.0)),
+			"upload_ms": float(upload.get("upload_ms", 0.0)),
+			"dirty_cells": int(_pending_prepare.get("dirty_cells", 0)),
+			"dirty_ratio": float(_pending_prepare.get("dirty_ratio", 0.0)),
+		}
+	var prep: Dictionary = baker.prepare_sea_ice_fraction_atlas(map, world_data)
+	_pending_prepare = prep
+	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", false)):
+		_pending_upload = true
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	return {
 		"done": true,
 		"work_done": map.cell_count() if map != null else 0,
 		"elapsed_ms": elapsed_ms,
-		"progress_ratio": 1.0,
+		"progress_ratio": 0.5 if _pending_upload else 1.0,
+		"phase": "prepare",
+		"path": String(prep.get("path", "unknown")),
+		"prepare_ms": float(prep.get("prepare_ms", elapsed_ms)),
+		"image_ms": 0.0,
+		"upload_ms": 0.0,
+		"dirty_cells": int(prep.get("dirty_cells", 0)),
+		"dirty_ratio": float(prep.get("dirty_ratio", 0.0)),
 	}
 
 

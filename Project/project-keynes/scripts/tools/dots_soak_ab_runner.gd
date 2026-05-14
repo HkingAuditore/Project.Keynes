@@ -71,7 +71,7 @@ signal completed(report: Dictionary)
 
 
 enum Phase { IDLE, RUN_A, BETWEEN, RUN_B, DIFF }
-enum Mode { SAME_SOURCE, VS_LEGACY }
+enum Mode { SAME_SOURCE, VS_LEGACY, FLAG_PROFILE }
 
 
 # ─── 运行期状态 ─────────────────────────────────────────────────────────
@@ -84,6 +84,15 @@ var _path_b: String = ""
 var _label_a: String = "stateA"
 var _label_b: String = "stateB"
 var _started_at_ms: int = 0
+var _flag_overrides_a: Dictionary = {}
+var _flag_overrides_b: Dictionary = {}
+var _saved_flag_values: Dictionary = {}
+var _flag_label_a: String = "flags_off"
+var _flag_label_b: String = "flags_on"
+var _batch_active: bool = false
+var _batch_counts: PackedInt32Array = PackedInt32Array()
+var _batch_index: int = 0
+var _batch_reports: Array = []
 
 
 ## 启动一次 A/B 对比。
@@ -111,7 +120,11 @@ func start(main_node: Node, n_ticks: int = 30, mode: int = Mode.SAME_SOURCE) -> 
 	# 路径生成（共享时间戳让一对 A/B 文件名能配对识别）
 	# 文件名前缀按 mode 区分，便于在 user://soak/ 下肉眼区分
 	var ts: String = Time.get_datetime_string_from_system().replace(":", "-")
-	var prefix: String = ("same" if _mode == Mode.SAME_SOURCE else "vsleg")
+	var prefix: String = "same"
+	if _mode == Mode.VS_LEGACY:
+		prefix = "vsleg"
+	elif _mode == Mode.FLAG_PROFILE:
+		prefix = "flags"
 	_path_a = "user://soak/%s_A_%s.tsv" % [prefix, ts]
 	_path_b = "user://soak/%s_B_%s.tsv" % [prefix, ts]
 	# Label
@@ -120,11 +133,15 @@ func start(main_node: Node, n_ticks: int = 30, mode: int = Mode.SAME_SOURCE) -> 
 		# A 和 B 都是同一状态（当前），label 一致
 		_label_a = ("dc_on" if dc_on else "dc_off")
 		_label_b = _label_a
-	else:
+	elif _mode == Mode.VS_LEGACY:
 		# VS_LEGACY: A=current, B=toggled
 		_label_a = ("dc_on" if dc_on else "dc_off")
 		_label_b = ("dc_off" if dc_on else "dc_on")
-	var mode_str: String = ("SAME_SOURCE" if _mode == Mode.SAME_SOURCE else "VS_LEGACY")
+	else:
+		_label_a = _flag_label_a
+		_label_b = _flag_label_b
+		_apply_flag_overrides(_flag_overrides_a, true)
+	var mode_str: String = _mode_name(_mode)
 	print("[soak-ab] ────── A/B run start ──────")
 	print("[soak-ab]   mode=%s  n_ticks=%d  phaseA=%s  phaseB=%s" % [mode_str, _n_ticks, _label_a, _label_b])
 	print("[soak-ab]   path A: %s" % _path_a)
@@ -135,6 +152,31 @@ func start(main_node: Node, n_ticks: int = 30, mode: int = Mode.SAME_SOURCE) -> 
 		print("[soak-ab]   threshold=0.5 (DataCore vs legacy 业务对比；小差异属预期)")
 	print("[soak-ab] phase A 启动（当前状态 %s 跑 %d tick）..." % [_label_a, _n_ticks])
 	return _start_phase(_path_a, Phase.RUN_A)
+
+
+func start_flag_profile(main_node: Node, n_ticks: int, flags_a: Dictionary,
+		flags_b: Dictionary, label_a: String = "flags_off",
+		label_b: String = "flags_on") -> bool:
+	_flag_overrides_a = flags_a.duplicate(true)
+	_flag_overrides_b = flags_b.duplicate(true)
+	_saved_flag_values.clear()
+	_flag_label_a = label_a
+	_flag_label_b = label_b
+	return start(main_node, n_ticks, Mode.FLAG_PROFILE)
+
+
+func start_season_atlas_batch(main_node: Node,
+		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	if _phase != Phase.IDLE:
+		print("[soak-ab] batch ignored: runner already active.")
+		return false
+	_batch_active = true
+	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 120, 1000])
+	_batch_index = 0
+	_batch_reports.clear()
+	if not completed.is_connected(_on_batch_completed):
+		completed.connect(_on_batch_completed)
+	return _start_next_batch_run(main_node)
 
 
 ## 中止当前 A/B 流程（立即 stop dump，不打 diff 报告）。
@@ -148,6 +190,8 @@ func cancel() -> void:
 		if DCSoakDump.instance.is_active():
 			DCSoakDump.instance.stop()
 	_phase = Phase.IDLE
+	_restore_flag_overrides()
+	_batch_active = false
 
 
 func is_running() -> bool:
@@ -186,6 +230,9 @@ func _on_dump_completed(path: String, ticks_done: int, _dump_mode: int) -> void:
 				_main._toggle_data_core_master_runtime()
 			else:
 				push_warning("[soak-ab] main 缺少 _toggle_data_core_master_runtime 方法，跳过 toggle")
+		elif _mode == Mode.FLAG_PROFILE:
+			print("[soak-ab] FLAG_PROFILE mode: apply phase B flags %s" % str(_flag_overrides_b))
+			_apply_flag_overrides(_flag_overrides_b, false)
 		else:
 			print("[soak-ab] SAME_SOURCE mode：不 toggle DataCore，phase B 沿用 %s 状态" % _label_a)
 		# 等下一帧让 SUS 看到任何 ClimateProfile 字段变化（hot path 每 tick 重读 cp）
@@ -204,7 +251,7 @@ func _on_dump_completed(path: String, ticks_done: int, _dump_mode: int) -> void:
 		# threshold 的语义按 mode 区分（SAME_SOURCE 走多阈值，见 _evaluate_same_source）
 		var threshold: float = (_SAME_SOURCE_SCALAR_THRESHOLD if _mode == Mode.SAME_SOURCE else 0.5)
 		var report: Dictionary = compute_diff_report(_path_a, _path_b, _label_a, _label_b, threshold)
-		report["mode"] = ("SAME_SOURCE" if _mode == Mode.SAME_SOURCE else "VS_LEGACY")
+		report["mode"] = _mode_name(_mode)
 		# SAME_SOURCE：用字段分类阈值重新评 verdict，覆盖 compute_diff_report 默认
 		if _mode == Mode.SAME_SOURCE:
 			_evaluate_same_source(report)
@@ -212,6 +259,7 @@ func _on_dump_completed(path: String, ticks_done: int, _dump_mode: int) -> void:
 		var elapsed_s: float = float(Time.get_ticks_msec() - _started_at_ms) / 1000.0
 		print("[soak-ab] ────── A/B run done in %.2fs ──────" % elapsed_s)
 		_phase = Phase.IDLE
+		_restore_flag_overrides()
 		completed.emit(report)
 
 
@@ -267,6 +315,84 @@ func _is_dc_on() -> bool:
 		if cp != null and "use_data_core" in cp:
 			return bool(cp.use_data_core)
 	return false
+
+
+func _mode_name(mode: int) -> String:
+	if mode == Mode.SAME_SOURCE:
+		return "SAME_SOURCE"
+	if mode == Mode.VS_LEGACY:
+		return "VS_LEGACY"
+	if mode == Mode.FLAG_PROFILE:
+		return "FLAG_PROFILE"
+	return "UNKNOWN"
+
+
+func _apply_flag_overrides(overrides: Dictionary, capture_originals: bool) -> void:
+	var gen = _main._generator if _main != null and "_generator" in _main else null
+	if gen == null or not gen.has_method("_c"):
+		push_warning("[soak-ab] cannot apply flag overrides: generator/climate_profile missing")
+		return
+	var cp = gen._c()
+	if cp == null:
+		push_warning("[soak-ab] cannot apply flag overrides: climate_profile null")
+		return
+	for k in overrides.keys():
+		var name: String = String(k)
+		var old_v: Variant = cp.get(name)
+		if typeof(old_v) == TYPE_NIL:
+			push_warning("[soak-ab] flag '%s' not found on ClimateProfile; skipped" % name)
+			continue
+		if capture_originals and not _saved_flag_values.has(name):
+			_saved_flag_values[name] = old_v
+		cp.set(name, overrides[k])
+		print("[soak-ab] flag %s=%s" % [name, str(overrides[k])])
+
+
+func _restore_flag_overrides() -> void:
+	if _saved_flag_values.is_empty():
+		return
+	var gen = _main._generator if _main != null and "_generator" in _main else null
+	var cp = gen._c() if gen != null and gen.has_method("_c") else null
+	if cp != null:
+		for k in _saved_flag_values.keys():
+			cp.set(String(k), _saved_flag_values[k])
+			print("[soak-ab] restore flag %s=%s" % [String(k), str(_saved_flag_values[k])])
+	_saved_flag_values.clear()
+
+
+func _start_next_batch_run(main_node: Node) -> bool:
+	if _batch_index >= _batch_counts.size():
+		_batch_active = false
+		if completed.is_connected(_on_batch_completed):
+			completed.disconnect(_on_batch_completed)
+		print("[soak-ab] season/atlas batch complete: %d reports" % _batch_reports.size())
+		return true
+	var n_ticks: int = int(_batch_counts[_batch_index])
+	print("[soak-ab] season/atlas batch %d/%d: %d ticks" % [
+		_batch_index + 1, _batch_counts.size(), n_ticks
+	])
+	return start_flag_profile(
+		main_node,
+		n_ticks,
+		{
+			"use_gdext_season_refresh": false,
+			"use_gdext_sea_ice_atlas_prepare": false,
+		},
+		{
+			"use_gdext_season_refresh": true,
+			"use_gdext_sea_ice_atlas_prepare": true,
+		},
+		"gdscript_stage8_atlas",
+		"gdext_stage8_atlas"
+	)
+
+
+func _on_batch_completed(report: Dictionary) -> void:
+	if not _batch_active:
+		return
+	_batch_reports.append(report)
+	_batch_index += 1
+	call_deferred("_start_next_batch_run", _main)
 
 
 # ─── 内部：SUMMARY TSV 解析 + diff ─────────────────────────────────────

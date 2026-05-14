@@ -62,10 +62,13 @@ const _CID_OCEAN_CURRENT_X      := 16  # F32  cell.ocean_current_x
 const _CID_OCEAN_CURRENT_Y      := 17  # F32  cell.ocean_current_y
 const _CID_WIND_X               := 18  # F32  cell.wind_x
 const _CID_WIND_Y               := 19  # F32  cell.wind_y
-const _CID_WEATHER_TYPE         := 20  # U8   cell.weather_type
-const _CID_WEATHER_FIELD_INIT   := 21  # U8   cell.weather_field_init  (bool)
-const _CID_EMA_INITIALIZED      := 22  # U8   cell.ema_initialized      (bool)
-const _CID_COUNT                := 23
+const _CID_SLP                  := 20  # F32  cell.slp
+const _CID_WIND_SPEED           := 21  # F32  cell.wind_speed
+const _CID_UPWELLING_STRENGTH   := 22  # F32  cell.upwelling_strength
+const _CID_WEATHER_TYPE         := 23  # U8   cell.weather_type
+const _CID_WEATHER_FIELD_INIT   := 24  # U8   cell.weather_field_init  (bool)
+const _CID_EMA_INITIALIZED      := 25  # U8   cell.ema_initialized      (bool)
+const _CID_COUNT                := 26
 
 # StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
 # 字面量是合法 const expression，可以直接用。
@@ -90,6 +93,9 @@ const _COMP_NAMES: Array[StringName] = [
 	&"cell.ocean_current_y",
 	&"cell.wind_x",
 	&"cell.wind_y",
+	&"cell.slp",
+	&"cell.wind_speed",
+	&"cell.upwelling_strength",
 	&"cell.weather_type",
 	&"cell.weather_field_init",
 	&"cell.ema_initialized",
@@ -536,7 +542,20 @@ var wind_vector: Vector2 = Vector2.ZERO:
 #   负值 = 下沉流（高纬冷咸水汇点），当前主要给海冰 pass 做冷源修正。
 #   仅对 is_water cell 有意义；陆地维持 0。由 MapGenerator._compute_ocean_currents
 #   从 WorldData.ocean_upwelling_buffer 采样得到。
-var upwelling_strength: float = 0.0
+var _upwelling_strength_backing: float = 0.0
+var upwelling_strength: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_UPWELLING_STRENGTH]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _upwelling_strength_backing
+	set(v):
+		_upwelling_strength_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_UPWELLING_STRENGTH]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # --- Physical Wind & Ocean Circulation（物理化大气/海洋环流；hex 域求解） ─────
 # 本块字段由 MapBaker 物理化求解器在每轮洋流烘焙时写入，仅当
@@ -547,11 +566,37 @@ var upwelling_strength: float = 0.0
 #   正值 = 高压（副热带 / 大陆冬季内陆），负值 = 低压（赤道 / 副极地 / 大陆夏季内陆）。
 #   计算：纬度基线（赤道-/副热带+/副极地-/极地+）+ 海陆性 × 季节调制 + 邻域扩散平滑。
 #   下游：物理化风场用 -∇slp 当压力梯度风源项。
-var slp: float = 0.0
+var _slp_backing: float = 0.0
+var slp: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SLP]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _slp_backing
+	set(v):
+		_slp_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SLP]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # wind_speed：物理化风速（相对量级）。与 wind_vector 配对：
 #   wind_vector 单位向量给方向，wind_speed 给强度。weather_system advection
 #   与 ψ 求解的风应力 τ ≈ wind_speed² × wind_vector 都需要它。
-var wind_speed: float = 0.0
+var _wind_speed_backing: float = 0.0
+var wind_speed: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WIND_SPEED]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _wind_speed_backing
+	set(v):
+		_wind_speed_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WIND_SPEED]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 # wind_stress_curl：风应力旋度 curl(τ)。海盆 ψ 求解的源项；overlay 调试可视化用。
 #   仅水域 cell 有意义，陆地维持 0。
 var wind_stress_curl: float = 0.0

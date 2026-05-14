@@ -4998,6 +4998,466 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+namespace {
+
+static inline double pk_clamp01(double v) {
+    return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+}
+
+static inline bool pk_is_water_terrain(uint8_t t) {
+    return t == 0 || t == 1 || t == 18 || t == 19 || t == 20 || t == 21;
+}
+
+static inline uint8_t pk_derive_landform(uint8_t terrain, float elev, float sea_level) {
+    // Terrain enum order mirrors scripts/geography/terrain_type.gd.
+    // Landform enum order mirrors scripts/geography/landform_type.gd.
+    if (terrain == 18) return 3; // LAKE
+    if (terrain == 0 || terrain == 1 || terrain == 19 || terrain == 20 || terrain == 21) {
+        if (elev < sea_level * 0.55f) return 0; // DEEP_OCEAN
+        if (elev < sea_level * 0.92f) return 1; // OCEAN
+        return 2; // COAST
+    }
+    if (terrain == 22) return 9;  // DELTA
+    if (terrain == 25) return 10; // BADLANDS
+    if (terrain == 24) return 11; // SALT_FLAT
+
+    const float denom = std::max(1.0f - sea_level, 0.001f);
+    const float land_h = (elev - sea_level) / denom;
+    if (land_h > 0.82f) return 8; // PEAK
+    if (land_h > 0.62f) return 7; // MOUNTAIN
+    if (land_h > 0.22f) return 6; // HILL
+    if (land_h > 0.05f) return 5; // LOWLAND
+    return 4; // PLAIN
+}
+
+static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture, uint8_t landform) {
+    const bool is_alpine = (landform == 7 || landform == 8);
+    const bool is_hilly = (landform == 6);
+    if (temperature < 0.06f) return 1; // POLAR_DESERT
+    if (temperature < 0.20f) return is_alpine ? 3 : 2; // ALPINE_TUNDRA / TUNDRA
+    if (temperature < 0.40f) {
+        if (moisture > 0.40f) return is_alpine ? 8 : 5; // TEMPERATE_CONIFER / TAIGA
+        if (moisture > 0.20f) return 6; // BOREAL_SHRUB
+        return 10; // TEMPERATE_STEPPE
+    }
+    if (temperature < 0.55f) {
+        if (moisture > 0.55f) return is_alpine ? 8 : (is_hilly ? 7 : 7);
+        if (moisture > 0.30f) return is_alpine ? 4 : 9; // ALPINE_MEADOW / TEMPERATE_GRASSLAND
+        return 10; // TEMPERATE_STEPPE
+    }
+    if (moisture > 0.65f) return 14; // TROPICAL_RAINFOREST
+    if (moisture > 0.40f) return 15; // TROPICAL_DRY_FOREST
+    if (moisture > 0.20f) return 13; // SAVANNA
+    if (moisture < 0.10f) return 17; // XERIC_DESERT
+    return 16; // DESERT_SCRUB
+}
+
+static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, float temperature, float moisture) {
+    if (terrain == 0 || terrain == 1 || terrain == 18 || terrain == 20) return 0; // NONE
+    if (terrain == 19) return 23; // CORAL_REEF
+    if (terrain == 21) return 22; // KELP_FOREST
+    if (terrain == 17) return 0;  // GLACIER
+    if (terrain == 9) {
+        if (landform == 6 || landform == 7) return 3; // ALPINE_TUNDRA
+        if (landform == 8) return 0; // PEAK
+        return 1; // POLAR_DESERT
+    }
+    if (landform == 8) return 0; // PEAK
+    if (terrain == 22) return temperature < 0.55f ? 21 : 19; // MARSH / MANGROVE
+    if (terrain == 23) return 18; // OASIS_VEG
+    if (terrain == 24) return 0;  // SALT_FLAT
+    if (terrain == 25) return 16; // DESERT_SCRUB
+    if (terrain == 10) return 20; // SWAMP
+    if (terrain == 16) return 19; // MANGROVE
+    if (terrain == 15) return 11; // MEDITERRANEAN_SHRUB
+    if (terrain == 8) return (landform == 7 || landform == 8) ? 3 : 2; // TUNDRA
+    if (terrain == 13) return (landform == 7 || landform == 8) ? 8 : 5; // TAIGA
+    if (terrain == 5 || terrain == 6 || terrain == 2) {
+        return pk_whittaker_vegetation(temperature, moisture, landform);
+    }
+    switch (terrain) {
+        case 4:  return (landform == 7 || landform == 8) ? 8 : (temperature > 0.55f ? 12 : 7); // FOREST
+        case 11: return moisture > 0.70f ? 14 : 15; // JUNGLE
+        case 12: return 13; // SAVANNA
+        case 3:  return (landform == 7 || landform == 8) ? 4 : 9; // GRASSLAND
+        case 14: return 10; // STEPPE
+        case 7:  return moisture < 0.10f ? 17 : 16; // DESERT
+        default: return pk_whittaker_vegetation(temperature, moisture, landform);
+    }
+}
+
+static inline uint8_t pk_derive_cover(uint8_t terrain, float snow_cover) {
+    if (terrain == 17) return 2; // GLACIER
+    if (terrain == 20) return 3; // SEA_ICE
+    if (terrain == 9) return 1;  // SNOW
+    if (snow_cover > 0.5f && !pk_is_water_terrain(terrain)) return 1; // SNOW
+    if (terrain == 8) return 4; // PERMAFROST
+    return 0; // NONE
+}
+
+} // namespace
+
+godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["stage"] = int(knobs.get("stage", 8));
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] run_season_refresh_stage: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    const int stage = int(knobs.get("stage", 8));
+    if (stage != 8) return fail("unsupported stage");
+    if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+        !knobs.has("season_offset_rows")) {
+        return fail("missing required knob");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    const int height = int(knobs["height"]);
+    const float sea_level = float(knobs["sea_level"]);
+    if (n_cells <= 0) return fail("n_cells <= 0");
+    if (height <= 0) return fail("height <= 0");
+    PackedFloat32Array season_rows = knobs["season_offset_rows"];
+    if (season_rows.size() < height) return fail("season_offset_rows size < height");
+
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_snow = component_id(StringName("cell_snow_cover"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_temp_year = component_id(StringName("cell_temp_baseline_year"));
+    const int sid_lat = component_id(StringName("cell_lat_norm"));
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_landform = component_id(StringName("cell_landform"));
+    const int sid_vegetation = component_id(StringName("cell_vegetation"));
+    const int sid_cover = component_id(StringName("cell_cover"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_elev < 0 ||
+        sid_temp_year < 0 || sid_lat < 0 || sid_terrain < 0 ||
+        sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0) {
+        return fail("missing slot id");
+    }
+
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_moist = _slots.write[sid_moist];
+    Slot &s_snow = _slots.write[sid_snow];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_temp_year = _slots.write[sid_temp_year];
+    Slot &s_lat = _slots.write[sid_lat];
+    Slot &s_terrain = _slots.write[sid_terrain];
+    Slot &s_landform = _slots.write[sid_landform];
+    Slot &s_vegetation = _slots.write[sid_vegetation];
+    Slot &s_cover = _slots.write[sid_cover];
+    if (s_temp.arr_f32.size() != n_cells || s_moist.arr_f32.size() != n_cells ||
+        s_snow.arr_f32.size() != n_cells || s_elev.arr_f32.size() != n_cells ||
+        s_temp_year.arr_f32.size() != n_cells || s_lat.arr_f32.size() != n_cells ||
+        s_terrain.arr_u8.size() != n_cells || s_landform.arr_u8.size() != n_cells ||
+        s_vegetation.arr_u8.size() != n_cells || s_cover.arr_u8.size() != n_cells) {
+        return fail("slot array size mismatch");
+    }
+
+    const float * const __restrict MOIST = s_moist.arr_f32.ptr();
+    const float * const __restrict ELEV = s_elev.arr_f32.ptr();
+    const float * const __restrict TEMP_YEAR_BASE = s_temp_year.arr_f32.ptr();
+    const float * const __restrict LAT = s_lat.arr_f32.ptr();
+    const float * const __restrict ROW_OFF = season_rows.ptr();
+    const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
+    float * const __restrict TEMP = s_temp.arr_f32.ptrw();
+    float * const __restrict SNOW = s_snow.arr_f32.ptrw();
+    uint8_t * const __restrict LAND = s_landform.arr_u8.ptrw();
+    uint8_t * const __restrict VEG = s_vegetation.arr_u8.ptrw();
+    uint8_t * const __restrict COV = s_cover.arr_u8.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    int snow_cells = 0;
+    const int max_row = height - 1;
+    for (int i = 0; i < n_cells; ++i) {
+        int row = int(std::round(pk_clamp01(double(LAT[i])) * double(max_row)));
+        if (row < 0) row = 0;
+        else if (row > max_row) row = max_row;
+        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - double(ELEV[i]) * 0.5);
+        const float temp_now = float(pk_clamp01(temp_year + double(ROW_OFF[row])));
+        float snow = 0.0f;
+        if (!pk_is_water_terrain(TERR[i])) {
+            const float land_h = (ELEV[i] - sea_level) / std::max(1.0f - sea_level, 0.001f);
+            if (TERR[i] == 9) {
+                snow = 1.0f;
+            } else if (temp_now < 0.18f) {
+                snow = float(pk_clamp01((0.18f - temp_now) / 0.14f)) * 0.85f;
+            } else if (land_h > 0.45f && temp_now < 0.30f) {
+                const float t1 = float(pk_clamp01((0.30f - temp_now) / 0.20f));
+                const float x = float(pk_clamp01((land_h - 0.45f) / (0.85f - 0.45f)));
+                const float t2 = x * x * (3.0f - 2.0f * x);
+                snow = t1 * t2;
+            }
+        }
+        const uint8_t lf = pk_derive_landform(TERR[i], ELEV[i], sea_level);
+        TEMP[i] = temp_now;
+        SNOW[i] = snow;
+        LAND[i] = lf;
+        VEG[i] = pk_derive_vegetation(TERR[i], lf, temp_now, MOIST[i]);
+        COV[i] = pk_derive_cover(TERR[i], snow);
+        if (snow > 0.5f) ++snow_cells;
+    }
+
+    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_snow);
+    _flush_slot_to_map(sid_landform);
+    _flush_slot_to_map(sid_vegetation);
+    _flush_slot_to_map(sid_cover);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["touched"] = n_cells;
+    out["snow_cells"] = snow_cells;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_sea_ice_atlas_prepare(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["prepare_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] run_sea_ice_atlas_prepare: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!knobs.has("n_cells") || !knobs.has("width") || !knobs.has("height") ||
+        !knobs.has("pixel_to_cell_index")) {
+        return fail("missing required knob");
+    }
+    const int n_cells = int(knobs["n_cells"]);
+    const int width = int(knobs["width"]);
+    const int height = int(knobs["height"]);
+    if (n_cells <= 0 || width <= 0 || height <= 0) return fail("invalid dimensions");
+
+    PackedInt32Array pix_to_cell = knobs["pixel_to_cell_index"];
+    const int n_pix = width * height;
+    if (pix_to_cell.size() < n_pix) return fail("pixel_to_cell_index too small");
+    PackedByteArray prev_cell_bytes = knobs.get("previous_cell_bytes", PackedByteArray());
+
+    const int sid_ice = component_id(StringName("cell_sea_ice_frac"));
+    if (sid_ice < 0) return fail("missing slot id cell_sea_ice_frac");
+    Slot &s_ice = _slots.write[sid_ice];
+    if (s_ice.arr_f32.size() < n_cells) return fail("sea_ice_frac slot too small");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    PackedByteArray cell_bytes;
+    cell_bytes.resize(n_cells);
+    uint8_t * const __restrict CB = cell_bytes.ptrw();
+    const float * const __restrict ICE = s_ice.arr_f32.ptr();
+    const uint8_t * const PREV = prev_cell_bytes.size() >= n_cells ? prev_cell_bytes.ptr() : nullptr;
+    int dirty_cells = 0;
+    for (int i = 0; i < n_cells; ++i) {
+        int q = int(std::round(pk_clamp01(double(ICE[i])) * 255.0));
+        if (q < 0) q = 0;
+        else if (q > 255) q = 255;
+        CB[i] = uint8_t(q);
+        if (PREV == nullptr || PREV[i] != CB[i]) ++dirty_cells;
+    }
+
+    PackedByteArray buffer;
+    buffer.resize(n_pix);
+    uint8_t * const __restrict BUF = buffer.ptrw();
+    const int32_t * const __restrict P2C = pix_to_cell.ptr();
+    for (int p = 0; p < n_pix; ++p) {
+        const int ci = P2C[p];
+        BUF[p] = (ci >= 0 && ci < n_cells) ? CB[ci] : 0;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["prepare_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["buffer"] = buffer;
+    out["cell_bytes"] = cell_bytes;
+    out["dirty_cells"] = dirty_cells;
+    out["dirty_ratio"] = n_cells > 0 ? double(dirty_cells) / double(n_cells) : 0.0;
+    out["pixels"] = n_pix;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["stage"] = knobs.get("stage", String("upwelling"));
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_physical_circulation_pass: ", why,
+            " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    const String stage = String(knobs.get("stage", String("upwelling")));
+    if (stage != String("upwelling")) return fail("unsupported stage");
+    if (!knobs.has("n_cells") || !knobs.has("neighbor_indices") ||
+        !knobs.has("water_terrain_ids") ||
+        !knobs.has("world_bounds_pos_y") || !knobs.has("world_bounds_size_y")) {
+        return fail("missing required knob");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    const double bounds_pos_y = double(knobs["world_bounds_pos_y"]);
+    const double bounds_size_y = double(knobs["world_bounds_size_y"]);
+    const double cold_sink_temp = double(knobs.get("cold_sink_temp", -0.05));
+    if (n_cells <= 0) return fail("n_cells <= 0");
+    if (bounds_size_y <= 0.001) return fail("world_bounds_size_y <= 0.001");
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedByteArray water_ids = knobs["water_terrain_ids"];
+    if (nb_arr.size() < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
+    if (water_ids.size() <= 0) return fail("water_terrain_ids empty");
+
+    const int sid_pos_y = component_id(StringName("cell_pos_y"));
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_wind_x = component_id(StringName("cell_wind_x"));
+    const int sid_wind_y = component_id(StringName("cell_wind_y"));
+    const int sid_wind_speed = component_id(StringName("cell_wind_speed"));
+    const int sid_upwelling = component_id(StringName("cell_upwelling_strength"));
+    if (sid_pos_y < 0 || sid_terrain < 0 || sid_wind_x < 0 || sid_wind_y < 0 ||
+        sid_wind_speed < 0 || sid_upwelling < 0) {
+        return fail("missing slot id (pos_y/terrain/wind/upwelling)");
+    }
+
+    Slot &s_pos_y = _slots.write[sid_pos_y];
+    Slot &s_terrain = _slots.write[sid_terrain];
+    Slot &s_wind_x = _slots.write[sid_wind_x];
+    Slot &s_wind_y = _slots.write[sid_wind_y];
+    Slot &s_wind_speed = _slots.write[sid_wind_speed];
+    Slot &s_upwelling = _slots.write[sid_upwelling];
+    if (s_pos_y.arr_f32.size() != n_cells ||
+        s_terrain.arr_u8.size() != n_cells ||
+        s_wind_x.arr_f32.size() != n_cells ||
+        s_wind_y.arr_f32.size() != n_cells ||
+        s_wind_speed.arr_f32.size() != n_cells ||
+        s_upwelling.arr_f32.size() != n_cells) {
+        return fail("slot array size mismatch");
+    }
+
+    bool is_water_lut[256];
+    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
+    for (int k = 0; k < water_ids.size(); ++k) {
+        const int wid = int(water_ids[k]);
+        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
+    }
+
+    const float * const __restrict POSY = s_pos_y.arr_f32.ptr();
+    const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
+    const float * const __restrict WX = s_wind_x.arr_f32.ptr();
+    const float * const __restrict WY = s_wind_y.arr_f32.ptr();
+    const float * const __restrict WSPD = s_wind_speed.arr_f32.ptr();
+    float * const __restrict UP = s_upwelling.arr_f32.ptrw();
+    const int32_t * const __restrict NB = nb_arr.ptr();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    constexpr double PI_HALF = 1.5707963267948966;
+    constexpr double UPWELLING_EKMAN_GAIN = 0.6;
+    constexpr double UPWELLING_COLD_SINK_GAIN = 0.5;
+    constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.6;
+    const double inv_bounds_h = 1.0 / bounds_size_y;
+
+    for (int i = 0; i < n_cells; ++i) {
+        if (!is_water_lut[TERR[i]]) {
+            UP[i] = 0.0f;
+            continue;
+        }
+
+        double ny = (double(POSY[i]) - bounds_pos_y) * inv_bounds_h;
+        if (ny < 0.0) ny = 0.0;
+        else if (ny > 1.0) ny = 1.0;
+        const double ls = (ny - 0.5) * 2.0;
+        const double ls_abs = (ls < 0.0) ? -ls : ls;
+        double lat_temp = std::pow(std::cos(ls_abs * PI_HALF), 1.2);
+        if (lat_temp < 0.0) lat_temp = 0.0;
+        else if (lat_temp > 1.0) lat_temp = 1.0;
+        const double temp_rel = lat_temp - 0.5;
+
+        double land_dx = 0.0;
+        double land_dy = 0.0;
+        const int base = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[base + d];
+            if (ni < 0) continue;
+            if (!is_water_lut[TERR[ni]]) {
+                land_dx += NB_DIR_X[d];
+                land_dy += NB_DIR_Y[d];
+            }
+        }
+
+        double ekman_main = 0.0;
+        const double land_len2 = land_dx * land_dx + land_dy * land_dy;
+        if (land_len2 > 0.0001) {
+            const double inv_land = 1.0 / std::sqrt(land_len2);
+            const double off_x = -land_dx * inv_land;
+            const double off_y = -land_dy * inv_land;
+            const double coast_tan_x = -off_y;
+            const double coast_tan_y = off_x;
+            const double hemi_sign = (ls < 0.0) ? 1.0 : -1.0;
+            const double dot_v = double(WX[i]) * coast_tan_x + double(WY[i]) * coast_tan_y;
+            ekman_main = dot_v * hemi_sign * double(WSPD[i]) * UPWELLING_EKMAN_GAIN;
+        }
+
+        double cold_sink_neg = 0.0;
+        if (ls_abs > UPWELLING_HIGHLAT_ABS_SOLVER && temp_rel < cold_sink_temp) {
+            double t_cold = (cold_sink_temp - temp_rel) / 0.3;
+            if (t_cold < 0.0) t_cold = 0.0;
+            else if (t_cold > 1.0) t_cold = 1.0;
+            cold_sink_neg = -t_cold * UPWELLING_COLD_SINK_GAIN;
+        }
+
+        double up = ekman_main + cold_sink_neg;
+        if (up < -1.0) up = -1.0;
+        else if (up > 1.0) up = 1.0;
+        UP[i] = float(up);
+    }
+
+    _flush_slot_to_map(sid_upwelling);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"] = false;
+    out["reason"] = String();
+    return out;
+}
+
 // ─── full / scalar ───────────────────────────────────────────────────────
 void DCWorldExt::bench_pass_a_full_scalar(int comp_id,
                                           const PackedFloat32Array &lat,
@@ -5747,6 +6207,15 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_wind_field_pass", "knobs"),
         &DCWorldExt::run_wind_field_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_physical_circulation_pass", "knobs"),
+        &DCWorldExt::run_physical_circulation_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_season_refresh_stage", "knobs"),
+        &DCWorldExt::run_season_refresh_stage);
+    ClassDB::bind_method(
+        D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
+        &DCWorldExt::run_sea_ice_atlas_prepare);
 
     // Mode-B reference implementation entry point (see performance-charter.md §12)
     ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"), &DCWorldExt::run_temp_drift_pass);

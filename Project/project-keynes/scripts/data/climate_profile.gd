@@ -199,6 +199,7 @@ extends Resource
 @export var use_gdext_ocean_land:   bool = true    # F.2b P1：3.4ms → < 0.5ms
 @export var use_gdext_climate_pass_b: bool = true  # F.3 P1：5.2ms → < 0.5ms
 @export var use_gdext_sea_ice:      bool = true    # F.4 P2：5.1ms → < 0.5ms
+@export var use_gdext_sea_ice_atlas_prepare: bool = true # C++ R8 sea-ice atlas buffer prepare
 @export var use_gdext_transpiration: bool = true   # F.5 P2：3.2ms → < 0.3ms
 @export var use_gdext_weather_front: bool = true   # F.6 P3：3.0ms → < 0.5ms
 # ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）─────────────────────
@@ -211,10 +212,12 @@ extends Resource
 # 当前 GDScript PhysicalCirculationSolver.solve_wind_field 在 SUS 切片下
 # p95=35.55ms（实测 dots-master-execution-handbook §3.3 ground truth）。
 # 目标：C++ DCWorldExt.run_wind_field_pass —— p95 < 5ms。
-# 默认 false（C++ stub 当前返回 -1 → 永远走 GDScript fallback）。
+# 默认 true：C++ wind/upwelling path 已接入；返回 fallback 时仍走 GDScript。
 # 验收：docs/dots-wind-validation.md 描述 SAME_SOURCE A/B 协议；触发开启条件为
 # C++ 实现 + 1000-tick fronts mean_diff ≤ 0.005 + p95 ≤ 5ms。
-@export var use_gdext_wind_field: bool = false      # Block B P1：35.55ms → < 5ms
+@export var use_gdext_wind_field: bool = true       # Block B P1：35.55ms → < 5ms
+@export var use_gdext_physical_circulation: bool = true # C++ SLP/wind/upwelling path
+@export var use_gdext_season_refresh: bool = true   # C++ season_refresh path when available
 
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。

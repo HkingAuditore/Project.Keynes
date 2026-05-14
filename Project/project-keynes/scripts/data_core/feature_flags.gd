@@ -44,7 +44,7 @@ const FLAGS: Array = [
 	{
 		name = &"use_data_core",
 		owner = "data_core.bootstrap",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
 		description = "在 _setup_sus 期把 MapData 挂入 DCWorld；为 false 时所有 system 走 legacy AoS 路径",
 	},
@@ -206,6 +206,13 @@ const FLAGS: Array = [
 		description = "Phase F.4 (P2)：sea ice daily pass C++ 化；目标 5.1ms → < 0.5ms；terrain 翻转走 ECB",
 	},
 	{
+		name = &"use_gdext_sea_ice_atlas_prepare",
+		owner = "rendering.sea_ice_atlas",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Prepare sea-ice R8 atlas buffer in DCWorldExt; Godot texture upload remains main-thread.",
+	},
+	{
 		name = &"use_gdext_transpiration",
 		owner = "biology.transpiration",
 		default = true,
@@ -247,9 +254,23 @@ const FLAGS: Array = [
 	{
 		name = &"use_gdext_wind_field",
 		owner = "simulation.ocean.wind_field",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "Block B (P1)：wind field C++ 化；目标 p95 35.55ms → < 5ms。前置：C++ 实装（当前 stub 返回 -1）+ docs/dots-wind-validation.md A/B 通过",
+		description = "Block B (P1)：wind field C++ 化；目标 p95 35.55ms → < 5ms。C++ 返回 fallback 时自动回退 GDScript",
+	},
+	{
+		name = &"use_gdext_physical_circulation",
+		owner = "simulation.ocean.physical",
+		default = true,
+		resource = "ClimateProfile",
+		description = "C++ physical circulation path for wind/upwelling hot fields.",
+	},
+	{
+		name = &"use_gdext_season_refresh",
+		owner = "simulation.season_refresh",
+		default = true,
+		resource = "ClimateProfile",
+		description = "C++ season refresh path when DCWorldExt exposes run_season_refresh_stage.",
 	},
 ]
 
