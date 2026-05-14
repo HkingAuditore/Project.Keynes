@@ -430,6 +430,8 @@ public:
     //   sig 设计：knobs 走 by-value（非 const&），与 F.4 同模式（让 C++
     //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
     double run_weather_front_advect_pass(godot::Dictionary knobs);
+    godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
+    godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
 
     // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
     //
@@ -553,6 +555,7 @@ public:
     //   bit-equal 容差：1e-4（含 sin/cos/sqrt/normalize 链）
     //   未支持的特性：none（与 GDScript 算法 1:1 镜像）
     double run_wind_field_pass(godot::Dictionary knobs);
+    godot::Dictionary run_physical_circulation_pass(godot::Dictionary knobs);
 
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++

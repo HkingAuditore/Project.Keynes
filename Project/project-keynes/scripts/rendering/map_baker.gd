@@ -83,12 +83,14 @@ static var _shared_noise_tex: ImageTexture = null
 # 同一个常驻 buf 不会出现 "改 buf 影响 GPU 已上传内容" 的悬空引用问题。
 var _sea_ice_only_buf: PackedByteArray = PackedByteArray()
 var _sea_ice_cache_size: Vector2i = Vector2i.ZERO
+var _sea_ice_pixel_to_cell_idx: PackedInt32Array = PackedInt32Array()
 # Daily-sim perf opt: cell 级 byte 量化快照（key=HexCell, value=int 0..255）。
 # bake_sea_ice_fraction_only 入口先做 cell 级 byte 比较：水格通常 ~1300 个，
 # 比 620k 像素级比较快 ~500×。绝大多数日子海冰 byte 不变 → 直接 return，连像素
 # buf 都不算，省掉 ~100ms 的 lookup 循环。
 # 当 bake_world 重做 lookup 时一同失效（_sea_ice_only_buf 清空时也清掉）。
 var _last_sea_ice_cell_bytes: Dictionary = {}
+var _last_sea_ice_cell_bytes_packed: PackedByteArray = PackedByteArray()
 
 # Daily-sim perf opt 阶段 P：cover / vegetation 的 per-cell byte 快照（用于 rebake_*_only 增量路径）。
 # weather_system 每日翻 cover 的 cell 通常 < 30 个，而旧 fast path 仍要扫 614k 像素重写所有 byte
@@ -266,6 +268,7 @@ const _PHYS_WIND_RASTER_PIXELS_PER_STEP: int = 30000
 var _phys_stage: int = _PHYS_STAGE_NONE
 var _phys_psi_iters_done: int = 0
 var _phys_wind_raster_idx: int = 0
+var _phys_wind_done_by_cpp: bool = false
 
 # ─── 公开接口 ─────────────────────────────────────────────────────────────
 
@@ -291,7 +294,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# scalar_atlas 自己每次 bake_world 都会通过 _encode_scalar_atlas 重建，无需手动清。
 	_sea_ice_only_buf = PackedByteArray()
 	_sea_ice_cache_size = Vector2i.ZERO
+	_sea_ice_pixel_to_cell_idx = PackedInt32Array()
 	_last_sea_ice_cell_bytes = {}
+	_last_sea_ice_cell_bytes_packed = PackedByteArray()
 	# 阶段 P：cover / vegetation 的增量缓存同样要随地图重生 / 重烘失效。
 	_last_cover_cell_bytes = {}
 	_last_vegetation_cell_bytes = {}
@@ -2049,141 +2054,139 @@ func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture
 #
 # 调用约定：SeaIceAtlasUploadJob 每 stride 日调用一次（之前是 refresh_climate_daily 末尾）。
 func bake_sea_ice_fraction_only(map: MapData, world: WorldData) -> void:
-	if world == null or map == null:
-		return
-	var W := world.derived_size.x
-	var H := world.derived_size.y
-	var n := W * H
-	if n <= 0:
-		return
+	var prep: Dictionary = prepare_sea_ice_fraction_atlas(map, world)
+	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", true)):
+		upload_prepared_sea_ice_fraction_atlas(world)
 
-	var lookup := world.pixel_to_cell_lookup
-	var has_lookup: bool = lookup.size() == n
-	if not has_lookup:
-		# lookup 缺失：bake_world 必定会填充它，这里走到意味着调用顺序出错。
-		# 保守回退为全 0 + 警告，避免访问不存在的 map API。
-		push_warning("MapBaker.bake_sea_ice_fraction_only: pixel_to_cell_lookup missing; falling back to zeros")
+
+func prepare_sea_ice_fraction_atlas(map: MapData, world: WorldData) -> Dictionary:
+	var t0: int = Time.get_ticks_usec()
+	var out: Dictionary = {
+		"prepared": false,
+		"dirty": false,
+		"prepare_ms": 0.0,
+		"path": "none",
+		"dirty_cells": 0,
+		"dirty_ratio": 0.0,
+	}
+	if world == null or map == null:
+		return out
+	var W: int = int(world.derived_size.x)
+	var H: int = int(world.derived_size.y)
+	var n: int = W * H
+	if n <= 0:
+		return out
+	if world.pixel_to_cell_lookup.size() != n:
+		push_warning("MapBaker.prepare_sea_ice_fraction_atlas: pixel_to_cell_lookup missing; falling back to zeros")
 		var zero_buf := PackedByteArray()
 		zero_buf.resize(n)
+		_sea_ice_only_buf = zero_buf
 		world.sea_ice_fraction_buffer = zero_buf
-		return
+		out["prepared"] = true
+		out["dirty"] = true
+		out["path"] = "zero_fallback"
+		out["prepare_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
+		return out
 
-	# Daily-sim perf opt（数据结构层重构）：
-	#   原实现每天走 620k 次像素循环（lookup[i] + clampf + round + int 字节码 ~110ms）。
-	#   关键事实：陆地 cell 的 sea_ice_fraction 恒为 0；像素一旦初始化为 0 就永久不变。
-	#   所以只有水格的像素才需要每日刷新。
-	#
-	#   新方案：首次调用时（_water_pixel_lists 为空）扫一遍 lookup 构建反向索引
-	#     water_pixel_lists[cell] = PackedInt32Array(像素 1D index)
-	#   之后每日：
-	#     for cell in water_pixel_lists:
-	#         byte = round(cell.sea_ice_fraction * 255)
-	#         if byte == last_cell_byte[cell]: continue          # 该格无变化 → 0 操作
-	#         for px in cell_pixels: buf[px] = byte; sea_ice_only_buf[px] = byte
-	#         last_cell_byte[cell] = byte
-	#
-	#   性能预算：
-	#     - 水格 ~1300 个 + 平均覆盖 ~140 像素 = ~180k 像素操作（vs 620k → -71%）
-	#     - 字节没变的水格（典型日 70%+ 是赤道远海，恒 0）→ 完全跳过 → 实际 ~50k 操作
-	#     - 阶段 1 拆 R8 后 GPU 上传体积 -75%，进一步省驱动开销
-
-	var water_pixel_lists: Dictionary = world.water_cell_pixel_lists
-	var cache_valid: bool = (_sea_ice_cache_size == Vector2i(W, H) \
-			and _sea_ice_only_buf.size() == n \
-			and not water_pixel_lists.is_empty() \
-			and world.sea_ice_tex != null \
-			and world.sea_ice_tex.get_size() == Vector2(float(W), float(H)))
-
-	if not cache_valid:
-		# ───────── 首次构建路径（地形重烘后第一日） ─────────
-		# 1) 完整 R8 缓冲：按 lookup 全图扫，写当前 sea_ice_fraction byte。
-		# 2) 同时构建 water_cell_pixel_lists 反向索引：cell → 像素 index 数组。
-		# 3) 同时构建 _last_sea_ice_cell_bytes：cell → 当前 byte。
-		_sea_ice_only_buf = PackedByteArray()
-		_sea_ice_only_buf.resize(n)
-
-		var sea_ice_buf := PackedByteArray()
-		sea_ice_buf.resize(n)
-
-		# 桶式构建：先按 cell 收集 pixel index（值不写到 PackedInt32Array 的 push_back，
-		# 而是先用普通 Array 收集，最后一次性 PackedInt32Array.assign，避开重复扩容开销）。
-		var raw_buckets: Dictionary = {}  # HexCell → Array[int]
-		var cell_byte_dict: Dictionary = {}  # HexCell → int (byte)
-
-		for i in range(n):
-			var cell = lookup[i]
-			if cell == null or not _is_water(cell.terrain):
-				_sea_ice_only_buf[i] = 0
-				sea_ice_buf[i] = 0
-				continue
-			# 水格：写当前 byte；同时记录到反向索引
-			var b: int = int(round(clampf(float(cell.sea_ice_fraction), 0.0, 1.0) * 255.0))
-			_sea_ice_only_buf[i] = b
-			sea_ice_buf[i] = b
-			if not raw_buckets.has(cell):
-				raw_buckets[cell] = []
-				cell_byte_dict[cell] = b
-			(raw_buckets[cell] as Array).push_back(i)
-
-		# Array → PackedInt32Array 一次性 append_array（GDScript 内部 memcpy，
-		# 比逐个 push_back 快一个数量级；Godot 4 的 PackedInt32Array 没有 assign 方法）。
-		water_pixel_lists.clear()
-		for cell_key in raw_buckets.keys():
-			var packed := PackedInt32Array()
-			packed.append_array(raw_buckets[cell_key] as Array)
-			water_pixel_lists[cell_key] = packed
-		world.water_cell_pixel_lists = water_pixel_lists
-		world.sea_ice_fraction_buffer = sea_ice_buf
-		_last_sea_ice_cell_bytes = cell_byte_dict
-		_sea_ice_cache_size = Vector2i(W, H)
-
-		# 一次性整张 GPU 上传（R8 / FORMAT_L8）
-		var first_img := Image.create_from_data(W, H, false, Image.FORMAT_L8, _sea_ice_only_buf)
-		if world.sea_ice_tex != null and world.sea_ice_tex.get_size() == Vector2(float(W), float(H)):
-			world.sea_ice_tex.update(first_img)
+	_ensure_sea_ice_pixel_to_cell_index(map, world)
+	var cfg = world.get("config")
+	var cp = cfg.climate_profile if cfg != null and "climate_profile" in cfg else null
+	var use_native: bool = cp != null and "use_gdext_sea_ice_atlas_prepare" in cp \
+			and bool(cp.use_gdext_sea_ice_atlas_prepare) \
+			and _world_ext != null and _world_ext.has_method("run_sea_ice_atlas_prepare")
+	if use_native:
+		if _world_ext.has_method("refresh_slots_from_map"):
+			_world_ext.refresh_slots_from_map()
+		var ret: Dictionary = _world_ext.run_sea_ice_atlas_prepare({
+			"n_cells": map.cell_count(),
+			"width": W,
+			"height": H,
+			"pixel_to_cell_index": _sea_ice_pixel_to_cell_idx,
+			"previous_cell_bytes": _last_sea_ice_cell_bytes_packed,
+		})
+		if not bool(ret.get("fallback", true)):
+			_sea_ice_only_buf = ret.get("buffer", PackedByteArray())
+			_last_sea_ice_cell_bytes_packed = ret.get("cell_bytes", PackedByteArray())
+			world.sea_ice_fraction_buffer = _sea_ice_only_buf
+			_sea_ice_cache_size = Vector2i(W, H)
+			out["prepared"] = _sea_ice_only_buf.size() == n
+			out["dirty_cells"] = int(ret.get("dirty_cells", map.cell_count()))
+			out["dirty_ratio"] = float(ret.get("dirty_ratio", 1.0))
+			out["dirty"] = int(out.get("dirty_cells", 0)) > 0 or world.sea_ice_tex == null
+			out["path"] = "gdext"
+			out["prepare_ms"] = float(ret.get("prepare_ms", ret.get("elapsed_ms", 0.0)))
+			return out
 		else:
-			world.sea_ice_tex = ImageTexture.create_from_image(first_img)
-		return
+			out["fallback_reason"] = String(ret.get("reason", "unknown"))
 
-	# ───────── 增量路径（典型每日） ─────────
-	# 只遍历水格（~1300）；每格如果 byte 不变直接跳过；变了就批量写它的像素列表。
-	var sea_ice_buf2 := world.sea_ice_fraction_buffer
-	if sea_ice_buf2.size() != n:
-		# 极偶发：buf 被外部 resize 过，重建一次零值（陆地像素本就该 0；水格马上覆盖）。
-		sea_ice_buf2 = PackedByteArray()
-		sea_ice_buf2.resize(n)
+	var gd_ret: Dictionary = _prepare_sea_ice_fraction_atlas_gd(map, world, W, H, n)
+	gd_ret["prepare_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
+	return gd_ret
 
-	var any_atlas_dirty: bool = false
-	for cell_key in water_pixel_lists.keys():
-		var cell: HexCell = cell_key
-		# Defensive：cell 已变陆地（极少见，地形 in-place 切换）→ 强制 0 并保留在表里
-		# （表本身在 bake_world 时会重建，这里只需保证语义正确）。
-		var b: int
-		if not _is_water(cell.terrain):
-			b = 0
-		else:
-			b = int(round(clampf(float(cell.sea_ice_fraction), 0.0, 1.0) * 255.0))
-		var prev_b: int = int(_last_sea_ice_cell_bytes.get(cell, -1))
-		if b == prev_b:
-			continue  # 该格 byte 未变 → 0 像素写
-		_last_sea_ice_cell_bytes[cell] = b
-		any_atlas_dirty = true
-		var pixels: PackedInt32Array = water_pixel_lists[cell_key]
-		for px in pixels:
-			sea_ice_buf2[px] = b
-			_sea_ice_only_buf[px] = b
 
-	world.sea_ice_fraction_buffer = sea_ice_buf2
-	if not any_atlas_dirty:
-		return  # 所有水格 byte 都没动 → atlas 不变，连 GPU update 都跳过
-
-	# 至少一个水格变了 → 重新上传 sea_ice_tex（Godot 没有 partial-update API，整张走，
-	# 但 R8 比原 RGBA8 小 75%，驱动开销显著降低）
+func upload_prepared_sea_ice_fraction_atlas(world: WorldData) -> Dictionary:
+	var out: Dictionary = {"uploaded": false, "image_ms": 0.0, "upload_ms": 0.0, "elapsed_ms": 0.0}
+	if world == null:
+		return out
+	var W: int = int(world.derived_size.x)
+	var H: int = int(world.derived_size.y)
+	if W <= 0 or H <= 0 or _sea_ice_only_buf.size() != W * H:
+		return out
+	var t0: int = Time.get_ticks_usec()
 	var img := Image.create_from_data(W, H, false, Image.FORMAT_L8, _sea_ice_only_buf)
+	var t1: int = Time.get_ticks_usec()
 	if world.sea_ice_tex != null and world.sea_ice_tex.get_size() == Vector2(float(W), float(H)):
 		world.sea_ice_tex.update(img)
 	else:
 		world.sea_ice_tex = ImageTexture.create_from_image(img)
+	var t2: int = Time.get_ticks_usec()
+	out["uploaded"] = true
+	out["image_ms"] = (t1 - t0) / 1000.0
+	out["upload_ms"] = (t2 - t1) / 1000.0
+	out["elapsed_ms"] = (t2 - t0) / 1000.0
+	return out
+
+
+func _ensure_sea_ice_pixel_to_cell_index(map: MapData, world: WorldData) -> void:
+	var n: int = int(world.derived_size.x) * int(world.derived_size.y)
+	if _sea_ice_cache_size == world.derived_size and _sea_ice_pixel_to_cell_idx.size() == n:
+		return
+	_sea_ice_pixel_to_cell_idx = PackedInt32Array()
+	_sea_ice_pixel_to_cell_idx.resize(n)
+	var lookup := world.pixel_to_cell_lookup
+	for i in range(n):
+		var cell = lookup[i]
+		_sea_ice_pixel_to_cell_idx[i] = map.index_of(cell) if cell != null else -1
+
+
+func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, H: int, n: int) -> Dictionary:
+	_sea_ice_only_buf = PackedByteArray()
+	_sea_ice_only_buf.resize(n)
+	var cell_bytes := PackedByteArray()
+	cell_bytes.resize(map.cell_count())
+	var dirty_cells: int = 0
+	for i in range(map.cell_count()):
+		var cell: HexCell = map.cell_at(i)
+		var b: int = 0
+		if cell != null and _is_water(cell.terrain):
+			b = int(round(clampf(float(cell.sea_ice_fraction), 0.0, 1.0) * 255.0))
+		cell_bytes[i] = b
+		if _last_sea_ice_cell_bytes_packed.size() <= i or int(_last_sea_ice_cell_bytes_packed[i]) != b:
+			dirty_cells += 1
+	for px in range(n):
+		var ci: int = _sea_ice_pixel_to_cell_idx[px] if px < _sea_ice_pixel_to_cell_idx.size() else -1
+		_sea_ice_only_buf[px] = cell_bytes[ci] if ci >= 0 and ci < cell_bytes.size() else 0
+	_last_sea_ice_cell_bytes_packed = cell_bytes
+	world.sea_ice_fraction_buffer = _sea_ice_only_buf
+	_sea_ice_cache_size = Vector2i(W, H)
+	return {
+		"prepared": true,
+		"dirty": dirty_cells > 0 or world.sea_ice_tex == null,
+		"prepare_ms": 0.0,
+		"path": "gdscript",
+		"dirty_cells": dirty_cells,
+		"dirty_ratio": float(dirty_cells) / float(maxi(map.cell_count(), 1)),
+	}
 
 func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 	if world == null or map == null:
@@ -2683,6 +2686,7 @@ func reset_physical_solve_state() -> void:
 	_phys_stage = _PHYS_STAGE_NONE
 	_phys_psi_iters_done = 0
 	_phys_wind_raster_idx = 0
+	_phys_wind_done_by_cpp = false
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	_pending_wind_buf = PackedByteArray()
@@ -2712,6 +2716,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	if _phys_stage == _PHYS_STAGE_NONE:
 		_phys_stage = _PHYS_STAGE_SLP
 		_phys_psi_iters_done = 0
+		_phys_wind_done_by_cpp = false
 		_pending_psi_state = null
 
 	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
@@ -2722,6 +2727,11 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
 			PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
+			var cells_for_slp: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+			if map.slp_arr.size() == cells_for_slp.size():
+				for _i_slp_commit in range(cells_for_slp.size()):
+					var _c_slp_commit: HexCell = cells_for_slp[_i_slp_commit]
+					map.slp_arr[_i_slp_commit] = _c_slp_commit.slp if _c_slp_commit != null else 0.0
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
 			# Block B（master 手册 §4 / dots-wind-validation.md）：wind solver C++ 化 hook。
@@ -2731,12 +2741,12 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if profile != null and "use_gdext_wind_field" in profile \
 				and bool(profile.use_gdext_wind_field) \
 				and _world_ext != null and _world_ext.has_method("run_wind_field_pass"):
-				var cells_for_wind: Array = map.all_cells()
+				var cells_for_wind: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 				var n_wind: int = cells_for_wind.size()
 				var nb_idx_for_wind: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 				var fast_indexed_wind: bool = nb_idx_for_wind.size() >= n_wind * 6
 				if fast_indexed_wind and n_wind > 0:
-					# Pack cell.slp 到 PackedFloat32Array（cell.slp 不在 schema）
+					# Pack cell.slp in index order; C++ wind pass consumes this snapshot.
 					var slp_arr: PackedFloat32Array = PackedFloat32Array()
 					slp_arr.resize(n_wind)
 					for _i_slp in range(n_wind):
@@ -2768,18 +2778,22 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						var wx_arr: PackedFloat32Array = map.wind_x_arr
 						var wy_arr: PackedFloat32Array = map.wind_y_arr
 						var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
-						if wx_arr.size() == n_wind and wy_arr.size() == n_wind and wspd_arr.size() == n_wind:
+						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
+								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
 							for _i_w in range(n_wind):
 								var _c_w: HexCell = cells_for_wind[_i_w]
 								if _c_w == null:
 									continue
 								_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
 								_c_w.wind_speed = wspd_arr[_i_w]
+								map.wind_speed_arr[_i_w] = wspd_arr[_i_w]
 							_wind_done_by_cpp = true
+							_phys_wind_done_by_cpp = true
 							if not _wind_b_first_run_logged:
 								_wind_b_first_run_logged = true
 								print("[wind_field/B] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 35ms; charter §7 / dots-wind-validation.md target < 5ms)" % float(_rc_wind))
 			if not _wind_done_by_cpp:
+				_phys_wind_done_by_cpp = false
 				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
 			if heat_transport:
 				_phys_stage = _PHYS_STAGE_PSI_INIT
@@ -2808,7 +2822,36 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
 			_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_UPWELLING:
-			PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
+			var _upwelling_done_by_cpp: bool = false
+			if profile != null and "use_gdext_physical_circulation" in profile \
+					and bool(profile.use_gdext_physical_circulation) \
+					and _world_ext != null and _world_ext.has_method("run_physical_circulation_pass") \
+					and _phys_wind_done_by_cpp \
+					and map.has_indices():
+				var n_up: int = map.soa_size()
+				var nb_idx_up: PackedInt32Array = map.neighbor_indices_packed()
+				if n_up > 0 and nb_idx_up.size() >= n_up * 6:
+					var water_ids_up := PackedByteArray()
+					water_ids_up.append(int(TerrainType.TERRAIN.OCEAN))
+					water_ids_up.append(int(TerrainType.TERRAIN.COAST))
+					water_ids_up.append(int(TerrainType.TERRAIN.REEF))
+					water_ids_up.append(int(TerrainType.TERRAIN.KELP))
+					var knobs_up := {
+						"stage": "upwelling",
+						"n_cells": n_up,
+						"neighbor_indices": nb_idx_up,
+						"water_terrain_ids": water_ids_up,
+						"world_bounds_pos_y": bounds.position.y,
+						"world_bounds_size_y": bounds.size.y,
+						"cold_sink_temp": (cfg.COLD_SINK_TEMP if cfg != null else -0.05),
+					}
+					if _world_ext.has_method("refresh_slots_from_map"):
+						_world_ext.refresh_slots_from_map()
+					var ret_up = _world_ext.run_physical_circulation_pass(knobs_up)
+					if typeof(ret_up) == TYPE_DICTIONARY and not bool(ret_up.get("fallback", true)):
+						_upwelling_done_by_cpp = true
+			if not _upwelling_done_by_cpp:
+				PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
 			_phys_stage = _PHYS_STAGE_WIND_RASTER
 		_PHYS_STAGE_WIND_RASTER:
 			# 第一次进入 WIND_RASTER 时跑 NaN 守门 + 分配 buffer，之后每次推进

@@ -101,6 +101,9 @@ var ocean_current_x_arr:    PackedFloat32Array = PackedFloat32Array()
 var ocean_current_y_arr:    PackedFloat32Array = PackedFloat32Array()
 var wind_x_arr:             PackedFloat32Array = PackedFloat32Array()
 var wind_y_arr:             PackedFloat32Array = PackedFloat32Array()
+var slp_arr:                PackedFloat32Array = PackedFloat32Array()
+var wind_speed_arr:         PackedFloat32Array = PackedFloat32Array()
+var upwelling_strength_arr: PackedFloat32Array = PackedFloat32Array()
 
 # float32 — cell 屏幕坐标缓存（size=1 单位；用于内层循环消除 HexUtils.cube_to_world 重算）
 var cell_pos_x_arr:         PackedFloat32Array = PackedFloat32Array()
@@ -120,6 +123,9 @@ var _lat_lut_baked: bool = false
 var terrain_arr:            PackedByteArray = PackedByteArray()
 var landform_arr:           PackedByteArray = PackedByteArray()
 var vegetation_arr:         PackedByteArray = PackedByteArray()
+var base_terrain_arr:       PackedByteArray = PackedByteArray()
+var base_landform_arr:      PackedByteArray = PackedByteArray()
+var base_vegetation_arr:    PackedByteArray = PackedByteArray()
 var cover_arr:              PackedByteArray = PackedByteArray()
 var weather_type_arr:       PackedByteArray = PackedByteArray()
 var is_water_arr:           PackedByteArray = PackedByteArray()
@@ -283,6 +289,9 @@ func _alloc_soa(n: int) -> void:
 	ocean_current_y_arr.resize(n)
 	wind_x_arr.resize(n)
 	wind_y_arr.resize(n)
+	slp_arr.resize(n)
+	wind_speed_arr.resize(n)
+	upwelling_strength_arr.resize(n)
 	cell_pos_x_arr.resize(n)
 	cell_pos_y_arr.resize(n)
 	cell_lat_norm_arr.resize(n)
@@ -290,6 +299,9 @@ func _alloc_soa(n: int) -> void:
 	terrain_arr.resize(n)
 	landform_arr.resize(n)
 	vegetation_arr.resize(n)
+	base_terrain_arr.resize(n)
+	base_landform_arr.resize(n)
+	base_vegetation_arr.resize(n)
 	cover_arr.resize(n)
 	weather_type_arr.resize(n)
 	is_water_arr.resize(n)
@@ -346,12 +358,18 @@ func rebuild_soa_from_cells() -> void:
 		ocean_current_y_arr[i] = c.ocean_current.y
 		wind_x_arr[i] = c.wind_vector.x
 		wind_y_arr[i] = c.wind_vector.y
+		slp_arr[i] = c.slp
+		wind_speed_arr[i] = c.wind_speed
+		upwelling_strength_arr[i] = c.upwelling_strength
 		var wp: Vector2 = HexUtils.cube_to_world(c.q, c.r, 1.0)
 		cell_pos_x_arr[i] = wp.x
 		cell_pos_y_arr[i] = wp.y
 		terrain_arr[i] = int(c.terrain) & 0xFF
 		landform_arr[i] = c.landform & 0xFF
 		vegetation_arr[i] = c.vegetation & 0xFF
+		base_terrain_arr[i] = int(c.base_terrain) & 0xFF
+		base_landform_arr[i] = c.base_landform & 0xFF
+		base_vegetation_arr[i] = c.base_vegetation & 0xFF
 		cover_arr[i] = c.cover & 0xFF
 		weather_type_arr[i] = c.weather_type & 0xFF
 		is_water_arr[i] = (1 if (not c.passable_land) else 0)

@@ -213,6 +213,9 @@ func _record_summary(phase_kind: String, day: int, season_phase: float, map) -> 
 			continue  # I32 暂无生产字段；保留分支
 		if line != "":
 			_file.store_line(line)
+	var sea_ice_line: String = _summary_line_sea_ice_r8_buffer(phase_kind, day, season_phase)
+	if sea_ice_line != "":
+		_file.store_line(sea_ice_line)
 
 
 func _summary_line_f32(map, map_field: String, phase_kind: String, day: int, season_phase: float, field_name: String) -> String:
@@ -264,6 +267,25 @@ func _summary_line_u8(map, map_field: String, phase_kind: String, day: int, seas
 	var std: float = sqrt(max(0.0, var_v))
 	return "%d\t%d\t%.4f\t%s\t%s\t%d\t%d\t%.6f\t%.6f" % [
 		_tick_idx + 1, day, season_phase, phase_kind, field_name, mn, mx, mean, std
+	]
+
+
+func _summary_line_sea_ice_r8_buffer(phase_kind: String, day: int, season_phase: float) -> String:
+	if _generator == null or not "_last_world" in _generator or _generator._last_world == null:
+		return ""
+	var buf: PackedByteArray = _generator._last_world.sea_ice_fraction_buffer
+	var n: int = buf.size()
+	var field_name: String = "world.sea_ice_fraction_buffer_hash"
+	if n == 0:
+		return "%d\t%d\t%.4f\t%s\t%s\t0\t0\t0\t0" % [
+			_tick_idx + 1, day, season_phase, phase_kind, field_name
+		]
+	var hash32: int = 2166136261
+	for i in range(n):
+		hash32 = int((hash32 ^ int(buf[i])) * 16777619) & 0xFFFFFFFF
+	return "%d\t%d\t%.4f\t%s\t%s\t%d\t%d\t%.6f\t0" % [
+		_tick_idx + 1, day, season_phase, phase_kind,
+		field_name, hash32, hash32, float(hash32)
 	]
 
 

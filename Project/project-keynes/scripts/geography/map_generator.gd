@@ -694,6 +694,7 @@ var _season_refresh_job = null
 var _world_clock_ref = null
 # 一次性 deprecated 字段警告守门（避免同一会话反复 print）。
 var _ocean_legacy_warning_logged: bool = false
+var _season_refresh_gdext_fallback_logged: bool = false
 
 # ─── 任务 6：refresh_seasonal per-cell 起点优化（方案 C）───────────────────
 # 行级查表：纬度温度 + 当季温度偏移 都只取决于 ny（= row / (height-1)），
@@ -1357,7 +1358,8 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			if _last_cfg != null:
 				_apply_swamp_pass(map, _last_cfg)
 		8:
-			_seasonal_sync_current_state(map, season)
+			if not _run_season_refresh_stage8_gdext(map, world, season):
+				_seasonal_sync_current_state(map, season)
 		9:
 			if world != null and _baker != null:
 				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
@@ -1378,6 +1380,83 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 
 func sus_season_refresh_breakdown() -> Dictionary:
 	return _last_season_refresh_breakdown.duplicate()
+
+
+func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		if not _season_refresh_gdext_fallback_logged:
+			print("[season_refresh] gdext stage8 fallback: ext/method/map/cfg unavailable")
+			_season_refresh_gdext_fallback_logged = true
+		return false
+	if not map.has_lat_lut():
+		map.bake_lat_temp_year_lut(self)
+	_ensure_row_tables(_last_cfg, season)
+	if _data_core_world_ext.has_method("refresh_slots_from_map"):
+		_data_core_world_ext.refresh_slots_from_map()
+	var knobs: Dictionary = {
+		"stage": 8,
+		"season": season,
+		"n_cells": map.cell_count(),
+		"height": _last_cfg.height,
+		"sea_level": _last_cfg.sea_level,
+		"season_offset_rows": _row_season_off,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		if not _season_refresh_gdext_fallback_logged:
+			print("[season_refresh] gdext stage8 fallback: %s" % String(res.get("reason", "unknown")))
+			_season_refresh_gdext_fallback_logged = true
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_8_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_8_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	return true
+
+
+func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
+	var n: int = map.cell_count()
+	var terrain_a: PackedByteArray = map.terrain_arr
+	var landform_a: PackedByteArray = map.landform_arr
+	var vegetation_a: PackedByteArray = map.vegetation_arr
+	var cover_a: PackedByteArray = map.cover_arr
+	for i in range(n):
+		var cell: HexCell = map.cell_at(i)
+		if cell == null:
+			continue
+		if i < terrain_a.size():
+			cell.terrain = int(terrain_a[i])
+		if i < landform_a.size():
+			cell.landform = int(landform_a[i])
+		if i < vegetation_a.size():
+			cell.vegetation = int(vegetation_a[i])
+		if i < cover_a.size():
+			cell.cover = int(cover_a[i])
+		cell.push_biome_history(int(cell.terrain))
+		cell.push_vegetation_history(int(cell.vegetation))
+
+
+func build_current_state_view(cell: HexCell, season: int = -1) -> Dictionary:
+	if cell == null:
+		return {}
+	var season_v: int = season
+	if season_v < 0:
+		season_v = clampi(_current_season, 0, 3)
+	return {
+		"season": season_v,
+		"temperature": float(cell.temperature),
+		"moisture": float(cell.moisture),
+		"snow_cover": float(cell.snow_cover),
+		"biome": int(cell.terrain),
+		"landform": int(cell.landform),
+		"vegetation": int(cell.vegetation),
+		"cover": int(cell.cover),
+		"weather": cell.weather_type if cell.weather_field_initialized else int(WeatherType.WT.CLEAR),
+		"weather_intensity": cell.weather_intensity if cell.weather_field_initialized else 0.0,
+	}
 
 
 func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
