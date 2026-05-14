@@ -74,12 +74,16 @@ func write_f32_range(comp_id: int, start: int, count: int, vals: PackedFloat32Ar
 [`map_generator.gd:3486-3487`](../Project/project-keynes/scripts/geography/map_generator.gd#L3486)：
 
 ```gdscript
-# 当前：常量短路让 C++ Pass-A 永远不可达
-const _DIAG_DISABLE_CPP_PASS_A: bool = true
+# 当前（2026-05-15+）：常量短路已删除，升级为 ClimateProfile flag
+@export var use_gdext_climate_pass_a: bool = false  # climate_profile.gd:227
+# earth_like.tres opt-in = true（实际游戏运行时已启用 C++ Pass-A）
+# 但 default 仍 false，等 PR-2.1.1 storage 同源 PASS 后翻
 ```
 
-需独立 PR 复活。Phase 1 todo `phase1-f4`/`phase1-scheduler` 标 completed
-但实质 Pass-A 路径还没真正用上。
+历史：早期由 `const _DIAG_DISABLE_CPP_PASS_A = true` 短路（详见 git log
+2026-05-12 ~ 05-14）；现已升级为 flag。Phase 1 todo `phase1-f4`/
+`phase1-scheduler` 标 completed 且实际启用，但 default false 是为了
+让 storage 同源验证 PR-2.1.1 完成后才正式翻。
 
 #### 0.2.3 `map.<field>_arr[i] = X` 字面写位 = 0
 
@@ -447,19 +451,29 @@ git revert PR-2.0；后续 PR 因依赖 API 会失败（这是预期），不影
 被短路的 Pass-A C++ 路径：
 
 ```gdscript
-# 当前：
-const _DIAG_DISABLE_CPP_PASS_A: bool = true
+# 历史现状（2026-05-12 ~ 05-14）：
+const _DIAG_DISABLE_CPP_PASS_A: bool = true   # 已删除，升级为 flag
 ```
 
 #### 3.2.2 改造点
 
-1. 删除常量短路，改为 ClimateProfile flag：
+1. ✅ **已完成（2026-05-15）**：常量短路已删除，升级为 ClimateProfile flag
+   `use_gdext_climate_pass_a`（climate_profile.gd:227, default=false）；
+   `earth_like.tres` opt-in = true（实际游戏已启用 C++ Pass-A）：
 
 ```gdscript
-# 改后：
-# const _DIAG_DISABLE_CPP_PASS_A 删除
-# 走 cp.use_data_core_climate（climate_profile.gd:165）控制
+# 当前（2026-05-15+）：
+# climate_profile.gd:227
+@export var use_gdext_climate_pass_a: bool = false
+# earth_like.tres
+use_gdext_climate_pass_a = true
+# map_generator.gd::_climate_pass_a 入口判断
+if cp.use_gdext_climate_pass_a and cp.use_data_core_climate ...
 ```
+
+2. ⏸ **deferred 到 PR-2.1.1 之后**：把 default 翻 true。
+   原因：当前 SAME_SOURCE 仍 FAIL（master 基线 12 hot field 0.01–0.13 漂移，
+   见 `.workbuddy/baselines/master-2026-05-15/`），需 PR-2.1.1 storage 同源后才合规。
 
 2. 在 `_climate_pass_a` 入口处：
 

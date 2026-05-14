@@ -3591,37 +3591,11 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	# 任何 C++ 端异常 / -1 返回都让 GDScript 路径接管，不抛 error 不打 push_warning
 	# 以避免 frame 内日志炸开（首日由 _setup_sus 的 [DataCore] _data_core_world_ext
 	# bound 行体现整体路径状态）。
-	# [DIAG 2026-05-12] 临时禁用 C++ Pass-A 入口以二分定位"温度逐日累积全蓝"bug。
-	# 当 _DIAG_DISABLE_CPP_PASS_A=true 时整段短路 → 走 GDScript SoA fallback；
-	# 实测：禁用后仍然全蓝 → C++ Pass-A 不是元凶，bug 在 Pass-B / ocean / sea_ice。
-	# 已恢复 false 让 C++ 路径正常工作；保留闸门以备后续再次二分。
-	#
-	# [DIAG 2026-05-12 R2] 重新启用 kill-switch。新证据：
-	#   - DIAG 日志中 pass_a_end 仅在 day=0 出现一次，day=1..8 全部缺席
-	#     → C++ Pass-A 已接管（return >= 0），GDScript SoA Pass-A 不再执行；
-	#   - C++ Pass-A 写 _slots[].arr_f32（storage B），而 _climate_views_from_world
-	#     在 _data_core_world_ext != null 时返回空 dict（路 C kill-switch），
-	#     导致 ocean_water/ocean_land/Pass-B/sea_ice 全部回退写 map.temp_arr（storage A）；
-	#   - storage A 与 storage B 解耦后，没有任何 sub-pass 重置 map.temp_arr，
-	#     ocean transport 的 anomaly 单调累积 → temp_a 撑到 0/1 → 椒盐全蓝。
-	# 修复：暂时禁用 C++ Pass-A，让 GDScript SoA Pass-A 写 map.temp_arr，
-	# 闭合反馈回路。等 storage 同源（CoW alias）做实后再恢复 false。
-	#
-	# 2026-05-14（W.1 验证期）：重新启用 kill-switch。用户在 macOS arm64 + 0.4.1
-	# DCSystemScheduler 接入后报告"所有地方温度都是极寒"。诊断结论与 R2 一致：
-	# storage A / B 仍未同源（CoW alias 还没做实），ocean/Pass-B/sea_ice 写 storage A
-	# 但 view_adapter.World 读 DCWorld slot（可能命中 storage A 也可能 B，路径取决于
-	# bind_map_data 当时的 set_array_ref 实现）。临时禁用 C++ Pass-A 让 storage A
-	# 闭环。**注意**：禁用 C++ Pass-A 意味着 climate 性能损失（charter §7 P0 ~10x），
-	# 等存档/合并 storage 后必须翻回 false。
-	#
-	# PR-2.passA-unblock（2026-Q3）：把 const kill-switch 升级为 ClimateProfile flag
-	# `use_gdext_climate_pass_a`（默认 false）。这样：
-	#   - 短路效果与原本 _DIAG_DISABLE_CPP_PASS_A=true 一致（默认禁用 C++ Pass-A）
-	#   - 但用户可以 opt-in 测试 C++ Pass-A 路径，无需改代码
-	#   - PR-2.1.1 climate Pass-A 写路径下移完成 + storage A/B 同源 PASS 后，
-	#     把 use_gdext_climate_pass_a 默认改为 true，并把本段 const 注释一并清理。
-	# 详见 docs/dots-master-execution-handbook.md §3.2。
+	# C++ Pass-A 启用闸门：`cp.use_gdext_climate_pass_a`（默认 false，opt-in via earth_like.tres）。
+	# 历史：早期（2026-05-12 ~ 05-14）由 const _DIAG_DISABLE_CPP_PASS_A 短路，因 storage A/B
+	# 未同源导致温度累积异常（详见 git log）。现已升级为 ClimateProfile flag。
+	# 待 PR-2.1.1 climate Pass-A 写路径下移 + SAME_SOURCE PASS 后，
+	# 把 default 翻 true 并清理本注释。详见 docs/dots-master-execution-handbook.md §3.2 / §0.2.2。
 	if cp.use_gdext_climate_pass_a and cp.use_data_core_climate and _data_core_world_ext != null and map != null:
 		# §11.2: Pass-A is the first C++ pass in the pipeline. Refresh all
 		# slots from MapData so C++ reads GDScript-side changes since last flush.
