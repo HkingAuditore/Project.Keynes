@@ -47,10 +47,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		generator.run_season_refresh_stage(map, world, _season_idx, _stage)
 	_stage += 1
 
-	# 11 stages：moisture / rain_shadow / redecide / river+veg_fb / shrubland /
+	# 12 stages：moisture / rain_shadow / redecide / river / veg_fb / shrubland /
 	# mangrove / glacier / swamp / sync_current / rebake_biome / consume_feedback。
 	# 拆细后每 stage 上界 < 30ms（原 7-stage 时单 stage 可能 ~100ms）。
-	var done: bool = _stage >= 11
+	var done: bool = _stage >= 12
 	if done:
 		_round_active = false
 		if generator.has_method("finish_season_refresh"):
@@ -62,7 +62,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"done": done,
 		"work_done": 1,
 		"elapsed_ms": elapsed_ms,
-		"progress_ratio": 1.0 if done else float(_stage) / 11.0,
+		"progress_ratio": 1.0 if done else float(_stage) / 12.0,
 	}
 
 

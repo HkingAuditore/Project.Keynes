@@ -124,6 +124,10 @@ func unbind_world() -> void:
 	_facade_enabled = false
 	_cid_array = PackedInt32Array()
 
+
+func is_facade_enabled() -> bool:
+	return _facade_enabled
+
 # --- 地形（兼容轴；Milestone 1 起为 derived 字段） ---
 # 仍是 baker / shader / 老 _apply_*_pass 的工作字段，
 # 但语义上已被 landform / vegetation / cover 三轴取代。

@@ -24,6 +24,9 @@ const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const SusJobScript = preload("res://scripts/simulation/sus/sus_job.gd")
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 9.0
+const _MAX_CLIMATE_DEFER_STREAK: int = 2
+
 # External references — wired up by MapGenerator at registration time.
 var baker: MapBakerScript = null
 var map: MapData = null
@@ -35,6 +38,10 @@ var hex_size: float = 0.0
 var on_commit: Callable = Callable()
 # Optional: phase getter from world_clock; if not set, falls back to ctx.season_phase.
 var season_phase_getter: Callable = Callable()
+# Optional: defer ocean phys slices after heavy climate sub-passes so the two
+# ocean heat paths do not stack into one fast tick.
+var climate_ran_this_tick_getter: Callable = Callable()
+var climate_slice_ms_getter: Callable = Callable()
 
 # Internal slice cursor and locked phase for the in-flight bake round.
 var _next_pixel_idx: int = 0
@@ -57,6 +64,7 @@ var _phys_solve_done: bool = false
 #   false → 求解完成立即 round_done，跳过 stage 7 (WIND_RASTER) 与 pixel slices。
 var _phase_int_seen: int = -9999
 var _need_pixel_this_round: bool = false
+var _climate_defer_streak: int = 0
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
@@ -109,6 +117,7 @@ func reset_progress() -> void:
 	# 保证场景重载/换地图后第一帧像素 buffer 正确。
 	_phase_int_seen = -9999
 	_need_pixel_this_round = false
+	_climate_defer_streak = 0
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
@@ -122,7 +131,26 @@ func should_run(ctx: SusTickContext) -> bool:
 	# every 3 days). Drift of mid-round phase is bounded by the locked
 	# _phase_locked, so spreading slices across the full period_ticks window
 	# is exactly the desired behavior.
-	return super.should_run(ctx)
+	if not super.should_run(ctx):
+		return false
+	if _should_defer_after_climate_slice():
+		return false
+	_climate_defer_streak = 0
+	return true
+
+
+func _should_defer_after_climate_slice() -> bool:
+	if not climate_ran_this_tick_getter.is_valid() or not climate_slice_ms_getter.is_valid():
+		return false
+	if not bool(climate_ran_this_tick_getter.call()):
+		return false
+	var climate_ms: float = float(climate_slice_ms_getter.call())
+	if climate_ms < _DEFER_AFTER_CLIMATE_SLICE_MS:
+		return false
+	if _climate_defer_streak >= _MAX_CLIMATE_DEFER_STREAK:
+		return false
+	_climate_defer_streak += 1
+	return true
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
@@ -192,12 +220,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				baker._pending_phys_solved_phase = _phase_locked
 			_phys_solve_done = true
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 25ms → 打印来源 stage。
+		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 8ms → 打印来源 stage。
 		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
 		# return 漏掉了；ocean_currents p95 outlier 通常就是这里。
 		# 注意：函数内是"跑完当前 stage → 设为下一 stage"，所以返回时读 _phys_stage
 		# 拿到的是**下一**阶段的 id；这里要换算成"刚跑完的 stage"。
-		if elapsed_solve_ms > 25.0:
+		if elapsed_solve_ms > 8.0:
 			var next_stage_id: int = -1
 			if "_phys_stage" in baker:
 				next_stage_id = int(baker._phys_stage)
