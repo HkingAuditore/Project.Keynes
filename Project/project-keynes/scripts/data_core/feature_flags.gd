@@ -272,6 +272,65 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "C++ season refresh path when DCWorldExt exposes run_season_refresh_stage.",
 	},
+	# ─── DOTS-Final-Push (plan/dots-final-push)：stage_b 三件套 C++ 化 ───────
+	# 目标：weather_refresh p95 27.66ms → ≤ 5ms。三个 flag 独立切换；C++ 不可用
+	# 时透明 fallback 到 GDScript 并打印一次 [stage_b] gdext path UNAVAILABLE。
+	# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
+	{
+		name = &"use_gdext_albedo",
+		owner = "climate.albedo",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Final-Push：_apply_albedo_pass C++ 化；目标 ~3.6ms → < 0.5ms",
+	},
+	{
+		name = &"use_gdext_vegetation_dynamics",
+		owner = "biology.vegetation_dynamics",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Final-Push：_apply_vegetation_dynamics C++ 化（返回 vegetation_dirty 标志）；目标 ~9.2ms → < 1.0ms",
+	},
+	{
+		name = &"use_gdext_climate_feedback",
+		owner = "climate.weather_feedback",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Final-Push：_apply_weather_to_map_feedback_pass C++ 化（小权重累加 ≤ 0.5%/日）；目标 ~6.1ms → < 0.5ms",
+	},
+	# ─── DOTS-Final-Push：atlas pack C++ 化 ──────────────────────────────────
+	# 与已有的 use_gdext_sea_ice_atlas_prepare 协作。目标：sea_ice_atlas_upload
+	# p95 49.23ms → ≤ 8ms；enum_atlas_upload p95 ≤ 3ms。
+	{
+		name = &"use_gdext_enum_atlas_pack",
+		owner = "rendering.enum_atlas",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Final-Push：enum_atlas_upload 的 cell→PackedByteArray 打包走 C++（climate_vector / vegetation 等枚举轴）",
+	},
+	# ─── DOTS-Total-CPP（plan/dots-total-cpp）：所有剩余热点下沉 C++ ──────
+	# 5 个新 flag 中 2 个复用已有的 use_gdext_season_refresh / use_gdext_ocean_water；
+	# 下面三个为本计划新增。全部默认 false，SAME_SOURCE A/B 验收后才翻 true。
+	{
+		name = &"use_gdext_ocean_currents_pixel",
+		owner = "rendering.ocean_currents",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Total-CPP：bake_ocean_currents_slice 像素填充走 C++（仅产 PackedByteArray，不调 RenderingServer）。目标 25ms slice → < 6ms",
+	},
+	{
+		name = &"use_gdext_weather_field_pixel",
+		owner = "rendering.weather_field",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Total-CPP：bake_weather_field_only 像素填充走 C++（仅产 PackedByteArray）。目标 wrapper ≤ 2ms",
+	},
+	{
+		name = &"use_gdext_sea_ice_atlas_pack",
+		owner = "rendering.sea_ice_atlas",
+		default = false,
+		resource = "ClimateProfile",
+		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）",
+	},
 ]
 
 

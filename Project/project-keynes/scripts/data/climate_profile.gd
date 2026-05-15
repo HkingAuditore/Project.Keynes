@@ -217,8 +217,40 @@ extends Resource
 # C++ 实现 + 1000-tick fronts mean_diff ≤ 0.005 + p95 ≤ 5ms。
 @export var use_gdext_wind_field: bool = true       # Block B P1：35.55ms → < 5ms
 @export var use_gdext_physical_circulation: bool = true # C++ SLP/wind/upwelling path
-@export var use_gdext_season_refresh: bool = true   # C++ season_refresh path when available
+@export var use_gdext_season_refresh: bool = true   # C++ season refresh path when available
 
+# ─── dots-slp-psi-cpp (plan/dots-slp-psi-cpp) — physical-circulation final push ──
+# Sink remaining GDScript stages (1/SLP, 3+4+5/PSI) into DCWorldExt.
+# Rollout order: enable use_gdext_slp_field first (validate 7 days A/B
+# numeric drift <= 1e-3), then enable use_gdext_psi_solver (validate 7
+# days A/B |ocean_current| <= 5%, angle <= 5deg). Defaults to false until
+# Same-Source A/B passes; falls back to GDScript path on any error.
+# Targets: stage 1 single slice <= 3ms; stage 3 (init+iters+finalize
+# fused) single slice <= 5ms.
+@export var use_gdext_slp_field:   bool = false      # stage 1 / SLP solver C++
+@export var use_gdext_psi_solver:  bool = false      # stage 3+4+5 fused PSI solver C++
+
+# ─── DOTS-Final-Push（plan/dots-final-push）：stage_b 三件套 + atlas pack ──
+# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
+# C++ 不可用时入口分支会自动 fallback 到 GDScript 并打印一次 UNAVAILABLE。
+# stride 字段沿用现有 weather_albedo_stride / weather_vegetation_dynamics_stride
+# / weather_feedback_stride，无需新增。
+@export var use_gdext_albedo: bool = false              # _apply_albedo_pass C++ 化
+@export var use_gdext_vegetation_dynamics: bool = false # _apply_vegetation_dynamics C++ 化
+@export var use_gdext_climate_feedback: bool = false    # _apply_weather_to_map_feedback_pass C++ 化
+@export var use_gdext_enum_atlas_pack: bool = false     # enum_atlas_upload pack C++ 化
+# ─── DOTS-Total-CPP（plan/dots-total-cpp）：剩余 GDScript 残余下沉 C++ ────
+# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick 数值 |Δ| ≤ 1e-5 或像素
+# bytes_match_ratio ≥ 99.5% 验收。C++ 不可用时入口自动回退到 GDScript 并
+# 打印一次 UNAVAILABLE / fallback 日志。
+#  • use_gdext_ocean_currents_pixel: bake_ocean_currents_slice 像素填充下沉
+#  • use_gdext_weather_field_pixel: bake_weather_field_only 像素填充下沉
+#  • use_gdext_sea_ice_atlas_pack: sea_ice_atlas_upload pack C++ 化（与现有
+#    use_gdext_sea_ice_atlas_prepare 互补：prepare 写权威 buffer，pack 走
+#    dirty-tile 增量打包）
+@export var use_gdext_ocean_currents_pixel: bool = false # 像素 baker C++ 化（25ms slice → < 6ms）
+@export var use_gdext_weather_field_pixel: bool = false  # weather field 像素 baker C++ 化
+@export var use_gdext_sea_ice_atlas_pack: bool = false   # sea_ice_atlas_upload pack C++ 化
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。
 # 默认 false：在 storage 同源（PR-2.1.1 climate Pass-A 写路径下移）完成前，

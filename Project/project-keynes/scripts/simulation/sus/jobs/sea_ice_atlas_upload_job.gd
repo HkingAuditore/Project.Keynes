@@ -28,12 +28,15 @@ const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 var baker: MapBakerScript = null
 var map: MapData = null
 var world: WorldData = null
+# Optional generator ref — MapGenerator passes self in via reconfigure() if it
+# wants to receive per-slice breakdown (path/prepare_ms/upload_ms/dirty_cells)
+# for fast tick WARN expansion. May remain null in unit tests.
+var generator = null
 
 # Mirrored stride for fast reconfigure() without rebuilding the whole Job.
 var stride: int = 2
 var _pending_upload: bool = false
 var _pending_prepare: Dictionary = {}
-
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_stride: int) -> void:
@@ -72,7 +75,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		var upload: Dictionary = baker.upload_prepared_sea_ice_fraction_atlas(world)
 		_pending_upload = false
 		var elapsed_upload_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		return {
+		var report_upload: Dictionary = {
 			"done": true,
 			"work_done": 0,
 			"elapsed_ms": elapsed_upload_ms,
@@ -85,12 +88,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"dirty_cells": int(_pending_prepare.get("dirty_cells", 0)),
 			"dirty_ratio": float(_pending_prepare.get("dirty_ratio", 0.0)),
 		}
+		if generator != null and generator.has_method("record_sea_ice_atlas_upload"):
+			generator.record_sea_ice_atlas_upload(report_upload)
+		return report_upload
 	var prep: Dictionary = baker.prepare_sea_ice_fraction_atlas(map, world)
 	_pending_prepare = prep
 	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", false)):
 		_pending_upload = true
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-	return {
+	var report_prep: Dictionary = {
 		"done": true,
 		"work_done": map.cell_count() if map != null else 0,
 		"elapsed_ms": elapsed_ms,
@@ -103,6 +109,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"dirty_cells": int(prep.get("dirty_cells", 0)),
 		"dirty_ratio": float(prep.get("dirty_ratio", 0.0)),
 	}
+	if generator != null and generator.has_method("record_sea_ice_atlas_upload"):
+		generator.record_sea_ice_atlas_upload(report_prep)
+	return report_prep
 
 
 ## Allow MapGenerator to retune the stride on the fly (climate profile reload).

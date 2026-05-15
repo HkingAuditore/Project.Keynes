@@ -241,8 +241,45 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 # 末尾通过 set_world_ext() 注入。null 时所有 C++ hook 走 GDScript fallback。
 # 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
 var _world_ext = null
+# DOTS-Final-Push 修复：sea_ice prepare / 其他需要 ClimateProfile 的路径不能再依赖
+# `world.get("config")`（WorldData 上根本没有 config 字段，永远返回 null，导致
+# `use_native` 一直 false 走 48ms GDScript 回扫）。改由 MapGenerator 在 bake_world
+# 末尾通过 set_climate_profile() 显式注入。null 时回退到旧的 cfg 参数路径。
+var _climate_profile = null
 # Block B (wind_field/B) 一次性诊断标记 — 仿 climate_b/F.3 / weather/F.1 路径。
 var _wind_b_first_run_logged: bool = false
+# DOTS-Final-Push 后续诊断 — wind stage 2 路径决策诊断（前 3 次进入 stage 2
+# 都打印，避免 once-only 在启动期被消耗 / 用户截断日志看不到首次打印的情况）。
+var _wind_b_path_log_count: int = 0
+# DOTS-Final-Push 后续诊断 — wind C++ commit 阶段 size-check 诊断。
+# 用于定位"_rc_wind>=0 但 commit 阶段静默 fallback"的边界 case（wspd_out 未回传等）。
+# 同样改为前 3 次都打印。
+var _wind_b_commit_diag_count: int = 0
+# DOTS-Final-Push 任务 6.2：sea_ice atlas prepare 路径选择诊断（once-only）。
+# 日志显示 path=gdscript 但 climate_profile default 是 true ——
+# 必须暴露 use_native 判定中四个条件分别命中情况，定位真正 false 的那一项。
+var _sea_ice_path_logged: bool = false
+# DOTS-Final-Push 任务 6.2：upwelling C++ 路径选择诊断（once-only）。
+# stage 6 GDScript fallback ~92ms 是当前最大瓶颈。原因可能是 _phys_wind_done_by_cpp
+# 没翻 true（wind C++ 路径失败），或 use_gdext_physical_circulation 没生效。
+var _upwelling_path_logged: bool = false
+# DOTS-Total-CPP 诊断：path-decision once-only 不够，需要每次 stage 6 都 log
+# 前 5 次完整路径决策 + 内层 fallback 原因 + 实测 GDScript fallback 耗时。
+var _upwelling_diag_count: int = 0
+# plan/dots-slp-psi-cpp — SLP stage 1 path-decision / commit-diag / fallback,
+# fronts 3 hits each (matches wind_field/B style; once-only logs are usually
+# consumed before the user sees them in long sessions).
+var _slp_path_log_count: int = 0
+var _slp_commit_diag_count: int = 0
+var _slp_first_run_logged: bool = false
+var _slp_native_ms_last: float = -1.0
+var _slp_path_str_last: String = "gdscript"
+# plan/dots-slp-psi-cpp — PSI stage 3+4+5 fused C++ path diagnostics.
+var _psi_path_log_count: int = 0
+var _psi_commit_diag_count: int = 0
+var _psi_first_run_logged: bool = false
+var _psi_native_ms_last: float = -1.0
+var _psi_path_str_last: String = "gdscript"
 
 # Phys Solve Sliced：求解状态机阶段。
 const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
@@ -367,52 +404,21 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.latitude_buffer = _bake_latitude_buffer(world.world_bounds, world.derived_size)
 	print("  latitude: %dms" % (Time.get_ticks_msec() - t))
 
-	# Phase 6：风带（每像素盛行风向，summer-default 当 baseline）
-	# Physical Wind & Ocean Circulation：当 cfg.climate_profile.physical_circulation_enabled = true 时
-	# 风场 / 洋流 / 上升流统一走 hex 求解 → 像素光栅化路径，三件产物一起在
-	# _physical_solve_for_phase 内部生成（_pending_wind_buf 也在此时写好）。
-	# 否则保留旧 _bake_wind_field + _bake_ocean_currents + _bake_ocean_upwelling 三段路径。
-	t = Time.get_ticks_msec()
-	if _use_physical_circulation(cfg):
-		# 一次性求解（season_phase=2.0 同旧基线）
-		_physical_solve_for_phase(map, world, hex_size, cfg, 2.0)
-		# 风场 buffer：直接拿 _physical_solve 写好的 _pending_wind_buf
-		world.wind_field_buffer = _pending_wind_buf if not _pending_wind_buf.is_empty() \
-				else _bake_wind_field(world.world_bounds, world.derived_size, 2.0)
-		print("  wind field (physical-hex): %dms" % (Time.get_ticks_msec() - t))
-		# Ocean current：用 hex → pixel 光栅化整张
-		t = Time.get_ticks_msec()
-		var W := world.derived_size.x
-		var H := world.derived_size.y
-		var cur_buf := PackedByteArray()
-		cur_buf.resize(W * H * 2)
-		_rasterize_ocean_current_slice_from_hex(world, cur_buf, 0, W * H)
-		world.ocean_current_buffer = cur_buf
-		print("  ocean currents (physical-hex): %dms" % (Time.get_ticks_msec() - t))
-		# Upwelling：同上
-		t = Time.get_ticks_msec()
-		var up_buf := PackedByteArray()
-		up_buf.resize(W * H)
-		_rasterize_upwelling_slice_from_hex(world, up_buf, 0, W * H)
-		world.ocean_upwelling_buffer = up_buf
-		print("  ocean upwelling (physical-hex): %dms" % (Time.get_ticks_msec() - t))
-		# 清掉一次性路径用过的中间状态，避免 OceanCurrentsJob 第一次切片误以为已求解过本轮。
-		_pending_phys_solved_phase = NAN
-		_pending_psi_state = null
-		_pending_wind_buf = PackedByteArray()
-	else:
-		world.wind_field_buffer = _bake_wind_field(world.world_bounds, world.derived_size, 2.0)
-		print("  wind field: %dms" % (Time.get_ticks_msec() - t))
-
-		# Phase 3：洋流向量场（RG8），仅海洋像素有意义。Phase 6 改为风驱动 + Ekman 偏转。
-		# Systemic Ocean Currents：v2 加入热盐驱动项（经向分量）+ 独立的 upwelling buffer。
-		t = Time.get_ticks_msec()
-		world.ocean_current_buffer = _bake_ocean_currents(map, hex_size, world, cfg)
-		print("  ocean currents: %dms" % (Time.get_ticks_msec() - t))
-
-		t = Time.get_ticks_msec()
-		world.ocean_upwelling_buffer = _bake_ocean_upwelling(map, hex_size, world, cfg)
-		print("  ocean upwelling: %dms" % (Time.get_ticks_msec() - t))
+	# C3 plan (vector_atlas removal)：风/洋流/上升流像素 buffer 已不再被任何
+	# 路径消费（hex_renderer / weather_layer 不再注入 vector_atlas，shader 端
+	# 退化为零向量 fallback）。bake_world 入口跳过 hex→pixel 喷射 + 编码三张
+	# 纹理。三件 buffer 仍保留为空 PackedByteArray，让 sample_*() 走 is_empty
+	# fast-fail 路径返回 Vector2.ZERO（GDScript 已无消费方，纯 dead-fallback）。
+	# 注：物理化路径下的 hex per-cell 解（cell.wind_vector / cell.ocean_current /
+	# cell.upwelling_strength）走另一条路径，由 PhysicalCirculationSolver 直写，
+	# 这里不需要触碰。旧 ny-only baseline 也彻底取消（无消费方）。
+	world.wind_field_buffer = PackedByteArray()
+	world.ocean_current_buffer = PackedByteArray()
+	world.ocean_upwelling_buffer = PackedByteArray()
+	_pending_phys_solved_phase = NAN
+	_pending_psi_state = null
+	_pending_wind_buf = PackedByteArray()
+	print("  wind/ocean/upwelling pixel buffers: skipped (vector_atlas removed)")
 
 	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减
 	t = Time.get_ticks_msec()
@@ -444,12 +450,12 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 海冰独立 R8 纹理（地形烘焙后初始化为全 0；首日 SUS Job 触发后会被实际数据 in-place update）。
 	world.sea_ice_tex = _encode_r8_tex(world.sea_ice_fraction_buffer, world.derived_size, world.sea_ice_tex)
 	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
-	world.vector_atlas_tex = _encode_vector_atlas(
-		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size
-	)
-	# Systemic Ocean Currents：编码独立的 R8 upwelling 纹理
-	world.upwelling_tex = _encode_upwelling_tex(world.ocean_upwelling_buffer, world.derived_size)
+	# C3 plan (vector_atlas removal)：vector_atlas_tex 与 upwelling_tex 已无 GPU
+	# 消费方（hex_renderer / weather_layer 不再 set_shader_parameter 注入它们，
+	# world_map.gdshader 仍声明 uniform 但因占位 null 纹理走零向量退化）。这里
+	# 不再编码这两张图。world.vector_atlas_tex / world.upwelling_tex 保持 null。
+	world.vector_atlas_tex = null
+	world.upwelling_tex = null
 	# v9.fbm-opt：共享 noise 贴图（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
@@ -519,61 +525,14 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 #   - world.ocean_upwelling_buffer（R8，重写）
 #   - world.vector_atlas_tex（重编码，包含新 RG = ocean_current）
 # 注意：wind_field_buffer 本身保持夏季基线不变，monsoon 仅作为 CPU 端融合项。
-func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
-		cfg: MapConfig, season_phase: float) -> void:
-	if world == null:
-		return
-	# Physical Wind & Ocean Circulation：当物理化开启时，rebake 也走 hex 求解 + 光栅化路径。
-	# 与 bake_world 入口策略相同：一次性把三件产物（wind / ocean_current / upwelling）烤好。
-	if _use_physical_circulation(cfg):
-		var t_phys := Time.get_ticks_msec()
-		_physical_solve_for_phase(map, world, hex_size, cfg, season_phase)
-		# 把 _pending_wind_buf 替换到 world.wind_field_buffer
-		if not _pending_wind_buf.is_empty():
-			world.wind_field_buffer = _pending_wind_buf
-		var W := world.derived_size.x
-		var H := world.derived_size.y
-		var cur_buf := PackedByteArray()
-		cur_buf.resize(W * H * 2)
-		_rasterize_ocean_current_slice_from_hex(world, cur_buf, 0, W * H)
-		world.ocean_current_buffer = cur_buf
-		var up_buf := PackedByteArray()
-		up_buf.resize(W * H)
-		_rasterize_upwelling_slice_from_hex(world, up_buf, 0, W * H)
-		world.ocean_upwelling_buffer = up_buf
-		world.vector_atlas_tex = _encode_vector_atlas(
-			world.ocean_current_buffer, world.wind_field_buffer,
-			world.derived_size, world.vector_atlas_tex
-		)
-		world.upwelling_tex = _encode_upwelling_tex(
-			world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
-		)
-		# 清状态，让 OceanCurrentsJob 下一轮第一片重新触发求解
-		_pending_phys_solved_phase = NAN
-		_pending_psi_state = null
-		_pending_wind_buf = PackedByteArray()
-		print("  rebake_ocean_currents (physical-hex, phase=%.2f): total=%dms" % [
-			season_phase, Time.get_ticks_msec() - t_phys
-		])
-		return
-	var t := Time.get_ticks_msec()
-	world.ocean_current_buffer = _bake_ocean_currents(map, hex_size, world, cfg, season_phase)
-	var t_cur := Time.get_ticks_msec() - t
-	t = Time.get_ticks_msec()
-	world.ocean_upwelling_buffer = _bake_ocean_upwelling(map, hex_size, world, cfg, season_phase)
-	var t_up := Time.get_ticks_msec() - t
-	# 重编码 vector atlas（RGBA8：RG=ocean, BA=wind）。wind 维持夏季基线不变。
-	world.vector_atlas_tex = _encode_vector_atlas(
-		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size, world.vector_atlas_tex
-	)
-	# Systemic Ocean Currents：同步重编码 upwelling R8 纹理（F6 调试层消费）
-	world.upwelling_tex = _encode_upwelling_tex(
-		world.ocean_upwelling_buffer, world.derived_size, world.upwelling_tex
-	)
-	print("  rebake_ocean_currents(phase=%.2f): currents=%dms upwelling=%dms" % [
-		season_phase, t_cur, t_up
-	])
+func rebake_ocean_currents(_map: MapData, _world: WorldData, _hex_size: float,
+		_cfg: MapConfig, _season_phase: float) -> void:
+	# C3 plan (vector_atlas removal)：季节切换时不再重 bake 像素 buffer。
+	# 视觉路径 (hex_renderer / weather_layer) 已退化为零向量 fallback；模拟路径
+	# 走 cell.* per-cell 解，与 vector_atlas 无关。直接 return 等同于把 ~49ms
+	# commit + ~30ms hex→pixel 整轮抹掉。
+	# 参数前缀加 _ 避免 unused-parameter 警告；保留签名给 main.gd / map_generator 调用方兼容。
+	pass
 
 # ─── SUS 切片烘焙接口（接入点 ① · 任务 3） ────────────────────────────────
 #
@@ -2089,11 +2048,28 @@ func prepare_sea_ice_fraction_atlas(map: MapData, world: WorldData) -> Dictionar
 		return out
 
 	_ensure_sea_ice_pixel_to_cell_index(map, world)
-	var cfg = world.get("config")
-	var cp = cfg.climate_profile if cfg != null and "climate_profile" in cfg else null
+	# DOTS-Final-Push 修复：优先用 set_climate_profile() 注入的引用；fallback 才走
+	# 老的 world.get("config") 路径——但 WorldData 没有 config 字段，那条永远是 null。
+	var cp = _climate_profile
+	if cp == null:
+		var cfg_legacy = world.get("config")
+		cp = cfg_legacy.climate_profile if cfg_legacy != null and "climate_profile" in cfg_legacy else null
 	var use_native: bool = cp != null and "use_gdext_sea_ice_atlas_prepare" in cp \
 			and bool(cp.use_gdext_sea_ice_atlas_prepare) \
 			and _world_ext != null and _world_ext.has_method("run_sea_ice_atlas_prepare")
+	# DOTS-Final-Push 任务 6.2：once-only 诊断打印——把 use_native 四个条件分别状态
+	# 暴露出来，定位 path=gdscript 的真因（cp null / flag 未挂 / flag false /
+	# _world_ext null / has_method false）。
+	if not _sea_ice_path_logged:
+		_sea_ice_path_logged = true
+		var cp_ok: bool = cp != null
+		var flag_attr_ok: bool = cp_ok and ("use_gdext_sea_ice_atlas_prepare" in cp)
+		var flag_val_ok: bool = flag_attr_ok and bool(cp.use_gdext_sea_ice_atlas_prepare)
+		var ext_ok: bool = _world_ext != null
+		var method_ok: bool = ext_ok and _world_ext.has_method("run_sea_ice_atlas_prepare")
+		print("[sea_ice_atlas_prepare] path-decision once-only: cp=%s flag_attr=%s flag_val=%s ext=%s method=%s -> use_native=%s" % [
+			str(cp_ok), str(flag_attr_ok), str(flag_val_ok), str(ext_ok), str(method_ok), str(use_native)
+		])
 	if use_native:
 		if _world_ext.has_method("refresh_slots_from_map"):
 			_world_ext.refresh_slots_from_map()
@@ -2160,8 +2136,13 @@ func _ensure_sea_ice_pixel_to_cell_index(map: MapData, world: WorldData) -> void
 
 
 func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, H: int, n: int) -> Dictionary:
-	_sea_ice_only_buf = PackedByteArray()
-	_sea_ice_only_buf.resize(n)
+	# DOTS-Final-Push 任务 6.2 / 方案 A：之前每次 prepare 都跑 2400 cell 字节比对
+	# 后再无条件跑 28800 像素回扫（var px in range(n)），即便所有 cell 都没翻面也
+	# 一样。32-day 的 sea_ice_atlas_upload p95=49ms（极端 232ms）的 prepare 部分
+	# 大概率卡在这里。优化：先做 cell 字节比对，dirty_cells==0 且 sea_ice_tex
+	# 已存在时直接 dirty=false 返回——不重新填 _sea_ice_only_buf（保持上一帧的
+	# buffer），upload 阶段也会被 SeaIceAtlasUploadJob 跳过（prep["dirty"]==false
+	# → 不进入 _pending_upload）。
 	var cell_bytes := PackedByteArray()
 	cell_bytes.resize(map.cell_count())
 	var dirty_cells: int = 0
@@ -2173,6 +2154,25 @@ func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, 
 		cell_bytes[i] = b
 		if _last_sea_ice_cell_bytes_packed.size() <= i or int(_last_sea_ice_cell_bytes_packed[i]) != b:
 			dirty_cells += 1
+	# Early-return：所有 cell 字节都没翻面 + 纹理已建立 + 缓存大小匹配 →
+	# 不重做 28800 像素回扫，直接复用上一帧 _sea_ice_only_buf（caller 不会
+	# 走 upload 分支，sea_ice_tex 维持当前内容）。
+	if dirty_cells == 0 and world.sea_ice_tex != null \
+			and _sea_ice_cache_size == Vector2i(W, H) \
+			and _sea_ice_only_buf.size() == n:
+		# _last_sea_ice_cell_bytes_packed 已与本帧一致，无需再赋值。
+		world.sea_ice_fraction_buffer = _sea_ice_only_buf
+		return {
+			"prepared": true,
+			"dirty": false,
+			"prepare_ms": 0.0,
+			"path": "gdscript_skip",
+			"dirty_cells": 0,
+			"dirty_ratio": 0.0,
+		}
+	# 有翻面 → 走完整像素回扫。
+	_sea_ice_only_buf = PackedByteArray()
+	_sea_ice_only_buf.resize(n)
 	for px in range(n):
 		var ci: int = _sea_ice_pixel_to_cell_idx[px] if px < _sea_ice_pixel_to_cell_idx.size() else -1
 		_sea_ice_only_buf[px] = cell_bytes[ci] if ci >= 0 and ci < cell_bytes.size() else 0
@@ -2189,6 +2189,10 @@ func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, 
 	}
 
 func bake_weather_field_only(map: MapData, world: WorldData) -> void:
+	# DEPRECATED（DOTS-Total-CPP 任务 7）：本函数沿用 GDScript 像素填充路径，
+	# fast tick 主路径 set_weather_field_texture(null) 已不再实际烘焙整张纹理；
+	# 仅保留兜底用途（手动 reset / regenerate 后首帧）。后续将由 weather_baker.gd
+	# 接管 dirty-tile pack；新代码路径**不要**调用此函数。
 	if world == null or map == null:
 		return
 	# Daily-sim perf opt（dirty 增量路径，与 bake_sea_ice_fraction_only / cover / vegetation
@@ -2681,6 +2685,21 @@ func _use_physical_circulation(cfg: MapConfig) -> bool:
 ## ext == null 时所有 C++ hook 退化为 GDScript path，行为零回归。
 func set_world_ext(ext) -> void:
 	_world_ext = ext
+	# DOTS-Final-Push 后续诊断：启动期烘焙阶段 _world_ext 还是 null（注入晚于
+	# bake_world），所以 once-only 诊断旗标在启动期就被消耗（打印过 ext=false /
+	# wind_cpp=false 的诊断，对运行期参考价值有限）。注入 _world_ext 时重置这些
+	# 旗标，让运行期 SUS 第一次进 stage 2/6 时重新打印一次真实路径决策。
+	_wind_b_first_run_logged = false
+	_wind_b_path_log_count = 0
+	_wind_b_commit_diag_count = 0
+	_upwelling_path_logged = false
+	_sea_ice_path_logged = false
+
+## DOTS-Final-Push 修复：注入 ClimateProfile 引用，让 sea_ice / albedo / veg_dyn /
+## feedback 等 C++ hook 能通过 `_climate_profile` 直接读 flag，不再走错误的
+## `world.get("config")` 路径。
+func set_climate_profile(cp) -> void:
+	_climate_profile = cp
 
 func reset_physical_solve_state() -> void:
 	_phys_stage = _PHYS_STAGE_NONE
@@ -2690,6 +2709,26 @@ func reset_physical_solve_state() -> void:
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	_pending_wind_buf = PackedByteArray()
+	# plan/dots-slp-psi-cpp — reset per-round path-decision counters & timings
+	# so a freshly-bound profile flag flip takes effect immediately on the
+	# next round (previous round's residual values would otherwise be sticky).
+	_slp_native_ms_last = -1.0
+	_slp_path_str_last = "gdscript"
+	_psi_native_ms_last = -1.0
+	_psi_path_str_last = "gdscript"
+
+# plan/dots-slp-psi-cpp — diagnostics getters for ocean_currents_job to attach
+# stage_slp_path / stage_slp_native_ms / stage_psi_path / stage_psi_native_ms
+# onto its slice-result dictionary (mirrors stage_0_path / stage_8_path naming
+# convention from season_refresh's _last_season_refresh_breakdown).
+func get_slp_path_str() -> String:
+	return _slp_path_str_last
+func get_slp_native_ms() -> float:
+	return _slp_native_ms_last
+func get_psi_path_str() -> String:
+	return _psi_path_str_last
+func get_psi_native_ms() -> float:
+	return _psi_native_ms_last
 
 # Phys Solve Sliced 入口 ② ：把 7 阶段求解推进 1 步，返回 true 表示本轮已彻底完成
 # （`_pending_phys_solved_phase = season_phase` 同时被设好）。
@@ -2726,18 +2765,103 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
-			PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
-			var cells_for_slp: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-			if map.slp_arr.size() == cells_for_slp.size():
-				for _i_slp_commit in range(cells_for_slp.size()):
-					var _c_slp_commit: HexCell = cells_for_slp[_i_slp_commit]
-					map.slp_arr[_i_slp_commit] = _c_slp_commit.slp if _c_slp_commit != null else 0.0
+			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
+			var _slp_done_by_cpp: bool = false
+			var _slp_native_ms: float = -1.0
+			if _slp_path_log_count < 3:
+				_slp_path_log_count += 1
+				var _s_prof_ok: bool = profile != null
+				var _s_pflag_attr_ok: bool = _s_prof_ok and ("use_gdext_slp_field" in profile)
+				var _s_pflag_val_ok: bool = _s_pflag_attr_ok and bool(profile.use_gdext_slp_field)
+				var _s_pext_ok: bool = _world_ext != null
+				var _s_pmethod_ok: bool = _s_pext_ok and _world_ext.has_method("run_slp_field_pass")
+				var _s_idx_ok: bool = map != null and map.has_indices()
+				var _s_gate_pass: bool = _s_pflag_val_ok and _s_pmethod_ok and _s_idx_ok
+				print("[slp_field] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s -> cpp_gate=%s" % [
+					_slp_path_log_count,
+					str(_s_prof_ok), str(_s_pflag_attr_ok), str(_s_pflag_val_ok),
+					str(_s_pext_ok), str(_s_pmethod_ok), str(_s_idx_ok), str(_s_gate_pass)
+				])
+			if profile != null and "use_gdext_slp_field" in profile \
+					and bool(profile.use_gdext_slp_field) \
+					and _world_ext != null and _world_ext.has_method("run_slp_field_pass") \
+					and map != null and map.has_indices():
+				var cells_for_slp_cpp: Array = map.iter_cells()
+				var n_slp: int = cells_for_slp_cpp.size()
+				var nb_idx_for_slp: PackedInt32Array = map.neighbor_indices_packed()
+				if n_slp > 0 and nb_idx_for_slp.size() >= n_slp * 6:
+					var water_ids_slp := PackedByteArray()
+					water_ids_slp.append(int(TerrainType.TERRAIN.OCEAN))
+					water_ids_slp.append(int(TerrainType.TERRAIN.COAST))
+					water_ids_slp.append(int(TerrainType.TERRAIN.REEF))
+					water_ids_slp.append(int(TerrainType.TERRAIN.KELP))
+					var knobs_slp := {
+						"n_cells": n_slp,
+						"hex_size": hex_size,
+						"season_phase": season_phase,
+						"smooth_passes": 1,  # mirrors PhysCircSolverScript._SLP_SMOOTH_PASSES
+						"world_bounds_pos_y": bounds.position.y,
+						"world_bounds_size_y": bounds.size.y,
+						"neighbor_indices": nb_idx_for_slp,
+						"water_terrain_ids": water_ids_slp,
+					}
+					var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
+					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
+						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
+						var slp_out: PackedFloat32Array = ret_slp.get("slp_out", PackedFloat32Array())
+						if _slp_commit_diag_count < 3:
+							_slp_commit_diag_count += 1
+							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d" % [
+								_slp_commit_diag_count, rc_slp, slp_out.size(), n_slp, map.slp_arr.size()
+							])
+						if rc_slp >= 0.0 and slp_out.size() == n_slp:
+							for _i_slp_cpp in range(n_slp):
+								var _c_slp_cpp: HexCell = cells_for_slp_cpp[_i_slp_cpp]
+								if _c_slp_cpp != null:
+									_c_slp_cpp.slp = slp_out[_i_slp_cpp]
+							if map.slp_arr.size() == n_slp:
+								for _i_slp_arr in range(n_slp):
+									map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
+							_slp_done_by_cpp = true
+							_slp_native_ms = rc_slp
+							if not _slp_first_run_logged:
+								_slp_first_run_logged = true
+								print("[slp_field] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ~36ms; target < 3ms)" % rc_slp)
+			if not _slp_done_by_cpp:
+				if _slp_path_log_count > 0 and _slp_path_log_count <= 3:
+					print("[slp_field] FALLBACK to GDScript solve_slp_field (call#%d) — see preceding path-decision / commit-diag for reason" % _slp_path_log_count)
+				PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
+				var cells_for_slp: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+				if map.slp_arr.size() == cells_for_slp.size():
+					for _i_slp_commit in range(cells_for_slp.size()):
+						var _c_slp_commit: HexCell = cells_for_slp[_i_slp_commit]
+						map.slp_arr[_i_slp_commit] = _c_slp_commit.slp if _c_slp_commit != null else 0.0
+			_slp_native_ms_last = _slp_native_ms
+			_slp_path_str_last = "gdext" if _slp_done_by_cpp else "gdscript"
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
 			# Block B（master 手册 §4 / dots-wind-validation.md）：wind solver C++ 化 hook。
 			# 默认 _world_ext == null 或 use_gdext_wind_field=false → 走 GDScript fallback。
 			# 触发开启条件：SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后 ClimateProfile 切 true。
 			var _wind_done_by_cpp: bool = false
+			# DOTS-Final-Push 后续诊断 — once-only 路径决策（仿 upwelling stage 6）。
+			# 与 _wind_b_first_run_logged 不同：那个只在 C++ 路径首次成功后打印；
+			# 这里在 stage 2 第一次执行时无条件打印各子条件命中状态，定位 cpp_gate
+			# 失败的真正源头（之前只通过 stage 6 间接看到 wind_cpp=false）。
+			if _wind_b_path_log_count < 3:
+				_wind_b_path_log_count += 1
+				var _w_prof_ok: bool = profile != null
+				var _w_pflag_attr_ok: bool = _w_prof_ok and ("use_gdext_wind_field" in profile)
+				var _w_pflag_val_ok: bool = _w_pflag_attr_ok and bool(profile.use_gdext_wind_field)
+				var _w_pext_ok: bool = _world_ext != null
+				var _w_pmethod_ok: bool = _w_pext_ok and _world_ext.has_method("run_wind_field_pass")
+				var _w_idx_ok: bool = map != null and map.has_indices()
+				var _w_gate_pass: bool = _w_pflag_val_ok and _w_pmethod_ok and _w_idx_ok
+				print("[wind_field/B] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s -> cpp_gate=%s" % [
+					_wind_b_path_log_count,
+					str(_w_prof_ok), str(_w_pflag_attr_ok), str(_w_pflag_val_ok),
+					str(_w_pext_ok), str(_w_pmethod_ok), str(_w_idx_ok), str(_w_gate_pass)
+				])
 			if profile != null and "use_gdext_wind_field" in profile \
 				and bool(profile.use_gdext_wind_field) \
 				and _world_ext != null and _world_ext.has_method("run_wind_field_pass"):
@@ -2778,6 +2902,14 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						var wx_arr: PackedFloat32Array = map.wind_x_arr
 						var wy_arr: PackedFloat32Array = map.wind_y_arr
 						var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
+						# DOTS-Final-Push 后续诊断：commit size 检查是 silent
+						# fallback 唯一缺口（rc>=0 但 size 不齐 → _phys_wind_done_by_cpp
+						# 仍是 false，stage 6 走 GDScript upwelling 92ms）。一次性 print。
+						if _wind_b_commit_diag_count < 3:
+							_wind_b_commit_diag_count += 1
+							print("[wind_field/B] commit-diag call#%d: rc=%.3f n_wind=%d wx=%d wy=%d wspd=%d map_wspd=%d" % [
+								_wind_b_commit_diag_count, float(_rc_wind), n_wind, wx_arr.size(), wy_arr.size(), wspd_arr.size(), map.wind_speed_arr.size()
+							])
 						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
 								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
 							for _i_w in range(n_wind):
@@ -2794,6 +2926,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 								print("[wind_field/B] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 35ms; charter §7 / dots-wind-validation.md target < 5ms)" % float(_rc_wind))
 			if not _wind_done_by_cpp:
 				_phys_wind_done_by_cpp = false
+				# DOTS-Final-Push 后续诊断：fallback 分支也打前 3 次，配合 path-decision /
+				# commit-diag 形成完整诊断三角（gate 失败 / commit size mismatch / 默默 fallback）。
+				if _wind_b_path_log_count > 0 and _wind_b_path_log_count <= 3:
+					print("[wind_field/B] FALLBACK to GDScript solve_wind_field (call#%d) — see preceding path-decision / commit-diag for reason" % _wind_b_path_log_count)
 				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
 			if heat_transport:
 				_phys_stage = _PHYS_STAGE_PSI_INIT
@@ -2803,9 +2939,127 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
 				_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_PSI_INIT:
-			_pending_psi_state = PhysCircSolverScript.init_psi_solver(map, hex_size, bounds)
-			_phys_psi_iters_done = 0
-			_phys_stage = _PHYS_STAGE_PSI_ITERS
+			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
+			var _psi_done_by_cpp: bool = false
+			var _psi_native_ms: float = -1.0
+			if _psi_path_log_count < 3:
+				_psi_path_log_count += 1
+				var _p_prof_ok: bool = profile != null
+				var _p_pflag_attr_ok: bool = _p_prof_ok and ("use_gdext_psi_solver" in profile)
+				var _p_pflag_val_ok: bool = _p_pflag_attr_ok and bool(profile.use_gdext_psi_solver)
+				var _p_pext_ok: bool = _world_ext != null
+				var _p_pmethod_ok: bool = _p_pext_ok and _world_ext.has_method("run_psi_solver_pass")
+				var _p_idx_ok: bool = map != null and map.has_indices()
+				var _p_heat_ok: bool = heat_transport
+				var _p_gate_pass: bool = _p_pflag_val_ok and _p_pmethod_ok and _p_idx_ok and _p_heat_ok
+				print("[psi_solver] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s heat=%s -> cpp_gate=%s" % [
+					_psi_path_log_count,
+					str(_p_prof_ok), str(_p_pflag_attr_ok), str(_p_pflag_val_ok),
+					str(_p_pext_ok), str(_p_pmethod_ok), str(_p_idx_ok),
+					str(_p_heat_ok), str(_p_gate_pass)
+				])
+			if heat_transport \
+					and profile != null and "use_gdext_psi_solver" in profile \
+					and bool(profile.use_gdext_psi_solver) \
+					and _world_ext != null and _world_ext.has_method("run_psi_solver_pass") \
+					and map != null and map.has_indices():
+				var cells_for_psi: Array = map.iter_cells()
+				var n_psi: int = cells_for_psi.size()
+				var nb_idx_for_psi: PackedInt32Array = map.neighbor_indices_packed()
+				# Pack current-frame wind state from cell.wind_vector / wind_speed.
+				# (map.wind_x_arr / wind_y_arr only valid when wind C++ path ran;
+				#  cell.* always reflects the freshly-solved wind regardless.)
+				var wx_arr_psi: PackedFloat32Array = PackedFloat32Array()
+				var wy_arr_psi: PackedFloat32Array = PackedFloat32Array()
+				var wspd_arr_psi: PackedFloat32Array = PackedFloat32Array()
+				wx_arr_psi.resize(n_psi)
+				wy_arr_psi.resize(n_psi)
+				wspd_arr_psi.resize(n_psi)
+				for _i_w_pack in range(n_psi):
+					var _c_wp: HexCell = cells_for_psi[_i_w_pack]
+					if _c_wp == null:
+						wx_arr_psi[_i_w_pack] = 0.0
+						wy_arr_psi[_i_w_pack] = 0.0
+						wspd_arr_psi[_i_w_pack] = 0.0
+					else:
+						wx_arr_psi[_i_w_pack] = _c_wp.wind_vector.x
+						wy_arr_psi[_i_w_pack] = _c_wp.wind_vector.y
+						wspd_arr_psi[_i_w_pack] = _c_wp.wind_speed
+				if n_psi > 0 and nb_idx_for_psi.size() >= n_psi * 6:
+					var water_ids_psi := PackedByteArray()
+					water_ids_psi.append(int(TerrainType.TERRAIN.OCEAN))
+					water_ids_psi.append(int(TerrainType.TERRAIN.COAST))
+					water_ids_psi.append(int(TerrainType.TERRAIN.REEF))
+					water_ids_psi.append(int(TerrainType.TERRAIN.KELP))
+					var cold_sink_temp: float = -0.05
+					if cfg != null and "COLD_SINK_TEMP" in cfg:
+						cold_sink_temp = float(cfg.COLD_SINK_TEMP)
+					var knobs_psi := {
+						"n_cells": n_psi,
+						"hex_size": hex_size,
+						"world_bounds_pos_y": bounds.position.y,
+						"world_bounds_size_y": bounds.size.y,
+						"neighbor_indices": nb_idx_for_psi,
+						"water_terrain_ids": water_ids_psi,
+						"wind_x_arr": wx_arr_psi,
+						"wind_y_arr": wy_arr_psi,
+						"wind_speed_arr": wspd_arr_psi,
+						"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
+						"psi_sor_omega": 1.20,
+						"psi_r_base": 0.10,
+						"psi_beta_floor": 0.05,
+						"psi_source_scale": 1.0,
+						"ocean_current_scale": 0.05,
+						"thermohaline_weight": 0.18,
+						"upwelling_highlat_abs": 0.6,
+						"cold_sink_temp": cold_sink_temp,
+					}
+					var ret_psi = _world_ext.run_psi_solver_pass(knobs_psi)
+					if ret_psi != null and typeof(ret_psi) == TYPE_DICTIONARY:
+						var rc_psi: float = float(ret_psi.get("elapsed_ms", -1.0))
+						var curl_out: PackedFloat32Array = ret_psi.get("wind_stress_curl_out", PackedFloat32Array())
+						var psi_out: PackedFloat32Array = ret_psi.get("ocean_psi_out", PackedFloat32Array())
+						var ocx_out: PackedFloat32Array = ret_psi.get("ocean_current_x_out", PackedFloat32Array())
+						var ocy_out: PackedFloat32Array = ret_psi.get("ocean_current_y_out", PackedFloat32Array())
+						if _psi_commit_diag_count < 3:
+							_psi_commit_diag_count += 1
+							print("[psi_solver] commit-diag call#%d: rc=%.3f n_water=%d curl=%d psi=%d ocx=%d ocy=%d n_cells=%d" % [
+								_psi_commit_diag_count, rc_psi,
+								int(ret_psi.get("n_water", -1)),
+								curl_out.size(), psi_out.size(), ocx_out.size(), ocy_out.size(), n_psi
+							])
+						if rc_psi >= 0.0 and curl_out.size() == n_psi and psi_out.size() == n_psi \
+								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
+							# Commit: write wind_stress_curl / ocean_psi for ALL cells
+							# (C++ already zeroed land cells); ocean_current only for
+							# water cells (preserve land Vector2.ZERO invariant maintained
+							# elsewhere; C++ also wrote 0 for land so it's safe to commit
+							# unconditionally).
+							for _i_pc in range(n_psi):
+								var _c_pc: HexCell = cells_for_psi[_i_pc]
+								if _c_pc == null:
+									continue
+								_c_pc.wind_stress_curl = curl_out[_i_pc]
+								_c_pc.ocean_psi = psi_out[_i_pc]
+								_c_pc.ocean_current = Vector2(ocx_out[_i_pc], ocy_out[_i_pc])
+							_psi_done_by_cpp = true
+							_psi_native_ms = rc_psi
+							if not _psi_first_run_logged:
+								_psi_first_run_logged = true
+								print("[psi_solver] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)" % rc_psi)
+			_psi_native_ms_last = _psi_native_ms
+			_psi_path_str_last = "gdext" if _psi_done_by_cpp else "gdscript"
+			if _psi_done_by_cpp:
+				# Skip stage 4 / 5: C++ pass did init+iters+finalize+commit.
+				_pending_psi_state = null
+				_phys_psi_iters_done = _PHYS_PSI_TOTAL_ITERS
+				_phys_stage = _PHYS_STAGE_UPWELLING
+			else:
+				if _psi_path_log_count > 0 and _psi_path_log_count <= 3:
+					print("[psi_solver] FALLBACK to GDScript init/iters/finalize (call#%d) — see preceding path-decision / commit-diag for reason" % _psi_path_log_count)
+				_pending_psi_state = PhysCircSolverScript.init_psi_solver(map, hex_size, bounds)
+				_phys_psi_iters_done = 0
+				_phys_stage = _PHYS_STAGE_PSI_ITERS
 		_PHYS_STAGE_PSI_ITERS:
 			var iters_to_do: int = mini(
 				_PHYS_PSI_ITERS_PER_STEP,
@@ -2823,14 +3077,40 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_UPWELLING:
 			var _upwelling_done_by_cpp: bool = false
+			# DOTS-Total-CPP 诊断：stage 6 整体 87ms 但 cpp 内部 0.045ms，瓶颈
+			# 此前定位在 GDScript 准备步骤；现在 C++ 路径已经稳定（实测
+			# STAGE-TOTAL ≈ 0.21ms），收尾把诊断收紧到只在第一次进入时打一组，
+			# 之后静默。要复现详细日志只需把 budget 改大或重置 _upwelling_diag_count = 0。
+			const _UPWELLING_DIAG_BUDGET: int = 1
+			var _diag_active: bool = _upwelling_diag_count < _UPWELLING_DIAG_BUDGET
+			var _t_stage_us: int = Time.get_ticks_usec()
+			if _diag_active:
+				_upwelling_diag_count += 1
+				var prof_ok: bool = profile != null
+				var pflag_attr_ok: bool = prof_ok and ("use_gdext_physical_circulation" in profile)
+				var pflag_val_ok: bool = pflag_attr_ok and bool(profile.use_gdext_physical_circulation)
+				var pext_ok: bool = _world_ext != null
+				var pmethod_ok: bool = pext_ok and _world_ext.has_method("run_physical_circulation_pass")
+				var wind_cpp_ok: bool = _phys_wind_done_by_cpp
+				var idx_ok: bool = map != null and map.has_indices()
+				var gate_pass: bool = pflag_val_ok and pmethod_ok and wind_cpp_ok and idx_ok
+				print("[upwelling/DIAG#%d] gate: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s wind_cpp=%s idx=%s -> cpp_gate=%s" % [
+					_upwelling_diag_count, str(prof_ok), str(pflag_attr_ok), str(pflag_val_ok), str(pext_ok),
+					str(pmethod_ok), str(wind_cpp_ok), str(idx_ok), str(gate_pass)
+				])
 			if profile != null and "use_gdext_physical_circulation" in profile \
 					and bool(profile.use_gdext_physical_circulation) \
 					and _world_ext != null and _world_ext.has_method("run_physical_circulation_pass") \
 					and _phys_wind_done_by_cpp \
 					and map.has_indices():
+				# T1: neighbor_indices_packed
+				var _t1_us: int = Time.get_ticks_usec()
 				var n_up: int = map.soa_size()
 				var nb_idx_up: PackedInt32Array = map.neighbor_indices_packed()
+				var _ms_t1: float = float(Time.get_ticks_usec() - _t1_us) / 1000.0
 				if n_up > 0 and nb_idx_up.size() >= n_up * 6:
+					# T2: 准备 knobs（PackedByteArray + Dictionary）
+					var _t2_us: int = Time.get_ticks_usec()
 					var water_ids_up := PackedByteArray()
 					water_ids_up.append(int(TerrainType.TERRAIN.OCEAN))
 					water_ids_up.append(int(TerrainType.TERRAIN.COAST))
@@ -2845,13 +3125,53 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"world_bounds_size_y": bounds.size.y,
 						"cold_sink_temp": (cfg.COLD_SINK_TEMP if cfg != null else -0.05),
 					}
+					var _ms_t2: float = float(Time.get_ticks_usec() - _t2_us) / 1000.0
+					# T3: refresh_slots_from_map
+					var _t3_us: int = Time.get_ticks_usec()
 					if _world_ext.has_method("refresh_slots_from_map"):
 						_world_ext.refresh_slots_from_map()
+					var _ms_t3: float = float(Time.get_ticks_usec() - _t3_us) / 1000.0
+					# T4: 真正调用 C++
+					var _t4_us: int = Time.get_ticks_usec()
 					var ret_up = _world_ext.run_physical_circulation_pass(knobs_up)
+					var _ms_t4: float = float(Time.get_ticks_usec() - _t4_us) / 1000.0
+					if _diag_active:
+						var rt_ok: bool = (typeof(ret_up) == TYPE_DICTIONARY)
+						var fb: bool = (not rt_ok) or bool(ret_up.get("fallback", true))
+						var rsn: String = (ret_up.get("reason", "") if rt_ok else "non-dict")
+						var em: float = (float(ret_up.get("elapsed_ms", -1.0)) if rt_ok else -1.0)
+						print("[upwelling/DIAG#%d] cpp-call: ret_type=%s fallback=%s reason='%s' elapsed_native_ms=%.3f" % [
+							_upwelling_diag_count, str(typeof(ret_up)), str(fb), rsn, em
+						])
+						print("[upwelling/DIAG#%d] BREAKDOWN: T1_nb_pack=%.2fms T2_knobs=%.2fms T3_refresh_slots=%.2fms T4_cpp_call=%.2fms (n=%d)" % [
+							_upwelling_diag_count, _ms_t1, _ms_t2, _ms_t3, _ms_t4, n_up
+						])
 					if typeof(ret_up) == TYPE_DICTIONARY and not bool(ret_up.get("fallback", true)):
 						_upwelling_done_by_cpp = true
+				else:
+					if _diag_active:
+						print("[upwelling/DIAG#%d] inner-skip: n_cells=%d nb_idx_size=%d (need >= %d)" % [
+							_upwelling_diag_count, n_up, nb_idx_up.size(), n_up * 6
+						])
+			else:
+				if _diag_active:
+					print("[upwelling/DIAG#%d] outer-skip: gate_pass=false (see gate line above)" % _upwelling_diag_count)
 			if not _upwelling_done_by_cpp:
+				var _t_fb_us: int = Time.get_ticks_usec()
 				PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
+				if _diag_active:
+					var _ms_fb: float = float(Time.get_ticks_usec() - _t_fb_us) / 1000.0
+					print("[upwelling/DIAG#%d] GDSCRIPT-FALLBACK ran=%.2fms (THIS IS THE BOTTLENECK)" % [
+						_upwelling_diag_count, _ms_fb
+					])
+			else:
+				if _diag_active:
+					print("[upwelling/DIAG#%d] CPP-PATH-OK (no GDScript fallback)" % _upwelling_diag_count)
+			if _diag_active:
+				var _ms_stage: float = float(Time.get_ticks_usec() - _t_stage_us) / 1000.0
+				print("[upwelling/DIAG#%d] STAGE-TOTAL=%.2fms (matches slow_slice if > 25ms)" % [
+					_upwelling_diag_count, _ms_stage
+				])
 			_phys_stage = _PHYS_STAGE_WIND_RASTER
 		_PHYS_STAGE_WIND_RASTER:
 			# 第一次进入 WIND_RASTER 时跑 NaN 守门 + 分配 buffer，之后每次推进
@@ -2879,6 +3199,20 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
 					PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
 				_ensure_pending_wind_size(world)
+				# DOTS-Total-CPP（A 方案 / wind raster）：第一次进入 stage 时尝试 C++
+				# 一次性 hex→pixel rasterize（620544 像素 ≤ 5ms），成功则直接收尾。
+				# 失败 → 透明回落到下面的 GDScript 像素切片路径。
+				# 复用 ClimateProfile.use_gdext_ocean_currents_pixel gate（同孪生场景）。
+				if profile != null and "use_gdext_ocean_currents_pixel" in profile \
+						and bool(profile.use_gdext_ocean_currents_pixel) \
+						and _world_ext != null \
+						and _world_ext.has_method("run_wind_field_rasterize"):
+					var _wr_res: Dictionary = run_wind_field_rasterize_full(map, world, cfg)
+					if not bool(_wr_res.get("fallback", true)):
+						_pending_phys_solved_phase = season_phase
+						_phys_stage = _PHYS_STAGE_DONE
+						_phys_wind_raster_idx = 0
+						return true
 			var s_idx: int = _phys_wind_raster_idx
 			var e_idx: int = mini(pix_total, s_idx + _PHYS_WIND_RASTER_PIXELS_PER_STEP)
 			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, s_idx, e_idx)
@@ -3069,3 +3403,135 @@ func _rasterize_upwelling_slice_from_hex(world: WorldData, dst: PackedByteArray,
 			continue
 		var up: float = clampf(cell.upwelling_strength, -1.0, 1.0)
 		dst[i] = clampi(int(round(128.0 + 127.0 * up)), 0, 255)
+
+
+# ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）────────────────────────
+# Ocean rasterize 一次性 hex→pixel byte 直出 — 替代 _rasterize_ocean_current_slice_from_hex
+# + _rasterize_upwelling_slice_from_hex 的 17 个 pixel slice。
+# Gate：caller 已确认 ClimateProfile.use_gdext_ocean_currents_pixel + ext.has_method。
+
+# 缓存 ocean rasterize 的 pixel→cell-index 表（与 sea_ice 缓存独立）。
+var _ocean_pixel_to_cell_idx: PackedInt32Array = PackedInt32Array()
+var _ocean_pixel_cache_size: Vector2i = Vector2i.ZERO
+
+
+func _ensure_ocean_pixel_to_cell_index(map: MapData, world: WorldData) -> void:
+	var n: int = int(world.derived_size.x) * int(world.derived_size.y)
+	if _ocean_pixel_cache_size == world.derived_size and _ocean_pixel_to_cell_idx.size() == n:
+		return
+	_ocean_pixel_to_cell_idx = PackedInt32Array()
+	_ocean_pixel_to_cell_idx.resize(n)
+	var lookup := world.pixel_to_cell_lookup
+	for i in range(n):
+		var cell = lookup[i] if i < lookup.size() else null
+		_ocean_pixel_to_cell_idx[i] = map.index_of(cell) if cell != null else -1
+	_ocean_pixel_cache_size = world.derived_size
+
+
+# 一次性把 ocean_current + upwelling SoA 通过 C++ rasterize 量化进
+# _pending_currents_buf / _pending_upwelling_buf / _vector_atlas_data。
+# 返回 Dictionary：{ "fallback": bool, "elapsed_ms": float, "pixels": int, "atlas_updated": bool }
+func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig) -> Dictionary:
+	var out := { "fallback": true, "elapsed_ms": -1.0, "pixels": 0, "atlas_updated": false }
+	if world == null or map == null:
+		out["reason"] = "missing world/map"
+		return out
+	if _world_ext == null or not _world_ext.has_method("run_ocean_field_rasterize"):
+		out["reason"] = "ext/method missing"
+		return out
+	# 必须先把 hex 求解推到 DONE — caller 已通过 _physical_solve_step_one 完成。
+	# pending_currents / pending_upwelling 缓冲就绪
+	_ensure_pending_currents_size(world)
+	_ensure_pending_upwelling_size(world)
+	_ensure_ocean_pixel_to_cell_index(map, world)
+
+	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
+	if _world_ext.has_method("refresh_slots_from_map"):
+		_world_ext.refresh_slots_from_map()
+
+	var W := int(world.derived_size.x)
+	var H := int(world.derived_size.y)
+	var n_px: int = W * H
+	# atlas_data fast path：若 _vector_atlas_data 已就位，让 C++ 同步写入
+	var atlas_ok: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+			and _vector_atlas_data.size() == n_px * 4)
+	var knobs: Dictionary = {
+		"n_cells": map.cell_count(),
+		"w": W,
+		"h": H,
+		"pixel_to_cell_idx": _ocean_pixel_to_cell_idx,
+		"dst_currents": _pending_currents_buf,
+		"dst_upwelling": _pending_upwelling_buf,
+		"update_atlas_data": atlas_ok,
+	}
+	if atlas_ok:
+		knobs["atlas_data"] = _vector_atlas_data
+	var res: Dictionary = _world_ext.run_ocean_field_rasterize(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		out["reason"] = String(res.get("reason", "unknown"))
+		return out
+	# C++ 端通过 ptrw 已修改 PackedByteArray；Dictionary 共享 ref，赋值即同步。
+	_pending_currents_buf = knobs["dst_currents"]
+	_pending_upwelling_buf = knobs["dst_upwelling"]
+	if atlas_ok:
+		_vector_atlas_data = knobs["atlas_data"]
+	out["fallback"] = false
+	out["elapsed_ms"] = float(res.get("elapsed_ms", 0.0))
+	out["pixels"] = int(res.get("pixels", 0))
+	out["atlas_updated"] = bool(res.get("atlas_updated", false))
+	return out
+
+
+# ─── DOTS-Total-CPP（A 方案 / wind raster 孪生）─────────────────────────
+# Wind rasterize 一次性 hex→pixel byte 直出 — 替代 _rasterize_wind_slice_from_hex
+# 在 _PHYS_STAGE_WIND_RASTER 中跑 21 片 × ~87ms 的 GDScript 循环。
+# 复用 _ocean_pixel_to_cell_idx 缓存（同一 pixel→cell 映射）。
+#
+# Gate：caller 已确认 ClimateProfile.use_gdext_ocean_currents_pixel + ext.has_method。
+# 返回 Dictionary：{ "fallback": bool, "elapsed_ms": float, "pixels": int, "atlas_updated": bool }
+func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig) -> Dictionary:
+	var out := { "fallback": true, "elapsed_ms": -1.0, "pixels": 0, "atlas_updated": false }
+	if world == null or map == null:
+		out["reason"] = "missing world/map"
+		return out
+	if _world_ext == null or not _world_ext.has_method("run_wind_field_rasterize"):
+		out["reason"] = "ext/method missing"
+		return out
+	# pending_wind 缓冲就绪
+	_ensure_pending_wind_size(world)
+	# pixel→cell idx 表（与 ocean rasterize 共用同一张表）
+	_ensure_ocean_pixel_to_cell_index(map, world)
+
+	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
+	if _world_ext.has_method("refresh_slots_from_map"):
+		_world_ext.refresh_slots_from_map()
+
+	var W := int(world.derived_size.x)
+	var H := int(world.derived_size.y)
+	var n_px: int = W * H
+	# atlas_data fast path：若 _vector_atlas_data 已就位，让 C++ 同步写 [+2]/[+3]
+	var atlas_ok: bool = (_vector_atlas_data_size == Vector2i(W, H) \
+			and _vector_atlas_data.size() == n_px * 4)
+	var knobs: Dictionary = {
+		"n_cells": map.cell_count(),
+		"w": W,
+		"h": H,
+		"pixel_to_cell_idx": _ocean_pixel_to_cell_idx,
+		"dst_wind": _pending_wind_buf,
+		"update_atlas_data": atlas_ok,
+	}
+	if atlas_ok:
+		knobs["atlas_data"] = _vector_atlas_data
+	var res: Dictionary = _world_ext.run_wind_field_rasterize(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		out["reason"] = String(res.get("reason", "unknown"))
+		return out
+	# C++ 端通过 ptrw 已修改 PackedByteArray；Dictionary 共享 ref，赋值即同步。
+	_pending_wind_buf = knobs["dst_wind"]
+	if atlas_ok:
+		_vector_atlas_data = knobs["atlas_data"]
+	out["fallback"] = false
+	out["elapsed_ms"] = float(res.get("elapsed_ms", 0.0))
+	out["pixels"] = int(res.get("pixels", 0))
+	out["atlas_updated"] = bool(res.get("atlas_updated", false))
+	return out

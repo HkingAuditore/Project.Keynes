@@ -3527,6 +3527,545 @@ double DCWorldExt::run_transpiration_pass(const Dictionary &knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+// ─── DOTS-Final-Push 任务 2：run_albedo_pass ────────────────────────────
+//
+// 1:1 mirror of scripts/geography/map_generator.gd::_apply_albedo_pass.
+// 算法极简：陆地 cell 上 dt = (ref_alb - alb) * gain，alb 受 SNOW/GLACIER
+// cover 上限钳制为 0.75。无邻居访问，无 snapshot —— 单 cell 独立计算。
+//
+// 与 climate_pass_b 共享 cell_is_water / cell_vegetation 两个 SoA 槽位，
+// 同套 albedo_table（按 VegetationType.VEG enum 顺序的 PackedFloat32Array）。
+// climate_pass_b 用的是 foliage_table，本 pass 用的是 albedo_table —— 两表
+// 在 GDScript caller 端各自缓存，C++ 不做合表。
+double DCWorldExt::run_albedo_pass(const Dictionary &knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_albedo_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    // ─── Resolve slot ids ───────────────────────────────────────────────
+    const int sid_iswater = component_id(StringName("cell_is_water"));
+    const int sid_veg     = component_id(StringName("cell_vegetation"));
+    const int sid_cover   = component_id(StringName("cell_cover"));
+    const int sid_temp    = component_id(StringName("cell_temp"));
+    if (sid_iswater < 0 || sid_veg < 0 || sid_cover < 0 || sid_temp < 0) {
+        diag("missing slot id (cell_is_water/vegetation/cover/temp)");
+        return -1.0;
+    }
+
+    // ─── Pull scalars from knobs ────────────────────────────────────────
+    if (!knobs.has("n_cells") || !knobs.has("reference_albedo") ||
+        !knobs.has("albedo_temp_gain") || !knobs.has("albedo_table")) {
+        diag("knobs missing required keys (n_cells / reference_albedo / albedo_temp_gain / albedo_table)");
+        return -1.0;
+    }
+    const int n_cells = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const float reference_albedo = float(knobs["reference_albedo"]);
+    const float albedo_temp_gain = float(knobs["albedo_temp_gain"]);
+    const float snow_cover_albedo = float(knobs.get("snow_cover_albedo", 0.75f));
+    // CoverType.CV.SNOW = 1, CV.GLACIER = 2 (cover_type.gd:16-24)
+    const uint8_t cover_snow_id    = uint8_t(int(knobs.get("cover_snow_id", 1)));
+    const uint8_t cover_glacier_id = uint8_t(int(knobs.get("cover_glacier_id", 2)));
+
+    // ─── Pull albedo_table ──────────────────────────────────────────────
+    PackedFloat32Array albedo_arr = knobs["albedo_table"];
+    const int albedo_size = albedo_arr.size();
+    if (albedo_size <= 0) { diag("albedo_table empty"); return -1.0; }
+
+    // ─── Acquire slot arrays + validate sizes ───────────────────────────
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_veg     = _slots.write[sid_veg];
+    Slot &s_cover   = _slots.write[sid_cover];
+    Slot &s_temp    = _slots.write[sid_temp];
+    if (s_iswater.arr_u8.size() != n_cells ||
+        s_veg.arr_u8.size()     != n_cells ||
+        s_cover.arr_u8.size()   != n_cells ||
+        s_temp.arr_f32.size()   != n_cells) {
+        diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+
+    const uint8_t * const __restrict IW    = s_iswater.arr_u8.ptr();
+    const uint8_t * const __restrict VG    = s_veg.arr_u8.ptr();
+    const uint8_t * const __restrict CV    = s_cover.arr_u8.ptr();
+    float         * const __restrict T     = s_temp.arr_f32.ptrw();
+    const float   * const __restrict ALB   = albedo_arr.ptr();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── Main loop ──────────────────────────────────────────────────────
+    for (int i = 0; i < n_cells; ++i) {
+        if (IW[i] != 0) continue;                           // skip water cells
+        const uint8_t veg_id = VG[i];
+        float alb = (veg_id < albedo_size) ? ALB[veg_id] : 0.0f;
+        const uint8_t cover_id = CV[i];
+        if (cover_id == cover_snow_id || cover_id == cover_glacier_id) {
+            if (alb < snow_cover_albedo) alb = snow_cover_albedo;
+        }
+        const float dt = (reference_albedo - alb) * albedo_temp_gain;
+        float v = T[i] + dt;
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        T[i] = v;
+    }
+
+    // §11.2 flush: push CoW-detached cell_temp back to MapData
+    _flush_slot_to_map(sid_temp);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── DOTS-Final-Push 任务 3：run_vegetation_dynamics_pass ────────────────
+//
+// 1:1 mirror of scripts/geography/map_generator.gd::_apply_vegetation_dynamics
+// 主循环（含 vitality / streak 更新）；演替触发本身（写 cell.vegetation /
+// base_vegetation / current_state）由 GDScript 后处理（与 sea_ice flip_lists
+// 同模式），C++ 仅输出 succession_indices + succession_to_veg。
+//
+// vitality / low_streak / high_streak 当前未在 SoA schema 中（仍是 HexCell
+// 私有字段），所以走 knobs in/out PackedArray 模式：caller pack 进入 → C++
+// 写回 → caller unpack 回 cell。N=2400 时 6 个 PackedArray 一进一出的总开销
+// 约 0.05ms，远小于跑算法的 ~9ms。
+double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_vegetation_dynamics_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    // ─── Resolve slot ids ───────────────────────────────────────────────
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_veg      = component_id(StringName("cell_vegetation"));
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_moist    = component_id(StringName("cell_moisture"));
+    const int sid_wt_type  = component_id(StringName("cell_weather_type"));
+    const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
+    const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
+    if (sid_iswater < 0 || sid_veg < 0 || sid_temp < 0 || sid_moist < 0 ||
+        sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
+        diag("missing slot id (cell_is_water/vegetation/temp/moisture/weather_type/weather_intensity/weather_field_init)");
+        return -1.0;
+    }
+
+    // ─── Pull scalars ───────────────────────────────────────────────────
+    static const char *required_scalars[] = {
+        "n_cells", "day_scale", "streak_days",
+        "vitality_change_rate", "compat_harshness",
+        "low_threshold", "high_threshold",
+        "succession_degrade_days", "succession_upgrade_days",
+        "n_wt", "wt_clear_id", "veg_none_id",
+    };
+    for (const char *k : required_scalars) {
+        if (!knobs.has(k)) { diag("knobs missing required scalar key"); return -1.0; }
+    }
+    const int   n_cells       = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const float day_scale_raw = float(knobs["day_scale"]);
+    const float scale         = day_scale_raw < 1.0f ? 1.0f : day_scale_raw;
+    const int   streak_days   = int(knobs["streak_days"]);
+    const float rate          = float(knobs["vitality_change_rate"]);
+    const float harshness     = float(knobs["compat_harshness"]);
+    const float low_thresh    = float(knobs["low_threshold"]);
+    const float high_thresh   = float(knobs["high_threshold"]);
+    const int   degrade_days  = int(knobs["succession_degrade_days"]);
+    const int   upgrade_days  = int(knobs["succession_upgrade_days"]);
+    const int   n_wt          = int(knobs["n_wt"]);
+    const int   wt_clear_id   = int(knobs["wt_clear_id"]);
+    const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
+    if (n_wt <= 0) { diag("n_wt <= 0"); return -1.0; }
+
+    // ─── Pull tables ────────────────────────────────────────────────────
+    static const char *required_tables[] = {
+        "ideal_temp_table", "ideal_moist_table",
+        "temp_tol_table", "moist_tol_table",
+        "weather_penalty_table", "resistance_table",
+        "next_up_table", "next_down_table",
+        "vitality_arr", "low_streak_arr", "high_streak_arr",
+    };
+    for (const char *k : required_tables) {
+        if (!knobs.has(k)) { diag("knobs missing required table key"); return -1.0; }
+    }
+    PackedFloat32Array ideal_t_arr   = knobs["ideal_temp_table"];
+    PackedFloat32Array ideal_m_arr   = knobs["ideal_moist_table"];
+    PackedFloat32Array tol_t_arr     = knobs["temp_tol_table"];
+    PackedFloat32Array tol_m_arr     = knobs["moist_tol_table"];
+    PackedFloat32Array wt_pen_arr    = knobs["weather_penalty_table"];
+    PackedFloat32Array resist_arr    = knobs["resistance_table"];
+    PackedByteArray    next_up_arr   = knobs["next_up_table"];
+    PackedByteArray    next_down_arr = knobs["next_down_table"];
+    PackedFloat32Array vitality_arr  = knobs["vitality_arr"];
+    PackedInt32Array   low_streak    = knobs["low_streak_arr"];
+    PackedInt32Array   high_streak   = knobs["high_streak_arr"];
+
+    const int n_veg = ideal_t_arr.size();
+    if (n_veg <= 0) { diag("ideal_temp_table empty"); return -1.0; }
+    if (ideal_m_arr.size() != n_veg || tol_t_arr.size() != n_veg ||
+        tol_m_arr.size() != n_veg || next_up_arr.size() != n_veg ||
+        next_down_arr.size() != n_veg) {
+        diag("VEG-indexed table size mismatch");
+        return -1.0;
+    }
+    if (wt_pen_arr.size() < n_wt) { diag("weather_penalty_table size < n_wt"); return -1.0; }
+    if (resist_arr.size() != n_veg * n_wt) {
+        diag("resistance_table size != n_veg * n_wt");
+        return -1.0;
+    }
+    if (vitality_arr.size() != n_cells || low_streak.size() != n_cells ||
+        high_streak.size() != n_cells) {
+        diag("vitality/streak in/out array size mismatch");
+        return -1.0;
+    }
+
+    // ─── Acquire slot arrays + validate sizes ───────────────────────────
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_veg     = _slots.write[sid_veg];
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_moist   = _slots.write[sid_moist];
+    Slot &s_wt_type = _slots.write[sid_wt_type];
+    Slot &s_wt_int  = _slots.write[sid_wt_int];
+    Slot &s_wt_init = _slots.write[sid_wt_init];
+    if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
+        s_temp.arr_f32.size()   != n_cells || s_moist.arr_f32.size()  != n_cells ||
+        s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
+        s_wt_init.arr_u8.size() != n_cells) {
+        diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+
+    const uint8_t * const __restrict IW   = s_iswater.arr_u8.ptr();
+    const uint8_t * const __restrict VG   = s_veg.arr_u8.ptr();
+    const float   * const __restrict T    = s_temp.arr_f32.ptr();
+    const float   * const __restrict M    = s_moist.arr_f32.ptr();
+    const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
+    const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
+    const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
+    const float   * const __restrict IDT  = ideal_t_arr.ptr();
+    const float   * const __restrict IDM  = ideal_m_arr.ptr();
+    const float   * const __restrict TLT  = tol_t_arr.ptr();
+    const float   * const __restrict TLM  = tol_m_arr.ptr();
+    const float   * const __restrict WPN  = wt_pen_arr.ptr();
+    const float   * const __restrict RES  = resist_arr.ptr();
+    const uint8_t * const __restrict NXU  = next_up_arr.ptr();
+    const uint8_t * const __restrict NXD  = next_down_arr.ptr();
+    float   * const __restrict VIT  = vitality_arr.ptrw();
+    int32_t * const __restrict LSK  = low_streak.ptrw();
+    int32_t * const __restrict HSK  = high_streak.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── Output candidate buffers (会大幅小于 n_cells，先 reserve 64) ────
+    std::vector<int32_t> succ_indices;
+    std::vector<uint8_t> succ_to_veg;
+    succ_indices.reserve(64);
+    succ_to_veg.reserve(64);
+
+    // ─── Main loop ──────────────────────────────────────────────────────
+    for (int i = 0; i < n_cells; ++i) {
+        if (IW[i] != 0) continue;                                  // skip water
+        const uint8_t v_id = VG[i];
+        const float temp = T[i];
+        const float moist = M[i];
+
+        // compat = exp(-0.5 * (dt² + dm²)) — guard tol > 0.01 (mirror GDScript max(tol,0.01))
+        float compat = 0.0f;
+        if (v_id < n_veg) {
+            const float tt = TLT[v_id] < 0.01f ? 0.01f : TLT[v_id];
+            const float tm = TLM[v_id] < 0.01f ? 0.01f : TLM[v_id];
+            const float dt = (temp  - IDT[v_id]) / tt;
+            const float dm = (moist - IDM[v_id]) / tm;
+            const float k = 0.5f * (dt * dt + dm * dm);
+            compat = std::exp(-k);
+        }
+
+        // dv (asymmetric drift + dead zone in (0.4, 0.6); NONE skipped)
+        float dv = 0.0f;
+        if (v_id != veg_none_id) {
+            if (compat >= 0.6f) {
+                dv = (compat - 0.5f) * 2.0f * rate;
+            } else if (compat <= 0.4f) {
+                dv = -(0.5f - compat) * 2.0f * rate * harshness;
+            }
+        }
+
+        // weather penalty (clamp wt to valid id range; no init → CLEAR)
+        int wt = wt_clear_id;
+        float wi = 0.0f;
+        if (WTIN[i] != 0) {
+            wt = int(WTT[i]);
+            wi = WTI[i];
+        }
+        float base_pen = (wt >= 0 && wt < wt_pen_arr.size()) ? WPN[wt] : 0.0f;
+        float resist = 0.0f;
+        if (v_id < n_veg && wt >= 0 && wt < n_wt) {
+            resist = RES[int(v_id) * n_wt + wt];
+        }
+        const float penalty = base_pen * wi * (1.0f - resist);
+        dv -= penalty;
+
+        // vitality update (clamp 0..1)
+        float vit = VIT[i] + dv * scale;
+        if (vit < 0.0f) vit = 0.0f;
+        else if (vit > 1.0f) vit = 1.0f;
+        VIT[i] = vit;
+
+        // streak update
+        int ls = LSK[i];
+        int hs = HSK[i];
+        if (vit < low_thresh) {
+            ls += streak_days;
+            hs = 0;
+        } else if (vit > high_thresh) {
+            hs += streak_days;
+            ls = 0;
+        } else {
+            ls -= streak_days; if (ls < 0) ls = 0;
+            hs -= streak_days; if (hs < 0) hs = 0;
+        }
+
+        // succession candidate decision (degrade priority — mirror GDScript order)
+        bool fired = false;
+        if (ls >= degrade_days) {
+            uint8_t nxt = (v_id < n_veg) ? NXD[v_id] : v_id;
+            if (nxt != v_id) {
+                succ_indices.push_back(i);
+                succ_to_veg.push_back(nxt);
+                ls = 0;
+                hs = 0;
+                fired = true;
+            } else {
+                // 没有下家：把 ls 清零防止反复触发（与 GDScript 一致）
+                ls = 0;
+            }
+        }
+        if (!fired && hs >= upgrade_days) {
+            uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
+            if (nxt != v_id) {
+                succ_indices.push_back(i);
+                succ_to_veg.push_back(nxt);
+                ls = 0;
+                hs = 0;
+            } else {
+                hs = 0;
+            }
+        }
+        LSK[i] = ls;
+        HSK[i] = hs;
+    }
+
+    // ─── Pack succession results back into knobs ────────────────────────
+    PackedInt32Array out_indices;
+    PackedByteArray  out_to_veg;
+    const int n_succ = int(succ_indices.size());
+    out_indices.resize(n_succ);
+    out_to_veg.resize(n_succ);
+    if (n_succ > 0) {
+        std::memcpy(out_indices.ptrw(), succ_indices.data(), n_succ * sizeof(int32_t));
+        std::memcpy(out_to_veg.ptrw(),  succ_to_veg.data(),  n_succ * sizeof(uint8_t));
+    }
+    knobs["succession_indices"] = out_indices;
+    knobs["succession_to_veg"]  = out_to_veg;
+    knobs["stat_succession_count"] = n_succ;
+
+    // 写回 in/out arrays（CoW：caller 保留同一份引用，ptrw 已经写过了）
+    knobs["vitality_arr"]   = vitality_arr;
+    knobs["low_streak_arr"] = low_streak;
+    knobs["high_streak_arr"]= high_streak;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── DOTS-Final-Push 任务 4：run_climate_feedback_pass ───────────────────
+//
+// 1:1 mirror of scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass.
+// 算法两段：
+//   ① 长期 ocean→base_moisture 漂移（陆地 cell，邻水均值 anomaly 驱动）
+//   ② 当日 weather→soil/veg_growth 累加（小权重，clamp ≤ per_day_clamp）
+// 字段 soil_moisture / veg_growth_pressure 当前未在 SoA schema 中，走 in/out
+// PackedArray 模式（与 vegetation_dynamics 的 vitality/streak 同模式）。
+// base_moisture 已有 cell_base_moisture SoA，C++ 直读直写。
+double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_climate_feedback_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    // ─── Resolve slot ids ───────────────────────────────────────────────
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_wt_type  = component_id(StringName("cell_weather_type"));
+    const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
+    const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
+    const int sid_base_m   = component_id(StringName("cell_base_moisture"));
+    if (sid_iswater < 0 || sid_wt_type < 0 || sid_wt_int < 0 ||
+        sid_wt_init < 0 || sid_base_m < 0) {
+        diag("missing slot id (cell_is_water/weather_type/weather_intensity/weather_field_init/base_moisture)");
+        return -1.0;
+    }
+
+    // ─── Pull scalars ───────────────────────────────────────────────────
+    static const char *required_scalars[] = {
+        "n_cells", "soil_gain", "veg_gain", "scale", "per_day_clamp",
+        "ocean_drift_gain", "wt_clear_id",
+        "wt_rain_id", "wt_storm_id", "wt_monsoon_id",
+        "wt_blizzard_id", "wt_drought_id", "wt_heatwave_id",
+    };
+    for (const char *k : required_scalars) {
+        if (!knobs.has(k)) { diag("knobs missing required scalar key"); return -1.0; }
+    }
+    const int   n_cells          = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const float soil_gain        = float(knobs["soil_gain"]);
+    const float veg_gain         = float(knobs["veg_gain"]);
+    const float scale            = float(knobs["scale"]);
+    const float per_day_clamp    = float(knobs["per_day_clamp"]);
+    const float ocean_drift_gain = float(knobs["ocean_drift_gain"]);
+    const int   wt_rain_id       = int(knobs["wt_rain_id"]);
+    const int   wt_storm_id      = int(knobs["wt_storm_id"]);
+    const int   wt_monsoon_id    = int(knobs["wt_monsoon_id"]);
+    const int   wt_blizzard_id   = int(knobs["wt_blizzard_id"]);
+    const int   wt_drought_id    = int(knobs["wt_drought_id"]);
+    const int   wt_heatwave_id   = int(knobs["wt_heatwave_id"]);
+
+    // ─── Pull PackedArrays ──────────────────────────────────────────────
+    if (!knobs.has("neighbor_indices") || !knobs.has("temp_transport_anomaly") ||
+        !knobs.has("soil_moisture_arr") || !knobs.has("veg_growth_pressure_arr")) {
+        diag("knobs missing required PackedArray key");
+        return -1.0;
+    }
+    PackedInt32Array   nb_arr        = knobs["neighbor_indices"];
+    PackedFloat32Array tta_arr       = knobs["temp_transport_anomaly"];
+    PackedFloat32Array soil_arr      = knobs["soil_moisture_arr"];
+    PackedFloat32Array vg_arr        = knobs["veg_growth_pressure_arr"];
+    if (nb_arr.size() < n_cells * 6)    { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
+    if (tta_arr.size() != n_cells)      { diag("temp_transport_anomaly size mismatch"); return -1.0; }
+    if (soil_arr.size() != n_cells)     { diag("soil_moisture_arr size mismatch"); return -1.0; }
+    if (vg_arr.size() != n_cells)       { diag("veg_growth_pressure_arr size mismatch"); return -1.0; }
+
+    // ─── Acquire slot arrays + validate sizes ───────────────────────────
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_wt_type = _slots.write[sid_wt_type];
+    Slot &s_wt_int  = _slots.write[sid_wt_int];
+    Slot &s_wt_init = _slots.write[sid_wt_init];
+    Slot &s_base_m  = _slots.write[sid_base_m];
+    if (s_iswater.arr_u8.size() != n_cells || s_wt_type.arr_u8.size() != n_cells ||
+        s_wt_int.arr_f32.size() != n_cells || s_wt_init.arr_u8.size() != n_cells ||
+        s_base_m.arr_f32.size()  != n_cells) {
+        diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+
+    const uint8_t * const __restrict IW    = s_iswater.arr_u8.ptr();
+    const uint8_t * const __restrict WTT   = s_wt_type.arr_u8.ptr();
+    const float   * const __restrict WTI   = s_wt_int.arr_f32.ptr();
+    const uint8_t * const __restrict WTIN  = s_wt_init.arr_u8.ptr();
+    float         * const __restrict BM    = s_base_m.arr_f32.ptrw();
+    const int32_t * const __restrict NB    = nb_arr.ptr();
+    const float   * const __restrict TTA   = tta_arr.ptr();
+    float         * const __restrict SOIL  = soil_arr.ptrw();
+    float         * const __restrict VG    = vg_arr.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── Main loop ──────────────────────────────────────────────────────
+    for (int i = 0; i < n_cells; ++i) {
+        if (IW[i] != 0) continue;                              // skip water cells
+
+        // ① ocean → base_moisture drift（年尺度，每日 |Δ| ≤ per_day_clamp）
+        if (ocean_drift_gain > 0.0f) {
+            float sum_an = 0.0f;
+            int   n_water = 0;
+            const int base = i * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t ni = NB[base + d];
+                if (ni < 0) continue;
+                if (IW[ni] != 0) {
+                    sum_an += TTA[ni];
+                    n_water += 1;
+                }
+            }
+            if (n_water > 0) {
+                const float avg_an = sum_an / float(n_water);
+                if (std::fabs(avg_an) > 0.005f) {
+                    float coastal_ratio = float(n_water) / 6.0f;
+                    if (coastal_ratio > 1.0f) coastal_ratio = 1.0f;
+                    float d_base = ocean_drift_gain * avg_an * coastal_ratio * scale;
+                    if (d_base < -per_day_clamp) d_base = -per_day_clamp;
+                    else if (d_base > per_day_clamp) d_base = per_day_clamp;
+                    float bm = BM[i] + d_base;
+                    if (bm < 0.0f) bm = 0.0f;
+                    else if (bm > 1.0f) bm = 1.0f;
+                    BM[i] = bm;
+                }
+            }
+        }
+
+        // ② weather → soil / vegetation_growth_pressure 累加（小权重）
+        const bool init = WTIN[i] != 0;
+        const int   wt = init ? int(WTT[i]) : -1;             // -1 = uninit (== CLEAR semantically)
+        const float wi = init ? WTI[i] : 0.0f;
+        if (wi < 0.01f) continue;
+
+        float precip = 0.0f;
+        if      (wt == wt_rain_id)     precip = wi;
+        else if (wt == wt_storm_id)    precip = wi * 0.8f;
+        else if (wt == wt_monsoon_id)  precip = wi * 1.2f;
+        else if (wt == wt_blizzard_id) precip = wi * 0.3f;
+        else if (wt == wt_drought_id)  precip = -wi * 0.6f;
+        else if (wt == wt_heatwave_id) precip = -wi * 0.4f;
+        // else: precip = 0.0 (CLEAR / FOG / etc.)
+
+        // soil_moisture (clamp -0.5..0.5)
+        float d_soil = soil_gain * precip * scale;
+        if (d_soil < -per_day_clamp) d_soil = -per_day_clamp;
+        else if (d_soil > per_day_clamp) d_soil = per_day_clamp;
+        float soil = SOIL[i] + d_soil;
+        if (soil < -0.5f) soil = -0.5f;
+        else if (soil > 0.5f) soil = 0.5f;
+        SOIL[i] = soil;
+
+        // vegetation_growth_pressure (clamp -0.5..0.5)
+        float d_veg = veg_gain * precip * scale;
+        if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
+        else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
+        float vg_v = VG[i] + d_veg;
+        if (vg_v < -0.5f) vg_v = -0.5f;
+        else if (vg_v > 0.5f) vg_v = 0.5f;
+        VG[i] = vg_v;
+    }
+
+    // §11.2 flush: push CoW-detached cell_base_moisture back to MapData
+    _flush_slot_to_map(sid_base_m);
+
+    // 写回 in/out PackedArray (CoW：caller 保留同一份引用，ptrw 已经写过了)
+    knobs["soil_moisture_arr"]       = soil_arr;
+    knobs["veg_growth_pressure_arr"] = vg_arr;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
 // ─── F.6 main pass ──────────────────────────────────────────────────────────
 //
 // 1:1 mirror of scripts/weather/weather_front.gd::advance_one_day +
@@ -5118,6 +5657,119 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     if (!_bound) return fail("not bound");
     const int stage = int(knobs.get("stage", 8));
+    // DOTS-Total-CPP（task-item.md 任务 2）：扩展 stage 分发到 0 / 8 / 10。
+    // - stage 0 (moisture set)  ：纯 SoA loop，直接 C++。
+    // - stage 8 (sync_current_state)：本函数原有实装。
+    // - stage 10 (feedback decay)   ：knobs in/out 走 soil_moisture_arr /
+    //   veg_growth_pressure_arr（SoA schema 未含），与 run_climate_feedback_pass 同模式。
+    // - stage 1/2/3/4/5/6/7/9 ：依赖 terrain decision tree + apply_terrain multi-axis
+    //   sync + RenderingServer，按 plan/dots-total-cpp/requirements.md §8.4 标 TODO，
+    //   GDScript caller 仍走 fallback。
+    // TODO(dots-total-cpp): stage 1/2/3/4/5/6/7 完整 C++ 化（需复刻 WindBelt /
+    //                       _decide_terrain / _is_permanent_landform / apply_terrain）。
+    if (stage == 0) {
+        if (!knobs.has("n_cells") || !knobs.has("moist_scale")) {
+            return fail("stage_0 missing required knob (n_cells / moist_scale)");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const double moist_scale = double(knobs["moist_scale"]);
+        if (n_cells <= 0) return fail("stage_0 n_cells <= 0");
+
+        const int sid_terrain      = component_id(StringName("cell_terrain"));
+        const int sid_moist        = component_id(StringName("cell_moisture"));
+        const int sid_base_m       = component_id(StringName("cell_base_moisture"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_base_m < 0) {
+            return fail("stage_0 missing slot id (terrain/moisture/base_moisture)");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_bm = _slots.write[sid_base_m];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_bm.arr_f32.size() != n_cells) {
+            return fail("stage_0 slot array size mismatch");
+        }
+        const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
+        const float   * const __restrict BASE = s_bm.arr_f32.ptr();
+        float         * const __restrict M    = s_m.arr_f32.ptrw();
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < n_cells; ++i) {
+            if (pk_is_water_terrain(TERR[i])) {
+                M[i] = BASE[i];
+            } else {
+                double m = double(BASE[i]) * moist_scale;
+                if (m < 0.0) m = 0.0;
+                else if (m > 1.0) m = 1.0;
+                M[i] = float(m);
+            }
+        }
+        _flush_slot_to_map(sid_moist);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = n_cells;
+        return out;
+    }
+    if (stage == 10) {
+        if (!knobs.has("n_cells") || !knobs.has("decay") ||
+            !knobs.has("soil_moisture_arr") || !knobs.has("veg_growth_pressure_arr")) {
+            return fail("stage_10 missing required knob (n_cells/decay/soil_moisture_arr/veg_growth_pressure_arr)");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const double decay = double(knobs["decay"]);
+        if (n_cells <= 0) return fail("stage_10 n_cells <= 0");
+
+        const int sid_terrain = component_id(StringName("cell_terrain"));
+        const int sid_base_m  = component_id(StringName("cell_base_moisture"));
+        if (sid_terrain < 0 || sid_base_m < 0) {
+            return fail("stage_10 missing slot id (terrain/base_moisture)");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_bm = _slots.write[sid_base_m];
+        if (s_t.arr_u8.size() != n_cells || s_bm.arr_f32.size() != n_cells) {
+            return fail("stage_10 slot array size mismatch (terrain/base_moisture)");
+        }
+        PackedFloat32Array soil_arr = knobs["soil_moisture_arr"];
+        PackedFloat32Array vg_arr   = knobs["veg_growth_pressure_arr"];
+        if (soil_arr.size() != n_cells || vg_arr.size() != n_cells) {
+            return fail("stage_10 soil/vg arr size mismatch");
+        }
+
+        const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
+        float         * const __restrict BASE = s_bm.arr_f32.ptrw();
+        float         * const __restrict SOIL = soil_arr.ptrw();
+        float         * const __restrict VG   = vg_arr.ptrw();
+        constexpr double FEEDBACK_SOIL_TO_BASE_W = 0.15;
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            if (pk_is_water_terrain(TERR[i])) continue;
+            const double sm = double(SOIL[i]);
+            if (sm > 1e-4 || sm < -1e-4) {
+                double bm = double(BASE[i]) + FEEDBACK_SOIL_TO_BASE_W * sm;
+                if (bm < 0.0) bm = 0.0;
+                else if (bm > 1.0) bm = 1.0;
+                BASE[i] = float(bm);
+                ++touched;
+            }
+            SOIL[i] = float(sm * decay);
+            VG[i]   = float(double(VG[i]) * decay);
+        }
+        _flush_slot_to_map(sid_base_m);
+        // 写回 in/out arrays（让 GDScript caller 看到 decayed 后的值）
+        knobs["soil_moisture_arr"] = soil_arr;
+        knobs["veg_growth_pressure_arr"] = vg_arr;
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
     if (stage != 8) return fail("unsupported stage");
     if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
         !knobs.has("season_offset_rows")) {
@@ -5222,6 +5874,255 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     out["reason"] = String();
     out["touched"] = n_cells;
     out["snow_cells"] = snow_cells;
+    return out;
+}
+
+// DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：
+// run_ocean_field_rasterize — hex→pixel rasterize 一次性 C++ 直出。
+// 替代 GDScript _rasterize_ocean_current_slice_from_hex + _rasterize_upwelling_slice_from_hex
+// 的 17 个 pixel slice，消除 ocean_currents 25ms slow slice 源头。
+godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels"] = 0;
+    out["atlas_updated"] = false;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] run_ocean_field_rasterize: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!knobs.has("n_cells") || !knobs.has("w") || !knobs.has("h") ||
+        !knobs.has("pixel_to_cell_idx") ||
+        !knobs.has("dst_currents") || !knobs.has("dst_upwelling")) {
+        return fail("missing required knob");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    const int W = int(knobs["w"]);
+    const int H = int(knobs["h"]);
+    if (n_cells <= 0 || W <= 0 || H <= 0) return fail("invalid dims");
+    const int n_px = W * H;
+
+    PackedInt32Array px2cell = knobs["pixel_to_cell_idx"];
+    PackedByteArray  dst_cur = knobs["dst_currents"];
+    PackedByteArray  dst_up  = knobs["dst_upwelling"];
+    if (px2cell.size() != n_px) return fail("pixel_to_cell_idx size mismatch");
+    if (dst_cur.size() != n_px * 2) return fail("dst_currents size mismatch");
+    if (dst_up.size() != n_px) return fail("dst_upwelling size mismatch");
+
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_ocx     = component_id(StringName("cell_ocean_current_x"));
+    const int sid_ocy     = component_id(StringName("cell_ocean_current_y"));
+    const int sid_up      = component_id(StringName("cell_upwelling_strength"));
+    if (sid_terrain < 0 || sid_ocx < 0 || sid_ocy < 0 || sid_up < 0) {
+        return fail("missing slot id");
+    }
+    Slot &s_terr = _slots.write[sid_terrain];
+    Slot &s_ocx  = _slots.write[sid_ocx];
+    Slot &s_ocy  = _slots.write[sid_ocy];
+    Slot &s_up   = _slots.write[sid_up];
+    if (s_terr.arr_u8.size()  != n_cells ||
+        s_ocx.arr_f32.size()  != n_cells ||
+        s_ocy.arr_f32.size()  != n_cells ||
+        s_up.arr_f32.size()   != n_cells) {
+        return fail("slot array size mismatch");
+    }
+
+    const uint8_t * const __restrict TERR = s_terr.arr_u8.ptr();
+    const float   * const __restrict OCX  = s_ocx.arr_f32.ptr();
+    const float   * const __restrict OCY  = s_ocy.arr_f32.ptr();
+    const float   * const __restrict UP   = s_up.arr_f32.ptr();
+    const int32_t * const __restrict P2C  = px2cell.ptr();
+    uint8_t       * const __restrict DCUR = dst_cur.ptrw();
+    uint8_t       * const __restrict DUP  = dst_up.ptrw();
+
+    // 可选 atlas_data 同步（与 GDScript _vector_atlas_data 共享）
+    bool atlas_ok = false;
+    uint8_t *ATLAS = nullptr;
+    PackedByteArray atlas_data;
+    const bool update_atlas = bool(knobs.get("update_atlas_data", false));
+    if (update_atlas && knobs.has("atlas_data")) {
+        atlas_data = knobs["atlas_data"];
+        if (atlas_data.size() == n_px * 4) {
+            atlas_ok = true;
+            ATLAS = atlas_data.ptrw();
+        }
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    int written = 0;
+    for (int i = 0; i < n_px; ++i) {
+        const int32_t ci = P2C[i];
+        float cur_x = 0.0f;
+        float cur_y = 0.0f;
+        bool is_water = false;
+        if (ci >= 0 && ci < n_cells) {
+            is_water = pk_is_water_terrain(TERR[ci]);
+            if (is_water) {
+                cur_x = OCX[ci];
+                cur_y = OCY[ci];
+            }
+        }
+        // currents 量化：x/y ∈ [-1,1] → byte ∈ [0,255]，128 = 0
+        int bx = int(std::round((double(cur_x) * 0.5 + 0.5) * 255.0));
+        int by = int(std::round((double(cur_y) * 0.5 + 0.5) * 255.0));
+        if (bx < 0) bx = 0; else if (bx > 255) bx = 255;
+        if (by < 0) by = 0; else if (by > 255) by = 255;
+        DCUR[i * 2]     = uint8_t(bx);
+        DCUR[i * 2 + 1] = uint8_t(by);
+
+        // upwelling 量化：陆地 / 非水填 128（中性）
+        if (ci >= 0 && ci < n_cells && is_water) {
+            float up = UP[ci];
+            if (up < -1.0f) up = -1.0f; else if (up > 1.0f) up = 1.0f;
+            int q = int(std::round(128.0 + 127.0 * double(up)));
+            if (q < 0) q = 0; else if (q > 255) q = 255;
+            DUP[i] = uint8_t(q);
+        } else {
+            DUP[i] = 128;
+        }
+
+        if (atlas_ok) {
+            ATLAS[i * 4]     = uint8_t(bx);
+            ATLAS[i * 4 + 1] = uint8_t(by);
+            // ATLAS[i*4+2..+3] 由 wind 通道写，rasterize 不动
+        }
+        ++written;
+    }
+
+    knobs["dst_currents"]   = dst_cur;
+    knobs["dst_upwelling"]  = dst_up;
+    if (atlas_ok) {
+        knobs["atlas_data"] = atlas_data;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels"] = written;
+    out["atlas_updated"] = atlas_ok;
+    return out;
+}
+
+// DOTS-Total-CPP（A 方案 / wind raster 孪生）：
+// run_wind_field_rasterize — wind_x/wind_y SoA → hex→pixel byte 一次性直出。
+// 替代 GDScript map_baker.gd::_rasterize_wind_slice_from_hex 的 21 片 × ~87ms 循环。
+godot::Dictionary DCWorldExt::run_wind_field_rasterize(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels"] = 0;
+    out["atlas_updated"] = false;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] run_wind_field_rasterize: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!knobs.has("n_cells") || !knobs.has("w") || !knobs.has("h") ||
+        !knobs.has("pixel_to_cell_idx") || !knobs.has("dst_wind")) {
+        return fail("missing required knob");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    const int W = int(knobs["w"]);
+    const int H = int(knobs["h"]);
+    if (n_cells <= 0 || W <= 0 || H <= 0) return fail("invalid dims");
+    const int n_px = W * H;
+
+    PackedInt32Array px2cell = knobs["pixel_to_cell_idx"];
+    PackedByteArray  dst_wind = knobs["dst_wind"];
+    if (px2cell.size() != n_px) return fail("pixel_to_cell_idx size mismatch");
+    if (dst_wind.size() != n_px * 2) return fail("dst_wind size mismatch");
+
+    const int sid_wind_x = component_id(StringName("cell_wind_x"));
+    const int sid_wind_y = component_id(StringName("cell_wind_y"));
+    if (sid_wind_x < 0 || sid_wind_y < 0) return fail("missing slot id");
+    Slot &s_wx = _slots.write[sid_wind_x];
+    Slot &s_wy = _slots.write[sid_wind_y];
+    if (s_wx.arr_f32.size() != n_cells || s_wy.arr_f32.size() != n_cells) {
+        return fail("slot array size mismatch");
+    }
+
+    const float   * const __restrict WX  = s_wx.arr_f32.ptr();
+    const float   * const __restrict WY  = s_wy.arr_f32.ptr();
+    const int32_t * const __restrict P2C = px2cell.ptr();
+    uint8_t       * const __restrict DW  = dst_wind.ptrw();
+
+    // 可选 atlas_data 同步（与 GDScript _vector_atlas_data 共享，wind 写 [+2]/[+3]）
+    bool atlas_ok = false;
+    uint8_t *ATLAS = nullptr;
+    PackedByteArray atlas_data;
+    const bool update_atlas = bool(knobs.get("update_atlas_data", false));
+    if (update_atlas && knobs.has("atlas_data")) {
+        atlas_data = knobs["atlas_data"];
+        if (atlas_data.size() == n_px * 4) {
+            atlas_ok = true;
+            ATLAS = atlas_data.ptrw();
+        }
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    int written = 0;
+    for (int i = 0; i < n_px; ++i) {
+        const int32_t ci = P2C[i];
+        // 与 GDScript _rasterize_wind_slice_from_hex 一致：cell 缺失时默认 (1,0)
+        float wx = 1.0f;
+        float wy = 0.0f;
+        if (ci >= 0 && ci < n_cells) {
+            wx = WX[ci];
+            wy = WY[ci];
+        }
+        // 量化：wx/wy ∈ [-1,1] → byte ∈ [0,255]，128 = 0
+        int bx = int(std::round((double(wx) * 0.5 + 0.5) * 255.0));
+        int by = int(std::round((double(wy) * 0.5 + 0.5) * 255.0));
+        if (bx < 0) bx = 0; else if (bx > 255) bx = 255;
+        if (by < 0) by = 0; else if (by > 255) by = 255;
+        DW[i * 2]     = uint8_t(bx);
+        DW[i * 2 + 1] = uint8_t(by);
+
+        if (atlas_ok) {
+            // ATLAS[i*4+0..+1] 由 ocean rasterize 写，wind 不动
+            ATLAS[i * 4 + 2] = uint8_t(bx);
+            ATLAS[i * 4 + 3] = uint8_t(by);
+        }
+        ++written;
+    }
+
+    knobs["dst_wind"] = dst_wind;
+    if (atlas_ok) {
+        knobs["atlas_data"] = atlas_data;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels"] = written;
+    out["atlas_updated"] = atlas_ok;
     return out;
 }
 
@@ -5455,6 +6356,528 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     out["fallback"] = false;
     out["reason"] = String();
+    return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// plan/dots-slp-psi-cpp — SLP field solver (stage 1)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 1:1 mirror of GDScript PhysicalCirculationSolver.solve_slp_field:
+//   Pass A: per-cell baseline written to slp_buf[i]
+//     base_lat = -A_LAT * cos(ls_abs * 2pi) * (1 - 0.5 * ls_abs)
+//                + 0.15 * cos(ls_abs * 4pi) * ls_abs
+//     hemi_sign = sign(ls)  (default +1 if |ls| <= 0.001)
+//     lat_temp_factor = sin^2(ls_abs * pi)
+//     season_signal_n_hemi = -cos((season_phase - 2) / 4 * 2pi)
+//     water  -> landsea = -hemi_sign * season_signal * A_LAND * lat_factor * WATER_DAMP
+//     land   -> coast detect (any water neighbor) -> COAST_DAMP : INTERIOR_BOOST
+//             landsea = -hemi_sign * season_signal * A_LAND * lat_factor * continentality
+//     slp[i] = base_lat + landsea
+//   Pass B: smooth_passes-round 6-neighbor Jacobi smoothing.
+//     For each cell, slp_new = (slp_self + sum_valid_nb) / (1 + cnt_valid_nb).
+//     Land/water makes no difference; only valid (>= 0) neighbors are summed.
+godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_slp_field_pass: ", why,
+            " — fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not _bound");
+
+    static const char *required_keys[] = {
+        "n_cells", "hex_size", "season_phase", "smooth_passes",
+        "world_bounds_pos_y", "world_bounds_size_y",
+        "neighbor_indices", "water_terrain_ids",
+        nullptr,
+    };
+    for (int k = 0; required_keys[k] != nullptr; ++k) {
+        if (!knobs.has(required_keys[k])) {
+            String s = String("missing knob '") + String(required_keys[k]) + String("'");
+            return fail(s.utf8().get_data());
+        }
+    }
+
+    const int    n_cells       = int(knobs["n_cells"]);
+    const double season_phase  = double(knobs["season_phase"]);
+    const int    smooth_passes = int(knobs["smooth_passes"]);
+    const double bounds_pos_y  = double(knobs["world_bounds_pos_y"]);
+    const double bounds_size_y = double(knobs["world_bounds_size_y"]);
+    if (n_cells <= 0)            return fail("n_cells <= 0");
+    if (bounds_size_y <= 0.001)  return fail("world_bounds_size_y <= 0.001");
+
+    // Tunables (defaults match GDScript constants; allow override via knobs).
+    const float A_LAT          = float(knobs.has("slp_lat_amp")        ? double(knobs["slp_lat_amp"])        : 0.40);
+    const float A_LAND         = float(knobs.has("slp_land_amp")       ? double(knobs["slp_land_amp"])       : 0.55);
+    const float WATER_DAMP     = float(knobs.has("slp_water_damp")     ? double(knobs["slp_water_damp"])     : 0.20);
+    const float INTERIOR_BOOST = float(knobs.has("slp_interior_boost") ? double(knobs["slp_interior_boost"]) : 1.30);
+    const float COAST_DAMP     = float(knobs.has("slp_coast_damp")     ? double(knobs["slp_coast_damp"])     : 0.60);
+
+    PackedInt32Array nb_arr   = knobs["neighbor_indices"];
+    PackedByteArray  water_ids = knobs["water_terrain_ids"];
+    if (nb_arr.size()  < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
+    if (water_ids.size() <= 0)         return fail("water_terrain_ids empty");
+
+    // Slot resolution: cell_pos_y + cell_terrain.
+    const int sid_pos_y   = component_id(StringName("cell_pos_y"));
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    if (sid_pos_y < 0 || sid_terrain < 0) {
+        return fail("missing slot id (cell_pos_y/cell_terrain)");
+    }
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_terrain = _slots.write[sid_terrain];
+    if (s_pos_y.arr_f32.size()  != n_cells ||
+        s_terrain.arr_u8.size() != n_cells) {
+        return fail("slot array size mismatch (re-bind needed?)");
+    }
+
+    // Build is_water LUT (256-entry, same pattern as F.4 / wind_field_pass).
+    bool is_water_lut[256];
+    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
+    for (int k = 0; k < water_ids.size(); ++k) {
+        const int wid = int(water_ids[k]);
+        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
+    }
+
+    const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
+    const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
+    const int32_t * const __restrict NB   = nb_arr.ptr();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // season_signal_n_hemi = -cos((phase - 2) / 4 * 2pi)
+    const double TWO_PI = 6.283185307179586476925286766559;
+    const float season_signal_n_hemi = float(-std::cos((season_phase - 2.0) / 4.0 * TWO_PI));
+
+    // Output buffer (n_cells floats); will become slp_out PackedFloat32Array.
+    std::vector<float> slp_buf(static_cast<size_t>(n_cells), 0.0f);
+
+    // ─── Pass A: per-cell baseline ────────────────────────────────────────
+    for (int i = 0; i < n_cells; ++i) {
+        // ny / lat_signed / lat_abs
+        float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
+        if (ny < 0.0f) ny = 0.0f;
+        else if (ny > 1.0f) ny = 1.0f;
+        const float ls     = (ny - 0.5f) * 2.0f;
+        const float ls_abs = std::fabs(ls);
+
+        // base_lat (double-frequency cosine bell)
+        float base_lat = -A_LAT * std::cos(ls_abs * 3.14159265358979323846f * 2.0f) * (1.0f - 0.5f * ls_abs);
+        base_lat += 0.15f * std::cos(ls_abs * 3.14159265358979323846f * 4.0f) * ls_abs;
+
+        // hemi_sign
+        float hemi_sign;
+        if (std::fabs(ls) > 0.001f)
+            hemi_sign = (ls > 0.0f) ? 1.0f : -1.0f;
+        else
+            hemi_sign = 1.0f;
+
+        // lat_temp_factor = sin^2(ls_abs * pi)
+        const float s_lat = std::sin(ls_abs * 3.14159265358979323846f);
+        const float lat_temp_factor = s_lat * s_lat;
+
+        const bool is_water = is_water_lut[TR[i]];
+        float landsea;
+        if (is_water) {
+            landsea = -hemi_sign * season_signal_n_hemi * A_LAND * lat_temp_factor * WATER_DAMP;
+        } else {
+            // Coast detect: any valid neighbor that is water.
+            bool is_coast = false;
+            const int base_i = i * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[base_i + d];
+                if (ni >= 0 && ni < n_cells && is_water_lut[TR[ni]]) {
+                    is_coast = true;
+                    break;
+                }
+            }
+            const float continentality = is_coast ? COAST_DAMP : INTERIOR_BOOST;
+            landsea = -hemi_sign * season_signal_n_hemi * A_LAND * lat_temp_factor * continentality;
+        }
+        slp_buf[i] = base_lat + landsea;
+    }
+
+    // ─── Pass B: 6-neighbor Jacobi smoothing ──────────────────────────────
+    if (smooth_passes > 0) {
+        std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
+        for (int p = 0; p < smooth_passes; ++p) {
+            for (int i = 0; i < n_cells; ++i) {
+                float sum_slp = slp_buf[i];
+                int   cnt     = 1;
+                const int base_i = i * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[base_i + d];
+                    if (ni < 0 || ni >= n_cells) continue;
+                    sum_slp += slp_buf[ni];
+                    cnt += 1;
+                }
+                tmp[i] = sum_slp / float(cnt);
+            }
+            // Write back (one sweep).
+            std::swap(slp_buf, tmp);
+        }
+    }
+
+    // ─── Marshall slp_out ─────────────────────────────────────────────────
+    PackedFloat32Array slp_out;
+    slp_out.resize(n_cells);
+    {
+        float *dst = slp_out.ptrw();
+        std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
+    }
+    knobs["slp_out"] = slp_out;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"]   = false;
+    out["reason"]     = String();
+    out["slp_out"]    = slp_out;
+    return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// plan/dots-slp-psi-cpp — PSI ocean stream-function solver (stage 3+4+5)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Fused init + SOR iters + finalize, 1:1 mirror of GDScript:
+//   PhysicalCirculationSolver.init_psi_solver  (stage 3 PSI_INIT)
+//   PhysicalCirculationSolver.step_psi_solver  (stage 4 PSI_ITERS, n_iters)
+//   PhysicalCirculationSolver.psi_to_ocean_current + commit_psi_to_cells
+//                                              (stage 5 PSI_FINALIZE)
+//
+// Water-cell ordering MUST match GDScript: enumerate all cells in cell-index
+// ascending order, push back to water_to_cell[] when terrain is water. This
+// matches the GDScript loop "for cell in cells" since cells are indexed
+// linearly. Mismatch here would cause SOR to converge to a different shape.
+//
+// Algorithmic choices kept identical to GDScript:
+//   - 6-neighbor curl tau (z component): a.x * b.y - a.y * b.x
+//   - PSI source = source_scale * curl_tau / max(beta_abs, beta_floor)
+//   - r_factor   = r_base / max(beta_abs, beta_floor)
+//   - SOR sweep: in-place Gauss-Seidel; psi_e = nb[d=0], psi_w = nb[d=3];
+//                advection term r_factor * (psi_e - psi_w) * 0.5
+//                target  = sum_nb / 6 - adv + source
+//                psi[k]  = (1 - omega) * old + omega * target
+//   - Finalize : grad_psi = (1/3) * sum_d (psi[nb] - psi[self]) * NB_DIR_d
+//                cur = (-grad.y, grad.x) * ocean_current_scale
+//                if |ls| > UPWELLING_HIGHLAT_ABS && temp_rel < cold_sink_temp:
+//                    cur.y += sign(ls) * sin(|ls| * pi) * thermohaline_weight
+//                cur.x = clamp(cur.x, -1, 1); cur.y = clamp(cur.y, -1, 1);
+//
+// NEIGHBOR_DIRS (match GDScript HexUtils + solver):
+//   d=0 ( 1,  0)         east
+//   d=1 ( 0.5, +sqrt3/2) south-east  (screen +y = south)
+//   d=2 (-0.5, +sqrt3/2) south-west
+//   d=3 (-1,  0)         west
+//   d=4 (-0.5, -sqrt3/2) north-west
+//   d=5 ( 0.5, -sqrt3/2) north-east
+godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_psi_solver_pass: ", why,
+            " — fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not _bound");
+
+    static const char *required_keys[] = {
+        "n_cells", "hex_size",
+        "world_bounds_pos_y", "world_bounds_size_y",
+        "neighbor_indices", "water_terrain_ids",
+        "wind_x_arr", "wind_y_arr", "wind_speed_arr",
+        nullptr,
+    };
+    for (int k = 0; required_keys[k] != nullptr; ++k) {
+        if (!knobs.has(required_keys[k])) {
+            String s = String("missing knob '") + String(required_keys[k]) + String("'");
+            return fail(s.utf8().get_data());
+        }
+    }
+
+    const int    n_cells       = int(knobs["n_cells"]);
+    const double bounds_pos_y  = double(knobs["world_bounds_pos_y"]);
+    const double bounds_size_y = double(knobs["world_bounds_size_y"]);
+    if (n_cells <= 0)            return fail("n_cells <= 0");
+    if (bounds_size_y <= 0.001)  return fail("world_bounds_size_y <= 0.001");
+
+    // Numeric constants (defaults must mirror physical_circulation_solver.gd).
+    const int   PSI_TOTAL_ITERS = int(knobs.has("psi_total_iters")     ? int(knobs["psi_total_iters"])     : 24);
+    const float PSI_OMEGA       = float(knobs.has("psi_sor_omega")     ? double(knobs["psi_sor_omega"])    : 1.20);
+    const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.10);
+    const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
+    const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 1.0);
+    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.05);
+    const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.18);
+    const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.6);
+    const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
+
+    PackedInt32Array nb_arr     = knobs["neighbor_indices"];
+    PackedByteArray  water_ids  = knobs["water_terrain_ids"];
+    PackedFloat32Array wind_x   = knobs["wind_x_arr"];
+    PackedFloat32Array wind_y   = knobs["wind_y_arr"];
+    PackedFloat32Array wind_spd = knobs["wind_speed_arr"];
+    if (nb_arr.size()   < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
+    if (water_ids.size() <= 0)          return fail("water_terrain_ids empty");
+    if (wind_x.size()   < n_cells)      return fail("wind_x_arr size < n_cells");
+    if (wind_y.size()   < n_cells)      return fail("wind_y_arr size < n_cells");
+    if (wind_spd.size() < n_cells)      return fail("wind_speed_arr size < n_cells");
+
+    const int sid_pos_y   = component_id(StringName("cell_pos_y"));
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    if (sid_pos_y < 0 || sid_terrain < 0) {
+        return fail("missing slot id (cell_pos_y/cell_terrain)");
+    }
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_terrain = _slots.write[sid_terrain];
+    if (s_pos_y.arr_f32.size()  != n_cells ||
+        s_terrain.arr_u8.size() != n_cells) {
+        return fail("slot array size mismatch (re-bind needed?)");
+    }
+
+    bool is_water_lut[256];
+    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
+    for (int k = 0; k < water_ids.size(); ++k) {
+        const int wid = int(water_ids[k]);
+        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
+    }
+
+    const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
+    const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
+    const int32_t * const __restrict NB   = nb_arr.ptr();
+    const float   * const __restrict WX   = wind_x.ptr();
+    const float   * const __restrict WY   = wind_y.ptr();
+    const float   * const __restrict WSP  = wind_spd.ptr();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── PSI init ─────────────────────────────────────────────────────────
+    // Build water_to_cell[] in cell-index ascending order; cell_to_water[] is
+    // the inverse map (-1 for land cells).
+    std::vector<int> cell_to_water(static_cast<size_t>(n_cells), -1);
+    std::vector<int> water_to_cell;
+    water_to_cell.reserve(static_cast<size_t>(n_cells));
+    for (int i = 0; i < n_cells; ++i) {
+        if (is_water_lut[TR[i]]) {
+            cell_to_water[i] = static_cast<int>(water_to_cell.size());
+            water_to_cell.push_back(i);
+        }
+    }
+    const int n_water = static_cast<int>(water_to_cell.size());
+
+    // Per-water-cell: nb_idx (to water-domain index, -1 = land/out-of-domain),
+    // wind stress (= wind_vector * wind_speed), curl_tau, beta_abs, r_factor,
+    // source, psi.
+    std::vector<int>   nb_w(static_cast<size_t>(n_water * 6), -1);
+    std::vector<float> tau_x(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> tau_y(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> ny_w(static_cast<size_t>(n_water), 0.5f);
+    std::vector<float> ls_w(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> curl(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> beta_abs(static_cast<size_t>(n_water), PSI_BETA_FLOOR);
+    std::vector<float> r_factor(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> source(static_cast<size_t>(n_water), 0.0f);
+    std::vector<float> psi(static_cast<size_t>(n_water), 0.0f);
+
+    // NEIGHBOR_DIRS (screen-space, +y = south, +x = east), matching solver.
+    const float SQRT3_OVER_2 = 0.8660254037844386f;
+    const float NB_DIR_X[6] = { 1.0f,  0.5f, -0.5f, -1.0f, -0.5f,  0.5f };
+    const float NB_DIR_Y[6] = { 0.0f,  SQRT3_OVER_2, SQRT3_OVER_2, 0.0f, -SQRT3_OVER_2, -SQRT3_OVER_2 };
+
+    // Build nb_w + tau (= wind_stress = wind_vector * wind_speed; here
+    // wind_x_arr / wind_y_arr already encode wind_vector, so multiply by speed
+    // to get wind_stress 1:1 with GDScript).
+    for (int k = 0; k < n_water; ++k) {
+        const int i = water_to_cell[k];
+        const int base_i = i * 6;
+        const int base_k = k * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[base_i + d];
+            int kw = -1;
+            if (ni >= 0 && ni < n_cells) {
+                kw = cell_to_water[ni];
+            }
+            nb_w[base_k + d] = kw;
+        }
+        tau_x[k] = WX[i] * WSP[i];
+        tau_y[k] = WY[i] * WSP[i];
+
+        // ny / ls
+        float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
+        if (ny < 0.0f) ny = 0.0f;
+        else if (ny > 1.0f) ny = 1.0f;
+        ny_w[k] = ny;
+        ls_w[k] = (ny - 0.5f) * 2.0f;
+    }
+
+    // curl_tau (z component) over 6-neighbors:
+    //   curl ~ (1/3) * sum_d (tau_nb_d - tau_self) x NB_DIR_d
+    //        = (1/3) * sum_d ((tau_nb.x - tau_self.x) * NB_DIR_d.y
+    //                         - (tau_nb.y - tau_self.y) * NB_DIR_d.x)
+    // Land neighbors: tau = (0, 0) (no-slip / no-stress boundary).
+    for (int k = 0; k < n_water; ++k) {
+        const float tx_self = tau_x[k];
+        const float ty_self = tau_y[k];
+        float c = 0.0f;
+        const int base_k = k * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int kw = nb_w[base_k + d];
+            float tx_nb, ty_nb;
+            if (kw >= 0) {
+                tx_nb = tau_x[kw];
+                ty_nb = tau_y[kw];
+            } else {
+                tx_nb = 0.0f;
+                ty_nb = 0.0f;
+            }
+            const float dx = tx_nb - tx_self;
+            const float dy = ty_nb - ty_self;
+            c += dx * NB_DIR_Y[d] - dy * NB_DIR_X[d];
+        }
+        curl[k] = c / 3.0f;
+    }
+
+    // beta_abs: linear in |ls| with floor; r_factor = R_BASE / max(beta, floor)
+    // source: PSI_SRC_SCALE * curl / max(beta, floor)
+    for (int k = 0; k < n_water; ++k) {
+        const float ls_abs = std::fabs(ls_w[k]);
+        float b = ls_abs;
+        if (b < PSI_BETA_FLOOR) b = PSI_BETA_FLOOR;
+        beta_abs[k] = b;
+        r_factor[k] = PSI_R_BASE / b;
+        source[k]   = PSI_SRC_SCALE * curl[k] / b;
+        // psi[k] already zero from std::vector constructor.
+    }
+
+    // ─── PSI iters: SOR Gauss-Seidel (in-place) ───────────────────────────
+    for (int it = 0; it < PSI_TOTAL_ITERS; ++it) {
+        for (int k = 0; k < n_water; ++k) {
+            float sum_psi = 0.0f;
+            float psi_e   = 0.0f;
+            float psi_w   = 0.0f;
+            const int base_k = k * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int kw = nb_w[base_k + d];
+                const float p_nb = (kw >= 0) ? psi[kw] : 0.0f;
+                sum_psi += p_nb;
+                if (d == 0) psi_e = p_nb;
+                else if (d == 3) psi_w = p_nb;
+            }
+            const float avg_nb  = sum_psi / 6.0f;
+            const float adv     = r_factor[k] * (psi_e - psi_w) * 0.5f;
+            const float target  = avg_nb - adv + source[k];
+            const float old_v   = psi[k];
+            psi[k] = (1.0f - PSI_OMEGA) * old_v + PSI_OMEGA * target;
+        }
+    }
+
+    // ─── PSI finalize: grad psi -> ocean_current + thermohaline + clamp ───
+    PackedFloat32Array curl_out, psi_out, ocx_out, ocy_out;
+    curl_out.resize(n_cells);
+    psi_out.resize(n_cells);
+    ocx_out.resize(n_cells);
+    ocy_out.resize(n_cells);
+    float * const __restrict P_CURL = curl_out.ptrw();
+    float * const __restrict P_PSI  = psi_out.ptrw();
+    float * const __restrict P_OCX  = ocx_out.ptrw();
+    float * const __restrict P_OCY  = ocy_out.ptrw();
+    for (int i = 0; i < n_cells; ++i) {
+        P_CURL[i] = 0.0f;
+        P_PSI[i]  = 0.0f;
+        P_OCX[i]  = 0.0f;
+        P_OCY[i]  = 0.0f;
+    }
+
+    const float HALF_PI = 1.5707963267948966f;
+    const float PI_F    = 3.14159265358979323846f;
+
+    for (int k = 0; k < n_water; ++k) {
+        const int i = water_to_cell[k];
+        // ψ gradient over 6-neighbors (boundary ψ = 0 on land).
+        const float p_self = psi[k];
+        float gx = 0.0f, gy = 0.0f;
+        const int base_k = k * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int kw = nb_w[base_k + d];
+            const float p_nb = (kw >= 0) ? psi[kw] : 0.0f;
+            const float dpsi = p_nb - p_self;
+            gx += dpsi * NB_DIR_X[d];
+            gy += dpsi * NB_DIR_Y[d];
+        }
+        gx /= 3.0f;
+        gy /= 3.0f;
+
+        // Rotate 90° ccw -> (u, v) = (-d psi/dy, d psi/dx); scale.
+        float cx = -gy * OC_SCALE;
+        float cy =  gx * OC_SCALE;
+
+        // High-lat thermohaline overlay (preserve "polar cold sinker" semantics).
+        const float ls     = ls_w[k];
+        const float ls_abs = std::fabs(ls);
+        if (ls_abs > UPW_HIGHLAT_ABS) {
+            // lat_temp = pow(cos(ls_abs * pi/2), 1.2); temp_rel = lat_temp - 0.5
+            const float c_ls    = std::cos(ls_abs * HALF_PI);
+            const float lat_t   = std::pow(c_ls > 0.0f ? c_ls : 0.0f, 1.2f);
+            const float temp_rel = lat_t - 0.5f;
+            if (temp_rel < COLD_SINK_TEMP) {
+                const float pole_dir_y = (ls > 0.0f) ? 1.0f : ((ls < 0.0f) ? -1.0f : 0.0f);
+                const float grad_mag   = std::sin(ls_abs * PI_F);
+                cy += pole_dir_y * grad_mag * TH_WEIGHT;
+            }
+        }
+
+        // Clamp to [-1, 1].
+        if (cx >  1.0f) cx =  1.0f; else if (cx < -1.0f) cx = -1.0f;
+        if (cy >  1.0f) cy =  1.0f; else if (cy < -1.0f) cy = -1.0f;
+
+        P_CURL[i] = curl[k];
+        P_PSI[i]  = psi[k];
+        P_OCX[i]  = cx;
+        P_OCY[i]  = cy;
+    }
+
+    knobs["wind_stress_curl_out"] = curl_out;
+    knobs["ocean_psi_out"]        = psi_out;
+    knobs["ocean_current_x_out"]  = ocx_out;
+    knobs["ocean_current_y_out"]  = ocy_out;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["fallback"]   = false;
+    out["reason"]     = String();
+    out["n_water"]    = n_water;
+    out["wind_stress_curl_out"] = curl_out;
+    out["ocean_psi_out"]        = psi_out;
+    out["ocean_current_x_out"]  = ocx_out;
+    out["ocean_current_y_out"]  = ocy_out;
     return out;
 }
 
@@ -6180,6 +7603,18 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_transpiration_pass", "knobs"),
         &DCWorldExt::run_transpiration_pass);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）─────────────────
+    ClassDB::bind_method(
+        D_METHOD("run_albedo_pass", "knobs"),
+        &DCWorldExt::run_albedo_pass);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）─────────────────
+    ClassDB::bind_method(
+        D_METHOD("run_vegetation_dynamics_pass", "knobs"),
+        &DCWorldExt::run_vegetation_dynamics_pass);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）─────────────────
+    ClassDB::bind_method(
+        D_METHOD("run_climate_feedback_pass", "knobs"),
+        &DCWorldExt::run_climate_feedback_pass);
     ClassDB::bind_method(
         D_METHOD("run_weather_front_advect_pass", "knobs"),
         &DCWorldExt::run_weather_front_advect_pass);
@@ -6210,12 +7645,27 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_physical_circulation_pass", "knobs"),
         &DCWorldExt::run_physical_circulation_pass);
+    // plan/dots-slp-psi-cpp: SLP + PSI fully native physical-circulation finals
+    ClassDB::bind_method(
+        D_METHOD("run_slp_field_pass", "knobs"),
+        &DCWorldExt::run_slp_field_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_psi_solver_pass", "knobs"),
+        &DCWorldExt::run_psi_solver_pass);
     ClassDB::bind_method(
         D_METHOD("run_season_refresh_stage", "knobs"),
         &DCWorldExt::run_season_refresh_stage);
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
         &DCWorldExt::run_sea_ice_atlas_prepare);
+    // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
+    ClassDB::bind_method(
+        D_METHOD("run_ocean_field_rasterize", "knobs"),
+        &DCWorldExt::run_ocean_field_rasterize);
+    // DOTS-Total-CPP（A 方案 / wind raster 孪生）：wind rasterize 一次性 hex→pixel
+    ClassDB::bind_method(
+        D_METHOD("run_wind_field_rasterize", "knobs"),
+        &DCWorldExt::run_wind_field_rasterize);
 
     // Mode-B reference implementation entry point (see performance-charter.md §12)
     ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"), &DCWorldExt::run_temp_drift_pass);

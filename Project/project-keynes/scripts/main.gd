@@ -191,6 +191,11 @@ var _tod_profile: TODProfile = null
 
 var _current_map: MapData = null
 var _generator: MapGenerator = null
+
+# DOTS-Final-Push 任务 9：startup acceptance 日志一次性标记。首次 generate
+# 完成后打印 DCDotsCompletionGate 的 5 段状态行 + evaluate() BLOCK 警告。
+# R 键重新生成不再重复打印（避免刷屏）。
+var _dots_final_push_logged: bool = false
 var _world_data: WorldData = null
 # B.1 (dots-migration-roadmap §3 B2)：info_panel / overlay 等只读消费者
 # 通过 ViewAdapter 读 schema-mirrored 字段，不直接 cell.<field>。CellViewAdapter
@@ -229,6 +234,14 @@ var _validate_buckets: Dictionary = {}    # path -> { count, fronts, cloud, prec
 var _validate_total_samples: int = 0
 # Emergent Climate Coupling：fast tick 性能打点计数（需求 6.2 合计耗时节流 WARN）
 var _fast_tick_count: int = 0
+
+# DOTS-Final-Push 任务 10：200 tick 滚动采样，给 DCDotsFinalPushPerfVerdict 用。
+# fast tick 主循环每帧追加 fast_ms，超过 PERF_VERDICT_WINDOW 时丢最旧。
+# warn 计数同窗口对齐——每次 trigger_warn 命中都 +1，落入旧窗口外时随
+# total_ms 数组同步丢弃。
+const PERF_VERDICT_WINDOW: int = 200
+var _perf_verdict_total_ms: Array = []
+var _perf_verdict_warn_marks: Array = []  # 与 _perf_verdict_total_ms 平行：bool 数组
 var _fast_tick_warn_last_frame: int = 0
 var _slow_tick_count: int = 0
 
@@ -652,6 +665,17 @@ func _on_day_changed(_day_idx: int) -> void:
 	if _overlay_mode != 0:
 		_refresh_overlay_data()
 
+	# DOTS-Final-Push 任务 10：把当前 tick 的 fast_ms 与 trigger_warn 标记
+	# 推入滚动窗口（PERF_VERDICT_WINDOW=200），供 request_dots_final_push_perf_verdict()
+	# 一键产出 verdict。跳日（was_skipped_day）的 tick 不计入窗口——它本就
+	# 是低成本路径，与稳态门槛验收无关（需求 6.1~6.3 都是非跳日）。
+	if not was_skipped_day:
+		_perf_verdict_total_ms.append(float(fast_ms))
+		_perf_verdict_warn_marks.append(trigger_warn)
+		while _perf_verdict_total_ms.size() > PERF_VERDICT_WINDOW:
+			_perf_verdict_total_ms.pop_front()
+			_perf_verdict_warn_marks.pop_front()
+
 
 # Daily-sim perf instrumentation：把 SUS.report_last_tick() 翻译成可读日志。
 # 同时打印 source（区分 day_changed / season_changed 等触发源）和每 Job 的
@@ -779,6 +803,25 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(eb.get("elapsed_ms", 0.0)),
 						str(eb.get("cover_pending", false)),
 						str(eb.get("vegetation_pending", false)),
+					])
+			# DOTS-Final-Push 任务 6.2：sea_ice_atlas_upload 拆 prepare/upload 子段。
+			# 之前日志只看到 ran=232ms slices=1 progress=0.5 但完全不知道这 232ms
+			# 是卡在 prepare（C++ run_sea_ice_atlas_prepare / GD 全图 28800 像素回扫）
+			# 还是 upload（28KB R8 纹理 update）。本钩子把两段拆出来 + path（gdext/
+			# gdscript/zero_fallback）+ dirty_cells/dirty_ratio 一并打印，让下次跑日志
+			# 直接看到瓶颈源。
+			if job_id == &"sea_ice_atlas_upload" and _generator != null \
+					and _generator.has_method("sus_sea_ice_atlas_breakdown"):
+				var sib: Dictionary = _generator.sus_sea_ice_atlas_breakdown()
+				if not sib.is_empty():
+					print("        sea_ice_atlas phase=%s path=%s prep=%.2f img=%.2f upload=%.2f dirty=%d/%.2f" % [
+						str(sib.get("phase", "")),
+						str(sib.get("path", "unknown")),
+						float(sib.get("prepare_ms", 0.0)),
+						float(sib.get("image_ms", 0.0)),
+						float(sib.get("upload_ms", 0.0)),
+						int(sib.get("dirty_cells", 0)),
+						float(sib.get("dirty_ratio", 0.0)),
 					])
 			if job_id == &"season_refresh" and _generator != null \
 					and _generator.has_method("sus_season_refresh_breakdown"):
@@ -933,6 +976,20 @@ func _generate_and_render(seed_val: int) -> void:
 	_sync_overlay_to_world()
 	if _overlay_mode != 0:
 		_refresh_overlay_data()
+
+	# DOTS-Final-Push 任务 9：首次 generate 完成后，把本计划新增 5 段的
+	# flag 启用状态 + 验收门槛打一次到控制台；任一 required 段未达成时
+	# 走 evaluate() 并打印 [DOTS-Final-Push] BLOCK 警告。R 键重新生成
+	# 地图不再重复打印（避免刷屏）。
+	if not _dots_final_push_logged and _generator != null:
+		_dots_final_push_logged = true
+		var _cp_for_gate = _generator._c() if _generator.has_method("_c") else null
+		if _cp_for_gate != null:
+			for _line in DCDotsCompletionGate.format_acceptance_lines(_cp_for_gate):
+				print(_line)
+			var _failures: Array = DCDotsCompletionGate.evaluate(_cp_for_gate)
+			for _f in _failures:
+				push_warning(String(_f))
 
 # ─── 任务 1：视觉总开关推送 ─────────────────────────────────────────────
 # 把六个 @export 开关一次性推到 HexRenderer / WeatherLayer。
@@ -1611,6 +1668,44 @@ func get_fast_tick_count() -> int:
 
 func get_last_fast_tick_ms() -> int:
 	return _overlay_last_fast_tick_ms
+
+
+# DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。
+#
+# 用法：
+#   - 启动游戏在 2400 cells 基线运行 ≥ 200 fast tick 后，从 debug_console 或
+#     脚本调用 get_tree().root.get_node("...Main").request_dots_final_push_perf_verdict()
+#   - 函数内部读 PERF_VERDICT_WINDOW 滚动窗口（最多 200 tick 的 fast_ms / warn 标记）
+#     + 透传 SUS scheduler `_stats` 全表 → DCDotsFinalPushPerfVerdict.evaluate()
+#   - 把结构化 verdict Dictionary 返回给调用方，并把 format_verdict_lines 的可读
+#     报告打印到控制台
+#
+# 验收门槛（与 plan/dots-final-push/requirements.md §6 一致）：
+#   - 2400 cells 200 tick 中 fast tick WARN 占比 ≤ 0.5%
+#   - total_ms p95 ≤ 12ms / p99 ≤ 20ms
+#   - 任一 SUS job p95 ≤ 8ms（豁免 sea_ice_atlas_upload / enum_atlas_upload）
+#   - 6400 cells 大地图 200 tick 中 WARN 占比 ≤ 5%
+#
+# 不达标时 verdict.fail_reasons 给出具体哪条门槛未达成 + next_bottleneck
+# 字段标注次高瓶颈，作为下一轮 plan 的输入（不阻塞本计划按段验收）。
+func request_dots_final_push_perf_verdict() -> Dictionary:
+	var samples: Array = _perf_verdict_total_ms.duplicate()
+	var warn_count: int = 0
+	for marked in _perf_verdict_warn_marks:
+		if bool(marked):
+			warn_count += 1
+	var sus_job_stats: Dictionary = {}
+	if _generator != null and _generator.has_method("sus_report_job_stats"):
+		sus_job_stats = _generator.sus_report_job_stats()
+	var cells: int = 0
+	if _current_map != null:
+		cells = _current_map.cell_count()
+	var verdict: Dictionary = DCDotsFinalPushPerfVerdict.evaluate(
+		samples, warn_count, sus_job_stats, cells
+	)
+	for line in DCDotsFinalPushPerfVerdict.format_verdict_lines(verdict):
+		print(line)
+	return verdict
 
 # Legend 指针：把当前选中 cell 在当前 overlay 通道下的归一化值传给 OverlayLegend，
 # 使色带上的指针位置与 RightPanel 显示的实际数值一一对应。

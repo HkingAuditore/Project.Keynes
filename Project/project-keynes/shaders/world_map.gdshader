@@ -1114,7 +1114,12 @@ void fragment() {
 	// v9.atlas：把 3 张 atlas 一次采样解码到局部变量，后续逻辑读这些变量
 	vec4 enums = texture(enum_atlas,   uv);
 	vec4 scals = texture(scalar_atlas, uv);
-	vec4 vects = texture(vector_atlas, uv);
+	// C3 plan (vector_atlas removal)：vector_atlas 已不再被任何 GDScript 路径
+	// 注入（hex_renderer 不再 set_shader_parameter）。直接把 vects 置零，下游
+	// `ocean_current_v / wind_v` 全部退化为 vec2(0)，所有 length>0.05 等阈值
+	// 分支自然短路，海面回到无洋流暗道 / 静态 wave 状态。仍保留 uniform 声明
+	// 与下方解码代码以避免任何 shader compile 漂移；把 sampler 调用替换为常量。
+	vec4 vects = vec4(0.5);
 
 	int biome = int(enums.r * 255.0 + 0.5);
 	int veg   = int(enums.g * 255.0 + 0.5);

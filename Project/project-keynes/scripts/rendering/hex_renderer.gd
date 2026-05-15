@@ -639,12 +639,26 @@ func set_estuary_plume_strength(v: float) -> void:
 		)
 
 # Upload active weather fronts to both the terrain shader and the weather layer.
+# Diag log（2026-05-10 引入用于诊断 weather_layer logs 缺失）：本次收尾把
+# "每帧必报"收紧为"前 3 次 + 数量变化时报"，避免 release log 刷屏；要恢复
+# 详细日志只需把 _set_weather_fronts_log_budget 改大 / 把 last_n 重置为 -1。
+var _set_weather_fronts_log_count: int = 0
+var _set_weather_fronts_last_n: int = -1
+const _set_weather_fronts_log_budget: int = 3
 func set_weather_fronts(fronts: Array) -> void:
-	# Drift-debug（2026-05-10）：诊断 weather_layer logs 缺失。
-	print("[hex-renderer] set_weather_fronts(n=%d) layer=%s" % [
-		fronts.size(),
-		"WeatherLayer" if _weather_layer != null else "<null,fallback>",
-	])
+	var n_now: int = fronts.size()
+	var should_log: bool = false
+	if _set_weather_fronts_log_count < _set_weather_fronts_log_budget:
+		should_log = true
+	elif n_now != _set_weather_fronts_last_n:
+		should_log = true
+	if should_log:
+		_set_weather_fronts_log_count += 1
+		_set_weather_fronts_last_n = n_now
+		print("[hex-renderer] set_weather_fronts(n=%d) layer=%s" % [
+			n_now,
+			"WeatherLayer" if _weather_layer != null else "<null,fallback>",
+		])
 	if _weather_layer != null:
 		_weather_layer.set_weather_fronts(fronts)
 	else:
@@ -792,19 +806,26 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("height_tex",   _world.height_tex)
 	sm.set_shader_parameter("enum_atlas",   _world.enum_atlas_tex)
 	sm.set_shader_parameter("scalar_atlas", _world.scalar_atlas_tex)
-	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
-	# Phase 1：vector_atlas 是地形 + weather 共享的风/洋流纹理。
-	# 每次 _apply_uniforms 重新推入时也要回流给 WeatherLayer，
-	# 避免 MapBaker.rebake_*_only 重建后 weather overlay 仍持有旧风场。
+	# C3 plan (vector_atlas removal)：vector_atlas / ocean_upwelling_tex 已不再
+	# 被任何 GDScript 路径写入（map_baker 跳过 _encode_vector_atlas / _encode_upwelling_tex）。
+	# shader 端 world_map.gdshader 已用 vec4(0.5) 常量替代采样，下游 ocean_current_v /
+	# wind_v 全部退化为 vec2(0)，所有相关分支自然短路。F6 调试层的
+	# ocean_upwelling_tex 仅在 ocean_current_debug=true 时采样，关闭时零开销。
+	# 这两个 set_shader_parameter 也跟着停掉，避免传 null 触发 sampler 默认绑定漂移。
+	# WeatherLayer 继续走 set_vector_atlas_texture(null)，wind_field_enabled=false
+	# 自动 fallback 到 axis-only advection。
 	if _weather_layer != null:
-		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
+		_weather_layer.set_vector_atlas_texture(null)
 	# 火山强度场独立纹理（让位给 scalar_atlas.a 的连续 sea_ice_fraction）
 	sm.set_shader_parameter("volcano_field_tex", _world.volcano_field_tex)
 	# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a 已让位）。
 	# 由 SeaIceAtlasUploadJob 每 stride 日通过 MapBaker.bake_sea_ice_fraction_only 上传。
 	sm.set_shader_parameter("sea_ice_tex", _world.sea_ice_tex)
-	# Systemic Ocean Currents：上升流 R8（F6 调试层消费，主路径不采样）
-	sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
+	# C3 plan (vector_atlas removal)：upwelling_tex 仅 F6 调试层 if(ocean_current_debug)
+	# 分支采样；map_baker 已停止编码（永远 null）。这里也停掉注入，避免 sampler null 漂移。
+	# 调试模式开启时 shader 内 texture(ocean_upwelling_tex, uv) 会拿默认 0 黑纹理 →
+	# up_signed = -1.0、up_mag = 1.0，会画满紫色 → 后续若需要恢复 F6 调试，重启 atlas
+	# 即可。当前主路径 (ocean_current_debug=false) 完全无影响。
 	# v9.fbm-opt：把共享 noise_tex 喂给地形 shader，替换 value_noise 内部的 4× hash21
 	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
 
@@ -879,9 +900,9 @@ func _apply_uniforms() -> void:
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
 		_weather_layer.set_weather_field_texture(null)
-		# Phase 1：把 vector_atlas（BA 通道为 wind_field）也喂给 weather overlay，
-		# 让云团按真实风场做 per-cell advection，而不是用全局常量 axis 整体平移。
-		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
+		# C3 plan (vector_atlas removal)：vector_atlas 已停止 bake，传 null 让
+		# wind_field_enabled=false，shader 内 sample_wind 走全局常量 axis fallback。
+		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)
 	set_weather_fronts([])
 
