@@ -358,6 +358,7 @@ func commit() -> Array[WeatherFront]:
 		return [] as Array[WeatherFront]
 	if not _field_slice_active:
 		return _weather_system._active_fronts
+	var t_commit_total_us: int = Time.get_ticks_usec()
 	var map: MapData = _field_slice_map
 	var world: WorldData = _field_slice_world
 	var cells: Array = _field_slice_cells
@@ -374,29 +375,10 @@ func commit() -> Array[WeatherFront]:
 	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
 	var soa_instability: PackedFloat32Array = map.weather_instability_arr
 	var soa_field_init: PackedByteArray = map.weather_field_init_arr
-	# PR-2.1.6（weather field commit 写路径下移）：预分配 batch buffer。
-	# commit 阶段一次性写 7 个 f32 字段 + 2 个 u8 字段（weather_type / field_init 均为 U8）。
-	# 详见 master 手册 §3.9。
-	var _wf_n: int = cells.size()
-	var _wf_idx: PackedInt32Array = PackedInt32Array()
-	var _wf_intensity: PackedFloat32Array = PackedFloat32Array()
-	var _wf_cloud: PackedFloat32Array = PackedFloat32Array()
-	var _wf_precip: PackedFloat32Array = PackedFloat32Array()
-	var _wf_vapor: PackedFloat32Array = PackedFloat32Array()
-	var _wf_conv: PackedFloat32Array = PackedFloat32Array()
-	var _wf_inst: PackedFloat32Array = PackedFloat32Array()
-	var _wf_type: PackedByteArray = PackedByteArray()
-	var _wf_init: PackedByteArray = PackedByteArray()
-	_wf_idx.resize(_wf_n)
-	_wf_intensity.resize(_wf_n)
-	_wf_cloud.resize(_wf_n)
-	_wf_precip.resize(_wf_n)
-	_wf_vapor.resize(_wf_n)
-	_wf_conv.resize(_wf_n)
-	_wf_inst.resize(_wf_n)
-	_wf_type.resize(_wf_n)
-	_wf_init.resize(_wf_n)
+	var commit_n: int = cells.size()
+	var commit_setup_ms: float = (Time.get_ticks_usec() - t_commit_total_us) / 1000.0
 
+	var t_commit_loop_us: int = Time.get_ticks_usec()
 	var hexcell_facade_on: bool = _weather_system._hexcell_facade_on
 	for i in range(cells.size()):
 		var out_cell: HexCell = cells[i]
@@ -428,45 +410,42 @@ func commit() -> Array[WeatherFront]:
 		soa_convergence[i] = v_convergence
 		soa_instability[i] = v_instability
 		soa_field_init[i] = 1
-		# PR-2.1.6：收集 dirty entry 到 batch buffer
-		_wf_idx[i] = i
-		_wf_intensity[i] = v_intensity
-		_wf_cloud[i] = v_cloud
-		_wf_precip[i] = v_precip
-		_wf_vapor[i] = v_vapor
-		_wf_conv[i] = v_convergence
-		_wf_inst[i] = v_instability
-		_wf_type[i] = v_type & 0xFF
-		_wf_init[i] = 1
-	# PR-2.1.6：循环结束后批量提交 9 字段到 DCWorld SoA。
+	var commit_loop_ms: float = (Time.get_ticks_usec() - t_commit_loop_us) / 1000.0
+	# Full-field commit 始终覆盖 [0,n)，用 range 写避免构造 idx/value batch。
+	var t_commit_dc_us: int = Time.get_ticks_usec()
 	var _data_core_world = _weather_system._data_core_world
-	if _data_core_world != null and _wf_n > 0:
+	if _data_core_world != null and commit_n > 0:
 		var _cid_wi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
 		if _cid_wi >= 0:
-			_data_core_world.write_f32_indexed(_cid_wi, _wf_idx, _wf_intensity)
+			_data_core_world.write_f32_range(_cid_wi, 0, soa_intensity)
 		var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
 		if _cid_wc >= 0:
-			_data_core_world.write_f32_indexed(_cid_wc, _wf_idx, _wf_cloud)
+			_data_core_world.write_f32_range(_cid_wc, 0, soa_cloud)
 		var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
 		if _cid_wp >= 0:
-			_data_core_world.write_f32_indexed(_cid_wp, _wf_idx, _wf_precip)
+			_data_core_world.write_f32_range(_cid_wp, 0, soa_precip)
 		var _cid_wv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
 		if _cid_wv >= 0:
-			_data_core_world.write_f32_indexed(_cid_wv, _wf_idx, _wf_vapor)
+			_data_core_world.write_f32_range(_cid_wv, 0, soa_vapor)
 		var _cid_wcv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
 		if _cid_wcv >= 0:
-			_data_core_world.write_f32_indexed(_cid_wcv, _wf_idx, _wf_conv)
+			_data_core_world.write_f32_range(_cid_wcv, 0, soa_convergence)
 		var _cid_wins: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
 		if _cid_wins >= 0:
-			_data_core_world.write_f32_indexed(_cid_wins, _wf_idx, _wf_inst)
+			_data_core_world.write_f32_range(_cid_wins, 0, soa_instability)
 		var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
 		if _cid_wt >= 0:
-			_data_core_world.write_u8_indexed(_cid_wt, _wf_idx, _wf_type)
+			_data_core_world.write_u8_range(_cid_wt, 0, soa_type)
 		var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
 		if _cid_wfi >= 0:
-			_data_core_world.write_u8_indexed(_cid_wfi, _wf_idx, _wf_init)
+			_data_core_world.write_u8_range(_cid_wfi, 0, soa_field_init)
+	var commit_dc_ms: float = (Time.get_ticks_usec() - t_commit_dc_us) / 1000.0
+	var commit_convergence_ms: float = 0.0
 	if _field_slice_refresh_convergence:
+		var t_commit_conv_us: int = Time.get_ticks_usec()
 		_weather_system._apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
+		commit_convergence_ms = (Time.get_ticks_usec() - t_commit_conv_us) / 1000.0
+	var commit_total_ms: float = (Time.get_ticks_usec() - t_commit_total_us) / 1000.0
 
 	var t_us0_field: int = Time.get_ticks_usec()
 	# ─── Weather Hot-Path：dist fast-path（plan/weather-hotpath-cpp 任务 3）──
@@ -570,6 +549,11 @@ func commit() -> Array[WeatherFront]:
 		"field_solve_ms": last_solve_ms,
 		"field_solve_total_ms": solve_ms,
 		"field_summary_ms": summary_ms,
+		"field_commit_total_ms": commit_total_ms,
+		"field_commit_setup_ms": commit_setup_ms,
+		"field_commit_loop_ms": commit_loop_ms,
+		"field_commit_dc_ms": commit_dc_ms,
+		"field_commit_convergence_ms": commit_convergence_ms,
 		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
 	}
 	# 任务 9：节流式回归告警（dist/summary 各自门槛 × 2 ring buffer 检测）

@@ -696,12 +696,19 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 	var n: int = state.size()
 	var cold_sink_temp: float = cfg.COLD_SINK_TEMP if cfg != null else -0.05
 
-	# 先把所有水域陆地都清零，避免"上一轮残留 ocean_current"（旧像素路径写过）。
-	# 但只清水格——陆地维持 Vector2.ZERO 的不变量已由其他路径保证。
+	var ocx_arr: PackedFloat32Array = map.ocean_current_x_arr
+	var ocy_arr: PackedFloat32Array = map.ocean_current_y_arr
+	var soa_ok: bool = ocx_arr.size() >= map.soa_size() and ocy_arr.size() >= map.soa_size()
+
+	# 先把所有水域清零，避免"上一轮残留 ocean_current"（旧像素路径写过）。
 	for k in range(n):
 		var c: HexCell = state.water_cells[k]
 		if c != null:
-			c.ocean_current = Vector2.ZERO
+			if soa_ok:
+				ocx_arr[c.index] = 0.0
+				ocy_arr[c.index] = 0.0
+			else:
+				c.ocean_current = Vector2.ZERO
 
 	for k in range(n):
 		var c: HexCell = state.water_cells[k]
@@ -733,7 +740,11 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		# 限幅 [-1, 1]
 		cur.x = clampf(cur.x, -1.0, 1.0)
 		cur.y = clampf(cur.y, -1.0, 1.0)
-		c.ocean_current = cur
+		if soa_ok:
+			ocx_arr[c.index] = cur.x
+			ocy_arr[c.index] = cur.y
+		else:
+			c.ocean_current = cur
 
 ## solve_ocean_current_fallback —— 当 enable_ocean_heat_transport = false 时使用。
 ##

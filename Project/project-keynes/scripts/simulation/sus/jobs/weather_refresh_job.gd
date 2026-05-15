@@ -27,9 +27,9 @@ const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 # 在 climate 还是 80ms 单体怪兽时合理（climate 一跑 weather 必须让），但
 # 当前 climate 已切片到 6 个 sub-stage，每 stage 5-10ms，每次都触发 defer
 # → weather 30 tick 只跑 4 次（每 7.5 天 1 次）。
-# 提到 12ms：略高于典型 climate sub-stage 耗时，让 weather 不会因为 climate
-# 正常切片就饿死；只在 climate 真出现 spike（>12ms 的极端档）时才 defer。
-const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 12.0
+# 当前 ocean_water sub-stage 实测约 10-12ms；这类片再叠 weather 的 8ms commit
+# 会稳定打出 30ms+ fast tick。阈值设为 9ms，只让 A/B 这类轻片同帧跑 weather。
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 9.0
 const _MAX_CLIMATE_DEFER_STREAK: int = 2
 
 # External references — wired up by MapGenerator at registration time.
@@ -572,27 +572,45 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		and generator.has_method("begin_weather_refresh_stage_a") \
 		and generator.has_method("run_weather_refresh_stage_a_slice") \
 		and generator.has_method("commit_weather_refresh_stage_a")
+	var timing: Dictionary = {
+		"begin_stage_a_ms": 0.0,
+		"run_stage_a_slice_ms": 0.0,
+		"stage_a_direct_ms": 0.0,
+		"commit_stage_a_ms": 0.0,
+		"stage_b_outer_ms": 0.0,
+		"sync_fronts_ms": 0.0,
+		"soak_dump_ms": 0.0,
+	}
 	if can_slice_field:
 		if not _round_active:
+			var t_begin_us: int = Time.get_ticks_usec()
 			generator.begin_weather_refresh_stage_a(map, world, season_idx, anomaly, season_phase)
+			timing["begin_stage_a_ms"] = (Time.get_ticks_usec() - t_begin_us) / 1000.0
 			_round_active = true
 			_round_stage = 1
 			_round_fronts = _last_fronts
 		var cell_budget: int = 500
 		if generator.has_method("weather_field_slice_cells"):
 			cell_budget = int(generator.weather_field_slice_cells())
+		var t_run_us: int = Time.get_ticks_usec()
 		var slice_result: Dictionary = generator.run_weather_refresh_stage_a_slice(cell_budget)
+		timing["run_stage_a_slice_ms"] = (Time.get_ticks_usec() - t_run_us) / 1000.0
 		var slice_done: bool = bool(slice_result.get("done", true))
 		if not slice_done:
 			var partial_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+			_publish_job_timing(timing, partial_elapsed_ms)
 			return {
 				"done": false,
 				"work_done": int(slice_result.get("work_done", 0)),
 				"elapsed_ms": partial_elapsed_ms,
 				"progress_ratio": float(slice_result.get("progress_ratio", 0.0)),
 			}
+		var t_commit_us: int = Time.get_ticks_usec()
 		var sliced_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
+		timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
+		var t_stage_b_us: int = Time.get_ticks_usec()
 		generator.refresh_daily_stage_b(map, world)
+		timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_stage_b_us) / 1000.0
 		_last_fronts = sliced_fronts
 		_round_fronts = sliced_fronts
 		_round_active = false
@@ -602,9 +620,14 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		# DataCore step 2：正路径 commit 完成，镜像 front 到 World（开关 ON 才生效）。
 		# C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
 		if is_data_core_on:
+			var t_sync_us: int = Time.get_ticks_usec()
 			sync_fronts_to_world(sliced_fronts)
+			timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_sync_us) / 1000.0
+		var t_soak_us: int = Time.get_ticks_usec()
 		_soak_dump_weather_phase(ctx, sliced_fronts.size())
+		timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_soak_us) / 1000.0
 		var sliced_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		_publish_job_timing(timing, sliced_elapsed_ms)
 		return {
 			"done": true,
 			"work_done": int(slice_result.get("work_done", sliced_fronts.size())),
@@ -612,8 +635,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"progress_ratio": 1.0,
 		}
 
+	var t_direct_a_us: int = Time.get_ticks_usec()
 	var fronts: Array[WeatherFront] = generator.refresh_daily_stage_a(map, world, season_idx, anomaly, season_phase)
+	timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_direct_a_us) / 1000.0
+	var t_direct_b_us: int = Time.get_ticks_usec()
 	generator.refresh_daily_stage_b(map, world)
+	timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_direct_b_us) / 1000.0
 
 	_last_fronts = fronts
 	_round_fronts = fronts
@@ -625,9 +652,14 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_fronts_changed_this_tick = true
 	# DataCore step 2：同步镜像。C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
 	if is_data_core_on:
+		var t_direct_sync_us: int = Time.get_ticks_usec()
 		sync_fronts_to_world(fronts)
+		timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_direct_sync_us) / 1000.0
+	var t_direct_soak_us: int = Time.get_ticks_usec()
 	_soak_dump_weather_phase(ctx, fronts.size())
+	timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_direct_soak_us) / 1000.0
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+	_publish_job_timing(timing, elapsed_ms)
 	return {
 		"done": true,
 		"work_done": fronts.size(),
@@ -689,6 +721,24 @@ func _is_data_core_weather_enabled() -> bool:
 	if "use_data_core_weather" in cp:
 		return bool(cp.use_data_core_weather)
 	return false
+
+
+func _publish_job_timing(timing: Dictionary, total_ms: float) -> void:
+	timing["job_total_ms"] = total_ms
+	var accounted_ms: float = 0.0
+	for k in [
+		"begin_stage_a_ms",
+		"run_stage_a_slice_ms",
+		"stage_a_direct_ms",
+		"commit_stage_a_ms",
+		"stage_b_outer_ms",
+		"sync_fronts_ms",
+		"soak_dump_ms",
+	]:
+		accounted_ms += float(timing.get(k, 0.0))
+	timing["job_unattributed_ms"] = maxf(0.0, total_ms - accounted_ms)
+	if generator != null and generator.has_method("merge_weather_job_breakdown"):
+		generator.merge_weather_job_breakdown(timing)
 
 
 ## Was run_slice invoked on the most recent SUS.tick()? Used by main.gd to

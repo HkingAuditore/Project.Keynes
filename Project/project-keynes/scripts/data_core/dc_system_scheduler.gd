@@ -247,7 +247,11 @@ func _topo_sort() -> PackedInt32Array:
 	while not ready.is_empty():
 		var pick: int = 0
 		for k in range(1, ready.size()):
-			if ready[k] < ready[pick]:
+			var idx_k: int = int(ready[k])
+			var idx_pick: int = int(ready[pick])
+			var pri_k: int = int(_systems[idx_k].priority)
+			var pri_pick: int = int(_systems[idx_pick].priority)
+			if pri_k < pri_pick or (pri_k == pri_pick and idx_k < idx_pick):
 				pick = k
 		var idx: int = ready[pick]
 		ready.remove_at(pick)

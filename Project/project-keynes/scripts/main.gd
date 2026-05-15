@@ -748,6 +748,21 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
+					if str(b.get("current_pass", "")) == "sea_ice" and "_last_sea_ice_daily_breakdown" in _generator:
+						var sid: Dictionary = _generator._last_sea_ice_daily_breakdown
+						if not sid.is_empty():
+							print("        sea_ice_daily path=%s pack=%.1f refresh=%.1f native=%.3f native_wall=%.1f sync=%.1f flip=%.1f total=%.1f water=%d flipped=%d" % [
+								str(sid.get("path", "")),
+								float(sid.get("pack_ms", 0.0)),
+								float(sid.get("refresh_ms", 0.0)),
+								float(sid.get("native_ms", -1.0)),
+								float(sid.get("native_wall_ms", 0.0)),
+								float(sid.get("sync_ms", 0.0)),
+								float(sid.get("flip_ms", 0.0)),
+								float(sid.get("total_wall_ms", 0.0)),
+								int(sid.get("water", 0)),
+								int(sid.get("flipped", 0)),
+							])
 			# Daily-sim perf instrumentation：weather_refresh 内部细分
 			# （weather_tick 包括 advance/spawn/distribute/cyclone 四段；
 			#  之后是 transp/albedo/veg_dyn/cover_rebake/veg_rebake/feedback）
@@ -770,6 +785,26 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(wb.get("feedback_ms", 0.0)),
 						int(wb.get("fronts", 0)),
 					])
+					if wb.has("job_total_ms"):
+						print("        weather_job total=%.1f begin=%.1f run_slice=%.1f direct_a=%.1f commit=%.1f stage_b=%.1f sync=%.1f soak=%.1f unattributed=%.1f" % [
+							float(wb.get("job_total_ms", 0.0)),
+							float(wb.get("begin_stage_a_ms", 0.0)),
+							float(wb.get("run_stage_a_slice_ms", 0.0)),
+							float(wb.get("stage_a_direct_ms", 0.0)),
+							float(wb.get("commit_stage_a_ms", 0.0)),
+							float(wb.get("stage_b_outer_ms", 0.0)),
+							float(wb.get("sync_fronts_ms", 0.0)),
+							float(wb.get("soak_dump_ms", 0.0)),
+							float(wb.get("job_unattributed_ms", 0.0)),
+						])
+					if wb.has("field_commit_total_ms"):
+						print("        weather_commit total=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f" % [
+							float(wb.get("field_commit_total_ms", 0.0)),
+							float(wb.get("field_commit_setup_ms", 0.0)),
+							float(wb.get("field_commit_loop_ms", 0.0)),
+							float(wb.get("field_commit_dc_ms", 0.0)),
+							float(wb.get("field_commit_convergence_ms", 0.0)),
+						])
 					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
 					# 真相源 = ClimateProfile.use_data_core_weather（F9 实时切换的旗子）
 					# 不能用 data_core_ready()，那个一旦镜像挂上就不会回退，会让 F9 切到

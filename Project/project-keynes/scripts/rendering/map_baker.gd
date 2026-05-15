@@ -2912,13 +2912,17 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							])
 						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
 								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
+							var psi_cpp_expected: bool = heat_transport \
+									and profile != null and "use_gdext_psi_solver" in profile \
+									and bool(profile.use_gdext_psi_solver) \
+									and _world_ext != null and _world_ext.has_method("run_psi_solver_pass")
 							for _i_w in range(n_wind):
-								var _c_w: HexCell = cells_for_wind[_i_w]
-								if _c_w == null:
-									continue
-								_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
-								_c_w.wind_speed = wspd_arr[_i_w]
 								map.wind_speed_arr[_i_w] = wspd_arr[_i_w]
+								if not psi_cpp_expected:
+									var _c_w: HexCell = cells_for_wind[_i_w]
+									if _c_w != null:
+										_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
+										_c_w.wind_speed = wspd_arr[_i_w]
 							_wind_done_by_cpp = true
 							_phys_wind_done_by_cpp = true
 							if not _wind_b_first_run_logged:
@@ -2966,25 +2970,30 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				var cells_for_psi: Array = map.iter_cells()
 				var n_psi: int = cells_for_psi.size()
 				var nb_idx_for_psi: PackedInt32Array = map.neighbor_indices_packed()
-				# Pack current-frame wind state from cell.wind_vector / wind_speed.
-				# (map.wind_x_arr / wind_y_arr only valid when wind C++ path ran;
-				#  cell.* always reflects the freshly-solved wind regardless.)
+				# Pack current-frame wind state. C++ wind path already wrote map.wind_x/y
+				# and map.wind_speed_arr, so reuse SoA directly and avoid 2400 facade reads.
 				var wx_arr_psi: PackedFloat32Array = PackedFloat32Array()
 				var wy_arr_psi: PackedFloat32Array = PackedFloat32Array()
 				var wspd_arr_psi: PackedFloat32Array = PackedFloat32Array()
-				wx_arr_psi.resize(n_psi)
-				wy_arr_psi.resize(n_psi)
-				wspd_arr_psi.resize(n_psi)
-				for _i_w_pack in range(n_psi):
-					var _c_wp: HexCell = cells_for_psi[_i_w_pack]
-					if _c_wp == null:
-						wx_arr_psi[_i_w_pack] = 0.0
-						wy_arr_psi[_i_w_pack] = 0.0
-						wspd_arr_psi[_i_w_pack] = 0.0
-					else:
-						wx_arr_psi[_i_w_pack] = _c_wp.wind_vector.x
-						wy_arr_psi[_i_w_pack] = _c_wp.wind_vector.y
-						wspd_arr_psi[_i_w_pack] = _c_wp.wind_speed
+				if _phys_wind_done_by_cpp and map.wind_x_arr.size() == n_psi \
+						and map.wind_y_arr.size() == n_psi and map.wind_speed_arr.size() == n_psi:
+					wx_arr_psi = map.wind_x_arr
+					wy_arr_psi = map.wind_y_arr
+					wspd_arr_psi = map.wind_speed_arr
+				else:
+					wx_arr_psi.resize(n_psi)
+					wy_arr_psi.resize(n_psi)
+					wspd_arr_psi.resize(n_psi)
+					for _i_w_pack in range(n_psi):
+						var _c_wp: HexCell = cells_for_psi[_i_w_pack]
+						if _c_wp == null:
+							wx_arr_psi[_i_w_pack] = 0.0
+							wy_arr_psi[_i_w_pack] = 0.0
+							wspd_arr_psi[_i_w_pack] = 0.0
+						else:
+							wx_arr_psi[_i_w_pack] = _c_wp.wind_vector.x
+							wy_arr_psi[_i_w_pack] = _c_wp.wind_vector.y
+							wspd_arr_psi[_i_w_pack] = _c_wp.wind_speed
 				if n_psi > 0 and nb_idx_for_psi.size() >= n_psi * 6:
 					var water_ids_psi := PackedByteArray()
 					water_ids_psi.append(int(TerrainType.TERRAIN.OCEAN))
@@ -3030,18 +3039,12 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							])
 						if rc_psi >= 0.0 and curl_out.size() == n_psi and psi_out.size() == n_psi \
 								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
-							# Commit: write wind_stress_curl / ocean_psi for ALL cells
-							# (C++ already zeroed land cells); ocean_current only for
-							# water cells (preserve land Vector2.ZERO invariant maintained
-							# elsewhere; C++ also wrote 0 for land so it's safe to commit
-							# unconditionally).
+							# Commit hot path: keep current in SoA. HexCell facade reads the
+							# same components, while climate ocean_water can consume arrays
+							# without a second cell → PackedArray pack.
 							for _i_pc in range(n_psi):
-								var _c_pc: HexCell = cells_for_psi[_i_pc]
-								if _c_pc == null:
-									continue
-								_c_pc.wind_stress_curl = curl_out[_i_pc]
-								_c_pc.ocean_psi = psi_out[_i_pc]
-								_c_pc.ocean_current = Vector2(ocx_out[_i_pc], ocy_out[_i_pc])
+								map.ocean_current_x_arr[_i_pc] = ocx_out[_i_pc]
+								map.ocean_current_y_arr[_i_pc] = ocy_out[_i_pc]
 							_psi_done_by_cpp = true
 							_psi_native_ms = rc_psi
 							if not _psi_first_run_logged:
@@ -3057,6 +3060,15 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			else:
 				if _psi_path_log_count > 0 and _psi_path_log_count <= 3:
 					print("[psi_solver] FALLBACK to GDScript init/iters/finalize (call#%d) — see preceding path-decision / commit-diag for reason" % _psi_path_log_count)
+				if _phys_wind_done_by_cpp and map.wind_x_arr.size() >= map.soa_size() \
+						and map.wind_y_arr.size() >= map.soa_size() \
+						and map.wind_speed_arr.size() >= map.soa_size():
+					var cells_sync_wind: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+					for _i_sync_wind in range(map.soa_size()):
+						var _c_sync_wind: HexCell = cells_sync_wind[_i_sync_wind]
+						if _c_sync_wind != null:
+							_c_sync_wind.wind_vector = Vector2(map.wind_x_arr[_i_sync_wind], map.wind_y_arr[_i_sync_wind])
+							_c_sync_wind.wind_speed = map.wind_speed_arr[_i_sync_wind]
 				_pending_psi_state = PhysCircSolverScript.init_psi_solver(map, hex_size, bounds)
 				_phys_psi_iters_done = 0
 				_phys_stage = _PHYS_STAGE_PSI_ITERS

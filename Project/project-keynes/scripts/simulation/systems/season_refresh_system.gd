@@ -89,8 +89,8 @@ func tick(_ctx) -> Dictionary:
 		generator.run_season_refresh_stage(map, world_data, _season_idx, _stage)
 	_stage += 1
 
-	# 与 SeasonRefreshJob 一致：11 stages
-	var done: bool = _stage >= 11
+	# 与 SeasonRefreshJob 一致：12 stages
+	var done: bool = _stage >= 12
 	if done:
 		_round_active = false
 		if generator.has_method("finish_season_refresh"):
@@ -102,7 +102,7 @@ func tick(_ctx) -> Dictionary:
 		"done": done,
 		"work_done": 1,
 		"elapsed_ms": elapsed_ms,
-		"progress_ratio": 1.0 if done else float(_stage) / 11.0,
+		"progress_ratio": 1.0 if done else float(_stage) / 12.0,
 	}
 
 

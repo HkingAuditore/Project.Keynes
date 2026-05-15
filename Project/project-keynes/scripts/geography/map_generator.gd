@@ -333,6 +333,7 @@ var _wind_heat_call_count: int = 0
 # 字段：pass_a_ms / pass_b_ms / ocean_ms / sea_ice_ms / ice_bake_ms / transp_ms /
 # total_ms / cells。main.gd fast tick WARN 路径用它定位是哪一段慢。
 var _last_climate_breakdown: Dictionary = {}
+var _last_sea_ice_daily_breakdown: Dictionary = {}
 
 # A.2.1.A3 — Pass B 稀疏遍历专用：dirty + 1 跳邻居膨胀后的 visit mask。
 # 缓存在 generator 上避免每 round 分配；第一次遇到时按 cell_count 一次性 resize。
@@ -653,13 +654,13 @@ var _gdext_ocean_anomaly_buf_cached: PackedFloat32Array = PackedFloat32Array()
 # _compute_temperature 兜底），land pass C++ 用作 t_prev 兜底（修复 cell temp
 # 锁死在 0 的正反馈 bug，2026-05-13 用户验收踩过）。
 var _gdext_ocean_baseline_arr_cached: PackedFloat32Array = PackedFloat32Array()
-# F.2 共享 ocean_current buffer：从 cells[i].ocean_current.x/y 提取（schema 里
-# 的 cell_ocean_current_x/y SoA 镜像由 rebuild_soa_from_cells 仅在世界生成时
-# 填一次；physical_circulation_solver 之后改的是 HexCell，从不回写 SoA。
-# C++ 直接读 SoA slot 拿到的是初始值，advect 方向乱 → temp 雪崩。）
-# 与 anomaly_buf 同一 tick 内 land pass 复用，避免再 cells→array 拷贝。
+# F.2 共享 ocean_current buffer：physical C++ 路径会同步写 map.ocean_current_x/y_arr；
+# water/land pass 直接读 SoA，避免每次从 HexCell facade 反向打包。
 var _gdext_ocean_current_x_arr_cached: PackedFloat32Array = PackedFloat32Array()
 var _gdext_ocean_current_y_arr_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_ocean_baseline_work_buf: PackedFloat32Array = PackedFloat32Array()
+var _gdext_ocean_temp_before_work_buf: PackedFloat32Array = PackedFloat32Array()
+var _gdext_ocean_anomaly_work_buf: PackedFloat32Array = PackedFloat32Array()
 
 # F.4 sea_ice daily pass C++ 加速运行时统计（charter §7 P2，5.1ms → 0.5ms 目标）。
 var _gdext_sea_ice_runs: int = 0
@@ -1128,6 +1129,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
 		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 		_sus.register_job(_refresh_climate_daily_job)
+	if _ocean_currents_job != null:
+		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
+		_ocean_currents_job.climate_slice_ms_getter = Callable(self, "last_refresh_climate_slice_ms")
 	# 0.4.1：use_dc_system_scheduler 时用 EnumAtlasUploadSystem（native DCSystem，
 	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
 	if _use_dc_system_scheduler:
@@ -1332,6 +1336,11 @@ func sus_weather_breakdown() -> Dictionary:
 	return _last_weather_breakdown.duplicate()
 
 
+func merge_weather_job_breakdown(extra: Dictionary) -> void:
+	for k in extra.keys():
+		_last_weather_breakdown[k] = extra[k]
+
+
 func has_pending_enum_atlas_upload() -> bool:
 	return _enum_atlas_cover_dirty or _enum_atlas_vegetation_dirty
 
@@ -1393,20 +1402,21 @@ func begin_pending_season_refresh() -> int:
 
 
 func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, stage: int) -> void:
-	# 11-stage 切片（原 7-stage），把 stage 4 的 4 个生态 pass 与 stage 6 的
+	# 12-stage 切片（原 7-stage），把 stage 4 的 4 个生态 pass 与 stage 6 的
 	# rebake_biome + consume_feedback 各自独立成 stage。每个 stage 的单帧上界
-	# 从原来 ~140ms 降到 ~30ms 量级。SeasonRefreshJob 的 done 判定按 11 同步。
+	# 从原来 ~140ms 降到 ~30ms 量级。SeasonRefreshJob 的 done 判定按 12 同步。
 	#   0: moisture set
 	#   1: rain_shadow
 	#   2: redecide_terrain
-	#   3: river_ecology + vegetation_feedback
-	#   4: shrubland_pass
-	#   5: mangrove_pass
-	#   6: glacier_pass
-	#   7: swamp_pass
-	#   8: sync_current_state
-	#   9: rebake_biome_tex_only
-	#  10: consume_feedback_buffers
+	#   3: river_ecology
+	#   4: vegetation_feedback
+	#   5: shrubland_pass
+	#   6: mangrove_pass
+	#   7: glacier_pass
+	#   8: swamp_pass
+	#   9: sync_current_state
+	#  10: rebake_biome_tex_only
+	#  11: consume_feedback_buffers
 	var t_us0: int = Time.get_ticks_usec()
 	var season := clampi(season_idx, 0, 3)
 	match stage:
@@ -1435,39 +1445,42 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			# 需复刻 _decide_terrain 决策树 + apply_terrain multi-axis sync；本会话保留 GDScript。
 			_seasonal_redecide_terrain(map, season)
 		3:
-			# TODO(dots-total-cpp): stage 3 river_ecology + vegetation_feedback 完整 C++ 化
-			# 涉及河流流向链 + 邻域 diffuse + 二次 redecide；本会话保留 GDScript。
+			# TODO(dots-total-cpp): stage 3 _apply_river_ecology 完整 C++ 化
 			if _last_cfg != null:
 				_apply_river_ecology(map, _last_cfg)
-				_apply_vegetation_feedback(map, _last_cfg)
 		4:
-			# TODO(dots-total-cpp): stage 4 shrubland_pass 完整 C++ 化
+			# TODO(dots-total-cpp): stage 4 _apply_vegetation_feedback 完整 C++ 化
+			# 涉及邻域 diffuse + 二次 redecide；本会话保留 GDScript。
+			if _last_cfg != null:
+				_apply_vegetation_feedback(map, _last_cfg)
+		5:
+			# TODO(dots-total-cpp): stage 5 shrubland_pass 完整 C++ 化
 			# 涉及 _is_permanent_landform + apply_terrain multi-axis sync；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_shrubland_pass(map, _last_cfg)
-		5:
-			# TODO(dots-total-cpp): stage 5 mangrove_pass 完整 C++ 化（282 行）；本会话保留 GDScript。
+		6:
+			# TODO(dots-total-cpp): stage 6 mangrove_pass 完整 C++ 化（282 行）；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_mangrove_pass(map, _last_cfg)
-		6:
-			# TODO(dots-total-cpp): stage 6 glacier_pass 完整 C++ 化（843 行多 pass 雪线/冰川流/侵蚀）；本会话保留 GDScript。
+		7:
+			# TODO(dots-total-cpp): stage 7 glacier_pass 完整 C++ 化（843 行多 pass 雪线/冰川流/侵蚀）；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_glacier_pass(map, _last_cfg)
-		7:
-			# TODO(dots-total-cpp): stage 7 swamp_pass 完整 C++ 化；本会话保留 GDScript。
+		8:
+			# TODO(dots-total-cpp): stage 8 swamp_pass 完整 C++ 化；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_swamp_pass(map, _last_cfg)
-		8:
+		9:
 			if not _run_season_refresh_stage8_gdext(map, world, season):
 				_seasonal_sync_current_state(map, season)
-		9:
-			# 需求 7.2：RenderingServer 调用必须由 GDScript 发起，stage 9 不可 C++ 化。
+		10:
+			# 需求 7.2：RenderingServer 调用必须由 GDScript 发起，rebake stage 不可 C++ 化。
 			if world != null and _baker != null:
 				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
-		10:
+		11:
 			var cp_fb := _c()
 			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
-				# stage 10：soil_moisture / vegetation_growth_pressure 不在 SoA schema，
+				# stage 11：soil_moisture / vegetation_growth_pressure 不在 SoA schema，
 				# C++ 反向打包代价高于直接 GDScript 循环；保留 GDScript 直接调用。
 				# C++ 端 stage 10 实装作为 dormant 路径备用（字段未来进 SoA 后激活）。
 				_consume_feedback_buffers(map, cp_fb.feedback_decay)
@@ -4291,6 +4304,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	if cp == null:
 		return
 
+	var t_total_us: int = Time.get_ticks_usec()
 	var t0: int = Time.get_ticks_msec()
 	var k_freeze: float = float(cp.sea_ice_freeze_rate)
 	var k_melt: float = float(cp.sea_ice_melt_rate)
@@ -4347,25 +4361,40 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			_gdext_sea_ice_signature_ok = _validate_gdext_method_signature("run_sea_ice_daily_pass", 2)
 			print("[sea_ice/F.4] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_sea_ice_signature_ok))
 
-		# Build per-tick PackedArray 输入：
-		# - base_terrain / tta / upw：schema 无 SoA 镜像，必须从 cell 打包
-		# - cell_temperature：与 GDScript fallback 1:1 mirror，**必须**从 cell.temperature
-		#   打包；不能直接读 SoA cell_temp slot（pass_b/ocean_* C++ 写 SoA 不回写 cell，
-		#   读 SoA 会拿到 ocean_land 之后的修正温度，比 GDScript 路径冷许多）。
+		# Build per-tick PackedArray 输入：尽量走 SoA/cache，避免从 HexCell facade
+		# 逐格打包。sea_ice C++ native 只有几十微秒，热成本主要在这里。
 		if _gdext_sea_ice_base_terrain_buf.size() != n_cells_fast:
 			_gdext_sea_ice_base_terrain_buf.resize(n_cells_fast)
-		if _gdext_sea_ice_tta_buf.size() != n_cells_fast:
-			_gdext_sea_ice_tta_buf.resize(n_cells_fast)
-		if _gdext_sea_ice_upw_buf.size() != n_cells_fast:
-			_gdext_sea_ice_upw_buf.resize(n_cells_fast)
-		if _gdext_sea_ice_temp_buf.size() != n_cells_fast:
-			_gdext_sea_ice_temp_buf.resize(n_cells_fast)
+		var t_pack_us: int = Time.get_ticks_usec()
 		for i_build in range(n_cells_fast):
 			var c_build: HexCell = cells_fast[i_build]
 			_gdext_sea_ice_base_terrain_buf[i_build] = int(c_build.base_terrain) & 0xFF
-			_gdext_sea_ice_tta_buf[i_build] = c_build.temperature_transport_anomaly
-			_gdext_sea_ice_upw_buf[i_build] = c_build.upwelling_strength
-			_gdext_sea_ice_temp_buf[i_build] = c_build.temperature
+		var tta_input: PackedFloat32Array = PackedFloat32Array()
+		if _gdext_ocean_anomaly_buf_cached.size() == n_cells_fast:
+			tta_input = _gdext_ocean_anomaly_buf_cached
+		else:
+			if _gdext_sea_ice_tta_buf.size() != n_cells_fast:
+				_gdext_sea_ice_tta_buf.resize(n_cells_fast)
+			tta_input = _gdext_sea_ice_tta_buf
+			for i_tta in range(n_cells_fast):
+				tta_input[i_tta] = cells_fast[i_tta].temperature_transport_anomaly
+		var upw_input: PackedFloat32Array = map.upwelling_strength_arr \
+				if map.upwelling_strength_arr.size() == n_cells_fast \
+				else _gdext_sea_ice_upw_buf
+		if upw_input.size() != n_cells_fast:
+			_gdext_sea_ice_upw_buf.resize(n_cells_fast)
+			upw_input = _gdext_sea_ice_upw_buf
+			for i_upw in range(n_cells_fast):
+				upw_input[i_upw] = cells_fast[i_upw].upwelling_strength
+		var temp_input: PackedFloat32Array = map.temp_arr \
+				if map.temp_arr.size() == n_cells_fast \
+				else _gdext_sea_ice_temp_buf
+		if temp_input.size() != n_cells_fast:
+			_gdext_sea_ice_temp_buf.resize(n_cells_fast)
+			temp_input = _gdext_sea_ice_temp_buf
+			for i_temp in range(n_cells_fast):
+				temp_input[i_temp] = cells_fast[i_temp].temperature
+		var pack_ms: float = (Time.get_ticks_usec() - t_pack_us) / 1000.0
 
 		# water_terrain_ids 与 _is_water 1:1 对齐（line 3090+）：
 		# OCEAN / COAST / LAKE / REEF / KELP / SEA_ICE 共 6 种。
@@ -4395,18 +4424,23 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			"water_terrain_ids": water_ids,
 			"neighbor_indices": nb_idx_fast,
 			"base_terrain_arr": _gdext_sea_ice_base_terrain_buf,
-			"temp_transport_anomaly": _gdext_sea_ice_tta_buf,
-			"upwelling_strength": _gdext_sea_ice_upw_buf,
-			"cell_temperature_arr": _gdext_sea_ice_temp_buf,
+			"temp_transport_anomaly": tta_input,
+			"upwelling_strength": upw_input,
+			"cell_temperature_arr": temp_input,
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/dots-f4-validation.md §2.2.b）：
 		# GDScript pass_a 写 map.temp_arr / 上一段 sub-pass 写 map.*_arr 后，C++ slot
 		# 仍指向 CoW 解耦前的旧 buffer。先 refresh 让 C++ 读到 GDScript 端最新状态。
 		# 开销 ~14μs / 35 component（map_data->get + Variant 类型分发），可接受；
 		# 后续 Phase 2.1 GDScript 改走 world.write_f32_indexed 后可移除。
+		var refresh_ms: float = 0.0
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			var t_refresh_us: int = Time.get_ticks_usec()
 			_data_core_world_ext.refresh_slots_from_map()
+			refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+		var t_native_us: int = Time.get_ticks_usec()
 		var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
+		var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
 		if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 3:
 			print("[sea_ice/F.4] DEBUG call#%d: rc=%.4f n_cells=%d enable_oht=%s" % [
 				_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
@@ -4414,15 +4448,21 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			])
 		if rc >= 0.0:
 			# C++ 已写 cell_sea_ice_frac SoA + flush 回 MapData。
-			# 同步 cells[i].sea_ice_fraction（fastpath HexCell typed fields 路径
-			# 下 cell.sea_ice_fraction 是独立成员，需要从 SoA 拷回；不在 fastpath
-			# 下 sea_ice_frac_arr 已经被 C++ 写过，但 cells[i].sea_ice_fraction
-			# 仍是上一日值 → 必须显式同步）。
-			for i_sync in range(n_cells_fast):
-				var c_sync: HexCell = cells_fast[i_sync]
-				c_sync.sea_ice_fraction = map.sea_ice_frac_arr[i_sync]
+			# HexCell facade 开启时 sea_ice_fraction getter 直接读 SoA；不再全图
+			# 回写 2400 个 cell setter。只在 facade 未启用的 fallback 场景才同步。
+			var t_sync_us: int = Time.get_ticks_usec()
+			var sync_needed: bool = true
+			if n_cells_fast > 0:
+				var c_probe: HexCell = cells_fast[0]
+				sync_needed = c_probe != null and not c_probe.is_facade_enabled()
+			if sync_needed:
+				for i_sync in range(n_cells_fast):
+					var c_sync: HexCell = cells_fast[i_sync]
+					c_sync.sea_ice_fraction = map.sea_ice_frac_arr[i_sync]
+			var sync_ms: float = (Time.get_ticks_usec() - t_sync_us) / 1000.0
 
 			# 应用 flip 列表
+			var t_flip_us: int = Time.get_ticks_usec()
 			var flip_to_ice_list: PackedInt32Array = knobs.get("flip_to_ice_list", PackedInt32Array())
 			var flip_to_base_list: PackedInt32Array = knobs.get("flip_to_base_list", PackedInt32Array())
 			var flip_to_base_terrain: PackedByteArray = knobs.get("flip_to_base_terrain", PackedByteArray())
@@ -4435,6 +4475,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
 					var target_terr: int = int(flip_to_base_terrain[i_back])
 					(cells_fast[idx_b] as HexCell).apply_terrain(target_terr as TerrainType.TERRAIN)
+			var flip_ms: float = (Time.get_ticks_usec() - t_flip_us) / 1000.0
 
 			var water_count_cpp: int = int(knobs.get("stat_water_count", 0))
 			var flipped_count_cpp: int = int(knobs.get("stat_flipped_count", 0))
@@ -4457,6 +4498,19 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				print("_apply_sea_ice_daily_pass[F.4]: %.2fms (water=%d, flipped=%d, phase=%.3f)" % [
 					rc, water_count_cpp, flipped_count_cpp, season_phase
 				])
+			_last_sea_ice_daily_breakdown = {
+				"path": "gdext",
+				"pack_ms": pack_ms,
+				"refresh_ms": refresh_ms,
+				"native_ms": rc,
+				"native_wall_ms": native_wall_ms,
+				"sync_ms": sync_ms,
+				"flip_ms": flip_ms,
+				"total_wall_ms": (Time.get_ticks_usec() - t_total_us) / 1000.0,
+				"water": water_count_cpp,
+				"flipped": flipped_count_cpp,
+			}
+			_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 			return
 		_gdext_sea_ice_fallbacks += 1
 		# rc<0：C++ 已 push_warning；继续 fall through 到 GDScript 路径
@@ -4579,6 +4633,19 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var _cid_si: int = _data_core_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC)
 		if _cid_si >= 0:
 			_data_core_world.write_f32_indexed(_cid_si, _si_indices, _si_frac)
+	_last_sea_ice_daily_breakdown = {
+		"path": "gdscript",
+		"pack_ms": 0.0,
+		"refresh_ms": 0.0,
+		"native_ms": -1.0,
+		"native_wall_ms": 0.0,
+		"sync_ms": 0.0,
+		"flip_ms": 0.0,
+		"total_wall_ms": (Time.get_ticks_usec() - t_total_us) / 1000.0,
+		"water": water_count,
+		"flipped": flipped_count,
+	}
+	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 
 	# 节流打点（每 365 天打一次）
 	if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
@@ -5528,11 +5595,13 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 	# Phase 3a Step 2.1.a：ema_initialized SoA 别名
 	var ema_init_a: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
 
-	# baseline + temp_before 快照
-	var baseline: PackedFloat32Array = PackedFloat32Array()
-	baseline.resize(n)
-	var temp_before: PackedFloat32Array = PackedFloat32Array()
-	temp_before.resize(n)
+	# baseline + temp_before 快照。复用 PackedArray，避免每个 climate round 分配。
+	if _gdext_ocean_baseline_work_buf.size() != n:
+		_gdext_ocean_baseline_work_buf.resize(n)
+	if _gdext_ocean_temp_before_work_buf.size() != n:
+		_gdext_ocean_temp_before_work_buf.resize(n)
+	var baseline: PackedFloat32Array = _gdext_ocean_baseline_work_buf
+	var temp_before: PackedFloat32Array = _gdext_ocean_temp_before_work_buf
 	for i in range(n):
 		var c: HexCell = cells[i]
 		if ema_init_a[i] != 0:
@@ -5578,21 +5647,11 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			_gdext_ocean_water_signature_checked = true
 			_gdext_ocean_water_signature_ok = _validate_gdext_method_signature("run_ocean_water_pass", 1)
 			print("[ocean_water/F.2a] sig probe result = %s（仅作诊断）" % str(_gdext_ocean_water_signature_ok))
-		# 准备 anomaly_out scratch buffer：必须 fresh 给 C++（land pass 之前
-		# 由 water pass 写 water cell；land pass 再覆盖 land cell）。先从 cells
-		# 的当前 anomaly 拷出来当 baseline，C++ water pass 会覆盖 water 部分。
-		var anomaly_buf: PackedFloat32Array = PackedFloat32Array()
-		anomaly_buf.resize(n)
-		# ocean_current 必须从 cells 提取（SoA stale，见上方 cache 字段注释）
-		var ocx_buf: PackedFloat32Array = PackedFloat32Array()
-		var ocy_buf: PackedFloat32Array = PackedFloat32Array()
-		ocx_buf.resize(n)
-		ocy_buf.resize(n)
-		for ai in range(n):
-			var cai: HexCell = cells[ai]
-			anomaly_buf[ai] = float(cai.temperature_transport_anomaly)
-			ocx_buf[ai] = cai.ocean_current.x
-			ocy_buf[ai] = cai.ocean_current.y
+		# C++ 会创建 fresh anomaly_out 并写回 knobs。这里传复用 buffer 只为满足
+		# 旧签名，避免额外 cells → array 打包。
+		if _gdext_ocean_anomaly_work_buf.size() != n:
+			_gdext_ocean_anomaly_work_buf.resize(n)
+		var anomaly_buf: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
 		var knobs_w: Dictionary = {
 			"n_cells": n,
 			"advect_steps": advect_steps,
@@ -5601,8 +5660,8 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			"baseline_arr": baseline,
 			"temp_before_arr": temp_before,
 			"anomaly_out": anomaly_buf,
-			"ocean_current_x_arr": ocx_buf,
-			"ocean_current_y_arr": ocy_buf,
+			"ocean_current_x_arr": ocx_a,
+			"ocean_current_y_arr": ocy_a,
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
 		# 但本 pass 还要读 map.is_water_arr / cell_lat_norm_arr 等静态/上一段写过的字段；
@@ -5619,18 +5678,17 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
 			# 必须从 dict 重新读取，原始 anomaly_buf 因 CoW detach 仍是旧数据。
 			anomaly_buf = knobs_w["anomaly_out"]
-			for ci in range(n):
-				if is_water_a[ci] != 0:
-					cells[ci].temperature_transport_anomaly = anomaly_buf[ci]
-				# else：保留 cells 旧 anomaly（land pass 会重新算）
+			# 不在 water pass 回写 HexCell.temperature_transport_anomaly：land pass
+			# 会直接复用该 buffer，并在下一片统一回写。这样 ocean_water 不再承担
+			# 2400 次 facade 属性写。
 			# 顺便把 anomaly_buf 缓存给后续 land pass C++ 路径使用，避免再
 			# 次 cells → PackedArray 拷贝（_apply_ocean_anomaly_to_cells 之后再清）
 			_gdext_ocean_anomaly_buf_cached = anomaly_buf
 			# 把 baseline 也 stash 一份给 land pass 当 t_prev 兜底（修复正反馈 bug）
 			_gdext_ocean_baseline_arr_cached = baseline
-			# ocean_current 同样 cache 给 land pass 复用，省一次 cells→array 拷贝
-			_gdext_ocean_current_x_arr_cached = ocx_buf
-			_gdext_ocean_current_y_arr_cached = ocy_buf
+			# ocean_current 同样 cache 给 land pass 复用。
+			_gdext_ocean_current_x_arr_cached = ocx_a
+			_gdext_ocean_current_y_arr_cached = ocy_a
 			_gdext_ocean_water_runs += 1
 			_gdext_ocean_water_total_ms += rc_w
 			if _gdext_ocean_water_runs == 1:
@@ -5815,8 +5873,8 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			for ci in range(n):
 				if is_water_l[ci] == 0:
 					cells[ci].temperature_transport_anomaly = anomaly_io[ci]
-			# tick 末尾失效全部 cache（4 个：anomaly + baseline + ocean_current x/y）
-			_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
+			# anomaly 继续保留给同轮 sea_ice，避免 sea_ice 再从 HexCell 打包 TTA。
+			_gdext_ocean_anomaly_buf_cached = anomaly_io
 			_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
 			_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
 			_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
