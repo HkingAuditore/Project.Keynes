@@ -2396,8 +2396,11 @@ func configure_weather_field(
 #     这是地形扰动后的 per-cell 实际风，本身已含山脈绕流与海岸热力加速，
 #     另外包含了费老的季节偏移资源 → 不再叠加 monsoon offset（避免双重叠加）。
 #   - fallback（开关为 false / 反查失败 / wind_vector 太小）
-#     走旧路径 world.sample_wind(pos) + WindBelt.monsoon_offset_at(ny, season_phase)。
-func _sample_terrain_wind(map: MapData, world: WorldData, world_pos: Vector2, ny: float, season_phase: float) -> Vector2:
+#     C3 plan (vector_atlas removal)：原 fallback 调 world.sample_wind(pos)
+#     从 wind_field_buffer 双线性采样，但 buffer 已停止 bake（is_empty）。
+#     新 fallback：直接走 WindBelt.wind_at(ny, season_phase) 的纯纬度风基线 +
+#     monsoon_offset，与原 fallback 行为等价但跳过空 buffer 采样开销。
+func _sample_terrain_wind(map: MapData, _world: WorldData, world_pos: Vector2, ny: float, season_phase: float) -> Vector2:
 	if _use_wind_vector_for_advect and map != null:
 		var cube := HexUtils.world_to_cube(world_pos, _hex_size)
 		var cell: HexCell = map.get_cell_by_cube(cube)
@@ -2405,7 +2408,8 @@ func _sample_terrain_wind(map: MapData, world: WorldData, world_pos: Vector2, ny
 			var wv: Vector2 = cell.wind_vector
 			if wv.length() > 0.01:
 				return wv
-	var base: Vector2 = world.sample_wind(world_pos)
+	# Pure-baseline fallback：纬度风 + monsoon offset（不再走像素 buffer 采样）。
+	var base: Vector2 = WindBelt.wind_at(ny, season_phase)
 	return base + WindBelt.monsoon_offset_at(ny, season_phase)
 
 # spawn 路径（_spawn_random_front / _build_front_at）复用 _current_map_for_tick 取 map

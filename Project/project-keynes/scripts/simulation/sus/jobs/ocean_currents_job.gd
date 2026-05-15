@@ -6,10 +6,19 @@ class_name OceanCurrentsJob
 ##
 ## Driven by: SUS daily tick (sourced from main.gd._on_day_changed).
 ## Strategy:  ContinuousSlicedPolicy(period_ticks, slice_count). Each slice
-##            bakes ⌈total_pixels / slice_count⌉ pixels into the baker's
-##            pending double-buffer. After the last slice the buffers are
-##            atomically committed to world_data and per-cell ocean current
-##            samples are recomputed.
+##            advances the physical solver one stage; after solver done we
+##            EITHER short-circuit to round_done (per-cell data already in
+##            HexCell, no pixel work) OR run the pixel rasterizer + commit
+##            once when season_phase crosses an integer boundary (event-
+##            driven pixel buffer refresh — see _need_pixel_rebake() below).
+##
+## 像素 buffer 是纯视觉 overlay（vector_atlas_tex / world.wind_field_buffer
+## / world.ocean_current_buffer）的输入，被 hex_renderer / weather_layer 的
+## shader 消费。模拟逻辑（weather_system / climate_daily / sea_ice）全部读
+## HexCell.* per-cell 字段，不读这些像素 buffer。因此把"hex→620k 像素喷射"
+## 移出每日 SUS、改为季节切换事件驱动可以把 day_changed 路径再砍掉 ~25ms
+## 而不影响任何模拟正确性 — 视觉 overlay 仅在 phase_int 跨越（每季 1 次）
+## 时刷新一次，玩家观感等同。
 
 const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const SusJobScript = preload("res://scripts/simulation/sus/sus_job.gd")
@@ -38,9 +47,16 @@ var _phase_locked: float = 0.0
 var _round_active: bool = false
 # Phys Solve Sliced：物理化路径下，一轮 round 先做 N 个 slice 把 hex 求解（SLP /
 # wind / ψ / current / upwelling / wind raster）推到 DONE，再开始按像素区间光栅化。
-# True 表示求解阶段已完成，本轮余下 slice 全部用于像素切片。
+# True 表示求解阶段已完成，本轮余下 slice 全部用于像素工作。
 var _phys_solve_done: bool = false
 
+# Event-driven pixel rebake gate（2026-05-15 新增）：
+#   每日只跑 hex 求解（per-cell 数据），像素 buffer 只在 season_phase 跨整数时
+#   重 bake 一次。_phase_int_seen = -9999 视作"从未跑过"，第一次 round 强制 rebake。
+#   _need_pixel_this_round 在 round 起点决定：true → 走完整 raster + commit；
+#   false → 求解完成立即 round_done，跳过 stage 7 (WIND_RASTER) 与 pixel slices。
+var _phase_int_seen: int = -9999
+var _need_pixel_this_round: bool = false
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
@@ -89,6 +105,10 @@ func reset_progress() -> void:
 	_total_pixels = 0
 	_round_active = false
 	_phys_solve_done = false
+	# 重置事件驱动门 — 下一次 round 会因 _phase_int_seen=-9999 而强制 rebake，
+	# 保证场景重载/换地图后第一帧像素 buffer 正确。
+	_phase_int_seen = -9999
+	_need_pixel_this_round = false
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
@@ -127,13 +147,50 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_phys_solve_done = not baker._use_physical_circulation(cfg)
 		if not _phys_solve_done and baker.has_method("reset_physical_solve_state"):
 			baker.reset_physical_solve_state()
+		# Event-driven pixel rebake：决定本轮是否需要重 bake 像素 buffer。
+		#   像素 buffer (vector_atlas / wind_field_buffer / ocean_current_buffer) 只
+		#   被视觉 overlay shader 消费 (hex_renderer.vector_atlas + weather_layer)。
+		#   模拟逻辑全部走 HexCell.* per-cell，所以可以把 hex→pixel 喷射改为
+		#   "phase_int 跨整数" 时才执行（每季 1 次）。
+		#   - 首次启动 (_phase_int_seen == -9999) → 强制 rebake，确保启动 frame 有像素纹理
+		#   - phase_int 跨越（春→夏 / 夏→秋 / ...） → rebake，让 overlay 反映新季节风迹
+		#   - 其他情况 → 跳过像素 raster + commit（节省 ~25-30ms / day）
+		#
+		# 旧路径（_use_physical_circulation=false / ny-only）保留原"每天 commit"
+		# 行为：那条路径没有 hex 求解阶段，整个 round 全部用于像素 slice，
+		# 跳过会让 overlay 完全无更新。仅在物理化新路径下启用事件驱动门。
+		# C3 plan (vector_atlas removal)：像素 buffer / vector_atlas_tex 不再被任何
+		# shader 消费（world_map / weather_overlay 都已退化为零向量 fallback），
+		# 所以无论是否跨季都强制不做像素阶段。stage 7 (WIND_RASTER) + commit 永
+		# 久死亡，每天直接节省 ~30ms slow slice + 季节切换节省 ~49ms commit。
+		# 旧路径（ny-only）下也置 false：那条路径从此 round 立即 round_done。
+		_need_pixel_this_round = false
+		_phase_int_seen = int(floor(_phase_locked))
 
 	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
 	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
 	# `_PHYS_STAGE_*` 常量），因此一轮新增 7 个 slice；用 ContinuousSlicedPolicy
 	# 的 period_ticks/slice_count 决定每天跑几片即可。
+	#
+	# Event-driven pixel rebake 短路：_need_pixel_this_round=false 时，跑完
+	# stage 6 (UPWELLING) 即认为求解完成，跳过 stage 7 (WIND_RASTER) 与后续
+	# pixel slices + commit — 把 day_changed 路径砍掉 ~25-30ms。
 	if not _phys_solve_done:
 		_phys_solve_done = baker._physical_solve_step_one(map, world, hex_size, cfg, _phase_locked)
+		# 短路检测：baker 跑完 stage 6 (UPWELLING) 后会把 _phys_stage 设为 7
+		# (_PHYS_STAGE_WIND_RASTER)。本轮不需要像素 → 手动推到 _PHYS_STAGE_DONE
+		# 并把 _pending_phys_solved_phase 锁定到当前 phase，下次同 phase 调入
+		# step_one 也会瞬间命中 NaN 守门 short-circuit。
+		if not _phys_solve_done and not _need_pixel_this_round \
+				and baker.has_method("_use_physical_circulation") \
+				and "_phys_stage" in baker \
+				and "_PHYS_STAGE_WIND_RASTER" in baker \
+				and "_PHYS_STAGE_DONE" in baker \
+				and int(baker._phys_stage) == int(baker._PHYS_STAGE_WIND_RASTER):
+			baker._phys_stage = baker._PHYS_STAGE_DONE
+			if "_pending_phys_solved_phase" in baker:
+				baker._pending_phys_solved_phase = _phase_locked
+			_phys_solve_done = true
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 25ms → 打印来源 stage。
 		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
@@ -148,27 +205,88 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var just_done_id: int = max(0, next_stage_id - 1)
 			var stage_names: Array = ["NONE", "SLP", "WIND", "PSI_INIT", "PSI_ITERS",
 				"PSI_FINALIZE", "UPWELLING", "WIND_RASTER", "DONE"]
+			# 修正：WIND_RASTER (7) 内部分片时 _phys_stage 不切换，next_stage_id
+			# 仍是 7。此时实际"刚跑完一片像素"的就是 WIND_RASTER 本身，不是 UPWELLING。
+			# 用 baker._phys_wind_raster_idx > 0 判断是否处于 stage 7 的 in-flight 状态。
+			var in_wind_raster_loop: bool = (next_stage_id == 7) \
+					and ("_phys_wind_raster_idx" in baker) \
+					and (int(baker._phys_wind_raster_idx) > 0)
+			if in_wind_raster_loop:
+				just_done_id = 7
 			var just_done_name: String = "?"
 			if just_done_id >= 0 and just_done_id < stage_names.size():
 				just_done_name = String(stage_names[just_done_id])
 			print("  [ocean_currents] slow slice=%.1fms (just-finished stage=%d/%s, next=%d, round_done=%s)" % [
 				elapsed_solve_ms, just_done_id, just_done_name, next_stage_id, str(_phys_solve_done)
 			])
-		return {
-			"done": false,
-			"work_done": 0,
-			"elapsed_ms": elapsed_solve_ms,
-			"progress_ratio": 0.0,
-		}
+		# 求解未完成 → 本片返回，等下一个 SUS tick 继续；
+		# 求解完成且不需要像素 rebake → 立刻收尾本轮，不进入 pixel slice 分支
+		if not _phys_solve_done:
+			return {
+				"done": false,
+				"work_done": 0,
+				"elapsed_ms": elapsed_solve_ms,
+				"progress_ratio": 0.0,
+				# plan/dots-slp-psi-cpp — surface SLP / PSI C++ path decision +
+				# native ms onto the slice result so [SUS] aggregation / season
+				# breakdown can attribute the time correctly. Only meaningful
+				# after the relevant stage has actually run (defaults remain
+				# "gdscript" / -1.0 otherwise).
+				"stage_slp_path": baker.get_slp_path_str() if baker.has_method("get_slp_path_str") else "gdscript",
+				"stage_slp_native_ms": baker.get_slp_native_ms() if baker.has_method("get_slp_native_ms") else -1.0,
+				"stage_psi_path": baker.get_psi_path_str() if baker.has_method("get_psi_path_str") else "gdscript",
+				"stage_psi_native_ms": baker.get_psi_native_ms() if baker.has_method("get_psi_native_ms") else -1.0,
+			}
+		# _phys_solve_done = true & !_need_pixel_this_round → 跳过像素阶段，
+		# 立刻 round_done。on_commit 仍要触发，让 MapGenerator 重置 per-cell
+		# sample 缓存 / 通知下游 dirty。但不调 baker.commit_ocean_buffers（无新像素）。
+		if not _need_pixel_this_round:
+			if on_commit.is_valid():
+				on_commit.call()
+			_round_active = false
+			_next_pixel_idx = 0
+			_phys_solve_done = false
+			return {
+				"done": true,
+				"work_done": 0,
+				"elapsed_ms": elapsed_solve_ms,
+				"progress_ratio": 1.0,
+				"pixel_skipped": true,
+				"stage_slp_path": baker.get_slp_path_str() if baker.has_method("get_slp_path_str") else "gdscript",
+				"stage_slp_native_ms": baker.get_slp_native_ms() if baker.has_method("get_slp_native_ms") else -1.0,
+				"stage_psi_path": baker.get_psi_path_str() if baker.has_method("get_psi_path_str") else "gdscript",
+				"stage_psi_native_ms": baker.get_psi_native_ms() if baker.has_method("get_psi_native_ms") else -1.0,
+			}
+		# 否则（_need_pixel_this_round=true）→ 落入下面的 pixel slice 分支
 
+	# Event-driven rebake notification — 每次跨季节进入像素阶段时打一条日志，
+	# 让玩家/开发者能在 console 看到"vector_atlas 在 phase=X.XX 重 bake"提示。
+	# 只在 round 的第一次像素 slice (s == 0) 打。
 	var pps: int = _pixels_per_slice()
 	var s: int = _next_pixel_idx
 	var e: int = mini(_total_pixels, s + pps)
-	# Bake slice for both currents and upwelling using the same idx range.
-	# Both share the locked phase to avoid intra-round drift.
-	baker.bake_ocean_currents_slice(map, world, hex_size, cfg, _phase_locked, s, e)
-	baker.bake_ocean_upwelling_slice(map, world, hex_size, cfg, _phase_locked, s, e)
-	_next_pixel_idx = e
+	if s == 0 and _need_pixel_this_round:
+		print("[ocean_currents] season_crossed → rebaking pixel atlas at phase=%.3f (phase_int=%d, total_pixels=%d)" % [
+			_phase_locked, _phase_int_seen, _total_pixels
+		])
+	# DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）：
+	# 物理化路径下，rasterize 改为 C++ 一次性 hex→pixel 直出（替代 10 个 GDScript pixel slice）。
+	# Gate：ClimateProfile.use_gdext_ocean_currents_pixel=true + ext.has_method
+	# +baker.run_ocean_field_rasterize_full（新引入）。失败/未导出 → fallback 到旧 slice 路径。
+	var used_cpp_raster: bool = false
+	if s == 0 and baker._use_physical_circulation(cfg):
+		var cp_oc: ClimateProfile = cfg.climate_profile if cfg != null else null
+		if cp_oc != null and bool(cp_oc.use_gdext_ocean_currents_pixel) \
+				and baker.has_method("run_ocean_field_rasterize_full"):
+			var raster_res: Dictionary = baker.run_ocean_field_rasterize_full(map, world, cfg)
+			if not bool(raster_res.get("fallback", true)):
+				used_cpp_raster = true
+				_next_pixel_idx = _total_pixels
+	if not used_cpp_raster:
+		# Fallback / 旧路径：按 [s, e) 切片光栅化。
+		baker.bake_ocean_currents_slice(map, world, hex_size, cfg, _phase_locked, s, e)
+		baker.bake_ocean_upwelling_slice(map, world, hex_size, cfg, _phase_locked, s, e)
+		_next_pixel_idx = e
 
 	var done: bool = (_next_pixel_idx >= _total_pixels)
 	if done:

@@ -300,6 +300,28 @@ func report_skipped_summary() -> Dictionary:
 	return out
 
 
+## DOTS-Final-Push 任务 10：返回 `_stats` 全表的深拷贝，供
+## DCDotsFinalPushPerfVerdict.evaluate() 使用。schema 与 _record_stats 一致：
+##   { job_id -> { samples: Array[float], slices_total: int,
+##                 skipped: Dictionary, max_ms: float } }
+## 注意：`samples` 在每次 log_interval_ticks 被清空（line 362），所以读取窗口
+## 由 SUS scheduler 的滚动周期决定（默认 30 tick）。caller 若要 200 tick 长
+## 窗口，应在 main.gd 自行累积 fast tick total_ms 数组，本表仅供 SUS Job
+## p95 比对（30 tick 滚动 p95 已足以判定稳态门槛）。
+func report_job_stats() -> Dictionary:
+	var out: Dictionary = {}
+	for job_id in _stats.keys():
+		var s: Dictionary = _stats[job_id]
+		var samples: Array = s.get("samples", [])
+		out[job_id] = {
+			"samples": samples.duplicate(),
+			"slices_total": int(s.get("slices_total", 0)),
+			"skipped": (s.get("skipped", {}) as Dictionary).duplicate(),
+			"max_ms": float(s.get("max_ms", 0.0)),
+		}
+	return out
+
+
 func _record_stats(job_id: StringName, elapsed_ms: float, slices_run: int) -> void:
 	if not _stats.has(job_id):
 		_stats[job_id] = {

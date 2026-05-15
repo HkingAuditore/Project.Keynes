@@ -383,6 +383,152 @@ public:
     //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
     double run_transpiration_pass(const godot::Dictionary &knobs);
 
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
+    //   ClimateProfile flag：use_gdext_albedo
+    //   性能目标：~3.6ms → < 0.5ms
+    //
+    //   算法（与 GDScript 1:1 镜像）：
+    //     for each cell i:
+    //       if is_water[i]: continue
+    //       alb = albedo_table[veg[i]]
+    //       if cover[i] == CV.SNOW (=1) || cover[i] == CV.GLACIER (=2):
+    //         alb = max(alb, 0.75)
+    //       dt = (reference_albedo - alb) * albedo_temp_gain
+    //       temp[i] = clamp(temp[i] + dt, 0, 1)
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            reference_albedo (float)         — ClimateProfile.reference_albedo
+    //            albedo_temp_gain (float)          — ClimateProfile.albedo_temp_gain
+    //            snow_cover_albedo (float, =0.75) — SNOW/GLACIER cover 的反照率下限
+    //            cover_snow_id (int, =1)          — CoverType.CV.SNOW 枚举值
+    //            cover_glacier_id (int, =2)       — CoverType.CV.GLACIER 枚举值
+    //     PackedArray（zero-copy read）：
+    //            albedo_table : PackedFloat32Array — 按 VegetationType.VEG enum 顺序
+    //
+    //   读：cell_is_water (U8) / cell_vegetation (U8) / cell_cover (U8) / cell_temp (F32)
+    //   写：cell_temp (F32)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    double run_albedo_pass(const godot::Dictionary &knobs);
+
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）：vegetation dynamics ─
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_vegetation_dynamics
+    //   ClimateProfile flag：use_gdext_vegetation_dynamics
+    //   性能目标：~9.2ms → < 1.0ms
+    //
+    //   算法分工（与 GDScript 1:1 镜像，但演替触发由 GDScript 后处理）：
+    //     C++ 主循环（每 cell 独立）：
+    //       if is_water[i]: continue
+    //       compat = exp(-0.5 * ((t - ideal_t[v])/tol_t[v])² + ((m - ideal_m[v])/tol_m[v])²)
+    //       dv = 0
+    //       if v != NONE:
+    //         if compat >= 0.6: dv = (compat - 0.5) * 2 * rate
+    //         elif compat <= 0.4: dv = -(0.5 - compat) * 2 * rate * harshness
+    //       wt = (weather_field_init[i] != 0) ? weather_type[i] : WT.CLEAR
+    //       wi = (weather_field_init[i] != 0) ? weather_intensity[i] : 0
+    //       base_pen = weather_penalty[wt]
+    //       resist  = resistance_lut[v * n_wt + wt]
+    //       dv -= base_pen * wi * (1 - resist)
+    //       vitality[i] = clamp(vitality[i] + dv * scale, 0, 1)
+    //       streak update（sticky in [low, high]）
+    //       if low_streak[i] >= degrade_days && next_down[v] != v：候选 succession
+    //       elif high_streak[i] >= upgrade_days && next_up[v] != v：候选 succession
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            day_scale (float)                 — max(day_scale, 1.0)
+    //            streak_days (int)                 — round(scale)
+    //            vitality_change_rate (float)
+    //            compat_harshness (float)
+    //            low_threshold (float)
+    //            high_threshold (float)
+    //            succession_degrade_days (int)
+    //            succession_upgrade_days (int)
+    //            n_wt (int)                         — WeatherType.WT.size()
+    //            wt_clear_id (int)                  — WeatherType.WT.CLEAR 枚举值
+    //            veg_none_id (int)                  — VegetationType.VEG.NONE 枚举值
+    //     PackedArray（zero-copy read）：
+    //            ideal_temp_table  : PackedFloat32Array  (n_veg)
+    //            ideal_moist_table : PackedFloat32Array  (n_veg)
+    //            temp_tol_table    : PackedFloat32Array  (n_veg)
+    //            moist_tol_table   : PackedFloat32Array  (n_veg)
+    //            weather_penalty_table : PackedFloat32Array  (n_wt)
+    //            resistance_table  : PackedFloat32Array  (n_veg * n_wt) — sparse 0.0 default
+    //            next_up_table     : PackedByteArray     (n_veg)         — VEG.next_richer
+    //            next_down_table   : PackedByteArray     (n_veg)         — VEG.next_harsher
+    //     PackedArray（in/out — caller pack/unpack since fields not in SoA schema）：
+    //            vitality_arr      : PackedFloat32Array  (n_cells)
+    //            low_streak_arr    : PackedInt32Array    (n_cells)
+    //            high_streak_arr   : PackedInt32Array    (n_cells)
+    //
+    //   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp (F32) /
+    //       cell_moisture (F32) / cell_weather_type (U8) /
+    //       cell_weather_intensity (F32) / cell_weather_field_init (U8)
+    //   写：vitality_arr / low_streak_arr / high_streak_arr (in/out)
+    //
+    //   knobs 输出回填（C++ 写进 knobs）：
+    //     succession_indices : PackedInt32Array  — 触发演替的 cell idx
+    //     succession_to_veg  : PackedByteArray   — 与 indices 同长，目标新 veg id
+    //                          上家：next_up[v]； 下家：next_down[v]（区分由 caller 看 streak 判断）
+    //     stat_succession_count : int (写到 knobs)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    //   knobs 走 by-value（非 const&），让 C++ 端能写回 succession lists（与 sea_ice 同模式）。
+    double run_vegetation_dynamics_pass(godot::Dictionary knobs);
+
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）：climate feedback ─
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass
+    //   ClimateProfile flag：use_gdext_climate_feedback
+    //   性能目标：~6.1ms → < 0.5ms
+    //
+    //   算法（与 GDScript 1:1 镜像，每日小权重累加 ≤ 0.5%）：
+    //     for each cell i:
+    //       if is_water[i]: continue
+    //       if ocean_drift_gain > 0:
+    //         sum_an + n_water = sum/count(nb_water_anomaly)
+    //         if n_water > 0 && |avg_an| > 0.005:
+    //           coastal_ratio = clamp(n_water/6, 0, 1)
+    //           d_base = clamp(ocean_drift_gain * avg_an * coastal_ratio * scale, -clamp, clamp)
+    //           base_moisture[i] = clamp(base_moisture[i] + d_base, 0, 1)
+    //       wt = init ? weather_type[i] : WT.CLEAR
+    //       wi = init ? weather_intensity[i] : 0
+    //       if wi < 0.01: continue
+    //       precip = match(wt) {RAIN: wi, STORM: 0.8wi, MONSOON: 1.2wi,
+    //                          BLIZZARD: 0.3wi, DROUGHT: -0.6wi, HEATWAVE: -0.4wi, _: 0}
+    //       d_soil = clamp(soil_gain * precip * scale, -clamp, clamp)
+    //       soil_moisture[i] = clamp(soil_moisture[i] + d_soil, -0.5, 0.5)
+    //       d_veg = clamp(veg_gain * precip * scale, -clamp, clamp)
+    //       vg_pressure[i] = clamp(vg_pressure[i] + d_veg, -0.5, 0.5)
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            soil_gain (float)
+    //            veg_gain (float)
+    //            scale (float)              — max(day_scale, 1.0)
+    //            per_day_clamp (float)      — feedback_per_day_clamp * scale
+    //            ocean_drift_gain (float)   — 0 表示禁用 ocean→base 漂移
+    //            wt_clear_id (int)          — WeatherType.WT.CLEAR
+    //            wt_rain_id / wt_storm_id / wt_monsoon_id / wt_blizzard_id /
+    //            wt_drought_id / wt_heatwave_id (int) — 6 个 WT 枚举值
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+    //                ↑ 与 climate_pass_b 同字段，caller 端打包传入
+    //     PackedArray（in/out — caller pack/unpack since fields not in SoA schema）：
+    //            soil_moisture_arr    : PackedFloat32Array  (n_cells)
+    //            veg_growth_pressure_arr : PackedFloat32Array (n_cells)
+    //
+    //   读：cell_is_water (U8) / cell_weather_type (U8) /
+    //       cell_weather_intensity (F32) / cell_weather_field_init (U8) /
+    //       cell_base_moisture (F32) — direct write
+    //       + 入参 PackedArray
+    //   写：cell_base_moisture (F32) / soil_moisture_arr / veg_growth_pressure_arr (in/out)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    double run_climate_feedback_pass(godot::Dictionary knobs);
+
     // F.6 (P3): weather front advect (含 front pool 批量提取模式)
     //   GDScript 源：scripts/weather/weather_front.gd::advance_one_day +
     //                refresh_visual_lifecycle (line 74-127)
@@ -432,6 +578,56 @@ public:
     double run_weather_front_advect_pass(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
+
+    // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
+    // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_ocean_current_slice_from_hex
+    //               + _rasterize_upwelling_slice_from_hex
+    //
+    // ClimateProfile flag：use_gdext_ocean_currents_pixel（默认 false，需求 8.5 验收后开）
+    //
+    // 性能目标：消除 ocean_currents 17 个 GDScript pixel slice（25ms slow slice），
+    //           620544 像素一次性 C++ loop ≤ 5ms。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
+    //     PackedArray：
+    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
+    //           dst_currents      : PackedByteArray  (W*H*2)，输出 R+G byte
+    //           dst_upwelling     : PackedByteArray  (W*H*1)，输出 byte
+    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步更新
+    //   读：cell_terrain / cell_ocean_current_x / cell_ocean_current_y /
+    //       cell_upwelling_strength SoA
+    //   写：dst_currents / dst_upwelling / atlas_data（in/out via knobs ptrw）
+    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels", "atlas_updated" }
+    godot::Dictionary run_ocean_field_rasterize(godot::Dictionary knobs);
+
+    // ─── DOTS-Total-CPP（A 方案 / wind raster 孪生）─────────────────────
+    // run_wind_field_rasterize：wind_x / wind_y SoA → hex→pixel byte 直出。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_wind_slice_from_hex
+    //               (Stage 7 _PHYS_STAGE_WIND_RASTER 内部循环)
+    //
+    // ClimateProfile flag：复用 use_gdext_ocean_currents_pixel（孪生场景：
+    //                       同样的 hex→pixel byte rasterize，无需新 flag）
+    //
+    // 性能目标：消除 ocean_currents 21 片 × 87ms 的 wind raster GDScript 循环。
+    //           620544 像素一次性 C++ loop ≤ 5ms。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
+    //     PackedArray：
+    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
+    //           dst_wind          : PackedByteArray  (W*H*2)，输出 wx/wy byte
+    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步写 [+2]/[+3]
+    //   读：cell_wind_x / cell_wind_y SoA
+    //   写：dst_wind / atlas_data[i*4+2..+3]（in/out via knobs ptrw）
+    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels", "atlas_updated" }
+    //
+    //   ⚠️ 与 ocean 行为差异：cell idx 无效（lookup 缺失或 -1）时，wx 默认 1.0、wy 默认 0.0
+    //                          （与 GDScript _rasterize_wind_slice_from_hex 严格 1:1）。
+    godot::Dictionary run_wind_field_rasterize(godot::Dictionary knobs);
 
     // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
     //
@@ -556,6 +752,47 @@ public:
     //   未支持的特性：none（与 GDScript 算法 1:1 镜像）
     double run_wind_field_pass(godot::Dictionary knobs);
     godot::Dictionary run_physical_circulation_pass(godot::Dictionary knobs);
+
+    // ─── plan/dots-slp-psi-cpp: SLP field solver (stage 1) ───────────────
+    // Mirrors GDScript PhysicalCirculationSolver.solve_slp_field 1:1:
+    //   Pass A: per-cell baseline (lat amp + landsea + coast detect)
+    //   Pass B: smooth_passes-round 6-neighbor Jacobi smoothing
+    //
+    // knobs in:   n_cells, hex_size, season_phase, smooth_passes,
+    //             world_bounds_pos_y, world_bounds_size_y,
+    //             neighbor_indices, water_terrain_ids,
+    //             slp_lat_amp, slp_land_amp, slp_water_damp,
+    //             slp_interior_boost, slp_coast_damp
+    // knobs out:  slp_out (PackedFloat32Array, length n_cells)
+    //
+    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
+    //   elapsed_ms < 0 -> caller falls back to GDScript path.
+    godot::Dictionary run_slp_field_pass(godot::Dictionary knobs);
+
+    // ─── plan/dots-slp-psi-cpp: PSI ocean stream-function solver ─────────
+    // Fused stage 3 + 4 + 5 (init + SOR iters + finalize) in one C++ call:
+    //   init     : enumerate water cells in cell-index order (1:1 with
+    //              GDScript), build nb_idx, compute wind_stress_curl,
+    //              compute beta_abs / r_factor / source per water cell.
+    //   iters    : SOR Gauss-Seidel in-place iterations (psi_total_iters
+    //              default 24), bit-equal to GDScript step_psi_solver.
+    //   finalize : 6-neighbor gradient -> ocean_current, +/- 90 deg
+    //              rotate, thermohaline high-lat overlay, clamp [-1,1].
+    //
+    // knobs in:   n_cells, hex_size, world_bounds_pos_y/size_y,
+    //             neighbor_indices, cell_q, cell_r, water_terrain_ids,
+    //             wind_x_arr, wind_y_arr, wind_speed_arr,
+    //             psi_total_iters, psi_sor_omega, psi_r_base,
+    //             psi_beta_floor, psi_source_scale, ocean_current_scale,
+    //             thermohaline_weight, upwelling_highlat_abs,
+    //             cold_sink_temp
+    // knobs out:  wind_stress_curl_out, ocean_psi_out,
+    //             ocean_current_x_out, ocean_current_y_out
+    //             (each PackedFloat32Array of length n_cells; land cells
+    //              filled with 0)
+    //
+    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
+    godot::Dictionary run_psi_solver_pass(godot::Dictionary knobs);
 
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++

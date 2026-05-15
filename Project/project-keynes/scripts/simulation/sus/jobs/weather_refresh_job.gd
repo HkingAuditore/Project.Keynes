@@ -123,6 +123,8 @@ var _data_core_components_ready: bool = false
 const MAX_FRONTS_DC: int = 16  # 与 WeatherSystem.MAX_FRONTS 保持一致
 var _pool_id_fronts: int = -1
 var _front_pool_base: int = -1
+# DOTS-Total-CPP（任务 7）：mock 路径警告限频，避免每天 spam log。
+var _sync_fronts_dict_warned: bool = false
 
 # C-01 dirty short-circuit 缓存：上次 sync 的 fronts 数量 + instance_id 异或哈希
 # + 内容指纹（pos/vel/intensity/age 加权和），用于跳过未变化的全量同步。
@@ -397,7 +399,10 @@ func _sync_fronts_object_path(active_fronts: Array, n: int) -> void:
 ## I2.A.5：mock 路径不走 ECB pool-aware（Dict 没有 world_idx 字段），继续使用
 ## base+i 顺序占段与直接 assign_archetype。生产路径若误入此分支会被 push_warning 提醒。
 func _sync_fronts_dict_path(active_fronts: Array, n: int) -> void:
-	push_warning("[weather_refresh_job] _sync_fronts_dict_path: mock data path; ECB pool-aware path is bypassed. n=%d" % n)
+	# DOTS-Total-CPP（任务 7）：mock 路径警告限频（生产路径误入 → 仅第一次提醒）
+	if not _sync_fronts_dict_warned:
+		push_warning("[weather_refresh_job] _sync_fronts_dict_path: mock data path; ECB pool-aware path is bypassed. n=%d (subsequent warnings suppressed)" % n)
+		_sync_fronts_dict_warned = true
 	for i in range(n):
 		var f = active_fronts[i]
 		if f == null:

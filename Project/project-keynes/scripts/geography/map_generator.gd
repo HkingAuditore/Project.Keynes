@@ -185,6 +185,10 @@ const DCSusSystemsBootstrapScript = preload("res://scripts/bootstrap/sus_systems
 # - _c() 是热路径 helper：返回非空的 climate_profile。
 @export var climate_profile: ClimateProfile = null
 
+# 收尾日志限频：physical-hex 路径首次跳过 _compute_ocean_currents 时打一次，
+# 之后静默（避免每天/每帧刷屏）。
+var _phys_skip_logged: bool = false
+
 func _c() -> ClimateProfile:
 	if climate_profile == null:
 		var loaded := ResourceLoader.load("res://data/world/earth_like.tres", "Resource") as ClimateProfile
@@ -366,6 +370,10 @@ var _weather_round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _enum_atlas_cover_dirty: bool = false
 var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
+# DOTS-Final-Push 任务 6.2 / 方案 A：sea_ice_atlas_upload Job 把 prepare/upload
+# 的拆分耗时（path/prepare_ms/upload_ms/image_ms/dirty_cells/dirty_ratio）回填
+# 到这里，供 main.gd fast tick WARN 详细日志展开。schema 与 enum_atlas 同构。
+var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
 var _pending_season_refresh: bool = false
 var _pending_season_idx: int = 0
 var _season_refresh_in_progress: bool = false
@@ -544,6 +552,10 @@ var _data_core_world: DCWorld = null
 #   决定是否走 C++ 加速；任何失败一律 fallback 到 DataCore-GDScript 路径
 # - ClassDB.instantiate("DCWorldExt") 由 gdext/src/register_types.cpp 注册
 var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+# DOTS-Total-CPP（任务 6）：ocean_water_pass 同 tick 复用 short-circuit。
+# climate_daily 与 ocean_currents_job 都可能调 _ocean_water_pass；同一 phase
+# 只跑一次。NaN = 未跑过；reset_progress 时清回 NaN。
+var _ocean_water_done_phase: float = NAN
 # F.5 transpiration pass C++ 加速运行时统计（charter §7 P2，3.2ms → 0.3ms 目标）。
 # 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 dots-f5-validation.md 验收。
 var _gdext_transp_runs: int = 0
@@ -562,6 +574,51 @@ var _gdext_transp_signature_ok: bool = false
 # 时不影响——transpiration 是 VegetationProfileRegistry 静态查询，profile 资源换了
 # 也不会影响这个 table 的生成。invalid 时调 _build_transpiration_donor_table() 重建。
 var _gdext_transp_donor_table_cached: PackedFloat32Array = PackedFloat32Array()
+
+# ─── DOTS-Final-Push（plan/dots-final-push）：stage_b 三件套运行时统计 ────
+# albedo / vegetation_dynamics / climate_feedback 三段 C++ 化的诊断与 perf 计数。
+# 与 F.5 transp 共享同套模式：first_attempt_logged + signature_checked +
+# runs / fallbacks / total_ms 累计。stride 字段沿用 ClimateProfile 已有的
+# weather_albedo_stride / weather_vegetation_dynamics_stride / weather_feedback_stride。
+
+# albedo（任务 2）—— 使用与 climate_pass_b 同款 albedo_table（按 VEG enum 顺序）。
+var _gdext_albedo_runs: int = 0
+var _gdext_albedo_fallbacks: int = 0
+var _gdext_albedo_total_ms: float = 0.0
+var _gdext_albedo_first_attempt_logged: bool = false
+var _gdext_albedo_signature_checked: bool = false
+var _gdext_albedo_signature_ok: bool = false
+var _gdext_albedo_table_cached: PackedFloat32Array = PackedFloat32Array()
+
+# vegetation_dynamics（任务 3）—— 演替主循环 C++ 化。需要 6 张 LUT：
+#   ideal_temp / ideal_moist / temp_tol / moist_tol / weather_penalty /
+#   resistance(VEG×WT 平铺)。next_up / next_down 是 PackedByteArray。
+# vitality / low_streak / high_streak 通过 in/out PackedArray 走 caller pack/unpack。
+var _gdext_vegdyn_runs: int = 0
+var _gdext_vegdyn_fallbacks: int = 0
+var _gdext_vegdyn_total_ms: float = 0.0
+var _gdext_vegdyn_first_attempt_logged: bool = false
+var _gdext_vegdyn_signature_checked: bool = false
+var _gdext_vegdyn_signature_ok: bool = false
+var _gdext_vegdyn_ideal_temp_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_ideal_moist_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_temp_tol_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_moist_tol_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_weather_penalty_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_resistance_cached: PackedFloat32Array = PackedFloat32Array()
+var _gdext_vegdyn_next_up_cached: PackedByteArray = PackedByteArray()
+var _gdext_vegdyn_next_down_cached: PackedByteArray = PackedByteArray()
+
+# climate_feedback（任务 4）—— 反馈三件套最后一段。base_moisture 直接走 SoA；
+# soil_moisture / vegetation_growth_pressure / temperature_transport_anomaly
+# 三个字段尚未 SoA 化，走 in/out PackedArray pack/unpack（前两者 in/out，
+# 后者只读）。
+var _gdext_feedback_runs: int = 0
+var _gdext_feedback_fallbacks: int = 0
+var _gdext_feedback_total_ms: float = 0.0
+var _gdext_feedback_first_attempt_logged: bool = false
+var _gdext_feedback_signature_checked: bool = false
+var _gdext_feedback_signature_ok: bool = false
 
 # F.3 climate Pass-B C++ 加速运行时统计（charter §7 P1，5.2ms → 0.5ms 目标）。
 var _gdext_climate_b_runs: int = 0
@@ -969,6 +1026,15 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			# GDExtension 没加载（开发机没编译 gdext / 平台不支持等），完全降级。
 			# 不打 error 避免噪声，main.gd 的 [DataCore] flags 那行已能体现整体路径。
 			print("[DataCore] DCWorldExt class not registered (gdext unavailable); climate Pass-A will use DataCore/GDScript path only")
+	# DOTS-Final-Push 修复：把 ClimateProfile 直接注入 MapBaker。
+	# 历史上 sea_ice prepare / albedo / veg_dyn / feedback 通过 `world.get("config")`
+	# 取 cp 永远拿到 null（WorldData 上没有 config 字段），导致 use_native 一直 false，
+	# sea_ice prepare 稳定 48ms GDScript 全图回扫。这里显式注入修正这一长期 bug。
+	# 不被 dc_enabled 门控——GDScript 路径同样需要 cp.flag 做配置读取。
+	if _baker != null and _baker.has_method("set_climate_profile"):
+		var cp_for_baker = _c()
+		_baker.set_climate_profile(cp_for_baker)
+		print("[DataCore] _baker climate_profile injected=%s (fixes WorldData.config==null sea_ice prepare path)" % str(cp_for_baker != null))
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄 + ClimateProfile.use_gdext_weather_field 一次性下发给 WeatherSystem。
 	# ext 为 null（gdext 未编译 / 未 bind） 或 flag=false 时 WeatherSystem 自动走
@@ -1130,10 +1196,19 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _use_dc_system_scheduler:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
 		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
+		# DOTS-Final-Push 任务 6.2：同 SUS 路径，注入 generator 让 tick() 末尾
+		# 把 prepare/upload 拆分回填给 sus_sea_ice_atlas_breakdown()。
+		if "generator" in _sea_ice_atlas_upload_job:
+			_sea_ice_atlas_upload_job.generator = self
 		_sus.register_system(_sea_ice_atlas_upload_job)
 	else:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
 		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
+		# DOTS-Final-Push 任务 6.2：注入 generator 引用，让 Job 把 prepare/upload
+		# 拆分耗时回填到 _last_sea_ice_atlas_upload_breakdown，供 main.gd fast tick
+		# WARN 详细日志看到 232ms 究竟卡 prepare 还是 upload。
+		if "generator" in _sea_ice_atlas_upload_job:
+			_sea_ice_atlas_upload_job.generator = self
 		_sus.register_job(_sea_ice_atlas_upload_job)
 
 	# 0.4.1：DCSystemScheduler 路径必须在所有 register_system 之后调一次
@@ -1284,6 +1359,18 @@ func sus_enum_atlas_breakdown() -> Dictionary:
 	return _last_enum_atlas_upload_breakdown.duplicate()
 
 
+# DOTS-Final-Push 任务 6.2：sea_ice_atlas_upload Job 在每次 slice 末尾调用本方法，
+# 把 prepare_ms / upload_ms / image_ms / dirty_cells / dirty_ratio / path 缓存到
+# _last_sea_ice_atlas_upload_breakdown。main.gd fast tick WARN 详细日志通过
+# sus_sea_ice_atlas_breakdown() 取来打印，定位 232ms 异常 slice 的真实瓶颈。
+func record_sea_ice_atlas_upload(report: Dictionary) -> void:
+	_last_sea_ice_atlas_upload_breakdown = report.duplicate()
+
+
+func sus_sea_ice_atlas_breakdown() -> Dictionary:
+	return _last_sea_ice_atlas_upload_breakdown.duplicate()
+
+
 func _mark_enum_atlas_dirty(cover_dirty: bool, vegetation_dirty: bool) -> void:
 	_enum_atlas_cover_dirty = _enum_atlas_cover_dirty or cover_dirty
 	_enum_atlas_vegetation_dirty = _enum_atlas_vegetation_dirty or vegetation_dirty
@@ -1330,42 +1417,59 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			if cfg_local == null:
 				return
 			_ensure_row_tables(cfg_local, season)
-			var moist_scale: float = _c().seasonal_moisture_scale[season]
-			for cell: HexCell in map.all_cells():
-				if _is_water(cell.terrain):
-					cell.moisture = cell.base_moisture
-				else:
-					cell.moisture = clampf(cell.base_moisture * moist_scale, 0.0, 1.0)
+			# DOTS-Total-CPP（任务 2）：stage 0 优先 gdext SoA pass；未导出/失败 fallback。
+			if not _run_season_refresh_stage0_gdext(map, world, season):
+				var moist_scale: float = _c().seasonal_moisture_scale[season]
+				for cell: HexCell in map.all_cells():
+					if _is_water(cell.terrain):
+						cell.moisture = cell.base_moisture
+					else:
+						cell.moisture = clampf(cell.base_moisture * moist_scale, 0.0, 1.0)
 		1:
+			# TODO(dots-total-cpp): stage 1 _apply_rain_shadow_per_cell 完整 C++ 化
+			# 需在 C++ 端复刻 WindBelt.upwind_hex_dir + 6 邻接 lookback；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_rain_shadow_per_cell(map, _last_cfg, float(season) + 0.5)
 		2:
+			# TODO(dots-total-cpp): stage 2 _seasonal_redecide_terrain 完整 C++ 化
+			# 需复刻 _decide_terrain 决策树 + apply_terrain multi-axis sync；本会话保留 GDScript。
 			_seasonal_redecide_terrain(map, season)
 		3:
+			# TODO(dots-total-cpp): stage 3 river_ecology + vegetation_feedback 完整 C++ 化
+			# 涉及河流流向链 + 邻域 diffuse + 二次 redecide；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_river_ecology(map, _last_cfg)
 				_apply_vegetation_feedback(map, _last_cfg)
 		4:
+			# TODO(dots-total-cpp): stage 4 shrubland_pass 完整 C++ 化
+			# 涉及 _is_permanent_landform + apply_terrain multi-axis sync；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_shrubland_pass(map, _last_cfg)
 		5:
+			# TODO(dots-total-cpp): stage 5 mangrove_pass 完整 C++ 化（282 行）；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_mangrove_pass(map, _last_cfg)
 		6:
+			# TODO(dots-total-cpp): stage 6 glacier_pass 完整 C++ 化（843 行多 pass 雪线/冰川流/侵蚀）；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_glacier_pass(map, _last_cfg)
 		7:
+			# TODO(dots-total-cpp): stage 7 swamp_pass 完整 C++ 化；本会话保留 GDScript。
 			if _last_cfg != null:
 				_apply_swamp_pass(map, _last_cfg)
 		8:
 			if not _run_season_refresh_stage8_gdext(map, world, season):
 				_seasonal_sync_current_state(map, season)
 		9:
+			# 需求 7.2：RenderingServer 调用必须由 GDScript 发起，stage 9 不可 C++ 化。
 			if world != null and _baker != null:
 				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
 		10:
 			var cp_fb := _c()
 			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
+				# stage 10：soil_moisture / vegetation_growth_pressure 不在 SoA schema，
+				# C++ 反向打包代价高于直接 GDScript 循环；保留 GDScript 直接调用。
+				# C++ 端 stage 10 实装作为 dormant 路径备用（字段未来进 SoA 后激活）。
 				_consume_feedback_buffers(map, cp_fb.feedback_decay)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
 	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
@@ -1414,6 +1518,37 @@ func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: i
 	_sync_stage8_facade_fields_from_soa(map)
 	_last_season_refresh_breakdown["stage_8_path"] = "gdext"
 	_last_season_refresh_breakdown["stage_8_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	return true
+
+
+# DOTS-Total-CPP（任务 2）：stage 0（per-cell moisture set）gdext 路径。
+# 与 stage 8 helper 同模式：检查 ClimateProfile flag + ext + method，未满足走 fallback。
+# C++ 端写 cell_moisture SoA；feature_flags.use_hexcell_facade=true 让 cell.moisture
+# 自动看到最新 SoA 值，不需要 facade sync。
+func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		return false
+	if _data_core_world_ext.has_method("refresh_slots_from_map"):
+		_data_core_world_ext.refresh_slots_from_map()
+	var moist_scale: float = float(cp.seasonal_moisture_scale[clampi(season, 0, 3)])
+	var knobs: Dictionary = {
+		"stage": 0,
+		"season": season,
+		"n_cells": map.cell_count(),
+		"moist_scale": moist_scale,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		if not _season_refresh_gdext_fallback_logged:
+			print("[season_refresh] gdext stage0 fallback: %s" % String(res.get("reason", "unknown")))
+			_season_refresh_gdext_fallback_logged = true
+		return false
+	_last_season_refresh_breakdown["stage_0_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_0_native_ms"] = float(res.get("elapsed_ms", 0.0))
 	return true
 
 
@@ -1531,6 +1666,17 @@ func sus_report_last_tick_summary() -> Dictionary:
 	if _sus == null:
 		return {}
 	return _sus.report_last_tick_summary()
+
+
+# DOTS-Final-Push 任务 10：透传 SUS scheduler `_stats` 全表给
+# DCDotsFinalPushPerfVerdict.evaluate() 使用。schema 见
+# sus_scheduler.gd::report_job_stats() 注释。
+func sus_report_job_stats() -> Dictionary:
+	if _sus == null:
+		return {}
+	if not _sus.has_method("report_job_stats"):
+		return {}
+	return _sus.report_job_stats()
 
 # 把当前 cell.terrain 作为"年均基线"保存。
 # base_moisture 已在 _generate_cells 内、雨影 / 河岸生态之前快照。
@@ -3088,7 +3234,11 @@ func _compute_ocean_currents(map: MapData, world: WorldData, hex_size: float) ->
 	# 旧路径继续按"像素回采到 hex"工作，行为 bit-for-bit 不变。
 	var profile: ClimateProfile = _c()
 	if profile != null and profile.physical_circulation_enabled:
-		print("MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)")
+		# 收尾日志：旧版每天一次；现在 physical-hex 已是常态路径，只在第一次
+		# 命中时打一行作为可观测证据，后续静默。
+		if not _phys_skip_logged:
+			_phys_skip_logged = true
+			print("MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)")
 		return
 	var water_count: int = 0
 	var has_upwelling: bool = not world.ocean_upwelling_buffer.is_empty()
@@ -3627,6 +3777,15 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# 这些字段必须与 world_ext.cpp::run_climate_pass_a 第 3 节读取顺序一一对应。
 		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0，自动 fallback 到 legacy。
 		# truth source for 各 cp.xxx 字段：scripts/geography/climate_profile.gd。
+		# Bug-fix（DOTS-Final-Push 后续观测）：原本只有 SoA fallback 在 round 入口
+		# bake _insol_dev_lut（line ~4803），C++ 路径直接 packing 时 LUT 仍是空数组，
+		# 触发 world_ext.cpp::run_climate_pass_a 的 "insol_dev_lut wrong size" 兜底，
+		# 每天都回退到 GDScript 慢路径（A=15.6ms）。这里在 packing 前主动 bake 一次，
+		# 内部有 phase 复用判断（一日内多次调用直接早返），开销可忽略。
+		# 仅当 use_insol=true 时 bake；C++ 在 use_insol=false 时也会 return -1，
+		# 走 GDScript 路径（与历史行为一致）。
+		if bool(cp.true_insolation_enabled):
+			_rebuild_insol_now_lut(season_phase)
 		var cp_struct: Dictionary = {
 			"use_insol":        bool(cp.true_insolation_enabled),
 			"use_sparse":       bool(cp.use_sparse_climate),
@@ -4470,10 +4629,17 @@ func _apply_ocean_heat_transport_pass(map: MapData, season_phase: float) -> void
 func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 	if _last_cfg == null:
 		return
+	# DOTS-Total-CPP（任务 6）：同 tick 复用 short-circuit。
+	# climate_daily Pass _PASS_OCEAN_WATER 与 ocean_currents_job 的 phys solve 都
+	# 可能调本函数；同一个 SUS tick 内只跑一次（用 phase 作为标识，与 ocean_currents
+	# 的 _phase_locked 同语义）。
+	if not is_nan(_ocean_water_done_phase) and absf(_ocean_water_done_phase - season_phase) < 0.001:
+		return
 	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 分发。
 	var cp := _c()
 	if cp != null and cp.use_soa_pipeline and map != null and map.has_soa():
 		_ocean_water_pass_soa(map, season_phase, cp)
+		_ocean_water_done_phase = season_phase
 		return
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0)
@@ -4573,6 +4739,8 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 			var _cid_temp_ow: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 			if _cid_temp_ow >= 0 and cell.index >= 0:
 				_data_core_world.write_f32(_cid_temp_ow, int(cell.index), temp_clamped)
+	# DOTS-Total-CPP（任务 6）：标记本 phase 已跑完，让同 tick caller 短路。
+	_ocean_water_done_phase = season_phase
 
 # Daily Sim SoA Refactor 方向 X（A2）：洋流热输运的"陆段"——
 # 陆地 cell 从相邻水 cell 收集 temperature_transport_anomaly，按"邻水 cell 的
@@ -5960,8 +6128,102 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 	var per_day_clamp: float = float(cp.feedback_per_day_clamp) * scale
 	var ocean_drift_gain: float = float(cp.ocean_moisture_drift_gain)
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
 	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
-	var fast_indexed: bool = neighbor_indices.size() >= cells.size() * 6
+	var fast_indexed: bool = neighbor_indices.size() >= n_cells * 6
+
+	# ─── DOTS-Final-Push 任务 4：DCWorldExt C++ 快路径 ──────────────────
+	# 触发条件：
+	#   1. ClimateProfile.use_gdext_climate_feedback == true
+	#   2. _data_core_world_ext 已 bind 且 has_method("run_climate_feedback_pass")
+	#   3. fast_indexed（neighbor_indices_packed 完整 — ocean drift 段需要）
+	#   4. C++ 端返回 ≥ 0
+	# 任意一条不满足 → 透明 fallback 到下面 GDScript 单循环。
+	#
+	# soil_moisture / veg_growth_pressure / temperature_transport_anomaly 三个字段
+	# 未 SoA 化，走 in/out PackedArray pack/unpack。base_moisture 已 SoA，C++ 直读直写。
+	if not _gdext_feedback_first_attempt_logged:
+		_gdext_feedback_first_attempt_logged = true
+		var cp_path: String = "<in-memory ClimateProfile>"
+		var flag_val: bool = false
+		if cp != null:
+			if cp.resource_path != "":
+				cp_path = cp.resource_path
+			flag_val = bool(cp.use_gdext_climate_feedback)
+		var ext_ok: bool = _data_core_world_ext != null
+		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_climate_feedback_pass")
+		var verdict: String = "OK → will try C++"
+		if not (flag_val and ext_ok and has_method_ok and fast_indexed):
+			verdict = "FAIL → fall through to GDScript path"
+		print("[feedback/stage_b] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path)
+		print("  cp.use_gdext_climate_feedback = %s" % str(flag_val))
+		print("  _data_core_world_ext != null = %s" % str(ext_ok))
+		print("  ext.has_method('run_climate_feedback_pass') = %s" % str(has_method_ok))
+		print("  fast_indexed = %s (need n_cells*6=%d, got neighbor_indices.size()=%d)" % [str(fast_indexed), n_cells * 6, neighbor_indices.size()])
+		print("  verdict = %s" % verdict)
+	if cp != null and bool(cp.use_gdext_climate_feedback) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_climate_feedback_pass") and fast_indexed:
+		if not _gdext_feedback_signature_checked:
+			_gdext_feedback_signature_checked = true
+			_gdext_feedback_signature_ok = _validate_gdext_method_signature("run_climate_feedback_pass", 1)
+			print("[feedback/stage_b] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_feedback_signature_ok))
+		# Pack in/out 数组：3 个 PackedFloat32Array（n_cells 长度）
+		var soil_arr: PackedFloat32Array = PackedFloat32Array()
+		var vg_arr: PackedFloat32Array = PackedFloat32Array()
+		var tta_arr: PackedFloat32Array = PackedFloat32Array()
+		soil_arr.resize(n_cells)
+		vg_arr.resize(n_cells)
+		tta_arr.resize(n_cells)
+		for i in range(n_cells):
+			var cell_pack: HexCell = cells[i]
+			soil_arr[i] = cell_pack.soil_moisture
+			vg_arr[i] = cell_pack.vegetation_growth_pressure
+			tta_arr[i] = cell_pack.temperature_transport_anomaly
+		var knobs: Dictionary = {
+			"n_cells": n_cells,
+			"soil_gain": soil_gain,
+			"veg_gain": veg_gain,
+			"scale": scale,
+			"per_day_clamp": per_day_clamp,
+			"ocean_drift_gain": ocean_drift_gain,
+			"wt_clear_id": int(WeatherType.WT.CLEAR),
+			"wt_rain_id": int(WeatherType.WT.RAIN),
+			"wt_storm_id": int(WeatherType.WT.STORM),
+			"wt_monsoon_id": int(WeatherType.WT.MONSOON),
+			"wt_blizzard_id": int(WeatherType.WT.BLIZZARD),
+			"wt_drought_id": int(WeatherType.WT.DROUGHT),
+			"wt_heatwave_id": int(WeatherType.WT.HEATWAVE),
+			"neighbor_indices": neighbor_indices,
+			"temp_transport_anomaly": tta_arr,
+			"soil_moisture_arr": soil_arr,
+			"veg_growth_pressure_arr": vg_arr,
+		}
+		# storage A/B 同源契约：refresh 让 SoA 取得最新值（接 weather_refresh 上一段）
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
+		var rc: float = float(_data_core_world_ext.run_climate_feedback_pass(knobs))
+		if _gdext_feedback_runs + _gdext_feedback_fallbacks < 3:
+			print("[feedback/stage_b] DEBUG call#%d: rc=%.4f n_cells=%d scale=%.2f" % [
+				_gdext_feedback_runs + _gdext_feedback_fallbacks + 1,
+				rc, n_cells, scale,
+			])
+		if rc >= 0.0:
+			# 写回 in/out arrays（base_moisture 已通过 SoA flush 写回 cell.base_moisture）
+			var soil_out: PackedFloat32Array = knobs.get("soil_moisture_arr", soil_arr)
+			var vg_out: PackedFloat32Array = knobs.get("veg_growth_pressure_arr", vg_arr)
+			for i in range(n_cells):
+				var cell_unpack: HexCell = cells[i]
+				cell_unpack.soil_moisture = soil_out[i]
+				cell_unpack.vegetation_growth_pressure = vg_out[i]
+			_gdext_feedback_runs += 1
+			_gdext_feedback_total_ms += rc
+			if _gdext_feedback_runs == 1:
+				print("[feedback/stage_b] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 6.1ms; target < 0.5ms)" % rc)
+			return
+		_gdext_feedback_fallbacks += 1
+		if _gdext_feedback_fallbacks == 1:
+			print("[stage_b] gdext path UNAVAILABLE: run_climate_feedback_pass — falling back to GDScript")
 
 	for i in range(cells.size()):
 		var cell: HexCell = cells[i]
@@ -6208,8 +6470,92 @@ func _apply_transpiration_pass(map: MapData) -> void:
 # REFERENCE_ALBEDO=0.30 是中性参考（无植被裸地）。雨林 albedo=0.10 → +0.005 / day。
 # const REFERENCE_ALBEDO (migrated to ClimateProfile.reference_albedo)
 # const ALBEDO_TEMP_GAIN (migrated to ClimateProfile.albedo_temp_gain)  # 每"日"最大 ±0.005 温度调制
+# DOTS-Final-Push 任务 2 helper：按 VegetationType.VEG enum 顺序构建 albedo donor table。
+# 与 F.5 _build_transpiration_donor_table 同模式：一次性 cache，VEG enum 长度固定。
+# C++ run_albedo_pass 入参 albedo_table 通过 Variant 边界 zero-copy 共享 ptr。
+func _build_albedo_donor_table() -> PackedFloat32Array:
+	if _gdext_albedo_table_cached.size() > 0:
+		return _gdext_albedo_table_cached
+	var n_veg: int = VegetationType.VEG.size()
+	var table: PackedFloat32Array = PackedFloat32Array()
+	table.resize(n_veg)
+	for v in range(n_veg):
+		table[v] = VegetationType.albedo(v)
+	_gdext_albedo_table_cached = table
+	return _gdext_albedo_table_cached
+
 func _apply_albedo_pass(map: MapData) -> void:
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+
+	# ─── DOTS-Final-Push 任务 2：DCWorldExt C++ 快路径 ───────────────────
+	# 触发条件：
+	#   1. ClimateProfile.use_gdext_albedo == true
+	#   2. _data_core_world_ext 已 bind
+	#   3. C++ 端 run_albedo_pass 返回 ≥ 0
+	# 任意一条不满足 → 透明 fallback 到下面 GDScript 单循环。
+	# 与 climate_pass_b 共享 cell_is_water / cell_vegetation / cell_cover / cell_temp 槽位，
+	# 写直接落 SoA cell_temp（fastpath HexCell typed fields 模式下等价于 cell.temperature）。
+	var cp_alb := _c()
+	if not _gdext_albedo_first_attempt_logged:
+		_gdext_albedo_first_attempt_logged = true
+		var cp_path: String = "<in-memory ClimateProfile>"
+		var flag_val: bool = false
+		if cp_alb != null:
+			if cp_alb.resource_path != "":
+				cp_path = cp_alb.resource_path
+			flag_val = bool(cp_alb.use_gdext_albedo)
+		var ext_ok: bool = _data_core_world_ext != null
+		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_albedo_pass")
+		var verdict: String = "OK → will try C++"
+		if not (flag_val and ext_ok and has_method_ok):
+			verdict = "FAIL → fall through to GDScript path"
+		print("[albedo/stage_b] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path)
+		print("  cp.use_gdext_albedo = %s" % str(flag_val))
+		print("  _data_core_world_ext != null = %s" % str(ext_ok))
+		print("  ext.has_method('run_albedo_pass') = %s" % str(has_method_ok))
+		print("  verdict = %s" % verdict)
+	if cp_alb != null and bool(cp_alb.use_gdext_albedo) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_albedo_pass"):
+		if not _gdext_albedo_signature_checked:
+			_gdext_albedo_signature_checked = true
+			_gdext_albedo_signature_ok = _validate_gdext_method_signature("run_albedo_pass", 1)
+			print("[albedo/stage_b] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_albedo_signature_ok))
+		var albedo_table: PackedFloat32Array = _build_albedo_donor_table()
+		var knobs: Dictionary = {
+			"n_cells": n_cells,
+			"reference_albedo": float(cp_alb.reference_albedo),
+			"albedo_temp_gain": float(cp_alb.albedo_temp_gain),
+			"snow_cover_albedo": 0.75,
+			"cover_snow_id": int(CoverType.CV.SNOW),
+			"cover_glacier_id": int(CoverType.CV.GLACIER),
+			"albedo_table": albedo_table,
+		}
+		# storage A/B 同源契约：在 stage_b 链路上前序 pass（fronts / sea_ice / 等）
+		# 已 flush 到 map，refresh 让 cell.temperature / cell.cover / cell.vegetation
+		# 取得最新值再计算（与 transp/F.5 同模式）。
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
+		var rc: float = float(_data_core_world_ext.run_albedo_pass(knobs))
+		if _gdext_albedo_runs + _gdext_albedo_fallbacks < 3:
+			print("[albedo/stage_b] DEBUG call#%d: rc=%.4f albedo_table.size()=%d n_cells=%d ref_alb=%.3f gain=%.4f" % [
+				_gdext_albedo_runs + _gdext_albedo_fallbacks + 1,
+				rc, albedo_table.size(), n_cells,
+				float(cp_alb.reference_albedo), float(cp_alb.albedo_temp_gain),
+			])
+		if rc >= 0.0:
+			_gdext_albedo_runs += 1
+			_gdext_albedo_total_ms += rc
+			if _gdext_albedo_runs == 1:
+				print("[albedo/stage_b] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 3.6ms; target < 0.5ms)" % rc)
+			return
+		_gdext_albedo_fallbacks += 1
+		# rc<0：C++ 已 push_warning；继续 fall through 到 GDScript 路径
+		# 一次性 UNAVAILABLE 提示（与需求 1.7 对齐）：仅当 fallback 计数从 0 → 1 时打
+		if _gdext_albedo_fallbacks == 1:
+			print("[stage_b] gdext path UNAVAILABLE: run_albedo_pass — falling back to GDScript")
+
 	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
 			continue
@@ -6239,11 +6585,192 @@ const WEATHER_VITALITY_PENALTY: Dictionary = {
 	WeatherType.WT.STORM:    0.001,   # Minor storm damage from windthrow.
 	WeatherType.WT.MONSOON:  0.001,
 }
+
+# DOTS-Final-Push 任务 3 helper：构建（一次性 cache）vegetation_dynamics 所需 8 张 LUT。
+#  - ideal_temp / ideal_moist / temp_tol / moist_tol  按 VEG enum 顺序的 PackedFloat32Array
+#  - weather_penalty_table                           按 WT enum 顺序的 PackedFloat32Array
+#  - resistance_table                                平铺 VEG×WT 的 PackedFloat32Array
+#  - next_up_table / next_down_table                 按 VEG enum 顺序的 PackedByteArray
+# 全部为静态查询，运行期不变（VegetationProfileRegistry 是 res:// 资源，profile
+# 资源换了 / inspector 改了 ideal_* 时需要 reload 整个项目，cache 会被自然丢弃）。
+func _ensure_vegdyn_lut() -> void:
+	if _gdext_vegdyn_ideal_temp_cached.size() > 0:
+		return
+	var n_veg: int = VegetationType.VEG.size()
+	var n_wt: int = WeatherType.WT.size()
+	var ideal_t: PackedFloat32Array = PackedFloat32Array()
+	var ideal_m: PackedFloat32Array = PackedFloat32Array()
+	var tol_t: PackedFloat32Array = PackedFloat32Array()
+	var tol_m: PackedFloat32Array = PackedFloat32Array()
+	var nx_up: PackedByteArray = PackedByteArray()
+	var nx_dn: PackedByteArray = PackedByteArray()
+	ideal_t.resize(n_veg)
+	ideal_m.resize(n_veg)
+	tol_t.resize(n_veg)
+	tol_m.resize(n_veg)
+	nx_up.resize(n_veg)
+	nx_dn.resize(n_veg)
+	for v in range(n_veg):
+		var p := VegetationProfileRegistry.get_profile(v)
+		ideal_t[v] = float(p.ideal_temp)
+		ideal_m[v] = float(p.ideal_moist)
+		tol_t[v] = float(p.temp_tolerance)
+		tol_m[v] = float(p.moist_tolerance)
+		nx_up[v] = int(VegetationType.next_in_succession(v, 1))
+		nx_dn[v] = int(VegetationType.next_in_succession(v, -1))
+	_gdext_vegdyn_ideal_temp_cached = ideal_t
+	_gdext_vegdyn_ideal_moist_cached = ideal_m
+	_gdext_vegdyn_temp_tol_cached = tol_t
+	_gdext_vegdyn_moist_tol_cached = tol_m
+	_gdext_vegdyn_next_up_cached = nx_up
+	_gdext_vegdyn_next_down_cached = nx_dn
+	# weather_penalty 表（按 WT enum 顺序）：参考本文件 const WEATHER_VITALITY_PENALTY 字典，
+	# 未声明的 WT 默认 0.0。
+	var wpn: PackedFloat32Array = PackedFloat32Array()
+	wpn.resize(n_wt)
+	for wt_id in range(n_wt):
+		wpn[wt_id] = float(WEATHER_VITALITY_PENALTY.get(wt_id, 0.0))
+	_gdext_vegdyn_weather_penalty_cached = wpn
+	# resistance_table：VEG × WT 平铺，VegetationType.weather_resistance 提供单点查询
+	var res: PackedFloat32Array = PackedFloat32Array()
+	res.resize(n_veg * n_wt)
+	for v in range(n_veg):
+		var base: int = v * n_wt
+		for wt_id in range(n_wt):
+			res[base + wt_id] = float(VegetationType.weather_resistance(v, wt_id))
+	_gdext_vegdyn_resistance_cached = res
+
 func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 	var any_changed: bool = false
 	var scale: float = maxf(day_scale, 1.0)
 	var streak_days: int = maxi(1, int(round(scale)))
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells: int = cells.size()
+
+	# ─── DOTS-Final-Push 任务 3：DCWorldExt C++ 快路径 ────────────────────
+	# 触发条件：
+	#   1. ClimateProfile.use_gdext_vegetation_dynamics == true
+	#   2. _data_core_world_ext 已 bind 且 has_method("run_vegetation_dynamics_pass")
+	#   3. C++ 端返回 ≥ 0
+	# 任意一条不满足 → 透明 fallback 到下面 GDScript 单循环。
+	# 与 sea_ice 同模式：演替触发的写入（cell.vegetation/base_vegetation/current_state）
+	# 由 GDScript 后处理；C++ 仅返回候选列表 succession_indices + succession_to_veg。
+	var cp_vd := _c()
+	if not _gdext_vegdyn_first_attempt_logged:
+		_gdext_vegdyn_first_attempt_logged = true
+		var cp_path: String = "<in-memory ClimateProfile>"
+		var flag_val: bool = false
+		if cp_vd != null:
+			if cp_vd.resource_path != "":
+				cp_path = cp_vd.resource_path
+			flag_val = bool(cp_vd.use_gdext_vegetation_dynamics)
+		var ext_ok: bool = _data_core_world_ext != null
+		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_vegetation_dynamics_pass")
+		var verdict: String = "OK → will try C++"
+		if not (flag_val and ext_ok and has_method_ok):
+			verdict = "FAIL → fall through to GDScript path"
+		print("[veg_dyn/stage_b] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path)
+		print("  cp.use_gdext_vegetation_dynamics = %s" % str(flag_val))
+		print("  _data_core_world_ext != null = %s" % str(ext_ok))
+		print("  ext.has_method('run_vegetation_dynamics_pass') = %s" % str(has_method_ok))
+		print("  verdict = %s" % verdict)
+	if cp_vd != null and bool(cp_vd.use_gdext_vegetation_dynamics) and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_vegetation_dynamics_pass"):
+		if not _gdext_vegdyn_signature_checked:
+			_gdext_vegdyn_signature_checked = true
+			_gdext_vegdyn_signature_ok = _validate_gdext_method_signature("run_vegetation_dynamics_pass", 1)
+			print("[veg_dyn/stage_b] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_vegdyn_signature_ok))
+		# 构建/复用 LUT + pack vitality / streak in/out arrays。
+		_ensure_vegdyn_lut()
+		var vitality_arr: PackedFloat32Array = PackedFloat32Array()
+		var low_streak_arr: PackedInt32Array = PackedInt32Array()
+		var high_streak_arr: PackedInt32Array = PackedInt32Array()
+		vitality_arr.resize(n_cells)
+		low_streak_arr.resize(n_cells)
+		high_streak_arr.resize(n_cells)
+		for i in range(n_cells):
+			var cell_pack: HexCell = cells[i]
+			vitality_arr[i] = cell_pack.vegetation_vitality
+			low_streak_arr[i] = cell_pack._vitality_low_streak
+			high_streak_arr[i] = cell_pack._vitality_high_streak
+		var n_wt: int = WeatherType.WT.size()
+		var knobs: Dictionary = {
+			"n_cells": n_cells,
+			"day_scale": float(day_scale),
+			"streak_days": streak_days,
+			"vitality_change_rate": float(cp_vd.vitality_change_rate),
+			"compat_harshness": float(cp_vd.compat_harshness),
+			"low_threshold": float(cp_vd.vitality_low_threshold),
+			"high_threshold": float(cp_vd.vitality_high_threshold),
+			"succession_degrade_days": int(cp_vd.succession_degrade_days),
+			"succession_upgrade_days": int(cp_vd.succession_upgrade_days),
+			"n_wt": n_wt,
+			"wt_clear_id": int(WeatherType.WT.CLEAR),
+			"veg_none_id": int(VegetationType.VEG.NONE),
+			"ideal_temp_table": _gdext_vegdyn_ideal_temp_cached,
+			"ideal_moist_table": _gdext_vegdyn_ideal_moist_cached,
+			"temp_tol_table": _gdext_vegdyn_temp_tol_cached,
+			"moist_tol_table": _gdext_vegdyn_moist_tol_cached,
+			"weather_penalty_table": _gdext_vegdyn_weather_penalty_cached,
+			"resistance_table": _gdext_vegdyn_resistance_cached,
+			"next_up_table": _gdext_vegdyn_next_up_cached,
+			"next_down_table": _gdext_vegdyn_next_down_cached,
+			"vitality_arr": vitality_arr,
+			"low_streak_arr": low_streak_arr,
+			"high_streak_arr": high_streak_arr,
+		}
+		# storage A/B 同源契约：与 albedo / transp 同模式，refresh 让 SoA 取得最新值
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
+		var rc: float = float(_data_core_world_ext.run_vegetation_dynamics_pass(knobs))
+		if _gdext_vegdyn_runs + _gdext_vegdyn_fallbacks < 3:
+			print("[veg_dyn/stage_b] DEBUG call#%d: rc=%.4f n_cells=%d scale=%.2f" % [
+				_gdext_vegdyn_runs + _gdext_vegdyn_fallbacks + 1,
+				rc, n_cells, scale,
+			])
+		if rc >= 0.0:
+			# 写回 vitality / streak —— knobs in/out 模式
+			var vit_out: PackedFloat32Array = knobs.get("vitality_arr", vitality_arr)
+			var ls_out: PackedInt32Array = knobs.get("low_streak_arr", low_streak_arr)
+			var hs_out: PackedInt32Array = knobs.get("high_streak_arr", high_streak_arr)
+			for i in range(n_cells):
+				var cell_unpack: HexCell = cells[i]
+				cell_unpack.vegetation_vitality = vit_out[i]
+				cell_unpack._vitality_low_streak = ls_out[i]
+				cell_unpack._vitality_high_streak = hs_out[i]
+			# 应用演替候选（GDScript 后处理：写 cell.vegetation / base_vegetation / current_state）
+			# 退化起点 vitality=0.65（远离 LOW_THRESHOLD 给适应缓冲），升级起点 vitality=0.70
+			# —— 与 _trigger_succession 的 0.65 / 0.7 分歧严格对齐。
+			var succ_indices: PackedInt32Array = knobs.get("succession_indices", PackedInt32Array())
+			var succ_to_veg: PackedByteArray = knobs.get("succession_to_veg", PackedByteArray())
+			var n_succ: int = succ_indices.size()
+			for k in range(n_succ):
+				var ci: int = succ_indices[k]
+				if ci < 0 or ci >= n_cells:
+					continue
+				var c: HexCell = cells[ci]
+				var prev_veg: int = int(c.vegetation)
+				var new_veg: int = int(succ_to_veg[k])
+				# 判断方向：C++ 端先尝试退化（next_down），失败才尝试升级（next_up）
+				# 这里用 cached LUT 反查方向，与 _trigger_succession 的 priority 顺序一致
+				var is_degrade: bool = (prev_veg < _gdext_vegdyn_next_down_cached.size() \
+						and int(_gdext_vegdyn_next_down_cached[prev_veg]) == new_veg \
+						and new_veg != prev_veg)
+				c.vegetation = new_veg
+				c.base_vegetation = new_veg
+				c.vegetation_vitality = 0.65 if is_degrade else 0.7
+				c.current_state["vegetation"] = new_veg
+				any_changed = true
+			_gdext_vegdyn_runs += 1
+			_gdext_vegdyn_total_ms += rc
+			if _gdext_vegdyn_runs == 1:
+				print("[veg_dyn/stage_b] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 9.2ms; target < 1.0ms)" % rc)
+			return any_changed
+		_gdext_vegdyn_fallbacks += 1
+		if _gdext_vegdyn_fallbacks == 1:
+			print("[stage_b] gdext path UNAVAILABLE: run_vegetation_dynamics_pass — falling back to GDScript")
+
 	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
 			continue
