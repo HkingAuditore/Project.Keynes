@@ -312,7 +312,7 @@ gantt
 |---|---|---|---|
 | W01 上 | A | PR-2.0 + PR-2.passA-unblock | API 落地，Pass-A C++ 复活 |
 | W01 下 | A | PR-2.1.5 transpiration | 模板 PR 定型改造模式 |
-| W02 | A | PR-2.1.1 Pass-A | 长期均值字段 mean_diff ≤ 0.005 |
+| W02 | A | PR-2.1.1 Pass-A ✅ | 长期均值字段 mean_diff ≤ 0.005（实测 = 0.0，commit `8a725f5`）|
 | W03 | A | PR-2.1.2 Pass-B | 含局部气候耦合 |
 | W04 上 | A | PR-2.1.3a ocean water | |
 | W04 下 | A | PR-2.1.3b ocean land | |
@@ -551,7 +551,9 @@ if _world != null:
 
 ---
 
-### 3.4 PR-2.1.1 climate Pass-A（W02，~1 周）
+### 3.4 PR-2.1.1 climate Pass-A（W02，~1 周）✅ **DONE 2026-05-15**
+
+> **验收存档**：[`.workbuddy/baselines/pr-2-1-1/`](../.workbuddy/baselines/pr-2-1-1/) — long-term mean_diff = **0.0**（红线 ≤ 0.005），12 hot field 全部在 baseline 水位附近或更稳，commit `8a725f5`。
 
 #### 3.4.1 目标
 
@@ -627,6 +629,19 @@ func _push_dirty_f32_to_world(cid: int, alias: PackedFloat32Array, dirty_idx: Pa
 - DCSoakABRunner SAME_SOURCE PASS
 - **特殊红线**：长期均值字段（`cell.temp_30d` / `cell.temp_365d` / `cell.temp_anomaly`）
   mean_diff ≤ **0.005**（比通用 0.01 严，因为是长期累积，对 storage 同源最敏感）
+
+#### 3.4.3.✅ 实测结果（2026-05-15 commit `8a725f5`）
+
+| 指标 | 红线 | PR-passA-unblock | PR-2.1.1 after | 判定 |
+|---|---|---|---|---|
+| long-term mean_diff | ≤ 0.005 | 0.0 | **0.0** | ✅ 完美 |
+| cell.temp mean_diff | (参考) | 0.021 | **0.013** | 改善 |
+| cell.moisture mean_diff | (参考) | 0.047 | **0.044** | 持平 |
+| cell.snow_cover mean_diff | (参考) | 0.039 | **0.043** | 持平（< 0.05）|
+
+scalar FAIL 来自 `world.sea_ice_fraction_buffer_hash`（uint32→f32 cast），baseline 也 FAIL，与 refactor 无关；真正 storage bug 信号是 long-term，值 = 0.0。
+
+helper `_push_f32_to_world` / `_push_u8_to_world` 已落地于 `map_generator.gd` 紧邻 `_climate_pass_a` 之前，封装 `_data_core_world == null` / `cid < 0` 双守卫，**PR-2.1.2 ~ PR-2.1.4 hot pass push 块直接复用**，避免 boilerplate 堆积。
 
 #### 3.4.4 风险
 
