@@ -87,6 +87,11 @@ func get_ocean_current_x(_idx: int) -> float: return 0.0
 func get_ocean_current_y(_idx: int) -> float: return 0.0
 func get_wind_x(_idx: int) -> float: return 0.0
 func get_wind_y(_idx: int) -> float: return 0.0
+func get_slp(_idx: int) -> float: return 0.0
+func get_wind_speed(_idx: int) -> float: return 0.0
+func get_upwelling_strength(_idx: int) -> float: return 0.0
+func get_wind_stress_curl(_idx: int) -> float: return 0.0
+func get_ocean_psi(_idx: int) -> float: return 0.0
 
 # ─── Discrete enums (U8) ─────────────────────────────────────────────────
 func get_terrain(_idx: int) -> int: return 0
@@ -178,6 +183,11 @@ class Cell extends DCViewAdapter:
 	func get_ocean_current_y(idx: int) -> float: return float(_cells[idx].ocean_current.y)
 	func get_wind_x(idx: int) -> float: return float(_cells[idx].wind_vector.x)
 	func get_wind_y(idx: int) -> float: return float(_cells[idx].wind_vector.y)
+	func get_slp(idx: int) -> float: return float(_cells[idx].slp)
+	func get_wind_speed(idx: int) -> float: return float(_cells[idx].wind_speed)
+	func get_upwelling_strength(idx: int) -> float: return float(_cells[idx].upwelling_strength)
+	func get_wind_stress_curl(idx: int) -> float: return float(_cells[idx].wind_stress_curl)
+	func get_ocean_psi(idx: int) -> float: return float(_cells[idx].ocean_psi)
 
 	# Enums
 	func get_terrain(idx: int) -> int: return int(_cells[idx].terrain)
@@ -302,6 +312,11 @@ class World extends DCViewAdapter:
 	func get_ocean_current_y(idx: int) -> float:  return _f(_arr_f32(&"ocean_current_y_arr"), idx)
 	func get_wind_x(idx: int) -> float:           return _f(_arr_f32(&"wind_x_arr"), idx)
 	func get_wind_y(idx: int) -> float:           return _f(_arr_f32(&"wind_y_arr"), idx)
+	func get_slp(idx: int) -> float:              return _f(_arr_f32(&"slp_arr"), idx)
+	func get_wind_speed(idx: int) -> float:       return _f(_arr_f32(&"wind_speed_arr"), idx)
+	func get_upwelling_strength(idx: int) -> float: return _f(_arr_f32(&"upwelling_strength_arr"), idx)
+	func get_wind_stress_curl(idx: int) -> float: return _f(_arr_f32(&"wind_stress_curl_arr"), idx)
+	func get_ocean_psi(idx: int) -> float:        return _f(_arr_f32(&"ocean_psi_arr"), idx)
 
 	# Enums
 	func get_terrain(idx: int) -> int:       return _u(_arr_u8(&"terrain_arr"), idx)

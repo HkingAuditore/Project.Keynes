@@ -23,6 +23,15 @@ class_name SlicedUpdateScheduler
 ## half-baked state).
 var frame_budget_ms: float = 12.0
 
+## Strict mode is used by the 1ms simulation profile. It prevents a job from
+## consuming multiple slices in one tick unless that job explicitly opts out
+## with max_slices_per_tick = 0 and the profile leaves strict mode disabled.
+var strict_budget_enabled: bool = false
+
+## Rolling perf gate window for fast-tick simulation budget diagnostics.
+var sim_budget_window_size: int = 300
+var sim_budget_warn_ms: float = 1.0
+
 ## Print a `[SUS] last N ticks: <job_id> avg=Xms p95=Yms slices=Z` line every
 ## this many ticks. 0 disables periodic logging.
 var log_interval_ticks: int = 30
@@ -50,8 +59,13 @@ var _stats: Dictionary = {}
 ##   { tick_index, source, total_ms, jobs_ran, jobs_skipped, slices_total }
 var _last_tick_summary: Dictionary = {}
 
+## Rolling whole-tick samples:
+## { total_ms, largest_slice_job, largest_slice_stage, largest_slice_ms }
+var _tick_budget_samples: Array = []
+
 ## Number of ticks dispatched since reset.
 var _tick_counter: int = 0
+var _strict_next_job_index: int = 0
 
 ## DataCore World 引用（2026-05-11，dots-foundation-and-weather-migration）。
 ## main.gd 在 World 初始化完成后调用 bind_world(w)；SUS 把它注入到每个已注册
@@ -126,8 +140,19 @@ func tick(ctx: SusTickContext) -> void:
 	var jobs_ran: int = 0
 	var jobs_skipped: int = 0
 	var slices_total_this_tick: int = 0
+	var largest_slice_job_tick: StringName = &""
+	var largest_slice_stage_tick: String = ""
+	var largest_slice_ms_tick: float = 0.0
 
-	for job in _jobs:
+	var ordered_jobs: Array[SusJob] = _jobs
+	if strict_budget_enabled and _jobs.size() > 1:
+		ordered_jobs = []
+		var start_idx: int = posmod(_strict_next_job_index, _jobs.size())
+		for offset in range(_jobs.size()):
+			ordered_jobs.append(_jobs[(start_idx + offset) % _jobs.size()])
+	var sim_total_ms_tick: float = 0.0
+
+	for job in ordered_jobs:
 		var report: Dictionary = {
 			"id": job.id,
 			"elapsed_ms": 0.0,
@@ -149,8 +174,16 @@ func tick(ctx: SusTickContext) -> void:
 		# starvation_threshold 次的 Job，本 tick 强制绕过 budget 跑一次，避免
 		# sea_ice_atlas_upload / ocean_currents 这类低优先级 Job 长期饿死。
 		var elapsed_us_now: int = Time.get_ticks_usec() - tick_start_us
-		var starving: bool = job.starvation_threshold > 0 \
+		var starving: bool = not strict_budget_enabled \
+				and job.starvation_threshold > 0 \
 				and job._starvation_count >= job.starvation_threshold
+		if strict_budget_enabled and jobs_ran > 0:
+			report["skipped_reason"] = "strict_budget_one_job"
+			_last_report[job.id] = report
+			_record_skipped(job.id, "strict_budget_one_job")
+			job._starvation_count += 1
+			jobs_skipped += 1
+			continue
 		if elapsed_us_now >= budget_us and not bool(job.must_run) and not starving:
 			report["skipped_reason"] = "frame_budget_exhausted"
 			_last_report[job.id] = report
@@ -170,6 +203,10 @@ func tick(ctx: SusTickContext) -> void:
 		# Dependency gate: any unfinished dep blocks this tick.
 		var blocked_by: StringName = &""
 		for dep_id in job.depends_on:
+			var dep_job: SusJob = get_job(dep_id)
+			if dep_job != null and bool(dep_job._in_flight):
+				blocked_by = dep_id
+				break
 			if in_flight_after_tick.has(dep_id) and bool(in_flight_after_tick[dep_id]):
 				blocked_by = dep_id
 				break
@@ -197,10 +234,17 @@ func tick(ctx: SusTickContext) -> void:
 			elapsed_us_now = Time.get_ticks_usec() - tick_start_us
 			if slices_run > 0 and elapsed_us_now >= budget_us and not bool(job.must_run):
 				break
+			var max_slices_this_tick: int = int(job.max_slices_per_tick)
+			if strict_budget_enabled and max_slices_this_tick <= 0:
+				max_slices_this_tick = 1
+			if max_slices_this_tick > 0 and slices_run >= max_slices_this_tick:
+				break
 			if starving and slices_run >= 1:
 				break
 
+			var slice_start_us: int = Time.get_ticks_usec()
 			var slice_result: Dictionary = job.run_slice(ctx)
+			var slice_actual_ms: float = (Time.get_ticks_usec() - slice_start_us) / 1000.0
 			slices_run += 1
 
 			# Defensive read — Job impls should always return a Dictionary,
@@ -209,6 +253,13 @@ func tick(ctx: SusTickContext) -> void:
 				push_error("[SUS] job %s.run_slice did not return Dictionary" % str(job.id))
 				done = true
 				break
+
+			var slice_reported_ms: float = float(slice_result.get("elapsed_ms", slice_actual_ms))
+			var slice_ms: float = maxf(slice_actual_ms, slice_reported_ms)
+			if not _is_upload_job(job.id) and slice_ms > largest_slice_ms_tick:
+				largest_slice_ms_tick = slice_ms
+				largest_slice_job_tick = job.id
+				largest_slice_stage_tick = _slice_stage_name(slice_result)
 
 			done = bool(slice_result.get("done", true))
 			work_done_total += int(slice_result.get("work_done", 0))
@@ -228,8 +279,14 @@ func tick(ctx: SusTickContext) -> void:
 		report["progress_ratio"] = last_progress_ratio
 		_last_report[job.id] = report
 		_record_stats(job.id, job_elapsed_ms, slices_run)
+		if not _is_upload_job(job.id):
+			sim_total_ms_tick += job_elapsed_ms
 
 		jobs_ran += 1
+		if strict_budget_enabled:
+			var original_idx: int = _jobs.find(job)
+			if original_idx >= 0:
+				_strict_next_job_index = (original_idx + 1) % maxi(1, _jobs.size())
 		slices_total_this_tick += slices_run
 		# Starvation 防护：实际跑过即清零计数；下一次还会从 0 开始累计。
 		job._starvation_count = 0
@@ -245,6 +302,8 @@ func tick(ctx: SusTickContext) -> void:
 
 	# Perf instrumentation: 单次 tick 摘要，便于 main.gd 取来打印或触发 WARN。
 	var total_ms: float = (Time.get_ticks_usec() - tick_start_us) / 1000.0
+	_record_tick_budget_sample(sim_total_ms_tick, largest_slice_job_tick, largest_slice_stage_tick, largest_slice_ms_tick)
+	var budget_window: Dictionary = _sim_budget_window_dict()
 	_last_tick_summary = {
 		"tick_index": ctx.tick_index,
 		"source": ctx.source,
@@ -252,6 +311,12 @@ func tick(ctx: SusTickContext) -> void:
 		"jobs_ran": jobs_ran,
 		"jobs_skipped": jobs_skipped,
 		"slices_total": slices_total_this_tick,
+		"largest_slice_job": largest_slice_job_tick,
+		"largest_slice_stage": largest_slice_stage_tick,
+		"largest_slice_ms": largest_slice_ms_tick,
+		"sus_sim_p95_300": float(budget_window.get("sus_sim_p95_300", 0.0)),
+		"sus_sim_max_300": float(budget_window.get("sus_sim_max_300", 0.0)),
+		"over_1ms_count_300": int(budget_window.get("over_1ms_count_300", 0)),
 	}
 
 	if log_interval_ticks > 0 and (_tick_counter % log_interval_ticks) == 0:
@@ -267,8 +332,10 @@ func reset_all_progress() -> void:
 		j.reset_progress()
 	_last_report.clear()
 	_last_tick_summary.clear()
+	_tick_budget_samples.clear()
 	_stats.clear()
 	_tick_counter = 0
+	_strict_next_job_index = 0
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +352,10 @@ func report_last_tick() -> Dictionary:
 ##   2. 触发 > 12ms WARN 时附带打印
 func report_last_tick_summary() -> Dictionary:
 	return _last_tick_summary.duplicate(true)
+
+
+func report_sim_budget_window() -> Dictionary:
+	return _sim_budget_window_dict().duplicate(true)
 
 
 ## Perf instrumentation: 滚动窗口内的 skipped_reason 累计 + max_ms。
@@ -320,6 +391,71 @@ func report_job_stats() -> Dictionary:
 			"max_ms": float(s.get("max_ms", 0.0)),
 		}
 	return out
+
+
+func _record_tick_budget_sample(total_ms: float, largest_job: StringName, largest_stage: String, largest_ms: float) -> void:
+	_tick_budget_samples.append({
+		"total_ms": total_ms,
+		"largest_slice_job": largest_job,
+		"largest_slice_stage": largest_stage,
+		"largest_slice_ms": largest_ms,
+	})
+	while _tick_budget_samples.size() > maxi(1, sim_budget_window_size):
+		_tick_budget_samples.remove_at(0)
+
+
+func _sim_budget_window_dict() -> Dictionary:
+	var sample_count: int = _tick_budget_samples.size()
+	if sample_count <= 0:
+		return {
+			"sus_sim_p95_300": 0.0,
+			"sus_sim_max_300": 0.0,
+			"over_1ms_count_300": 0,
+			"largest_slice_job": &"",
+			"largest_slice_stage": "",
+			"largest_slice_ms": 0.0,
+			"sample_count": 0,
+		}
+	var totals: Array = []
+	var max_total_ms: float = 0.0
+	var over_count: int = 0
+	var largest_job: StringName = &""
+	var largest_stage: String = ""
+	var largest_ms: float = 0.0
+	for sample in _tick_budget_samples:
+		var d: Dictionary = sample
+		var total_ms: float = float(d.get("total_ms", 0.0))
+		totals.append(total_ms)
+		max_total_ms = maxf(max_total_ms, total_ms)
+		if total_ms > sim_budget_warn_ms:
+			over_count += 1
+		var slice_ms: float = float(d.get("largest_slice_ms", 0.0))
+		if slice_ms > largest_ms:
+			largest_ms = slice_ms
+			largest_job = StringName(str(d.get("largest_slice_job", "")))
+			largest_stage = str(d.get("largest_slice_stage", ""))
+	totals.sort()
+	var p95_idx: int = clampi(int(ceil(totals.size() * 0.95)) - 1, 0, totals.size() - 1)
+	return {
+		"sus_sim_p95_300": float(totals[p95_idx]),
+		"sus_sim_max_300": max_total_ms,
+		"over_1ms_count_300": over_count,
+		"largest_slice_job": largest_job,
+		"largest_slice_stage": largest_stage,
+		"largest_slice_ms": largest_ms,
+		"sample_count": sample_count,
+	}
+
+
+func _slice_stage_name(slice_result: Dictionary) -> String:
+	for key in ["stage_name", "stage", "pass", "axis"]:
+		if slice_result.has(key):
+			return str(slice_result[key])
+	return ""
+
+
+func _is_upload_job(job_id: StringName) -> bool:
+	return job_id == &"enum_atlas_upload" or job_id == &"sea_ice_atlas_upload"
 
 
 func _record_stats(job_id: StringName, elapsed_ms: float, slices_run: int) -> void:
@@ -385,6 +521,16 @@ func _emit_periodic_log() -> void:
 		s["slices_total"] = 0
 		s["skipped"] = {}
 		s["max_ms"] = 0.0
+	var bw: Dictionary = _sim_budget_window_dict()
+	if int(bw.get("sample_count", 0)) > 0:
+		print("[SUS] budget last %d ticks: total_p95=%.2fms max=%.2fms over_1ms=%d largest=%s/%s %.2fms"
+			% [int(bw.get("sample_count", 0)),
+				float(bw.get("sus_sim_p95_300", 0.0)),
+				float(bw.get("sus_sim_max_300", 0.0)),
+				int(bw.get("over_1ms_count_300", 0)),
+				str(bw.get("largest_slice_job", "")),
+				str(bw.get("largest_slice_stage", "")),
+				float(bw.get("largest_slice_ms", 0.0))])
 	# DataCore 状态尾巴一行（dots-foundation-and-weather-migration 任务 10）。
 	# 仅在已 bind World 时打印；未 bind 时（默认 legacy）保持静默以减少 log 噪声。
 	if world != null:

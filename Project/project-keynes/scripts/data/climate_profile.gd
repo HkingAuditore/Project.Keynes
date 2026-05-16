@@ -182,6 +182,13 @@ extends Resource
 # 任务 6（dots-completion）：默认 false → true。earth_like.tres 生产 profile 已启用与验证。
 @export var use_dc_system_scheduler: bool = true
 
+# 1ms simulation budget profile. This keeps simulation precision intact and
+# forces long rounds to advance over more fast ticks instead of blocking one.
+@export var sim_strict_budget_enabled: bool = true
+@export_range(0.25, 16.0, 0.05) var sim_frame_budget_ms: float = 1.0
+@export_range(0.10, 8.0, 0.05) var sim_slice_budget_ms: float = 0.55
+@export_range(0.10, 8.0, 0.05) var sim_upload_slice_budget_ms: float = 0.45
+
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
 #
 # 6 个 hot pass 的 C++ 化开关。

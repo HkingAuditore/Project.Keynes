@@ -55,6 +55,11 @@ var _emergent_feedback_label: Label = null
 var _emergent_sun_label: Label = null
 var _emergent_month_label: Label = null
 
+# Physical circulation debug lines. Lazy-created to avoid scene layout churn.
+var _physical_ocean_label: Label = null
+var _physical_wind_label: Label = null
+var _physical_pressure_label: Label = null
+
 # ─── 动态上下文 ─────────────────────────────────────────────────────
 var _selected_cell: HexCell = null
 var _view_adapter: DCViewAdapter = null
@@ -237,6 +242,7 @@ func refresh_info_panel() -> void:
 			_history_label.text = "近期植被：%s（兼容轴）" % " → ".join(names2)
 
 	# Emergent Climate Coupling：三行涌现耦合信息（温度分解 / 海冰覆盖度 / 反馈缓冲）
+	refresh_physical_lines()
 	refresh_emergent_lines()
 
 
@@ -295,6 +301,7 @@ func refresh_climate_line() -> void:
 		_precip_label.text = "当季降水：%.2f（估算 = %s ×%.2f × 年均湿度 %.2f）" % [
 			precip, _world_clock.season_name_cn(season), scale, base_moist_3
 		]
+	refresh_physical_lines()
 
 
 # Milestone 4：单独刷新植被生命值行（与 weather 一样按"日"高频刷新）
@@ -350,6 +357,59 @@ func ensure_emergent_labels() -> void:
 	_emergent_month_label = Label.new()
 	_emergent_month_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(_emergent_month_label)
+
+
+func ensure_physical_labels() -> void:
+	if _physical_ocean_label != null:
+		return
+	var vbox: Node = _history_label.get_parent() if _history_label != null else null
+	if vbox == null:
+		return
+	_physical_ocean_label = Label.new()
+	_physical_ocean_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_physical_ocean_label)
+	_physical_wind_label = Label.new()
+	_physical_wind_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_physical_wind_label)
+	_physical_pressure_label = Label.new()
+	_physical_pressure_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_physical_pressure_label)
+
+
+func refresh_physical_lines() -> void:
+	if _selected_cell == null:
+		return
+	ensure_physical_labels()
+	if _physical_ocean_label == null:
+		return
+	var cell := _selected_cell
+	var idx: int = int(cell.index)
+	var ad: DCViewAdapter = _view_adapter
+	var is_water: bool = bool(cell.passable_sea)
+	var ocean_current: Vector2 = ad.get_ocean_current(idx) if ad != null else cell.ocean_current
+	var wind: Vector2 = ad.get_wind_vector(idx) if ad != null else cell.wind_vector
+	var wind_speed: float = ad.get_wind_speed(idx) if ad != null else float(cell.wind_speed)
+	if wind_speed <= 0.0001 and wind.length() > 0.0001:
+		wind_speed = wind.length()
+	var upwelling: float = ad.get_upwelling_strength(idx) if ad != null else float(cell.upwelling_strength)
+	var slp: float = ad.get_slp(idx) if ad != null else float(cell.slp)
+	var curl: float = ad.get_wind_stress_curl(idx) if ad != null else float(cell.wind_stress_curl)
+	var psi: float = ad.get_ocean_psi(idx) if ad != null else float(cell.ocean_psi)
+	var heat_transport: float = float(cell.temperature_transport_anomaly)
+	var ocean_mag_text: String = _fmt3(ocean_current.length()) if is_water else "—"
+	var up_text: String = _fmt_signed3(upwelling) if is_water else "—"
+	var ocean_dir_text: String = _dir_degrees_text(ocean_current) if is_water else "—"
+	var curl_text: String = _fmt_signed3(curl) if is_water else "—"
+	var psi_text: String = _fmt_signed3(psi) if is_water else "—"
+	_physical_ocean_label.text = "洋流：强度 %s  热输运 %s  上升流 %s" % [
+		ocean_mag_text, _fmt_signed3(heat_transport), up_text
+	]
+	_physical_wind_label.text = "风场：风速 %s  风向 %s  洋流方向 %s" % [
+		_fmt3(wind_speed), _dir_degrees_text(wind), ocean_dir_text
+	]
+	_physical_pressure_label.text = "压力/ψ：海平压力 %s  风应力旋度 %s  流函数 ψ %s" % [
+		_fmt_signed3(slp), curl_text, psi_text
+	]
 
 
 # Emergent Climate Coupling：刷新三行"涌现耦合"信息：
@@ -419,6 +479,20 @@ func refresh_emergent_lines() -> void:
 
 
 # ─── 文字档位 helper（仅 UI 用，不参与游戏逻辑） ─────────────────────
+
+func _fmt3(v: float) -> String:
+	return "%.3f" % v
+
+
+func _fmt_signed3(v: float) -> String:
+	return "%+.3f" % v
+
+
+func _dir_degrees_text(v: Vector2) -> String:
+	if v.length() < 0.0001:
+		return "—"
+	return "%.0f°" % fposmod(rad_to_deg(atan2(v.y, v.x)), 360.0)
+
 
 func _vitality_band(v: float) -> String:
 	if v < 0.15: return "濒死"

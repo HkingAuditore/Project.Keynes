@@ -639,11 +639,12 @@ func _on_day_changed(_day_idx: int) -> void:
 	# Fast-tick perf opt (A)：跳日路径本就是低成本，跳过 > 12ms 警告误报判定。
 	# Daily-sim perf instrumentation：原 365 帧节流过松（卡顿期 400ms 一年才提醒一次），
 	# 改为指数退让——首次必报，之后按 30 帧节流，避免刷屏又能持续看到趋势。
-	var trigger_warn: bool = (not was_skipped_day) and fast_ms > 12 \
+	var sus_budget_warn: bool = t_sus_ms > 1.0
+	var trigger_warn: bool = (not was_skipped_day) and (fast_ms > 12 or sus_budget_warn) \
 		and (_fast_tick_warn_last_frame == 0 or (_fast_tick_count - _fast_tick_warn_last_frame) >= 30)
 	if trigger_warn:
-		push_warning("[fast tick] %dms > 12ms budget (frame=%d, sus=%.2fms render=%.2fms ui=%.2fms cells=%d)" % [
-			fast_ms, _fast_tick_count, t_sus_ms, t_render_ms, t_ui_ms,
+		push_warning("[fast tick] frame=%d total=%dms sus=%.2fms render=%.2fms ui=%.2fms cells=%d budgets(total>12ms or sus>1ms)" % [
+			_fast_tick_count, fast_ms, t_sus_ms, t_render_ms, t_ui_ms,
 			_current_map.cell_count() if _current_map != null else 0
 		])
 		_fast_tick_warn_last_frame = _fast_tick_count
@@ -687,6 +688,17 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 		% [prefix, tick_no, sus_ms, render_ms, ui_ms, total_ms, str(skipped_day)])
 	if _generator == null or not _generator.has_method("sus_report_last_tick"):
 		return
+	if _generator.has_method("sus_report_last_tick_summary"):
+		var summary: Dictionary = _generator.sus_report_last_tick_summary()
+		if not summary.is_empty():
+			print("    sus_window p95=%.2fms max=%.2fms over1ms=%d largest=%s/%s %.2fms" % [
+				float(summary.get("sus_sim_p95_300", 0.0)),
+				float(summary.get("sus_sim_max_300", 0.0)),
+				int(summary.get("over_1ms_count_300", 0)),
+				str(summary.get("largest_slice_job", "")),
+				str(summary.get("largest_slice_stage", "")),
+				float(summary.get("largest_slice_ms", 0.0)),
+			])
 	var report: Dictionary = _generator.sus_report_last_tick()
 	if report.is_empty():
 		print("    (sus report empty)")
@@ -1599,8 +1611,13 @@ func _refresh_overlay_data() -> void:
 	if DataOverlayBaker == null:
 		_disable_overlay_due_to_error("DataOverlayBaker not loaded")
 		return
+	var overlay_adapter: DCViewAdapter = _view_adapter
+	if _generator != null and _generator.has_method("get_data_core_world"):
+		var dc_world = _generator.get_data_core_world()
+		if dc_world != null and dc_world.has_method("is_bound") and dc_world.is_bound():
+			overlay_adapter = DCViewAdapter.World.new(dc_world, _current_map)
 	result = DataOverlayBaker.bake(
-		_current_map, _world_data, _overlay_mode, cp, phase, _view_adapter
+		_current_map, _world_data, _overlay_mode, cp, phase, overlay_adapter
 	)
 	_overlay_last_bake_ms = (Time.get_ticks_usec() - t0) / 1000.0
 	var tex = result.get("texture", null)

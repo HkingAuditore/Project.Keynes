@@ -5547,6 +5547,47 @@ static inline bool pk_is_water_terrain(uint8_t t) {
     return t == 0 || t == 1 || t == 18 || t == 19 || t == 20 || t == 21;
 }
 
+static inline int pk_upwind_dir_index_from_wind(float wx, float wy) {
+    const double len2 = double(wx) * double(wx) + double(wy) * double(wy);
+    if (len2 <= 0.0001) {
+        return -1;
+    }
+    const double inv_len = 1.0 / std::sqrt(len2);
+    const double nx = double(wx) * inv_len;
+    const double ny = double(wy) * inv_len;
+    const double wind_q = std::sqrt(3.0) / 3.0 * nx - ny / 3.0;
+    const double wind_r = 2.0 / 3.0 * ny;
+    const double wind_s = -wind_q - wind_r;
+    const double cube_len = std::sqrt(wind_q * wind_q + wind_r * wind_r + wind_s * wind_s);
+    if (cube_len <= 0.0001) {
+        return -1;
+    }
+    const double uq = -wind_q / cube_len;
+    const double ur = -wind_r / cube_len;
+    const double us = -wind_s / cube_len;
+    constexpr int DIRS[6][3] = {
+        { 1,  0, -1},
+        { 1, -1,  0},
+        { 0, -1,  1},
+        {-1,  0,  1},
+        {-1,  1,  0},
+        { 0,  1, -1},
+    };
+    const double inv_dir_len = 1.0 / std::sqrt(2.0);
+    int best = 0;
+    double best_dot = -std::numeric_limits<double>::infinity();
+    for (int d = 0; d < 6; ++d) {
+        const double dot = uq * double(DIRS[d][0]) * inv_dir_len
+                         + ur * double(DIRS[d][1]) * inv_dir_len
+                         + us * double(DIRS[d][2]) * inv_dir_len;
+        if (dot > best_dot) {
+            best_dot = dot;
+            best = d;
+        }
+    }
+    return best;
+}
+
 static inline uint8_t pk_derive_landform(uint8_t terrain, float elev, float sea_level) {
     // Terrain enum order mirrors scripts/geography/terrain_type.gd.
     // Landform enum order mirrors scripts/geography/landform_type.gd.
@@ -5874,6 +5915,130 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     out["reason"] = String();
     out["touched"] = n_cells;
     out["snow_cells"] = snow_cells;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_season_refresh_micro_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    const int stage = int(knobs.get("stage", 1));
+    out["stage"] = stage;
+    out["stage_name"] = String("unknown");
+    out["done"] = false;
+    out["next_stage"] = stage;
+    out["cursor"] = int(knobs.get("cursor", 0));
+    out["elapsed_ms"] = 0.0;
+    out["touched"] = 0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (stage != 1) return fail("unsupported stage");
+    out["stage_name"] = String("rain_shadow");
+
+    if (!knobs.has("n_cells") || !knobs.has("cursor") || !knobs.has("max_usec") ||
+        !knobs.has("rain_shadow_lookback") || !knobs.has("rain_shadow_threshold") ||
+        !knobs.has("rain_shadow_factor") || !knobs.has("neighbor_indices")) {
+        return fail("stage_1 missing required knobs");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    int cursor = int(knobs["cursor"]);
+    const int max_usec = std::max(50, int(knobs["max_usec"]));
+    const int lookback = std::max(0, int(knobs["rain_shadow_lookback"]));
+    const float threshold = float(knobs["rain_shadow_threshold"]);
+    const float factor = float(knobs["rain_shadow_factor"]);
+    if (n_cells <= 0) return fail("n_cells <= 0");
+    if (cursor < 0 || cursor > n_cells) return fail("cursor out of range");
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    if (nb_arr.size() < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
+
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_moist   = component_id(StringName("cell_moisture"));
+    const int sid_elev    = component_id(StringName("cell_elevation"));
+    const int sid_wx      = component_id(StringName("cell_wind_x"));
+    const int sid_wy      = component_id(StringName("cell_wind_y"));
+    if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_wx < 0 || sid_wy < 0) {
+        return fail("missing slot id (terrain/moisture/elevation/wind)");
+    }
+
+    Slot &s_t = _slots.write[sid_terrain];
+    Slot &s_m = _slots.write[sid_moist];
+    Slot &s_e = _slots.write[sid_elev];
+    Slot &s_wx = _slots.write[sid_wx];
+    Slot &s_wy = _slots.write[sid_wy];
+    if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+        s_e.arr_f32.size() != n_cells || s_wx.arr_f32.size() != n_cells ||
+        s_wy.arr_f32.size() != n_cells) {
+        return fail("slot array size mismatch");
+    }
+
+    const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
+    float         * const __restrict M    = s_m.arr_f32.ptrw();
+    const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+    const float   * const __restrict WX   = s_wx.arr_f32.ptr();
+    const float   * const __restrict WY   = s_wy.arr_f32.ptr();
+    const int32_t * const __restrict NB   = nb_arr.ptr();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    int touched = 0;
+    int processed = 0;
+    bool budget_yield = false;
+
+    for (; cursor < n_cells; ++cursor) {
+        if (!pk_is_water_terrain(TERR[cursor]) && lookback > 0) {
+            const int dir = pk_upwind_dir_index_from_wind(WX[cursor], WY[cursor]);
+            if (dir < 0) {
+                continue;
+            }
+            int probe = cursor;
+            for (int step = 0; step < lookback; ++step) {
+                const int ni = NB[probe * 6 + dir];
+                if (ni < 0) {
+                    probe = -1;
+                    break;
+                }
+                probe = ni;
+            }
+            if (probe >= 0 && ELEV[probe] > ELEV[cursor] + threshold) {
+                M[cursor] = M[cursor] * factor;
+                ++touched;
+            }
+        }
+
+        ++processed;
+        if ((processed & 63) == 0) {
+            auto now = std::chrono::high_resolution_clock::now();
+            const double elapsed_us = std::chrono::duration<double, std::micro>(now - t0).count();
+            if (elapsed_us >= double(max_usec)) {
+                ++cursor;
+                budget_yield = true;
+                break;
+            }
+        }
+    }
+
+    _flush_slot_to_map(sid_moist);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const bool done = cursor >= n_cells;
+    out["done"] = done;
+    out["next_stage"] = done ? stage + 1 : stage;
+    out["cursor"] = cursor;
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["touched"] = touched;
+    out["fallback"] = false;
+    out["reason"] = budget_yield ? String("budget_yield") : String();
     return out;
 }
 
@@ -7655,6 +7820,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_season_refresh_stage", "knobs"),
         &DCWorldExt::run_season_refresh_stage);
+    ClassDB::bind_method(
+        D_METHOD("run_season_refresh_micro_pass", "knobs"),
+        &DCWorldExt::run_season_refresh_micro_pass);
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
         &DCWorldExt::run_sea_ice_atlas_prepare);

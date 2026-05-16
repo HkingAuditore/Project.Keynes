@@ -104,6 +104,8 @@ var wind_y_arr:             PackedFloat32Array = PackedFloat32Array()
 var slp_arr:                PackedFloat32Array = PackedFloat32Array()
 var wind_speed_arr:         PackedFloat32Array = PackedFloat32Array()
 var upwelling_strength_arr: PackedFloat32Array = PackedFloat32Array()
+var wind_stress_curl_arr:   PackedFloat32Array = PackedFloat32Array()
+var ocean_psi_arr:          PackedFloat32Array = PackedFloat32Array()
 
 # float32 — cell 屏幕坐标缓存（size=1 单位；用于内层循环消除 HexUtils.cube_to_world 重算）
 var cell_pos_x_arr:         PackedFloat32Array = PackedFloat32Array()
@@ -292,6 +294,8 @@ func _alloc_soa(n: int) -> void:
 	slp_arr.resize(n)
 	wind_speed_arr.resize(n)
 	upwelling_strength_arr.resize(n)
+	wind_stress_curl_arr.resize(n)
+	ocean_psi_arr.resize(n)
 	cell_pos_x_arr.resize(n)
 	cell_pos_y_arr.resize(n)
 	cell_lat_norm_arr.resize(n)
@@ -361,6 +365,8 @@ func rebuild_soa_from_cells() -> void:
 		slp_arr[i] = c.slp
 		wind_speed_arr[i] = c.wind_speed
 		upwelling_strength_arr[i] = c.upwelling_strength
+		wind_stress_curl_arr[i] = c.wind_stress_curl
+		ocean_psi_arr[i] = c.ocean_psi
 		var wp: Vector2 = HexUtils.cube_to_world(c.q, c.r, 1.0)
 		cell_pos_x_arr[i] = wp.x
 		cell_pos_y_arr[i] = wp.y

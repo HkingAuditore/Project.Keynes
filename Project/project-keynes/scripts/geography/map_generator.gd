@@ -368,9 +368,11 @@ var _last_weather_breakdown: Dictionary = {}
 var _weather_round_t0_us: int = 0
 var _weather_round_tick_ms: float = 0.0
 var _weather_round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
+var _enum_atlas_biome_dirty: bool = false
 var _enum_atlas_cover_dirty: bool = false
 var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
+var _season_stage4_deltas: Dictionary = {}
 # DOTS-Final-Push 任务 6.2 / 方案 A：sea_ice_atlas_upload Job 把 prepare/upload
 # 的拆分耗时（path/prepare_ms/upload_ms/image_ms/dirty_cells/dirty_ratio）回填
 # 到这里，供 main.gd fast tick WARN 详细日志展开。schema 与 enum_atlas 同构。
@@ -802,9 +804,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_last_seed = effective_seed
 	_current_season = -1
 	_weather_stage_b_call_index = -1
+	_enum_atlas_biome_dirty = false
 	_enum_atlas_cover_dirty = false
 	_enum_atlas_vegetation_dirty = false
 	_last_enum_atlas_upload_breakdown = {}
+	_season_stage4_deltas.clear()
 	_pending_season_refresh = false
 	_season_refresh_in_progress = false
 	_last_season_refresh_breakdown = {}
@@ -961,6 +965,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_sus = DCSystemSchedulerScript.new()
 	else:
 		_sus = SlicedUpdateScheduler.new()
+	_apply_sim_budget_profile_to_scheduler(cp_sched)
 	# DataCore World 接入（dots-foundation-and-weather-migration）：
 	# 在 SUS 注册任何 job 前先把 World 实例创建出来并 bind 到 MapData，
 	# 这样所有 register_job 会自动被注入 world 引用。
@@ -1055,9 +1060,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 同结构 11-stage）。
 	if _use_dc_system_scheduler:
 		_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
+		_apply_sim_budget_profile_to_job(_season_refresh_job, cp_sched)
 		_sus.register_system(_season_refresh_job)
 	else:
 		_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
+		_apply_sim_budget_profile_to_job(_season_refresh_job, cp_sched)
 		_sus.register_job(_season_refresh_job)
 	# Deprecated 字段守门：旧 ClimateProfile 资源里 ocean_current_refresh_seasons
 	# 仍可能被序列化保存。打印一次 warning 提示作者迁移到 SUS 配置。
@@ -1086,6 +1093,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _use_dc_system_scheduler:
 		var ocean_sys = OceanCurrentsSystemScript.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
 		_ocean_currents_job = ocean_sys.get_inner()
+		_apply_sim_budget_profile_to_job(ocean_sys, cp)
+		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
 		_ocean_currents_job.depends_on.append(&"season_refresh")
 		_ocean_currents_job.on_commit = func():
 			_compute_ocean_currents(map, world, hex_size)
@@ -1094,6 +1103,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_sus.register_system(ocean_sys)
 	else:
 		_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
 		_ocean_currents_job.depends_on.append(&"season_refresh")
 		# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
 		_ocean_currents_job.on_commit = func():
@@ -1123,10 +1133,13 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _use_dc_system_scheduler:
 		var climate_sys = ClimateDailySystemScript.new(self, map, climate_phase_getter, climate_stride)
 		_refresh_climate_daily_job = climate_sys.get_inner()
+		_apply_sim_budget_profile_to_job(climate_sys, cp)
+		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
 		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 		_sus.register_system(climate_sys)
 	else:
 		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
+		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
 		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 		_sus.register_job(_refresh_climate_daily_job)
 	if _ocean_currents_job != null:
@@ -1136,10 +1149,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
 	if _use_dc_system_scheduler:
 		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
+		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
 		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
 		_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
@@ -1165,12 +1180,15 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			weather_stride
 		)
 		_weather_refresh_job = weather_dc_system.get_inner()
+		_apply_sim_budget_profile_to_job(weather_dc_system, cp)
+		_apply_sim_budget_profile_to_job(_weather_refresh_job, cp)
 	else:
 		_weather_refresh_job = WeatherRefreshJobScript.new(
 			self, map, world,
 			season_idx_getter, season_phase_getter, climate_anomaly_getter,
 			weather_stride
 		)
+		_apply_sim_budget_profile_to_job(_weather_refresh_job, cp)
 	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
 	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
@@ -1199,6 +1217,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 业务逻辑与 SeaIceAtlasUploadJob 等价）。
 	if _use_dc_system_scheduler:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
+		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
 		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
 		# DOTS-Final-Push 任务 6.2：同 SUS 路径，注入 generator 让 tick() 末尾
 		# 把 prepare/upload 拆分回填给 sus_sea_ice_atlas_breakdown()。
@@ -1207,6 +1226,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_sus.register_system(_sea_ice_atlas_upload_job)
 	else:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
+		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
 		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
 		# DOTS-Final-Push 任务 6.2：注入 generator 引用，让 Job 把 prepare/upload
 		# 拆分耗时回填到 _last_sea_ice_atlas_upload_breakdown，供 main.gd fast tick
@@ -1234,6 +1254,46 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_sus_bootstrap.attach_post_setup(self, _sus)
 	if OS.is_debug_build():
 		print("[map_generator] %s" % _sus_bootstrap.status_one_liner())
+
+
+func _apply_sim_budget_profile_to_scheduler(cp) -> void:
+	if _sus == null or cp == null:
+		return
+	if cp.get("sim_frame_budget_ms") != null:
+		_sus.frame_budget_ms = float(cp.sim_frame_budget_ms)
+	if cp.get("sim_strict_budget_enabled") != null:
+		_sus.strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
+	if _sus.get("sim_budget_window_size") != null:
+		_sus.sim_budget_window_size = 300
+	if _sus.get("sim_budget_warn_ms") != null:
+		_sus.sim_budget_warn_ms = 1.0
+	if OS.is_debug_build():
+		print("[SUS] sim budget strict=%s frame=%.2fms slice=%.2fms upload=%.2fms scheduler=%s"
+			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
+				float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms),
+				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
+				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
+				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
+
+
+func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
+	if job == null or cp == null:
+		return
+	if cp.get("sim_strict_budget_enabled") != null and not bool(cp.sim_strict_budget_enabled):
+		return
+	var slice_ms: float = 0.55
+	if upload_job and cp.get("sim_upload_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_upload_slice_budget_ms)
+	elif cp.get("sim_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_slice_budget_ms)
+	if job.get("slice_budget_ms") != null:
+		job.slice_budget_ms = slice_ms
+	if job.get("max_slices_per_tick") != null:
+		job.max_slices_per_tick = 1
+	if job.get("must_run") != null:
+		job.must_run = false
+	if job.get("starvation_threshold") != null:
+		job.starvation_threshold = 0
 
 
 ## Phase 1.4 — 让 main.gd / debug overlay 拿到 sus_systems_bootstrap 引用。
@@ -1342,10 +1402,15 @@ func merge_weather_job_breakdown(extra: Dictionary) -> void:
 
 
 func has_pending_enum_atlas_upload() -> bool:
-	return _enum_atlas_cover_dirty or _enum_atlas_vegetation_dirty
+	return _enum_atlas_biome_dirty or _enum_atlas_cover_dirty or _enum_atlas_vegetation_dirty
 
 
 func consume_pending_enum_atlas_axis() -> String:
+	if _enum_atlas_biome_dirty:
+		_enum_atlas_biome_dirty = false
+		_enum_atlas_cover_dirty = false
+		_enum_atlas_vegetation_dirty = false
+		return "biome"
 	if _enum_atlas_cover_dirty:
 		_enum_atlas_cover_dirty = false
 		return "cover"
@@ -1359,6 +1424,7 @@ func record_enum_atlas_upload(axis: String, elapsed_ms: float) -> void:
 	_last_enum_atlas_upload_breakdown = {
 		"axis": axis,
 		"elapsed_ms": elapsed_ms,
+		"biome_pending": _enum_atlas_biome_dirty,
 		"cover_pending": _enum_atlas_cover_dirty,
 		"vegetation_pending": _enum_atlas_vegetation_dirty,
 	}
@@ -1380,7 +1446,8 @@ func sus_sea_ice_atlas_breakdown() -> Dictionary:
 	return _last_sea_ice_atlas_upload_breakdown.duplicate()
 
 
-func _mark_enum_atlas_dirty(cover_dirty: bool, vegetation_dirty: bool) -> void:
+func _mark_enum_atlas_dirty(cover_dirty: bool, vegetation_dirty: bool, biome_dirty: bool = false) -> void:
+	_enum_atlas_biome_dirty = _enum_atlas_biome_dirty or biome_dirty
 	_enum_atlas_cover_dirty = _enum_atlas_cover_dirty or cover_dirty
 	_enum_atlas_vegetation_dirty = _enum_atlas_vegetation_dirty or vegetation_dirty
 
@@ -1474,9 +1541,9 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			if not _run_season_refresh_stage8_gdext(map, world, season):
 				_seasonal_sync_current_state(map, season)
 		10:
-			# 需求 7.2：RenderingServer 调用必须由 GDScript 发起，rebake stage 不可 C++ 化。
-			if world != null and _baker != null:
-				_baker.rebake_biome_tex_only(map, world, _last_hex_size)
+			# stage 10 is a render/upload concern. Queue it instead of blocking
+			# the season simulation slice with a full biome atlas rebuild.
+			_mark_enum_atlas_dirty(true, true, true)
 		11:
 			var cp_fb := _c()
 			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
@@ -1489,6 +1556,218 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 	# H 诊断：单 stage > 30ms → 直接打点，定位 season_refresh max=128-141ms 的根因 stage。
 	if elapsed_ms > 30.0:
 		print("  [season_refresh] stage=%d slow=%.1fms (season=%d)" % [stage, elapsed_ms, season])
+
+
+func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx: int, stage: int, cursor: int) -> Dictionary:
+	var out: Dictionary = {
+		"handled": false,
+		"done": false,
+		"cursor": cursor,
+		"elapsed_ms": 0.0,
+		"work_done": 0,
+		"stage_name": "",
+	}
+	var cp := _c()
+	if cp == null:
+		return out
+	var max_usec: int = 550
+	if cp.get("sim_slice_budget_ms") != null:
+		max_usec = maxi(50, int(round(float(cp.sim_slice_budget_ms) * 1000.0)))
+
+	if stage == 2:
+		return _run_season_stage2_micro(map, season_idx, cursor, max_usec)
+	if stage == 4:
+		return _run_season_stage4_micro(map, season_idx, cursor, max_usec)
+
+	if stage != 1:
+		return out
+	if not bool(cp.use_gdext_season_refresh):
+		return out
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_micro_pass"):
+		return out
+	if not map.has_indices():
+		return out
+
+	if cursor <= 0 and _data_core_world_ext.has_method("refresh_slots_from_map"):
+		_data_core_world_ext.refresh_slots_from_map()
+
+	var knobs: Dictionary = {
+		"stage": stage,
+		"cursor": maxi(0, cursor),
+		"season": clampi(season_idx, 0, 3),
+		"n_cells": map.cell_count(),
+		"max_usec": max_usec,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"rain_shadow_lookback": int(cp.rain_shadow_lookback),
+		"rain_shadow_threshold": float(cp.rain_shadow_threshold),
+		"rain_shadow_factor": float(cp.rain_shadow_factor),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_micro_pass(knobs)
+	if bool(res.get("fallback", true)):
+		if cursor <= 0:
+			return out
+		push_warning("[season_refresh] micro-pass fallback mid-stage: %s" % str(res.get("reason", "")))
+		out["handled"] = true
+		out["done"] = false
+		return out
+
+	var elapsed_ms: float = float(res.get("elapsed_ms", 0.0))
+	var next_cursor: int = int(res.get("cursor", cursor))
+	var done: bool = bool(res.get("done", false))
+	var stage_name: String = str(res.get("stage_name", "stage_%d" % stage))
+	_last_season_refresh_breakdown["stage_%d_path" % stage] = "gdext_micro"
+	_last_season_refresh_breakdown["stage_%d_native_ms" % stage] = elapsed_ms
+	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
+	_last_season_refresh_breakdown["stage_%d_cursor" % stage] = next_cursor
+	out["handled"] = true
+	out["done"] = done
+	out["cursor"] = next_cursor
+	out["elapsed_ms"] = elapsed_ms
+	out["work_done"] = int(res.get("touched", 0))
+	out["stage_name"] = stage_name
+	return out
+
+
+func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_usec: int) -> Dictionary:
+	var out: Dictionary = {
+		"handled": true,
+		"done": false,
+		"cursor": maxi(0, cursor),
+		"elapsed_ms": 0.0,
+		"work_done": 0,
+		"stage_name": "stage_2_redecide",
+	}
+	if map == null or _last_cfg == null:
+		out["done"] = true
+		return out
+	var cfg_local: MapConfig = _last_cfg
+	var season: int = clampi(season_idx, 0, 3)
+	_ensure_row_tables(cfg_local, season)
+	var lat_tab: PackedFloat32Array = _row_lat_temp
+	var off_tab: PackedFloat32Array = _row_season_off
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n: int = cells.size()
+	if n <= 0:
+		out["done"] = true
+		return out
+	var t0: int = Time.get_ticks_usec()
+	var cur: int = clampi(cursor, 0, n)
+	var touched: int = 0
+	while cur < n:
+		var cell: HexCell = cells[cur]
+		if cell != null:
+			if _is_water(cell.terrain):
+				pass
+			else:
+				var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
+						or cell.base_terrain == TerrainType.TERRAIN.SNOW
+				if is_permanent_climate or _is_permanent_landform(cell.base_terrain):
+					cell.apply_terrain(cell.base_terrain)
+				else:
+					var r_idx: int = _cube_to_row(cell, cfg_local)
+					var lat_temp: float = lat_tab[r_idx]
+					var temp_year: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+					var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
+					var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+					cell.apply_terrain(new_terrain)
+		cur += 1
+		touched += 1
+		if (touched & 31) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
+			break
+	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
+	out["cursor"] = cur
+	out["done"] = cur >= n
+	out["elapsed_ms"] = elapsed_ms
+	out["work_done"] = touched
+	_last_season_refresh_breakdown["stage_2_path"] = "gdscript_micro"
+	_last_season_refresh_breakdown["stage_2_ms"] = elapsed_ms
+	_last_season_refresh_breakdown["stage_2_cursor"] = cur
+	return out
+
+
+func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_usec: int) -> Dictionary:
+	var out: Dictionary = {
+		"handled": true,
+		"done": false,
+		"cursor": maxi(0, cursor),
+		"elapsed_ms": 0.0,
+		"work_done": 0,
+		"stage_name": "stage_4_veg_feedback",
+	}
+	if map == null or _last_cfg == null:
+		out["done"] = true
+		return out
+	var t_us0: int = Time.get_ticks_usec()
+	var cells: Array = map.all_cells()
+	var n: int = cells.size()
+	if n <= 0:
+		out["done"] = true
+		return out
+	var cur: int = clampi(cursor, 0, n * 3)
+	if cur == 0:
+		_season_stage4_deltas.clear()
+	var work_done: int = 0
+	var elev_decay: float = _c().veg_feedback_elev_decay
+	var phase3_tables_ready: bool = false
+	if cur >= n * 2:
+		_ensure_row_tables(_last_cfg, clampi(_current_season, 0, 3))
+		phase3_tables_ready = true
+
+	while cur < n * 3:
+		if cur < n:
+			var cell: HexCell = cells[cur]
+			if cell != null:
+				var donor: float = _vegetation_donor_amount(int(cell.terrain))
+				if donor != 0.0:
+					var elev_factor: float = clampf(1.0 - cell.elevation * elev_decay, 0.1, 1.0)
+					var donor_eff: float = donor * elev_factor
+					for nb: HexCell in map.get_neighbors(cell):
+						if _is_water(nb.terrain):
+							continue
+						var k := Vector3i(nb.q, nb.r, nb.s)
+						_season_stage4_deltas[k] = float(_season_stage4_deltas.get(k, 0.0)) + donor_eff
+		elif cur < n * 2:
+			var apply_idx: int = cur - n
+			var cell_apply: HexCell = cells[apply_idx]
+			if cell_apply != null and not _is_water(cell_apply.terrain):
+				var k_apply := Vector3i(cell_apply.q, cell_apply.r, cell_apply.s)
+				if _season_stage4_deltas.has(k_apply):
+					var d: float = float(_season_stage4_deltas[k_apply])
+					cell_apply.moisture = clampf(cell_apply.moisture + d, 0.0, 1.0)
+		else:
+			if not phase3_tables_ready:
+				_ensure_row_tables(_last_cfg, clampi(_current_season, 0, 3))
+				phase3_tables_ready = true
+			var redecide_idx: int = cur - n * 2
+			var cell_re: HexCell = cells[redecide_idx]
+			if cell_re != null and not _is_water(cell_re.terrain):
+				if cell_re.terrain != TerrainType.TERRAIN.MOUNTAIN \
+						and cell_re.terrain != TerrainType.TERRAIN.SNOW \
+						and not _is_permanent_landform(cell_re.terrain):
+					var r_idx: int = _cube_to_row(cell_re, _last_cfg)
+					var lat_temp: float = _row_lat_temp[r_idx]
+					var temp: float = clampf(lat_temp - cell_re.elevation * 0.5, 0.0, 1.0)
+					var new_terrain := _decide_terrain(cell_re.elevation, temp, cell_re.moisture, _last_cfg)
+					cell_re.apply_terrain(new_terrain)
+
+		cur += 1
+		work_done += 1
+		if work_done % 32 == 0 and Time.get_ticks_usec() - t_us0 >= max_usec:
+			break
+
+	var done: bool = cur >= n * 3
+	if done:
+		_season_stage4_deltas.clear()
+	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	_last_season_refresh_breakdown["stage_4_path"] = "gdscript_micro"
+	_last_season_refresh_breakdown["stage_4_ms"] = elapsed_ms
+	_last_season_refresh_breakdown["stage_4_cursor"] = cur
+	out["done"] = done
+	out["cursor"] = cur
+	out["elapsed_ms"] = elapsed_ms
+	out["work_done"] = work_done
+	return out
 
 
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
@@ -1679,6 +1958,12 @@ func sus_report_last_tick_summary() -> Dictionary:
 	if _sus == null:
 		return {}
 	return _sus.report_last_tick_summary()
+
+
+func sus_report_sim_budget_window() -> Dictionary:
+	if _sus == null or not _sus.has_method("report_sim_budget_window"):
+		return {}
+	return _sus.report_sim_budget_window()
 
 
 # DOTS-Final-Push 任务 10：透传 SUS scheduler `_stats` 全表给

@@ -110,18 +110,35 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_cursor = 0
 	_field_slice_solve_ms = 0.0
 	_field_slice_last_ms = 0.0
+	_field_slice_results_in_soa = false
 	_field_slice_refresh_convergence = ((_weather_system._field_solve_tick - 1) % _weather_system._field_convergence_refresh_stride) == 0
 	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = _field_slice_cells.size()
 	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
-	_field_slice_cell_pos = PackedVector2Array()
-	_field_slice_cell_pos.resize(n_cells)
+	var map_id: int = map.get_instance_id()
+	var can_reuse_cell_pos: bool = _cached_cell_pos_n == n_cells \
+		and _cached_cell_pos_map_id == map_id \
+		and absf(_cached_cell_pos_hex_size - _weather_system._hex_size) < 0.0001 \
+		and _cached_cell_pos.size() == n_cells
+	if not can_reuse_cell_pos:
+		_cached_cell_pos = PackedVector2Array()
+		_cached_cell_pos.resize(n_cells)
+		var pos_x_arr: PackedFloat32Array = map.cell_pos_x_arr
+		var pos_y_arr: PackedFloat32Array = map.cell_pos_y_arr
+		var has_soa_pos: bool = pos_x_arr.size() >= n_cells and pos_y_arr.size() >= n_cells
+		for i in range(n_cells):
+			if has_soa_pos:
+				_cached_cell_pos[i] = Vector2(pos_x_arr[i], pos_y_arr[i])
+			else:
+				var cell: HexCell = _field_slice_cells[i]
+				_cached_cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _weather_system._hex_size)
+		_cached_cell_pos_n = n_cells
+		_cached_cell_pos_map_id = map_id
+		_cached_cell_pos_hex_size = _weather_system._hex_size
+	_field_slice_cell_pos = _cached_cell_pos
 	_weather_system._tick_cell_pos.clear()
 	_weather_system._tick_cell_neighbors.clear()
-	for i in range(n_cells):
-		var cell: HexCell = _field_slice_cells[i]
-		_field_slice_cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _weather_system._hex_size)
 
 	_field_slice_prev_vapor = PackedFloat32Array()
 	_field_slice_prev_precip = PackedFloat32Array()
@@ -200,13 +217,15 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if rc >= 0.0:
 			# C++ 完成全量。把 SoA 拷回 _field_slice_next_*，让 commit_* 看到一致
 			# 数据；cursor 推进到末尾，slice 标记为 done。
-			_weather_system._pull_gdext_field_results_to_next(map, n_cells)
+			_field_slice_results_in_soa = true
 			# A/B 验证（dev 诊断 only）：在 C++ 写完 SoA 之后，把 next_* 快照、
 			# 复位 SoA、跑一遍 GDScript loop 写到独立缓冲区，然后逐 cell 对账。
 			# 失败时 push_warning 并打首次发散位置；不影响本 tick commit（commit
 			# 仍走 C++ 结果——出 bug 时玩家肉眼能看到，verify 只是给 dev 抓证据）。
-			if _weather_system._field_verify_enabled:
-				_weather_system._verify_gdext_field_against_gdscript(map, world, n_cells)
+			if _weather_system._field_verify_enabled or not _weather_system._hexcell_facade_on:
+				_weather_system._pull_gdext_field_results_to_next(map, n_cells)
+				if _weather_system._field_verify_enabled:
+					_weather_system._verify_gdext_field_against_gdscript(map, world, n_cells)
 			_field_slice_cursor = n_cells
 			_field_slice_solve_ms += rc
 			_field_slice_last_ms = rc
@@ -381,6 +400,8 @@ func commit() -> Array[WeatherFront]:
 	var t_commit_loop_us: int = Time.get_ticks_usec()
 	var hexcell_facade_on: bool = _weather_system._hexcell_facade_on
 	for i in range(cells.size()):
+		if _field_slice_results_in_soa and hexcell_facade_on:
+			break
 		var out_cell: HexCell = cells[i]
 		var v_cloud: float = _field_slice_next_cloud[i]
 		var v_precip: float = _field_slice_next_precip[i]
@@ -414,31 +435,35 @@ func commit() -> Array[WeatherFront]:
 	# Full-field commit 始终覆盖 [0,n)，用 range 写避免构造 idx/value batch。
 	var t_commit_dc_us: int = Time.get_ticks_usec()
 	var _data_core_world = _weather_system._data_core_world
-	if _data_core_world != null and commit_n > 0:
+	if _data_core_world != null and commit_n > 0 and not _field_slice_results_in_soa:
 		var _cid_wi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INTENSITY)
-		if _cid_wi >= 0:
-			_data_core_world.write_f32_range(_cid_wi, 0, soa_intensity)
-		var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
-		if _cid_wc >= 0:
-			_data_core_world.write_f32_range(_cid_wc, 0, soa_cloud)
-		var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
-		if _cid_wp >= 0:
-			_data_core_world.write_f32_range(_cid_wp, 0, soa_precip)
-		var _cid_wv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
-		if _cid_wv >= 0:
-			_data_core_world.write_f32_range(_cid_wv, 0, soa_vapor)
-		var _cid_wcv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
-		if _cid_wcv >= 0:
-			_data_core_world.write_f32_range(_cid_wcv, 0, soa_convergence)
-		var _cid_wins: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
-		if _cid_wins >= 0:
-			_data_core_world.write_f32_range(_cid_wins, 0, soa_instability)
-		var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
-		if _cid_wt >= 0:
-			_data_core_world.write_u8_range(_cid_wt, 0, soa_type)
-		var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
-		if _cid_wfi >= 0:
-			_data_core_world.write_u8_range(_cid_wfi, 0, soa_field_init)
+		var world_reads_map_arrays: bool = _cid_wi >= 0 \
+				and _data_core_world.has_method("is_external_component") \
+				and bool(_data_core_world.is_external_component(_cid_wi))
+		if not world_reads_map_arrays:
+			if _cid_wi >= 0:
+				_data_core_world.write_f32_range(_cid_wi, 0, soa_intensity)
+			var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
+			if _cid_wc >= 0:
+				_data_core_world.write_f32_range(_cid_wc, 0, soa_cloud)
+			var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
+			if _cid_wp >= 0:
+				_data_core_world.write_f32_range(_cid_wp, 0, soa_precip)
+			var _cid_wv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_VAPOR)
+			if _cid_wv >= 0:
+				_data_core_world.write_f32_range(_cid_wv, 0, soa_vapor)
+			var _cid_wcv: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CONVERGENCE)
+			if _cid_wcv >= 0:
+				_data_core_world.write_f32_range(_cid_wcv, 0, soa_convergence)
+			var _cid_wins: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_INSTABILITY)
+			if _cid_wins >= 0:
+				_data_core_world.write_f32_range(_cid_wins, 0, soa_instability)
+			var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+			if _cid_wt >= 0:
+				_data_core_world.write_u8_range(_cid_wt, 0, soa_type)
+			var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
+			if _cid_wfi >= 0:
+				_data_core_world.write_u8_range(_cid_wfi, 0, soa_field_init)
 	var commit_dc_ms: float = (Time.get_ticks_usec() - t_commit_dc_us) / 1000.0
 	var commit_convergence_ms: float = 0.0
 	if _field_slice_refresh_convergence:
@@ -502,6 +527,8 @@ func commit() -> Array[WeatherFront]:
 		else:
 			_weather_system._gdext_dist_fallbacks += 1
 	if not dist_done_by_cpp:
+		if _weather_system.has_method("_sync_weather_distribute_cache_to_cells"):
+			_weather_system._sync_weather_distribute_cache_to_cells(map, n_cells)
 		_weather_system._distribute_weather_field_to_cells(map)
 		distribute_ms_field = (Time.get_ticks_usec() - t_us0_field) / 1000.0
 
@@ -935,4 +962,9 @@ var _field_slice_next_convergence: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_type: PackedInt32Array = PackedInt32Array()
 var _field_slice_solve_ms: float = 0.0
 var _field_slice_last_ms: float = 0.0
+var _field_slice_results_in_soa: bool = false
+var _cached_cell_pos: PackedVector2Array = PackedVector2Array()
+var _cached_cell_pos_map_id: int = 0
+var _cached_cell_pos_n: int = 0
+var _cached_cell_pos_hex_size: float = -1.0
 # endregion PR-4

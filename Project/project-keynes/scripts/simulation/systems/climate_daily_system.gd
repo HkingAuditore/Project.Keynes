@@ -106,9 +106,10 @@ var _full_sweep_counter: int = 30
 func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int) -> void:
 	id = &"refresh_climate_daily"
 	priority = 100  # earliest of the daily jobs (writes the baseline climate)
-	slice_budget_ms = 8.0  # 单 sub-pass soft budget；实际由 SUS frame_budget 兜底
+	slice_budget_ms = 0.55  # 单 sub-pass soft budget；实际由 SUS frame_budget 兜底
+	max_slices_per_tick = 1
 	# Daily Sim SoA Refactor 方向 X：必须跨 frame_budget——气候推进不能被掐
-	must_run = true
+	must_run = false
 	generator = p_generator
 	map = p_map
 	season_phase_getter = p_phase_getter

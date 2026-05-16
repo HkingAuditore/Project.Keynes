@@ -76,7 +76,8 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_period_ticks: int, p_slice_count: int) -> void:
 	id = &"ocean_currents"
 	priority = 200  # runs after refresh_climate_daily (100) / weather (150)
-	slice_budget_ms = 4.0
+	slice_budget_ms = 0.55
+	max_slices_per_tick = 1
 	# Ocean currents are a slow visual/simulation layer. Let the scheduler defer
 	# slices when the frame budget is already exhausted instead of forcing a
 	# fast-tick spike.
@@ -84,7 +85,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# Starvation 防护（2026-05-11）：连续被 frame_budget_exhausted 跳过 6 次后
 	# 强制让步一次。配合 ContinuousSlicedPolicy 的 period_ticks 节流，依然能
 	# 保证慢层视觉/物理推进不冻结。
-	starvation_threshold = 6
+	starvation_threshold = 0
 	baker = p_baker
 	map = p_map
 	world = p_world

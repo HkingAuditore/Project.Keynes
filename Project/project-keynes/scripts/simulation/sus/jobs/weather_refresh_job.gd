@@ -493,11 +493,12 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 	id = &"weather_refresh"
 	priority = 150  # after refresh_climate_daily (100), before ocean_currents (200)
 	# Field solver now runs in cell slices; commit slice may add summary/stage_b.
-	slice_budget_ms = 12.0
+	slice_budget_ms = 0.55
+	max_slices_per_tick = 1
 	# Daily-sim perf bugfix：weather 推进必须每日发生（受 stride 节流），否则
 	# 全图天气前沿冻结、降水/温度异常驱动失效。绕过 frame_budget 守卫，避免
 	# 因 climate Job 超预算而被 frame_budget_exhausted 全数跳过。
-	must_run = true
+	must_run = false
 	generator = p_generator
 	map = p_map
 	world = p_world
@@ -589,21 +590,41 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_round_active = true
 			_round_stage = 1
 			_round_fronts = _last_fronts
+			var begin_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+			_publish_job_timing(timing, begin_elapsed_ms)
+			return {
+				"done": false,
+				"work_done": 0,
+				"elapsed_ms": begin_elapsed_ms,
+				"progress_ratio": 0.10,
+				"stage_name": "weather_begin",
+			}
 		var cell_budget: int = 500
 		if generator.has_method("weather_field_slice_cells"):
 			cell_budget = int(generator.weather_field_slice_cells())
-		var t_run_us: int = Time.get_ticks_usec()
-		var slice_result: Dictionary = generator.run_weather_refresh_stage_a_slice(cell_budget)
-		timing["run_stage_a_slice_ms"] = (Time.get_ticks_usec() - t_run_us) / 1000.0
-		var slice_done: bool = bool(slice_result.get("done", true))
-		if not slice_done:
-			var partial_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-			_publish_job_timing(timing, partial_elapsed_ms)
+		var slice_result: Dictionary = {}
+		if _round_stage <= 1:
+			var t_run_us: int = Time.get_ticks_usec()
+			slice_result = generator.run_weather_refresh_stage_a_slice(cell_budget)
+			timing["run_stage_a_slice_ms"] = (Time.get_ticks_usec() - t_run_us) / 1000.0
+			var slice_done: bool = bool(slice_result.get("done", true))
+			var solve_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+			_publish_job_timing(timing, solve_elapsed_ms)
+			if not slice_done:
+				return {
+					"done": false,
+					"work_done": int(slice_result.get("work_done", 0)),
+					"elapsed_ms": solve_elapsed_ms,
+					"progress_ratio": maxf(0.10, float(slice_result.get("progress_ratio", 0.0))),
+					"stage_name": "weather_solve",
+				}
+			_round_stage = 2
 			return {
 				"done": false,
 				"work_done": int(slice_result.get("work_done", 0)),
-				"elapsed_ms": partial_elapsed_ms,
-				"progress_ratio": float(slice_result.get("progress_ratio", 0.0)),
+				"elapsed_ms": solve_elapsed_ms,
+				"progress_ratio": 0.70,
+				"stage_name": "weather_solve",
 			}
 		var t_commit_us: int = Time.get_ticks_usec()
 		var sliced_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
@@ -630,9 +651,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_publish_job_timing(timing, sliced_elapsed_ms)
 		return {
 			"done": true,
-			"work_done": int(slice_result.get("work_done", sliced_fronts.size())),
+			"work_done": sliced_fronts.size(),
 			"elapsed_ms": sliced_elapsed_ms,
 			"progress_ratio": 1.0,
+			"stage_name": "weather_commit",
 		}
 
 	var t_direct_a_us: int = Time.get_ticks_usec()
@@ -665,6 +687,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"work_done": fronts.size(),
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 1.0,
+		"stage_name": "weather_direct",
 	}
 
 

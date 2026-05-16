@@ -21,6 +21,11 @@ var policy: SusPolicy = null
 ## is enforced by the scheduler-wide frame_budget_ms.
 var slice_budget_ms: float = 4.0
 
+## Hard cap on how many run_slice() calls this job may receive in one SUS tick.
+## 0 preserves the legacy behavior where SUS can keep calling a job while
+## budget remains. Strict simulation profiles set this to 1.
+var max_slices_per_tick: int = 0
+
 ## Lower priority runs first. Default 100, ocean_currents = 200, etc.
 var priority: int = 100
 

@@ -63,6 +63,7 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 	id = _inner.id
 	priority = _inner.priority
 	slice_budget_ms = _inner.slice_budget_ms
+	max_slices_per_tick = _inner.max_slices_per_tick
 	must_run = _inner.must_run
 	starvation_threshold = _inner.starvation_threshold
 	policy = _inner.policy
