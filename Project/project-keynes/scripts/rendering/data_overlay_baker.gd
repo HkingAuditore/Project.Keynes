@@ -44,6 +44,7 @@ const UPWELLING_NORM_RANGE: float = 1.0
 
 # 风速归一化：wind_at 已 normalize 到 1.0，叠加 monsoon_offset 后理论极值约 1.6。
 const WIND_SPEED_NORM_MAX: float = 1.7
+const SLP_OVERLAY_NORM_RANGE: float = 0.35
 
 # 用一张静态的空 1×1 纹理避免 mode=NONE 时 shader uniform 为 null。
 static var _empty_tex: ImageTexture = null
@@ -347,7 +348,7 @@ static func _sample_cell(
 			# 同样双向归一化到 [0, 1]：0 = 强下沉、0.5 = 中性、1 = 强上升。
 			if not bool(cell.passable_sea):
 				return { "value": 0.5, "valid": false }
-			var raw_u: float = float(cell.upwelling_strength)
+			var raw_u: float = adapter.get_upwelling_strength(idx)
 			var n_u: float = 0.5 + clampf(raw_u / (UPWELLING_NORM_RANGE * 2.0), -0.5, 0.5)
 			return {
 				"value": n_u,
@@ -355,11 +356,10 @@ static func _sample_cell(
 			}
 		OverlayMode.MODE.WIND_SPEED:
 			# 注意：wind_at() 总是 normalize（服务于风向场 advection），不能反推
-			# 风速。改用 WindBelt.wind_speed_at()——按风带分类的物理量级，叠加
-			# 季风 y 幅度。值域 ≈ [0.15, 1.7]，由 WIND_SPEED_NORM_MAX 钳到 [0, 1]。
+			# 风速。这里读物理循环写入的 wind_speed SoA / facade 真值。
+			# 值域 ≈ [0.15, 1.7]，由 WIND_SPEED_NORM_MAX 钳到 [0, 1]。
 			# 全图都有效，包括海洋和高山。
-			var ny_w: float = _cell_latitude(cell, world, lat_buf, lat_buf_size)
-			var w_speed: float = WindBeltScript.wind_speed_at(ny_w, season_phase)
+			var w_speed: float = adapter.get_wind_speed(idx)
 			return {
 				"value": clampf(w_speed / WIND_SPEED_NORM_MAX, 0.0, 1.0),
 				"valid": true,
@@ -424,8 +424,8 @@ static func _sample_cell(
 			# Physical Wind & Ocean Circulation 调试通道：海陆压力（双向）。
 			# cell.slp ∈ [-1, 1] 归一化（陆地夏低冬高、海洋季节波动小）。
 			# 全图都有效；diverging 渐变 → 0=低压(冷色) / 0.5=中性 / 1=高压(暖色)。
-			var slp_raw: float = float(cell.slp)
-			var n_slp: float = 0.5 + clampf(slp_raw * 0.5, -0.5, 0.5)
+			var slp_raw: float = adapter.get_slp(idx)
+			var n_slp: float = 0.5 + clampf(slp_raw / (SLP_OVERLAY_NORM_RANGE * 2.0), -0.5, 0.5)
 			return {
 				"value": n_slp,
 				"valid": true,
@@ -436,7 +436,7 @@ static func _sample_cell(
 			# ~ ±0.5（无量纲，只用于 overlay 视觉对比）。
 			if not bool(cell.passable_sea):
 				return { "value": 0.5, "valid": false }
-			var curl_raw: float = float(cell.wind_stress_curl)
+			var curl_raw: float = adapter.get_wind_stress_curl(idx)
 			var n_curl: float = 0.5 + clampf(curl_raw * 1.0, -0.5, 0.5)
 			return {
 				"value": n_curl,
@@ -449,7 +449,7 @@ static func _sample_cell(
 			# 归一化；这里简化用经验常数 5.0。
 			if not bool(cell.passable_sea):
 				return { "value": 0.5, "valid": false }
-			var psi_raw: float = float(cell.ocean_psi)
+			var psi_raw: float = adapter.get_ocean_psi(idx)
 			var n_psi: float = 0.5 + clampf(psi_raw / 10.0, -0.5, 0.5)
 			return {
 				"value": n_psi,

@@ -577,6 +577,7 @@ public:
     //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
     double run_weather_front_advect_pass(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
+    godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
 
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────

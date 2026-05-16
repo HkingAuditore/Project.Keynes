@@ -895,6 +895,11 @@ func is_bound() -> bool:
 	return _bound
 
 
+func is_external_component(comp_id: int) -> bool:
+	var slot: _Slot = _get_slot(comp_id)
+	return slot != null and slot.external_ref
+
+
 ## PR-4.4：解绑 MapData，让 hot-reload 路径可以"卸下当前世界 → 改 flag → 重 bind"。
 ##
 ## 解绑后所有 SoA 槽位的 external_ref 引用立刻清空（slot.arr_f32 = PackedFloat32Array()）；

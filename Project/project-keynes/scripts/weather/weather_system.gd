@@ -123,6 +123,10 @@ var _field_convergence_refresh_stride: int = 4
 var _field_solve_tick: int = 0
 var _field_ocean_evap_gain: float = 0.30
 var _field_summary_limit: int = 12
+var _summary_q_cache: PackedInt32Array = PackedInt32Array()
+var _summary_r_cache: PackedInt32Array = PackedInt32Array()
+var _summary_cache_map_id: int = 0
+var _summary_cache_n: int = 0
 var _weather_field: Dictionary = {}
 var _last_map_for_query: MapData = null
 
@@ -177,6 +181,10 @@ var _gdext_dist_fallbacks: int = 0
 var _gdext_dist_total_ms: float = 0.0
 var _gdext_dist_warned_fallback: bool = false
 var _gdext_dist_first_attempt_logged: bool = false
+var _dist_acc_snow_cache: PackedInt32Array = PackedInt32Array()
+var _dist_pre_cover_cache: PackedInt32Array = PackedInt32Array()
+var _dist_cache_map_id: int = 0
+var _dist_cache_n: int = 0
 # summary 运行时统计与节流告警
 var _gdext_summary_runs: int = 0
 var _gdext_summary_fallbacks: int = 0
@@ -784,15 +792,20 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 	#
 	# WeatherType / LandformType 静态查询：profile lookup 是 Resource access，
 	# C++ 拿不到。打包成 8-element PackedArray 按 WT 索引，C++ 内部 O(1) 查表。
-	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	var acc_snow_days: PackedInt32Array = PackedInt32Array()
-	var pre_snow_cover: PackedInt32Array = PackedInt32Array()
-	acc_snow_days.resize(n_cells)
-	pre_snow_cover.resize(n_cells)
-	for i in range(n_cells):
-		var c: HexCell = cells[i]
-		acc_snow_days[i] = c.accumulated_snow_days
-		pre_snow_cover[i] = c.pre_snow_cover
+	var map_id: int = map.get_instance_id()
+	if _dist_cache_map_id != map_id or _dist_cache_n != n_cells \
+			or _dist_acc_snow_cache.size() != n_cells or _dist_pre_cover_cache.size() != n_cells:
+		var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+		_dist_acc_snow_cache = PackedInt32Array()
+		_dist_pre_cover_cache = PackedInt32Array()
+		_dist_acc_snow_cache.resize(n_cells)
+		_dist_pre_cover_cache.resize(n_cells)
+		for i in range(n_cells):
+			var c: HexCell = cells[i]
+			_dist_acc_snow_cache[i] = c.accumulated_snow_days
+			_dist_pre_cover_cache[i] = c.pre_snow_cover
+		_dist_cache_map_id = map_id
+		_dist_cache_n = n_cells
 	# 8 个 WT 的 profile 静态值（temp_delta / moisture_delta / can_form_snow /
 	# can_form_flood）按 WT 索引。WT 枚举值 0..7（CLEAR..MONSOON）。
 	var temp_d: PackedFloat32Array = PackedFloat32Array()
@@ -830,8 +843,8 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		"cv_flooding": int(CoverType.CV.FLOODING),
 		# AoS 字段 PackedArray（CoW shared via Dictionary 持有）。C++ 直接 ptrw 写回，
 		# GDScript 在 try 函数末尾用同样的 Packed 引用 lookup 写回 AoS。
-		"accumulated_snow_days": acc_snow_days,
-		"pre_snow_cover": pre_snow_cover,
+		"accumulated_snow_days": _dist_acc_snow_cache,
+		"pre_snow_cover": _dist_pre_cover_cache,
 		# WeatherType 静态查询表（PackedArray 按 WT 索引，C++ 内部 O(1)）。
 		"temp_delta_arr": temp_d,
 		"moisture_delta_arr": moist_d,
@@ -849,28 +862,46 @@ func _try_run_weather_distribute_gdext(map: MapData, n_cells: int) -> Dictionary
 	var rc_dict: Dictionary = _data_core_world_ext.run_weather_distribute_pass(knobs)
 	var rc: float = float(rc_dict.get("elapsed_ms", -1.0))
 	if rc < 0.0:
+		_sync_weather_distribute_cache_to_cells(map, n_cells)
 		if not _gdext_dist_warned_fallback:
 			_gdext_dist_warned_fallback = true
 			push_warning("[weather] gdext run_weather_distribute_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
 		return rc_dict
 	# C++ 已通过 PackedArray ptrw 把 acc_snow_days / pre_snow_cover 改写完成（CoW
-	# alias 透传）；这里把它们写回 cell.* AoS 字段。
-	# changed_cells 列表用于同步 cell.current_state["cover"]（dict 字段无 SoA 镜像）。
+	# alias 透传）。fast path 以 PackedArray 为连续状态源，不再每 tick 全量写回
+	# HexCell；只有 cover 真正变化的 cell 需要同步 current_state。verify/fallback
+	# 路径仍会全量同步，保证调试和降级语义一致。
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var acc_after: PackedInt32Array = knobs.get("accumulated_snow_days", PackedInt32Array())
 	var pre_after: PackedInt32Array = knobs.get("pre_snow_cover", PackedInt32Array())
-	if acc_after.size() == n_cells and pre_after.size() == n_cells:
-		for i in range(n_cells):
-			var c: HexCell = cells[i]
-			c.accumulated_snow_days = acc_after[i]
-			c.pre_snow_cover = pre_after[i]
 	var changed: PackedInt32Array = rc_dict.get("changed_cells", PackedInt32Array())
-	for ci in changed:
-		var cc: HexCell = cells[ci]
-		# C++ 已经写好 cover_arr (SoA)；HexCell facade reader cell.cover 应当透读 SoA。
-		# 但 current_state["cover"] 是 dict 字段，需手动同步。
-		cc.current_state["cover"] = int(cc.cover)
+	if _distribute_verify_enabled:
+		_sync_weather_distribute_cache_to_cells(map, n_cells)
+	else:
+		for ci in changed:
+			if ci < 0 or ci >= cells.size():
+				continue
+			var cc: HexCell = cells[ci]
+			if acc_after.size() == n_cells and pre_after.size() == n_cells:
+				cc.accumulated_snow_days = acc_after[ci]
+				cc.pre_snow_cover = pre_after[ci]
+			# C++ 已经写好 cover_arr (SoA)；HexCell facade reader cell.cover 应当透读 SoA。
+			# 但 current_state["cover"] 是 dict 字段，需手动同步。
+			cc.current_state["cover"] = int(cc.cover)
 	return rc_dict
+
+func _sync_weather_distribute_cache_to_cells(map: MapData, n_cells: int) -> void:
+	if map == null:
+		return
+	if _dist_acc_snow_cache.size() != n_cells or _dist_pre_cover_cache.size() != n_cells:
+		return
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var limit: int = mini(n_cells, cells.size())
+	for i in range(limit):
+		var c: HexCell = cells[i]
+		c.accumulated_snow_days = _dist_acc_snow_cache[i]
+		c.pre_snow_cover = _dist_pre_cover_cache[i]
+		c.current_state["cover"] = int(c.cover)
 
 # ─── Weather Hot-Path：summary fronts pass GDExt 接入（任务 6）────────────
 # C++ pass 要求的 SoA + 静态查表数据由 _build_weather_summary_knobs 一次构造。
@@ -880,20 +911,20 @@ func _try_run_weather_distribute_gdext(map: MapData, n_cells: int) -> Dictionary
 # elapsed_ms < 0 → fallback 到 GDScript（push_warning 一次）。
 func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 	var n_cells: int = map.cell_count()
-	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	# ─── 持久化字段：q/r 数组（cell 拓扑不变，C++ 端 lazy-cache；首次或 size
-	# 变化时 rebuild cube_to_idx hash）。每帧重传 PackedArray 引用是 O(1) 操作，
-	# CoW 不会拷贝底层数据。
-	# ─── q/r 没有 SoA 镜像，必须每帧从 cells 提取（或 C++ 端缓存）；这里固定
-	# 每帧打包一次，C++ 在 size 不变时跳过 hash rebuild。
-	var q_arr: PackedInt32Array = PackedInt32Array()
-	var r_arr: PackedInt32Array = PackedInt32Array()
-	q_arr.resize(n_cells)
-	r_arr.resize(n_cells)
-	for i in range(n_cells):
-		var c: HexCell = cells[i]
-		q_arr[i] = c.q
-		r_arr[i] = c.r
+	var map_id: int = map.get_instance_id()
+	if _summary_cache_map_id != map_id or _summary_cache_n != n_cells \
+			or _summary_q_cache.size() != n_cells or _summary_r_cache.size() != n_cells:
+		var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+		_summary_q_cache = PackedInt32Array()
+		_summary_r_cache = PackedInt32Array()
+		_summary_q_cache.resize(n_cells)
+		_summary_r_cache.resize(n_cells)
+		for i in range(n_cells):
+			var c: HexCell = cells[i]
+			_summary_q_cache[i] = c.q
+			_summary_r_cache[i] = c.r
+		_summary_cache_map_id = map_id
+		_summary_cache_n = n_cells
 	# wind_x / wind_y 已是 SoA（map.wind_x_arr / wind_y_arr）；C++ 通过 _slots
 	# 直接读，不必通过 knobs 传。
 	return {
@@ -913,8 +944,8 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
 		"wt_clear": int(WeatherType.WT.CLEAR),
 		# Q/R 拓扑（C++ 端用于 cube_to_world / world_to_cube 反查）
-		"cell_q_arr": q_arr,
-		"cell_r_arr": r_arr,
+		"cell_q_arr": _summary_q_cache,
+		"cell_r_arr": _summary_r_cache,
 		# 邻居索引（n_cells*6，-1 表无邻居；C++ 端 BFS / pick_inheritance_seed 必需）
 		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
 		# Drift 调试日志（C++ 路径下默认关闭，verify mode 不影响日志）
@@ -1210,6 +1241,7 @@ func _clear_weather_field_slice_state() -> void:
 	_field_solver._field_slice_next_type = PackedInt32Array()
 	_field_solver._field_slice_solve_ms = 0.0
 	_field_solver._field_slice_last_ms = 0.0
+	_field_solver._field_slice_results_in_soa = false
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
 	# dots-monolith-split §1.2 / PR-6：250 行 dead code 已删除；逻辑入口

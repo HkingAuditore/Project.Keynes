@@ -16,11 +16,12 @@ func _init(p_generator, p_baker: MapBakerScript, p_map: MapData,
 		p_world: WorldData, p_hex_size: float, p_stride: int) -> void:
 	id = &"enum_atlas_upload"
 	priority = 140
-	slice_budget_ms = 6.0
+	slice_budget_ms = 0.45
+	max_slices_per_tick = 1
 	must_run = false
 	# Starvation 防护（2026-05-11）：cover/veg 纹理上传被 frame_budget_exhausted
 	# 频繁跳过（30 ticks 内 ran=2 / skipped=11）。阈值 6 保证地表变化能稳定可视化。
-	starvation_threshold = 6
+	starvation_threshold = 0
 	generator = p_generator
 	baker = p_baker
 	map = p_map
@@ -48,7 +49,9 @@ func run_slice(_ctx: SusTickContext) -> Dictionary:
 	var axis: String = ""
 	if generator.has_method("consume_pending_enum_atlas_axis"):
 		axis = str(generator.consume_pending_enum_atlas_axis())
-	if axis == "cover":
+	if axis == "biome":
+		baker.rebake_biome_tex_only(map, world, hex_size)
+	elif axis == "cover":
 		baker.rebake_cover_tex_only(map, world, hex_size)
 	elif axis == "vegetation":
 		baker.rebake_vegetation_tex_only(map, world, hex_size)

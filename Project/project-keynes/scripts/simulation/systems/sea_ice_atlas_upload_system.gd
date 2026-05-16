@@ -29,9 +29,10 @@ func _init(p_baker: _MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_stride: int) -> void:
 	id = &"sea_ice_atlas_upload"
 	priority = 250
-	slice_budget_ms = 25.0
+	slice_budget_ms = 0.45
+	max_slices_per_tick = 1
 	must_run = false
-	starvation_threshold = 8
+	starvation_threshold = 0
 	baker = p_baker
 	map = p_map
 	world_data = p_world

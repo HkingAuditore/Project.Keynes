@@ -49,6 +49,9 @@ var _topo_order: PackedInt32Array = PackedInt32Array()
 ## frame_budget_ms：与 SusScheduler.frame_budget_ms 一致；调度器外部直接
 ## 写本字段；本类 tick 时同步给 _sus。
 var frame_budget_ms: float = 12.0
+var strict_budget_enabled: bool = false
+var sim_budget_window_size: int = 300
+var sim_budget_warn_ms: float = 1.0
 var log_interval_ticks: int = 30
 
 
@@ -146,6 +149,9 @@ func tick(ctx) -> void:
 		return
 	# 同步配置
 	_sus.frame_budget_ms = frame_budget_ms
+	_sus.strict_budget_enabled = strict_budget_enabled
+	_sus.sim_budget_window_size = sim_budget_window_size
+	_sus.sim_budget_warn_ms = sim_budget_warn_ms
 	_sus.log_interval_ticks = log_interval_ticks
 	# debug-only reads/writes 校验：让每个 system 自己 begin/end pass
 	# DCSystem 提供 _scheduler_debug_pass_begin/end；SUS 真正调 run_slice 时
@@ -182,6 +188,18 @@ func report_last_tick() -> Dictionary:
 
 func report_last_tick_summary() -> Dictionary:
 	return _sus.report_last_tick_summary()
+
+
+func report_sim_budget_window() -> Dictionary:
+	return _sus.report_sim_budget_window()
+
+
+func report_job_stats() -> Dictionary:
+	return _sus.report_job_stats()
+
+
+func report_skipped_summary() -> Dictionary:
+	return _sus.report_skipped_summary()
 
 
 ## 当前注册 system 数。

@@ -309,6 +309,37 @@ var _phys_wind_done_by_cpp: bool = false
 
 # ─── 公开接口 ─────────────────────────────────────────────────────────────
 
+const _INITIAL_PHYSICAL_SEASON_PHASE: float = 1.5
+
+
+func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> void:
+	if not _use_physical_circulation(cfg):
+		return
+	var t_phys := Time.get_ticks_msec()
+	var saved_world_ext = _world_ext
+	# bake_world may run before the new DCWorldExt is rebound, especially on regenerate.
+	# Force the bake-time solve through the HexCell fallback so the initial SoA mirror
+	# cannot read stale native slots from the previous map.
+	_world_ext = null
+	_physical_solve_for_phase(map, world, hex_size, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
+	_world_ext = saved_world_ext
+	# Vector atlas was removed; only the per-cell fields are needed before
+	# MapData.init_soa_from_bake() mirrors them into SoA.
+	_pending_currents_buf = PackedByteArray()
+	_pending_upwelling_buf = PackedByteArray()
+	_pending_upwelling_mask = PackedByteArray()
+	_pending_upwelling_row_built = PackedByteArray()
+	_pending_wind_buf = PackedByteArray()
+	_pending_size = Vector2i.ZERO
+	_pending_phys_solved_phase = NAN
+	_pending_psi_state = null
+	_phys_stage = _PHYS_STAGE_NONE
+	_phys_psi_iters_done = 0
+	_phys_wind_raster_idx = 0
+	_phys_wind_done_by_cpp = false
+	print("  physical circulation hex solve: %dms" % (Time.get_ticks_msec() - t_phys))
+
+
 static func compute_world_bounds(width: int, height: int, hex_size: float) -> Rect2:
 	if width <= 0 or height <= 0:
 		return Rect2()
@@ -412,13 +443,14 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 注：物理化路径下的 hex per-cell 解（cell.wind_vector / cell.ocean_current /
 	# cell.upwelling_strength）走另一条路径，由 PhysicalCirculationSolver 直写，
 	# 这里不需要触碰。旧 ny-only baseline 也彻底取消（无消费方）。
+	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	world.wind_field_buffer = PackedByteArray()
 	world.ocean_current_buffer = PackedByteArray()
 	world.ocean_upwelling_buffer = PackedByteArray()
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	_pending_wind_buf = PackedByteArray()
-	print("  wind/ocean/upwelling pixel buffers: skipped (vector_atlas removed)")
+	print("  wind/ocean/upwelling pixel buffers: skipped (vector_atlas removed; hex fields solved)")
 
 	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减
 	t = Time.get_ticks_msec()
@@ -3042,9 +3074,14 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							# Commit hot path: keep current in SoA. HexCell facade reads the
 							# same components, while climate ocean_water can consume arrays
 							# without a second cell → PackedArray pack.
+							var _has_psi_debug_arr: bool = map.wind_stress_curl_arr.size() == n_psi \
+									and map.ocean_psi_arr.size() == n_psi
 							for _i_pc in range(n_psi):
 								map.ocean_current_x_arr[_i_pc] = ocx_out[_i_pc]
 								map.ocean_current_y_arr[_i_pc] = ocy_out[_i_pc]
+								if _has_psi_debug_arr:
+									map.wind_stress_curl_arr[_i_pc] = curl_out[_i_pc]
+									map.ocean_psi_arr[_i_pc] = psi_out[_i_pc]
 							_psi_done_by_cpp = true
 							_psi_native_ms = rc_psi
 							if not _psi_first_run_logged:
@@ -3086,6 +3123,13 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if _pending_psi_state != null:
 				PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg)
 				PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
+				if map.has_indices() and map.wind_stress_curl_arr.size() == map.soa_size() \
+						and map.ocean_psi_arr.size() == map.soa_size():
+					var cells_for_psi_debug: Array = map.iter_cells()
+					for _i_psi_debug in range(cells_for_psi_debug.size()):
+						var _c_psi_debug: HexCell = cells_for_psi_debug[_i_psi_debug]
+						map.wind_stress_curl_arr[_i_psi_debug] = _c_psi_debug.wind_stress_curl if _c_psi_debug != null else 0.0
+						map.ocean_psi_arr[_i_psi_debug] = _c_psi_debug.ocean_psi if _c_psi_debug != null else 0.0
 			_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_UPWELLING:
 			var _upwelling_done_by_cpp: bool = false

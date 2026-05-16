@@ -28,9 +28,10 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 		p_world: WorldData, p_hex_size: float, p_stride: int) -> void:
 	id = &"enum_atlas_upload"
 	priority = 140
-	slice_budget_ms = 6.0
+	slice_budget_ms = 0.45
+	max_slices_per_tick = 1
 	must_run = false
-	starvation_threshold = 6  # 与 EnumAtlasUploadJob 一致：6 tick 后强制让步
+	starvation_threshold = 0
 	generator = p_generator
 	baker = p_baker
 	map = p_map
@@ -44,7 +45,7 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 
 func declare_reads() -> Array[StringName]:
 	# baker 烘焙 cover_tex 与 vegetation_tex 时读 cell.cover / cell.vegetation。
-	return [DCComponentIds.CELL_COVER, DCComponentIds.CELL_VEGETATION]
+	return [DCComponentIds.CELL_TERRAIN, DCComponentIds.CELL_COVER, DCComponentIds.CELL_VEGETATION]
 
 
 func declare_writes() -> Array[StringName]:
@@ -75,7 +76,9 @@ func tick(_ctx) -> Dictionary:
 	var axis: String = ""
 	if generator.has_method("consume_pending_enum_atlas_axis"):
 		axis = str(generator.consume_pending_enum_atlas_axis())
-	if axis == "cover":
+	if axis == "biome":
+		baker.rebake_biome_tex_only(map, world_data, hex_size)
+	elif axis == "cover":
 		baker.rebake_cover_tex_only(map, world_data, hex_size)
 	elif axis == "vegetation":
 		baker.rebake_vegetation_tex_only(map, world_data, hex_size)
