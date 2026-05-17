@@ -164,6 +164,20 @@ extends Resource
 @export var use_data_core_weather: bool = false
 @export var use_data_core_climate: bool = false
 
+const NATIVE_MODE_OFF: int = 0
+const NATIVE_MODE_SHADOW: int = 1
+const NATIVE_MODE_ACTIVE: int = 2
+
+# Native top-level migration modes. OFF preserves the current pass-by-pass
+# path, SHADOW runs native diagnostics beside legacy paths, ACTIVE is allowed
+# to replace the corresponding GDScript orchestration when the native probe
+# reports readiness.
+@export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_OFF
+@export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
+@export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
+@export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
+@export var native_shadow_diff_enabled: bool = true
+
 # Phase B.3 / dots-migration-roadmap §3 B2：ViewAdapter 默认走 .Cell 实现
 # （直读 HexCell 强类型成员，与 legacy 行为完全等价）；为 true 时切到
 # .World 实现（从 DCWorld.view_f32 拿 PackedArray 引用）。

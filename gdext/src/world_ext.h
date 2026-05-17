@@ -129,6 +129,18 @@ public:
     bool bind_map_data(godot::Object *map_data);
     bool is_bound() const { return _bound; }
 
+    // Top-level native orchestration scaffold. These APIs are intentionally
+    // coarse-grained: GDScript configures once after bind_map_data(), then a
+    // daily tick passes only scalar clock values. Kernels can be fused behind
+    // this surface without changing GDScript orchestration again.
+    godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
+    godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
+    godot::Dictionary run_native_world_generate_pass(int seed,
+                                                     const godot::Dictionary &cfg,
+                                                     const godot::Dictionary &profile);
+    godot::Array get_native_fronts_snapshot() const;
+    godot::Dictionary get_native_dirty_report() const;
+
     // ─── CoW flush / refresh (performance-charter §11.2) ─────────────────
     // After any C++ pass calls ptrw() on a slot, CoW detaches the buffer.
     // flush_slots_to_map() pushes the (possibly-detached) C++ buffer back
@@ -1221,6 +1233,12 @@ private:
     // ---- bind state ----
     godot::Object                            *_map_data = nullptr; // weak (GDScript holds strong ref)
     bool                                      _bound    = false;
+    bool                                      _native_world_configured = false;
+    int                                       _native_world_cell_count = 0;
+    int                                       _native_daily_tick_count = 0;
+    double                                    _native_daily_perf_target_ms = 1.0;
+    godot::Array                              _native_fronts_snapshot;
+    godot::Dictionary                        _native_dirty_report;
 
     // ---- archetype ----
     godot::Vector<godot::Array>               _archetypes;          // each entry = comp_ids

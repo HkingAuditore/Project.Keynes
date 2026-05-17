@@ -718,6 +718,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 		"world_bounds_pos_y": _world_bounds.position.y,
 		"world_bounds_size_y": _world_bounds.size.y,
 		"refresh_convergence": _field_solver._field_slice_refresh_convergence,
+		"apply_convergence_boost": not _field_verify_enabled,
 		"hex_size": _hex_size,
 		"field_advect_steps": _field_advect_steps,
 		"field_diffusion": _field_diffusion,
@@ -1242,6 +1243,7 @@ func _clear_weather_field_slice_state() -> void:
 	_field_solver._field_slice_solve_ms = 0.0
 	_field_solver._field_slice_last_ms = 0.0
 	_field_solver._field_slice_results_in_soa = false
+	_field_solver._field_slice_native_convergence_boost = false
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
 	# dots-monolith-split §1.2 / PR-6：250 行 dead code 已删除；逻辑入口

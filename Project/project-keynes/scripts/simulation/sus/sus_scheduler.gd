@@ -138,6 +138,7 @@ func tick(ctx: SusTickContext) -> void:
 	var in_flight_after_tick: Dictionary = {}
 	# Perf instrumentation: 本 tick 跨所有 Job 的总切片数 / 实际跑了 / 被跳过的 Job 数。
 	var jobs_ran: int = 0
+	var optional_jobs_ran: int = 0
 	var jobs_skipped: int = 0
 	var slices_total_this_tick: int = 0
 	var largest_slice_job_tick: StringName = &""
@@ -177,7 +178,7 @@ func tick(ctx: SusTickContext) -> void:
 		var starving: bool = not strict_budget_enabled \
 				and job.starvation_threshold > 0 \
 				and job._starvation_count >= job.starvation_threshold
-		if strict_budget_enabled and jobs_ran > 0:
+		if strict_budget_enabled and optional_jobs_ran > 0 and not bool(job.must_run):
 			report["skipped_reason"] = "strict_budget_one_job"
 			_last_report[job.id] = report
 			_record_skipped(job.id, "strict_budget_one_job")
@@ -283,7 +284,9 @@ func tick(ctx: SusTickContext) -> void:
 			sim_total_ms_tick += job_elapsed_ms
 
 		jobs_ran += 1
-		if strict_budget_enabled:
+		if not bool(job.must_run):
+			optional_jobs_ran += 1
+		if strict_budget_enabled and not bool(job.must_run):
 			var original_idx: int = _jobs.find(job)
 			if original_idx >= 0:
 				_strict_next_job_index = (original_idx + 1) % maxi(1, _jobs.size())

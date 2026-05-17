@@ -151,6 +151,7 @@ const OceanCurrentsJobScript = preload("res://scripts/simulation/sus/jobs/ocean_
 # 任务 8：把 refresh_climate_daily / refresh_daily 收编为 SUS Job。
 const RefreshClimateDailyJobScript = preload("res://scripts/simulation/sus/jobs/refresh_climate_daily_job.gd")
 const WeatherRefreshJobScript = preload("res://scripts/simulation/sus/jobs/weather_refresh_job.gd")
+const NativeDailySimJobScript = preload("res://scripts/simulation/sus/jobs/native_daily_sim_job.gd")
 # Daily Sim SoA Refactor 阶段 1：把 bake_sea_ice_fraction_only 从 refresh_climate_daily
 # 末尾拆出为独立 SUS Job，受 sea_ice_atlas_upload_stride 控制。
 const SeaIceAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/sea_ice_atlas_upload_job.gd")
@@ -757,6 +758,9 @@ var _weather_refresh_job: WeatherRefreshJob = null
 # 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
 var _sea_ice_atlas_upload_job = null
 var _enum_atlas_upload_job = null
+var _native_daily_sim_job = null
+var _native_daily_configured: bool = false
+var _native_daily_last_result: Dictionary = {}
 var _season_refresh_job = null
 # main.gd 在 _ready 末尾通过 set_world_clock_ref(world_clock) 注入，给
 # OceanCurrentsJob 的 season_phase getter 用。
@@ -1035,6 +1039,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					# 让 _PHYS_STAGE_WIND 等 C++ hook 在启用 use_gdext_wind_field 时使用。
 					if _baker != null and _baker.has_method("set_world_ext"):
 						_baker.set_world_ext(_data_core_world_ext)
+					_configure_native_world_context(map, world, cfg, hex_size)
 			else:
 				push_warning("[DataCore] ClassDB.instantiate(\"DCWorldExt\") returned null/non-RefCounted; gdext likely not loaded — climate C++ accel disabled")
 		else:
@@ -1064,6 +1069,18 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		# PR-2.1.6：第 4 个参数注入 GDScript DCWorld，让 weather field commit 写路径
 		# 走 world.write_f32_indexed。详见 master 手册 §3.9。
 		_weather_system.configure_gdext_acceleration(_data_core_world_ext, f1_flag, cp_f1, _data_core_world)
+	if _try_register_native_daily_sim_job(map, world):
+		if OS.is_debug_build():
+			print("[native_daily] ACTIVE: registered native_daily_sim + visual upload jobs only")
+		_register_visual_upload_jobs(map, world, hex_size, cp_sched)
+		if _use_dc_system_scheduler:
+			var topo_native_ok: bool = _sus.build_topology()
+			if not topo_native_ok:
+				push_error("[map_generator] DCSystemScheduler.build_topology() failed for native_daily path")
+		if _sus_bootstrap == null:
+			_sus_bootstrap = DCSusSystemsBootstrapScript.new(self)
+		_sus_bootstrap.attach_post_setup(self, _sus)
+		return
 	# 0.4.1：use_dc_system_scheduler 决定用 System（native DCSystem，IS-A SusJob）
 	# 还是原 Job。两者业务逻辑等价（SeasonRefreshSystem.tick 与 SeasonRefreshJob.run_slice
 	# 同结构 11-stage）。
@@ -1104,7 +1121,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_ocean_currents_job = ocean_sys.get_inner()
 		_apply_sim_budget_profile_to_job(ocean_sys, cp)
 		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
-		_ocean_currents_job.depends_on.append(&"season_refresh")
 		_ocean_currents_job.on_commit = func():
 			_compute_ocean_currents(map, world, hex_size)
 		if _world_clock_ref != null:
@@ -1113,7 +1129,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	else:
 		_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
 		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
-		_ocean_currents_job.depends_on.append(&"season_refresh")
 		# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
 		_ocean_currents_job.on_commit = func():
 			_compute_ocean_currents(map, world, hex_size)
@@ -1144,12 +1159,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_refresh_climate_daily_job = climate_sys.get_inner()
 		_apply_sim_budget_profile_to_job(climate_sys, cp)
 		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
-		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 		_sus.register_system(climate_sys)
 	else:
 		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
 		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
-		_refresh_climate_daily_job.depends_on.append(&"season_refresh")
 		_sus.register_job(_refresh_climate_daily_job)
 	if _ocean_currents_job != null:
 		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
@@ -1159,12 +1172,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _use_dc_system_scheduler:
 		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
 		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_enum_atlas_upload_job.depends_on.append(&"season_refresh")
 		_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
 	var season_idx_getter := Callable()
@@ -1227,7 +1238,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _use_dc_system_scheduler:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
 		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
 		# DOTS-Final-Push 任务 6.2：同 SUS 路径，注入 generator 让 tick() 末尾
 		# 把 prepare/upload 拆分回填给 sus_sea_ice_atlas_breakdown()。
 		if "generator" in _sea_ice_atlas_upload_job:
@@ -1236,7 +1246,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	else:
 		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
 		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		_sea_ice_atlas_upload_job.depends_on.append(&"season_refresh")
 		# DOTS-Final-Push 任务 6.2：注入 generator 引用，让 Job 把 prepare/upload
 		# 拆分耗时回填到 _last_sea_ice_atlas_upload_breakdown，供 main.gd fast tick
 		# WARN 详细日志看到 232ms 究竟卡 prepare 还是 upload。
@@ -1285,6 +1294,20 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
 
 
+func _sim_job_should_must_run(job, upload_job: bool) -> bool:
+	if upload_job or job == null:
+		return false
+	var job_id: StringName = &""
+	var raw_id = job.get("id")
+	if raw_id != null:
+		job_id = StringName(str(raw_id))
+	match job_id:
+		&"native_daily_sim", &"refresh_climate_daily", &"weather_refresh":
+			return true
+		_:
+			return false
+
+
 func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
 	if job == null or cp == null:
 		return
@@ -1300,7 +1323,7 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 	if job.get("max_slices_per_tick") != null:
 		job.max_slices_per_tick = 1
 	if job.get("must_run") != null:
-		job.must_run = false
+		job.must_run = _sim_job_should_must_run(job, upload_job)
 	if job.get("starvation_threshold") != null:
 		job.starvation_threshold = 0
 
@@ -1333,6 +1356,114 @@ func set_world_clock_ref(world_clock_node) -> void:
 ## tick_index 单调递增；day_index / season_phase / speed 由 world_clock 提供。
 ## 返回字典：{ fronts: Array[WeatherFront], weather_ran: bool }，
 ## 让 main.gd 把 fronts 转发给 renderer、用 weather_ran 决定面板刷新策略。
+func _native_mode_is_active(cp, field_name: String) -> bool:
+	if cp == null or cp.get(field_name) == null:
+		return false
+	return int(cp.get(field_name)) == 2
+
+
+func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
+	_native_daily_configured = false
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_native_world"):
+		return
+	var cp := _c()
+	var knobs: Dictionary = {
+		"cell_count": map.cell_count() if map != null else 0,
+		"hex_size": hex_size,
+		"native_generation_mode": int(cp.get("native_generation_mode")) if cp != null and cp.get("native_generation_mode") != null else 0,
+		"native_daily_sim_mode": int(cp.get("native_daily_sim_mode")) if cp != null and cp.get("native_daily_sim_mode") != null else 0,
+		"native_render_prepare_mode": int(cp.get("native_render_prepare_mode")) if cp != null and cp.get("native_render_prepare_mode") != null else 0,
+		"native_daily_perf_target_ms": float(cp.get("native_daily_perf_target_ms")) if cp != null and cp.get("native_daily_perf_target_ms") != null else 1.0,
+		"shadow_diff_enabled": bool(cp.get("native_shadow_diff_enabled")) if cp != null and cp.get("native_shadow_diff_enabled") != null else true,
+		"has_world_data": world != null,
+		"has_config": cfg != null,
+	}
+	var res: Dictionary = _data_core_world_ext.configure_native_world(knobs)
+	_native_daily_configured = int(res.get("rc", -1)) == 0
+	if OS.is_debug_build():
+		print("[native_world] configure rc=%s reason=%s cells=%d"
+			% [str(res.get("rc", -1)), str(res.get("reason", "")), int(knobs["cell_count"])])
+
+
+func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
+	var cp := _c()
+	if not _native_mode_is_active(cp, "native_daily_sim_mode"):
+		return false
+	if not _native_daily_configured or _data_core_world_ext == null:
+		push_warning("[native_daily] ACTIVE requested but native world is not configured; falling back to legacy SUS jobs")
+		return false
+	if not _data_core_world_ext.has_method("run_native_daily_tick"):
+		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_tick; falling back to legacy SUS jobs")
+		return false
+	var probe: Dictionary = _data_core_world_ext.run_native_daily_tick({ "probe": true })
+	if int(probe.get("rc", -1)) != 0:
+		push_warning("[native_daily] ACTIVE requested but native tick is not ready (%s); falling back to legacy SUS jobs"
+			% str(probe.get("fail_stage", probe.get("reason", ""))))
+		return false
+	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world)
+	_apply_sim_budget_profile_to_job(_native_daily_sim_job, cp, false)
+	if _use_dc_system_scheduler:
+		_sus.register_system(_native_daily_sim_job)
+	else:
+		_sus.register_job(_native_daily_sim_job)
+	return true
+
+
+func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: float, cp) -> void:
+	if _use_dc_system_scheduler:
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
+		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
+		_sus.register_system(_enum_atlas_upload_job)
+	else:
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
+		_sus.register_job(_enum_atlas_upload_job)
+	var sea_ice_stride: int = 2
+	if cp != null:
+		sea_ice_stride = max(1, int(cp.sea_ice_atlas_upload_stride))
+	if _use_dc_system_scheduler:
+		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
+		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
+		if "generator" in _sea_ice_atlas_upload_job:
+			_sea_ice_atlas_upload_job.generator = self
+		_sus.register_system(_sea_ice_atlas_upload_job)
+	else:
+		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
+		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
+		if "generator" in _sea_ice_atlas_upload_job:
+			_sea_ice_atlas_upload_job.generator = self
+		_sus.register_job(_sea_ice_atlas_upload_job)
+
+
+func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
+		return { "rc": -1, "fail_stage": "gdext_unavailable" }
+	var season_idx: int = 0
+	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
+		season_idx = int(_world_clock_ref.season_index())
+	var anomaly: float = 0.0
+	if _world_clock_ref != null:
+		var v = _world_clock_ref.get("climate_anomaly")
+		if v != null:
+			anomaly = float(v)
+	var res: Dictionary = _data_core_world_ext.run_native_daily_tick({
+		"day_index": ctx.day_index,
+		"tick_index": ctx.tick_index,
+		"season_phase": ctx.season_phase,
+		"season_index": season_idx,
+		"climate_anomaly": anomaly,
+		"speed_multiplier": ctx.speed_multiplier,
+	})
+	_native_daily_last_result = res.duplicate(true)
+	var breakdown: Dictionary = res.get("breakdown", {})
+	_last_weather_breakdown = breakdown.duplicate(true)
+	return res
+
+
+func native_daily_last_result() -> Dictionary:
+	return _native_daily_last_result.duplicate(true)
+
+
 func sus_tick_daily(world_clock_node) -> Dictionary:
 	if _sus == null:
 		return { "fronts": [] as Array[WeatherFront], "weather_ran": false }
@@ -1354,6 +1485,8 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 		_refresh_climate_daily_job.reset_run_flag()
 	if _weather_refresh_job != null:
 		_weather_refresh_job.reset_run_flag()
+	if _native_daily_sim_job != null and _native_daily_sim_job.has_method("reset_run_flag"):
+		_native_daily_sim_job.reset_run_flag()
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
 	_sus.tick(ctx)
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
@@ -1368,6 +1501,11 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 		fronts = _weather_refresh_job.last_fronts()
 		weather_ran = _weather_refresh_job.did_run_last_tick()
 		fronts_changed = _weather_refresh_job.did_change_fronts_last_tick()
+	elif _native_daily_sim_job != null:
+		var native_res: Dictionary = _native_daily_last_result
+		weather_ran = int(native_res.get("rc", -1)) == 0
+		fronts_changed = bool(native_res.get("fronts_changed", false))
+		fronts = native_res.get("fronts", [] as Array[WeatherFront])
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed }
 
 
@@ -6638,6 +6776,14 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"spawn_ms": float(sub.get("spawn_ms", 0.0)),
 		"distribute_ms": float(sub.get("distribute_ms", 0.0)),
 		"cyclone_ms": float(sub.get("cyclone_ms", 0.0)),
+		"field_solve_ms": float(sub.get("field_solve_ms", 0.0)),
+		"field_solve_total_ms": float(sub.get("field_solve_total_ms", 0.0)),
+		"field_summary_ms": float(sub.get("field_summary_ms", sub.get("spawn_ms", 0.0))),
+		"field_commit_total_ms": float(sub.get("field_commit_total_ms", 0.0)),
+		"field_commit_setup_ms": float(sub.get("field_commit_setup_ms", 0.0)),
+		"field_commit_loop_ms": float(sub.get("field_commit_loop_ms", 0.0)),
+		"field_commit_dc_ms": float(sub.get("field_commit_dc_ms", 0.0)),
+		"field_commit_convergence_ms": float(sub.get("field_commit_convergence_ms", 0.0)),
 		"weather_field_bake_ms": weather_field_bake_ms,
 		"transp_ms": transp_ms,
 		"albedo_ms": albedo_ms,
