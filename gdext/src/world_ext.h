@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -80,14 +81,19 @@ public:
     godot::PackedByteArray    view_u8(int comp_id);
 
     // ─── Mode-B snapshot API (recommended) ──────────────────────────────
-    // Returns a value-copy (Godot PackedArray COW) of `_slots[comp_id].arr_f32`.
+    // Returns a value-copy (Godot PackedArray COW) of `_slots[comp_id].arr_*`.
     // The caller is free to mutate the returned array — those mutations
     // never propagate back into `_slots[]`. Use this whenever GDScript
     // needs to read the latest C++-side numerical state (UI, baker,
     // diagnostics, MapData refresh via flush_to_mapdata).
     //
-    // On invalid `comp_id` or non-F32 slot: returns an empty array, no error.
+    // On invalid `comp_id` or dtype mismatch: returns an empty array, no error.
     godot::PackedFloat32Array snapshot_f32(int comp_id);
+    // B3b：snapshot_i32 / snapshot_u8 — 与 snapshot_f32 形成完整的 Mode-B
+    // 只读快照集合。植被动力学 streak 字段（cell.vitality_low/high_streak）走
+    // I32 snapshot；后续序列化 / save / overlay 也需要 U8 snapshot 补齐。
+    godot::PackedInt32Array   snapshot_i32(int comp_id);
+    godot::PackedByteArray    snapshot_u8(int comp_id);
 
     // ─── Hot-path writes (replaces `view_xxx(c)[i] = v` pattern) ─────────
     // Single-element writes; bounds-checked, no-op on invalid args.
@@ -458,15 +464,18 @@ public:
     //            resistance_table  : PackedFloat32Array  (n_veg * n_wt) — sparse 0.0 default
     //            next_up_table     : PackedByteArray     (n_veg)         — VEG.next_richer
     //            next_down_table   : PackedByteArray     (n_veg)         — VEG.next_harsher
-    //     PackedArray（in/out — caller pack/unpack since fields not in SoA schema）：
-    //            vitality_arr      : PackedFloat32Array  (n_cells)
-    //            low_streak_arr    : PackedInt32Array    (n_cells)
-    //            high_streak_arr   : PackedInt32Array    (n_cells)
-    //
-    //   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp (F32) /
-    //       cell_moisture (F32) / cell_weather_type (U8) /
-    //       cell_weather_intensity (F32) / cell_weather_field_init (U8)
-    //   写：vitality_arr / low_streak_arr / high_streak_arr (in/out)
+	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 3 个字段已下沉到
+	//     SoA schema：cell.vegetation_vitality / vitality_low_streak /
+	//     vitality_high_streak。stage_b_pass 走 use_soa=true 时直读 _slots ptrw。
+	//     该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
+	//            vitality_arr      : PackedFloat32Array  (n_cells)
+	//            low_streak_arr    : PackedInt32Array    (n_cells)
+	//            high_streak_arr   : PackedInt32Array    (n_cells)
+	//
+	//   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp (F32) /
+	//       cell_moisture (F32) / cell_weather_type (U8) /
+	//       cell_weather_intensity (F32) / cell_weather_field_init (U8)
+	//   写：vitality_arr / low_streak_arr / high_streak_arr (in/out)
     //
     //   knobs 输出回填（C++ 写进 knobs）：
     //     succession_indices : PackedInt32Array  — 触发演替的 cell idx
@@ -512,13 +521,16 @@ public:
     //            wt_clear_id (int)          — WeatherType.WT.CLEAR
     //            wt_rain_id / wt_storm_id / wt_monsoon_id / wt_blizzard_id /
     //            wt_drought_id / wt_heatwave_id (int) — 6 个 WT 枚举值
-    //     PackedArray（zero-copy read）：
-    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
-    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
-    //                ↑ 与 climate_pass_b 同字段，caller 端打包传入
-    //     PackedArray（in/out — caller pack/unpack since fields not in SoA schema）：
-    //            soil_moisture_arr    : PackedFloat32Array  (n_cells)
-    //            veg_growth_pressure_arr : PackedFloat32Array (n_cells)
+	//     PackedArray（zero-copy read — 仅老 caller 路径需要；B3b 后已下沉到 SoA：
+	//     cell.temperature_transport_anomaly。stage_b_pass 走 use_soa=true 时直读 _slots）：
+	//            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+	//            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+	//                ↑ 与 climate_pass_b 同字段
+	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 2 个字段已下沉到 SoA：
+	//     cell.soil_moisture / cell.vegetation_growth_pressure。stage_b_pass 走
+	//     use_soa=true 时直读 _slots ptrw。该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
+	//            soil_moisture_arr    : PackedFloat32Array  (n_cells)
+	//            veg_growth_pressure_arr : PackedFloat32Array (n_cells)
     //
     //   读：cell_is_water (U8) / cell_weather_type (U8) /
     //       cell_weather_intensity (F32) / cell_weather_field_init (U8) /
@@ -528,6 +540,85 @@ public:
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_climate_feedback_pass(godot::Dictionary knobs);
+
+    // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine） ──────────────────
+    //   GDScript 源：scripts/geography/map_generator.gd::refresh_daily_stage_b
+    //   ClimateProfile flag：use_gdext_stage_b_combined
+    //   性能目标：stage_b 累加 6–15ms → ≤ 1.5ms（消除 GDScript 端 3 次 pack/unpack
+    //   围栏：vit/lo/hi、soil/vg/tta、albedo_table/8 LUT 一次性入参）
+    //
+	//   行为 = run_albedo_pass + run_vegetation_dynamics_pass +
+	//         run_climate_feedback_pass 的顺序内联，**算法完全 1:1 复制**：
+	//     ① albedo（写 cell_temp）→ 仅当 run_albedo=true
+	//     ② veg_dyn（读最新 cell_temp + 写 vitality/streak/演替候选）→ 仅当 run_veg_dyn=true
+	//     ③ feedback（写 cell_base_moisture / soil/vg in/out）→ 仅当 run_feedback=true
+	//   cross-pass 依赖：albedo 写 cell_temp、veg_dyn 读 cell_temp，合并版本里
+	//   两段共享同一份 SoA ptrw，**无需中间 _flush_slot_to_map**（对比现状 GDScript
+	//   三段间需要 _flush_slot_to_map → MapData → refresh_slots_from_map 来回拷贝）。
+	//
+	//   B3b 数据所有权下沉（plan/b3b-data-ownership-lowering）：
+	//     新增 `use_soa` 开关（bool，默认 false 兼容旧路径）。当 use_soa=true 时：
+	//       - vit/streak/soil/vg/tta 五字段全部走 _slots[sid].arr_* ptrw 直读直写
+	//       - knobs 中 vitality_arr / low_streak_arr / high_streak_arr /
+	//         soil_moisture_arr / veg_growth_pressure_arr / temp_transport_anomaly
+	//         可省略（即使存在也不读不写）
+	//       - 末尾批量 flush 6 个 slot（vit/low_streak/high_streak/soil/vg）回 MapData
+	//       - 消除 GDScript 端 6 段 pack/unpack hot loop（实测 ~6.5ms wall 节省）
+    //
+    //   入参 `knobs` Dictionary（合并版本，knobs key 命名空间用前缀避免冲突）：
+	//     总开关：
+	//       n_cells (int)
+	//       run_albedo / run_veg_dyn / run_feedback (bool)  — stride 语义保留
+	//       use_soa (bool, optional, default false)         — B3b 数据所有权下沉开关
+    //
+    //     albedo 段（仅 run_albedo=true 时读，其它情况可省略）：
+    //       reference_albedo / albedo_temp_gain (float)
+    //       snow_cover_albedo (float, =0.75)
+    //       cover_snow_id / cover_glacier_id (int, =1, 2)
+    //       albedo_table : PackedFloat32Array (n_veg)
+    //
+    //     veg_dyn 段（仅 run_veg_dyn=true 时读）：
+    //       day_scale (float)
+    //       streak_days (int)
+    //       vitality_change_rate / compat_harshness (float)
+    //       low_threshold / high_threshold (float)
+    //       succession_degrade_days / succession_upgrade_days (int)
+    //       n_wt (int)
+    //       wt_clear_id / veg_none_id (int)
+    //       ideal_temp_table / ideal_moist_table / temp_tol_table /
+    //       moist_tol_table : PackedFloat32Array (n_veg)
+    //       weather_penalty_table : PackedFloat32Array (n_wt)
+    //       resistance_table : PackedFloat32Array (n_veg * n_wt)
+	//       next_up_table / next_down_table : PackedByteArray (n_veg)
+	//       vitality_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+	//       low_streak_arr / high_streak_arr : PackedInt32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+    //
+    //     feedback 段（仅 run_feedback=true 时读）：
+    //       soil_gain / veg_gain / scale / per_day_clamp / ocean_drift_gain (float)
+    //       wt_rain_id / wt_storm_id / wt_monsoon_id /
+    //       wt_blizzard_id / wt_drought_id / wt_heatwave_id (int)
+	//       neighbor_indices : PackedInt32Array (n_cells * 6)
+	//       temp_transport_anomaly : PackedFloat32Array (n_cells) — 仅 use_soa=false 时必填
+	//       soil_moisture_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+	//       veg_growth_pressure_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+    //
+    //   读：cell_is_water / cell_vegetation / cell_cover / cell_temp /
+    //       cell_moisture / cell_weather_type / cell_weather_intensity /
+    //       cell_weather_field_init / cell_base_moisture
+    //   写：cell_temp（albedo）、cell_base_moisture（feedback）；in/out arrays
+    //
+	//   knobs 输出回填（C++ 写进 knobs）：
+	//     albedo_ms / veg_dyn_ms / feedback_ms (float) — 每段单独 ms，供 caller 计时
+	//     succession_indices : PackedInt32Array
+	//     succession_to_veg  : PackedByteArray
+	//     stat_succession_count : int
+	//     vitality_arr / low_streak_arr / high_streak_arr (in/out 写回) — 仅 use_soa=false
+	//     soil_moisture_arr / veg_growth_pressure_arr (in/out 写回) — 仅 use_soa=false
+	//     注：use_soa=true 时这些字段直接 flush 到 SoA + MapData，无需 PackedArray 回写
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms 合计)；< 0.0 → fallback。
+    //   knobs 走 by-value（非 const&），让 C++ 能写回 succession + ms breakdown。
+    double run_stage_b_pass(godot::Dictionary knobs);
 
     // F.6 (P3): weather front advect (含 front pool 批量提取模式)
     //   GDScript 源：scripts/weather/weather_front.gd::advance_one_day +
@@ -696,6 +787,54 @@ public:
     // 还原到本 tick 入口；这两个接口配合 GDScript 端的 prev_seeds shadow 完成往返。
     void snapshot_weather_summary_state();
     void restore_weather_summary_state();
+
+    // ─── plan/weather-refresh-cpp-all: 顶层一体化 weather refresh ────────
+    //
+    // 单 C++ 调用内顺序执行 5 段：
+    //   ① run_weather_field_solve_pass(knobs)
+    //   ② run_weather_distribute_pass(knobs)
+    //   ③ run_weather_summary_fronts_pass(knobs)   ← 产 fronts Array
+    //   ④ cyclone_wake_step(knobs, fronts)         ← 新增（front_advect.gd::tick_cyclone_wake 1:1 移植）
+    //   ⑤ run_stage_b_pass(knobs)
+    //
+    // 设计原则（方案 X）：内部**直接复用已有 4 个 run_*_pass 公开 API**，
+    // 不抽 *_inline，不动现有 pass 函数体。代价是顶层 pass 内会重复解析同一
+    // Dictionary 4 次（每次 ~10-50μs），与节省的 4 次 GD↔CPP round-trip
+    // (~0.3-0.8ms) 相比仍净赚。
+    //
+    // ClimateProfile flag：use_gdext_weather_refresh_daily（默认 true）
+    //
+    // knobs 入参：所有子 pass 的 knobs 字段合并到同一 Dictionary，
+    //             各子 pass 各自只读自己需要的 key。本顶层 pass 额外要求：
+    //   标量： hex_size (float, cyclone_wake 用)
+    //          cyclone_wake_days (int, cyclone wake 持续天数)
+    //          cyclone_storm_type_id (int, WeatherType.WT.STORM 枚举值)
+    //          water_terrain_ids 已在 summary pass knobs 中存在，cyclone 复用
+    //   summary pass knobs 中已含 cell q/r 反查能力（_summary_qr_to_idx），
+    //     cyclone 通过 cell_q/cell_r SoA 反查注入点。
+    //
+    // 返回 Dictionary：
+    //   { rc: 0/-1, fail_stage: String?, weather_tick_ms,
+    //     advance_ms, distribute_ms, cyclone_ms, fronts_count,
+    //     albedo_ms, veg_dyn_ms, feedback_ms, total_ms, fronts: Array }
+    //   任一子段 rc<0 时 { rc:-1, fail_stage:"field_solve|distribute|summary|stage_b" }
+    //   立即短路返回，caller 走 GDScript fallback。
+    //
+    // 副作用：除子 pass 自身的副作用外，本顶层 pass 维护
+    //   _cyclone_perturbations (std::vector<CycloneWakeEntry>) 跨 tick 存活。
+    //   GDScript 端通过 get_cyclone_perturbations_dict() 取镜像，落到
+    //   weather_system.ocean_current_perturbation Dictionary。
+    godot::Dictionary run_weather_refresh_daily_pass(const godot::Dictionary &knobs);
+
+    // 镜像 API：把 C++ 端 _cyclone_perturbations 导出成 GDScript Dictionary，
+    // 结构与 weather_system.ocean_current_perturbation 1:1（key = cell.q*10000+cell.r 的
+    // 64-bit int hash；value = Dictionary{ vec: Vector2, vec_init: Vector2,
+    // days_left: int, init_days: int }）。
+    //
+    // 调用时机：refresh_weather_daily 在 ext call 成功后立即调一次，把结果
+    // 回灌 weather_system.ocean_current_perturbation，下游消费方（航运 AI、
+    // shader overlay、soak dump）零感知 C++ 切换。
+    godot::Dictionary get_cyclone_perturbations_dict() const;
 
     // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
     //
@@ -1110,6 +1249,29 @@ private:
     // n_cells 时清空重建。size 不变（即 cell 拓扑稳定）时直接复用。
     std::unordered_map<int64_t, int>          _summary_qr_to_idx;
     int                                       _summary_qr_to_idx_size = -1;
+
+    // ─── plan/weather-refresh-cpp-all: cyclone wake 持久化状态 ───────────
+    // 等价于 weather_system.ocean_current_perturbation Dictionary<key, entry> 的
+    // C++ 镜像。key = cell.q*10000+cell.r （与 GDScript 1:1 对齐，C++ 端用 int64_t
+    // 存储兼容负坐标 hash）。Entry 跨 tick 存活：每日 cyclone_wake_step 头部衰减/
+    // 淘汰，尾部按 STORM front 中心 cell 注入。GDScript 端通过
+    // get_cyclone_perturbations_dict() 拉镜像。
+    struct CycloneWakeEntry {
+        int64_t      key;          // cell.q * 10000 + cell.r
+        int          cell_idx;     // 反查到的 cell index（注入时记录，便于 debug）
+        godot::Vector2 vec;        // 当前扰动向量（按 days_left/init_days 比例缩放）
+        godot::Vector2 vec_init;   // 初始注入向量（衰减基准）
+        int          days_left;
+        int          init_days;
+    };
+    std::vector<CycloneWakeEntry>  _cyclone_perturbations;
+
+    // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
+    // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]
+    // （含 type/center/intensity/velocity 字段，与 GDScript WeatherFront 1:1）。
+    // 返回耗时 ms。
+    double cyclone_wake_step(const godot::Dictionary &knobs,
+                             const godot::Array &fronts_from_summary);
 
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);

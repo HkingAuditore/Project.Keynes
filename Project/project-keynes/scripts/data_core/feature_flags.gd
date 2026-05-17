@@ -247,9 +247,9 @@ const FLAGS: Array = [
 	{
 		name = &"use_gdext_climate_pass_a",
 		owner = "simulation.climate.pass_a",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "PR-2.passA-unblock：climate Pass-A C++ 化；目标 ~10ms → < 0.5ms。前置：PR-2.1.1 storage 同源验收通过",
+		description = "PR-2.passA-unblock：climate Pass-A C++ 化；目标 ~10ms → < 0.5ms。dots-final-push 验收 PASS，默认开启",
 	},
 	{
 		name = &"use_gdext_wind_field",
@@ -279,23 +279,36 @@ const FLAGS: Array = [
 	{
 		name = &"use_gdext_albedo",
 		owner = "climate.albedo",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_albedo_pass C++ 化；目标 ~3.6ms → < 0.5ms",
+		description = "DOTS-Final-Push：_apply_albedo_pass C++ 化；目标 ~3.6ms → < 0.5ms。验收 PASS，默认开启",
 	},
 	{
 		name = &"use_gdext_vegetation_dynamics",
 		owner = "biology.vegetation_dynamics",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_vegetation_dynamics C++ 化（返回 vegetation_dirty 标志）；目标 ~9.2ms → < 1.0ms",
+		description = "DOTS-Final-Push：_apply_vegetation_dynamics C++ 化（返回 vegetation_dirty 标志）；目标 ~9.2ms → < 1.0ms。验收 PASS，默认开启",
 	},
 	{
 		name = &"use_gdext_climate_feedback",
 		owner = "climate.weather_feedback",
+		default = true,
+		resource = "ClimateProfile",
+		description = "DOTS-Final-Push：_apply_weather_to_map_feedback_pass C++ 化（小权重累加 ≤ 0.5%/日）；目标 ~6.1ms → < 0.5ms。验收 PASS，默认开启",
+	},
+	# ─── 方案 B：stage_b 三段合并（plan/stage-b-combine）─────────────────────
+	# refresh_daily_stage_b 入口走单 cpp call run_stage_b_pass，把 albedo +
+	# veg_dyn + feedback 三段合并执行，消除 GDScript 端 3 次 pack/unpack 围栏。
+	# 前置条件：上面三个独立 cpp 路径已 ACTIVE（日志 first run elapsed < 0.1ms）。
+	# 验收：SAME_SOURCE A/B 30 tick；目标 stage_b 累加 6–15ms → ≤ 1.5ms，
+	# weather_refresh ran p95 3.51ms → ≤ 1.0ms。
+	{
+		name = &"use_gdext_stage_b_combined",
+		owner = "climate.stage_b_combined",
 		default = false,
 		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_weather_to_map_feedback_pass C++ 化（小权重累加 ≤ 0.5%/日）；目标 ~6.1ms → < 0.5ms",
+		description = "方案 B：stage_b albedo+veg_dyn+feedback 合并单 cpp call，消除 pack/unpack 围栏；目标 6–15ms → ≤ 1.5ms",
 	},
 	# ─── DOTS-Final-Push：atlas pack C++ 化 ──────────────────────────────────
 	# 与已有的 use_gdext_sea_ice_atlas_prepare 协作。目标：sea_ice_atlas_upload
@@ -313,23 +326,23 @@ const FLAGS: Array = [
 	{
 		name = &"use_gdext_ocean_currents_pixel",
 		owner = "rendering.ocean_currents",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：bake_ocean_currents_slice 像素填充走 C++（仅产 PackedByteArray，不调 RenderingServer）。目标 25ms slice → < 6ms",
+		description = "DOTS-Total-CPP：bake_ocean_currents_slice 像素填充走 C++（仅产 PackedByteArray，不调 RenderingServer）。目标 25ms slice → < 6ms。验收 PASS，默认开启",
 	},
 	{
 		name = &"use_gdext_weather_field_pixel",
 		owner = "rendering.weather_field",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：bake_weather_field_only 像素填充走 C++（仅产 PackedByteArray）。目标 wrapper ≤ 2ms",
+		description = "DOTS-Total-CPP：bake_weather_field_only 像素填充走 C++（仅产 PackedByteArray）。目标 wrapper ≤ 2ms。验收 PASS，默认开启",
 	},
 	{
 		name = &"use_gdext_sea_ice_atlas_pack",
 		owner = "rendering.sea_ice_atlas",
-		default = false,
+		default = true,
 		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）",
+		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）。验收 PASS，默认开启",
 	},
 ]
 

@@ -52,13 +52,28 @@ enum Mode {
 
 # ─── 运行期状态 ─────────────────────────────────────────────────────────
 var _mode: int = Mode.SUMMARY
-var _remaining: int = 0           ## 剩余 tick 数（climate phase 完成才递减）
+var _remaining: int = 0           ## 剩余 tick 数（按 sim-day 唯一性递减）
 var _path: String = ""
 var _file: FileAccess = null
-var _tick_idx: int = 0            ## 已完成的 tick 计数（每个 climate phase +1）
+var _tick_idx: int = 0            ## 已完成的 tick 计数（按 sim-day 唯一性 +1）
 var _started_at_unix: int = 0
 var _generator                    ## MapGenerator（拿 world / map 引用用）
 var _summary_header_written: bool = false
+## 反卡死（2026-05-17）：原版仅 phase_kind=="climate" 计 tick；当 SUS 把
+## refresh_climate_daily 长期 dep_pending 跳过时（例如 dump 自己把 weather 拉到
+## 40ms+ 顶满 frame budget → season_refresh strict_budget_one_job → climate
+## dep_pending），_remaining 永远不递减，dump 卡死。
+## 改为按 sim-day 唯一性计数：同 day 内首次 record_tick（任一 phase）触发 +1，
+## 后续同 day 的 record_tick 仅写入数据不重复计数。这样无论 climate/weather
+## 哪个 phase 先到都能推进进度，避免 phase 调度抖动导致 dump 永不结束。
+var _last_counted_day: int = -2147483648
+## record 异常守门：连续 N 次 record_tick 但 sim_day 没推进时，认为 sim 卡住，
+## 自动 _close 防止 weather phase 每帧 40ms 写入永久持续。200 次 ≈ 8s @ 40ms/tick。
+const _STALL_DAY_LIMIT: int = 200
+var _stall_records_at_same_day: int = 0
+## stall 触发时置 true；DCSoakABRunner 在 _on_dump_completed 里检测此 flag
+## 跳过 phase B / diff 流程，直接回到 IDLE。
+var aborted_due_to_stall: bool = false
 
 
 ## 启动 dump 会话。
@@ -80,6 +95,9 @@ func start(n_ticks: int, mode: int, path: String, generator) -> bool:
 	_generator = generator
 	_tick_idx = 0
 	_summary_header_written = false
+	_last_counted_day = -2147483648
+	_stall_records_at_same_day = 0
+	aborted_due_to_stall = false
 	_started_at_unix = int(Time.get_unix_time_from_system())
 	# 解析路径
 	var resolved_path: String = path
@@ -161,7 +179,11 @@ func start_from_arg(arg: String, generator) -> bool:
 ##   map: 当前 MapData（pipeline 已持引用，直传避免再绕 generator）
 ##   extra: 自由 metadata，FULL mode 写入 JSON top-level；SUMMARY 忽略
 ##
-## 仅 phase_kind=="climate" 视为一 tick 完成（递减 _remaining）。
+## 计数策略（2026-05-17 反卡死改造）：按 sim_day 唯一性 +1。
+## 同 day 内首次 record_tick（不论 phase=climate 还是 weather）触发 _tick_idx+1
+## 与 _remaining-1，后续同 day 的 record_tick 仅写入数据。避免 climate phase
+## 被长期 dep_pending / strict_budget 跳过时 dump 计数卡死。
+## 守门：连续 _STALL_DAY_LIMIT 次同 day record（无 day 推进）→ 自动 _close。
 func record_tick(phase_kind: String, day: int, season_phase: float, map, extra: Dictionary = {}) -> void:
 	if not is_active():
 		return
@@ -174,11 +196,23 @@ func record_tick(phase_kind: String, day: int, season_phase: float, map, extra: 
 	else:
 		_record_full(phase_kind, day, season_phase, extra, map)
 	_file.flush()
-	if phase_kind == "climate":
+	# Day-唯一性计数：同 day 多 phase 不重复 +1。
+	if day != _last_counted_day:
+		_last_counted_day = day
+		_stall_records_at_same_day = 0
 		_tick_idx += 1
 		_remaining -= 1
 		if _remaining <= 0:
 			print("[DCSoakDump] completed: %d ticks dumped → %s" % [_tick_idx, _path])
+			_close()
+	else:
+		_stall_records_at_same_day += 1
+		if _stall_records_at_same_day >= _STALL_DAY_LIMIT:
+			push_warning(("[DCSoakDump] STALL DETECTED: %d records at sim_day=%d without day advancement;"
+				+ " auto-aborting (likely climate phase starved by frame budget; SUS state:"
+				+ " check refresh_climate_daily skipped[dep_pending=*] / strict_budget_one_job)."
+				+ " path=%s") % [_stall_records_at_same_day, day, _path])
+			aborted_due_to_stall = true
 			_close()
 
 

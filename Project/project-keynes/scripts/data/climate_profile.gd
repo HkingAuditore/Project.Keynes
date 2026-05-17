@@ -242,9 +242,26 @@ extends Resource
 # C++ 不可用时入口分支会自动 fallback 到 GDScript 并打印一次 UNAVAILABLE。
 # stride 字段沿用现有 weather_albedo_stride / weather_vegetation_dynamics_stride
 # / weather_feedback_stride，无需新增。
-@export var use_gdext_albedo: bool = false              # _apply_albedo_pass C++ 化
-@export var use_gdext_vegetation_dynamics: bool = false # _apply_vegetation_dynamics C++ 化
-@export var use_gdext_climate_feedback: bool = false    # _apply_weather_to_map_feedback_pass C++ 化
+@export var use_gdext_albedo: bool = true               # _apply_albedo_pass C++ 化（dots-final-push 验收 PASS，默认开启）
+@export var use_gdext_vegetation_dynamics: bool = true  # _apply_vegetation_dynamics C++ 化（dots-final-push 验收 PASS，默认开启）
+@export var use_gdext_climate_feedback: bool = true     # _apply_weather_to_map_feedback_pass C++ 化（dots-final-push 验收 PASS，默认开启）
+# 方案 B：stage_b 三段合并（plan/stage-b-combine）。打开后 refresh_daily_stage_b
+# 走单 cpp call run_stage_b_pass，消除 GDScript 端 albedo/veg_dyn/feedback 三段
+# 各自的 pack/unpack 围栏 + refresh_slots_from_map 三次重复调用，目标 stage_b
+# 累加 6–15ms → ≤ 1.5ms。前置条件：use_gdext_albedo / use_gdext_vegetation_dynamics
+# / use_gdext_climate_feedback 三个独立路径已 ACTIVE（first run 日志已确认）；
+# 上线前需完成 SAME_SOURCE A/B 30 tick 验收（标量 |Δ| ≤ 0.05、长期均值 |Δ| ≤ 0.01）。
+@export var use_gdext_stage_b_combined: bool = false    # stage_b albedo+veg_dyn+feedback 合并单 cpp call
+# ─── plan/weather-refresh-cpp-all（PR-2 gd-facade-merge）─────────────────────
+# weather refresh daily 顶层一体化 C++ pass。打开后 map_generator.refresh_weather_daily
+# 走单 cpp call run_weather_refresh_daily_pass，把 field_solve / distribute /
+# summary / cyclone_wake / stage_b 五段串调一次完成，消除 GDScript ↔ C++ 间 5 次
+# Variant round-trip。前置条件：use_gdext_weather_field / use_gdext_weather_distribute /
+# use_gdext_weather_summary / use_gdext_stage_b_combined 各独立路径已 ACTIVE
+# （或至少 ext bound + has_method 通过）。任何环节缺失 / rc<0 → 自动回退到现路径
+# （refresh_daily_stage_a + refresh_daily_stage_b 两段链），保证 bit-equal 兜底。
+# 默认 false：上线前需完成 SAME_SOURCE A/B soak 验收。
+@export var use_gdext_weather_refresh_daily: bool = false
 @export var use_gdext_enum_atlas_pack: bool = false     # enum_atlas_upload pack C++ 化
 # ─── DOTS-Total-CPP（plan/dots-total-cpp）：剩余 GDScript 残余下沉 C++ ────
 # 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick 数值 |Δ| ≤ 1e-5 或像素
@@ -255,15 +272,15 @@ extends Resource
 #  • use_gdext_sea_ice_atlas_pack: sea_ice_atlas_upload pack C++ 化（与现有
 #    use_gdext_sea_ice_atlas_prepare 互补：prepare 写权威 buffer，pack 走
 #    dirty-tile 增量打包）
-@export var use_gdext_ocean_currents_pixel: bool = false # 像素 baker C++ 化（25ms slice → < 6ms）
-@export var use_gdext_weather_field_pixel: bool = false  # weather field 像素 baker C++ 化
-@export var use_gdext_sea_ice_atlas_pack: bool = false   # sea_ice_atlas_upload pack C++ 化
+@export var use_gdext_ocean_currents_pixel: bool = true # 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
+@export var use_gdext_weather_field_pixel: bool = true  # weather field 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
+@export var use_gdext_sea_ice_atlas_pack: bool = true   # sea_ice_atlas_upload pack C++ 化（dots-final-push 验收 PASS，默认开启）
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。
 # 默认 false：在 storage 同源（PR-2.1.1 climate Pass-A 写路径下移）完成前，
 # 仅允许 opt-in 试验；PR-2.1.1 验收通过后默认 true，且 _DIAG_DISABLE_CPP_PASS_A
 # 整体可移除。详见 docs/dots-master-execution-handbook.md §3.2。
-@export var use_gdext_climate_pass_a: bool = false  # P0：~10ms → < 0.5ms（待 PR-2.1.1 后默认开）
+@export var use_gdext_climate_pass_a: bool = true   # P0：~10ms → < 0.5ms（dots-final-push 验收 PASS，默认开启）
 
 # PR-2.3a HexCell facade（master 手册 §3.10.3）：
 # bake_world / 加载存档末尾给每个 cell 调用 cell.bind_world(world, use_hexcell_facade)。
