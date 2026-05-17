@@ -48,6 +48,12 @@ const SEGMENTS: Array = [
 		description = "DOTS-Final-Push 任务 4：_apply_weather_to_map_feedback_pass C++ 化",
 	},
 	{
+		flag = &"use_gdext_stage_b_combined",
+		segment = "stage_b_combined",
+		required = false,
+		description = "方案 B：stage_b albedo+veg_dyn+feedback 合并为单 cpp call run_stage_b_pass（消除 pack/unpack 围栏，目标 6–15ms → ≤ 1.5ms）",
+	},
+	{
 		flag = &"use_gdext_sea_ice",
 		segment = "sea_ice_full",
 		required = false,

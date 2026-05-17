@@ -852,9 +852,14 @@ func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> voi
 					return
 				_bind_register_and_attach_u8(entry.name, arr_v)
 			DCComponentIds.I32:
-				# 当前 schema 没有 I32 cell 字段；保留分支以备未来扩展。
-				push_warning("[DCWorld] bind_map_data: I32 cell schema entry currently untested: '%s'"
-					% String(entry.name))
+				# B3b：植被动力学 streak 字段（cell.vitality_low_streak /
+				# cell.vitality_high_streak）走 I32 attach 路径。register_component
+				# I32 路径 + view_i32 / write_i32 / write_i32_range / write_i32_indexed
+				# 都已实装；这里补上"挂入 MapData PackedInt32Array 外部引用"步骤。
+				if not (arr_v is PackedInt32Array):
+					push_error("[DCWorld] bind_map_data: MapData.%s expected PackedInt32Array" % map_field)
+					return
+				_bind_register_and_attach_i32(entry.name, arr_v)
 			_:
 				push_error("[DCWorld] bind_map_data: unsupported dtype=%d for '%s'"
 					% [int(entry.dtype), String(entry.name)])
@@ -1003,6 +1008,22 @@ func _bind_register_and_attach_u8(name: StringName, arr_ref: PackedByteArray) ->
 	var slot: _Slot = _slots[cid]
 	slot.external_ref = true
 	slot.arr_u8 = arr_ref
+
+
+## 内部：注册 cell-level I32 component 并挂入引用（B3b：植被动力学 streak 用）。
+## I32 不支持 track_prev（与 U8 一致；首版不双缓冲，见 _Slot 字段说明）。
+func _bind_register_and_attach_i32(name: StringName, arr_ref: PackedInt32Array) -> void:
+	var cid: int
+	if _slot_by_name.has(name):
+		cid = int(_slot_by_name[name])
+	else:
+		cid = register_component(name, DCComponentIds.I32, 1, false)
+		_builtin_cell_ids[name] = cid
+	if cid < 0:
+		return
+	var slot: _Slot = _slots[cid]
+	slot.external_ref = true
+	slot.arr_i32 = arr_ref
 
 
 ## 便捷：通过 StringName 直接拿内置 cell component 的 comp_id。

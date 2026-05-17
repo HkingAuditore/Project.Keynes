@@ -466,13 +466,21 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_soak_dump_hotkey_start()
 		KEY_F3:
 			# DCSoakABRunner 一键 A/B 对比（dots-storage-同源紧急修复 2026-05-14）：
-			#   F3        — SAME_SOURCE mode：A/B 都用当前 DataCore 状态（默认推荐）
-			#               验证 storage 在稳态下的可重复性，threshold=1e-4 期望 PASS
-			#   Shift+F3  — VS_LEGACY mode：A=current, B=toggle 后状态
-			#               对比 DataCore vs legacy 业务等价性，threshold=0.5
-			# 总耗时 ≈ 60 sim-ticks × 当前游戏速度（x1 ≈ 60s; x20 ≈ 3s）。
-			print("[soak-ab] F3 pressed (shift=%s)" % str(event.shift_pressed))
-			if event.shift_pressed:
+			#   F3         — SAME_SOURCE mode 30 tick：A/B 都用当前 DataCore 状态（默认推荐）
+			#                验证 storage 在稳态下的可重复性，threshold=1e-4 期望 PASS
+			#   Shift+F3   — VS_LEGACY mode 30 tick：A=current, B=toggle 后状态
+			#                对比 DataCore vs legacy 业务等价性，threshold=0.5
+			#   Ctrl+F3    — SAME_SOURCE mode **1000 tick**（B3b 阶段 3 收工验收 / 长期均值）
+			#                建议在 x20 速度下使用：1000 tick × 2 段 = 2000 sim-tick ≈ 100 s
+			#   Alt+F3     — 立即 cancel 当前 A/B 流程（解卡用）。无 active 流程时 nop。
+			# 总耗时 ≈ N tick × 2 段 × 当前游戏速度（x1 → 60s/30tick；x20 → 3s/30tick）。
+			print("[soak-ab] F3 pressed (shift=%s ctrl=%s alt=%s)" % [
+				str(event.shift_pressed), str(event.ctrl_pressed), str(event.alt_pressed)])
+			if event.alt_pressed:
+				_soak_ab_hotkey_cancel()
+			elif event.ctrl_pressed and not event.shift_pressed:
+				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE, 1000)
+			elif event.shift_pressed:
 				_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
 			else:
 				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE)
@@ -1937,24 +1945,44 @@ func _soak_dump_hotkey_start() -> void:
 
 # ─── DCSoakABRunner Hotkey (F3) ──────────────────────────────────────────
 # 一键完整 A/B 对比工作流：
-#   1) 用当前 DataCore 状态跑 30 tick → phase A.tsv
-#   2) toggle DataCore master
-#   3) 跑 30 tick → phase B.tsv
+#   1) 用当前 DataCore 状态跑 N tick → phase A.tsv
+#   2) (VS_LEGACY) toggle DataCore master / (SAME_SOURCE) 不切换
+#   3) 跑 N tick → phase B.tsv
 #   4) 内置 diff 报告（max mean_diff per field, top-15）
-# 总耗时 ≈ 60 sim-ticks（按游戏速度档：x1 ≈ 60s, x5 ≈ 12s, x20 ≈ 3s）。
+# 总耗时 ≈ 2N sim-ticks（按游戏速度档：x1 ≈ 60s/30tick, x5 ≈ 12s, x20 ≈ 3s）。
 # 已在跑则忽略；建议在游戏速度 ≥ x5 时按以缩短总耗时。
-func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE) -> void:
+#
+# B3b 阶段 3 收工长期验收用 Ctrl+F3 → n_ticks=1000；在 x20 速度下 ≈ 100s。
+func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE,
+		n_ticks: int = 30) -> void:
 	if _generator == null:
 		print("[soak-ab] F3: generator not ready, ignored.")
 		return
 	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
-		print("[soak-ab] F3: already running, ignored.")
+		print("[soak-ab] F3: already running, ignored. (Alt+F3 取消当前流程)")
 		return
 	if DCSoakABRunner.instance == null:
 		DCSoakABRunner.instance = DCSoakABRunner.new()
-	var ok: bool = DCSoakABRunner.instance.start(self, 30, mode)
+	var ok: bool = DCSoakABRunner.instance.start(self, n_ticks, mode)
 	if not ok:
 		push_warning("[soak-ab] F3 start failed (see prior errors)")
+
+
+## Alt+F3 — 立即 cancel 当前 A/B 流程并 stop dump。
+## 反卡死（2026-05-17）：当 dumper 自身把 weather wall 拉到 ~40ms+ 顶满 frame budget
+## 导致 climate phase 长期 dep_pending starve、_remaining 不递减、dump 永不结束时，
+## 用户可按 Alt+F3 强制解卡。同时 dump 内置 stall 守门会在 200 次同 day record 后
+## 自动 abort（约 8s @ 40ms/tick），Alt+F3 是更快的手动出口。
+func _soak_ab_hotkey_cancel() -> void:
+	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
+		DCSoakABRunner.instance.cancel()
+		print("[soak-ab] Alt+F3: A/B runner cancelled by user")
+		return
+	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
+		DCSoakDump.instance.stop()
+		print("[soak-ab] Alt+F3: standalone DCSoakDump stopped by user")
+		return
+	print("[soak-ab] Alt+F3: nothing active to cancel")
 
 
 ## DCSoakABRunner 用 helper：返回当前 use_data_core 状态。

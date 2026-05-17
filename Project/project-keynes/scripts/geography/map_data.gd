@@ -87,6 +87,20 @@ var has_river_arr:             PackedByteArray   = PackedByteArray()
 var ema_initialized_arr:       PackedByteArray   = PackedByteArray()
 var temp_season_offset_arr:    PackedFloat32Array = PackedFloat32Array()
 
+# ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
+# 6 个字段（4 f32 + 2 i32），由 cpp run_stage_b_pass 在阶段 2 之后直读直写
+# `_slots[].arr_f32/.arr_i32`；GDScript 端 hot pass 不再做 cells[i].<field>
+# pack/unpack（原先 ~7ms wall 的 95%）。
+# 启动期 bake 时从 HexCell 镜像初值（rebuild_soa_from_cells），阶段 2 末尾
+# 保留"slot → HexCell 回灌"兼容 _trigger_succession / GDScript legacy fallback /
+# baker/UI 读取点（阶段 3 全部迁完后可删）。
+var vegetation_vitality_arr:           PackedFloat32Array = PackedFloat32Array()
+var vitality_low_streak_arr:           PackedInt32Array   = PackedInt32Array()
+var vitality_high_streak_arr:          PackedInt32Array   = PackedInt32Array()
+var soil_moisture_arr:                 PackedFloat32Array = PackedFloat32Array()
+var vegetation_growth_pressure_arr:    PackedFloat32Array = PackedFloat32Array()
+var temperature_transport_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+
 # ─── Reference-impl Pass #2 (demo-only, performance-charter §12.6) ──
 # 由 World.bind_map_data 在 ClimateProfile.demo_thermal_gradient_enabled
 # == true 时按需 resize 到 N 并 attach；为 false 时保持 size=0（节省 N×4 字节）。
@@ -321,6 +335,13 @@ func _alloc_soa(n: int) -> void:
 	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段
 	ema_initialized_arr.resize(n)
 	temp_season_offset_arr.resize(n)
+	# B3b：植被动力学字段全量下沉 SoA（4 f32 + 2 i32）
+	vegetation_vitality_arr.resize(n)
+	vitality_low_streak_arr.resize(n)
+	vitality_high_streak_arr.resize(n)
+	soil_moisture_arr.resize(n)
+	vegetation_growth_pressure_arr.resize(n)
+	temperature_transport_anomaly_arr.resize(n)
 
 ## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
 ## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。
@@ -391,6 +412,13 @@ func rebuild_soa_from_cells() -> void:
 		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
 		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
 		temp_season_offset_arr[i] = c.temp_season_offset
+		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
+		vegetation_vitality_arr[i] = c.vegetation_vitality
+		vitality_low_streak_arr[i] = c._vitality_low_streak
+		vitality_high_streak_arr[i] = c._vitality_high_streak
+		soil_moisture_arr[i] = c.soil_moisture
+		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure
+		temperature_transport_anomaly_arr[i] = c.temperature_transport_anomaly
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

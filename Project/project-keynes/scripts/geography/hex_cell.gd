@@ -4,16 +4,24 @@
 #
 # ─── PR-2.3 HexCell Facade Migration（master 手册 §3.10.3） ──────────────
 # 目标：cell.<hot_field> 的语法保持不变，但底层走 DCWorld read_f32/write_f32。
-# 完整状态：PR-2.3 分三阶段：
-#   PR-2.3a [本 PR]：facade 基础设施（_world 绑定 + use_facade flag + bind_world）。
+# 完整状态：PR-2.3 分三阶段（B3b 阶段 3 已收工 2026-05-17）：
+#   PR-2.3a [DONE]：facade 基础设施（_world 绑定 + use_facade flag + bind_world）。
 #                    默认 _facade_enabled=false，向后兼容。
-#   PR-2.3b：25 个热字段（climate + weather + ocean）加 property setter/getter。
-#            默认仍走 var；启用 use_hexcell_facade flag 后转发到 world。
-#   PR-2.3c：默认开启 facade + 删除 flush_soa_to_cells / rebuild_soa_from_cells +
-#            清理冗余 var（如 temperature_breakdown 字典）。
+#   PR-2.3b [DONE]：21 个热字段（climate + weather + ocean）加 property setter/getter。
+#                    默认 use_hexcell_facade=true 后转发到 world。
+#   PR-2.3c [DONE]：默认开启 facade + B3b 植被动力学 5 字段下沉
+#            （vegetation_vitality / vitality_low_streak / vitality_high_streak /
+#             soil_moisture / vegetation_growth_pressure）→ 移除 map_generator
+#            stage_b combined unpack 回灌循环（n_cells×5 字段每帧节省）。
+#            实测稳态 wall=0.29ms（目标 ≤ 1.0ms，超额 3.4×），ROI 决策：B3b 收工。
 #
-# 删除前置条件（master 手册 §3.10.4）：
-#   1. PR-2.3b/c 全部合入 + 1000-tick SAME_SOURCE 通过
+# 后续可选项（已 ROI 评估为低优先，**默认不推进**）：
+#   - 阶段 4：删除 5 字段的 var 双重存储（_<field>_backing），节省 ~680KB / 17000 cells
+#   - 删除 flush_soa_to_cells / rebuild_soa_from_cells（map_data.gd）
+#   - 清理冗余 var（如 temperature_breakdown 字典）
+#
+# 阶段 4 删除前置条件（master 手册 §3.10.4，未来若推进）：
+#   1. 1000-tick SAME_SOURCE PASS（Ctrl+F3 触发；阈值 0.05 标量 / 0.01 长期均值）
 #   2. ripgrep `cell\.\w+\s*=` 在 hot-loop 文件 = 0（写路径已全部下移到 world）
 #   3. ripgrep `flush_soa_to_cells|rebuild_soa_from_cells` 全仓 = 0（仅 git history）
 
@@ -68,7 +76,13 @@ const _CID_UPWELLING_STRENGTH   := 22  # F32  cell.upwelling_strength
 const _CID_WEATHER_TYPE         := 23  # U8   cell.weather_type
 const _CID_WEATHER_FIELD_INIT   := 24  # U8   cell.weather_field_init  (bool)
 const _CID_EMA_INITIALIZED      := 25  # U8   cell.ema_initialized      (bool)
-const _CID_COUNT                := 26
+# B3b 阶段 3：植被动力学 5 字段下沉 facade（消除 stage_b combined unpack 回灌）
+const _CID_VEG_VITALITY         := 26  # F32  cell.vegetation_vitality
+const _CID_VITALITY_LOW_STREAK  := 27  # I32  cell.vitality_low_streak
+const _CID_VITALITY_HIGH_STREAK := 28  # I32  cell.vitality_high_streak
+const _CID_SOIL_MOISTURE        := 29  # F32  cell.soil_moisture
+const _CID_VEG_GROWTH_PRESSURE  := 30  # F32  cell.vegetation_growth_pressure
+const _CID_COUNT                := 31
 
 # StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
 # 字面量是合法 const expression，可以直接用。
@@ -99,6 +113,12 @@ const _COMP_NAMES: Array[StringName] = [
 	&"cell.weather_type",
 	&"cell.weather_field_init",
 	&"cell.ema_initialized",
+	# B3b 阶段 3：植被动力学 5 字段
+	&"cell.vegetation_vitality",
+	&"cell.vitality_low_streak",
+	&"cell.vitality_high_streak",
+	&"cell.soil_moisture",
+	&"cell.vegetation_growth_pressure",
 ]
 
 # 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
@@ -451,9 +471,51 @@ var _veg_history_idx: int = 0
 # _vitality_low_streak ：连续多少天 vitality < LOW_THRESHOLD（用于触发退化）。
 # _vitality_high_streak：连续多少天 vitality > HIGH_THRESHOLD（用于触发升级）。
 # 演替触发后两个 streak 都 reset 为 0。
-var vegetation_vitality: float = 0.7
-var _vitality_low_streak: int = 0
-var _vitality_high_streak: int = 0
+# B3b 阶段 3：3 个字段全部 facade 化（→ cell.vegetation_vitality SoA F32 +
+# cell.vitality_low_streak / cell.vitality_high_streak SoA I32）。stage_b combined
+# pass 完成后无需再做 unpack 回灌循环；hot path 直读 SoA 即可。
+var _vegetation_vitality_backing: float = 0.7
+var vegetation_vitality: float = 0.7:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_VITALITY]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _vegetation_vitality_backing
+	set(v):
+		_vegetation_vitality_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_VITALITY]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var __vitality_low_streak_backing: int = 0
+var _vitality_low_streak: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VITALITY_LOW_STREAK]
+			if cid >= 0:
+				return _world.read_i32(cid, index)
+		return __vitality_low_streak_backing
+	set(v):
+		__vitality_low_streak_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VITALITY_LOW_STREAK]
+			if cid >= 0:
+				_world.write_i32(cid, index, v)
+var __vitality_high_streak_backing: int = 0
+var _vitality_high_streak: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VITALITY_HIGH_STREAK]
+			if cid >= 0:
+				return _world.read_i32(cid, index)
+		return __vitality_high_streak_backing
+	set(v):
+		__vitality_high_streak_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VITALITY_HIGH_STREAK]
+			if cid >= 0:
+				_world.write_i32(cid, index, v)
 
 func push_biome_history(biome: int) -> void:
 	if biome_history.size() < HISTORY_LEN:
@@ -665,8 +727,35 @@ var sea_ice_fraction: float = 0.0:
 #   累加，由 refresh_seasonal 在季末消费并按 feedback_decay 衰减。
 #   它们使"连下三个月雨"等长期天气累积可以缓慢影响 base_moisture / 演替判定，
 #   但当天的雨绝不直接重写 base_*，从而维持快慢双时间尺度。
-var soil_moisture: float = 0.0
-var vegetation_growth_pressure: float = 0.0
+# B3b 阶段 3：facade 化（→ cell.soil_moisture / cell.vegetation_growth_pressure SoA F32）。
+var _soil_moisture_backing: float = 0.0
+var soil_moisture: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SOIL_MOISTURE]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _soil_moisture_backing
+	set(v):
+		_soil_moisture_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_SOIL_MOISTURE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_growth_pressure_backing: float = 0.0
+var vegetation_growth_pressure: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _vegetation_growth_pressure_backing
+	set(v):
+		_vegetation_growth_pressure_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # temperature_breakdown：调试用的温度分解字典（仅在选中地块面板查看时填充）。
 #   key ∈ {baseline, season, albedo, coastal, landform}，值单位与 temperature 一致。

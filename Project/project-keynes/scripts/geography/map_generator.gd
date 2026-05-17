@@ -623,6 +623,15 @@ var _gdext_feedback_first_attempt_logged: bool = false
 var _gdext_feedback_signature_checked: bool = false
 var _gdext_feedback_signature_ok: bool = false
 
+# 方案 B：stage_b 三段合并（plan/stage-b-combine）运行时统计。
+# 触发于 refresh_daily_stage_b 入口的合并快路径分支；与上面三个独立 pass 的统计
+# 互斥（合并成功一次 ≈ 三独立 pass 各被替代一次）。fallback 时下面三独立 wrapper
+# 接管，独立统计计数器仍正常累加。
+var _gdext_stage_b_runs: int = 0
+var _gdext_stage_b_fallbacks: int = 0
+var _gdext_stage_b_total_ms: float = 0.0
+var _gdext_stage_b_first_attempt_logged: bool = false
+
 # F.3 climate Pass-B C++ 加速运行时统计（charter §7 P1，5.2ms → 0.5ms 目标）。
 var _gdext_climate_b_runs: int = 0
 var _gdext_climate_b_fallbacks: int = 0
@@ -6154,10 +6163,18 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
 			# 必须从 dict 重新读取。
 			anomaly_io = knobs_l["anomaly_inout"]
-			var is_water_l: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
+			# Bugfix 2026-05-17（overlay 洋流热输运全白）：
+			# water pass 走 C++ 路径时刻意省略了 HexCell.temperature_transport_anomaly
+			# 的回写（注释说 "land pass 会直接复用该 buffer，并在下一片统一回写"），
+			# 但原回写循环只覆盖 land cell（is_water_l[ci]==0），导致水域 cell
+			# 的 anomaly 永远停留在 HexCell 默认值 0.0。DataOverlayBaker 读
+			# cell.temperature_transport_anomaly 后归一化为 value=0.5，shader 用
+			# ramp_diverging 渲染为中性灰（≈白），表现为"洋流热输运 overlay 全白"。
+			# anomaly_io 在进入 land pass 时复用 water pass cache（含水域 anomaly）
+			# 且 land pass C++ 只写 land cell；这里把水陆两部分一起 flush 回 HexCell，
+			# 与 GDScript 完整路径保持一致（line 5089 / 5177）。
 			for ci in range(n):
-				if is_water_l[ci] == 0:
-					cells[ci].temperature_transport_anomaly = anomaly_io[ci]
+				cells[ci].temperature_transport_anomaly = anomaly_io[ci]
 			# anomaly 继续保留给同轮 sea_ice，避免 sea_ice 再从 HexCell 打包 TTA。
 			_gdext_ocean_anomaly_buf_cached = anomaly_io
 			_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
@@ -6362,17 +6379,242 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		t_us0 = Time.get_ticks_usec()
 		_apply_transpiration_pass(map)
 		transp_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+
+	# ─── 方案 B：stage_b 三段合并快路径（plan/stage-b-combine）────────────────
+	# 满足 cp.use_gdext_stage_b_combined && ext bound && ext.has_method &&
+	# 至少一个 run_* 为 true 时，走单 cpp call run_stage_b_pass，把 albedo +
+	# veg_dyn + feedback 三段一次性 pack/unpack；成功则置 stage_b_combined_done
+	# 让下面独立三段 wrapper 全部跳过（任何一项失败 / rc<0 都会让 done=false，
+	# 自动透明回落到旧三段独立路径）。
+	# 关键收益：消除 GDScript 端 3 次 pack（vit/lo/hi、soil/vg/tta、albedo+8 LUT）
+	# + 3 次 refresh_slots_from_map + 3 次 unpack 循环。各段算法 1:1 同 cpp 旧路径。
+	var stage_b_combined_done: bool = false
 	var albedo_ms: float = 0.0
-	if run_albedo:
-		t_us0 = Time.get_ticks_usec()
-		_apply_albedo_pass(map)
-		albedo_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
-	var vegetation_dirty := false
 	var veg_dyn_ms: float = 0.0
-	if run_veg_dyn:
-		t_us0 = Time.get_ticks_usec()
-		vegetation_dirty = _apply_vegetation_dynamics(map, float(veg_dyn_stride))
-		veg_dyn_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+	var feedback_ms: float = 0.0
+	var vegetation_dirty := false
+	var fast_slow_layering_on: bool = cp_now != null and bool(cp_now.fast_slow_layering_enabled)
+	var combined_run_albedo: bool = run_albedo
+	var combined_run_veg_dyn: bool = run_veg_dyn
+	var combined_run_feedback: bool = run_feedback and fast_slow_layering_on
+	var stage_b_flag_on: bool = cp_now != null and bool(cp_now.use_gdext_stage_b_combined)
+	var stage_b_ext_ok: bool = _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_stage_b_pass")
+	if not _gdext_stage_b_first_attempt_logged:
+		_gdext_stage_b_first_attempt_logged = true
+		var cp_path: String = "<in-memory ClimateProfile>"
+		if cp_now != null and cp_now.resource_path != "":
+			cp_path = cp_now.resource_path
+		var verdict: String = "OK → will try C++ combined pass"
+		if not (stage_b_flag_on and stage_b_ext_ok):
+			verdict = "FAIL → fall through to legacy three-pass path"
+		print("[stage_b/combined] precondition probe (one-time):")
+		print("  active ClimateProfile = %s" % cp_path)
+		print("  cp.use_gdext_stage_b_combined = %s" % str(stage_b_flag_on))
+		print("  _data_core_world_ext != null = %s" % str(_data_core_world_ext != null))
+		print("  ext.has_method('run_stage_b_pass') = %s" % str(stage_b_ext_ok))
+		print("  verdict = %s" % verdict)
+
+	if stage_b_flag_on and stage_b_ext_ok \
+			and (combined_run_albedo or combined_run_veg_dyn or combined_run_feedback):
+		var t_combined_us0: int = Time.get_ticks_usec()
+		# 细粒度子段计时（仅前 3 次 DEBUG 用）
+		var _dbg_combined_first3: bool = (_gdext_stage_b_runs + _gdext_stage_b_fallbacks) < 3
+		var t_iter_us: int = 0
+		var t_pack_albedo_us: int = 0
+		var t_pack_vegdyn_us: int = 0
+		var t_pack_feedback_us: int = 0
+		var t_refresh_us: int = 0
+		var t_call_us: int = 0
+		var t_unpack_us: int = 0
+		var _dbg_t0: int = t_combined_us0
+		var cells_c: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+		var n_cells_c: int = cells_c.size()
+		if _dbg_combined_first3:
+			t_iter_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		var knobs_c: Dictionary = {
+			"n_cells": n_cells_c,
+			"run_albedo": combined_run_albedo,
+			"run_veg_dyn": combined_run_veg_dyn,
+			"run_feedback": combined_run_feedback,
+			# B3b 数据所有权下沉：6 字段已下沉到 SoA schema，cpp 端直读
+			# _slots[].arr_*，消除 GDScript 端 pack/unpack hot loop。
+			# 末尾 cpp 自动 flush 6 个新 slot 回 MapData，GDScript 端再做一次
+			# 轻量"slot → HexCell 回灌"以兼容下游冷路径（overlay/info_panel/main）。
+			"use_soa": true,
+		}
+
+		# ① ALBEDO 段入参（与 _apply_albedo_pass 完全一致）
+		if combined_run_albedo:
+			knobs_c["reference_albedo"]   = float(cp_now.reference_albedo)
+			knobs_c["albedo_temp_gain"]   = float(cp_now.albedo_temp_gain)
+			knobs_c["snow_cover_albedo"]  = 0.75
+			knobs_c["cover_snow_id"]      = int(CoverType.CV.SNOW)
+			knobs_c["cover_glacier_id"]   = int(CoverType.CV.GLACIER)
+			knobs_c["albedo_table"]       = _build_albedo_donor_table()
+		if _dbg_combined_first3:
+			t_pack_albedo_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		# ② VEG_DYN 段入参（B3b 后 vit/streak 已下沉到 SoA，无需 pack PackedArray）
+		if combined_run_veg_dyn:
+			_ensure_vegdyn_lut()
+			var veg_dyn_scale_raw: float = float(veg_dyn_stride)
+			var veg_dyn_scale_eff: float = maxf(veg_dyn_scale_raw, 1.0)
+			var streak_days_c: int = maxi(1, int(round(veg_dyn_scale_eff)))
+			knobs_c["day_scale"]               = veg_dyn_scale_raw
+			knobs_c["streak_days"]             = streak_days_c
+			knobs_c["vitality_change_rate"]    = float(cp_now.vitality_change_rate)
+			knobs_c["compat_harshness"]        = float(cp_now.compat_harshness)
+			knobs_c["low_threshold"]           = float(cp_now.vitality_low_threshold)
+			knobs_c["high_threshold"]          = float(cp_now.vitality_high_threshold)
+			knobs_c["succession_degrade_days"] = int(cp_now.succession_degrade_days)
+			knobs_c["succession_upgrade_days"] = int(cp_now.succession_upgrade_days)
+			knobs_c["n_wt"]                    = int(WeatherType.WT.size())
+			knobs_c["wt_clear_id"]             = int(WeatherType.WT.CLEAR)
+			knobs_c["veg_none_id"]             = int(VegetationType.VEG.NONE)
+			knobs_c["ideal_temp_table"]        = _gdext_vegdyn_ideal_temp_cached
+			knobs_c["ideal_moist_table"]       = _gdext_vegdyn_ideal_moist_cached
+			knobs_c["temp_tol_table"]          = _gdext_vegdyn_temp_tol_cached
+			knobs_c["moist_tol_table"]         = _gdext_vegdyn_moist_tol_cached
+			knobs_c["weather_penalty_table"]   = _gdext_vegdyn_weather_penalty_cached
+			knobs_c["resistance_table"]        = _gdext_vegdyn_resistance_cached
+			knobs_c["next_up_table"]           = _gdext_vegdyn_next_up_cached
+			knobs_c["next_down_table"]         = _gdext_vegdyn_next_down_cached
+			# 注：use_soa=true 时 cpp 直读 _slots[sid_vit/sid_low_streak/sid_high_streak]
+			# vitality_arr / low_streak_arr / high_streak_arr 已不再传入
+		if _dbg_combined_first3:
+			t_pack_vegdyn_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		# ③ FEEDBACK 段入参（B3b 后 soil/vg/tta 已下沉到 SoA，无需 pack PackedArray）
+		if combined_run_feedback:
+			var feedback_scale_eff: float = maxf(float(feedback_stride), 1.0)
+			var per_day_clamp_c: float = float(cp_now.feedback_per_day_clamp) * feedback_scale_eff
+			var neighbor_indices_c: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+			# fast_indexed precondition：合并入口的 feedback 段必须 fully indexed；
+			# 不满足时只降级 feedback 段（关掉合并里的 feedback 子开关 + 同步 knobs），
+			# 让 albedo + veg_dyn 仍走合并 cpp call，feedback 由下面的 legacy wrapper 接管。
+			if neighbor_indices_c.size() < n_cells_c * 6:
+				push_warning("[stage_b/combined] neighbor_indices_packed not fully indexed (size=%d < %d), feedback段降级走 legacy wrapper" % [neighbor_indices_c.size(), n_cells_c * 6])
+				combined_run_feedback = false
+				knobs_c["run_feedback"] = false
+			else:
+				knobs_c["soil_gain"]               = float(cp_now.weather_to_soil_gain)
+				knobs_c["veg_gain"]                = float(cp_now.weather_to_vegetation_gain)
+				knobs_c["scale"]                   = feedback_scale_eff
+				knobs_c["per_day_clamp"]           = per_day_clamp_c
+				knobs_c["ocean_drift_gain"]        = float(cp_now.ocean_moisture_drift_gain)
+				knobs_c["wt_rain_id"]              = int(WeatherType.WT.RAIN)
+				knobs_c["wt_storm_id"]             = int(WeatherType.WT.STORM)
+				knobs_c["wt_monsoon_id"]           = int(WeatherType.WT.MONSOON)
+				knobs_c["wt_blizzard_id"]          = int(WeatherType.WT.BLIZZARD)
+				knobs_c["wt_drought_id"]           = int(WeatherType.WT.DROUGHT)
+				knobs_c["wt_heatwave_id"]          = int(WeatherType.WT.HEATWAVE)
+				knobs_c["neighbor_indices"]        = neighbor_indices_c
+				# 注：use_soa=true 时 cpp 直读 _slots[sid_tta/sid_soil/sid_vgp]
+				# temp_transport_anomaly / soil_moisture_arr / veg_growth_pressure_arr 已不再传入
+		if _dbg_combined_first3:
+			t_pack_feedback_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		# 单次 refresh_slots_from_map（替代旧三段各自一次共三次）
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
+		if _dbg_combined_first3:
+			t_refresh_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		var rc_c: float = float(_data_core_world_ext.run_stage_b_pass(knobs_c))
+		if _dbg_combined_first3:
+			t_call_us = Time.get_ticks_usec() - _dbg_t0
+			_dbg_t0 = Time.get_ticks_usec()
+
+		if rc_c >= 0.0:
+			# 段计时（C++ 写回）
+			albedo_ms = float(knobs_c.get("albedo_ms", 0.0))
+			veg_dyn_ms = float(knobs_c.get("veg_dyn_ms", 0.0))
+			feedback_ms = float(knobs_c.get("feedback_ms", 0.0))
+
+			# VEG_DYN 写回：cpp 已直写 SoA _slots[sid_vit/sid_low_streak/sid_high_streak]，
+			# slot 与 map.vegetation_vitality_arr / vitality_low_streak_arr / vitality_high_streak_arr
+			# 共享同一份 PackedArray 引用（zero-copy）。HexCell 端 5 字段已 facade 化
+			# （hex_cell.gd L455-505），cell.vegetation_vitality / _vitality_low_streak / _vitality_high_streak
+			# 的 getter 直接走 world.read_f32/i32 → 拿到的就是 cpp 刚写完的最新值。
+			# 因此 unpack 回灌循环（n_cells × 3 PackedArray.get + cell setter）可整段删除，
+			# 这是 wall ≤ 1ms 收益的核心来源。
+			if combined_run_veg_dyn:
+				# 演替候选（与 _apply_vegetation_dynamics L7099-7115 完全一致）
+				# 注：succession 后处理会显式覆写 vegetation_vitality（0.65/0.7），
+				# cell.vegetation_vitality = new_vit_c 通过 facade setter 自动 write_f32
+				# 到 SoA，与 map.vegetation_vitality_arr 引用一致。
+				var succ_indices_c: PackedInt32Array = knobs_c.get("succession_indices", PackedInt32Array())
+				var succ_to_veg_c: PackedByteArray = knobs_c.get("succession_to_veg", PackedByteArray())
+				var n_succ_c: int = succ_indices_c.size()
+				for k in range(n_succ_c):
+					var ci_c: int = succ_indices_c[k]
+					if ci_c < 0 or ci_c >= n_cells_c:
+						continue
+					var c_succ: HexCell = cells_c[ci_c]
+					var prev_veg_c: int = int(c_succ.vegetation)
+					var new_veg_c: int = int(succ_to_veg_c[k])
+					var is_degrade_c: bool = (prev_veg_c < _gdext_vegdyn_next_down_cached.size() \
+							and int(_gdext_vegdyn_next_down_cached[prev_veg_c]) == new_veg_c \
+							and new_veg_c != prev_veg_c)
+					c_succ.vegetation = new_veg_c
+					c_succ.base_vegetation = new_veg_c
+					var new_vit_c: float = 0.65 if is_degrade_c else 0.7
+					c_succ.vegetation_vitality = new_vit_c  # facade setter → world.write_f32
+					c_succ.current_state["vegetation"] = new_veg_c
+					vegetation_dirty = true
+
+			# FEEDBACK 写回：cpp 已直写 SoA _slots[sid_soil/sid_vgp]，与 map.soil_moisture_arr /
+			# vegetation_growth_pressure_arr 共享 PackedArray 引用。HexCell 端 soil_moisture /
+			# vegetation_growth_pressure 已 facade 化（hex_cell.gd L668-697），getter 自动从
+			# SoA 拿最新值，无需 unpack 回灌循环。
+
+			stage_b_combined_done = true
+			_gdext_stage_b_runs += 1
+			_gdext_stage_b_total_ms += rc_c
+			if _gdext_stage_b_runs == 1:
+				print("[stage_b/combined] gdext path ACTIVE — first run elapsed=%.2fms (legacy three-pass total ≈ 6–15ms; target ≤ 1.5ms)" % rc_c)
+				print("  per-stage: albedo=%.2fms veg_dyn=%.2fms feedback=%.2fms" % [albedo_ms, veg_dyn_ms, feedback_ms])
+		else:
+			_gdext_stage_b_fallbacks += 1
+			if _gdext_stage_b_fallbacks == 1:
+				print("[stage_b/combined] gdext path UNAVAILABLE: run_stage_b_pass — falling back to legacy three-pass path")
+		# combined elapsed wall-clock（含 pack/unpack/marshal）—— 仅 DEBUG 前 3 次
+		if _gdext_stage_b_runs + _gdext_stage_b_fallbacks <= 3:
+			# unpack 段：从 t_call_us 测完到现在
+			t_unpack_us = Time.get_ticks_usec() - _dbg_t0
+			var combined_wall_ms: float = (Time.get_ticks_usec() - t_combined_us0) / 1000.0
+			print("[stage_b/combined] DEBUG call#%d: rc=%.4f wall=%.2fms run_a=%s run_v=%s run_f=%s" % [
+				_gdext_stage_b_runs + _gdext_stage_b_fallbacks,
+				rc_c, combined_wall_ms,
+				str(combined_run_albedo), str(combined_run_veg_dyn), str(combined_run_feedback),
+			])
+			print("  breakdown(ms): iter=%.2f pack_albedo=%.2f pack_vegdyn=%.2f pack_feedback=%.2f refresh=%.2f call=%.2f unpack=%.2f" % [
+				t_iter_us / 1000.0,
+				t_pack_albedo_us / 1000.0,
+				t_pack_vegdyn_us / 1000.0,
+				t_pack_feedback_us / 1000.0,
+				t_refresh_us / 1000.0,
+				t_call_us / 1000.0,
+				t_unpack_us / 1000.0,
+			])
+
+	# ─── Legacy 三段 wrapper（合并失败时 / flag 关闭时的 fallback；保留原行为） ─
+	if not stage_b_combined_done:
+		if run_albedo:
+			t_us0 = Time.get_ticks_usec()
+			_apply_albedo_pass(map)
+			albedo_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+		if run_veg_dyn:
+			t_us0 = Time.get_ticks_usec()
+			vegetation_dirty = _apply_vegetation_dynamics(map, float(veg_dyn_stride))
+			veg_dyn_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 	var cover_rebake_ms: float = 0.0
 	var veg_rebake_ms: float = 0.0
 	if _baker != null:
@@ -6380,11 +6622,11 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 			_mark_enum_atlas_dirty(true, false)
 		if vegetation_dirty:
 			_mark_enum_atlas_dirty(false, true)
-	var feedback_ms: float = 0.0
-	if cp_now != null and bool(cp_now.fast_slow_layering_enabled) and run_feedback:
-		t_us0 = Time.get_ticks_usec()
-		_apply_weather_to_map_feedback_pass(map, float(feedback_stride))
-		feedback_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+	if not stage_b_combined_done:
+		if cp_now != null and bool(cp_now.fast_slow_layering_enabled) and run_feedback:
+			t_us0 = Time.get_ticks_usec()
+			_apply_weather_to_map_feedback_pass(map, float(feedback_stride))
+			feedback_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 
 	var total_ms: float = (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0
 	var sub: Dictionary = {}

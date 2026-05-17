@@ -698,7 +698,14 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 
 	var ocx_arr: PackedFloat32Array = map.ocean_current_x_arr
 	var ocy_arr: PackedFloat32Array = map.ocean_current_y_arr
-	var soa_ok: bool = ocx_arr.size() >= map.soa_size() and ocy_arr.size() >= map.soa_size()
+	# SoA 写路径要求：索引已 build（cell.index >= 0）+ 两个数组都已按 soa_size 预分配。
+	# bake 初始烤制阶段 _build_indices 尚未跑（在 MapGenerator.generate 末尾才调用），
+	# 此时 soa_size()=0 但 cell.index=-1，必须 fallback 到 cell.ocean_current 写路径，
+	# 否则 ocx_arr[-1] 会越界（issue: psi_to_ocean_current OOB at index -1）。
+	var soa_ok: bool = map.has_indices() \
+			and ocx_arr.size() >= map.soa_size() \
+			and ocy_arr.size() >= map.soa_size() \
+			and map.soa_size() > 0
 
 	# 先把所有水域清零，避免"上一轮残留 ocean_current"（旧像素路径写过）。
 	for k in range(n):

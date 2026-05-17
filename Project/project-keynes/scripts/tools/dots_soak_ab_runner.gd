@@ -217,6 +217,26 @@ func _start_phase(path: String, target_phase: int) -> bool:
 
 
 func _on_dump_completed(path: String, ticks_done: int, _dump_mode: int) -> void:
+	# 反卡死（2026-05-17）：DCSoakDump 探测到 N 次同 day record 没推进会主动 abort；
+	# 此时 ticks_done 远小于 _n_ticks，且 dump.aborted_due_to_stall 为 true。
+	# 直接放弃整个 A/B 流程回 IDLE，不跑 phase B（它一定会再次撞同样的死锁）。
+	var aborted: bool = (DCSoakDump.instance != null
+			and DCSoakDump.instance.aborted_due_to_stall)
+	if aborted:
+		print("[soak-ab] ABORT: dump 在 phase=%d 被 stall 守门触发关闭（实际 %d / 期望 %d ticks）"
+				% [_phase, ticks_done, _n_ticks])
+		print("[soak-ab]   原因：refresh_climate_daily 长期 dep_pending / strict_budget_one_job")
+		print("[soak-ab]         （多半是 dump 自己把 weather wall 拉到 ~40ms 顶满 frame budget）。")
+		print("[soak-ab]   建议：(a) 关掉 DataCore master (F10) 让 dump 路径走 legacy；")
+		print("[soak-ab]         (b) 关闭其他高负载 overlay；")
+		print("[soak-ab]         (c) 用 x1 速度跑 (x20 下 SUS budget 更易顶满)；")
+		print("[soak-ab]         (d) 等 B3b dumper 优化 PR 把字段统计降到 ~5ms。")
+		if DCSoakDump.instance != null and DCSoakDump.instance.completed.is_connected(_on_dump_completed):
+			DCSoakDump.instance.completed.disconnect(_on_dump_completed)
+		_phase = Phase.IDLE
+		_restore_flag_overrides()
+		_batch_active = false
+		return
 	if _phase == Phase.RUN_A:
 		_phase = Phase.BETWEEN
 		# Disconnect 当前回调，避免下次 phase B start 时重复连接

@@ -87,6 +87,27 @@ const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/
 const CELL_EMA_INITIALIZED: StringName = &"cell.ema_initialized"             # u8 0/1
 const CELL_TEMP_SEASON_OFFSET: StringName = &"cell.temp_season_offset"       # f32
 
+# ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
+# 历史：这 6 个字段原先只在 HexCell 上做强类型 var，stage_b combined pass
+# 每帧要把 cells[i].<field> pack 成 PackedArray 喂给 cpp，cpp 算完 GDScript
+# 又把结果 unpack 回 cell.<field>。breakdown 显示 pack+unpack 合计 ~7ms，
+# 占整个 stage_b wall 的 95%。下沉到 SoA 后 cpp 端直读 _slots，pack/unpack
+# 完全消失，目标 wall ≈ 0.3-0.5ms。
+# 命名严格 1:1 对齐 HexCell 字段名（vegetation_vitality / _vitality_low_streak /
+# _vitality_high_streak / soil_moisture / vegetation_growth_pressure /
+# temperature_transport_anomaly），方便阶段 3 把 _trigger_succession / legacy
+# fallback 改成 `world.write_f32_range(slot_id, ...)` 时搜索/重构。
+# 写入侧：cpp run_stage_b_pass 直写 _slots（阶段 2 后），加上 _trigger_succession
+#         / GDScript legacy fallback / save-load。
+# 读取侧：cpp run_stage_b_pass 直读 _slots（阶段 2 后），加上 UI / overlay /
+#         baker / save 序列化（通过 snapshot_f32 / snapshot_i32）。
+const CELL_VEGETATION_VITALITY: StringName       = &"cell.vegetation_vitality"        # f32
+const CELL_VITALITY_LOW_STREAK: StringName       = &"cell.vitality_low_streak"        # i32
+const CELL_VITALITY_HIGH_STREAK: StringName      = &"cell.vitality_high_streak"       # i32
+const CELL_SOIL_MOISTURE: StringName             = &"cell.soil_moisture"              # f32
+const CELL_VEGETATION_GROWTH_PRESSURE: StringName = &"cell.vegetation_growth_pressure" # f32
+const CELL_TEMPERATURE_TRANSPORT_ANOMALY: StringName = &"cell.temperature_transport_anomaly" # f32
+
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用
 #   命名空间。任何真实游戏机制（climate / weather / biome / vegetation / UI

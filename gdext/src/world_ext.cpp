@@ -218,6 +218,30 @@ PackedFloat32Array DCWorldExt::snapshot_f32(int comp_id) {
     return s.arr_f32;
 }
 
+// B3b：snapshot_i32 / snapshot_u8 —— 与 snapshot_f32 1:1 镜像，给植被动力学
+// streak（I32）以及后续 save/overlay/baker 路径（U8）补齐 Mode-B 只读快照。
+PackedInt32Array DCWorldExt::snapshot_i32(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        return PackedInt32Array();
+    }
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::I32) {
+        return PackedInt32Array();
+    }
+    return s.arr_i32;
+}
+
+PackedByteArray DCWorldExt::snapshot_u8(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        return PackedByteArray();
+    }
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::U8) {
+        return PackedByteArray();
+    }
+    return s.arr_u8;
+}
+
 // ─── Hot-path writes ──────────────────────────────────────────────────────
 //
 // Pattern these replace (legacy / GDScript-DCWorld-only):
@@ -4066,6 +4090,599 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+// ─── 方案 B：stage_b 三段合并 run_stage_b_pass ────────────────────────────
+//
+// 这是 run_albedo_pass + run_vegetation_dynamics_pass +
+// run_climate_feedback_pass 的顺序内联合并版本。三段主循环算法**完全 1:1
+// 拷贝**自原三个独立函数，仅做以下结构合并：
+//
+//   1. 单一 prelude：_bound 检查 + slot id resolve + size validate（合并需要
+//      的 9 个 SoA slot：cell_is_water / cell_vegetation / cell_cover /
+//      cell_temp / cell_moisture / cell_weather_type / cell_weather_intensity /
+//      cell_weather_field_init / cell_base_moisture）。
+//   2. 三个 run_* bool 控制是否跑（保留 GDScript 端 stride 语义；
+//      false 时整段连入参验证都跳过，避免把 false 段的 knobs 设为必填）。
+//   3. cross-pass 依赖：albedo 写 cell_temp、veg_dyn 读 cell_temp。合并版本里
+//      两段共享同一份 s_temp.arr_f32 ptrw，**无需中间 _flush_slot_to_map** ——
+//      这是合并相对于"GDScript 跑三次 cpp call 各自 flush + GDScript 端
+//      refresh_slots_from_map 各自一次"的核心收益之一。
+//   4. 末尾批量 flush（仅 cell_temp + cell_base_moisture 两个 SoA 写出 slot）；
+//      _flush_slot_to_map 是 O(1) Variant 引用交换，开销可忽略（参见 §11.2 注释）。
+//   5. 计时：每段独立 chrono → ms 写回 knobs（albedo_ms / veg_dyn_ms /
+//      feedback_ms），caller 端用作 _last_weather_breakdown 沿用打点。
+//
+// **不修改任何算法逻辑**。如果发现 SAME_SOURCE A/B 漂移，回头去改这里就是
+// 合并破坏了语义；目标是字节级一致。
+double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_stage_b_pass: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    // ─── 总开关 + n_cells ───────────────────────────────────────────────
+    if (!knobs.has("n_cells")) { diag("knobs missing n_cells"); return -1.0; }
+    const int n_cells = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const bool run_albedo   = bool(knobs.get("run_albedo",   false));
+    const bool run_veg_dyn  = bool(knobs.get("run_veg_dyn",  false));
+    const bool run_feedback = bool(knobs.get("run_feedback", false));
+    if (!run_albedo && !run_veg_dyn && !run_feedback) {
+        // 三个 stride 同 tick 都跳过 —— 也算合法，返回 0ms 让 caller 走快路径
+        knobs["albedo_ms"]   = 0.0;
+        knobs["veg_dyn_ms"]  = 0.0;
+        knobs["feedback_ms"] = 0.0;
+        return 0.0;
+    }
+
+    // ─── Resolve 所有 slot id（即使某段不跑也 resolve，便于一次性失败诊断） ──
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_veg      = component_id(StringName("cell_vegetation"));
+    const int sid_cover    = component_id(StringName("cell_cover"));
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_moist    = component_id(StringName("cell_moisture"));
+    const int sid_wt_type  = component_id(StringName("cell_weather_type"));
+    const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
+    const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
+    const int sid_base_m   = component_id(StringName("cell_base_moisture"));
+    if (sid_iswater < 0 || sid_veg < 0 || sid_cover < 0 || sid_temp < 0 ||
+        sid_moist < 0 || sid_wt_type < 0 || sid_wt_int < 0 ||
+        sid_wt_init < 0 || sid_base_m < 0) {
+        diag("missing slot id (one of cell_is_water/vegetation/cover/temp/moisture/"
+             "weather_type/weather_intensity/weather_field_init/base_moisture)");
+        return -1.0;
+    }
+
+    // ─── B3b：6 个植被动力学新 slot（vit/low/high/soil/vg/tta） ────────────
+    // use_soa = true 时，veg_dyn / feedback 段直接读写这 6 个 slot 的 _slots 后端，
+    // 不再从 knobs 取 PackedArray（消除 GDScript 端 pack/unpack ~7ms wall）。
+    // use_soa = false 时（向后兼容），仍走 knobs PackedArray 路径，slot id 仅做
+    // 一次性 resolve 不消费——保证老 caller 的 SAME_SOURCE A/B 不破坏。
+    const bool use_soa = bool(knobs.get("use_soa", false));
+    const int sid_vit       = component_id(StringName("cell_vegetation_vitality"));
+    const int sid_low_streak  = component_id(StringName("cell_vitality_low_streak"));
+    const int sid_high_streak = component_id(StringName("cell_vitality_high_streak"));
+    const int sid_soil      = component_id(StringName("cell_soil_moisture"));
+    const int sid_vgp       = component_id(StringName("cell_vegetation_growth_pressure"));
+    const int sid_tta       = component_id(StringName("cell_temperature_transport_anomaly"));
+    if (use_soa) {
+        if (sid_vit < 0 || sid_low_streak < 0 || sid_high_streak < 0 ||
+            sid_soil < 0 || sid_vgp < 0 || sid_tta < 0) {
+            diag("[use_soa] missing one of cell_vegetation_vitality / "
+                 "cell_vitality_low_streak / cell_vitality_high_streak / "
+                 "cell_soil_moisture / cell_vegetation_growth_pressure / "
+                 "cell_temperature_transport_anomaly — did bind_map_data run after schema update?");
+            return -1.0;
+        }
+    }
+
+    // ─── Acquire all slot arrays + validate sizes ───────────────────────
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_veg     = _slots.write[sid_veg];
+    Slot &s_cover   = _slots.write[sid_cover];
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_moist   = _slots.write[sid_moist];
+    Slot &s_wt_type = _slots.write[sid_wt_type];
+    Slot &s_wt_int  = _slots.write[sid_wt_int];
+    Slot &s_wt_init = _slots.write[sid_wt_init];
+    Slot &s_base_m  = _slots.write[sid_base_m];
+    if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()    != n_cells ||
+        s_cover.arr_u8.size()   != n_cells || s_temp.arr_f32.size()  != n_cells ||
+        s_moist.arr_f32.size()  != n_cells || s_wt_type.arr_u8.size()!= n_cells ||
+        s_wt_int.arr_f32.size() != n_cells || s_wt_init.arr_u8.size()!= n_cells ||
+        s_base_m.arr_f32.size() != n_cells) {
+        diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+
+    // 通用 SoA pointer
+    const uint8_t * const __restrict IW    = s_iswater.arr_u8.ptr();
+    const uint8_t * const __restrict VG    = s_veg.arr_u8.ptr();
+    const uint8_t * const __restrict CV    = s_cover.arr_u8.ptr();
+    float         * const __restrict T     = s_temp.arr_f32.ptrw();   // albedo 写、veg_dyn 读
+    const float   * const __restrict M     = s_moist.arr_f32.ptr();
+    const uint8_t * const __restrict WTT   = s_wt_type.arr_u8.ptr();
+    const float   * const __restrict WTI   = s_wt_int.arr_f32.ptr();
+    const uint8_t * const __restrict WTIN  = s_wt_init.arr_u8.ptr();
+    float         * const __restrict BM    = s_base_m.arr_f32.ptrw();
+
+    auto t_total_0 = std::chrono::high_resolution_clock::now();
+    bool flush_temp = false;     // albedo 跑了才需要 flush
+    bool flush_base_m = false;   // feedback 跑了才需要 flush
+    double albedo_ms = 0.0;
+    double veg_dyn_ms = 0.0;
+    double feedback_ms = 0.0;
+
+    // ════════════════════════════════════════════════════════════════════
+    // ① ALBEDO 段（1:1 复制 run_albedo_pass 主循环）
+    // ════════════════════════════════════════════════════════════════════
+    if (run_albedo) {
+        if (!knobs.has("reference_albedo") || !knobs.has("albedo_temp_gain") ||
+            !knobs.has("albedo_table")) {
+            diag("[albedo] knobs missing required keys (reference_albedo / albedo_temp_gain / albedo_table)");
+            return -1.0;
+        }
+        const float reference_albedo  = float(knobs["reference_albedo"]);
+        const float albedo_temp_gain  = float(knobs["albedo_temp_gain"]);
+        const float snow_cover_albedo = float(knobs.get("snow_cover_albedo", 0.75f));
+        const uint8_t cover_snow_id    = uint8_t(int(knobs.get("cover_snow_id", 1)));
+        const uint8_t cover_glacier_id = uint8_t(int(knobs.get("cover_glacier_id", 2)));
+
+        PackedFloat32Array albedo_arr = knobs["albedo_table"];
+        const int albedo_size = albedo_arr.size();
+        if (albedo_size <= 0) { diag("[albedo] albedo_table empty"); return -1.0; }
+        const float * const __restrict ALB = albedo_arr.ptr();
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+
+        // ─── Main loop（与 run_albedo_pass:3604-3617 完全一致）──────────
+        for (int i = 0; i < n_cells; ++i) {
+            if (IW[i] != 0) continue;
+            const uint8_t veg_id = VG[i];
+            float alb = (veg_id < albedo_size) ? ALB[veg_id] : 0.0f;
+            const uint8_t cover_id = CV[i];
+            if (cover_id == cover_snow_id || cover_id == cover_glacier_id) {
+                if (alb < snow_cover_albedo) alb = snow_cover_albedo;
+            }
+            const float dt = (reference_albedo - alb) * albedo_temp_gain;
+            float v = T[i] + dt;
+            if (v < 0.0f) v = 0.0f;
+            else if (v > 1.0f) v = 1.0f;
+            T[i] = v;
+        }
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        albedo_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        flush_temp = true;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // ② VEGETATION_DYNAMICS 段（1:1 复制 run_vegetation_dynamics_pass 主循环）
+    //    注意：读最新 T[]（如果 albedo 段刚写过，这里直接读到——共享 SoA）
+    // ════════════════════════════════════════════════════════════════════
+    PackedInt32Array out_indices_vd;     // 留到末尾写回 knobs
+    PackedByteArray  out_to_veg_vd;
+    int n_succ_vd = 0;
+    if (run_veg_dyn) {
+        // 标量
+        static const char *required_scalars[] = {
+            "day_scale", "streak_days",
+            "vitality_change_rate", "compat_harshness",
+            "low_threshold", "high_threshold",
+            "succession_degrade_days", "succession_upgrade_days",
+            "n_wt", "wt_clear_id", "veg_none_id",
+        };
+        for (const char *k : required_scalars) {
+            if (!knobs.has(k)) { diag("[veg_dyn] knobs missing required scalar key"); return -1.0; }
+        }
+        const float day_scale_raw = float(knobs["day_scale"]);
+        const float scale         = day_scale_raw < 1.0f ? 1.0f : day_scale_raw;
+        const int   streak_days   = int(knobs["streak_days"]);
+        const float rate          = float(knobs["vitality_change_rate"]);
+        const float harshness     = float(knobs["compat_harshness"]);
+        const float low_thresh    = float(knobs["low_threshold"]);
+        const float high_thresh   = float(knobs["high_threshold"]);
+        const int   degrade_days  = int(knobs["succession_degrade_days"]);
+        const int   upgrade_days  = int(knobs["succession_upgrade_days"]);
+        const int   n_wt          = int(knobs["n_wt"]);
+        const int   wt_clear_id   = int(knobs["wt_clear_id"]);
+        const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
+        if (n_wt <= 0) { diag("[veg_dyn] n_wt <= 0"); return -1.0; }
+
+        // 表
+        static const char *required_tables[] = {
+            "ideal_temp_table", "ideal_moist_table",
+            "temp_tol_table", "moist_tol_table",
+            "weather_penalty_table", "resistance_table",
+            "next_up_table", "next_down_table",
+        };
+        for (const char *k : required_tables) {
+            if (!knobs.has(k)) { diag("[veg_dyn] knobs missing required table key"); return -1.0; }
+        }
+        // 老路径（use_soa=false）：vit/streak 通过 knobs 传入 PackedArray
+        // 新路径（use_soa=true）： vit/streak 直接走 _slots[sid_*].arr_*
+        if (!use_soa) {
+            if (!knobs.has("vitality_arr") || !knobs.has("low_streak_arr") || !knobs.has("high_streak_arr")) {
+                diag("[veg_dyn] knobs missing vitality_arr/low_streak_arr/high_streak_arr (use_soa=false path)");
+                return -1.0;
+            }
+        }
+        PackedFloat32Array ideal_t_arr   = knobs["ideal_temp_table"];
+        PackedFloat32Array ideal_m_arr   = knobs["ideal_moist_table"];
+        PackedFloat32Array tol_t_arr     = knobs["temp_tol_table"];
+        PackedFloat32Array tol_m_arr     = knobs["moist_tol_table"];
+        PackedFloat32Array wt_pen_arr    = knobs["weather_penalty_table"];
+        PackedFloat32Array resist_arr    = knobs["resistance_table"];
+        PackedByteArray    next_up_arr   = knobs["next_up_table"];
+        PackedByteArray    next_down_arr = knobs["next_down_table"];
+
+        // VIT / LSK / HSK ptrw —— 二选一来源
+        float   *VIT = nullptr;
+        int32_t *LSK = nullptr;
+        int32_t *HSK = nullptr;
+        // 持有引用确保 ptrw 生命周期跨越整个 loop（老路径用 knobs 入口的 PackedArray，
+        // 新路径用 _slots 内部的 PackedArray —— 后者由 _slots 持有）
+        PackedFloat32Array vitality_arr;  // 老路径用
+        PackedInt32Array   low_streak;    // 老路径用
+        PackedInt32Array   high_streak;   // 老路径用
+        if (use_soa) {
+            Slot &s_vit  = _slots.write[sid_vit];
+            Slot &s_lsk  = _slots.write[sid_low_streak];
+            Slot &s_hsk  = _slots.write[sid_high_streak];
+            if (s_vit.arr_f32.size() != n_cells ||
+                s_lsk.arr_i32.size() != n_cells ||
+                s_hsk.arr_i32.size() != n_cells) {
+                diag("[veg_dyn] use_soa: vit/streak slot size != n_cells (bind_map_data missing?)");
+                return -1.0;
+            }
+            VIT = s_vit.arr_f32.ptrw();
+            LSK = s_lsk.arr_i32.ptrw();
+            HSK = s_hsk.arr_i32.ptrw();
+        } else {
+            vitality_arr = knobs["vitality_arr"];
+            low_streak   = knobs["low_streak_arr"];
+            high_streak  = knobs["high_streak_arr"];
+            if (vitality_arr.size() != n_cells || low_streak.size() != n_cells ||
+                high_streak.size() != n_cells) {
+                diag("[veg_dyn] vitality/streak in/out array size mismatch");
+                return -1.0;
+            }
+            VIT = vitality_arr.ptrw();
+            LSK = low_streak.ptrw();
+            HSK = high_streak.ptrw();
+        }
+
+        const int n_veg = ideal_t_arr.size();
+        if (n_veg <= 0) { diag("[veg_dyn] ideal_temp_table empty"); return -1.0; }
+        if (ideal_m_arr.size() != n_veg || tol_t_arr.size() != n_veg ||
+            tol_m_arr.size() != n_veg || next_up_arr.size() != n_veg ||
+            next_down_arr.size() != n_veg) {
+            diag("[veg_dyn] VEG-indexed table size mismatch");
+            return -1.0;
+        }
+        if (wt_pen_arr.size() < n_wt) { diag("[veg_dyn] weather_penalty_table size < n_wt"); return -1.0; }
+        if (resist_arr.size() != n_veg * n_wt) {
+            diag("[veg_dyn] resistance_table size != n_veg * n_wt");
+            return -1.0;
+        }
+
+        const float   * const __restrict IDT  = ideal_t_arr.ptr();
+        const float   * const __restrict IDM  = ideal_m_arr.ptr();
+        const float   * const __restrict TLT  = tol_t_arr.ptr();
+        const float   * const __restrict TLM  = tol_m_arr.ptr();
+        const float   * const __restrict WPN  = wt_pen_arr.ptr();
+        const float   * const __restrict RES  = resist_arr.ptr();
+        const uint8_t * const __restrict NXU  = next_up_arr.ptr();
+        const uint8_t * const __restrict NXD  = next_down_arr.ptr();
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+
+        std::vector<int32_t> succ_indices;
+        std::vector<uint8_t> succ_to_veg;
+        succ_indices.reserve(64);
+        succ_to_veg.reserve(64);
+
+        // ─── Main loop（与 run_vegetation_dynamics_pass:3778-3868 完全一致）─
+        for (int i = 0; i < n_cells; ++i) {
+            if (IW[i] != 0) continue;
+            const uint8_t v_id = VG[i];
+            const float temp = T[i];        // 共享 SoA：若 albedo 刚写过，这里读到 albedo 输出
+            const float moist = M[i];
+
+            float compat = 0.0f;
+            if (v_id < n_veg) {
+                const float tt = TLT[v_id] < 0.01f ? 0.01f : TLT[v_id];
+                const float tm = TLM[v_id] < 0.01f ? 0.01f : TLM[v_id];
+                const float dt = (temp  - IDT[v_id]) / tt;
+                const float dm = (moist - IDM[v_id]) / tm;
+                const float k = 0.5f * (dt * dt + dm * dm);
+                compat = std::exp(-k);
+            }
+
+            float dv = 0.0f;
+            if (v_id != veg_none_id) {
+                if (compat >= 0.6f) {
+                    dv = (compat - 0.5f) * 2.0f * rate;
+                } else if (compat <= 0.4f) {
+                    dv = -(0.5f - compat) * 2.0f * rate * harshness;
+                }
+            }
+
+            int wt = wt_clear_id;
+            float wi = 0.0f;
+            if (WTIN[i] != 0) {
+                wt = int(WTT[i]);
+                wi = WTI[i];
+            }
+            float base_pen = (wt >= 0 && wt < wt_pen_arr.size()) ? WPN[wt] : 0.0f;
+            float resist = 0.0f;
+            if (v_id < n_veg && wt >= 0 && wt < n_wt) {
+                resist = RES[int(v_id) * n_wt + wt];
+            }
+            const float penalty = base_pen * wi * (1.0f - resist);
+            dv -= penalty;
+
+            float vit = VIT[i] + dv * scale;
+            if (vit < 0.0f) vit = 0.0f;
+            else if (vit > 1.0f) vit = 1.0f;
+            VIT[i] = vit;
+
+            int ls = LSK[i];
+            int hs = HSK[i];
+            if (vit < low_thresh) {
+                ls += streak_days;
+                hs = 0;
+            } else if (vit > high_thresh) {
+                hs += streak_days;
+                ls = 0;
+            } else {
+                ls -= streak_days; if (ls < 0) ls = 0;
+                hs -= streak_days; if (hs < 0) hs = 0;
+            }
+
+            bool fired = false;
+            if (ls >= degrade_days) {
+                uint8_t nxt = (v_id < n_veg) ? NXD[v_id] : v_id;
+                if (nxt != v_id) {
+                    succ_indices.push_back(i);
+                    succ_to_veg.push_back(nxt);
+                    ls = 0;
+                    hs = 0;
+                    fired = true;
+                } else {
+                    ls = 0;
+                }
+            }
+            if (!fired && hs >= upgrade_days) {
+                uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
+                if (nxt != v_id) {
+                    succ_indices.push_back(i);
+                    succ_to_veg.push_back(nxt);
+                    ls = 0;
+                    hs = 0;
+                } else {
+                    hs = 0;
+                }
+            }
+            LSK[i] = ls;
+            HSK[i] = hs;
+        }
+
+        // 演替输出 → out_*_vd（最后统一写回 knobs）
+        n_succ_vd = int(succ_indices.size());
+        out_indices_vd.resize(n_succ_vd);
+        out_to_veg_vd.resize(n_succ_vd);
+        if (n_succ_vd > 0) {
+            std::memcpy(out_indices_vd.ptrw(), succ_indices.data(), n_succ_vd * sizeof(int32_t));
+            std::memcpy(out_to_veg_vd.ptrw(),  succ_to_veg.data(),  n_succ_vd * sizeof(uint8_t));
+        }
+
+        // 写回 in/out arrays —— 仅老路径（use_soa=false）需要把 vit/streak
+        // PackedArray 重新塞回 knobs 让 GDScript caller unpack。新路径下
+        // _slots 已经被 ptrw 直接修改，末尾 _flush_slot_to_map 会 ref-swap
+        // 推回 MapData，GDScript 不需要 unpack。
+        if (!use_soa) {
+            knobs["vitality_arr"]    = vitality_arr;
+            knobs["low_streak_arr"]  = low_streak;
+            knobs["high_streak_arr"] = high_streak;
+        }
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        veg_dyn_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+    // 即使 run_veg_dyn=false，也写空的演替结果保证 caller 端 unpack 安全
+    knobs["succession_indices"]    = out_indices_vd;
+    knobs["succession_to_veg"]     = out_to_veg_vd;
+    knobs["stat_succession_count"] = n_succ_vd;
+
+    // ════════════════════════════════════════════════════════════════════
+    // ③ FEEDBACK 段（1:1 复制 run_climate_feedback_pass 主循环）
+    // ════════════════════════════════════════════════════════════════════
+    if (run_feedback) {
+        static const char *required_scalars[] = {
+            "soil_gain", "veg_gain", "scale", "per_day_clamp",
+            "ocean_drift_gain",
+            "wt_rain_id", "wt_storm_id", "wt_monsoon_id",
+            "wt_blizzard_id", "wt_drought_id", "wt_heatwave_id",
+        };
+        for (const char *k : required_scalars) {
+            if (!knobs.has(k)) { diag("[feedback] knobs missing required scalar key"); return -1.0; }
+        }
+        const float soil_gain        = float(knobs["soil_gain"]);
+        const float veg_gain         = float(knobs["veg_gain"]);
+        const float scale            = float(knobs["scale"]);
+        const float per_day_clamp    = float(knobs["per_day_clamp"]);
+        const float ocean_drift_gain = float(knobs["ocean_drift_gain"]);
+        const int   wt_rain_id       = int(knobs["wt_rain_id"]);
+        const int   wt_storm_id      = int(knobs["wt_storm_id"]);
+        const int   wt_monsoon_id    = int(knobs["wt_monsoon_id"]);
+        const int   wt_blizzard_id   = int(knobs["wt_blizzard_id"]);
+        const int   wt_drought_id    = int(knobs["wt_drought_id"]);
+        const int   wt_heatwave_id   = int(knobs["wt_heatwave_id"]);
+
+        if (!knobs.has("neighbor_indices")) {
+            diag("[feedback] knobs missing neighbor_indices");
+            return -1.0;
+        }
+        // 老路径（use_soa=false）：tta/soil/vg 通过 knobs 传入 PackedArray
+        // 新路径（use_soa=true）： 直接走 _slots[sid_*].arr_f32
+        if (!use_soa) {
+            if (!knobs.has("temp_transport_anomaly") ||
+                !knobs.has("soil_moisture_arr") || !knobs.has("veg_growth_pressure_arr")) {
+                diag("[feedback] knobs missing required PackedArray key (use_soa=false path)");
+                return -1.0;
+            }
+        }
+        PackedInt32Array   nb_arr   = knobs["neighbor_indices"];
+        if (nb_arr.size() < n_cells * 6) { diag("[feedback] neighbor_indices size < n_cells * 6"); return -1.0; }
+        const int32_t * const __restrict NB    = nb_arr.ptr();
+
+        // tta（read）/ soil（read+write）/ vg（read+write）—— 二选一来源
+        const float *TTA  = nullptr;
+        float       *SOIL = nullptr;
+        float       *VGP  = nullptr;
+        // 老路径下持有 PackedArray 引用确保 ptrw 生命周期
+        PackedFloat32Array tta_arr;
+        PackedFloat32Array soil_arr;
+        PackedFloat32Array vg_arr;
+        if (use_soa) {
+            Slot &s_tta  = _slots.write[sid_tta];
+            Slot &s_soil = _slots.write[sid_soil];
+            Slot &s_vgp  = _slots.write[sid_vgp];
+            if (s_tta.arr_f32.size()  != n_cells ||
+                s_soil.arr_f32.size() != n_cells ||
+                s_vgp.arr_f32.size()  != n_cells) {
+                diag("[feedback] use_soa: tta/soil/vg slot size != n_cells (bind_map_data missing?)");
+                return -1.0;
+            }
+            TTA  = s_tta.arr_f32.ptr();
+            SOIL = s_soil.arr_f32.ptrw();
+            VGP  = s_vgp.arr_f32.ptrw();
+        } else {
+            tta_arr  = knobs["temp_transport_anomaly"];
+            soil_arr = knobs["soil_moisture_arr"];
+            vg_arr   = knobs["veg_growth_pressure_arr"];
+            if (tta_arr.size() != n_cells)   { diag("[feedback] temp_transport_anomaly size mismatch"); return -1.0; }
+            if (soil_arr.size() != n_cells)  { diag("[feedback] soil_moisture_arr size mismatch"); return -1.0; }
+            if (vg_arr.size() != n_cells)    { diag("[feedback] veg_growth_pressure_arr size mismatch"); return -1.0; }
+            TTA  = tta_arr.ptr();
+            SOIL = soil_arr.ptrw();
+            VGP  = vg_arr.ptrw();
+        }
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+
+        // ─── Main loop（与 run_climate_feedback_pass:3992-4056 完全一致）─
+        for (int i = 0; i < n_cells; ++i) {
+            if (IW[i] != 0) continue;
+
+            if (ocean_drift_gain > 0.0f) {
+                float sum_an = 0.0f;
+                int   n_water = 0;
+                const int base = i * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t ni = NB[base + d];
+                    if (ni < 0) continue;
+                    if (IW[ni] != 0) {
+                        sum_an += TTA[ni];
+                        n_water += 1;
+                    }
+                }
+                if (n_water > 0) {
+                    const float avg_an = sum_an / float(n_water);
+                    if (std::fabs(avg_an) > 0.005f) {
+                        float coastal_ratio = float(n_water) / 6.0f;
+                        if (coastal_ratio > 1.0f) coastal_ratio = 1.0f;
+                        float d_base = ocean_drift_gain * avg_an * coastal_ratio * scale;
+                        if (d_base < -per_day_clamp) d_base = -per_day_clamp;
+                        else if (d_base > per_day_clamp) d_base = per_day_clamp;
+                        float bm = BM[i] + d_base;
+                        if (bm < 0.0f) bm = 0.0f;
+                        else if (bm > 1.0f) bm = 1.0f;
+                        BM[i] = bm;
+                    }
+                }
+            }
+
+            const bool init = WTIN[i] != 0;
+            const int   wt = init ? int(WTT[i]) : -1;
+            const float wi = init ? WTI[i] : 0.0f;
+            if (wi < 0.01f) continue;
+
+            float precip = 0.0f;
+            if      (wt == wt_rain_id)     precip = wi;
+            else if (wt == wt_storm_id)    precip = wi * 0.8f;
+            else if (wt == wt_monsoon_id)  precip = wi * 1.2f;
+            else if (wt == wt_blizzard_id) precip = wi * 0.3f;
+            else if (wt == wt_drought_id)  precip = -wi * 0.6f;
+            else if (wt == wt_heatwave_id) precip = -wi * 0.4f;
+
+            float d_soil = soil_gain * precip * scale;
+            if (d_soil < -per_day_clamp) d_soil = -per_day_clamp;
+            else if (d_soil > per_day_clamp) d_soil = per_day_clamp;
+            float soil = SOIL[i] + d_soil;
+            if (soil < -0.5f) soil = -0.5f;
+            else if (soil > 0.5f) soil = 0.5f;
+            SOIL[i] = soil;
+
+            float d_veg = veg_gain * precip * scale;
+            if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
+            else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
+            float vg_v = VGP[i] + d_veg;
+            if (vg_v < -0.5f) vg_v = -0.5f;
+            else if (vg_v > 0.5f) vg_v = 0.5f;
+            VGP[i] = vg_v;
+        }
+
+        // 写回 in/out arrays —— 仅老路径需要把 soil/vg 重新塞回 knobs；
+        // 新路径下 _slots 已被 ptrw 直接修改，末尾 _flush_slot_to_map 推回。
+        if (!use_soa) {
+            knobs["soil_moisture_arr"]       = soil_arr;
+            knobs["veg_growth_pressure_arr"] = vg_arr;
+        }
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        feedback_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        flush_base_m = true;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 末尾批量 flush（仅推 SoA 写出过的 slot；Variant 引用交换 O(1)）
+    // ════════════════════════════════════════════════════════════════════
+    if (flush_temp)   _flush_slot_to_map(sid_temp);
+    if (flush_base_m) _flush_slot_to_map(sid_base_m);
+    // B3b：use_soa 路径下，veg_dyn 段写过 vit/low/high，feedback 段写过 soil/vg。
+    // 这些 slot 的 arr_f32 / arr_i32 已经被 ptrw 直接修改，需要 _flush_slot_to_map
+    // 把 _slots[].arr_* 推回 MapData.<map_field>（CoW 引用交换 O(1)）。
+    // 老路径下这些 slot 没人写，flush 无害，但为了代码简洁仅在 use_soa=true 时 flush。
+    if (use_soa) {
+        if (run_veg_dyn) {
+            _flush_slot_to_map(sid_vit);
+            _flush_slot_to_map(sid_low_streak);
+            _flush_slot_to_map(sid_high_streak);
+        }
+        if (run_feedback) {
+            _flush_slot_to_map(sid_soil);
+            _flush_slot_to_map(sid_vgp);
+        }
+    }
+
+    // 计时回填
+    knobs["albedo_ms"]   = albedo_ms;
+    knobs["veg_dyn_ms"]  = veg_dyn_ms;
+    knobs["feedback_ms"] = feedback_ms;
+
+    auto t_total_1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t_total_1 - t_total_0).count();
+}
+
 // ─── F.6 main pass ──────────────────────────────────────────────────────────
 //
 // 1:1 mirror of scripts/weather/weather_front.gd::advance_one_day +
@@ -5052,6 +5669,281 @@ Dictionary DCWorldExt::run_weather_summary_fronts_pass(const Dictionary &knobs) 
     out["elapsed_ms"] = elapsed;
     out["fronts"] = fronts_out;
     return out;
+}
+
+// ─── plan/weather-refresh-cpp-all: cyclone wake step ─────────────────────
+//
+// 1:1 移植 scripts/weather/front_advect.gd::tick_cyclone_wake。维护
+// _cyclone_perturbations（跨 tick 存活）。
+//
+// 算法（与 GDScript 严格 bit-equal）：
+//   1) 衰减/淘汰：每个 entry days_left -= 1，<=0 删除；否则
+//      vec = vec_init * float(days_left) / float(max(init_days, 1))
+//   2) 注入：遍历 fronts_from_summary（Array[Dictionary]），仅
+//      type == STORM (knobs["cyclone_storm_type_id"]) && intensity >= 0.8
+//      且中心 cell 是水面（is_water_lut[terrain]）时注入：
+//        wind = velocity；若 length_sq < 1e-4 则 wind = (1,0)
+//        tangent = (-wind.y, wind.x).normalized()
+//        perturb = tangent * intensity * 0.6
+//        key = cell.q * 10000 + cell.r
+//      若同 key 已存在则覆盖（与 GDScript Dictionary 同语义）。
+//
+// 知识库笔记（front_advect.gd 注释）：扰动 key 必须用 q*10000+r，不是
+// summary_qr_to_idx 的 (q<<32)^r 编码，否则 GDScript 镜像 bit-not-equal。
+double DCWorldExt::cyclone_wake_step(const Dictionary &knobs,
+                                     const Array &fronts_from_summary) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ─── knobs ──────────────────────────────────────────────────────────
+    if (!knobs.has("hex_size") || !knobs.has("cyclone_wake_days") ||
+        !knobs.has("cyclone_storm_type_id") || !knobs.has("water_terrain_ids") ||
+        !knobs.has("cell_q_arr") || !knobs.has("cell_r_arr") ||
+        !knobs.has("n_cells")) {
+        // 缺 key 则只做衰减/淘汰（不注入），保持 best-effort
+        // 但发出一次 warning 便于排查
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] cyclone_wake_step: missing knob (need hex_size/"
+            "cyclone_wake_days/cyclone_storm_type_id/water_terrain_ids/"
+            "cell_q_arr/cell_r_arr/n_cells)");
+    }
+    const float hex_size = float(knobs.get("hex_size", 1.0f));
+    const int cyclone_wake_days = int(knobs.get("cyclone_wake_days", 7));
+    const int storm_type_id = int(knobs.get("cyclone_storm_type_id", -1));
+    const int n_cells = int(knobs.get("n_cells", 0));
+    PackedByteArray  water_ids = knobs.get("water_terrain_ids", PackedByteArray());
+    PackedInt32Array cell_q    = knobs.get("cell_q_arr", PackedInt32Array());
+    PackedInt32Array cell_r    = knobs.get("cell_r_arr", PackedInt32Array());
+
+    // ─── Phase 1: 衰减 / 淘汰 ───────────────────────────────────────────
+    // 等价 GDScript: days_left -= 1；<=0 删除；否则 vec = vec_init * days_left/init_days
+    {
+        size_t write = 0;
+        for (size_t read = 0; read < _cyclone_perturbations.size(); ++read) {
+            CycloneWakeEntry &e = _cyclone_perturbations[read];
+            const int new_days = e.days_left - 1;
+            if (new_days <= 0) {
+                continue; // 淘汰
+            }
+            e.days_left = new_days;
+            const int denom = std::max(e.init_days, 1);
+            const float scale = float(new_days) / float(denom);
+            e.vec = e.vec_init * scale;
+            if (write != read) {
+                _cyclone_perturbations[write] = e;
+            }
+            ++write;
+        }
+        _cyclone_perturbations.resize(write);
+    }
+
+    // ─── Phase 2: 注入 ──────────────────────────────────────────────────
+    // 前置：需要 fronts 列表 + cell terrain SoA + q/r 反查 + water LUT。
+    // 任一缺失则跳过注入（衰减/淘汰仍生效）。
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    if (sid_terrain < 0 || n_cells <= 0 || water_ids.size() <= 0 ||
+        cell_q.size() < n_cells || cell_r.size() < n_cells ||
+        storm_type_id < 0 || cyclone_wake_days <= 0) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+    Slot &s_terrain = _slots.write[sid_terrain];
+    if (int(s_terrain.arr_u8.size()) < n_cells) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+    const uint8_t * const TERR = s_terrain.arr_u8.ptr();
+
+    // is_water LUT（与 summary / sea_ice / wind 同模式）
+    bool is_water_lut[256];
+    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
+    for (int k = 0; k < water_ids.size(); ++k) {
+        const int wid = int(water_ids[k]);
+        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
+    }
+
+    // 复用 _summary_qr_to_idx（summary pass 已 lazy 填好）；若 size 不匹配
+    // 则跳过注入（与 summary pass 同一防御）。
+    const bool qr_idx_ready = (_summary_qr_to_idx_size == n_cells &&
+                               !_summary_qr_to_idx.empty());
+
+    // 与 summary pass 的 world_to_cube 严格 1:1（含 _cube_round）
+    const double SQRT3 = 1.7320508075688772;
+    auto world_to_qr = [&](Vector2 p, int &out_q, int &out_r) -> bool {
+        if (hex_size <= 0.0f) return false;
+        const double q_f = (SQRT3 / 3.0 * double(p.x) - 1.0 / 3.0 * double(p.y)) / double(hex_size);
+        const double r_f = (2.0 / 3.0 * double(p.y)) / double(hex_size);
+        const double s_f = -q_f - r_f;
+        int rq = int(std::lround(q_f));
+        int rr = int(std::lround(r_f));
+        int rs = int(std::lround(s_f));
+        const double dq = std::abs(double(rq) - q_f);
+        const double dr = std::abs(double(rr) - r_f);
+        const double ds = std::abs(double(rs) - s_f);
+        if (dq > dr && dq > ds) {
+            rq = -rr - rs;
+        } else if (dr > ds) {
+            rr = -rq - rs;
+        }
+        out_q = rq;
+        out_r = rr;
+        return true;
+    };
+
+    auto qr_to_cell_idx = [&](int q, int r) -> int {
+        if (!qr_idx_ready) return -1;
+        const int64_t key = (int64_t(q) << 32) ^ (uint32_t(r) & 0xFFFFFFFFu);
+        auto it = _summary_qr_to_idx.find(key);
+        return (it == _summary_qr_to_idx.end()) ? -1 : it->second;
+    };
+
+    // 注入遍历
+    const int n_fronts = fronts_from_summary.size();
+    for (int fi = 0; fi < n_fronts; ++fi) {
+        const Dictionary f = fronts_from_summary[fi];
+        const int ftype = int(f.get("type", -1));
+        if (ftype != storm_type_id) continue;
+        const float intensity = float(f.get("intensity", 0.0f));
+        if (intensity < 0.8f) continue;
+        const Vector2 center = f.get("center", Vector2());
+
+        int q = 0, r = 0;
+        if (!world_to_qr(center, q, r)) continue;
+        const int idx = qr_to_cell_idx(q, r);
+        if (idx < 0 || idx >= n_cells) continue;
+        if (!is_water_lut[TERR[idx]]) continue;
+
+        Vector2 wind = f.get("velocity", Vector2());
+        if (wind.length_squared() < 1e-4f) {
+            wind = Vector2(1.0f, 0.0f);
+        }
+        Vector2 tangent = Vector2(-wind.y, wind.x).normalized();
+        const Vector2 perturb = tangent * intensity * 0.6f;
+
+        const int64_t key_gd = int64_t(cell_q[idx]) * 10000LL + int64_t(cell_r[idx]);
+
+        // 若 key 已存在则覆盖（与 GDScript Dictionary 赋值同语义）
+        bool replaced = false;
+        for (auto &e : _cyclone_perturbations) {
+            if (e.key == key_gd) {
+                e.cell_idx  = idx;
+                e.vec       = perturb;
+                e.vec_init  = perturb;
+                e.days_left = cyclone_wake_days;
+                e.init_days = cyclone_wake_days;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            CycloneWakeEntry ne;
+            ne.key       = key_gd;
+            ne.cell_idx  = idx;
+            ne.vec       = perturb;
+            ne.vec_init  = perturb;
+            ne.days_left = cyclone_wake_days;
+            ne.init_days = cyclone_wake_days;
+            _cyclone_perturbations.push_back(ne);
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── plan/weather-refresh-cpp-all: cyclone perturbations 镜像导出 ────────
+Dictionary DCWorldExt::get_cyclone_perturbations_dict() const {
+    Dictionary out;
+    out.clear();
+    for (const auto &e : _cyclone_perturbations) {
+        Dictionary d;
+        d["vec"]        = e.vec;
+        d["vec_init"]   = e.vec_init;
+        d["days_left"]  = e.days_left;
+        d["init_days"]  = e.init_days;
+        // key 用 int64 —— GDScript Dictionary 接受 int key（自动 Variant::INT）
+        out[godot::Variant(int64_t(e.key))] = d;
+    }
+    return out;
+}
+
+// ─── plan/weather-refresh-cpp-all: 顶层一体化 weather refresh pass ───────
+//
+// 串调 5 段：① field_solve ② distribute ③ summary ④ cyclone_wake ⑤ stage_b
+// 任一段失败立即短路返回 { rc:-1, fail_stage:"..." }，caller 走 GDScript fallback。
+//
+// 子 pass 返回类型不齐：
+//   field_solve / stage_b → double (ms; <0 表 fallback)
+//   distribute / summary  → Dictionary { elapsed_ms, ... }
+// 顶层 pass 统一抽 ms 字段写到 breakdown。
+Dictionary DCWorldExt::run_weather_refresh_daily_pass(const Dictionary &knobs) {
+    Dictionary br;
+    auto t_top0 = std::chrono::high_resolution_clock::now();
+
+    auto fail = [&](const char *stage) -> Dictionary {
+        br["rc"] = -1;
+        br["fail_stage"] = String(stage);
+        auto t_e = std::chrono::high_resolution_clock::now();
+        br["total_ms"] = std::chrono::duration<double, std::milli>(t_e - t_top0).count();
+        return br;
+    };
+
+    // ① field solve（返回 double ms；<0 即失败）
+    const double field_ms = run_weather_field_solve_pass(knobs);
+    if (field_ms < 0.0) return fail("field_solve");
+    br["advance_ms"] = field_ms;
+
+    // ② distribute（返回 Dictionary { elapsed_ms, cover_dirty }）
+    const Dictionary r_dist = run_weather_distribute_pass(knobs);
+    const double dist_ms = double(r_dist.get("elapsed_ms", -1.0));
+    if (dist_ms < 0.0) return fail("distribute");
+    br["distribute_ms"] = dist_ms;
+    br["cover_dirty"]   = r_dist.get("cover_dirty", false);
+
+    // ③ summary fronts（返回 Dictionary { elapsed_ms, fronts: Array[Dictionary] }）
+    const Dictionary r_summary = run_weather_summary_fronts_pass(knobs);
+    const double summary_ms = double(r_summary.get("elapsed_ms", -1.0));
+    if (summary_ms < 0.0) return fail("summary");
+    const Array fronts_arr = r_summary.get("fronts", Array());
+    br["summary_ms"]   = summary_ms;
+    br["fronts_count"] = fronts_arr.size();
+    br["fronts"]       = fronts_arr;
+
+    // ④ cyclone wake（私有 step；只产 ms，副作用维护 _cyclone_perturbations）
+    const double cyclone_ms = cyclone_wake_step(knobs, fronts_arr);
+    br["cyclone_ms"] = cyclone_ms;
+
+    // ⑤ stage_b（返回 double ms 合计；<0 即失败）。
+    // 注：stage_b_pass sig 是 by-value Dictionary（会写回 succession_indices/
+    // succession_to_veg/stat_succession_count + 单段 albedo_ms/veg_dyn_ms/
+    // feedback_ms）。我们 by-value 复制一份让它写回到 local 副本，再把回写
+    // 字段合并到 br。
+    Dictionary stage_b_knobs = knobs; // shallow copy；godot Dictionary 写回会
+                                       // 在 shared backing 上发生（refcount），
+                                       // 这里复制 Variant header 即可。
+    const double stage_b_ms = run_stage_b_pass(stage_b_knobs);
+    if (stage_b_ms < 0.0) return fail("stage_b");
+    br["stage_b_ms"]   = stage_b_ms;
+    br["albedo_ms"]    = stage_b_knobs.get("albedo_ms",   0.0);
+    br["veg_dyn_ms"]   = stage_b_knobs.get("veg_dyn_ms",  0.0);
+    br["feedback_ms"]  = stage_b_knobs.get("feedback_ms", 0.0);
+    if (stage_b_knobs.has("succession_indices")) {
+        br["succession_indices"]    = stage_b_knobs["succession_indices"];
+        br["succession_to_veg"]     = stage_b_knobs["succession_to_veg"];
+        br["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+    }
+
+    // 顶层 total
+    auto t_top1 = std::chrono::high_resolution_clock::now();
+    const double total_ms = std::chrono::duration<double, std::milli>(t_top1 - t_top0).count();
+    br["weather_tick_ms"] = total_ms;
+    br["total_ms"]        = total_ms;
+    br["rc"]              = 0;
+    return br;
 }
 
 void DCWorldExt::reset_weather_summary_state() {
@@ -7717,6 +8609,9 @@ void DCWorldExt::_bind_methods() {
 
     // Mode-B snapshot API (recommended; see performance-charter.md §12)
     ClassDB::bind_method(D_METHOD("snapshot_f32", "comp_id"), &DCWorldExt::snapshot_f32);
+    // B3b：snapshot_i32 / snapshot_u8 给 streak（I32）+ 后续 save/overlay 补齐
+    ClassDB::bind_method(D_METHOD("snapshot_i32", "comp_id"), &DCWorldExt::snapshot_i32);
+    ClassDB::bind_method(D_METHOD("snapshot_u8",  "comp_id"), &DCWorldExt::snapshot_u8);
 
     ClassDB::bind_method(D_METHOD("write_f32", "comp_id", "idx", "v"), &DCWorldExt::write_f32);
     ClassDB::bind_method(D_METHOD("write_i32", "comp_id", "idx", "v"), &DCWorldExt::write_i32);
@@ -7780,6 +8675,12 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_climate_feedback_pass", "knobs"),
         &DCWorldExt::run_climate_feedback_pass);
+    // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine）──────────────────
+    //   合并 albedo + veg_dyn + feedback 单 cpp call，消除 GDScript 端
+    //   pack/unpack 围栏；目标 stage_b 6–15ms → ≤ 1.5ms
+    ClassDB::bind_method(
+        D_METHOD("run_stage_b_pass", "knobs"),
+        &DCWorldExt::run_stage_b_pass);
     ClassDB::bind_method(
         D_METHOD("run_weather_front_advect_pass", "knobs"),
         &DCWorldExt::run_weather_front_advect_pass);
@@ -7802,6 +8703,14 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("restore_weather_summary_state"),
         &DCWorldExt::restore_weather_summary_state);
+
+    // ─── plan/weather-refresh-cpp-all: 顶层一体化 weather refresh ────────
+    ClassDB::bind_method(
+        D_METHOD("run_weather_refresh_daily_pass", "knobs"),
+        &DCWorldExt::run_weather_refresh_daily_pass);
+    ClassDB::bind_method(
+        D_METHOD("get_cyclone_perturbations_dict"),
+        &DCWorldExt::get_cyclone_perturbations_dict);
 
     // Block B: ocean_currents wind solver (dots-wind-validation.md)
     ClassDB::bind_method(

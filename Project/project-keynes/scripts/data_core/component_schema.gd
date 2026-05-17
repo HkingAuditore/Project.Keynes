@@ -41,8 +41,8 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 38 条（截至 2026-05-12，与 component_ids.gd / world.gd /
-#     world_ext.cpp BIND_TABLE 1:1 镜像）────────────────────────────────────
+# ─── CELL_SCHEMA — 50 条（截至 2026-05-17，B3b 新增 6 条植被动力学字段；
+#     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
 # `ClimateProfile.demo_thermal_gradient_enabled` 为 true 时才被
@@ -99,6 +99,16 @@ const CELL_SCHEMA: Array = [
 	# ─── Phase 3a Step 2.1.a（2 条，对应 world.gd 711-712）─────────────────
 	{ name = &"cell.ema_initialized",       cpp_name = "cell_ema_initialized",       dtype = U8,  track_prev = false, map_field = "ema_initialized_arr",       prev_field = "", owner = "climate.pass_a" },
 	{ name = &"cell.temp_season_offset",    cpp_name = "cell_temp_season_offset",    dtype = F32, track_prev = false, map_field = "temp_season_offset_arr",    prev_field = "", owner = "climate.pass_a" },
+	# ─── B3b：植被动力学字段全量下沉 SoA（6 条，4 f32 + 2 i32）─────────────
+	# 消除 stage_b combined pass 的 pack/unpack hot loop（原 ~7ms wall 的 95%）。
+	# 命名严格 1:1 对齐 HexCell 字段名，方便阶段 3 把 _trigger_succession /
+	# legacy fallback 改成 `world.write_f32_range(slot_id, ...)` 时搜索/重构。
+	{ name = &"cell.vegetation_vitality",        cpp_name = "cell_vegetation_vitality",        dtype = F32, track_prev = false, map_field = "vegetation_vitality_arr",        prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vitality_low_streak",        cpp_name = "cell_vitality_low_streak",        dtype = I32, track_prev = false, map_field = "vitality_low_streak_arr",        prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vitality_high_streak",       cpp_name = "cell_vitality_high_streak",       dtype = I32, track_prev = false, map_field = "vitality_high_streak_arr",       prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.soil_moisture",              cpp_name = "cell_soil_moisture",              dtype = F32, track_prev = false, map_field = "soil_moisture_arr",              prev_field = "", owner = "climate.feedback" },
+	{ name = &"cell.vegetation_growth_pressure", cpp_name = "cell_vegetation_growth_pressure", dtype = F32, track_prev = false, map_field = "vegetation_growth_pressure_arr", prev_field = "", owner = "climate.feedback" },
+	{ name = &"cell.temperature_transport_anomaly", cpp_name = "cell_temperature_transport_anomaly", dtype = F32, track_prev = false, map_field = "temperature_transport_anomaly_arr", prev_field = "", owner = "climate.feedback" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。
