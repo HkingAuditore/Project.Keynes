@@ -111,6 +111,7 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_solve_ms = 0.0
 	_field_slice_last_ms = 0.0
 	_field_slice_results_in_soa = false
+	_field_slice_native_convergence_boost = false
 	_field_slice_refresh_convergence = ((_weather_system._field_solve_tick - 1) % _weather_system._field_convergence_refresh_stride) == 0
 	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = _field_slice_cells.size()
@@ -218,6 +219,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 			# C++ 完成全量。把 SoA 拷回 _field_slice_next_*，让 commit_* 看到一致
 			# 数据；cursor 推进到末尾，slice 标记为 done。
 			_field_slice_results_in_soa = true
+			_field_slice_native_convergence_boost = _field_slice_refresh_convergence \
+				and not _weather_system._field_verify_enabled
 			# A/B 验证（dev 诊断 only）：在 C++ 写完 SoA 之后，把 next_* 快照、
 			# 复位 SoA、跑一遍 GDScript loop 写到独立缓冲区，然后逐 cell 对账。
 			# 失败时 push_warning 并打首次发散位置；不影响本 tick commit（commit
@@ -466,7 +469,7 @@ func commit() -> Array[WeatherFront]:
 				_data_core_world.write_u8_range(_cid_wfi, 0, soa_field_init)
 	var commit_dc_ms: float = (Time.get_ticks_usec() - t_commit_dc_us) / 1000.0
 	var commit_convergence_ms: float = 0.0
-	if _field_slice_refresh_convergence:
+	if _field_slice_refresh_convergence and not _field_slice_native_convergence_boost:
 		var t_commit_conv_us: int = Time.get_ticks_usec()
 		_weather_system._apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
 		commit_convergence_ms = (Time.get_ticks_usec() - t_commit_conv_us) / 1000.0
@@ -963,6 +966,7 @@ var _field_slice_next_type: PackedInt32Array = PackedInt32Array()
 var _field_slice_solve_ms: float = 0.0
 var _field_slice_last_ms: float = 0.0
 var _field_slice_results_in_soa: bool = false
+var _field_slice_native_convergence_boost: bool = false
 var _cached_cell_pos: PackedVector2Array = PackedVector2Array()
 var _cached_cell_pos_map_id: int = 0
 var _cached_cell_pos_n: int = 0

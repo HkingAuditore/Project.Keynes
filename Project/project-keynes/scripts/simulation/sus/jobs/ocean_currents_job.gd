@@ -127,6 +127,12 @@ func should_run(ctx: SusTickContext) -> bool:
 	# Guard against missing dependencies (e.g. before bake_world finishes).
 	if baker == null or world == null or map == null or cfg == null:
 		return false
+	if not _round_active and _phase_int_seen != -9999:
+		var phase_now: float = ctx.season_phase
+		if season_phase_getter.is_valid():
+			phase_now = float(season_phase_getter.call())
+		if int(floor(phase_now)) == _phase_int_seen:
+			return false
 	# Always defer to policy, even when a round is in flight: that keeps the
 	# 'one slice every ticks_per_slice ticks' cadence intact (e.g. 1 slice
 	# every 3 days). Drift of mid-round phase is bounded by the locked

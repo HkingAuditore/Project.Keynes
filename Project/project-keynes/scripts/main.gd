@@ -818,12 +818,14 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("job_unattributed_ms", 0.0)),
 						])
 					if wb.has("field_commit_total_ms"):
-						print("        weather_commit total=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f" % [
+						print("        weather_commit inner=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f dist=%.1f summary=%.1f" % [
 							float(wb.get("field_commit_total_ms", 0.0)),
 							float(wb.get("field_commit_setup_ms", 0.0)),
 							float(wb.get("field_commit_loop_ms", 0.0)),
 							float(wb.get("field_commit_dc_ms", 0.0)),
 							float(wb.get("field_commit_convergence_ms", 0.0)),
+							float(wb.get("distribute_ms", 0.0)),
+							float(wb.get("field_summary_ms", 0.0)),
 						])
 					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
 					# 真相源 = ClimateProfile.use_data_core_weather（F9 实时切换的旗子）

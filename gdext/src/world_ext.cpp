@@ -593,6 +593,110 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     return _bound;
 }
 
+Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
+    Dictionary out;
+    _native_world_configured = false;
+    _native_world_cell_count = 0;
+    _native_daily_tick_count = 0;
+    _native_fronts_snapshot.clear();
+    _native_dirty_report.clear();
+
+    if (!_bound || _map_data == nullptr) {
+        out["rc"] = -1;
+        out["reason"] = String("not_bound");
+        return out;
+    }
+
+    _native_world_cell_count = int(knobs.get("cell_count", _entity_count));
+    if (_native_world_cell_count <= 0) {
+        _native_world_cell_count = _entity_count;
+    }
+    _native_daily_perf_target_ms = double(knobs.get("native_daily_perf_target_ms", 1.0));
+    _native_world_configured = true;
+
+    _native_dirty_report["atlas_dirty"] = false;
+    _native_dirty_report["enum_atlas_dirty"] = false;
+    _native_dirty_report["sea_ice_atlas_dirty"] = false;
+    _native_dirty_report["dirty_cell_count"] = 0;
+    _native_dirty_report["configured_cell_count"] = _native_world_cell_count;
+
+    out["rc"] = 0;
+    out["reason"] = String("configured");
+    out["cell_count"] = _native_world_cell_count;
+    out["component_count"] = component_count();
+    out["entity_count"] = entity_count();
+    out["native_daily_perf_target_ms"] = _native_daily_perf_target_ms;
+    return out;
+}
+
+Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
+    Dictionary out;
+    const auto t0 = std::chrono::high_resolution_clock::now();
+
+    if (!_native_world_configured) {
+        out["rc"] = -1;
+        out["fail_stage"] = String("native_world_not_configured");
+        out["total_ms"] = 0.0;
+        return out;
+    }
+
+    if (bool(tick_knobs.get("probe", false))) {
+        out["rc"] = -1;
+        out["fail_stage"] = String("runtime_kernels_unimplemented");
+        out["configured"] = true;
+        out["cell_count"] = _native_world_cell_count;
+        out["total_ms"] = 0.0;
+        return out;
+    }
+
+    ++_native_daily_tick_count;
+    _native_dirty_report["last_day_index"] = int(tick_knobs.get("day_index", 0));
+    _native_dirty_report["last_season_phase"] = double(tick_knobs.get("season_phase", 0.0));
+    _native_dirty_report["atlas_dirty"] = false;
+    _native_dirty_report["dirty_cell_count"] = 0;
+
+    Dictionary breakdown;
+    breakdown["native_context_ms"] = 0.0;
+    breakdown["season_ms"] = 0.0;
+    breakdown["climate_ms"] = 0.0;
+    breakdown["weather_ms"] = 0.0;
+    breakdown["ocean_ms"] = 0.0;
+    breakdown["stage_b_ms"] = 0.0;
+    breakdown["render_prepare_ms"] = 0.0;
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const double total_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["rc"] = -1;
+    out["fail_stage"] = String("runtime_kernels_unimplemented");
+    out["total_ms"] = total_ms;
+    out["breakdown"] = breakdown;
+    out["dirty_flags"] = _native_dirty_report.duplicate();
+    out["fronts_changed"] = false;
+    out["fronts"] = _native_fronts_snapshot;
+    out["tick_count"] = _native_daily_tick_count;
+    return out;
+}
+
+Dictionary DCWorldExt::run_native_world_generate_pass(int seed,
+                                                      const Dictionary &cfg,
+                                                      const Dictionary &profile) {
+    Dictionary out;
+    out["rc"] = -1;
+    out["fail_stage"] = String("generation_kernels_unimplemented");
+    out["seed"] = seed;
+    out["has_config"] = !cfg.is_empty();
+    out["has_profile"] = !profile.is_empty();
+    return out;
+}
+
+Array DCWorldExt::get_native_fronts_snapshot() const {
+    return _native_fronts_snapshot.duplicate();
+}
+
+Dictionary DCWorldExt::get_native_dirty_report() const {
+    return _native_dirty_report.duplicate();
+}
+
 // ─── Archetype ─────────────────────────────────────────────────────────────
 
 int DCWorldExt::create_archetype(const StringName &name, const Array &comp_ids) {
@@ -2146,6 +2250,60 @@ inline float wf_field_intensity_for_type(uint8_t wt, float temp, float vapor,
     return v;
 }
 
+// Mirror weather_system.gd::_apply_frontal_convergence_boost fast-indexed path.
+// Folded into F.1 so commit() no longer pays a separate GDScript full sweep on
+// convergence-refresh ticks.
+inline void wf_apply_frontal_convergence_boost_idx(
+        int idx, const float *T, const float *AA, const int32_t *NB,
+        float climate_anomaly, float convergence,
+        float temp_self, float vapor, float ocean_an,
+        float &cloud, float &precip, float &instability, uint8_t &wt,
+        float &intensity) {
+    constexpr float STORM_TEMP_DIFF = 0.28f;
+    constexpr float WEAK_TEMP_DIFF = 0.06f;
+    constexpr float CONVERGENCE_THRESHOLD = 0.45f;
+    if (convergence < CONVERGENCE_THRESHOLD) return;
+
+    float t_min = temp_self;
+    float t_max = temp_self;
+    const int base = idx * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t nb_idx = NB[base + d];
+        if (nb_idx < 0) continue;
+        float t_nb = T[nb_idx] + climate_anomaly + AA[nb_idx];
+        if (t_nb < 0.0f) t_nb = 0.0f;
+        else if (t_nb > 1.0f) t_nb = 1.0f;
+        if (t_nb < t_min) t_min = t_nb;
+        if (t_nb > t_max) t_max = t_nb;
+    }
+
+    const float temp_diff = t_max - t_min;
+    float diff_score = temp_diff / STORM_TEMP_DIFF;
+    if (diff_score < 0.0f) diff_score = 0.0f;
+    else if (diff_score > 1.0f) diff_score = 1.0f;
+    float frontal_score = ((convergence - CONVERGENCE_THRESHOLD)
+            / (1.0f - CONVERGENCE_THRESHOLD)) * diff_score;
+    if (frontal_score < 0.0f) frontal_score = 0.0f;
+    else if (frontal_score > 1.0f) frontal_score = 1.0f;
+    if (frontal_score < 0.45f) return;
+
+    const float cloud_min = 0.25f + frontal_score * 0.20f;
+    const float precip_min = 0.05f + frontal_score * 0.12f;
+    const float inst_min = 0.25f + frontal_score * 0.15f;
+    if (cloud < cloud_min) cloud = cloud_min;
+    if (precip < precip_min) precip = precip_min;
+    if (instability < inst_min) instability = inst_min;
+    if (cloud > 1.0f) cloud = 1.0f;
+    if (precip > 1.0f) precip = 1.0f;
+    if (instability > 1.0f) instability = 1.0f;
+
+    if (temp_diff < WEAK_TEMP_DIFF && (wt == 2 || wt == 7)) {
+        wt = 1; // RAIN
+    }
+    intensity = wf_field_intensity_for_type(
+        wt, temp_self, vapor, cloud, precip, instability, ocean_an);
+}
+
 } // anonymous namespace (F.1 helpers)
 
 // ─── F.1 main pass ──────────────────────────────────────────────────────────
@@ -2221,6 +2379,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float wb_pos_y        = float(knobs["world_bounds_pos_y"]);
     const float wb_size_y       = float(knobs["world_bounds_size_y"]);
     const bool  refresh_convergence = bool(knobs["refresh_convergence"]);
+    const bool  apply_convergence_boost = knobs.has("apply_convergence_boost")
+                                            ? bool(knobs["apply_convergence_boost"]) : true;
 
     if (start_idx != 0 || end_idx != n_cells) {
         diag("partial slice not yet supported (must be full-pass)");
@@ -2504,11 +2664,17 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         else if (precip > 1.0f) precip = 1.0f;
 
         // (line 749-750) classify + intensity
-        const uint8_t wt = wf_classify_field_weather_at(
+        uint8_t wt = wf_classify_field_weather_at(
             POS[i].y, season_idx, temp, vapor, cloud, precip, instability,
             ocean_an, wb_pos_y, wb_size_y, season_phase);
-        const float intensity = wf_field_intensity_for_type(
+        float intensity = wf_field_intensity_for_type(
             wt, temp, vapor, cloud, precip, instability, ocean_an);
+        if (refresh_convergence && apply_convergence_boost) {
+            wf_apply_frontal_convergence_boost_idx(
+                i, T, AA, NB, climate_anomaly, convergence,
+                temp, vapor, ocean_an,
+                cloud, precip, instability, wt, intensity);
+        }
 
         // (line 751-757) write outputs
         OUT_VAP[i] = vapor;
@@ -8629,6 +8795,16 @@ void DCWorldExt::_bind_methods() {
 
     ClassDB::bind_method(D_METHOD("bind_map_data", "map_data"), &DCWorldExt::bind_map_data);
     ClassDB::bind_method(D_METHOD("is_bound"),                  &DCWorldExt::is_bound);
+    ClassDB::bind_method(D_METHOD("configure_native_world", "knobs"),
+                         &DCWorldExt::configure_native_world);
+    ClassDB::bind_method(D_METHOD("run_native_daily_tick", "tick_knobs"),
+                         &DCWorldExt::run_native_daily_tick);
+    ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
+                         &DCWorldExt::run_native_world_generate_pass);
+    ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),
+                         &DCWorldExt::get_native_fronts_snapshot);
+    ClassDB::bind_method(D_METHOD("get_native_dirty_report"),
+                         &DCWorldExt::get_native_dirty_report);
 
     // CoW flush / refresh (performance-charter §11.2)
     ClassDB::bind_method(D_METHOD("flush_slots_to_map"),    &DCWorldExt::flush_slots_to_map);
