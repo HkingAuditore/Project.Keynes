@@ -88,6 +88,12 @@ func tick(_ctx) -> Dictionary:
 	_pending_prepare = prep
 	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", false)):
 		_pending_upload = true
+	var dynamic_report: Dictionary = {}
+	if baker.has_method("rebake_dynamic_cell_atlas_only"):
+		dynamic_report = baker.rebake_dynamic_cell_atlas_only(map, world_data)
+	var ecology_report: Dictionary = {}
+	if baker.has_method("rebake_ecology_visual_atlas_only"):
+		ecology_report = baker.rebake_ecology_visual_atlas_only(map, world_data)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	var report_prep: Dictionary = {
 		"done": true,
@@ -101,6 +107,10 @@ func tick(_ctx) -> Dictionary:
 		"upload_ms": 0.0,
 		"dirty_cells": int(prep.get("dirty_cells", 0)),
 		"dirty_ratio": float(prep.get("dirty_ratio", 0.0)),
+		"dynamic_dirty_cells": int(dynamic_report.get("dirty_cells", 0)),
+		"dynamic_ms": float(dynamic_report.get("elapsed_ms", 0.0)),
+		"ecology_dirty_cells": int(ecology_report.get("dirty_cells", 0)),
+		"ecology_ms": float(ecology_report.get("elapsed_ms", 0.0)),
 	}
 	if generator != null and generator.has_method("record_sea_ice_atlas_upload"):
 		generator.record_sea_ice_atlas_upload(report_prep)

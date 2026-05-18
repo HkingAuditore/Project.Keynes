@@ -139,6 +139,13 @@ var _last_weather_field_cell_sigs: Dictionary = {}  # HexCell → int (packed u3
 var _dynamic_cell_atlas_buf: PackedByteArray = PackedByteArray()
 var _dynamic_cell_atlas_cache_size: Vector2i = Vector2i.ZERO
 var _last_dynamic_cell_sigs: Dictionary = {}  # HexCell → int (packed u32)
+# Ecology visual atlas: RGBA8, same cell-dirty write path as dynamic_cell_atlas.
+var _ecology_visual_atlas_buf: PackedByteArray = PackedByteArray()
+var _ecology_visual_atlas_cache_size: Vector2i = Vector2i.ZERO
+var _last_ecology_visual_sigs: Dictionary = {}  # HexCell -> int (packed u32)
+var _last_ecology_veg_bytes: Dictionary = {}  # HexCell -> int
+var _last_ecology_vitality_bytes: Dictionary = {}  # HexCell -> int
+var _ecology_transition_age_bytes: Dictionary = {}  # HexCell -> int
 # H 诊断：bake_weather_field_only 命中率统计。每 30 次调用打一次 dirty 比例 +
 # 跳过比例，确认 F 增量路径是否真的吃到便宜。重置时一并清。
 var _wf_diag_calls: int = 0
@@ -423,6 +430,12 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_dynamic_cell_atlas_buf = PackedByteArray()
 	_dynamic_cell_atlas_cache_size = Vector2i.ZERO
 	_last_dynamic_cell_sigs = {}
+	_ecology_visual_atlas_buf = PackedByteArray()
+	_ecology_visual_atlas_cache_size = Vector2i.ZERO
+	_last_ecology_visual_sigs = {}
+	_last_ecology_veg_bytes = {}
+	_last_ecology_vitality_bytes = {}
+	_ecology_transition_age_bytes = {}
 	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
 	_vector_atlas_data = PackedByteArray()
 	_vector_atlas_data_size = Vector2i.ZERO
@@ -488,15 +501,14 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
 	print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
 
-	# Emergent Climate Coupling：初始化 sea_ice_fraction buffer（全 0）。
-	# 真正的覆盖率数值由 MapGenerator._apply_sea_ice_daily_pass 逐日推进，
-	# 再通过 SeaIceAtlasUploadJob → bake_sea_ice_fraction_only 上传到独立的 sea_ice_tex。
-	# 这里留一个空 buffer 让首次构建路径有正确的 size 对齐。
+	# Emergent Climate Coupling：sea_ice_fraction buffer 保持兼容数据通道。
+	# 主地图海冰视觉已改为 shader 直接按水温派生，不依赖此贴图光栅化。
 	world.sea_ice_fraction_buffer = PackedByteArray()
 	world.sea_ice_fraction_buffer.resize(world.derived_size.x * world.derived_size.y)
 
 	# 主地图动态状态 atlas：初始化为当前 cell.temperature/moisture/snow/vitality 快照。
 	rebake_dynamic_cell_atlas_only(map, world)
+	rebake_ecology_visual_atlas_only(map, world)
 
 	# 编码纹理：v9.atlas → 9 张 derived 贴图合并成 3 张 atlas + 独立 height_tex
 	t = Time.get_ticks_msec()
@@ -513,7 +525,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.latitude_buffer,
 		world.derived_size
 	)
-	# 海冰独立 R8 纹理（地形烘焙后初始化为全 0；首日 SUS Job 触发后会被实际数据 in-place update）。
+	# 兼容旧调试/数据通道；主视觉不再读此贴图决定海冰。
 	world.sea_ice_tex = _encode_r8_tex(world.sea_ice_fraction_buffer, world.derived_size, world.sea_ice_tex)
 	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
 	# vector_atlas 恢复：RG=洋流，BA=风场。
@@ -624,6 +636,126 @@ func _dynamic_cell_signature(cell: HexCell) -> int:
 	var g: int = _q01_byte(float(cell.moisture))
 	var b: int = _q01_byte(float(cell.snow_cover))
 	var a: int = 0 if bool(cell.passable_sea) else _q01_byte(float(cell.vegetation_vitality))
+	return r | (g << 8) | (b << 16) | (a << 24)
+
+# 生态视觉 atlas：RGBA8，derived_size。
+# R=叶量/冠层密度，G=胁迫/干旱，B=植被 enum 变化后的过渡年龄，A=近期生长/受损。
+func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Dictionary:
+	var report := {
+		"prepared": false,
+		"dirty": false,
+		"dirty_cells": 0,
+		"pixels_written": 0,
+		"elapsed_ms": 0.0,
+	}
+	if map == null or world == null:
+		return report
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	if n <= 0:
+		return report
+	var t_us: int = Time.get_ticks_usec()
+	var cache_valid: bool = (_ecology_visual_atlas_cache_size == Vector2i(W, H) \
+			and _ecology_visual_atlas_buf.size() == n * 4)
+	if not cache_valid:
+		_ecology_visual_atlas_buf = PackedByteArray()
+		_ecology_visual_atlas_buf.resize(n * 4)
+		_ecology_visual_atlas_buf.fill(0)
+		_ecology_visual_atlas_cache_size = Vector2i(W, H)
+		_last_ecology_visual_sigs = {}
+		_last_ecology_veg_bytes = {}
+		_last_ecology_vitality_bytes = {}
+		_ecology_transition_age_bytes = {}
+
+	var use_pixel_lists: bool = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
+	for cell in map.all_cells():
+		if cell == null:
+			continue
+		var cur_veg: int = int(cell.vegetation) & 0xFF
+		var cur_vitality_byte: int = _q01_byte(float(cell.vegetation_vitality))
+		var prev_veg: int = int(_last_ecology_veg_bytes.get(cell, cur_veg))
+		var prev_vitality_byte: int = int(_last_ecology_vitality_bytes.get(cell, cur_vitality_byte))
+		var transition_age: int = int(_ecology_transition_age_bytes.get(cell, 0))
+		if cache_valid:
+			if cur_veg != prev_veg:
+				transition_age = 255
+			elif transition_age > 0:
+				transition_age = maxi(0, transition_age - 18)
+		else:
+			transition_age = 0
+
+		var sig: int = _ecology_visual_signature(cell, transition_age, prev_vitality_byte)
+		_last_ecology_veg_bytes[cell] = cur_veg
+		_last_ecology_vitality_bytes[cell] = cur_vitality_byte
+		_ecology_transition_age_bytes[cell] = transition_age
+		if cache_valid and int(_last_ecology_visual_sigs.get(cell, -1)) == sig:
+			continue
+		_last_ecology_visual_sigs[cell] = sig
+		var r: int = sig & 0xFF
+		var g: int = (sig >> 8) & 0xFF
+		var b: int = (sig >> 16) & 0xFF
+		var a: int = (sig >> 24) & 0xFF
+		var pixels: PackedInt32Array = PackedInt32Array()
+		if use_pixel_lists:
+			pixels = world.cell_pixel_lists.get(cell, PackedInt32Array())
+		for px_idx in pixels:
+			if px_idx < 0 or px_idx >= n:
+				continue
+			var base_px: int = px_idx * 4
+			_ecology_visual_atlas_buf[base_px] = r
+			_ecology_visual_atlas_buf[base_px + 1] = g
+			_ecology_visual_atlas_buf[base_px + 2] = b
+			_ecology_visual_atlas_buf[base_px + 3] = a
+		report.dirty_cells = int(report.dirty_cells) + 1
+		report.pixels_written = int(report.pixels_written) + pixels.size()
+
+	report.prepared = true
+	report.dirty = int(report.dirty_cells) > 0 or world.ecology_visual_atlas_tex == null
+	world.ecology_visual_atlas_buffer = _ecology_visual_atlas_buf
+	if bool(report.dirty):
+		var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _ecology_visual_atlas_buf)
+		if world.ecology_visual_atlas_tex != null and world.ecology_visual_atlas_tex.get_size() == Vector2(float(W), float(H)):
+			world.ecology_visual_atlas_tex.update(img)
+		else:
+			world.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
+	return report
+
+func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality_byte: int) -> int:
+	var terrain_id: int = int(cell.terrain)
+	var is_water_cell: bool = bool(cell.passable_sea) \
+			or terrain_id == int(TerrainType.TERRAIN.LAKE) \
+			or terrain_id == int(TerrainType.TERRAIN.SEA_ICE)
+	var veg_id: int = int(cell.vegetation)
+	var vitality: float = clampf(float(cell.vegetation_vitality), 0.0, 1.0)
+	var moist: float = clampf(float(cell.moisture), 0.0, 1.0)
+	var temp: float = clampf(float(cell.temperature), 0.0, 1.0)
+	var snow: float = clampf(float(cell.snow_cover), 0.0, 1.0)
+
+	var foliage: float = 0.0
+	if not is_water_cell and veg_id != int(VegetationType.VEG.NONE):
+		var cold_loss: float = (1.0 - smoothstep(0.02, 0.18, temp)) * 0.55
+		var snow_loss: float = smoothstep(0.12, 0.75, snow) * 0.70
+		var dry_loss: float = (1.0 - smoothstep(0.05, 0.35, moist)) * 0.45
+		foliage = clampf(vitality * 0.72 + moist * 0.28 - cold_loss - snow_loss - dry_loss, 0.0, 1.0)
+
+	var stress: float = 0.0
+	if not is_water_cell:
+		var dryness: float = 1.0 - moist
+		var heat_stress: float = smoothstep(0.72, 0.95, temp)
+		var cold_stress: float = 1.0 - smoothstep(0.03, 0.20, temp)
+		var vitality_stress: float = 1.0 - vitality
+		stress = clampf(max(dryness * 0.70, max(heat_stress, cold_stress) * 0.65) \
+				+ vitality_stress * 0.45, 0.0, 1.0)
+
+	var vitality_delta: float = (float(_q01_byte(vitality)) - float(prev_vitality_byte)) / 255.0
+	var growth_damage: float = clampf(0.5 + vitality_delta * 5.0 + (foliage - 0.5) * 0.12 \
+			- stress * 0.10, 0.0, 1.0)
+	var r: int = _q01_byte(foliage)
+	var g: int = _q01_byte(stress)
+	var b: int = clampi(transition_age, 0, 255)
+	var a: int = _q01_byte(growth_damage)
 	return r | (g << 8) | (b << 16) | (a << 24)
 
 static func _q01_byte(v: float) -> int:

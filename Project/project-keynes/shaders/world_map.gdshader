@@ -12,7 +12,7 @@ render_mode blend_mix;
 //                     R = moisture
 //                     G = flow_accum (log-scaled)
 //                     B = latitude_norm ∈ [0, 1]
-//                     A = 0（保留；Daily Sim SoA Refactor 阶段 1 起原 sea_ice 已拆到独立 sea_ice_tex）
+//                     A = 0（保留）
 //   vector_atlas     (RGBA8, derived_size, LINEAR)
 //                     RG = ocean_current (-1..1 mapped from 0..1)
 //                     BA = wind_field    (-1..1 mapped from 0..1)
@@ -21,8 +21,7 @@ render_mode blend_mix;
 //   volcano_field_tex (R8, derived_size, LINEAR)
 //                     R = 火山强度场（原 scalar_atlas.a）
 //   sea_ice_tex      (R8, derived_size, LINEAR)
-//                     R = sea_ice_fraction ∈ [0, 1]  （连续海冰覆盖率，
-//                                                   由 SeaIceAtlasUploadJob 每 stride 日上传一次）
+//                     兼容旧调试/数据通道；主视觉海冰由 shader 按水温实时派生。
 //
 // 不再有 hex 逻辑、不再做 domain warp。整张地图就是这 4 张连续纹理的合成。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
@@ -38,6 +37,9 @@ uniform bool vector_atlas_valid = false;
 // 触发 dyn_valid = step(0.02, dyn_temp) = 0 → fallback 到 shader 派生温度 / 雪线，
 // 避免 Godot 默认 fallback 白纹理把 dyn_temp=1 / dyn_snow=1 全图判为高温积雪 → 地图全白。
 uniform sampler2D dynamic_cell_atlas : hint_default_black, filter_linear, repeat_disable;
+// ecology_visual_atlas RGBA8: R=foliage_density, G=stress/dryness,
+// B=vegetation transition age, A=recent growth/damage.
+uniform sampler2D ecology_visual_atlas : hint_default_black, filter_linear, repeat_disable;
 // 2026-05-18 P1-B：weather_field_tex RGBA8（hex-constant）：
 //   R = weather_type（编码索引，与 WeatherType.WT 一致）
 //   G = weather_intensity（[0,1]）
@@ -48,10 +50,9 @@ uniform sampler2D dynamic_cell_atlas : hint_default_black, filter_linear, repeat
 uniform sampler2D weather_field_tex : hint_default_black, filter_linear, repeat_disable;
 uniform bool weather_field_ocean_enabled = true;
 uniform float weather_field_ocean_strength : hint_range(0.0, 1.0) = 0.85;
-// 火山强度场独立 R8（原 scalar_atlas.a，已让位给 sea_ice_fraction）
+// 火山强度场独立 R8（原 scalar_atlas.a）
 uniform sampler2D volcano_field_tex : filter_linear, repeat_disable;
-// Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a）。
-// 每 stride 日由 SeaIceAtlasUploadJob 上传一次；bake_world 后初始为全 0。
+// 兼容旧调试/数据通道；主地图海冰视觉不采样它。
 uniform sampler2D sea_ice_tex : filter_linear, repeat_disable;
 // v9.fbm-opt：共享 noise 贴图（256×256 R8 tileable，由 MapBaker 烘焙）。
 // value_noise(p) 改用 texture(noise_tex, p / NOISE_TEX_SCALE).r 实现，
@@ -190,6 +191,10 @@ uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disa
 uniform float monsoon_wind_streak_boost : hint_range(1.0, 6.0) = 3.0;
 uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.35;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
+uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.70;
+uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
+uniform int ecology_visual_quality : hint_range(0, 2) = 2;
 // Seasonal terrain transition overlay. Main terrain stays opaque; the temporary
 // old-terrain layer dissolves out over early-season progress to avoid hard cuts.
 uniform bool season_transition_overlay = false;
@@ -550,10 +555,9 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 	// 而不是被推到 mountain/peak/snow 顶端
 	if (t < 0.55) return mix(color_lowland, color_hill, (t - 0.10) / 0.45);
 	if (t < 0.85) return mix(color_hill, color_mountain, (t - 0.55) / 0.30);
-	// peak→snow 拐点 0.96 → 0.985：snow 只占 top 1.5%
-	// gradient `mix(peak, snow, (t-0.985)/0.015)` 让边界 cell（t=0.99）才有 30% 雪白
+	// 最高海拔只给冷岩底色；真正积雪由动态 snow_factor 叠加，避免高山底图终年锁白。
 	if (t < 0.985) return mix(color_mountain, color_peak, (t - 0.85) / 0.135);
-	return mix(color_peak, color_snow, (t - 0.985) / 0.015);
+	return color_peak * vec3(1.04, 1.05, 1.06);
 }
 
 // ─── biome 色相调制（高度负责亮度，biome 负责色相） ──────────────────────
@@ -563,7 +567,7 @@ vec3 biome_hue_modulate(vec3 base, int biome) {
 	if (biome == B_GRASSLAND) return base * vec3(0.85, 1.05, 0.78);
 	if (biome == B_DESERT)    return base * vec3(1.18, 1.02, 0.72);
 	if (biome == B_TUNDRA)    return base * vec3(0.92, 1.00, 1.00);
-	if (biome == B_SNOW)      return base * vec3(0.92, 0.95, 1.00);
+	if (biome == B_SNOW)      return base * vec3(0.86, 0.90, 0.95);
 	if (biome == B_MOUNTAIN)  return base * vec3(1.00, 0.95, 0.95);
 	if (biome == B_HILL)      return base * vec3(1.05, 1.00, 0.90);
 	if (biome == B_SWAMP)     return base * vec3(0.55, 0.85, 0.62);
@@ -725,24 +729,18 @@ vec3 vegetation_seasonal_tint_dissolve(float phase, vec2 wp) {
 }
 
 // 季节性雪盖：综合"永久 SNOW biome"+"季节降温/高山雪线"两部分。返回 [0, 1]。
-// - 当前温度 < 0.28 + 陆地 → 季节雪（冬季中纬度也覆雪）
-// 2026-05-18 P1-A：把 cold_factor 区间从 [0.04, 0.18] 放宽到 [0.05, 0.28]，
-//   让中纬度寒潮 / 冬季也能进入"出雪带"；高山雪线门槛从 land_h>0.40 降到 >0.30，
-//   覆盖丘陵；同时把高山雪温度上限从 0.40 提到 0.55，让中高山在春秋也保留雪线。
+// 2026-05-19：雪线改为连续海拔/温度权重。丘陵在低温下出现薄雪，高山在暖季退雪，
+// 而不是 MOUNTAIN 全年全白、HILL 全年无雪。
 // 2026-05-18 N3：新增 wp 入参，让\"雪线\"在世界空间用 fbm 抖动：
 //   - cold_factor 阈值抖动 → 中纬度边界破碎成锯齿，而非沿纬线一刀切。
 //   - alt_snow 海拔门槛抖动 → 山体雪线参差，迎风坡 / 背风坡有差异感。
 //   - 整体雪量抖动 ×0.85~1.10（沿用旧 snow_noise 思路，整合进函数内）。
-// 2026-05-18 雪线修正（与 _derived_snow_cover SAME_SOURCE）：
-//   - cold_factor 比例 0.90 提到 0.95（与 CPU 低温段 *0.95 对齐）；
-//   - 高山段 land_h gate 0.30→0.30（保持），但 temp 区间从 (0.55, 0.12) 改为 (0.65, 0.20)，
-//     让 elev=0.6 中山 + temp=0.4 也能见到 ≈0.4 的雪盖；
-//   - alt_top 从 0.85 提到 0.80（让山顶提前到达饱和雪盖）。
-float compute_snow_factor(int biome, float current_temp, float elev, bool is_water, vec2 wp) {
+// CPU/GPU SAME_SOURCE：阈值与 map_generator._derived_snow_cover 保持一致。
+float compute_snow_factor(int biome, float current_temp, float elev, bool is_water, float moisture, vec2 wp) {
 	if (is_water) return 0.0;
 	float factor = 0.0;
-	// 1) 永久 SNOW biome 基础
-	if (biome == B_SNOW) factor = 0.65;
+	// 1) SNOW biome 也受当前温度调制，避免旧 enum 在暖季把高山锁成永久白。
+	if (biome == B_SNOW) factor = (1.0 - smoothstep(0.28, 0.58, current_temp)) * 0.70;
 	if (biome == B_GLACIER) factor = 0.80;
 	// 噪声层：低频用于雪线边界（破碎成斑驳的"雪带边缘"），中频用于整体雪量明灭。
 	float snowline_n = fbm(wp * 0.045 + vec2(-17.0, 53.0), 2);
@@ -751,17 +749,18 @@ float compute_snow_factor(int biome, float current_temp, float elev, bool is_wat
 	float altline_jitter = (altline_n - 0.5) * 0.18;            // ±0.09 高度域
 	float amount_n = fbm(wp * 0.18 + vec2(63.0, -29.0), 1);
 	float amount_jitter = mix(0.78, 1.16, amount_n);
-	float cold_lo = 0.05 + snowline_jitter;
-	float cold_hi = 0.28 + snowline_jitter;
-	float cold_factor = smoothstep(cold_hi, cold_lo, current_temp);
-	factor = max(factor, cold_factor * 0.95);
+	float cold_lo = 0.26 + snowline_jitter;
+	float cold_hi = 0.52 + snowline_jitter;
+	float wet_snow = mix(0.55, 1.0, smoothstep(0.18, 0.72, moisture));
+	float cold_snow = (1.0 - smoothstep(cold_lo, cold_hi, current_temp)) * 0.50 * wet_snow;
+	factor = max(factor, cold_snow);
 	float land_h = (elev - sea_level) / max(1.0 - sea_level, 0.001);
-	float alt_gate = 0.30 + altline_jitter;
-	if (land_h > alt_gate) {
-		float alt_top = 0.80 + altline_jitter * 0.4;
-		float alt_snow = smoothstep(alt_gate, alt_top, land_h) * smoothstep(0.65, 0.20, current_temp);
-		factor = max(factor, alt_snow * 0.95);
-	}
+	float alt_gate = 0.22 + altline_jitter;
+	float alt_top = 0.90 + altline_jitter * 0.4;
+	float altitude_w = smoothstep(alt_gate, alt_top, land_h);
+	float alpine_temp_w = 1.0 - smoothstep(0.28 + snowline_jitter, 0.72 + snowline_jitter, current_temp);
+	float alt_snow = altitude_w * alpine_temp_w * 0.92;
+	factor = max(factor, alt_snow);
 	factor *= amount_jitter;
 	return clamp(factor, 0.0, 1.0);
 }
@@ -912,7 +911,7 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 	if (biome == B_SNOW) {
 		float n = fbm(wp * 0.20, 3);
 		float micro = fbm(wp * 0.50, 1);  // v9.fbm-opt
-		return vec3(mix(0.93, 1.04, n) * mix(0.98, 1.02, micro));
+		return vec3(mix(0.78, 1.03, n) * mix(0.94, 1.02, micro));
 	}
 	if (biome == B_SWAMP) {
 		float pools = fbm(wp * 0.55, 3);
@@ -1216,6 +1215,7 @@ void fragment() {
 	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
 	// dynamic_cell_atlas：真实 cell 状态，低频 dirty 更新；用于替代纯 shader 派生温度/雪盖。
 	vec4 dyns = texture(dynamic_cell_atlas, uv);
+	vec4 ecos = texture(ecology_visual_atlas, uv);
 
 	int biome = int(enums.r * 255.0 + 0.5);
 	int veg   = int(enums.g * 255.0 + 0.5);
@@ -1226,15 +1226,17 @@ void fragment() {
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
 	float dyn_vitality = dyns.a;
+	float eco_foliage = ecos.r;
+	float eco_stress = ecos.g;
+	float eco_transition = ecos.b;
+	float eco_growth = ecos.a;
+	float eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition);
 	// dyn_valid：仅当 dynamic_cell_atlas 真的写过 cell 真值（temperature 必须 > 哨兵阈值）。
 	// bake_world 阶段 cell.temperature 还未由 refresh_climate_daily 初始化（默认 0.0），
 	// 此时 R 通道接近 0，应当走 derived_temp fallback，避免把全图判为雪线以下。
 	// 同时 G 通道（moisture）默认 ≈0.5 不能作为有效信号；A 通道（vitality）默认 0.7 同理。
 	float dyn_valid = step(0.02, dyn_temp);
 	moist = mix(moist, dyn_wet, dyn_valid);
-	// Daily Sim SoA Refactor 阶段 1：sea_ice_fraction 从 scalar_atlas.a 拆到独立 sea_ice_tex。
-	// scalar_atlas.a 已为保留位（0）。vol_intensity 仍从独立 volcano_field_tex 采样。
-	float sea_ice_frac_px = texture(sea_ice_tex, uv).r;
 	float vol_intensity_atlas = texture(volcano_field_tex, uv).r;
 	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
 	vec2 wind_v          = vects.ba * 2.0 - 1.0;
@@ -1330,6 +1332,36 @@ void fragment() {
 				&& biome_accepts_vegetation_tint(biome)) {
 			vec3 v_tint = vegetation_tint(veg);
 			col = mix(col, col * v_tint, vegetation_axis_strength);
+		}
+		if (ecology_visual_strength > 0.001
+				&& eco_valid > 0.5
+				&& veg != V_NONE) {
+			float eco_q = float(min(ecology_visual_quality, visual_quality));
+			float foliage_noise = 0.5;
+			if (eco_q >= 1.0) {
+				foliage_noise = fbm(wp * 0.095 + vec2(61.0, -37.0), 1);
+			}
+			float patch_noise = 0.5;
+			if (eco_q >= 2.0) {
+				patch_noise = fbm(wp * 0.22 + vec2(-17.0, 71.0), 1);
+			}
+			float foliage = clamp(eco_foliage + (foliage_noise - 0.5) * 0.22
+					+ (patch_noise - 0.5) * 0.12, 0.0, 1.0);
+			float stress = clamp(eco_stress + (patch_noise - 0.5) * 0.18, 0.0, 1.0);
+			float transition_w = smoothstep(0.02, 0.75, eco_transition);
+			vec3 live_tint = mix(vec3(0.88, 1.04, 0.82), vec3(0.70, 1.12, 0.72), foliage);
+			vec3 dry_tint = mix(vec3(1.10, 0.96, 0.70), vec3(1.23, 0.86, 0.56), stress);
+			float density_w = foliage_density_strength * ecology_visual_strength
+					* smoothstep(0.10, 0.85, foliage);
+			col *= mix(vec3(1.0), live_tint, density_w * (1.0 - stress * 0.55));
+			col *= mix(vec3(1.0), dry_tint,
+					ecology_visual_strength * smoothstep(0.22, 0.95, stress) * 0.62);
+			vec3 new_growth_tint = mix(vec3(1.0), vec3(0.82, 1.12, 0.78),
+					smoothstep(0.56, 0.82, eco_growth));
+			col *= mix(vec3(1.0), new_growth_tint,
+					transition_w * ecology_visual_strength * 0.28);
+			col = mix(col, col * vec3(0.93, 0.98, 0.88),
+					transition_w * (1.0 - foliage) * ecology_visual_strength * 0.35);
 		}
 	}
 
@@ -1449,22 +1481,16 @@ void fragment() {
 		float w_lake = smoothstep(blend_entry, blend_full, bw.x);
 		float w_reef = smoothstep(blend_entry, blend_full, bw.y);
 		float w_kelp = smoothstep(blend_entry, blend_full, bw.z);
-		// Emergent Climate Coupling：海冰权重直接读 sea_ice_tex 的连续 sea_ice_fraction，
-		// 不再依赖 biome == SEA_ICE 的邻域计数（否则就会出现"80% 覆盖率却显示海洋 /
-		// 20% 却显示冰"的硬切错位）。同时对 3×3 邻域做平均，起到和旧实现一致的软边作用。
-		float ice_frac_avg = sea_ice_frac_px;
-		{
-			vec2 tx_ice = 1.0 / derived_resolution;
-			float acc_ice = sea_ice_frac_px;
-			for (int oy = -1; oy <= 1; oy++) {
-				for (int ox = -1; ox <= 1; ox++) {
-					if (ox == 0 && oy == 0) continue;
-					acc_ice += texture(sea_ice_tex, clamp(uv + vec2(float(ox), float(oy)) * tx_ice, vec2(0.0), vec2(1.0))).r;
-				}
-			}
-			ice_frac_avg = acc_ice / 9.0;
+		// 海冰主视觉直接由当前水温派生，不再依赖 CPU 光栅化的 sea_ice_fraction 贴图。
+		float ice_field_noise = fbm(wpw * 0.045 + vec2(-71.0, 23.0), 2);
+		float ice_temp = current_temp + (ice_field_noise - 0.5) * 0.10;
+		float temp_ice = 1.0 - smoothstep(0.24, 0.54, ice_temp);
+		float polar_ice = smoothstep(0.46, 0.86, abs(lat_signed));
+		float depth_ice = mix(1.0, 0.72, smoothstep(0.28, 0.95, offshore_depth));
+		float w_ice = clamp(temp_ice * mix(0.58, 1.18, polar_ice) * depth_ice, 0.0, 1.0);
+		if (biome == B_SEA_ICE) {
+			w_ice = max(w_ice, 0.28);
 		}
-		float w_ice = smoothstep(0.08, 0.85, ice_frac_avg);
 		// Keep stacked special-water weights bounded so overlapping borders stay soft
 		// without over-tinting or producing decal-like saturated seams.
 		float special_sum = max(w_lake + w_reef + w_kelp + w_ice, 1.0);
@@ -1606,16 +1632,17 @@ void fragment() {
 
 		// (H) SEA_ICE 特征叠加：冷蓝白冰盖 + 低对比裂纹，跳过动态水纹语言
 		if (w_ice > 0.001) {
-			vec3 ice_base = mix(water_depth_gradient(offshore_depth * 0.65, elev), vec3(0.84, 0.91, 0.95), 0.82);
+			vec3 ice_base = mix(water_depth_gradient(offshore_depth * 0.65, elev), vec3(0.88, 0.94, 0.97), 0.90);
 			float crack_factor = 0.55;
 			if (visual_quality >= 1) {
 				float crack = voronoi_cell(wpw * 0.34);
-				crack_factor = smoothstep(0.03, 0.18, crack);
+				crack_factor = smoothstep(0.02, 0.16, crack);
 			}
 			float ice_noise = fbm(wpw * 0.12 + vec2(-9.0, 31.0), water_detail_oct);
-			vec3 ice_col = mix(ice_base * 0.82, ice_base * 1.04, crack_factor);
-			ice_col *= mix(0.96, 1.035, ice_noise);
-			col = mix(col, ice_col, w_ice * 0.94);
+			vec3 ice_col = mix(ice_base * 0.76, ice_base * 1.08, crack_factor);
+			ice_col *= mix(0.94, 1.055, ice_noise);
+			float ice_edge = smoothstep(0.08, 0.70, w_ice);
+			col = mix(col, ice_col, clamp(w_ice * 1.18 + ice_edge * 0.08, 0.0, 0.98));
 		}
 
 		if (shallow_transparency_enabled && visual_quality >= 1) {
@@ -2082,11 +2109,27 @@ void fragment() {
 	// 2026-05-18 N4：thickness 加 fbm 扰动 + 加一层"雪堆斑驳"细节噪声，避免薄/厚雪
 	//                呈完整的圆滑渐变。雪线 jitter 已经整合进 compute_snow_factor()。
 	if (!is_water) {
-		float snow_from_temp = compute_snow_factor(biome, current_temp, elev, is_water, wp);
+		float snow_from_temp = compute_snow_factor(biome, current_temp, elev, is_water, moist, wp);
 		// dyn_snow 仅在 dyn_valid 时参与；否则只用 derived 公式。避免 atlas 未写入时
 		// 因为 dyn_snow=0 与 max() 取 derived 一致，但若 dyn_temp 写过而 snow_cover 还
 		// 未由 weather pass 累积，使用 max() 也是安全的（取较高的雪覆盖）。
-		float snow_factor = max(snow_from_temp, dyn_snow * dyn_valid) * dynamic_snow_strength;
+		float raw_snow_signal = max(snow_from_temp, dyn_snow * dyn_valid);
+		float slope_shed = 0.0;
+		if (ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
+			vec2 snow_texel = 1.0 / hm_resolution;
+			float sl = decode_height_rg8(uv - vec2(snow_texel.x, 0.0));
+			float sr = decode_height_rg8(uv + vec2(snow_texel.x, 0.0));
+			float su = decode_height_rg8(uv - vec2(0.0, snow_texel.y));
+			float sd = decode_height_rg8(uv + vec2(0.0, snow_texel.y));
+			float snow_slope_mag = length(vec2(sr - sl, sd - su)) * hillshade_slope_gain;
+			slope_shed = smoothstep(0.42, 1.10, snow_slope_mag) * 0.16;
+		}
+		float snow_signal = raw_snow_signal;
+		snow_signal += eco_valid * eco_stress * smoothstep(0.12, 0.38, raw_snow_signal) * 0.10;
+		snow_signal -= eco_valid * eco_foliage * 0.16;
+		snow_signal -= slope_shed;
+		snow_signal = clamp(snow_signal, 0.0, 1.0);
+		float snow_factor = mix(raw_snow_signal, snow_signal, snowline_visual_strength) * dynamic_snow_strength;
 		snow_factor = clamp(snow_factor, 0.0, 1.0);
 		// 厚度噪声：低频决定"这一片是薄还是厚"，高频做"堆雪斑驳"。
 		float thick_low = fbm(wp * 0.070 + vec2(11.0, 47.0), 2);
@@ -2102,7 +2145,9 @@ void fragment() {
 		snow_color *= mix(0.94, 1.06, thick_hi);
 		// 边缘破碎：snow_factor 在最终 mix 上再叠一次 fbm，让"雪/无雪"边界呈不规则斑块。
 		float edge_noise = fbm(wp * 0.22 + vec2(29.0, -11.0), 1);
-		float snow_mix = clamp(snow_factor * mix(0.80, 1.18, edge_noise), 0.0, 1.0);
+		float edge_lo = mix(0.80, 0.66, snowline_visual_strength);
+		float edge_hi = mix(1.18, 1.34, snowline_visual_strength);
+		float snow_mix = clamp(snow_factor * mix(edge_lo, edge_hi, edge_noise), 0.0, 1.0);
 		col = mix(col, snow_color, snow_mix);
 	}
 
