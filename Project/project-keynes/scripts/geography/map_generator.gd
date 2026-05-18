@@ -1284,11 +1284,17 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	if _sus.get("sim_budget_window_size") != null:
 		_sus.sim_budget_window_size = 300
 	if _sus.get("sim_budget_warn_ms") != null:
-		_sus.sim_budget_warn_ms = 1.0
+		if cp.get("sim_budget_warn_ms") != null:
+			_sus.sim_budget_warn_ms = float(cp.sim_budget_warn_ms)
+		elif cp.get("sim_frame_budget_ms") != null:
+			_sus.sim_budget_warn_ms = float(cp.sim_frame_budget_ms)
+		else:
+			_sus.sim_budget_warn_ms = 1.0
 	if OS.is_debug_build():
-		print("[SUS] sim budget strict=%s frame=%.2fms slice=%.2fms upload=%.2fms scheduler=%s"
+		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s"
 			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
 				float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms),
+				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
 				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
 				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
 				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
@@ -1311,8 +1317,7 @@ func _sim_job_should_must_run(job, upload_job: bool) -> bool:
 func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
 	if job == null or cp == null:
 		return
-	if cp.get("sim_strict_budget_enabled") != null and not bool(cp.sim_strict_budget_enabled):
-		return
+	var strict_on: bool = bool(cp.sim_strict_budget_enabled) if cp.get("sim_strict_budget_enabled") != null else false
 	var slice_ms: float = 0.55
 	if upload_job and cp.get("sim_upload_slice_budget_ms") != null:
 		slice_ms = float(cp.sim_upload_slice_budget_ms)
@@ -1321,9 +1326,16 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
-		job.max_slices_per_tick = 1
+		var job_id: StringName = &""
+		var raw_id = job.get("id")
+		if raw_id != null:
+			job_id = StringName(str(raw_id))
+		if upload_job or job_id == &"ocean_currents" or job_id == &"season_refresh":
+			job.max_slices_per_tick = 1
+		else:
+			job.max_slices_per_tick = 1 if strict_on else 0
 	if job.get("must_run") != null:
-		job.must_run = _sim_job_should_must_run(job, upload_job)
+		job.must_run = strict_on and _sim_job_should_must_run(job, upload_job)
 	if job.get("starvation_threshold") != null:
 		job.starvation_threshold = 0
 
@@ -1577,6 +1589,13 @@ func record_enum_atlas_upload(axis: String, elapsed_ms: float) -> void:
 	}
 
 
+func record_enum_atlas_upload_report(report: Dictionary) -> void:
+	_last_enum_atlas_upload_breakdown = report.duplicate(true)
+	_last_enum_atlas_upload_breakdown["biome_pending"] = _enum_atlas_biome_dirty
+	_last_enum_atlas_upload_breakdown["cover_pending"] = _enum_atlas_cover_dirty
+	_last_enum_atlas_upload_breakdown["vegetation_pending"] = _enum_atlas_vegetation_dirty
+
+
 func sus_enum_atlas_breakdown() -> Dictionary:
 	return _last_enum_atlas_upload_breakdown.duplicate()
 
@@ -1612,6 +1631,20 @@ func begin_pending_season_refresh() -> int:
 	_pending_season_refresh = false
 	_season_refresh_in_progress = true
 	_last_season_refresh_breakdown = {}
+	return _pending_season_idx
+
+
+# Periodic-driver entry（慢变量周期重算）。SeasonRefreshJob 在新路径下不再依赖
+# queue_season_refresh / has_pending_season_refresh 信号；按真实 tick 周期自驱
+# 调用本入口启动一个 round。返回当前 WorldClock 的 season_index（仅供 stage 算
+# 法 API 兼容；新设计下 stage 1/4/5/6/7/8 等慢变量本身不再绑定到具体季节）。
+func begin_periodic_season_refresh() -> int:
+	_season_refresh_in_progress = true
+	_last_season_refresh_breakdown = {}
+	var season_idx: int = 0
+	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
+		season_idx = int(_world_clock_ref.season_index())
+	_pending_season_idx = clampi(season_idx, 0, 3)
 	return _pending_season_idx
 
 
@@ -1694,10 +1727,15 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 		11:
 			var cp_fb := _c()
 			if cp_fb != null and bool(cp_fb.fast_slow_layering_enabled):
-				# stage 11：soil_moisture / vegetation_growth_pressure 不在 SoA schema，
-				# C++ 反向打包代价高于直接 GDScript 循环；保留 GDScript 直接调用。
-				# C++ 端 stage 10 实装作为 dormant 路径备用（字段未来进 SoA 后激活）。
-				_consume_feedback_buffers(map, cp_fb.feedback_decay)
+				# stage 11 (feedback decay)：优先走 C++ stage 10（已在 world_ext.cpp
+				# line 6814 实装，含 AVX2 + restrict 指针），未启用/失败则 fallback
+				# 到 _consume_feedback_buffers GDScript 实现。
+				# 注：soil_moisture / vegetation_growth_pressure 现已在 SoA schema
+				# （component_schema.gd L109-110），facade getter 自动从 SoA 读取，
+				# 因此 in/out 走 map.soil_moisture_arr / vegetation_growth_pressure_arr
+				# PackedArray 引用零拷贝传递。
+				if not _run_season_refresh_stage11_gdext(map, world, season):
+					_consume_feedback_buffers(map, cp_fb.feedback_decay)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
 	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
 	# H 诊断：单 stage > 30ms → 直接打点，定位 season_refresh max=128-141ms 的根因 stage。
@@ -1723,6 +1761,8 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 
 	if stage == 2:
 		return _run_season_stage2_micro(map, season_idx, cursor, max_usec)
+	if stage == 3:
+		return _run_season_stage3_micro(map, season_idx, cursor, max_usec)
 	if stage == 4:
 		return _run_season_stage4_micro(map, season_idx, cursor, max_usec)
 
@@ -1807,14 +1847,17 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 			if _is_water(cell.terrain):
 				pass
 			else:
-				var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
-						or cell.base_terrain == TerrainType.TERRAIN.SNOW
+				# 2026-05-18 季节性高山雪：lock-in 仅锁 base_terrain==SNOW（极地/最高峰），
+				# MOUNTAIN 解放给 _decide_terrain 决策，让中纬高山冬天 temp_now<0.08 翻
+				# COLD_SNOW、夏天回 MOUNTAIN。注意 apply_terrain 不写 base_terrain，
+				# 所以 base 永远是 MOUNTAIN，不会被翻雪后污染（见 hex_cell.gd:812）。
+				var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 				if is_permanent_climate or _is_permanent_landform(cell.base_terrain):
 					cell.apply_terrain(cell.base_terrain)
 				else:
 					var r_idx: int = _cube_to_row(cell, cfg_local)
 					var lat_temp: float = lat_tab[r_idx]
-					var temp_year: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+					var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 					var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
 					cell.apply_terrain(new_terrain)
@@ -1833,6 +1876,64 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 	return out
 
 
+func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_usec: int) -> Dictionary:
+	# stage_3_river_ecology 切片版（2026-05-18）。原 _apply_river_ecology 单 pass
+	# 整跑 ~1ms / round，是 fast tick budget 最大固定开销之一（每 30 ticks 一次）。
+	# 算法上每个 cell 独立处理（仅 has_river / terrain / moisture / apply_terrain），
+	# 无跨 cell 依赖，可安全切片到 cursor。语义与 _apply_river_ecology 完全一致。
+	var out: Dictionary = {
+		"handled": true,
+		"done": false,
+		"cursor": maxi(0, cursor),
+		"elapsed_ms": 0.0,
+		"work_done": 0,
+		"stage_name": "stage_3_river",
+	}
+	if map == null or _last_cfg == null:
+		out["done"] = true
+		return out
+	var cfg_local: MapConfig = _last_cfg
+	var _season := clampi(season_idx, 0, 3)
+	# season 此处仅作占位防 unused-warning；river 决策实际只看年均温
+	# （_compute_temperature(ny, elev)），不带季节 offset，与 _apply_river_ecology 等价。
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n: int = cells.size()
+	if n <= 0:
+		out["done"] = true
+		return out
+	var t0: int = Time.get_ticks_usec()
+	var cur: int = clampi(cursor, 0, n)
+	var work_done: int = 0
+	while cur < n:
+		var cell: HexCell = cells[cur]
+		if cell != null and cell.has_river and not _is_water(cell.terrain):
+			if _is_permanent_landform(cell.terrain):
+				cell.moisture = maxf(cell.moisture, 0.65)
+			else:
+				cell.moisture = maxf(cell.moisture, 0.65)
+				if cell.terrain != TerrainType.TERRAIN.DESERT:
+					if cell.terrain == TerrainType.TERRAIN.PLAIN:
+						var ny: float = float(_cube_to_row(cell, cfg_local)) / float(cfg_local.height - 1)
+						var temp: float = _compute_temperature(ny, cell.elevation)
+						if temp > 0.55:
+							cell.apply_terrain(TerrainType.TERRAIN.FOREST)
+						elif temp > 0.30:
+							cell.apply_terrain(TerrainType.TERRAIN.GRASSLAND)
+		cur += 1
+		work_done += 1
+		if (work_done & 31) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
+			break
+	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
+	out["cursor"] = cur
+	out["done"] = cur >= n
+	out["elapsed_ms"] = elapsed_ms
+	out["work_done"] = work_done
+	_last_season_refresh_breakdown["stage_3_path"] = "gdscript_micro"
+	_last_season_refresh_breakdown["stage_3_ms"] = elapsed_ms
+	_last_season_refresh_breakdown["stage_3_cursor"] = cur
+	return out
+
+
 func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_usec: int) -> Dictionary:
 	var out: Dictionary = {
 		"handled": true,
@@ -1846,7 +1947,10 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 		out["done"] = true
 		return out
 	var t_us0: int = Time.get_ticks_usec()
-	var cells: Array = map.all_cells()
+	# 性能修复（2026-05-18）：与 stage_3/stage_11 同因——iter_cells() 零复制，all_cells() 复制 2400 项。
+	# stage_4 在 fast-tick 内每天调用，且本函数在 micro 框架内被多次重入（每次拿一段 cursor），
+	# 累计 array 复制成本可观。优先用索引化路径。
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n: int = cells.size()
 	if n <= 0:
 		out["done"] = true
@@ -1894,7 +1998,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 						and not _is_permanent_landform(cell_re.terrain):
 					var r_idx: int = _cube_to_row(cell_re, _last_cfg)
 					var lat_temp: float = _row_lat_temp[r_idx]
-					var temp: float = clampf(lat_temp - cell_re.elevation * 0.5, 0.0, 1.0)
+					var temp: float = clampf(lat_temp - _alt_penalty(cell_re.elevation), 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell_re.elevation, temp, cell_re.moisture, _last_cfg)
 					cell_re.apply_terrain(new_terrain)
 
@@ -1957,6 +2061,66 @@ func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: i
 	_sync_stage8_facade_fields_from_soa(map)
 	_last_season_refresh_breakdown["stage_8_path"] = "gdext"
 	_last_season_refresh_breakdown["stage_8_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	return true
+
+
+# DOTS-Total-CPP / Continuous-Climate-Push（2026-05-18）：stage 11 (feedback
+# decay) gdext 路径。与 stage 0 / stage 8 helper 同模式：cp.use_gdext_season_refresh
+# 总开关 + ext/method 存在性检查；未满足走 GDScript fallback。
+# 替换原 _consume_feedback_buffers (line ~4080) 的 ~6ms/round 开销。
+func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
+	# Stage 11 (feedback decay) → C++ stage 10：
+	# - 输入：soil_moisture_arr / vegetation_growth_pressure_arr（PackedArray 引用）+
+	#   n_cells + decay
+	# - 输出：base_moisture 由 C++ 端 _flush_slot_to_map 直接写 SoA；
+	#   soil_moisture / veg_growth_pressure 通过 knobs in/out 返回 decayed array，
+	#   facade getter 自动从 SoA 拿新值（hex_cell.gd L668-697）。
+	# - 数值漂移：clamp / decay / FEEDBACK_SOIL_TO_BASE_W=0.15 与 GDScript
+	#   _consume_feedback_buffers 完全一致（world_ext.cpp L6843 确认）。
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		return false
+	if map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return false
+	# 取 map.xxx_arr 引用；run_climate_feedback_pass 已经维护这两个 array
+	# 与 cell facade 的同步（line 6996-7002）。
+	var soil_arr: PackedFloat32Array = map.soil_moisture_arr
+	var vg_arr: PackedFloat32Array = map.vegetation_growth_pressure_arr
+	if soil_arr.size() != n_cells or vg_arr.size() != n_cells:
+		return false
+	# 让 C++ 端 SoA 看到最新 base_moisture（stage_8 之前可能已经写过 cell.base_moisture
+	# 而未 flush 回 _slots）。
+	if _data_core_world_ext.has_method("refresh_slots_from_map"):
+		_data_core_world_ext.refresh_slots_from_map()
+	var knobs: Dictionary = {
+		"stage": 10,
+		"n_cells": n_cells,
+		"decay": float(cp.feedback_decay),
+		"soil_moisture_arr": soil_arr,
+		"veg_growth_pressure_arr": vg_arr,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		if not _season_refresh_gdext_fallback_logged:
+			print("[season_refresh] gdext stage11 fallback: %s" % String(res.get("reason", "unknown")))
+			_season_refresh_gdext_fallback_logged = true
+		return false
+	# 写回 in/out arrays。C++ 端通过 knobs["soil_moisture_arr"] = soil_arr;
+	# 把 decayed 值写回；这里把更新后的 PackedArray 灌回 map.xxx_arr，
+	# facade getter 即可读到新值（与 _climate_feedback_pass 同模式）。
+	var soil_out: PackedFloat32Array = knobs.get("soil_moisture_arr", soil_arr)
+	var vg_out: PackedFloat32Array = knobs.get("veg_growth_pressure_arr", vg_arr)
+	if soil_out.size() == n_cells:
+		map.soil_moisture_arr = soil_out
+	if vg_out.size() == n_cells:
+		map.vegetation_growth_pressure_arr = vg_out
+	_last_season_refresh_breakdown["stage_11_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_11_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_last_season_refresh_breakdown["stage_11_touched"] = int(res.get("touched", 0))
 	return true
 
 
@@ -2040,11 +2204,13 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 	_ensure_row_tables(cfg_local, season)
 	var lat_tab: PackedFloat32Array = _row_lat_temp
 	var off_tab: PackedFloat32Array = _row_season_off
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
-		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.base_terrain == TerrainType.TERRAIN.SNOW
+		# 2026-05-18：解除 MOUNTAIN lock-in，仅 SNOW 永久。详见 _run_season_stage2_micro 注释。
+		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 		if is_permanent_climate:
 			cell.apply_terrain(cell.base_terrain)
 			continue
@@ -2053,7 +2219,7 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg_local)
 		var lat_temp: float = lat_tab[r_idx]
-		var temp_year: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
 		cell.apply_terrain(new_terrain)
@@ -2069,19 +2235,12 @@ func _seasonal_sync_current_state(map: MapData, season: int) -> void:
 	for cell: HexCell in map.all_cells():
 		var r_idx2: int = _cube_to_row(cell, cfg_local)
 		var lat_temp2: float = lat_tab[r_idx2]
-		var temp_year2: float = clampf(lat_temp2 - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_year2: float = clampf(lat_temp2 - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now2: float = clampf(temp_year2 + off_tab[r_idx2], 0.0, 1.0)
 		var land_h: float = (cell.elevation - cfg_local.sea_level) / maxf(1.0 - cfg_local.sea_level, 0.001)
 		var snow_cover: float = 0.0
 		if not _is_water(cell.terrain):
-			if cell.terrain == TerrainType.TERRAIN.SNOW:
-				snow_cover = 1.0
-			elif temp_now2 < 0.18:
-				snow_cover = clampf((0.18 - temp_now2) / 0.14, 0.0, 1.0) * 0.85
-			elif land_h > 0.45 and temp_now2 < 0.30:
-				var t1 := clampf((0.30 - temp_now2) / 0.20, 0.0, 1.0)
-				var t2 := smoothstep(0.45, 0.85, land_h)
-				snow_cover = t1 * t2
+			snow_cover = _derived_snow_cover(temp_now2, land_h, int(cell.terrain), int(cell.cover))
 		_sync_axes_for_cell(cell, cfg_local, snow_cover)
 		cell.current_state = {
 			"season": season,
@@ -2168,10 +2327,12 @@ func _generate_cells(cfg: MapConfig) -> MapData:
 		cell.moisture = _compute_moisture_base(nx2, ny2)
 
 	# 5. 初步定地形（先有 water/land 分类，下游 pass 才能区分海陆）
+	# permanent_only=true：bake 路径用严苛雪线，让"中纬高山"进 MOUNTAIN 而非
+	# 永久 SNOW，留给 fast tick 季节性翻面（见 _decide_terrain 注释）。
 	for cell: HexCell in map.all_cells():
 		var ny3: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
 		var temp := _compute_temperature(ny3, cell.elevation)
-		var terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg)
+		var terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg, true)
 		cell.apply_terrain(terrain)
 
 	# 5.5. Phase 13：水体连通分量 BFS — 不与地图边界 OCEAN 连通的水体 → LAKE
@@ -2204,7 +2365,8 @@ func _generate_cells(cfg: MapConfig) -> MapData:
 			continue
 		var ny5: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
 		var temp2 := _compute_temperature(ny5, cell.elevation)
-		var new_terrain := _decide_terrain(cell.elevation, temp2, cell.moisture, cfg)
+		# 同 step 5：bake 期严苛雪线，避免湿度二次改写又把中纬高山打回永久 SNOW。
+		var new_terrain := _decide_terrain(cell.elevation, temp2, cell.moisture, cfg, true)
 		cell.apply_terrain(new_terrain)
 
 	# 9. 河流：Flow Accumulation 算法
@@ -2593,11 +2755,49 @@ func _normalize_elevation(map: MapData) -> void:
 
 # ─── 温度（cos bell 曲线） ───────────────────────────────────────────────
 
+# 海拔→温度递减率（双段式，2026-05-18 雪线修正）。
+# 旧：alt_penalty = elev * 0.5 —— 海拔 0.85 山头只比平原冷 0.425（≈30 个纬度），
+#    赤道高山 temp 仍 ≈ 0.575，无法触发雪线分支。
+# 新：低海拔段保持 ×0.55（保护平原/丘陵的纬度气候带不被压扁），
+#    山地段（>0.45）用 smoothstep × 0.30 额外加扣，让 5km 高山多扣 ~0.20，
+#    高山顶（elev=0.85）总扣减 ≈ 0.467 + 0.198 ≈ 0.665。
+# CPU/GPU SAME_SOURCE：与 shader compute_current_temp::_alt_penalty 严格一致。
+const ALT_PEN_LINEAR: float = 0.55
+const ALT_PEN_HIGH_AMP: float = 0.30
+const ALT_PEN_HIGH_LO: float = 0.45
+const ALT_PEN_HIGH_HI: float = 1.00
+
+func _alt_penalty(elevation: float) -> float:
+	var lin: float = elevation * ALT_PEN_LINEAR
+	var hi: float = smoothstep(ALT_PEN_HIGH_LO, ALT_PEN_HIGH_HI, elevation) * ALT_PEN_HIGH_AMP
+	return lin + hi
+
+# 雪盖派生：与 shader compute_snow_factor 同公式（去掉 fbm jitter，CPU 端用确定性版本）。
+# 旧公式：低温段 < 0.18；高山段需 land_h>0.45 且 temp<0.30，门槛严苛、几乎只有极地 + 极高山才能触发。
+# 新公式（2026-05-18 雪线修正）：
+#   - 低温段保持 < 0.18，但比例提到 1.0（旧 0.85），让冬至中纬带能接近全雪。
+#   - 高山段放宽：land_h > 0.35 且 temp < 0.45 → 让丘陵 / 中山在春秋也能局部覆雪；
+#     温度档分母从 0.20 → 0.25（更宽的"缓出"），smoothstep 端点从 0.45..0.85 → 0.35..0.80。
+# 输入 land_h 由 caller 用 sea_level 归一化后传入，避免在此重复算。
+func _derived_snow_cover(temp_now: float, land_h: float, terrain: int, cover: int) -> float:
+	if terrain == TerrainType.TERRAIN.SNOW:
+		return 1.0
+	var snow_cover: float = 0.0
+	if temp_now < 0.18:
+		snow_cover = clampf((0.18 - temp_now) / 0.14, 0.0, 1.0) * 0.95
+	elif land_h > 0.35 and temp_now < 0.45:
+		var t1: float = clampf((0.45 - temp_now) / 0.25, 0.0, 1.0)
+		var t2: float = smoothstep(0.35, 0.80, land_h)
+		snow_cover = t1 * t2
+	if cover == CoverType.CV.GLACIER and snow_cover < 0.80:
+		snow_cover = 0.80
+	return snow_cover
+
 func _compute_temperature(ny: float, elevation: float) -> float:
 	# 用余弦做平滑钟形：赤道（ny=0.5）最高 ~1.0，两极 0
 	var lat_signed: float = (ny - 0.5) * 2.0   # [-1, +1]
 	var lat_temp: float = pow(cos(lat_signed * PI * 0.5), 1.2)
-	var alt_penalty: float = elevation * 0.5
+	var alt_penalty: float = _alt_penalty(elevation)
 	return clampf(lat_temp - alt_penalty, 0.0, 1.0)
 
 # ─── 湿度（多尺度噪声，v8） ─────────────────────────────────────────────
@@ -2651,7 +2851,9 @@ func _apply_orographic_moisture_boost(map: MapData) -> void:
 # 配合 _height_warp 给 ny 加一点 jitter，让风带边界呈犬牙交错而不是死板水平条纹。
 func _apply_rain_shadow_per_cell(map: MapData, cfg: MapConfig, season_phase: float) -> void:
 	var lookback: int = _c().rain_shadow_lookback
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		var ny: float = _cube_row_norm(cell, cfg)
@@ -2689,7 +2891,12 @@ func _pick_upwind_dir(cell: HexCell, ny: float, season_phase: float, jitter: flo
 #
 # 注意：这个 pass 必须在 rivers 生成之后、最后一次 terrain 决策之前调用。
 func _apply_river_ecology(map: MapData, cfg: MapConfig) -> void:
-	for cell: HexCell in map.all_cells():
+	# 性能修复（2026-05-18）：stage_3_river p95=1.27ms 的主要成本不是算法，而是
+	# map.all_cells() 每次调用都通过 Dictionary.values() 复制 2400 个 HexCell
+	# 引用。这里改走 iter_cells() 直接返回内部 PackedArray 引用，零复制；
+	# 对没有索引的旧 MapData（理论上不应发生在 SUS 阶段）回退到 all_cells()。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if not cell.has_river:
 			continue
 		if _is_water(cell.terrain):
@@ -2769,7 +2976,9 @@ func _apply_vegetation_feedback(map: MapData, cfg: MapConfig) -> void:
 	# decay==0 时退化为旧行为；下限 0.1 避免极高海拔完全失声。
 	var elev_decay: float = _c().veg_feedback_elev_decay
 	var deltas: Dictionary = {}
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制；本函数虽是 fallback，但 generate 也会调一次。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		var donor: float = _vegetation_donor_amount(int(cell.terrain))
 		if donor == 0.0:
 			continue
@@ -2782,7 +2991,7 @@ func _apply_vegetation_feedback(map: MapData, cfg: MapConfig) -> void:
 			deltas[k] = float(deltas.get(k, 0.0)) + donor_eff
 
 	# 2) 应用 delta 到 moisture（限幅）
-	for cell: HexCell in map.all_cells():
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		var k := Vector3i(cell.q, cell.r, cell.s)
@@ -2810,7 +3019,7 @@ func _apply_vegetation_feedback(map: MapData, cfg: MapConfig) -> void:
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg)
 		var lat_temp: float = lat_tab[r_idx]
-		var temp: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+		var temp: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg)
 		cell.apply_terrain(new_terrain)
 
@@ -2829,7 +3038,9 @@ func _apply_swamp_pass(map: MapData, cfg: MapConfig) -> void:
 	var season_local: int = clampi(_current_season, 0, 3)
 	_ensure_row_tables(cfg, season_local)
 	var lat_tab: PackedFloat32Array = _row_lat_temp
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
@@ -2845,7 +3056,7 @@ func _apply_swamp_pass(map: MapData, cfg: MapConfig) -> void:
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg)
 		var lat_temp: float = lat_tab[r_idx]
-		var temp: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+		var temp: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		if temp < 0.30:
 			continue
 		var has_water: bool = cell.has_river
@@ -2865,7 +3076,9 @@ func _apply_swamp_pass(map: MapData, cfg: MapConfig) -> void:
 # 不动：永久 biome / 已经是 SWAMP / JUNGLE / TAIGA / FOREST 等成熟林相
 func _apply_shrubland_pass(map: MapData, cfg: MapConfig) -> void:
 	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制，all_cells() 复制 2400 项。stage_5 与 stage_3/11 共因。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		# 仅替换"半干旱草原 / 平原"类，避免吃掉已成形的森林
@@ -2902,7 +3115,9 @@ func _apply_shrubland_pass(map: MapData, cfg: MapConfig) -> void:
 # 类似 SWAMP 但更偏沿海，是热带潮间带
 func _apply_mangrove_pass(map: MapData, cfg: MapConfig) -> void:
 	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		# MANGROVE 优先级低于 SWAMP（SWAMP 已生成的不动），且不动山地 / 雪 / 冻原
@@ -3179,12 +3394,16 @@ func _apply_badlands_pass(map: MapData, cfg: MapConfig) -> void:
 
 # GLACIER（冰川）
 # 触发条件之一：
-#   A) 极冷沿海冰舌：temp < 0.10 + land_h < 0.20 + COAST/OCEAN 邻居
-#   B) 高山冰川：land_h > 0.55 + temp < 0.10（替代 SNOW 在山腰部分）
+#   A) 极冷沿海冰舌：temp < 0.05 + land_h < 0.20 + COAST/OCEAN 邻居
+#   B) 高山冰川：land_h > 0.65 + temp < 0.05（替代 SNOW 在山腰部分）
 # 既能生成两极海岸冰盖，也能延伸到高山冰川舌
+# 2026-05-18 雪线修正 #2：alt_penalty 加深后中纬丘陵也能 temp<0.10，
+# 阈值跟着抬：temp 0.10→0.05，alpine land_h 0.55→0.65。
 func _apply_glacier_pass(map: MapData, cfg: MapConfig) -> void:
 	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in map.all_cells():
+	# 性能修复：iter_cells() 零复制。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		# 只替换 SNOW / TUNDRA（既然它们已经是冷区分类）
@@ -3195,7 +3414,7 @@ func _apply_glacier_pass(map: MapData, cfg: MapConfig) -> void:
 		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
 		var ny: float = _cube_row_norm(cell, cfg)
 		var temp: float = _compute_temperature(ny, cell.elevation)
-		if temp >= 0.10:
+		if temp >= 0.05:
 			continue
 		# A) 沿海冰舌（OCEAN/COAST/SEA_ICE 都算海洋邻居）
 		var coastal_glacier: bool = false
@@ -3207,7 +3426,7 @@ func _apply_glacier_pass(map: MapData, cfg: MapConfig) -> void:
 					coastal_glacier = true
 					break
 		# B) 高山冰川
-		var alpine_glacier: bool = land_h > 0.55
+		var alpine_glacier: bool = land_h > 0.65
 		if not (coastal_glacier or alpine_glacier):
 			continue
 		cell.apply_terrain(TerrainType.TERRAIN.GLACIER)
@@ -3239,7 +3458,7 @@ func _apply_coastal_moisture_boost(map: MapData) -> void:
 # MOUNTAIN 阈值保持 0.52，配合双向脊线就能产生山脉链。HILL 阈值 0.30
 # 让山脚有充足过渡区。
 
-func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg: MapConfig) -> TerrainType.TERRAIN:
+func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg: MapConfig, permanent_only: bool = false) -> TerrainType.TERRAIN:
 	if elevation < cfg.sea_level - 0.06:
 		return TerrainType.TERRAIN.OCEAN
 	if elevation < cfg.sea_level:
@@ -3249,13 +3468,33 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 
 	# ─── 海拔/极地优先（不论温度湿度）───────────────────────────────────
 	# v10.6：三档 SNOW 判定
-	const SNOW_LINE := 0.82
-	const COLD_SNOW_LINE := 0.40
-	if land_height > SNOW_LINE:
+	# 2026-05-18 雪线修正 #2：alt_penalty 加深后温度被多扣 ~0.24，
+	# 中纬丘陵 (land_h≈0.4~0.5) 大量误判 COLD_SNOW。阈值跟着抬：
+	#   COLD_SNOW_LINE 0.40→0.55（只允许中山以上冷雪）
+	#   cold-snow 温度门槛 0.13→0.08（更冷才换 SNOW）
+	#   极地低温门槛 0.06→0.03（低海拔不被 alt_pen 误伤）
+	#
+	# 2026-05-18 雪线修正 #3 / 季节性高山雪：
+	# permanent_only=true 仅在 bake 阶段（_snapshot_base_state 之前）使用，
+	# 用更严苛阈值决定哪些 cell 被永久锁死为 SNOW（base_terrain=SNOW，
+	# refresh_seasonal/refresh_climate_daily 会跳过 _decide_terrain 永久维持）。
+	# 其它 fast-tick 路径仍传 false，温度（含 season_offset）正常驱动雪/岩切换。
+	#
+	# 调参目标：
+	#   - 赤道高山顶（land_h>0.85）→ 永久雪 ✅
+	#   - 中纬高山（land_h≈0.55~0.82, 年均温<0.08）→ bake 进 MOUNTAIN，
+	#     fast tick 冬季 temp_now<0.08 时翻 SNOW，夏季回 MOUNTAIN
+	#   - 极地低海拔（temp<0.03）→ bake 进 TUNDRA/PLAIN，季节性翻雪
+	var snow_line: float = 0.85 if permanent_only else 0.82
+	var cold_snow_line: float = 0.70 if permanent_only else 0.55
+	var cold_snow_temp: float = 0.05 if permanent_only else 0.08
+	# 极地永久雪：bake 时关闭（温度<0 等价于不触发），fast-tick 仍按 0.03 兜底。
+	var polar_temp: float = -1.0 if permanent_only else 0.03
+	if land_height > snow_line:
 		return TerrainType.TERRAIN.SNOW
-	if land_height > COLD_SNOW_LINE and temperature < 0.13:
+	if land_height > cold_snow_line and temperature < cold_snow_temp:
 		return TerrainType.TERRAIN.SNOW
-	if temperature < 0.06:
+	if temperature < polar_temp:
 		return TerrainType.TERRAIN.SNOW
 	# 山地（0.62 < land_h ≤ 0.82）
 	if land_height > 0.62:
@@ -3922,8 +4161,8 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 	for cell: HexCell in map.all_cells():
 		if _is_water(cell.terrain):
 			continue
-		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.base_terrain == TerrainType.TERRAIN.SNOW
+		# 2026-05-18：解除 MOUNTAIN lock-in，仅 SNOW 永久。详见 _run_season_stage2_micro 注释。
+		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 		if is_permanent_climate:
 			cell.apply_terrain(cell.base_terrain)
 			continue
@@ -3933,7 +4172,7 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg_local)
 		var lat_temp: float = lat_tab[r_idx]
-		var temp_year: float = clampf(lat_temp - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
 		cell.apply_terrain(new_terrain)
@@ -3974,19 +4213,12 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 	for cell: HexCell in map.all_cells():
 		var r_idx2: int = _cube_to_row(cell, cfg_local)
 		var lat_temp2: float = lat_tab[r_idx2]
-		var temp_year2: float = clampf(lat_temp2 - cell.elevation * 0.5, 0.0, 1.0)
+		var temp_year2: float = clampf(lat_temp2 - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now2: float = clampf(temp_year2 + off_tab[r_idx2], 0.0, 1.0)
 		var land_h: float = (cell.elevation - cfg_local.sea_level) / maxf(1.0 - cfg_local.sea_level, 0.001)
 		var snow_cover: float = 0.0
 		if not _is_water(cell.terrain):
-			if cell.terrain == TerrainType.TERRAIN.SNOW:
-				snow_cover = 1.0
-			elif temp_now2 < 0.18:
-				snow_cover = clampf((0.18 - temp_now2) / 0.14, 0.0, 1.0) * 0.85
-			elif land_h > 0.45 and temp_now2 < 0.30:
-				var t1 := clampf((0.30 - temp_now2) / 0.20, 0.0, 1.0)
-				var t2 := smoothstep(0.45, 0.85, land_h)
-				snow_cover = t1 * t2
+			snow_cover = _derived_snow_cover(temp_now2, land_h, int(cell.terrain), int(cell.cover))
 		# 派生三轴（landform 跨季不变，但 vegetation/cover 会随当季 terrain/snow 变化）
 		_sync_axes_for_cell(cell, cfg_local, snow_cover)
 		cell.current_state = {
@@ -4031,7 +4263,11 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 #   2) 两个反馈字段都乘以 decay（默认 0.5）衰减，保留半数跨季记忆，避免无限累积。
 func _consume_feedback_buffers(map: MapData, decay: float) -> void:
 	var FEEDBACK_SOIL_TO_BASE_W: float = 0.15
-	for cell: HexCell in map.all_cells():
+	# 性能修复（2026-05-18）：stage_11_feedback 历史 max=6.14ms（120-tick budget 的最大单项）。
+	# 单 cell 工作量极小（一两次 clamp+mul），所以瓶颈是 all_cells() 每次新建
+	# Array 复制 2400 项的开销。走 iter_cells() 直接复用底层 _cell_array。
+	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
 			continue
 		if absf(cell.soil_moisture) > 1e-4:
@@ -4350,19 +4586,8 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# —— 3) 当日雪盖（双段公式与 refresh_seasonal 严格一致；永久态特例处理） ——
 		var snow_cover: float = 0.0
 		if not _is_water(cell.terrain):
-			if cell.terrain == TerrainType.TERRAIN.SNOW:
-				snow_cover = 1.0  # 永久 SNOW biome 上限不变（需求 3.3）
-			else:
-				var land_h: float = (cell.elevation - _last_cfg.sea_level) / maxf(1.0 - _last_cfg.sea_level, 0.001)
-				if temp_now < 0.18:
-					snow_cover = clampf((0.18 - temp_now) / 0.14, 0.0, 1.0) * 0.85
-				elif land_h > 0.45 and temp_now < 0.30:
-					var t1 := clampf((0.30 - temp_now) / 0.20, 0.0, 1.0)
-					var t2 := smoothstep(0.45, 0.85, land_h)
-					snow_cover = t1 * t2
-				# GLACIER cover：保留 0.80 下限（半永久冰川不会因日级温升彻底融光，需求 3.3）
-				if cell.cover == CoverType.CV.GLACIER:
-					snow_cover = maxf(snow_cover, 0.80)
+			var land_h: float = (cell.elevation - _last_cfg.sea_level) / maxf(1.0 - _last_cfg.sea_level, 0.001)
+			snow_cover = _derived_snow_cover(temp_now, land_h, int(cell.terrain), int(cell.cover))
 
 		# —— 4) 写回 current_state（只更新连续字段，biome/landform/vegetation/cover 由 refresh_seasonal 维护） ——
 		# Fast-tick perf opt (C)：temperature / moisture / snow_cover / temp_baseline /
@@ -4795,15 +5020,32 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 		# Build per-tick PackedArray 输入：尽量走 SoA/cache，避免从 HexCell facade
 		# 逐格打包。sea_ice C++ native 只有几十微秒，热成本主要在这里。
-		if _gdext_sea_ice_base_terrain_buf.size() != n_cells_fast:
-			_gdext_sea_ice_base_terrain_buf.resize(n_cells_fast)
+		#
+		# 性能修复（2026-05-18）：实测 pack=0.9ms vs native=0.025ms（36×）。
+		# 原因是 base_terrain_arr / TTA 都在 SoA（map_data.gd:102, 142），但旧代码
+		# 仍逐 cell 打包。现按 temp_input 同款策略：先看 SoA 是否已就绪，再用
+		# fallback 私有 buffer。base_terrain 运行时不会变（sea_ice 翻转只动 terrain
+		# 不动 base_terrain），可以直接引用；TTA 优先用 ocean pass 同 round 留下的
+		# cached buffer（更新鲜），其次回 SoA，最后才逐 cell 打包。
 		var t_pack_us: int = Time.get_ticks_usec()
-		for i_build in range(n_cells_fast):
-			var c_build: HexCell = cells_fast[i_build]
-			_gdext_sea_ice_base_terrain_buf[i_build] = int(c_build.base_terrain) & 0xFF
-		var tta_input: PackedFloat32Array = PackedFloat32Array()
+		# base_terrain：SoA 是权威源（见 map_data.gd:397，pull_packed_arrays_from_cells
+		# 在生成期 / 加载存档时写一次；运行时 sea_ice 翻 terrain 不动 base_terrain）。
+		var base_terrain_input: PackedByteArray
+		if map.base_terrain_arr.size() == n_cells_fast:
+			base_terrain_input = map.base_terrain_arr
+		else:
+			if _gdext_sea_ice_base_terrain_buf.size() != n_cells_fast:
+				_gdext_sea_ice_base_terrain_buf.resize(n_cells_fast)
+			base_terrain_input = _gdext_sea_ice_base_terrain_buf
+			for i_build in range(n_cells_fast):
+				var c_build: HexCell = cells_fast[i_build]
+				_gdext_sea_ice_base_terrain_buf[i_build] = int(c_build.base_terrain) & 0xFF
+		# TTA：优先 ocean pass cached（同 round 最新），其次 SoA，最后 fallback。
+		var tta_input: PackedFloat32Array
 		if _gdext_ocean_anomaly_buf_cached.size() == n_cells_fast:
 			tta_input = _gdext_ocean_anomaly_buf_cached
+		elif map.temperature_transport_anomaly_arr.size() == n_cells_fast:
+			tta_input = map.temperature_transport_anomaly_arr
 		else:
 			if _gdext_sea_ice_tta_buf.size() != n_cells_fast:
 				_gdext_sea_ice_tta_buf.resize(n_cells_fast)
@@ -4855,7 +5097,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			"terrain_ocean_id": int(TerrainType.TERRAIN.OCEAN),
 			"water_terrain_ids": water_ids,
 			"neighbor_indices": nb_idx_fast,
-			"base_terrain_arr": _gdext_sea_ice_base_terrain_buf,
+			"base_terrain_arr": base_terrain_input,
 			"temp_transport_anomaly": tta_input,
 			"upwelling_strength": upw_input,
 			"cell_temperature_arr": temp_input,
@@ -5496,8 +5738,15 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			if moisture_now < 0.0:
 				moisture_now = 0.0
 
-		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - elev*0.5，clamp）
-		var temp_year: float = temp_year_lat - elevation * 0.5
+		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - alt_penalty(elev)，clamp）
+		# 2026-05-18 雪线修正：alt_penalty 内联双段式（同 _alt_penalty）。
+		# lin = elev*0.55；hi = smoothstep(0.45, 1.00, elev) * 0.30
+		var alt_pen_lin: float = elevation * ALT_PEN_LINEAR
+		var alt_pen_hi_t: float = (elevation - ALT_PEN_HIGH_LO) / (ALT_PEN_HIGH_HI - ALT_PEN_HIGH_LO)
+		if alt_pen_hi_t < 0.0: alt_pen_hi_t = 0.0
+		elif alt_pen_hi_t > 1.0: alt_pen_hi_t = 1.0
+		var alt_pen_hi: float = alt_pen_hi_t * alt_pen_hi_t * (3.0 - 2.0 * alt_pen_hi_t) * ALT_PEN_HIGH_AMP
+		var temp_year: float = temp_year_lat - (alt_pen_lin + alt_pen_hi)
 		if temp_year < 0.0: temp_year = 0.0
 		elif temp_year > 1.0: temp_year = 1.0
 		var season_offset: float
@@ -5512,7 +5761,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		elif temp_now > 1.0:
 			temp_now = 1.0
 
-		# 3) 当日雪盖（与 legacy 严格一致）
+		# 3) 当日雪盖（与 _derived_snow_cover 严格一致：低温段 0.95、高山段门槛 0.35/0.45/0.25）
 		var snow_cover: float = 0.0
 		var terr: int = int(c.terrain)
 		if is_water_a[i] == 0:
@@ -5524,12 +5773,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 					var sc1: float = (0.18 - temp_now) / 0.14
 					if sc1 > 1.0: sc1 = 1.0
 					elif sc1 < 0.0: sc1 = 0.0
-					snow_cover = sc1 * 0.85
-				elif land_h > 0.45 and temp_now < 0.30:
-					var t1: float = (0.30 - temp_now) / 0.20
+					snow_cover = sc1 * 0.95
+				elif land_h > 0.35 and temp_now < 0.45:
+					var t1: float = (0.45 - temp_now) / 0.25
 					if t1 > 1.0: t1 = 1.0
 					elif t1 < 0.0: t1 = 0.0
-					var t2: float = smoothstep(0.45, 0.85, land_h)
+					var t2: float = smoothstep(0.35, 0.80, land_h)
 					snow_cover = t1 * t2
 				if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
 					snow_cover = 0.80

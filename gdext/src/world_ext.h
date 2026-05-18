@@ -733,6 +733,22 @@ public:
     //                          （与 GDScript _rasterize_wind_slice_from_hex 严格 1:1）。
     godot::Dictionary run_wind_field_rasterize(godot::Dictionary knobs);
 
+    // ─── DOTS-Total-CPP（A 方案 / phys nan_guard 孪生）─────────────────────
+    // phys_field_nan_guard：扫 cell_wind_{x,y,speed} / cell_ocean_current_{x,y}
+    // / cell_upwelling_strength 这 6 个 SoA，统计 NaN/Inf 数量。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_physical_solve_step_one
+    //   _PHYS_STAGE_WIND_RASTER 第一帧的 `for c in map.all_cells(): is_finite()`
+    //   循环（2400 cell × 6 字段 ≈ 22ms），是 phys_wind_raster slice 的最大头。
+    //
+    // 这里直接读 _slots 里的 PackedFloat32Array.ptr() 顺序扫，编译器
+    // 会自动向量化成 AVX2 SIMD（_mm256_cmp_ps NaN+Inf 检测），目标
+    // < 0.1ms（2400 cell × 6 ≈ 56KB 顺序读）。
+    //
+    // 返回 int：bad cell 数（任一字段 NaN/Inf 即 +1，不重复计数）。
+    // -1 表示 SoA size mismatch / slot 缺失（GDScript 应回落到原慢路径）。
+    int phys_field_nan_guard();
+
     // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
     //
     // dist：_distribute_weather_field_to_cells C++ 化

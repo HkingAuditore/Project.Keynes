@@ -85,8 +85,12 @@ func should_run(ctx: SusTickContext) -> bool:
 	return _inner.should_run(ctx)
 
 
-func tick(ctx) -> Dictionary:
+func run_slice(ctx: SusTickContext) -> Dictionary:
 	return _inner.run_slice(ctx)
+
+
+func tick(ctx) -> Dictionary:
+	return run_slice(ctx)
 
 
 func reset_progress() -> void:

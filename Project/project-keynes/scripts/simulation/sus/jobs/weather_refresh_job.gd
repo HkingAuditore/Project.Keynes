@@ -65,6 +65,7 @@ var _round_active: bool = false
 var _round_stage: int = 0
 var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _climate_defer_streak: int = 0
+var _merged_native_first_log_done: bool = false
 
 
 # ─── DataCore: weather component 注册与缓存（Task 8） ───────────────────
@@ -548,12 +549,68 @@ func _should_defer_after_climate_slice() -> bool:
 	return true
 
 
+## Merged-native gate 结果缓存（一次性 has_method 探测后固定）。
+##
+## 关键修复（基于 2026-05-18 实测日志）：
+## 旧实现每个 SUS slice 都对 DCWorldExt 调 4 次 get_method_list()，每次返回
+## 整个类的方法表（数百项）并遍历比对字符串——这是 weather_refresh 日志中
+## `unattributed=2.5~2.6ms` 的核心来源。
+## 同时旧实现检查的 4 个子方法名 (run_weather_field_solve_pass /
+## run_weather_distribute_pass / run_weather_summary_fronts_pass /
+## run_stage_b_pass) **未通过 ClassDB::bind_method 注册**（只是 C++ 内部
+## helper），所以 gate 实际上永远返回 false，反复付出诊断成本却拿不到收益。
+##
+## 唯一已 bind 的一体化入口是 DCWorldExt::run_weather_refresh_daily_pass。
+## 但现 GDScript 端没有构造其 17+ 项 knobs PackedArray 的 facade，所以现在
+## 仍保持 false，直到 generator 暴露 refresh_weather_daily() facade。
+## 这里用懒探测 + 永久缓存，把 gate 开销从每 tick 数毫秒降到一次 has_method。
+var _merged_native_gate_probed: bool = false
+var _merged_native_gate_active: bool = false
+
+
+func _refresh_merged_native_gate() -> void:
+	_merged_native_gate_probed = true
+	_merged_native_gate_active = false
+	if generator == null or not generator.has_method("get_data_core_world_ext"):
+		return
+	var cp = generator._c() if generator.has_method("_c") else null
+	if cp == null or not ("use_gdext_weather_refresh_daily" in cp) \
+			or not bool(cp.use_gdext_weather_refresh_daily):
+		return
+	var ext = generator.get_data_core_world_ext()
+	if ext == null:
+		return
+	# 走顶层一体化 pass（唯一 bind 的入口）。
+	# 注：当前 generator 还没有 GDScript facade 把入参打包到 run_weather_refresh_daily_pass，
+	# 所以即便 has_method=true 我们也不主动 invoke——保持 fallback 到现有 direct path。
+	# 待 facade 落地后，gate 立即返回 true 即可启用合并模式，无需改 schedule 代码。
+	if not ext.has_method("run_weather_refresh_daily_pass"):
+		return
+	if not generator.has_method("refresh_weather_daily"):
+		# 等 generator 暴露 facade（refresh_weather_daily）后再激活。
+		_merged_native_gate_active = false
+		return
+	_merged_native_gate_active = true
+
+
+func _should_use_merged_native_weather(can_slice_field: bool) -> bool:
+	if _round_active or not can_slice_field:
+		return false
+	if not _merged_native_gate_probed:
+		_refresh_merged_native_gate()
+	return _merged_native_gate_active
+
+
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if generator == null or map == null or world == null:
 		ran_this_tick = false
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0 }
 
+	# Prelude 计时：getter 调用、is_data_core_on 探测、can_slice_field has_method ×4。
+	# 历史日志（2026-05-18）显示 unattributed=2.5~2.6ms，将该段独立 instrument
+	# 以便后续诊断真凶（getter call 还是 has_method 链）。
+	var t_prelude_us: int = Time.get_ticks_usec()
 	var season_idx: int = 0
 	if season_index_getter.is_valid():
 		season_idx = int(season_index_getter.call())
@@ -573,6 +630,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		and generator.has_method("begin_weather_refresh_stage_a") \
 		and generator.has_method("run_weather_refresh_stage_a_slice") \
 		and generator.has_method("commit_weather_refresh_stage_a")
+	var prelude_ms: float = (Time.get_ticks_usec() - t_prelude_us) / 1000.0
 	var timing: Dictionary = {
 		"begin_stage_a_ms": 0.0,
 		"run_stage_a_slice_ms": 0.0,
@@ -581,8 +639,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"stage_b_outer_ms": 0.0,
 		"sync_fronts_ms": 0.0,
 		"soak_dump_ms": 0.0,
+		"prelude_ms": prelude_ms,
 	}
-	if can_slice_field:
+	var use_merged_native_weather: bool = _should_use_merged_native_weather(can_slice_field)
+	if use_merged_native_weather and not _merged_native_first_log_done:
+		_merged_native_first_log_done = true
+		print("[weather/native-daily] merged transaction ACTIVE — field/distribute/summary/stage_b run in one SUS slice; legacy sliced path remains fallback")
+	if can_slice_field and not use_merged_native_weather:
 		if not _round_active:
 			var t_begin_us: int = Time.get_ticks_usec()
 			generator.begin_weather_refresh_stage_a(map, world, season_idx, anomaly, season_phase)
@@ -598,6 +661,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"elapsed_ms": begin_elapsed_ms,
 				"progress_ratio": 0.10,
 				"stage_name": "weather_begin",
+				"substage": "init_round",
+				"path": "data_core_cells_only" if is_data_core_on else "legacy",
 			}
 		var cell_budget: int = 500
 		if generator.has_method("weather_field_slice_cells"):
@@ -617,6 +682,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 					"elapsed_ms": solve_elapsed_ms,
 					"progress_ratio": maxf(0.10, float(slice_result.get("progress_ratio", 0.0))),
 					"stage_name": "weather_solve",
+					"substage": "cells_%d" % int(slice_result.get("work_done", 0)),
+					"path": "data_core_cells_only" if is_data_core_on else "legacy",
 				}
 			_round_stage = 2
 			return {
@@ -625,6 +692,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"elapsed_ms": solve_elapsed_ms,
 				"progress_ratio": 0.70,
 				"stage_name": "weather_solve",
+				"substage": "cells_done",
+				"path": "data_core_cells_only" if is_data_core_on else "legacy",
 			}
 		var t_commit_us: int = Time.get_ticks_usec()
 		var sliced_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
@@ -655,6 +724,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"elapsed_ms": sliced_elapsed_ms,
 			"progress_ratio": 1.0,
 			"stage_name": "weather_commit",
+			"substage": "fronts_%d" % sliced_fronts.size(),
+			"path": "data_core_cells_only" if is_data_core_on else "legacy",
 		}
 
 	var t_direct_a_us: int = Time.get_ticks_usec()
@@ -688,6 +759,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 1.0,
 		"stage_name": "weather_direct",
+		"substage": "fronts_%d" % fronts.size(),
+		"path": "data_core_cells_only" if is_data_core_on else "legacy",
 	}
 
 
@@ -750,6 +823,7 @@ func _publish_job_timing(timing: Dictionary, total_ms: float) -> void:
 	timing["job_total_ms"] = total_ms
 	var accounted_ms: float = 0.0
 	for k in [
+		"prelude_ms",
 		"begin_stage_a_ms",
 		"run_stage_a_slice_ms",
 		"stage_a_direct_ms",
@@ -802,3 +876,8 @@ func reset_progress() -> void:
 	_round_fronts = [] as Array[WeatherFront]
 	_fronts_changed_this_tick = false
 	_climate_defer_streak = 0
+	_merged_native_first_log_done = false
+	# 强制下一次 run_slice 重新探测 merged-native gate（generator/ext 可能在
+	# scene reload 期间被替换或新 facade 被注入；缓存失效后下一 slice 自检即可）。
+	_merged_native_gate_probed = false
+	_merged_native_gate_active = false

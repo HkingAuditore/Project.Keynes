@@ -30,12 +30,22 @@ const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
 # Phase E（方案 A）：sim 端寿命翻倍后，相邻快照之间的位置变化更大、间隔更长。
 # 把 MAX_BLEND 从 1.35s 抬到 2.5s、MAX_PREDICT 从 0.35d 抬到 1.0d，让表现层
 # 能在每两次 day-tick 之间持续外推前进，避免"两次快照之间冻住、第三次跳一下"。
+#
+# 抽动修复（2026-05-18）：进一步把 MAX_BLEND 抬到 5.0s、MAX_PREDICT 抬到 2.5d。
+# 原因：SUS 多 tick 切片 + RefreshClimateDaily 偶发抢占下，commit 真实间隔可
+# 突变到 3-4s，旧上限 2.5s 会触顶 → lerp 完成后进入 _predict 外推 → 新 commit
+# 一到 _front_blend_elapsed=0 重置 + smoothstep 的 ease-in → 视觉上"加速冲一
+# 下→突然停→慢慢起步"。抬高上限后 99% commit 间隔都能装进单段 lerp 内。
 const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.65
 const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.35
-const _WEATHER_FRONT_MAX_BLEND_SEC: float = 2.5
+const _WEATHER_FRONT_MAX_BLEND_SEC: float = 5.0
 const _WEATHER_FRONT_BLEND_LAG_FACTOR: float = 1.15
 const _WEATHER_FRONT_DESPAWN_FADE_SEC: float = 0.85
-const _WEATHER_FRONT_MAX_PREDICT_DAYS: float = 1.0
+const _WEATHER_FRONT_MAX_PREDICT_DAYS: float = 2.5
+# 抽动修复（2026-05-18）：blend_duration IIR 平滑系数（new × α + prev × (1-α)）。
+# α 越小越平滑但响应越慢。0.35 是在"调速档切换后 ~3 次 commit 内追上新间隔"和
+# "抑制单次 interval 抖动"之间取的折中。
+const _WEATHER_FRONT_BLEND_IIR_ALPHA: float = 0.35
 
 # 云阴影 sprite 的"原始半径"（生成的 ImageTexture 的半径，单位像素）。
 # 实际显示半径 = SHADOW_BASE_RADIUS_PX * sprite.scale，scale 由 front.radius 推算。
@@ -395,6 +405,15 @@ func set_ambient_cloud_shadow_strength(v: float) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
 
+# 抽动修复（2026-05-18）：速度档切换时由 main.gd 调用，重置 interval/duration
+# 估计，避免下一次 commit 算出"上次 push 到现在"的超长间隔（例如 x20→x1 切换
+# 后第一段 lerp 会被算成几秒长，云突然变慢）。
+func reset_snapshot_pacing() -> void:
+	_last_front_snapshot_time = -1.0
+	_front_snapshot_interval_sec = _WEATHER_FRONT_INITIAL_BLEND_SEC
+	# 不清 _front_blend_duration / _front_blend_elapsed，让当前正在进行的 lerp
+	# 自然走完，新节奏从下一次 set_weather_fronts 起生效。
+
 # fronts: Array[WeatherFront]（也接受 untyped Array，避免 caller 强转）
 func set_weather_fronts(fronts: Array) -> void:
 	var now_sec: float = float(Time.get_ticks_msec()) / 1000.0
@@ -408,12 +427,25 @@ func set_weather_fronts(fronts: Array) -> void:
 		_front_snapshot_interval_sec = _WEATHER_FRONT_INITIAL_BLEND_SEC
 		_front_blend_duration = _WEATHER_FRONT_INITIAL_BLEND_SEC
 	else:
-		_front_snapshot_interval_sec = maxf(now_sec - _last_front_snapshot_time, 0.001)
-		_front_blend_duration = clampf(
+		var raw_interval: float = maxf(now_sec - _last_front_snapshot_time, 0.001)
+		# 抽动修复（2026-05-18）：snapshot_interval 也走 IIR，吸收单次 commit
+		# 切片造成的抖动（例如某 tick 被 climate 抢占多花 1s）。
+		_front_snapshot_interval_sec = lerpf(
+			_front_snapshot_interval_sec, raw_interval, _WEATHER_FRONT_BLEND_IIR_ALPHA
+		)
+		var target_duration: float = clampf(
 			_front_snapshot_interval_sec * _WEATHER_FRONT_BLEND_LAG_FACTOR,
 			_WEATHER_FRONT_MIN_BLEND_SEC,
 			_WEATHER_FRONT_MAX_BLEND_SEC
 		)
+		# IIR 平滑 blend_duration：新值 = 0.35 × target + 0.65 × prev。
+		# 防止 interval 抖动直接打到时长上造成"这段飘很快、下段飘很慢"。
+		if _front_blend_duration > 0.0001:
+			_front_blend_duration = lerpf(
+				_front_blend_duration, target_duration, _WEATHER_FRONT_BLEND_IIR_ALPHA
+			)
+		else:
+			_front_blend_duration = target_duration
 		if targets.size() < start_candidates.size():
 			_front_blend_duration = maxf(_front_blend_duration, _WEATHER_FRONT_DESPAWN_FADE_SEC)
 	_last_front_snapshot_time = now_sec
@@ -794,7 +826,13 @@ func _align_front_blend_snapshots(start_candidates: Array, targets: Array) -> Ar
 		# 边界 cell 抖动（再 ±0.5 × radius）叠加后会顶不住——明明是同一朵云，
 		# 因为重新聚类的中心移动 1.6 × radius 就被判定为"不同 front"。
 		# 取 max 半径意味着大簇能拉近小簇做匹配，避免"split 出的小半"被误判为新生。
-		var match_radius: float = maxf(target_radius, best_candidate_radius) * 2.5
+		#
+		# 抽动修复（2026-05-18）：阈值再放宽到 4.0 × max_radius。
+		# 实测在 forward-bias = 1.0~1.5 interval 下，target.center 已经被沿 velocity
+		# 预推了"接近一整个半径"的距离，叠加 cluster 重聚类抖动可达 2-3 倍半径，
+		# 2.5 还是不够；放到 4.0 能在大半径 front（如 MONSOON）下吸收几乎所有
+		# 误判，代价仅是偶发把"刚好擦肩而过的两朵不同云"识别为同一朵——可接受。
+		var match_radius: float = maxf(target_radius, best_candidate_radius) * 4.0
 		if best_idx >= 0 and best_dist_sq <= match_radius * match_radius:
 			used[best_idx] = true
 			start = start_candidates[best_idx]
@@ -826,7 +864,12 @@ func _update_weather_front_blend(delta: float) -> void:
 	_front_blend_elapsed += maxf(delta, 0.0)
 	var duration: float = maxf(_front_blend_duration, 0.0001)
 	var raw_t: float = clampf(_front_blend_elapsed / duration, 0.0, 1.0)
-	var t: float = smoothstep(0.0, 1.0, raw_t)
+	# 抽动修复（2026-05-18）：从 smoothstep 改为线性 t。
+	# smoothstep 的 ease-in 会让每段 lerp 的前 ~25% 时长几乎不动，叠加每次 commit
+	# 重置 _front_blend_elapsed=0 → 视觉上每隔一次 commit 就"顿一下、再起步"。
+	# 线性 t 让云的视觉速度在两次 commit 之间恒定，配合 forward-bias 让首尾相接
+	# 处的速度也连续——彻底消除"一抽一抽"的观感。
+	var t: float = raw_t
 	_front_visual_snapshots = _blend_front_snapshots(t)
 	if raw_t >= 1.0:
 		_front_target_snapshots = _filter_visible_front_snapshots(_front_target_snapshots)

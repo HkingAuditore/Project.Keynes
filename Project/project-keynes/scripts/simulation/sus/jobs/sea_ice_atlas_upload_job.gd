@@ -82,6 +82,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"elapsed_ms": elapsed_upload_ms,
 			"progress_ratio": 1.0,
 			"phase": "upload",
+			"stage_name": "sea_ice_atlas_upload",
+			"substage": "dirty_%d" % int(_pending_prepare.get("dirty_cells", 0)),
 			"path": String(_pending_prepare.get("path", "unknown")),
 			"prepare_ms": float(_pending_prepare.get("prepare_ms", 0.0)),
 			"image_ms": float(upload.get("image_ms", 0.0)),
@@ -96,6 +98,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_pending_prepare = prep
 	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", false)):
 		_pending_upload = true
+	var dynamic_report: Dictionary = {}
+	if baker.has_method("rebake_dynamic_cell_atlas_only"):
+		dynamic_report = baker.rebake_dynamic_cell_atlas_only(map, world)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	var report_prep: Dictionary = {
 		"done": true,
@@ -103,12 +108,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 0.5 if _pending_upload else 1.0,
 		"phase": "prepare",
+		"stage_name": "sea_ice_atlas_prepare",
+		"substage": "dirty_%d" % int(prep.get("dirty_cells", 0)),
 		"path": String(prep.get("path", "unknown")),
 		"prepare_ms": float(prep.get("prepare_ms", elapsed_ms)),
 		"image_ms": 0.0,
 		"upload_ms": 0.0,
 		"dirty_cells": int(prep.get("dirty_cells", 0)),
 		"dirty_ratio": float(prep.get("dirty_ratio", 0.0)),
+		"dynamic_dirty_cells": int(dynamic_report.get("dirty_cells", 0)),
+		"dynamic_ms": float(dynamic_report.get("elapsed_ms", 0.0)),
 	}
 	if generator != null and generator.has_method("record_sea_ice_atlas_upload"):
 		generator.record_sea_ice_atlas_upload(report_prep)

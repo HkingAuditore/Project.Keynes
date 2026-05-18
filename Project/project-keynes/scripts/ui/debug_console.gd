@@ -45,6 +45,10 @@ var _telemetry_timer: Timer
 
 # 防抖：在一次内部 setter 刷新 CheckBox.pressed 时不要反向触发 toggled 信号。
 var _suppress_sync_signals: bool = false
+# 外部快捷键 / main 侧状态变更后置 dirty，由可见性切换或 telemetry 低频同步一次。
+var _state_sync_dirty: bool = false
+var _perf_detail_tick: int = 0
+
 
 # --- 布局常量 -------------------------------------------------------------
 const PANEL_WIDTH: float = 360.0
@@ -78,9 +82,10 @@ func _ready() -> void:
 	# 这里不硬编码 anchor，交由父容器或 main 侧的锚点配置；但给一个兜底 offset
 	position = Vector2(8, 44)
 	_build_ui()
-	# Telemetry 1Hz 定时器
+	# Telemetry 低频定时器：Debug 面板只读缓存状态，避免打开面板后每秒制造 UI/字典开销。
 	_telemetry_timer = Timer.new()
-	_telemetry_timer.wait_time = 1.0
+	_telemetry_timer.wait_time = 2.0
+
 	_telemetry_timer.autostart = false
 	_telemetry_timer.timeout.connect(_on_telemetry_tick)
 	add_child(_telemetry_timer)
@@ -91,7 +96,20 @@ func set_main(m: Node) -> void:
 	_main = m
 	_refresh_from_state()
 
+# 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
+func request_state_sync() -> void:
+	_state_sync_dirty = true
+	if visible:
+		_sync_state_if_dirty()
+
+func _sync_state_if_dirty() -> void:
+	if not _state_sync_dirty:
+		return
+	_state_sync_dirty = false
+	_refresh_from_state()
+
 # --- UI 构建 --------------------------------------------------------------
+
 
 func _build_ui() -> void:
 	var margin := MarginContainer.new()
@@ -205,22 +223,57 @@ func _build_visual_group(parent: VBoxContainer) -> void:
 		_visual_checkboxes[field] = cb
 
 func _build_diagnose_group(parent: VBoxContainer) -> void:
-	parent.add_child(_make_section_header("诊断动作"))
+	parent.add_child(_make_section_header("移动端调试动作"))
+	_add_action_button(parent, "重新生成地图（R）", &"regenerate_debug_map")
+	_add_action_button(parent, "适配视口（F）", &"fit_debug_map")
+	_add_action_button(parent, "切换 5 项涌现/日射（F8）", &"toggle_emergent_debug_switches")
+	_add_action_button(parent, "切换洋流高对比（F6）", &"toggle_ocean_current_debug")
 
+	parent.add_child(_make_section_header("诊断打印"))
 	var btn_ocean := Button.new()
-	btn_ocean.text = "打印洋流热输运摘要（F7 等价）"
+	btn_ocean.text = "打印洋流热输运摘要（F7）"
+	btn_ocean.custom_minimum_size.y = 34.0
 	btn_ocean.pressed.connect(_on_btn_diagnose_ocean)
 	parent.add_child(btn_ocean)
 
 	var btn_temp := Button.new()
 	btn_temp.text = "打印选中地块温度分解"
+	btn_temp.custom_minimum_size.y = 34.0
 	btn_temp.pressed.connect(_on_btn_diagnose_temperature)
 	parent.add_child(btn_temp)
 
+	_add_action_button(parent, "打印 DataCore 标志（F11）", &"print_data_core_flags_debug")
+	_add_action_button(parent, "打印 validate-weather 快照（F12）", &"print_validate_weather_snapshot_debug")
+	_add_action_button(parent, "打印性能 Verdict", &"print_perf_verdict_debug")
+
+	parent.add_child(_make_section_header("DataCore / Soak"))
+	_add_action_button(parent, "切换 DataCore Weather（F9）", &"toggle_data_core_weather_debug")
+	_add_action_button(parent, "切换 DataCore Master（F10）", &"toggle_data_core_master_debug")
+	_add_action_button(parent, "启动 Soak Dump 30 tick（F2）", &"start_soak_dump_debug")
+	_add_action_button(parent, "启动 Soak A/B SAME 30（F3）", &"start_soak_ab_same_source_debug")
+	_add_action_button(parent, "启动 Soak A/B Legacy（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
+	_add_action_button(parent, "取消 Soak / Dump（Alt+F3）", &"cancel_soak_debug")
+
+	parent.add_child(_make_section_header("选择"))
 	var btn_clear := Button.new()
 	btn_clear.text = "清空当前选中"
+	btn_clear.custom_minimum_size.y = 34.0
 	btn_clear.pressed.connect(_on_btn_clear_selection)
 	parent.add_child(btn_clear)
+
+func _add_action_button(parent: VBoxContainer, text: String, method: StringName, args: Array = []) -> void:
+	var btn := Button.new()
+	btn.text = text
+	btn.custom_minimum_size.y = 34.0
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.pressed.connect(func() -> void: _call_main_action(method, args))
+	parent.add_child(btn)
+
+func _call_main_action(method: StringName, args: Array = []) -> void:
+	if _main == null or not _main.has_method(method):
+		push_warning("[DebugConsole] main action missing: %s" % String(method))
+		return
+	_main.callv(method, args)
 
 func _build_telemetry_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("实时监视（Telemetry）"))
@@ -229,6 +282,10 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	parent.add_child(_telemetry_vbox)
 	# 预注册常用 Label
 	_add_telemetry_label("fast_tick", "fast_tick #0: 0ms")
+	_add_telemetry_label("sus_summary", "SUS: —")
+	_add_telemetry_label("sus_largest", "largest: —")
+	_add_telemetry_label("sus_jobs", "jobs: —")
+	_add_telemetry_label("sim_breakdowns", "breakdown: —")
 	_add_telemetry_label("overlay_bake", "overlay bake: — ms")
 	_add_telemetry_label("overlay_stats", "overlay stats: —")
 	_add_telemetry_label("overlay_invalid", "invalid cells: 0")
@@ -252,8 +309,10 @@ func _make_section_header(text: String) -> Label:
 
 func _on_visibility_changed() -> void:
 	if visible:
-		_refresh_from_state()
+		_state_sync_dirty = true
+		_sync_state_if_dirty()
 		_on_telemetry_tick()
+
 		if _telemetry_timer != null:
 			_telemetry_timer.start()
 	else:
@@ -336,9 +395,10 @@ func _on_btn_clear_selection() -> void:
 # --- 状态同步 -------------------------------------------------------------
 
 # 从 main / ClimateProfile / HexRenderer 读回真值，刷新所有 CheckBox/滑条/下拉。
-# 由：① _ready 后 set_main 注入时 ② visible=true 时 ③ 1Hz Timer 调用。
+# 由：① _ready 后 set_main 注入时 ② visible=true 时 ③ 外部状态 dirty 时调用。
 func _refresh_from_state() -> void:
 	_suppress_sync_signals = true
+
 
 	# Overlay mode
 	if _main != null and _main.has_method("get_overlay_mode"):
@@ -346,14 +406,19 @@ func _refresh_from_state() -> void:
 		# OptionButton item_id = mode
 		for i in range(_overlay_option_btn.item_count):
 			if _overlay_option_btn.get_item_id(i) == cur_mode:
-				_overlay_option_btn.select(i)
+				if _overlay_option_btn.selected != i:
+					_overlay_option_btn.select(i)
 				break
 
 	# Overlay alpha
 	if _main != null and _main.has_method("get_overlay_alpha"):
 		var a: float = float(_main.call("get_overlay_alpha"))
-		_overlay_alpha_slider.value = a
-		_overlay_alpha_label.text = "透明度 %.2f" % a
+		if not is_equal_approx(float(_overlay_alpha_slider.value), a):
+			_overlay_alpha_slider.value = a
+		var alpha_text := "透明度 %.2f" % a
+		if _overlay_alpha_label.text != alpha_text:
+			_overlay_alpha_label.text = alpha_text
+
 
 	_refresh_overlay_error_line()
 
@@ -366,10 +431,15 @@ func _refresh_from_state() -> void:
 		if cb == null:
 			continue
 		if cp == null:
-			cb.disabled = true
+			if not cb.disabled:
+				cb.disabled = true
 		else:
-			cb.disabled = false
-			cb.button_pressed = bool(cp.get(field))
+			if cb.disabled:
+				cb.disabled = false
+			var pressed := bool(cp.get(field))
+			if cb.button_pressed != pressed:
+				cb.button_pressed = pressed
+
 
 	# 视觉开关：从 main.gd 的 @export 字段直接读；ocean_current_debug 特殊——
 	# renderer.get_ocean_current_debug() 才是权威真值（F6 可能绕过 main 修改）。
@@ -384,7 +454,9 @@ func _refresh_from_state() -> void:
 			val = bool(renderer.get_ocean_current_debug())
 		elif _main != null:
 			val = bool(_main.get(field))
-		cb.button_pressed = val
+		if cb.button_pressed != val:
+			cb.button_pressed = val
+
 
 	# 未生成地图：置灰诊断动作相关（通过比对 get_current_map() 是否为 null）
 	var has_map: bool = _main != null \
@@ -413,13 +485,15 @@ func _show_need_map_toast() -> void:
 
 # --- Telemetry tick -------------------------------------------------------
 
-# 1Hz 刷新：收集并显示全局统计。模拟暂停时依然更新（暂停本身是状态 freeze，
+# 低频刷新：收集并显示全局统计。模拟暂停时依然更新（暂停本身是状态 freeze，
 # 数值停留在最后一次真实 tick 的快照；此处不额外判 paused，因为 stats 字典
-# 本身已经是冻结态）。
+# 本身已经是冻结态）。UI 控件状态只在 dirty 时同步，不在 telemetry 中全量轮询。
 func _on_telemetry_tick() -> void:
 	if _main == null:
 		return
+	_sync_state_if_dirty()
 	# fast_tick
+
 	var tick_n: int = 0
 	var tick_ms: int = 0
 	if _main.has_method("get_fast_tick_count"):
@@ -434,6 +508,8 @@ func _on_telemetry_tick() -> void:
 		bake_ms = float(_main.call("get_overlay_last_bake_ms"))
 	_set_tele("overlay_bake", "overlay bake: %.2f ms" % bake_ms)
 
+	_refresh_sim_perf_lines()
+
 	var stats: Dictionary = {}
 	if _main.has_method("get_overlay_stats"):
 		stats = _main.call("get_overlay_stats")
@@ -447,6 +523,7 @@ func _on_telemetry_tick() -> void:
 		_set_tele("overlay_buckets", "")
 		_refresh_overlay_error_line()
 		return
+
 
 	if OverlayMode.is_discrete(mode):
 		_set_tele("overlay_stats", "stats: %d cells（离散通道）" % int(stats.get("count", 0)))
@@ -470,27 +547,149 @@ func _on_telemetry_tick() -> void:
 		_set_tele("overlay_buckets", "")
 
 	var invalid_n: int = int(stats.get("invalid_count", 0))
+	var near_zero_n: int = int(stats.get("near_zero_count", 0))
 	var inv_lb: Label = _telemetry_labels.get("overlay_invalid", null)
 	if inv_lb != null:
-		if invalid_n > 0:
-			inv_lb.text = "invalid cells: %d" % invalid_n
+		var hint := OverlayMode.domain_hint(mode)
+		var line := "invalid cells: %d" % invalid_n
+		if near_zero_n > 0:
+			line += " / near-zero valid: %d" % near_zero_n
+		if hint != "":
+			line += "\n提示：%s" % hint
+		inv_lb.text = line
+		inv_lb.visible = line != ""
+		if invalid_n > 0 or near_zero_n > 0:
 			inv_lb.add_theme_color_override("font_color", Color(0.98, 0.85, 0.30))
-			inv_lb.visible = true
 		else:
-			inv_lb.text = "invalid cells: 0"
 			inv_lb.add_theme_color_override("font_color", Color(0.70, 0.75, 0.80))
+
 
 	_refresh_overlay_error_line()
 
-	# 1Hz 状态回抽：让 F6/F8 等外部路径改动后 UI 不脱节（验收 4.7）
-	_refresh_from_state()
+func _refresh_sim_perf_lines() -> void:
+	var summary: Dictionary = {}
+
+	if _main.has_method("get_sus_last_tick_summary"):
+		var raw_summary = _main.call("get_sus_last_tick_summary")
+		if raw_summary is Dictionary:
+			summary = raw_summary
+	if summary.is_empty():
+		_set_tele("sus_summary", "SUS: —")
+		_set_tele("sus_largest", "largest: —")
+	else:
+		_set_tele("sus_summary", "SUS tick=%s source=%s total=%.2fms jobs=%d/%d slices=%d p95=%.2fms" % [
+			str(summary.get("tick_index", "—")),
+			str(summary.get("source", "—")),
+			float(summary.get("total_ms", 0.0)),
+			int(summary.get("jobs_ran", 0)),
+			int(summary.get("jobs_skipped", 0)),
+			int(summary.get("slices_total", 0)),
+			float(summary.get("sus_sim_p95_300", 0.0)),
+		])
+		_set_tele("sus_largest", "largest: %s %.2fms stage=%s/%s path=%s" % [
+			str(summary.get("largest_slice_job", "—")),
+			float(summary.get("largest_slice_ms", 0.0)),
+			str(summary.get("largest_slice_stage", "")),
+			str(summary.get("largest_slice_substage", "")),
+			str(summary.get("largest_slice_path", "")),
+		])
+
+	_perf_detail_tick += 1
+	if _perf_detail_tick % 2 != 1:
+		return
+
+	var report: Dictionary = {}
+	if _main.has_method("get_sus_last_tick_report"):
+		var raw_report = _main.call("get_sus_last_tick_report")
+		if raw_report is Dictionary:
+			report = raw_report
+	_set_tele("sus_jobs", _format_sus_jobs(report))
+
+	var breakdowns: Dictionary = {}
+	if _main.has_method("get_sim_breakdowns"):
+		var raw_breakdowns = _main.call("get_sim_breakdowns")
+		if raw_breakdowns is Dictionary:
+			breakdowns = raw_breakdowns
+	_set_tele("sim_breakdowns", _format_sim_breakdowns(breakdowns))
+
+
+func _format_sus_jobs(report: Dictionary) -> String:
+	if report.is_empty():
+		return "jobs: —"
+	var keys: Array = report.keys()
+	keys.sort_custom(func(a, b): return str(a) < str(b))
+	var rows: PackedStringArray = PackedStringArray()
+	for job_id in keys:
+		var r: Dictionary = report[job_id]
+		var skipped: String = str(r.get("skipped_reason", ""))
+		if skipped != "":
+			rows.append("%s skip:%s" % [str(job_id), skipped])
+		else:
+			rows.append("%s %.2fms slices=%d progress=%.0f%%%s" % [
+				str(job_id),
+				float(r.get("elapsed_ms", 0.0)),
+				int(r.get("slices_run", 0)),
+				float(r.get("progress_ratio", 0.0)) * 100.0,
+				_format_stage_suffix(r),
+			])
+		if rows.size() >= 8:
+			break
+	return "jobs:\n  " + "\n  ".join(rows)
+
+func _format_stage_suffix(r: Dictionary) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	var stage: String = str(r.get("stage", ""))
+	var substage: String = str(r.get("substage", ""))
+	var path: String = str(r.get("path", ""))
+	if stage != "":
+		parts.append(stage)
+	if substage != "":
+		parts.append(substage)
+	if path != "":
+		parts.append(path)
+	if parts.is_empty():
+		return ""
+	return " [" + "/".join(parts) + "]"
+
+func _format_sim_breakdowns(breakdowns: Dictionary) -> String:
+	if breakdowns.is_empty():
+		return "breakdown: —"
+	var rows: PackedStringArray = PackedStringArray()
+	for name in ["climate", "weather", "enum_atlas", "sea_ice_atlas"]:
+		var b = breakdowns.get(name, {})
+		if b is Dictionary and not b.is_empty():
+			rows.append("%s: %s" % [name, _format_ms_fields(b)])
+	if rows.is_empty():
+		return "breakdown: —"
+	return "breakdown:\n  " + "\n  ".join(rows)
+
+func _format_ms_fields(d: Dictionary) -> String:
+	var keys: Array = d.keys()
+	keys.sort_custom(func(a, b): return str(a) < str(b))
+	var parts: PackedStringArray = PackedStringArray()
+	for k in keys:
+		var key_text: String = str(k)
+		if key_text == "elapsed_ms" or key_text == "total_ms" or key_text.ends_with("_ms"):
+			parts.append("%s=%.1f" % [key_text.replace("_ms", ""), float(d[k])])
+		if parts.size() >= 7:
+			break
+	for meta_key in ["current_pass", "pass", "stage", "substage", "path"]:
+		if d.has(meta_key) and str(d[meta_key]) != "":
+			parts.append("%s=%s" % [meta_key, str(d[meta_key])])
+	if parts.is_empty():
+		return str(d)
+	return " ".join(parts)
 
 func _set_tele(key: String, text: String) -> void:
 	var lb: Label = _telemetry_labels.get(key, null)
 	if lb == null:
 		return
-	lb.text = text
-	lb.visible = text != ""
+	if lb.text != text:
+		lb.text = text
+	var want_visible := text != ""
+	if lb.visible != want_visible:
+		lb.visible = want_visible
+
 
 func _format_buckets(mode: int, buckets: Dictionary) -> String:
 	if buckets == null or buckets.is_empty():

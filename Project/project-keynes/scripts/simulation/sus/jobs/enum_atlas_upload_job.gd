@@ -57,13 +57,26 @@ func run_slice(_ctx: SusTickContext) -> Dictionary:
 		baker.rebake_vegetation_tex_only(map, world, hex_size)
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-	if generator.has_method("record_enum_atlas_upload"):
+	var report: Dictionary = {}
+	if baker != null and baker.has_method("get_last_enum_atlas_upload_report"):
+		report = baker.get_last_enum_atlas_upload_report()
+	if report.is_empty():
+		report = {"axis": axis, "elapsed_ms": elapsed_ms, "path": "unknown"}
+	report["axis"] = axis
+	report["elapsed_ms"] = elapsed_ms
+	if generator.has_method("record_enum_atlas_upload_report"):
+		generator.record_enum_atlas_upload_report(report)
+	elif generator.has_method("record_enum_atlas_upload"):
 		generator.record_enum_atlas_upload(axis, elapsed_ms)
 	return {
 		"done": true,
 		"work_done": 1 if axis != "" else 0,
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 1.0,
+		"axis": axis,
+		"path": str(report.get("path", "")),
+		"stage_name": "atlas_%s" % axis if axis != "" else "atlas_noop",
+		"substage": str(report.get("path", "")),
 	}
 
 

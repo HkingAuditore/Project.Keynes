@@ -59,7 +59,9 @@ const DISCRETE_LANDFORM_COLORS: Array = [
 ]
 
 var _title_label: Label
+var _hint_label: Label
 var _ramp_rect: TextureRect
+
 var _low_label: Label
 var _high_label: Label
 var _pointer: ColorRect         # 当前选中数值对应的色带位置指针（连续通道）
@@ -102,7 +104,16 @@ func _build_ui() -> void:
 	_title_label.add_theme_font_size_override("font_size", 14)
 	vbox.add_child(_title_label)
 
+	_hint_label = Label.new()
+	_hint_label.text = ""
+	_hint_label.visible = false
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint_label.add_theme_font_size_override("font_size", 11)
+	_hint_label.add_theme_color_override("font_color", Color(0.78, 0.82, 0.88))
+	vbox.add_child(_hint_label)
+
 	# 连续容器
+
 	_continuous_box = VBoxContainer.new()
 	_continuous_box.add_theme_constant_override("separation", 2)
 	vbox.add_child(_continuous_box)
@@ -185,7 +196,11 @@ func update_for_mode(mode: int) -> void:
 		return
 	visible = true
 	_title_label.text = OverlayMode.display_name(mode)
+	var hint := OverlayMode.domain_hint(mode)
+	_hint_label.text = hint
+	_hint_label.visible = hint != ""
 	_pointer.visible = false
+
 	_last_pointer_value = -1.0
 	if OverlayMode.is_vector(mode):
 		_continuous_box.visible = false
