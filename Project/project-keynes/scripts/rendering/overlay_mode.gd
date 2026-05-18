@@ -99,6 +99,21 @@ const RANGE_LABEL: Dictionary = {
 	MODE.DEMO_THERMAL_GRADIENT: ["0.00", "1.00"],
 }
 
+# 通道适用域 / 无效区域提示。DebugConsole 与 OverlayLegend 用它区分
+# “没有数据”和“该地块类型不适用 / 强度太低无方向”。
+const DOMAIN_HINT: Dictionary = {
+	MODE.VEGETATION_VITALITY: "仅陆地有效；水域透明不是缺数据。",
+	MODE.OCEAN_CURRENT: "仅水域有效；陆地透明，近零洋流会显示很暗。",
+	MODE.OCEAN_HEAT_TRANSPORT: "仅水域有效；陆地透明，0.5 为中性热输运。",
+	MODE.UPWELLING: "仅水域有效；陆地透明，0.5 为中性。",
+	MODE.WIND_DIR: "风速接近 0 时方向无意义，会记为 invalid。",
+	MODE.OCEAN_CURRENT_DIR: "仅水域有效；静水或陆地无方向，会记为 invalid。",
+	MODE.WIND_STRESS_CURL: "仅水域有效；陆地透明，0.5 为中性。",
+	MODE.OCEAN_PSI: "仅水域有效；陆地透明，0.5 为中性。",
+	MODE.DEMO_THERMAL_GRADIENT: "仅 demo 数据存在时有效；数组为空会透明。",
+}
+
+
 const CATEGORY: Dictionary = {
 	MODE.NONE: CATEGORY_KIND.CONTINUOUS,
 	MODE.TEMPERATURE: CATEGORY_KIND.CONTINUOUS,
@@ -253,7 +268,11 @@ static func ordered_modes() -> Array:
 static func display_name(m: int) -> String:
 	return DISPLAY_NAME.get(m, "未知")
 
+static func domain_hint(m: int) -> String:
+	return DOMAIN_HINT.get(m, "")
+
 static func is_discrete(m: int) -> bool:
+
 	return int(CATEGORY.get(m, CATEGORY_KIND.CONTINUOUS)) == CATEGORY_KIND.DISCRETE
 
 # 是否为方向型（色相=方向、亮度=强度）通道。

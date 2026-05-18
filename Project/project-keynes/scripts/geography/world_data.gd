@@ -53,6 +53,9 @@ var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
 # RGBA8 weather field texture, baked from per-cell weather state.
 # R=WeatherType id, G=intensity, B=cloud, A=precip.
 var weather_field_buffer: PackedByteArray = PackedByteArray()
+# RGBA8 dynamic cell atlas：把每日会变的真实 cell 状态喂给主地图材质。
+# R=temperature, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
+var dynamic_cell_atlas_buffer: PackedByteArray = PackedByteArray()
 
 # ─── 元数据 ───────────────────────────────────────────────────────────────
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
@@ -93,6 +96,8 @@ var volcano_field_tex: ImageTexture
 var sea_ice_tex: ImageTexture
 # Per-pixel weather field for WeatherLayer. Updated only after weather ticks.
 var weather_field_tex: ImageTexture
+# 主地图动态状态 atlas。低频/dirty 更新，shader 用它替代纯纬度派生温度/雪盖。
+var dynamic_cell_atlas_tex: ImageTexture
 # Systemic Ocean Currents：独立的上升流 R8 纹理。仅调试可视化（F6 扩展）消费；
 # 主视觉路径不需要它。bake_world 与 rebake_ocean_currents 都会同步更新。
 var upwelling_tex: ImageTexture

@@ -826,6 +826,10 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		"n_cells": n_cells,
 		# _apply_snow_accumulation 用到的 cover/温度阈值（任务 4 中 C++ 复刻 GDScript
 		# 同名函数；任意改动需保持双侧同步）。
+		# 2026-05-18 雪线修正：GDScript 在 _apply_snow_accumulation 内做 elev 偏移；
+		# C++ 端 run_weather_distribute_pass 已同步实现（gdext/src/world_ext.cpp，
+		# SNOW_ELEV_NEUTRAL=0.30 / FREEZE_GAIN=0.20 / MELT_GAIN=0.30，常数硬编码不走 knobs）。
+		# 若日后调参，需双侧同步修改。
 		"snow_min_intensity": 0.001,
 		"snow_freeze_t": 0.30,
 		"snow_melt_t": 0.34,
@@ -1393,15 +1397,34 @@ const SNOW_ACCUM_DAYS_REQ: int = 3      # 连续 N 天才落地积雪
 const SNOW_FREEZE_T: float = 0.30       # 低于此温度才算"可降雪冷度"
 const SNOW_MELT_T: float = 0.34         # 高于此温度开始消融（带一点滞回防抖）
 
+# 2026-05-18 雪线修正：海拔放宽 → 高山易积雪、平原难积雪。
+# 以 elev=0.30 为中性（freeze_t = 0.30、melt_t = 0.34），
+# 高于此值时 freeze 阈值随 elev 抬高（更容易冷到冻结），低于此值时 freeze 阈值压低；
+# melt 阈值同方向偏移（高山更难融、平原更易融）。
+# 偏移上限 ±0.06，避免极端山顶常年降雪而极平原永远不积雪。
+# 注：C++ snapshot（_make_weather_decision_snapshot）目前只携带 SNOW_FREEZE_T/SNOW_MELT_T
+# 基线常数；C++ 路径的 elev 偏移待任务 4 同步。GDScript 优先实现。
+const SNOW_ELEV_NEUTRAL: float = 0.30
+const SNOW_ELEV_FREEZE_GAIN: float = 0.20    # elev 每升 1.0 → freeze_t 上抬 0.20（≈+0.14 山顶）
+const SNOW_ELEV_FREEZE_MAX_OFF: float = 0.06
+const SNOW_ELEV_MELT_GAIN: float = 0.30      # elev 每升 1.0 → melt_t 上抬 0.30（高山难融）
+const SNOW_ELEV_MELT_MAX_OFF: float = 0.10
+
 func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity: float) -> bool:
 	# 返回 true 表示本调用改写了 cell.cover（caller 据此设置 _cover_dirty）。
 	if LandformType.is_water(cell.landform):
 		return false
 	var changed: bool = false
-	var snowing: bool = WeatherType.can_form_snow(wt) and temp_now < SNOW_FREEZE_T and intensity > 0.4
+	# 海拔偏移（雪线修正）：让高山即使 temp_now 较高也能积雪，平原相反。
+	var elev_delta: float = cell.elevation - SNOW_ELEV_NEUTRAL
+	var freeze_off: float = clampf(elev_delta * SNOW_ELEV_FREEZE_GAIN, -SNOW_ELEV_FREEZE_MAX_OFF, SNOW_ELEV_FREEZE_MAX_OFF)
+	var melt_off: float = clampf(elev_delta * SNOW_ELEV_MELT_GAIN, -SNOW_ELEV_MELT_MAX_OFF, SNOW_ELEV_MELT_MAX_OFF)
+	var freeze_t_local: float = SNOW_FREEZE_T + freeze_off
+	var melt_t_local: float = SNOW_MELT_T + melt_off
+	var snowing: bool = WeatherType.can_form_snow(wt) and temp_now < freeze_t_local and intensity > 0.4
 	if snowing:
 		cell.accumulated_snow_days += 1
-	elif temp_now > SNOW_MELT_T:
+	elif temp_now > melt_t_local:
 		cell.accumulated_snow_days = max(0, cell.accumulated_snow_days - 1)
 	# 升级：累积够了且当前还不是 SNOW → 备份并覆盖
 	if cell.accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ and cell.cover != CoverType.CV.SNOW:

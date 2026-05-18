@@ -323,11 +323,34 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_last_slice_elapsed_ms = slice_elapsed_ms if ran_this_tick else 0.0
 
 	var progress: float = float(_pass_cursor) / float(_PASS_COUNT)
+	var stage_name_out: String = ""
+	if ran_pass_id >= 0 and ran_pass_id < _PASS_NAMES.size():
+		stage_name_out = _PASS_NAMES[ran_pass_id]
+	elif done:
+		stage_name_out = "round_done"
+	else:
+		stage_name_out = "skip"
+	# 走 climate_pass_b 时有 sparse/full 三态，附带在 substage 上，便于
+	# fast tick WARN/largest 行直接看出本片走的稀疏程度。
+	# substage 用本 tick 真正执行的 pass_id（_pass_cursor 在执行后已 +1，
+	# 取它会偏向 "下一片要跑哪段" 而不是 "本片刚跑了哪段"）。
+	var substage_out: String = "cursor_%d" % ran_pass_id if ran_pass_id >= 0 else "cursor_skip"
+	var path_out: String = ""
+	var cp_for_path = generator._c() if generator != null and generator.has_method("_c") else null
+	if cp_for_path != null and "use_data_core_climate" in cp_for_path and bool(cp_for_path.use_data_core_climate):
+		path_out = "data_core" if data_core_ready() else "data_core_cells_only"
+	else:
+		path_out = "legacy"
+	if ran_pass_id == _PASS_B and generator != null and "_last_climate_pass_b_path" in generator:
+		substage_out = "pass_b_%s" % str(generator._last_climate_pass_b_path)
 	return {
 		"done": done,
 		"work_done": map.cell_count() if done else 0,
 		"elapsed_ms": slice_elapsed_ms,
 		"progress_ratio": progress if not done else 1.0,
+		"stage_name": stage_name_out,
+		"substage": substage_out,
+		"path": path_out,
 	}
 
 

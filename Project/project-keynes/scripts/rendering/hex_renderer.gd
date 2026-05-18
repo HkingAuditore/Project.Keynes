@@ -416,12 +416,29 @@ func set_ocean_current_enabled(v: bool) -> void:
 
 # 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
+# 方案 0：upwelling_tex 仅本开关 true 时使用——首次开启时通过 MapBaker.rebake_upwelling_tex_for_debug
+# lazy 烘焙一张并 set_shader_parameter；关闭时不做反向清理（保留贴图，避免来回切动反复 bake）。
 var _ocean_current_debug: bool = false
+# 外部注入：debug 开启时用来 lazy bake upwelling_tex。null 时跳过 bake，shader 也不会读到
+# 这张贴图（保持 uniform 默认黑纹理，调试覆盖层全屏中性，与未启用 debug 视觉一致但无方向提示）。
+var _map_baker = null
+
+func set_map_baker(b) -> void:
+	_map_baker = b
 
 func set_ocean_current_debug(v: bool) -> void:
 	_ocean_current_debug = v
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
+	# 方案 0：仅当切到 true 且贴图缺失时才 lazy bake upwelling_tex。
+	if _ocean_current_debug and _world != null and _world.upwelling_tex == null \
+			and _map_baker != null and _map_baker.has_method("rebake_upwelling_tex_for_debug"):
+		var t0 := Time.get_ticks_msec()
+		if _map_baker.rebake_upwelling_tex_for_debug(_world):
+			print("[VisualOverhaul] ocean_current_debug → lazy baked upwelling_tex in %dms"
+					% (Time.get_ticks_msec() - t0))
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
 
 func get_ocean_current_debug() -> bool:
 	return _ocean_current_debug
@@ -667,6 +684,16 @@ func set_weather_fronts(fronts: Array) -> void:
 func set_weather_field_texture(tex: Texture2D) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_weather_field_texture"):
 		_weather_layer.set_weather_field_texture(tex)
+	# 2026-05-18 P1-B：让主地形材质也消费 weather_field_tex（海面风暴变色 + 风浪条纹）。
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("weather_field_tex", tex)
+
+# 2026-05-18 P1-B：仅刷新主地形材质上的 weather_field_tex（不改 weather_layer
+# 的 null 语义 —— weather_layer 用 null/非 null 控制可见性切换；主材质需要
+# 始终知道 world.weather_field_tex 以便海面分支消费 storm intensity）。
+func refresh_terrain_weather_field_tex() -> void:
+	if _shader_mat != null and _world != null:
+		_shader_mat.set_shader_parameter("weather_field_tex", _world.weather_field_tex)
 
 func _on_weather_layer_visual_fronts_changed(fronts: Array) -> void:
 	_push_weather_fronts_to_shader(fronts)
@@ -802,30 +829,29 @@ func _apply_uniforms() -> void:
 	var sm := _shader_mat
 	var bounds := _world.world_bounds
 
-	# v9.atlas：原 10 张 sampler 压成 4 张（height + 3 atlas）+ 共享 noise_tex
+	# v9.atlas：height + enum/scalar/vector atlas + 共享 noise_tex。
 	sm.set_shader_parameter("height_tex",   _world.height_tex)
 	sm.set_shader_parameter("enum_atlas",   _world.enum_atlas_tex)
 	sm.set_shader_parameter("scalar_atlas", _world.scalar_atlas_tex)
-	# C3 plan (vector_atlas removal)：vector_atlas / ocean_upwelling_tex 已不再
-	# 被任何 GDScript 路径写入（map_baker 跳过 _encode_vector_atlas / _encode_upwelling_tex）。
-	# shader 端 world_map.gdshader 已用 vec4(0.5) 常量替代采样，下游 ocean_current_v /
-	# wind_v 全部退化为 vec2(0)，所有相关分支自然短路。F6 调试层的
-	# ocean_upwelling_tex 仅在 ocean_current_debug=true 时采样，关闭时零开销。
-	# 这两个 set_shader_parameter 也跟着停掉，避免传 null 触发 sampler 默认绑定漂移。
-	# WeatherLayer 继续走 set_vector_atlas_texture(null)，wind_field_enabled=false
-	# 自动 fallback 到 axis-only advection。
+	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
+	sm.set_shader_parameter("vector_atlas_valid", _world.vector_atlas_tex != null)
+	sm.set_shader_parameter("dynamic_cell_atlas", _world.dynamic_cell_atlas_tex)
+	# 2026-05-18 P1-B：海面天气视觉，把 weather_field_tex 也绑给主材质（hex-constant RGBA8）
+	if _world.weather_field_tex != null:
+		sm.set_shader_parameter("weather_field_tex", _world.weather_field_tex)
 	if _weather_layer != null:
-		_weather_layer.set_vector_atlas_texture(null)
+		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
 	# 火山强度场独立纹理（让位给 scalar_atlas.a 的连续 sea_ice_fraction）
 	sm.set_shader_parameter("volcano_field_tex", _world.volcano_field_tex)
 	# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a 已让位）。
 	# 由 SeaIceAtlasUploadJob 每 stride 日通过 MapBaker.bake_sea_ice_fraction_only 上传。
 	sm.set_shader_parameter("sea_ice_tex", _world.sea_ice_tex)
-	# C3 plan (vector_atlas removal)：upwelling_tex 仅 F6 调试层 if(ocean_current_debug)
-	# 分支采样；map_baker 已停止编码（永远 null）。这里也停掉注入，避免 sampler null 漂移。
-	# 调试模式开启时 shader 内 texture(ocean_upwelling_tex, uv) 会拿默认 0 黑纹理 →
-	# up_signed = -1.0、up_mag = 1.0，会画满紫色 → 后续若需要恢复 F6 调试，重启 atlas
-	# 即可。当前主路径 (ocean_current_debug=false) 完全无影响。
+	# Systemic Ocean Currents：仅 F6 高对比调试层采样；主路径不依赖它。
+	# 方案 0：默认不再每次新材质都绑 upwelling_tex（commit 路径已不烘焙它，绑过来就是 null）。
+	# 当 _ocean_current_debug=true 时 set_ocean_current_debug 已 lazy bake 并 set 一次；
+	# 这里仅在 _world.upwelling_tex 已存在时同步绑定，避免新材质丢失已 bake 的纹理。
+	if _world.upwelling_tex != null:
+		sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
 	# v9.fbm-opt：把共享 noise_tex 喂给地形 shader，替换 value_noise 内部的 4× hash21
 	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
 
@@ -900,9 +926,7 @@ func _apply_uniforms() -> void:
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
 		_weather_layer.set_weather_field_texture(null)
-		# C3 plan (vector_atlas removal)：vector_atlas 已停止 bake，传 null 让
-		# wind_field_enabled=false，shader 内 sample_wind 走全局常量 axis fallback。
-		_weather_layer.set_vector_atlas_texture(null)
+		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
 		_weather_layer.set_weather_strength(weather_strength)
 	set_weather_fronts([])
 

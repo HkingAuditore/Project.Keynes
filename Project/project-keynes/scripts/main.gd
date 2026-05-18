@@ -147,6 +147,9 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
 @onready var _info_label: Label = $UI/TopBar/HBox/InfoLabel
+@onready var _debug_btn: Button = $UI/TopBar/HBox/DebugBtn
+@onready var _regen_btn: Button = $UI/TopBar/HBox/RegenBtn
+@onready var _fit_btn: Button = $UI/TopBar/HBox/FitBtn
 @onready var _time_label: Label = $UI/TopBar/HBox/TimeLabel
 @onready var _climate_label: Label = $UI/TopBar/HBox/ClimateLabel
 @onready var _pause_btn: Button = $UI/TopBar/HBox/PauseBtn
@@ -356,9 +359,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	match event.keycode:
 		KEY_R:
-			_generate_and_render(0)
+			regenerate_debug_map()
 		KEY_F:
-			_camera.fit_to_viewport(1.05, _map_safe_area())
+			fit_debug_map()
 		KEY_SPACE:
 			_world_clock.toggle_pause()
 			_sync_pause_btn()
@@ -367,83 +370,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# Debug 控制台开合（需求 4.1）。反引号/波浪键 或 F1
 			# 都能切换可见性。面板 mouse_filter=STOP，点击在面板内
 			# 的时候不会穿透选中地块。
-			if _debug_console != null:
-				_debug_console.visible = not _debug_console.visible
+			toggle_debug_console()
 		KEY_F8:
 			# Emergent Climate Coupling + True Insolation-Driven：一键切换"纯回退模式"。
-			# 把 5 个涌现耦合开关（含 true_insolation_enabled）统一在 true / false
-			# 之间切换，让画面、温度物理、海冰、湿度同时切换；方便 QA 在同一会话
-			# 对比"全涌现"与"全 legacy"路径的差异。
-			if _generator != null:
-				var cp = _generator._c()
-				if cp != null:
-					var fallback: bool = bool(cp.emergent_season_enabled)
-					var new_state: bool = not fallback
-					cp.emergent_season_enabled = new_state
-					cp.enable_local_climate_coupling = new_state
-					cp.emergent_weather_coupling = new_state
-					cp.fast_slow_layering_enabled = new_state
-					cp.true_insolation_enabled = new_state
-					print("[Emergent+Insolation] 5 switches → %s (press F8 to toggle)" % str(new_state))
-					# 同步推到 shader（画面跟着物理一起切）
-					if _renderer != null and _renderer.has_method("set_true_insolation_enabled"):
-						_renderer.set_true_insolation_enabled(new_state)
-					# WeatherSystem 也要同步
-					# 注：用 call() 反射调用 + Object 弱类型接收，是为了绕开 Godot 4
-					# 偶发的 "Could not resolve external class member" 静态解析报错
-					# （脚本类缓存脏时复现）。功能上等价于 _generator.get_weather_system()。
-					var ws: Object = _generator.call("get_weather_system") if _generator.has_method("get_weather_system") else null
-					if ws != null and ws.has_method("configure_emergent_coupling"):
-						ws.call("configure_emergent_coupling",
-							bool(cp.emergent_weather_coupling),
-							float(cp.rain_shadow_threshold),
-							float(cp.rain_shadow_factor),
-							float(cp.orographic_boost)
-						)
-					if ws != null and ws.has_method("configure_ocean_spawn_bias"):
-						ws.call("configure_ocean_spawn_bias", float(cp.ocean_weather_spawn_bias))
-					# 立即强制一次 refresh_climate_daily，让面板 / 温度 / 海冰即时响应
-					if _current_map != null and _world_clock != null:
-						_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())
-						_refresh_emergent_lines()
+			toggle_emergent_debug_switches()
 		KEY_F6:
 			# 任务 9：切换 ocean_current_debug uniform（高/低对比流线）
-			if _renderer != null and _renderer.has_method("set_ocean_current_debug"):
-				var cur: bool = _renderer.get_ocean_current_debug()
-				_renderer.set_ocean_current_debug(not cur)
-				print("[VisualOverhaul] ocean_current_debug = %s" % str(not cur))
+			toggle_ocean_current_debug()
 		KEY_F7:
 			# Systemic Ocean Currents：ocean_heat_debug 轻量控制台打印
-			# 初版不做 shader 红蓝渐变（需要 per-cell debug 贴图，侵入较大）；
-			# 改为：按下时打印当前地图里 temperature_transport_anomaly 分布摘要
-			# （min / max / mean / |>0.02| 计数），便于快速验证热输运 pass 是否生效。
-			if _current_map == null:
-				print("[Ocean] F7: no map")
-			else:
-				var mn: float = INF
-				var mx: float = -INF
-				var sm: float = 0.0
-				var cnt: int = 0
-				var hot_water: int = 0
-				var hot_land: int = 0
-				for c: HexCell in _current_map.all_cells():
-					var a: float = c.temperature_transport_anomaly
-					mn = minf(mn, a)
-					mx = maxf(mx, a)
-					sm += a
-					cnt += 1
-					if absf(a) > 0.02:
-						if _generator != null and _generator.has_method("_is_water"):
-							pass
-						# 简易判定：ocean_current 非零 → 判水
-						if c.ocean_current.length_squared() > 1e-6:
-							hot_water += 1
-						else:
-							hot_land += 1
-				if cnt > 0:
-					print("[Ocean] F7 heat_debug: anomaly min=%.3f max=%.3f mean=%.4f | |a|>0.02: water=%d land=%d" % [
-						mn, mx, sm / float(cnt), hot_water, hot_land
-					])
+			diagnose_ocean_heat()
 		KEY_F9:
 			# DataCore weather hot-toggle: switch use_data_core_weather at runtime.
 			# Used for A/B comparison without restarting the game.
@@ -492,9 +428,96 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# clearing buckets. Useful for any-time inspection while sampling.
 			_validate_weather_print_snapshot()
 
+# ─── 移动端调试按钮入口 ─────────────────────────────────────────────────
+
+func toggle_debug_console() -> void:
+	if _debug_console != null:
+		_debug_console.visible = not _debug_console.visible
+
+func _mark_debug_console_state_dirty() -> void:
+	if _debug_console != null and _debug_console.has_method("request_state_sync"):
+		_debug_console.call("request_state_sync")
+
+func regenerate_debug_map() -> void:
+	_generate_and_render(0)
+
+func fit_debug_map() -> void:
+	if _camera != null:
+		_camera.fit_to_viewport(1.05, _map_safe_area())
+
+func toggle_emergent_debug_switches() -> void:
+	if _generator == null:
+		print("[Emergent+Insolation] generator not ready, ignored.")
+		return
+	var cp = _generator._c()
+	if cp == null:
+		print("[Emergent+Insolation] ClimateProfile missing, ignored.")
+		return
+	var fallback: bool = bool(cp.emergent_season_enabled)
+	var new_state: bool = not fallback
+	cp.emergent_season_enabled = new_state
+	cp.enable_local_climate_coupling = new_state
+	cp.emergent_weather_coupling = new_state
+	cp.fast_slow_layering_enabled = new_state
+	cp.true_insolation_enabled = new_state
+	print("[Emergent+Insolation] 5 switches → %s" % str(new_state))
+	if _renderer != null and _renderer.has_method("set_true_insolation_enabled"):
+		_renderer.set_true_insolation_enabled(new_state)
+	var ws: Object = _generator.call("get_weather_system") if _generator.has_method("get_weather_system") else null
+	if ws != null and ws.has_method("configure_emergent_coupling"):
+		ws.call("configure_emergent_coupling",
+			bool(cp.emergent_weather_coupling),
+			float(cp.rain_shadow_threshold),
+			float(cp.rain_shadow_factor),
+			float(cp.orographic_boost)
+		)
+	if ws != null and ws.has_method("configure_ocean_spawn_bias"):
+		ws.call("configure_ocean_spawn_bias", float(cp.ocean_weather_spawn_bias))
+	if _current_map != null and _world_clock != null:
+		_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())
+		_refresh_emergent_lines()
+	_mark_debug_console_state_dirty()
+
+func toggle_ocean_current_debug() -> void:
+	if _renderer != null and _renderer.has_method("set_ocean_current_debug"):
+		var cur: bool = _renderer.get_ocean_current_debug()
+		_renderer.set_ocean_current_debug(not cur)
+		print("[VisualOverhaul] ocean_current_debug = %s" % str(not cur))
+	_mark_debug_console_state_dirty()
+
+func toggle_data_core_weather_debug() -> void:
+	_toggle_data_core_weather_runtime()
+
+func toggle_data_core_master_debug() -> void:
+	_toggle_data_core_master_runtime()
+
+func start_soak_dump_debug() -> void:
+	_soak_dump_hotkey_start()
+
+func start_soak_ab_same_source_debug(n_ticks: int = 30) -> void:
+	_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE, n_ticks)
+
+func start_soak_ab_vs_legacy_debug() -> void:
+	_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
+
+func cancel_soak_debug() -> void:
+	_soak_ab_hotkey_cancel()
+
+func print_data_core_flags_debug() -> void:
+	_print_data_core_flag_snapshot()
+
+func print_validate_weather_snapshot_debug() -> void:
+	_validate_weather_print_snapshot()
+
+func print_perf_verdict_debug() -> void:
+	request_dots_final_push_perf_verdict()
+
 # ─── 时间 UI 绑定 ───────────────────────────────────────────────────────
 
 func _wire_time_ui() -> void:
+	_debug_btn.pressed.connect(toggle_debug_console)
+	_regen_btn.pressed.connect(regenerate_debug_map)
+	_fit_btn.pressed.connect(fit_debug_map)
 	_pause_btn.toggled.connect(_on_pause_toggled)
 	_x1_btn.pressed.connect(func() -> void: _set_speed(1.0))
 	_x5_btn.pressed.connect(func() -> void: _set_speed(5.0))
@@ -527,6 +550,14 @@ func _on_speed_changed(new_speed: float) -> void:
 	else:
 		stride = 1
 	_generator.set_weather_refresh_stride(stride)
+	# 抽动修复（2026-05-18）：切档瞬间 weather_layer 内的 snapshot_interval 估计
+	# 会因为"上次 push 到现在"的墙钟差变得不真实（x20→x1 时尤其严重），导致下
+	# 一次 set_weather_fronts 算出超长 blend_duration → 云第一段几乎不动。重置
+	# pacing 让下一次 push 从 INITIAL_BLEND_SEC 重启 IIR。
+	if _renderer != null:
+		var wl = _renderer.get_node_or_null("WeatherLayer")
+		if wl != null and wl.has_method("reset_snapshot_pacing"):
+			wl.reset_snapshot_pacing()
 
 # 任务 5：把 WorldClock.paused 状态转发给 WeatherLayer，让粒子/噪声同步暂停
 # （只影响表现层时间累加，粒子引擎本身仍可继续渲染已生成的粒子——避免完全定格）
@@ -615,6 +646,10 @@ func _on_day_changed(_day_idx: int) -> void:
 	if _renderer != null:
 		if _renderer.has_method("set_weather_field_texture") and _world_data != null:
 			_renderer.set_weather_field_texture(null)
+		# 2026-05-18 P1-B：主地形材质需要看到 world.weather_field_tex 的最新内容，
+		# 让海面分支按 hex 真值做风暴变色 + 风浪条纹（weather_layer 仍走 null 路径）。
+		if _renderer.has_method("refresh_terrain_weather_field_tex"):
+			_renderer.refresh_terrain_weather_field_tex()
 		if fronts_changed:
 			_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
@@ -699,12 +734,14 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 	if _generator.has_method("sus_report_last_tick_summary"):
 		var summary: Dictionary = _generator.sus_report_last_tick_summary()
 		if not summary.is_empty():
-			print("    sus_window p95=%.2fms max=%.2fms over1ms=%d largest=%s/%s %.2fms" % [
+			print("    sus_window p95=%.2fms max=%.2fms over1ms=%d largest=%s/%s/%s path=%s %.2fms" % [
 				float(summary.get("sus_sim_p95_300", 0.0)),
 				float(summary.get("sus_sim_max_300", 0.0)),
 				int(summary.get("over_1ms_count_300", 0)),
 				str(summary.get("largest_slice_job", "")),
 				str(summary.get("largest_slice_stage", "")),
+				str(summary.get("largest_slice_substage", "")),
+				str(summary.get("largest_slice_path", "")),
 				float(summary.get("largest_slice_ms", 0.0)),
 			])
 	var report: Dictionary = _generator.sus_report_last_tick()
@@ -768,6 +805,40 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
+					# Ocean pass C++ vs fallback diag：当本片是 ocean_water / ocean_land
+					# 时附带 gdext runs / fallbacks / last rc，定位"为何 fallback"
+					var _cur_pass: String = str(b.get("current_pass", ""))
+					if _cur_pass == "ocean_land" or _cur_pass == "ocean_water":
+						var _ocp_runs: int = -1
+						var _ocp_fb: int = -1
+						var _ocp_total_ms: float = -1.0
+						var _ocp_flag: bool = false
+						var _ocp_field_runs: String = ""
+						var _ocp_field_fb: String = ""
+						var _ocp_field_total: String = ""
+						var _ocp_field_flag: String = ""
+						if _cur_pass == "ocean_land":
+							_ocp_field_runs = "_gdext_ocean_land_runs"
+							_ocp_field_fb = "_gdext_ocean_land_fallbacks"
+							_ocp_field_total = "_gdext_ocean_land_total_ms"
+							_ocp_field_flag = "use_gdext_ocean_land"
+						else:
+							_ocp_field_runs = "_gdext_ocean_water_runs"
+							_ocp_field_fb = "_gdext_ocean_water_fallbacks"
+							_ocp_field_total = "_gdext_ocean_water_total_ms"
+							_ocp_field_flag = "use_gdext_ocean_water"
+						if _ocp_field_runs in _generator:
+							_ocp_runs = int(_generator.get(_ocp_field_runs))
+						if _ocp_field_fb in _generator:
+							_ocp_fb = int(_generator.get(_ocp_field_fb))
+						if _ocp_field_total in _generator:
+							_ocp_total_ms = float(_generator.get(_ocp_field_total))
+						if _dcc_cp != null and _ocp_field_flag in _dcc_cp:
+							_ocp_flag = bool(_dcc_cp.get(_ocp_field_flag))
+						var _ocp_avg: float = (_ocp_total_ms / float(_ocp_runs)) if _ocp_runs > 0 else 0.0
+						print("        %s gdext flag=%s runs=%d fallbacks=%d avg_native=%.2fms" % [
+							_cur_pass, str(_ocp_flag), _ocp_runs, _ocp_fb, _ocp_avg,
+						])
 					if str(b.get("current_pass", "")) == "sea_ice" and "_last_sea_ice_daily_breakdown" in _generator:
 						var sid: Dictionary = _generator._last_sea_ice_daily_breakdown
 						if not sid.is_empty():
@@ -806,8 +877,9 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						int(wb.get("fronts", 0)),
 					])
 					if wb.has("job_total_ms"):
-						print("        weather_job total=%.1f begin=%.1f run_slice=%.1f direct_a=%.1f commit=%.1f stage_b=%.1f sync=%.1f soak=%.1f unattributed=%.1f" % [
+						print("        weather_job total=%.1f prelude=%.1f begin=%.1f run_slice=%.1f direct_a=%.1f commit=%.1f stage_b=%.1f sync=%.1f soak=%.1f unattributed=%.1f" % [
 							float(wb.get("job_total_ms", 0.0)),
+							float(wb.get("prelude_ms", 0.0)),
 							float(wb.get("begin_stage_a_ms", 0.0)),
 							float(wb.get("run_stage_a_slice_ms", 0.0)),
 							float(wb.get("stage_a_direct_ms", 0.0)),
@@ -855,9 +927,16 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					and _generator.has_method("sus_enum_atlas_breakdown"):
 				var eb: Dictionary = _generator.sus_enum_atlas_breakdown()
 				if not eb.is_empty():
-					print("        enum_atlas_upload axis=%s elapsed=%.1f pending_cv=%s pending_vg=%s" % [
+					print("        enum_atlas_upload axis=%s path=%s elapsed=%.2f patch=%.2f img=%.2f upload=%.2f dirty=%dpx/%dcells cache=%s pending_cv=%s pending_vg=%s" % [
 						str(eb.get("axis", "")),
+						str(eb.get("path", "unknown")),
 						float(eb.get("elapsed_ms", 0.0)),
+						float(eb.get("buffer_patch_ms", 0.0)),
+						float(eb.get("image_ms", 0.0)),
+						float(eb.get("upload_ms", 0.0)),
+						int(eb.get("dirty_pixels", 0)),
+						int(eb.get("dirty_cells", 0)),
+						str(eb.get("cache_valid", false)),
 						str(eb.get("cover_pending", false)),
 						str(eb.get("vegetation_pending", false)),
 					])
@@ -888,16 +967,25 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
-	# Phase 2：每"季"重跑湿度/雨影 → 局部 biome 重决策 → 重烘焙 biome_tex
+	# 2026-05-18：season_refresh 改为 SeasonRefreshJob 自驱周期重算（默认每 30
+	# tick 一次），不再绑定到 WorldClock.season_changed 信号脉冲。游戏世界里
+	# 温度 / 降水 / 风 / 海冰已由 refresh_climate_daily 每天连续推进，"季节切换"
+	# 退化为 UI 概念。仅在 ClimateProfile.season_refresh_legacy_signal=true（回归
+	# 对照路径）时，main.gd 才会主动 queue_season_refresh。
 	if _generator != null and _current_map != null and _world_data != null:
-		var t0 := Time.get_ticks_msec()
+		var cp = _generator._c() if _generator.has_method("_c") else null
+		var use_legacy: bool = false
+		if cp != null and "season_refresh_legacy_signal" in cp:
+			use_legacy = bool(cp.season_refresh_legacy_signal)
 		if _renderer != null and _renderer.has_method("begin_season_transition"):
 			_renderer.begin_season_transition(_world_clock.season_phase())
-		if _generator.has_method("queue_season_refresh"):
-			_generator.queue_season_refresh(_season_idx)
-		else:
-			_generator.refresh_seasonal(_current_map, _world_data, _season_idx)
-		print("Season refresh queued %dms" % (Time.get_ticks_msec() - t0))
+		if use_legacy:
+			var t0 := Time.get_ticks_msec()
+			if _generator.has_method("queue_season_refresh"):
+				_generator.queue_season_refresh(_season_idx)
+			else:
+				_generator.refresh_seasonal(_current_map, _world_data, _season_idx)
+			print("Season refresh queued %dms (legacy signal path)" % (Time.get_ticks_msec() - t0))
 	# 季节事务现在由 SUS 分片提交；面板在事务完成前保留上一套完整状态。
 	if _selected_cell != null:
 		_refresh_info_panel()
@@ -997,6 +1085,10 @@ func _generate_and_render(seed_val: int) -> void:
 
 	_renderer.hex_size = hex_size
 	_renderer.set_map(_current_map, _world_data)
+	# 方案 0：把 MapBaker 喂给 renderer，让 F6 切到 ocean_current_debug 时
+	# 能 lazy bake upwelling_tex（commit 路径已不再无条件烘焙）。
+	if _renderer.has_method("set_map_baker") and _generator != null and "_baker" in _generator:
+		_renderer.set_map_baker(_generator._baker)
 
 	# 把当前时间状态先推一次给 renderer，避免新生成的地图用着旧的 season_phase
 	if _world_clock != null:
@@ -1017,7 +1109,7 @@ func _generate_and_render(seed_val: int) -> void:
 
 	if _info_label != null:
 		var stats := _current_map.terrain_stats()
-		_info_label.text = "%dx%d  cells=%d  bake=%dms  [R] regenerate  [F] fit  [Space] pause" % [
+		_info_label.text = "%dx%d  cells=%d  bake=%dms  touch: Debug / Regen / Fit" % [
 			cfg.width, cfg.height, _current_map.cell_count(), elapsed
 		]
 		print("=== World baked in %dms ===" % elapsed)
@@ -1730,6 +1822,32 @@ func get_fast_tick_count() -> int:
 
 func get_last_fast_tick_ms() -> int:
 	return _overlay_last_fast_tick_ms
+
+func get_sus_last_tick_report() -> Dictionary:
+	if _generator == null or not _generator.has_method("sus_report_last_tick"):
+		return {}
+	var report: Dictionary = _generator.sus_report_last_tick()
+	return report.duplicate(false)
+
+func get_sus_last_tick_summary() -> Dictionary:
+	if _generator == null or not _generator.has_method("sus_report_last_tick_summary"):
+		return {}
+	var summary: Dictionary = _generator.sus_report_last_tick_summary()
+	return summary.duplicate(false)
+
+func get_sim_breakdowns() -> Dictionary:
+	var out: Dictionary = {}
+	if _generator == null:
+		return out
+	if _generator.has_method("sus_climate_breakdown"):
+		out["climate"] = _generator.sus_climate_breakdown()
+	if _generator.has_method("sus_weather_breakdown"):
+		out["weather"] = _generator.sus_weather_breakdown()
+	if _generator.has_method("sus_enum_atlas_breakdown"):
+		out["enum_atlas"] = _generator.sus_enum_atlas_breakdown()
+	if _generator.has_method("sus_sea_ice_atlas_breakdown"):
+		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
+	return out.duplicate(false)
 
 
 # DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。

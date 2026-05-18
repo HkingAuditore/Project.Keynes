@@ -143,6 +143,8 @@ func tick(ctx: SusTickContext) -> void:
 	var slices_total_this_tick: int = 0
 	var largest_slice_job_tick: StringName = &""
 	var largest_slice_stage_tick: String = ""
+	var largest_slice_substage_tick: String = ""
+	var largest_slice_path_tick: String = ""
 	var largest_slice_ms_tick: float = 0.0
 
 	var ordered_jobs: Array[SusJob] = _jobs
@@ -225,6 +227,9 @@ func tick(ctx: SusTickContext) -> void:
 		var slices_run: int = 0
 		var work_done_total: int = 0
 		var last_progress_ratio: float = 0.0
+		var last_slice_stage: String = ""
+		var last_slice_substage: String = ""
+		var last_slice_path: String = ""
 		job._in_flight = true
 
 		while true:
@@ -257,10 +262,15 @@ func tick(ctx: SusTickContext) -> void:
 
 			var slice_reported_ms: float = float(slice_result.get("elapsed_ms", slice_actual_ms))
 			var slice_ms: float = maxf(slice_actual_ms, slice_reported_ms)
+			last_slice_stage = _slice_stage_name(slice_result)
+			last_slice_substage = _slice_substage_name(slice_result)
+			last_slice_path = str(slice_result.get("path", ""))
 			if not _is_upload_job(job.id) and slice_ms > largest_slice_ms_tick:
 				largest_slice_ms_tick = slice_ms
 				largest_slice_job_tick = job.id
-				largest_slice_stage_tick = _slice_stage_name(slice_result)
+				largest_slice_stage_tick = last_slice_stage
+				largest_slice_substage_tick = last_slice_substage
+				largest_slice_path_tick = last_slice_path
 
 			done = bool(slice_result.get("done", true))
 			work_done_total += int(slice_result.get("work_done", 0))
@@ -278,6 +288,9 @@ func tick(ctx: SusTickContext) -> void:
 		report["elapsed_ms"] = job_elapsed_ms
 		report["slices_run"] = slices_run
 		report["progress_ratio"] = last_progress_ratio
+		report["stage"] = last_slice_stage
+		report["substage"] = last_slice_substage
+		report["path"] = last_slice_path
 		_last_report[job.id] = report
 		_record_stats(job.id, job_elapsed_ms, slices_run)
 		if not _is_upload_job(job.id):
@@ -305,7 +318,8 @@ func tick(ctx: SusTickContext) -> void:
 
 	# Perf instrumentation: 单次 tick 摘要，便于 main.gd 取来打印或触发 WARN。
 	var total_ms: float = (Time.get_ticks_usec() - tick_start_us) / 1000.0
-	_record_tick_budget_sample(sim_total_ms_tick, largest_slice_job_tick, largest_slice_stage_tick, largest_slice_ms_tick)
+	_record_tick_budget_sample(sim_total_ms_tick, largest_slice_job_tick, largest_slice_stage_tick,
+		largest_slice_substage_tick, largest_slice_path_tick, largest_slice_ms_tick)
 	var budget_window: Dictionary = _sim_budget_window_dict()
 	_last_tick_summary = {
 		"tick_index": ctx.tick_index,
@@ -316,6 +330,8 @@ func tick(ctx: SusTickContext) -> void:
 		"slices_total": slices_total_this_tick,
 		"largest_slice_job": largest_slice_job_tick,
 		"largest_slice_stage": largest_slice_stage_tick,
+		"largest_slice_substage": largest_slice_substage_tick,
+		"largest_slice_path": largest_slice_path_tick,
 		"largest_slice_ms": largest_slice_ms_tick,
 		"sus_sim_p95_300": float(budget_window.get("sus_sim_p95_300", 0.0)),
 		"sus_sim_max_300": float(budget_window.get("sus_sim_max_300", 0.0)),
@@ -396,11 +412,14 @@ func report_job_stats() -> Dictionary:
 	return out
 
 
-func _record_tick_budget_sample(total_ms: float, largest_job: StringName, largest_stage: String, largest_ms: float) -> void:
+func _record_tick_budget_sample(total_ms: float, largest_job: StringName, largest_stage: String,
+		largest_substage: String, largest_path: String, largest_ms: float) -> void:
 	_tick_budget_samples.append({
 		"total_ms": total_ms,
 		"largest_slice_job": largest_job,
 		"largest_slice_stage": largest_stage,
+		"largest_slice_substage": largest_substage,
+		"largest_slice_path": largest_path,
 		"largest_slice_ms": largest_ms,
 	})
 	while _tick_budget_samples.size() > maxi(1, sim_budget_window_size):
@@ -416,6 +435,8 @@ func _sim_budget_window_dict() -> Dictionary:
 			"over_1ms_count_300": 0,
 			"largest_slice_job": &"",
 			"largest_slice_stage": "",
+			"largest_slice_substage": "",
+			"largest_slice_path": "",
 			"largest_slice_ms": 0.0,
 			"sample_count": 0,
 		}
@@ -424,6 +445,8 @@ func _sim_budget_window_dict() -> Dictionary:
 	var over_count: int = 0
 	var largest_job: StringName = &""
 	var largest_stage: String = ""
+	var largest_substage: String = ""
+	var largest_path: String = ""
 	var largest_ms: float = 0.0
 	for sample in _tick_budget_samples:
 		var d: Dictionary = sample
@@ -437,6 +460,8 @@ func _sim_budget_window_dict() -> Dictionary:
 			largest_ms = slice_ms
 			largest_job = StringName(str(d.get("largest_slice_job", "")))
 			largest_stage = str(d.get("largest_slice_stage", ""))
+			largest_substage = str(d.get("largest_slice_substage", ""))
+			largest_path = str(d.get("largest_slice_path", ""))
 	totals.sort()
 	var p95_idx: int = clampi(int(ceil(totals.size() * 0.95)) - 1, 0, totals.size() - 1)
 	return {
@@ -445,6 +470,8 @@ func _sim_budget_window_dict() -> Dictionary:
 		"over_1ms_count_300": over_count,
 		"largest_slice_job": largest_job,
 		"largest_slice_stage": largest_stage,
+		"largest_slice_substage": largest_substage,
+		"largest_slice_path": largest_path,
 		"largest_slice_ms": largest_ms,
 		"sample_count": sample_count,
 	}
@@ -452,6 +479,13 @@ func _sim_budget_window_dict() -> Dictionary:
 
 func _slice_stage_name(slice_result: Dictionary) -> String:
 	for key in ["stage_name", "stage", "pass", "axis"]:
+		if slice_result.has(key):
+			return str(slice_result[key])
+	return ""
+
+
+func _slice_substage_name(slice_result: Dictionary) -> String:
+	for key in ["substage", "micro_stage", "stage_detail"]:
 		if slice_result.has(key):
 			return str(slice_result[key])
 	return ""
@@ -526,13 +560,15 @@ func _emit_periodic_log() -> void:
 		s["max_ms"] = 0.0
 	var bw: Dictionary = _sim_budget_window_dict()
 	if int(bw.get("sample_count", 0)) > 0:
-		print("[SUS] budget last %d ticks: total_p95=%.2fms max=%.2fms over_1ms=%d largest=%s/%s %.2fms"
+		print("[SUS] budget last %d ticks: total_p95=%.2fms max=%.2fms over_1ms=%d largest=%s/%s/%s path=%s %.2fms"
 			% [int(bw.get("sample_count", 0)),
 				float(bw.get("sus_sim_p95_300", 0.0)),
 				float(bw.get("sus_sim_max_300", 0.0)),
 				int(bw.get("over_1ms_count_300", 0)),
 				str(bw.get("largest_slice_job", "")),
 				str(bw.get("largest_slice_stage", "")),
+				str(bw.get("largest_slice_substage", "")),
+				str(bw.get("largest_slice_path", "")),
 				float(bw.get("largest_slice_ms", 0.0))])
 	# DataCore 状态尾巴一行（dots-foundation-and-weather-migration 任务 10）。
 	# 仅在已 bind World 时打印；未 bind 时（默认 legacy）保持静默以减少 log 噪声。

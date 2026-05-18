@@ -115,11 +115,43 @@ extends Resource
 # original season-aligned behavior (debug / regression).
 @export var daily_climate_interpolation: bool = true
 
+# ── Season-Refresh periodic driver (2026-05-18) ──────────────────────────
+# 慢变量批量重算的驱动方式。
+#
+# 设计背景：refresh_climate_daily 已经在每天连续更新温度 / 湿度 / 海冰，
+# 而 season_refresh 12-stage 是给"植被演替 / 冰川 / 红树林 / biome 重判 /
+# 反馈缓冲消费"等慢变量做批量重算的。游戏世界里温度 / 降水本就是连续涌现，
+# 不存在"明确的季节切换瞬间"——但慢变量的批量重算本质上仍需要"周期性"地
+# 进行，否则单纯每帧增量会出现 biome 边界抖动 + 反馈缓冲永远满。
+#
+# 新设计（默认）：SeasonRefreshJob 自驱周期，每 season_refresh_period_ticks
+# 个真实 SUS tick 启动一次 round（无视游戏速度档）。30 tick @ x1 速度 = 约
+# 30 秒一次 round；@ x20 速度 = 约 1.5 秒一次 round。慢变量演化速率与玩家
+# 在场时间挂钩，而非与游戏世界日数挂钩，避免高速档下慢变量被反复批量推进。
+#
+# 旧路径（legacy）：season_refresh 由 WorldClock.season_changed 信号触发
+# （main.gd._on_season_changed → queue_season_refresh）。速度档 x20 下每
+# ~15 ticks 就排一次 round，几乎 100% 占用主循环。打开 legacy_signal 时
+# 回到这条路径，仅用于回归对照。
+#
+# 切换说明：
+#   - legacy_signal=false 时 main.gd 仍然会调用 queue_season_refresh，但
+#     SeasonRefreshJob 不再消费它；新路径靠 period_ticks 自驱。
+#   - legacy_signal=true 时 SeasonRefreshJob 走 has_pending_season_refresh
+#     检查（与旧行为完全一致），period_ticks 字段被忽略。
+@export_range(1, 360, 1) var season_refresh_period_ticks: int = 30
+@export var season_refresh_legacy_signal: bool = false
+
 # Stride (in days) for daily-continuous refresh: 1 = every day, N>1 = every
 # N days (cheap downgrade if profiling shows the per-day pass too costly).
 # Has no effect when daily_climate_interpolation == false.
 # Used by SUS RefreshClimateDailyJob via StridePolicy.
-@export var daily_climate_refresh_stride: int = 1
+#
+# 2026-05-18：默认从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
+# 玩家完全无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
+# 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。如需严格回归测试可在 Inspector
+# 中改回 1。
+@export_range(1, 8, 1) var daily_climate_refresh_stride: int = 2
 
 # Stride (in days) for the sea-ice atlas GPU upload (SeaIceAtlasUploadJob).
 # Daily Sim SoA Refactor 阶段 1：把原先内嵌在 refresh_climate_daily 末尾、每日 ~105ms
@@ -160,9 +192,9 @@ extends Resource
 # CLI：main.gd 解析 --data-core / --no-data-core / --data-core-climate /
 # --no-data-core-climate，覆盖这三个开关；--validate-weather 用于做 30 day
 # 行为对照测试（legacy vs DataCore 镜像 baseline）。
-@export var use_data_core: bool = false
-@export var use_data_core_weather: bool = false
-@export var use_data_core_climate: bool = false
+@export var use_data_core: bool = true
+@export var use_data_core_weather: bool = true
+@export var use_data_core_climate: bool = true
 
 const NATIVE_MODE_OFF: int = 0
 const NATIVE_MODE_SHADOW: int = 1
@@ -183,7 +215,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # .World 实现（从 DCWorld.view_f32 拿 PackedArray 引用）。
 # 依赖：use_data_core=true 才生效；否则 silently 退到 .Cell。
 # 详见 docs/dots-view-adapter-guide.md。
-@export var use_world_view_adapter: bool = false
+@export var use_world_view_adapter: bool = true
 
 # Phase C.4 / dots-migration-roadmap §3 A3：调度器切换。
 # false（默认）：走既有 SlicedUpdateScheduler，6 个 SusJob 沿用既有路径
@@ -196,12 +228,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 任务 6（dots-completion）：默认 false → true。earth_like.tres 生产 profile 已启用与验证。
 @export var use_dc_system_scheduler: bool = true
 
-# 1ms simulation budget profile. This keeps simulation precision intact and
-# forces long rounds to advance over more fast ticks instead of blocking one.
-@export var sim_strict_budget_enabled: bool = true
-@export_range(0.25, 16.0, 0.05) var sim_frame_budget_ms: float = 1.0
-@export_range(0.10, 8.0, 0.05) var sim_slice_budget_ms: float = 0.55
-@export_range(0.10, 8.0, 0.05) var sim_upload_slice_budget_ms: float = 0.45
+# Native-normal simulation budget profile. Strict 1ms can still be restored per
+# resource, but the default favors completing lightweight DOTS/native transactions
+# in the same fast tick under a 2ms envelope.
+@export var sim_strict_budget_enabled: bool = false
+@export_range(0.25, 16.0, 0.05) var sim_frame_budget_ms: float = 2.0
+@export_range(0.10, 8.0, 0.05) var sim_slice_budget_ms: float = 0.75
+@export_range(0.10, 8.0, 0.05) var sim_upload_slice_budget_ms: float = 0.50
+@export_range(0.25, 16.0, 0.05) var sim_budget_warn_ms: float = 2.0
 
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
 #
@@ -248,8 +282,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Same-Source A/B passes; falls back to GDScript path on any error.
 # Targets: stage 1 single slice <= 3ms; stage 3 (init+iters+finalize
 # fused) single slice <= 5ms.
-@export var use_gdext_slp_field:   bool = false      # stage 1 / SLP solver C++
-@export var use_gdext_psi_solver:  bool = false      # stage 3+4+5 fused PSI solver C++
+@export var use_gdext_slp_field:   bool = true       # stage 1 / SLP solver C++
+@export var use_gdext_psi_solver:  bool = true       # stage 3+4+5 fused PSI solver C++
 
 # ─── DOTS-Final-Push（plan/dots-final-push）：stage_b 三件套 + atlas pack ──
 # 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
@@ -265,7 +299,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 累加 6–15ms → ≤ 1.5ms。前置条件：use_gdext_albedo / use_gdext_vegetation_dynamics
 # / use_gdext_climate_feedback 三个独立路径已 ACTIVE（first run 日志已确认）；
 # 上线前需完成 SAME_SOURCE A/B 30 tick 验收（标量 |Δ| ≤ 0.05、长期均值 |Δ| ≤ 0.01）。
-@export var use_gdext_stage_b_combined: bool = false    # stage_b albedo+veg_dyn+feedback 合并单 cpp call
+@export var use_gdext_stage_b_combined: bool = true     # stage_b albedo+veg_dyn+feedback 合并单 cpp call
 # ─── plan/weather-refresh-cpp-all（PR-2 gd-facade-merge）─────────────────────
 # weather refresh daily 顶层一体化 C++ pass。打开后 map_generator.refresh_weather_daily
 # 走单 cpp call run_weather_refresh_daily_pass，把 field_solve / distribute /
@@ -275,8 +309,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # （或至少 ext bound + has_method 通过）。任何环节缺失 / rc<0 → 自动回退到现路径
 # （refresh_daily_stage_a + refresh_daily_stage_b 两段链），保证 bit-equal 兜底。
 # 默认 false：上线前需完成 SAME_SOURCE A/B soak 验收。
-@export var use_gdext_weather_refresh_daily: bool = false
-@export var use_gdext_enum_atlas_pack: bool = false     # enum_atlas_upload pack C++ 化
+@export var use_gdext_weather_refresh_daily: bool = true
+@export var use_gdext_enum_atlas_pack: bool = true      # enum_atlas_upload pack C++ 化
 # ─── DOTS-Total-CPP（plan/dots-total-cpp）：剩余 GDScript 残余下沉 C++ ────
 # 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick 数值 |Δ| ≤ 1e-5 或像素
 # bytes_match_ratio ≥ 99.5% 验收。C++ 不可用时入口自动回退到 GDScript 并
@@ -390,10 +424,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 # the original Phase 8 / Milestone 4 constants in map_generator.gd.
 
 @export var vitality_change_rate: float = 0.004         # per day, at most ±0.004 (~250 days from 0 to 1)
-@export var vitality_low_threshold: float = 0.15        # below → downgrade streak（only truly dying cells count）
-@export var vitality_high_threshold: float = 0.90       # above → upgrade streak
-@export var succession_degrade_days: int = 180          # ~half a year of low vitality
-@export var succession_upgrade_days: int = 360          # ~1 full year of high vitality
+# 2026-05-18：演替门槛大幅放宽，让暴雨/极旱/连续不利气候有机会在 1.5 个月内触发
+# 可见的植被退化/升级。原 (0.15 / 0.90 / 180 / 360) 几乎需要 9 个月不间断的恶劣
+# 气候才能触发一次演替，玩家完全感受不到天气对地块的中长期影响。
+# 新默认：低/高阈值放宽 (0.25 / 0.75)，天数缩短到 (45 / 90)；
+# earth_like.tres 中 succession_upgrade_days 的覆盖值也同步调低（91）。
+@export var vitality_low_threshold: float = 0.25        # below → downgrade streak（only truly dying cells count）
+@export var vitality_high_threshold: float = 0.75       # above → upgrade streak
+@export var succession_degrade_days: int = 45           # ~1.5 个月的低 vitality
+@export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
 @export var compat_harshness: float = 0.8
@@ -583,14 +622,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    sub-pass 完成后由调度器调用 MapData.flush_soa_to_cells() 同步给 UI / Baker。
 #    false → 走原有 cell.temperature 等强类型成员路径（legacy）。
 #    依赖：MapData.has_soa() == true（rebuild_soa_from_cells 已被 bake_world 调用）。
-@export var use_soa_pipeline: bool = false
+@export var use_soa_pipeline: bool = true
 
 # 2) use_sparse_climate
 #    在 use_soa_pipeline = true 的前提下启用 climate_dirty_mask 增量更新。
 #    Pass A 写温度时按 epsilon=1/512 自动标 dirty；Pass B / 下游稀疏 sub-pass
 #    仅遍历 dirty + 1 跳邻居。dirty_ratio 在 [50/N, 0.8] 之外时自动回退全图遍历。
 #    季节切换日 / 每 30 日强制全图 dirty。false → SoA 路径仍跑全图。
-@export var use_sparse_climate: bool = false
+@export var use_sparse_climate: bool = true
 
 # 3) use_sparse_weather
 #    与 use_sparse_climate 平行的 weather field 稀疏开关。weather_field_solver
@@ -608,7 +647,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    enum_atlas_upload / sea_ice_atlas_upload 改 tile dirty 部分上传：
 #    维护 32×32 tile 粒度 tile_dirty_mask，仅上传变化 tile，单 tick 上限 8 tile。
 #    false → 维持现有整张纹理上传（legacy）。
-@export var use_partial_atlas_upload: bool = false
+@export var use_partial_atlas_upload: bool = true
 
 # Continuous day-length amplitude (how much the "day length" term modulates
 # insolation away from pure cos_zenith). 0 → pure sun-angle; higher → longer

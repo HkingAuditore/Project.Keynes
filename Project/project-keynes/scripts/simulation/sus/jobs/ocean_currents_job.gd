@@ -184,23 +184,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			baker.reset_physical_solve_state()
 		# Event-driven pixel rebake：决定本轮是否需要重 bake 像素 buffer。
 		#   像素 buffer (vector_atlas / wind_field_buffer / ocean_current_buffer) 只
-		#   被视觉 overlay shader 消费 (hex_renderer.vector_atlas + weather_layer)。
-		#   模拟逻辑全部走 HexCell.* per-cell，所以可以把 hex→pixel 喷射改为
-		#   "phase_int 跨整数" 时才执行（每季 1 次）。
-		#   - 首次启动 (_phase_int_seen == -9999) → 强制 rebake，确保启动 frame 有像素纹理
-		#   - phase_int 跨越（春→夏 / 夏→秋 / ...） → rebake，让 overlay 反映新季节风迹
-		#   - 其他情况 → 跳过像素 raster + commit（节省 ~25-30ms / day）
-		#
-		# 旧路径（_use_physical_circulation=false / ny-only）保留原"每天 commit"
-		# 行为：那条路径没有 hex 求解阶段，整个 round 全部用于像素 slice，
-		# 跳过会让 overlay 完全无更新。仅在物理化新路径下启用事件驱动门。
-		# C3 plan (vector_atlas removal)：像素 buffer / vector_atlas_tex 不再被任何
-		# shader 消费（world_map / weather_overlay 都已退化为零向量 fallback），
-		# 所以无论是否跨季都强制不做像素阶段。stage 7 (WIND_RASTER) + commit 永
-		# 久死亡，每天直接节省 ~30ms slow slice + 季节切换节省 ~49ms commit。
-		# 旧路径（ny-only）下也置 false：那条路径从此 round 立即 round_done。
-		_need_pixel_this_round = false
-		_phase_int_seen = int(floor(_phase_locked))
+		#   被视觉 shader 消费；模拟逻辑全部走 HexCell.* per-cell。
+		#   物理化路径下仅在首次 round 或 season_phase 跨整数时刷新 GPU atlas；
+		#   旧 ny-only 路径没有独立 hex 求解阶段，保留每轮像素刷新。
+		var phase_int: int = int(floor(_phase_locked))
+		if baker._use_physical_circulation(cfg):
+			_need_pixel_this_round = (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
+		else:
+			_need_pixel_this_round = true
+		_phase_int_seen = phase_int
 
 	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
 	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
@@ -211,6 +203,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# stage 6 (UPWELLING) 即认为求解完成，跳过 stage 7 (WIND_RASTER) 与后续
 	# pixel slices + commit — 把 day_changed 路径砍掉 ~25-30ms。
 	if not _phys_solve_done:
+		var phys_stage_before: int = _baker_phys_stage_id()
 		_phys_solve_done = baker._physical_solve_step_one(map, world, hex_size, cfg, _phase_locked)
 		# 短路检测：baker 跑完 stage 6 (UPWELLING) 后会把 _phys_stage 设为 7
 		# (_PHYS_STAGE_WIND_RASTER)。本轮不需要像素 → 手动推到 _PHYS_STAGE_DONE
@@ -227,51 +220,28 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				baker._pending_phys_solved_phase = _phase_locked
 			_phys_solve_done = true
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
 		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 8ms → 打印来源 stage。
 		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
 		# return 漏掉了；ocean_currents p95 outlier 通常就是这里。
-		# 注意：函数内是"跑完当前 stage → 设为下一 stage"，所以返回时读 _phys_stage
-		# 拿到的是**下一**阶段的 id；这里要换算成"刚跑完的 stage"。
 		if elapsed_solve_ms > 8.0:
-			var next_stage_id: int = -1
-			if "_phys_stage" in baker:
-				next_stage_id = int(baker._phys_stage)
-			# next stage = 3 (PSI_INIT) → 刚跑完 = 2 (WIND)，依此类推
-			var just_done_id: int = max(0, next_stage_id - 1)
-			var stage_names: Array = ["NONE", "SLP", "WIND", "PSI_INIT", "PSI_ITERS",
-				"PSI_FINALIZE", "UPWELLING", "WIND_RASTER", "DONE"]
-			# 修正：WIND_RASTER (7) 内部分片时 _phys_stage 不切换，next_stage_id
-			# 仍是 7。此时实际"刚跑完一片像素"的就是 WIND_RASTER 本身，不是 UPWELLING。
-			# 用 baker._phys_wind_raster_idx > 0 判断是否处于 stage 7 的 in-flight 状态。
-			var in_wind_raster_loop: bool = (next_stage_id == 7) \
-					and ("_phys_wind_raster_idx" in baker) \
-					and (int(baker._phys_wind_raster_idx) > 0)
-			if in_wind_raster_loop:
-				just_done_id = 7
-			var just_done_name: String = "?"
-			if just_done_id >= 0 and just_done_id < stage_names.size():
-				just_done_name = String(stage_names[just_done_id])
-			print("  [ocean_currents] slow slice=%.1fms (just-finished stage=%d/%s, next=%d, round_done=%s)" % [
-				elapsed_solve_ms, just_done_id, just_done_name, next_stage_id, str(_phys_solve_done)
+			print("  [ocean_currents] slow slice=%.1fms (just-finished stage=%d/%s, next=%d/%s, path=%s, round_done=%s)" % [
+				elapsed_solve_ms,
+				int(phys_report.get("stage", -1)),
+				str(phys_report.get("stage_name", "?")),
+				int(phys_report.get("next_stage", -1)),
+				str(phys_report.get("next_stage_name", "?")),
+				str(phys_report.get("path", "")),
+				str(_phys_solve_done),
 			])
 		# 求解未完成 → 本片返回，等下一个 SUS tick 继续；
 		# 求解完成且不需要像素 rebake → 立刻收尾本轮，不进入 pixel slice 分支
 		if not _phys_solve_done:
-			return {
-				"done": false,
-				"work_done": 0,
-				"elapsed_ms": elapsed_solve_ms,
-				"progress_ratio": 0.0,
-				# plan/dots-slp-psi-cpp — surface SLP / PSI C++ path decision +
-				# native ms onto the slice result so [SUS] aggregation / season
-				# breakdown can attribute the time correctly. Only meaningful
-				# after the relevant stage has actually run (defaults remain
-				# "gdscript" / -1.0 otherwise).
-				"stage_slp_path": baker.get_slp_path_str() if baker.has_method("get_slp_path_str") else "gdscript",
-				"stage_slp_native_ms": baker.get_slp_native_ms() if baker.has_method("get_slp_native_ms") else -1.0,
-				"stage_psi_path": baker.get_psi_path_str() if baker.has_method("get_psi_path_str") else "gdscript",
-				"stage_psi_native_ms": baker.get_psi_native_ms() if baker.has_method("get_psi_native_ms") else -1.0,
-			}
+			phys_report["done"] = false
+			phys_report["work_done"] = 0
+			phys_report["elapsed_ms"] = elapsed_solve_ms
+			phys_report["progress_ratio"] = 0.0
+			return phys_report
 		# _phys_solve_done = true & !_need_pixel_this_round → 跳过像素阶段，
 		# 立刻 round_done。on_commit 仍要触发，让 MapGenerator 重置 per-cell
 		# sample 缓存 / 通知下游 dirty。但不调 baker.commit_ocean_buffers（无新像素）。
@@ -281,17 +251,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_round_active = false
 			_next_pixel_idx = 0
 			_phys_solve_done = false
-			return {
-				"done": true,
-				"work_done": 0,
-				"elapsed_ms": elapsed_solve_ms,
-				"progress_ratio": 1.0,
-				"pixel_skipped": true,
-				"stage_slp_path": baker.get_slp_path_str() if baker.has_method("get_slp_path_str") else "gdscript",
-				"stage_slp_native_ms": baker.get_slp_native_ms() if baker.has_method("get_slp_native_ms") else -1.0,
-				"stage_psi_path": baker.get_psi_path_str() if baker.has_method("get_psi_path_str") else "gdscript",
-				"stage_psi_native_ms": baker.get_psi_native_ms() if baker.has_method("get_psi_native_ms") else -1.0,
-			}
+			phys_report["done"] = true
+			phys_report["work_done"] = 0
+			phys_report["elapsed_ms"] = elapsed_solve_ms
+			phys_report["progress_ratio"] = 1.0
+			phys_report["pixel_skipped"] = true
+			return phys_report
 		# 否则（_need_pixel_this_round=true）→ 落入下面的 pixel slice 分支
 
 	# Event-driven rebake notification — 每次跨季节进入像素阶段时打一条日志，
@@ -309,11 +274,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# Gate：ClimateProfile.use_gdext_ocean_currents_pixel=true + ext.has_method
 	# +baker.run_ocean_field_rasterize_full（新引入）。失败/未导出 → fallback 到旧 slice 路径。
 	var used_cpp_raster: bool = false
+	var raster_native_ms: float = -1.0
+	var raster_wall_ms: float = -1.0
 	if s == 0 and baker._use_physical_circulation(cfg):
 		var cp_oc: ClimateProfile = cfg.climate_profile if cfg != null else null
 		if cp_oc != null and bool(cp_oc.use_gdext_ocean_currents_pixel) \
 				and baker.has_method("run_ocean_field_rasterize_full"):
+			var t_raster_us: int = Time.get_ticks_usec()
 			var raster_res: Dictionary = baker.run_ocean_field_rasterize_full(map, world, cfg)
+			raster_wall_ms = (Time.get_ticks_usec() - t_raster_us) / 1000.0
+			raster_native_ms = float(raster_res.get("elapsed_ms", -1.0))
 			if not bool(raster_res.get("fallback", true)):
 				used_cpp_raster = true
 				_next_pixel_idx = _total_pixels
@@ -324,10 +294,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_next_pixel_idx = e
 
 	var done: bool = (_next_pixel_idx >= _total_pixels)
+	var commit_wall_ms: float = -1.0
 	if done:
-		# Daily fast ticks only need CPU buffers + HexCell.ocean_current for simulation.
-		# Texture/atlas uploads are expensive GPU work and caused 200ms+ commit spikes.
-		baker.commit_ocean_buffers(world, false)
+		# Pixel phase only runs on first round / season boundary, so commit the GPU atlas too.
+		# Per-day rounds without pixel work return earlier and do not upload textures.
+		var t_commit_us: int = Time.get_ticks_usec()
+		baker.commit_ocean_buffers(world, true)
+		commit_wall_ms = (Time.get_ticks_usec() - t_commit_us) / 1000.0
 		if on_commit.is_valid():
 			on_commit.call()
 		_round_active = false
@@ -336,20 +309,108 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	# H 诊断：单 slice > 25ms → 标注是 commit 那一片还是普通像素片，定位 78ms 尖峰来源。
+	# 拆分 raster_wall（包含 ext 调用 + ensure_pending + refresh_slots）/
+	# raster_native（C++ 内部 elapsed_ms）/ commit_wall（Image.create_from_data + tex.update）/
+	# rest（on_commit 回调 + slice 头尾杂项）。
 	if elapsed_ms > 25.0:
 		var marker: String = "commit" if done else "pixel"
-		print("  [ocean_currents] slow slice=%.1fms (%s, pixels=%d-%d / %d)" % [
-			elapsed_ms, marker, s, e, _total_pixels
+		var rest_ms: float = elapsed_ms
+		if raster_wall_ms >= 0.0:
+			rest_ms -= raster_wall_ms
+		if commit_wall_ms >= 0.0:
+			rest_ms -= commit_wall_ms
+		print("  [ocean_currents] slow slice=%.1fms (%s, pixels=%d-%d / %d) raster_wall=%.1f raster_native=%.1f commit_wall=%.1f rest=%.1f" % [
+			elapsed_ms, marker, s, e, _total_pixels,
+			raster_wall_ms, raster_native_ms, commit_wall_ms, rest_ms
 		])
 	var progress: float = 0.0
 	if _total_pixels > 0:
 		progress = float(_next_pixel_idx) / float(_total_pixels) if not done else 1.0
+	var work_done_pixels: int = _total_pixels if used_cpp_raster else e - s
 	return {
 		"done": done,
-		"work_done": e - s,
+		"work_done": work_done_pixels,
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": progress,
+		"stage_name": "ocean_pixel_commit" if done else "ocean_pixel_slice",
+		"substage": "pixels_%d_%d" % [s, e],
+		"path": "gdext_raster" if used_cpp_raster else "gdscript_slice",
 	}
+
+
+func _baker_phys_stage_id() -> int:
+	if baker != null and "_phys_stage" in baker:
+		return int(baker._phys_stage)
+	return -1
+
+
+func _phys_stage_name(stage: int) -> String:
+	match stage:
+		0: return "phys_none"
+		1: return "phys_slp"
+		2: return "phys_wind"
+		3: return "phys_psi_init"
+		4: return "phys_psi_iters"
+		5: return "phys_psi_finalize"
+		6: return "phys_upwelling"
+		7: return "phys_wind_raster"
+		8: return "phys_done"
+		_: return "phys_unknown"
+
+
+func _phys_stage_path(stage: int) -> String:
+	match stage:
+		1:
+			return baker.get_slp_path_str() if baker != null and baker.has_method("get_slp_path_str") else "gdscript"
+		2:
+			return "gdext" if baker != null and "_phys_wind_done_by_cpp" in baker and bool(baker._phys_wind_done_by_cpp) else "gdscript"
+		3:
+			return baker.get_psi_path_str() if baker != null and baker.has_method("get_psi_path_str") else "gdscript"
+		4, 5:
+			return "gdscript"
+		6:
+			return "physical_circulation"
+		7:
+			return "wind_raster"
+		_:
+			return "phys_solve"
+
+
+func _phys_stage_substage(stage: int, next_stage: int) -> String:
+	if baker != null and stage == 4 and "_phys_psi_iters_done" in baker:
+		return "iters_%d" % int(baker._phys_psi_iters_done)
+	if baker != null and stage == 7 and "_phys_wind_raster_idx" in baker:
+		return "pixel_%d" % int(baker._phys_wind_raster_idx)
+	return "next_%s" % _phys_stage_name(next_stage)
+
+
+func _current_phys_stage_report(stage_before: int, elapsed_ms: float) -> Dictionary:
+	var next_stage: int = _baker_phys_stage_id()
+	var just_done: int = stage_before
+	if just_done <= 0:
+		just_done = max(0, next_stage - 1)
+	# `_physical_solve_step_one()` may short-circuit stage 7 by directly marking
+	# `_PHYS_STAGE_DONE` when pixel buffers are disabled; that slice still did
+	# upwelling work, not a synthetic DONE stage.
+	if stage_before == 6 and next_stage == 8:
+		just_done = 6
+	# First SLP slice enters with stage_before=NONE and exits at WIND.
+	if stage_before <= 0 and next_stage == 2:
+		just_done = 1
+	var report: Dictionary = {
+		"stage": just_done,
+		"stage_name": _phys_stage_name(just_done),
+		"substage": _phys_stage_substage(just_done, next_stage),
+		"path": _phys_stage_path(just_done),
+		"next_stage": next_stage,
+		"next_stage_name": _phys_stage_name(next_stage),
+		"elapsed_ms": elapsed_ms,
+		"stage_slp_path": baker.get_slp_path_str() if baker != null and baker.has_method("get_slp_path_str") else "gdscript",
+		"stage_slp_native_ms": baker.get_slp_native_ms() if baker != null and baker.has_method("get_slp_native_ms") else -1.0,
+		"stage_psi_path": baker.get_psi_path_str() if baker != null and baker.has_method("get_psi_path_str") else "gdscript",
+		"stage_psi_native_ms": baker.get_psi_native_ms() if baker != null and baker.has_method("get_psi_native_ms") else -1.0,
+	}
+	return report
 
 
 ## Allow MapGenerator to retune the policy on the fly (e.g. after climate

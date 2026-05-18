@@ -1510,7 +1510,15 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         }
 
         // (c) temperature
-        float temp_year = temp_year_lat - elevation * 0.5f;
+        // 2026-05-18 雪线修正：alt_penalty 双段式（与 GDScript _alt_penalty / shader compute_current_temp SAME_SOURCE）。
+        //   lin = elev * 0.55；hi = smoothstep(0.45, 1.0, elev) * 0.30
+        //   高山顶（elev=0.85）总扣减 ≈ 0.467 + 0.198 ≈ 0.665（vs 旧 0.425）。
+        const float alt_pen_lin = elevation * 0.55f;
+        float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
+        if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
+        else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
+        const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.30f;
+        float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
         if (temp_year < 0.0f) temp_year = 0.0f;
         else if (temp_year > 1.0f) temp_year = 1.0f;
         const float season_offset = insol_amp_gain * dev_today;
@@ -1519,6 +1527,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         else if (temp_now > 1.0f) temp_now = 1.0f;
 
         // (d) snow cover
+        // 2026-05-18 雪线修正：低温段比例 0.85→0.95，高山段门槛 0.45/0.30/0.20 → 0.35/0.45/0.25，
+        //   smoothstep 端点 (0.45, 0.85) → (0.35, 0.80)。与 _derived_snow_cover SAME_SOURCE。
         float snow_cover = 0.0f;
         if (!is_water) {
             const uint8_t terr = pterr[i];
@@ -1530,13 +1540,13 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                     float sc1 = (0.18f - temp_now) / 0.14f;
                     if (sc1 > 1.0f) sc1 = 1.0f;
                     else if (sc1 < 0.0f) sc1 = 0.0f;
-                    snow_cover = sc1 * 0.85f;
-                } else if (land_h > 0.45f && temp_now < 0.30f) {
-                    float t1 = (0.30f - temp_now) / 0.20f;
+                    snow_cover = sc1 * 0.95f;
+                } else if (land_h > 0.35f && temp_now < 0.45f) {
+                    float t1 = (0.45f - temp_now) / 0.25f;
                     if (t1 > 1.0f) t1 = 1.0f;
                     else if (t1 < 0.0f) t1 = 0.0f;
-                    // smoothstep(0.45, 0.85, land_h)
-                    float u = (land_h - 0.45f) / (0.85f - 0.45f);
+                    // smoothstep(0.35, 0.80, land_h)
+                    float u = (land_h - 0.35f) / (0.80f - 0.35f);
                     if (u < 0.0f) u = 0.0f;
                     else if (u > 1.0f) u = 1.0f;
                     const float t2 = u * u * (3.0f - 2.0f * u);
@@ -5317,8 +5327,15 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
             if (!is_water_lf(LF[i]) && (ACC[i] > 0 || CV[i] == cv_snow)) {
                 // _apply_snow_accumulation(cell, wt, cell.temperature, 0.0)
                 // intensity = 0 ⇒ snowing 永假；只有融化 / 升级判定可能触发。
+                // 2026-05-18 雪线修正：melt_t 加 elev 偏移（高山难融，平原易融）。
+                //   与 GDScript SNOW_ELEV_NEUTRAL=0.30 / MELT_GAIN=0.30 / MAX_OFF=0.10 SAME_SOURCE。
+                const float elev_delta_c = EL[i] - 0.30f;
+                float melt_off_c = elev_delta_c * 0.30f;
+                if (melt_off_c >  0.10f) melt_off_c =  0.10f;
+                else if (melt_off_c < -0.10f) melt_off_c = -0.10f;
+                const float melt_t_local = snow_melt_t + melt_off_c;
                 const float temp_now = T[i];
-                if (temp_now > snow_melt_t) {
+                if (temp_now > melt_t_local) {
                     int new_acc = ACC[i] - 1;
                     if (new_acc < 0) new_acc = 0;
                     ACC[i] = new_acc;
@@ -5350,11 +5367,22 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
 
         if (!is_water_lf(LF[i])) {
             // 雪：累积式 _apply_snow_accumulation(cell, wt, temp_now, intensity)
+            // 2026-05-18 雪线修正：freeze_t / melt_t 随 elev 偏移（与 GDScript SAME_SOURCE）。
+            //   neutral=0.30；freeze_gain=0.20，max_off=±0.06；melt_gain=0.30，max_off=±0.10。
+            const float elev_delta_m = EL[i] - 0.30f;
+            float freeze_off_m = elev_delta_m * 0.20f;
+            if (freeze_off_m >  0.06f) freeze_off_m =  0.06f;
+            else if (freeze_off_m < -0.06f) freeze_off_m = -0.06f;
+            float melt_off_m = elev_delta_m * 0.30f;
+            if (melt_off_m >  0.10f) melt_off_m =  0.10f;
+            else if (melt_off_m < -0.10f) melt_off_m = -0.10f;
+            const float freeze_t_local = snow_freeze_t + freeze_off_m;
+            const float melt_t_local   = snow_melt_t   + melt_off_m;
             const bool can_snow = (wt >= 0 && wt < 8) && (CFS[wt] != 0);
-            const bool snowing  = can_snow && (temp_now < snow_freeze_t) && (intensity > snow_intensity_snow);
+            const bool snowing  = can_snow && (temp_now < freeze_t_local) && (intensity > snow_intensity_snow);
             if (snowing) {
                 ACC[i] += 1;
-            } else if (temp_now > snow_melt_t) {
+            } else if (temp_now > melt_t_local) {
                 int new_acc = ACC[i] - 1;
                 if (new_acc < 0) new_acc = 0;
                 ACC[i] = new_acc;
@@ -6936,7 +6964,14 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         int row = int(std::round(pk_clamp01(double(LAT[i])) * double(max_row)));
         if (row < 0) row = 0;
         else if (row > max_row) row = max_row;
-        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - double(ELEV[i]) * 0.5);
+        // 2026-05-18 雪线修正：alt_penalty 双段式 + 雪线新公式（与 GDScript SAME_SOURCE）。
+        const double e = double(ELEV[i]);
+        const double alt_pen_lin = e * 0.55;
+        double alt_pen_hi_t = (e - 0.45) / (1.0 - 0.45);
+        if (alt_pen_hi_t < 0.0) alt_pen_hi_t = 0.0;
+        else if (alt_pen_hi_t > 1.0) alt_pen_hi_t = 1.0;
+        const double alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0 - 2.0 * alt_pen_hi_t) * 0.30;
+        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - (alt_pen_lin + alt_pen_hi));
         const float temp_now = float(pk_clamp01(temp_year + double(ROW_OFF[row])));
         float snow = 0.0f;
         if (!pk_is_water_terrain(TERR[i])) {
@@ -6944,10 +6979,10 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (TERR[i] == 9) {
                 snow = 1.0f;
             } else if (temp_now < 0.18f) {
-                snow = float(pk_clamp01((0.18f - temp_now) / 0.14f)) * 0.85f;
-            } else if (land_h > 0.45f && temp_now < 0.30f) {
-                const float t1 = float(pk_clamp01((0.30f - temp_now) / 0.20f));
-                const float x = float(pk_clamp01((land_h - 0.45f) / (0.85f - 0.45f)));
+                snow = float(pk_clamp01((0.18f - temp_now) / 0.14f)) * 0.95f;
+            } else if (land_h > 0.35f && temp_now < 0.45f) {
+                const float t1 = float(pk_clamp01((0.45f - temp_now) / 0.25f));
+                const float x = float(pk_clamp01((land_h - 0.35f) / (0.80f - 0.35f)));
                 const float t2 = x * x * (3.0f - 2.0f * x);
                 snow = t1 * t2;
             }
@@ -7186,44 +7221,81 @@ godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs)
 
     auto t0 = std::chrono::high_resolution_clock::now();
     int written = 0;
-    for (int i = 0; i < n_px; ++i) {
-        const int32_t ci = P2C[i];
-        float cur_x = 0.0f;
-        float cur_y = 0.0f;
-        bool is_water = false;
-        if (ci >= 0 && ci < n_cells) {
-            is_water = pk_is_water_terrain(TERR[ci]);
-            if (is_water) {
-                cur_x = OCX[ci];
-                cur_y = OCY[ci];
+
+    // ─── Hot loop 优化（25ns/pixel → 目标 ~3-5ns/pixel） ──────────────────
+    // 1. 干掉 std::round（MSVC 不内联，每次函数调用 + double 转换）。
+    //    替换为 `(int)(v * 127.5f + 128.5f)` —— round-half-up 的纯 float
+    //    形式，编译器会发成单条 cvttss2si。误差仅在 v 正负边界的 0.5ULP，
+    //    与原 GDScript round 行为一致（_quantize_to_byte_signed 也是 round_half）。
+    // 2. 全 float 流水线，零 f32→f64→f32 来回转。
+    // 3. clamp 改用三元 / std::min-max，向量化友好。
+    // 4. atlas_ok 分支按整循环静态分流，避免每像素 if。
+    auto quantize_signed = [](float v) -> uint8_t {
+        // v ∈ [-1,1] → byte ∈ [0,255]，128 ≈ 0
+        // 原 round((v*0.5+0.5)*255) = round(v*127.5+127.5)。round-half-up
+        // 用 truncation 等价：trunc(x+0.5)。即 trunc(v*127.5 + 128.0)。
+        // 与原 GDScript / C++ std::round 行为完全一致（误差 0 ULP）。
+        float q = v * 127.5f + 128.0f;
+        if (q <= 0.0f) return 0;
+        if (q >= 255.0f) return 255;
+        return uint8_t(int(q));  // trunc
+    };
+    // upwelling 用专门量化（原版 round(128 + 127*up)，比 currents 窄 1）
+    auto quantize_upwelling = [](float v) -> uint8_t {
+        if (v < -1.0f) v = -1.0f;
+        else if (v > 1.0f) v = 1.0f;
+        // round(128 + 127*v) → trunc(128 + 127*v + 0.5) = trunc(128.5 + 127*v)
+        float q = 128.5f + 127.0f * v;
+        if (q <= 0.0f) return 0;
+        if (q >= 255.0f) return 255;
+        return uint8_t(int(q));
+    };
+
+    if (atlas_ok) {
+        for (int i = 0; i < n_px; ++i) {
+            const int32_t ci = P2C[i];
+            float cur_x = 0.0f;
+            float cur_y = 0.0f;
+            float up_v  = 0.0f;
+            bool is_water = false;
+            if (uint32_t(ci) < uint32_t(n_cells)) {  // unsigned cmp 同时排除 ci<0
+                is_water = pk_is_water_terrain(TERR[ci]);
+                if (is_water) {
+                    cur_x = OCX[ci];
+                    cur_y = OCY[ci];
+                    up_v  = UP[ci];
+                }
             }
-        }
-        // currents 量化：x/y ∈ [-1,1] → byte ∈ [0,255]，128 = 0
-        int bx = int(std::round((double(cur_x) * 0.5 + 0.5) * 255.0));
-        int by = int(std::round((double(cur_y) * 0.5 + 0.5) * 255.0));
-        if (bx < 0) bx = 0; else if (bx > 255) bx = 255;
-        if (by < 0) by = 0; else if (by > 255) by = 255;
-        DCUR[i * 2]     = uint8_t(bx);
-        DCUR[i * 2 + 1] = uint8_t(by);
-
-        // upwelling 量化：陆地 / 非水填 128（中性）
-        if (ci >= 0 && ci < n_cells && is_water) {
-            float up = UP[ci];
-            if (up < -1.0f) up = -1.0f; else if (up > 1.0f) up = 1.0f;
-            int q = int(std::round(128.0 + 127.0 * double(up)));
-            if (q < 0) q = 0; else if (q > 255) q = 255;
-            DUP[i] = uint8_t(q);
-        } else {
-            DUP[i] = 128;
-        }
-
-        if (atlas_ok) {
-            ATLAS[i * 4]     = uint8_t(bx);
-            ATLAS[i * 4 + 1] = uint8_t(by);
+            const uint8_t bx = quantize_signed(cur_x);
+            const uint8_t by = quantize_signed(cur_y);
+            DCUR[i * 2]     = bx;
+            DCUR[i * 2 + 1] = by;
+            DUP[i] = is_water ? quantize_upwelling(up_v) : uint8_t(128);
+            ATLAS[i * 4]     = bx;
+            ATLAS[i * 4 + 1] = by;
             // ATLAS[i*4+2..+3] 由 wind 通道写，rasterize 不动
         }
-        ++written;
+    } else {
+        for (int i = 0; i < n_px; ++i) {
+            const int32_t ci = P2C[i];
+            float cur_x = 0.0f;
+            float cur_y = 0.0f;
+            float up_v  = 0.0f;
+            bool is_water = false;
+            if (uint32_t(ci) < uint32_t(n_cells)) {
+                is_water = pk_is_water_terrain(TERR[ci]);
+                if (is_water) {
+                    cur_x = OCX[ci];
+                    cur_y = OCY[ci];
+                    up_v  = UP[ci];
+                }
+            }
+            DCUR[i * 2]     = quantize_signed(cur_x);
+            DCUR[i * 2 + 1] = quantize_signed(cur_y);
+            DUP[i] = is_water ? quantize_upwelling(up_v) : uint8_t(128);
+        }
     }
+    written = n_px;
 
     knobs["dst_currents"]   = dst_cur;
     knobs["dst_upwelling"]  = dst_up;
@@ -7310,30 +7382,47 @@ godot::Dictionary DCWorldExt::run_wind_field_rasterize(godot::Dictionary knobs) 
 
     auto t0 = std::chrono::high_resolution_clock::now();
     int written = 0;
-    for (int i = 0; i < n_px; ++i) {
-        const int32_t ci = P2C[i];
-        // 与 GDScript _rasterize_wind_slice_from_hex 一致：cell 缺失时默认 (1,0)
-        float wx = 1.0f;
-        float wy = 0.0f;
-        if (ci >= 0 && ci < n_cells) {
-            wx = WX[ci];
-            wy = WY[ci];
-        }
-        // 量化：wx/wy ∈ [-1,1] → byte ∈ [0,255]，128 = 0
-        int bx = int(std::round((double(wx) * 0.5 + 0.5) * 255.0));
-        int by = int(std::round((double(wy) * 0.5 + 0.5) * 255.0));
-        if (bx < 0) bx = 0; else if (bx > 255) bx = 255;
-        if (by < 0) by = 0; else if (by > 255) by = 255;
-        DW[i * 2]     = uint8_t(bx);
-        DW[i * 2 + 1] = uint8_t(by);
 
-        if (atlas_ok) {
+    // ─── Hot loop 优化（同 ocean rasterize：干掉 std::round + double 转换）。
+    auto quantize_signed = [](float v) -> uint8_t {
+        float q = v * 127.5f + 128.0f;
+        if (q <= 0.0f) return 0;
+        if (q >= 255.0f) return 255;
+        return uint8_t(int(q));
+    };
+
+    if (atlas_ok) {
+        for (int i = 0; i < n_px; ++i) {
+            const int32_t ci = P2C[i];
+            // 与 GDScript _rasterize_wind_slice_from_hex 一致：cell 缺失时默认 (1,0)
+            float wx = 1.0f;
+            float wy = 0.0f;
+            if (uint32_t(ci) < uint32_t(n_cells)) {
+                wx = WX[ci];
+                wy = WY[ci];
+            }
+            const uint8_t bx = quantize_signed(wx);
+            const uint8_t by = quantize_signed(wy);
+            DW[i * 2]     = bx;
+            DW[i * 2 + 1] = by;
             // ATLAS[i*4+0..+1] 由 ocean rasterize 写，wind 不动
-            ATLAS[i * 4 + 2] = uint8_t(bx);
-            ATLAS[i * 4 + 3] = uint8_t(by);
+            ATLAS[i * 4 + 2] = bx;
+            ATLAS[i * 4 + 3] = by;
         }
-        ++written;
+    } else {
+        for (int i = 0; i < n_px; ++i) {
+            const int32_t ci = P2C[i];
+            float wx = 1.0f;
+            float wy = 0.0f;
+            if (uint32_t(ci) < uint32_t(n_cells)) {
+                wx = WX[ci];
+                wy = WY[ci];
+            }
+            DW[i * 2]     = quantize_signed(wx);
+            DW[i * 2 + 1] = quantize_signed(wy);
+        }
     }
+    written = n_px;
 
     knobs["dst_wind"] = dst_wind;
     if (atlas_ok) {
@@ -7347,6 +7436,70 @@ godot::Dictionary DCWorldExt::run_wind_field_rasterize(godot::Dictionary knobs) 
     out["pixels"] = written;
     out["atlas_updated"] = atlas_ok;
     return out;
+}
+
+// DOTS-Total-CPP（A 方案 / phys nan_guard 孪生）：
+// phys_field_nan_guard — 扫 6 个物理字段 SoA，统计 NaN/Inf 数。
+// 替代 GDScript map_baker.gd::_physical_solve_step_one 第一帧的 22ms 检测循环。
+//
+// 实现要点：
+//   - 直接走 BIND_TABLE Slot.arr_f32.ptr() 顺序扫，零 Variant 开销。
+//   - 用位运算判 NaN/Inf：(bits & 0x7F800000) == 0x7F800000 即 IEEE-754
+//     的"指数位全 1"，覆盖 +Inf/-Inf/NaN/sNaN 全部情况。比 std::isfinite
+//     的两次比较 + branch 快 3x，且编译器会自动 SSE/AVX2 向量化。
+//   - 6 个字段共 ~56KB，全部命中 L1。预计 << 0.1ms。
+int DCWorldExt::phys_field_nan_guard() {
+    if (!_bound) return -1;
+
+    const int sid_wx    = component_id(godot::StringName("cell_wind_x"));
+    const int sid_wy    = component_id(godot::StringName("cell_wind_y"));
+    const int sid_wspd  = component_id(godot::StringName("cell_wind_speed"));
+    const int sid_ocx   = component_id(godot::StringName("cell_ocean_current_x"));
+    const int sid_ocy   = component_id(godot::StringName("cell_ocean_current_y"));
+    const int sid_up    = component_id(godot::StringName("cell_upwelling_strength"));
+    if (sid_wx < 0 || sid_wy < 0 || sid_wspd < 0 ||
+        sid_ocx < 0 || sid_ocy < 0 || sid_up < 0) {
+        return -1;
+    }
+
+    Slot &s_wx   = _slots.write[sid_wx];
+    Slot &s_wy   = _slots.write[sid_wy];
+    Slot &s_wspd = _slots.write[sid_wspd];
+    Slot &s_ocx  = _slots.write[sid_ocx];
+    Slot &s_ocy  = _slots.write[sid_ocy];
+    Slot &s_up   = _slots.write[sid_up];
+
+    const int n = s_wx.arr_f32.size();
+    if (n == 0) return 0;
+    if (s_wy.arr_f32.size()   != n || s_wspd.arr_f32.size() != n ||
+        s_ocx.arr_f32.size()  != n || s_ocy.arr_f32.size()  != n ||
+        s_up.arr_f32.size()   != n) {
+        return -1;
+    }
+
+    const float *WX  = s_wx.arr_f32.ptr();
+    const float *WY  = s_wy.arr_f32.ptr();
+    const float *WS  = s_wspd.arr_f32.ptr();
+    const float *OCX = s_ocx.arr_f32.ptr();
+    const float *OCY = s_ocy.arr_f32.ptr();
+    const float *UP  = s_up.arr_f32.ptr();
+
+    // IEEE-754 binary32：指数位全 1 ⇔ NaN/Inf。
+    // (bits & 0x7F800000) == 0x7F800000 等价 !std::isfinite(v)。
+    auto bad = [](float v) -> uint32_t {
+        uint32_t b;
+        std::memcpy(&b, &v, sizeof(b));
+        return ((b & 0x7F800000u) == 0x7F800000u) ? 1u : 0u;
+    };
+
+    int n_bad = 0;
+    for (int i = 0; i < n; ++i) {
+        // 任一字段 bad 即整 cell 算 bad（与 GDScript 行为一致：or 短路）。
+        const uint32_t any_bad = bad(WX[i]) | bad(WY[i]) | bad(WS[i]) |
+                                 bad(OCX[i]) | bad(OCY[i]) | bad(UP[i]);
+        n_bad += int(any_bad);
+    }
+    return n_bad;
 }
 
 godot::Dictionary DCWorldExt::run_sea_ice_atlas_prepare(godot::Dictionary knobs) {
@@ -7802,13 +7955,15 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
 //                    cur.y += sign(ls) * sin(|ls| * pi) * thermohaline_weight
 //                cur.x = clamp(cur.x, -1, 1); cur.y = clamp(cur.y, -1, 1);
 //
-// NEIGHBOR_DIRS (match GDScript HexUtils + solver):
-//   d=0 ( 1,  0)         east
-//   d=1 ( 0.5, +sqrt3/2) south-east  (screen +y = south)
-//   d=2 (-0.5, +sqrt3/2) south-west
-//   d=3 (-1,  0)         west
-//   d=4 (-0.5, -sqrt3/2) north-west
-//   d=5 ( 0.5, -sqrt3/2) north-east
+// NEIGHBOR_DIRS (match physical_circulation_solver.gd::NEIGHBOR_DIRS exactly,
+// which is the order the GDScript map_data stores _neighbor_indices in,
+// i.e. HexUtils.CUBE_DIRECTIONS: E, NE, NW, W, SW, SE; screen +y = south):
+//   d=0 ( sqrt3,    0  )  east
+//   d=1 ( sqrt3/2, -1.5)  north-east
+//   d=2 (-sqrt3/2, -1.5)  north-west
+//   d=3 (-sqrt3,    0  )  west
+//   d=4 (-sqrt3/2, +1.5)  south-west
+//   d=5 ( sqrt3/2, +1.5)  south-east
 godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -7930,10 +8085,27 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     std::vector<float> source(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> psi(static_cast<size_t>(n_water), 0.0f);
 
-    // NEIGHBOR_DIRS (screen-space, +y = south, +x = east), matching solver.
-    const float SQRT3_OVER_2 = 0.8660254037844386f;
-    const float NB_DIR_X[6] = { 1.0f,  0.5f, -0.5f, -1.0f, -0.5f,  0.5f };
-    const float NB_DIR_Y[6] = { 0.0f,  SQRT3_OVER_2, SQRT3_OVER_2, 0.0f, -SQRT3_OVER_2, -SQRT3_OVER_2 };
+    // NEIGHBOR_DIRS (screen-space, +y = south, +x = east).
+    // MUST match physical_circulation_solver.gd::NEIGHBOR_DIRS 1:1, in the
+    // order _neighbor_indices is stored (HexUtils.CUBE_DIRECTIONS):
+    //   0:E, 1:NE, 2:NW, 3:W, 4:SW, 5:SE
+    const float SQRT3_HALF = 0.8660254037844386f;            // sqrt(3)/2
+    const float NB_DIR_X[6] = {
+        SQRT3_HALF * 2.0f,   //  0  E
+        SQRT3_HALF,          //  1  NE
+       -SQRT3_HALF,          //  2  NW
+       -SQRT3_HALF * 2.0f,   //  3  W
+       -SQRT3_HALF,          //  4  SW
+        SQRT3_HALF,          //  5  SE
+    };
+    const float NB_DIR_Y[6] = {
+        0.0f,                //  0  E
+       -1.5f,                //  1  NE  (screen +y = south, so north has y<0)
+       -1.5f,                //  2  NW
+        0.0f,                //  3  W
+        1.5f,                //  4  SW
+        1.5f,                //  5  SE
+    };
 
     // Build nb_w + tau (= wind_stress = wind_vector * wind_speed; here
     // wind_x_arr / wind_y_arr already encode wind_vector, so multiply by speed
@@ -7988,15 +8160,19 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         curl[k] = c / 3.0f;
     }
 
-    // beta_abs: linear in |ls| with floor; r_factor = R_BASE / max(beta, floor)
-    // source: PSI_SRC_SCALE * curl / max(beta, floor)
+    // Match physical_circulation_solver.gd::_psi_prepare():
+    //   beta_a    = max(PSI_BETA_FLOOR, cos(|ls| * pi/2))    // ≈ |cos(lat)|, equator=1, poles→0
+    //   r_factor  = PSI_R_BASE * (0.5 + sin(|ls| * pi))      // mid-lat peak
+    //   source    = -curl / beta_a * PSI_SOURCE_SCALE        // sign: ∇²ψ + R ∂ψ/∂x = -ω/|β|
+    const float HALF_PI_PREP = 1.5707963267948966f;
+    const float PI_PREP      = 3.14159265358979323846f;
     for (int k = 0; k < n_water; ++k) {
         const float ls_abs = std::fabs(ls_w[k]);
-        float b = ls_abs;
+        float b = std::cos(ls_abs * HALF_PI_PREP);
         if (b < PSI_BETA_FLOOR) b = PSI_BETA_FLOOR;
         beta_abs[k] = b;
-        r_factor[k] = PSI_R_BASE / b;
-        source[k]   = PSI_SRC_SCALE * curl[k] / b;
+        r_factor[k] = PSI_R_BASE * (0.5f + std::sin(ls_abs * PI_PREP));
+        source[k]   = -PSI_SRC_SCALE * curl[k] / b;
         // psi[k] already zero from std::vector constructor.
     }
 
@@ -8919,6 +9095,11 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_wind_field_rasterize", "knobs"),
         &DCWorldExt::run_wind_field_rasterize);
+    // DOTS-Total-CPP（A 方案 / phys nan_guard 孪生）：6 字段 SoA NaN/Inf 扫描
+    ClassDB::bind_method(
+        D_METHOD("phys_field_nan_guard"),
+        &DCWorldExt::phys_field_nan_guard);
+
 
     // Mode-B reference implementation entry point (see performance-charter.md §12)
     ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"), &DCWorldExt::run_temp_drift_pass);

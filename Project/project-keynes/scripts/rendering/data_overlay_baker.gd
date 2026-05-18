@@ -32,9 +32,15 @@ const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 # （base∈[0,1] × scale∈[0, ~1.3]），给一点余量避免长尾被 clip 到同色。
 const PRECIPITATION_NORM_MAX: float = 1.5
 
-# 洋流模长归一化上限：MapGenerator._compute_ocean_currents 写入的 cell.ocean_current
-# 实测分布大多在 [0, 0.6]，给 0.8 余量避免极少数热点把整图压暗。
-const OCEAN_CURRENT_NORM_MAX: float = 0.8
+# 洋流模长归一化上限：cell.ocean_current.length() 的实际分布。
+# 历史注释假设 [0, 0.6]，但物理化路径（PhysicalCirculationSolver.psi_to_ocean_current）
+# 用 _OCEAN_CURRENT_SCALE = 0.05 把 ψ 梯度缩小后写入，实测海面分布大多在 [0, 0.15]，
+# 个别热点不超过 0.25。设上限 0.18 让"中等强度洋流" ≈ 35% 归一化值落到色带中段，
+# "强洋流" ≈ 0.15 接近顶部高亮色——避免之前 0.8 上限让整片海面都压缩在色带最低 8%
+# 区段（用户视觉看到全部"深青黑"，与陆地的"无 overlay"几乎无法区分）。
+# 同步影响 OCEAN_CURRENT_DIR 通道：dir_intensity = mag / 0.18 也被相应放大，
+# hsv2rgb_dir 的亮度 vv = mix(0.45, 1.0, dir_intensity) 才能撑到 ~0.7+ 显出色环。
+const OCEAN_CURRENT_NORM_MAX: float = 0.18
 
 # 双向连续通道的对称半幅：value = 0.5 + clamp(raw / RANGE, -0.5, 0.5)
 # OCEAN_HEAT_TRANSPORT 与 UPWELLING 都是带符号的异常量，0=中性、负=冷/下沉、正=暖/上升。
@@ -130,6 +136,7 @@ static func bake(
 		"median": 0.0,
 		"count": 0,
 		"invalid_count": 0,
+		"near_zero_count": 0,
 		"buckets": {},
 		"sum": 0.0,
 	}
@@ -186,6 +193,8 @@ static func bake(
 		if not is_valid:
 			stats.invalid_count = int(stats.invalid_count) + 1
 		else:
+			if not OverlayMode.is_discrete(mode) and _is_near_zero_sample(mode, value, intensity, is_vector_mode):
+				stats.near_zero_count = int(stats.near_zero_count) + 1
 			if OverlayMode.is_discrete(mode):
 				var bk: Dictionary = stats.buckets
 				bk[bucket] = int(bk.get(bucket, 0)) + 1
@@ -476,6 +485,17 @@ static func _sample_cell(
 		_:
 			return { "value": 0.0, "valid": false }
 
+static func _is_near_zero_sample(mode: int, value: float, intensity: float, is_vector_mode: bool) -> bool:
+	if is_vector_mode:
+		return intensity <= 0.025
+	match mode:
+		OverlayMode.MODE.OCEAN_CURRENT, OverlayMode.MODE.WIND_SPEED:
+			return value <= 0.025
+		OverlayMode.MODE.OCEAN_HEAT_TRANSPORT, OverlayMode.MODE.UPWELLING, OverlayMode.MODE.SLP, OverlayMode.MODE.WIND_STRESS_CURL, OverlayMode.MODE.OCEAN_PSI:
+			return absf(value - 0.5) <= 0.01
+		_:
+			return false
+
 # 根据季节相位在 climate.seasonal_moisture_scale 的 4 个值间线性插值。
 # season_phase ∈ [0, 4)；整数部分 = 当前季，小数部分 = 过渡进度。
 static func _moisture_scale_at_phase(climate, season_phase: float) -> float:
@@ -534,6 +554,7 @@ static func _empty_stats() -> Dictionary:
 		"median": 0.0,
 		"count": 0,
 		"invalid_count": 0,
+		"near_zero_count": 0,
 		"buckets": {},
 		"sum": 0.0,
 	}

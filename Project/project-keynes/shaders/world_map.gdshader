@@ -16,6 +16,8 @@ render_mode blend_mix;
 //   vector_atlas     (RGBA8, derived_size, LINEAR)
 //                     RG = ocean_current (-1..1 mapped from 0..1)
 //                     BA = wind_field    (-1..1 mapped from 0..1)
+//   dynamic_cell_atlas (RGBA8, derived_size, LINEAR)
+//                     R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality
 //   volcano_field_tex (R8, derived_size, LINEAR)
 //                     R = 火山强度场（原 scalar_atlas.a）
 //   sea_ice_tex      (R8, derived_size, LINEAR)
@@ -27,6 +29,25 @@ uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform sampler2D enum_atlas   : filter_nearest, repeat_disable;
 uniform sampler2D scalar_atlas : filter_linear,  repeat_disable;
 uniform sampler2D vector_atlas : filter_linear,  repeat_disable;
+// vector_atlas 是否已注入真实数据。bake_world / commit_ocean_buffers 完成时由 hex_renderer 置 true。
+// 未绑定时 Godot 默认 fallback 是白纹理（vec4(1)），错误地解码为 (1,1) 强洋流向；
+// 用此 flag 让 shader 在 false 时直接把 vects 当 0.5 中性值，等价于"没有洋流/风"。
+uniform bool vector_atlas_valid = false;
+// dynamic_cell_atlas RGBA8：R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality。
+// hint_default_black 让纹理未绑定 / atlas 还未由 climate pass 写入时采样得到 (0,0,0,0)，
+// 触发 dyn_valid = step(0.02, dyn_temp) = 0 → fallback 到 shader 派生温度 / 雪线，
+// 避免 Godot 默认 fallback 白纹理把 dyn_temp=1 / dyn_snow=1 全图判为高温积雪 → 地图全白。
+uniform sampler2D dynamic_cell_atlas : hint_default_black, filter_linear, repeat_disable;
+// 2026-05-18 P1-B：weather_field_tex RGBA8（hex-constant）：
+//   R = weather_type（编码索引，与 WeatherType.WT 一致）
+//   G = weather_intensity（[0,1]）
+//   B = cloud_cover  ([0,1])
+//   A = precipitation ([0,1])
+// 主 shader 仅在水域分支消费 G/B/A，让海面随风暴变深 / 雨幕变暗 / 出现风浪条纹。
+// 未绑定时 hint_default_black 让 intensity=0，所有海洋天气视觉静默回退到 legacy。
+uniform sampler2D weather_field_tex : hint_default_black, filter_linear, repeat_disable;
+uniform bool weather_field_ocean_enabled = true;
+uniform float weather_field_ocean_strength : hint_range(0.0, 1.0) = 0.85;
 // 火山强度场独立 R8（原 scalar_atlas.a，已让位给 sea_ice_fraction）
 uniform sampler2D volcano_field_tex : filter_linear, repeat_disable;
 // Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a）。
@@ -634,41 +655,114 @@ float season_offset_unified(float lat_signed, float phase) {
 }
 
 // 当前实时温度：[0, 1]。和 map_generator._compute_temperature 同公式：
-// lat_temp = pow(cos(lat_signed * π/2), 1.2) - elev*0.5
+// lat_temp = pow(cos(lat_signed * π/2), 1.2) - alt_penalty(elev)
 // 然后叠 + season_offset + climate_anomaly
+// 2026-05-18 雪线修正：alt_penalty 改双段式，与 GDScript _alt_penalty 严格 SAME_SOURCE。
+//   lin = elev * 0.55；hi = smoothstep(0.45, 1.0, elev) * 0.30
+//   高山顶（elev=0.85）总扣减 ≈ 0.467 + 0.198 ≈ 0.665（vs 旧 0.425），
+//   赤道高山温度从 ≈ 0.575 跌到 ≈ 0.335，立刻进入雪线分支。
 float compute_current_temp(float elev, float lat_signed, float season_offset) {
 	float lat_temp = pow(max(cos(lat_signed * 1.5707963), 0.0), 1.2);
-	float alt_penalty = elev * 0.5;
+	float alt_pen_lin = elev * 0.55;
+	float alt_pen_hi = smoothstep(0.45, 1.0, elev) * 0.30;
+	float alt_penalty = alt_pen_lin + alt_pen_hi;
 	return clamp(lat_temp + season_offset + climate_anomaly - alt_penalty, 0.0, 1.0);
 }
 
 // 返回乘性 tint（应用为 base * vegetation_seasonal_tint(...)）
+// 2026-05-18 P0-A：拉大四季色板差异，让"植被随季节变化"成为肉眼可见的主导视觉信号。
+//   春：嫩绿（明亮、略偏黄绿）
+//   夏：深墨绿（浓郁、压暗黄轴）
+//   秋：金黄+橙红（强暖偏移，蓝轴显著下沉）
+//   冬：枯灰偏冷蓝（饱和度大幅压低、整体偏冷）
 vec3 vegetation_seasonal_tint(float phase) {
-	vec3 spring = vec3(0.95, 1.06, 0.92);  // 鲜
-	vec3 summer = vec3(0.80, 1.00, 0.72);  // 深绿
-	vec3 autumn = vec3(1.12, 0.92, 0.62);  // 暖黄橙
-	vec3 winter = vec3(0.78, 0.78, 0.86);  // 灰冷
+	vec3 spring = vec3(0.96, 1.14, 0.82);  // 鲜嫩绿
+	vec3 summer = vec3(0.66, 1.05, 0.58);  // 深墨绿
+	vec3 autumn = vec3(1.30, 0.82, 0.42);  // 金黄橙红
+	vec3 winter = vec3(0.62, 0.66, 0.78);  // 枯灰冷蓝
 	if (phase < 1.0) return mix(spring, summer, phase);
 	if (phase < 2.0) return mix(summer, autumn, phase - 1.0);
 	if (phase < 3.0) return mix(autumn, winter, phase - 2.0);
 	return mix(winter, spring, phase - 3.0);
 }
 
+// 2026-05-18 N9：经典 Dissolve（溶解）风格的季节换色——替代 N1 的"整体 lerp + 相位抖动"。
+// 思路：
+//   原 lerp 模型：mix(season_A, season_B, fract(phase))
+//     → 所有像素同步、整片同时变色（即使加了 phase_jitter 也只是把"同步"换成"按低频
+//       fbm 分块同步"，本质仍是软渐变）。
+//   Dissolve 模型：每个像素从噪声图获得一个独立"相位阈值" noise ∈ [0,1]，当全局
+//     fract(phase) 越过该阈值时，该像素瞬间（或在窄带 w 内）从 A 切到 B。整体效果就是
+//     屏幕上看到"按 fbm 形状的色斑一片片先后翻面"，正是经典 Dissolve 质感。
+// 数学：local_t = clamp((global_t - noise) / w + 0.5, 0, 1)，再用 smoothstep 软化。
+//   w → 0 接近硬噪点边；w → 1 退化回普通 lerp。这里用 0.35 给出"明显但不刺眼"的破碎带。
+// 多层噪声：用低频 + 高频 fbm 叠加，得到"大色块边缘破碎成细斑"的层次（避免单频纯圆斑）。
+vec3 vegetation_seasonal_tint_dissolve(float phase, vec2 wp) {
+	vec3 spring = vec3(0.96, 1.14, 0.82);
+	vec3 summer = vec3(0.66, 1.05, 0.58);
+	vec3 autumn = vec3(1.30, 0.82, 0.42);
+	vec3 winter = vec3(0.62, 0.66, 0.78);
+	// 取出"上一季 A"和"下一季 B"以及它们之间的进度 global_t = fract(phase)。
+	int idx = int(floor(phase));
+	float global_t = phase - float(idx);
+	vec3 col_a;
+	vec3 col_b;
+	if (idx == 0)      { col_a = spring; col_b = summer; }
+	else if (idx == 1) { col_a = summer; col_b = autumn; }
+	else if (idx == 2) { col_a = autumn; col_b = winter; }
+	else               { col_a = winter; col_b = spring; }
+	// 两层 fbm 叠加得到每像素相位阈值：低频给"大色块"，高频给"边缘破碎细斑"。
+	// 频率刻意与 N1/N2/N7 错开，避免和其它噪声层产生条带共振。
+	float n_lo = fbm(wp * 0.050 + vec2(-11.0, 41.0), 2);
+	float n_hi = fbm(wp * 0.180 + vec2( 27.0, -53.0), 1);
+	float pix_threshold = clamp(n_lo * 0.70 + n_hi * 0.30, 0.0, 1.0);
+	// Dissolve 过渡带：w 越小越像噪点撕裂感、w 越大越软。0.35 是经验值——
+	// 既能让用户清楚看到"色斑在按形状先后翻面"，又不会留下大量同时存在的破碎噪点。
+	const float DISSOLVE_W = 0.35;
+	float local_t = (global_t - pix_threshold) / DISSOLVE_W + 0.5;
+	float mask = smoothstep(0.0, 1.0, clamp(local_t, 0.0, 1.0));
+	return mix(col_a, col_b, mask);
+}
+
 // 季节性雪盖：综合"永久 SNOW biome"+"季节降温/高山雪线"两部分。返回 [0, 1]。
-// - 当前温度 < 0.18 + 陆地 → 季节雪（冬季中纬度也覆雪）
-float compute_snow_factor(int biome, float current_temp, float elev, bool is_water) {
+// - 当前温度 < 0.28 + 陆地 → 季节雪（冬季中纬度也覆雪）
+// 2026-05-18 P1-A：把 cold_factor 区间从 [0.04, 0.18] 放宽到 [0.05, 0.28]，
+//   让中纬度寒潮 / 冬季也能进入"出雪带"；高山雪线门槛从 land_h>0.40 降到 >0.30，
+//   覆盖丘陵；同时把高山雪温度上限从 0.40 提到 0.55，让中高山在春秋也保留雪线。
+// 2026-05-18 N3：新增 wp 入参，让\"雪线\"在世界空间用 fbm 抖动：
+//   - cold_factor 阈值抖动 → 中纬度边界破碎成锯齿，而非沿纬线一刀切。
+//   - alt_snow 海拔门槛抖动 → 山体雪线参差，迎风坡 / 背风坡有差异感。
+//   - 整体雪量抖动 ×0.85~1.10（沿用旧 snow_noise 思路，整合进函数内）。
+// 2026-05-18 雪线修正（与 _derived_snow_cover SAME_SOURCE）：
+//   - cold_factor 比例 0.90 提到 0.95（与 CPU 低温段 *0.95 对齐）；
+//   - 高山段 land_h gate 0.30→0.30（保持），但 temp 区间从 (0.55, 0.12) 改为 (0.65, 0.20)，
+//     让 elev=0.6 中山 + temp=0.4 也能见到 ≈0.4 的雪盖；
+//   - alt_top 从 0.85 提到 0.80（让山顶提前到达饱和雪盖）。
+float compute_snow_factor(int biome, float current_temp, float elev, bool is_water, vec2 wp) {
 	if (is_water) return 0.0;
 	float factor = 0.0;
 	// 1) 永久 SNOW biome 基础
 	if (biome == B_SNOW) factor = 0.65;
 	if (biome == B_GLACIER) factor = 0.80;
-	float cold_factor = smoothstep(0.18, 0.04, current_temp);
-	factor = max(factor, cold_factor * 0.85);
+	// 噪声层：低频用于雪线边界（破碎成斑驳的"雪带边缘"），中频用于整体雪量明灭。
+	float snowline_n = fbm(wp * 0.045 + vec2(-17.0, 53.0), 2);
+	float snowline_jitter = (snowline_n - 0.5) * 0.10;          // ±0.05 温度域
+	float altline_n = fbm(wp * 0.090 + vec2(67.0, -31.0), 2);
+	float altline_jitter = (altline_n - 0.5) * 0.18;            // ±0.09 高度域
+	float amount_n = fbm(wp * 0.18 + vec2(63.0, -29.0), 1);
+	float amount_jitter = mix(0.78, 1.16, amount_n);
+	float cold_lo = 0.05 + snowline_jitter;
+	float cold_hi = 0.28 + snowline_jitter;
+	float cold_factor = smoothstep(cold_hi, cold_lo, current_temp);
+	factor = max(factor, cold_factor * 0.95);
 	float land_h = (elev - sea_level) / max(1.0 - sea_level, 0.001);
-	if (land_h > 0.40) {
-		float alt_snow = smoothstep(0.40, 0.85, land_h) * smoothstep(0.40, 0.10, current_temp);
-		factor = max(factor, alt_snow * 0.85);
+	float alt_gate = 0.30 + altline_jitter;
+	if (land_h > alt_gate) {
+		float alt_top = 0.80 + altline_jitter * 0.4;
+		float alt_snow = smoothstep(alt_gate, alt_top, land_h) * smoothstep(0.65, 0.20, current_temp);
+		factor = max(factor, alt_snow * 0.95);
 	}
+	factor *= amount_jitter;
 	return clamp(factor, 0.0, 1.0);
 }
 
@@ -716,10 +810,13 @@ bool biome_accepts_vegetation_tint(int biome) {
 // ─── Milestone 2：覆盖物轴叠加 ──────────────────────────────────────────
 // SNOW/SEA_ICE/GLACIER 已经被 dynamic_snow / biome 主路径处理，这里只补
 // "原系统没专门处理"的两个：FLOODING（水蓝叠加）+ PERMAFROST（灰青微暗）。
+// 2026-05-18 P2-A：PERMAFROST 从 0.10 → 0.40（让"永冻土"可见）；
+// GLACIER 从 0.20 → 0.50（让冰川覆盖明显厚重）；
+// FLOODING 从 0.45 → 0.58（让洪水淹没区在 saturate 后更接近"水蓝"而不是被冲淡）。
 vec4 cover_overlay(int cover) {
-	if (cover == CV_FLOODING)   return vec4(0.30, 0.45, 0.62, 0.45);
-	if (cover == CV_PERMAFROST) return vec4(0.74, 0.78, 0.82, 0.10);
-	if (cover == CV_GLACIER)    return vec4(0.86, 0.92, 0.96, 0.20);
+	if (cover == CV_FLOODING)   return vec4(0.30, 0.45, 0.62, 0.58);
+	if (cover == CV_PERMAFROST) return vec4(0.74, 0.78, 0.82, 0.40);
+	if (cover == CV_GLACIER)    return vec4(0.86, 0.92, 0.96, 0.50);
 	// Systemic Ocean Currents：远洋华深海富营养标记——淡绿 tint，表示浮游生物繁殖。
 	// 不覆盖流纹动画，仅在最后混色中加一层成环境光影响。
 	if (cover == CV_PELAGIC_BLOOM) return vec4(0.28, 0.58, 0.42, 0.22);
@@ -1114,18 +1211,27 @@ void fragment() {
 	// v9.atlas：把 3 张 atlas 一次采样解码到局部变量，后续逻辑读这些变量
 	vec4 enums = texture(enum_atlas,   uv);
 	vec4 scals = texture(scalar_atlas, uv);
-	// C3 plan (vector_atlas removal)：vector_atlas 已不再被任何 GDScript 路径
-	// 注入（hex_renderer 不再 set_shader_parameter）。直接把 vects 置零，下游
-	// `ocean_current_v / wind_v` 全部退化为 vec2(0)，所有 length>0.05 等阈值
-	// 分支自然短路，海面回到无洋流暗道 / 静态 wave 状态。仍保留 uniform 声明
-	// 与下方解码代码以避免任何 shader compile 漂移；把 sampler 调用替换为常量。
-	vec4 vects = vec4(0.5);
+	// vector_atlas：RG=洋流、BA=风场，均为 [-1,1] 映射到 [0,1]。
+	// 仅在 vector_atlas_valid=true（CPU 已写入真值）时使用；否则当作零向量中性 0.5。
+	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
+	// dynamic_cell_atlas：真实 cell 状态，低频 dirty 更新；用于替代纯 shader 派生温度/雪盖。
+	vec4 dyns = texture(dynamic_cell_atlas, uv);
 
 	int biome = int(enums.r * 255.0 + 0.5);
 	int veg   = int(enums.g * 255.0 + 0.5);
 	int cover = int(enums.b * 255.0 + 0.5);
 	float moist     = scals.r;
 	float lat_norm  = scals.b;
+	float dyn_temp = dyns.r;
+	float dyn_wet = dyns.g;
+	float dyn_snow = dyns.b;
+	float dyn_vitality = dyns.a;
+	// dyn_valid：仅当 dynamic_cell_atlas 真的写过 cell 真值（temperature 必须 > 哨兵阈值）。
+	// bake_world 阶段 cell.temperature 还未由 refresh_climate_daily 初始化（默认 0.0），
+	// 此时 R 通道接近 0，应当走 derived_temp fallback，避免把全图判为雪线以下。
+	// 同时 G 通道（moisture）默认 ≈0.5 不能作为有效信号；A 通道（vitality）默认 0.7 同理。
+	float dyn_valid = step(0.02, dyn_temp);
+	moist = mix(moist, dyn_wet, dyn_valid);
 	// Daily Sim SoA Refactor 阶段 1：sea_ice_fraction 从 scalar_atlas.a 拆到独立 sea_ice_tex。
 	// scalar_atlas.a 已为保留位（0）。vol_intensity 仍从独立 volcano_field_tex 采样。
 	float sea_ice_frac_px = texture(sea_ice_tex, uv).r;
@@ -1140,10 +1246,13 @@ void fragment() {
 	// ─── Phase 1：季节相位 + 当前温度（每帧由 WorldClock 驱动） ───────────
 	float lat_signed = lat_norm * 2.0 - 1.0;            // [-1, 1]
 	// eff_phase 仅用于植被季节色相（vegetation_seasonal_tint）；温度偏移走 insolation 统一入口。
+	// 注：赤道带的软混合在下方 vegetation tint 块单独处理；这里保留 eff_phase 给可能
+	// 的其它消费者，但实际 vegetation 走南/北两次 tint 颜色 mix（见 N7 注释）。
 	float eff_phase = hemi_phase(season_phase, lat_signed);
 	// True Insolation-Driven：CPU / GPU 同源季节偏移（true_insolation_enabled == true 时走 insolation 派生）
 	float season_offset = season_offset_unified(lat_signed, season_phase);
-	float current_temp = compute_current_temp(elev, lat_signed, season_offset);
+	float derived_temp = compute_current_temp(elev, lat_signed, season_offset);
+	float current_temp = mix(derived_temp, dyn_temp, dyn_valid);
 
 	vec3 col = hypsometric_tint(elev, is_water);
 
@@ -1151,16 +1260,69 @@ void fragment() {
 		// 2. biome 色相调制
 		col = biome_hue_modulate(col, biome);
 		// JUNGLE 一年常绿不参与；DESERT/SAVANNA/STEPPE 草本变化已经在 detail 里）
+		// 让真实 vegetation_vitality 调制季节振幅。dyn_valid=0 时取中性 1.0，避免
+		// 没有真值时把现成季节色削掉。
+		// 2026-05-18 P0-A：把 vitality_amp 下限从 0.55 抬到 0.85，让"没有真值或低 vitality"
+		// 的地块也保留 ≥85% 的季节色幅度，不会被削成几乎看不出春夏秋冬。
+		float vitality_w = mix(1.0, dyn_vitality, dyn_valid);
+		float vitality_amp = mix(0.85, 1.20, smoothstep(0.20, 0.95, vitality_w));
+		// 2026-05-18 N1：季节 tint 噪声扰动 —— 单纯 lerp 会让\"整张地图同时换季\"，
+		// 这里用两层 fbm：
+		//   ① phase_jitter（低频）→ 局部物候差异：阳坡先黄、阴坡后黄、湿润谷地常绿。
+		//      把 eff_phase 在 [-0.18, +0.18] 范围抖动，结果环回 4.0 域避免跳变。
+		//   ② amp_jitter（中频）→ 同 biome 内的"明灭斑驳"，让换季边界破碎不平整。
+		// 2026-05-18 N9：把"颜色 lerp"完全替换为 Dissolve（见 vegetation_seasonal_tint_dissolve）。
+		//   phase_jitter 仍保留——它现在的作用从"决定每像素的颜色相位偏移"降级为
+		//   "微调每像素的全局 t 起点"，给 dissolve mask 的形状再加一层低频不规则。
+		float phase_jitter_n = fbm(wp * 0.040 + vec2(7.0, -19.0), 2);
+		float phase_jitter = (phase_jitter_n - 0.5) * 0.36;
+		float amp_jitter_n = fbm(wp * 0.085 + vec2(-23.0, 11.0), 2);
+		float amp_jitter = mix(0.75, 1.18, amp_jitter_n);
+		// 2026-05-18 N7：赤道半球相位硬切修复 —— hemi_phase() 在 lat_signed=0 处
+		// 用硬 if/else 让南北半球相位相差 2.0（半年），等价于赤道一条像素级的硬分界线
+		// （图1的横向硬边）。修复方法：分别按"如果按北半球"/"如果按南半球"各算一次
+		// 植被 tint，然后用 lat_signed 经 smoothstep 软混合两个颜色。
+		// 相位是循环量不能直接 lerp（春/秋互混会得到夏色），必须在颜色域 mix。
+		// 赤道带宽度（默认 0.30）用 fbm 抖动 ±0.10，避免混合区本身又是另一条平直带。
+		float eq_band_n = fbm(wp * 0.022 + vec2(-83.0, 47.0), 2);
+		float eq_half_width = 0.30 + (eq_band_n - 0.5) * 0.20; // [0.20, 0.40]
+		float north_w_raw = smoothstep(-eq_half_width, eq_half_width, lat_signed);
+		// 在赤道带内再叠一层中频 fbm，让\"哪些像素归北、哪些归南\"破碎成斑驳
+		// （否则 smoothstep 自身的等高线仍会留一条柔水平带）。
+		float eq_mix_jitter = fbm(wp * 0.075 + vec2(53.0, -29.0), 2);
+		float north_w = clamp(north_w_raw + (eq_mix_jitter - 0.5) * 0.55, 0.0, 1.0);
+		float north_phase = mod(hemi_phase(season_phase, -1.0) + phase_jitter + 4.0, 4.0);
+		float south_phase = mod(hemi_phase(season_phase, +1.0) + phase_jitter + 4.0, 4.0);
+		vec3 north_tint = vegetation_seasonal_tint_dissolve(north_phase, wp);
+		vec3 south_tint = vegetation_seasonal_tint_dissolve(south_phase, wp);
+		vec3 veg_tint = mix(south_tint, north_tint, north_w);
 		if (biome == B_FOREST || biome == B_GRASSLAND || biome == B_HILL || biome == B_PLAIN
 				|| biome == B_TAIGA) {
-			vec3 veg_tint = vegetation_seasonal_tint(eff_phase);
-			col = mix(col, col * veg_tint, vegetation_season_strength);
+			col = mix(col, col * veg_tint, vegetation_season_strength * vitality_amp * amp_jitter);
 		} else if (biome == B_SAVANNA || biome == B_STEPPE) {
 			// 草原 / 稀树草原：振幅减半（干湿季对比远不如温带森林明显）
-			vec3 veg_tint = vegetation_seasonal_tint(eff_phase);
-			col = mix(col, col * veg_tint, vegetation_season_strength * 0.5);
+			col = mix(col, col * veg_tint, vegetation_season_strength * 0.5 * vitality_amp * amp_jitter);
 		}
 		col *= procedural_biome_detail(biome, wp);
+		// 动态湿润度：干旱区明显偏暖黄褐，湿润区偏深墨绿；作为 tint 不覆盖地形主色。
+		// 仅在 dyn_valid（cell 真值已注入）时启用，避免静态 moist≈0.5 也被错误调制。
+		// 2026-05-18 P0-B：把调制强度从 0.18 抬到 0.55，并把干/湿端 tint 拉远，
+		// 让暴雨/干旱期"地块发深墨绿 / 黄褐"成为可一眼看到的天气视觉反馈。
+		if (dyn_valid > 0.5) {
+			// 2026-05-18 N2：湿度调制噪声扰动 —— 让"干湿边界"破碎成斑驳而非整片渐变。
+			//   moist_noise 直接抖动 wet_mix（局部更湿/更干）；
+			//   amp_noise 抖动整体调制强度（让斑驳不均匀）。
+			float moist_noise = fbm(wp * 0.060 + vec2(31.0, -13.0), 2);
+			float moist_jitter = (moist_noise - 0.5) * 0.30;
+			float wet_mix = clamp(smoothstep(0.10, 0.90, moist) + moist_jitter, 0.0, 1.0);
+			vec3 dry_tint = vec3(1.18, 0.92, 0.62);   // 干旱：明显黄褐
+			vec3 wet_tint_v = vec3(0.78, 1.08, 0.82); // 湿润：明显深墨绿
+			vec3 wet_tint = mix(dry_tint, wet_tint_v, wet_mix);
+			float amp_noise = fbm(wp * 0.13 + vec2(-41.0, 23.0), 1);
+			float wet_amp = mix(0.70, 1.20, amp_noise);
+			// |moist - 0.5| ∈ [0, 0.5]，× 1.1 后 ∈ [0, 0.55]，相比旧 ×0.18 大幅放大
+			col *= mix(vec3(1.0), wet_tint, clamp(abs(moist - 0.5) * 1.1 * wet_amp, 0.0, 0.55));
+		}
 		// 3.5. Milestone 2：植被轴调制
 		// 仅在主色单一的地形 (PLAIN/HILL/MOUNTAIN/GRASSLAND) 上启用，
 		if (vegetation_axis_strength > 0.001
@@ -1536,6 +1698,81 @@ void fragment() {
 			);
 			col = mix(col, plume_col, clamp(plume * estuary_plume_strength * 0.55, 0.0, 0.55));
 		}
+		// ─── 2026-05-18 P1-B：海面天气视觉 ──────────────────────────────────
+		// 让 RAIN/STORM/MONSOON/BLIZZARD/FOG 等天气在海上有可一眼看到的色彩反馈，
+		// 不只表现在云层粒子。读 weather_field_tex（hex-constant RGBA8）：
+		//   .g = intensity, .b = cloud, .a = precip。
+		// 三个分量按权重合成"天气压暗 + 偏冷青"调制；同时在风向叠加一条流向风浪条纹，
+		// 用于强风/风暴时让海面"看上去在被吹"。
+		if (weather_field_ocean_enabled && weather_field_ocean_strength > 0.001) {
+			// 2026-05-18 N10：经典云做法重写海面 weather_field 采样。
+			// 旧问题（N8 不够）：N8 只是 uv warp，最终 storm_w 仍直接 = hex 的 intensity/cloud/
+			//   precip 加权——hex-constant 值是"乘性 mask"，所以海面风暴/雨幕轮廓还是贴 hex。
+			// 新做法：在 uv 邻域多点采样后加权平滑，得到连续的 w_intensity/w_cloud/w_precip。
+			// 这样海上风暴 / 雨幕轮廓由 fbm 噪声形状决定，hex 数据只控制"这一带是否有风暴"。
+			vec2 wf_offs[5] = vec2[5](
+				vec2(  0.0090,  0.0050),
+				vec2( -0.0080,  0.0085),
+				vec2(  0.0040, -0.0095),
+				vec2( -0.0110, -0.0035),
+				vec2(  0.0125,  0.0010)
+			);
+			vec4 wf_center = texture(weather_field_tex, uv);
+			float w_intensity = clamp(wf_center.g, 0.0, 1.0);
+			float w_cloud_sum = clamp(wf_center.b, 0.0, 1.0);
+			float w_precip_sum = clamp(wf_center.a, 0.0, 1.0);
+			float w_int_sum = w_intensity;
+			float w_weight = 1.0;
+			for (int wi = 0; wi < 5; wi++) {
+				vec2 j = vec2(
+					fbm(wp * 0.18 + vec2(17.0 + float(wi) * 13.0, -29.0), 1),
+					fbm(wp * 0.18 + vec2(-41.0, 19.0 + float(wi) * 7.0), 1)
+				) - 0.5;
+				vec2 s_uv = clamp(uv + wf_offs[wi] + j * 0.006, vec2(0.0), vec2(1.0));
+				vec4 wfn = texture(weather_field_tex, s_uv);
+				float wn = 0.5 + (fbm(wp * 0.21 + vec2(float(wi) * 23.0, 7.0), 1) - 0.5) * 0.5;
+				w_int_sum += clamp(wfn.g, 0.0, 1.0) * wn;
+				w_cloud_sum += clamp(wfn.b, 0.0, 1.0) * wn;
+				w_precip_sum += clamp(wfn.a, 0.0, 1.0) * wn;
+				w_weight += wn;
+			}
+			float w_int_smoothed = clamp(w_int_sum / max(w_weight, 0.001), 0.0, 1.0);
+			float w_cloud = clamp(w_cloud_sum / max(w_weight, 0.001), 0.0, 1.0);
+			float w_precip = clamp(w_precip_sum / max(w_weight, 0.001), 0.0, 1.0);
+			// 经典做法：用 fbm 形状 + 邻域平滑的 amount 做 threshold 调制，得到 storm_mask；
+			// 不再直接用 hex 加权值当强度——hex 数据只调制 fbm 的"过线难度"。
+			float storm_noise = fbm(wp * 0.011 + vec2(world_time * 0.012, -world_time * 0.008), 2);
+			float storm_thr = mix(0.62, 0.28, max(w_int_smoothed, w_cloud));
+			float storm_mask = smoothstep(storm_thr, storm_thr + 0.20, storm_noise);
+			float storm_w = clamp(storm_mask * (w_int_smoothed * 0.6 + w_cloud * 0.3 + w_precip * 0.4) * 1.8, 0.0, 1.0);
+			storm_w *= weather_field_ocean_strength;
+			if (storm_w > 0.005) {
+				// 2026-05-18 N6：海面风暴 + 雨幕加 fbm 团块噪声 —— 真实海上风暴呈\"暗团块\"，
+				//   不会均匀压暗整片海。两层噪声：
+				//     ① storm_patch（大尺度，缓慢漂移）→ \"风暴中心\"在哪儿是黑的；
+				//     ② rain_patch（中尺度，快漂）→ 雨幕是\"飘过来一阵\"而非整片均匀的灰。
+				float storm_patch = fbm(wp * 0.0045 + vec2(world_time * 0.018, -world_time * 0.011), 2);
+				float storm_amp = mix(0.45, 1.25, storm_patch);
+				float storm_eff = clamp(storm_w * storm_amp, 0.0, 1.0);
+				vec3 storm_tint = vec3(0.62, 0.74, 0.88);
+				col = mix(col, col * storm_tint, storm_eff * 0.85);
+				// 雨幕：飘移团块
+				float rain_patch = fbm(wp * 0.014 + vec2(-world_time * 0.025, world_time * 0.014), 2);
+				float rain_amp = mix(0.30, 1.30, rain_patch);
+				vec3 rain_veil = vec3(0.42, 0.50, 0.58);
+				col = mix(col, rain_veil, clamp(w_precip * weather_field_ocean_strength * 0.32 * rain_amp, 0.0, 0.55));
+				// 风浪条纹：沿 wind_v 方向叠一条 fbm 波纹，强度受 intensity * storm_patch 调制。
+				if (length(wind_v) > 0.04) {
+					vec2 wind_dir_w = normalize(wind_v);
+					vec2 wind_side = vec2(-wind_dir_w.y, wind_dir_w.x);
+					float along_w = dot(wp, wind_dir_w) * 0.022 + world_time * 0.060;
+					float across_w = dot(wp, wind_side) * 0.085;
+					float gust = fbm(vec2(along_w, across_w), 1);
+					float gust_amp = storm_eff * 0.55;
+					col *= 1.0 + (gust - 0.5) * gust_amp;
+				}
+			}
+		}
 	}
 	// Water Visual Overhaul：水体统一波浪 + 光照 + 浪花 + 焦散。
 	// 全部受 water_effect_enabled 总开关控制；关掉即回退到上面的基础水体着色。
@@ -1840,14 +2077,33 @@ void fragment() {
 	}
 
 	// 7.5. Phase 1：动态雪盖（季节性）— 放在 hillshade 之后让雪本身带阴影
+	// 2026-05-18 P2-B：让积雪"等级"在视觉上有渐进色阶 —— 薄雪（snow ≤ 0.35）偏冷蓝灰，
+	//                  厚雪（≥ 0.75）纯白，中间过渡，让玩家看得到"暴雪积累 → 融化"。
+	// 2026-05-18 N4：thickness 加 fbm 扰动 + 加一层"雪堆斑驳"细节噪声，避免薄/厚雪
+	//                呈完整的圆滑渐变。雪线 jitter 已经整合进 compute_snow_factor()。
 	if (!is_water) {
-		float snow_factor = compute_snow_factor(biome, current_temp, elev, is_water) * dynamic_snow_strength;
-		// 雪本身轻微随地形噪声打散（避免铺满死板）
-		float snow_noise = fbm(wp * 0.18 + vec2(63.0, -29.0), 1);
-		snow_factor *= mix(0.85, 1.10, snow_noise);
+		float snow_from_temp = compute_snow_factor(biome, current_temp, elev, is_water, wp);
+		// dyn_snow 仅在 dyn_valid 时参与；否则只用 derived 公式。避免 atlas 未写入时
+		// 因为 dyn_snow=0 与 max() 取 derived 一致，但若 dyn_temp 写过而 snow_cover 还
+		// 未由 weather pass 累积，使用 max() 也是安全的（取较高的雪覆盖）。
+		float snow_factor = max(snow_from_temp, dyn_snow * dyn_valid) * dynamic_snow_strength;
 		snow_factor = clamp(snow_factor, 0.0, 1.0);
-		vec3 snow_color = vec3(0.94, 0.95, 0.97);
-		col = mix(col, snow_color, snow_factor);
+		// 厚度噪声：低频决定"这一片是薄还是厚"，高频做"堆雪斑驳"。
+		float thick_low = fbm(wp * 0.070 + vec2(11.0, 47.0), 2);
+		float thick_hi = fbm(wp * 0.32 + vec2(-53.0, 17.0), 1);
+		// thickness 在 [0,1] 基础上做 ±0.22 抖动，让"薄雪→厚雪"边界破碎。
+		float thickness = clamp(
+			smoothstep(0.10, 0.85, snow_factor) + (thick_low - 0.5) * 0.44,
+			0.0, 1.0);
+		vec3 thin_snow  = vec3(0.82, 0.86, 0.92);
+		vec3 thick_snow = vec3(0.96, 0.97, 0.99);
+		vec3 snow_color = mix(thin_snow, thick_snow, thickness);
+		// 高频细节：±5% 亮度浮动，模拟雪堆/雪坑微反射差异。
+		snow_color *= mix(0.94, 1.06, thick_hi);
+		// 边缘破碎：snow_factor 在最终 mix 上再叠一次 fbm，让"雪/无雪"边界呈不规则斑块。
+		float edge_noise = fbm(wp * 0.22 + vec2(29.0, -11.0), 1);
+		float snow_mix = clamp(snow_factor * mix(0.80, 1.18, edge_noise), 0.0, 1.0);
+		col = mix(col, snow_color, snow_mix);
 	}
 
 	// 7.55. 任务 6：BLIZZARD 积雪增强（在季节雪盖之后叠加，暴风雪区域更白）
@@ -1885,12 +2141,23 @@ void fragment() {
 
 	// 7.6. Milestone 2：覆盖物轴叠加（FLOODING / PERMAFROST / GLACIER）
 	// SNOW / SEA_ICE 已被 dynamic_snow / biome 主路径处理，函数内返回 0 跳过。
+	// 2026-05-18 N5：cover 叠加加噪声扰动 —— 永冻土 / 冰川 / 洪水 都不是均匀一层，
+	// 实际地理上呈"斑驳大块"。用两层 fbm：低频决定\"这一片是否厚\"，高频给纹理细节，
+	// 同时按 cover 类型给一个微差的偏色，让 GLACIER 不再像贴了一张白片。
 	if (cover_axis_strength > 0.001) {
 		vec4 ov = cover_overlay(cover);
 		if (ov.a > 0.001) {
 			// FLOODING 仅在陆地上有意义；PERMAFROST / GLACIER 同理
 			if (!is_water) {
-				col = mix(col, ov.rgb, ov.a * cover_axis_strength);
+				float cov_low = fbm(wp * 0.055 + vec2(-13.0, 41.0), 2);
+				float cov_hi = fbm(wp * 0.26 + vec2(73.0, -19.0), 1);
+				// alpha 在 [0.55, 1.20] 区间抖动；很低的地方会几乎消失（露出地表），
+				// 高的地方会到 120% 实现"厚冰川 / 深永冻"局部块状。
+				float cov_amp = mix(0.55, 1.20, cov_low);
+				// 微亮度抖动 ±6%，再让冰川 / 永冻土 / 洪水都不再死板。
+				vec3 cov_rgb = ov.rgb * mix(0.94, 1.06, cov_hi);
+				float cov_a = clamp(ov.a * cov_amp, 0.0, 1.0);
+				col = mix(col, cov_rgb, cov_a * cover_axis_strength);
 			}
 		}
 	}

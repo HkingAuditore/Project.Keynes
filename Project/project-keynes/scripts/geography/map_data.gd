@@ -130,7 +130,8 @@ var cell_pos_y_arr:         PackedFloat32Array = PackedFloat32Array()
 # bake 一次。运行期 Pass A 内层只是数组索引，彻底取消 _cube_row_norm 调用。
 #   cell_lat_norm_arr[i] = _cube_row_norm(cell_i, _last_cfg)              ∈ [0, 1]
 #   temp_baseline_year_arr[i] = pow(cos((ny-0.5)*π), 1.2)                  ∈ [0, 1]
-# Pass A 当日温度 = clamp(temp_baseline_year_arr[i] - elev*0.5, 0, 1) + season_offset
+# Pass A 当日温度 = clamp(temp_baseline_year_arr[i] - alt_penalty(elev), 0, 1) + season_offset
+#   alt_penalty(elev) = elev*0.55 + smoothstep(0.45, 1.0, elev) * 0.30  （2026-05-18 雪线修正）
 var cell_lat_norm_arr:        PackedFloat32Array = PackedFloat32Array()
 var temp_baseline_year_arr:   PackedFloat32Array = PackedFloat32Array()
 var _lat_lut_baked: bool = false
