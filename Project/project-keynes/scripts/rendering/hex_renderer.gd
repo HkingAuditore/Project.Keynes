@@ -89,6 +89,10 @@ extends Node2D
 @export_group("Axes (Milestone 2)")
 @export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.35
 @export_range(0.0, 1.0, 0.01) var cover_axis_strength: float = 0.65
+@export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.70
+@export_range(0.0, 1.0, 0.01) var snowline_visual_strength: float = 0.85
+@export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.75
+@export_range(0, 2, 1) var ecology_visual_quality: int = 2
 
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
 @export_group("Weather (Milestone 3)")
@@ -396,6 +400,26 @@ func set_visual_quality(q: int) -> void:
 		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
 	if _weather_layer != null:
 		_weather_layer.set_visual_quality(visual_quality)
+
+func set_ecology_visual_quality(q: int) -> void:
+	ecology_visual_quality = clampi(q, 0, 2)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
+
+func set_ecology_visual_strength(v: float) -> void:
+	ecology_visual_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
+
+func set_snowline_visual_strength(v: float) -> void:
+	snowline_visual_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
+
+func set_foliage_density_strength(v: float) -> void:
+	foliage_density_strength = clampf(v, 0.0, 1.0)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("foliage_density_strength", foliage_density_strength)
 
 func set_day_night_enabled(v: bool) -> void:
 	day_night_enabled = v
@@ -836,15 +860,15 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
 	sm.set_shader_parameter("vector_atlas_valid", _world.vector_atlas_tex != null)
 	sm.set_shader_parameter("dynamic_cell_atlas", _world.dynamic_cell_atlas_tex)
+	sm.set_shader_parameter("ecology_visual_atlas", _world.ecology_visual_atlas_tex)
 	# 2026-05-18 P1-B：海面天气视觉，把 weather_field_tex 也绑给主材质（hex-constant RGBA8）
 	if _world.weather_field_tex != null:
 		sm.set_shader_parameter("weather_field_tex", _world.weather_field_tex)
 	if _weather_layer != null:
 		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
-	# 火山强度场独立纹理（让位给 scalar_atlas.a 的连续 sea_ice_fraction）
+	# 火山强度场独立纹理（原 scalar_atlas.a）
 	sm.set_shader_parameter("volcano_field_tex", _world.volcano_field_tex)
-	# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8（原 scalar_atlas.a 已让位）。
-	# 由 SeaIceAtlasUploadJob 每 stride 日通过 MapBaker.bake_sea_ice_fraction_only 上传。
+	# 兼容旧调试/数据通道；主地图海冰视觉由 shader 按水温实时派生，不读它。
 	sm.set_shader_parameter("sea_ice_tex", _world.sea_ice_tex)
 	# Systemic Ocean Currents：仅 F6 高对比调试层采样；主路径不依赖它。
 	# 方案 0：默认不再每次新材质都绑 upwelling_tex（commit 路径已不烘焙它，绑过来就是 null）。
@@ -878,6 +902,10 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("wind_streak_strength", wind_streak_strength)
 	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
 	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
+	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
+	sm.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
+	sm.set_shader_parameter("foliage_density_strength", foliage_density_strength)
+	sm.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
 	# Seasonal transition is only enabled on the temporary old-terrain overlay.
 	sm.set_shader_parameter("season_transition_overlay", false)
 	sm.set_shader_parameter("season_transition_progress", 1.0)

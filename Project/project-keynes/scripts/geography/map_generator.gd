@@ -152,8 +152,7 @@ const OceanCurrentsJobScript = preload("res://scripts/simulation/sus/jobs/ocean_
 const RefreshClimateDailyJobScript = preload("res://scripts/simulation/sus/jobs/refresh_climate_daily_job.gd")
 const WeatherRefreshJobScript = preload("res://scripts/simulation/sus/jobs/weather_refresh_job.gd")
 const NativeDailySimJobScript = preload("res://scripts/simulation/sus/jobs/native_daily_sim_job.gd")
-# Daily Sim SoA Refactor 阶段 1：把 bake_sea_ice_fraction_only 从 refresh_climate_daily
-# 末尾拆出为独立 SUS Job，受 sea_ice_atlas_upload_stride 控制。
+# Legacy sea_ice_atlas_upload 代码保留但不再注册；海冰主视觉由 shader 按水温派生。
 const SeaIceAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/sea_ice_atlas_upload_job.gd")
 const EnumAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/enum_atlas_upload_job.gd")
 const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season_refresh_job.gd")
@@ -171,6 +170,7 @@ const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_
 const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
 const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
 const SeaIceAtlasUploadSystemScript = preload("res://scripts/simulation/systems/sea_ice_atlas_upload_system.gd")
+const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -757,6 +757,7 @@ var _weather_refresh_job: WeatherRefreshJob = null
 # SeasonRefreshSystem 实例（DCSystem 子类，IS-A SusJob 但 NOT-A 原始 Job 类）。
 # 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
 var _sea_ice_atlas_upload_job = null
+var _dynamic_visual_atlas_upload_job = null
 var _enum_atlas_upload_job = null
 var _native_daily_sim_job = null
 var _native_daily_configured: bool = false
@@ -1227,31 +1228,22 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	else:
 		_sus.register_job(_weather_refresh_job)
 
-	# Daily Sim SoA Refactor 阶段 1：注册 SeaIceAtlasUploadJob。
-	# 把 bake_sea_ice_fraction_only 从 refresh_climate_daily 末尾摘出，独立 stride 控制。
-	# priority=250 保证晚于其它日级 Job；视觉上传允许被 frame_budget 守门延后一两天。
-	var sea_ice_stride: int = 2
-	if cp != null:
-		sea_ice_stride = max(1, int(cp.sea_ice_atlas_upload_stride))
-	# 0.4.1：use_dc_system_scheduler 时用 SeaIceAtlasUploadSystem（native DCSystem，
-	# 业务逻辑与 SeaIceAtlasUploadJob 等价）。
+	# 海冰主视觉已改为 shader 按逐像素水温派生，不再需要 sea_ice_atlas_upload
+	# 周期性光栅化 / GPU 上传。保留 sea_ice_tex 作为兼容空纹理，但不注册 SUS job。
+	_sea_ice_atlas_upload_job = null
+	_last_sea_ice_atlas_upload_breakdown = {
+		"done": true,
+		"phase": "disabled",
+		"stage_name": "sea_ice_atlas_upload",
+		"elapsed_ms": 0.0,
+		"reason": "shader_temperature_derived",
+	}
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, 2)
+	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
-		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
-		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		# DOTS-Final-Push 任务 6.2：同 SUS 路径，注入 generator 让 tick() 末尾
-		# 把 prepare/upload 拆分回填给 sus_sea_ice_atlas_breakdown()。
-		if "generator" in _sea_ice_atlas_upload_job:
-			_sea_ice_atlas_upload_job.generator = self
-		_sus.register_system(_sea_ice_atlas_upload_job)
+		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
-		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
-		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		# DOTS-Final-Push 任务 6.2：注入 generator 引用，让 Job 把 prepare/upload
-		# 拆分耗时回填到 _last_sea_ice_atlas_upload_breakdown，供 main.gd fast tick
-		# WARN 详细日志看到 232ms 究竟卡 prepare 还是 upload。
-		if "generator" in _sea_ice_atlas_upload_job:
-			_sea_ice_atlas_upload_job.generator = self
-		_sus.register_job(_sea_ice_atlas_upload_job)
+		_sus.register_job(_dynamic_visual_atlas_upload_job)
 
 	# 0.4.1：DCSystemScheduler 路径必须在所有 register_system 之后调一次
 	# build_topology()。它按 declare_reads/writes 构造 DAG + Kahn 拓扑排序，
@@ -1430,21 +1422,21 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_job(_enum_atlas_upload_job)
-	var sea_ice_stride: int = 2
-	if cp != null:
-		sea_ice_stride = max(1, int(cp.sea_ice_atlas_upload_stride))
+	# 海冰主视觉由 shader 按 current_temp/latitude/depth 直接派生；停用旧 atlas upload。
+	_sea_ice_atlas_upload_job = null
+	_last_sea_ice_atlas_upload_breakdown = {
+		"done": true,
+		"phase": "disabled",
+		"stage_name": "sea_ice_atlas_upload",
+		"elapsed_ms": 0.0,
+		"reason": "shader_temperature_derived",
+	}
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, 2)
+	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
-		_sea_ice_atlas_upload_job = SeaIceAtlasUploadSystemScript.new(_baker, map, world, sea_ice_stride)
-		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		if "generator" in _sea_ice_atlas_upload_job:
-			_sea_ice_atlas_upload_job.generator = self
-		_sus.register_system(_sea_ice_atlas_upload_job)
+		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
-		_sea_ice_atlas_upload_job = SeaIceAtlasUploadJobScript.new(_baker, map, world, sea_ice_stride)
-		_apply_sim_budget_profile_to_job(_sea_ice_atlas_upload_job, cp, true)
-		if "generator" in _sea_ice_atlas_upload_job:
-			_sea_ice_atlas_upload_job.generator = self
-		_sus.register_job(_sea_ice_atlas_upload_job)
+		_sus.register_job(_dynamic_visual_atlas_upload_job)
 
 
 func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
@@ -2773,22 +2765,20 @@ func _alt_penalty(elevation: float) -> float:
 	return lin + hi
 
 # 雪盖派生：与 shader compute_snow_factor 同公式（去掉 fbm jitter，CPU 端用确定性版本）。
-# 旧公式：低温段 < 0.18；高山段需 land_h>0.45 且 temp<0.30，门槛严苛、几乎只有极地 + 极高山才能触发。
-# 新公式（2026-05-18 雪线修正）：
-#   - 低温段保持 < 0.18，但比例提到 1.0（旧 0.85），让冬至中纬带能接近全雪。
-#   - 高山段放宽：land_h > 0.35 且 temp < 0.45 → 让丘陵 / 中山在春秋也能局部覆雪；
-#     温度档分母从 0.20 → 0.25（更宽的"缓出"），smoothstep 端点从 0.45..0.85 → 0.35..0.80。
+# 2026-05-19：把雪线从"高山地形开关"改回连续海拔/温度权重。
+#   - 低温段放宽到 temp<0.52，但以薄雪为主，解决丘陵/温带冬季永远无雪。
+#   - 高山段用 temp 0.72→0.28 和 land_h 0.22→0.90 的双 smoothstep，
+#     让暖季高山雪盖退成斑驳，而不是只要进 MOUNTAIN 就终年全白。
 # 输入 land_h 由 caller 用 sea_level 归一化后传入，避免在此重复算。
 func _derived_snow_cover(temp_now: float, land_h: float, terrain: int, cover: int) -> float:
-	if terrain == TerrainType.TERRAIN.SNOW:
-		return 1.0
 	var snow_cover: float = 0.0
-	if temp_now < 0.18:
-		snow_cover = clampf((0.18 - temp_now) / 0.14, 0.0, 1.0) * 0.95
-	elif land_h > 0.35 and temp_now < 0.45:
-		var t1: float = clampf((0.45 - temp_now) / 0.25, 0.0, 1.0)
-		var t2: float = smoothstep(0.35, 0.80, land_h)
-		snow_cover = t1 * t2
+	if terrain == TerrainType.TERRAIN.SNOW:
+		snow_cover = (1.0 - smoothstep(0.28, 0.58, temp_now)) * 0.70
+	var cold_snow: float = (1.0 - smoothstep(0.26, 0.52, temp_now)) * 0.50
+	var altitude_w: float = smoothstep(0.22, 0.90, land_h)
+	var alpine_temp_w: float = 1.0 - smoothstep(0.28, 0.72, temp_now)
+	var alpine_snow: float = altitude_w * alpine_temp_w * 0.92
+	snow_cover = max(snow_cover, max(cold_snow, alpine_snow))
 	if cover == CoverType.CV.GLACIER and snow_cover < 0.80:
 		snow_cover = 0.80
 	return snow_cover
@@ -3481,16 +3471,17 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 	# 其它 fast-tick 路径仍传 false，温度（含 season_offset）正常驱动雪/岩切换。
 	#
 	# 调参目标：
-	#   - 赤道高山顶（land_h>0.85）→ 永久雪 ✅
+	#   - 赤道高山顶不再只凭高度永久雪；由雪盖曲线决定季节性退缩。
 	#   - 中纬高山（land_h≈0.55~0.82, 年均温<0.08）→ bake 进 MOUNTAIN，
 	#     fast tick 冬季 temp_now<0.08 时翻 SNOW，夏季回 MOUNTAIN
 	#   - 极地低海拔（temp<0.03）→ bake 进 TUNDRA/PLAIN，季节性翻雪
 	var snow_line: float = 0.85 if permanent_only else 0.82
+	var snow_line_temp: float = 0.26 if permanent_only else 0.34
 	var cold_snow_line: float = 0.70 if permanent_only else 0.55
 	var cold_snow_temp: float = 0.05 if permanent_only else 0.08
 	# 极地永久雪：bake 时关闭（温度<0 等价于不触发），fast-tick 仍按 0.03 兜底。
 	var polar_temp: float = -1.0 if permanent_only else 0.03
-	if land_height > snow_line:
+	if land_height > snow_line and temperature < snow_line_temp:
 		return TerrainType.TERRAIN.SNOW
 	if land_height > cold_snow_line and temperature < cold_snow_temp:
 		return TerrainType.TERRAIN.SNOW
@@ -5761,27 +5752,20 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		elif temp_now > 1.0:
 			temp_now = 1.0
 
-		# 3) 当日雪盖（与 _derived_snow_cover 严格一致：低温段 0.95、高山段门槛 0.35/0.45/0.25）
+		# 3) 当日雪盖（与 _derived_snow_cover 严格一致：连续低温薄雪 + 高山雪线）
 		var snow_cover: float = 0.0
 		var terr: int = int(c.terrain)
 		if is_water_a[i] == 0:
 			if terr == TerrainType.TERRAIN.SNOW:
-				snow_cover = 1.0
-			else:
-				var land_h: float = (elevation - sea_level) * inv_above_sea
-				if temp_now < 0.18:
-					var sc1: float = (0.18 - temp_now) / 0.14
-					if sc1 > 1.0: sc1 = 1.0
-					elif sc1 < 0.0: sc1 = 0.0
-					snow_cover = sc1 * 0.95
-				elif land_h > 0.35 and temp_now < 0.45:
-					var t1: float = (0.45 - temp_now) / 0.25
-					if t1 > 1.0: t1 = 1.0
-					elif t1 < 0.0: t1 = 0.0
-					var t2: float = smoothstep(0.35, 0.80, land_h)
-					snow_cover = t1 * t2
-				if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
-					snow_cover = 0.80
+				snow_cover = (1.0 - smoothstep(0.28, 0.58, temp_now)) * 0.70
+			var land_h: float = (elevation - sea_level) * inv_above_sea
+			var cold_snow: float = (1.0 - smoothstep(0.26, 0.52, temp_now)) * 0.50
+			var altitude_w: float = smoothstep(0.22, 0.90, land_h)
+			var alpine_temp_w: float = 1.0 - smoothstep(0.28, 0.72, temp_now)
+			var alpine_snow: float = altitude_w * alpine_temp_w * 0.92
+			snow_cover = max(snow_cover, max(cold_snow, alpine_snow))
+			if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
+				snow_cover = 0.80
 
 		# 写入 SoA
 		c.current_state["season"] = season_idx

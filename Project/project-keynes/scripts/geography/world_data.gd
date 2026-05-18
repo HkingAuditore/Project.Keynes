@@ -43,12 +43,8 @@ var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8
 # Phase 14：每像素火山强度（r 通道）。靠近火山中心 = 1.0，向外径向衰减。
 # shader 用来叠加红光晕 / 烟柱效果。
 var volcano_field_buffer: PackedByteArray = PackedByteArray()  # R8
-# Emergent Climate Coupling（海冰连续化）：每像素海冰覆盖率 ∈ [0, 1]。
-# 由 MapBaker.bake_sea_ice_fraction_only 从 HexCell.sea_ice_fraction 光栅化而来；
-# 每 stride 日由 SeaIceAtlasUploadJob 触发上传一次（Daily Sim SoA Refactor 阶段 1 之前
-# 是每日内嵌在 refresh_climate_daily 末尾）。
-# shader 端从独立的 sea_ice_tex.r 连续读取（原 scalar_atlas.a），用 smoothstep 做 0..1 过渡，
-# 不再依赖 biome==SEA_ICE 这种硬标签（彻底消除"高覆盖率却显示海洋 / 低覆盖率却显示冰"）。
+# 兼容旧调试/数据通道的海冰覆盖率 buffer。主地图海冰视觉已经改为 shader
+# 按逐像素水温/纬度/水深派生，不再依赖此 buffer 上传。
 var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
 # RGBA8 weather field texture, baked from per-cell weather state.
 # R=WeatherType id, G=intensity, B=cloud, A=precip.
@@ -56,6 +52,9 @@ var weather_field_buffer: PackedByteArray = PackedByteArray()
 # RGBA8 dynamic cell atlas：把每日会变的真实 cell 状态喂给主地图材质。
 # R=temperature, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
 var dynamic_cell_atlas_buffer: PackedByteArray = PackedByteArray()
+# RGBA8 ecology visual atlas. R=foliage_density, G=stress/dryness,
+# B=vegetation transition age, A=recent growth/damage.
+var ecology_visual_atlas_buffer: PackedByteArray = PackedByteArray()
 
 # ─── 元数据 ───────────────────────────────────────────────────────────────
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
@@ -89,15 +88,16 @@ var vector_atlas_tex: ImageTexture
 # 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
 # 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
 var volcano_field_tex: ImageTexture
-# Daily Sim SoA Refactor 阶段 1：海冰覆盖率独立 R8 纹理（原先挤在 scalar_atlas.a）。
-# 由 SeaIceAtlasUploadJob 通过 MapBaker.bake_sea_ice_fraction_only 每 stride 日上传一次；
-# scalar_atlas 改回静态地形数据，bake_world 后永不变更，避免每日 RGBA8 整张回传。
-# shader 端 sample sea_ice_tex.r（替代原 scalar_atlas.a）。
+# 兼容旧调试/数据通道的海冰 R8 纹理。主地图海冰视觉不采样它；
+# sea_ice_atlas_upload 默认不再注册。
 var sea_ice_tex: ImageTexture
 # Per-pixel weather field for WeatherLayer. Updated only after weather ticks.
 var weather_field_tex: ImageTexture
 # 主地图动态状态 atlas。低频/dirty 更新，shader 用它替代纯纬度派生温度/雪盖。
 var dynamic_cell_atlas_tex: ImageTexture
+# Ecology visual atlas, updated with the same low-frequency dirty path as
+# dynamic_cell_atlas_tex.
+var ecology_visual_atlas_tex: ImageTexture
 # Systemic Ocean Currents：独立的上升流 R8 纹理。仅调试可视化（F6 扩展）消费；
 # 主视觉路径不需要它。bake_world 与 rebake_ocean_currents 都会同步更新。
 var upwelling_tex: ImageTexture
