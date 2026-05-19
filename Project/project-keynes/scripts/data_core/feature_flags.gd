@@ -344,6 +344,25 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）。验收 PASS，默认开启",
 	},
+	# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode）──────────────
+	# 4 张运行期 atlas baker 改造：sim 端 setter / DCWorld write API 漏斗式
+	# 推送 cell-level dirty mask；baker 入口 read_and_clear 一次拿 dirty cells
+	# 喂给 chunk_step，避免 N=1e5 全图扫。配 sig 二防线避免量化后无变化的
+	# GPU upload。阶段 F 接 DCWorldExt encode_* pass 走 C++/SIMD。
+	{
+		name = &"dirty_push_enabled",
+		owner = "rendering.atlas",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Phase D：baker 入口走 DCWorld.read_and_clear_dirty_mask() 拿 dirty cells 替换 all_cells；fallback 到 all_cells 当 mask 不可用",
+	},
+	{
+		name = &"cpp_atlas_encode_enabled",
+		owner = "rendering.atlas",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase F：DCWorldExt encode_dynamic_cell_atlas / encode_ecology_visual_atlas / encode_dyn_smooth_atlas / encode_ice_state_atlas 4 个 C++/SIMD pass 启用；ext 缺失自动回退到 dirty_push_enabled 的 GDScript mask 路径",
+	},
 ]
 
 

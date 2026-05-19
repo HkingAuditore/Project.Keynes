@@ -251,6 +251,12 @@ var _perf_verdict_warn_marks: Array = []  # 与 _perf_verdict_total_ms 平行：
 var _fast_tick_warn_last_frame: int = 0
 var _slow_tick_count: int = 0
 
+# Plan: perf-recording-csv-export
+# DebugConsole 录制按钮注入的 PerfRecorder 实例。null = 当前未挂载或未录制；
+# 主循环只做"非空时调 on_fast_tick"的快路径，避免污染主类。具体录制逻辑、
+# CSV 拼装、状态机全部在 scripts/ui/perf_recorder.gd 内。
+var _perf_recorder: RefCounted = null
+
 # ─── Data Overlay 状态 ─────────────────────────────────────────────
 # _overlay_mode   : OverlayMode.MODE 的整数值，NONE=0
 # _overlay_alpha  : 半透明强度（0.6~0.8 推荐），送到 data_overlay.gdshader
@@ -736,6 +742,38 @@ func _on_day_changed(_day_idx: int) -> void:
 		while _perf_verdict_total_ms.size() > PERF_VERDICT_WINDOW:
 			_perf_verdict_total_ms.pop_front()
 			_perf_verdict_warn_marks.pop_front()
+
+	# Plan: perf-recording-csv-export
+	# 把本帧 main 局部才知道的指标（三段 ms / 跳日标志 / fps / 时间戳）发布给
+	# PerfRecorder。recorder 自己再去拉 SUS report / summary / breakdowns。
+	# 未挂载录制器时 _publish_fast_tick_perf_sample 内部走 null 早返路径，
+	# 零开销；跳日帧也录入（CSV 里用 was_skipped_day 列区分），保证录制连贯。
+	_publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
+		float(fast_ms), was_skipped_day)
+
+
+# Plan: perf-recording-csv-export
+# 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给 _perf_recorder。
+# 不持有 recorder 引用时直接 return，零开销快路径。
+func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
+		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> void:
+	if _perf_recorder == null:
+		return
+	if not _perf_recorder.has_method("on_fast_tick"):
+		return
+	if _perf_recorder.has_method("is_recording") and not bool(_perf_recorder.call("is_recording")):
+		return
+	var sample: Dictionary = {
+		"tick_idx": _fast_tick_count,
+		"timestamp_ms": Time.get_ticks_msec(),
+		"was_skipped_day": was_skipped_day,
+		"fps": Engine.get_frames_per_second(),
+		"fast_ms": fast_ms,
+		"t_sus_ms": t_sus_ms,
+		"t_render_ms": t_render_ms,
+		"t_ui_ms": t_ui_ms,
+	}
+	_perf_recorder.call("on_fast_tick", sample)
 
 
 # Daily-sim perf instrumentation：把 SUS.report_last_tick() 翻译成可读日志。
@@ -1865,6 +1903,18 @@ func get_sim_breakdowns() -> Dictionary:
 	if _generator.has_method("sus_sea_ice_atlas_breakdown"):
 		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
 	return out.duplicate(false)
+
+
+# Plan: perf-recording-csv-export
+# DebugConsole 在 set_main 时实例化 PerfRecorder 并注入；fast_tick 末尾会把本帧
+# 指标 forward 给 recorder.on_fast_tick。传 null 等价于卸载（PerfRecorder 自身会
+# 留在 DebugConsole 持有，避免 GC）。
+func set_perf_recorder(rec: RefCounted) -> void:
+	_perf_recorder = rec
+
+
+func get_perf_recorder() -> RefCounted:
+	return _perf_recorder
 
 
 # DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。

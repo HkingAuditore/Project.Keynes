@@ -257,3 +257,123 @@ static func format_verdict_lines(verdict: Dictionary) -> Array:
 	for fr in reasons:
 		lines.append("[DOTS-Final-Push/perf]   FAIL → %s" % String(fr))
 	return lines
+
+
+# ─── plan/dirty-push-atlas-encode 阶段 G：baker atlas section 4 档对照 verdict ─
+
+## 4 档对照场景（caller 预先把每档跑 N tick 收集到 baker 段时延采样）：
+##   - "legacy"       : dirty_push_enabled=false 全图扫 + sig 比对（基线）
+##   - "mask_gd"      : dirty_push_enabled=true + cpp 关 → GDScript dirty 路径（阶段 D+E）
+##   - "mask_gd_full" : 同上但 stride 拉到极端（200 tick 全部 dirty）模拟最差工况
+##   - "mask_cpp"     : cpp_atlas_encode_enabled=true，DCWorldExt encode_* 启用（阶段 F）
+##
+## 验收门槛（plan/dirty-push-atlas-encode §性能预期）：
+##   - mask_gd p95 < legacy p95 × 0.5（至少减半）
+##   - mask_cpp p95 < mask_gd p95 × 0.5（再减半）
+##   - 任一档 p95 都不能 > legacy p95 × 1.10（防回归 10% 容差）
+##
+## 入参：
+##   section_samples : Dictionary
+##                     {
+##                       "legacy":       Array[float],  # baker 段总 ms（4 phase 累加）
+##                       "mask_gd":      Array[float],
+##                       "mask_gd_full": Array[float],  # optional，缺省时跳过该档比对
+##                       "mask_cpp":     Array[float],  # optional，缺省时跳过 cpp 验收
+##                     }
+##
+## 返回：Dictionary
+##   {
+##     overall: bool,                                  # 4 档对照硬门槛是否全部通过
+##     by_label: { label -> { n, avg, p50, p95, p99 } },
+##     legacy_p95: float,
+##     reductions: { "mask_gd": float, "mask_cpp": float },  # p95 相对 legacy 的比例
+##     fail_reasons: Array[String],
+##   }
+const _BAKER_REGRESSION_TOLERANCE: float = 1.10   # 任一档不能比 legacy 慢 10% 以上
+const _BAKER_MASK_GD_TARGET: float = 0.50          # mask_gd 应至少减半
+const _BAKER_MASK_CPP_TARGET: float = 0.50         # mask_cpp 应在 mask_gd 基础上再减半
+
+static func evaluate_baker_atlas_section(section_samples: Dictionary) -> Dictionary:
+	var by_label: Dictionary = {}
+	for label in section_samples.keys():
+		var samples: Array = section_samples[label]
+		if samples == null or samples.is_empty():
+			continue
+		var n: int = samples.size()
+		var sum: float = 0.0
+		for v in samples:
+			sum += float(v)
+		by_label[label] = {
+			"n": n,
+			"avg": sum / float(n),
+			"p50": _percentile(samples, 0.50),
+			"p95": _percentile(samples, 0.95),
+			"p99": _percentile(samples, 0.99),
+		}
+	var fail_reasons: Array = []
+	# legacy 必须存在（基线）
+	if not by_label.has("legacy"):
+		fail_reasons.append("legacy baseline samples missing — cannot evaluate")
+		return {
+			"overall": false,
+			"by_label": by_label,
+			"legacy_p95": 0.0,
+			"reductions": {},
+			"fail_reasons": fail_reasons,
+		}
+	var legacy_p95: float = float(by_label["legacy"].get("p95", 0.0))
+	var reductions: Dictionary = {}
+	# mask_gd 验收
+	if by_label.has("mask_gd"):
+		var mg_p95: float = float(by_label["mask_gd"].get("p95", 0.0))
+		reductions["mask_gd"] = mg_p95 / legacy_p95 if legacy_p95 > 0.0 else 1.0
+		if mg_p95 > legacy_p95 * _BAKER_REGRESSION_TOLERANCE:
+			fail_reasons.append("mask_gd p95 (%.2fms) regresses vs legacy (%.2fms × %.0f%%)"
+				% [mg_p95, legacy_p95, _BAKER_REGRESSION_TOLERANCE * 100.0])
+		elif mg_p95 > legacy_p95 * _BAKER_MASK_GD_TARGET:
+			fail_reasons.append("mask_gd p95 (%.2fms) does not meet target ≤ legacy × %.0f%% (%.2fms)"
+				% [mg_p95, _BAKER_MASK_GD_TARGET * 100.0, legacy_p95 * _BAKER_MASK_GD_TARGET])
+	# mask_gd_full 仅做防回归（最坏工况下不能比 legacy 慢 10% 以上）
+	if by_label.has("mask_gd_full"):
+		var mgf_p95: float = float(by_label["mask_gd_full"].get("p95", 0.0))
+		if mgf_p95 > legacy_p95 * _BAKER_REGRESSION_TOLERANCE:
+			fail_reasons.append("mask_gd_full p95 (%.2fms) regresses vs legacy (%.2fms × %.0f%%)"
+				% [mgf_p95, legacy_p95, _BAKER_REGRESSION_TOLERANCE * 100.0])
+	# mask_cpp 验收（在 mask_gd 基础上再减半）
+	if by_label.has("mask_cpp") and by_label.has("mask_gd"):
+		var mc_p95: float = float(by_label["mask_cpp"].get("p95", 0.0))
+		var mg_p95_2: float = float(by_label["mask_gd"].get("p95", 0.0))
+		reductions["mask_cpp"] = mc_p95 / legacy_p95 if legacy_p95 > 0.0 else 1.0
+		if mg_p95_2 > 0.0 and mc_p95 > mg_p95_2 * _BAKER_MASK_CPP_TARGET:
+			fail_reasons.append("mask_cpp p95 (%.2fms) does not meet target ≤ mask_gd × %.0f%% (%.2fms)"
+				% [mc_p95, _BAKER_MASK_CPP_TARGET * 100.0, mg_p95_2 * _BAKER_MASK_CPP_TARGET])
+	return {
+		"overall": fail_reasons.is_empty(),
+		"by_label": by_label,
+		"legacy_p95": legacy_p95,
+		"reductions": reductions,
+		"fail_reasons": fail_reasons,
+	}
+
+
+## 把 evaluate_baker_atlas_section 输出格式化为可读行，配 print_rich 直接打。
+static func format_baker_atlas_section_lines(verdict: Dictionary) -> Array:
+	var lines: Array = []
+	var overall: bool = bool(verdict.get("overall", false))
+	var status: String = "PASS" if overall else "FAIL"
+	lines.append("[plan/dirty-push-atlas-encode/perf] baker atlas section verdict: %s" % status)
+	var by_label: Dictionary = verdict.get("by_label", {})
+	for label in by_label.keys():
+		var s: Dictionary = by_label[label]
+		lines.append("[plan/dirty-push-atlas-encode/perf]   %-13s n=%-4d avg=%6.2fms p50=%6.2fms p95=%6.2fms p99=%6.2fms"
+				% [String(label), int(s.get("n", 0)),
+				   float(s.get("avg", 0.0)), float(s.get("p50", 0.0)),
+				   float(s.get("p95", 0.0)), float(s.get("p99", 0.0))])
+	var reductions: Dictionary = verdict.get("reductions", {})
+	for k in reductions.keys():
+		lines.append("[plan/dirty-push-atlas-encode/perf]   reduction(%s) = %.1f%% of legacy"
+				% [String(k), float(reductions[k]) * 100.0])
+	var reasons: Array = verdict.get("fail_reasons", [])
+	for r in reasons:
+		lines.append("[plan/dirty-push-atlas-encode/perf]   FAIL → %s" % String(r))
+	return lines

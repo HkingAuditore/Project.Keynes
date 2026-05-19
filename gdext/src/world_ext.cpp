@@ -7618,6 +7618,634 @@ godot::Dictionary DCWorldExt::run_sea_ice_atlas_prepare(godot::Dictionary knobs)
     return out;
 }
 
+// ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ──────────
+// 4 个 atlas baker 的 byte-fill pass C++ 化。CSR 协议详见 world_ext.h 注释。
+//
+// 共享内联 helper：q01_byte / q01_byte_ice 与 GDScript map_baker.gd::_q01_byte
+// 完全 bit-equal（int(round(clampf(v, 0, 1) * 255))）。round 走 C++ std::round
+// half-away-from-zero，与 GDScript round() 一致。
+
+static inline int pk_q01_byte(double v) {
+    if (v <= 0.0) return 0;
+    if (v >= 1.0) return 255;
+    int q = int(std::round(v * 255.0));
+    if (q < 0) q = 0;
+    else if (q > 255) q = 255;
+    return q;
+}
+
+// _q01_byte_ice：fraction>0 时强制 byte≥1，让微量海冰也能 shader 触发可见。
+static inline int pk_q01_byte_ice(double v) {
+    if (v <= 0.0) return 0;
+    if (v >= 1.0) return 255;
+    // ceil 而非 round，保证 v>0 → byte≥1。
+    int q = int(std::ceil(v * 255.0));
+    if (q < 1) q = 1;
+    else if (q > 255) q = 255;
+    return q;
+}
+
+// 共享 CSR 验证 helper：失败时调用 fail() 回 fallback Dictionary。
+namespace {
+
+struct AtlasEncodeCommon {
+    int n_pix = 0;
+    int stride = 0;
+    int K = 0;                 // dirty cell count
+    int total_px = 0;          // sum(cell_px_count)
+    godot::PackedByteArray buffer;
+    godot::PackedInt32Array cell_indices;
+    godot::PackedInt32Array first_px;
+    godot::PackedInt32Array px_count;
+    godot::PackedInt32Array flat_px;
+    bool valid = false;
+    const char *err = "";
+};
+
+// 提取并校验 CSR 通用入参。失败时设 err 并返回 valid=false。
+inline AtlasEncodeCommon parse_csr_common(const godot::Dictionary &knobs, int expected_stride) {
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    AtlasEncodeCommon c;
+    c.stride = expected_stride;
+    if (!knobs.has("n_pix") || !knobs.has("atlas_buffer") ||
+        !knobs.has("cell_indices") || !knobs.has("cell_first_px") ||
+        !knobs.has("cell_px_count") || !knobs.has("flat_px_indices")) {
+        c.err = "missing required CSR knob";
+        return c;
+    }
+    c.n_pix = int(knobs["n_pix"]);
+    if (c.n_pix <= 0) { c.err = "n_pix <= 0"; return c; }
+    c.buffer = knobs["atlas_buffer"];
+    if (c.buffer.size() != c.n_pix * c.stride) {
+        c.err = "atlas_buffer size mismatch";
+        return c;
+    }
+    c.cell_indices = knobs["cell_indices"];
+    c.first_px = knobs["cell_first_px"];
+    c.px_count = knobs["cell_px_count"];
+    c.flat_px = knobs["flat_px_indices"];
+    c.K = c.cell_indices.size();
+    if (c.first_px.size() != c.K || c.px_count.size() != c.K) {
+        c.err = "CSR row-ptr length mismatch";
+        return c;
+    }
+    c.total_px = c.flat_px.size();
+    // 边界 sanity：last cell first_px + px_count <= total_px
+    if (c.K > 0) {
+        const int last_first = c.first_px[c.K - 1];
+        const int last_count = c.px_count[c.K - 1];
+        if (last_first < 0 || last_count < 0 || last_first + last_count > c.total_px) {
+            c.err = "CSR row-ptr out of bounds";
+            return c;
+        }
+    }
+    c.valid = true;
+    return c;
+}
+
+} // anonymous namespace
+
+godot::Dictionary DCWorldExt::encode_dynamic_cell_atlas(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels_written"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_dynamic_cell_atlas: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+
+    auto c = parse_csr_common(knobs, 4);
+    if (!c.valid) return fail(c.err);
+    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
+    PackedByteArray pass_sea = knobs["cell_passable_sea"];
+    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_snow = component_id(StringName("cell_snow_cover"));
+    const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0) {
+        return fail("missing slot id (temp/moist/snow/vitality)");
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_moist = _slots.write[sid_moist];
+    Slot &s_snow = _slots.write[sid_snow];
+    Slot &s_vit = _slots.write[sid_vit];
+    const int n_cells = _entity_count;
+    if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells) {
+        return fail("slot array size < entity_count");
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const float * const __restrict TEMP = s_temp.arr_f32.ptr();
+    const float * const __restrict MOIST = s_moist.arr_f32.ptr();
+    const float * const __restrict SNOW = s_snow.arr_f32.ptr();
+    const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const int32_t * const __restrict CELLS = c.cell_indices.ptr();
+    const int32_t * const __restrict FIRST = c.first_px.ptr();
+    const int32_t * const __restrict CNT = c.px_count.ptr();
+    const int32_t * const __restrict FLAT = c.flat_px.ptr();
+    const uint8_t * const __restrict PSEA = pass_sea.ptr();
+    uint8_t * const __restrict BUF = c.buffer.ptrw();
+
+    PackedInt32Array new_sigs;
+    new_sigs.resize(c.K);
+    int32_t * const __restrict SIGS = new_sigs.ptrw();
+
+    int pixels_written = 0;
+    for (int k = 0; k < c.K; ++k) {
+        const int ci = CELLS[k];
+        if (ci < 0 || ci >= n_cells) {
+            SIGS[k] = 0;
+            continue;
+        }
+        const int r = pk_q01_byte(double(TEMP[ci]));
+        const int g = pk_q01_byte(double(MOIST[ci]));
+        const int b = pk_q01_byte(double(SNOW[ci]));
+        const int a = (PSEA[k] != 0) ? 0 : pk_q01_byte(double(VIT[ci]));
+        const uint32_t sig = uint32_t(r) | (uint32_t(g) << 8) |
+                             (uint32_t(b) << 16) | (uint32_t(a) << 24);
+        SIGS[k] = int32_t(sig);
+
+        const int first = FIRST[k];
+        const int count = CNT[k];
+        for (int p = 0; p < count; ++p) {
+            const int px_idx = FLAT[first + p];
+            if (px_idx < 0 || px_idx >= c.n_pix) continue;
+            const int base = px_idx * 4;
+            BUF[base    ] = uint8_t(r);
+            BUF[base + 1] = uint8_t(g);
+            BUF[base + 2] = uint8_t(b);
+            BUF[base + 3] = uint8_t(a);
+            ++pixels_written;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels_written"] = pixels_written;
+    out["atlas_buffer"] = c.buffer;
+    out["new_sigs"] = new_sigs;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels_written"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_ecology_visual_atlas: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+
+    auto c = parse_csr_common(knobs, 4);
+    if (!c.valid) return fail(c.err);
+    if (!knobs.has("prev_veg") || !knobs.has("prev_vitality") ||
+        !knobs.has("prev_transition")) {
+        return fail("missing ecology prev_* knob");
+    }
+    PackedByteArray prev_veg = knobs["prev_veg"];
+    PackedByteArray prev_vit = knobs["prev_vitality"];
+    PackedByteArray prev_tr = knobs["prev_transition"];
+    if (prev_veg.size() != c.K || prev_vit.size() != c.K || prev_tr.size() != c.K) {
+        return fail("ecology prev_* size mismatch");
+    }
+    const bool cache_valid = bool(knobs.get("cache_valid", false));
+
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_snow = component_id(StringName("cell_snow_cover"));
+    const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
+    const int sid_terr = component_id(StringName("cell_terrain"));
+    const int sid_veg = component_id(StringName("cell_vegetation"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0 ||
+        sid_terr < 0 || sid_veg < 0) {
+        return fail("missing slot id (temp/moist/snow/vit/terr/veg)");
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_moist = _slots.write[sid_moist];
+    Slot &s_snow = _slots.write[sid_snow];
+    Slot &s_vit = _slots.write[sid_vit];
+    Slot &s_terr = _slots.write[sid_terr];
+    Slot &s_veg = _slots.write[sid_veg];
+    const int n_cells = _entity_count;
+    if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells ||
+        s_terr.arr_u8.size() < n_cells || s_veg.arr_u8.size() < n_cells) {
+        return fail("slot array size < entity_count");
+    }
+
+    // 透传 GDScript TerrainType.TERRAIN.LAKE / SEA_ICE / VegetationType.VEG.NONE 常量。
+    // 通过 knobs 入参（避免 C++ 端硬编码 enum 值导致 schema 漂移）。
+    const int TERRAIN_LAKE = int(knobs.get("terrain_lake", -1));
+    const int TERRAIN_SEA_ICE = int(knobs.get("terrain_sea_ice", -1));
+    const int VEG_NONE = int(knobs.get("veg_none", -1));
+
+    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
+    PackedByteArray pass_sea = knobs["cell_passable_sea"];
+    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const float * const __restrict TEMP = s_temp.arr_f32.ptr();
+    const float * const __restrict MOIST = s_moist.arr_f32.ptr();
+    const float * const __restrict SNOW = s_snow.arr_f32.ptr();
+    const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const uint8_t * const __restrict TERR = s_terr.arr_u8.ptr();
+    const uint8_t * const __restrict VEG = s_veg.arr_u8.ptr();
+    const int32_t * const __restrict CELLS = c.cell_indices.ptr();
+    const int32_t * const __restrict FIRST = c.first_px.ptr();
+    const int32_t * const __restrict CNT = c.px_count.ptr();
+    const int32_t * const __restrict FLAT = c.flat_px.ptr();
+    const uint8_t * const __restrict PSEA = pass_sea.ptr();
+    const uint8_t * const __restrict PV_VEG = prev_veg.ptr();
+    const uint8_t * const __restrict PV_VIT = prev_vit.ptr();
+    const uint8_t * const __restrict PV_TR = prev_tr.ptr();
+    uint8_t * const __restrict BUF = c.buffer.ptrw();
+
+    PackedByteArray new_veg;  new_veg.resize(c.K);  uint8_t * const NV = new_veg.ptrw();
+    PackedByteArray new_vit;  new_vit.resize(c.K);  uint8_t * const NVI = new_vit.ptrw();
+    PackedByteArray new_tr;   new_tr.resize(c.K);   uint8_t * const NT = new_tr.ptrw();
+    PackedInt32Array new_sigs; new_sigs.resize(c.K); int32_t * const SIGS = new_sigs.ptrw();
+
+    // smoothstep helper：与 GDScript smoothstep(edge0, edge1, x) 同义。
+    auto smoothstep = [](double e0, double e1, double x) {
+        if (e1 <= e0) return x < e0 ? 0.0 : 1.0;
+        double t = (x - e0) / (e1 - e0);
+        if (t < 0.0) t = 0.0;
+        else if (t > 1.0) t = 1.0;
+        return t * t * (3.0 - 2.0 * t);
+    };
+    auto clamp01 = [](double v) {
+        return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+    };
+
+    int pixels_written = 0;
+    for (int k = 0; k < c.K; ++k) {
+        const int ci = CELLS[k];
+        if (ci < 0 || ci >= n_cells) {
+            NV[k] = 0; NVI[k] = 0; NT[k] = 0; SIGS[k] = 0;
+            continue;
+        }
+        const int cur_veg = int(VEG[ci]) & 0xFF;
+        const int cur_vit_byte = pk_q01_byte(double(VIT[ci]));
+        const int prev_veg_byte = int(PV_VEG[k]);
+        const int prev_vit_byte = int(PV_VIT[k]);
+        int transition_age = int(PV_TR[k]);
+        if (cache_valid) {
+            if (cur_veg != prev_veg_byte) transition_age = 255;
+            else if (transition_age > 0) {
+                transition_age = transition_age - 18;
+                if (transition_age < 0) transition_age = 0;
+            }
+        } else {
+            transition_age = 0;
+        }
+
+        // ── _ecology_visual_signature 镜像 ─────────────────────────
+        const int terrain_id = int(TERR[ci]);
+        const bool is_water_cell = (PSEA[k] != 0) ||
+            (terrain_id == TERRAIN_LAKE) ||
+            (terrain_id == TERRAIN_SEA_ICE);
+        const int veg_id = cur_veg;
+        const double vitality = clamp01(double(VIT[ci]));
+        const double moist = clamp01(double(MOIST[ci]));
+        const double temp = clamp01(double(TEMP[ci]));
+        const double snow = clamp01(double(SNOW[ci]));
+
+        double foliage = 0.0;
+        if (!is_water_cell && veg_id != VEG_NONE) {
+            const double cold_loss = (1.0 - smoothstep(0.02, 0.18, temp)) * 0.55;
+            const double snow_loss = smoothstep(0.12, 0.75, snow) * 0.70;
+            const double dry_loss = (1.0 - smoothstep(0.05, 0.35, moist)) * 0.45;
+            foliage = clamp01(vitality * 0.72 + moist * 0.28 - cold_loss - snow_loss - dry_loss);
+        }
+        double stress = 0.0;
+        if (!is_water_cell) {
+            const double dryness = 1.0 - moist;
+            const double heat_stress = smoothstep(0.72, 0.95, temp);
+            const double cold_stress = 1.0 - smoothstep(0.03, 0.20, temp);
+            const double vit_stress = 1.0 - vitality;
+            const double a1 = dryness * 0.70;
+            const double a2 = (heat_stress > cold_stress ? heat_stress : cold_stress) * 0.65;
+            const double a3 = (a1 > a2 ? a1 : a2);
+            stress = clamp01(a3 + vit_stress * 0.45);
+        }
+        const double vit_delta = (double(pk_q01_byte(vitality)) - double(prev_vit_byte)) / 255.0;
+        const double growth_damage = clamp01(0.5 + vit_delta * 5.0 + (foliage - 0.5) * 0.12 - stress * 0.10);
+
+        const int r = pk_q01_byte(foliage);
+        const int g = pk_q01_byte(stress);
+        int b = transition_age;
+        if (b < 0) b = 0;
+        else if (b > 255) b = 255;
+        const int a = pk_q01_byte(growth_damage);
+        const uint32_t sig = uint32_t(r) | (uint32_t(g) << 8) |
+                             (uint32_t(b) << 16) | (uint32_t(a) << 24);
+
+        // 写回 prev/sig 状态（每 cell 都写，无论 cache 命中）
+        NV[k] = uint8_t(cur_veg);
+        NVI[k] = uint8_t(cur_vit_byte);
+        NT[k] = uint8_t(b);
+        SIGS[k] = int32_t(sig);
+
+        // byte fill
+        const int first = FIRST[k];
+        const int count = CNT[k];
+        for (int p = 0; p < count; ++p) {
+            const int px_idx = FLAT[first + p];
+            if (px_idx < 0 || px_idx >= c.n_pix) continue;
+            const int base = px_idx * 4;
+            BUF[base    ] = uint8_t(r);
+            BUF[base + 1] = uint8_t(g);
+            BUF[base + 2] = uint8_t(b);
+            BUF[base + 3] = uint8_t(a);
+            ++pixels_written;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels_written"] = pixels_written;
+    out["atlas_buffer"] = c.buffer;
+    out["new_veg"] = new_veg;
+    out["new_vitality"] = new_vit;
+    out["new_transition"] = new_tr;
+    out["new_sigs"] = new_sigs;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels_written"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_dyn_smooth_atlas: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+
+    auto c = parse_csr_common(knobs, 4);
+    if (!c.valid) return fail(c.err);
+
+    if (!knobs.has("neighbor_indices")) return fail("missing neighbor_indices");
+    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedByteArray pass_sea = knobs["cell_passable_sea"];
+    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+
+    // C++ 端没有 cell_passable_sea SoA slot，但中心 cell + 邻居 cell 都需要算 sig。
+    // 邻居的 passable_sea 通过 SoA cell_is_water 槽位作为 proxy 取得 ——
+    // 注意：cell.is_water 与 cell.passable_sea 不完全等价（mountain/snow 也是 is_water=true）。
+    // 为保证 bit-equal，调用方必须在 GDScript 端"扁平化"：对所有 dirty cell 的 6 个邻居
+    // 也提供 passable_sea byte 数组（neighbor_passable_sea，长度 = K * 6，与 nb_arr 对齐）。
+    if (!knobs.has("neighbor_passable_sea")) return fail("missing neighbor_passable_sea");
+    PackedByteArray nb_psea = knobs["neighbor_passable_sea"];
+    if (nb_psea.size() != c.K * 6) return fail("neighbor_passable_sea size mismatch (need K*6)");
+
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_snow = component_id(StringName("cell_snow_cover"));
+    const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0) {
+        return fail("missing slot id (temp/moist/snow/vitality)");
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_moist = _slots.write[sid_moist];
+    Slot &s_snow = _slots.write[sid_snow];
+    Slot &s_vit = _slots.write[sid_vit];
+    const int n_cells = _entity_count;
+    if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells) {
+        return fail("slot array size < entity_count");
+    }
+    if (nb_arr.size() < n_cells * 6) return fail("neighbor_indices size < n_cells*6");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const float * const __restrict TEMP = s_temp.arr_f32.ptr();
+    const float * const __restrict MOIST = s_moist.arr_f32.ptr();
+    const float * const __restrict SNOW = s_snow.arr_f32.ptr();
+    const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const int32_t * const __restrict CELLS = c.cell_indices.ptr();
+    const int32_t * const __restrict FIRST = c.first_px.ptr();
+    const int32_t * const __restrict CNT = c.px_count.ptr();
+    const int32_t * const __restrict FLAT = c.flat_px.ptr();
+    const uint8_t * const __restrict PSEA = pass_sea.ptr();
+    const uint8_t * const __restrict NB_PSEA = nb_psea.ptr();
+    const int32_t * const __restrict NB = nb_arr.ptr();
+    uint8_t * const __restrict BUF = c.buffer.ptrw();
+
+    PackedInt32Array new_sigs; new_sigs.resize(c.K); int32_t * const SIGS = new_sigs.ptrw();
+
+    // 内联 sig 计算（与 _dynamic_cell_signature 等价）：
+    //   r=q01(temp), g=q01(moist), b=q01(snow), a = passable_sea ? 0 : q01(vit)
+    auto sig_of = [&](int idx, bool psea) -> uint32_t {
+        const int r = pk_q01_byte(double(TEMP[idx]));
+        const int g = pk_q01_byte(double(MOIST[idx]));
+        const int b = pk_q01_byte(double(SNOW[idx]));
+        const int a = psea ? 0 : pk_q01_byte(double(VIT[idx]));
+        return uint32_t(r) | (uint32_t(g) << 8) | (uint32_t(b) << 16) | (uint32_t(a) << 24);
+    };
+
+    int pixels_written = 0;
+    for (int k = 0; k < c.K; ++k) {
+        const int ci = CELLS[k];
+        if (ci < 0 || ci >= n_cells) { SIGS[k] = 0; continue; }
+
+        const uint32_t c_sig = sig_of(ci, PSEA[k] != 0);
+        const int cr = int(c_sig & 0xFF);
+        const int cg = int((c_sig >> 8) & 0xFF);
+        const int cb = int((c_sig >> 16) & 0xFF);
+        const int ca = int((c_sig >> 24) & 0xFF);
+
+        // FNV-1a 32-bit hood hash（中心 + 邻居各 4 byte），与 GDScript 1:1 镜像。
+        uint32_t hood_h = 0x811C9DC5u;
+        hood_h = (hood_h ^ uint32_t(cr)) * 0x01000193u;
+        hood_h = (hood_h ^ uint32_t(cg)) * 0x01000193u;
+        hood_h = (hood_h ^ uint32_t(cb)) * 0x01000193u;
+        hood_h = (hood_h ^ uint32_t(ca)) * 0x01000193u;
+
+        int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0;
+        const int nb_base_global = ci * 6;
+        const int nb_base_local = k * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[nb_base_global + d];
+            if (ni < 0 || ni >= n_cells) continue;
+            const bool n_psea = (NB_PSEA[nb_base_local + d] != 0);
+            const uint32_t n_sig = sig_of(int(ni), n_psea);
+            const int nrb = int(n_sig & 0xFF);
+            const int ngb = int((n_sig >> 8) & 0xFF);
+            const int nbb = int((n_sig >> 16) & 0xFF);
+            const int nab = int((n_sig >> 24) & 0xFF);
+            nr += nrb; ng += ngb; nb_sum += nbb; na += nab; nc += 1;
+            hood_h = (hood_h ^ uint32_t(nrb)) * 0x01000193u;
+            hood_h = (hood_h ^ uint32_t(ngb)) * 0x01000193u;
+            hood_h = (hood_h ^ uint32_t(nbb)) * 0x01000193u;
+            hood_h = (hood_h ^ uint32_t(nab)) * 0x01000193u;
+        }
+
+        SIGS[k] = int32_t(hood_h);
+
+        int or_, og, ob, oa;
+        if (nc > 0) {
+            // 中心 0.5 + 邻居均值 0.5；GDScript 用 int 除法，C++ 必须镜像同语义。
+            // (cr + nr / nc) / 2，全部 int 截断除。
+            const int t1 = cr + (nr / nc);
+            const int t2 = cg + (ng / nc);
+            const int t3 = cb + (nb_sum / nc);
+            const int t4 = ca + (na / nc);
+            or_ = t1 / 2; og = t2 / 2; ob = t3 / 2; oa = t4 / 2;
+            if (or_ < 0) or_ = 0; else if (or_ > 255) or_ = 255;
+            if (og < 0) og = 0; else if (og > 255) og = 255;
+            if (ob < 0) ob = 0; else if (ob > 255) ob = 255;
+            if (oa < 0) oa = 0; else if (oa > 255) oa = 255;
+        } else {
+            or_ = cr; og = cg; ob = cb; oa = ca;
+        }
+
+        const int first = FIRST[k];
+        const int count = CNT[k];
+        for (int p = 0; p < count; ++p) {
+            const int px_idx = FLAT[first + p];
+            if (px_idx < 0 || px_idx >= c.n_pix) continue;
+            const int base = px_idx * 4;
+            BUF[base    ] = uint8_t(or_);
+            BUF[base + 1] = uint8_t(og);
+            BUF[base + 2] = uint8_t(ob);
+            BUF[base + 3] = uint8_t(oa);
+            ++pixels_written;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels_written"] = pixels_written;
+    out["atlas_buffer"] = c.buffer;
+    out["new_sigs"] = new_sigs;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels_written"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_ice_state_atlas: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+
+    auto c = parse_csr_common(knobs, 1);  // R8 = 1 byte/pixel
+    if (!c.valid) return fail(c.err);
+
+    const int sid_ice = component_id(StringName("cell_sea_ice_frac"));
+    if (sid_ice < 0) return fail("missing slot id cell_sea_ice_frac");
+    Slot &s_ice = _slots.write[sid_ice];
+    const int n_cells = _entity_count;
+    if (s_ice.arr_f32.size() < n_cells) return fail("sea_ice_frac slot too small");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const float * const __restrict ICE = s_ice.arr_f32.ptr();
+    const int32_t * const __restrict CELLS = c.cell_indices.ptr();
+    const int32_t * const __restrict FIRST = c.first_px.ptr();
+    const int32_t * const __restrict CNT = c.px_count.ptr();
+    const int32_t * const __restrict FLAT = c.flat_px.ptr();
+    uint8_t * const __restrict BUF = c.buffer.ptrw();
+
+    PackedByteArray new_bytes; new_bytes.resize(c.K); uint8_t * const NB_OUT = new_bytes.ptrw();
+
+    int pixels_written = 0;
+    for (int k = 0; k < c.K; ++k) {
+        const int ci = CELLS[k];
+        if (ci < 0 || ci >= n_cells) { NB_OUT[k] = 0; continue; }
+        const int byte_v = pk_q01_byte_ice(double(ICE[ci]));
+        NB_OUT[k] = uint8_t(byte_v);
+        const int first = FIRST[k];
+        const int count = CNT[k];
+        for (int p = 0; p < count; ++p) {
+            const int px_idx = FLAT[first + p];
+            if (px_idx < 0 || px_idx >= c.n_pix) continue;
+            BUF[px_idx] = uint8_t(byte_v);
+            ++pixels_written;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels_written"] = pixels_written;
+    out["atlas_buffer"] = c.buffer;
+    // ice atlas 走 cell_byte cache（见 _last_ice_state_cell_bytes），返回 PackedByteArray
+    out["new_bytes"] = new_bytes;
+    return out;
+}
+
 godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -9132,6 +9760,20 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
         &DCWorldExt::run_sea_ice_atlas_prepare);
+    // Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F)：
+    // 4 张运行期 atlas baker 的 byte-fill C++/SIMD pass。CSR 协议详见 world_ext.h。
+    ClassDB::bind_method(
+        D_METHOD("encode_dynamic_cell_atlas", "knobs"),
+        &DCWorldExt::encode_dynamic_cell_atlas);
+    ClassDB::bind_method(
+        D_METHOD("encode_ecology_visual_atlas", "knobs"),
+        &DCWorldExt::encode_ecology_visual_atlas);
+    ClassDB::bind_method(
+        D_METHOD("encode_dyn_smooth_atlas", "knobs"),
+        &DCWorldExt::encode_dyn_smooth_atlas);
+    ClassDB::bind_method(
+        D_METHOD("encode_ice_state_atlas", "knobs"),
+        &DCWorldExt::encode_ice_state_atlas);
     // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
     ClassDB::bind_method(
         D_METHOD("run_ocean_field_rasterize", "knobs"),

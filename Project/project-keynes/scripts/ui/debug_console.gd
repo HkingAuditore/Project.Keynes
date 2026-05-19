@@ -58,6 +58,15 @@ var _pause_btn: Button
 var _snapshot_btn: Button
 var _topn_label: Label
 
+# Plan: perf-recording-csv-export
+# 性能录制按钮 + 录制器实例（与 _pause_btn / _snapshot_btn 同行展示）。
+# _perf_recorder 在 set_main() 时创建并注入到 _main，避免与 main 自己生命周期解耦。
+const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+var _record_btn: Button
+var _perf_recorder: RefCounted = null
+# _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
+var _record_btn_toast_until_msec: int = 0
+
 
 # --- 布局常量 -------------------------------------------------------------
 const PANEL_WIDTH: float = 360.0
@@ -103,6 +112,16 @@ func _ready() -> void:
 # 由 main.gd 注入。建议在 _ready 之后立即调用，确保 UI 构建完成后就能刷新状态。
 func set_main(m: Node) -> void:
 	_main = m
+	# Plan: perf-recording-csv-export
+	# 在注入 main 时创建 PerfRecorder 并双向挂接：DebugConsole 持有它（控制开关），
+	# main 在 fast_tick 末尾调它的 on_fast_tick。两端任一释放都不会留悬挂引用，
+	# 因为 PerfRecorder 是 RefCounted。
+	if _perf_recorder == null:
+		_perf_recorder = PerfRecorderScript.new()
+	if _perf_recorder.has_method("bind_main"):
+		_perf_recorder.call("bind_main", m)
+	if m != null and m.has_method("set_perf_recorder"):
+		m.call("set_perf_recorder", _perf_recorder)
 	_refresh_from_state()
 
 # 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
@@ -304,6 +323,14 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_snapshot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_snapshot_btn.pressed.connect(_on_btn_snapshot)
 	ctrl_row.add_child(_snapshot_btn)
+	# Plan: perf-recording-csv-export
+	# 录制按钮：再次点击触发 stop_and_export，CSV 落盘到 res://tmp/perf_record_*.csv
+	_record_btn = Button.new()
+	_record_btn.text = "⏺ 开始录制"
+	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ res://tmp/perf_record_<时间>.csv"
+	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_record_btn.pressed.connect(_on_btn_toggle_record)
+	ctrl_row.add_child(_record_btn)
 	parent.add_child(ctrl_row)
 
 	_telemetry_vbox = VBoxContainer.new()
@@ -657,6 +684,11 @@ func _refresh_sim_perf_lines() -> void:
 	# 能识别"持续慢 Job"vs"偶发慢 Job"，是性能调优的主要参考视图。
 	_set_tele("sus_topn", _format_topn_jobs())
 
+	# Plan: perf-recording-csv-export
+	# 录制中按钮文案随帧数刷新（"⏹ 停止并导出（已录 N 帧）"），
+	# 复用 _telemetry_timer，不新建 Timer。
+	_refresh_record_btn_text()
+
 
 # 2026-05-19：新增 ── 暂停 / 快照 / Top-N 工具函数
 # ─────────────────────────────────────────────────────────────────────────
@@ -754,6 +786,70 @@ func _show_snapshot_toast(msg: String, is_error: bool) -> void:
 			_snapshot_btn.text = prev
 			_snapshot_btn.remove_theme_color_override("font_color")
 	)
+
+
+# Plan: perf-recording-csv-export
+# 录制按钮按下：
+#   - 未录制 → start：清空缓冲，按钮变红
+#   - 录制中 → stop_and_export：写 CSV，按钮 2 秒绿色提示路径，再回到默认态
+func _on_btn_toggle_record() -> void:
+	if _perf_recorder == null:
+		return
+	if _perf_recorder.has_method("is_recording") and bool(_perf_recorder.call("is_recording")):
+		var path: String = ""
+		if _perf_recorder.has_method("stop_and_export"):
+			path = String(_perf_recorder.call("stop_and_export"))
+		if path == "":
+			_show_record_toast("导出失败（无数据或写盘失败）", true)
+		else:
+			# 截短路径：只显示文件名部分，避免按钮被撑爆
+			var fname: String = path.get_file()
+			_show_record_toast("已导出 " + fname, false)
+	else:
+		if _perf_recorder.has_method("start"):
+			_perf_recorder.call("start")
+		_refresh_record_btn_text(true)
+
+
+# 录制按钮文案随状态/帧数刷新；force=true 时立即更新（按下瞬间），
+# 否则由 _telemetry_timer 每 2 秒 tick 顺带刷新。
+# Toast 期间（_record_btn_toast_until_msec > now）冻结刷新，避免覆盖绿色提示。
+func _refresh_record_btn_text(force: bool = false) -> void:
+	if _record_btn == null or _perf_recorder == null:
+		return
+	if not force and Time.get_ticks_msec() < _record_btn_toast_until_msec:
+		return
+	var recording: bool = false
+	if _perf_recorder.has_method("is_recording"):
+		recording = bool(_perf_recorder.call("is_recording"))
+	if recording:
+		var n: int = 0
+		if _perf_recorder.has_method("row_count"):
+			n = int(_perf_recorder.call("row_count"))
+		_record_btn.text = "⏹ 停止并导出（已录 %d 帧）" % n
+		_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
+	else:
+		_record_btn.text = "⏺ 开始录制"
+		_record_btn.remove_theme_color_override("font_color")
+
+
+func _show_record_toast(msg: String, is_error: bool) -> void:
+	if _record_btn == null:
+		return
+	_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	if is_error:
+		_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	else:
+		_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	# 2 秒内冻结 _refresh_record_btn_text，让绿色提示稳定显示
+	_record_btn_toast_until_msec = Time.get_ticks_msec() + 2000
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(func() -> void:
+		if _record_btn != null and is_instance_valid(_record_btn):
+			_record_btn.remove_theme_color_override("font_color")
+			_refresh_record_btn_text(true)
+	)
+
 
 
 # 30-tick 滚动窗口 Top-N，按 max_ms 降序。比 last-tick 列表更稳定，

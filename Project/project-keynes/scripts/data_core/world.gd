@@ -61,6 +61,31 @@ var _pending_passes: int = 0
 # 调试：debug 构建下发出更严的告警。
 var _debug: bool = OS.is_debug_build()
 
+# ─── Dirty Cell Mask（plan: cell-dirty-push-and-dots-atlas-bakers, 阶段 A） ─────
+#
+# 目的：让 4 张运行期 atlas baker（map_baker.gd 的 dynamic_cell / ecology_visual /
+# dyn_atlas_smooth / ice_state）能事件驱动地"只重烘改过的 cell"，替代现状
+# "for cell in all_cells: sig 比对" 的 O(N) 全图扫。
+#
+# 漏斗：所有写 cell-level component 的路径都走 DCWorld 的 9 个 write_* API
+# （write_f32 / write_f32_range / write_f32_indexed / write_u8* / write_i32*）。
+# HexCell 21 个 facade setter 也走 _world.write_*，所以本层是唯一漏斗位。
+#
+# 范围：mask 只覆盖 cells pool（[0, n_cells)）。其他 pool（weather front 池等）
+# 写 idx >= n_cells 时本层直接跳过 mark（mask 大小固定 = n_cells）。
+#
+# 同步：SUS scheduler 单线程串行 tick，sea_ice_atlas_upload_job (priority=250)
+# 必然跑在所有 sim 写字段 Job (priority 100-200) 之后；baker 入口
+# read_and_clear_dirty_mask() 一次性快照 + 清零，原子语义靠"消费在写之后"保证。
+#
+# 性能：mark_dirty 单点开销 = 1 次比较 + 1 次 byte 写，N=1e5 全脏 ≈ 0.5ms（cold
+# path 上限）。生产 dirty 占比 ≤ 5%，单次 baker tick mark 总 cost < 0.05ms。
+#
+# 向后兼容：dirty_mask_enabled = false 时 mark 全部 no-op，baker 走 legacy 路径。
+var _dirty_cell_mask: PackedByteArray = PackedByteArray()
+var _dirty_cell_mask_size: int = 0      # = cells pool capacity；mark/read_and_clear 内联用
+var dirty_mask_enabled: bool = true     # 飞行开关；false 时 mark_* 全 no-op
+
 
 # ─── Task 1 — Component 注册 / 创建 entity / 基础访问 ───────────────────
 
@@ -261,6 +286,41 @@ func view_u8(comp_id: int) -> PackedByteArray:
 # 性能：在 GDScript fallback 下额外多一次方法调用 + slot 查表（_get_slot），
 # 单次开销 < 1us；调用方应在循环外缓存 comp_id，循环内直接调本方法。
 # 真正热的成段写应使用 write_*_range（一次调用搬一段）。
+#
+# Dirty mask 联动（plan: cell-dirty-push-and-dots-atlas-bakers, 阶段 A）：
+# 9 个 write_* API 在数据写入后调用 _dirty_mark_one/range/indexed；只对
+# cells pool 段（[0, _dirty_cell_mask_size)）生效，其他 pool（front 池等）
+# 因 idx 越界自动跳过。dirty_mask_enabled = false 或 mask_size = 0 时全 no-op。
+
+# 内部：单点 mark（hot path 高频，inline-friendly）。
+func _dirty_mark_one(idx: int) -> void:
+	if not dirty_mask_enabled:
+		return
+	if idx >= 0 and idx < _dirty_cell_mask_size:
+		_dirty_cell_mask[idx] = 1
+
+
+# 内部：成段 mark（[start, start+n) 全标）。
+func _dirty_mark_range(start: int, n: int) -> void:
+	if not dirty_mask_enabled or n <= 0 or _dirty_cell_mask_size <= 0:
+		return
+	var lo: int = maxi(start, 0)
+	var hi: int = mini(start + n, _dirty_cell_mask_size)
+	for i in range(lo, hi):
+		_dirty_cell_mask[i] = 1
+
+
+# 内部：批量索引 mark（dirty_indices 列表，越界元素自动跳过）。
+func _dirty_mark_indexed(indices: PackedInt32Array) -> void:
+	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
+		return
+	var cap: int = _dirty_cell_mask_size
+	var n: int = indices.size()
+	for k in range(n):
+		var idx: int = indices[k]
+		if idx >= 0 and idx < cap:
+			_dirty_cell_mask[idx] = 1
+
 
 ## 单元素写入：F32 component。
 func write_f32(comp_id: int, idx: int, v: float) -> void:
@@ -276,6 +336,7 @@ func write_f32(comp_id: int, idx: int, v: float) -> void:
 		push_error("[DCWorld] write_f32: idx=%d out of range [0,%d)" % [idx, slot.arr_f32.size()])
 		return
 	slot.arr_f32[idx] = v
+	_dirty_mark_one(idx)
 
 
 ## 单元素写入：I32 component。
@@ -292,6 +353,7 @@ func write_i32(comp_id: int, idx: int, v: int) -> void:
 		push_error("[DCWorld] write_i32: idx=%d out of range [0,%d)" % [idx, slot.arr_i32.size()])
 		return
 	slot.arr_i32[idx] = v
+	_dirty_mark_one(idx)
 
 
 ## 单元素写入：U8 component（int 入参，自动 & 0xFF 截断）。
@@ -308,6 +370,7 @@ func write_u8(comp_id: int, idx: int, v: int) -> void:
 		push_error("[DCWorld] write_u8: idx=%d out of range [0,%d)" % [idx, slot.arr_u8.size()])
 		return
 	slot.arr_u8[idx] = v & 0xFF
+	_dirty_mark_one(idx)
 
 
 ## 成段写入：F32 component。把 src[0..src.size()) 写到 arr[start..start+src.size())。
@@ -327,6 +390,7 @@ func write_f32_range(comp_id: int, start: int, src: PackedFloat32Array) -> void:
 		return
 	for i in range(n):
 		slot.arr_f32[start + i] = src[i]
+	_dirty_mark_range(start, n)
 
 
 ## 成段写入：I32 component。
@@ -346,6 +410,7 @@ func write_i32_range(comp_id: int, start: int, src: PackedInt32Array) -> void:
 		return
 	for i in range(n):
 		slot.arr_i32[start + i] = src[i]
+	_dirty_mark_range(start, n)
 
 
 ## 成段写入：U8 component。
@@ -365,6 +430,7 @@ func write_u8_range(comp_id: int, start: int, src: PackedByteArray) -> void:
 		return
 	for i in range(n):
 		slot.arr_u8[start + i] = src[i]
+	_dirty_mark_range(start, n)
 
 
 # ─── 批量索引写 API（PR-2.0，2026-Q3）─────────────────────────────────
@@ -399,6 +465,7 @@ func write_f32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedFl
 		var idx: int = indices[k]
 		if idx >= 0 and idx < cap:
 			arr[idx] = values[k]
+	_dirty_mark_indexed(indices)
 
 
 ## 批量索引写：I32 component。
@@ -418,6 +485,7 @@ func write_i32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedIn
 		var idx: int = indices[k]
 		if idx >= 0 and idx < cap:
 			arr[idx] = values[k]
+	_dirty_mark_indexed(indices)
 
 
 ## 批量索引写：U8 component（int 入参，自动 & 0xFF 截断）。
@@ -437,6 +505,91 @@ func write_u8_indexed(comp_id: int, indices: PackedInt32Array, values: PackedByt
 		var idx: int = indices[k]
 		if idx >= 0 and idx < cap:
 			arr[idx] = values[k] & 0xFF
+	_dirty_mark_indexed(indices)
+
+
+# ─── Dirty mask public API（plan: cell-dirty-push-and-dots-atlas-bakers, A） ───
+
+## 公开 API：手工标脏单 cell（外部直写场景兜底，例如 baker initialize 全脏）。
+## idx 必须在 [0, cell_count) 内；越界静默跳过。dirty_mask_enabled = false 时 no-op。
+func mark_dirty(idx: int) -> void:
+	_dirty_mark_one(idx)
+
+
+## 公开 API：成段标脏 [start, start+n)。多用于"刚 bind / regenerate 后强制全脏"。
+func mark_dirty_range(start: int, n: int) -> void:
+	_dirty_mark_range(start, n)
+
+
+## 公开 API：批量索引标脏。多用于"sim Job 已经攒了 dirty_indices 但走自定义路径写"。
+func mark_dirty_indexed(indices: PackedInt32Array) -> void:
+	_dirty_mark_indexed(indices)
+
+
+## 公开 API：把全脏标志强制设为全 1（首帧 baker bake_world / regenerate 用）。
+func mark_dirty_all() -> void:
+	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
+		return
+	for i in range(_dirty_cell_mask_size):
+		_dirty_cell_mask[i] = 1
+
+
+## 公开 API：原子地"读出当前所有 dirty cell 的 index 列表 + 把 mask 清零"。
+##
+## 返回 PackedInt32Array（升序，因遍历顺序保证）。
+## SUS scheduler 是单线程串行，priority 序天然把 sim 写 Job (100-200) 排在
+## sea_ice_atlas_upload_job (250) 之前 → baker 入口调本方法即获得 tick 内
+## "全部待消费 dirty"快照；之后 sim 再写下个 tick 的脏会重新累积。
+##
+## dirty_mask_enabled = false 或 mask_size = 0 时返回空数组（baker 应当退化到
+## "all_cells 全扫"行为）。
+func read_and_clear_dirty_mask() -> PackedInt32Array:
+	var out: PackedInt32Array = PackedInt32Array()
+	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
+		return out
+	# 首遍计数（避免 push_back 多次扩容）
+	var cap: int = _dirty_cell_mask_size
+	var cnt: int = 0
+	for i in range(cap):
+		if _dirty_cell_mask[i] != 0:
+			cnt += 1
+	if cnt == 0:
+		return out
+	out.resize(cnt)
+	var w: int = 0
+	for i in range(cap):
+		if _dirty_cell_mask[i] != 0:
+			out[w] = i
+			w += 1
+			_dirty_cell_mask[i] = 0
+	return out
+
+
+## 公开 API：诊断 / log 用，不清零。
+func peek_dirty_count() -> int:
+	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
+		return 0
+	var cnt: int = 0
+	for i in range(_dirty_cell_mask_size):
+		if _dirty_cell_mask[i] != 0:
+			cnt += 1
+	return cnt
+
+
+## 公开 API：dirty mask 当前覆盖的 cell 数（= cells pool capacity）。诊断用。
+func dirty_mask_size() -> int:
+	return _dirty_cell_mask_size
+
+
+# 内部：bind_map_data / unbind 调用，使 mask 大小与 cells pool 同步。
+func _resize_dirty_mask(new_size: int) -> void:
+	if new_size < 0:
+		new_size = 0
+	_dirty_cell_mask_size = new_size
+	_dirty_cell_mask.resize(new_size)
+	# resize 后内容未定义，统一清 0
+	for i in range(new_size):
+		_dirty_cell_mask[i] = 0
 
 
 ## 单元素读取：F32 component。冷路径（UI / baker / test / debug print）使用；
@@ -882,6 +1035,9 @@ func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> voi
 	# 5) Topology 挂入
 	_topo_neighbors = map_data.neighbor_indices_packed()
 	_topo_built = true
+	# 6) Dirty mask 同步（plan: cell-dirty-push-and-dots-atlas-bakers, A）。
+	#    mask 大小 = cells pool capacity = n_cells。重 bind 时强制清零（旧脏作废）。
+	_resize_dirty_mask(n)
 	_bound = true
 
 
@@ -936,6 +1092,9 @@ func unbind_map_data() -> void:
 			slot.external_ref = false
 	_map_data = null
 	_bound = false
+	# Dirty mask 同步（plan: cell-dirty-push-and-dots-atlas-bakers, A）：
+	# unbind 后 cell pool 失效，mask 一并释放，避免旧 mask 跨 bind 污染。
+	_resize_dirty_mask(0)
 
 
 ## PR-4.4：rebind 别名，兼容 hot-reload 调用。等价于先 unbind 再 bind。

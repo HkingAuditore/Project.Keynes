@@ -334,6 +334,23 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var use_gdext_ocean_currents_pixel: bool = true # 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
 @export var use_gdext_weather_field_pixel: bool = true  # weather field 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
 @export var use_gdext_sea_ice_atlas_pack: bool = true   # sea_ice_atlas_upload pack C++ 化（dots-final-push 验收 PASS，默认开启）
+
+# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode）─────────────────
+# 把 4 张运行期 atlas（dynamic_cell / ecology_visual / dyn_atlas_smooth /
+# ice_state）从"全图扫 + sig 比对"改造为"sim 端推 dirty mask + 仅扫 dirty cell"。
+#
+# dirty_push_enabled：开启 sim → DCWorld._dirty_cell_mask 推送，baker
+#   入口 read_and_clear_dirty_mask() 拿到 dirty cells 喂给 chunk_step；保留
+#   sig 二防线避免 GPU upload 被无效触发。默认 true（DCWorld 端漏斗 + mask
+#   已落地；baker 端只在 use_data_core 真 bind 后才走 mask 路径，否则 fallback
+#   到 all_cells）。
+#
+# cpp_atlas_encode_enabled：DCWorldExt 加 4 个 encode_* pass（C++ + SIMD），
+#   baker 入口 use_ext 路由。默认 false：上线前需 SAME_SOURCE A/B 200 tick
+#   像素 bit-identical 验收，且 ext 必须 has_method('encode_dynamic_cell_atlas')。
+@export var dirty_push_enabled: bool = true                     # plan/dirty-push-atlas-encode 阶段 D：baker 入口走 mask 消费
+@export var cpp_atlas_encode_enabled: bool = false              # plan/dirty-push-atlas-encode 阶段 F：DCWorldExt encode_* pass 启用
+
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。
 # 默认 false：在 storage 同源（PR-2.1.1 climate Pass-A 写路径下移）完成前，
