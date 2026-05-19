@@ -37,7 +37,7 @@ economy/
   trade_network.gd          # 城市之间的可达性 + 流动
   economy_system.gd         # class_name EconomySystem，主入口
   jobs/
-    economy_tick_job.gd     # 注册到 SUS，每 N 天更新
+	economy_tick_job.gd     # 注册到 SUS，每 N 天更新
 ```
 
 ## 第一版 MVP 建议范围

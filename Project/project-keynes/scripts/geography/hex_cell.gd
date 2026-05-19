@@ -43,9 +43,18 @@ var index: int = -1
 # --- PR-2.3a/b：HexCell Facade infrastructure ────────────────────────────
 # _world：DCWorld 引用，由 bake_world / 加载存档末尾通过 bind_world() 注入。
 #         null 时所有 property setter/getter 走 var fallback 路径，与旧行为完全兼容。
+# _world_ext：DCWorldExt（C++）引用，plan/3b-single-read-source 引入。
+#         非 null 时 facade 的 read 路径切到 ext.read_f32/i32/u8（直读 C++ slot），
+#         结构性消除"C++ flush 与 GDScript-DCWorld SoA 脱钩"类 bug（典型现象：
+#         cell.sea_ice_frac 冻结在初始日值，weather/climate/wind/ocean 12 处同款）。
+#         为 null（gdext 未编译 / DCWorldExt 未注册）时 fallback 到 _world.read_*，
+#         行为 = PR-2.3c 现状，100% 向后兼容。
+#         **write 路径仍走 _world**——GDScript-DCWorld → MapData 的 CoW alias
+#         从未脱钩；仅 read 切源即可消除问题面。
 # _facade_enabled：是否对该 cell 启用 facade（read/write 转发到 world）。
 #                  由 ClimateProfile.use_hexcell_facade 全局控制；调试可单 cell 关闭。
 var _world = null
+var _world_ext = null
 var _facade_enabled: bool = false
 
 # PR-2.3b：21 个 facade 字段 → cid 索引常量。bind_world() 时一次性 lookup。
@@ -123,26 +132,63 @@ const _COMP_NAMES: Array[StringName] = [
 
 # 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
 # bind_world() 时一次填充；运行期不变。
+#
+# _cid_array     : GDScript-DCWorld 这一侧的 cid（StringName = &"cell.xxx"）
+#                  → setter 走 _world.write_*(cid, ...) 用它
+#                  → ext == null 时 fallback getter 走 _world.read_*(cid, ...) 用它
+# _cid_array_ext : DCWorldExt（C++）这一侧的 cid（StringName = &"cell_xxx"，点→下划线）
+#                  → ext != null 时 getter 走 _world_ext.read_*(_cid_array_ext[i], idx)
+#
+# 为什么必须分两份：两边注册表是独立的——schema demo 字段在 GDScript 侧被过滤，
+# 在 C++ 端 BIND_TABLE 全量自动注册；且未来任一侧加额外注册都会让 cid 编号错位。
+# 不能假设 cid 同步（PR-3b 初版以为同步导致 sea_ice / 雪线读 cid 错位 → 全 0）。
 var _cid_array: PackedInt32Array = PackedInt32Array()
+var _cid_array_ext: PackedInt32Array = PackedInt32Array()
 
 ## 把本 cell 绑定到 DCWorld + 启用 facade。bake_world / load_save 末尾调用一次。
 ## 调用前必须保证 cell.index 已通过 _build_indices() 写入（>= 0）。
-func bind_world(world, enable_facade: bool = false) -> void:
+##
+## plan/3b-single-read-source：第三参 `world_ext` 是可选的 DCWorldExt 引用。
+##   - 传入非 null（且 gdext 已加载）：facade 21 个 getter 切到 ext.read_*；
+##     write 路径仍走 world（保持 GDScript-DCWorld → MapData CoW 单链路）。
+##   - 传入 null：getter fallback 到 world.read_*，行为 = PR-2.3c 现状。
+##   - 旧调用方（两参签名）：world_ext 默认 null，完全兼容。
+##
+## cid 缓存策略（双数组）：两侧注册表独立 → cid 编号不一定同步。
+##   _cid_array     ← world.component_id(&"cell.xxx")           （setter / fallback read 用）
+##   _cid_array_ext ← world_ext.component_id(&"cell_xxx")       （ext.read_* 用）
+##   cpp_name 一律由 String(gd_name).replace(".", "_") 机械推导——与
+##   component_schema.gd 全部 50 条目的命名约定 1:1 对齐（点→下划线无例外）。
+##   若 ext 这一侧某字段没有注册（理论上不应发生）→ _cid_array_ext[i] = -1，
+##   对应 getter 走 cid >= 0 检查时会回落到 backing 字段，安全降级。
+func bind_world(world, enable_facade: bool = false, world_ext = null) -> void:
 	_world = world
+	_world_ext = world_ext
 	_facade_enabled = enable_facade and (world != null) and (index >= 0)
 	# 填充 cid 缓存（即使 enable_facade=false 也填，给未来 hot reload 切 true 用）
 	if world != null:
 		_cid_array.resize(_CID_COUNT)
+		_cid_array_ext.resize(_CID_COUNT)
 		for i in range(_CID_COUNT):
-			_cid_array[i] = world.component_id(_COMP_NAMES[i])
+			var gd_name: StringName = _COMP_NAMES[i]
+			_cid_array[i] = world.component_id(gd_name)
+			if world_ext != null:
+				# 机械点→下划线推导 cpp_name（与 component_schema.gd 全表约定一致）
+				var cpp_name: StringName = StringName(String(gd_name).replace(".", "_"))
+				_cid_array_ext[i] = int(world_ext.component_id(cpp_name))
+			else:
+				_cid_array_ext[i] = -1
 	else:
 		_cid_array = PackedInt32Array()
+		_cid_array_ext = PackedInt32Array()
 
 ## 解绑（卸载世界 / 重新生成时调用，避免悬空引用）。
 func unbind_world() -> void:
 	_world = null
+	_world_ext = null
 	_facade_enabled = false
 	_cid_array = PackedInt32Array()
+	_cid_array_ext = PackedInt32Array()
 
 
 func is_facade_enabled() -> bool:
@@ -173,6 +219,8 @@ var moisture: float = 0.5:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_MOISTURE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_MOISTURE], index)
 				return _world.read_f32(cid, index)
 		return _moisture_backing
 	set(v):
@@ -216,6 +264,8 @@ var weather_field_initialized: bool = false:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_FIELD_INIT]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_FIELD_INIT], index) > 0
 				return _world.read_u8(cid, index) > 0
 		return _weather_field_initialized_backing
 	set(v):
@@ -230,6 +280,8 @@ var weather_type: int = 0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_TYPE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_TYPE], index)
 				return _world.read_u8(cid, index)
 		return _weather_type_backing
 	set(v):
@@ -244,6 +296,8 @@ var weather_intensity: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_INTENSITY]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_INTENSITY], index)
 				return _world.read_f32(cid, index)
 		return _weather_intensity_backing
 	set(v):
@@ -258,6 +312,8 @@ var weather_cloud: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_CLOUD]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_CLOUD], index)
 				return _world.read_f32(cid, index)
 		return _weather_cloud_backing
 	set(v):
@@ -272,6 +328,8 @@ var weather_precip: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_PRECIP]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_PRECIP], index)
 				return _world.read_f32(cid, index)
 		return _weather_precip_backing
 	set(v):
@@ -286,6 +344,8 @@ var weather_vapor: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_VAPOR]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_VAPOR], index)
 				return _world.read_f32(cid, index)
 		return _weather_vapor_backing
 	set(v):
@@ -300,6 +360,8 @@ var weather_instability: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_INSTABILITY]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_INSTABILITY], index)
 				return _world.read_f32(cid, index)
 		return _weather_instability_backing
 	set(v):
@@ -314,6 +376,8 @@ var weather_convergence: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WEATHER_CONVERGENCE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_CONVERGENCE], index)
 				return _world.read_f32(cid, index)
 		return _weather_convergence_backing
 	set(v):
@@ -334,6 +398,8 @@ var temperature: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP], index)
 				return _world.read_f32(cid, index)
 		return _temperature_backing
 	set(v):
@@ -348,6 +414,8 @@ var snow_cover: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_SNOW_COVER]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_SNOW_COVER], index)
 				return _world.read_f32(cid, index)
 		return _snow_cover_backing
 	set(v):
@@ -373,6 +441,8 @@ var temp_baseline: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP_BASELINE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_BASELINE], index)
 				return _world.read_f32(cid, index)
 		return _temp_baseline_backing
 	set(v):
@@ -387,6 +457,8 @@ var temp_season_offset: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP_SEASON_OFFSET]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_SEASON_OFFSET], index)
 				return _world.read_f32(cid, index)
 		return _temp_season_offset_backing
 	set(v):
@@ -402,6 +474,8 @@ var temp_30d_mean: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP_30D]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_30D], index)
 				return _world.read_f32(cid, index)
 		return _temp_30d_mean_backing
 	set(v):
@@ -416,6 +490,8 @@ var temp_365d_mean: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP_365D]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_365D], index)
 				return _world.read_f32(cid, index)
 		return _temp_365d_mean_backing
 	set(v):
@@ -430,6 +506,8 @@ var temp_dev_from_annual: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_TEMP_ANOMALY]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_ANOMALY], index)
 				return _world.read_f32(cid, index)
 		return _temp_dev_from_annual_backing
 	set(v):
@@ -447,6 +525,8 @@ var _ema_initialized: bool = false:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_EMA_INITIALIZED]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_u8(_cid_array_ext[_CID_EMA_INITIALIZED], index) > 0
 				return _world.read_u8(cid, index) > 0
 		return __ema_initialized_backing
 	set(v):
@@ -480,6 +560,8 @@ var vegetation_vitality: float = 0.7:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VEG_VITALITY]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_VITALITY], index)
 				return _world.read_f32(cid, index)
 		return _vegetation_vitality_backing
 	set(v):
@@ -494,6 +576,8 @@ var _vitality_low_streak: int = 0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VITALITY_LOW_STREAK]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_i32(_cid_array_ext[_CID_VITALITY_LOW_STREAK], index)
 				return _world.read_i32(cid, index)
 		return __vitality_low_streak_backing
 	set(v):
@@ -508,6 +592,8 @@ var _vitality_high_streak: int = 0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VITALITY_HIGH_STREAK]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_i32(_cid_array_ext[_CID_VITALITY_HIGH_STREAK], index)
 				return _world.read_i32(cid, index)
 		return __vitality_high_streak_backing
 	set(v):
@@ -555,6 +641,8 @@ var ocean_current: Vector2 = Vector2.ZERO:
 			var cid_x: int = _cid_array[_CID_OCEAN_CURRENT_X]
 			var cid_y: int = _cid_array[_CID_OCEAN_CURRENT_Y]
 			if cid_x >= 0 and cid_y >= 0:
+				if _world_ext != null:
+					return Vector2(_world_ext.read_f32(_cid_array_ext[_CID_OCEAN_CURRENT_X], index), _world_ext.read_f32(_cid_array_ext[_CID_OCEAN_CURRENT_Y], index))
 				return Vector2(_world.read_f32(cid_x, index), _world.read_f32(cid_y, index))
 		return _ocean_current_backing
 	set(v):
@@ -591,6 +679,8 @@ var wind_vector: Vector2 = Vector2.ZERO:
 			var cid_x: int = _cid_array[_CID_WIND_X]
 			var cid_y: int = _cid_array[_CID_WIND_Y]
 			if cid_x >= 0 and cid_y >= 0:
+				if _world_ext != null:
+					return Vector2(_world_ext.read_f32(_cid_array_ext[_CID_WIND_X], index), _world_ext.read_f32(_cid_array_ext[_CID_WIND_Y], index))
 				return Vector2(_world.read_f32(cid_x, index), _world.read_f32(cid_y, index))
 		return _wind_vector_backing
 	set(v):
@@ -614,6 +704,8 @@ var upwelling_strength: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_UPWELLING_STRENGTH]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_UPWELLING_STRENGTH], index)
 				return _world.read_f32(cid, index)
 		return _upwelling_strength_backing
 	set(v):
@@ -638,6 +730,8 @@ var slp: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_SLP]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_SLP], index)
 				return _world.read_f32(cid, index)
 		return _slp_backing
 	set(v):
@@ -655,6 +749,8 @@ var wind_speed: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_WIND_SPEED]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WIND_SPEED], index)
 				return _world.read_f32(cid, index)
 		return _wind_speed_backing
 	set(v):
@@ -692,6 +788,8 @@ var air_mass_temp_anomaly: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_AIR_MASS_TEMP_ANOM]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_AIR_MASS_TEMP_ANOM], index)
 				return _world.read_f32(cid, index)
 		return _air_mass_temp_anomaly_backing
 	set(v):
@@ -713,6 +811,8 @@ var sea_ice_fraction: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_SEA_ICE_FRAC]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_SEA_ICE_FRAC], index)
 				return _world.read_f32(cid, index)
 		return _sea_ice_fraction_backing
 	set(v):
@@ -734,6 +834,8 @@ var soil_moisture: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_SOIL_MOISTURE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_SOIL_MOISTURE], index)
 				return _world.read_f32(cid, index)
 		return _soil_moisture_backing
 	set(v):
@@ -748,6 +850,8 @@ var vegetation_growth_pressure: float = 0.0:
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
 			if cid >= 0:
+				if _world_ext != null:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_GROWTH_PRESSURE], index)
 				return _world.read_f32(cid, index)
 		return _vegetation_growth_pressure_backing
 	set(v):

@@ -101,6 +101,7 @@ var soil_moisture_arr:                 PackedFloat32Array = PackedFloat32Array()
 var vegetation_growth_pressure_arr:    PackedFloat32Array = PackedFloat32Array()
 var temperature_transport_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 
+
 # ─── Reference-impl Pass #2 (demo-only, performance-charter §12.6) ──
 # 由 World.bind_map_data 在 ClimateProfile.demo_thermal_gradient_enabled
 # == true 时按需 resize 到 N 并 attach；为 false 时保持 size=0（节省 N×4 字节）。

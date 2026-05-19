@@ -97,7 +97,7 @@
    | `orographic_boost` | `1.5` | `2.0` | 山地降雪更多 |
    | `veg_forest_donor` | `0.06` | `0.02` | 冻土森林蒸腾弱 |
    | `veg_desert_donor` | `-0.04` | `-0.08` | 冰原更干燥 |
-   | `vitality_change_rate` | `0.02` | `0.015` | 植被适应更慢 |
+   | `vitality_change_rate` | `0.015` | `0.010` | 植被适应更慢 |
    | `succession_degrade_days` | `30` | `20` | 退化更快 |
 
 3. **在 `MapGenerator.climate_profile` 指向新 `.tres`**：在 Godot 场景树中选中持有 `MapGenerator` 的节点，在 Inspector 的 `climate_profile` 字段拖入 `ice_age.tres`。或在代码里：

@@ -61,12 +61,14 @@ const PhysCircSolverScript = preload("res://scripts/rendering/physical_circulati
 # ─── 分辨率 ───────────────────────────────────────────────────────────────
 const HM_MAX_DIM := 1024  # hex-driven 模式下不需要 2048（hex 网格本身只 60×40，1024 已经远超）
 
-# ─── v9.fbm-opt：共享 noise 贴图（替换 shader 内 value_noise 的 4× hash21 计算） ──
-# 256×256 R8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
-# WorldData.noise_tex 都指向同一张 ImageTexture。shader 端 sampler 配置：
-#   filter_linear（bilinear ≈ value_noise 的 smoothstep mix，肉眼无法区分）
-#   repeat_enable（让 fbm 的多 octave 倍频采样自然 wrap）
-# 然后 value_noise(p) 实现退化为：texture(noise_tex, p / NOISE_TEX_SCALE).r。
+# ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
+# 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
+# WorldData.noise_tex 都指向同一张 ImageTexture。通道约定：
+#   R = raw tileable value noise（兼容 value_noise）
+#   G = 2-octave fBM 预积分
+#   B = 3-octave fBM 预积分
+#   A = 4-octave fBM 预积分
+# shader 端 fbm(p,N) 由 N 次 texture fetch 降为 1 次 texture fetch。
 const NOISE_TEX_SIZE := 256
 const NOISE_TEX_SEED := 0xC0DECAFE
 static var _shared_noise_tex: ImageTexture = null
@@ -142,6 +144,18 @@ var _last_dynamic_cell_sigs: Dictionary = {}  # HexCell → int (packed u32)
 # Ecology visual atlas: RGBA8, same cell-dirty write path as dynamic_cell_atlas.
 var _ecology_visual_atlas_buf: PackedByteArray = PackedByteArray()
 var _ecology_visual_atlas_cache_size: Vector2i = Vector2i.ZERO
+
+# ─── map-visual-overhaul-v1：3 张新 atlas 的 baker 缓存 ───
+# dyn_atlas_smooth：dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物。
+#   单 cell 处理 = 中心 0.5 + 6 邻居均值 0.5；O(N_cells × 7) 一次。
+#   cell-level signature 也走 dirty 路径，但因为受邻居影响，dirty 集合需要膨胀 1 跳。
+var _dyn_atlas_smooth_buf: PackedByteArray = PackedByteArray()
+var _dyn_atlas_smooth_cache_size: Vector2i = Vector2i.ZERO
+var _last_dyn_smooth_cell_sigs: Dictionary = {}  # HexCell → int (smoothed packed u32)
+# ice_state_atlas：R8，每像素 = sea_ice_frac × 255。仅水域 cell 写非零。
+var _ice_state_buf: PackedByteArray = PackedByteArray()
+var _ice_state_cache_size: Vector2i = Vector2i.ZERO
+var _last_ice_state_cell_bytes: Dictionary = {}  # HexCell → int byte
 var _last_ecology_visual_sigs: Dictionary = {}  # HexCell -> int (packed u32)
 var _last_ecology_veg_bytes: Dictionary = {}  # HexCell -> int
 var _last_ecology_vitality_bytes: Dictionary = {}  # HexCell -> int
@@ -161,18 +175,48 @@ static func get_or_build_shared_noise_tex() -> ImageTexture:
 static func _build_noise_tex(size: int, seed_val: int) -> ImageTexture:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
-	var data := PackedByteArray()
-	data.resize(size * size)
+	var raw := PackedByteArray()
+	raw.resize(size * size)
 	for i in range(size * size):
-		data[i] = rng.randi_range(0, 255)
-	# v9.perf：开启 mipmap。fbm 高 octave 在世界坐标里以 ~2.03^N 倍频采样这个 256² 贴图，
-	# 没 mip 时邻近像素跳到完全不同的 texel → cache 抖动 + 视觉 aliasing。
-	# 开 mip 后高频 fbm 自动落到低 mip 上（数据已被预滤波），既快又抗 aliasing。
-	# 注意：create_from_data 第 3 参 mipmaps=true 时要求 data 已包含全部 mip 级别的数据，
-	# 这里只提供了 base level，所以先传 false 建 base 图，再调用 generate_mipmaps() 生成后续级别。
-	var img := Image.create_from_data(size, size, false, Image.FORMAT_R8, data)
+		raw[i] = rng.randi_range(0, 255)
+
+	var data := PackedByteArray()
+	data.resize(size * size * 4)
+	for y in range(size):
+		for x in range(size):
+			var p := Vector2(float(x), float(y))
+			var n1 := _sample_noise_raw(raw, size, p)
+			var n2 := n1 * 0.5 + _sample_noise_raw(raw, size, p * 2.03) * 0.24
+			var n3 := n2 + _sample_noise_raw(raw, size, p * 2.03 * 2.03) * 0.1152
+			var n4 := n3 + _sample_noise_raw(raw, size, p * 2.03 * 2.03 * 2.03) * 0.055296
+			var idx: int = (y * size + x) * 4
+			data[idx] = clampi(int(round(n1 * 255.0)), 0, 255)
+			data[idx + 1] = clampi(int(round(n2 * 255.0)), 0, 255)
+			data[idx + 2] = clampi(int(round(n3 * 255.0)), 0, 255)
+			data[idx + 3] = clampi(int(round(n4 * 255.0)), 0, 255)
+	# v10.noise-pack：开启 mipmap。高频水纹/雪线/植被 dissolve 采样同一张预烘
+	# RGBA fBM 噪声包；mipmap 让远距离/高频采样自动预滤波，降低 cache 抖动和 aliasing。
+	var img := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, data)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+static func _sample_noise_raw(raw: PackedByteArray, size: int, p: Vector2) -> float:
+	var x0 := int(floor(p.x))
+	var y0 := int(floor(p.y))
+	var fx := p.x - float(x0)
+	var fy := p.y - float(y0)
+	var ux := fx * fx * (3.0 - 2.0 * fx)
+	var uy := fy * fy * (3.0 - 2.0 * fy)
+	var a := _noise_raw_at(raw, size, x0, y0)
+	var b := _noise_raw_at(raw, size, x0 + 1, y0)
+	var c := _noise_raw_at(raw, size, x0, y0 + 1)
+	var d := _noise_raw_at(raw, size, x0 + 1, y0 + 1)
+	return lerpf(lerpf(a, b, ux), lerpf(c, d, ux), uy)
+
+static func _noise_raw_at(raw: PackedByteArray, size: int, x: int, y: int) -> float:
+	var xx := posmod(x, size)
+	var yy := posmod(y, size)
+	return float(raw[yy * size + xx]) / 255.0
 
 # ─── Warp 参数 ────────────────────────────────────────────────────────────
 const WARP_AMP := 0.4           # 相对 hex_size，决定 hex 边界扭曲幅度
@@ -433,6 +477,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_ecology_visual_atlas_buf = PackedByteArray()
 	_ecology_visual_atlas_cache_size = Vector2i.ZERO
 	_last_ecology_visual_sigs = {}
+	# map-visual-overhaul-v1：新 atlas 缓存随地图重生失效
+	_dyn_atlas_smooth_buf = PackedByteArray()
+	_dyn_atlas_smooth_cache_size = Vector2i.ZERO
+	_last_dyn_smooth_cell_sigs = {}
+	_ice_state_buf = PackedByteArray()
+	_ice_state_cache_size = Vector2i.ZERO
+	_last_ice_state_cell_bytes = {}
 	_last_ecology_veg_bytes = {}
 	_last_ecology_vitality_bytes = {}
 	_ecology_transition_age_bytes = {}
@@ -492,7 +543,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	print("  latitude: %dms" % (Time.get_ticks_msec() - t))
 
 	# 风/洋流/上升流像素 buffer：先在 hex 域求解物理场，再把 per-cell 真值
-	# 光栅化回 vector_atlas，供主地图海洋 tint、风迹和 WeatherLayer advection 消费。
+	# 光栅化回 vector_atlas，供主地图海洋 tint / 水面风驱细节和 WeatherLayer advection 消费。
+
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
@@ -509,6 +561,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 主地图动态状态 atlas：初始化为当前 cell.temperature/moisture/snow/vitality 快照。
 	rebake_dynamic_cell_atlas_only(map, world)
 	rebake_ecology_visual_atlas_only(map, world)
+	# map-visual-overhaul-v1：新 atlas 初始化（必须在 dynamic_cell_atlas 之后，因为
+	# dyn_atlas_smooth 依赖它的 buffer 做邻接 blur）。
+	rebake_dyn_atlas_smooth(map, world)
+
+	rebake_ice_state_atlas(map, world)
 
 	# 编码纹理：v9.atlas → 9 张 derived 贴图合并成 3 张 atlas + 独立 height_tex
 	t = Time.get_ticks_msec()
@@ -538,7 +595,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 保留 world.upwelling_tex 为 null：shader 在 ocean_current_debug=false 时不采样此 tex，
 	# 不绑定不会渲染异常（hex_renderer 也已改为仅在 debug 开启时 set_shader_parameter）。
 	world.upwelling_tex = null
-	# v9.fbm-opt：共享 noise 贴图（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
+	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
@@ -567,6 +624,8 @@ func rebake_vegetation_tex_only(map: MapData, world: WorldData, hex_size: float)
 # 主地图动态状态 atlas：RGBA8，R=temp, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
 # 使用 world.cell_pixel_lists 按 cell dirty 写入，避免每次重新 cube_round / 逐像素取字段。
 func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionary:
+	# Thin wrapper：保持旧签名 100% 兼容（synthesize_world 初始烘走这条）。
+	# 走完整 chunk_begin → chunk_step(all_cells) → chunk_finalize 三段。
 	var report := {
 		"prepared": false,
 		"dirty": false,
@@ -576,12 +635,26 @@ func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionar
 	}
 	if map == null or world == null:
 		return report
+	var t_us: int = Time.get_ticks_usec()
+	var ctx: Dictionary = dynamic_cell_atlas_chunk_begin(map, world)
+	if not bool(ctx.get("prepared", false)):
+		return report
+	dynamic_cell_atlas_chunk_step(map, world, ctx, map.all_cells(), report)
+	dynamic_cell_atlas_chunk_finalize(world, ctx, report)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
+	return report
+
+
+# ─── dynamic_cell_atlas chunk API ─────────────────────────────────────────────
+func dynamic_cell_atlas_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
+	var ctx: Dictionary = {"prepared": false}
+	if map == null or world == null:
+		return ctx
 	var W: int = world.derived_size.x
 	var H: int = world.derived_size.y
 	var n: int = W * H
 	if n <= 0:
-		return report
-	var t_us: int = Time.get_ticks_usec()
+		return ctx
 	var cache_valid: bool = (_dynamic_cell_atlas_cache_size == Vector2i(W, H) \
 			and _dynamic_cell_atlas_buf.size() == n * 4)
 	if not cache_valid:
@@ -592,9 +665,22 @@ func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionar
 		_dynamic_cell_atlas_buf.fill(0)
 		_dynamic_cell_atlas_cache_size = Vector2i(W, H)
 		_last_dynamic_cell_sigs = {}
+	ctx["prepared"] = true
+	ctx["W"] = W
+	ctx["H"] = H
+	ctx["n"] = n
+	ctx["cache_valid"] = cache_valid
+	ctx["use_pixel_lists"] = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
+	return ctx
 
-	var use_pixel_lists: bool = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
-	for cell in map.all_cells():
+
+func dynamic_cell_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var n: int = int(ctx.n)
+	var cache_valid: bool = bool(ctx.cache_valid)
+	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
+	for cell in cells:
 		if cell == null:
 			continue
 		var sig: int = _dynamic_cell_signature(cell)
@@ -619,6 +705,12 @@ func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionar
 		report.dirty_cells = int(report.dirty_cells) + 1
 		report.pixels_written = int(report.pixels_written) + pixels.size()
 
+
+func dynamic_cell_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var W: int = int(ctx.W)
+	var H: int = int(ctx.H)
 	report.prepared = true
 	report.dirty = int(report.dirty_cells) > 0 or world.dynamic_cell_atlas_tex == null
 	world.dynamic_cell_atlas_buffer = _dynamic_cell_atlas_buf
@@ -628,8 +720,6 @@ func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionar
 			world.dynamic_cell_atlas_tex.update(img)
 		else:
 			world.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img)
-	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
-	return report
 
 func _dynamic_cell_signature(cell: HexCell) -> int:
 	var r: int = _q01_byte(float(cell.temperature))
@@ -641,6 +731,7 @@ func _dynamic_cell_signature(cell: HexCell) -> int:
 # 生态视觉 atlas：RGBA8，derived_size。
 # R=叶量/冠层密度，G=胁迫/干旱，B=植被 enum 变化后的过渡年龄，A=近期生长/受损。
 func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Dictionary:
+	# Thin wrapper：保持旧签名 100% 兼容。chunk_step 走 all_cells，一次性完成。
 	var report := {
 		"prepared": false,
 		"dirty": false,
@@ -650,12 +741,26 @@ func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Diction
 	}
 	if map == null or world == null:
 		return report
+	var t_us: int = Time.get_ticks_usec()
+	var ctx: Dictionary = ecology_visual_atlas_chunk_begin(map, world)
+	if not bool(ctx.get("prepared", false)):
+		return report
+	ecology_visual_atlas_chunk_step(map, world, ctx, map.all_cells(), report)
+	ecology_visual_atlas_chunk_finalize(world, ctx, report)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
+	return report
+
+
+# ─── ecology_visual_atlas chunk API ───────────────────────────────────────────
+func ecology_visual_atlas_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
+	var ctx: Dictionary = {"prepared": false}
+	if map == null or world == null:
+		return ctx
 	var W: int = world.derived_size.x
 	var H: int = world.derived_size.y
 	var n: int = W * H
 	if n <= 0:
-		return report
-	var t_us: int = Time.get_ticks_usec()
+		return ctx
 	var cache_valid: bool = (_ecology_visual_atlas_cache_size == Vector2i(W, H) \
 			and _ecology_visual_atlas_buf.size() == n * 4)
 	if not cache_valid:
@@ -667,9 +772,22 @@ func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Diction
 		_last_ecology_veg_bytes = {}
 		_last_ecology_vitality_bytes = {}
 		_ecology_transition_age_bytes = {}
+	ctx["prepared"] = true
+	ctx["W"] = W
+	ctx["H"] = H
+	ctx["n"] = n
+	ctx["cache_valid"] = cache_valid
+	ctx["use_pixel_lists"] = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
+	return ctx
 
-	var use_pixel_lists: bool = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
-	for cell in map.all_cells():
+
+func ecology_visual_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var n: int = int(ctx.n)
+	var cache_valid: bool = bool(ctx.cache_valid)
+	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
+	for cell in cells:
 		if cell == null:
 			continue
 		var cur_veg: int = int(cell.vegetation) & 0xFF
@@ -686,6 +804,7 @@ func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Diction
 			transition_age = 0
 
 		var sig: int = _ecology_visual_signature(cell, transition_age, prev_vitality_byte)
+		# 注意：辅助字典必须每 cell 都写（无论是否 dirty），否则 transition_age 衰减会丢。
 		_last_ecology_veg_bytes[cell] = cur_veg
 		_last_ecology_vitality_bytes[cell] = cur_vitality_byte
 		_ecology_transition_age_bytes[cell] = transition_age
@@ -710,6 +829,12 @@ func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Diction
 		report.dirty_cells = int(report.dirty_cells) + 1
 		report.pixels_written = int(report.pixels_written) + pixels.size()
 
+
+func ecology_visual_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var W: int = int(ctx.W)
+	var H: int = int(ctx.H)
 	report.prepared = true
 	report.dirty = int(report.dirty_cells) > 0 or world.ecology_visual_atlas_tex == null
 	world.ecology_visual_atlas_buffer = _ecology_visual_atlas_buf
@@ -719,8 +844,6 @@ func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Diction
 			world.ecology_visual_atlas_tex.update(img)
 		else:
 			world.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
-	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
-	return report
 
 func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality_byte: int) -> int:
 	var terrain_id: int = int(cell.terrain)
@@ -760,6 +883,325 @@ func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality
 
 static func _q01_byte(v: float) -> int:
 	return clampi(int(round(clampf(v, 0.0, 1.0) * 255.0)), 0, 255)
+
+# 2026-05-19 Plan-C：海冰专用量化（不影响 temp/moist/snow/vitality 等其他通道）。
+# 当 fraction > 0 时使用 ceil 并保证至少 byte=1，让微量海冰首日就能在 shader
+# smoothstep(0.02, 0.85) 中触发可见。fraction == 0 仍写 0，避免水域全黑像素被错误抬高。
+# 仅由 ice_state_atlas_chunk_step 在海冰写入路径调用。
+static func _q01_byte_ice(v: float) -> int:
+	if v <= 0.0:
+		return 0
+	return clampi(maxi(1, int(ceil(clampf(v, 0.0, 1.0) * 255.0))), 1, 255)
+
+# ─── map-visual-overhaul-v1：3 张新 atlas baker 实现 ─────────────────────────
+#
+# 设计原则与 rebake_dynamic_cell_atlas_only / rebake_ecology_visual_atlas_only
+# 一致：cell-level dirty 缓存 + cell_pixel_lists 像素列表批量写入。新增的"smooth"
+# atlas 在 cell 域做一次 hex 邻接 box blur，shader 端单点采样即可得到跨 cell 平滑
+# 的连续场（消除"颜色按 hex 块切"的硬阶梯，同时主地图 fragment 采样数严格 ≤ 8）。
+#
+# 调用约定：
+# - rebake_dyn_atlas_smooth 必须在 rebake_dynamic_cell_atlas_only 之后调用
+#   （因为它读取 _dynamic_cell_atlas_buf 中已经写入的 byte 作为 blur 输入）。
+# - rebake_ice_state_atlas 与气候/天气日 tick 解耦，每日 climate_system 末尾跑一次即可。
+
+# dyn_atlas_smooth：dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物。
+# 单 cell 处理成本 = 中心 0.5 + 6 邻居均值 0.5；O(N_cells × 7) 加和。
+# 与 rebake_dynamic_cell_atlas_only 同分辨率（derived_size, RGBA8）。
+#
+# Neighbor-aware sig（方案 C v1）：
+# 旧版 sig 用"输出 byte 拼接"做 cache key —— int 除法 + clampi 量化可能淹没真实
+# 邻居变动，造成视觉滞后。改造为"自己 4-byte + 6 邻居 4-byte，FNV-1a 哈希"作 cache
+# sig，保证邻居 sig 任一 bit 变化都能立刻触发本 cell 重算。
+func rebake_dyn_atlas_smooth(map: MapData, world: WorldData) -> Dictionary:
+	# Thin wrapper：保持旧签名 100% 兼容。
+	var report := {
+		"prepared": false,
+		"dirty": false,
+		"dirty_cells": 0,
+		"pixels_written": 0,
+		"elapsed_ms": 0.0,
+	}
+	if map == null or world == null:
+		return report
+	var t_us: int = Time.get_ticks_usec()
+	var ctx: Dictionary = dyn_atlas_smooth_chunk_begin(map, world)
+	if not bool(ctx.get("prepared", false)):
+		return report
+	dyn_atlas_smooth_chunk_step(map, world, ctx, map.all_cells(), report)
+	dyn_atlas_smooth_chunk_finalize(world, ctx, report)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
+	return report
+
+
+# ─── dyn_atlas_smooth chunk API ───────────────────────────────────────────────
+func dyn_atlas_smooth_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
+	var ctx: Dictionary = {"prepared": false}
+	if map == null or world == null:
+		return ctx
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	if n <= 0:
+		return ctx
+	var cache_valid: bool = (_dyn_atlas_smooth_cache_size == Vector2i(W, H) \
+			and _dyn_atlas_smooth_buf.size() == n * 4)
+	if not cache_valid:
+		_dyn_atlas_smooth_buf = PackedByteArray()
+		_dyn_atlas_smooth_buf.resize(n * 4)
+		# 同 dynamic_cell_atlas：全 0 起步，shader 端 dyn_valid step 退回 derived 路径。
+		_dyn_atlas_smooth_buf.fill(0)
+		_dyn_atlas_smooth_cache_size = Vector2i(W, H)
+		_last_dyn_smooth_cell_sigs = {}
+	ctx["prepared"] = true
+	ctx["W"] = W
+	ctx["H"] = H
+	ctx["n"] = n
+	ctx["cache_valid"] = cache_valid
+	ctx["use_pixel_lists"] = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
+	# 复用 _last_dynamic_cell_sigs 加速邻居 sig 查询：调度器保证 dyn_smooth 跑在
+	# dynamic_cell phase 完整完成之后，dict 内值就是本 stride 最新。
+	ctx["cache_dynamic_fresh"] = not _last_dynamic_cell_sigs.is_empty()
+	return ctx
+
+
+func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var n: int = int(ctx.n)
+	var cache_valid: bool = bool(ctx.cache_valid)
+	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
+	var cache_dynamic_fresh: bool = bool(ctx.get("cache_dynamic_fresh", false))
+	for cell in cells:
+		if cell == null:
+			continue
+		# 中心 sig（与 dynamic_cell_atlas 完全相同的 R/G/B/A 量化）。
+		var c_sig: int = _dynamic_cell_signature(cell)
+		var cr: int = c_sig & 0xFF
+		var cg: int = (c_sig >> 8) & 0xFF
+		var cb: int = (c_sig >> 16) & 0xFF
+		var ca: int = (c_sig >> 24) & 0xFF
+		# 邻居均值（最多 6 个；缺失方向不补 0，按实际邻居数取均值，避免边界 cell 被压暗）。
+		var nr: int = 0
+		var ng: int = 0
+		var nb: int = 0
+		var na: int = 0
+		var nc: int = 0
+		# 同时累积 neighbor-aware cache sig：FNV-1a 32-bit，吃 7×4=28 bytes。
+		var hood_h: int = 0x811C9DC5
+		hood_h = ((hood_h ^ (c_sig & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+		hood_h = ((hood_h ^ ((c_sig >> 8) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+		hood_h = ((hood_h ^ ((c_sig >> 16) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+		hood_h = ((hood_h ^ ((c_sig >> 24) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+		for nb_cell in map.get_neighbors(cell):
+			if nb_cell == null:
+				continue
+			# 复用 dynamic_cell phase 刚写好的 cache；冷启用 fallback。
+			var n_sig: int
+			if cache_dynamic_fresh:
+				n_sig = int(_last_dynamic_cell_sigs.get(nb_cell, -1))
+				if n_sig == -1:
+					n_sig = _dynamic_cell_signature(nb_cell)
+			else:
+				n_sig = _dynamic_cell_signature(nb_cell)
+			nr += n_sig & 0xFF
+			ng += (n_sig >> 8) & 0xFF
+			nb += (n_sig >> 16) & 0xFF
+			na += (n_sig >> 24) & 0xFF
+			nc += 1
+			hood_h = ((hood_h ^ (n_sig & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+			hood_h = ((hood_h ^ ((n_sig >> 8) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+			hood_h = ((hood_h ^ ((n_sig >> 16) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+			hood_h = ((hood_h ^ ((n_sig >> 24) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
+
+		# Cache 比对：用 neighbor-aware hood_h（不再用 smooth_sig output byte）。
+		if cache_valid and int(_last_dyn_smooth_cell_sigs.get(cell, -2)) == hood_h:
+			continue
+		_last_dyn_smooth_cell_sigs[cell] = hood_h
+
+		# Cache miss → 真正算 smooth 输出 byte 并写 buffer。
+		var or_: int
+		var og: int
+		var ob: int
+		var oa: int
+		if nc > 0:
+			# 中心 0.5 + 邻居均值 0.5
+			or_ = clampi((cr + nr / nc) / 2, 0, 255)
+			og = clampi((cg + ng / nc) / 2, 0, 255)
+			ob = clampi((cb + nb / nc) / 2, 0, 255)
+			oa = clampi((ca + na / nc) / 2, 0, 255)
+		else:
+			or_ = cr
+			og = cg
+			ob = cb
+			oa = ca
+		var pixels: PackedInt32Array = PackedInt32Array()
+		if use_pixel_lists:
+			pixels = world.cell_pixel_lists.get(cell, PackedInt32Array())
+		for px_idx in pixels:
+			if px_idx < 0 or px_idx >= n:
+				continue
+			var base_px: int = px_idx * 4
+			_dyn_atlas_smooth_buf[base_px] = or_
+			_dyn_atlas_smooth_buf[base_px + 1] = og
+			_dyn_atlas_smooth_buf[base_px + 2] = ob
+			_dyn_atlas_smooth_buf[base_px + 3] = oa
+		report.dirty_cells = int(report.dirty_cells) + 1
+		report.pixels_written = int(report.pixels_written) + pixels.size()
+
+
+func dyn_atlas_smooth_chunk_finalize(world: WorldData, ctx: Dictionary, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var W: int = int(ctx.W)
+	var H: int = int(ctx.H)
+	report.prepared = true
+	report.dirty = int(report.dirty_cells) > 0 or world.dyn_atlas_smooth_tex == null
+	world.dyn_atlas_smooth_buffer = _dyn_atlas_smooth_buf
+	if bool(report.dirty):
+		var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _dyn_atlas_smooth_buf)
+		if world.dyn_atlas_smooth_tex != null and world.dyn_atlas_smooth_tex.get_size() == Vector2(float(W), float(H)):
+			world.dyn_atlas_smooth_tex.update(img)
+		else:
+			world.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img)
+
+
+# ice_state_atlas：R8，每像素 = 该 cell.sea_ice_frac × 255。仅水域 cell 写非零，
+# 陆地恒 0。shader 据此替换原 lat-driven 静态 ice mask（病灶 A 解药）。
+# 走 cell-level byte dirty 缓存（与 bake_sea_ice_fraction_only 同构但本路径独立，
+# 因为目标 buffer 不同 + shader uniform 不同）。
+func rebake_ice_state_atlas(map: MapData, world: WorldData) -> Dictionary:
+	# Thin wrapper：保持旧签名 100% 兼容。
+	var report := {
+		"prepared": false,
+		"dirty": false,
+		"dirty_cells": 0,
+		"pixels_written": 0,
+		"elapsed_ms": 0.0,
+	}
+	if map == null or world == null:
+		return report
+	var t_us: int = Time.get_ticks_usec()
+	var ctx: Dictionary = ice_state_atlas_chunk_begin(map, world)
+	if not bool(ctx.get("prepared", false)):
+		return report
+	# Cell 来源：优先 water_cell_pixel_lists.keys()；fallback 走 all_cells + 过滤。
+	var cells = ice_state_atlas_default_cell_source(map, world, ctx)
+	ice_state_atlas_chunk_step(map, world, ctx, cells, report)
+	ice_state_atlas_chunk_finalize(world, ctx, report)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t_us) / 1000.0
+	return report
+
+
+# ─── ice_state_atlas chunk API ────────────────────────────────────────────────
+func ice_state_atlas_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
+	var ctx: Dictionary = {"prepared": false}
+	if map == null or world == null:
+		return ctx
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	if n <= 0:
+		return ctx
+	var cache_valid: bool = (_ice_state_cache_size == Vector2i(W, H) \
+			and _ice_state_buf.size() == n)
+	if not cache_valid:
+		_ice_state_buf = PackedByteArray()
+		_ice_state_buf.resize(n)
+		_ice_state_buf.fill(0)
+		_ice_state_cache_size = Vector2i(W, H)
+		_last_ice_state_cell_bytes = {}
+	var lists: Dictionary = world.water_cell_pixel_lists
+	var use_water_lists: bool = lists != null and not lists.is_empty()
+	ctx["prepared"] = true
+	ctx["W"] = W
+	ctx["H"] = H
+	ctx["n"] = n
+	ctx["cache_valid"] = cache_valid
+	ctx["use_water_lists"] = use_water_lists
+	ctx["use_pixel_lists"] = world.cell_pixel_lists != null and not world.cell_pixel_lists.is_empty()
+	return ctx
+
+
+# 默认 cell 数据源：根据 ctx 选择 water_cell_pixel_lists 或 all_cells。
+# 调度器（DynamicVisualAtlasUploadSystem）会在 phase 入口快照这份序列做切片。
+func ice_state_atlas_default_cell_source(map: MapData, world: WorldData, ctx: Dictionary) -> Array:
+	if not bool(ctx.get("prepared", false)):
+		return []
+	if bool(ctx.use_water_lists):
+		return world.water_cell_pixel_lists.keys()
+	return map.all_cells()
+
+
+func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var n: int = int(ctx.n)
+	var cache_valid: bool = bool(ctx.cache_valid)
+	var use_water_lists: bool = bool(ctx.use_water_lists)
+	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
+	if use_water_lists:
+		var lists: Dictionary = world.water_cell_pixel_lists
+		for cell in cells:
+			if cell == null:
+				continue
+			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
+			if cache_valid and int(_last_ice_state_cell_bytes.get(cell, -1)) == byte_v:
+				continue
+			_last_ice_state_cell_bytes[cell] = byte_v
+			var pixels: PackedInt32Array = lists.get(cell, PackedInt32Array())
+			for px_idx in pixels:
+				if px_idx < 0 or px_idx >= n:
+					continue
+				_ice_state_buf[px_idx] = byte_v
+			report.dirty_cells = int(report.dirty_cells) + 1
+			report.pixels_written = int(report.pixels_written) + pixels.size()
+	else:
+		# Fallback：扫所有 cell 但只处理水格。
+		for cell in cells:
+			if cell == null or not bool(cell.passable_sea):
+				continue
+			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
+			if cache_valid and int(_last_ice_state_cell_bytes.get(cell, -1)) == byte_v:
+				continue
+			_last_ice_state_cell_bytes[cell] = byte_v
+			var pixels: PackedInt32Array = PackedInt32Array()
+			if use_pixel_lists:
+				pixels = world.cell_pixel_lists.get(cell, PackedInt32Array())
+			for px_idx in pixels:
+				if px_idx < 0 or px_idx >= n:
+					continue
+				_ice_state_buf[px_idx] = byte_v
+			report.dirty_cells = int(report.dirty_cells) + 1
+			report.pixels_written = int(report.pixels_written) + pixels.size()
+
+
+func ice_state_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report: Dictionary) -> void:
+	if not bool(ctx.get("prepared", false)):
+		return
+	var W: int = int(ctx.W)
+	var H: int = int(ctx.H)
+	report.prepared = true
+	report.dirty = int(report.dirty_cells) > 0 or world.ice_state_tex == null
+	# === Plan-C diag (临时) === 检查 ice_state byte 是否真有非零 & 是否上传
+	var _ice_max: int = 0
+	var _ice_nz: int = 0
+	for _b in _ice_state_buf:
+		if int(_b) > 0:
+			_ice_nz += 1
+			if int(_b) > _ice_max:
+				_ice_max = int(_b)
+	print("[plan-c/ice_tex] dirty_cells=%d pixels_written=%d nonzero_px=%d max_byte=%d will_upload=%s tex_exists=%s" % [
+		int(report.dirty_cells), int(report.pixels_written), _ice_nz, _ice_max, str(bool(report.dirty)), str(world.ice_state_tex != null)])
+	# === end diag ===
+	world.ice_state_buffer = _ice_state_buf
+	if bool(report.dirty):
+		var img := Image.create_from_data(W, H, false, Image.FORMAT_R8, _ice_state_buf)
+		if world.ice_state_tex != null and world.ice_state_tex.get_size() == Vector2(float(W), float(H)):
+			world.ice_state_tex.update(img)
+		else:
+			world.ice_state_tex = ImageTexture.create_from_image(img)
+
 
 func get_last_enum_atlas_upload_report() -> Dictionary:
 	return _last_enum_atlas_upload_report.duplicate(true)
@@ -2608,7 +3050,9 @@ func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, 
 		var cell: HexCell = map.cell_at(i)
 		var b: int = 0
 		if cell != null and _is_water(cell.terrain):
-			b = int(round(clampf(float(cell.sea_ice_fraction), 0.0, 1.0) * 255.0))
+			# 2026-05-19 Plan-C：使用 _q01_byte_ice 量化兜底，让微量海冰首日可见。
+			# 与 ice_state_atlas_chunk_step 的语义一致（fraction>0 → byte≥1）。
+			b = _q01_byte_ice(float(cell.sea_ice_fraction))
 		cell_bytes[i] = b
 		if _last_sea_ice_cell_bytes_packed.size() <= i or int(_last_sea_ice_cell_bytes_packed[i]) != b:
 			dirty_cells += 1

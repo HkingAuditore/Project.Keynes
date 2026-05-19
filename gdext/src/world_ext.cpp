@@ -242,6 +242,40 @@ PackedByteArray DCWorldExt::snapshot_u8(int comp_id) {
     return s.arr_u8;
 }
 
+// ─── Mode-B per-cell read API（plan/3b-single-read-source）──────────────────
+// HexCell facade 21 个 hot getter 的 read 源。直接读 _slots[comp_id].arr_*.ptr()
+// 配整数索引；不分配、不装箱、不 CoW。每次调用 ~0.5-1μs（DCWorldExt 跨界开销主导，
+// 内部读操作 < 10ns）。
+//
+// dtype 兼容性：F32 slot 同时接受 DT_F32 / DT_VEC2_F32 / DT_VEC3_F32（前两者
+// 都把 arr_f32 作为底层 buffer——VEC2 cid 由调用方按 idx*2 / idx*2+1 索引）。
+// 与 view_f32 / snapshot_f32 的 dtype 检查策略保持一致。
+float DCWorldExt::read_f32(int comp_id, int idx) const {
+    if (comp_id < 0 || comp_id >= _slots.size()) return 0.0f;
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::F32) return 0.0f;
+    if (idx < 0 || idx >= s.arr_f32.size()) return 0.0f;
+    return s.arr_f32.ptr()[idx];
+}
+
+int32_t DCWorldExt::read_i32(int comp_id, int idx) const {
+    if (comp_id < 0 || comp_id >= _slots.size()) return 0;
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::I32) return 0;
+    if (idx < 0 || idx >= s.arr_i32.size()) return 0;
+    return s.arr_i32.ptr()[idx];
+}
+
+int DCWorldExt::read_u8(int comp_id, int idx) const {
+    if (comp_id < 0 || comp_id >= _slots.size()) return 0;
+    const Slot &s = _slots[comp_id];
+    if (s.dtype != SlotDType::U8) return 0;
+    if (idx < 0 || idx >= s.arr_u8.size()) return 0;
+    return static_cast<int>(s.arr_u8.ptr()[idx]);
+}
+
+
+
 // ─── Hot-path writes ──────────────────────────────────────────────────────
 //
 // Pattern these replace (legacy / GDScript-DCWorld-only):
@@ -3992,12 +4026,16 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
             compat = std::exp(-k);
         }
 
-        // dv (asymmetric drift + dead zone in (0.4, 0.6); NONE skipped)
+        // dv (asymmetric drift + tiny dead zone in (0.48, 0.52); NONE skipped)
+        // vegetation-survival-rebalance v2 (方案 B 收窄死区)：
+        //   compat ≥ 0.52 → 正向恢复
+        //   compat ≤ 0.48 → 负向退化，乘 harshness
+        //   compat ∈ (0.48, 0.52) → 死区 dv = 0（仅过滤数值噪声）
         float dv = 0.0f;
         if (v_id != veg_none_id) {
-            if (compat >= 0.6f) {
+            if (compat >= 0.52f) {
                 dv = (compat - 0.5f) * 2.0f * rate;
-            } else if (compat <= 0.4f) {
+            } else if (compat <= 0.48f) {
                 dv = -(0.5f - compat) * 2.0f * rate * harshness;
             }
         }
@@ -4584,9 +4622,9 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
             float dv = 0.0f;
             if (v_id != veg_none_id) {
-                if (compat >= 0.6f) {
+                if (compat >= 0.52f) {
                     dv = (compat - 0.5f) * 2.0f * rate;
-                } else if (compat <= 0.4f) {
+                } else if (compat <= 0.48f) {
                     dv = -(0.5f - compat) * 2.0f * rate * harshness;
                 }
             }
@@ -8954,6 +8992,13 @@ void DCWorldExt::_bind_methods() {
     // B3b：snapshot_i32 / snapshot_u8 给 streak（I32）+ 后续 save/overlay 补齐
     ClassDB::bind_method(D_METHOD("snapshot_i32", "comp_id"), &DCWorldExt::snapshot_i32);
     ClassDB::bind_method(D_METHOD("snapshot_u8",  "comp_id"), &DCWorldExt::snapshot_u8);
+
+    // Mode-B per-cell read API（plan/3b-single-read-source；HexCell facade
+    // 21 hot getter 的 read 源——结构性消除 C++ flush 与 GDScript-DCWorld
+    // SoA 脱钩类 bug，sea_ice_frac 冻结 + weather/climate/wind/ocean 同款 12 处）。
+    ClassDB::bind_method(D_METHOD("read_f32", "comp_id", "idx"), &DCWorldExt::read_f32);
+    ClassDB::bind_method(D_METHOD("read_i32", "comp_id", "idx"), &DCWorldExt::read_i32);
+    ClassDB::bind_method(D_METHOD("read_u8",  "comp_id", "idx"), &DCWorldExt::read_u8);
 
     ClassDB::bind_method(D_METHOD("write_f32", "comp_id", "idx", "v"), &DCWorldExt::write_f32);
     ClassDB::bind_method(D_METHOD("write_i32", "comp_id", "idx", "v"), &DCWorldExt::write_i32);

@@ -95,6 +95,20 @@ public:
     godot::PackedInt32Array   snapshot_i32(int comp_id);
     godot::PackedByteArray    snapshot_u8(int comp_id);
 
+    // ─── Mode-B per-cell read API（plan/3b-single-read-source）─────────
+    // 单元素直读：从 _slots[comp_id].arr_*.ptr() 直接索引，无 Variant 装箱、
+    // 无 PackedArray 拷贝。供 HexCell facade 21 个 hot getter 切换 read 源
+    // （由 GDScript-DCWorld 改读 C++ slot），结构性消除"C++ flush 与
+    // GDScript-DCWorld SoA 脱钩"类 bug（典型表现：cell.sea_ice_frac 冻结
+    // 在初始日值）。
+    //
+    // 越界 / dtype 不匹配 / comp_id 非法 → 返回 0；不 push_error
+    // （与 GDScript DCWorld.read_f32 严厉报警不同，hot getter 容忍静默 0，
+    //  避免每帧 2400 cell × 21 字段量级的错误风暴）。
+    float   read_f32(int comp_id, int idx) const;
+    int32_t read_i32(int comp_id, int idx) const;
+    int     read_u8 (int comp_id, int idx) const; // 返回 int（与 write_u8 对称）
+
     // ─── Hot-path writes (replaces `view_xxx(c)[i] = v` pattern) ─────────
     // Single-element writes; bounds-checked, no-op on invalid args.
     void write_f32(int comp_id, int idx, float v);

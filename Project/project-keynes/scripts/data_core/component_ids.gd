@@ -108,6 +108,7 @@ const CELL_SOIL_MOISTURE: StringName             = &"cell.soil_moisture"        
 const CELL_VEGETATION_GROWTH_PRESSURE: StringName = &"cell.vegetation_growth_pressure" # f32
 const CELL_TEMPERATURE_TRANSPORT_ANOMALY: StringName = &"cell.temperature_transport_anomaly" # f32
 
+
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用
 #   命名空间。任何真实游戏机制（climate / weather / biome / vegetation / UI

@@ -758,6 +758,10 @@ var _weather_refresh_job: WeatherRefreshJob = null
 # 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
 var _sea_ice_atlas_upload_job = null
 var _dynamic_visual_atlas_upload_job = null
+# 2026-05-19：dynamic/ecology/smooth/ice 四张 atlas 的上传 stride（默认 2 仿真日）。
+# HexRenderer 通过 set_dyn_atlas_upload_stride() 在运行时调整；构造期前若 hex_renderer
+# 已先 setter 过来，这里会持久化为非 2 的值。
+var _dyn_atlas_upload_stride: int = 2
 var _enum_atlas_upload_job = null
 var _native_daily_sim_job = null
 var _native_daily_configured: bool = false
@@ -999,20 +1003,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		if cp_dc != null and "demo_thermal_gradient_enabled" in cp_dc:
 			demo_tg_on = bool(cp_dc.demo_thermal_gradient_enabled)
 		_data_core_world.bind_map_data(map, demo_tg_on)
-		# PR-2.3a HexCell facade infra：bake_world / 加载存档末尾给每个 cell 注入 world
-		# 引用 + facade flag。默认 use_hexcell_facade=false（向后兼容），PR-2.3b 给热字段
-		# 加 property setter/getter 后可灰度开启（master 手册 §3.10.3）。
-		var _facade_on: bool = false
-		if cp_dc != null and "use_hexcell_facade" in cp_dc:
-			_facade_on = bool(cp_dc.use_hexcell_facade)
-		var _cell_arr_for_bind: Array = map._cell_array
-		var _n_cells_for_bind: int = _cell_arr_for_bind.size()
-		for _ci in range(_n_cells_for_bind):
-			var _c_for_bind = _cell_arr_for_bind[_ci]
-			if _c_for_bind != null and _c_for_bind.has_method("bind_world"):
-				_c_for_bind.bind_world(_data_core_world, _facade_on)
-		if _facade_on:
-			print("[hex_cell] facade ENABLED (use_hexcell_facade=true; %d cells bound)" % _n_cells_for_bind)
 	_sus.bind_world(_data_core_world)
 
 	# DataCore World — C++ co-processor（dots-roadmap-to-gdextension 务实 A）。
@@ -1047,6 +1037,27 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			# GDExtension 没加载（开发机没编译 gdext / 平台不支持等），完全降级。
 			# 不打 error 避免噪声，main.gd 的 [DataCore] flags 那行已能体现整体路径。
 			print("[DataCore] DCWorldExt class not registered (gdext unavailable); climate Pass-A will use DataCore/GDScript path only")
+
+	# PR-2.3a HexCell facade infra：bake_world / 加载存档末尾给每个 cell 注入 world
+	# 引用 + facade flag。默认 use_hexcell_facade=false（向后兼容），PR-2.3b 给热字段
+	# 加 property setter/getter 后可灰度开启（master 手册 §3.10.3）。
+	#
+	# plan/3b-single-read-source：本段已从 _data_core_world 创建紧后移到此处，
+	# 在 _data_core_world_ext 创建之后才 bind，使第 3 参 world_ext 能正确传入。
+	# 当 ext 为 null（gdext 未编译 / bind_map_data 失败）时退化为旧 2 参行为，
+	# facade getter 走 _world.read_*，与 PR-2.3c 实现 100% 等价。
+	if dc_enabled:
+		var _facade_on: bool = false
+		if cp_dc != null and "use_hexcell_facade" in cp_dc:
+			_facade_on = bool(cp_dc.use_hexcell_facade)
+		var _cell_arr_for_bind: Array = map._cell_array
+		var _n_cells_for_bind: int = _cell_arr_for_bind.size()
+		for _ci in range(_n_cells_for_bind):
+			var _c_for_bind = _cell_arr_for_bind[_ci]
+			if _c_for_bind != null and _c_for_bind.has_method("bind_world"):
+				_c_for_bind.bind_world(_data_core_world, _facade_on, _data_core_world_ext)
+		if _facade_on:
+			print("[hex_cell] facade ENABLED (use_hexcell_facade=true; %d cells bound; ext=%s)" % [_n_cells_for_bind, str(_data_core_world_ext != null)])
 	# DOTS-Final-Push 修复：把 ClimateProfile 直接注入 MapBaker。
 	# 历史上 sea_ice prepare / albedo / veg_dyn / feedback 通过 `world.get("config")`
 	# 取 cp 永远拿到 null（WorldData 上没有 config 字段），导致 use_native 一直 false，
@@ -1238,7 +1249,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		"elapsed_ms": 0.0,
 		"reason": "shader_temperature_derived",
 	}
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, 2)
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1338,6 +1349,15 @@ func get_sus_bootstrap() -> RefCounted:
 	return _sus_bootstrap
 
 
+## 2026-05-19：dynamic/ecology/smooth/ice atlas 上传 stride 的运行时调整入口。
+## HexRenderer.set_dyn_atlas_upload_stride() 反向调用过来；如果 _setup_sus 还没
+## 跑过（_dynamic_visual_atlas_upload_job == null），先存到字段，等下次 setup 用。
+func set_dyn_atlas_upload_stride(p_stride: int) -> void:
+	_dyn_atlas_upload_stride = clampi(p_stride, 1, 8)
+	if _dynamic_visual_atlas_upload_job != null and _dynamic_visual_atlas_upload_job.has_method("reconfigure"):
+		_dynamic_visual_atlas_upload_job.reconfigure(_dyn_atlas_upload_stride)
+
+
 ## main.gd 在 _ready 末尾调用，让 OceanCurrentsJob 拿到 season_phase 连续浮点。
 func set_world_clock_ref(world_clock_node) -> void:
 	_world_clock_ref = world_clock_node
@@ -1431,7 +1451,7 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 		"elapsed_ms": 0.0,
 		"reason": "shader_temperature_derived",
 	}
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, 2)
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -2274,6 +2294,14 @@ func sus_report_job_stats() -> Dictionary:
 		return {}
 	return _sus.report_job_stats()
 
+
+# 2026-05-19：透传 SUS 滚动窗口的 skipped reason 累计 + max_ms。
+# 用途：DebugConsole 快照导出 + 性能分析时识别"长期被节流"的 Job。
+func sus_report_skipped_summary() -> Dictionary:
+	if _sus == null or not _sus.has_method("report_skipped_summary"):
+		return {}
+	return _sus.report_skipped_summary()
+
 # 把当前 cell.terrain 作为"年均基线"保存。
 # base_moisture 已在 _generate_cells 内、雨影 / 河岸生态之前快照。
 # refresh_seasonal 每次从这两个基线出发应用季节扰动，避免跨季累积漂移。
@@ -2770,13 +2798,23 @@ func _alt_penalty(elevation: float) -> float:
 #   - 高山段用 temp 0.72→0.28 和 land_h 0.22→0.90 的双 smoothstep，
 #     让暖季高山雪盖退成斑驳，而不是只要进 MOUNTAIN 就终年全白。
 # 输入 land_h 由 caller 用 sea_level 归一化后传入，避免在此重复算。
+# 2026-05-19 Plan-C 调参：cold_snow 雪线带从 [0.26, 0.52]×0.50 收窄到 [0.30, 0.48]×0.55。
+# 配合 season_temp_amp 0.20→0.32 的振幅放大，让中高纬地块在春秋出现真正的雪线过渡态，
+# 而不是终年同色。SAME_SOURCE 锚点：
+#   - shader: shaders/include/snow_cover.gdshaderinc::apply_snow_cover (cold_lo/cold_hi)
+#   - 本文件 fast-path 复刻：行 ~5781（_apply_climate_daily_pass_fast 内）
 func _derived_snow_cover(temp_now: float, land_h: float, terrain: int, cover: int) -> float:
+	# 2026-05-19 Plan-C 二次调参（日志诊断后）：
+	# 现象：season_temp_amp=0.32 + 雪线带 [0.30, 0.48] 宽度仅 0.18 → 季节振幅(0.64)
+	# 是过渡带 3.6 倍 → 单 cell 只在春秋很短的窗口里看到"半雪"，其余时间全有/全无。
+	# 修复：把雪线带拉宽到 [0.20, 0.60]（0.40），中纬冬季满白、春秋稳定过渡、
+	#       夏季中高纬挂薄雪、赤道全年无雪。amount 上提 0.55→0.70 强化对比。
 	var snow_cover: float = 0.0
 	if terrain == TerrainType.TERRAIN.SNOW:
-		snow_cover = (1.0 - smoothstep(0.28, 0.58, temp_now)) * 0.70
-	var cold_snow: float = (1.0 - smoothstep(0.26, 0.52, temp_now)) * 0.50
+		snow_cover = (1.0 - smoothstep(0.22, 0.62, temp_now)) * 0.80
+	var cold_snow: float = (1.0 - smoothstep(0.20, 0.60, temp_now)) * 0.70
 	var altitude_w: float = smoothstep(0.22, 0.90, land_h)
-	var alpine_temp_w: float = 1.0 - smoothstep(0.28, 0.72, temp_now)
+	var alpine_temp_w: float = 1.0 - smoothstep(0.20, 0.85, temp_now)
 	var alpine_snow: float = altitude_w * alpine_temp_w * 0.92
 	snow_cover = max(snow_cover, max(cold_snow, alpine_snow))
 	if cover == CoverType.CV.GLACIER and snow_cover < 0.80:
@@ -4963,6 +5001,25 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	var hysteresis: float = float(cp.sea_ice_terrain_hysteresis)
 	var ice_delay: float = float(_last_cfg.OCEAN_CURRENT_ICE_DELAY)
 
+	# ─── map-visual-overhaul-v1：climate_anomaly 联动（极区可见缩水） ──────────
+	# climate_anomaly > 0 → 长期升温 → 海冰冻结/融化阈值同步下调 → 极地白圈缩水。
+	# 等价于"温度抬升 anomaly_strength * climate_anomaly"，但走阈值下调更安全
+	# （不污染 SoA temp_arr / cell.temperature），且对 GDExt C++ 路径透明
+	# （C++ 端接收的 t_form/t_melt 已带偏移）。系数 0.10 实测：
+	#   climate_anomaly = +0.20 → 阈值下调 0.02 → 极地白圈缩约 1-2 hex 圈
+	#   climate_anomaly = -0.20 → 阈值上调 0.02 → 中纬冬季冰扩约 1 hex 圈
+	# 区间内对玩家明显可见但不至于剧烈跳变。
+	var sea_ice_climate_anomaly_strength: float = 0.10
+	var climate_anomaly_now: float = 0.0
+	if _world_clock_ref != null:
+		var ca_v = _world_clock_ref.get("climate_anomaly")
+		if ca_v != null:
+			climate_anomaly_now = float(ca_v)
+	if not is_equal_approx(climate_anomaly_now, 0.0):
+		var ice_thr_shift: float = sea_ice_climate_anomaly_strength * climate_anomaly_now
+		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
+		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
+
 	# ─── Phase F.4：DCWorldExt C++ 快路径（charter §7 P2，5.1ms → 0.5ms）─
 	# 触发条件：
 	#   1. ClimateProfile.use_gdext_sea_ice == true
@@ -5106,6 +5163,85 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var t_native_us: int = Time.get_ticks_usec()
 		var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
 		var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
+		# === Plan-C diag (临时) === 检查 CPU 端海冰浮点是否真的在动
+		if Engine.get_process_frames() % 60 == 0:
+			var _max_f: float = 0.0
+			var _nonzero: int = 0
+			for _ci in range(n_cells_fast):
+				var _f: float = float(cells_fast[_ci].sea_ice_fraction)
+				if _f > 0.0:
+					_nonzero += 1
+					if _f > _max_f:
+						_max_f = _f
+			# 同时读 map.sea_ice_frac_arr（C++ flush 的目标）做对比
+			var _arr_max: float = 0.0
+			var _arr_nonzero: int = 0
+			var _arr_size: int = map.sea_ice_frac_arr.size()
+			for _ai in range(_arr_size):
+				var _af: float = float(map.sea_ice_frac_arr[_ai])
+				if _af > 0.0:
+					_arr_nonzero += 1
+					if _af > _arr_max: _arr_max = _af
+			# facade 是否启用？
+			var _facade_on: bool = false
+			if n_cells_fast > 0 and cells_fast[0] != null:
+				_facade_on = cells_fast[0].is_facade_enabled()
+			# 温度统计
+			var _t_min: float = 1.0e9
+			var _t_max: float = -1.0e9
+			var _t_sum: float = 0.0
+			var _t_n: int = 0
+			var _t_below_form: int = 0
+			var _t_below_form_water: int = 0
+			for _ti in range(n_cells_fast):
+				var _t: float = float(temp_input[_ti])
+				_t_sum += _t
+				_t_n += 1
+				if _t < _t_min: _t_min = _t
+				if _t > _t_max: _t_max = _t
+				if _t < t_form:
+					_t_below_form += 1
+					if int(base_terrain_input[_ti]) in [int(TerrainType.TERRAIN.OCEAN), int(TerrainType.TERRAIN.COAST), int(TerrainType.TERRAIN.SEA_ICE)]:
+						_t_below_form_water += 1
+			var _t_mean: float = (_t_sum / float(_t_n)) if _t_n > 0 else 0.0
+			print("[plan-c/sea_ice] frame=%d season_phase=%.3f rc=%.3f t_form=%.3f t_melt=%.3f k_freeze=%.3f k_melt=%.3f thr=%.3f hys=%.3f nonzero=%d max_frac=%.3f" % [
+				Engine.get_process_frames(), season_phase, rc, t_form, t_melt, k_freeze, k_melt, threshold, hysteresis, _nonzero, _max_f])
+			print("[plan-c/temp_in] t_min=%.3f t_max=%.3f t_mean=%.3f below_t_form=%d below_t_form_water=%d temp_input_size=%d" % [
+				_t_min, _t_max, _t_mean, _t_below_form, _t_below_form_water, temp_input.size()])
+			# 2026-05-19 plan-c：极点温度抽样诊断（4 个 water cell：最北 / 最南 / 25%N / 75%S 各 1）
+			# 目的：定位"南北极同时白"的真因——是季节信号反相？是 _insol_dev 极区截断？
+			var _poles_dump: PackedStringArray = PackedStringArray()
+			var _pole_ny_targets: PackedFloat32Array = PackedFloat32Array([0.02, 0.25, 0.75, 0.98])
+			for _pole_t in _pole_ny_targets:
+				var _best_i: int = -1
+				var _best_d: float = 1.0e9
+				for _pi in range(n_cells_fast):
+					if int(base_terrain_input[_pi]) != int(TerrainType.TERRAIN.OCEAN) \
+							and int(base_terrain_input[_pi]) != int(TerrainType.TERRAIN.SEA_ICE):
+						continue
+					var _ny_pi: float = _cube_row_norm(cells_fast[_pi], _last_cfg)
+					var _d: float = absf(_ny_pi - _pole_t)
+					if _d < _best_d:
+						_best_d = _d
+						_best_i = _pi
+				if _best_i < 0:
+					_poles_dump.append("ny~%.2f=NONE" % _pole_t)
+					continue
+				var _c_pi: HexCell = cells_fast[_best_i]
+				var _ny_v: float = _cube_row_norm(_c_pi, _last_cfg)
+				_poles_dump.append("ny=%.2f temp=%.3f baseline=%.3f off=%.3f sif=%.3f terr=%d" % [
+					_ny_v, float(temp_input[_best_i]), _c_pi.temp_baseline,
+					_c_pi.temp_season_offset, _c_pi.sea_ice_fraction, int(_c_pi.terrain)])
+			print("[plan-c/poles] phase=%.3f | %s" % [season_phase, " | ".join(_poles_dump)])
+			# 关键对比：map.sea_ice_frac_arr (C++ flush target) vs cell.sea_ice_fraction (facade getter)
+			# 以及 C++ 给的统计数字
+			var _w_cpp: int = int(knobs.get("stat_water_count", -1))
+			var _f_cpp: int = int(knobs.get("stat_flipped_count", -1))
+			var _has_flip_list: bool = knobs.has("flip_to_ice_list")
+			var _flip_list_n: int = (knobs.get("flip_to_ice_list", PackedInt32Array()) as PackedInt32Array).size() if _has_flip_list else -1
+			print("[plan-c/flush] facade=%s map.arr_size=%d arr_nonzero=%d arr_max=%.3f cells_nonzero=%d cells_max=%.3f cpp_water=%d cpp_flipped=%d flip_list_n=%d" % [
+				str(_facade_on), _arr_size, _arr_nonzero, _arr_max, _nonzero, _max_f, _w_cpp, _f_cpp, _flip_list_n])
+		# === end diag ===
 		if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 3:
 			print("[sea_ice/F.4] DEBUG call#%d: rc=%.4f n_cells=%d enable_oht=%s" % [
 				_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
@@ -5115,11 +5251,15 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			# C++ 已写 cell_sea_ice_frac SoA + flush 回 MapData。
 			# HexCell facade 开启时 sea_ice_fraction getter 直接读 SoA；不再全图
 			# 回写 2400 个 cell setter。只在 facade 未启用的 fallback 场景才同步。
+			#
+			# 2026-05-19 plan-c 修复：C++ run_sea_ice_daily_pass 的 flush 写的是
+			# map.sea_ice_frac_arr（GDScript MapData PackedFloat32Array），**不写
+			# DCWorld 的 cell.sea_ice_frac SoA**。而 facade getter 读的恰好是
+			# DCWorld SoA → 两边脱钩，cell.sea_ice_fraction 永远停留在启动初值。
+			# 解决：永远走 sync 循环，setter 会自动把值写回 DCWorld SoA（facade
+			# 启用时）和 _backing（兜底）。开销 ~0.5ms/2400 cell，可接受。
 			var t_sync_us: int = Time.get_ticks_usec()
-			var sync_needed: bool = true
-			if n_cells_fast > 0:
-				var c_probe: HexCell = cells_fast[0]
-				sync_needed = c_probe != null and not c_probe.is_facade_enabled()
+			var sync_needed: bool = true  # 强制 true：见上方注释
 			if sync_needed:
 				for i_sync in range(n_cells_fast):
 					var c_sync: HexCell = cells_fast[i_sync]
@@ -5127,19 +5267,36 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			var sync_ms: float = (Time.get_ticks_usec() - t_sync_us) / 1000.0
 
 			# 应用 flip 列表
+			# 2026-05-19 plan-c 修复：apply_terrain 只写 GDScript HexCell.terrain（裸 var），
+			# 不会同步到 map.terrain_arr。下次 sea_ice pass 调用 refresh_slots_from_map 时，
+			# C++ s_terrain.arr_u8 会从 map.terrain_arr 拿到 bake 时的旧 OCEAN，导致：
+			#   1) was_ice 永远 false → flip_to_base_list 永远空 → 冰永远翻不回 OCEAN
+			#   2) 已 flip 的 cell 被 C++ 重判为 "non-ice 且 sif>=thr" → 重复加入 flip_to_ice
+			# 修复：apply 同步写 map.terrain_arr，让 C++ 下一帧看到最新 terrain。
+			# 开销：flip_list 通常 <300，O(n) 写入 ~几 μs，可忽略。
 			var t_flip_us: int = Time.get_ticks_usec()
 			var flip_to_ice_list: PackedInt32Array = knobs.get("flip_to_ice_list", PackedInt32Array())
 			var flip_to_base_list: PackedInt32Array = knobs.get("flip_to_base_list", PackedInt32Array())
 			var flip_to_base_terrain: PackedByteArray = knobs.get("flip_to_base_terrain", PackedByteArray())
+			var _terrain_arr_ref: PackedByteArray = map.terrain_arr
+			var _terrain_arr_n: int = _terrain_arr_ref.size()
+			var _sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
 			for i_flip in range(flip_to_ice_list.size()):
 				var idx_i: int = flip_to_ice_list[i_flip]
 				if idx_i >= 0 and idx_i < n_cells_fast:
 					(cells_fast[idx_i] as HexCell).apply_terrain(TerrainType.TERRAIN.SEA_ICE)
+					if idx_i < _terrain_arr_n:
+						_terrain_arr_ref[idx_i] = _sea_ice_id
 			for i_back in range(flip_to_base_list.size()):
 				var idx_b: int = flip_to_base_list[i_back]
 				if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
 					var target_terr: int = int(flip_to_base_terrain[i_back])
 					(cells_fast[idx_b] as HexCell).apply_terrain(target_terr as TerrainType.TERRAIN)
+					if idx_b < _terrain_arr_n:
+						_terrain_arr_ref[idx_b] = target_terr & 0xFF
+			# CoW：PackedByteArray 是引用语义，但写回 map.terrain_arr 让 detach 后的 CoW
+			# buffer 与 map_data 持有的 backing 同步（防御性赋值）
+			map.terrain_arr = _terrain_arr_ref
 			var flip_ms: float = (Time.get_ticks_usec() - t_flip_us) / 1000.0
 
 			var water_count_cpp: int = int(knobs.get("stat_water_count", 0))
@@ -5753,15 +5910,16 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			temp_now = 1.0
 
 		# 3) 当日雪盖（与 _derived_snow_cover 严格一致：连续低温薄雪 + 高山雪线）
+		# 2026-05-19 Plan-C 二次：SAME_SOURCE 同步——雪线带 [0.20, 0.60]×0.70（拉宽）。
 		var snow_cover: float = 0.0
 		var terr: int = int(c.terrain)
 		if is_water_a[i] == 0:
 			if terr == TerrainType.TERRAIN.SNOW:
-				snow_cover = (1.0 - smoothstep(0.28, 0.58, temp_now)) * 0.70
+				snow_cover = (1.0 - smoothstep(0.22, 0.62, temp_now)) * 0.80
 			var land_h: float = (elevation - sea_level) * inv_above_sea
-			var cold_snow: float = (1.0 - smoothstep(0.26, 0.52, temp_now)) * 0.50
+			var cold_snow: float = (1.0 - smoothstep(0.20, 0.60, temp_now)) * 0.70
 			var altitude_w: float = smoothstep(0.22, 0.90, land_h)
-			var alpine_temp_w: float = 1.0 - smoothstep(0.28, 0.72, temp_now)
+			var alpine_temp_w: float = 1.0 - smoothstep(0.20, 0.85, temp_now)
 			var alpine_snow: float = altitude_w * alpine_temp_w * 0.92
 			snow_cover = max(snow_cover, max(cold_snow, alpine_snow))
 			if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
@@ -6936,8 +7094,14 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 							and new_veg_c != prev_veg_c)
 					c_succ.vegetation = new_veg_c
 					c_succ.base_vegetation = new_veg_c
-					var new_vit_c: float = 0.65 if is_degrade_c else 0.7
-					c_succ.vegetation_vitality = new_vit_c  # facade setter → world.write_f32
+					# vegetation-survival-rebalance v2：软重置代替硬重置。
+					# 原本 new_vit_c = 0.65/0.7 会把 vitality 拉回足以触发
+					# 下一轮演替中间的仰角 → 全图永远抽在 0.7 附近。
+					# 改为 (old + target) * 0.5 后，vitality 保留历史梯度，
+					# 热力图重新发热，还能防连锁死亡。
+					var prev_vit_c: float = c_succ.vegetation_vitality
+					var target_vit_c: float = 0.65 if is_degrade_c else 0.7
+					c_succ.vegetation_vitality = (prev_vit_c + target_vit_c) * 0.5  # facade setter → world.write_f32
 					c_succ.current_state["vegetation"] = new_veg_c
 					vegetation_dirty = true
 
@@ -6952,6 +7116,59 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 			if _gdext_stage_b_runs == 1:
 				print("[stage_b/combined] gdext path ACTIVE — first run elapsed=%.2fms (legacy three-pass total ≈ 6–15ms; target ≤ 1.5ms)" % rc_c)
 				print("  per-stage: albedo=%.2fms veg_dyn=%.2fms feedback=%.2fms" % [albedo_ms, veg_dyn_ms, feedback_ms])
+			# ─── DIAGNOSTIC: vegetation_vitality 数据通路一次性体检 ─────────────
+			# 跑 N 次后采样一次（让 vitality 有机会漂移），打印 4 个数据源的全图分布。
+			# 目的：定位"全图 70%"是 cpp 没漂、facade 没启用、还是渲染读错源。
+			# 顺便每 5 次报一次心跳，确认 pass 在持续运行。
+			if (_gdext_stage_b_runs % 5) == 0 and _gdext_stage_b_runs <= 20:
+				print("[veg_vit/HEARTBEAT] stage_b combined runs=%d" % _gdext_stage_b_runs)
+			if _gdext_stage_b_runs == 5:
+				var _diag_n: int = cells_c.size()
+				var _diag_cid: int = -1
+				# 关键：参数 world 是 WorldData（无 component_id），必须用 _data_core_world（DCWorld）
+				var _dcw = _data_core_world
+				if _dcw != null and _dcw.has_method("component_id"):
+					_diag_cid = int(_dcw.component_id(&"cell.vegetation_vitality"))
+				var _v_min_get: float =  1e9
+				var _v_max_get: float = -1e9
+				var _v_sum_get: float = 0.0
+				var _v_min_soa: float =  1e9
+				var _v_max_soa: float = -1e9
+				var _v_sum_soa: float = 0.0
+				var _v_min_arr: float =  1e9
+				var _v_max_arr: float = -1e9
+				var _v_sum_arr: float = 0.0
+				var _land_cnt: int = 0
+				var _facade_on_cnt: int = 0
+				var _arr_size: int = map.vegetation_vitality_arr.size() if map != null else 0
+				for _di in range(_diag_n):
+					var _dc: HexCell = cells_c[_di]
+					if _dc == null or bool(_dc.passable_sea):
+						continue
+					_land_cnt += 1
+					if _dc.is_facade_enabled():
+						_facade_on_cnt += 1
+					var _vg: float = float(_dc.vegetation_vitality)  # getter
+					if _vg < _v_min_get: _v_min_get = _vg
+					if _vg > _v_max_get: _v_max_get = _vg
+					_v_sum_get += _vg
+					if _diag_cid >= 0:
+						var _vs: float = float(_dcw.read_f32(_diag_cid, _di))
+						if _vs < _v_min_soa: _v_min_soa = _vs
+						if _vs > _v_max_soa: _v_max_soa = _vs
+						_v_sum_soa += _vs
+					if _di < _arr_size:
+						var _va: float = float(map.vegetation_vitality_arr[_di])
+						if _va < _v_min_arr: _v_min_arr = _va
+						if _va > _v_max_arr: _v_max_arr = _va
+						_v_sum_arr += _va
+				print("[veg_vit/DIAG] tick #5  land_cells=%d  facade_on=%d/%d  cid=%d  arr_size=%d" % [_land_cnt, _facade_on_cnt, _land_cnt, _diag_cid, _arr_size])
+				if _land_cnt > 0:
+					print("  getter (cell.vegetation_vitality):  min=%.4f  max=%.4f  avg=%.4f" % [_v_min_get, _v_max_get, _v_sum_get / float(_land_cnt)])
+					if _diag_cid >= 0:
+						print("  SoA    (world.read_f32):             min=%.4f  max=%.4f  avg=%.4f" % [_v_min_soa, _v_max_soa, _v_sum_soa / float(_land_cnt)])
+					if _arr_size > 0:
+						print("  array  (map.vegetation_vitality_arr): min=%.4f  max=%.4f  avg=%.4f" % [_v_min_arr, _v_max_arr, _v_sum_arr / float(_land_cnt)])
 		else:
 			_gdext_stage_b_fallbacks += 1
 			if _gdext_stage_b_fallbacks == 1:
@@ -7723,7 +7940,10 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 						and new_veg != prev_veg)
 				c.vegetation = new_veg
 				c.base_vegetation = new_veg
-				c.vegetation_vitality = 0.65 if is_degrade else 0.7
+				# vegetation-survival-rebalance v2：软重置（详见合并 pass 同段注释）
+				var prev_vit: float = c.vegetation_vitality
+				var target_vit: float = 0.65 if is_degrade else 0.7
+				c.vegetation_vitality = (prev_vit + target_vit) * 0.5
 				c.current_state["vegetation"] = new_veg
 				any_changed = true
 			_gdext_vegdyn_runs += 1
@@ -7745,17 +7965,21 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		var temp: float = cell.temperature
 		var moist: float = cell.moisture
 		var compat: float = VegetationType.climate_compat_score(cell.vegetation, temp, moist)
-		# vegetation-survival-rebalance 方案 B：非对称漂移 + 中性死区。
-		#   compat ≥ 0.6 → 正向恢复（原公式）
-		#   compat ≤ 0.4 → 负向退化，乘 COMPAT_HARSHNESS
-		#   compat ∈ (0.4, 0.6) → 死区 dv = 0（由天气惩罚单独处理）
+		# vegetation-survival-rebalance v2：非对称漂移 + 极小死区（仅过滤数值噪声）。
+		#   compat ≥ 0.52 → 正向恢复
+		#   compat ≤ 0.48 → 负向退化，乘 COMPAT_HARSHNESS
+		#   compat ∈ (0.48, 0.52) → 死区 dv = 0（由天气惩罚单独处理）
 		# 另外：NONE 跳过基础漂移（NONE 不自然衰减，只靠 streak 升级）
+		# 注意：本段必须与 gdext/src/world_ext.cpp 中
+		#   ① run_vegetation_dynamics_pass 主循环
+		#   ② run_albedo_and_vegetation_and_feedback_pass 的 VEGETATION_DYNAMICS 段
+		# 三处保持算法 1:1 一致；任何修改必须同步三处。
 		var dv: float = 0.0
 		if cell.vegetation != VegetationType.VEG.NONE:
 			var rate: float = _c().vitality_change_rate
-			if compat >= 0.6:
+			if compat >= 0.52:
 				dv = (compat - 0.5) * 2.0 * rate
-			elif compat <= 0.4:
+			elif compat <= 0.48:
 				dv = -(0.5 - compat) * 2.0 * rate * _c().compat_harshness
 			# else: 死区保持 dv = 0
 		# weather 额外惩罚（方案 C：按植被抗性缩放 penalty *= (1 - resistance)）
@@ -7793,9 +8017,10 @@ func _trigger_succession(cell: HexCell) -> bool:
 		if next_h != cell.vegetation:
 			cell.vegetation = next_h
 			cell.base_vegetation = next_h          # 演替后基线也跟着前进
-			# vegetation-survival-rebalance 需求 4：退化起点从 0.5 提升到 0.65，
-			# 远离 VITALITY_LOW_THRESHOLD（0.20）给新植被足够适应缓冲期，防连锁死亡。
-			cell.vegetation_vitality = 0.65
+			# vegetation-survival-rebalance v2：软重置代替硬重置。
+			# 原本硬设 vitality=0.65 会把低 vitality 拉高、高 vitality 拉低，
+			# 两者都抹去了热力梯度。软混合保留历史。
+			cell.vegetation_vitality = (cell.vegetation_vitality + 0.65) * 0.5
 			cell._vitality_low_streak = 0
 			cell._vitality_high_streak = 0
 			cell.current_state["vegetation"] = int(cell.vegetation)
@@ -7808,7 +8033,8 @@ func _trigger_succession(cell: HexCell) -> bool:
 		if next_r != cell.vegetation:
 			cell.vegetation = next_r
 			cell.base_vegetation = next_r
-			cell.vegetation_vitality = 0.7
+			# vegetation-survival-rebalance v2：软重置（详见退化分支同段注释）
+			cell.vegetation_vitality = (cell.vegetation_vitality + 0.7) * 0.5
 			cell._vitality_low_streak = 0
 			cell._vitality_high_streak = 0
 			cell.current_state["vegetation"] = int(cell.vegetation)

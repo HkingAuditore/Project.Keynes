@@ -63,7 +63,15 @@ static func compute_insolation(ny: float, season_phase: float,
 	var cos_zenith: float = maxf(cos(lat_rad - subsolar), 0.0)
 	var year_progress: float = fposmod(season_phase, 4.0) / 4.0
 	var lat_sign: float = signf(lat_rad)
-	# Plan B：与 subsolar 同相位。phase=2 时 cos=-1，北极 sign=-1 → 1 + amp（昼最长）。
-	var daylen_factor: float = 1.0 - insolation_daylen_amp * cos(TAU * year_progress) * lat_sign
+	# 2026-05-19 BUGFIX：原符号写反，导致南北半球季节响应反转
+	# （北半球夏天结冰、南半球冬天结冰）。手算验证：
+	#   7月 北纬45° (lat_rad=-π/4, lat_sign=-1)：cos(2π·year_progress)=cos(π)=-1
+	#   正确（夏季昼长 > 1）：1 + 0.35·(-1)·(-1) = 1.35  ✓
+	#   错误（旧式）：1 - 0.35·(-1)·(-1) = 0.65  ✗ 把夏天压成短日
+	# 这条 daylen_factor 乘到 cos_zenith 上后，使得 dev = (now-mean)/mean 在中
+	# 纬度区被压平甚至反相，最终 _insolation_season_offset 给出的温度偏移符号
+	# 反过来。修正：sign 翻转 →  '1 + amp·cos·lat_sign'。
+	# 极区端 cos_zenith 在极夜被 max(.,0) 截断为 0，所以旧 bug 主要影响中纬度。
+	var daylen_factor: float = 1.0 + insolation_daylen_amp * cos(TAU * year_progress) * lat_sign
 	return clampf(cos_zenith * daylen_factor, 0.0, 1.0)
 
