@@ -248,7 +248,9 @@ func _update_storm_flash() -> void:
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
 # 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 enum_atlas + noise_tex。
-func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture) -> void:
+# 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
+# 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
+func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
 	_world_bounds = bounds
 	_reset_front_blend_state()
 	if _overlay_quad != null:
@@ -258,6 +260,8 @@ func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture) -> 
 		_overlay_mat.set_shader_parameter("noise_tex", noise_tex)
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
+		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
+		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
 		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)

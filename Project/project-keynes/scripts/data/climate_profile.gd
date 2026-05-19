@@ -105,8 +105,13 @@ extends Resource
 
 # Seasonal temperature amplitude: peak |Δtemp| between summer-mid and
 # winter-mid (mid-latitudes, ny ≈ 0.5 → 0). Mirrors the shader-side
-# `season_temp_amp` constant in world_map.gdshader; keep both in sync.
-@export var season_temp_amp: float = 0.20
+# `season_temp_amp` uniform (uniforms.gdshaderinc) and hex_renderer.gd
+# export; keep all three in sync.
+# 2026-05-19 Plan-C 调参：0.20 → 0.32。理由：原振幅 0.20 < 雪线带宽 0.26
+# 导致大多数纬度全年困在雪线一侧（要么常年有雪要么常年无雪）。抬到 0.32
+# 之后 temp_year ∈ [0.10, 0.62] 的纬度带能在一年中真正穿过雪线，雪线随
+# 季节南北推移；高纬海域冬季也能进入海冰窗口 [0, 0.10]。
+@export var season_temp_amp: float = 0.32
 
 # Master switch for daily-continuous climate refresh. When true, MapGenerator
 # updates each cell's current_state.temperature / moisture / snow_cover every
@@ -169,7 +174,9 @@ extends Resource
 # Used by SUS WeatherRefreshJob via StridePolicy.
 @export_range(1, 8, 1) var weather_refresh_stride: int = 1
 @export_range(1, 30, 1) var weather_albedo_stride: int = 10
-@export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 10
+# 2026-05-19 vegetation-survival-rebalance v2：植被 pass 频率从 10 → 5，
+# 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
+@export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
 
 # ─── DataCore（dots-foundation-and-weather-migration） ─────────────
@@ -232,10 +239,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 # resource, but the default favors completing lightweight DOTS/native transactions
 # in the same fast tick under a 2ms envelope.
 @export var sim_strict_budget_enabled: bool = false
-@export_range(0.25, 16.0, 0.05) var sim_frame_budget_ms: float = 2.0
-@export_range(0.10, 8.0, 0.05) var sim_slice_budget_ms: float = 0.75
-@export_range(0.10, 8.0, 0.05) var sim_upload_slice_budget_ms: float = 0.50
-@export_range(0.25, 16.0, 0.05) var sim_budget_warn_ms: float = 2.0
+@export_range(0.25, 1600.0, 0.05) var sim_frame_budget_ms: float = 2.0
+@export_range(0.10, 800.0, 0.05) var sim_slice_budget_ms: float = 0.75
+## 2026-05-19 方案 B：dynamic visual atlas 上传 phase 的单 tick budget。
+## 0.50 → 1.5ms：配合 MAX_CELLS_PER_TICK=4096，让 dynamic/ecology/smooth/ice 四个 phase
+## 的每一个都能在单 tick 内扫完（典型 64×64=4096 cells），把雪量响应从约 40 仿真日
+## 缩短到约 8 仿真日（stride=2 × 4 phase）。tick 内峰值多花约 1ms，但 stride 之间不付代价。
+@export_range(0.10, 800.0, 0.05) var sim_upload_slice_budget_ms: float = 1.5
+@export_range(0.25, 1600.0, 0.05) var sim_budget_warn_ms: float = 2.0
 
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
 #
@@ -423,7 +434,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # consecutive days required to trigger succession up/down. Values mirror
 # the original Phase 8 / Milestone 4 constants in map_generator.gd.
 
-@export var vitality_change_rate: float = 0.004         # per day, at most ±0.004 (~250 days from 0 to 1)
+# 2026-05-19 vegetation-survival-rebalance v2：rate 从 0.004 → 0.015
+# （≈ 67 天可从 0 到 1），让暴雨/极旱在数周内即可看到 vitality 漂移。
+# 死区同步从 (0.4, 0.6) 收窄到 (0.48, 0.52)，避免大量 cell 永远卡在 dv=0。
+@export var vitality_change_rate: float = 0.015         # per day, at most ±0.015 (~67 days from 0 to 1)
 # 2026-05-18：演替门槛大幅放宽，让暴雨/极旱/连续不利气候有机会在 1.5 个月内触发
 # 可见的植被退化/升级。原 (0.15 / 0.90 / 180 / 360) 几乎需要 9 个月不间断的恶劣
 # 气候才能触发一次演替，玩家完全感受不到天气对地块的中长期影响。
@@ -497,10 +511,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
 # Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
-@export var sea_ice_freeze_rate: float = 0.18            # k_freeze per "degree" below T_form
-@export var sea_ice_melt_rate: float = 0.22              # k_melt per "degree" above T_melt
-@export var sea_ice_terrain_threshold: float = 0.55      # frac at which terrain flips to SEA_ICE
-@export var sea_ice_terrain_hysteresis: float = 0.10     # flip back when frac < threshold - hyst
+# 2026-05-19 Plan-C 三次调参（用户报告"南北极同时白 + 不化"）：
+# 现象：截图里两极同时大量永久冰盖，夏季不消退。
+# 进一步诊断：bootstrap 给两极满冰；运行时 _insol_dev 在两极 mean ≈ 0.05~0.10
+# 不会触发 1e-4 兜底，理论上夏至 temp ≈ 0.48 应该化冰，但用户单次 sea_ice pass
+# 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
+# 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
+# 修复：freeze 与 melt **对称**（1.50:1.50），让夏季的高温 cell 有足够融化速率。
+# 物理上海冰生消速率确实接近（极地冬季冻 0.5 米/月，夏季融 0.5 米/月）。
+@export var sea_ice_freeze_rate: float = 1.50            # k_freeze per "degree" below T_form
+@export var sea_ice_melt_rate: float = 1.50              # k_melt per "degree" above T_melt — 与 freeze 对称
+@export var sea_ice_terrain_threshold: float = 0.25      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
 @export var sea_ice_neighbor_contagion: float = 0.35     # extra k_freeze if any neighbor frac ≥ 0.6
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
@@ -660,8 +682,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 
 # Sea-ice cover thresholds (temperature).
-@export var sea_ice_form_threshold: float = 0.07
-@export var sea_ice_melt_threshold: float = 0.12
+# 2026-05-19 Plan-C 调参：form 0.07→0.10 / melt 0.12→0.16。理由：t_eff 受
+# ice_delay×ocean_anomaly 项常上抬 0.05~0.15，原 0.07 窗口在赤道-极地洋流
+# 影响下几乎闭合。放宽到 0.10 把可结冰纬度带向赤道方向扩展约 5°；form-melt
+# 间距保持 0.06 避免边界来回闪烁。
+@export var sea_ice_form_threshold: float = 0.15
+@export var sea_ice_melt_threshold: float = 0.25
 
 # Volcano placement.
 @export var max_volcanoes: int = 8

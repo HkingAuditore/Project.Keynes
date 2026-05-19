@@ -49,6 +49,15 @@ var _suppress_sync_signals: bool = false
 var _state_sync_dirty: bool = false
 var _perf_detail_tick: int = 0
 
+# 2026-05-19：Telemetry 增强字段
+# - _telemetry_paused: 冻结刷新，方便看清当前快照（解决"滚动太快"问题）
+# - _pause_btn / _snapshot_btn: 按钮句柄，便于改文本反映状态
+# - _topn_window: 滚动窗口 Top-N 排序模式（按 max_ms 降序，看长期热点）
+var _telemetry_paused: bool = false
+var _pause_btn: Button
+var _snapshot_btn: Button
+var _topn_label: Label
+
 
 # --- 布局常量 -------------------------------------------------------------
 const PANEL_WIDTH: float = 360.0
@@ -277,6 +286,26 @@ func _call_main_action(method: StringName, args: Array = []) -> void:
 
 func _build_telemetry_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("实时监视（Telemetry）"))
+
+	# 2026-05-19：Telemetry 控制条 ── 暂停 / 快照导出
+	# 暂停：冻结所有 telemetry label 的刷新，方便观察某一帧的精确数据
+	# 快照：把当前 SUS report + 30-tick 窗口统计 dump 成 res://tmp/perf_snapshot_*.json
+	var ctrl_row := HBoxContainer.new()
+	ctrl_row.add_theme_constant_override("separation", 6)
+	_pause_btn = Button.new()
+	_pause_btn.text = "⏸ 暂停刷新"
+	_pause_btn.tooltip_text = "暂停后 telemetry 文本冻结，方便复制/截图当前快照"
+	_pause_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pause_btn.pressed.connect(_on_btn_toggle_pause)
+	ctrl_row.add_child(_pause_btn)
+	_snapshot_btn = Button.new()
+	_snapshot_btn.text = "📸 快照→文件"
+	_snapshot_btn.tooltip_text = "导出当前 SUS report + 滚动统计 + breakdowns 到 res://tmp/perf_snapshot_<时间>.json"
+	_snapshot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_snapshot_btn.pressed.connect(_on_btn_snapshot)
+	ctrl_row.add_child(_snapshot_btn)
+	parent.add_child(ctrl_row)
+
 	_telemetry_vbox = VBoxContainer.new()
 	_telemetry_vbox.add_theme_constant_override("separation", 4)
 	parent.add_child(_telemetry_vbox)
@@ -286,6 +315,11 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_add_telemetry_label("sus_largest", "largest: —")
 	_add_telemetry_label("sus_jobs", "jobs: —")
 	_add_telemetry_label("sim_breakdowns", "breakdown: —")
+
+	# 2026-05-19：30-tick 滚动窗口 Top-N（按 max_ms 降序，看长期热点）
+	# 比 sus_jobs 的 last-tick 视图更稳定，能识别"偶发慢 job"和"持续慢 job"
+	_add_telemetry_label("sus_topn", "top by max_ms (window): —")
+
 	_add_telemetry_label("overlay_bake", "overlay bake: — ms")
 	_add_telemetry_label("overlay_stats", "overlay stats: —")
 	_add_telemetry_label("overlay_invalid", "invalid cells: 0")
@@ -488,8 +522,15 @@ func _show_need_map_toast() -> void:
 # 低频刷新：收集并显示全局统计。模拟暂停时依然更新（暂停本身是状态 freeze，
 # 数值停留在最后一次真实 tick 的快照；此处不额外判 paused，因为 stats 字典
 # 本身已经是冻结态）。UI 控件状态只在 dirty 时同步，不在 telemetry 中全量轮询。
+#
+# 2026-05-19：新增 _telemetry_paused 守门 —— 用户按"暂停刷新"按钮后，
+# 所有 telemetry label 文本冻结在按下那一刻的快照，方便看清 / 截图。
 func _on_telemetry_tick() -> void:
 	if _main == null:
+		return
+	if _telemetry_paused:
+		# 暂停状态：状态同步仍然处理（CheckBox 等），但 telemetry label 全部跳过
+		_sync_state_if_dirty()
 		return
 	_sync_state_if_dirty()
 	# fast_tick
@@ -611,6 +652,156 @@ func _refresh_sim_perf_lines() -> void:
 		if raw_breakdowns is Dictionary:
 			breakdowns = raw_breakdowns
 	_set_tele("sim_breakdowns", _format_sim_breakdowns(breakdowns))
+
+	# 2026-05-19：30-tick 滚动窗口 Top-N。比 last-tick 列表更稳定，
+	# 能识别"持续慢 Job"vs"偶发慢 Job"，是性能调优的主要参考视图。
+	_set_tele("sus_topn", _format_topn_jobs())
+
+
+# 2026-05-19：新增 ── 暂停 / 快照 / Top-N 工具函数
+# ─────────────────────────────────────────────────────────────────────────
+
+func _on_btn_toggle_pause() -> void:
+	_telemetry_paused = not _telemetry_paused
+	if _pause_btn != null:
+		_pause_btn.text = "▶ 恢复刷新" if _telemetry_paused else "⏸ 暂停刷新"
+		if _telemetry_paused:
+			_pause_btn.add_theme_color_override("font_color", Color(0.98, 0.75, 0.30))
+		else:
+			_pause_btn.remove_theme_color_override("font_color")
+
+
+# 把当前所有性能数据 dump 成 JSON 文件，便于事后分析 / 跨会话比对。
+# 2026-05-19：路径从 user:// 改为 res://tmp/，方便和项目仓库放在一起、
+# 不用钻 %APPDATA%。res://tmp/ 已在 .gitignore 之外（按项目惯例 tmp 目录下
+# 仅放一次性诊断产物），如果导出到正式 release 包应当通过 export_presets
+# 的 exclude_filter 排除。runtime 里 res:// 在编辑器/调试运行下可写，正式
+# 导出后只读 —— 此按钮本身就是 dev-only debug 入口，无需考虑导出后场景。
+# 路径：res://tmp/perf_snapshot_YYYYMMDD_HHMMSS.json
+# 内容：last_tick summary + per-job + 30-tick 窗口统计 + breakdowns + overlay
+func _on_btn_snapshot() -> void:
+	if _main == null:
+		return
+	var dt: Dictionary = Time.get_datetime_dict_from_system()
+	var fname: String = "res://tmp/perf_snapshot_%04d%02d%02d_%02d%02d%02d.json" % [
+		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
+		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
+	]
+	# 兜底：保证 tmp/ 目录存在（项目里已 commit，但留个保险）
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://tmp"))
+
+	var payload: Dictionary = _build_snapshot_payload()
+	var f := FileAccess.open(fname, FileAccess.WRITE)
+	if f == null:
+		var err := FileAccess.get_open_error()
+		push_warning("[DebugConsole] 快照写入失败：%s (err=%d)" % [fname, err])
+		_show_snapshot_toast("写入失败 err=%d" % err, true)
+		return
+	f.store_string(JSON.stringify(payload, "  "))
+	f.close()
+
+	# 转成绝对路径打印到控制台（res:// 在 dev 下 = 项目根目录）
+	var abs_path: String = ProjectSettings.globalize_path(fname)
+	print_rich("[color=cyan][PerfSnapshot][/color] saved to %s" % abs_path)
+	_show_snapshot_toast("已保存：%s" % fname.get_file(), false)
+
+
+func _build_snapshot_payload() -> Dictionary:
+	var out: Dictionary = {
+		"timestamp": Time.get_datetime_string_from_system(),
+		"frame": Engine.get_frames_drawn(),
+		"fps": Engine.get_frames_per_second(),
+	}
+	if _main.has_method("get_sus_last_tick_summary"):
+		out["sus_last_tick_summary"] = _main.call("get_sus_last_tick_summary")
+	if _main.has_method("get_sus_last_tick_report"):
+		out["sus_last_tick_jobs"] = _main.call("get_sus_last_tick_report")
+	if _main.has_method("get_sim_breakdowns"):
+		out["sim_breakdowns"] = _main.call("get_sim_breakdowns")
+	if _main.has_method("get_fast_tick_count"):
+		out["fast_tick_count"] = _main.call("get_fast_tick_count")
+	if _main.has_method("get_last_fast_tick_ms"):
+		out["fast_tick_last_ms"] = _main.call("get_last_fast_tick_ms")
+	if _main.has_method("get_overlay_last_bake_ms"):
+		out["overlay_last_bake_ms"] = _main.call("get_overlay_last_bake_ms")
+	if _main.has_method("get_overlay_stats"):
+		out["overlay_stats"] = _main.call("get_overlay_stats")
+
+	# SUS 滚动统计（30-tick 窗口）：从 generator 透传到 sus_scheduler
+	var gen = _get_generator()
+	if gen != null:
+		if gen.has_method("sus_report_job_stats"):
+			out["sus_job_stats_window"] = gen.sus_report_job_stats()
+		if gen.has_method("sus_report_skipped_summary"):
+			out["sus_skipped_summary"] = gen.sus_report_skipped_summary()
+		if gen.has_method("sus_report_sim_budget_window"):
+			out["sus_sim_budget_window"] = gen.sus_report_sim_budget_window()
+	return out
+
+
+func _show_snapshot_toast(msg: String, is_error: bool) -> void:
+	if _snapshot_btn == null:
+		return
+	var prev: String = "📸 快照→文件"
+	_snapshot_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	if is_error:
+		_snapshot_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	else:
+		_snapshot_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(func() -> void:
+		if _snapshot_btn != null and is_instance_valid(_snapshot_btn):
+			_snapshot_btn.text = prev
+			_snapshot_btn.remove_theme_color_override("font_color")
+	)
+
+
+# 30-tick 滚动窗口 Top-N，按 max_ms 降序。比 last-tick 列表更稳定，
+# 能识别"持续慢 job"（max≈avg）vs"偶发慢 job"（max>>avg）。
+const TOPN_LIMIT: int = 6
+
+func _format_topn_jobs() -> String:
+	var gen = _get_generator()
+	if gen == null or not gen.has_method("sus_report_job_stats"):
+		return "top by max_ms (window): —"
+	var raw = gen.sus_report_job_stats()
+	if not (raw is Dictionary) or raw.is_empty():
+		return "top by max_ms (window): —"
+
+	# 计算每个 job 的 avg / p95 / max（基于 samples 数组）
+	var rows: Array = []
+	for job_id in raw.keys():
+		var entry: Dictionary = raw[job_id]
+		var samples: Array = entry.get("samples", [])
+		if samples == null or samples.is_empty():
+			continue
+		var max_ms: float = float(entry.get("max_ms", 0.0))
+		var n: int = samples.size()
+		var sum: float = 0.0
+		for s in samples:
+			sum += float(s)
+		var avg: float = sum / float(n)
+		var sorted_samples: Array = samples.duplicate()
+		sorted_samples.sort()
+		var p95_idx: int = clampi(int(round(float(n - 1) * 0.95)), 0, n - 1)
+		var p95: float = float(sorted_samples[p95_idx])
+		rows.append({"id": str(job_id), "avg": avg, "p95": p95, "max": max_ms, "n": n})
+
+	if rows.is_empty():
+		return "top by max_ms (window): —"
+
+	rows.sort_custom(func(a, b): return float(a["max"]) > float(b["max"]))
+
+	var lines: PackedStringArray = PackedStringArray()
+	var shown: int = 0
+	for r in rows:
+		if shown >= TOPN_LIMIT:
+			break
+		lines.append("  %s  avg=%.2f  p95=%.2f  max=%.2fms  n=%d" % [
+			r["id"], r["avg"], r["p95"], r["max"], r["n"],
+		])
+		shown += 1
+	return "top by max_ms (window):\n" + "\n".join(lines)
 
 
 func _format_sus_jobs(report: Dictionary) -> String:

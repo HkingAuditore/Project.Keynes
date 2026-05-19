@@ -185,6 +185,9 @@ var _tod_profile: TODProfile = null
 @onready var _history_label: Label = $UI/RightPanel/Margin/Scroll/VBox/HistoryLabel
 # Debug 控制台：可开合的调试面板（默认 visible=false），快捷键 ` 或 F1 切换。
 @onready var _debug_console: PanelContainer = $UI/DebugConsole
+# 性能 Mini HUD：右上角常驻迷你性能浮窗（FPS / SUS total / largest job / fast_tick）。
+# 默认 visible=true，快捷键 F4 切换显隐。0.25s 刷新，复用 main.gd 已有 getter，不引入新统计。
+@onready var _perf_mini_hud: PanelContainer = $UI/PerfMiniHUD
 # Overlay 图例（Legend）：在地图左下角显示当前通道的色带 / 离散列表，
 # 只在 _overlay_mode != NONE 时可见。mouse_filter=IGNORE，不拦截地图输入。
 @onready var _overlay_legend: PanelContainer = $UI/OverlayLegend
@@ -330,6 +333,10 @@ func _ready() -> void:
 	if _debug_console != null and _debug_console.has_method("set_main"):
 		_debug_console.set_main(self)
 
+	# PerfMiniHUD：常驻迷你性能浮窗，右上角显示 FPS / SUS / fast_tick。
+	if _perf_mini_hud != null and _perf_mini_hud.has_method("set_main"):
+		_perf_mini_hud.set_main(self)
+
 	# PR-3.4.1（M4 拆分）：DCFlagBus 安装委托给 DCDotsBootstrap。
 	# main 节点不再持有 _on_dcflag_changed；hot-reload 回调由 bootstrap 类承担。
 	# bootstrap 实例必须保留（class member）以保持 connect 生命周期；否则 RefCounted
@@ -371,6 +378,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# 都能切换可见性。面板 mouse_filter=STOP，点击在面板内
 			# 的时候不会穿透选中地块。
 			toggle_debug_console()
+		KEY_F4:
+			# 2026-05-19：Mini Perf HUD 显隐切换（右上角常驻浮窗）。
+			toggle_perf_mini_hud()
 		KEY_F8:
 			# Emergent Climate Coupling + True Insolation-Driven：一键切换"纯回退模式"。
 			toggle_emergent_debug_switches()
@@ -433,6 +443,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func toggle_debug_console() -> void:
 	if _debug_console != null:
 		_debug_console.visible = not _debug_console.visible
+
+
+# 2026-05-19：Mini Perf HUD 显隐切换。
+# 默认 visible=true（一启动就能看到性能数据），F4 隐藏后内部 timer 也会停。
+func toggle_perf_mini_hud() -> void:
+	if _perf_mini_hud != null and _perf_mini_hud.has_method("toggle_visible"):
+		_perf_mini_hud.toggle_visible()
 
 func _mark_debug_console_state_dirty() -> void:
 	if _debug_console != null and _debug_console.has_method("request_state_sync"):

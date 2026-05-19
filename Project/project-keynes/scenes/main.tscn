@@ -8,6 +8,7 @@
 [ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="6_overlay"]
 [ext_resource type="Script" uid="uid://cw5wodk76aaby" path="res://scripts/ui/debug_console.gd" id="7_console"]
 [ext_resource type="Script" uid="uid://bbdihyphoivd7" path="res://scripts/ui/overlay_legend.gd" id="8_legend"]
+[ext_resource type="Script" uid="uid://cfuiddnh2gobi" path="res://scripts/ui/perf_mini_hud.gd" id="9_perfhud"]
 
 [node name="Main" type="Node2D" unique_id=1962249106]
 script = ExtResource("1_main")
@@ -53,17 +54,17 @@ theme_override_constants/separation = 12
 layout_mode = 2
 text = "Generating..."
 
-[node name="DebugBtn" type="Button" parent="UI/TopBar/HBox"]
+[node name="DebugBtn" type="Button" parent="UI/TopBar/HBox" unique_id=948738512]
 custom_minimum_size = Vector2(64, 32)
 layout_mode = 2
 text = "Debug"
 
-[node name="RegenBtn" type="Button" parent="UI/TopBar/HBox"]
+[node name="RegenBtn" type="Button" parent="UI/TopBar/HBox" unique_id=2118188790]
 custom_minimum_size = Vector2(64, 32)
 layout_mode = 2
 text = "Regen"
 
-[node name="FitBtn" type="Button" parent="UI/TopBar/HBox"]
+[node name="FitBtn" type="Button" parent="UI/TopBar/HBox" unique_id=519363022]
 custom_minimum_size = Vector2(52, 32)
 layout_mode = 2
 text = "Fit"
@@ -221,6 +222,18 @@ offset_top = 44.0
 offset_right = 368.0
 offset_bottom = 620.0
 script = ExtResource("7_console")
+
+[node name="PerfMiniHUD" type="PanelContainer" parent="UI" unique_id=-193630296]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -340.0
+offset_top = 44.0
+offset_right = -8.0
+offset_bottom = 130.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("9_perfhud")
 
 [node name="OverlayLegend" type="PanelContainer" parent="UI" unique_id=-193630294]
 visible = false

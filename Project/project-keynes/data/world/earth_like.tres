@@ -4,19 +4,12 @@
 
 [resource]
 script = ExtResource("1")
-use_data_core = true
-use_data_core_weather = true
-use_data_core_climate = true
-use_world_view_adapter = true
-use_gdext_slp_field = true
-use_gdext_psi_solver = true
-use_gdext_stage_b_combined = true
-use_gdext_weather_refresh_daily = true
-use_gdext_enum_atlas_pack = true
+sim_frame_budget_ms = 1600.0
+sim_slice_budget_ms = 800.0
+sim_upload_slice_budget_ms = 800.0
+sim_budget_warn_ms = 1600.0
 succession_upgrade_days = 91
 weather_field_advect_steps = 2
 weather_component_summary_limit = 16
-use_soa_pipeline = true
-use_sparse_climate = true
-use_partial_atlas_upload = true
+use_sparse_weather = true
 demo_thermal_gradient_path = 1

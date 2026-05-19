@@ -65,6 +65,14 @@ static func ensure_loaded() -> void:
 			)
 			continue
 		_cache[int(v)] = res
+	# map-visual-overhaul-v1：对于尚未在 .tres 内手填 season_color_lut 的资源，
+	# 套用 VegetationProfile.apply_default_season_lut() 给出生态合理的默认四季偏色。
+	# 这样既不强制美术手填 24 个文件，又能让游戏内立即看到"四季换色"。
+	# .tres 已配置过的资源（is_season_lut_default 返回 false）则尊重原值。
+	for v2 in _cache.keys():
+		var p2: VegetationProfile = _cache[v2]
+		if p2 != null and p2.is_season_lut_default():
+			p2.apply_default_season_lut()
 
 static func _ensure_fallback() -> VegetationProfile:
 	if _fallback == null:

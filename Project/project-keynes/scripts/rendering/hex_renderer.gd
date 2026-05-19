@@ -10,6 +10,17 @@ extends Node2D
 			_rebuild()
 
 @export var shader_path: String = "res://shaders/world_map.gdshader"
+@export var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
+	set(value):
+		world_material = value
+		if is_inside_tree():
+			_load_shader()
+			if _map != null and _world != null:
+				_rebuild()
+
+@export_group("Shader Hot Reload")
+@export var shader_hot_reload_enabled: bool = true
+@export_range(0.1, 5.0, 0.1) var shader_hot_reload_interval: float = 0.35
 
 # ─── Hypsometric 色阶（海陆双向，从深到浅） ──────────────────────────────
 # Open Ocean Color Rebalance v2：与 world_map.gdshader 同步，把深/浅海亮度差
@@ -64,14 +75,22 @@ extends Node2D
 @export_range(0.0, 0.2, 0.01) var paper_grain_strength: float = 0.05
 
 # ─── 季节 / 气候系统（每帧由 main.gd 通过 set_*_phase 推进） ─────────────
+# 2026-05-19 Plan-C：season_temp_amp 默认 0.20 → 0.32，与 climate_profile.gd
+# 和 uniforms.gdshaderinc 同步。这是真正推送到 shader 的数据源（行 989）。
 @export_group("Climate")
-@export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.20
+@export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.32
 @export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
-@export_range(0.0, 0.20, 0.01) var wind_streak_strength: float = 0.05
 @export_range(0.0, 1.0, 0.01) var season_transition_phase_span: float = 0.33
 @export_range(0.02, 0.45, 0.01) var season_transition_softness: float = 0.18
+# 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
+# 1=每仿真日上传一次；2（默认）=每 2 仿真日；4=每 4 仿真日。值越大越省 CPU 但雪线/海冰
+# 视觉变化越"卡顿"。运行时改这个值会触发 DynamicVisualAtlasUploadSystem.reconfigure。
+@export_range(1, 8, 1) var dyn_atlas_upload_stride: int = 2
+# 调试用：true 时雪盖跳过 fbm cosmetic 抖动，直接拿 dyn_snow（CPU snow_cover）上屏。
+# 用于验证"info_panel 显示的 snow_cover 是否真的体现在屏幕像素上"。
+@export var debug_force_dyn_snow_only: bool = false
 
 # True Insolation-Driven（Phase F）：CPU / GPU 同源的四个参数。默认与 ClimateProfile 一致。
 # 运行时由 main.gd 通过 set_true_insolation_params() 同步（F8 切换时）。
@@ -190,6 +209,11 @@ var _season_transition_active: bool = false
 var _season_transition_start_phase: float = 1.0
 # 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
 var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
+var _shader_hot_reload_accum: float = 0.0
+var _active_material_source_path: String = ""
+var _active_shader_source_path: String = ""
+var _material_source_mtime: int = 0
+var _shader_source_mtime: int = 0
 # Milestone 3：天气子系统数组上传
 # 与 shader 端 weather_front_centers[MAX_WEATHER_FRONTS] 长度严格一致；
 # 0 fronts 时仍填满 16 个 zero-vec，避免 shader 端越界采样。
@@ -275,6 +299,7 @@ func _ready() -> void:
 # 每帧把 world_time 推进给 shader（驱动洋流流纹）
 # 注意：这里只 push 一个 float uniform，几乎零开销
 func _process(delta: float) -> void:
+	_poll_shader_hot_reload(delta)
 	if _shader_mat == null:
 		return
 	_world_time += delta
@@ -287,13 +312,94 @@ func _process(delta: float) -> void:
 		_perf_sampler.push_frame_ms(delta * 1000.0)
 
 func _load_shader() -> void:
-	var shader := ResourceLoader.load(shader_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
-	if shader == null:
+	var next_mat: ShaderMaterial = null
+	_active_material_source_path = ""
+	_active_shader_source_path = ""
+
+	if world_material != null:
+		var source_mat := world_material
+		_active_material_source_path = source_mat.resource_path
+		if source_mat.resource_path != "":
+			var disk_mat := ResourceLoader.load(
+				source_mat.resource_path,
+				"ShaderMaterial",
+				ResourceLoader.CACHE_MODE_IGNORE
+			) as ShaderMaterial
+			if disk_mat != null:
+				source_mat = disk_mat
+				_active_material_source_path = disk_mat.resource_path
+		next_mat = source_mat.duplicate() as ShaderMaterial
+		if next_mat != null:
+			var shader := _load_fresh_shader_for_material(next_mat)
+			if shader != null:
+				next_mat.shader = shader
+			if next_mat.shader != null:
+				_shader_mat = next_mat
+				_world_quad.material = _shader_mat
+				_refresh_shader_hot_reload_baseline()
+				return
+		push_warning("HexRenderer: world_material has no shader; falling back to %s" % shader_path)
+
+	var fallback_shader := ResourceLoader.load(shader_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
+	if fallback_shader == null:
 		push_warning("HexRenderer: shader not found at %s" % shader_path)
+		_world_quad.material = null
 		return
 	_shader_mat = ShaderMaterial.new()
-	_shader_mat.shader = shader
+	_shader_mat.shader = fallback_shader
 	_world_quad.material = _shader_mat
+	_active_shader_source_path = shader_path
+	_refresh_shader_hot_reload_baseline()
+
+func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
+	var source_path := shader_path
+	if mat.shader != null and mat.shader.resource_path != "":
+		source_path = mat.shader.resource_path
+	_active_shader_source_path = source_path
+	if source_path == "":
+		return mat.shader
+	var shader := ResourceLoader.load(source_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
+	if shader == null:
+		push_warning("HexRenderer: shader not found at %s" % source_path)
+		return mat.shader
+	return shader
+
+func _poll_shader_hot_reload(delta: float) -> void:
+	if not shader_hot_reload_enabled:
+		return
+	_shader_hot_reload_accum += delta
+	if _shader_hot_reload_accum < maxf(shader_hot_reload_interval, 0.1):
+		return
+	_shader_hot_reload_accum = 0.0
+
+	var shader_mtime := _file_modified_time(_active_shader_source_path)
+	var material_mtime := _file_modified_time(_active_material_source_path)
+	var shader_changed := shader_mtime > 0 and _shader_source_mtime > 0 and shader_mtime != _shader_source_mtime
+	var material_changed := material_mtime > 0 and _material_source_mtime > 0 and material_mtime != _material_source_mtime
+	if not shader_changed and not material_changed:
+		if _shader_source_mtime == 0:
+			_shader_source_mtime = shader_mtime
+		if _material_source_mtime == 0:
+			_material_source_mtime = material_mtime
+		return
+
+	_load_shader()
+	_clear_season_transition()
+	if _map != null and _world != null and _shader_mat != null:
+		_apply_uniforms()
+	print("[HexRenderer] hot-reloaded world shader/material")
+
+func _refresh_shader_hot_reload_baseline() -> void:
+	_shader_source_mtime = _file_modified_time(_active_shader_source_path)
+	_material_source_mtime = _file_modified_time(_active_material_source_path)
+
+func _file_modified_time(path: String) -> int:
+	if path == "":
+		return 0
+	var fs_path := path
+	if path.begins_with("res://") or path.begins_with("user://"):
+		fs_path = ProjectSettings.globalize_path(path)
+	return int(FileAccess.get_modified_time(fs_path))
 
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
@@ -322,8 +428,6 @@ func begin_season_transition(start_phase: float) -> void:
 	_season_transition_mat.set_shader_parameter("season_transition_overlay", true)
 	_season_transition_mat.set_shader_parameter("season_transition_progress", 0.0)
 	_season_transition_mat.set_shader_parameter("season_transition_softness", season_transition_softness)
-	# Weather is rendered by WeatherLayer; disabling terrain weather tint here avoids double tinting.
-	_season_transition_mat.set_shader_parameter("weather_strength", 0.0)
 	_season_transition_quad.mesh = _world_quad.mesh
 	_season_transition_quad.material = _season_transition_mat
 	_season_transition_quad.visible = true
@@ -364,6 +468,17 @@ func set_season_phase(phase: float) -> void:
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("season_phase", _season_phase)
 		_update_season_transition()
+	# === Plan-C diag (临时) === 检查 season/uniform 推送 & ice_state_tex 是否绑了
+	if Engine.get_process_frames() % 120 == 0:
+		var _ice_tex_str: String = "null"
+		if _world != null and _world.ice_state_tex != null:
+			_ice_tex_str = "size=%s rid=%s" % [str(_world.ice_state_tex.get_size()), str(_world.ice_state_tex.get_rid())]
+		var _mat_ice: Object = null
+		if _shader_mat != null:
+			_mat_ice = _shader_mat.get_shader_parameter("ice_state_atlas")
+		print("[plan-c/uni] frame=%d season_phase=%.3f season_temp_amp=%.3f world.ice_state_tex=%s shader.ice_state_atlas=%s" % [
+			Engine.get_process_frames(), _season_phase, season_temp_amp, _ice_tex_str, str(_mat_ice)])
+	# === end diag ===
 
 func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
@@ -415,6 +530,24 @@ func set_snowline_visual_strength(v: float) -> void:
 	snowline_visual_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
+
+# 调试入口：toggle 雪盖"纯 dyn_snow（无 fbm 抖动）"渲染模式。
+# 屏幕上的雪量将严格 = info_panel 显示的 cell.snow_cover（±量化误差），用于
+# 验证 CPU→atlas→shader 链路。
+func set_debug_force_dyn_snow_only(v: bool) -> void:
+	debug_force_dyn_snow_only = v
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
+
+# 运行时调整 dynamic_cell / dyn_atlas_smooth / ecology / ice atlas 的上传 stride。
+# 1=每仿真日 2=每 2 仿真日 4=每 4 仿真日。值越大越省 CPU 但视觉变化越"卡"。
+# 透传到 DynamicVisualAtlasUploadSystem.reconfigure；map_generator 持有 system 引用。
+func set_dyn_atlas_upload_stride(v: int) -> void:
+	dyn_atlas_upload_stride = clampi(v, 1, 8)
+	# 找到 MapGenerator 来 reconfigure 已注册的 system 实例。
+	var mg = get_tree().root.find_child("MapGenerator", true, false)
+	if mg != null and mg.has_method("set_dyn_atlas_upload_stride"):
+		mg.set_dyn_atlas_upload_stride(dyn_atlas_upload_stride)
 
 func set_foliage_density_strength(v: float) -> void:
 	foliage_density_strength = clampf(v, 0.0, 1.0)
@@ -708,16 +841,13 @@ func set_weather_fronts(fronts: Array) -> void:
 func set_weather_field_texture(tex: Texture2D) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_weather_field_texture"):
 		_weather_layer.set_weather_field_texture(tex)
-	# 2026-05-18 P1-B：让主地形材质也消费 weather_field_tex（海面风暴变色 + 风浪条纹）。
-	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("weather_field_tex", tex)
+	# map-visual-overhaul-v1：主地图 shader 已不再消费 weather_field_tex，
+	# 海面天气视觉迁移到 weather_overlay 三层独立云。这里只转发给 weather_layer。
 
-# 2026-05-18 P1-B：仅刷新主地形材质上的 weather_field_tex（不改 weather_layer
-# 的 null 语义 —— weather_layer 用 null/非 null 控制可见性切换；主材质需要
-# 始终知道 world.weather_field_tex 以便海面分支消费 storm intensity）。
+# map-visual-overhaul-v1：主地形材质的 weather_field_tex 通道已删除；
+# 此函数保留为空 stub，让外部脚本（main.gd 等）历史调用点在过渡期不崩溃。
 func refresh_terrain_weather_field_tex() -> void:
-	if _shader_mat != null and _world != null:
-		_shader_mat.set_shader_parameter("weather_field_tex", _world.weather_field_tex)
+	pass
 
 func _on_weather_layer_visual_fronts_changed(fronts: Array) -> void:
 	_push_weather_fronts_to_shader(fronts)
@@ -861,13 +991,17 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("vector_atlas_valid", _world.vector_atlas_tex != null)
 	sm.set_shader_parameter("dynamic_cell_atlas", _world.dynamic_cell_atlas_tex)
 	sm.set_shader_parameter("ecology_visual_atlas", _world.ecology_visual_atlas_tex)
-	# 2026-05-18 P1-B：海面天气视觉，把 weather_field_tex 也绑给主材质（hex-constant RGBA8）
-	if _world.weather_field_tex != null:
-		sm.set_shader_parameter("weather_field_tex", _world.weather_field_tex)
+	# map-visual-overhaul-v1：主 shader 消费的是沿 hex 邻接 box-blur 后的 smooth 版本，
+	# 单点采样即可拿到跨 cell 平滑场（消除"颜色按 hex 块切"的硬阶梯）。
+	# 原 dynamic_cell_atlas 仍保留供调试 UI / info panel 消费。
+	sm.set_shader_parameter("dyn_atlas_smooth_atlas", _world.dyn_atlas_smooth_tex)
+	# 海冰生命化：复用 cell.sea_ice_fraction 的滞后积分结果，让极地核心终年不化、
+	# 中纬冬扩夏退；climate_anomaly 升高 → 极区可见缩水。
+	sm.set_shader_parameter("ice_state_atlas", _world.ice_state_tex)
+	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
+	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:
 		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
-	# 火山强度场独立纹理（原 scalar_atlas.a）
-	sm.set_shader_parameter("volcano_field_tex", _world.volcano_field_tex)
 	# 兼容旧调试/数据通道；主地图海冰视觉由 shader 按水温实时派生，不读它。
 	sm.set_shader_parameter("sea_ice_tex", _world.sea_ice_tex)
 	# Systemic Ocean Currents：仅 F6 高对比调试层采样；主路径不依赖它。
@@ -876,7 +1010,7 @@ func _apply_uniforms() -> void:
 	# 这里仅在 _world.upwelling_tex 已存在时同步绑定，避免新材质丢失已 bake 的纹理。
 	if _world.upwelling_tex != null:
 		sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
-	# v9.fbm-opt：把共享 noise_tex 喂给地形 shader，替换 value_noise 内部的 4× hash21
+	# v10.noise-pack：把共享 RGBA 噪声包喂给地形 shader，fbm(p,N) 全局单次采样。
 	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
 
 	sm.set_shader_parameter("world_origin", bounds.position)
@@ -897,9 +1031,12 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("insolation_daylen_amp", insolation_daylen_amp)
 	sm.set_shader_parameter("insolation_season_gain", insolation_season_gain)
 	sm.set_shader_parameter("vegetation_season_strength", vegetation_season_strength)
+	# map-visual-overhaul-v1：把 24 种植被的四季 LUT + climate_anomaly 偏移色 push 到 shader。
+	# 一次 setup 推送即可，运行时不刷新（除非热重载植被资源时显式 invalidate）。
+	_push_vegetation_season_lut()
 	sm.set_shader_parameter("dynamic_snow_strength", dynamic_snow_strength)
+	sm.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
 	sm.set_shader_parameter("ocean_current_strength", ocean_current_strength)
-	sm.set_shader_parameter("wind_streak_strength", wind_streak_strength)
 	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
 	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
 	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
@@ -911,8 +1048,7 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("season_transition_progress", 1.0)
 	sm.set_shader_parameter("season_transition_softness", season_transition_softness)
 
-	# Milestone 3：默认填空 weather 数组 + 设全局 weather 强度
-	sm.set_shader_parameter("weather_strength", weather_strength)
+	# Milestone 3：默认填空 weather 数组；全局天气强度只由 WeatherLayer 消费。
 
 	sm.set_shader_parameter("visual_quality", visual_quality)
 	sm.set_shader_parameter("day_night_enabled", day_night_enabled)
@@ -952,7 +1088,7 @@ func _apply_uniforms() -> void:
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
-		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex)
+		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size)
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
 		_weather_layer.set_weather_strength(weather_strength)
@@ -995,6 +1131,45 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("parchment_tint", parchment_tint)
 	sm.set_shader_parameter("parchment_strength", parchment_strength)
 	sm.set_shader_parameter("paper_grain_strength", paper_grain_strength)
+
+# ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
+# 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的
+#   season_color_lut[4]（春/夏/秋/冬叠乘色）
+#   anomaly_color_shift  （climate_anomaly 升高时的叠加色）
+# 一次性 push 到 shader 端的两个 uniform 数组：
+#   vegetation_season_lut[24*4] : 按 [veg*4 + season] 索引
+#   vegetation_anomaly_shift[24] : 按 [veg] 索引
+# 仅在 setup / _apply_uniforms 调用一次（植被资源不会运行时变化）。
+func _push_vegetation_season_lut() -> void:
+	if _shader_mat == null:
+		return
+	const VEG_COUNT := 24
+	var lut := PackedVector4Array()
+	lut.resize(VEG_COUNT * 4)
+	var shifts := PackedVector4Array()
+	shifts.resize(VEG_COUNT)
+	for veg in range(VEG_COUNT):
+		var profile: VegetationProfile = VegetationProfileRegistry.get_profile(veg)
+		if profile == null:
+			# 未知 veg → 写中性白 / 零偏移，避免 shader 拿到未初始化数据。
+			for s in range(4):
+				lut[veg * 4 + s] = Vector4(1.0, 1.0, 1.0, 1.0)
+			shifts[veg] = Vector4(0.0, 0.0, 0.0, 0.0)
+			continue
+		var profile_lut := profile.season_color_lut
+		for s in range(4):
+			if profile_lut != null and s < profile_lut.size():
+				var c: Color = profile_lut[s]
+				lut[veg * 4 + s] = Vector4(c.r, c.g, c.b, c.a)
+			else:
+				lut[veg * 4 + s] = Vector4(1.0, 1.0, 1.0, 1.0)
+		var shift: Color = profile.anomaly_color_shift
+		shifts[veg] = Vector4(shift.r, shift.g, shift.b, shift.a)
+	_shader_mat.set_shader_parameter("vegetation_season_lut", lut)
+	_shader_mat.set_shader_parameter("vegetation_anomaly_shift", shifts)
+	if _season_transition_mat != null:
+		_season_transition_mat.set_shader_parameter("vegetation_season_lut", lut)
+		_season_transition_mat.set_shader_parameter("vegetation_anomaly_shift", shifts)
 
 # ─── Fast-tick perf opt (E)：细粒度纹理重绑接口 ──────────────────────────
 # 背景：原 `set_map` 路径会触发 `_rebuild` → `_build_world_quad_mesh` + `_apply_uniforms`，

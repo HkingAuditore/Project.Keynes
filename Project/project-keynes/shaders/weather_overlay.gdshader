@@ -17,6 +17,12 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float world_time = 0.0;
 
+// 2026-05-19 hex-grounded-offset：一个 hex 的"直径"（wp 单位 = 2 * hex_size）。
+// 由 weather_layer.gd 在 setup() 时按 hex_size 写入。所有"邻域采样偏移"
+// 都按 hex_world_diameter 物理换算，避免和 enum_atlas / weather_field_tex
+// 的 hex 像素尺度发生频率共振导致六边形晶格化云团。
+uniform float hex_world_diameter = 38.0;
+
 uniform float day_phase : hint_range(0.0, 1.0) = 0.25;
 uniform bool day_night_enabled = true;
 uniform vec3 tod_sun_color : source_color = vec3(1.0);
@@ -29,6 +35,14 @@ uniform int weather_overlay_quality : hint_range(0, 2) = 2;
 uniform bool extreme_weather_ground_effect_enabled = true;
 uniform float storm_flash : hint_range(0.0, 1.0) = 0.0;
 uniform float heatwave_distortion : hint_range(0.0, 1.0) = 0.6;
+
+// ── DEBUG：临时诊断开关（验证完即可删除） ───────────────────────────
+// 0 = off（正常渲染）
+// 1 = 显示 uv（R=u, G=v）  期望：左下黑→右上黄的渐变填满地图
+// 2 = 显示 wp（按 world_size 归一化后） 期望：与模式 1 完全相同
+// 3 = 显示 enum_atlas.r（biome id / 255） 期望：与世界地图 biome 分布对齐
+// 4 = uv 越界高亮（红=u<0或>1, 绿=v<0或>1, 黄=两者都越界）
+uniform int debug_uv_mode : hint_range(0, 4) = 0;
 
 const int MAX_WEATHER_FRONTS = 16;
 uniform vec4 weather_front_centers[MAX_WEATHER_FRONTS];
@@ -80,11 +94,24 @@ float value_noise(vec2 p) {
 	return texture(noise_tex, p / NOISE_TEX_SCALE).r;
 }
 
+// 2026-05-19 noise-pack-cleanup：fbm 改为 RGBA 单 fetch（noise_tex 已预烘成
+// R=value, G=2-oct, B=3-oct, A=4-oct）。原本每条 fbm(p, N) 要采样 N 次，整张
+// shader 一像素 ~135 次 noise fetch；现在退化为 1 次 fetch，移动端可承受。
+// 兜底：如果当前持有的是旧 R8 noise_tex（G/B≈0、A≈1），临时退回多采样路径，
+// 等下一次 bake_world 重烘 RGBA 即自动走快路径。
 float fbm(vec2 p, int octaves) {
-	float sum = 0.0;
-	float amp = 0.5;
-	float freq = 1.0;
-	for (int i = 0; i < 6; i++) {
+	vec4 n = texture(noise_tex, p / NOISE_TEX_SCALE);
+	if (octaves <= 1) return n.r * 0.5;
+	bool packed_valid = (n.g + n.b > 0.0001) && (n.a < 0.98);
+	if (packed_valid) {
+		if (octaves == 2) return n.g;
+		if (octaves == 3) return n.b;
+		return n.a;
+	}
+	float sum = n.r * 0.5;
+	float amp = 0.24;
+	float freq = 2.03;
+	for (int i = 1; i < 6; i++) {
 		if (i >= octaves) break;
 		sum += value_noise(p * freq) * amp;
 		freq *= 2.03;
@@ -101,6 +128,14 @@ float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
 	p += dot(p, p + 45.32);
 	return fract(p.x * p.y);
+}
+
+// 2026-05-19 jitter-via-hash：把所有"只为破对称/产生伪随机偏移"用途的 fbm-0.5
+// 调用替换为 hash 调用——hash21 不需要纹理采样，比 fbm 廉价 ~30 倍。
+// 注意：该函数只能用于 jitter（偏移、相位、权重抖动），不能用于"形成云形"
+// 的主噪声——后者必须保留 fbm，因为其频谱特征不同。
+float hash_signed(vec2 p) {
+	return hash21(p) - 0.5;
 }
 
 vec2 blue_jitter(vec2 wp, float scale) {
@@ -126,8 +161,9 @@ float sample_high_cloud(vec2 wp, vec2 axis, float intensity) {
 	float cirrus = fbm(stretched, 3);
 	// 阈值化得到稀疏拉丝带；强度调节阈值高低。
 	float band = smoothstep(0.46, 0.74, cirrus);
-	// 二次纤维化：再叠一层更高频的拉丝，得到"羽毛"质感。
-	float feather = fbm(stretched * 3.7 + vec2(11.0, -23.0), 2);
+	// 2026-05-19 perf：二次纤维化的 "feather" 改用 hash21——羽毛只是亮度抖动，
+	// 不形成主结构，hash 视觉差异不可见，省 1 次 noise fetch。
+	float feather = hash21(floor(stretched * 3.7 + vec2(11.0, -23.0)));
 	band *= 0.65 + 0.55 * smoothstep(0.40, 0.78, feather);
 	return clamp(band * intensity, 0.0, 1.0);
 }
@@ -143,7 +179,8 @@ float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	vec2 dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
 	// 雾不沿风向拉伸（雾贴地、各向同性），但整体缓慢漂移。
 	vec2 advected = wp - dir * world_time * 1.4;
-	// 强 warp：低频偏移大，让雾团边缘极破碎。
+	// 2026-05-19 回退为 fbm：domain warp 偏移必须连续。hash21+floor 会让 warp 坐标
+	// 出现块状跳变，相邻像素 fbm 采样到同一点 → 云内出现可见方块。
 	float w1 = fbm(advected * 0.022 + vec2(world_time * 0.15, -world_time * 0.09), 2) - 0.5;
 	float w2 = fbm(advected * 0.022 + vec2(-world_time * 0.11, world_time * 0.13) + vec2(53.0, 17.0), 2) - 0.5;
 	vec2 warped = advected + vec2(w1, w2) * 11.0;
@@ -153,6 +190,32 @@ float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	// dramatic-fx：阈值 0.42 → 0.32、上界 0.78 → 0.70，让雾更早起量、覆盖更广。
 	float fog = smoothstep(0.32 + fog_breath, 0.70, fog_low);
 	return clamp(fog * intensity * biome_weight, 0.0, 1.0);
+}
+
+// map-visual-overhaul-v1：Cumulus（积云、中云）——三层独立云的"中层"。
+// 跟随风场漂移，octave 3 高频形成团块堆积，alpha 比 cirrus 高比 fog 低。
+// intensity 由调用方按"基础底色 + 天气加强"两段控制。
+// 关键参数：
+//   - 形态频率 0.0085：比 cirrus (0.0035) 略密，比 fog (0.022) 更稀疏；
+//   - 漂移速度 0.25：中速，介于 cirrus(0.55) 和 fog(0.15) 之间；
+//   - 阈值 0.42~0.70：宽过线带，让云团边缘自然消散而非硬切。
+float sample_cumulus(vec2 wp, vec2 axis, float intensity) {
+	if (intensity <= 0.001) {
+		return 0.0;
+	}
+	vec2 dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
+	vec2 advected = wp - dir * world_time * 0.25;
+	// 主形态：中频 fbm + 风场轻微 domain warp。
+	// 2026-05-19 回退为 fbm：warp 偏移必须连续。hash+floor 在积云中会产生
+	// ~83 wp 的可见方块。
+	float warp_n = fbm(advected * 0.012 + vec2(world_time * 0.05, -world_time * 0.03), 2) - 0.5;
+	vec2 warped = advected + dir * warp_n * 6.0;
+	warped += blue_jitter(wp, 0.05) * 0.5;
+	float base = fbm(warped * 0.0085, 3);
+	// 边缘破碎：再叠一层高频 fbm，让云团边缘呈\"花椰菜\"质感。
+	float edge_break = fbm(warped * 0.024 + vec2(13.0, -47.0), 2);
+	float cloud = smoothstep(0.42, 0.70, base) * (0.70 + 0.40 * smoothstep(0.40, 0.78, edge_break));
+	return clamp(cloud * intensity, 0.0, 1.0);
 }
 
 // Phase 1：采样真实风场（vector_atlas BA 通道）。
@@ -185,13 +248,13 @@ WindSample sample_wind(vec2 uv) {
 // Phase B：风场驱动的 domain warp。
 // 1) 沿 flow 方向做 advection（让云真正"飘"，不再原地抖）
 // 2) 再用两层错位低频 FBM 抖动坐标，让云团边缘破碎卷曲
-// freq 取 0.022 偏低频以适配 0.0085~0.062 多频段云形采样。
+// 2026-05-19 回退为 fbm：domain warp 的偏移量必须是连续场。
+// hash21+floor 产生的是分块随机量，乘 strength 后让 fbm 的采样点在邻近像素
+// 之间跳变→ 云内出现明显方块。付5周所见。
 vec2 wind_domain_warp(vec2 wp, vec2 flow, float t, float strength) {
 	vec2 advected = wp - flow * t;
 	float n1 = fbm(advected * 0.022 + vec2( t * 0.020,  t * 0.012), 2) - 0.5;
 	float n2 = fbm(advected * 0.022 + vec2(-t * 0.014,  t * 0.018) + vec2(37.0, 13.0), 2) - 0.5;
-	// Phase 2：叠加 blue_jitter 高频偏移，破除 FBM 在低频段的双线性网格感。
-	// 系数 0.5 保证只是细微抖动，不会改变云团整体形状。
 	vec2 jitter = blue_jitter(wp, 0.05) * 0.5;
 	return advected + vec2(n1, n2) * strength + jitter;
 }
@@ -306,38 +369,57 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	vec3 col_acc = vec3(0.0);  // profile_color 加权
 	float palpha_acc = 0.0;    // profile_alpha 加权
 	float w_acc = 0.0;
-	// 6 个采样点（中心 + 5 jitter 偏移）。中心权重适中，避免主像素仍然主导。
+	// 2026-05-19 perf：缓存邻居 wt，供下方 wt 借用循环复用，
+	// 避免额外 6 次 weather_field_tex 采样。
+	int cached_wtn[6];
+	cached_wtn[0] = -1;
+	// 2026-05-19 hex-grounded-offset：按 hex 物理直径生成采样圈（不再用 uv 域魔数）。
+	// 半径设计：2.8 hex 直径，跨过 ~3 个 hex 让相邻 hex 真正参与平滑；
+	// 角度按黄金角（~137.5°）分布去掉 6 边对称，半径在 0.85~1.15 抖动避免环带感。
+	// 旧实现用 0.0090~0.0125 uv 偏移 ≈ 1 个 hex，导致采样点几乎全落在自身 hex 内、
+	// 6 个对称位置又落在 6 个邻居中央 → enum_atlas/weather_field_tex（filter_nearest）
+	// 永远只读到 hex-constant，从而 mountain_w / cloud_amount 仍然是 hex-阶跃，
+	// 加上 fbm jitter 后形成"云团轮廓 = 地块六边形"的晶格效果。
+	vec2 ring_uv_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
+	const float GOLDEN_ANGLE = 2.39996323; // ≈ 137.5°
 	vec2 offs[6] = vec2[6](
-		vec2(  0.0000,  0.0000),
-		vec2(  0.0090,  0.0050),
-		vec2( -0.0080,  0.0085),
-		vec2(  0.0040, -0.0095),
-		vec2( -0.0110, -0.0035),
-		vec2(  0.0125,  0.0010)
+		vec2(0.0, 0.0),
+		vec2(cos(GOLDEN_ANGLE * 1.0), sin(GOLDEN_ANGLE * 1.0)) * 2.50,
+		vec2(cos(GOLDEN_ANGLE * 2.0), sin(GOLDEN_ANGLE * 2.0)) * 3.10,
+		vec2(cos(GOLDEN_ANGLE * 3.0), sin(GOLDEN_ANGLE * 3.0)) * 2.30,
+		vec2(cos(GOLDEN_ANGLE * 4.0), sin(GOLDEN_ANGLE * 4.0)) * 3.40,
+		vec2(cos(GOLDEN_ANGLE * 5.0), sin(GOLDEN_ANGLE * 5.0)) * 2.80
 	);
 	// 中心点权重 0.85（不再独占），偏移点权重 ~0.5 浮动——让"邻域平均"真正起作用。
 	for (int i = 0; i < 6; i++) {
-		// 每个采样位再叠一层 fbm jitter（约半个 hex），让"邻域圈"形状破碎不规则。
-		vec2 j = (i == 0) ? vec2(0.0) : (vec2(
-			fbm(wp * 0.18 + vec2(17.0 + float(i) * 13.0, -29.0), 1),
-			fbm(wp * 0.18 + vec2(-41.0, 19.0 + float(i) * 7.0), 1)
-		) - 0.5);
-		vec2 sample_uv = clamp(uv + offs[i] + j * 0.006, vec2(0.0), vec2(1.0));
+		// 2026-05-19 jitter-via-hash：每个采样位的偏移 jitter 改用 hash21，
+		// 原 6×2=12 次 noise fetch 完全省掉。
+		vec2 j = (i == 0) ? vec2(0.0) : vec2(
+			hash_signed(floor(wp * 0.18 + vec2(17.0 + float(i) * 13.0, -29.0))),
+			hash_signed(floor(wp * 0.18 + vec2(-41.0, 19.0 + float(i) * 7.0)))
+		);
+		// hex-grounded-offset：偏移与 jitter 都按 hex 物理尺度换算到 uv 域。
+		// jitter 振幅 = 1.4 hex 直径，叠到 2~3.4 hex 的环上后采样点位置足够随机，
+		// 完全脱离六边形几何对称。
+		vec2 uv_offset = offs[i] * ring_uv_step + j * 1.4 * ring_uv_step;
+		vec2 sample_uv = clamp(uv + uv_offset, vec2(0.0), vec2(1.0));
 		vec4 wfn = texture(weather_field_tex, sample_uv);
 		float cn = clamp(wfn.b, 0.0, 1.0);
 		float in_ = clamp(wfn.g, 0.0, 1.0);
 		float pn = clamp(wfn.a, 0.0, 1.0);
 		int wtn = int(wfn.r * 255.0 + 0.5);
+		cached_wtn[i] = wtn; // 2026-05-19 perf：缓存供 wt 借用循环复用
 		// 邻居的 type_bias / color / alpha——CLEAR/DROUGHT/HEATWAVE 视为 bias=1.0、
 		// 透明色，避免它们污染"邻域颜色平均"。
 		bool wtn_active = (wtn != WT_CLEAR && wtn != WT_DROUGHT && wtn != WT_HEATWAVE);
 		float bn = wtn_active ? type_cloud_bias(wtn) : 1.0;
 		vec4 prof = (wtn >= 0 && wtn < MAX_WEATHER_TYPES)
 			? weather_profile_colors[wtn] : vec4(0.0);
-		// 中心点权重 0.85（不让它独占），偏移点权重 0.5 ± fbm 抖动 0.25。
+		// 中心点权重 0.85（不让它独占），偏移点权重 0.5 ± hash 抖动 0.25。
+		// 2026-05-19 jitter-via-hash：weight 抖动改用 hash21，省 6 次 noise fetch。
 		float wn = (i == 0)
 			? 0.85
-			: (0.5 + (fbm(wp * 0.21 + vec2(float(i) * 23.0, 7.0), 1) - 0.5) * 0.5);
+			: (0.5 + hash_signed(floor(wp * 0.21 + vec2(float(i) * 23.0, 7.0))) * 0.5);
 		c_acc += cn * wn;
 		i_acc += in_ * wn;
 		p_acc += pn * wn;
@@ -371,10 +453,10 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	// color / alpha 计算——那些已经全部 smoothed 了。
 	bool main_wt_inactive = (wt == WT_CLEAR || wt == WT_DROUGHT || wt == WT_HEATWAVE);
 	if (main_wt_inactive) {
+		// 2026-05-19 perf：复用上方 6 邻域采样缓存的 cached_wtn，不再额外采样。
+		// 原本最坏情况 6 次 weather_field_tex fetch → 0 次。
 		for (int i = 1; i < 6; i++) {
-			vec2 sample_uv = clamp(uv + offs[i], vec2(0.0), vec2(1.0));
-			vec4 wfn = texture(weather_field_tex, sample_uv);
-			int wtn = int(wfn.r * 255.0 + 0.5);
+			int wtn = cached_wtn[i];
 			if (wtn != WT_CLEAR && wtn != WT_DROUGHT && wtn != WT_HEATWAVE) {
 				wt = wtn;
 				break;
@@ -390,19 +472,24 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	float field_fadein = smoothstep(0.02, 0.10, field_activity);
 
 	vec2 axis = normalize(vec2(1.0, 0.22));
-	// Phase 1：用真实风场（per-cell）替代全局常量 axis 做 advection。
-	// fallback：风场未启用或风极弱时退回旧的全局 axis 路径，保证视觉不退化。
-	WindSample wind = sample_wind(uv);
-	vec2 advect_dir = (wind.speed > 0.05) ? wind.dir : axis;
-	float advect_speed_scale = mix(0.55, 1.35, wind.speed); // 弱风慢漂、强风急流
+	// [DEBUG-A] 临时禁用 per-cell 风场 advection，强制使用全局常量 axis 验证晶格根因。
+	// 如果晶格消失，说明问题来自 vector_atlas 的 hex 量化 + 时间累积放大。
+	WindSample wind;
+	wind.dir = axis;
+	wind.speed = 0.5; // 给一个固定中等风速，保证下游表现稳定
+	vec2 advect_dir = axis;
+	float advect_speed_scale = mix(0.55, 1.35, wind.speed);
 	float base_speed = mix(4.0, 10.0, max(precip_amount, cloud_amount));
 	vec2 advect_flow = advect_dir * base_speed * advect_speed_scale;
 	vec2 warped = wind_domain_warp(wp, advect_flow, world_time, 7.0 + wind.speed * 4.0);
 	// 风强区高频抖动更剧烈，模拟急流撕扯云团；轴向（axis）也跟着真实风转向，
 	// 保证下游 rain_field/snow_field 的方向条纹与 advection 一致。
 	axis = advect_dir;
-	// 2026-05-18 N10：经典云做法的 domain warp —— 用一层 fbm 去扰动另一层 fbm 的采样点。
+	// 2026-05-18 N10：经典云做法的 domain warp —— 用一层伪随机偏移扰动 fbm 的采样点。
 	// 给云絮"被风拉扯成不规则形状"的拓扑感，而不是单层 fbm 的圆斑。
+	// 2026-05-19 回滚为 fbm：dw 乘 38.0 是 fbm 的"采样点偏移量"，必须连续。
+	// hash21+floor 让相邻像素 fbm 采样点跳 38 wp → 形成 ~77 wp 可见方块（图中云团内部
+	// 最显眼的马赛克即此处所致）。
 	vec2 dw = vec2(
 		fbm(warped * 0.013 + vec2(37.0, -19.0), 2),
 		fbm(warped * 0.013 + vec2(-23.0, 41.0), 2)
@@ -411,8 +498,9 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	int q_oct = (weather_overlay_quality >= 2) ? 3 : 2;
 	float low = fbm(warped_dw * 0.009, q_oct);
 	float mid = fbm(warped_dw * 0.026 + vec2(41.0, -23.0), 2);
-	float edge_break = fbm(warped_dw * 0.045 + vec2(11.0, 29.0), 2);
-	float cloud_noise = low * 0.58 + mid * 0.30 + edge_break * 0.12;
+	// 2026-05-19 perf：删除 edge_break（原权 0.12，频率最高），权重并入 mid。
+	// 高频细节对最终云形几乎不可见，省 1 次 noise fetch。
+	float cloud_noise = low * 0.58 + mid * 0.42;
 	// 2026-05-18 N10：阈值由 cloud_amount_smoothed 调制（连续值），不再用 hex-constant 的
 	// b 通道。多云区 threshold 低、更多 fbm 像素过线；晴区 threshold 高、几乎没像素过线。
 	// 这才是经典做法——hex 数据决定"这一带云密度"，云形状本身完全 fbm。
@@ -445,7 +533,8 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	f.precip = precip_gate;
 	f.shadow = clamp(cloud * 0.64 + intensity * 0.16, 0.0, 1.0);
 	f.core = clamp(max(precip_gate, intensity * 0.65), 0.0, 1.0);
-	f.edge = clamp(edge_break, 0.0, 1.0);
+	// 2026-05-19 perf：edge_break 已删除，f.edge 用 mid 代替（仅用于下游边缘亮度抖动）。
+	f.edge = clamp(mid, 0.0, 1.0);
 	f.type = wt;
 	f.axis = axis;
 	return f;
@@ -485,10 +574,13 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 		// dramatic-fx-fix：用 FBM 抖动 envelope 的有效距离，让椭圆边界本身碎掉。
 		// 频率 0.04 大致对应 1/3 ~ 1/2 个 front 半径，给边界 3-5 个大小不一的"凸起/凹陷"，
 		// 视觉上是云絮的不规则轮廓。每个 front 用 c.x/c.y 偏移让花纹独立。
-		// 同时叠一层稍高频细节让边缘有"絮状"颗粒。
+		// 2026-05-19 perf：删除 boundary_jitter_high。
+		// 原本设计是"低频 fbm 给软边缘 + 高频 hash 给颗粒"两层叠加，但实测高频 hash
+		// 在 ~7.7 wp 块尺寸上产生肉眼可见的方形像素颗粒（云外缘锯齿）；
+		// 而下游 cloud_shape 内部的 fbm(low,mid) 已经提供了天然的"花椰菜"软边缘，
+		// 这层 hash 抖动属于多余装饰，删除后云轮廓更干净。省 1 hash/像素/front。
 		float boundary_jitter_low = fbm(wp * 0.04 + vec2(c.x * 0.013, c.y * 0.017), 2) - 0.5;
-		float boundary_jitter_high = fbm(wp * 0.13 + vec2(c.y * 0.011, c.x * 0.019), 1) - 0.5;
-		float d = d_base + boundary_jitter_low * 0.34 + boundary_jitter_high * 0.12;
+		float d = d_base + boundary_jitter_low * 0.34;
 		if (d > 1.72) continue;
 
 		vec2 ax = front_axis(shape);
@@ -498,12 +590,16 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 		// Phase 1：在 front 主轴 ax 上叠加 30% 的局部风场扰动 —— front 整体仍然
 		// 沿 sim 端给的 stable_axis 平移（保留身份与一致性），但 front 内部不同
 		// 位置会因为局部风场不同产生差异化卷曲，破除"整团平移"的僵直感。
-		WindSample fwind = sample_wind(uv);
-		vec2 flow_dir = (fwind.speed > 0.05) ? normalize(ax + fwind.dir * 0.35) : ax;
+		// [DEBUG-A] 临时禁用 per-cell 风场对 front flow 的扰动，强制纯 ax 平移。
+		// 配合上方 sample_wind 的禁用，彻底排除 vector_atlas 量化作为根因。
+		WindSample fwind;
+		fwind.dir = ax;
+		fwind.speed = 0.5;
+		vec2 flow_dir = ax;
 		float flow_speed = (wt == WT_FOG)
 			? mix(3.0, 4.5, cloud_amount)
 			: mix(6.0, 13.0, max(precip_amount, cloud_amount));
-		flow_speed *= mix(0.9, 1.25, fwind.speed); // 强风区域的 front 漂得更快
+		flow_speed *= mix(0.9, 1.25, fwind.speed); // 固定 1.075x，不再 per-cell
 		vec2 flow = flow_dir * flow_speed;
 		float warp_strength = (wt == WT_FOG) ? 5.0 : 9.0;
 		// 把 wp 转到 front 局部坐标（相对 center），然后做 domain warp。
@@ -520,10 +616,11 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 		// 由于 warped 已经包含 advection + 抖动，所有频段会随风一起卷动，肉眼上是"自然流动的云"。
 		float low = fbm(warped * 0.0085, q_oct);
 		float mid = fbm(warped * 0.024 + vec2(41.0, -23.0), 2);
-		float high = (weather_overlay_quality >= 2)
-			? fbm(warped * 0.062, 1)
-			: 0.5;
-		float edge_break = fbm((warped + vec2(shape.z * 31.0, shape.w * -47.0)) * 0.017, 2);
+		// 2026-05-19 perf：high 改用 hash21——只用作下游 best.edge 的 ±25% 亮度抖动，
+		// 不影响云形，hash 视觉差异不可见，省 1 次 noise fetch（×N front）。
+		float high = hash21(floor(warped * 0.062));
+		// 2026-05-19 perf：删除 edge_break（原权 0.06，最高频细节），权重并入 mid。
+		// 省 1 次 noise fetch（×N front）。
 
 		// dramatic-fx-fix：阈值 mix(0.54,0.22) → mix(0.48,0.20)。
 		// 之前的 mix(0.42,0.10) 把噪声压到几乎全过线，导致 envelope 内部"实心填充"，
@@ -531,7 +628,7 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 		// 配合上方 boundary_jitter 把 envelope 边界打碎，整体形状回到"云絮"。
 		float threshold = mix(0.48, 0.20, cloud_amount);
 		threshold += dissolve * 0.15;
-		float cloud_shape = smoothstep(threshold, threshold + 0.24, low * 0.66 + mid * 0.28 + edge_break * 0.06);
+		float cloud_shape = smoothstep(threshold, threshold + 0.24, low * 0.70 + mid * 0.30);
 		// dramatic-fx-fix：移除 core * 0.28 的常量内部填充——这是椭圆"实心感"的另一来源。
 		// 改为只在云形噪声本身就有强度的地方用 core 做轻微强化（保留中心略浓的层次）。
 		float cloud = clamp(cloud_shape * envelope * cloud_amount * type_cloud_bias(wt) * (0.92 + core * 0.10), 0.0, 1.0);
@@ -541,7 +638,8 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 			precip_gate = 0.0;
 			// dramatic-fx-fix：FOG 也走"噪声主导"路径，envelope 只做整体衰减，
 			// 不再用 envelope * 0.70 这种近常数项把雾铺成实心椭圆。
-			float fog_shape = smoothstep(threshold - 0.08, threshold + 0.18, low * 0.72 + mid * 0.22 + edge_break * 0.06);
+			// 2026-05-19 perf：edge_break 已删除，权重并入 mid。
+			float fog_shape = smoothstep(threshold - 0.08, threshold + 0.18, low * 0.72 + mid * 0.28);
 			cloud = clamp(fog_shape * envelope * cloud_amount * (0.85 + core * 0.15), 0.0, 1.0);
 		}
 
@@ -576,16 +674,29 @@ FrontField sample_front_field(vec2 wp, vec2 uv) {
 	}
 
 	FrontField merged;
-	bool fronts_lead = best_score >= field_score * 0.95; // 并列偏向 fronts
-	merged.color = fronts_lead ? best.color : field_sample.color;
-	merged.alpha = fronts_lead ? best.alpha : field_sample.alpha;
+	// 2026-05-19 hard-edge-fix：原本 color/alpha/core/edge/axis 都用三元运算符
+	// `fronts_lead ? best : field_sample` 做二元切换 —— 这是一个**像素级阈值开关**，
+	// 当相邻像素一边 fronts_lead=true、一边 false 时，颜色会瞬间从云白切到雾灰，
+	// 在云雾接缝处形成肉眼可见的直线状硬边（截图红圈位置）。
+	// cloud/precip/shadow 用 max 没问题（连续函数），但 color/alpha 不能切换。
+	// 修复：用 score 比值做 smoothstep 软混合，过渡区跨越 ~10% score 差距。
+	// 0.475 / 0.525 的中点是 0.5（势均力敌），过渡区 ±2.5%，足够柔化但不至于"糊掉"两边特征。
+	float total_score = best_score + field_score + 1e-4;
+	float front_ratio = best_score / total_score;
+	float front_weight = smoothstep(0.475, 0.525, front_ratio);
+	merged.color = mix(field_sample.color, best.color, front_weight);
+	merged.alpha = mix(field_sample.alpha, best.alpha, front_weight);
 	merged.cloud = max(best.cloud, field_sample.cloud);
 	merged.precip = max(best.precip, field_sample.precip);
 	merged.shadow = max(best.shadow, field_sample.shadow);
-	merged.core = fronts_lead ? best.core : field_sample.core;
-	merged.edge = fronts_lead ? best.edge : field_sample.edge;
+	merged.core = mix(field_sample.core, best.core, front_weight);
+	merged.edge = mix(field_sample.edge, best.edge, front_weight);
+	// type 是离散枚举（int），无法 mix，必须二元；保持原行为（fronts 优先）。
+	bool fronts_lead = front_weight >= 0.5;
 	merged.type = fronts_lead ? best.type : field_sample.type;
-	merged.axis = fronts_lead ? best.axis : field_sample.axis;
+	// axis 是方向矢量，可线性混合后归一化（避免方向突变）。
+	vec2 mixed_axis = mix(field_sample.axis, best.axis, front_weight);
+	merged.axis = (length(mixed_axis) > 0.001) ? normalize(mixed_axis) : best.axis;
 	return merged;
 }
 
@@ -654,12 +765,15 @@ float compute_ambient_cloud_shadow(vec2 wp, bool is_water) {
 	vec2 drift = vec2(0.62, 0.38) * t * 6.0;
 	vec2 sp = wp - drift;
 	// Domain warp：两层独立慢相位 FBM 给云形施加 ±7 单位的扭曲偏移，让形状随时间演化。
+	// 2026-05-19 回退为 fbm：ambient shadow 的 warp 乘 14.0，hash+floor 会让阴影
+	// 边缘出现阶梯状块。
 	float warp_x = fbm(sp * 0.0318 + vec2(t * 0.25, 0.0), 1) - 0.5;
 	float warp_y = fbm(sp * 0.0318 + vec2(0.0, t * 0.21) + vec2(53.0, 17.0), 1) - 0.5;
 	vec2 warped = sp + vec2(warp_x, warp_y) * 14.0;
+	// 2026-05-19 perf：删除 mid（原权 0.30，仅装饰云影颗粒），仅用 low 即可。
+	// 阈值同步从 (0.38,0.58) 改为 (0.30,0.55) 兼容只用 low 的取值范围，省 1 次 noise fetch。
 	float low = fbm(warped * 0.0033, 2);
-	float mid = fbm(warped * 0.0138 + vec2(31.0 + t * 0.4, -17.0 - t * 0.3), 1);
-	float patches = smoothstep(0.38, 0.58, low * 0.70 + mid * 0.30);
+	float patches = smoothstep(0.30, 0.55, low);
 	float night_atten = 1.0 - tod_night_factor * 0.78;
 	float water_atten = is_water ? 0.45 : 1.0;
 	return patches * ambient_cloud_shadow_strength * 0.62 * night_atten * water_atten * weather_strength;
@@ -681,12 +795,28 @@ vec3 apply_cloud_tod(vec3 col, int wt) {
 }
 
 void vertex() {
-	v_world = VERTEX;
+	v_world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
 void fragment() {
 	vec2 wp = v_world;
-	vec2 uv = clamp((wp - world_origin) / world_size, vec2(0.0), vec2(1.0));
+	vec2 uv = (wp - world_origin) / world_size;
+
+	// ── DEBUG 可视化（不能用 return，Godot fragment 禁止）──────────
+	if (debug_uv_mode == 1) {
+		COLOR = vec4(uv, 0.0, 1.0);
+	} else if (debug_uv_mode == 2) {
+		vec2 wn = (wp - world_origin) / world_size;
+		COLOR = vec4(wn, 0.0, 1.0);
+	} else if (debug_uv_mode == 3) {
+		float b = texture(enum_atlas, uv).r;
+		COLOR = vec4(b, b, b, 1.0);
+	} else if (debug_uv_mode == 4) {
+		float ou = (uv.x < 0.0 || uv.x > 1.0) ? 1.0 : 0.0;
+		float ov = (uv.y < 0.0 || uv.y > 1.0) ? 1.0 : 0.0;
+		COLOR = vec4(ou, ov, 0.0, 1.0);
+	} else {
+
 	FrontField w = sample_front_field(wp, uv);
 
 	// dramatic-fx：低雾不再仅限山地/丘陵——平原也给基础权重 0.35，让所有陆地
@@ -707,29 +837,35 @@ void fragment() {
 	// 注：enum_atlas 是 filter_nearest 整数编码，邻域采样仍是离散的 biome id，
 	//   但**加权平均后会产生连续过渡**（一个像素的邻域内陆地像素占比 = 该像素的"陆度"）。
 	vec2 land_offs[6] = vec2[6](
-		vec2( 0.0,      0.0     ),  // 中心
-		vec2( 0.0090,   0.0050  ),
-		vec2(-0.0080,   0.0085  ),
-		vec2( 0.0040,  -0.0095  ),
-		vec2(-0.0110,  -0.0035  ),
-		vec2( 0.0125,   0.0010  )
+		vec2(0.0, 0.0),
+		vec2(cos(2.39996323 * 1.0 + 0.7), sin(2.39996323 * 1.0 + 0.7)) * 2.40,
+		vec2(cos(2.39996323 * 2.0 + 0.7), sin(2.39996323 * 2.0 + 0.7)) * 3.20,
+		vec2(cos(2.39996323 * 3.0 + 0.7), sin(2.39996323 * 3.0 + 0.7)) * 2.60,
+		vec2(cos(2.39996323 * 4.0 + 0.7), sin(2.39996323 * 4.0 + 0.7)) * 3.50,
+		vec2(cos(2.39996323 * 5.0 + 0.7), sin(2.39996323 * 5.0 + 0.7)) * 2.90
 	);
+	// 2026-05-19 hex-grounded-offset：和 sample_weather_field 同套思路——
+	// 偏移按 hex 物理直径换算到 uv 域，相位偏 0.7 让陆海/天气场两组采样圈互不重合。
+	vec2 land_ring_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
 	float land_w_sum = 0.0;
 	float land_total_w = 0.0;
 	for (int li = 0; li < 6; li++) {
-		// 每个偏移再叠 fbm jitter（约半个 hex），让"邻域圈"边缘不规则。
+		// 2026-05-19 jitter-via-hash：陆海邻域偏移 jitter 改用 hash21，
+		// 原 6×2=12 次 noise fetch 完全省掉。
 		vec2 jj = vec2(
-			fbm(wp * 0.18 + vec2(31.0 + float(li) * 11.0, -47.0), 1),
-			fbm(wp * 0.18 + vec2(-19.0, 23.0 + float(li) * 9.0), 1)
-		) - 0.5;
-		vec2 s_uv = clamp(uv + land_offs[li] + jj * 0.006, vec2(0.0), vec2(1.0));
+			hash_signed(floor(wp * 0.18 + vec2(31.0 + float(li) * 11.0, -47.0))),
+			hash_signed(floor(wp * 0.18 + vec2(-19.0, 23.0 + float(li) * 9.0)))
+		);
+		// hex-grounded-offset：jitter 振幅 = 1.4 hex 直径，与采样圈尺度对齐。
+		vec2 uv_offset = land_offs[li] * land_ring_step + jj * 1.4 * land_ring_step;
+		vec2 s_uv = clamp(uv + uv_offset, vec2(0.0), vec2(1.0));
 		int bs = int(texture(enum_atlas, s_uv).r * 255.0 + 0.5);
 		bool s_water = (bs == B_OCEAN) || (bs == B_COAST) || (bs == B_LAKE)
 				|| (bs == B_REEF) || (bs == B_KELP) || (bs == B_SEA_ICE);
 		float bw = (bs == B_MOUNTAIN) ? 1.0
 				: ((bs == B_HILL) ? 0.65 : (s_water ? 0.0 : 0.35));
-		// 采样权重叠 fbm 抖动 ±0.25，避免 6 点等权产生几何对称感。
-		float kw = 0.5 + (fbm(wp * 0.21 + vec2(float(li) * 23.0, 7.0), 1) - 0.5) * 0.5;
+		// 2026-05-19 jitter-via-hash：weight 抖动改用 hash21，省 6 次 noise fetch。
+		float kw = 0.5 + hash_signed(floor(wp * 0.21 + vec2(float(li) * 23.0, 7.0))) * 0.5;
 		// 中心点稍重一些（×1.4），保留\"主像素是陆是水\"的主导权。
 		if (li == 0) kw *= 1.4;
 		land_w_sum += bw * kw;
@@ -738,42 +874,61 @@ void fragment() {
 	float mountain_w_smoothed = clamp(land_w_sum / max(land_total_w, 0.001), 0.0, 1.0);
 	// 在过渡带（mountain_w_smoothed 在 0~0.35 之间）叠一层 fbm 抖动，
 	// 让陆海雾分界线破碎成不规则斑驳——配合上面的多点平滑彻底消除 hex 形状的直边。
-	float coast_jitter = fbm(wp * 0.085 + vec2(67.0, -31.0), 2) - 0.5;
+	// 2026-05-19 jitter-via-hash：海岸 jitter 改用 hash21，省 1 次 noise fetch。
+	// hash21 输出 [0,1] × 0.5 渡减后与原 fbm()-0.5 近似同频谱。
+	float coast_jitter = hash_signed(floor(wp * 0.085 + vec2(67.0, -31.0)));
 	float mountain_w = clamp(mountain_w_smoothed + coast_jitter * 0.18, 0.0, 1.0);
 
-	// Phase 2：先计算多层云的"附加贡献"（高云 + 山雾），再与中云合并。
-	// dramatic-fx：高云触发条件扩到 WT_RAIN，让大片雨云上方也能看到拉丝卷云；
-	// 强度系数 0.55 → 0.70（storm/monsoon 仍优先），层次感更厚。
-	float cirrus = 0.0;
-	if (weather_overlay_quality >= 1
-			&& (w.type == WT_STORM || w.type == WT_MONSOON || w.type == WT_RAIN)
-			&& w.cloud > 0.05) {
-		float cirrus_intensity = (w.type == WT_RAIN) ? w.cloud * 0.55 : w.cloud * 0.70;
-		cirrus = sample_high_cloud(wp, w.axis, cirrus_intensity);
+	// map-visual-overhaul-v1：三层独立云始终绘制（不再仅在 STORM/MONSOON/RAIN
+	// 触发），让玩家在任何天气下都看到三种云在不同高度独立飘动——\"地球在呼吸\"。
+	// weather front 只决定**加强系数**，不再决定有无；这是真正的卫星云图视觉。
+	//   Cirrus（卷云、高云）：纬向、快漂、低 alpha 半透薄纱
+	//   Cumulus（积云、中云）：跟风场、中速、团块堆积（map-visual-overhaul-v1 新增）
+	//   Fog（雾、低云）：贴附山地 / 海岸、慢漂、各向同性
+	// 注：Cumulus 的方向跟随风场（sample_wind 优先，否则 fallback 到 w.axis）。
+	WindSample ws = sample_wind(uv);
+	vec2 cumulus_axis = (ws.speed > 0.01) ? ws.dir : w.axis;
+	vec2 cirrus_axis = vec2(1.0, 0.15);  // 卷云固定纬向（地球真实大气环流近似）
+
+	// [v1-hotfix-darkness] Cirrus 基础 0.0（晴天无云），仅 weather front 触发：
+	// STORM/MONSOON/RAIN 时按 w.cloud 提升到最多 0.70。
+	float cirrus_intensity = 0.0;
+	if (w.type == WT_STORM || w.type == WT_MONSOON) {
+		cirrus_intensity = max(cirrus_intensity, w.cloud * 0.70);
+	} else if (w.type == WT_RAIN) {
+		cirrus_intensity = max(cirrus_intensity, w.cloud * 0.55);
 	}
-	// 山雾（低云）：在陆地及陆海过渡带上方堆叠；不再用 `!is_water` 硬切，
-	// 由 mountain_w（平滑后的连续场）自然决定强度——纯洋深处 ~0、近岸 ~0.1、
-	// 平原 ~0.35、丘陵 ~0.65、山地 ~1.0。
-	float low_fog = 0.0;
-	if (mountain_w > 0.001 && w.cloud > 0.05) {
-		float fog_intensity = w.cloud * 0.65;
-		// dramatic-fx：FOG 天气直接把局部权重提到 0.85，让浓雾在平原也明显。
-		float local_w = mountain_w;
-		if (w.type == WT_FOG) {
-			fog_intensity = max(fog_intensity, w.cloud * 1.30);
-			// FOG 天气下 local_w 抬升上限，但仍受 mountain_w 调制——
-			// 纯洋上不会突然出现浓雾（mountain_w≈0 时 local_w 仍≈0）。
-			local_w = max(local_w, mountain_w * 1.6);
-			local_w = min(local_w, 0.85);
-		}
-		if (w.type == WT_STORM || w.type == WT_MONSOON) fog_intensity *= 1.10;
-		low_fog = sample_low_fog(wp, w.axis, fog_intensity, local_w);
+	float cirrus = (weather_overlay_quality >= 1) ? sample_high_cloud(wp, cirrus_axis, cirrus_intensity) : 0.0;
+
+	// [v1-hotfix-darkness] Cumulus 基础 0.0（晴天无云），weather front 时按 w.cloud 触发显示。
+	float cumulus_intensity = 0.0;
+	if (w.cloud > 0.05) {
+		cumulus_intensity = max(cumulus_intensity, w.cloud * 0.85);
 	}
+	if (w.type == WT_STORM || w.type == WT_MONSOON) cumulus_intensity *= 1.20;
+	float cumulus = sample_cumulus(wp, cumulus_axis, cumulus_intensity);
+
+	// [v1-hotfix-darkness] Fog（低云/雾）：基础雾归零，仅 weather front（FOG/STORM/MONSOON 等）触发；
+	// 山地权重通过 local_fog_w 主导可见度，不再做"晴天山地常驻雾"。
+	float fog_base_intensity = 0.0;
+	float fog_intensity = fog_base_intensity;
+	if (w.cloud > 0.05) {
+		float wf = w.cloud * 0.65;
+		if (w.type == WT_FOG) wf = max(wf, w.cloud * 1.30);
+		if (w.type == WT_STORM || w.type == WT_MONSOON) wf *= 1.10;
+		fog_intensity = max(fog_intensity, wf);
+	}
+	float local_fog_w = mountain_w;
+	if (w.type == WT_FOG) local_fog_w = min(max(local_fog_w, mountain_w * 1.6), 0.85);
+	float low_fog = sample_low_fog(wp, w.axis, fog_intensity, local_fog_w);
 
 	// ambient-shadow：先算一次全图云影（与是否有天气无关），后面三条路径都会用。
 	float ambient_shadow = compute_ambient_cloud_shadow(wp, is_water);
 
-	bool has_layer = (w.cloud > 0.001) || (w.precip > 0.001) || (cirrus > 0.001) || (low_fog > 0.001);
+	// has_layer 改为：始终至少绘制三层基础云（cirrus + cumulus 已恒 > 0），
+	// 所以 has_layer 为真。但保留旧分支做兜底（极低 quality 时退化）。
+	bool has_layer = (w.cloud > 0.001) || (w.precip > 0.001)
+			|| (cirrus > 0.001) || (cumulus > 0.001) || (low_fog > 0.001);
 	if (!has_layer) {
 		// ambient-shadow：clear 区域只输出云影 alpha，其余通道保持 0（依赖 blend_mix
 		// 上层 ambient_color 作为底色，等同于"地面 × (1 - shadow_alpha)"的轻压暗）。
@@ -791,7 +946,17 @@ void fragment() {
 		//   彻底脱离 hex-constant 几何。FLAG 仅用于决定下游"雨/雪/雾"特效是否启用。
 		{
 
-			vec3 cloud_col = apply_cloud_tod(w.color, w.type);
+			// 2026-05-19 dark-overlay-fix：clear/drought/heatwave 的 overlay_color = (0,0,0)。
+			// N12 改造取消了 FLAG_HAS_OVERLAY 早退后，所有 wt 都会走这条渲染路径，
+			// 当某个像素的 w.color 因 wt=clear/drought/heatwave 而是黑色时：
+			//   col = mix(shadow_col(0.18,0.22,0.28), 黑, 0.62~0.82) ≈ (0.07,0.08,0.11)
+			// 这就是图中红圈"深灰团块"的来源。它和 fog 区域的浅白(0.84,0.86,0.90)
+			// 形成 ~0.7 的亮度差，再多 smoothstep 也救不回来。
+			// 修复：给 cloud_col 设置最低亮度 floor —— 任何 overlay_color 暗于 (0.78,0.82,0.86)
+			// 的天气，都被拉到这个"中性云白"基准。这是连续 max 操作，不引入硬边。
+			vec3 cloud_col_raw = apply_cloud_tod(w.color, w.type);
+			vec3 cloud_col_floor = vec3(0.78, 0.82, 0.86); // 与 fog 浅白接近的中性云色
+			vec3 cloud_col = max(cloud_col_raw, cloud_col_floor);
 			vec3 shadow_col = (w.type == WT_BLIZZARD) ? vec3(0.62, 0.68, 0.76) : vec3(0.18, 0.22, 0.28);
 			vec3 col = mix(shadow_col, cloud_col, 0.62 + w.edge * 0.20);
 			// 2026-05-18 N12：alpha 不再乘 w.alpha（hex-constant 的 profile alpha）——
@@ -817,6 +982,17 @@ void fragment() {
 				vec3 fog_col = mix(vec3(0.80, 0.84, 0.88), vec3(0.62, 0.68, 0.74), tod_night_factor);
 				col = mix(col, fog_col, low_fog * 0.78);
 				alpha = clamp(alpha + low_fog * 0.65 * weather_strength, 0.0, 0.96);
+			}
+
+			// map-visual-overhaul-v1：Cumulus（积云、中层云）—— 三层独立云的视觉主角。
+			// 颜色偏白、稍带 TOD 暖色染；alpha 权重比 fog 高（云团比雾"挡得更狠"）。
+			// 夜晚稍冷灰，避免黑夜里云团看起来比天空还亮。
+			if (cumulus > 0.001) {
+				vec3 cumulus_col = mix(vec3(0.94, 0.96, 1.00), tod_sun_color, 0.20);
+				cumulus_col = mix(cumulus_col, vec3(0.55, 0.62, 0.72), tod_night_factor);
+				col = mix(col, cumulus_col, cumulus * 0.65);
+				// alpha：基础 0.40 系数 + weather_strength 调制；上限稍低留出 cirrus 叠加空间。
+				alpha = clamp(alpha + cumulus * 0.40 * weather_strength, 0.0, 0.92);
 			}
 
 			if ((flags & FLAG_RAIN_STREAK) != 0 && w.precip > 0.001) {
@@ -866,4 +1042,5 @@ void fragment() {
 			COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), alpha);
 		}
 	}
+	} // end else (debug_uv_mode == 0)
 }

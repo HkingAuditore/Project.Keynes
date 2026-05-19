@@ -38,7 +38,8 @@ var ocean_current_buffer: PackedByteArray = PackedByteArray()  # RG8
 # HexCell.upwelling_strength，下游海冰 / 海洋生物 / 调试可视化共用。
 var ocean_upwelling_buffer: PackedByteArray = PackedByteArray()  # R8
 # Phase 6：每像素盛行风向（按纬度风带模型 + 大陆扰动 + 季风偏置）。RG8。
-# 海洋洋流通过 Ekman 偏转读它当主驱动力；shader 陆地端用它做风迹噪声。
+# 海洋洋流通过 Ekman 偏转读它当主驱动力；主地图水面和 WeatherLayer 仍消费它。
+
 var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8
 # Phase 14：每像素火山强度（r 通道）。靠近火山中心 = 1.0，向外径向衰减。
 # shader 用来叠加红光晕 / 烟柱效果。
@@ -55,6 +56,16 @@ var dynamic_cell_atlas_buffer: PackedByteArray = PackedByteArray()
 # RGBA8 ecology visual atlas. R=foliage_density, G=stress/dryness,
 # B=vegetation transition age, A=recent growth/damage.
 var ecology_visual_atlas_buffer: PackedByteArray = PackedByteArray()
+
+# ─── map-visual-overhaul-v1：地图视觉重构新增 atlas（病灶 B / A）───
+
+# dyn_atlas_smooth_buffer：dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物，
+#   shader 单点采样它即可得到跨 hex 平滑的 R=temp / G=moist / B=snow / A=vitality。
+#   原 dynamic_cell_atlas_buffer 保留给调试/info 面板，不再供主 shader 消费。
+# ice_state_buffer：R8，每像素 = 该 cell.sea_ice_frac × 255 量化。仅水域 cell 写
+#   非零，陆地恒 0。shader 据此替换原 lat-driven 静态 ice mask（病灶 A 解药）。
+var dyn_atlas_smooth_buffer: PackedByteArray = PackedByteArray()  # RGBA8
+var ice_state_buffer: PackedByteArray = PackedByteArray()         # R8
 
 # ─── 元数据 ───────────────────────────────────────────────────────────────
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
@@ -98,13 +109,17 @@ var dynamic_cell_atlas_tex: ImageTexture
 # Ecology visual atlas, updated with the same low-frequency dirty path as
 # dynamic_cell_atlas_tex.
 var ecology_visual_atlas_tex: ImageTexture
+# ─── map-visual-overhaul-v1：地图视觉重构新增 ImageTexture ───
+# 主地图 fragment 严格 ≤8 sample 的"邻域平滑 / 海冰生命化"全部接到这里。
+# 任何"看起来需要邻域"的视觉都由 baker 端预烘到这些 atlas，shader 单点采样。
+var dyn_atlas_smooth_tex: ImageTexture     # RGBA8 LINEAR, derived_size（与 dynamic_cell_atlas 同尺寸）
+var ice_state_tex: ImageTexture             # R8 LINEAR, derived_size（每像素 = sea_ice_frac × 255）
 # Systemic Ocean Currents：独立的上升流 R8 纹理。仅调试可视化（F6 扩展）消费；
 # 主视觉路径不需要它。bake_world 与 rebake_ocean_currents 都会同步更新。
 var upwelling_tex: ImageTexture
-# v9.fbm-opt：共享的 tileable noise 贴图（256×256 R8，filter_linear + repeat_enable）。
-# shader 端用它替换原本 value_noise(p) 内部的 4×hash21 + smoothstep mix —— 单 octave
-# 从 ~30 ALU 降到 1 次 bilinear texture fetch（dedicated hardware，几乎免费）。
-# 由 MapBaker 在 bake_world 时一次性 lazy 生成，跨 world 实例共享同一张 ImageTexture。
+# v10.noise-pack：共享 tileable 噪声包（256×256 RGBA8，filter_linear_mipmap + repeat_enable）。
+# R=raw value noise；G/B/A=2/3/4 octave fBM 预积分。world_map 的 fbm(p,N)
+# 全局降为 1 次 texture fetch，由 MapBaker lazy 生成，跨 world 实例共享同一张 ImageTexture。
 var noise_tex: ImageTexture
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
