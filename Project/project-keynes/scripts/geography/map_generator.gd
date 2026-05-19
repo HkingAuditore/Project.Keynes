@@ -1249,7 +1249,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		"elapsed_ms": 0.0,
 		"reason": "shader_temperature_derived",
 	}
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride)
+	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
+	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride, cp)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1451,7 +1453,9 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 		"elapsed_ms": 0.0,
 		"reason": "shader_temperature_derived",
 	}
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride)
+	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
+	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride, cp)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)

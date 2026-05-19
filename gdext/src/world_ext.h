@@ -697,6 +697,62 @@ public:
     godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
 
+    // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ────
+    // 4 张运行期 atlas baker 的 byte-fill 阶段下沉 C++/SIMD：
+    //   encode_dynamic_cell_atlas：RGBA8。R=q01(temp), G=q01(moist),
+    //     B=q01(snow), A = passable_sea ? 0 : q01(vitality)。镜像
+    //     map_baker.gd::_dynamic_cell_signature + dynamic_cell_atlas_chunk_step。
+    //   encode_ecology_visual_atlas：RGBA8。R=q01(foliage), G=q01(stress),
+    //     B=transition_age, A=q01(growth_damage)。需要持久状态：
+    //     prev_veg / prev_vitality_byte / prev_transition_age（per-cell byte 数组），
+    //     由 GDScript 端按 cell_indices 顺序传入并由 C++ 端写出新值（同长度）返回。
+    //     镜像 _ecology_visual_signature + ecology_visual_atlas_chunk_step。
+    //   encode_dyn_smooth_atlas：RGBA8。中心 sig 0.5 + ≤6 邻居均值 0.5 → q01。
+    //     需要 neighbor_indices PackedInt32Array（长度 n_cells*6，越界为 -1，
+    //     与 run_physical_circulation_pass 同构）。镜像 dyn_atlas_smooth_chunk_step。
+    //   encode_ice_state_atlas：R8。byte = sea_ice_frac > 0 ? max(1, ceil(*255)) : 0。
+    //     仅水域写非零，由 GDScript 端在 cell_indices 中只放水域 dirty cell。
+    //     镜像 ice_state_atlas_chunk_step（含 _q01_byte_ice）。
+    //
+    // ClimateProfile flag：cpp_atlas_encode_enabled（默认 false）。
+    //
+    // 共享 CSR 协议（所有 4 个 method 通用）：
+    //   knobs Dictionary 入参：
+    //     "n_pix"            : int      （= W*H）
+    //     "stride_bytes"     : int      （RGBA=4，R8=1）
+    //     "atlas_buffer"     : PackedByteArray（长度 n_pix * stride_bytes，C++ 端 ptrw 直写）
+    //     "cell_indices"     : PackedInt32Array（dirty cell SoA idx 数组，长度 K）
+    //     "cell_first_px"    : PackedInt32Array（长度 K，CSR row-ptr：第 i 个 cell 在 flat_px_indices 起始）
+    //     "cell_px_count"    : PackedInt32Array（长度 K，第 i 个 cell 的像素数）
+    //     "flat_px_indices"  : PackedInt32Array（长度 = sum(px_count)，所有像素 idx 顺序拼接）
+    //     "cell_passable_sea": PackedByteArray（长度 K，0/1；dynamic / dyn_smooth pass 必需）
+    //     # ecology pass 额外：
+    //     "prev_veg"         : PackedByteArray（长度 K）
+    //     "prev_vitality"    : PackedByteArray（长度 K）
+    //     "prev_transition"  : PackedByteArray（长度 K）
+    //     "cache_valid"      : bool（false 时 transition_age 强制清 0）
+    //     # dyn_smooth pass 额外：
+    //     "neighbor_indices" : PackedInt32Array（长度 n_cells * 6，-1 表示越界邻居）
+    //
+    // 返回 Dictionary：
+    //   "elapsed_ms"     : double（C++ 端 hot loop 耗时）
+    //   "fallback"       : bool（true 表示参数非法 / 槽位缺失，调用方应走 GDScript 路径）
+    //   "reason"         : String（fallback 时的理由）
+    //   "pixels_written" : int（实际写入的像素数）
+    //   "atlas_buffer"   : PackedByteArray（直写后的 buffer；GDScript 端取回赋给 world.*_buffer）
+    //   # ecology 额外返回：
+    //   "new_veg"        : PackedByteArray（长度 K，本 tick 写回 _last_ecology_veg_bytes）
+    //   "new_vitality"   : PackedByteArray（长度 K）
+    //   "new_transition" : PackedByteArray（长度 K，本 tick 写回 _ecology_transition_age_bytes；调用方须按 erase if==0 维护 _eco_active_decay_set）
+    //   "new_sigs"       : PackedInt32Array（长度 K，写回 _last_ecology_visual_sigs；dynamic/smooth/ice 也返回，写回各自 _last_*_sigs）
+    //
+    // 失败模式（fallback=true）：n_pix<=0、CSR 数组长度不匹配、SoA slot 缺失或大小不够、
+    // atlas_buffer 大小不匹配 stride*n_pix。
+    godot::Dictionary encode_dynamic_cell_atlas(godot::Dictionary knobs);
+    godot::Dictionary encode_ecology_visual_atlas(godot::Dictionary knobs);
+    godot::Dictionary encode_dyn_smooth_atlas(godot::Dictionary knobs);
+    godot::Dictionary encode_ice_state_atlas(godot::Dictionary knobs);
+
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
     //

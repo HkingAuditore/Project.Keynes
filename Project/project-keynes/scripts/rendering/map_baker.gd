@@ -160,6 +160,14 @@ var _last_ecology_visual_sigs: Dictionary = {}  # HexCell -> int (packed u32)
 var _last_ecology_veg_bytes: Dictionary = {}  # HexCell -> int
 var _last_ecology_vitality_bytes: Dictionary = {}  # HexCell -> int
 var _ecology_transition_age_bytes: Dictionary = {}  # HexCell -> int
+# plan/dirty-push-atlas-encode 阶段 E：transition_age > 0 的 cell 即使本 stride
+# 没被 sim 写脏，也必须由 baker 自驱重新进入 chunk_step（让 transition_age 按
+# 18/stride 衰减；line 800-802）。本 set 在 chunk_step 末尾按结果同步：
+#   transition_age > 0 → set[cell] = true
+#   transition_age == 0 → set.erase(cell)
+# 调度器（DynamicVisualAtlasUploadSystem）在 ecology phase 入口取 set.keys()
+# ∪ sim_dirty_cells 作为本 stride 真实工作集。
+var _eco_active_decay_set: Dictionary = {}  # HexCell -> true
 # H 诊断：bake_weather_field_only 命中率统计。每 30 次调用打一次 dirty 比例 +
 # 跳过比例，确认 F 增量路径是否真的吃到便宜。重置时一并清。
 var _wf_diag_calls: int = 0
@@ -487,6 +495,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_last_ecology_veg_bytes = {}
 	_last_ecology_vitality_bytes = {}
 	_ecology_transition_age_bytes = {}
+	_eco_active_decay_set = {}  # plan/dirty-push-atlas-encode 阶段 E：地图重生时清空
 	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
 	_vector_atlas_data = PackedByteArray()
 	_vector_atlas_data_size = Vector2i.ZERO
@@ -677,6 +686,12 @@ func dynamic_cell_atlas_chunk_begin(map: MapData, world: WorldData) -> Dictionar
 func dynamic_cell_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
+	# ── plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path ─────────────
+	# cpp_atlas_encode_enabled flag + DCWorldExt.encode_dynamic_cell_atlas 可用
+	# 时走 CSR 协议 → C++ SIMD 单遍 byte fill；fallback 到下面 GDScript loop。
+	if _cpp_atlas_encode_active("encode_dynamic_cell_atlas"):
+		if _try_cpp_dynamic_cell_atlas_encode(world, ctx, cells, report):
+			return
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
@@ -772,6 +787,7 @@ func ecology_visual_atlas_chunk_begin(map: MapData, world: WorldData) -> Diction
 		_last_ecology_veg_bytes = {}
 		_last_ecology_vitality_bytes = {}
 		_ecology_transition_age_bytes = {}
+		_eco_active_decay_set = {}  # plan/dirty-push-atlas-encode 阶段 E：cache 失效时一并清空
 	ctx["prepared"] = true
 	ctx["W"] = W
 	ctx["H"] = H
@@ -784,6 +800,10 @@ func ecology_visual_atlas_chunk_begin(map: MapData, world: WorldData) -> Diction
 func ecology_visual_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
+	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
+	if _cpp_atlas_encode_active("encode_ecology_visual_atlas"):
+		if _try_cpp_ecology_visual_atlas_encode(world, ctx, cells, report):
+			return
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
@@ -808,6 +828,15 @@ func ecology_visual_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictio
 		_last_ecology_veg_bytes[cell] = cur_veg
 		_last_ecology_vitality_bytes[cell] = cur_vitality_byte
 		_ecology_transition_age_bytes[cell] = transition_age
+		# plan/dirty-push-atlas-encode 阶段 E：维护 active decay set。
+		# 该 set 让调度器在下 stride 即使没收到 sim dirty，也能把"transition_age
+		# 还在衰减"的 cell 重新喂进 chunk_step，避免衰减卡在 stale byte。
+		# 注意：cache_invalid 路径下 transition_age 被强制清 0（line 804-805），
+		# 这里 erase 是正确的。
+		if transition_age > 0:
+			_eco_active_decay_set[cell] = true
+		else:
+			_eco_active_decay_set.erase(cell)
 		if cache_valid and int(_last_ecology_visual_sigs.get(cell, -1)) == sig:
 			continue
 		_last_ecology_visual_sigs[cell] = sig
@@ -968,6 +997,11 @@ func dyn_atlas_smooth_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
 func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
+	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
+	# dyn_smooth 需要 neighbor_indices 和 neighbor_passable_sea，由 helper 内打包。
+	if _cpp_atlas_encode_active("encode_dyn_smooth_atlas"):
+		if _try_cpp_dyn_smooth_atlas_encode(map, world, ctx, cells, report):
+			return
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
@@ -1136,6 +1170,11 @@ func ice_state_atlas_default_cell_source(map: MapData, world: WorldData, ctx: Di
 func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
+	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
+	# ice_state R8 stride=1，不需要 passable_sea（caller 端已只把水域 cell 喂入）。
+	if _cpp_atlas_encode_active("encode_ice_state_atlas"):
+		if _try_cpp_ice_state_atlas_encode(world, ctx, cells, report):
+			return
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_water_lists: bool = bool(ctx.use_water_lists)
@@ -1205,6 +1244,338 @@ func ice_state_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report: D
 
 func get_last_enum_atlas_upload_report() -> Dictionary:
 	return _last_enum_atlas_upload_report.duplicate(true)
+
+
+# ─── plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path helpers ────────
+#
+# 共享设计：所有 4 个 atlas 走同一 CSR 协议（cell_indices/cell_first_px/
+# cell_px_count/flat_px_indices），由 `_pack_csr_for_cells()` 一次构建，按需
+# 加上 passable_sea / prev_* / neighbor 等 pass 特有字段后调对应 cpp method。
+#
+# 失败模式：cpp method 缺失、CSR 打包失败、SoA slot 不匹配等情况下 helper 返回
+# false，caller 直接走下方 GDScript loop（透明 fallback）。**不报错、不抛异常**。
+
+# 是否启用 cpp encode pass。使用 helper 集中判断三件事：
+#   1. cpp_atlas_encode_enabled flag 为 true（或 climate_profile 缺失时跳过）
+#   2. _world_ext 已注入（DCWorld bind 完成）
+#   3. ext 实现了对应 method（向前兼容旧 dll）
+func _cpp_atlas_encode_active(method_name: StringName) -> bool:
+	if _climate_profile == null:
+		return false
+	# DCFeatureFlags.is_on 是 cp.<flag> 的薄 wrapper；这里走反射避免 hard import。
+	if not bool(_climate_profile.get("cpp_atlas_encode_enabled")):
+		return false
+	if _world_ext == null:
+		return false
+	return _world_ext.has_method(method_name)
+
+
+# 共享 CSR 打包：把 dirty cells（HexCell Array）转成 4 个 PackedInt32Array。
+# - cells: HexCell Array，可能含 null（caller 应已过滤但兼容 null 跳过）
+# - world: 用于读 cell_pixel_lists / water_cell_pixel_lists
+# - use_water_lists: ice_state pass 走 water_cell_pixel_lists；其他走 cell_pixel_lists
+# - n_pix: W*H，用于越界过滤
+# 返回 Dictionary：含 cell_indices / cell_first_px / cell_px_count / flat_px_indices /
+#                 cell_passable_sea / valid_count（实际有效 cell 数；剔除 null/idx<0/无 pixel list）
+# 如果 valid_count == 0，caller 应直接 return（无需调 cpp）。
+func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: int) -> Dictionary:
+	var lists: Dictionary
+	if use_water_lists:
+		lists = world.water_cell_pixel_lists if world != null else {}
+	else:
+		lists = world.cell_pixel_lists if world != null else {}
+
+	var k_max: int = cells.size()
+	var cell_indices: PackedInt32Array = PackedInt32Array()
+	cell_indices.resize(k_max)
+	var first_px: PackedInt32Array = PackedInt32Array()
+	first_px.resize(k_max)
+	var px_count: PackedInt32Array = PackedInt32Array()
+	px_count.resize(k_max)
+	var passable_sea: PackedByteArray = PackedByteArray()
+	passable_sea.resize(k_max)
+
+	var flat_px: PackedInt32Array = PackedInt32Array()
+	# 估算 flat_px 容量：典型每 cell 30-100 px。先粗占 64×k_max；resize 仅在结尾一次校准。
+	flat_px.resize(k_max * 64)
+	var flat_w: int = 0
+	var k: int = 0
+	for i in range(k_max):
+		var cell: HexCell = cells[i]
+		if cell == null or cell.index < 0:
+			continue
+		var pixels: PackedInt32Array
+		if lists != null and lists.has(cell):
+			pixels = lists.get(cell, PackedInt32Array())
+		else:
+			pixels = PackedInt32Array()
+		# 跳过 0-pixel cell：cpp 端 byte fill 也是 no-op，但保留会拉长 K 影响 sig cache 命中。
+		# 但 ecology pass 即使 0-pixel 也要更新 prev_*/transition_age 状态——这种情况
+		# caller 会传 use_water_lists=false 同时确保 cells 已过滤 null。这里保留写入。
+		cell_indices[k] = cell.index
+		first_px[k] = flat_w
+		px_count[k] = pixels.size()
+		passable_sea[k] = 1 if cell.passable_sea else 0
+		# 拷贝 pixel idx 到 flat 数组
+		var nx: int = pixels.size()
+		if flat_w + nx > flat_px.size():
+			flat_px.resize(maxi(flat_w + nx, flat_px.size() * 2))
+		for p in range(nx):
+			flat_px[flat_w + p] = pixels[p]
+		flat_w += nx
+		k += 1
+
+	cell_indices.resize(k)
+	first_px.resize(k)
+	px_count.resize(k)
+	passable_sea.resize(k)
+	flat_px.resize(flat_w)
+
+	return {
+		"cell_indices": cell_indices,
+		"cell_first_px": first_px,
+		"cell_px_count": px_count,
+		"flat_px_indices": flat_px,
+		"cell_passable_sea": passable_sea,
+		"valid_count": k,
+	}
+
+
+# dynamic_cell_atlas C++ fast-path。返回 true = 成功消费，caller 直接 return。
+func _try_cpp_dynamic_cell_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+	var n: int = int(ctx.n)
+	if n <= 0:
+		return false
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var k: int = int(csr.get("valid_count", 0))
+	if k <= 0:
+		# 没有有效 cell：cpp 不必调用，但仍算"成功消费"（GDScript loop 也会走完空 cells 0 操作）。
+		return true
+	var knobs := {
+		"n_pix": n,
+		"stride_bytes": 4,
+		"atlas_buffer": _dynamic_cell_atlas_buf,
+		"cell_indices": csr["cell_indices"],
+		"cell_first_px": csr["cell_first_px"],
+		"cell_px_count": csr["cell_px_count"],
+		"flat_px_indices": csr["flat_px_indices"],
+		"cell_passable_sea": csr["cell_passable_sea"],
+	}
+	var out: Dictionary = _world_ext.call("encode_dynamic_cell_atlas", knobs)
+	if bool(out.get("fallback", true)):
+		return false
+	# 取回 buffer（C++ 端通过 PackedByteArray 直写后返回；GDScript 端 PackedByteArray
+	# 是 COW，需要重新赋值才能让"GDScript 后续 finalize 看到新 byte"）。
+	_dynamic_cell_atlas_buf = out["atlas_buffer"]
+	# 写回 sig cache（caller 路径下 _last_dynamic_cell_sigs[cell] = sig）。
+	# C++ 没有 sig cache 命中 skip，所以所有进入的 cell 都视为 dirty 并刷 cache。
+	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
+	if new_sigs.size() == k:
+		var ci: PackedInt32Array = csr["cell_indices"]
+		for i in range(k):
+			var cell: HexCell = cells[i] if i < cells.size() else null
+			if cell != null and cell.index == ci[i]:
+				_last_dynamic_cell_sigs[cell] = new_sigs[i]
+			# else: 顺序错位时降级丢 sig cache（下次 GDScript path 自然重算）
+	report.dirty_cells = int(report.dirty_cells) + k
+	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	return true
+
+
+# ecology_visual_atlas C++ fast-path。
+func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+	var n: int = int(ctx.n)
+	if n <= 0:
+		return false
+	var cache_valid: bool = bool(ctx.cache_valid)
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var k: int = int(csr.get("valid_count", 0))
+	if k <= 0:
+		return true
+	# 打包 prev_veg / prev_vitality / prev_transition（按 cells 顺序）
+	var ci: PackedInt32Array = csr["cell_indices"]
+	var prev_veg: PackedByteArray = PackedByteArray()
+	prev_veg.resize(k)
+	var prev_vit: PackedByteArray = PackedByteArray()
+	prev_vit.resize(k)
+	var prev_tr: PackedByteArray = PackedByteArray()
+	prev_tr.resize(k)
+	# 拿取 cell 的本 stride 之前的状态（首次访问时取 cur 作 fallback 与 GDScript loop 同义）
+	var k_idx: int = 0
+	for i in range(cells.size()):
+		var cell: HexCell = cells[i]
+		if cell == null or cell.index < 0:
+			continue
+		if k_idx >= k:
+			break
+		var cur_veg: int = int(cell.vegetation) & 0xFF
+		var cur_vit_byte: int = _q01_byte(float(cell.vegetation_vitality))
+		prev_veg[k_idx] = int(_last_ecology_veg_bytes.get(cell, cur_veg)) & 0xFF
+		prev_vit[k_idx] = int(_last_ecology_vitality_bytes.get(cell, cur_vit_byte)) & 0xFF
+		prev_tr[k_idx] = int(_ecology_transition_age_bytes.get(cell, 0)) & 0xFF
+		k_idx += 1
+	var knobs := {
+		"n_pix": n,
+		"stride_bytes": 4,
+		"atlas_buffer": _ecology_visual_atlas_buf,
+		"cell_indices": ci,
+		"cell_first_px": csr["cell_first_px"],
+		"cell_px_count": csr["cell_px_count"],
+		"flat_px_indices": csr["flat_px_indices"],
+		"cell_passable_sea": csr["cell_passable_sea"],
+		"prev_veg": prev_veg,
+		"prev_vitality": prev_vit,
+		"prev_transition": prev_tr,
+		"cache_valid": cache_valid,
+		"terrain_lake": int(TerrainType.TERRAIN.LAKE),
+		"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
+		"veg_none": int(VegetationType.VEG.NONE),
+	}
+	var out: Dictionary = _world_ext.call("encode_ecology_visual_atlas", knobs)
+	if bool(out.get("fallback", true)):
+		return false
+	_ecology_visual_atlas_buf = out["atlas_buffer"]
+	var new_veg: PackedByteArray = out.get("new_veg", PackedByteArray())
+	var new_vit: PackedByteArray = out.get("new_vitality", PackedByteArray())
+	var new_tr: PackedByteArray = out.get("new_transition", PackedByteArray())
+	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
+	if new_veg.size() == k and new_vit.size() == k and new_tr.size() == k:
+		k_idx = 0
+		for i in range(cells.size()):
+			var cell: HexCell = cells[i]
+			if cell == null or cell.index < 0:
+				continue
+			if k_idx >= k:
+				break
+			# 注意：辅助字典必须每 cell 都写（无论是否 dirty；GDScript loop 同理）
+			_last_ecology_veg_bytes[cell] = int(new_veg[k_idx])
+			_last_ecology_vitality_bytes[cell] = int(new_vit[k_idx])
+			_ecology_transition_age_bytes[cell] = int(new_tr[k_idx])
+			# 维护 active decay set（与 GDScript loop 等价语义）
+			if int(new_tr[k_idx]) > 0:
+				_eco_active_decay_set[cell] = true
+			else:
+				_eco_active_decay_set.erase(cell)
+			if k_idx < new_sigs.size():
+				_last_ecology_visual_sigs[cell] = new_sigs[k_idx]
+			k_idx += 1
+	report.dirty_cells = int(report.dirty_cells) + k
+	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	return true
+
+
+# dyn_atlas_smooth C++ fast-path。需要 neighbor_indices（n_cells*6）+ neighbor_passable_sea（K*6）。
+func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+	var n: int = int(ctx.n)
+	if n <= 0:
+		return false
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var k: int = int(csr.get("valid_count", 0))
+	if k <= 0:
+		return true
+	# 邻居 SoA：neighbor_indices 已由 MapData 持有（rebuild 时建好），尺寸 = cell_count * 6。
+	var nb_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_method("neighbor_indices_packed") else PackedInt32Array()
+	if nb_indices.size() <= 0:
+		# 没有 neighbor SoA 不能走 cpp（fallback 到 GDScript 的 map.get_neighbors）
+		return false
+	# neighbor_passable_sea：长度 K*6，按 cells 顺序对每个 dirty cell 的 6 邻居打包 passable_sea。
+	var nb_pseas: PackedByteArray = PackedByteArray()
+	nb_pseas.resize(k * 6)
+	var k_idx: int = 0
+	for i in range(cells.size()):
+		var cell: HexCell = cells[i]
+		if cell == null or cell.index < 0:
+			continue
+		if k_idx >= k:
+			break
+		var ci_idx: int = cell.index
+		var base_g: int = ci_idx * 6
+		var base_l: int = k_idx * 6
+		for d in range(6):
+			var ni: int = nb_indices[base_g + d] if base_g + d < nb_indices.size() else -1
+			var nb_psea: int = 0
+			if ni >= 0:
+				var nb_cell: HexCell = map.cell_at(ni)
+				if nb_cell != null and nb_cell.passable_sea:
+					nb_psea = 1
+			nb_pseas[base_l + d] = nb_psea
+		k_idx += 1
+	var knobs := {
+		"n_pix": n,
+		"stride_bytes": 4,
+		"atlas_buffer": _dyn_atlas_smooth_buf,
+		"cell_indices": csr["cell_indices"],
+		"cell_first_px": csr["cell_first_px"],
+		"cell_px_count": csr["cell_px_count"],
+		"flat_px_indices": csr["flat_px_indices"],
+		"cell_passable_sea": csr["cell_passable_sea"],
+		"neighbor_indices": nb_indices,
+		"neighbor_passable_sea": nb_pseas,
+	}
+	var out: Dictionary = _world_ext.call("encode_dyn_smooth_atlas", knobs)
+	if bool(out.get("fallback", true)):
+		return false
+	_dyn_atlas_smooth_buf = out["atlas_buffer"]
+	# 写回 hood-aware sig cache（FNV-1a hash, 与 GDScript 1:1）
+	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
+	if new_sigs.size() == k:
+		k_idx = 0
+		for i in range(cells.size()):
+			var cell: HexCell = cells[i]
+			if cell == null or cell.index < 0:
+				continue
+			if k_idx >= k:
+				break
+			_last_dyn_smooth_cell_sigs[cell] = new_sigs[k_idx]
+			k_idx += 1
+	report.dirty_cells = int(report.dirty_cells) + k
+	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	return true
+
+
+# ice_state_atlas C++ fast-path。caller 负责只把水域 cell 喂入；cpp 端不再过滤。
+func _try_cpp_ice_state_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+	var n: int = int(ctx.n)
+	if n <= 0:
+		return false
+	# ice 走 water_cell_pixel_lists（caller 已交集水域 cell；fallback 时 caller 传非水域 cell
+	# 也安全：cpp 端按 _q01_byte_ice 对 sea_ice_frac 量化，陆地 cell 该字段恒 0 → byte=0）。
+	var use_water: bool = bool(ctx.get("use_water_lists", false))
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, use_water, n)
+	var k: int = int(csr.get("valid_count", 0))
+	if k <= 0:
+		return true
+	var knobs := {
+		"n_pix": n,
+		"stride_bytes": 1,
+		"atlas_buffer": _ice_state_buf,
+		"cell_indices": csr["cell_indices"],
+		"cell_first_px": csr["cell_first_px"],
+		"cell_px_count": csr["cell_px_count"],
+		"flat_px_indices": csr["flat_px_indices"],
+		# ice pass 不需要 passable_sea，但为了 CSR parse 共享 sanity（C++ 端会校验 K 匹配）
+		# 仍然把 cell_passable_sea 字段塞进去（C++ ice 路径不读取）。
+		"cell_passable_sea": csr["cell_passable_sea"],
+	}
+	var out: Dictionary = _world_ext.call("encode_ice_state_atlas", knobs)
+	if bool(out.get("fallback", true)):
+		return false
+	_ice_state_buf = out["atlas_buffer"]
+	# 写回 _last_ice_state_cell_bytes
+	var new_bytes: PackedByteArray = out.get("new_bytes", PackedByteArray())
+	if new_bytes.size() == k:
+		var k_idx: int = 0
+		for i in range(cells.size()):
+			var cell: HexCell = cells[i]
+			if cell == null or cell.index < 0:
+				continue
+			if k_idx >= k:
+				break
+			_last_ice_state_cell_bytes[cell] = int(new_bytes[k_idx])
+			k_idx += 1
+	report.dirty_cells = int(report.dirty_cells) + k
+	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	return true
 
 
 func _record_enum_atlas_upload_report(axis: String, path: String, elapsed_ms: float,
