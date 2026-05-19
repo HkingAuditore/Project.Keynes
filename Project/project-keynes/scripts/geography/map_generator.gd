@@ -1251,7 +1251,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	}
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride, cp)
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
+			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1455,7 +1456,8 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 	}
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
-	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(_baker, map, world, _dyn_atlas_upload_stride, cp)
+	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
+			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1626,6 +1628,13 @@ func record_sea_ice_atlas_upload(report: Dictionary) -> void:
 
 func sus_sea_ice_atlas_breakdown() -> Dictionary:
 	return _last_sea_ice_atlas_upload_breakdown.duplicate()
+
+
+func sus_dynamic_visual_atlas_breakdown() -> Dictionary:
+	if _dynamic_visual_atlas_upload_job != null \
+			and _dynamic_visual_atlas_upload_job.has_method("last_breakdown"):
+		return _dynamic_visual_atlas_upload_job.last_breakdown()
+	return {}
 
 
 func _mark_enum_atlas_dirty(cover_dirty: bool, vegetation_dirty: bool, biome_dirty: bool = false) -> void:
