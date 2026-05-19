@@ -1902,6 +1902,8 @@ func get_sim_breakdowns() -> Dictionary:
 		out["enum_atlas"] = _generator.sus_enum_atlas_breakdown()
 	if _generator.has_method("sus_sea_ice_atlas_breakdown"):
 		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
+	if _generator.has_method("sus_dynamic_visual_atlas_breakdown"):
+		out["dynamic_visual_atlas"] = _generator.sus_dynamic_visual_atlas_breakdown()
 	return out.duplicate(false)
 
 

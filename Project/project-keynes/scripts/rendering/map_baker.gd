@@ -683,19 +683,28 @@ func dynamic_cell_atlas_chunk_begin(map: MapData, world: WorldData) -> Dictionar
 	return ctx
 
 
-func dynamic_cell_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+func dynamic_cell_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
-	# ── plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path ─────────────
-	# cpp_atlas_encode_enabled flag + DCWorldExt.encode_dynamic_cell_atlas 可用
-	# 时走 CSR 协议 → C++ SIMD 单遍 byte fill；fallback 到下面 GDScript loop。
-	if _cpp_atlas_encode_active("encode_dynamic_cell_atlas"):
-		if _try_cpp_dynamic_cell_atlas_encode(world, ctx, cells, report):
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	if span.x >= span.y:
+		_report_inc(report, "empty_calls")
+		return
+	var cpp_reason: String = _cpp_atlas_encode_disabled_reason(&"encode_dynamic_cell_atlas")
+	if cpp_reason == "":
+		if _try_cpp_dynamic_cell_atlas_encode(world, ctx, cells, report, span.x, span.y):
 			return
+		cpp_reason = str(report.get("fallback_reason", "cpp_fallback"))
+	report["path"] = "gdscript"
+	if cpp_reason != "":
+		report["fallback_reason"] = cpp_reason
+	_report_inc(report, "gd_calls")
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
-	for cell in cells:
+	for i in range(span.x, span.y):
+		var cell: HexCell = cells[i]
 		if cell == null:
 			continue
 		var sig: int = _dynamic_cell_signature(cell)
@@ -797,17 +806,28 @@ func ecology_visual_atlas_chunk_begin(map: MapData, world: WorldData) -> Diction
 	return ctx
 
 
-func ecology_visual_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+func ecology_visual_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
-	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
-	if _cpp_atlas_encode_active("encode_ecology_visual_atlas"):
-		if _try_cpp_ecology_visual_atlas_encode(world, ctx, cells, report):
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	if span.x >= span.y:
+		_report_inc(report, "empty_calls")
+		return
+	var cpp_reason: String = _cpp_atlas_encode_disabled_reason(&"encode_ecology_visual_atlas")
+	if cpp_reason == "":
+		if _try_cpp_ecology_visual_atlas_encode(world, ctx, cells, report, span.x, span.y):
 			return
+		cpp_reason = str(report.get("fallback_reason", "cpp_fallback"))
+	report["path"] = "gdscript"
+	if cpp_reason != "":
+		report["fallback_reason"] = cpp_reason
+	_report_inc(report, "gd_calls")
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
-	for cell in cells:
+	for i in range(span.x, span.y):
+		var cell: HexCell = cells[i]
 		if cell == null:
 			continue
 		var cur_veg: int = int(cell.vegetation) & 0xFF
@@ -994,19 +1014,29 @@ func dyn_atlas_smooth_chunk_begin(map: MapData, world: WorldData) -> Dictionary:
 	return ctx
 
 
-func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
-	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
-	# dyn_smooth 需要 neighbor_indices 和 neighbor_passable_sea，由 helper 内打包。
-	if _cpp_atlas_encode_active("encode_dyn_smooth_atlas"):
-		if _try_cpp_dyn_smooth_atlas_encode(map, world, ctx, cells, report):
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	if span.x >= span.y:
+		_report_inc(report, "empty_calls")
+		return
+	var cpp_reason: String = _cpp_atlas_encode_disabled_reason(&"encode_dyn_smooth_atlas")
+	if cpp_reason == "":
+		if _try_cpp_dyn_smooth_atlas_encode(map, world, ctx, cells, report, span.x, span.y):
 			return
+		cpp_reason = str(report.get("fallback_reason", "cpp_fallback"))
+	report["path"] = "gdscript"
+	if cpp_reason != "":
+		report["fallback_reason"] = cpp_reason
+	_report_inc(report, "gd_calls")
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
 	var cache_dynamic_fresh: bool = bool(ctx.get("cache_dynamic_fresh", false))
-	for cell in cells:
+	for i in range(span.x, span.y):
+		var cell: HexCell = cells[i]
 		if cell == null:
 			continue
 		# 中心 sig（与 dynamic_cell_atlas 完全相同的 R/G/B/A 量化）。
@@ -1167,21 +1197,31 @@ func ice_state_atlas_default_cell_source(map: MapData, world: WorldData, ctx: Di
 	return map.all_cells()
 
 
-func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> void:
+func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> void:
 	if not bool(ctx.get("prepared", false)):
 		return
-	# plan/dirty-push-atlas-encode 阶段 F：C++ encode fast-path（同 dynamic_cell）。
-	# ice_state R8 stride=1，不需要 passable_sea（caller 端已只把水域 cell 喂入）。
-	if _cpp_atlas_encode_active("encode_ice_state_atlas"):
-		if _try_cpp_ice_state_atlas_encode(world, ctx, cells, report):
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	if span.x >= span.y:
+		_report_inc(report, "empty_calls")
+		return
+	var cpp_reason: String = _cpp_atlas_encode_disabled_reason(&"encode_ice_state_atlas")
+	if cpp_reason == "":
+		if _try_cpp_ice_state_atlas_encode(world, ctx, cells, report, span.x, span.y):
 			return
+		cpp_reason = str(report.get("fallback_reason", "cpp_fallback"))
+	report["path"] = "gdscript"
+	if cpp_reason != "":
+		report["fallback_reason"] = cpp_reason
+	_report_inc(report, "gd_calls")
 	var n: int = int(ctx.n)
 	var cache_valid: bool = bool(ctx.cache_valid)
 	var use_water_lists: bool = bool(ctx.use_water_lists)
 	var use_pixel_lists: bool = bool(ctx.use_pixel_lists)
 	if use_water_lists:
 		var lists: Dictionary = world.water_cell_pixel_lists
-		for cell in cells:
+		for i in range(span.x, span.y):
+			var cell: HexCell = cells[i]
 			if cell == null:
 				continue
 			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
@@ -1197,7 +1237,8 @@ func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary,
 			report.pixels_written = int(report.pixels_written) + pixels.size()
 	else:
 		# Fallback：扫所有 cell 但只处理水格。
-		for cell in cells:
+		for i in range(span.x, span.y):
+			var cell: HexCell = cells[i]
 			if cell == null or not bool(cell.passable_sea):
 				continue
 			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
@@ -1222,17 +1263,6 @@ func ice_state_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report: D
 	var H: int = int(ctx.H)
 	report.prepared = true
 	report.dirty = int(report.dirty_cells) > 0 or world.ice_state_tex == null
-	# === Plan-C diag (临时) === 检查 ice_state byte 是否真有非零 & 是否上传
-	var _ice_max: int = 0
-	var _ice_nz: int = 0
-	for _b in _ice_state_buf:
-		if int(_b) > 0:
-			_ice_nz += 1
-			if int(_b) > _ice_max:
-				_ice_max = int(_b)
-	print("[plan-c/ice_tex] dirty_cells=%d pixels_written=%d nonzero_px=%d max_byte=%d will_upload=%s tex_exists=%s" % [
-		int(report.dirty_cells), int(report.pixels_written), _ice_nz, _ice_max, str(bool(report.dirty)), str(world.ice_state_tex != null)])
-	# === end diag ===
 	world.ice_state_buffer = _ice_state_buf
 	if bool(report.dirty):
 		var img := Image.create_from_data(W, H, false, Image.FORMAT_R8, _ice_state_buf)
@@ -1260,14 +1290,31 @@ func get_last_enum_atlas_upload_report() -> Dictionary:
 #   2. _world_ext 已注入（DCWorld bind 完成）
 #   3. ext 实现了对应 method（向前兼容旧 dll）
 func _cpp_atlas_encode_active(method_name: StringName) -> bool:
+	return _cpp_atlas_encode_disabled_reason(method_name) == ""
+
+
+func _cpp_atlas_encode_disabled_reason(method_name: StringName) -> String:
 	if _climate_profile == null:
-		return false
+		return "no_climate_profile"
 	# DCFeatureFlags.is_on 是 cp.<flag> 的薄 wrapper；这里走反射避免 hard import。
 	if not bool(_climate_profile.get("cpp_atlas_encode_enabled")):
-		return false
+		return "flag_disabled"
 	if _world_ext == null:
-		return false
-	return _world_ext.has_method(method_name)
+		return "no_world_ext"
+	if not _world_ext.has_method(method_name):
+		return "method_missing"
+	return ""
+
+
+func _report_inc(report: Dictionary, key: String, delta: int = 1) -> void:
+	report[key] = int(report.get(key, 0)) + delta
+
+
+func _cell_range(cells, start_idx: int = 0, end_idx: int = -1) -> Vector2i:
+	var count: int = cells.size()
+	var s: int = clampi(start_idx, 0, count)
+	var e: int = count if end_idx < 0 else clampi(end_idx, s, count)
+	return Vector2i(s, e)
 
 
 # 共享 CSR 打包：把 dirty cells（HexCell Array）转成 4 个 PackedInt32Array。
@@ -1278,14 +1325,16 @@ func _cpp_atlas_encode_active(method_name: StringName) -> bool:
 # 返回 Dictionary：含 cell_indices / cell_first_px / cell_px_count / flat_px_indices /
 #                 cell_passable_sea / valid_count（实际有效 cell 数；剔除 null/idx<0/无 pixel list）
 # 如果 valid_count == 0，caller 应直接 return（无需调 cpp）。
-func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: int) -> Dictionary:
+func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: int,
+		start_idx: int = 0, end_idx: int = -1) -> Dictionary:
 	var lists: Dictionary
 	if use_water_lists:
 		lists = world.water_cell_pixel_lists if world != null else {}
 	else:
 		lists = world.cell_pixel_lists if world != null else {}
 
-	var k_max: int = cells.size()
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	var k_max: int = span.y - span.x
 	var cell_indices: PackedInt32Array = PackedInt32Array()
 	cell_indices.resize(k_max)
 	var first_px: PackedInt32Array = PackedInt32Array()
@@ -1300,7 +1349,7 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 	flat_px.resize(k_max * 64)
 	var flat_w: int = 0
 	var k: int = 0
-	for i in range(k_max):
+	for i in range(span.x, span.y):
 		var cell: HexCell = cells[i]
 		if cell == null or cell.index < 0:
 			continue
@@ -1342,14 +1391,19 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 
 
 # dynamic_cell_atlas C++ fast-path。返回 true = 成功消费，caller 直接 return。
-func _try_cpp_dynamic_cell_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+func _try_cpp_dynamic_cell_atlas_encode(world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> bool:
 	var n: int = int(ctx.n)
 	if n <= 0:
+		report["fallback_reason"] = "empty_texture"
 		return false
-	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n, span.x, span.y)
 	var k: int = int(csr.get("valid_count", 0))
 	if k <= 0:
-		# 没有有效 cell：cpp 不必调用，但仍算"成功消费"（GDScript loop 也会走完空 cells 0 操作）。
+		_report_inc(report, "empty_calls")
+		report["path"] = "cpp_empty"
+		report["fallback_reason"] = ""
 		return true
 	var knobs := {
 		"n_pix": n,
@@ -1363,6 +1417,7 @@ func _try_cpp_dynamic_cell_atlas_encode(world: WorldData, ctx: Dictionary, cells
 	}
 	var out: Dictionary = _world_ext.call("encode_dynamic_cell_atlas", knobs)
 	if bool(out.get("fallback", true)):
+		report["fallback_reason"] = str(out.get("reason", "cpp_fallback"))
 		return false
 	# 取回 buffer（C++ 端通过 PackedByteArray 直写后返回；GDScript 端 PackedByteArray
 	# 是 COW，需要重新赋值才能让"GDScript 后续 finalize 看到新 byte"）。
@@ -1372,25 +1427,39 @@ func _try_cpp_dynamic_cell_atlas_encode(world: WorldData, ctx: Dictionary, cells
 	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
 	if new_sigs.size() == k:
 		var ci: PackedInt32Array = csr["cell_indices"]
-		for i in range(k):
-			var cell: HexCell = cells[i] if i < cells.size() else null
-			if cell != null and cell.index == ci[i]:
-				_last_dynamic_cell_sigs[cell] = new_sigs[i]
-			# else: 顺序错位时降级丢 sig cache（下次 GDScript path 自然重算）
+		var k_idx: int = 0
+		for i in range(span.x, span.y):
+			var cell: HexCell = cells[i]
+			if cell == null or cell.index < 0:
+				continue
+			if k_idx >= k:
+				break
+			if cell.index == ci[k_idx]:
+				_last_dynamic_cell_sigs[cell] = new_sigs[k_idx]
+			k_idx += 1
 	report.dirty_cells = int(report.dirty_cells) + k
 	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	_report_inc(report, "cpp_calls")
+	report["path"] = "cpp"
+	report["fallback_reason"] = ""
 	return true
 
 
 # ecology_visual_atlas C++ fast-path。
-func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> bool:
 	var n: int = int(ctx.n)
 	if n <= 0:
+		report["fallback_reason"] = "empty_texture"
 		return false
 	var cache_valid: bool = bool(ctx.cache_valid)
-	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n, span.x, span.y)
 	var k: int = int(csr.get("valid_count", 0))
 	if k <= 0:
+		_report_inc(report, "empty_calls")
+		report["path"] = "cpp_empty"
+		report["fallback_reason"] = ""
 		return true
 	# 打包 prev_veg / prev_vitality / prev_transition（按 cells 顺序）
 	var ci: PackedInt32Array = csr["cell_indices"]
@@ -1402,7 +1471,7 @@ func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cel
 	prev_tr.resize(k)
 	# 拿取 cell 的本 stride 之前的状态（首次访问时取 cur 作 fallback 与 GDScript loop 同义）
 	var k_idx: int = 0
-	for i in range(cells.size()):
+	for i in range(span.x, span.y):
 		var cell: HexCell = cells[i]
 		if cell == null or cell.index < 0:
 			continue
@@ -1433,6 +1502,7 @@ func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cel
 	}
 	var out: Dictionary = _world_ext.call("encode_ecology_visual_atlas", knobs)
 	if bool(out.get("fallback", true)):
+		report["fallback_reason"] = str(out.get("reason", "cpp_fallback"))
 		return false
 	_ecology_visual_atlas_buf = out["atlas_buffer"]
 	var new_veg: PackedByteArray = out.get("new_veg", PackedByteArray())
@@ -1441,7 +1511,7 @@ func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cel
 	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
 	if new_veg.size() == k and new_vit.size() == k and new_tr.size() == k:
 		k_idx = 0
-		for i in range(cells.size()):
+		for i in range(span.x, span.y):
 			var cell: HexCell = cells[i]
 			if cell == null or cell.index < 0:
 				continue
@@ -1461,28 +1531,38 @@ func _try_cpp_ecology_visual_atlas_encode(world: WorldData, ctx: Dictionary, cel
 			k_idx += 1
 	report.dirty_cells = int(report.dirty_cells) + k
 	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	_report_inc(report, "cpp_calls")
+	report["path"] = "cpp"
+	report["fallback_reason"] = ""
 	return true
 
 
 # dyn_atlas_smooth C++ fast-path。需要 neighbor_indices（n_cells*6）+ neighbor_passable_sea（K*6）。
-func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> bool:
 	var n: int = int(ctx.n)
 	if n <= 0:
+		report["fallback_reason"] = "empty_texture"
 		return false
-	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n)
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, false, n, span.x, span.y)
 	var k: int = int(csr.get("valid_count", 0))
 	if k <= 0:
+		_report_inc(report, "empty_calls")
+		report["path"] = "cpp_empty"
+		report["fallback_reason"] = ""
 		return true
 	# 邻居 SoA：neighbor_indices 已由 MapData 持有（rebuild 时建好），尺寸 = cell_count * 6。
 	var nb_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_method("neighbor_indices_packed") else PackedInt32Array()
 	if nb_indices.size() <= 0:
 		# 没有 neighbor SoA 不能走 cpp（fallback 到 GDScript 的 map.get_neighbors）
+		report["fallback_reason"] = "neighbor_indices_missing"
 		return false
 	# neighbor_passable_sea：长度 K*6，按 cells 顺序对每个 dirty cell 的 6 邻居打包 passable_sea。
 	var nb_pseas: PackedByteArray = PackedByteArray()
 	nb_pseas.resize(k * 6)
 	var k_idx: int = 0
-	for i in range(cells.size()):
+	for i in range(span.x, span.y):
 		var cell: HexCell = cells[i]
 		if cell == null or cell.index < 0:
 			continue
@@ -1514,13 +1594,14 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 	}
 	var out: Dictionary = _world_ext.call("encode_dyn_smooth_atlas", knobs)
 	if bool(out.get("fallback", true)):
+		report["fallback_reason"] = str(out.get("reason", "cpp_fallback"))
 		return false
 	_dyn_atlas_smooth_buf = out["atlas_buffer"]
 	# 写回 hood-aware sig cache（FNV-1a hash, 与 GDScript 1:1）
 	var new_sigs: PackedInt32Array = out.get("new_sigs", PackedInt32Array())
 	if new_sigs.size() == k:
 		k_idx = 0
-		for i in range(cells.size()):
+		for i in range(span.x, span.y):
 			var cell: HexCell = cells[i]
 			if cell == null or cell.index < 0:
 				continue
@@ -1530,20 +1611,29 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 			k_idx += 1
 	report.dirty_cells = int(report.dirty_cells) + k
 	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	_report_inc(report, "cpp_calls")
+	report["path"] = "cpp"
+	report["fallback_reason"] = ""
 	return true
 
 
 # ice_state_atlas C++ fast-path。caller 负责只把水域 cell 喂入；cpp 端不再过滤。
-func _try_cpp_ice_state_atlas_encode(world: WorldData, ctx: Dictionary, cells, report: Dictionary) -> bool:
+func _try_cpp_ice_state_atlas_encode(world: WorldData, ctx: Dictionary, cells,
+		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> bool:
 	var n: int = int(ctx.n)
 	if n <= 0:
+		report["fallback_reason"] = "empty_texture"
 		return false
 	# ice 走 water_cell_pixel_lists（caller 已交集水域 cell；fallback 时 caller 传非水域 cell
 	# 也安全：cpp 端按 _q01_byte_ice 对 sea_ice_frac 量化，陆地 cell 该字段恒 0 → byte=0）。
 	var use_water: bool = bool(ctx.get("use_water_lists", false))
-	var csr: Dictionary = _pack_csr_for_cells(world, cells, use_water, n)
+	var span: Vector2i = _cell_range(cells, start_idx, end_idx)
+	var csr: Dictionary = _pack_csr_for_cells(world, cells, use_water, n, span.x, span.y)
 	var k: int = int(csr.get("valid_count", 0))
 	if k <= 0:
+		_report_inc(report, "empty_calls")
+		report["path"] = "cpp_empty"
+		report["fallback_reason"] = ""
 		return true
 	var knobs := {
 		"n_pix": n,
@@ -1559,13 +1649,14 @@ func _try_cpp_ice_state_atlas_encode(world: WorldData, ctx: Dictionary, cells, r
 	}
 	var out: Dictionary = _world_ext.call("encode_ice_state_atlas", knobs)
 	if bool(out.get("fallback", true)):
+		report["fallback_reason"] = str(out.get("reason", "cpp_fallback"))
 		return false
 	_ice_state_buf = out["atlas_buffer"]
 	# 写回 _last_ice_state_cell_bytes
 	var new_bytes: PackedByteArray = out.get("new_bytes", PackedByteArray())
 	if new_bytes.size() == k:
 		var k_idx: int = 0
-		for i in range(cells.size()):
+		for i in range(span.x, span.y):
 			var cell: HexCell = cells[i]
 			if cell == null or cell.index < 0:
 				continue
@@ -1575,6 +1666,9 @@ func _try_cpp_ice_state_atlas_encode(world: WorldData, ctx: Dictionary, cells, r
 			k_idx += 1
 	report.dirty_cells = int(report.dirty_cells) + k
 	report.pixels_written = int(report.pixels_written) + int(out.get("pixels_written", 0))
+	_report_inc(report, "cpp_calls")
+	report["path"] = "cpp"
+	report["fallback_reason"] = ""
 	return true
 
 

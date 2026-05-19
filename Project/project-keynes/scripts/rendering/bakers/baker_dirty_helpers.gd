@@ -51,19 +51,30 @@ static func dilate_dirty_one_hop(map, base_cells: Array) -> Array:
 		if idx >= 0 and idx < n:
 			seen[idx] = 1
 	# 第二遍：mark base cells 的邻居（最多 6 个）。
-	# 注意：用 map.get_neighbor_index 走 PackedInt32Array，比 get_neighbors() 拿
-	# 引用列表快一倍。-1 表示该方向无邻居（地图边界），跳过。
+	# 优先走 PackedInt32Array 快路径；旧 MapData 退回 get_neighbors(cell)。
+	var nb_indices: PackedInt32Array = PackedInt32Array()
+	if map.has_method("neighbor_indices_packed"):
+		nb_indices = map.neighbor_indices_packed()
+	var fast_indexed: bool = nb_indices.size() >= n * 6
 	for c in base_cells:
 		if c == null:
 			continue
 		var idx: int = int(c.index)
 		if idx < 0 or idx >= n:
 			continue
-		# 避免重复 read：直接走 _neighbor_indices 快路径
-		for d in range(6):
-			var nb_idx: int = map.get_neighbor_index(idx, d)
-			if nb_idx >= 0 and nb_idx < n:
-				seen[nb_idx] = 1
+		if fast_indexed:
+			var base: int = idx * 6
+			for d in range(6):
+				var nb_idx: int = nb_indices[base + d]
+				if nb_idx >= 0 and nb_idx < n:
+					seen[nb_idx] = 1
+		elif map.has_method("get_neighbors"):
+			for nb_cell in map.get_neighbors(c):
+				if nb_cell == null:
+					continue
+				var nb_i: int = int(nb_cell.index)
+				if nb_i >= 0 and nb_i < n:
+					seen[nb_i] = 1
 	# 第三遍：按 idx 顺序收集 cells。
 	var out: Array = []
 	for i in range(n):

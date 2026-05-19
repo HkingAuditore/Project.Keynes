@@ -40,6 +40,8 @@ const PHASE_COUNT: int = 4  # 实际工作 phase 数（1..4）
 # 避免 4 phase × 多 tick 串行导致雪量响应延迟数十仿真日。
 # 实际 dirty 少时 chunk_step 走 sig 比对快速 skip，远未达上限就 phase 结束。
 const MAX_CELLS_PER_TICK: int = 4096
+const TIME_CHECK_CELLS_PER_STEP: int = 128
+const CPP_TIME_CHECK_CELLS_PER_STEP: int = 512
 
 # Soft budget = slice_budget_ms × 这个倍数，超出则 break 让出。
 const SOFT_BUDGET_MULTIPLIER: float = 2.0
@@ -47,6 +49,7 @@ const SOFT_BUDGET_MULTIPLIER: float = 2.0
 var baker: MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null
+var dirty_world = null
 var stride: int = 2
 # plan/dirty-push-atlas-encode 阶段 D：dirty mask 消费方需要拿到 ClimateProfile
 # 才能在 hot path 内调 DCFeatureFlags.is_on(&"dirty_push_enabled", cp)。
@@ -72,15 +75,19 @@ var _total_ticks_used: int = 0         # 本 stride 跨了多少 tick（含起�
 var _stride_dirty_indices: PackedInt32Array = PackedInt32Array()
 var _stride_dirty_cells: Array = []           # 反查后的 HexCell 列表（dynamic/ice phase 用）
 var _stride_dirty_path_used: bool = false     # 诊断：本 stride 是否走了 mask 路径（影响 report）
+var _stride_dirty_noop: bool = false
+var _stride_dirty_reason: String = ""
 
 # 诊断采样（沿用 _wf_diag_* 风格）。
 var _dvas_diag_stride_count: int = 0
 var _dvas_diag_ticks_accum: int = 0
 var _dvas_diag_max_tick_ms: float = 0.0
 var _dvas_diag_avg_window: int = 30
+var _last_breakdown: Dictionary = {}
 
 
-func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData, p_stride: int = 2, p_climate_profile = null) -> void:
+func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
+		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null) -> void:
 	id = &"dynamic_visual_atlas_upload"
 	priority = 250
 	# 2026-05-19 方案 B：默认 budget 从 0.45 → 1.5ms，配合 MAX_CELLS_PER_TICK=4096
@@ -92,6 +99,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData, p_stride
 	baker = p_baker
 	map = p_map
 	world_data = p_world
+	dirty_world = p_dirty_world
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
@@ -107,7 +115,8 @@ func tick(_ctx) -> Dictionary:
 		return _tick_oneshot(t_start_us)
 
 	# Soft budget：单 tick 不应超过这个数值；用作 phase 推进的让出阈值。
-	var soft_budget_us: int = int(slice_budget_ms * SOFT_BUDGET_MULTIPLIER * 1000.0)
+	var soft_budget_us: int = maxi(50, int(slice_budget_ms * SOFT_BUDGET_MULTIPLIER * 1000.0))
+	var deadline_us: int = t_start_us + soft_budget_us
 
 	# Phase IDLE：进入新 stride。
 	if _phase == PHASE_IDLE:
@@ -124,7 +133,7 @@ func tick(_ctx) -> Dictionary:
 		var remaining_budget: int = MAX_CELLS_PER_TICK - int(_aggregated_report.get("_cells_scanned_this_tick", 0))
 		if remaining_budget <= 0:
 			break
-		var phase_done: bool = _advance_current_phase(remaining_budget)
+		var phase_done: bool = _advance_current_phase(remaining_budget, deadline_us)
 		if phase_done:
 			_phase += 1
 			# Phase 切换：清掉 ctx / report，准备进入下一 phase。
@@ -149,19 +158,9 @@ func tick(_ctx) -> Dictionary:
 		return final_report
 
 	# 还有 phase 未完成 —— 返回部分进度，下 tick 续跑。
-	return {
-		"done": false,
-		"work_done": int(_aggregated_report.get("dynamic_dirty_cells", 0)) \
-				+ int(_aggregated_report.get("ecology_dirty_cells", 0)) \
-				+ int(_aggregated_report.get("smooth_dirty_cells", 0)),
-		"elapsed_ms": elapsed_ms,
-		"progress_ratio": float(_phase) / float(PHASE_DONE),
-		"phase": "upload_phase_%d" % _phase,
-		"stage_name": "dynamic_visual_atlas_upload",
-		"current_phase": _phase,
-		"phase_cursor": _phase_cursor,
-		"ticks_used": _total_ticks_used,
-	}
+	var partial_report: Dictionary = _build_report(false, elapsed_ms)
+	_last_breakdown = partial_report.duplicate(true)
+	return partial_report
 
 
 # ─── 状态机内部 helpers ───────────────────────────────────────────────────────
@@ -182,6 +181,42 @@ func _start_new_stride() -> void:
 		"smooth_ms": 0.0,
 		"ice_dirty_cells": 0,
 		"ice_ms": 0.0,
+		"dynamic_prepare_ms": 0.0,
+		"dynamic_step_ms": 0.0,
+		"dynamic_finalize_ms": 0.0,
+		"dynamic_cells_considered": 0,
+		"dynamic_pixels_written": 0,
+		"dynamic_cpp_calls": 0,
+		"dynamic_gd_calls": 0,
+		"dynamic_empty_calls": 0,
+		"ecology_prepare_ms": 0.0,
+		"ecology_step_ms": 0.0,
+		"ecology_finalize_ms": 0.0,
+		"ecology_cells_considered": 0,
+		"ecology_pixels_written": 0,
+		"ecology_cpp_calls": 0,
+		"ecology_gd_calls": 0,
+		"ecology_empty_calls": 0,
+		"smooth_prepare_ms": 0.0,
+		"smooth_step_ms": 0.0,
+		"smooth_finalize_ms": 0.0,
+		"smooth_cells_considered": 0,
+		"smooth_pixels_written": 0,
+		"smooth_cpp_calls": 0,
+		"smooth_gd_calls": 0,
+		"smooth_empty_calls": 0,
+		"ice_prepare_ms": 0.0,
+		"ice_step_ms": 0.0,
+		"ice_finalize_ms": 0.0,
+		"ice_cells_considered": 0,
+		"ice_pixels_written": 0,
+		"ice_cpp_calls": 0,
+		"ice_gd_calls": 0,
+		"ice_empty_calls": 0,
+		"dirty_reason": "",
+		"dirty_source": "",
+		"dirty_mask_available": false,
+		"dirty_noop": false,
 		"_cells_scanned_this_tick": 0,
 	}
 	# plan/dirty-push-atlas-encode 阶段 D：原子读 + 清零 mask，反查 cell 列表。
@@ -190,18 +225,35 @@ func _start_new_stride() -> void:
 	_stride_dirty_indices = PackedInt32Array()
 	_stride_dirty_cells = []
 	_stride_dirty_path_used = false
+	_stride_dirty_noop = false
+	_stride_dirty_reason = ""
 	if not _is_dirty_push_enabled():
+		_stride_dirty_reason = "flag_disabled"
+		_aggregated_report["dirty_reason"] = _stride_dirty_reason
 		return
-	if world_data == null or not world_data.has_method("read_and_clear_dirty_mask"):
+	var dirty_source = dirty_world if dirty_world != null else world_data
+	_aggregated_report["dirty_source"] = "dirty_world" if dirty_world != null else "world_data"
+	if dirty_source == null or not dirty_source.has_method("read_and_clear_dirty_mask"):
+		_stride_dirty_reason = "read_and_clear_missing"
+		_aggregated_report["dirty_reason"] = _stride_dirty_reason
 		return
-	var dirty: PackedInt32Array = world_data.read_and_clear_dirty_mask()
+	if dirty_source.has_method("dirty_mask_size") and int(dirty_source.dirty_mask_size()) <= 0:
+		_stride_dirty_reason = "dirty_mask_size_zero"
+		_aggregated_report["dirty_reason"] = _stride_dirty_reason
+		return
+	_aggregated_report["dirty_mask_available"] = true
+	var dirty: PackedInt32Array = dirty_source.read_and_clear_dirty_mask()
+	_stride_dirty_path_used = true
 	if dirty.size() <= 0:
-		# mask 为空：可能是 use_data_core 关闭 / facade 关闭 / 本 stride 真无变化。
-		# 记 path_used=true 仍然有意义（stride 结束 report 区分"flag 关"vs"无 dirty"）。
-		_stride_dirty_path_used = true
+		_stride_dirty_noop = true
+		_stride_dirty_reason = "no_dirty"
+		_aggregated_report["dirty_reason"] = _stride_dirty_reason
+		_aggregated_report["dirty_noop"] = true
 		return
 	_stride_dirty_indices = dirty
-	_stride_dirty_path_used = true
+	_stride_dirty_reason = "dirty"
+	_aggregated_report["dirty_reason"] = _stride_dirty_reason
+	_aggregated_report["dirty_noop"] = false
 	# 反查 HexCell：MapData.cell_by_index(idx) 是 O(1) 数组下标。
 	_stride_dirty_cells.resize(dirty.size())
 	var n: int = dirty.size()
@@ -231,6 +283,8 @@ func _is_dirty_push_enabled() -> bool:
 # 此 helper 始终返回 false。等 gdext/src/world_ext.cpp 实现 4 个 method 后
 # flip flag 即可启用，无需改 GDScript 一行。
 func _should_use_ext_encode(method_name: StringName) -> bool:
+	if baker != null and baker.has_method("_cpp_atlas_encode_active"):
+		return bool(baker.call("_cpp_atlas_encode_active", method_name))
 	if climate_profile == null:
 		return false
 	if not FeatureFlagsScript.is_on(&"cpp_atlas_encode_enabled", climate_profile):
@@ -247,22 +301,40 @@ func _should_use_ext_encode(method_name: StringName) -> bool:
 	return ext.has_method(method_name)
 
 
+func _chunk_size_limit_for_baker(baker_key: String) -> int:
+	var method_name: StringName
+	match baker_key:
+		"dynamic_cell_atlas":
+			method_name = &"encode_dynamic_cell_atlas"
+		"ecology_visual_atlas":
+			method_name = &"encode_ecology_visual_atlas"
+		"dyn_atlas_smooth":
+			method_name = &"encode_dyn_smooth_atlas"
+		"ice_state_atlas":
+			method_name = &"encode_ice_state_atlas"
+		_:
+			return TIME_CHECK_CELLS_PER_STEP
+	if _should_use_ext_encode(method_name):
+		return CPP_TIME_CHECK_CELLS_PER_STEP
+	return TIME_CHECK_CELLS_PER_STEP
+
+
 # 推进当前 phase；返回 true 表示当前 phase 已完成（finalize 已调用），可切下一 phase。
 # remaining_budget 是本 tick 还能扫多少 cell。
-func _advance_current_phase(remaining_budget: int) -> bool:
+func _advance_current_phase(remaining_budget: int, deadline_us: int) -> bool:
 	match _phase:
 		PHASE_DYNAMIC:
 			return _step_phase_baker(remaining_budget, "dynamic_cell_atlas",
-					"dynamic_dirty_cells", "dynamic_ms")
+					"dynamic_dirty_cells", "dynamic_ms", "dynamic", deadline_us)
 		PHASE_ECOLOGY:
 			return _step_phase_baker(remaining_budget, "ecology_visual_atlas",
-					"ecology_dirty_cells", "ecology_ms")
+					"ecology_dirty_cells", "ecology_ms", "ecology", deadline_us)
 		PHASE_SMOOTH:
 			return _step_phase_baker(remaining_budget, "dyn_atlas_smooth",
-					"smooth_dirty_cells", "smooth_ms")
+					"smooth_dirty_cells", "smooth_ms", "smooth", deadline_us)
 		PHASE_ICE:
 			return _step_phase_baker(remaining_budget, "ice_state_atlas",
-					"ice_dirty_cells", "ice_ms")
+					"ice_dirty_cells", "ice_ms", "ice", deadline_us)
 		_:
 			return true
 
@@ -271,31 +343,32 @@ func _advance_current_phase(remaining_budget: int) -> bool:
 # baker_key 决定调用哪组 chunk_begin/step/finalize；
 # agg_dirty_key / agg_ms_key 是 aggregated_report 里的累计字段名。
 func _step_phase_baker(remaining_budget: int, baker_key: String,
-		agg_dirty_key: String, agg_ms_key: String) -> bool:
-	var t_us: int = Time.get_ticks_usec()
-	# 首次进入这个 phase：调用 chunk_begin + 准备 cell 序列。
+		agg_dirty_key: String, agg_ms_key: String, phase_key: String,
+		deadline_us: int) -> bool:
+	var total_us: int = Time.get_ticks_usec()
 	if _phase_ctx.is_empty():
+		var prepare_us: int = Time.get_ticks_usec()
 		var begin_method: String = "%s_chunk_begin" % baker_key
 		if not baker.has_method(begin_method):
-			# baker 不支持该 phase（例如热回退老 baker） —— 跳过。
 			return true
 		_phase_ctx = baker.call(begin_method, map, world_data)
 		if not bool(_phase_ctx.get("prepared", false)):
-			# baker 自报未就绪（map/world 空、derived_size=0 等）—— 跳过。
 			_phase_ctx = {}
 			return true
-		# Cell 数据源（plan/dirty-push-atlas-encode 阶段 D + E）：
-		# - ice_state：dirty 路径下取 (dirty_cells ∩ water_lists.keys())；
-		#   否则走 baker.ice_state_atlas_default_cell_source（water_lists.keys() 全集）；
-		# - dynamic_cell：dirty 路径下直接取 _stride_dirty_cells；否则 all_cells；
-		# - ecology_visual：dirty 路径下取 dirty_cells ∪ baker._eco_active_decay_set
-		#   （让 transition_age 还在衰减的 cells 重新喂进 chunk_step）；
-		# - dyn_atlas_smooth：dirty 路径下取 dilate_dirty_one_hop(dirty_cells)
-		#   （box blur 中心 + 邻居均值，dirty cell 变化会让其 6 邻居作为"中心"
-		#   时也需要重算，所以必须 1 跳膨胀）。
+		var source: String = "all_cells"
 		if baker_key == "ice_state_atlas":
-			if _stride_dirty_path_used and baker.has_method("ice_state_atlas_default_cell_source"):
-				# 取 dirty cells ∩ water cells 的交集。water_cell_pixel_lists 的 keys() 是水域 cell 全集。
+			if _stride_dirty_path_used and _stride_dirty_noop:
+				var ice_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
+				if ice_cache_valid:
+					_phase_cells = []
+					source = "no_dirty"
+				elif baker.has_method("ice_state_atlas_default_cell_source"):
+					_phase_cells = baker.ice_state_atlas_default_cell_source(map, world_data, _phase_ctx)
+					source = "all_cells_cache_invalid"
+				else:
+					_phase_cells = map.all_cells()
+					source = "all_cells_cache_invalid"
+			elif _stride_dirty_path_used and baker.has_method("ice_state_atlas_default_cell_source"):
 				var water_lists: Dictionary = world_data.water_cell_pixel_lists if world_data != null else {}
 				if water_lists != null and not water_lists.is_empty() and not _stride_dirty_cells.is_empty():
 					var intersection: Array = []
@@ -307,34 +380,67 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 							w += 1
 					intersection.resize(w)
 					_phase_cells = intersection
+					source = "dirty_water_intersection"
 				else:
-					# water_lists 还没建好 / dirty 为空 → 走 baker 默认源（兼容首帧 cold 场景）
-					_phase_cells = baker.ice_state_atlas_default_cell_source(map, world_data, _phase_ctx)
+					var ice_dirty_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
+					if ice_dirty_cache_valid:
+						_phase_cells = []
+						source = "dirty_no_water_intersection"
+					else:
+						_phase_cells = baker.ice_state_atlas_default_cell_source(map, world_data, _phase_ctx)
+						source = "all_cells_cache_invalid"
 			elif baker.has_method("ice_state_atlas_default_cell_source"):
 				_phase_cells = baker.ice_state_atlas_default_cell_source(map, world_data, _phase_ctx)
+				source = "ice_default_source"
 			else:
 				_phase_cells = map.all_cells()
 		elif baker_key == "dynamic_cell_atlas" and _stride_dirty_path_used:
-			# dirty 路径：直接喂 dirty cells 子集
-			_phase_cells = _stride_dirty_cells
+			if _stride_dirty_noop:
+				var dynamic_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
+				if dynamic_cache_valid:
+					_phase_cells = []
+					source = "no_dirty"
+				else:
+					_phase_cells = map.all_cells()
+					source = "all_cells_cache_invalid"
+			else:
+				_phase_cells = _stride_dirty_cells
+				source = "dirty_mask"
 		elif baker_key == "ecology_visual_atlas" and _stride_dirty_path_used:
-			# ecology phase：dirty ∪ active_decay_set。cache_invalid（首帧 / 地图重生）
-			# 时强制走 all_cells，让 chunk_step 完成 byte 初始化。
-			var ctx_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
-			if not ctx_cache_valid:
+			var eco_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
+			if not eco_cache_valid:
 				_phase_cells = map.all_cells()
+				source = "all_cells_cache_invalid"
+			elif _stride_dirty_noop:
+				if baker._eco_active_decay_set.is_empty():
+					_phase_cells = []
+					source = "no_dirty"
+				else:
+					_phase_cells = baker._eco_active_decay_set.keys()
+					source = "decay_only"
 			else:
 				_phase_cells = BakerDirtyHelpersScript.merge_with_eco_decay(
 					_stride_dirty_cells, baker._eco_active_decay_set)
+				source = "dirty_plus_decay"
 		elif baker_key == "dyn_atlas_smooth" and _stride_dirty_path_used:
-			# smooth phase：1 跳邻居膨胀。cache_invalid 同 ecology 强制走 all_cells。
-			var ctx_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
-			if not ctx_cache_valid:
+			var smooth_cache_valid: bool = bool(_phase_ctx.get("cache_valid", false))
+			if not smooth_cache_valid:
 				_phase_cells = map.all_cells()
+				source = "all_cells_cache_invalid"
+			elif _stride_dirty_noop:
+				if baker._eco_active_decay_set.is_empty():
+					_phase_cells = []
+					source = "no_dirty"
+				else:
+					_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(
+							map, baker._eco_active_decay_set.keys())
+					source = "decay_one_hop"
 			else:
-				_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, _stride_dirty_cells)
+				var smooth_seed: Array = BakerDirtyHelpersScript.merge_with_eco_decay(
+						_stride_dirty_cells, baker._eco_active_decay_set)
+				_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, smooth_seed)
+				source = "dirty_decay_one_hop"
 		else:
-			# ecology / smooth / fallback（flag off / mask 不可用）：维持 all_cells
 			_phase_cells = map.all_cells()
 		_phase_cursor = 0
 		_phase_report = {
@@ -343,30 +449,61 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 			"dirty_cells": 0,
 			"pixels_written": 0,
 			"elapsed_ms": 0.0,
+			"path": "",
+			"fallback_reason": "",
+			"cpp_calls": 0,
+			"gd_calls": 0,
+			"empty_calls": 0,
 		}
+		_aggregated_report[phase_key + "_prepare_ms"] = \
+				float(Time.get_ticks_usec() - prepare_us) / 1000.0
+		_aggregated_report[phase_key + "_source"] = source
+		_aggregated_report[phase_key + "_total_cells"] = _phase_cells.size()
 
-	# 切一段 cell 子集出来，调用 chunk_step。
 	var total_cells: int = _phase_cells.size()
-	var end_cursor: int = min(total_cells, _phase_cursor + remaining_budget)
-	var slice_size: int = end_cursor - _phase_cursor
-	if slice_size > 0:
-		var subset: Array = _phase_cells.slice(_phase_cursor, end_cursor)
+	var cells_scanned: int = 0
+	while _phase_cursor < total_cells and cells_scanned < remaining_budget:
+		if cells_scanned > 0 and Time.get_ticks_usec() >= deadline_us:
+			break
+		var chunk_size_limit: int = _chunk_size_limit_for_baker(baker_key)
+		var chunk_budget: int = mini(chunk_size_limit, remaining_budget - cells_scanned)
+		var end_cursor: int = mini(total_cells, _phase_cursor + chunk_budget)
+		var slice_size: int = end_cursor - _phase_cursor
+		if slice_size <= 0:
+			break
+		var step_us: int = Time.get_ticks_usec()
 		var step_method: String = "%s_chunk_step" % baker_key
-		baker.call(step_method, map, world_data, _phase_ctx, subset, _phase_report)
+		baker.call(step_method, map, world_data, _phase_ctx, _phase_cells,
+				_phase_report, _phase_cursor, end_cursor)
 		_phase_cursor = end_cursor
-		_aggregated_report["_cells_scanned_this_tick"] = int(_aggregated_report.get("_cells_scanned_this_tick", 0)) + slice_size
+		_aggregated_report["_cells_scanned_this_tick"] = \
+				int(_aggregated_report.get("_cells_scanned_this_tick", 0)) + slice_size
+		_aggregated_report[phase_key + "_cells_considered"] = \
+				int(_aggregated_report.get(phase_key + "_cells_considered", 0)) + slice_size
+		_aggregated_report[phase_key + "_step_ms"] = \
+				float(_aggregated_report.get(phase_key + "_step_ms", 0.0)) \
+				+ float(Time.get_ticks_usec() - step_us) / 1000.0
+		cells_scanned += slice_size
 
 	var phase_complete: bool = _phase_cursor >= total_cells
 	if phase_complete:
-		# 触发 GPU upload（仅这里允许；中间 tick 绝不上传）。
+		var finalize_us: int = Time.get_ticks_usec()
 		var finalize_method: String = "%s_chunk_finalize" % baker_key
 		baker.call(finalize_method, world_data, _phase_ctx, _phase_report)
+		_aggregated_report[phase_key + "_finalize_ms"] = \
+				float(_aggregated_report.get(phase_key + "_finalize_ms", 0.0)) \
+				+ float(Time.get_ticks_usec() - finalize_us) / 1000.0
 
-	# 累加到 aggregated_report。
 	_phase_report.elapsed_ms = float(_phase_report.get("elapsed_ms", 0.0)) \
-			+ float(Time.get_ticks_usec() - t_us) / 1000.0
+			+ float(Time.get_ticks_usec() - total_us) / 1000.0
 	_aggregated_report[agg_dirty_key] = int(_phase_report.get("dirty_cells", 0))
 	_aggregated_report[agg_ms_key] = float(_phase_report.get("elapsed_ms", 0.0))
+	_aggregated_report[phase_key + "_pixels_written"] = int(_phase_report.get("pixels_written", 0))
+	_aggregated_report[phase_key + "_path"] = str(_phase_report.get("path", ""))
+	_aggregated_report[phase_key + "_fallback_reason"] = str(_phase_report.get("fallback_reason", ""))
+	_aggregated_report[phase_key + "_cpp_calls"] = int(_phase_report.get("cpp_calls", 0))
+	_aggregated_report[phase_key + "_gd_calls"] = int(_phase_report.get("gd_calls", 0))
+	_aggregated_report[phase_key + "_empty_calls"] = int(_phase_report.get("empty_calls", 0))
 
 	return phase_complete
 
@@ -383,28 +520,9 @@ func _finalize_stride(elapsed_ms: float) -> Dictionary:
 		_dvas_diag_ticks_accum = 0
 		_dvas_diag_max_tick_ms = 0.0
 
-	return {
-		"done": true,
-		"work_done": map.cell_count(),
-		"elapsed_ms": elapsed_ms,
-		"progress_ratio": 1.0,
-		"phase": "upload",
-		"stage_name": "dynamic_visual_atlas_upload",
-		"dynamic_dirty_cells": int(_aggregated_report.get("dynamic_dirty_cells", 0)),
-		"dynamic_ms": float(_aggregated_report.get("dynamic_ms", 0.0)),
-		"ecology_dirty_cells": int(_aggregated_report.get("ecology_dirty_cells", 0)),
-		"ecology_ms": float(_aggregated_report.get("ecology_ms", 0.0)),
-		"smooth_dirty_cells": int(_aggregated_report.get("smooth_dirty_cells", 0)),
-		"smooth_ms": float(_aggregated_report.get("smooth_ms", 0.0)),
-		"ice_dirty_cells": int(_aggregated_report.get("ice_dirty_cells", 0)),
-		"ice_ms": float(_aggregated_report.get("ice_ms", 0.0)),
-		"total_ticks_used": _total_ticks_used,
-		# plan/dirty-push-atlas-encode 阶段 D 诊断：
-		# mask_path = true 表示本 stride dynamic/ice phase 走了 dirty 子集；
-		# mask_dirty_count 是 _start_new_stride 时一次性读到的 cell 数量。
-		"mask_path": _stride_dirty_path_used,
-		"mask_dirty_count": _stride_dirty_indices.size(),
-	}
+	var report: Dictionary = _build_report(true, elapsed_ms)
+	_last_breakdown = report.duplicate(true)
+	return report
 
 
 func _reset_state_machine() -> void:
@@ -421,6 +539,8 @@ func _reset_state_machine() -> void:
 	_stride_dirty_indices = PackedInt32Array()
 	_stride_dirty_cells = []
 	_stride_dirty_path_used = false
+	_stride_dirty_noop = false
+	_stride_dirty_reason = ""
 
 
 # ─── 紧急回退：one-shot 路径 ───────────────────────────────────────────────
@@ -438,7 +558,7 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 	if baker.has_method("rebake_ice_state_atlas"):
 		ice_report = baker.rebake_ice_state_atlas(map, world_data)
 	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
-	return {
+	var report := {
 		"done": true,
 		"work_done": map.cell_count(),
 		"elapsed_ms": elapsed_ms,
@@ -455,8 +575,66 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 		"ice_ms": float(ice_report.get("elapsed_ms", 0.0)),
 		"total_ticks_used": 1,
 	}
+	_last_breakdown = report.duplicate(true)
+	return report
 
 
 func reconfigure(p_stride: int) -> void:
 	stride = max(1, p_stride)
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+
+
+func last_breakdown() -> Dictionary:
+	return _last_breakdown.duplicate(true)
+
+
+func _build_report(done: bool, elapsed_ms: float) -> Dictionary:
+	var work_done: int = int(_aggregated_report.get("dynamic_dirty_cells", 0)) \
+			+ int(_aggregated_report.get("ecology_dirty_cells", 0)) \
+			+ int(_aggregated_report.get("smooth_dirty_cells", 0)) \
+			+ int(_aggregated_report.get("ice_dirty_cells", 0))
+	var report_work_done: int = work_done
+	if report_work_done <= 0 and not _stride_dirty_path_used:
+		report_work_done = map.cell_count()
+	var progress_ratio: float = 1.0
+	var phase_name: String = "upload"
+	if not done:
+		progress_ratio = clampf(float(_phase) / float(PHASE_DONE), 0.0, 1.0)
+		phase_name = "upload_phase_%d" % _phase
+	var out := {
+		"done": done,
+		"work_done": report_work_done,
+		"elapsed_ms": elapsed_ms,
+		"progress_ratio": progress_ratio,
+		"phase": phase_name,
+		"stage_name": "dynamic_visual_atlas_upload",
+		"current_phase": _phase,
+		"phase_cursor": _phase_cursor,
+		"ticks_used": _total_ticks_used,
+		"total_ticks_used": _total_ticks_used,
+		"mask_path": _stride_dirty_path_used,
+		"mask_dirty_count": _stride_dirty_indices.size(),
+		"dirty_reason": _stride_dirty_reason,
+		"dirty_noop": _stride_dirty_noop,
+		"dirty_mask_available": bool(_aggregated_report.get("dirty_mask_available", false)),
+		"dirty_source": str(_aggregated_report.get("dirty_source", "")),
+		"max_cells_per_tick": MAX_CELLS_PER_TICK,
+		"time_check_cells_per_step": TIME_CHECK_CELLS_PER_STEP,
+		"cpp_time_check_cells_per_step": CPP_TIME_CHECK_CELLS_PER_STEP,
+		"slice_budget_ms": slice_budget_ms,
+	}
+	for phase_key in ["dynamic", "ecology", "smooth", "ice"]:
+		_copy_phase_metrics(out, phase_key)
+	return out
+
+
+func _copy_phase_metrics(out: Dictionary, phase_key: String) -> void:
+	for suffix in [
+		"dirty_cells", "ms", "prepare_ms", "step_ms", "finalize_ms",
+		"cells_considered", "total_cells", "pixels_written",
+		"cpp_calls", "gd_calls", "empty_calls",
+		"source", "path", "fallback_reason",
+	]:
+		var key: String = phase_key + "_" + suffix
+		if _aggregated_report.has(key):
+			out[key] = _aggregated_report[key]
