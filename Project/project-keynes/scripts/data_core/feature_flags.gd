@@ -363,6 +363,23 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "Phase F：DCWorldExt encode_dynamic_cell_atlas / encode_ecology_visual_atlas / encode_dyn_smooth_atlas / encode_ice_state_atlas 4 个 C++/SIMD pass 启用；ext 缺失自动回退到 dirty_push_enabled 的 GDScript mask 路径",
 	},
+	# ─── Atlas Pipeline CPP（plan/atlas-pipeline-cpp，2026-05-20）─────────────
+	# dynamic_visual_atlas_upload_system 每帧热路径整套搬到 C++：dirty 消费 →
+	# 4 张 atlas value-diff（per-atlas prev_sigs snapshot 兜底 dirty 语义 bug）
+	# → 1-跳邻居膨胀（smooth 用）→ CSR 打包 → 4 张 atlas encode → 4-phase 调
+	# 度节流。GD 端薄壳每 tick 只调一次 DCWorldExt.run_atlas_pipeline_step(opts)，
+	# 拿 atlas_buffers Dict 后做 4 次 ImageTexture.update。
+	#
+	# 与 cpp_atlas_encode_enabled 互补：本 flag 涵盖 dirty/diff/dilate/CSR/调度的
+	# 全部 GDScript 计算下沉，cpp_atlas_encode_enabled 仅控制 per-phase encode-only。
+	# true 时 ext 缺失自动回退到旧 GD 4-phase 状态机。
+	{
+		name = &"cpp_atlas_pipeline_enabled",
+		owner = "rendering.atlas",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Phase G：4 张运行期 atlas（dynamic_cell/ecology_visual/dyn_smooth/ice_state）全管线 C++ 化。GD 端只剩 ImageTexture.update 薄壳。ext 缺失或 has_method 失败自动回退到旧 GD 4-phase 状态机",
+	},
 ]
 
 

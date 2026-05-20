@@ -190,6 +190,11 @@ func _reset_baker_state(baker: MapBaker) -> void:
 	baker._last_ecology_veg_bytes.clear()
 	baker._last_ecology_vitality_bytes.clear()
 	baker._ecology_transition_age_bytes.clear()
+	# P1-E：同步清 SoA 镜像，强制 chunk_begin 走 cache_invalid baseline 灌注路径
+	baker._eco_veg_bytes_arr = PackedByteArray()
+	baker._eco_vitality_bytes_arr = PackedByteArray()
+	baker._eco_transition_age_arr = PackedByteArray()
+	baker._eco_soa_initialized = false
 
 	baker._dyn_atlas_smooth_buf = PackedByteArray()
 	baker._dyn_atlas_smooth_cache_size = Vector2i.ZERO

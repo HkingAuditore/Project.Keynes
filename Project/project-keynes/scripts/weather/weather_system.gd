@@ -154,6 +154,10 @@ var _data_core_world = null  # DCWorld（GDScript）
 # 由 map_generator / main 在 facade 切换时调 set_hexcell_facade_on(b)。
 var _hexcell_facade_on: bool = false
 
+# [DIAG mask_dirty=2400 排查 · 2026-05-20] commit 路径调用计数（节流日志）
+var _diag_wd_commit_count: int = 0
+var _diag_fb_commit_count: int = 0
+
 var _use_gdext_weather_field: bool = false
 # F.1 运行时统计：cpp_runs / cpp_fallbacks / cpp_total_ms（_last_breakdown 暴露给上层 HUD）
 var _gdext_field_runs: int = 0
@@ -632,8 +636,14 @@ func _distribute_to_cells(map: MapData) -> void:
 		var temp_now: float = cell.temperature
 		moist_now = clampf(moist_now + WeatherType.moisture_delta(wt) * intensity, 0.0, 1.0)
 		temp_now = clampf(temp_now + WeatherType.temp_delta(wt) * intensity, 0.0, 1.0)
-		cell.moisture = moist_now
-		cell.temperature = temp_now
+		# [perf 2026-05-20] 删除 cell.moisture = / cell.temperature = 单点 setter。
+		# 这里循环 2400 次，每次走 facade setter → world.write_f32 → _dirty_mark_one 风暴，
+		# 把 _dirty_cell_mask 标成全 1。下面的批量数组 _wd_moist / _wd_temp + 末尾
+		# write_f32_indexed 已经完整 commit（含 dirty range 标记），单点 setter 是冗余写。
+		# 若 facade 未启用 → fallback 回单点 setter（保 backing 同步）。
+		if _data_core_world == null:
+			cell.moisture = moist_now
+			cell.temperature = temp_now
 		# PR-2.1.6：收集 dirty entry。
 		if cell.index >= 0 and _wd_w < _wd_n:
 			_wd_idx[_wd_w] = int(cell.index)
@@ -669,6 +679,10 @@ func _distribute_to_cells(map: MapData) -> void:
 		var _cid_td: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		if _cid_td >= 0:
 			_data_core_world.write_f32_indexed(_cid_td, _wd_idx, _wd_temp)
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] 前 5 次 + 之后每 50 次打一次
+		_diag_wd_commit_count += 1
+		if _diag_wd_commit_count <= 5 or (_diag_wd_commit_count % 50) == 0:
+			print("[DIAG weather_wd_commit] #%d wrote %d cells (moist+temp)" % [_diag_wd_commit_count, _wd_w])
 
 func uses_weather_field() -> bool:
 	return _weather_field_enabled
@@ -1381,7 +1395,10 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 		var _cid_fbt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
 		if _cid_fbt >= 0:
 			_data_core_world.write_u8_indexed(_cid_fbt, _fb_idx, _fb_type)
-
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] 前 5 次 + 之后每 50 次打一次
+		_diag_fb_commit_count += 1
+		if _diag_fb_commit_count <= 5 or (_diag_fb_commit_count % 50) == 0:
+			print("[DIAG weather_fb_commit] #%d wrote %d cells (cloud+precip+inst+intensity+type)" % [_diag_fb_commit_count, _fb_w])
 # Phase 3c：积雪累积与融化（共享方法）
 # ------------------------------------------------------------------------
 # 目的：把"BLIZZARD/SNOW 一发生立刻 cover=SNOW"换成累积式累计 + 温升融化。
@@ -1624,6 +1641,17 @@ func _field_intensity_for_type(wt: int, temp: float, vapor: float, cloud: float,
 func _distribute_weather_field_to_cells(map: MapData) -> void:
 	_cover_dirty = false
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	# [perf 2026-05-20] 同 _distribute_to_cells：累积到批量数组，末尾 write_f32_indexed。
+	# 原循环里 cell.moisture / cell.temperature 单点 setter 会导致 _dirty_mark_one 风暴
+	# （N 次单点 mark → mask 全 1 → atlas_upload 退化为全推）。
+	var _wfd_n: int = cells.size()
+	var _wfd_idx: PackedInt32Array = PackedInt32Array()
+	var _wfd_moist: PackedFloat32Array = PackedFloat32Array()
+	var _wfd_temp: PackedFloat32Array = PackedFloat32Array()
+	_wfd_idx.resize(_wfd_n)
+	_wfd_moist.resize(_wfd_n)
+	_wfd_temp.resize(_wfd_n)
+	var _wfd_w: int = 0
 	for cell: HexCell in cells:
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
@@ -1637,8 +1665,15 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 
 		var moist_now: float = clampf(cell.moisture + WeatherType.moisture_delta(wt) * intensity, 0.0, 1.0)
 		var temp_now: float = clampf(cell.temperature + WeatherType.temp_delta(wt) * intensity, 0.0, 1.0)
-		cell.moisture = moist_now
-		cell.temperature = temp_now
+		# [perf] 删除单点 setter；累积到批量数组（fallback 时仍走 setter 兜 backing）
+		if _data_core_world == null:
+			cell.moisture = moist_now
+			cell.temperature = temp_now
+		if cell.index >= 0 and _wfd_w < _wfd_n:
+			_wfd_idx[_wfd_w] = int(cell.index)
+			_wfd_moist[_wfd_w] = moist_now
+			_wfd_temp[_wfd_w] = temp_now
+			_wfd_w += 1
 
 		if not LandformType.is_water(cell.landform):
 			# 雪：累积式（同 fronts 路径，避免两条分支不一致）
@@ -1652,6 +1687,18 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 					cell.cover = CoverType.CV.FLOODING
 					cell.current_state["cover"] = int(cell.cover)
 					_cover_dirty = true
+
+	# [perf] 末尾批量 commit moisture / temperature 到 DCWorld（一次性 mark dirty）
+	if _data_core_world != null and _wfd_w > 0:
+		_wfd_idx.resize(_wfd_w)
+		_wfd_moist.resize(_wfd_w)
+		_wfd_temp.resize(_wfd_w)
+		var _cid_md_f: int = _data_core_world.component_id(DCComponentIds.CELL_MOISTURE)
+		if _cid_md_f >= 0:
+			_data_core_world.write_f32_indexed(_cid_md_f, _wfd_idx, _wfd_moist)
+		var _cid_td_f: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+		if _cid_td_f >= 0:
+			_data_core_world.write_f32_indexed(_cid_td_f, _wfd_idx, _wfd_temp)
 
 func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[WeatherFront]:
 	# Continuity-fix（2026-05-10）：完全重写聚类阶段，根治"天气特效跳变"。
