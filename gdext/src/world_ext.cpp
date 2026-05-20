@@ -761,8 +761,30 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     }
 
     if (bool(tick_knobs.get("probe", false))) {
-        out["rc"] = -1;
-        out["fail_stage"] = String("runtime_kernels_unimplemented");
+        bool has_bundle = false;
+        bool has_pass = false;
+        if (tick_knobs.has("native_daily_bundle") &&
+            Variant(tick_knobs["native_daily_bundle"]).get_type() == Variant::DICTIONARY) {
+            Dictionary bundle = tick_knobs["native_daily_bundle"];
+            has_bundle = !bundle.is_empty();
+            has_pass =
+                bundle.has("climate_pass_a_struct") ||
+                bundle.has("ocean_water_knobs") ||
+                bundle.has("ocean_land_knobs") ||
+                bundle.has("climate_pass_b_knobs") ||
+                bundle.has("sea_ice_knobs") ||
+                bundle.has("transpiration_knobs") ||
+                bundle.has("albedo_knobs") ||
+                bundle.has("vegetation_dynamics_knobs") ||
+                bundle.has("climate_feedback_knobs") ||
+                bundle.has("stage_b_knobs") ||
+                bundle.has("weather_knobs");
+        }
+        out["rc"] = (has_bundle && has_pass) ? 0 : -1;
+        out["fail_stage"] = (has_bundle && has_pass)
+            ? String()
+            : (has_bundle ? String("native_daily_bundle_no_passes")
+                          : String("native_daily_bundle_missing"));
         out["configured"] = true;
         out["cell_count"] = _native_world_cell_count;
         out["total_ms"] = 0.0;
@@ -784,14 +806,180 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     breakdown["stage_b_ms"] = 0.0;
     breakdown["render_prepare_ms"] = 0.0;
 
+    auto finish_with_failure = [&](const char *stage, const String &reason) -> Dictionary {
+        const auto t_fail = std::chrono::high_resolution_clock::now();
+        const double total_ms = std::chrono::duration<double, std::milli>(t_fail - t0).count();
+        out["rc"] = -1;
+        out["fail_stage"] = String(stage);
+        out["reason"] = reason;
+        out["total_ms"] = total_ms;
+        out["breakdown"] = breakdown;
+        out["dirty_flags"] = _native_dirty_report.duplicate();
+        out["fronts_changed"] = false;
+        out["fronts"] = _native_fronts_snapshot;
+        out["tick_count"] = _native_daily_tick_count;
+        return out;
+    };
+
+    auto as_dict = [](const Variant &v) -> Dictionary {
+        if (v.get_type() == Variant::DICTIONARY) {
+            return v;
+        }
+        return Dictionary();
+    };
+
+    auto copy_dict_into = [](Dictionary &dst, const Dictionary &src) {
+        Array keys = src.keys();
+        for (int i = 0; i < keys.size(); ++i) {
+            Variant k = keys[i];
+            dst[k] = src[k];
+        }
+    };
+
+    if (!tick_knobs.has("native_daily_bundle")) {
+        return finish_with_failure("native_daily_bundle", "missing native_daily_bundle");
+    }
+    Dictionary bundle = as_dict(tick_knobs.get("native_daily_bundle", Dictionary()));
+    if (bundle.is_empty()) {
+        return finish_with_failure("native_daily_bundle", "empty native_daily_bundle");
+    }
+
+    const auto t_context0 = std::chrono::high_resolution_clock::now();
+    if (bool(bundle.get("refresh_slots_from_map", true))) {
+        refresh_slots_from_map();
+    }
+    const auto t_context1 = std::chrono::high_resolution_clock::now();
+    breakdown["native_context_ms"] = std::chrono::duration<double, std::milli>(
+        t_context1 - t_context0).count();
+
+    bool any_pass_ran = false;
+
+    if (bundle.has("climate_pass_a_struct")) {
+        Dictionary cp_struct = as_dict(bundle["climate_pass_a_struct"]);
+        const double phase = double(tick_knobs.get("season_phase", 0.0));
+        const double season_phase = double(tick_knobs.get("season_phase", phase));
+        const double ms = run_climate_pass_a(cp_struct, phase, season_phase);
+        if (ms < 0.0) return finish_with_failure("climate_pass_a", "pass returned fallback");
+        breakdown["pass_a_ms"] = ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("ocean_water_knobs")) {
+        const double ms = run_ocean_water_pass(as_dict(bundle["ocean_water_knobs"]));
+        if (ms < 0.0) return finish_with_failure("ocean_water", "pass returned fallback");
+        breakdown["ocean_water_ms"] = ms;
+        breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("ocean_land_knobs")) {
+        const double ms = run_ocean_land_pass(as_dict(bundle["ocean_land_knobs"]));
+        if (ms < 0.0) return finish_with_failure("ocean_land", "pass returned fallback");
+        breakdown["ocean_land_ms"] = ms;
+        breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("climate_pass_b_knobs")) {
+        const double ms = run_climate_pass_b(as_dict(bundle["climate_pass_b_knobs"]));
+        if (ms < 0.0) return finish_with_failure("climate_pass_b", "pass returned fallback");
+        breakdown["pass_b_ms"] = ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("sea_ice_knobs")) {
+        const float phase = float(tick_knobs.get("season_phase", 0.0));
+        const double ms = run_sea_ice_daily_pass(as_dict(bundle["sea_ice_knobs"]), phase);
+        if (ms < 0.0) return finish_with_failure("sea_ice", "pass returned fallback");
+        breakdown["sea_ice_ms"] = ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("transpiration_knobs")) {
+        const double ms = run_transpiration_pass(as_dict(bundle["transpiration_knobs"]));
+        if (ms < 0.0) return finish_with_failure("transpiration", "pass returned fallback");
+        breakdown["transp_ms"] = ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("albedo_knobs")) {
+        const double ms = run_albedo_pass(as_dict(bundle["albedo_knobs"]));
+        if (ms < 0.0) return finish_with_failure("albedo", "pass returned fallback");
+        breakdown["albedo_ms"] = ms;
+        breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("vegetation_dynamics_knobs")) {
+        const double ms = run_vegetation_dynamics_pass(as_dict(bundle["vegetation_dynamics_knobs"]));
+        if (ms < 0.0) return finish_with_failure("vegetation_dynamics", "pass returned fallback");
+        breakdown["veg_dyn_ms"] = ms;
+        breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("climate_feedback_knobs")) {
+        const double ms = run_climate_feedback_pass(as_dict(bundle["climate_feedback_knobs"]));
+        if (ms < 0.0) return finish_with_failure("climate_feedback", "pass returned fallback");
+        breakdown["feedback_ms"] = ms;
+        breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("stage_b_knobs")) {
+        Dictionary stage_b_knobs = as_dict(bundle["stage_b_knobs"]);
+        const double ms = run_stage_b_pass(stage_b_knobs);
+        if (ms < 0.0) return finish_with_failure("stage_b", "pass returned fallback");
+        breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+        breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
+        breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
+        breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+        if (stage_b_knobs.has("succession_indices")) {
+            breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
+            breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
+            breakdown["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+        }
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("weather_knobs")) {
+        Dictionary weather = run_weather_refresh_daily_pass(as_dict(bundle["weather_knobs"]));
+        if (int(weather.get("rc", -1)) != 0) {
+            return finish_with_failure("weather", String(weather.get("fail_stage", "unknown")));
+        }
+        breakdown["weather_ms"] = double(weather.get("total_ms", 0.0));
+        copy_dict_into(breakdown, weather);
+        if (weather.has("fronts")) {
+            _native_fronts_snapshot = weather["fronts"];
+        }
+        any_pass_ran = true;
+    }
+
+    if (!any_pass_ran) {
+        return finish_with_failure("native_daily_bundle", "no pass knobs in native_daily_bundle");
+    }
+
+    if (bool(bundle.get("flush_slots_to_map", true))) {
+        const auto t_flush0 = std::chrono::high_resolution_clock::now();
+        flush_slots_to_map();
+        const auto t_flush1 = std::chrono::high_resolution_clock::now();
+        breakdown["render_prepare_ms"] = std::chrono::duration<double, std::milli>(
+            t_flush1 - t_flush0).count();
+    }
+
     const auto t1 = std::chrono::high_resolution_clock::now();
     const double total_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    out["rc"] = -1;
-    out["fail_stage"] = String("runtime_kernels_unimplemented");
+    out["rc"] = 0;
+    out["fail_stage"] = String();
     out["total_ms"] = total_ms;
+    breakdown["total_ms"] = total_ms;
     out["breakdown"] = breakdown;
     out["dirty_flags"] = _native_dirty_report.duplicate();
-    out["fronts_changed"] = false;
+    out["fronts_changed"] = bundle.has("weather_knobs");
     out["fronts"] = _native_fronts_snapshot;
     out["tick_count"] = _native_daily_tick_count;
     return out;

@@ -75,6 +75,7 @@ var baker: MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null
 var dirty_world = null
+var world_ext = null
 
 # [perf 2026-05-20] 方案 C：Callable 缓存。
 # 原因：_step_phase_baker 在 hot loop 内每帧 20+ 次 `baker.call("xxx_chunk_step", ...)`,
@@ -141,7 +142,8 @@ var _cpp_pipeline_warned_missing_method: bool = false  # 一次性 push_warning
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
-		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null) -> void:
+		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null,
+		p_world_ext = null) -> void:
 	id = &"dynamic_visual_atlas_upload"
 	priority = 250
 	# 2026-05-19 方案 B：默认 budget 从 0.45 → 1.5ms，配合 MAX_CELLS_PER_TICK=4096
@@ -154,6 +156,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	map = p_map
 	world_data = p_world
 	dirty_world = p_dirty_world
+	world_ext = p_world_ext
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
@@ -699,11 +702,17 @@ func _is_cpp_atlas_pipeline_enabled() -> bool:
 # 取 DCWorld 挂载的 _world_ext / _ext（与 _should_use_ext_encode 同模式，
 # 走 .get() 反射避免对 DCWorld 内部命名强耦合）。
 func _get_world_ext():
+	if world_ext != null:
+		return world_ext
 	if world_data == null:
+		if baker != null:
+			return baker.get("_world_ext")
 		return null
 	var ext = world_data.get("_world_ext")
 	if ext == null:
 		ext = world_data.get("_ext")
+	if ext == null and baker != null:
+		ext = baker.get("_world_ext")
 	return ext
 
 
@@ -754,12 +763,13 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"map": map,
 		"width": W,
 		"height": H,
-		"dirty_indices": dirty_indices,
 		"terrain_lake": int(TerrainTypeScript.TERRAIN.LAKE),
 		"terrain_sea_ice": int(TerrainTypeScript.TERRAIN.SEA_ICE),
 		"veg_none": int(VegetationTypeScript.VEG.NONE),
 		"enable_diag": true,
 	}
+	if dirty_path_used:
+		opts["dirty_indices"] = dirty_indices
 	var t_call_us: int = Time.get_ticks_usec()
 	var res: Dictionary = ext.call(&"run_atlas_pipeline_step", opts)
 	var call_ms: float = float(Time.get_ticks_usec() - t_call_us) / 1000.0
@@ -775,7 +785,9 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 
 	# ── Step 4：4 次 ImageTexture.update（保留 GD 端 RenderingServer 边界）──
 	var atlas_buffers: Dictionary = res.get("atlas_buffers", {})
-	var pixels_written_total: int = _commit_atlas_buffers_to_gpu(atlas_buffers, W, H)
+	var stride_real: Dictionary = res.get("stride_real", {})
+	var pixels_written_total: int = _commit_atlas_buffers_to_gpu(
+			atlas_buffers, W, H, stride_real)
 
 	# ── Step 5：诊断与 report 组装 ──
 	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
@@ -795,7 +807,6 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		for k in _dvas_diag_phase_ms_accum.keys():
 			_dvas_diag_phase_ms_accum[k] = 0.0
 
-	var stride_real: Dictionary = res.get("stride_real", {})
 	var report: Dictionary = {
 		"done": true,
 		"work_done": int(stride_real.get("dyn", 0)) + int(stride_real.get("eco", 0)) \
@@ -807,6 +818,9 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"path": "cpp_pipeline",
 		"call_ms": call_ms,
 		"total_ms": float(res.get("total_ms", 0.0)),
+		"current_phase": PHASE_DONE,
+		"phase_cursor": 0,
+		"ticks_used": 1,
 		"dynamic_dirty_cells": int(stride_real.get("dyn", 0)),
 		"ecology_dirty_cells": int(stride_real.get("eco", 0)),
 		"smooth_dirty_cells": int(stride_real.get("smo", 0)),
@@ -818,18 +832,46 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"dirty_reason": dirty_reason,
 		"dirty_source": dirty_source_tag,
 		"dirty_mask_available": dirty_mask_available,
+		"max_cells_per_tick": MAX_CELLS_PER_TICK,
+		"time_check_cells_per_step": TIME_CHECK_CELLS_PER_STEP,
+		"cpp_time_check_cells_per_step": CPP_TIME_CHECK_CELLS_PER_STEP,
+		"slice_budget_ms": slice_budget_ms,
 		"dynamic_prepare_ms": float(ms_breakdown.get("dynamic_prepare_ms", 0.0)),
 		"dynamic_step_ms": float(ms_breakdown.get("dynamic_step_ms", 0.0)),
 		"dynamic_finalize_ms": float(ms_breakdown.get("dynamic_finalize_ms", 0.0)),
+		"dynamic_cpp_calls": 1,
+		"dynamic_gd_calls": 0,
+		"dynamic_empty_calls": 0,
+		"dynamic_source": "cpp_pipeline",
+		"dynamic_path": "cpp_pipeline",
+		"dynamic_fallback_reason": "",
 		"ecology_prepare_ms": float(ms_breakdown.get("ecology_prepare_ms", 0.0)),
 		"ecology_step_ms": float(ms_breakdown.get("ecology_step_ms", 0.0)),
 		"ecology_finalize_ms": float(ms_breakdown.get("ecology_finalize_ms", 0.0)),
+		"ecology_cpp_calls": 1,
+		"ecology_gd_calls": 0,
+		"ecology_empty_calls": 0,
+		"ecology_source": "cpp_pipeline",
+		"ecology_path": "cpp_pipeline",
+		"ecology_fallback_reason": "",
 		"smooth_prepare_ms": float(ms_breakdown.get("smooth_prepare_ms", 0.0)),
 		"smooth_step_ms": float(ms_breakdown.get("smooth_step_ms", 0.0)),
 		"smooth_finalize_ms": float(ms_breakdown.get("smooth_finalize_ms", 0.0)),
+		"smooth_cpp_calls": 1,
+		"smooth_gd_calls": 0,
+		"smooth_empty_calls": 0,
+		"smooth_source": "cpp_pipeline",
+		"smooth_path": "cpp_pipeline",
+		"smooth_fallback_reason": "",
 		"ice_prepare_ms": float(ms_breakdown.get("ice_prepare_ms", 0.0)),
 		"ice_step_ms": float(ms_breakdown.get("ice_step_ms", 0.0)),
 		"ice_finalize_ms": float(ms_breakdown.get("ice_finalize_ms", 0.0)),
+		"ice_cpp_calls": 1,
+		"ice_gd_calls": 0,
+		"ice_empty_calls": 0,
+		"ice_source": "cpp_pipeline",
+		"ice_path": "cpp_pipeline",
+		"ice_fallback_reason": "",
 	}
 	_last_breakdown = report.duplicate(true)
 	return report
@@ -866,14 +908,19 @@ func _burn_in_eco_state(ext: Object) -> void:
 # 把 C++ 返回的 4 张 atlas PackedByteArray 上传到对应 ImageTexture。
 # 与 map_baker 旧路径完全等价（同 Image.create_from_data + .update 模式）。
 # 返回 4 张 atlas 的总写入像素数（用于 report.work_done 估算）。
-func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int) -> int:
+func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int,
+		stride_real: Dictionary = {}) -> int:
 	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
 		return 0
 	var n_pix: int = W * H
 	var total_pixels: int = 0
 	# dyn (RGBA8)
 	var buf_dyn: PackedByteArray = atlas_buffers.get("dyn", PackedByteArray())
-	if buf_dyn.size() == n_pix * 4:
+	var dyn_need_init: bool = world_data.dynamic_cell_atlas_tex == null \
+			or world_data.dynamic_cell_atlas_tex.get_size() != Vector2(float(W), float(H)) \
+			or world_data.dynamic_cell_atlas_buffer.size() != n_pix * 4
+	if buf_dyn.size() == n_pix * 4 \
+			and (int(stride_real.get("dyn", 0)) > 0 or dyn_need_init):
 		world_data.dynamic_cell_atlas_buffer = buf_dyn
 		var img_dyn := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_dyn)
 		if world_data.dynamic_cell_atlas_tex != null \
@@ -884,7 +931,11 @@ func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int) -> 
 		total_pixels += n_pix
 	# eco (RGBA8)
 	var buf_eco: PackedByteArray = atlas_buffers.get("eco", PackedByteArray())
-	if buf_eco.size() == n_pix * 4:
+	var eco_need_init: bool = world_data.ecology_visual_atlas_tex == null \
+			or world_data.ecology_visual_atlas_tex.get_size() != Vector2(float(W), float(H)) \
+			or world_data.ecology_visual_atlas_buffer.size() != n_pix * 4
+	if buf_eco.size() == n_pix * 4 \
+			and (int(stride_real.get("eco", 0)) > 0 or eco_need_init):
 		world_data.ecology_visual_atlas_buffer = buf_eco
 		var img_eco := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_eco)
 		if world_data.ecology_visual_atlas_tex != null \
@@ -895,7 +946,11 @@ func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int) -> 
 		total_pixels += n_pix
 	# smo (RGBA8)
 	var buf_smo: PackedByteArray = atlas_buffers.get("smo", PackedByteArray())
-	if buf_smo.size() == n_pix * 4:
+	var smo_need_init: bool = world_data.dyn_atlas_smooth_tex == null \
+			or world_data.dyn_atlas_smooth_tex.get_size() != Vector2(float(W), float(H)) \
+			or world_data.dyn_atlas_smooth_buffer.size() != n_pix * 4
+	if buf_smo.size() == n_pix * 4 \
+			and (int(stride_real.get("smo", 0)) > 0 or smo_need_init):
 		world_data.dyn_atlas_smooth_buffer = buf_smo
 		var img_smo := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_smo)
 		if world_data.dyn_atlas_smooth_tex != null \
@@ -906,7 +961,11 @@ func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int) -> 
 		total_pixels += n_pix
 	# ice (R8)
 	var buf_ice: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
-	if buf_ice.size() == n_pix:
+	var ice_need_init: bool = world_data.ice_state_tex == null \
+			or world_data.ice_state_tex.get_size() != Vector2(float(W), float(H)) \
+			or world_data.ice_state_buffer.size() != n_pix
+	if buf_ice.size() == n_pix \
+			and (int(stride_real.get("ice", 0)) > 0 or ice_need_init):
 		world_data.ice_state_buffer = buf_ice
 		var img_ice := Image.create_from_data(W, H, false, Image.FORMAT_R8, buf_ice)
 		if world_data.ice_state_tex != null \
