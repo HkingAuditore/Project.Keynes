@@ -22,10 +22,11 @@ var map: MapData = null
 var world_data: WorldData = null  # 与 DCSystem._world (DCWorld) 区分
 var hex_size: float = 0.0
 var stride: int = 2
+var world_ext = null
 
 
 func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
-		p_world: WorldData, p_hex_size: float, p_stride: int) -> void:
+		p_world: WorldData, p_hex_size: float, p_stride: int, p_world_ext = null) -> void:
 	id = &"enum_atlas_upload"
 	priority = 140
 	slice_budget_ms = 0.45
@@ -38,6 +39,7 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 	world_data = p_world
 	hex_size = p_hex_size
 	stride = max(1, p_stride)
+	world_ext = p_world_ext
 	policy = _SusPolicyScript.StridePolicy.new(stride, 0)
 
 
@@ -73,6 +75,8 @@ func tick(_ctx) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if generator == null or baker == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
+	if world_ext != null and baker.has_method("set_world_ext"):
+		baker.set_world_ext(world_ext)
 	var axis: String = ""
 	if generator.has_method("consume_pending_enum_atlas_axis"):
 		axis = str(generator.consume_pending_enum_atlas_axis())
