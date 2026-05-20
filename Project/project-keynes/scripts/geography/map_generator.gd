@@ -1195,11 +1195,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 0.4.1：use_dc_system_scheduler 时用 EnumAtlasUploadSystem（native DCSystem，
 	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
 	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
@@ -1618,11 +1618,11 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 
 func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: float, cp) -> void:
 	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2)
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_job(_enum_atlas_upload_job)
 	# 海冰主视觉由 shader 按 current_temp/latitude/depth 直接派生；停用旧 atlas upload。
@@ -2060,7 +2060,7 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 					cell.apply_terrain(new_terrain)
 		cur += 1
 		touched += 1
-		if (touched & 31) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
+		if (touched & 7) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
 			break
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
 	out["cursor"] = cur
@@ -2201,7 +2201,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 
 		cur += 1
 		work_done += 1
-		if work_done % 32 == 0 and Time.get_ticks_usec() - t_us0 >= max_usec:
+		if (work_done & 7) == 0 and Time.get_ticks_usec() - t_us0 >= max_usec:
 			break
 
 	var done: bool = cur >= n * 3

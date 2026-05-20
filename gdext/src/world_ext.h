@@ -696,6 +696,7 @@ public:
     godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
+    godot::Dictionary patch_enum_atlas_axes(godot::Dictionary knobs);
 
     // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ────
     // 4 张运行期 atlas baker 的 byte-fill 阶段下沉 C++/SIMD：

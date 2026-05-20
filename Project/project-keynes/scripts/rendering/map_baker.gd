@@ -101,6 +101,8 @@ var _last_sea_ice_cell_bytes_packed: PackedByteArray = PackedByteArray()
 # 与 ice_bake 的 _last_sea_ice_cell_bytes 完全同构。bake_world 重做 lookup 时一并失效。
 var _last_cover_cell_bytes: Dictionary = {}
 var _last_vegetation_cell_bytes: Dictionary = {}
+var _last_cover_cell_bytes_packed: PackedByteArray = PackedByteArray()
+var _last_vegetation_cell_bytes_packed: PackedByteArray = PackedByteArray()
 var _cover_cache_size: Vector2i = Vector2i.ZERO
 var _vegetation_cache_size: Vector2i = Vector2i.ZERO
 # J: biome（R 通道）增量缓存。stage 9 `rebake_biome_axes_only` 之前每季全图重烘
@@ -108,6 +110,7 @@ var _vegetation_cache_size: Vector2i = Vector2i.ZERO
 # 真正翻 terrain（_seasonal_redecide_terrain 的边界 cell），其余直接 byte 不变跳过。
 # bake_world / regenerate 时一并失效。
 var _last_biome_cell_bytes: Dictionary = {}
+var _last_biome_cell_bytes_packed: PackedByteArray = PackedByteArray()
 var _biome_cache_size: Vector2i = Vector2i.ZERO
 
 # Daily-sim perf opt 阶段 P2：enum_atlas 的 RGB8 交错 data 持久缓存。
@@ -324,6 +327,7 @@ var _world_ext = null
 # `use_native` 一直 false 走 48ms GDScript 回扫）。改由 MapGenerator 在 bake_world
 # 末尾通过 set_climate_profile() 显式注入。null 时回退到旧的 cfg 参数路径。
 var _climate_profile = null
+var _enum_atlas_cpp_skip_reason: String = ""
 # Block B (wind_field/B) 一次性诊断标记 — 仿 climate_b/F.3 / weather/F.1 路径。
 var _wind_b_first_run_logged: bool = false
 # DOTS-Final-Push 后续诊断 — wind stage 2 路径决策诊断（前 3 次进入 stage 2
@@ -477,10 +481,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 阶段 P：cover / vegetation 的增量缓存同样要随地图重生 / 重烘失效。
 	_last_cover_cell_bytes = {}
 	_last_vegetation_cell_bytes = {}
+	_last_cover_cell_bytes_packed = PackedByteArray()
+	_last_vegetation_cell_bytes_packed = PackedByteArray()
 	_cover_cache_size = Vector2i.ZERO
 	_vegetation_cache_size = Vector2i.ZERO
 	# J: biome 增量缓存随地图重生失效（首次 rebake_biome_axes_only 走 fallback 重建路径）
 	_last_biome_cell_bytes = {}
+	_last_biome_cell_bytes_packed = PackedByteArray()
 	_biome_cache_size = Vector2i.ZERO
 	# 阶段 P2：enum_atlas 交错 data 缓存随地图重生失效（首次 _encode_enum_atlas 会重新填）
 	_enum_atlas_data = PackedByteArray()
@@ -599,6 +606,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size
 	)
+	prewarm_dynamic_axis_caches(map, world)
 	# Daily Sim SoA Refactor 阶段 1：scalar_atlas 改回 RGB(latitude/flow/moisture)+空 A 通道，
 	# 海冰从此走独立 sea_ice_tex（R8），见下方 `_encode_sea_ice_tex` 与
 	# `bake_sea_ice_fraction_only` 实现。
@@ -645,6 +653,235 @@ func rebake_cover_tex_only(map: MapData, world: WorldData, hex_size: float) -> v
 # 同样的 warp + cube_round + 单 R8 编码路径，开销与 cover-only 相同。
 func rebake_vegetation_tex_only(map: MapData, world: WorldData, hex_size: float) -> void:
 	_rebake_single_axis(map, world, hex_size, "vegetation")
+
+
+func _enum_atlas_cpp_pack_disabled_reason() -> String:
+	if _world_ext == null:
+		return "cpp_gate_no_world_ext"
+	if not _world_ext.has_method("patch_enum_atlas_axes"):
+		return "cpp_gate_method_missing"
+	# 与其他运行期 C++ atlas 路径保持容错：ClimateProfile 未注入或旧 profile
+	# 缺字段时不阻断 native 路径；只有显式配置为 false 才关闭。
+	if _climate_profile != null and "use_gdext_enum_atlas_pack" in _climate_profile \
+			and not bool(_climate_profile.use_gdext_enum_atlas_pack):
+		return "cpp_gate_flag_false"
+	return ""
+
+
+func _enum_atlas_cpp_pack_enabled() -> bool:
+	return _enum_atlas_cpp_pack_disabled_reason() == ""
+
+
+func _ensure_world_cell_pixel_csr(map: MapData, world: WorldData) -> bool:
+	if world == null:
+		return false
+	if not world.cell_first_px_arr.is_empty() and not world.cell_px_count_arr.is_empty() \
+			and not world.flat_px_indices_arr.is_empty():
+		return true
+	if world.cell_pixel_lists.is_empty():
+		return false
+	var n_cells: int = map.cell_count() if map != null else 0
+	if n_cells <= 0:
+		for cell_key in world.cell_pixel_lists.keys():
+			var cell: HexCell = cell_key
+			if cell != null:
+				n_cells = maxi(n_cells, int(cell.index) + 1)
+	if n_cells <= 0:
+		return false
+	var first_px_arr := PackedInt32Array()
+	var px_count_arr := PackedInt32Array()
+	first_px_arr.resize(n_cells)
+	px_count_arr.resize(n_cells)
+	for i in range(n_cells):
+		first_px_arr[i] = -1
+		px_count_arr[i] = 0
+	var total_px: int = 0
+	for cell_key in world.cell_pixel_lists.keys():
+		var pixels: PackedInt32Array = world.cell_pixel_lists[cell_key]
+		total_px += pixels.size()
+	if total_px <= 0:
+		return false
+	var flat_arr := PackedInt32Array()
+	flat_arr.resize(total_px)
+	var flat_w: int = 0
+	for cell_key in world.cell_pixel_lists.keys():
+		var cell: HexCell = cell_key
+		if cell == null:
+			continue
+		var idx: int = int(cell.index)
+		if idx < 0 or idx >= n_cells:
+			continue
+		var pixels: PackedInt32Array = world.cell_pixel_lists[cell_key]
+		var count: int = pixels.size()
+		if count <= 0:
+			continue
+		first_px_arr[idx] = flat_w
+		px_count_arr[idx] = count
+		for p in range(count):
+			flat_arr[flat_w + p] = pixels[p]
+		flat_w += count
+	if flat_w <= 0:
+		return false
+	if flat_w != total_px:
+		flat_arr.resize(flat_w)
+	world.cell_first_px_arr = first_px_arr
+	world.cell_px_count_arr = px_count_arr
+	world.flat_px_indices_arr = flat_arr
+	return true
+
+
+func _try_cpp_enum_axis_patch(map: MapData, world: WorldData, axis: String, report_t0_us: int) -> bool:
+	_enum_atlas_cpp_skip_reason = ""
+	if world == null:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_world_null"
+		return false
+	var gate_reason: String = _enum_atlas_cpp_pack_disabled_reason()
+	if gate_reason != "":
+		_enum_atlas_cpp_skip_reason = gate_reason
+		return false
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var pix_count: int = W * H
+	if pix_count <= 0:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_bad_size"
+		return false
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_enum_data_invalid"
+		return false
+	if not _ensure_world_cell_pixel_csr(map, world):
+		_enum_atlas_cpp_skip_reason = "cpp_gate_csr_empty"
+		return false
+	var run_cover: bool = axis == "cover"
+	var run_vegetation: bool = axis == "vegetation"
+	if not run_cover and not run_vegetation:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_axis_unsupported"
+		return false
+	var patch_t0_us: int = Time.get_ticks_usec()
+	var knobs: Dictionary = {
+		"n_cells": world.cell_first_px_arr.size(),
+		"n_pix": pix_count,
+		"cell_first_px": world.cell_first_px_arr,
+		"cell_px_count": world.cell_px_count_arr,
+		"flat_px_indices": world.flat_px_indices_arr,
+		"enum_atlas_data": _enum_atlas_data,
+		"run_cover": run_cover,
+		"run_vegetation": run_vegetation,
+		"cover_buffer": world.cover_buffer,
+		"vegetation_buffer": world.vegetation_buffer,
+		"prev_cover": _last_cover_cell_bytes_packed,
+		"prev_vegetation": _last_vegetation_cell_bytes_packed,
+	}
+	var out: Dictionary = _world_ext.patch_enum_atlas_axes(knobs)
+	if bool(out.get("fallback", true)):
+		_enum_atlas_cpp_skip_reason = "cpp_native_fallback_" + str(out.get("reason", "unknown"))
+		return false
+	var buffer_patch_ms: float = float(Time.get_ticks_usec() - patch_t0_us) / 1000.0
+	_enum_atlas_data = out.get("enum_atlas_data", _enum_atlas_data)
+	var dirty_cells: int = 0
+	var dirty_pixels: int = int(out.get("dirty_pixels", 0))
+	if run_cover:
+		world.cover_buffer = out.get("cover_buffer", world.cover_buffer)
+		_last_cover_cell_bytes_packed = out.get("prev_cover", _last_cover_cell_bytes_packed)
+		dirty_cells = int(out.get("cover_dirty", 0))
+		_cover_cache_size = Vector2i(W, H)
+	else:
+		world.vegetation_buffer = out.get("vegetation_buffer", world.vegetation_buffer)
+		_last_vegetation_cell_bytes_packed = out.get("prev_vegetation", _last_vegetation_cell_bytes_packed)
+		dirty_cells = int(out.get("vegetation_dirty", 0))
+		_vegetation_cache_size = Vector2i(W, H)
+	if dirty_cells <= 0:
+		_record_enum_atlas_upload_report(axis, "cpp_skipped_no_dirty",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			0, 0, buffer_patch_ms, 0.0, 0.0, true)
+		return true
+	var image_t0_us: int = Time.get_ticks_usec()
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
+	var upload_t0_us: int = Time.get_ticks_usec()
+	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
+		world.enum_atlas_tex.update(img)
+	else:
+		world.enum_atlas_tex = ImageTexture.create_from_image(img)
+	var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
+	_record_enum_atlas_upload_report(axis, "cpp_cached_patch",
+		float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+		dirty_cells, dirty_pixels, buffer_patch_ms, image_ms, upload_ms, true)
+	return true
+
+
+func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int) -> bool:
+	_enum_atlas_cpp_skip_reason = ""
+	if world == null:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_world_null"
+		return false
+	var gate_reason: String = _enum_atlas_cpp_pack_disabled_reason()
+	if gate_reason != "":
+		_enum_atlas_cpp_skip_reason = gate_reason
+		return false
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var pix_count: int = W * H
+	if pix_count <= 0:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_bad_size"
+		return false
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+		_enum_atlas_cpp_skip_reason = "cpp_gate_enum_data_invalid"
+		return false
+	if not _ensure_world_cell_pixel_csr(map, world):
+		_enum_atlas_cpp_skip_reason = "cpp_gate_csr_empty"
+		return false
+	var patch_t0_us: int = Time.get_ticks_usec()
+	var out: Dictionary = _world_ext.patch_enum_atlas_axes({
+		"n_cells": world.cell_first_px_arr.size(),
+		"n_pix": pix_count,
+		"cell_first_px": world.cell_first_px_arr,
+		"cell_px_count": world.cell_px_count_arr,
+		"flat_px_indices": world.flat_px_indices_arr,
+		"enum_atlas_data": _enum_atlas_data,
+		"run_biome": true,
+		"run_vegetation": true,
+		"run_cover": true,
+		"biome_buffer": world.biome_buffer,
+		"vegetation_buffer": world.vegetation_buffer,
+		"cover_buffer": world.cover_buffer,
+		"prev_biome": _last_biome_cell_bytes_packed,
+		"prev_vegetation": _last_vegetation_cell_bytes_packed,
+		"prev_cover": _last_cover_cell_bytes_packed,
+	})
+	if bool(out.get("fallback", true)):
+		_enum_atlas_cpp_skip_reason = "cpp_native_fallback_" + str(out.get("reason", "unknown"))
+		return false
+	var buffer_patch_ms: float = float(Time.get_ticks_usec() - patch_t0_us) / 1000.0
+	world.biome_buffer = out.get("biome_buffer", world.biome_buffer)
+	world.vegetation_buffer = out.get("vegetation_buffer", world.vegetation_buffer)
+	world.cover_buffer = out.get("cover_buffer", world.cover_buffer)
+	_enum_atlas_data = out.get("enum_atlas_data", _enum_atlas_data)
+	_last_biome_cell_bytes_packed = out.get("prev_biome", _last_biome_cell_bytes_packed)
+	_last_vegetation_cell_bytes_packed = out.get("prev_vegetation", _last_vegetation_cell_bytes_packed)
+	_last_cover_cell_bytes_packed = out.get("prev_cover", _last_cover_cell_bytes_packed)
+	_biome_cache_size = Vector2i(W, H)
+	_vegetation_cache_size = Vector2i(W, H)
+	_cover_cache_size = Vector2i(W, H)
+	var dirty_cells: int = int(out.get("dirty_cells", 0))
+	var dirty_pixels: int = int(out.get("dirty_pixels", 0))
+	if dirty_cells <= 0:
+		_record_enum_atlas_upload_report("biome", "cpp_skipped_no_dirty",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			0, 0, buffer_patch_ms, 0.0, 0.0, true)
+		return true
+	var image_t0_us: int = Time.get_ticks_usec()
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
+	var upload_t0_us: int = Time.get_ticks_usec()
+	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
+		world.enum_atlas_tex.update(img)
+	else:
+		world.enum_atlas_tex = ImageTexture.create_from_image(img)
+	var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
+	_record_enum_atlas_upload_report("biome", "cpp_cached_patch",
+		float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+		dirty_cells, dirty_pixels, buffer_patch_ms, image_ms, upload_ms, true)
+	return true
 
 # 主地图动态状态 atlas：RGBA8，R=temp, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
 # 使用 world.cell_pixel_lists 按 cell dirty 写入，避免每次重新 cube_round / 逐像素取字段。
@@ -1883,9 +2120,13 @@ func _try_cpp_ice_state_atlas_encode(map: MapData, world: WorldData, ctx: Dictio
 func _record_enum_atlas_upload_report(axis: String, path: String, elapsed_ms: float,
 		dirty_cells: int, dirty_pixels: int, buffer_patch_ms: float,
 		image_ms: float, upload_ms: float, cache_valid: bool) -> void:
+	var out_path: String = path
+	var skip_reason: String = _enum_atlas_cpp_skip_reason
+	if skip_reason != "" and not path.begins_with("cpp_"):
+		out_path = "%s:%s" % [path, skip_reason]
 	_last_enum_atlas_upload_report = {
 		"axis": axis,
-		"path": path,
+		"path": out_path,
 		"elapsed_ms": elapsed_ms,
 		"dirty_cells": dirty_cells,
 		"dirty_pixels": dirty_pixels,
@@ -1893,7 +2134,9 @@ func _record_enum_atlas_upload_report(axis: String, path: String, elapsed_ms: fl
 		"image_ms": image_ms,
 		"upload_ms": upload_ms,
 		"cache_valid": cache_valid,
+		"cpp_skip_reason": skip_reason,
 	}
+	_enum_atlas_cpp_skip_reason = ""
 
 
 func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
@@ -1906,7 +2149,8 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 		return
 	if world.cell_pixel_lists.is_empty():
 		return
-	if world.cover_buffer.size() != pix_count or world.vegetation_buffer.size() != pix_count:
+	if world.cover_buffer.size() != pix_count or world.vegetation_buffer.size() != pix_count \
+			or world.biome_buffer.size() != pix_count:
 		return
 	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
 		return
@@ -1915,13 +2159,28 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 	var vegetation_cache: Dictionary = {}
 	# J: 同步预热 biome 缓存，让下一次 rebake_biome_axes_only 直接走增量路径
 	var biome_cache: Dictionary = {}
-	for cell_key in world.cell_pixel_lists.keys():
+	var n_cells: int = map.cell_count()
+	_last_cover_cell_bytes_packed = PackedByteArray()
+	_last_vegetation_cell_bytes_packed = PackedByteArray()
+	_last_biome_cell_bytes_packed = PackedByteArray()
+	_last_cover_cell_bytes_packed.resize(n_cells)
+	_last_vegetation_cell_bytes_packed.resize(n_cells)
+	_last_biome_cell_bytes_packed.resize(n_cells)
+	var cells_for_cache: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for cell_key in cells_for_cache:
 		var cell: HexCell = cell_key
 		if cell == null:
 			continue
-		cover_cache[cell] = int(cell.cover) & 0xFF
-		vegetation_cache[cell] = int(cell.vegetation) & 0xFF
-		biome_cache[cell] = int(cell.terrain) & 0xFF
+		var b_cover: int = int(cell.cover) & 0xFF
+		var b_veg: int = int(cell.vegetation) & 0xFF
+		var b_biome: int = int(cell.terrain) & 0xFF
+		cover_cache[cell] = b_cover
+		vegetation_cache[cell] = b_veg
+		biome_cache[cell] = b_biome
+		if cell.index >= 0 and cell.index < n_cells:
+			_last_cover_cell_bytes_packed[cell.index] = b_cover
+			_last_vegetation_cell_bytes_packed[cell.index] = b_veg
+			_last_biome_cell_bytes_packed[cell.index] = b_biome
 	_last_cover_cell_bytes = cover_cache
 	_last_vegetation_cell_bytes = vegetation_cache
 	_last_biome_cell_bytes = biome_cache
@@ -2449,6 +2708,8 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 	var W := world.derived_size.x
 	var H := world.derived_size.y
 	var pix_count := W * H
+	if _try_cpp_enum_axis_patch(map, world, axis, report_t0_us):
+		return
 
 	# Fast path：lookup + cell_pixel_lists 都齐全 → 走增量路径
 	var has_lookup: bool = world.pixel_to_cell_lookup.size() == pix_count
@@ -2662,6 +2923,8 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 	var W := world.derived_size.x
 	var H := world.derived_size.y
 	var pix_count := W * H
+	if _try_cpp_enum_axes_patch(map, world, report_t0_us):
+		return
 	var has_lookup: bool = world.pixel_to_cell_lookup.size() == pix_count
 	var has_cell_lists: bool = not world.cell_pixel_lists.is_empty()
 

@@ -7892,6 +7892,160 @@ godot::Dictionary DCWorldExt::run_sea_ice_atlas_prepare(godot::Dictionary knobs)
     return out;
 }
 
+godot::Dictionary DCWorldExt::patch_enum_atlas_axes(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["dirty_cells"] = 0;
+    out["dirty_pixels"] = 0;
+    out["biome_dirty"] = 0;
+    out["vegetation_dirty"] = 0;
+    out["cover_dirty"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!knobs.has("n_cells") || !knobs.has("n_pix") ||
+        !knobs.has("cell_first_px") || !knobs.has("cell_px_count") ||
+        !knobs.has("flat_px_indices") || !knobs.has("enum_atlas_data")) {
+        return fail("missing required knob");
+    }
+
+    const int n_cells = int(knobs["n_cells"]);
+    const int n_pix = int(knobs["n_pix"]);
+    const bool run_biome = bool(knobs.get("run_biome", false));
+    const bool run_vegetation = bool(knobs.get("run_vegetation", false));
+    const bool run_cover = bool(knobs.get("run_cover", false));
+    if (n_cells <= 0 || n_pix <= 0) return fail("invalid n_cells/n_pix");
+    if (!run_biome && !run_vegetation && !run_cover) return fail("no axis enabled");
+
+    PackedInt32Array first_px = knobs["cell_first_px"];
+    PackedInt32Array px_count = knobs["cell_px_count"];
+    PackedInt32Array flat_px = knobs["flat_px_indices"];
+    PackedByteArray enum_data = knobs["enum_atlas_data"];
+    if (first_px.size() < n_cells || px_count.size() < n_cells) return fail("cell CSR size < n_cells");
+    if (enum_data.size() != n_pix * 3) return fail("enum_atlas_data size mismatch");
+
+    PackedByteArray biome_buf = knobs.get("biome_buffer", PackedByteArray());
+    PackedByteArray vegetation_buf = knobs.get("vegetation_buffer", PackedByteArray());
+    PackedByteArray cover_buf = knobs.get("cover_buffer", PackedByteArray());
+    if (run_biome && biome_buf.size() != n_pix) return fail("biome_buffer size mismatch");
+    if (run_vegetation && vegetation_buf.size() != n_pix) return fail("vegetation_buffer size mismatch");
+    if (run_cover && cover_buf.size() != n_pix) return fail("cover_buffer size mismatch");
+
+    PackedByteArray prev_biome = knobs.get("prev_biome", PackedByteArray());
+    PackedByteArray prev_vegetation = knobs.get("prev_vegetation", PackedByteArray());
+    PackedByteArray prev_cover = knobs.get("prev_cover", PackedByteArray());
+    const bool prev_biome_valid = prev_biome.size() == n_cells;
+    const bool prev_vegetation_valid = prev_vegetation.size() == n_cells;
+    const bool prev_cover_valid = prev_cover.size() == n_cells;
+    if (run_biome && !prev_biome_valid) prev_biome.resize(n_cells);
+    if (run_vegetation && !prev_vegetation_valid) prev_vegetation.resize(n_cells);
+    if (run_cover && !prev_cover_valid) prev_cover.resize(n_cells);
+
+    const int sid_terrain = run_biome ? component_id(StringName("cell_terrain")) : -1;
+    const int sid_vegetation = run_vegetation ? component_id(StringName("cell_vegetation")) : -1;
+    const int sid_cover = run_cover ? component_id(StringName("cell_cover")) : -1;
+    if (run_biome && sid_terrain < 0) return fail("missing slot id cell_terrain");
+    if (run_vegetation && sid_vegetation < 0) return fail("missing slot id cell_vegetation");
+    if (run_cover && sid_cover < 0) return fail("missing slot id cell_cover");
+
+    const uint8_t *TERR = nullptr;
+    const uint8_t *VEG = nullptr;
+    const uint8_t *COV = nullptr;
+    if (run_biome) {
+        Slot &s = _slots.write[sid_terrain];
+        if (s.arr_u8.size() < n_cells) return fail("terrain slot too small");
+        TERR = s.arr_u8.ptr();
+    }
+    if (run_vegetation) {
+        Slot &s = _slots.write[sid_vegetation];
+        if (s.arr_u8.size() < n_cells) return fail("vegetation slot too small");
+        VEG = s.arr_u8.ptr();
+    }
+    if (run_cover) {
+        Slot &s = _slots.write[sid_cover];
+        if (s.arr_u8.size() < n_cells) return fail("cover slot too small");
+        COV = s.arr_u8.ptr();
+    }
+
+    const int32_t * const FIRST = first_px.ptr();
+    const int32_t * const CNT = px_count.ptr();
+    const int32_t * const FLAT = flat_px.ptr();
+    const int flat_n = flat_px.size();
+    uint8_t * const ED = enum_data.ptrw();
+    uint8_t *BB = run_biome ? biome_buf.ptrw() : nullptr;
+    uint8_t *VB = run_vegetation ? vegetation_buf.ptrw() : nullptr;
+    uint8_t *CB = run_cover ? cover_buf.ptrw() : nullptr;
+    uint8_t *PB = run_biome ? prev_biome.ptrw() : nullptr;
+    uint8_t *PV = run_vegetation ? prev_vegetation.ptrw() : nullptr;
+    uint8_t *PC = run_cover ? prev_cover.ptrw() : nullptr;
+
+    int biome_dirty = 0;
+    int vegetation_dirty = 0;
+    int cover_dirty = 0;
+    int dirty_pixels = 0;
+
+    for (int i = 0; i < n_cells; ++i) {
+        const uint8_t b_t = run_biome ? TERR[i] : 0;
+        const uint8_t b_v = run_vegetation ? VEG[i] : 0;
+        const uint8_t b_c = run_cover ? COV[i] : 0;
+        const bool dirty_b = run_biome && (!prev_biome_valid || PB[i] != b_t);
+        const bool dirty_v = run_vegetation && (!prev_vegetation_valid || PV[i] != b_v);
+        const bool dirty_c = run_cover && (!prev_cover_valid || PC[i] != b_c);
+        if (!dirty_b && !dirty_v && !dirty_c) continue;
+
+        if (dirty_b) { PB[i] = b_t; ++biome_dirty; }
+        if (dirty_v) { PV[i] = b_v; ++vegetation_dirty; }
+        if (dirty_c) { PC[i] = b_c; ++cover_dirty; }
+
+        const int f = FIRST[i];
+        const int c = CNT[i];
+        if (c <= 0 || f < 0 || f + c > flat_n) continue;
+        const int axis_changes = (dirty_b ? 1 : 0) + (dirty_v ? 1 : 0) + (dirty_c ? 1 : 0);
+        dirty_pixels += c * axis_changes;
+        for (int p = 0; p < c; ++p) {
+            const int px = FLAT[f + p];
+            if (px < 0 || px >= n_pix) continue;
+            const int di = px * 3;
+            if (dirty_b) { BB[px] = b_t; ED[di] = b_t; }
+            if (dirty_v) { VB[px] = b_v; ED[di + 1] = b_v; }
+            if (dirty_c) { CB[px] = b_c; ED[di + 2] = b_c; }
+        }
+    }
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["dirty_cells"] = biome_dirty + vegetation_dirty + cover_dirty;
+    out["dirty_pixels"] = dirty_pixels;
+    out["biome_dirty"] = biome_dirty;
+    out["vegetation_dirty"] = vegetation_dirty;
+    out["cover_dirty"] = cover_dirty;
+    out["enum_atlas_data"] = enum_data;
+    if (run_biome) {
+        out["biome_buffer"] = biome_buf;
+        out["prev_biome"] = prev_biome;
+    }
+    if (run_vegetation) {
+        out["vegetation_buffer"] = vegetation_buf;
+        out["prev_vegetation"] = prev_vegetation;
+    }
+    if (run_cover) {
+        out["cover_buffer"] = cover_buf;
+        out["prev_cover"] = prev_cover;
+    }
+    return out;
+}
+
 // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ──────────
 // 4 个 atlas baker 的 byte-fill pass C++ 化。CSR 协议详见 world_ext.h 注释。
 //
@@ -8142,6 +8296,12 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
         return fail("ecology prev_* size mismatch");
     }
     const bool cache_valid = bool(knobs.get("cache_valid", false));
+    PackedInt32Array prev_sigs;
+    bool prev_sigs_usable = false;
+    if (cache_valid && knobs.has("prev_sigs")) {
+        prev_sigs = knobs["prev_sigs"];
+        prev_sigs_usable = (prev_sigs.size() == c.K);
+    }
 
     const int sid_temp = component_id(StringName("cell_temp"));
     const int sid_moist = component_id(StringName("cell_moisture"));
@@ -8192,6 +8352,7 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
     const uint8_t * const __restrict PV_VEG = prev_veg.ptr();
     const uint8_t * const __restrict PV_VIT = prev_vit.ptr();
     const uint8_t * const __restrict PV_TR = prev_tr.ptr();
+    const int32_t * const __restrict PREV_SIGS = prev_sigs_usable ? prev_sigs.ptr() : nullptr;
     uint8_t * const __restrict BUF = c.buffer.ptrw();
 
     PackedByteArray new_veg;  new_veg.resize(c.K);  uint8_t * const NV = new_veg.ptrw();
@@ -8280,6 +8441,10 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
         NT[k] = uint8_t(b);
         SIGS[k] = int32_t(sig);
 
+        if (PREV_SIGS != nullptr && uint32_t(PREV_SIGS[k]) == sig) {
+            continue;
+        }
+
         // byte fill
         const int first = FIRST[k];
         const int count = CNT[k];
@@ -8339,6 +8504,13 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
     PackedByteArray pass_sea = knobs["cell_passable_sea"];
     if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+    const bool cache_valid = bool(knobs.get("cache_valid", false));
+    PackedInt32Array prev_sigs;
+    bool prev_sigs_usable = false;
+    if (cache_valid && knobs.has("prev_sigs")) {
+        prev_sigs = knobs["prev_sigs"];
+        prev_sigs_usable = (prev_sigs.size() == c.K);
+    }
 
     // C++ 端没有 cell_passable_sea SoA slot，但中心 cell + 邻居 cell 都需要算 sig。
     // 邻居的 passable_sea 通过 SoA cell_is_water 槽位作为 proxy 取得 ——
@@ -8380,6 +8552,7 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
     const uint8_t * const __restrict PSEA = pass_sea.ptr();
     const uint8_t * const __restrict NB_PSEA = nb_psea.ptr();
     const int32_t * const __restrict NB = nb_arr.ptr();
+    const int32_t * const __restrict PREV_SIGS = prev_sigs_usable ? prev_sigs.ptr() : nullptr;
     uint8_t * const __restrict BUF = c.buffer.ptrw();
 
     PackedInt32Array new_sigs; new_sigs.resize(c.K); int32_t * const SIGS = new_sigs.ptrw();
@@ -8432,6 +8605,9 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
         }
 
         SIGS[k] = int32_t(hood_h);
+        if (PREV_SIGS != nullptr && uint32_t(PREV_SIGS[k]) == hood_h) {
+            continue;
+        }
 
         int or_, og, ob, oa;
         if (nc > 0) {
@@ -8867,6 +9043,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     // ────────────────────────────────────────────────────────────────────
     auto t_p = std::chrono::high_resolution_clock::now();
     PackedInt32Array dyn_real_indices;
+    PackedInt32Array dyn_real_sigs;
     {
         // 候选集：dirty_path_used 时为 dirty_indices；否则为全集（首帧 / cache_invalid）。
         // GD 端语义：dynamic_cache_valid=false 时 _phase_cells = all_cells；
@@ -8880,7 +9057,9 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             const int32_t * const SRC = use_all ? nullptr : dirty_indices.ptr();
             // 预估 reserve；diff-skip 后真正变化的远少于 N
             dyn_real_indices.resize(N);
+            dyn_real_sigs.resize(N);
             int32_t * const OUT = dyn_real_indices.ptrw();
+            int32_t * const OUT_SIG = dyn_real_sigs.ptrw();
             int kw = 0;
             for (int i = 0; i < N; ++i) {
                 const int idx = use_all ? i : SRC[i];
@@ -8891,50 +9070,49 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                     double(SNOW[idx]), double(VIT[idx]), psea);
                 if (cache_valid_dyn && uint32_t(PREV[idx]) == sig) continue;  // skip
                 PREV[idx] = int32_t(sig);
-                OUT[kw++] = idx;
+                OUT[kw] = idx;
+                OUT_SIG[kw] = int32_t(sig);
+                ++kw;
             }
             dyn_real_indices.resize(kw);
+            dyn_real_sigs.resize(kw);
         }
     }
     auto t_q = std::chrono::high_resolution_clock::now();
     st->ms_dyn_prep = std::chrono::duration<double, std::milli>(t_q - t_p).count();
 
-    // 调 encode_dynamic_cell_atlas (复用现有实现，同 1:1 bit-equal)
+    // dynamic phase 直接写 buffer：prep 已完成 sig-diff，避免再构造 Dictionary/CSR 临时数组并二次算 sig。
     {
         t_p = std::chrono::high_resolution_clock::now();
         const int K = dyn_real_indices.size();
         if (K > 0) {
-            // 构造 CSR knobs（按 dyn_real_indices 顺序压平）
-            PackedInt32Array first_px; first_px.resize(K);
-            PackedInt32Array px_count; px_count.resize(K);
-            PackedByteArray pass_sea; pass_sea.resize(K);
-            PackedInt32Array prev_sigs_csr; prev_sigs_csr.resize(K);
             const int32_t * const REAL = dyn_real_indices.ptr();
+            const int32_t * const SIGS = dyn_real_sigs.ptr();
             const int32_t * const SF = soa.cell_first_px.ptr();
             const int32_t * const SC = soa.cell_px_count.ptr();
+            const int32_t * const FLAT = soa.flat_px_indices.ptr();
+            uint8_t * const BUF = st->buf_dyn.ptrw();
+            const int flat_n = soa.flat_px_indices.size();
             for (int k = 0; k < K; ++k) {
                 const int idx = REAL[k];
-                const int f = (idx < soa.n_cells) ? SF[idx] : -1;
-                const int c = (idx < soa.n_cells) ? SC[idx] : 0;
-                first_px[k] = (c <= 0 || f < 0) ? 0 : f;
-                px_count[k] = (c <= 0 || f < 0) ? 0 : c;
-                pass_sea[k] = cell_psea(idx) ? 1 : 0;
-                prev_sigs_csr[k] = -1;  // diff 已在外层做完，cpp 端 sig-skip 全 miss
-            }
-            Dictionary knobs;
-            knobs["n_pix"] = n_pix;
-            knobs["stride_bytes"] = 4;
-            knobs["atlas_buffer"] = st->buf_dyn;
-            knobs["cell_indices"] = dyn_real_indices;
-            knobs["cell_first_px"] = first_px;
-            knobs["cell_px_count"] = px_count;
-            knobs["flat_px_indices"] = soa.flat_px_indices;
-            knobs["cell_passable_sea"] = pass_sea;
-            knobs["cache_valid"] = false;  // 已在外层做 diff，禁用内层 sig-skip
-            knobs["prev_sigs"] = prev_sigs_csr;
-            Dictionary res = encode_dynamic_cell_atlas(knobs);
-            if (!bool(res.get("fallback", true))) {
-                st->buf_dyn = res["atlas_buffer"];
+                if (idx < 0 || idx >= soa.n_cells) continue;
+                const int f = SF[idx];
+                const int c = SC[idx];
+                if (c <= 0 || f < 0 || f + c > flat_n) continue;
+                const uint32_t sig = uint32_t(SIGS[k]);
+                const uint8_t r = uint8_t(sig & 0xFFu);
+                const uint8_t g = uint8_t((sig >> 8) & 0xFFu);
+                const uint8_t b = uint8_t((sig >> 16) & 0xFFu);
+                const uint8_t a = uint8_t((sig >> 24) & 0xFFu);
+                for (int p = 0; p < c; ++p) {
+                    const int px_idx = FLAT[f + p];
+                    if (px_idx < 0 || px_idx >= n_pix) continue;
+                    const int base = px_idx * 4;
+                    BUF[base    ] = r;
+                    BUF[base + 1] = g;
+                    BUF[base + 2] = b;
+                    BUF[base + 3] = a;
+                }
             }
         }
         t_q = std::chrono::high_resolution_clock::now();
@@ -9006,10 +9184,12 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             PackedByteArray prev_veg; prev_veg.resize(K);
             PackedByteArray prev_vit; prev_vit.resize(K);
             PackedByteArray prev_tr; prev_tr.resize(K);
+            PackedInt32Array prev_sigs_csr; prev_sigs_csr.resize(K);
             const int32_t * const REAL = eco_real_indices.ptr();
             const int32_t * const SF = soa.cell_first_px.ptr();
             const int32_t * const SC = soa.cell_px_count.ptr();
             const float * const TR = st->eco_transition_age.ptr();
+            const int32_t * const PE_PREV = st->prev_sigs_eco.ptr();
             for (int k = 0; k < K; ++k) {
                 const int idx = REAL[k];
                 const int f = (idx < soa.n_cells) ? SF[idx] : -1;
@@ -9030,6 +9210,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                 prev_veg[k] = uint8_t(VEG[idx]);
                 prev_vit[k] = uint8_t(pk_q01_byte(double(VIT[idx])));
                 prev_tr[k] = uint8_t(int(TR[idx]) & 0xFF);
+                prev_sigs_csr[k] = (idx >= 0 && idx < n_cells) ? PE_PREV[idx] : -1;
             }
             Dictionary knobs;
             knobs["n_pix"] = n_pix;
@@ -9043,6 +9224,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             knobs["prev_veg"] = prev_veg;
             knobs["prev_vitality"] = prev_vit;
             knobs["prev_transition"] = prev_tr;
+            knobs["prev_sigs"] = prev_sigs_csr;
             knobs["cache_valid"] = cache_valid_eco;
             knobs["terrain_lake"] = int(opts.get("terrain_lake", -1));
             knobs["terrain_sea_ice"] = int(opts.get("terrain_sea_ice", -1));
@@ -9150,57 +9332,85 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     t_q = std::chrono::high_resolution_clock::now();
     st->ms_smo_prep = std::chrono::duration<double, std::milli>(t_q - t_p).count();
 
-    // 调 encode_dyn_smooth_atlas
+    // smooth phase 直接写 buffer：避免构造 Dictionary / K 级临时 CSR 数组 / neighbor_passable_sea。
     {
         t_p = std::chrono::high_resolution_clock::now();
         const int K = smo_real_indices.size();
         if (K > 0 && have_nb) {
-            PackedInt32Array first_px; first_px.resize(K);
-            PackedInt32Array px_count; px_count.resize(K);
-            PackedByteArray pass_sea; pass_sea.resize(K);
-            PackedByteArray nb_pseas; nb_pseas.resize(K * 6);
             const int32_t * const REAL = smo_real_indices.ptr();
             const int32_t * const SF = soa.cell_first_px.ptr();
             const int32_t * const SC = soa.cell_px_count.ptr();
+            const int32_t * const FLAT = soa.flat_px_indices.ptr();
             const int32_t * const NB = nb_arr.ptr();
+            int32_t * const PS = st->prev_sigs_smo.ptrw();
+            uint8_t * const BUF = st->buf_smo.ptrw();
+            const int flat_n = soa.flat_px_indices.size();
+
+            auto sig_of = [&](int idx) -> uint32_t {
+                return pk_atlas_sig_dynamic(
+                    double(TEMP[idx]), double(MOIST[idx]),
+                    double(SNOW[idx]), double(VIT[idx]), cell_psea(idx));
+            };
+
             for (int k = 0; k < K; ++k) {
-                const int idx = REAL[k];
-                const int f = (idx < soa.n_cells) ? SF[idx] : -1;
-                const int c = (idx < soa.n_cells) ? SC[idx] : 0;
-                first_px[k] = (c <= 0 || f < 0) ? 0 : f;
-                px_count[k] = (c <= 0 || f < 0) ? 0 : c;
-                pass_sea[k] = cell_psea(idx) ? 1 : 0;
-                const int base_g = idx * 6;
-                const int base_l = k * 6;
+                const int ci = REAL[k];
+                if (ci < 0 || ci >= n_cells) continue;
+
+                const uint32_t c_sig = sig_of(ci);
+                const int cr = int(c_sig & 0xFFu);
+                const int cg = int((c_sig >> 8) & 0xFFu);
+                const int cb = int((c_sig >> 16) & 0xFFu);
+                const int ca = int((c_sig >> 24) & 0xFFu);
+
+                uint32_t hood_h = 0x811C9DC5u;
+                hood_h = (hood_h ^ uint32_t(cr)) * 0x01000193u;
+                hood_h = (hood_h ^ uint32_t(cg)) * 0x01000193u;
+                hood_h = (hood_h ^ uint32_t(cb)) * 0x01000193u;
+                hood_h = (hood_h ^ uint32_t(ca)) * 0x01000193u;
+
+                int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0;
+                const int nb_base = ci * 6;
                 for (int d = 0; d < 6; ++d) {
-                    const int ni = NB[base_g + d];
-                    nb_pseas[base_l + d] = (ni >= 0 && cell_psea(ni)) ? 1 : 0;
+                    const int32_t ni = NB[nb_base + d];
+                    if (ni < 0 || ni >= n_cells) continue;
+                    const uint32_t n_sig = sig_of(int(ni));
+                    const int nrb = int(n_sig & 0xFFu);
+                    const int ngb = int((n_sig >> 8) & 0xFFu);
+                    const int nbb = int((n_sig >> 16) & 0xFFu);
+                    const int nab = int((n_sig >> 24) & 0xFFu);
+                    nr += nrb; ng += ngb; nb_sum += nbb; na += nab; ++nc;
+                    hood_h = (hood_h ^ uint32_t(nrb)) * 0x01000193u;
+                    hood_h = (hood_h ^ uint32_t(ngb)) * 0x01000193u;
+                    hood_h = (hood_h ^ uint32_t(nbb)) * 0x01000193u;
+                    hood_h = (hood_h ^ uint32_t(nab)) * 0x01000193u;
                 }
-            }
-            Dictionary knobs;
-            knobs["n_pix"] = n_pix;
-            knobs["stride_bytes"] = 4;
-            knobs["atlas_buffer"] = st->buf_smo;
-            knobs["cell_indices"] = smo_real_indices;
-            knobs["cell_first_px"] = first_px;
-            knobs["cell_px_count"] = px_count;
-            knobs["flat_px_indices"] = soa.flat_px_indices;
-            knobs["cell_passable_sea"] = pass_sea;
-            knobs["neighbor_indices"] = nb_arr;
-            knobs["neighbor_passable_sea"] = nb_pseas;
-            Dictionary res = encode_dyn_smooth_atlas(knobs);
-            if (!bool(res.get("fallback", true))) {
-                st->buf_smo = res["atlas_buffer"];
-                if (res.has("new_sigs")) {
-                    PackedInt32Array new_sigs = res["new_sigs"];
-                    if (new_sigs.size() == K) {
-                        int32_t * const PS = st->prev_sigs_smo.ptrw();
-                        const int32_t * const NS = new_sigs.ptr();
-                        for (int k = 0; k < K; ++k) {
-                            const int idx = REAL[k];
-                            if (idx >= 0 && idx < n_cells) PS[idx] = NS[k];
-                        }
-                    }
+
+                if (cache_valid_smo && uint32_t(PS[ci]) == hood_h) {
+                    continue;
+                }
+                PS[ci] = int32_t(hood_h);
+
+                int or_, og, ob, oa;
+                if (nc > 0) {
+                    or_ = (cr + (nr / nc)) / 2;
+                    og = (cg + (ng / nc)) / 2;
+                    ob = (cb + (nb_sum / nc)) / 2;
+                    oa = (ca + (na / nc)) / 2;
+                } else {
+                    or_ = cr; og = cg; ob = cb; oa = ca;
+                }
+
+                const int first = SF[ci];
+                const int count = SC[ci];
+                if (count <= 0 || first < 0 || first + count > flat_n) continue;
+                for (int p = 0; p < count; ++p) {
+                    const int px_idx = FLAT[first + p];
+                    if (px_idx < 0 || px_idx >= n_pix) continue;
+                    const int base = px_idx * 4;
+                    BUF[base    ] = uint8_t(or_);
+                    BUF[base + 1] = uint8_t(og);
+                    BUF[base + 2] = uint8_t(ob);
+                    BUF[base + 3] = uint8_t(oa);
                 }
             }
         }
@@ -10877,6 +11087,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
         &DCWorldExt::run_sea_ice_atlas_prepare);
+    ClassDB::bind_method(
+        D_METHOD("patch_enum_atlas_axes", "knobs"),
+        &DCWorldExt::patch_enum_atlas_axes);
     // Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F)：
     // 4 张运行期 atlas baker 的 byte-fill C++/SIMD pass。CSR 协议详见 world_ext.h。
     ClassDB::bind_method(
