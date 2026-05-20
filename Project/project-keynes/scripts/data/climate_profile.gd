@@ -350,6 +350,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   像素 bit-identical 验收，且 ext 必须 has_method('encode_dynamic_cell_atlas')。
 @export var dirty_push_enabled: bool = true                     # plan/dirty-push-atlas-encode 阶段 D：baker 入口走 mask 消费
 @export var cpp_atlas_encode_enabled: bool = false              # plan/dirty-push-atlas-encode 阶段 F：DCWorldExt encode_* pass 启用
+# plan/atlas-pipeline-cpp（2026-05-20）：4 张运行期 atlas 全管线 C++ 化。
+# true 时 dynamic_visual_atlas_upload_system 每 tick 只调一次
+# DCWorldExt.run_atlas_pipeline_step(opts)，C++ 内部完成 dirty 消费 / value-diff
+# / 1-跳膨胀 / CSR 打包 / 4 张 atlas encode / 4-phase 调度节流；GD 端只剩
+# ImageTexture.update 薄壳。false 时退化到旧的 GD 4-phase 状态机 +
+# cpp_atlas_encode_enabled 控制的 per-phase encode-only 下沉。
+@export var cpp_atlas_pipeline_enabled: bool = true             # plan/atlas-pipeline-cpp 阶段 G：4 张 atlas pipeline 全管线 C++ 化
 
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。

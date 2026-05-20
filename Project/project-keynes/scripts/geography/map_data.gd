@@ -274,6 +274,35 @@ func iter_cells() -> Array[HexCell]:
 func neighbor_indices_packed() -> PackedInt32Array:
 	return _neighbor_indices
 
+# ─── P1：terrain → passable_sea 静态 LUT（256 byte 表） ────────────────
+# 给 dynamic_visual_atlas dyn_smooth pass 的 K*6 邻居循环用：原本每个邻居要
+# `var nb_cell = map.cell_at(ni); nb_cell.passable_sea` —— 这是
+# Dictionary 哈希反查 + RefCounted 字段读取双开销。改用 LUT 后：
+#     passable_sea_lut[terrain_arr[ni]]
+# 直接 PackedByteArray 索引 → 0 字段解引用 / 0 dict 查找。
+#
+# LUT 仅依赖 TerrainProfileRegistry（启动时静态注册），构建一次后永久可复用，
+# 不随 cell terrain 变化（terrain 改时 terrain_arr[ni] 改，查表结果自动跟随）。
+const _PassableSeaLUT_TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
+static var _passable_sea_lut_cache: PackedByteArray = PackedByteArray()
+static var _passable_sea_lut_built: bool = false
+
+## 256-byte LUT：lut[terrain_byte] = 1 if passable_sea else 0。
+## 第一次调用时 build；之后零分配返回。线程安全：build 只读 TerrainProfileRegistry。
+static func passable_sea_lut() -> PackedByteArray:
+	if _passable_sea_lut_built:
+		return _passable_sea_lut_cache
+	var lut: PackedByteArray = PackedByteArray()
+	lut.resize(256)
+	# 仅枚举值 0..N-1 有意义（其余字节 byte 默认 0=不通行海，安全 fallback）。
+	for t_int in range(256):
+		# is_passable_sea 接收 enum；超出枚举范围时 TerrainProfileRegistry 返回 default
+		# profile（passable_sea=false），与默认值 0 一致，无需特判。
+		lut[t_int] = 1 if _PassableSeaLUT_TerrainTypeScript.is_passable_sea(t_int) else 0
+	_passable_sea_lut_cache = lut
+	_passable_sea_lut_built = true
+	return lut
+
 # ─── Climate-Weather 2ms Budget — Phase A.1：SoA 构造 / 同步 API ─────────
 # 调用关系（PR-2.4 之后）：
 #   - bake_world / 加载存档完成后调用 rebuild_soa_from_cells() 一次同步全部字段

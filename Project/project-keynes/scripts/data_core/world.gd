@@ -292,12 +292,65 @@ func view_u8(comp_id: int) -> PackedByteArray:
 # cells pool 段（[0, _dirty_cell_mask_size)）生效，其他 pool（front 池等）
 # 因 idx 越界自动跳过。dirty_mask_enabled = false 或 mask_size = 0 时全 no-op。
 
+# [DIAG mask_dirty=2400 排查 · 2026-05-20] 凶手抓现行：每次 mark 前 30 次
+# 调用打印调用栈（含调用文件、函数、行号），定位"谁在每帧标 2400 dirty"。
+# 诊断完成后整段（包括 _diag_mark_count + _diag_dump_caller）一次性删除。
+var _diag_mark_count: int = 0
+
+func _diag_dump_caller(tag: String, n_marked: int) -> void:
+	if _diag_mark_count >= 30:
+		return
+	_diag_mark_count += 1
+	var stack = get_stack()
+	# stack[0] 是 _diag_dump_caller 自己；stack[1] 是 _dirty_mark_*；
+	# stack[2] 是 write_* API；stack[3] 才是真正的业务调用方。
+	var caller_info: String = "<unknown>"
+	if stack != null and stack.size() >= 4:
+		var s = stack[3]
+		caller_info = "%s:%d %s()" % [str(s.get("source", "?")), int(s.get("line", -1)), str(s.get("function", "?"))]
+	elif stack != null and stack.size() >= 3:
+		var s2 = stack[2]
+		caller_info = "%s:%d %s()" % [str(s2.get("source", "?")), int(s2.get("line", -1)), str(s2.get("function", "?"))]
+	print("[DIAG dirty_mark #%d] %s n=%d caller=%s" % [_diag_mark_count, tag, n_marked, caller_info])
+
+
 # 内部：单点 mark（hot path 高频，inline-friendly）。
 func _dirty_mark_one(idx: int) -> void:
 	if not dirty_mask_enabled:
 		return
 	if idx >= 0 and idx < _dirty_cell_mask_size:
 		_dirty_cell_mask[idx] = 1
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] 也许凶手是单点写
+		# write_f32(idx, v)，前 30 次打调用栈定位（每个不同 caller 只打一次去重）
+		_diag_dump_caller_one(idx)
+
+
+# [DIAG] 单点 mark 调用栈去重打印：每个 (source, function) 组合只打一次，
+# 避免单点循环 2400 次刷屏；总共最多打 30 个不同 caller。
+var _diag_one_callers_seen: Dictionary = {}
+var _diag_one_count: int = 0
+
+func _diag_dump_caller_one(idx: int) -> void:
+	if _diag_one_count >= 30:
+		return
+	var stack = get_stack()
+	if stack == null or stack.size() < 3:
+		return
+	# stack[0]=_diag_dump_caller_one, stack[1]=_dirty_mark_one,
+	# stack[2]=write_f32/u8/i32, stack[3]=业务 caller
+	var key_info = stack[2] if stack.size() >= 3 else null
+	var biz_info = stack[3] if stack.size() >= 4 else key_info
+	if biz_info == null:
+		return
+	var src: String = str(biz_info.get("source", "?"))
+	var fn: String = str(biz_info.get("function", "?"))
+	var ln: int = int(biz_info.get("line", -1))
+	var key: String = "%s::%s" % [src, fn]
+	if _diag_one_callers_seen.has(key):
+		return
+	_diag_one_callers_seen[key] = true
+	_diag_one_count += 1
+	print("[DIAG dirty_mark_one #%d] idx=%d caller=%s:%d %s()" % [_diag_one_count, idx, src, ln, fn])
 
 
 # 内部：成段 mark（[start, start+n) 全标）。
@@ -308,6 +361,7 @@ func _dirty_mark_range(start: int, n: int) -> void:
 	var hi: int = mini(start + n, _dirty_cell_mask_size)
 	for i in range(lo, hi):
 		_dirty_cell_mask[i] = 1
+	_diag_dump_caller("range", hi - lo)
 
 
 # 内部：批量索引 mark（dirty_indices 列表，越界元素自动跳过）。
@@ -320,6 +374,7 @@ func _dirty_mark_indexed(indices: PackedInt32Array) -> void:
 		var idx: int = indices[k]
 		if idx >= 0 and idx < cap:
 			_dirty_cell_mask[idx] = 1
+	_diag_dump_caller("indexed", n)
 
 
 ## 单元素写入：F32 component。
@@ -449,6 +504,11 @@ func write_u8_range(comp_id: int, start: int, src: PackedByteArray) -> void:
 
 ## 批量索引写：F32 component。
 ## 把 values[k] 写到 arr[indices[k]]，k ∈ [0, min(indices.size(), values.size()))。
+##
+## [perf 2026-05-20 indexed-value-diff] 旧版无条件 _dirty_mark_indexed(indices)
+##   导致 weather_system 每 tick commit 2400 idx → mask 全 1 → atlas_upload 全推。
+##   现改为 value-diff：仅当 arr[idx] != values[k] 才写 + 标 dirty。
+##   语义等价于 write_f32_dense 的 value-diff 行为。
 func write_f32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedFloat32Array) -> void:
 	var slot: _Slot = _get_slot(comp_id)
 	if slot == null:
@@ -461,14 +521,25 @@ func write_f32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedFl
 	var arr: PackedFloat32Array = slot.arr_f32
 	var cap: int = arr.size()
 	var n: int = mini(indices.size(), values.size())
-	for k in range(n):
-		var idx: int = indices[k]
-		if idx >= 0 and idx < cap:
-			arr[idx] = values[k]
-	_dirty_mark_indexed(indices)
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var mask_cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var idx: int = indices[k]
+			if idx >= 0 and idx < cap:
+				var v_new: float = values[k]
+				if arr[idx] != v_new:
+					arr[idx] = v_new
+					if idx < mask_cap:
+						_dirty_cell_mask[idx] = 1
+	else:
+		for k in range(n):
+			var idx2: int = indices[k]
+			if idx2 >= 0 and idx2 < cap:
+				arr[idx2] = values[k]
 
 
 ## 批量索引写：I32 component。
+## [perf 2026-05-20 indexed-value-diff] 同 write_f32_indexed。
 func write_i32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedInt32Array) -> void:
 	var slot: _Slot = _get_slot(comp_id)
 	if slot == null:
@@ -481,14 +552,25 @@ func write_i32_indexed(comp_id: int, indices: PackedInt32Array, values: PackedIn
 	var arr: PackedInt32Array = slot.arr_i32
 	var cap: int = arr.size()
 	var n: int = mini(indices.size(), values.size())
-	for k in range(n):
-		var idx: int = indices[k]
-		if idx >= 0 and idx < cap:
-			arr[idx] = values[k]
-	_dirty_mark_indexed(indices)
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var mask_cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var idx: int = indices[k]
+			if idx >= 0 and idx < cap:
+				var v_new: int = values[k]
+				if arr[idx] != v_new:
+					arr[idx] = v_new
+					if idx < mask_cap:
+						_dirty_cell_mask[idx] = 1
+	else:
+		for k in range(n):
+			var idx2: int = indices[k]
+			if idx2 >= 0 and idx2 < cap:
+				arr[idx2] = values[k]
 
 
 ## 批量索引写：U8 component（int 入参，自动 & 0xFF 截断）。
+## [perf 2026-05-20 indexed-value-diff] 同 write_f32_indexed。
 func write_u8_indexed(comp_id: int, indices: PackedInt32Array, values: PackedByteArray) -> void:
 	var slot: _Slot = _get_slot(comp_id)
 	if slot == null:
@@ -501,11 +583,111 @@ func write_u8_indexed(comp_id: int, indices: PackedInt32Array, values: PackedByt
 	var arr: PackedByteArray = slot.arr_u8
 	var cap: int = arr.size()
 	var n: int = mini(indices.size(), values.size())
-	for k in range(n):
-		var idx: int = indices[k]
-		if idx >= 0 and idx < cap:
-			arr[idx] = values[k] & 0xFF
-	_dirty_mark_indexed(indices)
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var mask_cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var idx: int = indices[k]
+			if idx >= 0 and idx < cap:
+				var v_new: int = values[k] & 0xFF
+				if arr[idx] != v_new:
+					arr[idx] = v_new
+					if idx < mask_cap:
+						_dirty_cell_mask[idx] = 1
+	else:
+		for k in range(n):
+			var idx2: int = indices[k]
+			if idx2 >= 0 and idx2 < cap:
+				arr[idx2] = values[k] & 0xFF
+
+
+# ─── Dense 批量写（plan: kill _dirty_mark_one storm, 2026-05-20） ────────────────
+# 设计动机：
+#   - `cell.X = v` 这种 facade setter 走 write_f32(cid, idx, v) 单点写 + 单点标 dirty，
+#     若 hot pass 每帧给所有 cell 都赋值一遍 → _dirty_cell_mask 被标成全 1，
+#     atlas_upload 退化为全推（21-24 ms/tick 大头）。
+#   - 解决方案是 hot pass 把结果累积到 PackedFloat32Array，结尾一次性
+#     `write_f32_dense(cid, values)`：写整段 + 一次性 mark dirty range，
+#     避免 N 次单点 mark。
+#   - dense API 假设 values.size() ≤ slot capacity；多余元素截断，少于则只写前 n 个。
+
+## 批量整段写：F32 component。把 values[0..n) 写到 arr[0..n)，并标 dirty range。
+func write_f32_dense(comp_id: int, values: PackedFloat32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_f32_dense: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.F32 and slot.dtype != DCComponentIds.VEC2_F32 and slot.dtype != DCComponentIds.VEC3_F32:
+		push_error("[DCWorld] write_f32_dense: comp '%s' dtype=%s is not F32-compatible"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedFloat32Array = slot.arr_f32
+	var n: int = mini(values.size(), arr.size())
+	# [perf 2026-05-20] value-diff 标脏：仅对实际变化的 cell 标脏。
+	# 修复 atlas 全图重传问题：write_f32_dense 之前无条件 mark_range(0, n)，
+	# 即使绝大多数 cell 值未变也会全脏 → atlas_upload dirty_count=n 每帧 → 18-22ms 卡顿。
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var v_new: float = values[k]
+			if arr[k] != v_new:
+				arr[k] = v_new
+				if k < cap:
+					_dirty_cell_mask[k] = 1
+	else:
+		for k in range(n):
+			arr[k] = values[k]
+
+
+## 批量整段写：I32 component。
+func write_i32_dense(comp_id: int, values: PackedInt32Array) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_i32_dense: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.I32:
+		push_error("[DCWorld] write_i32_dense: comp '%s' dtype=%s is not I32"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedInt32Array = slot.arr_i32
+	var n: int = mini(values.size(), arr.size())
+	# [perf 2026-05-20] value-diff 标脏：仅对实际变化的 cell 标脏（同 write_f32_dense）。
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var v_new: int = values[k]
+			if arr[k] != v_new:
+				arr[k] = v_new
+				if k < cap:
+					_dirty_cell_mask[k] = 1
+	else:
+		for k in range(n):
+			arr[k] = values[k]
+
+
+## 批量整段写：U8 component。values 是 PackedByteArray，会按需 & 0xFF。
+func write_u8_dense(comp_id: int, values: PackedByteArray) -> void:
+	var slot: _Slot = _get_slot(comp_id)
+	if slot == null:
+		push_error("[DCWorld] write_u8_dense: invalid comp_id=%d" % comp_id)
+		return
+	if slot.dtype != DCComponentIds.U8:
+		push_error("[DCWorld] write_u8_dense: comp '%s' dtype=%s is not U8"
+			% [String(slot.name), DCComponentIds.dtype_name(slot.dtype)])
+		return
+	var arr: PackedByteArray = slot.arr_u8
+	var n: int = mini(values.size(), arr.size())
+	# [perf 2026-05-20] value-diff 标脏：仅对实际变化的 cell 标脏（同 write_f32_dense）。
+	if dirty_mask_enabled and _dirty_cell_mask_size > 0:
+		var cap: int = _dirty_cell_mask_size
+		for k in range(n):
+			var v_new: int = values[k] & 0xFF
+			if arr[k] != v_new:
+				arr[k] = v_new
+				if k < cap:
+					_dirty_cell_mask[k] = 1
+	else:
+		for k in range(n):
+			arr[k] = values[k] & 0xFF
 
 
 # ─── Dirty mask public API（plan: cell-dirty-push-and-dots-atlas-bakers, A） ───

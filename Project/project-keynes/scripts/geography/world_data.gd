@@ -150,6 +150,24 @@ var water_cell_pixel_lists: Dictionary = {}
 # bake_world 重跑时与 pixel_to_cell_lookup 同步重建。
 var cell_pixel_lists: Dictionary = {}
 
+# P1：cell_pixel_lists 的 SoA 形态（CSR 布局）。
+# 给 dynamic_visual_atlas 4 个 phase 的 _pack_csr_for_cells 走 fast path 用，
+# 消除 Dictionary[HexCell→PackedInt32Array] 的 K 次 has() + get() 哈希查找。
+#
+# 布局（与 cell.index 严格对齐，长度 = map.cell_count()）：
+#   cell_first_px_arr[cell_idx]    : 该 cell 在 flat_px_indices_arr 里的起始偏移
+#                                    (-1 = 该 cell 无像素 / map 外)
+#   cell_px_count_arr[cell_idx]    : 该 cell 拥有的像素数量（0 = 无像素）
+#   flat_px_indices_arr            : 所有 cell 的像素 idx 串接（按 cell_idx 顺序）
+#
+# 与 Dictionary 版本同源构建（_bake_height_biome_moisture 同一桶分发）；
+# Dict 版本仍保留——给 finalize / rebake_cover_tex_only 等仍按 cell_key 查的
+# 旧路径继续跑。water_cell_pixel_lists 在 production 代码里始终为空（仅测试用），
+# 因此不为它构建 SoA 镜像。
+var cell_first_px_arr: PackedInt32Array = PackedInt32Array()
+var cell_px_count_arr: PackedInt32Array = PackedInt32Array()
+var flat_px_indices_arr: PackedInt32Array = PackedInt32Array()
+
 # ─── 采样接口（给 MapGenerator 在 hex 中心采样用） ────────────────────────
 
 func sample_height(world_pos: Vector2) -> float:

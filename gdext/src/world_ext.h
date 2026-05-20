@@ -753,6 +753,51 @@ public:
     godot::Dictionary encode_dyn_smooth_atlas(godot::Dictionary knobs);
     godot::Dictionary encode_ice_state_atlas(godot::Dictionary knobs);
 
+    // ─── plan/atlas-pipeline-cpp（2026-05-20）：4 张 atlas 全管线主入口 ─────
+    // dynamic_visual_atlas_upload_system 每帧热路径整套搬到 C++：dirty 消费 →
+    // 4 张 atlas value-diff（per-atlas prev_sigs snapshot 兜底 dirty 语义 bug）
+    // → 1-跳邻居膨胀（smooth 用）→ CSR 打包 → 4 张 atlas encode → 4-phase 调
+    // 度节流。GD 端薄壳每 tick 只调一次本入口，拿 atlas_buffers Dict 后做
+    // 4 次 ImageTexture.update。
+    //
+    // opts (Dictionary 输入):
+    //   "world"            : Object（DCWorld 实例，必填）
+    //   "soft_budget_us"   : int（本 tick 软预算，C++ 内部每 phase / chunk 边界检查；默认 1500）
+    //   "max_cells"        : int（本 tick 最多处理 cell 数；默认 4096）
+    //   "enable_diag"      : bool（开则填 12 个 ms_* 字段；默认 false）
+    //   "encode_knobs_*"   : Dictionary（4 个 atlas 的 encode 旋钮，转发给内部 encode_*）
+    //
+    // 返回 (Dictionary):
+    //   "done"             : bool（true 表示本 stride 4 phase 全部完成）
+    //   "phase"            : int（当前 phase 枚举，0=IDLE..5=DONE）
+    //   "cursor"           : int（当前 phase 内 cursor，调试用）
+    //   "atlas_buffers"    : Dictionary { "dyn"/"eco"/"smo"/"ice" : PackedByteArray }（仅 finalize 阶段含）
+    //   "stride_real"      : Dictionary { 4 个 atlas 的真·变化 cell 数 }
+    //   "ms_breakdown"     : Dictionary（12 个 phase 细分时间，enable_diag=true 才填）
+    //
+    // 与现有 encode_* 关系：本方法在内部直接复用 4 个 encode_* 函数体，prev_sigs
+    // 从 AtlasPipelineState::prev_sigs_* 读取，无需 GD 端来回传 snapshot。
+    godot::Dictionary run_atlas_pipeline_step(godot::Dictionary opts);
+
+    // 地图重生成 / map_regenerate 时调，使 AtlasPipelineState::csr_cache 与
+    // prev_sigs 失效；下一次 run_atlas_pipeline_step 会按 dirty 全集重建。
+    // 无副作用、O(1) 清空 PackedArray。
+    void invalidate_atlas_csr_cache();
+
+    // 一次性把 GD 端 ecology 持久状态（map_baker.gd _eco_foliage/_eco_stress/
+    // _eco_transition_age_bytes / _eco_growth_damage / _eco_active_decay_set）
+    // 迁移到 C++ 端 AtlasPipelineState。init 阶段调一次，之后完全由 C++ 维护。
+    //
+    // state (Dictionary):
+    //   "foliage"           : PackedFloat32Array（长度 n_cells，per-cell foliage 0..1）
+    //   "stress"            : PackedFloat32Array（同上，stress 0..1）
+    //   "transition_age"    : PackedFloat32Array（同上，秒）
+    //   "growth_damage"     : PackedFloat32Array（同上，0..1）
+    //   "active_decay"      : PackedInt32Array（active decay set 的 cell.index 列表）
+    //
+    // 容错：缺失字段以默认 0 填充；长度不匹配以 n_cells 截断/补 0。
+    void migrate_eco_persistent_from_gd(godot::Dictionary state);
+
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
     //
@@ -1347,6 +1392,12 @@ private:
     // _async_state 同模式）；具体类型在 .cpp 内部 forward-declare 并 lazy alloc。
     void                                     *_summary_state          = nullptr;
     void                                     *_summary_state_snapshot = nullptr;
+
+    // ─── plan/atlas-pipeline-cpp（2026-05-20）：atlas pipeline opaque state ─
+    // 实际类型 pk::AtlasPipelineState 在 .cpp 顶部定义。lazy alloc 在
+    // run_atlas_pipeline_step 首次调用；析构走 PackedArray RAII。与
+    // _summary_state 同模式（void* opaque pointer）。
+    void                                     *_atlas_state            = nullptr;
 
     // q/r → cell idx 反查 hash（summary pass cube_to_idx 用）。lazy rebuild：
     // 在 run_weather_summary_fronts_pass 内部，发现 _summary_qr_to_idx_size !=

@@ -19,11 +19,30 @@ class_name DynamicVisualAtlasUploadSystem
 ##   - dirty_push_enabled flag 关闭 → 全部 phase 走 all_cells（旧行为）
 ##   - world == null / mask 为空 → 同上
 ##   - DCWorld 未挂 use_data_core / use_hexcell_facade → mask 一直为空 → 自动 fallback
+##
+## 2026-05-20 plan/atlas-pipeline-cpp（全量 DOTS 化）：
+##   新增 `cpp_atlas_pipeline_enabled` flag（默认 true）。开启时 tick 入口直接
+##   调 `world_ext.run_atlas_pipeline_step(opts)`，C++ 端一次性完成 4 phase
+##   （dirty 消费 + value-diff via prev_sigs + 1 跳膨胀 + 4 atlas encode），返回
+##   `atlas_buffers` 字典（dyn/eco/smo/ice 四份 PackedByteArray），GD 端只做
+##   `Image.create_from_data + ImageTexture.update`。flag=false 时回退到旧
+##   4-phase 状态机 + map_baker chunk_begin/step/finalize 路径。
+##
+##   迁移覆盖：旧 `_step_phase_baker` / `_baker_callables` / 12 个 phase ms
+##   累加器仍保留以服务 fallback 路径与旧 dashboard；新路径用 `_last_breakdown`
+##   接收 C++ 返回的 `ms_breakdown` Dict，保持采样窗口与 print 格式不变。
+##
+##   ecology 持久状态 burn-in：首次以 cpp 路径成功跑通时调
+##   `world_ext.migrate_eco_persistent_from_gd(state)`，把 baker 端
+##   `_eco_active_decay_set / _eco_transition_age_arr` 一次性灌过去；之后
+##   完全由 C++ 端 AtlasPipelineState 维护。
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const FeatureFlagsScript = preload("res://scripts/data_core/feature_flags.gd")
 const BakerDirtyHelpersScript = preload("res://scripts/rendering/bakers/baker_dirty_helpers.gd")
+const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
+const VegetationTypeScript = preload("res://scripts/geography/vegetation_type.gd")
 
 
 # ─── Phase 编号 ───────────────────────────────────────────────────────────────
@@ -41,7 +60,13 @@ const PHASE_COUNT: int = 4  # 实际工作 phase 数（1..4）
 # 实际 dirty 少时 chunk_step 走 sig 比对快速 skip，远未达上限就 phase 结束。
 const MAX_CELLS_PER_TICK: int = 4096
 const TIME_CHECK_CELLS_PER_STEP: int = 128
-const CPP_TIME_CHECK_CELLS_PER_STEP: int = 512
+# [perf 2026-05-20] 方案 A：CPP 路径从 512 → 4096。
+# 原因：512 把 2400-cell 全图人为切成 5 段，每段都付一次 GD→C++ 反射调用 +
+# _pack_csr_for_cells 打包 + Variant/Dict marshalling 税（5 段 × 4 phase = 20 次/stride）。
+# 实测 max_tick_ms 18-22ms 主要来自这个调度开销，而非 C++ 真实算力（< 0.5ms）。
+# 放大到 4096 后单 phase 单次 baker.call 吃完全图（4 次/stride），并且 CSR 在
+# cache 友好的连续段上拼接更快。GD fallback 路径仍保留 128 上限以保护时间预算。
+const CPP_TIME_CHECK_CELLS_PER_STEP: int = 4096
 
 # Soft budget = slice_budget_ms × 这个倍数，超出则 break 让出。
 const SOFT_BUDGET_MULTIPLIER: float = 2.0
@@ -50,6 +75,13 @@ var baker: MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null
 var dirty_world = null
+
+# [perf 2026-05-20] 方案 C：Callable 缓存。
+# 原因：_step_phase_baker 在 hot loop 内每帧 20+ 次 `baker.call("xxx_chunk_step", ...)`,
+# 字符串路径每次走 ObjectDB method-name lookup（dict hash + StringName intern）。
+# 改用 baker_key → {begin/step/finalize: Callable} 的预解析表，命中直接 .call(...) 省 lookup 税。
+# init 阶段 baker 不会变，Callable 永久有效；baker == null 时表为空，fallback 走旧 baker.call 路径。
+var _baker_callables: Dictionary = {}   # baker_key (String) -> {"begin": Callable, "step": Callable, "finalize": Callable}
 var stride: int = 2
 # plan/dirty-push-atlas-encode 阶段 D：dirty mask 消费方需要拿到 ClimateProfile
 # 才能在 hot path 内调 DCFeatureFlags.is_on(&"dirty_push_enabled", cp)。
@@ -85,6 +117,28 @@ var _dvas_diag_max_tick_ms: float = 0.0
 var _dvas_diag_avg_window: int = 30
 var _last_breakdown: Dictionary = {}
 
+# [diag 2026-05-20 phase-breakdown] 窗口内累加每 phase 的 prepare/step/finalize ms 总和，
+# 用于回答"max_tick_ms 那 ~20ms 到底花在哪个 phase 哪个阶段"。
+# stride 完成时把 _aggregated_report 的 *_ms 字段累计进来，print 时除以 stride_count 得均值。
+var _dvas_diag_phase_ms_accum: Dictionary = {
+	"dynamic_prepare_ms": 0.0, "dynamic_step_ms": 0.0, "dynamic_finalize_ms": 0.0,
+	"ecology_prepare_ms": 0.0, "ecology_step_ms": 0.0, "ecology_finalize_ms": 0.0,
+	"smooth_prepare_ms": 0.0, "smooth_step_ms": 0.0, "smooth_finalize_ms": 0.0,
+	"ice_prepare_ms": 0.0, "ice_step_ms": 0.0, "ice_finalize_ms": 0.0,
+}
+
+# ─── plan/atlas-pipeline-cpp 薄壳路径状态 ────────────────────────────────
+# _eco_burnin_done：首次成功调用 run_atlas_pipeline_step 之前，
+# 是否已经把 GD 端 ecology 持久状态（map_baker._eco_active_decay_set /
+# _eco_transition_age_arr）一次性迁移到 C++ AtlasPipelineState。
+# 之后由 C++ 端独立维护，无需再读 GD 端 baker 状态。
+# 地图重生成（discard_all_buffers / bake_world）时由 invalidate_atlas_csr_cache
+# 旁路触发再次 burn-in（_eco_burnin_done 由 baker 通知或本系统在
+# `_pending_burnin = true` 时触发）。
+var _eco_burnin_done: bool = false
+var _pending_burnin: bool = false
+var _cpp_pipeline_warned_missing_method: bool = false  # 一次性 push_warning
+
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null) -> void:
@@ -103,6 +157,29 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	_rebuild_baker_callables()
+
+
+# [perf 2026-05-20] 方案 C：预解析所有 baker_key 的 begin/step/finalize Callable。
+# 仅在 init/baker 切换时跑一次。Callable 是 Variant 内 inline，调用时无字符串 lookup。
+func _rebuild_baker_callables() -> void:
+	_baker_callables.clear()
+	if baker == null:
+		return
+	const _KEYS: Array[String] = ["dynamic_cell_atlas", "ecology_visual_atlas",
+			"dyn_atlas_smooth", "ice_state_atlas"]
+	for k in _KEYS:
+		var begin_name: String = k + "_chunk_begin"
+		var step_name: String = k + "_chunk_step"
+		var finalize_name: String = k + "_chunk_finalize"
+		if not baker.has_method(begin_name) or not baker.has_method(step_name) \
+				or not baker.has_method(finalize_name):
+			continue
+		_baker_callables[k] = {
+			"begin": Callable(baker, begin_name),
+			"step": Callable(baker, step_name),
+			"finalize": Callable(baker, finalize_name),
+		}
 
 
 func tick(_ctx) -> Dictionary:
@@ -113,6 +190,18 @@ func tick(_ctx) -> Dictionary:
 	# 紧急回退：走旧 one-shot 路径。
 	if not enable_time_slicing:
 		return _tick_oneshot(t_start_us)
+
+	# ── plan/atlas-pipeline-cpp：薄壳路径分流 ────────────────────────────
+	# flag=true 且 ext 实现了 run_atlas_pipeline_step → 走全量 DOTS C++ 路径，
+	# 一次性完成 4 atlas 计算并返回 atlas_buffers，GD 端只做 ImageTexture.update。
+	# 任一前置条件不满足则自动 fallback 到旧 4-phase 状态机。
+	if _is_cpp_atlas_pipeline_enabled():
+		var ext = _get_world_ext()
+		if ext != null and ext.has_method(&"run_atlas_pipeline_step"):
+			return _tick_cpp_pipeline(t_start_us, ext)
+		elif not _cpp_pipeline_warned_missing_method:
+			_cpp_pipeline_warned_missing_method = true
+			push_warning("[atlas-pipeline-cpp] flag=on 但 ext 缺少 run_atlas_pipeline_step；fallback 到旧 4-phase 路径")
 
 	# Soft budget：单 tick 不应超过这个数值；用作 phase 推进的让出阈值。
 	var soft_budget_us: int = maxi(50, int(slice_budget_ms * SOFT_BUDGET_MULTIPLIER * 1000.0))
@@ -244,6 +333,15 @@ func _start_new_stride() -> void:
 	_aggregated_report["dirty_mask_available"] = true
 	var dirty: PackedInt32Array = dirty_source.read_and_clear_dirty_mask()
 	_stride_dirty_path_used = true
+	# [DIAG mask_dirty=2400 排查 · 2026-05-20] 仅前 8 次 stride + 之后每 30 stride 打一次
+	if _dvas_diag_stride_count < 8 or (_dvas_diag_stride_count % 30) == 0:
+		var _src_tag: String = "dirty_world" if dirty_world != null else "world_data"
+		var _mask_size_dump: int = -1
+		if dirty_source.has_method("dirty_mask_size"):
+			_mask_size_dump = int(dirty_source.dirty_mask_size())
+		print("[DIAG atlas_upload] stride#%d source=%s mask_size=%d dirty_count=%d" % [
+			_dvas_diag_stride_count, _src_tag, _mask_size_dump, dirty.size(),
+		])
 	if dirty.size() <= 0:
 		_stride_dirty_noop = true
 		_stride_dirty_reason = "no_dirty"
@@ -346,12 +444,20 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 		agg_dirty_key: String, agg_ms_key: String, phase_key: String,
 		deadline_us: int) -> bool:
 	var total_us: int = Time.get_ticks_usec()
+	# [perf 2026-05-20] 方案 C：Callable 表命中直接调，未命中（理论上不会发生）走老路径。
+	var _cb: Dictionary = _baker_callables.get(baker_key, {})
+	var _cb_step: Callable = _cb.get("step", Callable())
+	var _cb_finalize: Callable = _cb.get("finalize", Callable())
 	if _phase_ctx.is_empty():
 		var prepare_us: int = Time.get_ticks_usec()
 		var begin_method: String = "%s_chunk_begin" % baker_key
 		if not baker.has_method(begin_method):
 			return true
-		_phase_ctx = baker.call(begin_method, map, world_data)
+		var _cb_begin: Callable = _cb.get("begin", Callable())
+		if _cb_begin.is_valid():
+			_phase_ctx = _cb_begin.call(map, world_data)
+		else:
+			_phase_ctx = baker.call(begin_method, map, world_data)
 		if not bool(_phase_ctx.get("prepared", false)):
 			_phase_ctx = {}
 			return true
@@ -472,9 +578,14 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 		if slice_size <= 0:
 			break
 		var step_us: int = Time.get_ticks_usec()
-		var step_method: String = "%s_chunk_step" % baker_key
-		baker.call(step_method, map, world_data, _phase_ctx, _phase_cells,
-				_phase_report, _phase_cursor, end_cursor)
+		# [perf 2026-05-20] 方案 C：Callable 直调；hot path 单次省 ~50-100μs。
+		if _cb_step.is_valid():
+			_cb_step.call(map, world_data, _phase_ctx, _phase_cells,
+					_phase_report, _phase_cursor, end_cursor)
+		else:
+			var step_method: String = "%s_chunk_step" % baker_key
+			baker.call(step_method, map, world_data, _phase_ctx, _phase_cells,
+					_phase_report, _phase_cursor, end_cursor)
 		_phase_cursor = end_cursor
 		_aggregated_report["_cells_scanned_this_tick"] = \
 				int(_aggregated_report.get("_cells_scanned_this_tick", 0)) + slice_size
@@ -488,8 +599,12 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 	var phase_complete: bool = _phase_cursor >= total_cells
 	if phase_complete:
 		var finalize_us: int = Time.get_ticks_usec()
-		var finalize_method: String = "%s_chunk_finalize" % baker_key
-		baker.call(finalize_method, world_data, _phase_ctx, _phase_report)
+		# [perf 2026-05-20] 方案 C：Callable 直调。
+		if _cb_finalize.is_valid():
+			_cb_finalize.call(world_data, _phase_ctx, _phase_report)
+		else:
+			var finalize_method: String = "%s_chunk_finalize" % baker_key
+			baker.call(finalize_method, world_data, _phase_ctx, _phase_report)
 		_aggregated_report[phase_key + "_finalize_ms"] = \
 				float(_aggregated_report.get(phase_key + "_finalize_ms", 0.0)) \
 				+ float(Time.get_ticks_usec() - finalize_us) / 1000.0
@@ -512,13 +627,39 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 func _finalize_stride(elapsed_ms: float) -> Dictionary:
 	_dvas_diag_stride_count += 1
 	_dvas_diag_ticks_accum += _total_ticks_used
+	# [diag 2026-05-20 phase-breakdown] 累加本 stride 的 phase ms 切片到窗口累加器。
+	for key in _dvas_diag_phase_ms_accum.keys():
+		_dvas_diag_phase_ms_accum[key] = float(_dvas_diag_phase_ms_accum[key]) \
+				+ float(_aggregated_report.get(key, 0.0))
 	if _dvas_diag_stride_count >= _dvas_diag_avg_window:
 		var avg_ticks: float = float(_dvas_diag_ticks_accum) / float(_dvas_diag_stride_count)
+		var n: float = float(_dvas_diag_stride_count)
+		# 顶层数字（保持原有格式以免破坏旧 dashboard / grep）
 		print_rich("[color=#888]dynamic_visual_atlas_upload diag: avg_ticks_per_stride=%.2f, max_tick_ms=%.2f (over %d strides)[/color]"
 				% [avg_ticks, _dvas_diag_max_tick_ms, _dvas_diag_stride_count])
+		# Phase 分解：每行一个 phase，prep/step/fin 三个分量（窗口均值, ms/stride）
+		var dyn_p: float = float(_dvas_diag_phase_ms_accum["dynamic_prepare_ms"]) / n
+		var dyn_s: float = float(_dvas_diag_phase_ms_accum["dynamic_step_ms"]) / n
+		var dyn_f: float = float(_dvas_diag_phase_ms_accum["dynamic_finalize_ms"]) / n
+		var eco_p: float = float(_dvas_diag_phase_ms_accum["ecology_prepare_ms"]) / n
+		var eco_s: float = float(_dvas_diag_phase_ms_accum["ecology_step_ms"]) / n
+		var eco_f: float = float(_dvas_diag_phase_ms_accum["ecology_finalize_ms"]) / n
+		var smo_p: float = float(_dvas_diag_phase_ms_accum["smooth_prepare_ms"]) / n
+		var smo_s: float = float(_dvas_diag_phase_ms_accum["smooth_step_ms"]) / n
+		var smo_f: float = float(_dvas_diag_phase_ms_accum["smooth_finalize_ms"]) / n
+		var ice_p: float = float(_dvas_diag_phase_ms_accum["ice_prepare_ms"]) / n
+		var ice_s: float = float(_dvas_diag_phase_ms_accum["ice_step_ms"]) / n
+		var ice_f: float = float(_dvas_diag_phase_ms_accum["ice_finalize_ms"]) / n
+		var total: float = dyn_p + dyn_s + dyn_f + eco_p + eco_s + eco_f \
+				+ smo_p + smo_s + smo_f + ice_p + ice_s + ice_f
+		print_rich("[color=#888]  phase breakdown (avg ms/stride, prep+step+fin):"
+				+ " dyn=%.2f+%.2f+%.2f eco=%.2f+%.2f+%.2f smo=%.2f+%.2f+%.2f ice=%.2f+%.2f+%.2f sum=%.2f[/color]"
+				% [dyn_p, dyn_s, dyn_f, eco_p, eco_s, eco_f, smo_p, smo_s, smo_f, ice_p, ice_s, ice_f, total])
 		_dvas_diag_stride_count = 0
 		_dvas_diag_ticks_accum = 0
 		_dvas_diag_max_tick_ms = 0.0
+		for key2 in _dvas_diag_phase_ms_accum.keys():
+			_dvas_diag_phase_ms_accum[key2] = 0.0
 
 	var report: Dictionary = _build_report(true, elapsed_ms)
 	_last_breakdown = report.duplicate(true)
@@ -541,6 +682,273 @@ func _reset_state_machine() -> void:
 	_stride_dirty_path_used = false
 	_stride_dirty_noop = false
 	_stride_dirty_reason = ""
+
+
+# ─── plan/atlas-pipeline-cpp 薄壳路径 ─────────────────────────────────────
+
+# 是否启用 cpp_atlas_pipeline 全量 DOTS 路径。要求：
+#   1. climate_profile 不为空（默认 ResourceLoader 注入）
+#   2. cpp_atlas_pipeline_enabled flag = true
+# climate_profile == null 时返回 false 走旧 4-phase 路径，向后兼容老存档/调试入口。
+func _is_cpp_atlas_pipeline_enabled() -> bool:
+	if climate_profile == null:
+		return false
+	return FeatureFlagsScript.is_on(&"cpp_atlas_pipeline_enabled", climate_profile)
+
+
+# 取 DCWorld 挂载的 _world_ext / _ext（与 _should_use_ext_encode 同模式，
+# 走 .get() 反射避免对 DCWorld 内部命名强耦合）。
+func _get_world_ext():
+	if world_data == null:
+		return null
+	var ext = world_data.get("_world_ext")
+	if ext == null:
+		ext = world_data.get("_ext")
+	return ext
+
+
+# 主入口：cpp_atlas_pipeline 薄壳。
+# 1) 一次性原子读 dirty_indices；2) 首次调用前做 ecology 持久状态 burn-in；
+# 3) 调 run_atlas_pipeline_step 拿 atlas_buffers + ms_breakdown；
+# 4) 4 次 ImageTexture.update；5) 复用 _dvas_diag_* 采样窗口与 phase breakdown 输出。
+func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
+	# ── Step 1：原子读 dirty_indices（与旧路径 _start_new_stride 同语义）──
+	var dirty_indices: PackedInt32Array = PackedInt32Array()
+	var dirty_path_used: bool = false
+	var dirty_reason: String = ""
+	var dirty_source_tag: String = ""
+	var dirty_mask_available: bool = false
+	if _is_dirty_push_enabled():
+		var dirty_source = dirty_world if dirty_world != null else world_data
+		dirty_source_tag = "dirty_world" if dirty_world != null else "world_data"
+		if dirty_source != null and dirty_source.has_method("read_and_clear_dirty_mask"):
+			var has_mask: bool = true
+			if dirty_source.has_method("dirty_mask_size") \
+					and int(dirty_source.dirty_mask_size()) <= 0:
+				has_mask = false
+				dirty_reason = "dirty_mask_size_zero"
+			if has_mask:
+				dirty_mask_available = true
+				dirty_indices = dirty_source.read_and_clear_dirty_mask()
+				dirty_path_used = true
+				dirty_reason = "dirty" if dirty_indices.size() > 0 else "no_dirty"
+		else:
+			dirty_reason = "read_and_clear_missing"
+	else:
+		dirty_reason = "flag_disabled"
+
+	# ── Step 2：burn-in ecology 持久状态（首次 / 地图重生时）──
+	# 把 baker._eco_active_decay_set + _eco_transition_age_arr 一次性灌到 C++ 端。
+	# 之后由 AtlasPipelineState 独立维护，无需再读 baker 状态。
+	if (not _eco_burnin_done or _pending_burnin) \
+			and ext.has_method(&"migrate_eco_persistent_from_gd"):
+		_burn_in_eco_state(ext)
+		_eco_burnin_done = true
+		_pending_burnin = false
+
+	# ── Step 3：构造 opts → 调 run_atlas_pipeline_step ──
+	var W: int = int(world_data.derived_size.x) if world_data != null else 0
+	var H: int = int(world_data.derived_size.y) if world_data != null else 0
+	var opts: Dictionary = {
+		"world": world_data,
+		"map": map,
+		"width": W,
+		"height": H,
+		"dirty_indices": dirty_indices,
+		"terrain_lake": int(TerrainTypeScript.TERRAIN.LAKE),
+		"terrain_sea_ice": int(TerrainTypeScript.TERRAIN.SEA_ICE),
+		"veg_none": int(VegetationTypeScript.VEG.NONE),
+		"enable_diag": true,
+	}
+	var t_call_us: int = Time.get_ticks_usec()
+	var res: Dictionary = ext.call(&"run_atlas_pipeline_step", opts)
+	var call_ms: float = float(Time.get_ticks_usec() - t_call_us) / 1000.0
+
+	if bool(res.get("fallback", true)):
+		# C++ 端在前置校验失败时会返回 fallback=true。退化为旧路径以保安全。
+		if not _cpp_pipeline_warned_missing_method:
+			_cpp_pipeline_warned_missing_method = true
+			push_warning("[atlas-pipeline-cpp] run_atlas_pipeline_step fallback=true reason=",
+					String(res.get("reason", "")), "; 本 stride fallback 到旧 4-phase 路径")
+		# 软回退：不破坏 _phase 状态机，沿用旧路径接管这一 stride。
+		return _tick_oneshot(t_start_us)
+
+	# ── Step 4：4 次 ImageTexture.update（保留 GD 端 RenderingServer 边界）──
+	var atlas_buffers: Dictionary = res.get("atlas_buffers", {})
+	var pixels_written_total: int = _commit_atlas_buffers_to_gpu(atlas_buffers, W, H)
+
+	# ── Step 5：诊断与 report 组装 ──
+	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+	_dvas_diag_max_tick_ms = max(_dvas_diag_max_tick_ms, elapsed_ms)
+	_dvas_diag_stride_count += 1
+	_dvas_diag_ticks_accum += 1
+	# 累加 C++ 返回的 ms_breakdown（保持窗口均值输出格式不变）
+	var ms_breakdown: Dictionary = res.get("ms_breakdown", {})
+	for key in _dvas_diag_phase_ms_accum.keys():
+		_dvas_diag_phase_ms_accum[key] = float(_dvas_diag_phase_ms_accum[key]) \
+				+ float(ms_breakdown.get(key, 0.0))
+	if _dvas_diag_stride_count >= _dvas_diag_avg_window:
+		_print_phase_breakdown_window("cpp_pipeline")
+		_dvas_diag_stride_count = 0
+		_dvas_diag_ticks_accum = 0
+		_dvas_diag_max_tick_ms = 0.0
+		for k in _dvas_diag_phase_ms_accum.keys():
+			_dvas_diag_phase_ms_accum[k] = 0.0
+
+	var stride_real: Dictionary = res.get("stride_real", {})
+	var report: Dictionary = {
+		"done": true,
+		"work_done": int(stride_real.get("dyn", 0)) + int(stride_real.get("eco", 0)) \
+				+ int(stride_real.get("smo", 0)) + int(stride_real.get("ice", 0)),
+		"elapsed_ms": elapsed_ms,
+		"progress_ratio": 1.0,
+		"phase": "upload",
+		"stage_name": "dynamic_visual_atlas_upload",
+		"path": "cpp_pipeline",
+		"call_ms": call_ms,
+		"total_ms": float(res.get("total_ms", 0.0)),
+		"dynamic_dirty_cells": int(stride_real.get("dyn", 0)),
+		"ecology_dirty_cells": int(stride_real.get("eco", 0)),
+		"smooth_dirty_cells": int(stride_real.get("smo", 0)),
+		"ice_dirty_cells": int(stride_real.get("ice", 0)),
+		"pixels_written": pixels_written_total,
+		"total_ticks_used": 1,
+		"mask_path": dirty_path_used,
+		"mask_dirty_count": dirty_indices.size(),
+		"dirty_reason": dirty_reason,
+		"dirty_source": dirty_source_tag,
+		"dirty_mask_available": dirty_mask_available,
+		"dynamic_prepare_ms": float(ms_breakdown.get("dynamic_prepare_ms", 0.0)),
+		"dynamic_step_ms": float(ms_breakdown.get("dynamic_step_ms", 0.0)),
+		"dynamic_finalize_ms": float(ms_breakdown.get("dynamic_finalize_ms", 0.0)),
+		"ecology_prepare_ms": float(ms_breakdown.get("ecology_prepare_ms", 0.0)),
+		"ecology_step_ms": float(ms_breakdown.get("ecology_step_ms", 0.0)),
+		"ecology_finalize_ms": float(ms_breakdown.get("ecology_finalize_ms", 0.0)),
+		"smooth_prepare_ms": float(ms_breakdown.get("smooth_prepare_ms", 0.0)),
+		"smooth_step_ms": float(ms_breakdown.get("smooth_step_ms", 0.0)),
+		"smooth_finalize_ms": float(ms_breakdown.get("smooth_finalize_ms", 0.0)),
+		"ice_prepare_ms": float(ms_breakdown.get("ice_prepare_ms", 0.0)),
+		"ice_step_ms": float(ms_breakdown.get("ice_step_ms", 0.0)),
+		"ice_finalize_ms": float(ms_breakdown.get("ice_finalize_ms", 0.0)),
+	}
+	_last_breakdown = report.duplicate(true)
+	return report
+
+
+# burn-in：把 baker 端 ecology 持久状态一次性灌到 C++ AtlasPipelineState。
+# 调用时机：本系统首次调 _tick_cpp_pipeline，或 _pending_burnin=true（外部
+# 通知地图重生）。失败不抛错，只记日志，让 C++ 用 SoA cur 自启 baseline。
+func _burn_in_eco_state(ext: Object) -> void:
+	var state: Dictionary = {}
+	# transition_age：直接拿 baker 端 SoA byte 数组（PackedByteArray）
+	var tr_arr = baker.get("_eco_transition_age_arr")
+	if tr_arr is PackedByteArray and tr_arr.size() > 0:
+		state["transition_age"] = tr_arr
+	# active_decay：从 _eco_active_decay_set 提 cell.index 列表
+	var decay_set = baker.get("_eco_active_decay_set")
+	if decay_set is Dictionary and not decay_set.is_empty():
+		var idxs: PackedInt32Array = PackedInt32Array()
+		idxs.resize(decay_set.size())
+		var w: int = 0
+		for cell in decay_set.keys():
+			if cell != null and cell.index >= 0:
+				idxs[w] = cell.index
+				w += 1
+		idxs.resize(w)
+		state["active_decay"] = idxs
+	ext.call(&"migrate_eco_persistent_from_gd", state)
+	print("[atlas-pipeline-cpp] eco burn-in: transition_age=%d active_decay=%d" % [
+		int(state.get("transition_age", PackedByteArray()).size()),
+		int(state.get("active_decay", PackedInt32Array()).size()),
+	])
+
+
+# 把 C++ 返回的 4 张 atlas PackedByteArray 上传到对应 ImageTexture。
+# 与 map_baker 旧路径完全等价（同 Image.create_from_data + .update 模式）。
+# 返回 4 张 atlas 的总写入像素数（用于 report.work_done 估算）。
+func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int) -> int:
+	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
+		return 0
+	var n_pix: int = W * H
+	var total_pixels: int = 0
+	# dyn (RGBA8)
+	var buf_dyn: PackedByteArray = atlas_buffers.get("dyn", PackedByteArray())
+	if buf_dyn.size() == n_pix * 4:
+		world_data.dynamic_cell_atlas_buffer = buf_dyn
+		var img_dyn := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_dyn)
+		if world_data.dynamic_cell_atlas_tex != null \
+				and world_data.dynamic_cell_atlas_tex.get_size() == Vector2(float(W), float(H)):
+			world_data.dynamic_cell_atlas_tex.update(img_dyn)
+		else:
+			world_data.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img_dyn)
+		total_pixels += n_pix
+	# eco (RGBA8)
+	var buf_eco: PackedByteArray = atlas_buffers.get("eco", PackedByteArray())
+	if buf_eco.size() == n_pix * 4:
+		world_data.ecology_visual_atlas_buffer = buf_eco
+		var img_eco := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_eco)
+		if world_data.ecology_visual_atlas_tex != null \
+				and world_data.ecology_visual_atlas_tex.get_size() == Vector2(float(W), float(H)):
+			world_data.ecology_visual_atlas_tex.update(img_eco)
+		else:
+			world_data.ecology_visual_atlas_tex = ImageTexture.create_from_image(img_eco)
+		total_pixels += n_pix
+	# smo (RGBA8)
+	var buf_smo: PackedByteArray = atlas_buffers.get("smo", PackedByteArray())
+	if buf_smo.size() == n_pix * 4:
+		world_data.dyn_atlas_smooth_buffer = buf_smo
+		var img_smo := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_smo)
+		if world_data.dyn_atlas_smooth_tex != null \
+				and world_data.dyn_atlas_smooth_tex.get_size() == Vector2(float(W), float(H)):
+			world_data.dyn_atlas_smooth_tex.update(img_smo)
+		else:
+			world_data.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img_smo)
+		total_pixels += n_pix
+	# ice (R8)
+	var buf_ice: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
+	if buf_ice.size() == n_pix:
+		world_data.ice_state_buffer = buf_ice
+		var img_ice := Image.create_from_data(W, H, false, Image.FORMAT_R8, buf_ice)
+		if world_data.ice_state_tex != null \
+				and world_data.ice_state_tex.get_size() == Vector2(float(W), float(H)):
+			world_data.ice_state_tex.update(img_ice)
+		else:
+			world_data.ice_state_tex = ImageTexture.create_from_image(img_ice)
+		total_pixels += n_pix
+	return total_pixels
+
+
+# 复用 _finalize_stride 的 phase breakdown 打印格式（cpp_pipeline 路径同款 grep）。
+func _print_phase_breakdown_window(path_tag: String) -> void:
+	var n: float = float(_dvas_diag_stride_count)
+	if n <= 0.0:
+		return
+	var avg_ticks: float = float(_dvas_diag_ticks_accum) / n
+	print_rich("[color=#888]dynamic_visual_atlas_upload diag(%s): avg_ticks_per_stride=%.2f, max_tick_ms=%.2f (over %d strides)[/color]"
+			% [path_tag, avg_ticks, _dvas_diag_max_tick_ms, _dvas_diag_stride_count])
+	var dyn_p: float = float(_dvas_diag_phase_ms_accum["dynamic_prepare_ms"]) / n
+	var dyn_s: float = float(_dvas_diag_phase_ms_accum["dynamic_step_ms"]) / n
+	var dyn_f: float = float(_dvas_diag_phase_ms_accum["dynamic_finalize_ms"]) / n
+	var eco_p: float = float(_dvas_diag_phase_ms_accum["ecology_prepare_ms"]) / n
+	var eco_s: float = float(_dvas_diag_phase_ms_accum["ecology_step_ms"]) / n
+	var eco_f: float = float(_dvas_diag_phase_ms_accum["ecology_finalize_ms"]) / n
+	var smo_p: float = float(_dvas_diag_phase_ms_accum["smooth_prepare_ms"]) / n
+	var smo_s: float = float(_dvas_diag_phase_ms_accum["smooth_step_ms"]) / n
+	var smo_f: float = float(_dvas_diag_phase_ms_accum["smooth_finalize_ms"]) / n
+	var ice_p: float = float(_dvas_diag_phase_ms_accum["ice_prepare_ms"]) / n
+	var ice_s: float = float(_dvas_diag_phase_ms_accum["ice_step_ms"]) / n
+	var ice_f: float = float(_dvas_diag_phase_ms_accum["ice_finalize_ms"]) / n
+	var total: float = dyn_p + dyn_s + dyn_f + eco_p + eco_s + eco_f \
+			+ smo_p + smo_s + smo_f + ice_p + ice_s + ice_f
+	print_rich("[color=#888]  phase breakdown (avg ms/stride, prep+step+fin):"
+			+ " dyn=%.2f+%.2f+%.2f eco=%.2f+%.2f+%.2f smo=%.2f+%.2f+%.2f ice=%.2f+%.2f+%.2f sum=%.2f[/color]"
+			% [dyn_p, dyn_s, dyn_f, eco_p, eco_s, eco_f, smo_p, smo_s, smo_f, ice_p, ice_s, ice_f, total])
+
+
+# 外部通知接口：地图重生成或 invalidate_atlas_csr_cache 时调，
+# 让下一次 _tick_cpp_pipeline 重新做 ecology burn-in。
+func notify_eco_burnin_pending() -> void:
+	_pending_burnin = true
 
 
 # ─── 紧急回退：one-shot 路径 ───────────────────────────────────────────────

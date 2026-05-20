@@ -425,6 +425,10 @@ func _finalize_round() -> void:
 	# 与 wrapper 路径保持完全一致的 _last_climate_breakdown 字段集合，让 main.gd 直接复用
 	if generator != null:
 		generator._daily_climate_call_count += 1
+		# A.2.1.B — Pass-A push 稀疏度（dynamic_visual_atlas M1 AB 验证字段）
+		var _pa_pushed_out: int = int(generator._pa_last_pushed_cells) if "_pa_last_pushed_cells" in generator else 0
+		var _pa_total_out: int = int(generator._pa_last_total_cells) if "_pa_last_total_cells" in generator else 0
+		var _pa_push_ratio_out: float = (float(_pa_pushed_out) / float(_pa_total_out)) if _pa_total_out > 0 else 1.0
 		generator._last_climate_breakdown = {
 			"pass_a_ms": _round_t_pass_a_ms,
 			"pass_b_ms": _round_t_pass_b_ms,
@@ -440,6 +444,10 @@ func _finalize_round() -> void:
 			"dirty_ratio": dirty_ratio_out,
 			"visited_ratio": visited_ratio_out,
 			"pass_b_path": pass_b_path_out,
+			# A.2.1.B — Pass-A 写路径下移 push 集大小（≤ cells，反映 ε sparse 有效性）
+			"pa_pushed_cells": _pa_pushed_out,
+			"pa_total_cells": _pa_total_out,
+			"pa_push_ratio": _pa_push_ratio_out,
 		}
 		var n: int = generator._daily_climate_call_count
 		if n == 1 or (n % 365) == 0:

@@ -358,6 +358,14 @@ var _round_dm_sum: float = 0.0
 var _round_ds_sum: float = 0.0
 var _round_drift_count: int = 0
 
+# A.2.1.B — Pass-A push 稀疏度统计（M1：dynamic_visual_atlas 35-50ms 长帧根治）。
+#   _pa_last_pushed_cells: 上一日实际 push 到 DCWorld 的 cell 数（≤ _pa_last_total_cells）
+#   _pa_last_total_cells:  地图总 cell 数（SoA 路径下 = map.soa_size()）
+# 比值反映 sparse 路径有效性：稳态期望 ≤ 10%；季节切换 / 30 日 / 加载首日 = 1.0。
+# climate_daily_system / main.gd 可读取以输出到 perf breakdown。
+var _pa_last_pushed_cells: int = 0
+var _pa_last_total_cells: int = 0
+
 # Daily-sim perf instrumentation（weather）：上一次 refresh_daily 的子段拆解。
 # 字段：advance_ms / spawn_ms / distribute_ms / cyclone_ms（weather_system.tick_one_day 内部）
 #       transp_ms / albedo_ms / veg_dyn_ms / cover_rebake_ms / veg_rebake_ms /
@@ -2800,6 +2808,13 @@ const ALT_PEN_HIGH_AMP: float = 0.30
 const ALT_PEN_HIGH_LO: float = 0.45
 const ALT_PEN_HIGH_HI: float = 1.00
 
+# A.2.1.B — Pass-A push 稀疏化 ε 阈值（dynamic_visual_atlas 35-50ms 长帧根治 M1）。
+# SoA 路径（_climate_pass_a_soa）用同款数值就地声明为 _DIRTY_EPS_TEMP/MOIST/SNOW，
+# 二者必须严格相等以保证两路径的 dirty 决策语义一致（mean_diff 红线 0.005，ε 远低于此）。
+const _PUSH_EPS_TEMP: float = 1.0 / 512.0
+const _PUSH_EPS_MOIST: float = 1.0 / 512.0
+const _PUSH_EPS_SNOW: float = 1.0 / 256.0
+
 func _alt_penalty(elevation: float) -> float:
 	var lin: float = elevation * ALT_PEN_LINEAR
 	var hi: float = smoothstep(ALT_PEN_HIGH_LO, ALT_PEN_HIGH_HI, elevation) * ALT_PEN_HIGH_AMP
@@ -4475,6 +4490,18 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	if cp == null or _last_cfg == null:
 		return
 
+	# [DIAG mask_dirty=2400 排查 · 2026-05-20] 入口 flag dump（仅前 3 个 round，
+	# 之后每 365 次打一次）。诊断完成后整段删除。
+	if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+		print("[DIAG pass_a_entry] day=%d phase=%.3f gdext_pass_a=%s use_data_core_climate=%s use_soa_pipeline=%s use_sparse_climate=%s ext_bound=%s" % [
+			_daily_climate_call_count, season_phase,
+			str(bool(cp.use_gdext_climate_pass_a)),
+			str(bool(cp.use_data_core_climate)),
+			str(bool(cp.use_soa_pipeline)),
+			str(bool(cp.use_sparse_climate)),
+			str(_data_core_world_ext != null),
+		])
+
 	# dots-roadmap-to-gdextension 务实 A — climate Pass-A C++ 加速路由。
 	# 三态路径优先级：
 	#   1. C++（DCWorldExt.run_climate_pass_a） — 仅当 use_data_core_climate=true
@@ -4519,6 +4546,16 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"insol_dev_lut":    _insol_dev_lut,
 		}
 		var rc: float = float(_data_core_world_ext.run_climate_pass_a(cp_struct, float(season_phase), float(season_phase)))
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] C++ Pass-A 路径 rc + DCWorld dirty
+		# 即时观测：rc>=0 表示 C++ 接管并已 return；此处 peek 一次 dirty count 看 C++
+		# 端是否在 set() 推回 MapData 时也副作用 mark 到 DCWorld（理论上不会）。
+		if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+			var _dirty_after_cpp: int = -1
+			if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
+				_dirty_after_cpp = int(_data_core_world.peek_dirty_count())
+			print("[DIAG pass_a_cpp] day=%d rc=%.4f cpp_taken_over=%s dirty_count_after_cpp=%d" % [
+				_daily_climate_call_count, rc, str(rc >= 0.0), _dirty_after_cpp
+			])
 		if rc >= 0.0:
 			# C++ 路径已接管整段 Pass-A 并已通过 set() 把结果推回 MapData。
 			# 与 SoA 路径一样，这里直接返回；其余 sub-pass（B/ocean/sea_ice/transp）
@@ -4600,6 +4637,14 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 				"cover": int(cell.cover),
 			}
 
+		# A.2.1.B — Pass-A push 稀疏化（legacy fallback 路径 M1）：
+		# 在写回 cell.* 之前先读旧值，循环末按 ε 决定是否进入 push 列表。
+		# 与 SoA 路径同款阈值（_DIRTY_EPS_TEMP/MOIST/SNOW = 1/512 / 1/512 / 1/256）。
+		# 首次（ema_was_init=false）强制收集 → push 一次完整 baseline，避免长尾。
+		var _prev_t_legacy: float = cell.temperature
+		var _prev_m_legacy: float = cell.moisture
+		var _prev_s_legacy: float = cell.snow_cover
+
 		# —— 1) 当日湿度（陆地按当日连续倍率缩放，水体保持基线） ——
 		# True Insolation-Driven（Phase F）：在 moist_scale_now 全局倍率之上叠加
 		# 按纬度涌现的 (1 + 0.2 * insol_dev) 调制——赤道 dev≈0 → 几乎不变、
@@ -4663,9 +4708,30 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		cell.temp_365d_mean = m365
 		cell.temp_dev_from_annual = m30 - m365
 
+		# A.2.1.B — ε 比对决定是否进入 push 列表。
+		# 首次 EMA 初始化 / current_state 刚建骨架 → 视为"baseline 必推"。
+		# 否则三主字段 (T/M/S) 任一变化幅度 > ε 才 push。
+		var _force_push_legacy: bool = not ema_was_init
+		var _need_push_legacy: bool = _force_push_legacy
+		if not _need_push_legacy:
+			var _dt_abs: float = temp_now - _prev_t_legacy
+			if _dt_abs < 0.0: _dt_abs = -_dt_abs
+			if _dt_abs > _PUSH_EPS_TEMP:
+				_need_push_legacy = true
+		if not _need_push_legacy:
+			var _dm_abs: float = moisture_now - _prev_m_legacy
+			if _dm_abs < 0.0: _dm_abs = -_dm_abs
+			if _dm_abs > _PUSH_EPS_MOIST:
+				_need_push_legacy = true
+		if not _need_push_legacy:
+			var _ds_abs: float = snow_cover - _prev_s_legacy
+			if _ds_abs < 0.0: _ds_abs = -_ds_abs
+			if _ds_abs > _PUSH_EPS_SNOW:
+				_need_push_legacy = true
+
 		# PR-2.1.1：收集 dirty entry（每 cell 一行，9 字段一次性下移到 SoA）。
 		var _pa_idx: int = int(cell.index)
-		if _pa_idx >= 0 and _pa_write_i < _pa_n:
+		if _need_push_legacy and _pa_idx >= 0 and _pa_write_i < _pa_n:
 			_pa_indices[_pa_write_i] = _pa_idx
 			_pa_temp[_pa_write_i] = temp_now
 			_pa_moist[_pa_write_i] = moisture_now
@@ -4701,6 +4767,9 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_indices, _pa_temp_365d)
 		_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_indices, _pa_temp_anom)
 		_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_indices, _pa_ema_init)
+	# A.2.1.B — 同步 push 统计（legacy fallback 路径，配合 SoA 路径统一 perf 输出）
+	_pa_last_pushed_cells = _pa_write_i
+	_pa_last_total_cells = _pa_n
 
 # Daily Sim SoA Refactor 方向 X：Pass B — 局部气候耦合。
 # 调用方负责守卫 enable_local_climate_coupling 开关。winter_boost 从 season_phase
@@ -5392,17 +5461,19 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	var water_count: int = 0
 	var flipped_count: int = 0
 
+	# [perf 2026-05-20] 移除循环内 cell.sea_ice_fraction = X 单点 setter，
+	# 仅写 _si_frac[i]，末尾走 write_f32_indexed 批量提交。
+	# 原因：facade setter → world.write_f32 → _dirty_mark_one 风暴，导致
+	# _dirty_cell_mask 每帧被标成全 1，atlas_upload 退化为全推（21-24 ms/tick）。
 	for i in range(n_cells):
 		var cell: HexCell = cells[i]
 		if not _is_water(cell.terrain):
 			# 非水体 cell 强制保持 0
-			cell.sea_ice_fraction = 0.0
 			_si_indices[i] = i
 			_si_frac[i] = 0.0
 			continue
 		# LAKE：跳过（淡水冻结留给后续 phase）
 		if cell.terrain == TerrainType.TERRAIN.LAKE:
-			cell.sea_ice_fraction = 0.0
 			_si_indices[i] = i
 			_si_frac[i] = 0.0
 			continue
@@ -5436,7 +5507,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var d_frac: float = delta_freeze - delta_melt
 		var prev_frac: float = cell.sea_ice_fraction
 		var new_frac: float = clampf(prev_frac + d_frac, 0.0, 1.0)
-		cell.sea_ice_fraction = new_frac
+		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
 		_si_indices[i] = i
 		_si_frac[i] = new_frac
 
@@ -5992,22 +6063,116 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# 与 DCWorld 不同源时唯一的 push 时机）。
 	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
 	# helper 内部守卫 _data_core_world / cid，故此处只判 n > 0。
+	#
+	# A.2.1.B — Dirty-aware push（dynamic_visual_atlas 35-50ms 长帧根治 M1）：
+	#   早先版本用 `_pa_soa_indices = [0..n)` 无差别 push 全图，导致
+	#   `world.write_f32_indexed` 内部 `_dirty_mark_indexed` 把整图标脏，
+	#   下游 `dynamic_visual_atlas_upload_system` 看到 `mask_dirty_count = 2400`
+	#   ⇒ dynamic / ecology / smooth 三个 phase 每天重打包全图 CSR（GDScript
+	#   端 18-25ms × 3 phase）。
+	#
+	#   这里改造：当 `use_sparse=true` 且 climate_dirty_mask 可用时，只 push
+	#   mask[i]=1 的 cell（ε 真变 + 季节边界 mark_all + 30 日 full-sweep 已在
+	#   round 入口预置 mark 进 mask，所以行为完全等价）。
+	#   - mask 全 1（季节切换日 / 30 日 / 加载首日）→ push 退化为全图，与旧版相同。
+	#   - mask 稀疏（增量稳态日）→ push k=mask_count，下游 dirty_world 自然
+	#     稀疏化，dynamic_visual_atlas 看到的 mask_dirty_count 同步下降。
+	#   - use_sparse=false 或 mask 不可用 → 走 else 分支的全图旧路径，0 风险回退。
 	if n > 0:
-		var _pa_soa_indices: PackedInt32Array = PackedInt32Array()
-		_pa_soa_indices.resize(n)
-		for _ki in range(n):
-			_pa_soa_indices[_ki] = _ki
-		_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_soa_indices, temp_a)
-		_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_soa_indices, moist_a)
-		_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_soa_indices, snow_a)
-		# 长期均值字段（master 手册 §3.4.3 要求 mean_diff ≤ 0.005 的严格红线）
-		_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_soa_indices, temp_baseline_a)
-		_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_soa_indices, season_off_a)
-		_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_soa_indices, temp_30d_a)
-		_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_soa_indices, temp_365d_a)
-		_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_soa_indices, temp_anom_a)
-		_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_soa_indices, ema_init_a)
+		var _use_sparse_push: bool = use_sparse and dirty_mask.size() == n
+		if _use_sparse_push:
+			# 1) 先数 mask 中 1 的个数，避免 push_back 多次扩容
+			var _k: int = 0
+			for _ki in range(n):
+				if dirty_mask[_ki] != 0:
+					_k += 1
+			if _k <= 0:
+				pass  # 本日完全没真变（罕见）—— 直接跳过 push
+			elif _k >= n:
+				# 全图脏：与旧路径完全一致，避免无谓子集分配。
+				var _pa_all: PackedInt32Array = PackedInt32Array()
+				_pa_all.resize(n)
+				for _ki in range(n):
+					_pa_all[_ki] = _ki
+				_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_all, temp_a)
+				_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_all, moist_a)
+				_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_all, snow_a)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_all, temp_baseline_a)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_all, season_off_a)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_all, temp_30d_a)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_all, temp_365d_a)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_all, temp_anom_a)
+				_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_all, ema_init_a)
+			else:
+				# 2) 提取 ε 真变子集（mask[i]=1 → idx 收入 _pa_idx；同时同步压缩 9 路 values）
+				var _pa_idx: PackedInt32Array = PackedInt32Array()
+				_pa_idx.resize(_k)
+				var _v_temp: PackedFloat32Array = PackedFloat32Array(); _v_temp.resize(_k)
+				var _v_moist: PackedFloat32Array = PackedFloat32Array(); _v_moist.resize(_k)
+				var _v_snow: PackedFloat32Array = PackedFloat32Array(); _v_snow.resize(_k)
+				var _v_temp_baseline: PackedFloat32Array = PackedFloat32Array(); _v_temp_baseline.resize(_k)
+				var _v_season_off: PackedFloat32Array = PackedFloat32Array(); _v_season_off.resize(_k)
+				var _v_temp_30d: PackedFloat32Array = PackedFloat32Array(); _v_temp_30d.resize(_k)
+				var _v_temp_365d: PackedFloat32Array = PackedFloat32Array(); _v_temp_365d.resize(_k)
+				var _v_temp_anom: PackedFloat32Array = PackedFloat32Array(); _v_temp_anom.resize(_k)
+				var _v_ema_init: PackedByteArray = PackedByteArray(); _v_ema_init.resize(_k)
+				var _w: int = 0
+				for _ki in range(n):
+					if dirty_mask[_ki] == 0:
+						continue
+					_pa_idx[_w] = _ki
+					_v_temp[_w] = temp_a[_ki]
+					_v_moist[_w] = moist_a[_ki]
+					_v_snow[_w] = snow_a[_ki]
+					_v_temp_baseline[_w] = temp_baseline_a[_ki]
+					_v_season_off[_w] = season_off_a[_ki]
+					_v_temp_30d[_w] = temp_30d_a[_ki]
+					_v_temp_365d[_w] = temp_365d_a[_ki]
+					_v_temp_anom[_w] = temp_anom_a[_ki]
+					_v_ema_init[_w] = ema_init_a[_ki]
+					_w += 1
+				_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_idx, _v_temp)
+				_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_idx, _v_moist)
+				_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_idx, _v_snow)
+				# 长期均值字段：mean_diff ≤ 0.005 红线（master 手册 §3.4.3）
+				# 注：30d/365d/anomaly 在 ε ≤ 1/512 时人均误差远低于红线，安全。
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_idx, _v_temp_baseline)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_idx, _v_season_off)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_idx, _v_temp_30d)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_idx, _v_temp_365d)
+				_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_idx, _v_temp_anom)
+				_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_idx, _v_ema_init)
+			# 把 push 统计塞进诊断成员，供 climate_daily_system breakdown 抓取（M1 AB 验证）
+			_pa_last_pushed_cells = _k
+			_pa_last_total_cells = n
+		else:
+			# Sparse 关闭 / mask 不可用：保留旧的全图 push 行为（0 风险回退路径）。
+			var _pa_soa_indices: PackedInt32Array = PackedInt32Array()
+			_pa_soa_indices.resize(n)
+			for _ki in range(n):
+				_pa_soa_indices[_ki] = _ki
+			_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_soa_indices, temp_a)
+			_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_soa_indices, moist_a)
+			_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_soa_indices, snow_a)
+			# 长期均值字段（master 手册 §3.4.3 要求 mean_diff ≤ 0.005 的严格红线）
+			_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_soa_indices, temp_baseline_a)
+			_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_soa_indices, season_off_a)
+			_push_f32_to_world(DCComponentIds.CELL_TEMP_30D, _pa_soa_indices, temp_30d_a)
+			_push_f32_to_world(DCComponentIds.CELL_TEMP_365D, _pa_soa_indices, temp_365d_a)
+			_push_f32_to_world(DCComponentIds.CELL_TEMP_ANOMALY, _pa_soa_indices, temp_anom_a)
+			_push_u8_to_world(DCComponentIds.CELL_EMA_INITIALIZED, _pa_soa_indices, ema_init_a)
+			_pa_last_pushed_cells = n
+			_pa_last_total_cells = n
 
+	# [DIAG mask_dirty=2400 排查 · 2026-05-20] SoA Pass-A push 末尾路径 dump
+	if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+		var _dirty_after_pa: int = -1
+		if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
+			_dirty_after_pa = int(_data_core_world.peek_dirty_count())
+		print("[DIAG pass_a_soa_end] day=%d use_sparse=%s dirty_mask_size=%d _pa_last_pushed=%d _pa_last_total=%d dc_dirty_count=%d" % [
+			_daily_climate_call_count, str(use_sparse), dirty_mask.size(),
+			_pa_last_pushed_cells, _pa_last_total_cells, _dirty_after_pa,
+		])
 	# A.2.1.A2-fix — Pass A 完成：把本日全图 drift 写回 generator 成员，供下一日 epsilon 比对扣除。
 	# 用 EMA 平滑（α=0.3）避免单日噪声导致 drift 估计抖动；首次（drift_count_local==0）保持原值。
 	if drift_count_local > 0:
@@ -6381,17 +6546,76 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 
 	# PR-2.1.2（climate Pass-B SoA 路径）：循环结束后批量 push temp_a / moist_a 到 DCWorld。
 	# 与 PR-2.1.1 SoA 收尾对称（详见 docs/dots-master-execution-handbook.md §3.5）。
+	#
+	# A.2.1.B — Dirty-aware push（M1 续）：复用 Pass-A 的 climate_dirty_mask 子集，
+	# 避免在 Pass-A 已稀疏化之后再被本 pass 全图覆盖。dirty_mask 不可用 / 大小不符
+	# → 退回旧的全图 push（0 风险路径）。
 	if _data_core_world != null and n > 0:
-		var _pb_soa_indices: PackedInt32Array = PackedInt32Array()
-		_pb_soa_indices.resize(n)
-		for _ki in range(n):
-			_pb_soa_indices[_ki] = _ki
+		var _pb_dirty_mask: PackedByteArray = map.climate_dirty_mask if map != null else PackedByteArray()
+		var _pb_use_sparse: bool = bool(cp.use_sparse_climate) and _pb_dirty_mask.size() == n
 		var _cid_temp_bs: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
-		if _cid_temp_bs >= 0:
-			_data_core_world.write_f32_indexed(_cid_temp_bs, _pb_soa_indices, temp_a)
 		var _cid_moist_bs: int = _data_core_world.component_id(DCComponentIds.CELL_MOISTURE)
-		if _cid_moist_bs >= 0:
-			_data_core_world.write_f32_indexed(_cid_moist_bs, _pb_soa_indices, moist_a)
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] Pass-B push 路径决策点
+		var _pb_dirty_count_local: int = 0
+		var _pb_path_tag: String = ""
+		if _pb_use_sparse:
+			var _kb: int = 0
+			for _ki in range(n):
+				if _pb_dirty_mask[_ki] != 0:
+					_kb += 1
+			if _kb > 0 and _kb < n:
+				var _pb_idx_sub: PackedInt32Array = PackedInt32Array(); _pb_idx_sub.resize(_kb)
+				var _pb_temp_sub: PackedFloat32Array = PackedFloat32Array(); _pb_temp_sub.resize(_kb)
+				var _pb_moist_sub: PackedFloat32Array = PackedFloat32Array(); _pb_moist_sub.resize(_kb)
+				var _wb: int = 0
+				for _ki in range(n):
+					if _pb_dirty_mask[_ki] == 0:
+						continue
+					_pb_idx_sub[_wb] = _ki
+					_pb_temp_sub[_wb] = temp_a[_ki]
+					_pb_moist_sub[_wb] = moist_a[_ki]
+					_wb += 1
+				if _cid_temp_bs >= 0:
+					_data_core_world.write_f32_indexed(_cid_temp_bs, _pb_idx_sub, _pb_temp_sub)
+				if _cid_moist_bs >= 0:
+					_data_core_world.write_f32_indexed(_cid_moist_bs, _pb_idx_sub, _pb_moist_sub)
+				_pb_path_tag = "sparse_subset"
+				_pb_dirty_count_local = _kb
+			elif _kb >= n:
+				# 全图脏：退化为全图 push（与旧路径完全一致）
+				var _pb_all: PackedInt32Array = PackedInt32Array(); _pb_all.resize(n)
+				for _ki in range(n):
+					_pb_all[_ki] = _ki
+				if _cid_temp_bs >= 0:
+					_data_core_world.write_f32_indexed(_cid_temp_bs, _pb_all, temp_a)
+				if _cid_moist_bs >= 0:
+					_data_core_world.write_f32_indexed(_cid_moist_bs, _pb_all, moist_a)
+				_pb_path_tag = "sparse_fullmask"
+				_pb_dirty_count_local = n
+			else:
+				_pb_path_tag = "sparse_zero_skip"
+				_pb_dirty_count_local = 0
+			# _kb == 0 → 无 dirty，跳过 push
+		else:
+			var _pb_soa_indices: PackedInt32Array = PackedInt32Array()
+			_pb_soa_indices.resize(n)
+			for _ki in range(n):
+				_pb_soa_indices[_ki] = _ki
+			if _cid_temp_bs >= 0:
+				_data_core_world.write_f32_indexed(_cid_temp_bs, _pb_soa_indices, temp_a)
+			if _cid_moist_bs >= 0:
+				_data_core_world.write_f32_indexed(_cid_moist_bs, _pb_soa_indices, moist_a)
+			_pb_path_tag = "fallback_full"
+			_pb_dirty_count_local = n
+		# [DIAG mask_dirty=2400 排查 · 2026-05-20] Pass-B push 完成后路径 dump
+		if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+			var _dirty_after_pb: int = -1
+			if _data_core_world.has_method("peek_dirty_count"):
+				_dirty_after_pb = int(_data_core_world.peek_dirty_count())
+			print("[DIAG pass_b_push] day=%d path=%s use_sparse=%s mask_size=%d wrote=%d dc_dirty_count=%d" % [
+				_daily_climate_call_count, _pb_path_tag, str(_pb_use_sparse),
+				_pb_dirty_mask.size(), _pb_dirty_count_local, _dirty_after_pb,
+			])
 
 	# [DIAG 2026-05-12] Pass-B 末尾打 temp_a 全图统计（前 8 个 round）。
 	# 与 Pass-A 末尾配对解读：若 Pass-B 末尾 mean ≈ 0 但 Pass-A 末尾正常 → bug 在 Pass-B 内
@@ -6583,14 +6807,39 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		cells[i].temperature_transport_anomaly = temp_mixed - baseline[i]
 
 	# PR-2.1.3a（ocean water SoA 路径）：循环结束后批量 push temp_a 到 DCWorld。
+	#
+	# A.2.1.B — Dirty 范围收窄 + ε 真变（M1 续）：本 pass 只修改水域 cell 的温度。
+	# 利用 pass 入口快照 `temp_before`（已在 line ~6611 填好）做差分：
+	#   - 仅 push 水域 (is_water_a[i]!=0) 且 |temp_a[i] - temp_before[i]| > ε 的 cell。
+	# 这样 dirty mask 只包含"洋流热传输实际改了温度"的水 cell，下游
+	# dynamic_visual_atlas / sea_ice / weather 能精准消费。
+	# ε 与 climate Pass-A 同源（_PUSH_EPS_TEMP = 1/512）。
 	if _data_core_world != null and n > 0:
-		var _ow_indices: PackedInt32Array = PackedInt32Array()
-		_ow_indices.resize(n)
+		var _ow_n_changed: int = 0
 		for _ki in range(n):
-			_ow_indices[_ki] = _ki
-		var _cid_temp_ows: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
-		if _cid_temp_ows >= 0:
-			_data_core_world.write_f32_indexed(_cid_temp_ows, _ow_indices, temp_a)
+			if is_water_a[_ki] == 0:
+				continue
+			var _d: float = temp_a[_ki] - temp_before[_ki]
+			if _d < 0.0: _d = -_d
+			if _d > _PUSH_EPS_TEMP:
+				_ow_n_changed += 1
+		if _ow_n_changed > 0:
+			var _ow_indices: PackedInt32Array = PackedInt32Array(); _ow_indices.resize(_ow_n_changed)
+			var _ow_temp: PackedFloat32Array = PackedFloat32Array(); _ow_temp.resize(_ow_n_changed)
+			var _ow_w: int = 0
+			for _ki in range(n):
+				if is_water_a[_ki] == 0:
+					continue
+				var _d2: float = temp_a[_ki] - temp_before[_ki]
+				if _d2 < 0.0: _d2 = -_d2
+				if _d2 <= _PUSH_EPS_TEMP:
+					continue
+				_ow_indices[_ow_w] = _ki
+				_ow_temp[_ow_w] = temp_a[_ki]
+				_ow_w += 1
+			var _cid_temp_ows: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+			if _cid_temp_ows >= 0:
+				_data_core_world.write_f32_indexed(_cid_temp_ows, _ow_indices, _ow_temp)
 
 func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	var coast_leak: float = _last_cfg.COASTAL_HEAT_LEAK
@@ -6740,6 +6989,12 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 	# Phase 3a Step 2.1.a：ema_initialized SoA 别名
 	var ema_init_a: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
 
+	# A.2.1.B — Dirty 范围收窄 + 真变收集（M1 续，ocean_land 路径）：
+	# 循环里本来就只对 |anomaly_in| > 1e-5 的 cell 写 temp_a[i]。
+	# 这里同步记录这些 cell 的 idx + 新温度，循环结束后只 push 这些。
+	var _ol_changed_idx: PackedInt32Array = PackedInt32Array()
+	var _ol_changed_temp: PackedFloat32Array = PackedFloat32Array()
+
 	for i in range(n):
 		if is_water_a[i] != 0:
 			continue
@@ -6784,16 +7039,23 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			if tnew < 0.0: tnew = 0.0
 			elif tnew > 1.0: tnew = 1.0
 			temp_a[i] = tnew
+			# A.2.1.B — 真变 cell 收集（push 子集）。仅当 ε 真变才入列；
+			# 同时把"陆地端 anomaly 修正本身大于 ε"也吸收（避免极小修正污染 dirty）。
+			var _ol_d: float = tnew - t_prev
+			if _ol_d < 0.0: _ol_d = -_ol_d
+			if _ol_d > _PUSH_EPS_TEMP:
+				_ol_changed_idx.append(i)
+				_ol_changed_temp.append(tnew)
 
 	# PR-2.1.3b（ocean land SoA 路径）：循环结束后批量 push temp_a 到 DCWorld。
-	if _data_core_world != null and n > 0:
-		var _ol_indices: PackedInt32Array = PackedInt32Array()
-		_ol_indices.resize(n)
-		for _ki in range(n):
-			_ol_indices[_ki] = _ki
+	#
+	# A.2.1.B — Dirty 范围收窄 + ε 真变（M1 续）：循环里已经收集了所有
+	# |t_new - t_prev| > ε 的陆地 cell 到 _ol_changed_idx / _ol_changed_temp。
+	# 这里直接 push 子集，避免把没动的陆地 cell 标进 dirty mask。
+	if _data_core_world != null and _ol_changed_idx.size() > 0:
 		var _cid_temp_ols: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		if _cid_temp_ols >= 0:
-			_data_core_world.write_f32_indexed(_cid_temp_ols, _ol_indices, temp_a)
+			_data_core_world.write_f32_indexed(_cid_temp_ols, _ol_changed_idx, _ol_changed_temp)
 
 # ─── Milestone 3：天气子系统每日推进 ────────────────────────────────────
 # 由 main.gd 的 _on_day_changed 触发。流程：
@@ -7928,11 +8190,27 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			var vit_out: PackedFloat32Array = knobs.get("vitality_arr", vitality_arr)
 			var ls_out: PackedInt32Array = knobs.get("low_streak_arr", low_streak_arr)
 			var hs_out: PackedInt32Array = knobs.get("high_streak_arr", high_streak_arr)
-			for i in range(n_cells):
-				var cell_unpack: HexCell = cells[i]
-				cell_unpack.vegetation_vitality = vit_out[i]
-				cell_unpack._vitality_low_streak = ls_out[i]
-				cell_unpack._vitality_high_streak = hs_out[i]
+			# [perf 2026-05-20] 替换原来的 for-loop 单点 setter（每帧 N 次 _dirty_mark_one
+			# 风暴）为 dense 批量写。只标 dirty range 一次，atlas_upload 不再被打成全脏。
+			# 注意：facade 走 SoA 真值源，backing field 在 facade_enabled=true 时无人读，
+			# 所以这里安全地绕过 setter，直接写底层 component。
+			if _data_core_world != null:
+				var _cid_vit: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION_VITALITY)
+				var _cid_ls: int = _data_core_world.component_id(DCComponentIds.CELL_VITALITY_LOW_STREAK)
+				var _cid_hs: int = _data_core_world.component_id(DCComponentIds.CELL_VITALITY_HIGH_STREAK)
+				if _cid_vit >= 0:
+					_data_core_world.write_f32_dense(_cid_vit, vit_out)
+				if _cid_ls >= 0:
+					_data_core_world.write_i32_dense(_cid_ls, ls_out)
+				if _cid_hs >= 0:
+					_data_core_world.write_i32_dense(_cid_hs, hs_out)
+			else:
+				# fallback：facade 未启用时仍走 setter（backing 必须更新）
+				for i in range(n_cells):
+					var cell_unpack: HexCell = cells[i]
+					cell_unpack.vegetation_vitality = vit_out[i]
+					cell_unpack._vitality_low_streak = ls_out[i]
+					cell_unpack._vitality_high_streak = hs_out[i]
 			# 应用演替候选（GDScript 后处理：写 cell.vegetation / base_vegetation / current_state）
 			# 退化起点 vitality=0.65（远离 LOW_THRESHOLD 给适应缓冲），升级起点 vitality=0.70
 			# —— 与 _trigger_succession 的 0.65 / 0.7 分歧严格对齐。
@@ -8402,6 +8680,8 @@ func _apply_wind_heat_transport_pass(map: MapData, season_phase: float) -> void:
 # 风温耦合的"气团段"——
 # 所有 cell 沿 -wind_vector 回溯 advect_steps 步、与上游 cell 温度做 lerp 混合，
 # 写回 cell.temperature 与 cell.air_mass_temp_anomaly。
+# [perf 2026-05-20] 不再循环 cell.X = setter（每帧 N 次 _dirty_mark_one 风暴），
+# 改成累积到 PackedFloat32Array → 末尾 write_f32_dense 一次性 commit + 一次性 mark dirty range。
 func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	if _last_cfg == null:
 		return
@@ -8413,16 +8693,29 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	for cell: HexCell in map.all_cells():
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
-
+	
 	# 先把所有 cell 的当前 temperature 拷贝出来（避免半途被覆盖）
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		temp_before[cell] = cell.temperature if cell.temperature > 0.0 else float(baseline[cell])
-
+	
+	# [perf] 累积输出，循环结束后批量 commit
+	var n_cells_air: int = map.iter_cells().size() if map.has_indices() else map.all_cells().size()
+	var temp_out_arr: PackedFloat32Array = PackedFloat32Array()
+	var anom_out_arr: PackedFloat32Array = PackedFloat32Array()
+	temp_out_arr.resize(n_cells_air)
+	anom_out_arr.resize(n_cells_air)
+	# 默认值：保持当前 temp、anom=0
+	var iter_cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for ic in range(n_cells_air):
+		var c0: HexCell = iter_cells[ic]
+		temp_out_arr[ic] = float(temp_before.get(c0, baseline.get(c0, 0.0)))
+		anom_out_arr[ic] = 0.0
+	
 	for cell: HexCell in map.all_cells():
 		var wind: Vector2 = cell.wind_vector
 		if wind.length_squared() < 1e-6 or advect_steps == 0:
-			cell.air_mass_temp_anomaly = 0.0
+			# anom = 0（默认）；temp 保持原值（默认）
 			continue
 		
 		# 沿 -wind 方向回溯 advect_steps 步，每步选最对齐的邻居
@@ -8454,13 +8747,30 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 		var temp_up: float = temp_before.get(upstream, baseline.get(upstream, temp_self))
 		var temp_mixed: float = lerpf(temp_self, temp_up, heat_mix)
 		
-		# Fast-tick perf opt (C)：直接写强类型成员
-		cell.temperature = clampf(temp_mixed, 0.0, 1.0)
-		cell.air_mass_temp_anomaly = temp_mixed - baseline[cell]
+		var idx_cell: int = int(cell.index)
+		if idx_cell >= 0 and idx_cell < n_cells_air:
+			temp_out_arr[idx_cell] = clampf(temp_mixed, 0.0, 1.0)
+			anom_out_arr[idx_cell] = temp_mixed - float(baseline[cell])
+	
+	# 末尾批量 commit（dense 写 + 一次性 mark dirty range；fallback 用单点 setter 兜 backing）
+	if _data_core_world != null:
+		var _cid_temp_a: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+		var _cid_anom_a: int = _data_core_world.component_id(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY)
+		if _cid_temp_a >= 0:
+			_data_core_world.write_f32_dense(_cid_temp_a, temp_out_arr)
+		if _cid_anom_a >= 0:
+			_data_core_world.write_f32_dense(_cid_anom_a, anom_out_arr)
+	else:
+		# fallback：facade 未启用 → 走 setter（backing 必须更新）
+		for ic in range(n_cells_air):
+			var cf: HexCell = iter_cells[ic]
+			cf.temperature = temp_out_arr[ic]
+			cf.air_mass_temp_anomaly = anom_out_arr[ic]
 
 # 风温耦合的"地表段"——
 # 每个 cell 从相邻 cell 收集 air_mass_temp_anomaly，按"邻 cell 的 wind_vector 是否流向本 cell"加权注入。
 # 必须在 _wind_air_mass_pass 之后调用——读取的是气团段写完的 anomaly。
+# [perf 2026-05-20] 同 _wind_air_mass_pass：循环只累积到 array，末尾 dense 一次性 commit。
 func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	if _last_cfg == null:
 		return
@@ -8471,7 +8781,20 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	for cell: HexCell in map.all_cells():
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
-
+	
+	# [perf] 累积 anom + temp 输出
+	var iter_cells_s: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells_s: int = iter_cells_s.size()
+	var anom_out_s: PackedFloat32Array = PackedFloat32Array()
+	var temp_out_s: PackedFloat32Array = PackedFloat32Array()
+	anom_out_s.resize(n_cells_s)
+	temp_out_s.resize(n_cells_s)
+	# 默认值：anom=0；temp 保留 air_mass pass 写入的最新值（来自 facade getter）
+	for ic in range(n_cells_s):
+		var c0: HexCell = iter_cells_s[ic]
+		anom_out_s[ic] = 0.0
+		temp_out_s[ic] = c0.temperature
+	
 	for cell: HexCell in map.all_cells():
 		var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
@@ -8501,12 +8824,29 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 		if weight_total > 0.0:
 			anomaly_in = (weighted_sum / weight_total) * air_leak
 		
-		cell.air_mass_temp_anomaly = anomaly_in
+		var idx_cell_s: int = int(cell.index)
+		if idx_cell_s < 0 or idx_cell_s >= n_cells_s:
+			continue
+		anom_out_s[idx_cell_s] = anomaly_in
 		if absf(anomaly_in) > 1e-5:
-			# Fast-tick perf opt (C)：直接读写强类型成员
+			# 注：cell.temperature 此时是 air_mass pass commit 后的值（facade getter 走 SoA）
 			var t_prev: float = cell.temperature if cell.temperature > 0.0 else float(baseline[cell])
-			cell.temperature = clampf(t_prev + anomaly_in, 0.0, 1.0)
-
+			temp_out_s[idx_cell_s] = clampf(t_prev + anomaly_in, 0.0, 1.0)
+	
+	# 末尾批量 commit
+	if _data_core_world != null:
+		var _cid_temp_s: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+		var _cid_anom_s: int = _data_core_world.component_id(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY)
+		if _cid_temp_s >= 0:
+			_data_core_world.write_f32_dense(_cid_temp_s, temp_out_s)
+		if _cid_anom_s >= 0:
+			_data_core_world.write_f32_dense(_cid_anom_s, anom_out_s)
+	else:
+		for ic in range(n_cells_s):
+			var cf: HexCell = iter_cells_s[ic]
+			cf.temperature = temp_out_s[ic]
+			cf.air_mass_temp_anomaly = anom_out_s[ic]
+	
 	# B-full Step-2：把本帧 _wind_air_mass_pass + _wind_surface_pass 写完的
 	# air_mass_temp_anomaly 一次性镜像到 SoA（与 DCWorld view_f32 同引用）。
 	# 后续 weather hot loop 走 map.air_mass_temp_anomaly_arr[i]，零 AoS 字段访问。
