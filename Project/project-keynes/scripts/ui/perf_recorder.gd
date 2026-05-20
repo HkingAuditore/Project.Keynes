@@ -55,6 +55,7 @@ const JOB_COL_MS_SUFFIX: String = "_ms"
 const JOB_COL_SLICES_SUFFIX: String = "_slices"
 const JOB_COL_SKIP_SUFFIX: String = "_skip"
 const BD_COL_PREFIX: String = "bd_"
+const EXPORT_DIR_RELATIVE: String = "../../tmp"
 
 
 var _main = null  # 鸭子类型（运行时只 has_method/call 调用）；
@@ -103,12 +104,13 @@ func stop_and_export() -> String:
 		return ""
 
 	var dt: Dictionary = Time.get_datetime_dict_from_system()
-	var fname: String = "res://tmp/perf_record_%04d%02d%02d_%02d%02d%02d.csv" % [
+	var export_dir: String = _export_dir_absolute()
+	var fname: String = export_dir.path_join("perf_record_%04d%02d%02d_%02d%02d%02d.csv" % [
 		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
 		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
-	]
-	# 兜底：保证 res://tmp 目录存在（与 _on_btn_snapshot 同模式）
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://tmp"))
+	])
+	# Keep perf CSV outside res:// so Godot does not import it as csv_translation.
+	DirAccess.make_dir_recursive_absolute(export_dir)
 
 	var f := FileAccess.open(fname, FileAccess.WRITE)
 	if f == null:
@@ -133,15 +135,18 @@ func stop_and_export() -> String:
 
 	f.close()
 
-	var globalized: String = ProjectSettings.globalize_path(fname)
 	print("[perf-record] exported rows=%d cols=%d → %s%s" % [
-		_rows.size(), columns.size(), globalized,
+		_rows.size(), columns.size(), fname,
 		"  (HIT LIMIT)" if _hit_limit else "",
 	])
 	# 导出后清空缓冲，避免下次 start 误算（start 会重新 clear，但 stop 后即清更直观）
 	_rows.clear()
 	_hit_limit = false
-	return globalized
+	return fname
+
+
+static func _export_dir_absolute() -> String:
+	return ProjectSettings.globalize_path("res://").path_join(EXPORT_DIR_RELATIVE).simplify_path()
 
 
 # main.gd._run_fast_tick() 末尾调用。recorder 自己拉 SUS 数据，sample 只承载

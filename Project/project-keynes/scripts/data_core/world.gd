@@ -292,9 +292,11 @@ func view_u8(comp_id: int) -> PackedByteArray:
 # cells pool 段（[0, _dirty_cell_mask_size)）生效，其他 pool（front 池等）
 # 因 idx 越界自动跳过。dirty_mask_enabled = false 或 mask_size = 0 时全 no-op。
 
+const ENABLE_DIRTY_MARK_STACK_DIAG := false
+
 # [DIAG mask_dirty=2400 排查 · 2026-05-20] 凶手抓现行：每次 mark 前 30 次
 # 调用打印调用栈（含调用文件、函数、行号），定位"谁在每帧标 2400 dirty"。
-# 诊断完成后整段（包括 _diag_mark_count + _diag_dump_caller）一次性删除。
+# 默认关闭，避免 hot path 中的 get_stack() 成为性能瓶颈。
 var _diag_mark_count: int = 0
 
 func _diag_dump_caller(tag: String, n_marked: int) -> void:
@@ -322,7 +324,8 @@ func _dirty_mark_one(idx: int) -> void:
 		_dirty_cell_mask[idx] = 1
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] 也许凶手是单点写
 		# write_f32(idx, v)，前 30 次打调用栈定位（每个不同 caller 只打一次去重）
-		_diag_dump_caller_one(idx)
+		if ENABLE_DIRTY_MARK_STACK_DIAG:
+			_diag_dump_caller_one(idx)
 
 
 # [DIAG] 单点 mark 调用栈去重打印：每个 (source, function) 组合只打一次，
@@ -361,7 +364,8 @@ func _dirty_mark_range(start: int, n: int) -> void:
 	var hi: int = mini(start + n, _dirty_cell_mask_size)
 	for i in range(lo, hi):
 		_dirty_cell_mask[i] = 1
-	_diag_dump_caller("range", hi - lo)
+	if ENABLE_DIRTY_MARK_STACK_DIAG:
+		_diag_dump_caller("range", hi - lo)
 
 
 # 内部：批量索引 mark（dirty_indices 列表，越界元素自动跳过）。
@@ -374,7 +378,8 @@ func _dirty_mark_indexed(indices: PackedInt32Array) -> void:
 		var idx: int = indices[k]
 		if idx >= 0 and idx < cap:
 			_dirty_cell_mask[idx] = 1
-	_diag_dump_caller("indexed", n)
+	if ENABLE_DIRTY_MARK_STACK_DIAG:
+		_diag_dump_caller("indexed", n)
 
 
 ## 单元素写入：F32 component。

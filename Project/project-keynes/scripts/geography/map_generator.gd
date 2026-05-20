@@ -774,6 +774,9 @@ var _enum_atlas_upload_job = null
 var _native_daily_sim_job = null
 var _native_daily_configured: bool = false
 var _native_daily_last_result: Dictionary = {}
+var _native_daily_shadow_probe_logged: bool = false
+var _sus_map: MapData = null
+var _sus_world: WorldData = null
 var _season_refresh_job = null
 # main.gd 在 _ready 末尾通过 set_world_clock_ref(world_clock) 注入，给
 # OceanCurrentsJob 的 season_phase getter 用。
@@ -973,6 +976,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 # ─── SUS 接入点（任务 4） ────────────────────────────────────────────────
 
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
+	_sus_map = map
+	_sus_world = world
 	# 创建一个全新 SUS 实例（regenerate 路径会让旧实例随 MapGenerator 一起被替换，
 	# 不需要手动 reset_all_progress）。
 	#
@@ -1260,7 +1265,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
 	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
-			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world)
+			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
+			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1397,6 +1403,161 @@ func _native_mode_is_active(cp, field_name: String) -> bool:
 	return int(cp.get(field_name)) == 2
 
 
+func _native_mode_is_shadow(cp, field_name: String) -> bool:
+	if cp == null or cp.get(field_name) == null:
+		return false
+	return int(cp.get(field_name)) == 1
+
+
+func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
+	var season_idx: int = 0
+	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
+		season_idx = int(_world_clock_ref.season_index())
+	var anomaly: float = 0.0
+	if _world_clock_ref != null:
+		var v = _world_clock_ref.get("climate_anomaly")
+		if v != null:
+			anomaly = float(v)
+	return {
+		"day_index": ctx.day_index,
+		"tick_index": ctx.tick_index,
+		"season_phase": ctx.season_phase,
+		"season_index": season_idx,
+		"climate_anomaly": anomaly,
+		"speed_multiplier": ctx.speed_multiplier,
+	}
+
+
+func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) -> Dictionary:
+	if map == null or cp_now == null:
+		return {}
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return {}
+	var albedo_stride: int = maxi(1, int(cp_now.weather_albedo_stride))
+	var veg_dyn_stride: int = maxi(1, int(cp_now.weather_vegetation_dynamics_stride))
+	var feedback_stride: int = maxi(1, int(cp_now.weather_feedback_stride))
+	var run_albedo: bool = (call_index % albedo_stride) == 0
+	var run_veg_dyn: bool = (call_index % veg_dyn_stride) == 0
+	var run_feedback: bool = (call_index % feedback_stride) == 0 and bool(cp_now.fast_slow_layering_enabled)
+	if not (run_albedo or run_veg_dyn or run_feedback):
+		return {}
+	var knobs: Dictionary = {
+		"n_cells": n_cells,
+		"run_albedo": run_albedo,
+		"run_veg_dyn": run_veg_dyn,
+		"run_feedback": run_feedback,
+		"use_soa": true,
+	}
+	if run_albedo:
+		knobs["reference_albedo"] = float(cp_now.reference_albedo)
+		knobs["albedo_temp_gain"] = float(cp_now.albedo_temp_gain)
+		knobs["snow_cover_albedo"] = 0.75
+		knobs["cover_snow_id"] = int(CoverType.CV.SNOW)
+		knobs["cover_glacier_id"] = int(CoverType.CV.GLACIER)
+		knobs["albedo_table"] = _build_albedo_donor_table()
+	if run_veg_dyn:
+		_ensure_vegdyn_lut()
+		var veg_dyn_scale_raw: float = float(veg_dyn_stride)
+		var veg_dyn_scale_eff: float = maxf(veg_dyn_scale_raw, 1.0)
+		knobs["day_scale"] = veg_dyn_scale_raw
+		knobs["streak_days"] = maxi(1, int(round(veg_dyn_scale_eff)))
+		knobs["vitality_change_rate"] = float(cp_now.vitality_change_rate)
+		knobs["compat_harshness"] = float(cp_now.compat_harshness)
+		knobs["low_threshold"] = float(cp_now.vitality_low_threshold)
+		knobs["high_threshold"] = float(cp_now.vitality_high_threshold)
+		knobs["succession_degrade_days"] = int(cp_now.succession_degrade_days)
+		knobs["succession_upgrade_days"] = int(cp_now.succession_upgrade_days)
+		knobs["n_wt"] = int(WeatherType.WT.size())
+		knobs["wt_clear_id"] = int(WeatherType.WT.CLEAR)
+		knobs["veg_none_id"] = int(VegetationType.VEG.NONE)
+		knobs["ideal_temp_table"] = _gdext_vegdyn_ideal_temp_cached
+		knobs["ideal_moist_table"] = _gdext_vegdyn_ideal_moist_cached
+		knobs["temp_tol_table"] = _gdext_vegdyn_temp_tol_cached
+		knobs["moist_tol_table"] = _gdext_vegdyn_moist_tol_cached
+		knobs["weather_penalty_table"] = _gdext_vegdyn_weather_penalty_cached
+		knobs["resistance_table"] = _gdext_vegdyn_resistance_cached
+		knobs["next_up_table"] = _gdext_vegdyn_next_up_cached
+		knobs["next_down_table"] = _gdext_vegdyn_next_down_cached
+	if run_feedback:
+		var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+		if neighbor_indices.size() < n_cells * 6:
+			knobs["run_feedback"] = false
+		else:
+			var feedback_scale_eff: float = maxf(float(feedback_stride), 1.0)
+			knobs["soil_gain"] = float(cp_now.weather_to_soil_gain)
+			knobs["veg_gain"] = float(cp_now.weather_to_vegetation_gain)
+			knobs["scale"] = feedback_scale_eff
+			knobs["per_day_clamp"] = float(cp_now.feedback_per_day_clamp) * feedback_scale_eff
+			knobs["ocean_drift_gain"] = float(cp_now.ocean_moisture_drift_gain)
+			knobs["wt_rain_id"] = int(WeatherType.WT.RAIN)
+			knobs["wt_storm_id"] = int(WeatherType.WT.STORM)
+			knobs["wt_monsoon_id"] = int(WeatherType.WT.MONSOON)
+			knobs["wt_blizzard_id"] = int(WeatherType.WT.BLIZZARD)
+			knobs["wt_drought_id"] = int(WeatherType.WT.DROUGHT)
+			knobs["wt_heatwave_id"] = int(WeatherType.WT.HEATWAVE)
+			knobs["neighbor_indices"] = neighbor_indices
+	if not bool(knobs.get("run_albedo", false)) \
+			and not bool(knobs.get("run_veg_dyn", false)) \
+			and not bool(knobs.get("run_feedback", false)):
+		return {}
+	return knobs
+
+
+func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: WorldData) -> Dictionary:
+	var cp_now := _c()
+	if map == null or cp_now == null:
+		return {}
+	var bundle: Dictionary = {
+		"refresh_slots_from_map": true,
+		"flush_slots_to_map": true,
+	}
+	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
+		map,
+		cp_now,
+		maxi(1, _weather_stage_b_call_index)
+	)
+	if not stage_b_knobs.is_empty():
+		bundle["stage_b_knobs"] = stage_b_knobs
+	return bundle
+
+
+func _native_daily_bundle_pass_keys(bundle: Dictionary) -> Array[String]:
+	var keys: Array[String] = []
+	for k in bundle.keys():
+		var s: String = str(k)
+		if s.ends_with("_knobs") or s == "climate_pass_a_struct":
+			keys.append(s)
+	keys.sort()
+	return keys
+
+
+func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: WorldData) -> void:
+	var cp := _c()
+	if not _native_mode_is_shadow(cp, "native_daily_sim_mode"):
+		return
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
+		_native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "gdext_unavailable" }
+		return
+	var bundle: Dictionary = _build_native_daily_bundle(ctx, map, world)
+	var pass_keys: Array[String] = _native_daily_bundle_pass_keys(bundle)
+	if pass_keys.is_empty():
+		_native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "empty_bundle" }
+		return
+	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
+	tick_knobs["probe"] = true
+	tick_knobs["native_daily_bundle"] = bundle
+	var res: Dictionary = _data_core_world_ext.run_native_daily_tick(tick_knobs)
+	res["mode"] = "shadow_probe"
+	res["bundle_pass_keys"] = pass_keys
+	_native_daily_last_result = res.duplicate(true)
+	if not _native_daily_shadow_probe_logged:
+		_native_daily_shadow_probe_logged = true
+		var pass_key_text: String = ", ".join(PackedStringArray(pass_keys))
+		print("[native_daily] SHADOW probe rc=%s passes=%s (legacy SUS remains authoritative)"
+			% [str(res.get("rc", -1)), pass_key_text])
+
+
 func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_native_daily_configured = false
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_native_world"):
@@ -1430,10 +1591,21 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	if not _data_core_world_ext.has_method("run_native_daily_tick"):
 		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_tick; falling back to legacy SUS jobs")
 		return false
-	var probe: Dictionary = _data_core_world_ext.run_native_daily_tick({ "probe": true })
+	var probe_ctx: SusTickContext = SusTickContext.make(0, 0, 0.0, 1.0, &"native_daily_probe")
+	var probe_bundle: Dictionary = _build_native_daily_bundle(probe_ctx, map, world)
+	var probe: Dictionary = _data_core_world_ext.run_native_daily_tick({
+		"probe": true,
+		"native_daily_bundle": probe_bundle,
+	})
 	if int(probe.get("rc", -1)) != 0:
 		push_warning("[native_daily] ACTIVE requested but native tick is not ready (%s); falling back to legacy SUS jobs"
 			% str(probe.get("fail_stage", probe.get("reason", ""))))
+		return false
+	# 第一阶段只把现有 C++ pass 串进 dispatcher 并验证 GDScript bundle 通道。
+	# climate/weather/ocean 尚未全部 authoritative，下放 ACTIVE 会跳过旧 job，行为风险太高。
+	var native_daily_authoritative_ready: bool = false
+	if not native_daily_authoritative_ready:
+		push_warning("[native_daily] ACTIVE requested but native bundle is diagnostic-only; falling back to legacy SUS jobs")
 		return false
 	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world)
 	_apply_sim_budget_profile_to_job(_native_daily_sim_job, cp, false)
@@ -1465,7 +1637,8 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
 	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
-			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world)
+			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
+			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
@@ -1476,22 +1649,11 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
-	var season_idx: int = 0
-	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
-		season_idx = int(_world_clock_ref.season_index())
-	var anomaly: float = 0.0
-	if _world_clock_ref != null:
-		var v = _world_clock_ref.get("climate_anomaly")
-		if v != null:
-			anomaly = float(v)
-	var res: Dictionary = _data_core_world_ext.run_native_daily_tick({
-		"day_index": ctx.day_index,
-		"tick_index": ctx.tick_index,
-		"season_phase": ctx.season_phase,
-		"season_index": season_idx,
-		"climate_anomaly": anomaly,
-		"speed_multiplier": ctx.speed_multiplier,
-	})
+	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world)
+	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
+	tick_knobs["native_daily_bundle"] = bundle
+	var res: Dictionary = _data_core_world_ext.run_native_daily_tick(tick_knobs)
+	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
 	_native_daily_last_result = res.duplicate(true)
 	var breakdown: Dictionary = res.get("breakdown", {})
 	_last_weather_breakdown = breakdown.duplicate(true)
@@ -1527,6 +1689,8 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 		_native_daily_sim_job.reset_run_flag()
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
 	_sus.tick(ctx)
+	if _native_daily_sim_job == null:
+		_run_native_daily_shadow_probe(ctx, _sus_map, _sus_world)
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 	var weather_ran: bool = false
 	# Drift-fix（2026-05-10）：暴露"fronts 是否真的变了"标志。
@@ -5330,19 +5494,24 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				rc, n_cells_fast, str(_last_cfg.enable_ocean_heat_transport),
 			])
 		if rc >= 0.0:
-			# C++ 已写 cell_sea_ice_frac SoA + flush 回 MapData。
-			# HexCell facade 开启时 sea_ice_fraction getter 直接读 SoA；不再全图
-			# 回写 2400 个 cell setter。只在 facade 未启用的 fallback 场景才同步。
-			#
-			# 2026-05-19 plan-c 修复：C++ run_sea_ice_daily_pass 的 flush 写的是
-			# map.sea_ice_frac_arr（GDScript MapData PackedFloat32Array），**不写
-			# DCWorld 的 cell.sea_ice_frac SoA**。而 facade getter 读的恰好是
-			# DCWorld SoA → 两边脱钩，cell.sea_ice_fraction 永远停留在启动初值。
-			# 解决：永远走 sync 循环，setter 会自动把值写回 DCWorld SoA（facade
-			# 启用时）和 _backing（兜底）。开销 ~0.5ms/2400 cell，可接受。
+			# C++ 已写 DCWorldExt cell_sea_ice_frac slot 并 flush 回 MapData。
+			# 这里还需要同步 GDScript DCWorld 的 dirty mask，供 dynamic atlas 消费。
+			# 旧实现逐 cell 走 HexCell setter，会触发 2400 次 write_f32/dirty mark；
+			# 改为 dense 批量写，复用 value-diff，仅真实变化的 cell 标 dirty。
 			var t_sync_us: int = Time.get_ticks_usec()
-			var sync_needed: bool = true  # 强制 true：见上方注释
-			if sync_needed:
+			var facade_on: bool = false
+			if n_cells_fast > 0 and cells_fast[0] != null:
+				var c0_sync: HexCell = cells_fast[0] as HexCell
+				facade_on = c0_sync != null and c0_sync.is_facade_enabled()
+			var sync_done_dense: bool = false
+			if facade_on and _data_core_world != null \
+					and _data_core_world.has_method("write_f32_dense") \
+					and map.sea_ice_frac_arr.size() >= n_cells_fast:
+				var _cid_si_dense: int = _data_core_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC)
+				if _cid_si_dense >= 0:
+					_data_core_world.write_f32_dense(_cid_si_dense, map.sea_ice_frac_arr)
+					sync_done_dense = true
+			if not sync_done_dense:
 				for i_sync in range(n_cells_fast):
 					var c_sync: HexCell = cells_fast[i_sync]
 					c_sync.sea_ice_fraction = map.sea_ice_frac_arr[i_sync]

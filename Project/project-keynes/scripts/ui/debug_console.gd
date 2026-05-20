@@ -324,10 +324,10 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_snapshot_btn.pressed.connect(_on_btn_snapshot)
 	ctrl_row.add_child(_snapshot_btn)
 	# Plan: perf-recording-csv-export
-	# 录制按钮：再次点击触发 stop_and_export，CSV 落盘到 res://tmp/perf_record_*.csv
+	# 录制按钮：再次点击触发 stop_and_export，CSV 落盘到 ../../tmp/perf_record_*.csv
 	_record_btn = Button.new()
 	_record_btn.text = "⏺ 开始录制"
-	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ res://tmp/perf_record_<时间>.csv"
+	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ ../../tmp/perf_record_<时间>.csv"
 	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)

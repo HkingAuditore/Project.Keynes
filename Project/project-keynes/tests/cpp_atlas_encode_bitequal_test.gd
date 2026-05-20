@@ -222,7 +222,7 @@ func _check_prerequisites() -> bool:
 	if not ClassDB.class_exists("DCWorldExt"):
 		_skip("DCWorldExt class missing — gdext dll not loaded")
 		return false
-	var ext := ClassDB.instantiate("DCWorldExt")
+	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	if ext == null:
 		_skip("DCWorldExt instantiate returned null")
 		return false
@@ -266,8 +266,8 @@ func _build_fixture() -> Dictionary:
 			var idx_lin := row * W + col
 			var is_sea := (idx_lin % 5) == 0  # 16 中 4 个是海（0/5/10/15）
 			c.terrain = TerrainType.TERRAIN.OCEAN if is_sea else TerrainType.TERRAIN.GRASSLAND
-			c.landform = LandformType.LF.OCEAN if is_sea else LandformType.LF.PLAINS
-			c.vegetation = VegetationType.VEG.NONE if is_sea else VegetationType.VEG.GRASSLAND
+			c.landform = LandformType.LF.OCEAN if is_sea else LandformType.LF.PLAIN
+			c.vegetation = VegetationType.VEG.NONE if is_sea else VegetationType.VEG.TEMPERATE_GRASSLAND
 			c.passable_sea = is_sea
 			c.temperature = 0.10 + 0.05 * float(idx_lin)  # 0.10..0.85
 			c.moisture = clampf(0.20 + 0.04 * float(idx_lin), 0.0, 1.0)
@@ -291,7 +291,7 @@ func _build_fixture() -> Dictionary:
 	map.vegetation_arr = PackedByteArray()
 	map.vegetation_arr.resize(n)
 	for i in range(n):
-		var cell := map.cell_at(i)
+		var cell: HexCell = map.cell_at(i)
 		map.temp_arr[i] = float(cell.temperature)
 		map.moisture_arr[i] = float(cell.moisture)
 		map.snow_cover_arr[i] = float(cell.snow_cover)
@@ -300,7 +300,7 @@ func _build_fixture() -> Dictionary:
 		map.vegetation_arr[i] = int(cell.vegetation) & 0xFF
 
 	# 实例化 + bind DCWorldExt
-	var ext = ClassDB.instantiate("DCWorldExt")
+	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	if ext == null:
 		return {}
 	# 让 ext._entity_count = n（bind_map_data 内部不会主动 resize entities，但 SoA
@@ -334,7 +334,7 @@ func _build_fixture() -> Dictionary:
 	world.cell_pixel_lists = {}
 	world.water_cell_pixel_lists = {}
 	for i in range(n):
-		var cell := map.cell_at(i)
+		var cell: HexCell = map.cell_at(i)
 		var base := i * 4  # 4 个连续像素
 		var pix := PackedInt32Array()
 		pix.append(base + 0)
@@ -392,7 +392,7 @@ func _modify_some_cells(map: MapData) -> void:
 	# 改 5 个 cell 的 temperature / moisture，让 sig 变 → 走 cache_valid 增量分支
 	var change_indices := [1, 3, 6, 9, 12]
 	for ci in change_indices:
-		var cell := map.cell_at(ci)
+		var cell: HexCell = map.cell_at(ci)
 		if cell == null:
 			continue
 		cell.temperature = clampf(float(cell.temperature) + 0.13, 0.0, 1.0)
