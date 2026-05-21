@@ -19,6 +19,8 @@ script = ExtResource("1_main")
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
+dynamic_snow_strength = 1.0
+snowline_visual_strength = 1.0
 river_width_factor = 0.14
 
 [node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=56384315]

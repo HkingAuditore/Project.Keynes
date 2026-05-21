@@ -52,6 +52,13 @@ var _phase_locked: float = 0.0
 # False until the very first slice of the very first round runs (we need to
 # know when to lock the phase fresh).
 var _round_active: bool = false
+# Commit Defer (2026-05-21)：raster 完成（_next_pixel_idx >= _total_pixels）后，
+# 不立即 commit_ocean_buffers（含 620k×4 byte ImageTexture.update 同步上传 ~1-2ms）。
+# 改为下一个 SUS tick 的专用 commit-only slice 跑，把单 slice 峰值
+# 4.7ms（gdext_raster + commit）拆成 raster_slice ~3ms / commit_slice ~1.5ms。
+# 状态：raster done → _pending_commit=true，本片 done=false 让 round 续；
+# 下一片入口检测 → 跑 commit → 本片 done=true 收尾 round。
+var _pending_commit: bool = false
 # Phys Solve Sliced：物理化路径下，一轮 round 先做 N 个 slice 把 hex 求解（SLP /
 # wind / ψ / current / upwelling / wind raster）推到 DONE，再开始按像素区间光栅化。
 # True 表示求解阶段已完成，本轮余下 slice 全部用于像素工作。
@@ -114,6 +121,7 @@ func reset_progress() -> void:
 	_total_pixels = 0
 	_round_active = false
 	_phys_solve_done = false
+	_pending_commit = false
 	# 重置事件驱动门 — 下一次 round 会因 _phase_int_seen=-9999 而强制 rebake，
 	# 保证场景重载/换地图后第一帧像素 buffer 正确。
 	_phase_int_seen = -9999
@@ -127,6 +135,10 @@ func should_run(ctx: SusTickContext) -> bool:
 	# Guard against missing dependencies (e.g. before bake_world finishes).
 	if baker == null or world == null or map == null or cfg == null:
 		return false
+	# Commit Defer：raster 已完成、commit 待跑 → 绕过 phase short-circuit
+	# 与 climate-defer 让位（commit 极轻 ~1.5ms 且必须尽快上传纹理，否则 shader 看的是旧 buffer）。
+	if _pending_commit:
+		return super.should_run(ctx)
 	if not _round_active and _phase_int_seen != -9999:
 		var phase_now: float = ctx.season_phase
 		if season_phase_getter.is_valid():
@@ -164,6 +176,31 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or world == null or map == null:
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0 }
+
+	# Commit Defer fast-path：上一片 raster 完成后挂了 _pending_commit。
+	# 本片专门跑 commit_ocean_buffers（一次同步 620k×4 byte tex.update + 杂项），
+	# 跑完即 round_done。把 raster 与 commit 错峰到两帧上。
+	if _pending_commit:
+		var t_commit2_us: int = Time.get_ticks_usec()
+		baker.commit_ocean_buffers(world, true)
+		var commit_only_ms: float = (Time.get_ticks_usec() - t_commit2_us) / 1000.0
+		if on_commit.is_valid():
+			on_commit.call()
+		_pending_commit = false
+		_round_active = false
+		_next_pixel_idx = 0
+		_phys_solve_done = false
+		var elapsed_commit_only: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": elapsed_commit_only,
+			"progress_ratio": 1.0,
+			"stage_name": "ocean_pixel_commit_deferred",
+			"substage": "commit_only",
+			"path": "gpu_upload",
+			"commit_wall_ms": commit_only_ms,
+		}
 
 	# Begin a new round: lock total pixels and phase.
 	if not _round_active:
@@ -296,16 +333,14 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var done: bool = (_next_pixel_idx >= _total_pixels)
 	var commit_wall_ms: float = -1.0
 	if done:
-		# Pixel phase only runs on first round / season boundary, so commit the GPU atlas too.
-		# Per-day rounds without pixel work return earlier and do not upload textures.
-		var t_commit_us: int = Time.get_ticks_usec()
-		baker.commit_ocean_buffers(world, true)
-		commit_wall_ms = (Time.get_ticks_usec() - t_commit_us) / 1000.0
-		if on_commit.is_valid():
-			on_commit.call()
-		_round_active = false
-		_next_pixel_idx = 0
-		_phys_solve_done = false
+		# Commit Defer：raster 完成 → 仅挂 _pending_commit，本片不立即 commit_ocean_buffers。
+		# 下一个 SUS tick 入口的 fast-path 会专门跑 commit。这样把单片峰值
+		# raster(3ms)+commit(1.5ms)≈4.7ms 拆成两片各 ~3ms / ~1.5ms，
+		# 不再撑爆任何单帧 budget。
+		_pending_commit = true
+		# 强制本片返回 done=false，让 SUS round 续到下一个调度点。
+		# round_active / _next_pixel_idx 状态保持不变（commit-defer fast-path 会清）。
+		done = false
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 	# H 诊断：单 slice > 25ms → 标注是 commit 那一片还是普通像素片，定位 78ms 尖峰来源。
@@ -325,14 +360,24 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		])
 	var progress: float = 0.0
 	if _total_pixels > 0:
-		progress = float(_next_pixel_idx) / float(_total_pixels) if not done else 1.0
+		if done or _pending_commit:
+			progress = 1.0
+		else:
+			progress = float(_next_pixel_idx) / float(_total_pixels)
 	var work_done_pixels: int = _total_pixels if used_cpp_raster else e - s
+	# Commit Defer：raster 完成片标 ocean_pixel_raster_done；
+	# 普通中途 slice 标 ocean_pixel_slice；done=true 不再可能（raster 完即转 commit defer）。
+	var slice_stage_name: String = "ocean_pixel_slice"
+	if _pending_commit:
+		slice_stage_name = "ocean_pixel_raster_done"
+	elif done:
+		slice_stage_name = "ocean_pixel_commit"
 	return {
 		"done": done,
 		"work_done": work_done_pixels,
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": progress,
-		"stage_name": "ocean_pixel_commit" if done else "ocean_pixel_slice",
+		"stage_name": slice_stage_name,
 		"substage": "pixels_%d_%d" % [s, e],
 		"path": "gdext_raster" if used_cpp_raster else "gdscript_slice",
 	}

@@ -127,6 +127,28 @@ var _enum_atlas_data_size: Vector2i = Vector2i.ZERO
 # 由 EnumAtlasUploadJob/System 在 slice 结束后读取并转存到 MapGenerator。
 var _last_enum_atlas_upload_report: Dictionary = {}
 
+# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：enum atlas upload 节流 ───
+# Godot 4 没有 partial texture upload API（issue godotengine/godot#65762），整图
+# RGB8 (~1.8MB) GPU upload 在每天有 ≥1 个 dirty cell 时都会触发，单次 1.0-1.5ms。
+# cpp 端 patch_enum_atlas_axes 已经做了 dirty cell 比对，buffer_patch_ms 只占
+# ~0.45ms；剩下 0.5-1.0ms 几乎全在 image_create + texture.update。
+# Throttle 在 dirty_cells > 0 时不立即 GPU upload，而是按 axis 累积 dirty 计数，
+# 满足以下任一条件才真正 flush：
+#   1. 累积 dirty cells ≥ THRESHOLD_DIRTY_CELLS (16)
+#   2. 累积 skip 次数 ≥ THRESHOLD_SKIP_COUNT (4)
+#   3. 距上次 flush ≥ THRESHOLD_HEAL_TICKS (64)（自愈兜底，避免 dirty 漏标）
+# 强制 flush 入口：
+#   - bake_world / set_climate_profile（地图重生 / profile 切换）调用 reset
+#   - season 切换 / save / screenshot 调用 force_flush_enum_atlas_throttle()
+# 数据完整性：cpp 端 _enum_atlas_data 始终是最新，仅 GPU 端的 enum_atlas_tex
+# 延迟 N tick；视觉上 cover/vegetation 的颜色翻转会延迟出现。
+var _enum_atlas_throttle_skipped_uploads: Dictionary = {}  # axis(String) → int
+var _enum_atlas_throttle_pending_dirty: Dictionary = {}    # axis(String) → int
+var _enum_atlas_throttle_ticks_since_flush: Dictionary = {}# axis(String) → int
+const _ENUM_ATLAS_THROTTLE_DIRTY_THRESHOLD: int = 16
+const _ENUM_ATLAS_THROTTLE_SKIP_THRESHOLD: int = 4
+const _ENUM_ATLAS_THROTTLE_HEAL_TICKS: int = 64
+
 # Daily-sim perf opt：weather_field_tex 增量缓存。
 # 旧 bake_weather_field_only 每天扫 ~2400 cell × 4 通道，再写 ~250k–600k 像素
 # 字节，~27ms / tick。WeatherSystem 每日只让若干 cell 翻 weather/intensity/cloud/precip,
@@ -150,8 +172,15 @@ var _ecology_visual_atlas_cache_size: Vector2i = Vector2i.ZERO
 
 # ─── map-visual-overhaul-v1：3 张新 atlas 的 baker 缓存 ───
 # dyn_atlas_smooth：dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物。
-#   单 cell 处理 = 中心 0.5 + 6 邻居均值 0.5；O(N_cells × 7) 一次。
-#   cell-level signature 也走 dirty 路径，但因为受邻居影响，dirty 集合需要膨胀 1 跳。
+#   单 cell 处理 = R/G 通道：中心 0.5 + 6 邻居均值 0.5；
+#                   B 通道（snow_cover）：passthrough，不参与平滑（阈值型，
+#                                          单格能在雪线之上而邻居不在）。
+#                   A 通道（vitality）：仅"非海域邻居"参与平均。海域 cell 在
+#                                       encode 时被强制 A=0，若与陆地邻居一起
+#                                       平均会把海岸陆地 cell 的 vitality 系统
+#                                       性拖低（孤岛 5 海邻 → -42%）。
+#   O(N_cells × 7) 一次。cell-level signature 也走 dirty 路径，但因为受邻居
+#   影响，dirty 集合需要膨胀 1 跳。
 var _dyn_atlas_smooth_buf: PackedByteArray = PackedByteArray()
 var _dyn_atlas_smooth_cache_size: Vector2i = Vector2i.ZERO
 var _last_dyn_smooth_cell_sigs: Dictionary = {}  # HexCell → int (smoothed packed u32)
@@ -492,6 +521,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 阶段 P2：enum_atlas 交错 data 缓存随地图重生失效（首次 _encode_enum_atlas 会重新填）
 	_enum_atlas_data = PackedByteArray()
 	_enum_atlas_data_size = Vector2i.ZERO
+	# plan/sim-2ms-simd-dirty-budget：地图重生 → enum atlas 整张重烘必走 GPU upload；
+	# 累积的 throttle 计数同步清零，避免老 axis 的 pending dirty 在新地图上误触发自愈。
+	force_flush_enum_atlas_throttle()
 	# weather_field 增量缓存：地图重生 → 缓冲与 sig 失效；首次 bake_weather_field_only 会重建。
 	_weather_field_buf = PackedByteArray()
 	_weather_field_cache_size = Vector2i.ZERO
@@ -794,6 +826,14 @@ func _try_cpp_enum_axis_patch(map: MapData, world: WorldData, axis: String, repo
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			0, 0, buffer_patch_ms, 0.0, 0.0, true)
 		return true
+	# plan/sim-2ms-simd-dirty-budget：节流判定。flag=false 时直通走原路径；
+	# flag=true 时按累积阈值（≥16 dirty cells / ≥4 skip / ≥64 tick 自愈）决策。
+	# 跳过路径：cpu 端 _enum_atlas_data 已经被 cpp 写入最新值，仅 GPU upload 推迟。
+	if not _enum_atlas_throttle_should_flush(axis, dirty_cells):
+		_record_enum_atlas_upload_report(axis, "cpp_throttle_skipped",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
+		return true
 	var image_t0_us: int = Time.get_ticks_usec()
 	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
 	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
@@ -868,6 +908,14 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 		_record_enum_atlas_upload_report("biome", "cpp_skipped_no_dirty",
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			0, 0, buffer_patch_ms, 0.0, 0.0, true)
+		return true
+	# plan/sim-2ms-simd-dirty-budget：节流判定（合并 axes 路径用 "biome" 当 key
+	# —— 一次合并 patch 等同 biome+veg+cover 三 axis 的整体翻转，所以共用一个
+	# 阈值序列即可）。详见 _try_cpp_enum_axis_patch 同名注释。
+	if not _enum_atlas_throttle_should_flush("biome", dirty_cells):
+		_record_enum_atlas_upload_report("biome", "cpp_throttle_skipped",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 		return true
 	var image_t0_us: int = Time.get_ticks_usec()
 	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
@@ -1350,6 +1398,7 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 		var nb: int = 0
 		var na: int = 0
 		var nc: int = 0
+		var na_c: int = 0  # A 通道独立邻居计数：仅累加非海域邻居（D 项修复）
 		# 同时累积 neighbor-aware cache sig：FNV-1a 32-bit，吃 7×4=28 bytes。
 		var hood_h: int = 0x811C9DC5
 		hood_h = ((hood_h ^ (c_sig & 0xFF)) * 0x01000193) & 0xFFFFFFFF
@@ -1370,8 +1419,15 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 			nr += n_sig & 0xFF
 			ng += (n_sig >> 8) & 0xFF
 			nb += (n_sig >> 16) & 0xFF
-			na += (n_sig >> 24) & 0xFF
 			nc += 1
+			# A 通道（vitality）encode 时被强制 `passable_sea ? 0 : vit`，海域邻
+			# 居恒为 0；若与 R/G 一起做全邻居平均，会把海岸陆地 cell 的 vitality
+			# 系统性拖低（孤岛 5 海邻 → -42%）。仅累加非海域邻居以避免该偏置；
+			# R/G 仍走全邻居（海陆温/湿度都是真值，跳过海邻反而会失真）。
+			# SAME_SOURCE：gdext/src/world_ext.cpp::encode_dyn_smooth_atlas。
+			if not nb_cell.passable_sea:
+				na += (n_sig >> 24) & 0xFF
+				na_c += 1
 			hood_h = ((hood_h ^ (n_sig & 0xFF)) * 0x01000193) & 0xFFFFFFFF
 			hood_h = ((hood_h ^ ((n_sig >> 8) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
 			hood_h = ((hood_h ^ ((n_sig >> 16) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
@@ -1388,11 +1444,18 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 		var ob: int
 		var oa: int
 		if nc > 0:
-			# 中心 0.5 + 邻居均值 0.5
+			# 中心 0.5 + 邻居均值 0.5（R/G）
+			# 2026-05-21 修复：B 通道（snow_cover）是阈值型现象，不做邻居平均，
+			# 否则单格 95% 雪盖会被无雪邻居拖到 ~47.5% 后被 shader 后段压不可见。
+			# A 通道仅平均非海域邻居（见上面 for 循环内的 SAME_SOURCE 注释）。
+			# SAME_SOURCE 见 gdext/src/world_ext.cpp::encode_dyn_smooth_atlas。
 			or_ = clampi((cr + nr / nc) / 2, 0, 255)
 			og = clampi((cg + ng / nc) / 2, 0, 255)
-			ob = clampi((cb + nb / nc) / 2, 0, 255)
-			oa = clampi((ca + na / nc) / 2, 0, 255)
+			ob = clampi(cb, 0, 255)  # snow passthrough：保留 cell 真值
+			if na_c > 0:
+				oa = clampi((ca + na / na_c) / 2, 0, 255)
+			else:
+				oa = clampi(ca, 0, 255)  # 全是海邻 → 退回中心值
 		else:
 			or_ = cr
 			og = cg
@@ -2115,6 +2178,59 @@ func _try_cpp_ice_state_atlas_encode(map: MapData, world: WorldData, ctx: Dictio
 	report["path"] = "cpp"
 	report["fallback_reason"] = ""
 	return true
+
+
+# plan/sim-2ms-simd-dirty-budget：enum atlas upload 节流核心判定。
+# 返回 true 表示"必须真正 flush 到 GPU"，false 表示"本次跳过 upload，仅累积 dirty"。
+# 策略：默认 flag=false 时永远返回 true（保持原行为）；flag=true 时按累积阈值决策。
+# axis 单独跟踪：cover / vegetation / biome 各自独立计数。
+# 注意：dirty_cells == 0 时根本不会进 throttle 路径，由 caller 提前 short-circuit。
+func _enum_atlas_throttle_should_flush(axis: String, dirty_cells: int) -> bool:
+	if _climate_profile == null:
+		return true
+	if not bool(_climate_profile.get("use_atlas_dirty_throttle")):
+		return true
+	# 累积 dirty + tick
+	var pending: int = int(_enum_atlas_throttle_pending_dirty.get(axis, 0)) + dirty_cells
+	var skipped: int = int(_enum_atlas_throttle_skipped_uploads.get(axis, 0))
+	var ticks_since: int = int(_enum_atlas_throttle_ticks_since_flush.get(axis, 0)) + 1
+	# 阈值判定：任一满足则 flush
+	if pending >= _ENUM_ATLAS_THROTTLE_DIRTY_THRESHOLD:
+		_enum_atlas_throttle_pending_dirty[axis] = 0
+		_enum_atlas_throttle_skipped_uploads[axis] = 0
+		_enum_atlas_throttle_ticks_since_flush[axis] = 0
+		return true
+	if skipped + 1 >= _ENUM_ATLAS_THROTTLE_SKIP_THRESHOLD:
+		_enum_atlas_throttle_pending_dirty[axis] = 0
+		_enum_atlas_throttle_skipped_uploads[axis] = 0
+		_enum_atlas_throttle_ticks_since_flush[axis] = 0
+		return true
+	if ticks_since >= _ENUM_ATLAS_THROTTLE_HEAL_TICKS:
+		# 自愈：强制 flush 消除 dirty 漏标的视觉残影
+		_enum_atlas_throttle_pending_dirty[axis] = 0
+		_enum_atlas_throttle_skipped_uploads[axis] = 0
+		_enum_atlas_throttle_ticks_since_flush[axis] = 0
+		return true
+	# 跳过本次 GPU upload，更新累积 state
+	_enum_atlas_throttle_pending_dirty[axis] = pending
+	_enum_atlas_throttle_skipped_uploads[axis] = skipped + 1
+	_enum_atlas_throttle_ticks_since_flush[axis] = ticks_since
+	return false
+
+
+# plan/sim-2ms-simd-dirty-budget：强制 flush 入口（season 切换 / save /
+# screenshot 等场景必须把累积的 dirty 立即同步到 GPU 避免视觉错位）。
+# axis = "" 表示 flush 所有 axis；否则 flush 单 axis。
+# Caller 必须在调用本函数后再触发 enum atlas 重烘走完整路径，本函数仅清算计数。
+func force_flush_enum_atlas_throttle(axis: String = "") -> void:
+	if axis == "":
+		_enum_atlas_throttle_pending_dirty.clear()
+		_enum_atlas_throttle_skipped_uploads.clear()
+		_enum_atlas_throttle_ticks_since_flush.clear()
+	else:
+		_enum_atlas_throttle_pending_dirty.erase(axis)
+		_enum_atlas_throttle_skipped_uploads.erase(axis)
+		_enum_atlas_throttle_ticks_since_flush.erase(axis)
 
 
 func _record_enum_atlas_upload_report(axis: String, path: String, elapsed_ms: float,

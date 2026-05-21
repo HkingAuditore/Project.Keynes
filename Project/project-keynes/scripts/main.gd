@@ -523,6 +523,20 @@ func start_soak_ab_same_source_debug(n_ticks: int = 30) -> void:
 func start_soak_ab_vs_legacy_debug() -> void:
 	_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
 
+## DOTS-Final-Frontier Phase B+ 验收入口：跑两段（30 tick + 1000 tick）SAME_SOURCE
+## A/B（A=B+ off / B=B+ on），用于验证 use_gdext_season_round 与 12-stage 路径
+## bit-equal + fast_ms p95 ↓。复用 DCSoakABRunner.start_season_round_batch。
+## 完成后报告写到 user://soak/last_report.txt（与现有 F3 共享通道）。
+func start_soak_ab_season_round_batch_debug() -> void:
+	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
+		print("[main] season_round batch ignored: A/B runner already running")
+		return
+	if DCSoakABRunner.instance == null:
+		DCSoakABRunner.instance = DCSoakABRunner.new()
+	var ok: bool = DCSoakABRunner.instance.start_season_round_batch(self)
+	if not ok:
+		print("[main] start_season_round_batch failed (generator not ready?)")
+
 func cancel_soak_debug() -> void:
 	_soak_ab_hotkey_cancel()
 
@@ -617,6 +631,14 @@ func _on_day_changed(_day_idx: int) -> void:
 	# total = t_sus + t_renderer_sync + t_ui（外加少量调度开销）
 	var t_fast0: int = Time.get_ticks_msec()
 	var t_sus_us0: int = Time.get_ticks_usec()
+
+	# Perf instrumentation freshness（方案 ④ Step 1）：在跑 SUS 之前把"本帧将要
+	# 变成的 fast_tick_idx"（即 _fast_tick_count + 1）同步给 generator/DVA，让
+	# 所有 _last_*_breakdown 写入点能打上 _tick_idx 戳。perf_recorder.on_fast_tick
+	# 拿到的 sample.tick_idx 也是 _fast_tick_count + 1（见 _fast_tick_count += 1
+	# 在 fast tick 末尾，sample 在那之后构造），两侧对齐。
+	if _generator != null and _generator.has_method("set_current_fast_tick_idx"):
+		_generator.set_current_fast_tick_idx(_fast_tick_count + 1)
 
 	# Sliced Update Scheduler（任务 8）：完整收编后 fast tick 的全部模拟工作
 	# 都在这里一次性驱动。返回字典：{ fronts: Array[WeatherFront], weather_ran: bool }。

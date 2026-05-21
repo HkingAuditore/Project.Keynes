@@ -285,6 +285,27 @@ public:
     double run_ocean_water_pass(godot::Dictionary knobs);
     double run_ocean_land_pass (godot::Dictionary knobs);
 
+    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for ocean passes.
+    //
+    // run_ocean_water_pass_simd / run_ocean_land_pass_simd:
+    //   与原 scalar 版同签名 / 同输出语义；内部走 water-cell / land-cell 预筛
+    //   + 直线 hot kernel，消除主循环外层 if(IW[i]==0|!=0) 分支让编译器自由
+    //   auto-vectorize。CoW fix（anomaly_out / anomaly_inout 仍走 duplicate）
+    //   保持不变。ulp ≤ 4 容差（charter §risk=B 已批）。
+    //   仅在 ClimateProfile.use_gdext_ocean_water_simd / use_gdext_ocean_land_simd
+    //   = true 时由调用方派发。
+    //
+    // run_ocean_water_pass_thread / run_ocean_land_pass_thread:
+    //   预筛 idx 按 n_tasks 切 WorkerThreadPool；n_water / n_land < 256 时
+    //   降级单线程；wtp == nullptr 时 in-thread fallback。n_tasks <= 0 时
+    //   按 ~1024 cells/task 自适应（cap 至 16）。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 不达
+    //   预算时由调用方派发。
+    double run_ocean_water_pass_simd  (godot::Dictionary knobs);
+    double run_ocean_water_pass_thread(godot::Dictionary knobs, int n_tasks);
+    double run_ocean_land_pass_simd   (godot::Dictionary knobs);
+    double run_ocean_land_pass_thread (godot::Dictionary knobs, int n_tasks);
+
     // F.3 (P1): climate Pass-B (local climate coupling)
     //   GDScript 源：scripts/geography/map_generator.gd::_climate_pass_b_soa
     //                 (line 4311+, SoA-aware fast path)
@@ -325,6 +346,26 @@ public:
     //     - [DIAG pass_b_end] 末尾统计 print（GDScript caller 在 C++ pass 之后
     //       自己 dump SoA 即可，本 C++ 不打日志）
     double run_climate_pass_b(const godot::Dictionary &knobs);
+
+    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for hot pass-B.
+    //
+    // run_climate_pass_b_simd:
+    //   与 run_climate_pass_b 同签名 / 同输出语义；内部走 land-cell 预筛 +
+    //   直线 hot kernel（albedo / coastal / landform / write）+ scalar
+    //   rain-shadow 子段。MSVC /O2 /arch:AVX2 在直线 land-only 循环上能自
+    //   动向量化；显式 AVX2 8-lane block 包在 PK_HAVE_AVX2 内对最 SIMD-
+    //   friendly 段（albedo）做强制向量化。
+    //   ulp 容差：≤ 4（plan §验收 §B）。
+    //   仅在 ClimateProfile.use_gdext_pass_b_simd = true 时由调用方派发。
+    //
+    // run_climate_pass_b_thread:
+    //   land-cell 主段按 n_tasks 切 WorkerThreadPool；rain-shadow 子段仍
+    //   单线程跑（其内含的串行 probe + 邻居最佳方向 search 无可分发性）。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 路径
+    //   未达预算时由调用方派发；wtp == nullptr 时 in-thread fallback。
+    double run_climate_pass_b_simd  (const godot::Dictionary &knobs);
+    double run_climate_pass_b_thread(const godot::Dictionary &knobs, int n_tasks);
+
 
     // F.4 (P2): sea ice daily pass
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_sea_ice_daily_pass
@@ -695,6 +736,53 @@ public:
     double run_weather_front_advect_pass(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
+    // ─── Phase B+：season refresh round 一次跨界整 round 切片调度 ──────────
+    // 与 run_season_refresh_stage 协作（B+ 路径下 run_season_round_slice 内部
+    // 直接复用 run_season_refresh_stage 的 stage dispatch，零算法复制）。
+    //
+    // 用法（GDScript caller）：
+    //   handle = ext.start_season_round(round_knobs)         # round 起始（一次烘焙 row tables / jitter / donor）
+    //   while not done:
+    //       slice = ext.run_season_round_slice(handle, max_usec)  # 每 SUS slot 调一次，b1=stage 边界粒度
+    //       done = slice.done
+    //   fin = ext.finish_season_round(handle)                # GDScript 拿 fin 后做一次 facade sync + history push
+    //
+    // round_knobs（一次塞齐 12 个 stage 所需的全部字段，B+ 内部按 stage 取用）：
+    //   "season"               : int    (0..3)
+    //   "n_cells"              : int
+    //   "height"               : int
+    //   "sea_level"            : float
+    //   "moist_scale"          : float                       # stage 0
+    //   "rain_shadow_lookback" : int                         # stage 1
+    //   "rain_shadow_threshold": float                       # stage 1
+    //   "rain_shadow_factor"   : float                       # stage 1
+    //   "season_phase"         : float                       # stage 1
+    //   "elev_decay"           : float                       # stage 4
+    //   "decay"                : float                       # stage 11 (=feedback decay)
+    //   "lat_temp_rows"        : PackedFloat32Array          # stage 2/4/9
+    //   "season_offset_rows"   : PackedFloat32Array          # stage 2/9 (=sync_state)
+    //   "row_indices"          : PackedInt32Array            # stage 2/3/4/5/6/7/swamp
+    //   "neighbor_indices"     : PackedInt32Array            # stage 1/4/5/6/7/swamp
+    //   "jitter_arr"           : PackedFloat32Array          # stage 1
+    //   "donor_table"          : PackedFloat32Array          # stage 4
+    //   "soil_moisture_arr"    : PackedFloat32Array (in/out) # stage 11
+    //   "veg_growth_pressure_arr": PackedFloat32Array (in/out) # stage 11
+    //
+    // start_season_round 返回：
+    //   { "handle": int (>=0 成功，<0 fallback), "fallback": bool, "reason": String }
+    // run_season_round_slice 返回：
+    //   { "done": bool, "stage": int (当前 round_stage 0..11),
+    //     "stages_done_this_slice": int, "elapsed_ms": float,
+    //     "fallback": bool, "reason": String }
+    // finish_season_round 返回：
+    //   { "total_native_ms": float, "slices_used": int, "stages_done": int,
+    //     "soil_moisture_arr": PackedFloat32Array (decayed, write-back to map),
+    //     "veg_growth_pressure_arr": PackedFloat32Array (decayed, write-back to map) }
+    // abort_season_round：清 round state，让 generation +=1 让悬挂 handle 失效。
+    godot::Dictionary start_season_round(godot::Dictionary round_knobs);
+    godot::Dictionary run_season_round_slice(int handle, int max_usec);
+    godot::Dictionary finish_season_round(int handle);
+    void abort_season_round();
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
     godot::Dictionary patch_enum_atlas_axes(godot::Dictionary knobs);
 
@@ -1399,6 +1487,14 @@ private:
     // run_atlas_pipeline_step 首次调用；析构走 PackedArray RAII。与
     // _summary_state 同模式（void* opaque pointer）。
     void                                     *_atlas_state            = nullptr;
+
+    // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
+    // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation
+    // 计数器 / current stage / round_knobs 缓存 / 计时累加）。lazy alloc 在
+    // start_season_round 首次成功路径；abort_season_round 内手动 delete + 置
+    // null；DCWorldExt 析构内自动清理（与 _summary_state / _atlas_state 同模式）。
+    // B+ b1 粒度：每 slice 跑整 stage（不在 stage 内 cursor 切片）。
+    void                                     *_season_round           = nullptr;
 
     // q/r → cell idx 反查 hash（summary pass cube_to_idx 用）。lazy rebuild：
     // 在 run_weather_summary_fronts_pass 内部，发现 _summary_qr_to_idx_size !=

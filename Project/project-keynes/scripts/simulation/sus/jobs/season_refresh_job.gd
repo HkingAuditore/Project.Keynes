@@ -10,6 +10,10 @@ var _stage: int = 0
 var _stage_cursor: int = 0
 var _season_idx: int = 0
 var _round_active: bool = false
+# DOTS-Final-Frontier Phase B+：本 round 是否走"全 round 单 C++ 调用"路径。
+# round 启动时尝试 start_season_round_b_plus；成功则置 true，整个 round 走
+# run_season_round_slice_b_plus；失败则走原 12-stage micro/main switch。
+var _b_plus_active: bool = false
 
 # ─── Periodic-driver (慢变量周期重算) ─────────────────────────────────────
 # 旧设计：season_refresh 由 WorldClock.season_changed 信号触发，速度档 x20
@@ -90,6 +94,56 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_stage_cursor = 0
 		_round_active = true
 		_ticks_since_last_round = 0
+		# DOTS-Final-Frontier Phase B+：尝试启用 round-level 单 C++ 调用路径。
+		# 失败（flag/ext/method/cfg 不齐）即留 false，本 round 退到 12-stage micro/main。
+		_b_plus_active = false
+		if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
+			if generator.has_method("start_season_round_b_plus"):
+				var bp_handle: int = int(generator.start_season_round_b_plus(map, world, _season_idx))
+				_b_plus_active = bp_handle > 0
+
+	# B+ 路径：整个 round 用 1 个 C++ 调度器跑，slice 由 b1 stage-boundary 切片。
+	if _b_plus_active:
+		var bp_max_us: int = int(slice_budget_ms * 1000.0)
+		var bp_res: Dictionary = generator.run_season_round_slice_b_plus(map, world, bp_max_us)
+		var bp_done: bool = bool(bp_res.get("done", false)) or bool(bp_res.get("fallback", false))
+		var bp_stages_done: int = int(bp_res.get("stages_done", _stage))
+		var bp_elapsed_ms_inner: float = float(bp_res.get("elapsed_ms", 0.0))
+		_stage = clampi(bp_stages_done, 0, 12)
+		if bool(bp_res.get("fallback", false)):
+			# C++ 端中途 fallback：本 round 残余 stage 仍然按 12-stage micro/main 跑完。
+			# B+ 已写完前面 stages_done 个 stage 到 SoA + 做了 facade sync 1 次（在 abort
+			# 路径里没 sync，这里调一次，对齐 12-stage 路径的语义）。
+			# 注：start_season_round 失败时 b_plus_active 为 false 不进这里。
+			_b_plus_active = false
+			# 让 12-stage 路径从 stages_done 续跑；若 stages_done == 12 则下一次循环判 done。
+		var bp_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		var bp_progress: float = 1.0 if (bp_done and _stage >= 12) else float(_stage) / 12.0
+		if bp_done:
+			# 整 round 完成（含 fallback 情况下 stages_done 也可能未到 12，但 b_plus_active
+			# 已关，下一 slice 会进入 12-stage 路径补完；只有 stages_done == 12 才真正 done）。
+			if _stage >= 12:
+				_round_active = false
+				if generator.has_method("finish_season_round_b_plus"):
+					generator.finish_season_round_b_plus(map, world, _season_idx)
+				if generator.has_method("finish_season_refresh"):
+					generator.finish_season_refresh(map, world, _season_idx)
+				_stage = 0
+				_stage_cursor = 0
+		# 即便未完成也要把 elapsed/progress 抛回；inner native_ms 保留在
+		# generator 端 _last_season_refresh_breakdown，外层不重复处理。
+		var _unused_inner: float = bp_elapsed_ms_inner
+		return {
+			"done": bp_done and _stage >= 12,
+			"work_done": 1,
+			"elapsed_ms": bp_elapsed_ms,
+			"progress_ratio": bp_progress,
+			"stage": _stage,
+			"stage_name": "b_plus_round",
+			"substage": "stages_done_%d" % _stage,
+			"path": "b_plus",
+			"cursor": 0,
+		}
 
 	var micro_handled: bool = false
 	var micro_done: bool = false
@@ -148,6 +202,10 @@ func reset_progress() -> void:
 	_stage = 0
 	_stage_cursor = 0
 	_round_active = false
+	# B+ 路径残留 round handle 强制清理（generator 内部会 abort 掉 C++ 端 round_state）。
+	if _b_plus_active and generator != null and generator.has_method("_abort_season_round_b_plus_safe"):
+		generator._abort_season_round_b_plus_safe()
+	_b_plus_active = false
 
 
 func _season_stage_name(stage: int) -> String:

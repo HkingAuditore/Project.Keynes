@@ -179,6 +179,123 @@ func start_season_atlas_batch(main_node: Node,
 	return _start_next_batch_run(main_node)
 
 
+## DOTS-Final-Frontier phase 0：SIMD 三 flag 批跑入口。
+## 跑 1000-tick A/B（off vs on），验收 ≥30% 加速 + bit-equal（标量 < 1e-5）。
+## 与 _start_next_batch_run 完全独立，不污染既有 season/atlas 批跑路径。
+func start_simd_batch(main_node: Node,
+		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	if _phase != Phase.IDLE:
+		print("[soak-ab] simd batch ignored: runner already active.")
+		return false
+	_batch_active = true
+	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([1000])
+	_batch_index = 0
+	_batch_reports.clear()
+	if not completed.is_connected(_on_batch_completed_simd):
+		completed.connect(_on_batch_completed_simd)
+	return _start_next_simd_run(main_node)
+
+
+func _start_next_simd_run(main_node: Node) -> bool:
+	if _batch_index >= _batch_counts.size():
+		_batch_active = false
+		if completed.is_connected(_on_batch_completed_simd):
+			completed.disconnect(_on_batch_completed_simd)
+		print("[soak-ab] simd batch complete: %d reports" % _batch_reports.size())
+		return true
+	var n_ticks: int = int(_batch_counts[_batch_index])
+	print("[soak-ab] simd batch %d/%d: %d ticks (target ≥30%% accel + bit-equal)" % [
+		_batch_index + 1, _batch_counts.size(), n_ticks
+	])
+	return start_flag_profile(
+		main_node,
+		n_ticks,
+		{
+			"use_gdext_pass_b_simd": false,
+			"use_gdext_ocean_water_simd": false,
+			"use_gdext_ocean_land_simd": false,
+		},
+		{
+			"use_gdext_pass_b_simd": true,
+			"use_gdext_ocean_water_simd": true,
+			"use_gdext_ocean_land_simd": true,
+		},
+		"simd_off",
+		"simd_on"
+	)
+
+
+func _on_batch_completed_simd(report: Dictionary) -> void:
+	if not _batch_active:
+		return
+	_batch_reports.append(report)
+	_batch_index += 1
+	call_deferred("_start_next_simd_run", _main)
+
+
+## DOTS-Final-Frontier Phase B+：season_round 批跑入口。
+## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_season_round off / B=on），
+## 验收 1000-tick 长期均值字段（temp_30d/365d/anomaly）≤ 0.01，标量字段 ≤ 0.05；
+## 同时 B 段会沉淀 _last_season_refresh_breakdown.b_plus_native_ms / slices_used /
+## stages_done，配合 perf 快照评 fast_ms p95。
+##
+## 关键约束：B 段必须保证 use_gdext_season_refresh = true（B+ 路径在 GDScript
+## wrapper 内 gate 依赖该总开关；A 段也不强制关，避免引入额外协变量）。
+##
+## 与 start_simd_batch 同构，零污染既有 season/atlas 批跑路径。
+func start_season_round_batch(main_node: Node,
+		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	if _phase != Phase.IDLE:
+		print("[soak-ab] season_round batch ignored: runner already active.")
+		return false
+	_batch_active = true
+	# 默认两段：30 tick 快速烟测 + 1000 tick 正式验收。
+	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 1000])
+	_batch_index = 0
+	_batch_reports.clear()
+	if not completed.is_connected(_on_batch_completed_season_round):
+		completed.connect(_on_batch_completed_season_round)
+	return _start_next_season_round_run(main_node)
+
+
+func _start_next_season_round_run(main_node: Node) -> bool:
+	if _batch_index >= _batch_counts.size():
+		_batch_active = false
+		if completed.is_connected(_on_batch_completed_season_round):
+			completed.disconnect(_on_batch_completed_season_round)
+		print("[soak-ab] season_round batch complete: %d reports" % _batch_reports.size())
+		return true
+	var n_ticks: int = int(_batch_counts[_batch_index])
+	print("[soak-ab] season_round batch %d/%d: %d ticks (B+ on vs off, target bit-equal + fast_ms ↓)" % [
+		_batch_index + 1, _batch_counts.size(), n_ticks
+	])
+	# A 段：B+ 关闭，但 stage 1-8 单 stage gdext 路径保持开启（与现网 phase B 一致），
+	#       这样 A/B 差异**只**来自"调度层是否下沉到 C++ round_state"，不引入算法面差异。
+	# B 段：B+ 打开 + use_gdext_season_refresh 保持开启（B+ wrapper 内部 gate 依赖该总开关）。
+	return start_flag_profile(
+		main_node,
+		n_ticks,
+		{
+			"use_gdext_season_round": false,
+			"use_gdext_season_refresh": true,
+		},
+		{
+			"use_gdext_season_round": true,
+			"use_gdext_season_refresh": true,
+		},
+		"b_plus_off",
+		"b_plus_on"
+	)
+
+
+func _on_batch_completed_season_round(report: Dictionary) -> void:
+	if not _batch_active:
+		return
+	_batch_reports.append(report)
+	_batch_index += 1
+	call_deferred("_start_next_season_round_run", _main)
+
+
 ## 中止当前 A/B 流程（立即 stop dump，不打 diff 报告）。
 func cancel() -> void:
 	if _phase == Phase.IDLE:

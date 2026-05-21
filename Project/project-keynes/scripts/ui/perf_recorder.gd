@@ -212,16 +212,36 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 
 # breakdowns = { "climate": {...}, "weather": {...}, "enum_atlas": {...}, "sea_ice_atlas": {...} }
 # 每个子 dict 的 key 集合不固定，全部展开为 bd_<group>_<key>。
+#
+# 方案 ④ Step 1（freshness 过滤）：
+#   每个 sub dict 的写入点会打一个 `_tick_idx` 字段。若 sub 的 _tick_idx 与本 row
+#   的 tick_idx 不一致 —— 说明本帧没真正刷新过，看到的是 stale 快照回放 ——
+#   则整组 sub 字段全部跳过（在 CSV 里留空），避免"305 行重复值"被误读为持续耗时。
+#   `_tick_idx` 自身永不写入 CSV（开头判定丢弃，避免污染列表）。
 func _merge_breakdowns(row: Dictionary, bds: Dictionary) -> void:
 	if bds.is_empty():
 		return
+	var row_tick: int = int(row.get("tick_idx", -1))
 	for group in bds.keys():
 		var sub = bds[group]
 		if not (sub is Dictionary):
 			continue
-		for k in (sub as Dictionary).keys():
-			var col: String = BD_COL_PREFIX + str(group) + "_" + str(k)
-			row[col] = (sub as Dictionary)[k]
+		var sub_dict: Dictionary = sub as Dictionary
+		# Freshness gate：sub 必须显式带 `_tick_idx` 且匹配本 row。
+		# - 不带 _tick_idx：兼容旧路径（视为"未追踪 freshness"，照旧写入，避免
+		#   未改造点突然全列空白；任何写入点都应在改造完成后带上 _tick_idx）。
+		# - 带 _tick_idx 但不等于 row_tick：本帧未刷新，跳过整组。
+		if sub_dict.has("_tick_idx"):
+			var sub_tick: int = int(sub_dict["_tick_idx"])
+			if sub_tick != row_tick:
+				continue
+		for k in sub_dict.keys():
+			var ks: String = str(k)
+			# `_tick_idx` 是内部标记，不进 CSV 列。
+			if ks == "_tick_idx":
+				continue
+			var col: String = BD_COL_PREFIX + str(group) + "_" + ks
+			row[col] = sub_dict[k]
 
 
 # ---------- 静态：列并集 / CSV 拼装 ----------

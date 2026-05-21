@@ -284,6 +284,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var use_gdext_wind_field: bool = true       # Block B P1：35.55ms → < 5ms
 @export var use_gdext_physical_circulation: bool = true # C++ SLP/wind/upwelling path
 @export var use_gdext_season_refresh: bool = true   # C++ season refresh path when available
+# ─── Phase B+（2026-05-21）：season refresh round 一次跨界整 round 切片调度 ───
+# 默认 false：先做 A/B 等价性验收（1000-tick diff，所有 cell terrain/landform/
+# vegetation/cover/moisture epsilon=0/1e-5）+ perf snapshot 通过后再翻 true。
+# B+ 路径下 GDScript 跨界次数从 12→1，facade sync 从 8→1，history push 从 8→1
+# （行为变更：round 末尾仅 1 次 push 修复 ring buffer 同 round 多次写入的污染）。
+# 依赖 use_gdext_season_refresh=true（B+ 路径仍走单 stage gdext helper 体内的
+# C++ 算法，仅调度层升级；二者必须同时启用）。
+@export var use_gdext_season_round: bool = false
 
 # ─── dots-slp-psi-cpp (plan/dots-slp-psi-cpp) — physical-circulation final push ──
 # Sink remaining GDScript stages (1/SLP, 3+4+5/PSI) into DCWorldExt.
@@ -357,6 +365,43 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ImageTexture.update 薄壳。false 时退化到旧的 GD 4-phase 状态机 +
 # cpp_atlas_encode_enabled 控制的 per-phase encode-only 下沉。
 @export var cpp_atlas_pipeline_enabled: bool = true             # plan/atlas-pipeline-cpp 阶段 G：4 张 atlas pipeline 全管线 C++ 化
+
+# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：SIMD 内核 + 线程兜底 ──────
+# 上一轮 dots-* 系列把 hot pass 全部 C++ 化；本轮在 C++ 内部走 AVX2 SIMD 8-lane
+# 路径（复刻 bench_pass_a_full_simd 模板），每个 hot pass 独立 flag，默认 false。
+# A/B 验收要求：1000-tick mean ms 优于 scalar 路径 ≥ 30%，年度统计指标（年均温 /
+# 年均降水 / 海冰）|Δ| < 0.5%，玩家观感无差异；ulp ≤ 4 浮点偏差允许（SIMD reorder
+# 引入）。任一前置 use_gdext_* C++ 化未开启时 simd flag 静默忽略。
+#
+# 自愈：dirty-rect 路径每 64 tick 强制走一次全图回退，避免 dirty 漏标导致
+# 视觉残影（路径已封在 baker 内，无独立 flag）。
+@export var use_gdext_pass_b_simd: bool = false        # climate Pass-B AVX2 SIMD path
+@export var use_gdext_ocean_water_simd: bool = false   # ocean water pass AVX2 SIMD path
+@export var use_gdext_ocean_land_simd: bool = false    # ocean land pass AVX2 SIMD path
+@export var use_gdext_thread_fallback: bool = false    # 总开关：SIMD 不达标时启用 WorkerThreadPool 降级
+
+# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：enum atlas upload 节流 ───
+# Godot 4 没有 partial texture upload API（issue godotengine/godot#65762 未解决），
+# 即便 cpp 端 patch_enum_atlas_axes 早已做 dirty cell 比对，整图 RGB8 (~1.8MB)
+# GPU upload 在每天有 ≥1 个 dirty cell 时都会触发，单次 1.0-1.5ms。本 flag 打开后
+# baker 内部累积 dirty cell 总数 + 跳过次数，达到阈值（≥16 cells / ≥4 次 skip /
+# 距上次 flush ≥ 64 个 daily tick 自愈）才真正触发 image_create + texture.update；
+# 跳过的 tick 仅保留 cpu 端 _enum_atlas_data 最新（因 cpp patch 已写入），仅 GPU
+# 视觉延迟最多 N tick。视觉残影由季节切换 / save / screenshot 强制 flush + 64-tick
+# 自愈 兜底。前置条件：use_gdext_enum_atlas_pack 已 ACTIVE。
+# 默认 false：上线前需完成 1000-tick A/B perf + 视觉 soak（10 个游戏年度）验收。
+@export var use_atlas_dirty_throttle: bool = false      # enum atlas upload 节流（累积 dirty 阈值才 flush GPU）
+
+# ─── plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas dirty 编码 kill-switch ─
+# cpp run_atlas_pipeline_step 4 phase（DYNAMIC / ECOLOGY / SMOOTH / ICE）已全部走 dirty
+# 路径（dirty_indices 比对 + value-diff + 1-跳邻居膨胀）。本 flag 默认 true 与现行行为一致，
+# false 时 dvas_system 跳过传 dirty_indices 且 opts.force_full_encode=true，让 cpp 覆盖
+# dirty_path_used=false 强制 4 phase 全集编码（等价 cache_invalid 首帧路径），用于：
+#   1. SAME_SOURCE A/B 30 tick 像素 bit-equal 验证 dirty 路径无遗漏；
+#   2. 视觉残影排障入口（怀疑 dirty 漏标时切 false 排除嫌疑）。
+# 生产环境无理由切 false（dirty 路径已是 cpp 默认；切 false 会让 4 phase 整图编码每 tick
+# 触发，dyn smooth phase ~620k px 单 phase 耗时回到 0.5-1.0ms）。
+@export var use_gdext_dynamic_atlas_terminal_dirty: bool = true  # 任务 7：dynamic_visual_atlas dirty 编码 kill-switch（默认 true）
 
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。

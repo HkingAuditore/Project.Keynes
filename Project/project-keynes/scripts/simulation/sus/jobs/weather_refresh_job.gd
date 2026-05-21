@@ -645,6 +645,51 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if use_merged_native_weather and not _merged_native_first_log_done:
 		_merged_native_first_log_done = true
 		print("[weather/native-daily] merged transaction ACTIVE — field/distribute/summary/stage_b run in one SUS slice; legacy sliced path remains fallback")
+
+	# plan/weather-refresh-cpp-all PR-2：合并 facade 快路径。
+	#
+	# 当 _merged_native_gate_active=true 时，单 SUS slice 调 generator.refresh_weather_daily()
+	# 把 5 段 cpp pass 一次跑完。返回的 fronts 与老链 stage_a + stage_b 完全语义一致；
+	# 任何前置失败（flag off / ext null / cpp rc!=0）会在 generator.refresh_weather_daily
+	# 内部透明 fallback 到 stage_a + stage_b 老链，所以本 job 这里只需关心"成功提交"
+	# 后的状态同步：_last_fronts / _round_fronts / DataCore sync / soak dump / SUS timing publish。
+	if use_merged_native_weather:
+		var t_merged_us: int = Time.get_ticks_usec()
+		var merged_fronts: Array[WeatherFront] = generator.refresh_weather_daily(
+			map, world, season_idx, anomaly, season_phase
+		)
+		# 用 stage_a_direct_ms 字段记录合并 path 的总耗时（"direct" 模式 = 单 slice
+		# 完成全部，与 fallback 走 stage_a/stage_b 共用同一字段语义；perf overlay
+		# 通过 _last_weather_breakdown.path == "gdext_combined" 区分两者）。
+		timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_merged_us) / 1000.0
+
+		_last_fronts = merged_fronts
+		_round_fronts = merged_fronts
+		_round_active = false
+		_round_stage = 0
+		ran_this_tick = true
+		_fronts_changed_this_tick = true
+
+		if is_data_core_on:
+			var t_merged_sync_us: int = Time.get_ticks_usec()
+			sync_fronts_to_world(merged_fronts)
+			timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_merged_sync_us) / 1000.0
+		var t_merged_soak_us: int = Time.get_ticks_usec()
+		_soak_dump_weather_phase(ctx, merged_fronts.size())
+		timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_merged_soak_us) / 1000.0
+
+		var merged_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		_publish_job_timing(timing, merged_elapsed_ms)
+		return {
+			"done": true,
+			"work_done": merged_fronts.size(),
+			"elapsed_ms": merged_elapsed_ms,
+			"progress_ratio": 1.0,
+			"stage_name": "weather_merged",
+			"substage": "fronts_%d" % merged_fronts.size(),
+			"path": "data_core_cells_only" if is_data_core_on else "legacy",
+		}
+
 	if can_slice_field and not use_merged_native_weather:
 		if not _round_active:
 			var t_begin_us: int = Time.get_ticks_usec()
