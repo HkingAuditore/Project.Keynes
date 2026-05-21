@@ -109,6 +109,47 @@ const SEGMENTS: Array = [
 		required = false,
 		description = "DOTS-Total-CPP 任务 8 伞段：sea_ice_atlas_upload dirty-tile pack C++ 化",
 	},
+	# ─── DOTS-Final-Frontier（plan/dots-final-frontier）：season_refresh stage 1-8 + SIMD 三件套 ──
+	# 真·收尾：此前 stage 0/8/11 已 C++（伞段 season_refresh_pipeline 上方），本计划补齐
+	# stage 1-8 全量下沉 + 翻开 pass_b/ocean_water/ocean_land 三 SIMD flag。
+	# 任务 1 阶段（phase 0）：required = false 仅占位；phase 6/7 验收通过后翻 true。
+	{
+		flag = &"use_gdext_season_refresh",
+		segment = "season_refresh_stage_1_to_8",
+		required = false,
+		description = "DOTS-Final-Frontier：season_refresh stage 1-8 全量 C++ 化（rain_shadow/redecide/river_eco/veg_feedback/shrubland/mangrove/glacier/swamp）。复用 use_gdext_season_refresh 总开关 + per-stage helper gate。",
+	},
+	# ─── DOTS-Final-Frontier Phase B+：season refresh full-round single-call ──
+	# 在 stage 1-8 全量 C++ 化的基础上，进一步把 12-stage round 的"调度层"也下沉：
+	# GDScript 端从每 slice 12 次跨界塌缩为 start/run_slice/finish 3 次跨界，
+	# 切片粒度退化为 stage 边界（b1）。算法实现完全复用 stage 1-8 已 bit-equal 的
+	# C++ 路径，仅多一层 round_state 调度，验收复用 SAME_SOURCE 1000-tick A/B。
+	# 行为变更：history.push 由原 8 次/round 收敛为 1 次/round（用户已接受）。
+	# 任务 1 阶段（B+1/B+2）：required = false 仅占位；B+3 1000-tick A/B 通过后翻 true。
+	{
+		flag = &"use_gdext_season_round",
+		segment = "season_round_full",
+		required = false,
+		description = "DOTS-Final-Frontier Phase B+：season_refresh 12-stage round 单 C++ 调用 + stage-boundary 切片（b1）。GDScript→C++ 跨界 12→3，facade sync 8→1，history push 8→1。验收门槛：SAME_SOURCE 1000-tick A/B + fast_ms p95 ≤ 5ms。依赖 use_gdext_season_refresh = true（B+ 路径内部仍调 stage 1-8 helper）。",
+	},
+	{
+		flag = &"use_gdext_pass_b_simd",
+		segment = "simd_avx2_pass_b",
+		required = false,
+		description = "DOTS-Final-Frontier：climate Pass-B AVX2 8-lane SIMD 升级。验收门槛：1000-tick mean ≥30% 加速 + bit-equal。",
+	},
+	{
+		flag = &"use_gdext_ocean_water_simd",
+		segment = "simd_avx2_ocean_water",
+		required = false,
+		description = "DOTS-Final-Frontier：ocean water pass AVX2 8-lane SIMD 升级。验收门槛：1000-tick mean ≥30% 加速 + bit-equal。",
+	},
+	{
+		flag = &"use_gdext_ocean_land_simd",
+		segment = "simd_avx2_ocean_land",
+		required = false,
+		description = "DOTS-Final-Frontier：ocean land pass AVX2 8-lane SIMD 升级。验收门槛：1000-tick mean ≥30% 加速 + bit-equal。",
+	},
 ]
 
 

@@ -2,6 +2,12 @@
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 
+// MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
+// 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <godot_cpp/classes/global_constants.hpp>
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -14,6 +20,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <condition_variable>
 #include <cstring>
 #include <limits>
@@ -129,6 +138,92 @@ struct AtlasPipelineState {
 
     // 累计 stride 计数（采样诊断节流用：每 30 stride 打一次）。
     int stride_counter = 0;
+
+    // ── plan/atlas-phase-slicing（2026-05-21）：phase-by-phase 时间切片 ──
+    // 当 opts["phase_budget"] < 4 时，run_atlas_pipeline_step 会在跑完
+    // budget 个 phase 后提前 return，把 phase 状态留在 IDLE..ICE 之间，下一
+    // 次 call 接着跑。整段 stride 期间持有的"入口快照"（dirty_indices /
+    // cache_valid_* / 4 个 prep 产物）必须跨 call 持久化，避免每 phase 重做。
+    //
+    // 入口判断：phase==IDLE 或 phase==DONE 时执行 stride 入口 setup（
+    // 消费 dirty_indices、SoA 拉取、buf 校验、cache_valid 计算、prep_*）；
+    // 中间态（DYNAMIC..ICE）直接复用本结构里的 cached 值。
+    //
+    // 注意：所有 PackedXxxArray CoW 引用计数共享，跨 call 不产生拷贝；
+    // 真正的 SoA 指针（TEMP/MOIST/...）每 call 通过 fetch_world_soa 重拿
+    // ——这本身只是几次 Object::get（< 5μs），不计入"传输开销"。
+    bool             stride_active = false;     // true: 入口快照有效（IDLE→DONE 期间）
+    bool             stride_dirty_path_used = false;
+    bool             stride_dirty_noop = false;
+    bool             stride_have_nb = false;
+    bool             stride_cache_valid_dyn = false;
+    bool             stride_cache_valid_eco = false;
+    bool             stride_cache_valid_smo = false;
+    bool             stride_cache_valid_ice = false;
+    int              stride_n_pix = 0;
+    int              stride_n_cells = 0;
+    int              stride_terrain_lake = -1;
+    int              stride_terrain_sea_ice = -1;
+    int              stride_veg_none = -1;
+    PackedInt32Array stride_nb_arr;             // neighbor_indices_packed snapshot
+
+    // 4 个 phase 的 prep 产物（每 phase 入口写一次，phase 内 step 消费）。
+    PackedInt32Array prep_dyn_real_indices;
+    PackedInt32Array prep_dyn_real_sigs;
+    PackedInt32Array prep_eco_real_indices;
+    PackedInt32Array prep_smo_real_indices;
+    PackedInt32Array prep_ice_real_indices;
+    bool             prep_eco_skip = false;
+    bool             prep_smo_skip = false;
+    bool             prep_ice_skip = false;
+
+    // 整段 stride 起始时间戳（用于 total_ms 跨 call 累加）。
+    std::chrono::high_resolution_clock::time_point stride_t_start;
+    double stride_total_ms_accum = 0.0;
+};
+
+// ─── Phase B+ (2026-05-21)：season refresh round 切片调度 opaque state ────
+// SAME_SOURCE: map_generator.gd::run_season_refresh_stage 12-stage round。
+// B+ 调度要点：
+//   1. start_season_round 一次性接收完整 round_knobs（12 stage 所需字段超集），
+//      存到 input_knobs；同时把所有 PackedArray 引用持有，避免 GDScript 释放。
+//   2. run_season_round_slice 内部按 "round_stage 0..11" 推进，每 stage 把
+//      input_knobs 浅拷贝出来 + 改写 stage 字段后 →
+//      DCWorldExt::run_season_refresh_stage(stage_knobs)。零算法复制。
+//   3. b1 粒度（用户 2026-05-21 决策）：每 stage 是最小切片单位；stage 边界
+//      永远查 deadline，不在 stage 内 cursor 切片。
+//   4. round_stage → C++ stage_id 映射（与 GDScript 12-stage 顺序一致）：
+//        0 moisture     → cpp_stage 0   (run_season_refresh_stage)
+//        1 rain_shadow  → cpp_stage 1
+//        2 redecide     → cpp_stage 2
+//        3 river        → cpp_stage 3
+//        4 veg_fb       → cpp_stage 4
+//        5 shrubland    → cpp_stage 5
+//        6 mangrove     → cpp_stage 6
+//        7 glacier      → cpp_stage 7
+//        8 swamp        → cpp_stage 9   (历史命名冲突，避开 stage 8=sync)
+//        9 sync_state   → cpp_stage 8
+//       10 atlas_queue  → SKIP（render concern；GDScript 端在 finish 阶段
+//                         调 _mark_enum_atlas_dirty）
+//       11 feedback_decay→ cpp_stage 10
+//   5. generation 计数器：每次 start/abort 自增；run_slice/finish 校验入参
+//      handle == generation，不匹配返回 fallback。reload world / 异常退出
+//      场景下，旧 handle 自然失效，避免 stale state。
+//   6. soil_moisture_arr / veg_growth_pressure_arr 是 in/out PackedFloat32Array
+//      （由 stage 11=feedback_decay 写回 decayed 值），finish_season_round
+//      把它们放进返回 dict 让 GDScript 灌回 map.xxx_arr。
+struct SeasonRoundState {
+    int      generation       = 0;       // 起始时 +=1；caller 持的 handle 必须等于本值
+    bool     active           = false;
+    int      round_stage      = 0;       // 0..11，当前要跑的 round_stage
+    int      stages_done      = 0;       // 已完成的 stage 数（含 SKIP）
+    int      slices_used      = 0;       // 跑过的 slice 数
+    double   total_native_ms  = 0.0;     // 累计 C++ 算法纯耗时（不含 dispatch）
+    Dictionary input_knobs;              // round 起始一次性塞齐的所有字段（Variant 持引用）
+    // stage 11 (feedback_decay) 的 in/out PackedArray 引用——单独缓存指针的快照，
+    // C++ stage 10 内会 ptrw 写回；finish 时把这两个 array 放回 ret dict。
+    PackedFloat32Array soil_moisture_arr;
+    PackedFloat32Array veg_growth_pressure_arr;
 };
 
 DCWorldExt::DCWorldExt() = default;
@@ -156,6 +251,14 @@ DCWorldExt::~DCWorldExt() {
     if (_atlas_state != nullptr) {
         delete static_cast<AtlasPipelineState *>(_atlas_state);
         _atlas_state = nullptr;
+    }
+
+    // Season refresh round opaque state（Phase B+ 2026-05-21）：lazy alloc 在
+    // start_season_round；析构走 PackedArray RAII（input_knobs / soil_moisture_arr /
+    // veg_growth_pressure_arr 的 CoW refcount），无 OS 句柄。
+    if (_season_round != nullptr) {
+        delete static_cast<SeasonRoundState *>(_season_round);
+        _season_round = nullptr;
     }
 }
 
@@ -3689,6 +3792,1111 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// plan/sim-2ms-simd-dirty-budget — climate Pass-B SIMD / Thread variants
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 策略：pass_b 的 5 段计算（albedo / coastal / landform / write / evap +
+// rain-shadow）全部是 `if (!is_water) { ... }` 嵌套。原 scalar 实现按 cell
+// 顺序串行迭代，每个 cell 命中 5 个分支预测槽位。改造路径：
+//   1. 一次性 scan IW[]，构建 PackedInt32-equivalent `land_idx` 列表；
+//   2. land-cell 主段按 land_idx 直线迭代——5 段去 if 后 MSVC /O2 /arch:AVX2
+//      能自动向量化最简单的 albedo + write 段；
+//   3. rain-shadow 串行 probe 段对每个 land cell 单独走，因为算法需要沿
+//      wind direction 沿 6-邻居最佳方向多步追踪，无 SIMD-able 模式；
+//   4. water cell 不需要任何 hot 计算（pass_b 对 water cell 完全 no-op）。
+//
+// 与原 scalar 的语义差异（plan §risk = B 已接受 ulp ≤ 4）：
+//   - 内存访问顺序变为 land-first（按 land_idx 顺序），cache 命中模式不同；
+//   - 浮点重排：FMA / 编译器 vectorize 引入 ulp 差异（≤ 4）；
+//   - water cell 的 T/M 完全未写——与原 scalar 完全一致（原 scalar 也只
+//     在 land 分支写 T，水 cell 走 `T[i] = clamp(temp_now)`，但 temp_now =
+//     TS[i] = T[i]，等价于不写）；为安全起见 land-mask 路径下仍保持 water
+//     cell T/M 不变。
+//   - moisture 同理：water cell 在原 scalar 中也走 `(M[i] + 0) * 1 = M[i]`，
+//     等价不写。
+//
+// 显式 AVX2 fast block 仅用于 albedo 段（最简单 = 单 ld + 1 fmul + 1 fsub）；
+// 其余段直线代码交给编译器 auto-vectorize 即可（pass_b 复杂度远高于 pass_a
+// 的纯 stencil，手写 6-邻居 mask gather 收益 < 30%、维护成本高）。
+//
+// run_climate_pass_b_simd / _thread 的 ulp 差异不会比原 scalar 在不同编译
+// 器版本间的差异更大；A/B 验收（sim_2ms_ulp_tolerant_test）应通过。
+
+namespace {
+
+// Inline LandformType ordinals — 与 run_climate_pass_b 内 constexpr 同源。
+constexpr uint8_t kLF_LOWLAND   = 5;
+constexpr uint8_t kLF_MOUNTAIN  = 7;
+constexpr uint8_t kLF_PEAK      = 8;
+constexpr uint8_t kLF_DELTA     = 9;
+constexpr uint8_t kLF_SALT_FLAT = 11;
+
+// pass_b 共享输入指针 + 标量 knobs 的不变 view，避免重复传 20+ 参数。
+struct PassBCtx {
+    // 输出
+    float       * __restrict T;
+    float       * __restrict M;
+    // 只读
+    const float * __restrict TS;       // temp snapshot (pre-write)
+    const float * __restrict SNOW;
+    const uint8_t * __restrict IW;
+    const uint8_t * __restrict LF;
+    const uint8_t * __restrict VG;
+    const float * __restrict ELEV;
+    const float * __restrict LAT;
+    const float * __restrict POSX;
+    const float * __restrict POSY;
+    const int32_t * __restrict NB;
+    const float * __restrict TTA;
+    const float * __restrict FOL;
+    int foliage_size;
+    // 标量
+    float winter_boost, snow_cool, veg_cool, diurnal_amp, evap_gain;
+    float rs_threshold, rs_factor, t_freeze, coupling_gain, coast_leak;
+    float landform_phase_factor;
+    double season_phase;
+    int rs_lookback;
+};
+
+// 对单个 land cell i 跑 pass_b 的 albedo + coastal + landform + write 段。
+// 不走 evap / rain-shadow（那两段分别由独立 helper 处理，避免 evap 中
+// 第二次邻居扫描污染当前 hot path 的内存访问模式）。返回 temp_final，便于
+// 后续 evap 段直接拿用而不重读 T[i]。
+inline float pass_b_land_compute_temp(const PassBCtx &c, int i) {
+    const float temp_now   = c.TS[i];
+    const float snow_cover = c.SNOW[i];
+
+    // ① albedo
+    float d_albedo = -c.snow_cool * snow_cover;
+    const uint8_t veg_id = c.VG[i];
+    const float foliage = (veg_id < c.foliage_size) ? c.FOL[veg_id] : 0.0f;
+    d_albedo -= c.veg_cool * foliage;
+
+    // ② coastal heat leak（snapshot TTA[]，邻居 sentinel < 0 跳过）
+    float d_coastal = 0.0f;
+    {
+        float sum_anomaly = 0.0f;
+        int   n_water     = 0;
+        const int base = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = c.NB[base + d];
+            if (ni < 0) continue;
+            if (c.IW[ni] != 0) {
+                sum_anomaly += c.TTA[ni];
+                n_water += 1;
+            }
+        }
+        if (n_water > 0) {
+            d_coastal = c.coast_leak * (sum_anomaly / float(n_water)) * c.winter_boost;
+        }
+    }
+
+    // ③ landform diurnal
+    float d_landform = 0.0f;
+    const uint8_t lf = c.LF[i];
+    if (lf == kLF_LOWLAND || lf == kLF_SALT_FLAT || lf == kLF_DELTA) {
+        const float dir_factor = c.landform_phase_factor * 2.0f - 1.0f;
+        d_landform = c.diurnal_amp * dir_factor;
+    } else if (lf == kLF_PEAK || lf == kLF_MOUNTAIN) {
+        d_landform = -c.diurnal_amp * 0.5f * (1.0f - c.landform_phase_factor);
+    }
+
+    // ④ write temp（clamp 到 [0,1]）
+    float temp_final = temp_now + d_albedo + d_coastal + d_landform;
+    if (temp_final < 0.0f) temp_final = 0.0f;
+    else if (temp_final > 1.0f) temp_final = 1.0f;
+    c.T[i] = temp_final;
+    return temp_final;
+}
+
+// 单个 land cell 的 evap 段（与原 scalar 1:1 mirror）。返回 d_evap。
+inline float pass_b_land_compute_evap(const PassBCtx &c, int i, float temp_final) {
+    const float t_eff = temp_final + c.TTA[i];
+    float water_neighbor_w = 0.0f;
+    float sum_water_anomaly = 0.0f;
+    const int bo = i * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t ni = c.NB[bo + d];
+        if (ni < 0) continue;
+        if (c.IW[ni] != 0) {
+            water_neighbor_w += 1.0f;
+            sum_water_anomaly += c.TTA[ni];
+        }
+    }
+    float avg_water_anomaly = 0.0f;
+    if (water_neighbor_w > 0.0f) {
+        avg_water_anomaly = sum_water_anomaly / water_neighbor_w;
+    }
+    float nb_w_norm = water_neighbor_w / 6.0f;
+    if (nb_w_norm > 1.0f) nb_w_norm = 1.0f;
+    float d_evap = 0.0f;
+    if (t_eff > c.t_freeze && nb_w_norm > 0.0f) {
+        d_evap = c.evap_gain * (t_eff - c.t_freeze) * nb_w_norm;
+        if (c.coupling_gain > 0.0f && std::fabs(avg_water_anomaly) > 0.001f) {
+            float evap_mul = 1.0f + c.coupling_gain * avg_water_anomaly;
+            if (evap_mul < 0.0f) evap_mul = 0.0f;
+            else if (evap_mul > 2.0f) evap_mul = 2.0f;
+            d_evap *= evap_mul;
+        }
+    }
+    if (avg_water_anomaly < -0.01f && nb_w_norm > 0.0f && c.coupling_gain > 0.0f) {
+        d_evap += -c.evap_gain * (-avg_water_anomaly) * nb_w_norm * c.coupling_gain * 0.5f;
+    }
+    return d_evap;
+}
+
+// 单个 land cell 的 rain-shadow 段（串行 probe，无 SIMD-able 模式）。
+inline float pass_b_land_compute_rain_shadow(const PassBCtx &c, int i) {
+    if (c.rs_lookback <= 0) return 1.0f;
+    const double ny = double(c.LAT[i]);
+    double w_dx = 0.0, w_dy = 0.0;
+    wind_belt_at(ny, c.season_phase, &w_dx, &w_dy);
+    const double wlen2 = w_dx * w_dx + w_dy * w_dy;
+    if (wlen2 <= 1e-6) return 1.0f;
+    float max_upwind_h = c.ELEV[i];
+    int probe_idx = i;
+    for (int step = 0; step < c.rs_lookback; ++step) {
+        int   best_idx = -1;
+        double best_dot = 0.1;
+        const float pwx = c.POSX[probe_idx];
+        const float pwy = c.POSY[probe_idx];
+        const int pbase = probe_idx * 6;
+        for (int d3 = 0; d3 < 6; ++d3) {
+            const int32_t ni3 = c.NB[pbase + d3];
+            if (ni3 < 0) continue;
+            const double dx = double(pwx) - double(c.POSX[ni3]);
+            const double dy = double(pwy) - double(c.POSY[ni3]);
+            const double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-6) continue;
+            const double inv_len = 1.0 / std::sqrt(len2);
+            const double dotv = (dx * w_dx + dy * w_dy) * inv_len;
+            if (dotv > best_dot) {
+                best_dot = dotv;
+                best_idx = ni3;
+            }
+        }
+        if (best_idx < 0) break;
+        probe_idx = best_idx;
+        if (c.ELEV[probe_idx] > max_upwind_h) {
+            max_upwind_h = c.ELEV[probe_idx];
+        }
+    }
+    return (max_upwind_h - c.ELEV[i] >= c.rs_threshold) ? c.rs_factor : 1.0f;
+}
+
+// land-only main pass：对 land_idx[begin..end) 逐 cell 跑全部 5 段并写 T/M。
+// 抽成 helper 是为了 _thread 变体能按 land_idx 分块复用同一 body。
+inline void pass_b_run_land_range(const PassBCtx &c,
+                                  const int *land_idx,
+                                  int begin, int end) {
+    for (int k = begin; k < end; ++k) {
+        const int i = land_idx[k];
+        const float moisture_now = c.M[i];
+        const float temp_final = pass_b_land_compute_temp(c, i);
+        const float d_evap = pass_b_land_compute_evap(c, i, temp_final);
+        const float d_rs   = pass_b_land_compute_rain_shadow(c, i);
+        float moisture_final = (moisture_now + d_evap) * d_rs;
+        if (moisture_final < 0.0f) moisture_final = 0.0f;
+        else if (moisture_final > 1.0f) moisture_final = 1.0f;
+        c.M[i] = moisture_final;
+    }
+}
+
+// _thread payload：land_idx + ctx pointer + n_tasks。worker 按 land_idx 切块。
+struct PassBLandTask {
+    const PassBCtx *ctx;
+    const int      *land_idx;
+    int             n_land;
+    int             n_tasks;
+};
+
+static void pass_b_land_worker(void *userdata, uint32_t task_idx) {
+    auto *t = static_cast<PassBLandTask *>(userdata);
+    const int chunk = (t->n_land + t->n_tasks - 1) / t->n_tasks;
+    const int begin = static_cast<int>(task_idx) * chunk;
+    const int end   = std::min(begin + chunk, t->n_land);
+    pass_b_run_land_range(*t->ctx, t->land_idx, begin, end);
+}
+
+} // namespace
+
+// ─── pass-B SIMD（land-mask 预筛 + 直线 hot kernel） ────────────────────
+//
+// 与 run_climate_pass_b 同输入 / 同输出语义；改造点：
+//   1. 主循环前一次性 scan IW[] 提取 land_idx；
+//   2. land-only loop 走 helper（直线代码无 if (!is_water) 分支）；
+//   3. 编译器在 albedo / write 段自动向量化（MSVC /O2 /arch:AVX2 等价）；
+//   4. evap / rain-shadow 段保持 scalar 串行（算法本身不 SIMD-able）。
+//
+// fallback：任何 sanity check 失败返回 -1.0，调用方走原 run_climate_pass_b。
+double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_climate_pass_b_simd: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_moist    = component_id(StringName("cell_moisture"));
+    const int sid_snow     = component_id(StringName("cell_snow_cover"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_landform = component_id(StringName("cell_landform"));
+    const int sid_veg      = component_id(StringName("cell_vegetation"));
+    const int sid_elev     = component_id(StringName("cell_elevation"));
+    const int sid_lat      = component_id(StringName("cell_lat_norm"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_iswater < 0 ||
+        sid_landform < 0 || sid_veg < 0 || sid_elev < 0 || sid_lat < 0 ||
+        sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id");
+        return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("winter_boost") ||
+        !knobs.has("snow_cool") || !knobs.has("veg_cool") ||
+        !knobs.has("diurnal_amp") || !knobs.has("evap_gain") ||
+        !knobs.has("rs_threshold") || !knobs.has("rs_factor") ||
+        !knobs.has("rs_lookback") || !knobs.has("t_freeze") ||
+        !knobs.has("coupling_gain") || !knobs.has("coast_leak") ||
+        !knobs.has("landform_phase_factor") || !knobs.has("season_phase") ||
+        !knobs.has("neighbor_indices") || !knobs.has("temp_transport_anomaly") ||
+        !knobs.has("foliage_table")) {
+        diag("knobs missing required keys");
+        return -1.0;
+    }
+    const int n_cells = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    if (knobs.has("go_sparse") && bool(knobs["go_sparse"])) {
+        diag("go_sparse=true — sparse path not supported in SIMD variant");
+        return -1.0;
+    }
+
+    PassBCtx ctx;
+    ctx.winter_boost          = float(knobs["winter_boost"]);
+    ctx.snow_cool             = float(knobs["snow_cool"]);
+    ctx.veg_cool              = float(knobs["veg_cool"]);
+    ctx.diurnal_amp           = float(knobs["diurnal_amp"]);
+    ctx.evap_gain             = float(knobs["evap_gain"]);
+    ctx.rs_threshold          = float(knobs["rs_threshold"]);
+    ctx.rs_factor             = float(knobs["rs_factor"]);
+    ctx.rs_lookback           = int(knobs["rs_lookback"]);
+    ctx.t_freeze              = float(knobs["t_freeze"]);
+    ctx.coupling_gain         = float(knobs["coupling_gain"]);
+    ctx.coast_leak            = float(knobs["coast_leak"]);
+    ctx.landform_phase_factor = float(knobs["landform_phase_factor"]);
+    ctx.season_phase          = double(knobs["season_phase"]);
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
+    PackedFloat32Array foliage_arr = knobs["foliage_table"];
+    if (nb_arr.size() < n_cells * 6) { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
+    if (tta_arr.size() != n_cells)   { diag("temp_transport_anomaly size mismatch"); return -1.0; }
+    ctx.foliage_size = foliage_arr.size();
+    if (ctx.foliage_size <= 0) { diag("foliage_table empty"); return -1.0; }
+
+    Slot &s_temp     = _slots.write[sid_temp];
+    Slot &s_moist    = _slots.write[sid_moist];
+    Slot &s_snow     = _slots.write[sid_snow];
+    Slot &s_iswater  = _slots.write[sid_iswater];
+    Slot &s_landform = _slots.write[sid_landform];
+    Slot &s_veg      = _slots.write[sid_veg];
+    Slot &s_elev     = _slots.write[sid_elev];
+    Slot &s_lat      = _slots.write[sid_lat];
+    Slot &s_pos_x    = _slots.write[sid_pos_x];
+    Slot &s_pos_y    = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_moist.arr_f32.size()    != n_cells ||
+        s_snow.arr_f32.size()  != n_cells || s_iswater.arr_u8.size()   != n_cells ||
+        s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
+        s_elev.arr_f32.size()  != n_cells || s_lat.arr_f32.size()      != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()    != n_cells) {
+        diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    ctx.T    = s_temp.arr_f32.ptrw();
+    ctx.M    = s_moist.arr_f32.ptrw();
+    ctx.SNOW = s_snow.arr_f32.ptr();
+    ctx.IW   = s_iswater.arr_u8.ptr();
+    ctx.LF   = s_landform.arr_u8.ptr();
+    ctx.VG   = s_veg.arr_u8.ptr();
+    ctx.ELEV = s_elev.arr_f32.ptr();
+    ctx.LAT  = s_lat.arr_f32.ptr();
+    ctx.POSX = s_pos_x.arr_f32.ptr();
+    ctx.POSY = s_pos_y.arr_f32.ptr();
+    ctx.NB   = nb_arr.ptr();
+    ctx.TTA  = tta_arr.ptr();
+    ctx.FOL  = foliage_arr.ptr();
+
+    // Snapshot temp BEFORE writes（与原 scalar 等价；coastal/evap 段读 TS/TTA）
+    std::vector<float> temp_snapshot(n_cells);
+    std::memcpy(temp_snapshot.data(), ctx.T, n_cells * sizeof(float));
+    ctx.TS = temp_snapshot.data();
+
+    // Land-cell index 预筛：reserve 上界 n_cells，append-only。
+    // 后续 land hot path 直接迭代该向量，省去 if (!is_water) 分支。
+    std::vector<int> land_idx;
+    land_idx.reserve(n_cells);
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] == 0) land_idx.push_back(i);
+    }
+    const int n_land = static_cast<int>(land_idx.size());
+
+    // Hot loop：仅遍历 land cells，直线代码无 if-water 分支。
+    pass_b_run_land_range(ctx, land_idx.data(), 0, n_land);
+
+    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_moist);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── pass-B Thread（land 段分块 WorkerThreadPool） ──────────────────────
+double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_tasks) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::WorkerThreadPool;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_climate_pass_b_thread: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+    if (n_tasks < 1) n_tasks = 1;
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_moist    = component_id(StringName("cell_moisture"));
+    const int sid_snow     = component_id(StringName("cell_snow_cover"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_landform = component_id(StringName("cell_landform"));
+    const int sid_veg      = component_id(StringName("cell_vegetation"));
+    const int sid_elev     = component_id(StringName("cell_elevation"));
+    const int sid_lat      = component_id(StringName("cell_lat_norm"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_iswater < 0 ||
+        sid_landform < 0 || sid_veg < 0 || sid_elev < 0 || sid_lat < 0 ||
+        sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id");
+        return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("neighbor_indices") ||
+        !knobs.has("temp_transport_anomaly") || !knobs.has("foliage_table")) {
+        diag("knobs missing required keys");
+        return -1.0;
+    }
+    const int n_cells = int(knobs["n_cells"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    if (knobs.has("go_sparse") && bool(knobs["go_sparse"])) {
+        diag("go_sparse=true — sparse path not supported in thread variant");
+        return -1.0;
+    }
+
+    PassBCtx ctx;
+    ctx.winter_boost          = float(knobs["winter_boost"]);
+    ctx.snow_cool             = float(knobs["snow_cool"]);
+    ctx.veg_cool              = float(knobs["veg_cool"]);
+    ctx.diurnal_amp           = float(knobs["diurnal_amp"]);
+    ctx.evap_gain             = float(knobs["evap_gain"]);
+    ctx.rs_threshold          = float(knobs["rs_threshold"]);
+    ctx.rs_factor             = float(knobs["rs_factor"]);
+    ctx.rs_lookback           = int(knobs["rs_lookback"]);
+    ctx.t_freeze              = float(knobs["t_freeze"]);
+    ctx.coupling_gain         = float(knobs["coupling_gain"]);
+    ctx.coast_leak            = float(knobs["coast_leak"]);
+    ctx.landform_phase_factor = float(knobs["landform_phase_factor"]);
+    ctx.season_phase          = double(knobs["season_phase"]);
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
+    PackedFloat32Array foliage_arr = knobs["foliage_table"];
+    if (nb_arr.size() < n_cells * 6) { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
+    if (tta_arr.size() != n_cells)   { diag("temp_transport_anomaly size mismatch"); return -1.0; }
+    ctx.foliage_size = foliage_arr.size();
+    if (ctx.foliage_size <= 0) { diag("foliage_table empty"); return -1.0; }
+
+    Slot &s_temp     = _slots.write[sid_temp];
+    Slot &s_moist    = _slots.write[sid_moist];
+    Slot &s_snow     = _slots.write[sid_snow];
+    Slot &s_iswater  = _slots.write[sid_iswater];
+    Slot &s_landform = _slots.write[sid_landform];
+    Slot &s_veg      = _slots.write[sid_veg];
+    Slot &s_elev     = _slots.write[sid_elev];
+    Slot &s_lat      = _slots.write[sid_lat];
+    Slot &s_pos_x    = _slots.write[sid_pos_x];
+    Slot &s_pos_y    = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_moist.arr_f32.size()    != n_cells ||
+        s_snow.arr_f32.size()  != n_cells || s_iswater.arr_u8.size()   != n_cells ||
+        s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
+        s_elev.arr_f32.size()  != n_cells || s_lat.arr_f32.size()      != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()    != n_cells) {
+        diag("slot array size mismatch");
+        return -1.0;
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    ctx.T    = s_temp.arr_f32.ptrw();
+    ctx.M    = s_moist.arr_f32.ptrw();
+    ctx.SNOW = s_snow.arr_f32.ptr();
+    ctx.IW   = s_iswater.arr_u8.ptr();
+    ctx.LF   = s_landform.arr_u8.ptr();
+    ctx.VG   = s_veg.arr_u8.ptr();
+    ctx.ELEV = s_elev.arr_f32.ptr();
+    ctx.LAT  = s_lat.arr_f32.ptr();
+    ctx.POSX = s_pos_x.arr_f32.ptr();
+    ctx.POSY = s_pos_y.arr_f32.ptr();
+    ctx.NB   = nb_arr.ptr();
+    ctx.TTA  = tta_arr.ptr();
+    ctx.FOL  = foliage_arr.ptr();
+
+    std::vector<float> temp_snapshot(n_cells);
+    std::memcpy(temp_snapshot.data(), ctx.T, n_cells * sizeof(float));
+    ctx.TS = temp_snapshot.data();
+
+    std::vector<int> land_idx;
+    land_idx.reserve(n_cells);
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] == 0) land_idx.push_back(i);
+    }
+    const int n_land = static_cast<int>(land_idx.size());
+
+    if (n_land == 0) {
+        _flush_slot_to_map(sid_temp);
+        _flush_slot_to_map(sid_moist);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
+    // 任务粒度兜底：n_land 很小时（< 256），分块开销 > 收益，直接单线程跑。
+    if (n_land < 256) {
+        pass_b_run_land_range(ctx, land_idx.data(), 0, n_land);
+        _flush_slot_to_map(sid_temp);
+        _flush_slot_to_map(sid_moist);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
+    PassBLandTask task = { &ctx, land_idx.data(), n_land, n_tasks };
+    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
+    if (wtp == nullptr) {
+        // Fallback: in-thread loop over the would-be tasks（保持调度等价）
+        for (int t = 0; t < n_tasks; ++t) {
+            pass_b_land_worker(&task, static_cast<uint32_t>(t));
+        }
+    } else {
+        int64_t group_id = wtp->add_native_group_task(
+            &pass_b_land_worker, &task, n_tasks, -1, true,
+            godot::String("pk_pass_b_land"));
+        wtp->wait_for_group_task_completion(group_id);
+    }
+
+    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_moist);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── sim-2ms-perf-push（plan/ocean-water-land-simd）─────────────────────────
+//
+// 复用 pass_b 模板：Ctx + idx 预筛 + run_range helper + WorkerThreadPool worker。
+// 算法与 run_ocean_water_pass / run_ocean_land_pass 一一对应；区别仅在：
+//   1. 主循环外层不再有 if(IW[i]==0)/if(IW[i]!=0) 分支——预筛后只迭代 water/land。
+//   2. ptr() 一次性取到全部基址，每 i 内只剩内层 6 邻居 + advect 链路。
+//   3. 内层"邻居是否合格"分支保留（gather 无收益，charter §risk=B 接受）。
+// 数值容差：ulp ≤ 4（仅浮点重排，无算法变更）。
+namespace {
+
+struct OceanWaterCtx {
+    int             n_cells;
+    int             advect_steps;
+    float           heat_mix;
+    const int32_t  *NB;        // n_cells * 6
+    const uint8_t  *IW;        // n_cells
+    const float    *POSX;      // n_cells
+    const float    *POSY;      // n_cells
+    const float    *OCX;       // n_cells
+    const float    *OCY;       // n_cells
+    const float    *BL;        // baseline, n_cells
+    const float    *TB;        // temp_before, n_cells
+    float          *T;         // cell_temp out (in-place via slot ptrw)
+    float          *AOUT;      // anomaly_out, n_cells (water cells written)
+};
+
+// 单 cell hot kernel：完整复刻 run_ocean_water_pass 主循环 body（line 3160-3206）。
+// IW[i]==1 已由 idx 预筛保证，外层无分支。
+inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
+    const float cur_x = c.OCX[i];
+    const float cur_y = c.OCY[i];
+    const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
+    if (cur_len2 < 1e-6f || c.advect_steps == 0) {
+        c.AOUT[i] = 0.0f;
+        return;
+    }
+    const float inv_cur = 1.0f / std::sqrt(cur_len2);
+    const float up_dx = -cur_x * inv_cur;
+    const float up_dy = -cur_y * inv_cur;
+
+    int upstream_idx = i;
+    for (int step = 0; step < c.advect_steps; ++step) {
+        int   best_idx = -1;
+        float best_dot = 0.1f;
+        const float swx = c.POSX[upstream_idx];
+        const float swy = c.POSY[upstream_idx];
+        const int ub = upstream_idx * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = c.NB[ub + d];
+            if (ni < 0) continue;
+            if (c.IW[ni] == 0) continue;
+            const float dx = c.POSX[ni] - swx;
+            const float dy = c.POSY[ni] - swy;
+            const float len2 = dx * dx + dy * dy;
+            if (len2 < 1e-6f) continue;
+            const float inv_len = 1.0f / std::sqrt(len2);
+            const float dot_v = (dx * up_dx + dy * up_dy) * inv_len;
+            if (dot_v > best_dot) {
+                best_dot = dot_v;
+                best_idx = ni;
+            }
+        }
+        if (best_idx < 0) break;
+        upstream_idx = best_idx;
+    }
+
+    const float temp_self = c.TB[i];
+    const float temp_up   = c.TB[upstream_idx];
+    float temp_mixed = temp_self + (temp_up - temp_self) * c.heat_mix; // = lerpf
+    if (temp_mixed < 0.0f) temp_mixed = 0.0f;
+    else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
+    c.T[i] = temp_mixed;
+    c.AOUT[i] = temp_mixed - c.BL[i];
+}
+
+inline void ocean_water_run_water_range(const OceanWaterCtx &c,
+                                        const int *water_idx,
+                                        int begin, int end) {
+    for (int k = begin; k < end; ++k) {
+        ocean_water_compute_one(c, water_idx[k]);
+    }
+}
+
+struct OceanWaterTask {
+    const OceanWaterCtx *ctx;
+    const int           *water_idx;
+    int                  n_water;
+    int                  n_tasks;
+};
+
+static void ocean_water_worker(void *userdata, uint32_t task_idx) {
+    auto *t = static_cast<OceanWaterTask *>(userdata);
+    const int chunk = (t->n_water + t->n_tasks - 1) / t->n_tasks;
+    const int begin = static_cast<int>(task_idx) * chunk;
+    const int end   = std::min(begin + chunk, t->n_water);
+    if (begin >= end) return;
+    ocean_water_run_water_range(*t->ctx, t->water_idx, begin, end);
+}
+
+} // anonymous namespace (ocean water helpers)
+
+// fallback：任何 sanity check 失败返回 -1.0，调用方走原 run_ocean_water_pass。
+double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_ocean_water_pass_simd: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id");
+        return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("advect_steps") ||
+        !knobs.has("heat_mix") || !knobs.has("neighbor_indices") ||
+        !knobs.has("baseline_arr") || !knobs.has("temp_before_arr") ||
+        !knobs.has("anomaly_out") ||
+        !knobs.has("ocean_current_x_arr") || !knobs.has("ocean_current_y_arr")) {
+        diag("knobs missing required keys");
+        return -1.0;
+    }
+    const int   n_cells      = int(knobs["n_cells"]);
+    const int   advect_steps = int(knobs["advect_steps"]);
+    const float heat_mix     = float(knobs["heat_mix"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    PackedInt32Array   nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array baseline_arr = knobs["baseline_arr"];
+    PackedFloat32Array temp_before_arr = knobs["temp_before_arr"];
+    PackedFloat32Array ocx_arr = knobs["ocean_current_x_arr"];
+    PackedFloat32Array ocy_arr = knobs["ocean_current_y_arr"];
+    if (nb_arr.size() < n_cells * 6)         { diag("neighbor_indices size"); return -1.0; }
+    if (baseline_arr.size()    != n_cells)   { diag("baseline_arr size"); return -1.0; }
+    if (temp_before_arr.size() != n_cells)   { diag("temp_before_arr size"); return -1.0; }
+    if (ocx_arr.size()         != n_cells)   { diag("ocx_arr size"); return -1.0; }
+    if (ocy_arr.size()         != n_cells)   { diag("ocy_arr size"); return -1.0; }
+
+    // CoW fix: fresh anomaly_out array (refcount=1)
+    PackedFloat32Array anomaly_out;
+    anomaly_out.resize(n_cells);
+
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_pos_x   = _slots.write[sid_pos_x];
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        diag("slot array size");
+        return -1.0;
+    }
+
+    OceanWaterCtx ctx{};
+    ctx.n_cells      = n_cells;
+    ctx.advect_steps = advect_steps;
+    ctx.heat_mix     = heat_mix;
+    ctx.NB           = nb_arr.ptr();
+    ctx.IW           = s_iswater.arr_u8.ptr();
+    ctx.POSX         = s_pos_x.arr_f32.ptr();
+    ctx.POSY         = s_pos_y.arr_f32.ptr();
+    ctx.OCX          = ocx_arr.ptr();
+    ctx.OCY          = ocy_arr.ptr();
+    ctx.BL           = baseline_arr.ptr();
+    ctx.TB           = temp_before_arr.ptr();
+    ctx.T            = s_temp.arr_f32.ptrw();
+    ctx.AOUT         = anomaly_out.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // 预筛 water cells：~70% 占比，外层无 if(IW[i]==0) 分支。
+    std::vector<int> water_idx;
+    water_idx.reserve(static_cast<size_t>(n_cells));
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] != 0) water_idx.push_back(i);
+    }
+    const int n_water = static_cast<int>(water_idx.size());
+
+    ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
+
+    knobs["anomaly_out"] = anomaly_out;
+    _flush_slot_to_map(sid_temp);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_ocean_water_pass_thread: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id"); return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("advect_steps") ||
+        !knobs.has("heat_mix") || !knobs.has("neighbor_indices") ||
+        !knobs.has("baseline_arr") || !knobs.has("temp_before_arr") ||
+        !knobs.has("anomaly_out") ||
+        !knobs.has("ocean_current_x_arr") || !knobs.has("ocean_current_y_arr")) {
+        diag("knobs missing"); return -1.0;
+    }
+    const int   n_cells      = int(knobs["n_cells"]);
+    const int   advect_steps = int(knobs["advect_steps"]);
+    const float heat_mix     = float(knobs["heat_mix"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    PackedInt32Array   nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array baseline_arr = knobs["baseline_arr"];
+    PackedFloat32Array temp_before_arr = knobs["temp_before_arr"];
+    PackedFloat32Array ocx_arr = knobs["ocean_current_x_arr"];
+    PackedFloat32Array ocy_arr = knobs["ocean_current_y_arr"];
+    if (nb_arr.size() < n_cells * 6)         { diag("nb size"); return -1.0; }
+    if (baseline_arr.size()    != n_cells)   { diag("baseline size"); return -1.0; }
+    if (temp_before_arr.size() != n_cells)   { diag("temp_before size"); return -1.0; }
+    if (ocx_arr.size()         != n_cells)   { diag("ocx size"); return -1.0; }
+    if (ocy_arr.size()         != n_cells)   { diag("ocy size"); return -1.0; }
+
+    PackedFloat32Array anomaly_out;
+    anomaly_out.resize(n_cells);
+
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_pos_x   = _slots.write[sid_pos_x];
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        diag("slot size"); return -1.0;
+    }
+
+    OceanWaterCtx ctx{};
+    ctx.n_cells      = n_cells;
+    ctx.advect_steps = advect_steps;
+    ctx.heat_mix     = heat_mix;
+    ctx.NB           = nb_arr.ptr();
+    ctx.IW           = s_iswater.arr_u8.ptr();
+    ctx.POSX         = s_pos_x.arr_f32.ptr();
+    ctx.POSY         = s_pos_y.arr_f32.ptr();
+    ctx.OCX          = ocx_arr.ptr();
+    ctx.OCY          = ocy_arr.ptr();
+    ctx.BL           = baseline_arr.ptr();
+    ctx.TB           = temp_before_arr.ptr();
+    ctx.T            = s_temp.arr_f32.ptrw();
+    ctx.AOUT         = anomaly_out.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    std::vector<int> water_idx;
+    water_idx.reserve(static_cast<size_t>(n_cells));
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] != 0) water_idx.push_back(i);
+    }
+    const int n_water = static_cast<int>(water_idx.size());
+
+    if (n_tasks <= 0) {
+        // 自适应：每 task ~1024 cells，但至少 1，至多 16（保守，charter §C 不动并行总基调）
+        n_tasks = std::max(1, std::min(16, (n_water + 1023) / 1024));
+    }
+    // 小规模降级：~256 阈值与 pass_b 对齐
+    if (n_water < 256 || n_tasks == 1) {
+        ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
+        knobs["anomaly_out"] = anomaly_out;
+        _flush_slot_to_map(sid_temp);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
+    OceanWaterTask task = { &ctx, water_idx.data(), n_water, n_tasks };
+    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
+    if (wtp == nullptr) {
+        // in-thread fallback（pass_b 同模板）
+        for (int t = 0; t < n_tasks; ++t) {
+            ocean_water_worker(&task, static_cast<uint32_t>(t));
+        }
+    } else {
+        int64_t group_id = wtp->add_native_group_task(
+            &ocean_water_worker, &task, n_tasks, -1, true,
+            godot::String("pk_ocean_water"));
+        wtp->wait_for_group_task_completion(group_id);
+    }
+
+    knobs["anomaly_out"] = anomaly_out;
+    _flush_slot_to_map(sid_temp);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+// ─── ocean_land SIMD + Thread ───────────────────────────────────────────────
+namespace {
+
+struct OceanLandCtx {
+    int             n_cells;
+    float           effective_leak;
+    const int32_t  *NB;        // n_cells * 6
+    const uint8_t  *IW;        // n_cells
+    const float    *POSX;      // n_cells
+    const float    *POSY;      // n_cells
+    const float    *OCX;       // n_cells
+    const float    *OCY;       // n_cells
+    const float    *FBL;       // fallback_baseline, n_cells
+    float          *T;         // cell_temp inout (slot ptrw)
+    float          *A;         // anomaly_inout, n_cells (land cells written, read water nbs)
+};
+
+// 单 cell hot kernel：完整复刻 run_ocean_land_pass 主循环 body（line 3309-3355）。
+// IW[i]==0 已由 idx 预筛保证，外层无分支。
+inline void ocean_land_compute_one(const OceanLandCtx &c, int i) {
+    const float swx = c.POSX[i];
+    const float swy = c.POSY[i];
+    float weighted_sum = 0.0f;
+    float weight_total = 0.0f;
+    const int b = i * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t ni = c.NB[b + d];
+        if (ni < 0) continue;
+        if (c.IW[ni] == 0) continue; // only water nb contributes
+        const float cx = c.OCX[ni];
+        const float cy = c.OCY[ni];
+        if (cx * cx + cy * cy < 1e-6f) continue;
+        const float dx = swx - c.POSX[ni];
+        const float dy = swy - c.POSY[ni];
+        const float dlen2 = dx * dx + dy * dy;
+        if (dlen2 < 1e-6f) continue;
+        const float inv_len = 1.0f / std::sqrt(dlen2);
+        const float dot_v = (dx * cx + dy * cy) * inv_len;
+        if (dot_v <= 0.0f) continue;
+        weighted_sum += c.A[ni] * dot_v;
+        weight_total += dot_v;
+    }
+    float anomaly_in = 0.0f;
+    if (weight_total > 0.0f) {
+        anomaly_in = (weighted_sum / weight_total) * c.effective_leak;
+    }
+    c.A[i] = anomaly_in;
+    const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
+    if (abs_anom > 1e-5f) {
+        float t_prev = c.T[i];
+        if (t_prev <= 0.0f) t_prev = c.FBL[i];
+        float tnew = t_prev + anomaly_in;
+        if (tnew < 0.0f) tnew = 0.0f;
+        else if (tnew > 1.0f) tnew = 1.0f;
+        c.T[i] = tnew;
+    }
+}
+
+inline void ocean_land_run_land_range(const OceanLandCtx &c,
+                                      const int *land_idx,
+                                      int begin, int end) {
+    for (int k = begin; k < end; ++k) {
+        ocean_land_compute_one(c, land_idx[k]);
+    }
+}
+
+struct OceanLandTask {
+    const OceanLandCtx *ctx;
+    const int          *land_idx;
+    int                 n_land;
+    int                 n_tasks;
+};
+
+static void ocean_land_worker(void *userdata, uint32_t task_idx) {
+    auto *t = static_cast<OceanLandTask *>(userdata);
+    const int chunk = (t->n_land + t->n_tasks - 1) / t->n_tasks;
+    const int begin = static_cast<int>(task_idx) * chunk;
+    const int end   = std::min(begin + chunk, t->n_land);
+    if (begin >= end) return;
+    ocean_land_run_land_range(*t->ctx, t->land_idx, begin, end);
+}
+
+} // anonymous namespace (ocean land helpers)
+
+double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_ocean_land_pass_simd: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id"); return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("effective_leak") ||
+        !knobs.has("neighbor_indices") || !knobs.has("anomaly_inout") ||
+        !knobs.has("fallback_baseline_arr") ||
+        !knobs.has("ocean_current_x_arr") || !knobs.has("ocean_current_y_arr")) {
+        diag("knobs missing"); return -1.0;
+    }
+    const int   n_cells        = int(knobs["n_cells"]);
+    const float effective_leak = float(knobs["effective_leak"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array fallback_baseline = knobs["fallback_baseline_arr"];
+    PackedFloat32Array ocx_arr = knobs["ocean_current_x_arr"];
+    PackedFloat32Array ocy_arr = knobs["ocean_current_y_arr"];
+    if (nb_arr.size() < n_cells * 6)         { diag("nb size"); return -1.0; }
+    if (fallback_baseline.size() != n_cells) { diag("fbl size"); return -1.0; }
+    if (ocx_arr.size()       != n_cells)     { diag("ocx size"); return -1.0; }
+    if (ocy_arr.size()       != n_cells)     { diag("ocy size"); return -1.0; }
+
+    // CoW fix: duplicate anomaly_inout 以独占 ptrw（同 scalar 路径）
+    PackedFloat32Array anomaly_src = knobs["anomaly_inout"];
+    if (anomaly_src.size() != n_cells) { diag("anomaly size"); return -1.0; }
+    PackedFloat32Array anomaly_inout = anomaly_src.duplicate();
+
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_pos_x   = _slots.write[sid_pos_x];
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        diag("slot size"); return -1.0;
+    }
+
+    OceanLandCtx ctx{};
+    ctx.n_cells        = n_cells;
+    ctx.effective_leak = effective_leak;
+    ctx.NB             = nb_arr.ptr();
+    ctx.IW             = s_iswater.arr_u8.ptr();
+    ctx.POSX           = s_pos_x.arr_f32.ptr();
+    ctx.POSY           = s_pos_y.arr_f32.ptr();
+    ctx.OCX            = ocx_arr.ptr();
+    ctx.OCY            = ocy_arr.ptr();
+    ctx.FBL            = fallback_baseline.ptr();
+    ctx.T              = s_temp.arr_f32.ptrw();
+    ctx.A              = anomaly_inout.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    std::vector<int> land_idx;
+    land_idx.reserve(static_cast<size_t>(n_cells));
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] == 0) land_idx.push_back(i);
+    }
+    const int n_land = static_cast<int>(land_idx.size());
+
+    ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
+
+    knobs["anomaly_inout"] = anomaly_inout;
+    _flush_slot_to_map(sid_temp);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
+    using godot::StringName;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+
+    auto diag = [&](const char *why) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_ocean_land_pass_thread: ", why,
+            " — fallback to GDScript");
+    };
+
+    if (!_bound) { diag("not _bound"); return -1.0; }
+
+    const int sid_temp     = component_id(StringName("cell_temp"));
+    const int sid_iswater  = component_id(StringName("cell_is_water"));
+    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
+    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+        diag("missing slot id"); return -1.0;
+    }
+
+    if (!knobs.has("n_cells") || !knobs.has("effective_leak") ||
+        !knobs.has("neighbor_indices") || !knobs.has("anomaly_inout") ||
+        !knobs.has("fallback_baseline_arr") ||
+        !knobs.has("ocean_current_x_arr") || !knobs.has("ocean_current_y_arr")) {
+        diag("knobs missing"); return -1.0;
+    }
+    const int   n_cells        = int(knobs["n_cells"]);
+    const float effective_leak = float(knobs["effective_leak"]);
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    PackedInt32Array nb_arr = knobs["neighbor_indices"];
+    PackedFloat32Array fallback_baseline = knobs["fallback_baseline_arr"];
+    PackedFloat32Array ocx_arr = knobs["ocean_current_x_arr"];
+    PackedFloat32Array ocy_arr = knobs["ocean_current_y_arr"];
+    if (nb_arr.size() < n_cells * 6)         { diag("nb size"); return -1.0; }
+    if (fallback_baseline.size() != n_cells) { diag("fbl size"); return -1.0; }
+    if (ocx_arr.size()       != n_cells)     { diag("ocx size"); return -1.0; }
+    if (ocy_arr.size()       != n_cells)     { diag("ocy size"); return -1.0; }
+
+    PackedFloat32Array anomaly_src = knobs["anomaly_inout"];
+    if (anomaly_src.size() != n_cells) { diag("anomaly size"); return -1.0; }
+    PackedFloat32Array anomaly_inout = anomaly_src.duplicate();
+
+    Slot &s_temp    = _slots.write[sid_temp];
+    Slot &s_iswater = _slots.write[sid_iswater];
+    Slot &s_pos_x   = _slots.write[sid_pos_x];
+    Slot &s_pos_y   = _slots.write[sid_pos_y];
+    if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        diag("slot size"); return -1.0;
+    }
+
+    OceanLandCtx ctx{};
+    ctx.n_cells        = n_cells;
+    ctx.effective_leak = effective_leak;
+    ctx.NB             = nb_arr.ptr();
+    ctx.IW             = s_iswater.arr_u8.ptr();
+    ctx.POSX           = s_pos_x.arr_f32.ptr();
+    ctx.POSY           = s_pos_y.arr_f32.ptr();
+    ctx.OCX            = ocx_arr.ptr();
+    ctx.OCY            = ocy_arr.ptr();
+    ctx.FBL            = fallback_baseline.ptr();
+    ctx.T              = s_temp.arr_f32.ptrw();
+    ctx.A              = anomaly_inout.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    std::vector<int> land_idx;
+    land_idx.reserve(static_cast<size_t>(n_cells));
+    for (int i = 0; i < n_cells; ++i) {
+        if (ctx.IW[i] == 0) land_idx.push_back(i);
+    }
+    const int n_land = static_cast<int>(land_idx.size());
+
+    if (n_tasks <= 0) {
+        n_tasks = std::max(1, std::min(16, (n_land + 1023) / 1024));
+    }
+    if (n_land < 256 || n_tasks == 1) {
+        ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
+        knobs["anomaly_inout"] = anomaly_inout;
+        _flush_slot_to_map(sid_temp);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
+    OceanLandTask task = { &ctx, land_idx.data(), n_land, n_tasks };
+    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
+    if (wtp == nullptr) {
+        for (int t = 0; t < n_tasks; ++t) {
+            ocean_land_worker(&task, static_cast<uint32_t>(t));
+        }
+    } else {
+        int64_t group_id = wtp->add_native_group_task(
+            &ocean_land_worker, &task, n_tasks, -1, true,
+            godot::String("pk_ocean_land"));
+        wtp->wait_for_group_task_completion(group_id);
+    }
+
+    knobs["anomaly_inout"] = anomaly_inout;
+    _flush_slot_to_map(sid_temp);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
 // ─── F.4 main pass ──────────────────────────────────────────────────────────
 //
 // 1:1 mirror of map_generator.gd::_apply_sea_ice_daily_pass (line 3856-3980).
@@ -7073,6 +8281,164 @@ static inline uint8_t pk_derive_cover(uint8_t terrain, float snow_cover) {
     return 0; // NONE
 }
 
+// DOTS-Total-CPP Phase 4 收尾迁移（plan/dots-total-cpp 任务 1+2）：season_refresh
+// stage 1-8 helpers，与 GDScript map_generator.gd 1:1 同源（bit-equal epsilon 1e-5）。
+
+static inline bool pk_is_permanent_landform(uint8_t t) {
+    // OASIS=23, DELTA=22, SALT_FLAT=24, BADLANDS=25
+    return t == 23 || t == 22 || t == 24 || t == 25;
+}
+
+static inline double pk_smoothstep(double a, double b, double x) {
+    if (b <= a) return x < a ? 0.0 : 1.0;
+    double t = (x - a) / (b - a);
+    if (t < 0.0) t = 0.0;
+    else if (t > 1.0) t = 1.0;
+    return t * t * (3.0 - 2.0 * t);
+}
+
+// SAME_SOURCE: map_generator.gd::_alt_penalty (line 3059).
+//   ALT_PEN_LINEAR=0.55, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.30
+static inline double pk_alt_penalty(double e) {
+    const double lin = e * 0.55;
+    const double hi = pk_smoothstep(0.45, 1.00, e) * 0.30;
+    return lin + hi;
+}
+
+// SAME_SOURCE: map_generator.gd::_compute_temperature (line 3093).
+//   lat_signed = (ny - 0.5) * 2; lat_temp = pow(cos(lat_signed * π/2), 1.2);
+//   return clamp(lat_temp - alt_penalty, 0, 1).
+static inline float pk_compute_temperature(double ny, double elevation) {
+    const double lat_signed = (ny - 0.5) * 2.0;
+    const double cos_v = std::cos(lat_signed * M_PI * 0.5);
+    const double cos_safe = cos_v < 0.0 ? 0.0 : cos_v;
+    const double lat_temp = std::pow(cos_safe, 1.2);
+    return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation)));
+}
+
+// SAME_SOURCE: map_generator.gd::_decide_terrain (line 3758, permanent_only=false).
+// 返回值是 TerrainType.TERRAIN 整数：
+//   OCEAN=0 / COAST=1 / SNOW=9 / MOUNTAIN=6 / TUNDRA=8 / HILL=5 /
+//   JUNGLE=11 / SAVANNA=12 / DESERT=7 / FOREST=4 / GRASSLAND=3 / STEPPE=14 /
+//   TAIGA=13 / PLAIN=2.
+static inline uint8_t pk_decide_terrain(double elevation, double temperature,
+                                        double moisture, double sea_level) {
+    if (elevation < sea_level - 0.06) return 0; // OCEAN
+    if (elevation < sea_level) return 1;        // COAST
+
+    const double denom = (1.0 - sea_level) > 0.001 ? (1.0 - sea_level) : 0.001;
+    const double land_h = (elevation - sea_level) / denom;
+
+    // permanent_only=false 分支阈值（fast-tick / refresh path）
+    constexpr double snow_line = 0.82;
+    constexpr double snow_line_temp = 0.34;
+    constexpr double cold_snow_line = 0.55;
+    constexpr double cold_snow_temp = 0.08;
+    constexpr double polar_temp = 0.03;
+
+    if (land_h > snow_line && temperature < snow_line_temp) return 9;       // SNOW
+    if (land_h > cold_snow_line && temperature < cold_snow_temp) return 9;  // SNOW
+    if (temperature < polar_temp) return 9;                                 // SNOW
+
+    if (land_h > 0.62) return 6;          // MOUNTAIN
+    if (temperature < 0.20) return 8;     // TUNDRA
+    if (land_h > 0.22) return 5;          // HILL
+
+    // Whittaker（GDScript 注释里阈值有 overlap 缓冲，这里 1:1 复刻）
+    if (temperature > 0.55) {
+        if (moisture > 0.65) return 11;   // JUNGLE
+        if (moisture > 0.30) return 12;   // SAVANNA
+        return 7;                         // DESERT
+    }
+    if (temperature > 0.40) {
+        if (moisture > 0.55) return 4;    // FOREST
+        if (moisture > 0.30) return 3;    // GRASSLAND
+        return 14;                        // STEPPE
+    }
+    if (temperature > 0.20) {
+        if (moisture > 0.40) return 13;   // TAIGA
+        if (moisture > 0.20) return 14;   // STEPPE
+        return 7;                         // DESERT
+    }
+    return 2;                             // PLAIN (fallback, 实际不会到)
+}
+
+// SAME_SOURCE: wind_belt.gd::wind_at (line 66).
+// 返回归一化 Vector2 (wx, wy)。lat_jitter 来自 caller，可为 0。
+struct PkWind2 { float x, y; };
+static inline PkWind2 pk_wind_belt_wind_at(double ny, double season_phase, double lat_jitter) {
+    constexpr double ITCZ_HALF_WIDTH = 0.05;
+    constexpr double TRADE_TOP = 0.40;
+    constexpr double WEST_TOP = 0.70;
+    constexpr double TRADE_X = -1.0;
+    constexpr double TRADE_Y_AMP = 0.20;
+    constexpr double WEST_X = 1.0;
+    constexpr double WEST_Y_AMP = 0.10;
+    constexpr double POLAR_X = -1.0;
+    constexpr double POLAR_Y_AMP = 0.20;
+    constexpr double ITCZ_X = -0.20;
+    constexpr double MONSOON_AMP = 0.6;
+    constexpr double bbh = 0.06;
+
+    const double lat_signed = (ny - 0.5) * 2.0 + lat_jitter;
+    const double abs_lat = std::fabs(lat_signed);
+    const double sl = (lat_signed < -0.001) ? -1.0 : (lat_signed > 0.001 ? 1.0 : 1.0);
+
+    const double w_itcz_b  = 1.0 - pk_smoothstep(ITCZ_HALF_WIDTH - bbh, ITCZ_HALF_WIDTH + bbh, abs_lat);
+    const double w_trade_b = pk_smoothstep(ITCZ_HALF_WIDTH - bbh, ITCZ_HALF_WIDTH + bbh, abs_lat)
+                           * (1.0 - pk_smoothstep(TRADE_TOP - bbh, TRADE_TOP + bbh, abs_lat));
+    const double w_west_b  = pk_smoothstep(TRADE_TOP - bbh, TRADE_TOP + bbh, abs_lat)
+                           * (1.0 - pk_smoothstep(WEST_TOP - bbh, WEST_TOP + bbh, abs_lat));
+    const double w_polar_b = pk_smoothstep(WEST_TOP - bbh, WEST_TOP + bbh, abs_lat);
+
+    double bx = w_itcz_b * ITCZ_X
+              + w_trade_b * TRADE_X
+              + w_west_b * WEST_X
+              + w_polar_b * POLAR_X;
+    double by = w_itcz_b * 0.0
+              + w_trade_b * (-TRADE_Y_AMP * sl)
+              + w_west_b  * (+WEST_Y_AMP * sl)
+              + w_polar_b * (-POLAR_Y_AMP * sl);
+
+    // 季风偏置（仅低纬度）
+    double hemi_phase;
+    if (lat_signed < 0.0) {
+        hemi_phase = std::fmod(season_phase - 1.0 + 4.0, 4.0);
+    } else {
+        hemi_phase = std::fmod(season_phase + 1.0 + 4.0, 4.0);
+    }
+    if (hemi_phase < 0.0) hemi_phase += 4.0;
+    const double monsoon_polarity = std::sin(hemi_phase * 0.5 * M_PI);
+    // smoothstep(TRADE_TOP, ITCZ_HALF_WIDTH, abs_lat) — 注意 a > b，标准 smoothstep
+    // 在 a > b 时按 GDScript 等价物（clamp((x-a)/(b-a))）会返回反向 0/1；这里用
+    // GDScript Math::smoothstep 的实现：当 from > to 时仍按 (x-from)/(to-from) 然后
+    // 平滑。直接复用上面的 pk_smoothstep 但允许 a > b 的下行 smoothstep。
+    double tropical_w;
+    {
+        // 下降 smoothstep：abs_lat=0 → 1, abs_lat=TRADE_TOP → 0
+        const double a = TRADE_TOP, b = ITCZ_HALF_WIDTH;
+        double t = (abs_lat - a) / (b - a);
+        if (t < 0.0) t = 0.0;
+        else if (t > 1.0) t = 1.0;
+        tropical_w = t * t * (3.0 - 2.0 * t);
+    }
+    const double y_offset = monsoon_polarity * tropical_w * MONSOON_AMP * sl;
+    by += y_offset;
+
+    const double len2 = bx * bx + by * by;
+    if (len2 < 0.0001) {
+        return PkWind2{1.0f, 0.0f};
+    }
+    const double inv = 1.0 / std::sqrt(len2);
+    return PkWind2{float(bx * inv), float(by * inv)};
+}
+
+// 与 wind_belt.gd::upwind_hex_dir 等价但接 cube delta（int triple）。
+// HexUtils.CUBE_DIRECTIONS 顺序（与 _pick_upwind_dir/upwind_hex_dir 同源）。
+//   方向 0..5 : (1,0,-1) (1,-1,0) (0,-1,1) (-1,0,1) (-1,1,0) (0,1,-1)
+// 注意：与 pk_upwind_dir_index_from_wind 用的 DIRS 相同（line 8113）。
+// 返回值是 0..5 的索引；caller 拿后从 neighbor_indices_packed[idx*6 + dir] 取邻居。
+
 } // namespace
 
 godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) {
@@ -7209,6 +8575,799 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         out["touched"] = touched;
         return out;
     }
+    // ─── stage 1：rain_shadow_per_cell ────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_rain_shadow_per_cell (line 3149).
+    // 流程：陆地 cell → wind_vector 优先 / WindBelt fallback → upwind hex dir
+    // → lookback N 步 → 若上风 cell 海拔高 threshold → moisture *= factor。
+    if (stage == 1) {
+        if (!knobs.has("n_cells") || !knobs.has("rain_shadow_lookback") ||
+            !knobs.has("rain_shadow_threshold") || !knobs.has("rain_shadow_factor") ||
+            !knobs.has("neighbor_indices") || !knobs.has("season_phase") ||
+            !knobs.has("jitter_arr")) {
+            return fail("stage_1 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int lookback = std::max(0, int(knobs["rain_shadow_lookback"]));
+        const float threshold = float(knobs["rain_shadow_threshold"]);
+        const float factor = float(knobs["rain_shadow_factor"]);
+        const double season_phase = double(knobs["season_phase"]);
+        if (n_cells <= 0) return fail("stage_1 n_cells <= 0");
+
+        const int sid_terrain = component_id(StringName("cell_terrain"));
+        const int sid_moist   = component_id(StringName("cell_moisture"));
+        const int sid_elev    = component_id(StringName("cell_elevation"));
+        const int sid_wx      = component_id(StringName("cell_wind_x"));
+        const int sid_wy      = component_id(StringName("cell_wind_y"));
+        const int sid_lat     = component_id(StringName("cell_lat_norm"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 ||
+            sid_wx < 0 || sid_wy < 0 || sid_lat < 0) {
+            return fail("stage_1 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_wx = _slots.write[sid_wx];
+        Slot &s_wy = _slots.write[sid_wy];
+        Slot &s_lat = _slots.write[sid_lat];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_wx.arr_f32.size() != n_cells ||
+            s_wy.arr_f32.size() != n_cells || s_lat.arr_f32.size() != n_cells) {
+            return fail("stage_1 slot size mismatch");
+        }
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        if (nb_arr.size() < n_cells * 6) return fail("stage_1 neighbor_indices size mismatch");
+        godot::PackedFloat32Array jitter_arr = knobs["jitter_arr"];
+        if (jitter_arr.size() != n_cells) return fail("stage_1 jitter_arr size mismatch");
+
+        const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
+        float         * const __restrict M    = s_m.arr_f32.ptrw();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        const float   * const __restrict WX   = s_wx.arr_f32.ptr();
+        const float   * const __restrict WY   = s_wy.arr_f32.ptr();
+        const float   * const __restrict LAT  = s_lat.arr_f32.ptr();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const float   * const __restrict JITTER = jitter_arr.ptr();
+
+        // 6 hex 方向（与 pk_upwind_dir_index_from_wind 内 DIRS 同源），
+        // 用于把 wind 向量映射到 0..5 索引。
+        constexpr int DIRS[6][3] = {
+            { 1,  0, -1}, { 1, -1,  0}, { 0, -1,  1},
+            {-1,  0,  1}, {-1,  1,  0}, { 0,  1, -1},
+        };
+        constexpr double inv_sqrt2 = 0.7071067811865475;
+
+        auto pick_dir_from_wind = [&](double wx, double wy) -> int {
+            const double len2 = wx * wx + wy * wy;
+            if (len2 <= 0.0001) return -1;
+            const double inv_len = 1.0 / std::sqrt(len2);
+            const double nx = wx * inv_len;
+            const double ny_ = wy * inv_len;
+            const double wq = std::sqrt(3.0) / 3.0 * nx - ny_ / 3.0;
+            const double wr = 2.0 / 3.0 * ny_;
+            const double ws = -wq - wr;
+            const double clen = std::sqrt(wq * wq + wr * wr + ws * ws);
+            if (clen <= 0.0001) return -1;
+            const double uq = -wq / clen;
+            const double ur = -wr / clen;
+            const double us = -ws / clen;
+            int best = 0;
+            double best_dot = -std::numeric_limits<double>::infinity();
+            for (int d = 0; d < 6; ++d) {
+                const double dot = uq * double(DIRS[d][0]) * inv_sqrt2
+                                 + ur * double(DIRS[d][1]) * inv_sqrt2
+                                 + us * double(DIRS[d][2]) * inv_sqrt2;
+                if (dot > best_dot) { best_dot = dot; best = d; }
+            }
+            return best;
+        };
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            if (pk_is_water_terrain(TERR[i])) continue;
+            if (lookback <= 0) continue;
+            int dir;
+            // 先用 cell.wind_vector（地形扰动后的实际盛行风），与 _pick_upwind_dir 一致。
+            const double cell_wx = double(WX[i]);
+            const double cell_wy = double(WY[i]);
+            const double wv_len2 = cell_wx * cell_wx + cell_wy * cell_wy;
+            if (wv_len2 > 0.0001) { // wv.length() > 0.01 等价
+                dir = pick_dir_from_wind(cell_wx, cell_wy);
+            } else {
+                // Fallback：WindBelt.wind_at(ny, season_phase, lat_jitter)
+                const double ny = double(LAT[i]);
+                const double jitter = double(JITTER[i]);
+                const PkWind2 w = pk_wind_belt_wind_at(ny, season_phase, jitter);
+                dir = pick_dir_from_wind(double(w.x), double(w.y));
+            }
+            if (dir < 0) continue;
+
+            int probe = i;
+            for (int step = 0; step < lookback; ++step) {
+                const int ni = NB[probe * 6 + dir];
+                if (ni < 0) { probe = -1; break; }
+                probe = ni;
+            }
+            if (probe < 0) continue;
+            if (ELEV[probe] > ELEV[i] + threshold) {
+                M[i] = M[i] * factor;
+                ++touched;
+            }
+        }
+        _flush_slot_to_map(sid_moist);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 2：seasonal_redecide_terrain ───────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_seasonal_redecide_terrain (line 2474).
+    // 流程：非永久气候 / 非永久地标 → 用 lat_tab + off_tab 算 temp_now
+    //       → _decide_terrain → apply_terrain（写 terrain + 派生 landform/veg/cover）。
+    if (stage == 2) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("lat_temp_rows") || !knobs.has("season_offset_rows") ||
+            !knobs.has("row_indices")) {
+            return fail("stage_2 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 0) return fail("stage_2 invalid dims");
+
+        godot::PackedFloat32Array lat_tab = knobs["lat_temp_rows"];
+        godot::PackedFloat32Array off_tab = knobs["season_offset_rows"];
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        if (lat_tab.size() < height || off_tab.size() < height) return fail("stage_2 row tables size");
+        if (row_idx.size() != n_cells) return fail("stage_2 row_indices size");
+
+        const int sid_terrain   = component_id(StringName("cell_terrain"));
+        const int sid_base_t    = component_id(StringName("cell_base_terrain"));
+        const int sid_elev      = component_id(StringName("cell_elevation"));
+        const int sid_moist     = component_id(StringName("cell_moisture"));
+        const int sid_landform  = component_id(StringName("cell_landform"));
+        const int sid_vegetation= component_id(StringName("cell_vegetation"));
+        const int sid_cover     = component_id(StringName("cell_cover"));
+        const int sid_snow      = component_id(StringName("cell_snow_cover"));
+        if (sid_terrain < 0 || sid_base_t < 0 || sid_elev < 0 || sid_moist < 0 ||
+            sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0 || sid_snow < 0) {
+            return fail("stage_2 missing slot id");
+        }
+        Slot &s_t  = _slots.write[sid_terrain];
+        Slot &s_bt = _slots.write[sid_base_t];
+        Slot &s_e  = _slots.write[sid_elev];
+        Slot &s_m  = _slots.write[sid_moist];
+        Slot &s_lf = _slots.write[sid_landform];
+        Slot &s_vg = _slots.write[sid_vegetation];
+        Slot &s_cv = _slots.write[sid_cover];
+        Slot &s_sn = _slots.write[sid_snow];
+        if (s_t.arr_u8.size() != n_cells || s_bt.arr_u8.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_lf.arr_u8.size() != n_cells || s_vg.arr_u8.size() != n_cells ||
+            s_cv.arr_u8.size() != n_cells || s_sn.arr_f32.size() != n_cells) {
+            return fail("stage_2 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR  = s_t.arr_u8.ptrw();
+        const uint8_t * const __restrict BTERR = s_bt.arr_u8.ptr();
+        const float   * const __restrict ELEV  = s_e.arr_f32.ptr();
+        const float   * const __restrict MOIST = s_m.arr_f32.ptr();
+        uint8_t       * const __restrict LF    = s_lf.arr_u8.ptrw();
+        uint8_t       * const __restrict VG    = s_vg.arr_u8.ptrw();
+        uint8_t       * const __restrict CV    = s_cv.arr_u8.ptrw();
+        const float   * const __restrict SNOW  = s_sn.arr_f32.ptr();
+        const float   * const __restrict LATT  = lat_tab.ptr();
+        const float   * const __restrict OFFT  = off_tab.ptr();
+        const int32_t * const __restrict ROWI  = row_idx.ptr();
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        const int max_row = height - 1;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t cur = TERR[i];
+            if (pk_is_water_terrain(cur)) continue;
+            const uint8_t bt = BTERR[i];
+            uint8_t new_t;
+            if (bt == 9) { // SNOW base = 永久 SNOW
+                new_t = bt;
+            } else if (pk_is_permanent_landform(bt)) {
+                new_t = bt;
+            } else {
+                int row = ROWI[i];
+                if (row < 0) row = 0;
+                else if (row > max_row) row = max_row;
+                const double lat_temp = double(LATT[row]);
+                const double e = double(ELEV[i]);
+                const double temp_year = pk_clamp01(lat_temp - pk_alt_penalty(e));
+                const double temp_now = pk_clamp01(temp_year + double(OFFT[row]));
+                new_t = pk_decide_terrain(e, temp_now, double(MOIST[i]),
+                                          double(sea_level));
+            }
+            if (new_t != cur) ++touched;
+            TERR[i] = new_t;
+            // apply_terrain multi-axis sync（与 hex_cell.gd::apply_terrain 一致：
+            // terrain 写后，三轴派生由 _sync_axes 完成。这里用 stage 8 同款 derive 路径。）
+            const uint8_t lf_new = pk_derive_landform(new_t, ELEV[i], sea_level);
+            LF[i] = lf_new;
+            // vegetation 用当前 moisture + 季节温度（temp 由 stage 8 写，这里
+            // 用 lat_tab 行温度 + off 近似；与 GDScript _seasonal_redecide_terrain
+            // 路径不调用 _sync_axes_for_cell（只 apply_terrain），但下游 stage 9
+            // 会 sync）。为保持 bit-equal：仅写 terrain + landform，veg/cover 留给
+            // stage 9 (sync_current_state) 统一处理。
+            (void)VG; (void)CV; (void)SNOW;
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 3：river_ecology ───────────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_river_ecology (line 3190).
+    // 流程：has_river && 非水 → moisture=max(moist, 0.65)；
+    //       永久地标 / DESERT 仅加湿不翻 terrain；
+    //       PLAIN: temp>0.55→FOREST；temp>0.30→GRASSLAND（用 _compute_temperature 年均温）。
+    if (stage == 3) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("row_indices")) {
+            return fail("stage_3 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 1) return fail("stage_3 invalid dims");
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        if (row_idx.size() != n_cells) return fail("stage_3 row_indices size");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_moist    = component_id(StringName("cell_moisture"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_river    = component_id(StringName("cell_has_river"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_river < 0 ||
+            sid_landform < 0) {
+            return fail("stage_3 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_r = _slots.write[sid_river];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_r.arr_u8.size() != n_cells ||
+            s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_3 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        float         * const __restrict M    = s_m.arr_f32.ptrw();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        const uint8_t * const __restrict RIV  = s_r.arr_u8.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const int max_row = height - 1;
+        const double inv_max_row = 1.0 / double(max_row > 0 ? max_row : 1);
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            if (RIV[i] == 0) continue;
+            const uint8_t t = TERR[i];
+            if (pk_is_water_terrain(t)) continue;
+            if (pk_is_permanent_landform(t)) {
+                if (M[i] < 0.65f) { M[i] = 0.65f; ++touched; }
+                continue;
+            }
+            if (M[i] < 0.65f) M[i] = 0.65f;
+            if (t == 7) continue; // DESERT 不翻
+            if (t == 2) {         // PLAIN
+                int row = ROWI[i];
+                if (row < 0) row = 0;
+                else if (row > max_row) row = max_row;
+                const double ny = double(row) * inv_max_row;
+                const double temp = double(pk_compute_temperature(ny, double(ELEV[i])));
+                uint8_t new_t = t;
+                if (temp > 0.55) new_t = 4;       // FOREST
+                else if (temp > 0.30) new_t = 3;  // GRASSLAND
+                if (new_t != t) {
+                    TERR[i] = new_t;
+                    LF[i] = pk_derive_landform(new_t, ELEV[i], sea_level);
+                    ++touched;
+                }
+            }
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_moist);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 4：vegetation_feedback ─────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_vegetation_feedback (line 3269).
+    // 流程：1) 累加 donor 邻居 delta（陆地，elev_factor=clamp(1-elev*decay,0.1,1)）
+    //       2) 应用 delta 到 moisture（限幅）
+    //       3) 重决策非永久 biome（不动 MOUNTAIN/SNOW/permanent_landform），
+    //          仅用 lat_tab 不叠 off_tab（与 GDScript line 3304 注释一致）。
+    if (stage == 4) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("lat_temp_rows") || !knobs.has("row_indices") ||
+            !knobs.has("neighbor_indices") || !knobs.has("donor_table") ||
+            !knobs.has("elev_decay")) {
+            return fail("stage_4 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        const double elev_decay = double(knobs["elev_decay"]);
+        if (n_cells <= 0 || height <= 0) return fail("stage_4 invalid dims");
+
+        godot::PackedFloat32Array lat_tab = knobs["lat_temp_rows"];
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        // donor_table[26]：每种 terrain 的 donor 强度（陆地非 donor=0）。
+        godot::PackedFloat32Array donor_tab = knobs["donor_table"];
+        if (lat_tab.size() < height) return fail("stage_4 lat_temp_rows size");
+        if (row_idx.size() != n_cells) return fail("stage_4 row_indices size");
+        if (nb_arr.size() < n_cells * 6) return fail("stage_4 neighbor_indices size");
+        if (donor_tab.size() < 26) return fail("stage_4 donor_table size < 26");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_moist    = component_id(StringName("cell_moisture"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_landform < 0) {
+            return fail("stage_4 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_4 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        float         * const __restrict M    = s_m.arr_f32.ptrw();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const float   * const __restrict LATT = lat_tab.ptr();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const float   * const __restrict DTAB = donor_tab.ptr();
+        const int max_row = height - 1;
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        // pass 1：累加 delta（per-target sum）
+        std::vector<float> deltas(size_t(n_cells), 0.0f);
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t t = TERR[i];
+            const float donor = (t < 26) ? DTAB[t] : 0.0f;
+            if (donor == 0.0f) continue;
+            double elev_factor = 1.0 - double(ELEV[i]) * elev_decay;
+            if (elev_factor < 0.1) elev_factor = 0.1;
+            else if (elev_factor > 1.0) elev_factor = 1.0;
+            const float donor_eff = float(double(donor) * elev_factor);
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[i * 6 + d];
+                if (ni < 0) continue;
+                if (pk_is_water_terrain(TERR[ni])) continue;
+                deltas[size_t(ni)] += donor_eff;
+            }
+        }
+        // pass 2：应用 delta（陆地 only，限幅）
+        for (int i = 0; i < n_cells; ++i) {
+            if (pk_is_water_terrain(TERR[i])) continue;
+            const float d = deltas[size_t(i)];
+            if (d == 0.0f) continue;
+            double m = double(M[i]) + double(d);
+            if (m < 0.0) m = 0.0;
+            else if (m > 1.0) m = 1.0;
+            M[i] = float(m);
+        }
+        // pass 3：redecide（仅 lat_tab，不叠 off_tab；不动 MOUNTAIN/SNOW/permanent_landform）
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t cur = TERR[i];
+            if (pk_is_water_terrain(cur)) continue;
+            if (cur == 6 || cur == 9) continue;            // MOUNTAIN/SNOW
+            if (pk_is_permanent_landform(cur)) continue;
+            int row = ROWI[i];
+            if (row < 0) row = 0;
+            else if (row > max_row) row = max_row;
+            const double lat_temp = double(LATT[row]);
+            const double e = double(ELEV[i]);
+            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e));
+            const uint8_t new_t = pk_decide_terrain(e, temp, double(M[i]),
+                                                    double(sea_level));
+            if (new_t != cur) {
+                TERR[i] = new_t;
+                LF[i] = pk_derive_landform(new_t, ELEV[i], sea_level);
+                ++touched;
+            }
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_moist);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 5：shrubland_pass ──────────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_shrubland_pass (line 3374).
+    // 触发：陆地 + (GRASSLAND/STEPPE/SAVANNA/PLAIN) + !permanent_landform
+    //   + land_h<=0.30 + temp>=0.50 + moisture∈[0.25, 0.40]
+    //   + 至少 1 个 OCEAN/COAST 邻居 → SHRUBLAND(15)
+    if (stage == 5) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("row_indices") || !knobs.has("neighbor_indices")) {
+            return fail("stage_5 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 1) return fail("stage_5 invalid dims");
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        if (row_idx.size() != n_cells) return fail("stage_5 row_indices size");
+        if (nb_arr.size() < n_cells * 6) return fail("stage_5 neighbor_indices size");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_moist    = component_id(StringName("cell_moisture"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_landform < 0) {
+            return fail("stage_5 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_5 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        const float   * const __restrict M    = s_m.arr_f32.ptr();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const int max_row = height - 1;
+        const double inv_max_row = 1.0 / double(max_row > 0 ? max_row : 1);
+        const double inv_above_sea = 1.0 / std::max(1.0 - double(sea_level), 0.001);
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t t = TERR[i];
+            if (pk_is_water_terrain(t)) continue;
+            // 仅替换 GRASSLAND(3) / STEPPE(14) / SAVANNA(12) / PLAIN(2)
+            if (t != 3 && t != 14 && t != 12 && t != 2) continue;
+            if (pk_is_permanent_landform(t)) continue;
+            const double e = double(ELEV[i]);
+            const double land_h = (e - double(sea_level)) * inv_above_sea;
+            if (land_h > 0.30) continue;
+            int row = ROWI[i];
+            if (row < 0) row = 0;
+            else if (row > max_row) row = max_row;
+            const double ny = double(row) * inv_max_row;
+            const double temp = double(pk_compute_temperature(ny, e));
+            if (temp < 0.50) continue;
+            const float mv = M[i];
+            if (mv < 0.25f || mv > 0.40f) continue;
+            bool has_sea = false;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[i * 6 + d];
+                if (ni < 0) continue;
+                const uint8_t nt = TERR[ni];
+                if (nt == 0 || nt == 1) { has_sea = true; break; }
+            }
+            if (!has_sea) continue;
+            TERR[i] = 15; // SHRUBLAND
+            LF[i] = pk_derive_landform(15, ELEV[i], sea_level);
+            ++touched;
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 6：mangrove_pass ───────────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_mangrove_pass (line 3413).
+    // 触发：陆地 + !MOUNTAIN/SNOW/TUNDRA/SWAMP + !permanent_landform
+    //   + land_h<=0.05 + temp>=0.65 + 紧邻 COAST + (has_river 或 SWAMP 邻接)
+    //   → MANGROVE(16)
+    if (stage == 6) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("row_indices") || !knobs.has("neighbor_indices")) {
+            return fail("stage_6 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 1) return fail("stage_6 invalid dims");
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        if (row_idx.size() != n_cells) return fail("stage_6 row_indices size");
+        if (nb_arr.size() < n_cells * 6) return fail("stage_6 neighbor_indices size");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_river    = component_id(StringName("cell_has_river"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_elev < 0 || sid_river < 0 || sid_landform < 0) {
+            return fail("stage_6 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_r = _slots.write[sid_river];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_e.arr_f32.size() != n_cells ||
+            s_r.arr_u8.size() != n_cells || s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_6 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        const uint8_t * const __restrict RIV  = s_r.arr_u8.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const int max_row = height - 1;
+        const double inv_max_row = 1.0 / double(max_row > 0 ? max_row : 1);
+        const double inv_above_sea = 1.0 / std::max(1.0 - double(sea_level), 0.001);
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t t = TERR[i];
+            if (pk_is_water_terrain(t)) continue;
+            if (t == 6 || t == 9 || t == 8 || t == 10) continue; // MOUNTAIN/SNOW/TUNDRA/SWAMP
+            if (pk_is_permanent_landform(t)) continue;
+            const double e = double(ELEV[i]);
+            const double land_h = (e - double(sea_level)) * inv_above_sea;
+            if (land_h > 0.05) continue;
+            int row = ROWI[i];
+            if (row < 0) row = 0;
+            else if (row > max_row) row = max_row;
+            const double ny = double(row) * inv_max_row;
+            const double temp = double(pk_compute_temperature(ny, e));
+            if (temp < 0.65) continue;
+            bool coast_nb = false;
+            bool swamp_nb = false;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[i * 6 + d];
+                if (ni < 0) continue;
+                const uint8_t nt = TERR[ni];
+                if (nt == 1) coast_nb = true;
+                else if (nt == 10) swamp_nb = true;
+            }
+            if (!coast_nb) continue;
+            if (!(RIV[i] || swamp_nb)) continue;
+            TERR[i] = 16; // MANGROVE
+            LF[i] = pk_derive_landform(16, ELEV[i], sea_level);
+            ++touched;
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 7：glacier_pass ────────────────────────────────────────────
+    // SAME_SOURCE: map_generator.gd::_apply_glacier_pass (line 3699).
+    // 触发：(SNOW/TUNDRA) + temp<0.05 + (沿海冰舌 land_h<0.20 && OCEAN/COAST/SEA_ICE 邻居
+    //                                  || alpine land_h>0.65)
+    //       → GLACIER(17)
+    if (stage == 7) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("row_indices") || !knobs.has("neighbor_indices")) {
+            return fail("stage_7 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 1) return fail("stage_7 invalid dims");
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        if (row_idx.size() != n_cells) return fail("stage_7 row_indices size");
+        if (nb_arr.size() < n_cells * 6) return fail("stage_7 neighbor_indices size");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_elev < 0 || sid_landform < 0) {
+            return fail("stage_7 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_e.arr_f32.size() != n_cells ||
+            s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_7 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const int max_row = height - 1;
+        const double inv_max_row = 1.0 / double(max_row > 0 ? max_row : 1);
+        const double inv_above_sea = 1.0 / std::max(1.0 - double(sea_level), 0.001);
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t t = TERR[i];
+            if (pk_is_water_terrain(t)) continue;
+            if (t != 9 && t != 8) continue; // 仅 SNOW / TUNDRA
+            const double e = double(ELEV[i]);
+            const double land_h = (e - double(sea_level)) * inv_above_sea;
+            int row = ROWI[i];
+            if (row < 0) row = 0;
+            else if (row > max_row) row = max_row;
+            const double ny = double(row) * inv_max_row;
+            const double temp = double(pk_compute_temperature(ny, e));
+            if (temp >= 0.05) continue;
+            bool coastal_glacier = false;
+            if (land_h < 0.20) {
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[i * 6 + d];
+                    if (ni < 0) continue;
+                    const uint8_t nt = TERR[ni];
+                    if (nt == 0 || nt == 1 || nt == 20) {
+                        coastal_glacier = true;
+                        break;
+                    }
+                }
+            }
+            const bool alpine_glacier = land_h > 0.65;
+            if (!(coastal_glacier || alpine_glacier)) continue;
+            TERR[i] = 17; // GLACIER
+            LF[i] = pk_derive_landform(17, ELEV[i], sea_level);
+            ++touched;
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // ─── stage 8 was the original sentinel; rename to stage 9: swamp_pass ─
+    // 注意：GDScript 的 12-stage 切片 stage 8=swamp_pass、stage 9=sync_current_state；
+    // 而 C++ 端历史上把 stage 8 用作 sync_current_state（与 _run_season_refresh_stage8_gdext
+    // 同步）。本次新增 swamp 用 stage_id=9 入口避免与已有 stage 8 冲突。GDScript caller
+    // 在新 helper _run_season_refresh_stage_swamp_gdext 里发 stage=9。
+    // SAME_SOURCE: map_generator.gd::_apply_swamp_pass (line 3330).
+    if (stage == 9) {
+        if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
+            !knobs.has("lat_temp_rows") || !knobs.has("row_indices") ||
+            !knobs.has("neighbor_indices")) {
+            return fail("stage_9 missing required knob");
+        }
+        const int n_cells = int(knobs["n_cells"]);
+        const int height = int(knobs["height"]);
+        const float sea_level = float(knobs["sea_level"]);
+        if (n_cells <= 0 || height <= 0) return fail("stage_9 invalid dims");
+        godot::PackedFloat32Array lat_tab = knobs["lat_temp_rows"];
+        godot::PackedInt32Array row_idx = knobs["row_indices"];
+        godot::PackedInt32Array nb_arr = knobs["neighbor_indices"];
+        if (lat_tab.size() < height) return fail("stage_9 lat_temp_rows size");
+        if (row_idx.size() != n_cells) return fail("stage_9 row_indices size");
+        if (nb_arr.size() < n_cells * 6) return fail("stage_9 neighbor_indices size");
+
+        const int sid_terrain  = component_id(StringName("cell_terrain"));
+        const int sid_moist    = component_id(StringName("cell_moisture"));
+        const int sid_elev     = component_id(StringName("cell_elevation"));
+        const int sid_river    = component_id(StringName("cell_has_river"));
+        const int sid_landform = component_id(StringName("cell_landform"));
+        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_river < 0 ||
+            sid_landform < 0) {
+            return fail("stage_9 missing slot id");
+        }
+        Slot &s_t = _slots.write[sid_terrain];
+        Slot &s_m = _slots.write[sid_moist];
+        Slot &s_e = _slots.write[sid_elev];
+        Slot &s_r = _slots.write[sid_river];
+        Slot &s_lf= _slots.write[sid_landform];
+        if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_e.arr_f32.size() != n_cells || s_r.arr_u8.size() != n_cells ||
+            s_lf.arr_u8.size() != n_cells) {
+            return fail("stage_9 slot size mismatch");
+        }
+
+        uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
+        const float   * const __restrict M    = s_m.arr_f32.ptr();
+        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
+        const uint8_t * const __restrict RIV  = s_r.arr_u8.ptr();
+        uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
+        const int32_t * const __restrict NB   = nb_arr.ptr();
+        const float   * const __restrict LATT = lat_tab.ptr();
+        const int32_t * const __restrict ROWI = row_idx.ptr();
+        const int max_row = height - 1;
+        const double inv_above_sea = 1.0 / std::max(1.0 - double(sea_level), 0.001);
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        int touched = 0;
+        for (int i = 0; i < n_cells; ++i) {
+            const uint8_t t = TERR[i];
+            if (pk_is_water_terrain(t)) continue;
+            if (t == 6 || t == 9 || t == 8) continue; // MOUNTAIN/SNOW/TUNDRA
+            if (pk_is_permanent_landform(t)) continue;
+            const double e = double(ELEV[i]);
+            const double land_h = (e - double(sea_level)) * inv_above_sea;
+            if (land_h > 0.10) continue;
+            if (M[i] < 0.75f) continue;
+            int row = ROWI[i];
+            if (row < 0) row = 0;
+            else if (row > max_row) row = max_row;
+            const double lat_temp = double(LATT[row]);
+            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e));
+            if (temp < 0.30) continue;
+            bool has_water = (RIV[i] != 0);
+            if (!has_water) {
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[i * 6 + d];
+                    if (ni < 0) continue;
+                    if (pk_is_water_terrain(TERR[ni])) { has_water = true; break; }
+                }
+            }
+            if (!has_water) continue;
+            TERR[i] = 10; // SWAMP
+            LF[i] = pk_derive_landform(10, ELEV[i], sea_level);
+            ++touched;
+        }
+        _flush_slot_to_map(sid_terrain);
+        _flush_slot_to_map(sid_landform);
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["touched"] = touched;
+        return out;
+    }
+
+    // 历史上的 stage 8 = sync_current_state（_run_season_refresh_stage8_gdext 入口）。
     if (stage != 8) return fail("unsupported stage");
     if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
         !knobs.has("season_offset_rows")) {
@@ -7445,6 +9604,266 @@ godot::Dictionary DCWorldExt::run_season_refresh_micro_pass(godot::Dictionary kn
     out["fallback"] = false;
     out["reason"] = budget_yield ? String("budget_yield") : String();
     return out;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Phase B+ (2026-05-21)：season refresh round 一次跨界整 round 切片调度
+// ════════════════════════════════════════════════════════════════════════════
+// 设计要点（决策来自 user 2026-05-21）：
+//   1) history push：B+ 路径下 round 末尾 1 次（GDScript 端在 finish 后调
+//      _sync_stage8_facade_fields_from_soa 一次；本 round 12 个 stage 内
+//      C++ 不调任何 history push）
+//   2) chunk 粒度：b1 = stage 边界切片；不在 stage 内 cursor 切片
+//   3) 复用现有 run_season_refresh_stage(knobs) 的 stage dispatch；零算法
+//      复制。每 stage 把 round.input_knobs 浅拷贝出来 + 改写 stage 字段后
+//      调用一次 → run_season_refresh_stage(stage_knobs)。
+//
+// stage_id 映射（GDScript 12-stage round_stage → C++ stage 字段）：
+//   round_stage  cpp_stage  含义
+//        0           0      moisture_set
+//        1           1      rain_shadow
+//        2           2      seasonal_redecide_terrain
+//        3           3      river_ecology
+//        4           4      vegetation_feedback
+//        5           5      shrubland
+//        6           6      mangrove
+//        7           7      glacier
+//        8           9      swamp（C++ 端 id=9，避免与 sync 冲突）
+//        9           8      sync_current_state
+//       10          —       atlas_queue（render concern → SKIP；GDScript 端
+//                          finish 阶段调 _mark_enum_atlas_dirty）
+//       11          10      feedback_decay
+static int pk_round_stage_to_cpp_stage(int round_stage) {
+    switch (round_stage) {
+        case 0:  return 0;
+        case 1:  return 1;
+        case 2:  return 2;
+        case 3:  return 3;
+        case 4:  return 4;
+        case 5:  return 5;
+        case 6:  return 6;
+        case 7:  return 7;
+        case 8:  return 9;   // swamp
+        case 9:  return 8;   // sync
+        case 10: return -1;  // atlas: SKIP（GDScript 处理）
+        case 11: return 10;  // feedback decay
+        default: return -1;
+    }
+}
+
+godot::Dictionary DCWorldExt::start_season_round(godot::Dictionary round_knobs) {
+    using godot::Dictionary;
+    using godot::String;
+
+    Dictionary out;
+    out["handle"] = -1;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] start_season_round: ", why,
+                                       " - fallback to GDScript 12-stage path");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!round_knobs.has("n_cells")) return fail("missing required knob: n_cells");
+    const int n_cells = int(round_knobs["n_cells"]);
+    if (n_cells <= 0) return fail("n_cells <= 0");
+
+    // 已存在活跃 round：先 abort 旧的，避免泄漏（fast-restart 容错）。
+    // generation 单调递增保证：把旧 generation +=1 后赋给新 SeasonRoundState，
+    // 让悬挂的旧 handle 自然失效。
+    int next_generation = 1;
+    if (_season_round != nullptr) {
+        SeasonRoundState *old = static_cast<SeasonRoundState *>(_season_round);
+        if (old->active) {
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] start_season_round: previous round still active "
+                "(generation=", old->generation, ", round_stage=", old->round_stage,
+                ") - aborting and starting fresh");
+        }
+        next_generation = old->generation + 1;
+        if (next_generation <= 0) next_generation = 1;  // 溢出兜底
+        delete old;
+        _season_round = nullptr;
+    }
+
+    SeasonRoundState *st = new SeasonRoundState();
+    st->generation       = next_generation;
+    st->active           = true;
+    st->round_stage      = 0;
+    st->stages_done      = 0;
+    st->slices_used      = 0;
+    st->total_native_ms  = 0.0;
+    st->input_knobs      = round_knobs;  // 浅拷贝；PackedArray CoW 共享
+    // 缓存 in/out PackedFloat32Array（stage 11 需要）
+    if (round_knobs.has("soil_moisture_arr")) {
+        st->soil_moisture_arr = round_knobs["soil_moisture_arr"];
+    }
+    if (round_knobs.has("veg_growth_pressure_arr")) {
+        st->veg_growth_pressure_arr = round_knobs["veg_growth_pressure_arr"];
+    }
+    _season_round = st;
+
+    out["handle"] = st->generation;
+    out["fallback"] = false;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
+    using godot::Dictionary;
+    using godot::String;
+
+    Dictionary out;
+    out["done"] = false;
+    out["stage"] = -1;
+    out["stages_done_this_slice"] = 0;
+    out["elapsed_ms"] = 0.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (_season_round == nullptr) return fail("no active round (call start_season_round first)");
+    SeasonRoundState *st = static_cast<SeasonRoundState *>(_season_round);
+    if (!st->active) return fail("round inactive");
+    if (handle != st->generation) return fail("stale handle (generation mismatch)");
+
+    if (max_usec <= 0) max_usec = 550;  // 默认 SUS slice budget
+    // 用 steady_clock 算 deadline，与文件其余 perf 计时保持一致，避免引入
+    // godot-cpp <classes/os.hpp> 依赖（OS::get_singleton 在本 TU 未 include）。
+    auto t_slice0 = std::chrono::steady_clock::now();
+    const auto t_deadline = t_slice0 + std::chrono::microseconds(int64_t(max_usec));
+    int stages_done_this_slice = 0;
+    String last_stage_reason;
+
+    // b1 粒度：每 stage 边界查一次 deadline；不在 stage 内 cursor 切片
+    while (st->round_stage < 12) {
+        const int round_stage = st->round_stage;
+        const int cpp_stage = pk_round_stage_to_cpp_stage(round_stage);
+
+        if (cpp_stage < 0) {
+            // SKIP（atlas_queue / unknown）：直接前进
+            st->round_stage += 1;
+            st->stages_done += 1;
+            stages_done_this_slice += 1;
+            continue;
+        }
+
+        // 浅拷贝 input_knobs + 改写 stage 字段；不污染 round 级 input_knobs
+        Dictionary stage_knobs = st->input_knobs.duplicate(false);
+        stage_knobs["stage"] = cpp_stage;
+        // stage 11 (=cpp 10) 是 in/out array；C++ stage 10 内会 ptrw 写回，
+        // 我们持有的 st->soil_moisture_arr 也会同步看到新值（CoW 引用共享）。
+        if (round_stage == 11) {
+            stage_knobs["soil_moisture_arr"] = st->soil_moisture_arr;
+            stage_knobs["veg_growth_pressure_arr"] = st->veg_growth_pressure_arr;
+        }
+
+        Dictionary stage_res = run_season_refresh_stage(stage_knobs);
+        const bool stage_fb = bool(stage_res.get("fallback", true));
+        const double stage_ms = double(stage_res.get("elapsed_ms", -1.0));
+        if (stage_fb || stage_ms < 0.0) {
+            // 单 stage fallback：整个 round 标记 fallback，由 GDScript 端
+            // abort 后走 12-stage 兜底路径。不在 C++ 内自动 retry。
+            last_stage_reason = String(stage_res.get("reason", "stage_fallback"));
+            out["stage"] = round_stage;
+            out["stages_done_this_slice"] = stages_done_this_slice;
+            out["fallback"] = true;
+            out["reason"] = String("round_stage_") + String::num_int64(round_stage)
+                          + String(": ") + last_stage_reason;
+            // 注意：不在这里 abort/清空 _season_round，让 caller 看到具体
+            // round_stage 后调 abort_season_round 显式清理。
+            auto t_slice1 = std::chrono::steady_clock::now();
+            out["elapsed_ms"] = std::chrono::duration<double, std::milli>(
+                                    t_slice1 - t_slice0).count();
+            return out;
+        }
+
+        // stage 11 写回（C++ 端在 stage 10 内通过 knobs["soil_moisture_arr"] = soil_arr;
+        // 把 decayed 值写回 stage_knobs，但我们持有的 st->soil_moisture_arr 是
+        // 旧 ref——重新拉回来）
+        if (round_stage == 11) {
+            if (stage_knobs.has("soil_moisture_arr")) {
+                st->soil_moisture_arr = stage_knobs["soil_moisture_arr"];
+            }
+            if (stage_knobs.has("veg_growth_pressure_arr")) {
+                st->veg_growth_pressure_arr = stage_knobs["veg_growth_pressure_arr"];
+            }
+        }
+
+        st->total_native_ms += stage_ms;
+        st->round_stage += 1;
+        st->stages_done += 1;
+        stages_done_this_slice += 1;
+
+        // stage 边界查 deadline（b1 粒度）
+        if (std::chrono::steady_clock::now() >= t_deadline) {
+            break;
+        }
+    }
+
+    st->slices_used += 1;
+    auto t_slice1 = std::chrono::steady_clock::now();
+    const double slice_ms = std::chrono::duration<double, std::milli>(
+                                t_slice1 - t_slice0).count();
+    const bool round_done = st->round_stage >= 12;
+
+    out["done"] = round_done;
+    out["stage"] = st->round_stage;
+    out["stages_done_this_slice"] = stages_done_this_slice;
+    out["elapsed_ms"] = slice_ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    return out;
+}
+
+godot::Dictionary DCWorldExt::finish_season_round(int handle) {
+    using godot::Dictionary;
+    using godot::String;
+
+    Dictionary out;
+    out["total_native_ms"] = 0.0;
+    out["slices_used"] = 0;
+    out["stages_done"] = 0;
+    out["fallback"] = true;
+    out["reason"] = String();
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (_season_round == nullptr) return fail("no active round");
+    SeasonRoundState *st = static_cast<SeasonRoundState *>(_season_round);
+    if (handle != st->generation) return fail("stale handle (generation mismatch)");
+
+    out["total_native_ms"] = st->total_native_ms;
+    out["slices_used"] = st->slices_used;
+    out["stages_done"] = st->stages_done;
+    // 把 stage 11 (feedback_decay) 的 decayed in/out array 回传给 GDScript caller
+    out["soil_moisture_arr"] = st->soil_moisture_arr;
+    out["veg_growth_pressure_arr"] = st->veg_growth_pressure_arr;
+    out["fallback"] = false;
+    out["reason"] = String();
+
+    // 清理：generation 不变，下次 start 才 +=1
+    delete st;
+    _season_round = nullptr;
+    return out;
+}
+
+void DCWorldExt::abort_season_round() {
+    if (_season_round == nullptr) return;
+    SeasonRoundState *st = static_cast<SeasonRoundState *>(_season_round);
+    delete st;
+    _season_round = nullptr;
 }
 
 // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：
@@ -8585,7 +11004,7 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
         hood_h = (hood_h ^ uint32_t(cb)) * 0x01000193u;
         hood_h = (hood_h ^ uint32_t(ca)) * 0x01000193u;
 
-        int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0;
+        int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0, na_c = 0;
         const int nb_base_global = ci * 6;
         const int nb_base_local = k * 6;
         for (int d = 0; d < 6; ++d) {
@@ -8597,7 +11016,16 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
             const int ngb = int((n_sig >> 8) & 0xFF);
             const int nbb = int((n_sig >> 16) & 0xFF);
             const int nab = int((n_sig >> 24) & 0xFF);
-            nr += nrb; ng += ngb; nb_sum += nbb; na += nab; nc += 1;
+            nr += nrb; ng += ngb; nb_sum += nbb; nc += 1;
+            // ─────────────────────────────────────────────────────────
+            // 2026-05-21 修复 (issue: 海岸陆地 cell 季节振幅 -10%)：
+            // A 通道（vitality）在 encode 时被强制 `passable_sea ? 0 : vit`，
+            // 海域邻居恒为 0；如果与 R/G 一起做全邻居平均，会把海岸陆地 cell
+            // 的 vitality 系统性拖低（最严重情况孤岛 5 海邻 → -42%）。
+            // 只让"非海域邻居"参与 A 累加；R/G 仍走全邻居（海陆温/湿度都是
+            // 真值，跳过海邻反而会失真）。SAME_SOURCE 见 map_baker.gd。
+            // ─────────────────────────────────────────────────────────
+            if (!n_psea) { na += nab; na_c += 1; }
             hood_h = (hood_h ^ uint32_t(nrb)) * 0x01000193u;
             hood_h = (hood_h ^ uint32_t(ngb)) * 0x01000193u;
             hood_h = (hood_h ^ uint32_t(nbb)) * 0x01000193u;
@@ -8613,11 +11041,29 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
         if (nc > 0) {
             // 中心 0.5 + 邻居均值 0.5；GDScript 用 int 除法，C++ 必须镜像同语义。
             // (cr + nr / nc) / 2，全部 int 截断除。
+            // ─────────────────────────────────────────────────────────
+            // 2026-05-21 修复 (issue: 95% 雪盖在屏幕上不可见)：
+            // B 通道（snow_cover）是「阈值型」现象——单格可在雪线之上而所有
+            // 邻居都在雪线之下；它不是温度/湿度那样的连续梯度场，不应参与
+            // box blur，否则 95% 的真值被邻居 0 拖到 ~47.5% 直接被后段
+            // smoothstep 压成几乎不可见。R/G/A 仍走原有 box blur 逻辑以保留
+            // 温度/湿度/植被活力沿 hex 边界的平滑过渡。SAME_SOURCE 兜底见
+            // map_baker.gd::dyn_atlas_smooth_chunk_step。
+            // 2026-05-21 D 项追加：A 通道仅平均"非海域邻居"，详见上方
+            // for 循环内的注释。海岸陆地 cell 不再被海洋 0 系统性拖低。
+            // ─────────────────────────────────────────────────────────
             const int t1 = cr + (nr / nc);
             const int t2 = cg + (ng / nc);
-            const int t3 = cb + (nb_sum / nc);
-            const int t4 = ca + (na / nc);
-            or_ = t1 / 2; og = t2 / 2; ob = t3 / 2; oa = t4 / 2;
+            or_ = t1 / 2; og = t2 / 2;
+            ob = cb;  // snow passthrough：保留 cell 真值，不做邻居平均。
+            // A 通道：用陆地邻居数 na_c 做平均；陆地 cell 全是海邻（na_c=0）
+            // 时退回中心值，避免除 0 也避免被 0 邻居拖低。
+            if (na_c > 0) {
+                const int t4 = ca + (na / na_c);
+                oa = t4 / 2;
+            } else {
+                oa = ca;
+            }
             if (or_ < 0) or_ = 0; else if (or_ > 255) or_ = 255;
             if (og < 0) og = 0; else if (og > 255) og = 255;
             if (ob < 0) ob = 0; else if (ob > 255) ob = 255;
@@ -8934,21 +11380,68 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     if (n_pix <= 0) return fail("invalid texture size");
 
     auto *st = get_or_create_atlas_state(_atlas_state);
-    const int n_cells = _entity_count;
-    if (n_cells <= 0) return fail("entity_count = 0 (DCWorld 未挂载?)");
 
-    // 拉取 SoA refs（CSR + LUT）
+    // 拉取 SoA refs（CSR + LUT）。
+    // n_cells 取自 world.cell_first_px_arr.size()（CSR 主索引），与
+    // map.cell_count() 等价；不再依赖 _entity_count（那是 ECS 实体计数，
+    // 仅在 assign_archetype/create_entities 路径累加，atlas pipeline 不走
+    // 那条路 → 长期保持为 0 会让本接口永远 fallback 到 oneshot）。
+    // —— 2026-05-21 plan/atlas-phase-slicing 诊断修复
     WorldSoARefs soa = fetch_world_soa(world, map);
     if (!soa.ok) return fail("world SoA not ready");
+    const int n_cells = soa.n_cells;
+    if (n_cells <= 0) return fail("world SoA n_cells = 0");
 
-    // 取 dirty_indices：opts["dirty_indices"] 由 GD 已读取（保留 atomicity）。
-    PackedInt32Array dirty_indices;
-    if (opts.has("dirty_indices")) {
-        Variant v = opts["dirty_indices"];
-        if (v.get_type() == Variant::PACKED_INT32_ARRAY) dirty_indices = v;
+    // ── plan/atlas-phase-slicing：phase-by-phase 时间切片入口判断 ──
+    // phase_budget = 本次 call 最多推进的 phase 数（默认 4 = 一气呵成；GD 可传 1
+    // 实现每 tick 1 phase）。in_mid_stride = 上次 call yield 时的状态延续，需要
+    // 复用 st 的 stride snapshot（dirty_indices / cache_valid_* / nb_arr / prep_*）。
+    int phase_budget = 4;
+    bool opts_has_phase_budget = opts.has("phase_budget");
+    int opts_phase_budget_raw = -1;
+    if (opts_has_phase_budget) {
+        opts_phase_budget_raw = int(opts["phase_budget"]);
+        phase_budget = opts_phase_budget_raw;
+        if (phase_budget < 1) phase_budget = 1;
+        if (phase_budget > 4) phase_budget = 4;
     }
-    const bool dirty_path_used = opts.has("dirty_indices");
-    const bool dirty_noop = dirty_indices.size() == 0;
+    const bool in_mid_stride =
+        st->stride_active &&
+        st->phase >= AtlasPipelineState::DYNAMIC &&
+        st->phase <= AtlasPipelineState::ICE &&
+        st->stride_n_pix == n_pix &&
+        st->stride_n_cells == n_cells;
+    int phases_done_this_call = 0;
+
+    // 取 dirty_indices：mid-stride 时复用 st 缓存（GD 不应重复传）；
+    // 新 stride 入口时从 opts 消费（GD 已 read_and_clear，保留 atomicity）。
+    // plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：force_full_encode kill-switch。
+    // GD 端 use_gdext_dynamic_atlas_terminal_dirty=false 时设 opts.force_full_encode=true
+    // → 此处覆盖 dirty_path_used=false 让 4 phase 全部走 all_cells（A/B 对照入口）。
+    PackedInt32Array dirty_indices;
+    bool dirty_path_used;
+    bool dirty_noop;
+    bool force_full_encode = opts.has("force_full_encode")
+        ? bool(opts["force_full_encode"]) : false;
+    if (in_mid_stride) {
+        dirty_indices = st->stride_dirty_indices;
+        dirty_path_used = st->stride_dirty_path_used;
+        dirty_noop = st->stride_dirty_noop;
+    } else {
+        if (opts.has("dirty_indices")) {
+            Variant v = opts["dirty_indices"];
+            if (v.get_type() == Variant::PACKED_INT32_ARRAY) dirty_indices = v;
+        }
+        dirty_path_used = opts.has("dirty_indices");
+        dirty_noop = dirty_indices.size() == 0;
+        // 任务 7 kill-switch 覆盖：force_full_encode=true 时强制走全集编码。
+        // 仅在 stride 起点生效（mid-stride 复用 snapshot 不允许中途切语义）。
+        if (force_full_encode) {
+            dirty_path_used = false;
+            dirty_noop = false;
+            dirty_indices = PackedInt32Array();
+        }
+    }
 
     // SoA 槽位
     const int sid_temp = component_id(StringName("cell_temp"));
@@ -9002,6 +11495,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     }
 
     // ── atlas buffer 初始化 / 大小校验 ──
+    // mid-stride 时复用 st 缓存的 cache_valid_*；新 stride 时计算并缓存。
     auto ensure_buf = [&](PackedByteArray &buf, int stride) -> bool {
         if (buf.size() != n_pix * stride) {
             buf.resize(n_pix * stride);
@@ -9011,10 +11505,24 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         }
         return true;
     };
-    const bool cache_valid_dyn = ensure_buf(st->buf_dyn, 4);
-    const bool cache_valid_eco = ensure_buf(st->buf_eco, 4);
-    const bool cache_valid_smo = ensure_buf(st->buf_smo, 4);
-    const bool cache_valid_ice = ensure_buf(st->buf_ice, 1);
+    bool cache_valid_dyn, cache_valid_eco, cache_valid_smo, cache_valid_ice;
+    if (in_mid_stride) {
+        // buffer 大小不能在 stride 中变化（已被 stride_n_pix 校验前置兜底）；
+        // 但仍需 ensure_buf 校验防御 GD 端误改 buf；不变更 cache_valid_*。
+        ensure_buf(st->buf_dyn, 4);
+        ensure_buf(st->buf_eco, 4);
+        ensure_buf(st->buf_smo, 4);
+        ensure_buf(st->buf_ice, 1);
+        cache_valid_dyn = st->stride_cache_valid_dyn;
+        cache_valid_eco = st->stride_cache_valid_eco;
+        cache_valid_smo = st->stride_cache_valid_smo;
+        cache_valid_ice = st->stride_cache_valid_ice;
+    } else {
+        cache_valid_dyn = ensure_buf(st->buf_dyn, 4);
+        cache_valid_eco = ensure_buf(st->buf_eco, 4);
+        cache_valid_smo = ensure_buf(st->buf_smo, 4);
+        cache_valid_ice = ensure_buf(st->buf_ice, 1);
+    }
 
     // ── helper: passable_sea by cell.index (LUT or fallback to false) ──
     auto cell_psea = [&](int idx) -> bool {
@@ -9026,9 +11534,13 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     };
 
     // ── neighbor SoA: 从 map.neighbor_indices_packed() 取 ──
+    // mid-stride 时复用 st 缓存。
     PackedInt32Array nb_arr;
     bool have_nb = false;
-    if (map != nullptr) {
+    if (in_mid_stride) {
+        nb_arr = st->stride_nb_arr;
+        have_nb = st->stride_have_nb;
+    } else if (map != nullptr) {
         Variant v_nb = map->call(StringName("neighbor_indices_packed"));
         if (v_nb.get_type() == Variant::PACKED_INT32_ARRAY) {
             nb_arr = v_nb;
@@ -9036,12 +11548,49 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         }
     }
 
+    // ── 新 stride 入口：把入口快照写进 st，供后续 mid-stride call 复用 ──
+    if (!in_mid_stride) {
+        st->stride_active = true;
+        st->phase = AtlasPipelineState::DYNAMIC;
+        st->cursor = 0;
+        st->stride_dirty_indices = dirty_indices;
+        st->stride_dirty_path_used = dirty_path_used;
+        st->stride_dirty_noop = dirty_noop;
+        st->stride_cache_valid_dyn = cache_valid_dyn;
+        st->stride_cache_valid_eco = cache_valid_eco;
+        st->stride_cache_valid_smo = cache_valid_smo;
+        st->stride_cache_valid_ice = cache_valid_ice;
+        st->stride_have_nb = have_nb;
+        st->stride_nb_arr = nb_arr;
+        st->stride_n_pix = n_pix;
+        st->stride_n_cells = n_cells;
+        st->stride_t_start = std::chrono::high_resolution_clock::now();
+        st->stride_total_ms_accum = 0.0;
+        // 重置 ms_breakdown（每段 stride 独立诊断）
+        st->ms_dyn_prep = st->ms_dyn_step = st->ms_dyn_fin = 0.0;
+        st->ms_eco_prep = st->ms_eco_step = st->ms_eco_fin = 0.0;
+        st->ms_smo_prep = st->ms_smo_step = st->ms_smo_fin = 0.0;
+        st->ms_ice_prep = st->ms_ice_step = st->ms_ice_fin = 0.0;
+    }
+
     auto t_total_start = std::chrono::high_resolution_clock::now();
+
+    // ── plan/atlas-phase-slicing：phase gate 用变量 ──
+    // yielded=true 后所有 phase 的 if(gate) 失败，控制流直奔 finalize/mid-return；
+    // *_real_count 跨 phase 块保留（finalize 输出 stride_real 用）。
+    bool yielded = false;
+    int dyn_real_count = 0;
+    int eco_real_count = 0;
+    int smo_real_count = 0;
+    int ice_real_count = 0;
+    auto t_p = std::chrono::high_resolution_clock::now();
+    auto t_q = t_p;
 
     // ────────────────────────────────────────────────────────────────────
     // Phase DYNAMIC：dirty ∩ value-diff(prev_sigs_dyn)
     // ────────────────────────────────────────────────────────────────────
-    auto t_p = std::chrono::high_resolution_clock::now();
+    if (!yielded && st->phase == AtlasPipelineState::DYNAMIC) {
+    t_p = std::chrono::high_resolution_clock::now();
     PackedInt32Array dyn_real_indices;
     PackedInt32Array dyn_real_sigs;
     {
@@ -9078,7 +11627,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             dyn_real_sigs.resize(kw);
         }
     }
-    auto t_q = std::chrono::high_resolution_clock::now();
+    t_q = std::chrono::high_resolution_clock::now();
     st->ms_dyn_prep = std::chrono::duration<double, std::milli>(t_q - t_p).count();
 
     // dynamic phase 直接写 buffer：prep 已完成 sig-diff，避免再构造 Dictionary/CSR 临时数组并二次算 sig。
@@ -9119,10 +11668,16 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->ms_dyn_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
         st->ms_dyn_fin = 0.0;
     }
+    dyn_real_count = dyn_real_indices.size();
+    st->phase = AtlasPipelineState::ECOLOGY;
+    ++phases_done_this_call;
+    if (phases_done_this_call >= phase_budget) yielded = true;
+    }  // end Phase DYNAMIC gate
 
     // ────────────────────────────────────────────────────────────────────
     // Phase ECOLOGY：dirty ∪ active_decay；cache_invalid 时全集；维护 transition_age
     // ────────────────────────────────────────────────────────────────────
+    if (!yielded && st->phase == AtlasPipelineState::ECOLOGY) {
     PackedInt32Array eco_real_indices;
     t_p = std::chrono::high_resolution_clock::now();
     {
@@ -9269,10 +11824,16 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->ms_eco_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
         st->ms_eco_fin = 0.0;
     }
+    eco_real_count = eco_real_indices.size();
+    st->phase = AtlasPipelineState::SMOOTH;
+    ++phases_done_this_call;
+    if (phases_done_this_call >= phase_budget) yielded = true;
+    }  // end Phase ECOLOGY gate
 
     // ────────────────────────────────────────────────────────────────────
     // Phase SMOOTH：(eco_real ∪ dirty) 1-跳邻居膨胀；需要 neighbor SoA
     // ────────────────────────────────────────────────────────────────────
+    if (!yielded && st->phase == AtlasPipelineState::SMOOTH) {
     PackedInt32Array smo_real_indices;
     t_p = std::chrono::high_resolution_clock::now();
     {
@@ -9418,6 +11979,11 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->ms_smo_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
         st->ms_smo_fin = 0.0;
     }
+    smo_real_count = smo_real_indices.size();
+    st->phase = AtlasPipelineState::ICE;
+    ++phases_done_this_call;
+    if (phases_done_this_call >= phase_budget) yielded = true;
+    }  // end Phase SMOOTH gate
 
     // ────────────────────────────────────────────────────────────────────
     // Phase ICE：dirty ∩ water；cache_invalid 时全水域；走 water_cell_pixel_lists
@@ -9427,6 +11993,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     //   实际上 GD encode_ice_state_atlas 已用 sea_ice_frac 量化（陆地 cell
     //   sea_ice_frac=0 → byte=0），所以走整图 SoA 也能得到 bit-equal 结果。
     // ────────────────────────────────────────────────────────────────────
+    if (!yielded && st->phase == AtlasPipelineState::ICE) {
     PackedInt32Array ice_real_indices;
     t_p = std::chrono::high_resolution_clock::now();
     {
@@ -9522,35 +12089,63 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->ms_ice_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
         st->ms_ice_fin = 0.0;
     }
+    ice_real_count = ice_real_indices.size();
+    st->phase = AtlasPipelineState::DONE;
+    ++phases_done_this_call;
+    // ICE 是最后一个 phase，跑完 phase=DONE，无需再 yield 检查
+    }  // end Phase ICE gate
 
     auto t_total_end = std::chrono::high_resolution_clock::now();
-    const double total_ms = std::chrono::duration<double, std::milli>(
+    const double this_call_ms = std::chrono::duration<double, std::milli>(
         t_total_end - t_total_start).count();
+    st->stride_total_ms_accum += this_call_ms;
 
-    // 状态机：本入口一次跑完 4 phase（done=true），不做时间切片
-    st->phase = AtlasPipelineState::DONE;
-    st->stride_counter += 1;
+    // 状态机：phase==DONE → 本 stride 跑完；否则中途 yield。
+    const bool stride_done = (st->phase == AtlasPipelineState::DONE);
+    if (stride_done) {
+        st->stride_active = false;
+        st->stride_counter += 1;
+    }
 
     // ── 组装返回 Dict ──
     out["fallback"] = false;
     out["reason"] = String();
-    out["done"] = true;
+    out["done"] = stride_done;
     out["phase"] = int(st->phase);
     out["cursor"] = st->cursor;
-    out["total_ms"] = total_ms;
+    // total_ms：stride_done 时返回整段累加；mid-stride 时返回本 call 局部
+    // （GD 端用 done==true 触发 GPU commit，并据此读 total_ms 做 dashboard）
+    out["total_ms"] = stride_done ? st->stride_total_ms_accum : this_call_ms;
+    out["phases_done_this_call"] = phases_done_this_call;
+    out["mid_stride"] = !stride_done;
+    // ── plan/atlas-phase-slicing 诊断（2026-05-21）──
+    // 上一次 perf 录制看到 done=true 一次跑 4 phase，但字符串确实编进 DLL 了。
+    // 把"opts 里到底有没有 phase_budget / 实际生效值"原样回吐，让 GD 端能直接
+    // 在 CSV 里看到——若 CSV 显示 phase_budget_effective=4 就铁证 opts 没传过来。
+    out["phase_budget_effective"] = phase_budget;
+    out["opts_has_phase_budget"] = opts_has_phase_budget;
+    // plan/sim-2ms-simd-dirty-budget 任务 7：dirty 编码 kill-switch 诊断透传。
+    // GD 端 perf log 用 force_full_encode 字段确认 use_gdext_dynamic_atlas_terminal_dirty
+    // flag 是否实际生效（A/B 比对时 csv 会同时记录 path 与 force_full_encode）。
+    out["force_full_encode"] = force_full_encode;
+    out["dirty_path_used"] = dirty_path_used;
+    out["opts_phase_budget_raw"] = opts_phase_budget_raw;
 
+    // atlas_buffers：只在 stride_done 时输出（mid-stride 时空 Dict，GD 不应 commit）
     Dictionary atlas_buffers;
-    atlas_buffers["dyn"] = st->buf_dyn;
-    atlas_buffers["eco"] = st->buf_eco;
-    atlas_buffers["smo"] = st->buf_smo;
-    atlas_buffers["ice"] = st->buf_ice;
+    if (stride_done) {
+        atlas_buffers["dyn"] = st->buf_dyn;
+        atlas_buffers["eco"] = st->buf_eco;
+        atlas_buffers["smo"] = st->buf_smo;
+        atlas_buffers["ice"] = st->buf_ice;
+    }
     out["atlas_buffers"] = atlas_buffers;
 
     Dictionary stride_real;
-    stride_real["dyn"] = dyn_real_indices.size();
-    stride_real["eco"] = eco_real_indices.size();
-    stride_real["smo"] = smo_real_indices.size();
-    stride_real["ice"] = ice_real_indices.size();
+    stride_real["dyn"] = dyn_real_count;
+    stride_real["eco"] = eco_real_count;
+    stride_real["smo"] = smo_real_count;
+    stride_real["ice"] = ice_real_count;
     out["stride_real"] = stride_real;
 
     if (bool(opts.get("enable_diag", false))) {
@@ -11006,9 +13601,36 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_ocean_land_pass", "knobs"),
         &DCWorldExt::run_ocean_land_pass);
+    // ─── sim-2ms-perf-push（plan/ocean-water-land-simd）────────────────
+    //   water/land 各两档：water/land idx 预筛 + 直线 kernel（_simd）/
+    //   + WorkerThreadPool 分块（_thread）。flag gate：
+    //   use_gdext_ocean_water_simd / use_gdext_ocean_land_simd /
+    //   use_gdext_thread_fallback。
+    ClassDB::bind_method(
+        D_METHOD("run_ocean_water_pass_simd", "knobs"),
+        &DCWorldExt::run_ocean_water_pass_simd);
+    ClassDB::bind_method(
+        D_METHOD("run_ocean_water_pass_thread", "knobs", "n_tasks"),
+        &DCWorldExt::run_ocean_water_pass_thread);
+    ClassDB::bind_method(
+        D_METHOD("run_ocean_land_pass_simd", "knobs"),
+        &DCWorldExt::run_ocean_land_pass_simd);
+    ClassDB::bind_method(
+        D_METHOD("run_ocean_land_pass_thread", "knobs", "n_tasks"),
+        &DCWorldExt::run_ocean_land_pass_thread);
     ClassDB::bind_method(
         D_METHOD("run_climate_pass_b", "knobs"),
         &DCWorldExt::run_climate_pass_b);
+    // ─── sim-2ms-perf-push（plan/climate-pass-b-simd）─────────────────
+    //   land-mask 预筛 + auto-vectorize 路径（ulp ≤ 4 容差，charter §risk=B 已批）
+    //   + WorkerThreadPool 兜底变体。flag gate 见 ClimateProfile / FLAGS：
+    //   use_gdext_pass_b_simd / use_gdext_thread_fallback。
+    ClassDB::bind_method(
+        D_METHOD("run_climate_pass_b_simd", "knobs"),
+        &DCWorldExt::run_climate_pass_b_simd);
+    ClassDB::bind_method(
+        D_METHOD("run_climate_pass_b_thread", "knobs", "n_tasks"),
+        &DCWorldExt::run_climate_pass_b_thread);
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_daily_pass", "knobs", "season_phase"),
         &DCWorldExt::run_sea_ice_daily_pass);
@@ -11084,6 +13706,19 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_season_refresh_micro_pass", "knobs"),
         &DCWorldExt::run_season_refresh_micro_pass);
+    // ─── Phase B+（2026-05-21）：season refresh round 一次跨界整 round 切片调度 ─
+    ClassDB::bind_method(
+        D_METHOD("start_season_round", "round_knobs"),
+        &DCWorldExt::start_season_round);
+    ClassDB::bind_method(
+        D_METHOD("run_season_round_slice", "handle", "max_usec"),
+        &DCWorldExt::run_season_round_slice);
+    ClassDB::bind_method(
+        D_METHOD("finish_season_round", "handle"),
+        &DCWorldExt::finish_season_round);
+    ClassDB::bind_method(
+        D_METHOD("abort_season_round"),
+        &DCWorldExt::abort_season_round);
     ClassDB::bind_method(
         D_METHOD("run_sea_ice_atlas_prepare", "knobs"),
         &DCWorldExt::run_sea_ice_atlas_prepare);

@@ -272,6 +272,20 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "C++ season refresh path when DCWorldExt exposes run_season_refresh_stage.",
 	},
+	# ─── Phase B+（2026-05-21）：season refresh round 一次跨界整 round 切片调度 ───
+	# 上层调度升级：GDScript 跨界 12→1，facade sync 8→1，history push 8→1
+	# （行为变更：B+ 路径下 round 末尾仅 1 次 push，修复 ring buffer 同 round
+	# 多次写入的污染）。算法层完全复用 use_gdext_season_refresh 的 12 个 stage
+	# C++ 实装；本 flag 仅切换调度路径。验收：1000-tick A/B diff
+	# (terrain/landform/vegetation/cover/moisture, epsilon=0/1e-5) +
+	# fast_ms p95 ≤5ms + stage 7 atomic 单帧 ≤3ms。
+	{
+		name = &"use_gdext_season_round",
+		owner = "simulation.season_refresh",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase B+: season refresh full round in single C++ call with stage-boundary slicing.",
+	},
 	# ─── DOTS-Final-Push (plan/dots-final-push)：stage_b 三件套 C++ 化 ───────
 	# 目标：weather_refresh p95 27.66ms → ≤ 5ms。三个 flag 独立切换；C++ 不可用
 	# 时透明 fallback 到 GDScript 并打印一次 [stage_b] gdext path UNAVAILABLE。
@@ -379,6 +393,60 @@ const FLAGS: Array = [
 		default = true,
 		resource = "ClimateProfile",
 		description = "Phase G：4 张运行期 atlas（dynamic_cell/ecology_visual/dyn_smooth/ice_state）全管线 C++ 化。GD 端只剩 ImageTexture.update 薄壳。ext 缺失或 has_method 失败自动回退到旧 GD 4-phase 状态机",
+	},
+	# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：SIMD 内核 + 线程兜底 ─
+	# 复刻 bench_pass_a_full_simd 模板把 climate Pass-B / ocean water / ocean
+	# land 三大 hot pass 升级到 AVX2 SIMD 8-lane + scalar tail；线程兜底独立
+	# 总开关。所有 flag 默认 false，1000-tick mean ≥ 30% 加速 + 年度统计 |Δ|
+	# < 0.5% 验收后逐项开启。前置 use_gdext_climate_pass_b / use_gdext_ocean_*
+	# 必须 ACTIVE，否则 simd flag 静默忽略。
+	{
+		name = &"use_gdext_pass_b_simd",
+		owner = "climate.pass_b",
+		default = false,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget：climate Pass-B AVX2 SIMD 8-lane kernel；目标 0.86ms → < 0.15ms",
+	},
+	{
+		name = &"use_gdext_ocean_water_simd",
+		owner = "ocean.heat_transport",
+		default = false,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget：ocean water pass AVX2 SIMD 8-lane kernel；目标 0.4ms → < 0.1ms",
+	},
+	{
+		name = &"use_gdext_ocean_land_simd",
+		owner = "ocean.heat_transport",
+		default = false,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget：ocean land pass AVX2 SIMD 8-lane kernel；目标 0.4ms → < 0.1ms",
+	},
+	{
+		name = &"use_gdext_thread_fallback",
+		owner = "data_core.thread_fallback",
+		default = false,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget：总开关，SIMD 路径不达标或大地图场景时启用 WorkerThreadPool _thread 降级（复刻 bench_pass_a_full_thread 模板）",
+	},
+	{
+		name = &"use_atlas_dirty_throttle",
+		owner = "rendering.map_baker",
+		default = false,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget：enum atlas upload 节流。累积 dirty cell 数 / 跳过次数 / 距上次 flush 的 tick 数，达阈值才 image_create + texture.update。Godot 4 无 partial texture upload API（#65762），整图 1.8MB upload 是 1.27ms 瓶颈；节流目标 ≥50% 跳过率 → 节省 ~0.6-0.9ms。视觉残影由 64-tick 自愈 + 强制 flush 钩子兜底",
+	},
+	# plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas pipeline
+	# 4 个工作 phase（DYNAMIC / ECOLOGY / SMOOTH / ICE）的 dirty 路径 kill-switch。
+	# 默认 true 与 cpp run_atlas_pipeline_step 现行 dirty 编码行为一致；false 时
+	# dvas_system 不向 cpp 传 dirty_indices 且加 force_full_encode=true，cpp 覆盖
+	# dirty_path_used=false → 4 phase 全部走 all_cells（与 cache_invalid 首帧路径
+	# 等价），保留 SAME_SOURCE A/B 30 tick 校验能力（任务 7 验收 + 回归排障入口）。
+	{
+		name = &"use_gdext_dynamic_atlas_terminal_dirty",
+		owner = "rendering.dynamic_visual_atlas",
+		default = true,
+		resource = "ClimateProfile",
+		description = "plan/sim-2ms-simd-dirty-budget 任务 7：dynamic_visual_atlas 4 phase dirty 编码 kill-switch。默认 true 走 cpp 现行 dirty 路径；false 时 dvas_system 跳过传 dirty_indices 且 opts.force_full_encode=true 让 cpp 覆盖 dirty_path_used=false 强制全集编码。仅作为 A/B 对照与回归排障入口，生产无理由切 false",
 	},
 ]
 

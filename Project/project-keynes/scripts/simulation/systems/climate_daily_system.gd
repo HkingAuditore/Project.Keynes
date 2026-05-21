@@ -407,6 +407,8 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 		"dirty_ratio": dirty_ratio_out,
 		"visited_ratio": visited_ratio_out,
 		"pass_b_path": pass_b_path_out,
+		# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
+		"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 	}
 
 
@@ -448,6 +450,8 @@ func _finalize_round() -> void:
 			"pa_pushed_cells": _pa_pushed_out,
 			"pa_total_cells": _pa_total_out,
 			"pa_push_ratio": _pa_push_ratio_out,
+			# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
+			"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 		}
 		var n: int = generator._daily_climate_call_count
 		if n == 1 or (n % 365) == 0:

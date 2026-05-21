@@ -195,6 +195,15 @@ var _gdext_summary_fallbacks: int = 0
 var _gdext_summary_total_ms: float = 0.0
 var _gdext_summary_warned_fallback: bool = false
 var _gdext_summary_first_attempt_logged: bool = false
+
+# plan/weather-refresh-cpp-all PR-2：weather refresh daily 合并 facade 运行时统计。
+# 仅在 try_run_refresh_daily_combined_gdext 成功路径累计；rc!=0 路径走 fallback
+# 并节流告警（_gdext_combined_warned_fallback 一次性）。HUD 用 runs/total_ms 算
+# 平均 ms，与单 pass 各自的 _gdext_field/dist/summary 统计互斥（合并成功一次
+# ≈ 4 段 cpp pass 各被替代一次）。
+var _gdext_combined_runs: int = 0
+var _gdext_combined_total_ms: float = 0.0
+var _gdext_combined_warned_fallback: bool = false
 # A/B verify：dev 诊断开关 + 容差。开启后 commit 仍走 C++，verify 跑 GDScript shadow 对账。
 var _distribute_verify_enabled: bool = false
 var _distribute_verify_tol_f32: float = 1.0e-4
@@ -1023,6 +1032,160 @@ func _try_run_weather_summary_fronts_gdext(map: MapData, world: WorldData) -> Va
 	for d in fronts_arr:
 		out.append(_unpack_summary_dict_to_front(d))
 	return out
+
+# ─── plan/weather-refresh-cpp-all PR-2 facade ─────────────────────────────
+# 单 cpp call 跑完 weather refresh daily 全套（field_solve + distribute +
+# summary_fronts + cyclone_wake + stage_b 五段），消除 GDScript ↔ C++ 之间
+# 5 次 marshal。返回值：
+#   { ok: bool, fronts: Array[WeatherFront], breakdown: Dictionary, fail_stage: String }
+# ok=false 时 caller 必须走 GDScript fallback（refresh_daily_stage_a +
+# refresh_daily_stage_b）。fail_stage 用于诊断（"precondition" / "field_solve" /
+# "distribute" / "summary" / "stage_b" / "rc"）。
+#
+# 前置条件：
+#   - _data_core_world_ext 已绑定且 has_method("run_weather_refresh_daily_pass")
+#   - 由 map_generator.refresh_weather_daily() 间接保证
+#
+# 副作用（成功路径）：
+#   - 推进 _day_counter / _field_solve_tick（等价于 tick_one_day 的 day-bump）
+#   - 写入 SoA 8 字段（cpp 端 field_solve 直写）
+#   - 写入 _active_fronts = fronts_cpp（替代 commit() 末段）
+#   - 同步 ocean_current_perturbation（cpp 端 cyclone_wake 维护）
+#   - 写入 _last_breakdown（advance/distribute/summary/cyclone/stage_b 子段 ms）
+#   - distribute 写回的 acc_snow / pre_snow_cover 由 caller 在拿到 fronts 后
+#     按需同步（与 _try_run_weather_distribute_gdext 行为一致）；本函数不
+#     做 cell-level 反向写入，避免重复 hot loop。
+func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
+		season_idx: int, climate_anomaly: float, season_phase: float = -1.0,
+		stage_b_knobs: Dictionary = {}) -> Dictionary:
+	var ret: Dictionary = {
+		"ok": false,
+		"fronts": [] as Array[WeatherFront],
+		"breakdown": {},
+		"fail_stage": "precondition",
+	}
+	if _data_core_world_ext == null:
+		return ret
+	if not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
+		return ret
+	if map == null or world == null:
+		return ret
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return ret
+
+	var t_us0: int = Time.get_ticks_usec()
+
+	# Step 1：初始化 field slice state（替代 tick_one_day 入口的 day-bump +
+	# wind_fn 设置；count_day=true，与 tick_one_day 语义一致）。
+	_current_map_for_tick = map
+	begin_weather_field_solve(map, world, season_idx, climate_anomaly, season_phase, true)
+	# fast-indexed 是 cpp 5 段的硬前置条件（field_solve / distribute /
+	# summary / feedback 都要 neighbor_indices_packed 完整）。任意一段缺失
+	# 立即放弃，让 caller 走 GDScript fallback 而不是付出半 cpp 半 GDScript 代价。
+	if not _field_solver._field_slice_fast_indexed:
+		_clear_weather_field_slice_state()
+		ret["fail_stage"] = "fast_indexed_missing"
+		return ret
+
+	# Step 2：合并 4 组 knobs。各 builder 已存在且严格按 cpp 端 5 段所需 key
+	# 集合产出。super-knobs 用 merge() 合到一个 Dictionary 单次跨界传递。
+	# stage_b 的 knobs 由 generator 提供（builder 在 generator 那边，
+	# weather_system 拿不到 cp/lut；caller 必须传入）。
+	var super_knobs: Dictionary = _build_weather_field_knobs(map, world, n_cells)
+	var dist_knobs: Dictionary = _build_weather_distribute_knobs(map, n_cells)
+	for k in dist_knobs.keys():
+		super_knobs[k] = dist_knobs[k]
+	var summary_knobs: Dictionary = _build_weather_summary_knobs(map, world)
+	for k in summary_knobs.keys():
+		super_knobs[k] = summary_knobs[k]
+	# stage_b 的 5 段 knobs 由 caller（map_generator.refresh_weather_daily facade）
+	# 通过 stage_b_knobs 参数注入——builder 在 generator 那边（依赖 cp/lut），
+	# weather_system 拿不到。如果 caller 传空 dict（例如还在试运行阶段），那么
+	# cpp 端会跳过 stage_b 段（stage_b_pass 内部检查 run_albedo/veg_dyn/feedback
+	# 三个 flag 全 false 时直接 return rc=0），这是允许的过渡状态。
+	# 注意：把 stage_b_knobs 的所有 key 平铺到 super_knobs 顶层，与 cpp 端
+	# run_weather_refresh_daily_pass 解 stage_b 段时按 top-level key 取值的约定一致。
+	if not stage_b_knobs.is_empty():
+		for k in stage_b_knobs.keys():
+			# 不允许 stage_b key 覆盖 weather field/distribute/summary 已写好的同名
+			# key（例如 n_cells / neighbor_indices）——后者是真值，stage_b 端的
+			# n_cells / neighbor_indices 与 weather 段必然一致，但为安全起见
+			# 用 has() 做防御。
+			if not super_knobs.has(k):
+				super_knobs[k] = stage_b_knobs[k]
+
+	# Step 3：单次 cpp call。
+	var rc_dict: Dictionary = _data_core_world_ext.run_weather_refresh_daily_pass(super_knobs)
+	var rc_int: int = int(rc_dict.get("rc", -1))
+	if rc_int != 0:
+		# cpp 端任一段失败 → 清理 slice state，让 caller 走 GDScript fallback。
+		_clear_weather_field_slice_state()
+		ret["fail_stage"] = String(rc_dict.get("fail_stage", "rc"))
+		ret["breakdown"] = {
+			"total_ms": float(rc_dict.get("total_ms", 0.0)),
+		}
+		if not _gdext_combined_warned_fallback:
+			_gdext_combined_warned_fallback = true
+			push_warning("[weather/combined] run_weather_refresh_daily_pass rc=%d fail_stage=%s; falling back to GDScript chain" % [rc_int, ret["fail_stage"]])
+		return ret
+
+	# Step 4：解包 fronts，写 _active_fronts（替代 commit() summary 段 +
+	# tick_one_day 末端 _active_fronts 写入）。
+	var fronts_arr: Array = rc_dict.get("fronts", [])
+	var fronts_out: Array[WeatherFront] = [] as Array[WeatherFront]
+	for d in fronts_arr:
+		fronts_out.append(_unpack_summary_dict_to_front(d))
+	_active_fronts = fronts_out
+
+	# Step 5：cover_dirty 同步（distribute 段输出）。
+	_cover_dirty = bool(rc_dict.get("cover_dirty", false)) or _cover_dirty
+
+	# Step 6：cyclone_wake 镜像（cpp 端维护 _cyclone_perturbations 内部
+	# vector，GDScript 端 ocean_current_perturbation 用于航运 AI 直读）。
+	if _data_core_world_ext.has_method("get_cyclone_perturbations_dict"):
+		var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
+		# 替换式同步而非 merge：cpp 是 source of truth（已经做了衰减 + 注入）。
+		ocean_current_perturbation = cyclone_mirror
+
+	# Step 7：清理 slice state（cpp 已直写 SoA，_field_slice_* buffer 不再需要）。
+	_clear_weather_field_slice_state()
+	_current_map_for_tick = null
+
+	# Step 8：拼装 _last_breakdown（与 GDScript path 字段集合保持一致）。
+	var combined_total_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+	var br: Dictionary = {
+		"advance_ms": float(rc_dict.get("advance_ms", 0.0)),
+		"distribute_ms": float(rc_dict.get("distribute_ms", 0.0)),
+		"summary_ms": float(rc_dict.get("summary_ms", 0.0)),
+		"cyclone_ms": float(rc_dict.get("cyclone_ms", 0.0)),
+		"stage_b_ms": float(rc_dict.get("stage_b_ms", 0.0)),
+		"albedo_ms": float(rc_dict.get("albedo_ms", 0.0)),
+		"veg_dyn_ms": float(rc_dict.get("veg_dyn_ms", 0.0)),
+		"feedback_ms": float(rc_dict.get("feedback_ms", 0.0)),
+		"weather_tick_ms": float(rc_dict.get("weather_tick_ms", combined_total_ms)),
+		"total_ms": combined_total_ms,
+		"fronts": fronts_out.size(),
+		"path": "gdext_combined",
+	}
+	# stage_b succession 写回（与 _build_native_daily_stage_b_knobs 等价）
+	if rc_dict.has("succession_indices"):
+		br["succession_indices"] = rc_dict["succession_indices"]
+		br["succession_to_veg"] = rc_dict["succession_to_veg"]
+		br["stat_succession_count"] = int(rc_dict.get("stat_succession_count", 0))
+	_last_breakdown = br
+
+	# 节流告警（仅首次）：标记 gdext_combined ACTIVE。
+	_gdext_combined_runs += 1
+	_gdext_combined_total_ms += combined_total_ms
+	if _gdext_combined_runs == 1:
+		print("[weather/combined] gdext path ACTIVE — first run elapsed=%.2fms (target ≤ 1.5ms; legacy stage_a+stage_b chain ≈ 1.0-1.2ms baseline + 3 marshal overhead)" % combined_total_ms)
+
+	ret["ok"] = true
+	ret["fronts"] = fronts_out
+	ret["breakdown"] = br
+	ret["fail_stage"] = ""
+	return ret
 
 # C++ 完成后 SoA 已经写好，把 8 个数组的内容按 i 拷回 _field_solver._field_slice_next_*
 # 让 commit_weather_field_solve() 用同样的 GDScript 数据流 commit 回 cells +

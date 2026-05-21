@@ -386,10 +386,57 @@ var _season_stage4_deltas: Dictionary = {}
 # 的拆分耗时（path/prepare_ms/upload_ms/image_ms/dirty_cells/dirty_ratio）回填
 # 到这里，供 main.gd fast tick WARN 详细日志展开。schema 与 enum_atlas 同构。
 var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
+
+# Perf instrumentation freshness（方案 ④ Step 1）：
+# 5 个 _last_*_breakdown 字典都是"上次执行的快照"，没刷新时 perf_recorder
+# 仍会每帧把同一份 stale 值写入 CSV。让 main.gd 在 fast tick 入口同步当前
+# tick_idx 到这里，所有写入点把它打到字典内的 `_tick_idx` 字段；
+# perf_recorder 比对 row.tick_idx ≠ dict._tick_idx 时跳过整组字段，避免
+# 把 "305 行重复值" 累加成假象总耗时。
+var _current_fast_tick_idx: int = 0
 var _pending_season_refresh: bool = false
 var _pending_season_idx: int = 0
 var _season_refresh_in_progress: bool = false
 var _last_season_refresh_breakdown: Dictionary = {}
+# X2-精简版（2026-05-21）：season_refresh round 内 SoA-slots 缓存标志。
+# round 启动时 refresh_slots_from_map 调一次后置 true；
+# 之后每个 stage helper 进入时若仍为 true → 跳过 refresh_slots（省 ~14μs × 11 = ~0.15ms/round）；
+# 任何 stage 走 GDScript fallback（_apply_xxx 直接改 cell 字段而未 flush 回 SoA）→ 置 false，
+# 下一个 stage helper 会自动补一次 refresh_slots 保证 C++ SoA 看到最新 cell。
+# round 结束（finish_season_refresh）→ 置 false。
+var _season_round_slots_fresh: bool = false
+# X2 once-log：累计当 round 内 ensure helper 的 skip / refresh 次数，用于 A/B 验证。
+var _season_round_slots_skip_count: int = 0
+var _season_round_slots_refresh_count: int = 0
+
+# ── DOTS-Final-Frontier Phase B+：season refresh full-round single-call 状态 ──
+# B+ 路径将 12-stage round 的"调度层"也下沉到 C++（一次 start_season_round → N 次
+# run_season_round_slice → 一次 finish_season_round），上层 SUS Job 仅做 3 次跨界。
+# - _season_round_b_plus_handle: C++ 端返回的 round handle（generation 计数器）；
+#   <=0 表示当前没有 active round。round 跨帧持有，每个 slice 复用。
+# - _season_round_b_plus_logged: once-log 防 spam（gate 失败 / mid-slice 异常各打一次）。
+# - _season_round_b_plus_native_ms: 累计 round 总 native_ms，finish 时落到 breakdown。
+# 行为变更（用户 2026-05-21 已确认）：B+ 路径下 facade sync + history push 由原 8 次
+# /round 收敛为 1 次 /round（finish 末尾）。原多次 push 实为环形缓冲污染，B+ 修复后
+# 与"每季度一次状态快照"语义对齐。
+var _season_round_b_plus_handle: int = 0
+var _season_round_b_plus_logged: Dictionary = {}
+var _season_round_b_plus_native_ms: float = 0.0
+var _season_round_b_plus_slices_used: int = 0
+var _season_round_b_plus_stages_done: int = 0
+# B+ round 验收采集器：每个 finish_season_round_b_plus 完成时 append 一条记录，
+# 由 dots_final_frontier_perf_verdict.evaluate(season_round_stats=…) 消费。
+# pop_b_plus_round_samples() 一次性取走并清零，避免长期增长。
+# round_wall_ms = finish 时刻挂钟相对 round 启动的时间（涵盖跨界 + GDScript 包装）。
+var _b_plus_rounds_total: int = 0
+var _b_plus_rounds_b_plus: int = 0
+var _b_plus_rounds_fallback: int = 0
+var _b_plus_slices_used_samples: PackedInt32Array = PackedInt32Array()
+var _b_plus_stages_done_samples: PackedInt32Array = PackedInt32Array()
+var _b_plus_native_ms_samples: PackedFloat32Array = PackedFloat32Array()
+var _b_plus_wall_ms_samples: PackedFloat32Array = PackedFloat32Array()
+# round 启动时刻（usec），finish 时算 wall_ms。0 表示当前没 active round。
+var _b_plus_round_start_usec: int = 0
 
 # True Insolation-Driven Climate（Phase F）：按纬度缓存的"一年平均日射" lookup。
 # key  = round(ny * _INSOL_MEAN_LUT_SIZE) ∈ [0, SIZE]
@@ -689,6 +736,24 @@ var _gdext_sea_ice_total_ms: float = 0.0
 var _gdext_sea_ice_first_attempt_logged: bool = false
 var _gdext_sea_ice_signature_checked: bool = false
 var _gdext_sea_ice_signature_ok: bool = false
+
+# 方案 ① Step 1（确诊）：sea_ice pass total_wall_ms ≥ SLOW_DUMP_THRESHOLD_MS 时
+# 强制打印 _last_sea_ice_daily_breakdown 全字段（path/pack/refresh/native/native_wall/
+# sync/flip/total_wall/water/flipped），让用户一眼看出 7ms 是 GDScript fallback
+# 还是 gdext 路径但 pack/sync 拖慢。节流到至少 30 fast tick 间隔一次，避免刷屏。
+const _SEA_ICE_SLOW_DUMP_THRESHOLD_MS: float = 5.0
+const _SEA_ICE_SLOW_DUMP_MIN_INTERVAL: int = 30
+var _sea_ice_slow_dump_last_tick: int = -10000
+
+# Plan: civ-grounded-development / 方案 ④（weather cyclone 突刺诊断）
+# 5/21 perf 数据 tick 165 cyclone_ms = 6.49ms（其余 48 帧均 0.13~0.17ms，差 40 倍）。
+# 强烈怀疑某种"风暴诞生/合并/死亡"路径走了一次性重操作。先加一次性诊断：
+# weather 总 tick ≥ 5ms 或 cyclone_ms ≥ 3ms 任一触发时打 _last_weather_breakdown 全字段。
+# 节流到至少 30 fast tick 间隔一次，避免突刺连帧刷屏。
+const _WEATHER_SLOW_DUMP_TOTAL_THRESHOLD_MS: float = 5.0
+const _WEATHER_SLOW_DUMP_CYCLONE_THRESHOLD_MS: float = 3.0
+const _WEATHER_SLOW_DUMP_MIN_INTERVAL: int = 30
+var _weather_slow_dump_last_tick: int = -10000
 # F.4 共享 buffer：base_terrain / temp_transport_anomaly / upwelling_strength / cell.temperature
 # 按 cells 索引提取（schema 没有 SoA 镜像，或与 GDScript 1:1 mirror 必须用 cell 字段）。
 # 一个 tick 内 build 一次（不 cache 跨 tick：transport_anomaly / upwelling / temperature 每日变）。
@@ -783,7 +848,13 @@ var _season_refresh_job = null
 var _world_clock_ref = null
 # 一次性 deprecated 字段警告守门（避免同一会话反复 print）。
 var _ocean_legacy_warning_logged: bool = false
-var _season_refresh_gdext_fallback_logged: bool = false
+# DOTS-Total-CPP 真·收尾（2026-05-21）：原来的 _season_refresh_gdext_fallback_logged
+# 是"全 stage 共享一个 once-flag"，导致 8 个 stage 只要任一个先 fallback，后面 7 个
+# 全部静默——用户无法看到每个 stage 实际走哪条路。
+# 改成 per-stage-key 的 set：键为 "stage1" / "stage1_gdext" / "stage1_fb:ext" 等，
+# 每个键在同会话内只打印一次；同时给每个 stage 在 success / 各 fallback 分支都加日志。
+var _season_refresh_gdext_fallback_logged: bool = false  # DEPRECATED: 不再写入；保留声明只为兼容历史外部读引用
+var _season_stage_path_logged: Dictionary = {}
 
 # ─── 任务 6：refresh_seasonal per-cell 起点优化（方案 C）───────────────────
 # 行级查表：纬度温度 + 当季温度偏移 都只取决于 ny（= row / (height-1)），
@@ -841,6 +912,10 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_pending_season_refresh = false
 	_season_refresh_in_progress = false
 	_last_season_refresh_breakdown = {}
+	# X2-精简版：reset 时清掉 SoA-slots 缓存标志，避免新世界生成跨用上个世界的 stale fresh。
+	_season_round_slots_fresh = false
+	_season_round_slots_skip_count = 0
+	_season_round_slots_refresh_count = 0
 
 	var t_total := Time.get_ticks_msec()
 	var map := _generate_cells(cfg)
@@ -1343,6 +1418,15 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		slice_ms = float(cp.sim_upload_slice_budget_ms)
 	elif cp.get("sim_slice_budget_ms") != null:
 		slice_ms = float(cp.sim_slice_budget_ms)
+	# plan/atlas-phase-slicing（2026-05-21）：upload Job 强制限上限。
+	# 原因：earth_like.tres 把 sim_upload_slice_budget_ms 设为 800ms（几乎不限），
+	# 与 phase-slicing（每 tick 推 1 phase ≈ 4ms）期望的"单 slice 跑超就让出"
+	# 矛盾——SUS 永远不会因为 slice_budget_us 触顶 break，只能靠 max_slices_per_tick=1
+	# 单线兜底。把 upload_job 的 slice_budget_ms 钳到 4ms（≈ 单 phase 上限），
+	# 形成 max_slices + slice_budget 双保险，即使 C++ DLL 是旧版（不识别 phase_budget）
+	# 也保留时间维度的 yield 能力。
+	if upload_job:
+		slice_ms = clampf(slice_ms, 0.10, 4.0)
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
@@ -1657,6 +1741,10 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 	_native_daily_last_result = res.duplicate(true)
 	var breakdown: Dictionary = res.get("breakdown", {})
 	_last_weather_breakdown = breakdown.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
+	_dump_weather_breakdown_if_slow()
 	return res
 
 
@@ -1723,6 +1811,23 @@ func sus_report_last_tick() -> Dictionary:
 	return _sus.report_last_tick()
 
 
+# Perf instrumentation freshness（方案 ④ Step 1）：main.gd._run_fast_tick() 顶部
+# 每帧调用一次，把当前 _fast_tick_count 同步给 generator。所有 _last_*_breakdown
+# 写入点会从这里取值打到字典内的 `_tick_idx` 字段，让 perf_recorder 区分
+# "本帧真刷新过" vs "stale 快照回放"。
+func set_current_fast_tick_idx(idx: int) -> void:
+	_current_fast_tick_idx = idx
+	# DVA 不持有 generator 引用，单独同步过去；其内部 4 个 _last_breakdown 写入点
+	# 直接读 current_fast_tick_idx。
+	if _dynamic_visual_atlas_upload_job != null \
+			and "current_fast_tick_idx" in _dynamic_visual_atlas_upload_job:
+		_dynamic_visual_atlas_upload_job.current_fast_tick_idx = idx
+
+
+func get_current_fast_tick_idx() -> int:
+	return _current_fast_tick_idx
+
+
 # Daily-sim perf instrumentation：返回上一次 refresh_climate_daily 的子段拆解，
 # 供 main.gd fast tick WARN / 详细日志路径定位 6 段子耗时。
 func sus_climate_breakdown() -> Dictionary:
@@ -1776,6 +1881,8 @@ func record_enum_atlas_upload(axis: String, elapsed_ms: float) -> void:
 		"biome_pending": _enum_atlas_biome_dirty,
 		"cover_pending": _enum_atlas_cover_dirty,
 		"vegetation_pending": _enum_atlas_vegetation_dirty,
+		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+		"_tick_idx": _current_fast_tick_idx,
 	}
 
 
@@ -1784,6 +1891,8 @@ func record_enum_atlas_upload_report(report: Dictionary) -> void:
 	_last_enum_atlas_upload_breakdown["biome_pending"] = _enum_atlas_biome_dirty
 	_last_enum_atlas_upload_breakdown["cover_pending"] = _enum_atlas_cover_dirty
 	_last_enum_atlas_upload_breakdown["vegetation_pending"] = _enum_atlas_vegetation_dirty
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_enum_atlas_upload_breakdown["_tick_idx"] = _current_fast_tick_idx
 
 
 func sus_enum_atlas_breakdown() -> Dictionary:
@@ -1796,6 +1905,8 @@ func sus_enum_atlas_breakdown() -> Dictionary:
 # sus_sea_ice_atlas_breakdown() 取来打印，定位 232ms 异常 slice 的真实瓶颈。
 func record_sea_ice_atlas_upload(report: Dictionary) -> void:
 	_last_sea_ice_atlas_upload_breakdown = report.duplicate()
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_sea_ice_atlas_upload_breakdown["_tick_idx"] = _current_fast_tick_idx
 
 
 func sus_sea_ice_atlas_breakdown() -> Dictionary:
@@ -1828,6 +1939,11 @@ func begin_pending_season_refresh() -> int:
 	_pending_season_refresh = false
 	_season_refresh_in_progress = true
 	_last_season_refresh_breakdown = {}
+	# X2-精简版：round 启动重置 SoA-slots 缓存标志位，让第一个 stage helper 自然触发
+	# 唯一一次 refresh_slots_from_map（后续 11 个 stage 共享该次同步）。
+	_season_round_slots_fresh = false
+	_season_round_slots_skip_count = 0
+	_season_round_slots_refresh_count = 0
 	return _pending_season_idx
 
 
@@ -1838,6 +1954,10 @@ func begin_pending_season_refresh() -> int:
 func begin_periodic_season_refresh() -> int:
 	_season_refresh_in_progress = true
 	_last_season_refresh_breakdown = {}
+	# X2-精简版：同上，重置 round 内 slots 缓存标志位。
+	_season_round_slots_fresh = false
+	_season_round_slots_skip_count = 0
+	_season_round_slots_refresh_count = 0
 	var season_idx: int = 0
 	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
 		season_idx = int(_world_clock_ref.season_index())
@@ -1863,6 +1983,19 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 	#  11: consume_feedback_buffers
 	var t_us0: int = Time.get_ticks_usec()
 	var season := clampi(season_idx, 0, 3)
+	# DOTS-Total-CPP 真·收尾（2026-05-21）：第一次进入 run_season_refresh_stage 时打一条
+	# 启动 banner，让 rebuild 后立刻能看到 use_gdext_season_refresh 总开关、ext 引用、
+	# has_method 的真实状态——这是验证 8 stage 是否能走 gdext 路径的最快诊断。
+	if not _season_stage_path_logged.has("__startup_banner"):
+		_season_stage_path_logged["__startup_banner"] = true
+		var cp_dbg := _c()
+		var flag_v: String = "<cp=null>" if cp_dbg == null else str(bool(cp_dbg.use_gdext_season_refresh))
+		var ext_v: String = "null" if _data_core_world_ext == null else "ok"
+		var method_v: String = "n/a"
+		if _data_core_world_ext != null:
+			method_v = str(_data_core_world_ext.has_method("run_season_refresh_stage"))
+		print("[season_refresh] startup banner: use_gdext_season_refresh=%s ext=%s has_run_season_refresh_stage=%s"
+				% [flag_v, ext_v, method_v])
 	match stage:
 		0:
 			_last_world = world
@@ -1879,44 +2012,58 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 						cell.moisture = cell.base_moisture
 					else:
 						cell.moisture = clampf(cell.base_moisture * moist_scale, 0.0, 1.0)
+				_season_round_slots_fresh = false  # X2: GDScript fallback 改了 cell.moisture
 		1:
-			# TODO(dots-total-cpp): stage 1 _apply_rain_shadow_per_cell 完整 C++ 化
-			# 需在 C++ 端复刻 WindBelt.upwind_hex_dir + 6 邻接 lookback；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_rain_shadow_per_cell(map, _last_cfg, float(season) + 0.5)
+			# DOTS-Total-CPP（2026-05-21 真·收尾）：先 try gdext stage 1，失败 fallback GDScript。
+			if not _run_season_refresh_stage1_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_rain_shadow_per_cell(map, _last_cfg, float(season) + 0.5)
+					_season_round_slots_fresh = false  # X2
 		2:
-			# TODO(dots-total-cpp): stage 2 _seasonal_redecide_terrain 完整 C++ 化
-			# 需复刻 _decide_terrain 决策树 + apply_terrain multi-axis sync；本会话保留 GDScript。
-			_seasonal_redecide_terrain(map, season)
+			# DOTS-Total-CPP：先 try gdext stage 2 redecide_terrain，失败 fallback GDScript。
+			if not _run_season_refresh_stage2_gdext(map, world, season):
+				_seasonal_redecide_terrain(map, season)
+				_season_round_slots_fresh = false  # X2
 		3:
-			# TODO(dots-total-cpp): stage 3 _apply_river_ecology 完整 C++ 化
-			if _last_cfg != null:
-				_apply_river_ecology(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext stage 3 river_ecology，失败 fallback GDScript。
+			if not _run_season_refresh_stage3_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_river_ecology(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		4:
-			# TODO(dots-total-cpp): stage 4 _apply_vegetation_feedback 完整 C++ 化
-			# 涉及邻域 diffuse + 二次 redecide；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_vegetation_feedback(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext stage 4 vegetation_feedback，失败 fallback GDScript。
+			if not _run_season_refresh_stage4_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_vegetation_feedback(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		5:
-			# TODO(dots-total-cpp): stage 5 shrubland_pass 完整 C++ 化
-			# 涉及 _is_permanent_landform + apply_terrain multi-axis sync；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_shrubland_pass(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext stage 5 shrubland_pass，失败 fallback GDScript。
+			if not _run_season_refresh_stage5_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_shrubland_pass(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		6:
-			# TODO(dots-total-cpp): stage 6 mangrove_pass 完整 C++ 化（282 行）；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_mangrove_pass(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext stage 6 mangrove_pass，失败 fallback GDScript。
+			if not _run_season_refresh_stage6_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_mangrove_pass(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		7:
-			# TODO(dots-total-cpp): stage 7 glacier_pass 完整 C++ 化（843 行多 pass 雪线/冰川流/侵蚀）；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_glacier_pass(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext stage 7 glacier_pass，失败 fallback GDScript。
+			if not _run_season_refresh_stage7_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_glacier_pass(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		8:
-			# TODO(dots-total-cpp): stage 8 swamp_pass 完整 C++ 化；本会话保留 GDScript。
-			if _last_cfg != null:
-				_apply_swamp_pass(map, _last_cfg)
+			# DOTS-Total-CPP：先 try gdext swamp（C++ 端 stage_id=9），失败 fallback GDScript。
+			if not _run_season_refresh_swamp_gdext(map, world, season):
+				if _last_cfg != null:
+					_apply_swamp_pass(map, _last_cfg)
+					_season_round_slots_fresh = false  # X2
 		9:
 			if not _run_season_refresh_stage8_gdext(map, world, season):
 				_seasonal_sync_current_state(map, season)
+				_season_round_slots_fresh = false  # X2: GDScript 改 landform/vegetation/cover
 		10:
 			# stage 10 is a render/upload concern. Queue it instead of blocking
 			# the season simulation slice with a full biome atlas rebuild.
@@ -1933,6 +2080,7 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 				# PackedArray 引用零拷贝传递。
 				if not _run_season_refresh_stage11_gdext(map, world, season):
 					_consume_feedback_buffers(map, cp_fb.feedback_decay)
+					_season_round_slots_fresh = false  # X2
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
 	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
 	# H 诊断：单 stage > 30ms → 直接打点，定位 season_refresh max=128-141ms 的根因 stage。
@@ -1956,25 +2104,47 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	if cp.get("sim_slice_budget_ms") != null:
 		max_usec = maxi(50, int(round(float(cp.sim_slice_budget_ms) * 1000.0)))
 
+	# plan/season-stage4-chunking（2026-05-21）：stage_4_veg_feedback chunk 化。
+	# 原因：earth_like.tres 把 sim_slice_budget_ms 设为 800ms，导致 max_usec=800000us
+	# ≈ 不限，stage_4 内部的 deadline 检查永不触发 → 一次跑完 n*3 = 7200 cell-iter
+	# spike 到 15ms。stage_4 是 11 stage 中最重的（_vegetation_donor_amount × 6 邻居
+	# + Vector3i 哈希 + redecide 三段），单 stage 用 ~12ms 时实测会顶到 max_tick。
+	# 这里把 stage_4 的预算压到 1.5ms（5/21 perf 显示 stage_4 cursor 4 帧 × 3ms，
+	# 拍打到 ~1.5ms 后会变 ~6-8 帧 × 1.5ms，不再撑爆 fast tick 10ms 预算）。
+	# 其它 stage（2/3）也加 cap：earth_like.tres 的 800ms budget 是上限，不是 SUS
+	# 想让单 slice 用满的预算。这里给各 stage 单独压到 ~2.5ms 同样原因。
+	const STAGE2_MAX_USEC: int = 2500
+	const STAGE3_MAX_USEC: int = 2500
+	const STAGE4_MAX_USEC: int = 1500
 	if stage == 2:
-		return _run_season_stage2_micro(map, season_idx, cursor, max_usec)
+		var stage2_usec: int = mini(max_usec, STAGE2_MAX_USEC)
+		return _run_season_stage2_micro(map, season_idx, cursor, stage2_usec)
 	if stage == 3:
-		return _run_season_stage3_micro(map, season_idx, cursor, max_usec)
+		var stage3_usec: int = mini(max_usec, STAGE3_MAX_USEC)
+		return _run_season_stage3_micro(map, season_idx, cursor, stage3_usec)
 	if stage == 4:
-		return _run_season_stage4_micro(map, season_idx, cursor, max_usec)
+		var stage4_usec: int = mini(max_usec, STAGE4_MAX_USEC)
+		return _run_season_stage4_micro(map, season_idx, cursor, stage4_usec)
 
 	if stage != 1:
 		return out
+	# DOTS-Total-CPP（2026-05-21 真·收尾）：micro-pass 路径补 once-log。
+	# 主 switch 的 _run_season_refresh_stage1_gdext 有完整 _season_log_path_once，
+	# 但 micro-pass 这条独立路径之前完全静默 → 日志里看不到 stage 1 走哪条。
+	# 这里沿用同 helper，stage_key 用 "stage1_micro" 区分主 switch 的 "stage1"。
 	if not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage1_micro", "gdscript_fallback", "flag use_gdext_season_refresh=false")
 		return out
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_micro_pass"):
+		_season_log_path_once("stage1_micro", "gdscript_fallback", "ext/method/map/cfg unavailable (no run_season_refresh_micro_pass)")
 		return out
 	if not map.has_indices():
+		_season_log_path_once("stage1_micro", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
 		return out
 
-	if cursor <= 0 and _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	if cursor <= 0:
+		_ensure_season_round_slots_fresh()
 
 	var knobs: Dictionary = {
 		"stage": stage,
@@ -1990,7 +2160,11 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_micro_pass(knobs)
 	if bool(res.get("fallback", true)):
 		if cursor <= 0:
+			_season_log_path_once("stage1_micro", "gdscript_fallback", "C++ returned fallback at cursor=0: %s" % str(res.get("reason", "unknown")))
 			return out
+		# mid-stage fallback：C++ 已经处理了一部分 cursor 但中途放弃；
+		# 调用方需要继续走 micro 路径，但本帧没新进度 → handled=true done=false。
+		_season_log_path_once("stage1_micro", "gdext_mid_fallback", "C++ mid-stage fallback cursor=%d: %s" % [cursor, str(res.get("reason", "unknown"))])
 		push_warning("[season_refresh] micro-pass fallback mid-stage: %s" % str(res.get("reason", "")))
 		out["handled"] = true
 		out["done"] = false
@@ -2004,6 +2178,11 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	_last_season_refresh_breakdown["stage_%d_native_ms" % stage] = elapsed_ms
 	_last_season_refresh_breakdown["stage_%d_ms" % stage] = elapsed_ms
 	_last_season_refresh_breakdown["stage_%d_cursor" % stage] = next_cursor
+	# 成功路径 once-log：done=true 时只打一次，未完成时不刷屏（detail 含 done 状态做 dedup key）。
+	if done:
+		_season_log_path_once("stage1_micro", "gdext", "native_ms=%.3f done=true cursor=%d" % [elapsed_ms, next_cursor])
+	else:
+		_season_log_path_once("stage1_micro", "gdext", "native_ms=%.3f done=false (chunking)" % elapsed_ms)
 	out["handled"] = true
 	out["done"] = done
 	out["cursor"] = next_cursor
@@ -2027,6 +2206,26 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 		return out
 	var cfg_local: MapConfig = _last_cfg
 	var season: int = clampi(season_idx, 0, 3)
+	# DOTS-Total-CPP（2026-05-21 真·收尾 / 方案 A）：cursor=0 时先 try C++ 一帧跑完。
+	# 成功 → 直接 done=true 返回（绕过 GDScript chunk）；失败 → fallback 走下方 chunk 不变。
+	# 见 plan.md「实施策略 / stage 2」与 _run_season_refresh_stage2_gdext (line ~2587)。
+	# helper 的 world 参数标记为 _world（unused），传 null 安全。
+	if cursor == 0:
+		var t_try0: int = Time.get_ticks_usec()
+		if _run_season_refresh_stage2_gdext(map, null, season):
+			var elapsed_try: float = (Time.get_ticks_usec() - t_try0) / 1000.0
+			var n_total: int = map.cell_count() if map.has_indices() else map.all_cells().size()
+			out["done"] = true
+			out["cursor"] = n_total
+			out["elapsed_ms"] = elapsed_try
+			out["work_done"] = n_total
+			# breakdown 由 _run_season_refresh_stage2_gdext 内部已写 stage_2_path=gdext / stage_2_native_ms；
+			# 这里补 _ms（wall-clock 含 helper 开销）与 cursor 保持口径一致。
+			_last_season_refresh_breakdown["stage_2_ms"] = elapsed_try
+			_last_season_refresh_breakdown["stage_2_cursor"] = n_total
+			return out
+		# C++ 走不通（flag off / ext 缺失 / size mismatch / C++ fallback），
+		# helper 内部已 _season_log_path_once，这里静默落 chunk。
 	_ensure_row_tables(cfg_local, season)
 	var lat_tab: PackedFloat32Array = _row_lat_temp
 	var off_tab: PackedFloat32Array = _row_season_off
@@ -2070,6 +2269,7 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 	_last_season_refresh_breakdown["stage_2_path"] = "gdscript_micro"
 	_last_season_refresh_breakdown["stage_2_ms"] = elapsed_ms
 	_last_season_refresh_breakdown["stage_2_cursor"] = cur
+	_season_round_slots_fresh = false  # X2: chunk path apply_terrain 改 cell.terrain
 	return out
 
 
@@ -2091,6 +2291,21 @@ func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_us
 		return out
 	var cfg_local: MapConfig = _last_cfg
 	var _season := clampi(season_idx, 0, 3)
+	# DOTS-Total-CPP（2026-05-21 真·收尾 / 方案 A）：cursor=0 时先 try C++ 一帧跑完。
+	# 见 _run_season_refresh_stage3_gdext (line ~2670)。river_ecology 无跨 cell 依赖，
+	# C++ 一帧跑完 ~0.1ms 远低于 chunk 的 ~1ms。
+	if cursor == 0:
+		var t_try0: int = Time.get_ticks_usec()
+		if _run_season_refresh_stage3_gdext(map, null, _season):
+			var elapsed_try: float = (Time.get_ticks_usec() - t_try0) / 1000.0
+			var n_total: int = map.cell_count() if map.has_indices() else map.all_cells().size()
+			out["done"] = true
+			out["cursor"] = n_total
+			out["elapsed_ms"] = elapsed_try
+			out["work_done"] = n_total
+			_last_season_refresh_breakdown["stage_3_ms"] = elapsed_try
+			_last_season_refresh_breakdown["stage_3_cursor"] = n_total
+			return out
 	# season 此处仅作占位防 unused-warning；river 决策实际只看年均温
 	# （_compute_temperature(ny, elev)），不带季节 offset，与 _apply_river_ecology 等价。
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
@@ -2128,6 +2343,7 @@ func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_us
 	_last_season_refresh_breakdown["stage_3_path"] = "gdscript_micro"
 	_last_season_refresh_breakdown["stage_3_ms"] = elapsed_ms
 	_last_season_refresh_breakdown["stage_3_cursor"] = cur
+	_season_round_slots_fresh = false  # X2: chunk path 改 cell.terrain (river ecology)
 	return out
 
 
@@ -2144,6 +2360,25 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 		out["done"] = true
 		return out
 	var t_us0: int = Time.get_ticks_usec()
+	# DOTS-Total-CPP（2026-05-21 真·收尾 / 方案 A）：cursor=0 时先 try C++ 一帧跑完。
+	# 见 _run_season_refresh_stage4_gdext (line ~2709)。stage 4 是 fast_ms p95 最大元凶
+	# （chunk 路径 ~3ms × 4 帧 = ~12ms 总）。C++ 一帧跑完预计 ~0.8-1.5ms。
+	# 注意 stage 4 的 cursor 上限是 n*3（3-pass：donor / apply / redecide），
+	# C++ 内部已合并 3-pass，done 时 cursor 必须设到 n*3 以匹配 chunk 路径口径。
+	var season4: int = clampi(season_idx, 0, 3)
+	if cursor == 0:
+		var t_try0: int = Time.get_ticks_usec()
+		if _run_season_refresh_stage4_gdext(map, null, season4):
+			var elapsed_try: float = (Time.get_ticks_usec() - t_try0) / 1000.0
+			var n_total: int = map.cell_count() if map.has_indices() else map.all_cells().size()
+			var cursor_done: int = n_total * 3
+			out["done"] = true
+			out["cursor"] = cursor_done
+			out["elapsed_ms"] = elapsed_try
+			out["work_done"] = cursor_done
+			_last_season_refresh_breakdown["stage_4_ms"] = elapsed_try
+			_last_season_refresh_breakdown["stage_4_cursor"] = cursor_done
+			return out
 	# 性能修复（2026-05-18）：与 stage_3/stage_11 同因——iter_cells() 零复制，all_cells() 复制 2400 项。
 	# stage_4 在 fast-tick 内每天调用，且本函数在 micro 框架内被多次重入（每次拿一段 cursor），
 	# 累计 array 复制成本可观。优先用索引化路径。
@@ -2211,6 +2446,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 	_last_season_refresh_breakdown["stage_4_path"] = "gdscript_micro"
 	_last_season_refresh_breakdown["stage_4_ms"] = elapsed_ms
 	_last_season_refresh_breakdown["stage_4_cursor"] = cur
+	_season_round_slots_fresh = false  # X2: chunk path 改 base_moisture / cover / vegetation
 	out["done"] = done
 	out["cursor"] = cur
 	out["elapsed_ms"] = elapsed_ms
@@ -2220,27 +2456,77 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
 	_season_refresh_in_progress = false
+	# X2-精简版（2026-05-21）：once-log round 的 slots refresh / skip 计数。
+	# 期望全 gdext 路径下：refresh=1, skip=11（同 round 12 个 stage helper 共享一次 refresh）。
+	# 若 refresh 大于 1 → 说明 round 内某 stage 走了 GDScript fallback 改 cell，触发自动补刷
+	# （这是设计行为；A/B 验证时若发现 refresh>1 但语义无误则属正常）。
+	# 把统计写入 breakdown，方便 perf overlay / sus_season_refresh_breakdown 查询。
+	_last_season_refresh_breakdown["slots_refresh_count"] = _season_round_slots_refresh_count
+	_last_season_refresh_breakdown["slots_skip_count"] = _season_round_slots_skip_count
+	if not _season_stage_path_logged.has("__x2_slots_round_first"):
+		_season_stage_path_logged["__x2_slots_round_first"] = true
+		print("[season_refresh] x2 slots: refresh=%d skip=%d (期望 refresh=1 skip=11 全 gdext 路径)"
+				% [_season_round_slots_refresh_count, _season_round_slots_skip_count])
+	# 重置标志位让下一 round 重新走"首 stage 触发 refresh"流程。
+	_season_round_slots_fresh = false
+	_season_round_slots_skip_count = 0
+	_season_round_slots_refresh_count = 0
 
 
 func sus_season_refresh_breakdown() -> Dictionary:
 	return _last_season_refresh_breakdown.duplicate()
 
 
+# DOTS-Total-CPP 真·收尾（2026-05-21）：per-stage path once-log。
+# 每个 stage_key（如 "stage1"）在同一会话内最多打印一次自己的"路径来源"，
+# 让 rebuild 后 run 一次就能在控制台看到 8 个 stage 各自走的是 gdext / 哪条 fallback。
+# stage_key:  stage 标识，例如 "stage1" / "stage_swamp" / "stage0"
+# path:       "gdext"（成功）/ "gdscript_fallback"（GDScript 兜底）
+# detail:     reason / native_ms / 哪个 gate 拦下
+func _season_log_path_once(stage_key: String, path: String, detail: String) -> void:
+	# 同一 stage 同一 path 同一 detail 才算 dedup；path 切换（fallback→gdext）要重打。
+	var k: String = "%s|%s|%s" % [stage_key, path, detail]
+	if _season_stage_path_logged.has(k):
+		return
+	_season_stage_path_logged[k] = true
+	print("[season_refresh] %s path=%s %s" % [stage_key, path, detail])
+
+
+# X2-精简版（2026-05-21）：round 内 SoA-slots 同步守门员。
+# 调用模式：每个 stage helper 进入时调本函数（替换原 if has_method+refresh_slots_from_map）。
+# 行为：
+#   - 若 _season_round_slots_fresh == true（同 round 已 refresh 过，且中间无 fallback 改 cell）
+#     → 跳过 refresh_slots_from_map，省 ~14μs Variant get-loop。
+#   - 若 false（首次 / 上一 stage 走 GDScript fallback 改 cell 后置 false）
+#     → 调一次 refresh_slots_from_map，置 true。
+# 注意：本 helper 仅用于 season_refresh round 内的 11 处 stage helper（含 micro-pass）。
+# climate_pass_a / daily ECS 路径不在 round 内，**不要**改用本 helper。
+func _ensure_season_round_slots_fresh() -> void:
+	if _data_core_world_ext == null:
+		return
+	if not _data_core_world_ext.has_method("refresh_slots_from_map"):
+		return
+	if _season_round_slots_fresh:
+		_season_round_slots_skip_count += 1
+		return
+	_data_core_world_ext.refresh_slots_from_map()
+	_season_round_slots_fresh = true
+	_season_round_slots_refresh_count += 1
+
+
 func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
 	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage8", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
-		if not _season_refresh_gdext_fallback_logged:
-			print("[season_refresh] gdext stage8 fallback: ext/method/map/cfg unavailable")
-			_season_refresh_gdext_fallback_logged = true
+		_season_log_path_once("stage8", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_lat_lut():
 		map.bake_lat_temp_year_lut(self)
 	_ensure_row_tables(_last_cfg, season)
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_ensure_season_round_slots_fresh()
 	var knobs: Dictionary = {
 		"stage": 8,
 		"season": season,
@@ -2251,13 +2537,12 @@ func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: i
 	}
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
-		if not _season_refresh_gdext_fallback_logged:
-			print("[season_refresh] gdext stage8 fallback: %s" % String(res.get("reason", "unknown")))
-			_season_refresh_gdext_fallback_logged = true
+		_season_log_path_once("stage8", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
 		return false
 	_sync_stage8_facade_fields_from_soa(map)
 	_last_season_refresh_breakdown["stage_8_path"] = "gdext"
 	_last_season_refresh_breakdown["stage_8_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage8", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
 	return true
 
 
@@ -2276,23 +2561,26 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 	#   _consume_feedback_buffers 完全一致（world_ext.cpp L6843 确认）。
 	var cp := _c()
 	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage11", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
 		return false
 	if map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage11", "gdscript_fallback", "ext/method/map unavailable")
 		return false
 	var n_cells: int = map.cell_count()
 	if n_cells <= 0:
+		_season_log_path_once("stage11", "gdscript_fallback", "n_cells<=0")
 		return false
 	# 取 map.xxx_arr 引用；run_climate_feedback_pass 已经维护这两个 array
 	# 与 cell facade 的同步（line 6996-7002）。
 	var soil_arr: PackedFloat32Array = map.soil_moisture_arr
 	var vg_arr: PackedFloat32Array = map.vegetation_growth_pressure_arr
 	if soil_arr.size() != n_cells or vg_arr.size() != n_cells:
+		_season_log_path_once("stage11", "gdscript_fallback", "soil/vg arr size mismatch n_cells=%d soil=%d vg=%d" % [n_cells, soil_arr.size(), vg_arr.size()])
 		return false
 	# 让 C++ 端 SoA 看到最新 base_moisture（stage_8 之前可能已经写过 cell.base_moisture
 	# 而未 flush 回 _slots）。
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_ensure_season_round_slots_fresh()
 	var knobs: Dictionary = {
 		"stage": 10,
 		"n_cells": n_cells,
@@ -2302,9 +2590,7 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 	}
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
-		if not _season_refresh_gdext_fallback_logged:
-			print("[season_refresh] gdext stage11 fallback: %s" % String(res.get("reason", "unknown")))
-			_season_refresh_gdext_fallback_logged = true
+		_season_log_path_once("stage11", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
 		return false
 	# 写回 in/out arrays。C++ 端通过 knobs["soil_moisture_arr"] = soil_arr;
 	# 把 decayed 值写回；这里把更新后的 PackedArray 灌回 map.xxx_arr，
@@ -2318,6 +2604,7 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 	_last_season_refresh_breakdown["stage_11_path"] = "gdext"
 	_last_season_refresh_breakdown["stage_11_native_ms"] = float(res.get("elapsed_ms", 0.0))
 	_last_season_refresh_breakdown["stage_11_touched"] = int(res.get("touched", 0))
+	_season_log_path_once("stage11", "gdext", "native_ms=%.3f touched=%d" % [float(res.get("elapsed_ms", 0.0)), int(res.get("touched", 0))])
 	return true
 
 
@@ -2328,12 +2615,13 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
 	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage0", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage0", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_ensure_season_round_slots_fresh()
 	var moist_scale: float = float(cp.seasonal_moisture_scale[clampi(season, 0, 3)])
 	var knobs: Dictionary = {
 		"stage": 0,
@@ -2343,13 +2631,748 @@ func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: i
 	}
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
-		if not _season_refresh_gdext_fallback_logged:
-			print("[season_refresh] gdext stage0 fallback: %s" % String(res.get("reason", "unknown")))
-			_season_refresh_gdext_fallback_logged = true
+		_season_log_path_once("stage0", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
 		return false
 	_last_season_refresh_breakdown["stage_0_path"] = "gdext"
 	_last_season_refresh_breakdown["stage_0_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage0", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
 	return true
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DOTS-Total-CPP（2026-05-21 真·收尾）：stage 1-9（=swamp）gdext helper。
+# 严格沿用 stage 0/8/11 的双轨模板：
+#   1. flag (cp.use_gdext_season_refresh) + ext + method gate；
+#   2. refresh_slots_from_map() 让 C++ SoA 看到最新 cell 字段；
+#   3. 构造 knobs（每 stage 必需字段见 world_ext.cpp run_season_refresh_stage）；
+#   4. C++ 写 SoA + facade getter 自动透出（hexcell_facade=true）；
+#      多轴变化（terrain/landform/vegetation/cover）需 _sync_stage8_facade_fields_from_soa；
+#   5. fallback once-log 防 spam，回 false 让主 switch 调原 GDScript pass。
+# ════════════════════════════════════════════════════════════════════════════
+
+# 共用工具：构造 row_indices(PackedInt32Array, size=n_cells)，每 cell 一个 row id。
+# 多 stage 共用，避免重复遍历。返回空表表示 cell 不可用。
+func _build_row_indices_for_gdext(map: MapData, cfg: MapConfig) -> PackedInt32Array:
+	var n: int = map.cell_count()
+	var out: PackedInt32Array = PackedInt32Array()
+	if n <= 0 or cfg == null:
+		return out
+	out.resize(n)
+	for i in range(n):
+		var cell: HexCell = map.cell_at(i)
+		if cell == null:
+			out[i] = 0
+			continue
+		out[i] = _cube_to_row(cell, cfg)
+	return out
+
+
+# stage 4 用的 donor_table（PackedFloat32Array, size=26, 按 terrain enum 索引）。
+# 复刻 _vegetation_donor_amount 的 10 类型 hot 表 + 其余为 0。
+func _build_vegetation_donor_table_for_gdext() -> PackedFloat32Array:
+	var c := _c()
+	var t: PackedFloat32Array = PackedFloat32Array()
+	t.resize(26)
+	if c == null:
+		return t
+	t[int(TerrainType.TERRAIN.FOREST)]    = float(c.veg_forest_donor)
+	t[int(TerrainType.TERRAIN.SWAMP)]     = float(c.veg_swamp_donor)
+	t[int(TerrainType.TERRAIN.GRASSLAND)] = float(c.veg_grassland_donor)
+	t[int(TerrainType.TERRAIN.DESERT)]    = float(c.veg_desert_donor)
+	t[int(TerrainType.TERRAIN.JUNGLE)]    = float(c.veg_jungle_donor)
+	t[int(TerrainType.TERRAIN.TAIGA)]     = float(c.veg_taiga_donor)
+	t[int(TerrainType.TERRAIN.SAVANNA)]   = float(c.veg_savanna_donor)
+	t[int(TerrainType.TERRAIN.OASIS)]     = float(c.veg_oasis_donor)
+	t[int(TerrainType.TERRAIN.DELTA)]     = float(c.veg_delta_donor)
+	t[int(TerrainType.TERRAIN.SALT_FLAT)] = float(c.veg_salt_flat_donor)
+	return t
+
+
+# stage 1 用的 jitter_arr（PackedFloat32Array, size=n_cells）。
+# 与 _apply_rain_shadow_per_cell line 3158 完全等价：
+#   jitter[i] = _height_warp.get_noise_2d(cell.q*8.0, cell.r*8.0) * 0.04
+# 让 C++ 端 stage 1 不需要 noise 引擎即可 bit-equal 复刻 WindBelt fallback 路径。
+func _build_rain_shadow_jitter_for_gdext(map: MapData) -> PackedFloat32Array:
+	var n: int = map.cell_count()
+	var out: PackedFloat32Array = PackedFloat32Array()
+	if n <= 0 or _height_warp == null:
+		return out
+	out.resize(n)
+	for i in range(n):
+		var cell: HexCell = map.cell_at(i)
+		if cell == null:
+			out[i] = 0.0
+			continue
+		out[i] = _height_warp.get_noise_2d(float(cell.q) * 8.0, float(cell.r) * 8.0) * 0.04
+	return out
+
+
+# stage 1: rain_shadow_per_cell。
+# C++ 等价：cell.wind_vector 优先 + WindBelt fallback（用预烘焙 jitter）+ 6 邻接 lookback。
+func _run_season_refresh_stage1_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage1", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage1", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage1", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage1", "gdscript_fallback", "n_cells<=0")
+		return false
+	_ensure_season_round_slots_fresh()
+	var jitter_arr: PackedFloat32Array = _build_rain_shadow_jitter_for_gdext(map)
+	if jitter_arr.size() != n_cells:
+		_season_log_path_once("stage1", "gdscript_fallback", "jitter_arr size mismatch n_cells=%d jitter=%d" % [n_cells, jitter_arr.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 1,
+		"n_cells": n_cells,
+		"rain_shadow_lookback": int(cp.rain_shadow_lookback),
+		"rain_shadow_threshold": float(cp.rain_shadow_threshold),
+		"rain_shadow_factor": float(cp.rain_shadow_factor),
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"season_phase": float(season) + 0.5,
+		"jitter_arr": jitter_arr,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage1", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	# moisture 是单轴写入，hexcell_facade=true 自动透出，不需 facade sync。
+	_last_season_refresh_breakdown["stage_1_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_1_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage1", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 2: seasonal_redecide_terrain。多轴写入（terrain + landform + vegetation + cover），
+# 必须在结束后 _sync_stage8_facade_fields_from_soa 同步 facade。
+func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage2", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage2", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage2", "gdscript_fallback", "n_cells<=0")
+		return false
+	if not map.has_lat_lut():
+		map.bake_lat_temp_year_lut(self)
+	_ensure_row_tables(_last_cfg, season)
+	if _row_lat_temp.size() < _last_cfg.height or _row_season_off.size() < _last_cfg.height:
+		_season_log_path_once("stage2", "gdscript_fallback", "row tables not ready: lat_temp=%d season_off=%d height=%d" % [_row_lat_temp.size(), _row_season_off.size(), int(_last_cfg.height)])
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage2", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 2,
+		"season": season,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"lat_temp_rows": _row_lat_temp,
+		"season_offset_rows": _row_season_off,
+		"row_indices": row_idx,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage2", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_2_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_2_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage2", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 3: river_ecology。DESERT 不翻；PLAIN→FOREST/GRASSLAND；has_river+land 强湿。
+# 多轴写入需 facade sync。
+func _run_season_refresh_stage3_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage3", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage3", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage3", "gdscript_fallback", "n_cells<=0")
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage3", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 3,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"row_indices": row_idx,
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage3", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_3_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_3_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage3", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 4: vegetation_feedback。3-pass（donor delta 累加 / 应用 / 二次 redecide）。
+# 多轴写入 + moisture 写入；需 facade sync。
+func _run_season_refresh_stage4_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage4", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage4", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage4", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage4", "gdscript_fallback", "n_cells<=0")
+		return false
+	if not map.has_lat_lut():
+		map.bake_lat_temp_year_lut(self)
+	_ensure_row_tables(_last_cfg, season)
+	if _row_lat_temp.size() < _last_cfg.height:
+		_season_log_path_once("stage4", "gdscript_fallback", "row_lat_temp not ready: size=%d height=%d" % [_row_lat_temp.size(), int(_last_cfg.height)])
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage4", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var donor_table: PackedFloat32Array = _build_vegetation_donor_table_for_gdext()
+	var knobs: Dictionary = {
+		"stage": 4,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"lat_temp_rows": _row_lat_temp,
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"donor_table": donor_table,
+		"elev_decay": float(cp.veg_feedback_elev_decay),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage4", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_4_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_4_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage4", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 5: shrubland_pass。陆地 + GRASSLAND/STEPPE/SAVANNA/PLAIN + 低海拔 + 暖温 + 中干 + 海邻 → SHRUBLAND.
+func _run_season_refresh_stage5_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage5", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage5", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage5", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage5", "gdscript_fallback", "n_cells<=0")
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage5", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 5,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage5", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_5_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_5_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage5", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 6: mangrove_pass。陆地 + 非永久 + 极低海拔 + 热带 + COAST 邻接 + (river || SWAMP邻) → MANGROVE.
+func _run_season_refresh_stage6_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage6", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage6", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage6", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage6", "gdscript_fallback", "n_cells<=0")
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage6", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 6,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage6", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_6_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_6_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage6", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 7: glacier_pass。SNOW/TUNDRA + temp<0.05 + (沿海冰舌 || alpine) → GLACIER.
+func _run_season_refresh_stage7_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage7", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage7", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage7", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage7", "gdscript_fallback", "n_cells<=0")
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage7", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 7,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage7", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_7_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_7_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage7", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# stage 8 in scheduler == swamp_pass. C++ 端 stage_id=9（避开 stage 8=sync_current_state 的占用）。
+# 陆地 + !MOUNTAIN/SNOW/TUNDRA + !permanent + 极低海拔 + 极湿 + 暖温 + (river||water邻) → SWAMP.
+func _run_season_refresh_swamp_gdext(map: MapData, _world: WorldData, season: int) -> bool:
+	var cp := _c()
+	if cp == null or not bool(cp.use_gdext_season_refresh):
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+		return false
+	if _last_cfg == null or map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "ext/method/map/cfg unavailable")
+		return false
+	if not map.has_indices():
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "map.has_indices()=false (CSR not baked)")
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "n_cells<=0")
+		return false
+	if not map.has_lat_lut():
+		map.bake_lat_temp_year_lut(self)
+	_ensure_row_tables(_last_cfg, season)
+	if _row_lat_temp.size() < _last_cfg.height:
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "row_lat_temp not ready: size=%d height=%d" % [_row_lat_temp.size(), int(_last_cfg.height)])
+		return false
+	_ensure_season_round_slots_fresh()
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "row_idx size mismatch n_cells=%d row_idx=%d" % [n_cells, row_idx.size()])
+		return false
+	var knobs: Dictionary = {
+		"stage": 9,  # C++ 端 stage_id=9 = swamp（注：与 GDScript scheduler 的 stage 8 对应）
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		"lat_temp_rows": _row_lat_temp,
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	}
+	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
+	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "C++ returned fallback: %s" % String(res.get("reason", "unknown")))
+		return false
+	_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["stage_swamp_path"] = "gdext"
+	_last_season_refresh_breakdown["stage_swamp_native_ms"] = float(res.get("elapsed_ms", 0.0))
+	_season_log_path_once("stage_swamp", "gdext", "native_ms=%.3f" % float(res.get("elapsed_ms", 0.0)))
+	return true
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DOTS-Final-Frontier Phase B+：season refresh full-round single-call wrappers
+# ────────────────────────────────────────────────────────────────────────────
+# B+ 路径思想：原 12-stage round 每 slice 跨界 1 次（共 12 次）→ B+ 退化为
+# 整 round 共 3 次跨界（start / run_slice × N / finish）。每 slice 内由 C++
+# 调度器 run_season_round_slice 在 stage 边界（b1）连续推进，到 deadline 退出。
+# 算法实现 100% 复用 stage 0..11 已 bit-equal 的 C++ 路径（不引入新算法）。
+#
+# 与单 stage helper（_run_season_refresh_stageN_gdext）的关系：
+#   - 单 stage helper 仍保留为双轨 fallback 与 A/B 等价性基线；
+#   - B+ wrapper 在 SUS Job / DCSystem 入口处优先尝试，gate 失败则退到 12-stage
+#     scheduler，整体不阻断主线（required = false 直到 1000-tick A/B 通过）。
+#
+# round_knobs 是 12 stage 各自 knobs 的并集；C++ 端 start_season_round 把它存到
+# round_state，每 slice 内部 ::run_season_round_slice 复制一份 + 覆盖 stage 字段
+# 后调既有 run_season_refresh_stage 路径，达到 zero-copy / 零算法风险。
+#
+# facade sync / history push（行为变更，用户已确认）：
+#   原路径：stage 2/3/4/5/6/7/swamp 各自调一次 _sync_stage8_facade_fields_from_soa，
+#           触发 push_biome_history + push_vegetation_history 累计 ~7 次/round。
+#   B+ 路径：仅在 finish_season_round_b_plus 末尾调一次 → 1 次/round。
+#           对应"每季度一次状态快照"的产品语义，也消除了 history 环形缓冲被
+#           同 round 多次 push 污染的隐性 bug。
+# ════════════════════════════════════════════════════════════════════════════
+
+# B+ 路径门禁：检查 cp.use_gdext_season_round + cp.use_gdext_season_refresh + ext +
+# 4 个新方法（start/run_slice/finish/abort）是否齐全。任一不满足返回 false。
+# 上层 caller（SUS Job / DCSystem）拿到 false 后回退到 12-stage scheduler。
+func season_round_b_plus_available() -> bool:
+	var cp := _c()
+	if cp == null:
+		return false
+	if not bool(cp.get("use_gdext_season_round")):
+		return false
+	# B+ 在 C++ 端复用单 stage 路径，必须同时打开总开关。
+	if not bool(cp.get("use_gdext_season_refresh")):
+		return false
+	if _data_core_world_ext == null:
+		return false
+	if not _data_core_world_ext.has_method("start_season_round"):
+		return false
+	if not _data_core_world_ext.has_method("run_season_round_slice"):
+		return false
+	if not _data_core_world_ext.has_method("finish_season_round"):
+		return false
+	return true
+
+
+# 构造 round_knobs：12 stage knobs 的并集。
+# 失败（cfg / map / row_table 缺失）返回空 Dictionary，caller 视为 fallback。
+func _build_season_round_knobs(map: MapData, season: int) -> Dictionary:
+	var cp := _c()
+	if cp == null or _last_cfg == null or map == null:
+		return {}
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return {}
+	if not map.has_indices():
+		return {}
+	if not map.has_lat_lut():
+		map.bake_lat_temp_year_lut(self)
+	_ensure_row_tables(_last_cfg, season)
+	if _row_lat_temp.size() < _last_cfg.height or _row_season_off.size() < _last_cfg.height:
+		return {}
+	var row_idx: PackedInt32Array = _build_row_indices_for_gdext(map, _last_cfg)
+	if row_idx.size() != n_cells:
+		return {}
+	var jitter_arr: PackedFloat32Array = _build_rain_shadow_jitter_for_gdext(map)
+	if jitter_arr.size() != n_cells:
+		return {}
+	var donor_table: PackedFloat32Array = _build_vegetation_donor_table_for_gdext()
+	var moist_scale: float = float(cp.seasonal_moisture_scale[clampi(season, 0, 3)])
+	var soil_arr: PackedFloat32Array = map.soil_moisture_arr
+	var vg_arr: PackedFloat32Array = map.vegetation_growth_pressure_arr
+	# B+ 路径暂不暴露 stage 11（feedback_decay）的 in/out array 写回路径——
+	# 由 finish wrapper 末尾通过 knobs 取回 decayed array 后回灌 map.xxx_arr。
+	# round_knobs 字段顺序与 stage helper 中现有 knobs 保持一致，便于 diff 验收。
+	var knobs: Dictionary = {
+		"season": season,
+		"season_phase": float(season) + 0.5,
+		"n_cells": n_cells,
+		"height": int(_last_cfg.height),
+		"sea_level": float(_last_cfg.sea_level),
+		# stage 0
+		"moist_scale": moist_scale,
+		# stage 1
+		"rain_shadow_lookback": int(cp.rain_shadow_lookback),
+		"rain_shadow_threshold": float(cp.rain_shadow_threshold),
+		"rain_shadow_factor": float(cp.rain_shadow_factor),
+		"jitter_arr": jitter_arr,
+		# stage 2 / 4 / swamp
+		"lat_temp_rows": _row_lat_temp,
+		"season_offset_rows": _row_season_off,
+		"row_indices": row_idx,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		# stage 4
+		"donor_table": donor_table,
+		"elev_decay": float(cp.veg_feedback_elev_decay),
+		# stage 11 (feedback_decay)
+		"decay": float(cp.feedback_decay),
+		"soil_moisture_arr": soil_arr,
+		"veg_growth_pressure_arr": vg_arr,
+	}
+	return knobs
+
+
+# B+ 入口 1/3：开启 round。
+# 返回 handle > 0 表示 active；<=0 表示门禁失败，caller 应退回 12-stage 路径。
+# 副作用：refresh_slots_from_map（让 C++ SoA 看到本 round 起点的最新 cell 状态），
+#         重置 _season_round_b_plus_* 累计计数。
+func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> int:
+	if not season_round_b_plus_available():
+		_season_log_path_once("b_plus", "gdscript_fallback", "gate fail (cp/ext/method)")
+		return 0
+	if soil_arr_size_mismatch(map):
+		_season_log_path_once("b_plus", "gdscript_fallback", "soil/vg arr size mismatch with n_cells")
+		return 0
+	# 旧 round 残留（前一个 round 没正常 finish / abort）→ 强制清理。
+	if _season_round_b_plus_handle > 0:
+		_season_log_path_once("b_plus", "stale_handle_abort", "previous handle=%d still active, forcing abort" % _season_round_b_plus_handle)
+		_abort_season_round_b_plus_safe()
+	_ensure_season_round_slots_fresh()
+	var knobs: Dictionary = _build_season_round_knobs(map, season)
+	if knobs.is_empty():
+		_season_log_path_once("b_plus", "gdscript_fallback", "round_knobs build failed (cfg/map/row_table)")
+		return 0
+	var res: Dictionary = _data_core_world_ext.start_season_round(knobs)
+	if res.is_empty() or bool(res.get("fallback", true)):
+		_season_log_path_once("b_plus", "gdscript_fallback", "start_season_round returned fallback: %s" % String(res.get("reason", "unknown")))
+		return 0
+	var handle: int = int(res.get("handle", 0))
+	if handle <= 0:
+		_season_log_path_once("b_plus", "gdscript_fallback", "start_season_round returned invalid handle=%d" % handle)
+		return 0
+	_season_round_b_plus_handle = handle
+	_season_round_b_plus_native_ms = 0.0
+	_season_round_b_plus_slices_used = 0
+	_season_round_b_plus_stages_done = 0
+	_b_plus_round_start_usec = Time.get_ticks_usec()
+	_last_season_refresh_breakdown["b_plus_path"] = "gdext"
+	_last_season_refresh_breakdown["b_plus_handle"] = handle
+	_season_log_path_once("b_plus_start", "gdext", "handle=%d season=%d n_cells=%d" % [handle, season, int(knobs.get("n_cells", 0))])
+	return handle
+
+
+# B+ 入口 2/3：推进一个 slice，stage-boundary 切片（b1）。
+# max_usec：单 slice 预算（默认从 cp.sim_slice_budget_ms 取）。
+# 返回字典 { "done": bool, "stages_done": int, "elapsed_ms": float, "fallback": bool }。
+# 任一异常（handle 无效 / fallback / mid-slice 错误）→ 标记 done=true + fallback=true，
+# 上层 caller 应放弃 round 并退回 12-stage 路径补完。
+func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: int = 0) -> Dictionary:
+	var out: Dictionary = {"done": false, "stages_done": 0, "elapsed_ms": 0.0, "fallback": false}
+	if _season_round_b_plus_handle <= 0:
+		out["fallback"] = true
+		out["done"] = true
+		_season_log_path_once("b_plus_slice", "gdscript_fallback", "no active handle")
+		return out
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_season_round_slice"):
+		out["fallback"] = true
+		out["done"] = true
+		_season_log_path_once("b_plus_slice", "gdscript_fallback", "ext/method missing mid-round")
+		return out
+	var budget_us: int = max_usec
+	if budget_us <= 0:
+		var cp := _c()
+		var ms: float = 0.55
+		if cp != null and cp.get("sim_slice_budget_ms") != null:
+			ms = float(cp.sim_slice_budget_ms)
+		budget_us = maxi(50, int(round(ms * 1000.0)))
+	var res: Dictionary = _data_core_world_ext.run_season_round_slice(_season_round_b_plus_handle, budget_us)
+	if res.is_empty() or bool(res.get("fallback", false)):
+		out["fallback"] = true
+		out["done"] = true
+		_season_log_path_once("b_plus_slice", "gdscript_fallback", "run_season_round_slice fallback: %s" % String(res.get("reason", "unknown")))
+		# 让 C++ 端清掉残留状态（next round 才能干净开新）。
+		_abort_season_round_b_plus_safe()
+		return out
+	var elapsed_ms: float = float(res.get("elapsed_ms", 0.0))
+	_season_round_b_plus_native_ms += elapsed_ms
+	_season_round_b_plus_slices_used += 1
+	_season_round_b_plus_stages_done = int(res.get("stages_done", _season_round_b_plus_stages_done))
+	out["elapsed_ms"] = elapsed_ms
+	out["stages_done"] = _season_round_b_plus_stages_done
+	out["done"] = bool(res.get("done", false))
+	return out
+
+
+# B+ 入口 3/3：round 收尾。
+# 副作用：
+#   1. 调 finish_season_round 取回 decayed soil_moisture_arr / veg_growth_pressure_arr，
+#      回灌 map.xxx_arr，让 hexcell_facade getter 看到新值。
+#   2. 调一次 _sync_stage8_facade_fields_from_soa(map) 把多轴 SoA（terrain/landform/
+#      vegetation/cover）回灌到 cell facade，并触发 push_biome_history /
+#      push_vegetation_history 各 1 次/round。
+#   3. 落 breakdown：b_plus_native_ms / slices / stages_done。
+#   4. 清 handle 与累计计数。
+# 若 finish_season_round 本身 fallback：仍尝试 facade sync 让本 round 已写入 SoA 的
+# 部分字段透出（避免上层看到陈旧 cell），然后清 handle。
+func finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
+	if _season_round_b_plus_handle <= 0:
+		_season_log_path_once("b_plus_finish", "gdscript_fallback", "no active handle to finish")
+		return
+	var ext_ok: bool = _data_core_world_ext != null and _data_core_world_ext.has_method("finish_season_round")
+	if not ext_ok:
+		_season_log_path_once("b_plus_finish", "gdscript_fallback", "finish_season_round method missing")
+		# 算作一次 fallback round（已 start 但 ext 半途丢失，验收侧应可见）
+		_b_plus_rounds_total += 1
+		_b_plus_rounds_fallback += 1
+		_season_round_b_plus_handle = 0
+		_b_plus_round_start_usec = 0
+		return
+	var res: Dictionary = _data_core_world_ext.finish_season_round(_season_round_b_plus_handle)
+	var fallback: bool = bool(res.get("fallback", false))
+	# 即便 fallback，res 内的 in/out array 也优先取（C++ 端如果半途退出至少把已 decayed 的写回了）。
+	if map != null:
+		var n: int = map.cell_count()
+		var soil_out: Variant = res.get("soil_moisture_arr", null)
+		var vg_out: Variant = res.get("veg_growth_pressure_arr", null)
+		if typeof(soil_out) == TYPE_PACKED_FLOAT32_ARRAY and (soil_out as PackedFloat32Array).size() == n:
+			map.soil_moisture_arr = soil_out
+		if typeof(vg_out) == TYPE_PACKED_FLOAT32_ARRAY and (vg_out as PackedFloat32Array).size() == n:
+			map.vegetation_growth_pressure_arr = vg_out
+		# 行为变更（用户 2026-05-21 已确认）：B+ 路径下 facade sync + history push 1 次/round。
+		_sync_stage8_facade_fields_from_soa(map)
+	_last_season_refresh_breakdown["b_plus_native_ms"] = float(res.get("total_native_ms", _season_round_b_plus_native_ms))
+	_last_season_refresh_breakdown["b_plus_slices_used"] = int(res.get("slices_used", _season_round_b_plus_slices_used))
+	_last_season_refresh_breakdown["b_plus_stages_done"] = int(res.get("stages_done", _season_round_b_plus_stages_done))
+	if fallback:
+		_season_log_path_once("b_plus_finish", "gdscript_fallback", "finish_season_round fallback: %s" % String(res.get("reason", "unknown")))
+	else:
+		_season_log_path_once("b_plus_finish", "gdext", "native_ms=%.3f slices=%d stages_done=%d" % [
+				float(res.get("total_native_ms", _season_round_b_plus_native_ms)),
+				int(res.get("slices_used", _season_round_b_plus_slices_used)),
+				int(res.get("stages_done", _season_round_b_plus_stages_done)),
+		])
+	# B+ round 验收样本采集（pop_b_plus_round_samples 消费）
+	var wall_ms_now: float = 0.0
+	if _b_plus_round_start_usec > 0:
+		wall_ms_now = float(Time.get_ticks_usec() - _b_plus_round_start_usec) / 1000.0
+	_b_plus_rounds_total += 1
+	if fallback:
+		_b_plus_rounds_fallback += 1
+	else:
+		_b_plus_rounds_b_plus += 1
+	_b_plus_slices_used_samples.append(int(res.get("slices_used", _season_round_b_plus_slices_used)))
+	_b_plus_stages_done_samples.append(int(res.get("stages_done", _season_round_b_plus_stages_done)))
+	_b_plus_native_ms_samples.append(float(res.get("total_native_ms", _season_round_b_plus_native_ms)))
+	_b_plus_wall_ms_samples.append(wall_ms_now)
+	_season_round_b_plus_handle = 0
+	_season_round_b_plus_native_ms = 0.0
+	_season_round_b_plus_slices_used = 0
+	_season_round_b_plus_stages_done = 0
+	_b_plus_round_start_usec = 0
+
+
+# 一次性取走 B+ round 验收样本，清零内部计数。
+# 由 dots_final_frontier_perf_verdict.evaluate 调用，避免长期持有。
+func pop_b_plus_round_samples() -> Dictionary:
+	var slices_arr: Array = []
+	for v in _b_plus_slices_used_samples:
+		slices_arr.append(int(v))
+	var stages_arr: Array = []
+	for v in _b_plus_stages_done_samples:
+		stages_arr.append(int(v))
+	var native_arr: Array = []
+	for v in _b_plus_native_ms_samples:
+		native_arr.append(float(v))
+	var wall_arr: Array = []
+	for v in _b_plus_wall_ms_samples:
+		wall_arr.append(float(v))
+	var out: Dictionary = {
+		"rounds_total": _b_plus_rounds_total,
+		"rounds_b_plus": _b_plus_rounds_b_plus,
+		"rounds_fallback": _b_plus_rounds_fallback,
+		"slices_used_samples": slices_arr,
+		"stages_done_samples": stages_arr,
+		"native_ms_samples": native_arr,
+		"wall_ms_samples": wall_arr,
+	}
+	_b_plus_rounds_total = 0
+	_b_plus_rounds_b_plus = 0
+	_b_plus_rounds_fallback = 0
+	_b_plus_slices_used_samples.clear()
+	_b_plus_stages_done_samples.clear()
+	_b_plus_native_ms_samples.clear()
+	_b_plus_wall_ms_samples.clear()
+	return out
+
+
+# 强制中止当前 B+ round（C++ 端清 round_state，GDScript 端清 handle）。
+# 用于：start 前发现旧 round 残留 / slice 中途 fallback 后清场 / 外部主动放弃。
+# 不抛异常；ext 缺失时仅清本地 handle。
+func _abort_season_round_b_plus_safe() -> void:
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("abort_season_round"):
+		_data_core_world_ext.abort_season_round()
+	_season_round_b_plus_handle = 0
+	_season_round_b_plus_native_ms = 0.0
+	_season_round_b_plus_slices_used = 0
+	_season_round_b_plus_stages_done = 0
+	# abort 不算完整 round（不进 _b_plus_rounds_total 计数），仅清 start usec。
+	_b_plus_round_start_usec = 0
+
+
+# 检查 soil_moisture / veg_growth_pressure SoA size 是否与 n_cells 对齐。
+# B+ 路径 round_knobs 内含这两条 in/out array，size 不齐会导致 C++ 端 stage 11 路径
+# 误算或 OOB；start 阶段就拒绝，回 GDScript fallback。
+func soil_arr_size_mismatch(map: MapData) -> bool:
+	if map == null:
+		return true
+	var n: int = map.cell_count()
+	var s: int = (map.soil_moisture_arr as PackedFloat32Array).size()
+	var v: int = (map.vegetation_growth_pressure_arr as PackedFloat32Array).size()
+	return s != n or v != n
 
 
 func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
@@ -4585,6 +5608,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		"transp_ms": t_transp_ms,
 		"total_ms": float(Time.get_ticks_msec() - t0),
 		"cells": map.cell_count(),
+		"_tick_idx": _current_fast_tick_idx,
 	}
 	if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
 		# I1.A-1: wrapper 路径也补上 path=... 标识，与 sliced 路径输出格式对齐。
@@ -5227,6 +6251,75 @@ func _vegetation_foliage_density(veg: int) -> float:
 #   sea_ice_fraction ≥ ice_terrain_threshold              → terrain = SEA_ICE
 #   sea_ice_fraction <  ice_terrain_threshold - hyst      → terrain = base_terrain
 #
+# Plan: civ-grounded-development / 方案 ① Step 1（确诊辅助）
+# sea_ice daily pass total_wall ≥ 5ms 时强制打印 breakdown 全字段，便于定位是
+# 哪条路径（gdext / gdscript）+ 哪个阶段（pack / refresh / native / sync / flip）拖慢的。
+# 不阻塞快路径；节流避免连续帧刷屏。
+func _dump_sea_ice_breakdown_if_slow() -> void:
+	if _last_sea_ice_daily_breakdown.is_empty():
+		return
+	var total_wall: float = float(_last_sea_ice_daily_breakdown.get("total_wall_ms", 0.0))
+	if total_wall < _SEA_ICE_SLOW_DUMP_THRESHOLD_MS:
+		return
+	# 节流：30 fast tick 内最多打一次，避免连续帧刷屏。
+	# _current_fast_tick_idx 由 main.gd._run_fast_tick 顶部同步，初始 0；
+	# 首次触发时 last_tick=-10000，无论如何会打。
+	if _current_fast_tick_idx - _sea_ice_slow_dump_last_tick < _SEA_ICE_SLOW_DUMP_MIN_INTERVAL:
+		return
+	_sea_ice_slow_dump_last_tick = _current_fast_tick_idx
+	var b: Dictionary = _last_sea_ice_daily_breakdown
+	print("[sea_ice/slow-dump] tick=%d path=%s total_wall=%.2fms (pack=%.2f refresh=%.2f native=%.2f native_wall=%.2f sync=%.2f flip=%.2f) water=%d flipped=%d" % [
+		_current_fast_tick_idx,
+		str(b.get("path", "?")),
+		total_wall,
+		float(b.get("pack_ms", 0.0)),
+		float(b.get("refresh_ms", 0.0)),
+		float(b.get("native_ms", -1.0)),
+		float(b.get("native_wall_ms", 0.0)),
+		float(b.get("sync_ms", 0.0)),
+		float(b.get("flip_ms", 0.0)),
+		int(b.get("water", 0)),
+		int(b.get("flipped", 0)),
+	])
+
+
+# Plan: civ-grounded-development / weather cyclone 突刺一次性诊断（2026-05-21）
+# 触发条件（任一）：
+#   - weather_tick_ms ≥ 5.0   → 总 tick 突刺
+#   - cyclone_ms      ≥ 3.0   → cyclone_wake_step 单段突刺（典型常态 0.15ms）
+# 输出 _last_weather_breakdown 全字段：advance / spawn / distribute / cyclone /
+#   stage_a/b 各段 / albedo / veg_dyn / cover_rebake / veg_rebake / feedback / fronts / path。
+# 节流到至少 30 fast tick 间隔一次。
+func _dump_weather_breakdown_if_slow() -> void:
+	if _last_weather_breakdown.is_empty():
+		return
+	var total_wall: float = float(_last_weather_breakdown.get("weather_tick_ms", 0.0))
+	var cyclone_ms_v: float = float(_last_weather_breakdown.get("cyclone_ms", 0.0))
+	if total_wall < _WEATHER_SLOW_DUMP_TOTAL_THRESHOLD_MS \
+			and cyclone_ms_v < _WEATHER_SLOW_DUMP_CYCLONE_THRESHOLD_MS:
+		return
+	if _current_fast_tick_idx - _weather_slow_dump_last_tick < _WEATHER_SLOW_DUMP_MIN_INTERVAL:
+		return
+	_weather_slow_dump_last_tick = _current_fast_tick_idx
+	var b: Dictionary = _last_weather_breakdown
+	print("[weather/slow-dump] tick=%d path=%s tick_ms=%.2f (adv=%.2f spawn=%.2f dist=%.2f cyc=%.2f stage_b=%.2f albedo=%.2f veg_dyn=%.2f feedback=%.2f cover_rb=%.2f veg_rb=%.2f) fronts=%d" % [
+		_current_fast_tick_idx,
+		str(b.get("path", "?")),
+		total_wall,
+		float(b.get("advance_ms", 0.0)),
+		float(b.get("spawn_ms", 0.0)),
+		float(b.get("distribute_ms", 0.0)),
+		cyclone_ms_v,
+		float(b.get("stage_b_ms", 0.0)),
+		float(b.get("albedo_ms", 0.0)),
+		float(b.get("veg_dyn_ms", 0.0)),
+		float(b.get("feedback_ms", 0.0)),
+		float(b.get("cover_rebake_ms", 0.0)),
+		float(b.get("veg_rebake_ms", 0.0)),
+		int(b.get("fronts", 0)),
+	])
+
+
 # QA 异常守卫：当日 SEA_ICE 翻转 cell 数 > 总水体数 3% 时打印一次 WARN
 # （帮助定位"全图统一切换"的回归）。
 func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
@@ -5583,6 +6676,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				"water": water_count_cpp,
 				"flipped": flipped_count_cpp,
 			}
+			# 方案 ① Step 1：≥ 5ms 强制打印（节流），确诊 7ms 走的是哪条路径
+			_dump_sea_ice_breakdown_if_slow()
 			_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 			return
 		_gdext_sea_ice_fallbacks += 1
@@ -5720,6 +6815,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		"water": water_count,
 		"flipped": flipped_count,
 	}
+	# 方案 ① Step 1：≥ 5ms 强制打印（节流），确诊 7ms 走的是哪条路径
+	_dump_sea_ice_breakdown_if_slow()
 	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 
 	# 节流打点（每 365 天打一次）
@@ -6492,12 +7589,34 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/dots-f4-validation.md §2.2.b。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc_b: float = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
-		# 强制无脑诊断：前 3 次调用打 rc 值
+		# ─── sim-2ms-perf-push（plan/climate-pass-b-simd）派发 ───────────────
+		#   优先级：thread_fallback > simd > scalar（仅在底层 method 实际可见时）。
+		#   ulp ≤ 4 容差由 charter §risk=B 批准，rc 返回 ms 同形，下游 rc_b 路径
+		#   零改动。flag 在 ClimateProfile（资源开关）与 FLAGS（运行时旋钮）双轨注册，
+		#   默认 false——A/B 验收阶段会逐个翻 true。
+		var _use_b_simd: bool = false
+		var _use_b_thread: bool = false
+		if cp != null:
+			_use_b_simd = bool(cp.use_gdext_pass_b_simd)
+			_use_b_thread = bool(cp.use_gdext_thread_fallback)
+		var rc_b: float = -1.0
+		var _b_dispatch_path: String = "scalar"
+		if _use_b_thread and _data_core_world_ext.has_method("run_climate_pass_b_thread"):
+			# 单线程 SIMD 不达标或大地图场景用 WorkerThreadPool；n_tasks=0 让 C++
+			# 端自适应（n_land < 256 退化单线程）。
+			rc_b = float(_data_core_world_ext.run_climate_pass_b_thread(knobs_b, 0))
+			_b_dispatch_path = "thread"
+		elif _use_b_simd and _data_core_world_ext.has_method("run_climate_pass_b_simd"):
+			rc_b = float(_data_core_world_ext.run_climate_pass_b_simd(knobs_b))
+			_b_dispatch_path = "simd"
+		else:
+			rc_b = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
+			_b_dispatch_path = "scalar"
+		# 强制无脑诊断：前 3 次调用打 rc 值 + 派发路径
 		if _gdext_climate_b_runs + _gdext_climate_b_fallbacks < 3:
-			print("[climate_b/F.3] DEBUG call#%d: rc=%.4f n_cells=%d rs_lookback=%d" % [
+			print("[climate_b/F.3] DEBUG call#%d: path=%s rc=%.4f n_cells=%d rs_lookback=%d" % [
 				_gdext_climate_b_runs + _gdext_climate_b_fallbacks + 1,
-				rc_b, n_for_f3, rs_lookback,
+				_b_dispatch_path, rc_b, n_for_f3, rs_lookback,
 			])
 		if rc_b >= 0.0:
 			# C++ 写完 cell_temp / cell_moisture SoA。fastpath HexCell 模式下 cell.temperature
@@ -6511,7 +7630,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			# 末尾 [DIAG pass_b_end] 由 C++ 路径不打；如果 _daily_climate_call_count <= 8
 			# 期间想保留 baseline 对照，可以在这里打一行（GDScript 自己 dump SoA 即可）。
 			if _gdext_climate_b_runs == 1:
-				print("[climate_b/F.3] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)" % rc_b)
+				print("[climate_b/F.3] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)" % [_b_dispatch_path, rc_b])
 			return
 		_gdext_climate_b_fallbacks += 1
 		# rc<0：C++ 已 push_warning；继续 fall through 到下面的 GDScript 完整路径
@@ -6897,11 +8016,30 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		# refresh 后保证 C++ slot 与 map 一致。详见 docs/dots-f4-validation.md §2.2.b。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc_w: float = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
+		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
+		#   优先级：thread > simd > scalar；仅在底层 method 实际可见时切。
+		#   ulp ≤ 4 容差（charter §risk=B），rc 同形 ms，下游 anomaly_buf
+		#   仍走 knobs_w["anomaly_out"] 回读路径——CoW fix 三档一致。
+		var _use_w_simd: bool = false
+		var _use_w_thread: bool = false
+		if cp != null:
+			_use_w_simd = bool(cp.use_gdext_ocean_water_simd)
+			_use_w_thread = bool(cp.use_gdext_thread_fallback)
+		var rc_w: float = -1.0
+		var _w_dispatch_path: String = "scalar"
+		if _use_w_thread and _data_core_world_ext.has_method("run_ocean_water_pass_thread"):
+			rc_w = float(_data_core_world_ext.run_ocean_water_pass_thread(knobs_w, 0))
+			_w_dispatch_path = "thread"
+		elif _use_w_simd and _data_core_world_ext.has_method("run_ocean_water_pass_simd"):
+			rc_w = float(_data_core_world_ext.run_ocean_water_pass_simd(knobs_w))
+			_w_dispatch_path = "simd"
+		else:
+			rc_w = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
+			_w_dispatch_path = "scalar"
 		if _gdext_ocean_water_runs + _gdext_ocean_water_fallbacks < 3:
-			print("[ocean_water/F.2a] DEBUG call#%d: rc=%.4f n=%d advect=%d" % [
+			print("[ocean_water/F.2a] DEBUG call#%d: path=%s rc=%.4f n=%d advect=%d" % [
 				_gdext_ocean_water_runs + _gdext_ocean_water_fallbacks + 1,
-				rc_w, n, advect_steps,
+				_w_dispatch_path, rc_w, n, advect_steps,
 			])
 		if rc_w >= 0.0:
 			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
@@ -7113,11 +8251,29 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/dots-f4-validation.md §2.2.b。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc_l: float = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
+		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
+		#   thread > simd > scalar；ulp ≤ 4；CoW fix 三档一致（rc>=0 后下面
+		#   anomaly_io = knobs_l["anomaly_inout"] 回读路径不变）。
+		var _use_l_simd: bool = false
+		var _use_l_thread: bool = false
+		if cp != null:
+			_use_l_simd = bool(cp.use_gdext_ocean_land_simd)
+			_use_l_thread = bool(cp.use_gdext_thread_fallback)
+		var rc_l: float = -1.0
+		var _l_dispatch_path: String = "scalar"
+		if _use_l_thread and _data_core_world_ext.has_method("run_ocean_land_pass_thread"):
+			rc_l = float(_data_core_world_ext.run_ocean_land_pass_thread(knobs_l, 0))
+			_l_dispatch_path = "thread"
+		elif _use_l_simd and _data_core_world_ext.has_method("run_ocean_land_pass_simd"):
+			rc_l = float(_data_core_world_ext.run_ocean_land_pass_simd(knobs_l))
+			_l_dispatch_path = "simd"
+		else:
+			rc_l = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
+			_l_dispatch_path = "scalar"
 		if _gdext_ocean_land_runs + _gdext_ocean_land_fallbacks < 3:
-			print("[ocean_land/F.2b] DEBUG call#%d: rc=%.4f n=%d effective_leak=%.4f" % [
+			print("[ocean_land/F.2b] DEBUG call#%d: path=%s rc=%.4f n=%d effective_leak=%.4f" % [
 				_gdext_ocean_land_runs + _gdext_ocean_land_fallbacks + 1,
-				rc_l, n, effective_leak,
+				_l_dispatch_path, rc_l, n, effective_leak,
 			])
 		if rc_l >= 0.0:
 			# §11 CoW fix: C++ 创建了新的 anomaly 数组并写回了 knobs Dictionary。
@@ -7241,6 +8397,117 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	return fronts
 
 
+# plan/weather-refresh-cpp-all PR-2：weather refresh daily 合并 facade。
+#
+# 单次 cpp call 把 field_solve + distribute + summary_fronts + cyclone_wake + stage_b
+# 5 段 pass 跑完，跳过 GDScript ↔ C++ 3 次 marshal + 多次 Dictionary 装包。当 cp.use_gdext_weather_refresh_daily=true
+# 且 ext 已 bound + has_method 时由 SUS WeatherRefreshJob 优先选用本入口；任何前置不
+# 满足或 cpp rc!=0 时**透明回退**到 refresh_daily_stage_a + refresh_daily_stage_b 老链，
+# 对 caller 完全无感。
+#
+# 与 stage_a/stage_b 的语义对应：
+#   - stage_a (tick_one_day) ⇒ cpp 段 1-4：field_solve / distribute / summary / cyclone_wake
+#   - stage_b ⇒ cpp 段 5：albedo / veg_dyn / feedback
+#
+# 通报字段 1:1 沿用 stage_b 末尾的 _last_weather_breakdown 协议（path 字段标 "gdext_combined"
+# 让 perf overlay 能区分慢速 GDScript 链与 fast cpp 链）；同时 stage_b 的 enum_atlas
+# dirty mark 必须由本 facade 主动调用，因为合并 path 完全跳过了 stage_b GDScript 入口。
+func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
+		climate_anomaly: float, season_phase: float = -1.0) -> Array[WeatherFront]:
+	# Step 1：前置 gate。任何一项失败立即 fallback 到老链，让 caller 透明感知。
+	if _weather_system == null or map == null or world == null:
+		return refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
+	var cp_now := _c()
+	var flag_on: bool = cp_now != null and ("use_gdext_weather_refresh_daily" in cp_now) \
+			and bool(cp_now.use_gdext_weather_refresh_daily)
+	if not flag_on:
+		var fa: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
+		refresh_daily_stage_b(map, world)
+		return fa
+	if _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
+		var fb: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
+		refresh_daily_stage_b(map, world)
+		return fb
+	if not _weather_system.has_method("try_run_refresh_daily_combined_gdext"):
+		var fc: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
+		refresh_daily_stage_b(map, world)
+		return fc
+
+	# Step 2：sliced stage 不应混用合并模式（_round_active 状态由 sliced 路径维护，
+	# 由 weather_refresh_job 的 _should_use_merged_native_weather 互斥保证）。这里再
+	# 做 defensive：合并 path 必须自己刷新 _round_t0 计时基准，与 stage_b 的 total_ms 算法对齐。
+	_last_world = world
+	_weather_round_t0_us = Time.get_ticks_usec()
+
+	# Step 3：把 stage_b call_index 推进，保持 stride 计数与 stage_b 老链 1:1 对齐。
+	# （即便后续 ok=false 走 fallback 老链，老 stage_b 也会再 ++ 一次 — 这是 stride 二次
+	# 推进的旧问题，但它本就只在合并失败的"半冷启动"几 tick 出现，不影响周期 stride 节奏。
+	# 为最大兼容，这里仍按 stage_b 同步 ++，若 fallback 触发则在 fallback 分支里手动回滚。）
+	var prev_call_index: int = _weather_stage_b_call_index
+	_weather_stage_b_call_index += 1
+	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
+		map,
+		cp_now,
+		maxi(1, _weather_stage_b_call_index)
+	)
+
+	# Step 4：单次 cpp call。weather_system.try_run_refresh_daily_combined_gdext
+	# 内部 begin_field_solve → super_knobs merge → run_weather_refresh_daily_pass →
+	# unpack fronts + cyclone mirror，stage_b knobs 由本 facade 注入。
+	var res: Dictionary = _weather_system.try_run_refresh_daily_combined_gdext(
+		map, world, season_idx, climate_anomaly, season_phase, stage_b_knobs
+	)
+	var ok: bool = bool(res.get("ok", false))
+	if not ok:
+		# Fallback 路径：先回滚 stage_b call_index（让老 stage_b 自己重新 ++），
+		# 然后透明走 stage_a + stage_b 老链。fail_stage 会在 weather_system
+		# 内部首次失败时打 push_warning（节流单次），无需在此重复。
+		_weather_stage_b_call_index = prev_call_index
+		var fronts_fb: Array[WeatherFront] = refresh_daily_stage_a(
+			map, world, season_idx, climate_anomaly, season_phase
+		)
+		refresh_daily_stage_b(map, world)
+		return fronts_fb
+
+	# Step 5：成功路径。同步生成器侧通报状态。
+	var fronts_out: Array[WeatherFront] = res.get("fronts", [] as Array[WeatherFront])
+	_last_active_fronts = fronts_out
+	_weather_round_fronts = fronts_out
+	# breakdown：weather_system 已经按 path="gdext_combined" + 各段 ms 装好；外部 perf
+	# overlay / SUS publish 直接读 _last_weather_breakdown 即可。
+	var br: Dictionary = res.get("breakdown", {})
+	_last_weather_breakdown = br.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
+	_dump_weather_breakdown_if_slow()
+	# weather_round_tick_ms 用于 sliced 路径与本路径共享 perf 字段：取 advance+distribute+summary 段
+	# 之和（与 stage_a 老链的 weather_tick_ms 对应概念，cyclone/stage_b 之外的"主 tick"耗时）。
+	_weather_round_tick_ms = float(br.get("advance_ms", 0.0)) \
+			+ float(br.get("distribute_ms", 0.0)) \
+			+ float(br.get("summary_ms", 0.0))
+
+	# Step 6：合并 path 完全绕过了 stage_b GDScript 入口，所以 enum_atlas dirty mark 必须由
+	# 本 facade 主动触发——否则 baker 收不到 cover/vegetation 改动信号导致视觉残影。
+	#   - cover_dirty: weather distribute 段（BLIZZARD→SNOW 等）由 cpp 在 run_distribute 内
+	#     直接写 cell.cover；mark cover dirty 让 baker 重烘。
+	#   - vegetation_dirty: cpp veg_dyn 段返回 succession_indices / succession_to_veg；非空
+	#     即视为 vegetation 有改动。
+	if _baker != null:
+		if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
+			_mark_enum_atlas_dirty(true, false)
+		var succ_indices = br.get("succession_indices", null)
+		var veg_dirty: bool = succ_indices != null and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
+				and (succ_indices as PackedInt32Array).size() > 0
+		if not veg_dirty:
+			veg_dirty = int(br.get("stat_succession_count", 0)) > 0
+		if veg_dirty:
+			_mark_enum_atlas_dirty(false, true)
+
+	return fronts_out
+
+
 # Stage A：tick_one_day（advection / spawn / distribute / cyclone）。
 # WeatherRefreshJob 可把 field solver 拆成多 tick；最后一片才返回当日 fronts。
 # 副作用：写入 cell.current_state（weather/intensity/cloud/precip）+ 更新 _last_world / _last_active_fronts。
@@ -7304,7 +8571,11 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		"fronts": _weather_round_fronts.size(),
 		"partial": not bool(result.get("done", true)),
 		"progress_ratio": float(result.get("progress_ratio", 0.0)),
+		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+		"_tick_idx": _current_fast_tick_idx,
 	}
+	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
+	_dump_weather_breakdown_if_slow()
 	return result
 
 
@@ -7690,7 +8961,11 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"albedo_ran": run_albedo,
 		"veg_dyn_ran": run_veg_dyn,
 		"feedback_ran": run_feedback,
+		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+		"_tick_idx": _current_fast_tick_idx,
 	}
+	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
+	_dump_weather_breakdown_if_slow()
 
 # 给 UI / renderer 直接拿到当前天气快照（不触发 tick）
 func active_weather_fronts() -> Array[WeatherFront]:

@@ -71,6 +71,13 @@ const CPP_TIME_CHECK_CELLS_PER_STEP: int = 4096
 # Soft budget = slice_budget_ms × 这个倍数，超出则 break 让出。
 const SOFT_BUDGET_MULTIPLIER: float = 2.0
 
+# ─── plan/atlas-phase-slicing（2026-05-21）：CPP pipeline phase 切片预算 ───
+# 默认 1 = 每 tick 推 1 phase，4 个 phase 拆到 4 个 tick。
+# 调高到 4 = 单 tick 一气呵成（旧行为，回归）。
+# 配合 C++ AtlasPipelineState 跨 call 持有 stride snapshot（dirty/cache/nb_arr/prep_*），
+# 仅在 stride 起点传 dirty_indices；mid-stride tick 跳过 commit GPU。
+const CPP_PIPELINE_PHASE_BUDGET: int = 1
+
 var baker: MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null
@@ -118,6 +125,13 @@ var _dvas_diag_max_tick_ms: float = 0.0
 var _dvas_diag_avg_window: int = 30
 var _last_breakdown: Dictionary = {}
 
+# Perf instrumentation freshness（方案 ④ Step 1）：generator 在每个 fast tick 顶部
+# 通过 set_current_fast_tick_idx 把当前 _fast_tick_count 同步进来。所有
+# `_last_breakdown = report.duplicate(...)` 的写入点会立刻把它打到字典内的
+# `_tick_idx` 字段；perf_recorder 比对 row.tick_idx ≠ dict._tick_idx 时跳过整组
+# 字段，避免 305 行重复值假象。
+var current_fast_tick_idx: int = 0
+
 # [diag 2026-05-20 phase-breakdown] 窗口内累加每 phase 的 prepare/step/finalize ms 总和，
 # 用于回答"max_tick_ms 那 ~20ms 到底花在哪个 phase 哪个阶段"。
 # stride 完成时把 _aggregated_report 的 *_ms 字段累计进来，print 时除以 stride_count 得均值。
@@ -139,6 +153,14 @@ var _dvas_diag_phase_ms_accum: Dictionary = {
 var _eco_burnin_done: bool = false
 var _pending_burnin: bool = false
 var _cpp_pipeline_warned_missing_method: bool = false  # 一次性 push_warning
+# plan/atlas-phase-slicing 诊断（2026-05-21）：cpp_pipeline 返回 fallback=true 时
+# 暂存 reason，在 _tick_oneshot 写进 report，让 perf CSV 直接看出原因。
+var _pending_fallback_reason: String = ""
+
+# plan/atlas-phase-slicing：mid-stride 跟踪。true = 上一 tick C++ 返回 done=false，
+# 本 tick 应跳过 dirty 重读 + burn-in，直接 call 让 C++ 推下一个 phase。
+# done=true 时翻回 false，下一 tick 重新启动一个 stride。
+var _cpp_stride_in_progress: bool = false
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
@@ -252,6 +274,8 @@ func tick(_ctx) -> Dictionary:
 	# 还有 phase 未完成 —— 返回部分进度，下 tick 续跑。
 	var partial_report: Dictionary = _build_report(false, elapsed_ms)
 	_last_breakdown = partial_report.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return partial_report
 
 
@@ -666,6 +690,8 @@ func _finalize_stride(elapsed_ms: float) -> Dictionary:
 
 	var report: Dictionary = _build_report(true, elapsed_ms)
 	_last_breakdown = report.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return report
 
 
@@ -699,6 +725,17 @@ func _is_cpp_atlas_pipeline_enabled() -> bool:
 	return FeatureFlagsScript.is_on(&"cpp_atlas_pipeline_enabled", climate_profile)
 
 
+# plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas dirty
+# 编码 kill-switch。默认 true 走 cpp 现行 dirty 路径；false 时跳过传 dirty_indices
+# 且向 cpp 传 force_full_encode=true，让 cpp 覆盖 dirty_path_used=false 强制 4
+# phase 全集编码（A/B 对照与回归排障）。climate_profile==null 时按默认 true 处理，
+# 与 cpp 现行行为一致，避免空 profile 时意外退化为全集编码。
+func _is_dynamic_atlas_terminal_dirty_enabled() -> bool:
+	if climate_profile == null:
+		return true
+	return FeatureFlagsScript.is_on(&"use_gdext_dynamic_atlas_terminal_dirty", climate_profile)
+
+
 # 取 DCWorld 挂载的 _world_ext / _ext（与 _should_use_ext_encode 同模式，
 # 走 .get() 反射避免对 DCWorld 内部命名强耦合）。
 func _get_world_ext():
@@ -721,13 +758,18 @@ func _get_world_ext():
 # 3) 调 run_atlas_pipeline_step 拿 atlas_buffers + ms_breakdown；
 # 4) 4 次 ImageTexture.update；5) 复用 _dvas_diag_* 采样窗口与 phase breakdown 输出。
 func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
-	# ── Step 1：原子读 dirty_indices（与旧路径 _start_new_stride 同语义）──
+	# ── plan/atlas-phase-slicing：mid-stride 守卫 ──
+	# 上一 tick C++ 返回 done=false 表示 stride 没跑完（phase_budget < 4），
+	# 本 tick 不应再读 dirty / burn-in，直接 call C++ 推下一个 phase。
+	var is_mid_stride: bool = _cpp_stride_in_progress
+
+	# ── Step 1：原子读 dirty_indices（只在 stride 起点做，mid-stride 时复用 C++ 缓存）──
 	var dirty_indices: PackedInt32Array = PackedInt32Array()
 	var dirty_path_used: bool = false
 	var dirty_reason: String = ""
 	var dirty_source_tag: String = ""
 	var dirty_mask_available: bool = false
-	if _is_dirty_push_enabled():
+	if not is_mid_stride and _is_dirty_push_enabled():
 		var dirty_source = dirty_world if dirty_world != null else world_data
 		dirty_source_tag = "dirty_world" if dirty_world != null else "world_data"
 		if dirty_source != null and dirty_source.has_method("read_and_clear_dirty_mask"):
@@ -743,13 +785,13 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 				dirty_reason = "dirty" if dirty_indices.size() > 0 else "no_dirty"
 		else:
 			dirty_reason = "read_and_clear_missing"
+	elif is_mid_stride:
+		dirty_reason = "mid_stride_reuse"
 	else:
 		dirty_reason = "flag_disabled"
 
-	# ── Step 2：burn-in ecology 持久状态（首次 / 地图重生时）──
-	# 把 baker._eco_active_decay_set + _eco_transition_age_arr 一次性灌到 C++ 端。
-	# 之后由 AtlasPipelineState 独立维护，无需再读 baker 状态。
-	if (not _eco_burnin_done or _pending_burnin) \
+	# ── Step 2：burn-in ecology 持久状态（首次 / 地图重生时；mid-stride 不做）──
+	if not is_mid_stride and (not _eco_burnin_done or _pending_burnin) \
 			and ext.has_method(&"migrate_eco_persistent_from_gd"):
 		_burn_in_eco_state(ext)
 		_eco_burnin_done = true
@@ -758,6 +800,10 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 	# ── Step 3：构造 opts → 调 run_atlas_pipeline_step ──
 	var W: int = int(world_data.derived_size.x) if world_data != null else 0
 	var H: int = int(world_data.derived_size.y) if world_data != null else 0
+	# plan/sim-2ms-simd-dirty-budget 任务 7：dirty 编码 kill-switch（默认 true）。
+	# false 时跳过传 dirty_indices 并加 force_full_encode=true，cpp 入口会覆盖
+	# dirty_path_used=false 让 4 phase 全集编码（A/B 对照与回归排障）。
+	var dvas_terminal_dirty_on: bool = _is_dynamic_atlas_terminal_dirty_enabled()
 	var opts: Dictionary = {
 		"world": world_data,
 		"map": map,
@@ -767,9 +813,15 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"terrain_sea_ice": int(TerrainTypeScript.TERRAIN.SEA_ICE),
 		"veg_none": int(VegetationTypeScript.VEG.NONE),
 		"enable_diag": true,
+		"phase_budget": CPP_PIPELINE_PHASE_BUDGET,
 	}
-	if dirty_path_used:
+	# dirty_indices 仅在 stride 起点传一次（mid-stride 时 C++ 从 stride snapshot 复用）。
+	# 任务 7 kill-switch：flag=false 时显式不传 dirty_indices 并设置 force_full_encode，
+	# 让 cpp 端把 dirty_path_used 钉为 false（覆盖默认按 opts.has 决策）。
+	if dirty_path_used and dvas_terminal_dirty_on:
 		opts["dirty_indices"] = dirty_indices
+	if not dvas_terminal_dirty_on:
+		opts["force_full_encode"] = true
 	var t_call_us: int = Time.get_ticks_usec()
 	var res: Dictionary = ext.call(&"run_atlas_pipeline_step", opts)
 	var call_ms: float = float(Time.get_ticks_usec() - t_call_us) / 1000.0
@@ -780,32 +832,84 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 			_cpp_pipeline_warned_missing_method = true
 			push_warning("[atlas-pipeline-cpp] run_atlas_pipeline_step fallback=true reason=",
 					String(res.get("reason", "")), "; 本 stride fallback 到旧 4-phase 路径")
-		# 软回退：不破坏 _phase 状态机，沿用旧路径接管这一 stride。
+		# 软回退：重置 mid-stride 状态，让下一 tick 重启。
+		_cpp_stride_in_progress = false
+		# plan/atlas-phase-slicing 诊断（2026-05-21）：把 fallback reason 透传给 oneshot
+		# 的 report，让 CSV 能直接看出来 cpp_pipeline 为什么没生效。
+		_pending_fallback_reason = String(res.get("reason", "unknown"))
 		return _tick_oneshot(t_start_us)
 
-	# ── Step 4：4 次 ImageTexture.update（保留 GD 端 RenderingServer 边界）──
+	# ── plan/atlas-phase-slicing：判定本 tick 是否完成整段 stride ──
+	# done=false → mid-stride，不 commit GPU（atlas_buffers 为空 Dict），
+	# 设置 _cpp_stride_in_progress=true 让下一 tick 继续推 phase。
+	var stride_done: bool = bool(res.get("done", true))
+	_cpp_stride_in_progress = not stride_done
+
+	# ── Step 4：4 次 ImageTexture.update（仅在 stride_done 时做；mid-stride 跳过）──
 	var atlas_buffers: Dictionary = res.get("atlas_buffers", {})
 	var stride_real: Dictionary = res.get("stride_real", {})
-	var pixels_written_total: int = _commit_atlas_buffers_to_gpu(
-			atlas_buffers, W, H, stride_real)
+	var pixels_written_total: int = 0
+	if stride_done:
+		pixels_written_total = _commit_atlas_buffers_to_gpu(
+				atlas_buffers, W, H, stride_real)
 
 	# ── Step 5：诊断与 report 组装 ──
+	# mid-stride 时只更新 max_tick_ms（用于诊断单 tick 抖动），不累加 stride 计数；
+	# stride_done 时才完整累加并触发窗口输出（保持窗口=stride 数语义）。
 	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
 	_dvas_diag_max_tick_ms = max(_dvas_diag_max_tick_ms, elapsed_ms)
-	_dvas_diag_stride_count += 1
-	_dvas_diag_ticks_accum += 1
-	# 累加 C++ 返回的 ms_breakdown（保持窗口均值输出格式不变）
 	var ms_breakdown: Dictionary = res.get("ms_breakdown", {})
-	for key in _dvas_diag_phase_ms_accum.keys():
-		_dvas_diag_phase_ms_accum[key] = float(_dvas_diag_phase_ms_accum[key]) \
-				+ float(ms_breakdown.get(key, 0.0))
-	if _dvas_diag_stride_count >= _dvas_diag_avg_window:
-		_print_phase_breakdown_window("cpp_pipeline")
-		_dvas_diag_stride_count = 0
-		_dvas_diag_ticks_accum = 0
-		_dvas_diag_max_tick_ms = 0.0
-		for k in _dvas_diag_phase_ms_accum.keys():
-			_dvas_diag_phase_ms_accum[k] = 0.0
+	if stride_done:
+		_dvas_diag_stride_count += 1
+		_dvas_diag_ticks_accum += 1
+		# 累加 C++ 返回的 ms_breakdown（stride_done 时拿到完整 4 phase 累计）
+		for key in _dvas_diag_phase_ms_accum.keys():
+			_dvas_diag_phase_ms_accum[key] = float(_dvas_diag_phase_ms_accum[key]) \
+					+ float(ms_breakdown.get(key, 0.0))
+		if _dvas_diag_stride_count >= _dvas_diag_avg_window:
+			_print_phase_breakdown_window("cpp_pipeline")
+			_dvas_diag_stride_count = 0
+			_dvas_diag_ticks_accum = 0
+			_dvas_diag_max_tick_ms = 0.0
+			for k in _dvas_diag_phase_ms_accum.keys():
+				_dvas_diag_phase_ms_accum[k] = 0.0
+	else:
+		# mid-stride：仅累 ticks_accum 计数，便于在窗口里看到"每 stride 用 N tick"。
+		_dvas_diag_ticks_accum += 1
+
+	# mid-stride 时返回最小 report，告诉调度器"本 tick 没完成 stride，下 tick 继续"。
+	if not stride_done:
+		var mid_report: Dictionary = {
+			"done": false,
+			"work_done": 0,
+			"elapsed_ms": elapsed_ms,
+			"progress_ratio": 0.0,
+			"phase": "upload",
+			"stage_name": "dynamic_visual_atlas_upload",
+			"path": "cpp_pipeline_mid_stride",
+			"call_ms": call_ms,
+			"current_phase": int(res.get("phase", PHASE_IDLE)),
+			"phase_cursor": int(res.get("cursor", 0)),
+			"ticks_used": 1,
+			"mid_stride": true,
+			"phases_done_this_call": int(res.get("phases_done_this_call", 0)),
+			# plan/atlas-phase-slicing 诊断（2026-05-21）：mid-stride 也写 _last_breakdown，
+			# 否则 perf_recorder 在 mid-stride tick 拿到的是上一次 stride_done 的旧 dict，
+			# CSV 看起来"每次都 done=true 4 phase 全跑"是假象。
+			"phase_budget_effective": int(res.get("phase_budget_effective", -1)),
+			"opts_has_phase_budget": bool(res.get("opts_has_phase_budget", false)),
+			"opts_phase_budget_raw": int(res.get("opts_phase_budget_raw", -999)),
+			"pixels_written": 0,
+			"mask_path": dirty_path_used,
+			"mask_dirty_count": dirty_indices.size(),
+			"dirty_reason": dirty_reason,
+			"dirty_source": dirty_source_tag,
+			"dirty_mask_available": dirty_mask_available,
+		}
+		_last_breakdown = mid_report.duplicate(true)
+		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+		_last_breakdown["_tick_idx"] = current_fast_tick_idx
+		return mid_report
 
 	var report: Dictionary = {
 		"done": true,
@@ -872,8 +976,15 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"ice_source": "cpp_pipeline",
 		"ice_path": "cpp_pipeline",
 		"ice_fallback_reason": "",
+		# plan/atlas-phase-slicing 诊断（2026-05-21）：把 C++ 实际看到的 phase_budget
+		# 透传到 CSV，方便确认 opts marshalling 是否正确。预期：opts_has=true、raw=1、effective=1。
+		"phase_budget_effective": int(res.get("phase_budget_effective", -1)),
+		"opts_has_phase_budget": bool(res.get("opts_has_phase_budget", false)),
+		"opts_phase_budget_raw": int(res.get("opts_phase_budget_raw", -999)),
 	}
 	_last_breakdown = report.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return report
 
 
@@ -1041,8 +1152,16 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 		"ice_dirty_cells": int(ice_report.get("dirty_cells", 0)),
 		"ice_ms": float(ice_report.get("elapsed_ms", 0.0)),
 		"total_ticks_used": 1,
+		# plan/atlas-phase-slicing 诊断（2026-05-21）：标记本次走 oneshot 的原因，
+		# 让 perf CSV 直接能看出是\"cpp_pipeline 没生效→fallback\"还是\"enable_time_slicing=false\"。
+		"path": "oneshot",
+		"fallback_reason": _pending_fallback_reason if _pending_fallback_reason != "" else "no_cpp_pipeline_or_time_slicing_off",
 	}
+	# 消费一次，下次默认空（如果连续 fallback，每次都会被重置成最新原因）。
+	_pending_fallback_reason = ""
 	_last_breakdown = report.duplicate(true)
+	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return report
 
 

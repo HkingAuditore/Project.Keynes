@@ -90,9 +90,14 @@ vec3 apply_snow_cover(
 	snow_factor = clamp(snow_factor, 0.0, 1.0);
 
 	// 5) 厚度色阶 + 边缘破碎。
+	// 2026-05-21 调整：阈值从 (0.10, 0.85) → (0.05, 0.60)。
+	// 原阈值在 dynamic_snow_strength=0.85、eco_foliage 扣减、box blur 稀释三档
+	// 软衰减叠加下，会把 cell.snow_cover 真值 ~0.95 的弱雪压成不可见
+	// (smoothstep(0.10, 0.85, ~0.40) ≈ 0.36)。降低高门槛让 0.4~0.6 的弱雪
+	// 也能形成可见的薄雪覆盖；下限维持低水位（0.05）防止无雪格泛白。
 	float thick_low = pixel_noise.g;
 	float thick_hi = pixel_noise.r;
-	float thickness = clamp(smoothstep(0.10, 0.85, snow_factor) + (thick_low - 0.5) * 0.44, 0.0, 1.0);
+	float thickness = clamp(smoothstep(0.05, 0.60, snow_factor) + (thick_low - 0.5) * 0.44, 0.0, 1.0);
 	vec3 thin_snow  = vec3(0.82, 0.86, 0.92);
 	vec3 thick_snow = vec3(0.96, 0.97, 0.99);
 	vec3 snow_color = mix(thin_snow, thick_snow, thickness);
