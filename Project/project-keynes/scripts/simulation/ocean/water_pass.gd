@@ -41,7 +41,7 @@ func _init(generator) -> void:
 func run(map: MapData, season_phase: float) -> void:
 	if _generator == null:
 		return
-	# Future: cp.use_gdext_ocean_water 切 dots_cpp / cp.use_soa_pipeline 切 soa
+# Future: ext.has_method("run_ocean_water") 切 dots_cpp / cp.use_soa_pipeline 切 soa (use_gdext_ocean_water removed in dots-flag-prune-pr1)
 	pass
 
 func describe() -> String:

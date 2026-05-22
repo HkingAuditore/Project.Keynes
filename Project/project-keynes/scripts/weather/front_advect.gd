@@ -134,7 +134,7 @@ func tick_cyclone_wake(map) -> void:
 ## 行为完全等价于原 [`weather_system.tick_one_day`] 中 line 305-446 的
 ## "1) 推进所有 front" + "2) 回收 dead 与出图 front" 内联段：
 ##   - emergent_coupling 时按 front 中心 cell 预算 decay_mul / precip_bonus
-##   - F.6 C++ 快路径（`use_gdext_weather_front` flag + ext.has_method 通过时）
+##   - F.6 C++ 快路径（`ext != null + has_method` 探测通过时）
 ##     批量 advect；rc<0 时透明 fallback
 ##   - GDScript 主循环：advance_one_day(wind_fn) + 迎风坡 precip 加成
 ##   - reap：剔除 is_alive() == false 或飘出地图 + bounding_radius() 边界的 front
@@ -163,9 +163,13 @@ func tick_advance_fronts(map, wind_fn: Callable) -> float:
 	# 不匹配 → ×1.5（更快耗尽）。缩放只影响本次 advance_one_day 的 decay 消耗。
 	# 不持久化到 front.decay_per_day 自身，避免跨日连锁放大。
 	#
-	# ─── Phase F.6：DCWorldExt fronts advect C++ 快路径 ─────────────────
-	# 触发条件：cp.use_gdext_weather_front == true + ext != null + has_method
-	#         + active_fronts 不空。任一不满足走 GDScript fallback。
+	# ─── Phase F.6：DCWorldExt fronts advect C++ 快路径 ─────────────
+	# 触发条件：ext != null + has_method + active_fronts 不空。任一不满足走
+	# GDScript fallback。
+	#
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_weather_front flag 已从
+	# ClimateProfile 删除——hot pass 现恒走 ext+has_method 探测单边分支（rc<0
+	# 时 transparent fallback 到 GDScript 路径）。
 	#
 	# 设计：emergent_coupling 的 decay_mul / precip_bonus 仍由 GDScript 预算
 	# （需要 map 查询）；C++ 端只接 batch advect 主循环（旋转 / center += vel /
@@ -173,17 +177,14 @@ func tick_advance_fronts(map, wind_fn: Callable) -> float:
 	# 一次性 pre-compute 成 PackedVector2Array 传 C++。
 	var f6_did_fast_path: bool = false
 	var f6_active_fronts_size: int = ws._active_fronts.size()
-	var f6_flag_on: bool = false
-	if ws._cp_for_front_flag != null and "use_gdext_weather_front" in ws._cp_for_front_flag:
-		f6_flag_on = bool(ws._cp_for_front_flag.use_gdext_weather_front)
-	if f6_active_fronts_size > 0 and f6_flag_on \
+	if f6_active_fronts_size > 0 \
 			and ws._data_core_world_ext != null \
 			and ws._data_core_world_ext.has_method("run_weather_front_advect_pass"):
 		# 一次性诊断
 		if not ws._gdext_front_first_attempt_logged:
 			ws._gdext_front_first_attempt_logged = true
-			print("[front/F.6] first attempt: n_active_fronts=%d flag=%s ext_ok=%s" % [
-				f6_active_fronts_size, str(f6_flag_on), str(ws._data_core_world_ext != null),
+			print("[front/F.6] first attempt: n_active_fronts=%d ext_ok=%s" % [
+				f6_active_fronts_size, str(ws._data_core_world_ext != null),
 			])
 		if not ws._gdext_front_signature_checked:
 			ws._gdext_front_signature_checked = true

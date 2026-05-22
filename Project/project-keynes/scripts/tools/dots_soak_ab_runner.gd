@@ -165,499 +165,61 @@ func start_flag_profile(main_node: Node, n_ticks: int, flags_a: Dictionary,
 	return start(main_node, n_ticks, Mode.FLAG_PROFILE)
 
 
-func start_season_atlas_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 120, 1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed):
-		completed.connect(_on_batch_completed)
-	return _start_next_batch_run(main_node)
+func start_season_atlas_batch(_main_node: Node,
+		_tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	# dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_season_refresh /
+	# use_gdext_sea_ice_atlas_prepare flag 均已删除——batch 入口退役为 no-op stub。
+	print("[soak-ab] start_season_atlas_batch: deprecated (flags removed); no-op.")
+	return false
 
 
 ## DOTS-Final-Frontier phase 0：SIMD 三 flag 批跑入口。
-## 跑 1000-tick A/B（off vs on），验收 ≥30% 加速 + bit-equal（标量 < 1e-5）。
-## 与 _start_next_batch_run 完全独立，不污染既有 season/atlas 批跑路径。
-func start_simd_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] simd batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_simd):
-		completed.connect(_on_batch_completed_simd)
-	return _start_next_simd_run(main_node)
-
-
-func _start_next_simd_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_simd):
-			completed.disconnect(_on_batch_completed_simd)
-		print("[soak-ab] simd batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] simd batch %d/%d: %d ticks (target ≥30%% accel + bit-equal)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_pass_b_simd": false,
-			"use_gdext_ocean_water_simd": false,
-			"use_gdext_ocean_land_simd": false,
-		},
-		{
-			"use_gdext_pass_b_simd": true,
-			"use_gdext_ocean_water_simd": true,
-			"use_gdext_ocean_land_simd": true,
-		},
-		"simd_off",
-		"simd_on"
-	)
-
-
-func _on_batch_completed_simd(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_simd_run", _main)
+## dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_pass_b_simd /
+## use_gdext_ocean_water_simd / use_gdext_ocean_land_simd flag 均已删除——
+## SIMD 调度现由 C++ 内部根据 CPU 特性自动选择，batch 入口退役为 no-op stub。
+func start_simd_batch(_main_node: Node,
+		_tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	print("[soak-ab] start_simd_batch: deprecated (SIMD flags removed; auto-dispatched in C++); no-op.")
+	return false
 
 
 ## DOTS-Total-CPP C.3d：thread fallback 批跑入口。
-## 跑 N-tick A/B（A=use_gdext_thread_fallback off / B=on），覆盖：
-##   climate Pass-B / ocean_water / ocean_land / sea_ice / vegetation_dynamics
-##   共 5 个 _thread 入口（C.3a-c + C.3d 五处接入点）
-## 验收门槛：
-##   - bit-equal（标量 < 1e-5；reduce 严格按 task_idx 升序，无 race）
-##   - elapsed_ms：thread on 在 N≥2400 + WTP 可用时应快于 thread off（不强制）
-## 与 start_simd_batch 同构。注意：不强制 SIMD 三 flag 状态（thread fallback 是
-## SIMD 不达预算时的二级路径；A/B 在两段都保持当前 ClimateProfile 默认 flag 即可）。
-func start_thread_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] thread batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_thread):
-		completed.connect(_on_batch_completed_thread)
-	return _start_next_thread_run(main_node)
+## dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_thread_fallback flag 已删除——
+## thread 调度现由 C++ 内部根据 n_cells 自动选择，batch 入口退役为 no-op stub。
+func start_thread_batch(_main_node: Node,
+		_tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	print("[soak-ab] start_thread_batch: deprecated (thread flags removed; auto-dispatched in C++); no-op.")
+	return false
 
 
-func _start_next_thread_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_thread):
-			completed.disconnect(_on_batch_completed_thread)
-		print("[soak-ab] thread batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] thread batch %d/%d: %d ticks (covers pass_b / ocean_water / ocean_land / sea_ice / veg_dyn _thread; target bit-equal < 1e-5)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_thread_fallback": false,
-		},
-		{
-			"use_gdext_thread_fallback": true,
-		},
-		"thread_off",
-		"thread_on"
-	)
+## Phase A.1：fronts zero-copy SoA 批跑入口。
+## dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_fronts_soa flag 已删除——
+## fronts SoA 现恒嵌入主路径，batch 入口退役为 no-op stub。
+func start_fronts_soa_batch(_main_node: Node,
+		_tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	print("[soak-ab] start_fronts_soa_batch: deprecated (flag removed); no-op.")
+	return false
 
 
-func _on_batch_completed_thread(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_thread_run", _main)
+## Phase A.3：常驻 knobs RID 批跑入口。
+## dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_resident_knobs flag 已删除——
+## resident knobs 现恒嵌入主路径，batch 入口退役为 no-op stub。
+func start_resident_knobs_batch(_main_node: Node,
+		_tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
+	print("[soak-ab] start_resident_knobs_batch: deprecated (flag removed); no-op.")
+	return false
 
 
-## Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_fronts_soa off / B=on），
-## 验收门槛：
-##   - fronts 23 字段（center/radius/velocity/axis/...）worst diff ≤ 1e-5（标量）
-##   - elapsed_ms 不退化（B ≤ A * 1.05，即 SoA 路径不能比 Dict 路径慢）
-##   - 首次运行打印 "[weather/summary] fronts_soa path ACTIVE — first run n=..."
-## 设计约束：A/B 两段算法路径完全一致（C++ 端 fronts_soa 与 fronts 并存输出），
-## 仅 GDScript 端 unpack 路径切换；理论 fronts 字段应 bit-equal（epsilon=0 而非
-## 1e-5），1e-5 留作 PackedFloat32 vs Variant double 反复转换的浮点尾差容忍。
-##
-## 与 start_simd_batch 同构，零污染既有 batch 路径。
-func start_fronts_soa_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] fronts_soa batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_fronts_soa):
-		completed.connect(_on_batch_completed_fronts_soa)
-	return _start_next_fronts_soa_run(main_node)
-
-
-func _start_next_fronts_soa_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_fronts_soa):
-			completed.disconnect(_on_batch_completed_fronts_soa)
-		print("[soak-ab] fronts_soa batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] fronts_soa batch %d/%d: %d ticks (target fronts diff ≤ 1e-5 + elapsed_ms not regress)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{ "use_gdext_fronts_soa": false },
-		{ "use_gdext_fronts_soa": true },
-		"fronts_soa_off",
-		"fronts_soa_on"
-	)
-
-
-func _on_batch_completed_fronts_soa(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_fronts_soa_run", _main)
-
-
-## Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_resident_knobs off / B=on），
-## 验收门槛：
-##   - 3 个 hot-path build_*_knobs 输出 Dict 标量段 bit-equal（key 同集合 + 同值）
-##   - 任一 build_*_knobs fast path miss（KnobsHandle null / has_method false）自动 fallback，
-##     A/B 数值完全一致是必要条件（"on" 路径不能引入差异）
-##   - elapsed_ms 不退化（B ≤ A * 1.02，标量段缓存的开销主要在 first hit；稳态零分配）
-##   - 首次运行打印 "[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit"
-##   - get_field_rebuild_count() / get_summary_rebuild_count() 等在 1000-tick 结束时
-##     应 ≤2（启动 + 至多 1 次 ClimateProfile 变更）
-func start_resident_knobs_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] resident_knobs batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_resident_knobs):
-		completed.connect(_on_batch_completed_resident_knobs)
-	return _start_next_resident_knobs_run(main_node)
-
-
-func _start_next_resident_knobs_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_resident_knobs):
-			completed.disconnect(_on_batch_completed_resident_knobs)
-		print("[soak-ab] resident_knobs batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] resident_knobs batch %d/%d: %d ticks (target Dict bit-equal + elapsed_ms not regress + rebuild_count ≤2)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{ "use_gdext_resident_knobs": false },
-		{ "use_gdext_resident_knobs": true },
-		"resident_knobs_off",
-		"resident_knobs_on"
-	)
-
-
-func _on_batch_completed_resident_knobs(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_resident_knobs_run", _main)
-
-
-## DOTS-Final-Frontier Phase B+：season_round 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_season_round off / B=on），
-## 验收 1000-tick 长期均值字段（temp_30d/365d/anomaly）≤ 0.01，标量字段 ≤ 0.05；
-## 同时 B 段会沉淀 _last_season_refresh_breakdown.b_plus_native_ms / slices_used /
-## stages_done，配合 perf 快照评 fast_ms p95。
-##
-## 关键约束：B 段必须保证 use_gdext_season_refresh = true（B+ 路径在 GDScript
-## wrapper 内 gate 依赖该总开关；A 段也不强制关，避免引入额外协变量）。
-##
-## 与 start_simd_batch 同构，零污染既有 season/atlas 批跑路径。
-func start_season_round_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] season_round batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	# 默认两段：30 tick 快速烟测 + 1000 tick 正式验收。
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_season_round):
-		completed.connect(_on_batch_completed_season_round)
-	return _start_next_season_round_run(main_node)
-
-
-func _start_next_season_round_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_season_round):
-			completed.disconnect(_on_batch_completed_season_round)
-		print("[soak-ab] season_round batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] season_round batch %d/%d: %d ticks (B+ on vs off, target bit-equal + fast_ms ↓)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	# A 段：B+ 关闭，但 stage 1-8 单 stage gdext 路径保持开启（与现网 phase B 一致），
-	#       这样 A/B 差异**只**来自"调度层是否下沉到 C++ round_state"，不引入算法面差异。
-	# B 段：B+ 打开 + use_gdext_season_refresh 保持开启（B+ wrapper 内部 gate 依赖该总开关）。
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_season_round": false,
-			"use_gdext_season_refresh": true,
-		},
-		{
-			"use_gdext_season_round": true,
-			"use_gdext_season_refresh": true,
-		},
-		"b_plus_off",
-		"b_plus_on"
-	)
-
-
-func _on_batch_completed_season_round(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_season_round_run", _main)
-
-
-## Phase A.2（plan/dots-total-cpp）：unified fast tick 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_unified_fast_tick off / B=on），
-## 验收门槛：
-##   - native_daily breakdown 顶层 weather_ms / advance_ms / distribute_ms /
-##     summary_ms / cyclone_ms / stage_b_ms 字段集合一致（B 段必须含 weather 段）
-##   - fronts 数量 diff = 0，fronts 字段 diff ≤ 1e-5（cpp 5 段 + native_daily 11 段
-##     完全同源算法，理论 bit-equal）
-##   - elapsed_ms 不退化（B ≤ A * 1.02；理论应 ↓ ≈ 50-100μs/帧）
-##   - 首次运行打印 "[native_daily/unified] gdext path ACTIVE — weather_knobs embedded..."
-##
-## 关键约束：B 段必须保证 use_gdext_weather_refresh_daily = true（unified 路径
-## 在 _build_native_daily_bundle 内 gate 依赖该开关）；同时 native_daily_sim_mode
-## 必须已是 ACTIVE（mode=2），否则 unified 入口不触发（A/B 都不进入 unified path，
-## 等价于无操作，但仍可作为零退化烟测）。
-##
-## 与 start_simd_batch 同构，零污染既有批跑路径。
-func start_unified_fast_tick_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] unified_fast_tick batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_unified_fast_tick):
-		completed.connect(_on_batch_completed_unified_fast_tick)
-	return _start_next_unified_fast_tick_run(main_node)
-
-
-func _start_next_unified_fast_tick_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_unified_fast_tick):
-			completed.disconnect(_on_batch_completed_unified_fast_tick)
-		print("[soak-ab] unified_fast_tick batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] unified_fast_tick batch %d/%d: %d ticks (target fronts bit-equal + breakdown fields consistent + fast_ms not regress)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	# A 段：unified off，weather refresh daily 仍走独立 weather_refresh_job（如果它被注册）；
-	#       native_daily_sim_mode=ACTIVE 时则 weather 段不跑（已知潜在 gap，A/B 不评估此点）。
-	# B 段：unified on，weather refresh daily 嵌入 native_daily 单次跨界。
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_unified_fast_tick": false,
-			"use_gdext_weather_refresh_daily": true,
-		},
-		{
-			"use_gdext_unified_fast_tick": true,
-			"use_gdext_weather_refresh_daily": true,
-		},
-		"unified_off",
-		"unified_on"
-	)
-
-
-func _on_batch_completed_unified_fast_tick(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_unified_fast_tick_run", _main)
-
-
-## Phase C.1（plan/dots-total-cpp）：System schedule graph 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_system_schedule off / B=on），
-## 验收门槛：
-##   - native_daily breakdown 全 ms 字段 epsilon ≤ 1e-5
-##     （pass_a_ms / pass_b_ms / ocean_water_ms / ocean_land_ms / sea_ice_ms /
-##      transp_ms / albedo_ms / veg_dyn_ms / feedback_ms / weather_ms /
-##      stage_b_ms / climate_ms / ocean_ms / total_ms）
-##   - succession_indices / succession_to_veg / stat_succession_count 完全相等
-##   - fronts 数量 diff = 0，fronts 字段 diff ≤ 1e-5（schedule graph 完全镜像
-##     原 if-chain，理论 bit-equal）
-##   - elapsed_ms 不退化（B ≤ A * 1.02；理论无差异，因为 dispatch loop 自身开销
-##     ~微秒级，远低于 pass 自身耗时）
-##   - 首次运行打印日志可在 dispatch_system_schedule 内自加（当前未必需要）
-##
-## 与 start_unified_fast_tick_batch 同构。
-func start_system_schedule_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] system_schedule batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_system_schedule):
-		completed.connect(_on_batch_completed_system_schedule)
-	return _start_next_system_schedule_run(main_node)
-
-
-func _start_next_system_schedule_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_system_schedule):
-			completed.disconnect(_on_batch_completed_system_schedule)
-		print("[soak-ab] system_schedule batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] system_schedule batch %d/%d: %d ticks (target breakdown bit-equal + fronts bit-equal + elapsed not regress)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	# A 段：system_schedule off，走 run_native_daily_tick 原 11 段手写 if-chain。
-	# B 段：system_schedule on，走 system_schedule.cpp dispatch loop 遍历
-	#       SCHEDULE_GRAPH[]。两者算法完全同源，理论 bit-equal。
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_system_schedule": false,
-		},
-		{
-			"use_gdext_system_schedule": true,
-		},
-		"sched_off",
-		"sched_on"
-	)
-
-
-func _on_batch_completed_system_schedule(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_system_schedule_run", _main)
-
-
-## Phase 1A.4（plan/sus-cpp-port）：SUS scheduler native shell 批跑入口。
-## 跑 SAME_SOURCE 同源 N-tick A/B（A=use_gdext_sus_scheduler off / B=on），
-## 验收门槛：
-##   - SAME_SOURCE 多阈值评估（_evaluate_same_source）：
-##       scalar 字段 ≤ 0.05，long-term (temp_30d/365d/anomaly) ≤ 0.01
-##     SUS native shell 不动算法面（Job.run_slice 仍 GDScript），理论 bit-equal；
-##     1e-5 epsilon 留作 priority sort tie 的稳定性 / Variant marshalling 浮点尾差。
-##   - elapsed_ms 不退化（B ≤ A * 1.05；理论应 ↓，因为 per-tick GD↔native
-##     crossing 从 ~30-40 降到 ~5-10，实测 ≈ 10-50μs/帧节省）
-##   - 首次进入 native 路径时 SusScheduler._ensure_ext 无 push_error
-##     （ClassDB.class_exists("SusSchedulerExt") + instantiate 都成功）
-##   - 1000-tick 后 _last_report 字段 schema 一致（每个 job 的
-##     slices_run / progress_ratio / skipped_reason）—— GD/C++ 双路径都能
-##     被 main.gd diagnostic 路径读取
-##
-## 关键约束：A/B 两段算法路径完全一致（C++ SusSchedulerExt 镜像 GDScript
-## SusScheduler.tick 全部分支，包含 strict_budget round-robin + starvation
-## promotion + AccumulatorPolicy callable getter）。
-##
-## 与 start_system_schedule_batch 同构，零污染既有批跑路径。
-func start_sus_scheduler_batch(main_node: Node,
-		tick_counts: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _phase != Phase.IDLE:
-		print("[soak-ab] sus_scheduler batch ignored: runner already active.")
-		return false
-	_batch_active = true
-	# 默认两段：30 tick 快速烟测（重点看启动 lazy migration / push_error） +
-	# 1000 tick 正式验收（重点看 storage bit-equal + perf 不退化）。
-	_batch_counts = tick_counts if tick_counts.size() > 0 else PackedInt32Array([30, 1000])
-	_batch_index = 0
-	_batch_reports.clear()
-	if not completed.is_connected(_on_batch_completed_sus_scheduler):
-		completed.connect(_on_batch_completed_sus_scheduler)
-	return _start_next_sus_scheduler_run(main_node)
-
-
-func _start_next_sus_scheduler_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed_sus_scheduler):
-			completed.disconnect(_on_batch_completed_sus_scheduler)
-		print("[soak-ab] sus_scheduler batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] sus_scheduler batch %d/%d: %d ticks (target SAME_SOURCE bit-equal + elapsed not regress)" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	# A 段：sus_scheduler off，SusScheduler.tick / register_job / report_* 走 GDScript。
-	# B 段：sus_scheduler on，整个 tick loop 转发到 SusSchedulerExt（C++）；
-	#       Job.run_slice 仍跨界回 GDScript（Phase 1B 才升级 NativeDailySimJob 为真 native kind）。
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{ "use_gdext_sus_scheduler": false },
-		{ "use_gdext_sus_scheduler": true },
-		"sus_sched_off",
-		"sus_sched_on"
-	)
-
-
-func _on_batch_completed_sus_scheduler(report: Dictionary) -> void:
-	if not _batch_active:
-		return
-	_batch_reports.append(report)
-	_batch_index += 1
-	call_deferred("_start_next_sus_scheduler_run", _main)
+# ─── 已删除 batch 入口（dots-flag-prune-pr1，2026-05-22）────────────────────
+# 以下 4 个 batch 入口函数随 ClimateProfile 字段一同删除：
+#   - start_season_round_batch / _start_next_season_round_run /
+#     _on_batch_completed_season_round（use_gdext_season_round 已恒走单路径）
+#   - start_unified_fast_tick_batch / _start_next_unified_fast_tick_run /
+#     _on_batch_completed_unified_fast_tick（use_gdext_unified_fast_tick 已删）
+#   - start_system_schedule_batch / _start_next_system_schedule_run /
+#     _on_batch_completed_system_schedule（use_gdext_system_schedule 已删）
+#   - start_sus_scheduler_batch / _start_next_sus_scheduler_run /
+#     _on_batch_completed_sus_scheduler（use_gdext_sus_scheduler 已删）
 
 
 ## 中止当前 A/B 流程（立即 stop dump，不打 diff 报告）。
@@ -812,17 +374,16 @@ func _evaluate_same_source(report: Dictionary) -> void:
 
 
 func _is_dc_on() -> bool:
+	# dots-flag-prune-pr1（2026-05-22）：use_data_core 字段已从 ClimateProfile
+	# 删除——DataCore 已恒走单路径（World 始终 bind，weather/climate 始终走
+	# DCWorld view 镜像）。保留 is_data_core_on() 探测以兼容旧 main.gd（toggle
+	# master 仍可在 runtime 切换路径），fallback 路径在字段缺失时直接返回 true。
 	if _main == null:
 		return false
 	if _main.has_method("is_data_core_on"):
 		return bool(_main.is_data_core_on())
-	# Fallback：直接读 generator._c().use_data_core
-	var gen = _main._generator if "_generator" in _main else null
-	if gen != null and gen.has_method("_c"):
-		var cp = gen._c()
-		if cp != null and "use_data_core" in cp:
-			return bool(cp.use_data_core)
-	return false
+	# Fallback：DataCore 默认恒挂载，无 helper 暴露时按 on 处理。
+	return true
 
 
 func _mode_name(mode: int) -> String:
@@ -868,31 +429,15 @@ func _restore_flag_overrides() -> void:
 	_saved_flag_values.clear()
 
 
-func _start_next_batch_run(main_node: Node) -> bool:
-	if _batch_index >= _batch_counts.size():
-		_batch_active = false
-		if completed.is_connected(_on_batch_completed):
-			completed.disconnect(_on_batch_completed)
-		print("[soak-ab] season/atlas batch complete: %d reports" % _batch_reports.size())
-		return true
-	var n_ticks: int = int(_batch_counts[_batch_index])
-	print("[soak-ab] season/atlas batch %d/%d: %d ticks" % [
-		_batch_index + 1, _batch_counts.size(), n_ticks
-	])
-	return start_flag_profile(
-		main_node,
-		n_ticks,
-		{
-			"use_gdext_season_refresh": false,
-			"use_gdext_sea_ice_atlas_prepare": false,
-		},
-		{
-			"use_gdext_season_refresh": true,
-			"use_gdext_sea_ice_atlas_prepare": true,
-		},
-		"gdscript_stage8_atlas",
-		"gdext_stage8_atlas"
-	)
+func _start_next_batch_run(_main_node: Node) -> bool:
+	# dots-flag-prune-pr1 round 2 (2026-05-22): use_gdext_season_refresh /
+	# use_gdext_sea_ice_atlas_prepare flag 均已删除——season/atlas A/B 逻辑已退役。
+	# 保留函数骨架以防止 _on_batch_completed 调用点报错，直接返回作为终止。
+	_batch_active = false
+	if completed.is_connected(_on_batch_completed):
+		completed.disconnect(_on_batch_completed)
+	print("[soak-ab] season/atlas batch path retired (flags removed).")
+	return false
 
 
 func _on_batch_completed(report: Dictionary) -> void:

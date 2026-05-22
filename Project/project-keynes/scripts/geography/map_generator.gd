@@ -497,9 +497,11 @@ func get_data_core_world_ext():
 ## 一行不动。
 ##
 ## 返回空 Dict（{}）的语义 = "走 legacy 路径"，触发条件：
-##   - cp.use_data_core_climate = false（开关关闭）
-##   - _data_core_world 未 bind（即 use_data_core=false 或还没 _setup_sus）
+##   - _data_core_world 未 bind（DCWorld 未创建 / bind_map_data 失败）
 ##   - _refresh_climate_daily_job.data_core_ready() = false（comp_id 没缓存好）
+##
+## dots-flag-prune-pr1 (2026-05-22)： use_data_core_climate flag 已删除——
+## DataCore views 现恒可用，仅看 world bound + comp_id ready 两个环境条件。
 ##
 ## 设计要点：
 ##   - bind_map_data 保证 view_f32(CELL_TEMP) 与 map.temp_arr 是同一个底层
@@ -509,7 +511,7 @@ func get_data_core_world_ext():
 ##   - 内层 for 循环不应再 lookup 此 Dictionary；调用方必须一次性 .get(...) 出来
 ##     存到本地 var 再用。
 func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
-	if cp == null or not cp.use_data_core_climate:
+	if cp == null:
 		return {}
 	if _data_core_world == null or not _data_core_world.is_bound():
 		return {}
@@ -1066,24 +1068,21 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	#     用 reads/writes 重写 priority 实现拓扑序运行
 	# 调度器 API 同形：bind_world / tick / reset_all_progress / report_last_tick /
 	# report_last_tick_summary 同名同签名。
+	# dots-flag-prune-pr1 (2026-05-22)： use_dc_system_scheduler flag 已删除——
+	# DCSystemScheduler 现恒走单路径（6 个 DCSystem wrapper + 拓扑排序）。
+	# _use_dc_system_scheduler 变量保留作为内部常量 true，避免下游 if 分支改动。
 	var cp_sched := _c()
-	_use_dc_system_scheduler = false
-	if cp_sched != null and "use_dc_system_scheduler" in cp_sched:
-		_use_dc_system_scheduler = bool(cp_sched.use_dc_system_scheduler)
-	if _use_dc_system_scheduler:
-		_sus = DCSystemSchedulerScript.new()
-	else:
-		_sus = SlicedUpdateScheduler.new()
+	_use_dc_system_scheduler = true
+	_sus = DCSystemSchedulerScript.new()
 	_apply_sim_budget_profile_to_scheduler(cp_sched)
 	# DataCore World 接入（dots-foundation-and-weather-migration）：
 	# 在 SUS 注册任何 job 前先把 World 实例创建出来并 bind 到 MapData，
 	# 这样所有 register_job 会自动被注入 world 引用。
-	# 开关：ClimateProfile.use_data_core（默认 false → World 仍创建但不 bind，
-	# 等同 legacy 路径）。Task 10 暴露 CLI / 完整治理。
-	var dc_enabled: bool = false
+	#
+	# dots-flag-prune-pr1 (2026-05-22)： use_data_core flag 已删除——DataCore 现
+	# 恒挂载并 bind（不再区分 "创建但不 bind" 的 legacy 路径）。
+	var dc_enabled: bool = true
 	var cp_dc := _c()
-	if cp_dc != null and "use_data_core" in cp_dc:
-		dc_enabled = bool(cp_dc.use_data_core)
 	_data_core_world = DCWorld.new()
 	if dc_enabled:
 		# Reference-impl Pass #2 (performance-charter §12.6)：把 demo 开关透传，
@@ -1130,17 +1129,18 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			print("[DataCore] DCWorldExt class not registered (gdext unavailable); climate Pass-A will use DataCore/GDScript path only")
 
 	# PR-2.3a HexCell facade infra：bake_world / 加载存档末尾给每个 cell 注入 world
-	# 引用 + facade flag。默认 use_hexcell_facade=false（向后兼容），PR-2.3b 给热字段
-	# 加 property setter/getter 后可灰度开启（master 手册 §3.10.3）。
+	# 引用 + facade flag。
+	#
+	# dots-flag-prune-pr1 (2026-05-22)： use_hexcell_facade flag 已删除——
+	# facade 现恒启用（bind_world 第 2 参 _facade_on=true），热字段 getter/setter 全走
+	# DCWorld view（PR-2.3c 已验收）。
 	#
 	# plan/3b-single-read-source：本段已从 _data_core_world 创建紧后移到此处，
 	# 在 _data_core_world_ext 创建之后才 bind，使第 3 参 world_ext 能正确传入。
 	# 当 ext 为 null（gdext 未编译 / bind_map_data 失败）时退化为旧 2 参行为，
 	# facade getter 走 _world.read_*，与 PR-2.3c 实现 100% 等价。
 	if dc_enabled:
-		var _facade_on: bool = false
-		if cp_dc != null and "use_hexcell_facade" in cp_dc:
-			_facade_on = bool(cp_dc.use_hexcell_facade)
+		var _facade_on: bool = true
 		var _cell_arr_for_bind: Array = map._cell_array
 		var _n_cells_for_bind: int = _cell_arr_for_bind.size()
 		for _ci in range(_n_cells_for_bind):
@@ -1148,7 +1148,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			if _c_for_bind != null and _c_for_bind.has_method("bind_world"):
 				_c_for_bind.bind_world(_data_core_world, _facade_on, _data_core_world_ext)
 		if _facade_on:
-			print("[hex_cell] facade ENABLED (use_hexcell_facade=true; %d cells bound; ext=%s)" % [_n_cells_for_bind, str(_data_core_world_ext != null)])
+			print("[hex_cell] facade ENABLED (%d cells bound; ext=%s)" % [_n_cells_for_bind, str(_data_core_world_ext != null)])
 	# DOTS-Final-Push 修复：把 ClimateProfile 直接注入 MapBaker。
 	# 历史上 sea_ice prepare / albedo / veg_dyn / feedback 通过 `world.get("config")`
 	# 取 cp 永远拿到 null（WorldData 上没有 config 字段），导致 use_native 一直 false，
@@ -1159,19 +1159,17 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_baker.set_climate_profile(cp_for_baker)
 		print("[DataCore] _baker climate_profile injected=%s (fixes WorldData.config==null sea_ice prepare path)" % str(cp_for_baker != null))
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
-	# 把 ext 句柄 + ClimateProfile.use_gdext_weather_field 一次性下发给 WeatherSystem。
-	# ext 为 null（gdext 未编译 / 未 bind） 或 flag=false 时 WeatherSystem 自动走
-	# GDScript legacy path，对 caller 完全透明。
+	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
+	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
+	#
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_weather_field/distribute/summary
+	# /weather_front 四个 flag 已删除——enabled 参数现恒传 true，WeatherSystem 内部
+	# 走 ext+has_method+sig 探测单边分支。
+	# PR-2.1.6：第 4 个参数注入 GDScript DCWorld，让 weather field commit 写路径
+	# 走 world.write_f32_indexed。详见 master 手册 §3.9。
 	if _weather_system != null and _weather_system.has_method("configure_gdext_acceleration"):
 		var cp_f1 := _c()
-		var f1_flag: bool = false
-		if cp_f1 != null and "use_gdext_weather_field" in cp_f1:
-			f1_flag = bool(cp_f1.use_gdext_weather_field)
-		# Phase F.6：传 cp 引用，让 weather_system fast-path 能动态读
-		# cp.use_gdext_weather_front（独立于 F.1 weather_field flag）。
-		# PR-2.1.6：第 4 个参数注入 GDScript DCWorld，让 weather field commit 写路径
-		# 走 world.write_f32_indexed。详见 master 手册 §3.9。
-		_weather_system.configure_gdext_acceleration(_data_core_world_ext, f1_flag, cp_f1, _data_core_world)
+		_weather_system.configure_gdext_acceleration(_data_core_world_ext, true, cp_f1, _data_core_world)
 	if _try_register_native_daily_sim_job(map, world):
 		if OS.is_debug_build():
 			print("[native_daily] ACTIVE: registered native_daily_sim + visual upload jobs only")
@@ -1195,14 +1193,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
 		_apply_sim_budget_profile_to_job(_season_refresh_job, cp_sched)
 		_sus.register_job(_season_refresh_job)
-	# Deprecated 字段守门：旧 ClimateProfile 资源里 ocean_current_refresh_seasons
-	# 仍可能被序列化保存。打印一次 warning 提示作者迁移到 SUS 配置。
+	# dots-flag-prune-pr1 (2026-05-22)：ocean_current_refresh_seasons E 类废字段已
+	# 从 ClimateProfile 删除——原有的 deprecated warning 不再需要。SUS 路径仅
+	# 读 ocean_currents_period_ticks / ocean_currents_slice_count。
 	var cp := _c()
-	if cp != null and not _ocean_legacy_warning_logged:
-		# 默认值是 4；若仍是 4 则视作"未显式覆盖"，不打 warning，避免噪声。
-		if int(cp.ocean_current_refresh_seasons) != 4:
-			print("[SUS] ocean_current_refresh_seasons is deprecated (was %d), ignored. Use ocean_currents_period_ticks / ocean_currents_slice_count instead." % int(cp.ocean_current_refresh_seasons))
-		_ocean_legacy_warning_logged = true
 	# 注册 OceanCurrentsJob。
 	var period_ticks: int = 30
 	var slice_count: int = 10
@@ -1388,24 +1382,17 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 			_sus.sim_budget_warn_ms = float(cp.sim_frame_budget_ms)
 		else:
 			_sus.sim_budget_warn_ms = 1.0
-	# Phase 1A — sus-cpp-port: 把 SUS 调度外壳 native flag 透传给 scheduler。
-	# 适用于 SusScheduler 与 DCSystemScheduler 两路（后者透传给内部 _sus）。
-	# 必须在 register_job 之前生效——本方法在 _setup_sus 创建 scheduler 后立刻
-	# 调用，仍早于所有 register_job，符合时序。
-	if "use_gdext_sus_scheduler" in _sus and cp.get("use_gdext_sus_scheduler") != null:
-		_sus.use_gdext_sus_scheduler = bool(cp.use_gdext_sus_scheduler)
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler flag 已删除——SUS
+	# scheduler native 路径现恒走 ext != null 单边分支，scheduler 内部自动
+	# 探测 _ext，无需 caller 在这里透传 flag。
 	if OS.is_debug_build():
-		var native_sus_on: bool = false
-		if "use_gdext_sus_scheduler" in _sus:
-			native_sus_on = bool(_sus.use_gdext_sus_scheduler)
-		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=%s"
+		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
 			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
 				float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms),
 				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
 				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
 				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
-				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler",
-				str(native_sus_on)])
+				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
 
 
 func _sim_job_should_must_run(job, upload_job: bool) -> bool:
@@ -1610,22 +1597,19 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 		"flush_slots_to_map": true,
 	}
 	# Phase C.1（dots-total-cpp roadmap）：System schedule graph 双轨入口。
-	# cp.use_gdext_system_schedule=true 时，C++ 端 run_native_daily_tick 跳过
-	# 原 11 段手写 if-chain，改走 system_schedule.cpp 的 dispatch_system_schedule
-	# loop 遍历 SCHEDULE_GRAPH[]。输出 dict（breakdown / fronts / succession_*）
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_system_schedule flag 已删除，
+	# C++ 端 run_native_daily_tick 现恒走 system_schedule.cpp 的
+	# dispatch_system_schedule loop。输出 dict（breakdown / fronts / succession_*）
 	# 必须 bit-equal（dots_soak_ab_runner SAME_SOURCE 1000-tick A/B 验收）。
 	# 任意节点失败 → C++ 端 finish_with_failure 短路返回 rc=-1，与原 if-chain
 	# 同语义（caller 在 run_native_daily_tick_from_job 已有 fallback 处理）。
-	if "use_gdext_system_schedule" in cp_now and bool(cp_now.use_gdext_system_schedule):
-		bundle["use_system_schedule"] = true
-	# Phase A.2 unified fast tick：当 cp.use_gdext_unified_fast_tick=true 时，把
-	# weather refresh daily 的 4 组 super_knobs（field/distribute/summary + stage_b 平铺）
-	# 嵌入 bundle["weather_knobs"]，让 C++ 端 run_native_daily_tick 内部 line 1052 的
-	# bundle.has("weather_knobs") 分支自动转调 run_weather_refresh_daily_pass，省去
-	# weather_refresh_job 独立的一次跨界（节省 1 次 Variant marshalling fix-cost ≈ 50-100μs）。
-	# 任意前置不满足（flag off / weather_system null / fast_indexed 缺失）自动返回空 dict，
-	# 此时 bundle 不含 weather_knobs，C++ 端短路跳过 weather 段——bit-equal 兜底，
-	# weather 段在传统 SUS 调度下仍可由独立 weather_refresh_job 跑（如果它被注册）。
+	bundle["use_system_schedule"] = true
+	# Phase A.2 unified fast tick: dots-flag-prune-pr1 round 2 (2026-05-22):
+	# use_gdext_unified_fast_tick / use_gdext_weather_refresh_daily flag 均已删除——
+	# weather refresh daily 的 4 组 super_knobs（field/distribute/summary + stage_b
+	# 平铺）现恒嵌入 bundle，仅受 ext + has_method 探测控制。任意前置不满足
+	# （weather_system null / fast_indexed 缺失）自动返回空 dict，此时 bundle 不含
+	# weather_knobs，C++ 端短路跳过 weather 段——bit-equal 兜底。
 	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 		map,
 		cp_now,
@@ -1633,11 +1617,7 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 	)
 	if not stage_b_knobs.is_empty():
 		bundle["stage_b_knobs"] = stage_b_knobs
-	var unified_on: bool = "use_gdext_unified_fast_tick" in cp_now \
-			and bool(cp_now.use_gdext_unified_fast_tick) \
-			and ("use_gdext_weather_refresh_daily" in cp_now) \
-			and bool(cp_now.use_gdext_weather_refresh_daily)
-	if unified_on and _weather_system != null and _world != null \
+	if _weather_system != null and _world != null \
 			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		var season_idx_local: int = 0
 		var anomaly_local: float = 0.0
@@ -2085,18 +2065,18 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 	var t_us0: int = Time.get_ticks_usec()
 	var season := clampi(season_idx, 0, 3)
 	# DOTS-Total-CPP 真·收尾（2026-05-21）：第一次进入 run_season_refresh_stage 时打一条
-	# 启动 banner，让 rebuild 后立刻能看到 use_gdext_season_refresh 总开关、ext 引用、
-	# has_method 的真实状态——这是验证 8 stage 是否能走 gdext 路径的最快诊断。
+	# 启动 banner，让 rebuild 后立刻能看到 ext 引用 / has_method 的真实状态——
+	# 这是验证 8 stage 是否能走 gdext 路径的最快诊断。
+	# dots-flag-prune-pr1 round 2: use_gdext_season_refresh flag 已删除，banner
+	# 只报告 ext + has_method。
 	if not _season_stage_path_logged.has("__startup_banner"):
 		_season_stage_path_logged["__startup_banner"] = true
-		var cp_dbg := _c()
-		var flag_v: String = "<cp=null>" if cp_dbg == null else str(bool(cp_dbg.use_gdext_season_refresh))
 		var ext_v: String = "null" if _data_core_world_ext == null else "ok"
 		var method_v: String = "n/a"
 		if _data_core_world_ext != null:
 			method_v = str(_data_core_world_ext.has_method("run_season_refresh_stage"))
-		print("[season_refresh] startup banner: use_gdext_season_refresh=%s ext=%s has_run_season_refresh_stage=%s"
-				% [flag_v, ext_v, method_v])
+		print("[season_refresh] startup banner: ext=%s has_run_season_refresh_stage=%s"
+				% [ext_v, method_v])
 	match stage:
 		0:
 			_last_world = world
@@ -2233,9 +2213,8 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	# 主 switch 的 _run_season_refresh_stage1_gdext 有完整 _season_log_path_once，
 	# 但 micro-pass 这条独立路径之前完全静默 → 日志里看不到 stage 1 走哪条。
 	# 这里沿用同 helper，stage_key 用 "stage1_micro" 区分主 switch 的 "stage1"。
-	if not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage1_micro", "gdscript_fallback", "flag use_gdext_season_refresh=false")
-		return out
+	# dots-flag-prune-pr1 round 2: use_gdext_season_refresh flag 已删除——恒走 ext +
+	# has_method 探测分支。
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_micro_pass"):
 		_season_log_path_once("stage1_micro", "gdscript_fallback", "ext/method/map/cfg unavailable (no run_season_refresh_micro_pass)")
@@ -2617,8 +2596,10 @@ func _ensure_season_round_slots_fresh() -> void:
 
 func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage8", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	# dots-flag-prune-pr1 round 2: use_gdext_season_refresh flag 已删除——恒走
+	# ext + has_method 探测分支。cp 仅作为后续字段读取检查。
+	if cp == null:
+		_season_log_path_once("stage8", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2661,8 +2642,8 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 	# - 数值漂移：clamp / decay / FEEDBACK_SOIL_TO_BASE_W=0.15 与 GDScript
 	#   _consume_feedback_buffers 完全一致（world_ext.cpp L6843 确认）。
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage11", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage11", "gdscript_fallback", "cp null")
 		return false
 	if map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2715,8 +2696,8 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 # 自动看到最新 SoA 值，不需要 facade sync。
 func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage0", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage0", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2812,8 +2793,8 @@ func _build_rain_shadow_jitter_for_gdext(map: MapData) -> PackedFloat32Array:
 # C++ 等价：cell.wind_vector 优先 + WindBelt fallback（用预烘焙 jitter）+ 6 邻接 lookback。
 func _run_season_refresh_stage1_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage1", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage1", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2856,8 +2837,8 @@ func _run_season_refresh_stage1_gdext(map: MapData, _world: WorldData, season: i
 # 必须在结束后 _sync_stage8_facade_fields_from_soa 同步 facade。
 func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage2", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage2", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2903,8 +2884,8 @@ func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: i
 # 多轴写入需 facade sync。
 func _run_season_refresh_stage3_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage3", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage3", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2941,8 +2922,8 @@ func _run_season_refresh_stage3_gdext(map: MapData, _world: WorldData, _season: 
 # 多轴写入 + moisture 写入；需 facade sync。
 func _run_season_refresh_stage4_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage4", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage4", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -2992,8 +2973,8 @@ func _run_season_refresh_stage4_gdext(map: MapData, _world: WorldData, season: i
 # stage 5: shrubland_pass。陆地 + GRASSLAND/STEPPE/SAVANNA/PLAIN + 低海拔 + 暖温 + 中干 + 海邻 → SHRUBLAND.
 func _run_season_refresh_stage5_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage5", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage5", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -3033,8 +3014,8 @@ func _run_season_refresh_stage5_gdext(map: MapData, _world: WorldData, _season: 
 # stage 6: mangrove_pass。陆地 + 非永久 + 极低海拔 + 热带 + COAST 邻接 + (river || SWAMP邻) → MANGROVE.
 func _run_season_refresh_stage6_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage6", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage6", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -3074,8 +3055,8 @@ func _run_season_refresh_stage6_gdext(map: MapData, _world: WorldData, _season: 
 # stage 7: glacier_pass。SNOW/TUNDRA + temp<0.05 + (沿海冰舌 || alpine) → GLACIER.
 func _run_season_refresh_stage7_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage7", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage7", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -3116,8 +3097,8 @@ func _run_season_refresh_stage7_gdext(map: MapData, _world: WorldData, _season: 
 # 陆地 + !MOUNTAIN/SNOW/TUNDRA + !permanent + 极低海拔 + 极湿 + 暖温 + (river||water邻) → SWAMP.
 func _run_season_refresh_swamp_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
-	if cp == null or not bool(cp.use_gdext_season_refresh):
-		_season_log_path_once("stage_swamp", "gdscript_fallback", "flag use_gdext_season_refresh=false or cp null")
+	if cp == null:
+		_season_log_path_once("stage_swamp", "gdscript_fallback", "cp null")
 		return false
 	if _last_cfg == null or map == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
@@ -3186,18 +3167,11 @@ func _run_season_refresh_swamp_gdext(map: MapData, _world: WorldData, season: in
 #           同 round 多次 push 污染的隐性 bug。
 # ════════════════════════════════════════════════════════════════════════════
 
-# B+ 路径门禁：检查 cp.use_gdext_season_round + cp.use_gdext_season_refresh + ext +
-# 4 个新方法（start/run_slice/finish/abort）是否齐全。任一不满足返回 false。
+# B+ 路径门禁：dots-flag-prune-pr1 round 2 (2026-05-22)：use_gdext_season_round /
+# use_gdext_season_refresh flag 均已删除——现只检查 ext + 4 个新方法（start/run_slice/
+# finish/abort）是否齐全。任一不满足返回 false。
 # 上层 caller（SUS Job / DCSystem）拿到 false 后回退到 12-stage scheduler。
 func season_round_b_plus_available() -> bool:
-	var cp := _c()
-	if cp == null:
-		return false
-	if not bool(cp.get("use_gdext_season_round")):
-		return false
-	# B+ 在 C++ 端复用单 stage 路径，必须同时打开总开关。
-	if not bool(cp.get("use_gdext_season_refresh")):
-		return false
 	if _data_core_world_ext == null:
 		return false
 	if not _data_core_world_ext.has_method("start_season_round"):
@@ -5544,6 +5518,7 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 	#
 	# 历史代码（已移除）：
 	#   var ocean_stride := maxi(1, _c().ocean_current_refresh_seasons)
+	#   # dots-flag-prune-pr1 (2026-05-22)：ocean_current_refresh_seasons E 类废字段已删除
 	#   if season_idx == 0 or (season_idx % ocean_stride) == 0:
 	#       _baker.rebake_ocean_currents(map, world, _last_hex_size, _last_cfg, float(season) + 0.5)
 	#       _compute_ocean_currents(map, world, _last_hex_size)
@@ -5716,13 +5691,11 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		# 实际该路径在 SUS 接管后基本不触发（已走 RefreshClimateDailyJob.sliced），
 		# 但保留对齐避免日志解析脚本分歧。
 		var _wrap_path: String = "legacy"
-		var _wrap_cp = _c() if has_method("_c") else null
-		if _wrap_cp != null and "use_data_core_climate" in _wrap_cp and bool(_wrap_cp.use_data_core_climate):
-			if _data_core_world != null and _data_core_world.is_bound():
-				if _refresh_climate_daily_job != null and _refresh_climate_daily_job.has_method("data_core_ready") and _refresh_climate_daily_job.data_core_ready():
-					_wrap_path = "data_core"
-				else:
-					_wrap_path = "data_core_cells_only"
+		if _data_core_world != null and _data_core_world.is_bound():
+			if _refresh_climate_daily_job != null and _refresh_climate_daily_job.has_method("data_core_ready") and _refresh_climate_daily_job.data_core_ready():
+				_wrap_path = "data_core"
+			else:
+				_wrap_path = "data_core_cells_only"
 		print("refresh_climate_daily #%d: %dms (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f wind=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f path=%s" % [
 			_daily_climate_call_count,
 			Time.get_ticks_msec() - t0,
@@ -5781,11 +5754,13 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 
 	# [DIAG mask_dirty=2400 排查 · 2026-05-20] 入口 flag dump（仅前 3 个 round，
 	# 之后每 365 次打一次）。诊断完成后整段删除。
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_climate_pass_a / use_data_core_climate
+	# flag 已删除——这里保留原原生 DIAG 输出格式不变，但打印常量 true。
 	if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
 		print("[DIAG pass_a_entry] day=%d phase=%.3f gdext_pass_a=%s use_data_core_climate=%s use_soa_pipeline=%s use_sparse_climate=%s ext_bound=%s" % [
 			_daily_climate_call_count, season_phase,
-			str(bool(cp.use_gdext_climate_pass_a)),
-			str(bool(cp.use_data_core_climate)),
+			"true",
+			"true",
 			str(bool(cp.use_soa_pipeline)),
 			str(bool(cp.use_sparse_climate)),
 			str(_data_core_world_ext != null),
@@ -5793,21 +5768,19 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 
 	# dots-roadmap-to-gdextension 务实 A — climate Pass-A C++ 加速路由。
 	# 三态路径优先级：
-	#   1. C++（DCWorldExt.run_climate_pass_a） — 仅当 use_data_core_climate=true
-	#      且 _data_core_world_ext 已 bind 时尝试；返回 < 0 视作 "未实装/拒绝"，
-	#      静默 fallback 到下一档（snapshot contract 见 world_ext.cpp）。
+	#   1. C++（DCWorldExt.run_climate_pass_a） — _data_core_world_ext 已 bind 时尝试；
+	#      返回 < 0 视作 "未实装/拒绝"，静默 fallback 到下一档（snapshot contract
+	#      见 world_ext.cpp）。
 	#   2. DataCore SoA（_climate_pass_a_soa） — 当 use_soa_pipeline=true 走此路。
 	#   3. Legacy 强类型成员循环 — 默认路径。
 	# 注意：本路由只在 _climate_pass_a 入口做一次判断；hot path 完全不动。
 	# 任何 C++ 端异常 / -1 返回都让 GDScript 路径接管，不抛 error 不打 push_warning
 	# 以避免 frame 内日志炸开（首日由 _setup_sus 的 [DataCore] _data_core_world_ext
 	# bound 行体现整体路径状态）。
-	# C++ Pass-A 启用闸门：`cp.use_gdext_climate_pass_a`（默认 false，opt-in via earth_like.tres）。
-	# 历史：早期（2026-05-12 ~ 05-14）由 const _DIAG_DISABLE_CPP_PASS_A 短路，因 storage A/B
-	# 未同源导致温度累积异常（详见 git log）。现已升级为 ClimateProfile flag。
-	# 待 PR-2.1.1 climate Pass-A 写路径下移 + SAME_SOURCE PASS 后，
-	# 把 default 翻 true 并清理本注释。详见 docs/dots-master-execution-handbook.md §3.2 / §0.2.2。
-	if cp.use_gdext_climate_pass_a and cp.use_data_core_climate and _data_core_world_ext != null and map != null:
+	#
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_climate_pass_a / use_data_core_climate
+	# 两个闸门 flag 已删除——现恒走 ext+has_method 探测单边分支。
+	if _data_core_world_ext != null and map != null:
 		# §11.2: Pass-A is the first C++ pass in the pipeline. Refresh all
 		# slots from MapData so C++ reads GDScript-side changes since last flush.
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
@@ -5835,16 +5808,10 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"insol_dev_lut":    _insol_dev_lut,
 		}
 		var rc: float = -1.0
-		# [Phase C.3c] climate_pass_a 双轨：use_gdext_thread_fallback=true 时走
-		# WorkerThreadPool 并行变体（cell-local map，无 race，N=2400 约 4 核加速）；
-		# false 时走原 scalar 路径。两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
-		var _use_a_thread: bool = false
-		if "use_gdext_thread_fallback" in cp:
-			_use_a_thread = bool(cp.use_gdext_thread_fallback)
-		if _use_a_thread and _data_core_world_ext.has_method("run_climate_pass_a_thread"):
-			rc = float(_data_core_world_ext.run_climate_pass_a_thread(cp_struct, float(season_phase), float(season_phase), 0))
-		else:
-			rc = float(_data_core_world_ext.run_climate_pass_a(cp_struct, float(season_phase), float(season_phase)))
+		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
+		# C++ scalar 入口 run_climate_pass_a，C++ 内部根据 CPU 特性 / n_cells 自动选择
+		# scalar / SIMD / threaded 三档执行路径。
+		rc = float(_data_core_world_ext.run_climate_pass_a(cp_struct, float(season_phase), float(season_phase)))
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] C++ Pass-A 路径 rc + DCWorld dirty
 		# 即时观测：rc>=0 表示 C++ 接管并已 return；此处 peek 一次 dirty count 看 C++
 		# 端是否在 set() 推回 MapData 时也副作用 mark 到 DCWorld（理论上不会）。
@@ -6488,11 +6455,11 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
 
 	# ─── Phase F.4：DCWorldExt C++ 快路径（charter §7 P2，5.1ms → 0.5ms）─
-	# 触发条件：
-	#   1. ClimateProfile.use_gdext_sea_ice == true
-	#   2. _data_core_world_ext 已 bind
-	#   3. fast_indexed（neighbor_indices_packed 完整 + has_indices）
-	#   4. C++ 端 run_sea_ice_daily_pass 返回 ≥ 0
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sea_ice flag 已删，现走 ext +
+	# has_method 探测。触发条件：
+	#   1. _data_core_world_ext 已 bind
+	#   2. fast_indexed（neighbor_indices_packed 完整 + has_indices）
+	#   3. C++ 端 has run_sea_ice_daily_pass 且返回 ≥ 0
 	# 任意一条不满足 → 透明 fallback 到下面的 GDScript 双 phase 循环。
 	#
 	# 设计：terrain 翻转**不**在 C++ 端写——C++ 只算 fraction 增量 + 收集 flip
@@ -6507,11 +6474,9 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	if not _gdext_sea_ice_first_attempt_logged:
 		_gdext_sea_ice_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
-		var flag_val: bool = false
-		if cp != null:
-			if cp.resource_path != "":
-				cp_path = cp.resource_path
-			flag_val = bool(cp.use_gdext_sea_ice)
+		var flag_val: bool = true  # use_gdext_sea_ice flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp != null and cp.resource_path != "":
+			cp_path = cp.resource_path
 		var ext_ok: bool = _data_core_world_ext != null
 		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_sea_ice_daily_pass")
 		var verdict: String = "OK → will try C++"
@@ -6519,13 +6484,13 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			verdict = "FAIL → fall through to GDScript path"
 		print("[sea_ice/F.4] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path)
-		print("  cp.use_gdext_sea_ice = %s" % str(flag_val))
+		print("  cp.use_gdext_sea_ice = %s (flag removed; constant true)" % str(flag_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_sea_ice_daily_pass') = %s" % str(has_method_ok))
 		print("  fast_indexed = %s (need n_cells*6=%d, got neighbor_indices.size()=%d)" % [str(fast_indexed), n_cells_fast * 6, nb_idx_fast.size()])
 		print("  verdict = %s" % verdict)
 
-	if cp != null and bool(cp.use_gdext_sea_ice) and _data_core_world_ext != null \
+	if _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_sea_ice_daily_pass") and fast_indexed:
 		# Stale .dll probe（一次/session）
 		if not _gdext_sea_ice_signature_checked:
@@ -6627,20 +6592,12 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			var t_refresh_us: int = Time.get_ticks_usec()
 			_data_core_world_ext.refresh_slots_from_map()
 			refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
-		# C.3d dispatch：thread fallback flag 开 + _thread 入口 export 时优先走
-		# WorkerThreadPool 路径；n_tasks=0 让 C++ 端按 ~1024 cells/task 自适应。
-		# 任意条件不满足 → 走原 scalar 入口。
-		var _use_sea_ice_thread: bool = bool(cp.use_gdext_thread_fallback) \
-				and _data_core_world_ext.has_method("run_sea_ice_daily_pass_thread")
+		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
+		# C++ scalar 入口 run_sea_ice_daily_pass，C++ 内部根据 CPU 特性 / n_cells 自动选择
+		# scalar / SIMD / threaded 三档执行路径。
 		var _sea_ice_dispatch_path: String = "scalar"
 		var t_native_us: int = Time.get_ticks_usec()
-		var rc: float
-		if _use_sea_ice_thread:
-			rc = float(_data_core_world_ext.run_sea_ice_daily_pass_thread(knobs, season_phase, 0))
-			_sea_ice_dispatch_path = "thread"
-		else:
-			rc = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
-			_sea_ice_dispatch_path = "scalar"
+		var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
 		var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
 		# === Plan-C diag (临时) === 检查 CPU 端海冰浮点是否真的在动
 		if Engine.get_process_frames() % 60 == 0:
@@ -7647,17 +7604,15 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var landform_phase_factor: float = (cos((phase_mod - 1.0) * 0.5 * PI) + 1.0) * 0.5
 
 	# ─── Phase F.3：DCWorldExt C++ 快路径（charter §7 P1，5.2ms → < 0.5ms）──
-	# 触发条件（全 true 才进 C++）：
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_climate_pass_b flag 已删，现走
+	# ext + has_method 探测。触发条件：
 	#   1. cp != null
-	#   2. ClimateProfile.use_gdext_climate_pass_b == true
-	#   3. _data_core_world_ext 已 bind && has_method("run_climate_pass_b")
-	#   4. fast_indexed（neighbor_indices_packed 完整 = n_cells*6）
-	#   5. **删除了 `not use_sparse_climate` 检查**——之前误判把开 sparse 但
-	#      runtime path=full 的场景都拒了。C++ 永远跑 full pass；如果 sparse
-	#      runtime 真触发 (path=sparse)，C++ 仍会跑全图，结果与"GDScript 跑 full"
-	#      bit-equal（dirty mask 在稳态下与全跑是等价的），只是损失 sparse 跳格
-	#      的微小性能优化。可接受。
-	#   6. C++ 端 run_climate_pass_b 返回 ≥ 0
+	#   2. _data_core_world_ext 已 bind && has_method("run_climate_pass_b")
+	#   3. fast_indexed（neighbor_indices_packed 完整 = n_cells*6）
+	#   4. **删除了 `not use_sparse_climate` 检查**——C++ 永远跑 full pass；
+	#      如果 sparse runtime 真触发 (path=sparse)，C++ 仍会跑全图，结果与
+	#      “GDScript 跑 full” bit-equal（稳态下等价），仅损失 sparse 跳格优化。
+	#   5. C++ 端 run_climate_pass_b 返回 ≥ 0
 	var nb_idx_for_f3: PackedInt32Array = map.neighbor_indices_packed()
 	var n_for_f3: int = map.soa_size()
 	var fast_indexed_b: bool = nb_idx_for_f3.size() >= n_for_f3 * 6
@@ -7668,12 +7623,11 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	if not _gdext_climate_b_first_attempt_logged:
 		_gdext_climate_b_first_attempt_logged = true
 		var cp_b_path: String = "<in-memory ClimateProfile>"
-		var flag_b_val: bool = false
+		var flag_b_val: bool = true  # use_gdext_climate_pass_b flag removed (dots-flag-prune-pr1, 2026-05-22)
 		var sparse_b_val: bool = false
 		if cp != null:
 			if cp.resource_path != "":
 				cp_b_path = cp.resource_path
-			flag_b_val = bool(cp.use_gdext_climate_pass_b)
 			sparse_b_val = bool(cp.use_sparse_climate)
 		var ext_b_ok: bool = _data_core_world_ext != null
 		var has_method_b_ok: bool = ext_b_ok and _data_core_world_ext.has_method("run_climate_pass_b")
@@ -7682,7 +7636,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			verdict_b = "FAIL → fall through to GDScript path"
 		print("[climate_b/F.3] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_b_path)
-		print("  cp.use_gdext_climate_pass_b = %s" % str(flag_b_val))
+		print("  cp.use_gdext_climate_pass_b = %s (flag removed; constant true)" % str(flag_b_val))
 		print("  cp.use_sparse_climate = %s（C++ 会跑 full path 等价结果，不阻止）" % str(sparse_b_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_b_ok))
 		print("  ext.has_method('run_climate_pass_b') = %s" % str(has_method_b_ok))
@@ -7690,7 +7644,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		print("  rs_lookback = %d, t_freeze = %.4f, coupling_gain = %.4f" % [rs_lookback, t_freeze, coupling_gain])
 		print("  verdict = %s" % verdict_b)
 
-	if cp != null and bool(cp.use_gdext_climate_pass_b) and _data_core_world_ext != null \
+	if cp != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_climate_pass_b") and fast_indexed_b:
 		# Stale .dll sig probe（仅作诊断，不阻止下方 C++ 调用——和 F.5 同模板）
 		if not _gdext_climate_b_signature_checked:
@@ -7730,28 +7684,11 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		# ─── sim-2ms-perf-push（plan/climate-pass-b-simd）派发 ───────────────
-		#   优先级：thread_fallback > simd > scalar（仅在底层 method 实际可见时）。
-		#   ulp ≤ 4 容差由 charter §risk=B 批准，rc 返回 ms 同形，下游 rc_b 路径
-		#   零改动。flag 在 ClimateProfile（资源开关）与 FLAGS（运行时旋钮）双轨注册，
-		#   默认 false——A/B 验收阶段会逐个翻 true。
-		var _use_b_simd: bool = false
-		var _use_b_thread: bool = false
-		if cp != null:
-			_use_b_simd = bool(cp.use_gdext_pass_b_simd)
-			_use_b_thread = bool(cp.use_gdext_thread_fallback)
-		var rc_b: float = -1.0
+		# dots-flag-prune-pr1 round 2: use_gdext_pass_b_simd / use_gdext_thread_fallback
+		# flag 均已删除——恒走 C++ scalar 入口 run_climate_pass_b，C++ 内部根据 CPU 特性 /
+		# n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
+		var rc_b: float = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
 		var _b_dispatch_path: String = "scalar"
-		if _use_b_thread and _data_core_world_ext.has_method("run_climate_pass_b_thread"):
-			# 单线程 SIMD 不达标或大地图场景用 WorkerThreadPool；n_tasks=0 让 C++
-			# 端自适应（n_land < 256 退化单线程）。
-			rc_b = float(_data_core_world_ext.run_climate_pass_b_thread(knobs_b, 0))
-			_b_dispatch_path = "thread"
-		elif _use_b_simd and _data_core_world_ext.has_method("run_climate_pass_b_simd"):
-			rc_b = float(_data_core_world_ext.run_climate_pass_b_simd(knobs_b))
-			_b_dispatch_path = "simd"
-		else:
-			rc_b = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
-			_b_dispatch_path = "scalar"
 		# 强制无脑诊断：前 3 次调用打 rc 值 + 派发路径
 		if _gdext_climate_b_runs + _gdext_climate_b_fallbacks < 3:
 			print("[climate_b/F.3] DEBUG call#%d: path=%s rc=%.4f n_cells=%d rs_lookback=%d" % [
@@ -8109,11 +8046,9 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 	if not _gdext_ocean_water_first_attempt_logged:
 		_gdext_ocean_water_first_attempt_logged = true
 		var cp_path_w: String = "<in-memory>"
-		var flag_w: bool = false
-		if cp != null:
-			if cp.resource_path != "":
-				cp_path_w = cp.resource_path
-			flag_w = bool(cp.use_gdext_ocean_water)
+		var flag_w: bool = true  # use_gdext_ocean_water flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp != null and cp.resource_path != "":
+			cp_path_w = cp.resource_path
 		var ext_w_ok: bool = _data_core_world_ext != null
 		var has_w_ok: bool = ext_w_ok and _data_core_world_ext.has_method("run_ocean_water_pass")
 		var fast_w_ok: bool = nb_idx.size() >= n * 6
@@ -8122,14 +8057,14 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			verdict_w = "FAIL → fall through to GDScript"
 		print("[ocean_water/F.2a] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path_w)
-		print("  cp.use_gdext_ocean_water = %s" % str(flag_w))
+		print("  cp.use_gdext_ocean_water = %s (flag removed; constant true)" % str(flag_w))
 		print("  _data_core_world_ext != null = %s" % str(ext_w_ok))
 		print("  ext.has_method('run_ocean_water_pass') = %s" % str(has_w_ok))
 		print("  fast_indexed = %s (n=%d nb=%d)" % [str(fast_w_ok), n, nb_idx.size()])
 		print("  advect_steps=%d heat_mix=%.4f" % [advect_steps, heat_mix])
 		print("  verdict = %s" % verdict_w)
 
-	if cp != null and bool(cp.use_gdext_ocean_water) and _data_core_world_ext != null \
+	if cp != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_ocean_water_pass") and nb_idx.size() >= n * 6:
 		if not _gdext_ocean_water_signature_checked:
 			_gdext_ocean_water_signature_checked = true
@@ -8157,25 +8092,11 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
-		#   优先级：thread > simd > scalar；仅在底层 method 实际可见时切。
-		#   ulp ≤ 4 容差（charter §risk=B），rc 同形 ms，下游 anomaly_buf
-		#   仍走 knobs_w["anomaly_out"] 回读路径——CoW fix 三档一致。
-		var _use_w_simd: bool = false
-		var _use_w_thread: bool = false
-		if cp != null:
-			_use_w_simd = bool(cp.use_gdext_ocean_water_simd)
-			_use_w_thread = bool(cp.use_gdext_thread_fallback)
-		var rc_w: float = -1.0
+		# dots-flag-prune-pr1 round 2: use_gdext_ocean_water_simd / use_gdext_thread_fallback
+		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_water_pass，C++ 内部根据 CPU
+		# 特性 / n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
+		var rc_w: float = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
 		var _w_dispatch_path: String = "scalar"
-		if _use_w_thread and _data_core_world_ext.has_method("run_ocean_water_pass_thread"):
-			rc_w = float(_data_core_world_ext.run_ocean_water_pass_thread(knobs_w, 0))
-			_w_dispatch_path = "thread"
-		elif _use_w_simd and _data_core_world_ext.has_method("run_ocean_water_pass_simd"):
-			rc_w = float(_data_core_world_ext.run_ocean_water_pass_simd(knobs_w))
-			_w_dispatch_path = "simd"
-		else:
-			rc_w = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
-			_w_dispatch_path = "scalar"
 		if _gdext_ocean_water_runs + _gdext_ocean_water_fallbacks < 3:
 			print("[ocean_water/F.2a] DEBUG call#%d: path=%s rc=%.4f n=%d advect=%d" % [
 				_gdext_ocean_water_runs + _gdext_ocean_water_fallbacks + 1,
@@ -8309,11 +8230,9 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 	if not _gdext_ocean_land_first_attempt_logged:
 		_gdext_ocean_land_first_attempt_logged = true
 		var cp_path_l: String = "<in-memory>"
-		var flag_l: bool = false
-		if cp != null:
-			if cp.resource_path != "":
-				cp_path_l = cp.resource_path
-			flag_l = bool(cp.use_gdext_ocean_land)
+		var flag_l: bool = true  # use_gdext_ocean_land flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp != null and cp.resource_path != "":
+			cp_path_l = cp.resource_path
 		var ext_l_ok: bool = _data_core_world_ext != null
 		var has_l_ok: bool = ext_l_ok and _data_core_world_ext.has_method("run_ocean_land_pass")
 		var fast_l_ok: bool = nb_idx.size() >= n * 6
@@ -8322,14 +8241,14 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			verdict_l = "FAIL → fall through to GDScript"
 		print("[ocean_land/F.2b] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path_l)
-		print("  cp.use_gdext_ocean_land = %s" % str(flag_l))
+		print("  cp.use_gdext_ocean_land = %s (flag removed; constant true)" % str(flag_l))
 		print("  _data_core_world_ext != null = %s" % str(ext_l_ok))
 		print("  ext.has_method('run_ocean_land_pass') = %s" % str(has_l_ok))
 		print("  fast_indexed = %s (n=%d nb=%d)" % [str(fast_l_ok), n, nb_idx.size()])
 		print("  effective_leak=%.4f (coast_leak=%.4f winter_boost=%.4f)" % [effective_leak, coast_leak, winter_boost])
 		print("  verdict = %s" % verdict_l)
 
-	if cp != null and bool(cp.use_gdext_ocean_land) and _data_core_world_ext != null \
+	if cp != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_ocean_land_pass") and nb_idx.size() >= n * 6:
 		if not _gdext_ocean_land_signature_checked:
 			_gdext_ocean_land_signature_checked = true
@@ -8392,24 +8311,11 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
-		#   thread > simd > scalar；ulp ≤ 4；CoW fix 三档一致（rc>=0 后下面
-		#   anomaly_io = knobs_l["anomaly_inout"] 回读路径不变）。
-		var _use_l_simd: bool = false
-		var _use_l_thread: bool = false
-		if cp != null:
-			_use_l_simd = bool(cp.use_gdext_ocean_land_simd)
-			_use_l_thread = bool(cp.use_gdext_thread_fallback)
-		var rc_l: float = -1.0
+		# dots-flag-prune-pr1 round 2: use_gdext_ocean_land_simd / use_gdext_thread_fallback
+		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_land_pass，C++ 内部根据 CPU
+		# 特性 / n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
+		var rc_l: float = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
 		var _l_dispatch_path: String = "scalar"
-		if _use_l_thread and _data_core_world_ext.has_method("run_ocean_land_pass_thread"):
-			rc_l = float(_data_core_world_ext.run_ocean_land_pass_thread(knobs_l, 0))
-			_l_dispatch_path = "thread"
-		elif _use_l_simd and _data_core_world_ext.has_method("run_ocean_land_pass_simd"):
-			rc_l = float(_data_core_world_ext.run_ocean_land_pass_simd(knobs_l))
-			_l_dispatch_path = "simd"
-		else:
-			rc_l = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
-			_l_dispatch_path = "scalar"
 		if _gdext_ocean_land_runs + _gdext_ocean_land_fallbacks < 3:
 			print("[ocean_land/F.2b] DEBUG call#%d: path=%s rc=%.4f n=%d effective_leak=%.4f" % [
 				_gdext_ocean_land_runs + _gdext_ocean_land_fallbacks + 1,
@@ -8558,12 +8464,9 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	if _weather_system == null or map == null or world == null:
 		return refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
 	var cp_now := _c()
-	var flag_on: bool = cp_now != null and ("use_gdext_weather_refresh_daily" in cp_now) \
-			and bool(cp_now.use_gdext_weather_refresh_daily)
-	if not flag_on:
-		var fa: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
-		refresh_daily_stage_b(map, world)
-		return fa
+	# dots-flag-prune-pr1 round 2: use_gdext_weather_refresh_daily flag 已删除——
+	# 恒走 ext + has_method(run_weather_refresh_daily_pass) + weather_system has_method
+	# 探测分支（任一缺失透明 fallback 到老链 stage_a + stage_b）。
 	if _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
 		var fb: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
@@ -8781,7 +8684,10 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 	var combined_run_albedo: bool = run_albedo
 	var combined_run_veg_dyn: bool = run_veg_dyn
 	var combined_run_feedback: bool = run_feedback and fast_slow_layering_on
-	var stage_b_flag_on: bool = cp_now != null and bool(cp_now.use_gdext_stage_b_combined)
+	# dots-flag-prune-pr1 round 2: use_gdext_stage_b_combined flag 已删除——恒走 ext +
+	# has_method(run_stage_b_pass) 探测分支。DIAG 块保留原状，stage_b_flag_on 恒 true
+	# 仅作为诊断记录。
+	var stage_b_flag_on: bool = true  # 已折叠：flag 字段已删
 	var stage_b_ext_ok: bool = _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_stage_b_pass")
 	if not _gdext_stage_b_first_attempt_logged:
@@ -9185,11 +9091,9 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 	if not _gdext_feedback_first_attempt_logged:
 		_gdext_feedback_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
-		var flag_val: bool = false
-		if cp != null:
-			if cp.resource_path != "":
-				cp_path = cp.resource_path
-			flag_val = bool(cp.use_gdext_climate_feedback)
+		var flag_val: bool = true  # use_gdext_climate_feedback flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp != null and cp.resource_path != "":
+			cp_path = cp.resource_path
 		var ext_ok: bool = _data_core_world_ext != null
 		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_climate_feedback_pass")
 		var verdict: String = "OK → will try C++"
@@ -9197,12 +9101,12 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 			verdict = "FAIL → fall through to GDScript path"
 		print("[feedback/stage_b] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path)
-		print("  cp.use_gdext_climate_feedback = %s" % str(flag_val))
+		print("  cp.use_gdext_climate_feedback = %s (flag removed; constant true)" % str(flag_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_climate_feedback_pass') = %s" % str(has_method_ok))
 		print("  fast_indexed = %s (need n_cells*6=%d, got neighbor_indices.size()=%d)" % [str(fast_indexed), n_cells * 6, neighbor_indices.size()])
 		print("  verdict = %s" % verdict)
-	if cp != null and bool(cp.use_gdext_climate_feedback) and _data_core_world_ext != null \
+	if cp != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_climate_feedback_pass") and fast_indexed:
 		if not _gdext_feedback_signature_checked:
 			_gdext_feedback_signature_checked = true
@@ -9242,17 +9146,10 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 		# storage A/B 同源契约：refresh 让 SoA 取得最新值（接 weather_refresh 上一段）
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		# [Phase C.3c] climate_feedback 双轨：use_gdext_thread_fallback=true 时走
-		# WorkerThreadPool 并行变体（cell-local map，无 race）；false 时走原 scalar 路径。
-		# 两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
-		var rc: float = -1.0
-		var _use_fb_thread: bool = false
-		if "use_gdext_thread_fallback" in cp:
-			_use_fb_thread = bool(cp.use_gdext_thread_fallback)
-		if _use_fb_thread and _data_core_world_ext.has_method("run_climate_feedback_pass_thread"):
-			rc = float(_data_core_world_ext.run_climate_feedback_pass_thread(knobs, 0))
-		else:
-			rc = float(_data_core_world_ext.run_climate_feedback_pass(knobs))
+		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
+		# C++ scalar 入口 run_climate_feedback_pass，C++ 内部根据 CPU 特性 / n_cells 自动
+		# 选择 scalar / SIMD / threaded 三档执行路径。
+		var rc: float = float(_data_core_world_ext.run_climate_feedback_pass(knobs))
 		if _gdext_feedback_runs + _gdext_feedback_fallbacks < 3:
 			print("[feedback/stage_b] DEBUG call#%d: rc=%.4f n_cells=%d scale=%.2f" % [
 				_gdext_feedback_runs + _gdext_feedback_fallbacks + 1,
@@ -9389,11 +9286,9 @@ func _apply_transpiration_pass(map: MapData) -> void:
 	if not _gdext_transp_first_attempt_logged:
 		_gdext_transp_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
-		var flag_val: bool = false
-		if cp_f5 != null:
-			if cp_f5.resource_path != "":
-				cp_path = cp_f5.resource_path
-			flag_val = bool(cp_f5.use_gdext_transpiration)
+		var flag_val: bool = true  # use_gdext_transpiration flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp_f5 != null and cp_f5.resource_path != "":
+			cp_path = cp_f5.resource_path
 		var ext_ok: bool = _data_core_world_ext != null
 		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_transpiration_pass")
 		var verdict: String = "OK → will try C++"
@@ -9401,12 +9296,12 @@ func _apply_transpiration_pass(map: MapData) -> void:
 			verdict = "FAIL → fall through to GDScript path"
 		print("[transp/F.5] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path)
-		print("  cp.use_gdext_transpiration = %s" % str(flag_val))
+		print("  cp.use_gdext_transpiration = %s (flag removed; constant true)" % str(flag_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_transpiration_pass') = %s" % str(has_method_ok))
 		print("  fast_indexed = %s (need n_cells*6=%d, got neighbor_indices.size()=%d)" % [str(fast_indexed), n_cells * 6, neighbor_indices.size()])
 		print("  verdict = %s" % verdict)
-	if cp_f5 != null and bool(cp_f5.use_gdext_transpiration) and _data_core_world_ext != null \
+	if cp_f5 != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_transpiration_pass") and fast_indexed:
 		# Stale .dll probe（一次/session）：先无脑跑一次（带详细诊断 print），
 		# 但即使 probe 判 false 也不阻止下面的 C++ 调用——避免 strict equality
@@ -9550,11 +9445,9 @@ func _apply_albedo_pass(map: MapData) -> void:
 	if not _gdext_albedo_first_attempt_logged:
 		_gdext_albedo_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
-		var flag_val: bool = false
-		if cp_alb != null:
-			if cp_alb.resource_path != "":
-				cp_path = cp_alb.resource_path
-			flag_val = bool(cp_alb.use_gdext_albedo)
+		var flag_val: bool = true  # use_gdext_albedo flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp_alb != null and cp_alb.resource_path != "":
+			cp_path = cp_alb.resource_path
 		var ext_ok: bool = _data_core_world_ext != null
 		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_albedo_pass")
 		var verdict: String = "OK → will try C++"
@@ -9562,11 +9455,11 @@ func _apply_albedo_pass(map: MapData) -> void:
 			verdict = "FAIL → fall through to GDScript path"
 		print("[albedo/stage_b] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path)
-		print("  cp.use_gdext_albedo = %s" % str(flag_val))
+		print("  cp.use_gdext_albedo = %s (flag removed; constant true)" % str(flag_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_albedo_pass') = %s" % str(has_method_ok))
 		print("  verdict = %s" % verdict)
-	if cp_alb != null and bool(cp_alb.use_gdext_albedo) and _data_core_world_ext != null \
+	if cp_alb != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_albedo_pass"):
 		if not _gdext_albedo_signature_checked:
 			_gdext_albedo_signature_checked = true
@@ -9587,17 +9480,10 @@ func _apply_albedo_pass(map: MapData) -> void:
 		# 取得最新值再计算（与 transp/F.5 同模式）。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		# [Phase C.3c] albedo 双轨：use_gdext_thread_fallback=true 时走
-		# WorkerThreadPool 并行变体（cell-local map，无 race）；false 时走原 scalar 路径。
-		# 两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
-		var rc: float = -1.0
-		var _use_alb_thread: bool = false
-		if "use_gdext_thread_fallback" in cp_alb:
-			_use_alb_thread = bool(cp_alb.use_gdext_thread_fallback)
-		if _use_alb_thread and _data_core_world_ext.has_method("run_albedo_pass_thread"):
-			rc = float(_data_core_world_ext.run_albedo_pass_thread(knobs, 0))
-		else:
-			rc = float(_data_core_world_ext.run_albedo_pass(knobs))
+		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
+		# C++ scalar 入口 run_albedo_pass，C++ 内部根据 CPU 特性 / n_cells 自动选择
+		# scalar / SIMD / threaded 三档执行路径。
+		var rc: float = float(_data_core_world_ext.run_albedo_pass(knobs))
 		if _gdext_albedo_runs + _gdext_albedo_fallbacks < 3:
 			print("[albedo/stage_b] DEBUG call#%d: rc=%.4f albedo_table.size()=%d n_cells=%d ref_alb=%.3f gain=%.4f" % [
 				_gdext_albedo_runs + _gdext_albedo_fallbacks + 1,
@@ -9719,11 +9605,9 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 	if not _gdext_vegdyn_first_attempt_logged:
 		_gdext_vegdyn_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
-		var flag_val: bool = false
-		if cp_vd != null:
-			if cp_vd.resource_path != "":
-				cp_path = cp_vd.resource_path
-			flag_val = bool(cp_vd.use_gdext_vegetation_dynamics)
+		var flag_val: bool = true  # use_gdext_vegetation_dynamics flag removed (dots-flag-prune-pr1, 2026-05-22)
+		if cp_vd != null and cp_vd.resource_path != "":
+			cp_path = cp_vd.resource_path
 		var ext_ok: bool = _data_core_world_ext != null
 		var has_method_ok: bool = ext_ok and _data_core_world_ext.has_method("run_vegetation_dynamics_pass")
 		var verdict: String = "OK → will try C++"
@@ -9731,11 +9615,11 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			verdict = "FAIL → fall through to GDScript path"
 		print("[veg_dyn/stage_b] precondition probe (one-time):")
 		print("  active ClimateProfile = %s" % cp_path)
-		print("  cp.use_gdext_vegetation_dynamics = %s" % str(flag_val))
+		print("  cp.use_gdext_vegetation_dynamics = %s (flag removed; constant true)" % str(flag_val))
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_vegetation_dynamics_pass') = %s" % str(has_method_ok))
 		print("  verdict = %s" % verdict)
-	if cp_vd != null and bool(cp_vd.use_gdext_vegetation_dynamics) and _data_core_world_ext != null \
+	if cp_vd != null and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_vegetation_dynamics_pass"):
 		if not _gdext_vegdyn_signature_checked:
 			_gdext_vegdyn_signature_checked = true
@@ -9783,18 +9667,11 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		# storage A/B 同源契约：与 albedo / transp 同模式，refresh 让 SoA 取得最新值
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		# C.3d dispatch：thread fallback flag 开 + _thread 入口 export 时优先走
-		# WorkerThreadPool 路径；n_tasks=0 让 C++ 端按 ~1024 cells/task 自适应。
-		var _use_vegdyn_thread: bool = bool(cp_vd.use_gdext_thread_fallback) \
-				and _data_core_world_ext.has_method("run_vegetation_dynamics_pass_thread")
+		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
+		# C++ scalar 入口 run_vegetation_dynamics_pass，C++ 内部根据 CPU 特性 / n_cells
+		# 自动选择 scalar / SIMD / threaded 三档执行路径。
 		var _vegdyn_dispatch_path: String = "scalar"
-		var rc: float
-		if _use_vegdyn_thread:
-			rc = float(_data_core_world_ext.run_vegetation_dynamics_pass_thread(knobs, 0))
-			_vegdyn_dispatch_path = "thread"
-		else:
-			rc = float(_data_core_world_ext.run_vegetation_dynamics_pass(knobs))
-			_vegdyn_dispatch_path = "scalar"
+		var rc: float = float(_data_core_world_ext.run_vegetation_dynamics_pass(knobs))
 		if _gdext_vegdyn_runs + _gdext_vegdyn_fallbacks < 3:
 			print("[veg_dyn/stage_b] DEBUG call#%d: path=%s rc=%.4f n_cells=%d scale=%.2f" % [
 				_gdext_vegdyn_runs + _gdext_vegdyn_fallbacks + 1,

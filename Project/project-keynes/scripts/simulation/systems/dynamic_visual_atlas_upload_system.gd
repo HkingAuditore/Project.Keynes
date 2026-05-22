@@ -389,31 +389,24 @@ func _start_new_stride() -> void:
 
 
 # plan/dirty-push-atlas-encode 阶段 D 私有 helper：
-# 是否启用 dirty mask 路径。在 climate_profile == null 时返回 false 走 fallback。
-# 复用 DCFeatureFlags.is_on 保证未来 hot-reload 钩子统一接入。
+# dots-flag-prune-pr1 round 2: dirty_push_enabled flag 已删除——恒走 mask 路径。
+# climate_profile 与 dirty mask 逻辑无关，dirty_source 是否实现 read_and_clear_dirty_mask
+# 由下游调用点探测。本 helper 仅作为后兼容保留，恒返 true。
 func _is_dirty_push_enabled() -> bool:
-	if climate_profile == null:
-		return false
-	return FeatureFlagsScript.is_on(&"dirty_push_enabled", climate_profile)
+	return true
 
 
 # plan/dirty-push-atlas-encode 阶段 F 私有 helper：
-# 是否启用 C++ atlas encode pass。要求三件事同时满足：
-#   1. cpp_atlas_encode_enabled flag = true
-#   2. world_data 有 _world_ext 引用且非 null（DCWorld bind 后注入）
-#   3. ext 实现了对应 encode_* 方法（向前兼容旧版本 GDExtension dll）
-# 任一不满足都返回 false → 自动 fallback 到 GDScript mask 路径（阶段 D+E）。
+# 是否启用 C++ atlas encode pass。要求：
+#   1. world_data 有 _world_ext 引用且非 null（DCWorld bind 后注入）
+#   2. ext 实现了对应 encode_* 方法（向前兼容旧版本 GDExtension dll）
+# 任一不满足都返回 false → 自动 fallback 到 GDScript mask 路径。
 #
-# 当前 C++ 端 encode_* pass 暂未落地（plan 阶段 F 计划项），
-# 此 helper 始终返回 false。等 gdext/src/world_ext.cpp 实现 4 个 method 后
-# flip flag 即可启用，无需改 GDScript 一行。
+# dots-flag-prune-pr1 round 2: cpp_atlas_encode_enabled flag 已删除——恒走 ext +
+# has_method 探测分支（ext 未提供对应 encode_* method 时透明回退）。
 func _should_use_ext_encode(method_name: StringName) -> bool:
 	if baker != null and baker.has_method("_cpp_atlas_encode_active"):
 		return bool(baker.call("_cpp_atlas_encode_active", method_name))
-	if climate_profile == null:
-		return false
-	if not FeatureFlagsScript.is_on(&"cpp_atlas_encode_enabled", climate_profile):
-		return false
 	if world_data == null:
 		return false
 	# DCWorld 在 bind_world 时把 ext 引用挂到 _world_ext / _ext 等字段；
@@ -717,23 +710,19 @@ func _reset_state_machine() -> void:
 
 # 是否启用 cpp_atlas_pipeline 全量 DOTS 路径。要求：
 #   1. climate_profile 不为空（默认 ResourceLoader 注入）
-#   2. cpp_atlas_pipeline_enabled flag = true
-# climate_profile == null 时返回 false 走旧 4-phase 路径，向后兼容老存档/调试入口。
+# dots-flag-prune-pr1 round 2: cpp_atlas_pipeline_enabled flag 已删除——恒走 ext +
+# has_method(run_atlas_pipeline_step) 探测分支（ext 缺失时透明 fallback 到旧 4-phase 状态机）。
+# 本 helper 作为后兼容保留，恒返 true。
 func _is_cpp_atlas_pipeline_enabled() -> bool:
-	if climate_profile == null:
-		return false
-	return FeatureFlagsScript.is_on(&"cpp_atlas_pipeline_enabled", climate_profile)
+	return true
 
 
 # plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas dirty
-# 编码 kill-switch。默认 true 走 cpp 现行 dirty 路径；false 时跳过传 dirty_indices
-# 且向 cpp 传 force_full_encode=true，让 cpp 覆盖 dirty_path_used=false 强制 4
-# phase 全集编码（A/B 对照与回归排障）。climate_profile==null 时按默认 true 处理，
-# 与 cpp 现行行为一致，避免空 profile 时意外退化为全集编码。
+# 编码 kill-switch。dots-flag-prune-pr1 round 2: use_gdext_dynamic_atlas_terminal_dirty
+# flag 已删除——恒走 cpp 现行 dirty 路径（dirty_indices 比对 + value-diff + 1-跳
+# 邻居膨胀），不再提供 A/B 对照与回归排障入口。本 helper 恒返 true。
 func _is_dynamic_atlas_terminal_dirty_enabled() -> bool:
-	if climate_profile == null:
-		return true
-	return FeatureFlagsScript.is_on(&"use_gdext_dynamic_atlas_terminal_dirty", climate_profile)
+	return true
 
 
 # 取 DCWorld 挂载的 _world_ext / _ext（与 _should_use_ext_encode 同模式，

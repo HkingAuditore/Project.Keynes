@@ -335,12 +335,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# substage 用本 tick 真正执行的 pass_id（_pass_cursor 在执行后已 +1，
 	# 取它会偏向 "下一片要跑哪段" 而不是 "本片刚跑了哪段"）。
 	var substage_out: String = "cursor_%d" % ran_pass_id if ran_pass_id >= 0 else "cursor_skip"
-	var path_out: String = ""
-	var cp_for_path = generator._c() if generator != null and generator.has_method("_c") else null
-	if cp_for_path != null and "use_data_core_climate" in cp_for_path and bool(cp_for_path.use_data_core_climate):
-		path_out = "data_core" if data_core_ready() else "data_core_cells_only"
-	else:
-		path_out = "legacy"
+	# dots-flag-prune-pr1 (2026-05-22)：use_data_core_climate flag 已删除——路径现恒
+	# 走 DataCore，仅根据 data_core_ready() 探测决定 path 标签是 cells_only 还是完整
+	# DataCore。上游 cp_for_path 仅为保留 generator._c() lookup 路径，用于后续
+	# climate_pass_b path 诊断。
+	var path_out: String = "data_core" if data_core_ready() else "data_core_cells_only"
 	if ran_pass_id == _PASS_B and generator != null and "_last_climate_pass_b_path" in generator:
 		substage_out = "pass_b_%s" % str(generator._last_climate_pass_b_path)
 	return {
@@ -456,23 +455,22 @@ func _finalize_round() -> void:
 		var n: int = generator._daily_climate_call_count
 		if n == 1 or (n % 365) == 0:
 			# I1.A-1: 在 round summary 末尾追加 path=... 标识，与 weather 日志对齐，
-			# 便于 grep / A-B 桶聚合。三态推导与 main.gd path=... 一致：
-			#   legacy                — use_data_core_climate=false 或 World 未绑定
-			#   data_core_cells_only  — Flag on + World 已绑定，但 25 个 comp_id 还没缓存好
-			#   data_core             — Flag on + World 已绑定 + 全部 comp_id 缓存就绪
+			# 便于 grep / A-B 桶聚合。dots-flag-prune-pr1 (2026-05-22)：
+			# use_data_core_climate flag 已删除——climate 现恒走 DataCore 单路径：
+			#   legacy                — World 还没绑定（启动早期 fallback）
+			#   data_core_cells_only  — World 已绑定，但 25 个 comp_id 还未缓存好
+			#   data_core             — World 已绑定 + 全部 comp_id 缓存就绪
 			var _path_str: String = "legacy"
-			var _cp = generator._c() if generator.has_method("_c") else null
-			if _cp != null and "use_data_core_climate" in _cp and bool(_cp.use_data_core_climate):
-				var _w = generator.get_data_core_world() if generator.has_method("get_data_core_world") else null
-				if _w != null and _w.is_bound():
-					_path_str = "data_core" if data_core_ready() else "data_core_cells_only"
-				# dots-roadmap-to-gdextension 务实 A：若 C++ co-processor 也已绑定，
-				# 在 path 后追加 +cpp 标记（实际本轮 run_climate_pass_a 仍 stub，
-				# 但能从日志看到 "co-processor 在席" 的事实，便于 probe 验收）。
-				if generator.has_method("get_data_core_world_ext"):
-					var _w_ext = generator.get_data_core_world_ext()
-					if _w_ext != null:
-						_path_str += "+cpp_ext"
+			var _w = generator.get_data_core_world() if generator.has_method("get_data_core_world") else null
+			if _w != null and _w.is_bound():
+				_path_str = "data_core" if data_core_ready() else "data_core_cells_only"
+			# dots-roadmap-to-gdextension 务实 A：若 C++ co-processor 也已绑定，
+			# 在 path 后追加 +cpp 标记（实际本轮 run_climate_pass_a 仍 stub，
+			# 但能从日志看到 "co-processor 在席" 的事实，便于 probe 验收）。
+			if generator.has_method("get_data_core_world_ext"):
+				var _w_ext = generator.get_data_core_world_ext()
+				if _w_ext != null:
+					_path_str += "+cpp_ext"
 			print("refresh_climate_daily(sliced) #%d: %dms across sub-ticks (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f transp=%.1f path=%s" % [
 				n,
 				int(Time.get_ticks_msec() - _round_t_round_start_ms),

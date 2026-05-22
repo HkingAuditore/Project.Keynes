@@ -14,11 +14,9 @@ class_name DCSystemScheduler
 ##     (c) tick 入口包裹 _debug_*_pass 校验；(d) 自动 swap_double_buffer。
 ##
 ## 与现有 SusScheduler / DCEcsScheduler 并存：
-##   本类不替换任何现有调度器 —— 是一个**额外**入口。bootstrap 路径根据
-##   DCFeatureFlags.use_dc_system_scheduler 决定走哪条：
-##     - false（默认）→ 走 SusScheduler（旧路径，原有 6 个 Job）
-##     - true          → 走 DCSystemScheduler（新路径，6 个 system 在 C.3 中改写）
-##
+##   本类不替换任何现有调度器 — 是一个**额外**入口。dots-flag-prune-pr1
+##   (2026-05-22)： use_dc_system_scheduler flag 已从 ClimateProfile 删除，
+##   bootstrap 路径现恒走单路径。##
 ## 与 dots-experiment-report §3.6 一致：
 ##   实验已证明拓扑排序在 J=8 真实算子下 +5.08% overhead，远低于 25% 红线。
 ##   本类把那个沙盒结论搬进 production；reads/writes 拓扑由 DCEcsScheduler
@@ -54,15 +52,12 @@ var sim_budget_window_size: int = 300
 var sim_budget_warn_ms: float = 1.0
 var log_interval_ticks: int = 30
 
-## Phase 1A — sus-cpp-port: 透传给内部 SusScheduler。caller 写本字段后下次 tick
-## 同步给 _sus；翻 true 时 _sus 内部会把所有 register 过的 job forward 到
-## SusSchedulerExt（C++）。本类零行为变化——纯透传。
-## Phase 1C (2026-05-22)：默认值翻 true 与 SusScheduler / ClimateProfile 对齐。
-var use_gdext_sus_scheduler: bool = true
+# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler 已随
+# SusScheduler 一起删除——SusScheduler 现恒走 ext 探测单边分支，
+# 本类不再需要透传字段。
 
 
-# ─── 注入 World ──────────────────────────────────────────────────────
-
+# ─── 注入 World ─────────────────────────────────────
 ## 由 main.gd / DataCore bootstrap 在 World 初始化完成后调用。会同步注入到
 ## 内部 SUS（以兼容现有 SusJob.bind_world 链路）和已注册的 DCSystem。
 func bind_world(w) -> void:
@@ -159,10 +154,8 @@ func tick(ctx) -> void:
 	_sus.sim_budget_window_size = sim_budget_window_size
 	_sus.sim_budget_warn_ms = sim_budget_warn_ms
 	_sus.log_interval_ticks = log_interval_ticks
-	# Phase 1A: native scheduler flag forwarding. 注意——若在已 register_system 之
-	# 后才翻 true，SusScheduler._ensure_ext 会做 lazy 迁移，把已注册 job 全部
-	# replay 给 SusSchedulerExt。
-	_sus.use_gdext_sus_scheduler = use_gdext_sus_scheduler
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_sus_scheduler 透传已删除——
+	# SusScheduler 现恒走 _ensure_ext＋ext-null fallback 单边分支。
 	# debug-only reads/writes 校验：让每个 system 自己 begin/end pass
 	# DCSystem 提供 _scheduler_debug_pass_begin/end；SUS 真正调 run_slice 时
 	# 这两个钩子还没被触发——所以我们目前选择"在 tick 入口 begin、tick 结束 end"

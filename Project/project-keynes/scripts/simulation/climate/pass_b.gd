@@ -26,8 +26,8 @@ class_name DCClimatePassB
 ##   `run_climate_pass_b(cp_struct, phase, season_phase)`
 ## 与已有 `run_climate_pass_a` 同形（charter §12.3.1 模板）。
 ##
-## flag：`ClimateProfile.use_gdext_climate_pass_b: bool = false`
-## 默认 false，bit-equal 验收通过后切 true（独立于 use_gdext_climate）。
+## flag：`ClimateProfile.use_gdext_climate_pass_b` 已于 dots-flag-prune-pr1 (2026-05-22)
+## 删除。切换路径现走 ext.has_method("run_climate_pass_b") 探测，按默认 enable。
 ##
 ## ─── 拆分原则 ────────────────────────────────────────────────────
 ##
@@ -47,7 +47,7 @@ func _init(generator) -> void:
 func run(map: MapData, season_phase: float) -> void:
 	if _generator == null:
 		return
-	# Future: switch by cp.use_gdext_climate_pass_b / cp.use_soa_pipeline
+	# Future: switch by ext.has_method("run_climate_pass_b") / cp.use_soa_pipeline (use_gdext_climate_pass_b removed in dots-flag-prune-pr1)
 	pass
 
 func describe() -> String:

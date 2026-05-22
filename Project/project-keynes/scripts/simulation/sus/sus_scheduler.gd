@@ -86,36 +86,36 @@ var world = null    # DCWorld
 ## path. Numerical telemetry (elapsed_ms / total_ms) is timing-dependent and only
 ## required to be within ±20% perf budget.
 ##
-## Wire-up: when this flag is true, register_job / unregister_job / bind_world /
-## tick / reset_all_progress / report_* all forward to `_ext`. The GDScript-side
-## `_jobs` array is still kept in sync so legacy callers that introspect the
-## scheduler (e.g. main.gd's WARN diagnostics that walk `_jobs`) keep working.
+## Wire-up: register_job / unregister_job / bind_world / tick /
+## reset_all_progress / report_* all forward to `_ext` when the C++ class is
+## available; otherwise transparent fallback to the in-script `_jobs` loop
+## (e.g. when running tests outside the gdext build, or when the .dll fails
+## to load). The GDScript-side `_jobs` array is always kept in sync so
+## legacy callers that introspect the scheduler (e.g. main.gd's WARN
+## diagnostics that walk `_jobs`) keep working regardless of branch.
 ##
-## Phase 1C (2026-05-22): default flipped false → true after 30+1000 tick
-## SAME_SOURCE A/B PASS. GDScript fallback branch is kept for A/B runner /
-## emergency switch-off; production has no reason to flip back.
-var use_gdext_sus_scheduler: bool = true
+## dots-flag-prune-pr1 (2026-05-22): use_gdext_sus_scheduler flag removed —
+## native path is the production single path; ext-null fallback is kept as a
+## one-sided probe branch (transparent to callers).
 
 ## Lazily-instantiated SusSchedulerExt (DCWorldExt sibling class). nil when
-## use_gdext_sus_scheduler=false; cached after first ensure call.
+## the C++ class is not registered (e.g. editor tests without gdext .dll);
+## cached after first ensure call.
 var _ext = null
 
 
 func _ensure_ext() -> void:
-	# Idempotent — called from every register_job / tick / report_* entry when
-	# the flag is true. We instantiate lazily so toggling the flag on after
-	# already registering jobs (rare; normally flag is set in main.gd before
-	# any subsystem registers) still works via _migrate_to_ext.
+	# Idempotent — called from every register_job / tick / report_* entry.
+	# We instantiate lazily so subsystems registered before any tick still
+	# get re-registered into the native scheduler via the for-loop below.
 	if _ext != null:
 		return
 	if not ClassDB.class_exists("SusSchedulerExt"):
-		push_error("[SUS] use_gdext_sus_scheduler=true but SusSchedulerExt not registered — falling back to GDScript path")
-		use_gdext_sus_scheduler = false
+		# gdext .dll not loaded (e.g. editor tests). Stay on GDScript path.
 		return
 	_ext = ClassDB.instantiate("SusSchedulerExt")
 	if _ext == null:
-		push_error("[SUS] failed to instantiate SusSchedulerExt — falling back")
-		use_gdext_sus_scheduler = false
+		push_error("[SUS] failed to instantiate SusSchedulerExt — staying on GDScript path")
 		return
 	_ext.set_frame_budget_ms(frame_budget_ms)
 	_ext.set_strict_budget_enabled(strict_budget_enabled)
@@ -204,10 +204,9 @@ func bind_world(w) -> void:
 	world = w
 	for j in _jobs:
 		j.bind_world(w)
-	if use_gdext_sus_scheduler:
-		_ensure_ext()
-		if _ext != null:
-			_ext.bind_world(w)
+	_ensure_ext()
+	if _ext != null:
+		_ext.bind_world(w)
 
 
 func register_job(job: SusJob) -> void:
@@ -229,10 +228,9 @@ func register_job(job: SusJob) -> void:
 		job.bind_world(world)
 	# Forward to native scheduler. We pass *after* policy default fill-in and
 	# bind_world so the C++ side observes the same final job state.
-	if use_gdext_sus_scheduler:
-		_ensure_ext()
-		if _ext != null:
-			_ext.register_job(job, _descriptor_from_job(job))
+	_ensure_ext()
+	if _ext != null:
+		_ext.register_job(job, _descriptor_from_job(job))
 
 
 func unregister_job(job_id: StringName) -> void:
@@ -240,7 +238,7 @@ func unregister_job(job_id: StringName) -> void:
 		if _jobs[i].id == job_id:
 			_jobs.remove_at(i)
 			break
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		_ext.unregister_job(job_id)
 
 
@@ -263,7 +261,7 @@ func tick(ctx: SusTickContext) -> void:
 	# C++ side runs the priority sort / budget / starvation / depends_on / slice
 	# loop / reporting; only Job.run_slice() (and the optional Accumulator
 	# getter) cross back into GDScript.
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		_ext.tick(ctx)
 		return
 	_tick_counter += 1
@@ -495,7 +493,7 @@ func reset_all_progress() -> void:
 	_stats.clear()
 	_tick_counter = 0
 	_strict_next_job_index = 0
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		_ext.reset_all_progress()
 
 
@@ -504,7 +502,7 @@ func reset_all_progress() -> void:
 # ---------------------------------------------------------------------------
 
 func report_last_tick() -> Dictionary:
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		return _ext.report_last_tick()
 	return _last_report.duplicate(true)
 
@@ -514,13 +512,13 @@ func report_last_tick() -> Dictionary:
 ##   1. 把 SUS 那段耗时与 fast tick 总耗时对比
 ##   2. 触发 > 12ms WARN 时附带打印
 func report_last_tick_summary() -> Dictionary:
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		return _ext.report_last_tick_summary()
 	return _last_tick_summary.duplicate(true)
 
 
 func report_sim_budget_window() -> Dictionary:
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		return _ext.report_sim_budget_window()
 	return _sim_budget_window_dict().duplicate(true)
 
@@ -528,7 +526,7 @@ func report_sim_budget_window() -> Dictionary:
 ## Perf instrumentation: 滚动窗口内的 skipped_reason 累计 + max_ms。
 ## 用于诊断"某 Job 长期被节流"等慢性问题。
 func report_skipped_summary() -> Dictionary:
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		return _ext.report_skipped_summary()
 	var out: Dictionary = {}
 	for job_id in _stats.keys():
@@ -549,7 +547,7 @@ func report_skipped_summary() -> Dictionary:
 ## 窗口，应在 main.gd 自行累积 fast tick total_ms 数组，本表仅供 SUS Job
 ## p95 比对（30 tick 滚动 p95 已足以判定稳态门槛）。
 func report_job_stats() -> Dictionary:
-	if use_gdext_sus_scheduler and _ext != null:
+	if _ext != null:
 		return _ext.report_job_stats()
 	var out: Dictionary = {}
 	for job_id in _stats.keys():

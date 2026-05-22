@@ -574,8 +574,10 @@ func _refresh_merged_native_gate() -> void:
 	if generator == null or not generator.has_method("get_data_core_world_ext"):
 		return
 	var cp = generator._c() if generator.has_method("_c") else null
-	if cp == null or not ("use_gdext_weather_refresh_daily" in cp) \
-			or not bool(cp.use_gdext_weather_refresh_daily):
+	# dots-flag-prune-pr1 round 2: use_gdext_weather_refresh_daily flag 已删除——恒走
+	# ext + has_method(run_weather_refresh_daily_pass) 探测分支。cp 仅作为 hot-reload
+	# 接入点保留，不再控制 gate 开关。
+	if cp == null:
 		return
 	var ext = generator.get_data_core_world_ext()
 	if ext == null:
@@ -852,16 +854,14 @@ func query_active_fronts() -> DCQuery:
 	return q.build()
 
 
-## 内部：读取 ClimateProfile.use_data_core_weather 开关（Task 10 补齐字段）。
+## 内部：use_data_core_weather flag 已删（dots-flag-prune-pr1, 2026-05-22）。
+## DataCore weather mirror 现恒走单路径——本 helper 改为返回常量 true，
+## 仅在 generator 未就绪时返 false 作为 probe。最终 is_data_core_on 仍由
+## data_core_ready() gate（comp_id 缓存就绪后才算真激活）。
 func _is_data_core_weather_enabled() -> bool:
 	if generator == null:
 		return false
-	var cp = generator._c() if generator.has_method("_c") else null
-	if cp == null:
-		return false
-	if "use_data_core_weather" in cp:
-		return bool(cp.use_data_core_weather)
-	return false
+	return true
 
 
 func _publish_job_timing(timing: Dictionary, total_ms: float) -> void:

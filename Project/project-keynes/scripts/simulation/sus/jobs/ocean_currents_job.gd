@@ -308,8 +308,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		])
 	# DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）：
 	# 物理化路径下，rasterize 改为 C++ 一次性 hex→pixel 直出（替代 10 个 GDScript pixel slice）。
-	# Gate：ClimateProfile.use_gdext_ocean_currents_pixel=true + ext.has_method
-	# +baker.run_ocean_field_rasterize_full（新引入）。失败/未导出 → fallback 到旧 slice 路径。
+	# Gate：baker.has_method("run_ocean_field_rasterize_full") + ext 路径 ACTIVE。
+	# 失败/未导出 → fallback 到旧 slice 路径。
+	#
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_ocean_currents_pixel flag 已从
+	# ClimateProfile 删除——hot pass 现恒走 has_method 探测单边分支（rc<0 时
+	# transparent fallback 到旧 slice 路径）。
 	#
 	# Sub-slice 切片（plan/ocean-raster-subslice 2026-05-22）：
 	# 把 4.7ms 整图 raster 拆成 ocean_pixel_subslice_count 片（默认 4，每片 ~1.2ms）
@@ -322,8 +326,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var cpp_sub_e: int = -1
 	if baker._use_physical_circulation(cfg):
 		var cp_oc: ClimateProfile = cfg.climate_profile if cfg != null else null
-		if cp_oc != null and bool(cp_oc.use_gdext_ocean_currents_pixel) \
-				and baker.has_method("run_ocean_field_rasterize_full"):
+		if cp_oc != null and baker.has_method("run_ocean_field_rasterize_full"):
 			# 计算本片像素区间 [sub_s, sub_e)。
 			# subslice_count 至少 1；越大每片越小（更平滑），越小越粗（旧行为）。
 			var sub_count: int = 1

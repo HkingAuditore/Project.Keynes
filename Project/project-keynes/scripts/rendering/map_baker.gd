@@ -692,11 +692,8 @@ func _enum_atlas_cpp_pack_disabled_reason() -> String:
 		return "cpp_gate_no_world_ext"
 	if not _world_ext.has_method("patch_enum_atlas_axes"):
 		return "cpp_gate_method_missing"
-	# 与其他运行期 C++ atlas 路径保持容错：ClimateProfile 未注入或旧 profile
-	# 缺字段时不阻断 native 路径；只有显式配置为 false 才关闭。
-	if _climate_profile != null and "use_gdext_enum_atlas_pack" in _climate_profile \
-			and not bool(_climate_profile.use_gdext_enum_atlas_pack):
-		return "cpp_gate_flag_false"
+	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_enum_atlas_pack flag 已删除，
+	# enum atlas C++ 路径现恒走 ext + has_method 探测（上面两个 gate 已 cover）。
 	return ""
 
 
@@ -1662,9 +1659,8 @@ func _cpp_atlas_encode_active(method_name: StringName) -> bool:
 func _cpp_atlas_encode_disabled_reason(method_name: StringName) -> String:
 	if _climate_profile == null:
 		return "no_climate_profile"
-	# DCFeatureFlags.is_on 是 cp.<flag> 的薄 wrapper；这里走反射避免 hard import。
-	if not bool(_climate_profile.get("cpp_atlas_encode_enabled")):
-		return "flag_disabled"
+	# dots-flag-prune-pr1 round 2 (2026-05-22): cpp_atlas_encode_enabled flag 已删除——
+	# C++ atlas encode 现恒走入口，仅受 ext + has_method 探测控制。
 	if _world_ext == null:
 		return "no_world_ext"
 	if not _world_ext.has_method(method_name):
@@ -2181,41 +2177,11 @@ func _try_cpp_ice_state_atlas_encode(map: MapData, world: WorldData, ctx: Dictio
 
 
 # plan/sim-2ms-simd-dirty-budget：enum atlas upload 节流核心判定。
-# 返回 true 表示"必须真正 flush 到 GPU"，false 表示"本次跳过 upload，仅累积 dirty"。
-# 策略：默认 flag=false 时永远返回 true（保持原行为）；flag=true 时按累积阈值决策。
-# axis 单独跟踪：cover / vegetation / biome 各自独立计数。
-# 注意：dirty_cells == 0 时根本不会进 throttle 路径，由 caller 提前 short-circuit。
-func _enum_atlas_throttle_should_flush(axis: String, dirty_cells: int) -> bool:
-	if _climate_profile == null:
-		return true
-	if not bool(_climate_profile.get("use_atlas_dirty_throttle")):
-		return true
-	# 累积 dirty + tick
-	var pending: int = int(_enum_atlas_throttle_pending_dirty.get(axis, 0)) + dirty_cells
-	var skipped: int = int(_enum_atlas_throttle_skipped_uploads.get(axis, 0))
-	var ticks_since: int = int(_enum_atlas_throttle_ticks_since_flush.get(axis, 0)) + 1
-	# 阈值判定：任一满足则 flush
-	if pending >= _ENUM_ATLAS_THROTTLE_DIRTY_THRESHOLD:
-		_enum_atlas_throttle_pending_dirty[axis] = 0
-		_enum_atlas_throttle_skipped_uploads[axis] = 0
-		_enum_atlas_throttle_ticks_since_flush[axis] = 0
-		return true
-	if skipped + 1 >= _ENUM_ATLAS_THROTTLE_SKIP_THRESHOLD:
-		_enum_atlas_throttle_pending_dirty[axis] = 0
-		_enum_atlas_throttle_skipped_uploads[axis] = 0
-		_enum_atlas_throttle_ticks_since_flush[axis] = 0
-		return true
-	if ticks_since >= _ENUM_ATLAS_THROTTLE_HEAL_TICKS:
-		# 自愈：强制 flush 消除 dirty 漏标的视觉残影
-		_enum_atlas_throttle_pending_dirty[axis] = 0
-		_enum_atlas_throttle_skipped_uploads[axis] = 0
-		_enum_atlas_throttle_ticks_since_flush[axis] = 0
-		return true
-	# 跳过本次 GPU upload，更新累积 state
-	_enum_atlas_throttle_pending_dirty[axis] = pending
-	_enum_atlas_throttle_skipped_uploads[axis] = skipped + 1
-	_enum_atlas_throttle_ticks_since_flush[axis] = ticks_since
-	return false
+# dots-flag-prune-pr1 round 2 (2026-05-22): use_atlas_dirty_throttle flag 已删除——
+# 节流逻辑整体退役，函数退化为透明 passthrough（恒返 true 表示每次都 flush）。
+# axis / dirty_cells 参数保留以兼容 caller 签名。
+func _enum_atlas_throttle_should_flush(_axis: String, _dirty_cells: int) -> bool:
+	return true
 
 
 # plan/sim-2ms-simd-dirty-budget：强制 flush 入口（season 切换 / save /
@@ -4052,21 +4018,18 @@ func prepare_sea_ice_fraction_atlas(map: MapData, world: WorldData) -> Dictionar
 	if cp == null:
 		var cfg_legacy = world.get("config")
 		cp = cfg_legacy.climate_profile if cfg_legacy != null and "climate_profile" in cfg_legacy else null
-	var use_native: bool = cp != null and "use_gdext_sea_ice_atlas_prepare" in cp \
-			and bool(cp.use_gdext_sea_ice_atlas_prepare) \
+	var use_native: bool = cp != null \
 			and _world_ext != null and _world_ext.has_method("run_sea_ice_atlas_prepare")
-	# DOTS-Final-Push 任务 6.2：once-only 诊断打印——把 use_native 四个条件分别状态
-	# 暴露出来，定位 path=gdscript 的真因（cp null / flag 未挂 / flag false /
-	# _world_ext null / has_method false）。
+	# DOTS-Final-Push 任务 6.2：once-only 诊断打印——把 use_native 几个条件分别状态
+	# 暴露出来，定位 path=gdscript 的真因。dots-flag-prune-pr1 (2026-05-22)：
+	# use_gdext_sea_ice_atlas_prepare flag 已删，路径现恒走 ext + has_method 探测。
 	if not _sea_ice_path_logged:
 		_sea_ice_path_logged = true
 		var cp_ok: bool = cp != null
-		var flag_attr_ok: bool = cp_ok and ("use_gdext_sea_ice_atlas_prepare" in cp)
-		var flag_val_ok: bool = flag_attr_ok and bool(cp.use_gdext_sea_ice_atlas_prepare)
 		var ext_ok: bool = _world_ext != null
 		var method_ok: bool = ext_ok and _world_ext.has_method("run_sea_ice_atlas_prepare")
-		print("[sea_ice_atlas_prepare] path-decision once-only: cp=%s flag_attr=%s flag_val=%s ext=%s method=%s -> use_native=%s" % [
-			str(cp_ok), str(flag_attr_ok), str(flag_val_ok), str(ext_ok), str(method_ok), str(use_native)
+		print("[sea_ice_atlas_prepare] path-decision once-only: cp=%s ext=%s method=%s -> use_native=%s" % [
+			str(cp_ok), str(ext_ok), str(method_ok), str(use_native)
 		])
 	if use_native:
 		if _world_ext.has_method("refresh_slots_from_map"):
@@ -4766,25 +4729,26 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
 			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
+			# dots-flag-prune-pr1 round 2: use_gdext_slp_field flag 已删除——恒走 ext +
+			# has_method(run_slp_field_pass) + map.has_indices() 探测分支。DIAG 块保留原状，
+			# pflag_val 恒为 true 仅作为诊断记录。
 			var _slp_done_by_cpp: bool = false
 			var _slp_native_ms: float = -1.0
 			if _slp_path_log_count < 3:
 				_slp_path_log_count += 1
 				var _s_prof_ok: bool = profile != null
-				var _s_pflag_attr_ok: bool = _s_prof_ok and ("use_gdext_slp_field" in profile)
-				var _s_pflag_val_ok: bool = _s_pflag_attr_ok and bool(profile.use_gdext_slp_field)
+				var _s_pflag_attr_ok: bool = true  # 已折叠：flag 字段已删，不再检查
+				var _s_pflag_val_ok: bool = true  # 已折叠：恒 true
 				var _s_pext_ok: bool = _world_ext != null
 				var _s_pmethod_ok: bool = _s_pext_ok and _world_ext.has_method("run_slp_field_pass")
 				var _s_idx_ok: bool = map != null and map.has_indices()
-				var _s_gate_pass: bool = _s_pflag_val_ok and _s_pmethod_ok and _s_idx_ok
+				var _s_gate_pass: bool = _s_pmethod_ok and _s_idx_ok
 				print("[slp_field] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s -> cpp_gate=%s" % [
 					_slp_path_log_count,
 					str(_s_prof_ok), str(_s_pflag_attr_ok), str(_s_pflag_val_ok),
 					str(_s_pext_ok), str(_s_pmethod_ok), str(_s_idx_ok), str(_s_gate_pass)
 				])
-			if profile != null and "use_gdext_slp_field" in profile \
-					and bool(profile.use_gdext_slp_field) \
-					and _world_ext != null and _world_ext.has_method("run_slp_field_pass") \
+			if _world_ext != null and _world_ext.has_method("run_slp_field_pass") \
 					and map != null and map.has_indices():
 				var cells_for_slp_cpp: Array = map.iter_cells()
 				var n_slp: int = cells_for_slp_cpp.size()
@@ -4853,30 +4817,28 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
 			# Block B（master 手册 §4 / dots-wind-validation.md）：wind solver C++ 化 hook。
-			# 默认 _world_ext == null 或 use_gdext_wind_field=false → 走 GDScript fallback。
-			# 触发开启条件：SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后 ClimateProfile 切 true。
+			# dots-flag-prune-pr1 round 2: use_gdext_wind_field flag 已删除——恒走 ext +
+			# has_method(run_wind_field_pass) 探测分支（C++ 返回 fallback 或 ext 未 bind 时
+			# 透明 fallback 到 GDScript solve_wind_field）。DIAG 块保留原状。
 			var _wind_done_by_cpp: bool = false
 			# DOTS-Final-Push 后续诊断 — once-only 路径决策（仿 upwelling stage 6）。
 			# 与 _wind_b_first_run_logged 不同：那个只在 C++ 路径首次成功后打印；
-			# 这里在 stage 2 第一次执行时无条件打印各子条件命中状态，定位 cpp_gate
-			# 失败的真正源头（之前只通过 stage 6 间接看到 wind_cpp=false）。
+			# 这里在 stage 2 第一次执行时无条件打印各子条件命中状态。
 			if _wind_b_path_log_count < 3:
 				_wind_b_path_log_count += 1
 				var _w_prof_ok: bool = profile != null
-				var _w_pflag_attr_ok: bool = _w_prof_ok and ("use_gdext_wind_field" in profile)
-				var _w_pflag_val_ok: bool = _w_pflag_attr_ok and bool(profile.use_gdext_wind_field)
+				var _w_pflag_attr_ok: bool = true  # 已折叠：flag 字段已删
+				var _w_pflag_val_ok: bool = true  # 已折叠：恒 true
 				var _w_pext_ok: bool = _world_ext != null
 				var _w_pmethod_ok: bool = _w_pext_ok and _world_ext.has_method("run_wind_field_pass")
 				var _w_idx_ok: bool = map != null and map.has_indices()
-				var _w_gate_pass: bool = _w_pflag_val_ok and _w_pmethod_ok and _w_idx_ok
+				var _w_gate_pass: bool = _w_pmethod_ok and _w_idx_ok
 				print("[wind_field/B] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s -> cpp_gate=%s" % [
 					_wind_b_path_log_count,
 					str(_w_prof_ok), str(_w_pflag_attr_ok), str(_w_pflag_val_ok),
 					str(_w_pext_ok), str(_w_pmethod_ok), str(_w_idx_ok), str(_w_gate_pass)
 				])
-			if profile != null and "use_gdext_wind_field" in profile \
-				and bool(profile.use_gdext_wind_field) \
-				and _world_ext != null and _world_ext.has_method("run_wind_field_pass"):
+			if _world_ext != null and _world_ext.has_method("run_wind_field_pass"):
 				var cells_for_wind: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 				var n_wind: int = cells_for_wind.size()
 				var nb_idx_for_wind: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
@@ -4925,8 +4887,6 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
 								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
 							var psi_cpp_expected: bool = heat_transport \
-									and profile != null and "use_gdext_psi_solver" in profile \
-									and bool(profile.use_gdext_psi_solver) \
 									and _world_ext != null and _world_ext.has_method("run_psi_solver_pass")
 							for _i_w in range(n_wind):
 								map.wind_speed_arr[_i_w] = wspd_arr[_i_w]
@@ -4956,18 +4916,20 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_PSI_INIT:
 			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
+			# dots-flag-prune-pr1 round 2: use_gdext_psi_solver flag 已删除——恒走 ext +
+			# has_method(run_psi_solver_pass) + heat_transport + map.has_indices() 探测分支。
 			var _psi_done_by_cpp: bool = false
 			var _psi_native_ms: float = -1.0
 			if _psi_path_log_count < 3:
 				_psi_path_log_count += 1
 				var _p_prof_ok: bool = profile != null
-				var _p_pflag_attr_ok: bool = _p_prof_ok and ("use_gdext_psi_solver" in profile)
-				var _p_pflag_val_ok: bool = _p_pflag_attr_ok and bool(profile.use_gdext_psi_solver)
+				var _p_pflag_attr_ok: bool = true  # 已折叠：flag 字段已删
+				var _p_pflag_val_ok: bool = true  # 已折叠：恒 true
 				var _p_pext_ok: bool = _world_ext != null
 				var _p_pmethod_ok: bool = _p_pext_ok and _world_ext.has_method("run_psi_solver_pass")
 				var _p_idx_ok: bool = map != null and map.has_indices()
 				var _p_heat_ok: bool = heat_transport
-				var _p_gate_pass: bool = _p_pflag_val_ok and _p_pmethod_ok and _p_idx_ok and _p_heat_ok
+				var _p_gate_pass: bool = _p_pmethod_ok and _p_idx_ok and _p_heat_ok
 				print("[psi_solver] path-decision call#%d: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s idx=%s heat=%s -> cpp_gate=%s" % [
 					_psi_path_log_count,
 					str(_p_prof_ok), str(_p_pflag_attr_ok), str(_p_pflag_val_ok),
@@ -4975,8 +4937,6 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					str(_p_heat_ok), str(_p_gate_pass)
 				])
 			if heat_transport \
-					and profile != null and "use_gdext_psi_solver" in profile \
-					and bool(profile.use_gdext_psi_solver) \
 					and _world_ext != null and _world_ext.has_method("run_psi_solver_pass") \
 					and map != null and map.has_indices():
 				var cells_for_psi: Array = map.iter_cells()
@@ -5123,20 +5083,22 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if _diag_active:
 				_upwelling_diag_count += 1
 				var prof_ok: bool = profile != null
-				var pflag_attr_ok: bool = prof_ok and ("use_gdext_physical_circulation" in profile)
-				var pflag_val_ok: bool = pflag_attr_ok and bool(profile.use_gdext_physical_circulation)
+				# dots-flag-prune-pr1 round 2: use_gdext_physical_circulation flag 已删除——
+				# 探针保留以观察 ext / wind_cpp / idx 准备状态，pflag 列恒 true 标记。
+				var pflag_attr_ok: bool = true  # 已折叠：flag 字段已删
+				var pflag_val_ok: bool = true   # 已折叠：恒 true
 				var pext_ok: bool = _world_ext != null
 				var pmethod_ok: bool = pext_ok and _world_ext.has_method("run_physical_circulation_pass")
 				var wind_cpp_ok: bool = _phys_wind_done_by_cpp
 				var idx_ok: bool = map != null and map.has_indices()
-				var gate_pass: bool = pflag_val_ok and pmethod_ok and wind_cpp_ok and idx_ok
+				var gate_pass: bool = pmethod_ok and wind_cpp_ok and idx_ok
 				print("[upwelling/DIAG#%d] gate: prof=%s pflag_attr=%s pflag_val=%s ext=%s method=%s wind_cpp=%s idx=%s -> cpp_gate=%s" % [
 					_upwelling_diag_count, str(prof_ok), str(pflag_attr_ok), str(pflag_val_ok), str(pext_ok),
 					str(pmethod_ok), str(wind_cpp_ok), str(idx_ok), str(gate_pass)
 				])
-			if profile != null and "use_gdext_physical_circulation" in profile \
-					and bool(profile.use_gdext_physical_circulation) \
-					and _world_ext != null and _world_ext.has_method("run_physical_circulation_pass") \
+			# dots-flag-prune-pr1 round 2: use_gdext_physical_circulation flag 已删除——
+			# 恒走 ext + has_method(run_physical_circulation_pass) + wind_cpp + idx 探测。
+			if _world_ext != null and _world_ext.has_method("run_physical_circulation_pass") \
 					and _phys_wind_done_by_cpp \
 					and map.has_indices():
 				# T1: neighbor_indices_packed
@@ -5249,9 +5211,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				# DOTS-Total-CPP（A 方案 / wind raster）：第一次进入 stage 时尝试 C++
 				# 一次性 hex→pixel rasterize（620544 像素 ≤ 5ms），成功则直接收尾。
 				# 失败 → 透明回落到下面的 GDScript 像素切片路径。
-				# 复用 ClimateProfile.use_gdext_ocean_currents_pixel gate（同孪生场景）。
-				if profile != null and "use_gdext_ocean_currents_pixel" in profile \
-						and bool(profile.use_gdext_ocean_currents_pixel) \
+				# dots-flag-prune-pr1 (2026-05-22)：use_gdext_ocean_currents_pixel flag 已删，
+				# wind raster fast path 现恒走 ext + has_method 探测。
+				if profile != null \
 						and _world_ext != null \
 						and _world_ext.has_method("run_wind_field_rasterize"):
 					var t_raster0_us: int = Time.get_ticks_usec()
@@ -5462,7 +5424,7 @@ func _rasterize_upwelling_slice_from_hex(world: WorldData, dst: PackedByteArray,
 # ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）────────────────────────
 # Ocean rasterize 一次性 hex→pixel byte 直出 — 替代 _rasterize_ocean_current_slice_from_hex
 # + _rasterize_upwelling_slice_from_hex 的 17 个 pixel slice。
-# Gate：caller 已确认 ClimateProfile.use_gdext_ocean_currents_pixel + ext.has_method。
+	# Gate：caller 已确认 ext + has_method (use_gdext_ocean_currents_pixel removed in dots-flag-prune-pr1).
 
 # 缓存 ocean rasterize 的 pixel→cell-index 表（与 sea_ice 缓存独立）。
 var _ocean_pixel_to_cell_idx: PackedInt32Array = PackedInt32Array()
@@ -5566,7 +5528,7 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 # 在 _PHYS_STAGE_WIND_RASTER 中跑 21 片 × ~87ms 的 GDScript 循环。
 # 复用 _ocean_pixel_to_cell_idx 缓存（同一 pixel→cell 映射）。
 #
-# Gate：caller 已确认 ClimateProfile.use_gdext_ocean_currents_pixel + ext.has_method。
+	# Gate：caller 已确认 ext + has_method (use_gdext_ocean_currents_pixel removed in dots-flag-prune-pr1).
 # 返回 Dictionary：{ "fallback": bool, "elapsed_ms": float, "pixels": int, "atlas_updated": bool }
 func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig) -> Dictionary:
 	var out := { "fallback": true, "elapsed_ms": -1.0, "pixels": 0, "atlas_updated": false }

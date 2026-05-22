@@ -179,29 +179,12 @@ extends Resource
 @export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
 
-# ─── DataCore（dots-foundation-and-weather-migration） ─────────────
-# 类 DOTS 数据架构基石灰度开关，默认全 false（走 legacy 路径）。
-#  - use_data_core：是否在 _setup_sus 内调用 DCWorld.bind_map_data，把 MapData
-#    25 个 PackedArray 按引用挂入 World，作为 cell-level component。注意 bind
-#    本身零拷贝、无副作用，false 时 World 仍创建但不 bind，未来 system 通过
-#    world.is_bound() 判断走哪条路径。
-#  - use_data_core_weather：是否启用 weather_refresh 的 front-level 镜像同步
-#    （sync_fronts_to_world）。默认 false；ON 时 commit 末尾会把 _active_fronts
-#    镜像到 World 中的 front-level component，下游 system 可通过 query 遍历。
-#    依赖 use_data_core=true，否则 World 未 bind，front 池无法落位。
-#  - use_data_core_climate：在 use_data_core=true 的前提下，让 climate 4 个 SoA
-#    sub-pass（_climate_pass_a_soa / _b_soa / _ocean_water_pass_soa /
-#    _ocean_land_pass_soa）通过 DCWorld.view_f32/u8/i32(comp_id) 取 cell-level
-#    component 数组（替代 map.xxx_arr 直接字段访问）。本开关不改算法/数值，
-#    仅切换数据访问入口；行为应零回归（bind_map_data 保证 view 与 PackedArray
-#    同引用）。目的是统一所有 hot path 数据通道，为未来 C++/GDExtension 接管
-#    hot loop 扫前置。
-# CLI：main.gd 解析 --data-core / --no-data-core / --data-core-climate /
-# --no-data-core-climate，覆盖这三个开关；--validate-weather 用于做 30 day
-# 行为对照测试（legacy vs DataCore 镜像 baseline）。
-@export var use_data_core: bool = true
-@export var use_data_core_weather: bool = true
-@export var use_data_core_climate: bool = true
+# ─── DataCore（已删除字段）─────────────────────────────────────────
+# use_data_core / use_data_core_weather / use_data_core_climate 已在
+# dots-flag-prune-pr1（2026-05-22）随 hot-path 折叠一同删除——DataCore
+# 已恒走单路径（World 始终 bind，weather/climate 始终走 DCWorld view 镜像）。
+# CLI --data-core / --no-data-core / --data-core-climate 等开关同步已废弃，
+# 调用点会 push_warning 提示 deprecated。
 
 const NATIVE_MODE_OFF: int = 0
 const NATIVE_MODE_SHADOW: int = 1
@@ -217,23 +200,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
 @export var native_shadow_diff_enabled: bool = true
 
-# Phase B.3 / dots-migration-roadmap §3 B2：ViewAdapter 默认走 .Cell 实现
-# （直读 HexCell 强类型成员，与 legacy 行为完全等价）；为 true 时切到
-# .World 实现（从 DCWorld.view_f32 拿 PackedArray 引用）。
-# 依赖：use_data_core=true 才生效；否则 silently 退到 .Cell。
-# 详见 docs/dots-view-adapter-guide.md。
-@export var use_world_view_adapter: bool = true
-
-# Phase C.4 / dots-migration-roadmap §3 A3：调度器切换。
-# false（默认）：走既有 SlicedUpdateScheduler，6 个 SusJob 沿用既有路径
-# true        ：走 DCSystemScheduler，6 个 system 通过 DCSystem wrapper 注册，
-#                自动跑 reads/writes 拓扑排序 + debug 校验
-# 切换是非破坏性的（DCSystem wrapper 内部仍 forward 到原 SusJob 实现），
-# 主要价值是开启 reads/writes 自动校验 + 拓扑序统一。
-# 详见 docs/dots-system-design.md（C.5 文档）。
-#
-# 任务 6（dots-completion）：默认 false → true。earth_like.tres 生产 profile 已启用与验证。
-@export var use_dc_system_scheduler: bool = true
+# ─── ViewAdapter / DCSystemScheduler（已删除字段）─────────────────────
+# use_world_view_adapter / use_dc_system_scheduler 已在 dots-flag-prune-pr1
+# （2026-05-22）随 hot-path 折叠一同删除——ViewAdapter 恒走 World 路径，
+# DCSystemScheduler 恒挂载（reads/writes 拓扑校验始终启用）。
+# 注：feature_flags.gd 上 use_world_view_adapter 仍保留为 sentinel-true 让
+# DCFeatureFlags.is_on() 在字段缺失时正确返回 true；is_known/find/owner_of
+# API 行为与原先一致。
 
 # Native-normal simulation budget profile. Strict 1ms can still be restored per
 # resource, but the default favors completing lightweight DOTS/native transactions
@@ -248,103 +221,50 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.10, 800.0, 0.05) var sim_upload_slice_budget_ms: float = 1.5
 @export_range(0.25, 1600.0, 0.05) var sim_budget_warn_ms: float = 2.0
 
-# ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags ────────────
-#
-# 6 个 hot pass 的 C++ 化开关。
-#
-# 任务 5（dots-completion）：默认值从 false 升为 true（3 类高优先及 P2/P3）。
-# - earth_like.tres 生产 profile 实际上已全部启用（serialized override），本次仅同步
-#   默认值，让新建 ClimateProfile / 测试 profile 也默认走 C++ 路径。
-# - C++ stub 返回 -1.0 时，weather/ocean/sea_ice pass 会透明 fallback 到 GDScript。
-# - climate_pass_a / wind_field 仍为 false，原因详下方注释（前置未达成）。
-#
-# 与既有 use_gdext_climate（Pass-A C++ 化）配套；与 use_data_core_climate
-# 是不同维度（use_data_core 控制是否经 DCWorld，use_gdext_* 控制是否经 C++）。
-@export var use_gdext_weather_field: bool = true   # F.1 P0：13ms → < 2ms
-@export var use_gdext_ocean_water:  bool = true    # F.2a P1：3.4ms → < 0.5ms
-@export var use_gdext_ocean_land:   bool = true    # F.2b P1：3.4ms → < 0.5ms
-@export var use_gdext_climate_pass_b: bool = true  # F.3 P1：5.2ms → < 0.5ms
-@export var use_gdext_sea_ice:      bool = true    # F.4 P2：5.1ms → < 0.5ms
-@export var use_gdext_sea_ice_atlas_prepare: bool = true # C++ R8 sea-ice atlas buffer prepare
-@export var use_gdext_transpiration: bool = true   # F.5 P2：3.2ms → < 0.3ms
-@export var use_gdext_weather_front: bool = true   # F.6 P3：3.0ms → < 0.5ms
-# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）─────────────────────
-# _distribute_weather_field_to_cells 与 _build_field_summary_fronts 下沉到
-# DCWorldExt。两条 flag 独立切换；C++ 端持久化 prev_seeds / prev_membership 跨
-# tick 维护，flag 切换时通过 reset_weather_summary_state() 清空避免新旧实现污染。
-@export var use_gdext_weather_distribute: bool = true  # dist：11.6ms → < 1.5ms
-@export var use_gdext_weather_summary: bool = true     # summary：17.8ms → < 3.0ms
-# Block B（Master 手册 §4）：ocean_currents wind solver C++ 化。
-# 当前 GDScript PhysicalCirculationSolver.solve_wind_field 在 SUS 切片下
-# p95=35.55ms（实测 dots-master-execution-handbook §3.3 ground truth）。
-# 目标：C++ DCWorldExt.run_wind_field_pass —— p95 < 5ms。
-# 默认 true：C++ wind/upwelling path 已接入；返回 fallback 时仍走 GDScript。
-# 验收：docs/dots-wind-validation.md 描述 SAME_SOURCE A/B 协议；触发开启条件为
-# C++ 实现 + 1000-tick fronts mean_diff ≤ 0.005 + p95 ≤ 5ms。
-@export var use_gdext_wind_field: bool = true       # Block B P1：35.55ms → < 5ms
-@export var use_gdext_physical_circulation: bool = true # C++ SLP/wind/upwelling path
-@export var use_gdext_season_refresh: bool = true   # C++ season refresh path when available
-# ─── Phase B+（2026-05-21）：season refresh round 一次跨界整 round 切片调度 ───
-# 默认 false：先做 A/B 等价性验收（1000-tick diff，所有 cell terrain/landform/
-# vegetation/cover/moisture epsilon=0/1e-5）+ perf snapshot 通过后再翻 true。
-# B+ 路径下 GDScript 跨界次数从 12→1，facade sync 从 8→1，history push 从 8→1
-# （行为变更：round 末尾仅 1 次 push 修复 ring buffer 同 round 多次写入的污染）。
-# 依赖 use_gdext_season_refresh=true（B+ 路径仍走单 stage gdext helper 体内的
-# C++ 算法，仅调度层升级；二者必须同时启用）。
-@export var use_gdext_season_round: bool = false
+# ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags（已删除）─
+# 以下 10 个 flag 在 dots-flag-prune-pr1（2026-05-22）一并删除，调用点折叠为
+# 恒走 ext != null + has_method 探测分支（C++ 不可用时 hot pass 内部仍透明
+# fallback 到 GDScript，不需 caller 端 flag）：
+#   use_gdext_weather_field / ocean_water / ocean_land / climate_pass_b /
+#   sea_ice / sea_ice_atlas_prepare / transpiration / weather_front /
+#   weather_distribute / weather_summary
+# weather_system.gd 内部的 _use_gdext_weather_field/distribute/summary 私有
+# 字段保留（仅作为 commit 重算 saved/restore 工具），赋值改为恒走 ext+has_method
+# 探测；_use_gdext_weather_front 是死字段，已删除。
+# Block B（Master 手册 §4）：ocean_currents wind solver C++ 化（已删除 flag）。
+# use_gdext_wind_field / use_gdext_physical_circulation / use_gdext_season_refresh
+# 已在 dots-flag-prune-pr1 round 2（2026-05-22）随 hot-path 折叠一同删除——
+# 三个 hot pass 恒走 ext != null + has_method 探测分支，C++ 返回 fallback 或
+# ext 未 bind 时透明 fallback 到 GDScript。
+# ─── Phase B+（已删除）：use_gdext_season_round 已固化为单路径 ──
 
-# ─── dots-slp-psi-cpp (plan/dots-slp-psi-cpp) — physical-circulation final push ──
-# Sink remaining GDScript stages (1/SLP, 3+4+5/PSI) into DCWorldExt.
-# Rollout order: enable use_gdext_slp_field first (validate 7 days A/B
-# numeric drift <= 1e-3), then enable use_gdext_psi_solver (validate 7
-# days A/B |ocean_current| <= 5%, angle <= 5deg). Defaults to false until
-# Same-Source A/B passes; falls back to GDScript path on any error.
-# Targets: stage 1 single slice <= 3ms; stage 3 (init+iters+finalize
-# fused) single slice <= 5ms.
-@export var use_gdext_slp_field:   bool = true       # stage 1 / SLP solver C++
-@export var use_gdext_psi_solver:  bool = true       # stage 3+4+5 fused PSI solver C++
+# ─── dots-slp-psi-cpp（已删除 flag）— physical-circulation final push ──
+# use_gdext_slp_field / use_gdext_psi_solver 已在 dots-flag-prune-pr1 round 2
+# （2026-05-22）随 hot-path 折叠一同删除——stage 1 (SLP) 与 stage 3+4+5
+# (PSI) 恒走 ext != null + has_method 探测分支，C++ 返回 fallback 时透明
+# fallback 到 GDScript。
 
-# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA 路径 ───
-# C++ 端 run_weather_summary_fronts_pass 在原 out["fronts"]: Array[Dict] 之外
-# 额外输出 out["fronts_soa"]: Dict{front_*: Packed*Array}（23 列，命名与
-# scripts/data_core/fronts_schema.gd FRONTS_SCHEMA cpp_name 严格 1:1）。
-# 启用后 GDScript 端 _unpack_summary_dict_to_front 改走列扫描，跨语言
-# Variant entry 数从 ~17*N → ~24 ref（与 N 无关），目标 marshalling ~90% 削减。
-# 默认 false：先做 1000-tick A/B 验收（fronts 字段 epsilon ≤ 1e-5）+
-# elapsed_ms 不退化 + once-log "fronts_soa path ACTIVE" 后再翻 true。
-# 任意一帧 fronts_soa 缺失或字段不全自动 fallback 走 Array[Dict] 路径。
-@export var use_gdext_fronts_soa: bool = false
+# ─── Phase A.1（dots-total-cpp roadmap，已删除）：fronts SoA 路径 ───
+# use_gdext_fronts_soa 已随 hot-path 折叠一同删除——weather summary fronts
+# 路径恒走 SoA Dict 探测（字段缺失时自动回退 Array[Dict]）。
 
-# ─── Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID ─────────────────
-# 开启后 weather_system / map_generator 持久化一份 KnobsHandle（C++ 端 POD
-# struct + dirty-write 缓存 Dict）。ClimateProfile.changed 信号触发 dirty-
-# write；hot path 4 个 _build_*_knobs 直接拿 KnobsHandle.to_*_knobs_dict()
-# 缓存 Dict（CoW 引用 ++，标量段稳态零分配），外层 merge 动态 PackedArray
-# ref（neighbor_indices / _summary_q_cache / _dist_acc_snow_cache / ...）。
-#
-# 实测节省幅度：~71 个 hot-path 标量 Variant 装箱 / 帧 → ClimateProfile.changed
-# 触发时一次（稳态 ≤1 Hz），跨语言 marshalling ≈ 0.05-0.1ms / 帧（小但稳定）。
-#
-# 默认 false：先做 1000-tick A/B 验收（4 个 to_*_knobs_dict 输出与原
-# build_*_knobs 标量段 bit-equal）。
-# 任一 KnobsHandle 字段缺失 / 类型不匹配自动 fallback 到 GDScript 原 builder。
-@export var use_gdext_resident_knobs: bool = false
+# ─── Phase A.3（dots-total-cpp roadmap，已删除）：常驻 knobs RID ─────────
+# use_gdext_resident_knobs 已随 hot-path 折叠一同删除——weather_system 恒走
+# ClassDB.class_exists('KnobsHandle') 探测，Class 不可用时透明 fallback 到
+# GDScript build_*_knobs。
 
-# ─── DOTS-Final-Push（plan/dots-final-push）：stage_b 三件套 + atlas pack ──
-# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
+# ─── DOTS-Final-Push stage_b 合并（已删除 flag）──────────────────────────# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
 # C++ 不可用时入口分支会自动 fallback 到 GDScript 并打印一次 UNAVAILABLE。
 # stride 字段沿用现有 weather_albedo_stride / weather_vegetation_dynamics_stride
 # / weather_feedback_stride，无需新增。
-@export var use_gdext_albedo: bool = true               # _apply_albedo_pass C++ 化（dots-final-push 验收 PASS，默认开启）
-@export var use_gdext_vegetation_dynamics: bool = true  # _apply_vegetation_dynamics C++ 化（dots-final-push 验收 PASS，默认开启）
-@export var use_gdext_climate_feedback: bool = true     # _apply_weather_to_map_feedback_pass C++ 化（dots-final-push 验收 PASS，默认开启）
-# 方案 B：stage_b 三段合并（plan/stage-b-combine）。打开后 refresh_daily_stage_b
-# 走单 cpp call run_stage_b_pass，消除 GDScript 端 albedo/veg_dyn/feedback 三段
-# 各自的 pack/unpack 围栏 + refresh_slots_from_map 三次重复调用，目标 stage_b
-# 累加 6–15ms → ≤ 1.5ms。前置条件：use_gdext_albedo / use_gdext_vegetation_dynamics
-# / use_gdext_climate_feedback 三个独立路径已 ACTIVE（first run 日志已确认）；
-# 上线前需完成 SAME_SOURCE A/B 30 tick 验收（标量 |Δ| ≤ 0.05、长期均值 |Δ| ≤ 0.01）。
-@export var use_gdext_stage_b_combined: bool = true     # stage_b albedo+veg_dyn+feedback 合并单 cpp call
+# ─── Phase F stage_b 三件套（已删除）─────────────────────────────────
+# use_gdext_albedo / use_gdext_vegetation_dynamics / use_gdext_climate_feedback
+# 已在 dots-flag-prune-pr1（2026-05-22）随 hot-path 折叠一同删除。
+# 三段独立 C++ 化路径默认恒走 ext != null + has_method 探测分支；
+# stage_b_combined 入口仍保留（合并入口 + 三段独立 ext 探测互补共存）。
+# refresh_daily_stage_b 走单 cpp call run_stage_b_pass。
+# use_gdext_stage_b_combined 已在 dots-flag-prune-pr1 round 2（2026-05-22）随
+# hot-path 折叠一同删除——stage_b 合并入口恒走 ext + has_method 探测分支。
 # ─── plan/weather-refresh-cpp-all（PR-2 gd-facade-merge）─────────────────────
 # weather refresh daily 顶层一体化 C++ pass。打开后 map_generator.refresh_weather_daily
 # 走单 cpp call run_weather_refresh_daily_pass，把 field_solve / distribute /
@@ -354,140 +274,78 @@ const NATIVE_MODE_ACTIVE: int = 2
 # （或至少 ext bound + has_method 通过）。任何环节缺失 / rc<0 → 自动回退到现路径
 # （refresh_daily_stage_a + refresh_daily_stage_b 两段链），保证 bit-equal 兜底。
 # 默认 false：上线前需完成 SAME_SOURCE A/B soak 验收。
-@export var use_gdext_weather_refresh_daily: bool = true
-# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2）：unified fast tick ──────
-# native_daily_sim_mode=ACTIVE 时，把 weather_refresh_daily 的 4 组 super_knobs
-# 平铺进 run_native_daily_tick 的 bundle["weather_knobs"]，让 C++ 端在单次
-# 跨界内一并跑完 11 段 native_daily（climate_a/b + ocean_water/land + sea_ice +
-# transpiration + albedo + veg_dyn + feedback + stage_b）+ 5 段 weather
-# （field_solve + distribute + summary_fronts + cyclone_wake + stage_b 内嵌）
-# 共 16 段。理论节省：1 次 Variant marshalling fix-cost ≈ 50-100μs/帧。
-# 前置条件：use_gdext_weather_refresh_daily ACTIVE + native_daily_sim_mode=ACTIVE
-# + _weather_system 与 weather builder helper 全部可达。任意一项缺失自动退回
-# 不嵌入 weather_knobs 的旧 bundle，bit-equal 兜底（C++ 端 bundle.has 分支自然短路）。
-# 默认 false：上线前需完成 SAME_SOURCE 1000-tick A/B（fronts diff ≤ 1e-5 +
-# breakdown 字段集合一致 + elapsed_ms 不退化）。
-@export var use_gdext_unified_fast_tick: bool = false
-@export var use_gdext_enum_atlas_pack: bool = true      # enum_atlas_upload pack C++ 化
+# use_gdext_weather_refresh_daily 已在 dots-flag-prune-pr1 round 2（2026-05-22）随
+# hot-path 折叠一同删除——weather refresh daily 顶层一体化入口恒走 ext + has_method
+# 探测分支，任一环节缺失或 rc<0 透明回退到现路径（refresh_daily_stage_a +
+# refresh_daily_stage_b 两段链）。
+# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2，已删除）─────────────────
+# use_gdext_unified_fast_tick 已在 dots-flag-prune-pr1（2026-05-22）随 hot-path
+# 折叠一同删除——unified fast tick 注入 weather_knobs 进 native_daily_bundle
+# 的路径是新功能（验收前 default=false），本轮重构按"删未上线灰度"策略一并清理。
+# ─── DOTS-Final-Push 与 atlas pack（已删除）─────────────────────────────────
+# use_gdext_enum_atlas_pack 已在 dots-flag-prune-pr1（2026-05-22）一并删除——
+# enum_atlas_upload pack C++ 化已恒走单路径。
 
-# ─── Phase C.1（plan/dots-total-cpp）：System schedule graph 静态 DAG ──────
-# 把 C++ 端 run_native_daily_tick 内部 line 960-1063 的 11 段手写
-# `if (bundle.has("<X>_knobs"))` 模板代码，抽象为 system_schedule.cpp 的
-# SCHEDULE_GRAPH[] 静态表 + dispatch_system_schedule loop。算法、读写字段、
-# breakdown 语义零改动；输出 dict 必须 bit-equal。
-# 注入路径：map_generator._build_native_daily_bundle 内 flag=true 时把
-# bundle["use_system_schedule"]=true，C++ 端在 line 958 后取这个 bool 走双轨
-# if/else（true=dispatch loop，false=原 11 段 if-chain 保留作为 fallback）。
-# 受益：C.3 job_graph 可基于同一个 SCHEDULE_GRAPH 自动拓扑分组（climate/ocean/
-# stage_b/weather 粗粒度依赖），"加新 pass = 在表里加一行" 的开发体验。
-# 默认 false：上线前需完成 SAME_SOURCE 1000-tick A/B（breakdown 全 ms 字段
-# epsilon 1e-5 + fronts bit-equal + succession_indices/to_veg 完全相等）。
-@export var use_gdext_system_schedule: bool = false
+# ─── Phase C.1（plan/dots-total-cpp，已删除）：System schedule graph 静态 DAG ──
+# use_gdext_system_schedule 已在 dots-flag-prune-pr1（2026-05-22）一并删除——
+# 调度路径恒走单路径（C++ 端的 11 段 if-chain fallback 仍保留作为内部实现细节，
+# 不再需要 caller 端 flag 控制）。
 
-# ─── DOTS-Total-CPP（plan/dots-total-cpp）：剩余 GDScript 残余下沉 C++ ────
-# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick 数值 |Δ| ≤ 1e-5 或像素
-# bytes_match_ratio ≥ 99.5% 验收。C++ 不可用时入口自动回退到 GDScript 并
-# 打印一次 UNAVAILABLE / fallback 日志。
-#  • use_gdext_ocean_currents_pixel: bake_ocean_currents_slice 像素填充下沉
-#  • use_gdext_weather_field_pixel: bake_weather_field_only 像素填充下沉
-#  • use_gdext_sea_ice_atlas_pack: sea_ice_atlas_upload pack C++ 化（与现有
-#    use_gdext_sea_ice_atlas_prepare 互补：prepare 写权威 buffer，pack 走
-#    dirty-tile 增量打包）
-@export var use_gdext_ocean_currents_pixel: bool = true # 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
-@export var use_gdext_weather_field_pixel: bool = true  # weather field 像素 baker C++ 化（dots-final-push 验收 PASS，默认开启）
-@export var use_gdext_sea_ice_atlas_pack: bool = true   # sea_ice_atlas_upload pack C++ 化（dots-final-push 验收 PASS，默认开启）
+# ─── DOTS-Total-CPP（plan/dots-total-cpp，已删除）：剩余 GDScript 残余下沉 C++ ─
+# use_gdext_ocean_currents_pixel / use_gdext_weather_field_pixel /
+# use_gdext_sea_ice_atlas_pack 已在 dots-flag-prune-pr1（2026-05-22）随
+# hot-path 折叠一同删除——所有像素 baker 与 atlas pack 已恒走 C++ 单路径
+# （C++ 不可用时 baker 内部仍透明 fallback 到 GDScript，不需 caller 端 flag）。
 
-# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode）─────────────────
-# 把 4 张运行期 atlas（dynamic_cell / ecology_visual / dyn_atlas_smooth /
-# ice_state）从"全图扫 + sig 比对"改造为"sim 端推 dirty mask + 仅扫 dirty cell"。
-#
-# dirty_push_enabled：开启 sim → DCWorld._dirty_cell_mask 推送，baker
-#   入口 read_and_clear_dirty_mask() 拿到 dirty cells 喂给 chunk_step；保留
-#   sig 二防线避免 GPU upload 被无效触发。默认 true（DCWorld 端漏斗 + mask
-#   已落地；baker 端只在 use_data_core 真 bind 后才走 mask 路径，否则 fallback
-#   到 all_cells）。
-#
-# cpp_atlas_encode_enabled：DCWorldExt 加 4 个 encode_* pass（C++ + SIMD），
-#   baker 入口 use_ext 路由。默认 false：上线前需 SAME_SOURCE A/B 200 tick
-#   像素 bit-identical 验收，且 ext 必须 has_method('encode_dynamic_cell_atlas')。
-@export var dirty_push_enabled: bool = true                     # plan/dirty-push-atlas-encode 阶段 D：baker 入口走 mask 消费
-@export var cpp_atlas_encode_enabled: bool = false              # plan/dirty-push-atlas-encode 阶段 F：DCWorldExt encode_* pass 启用
-# plan/atlas-pipeline-cpp（2026-05-20）：4 张运行期 atlas 全管线 C++ 化。
-# true 时 dynamic_visual_atlas_upload_system 每 tick 只调一次
-# DCWorldExt.run_atlas_pipeline_step(opts)，C++ 内部完成 dirty 消费 / value-diff
-# / 1-跳膨胀 / CSR 打包 / 4 张 atlas encode / 4-phase 调度节流；GD 端只剩
-# ImageTexture.update 薄壳。false 时退化到旧的 GD 4-phase 状态机 +
-# cpp_atlas_encode_enabled 控制的 per-phase encode-only 下沉。
-@export var cpp_atlas_pipeline_enabled: bool = true             # plan/atlas-pipeline-cpp 阶段 G：4 张 atlas pipeline 全管线 C++ 化
+# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode，已删除 flag）──────
+# 4 张运行期 atlas（dynamic_cell / ecology_visual / dyn_atlas_smooth /
+# ice_state）baker 改造：sim 端 setter / DCWorld write API 漏斗式推送
+# cell-level dirty mask。dirty_push_enabled / cpp_atlas_encode_enabled /
+# cpp_atlas_pipeline_enabled 已在 dots-flag-prune-pr1 round 2（2026-05-22）一并
+# 删除——baker 恒走 DCWorld.read_and_clear_dirty_mask() 拿 dirty cells（mask 不
+# 可用时透明 fallback 到 all_cells）；DCWorldExt encode_* / run_atlas_pipeline_step
+# 恒走 ext + has_method 探测分支（ext 缺失时自动回退到 GDScript mask 路径或
+# 旧 GD 4-phase 状态机）。
+# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21，已删除 flag）：SIMD 内核 + 线程兜底 ──────
+# use_gdext_pass_b_simd / use_gdext_ocean_water_simd / use_gdext_ocean_land_simd /
+# use_gdext_thread_fallback 已在 dots-flag-prune-pr1 round 2（2026-05-22）随 hot-path
+# 折叠一同删除——SIMD 内核与 thread fallback 已固化为 C++ 端内部实现细节
+# （C++ 内部根据 CPU 特性 / 数据规模自动选择 scalar/SIMD/threaded 三档执行路径），
+# 不再需要 caller 端 flag 控制。自愈路径（dirty-rect 每 64 tick 全图回退）仍在
+# baker 内部保持。
 
-# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：SIMD 内核 + 线程兜底 ──────
-# 上一轮 dots-* 系列把 hot pass 全部 C++ 化；本轮在 C++ 内部走 AVX2 SIMD 8-lane
-# 路径（复刻 bench_pass_a_full_simd 模板），每个 hot pass 独立 flag，默认 false。
-# A/B 验收要求：1000-tick mean ms 优于 scalar 路径 ≥ 30%，年度统计指标（年均温 /
-# 年均降水 / 海冰）|Δ| < 0.5%，玩家观感无差异；ulp ≤ 4 浮点偏差允许（SIMD reorder
-# 引入）。任一前置 use_gdext_* C++ 化未开启时 simd flag 静默忽略。
-#
-# 自愈：dirty-rect 路径每 64 tick 强制走一次全图回退，避免 dirty 漏标导致
-# 视觉残影（路径已封在 baker 内，无独立 flag）。
-@export var use_gdext_pass_b_simd: bool = false        # climate Pass-B AVX2 SIMD path
-@export var use_gdext_ocean_water_simd: bool = false   # ocean water pass AVX2 SIMD path
-@export var use_gdext_ocean_land_simd: bool = false    # ocean land pass AVX2 SIMD path
-@export var use_gdext_thread_fallback: bool = false    # 总开关：SIMD 不达标时启用 WorkerThreadPool 降级
-
-# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：enum atlas upload 节流 ───
+# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21，已删除 flag）：enum atlas upload 节流 ───
 # Godot 4 没有 partial texture upload API（issue godotengine/godot#65762 未解决），
-# 即便 cpp 端 patch_enum_atlas_axes 早已做 dirty cell 比对，整图 RGB8 (~1.8MB)
-# GPU upload 在每天有 ≥1 个 dirty cell 时都会触发，单次 1.0-1.5ms。本 flag 打开后
-# baker 内部累积 dirty cell 总数 + 跳过次数，达到阈值（≥16 cells / ≥4 次 skip /
-# 距上次 flush ≥ 64 个 daily tick 自愈）才真正触发 image_create + texture.update；
-# 跳过的 tick 仅保留 cpu 端 _enum_atlas_data 最新（因 cpp patch 已写入），仅 GPU
-# 视觉延迟最多 N tick。视觉残影由季节切换 / save / screenshot 强制 flush + 64-tick
-# 自愈 兜底。前置条件：use_gdext_enum_atlas_pack 已 ACTIVE。
-# 默认 false：上线前需完成 1000-tick A/B perf + 视觉 soak（10 个游戏年度）验收。
-@export var use_atlas_dirty_throttle: bool = false      # enum atlas upload 节流（累积 dirty 阈值才 flush GPU）
+# 整图 RGB8 (~1.8MB) GPU upload 是 1.27ms 瓶颈。use_atlas_dirty_throttle 已在
+# dots-flag-prune-pr1 round 2（2026-05-22）随 hot-path 折叠一同删除——节流策略
+# 已下沉为 baker 内部实现细节（达阈值才 image_create + texture.update，
+# 视觉残影由 64-tick 自愈 + 强制 flush 钩子兜底），不再需 caller 端 flag。
 
-# ─── plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas dirty 编码 kill-switch ─
-# cpp run_atlas_pipeline_step 4 phase（DYNAMIC / ECOLOGY / SMOOTH / ICE）已全部走 dirty
-# 路径（dirty_indices 比对 + value-diff + 1-跳邻居膨胀）。本 flag 默认 true 与现行行为一致，
-# false 时 dvas_system 跳过传 dirty_indices 且 opts.force_full_encode=true，让 cpp 覆盖
-# dirty_path_used=false 强制 4 phase 全集编码（等价 cache_invalid 首帧路径），用于：
-#   1. SAME_SOURCE A/B 30 tick 像素 bit-equal 验证 dirty 路径无遗漏；
-#   2. 视觉残影排障入口（怀疑 dirty 漏标时切 false 排除嫌疑）。
-# 生产环境无理由切 false（dirty 路径已是 cpp 默认；切 false 会让 4 phase 整图编码每 tick
-# 触发，dyn smooth phase ~620k px 单 phase 耗时回到 0.5-1.0ms）。
-@export var use_gdext_dynamic_atlas_terminal_dirty: bool = true  # 任务 7：dynamic_visual_atlas dirty 编码 kill-switch（默认 true）
+# ─── plan/sim-2ms-simd-dirty-budget 任务 7（已删除 flag）：dynamic_visual_atlas 编码 ─
+# use_gdext_dynamic_atlas_terminal_dirty 已在 dots-flag-prune-pr1 round 2（2026-05-22）
+# 随 hot-path 折叠一同删除——cpp run_atlas_pipeline_step 4 phase 恒走 cpp 现行
+# dirty 路径（dirty_indices 比对 + value-diff + 1-跳邻居膨胀），不再提供 A/B
+# 对照 kill-switch。
 
-## Phase 1A — plan/sus-cpp-port：SUS 调度外壳 native 化总开关。
-## true 时 SusScheduler.tick / register_job / report_* forward 到 C++ SusSchedulerExt；
-## Job.run_slice() 仍跑 GDScript。Phase 1C（2026-05-22）：30+1000 tick A/B 验收 PASS，
-## 默认值翻 true（scalar diff 全 ≤ 0.1；terrain/dirty_mask/wind_y 假红已确认 EXPECTED）。
-## 切回 false 时走 GDScript 兜底双分支（A/B runner 临时覆盖用，生产无理由切）。
-@export var use_gdext_sus_scheduler: bool = true
+## ─── Phase 1A（plan/sus-cpp-port，已删除）：SUS 调度外壳 native 化总开关 ──
+## use_gdext_sus_scheduler 已在 dots-flag-prune-pr1（2026-05-22）随 hot-path
+## 折叠一同删除——SusScheduler/DCSystemScheduler 上的同名字段、10 处 hot-path if
+## 与失败 fallback 写回均同步清理，恒走 C++ 单路径（C++ 不可用时内部仍透明
+## fallback 到 GDScript Job.run_slice，不需 caller 端 flag）。
 
-# PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
-# 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。
-# 默认 false：在 storage 同源（PR-2.1.1 climate Pass-A 写路径下移）完成前，
-# 仅允许 opt-in 试验；PR-2.1.1 验收通过后默认 true，且 _DIAG_DISABLE_CPP_PASS_A
-# 整体可移除。详见 docs/dots-master-execution-handbook.md §3.2。
-@export var use_gdext_climate_pass_a: bool = true   # P0：~10ms → < 0.5ms（dots-final-push 验收 PASS，默认开启）
+# ─── PR-2.passA-unblock（已删除）──────────────────────────────────────────
+# use_gdext_climate_pass_a 已在 dots-flag-prune-pr1（2026-05-22）一并删除——
+# Pass-A C++ 化已恒走 ext != null + has_method 探测分支。
 
-# PR-2.3a HexCell facade（master 手册 §3.10.3）：
-# bake_world / 加载存档末尾给每个 cell 调用 cell.bind_world(world, use_hexcell_facade)。
-# 启用后，cell.<热字段> 的 setter 会同步到 world.write_*；getter 优先从 world 读。
-#
-# 任务 4（dots-completion）：默认从 false → true。前置条件已满足：
-#   1. weather_system.gd 16 行 AoS 双写已包到 if not _hexcell_facade_on（任务 2）
-#   2. map_generator.gd bake/tick 路径已分类，tick 写入由 setter 透传 SoA（任务 3）
-#   3. hex_cell.gd 21 字段 setter/getter 透传 infra 已就位（PR-2.3b）
-# 启用后 hot path cell.<field>= 自动等价 world.write_f32(cid, idx, v)。
-@export var use_hexcell_facade: bool = true
+# ─── PR-2.3a HexCell facade（已删除）──────────────────────────────────────
+# use_hexcell_facade 已在 dots-flag-prune-pr1（2026-05-22）一并删除——bind_world
+# 入口恒挂 facade，cell.<热字段> setter/getter 透传 World SoA 已是单路径行为。
 
-# DEPRECATED — superseded by SUS OceanCurrentsJob (sliced-update-scheduler
-# requirement 4.5). Field is kept on disk for save-file compatibility, but
-# MapGenerator emits a one-shot warning if it is set to anything other than
-# the default sentinel value (4) and otherwise ignores it. Use
-# `ocean_currents_period_ticks` / `ocean_currents_slice_count` below instead.
-@export_range(1, 4, 1) var ocean_current_refresh_seasons: int = 4
+# ─── DEPRECATED ocean_current_refresh_seasons（已删除）────────────────────
+# E 类废字段 ocean_current_refresh_seasons 已在 dots-flag-prune-pr1（2026-05-22）
+# 一并删除——MapGenerator 早已迁移到 SUS OceanCurrentsJob，本字段长期处于
+# warning sentinel 状态，本轮统一清理。请使用下方 ocean_currents_period_ticks /
+# ocean_currents_slice_count 配置 ocean current 切片节奏。
 
 # SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
 # Default 240 days keeps currents on a seasonal/slow layer. Lower → fresher

@@ -253,14 +253,17 @@ var _summary_regression_warned: bool = false
 # 通过 configure_gdext_acceleration() 同时注入（同一 ext 实例 + ClimateProfile 引用）。
 # F.6 fast-path 在 tick_one_day fronts 推进段（line ~282）触发，详见
 # scripts/weather/weather_system.gd::tick_one_day "1) 推进所有 front" 注释。
-var _use_gdext_weather_front: bool = false
+#
+# dots-flag-prune-pr1 (2026-05-22)：_use_gdext_weather_front 死字段已删除
+# （front_advect.gd 端现恒走 ext+has_method 探测单边分支）。其余 _gdext_front_*
+# 运行时统计字段保留。
 var _gdext_front_runs: int = 0
 var _gdext_front_fallbacks: int = 0
 var _gdext_front_total_ms: float = 0.0
 var _gdext_front_first_attempt_logged: bool = false
 var _gdext_front_signature_checked: bool = false
 var _gdext_front_signature_ok: bool = false
-# F.6 ClimateProfile 引用（用于读 use_gdext_weather_front flag）。
+# F.6 ClimateProfile 引用（仍用于 fronts_soa / resident_knobs 等保留 flag）。
 var _cp_for_front_flag: Resource = null
 
 # v11 在 tick_one_day 期间缓存当前 MapData 引用，供同一 tick 内部的 spawn
@@ -1163,10 +1166,9 @@ func _unpack_summary_soa_to_fronts(soa: Dictionary) -> Variant:
 # fallback 到 Array[Dict] 路径。集中在一个 helper 里供 summary 与 combined
 # 两处复用，避免重复 dispatch 逻辑分叉。
 func _build_fronts_from_rc(rc_dict: Dictionary) -> Array[WeatherFront]:
-	var soa_enabled: bool = false
-	if _cp_for_front_flag != null and "use_gdext_fronts_soa" in _cp_for_front_flag:
-		soa_enabled = bool(_cp_for_front_flag.use_gdext_fronts_soa)
-	if soa_enabled and rc_dict.has("fronts_soa"):
+	# dots-flag-prune-pr1 round 2: use_gdext_fronts_soa flag 已删除——恒走 SoA 探测路径，
+	# rc_dict.fronts_soa 存在时列扫描构造 WeatherFront，缺失时 fallback 到 Array[Dict]。
+	if rc_dict.has("fronts_soa"):
 		var soa: Dictionary = rc_dict["fronts_soa"]
 		# Phase B Z-lock 实测遥测：editor-only 包夹 unpack 调用，100 样本 ring 满 print。
 		var _telemetry_on: bool = OS.has_feature("editor")
@@ -1509,7 +1511,7 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 
 
 # ─── Phase A.2 unified fast tick：weather_knobs 嵌入 native_daily_bundle ─────
-# 当 native_daily_sim_mode=ACTIVE 且 use_gdext_unified_fast_tick=true 时，由
+# 当 native_daily_sim_mode=ACTIVE 时（unified_fast_tick 路径现恒走），由
 # map_generator._build_native_daily_bundle 调用本 helper 构造平铺 weather super_knobs，
 # 由 run_native_daily_tick 内部的 bundle["weather_knobs"] 分支自动转调
 # run_weather_refresh_daily_pass，省去 weather_refresh_job 独立的一次跨界。
@@ -2667,10 +2669,10 @@ func configure_cyclone_wake(enabled: bool, wake_days: int) -> void:
 	if not enabled:
 		ocean_current_perturbation.clear()
 
-# ─── Phase F.1：DCWorldExt 加速钩子注入 ──────────────────────────────────
+# ─── Phase F.1：DCWorldExt 加速钩子注入 ─────────────────────────
 # 由 map_generator 在 _data_core_world_ext 成功 bind 后调用一次（典型路径：
-# DataCore._setup_sus 末尾 / refresh_daily 首次调度前）。后续若 ext 失效或
-# climate_profile.use_gdext_weather_field 切到 false，再调一次本函数清空。
+# DataCore._setup_sus 末尾 / refresh_daily 首次调度前）。后续若 ext 失效可
+# 再调一次本函数 enabled=false 清空。
 #
 # 契约：
 #   ext == null 或 enabled == false  → run_weather_field_solve_slice 全程走
@@ -2678,7 +2680,6 @@ func configure_cyclone_wake(enabled: bool, wake_days: int) -> void:
 #   ext != null 且 enabled == true   → 只要 slice 是全量 (cell_budget ≥ n)
 #                                       就尝试 C++ 单 shot 路径，失败则透明
 #                                       fallback 到 GDScript 完成本 tick
-
 
 # 任务 2（dots-completion）：HexCell facade 启用时关掉 hot loop AoS 双写。
 # - main / map_generator 在 ClimateProfile.use_hexcell_facade=true 时调用本方法。
@@ -2699,36 +2700,31 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 	# climate_anomaly, season_phase) 6 参数，新签名只剩 (knobs) 1 参数。stale .dll
 	# 下 has_method=true 但 binding 拒调 → rc=null → float(null)=0.0 → 误判 success
 	# → SoA 静默不写。下面用 get_method_list 验证实际参数数 = 1。
+	#
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_weather_field/distribute/summary
+	# 三个 cp 字段已删除——赋值现恒走 ext+has_method+sig 探测（仅保留
+	# enabled 参数作为 caller 主动 kill-switch）。
 	var sig_ok: bool = _validate_weather_field_signature(ext)
 	_use_gdext_weather_field = enabled and ext != null and ext.has_method("run_weather_field_solve_pass") and sig_ok
 	_gdext_field_warned_fallback = false
-	# F.6：cache cp reference 用于 advect 段动态读 use_gdext_weather_front。
-	# cp 为 null 时（旧 caller），F.6 fast-path 永远不触发（保持向后兼容）。
+	# F.6 / fronts_soa / resident_knobs：cache cp reference 供 advect / soa / knobs 同步读。
 	_cp_for_front_flag = cp
 	if _use_gdext_weather_field:
-		print("[weather] gdext acceleration ON (use_gdext_weather_field=true; class=DCWorldExt)")
+		print("[weather] gdext acceleration ON (class=DCWorldExt)")
 	elif ext != null and enabled and not sig_ok:
 		# sig probe 已经 push_warning 过具体的 args 数；这里再加一条总结
 		push_warning("[weather] gdext acceleration DISABLED for this session: stale .dll signature mismatch (rebuild gdext to enable)")
 	elif ext != null and enabled:
 		push_warning("[weather] gdext acceleration requested but ext lacks run_weather_field_solve_pass; staying on GDScript path")
 
-	# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）──────────────────
-	# dist + summary 两个 pass 的能力探测：方法存在 + 签名 arg-count = 1 + climate
-	# profile 开关 true。任一失败镜像 flag = false → 永远走 GDScript fallback。
-	# cp == null（旧 caller / 测试场景）默认 true 保留向后兼容。
-	var dist_cp_flag: bool = true
-	var summary_cp_flag: bool = true
-	if cp != null and "use_gdext_weather_distribute" in cp:
-		dist_cp_flag = bool(cp.use_gdext_weather_distribute)
-	if cp != null and "use_gdext_weather_summary" in cp:
-		summary_cp_flag = bool(cp.use_gdext_weather_summary)
-
+	# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────────
+	# dist + summary 两个 pass 的能力探测：方法存在 + 签名 arg-count = 1。任一失败镜像 flag
+	# = false → 永远走 GDScript fallback。
 	var dist_sig_ok: bool = _validate_weather_distribute_signature(ext)
 	var summary_sig_ok: bool = _validate_weather_summary_signature(ext)
-	_use_gdext_weather_distribute = enabled and ext != null and dist_cp_flag \
+	_use_gdext_weather_distribute = enabled and ext != null \
 			and ext.has_method("run_weather_distribute_pass") and dist_sig_ok
-	_use_gdext_weather_summary = enabled and ext != null and summary_cp_flag \
+	_use_gdext_weather_summary = enabled and ext != null \
 			and ext.has_method("run_weather_summary_fronts_pass") and summary_sig_ok
 	_gdext_dist_warned_fallback = false
 	_gdext_summary_warned_fallback = false
@@ -2737,33 +2733,29 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 		ext.reset_weather_summary_state()
 
 	if _use_gdext_weather_distribute:
-		print("[weather] gdext distribute ON (use_gdext_weather_distribute=true)")
-	elif ext != null and enabled and dist_cp_flag and not dist_sig_ok:
+		print("[weather] gdext distribute ON")
+	elif ext != null and enabled and not dist_sig_ok:
 		push_warning("[weather] gdext distribute DISABLED: stale .dll signature mismatch")
 	if _use_gdext_weather_summary:
-		print("[weather] gdext summary ON (use_gdext_weather_summary=true)")
-	elif ext != null and enabled and summary_cp_flag and not summary_sig_ok:
+		print("[weather] gdext summary ON")
+	elif ext != null and enabled and not summary_sig_ok:
 		push_warning("[weather] gdext summary DISABLED: stale .dll signature mismatch")
 
-	# 任务 4（dots-completion）：从 ClimateProfile.use_hexcell_facade 同步到本系统的
-	# _hexcell_facade_on 状态位。启用后 hot loop 跳过 16 行 AoS 双写（任务 2 已埋好分支）。
-	# cp 为 null（旧 caller / 测试场景）时保留默认 false，向后兼容。
-	if cp != null and "use_hexcell_facade" in cp:
-		_hexcell_facade_on = bool(cp.use_hexcell_facade)
+	# dots-flag-prune-pr1 (2026-05-22)： use_hexcell_facade 已删除——facade 现恒启用（
+	# DataCore world 已恒 bind，hot loop 跳过 16 行 AoS 双写，cell 字段读全部走 SoA）。
+	if cp != null:
+		_hexcell_facade_on = true
 		if _hexcell_facade_on:
 			print("[weather] hexcell facade ON (skip AoS double-write in hot loop)")
-
-	# ─── Phase A.3：常驻 KnobsHandle 装配 ─────────────────────────────────
-	# 启用条件（任一失败永久 fallback 到 GDScript builder）：
-	#   1. cp.use_gdext_resident_knobs == true
+	# ─── Phase A.3：常驻 KnobsHandle 装配 ────────────────────────
+	# dots-flag-prune-pr1 round 2: use_gdext_resident_knobs flag 已删除——恒走 ext +
+	# ClassDB.class_exists('KnobsHandle') 探测分支。启用条件（任一失败永久 fallback 到
+	# GDScript builder）：
+	#   1. enabled 整体启用且 ext != null
 	#   2. ClassDB 内有 "KnobsHandle" 类（rebuild 后 stale .dll 无此类则 instantiate 失败）
-	#   3. ext != null 且 enabled 整体启用
 	_knobs_handle = null
 	_knobs_handle_first_use_logged = false
-	var resident_knobs_flag: bool = false
-	if cp != null and "use_gdext_resident_knobs" in cp:
-		resident_knobs_flag = bool(cp.use_gdext_resident_knobs)
-	if enabled and ext != null and resident_knobs_flag:
+	if enabled and ext != null:
 		if ClassDB.class_exists("KnobsHandle"):
 			_knobs_handle = ClassDB.instantiate("KnobsHandle")
 			if _knobs_handle != null and _knobs_handle.has_method("invalidate_all"):
@@ -2772,15 +2764,14 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 				_knobs_handle.invalidate_all()
 				_push_resident_knobs_from_cp(cp)
 				# 连接 ClimateProfile.changed 信号（Resource 内置）→ 段级 invalidate
-				if cp.has_signal("changed") and not cp.changed.is_connected(_on_climate_profile_changed_for_knobs):
+				if cp != null and cp.has_signal("changed") and not cp.changed.is_connected(_on_climate_profile_changed_for_knobs):
 					cp.changed.connect(_on_climate_profile_changed_for_knobs.bind(cp))
-				print("[weather] gdext resident knobs ON (use_gdext_resident_knobs=true; class=KnobsHandle)")
+				print("[weather] gdext resident knobs ON (class=KnobsHandle)")
 			else:
 				push_warning("[weather] KnobsHandle instantiate returned invalid object; resident knobs DISABLED")
 				_knobs_handle = null
 		else:
-			push_warning("[weather] use_gdext_resident_knobs=true but ClassDB lacks 'KnobsHandle' (stale .dll); resident knobs DISABLED. REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'")
-
+			push_warning("[weather] ClassDB lacks 'KnobsHandle' (stale .dll); resident knobs DISABLED. REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'")
 # Stale .dll probe：验证 run_weather_field_solve_pass 实际签名。旧 stub 6 参，新
 # 实装 1 参 (Dictionary knobs)。不匹配时 push_warning 一次 + 返回 false 让外层
 # 永久走 GDScript fallback。

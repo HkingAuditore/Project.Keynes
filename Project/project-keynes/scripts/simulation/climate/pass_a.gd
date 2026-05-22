@@ -44,7 +44,7 @@ func _init(generator) -> void:
 func run(map: MapData, season_phase: float) -> void:
 	if _generator == null:
 		return
-	# Future: switch by cp.use_soa_pipeline / cp.use_data_core_climate
+	# Future: switch by cp.use_soa_pipeline (use_data_core_climate has been removed in dots-flag-prune-pr1)
 	# Currently: still goes through generator._climate_pass_a / _soa
 	pass
 

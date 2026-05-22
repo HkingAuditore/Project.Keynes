@@ -1,5 +1,12 @@
 # Phase B+ 验收 SOP — season_refresh full-round single-call
 
+> **⚠️ DEPRECATED（dots-flag-prune-pr1，2026-05-22）**：
+> 本文档描述的 `use_gdext_season_round` / `use_gdext_season_refresh` flag 验收闭环
+> 已随 flag 一同退役。所有相关 flag（含 SIMD 三件套 / fronts_soa / resident_knobs / 
+> stage_b_combined / pipeline_enabled 等 18 项）均已在 ClimateProfile 上删除字段、
+> 在代码中折叠为单路径，C++ ext 不可用时各 hot pass 内部仍透明 fallback 到 GDScript。
+> 文档归档保留供溯源；勿再按本 SOP 操作（hotkey / 入口函数已删除）。
+>
 > 本文档对应 `.codebuddy/plan/dots-final-frontier-b-plus/`（Phase B+ 计划）。
 > 与既有 `README.md` 的 SAME_SOURCE / VS_LEGACY 验收套件**完全独立**，
 > 走独立 hotkey / 验收脚本，不污染 30-tick / 1000-tick 通用矩阵。
