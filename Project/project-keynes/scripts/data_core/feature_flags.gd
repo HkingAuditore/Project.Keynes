@@ -334,6 +334,35 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "DOTS-Final-Push：enum_atlas_upload 的 cell→PackedByteArray 打包走 C++（climate_vector / vegetation 等枚举轴）",
 	},
+	# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2）：unified fast tick ──
+	# native_daily_sim_mode=ACTIVE 时，把 weather refresh daily 的 4 组 super_knobs
+	# 平铺进 run_native_daily_tick 的 bundle["weather_knobs"]，让 C++ 端单次跨界
+	# 跑完 11 段 native_daily + 5 段 weather（共 16 段）。前置：use_gdext_weather_refresh_daily
+	# ACTIVE + native_daily_sim_mode=ACTIVE。验收：SAME_SOURCE 1000-tick A/B
+	# fronts diff ≤ 1e-5 + breakdown 字段集合一致 + elapsed_ms ≤ A*1.02。
+	{
+		name = &"use_gdext_unified_fast_tick",
+		owner = "climate.unified_fast_tick",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase A.2：把 weather refresh daily 嵌入 run_native_daily_tick 的 bundle.weather_knobs，单次跨界跑完 16 段；目标省 1 次 Variant marshalling fix-cost ≈ 50-100μs/帧",
+	},
+	# ─── Phase C.1（plan/dots-total-cpp）：System schedule graph 静态 DAG ────
+	# 把 run_native_daily_tick 内 line 960-1063 的 11 段手写 if-bundle 块抽象
+	# 为 system_schedule.cpp 的 SCHEDULE_GRAPH[] + dispatch_system_schedule
+	# loop。算法零改动，输出 dict bit-equal。注入：map_generator
+	# ._build_native_daily_bundle 在 flag=true 时把 bundle["use_system_schedule"]
+	# =true，C++ 端在 line 958 后走双轨 if/else。受益：C.3 job_graph 可基于
+	# 同一张表自动拓扑分组；"加新 pass = 在表里加一行"。验收：SAME_SOURCE
+	# 1000-tick A/B breakdown 全 ms 字段 epsilon 1e-5 + fronts bit-equal +
+	# succession_indices/to_veg 完全相等。
+	{
+		name = &"use_gdext_system_schedule",
+		owner = "climate.system_schedule",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase C.1：把 run_native_daily_tick 内 11 段手写 if-chain 抽象为 system_schedule.cpp 静态 DAG + dispatch loop，输出 bit-equal；为 C.3 job_graph 自动拓扑分组奠基。",
+	},
 	# ─── DOTS-Total-CPP（plan/dots-total-cpp）：所有剩余热点下沉 C++ ──────
 	# 5 个新 flag 中 2 个复用已有的 use_gdext_season_refresh / use_gdext_ocean_water；
 	# 下面三个为本计划新增。全部默认 false，SAME_SOURCE A/B 验收后才翻 true。
@@ -357,6 +386,31 @@ const FLAGS: Array = [
 		default = true,
 		resource = "ClimateProfile",
 		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）。验收 PASS，默认开启",
+	},
+	# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA ───────────
+	# C++ 端 run_weather_summary_fronts_pass 在原 out["fronts"]: Array[Dict] 之外
+	# 额外输出 out["fronts_soa"]: Dict{front_*: Packed*Array}（23 列，命名与
+	# scripts/data_core/fronts_schema.gd FRONTS_SCHEMA cpp_name 严格 1:1）。
+	# 跨语言 Variant entry 从 ~17*N → ~24 ref（与 N 无关），marshalling ~90% 削减。
+	# 默认 false：先做 1000-tick A/B fronts 字段 epsilon ≤ 1e-5 验收。
+	{
+		name = &"use_gdext_fronts_soa",
+		owner = "weather.summary_fronts",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase A.1：run_weather_summary_fronts_pass 走 fronts_soa Dict 路径（PackedArray 列），削减 ~90% Variant marshalling 开销",
+	},
+	# ─── Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID ─────────────────
+	# weather_system / map_generator 持久化 KnobsHandle（C++ POD struct + dirty-
+	# write 缓存 Dict）；ClimateProfile.changed 时触发段级 invalidate；hot path 4 个
+	# _build_*_knobs 拿 to_*_knobs_dict() 缓存输出（稳态 CoW 零分配）。
+	# 实测节省 ~71 标量 Variant 装箱 / 帧 ≈ 0.05-0.1ms。
+	{
+		name = &"use_gdext_resident_knobs",
+		owner = "weather.knobs_marshalling",
+		default = false,
+		resource = "ClimateProfile",
+		description = "Phase A.3：常驻 KnobsHandle RID，4 个 hot-path _build_*_knobs 走 dirty-write 缓存 Dict，节省 ~71 标量 Variant 装箱 / 帧",
 	},
 	# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode）──────────────
 	# 4 张运行期 atlas baker 改造：sim 端 setter / DCWorld write API 漏斗式
@@ -447,6 +501,23 @@ const FLAGS: Array = [
 		default = true,
 		resource = "ClimateProfile",
 		description = "plan/sim-2ms-simd-dirty-budget 任务 7：dynamic_visual_atlas 4 phase dirty 编码 kill-switch。默认 true 走 cpp 现行 dirty 路径；false 时 dvas_system 跳过传 dirty_indices 且 opts.force_full_encode=true 让 cpp 覆盖 dirty_path_used=false 强制全集编码。仅作为 A/B 对照与回归排障入口，生产无理由切 false",
+	},
+	# ─── Phase 1A（plan/sus-cpp-port）：SUS 调度外壳 native 化 ────────────
+	# SusScheduler.tick / register_job / report_* 全部 forward 到 SusSchedulerExt
+	# （C++）。Job.run_slice() 仍跑在 GDScript（Phase 1B 升级 NativeDailySimJob
+	# 为真 native kind 暂缓——NativeDailySimJob 当前 native_daily_authoritative_ready
+	# 仍 false，等它 ACTIVE 后再做；Phase 2 才把 baker/generator hot 方法 port C++）。
+	# Phase 1C（2026-05-22）：SAME_SOURCE 30+1000 tick A/B 双段验收 PASS（scalar
+	# diff 全 ≤ 0.1，terrain/dirty_mask/wind_y EXPECTED 假红已确认非同时间片差异），
+	# C.4 全矩阵 + sus_scheduler 矩阵均 verdict 接受，默认值翻 true。GDScript 兜底
+	# 双分支保留（A/B runner 通过 start_flag_profile 临时 dict 覆盖即可对照测）。
+	# Verdict：drop per-tick GD↔native crossings from ~30-40 to ~5-10。
+	{
+		name = &"use_gdext_sus_scheduler",
+		owner = "simulation.sus_scheduler",
+		default = true,
+		resource = "ClimateProfile",
+		description = "Phase 1A/1C：SUS 调度外壳 native 化。SusScheduler.tick / register_job / report_* forward 到 SusSchedulerExt（C++）；Job.run_slice 仍 GDScript。Phase 1C 默认开启",
 	},
 ]
 

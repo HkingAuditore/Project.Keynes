@@ -310,20 +310,41 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# 物理化路径下，rasterize 改为 C++ 一次性 hex→pixel 直出（替代 10 个 GDScript pixel slice）。
 	# Gate：ClimateProfile.use_gdext_ocean_currents_pixel=true + ext.has_method
 	# +baker.run_ocean_field_rasterize_full（新引入）。失败/未导出 → fallback 到旧 slice 路径。
+	#
+	# Sub-slice 切片（plan/ocean-raster-subslice 2026-05-22）：
+	# 把 4.7ms 整图 raster 拆成 ocean_pixel_subslice_count 片（默认 4，每片 ~1.2ms）
+	# 跑在多个 SUS tick 上。每片只 raster 一段像素区间，最后一片完成后挂 _pending_commit。
+	# subslice_count=1 → 旧"一次吃完"行为（kill-switch）。
 	var used_cpp_raster: bool = false
 	var raster_native_ms: float = -1.0
 	var raster_wall_ms: float = -1.0
-	if s == 0 and baker._use_physical_circulation(cfg):
+	var cpp_sub_s: int = -1
+	var cpp_sub_e: int = -1
+	if baker._use_physical_circulation(cfg):
 		var cp_oc: ClimateProfile = cfg.climate_profile if cfg != null else null
 		if cp_oc != null and bool(cp_oc.use_gdext_ocean_currents_pixel) \
 				and baker.has_method("run_ocean_field_rasterize_full"):
+			# 计算本片像素区间 [sub_s, sub_e)。
+			# subslice_count 至少 1；越大每片越小（更平滑），越小越粗（旧行为）。
+			var sub_count: int = 1
+			if "ocean_pixel_subslice_count" in cp_oc:
+				sub_count = max(1, int(cp_oc.ocean_pixel_subslice_count))
+			# 每片像素数 = ceil(total / sub_count)，最后一片可能更短。
+			var sub_pps: int = int(ceil(float(_total_pixels) / float(sub_count)))
+			var sub_s: int = _next_pixel_idx
+			var sub_e: int = mini(_total_pixels, sub_s + sub_pps)
 			var t_raster_us: int = Time.get_ticks_usec()
-			var raster_res: Dictionary = baker.run_ocean_field_rasterize_full(map, world, cfg)
+			var raster_res: Dictionary = baker.run_ocean_field_rasterize_full(map, world, cfg, sub_s, sub_e)
 			raster_wall_ms = (Time.get_ticks_usec() - t_raster_us) / 1000.0
 			raster_native_ms = float(raster_res.get("elapsed_ms", -1.0))
 			if not bool(raster_res.get("fallback", true)):
 				used_cpp_raster = true
-				_next_pixel_idx = _total_pixels
+				cpp_sub_s = int(raster_res.get("start_idx", sub_s))
+				cpp_sub_e = int(raster_res.get("end_idx", sub_e))
+				_next_pixel_idx = cpp_sub_e
+				# 同步外层 substage 报告变量，让 perf 日志反映真实区间。
+				s = cpp_sub_s
+				e = cpp_sub_e
 	if not used_cpp_raster:
 		# Fallback / 旧路径：按 [s, e) 切片光栅化。
 		baker.bake_ocean_currents_slice(map, world, hex_size, cfg, _phase_locked, s, e)
@@ -364,7 +385,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			progress = 1.0
 		else:
 			progress = float(_next_pixel_idx) / float(_total_pixels)
-	var work_done_pixels: int = _total_pixels if used_cpp_raster else e - s
+	# work_done = 本片实际 raster 的像素数。GD fallback 路径与 C++ sub-slice
+	# 路径都是 (e - s)；旧"C++ 一次吃完"路径已被 sub-slice 替代。
+	var work_done_pixels: int = e - s
 	# Commit Defer：raster 完成片标 ocean_pixel_raster_done；
 	# 普通中途 slice 标 ocean_pixel_slice；done=true 不再可能（raster 完即转 commit defer）。
 	var slice_stage_name: String = "ocean_pixel_slice"

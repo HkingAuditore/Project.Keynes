@@ -281,6 +281,9 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	_add_action_button(parent, "启动 Soak A/B SAME 30（F3）", &"start_soak_ab_same_source_debug")
 	_add_action_button(parent, "启动 Soak A/B Legacy（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
 	_add_action_button(parent, "Soak A/B B+ 矩阵（30+1000 tick）", &"start_soak_ab_season_round_batch_debug")
+	_add_action_button(parent, "Soak A/B Thread 矩阵（30+1000 tick）", &"start_soak_ab_thread_batch_debug")
+	_add_action_button(parent, "Soak C.4 全矩阵验收（约15分钟）", &"start_soak_ab_phase_c4_acceptance_debug")
+	_add_action_button(parent, "Soak SUS Scheduler 矩阵（30+1000 tick）", &"start_soak_ab_sus_scheduler_batch_debug")
 	_add_action_button(parent, "取消 Soak / Dump（Alt+F3）", &"cancel_soak_debug")
 
 	parent.add_child(_make_section_header("选择"))

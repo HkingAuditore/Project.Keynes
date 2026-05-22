@@ -5484,8 +5484,16 @@ func _ensure_ocean_pixel_to_cell_index(map: MapData, world: WorldData) -> void:
 
 # 一次性把 ocean_current + upwelling SoA 通过 C++ rasterize 量化进
 # _pending_currents_buf / _pending_upwelling_buf / _vector_atlas_data。
-# 返回 Dictionary：{ "fallback": bool, "elapsed_ms": float, "pixels": int, "atlas_updated": bool }
-func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig) -> Dictionary:
+#
+# Sub-slice 支持（plan/ocean-raster-subslice 2026-05-22）：
+#   p_start_idx / p_end_idx 缺省 -1 表示"全图一次性"（旧行为）。
+#   传入 [s, e) 时仅 raster 该像素区间，配合 OceanCurrentsJob 的多 sub-tick 切片。
+#   首片（s==0）做 _ensure_pending_* / refresh_slots_from_map（O(1) check + 一次性
+#   slot sync）；后续 sub-slice 跳过这两步，靠 caller 维持 buffer 一致。
+# 返回 Dictionary：{ "fallback": bool, "elapsed_ms": float, "pixels": int,
+#                  "atlas_updated": bool, "start_idx": int, "end_idx": int }
+func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig,
+		p_start_idx: int = -1, p_end_idx: int = -1) -> Dictionary:
 	var out := { "fallback": true, "elapsed_ms": -1.0, "pixels": 0, "atlas_updated": false }
 	if world == null or map == null:
 		out["reason"] = "missing world/map"
@@ -5499,13 +5507,26 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 	_ensure_pending_upwelling_size(world)
 	_ensure_ocean_pixel_to_cell_index(map, world)
 
-	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
-	if _world_ext.has_method("refresh_slots_from_map"):
-		_world_ext.refresh_slots_from_map()
-
 	var W := int(world.derived_size.x)
 	var H := int(world.derived_size.y)
 	var n_px: int = W * H
+
+	# 解析 sub-slice 区间。负数 / 越界 → 全图。
+	var s: int = p_start_idx
+	var e: int = p_end_idx
+	if s < 0:
+		s = 0
+	if e < 0 or e > n_px:
+		e = n_px
+	if s > e:
+		s = e
+	var is_first_subslice: bool = (s == 0)
+
+	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
+	# 仅首片做：sub-slice 中途 SoA 不应再变（_phase_locked 已固定，hex 求解已 DONE）
+	if is_first_subslice and _world_ext.has_method("refresh_slots_from_map"):
+		_world_ext.refresh_slots_from_map()
+
 	# atlas_data fast path：若 _vector_atlas_data 已就位，让 C++ 同步写入
 	var atlas_ok: bool = (_vector_atlas_data_size == Vector2i(W, H) \
 			and _vector_atlas_data.size() == n_px * 4)
@@ -5517,6 +5538,8 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 		"dst_currents": _pending_currents_buf,
 		"dst_upwelling": _pending_upwelling_buf,
 		"update_atlas_data": atlas_ok,
+		"start_idx": s,
+		"end_idx": e,
 	}
 	if atlas_ok:
 		knobs["atlas_data"] = _vector_atlas_data
@@ -5533,6 +5556,8 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 	out["elapsed_ms"] = float(res.get("elapsed_ms", 0.0))
 	out["pixels"] = int(res.get("pixels", 0))
 	out["atlas_updated"] = bool(res.get("atlas_updated", false))
+	out["start_idx"] = int(res.get("start_idx", s))
+	out["end_idx"] = int(res.get("end_idx", e))
 	return out
 
 

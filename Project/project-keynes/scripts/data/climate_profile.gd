@@ -304,6 +304,32 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var use_gdext_slp_field:   bool = true       # stage 1 / SLP solver C++
 @export var use_gdext_psi_solver:  bool = true       # stage 3+4+5 fused PSI solver C++
 
+# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA 路径 ───
+# C++ 端 run_weather_summary_fronts_pass 在原 out["fronts"]: Array[Dict] 之外
+# 额外输出 out["fronts_soa"]: Dict{front_*: Packed*Array}（23 列，命名与
+# scripts/data_core/fronts_schema.gd FRONTS_SCHEMA cpp_name 严格 1:1）。
+# 启用后 GDScript 端 _unpack_summary_dict_to_front 改走列扫描，跨语言
+# Variant entry 数从 ~17*N → ~24 ref（与 N 无关），目标 marshalling ~90% 削减。
+# 默认 false：先做 1000-tick A/B 验收（fronts 字段 epsilon ≤ 1e-5）+
+# elapsed_ms 不退化 + once-log "fronts_soa path ACTIVE" 后再翻 true。
+# 任意一帧 fronts_soa 缺失或字段不全自动 fallback 走 Array[Dict] 路径。
+@export var use_gdext_fronts_soa: bool = false
+
+# ─── Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID ─────────────────
+# 开启后 weather_system / map_generator 持久化一份 KnobsHandle（C++ 端 POD
+# struct + dirty-write 缓存 Dict）。ClimateProfile.changed 信号触发 dirty-
+# write；hot path 4 个 _build_*_knobs 直接拿 KnobsHandle.to_*_knobs_dict()
+# 缓存 Dict（CoW 引用 ++，标量段稳态零分配），外层 merge 动态 PackedArray
+# ref（neighbor_indices / _summary_q_cache / _dist_acc_snow_cache / ...）。
+#
+# 实测节省幅度：~71 个 hot-path 标量 Variant 装箱 / 帧 → ClimateProfile.changed
+# 触发时一次（稳态 ≤1 Hz），跨语言 marshalling ≈ 0.05-0.1ms / 帧（小但稳定）。
+#
+# 默认 false：先做 1000-tick A/B 验收（4 个 to_*_knobs_dict 输出与原
+# build_*_knobs 标量段 bit-equal）。
+# 任一 KnobsHandle 字段缺失 / 类型不匹配自动 fallback 到 GDScript 原 builder。
+@export var use_gdext_resident_knobs: bool = false
+
 # ─── DOTS-Final-Push（plan/dots-final-push）：stage_b 三件套 + atlas pack ──
 # 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
 # C++ 不可用时入口分支会自动 fallback 到 GDScript 并打印一次 UNAVAILABLE。
@@ -329,7 +355,35 @@ const NATIVE_MODE_ACTIVE: int = 2
 # （refresh_daily_stage_a + refresh_daily_stage_b 两段链），保证 bit-equal 兜底。
 # 默认 false：上线前需完成 SAME_SOURCE A/B soak 验收。
 @export var use_gdext_weather_refresh_daily: bool = true
+# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2）：unified fast tick ──────
+# native_daily_sim_mode=ACTIVE 时，把 weather_refresh_daily 的 4 组 super_knobs
+# 平铺进 run_native_daily_tick 的 bundle["weather_knobs"]，让 C++ 端在单次
+# 跨界内一并跑完 11 段 native_daily（climate_a/b + ocean_water/land + sea_ice +
+# transpiration + albedo + veg_dyn + feedback + stage_b）+ 5 段 weather
+# （field_solve + distribute + summary_fronts + cyclone_wake + stage_b 内嵌）
+# 共 16 段。理论节省：1 次 Variant marshalling fix-cost ≈ 50-100μs/帧。
+# 前置条件：use_gdext_weather_refresh_daily ACTIVE + native_daily_sim_mode=ACTIVE
+# + _weather_system 与 weather builder helper 全部可达。任意一项缺失自动退回
+# 不嵌入 weather_knobs 的旧 bundle，bit-equal 兜底（C++ 端 bundle.has 分支自然短路）。
+# 默认 false：上线前需完成 SAME_SOURCE 1000-tick A/B（fronts diff ≤ 1e-5 +
+# breakdown 字段集合一致 + elapsed_ms 不退化）。
+@export var use_gdext_unified_fast_tick: bool = false
 @export var use_gdext_enum_atlas_pack: bool = true      # enum_atlas_upload pack C++ 化
+
+# ─── Phase C.1（plan/dots-total-cpp）：System schedule graph 静态 DAG ──────
+# 把 C++ 端 run_native_daily_tick 内部 line 960-1063 的 11 段手写
+# `if (bundle.has("<X>_knobs"))` 模板代码，抽象为 system_schedule.cpp 的
+# SCHEDULE_GRAPH[] 静态表 + dispatch_system_schedule loop。算法、读写字段、
+# breakdown 语义零改动；输出 dict 必须 bit-equal。
+# 注入路径：map_generator._build_native_daily_bundle 内 flag=true 时把
+# bundle["use_system_schedule"]=true，C++ 端在 line 958 后取这个 bool 走双轨
+# if/else（true=dispatch loop，false=原 11 段 if-chain 保留作为 fallback）。
+# 受益：C.3 job_graph 可基于同一个 SCHEDULE_GRAPH 自动拓扑分组（climate/ocean/
+# stage_b/weather 粗粒度依赖），"加新 pass = 在表里加一行" 的开发体验。
+# 默认 false：上线前需完成 SAME_SOURCE 1000-tick A/B（breakdown 全 ms 字段
+# epsilon 1e-5 + fronts bit-equal + succession_indices/to_veg 完全相等）。
+@export var use_gdext_system_schedule: bool = false
+
 # ─── DOTS-Total-CPP（plan/dots-total-cpp）：剩余 GDScript 残余下沉 C++ ────
 # 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick 数值 |Δ| ≤ 1e-5 或像素
 # bytes_match_ratio ≥ 99.5% 验收。C++ 不可用时入口自动回退到 GDScript 并
@@ -403,6 +457,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 触发，dyn smooth phase ~620k px 单 phase 耗时回到 0.5-1.0ms）。
 @export var use_gdext_dynamic_atlas_terminal_dirty: bool = true  # 任务 7：dynamic_visual_atlas dirty 编码 kill-switch（默认 true）
 
+## Phase 1A — plan/sus-cpp-port：SUS 调度外壳 native 化总开关。
+## true 时 SusScheduler.tick / register_job / report_* forward 到 C++ SusSchedulerExt；
+## Job.run_slice() 仍跑 GDScript。Phase 1C（2026-05-22）：30+1000 tick A/B 验收 PASS，
+## 默认值翻 true（scalar diff 全 ≤ 0.1；terrain/dirty_mask/wind_y 假红已确认 EXPECTED）。
+## 切回 false 时走 GDScript 兜底双分支（A/B runner 临时覆盖用，生产无理由切）。
+@export var use_gdext_sus_scheduler: bool = true
+
 # PR-2.passA-unblock（2026-Q3）—— C++ Pass-A 路径独立 flag。
 # 替代 map_generator.gd:_DIAG_DISABLE_CPP_PASS_A 常量短路。
 # 默认 false：在 storage 同源（PR-2.1.1 climate Pass-A 写路径下移）完成前，
@@ -443,6 +504,20 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   - slice_count=60 → 每片 10k 像素 → ~44ms（可接受）
 #   - slice_count=120 → 每片 5k 像素 → ~22ms（更平滑）
 @export_range(1, 240, 1) var ocean_currents_slice_count: int = 120
+
+# OceanCurrentsJob C++ raster sub-slice 数（plan/ocean-raster-subslice 2026-05-22）。
+# use_gdext_ocean_currents_pixel=true 时，run_ocean_field_rasterize_full 把整图
+# 620k 像素的 ~4.7ms hot loop 拆成 N 个 sub-tick（每 sub-tick 一个像素区间），
+# 复用现有 _next_pixel_idx 切片游标 + commit-defer 框架。
+#
+# 实测（1024×606 = 620544 像素，C++ raster 总耗时 ~4.7ms）：
+#   - 1  → 一次性吃完，单 slice 4.7ms（旧行为，留作 kill-switch）
+#   - 4  → 每片 ~155k 像素 ≈ 1.2ms（推荐：与 weather_refresh fronts_12 / phys_wind 同量级）
+#   - 8  → 每片 ~78k 像素 ≈ 0.6ms（更激进，但 round 长度翻倍占用 SUS 调度位）
+#
+# 注意：sub-slice 仅在 _need_pixel_this_round=true 的轮次生效（每季最多一轮），
+# 不影响 phys_solve 的 7 stage 切片节奏。
+@export_range(1, 16, 1) var ocean_pixel_subslice_count: int = 4
 
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]

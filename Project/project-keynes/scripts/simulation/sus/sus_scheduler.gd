@@ -75,6 +75,127 @@ var world = null    # DCWorld
 
 
 # ---------------------------------------------------------------------------
+# Phase 1A — sus-cpp-port: native SUS 调度外壳
+# ---------------------------------------------------------------------------
+## When true, all dispatch / policy / reporting runs through the C++ SusSchedulerExt
+## (gdext). Job.run_slice() and Accumulator getter callbacks still cross back into
+## GDScript, but the per-job loop / budget / starvation / strict_budget logic is
+## entirely native — drops per-tick GD↔native crossings from ~30-40 to ~5-10.
+##
+## SAME-SOURCE A/B contract: behaviour must be bit-equal vs. the legacy GDScript
+## path. Numerical telemetry (elapsed_ms / total_ms) is timing-dependent and only
+## required to be within ±20% perf budget.
+##
+## Wire-up: when this flag is true, register_job / unregister_job / bind_world /
+## tick / reset_all_progress / report_* all forward to `_ext`. The GDScript-side
+## `_jobs` array is still kept in sync so legacy callers that introspect the
+## scheduler (e.g. main.gd's WARN diagnostics that walk `_jobs`) keep working.
+##
+## Phase 1C (2026-05-22): default flipped false → true after 30+1000 tick
+## SAME_SOURCE A/B PASS. GDScript fallback branch is kept for A/B runner /
+## emergency switch-off; production has no reason to flip back.
+var use_gdext_sus_scheduler: bool = true
+
+## Lazily-instantiated SusSchedulerExt (DCWorldExt sibling class). nil when
+## use_gdext_sus_scheduler=false; cached after first ensure call.
+var _ext = null
+
+
+func _ensure_ext() -> void:
+	# Idempotent — called from every register_job / tick / report_* entry when
+	# the flag is true. We instantiate lazily so toggling the flag on after
+	# already registering jobs (rare; normally flag is set in main.gd before
+	# any subsystem registers) still works via _migrate_to_ext.
+	if _ext != null:
+		return
+	if not ClassDB.class_exists("SusSchedulerExt"):
+		push_error("[SUS] use_gdext_sus_scheduler=true but SusSchedulerExt not registered — falling back to GDScript path")
+		use_gdext_sus_scheduler = false
+		return
+	_ext = ClassDB.instantiate("SusSchedulerExt")
+	if _ext == null:
+		push_error("[SUS] failed to instantiate SusSchedulerExt — falling back")
+		use_gdext_sus_scheduler = false
+		return
+	_ext.set_frame_budget_ms(frame_budget_ms)
+	_ext.set_strict_budget_enabled(strict_budget_enabled)
+	_ext.set_log_interval_ticks(log_interval_ticks)
+	_ext.set_sim_budget_window_size(sim_budget_window_size)
+	_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
+	if world != null:
+		_ext.bind_world(world)
+	# Re-register any jobs that were already registered before the ext was
+	# spun up (handles the unusual case of flag-flip after registration).
+	for j in _jobs:
+		_ext.register_job(j, _descriptor_from_job(j))
+
+
+## Build the policy descriptor Dictionary expected by SusSchedulerExt._build_policy.
+## See sus_scheduler_ext.h for the schema. Returns {} for unknown policy types
+## (which the C++ side treats as Always — safe default).
+func _descriptor_from_policy(p) -> Dictionary:
+	if p == null:
+		return { "kind": "always" }
+	if p is SusPolicy.AlwaysPolicy:
+		return { "kind": "always" }
+	if p is SusPolicy.StridePolicy:
+		return { "kind": "stride", "stride": int(p.stride), "phase": int(p.phase) }
+	if p is SusPolicy.AccumulatorPolicy:
+		# AccumulatorPolicy fields are name-mangled with leading underscore.
+		# C++ accepts the Callable directly via descriptor["getter"/"resetter"].
+		return {
+			"kind": "accumulator",
+			"threshold": float(p.threshold),
+			"getter": p._getter,
+			"resetter": p._resetter,
+		}
+	if p is SusPolicy.ContinuousSlicedPolicy:
+		# C++ side stores ticks_per_slice in the "stride" slot to keep the
+		# PolicyNode struct flat; precompute it here so native gate is one
+		# modulo op (matches sus_policy.gd::ContinuousSlicedPolicy.should_run).
+		return {
+			"kind": "continuous",
+			"stride": int(p.ticks_per_slice()),
+			"phase": int(p._phase_offset),
+		}
+	if p is SusPolicy.AndPolicy:
+		return {
+			"kind": "and",
+			"a": _descriptor_from_policy(p.a),
+			"b": _descriptor_from_policy(p.b),
+		}
+	if p is SusPolicy.OrPolicy:
+		return {
+			"kind": "or",
+			"a": _descriptor_from_policy(p.a),
+			"b": _descriptor_from_policy(p.b),
+		}
+	# Unknown subclass → forward as Always so we don't accidentally gate the job
+	# off; surface a one-time warning so devs can extend the descriptor builder.
+	push_warning("[SUS] unknown policy class %s — descriptor falling back to Always" % p.get_class())
+	return { "kind": "always" }
+
+
+## Build the full job descriptor for SusSchedulerExt.register_job.
+func _descriptor_from_job(job: SusJob) -> Dictionary:
+	# depends_on is Array[StringName] in GD; pass as plain Array to keep the
+	# Variant marshalling simple — C++ side iterates it via Array.size()/[].
+	var deps_arr: Array = []
+	for d in job.depends_on:
+		deps_arr.append(d)
+	return {
+		"id": job.id,
+		"priority": int(job.priority),
+		"must_run": bool(job.must_run),
+		"starvation_threshold": int(job.starvation_threshold),
+		"max_slices_per_tick": int(job.max_slices_per_tick),
+		"slice_budget_ms": float(job.slice_budget_ms),
+		"depends_on": deps_arr,
+		"policy": _descriptor_from_policy(job.policy),
+	}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -83,6 +204,10 @@ func bind_world(w) -> void:
 	world = w
 	for j in _jobs:
 		j.bind_world(w)
+	if use_gdext_sus_scheduler:
+		_ensure_ext()
+		if _ext != null:
+			_ext.bind_world(w)
 
 
 func register_job(job: SusJob) -> void:
@@ -102,13 +227,21 @@ func register_job(job: SusJob) -> void:
 	_jobs.sort_custom(func(a, b): return a.priority < b.priority)
 	if world != null:
 		job.bind_world(world)
+	# Forward to native scheduler. We pass *after* policy default fill-in and
+	# bind_world so the C++ side observes the same final job state.
+	if use_gdext_sus_scheduler:
+		_ensure_ext()
+		if _ext != null:
+			_ext.register_job(job, _descriptor_from_job(job))
 
 
 func unregister_job(job_id: StringName) -> void:
 	for i in range(_jobs.size()):
 		if _jobs[i].id == job_id:
 			_jobs.remove_at(i)
-			return
+			break
+	if use_gdext_sus_scheduler and _ext != null:
+		_ext.unregister_job(job_id)
 
 
 func get_job(job_id: StringName) -> SusJob:
@@ -125,6 +258,13 @@ func get_job(job_id: StringName) -> SusJob:
 func tick(ctx: SusTickContext) -> void:
 	if ctx == null:
 		push_error("[SUS] tick: nil context")
+		return
+	# Phase 1A native dispatch: forward the whole tick to SusSchedulerExt. The
+	# C++ side runs the priority sort / budget / starvation / depends_on / slice
+	# loop / reporting; only Job.run_slice() (and the optional Accumulator
+	# getter) cross back into GDScript.
+	if use_gdext_sus_scheduler and _ext != null:
+		_ext.tick(ctx)
 		return
 	_tick_counter += 1
 	_last_report.clear()
@@ -355,6 +495,8 @@ func reset_all_progress() -> void:
 	_stats.clear()
 	_tick_counter = 0
 	_strict_next_job_index = 0
+	if use_gdext_sus_scheduler and _ext != null:
+		_ext.reset_all_progress()
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +504,8 @@ func reset_all_progress() -> void:
 # ---------------------------------------------------------------------------
 
 func report_last_tick() -> Dictionary:
+	if use_gdext_sus_scheduler and _ext != null:
+		return _ext.report_last_tick()
 	return _last_report.duplicate(true)
 
 
@@ -370,16 +514,22 @@ func report_last_tick() -> Dictionary:
 ##   1. 把 SUS 那段耗时与 fast tick 总耗时对比
 ##   2. 触发 > 12ms WARN 时附带打印
 func report_last_tick_summary() -> Dictionary:
+	if use_gdext_sus_scheduler and _ext != null:
+		return _ext.report_last_tick_summary()
 	return _last_tick_summary.duplicate(true)
 
 
 func report_sim_budget_window() -> Dictionary:
+	if use_gdext_sus_scheduler and _ext != null:
+		return _ext.report_sim_budget_window()
 	return _sim_budget_window_dict().duplicate(true)
 
 
 ## Perf instrumentation: 滚动窗口内的 skipped_reason 累计 + max_ms。
 ## 用于诊断"某 Job 长期被节流"等慢性问题。
 func report_skipped_summary() -> Dictionary:
+	if use_gdext_sus_scheduler and _ext != null:
+		return _ext.report_skipped_summary()
 	var out: Dictionary = {}
 	for job_id in _stats.keys():
 		var s: Dictionary = _stats[job_id]
@@ -399,6 +549,8 @@ func report_skipped_summary() -> Dictionary:
 ## 窗口，应在 main.gd 自行累积 fast tick total_ms 数组，本表仅供 SUS Job
 ## p95 比对（30 tick 滚动 p95 已足以判定稳态门槛）。
 func report_job_stats() -> Dictionary:
+	if use_gdext_sus_scheduler and _ext != null:
+		return _ext.report_job_stats()
 	var out: Dictionary = {}
 	for job_id in _stats.keys():
 		var s: Dictionary = _stats[job_id]

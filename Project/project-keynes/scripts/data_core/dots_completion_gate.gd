@@ -103,6 +103,27 @@ const SEGMENTS: Array = [
 		required = false,
 		description = "DOTS-Total-CPP 任务 8 伞段：enum_atlas_upload dirty-tile pack（与 sea_ice_atlas_pack 同步验收）",
 	},
+	# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2）：unified fast tick ──
+	# native_daily_sim_mode=ACTIVE 时，把 weather refresh daily 的 4 组 super_knobs
+	# 平铺进 run_native_daily_tick 的 bundle["weather_knobs"]，让 C++ 端单次跨界
+	# 跑完 11 段 native_daily + 5 段 weather（共 16 段）。required=false：Phase A
+	# 收尾期门禁仅占位；Phase A 验收（SAME_SOURCE 1000-tick A/B + 72h soak）
+	# 通过后翻 true。
+	{
+		flag = &"use_gdext_unified_fast_tick",
+		segment = "unified_fast_tick",
+		required = false,
+		description = "Phase A.2：把 weather refresh daily 嵌入 run_native_daily_tick 的 bundle.weather_knobs，单次跨界跑完 16 段；目标省 1 次 Variant marshalling fix-cost ≈ 50-100μs/帧",
+	},
+	# Phase C.1：System schedule graph 静态 DAG。门禁占位，required=false；
+	# SAME_SOURCE 1000-tick A/B（breakdown ms 字段 epsilon 1e-5 + fronts
+	# bit-equal）+ 72h soak 0 crash 通过后翻 true。
+	{
+		flag = &"use_gdext_system_schedule",
+		segment = "system_schedule",
+		required = false,
+		description = "Phase C.1：把 run_native_daily_tick 内 11 段 if-chain 抽象为 SCHEDULE_GRAPH[] + dispatch loop，bit-equal；为 C.3 job_graph 拓扑分组奠基。",
+	},
 	{
 		flag = &"use_gdext_sea_ice_atlas_pack",
 		segment = "atlas_pack_sea_ice",
@@ -149,6 +170,31 @@ const SEGMENTS: Array = [
 		segment = "simd_avx2_ocean_land",
 		required = false,
 		description = "DOTS-Final-Frontier：ocean land pass AVX2 8-lane SIMD 升级。验收门槛：1000-tick mean ≥30% 加速 + bit-equal。",
+	},
+	# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA ───────────
+	# C++ 端 run_weather_summary_fronts_pass 在 out["fronts"] 之外并存输出
+	# out["fronts_soa"] = Dict{front_*: Packed*Array}（23 列）。GDScript 端
+	# _unpack_summary_soa_to_fronts 按 idx 读 PackedArray 列，跨语言开销
+	# 从 ~17*N Variant entry → ~24 PackedArray ref。phase 1（当前）：required=false
+	# 仅占位；1000-tick A/B fronts 字段 epsilon ≤ 1e-5 + elapsed_ms 不退化
+	# 验收通过后 phase 2 翻 required=true。
+	{
+		flag = &"use_gdext_fronts_soa",
+		segment = "fronts_soa_zero_copy",
+		required = false,
+		description = "Phase A.1：fronts zero-copy SoA。C++ 端 build_front_dict 并存 SoA Dict 输出，GDScript 走列扫描构造 WeatherFront；目标 marshalling ~90% 削减、_unpack_summary_dict_to_front fallback 一帧零拷贝。",
+	},
+	# ─── Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID ────────────
+	# weather_system / map_generator 持久化 KnobsHandle 实例，hot-path 4 个
+	# _build_*_knobs 走 to_*_knobs_dict() 缓存输出。ClimateProfile.changed 时
+	# 段级 invalidate；稳态重建频率应 ≤1 Hz（_*_rebuild_count 验收口径）。
+	# phase 1（当前）：required=false 仅占位；1000-tick A/B 4 段 Dict bit-equal
+	# 验收通过后 phase 2 翻 required=true。
+	{
+		flag = &"use_gdext_resident_knobs",
+		segment = "resident_knobs",
+		required = false,
+		description = "Phase A.3：常驻 KnobsHandle RID。ClimateProfile.changed → 段级 invalidate；hot-path 4 个 build_*_knobs 拿 to_*_knobs_dict() 缓存输出，节省 ~71 标量 Variant 装箱 / 帧。",
 	},
 ]
 
