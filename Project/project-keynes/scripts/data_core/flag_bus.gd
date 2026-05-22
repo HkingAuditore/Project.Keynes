@@ -23,16 +23,16 @@ class_name DCFlagBus
 ##
 ## 加入后任何脚本可：
 ##   DCFlagBus.flag_changed.connect(self._on_flag_changed)
-##   DCFlagBus.notify_flag_changed(&"use_data_core", true)
+##   DCFlagBus.notify_flag_changed(&"demo_thermal_gradient_enabled", true)
 ##
 ## ─── caller 改 flag 的标准 SOP（Phase 4.4 完成后）────────────────────
 ##
 ## 改前：
-##   cp.use_gdext_sea_ice = true        # 改了但 DCWorld 不知道，需重启
+##   cp.demo_thermal_gradient_enabled = true        # 改了但 DCWorld 不知道，需重启
 ##
 ## 改后：
-##   cp.use_gdext_sea_ice = true
-##   DCFlagBus.notify_flag_changed(&"use_gdext_sea_ice", true)  # 触发 hot-reload
+##   cp.demo_thermal_gradient_enabled = true
+##   DCFlagBus.notify_flag_changed(&"demo_thermal_gradient_enabled", true)  # 触发 hot-reload
 
 ## flag 变更通知信号。
 ##
@@ -52,8 +52,11 @@ static var singleton: DCFlagBus = null
 ## 已注册的 bind-critical flag 列表——对这些 flag 的变化必须触发 DCWorld 的
 ## bind_map_data 重 bind（否则 attach 关系不会更新）。其他 flag（hot-loop
 ## 路径切换之类）不需要 rebind，listener 自行处理。
+##
+## 历史注：`use_data_core` 曾在此列表（DataCore 主开关 / bind-critical），
+## 已在 dots-flag-prune-pr1（2026-05-22）连同 ClimateProfile 字段一并删除——
+## DataCore 已恒走单路径，不再有 bind/unbind 切换语义。
 const BIND_CRITICAL_FLAGS: Array[StringName] = [
-	&"use_data_core",
 	&"use_world_view_adapter",
 	&"demo_thermal_gradient_enabled",
 ]
@@ -85,10 +88,10 @@ static func is_bind_critical(name: StringName) -> bool:
 ## notify_flag_changed —— 一行搞定。
 ##
 ## 用例：
-##   DCFlagBus.singleton.set_flag(cp, &"use_data_core", true)
-##   →  cp.use_data_core = true
-##   →  emit flag_changed(&"use_data_core", true, cp)
-##   →  main.gd 监听 → world.rebind_map_data() 重新挂入 SoA
+##   DCFlagBus.singleton.set_flag(cp, &"demo_thermal_gradient_enabled", true)
+##   →  cp.demo_thermal_gradient_enabled = true
+##   →  emit flag_changed(&"demo_thermal_gradient_enabled", true, cp)
+##   →  main.gd 监听 → 立即重 bake demo overlay 等 hot-reload 路径
 ##
 ## profile 必须是 ClimateProfile 实例（或同等 Resource，含 @export var <name>）。
 ## 不存在该 property 时 push_error 不 emit。

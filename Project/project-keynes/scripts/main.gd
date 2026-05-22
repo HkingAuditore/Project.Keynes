@@ -198,9 +198,8 @@ var _tod_profile: TODProfile = null
 var _current_map: MapData = null
 var _generator: MapGenerator = null
 
-# DOTS-Total-CPP C.4 acceptance：串行批跑队列。空数组表示当前没有 C.4 顶层流程。
-# 由 start_soak_ab_phase_c4_acceptance_debug 填充，_on_c4_batch_completed 消费。
-var _c4_acceptance_queue: Array[String] = []
+# DOTS-Total-CPP C.4 acceptance 队列（已删除，dots-flag-prune-pr1，2026-05-22）。
+# 原 _c4_acceptance_queue 与 start_soak_ab_phase_c4_acceptance_debug 一同删除。
 
 # DOTS-Final-Push 任务 9：startup acceptance 日志一次性标记。首次 generate
 # 完成后打印 DCDotsCompletionGate 的 5 段状态行 + evaluate() BLOCK 警告。
@@ -222,29 +221,22 @@ var _last_time_label_hour: int = -1
 # 当前选中地块（重新生成地图时清空，避免持有旧 MapData 的 cell 引用）
 var _selected_cell: HexCell = null
 
-# ─── DataCore CLI 缓存（dots-foundation-and-weather-migration） ────────
-# Override 优先级：CLI > ClimateProfile 默认值。值为 -1 表示"未通过 CLI 指定"。
-var _cli_data_core_override: int = -1            # -1 / 0 / 1
-var _cli_data_core_weather_override: int = -1    # -1 / 0 / 1
-var _cli_validate_weather: bool = false          # --validate-weather
+# ─── DataCore CLI 缓存（dots-foundation-and-weather-migration）────
+# dots-flag-prune-pr1 (2026-05-22)： use_data_core / use_data_core_weather flag
+# 已删除——DataCore 现恒走单路径，--data-core / --no-data-core /
+# --data-core-weather / --no-data-core-weather / --validate-weather 四个 CLI 开关
+# 随之废弃（仅保留 --soak-dump=）。
 # DCSoakDump CLI（dots-storage-同源紧急修复 2026-05-14）：
 # --soak-dump=N[:mode[:path]]，例如 --soak-dump=30 / --soak-dump=30:full /
 # --soak-dump=30:summary:user://soak/with_dc.tsv。空字符串=未启用。
 var _cli_soak_dump_arg: String = ""
 
-# ─── Validate-Weather 桶（dots-foundation-and-weather-migration / D-01） ──
-# 当 --validate-weather 启用，每次 weather breakdown 落地时按 path 累加：
-#   fronts / cloud_sum / precip_sum / temp_field_hash
-# 满 _validate_window_size 个采样且 legacy + data_core 两桶都达标时打印 diff，
-# 然后清零进入下一窗口（手动 F12 可随时打印当前累计快照）。
-# 注：窗口=10 时，按 weather_refresh 被 policy 节流的频率（约每 3~5 个 game day 一次），
-# 单桶约 30~50 game day 即可填满；A 路径填满后按 F9 切换 path，再等同样时长会自动打 diff。
-var _validate_window_size: int = 30
-var _validate_buckets: Dictionary = {}    # path -> { count, fronts, cloud, precip, hash_xor, hash_sum }
-var _validate_total_samples: int = 0
+# ─── Validate-Weather 桶（已废弃）──────────────────────────────
+# 原机制依赖 use_data_core_weather 在运行期 F9 翻转以在同一进程内对比 legacy /
+# data_core 两条路径。dots-flag-prune-pr1 (2026-05-22)：该 flag 已删除——
+# DataCore 现恒走单路径，validate-weather 机制随之废弃。
 # Emergent Climate Coupling：fast tick 性能打点计数（需求 6.2 合计耗时节流 WARN）
 var _fast_tick_count: int = 0
-
 # DOTS-Final-Push 任务 10：200 tick 滚动采样，给 DCDotsFinalPushPerfVerdict 用。
 # fast tick 主循环每帧追加 fast_ms，超过 PERF_VERDICT_WINDOW 时丢最旧。
 # warn 计数同窗口对齐——每次 trigger_warn 命中都 +1，落入旧窗口外时随
@@ -401,23 +393,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# Systemic Ocean Currents：ocean_heat_debug 轻量控制台打印
 			diagnose_ocean_heat()
 		KEY_F9:
-			# DataCore weather hot-toggle: switch use_data_core_weather at runtime.
-			# Used for A/B comparison without restarting the game.
-			# Effect is immediate: next weather_refresh slice reads cp.use_data_core_weather
-			# fresh from ClimateProfile and routes to legacy or data_core mirror.
-			_toggle_data_core_weather_runtime()
+			# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除——
+			# DataCore weather mirror 现恒走单路径，F9 hot-toggle 不再生效。
+			print("[DataCore] F9 deprecated: use_data_core_weather flag removed (single-path).")
 		KEY_F10:
-			# DataCore master switch: toggle use_data_core. Auto-enables/disables
-			# use_data_core_weather to keep the dependency invariant. Note the
-			# DCWorld.bind_map_data() call only happens once at _setup_sus, so
-			# turning use_data_core back on at runtime keeps the existing binding
-			# (which is fine for compare runs in the same session).
-			_toggle_data_core_master_runtime()
+			# dots-flag-prune-pr1 (2026-05-22)： use_data_core master flag 已删除——
+			# DataCore 现恒挂载，F10 master toggle 不再生效。
+			print("[DataCore] F10 deprecated: use_data_core flag removed (single-path).")
 		KEY_F2:
 			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
 			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
-			# Plan 原文写 F10 hotkey，但 F10 已绑 use_data_core master toggle，
-			# 改用 F2（无歧义且与 F1 inspector / F8 ocean / F12 weather 同列）。
+			# F10 原本绑 use_data_core master toggle，dots-flag-prune-pr1 删除后改用 F2。
 			# 已在跑则忽略（避免互相覆盖）。
 			_soak_dump_hotkey_start()
 		KEY_F3:
@@ -441,11 +427,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			else:
 				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE)
 		KEY_F11:
-			# Print current DataCore flag snapshot for quick verification.
+			# Print current DataCore world bind / entity / component snapshot.
 			_print_data_core_flag_snapshot()
 		KEY_F12:
-			# Validate-weather: print current A/B bucket diff snapshot without
-			# clearing buckets. Useful for any-time inspection while sampling.
+			# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已随
+			# use_data_core_weather flag 一同废弃。F12 仅打印废弃提示。
 			_validate_weather_print_snapshot()
 
 # ─── 移动端调试按钮入口 ─────────────────────────────────────────────────
@@ -513,10 +499,12 @@ func toggle_ocean_current_debug() -> void:
 	_mark_debug_console_state_dirty()
 
 func toggle_data_core_weather_debug() -> void:
-	_toggle_data_core_weather_runtime()
+	# dots-flag-prune-pr1 (2026-05-22)：stub kept for debug_console.gd compatibility.
+	print("[DataCore] toggle deprecated: use_data_core_weather flag removed (single-path).")
 
 func toggle_data_core_master_debug() -> void:
-	_toggle_data_core_master_runtime()
+	# dots-flag-prune-pr1 (2026-05-22)：stub kept for debug_console.gd compatibility.
+	print("[DataCore] toggle deprecated: use_data_core flag removed (single-path).")
 
 func start_soak_dump_debug() -> void:
 	_soak_dump_hotkey_start()
@@ -527,19 +515,13 @@ func start_soak_ab_same_source_debug(n_ticks: int = 30) -> void:
 func start_soak_ab_vs_legacy_debug() -> void:
 	_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
 
-## DOTS-Final-Frontier Phase B+ 验收入口：跑两段（30 tick + 1000 tick）SAME_SOURCE
-## A/B（A=B+ off / B=B+ on），用于验证 use_gdext_season_round 与 12-stage 路径
-## bit-equal + fast_ms p95 ↓。复用 DCSoakABRunner.start_season_round_batch。
-## 完成后报告写到 user://soak/last_report.txt（与现有 F3 共享通道）。
-func start_soak_ab_season_round_batch_debug() -> void:
-	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
-		print("[main] season_round batch ignored: A/B runner already running")
-		return
-	if DCSoakABRunner.instance == null:
-		DCSoakABRunner.instance = DCSoakABRunner.new()
-	var ok: bool = DCSoakABRunner.instance.start_season_round_batch(self)
-	if not ok:
-		print("[main] start_season_round_batch failed (generator not ready?)")
+# ─── 已删除验收入口（dots-flag-prune-pr1，2026-05-22）──────────────────────
+# 以下 debug 入口随 ClimateProfile flag 一同删除：
+#   - start_soak_ab_season_round_batch_debug（use_gdext_season_round 已删）
+#   - start_soak_ab_sus_scheduler_batch_debug（use_gdext_sus_scheduler 已删）
+#   - start_soak_ab_phase_c4_acceptance_debug（依赖 unified_fast_tick /
+#     system_schedule / season_round 三个已删 flag 的 batch 入口）
+#   - _on_c4_batch_completed / _try_start_next_c4_batch / _c4_acceptance_queue
 
 ## DOTS-Total-CPP C.3d/C.3e 直接验收入口：跑两段（30 + 1000 tick）SAME_SOURCE A/B
 ## （A=use_gdext_thread_fallback off / B=on），覆盖全部 5 个 _thread 入口：
@@ -557,109 +539,6 @@ func start_soak_ab_thread_batch_debug() -> void:
 	if not ok:
 		print("[main] start_thread_batch failed (generator not ready?)")
 
-
-## Phase 1A.4 (plan/sus-cpp-port) 验收入口：跑两段（30 + 1000 tick）SAME_SOURCE A/B
-## （A=use_gdext_sus_scheduler off / B=on），验证 SUS 调度外壳 native 化与
-## GDScript 路径行为完全等价（buffer hash + perf）。
-##
-## 跑完后报告写到 user://soak/last_report.txt（与 F3 / 其他 batch 共享通道）；
-## 完整历史追加到 user://soak/report_history.txt。
-##
-## 预期 verdict：PASS（scalar ≤ 0.05、long-term ≤ 0.01）。
-## 如果 30-tick 段就 FAIL，多半是 _descriptor_from_policy 漏了某种 policy
-## 子类 / depends_on 序列化丢字段；先看 last_report.txt 里 worst_field 是哪个 job。
-##
-## 与 start_soak_ab_thread_batch_debug 同构。
-func start_soak_ab_sus_scheduler_batch_debug() -> void:
-	if DCSoakABRunner.instance != null \
-			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
-		print("[main] sus_scheduler batch ignored: A/B runner already running")
-		return
-	if DCSoakABRunner.instance == null:
-		DCSoakABRunner.instance = DCSoakABRunner.new()
-	var ok: bool = DCSoakABRunner.instance.start_sus_scheduler_batch(self)
-	if not ok:
-		print("[main] start_sus_scheduler_batch failed (generator not ready?)")
-
-## DOTS-Total-CPP C.4 顶层验收入口：串行跑 4 个核心 batch，一次覆盖
-## Phase A/B/C 全套 flag 矩阵：
-##   1. unified_fast_tick (mega-tick 顶层入口 on/off)
-##   2. system_schedule (Phase C.1 静态 DAG dispatch loop on/off)
-##   3. thread (C.3d/e 5 个 _thread 入口 + WorkerThreadPool 并行 on/off)
-##   4. season_round (Phase B+ 12-stage season 路径 on/off)
-## 每个 batch 内部跑 30 + 1000 tick 两段。
-## 跑完后最新报告写到 user://soak/last_report.txt，完整历史追加到
-## user://soak/report_history.txt（与现有 F3 共享通道）。
-##
-## 注意：单次完整跑 4 batch × 2 profiles × (30 + 1000) = 8240 sim-tick，
-## 按 x20 ≈ 800s 实墙时；建议 x20 速度 + 离开 15min 自动跑完。
-## 中间任一 batch 失败不阻塞后续 batch 启动。
-func start_soak_ab_phase_c4_acceptance_debug() -> void:
-	if _generator == null:
-		print("[main] C.4 acceptance ignored: generator not ready")
-		return
-	if DCSoakABRunner.instance != null \
-			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
-		print("[main] C.4 acceptance ignored: A/B runner already running")
-		return
-	if DCSoakABRunner.instance == null:
-		DCSoakABRunner.instance = DCSoakABRunner.new()
-	print("[main] === Phase C.4 acceptance: kicking off 4 batches sequentially ===")
-	print("[main]   1) unified_fast_tick on/off (mega-tick 顶层)")
-	print("[main]   2) system_schedule on/off (静态 DAG)")
-	print("[main]   3) thread on/off (5 个 _thread 入口 + WTP)")
-	print("[main]   4) season_round on/off (12-stage season)")
-	print("[main]   每个 batch 跑 30 + 1000 tick 两段，预计 ~800s @ x20 速度")
-	# 第 1 个 batch 直接启动；后续 batch 通过 batch completion 链式触发。
-	_c4_acceptance_queue = ["system_schedule", "thread", "season_round"]
-	var ok: bool = DCSoakABRunner.instance.start_unified_fast_tick_batch(self)
-	if not ok:
-		print("[main] C.4 acceptance: unified_fast_tick batch failed to start, abort chain")
-		_c4_acceptance_queue.clear()
-		return
-	# 监听 completed 信号串行下一个 batch（去重防多次连接）。
-	if not DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
-		DCSoakABRunner.instance.completed.connect(_on_c4_batch_completed)
-
-
-func _on_c4_batch_completed(_report: Dictionary) -> void:
-	# completed 信号触发时，runner 自己的 batch handler 也在处理 _batch_index / _batch_active。
-	# 后续 batch 的连接顺序可能让本回调先于内部 handler 执行；统一 deferred 一帧后判断，
-	# 确保 batch 内部 multi tick_counts 状态已经稳定。
-	call_deferred("_try_start_next_c4_batch")
-
-
-func _try_start_next_c4_batch() -> void:
-	if DCSoakABRunner.instance == null:
-		_c4_acceptance_queue.clear()
-		return
-	if DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active():
-		# 当前 batch 还在跑；multi tick_counts 段间会短暂回到 IDLE，
-		# 必须等 runner 内部 batch_active=false 后才能切下一个 batch。
-		return
-	if _c4_acceptance_queue.is_empty():
-		if DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
-			DCSoakABRunner.instance.completed.disconnect(_on_c4_batch_completed)
-		print("[main] === Phase C.4 acceptance: all batches complete ===")
-		return
-	var next_kind: String = _c4_acceptance_queue[0]
-	_c4_acceptance_queue.remove_at(0)
-	print("[main] C.4 acceptance: starting next batch = %s" % next_kind)
-	var ok: bool = false
-	match next_kind:
-		"system_schedule":
-			ok = DCSoakABRunner.instance.start_system_schedule_batch(self)
-		"thread":
-			ok = DCSoakABRunner.instance.start_thread_batch(self)
-		"season_round":
-			ok = DCSoakABRunner.instance.start_season_round_batch(self)
-		_:
-			print("[main] C.4 acceptance: unknown batch kind %s, skip" % next_kind)
-			call_deferred("_try_start_next_c4_batch")
-			return
-	if not ok:
-		print("[main] C.4 acceptance: batch %s failed to start, skip to next" % next_kind)
-		call_deferred("_try_start_next_c4_batch")
 
 func cancel_soak_debug() -> void:
 	_soak_ab_hotkey_cancel()
@@ -980,29 +859,19 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						str(b.get("pass_b_path", "full")),
 					])
 					# DataCore: climate sub-pass 取数路径标识（B-1）
-					# 真相源 = ClimateProfile.use_data_core_climate（F11/CLI 切换的旗子）
-					# 不能用 data_core_ready()，那个一旦 comp_id 缓存好就不会回退，会让 F11
-					# 切到 legacy 之后 path 仍误报 data_core，导致 A/B 桶无法分流。
-					# 三态：
-					#   legacy                — 开关 off 或 World 没绑定，sub-pass 走 map.xxx_arr
-					#   data_core_cells_only  — 开关 on + World 已 bind，但 25 个 comp_id 还没缓存好
-					#   data_core             — 开关 on + World 已 bind + 25 个 comp_id 全部缓存
+					# dots-flag-prune-pr1 (2026-05-22)： use_data_core_climate flag 已删除。
+					# Climate 现恒走 DataCore 单路径：
+					#   data_core             — World 已 bind + 25 个 comp_id 全部缓存
+					#   data_core_cells_only  — World 已 bind，但 comp_id 还未缓存好
+					#   legacy                — World 还没绑定（启动早期 fallback）
 					var _dcc_path: String = "legacy"
-					var _dcc_cp = _generator._c() if _generator.has_method("_c") else null
-					var _dcc_use_climate: bool = false
-					if _dcc_cp != null and "use_data_core_climate" in _dcc_cp:
-						_dcc_use_climate = bool(_dcc_cp.use_data_core_climate)
-					if _dcc_use_climate:
-						var _dcc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
-						if _dcc_w != null and _dcc_w.is_bound():
-							var _cjob = _generator._refresh_climate_daily_job if "_refresh_climate_daily_job" in _generator else null
-							if _cjob != null and _cjob.has_method("data_core_ready") and _cjob.data_core_ready():
-								_dcc_path = "data_core"
-							else:
-								_dcc_path = "data_core_cells_only"
+					var _dcc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
+					if _dcc_w != null and _dcc_w.is_bound():
+						var _cjob = _generator._refresh_climate_daily_job if "_refresh_climate_daily_job" in _generator else null
+						if _cjob != null and _cjob.has_method("data_core_ready") and _cjob.data_core_ready():
+							_dcc_path = "data_core"
 						else:
-							# Flag 开但 World 还没绑定（启动早期），按 legacy 算更安全
-							_dcc_path = "legacy"
+							_dcc_path = "data_core_cells_only"
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
@@ -1017,25 +886,23 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						var _ocp_field_runs: String = ""
 						var _ocp_field_fb: String = ""
 						var _ocp_field_total: String = ""
-						var _ocp_field_flag: String = ""
 						if _cur_pass == "ocean_land":
 							_ocp_field_runs = "_gdext_ocean_land_runs"
 							_ocp_field_fb = "_gdext_ocean_land_fallbacks"
 							_ocp_field_total = "_gdext_ocean_land_total_ms"
-							_ocp_field_flag = "use_gdext_ocean_land"
 						else:
 							_ocp_field_runs = "_gdext_ocean_water_runs"
 							_ocp_field_fb = "_gdext_ocean_water_fallbacks"
 							_ocp_field_total = "_gdext_ocean_water_total_ms"
-							_ocp_field_flag = "use_gdext_ocean_water"
 						if _ocp_field_runs in _generator:
 							_ocp_runs = int(_generator.get(_ocp_field_runs))
 						if _ocp_field_fb in _generator:
 							_ocp_fb = int(_generator.get(_ocp_field_fb))
 						if _ocp_field_total in _generator:
 							_ocp_total_ms = float(_generator.get(_ocp_field_total))
-						if _dcc_cp != null and _ocp_field_flag in _dcc_cp:
-							_ocp_flag = bool(_dcc_cp.get(_ocp_field_flag))
+						# dots-flag-prune-pr1: use_gdext_ocean_water/land flags were removed;
+						# these passes are now constant-on when ext+method probes succeed.
+						_ocp_flag = true
 						var _ocp_avg: float = (_ocp_total_ms / float(_ocp_runs)) if _ocp_runs > 0 else 0.0
 						print("        %s gdext flag=%s runs=%d fallbacks=%d avg_native=%.2fms" % [
 							_cur_pass, str(_ocp_flag), _ocp_runs, _ocp_fb, _ocp_avg,
@@ -1101,29 +968,19 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("field_summary_ms", 0.0)),
 						])
 					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
-					# 真相源 = ClimateProfile.use_data_core_weather（F9 实时切换的旗子）
-					# 不能用 data_core_ready()，那个一旦镜像挂上就不会回退，会让 F9 切到
-					# legacy 之后 path 仍误报 data_core，导致 A/B 桶无法分流。
+					# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除。
+					# Weather 现恒走 DataCore 单路径 ; path 仔细仅反映 World bind + comp_id
+					# 缓存状态。
 					var _dc_path: String = "legacy"
-					var _dc_cp = _generator._c() if _generator.has_method("_c") else null
-					var _dc_use_weather: bool = false
-					if _dc_cp != null and "use_data_core_weather" in _dc_cp:
-						_dc_use_weather = bool(_dc_cp.use_data_core_weather)
-					if _dc_use_weather:
-						var _dc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
-						if _dc_w != null and _dc_w.is_bound():
-							var _wjob = _generator._weather_refresh_job if "_weather_refresh_job" in _generator else null
-							if _wjob != null and _wjob.has_method("data_core_ready") and _wjob.data_core_ready():
-								_dc_path = "data_core"
-							else:
-								_dc_path = "data_core_cells_only"
+					var _dc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
+					if _dc_w != null and _dc_w.is_bound():
+						var _wjob = _generator._weather_refresh_job if "_weather_refresh_job" in _generator else null
+						if _wjob != null and _wjob.has_method("data_core_ready") and _wjob.data_core_ready():
+							_dc_path = "data_core"
 						else:
-							# Flag 开但 World 还没绑定（启动早期），按 legacy 算更安全
-							_dc_path = "legacy"
+							_dc_path = "data_core_cells_only"
 					print("        weather path=%s" % _dc_path)
-					# D-01：validate-weather 采样（仅在 --validate-weather 启用时生效）
-					if _cli_validate_weather:
-						_validate_weather_collect(_dc_path, wb)
+					# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已废弃。
 			if job_id == &"enum_atlas_upload" and _generator != null \
 					and _generator.has_method("sus_enum_atlas_breakdown"):
 				var eb: Dictionary = _generator.sus_enum_atlas_breakdown()
@@ -1591,7 +1448,7 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 		return
 	var ext = _generator.get_data_core_world_ext()
 	if ext == null:
-		_demo_tg_diag_once("DCWorldExt is null (gdext not loaded or use_data_core=false)")
+		_demo_tg_diag_once("DCWorldExt is null (gdext not loaded)")
 		return  # gdext 未加载（fallback 到纯 GDScript）；此 demo 无 GDScript fallback
 	# Pass #3：优先调用 run_demo_complex_pass；旧 .dll 不带新方法时回退到 Pass #2 老入口。
 	var has_complex: bool = ext.has_method("run_demo_complex_pass")
@@ -2170,8 +2027,11 @@ func _update_overlay_pointer_for_cell() -> void:
 
 
 # ─── DataCore CLI Helpers（dots-foundation-and-weather-migration） ────────
-# 解析阶段：在 _ready 早期调用，把命令行参数解析成 _cli_* 缓存。不直接接触
-# ClimateProfile（generator 此时尚未 new）。
+# dots-flag-prune-pr1 (2026-05-22)：use_data_core / use_data_core_weather flag
+# 已删除——DataCore 现恒走单路径。原 --data-core / --no-data-core /
+# --data-core-weather / --no-data-core-weather / --validate-weather 五个 CLI
+# 开关随之废弃（解析时打 deprecated 提示，不再写 ClimateProfile）。
+# 仅保留 --soak-dump= CLI（DCSoakDump 路径独立于 flag）。
 func _parse_data_core_cli() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	# 同时接受工程 cmdline_args（编辑器测试 / Godot 启动参数）
@@ -2180,46 +2040,21 @@ func _parse_data_core_cli() -> void:
 	for arg in args:
 		var s: String = String(arg)
 		match s:
-			"--data-core":
-				_cli_data_core_override = 1
-			"--no-data-core":
-				_cli_data_core_override = 0
-			"--data-core-weather":
-				_cli_data_core_weather_override = 1
-			"--no-data-core-weather":
-				_cli_data_core_weather_override = 0
+			"--data-core", "--no-data-core", \
+			"--data-core-weather", "--no-data-core-weather", \
 			"--validate-weather":
-				_cli_validate_weather = true
+				print("[DataCore] %s deprecated: flag removed (single-path); ignored." % s)
 			_:
 				# 形如 --soak-dump=30 / --soak-dump=30:full:user://x.jsonl
 				if s.begins_with("--soak-dump="):
 					_cli_soak_dump_arg = s.substr("--soak-dump=".length())
 
 
-# 应用阶段：generator 已创建。把 CLI 缓存写到 ClimateProfile，并保证依赖关系：
-#   use_data_core_weather=true 必须 use_data_core=true，否则 World 未 bind front 池
-#   分配会 short-circuit 到 legacy。
+# 应用阶段：generator 已创建。dots-flag-prune-pr1 后 ClimateProfile 已无相关
+# flag；本函数仅保留 --soak-dump 启动逻辑（独立于 flag 表）。
 func _apply_data_core_cli_to_profile() -> void:
 	if _generator == null:
 		return
-	var cp = _generator._c()
-	if cp == null:
-		return
-	if _cli_data_core_override == 1:
-		cp.use_data_core = true
-	elif _cli_data_core_override == 0:
-		cp.use_data_core = false
-	if _cli_data_core_weather_override == 1:
-		cp.use_data_core_weather = true
-		# 依赖守卫
-		if not bool(cp.use_data_core):
-			print("[DataCore] --data-core-weather requires use_data_core=true; auto-enabling.")
-			cp.use_data_core = true
-	elif _cli_data_core_weather_override == 0:
-		cp.use_data_core_weather = false
-	# 启动期日志，方便诊断
-	print("[DataCore] flags after CLI: use_data_core=%s use_data_core_weather=%s validate_weather=%s"
-		% [str(cp.use_data_core), str(cp.use_data_core_weather), str(_cli_validate_weather)])
 	# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：CLI 启动 N tick dump。
 	# generator 已经 _generate_and_render 完成，map / world 都就绪；hot path
 	# 第一次跑（climate_daily_system._finalize_round）就会写第一条记录。
@@ -2229,12 +2064,6 @@ func _apply_data_core_cli_to_profile() -> void:
 		var ok: bool = DCSoakDump.instance.start_from_arg(_cli_soak_dump_arg, _generator)
 		if not ok:
 			push_warning("[main] --soak-dump=%s failed to start (see prior errors)" % _cli_soak_dump_arg)
-	# Validate-weather 提示（单进程 A/B：F9 切 path 触发对照采样）
-	if _cli_validate_weather:
-		print("[DataCore] --validate-weather: in-process A/B mode (window=%d samples per bucket). " % _validate_window_size +
-			"Step 1) let current path fill its bucket (watch for '>>>VAL>>> window FULL ...'). " +
-			"Step 2) press F9 to flip path (legacy <-> data_core) and let the other bucket fill. " +
-			"Step 3) diff table prints automatically; F12 anytime for snapshot without reset.")
 
 
 ## 调试 / Overlay：生成 DataCore 状态摘要供 SUS 周期日志附加。
@@ -2309,16 +2138,6 @@ func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE,
 ## 用户可按 Alt+F3 强制解卡。同时 dump 内置 stall 守门会在 200 次同 day record 后
 ## 自动 abort（约 8s @ 40ms/tick），Alt+F3 是更快的手动出口。
 func _soak_ab_hotkey_cancel() -> void:
-	var cleared_c4_chain: bool = false
-	if not _c4_acceptance_queue.is_empty():
-		_c4_acceptance_queue.clear()
-		cleared_c4_chain = true
-	if DCSoakABRunner.instance != null \
-			and DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
-		DCSoakABRunner.instance.completed.disconnect(_on_c4_batch_completed)
-		cleared_c4_chain = true
-	if cleared_c4_chain:
-		print("[main] C.4 acceptance queue cleared")
 	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
 		DCSoakABRunner.instance.cancel()
 		print("[soak-ab] Alt+F3: A/B runner cancelled by user")
@@ -2332,287 +2151,57 @@ func _soak_ab_hotkey_cancel() -> void:
 
 ## DCSoakABRunner 用 helper：返回当前 use_data_core 状态。
 ## main.gd 暴露给 runner 用，避免 runner 自己解析 ClimateProfile。
+##
+## dots-flag-prune-pr1 (2026-05-22)： use_data_core flag 已删除——DataCore 现
+## 恒挂载，本 helper 返回常量 true（generator/world 未就绪时返 false作为 probe）。
 func is_data_core_on() -> bool:
-	if _generator == null or not _generator.has_method("_c"):
+	if _generator == null:
 		return false
-	var cp = _generator._c()
-	if cp == null or not "use_data_core" in cp:
-		return false
-	return bool(cp.use_data_core)
+	return true
 
 
-# ─── DataCore Runtime Hot Toggles (F9 / F10 / F11) ───────────────────────
-# Replacement for the CLI flags so we can A/B compare in a single session.
-# The job code reads `cp.use_data_core_weather` per-slice, so a flag flip
-# takes effect on the very next weather_refresh slice (no restart needed).
+# ─── DataCore Runtime Hot Toggles \u00b7 deprecated stubs ───────────────────
+# dots-flag-prune-pr1 (2026-05-22)\uff1a use_data_core / use_data_core_weather flag
+# 已删除——DataCore 现恒走单路径，原有 F9/F10 hot-toggle / F11 snapshot 改为
+# 简化 stub。F11 仍打 world bind / entity / component 状态，便于 runtime 自检。
 
 func _toggle_data_core_weather_runtime() -> void:
-	if _generator == null:
-		print("[DataCore] F9: generator not ready, ignored.")
-		return
-	var cp = _generator._c()
-	if cp == null:
-		print("[DataCore] F9: ClimateProfile missing, ignored.")
-		return
-	# Dependency guard: weather mirror requires the master switch on.
-	if not bool(cp.use_data_core):
-		cp.use_data_core = true
-	var new_state: bool = not bool(cp.use_data_core_weather)
-	cp.use_data_core_weather = new_state
-	print("[DataCore] F9 toggle: use_data_core_weather=%s (path=%s)" % [
-		str(new_state), ("data_core" if new_state else "legacy")
-	])
+	print("[DataCore] toggle deprecated: use_data_core_weather flag removed (single-path).")
 
 func _toggle_data_core_master_runtime() -> void:
-	if _generator == null:
-		print("[DataCore] F10: generator not ready, ignored.")
-		return
-	var cp = _generator._c()
-	if cp == null:
-		print("[DataCore] F10: ClimateProfile missing, ignored.")
-		return
-	var new_state: bool = not bool(cp.use_data_core)
-	cp.use_data_core = new_state
-	# Keep the invariant: weather mirror cannot be on while master is off.
-	if not new_state and bool(cp.use_data_core_weather):
-		cp.use_data_core_weather = false
-		print("[DataCore] F10: master OFF → also disabled use_data_core_weather.")
-	print("[DataCore] F10 toggle: use_data_core=%s use_data_core_weather=%s" % [
-		str(cp.use_data_core), str(cp.use_data_core_weather)
-	])
-	# Note: DCWorld.bind_map_data() only runs once at _setup_sus. Flipping
-	# the master back on later in the same session keeps the existing bind,
-	# which is what we want for fair A/B comparison.
+	print("[DataCore] toggle deprecated: use_data_core flag removed (single-path).")
 
 func _print_data_core_flag_snapshot() -> void:
 	if _generator == null:
 		print("[DataCore] F11: generator not ready.")
 		return
-	var cp = _generator._c()
-	if cp == null:
-		print("[DataCore] F11: ClimateProfile missing.")
-		return
 	var status: Dictionary = data_core_status_dict()
-	print("[DataCore] F11 snapshot: use_data_core=%s use_data_core_weather=%s | world bound=%s entities=%d components=%d" % [
-		str(cp.use_data_core),
-		str(cp.use_data_core_weather),
+	print("[DataCore] F11 snapshot: world bound=%s entities=%d components=%d (single-path; flags removed)" % [
 		str(status.get("bound", false)),
 		int(status.get("world_entities", 0)),
 		int(status.get("world_components", 0)),
 	])
 
 
-# ─── Validate-Weather (D-01) ───────────────────────────────────────────
-# 单进程内 A/B 对照：用户启动加 --validate-weather，运行期 F9 切 path 即可在
-# 同一进程内累积 legacy 桶 + data_core 桶；每窗口（默认 30 个采样点 / 桶）
-# 自动打印一次 diff 表，验收阈值：
-#   fronts_count diff ≤ 5%, cloud_sum diff ≤ 3%, precip_sum diff ≤ 3%,
-#   temp_field_hash 距离 ≤ 标定阈值（首版仅显示，不卡红线，原因见 SOP）。
-# F12 可随时打印当前累计快照；不影响 ClimateProfile 行为。
+# ─── Validate-Weather \u00b7 deprecated stubs ─────────────────────────────────
+# dots-flag-prune-pr1 (2026-05-22)：原 --validate-weather 机制依赖 F9 翻
+# use_data_core_weather 在同一进程内对比 legacy / data_core 两条路径。该 flag
+# 已删除——validate-weather 整个 A/B 桶机制随之废弃。F12 / debug_console
+# 入口保留为 stub 提示。
 
-func _validate_weather_collect(path: String, wb: Dictionary) -> void:
-	if _generator == null:
-		return
-	var bucket: Dictionary = _validate_buckets.get(path, {})
-	if bucket.is_empty():
-		bucket = {
-			"count": 0,
-			"fronts": 0.0,
-			"cloud": 0.0,
-			"precip": 0.0,
-			"temp_hash_xor": 0,
-			"temp_hash_sum": 0.0,
-		}
-	# fronts 来自 weather breakdown，云 / 降水 / 温度从 MapData 直接取（O(N) 累加）
-	var fronts: int = int(wb.get("fronts", 0))
-	var stats: Dictionary = _validate_compute_field_stats()
-	bucket["count"] = int(bucket["count"]) + 1
-	bucket["fronts"] = float(bucket["fronts"]) + float(fronts)
-	bucket["cloud"] = float(bucket["cloud"]) + float(stats.get("cloud_sum", 0.0))
-	bucket["precip"] = float(bucket["precip"]) + float(stats.get("precip_sum", 0.0))
-	bucket["temp_hash_xor"] = int(bucket["temp_hash_xor"]) ^ int(stats.get("temp_hash_xor", 0))
-	bucket["temp_hash_sum"] = float(bucket["temp_hash_sum"]) + float(stats.get("temp_hash_sum", 0.0))
-	_validate_buckets[path] = bucket
-	_validate_total_samples += 1
-	# 当任意一桶达到 window_size 且至少有两桶有数据，触发一次 diff 打印 + 清零
-	if int(bucket["count"]) >= _validate_window_size:
-		_validate_weather_try_emit_diff()
-
-
-func _validate_compute_field_stats() -> Dictionary:
-	# 采样源选择说明（重要）：
-	#   - temperature 走 SoA（climate 系统是 SoA-first，运行期权威值在 temp_arr）
-	#   - cloud / precip 走 HexCell（weather_system 仍是 HexCell-first 写回，
-	#     MapData.weather_cloud_arr / weather_precip_arr 只在启动 rebuild_soa_from_cells
-	#     时被填充，运行期不更新；如果直接读 SoA 永远是 0，diff 会假阳性 PASS）
-	#   2400 cells 的 O(N) 强类型字段累加，单次 < 0.5ms，game-day 间隔可承受。
-	# temp_hash 用轻量 xor + sum 双指标：
-	#   xor 对位翻转敏感（捕捉局部漂移），sum 对全局偏置敏感。
-	var out: Dictionary = {
-		"cloud_sum": 0.0,
-		"precip_sum": 0.0,
-		"temp_hash_xor": 0,
-		"temp_hash_sum": 0.0,
-	}
-	if _generator == null:
-		return out
-	var map: MapData = _current_map
-	if map == null:
-		return out
-	var temp: PackedFloat32Array = map.temp_arr
-	var cells: Array[HexCell] = map.iter_cells()
-	var n: int = mini(temp.size(), cells.size())
-	var cloud_sum: float = 0.0
-	var precip_sum: float = 0.0
-	var t_sum: float = 0.0
-	var t_xor: int = 0
-	for i in range(n):
-		var c: HexCell = cells[i]
-		cloud_sum += c.weather_cloud
-		precip_sum += c.weather_precip
-		var tv: float = temp[i]
-		t_sum += tv
-		# 量化到 1/1024 然后 xor，对小漂移抗噪、对真实漂移敏感
-		t_xor ^= int(tv * 1024.0) & 0xFFFFFFF
-	out["cloud_sum"] = cloud_sum
-	out["precip_sum"] = precip_sum
-	out["temp_hash_xor"] = t_xor
-	out["temp_hash_sum"] = t_sum
-	return out
-
-
-func _validate_weather_try_emit_diff() -> void:
-	# 至少需要两个 path 桶都达到 window_size，否则只是提示当前进度
-	var ready_paths: Array = []
-	for k in _validate_buckets.keys():
-		if int(_validate_buckets[k].get("count", 0)) >= _validate_window_size:
-			ready_paths.append(k)
-	if ready_paths.size() < 2:
-		# 只满了一桶，提示用户切 path 继续采样
-		var done_path: String = String(ready_paths[0]) if ready_paths.size() == 1 else ""
-		print("")
-		print(">>>VAL>>> ──────────────────────────────────────────────────────")
-		print(">>>VAL>>> window FULL  path=%s  n=%d  →  press F9/F10 to switch path" % [
-			done_path, _validate_window_size
-		])
-		print(">>>VAL>>> ──────────────────────────────────────────────────────")
-		print("")
-		return
-	# 两桶都满了 → 找出 legacy / data_core 这一对（如果有）作主对照
-	var primary_a: String = ""
-	var primary_b: String = ""
-	if _validate_buckets.has("legacy") and _validate_buckets.has("data_core"):
-		primary_a = "legacy"
-		primary_b = "data_core"
-	elif ready_paths.size() >= 2:
-		primary_a = String(ready_paths[0])
-		primary_b = String(ready_paths[1])
-	if primary_a == "" or primary_b == "":
-		return
-	_validate_weather_print_diff(primary_a, primary_b)
-	# 清零两个桶进入下一窗口；其它桶（cells_only 等）保留
-	_validate_buckets.erase(primary_a)
-	_validate_buckets.erase(primary_b)
-
-
-func _validate_weather_print_diff(a: String, b: String) -> void:
-	var ba: Dictionary = _validate_buckets.get(a, {})
-	var bb: Dictionary = _validate_buckets.get(b, {})
-	if ba.is_empty() or bb.is_empty():
-		return
-	var na: int = int(ba.get("count", 1))
-	var nb: int = int(bb.get("count", 1))
-	var fronts_a: float = float(ba["fronts"]) / float(na)
-	var fronts_b: float = float(bb["fronts"]) / float(nb)
-	var cloud_a: float = float(ba["cloud"]) / float(na)
-	var cloud_b: float = float(bb["cloud"]) / float(nb)
-	var precip_a: float = float(ba["precip"]) / float(na)
-	var precip_b: float = float(bb["precip"]) / float(nb)
-	var t_sum_a: float = float(ba["temp_hash_sum"]) / float(na)
-	var t_sum_b: float = float(bb["temp_hash_sum"]) / float(nb)
-	var fronts_pct: float = _validate_pct_diff(fronts_a, fronts_b)
-	var cloud_pct: float = _validate_pct_diff(cloud_a, cloud_b)
-	var precip_pct: float = _validate_pct_diff(precip_a, precip_b)
-	var t_sum_pct: float = _validate_pct_diff(t_sum_a, t_sum_b)
-	var fronts_ok: bool = abs(fronts_pct) <= 5.0
-	var cloud_ok: bool = abs(cloud_pct) <= 3.0
-	var precip_ok: bool = abs(precip_pct) <= 3.0
-	var t_sum_ok: bool = abs(t_sum_pct) <= 1.0
-	print("")
-	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
-	print(">>>VAL>>> A/B diff window  n=%d  (%s vs %s)" % [_validate_window_size, a, b])
-	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
-	print(">>>VAL>>> %-12s | %-10s avg | %-10s avg | diff %%  | OK?" % ["metric", a, b])
-	print(">>>VAL>>> fronts       | %10.3f | %10.3f | %+6.2f%% | %s (<=5%%)" % [
-		fronts_a, fronts_b, fronts_pct, ("PASS" if fronts_ok else "FAIL")
-	])
-	print(">>>VAL>>> cloud_sum    | %10.1f | %10.1f | %+6.2f%% | %s (<=3%%)" % [
-		cloud_a, cloud_b, cloud_pct, ("PASS" if cloud_ok else "FAIL")
-	])
-	print(">>>VAL>>> precip_sum   | %10.1f | %10.1f | %+6.2f%% | %s (<=3%%)" % [
-		precip_a, precip_b, precip_pct, ("PASS" if precip_ok else "FAIL")
-	])
-	print(">>>VAL>>> temp_hash_sum| %10.1f | %10.1f | %+6.2f%% | %s (<=1%%, ref)" % [
-		t_sum_a, t_sum_b, t_sum_pct, ("PASS" if t_sum_ok else "FAIL")
-	])
-	print(">>>VAL>>> temp_hash_xor| 0x%08x | 0x%08x | (xor distinct, info-only)" % [
-		int(ba["temp_hash_xor"]) & 0xFFFFFFFF,
-		int(bb["temp_hash_xor"]) & 0xFFFFFFFF,
-	])
-	var verdict: bool = fronts_ok and cloud_ok and precip_ok
-	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
-	print(">>>VAL>>> VERDICT: %s" % ("PASS" if verdict else "FAIL"))
-	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
-	print("")
-
+func _validate_weather_collect(_path: String, _wb: Dictionary) -> void:
+	pass
 
 func _validate_weather_print_snapshot() -> void:
-	if not _cli_validate_weather:
-		print(">>>VAL>>> F12: --validate-weather not enabled at startup; nothing to show.")
-		return
-	if _validate_buckets.is_empty():
-		print(">>>VAL>>> F12: no samples yet (run a few weather_refresh rounds first).")
-		return
-	print("")
-	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
-	print(">>>VAL>>> F12 snapshot (no reset, total samples=%d)" % _validate_total_samples)
-	print(">>>VAL>>> ──────────────────────────────────────────────────────────")
-	for k in _validate_buckets.keys():
-		var b: Dictionary = _validate_buckets[k]
-		var n: int = int(b.get("count", 0))
-		if n <= 0:
-			continue
-		print(">>>VAL>>> path=%s n=%d | fronts/avg=%.3f cloud/avg=%.1f precip/avg=%.1f temp_sum/avg=%.1f xor=0x%08x" % [
-			String(k), n,
-			float(b["fronts"]) / float(n),
-			float(b["cloud"]) / float(n),
-			float(b["precip"]) / float(n),
-			float(b["temp_hash_sum"]) / float(n),
-			int(b["temp_hash_xor"]) & 0xFFFFFFFF,
-		])
-	print(">>>VAL>>> ══════════════════════════════════════════════════════════")
-	print("")
-	# 如果存在 legacy & data_core 都有样本，则显示当前部分 diff
-	if _validate_buckets.has("legacy") and _validate_buckets.has("data_core"):
-		_validate_weather_print_diff("legacy", "data_core")
-
-
-func _validate_pct_diff(a: float, b: float) -> float:
-	# 以 a 为基准的相对百分比；a==0 时回退到 0 防止 nan
-	if abs(a) < 1e-9:
-		return 0.0
-	return ((b - a) / a) * 100.0
+	print(">>>VAL>>> deprecated: validate-weather buckets removed (single-path; use_data_core_weather flag deleted).")
 
 
 # ─── Phase B.3 / dots-migration-roadmap §3 B2：ViewAdapter A/B 切换 ─────
 # DCFeatureFlags.use_world_view_adapter 控制走 .Cell（默认）或 .World（DOTS 路径）。
-# 切换路径：
-#   - 启动期：调用 _rebuild_view_adapter() 一次（在 generate 完成后）
-#   - 运行期热切换：debug menu / CLI 改 ClimateProfile.use_world_view_adapter，
-#     再调 _rebuild_view_adapter() 重建实例
+# dots-flag-prune-pr1 (2026-05-22)： use_world_view_adapter 是唯一保留的 sentinel-true
+# flag——ClimateProfile 字段已删，DCFeatureFlags.is_on() 返回 FLAGS 表中的 default=true。
 # 依赖：
-#   - .World 实现要求 _generator.get_data_core_world() 返回非空且 is_bound()=true，
-#     即 ClimateProfile.use_data_core=true 已开 + DCWorld.bind_map_data 已成功；
+#   - .World 实现要求 _generator.get_data_core_world() 返回非空且 is_bound()=true（DCWorld.bind_map_data 已成功）；
 #     否则 silently 退到 .Cell 实现并 push_warning 一次。
 func _rebuild_view_adapter() -> void:
 	if _current_map == null:

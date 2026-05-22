@@ -40,28 +40,10 @@ class_name DCFeatureFlags
 # 而非 bool）此处不强行纳入；它们仍以普通 @export 存在于业务 Resource，
 # 通过普通 cp.<field> 读。本表只索引 bool 类型 flag。
 const FLAGS: Array = [
-	# ─── DataCore 主开关 ─────────────────────────────────────────────────
-	{
-		name = &"use_data_core",
-		owner = "data_core.bootstrap",
-		default = true,
-		resource = "ClimateProfile",
-		description = "在 _setup_sus 期把 MapData 挂入 DCWorld；为 false 时所有 system 走 legacy AoS 路径",
-	},
-	{
-		name = &"use_data_core_weather",
-		owner = "weather.system",
-		default = false,
-		resource = "ClimateProfile",
-		description = "依赖 use_data_core；为 true 时 weather front 走 World 镜像 + view_f32 hot loop",
-	},
-	{
-		name = &"use_data_core_climate",
-		owner = "climate.daily",
-		default = false,
-		resource = "ClimateProfile",
-		description = "依赖 use_data_core；为 true 时 climate Pass-A/B SoA hot loop 走 view_f32",
-	},
+	# ─── DataCore 主开关（已删除）──────────────────────────────────────
+	# use_data_core / use_data_core_weather / use_data_core_climate 已在
+	# dots-flag-prune-pr1（2026-05-22）随 ClimateProfile 字段一同删除——
+	# DataCore 已恒走单路径，不再有 bind/unbind 切换语义。
 	# ─── SoA / 稀疏更新（Climate-Weather 2ms Budget Plan）──────────────
 	{
 		name = &"use_soa_pipeline",
@@ -149,288 +131,77 @@ const FLAGS: Array = [
 	{
 		name = &"use_world_view_adapter",
 		owner = "rendering.view_adapter",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase B.3：true 时走 DCViewAdapter.World（DOTS）；false 时走 .Cell（legacy）。依赖 use_data_core",
-	},
-	{
-		name = &"use_hexcell_facade",
-		owner = "data_core.hex_cell_facade",
 		default = true,
 		resource = "ClimateProfile",
-		description = "PR-2.3b/任务 4：HexCell 21 个热字段 setter/getter 透传到 DCWorld SoA；启用后 cell.<field> = v 等价 world.write_f32(cid, idx, v)。依赖 use_data_core 已 bind world",
+		description = "Phase B.3：true 时走 DCViewAdapter.World（DOTS）；false 时走 .Cell（legacy）。注：dots-flag-prune-pr1 已删除 ClimateProfile 上同名字段，本表保留作为 sentinel-true 让 DCFeatureFlags.is_on() 在字段缺失时返回 true",
 	},
-	{
-		name = &"use_dc_system_scheduler",
-		owner = "data_core.scheduler",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase C.4 / 任务 6：true 时走 DCSystemScheduler（reads/writes 拓扑校验）；false 时走 SusScheduler 兼容路径。earth_like.tres 已启用",
-	},
-	# ─── Phase F / dots-full-migration §F.1-F.6：6 hot pass C++ 化 flags ────
-	# 任务 5（dots-completion）：7 个 hot pass flag 默认 false → true。
-	# C++ stub 返回 -1.0 时仍透明 fallback 到 GDScript；earth_like.tres 生产 profile 已验证。
-	{
-		name = &"use_gdext_weather_field",
-		owner = "weather.field_solver",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.1 (P0)：weather field solve C++ 化；目标 13ms → < 2ms",
-	},
-	{
-		name = &"use_gdext_ocean_water",
-		owner = "ocean.heat_transport",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.2a (P1)：ocean water pass C++ 化；目标 3.4ms → < 0.5ms",
-	},
-	{
-		name = &"use_gdext_ocean_land",
-		owner = "ocean.heat_transport",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.2b (P1)：ocean land pass C++ 化；目标 3.4ms → < 0.5ms",
-	},
-	{
-		name = &"use_gdext_climate_pass_b",
-		owner = "climate.pass_b",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.3 (P1)：climate Pass-B C++ 化；目标 5.2ms → < 0.5ms",
-	},
-	{
-		name = &"use_gdext_sea_ice",
-		owner = "climate.sea_ice",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.4 (P2)：sea ice daily pass C++ 化；目标 5.1ms → < 0.5ms；terrain 翻转走 ECB",
-	},
-	{
-		name = &"use_gdext_sea_ice_atlas_prepare",
-		owner = "rendering.sea_ice_atlas",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Prepare sea-ice R8 atlas buffer in DCWorldExt; Godot texture upload remains main-thread.",
-	},
-	{
-		name = &"use_gdext_transpiration",
-		owner = "biology.transpiration",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.5 (P2)：transpiration pass C++ 化；目标 3.2ms → < 0.3ms",
-	},
-	{
-		name = &"use_gdext_weather_front",
-		owner = "weather.fronts",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase F.6 (P3)：weather front advect C++ 化 + front pool DOTS 化；目标 3.0ms → < 0.5ms",
-	},
-	# ─── Weather Hot-Path C++ 化（dist + summary）：plan/weather-hotpath-cpp ───
-	# 把 _distribute_weather_field_to_cells（~11.6ms）与 _build_field_summary_fronts
-	# （~17.8ms）下沉到 DCWorldExt。两个 flag 独立切换；C++ 端持久化 prev_seeds /
-	# prev_membership 跨 tick 维护，flag 切换时通过 reset_weather_summary_state() 清空。
-	{
-		name = &"use_gdext_weather_distribute",
-		owner = "weather.distribute",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Weather hot-path：_distribute_weather_field_to_cells C++ 化；目标 11.6ms → < 1.5ms",
-	},
-	{
-		name = &"use_gdext_weather_summary",
-		owner = "weather.summary",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Weather hot-path：_build_field_summary_fronts C++ 化（含 BFS 继承 + EMA velocity）；目标 17.8ms → < 3.0ms",
-	},
-	{
-		name = &"use_gdext_climate_pass_a",
-		owner = "simulation.climate.pass_a",
-		default = true,
-		resource = "ClimateProfile",
-		description = "PR-2.passA-unblock：climate Pass-A C++ 化；目标 ~10ms → < 0.5ms。dots-final-push 验收 PASS，默认开启",
-	},
-	{
-		name = &"use_gdext_wind_field",
-		owner = "simulation.ocean.wind_field",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Block B (P1)：wind field C++ 化；目标 p95 35.55ms → < 5ms。C++ 返回 fallback 时自动回退 GDScript",
-	},
-	{
-		name = &"use_gdext_physical_circulation",
-		owner = "simulation.ocean.physical",
-		default = true,
-		resource = "ClimateProfile",
-		description = "C++ physical circulation path for wind/upwelling hot fields.",
-	},
-	{
-		name = &"use_gdext_season_refresh",
-		owner = "simulation.season_refresh",
-		default = true,
-		resource = "ClimateProfile",
-		description = "C++ season refresh path when DCWorldExt exposes run_season_refresh_stage.",
-	},
-	# ─── Phase B+（2026-05-21）：season refresh round 一次跨界整 round 切片调度 ───
-	# 上层调度升级：GDScript 跨界 12→1，facade sync 8→1，history push 8→1
-	# （行为变更：B+ 路径下 round 末尾仅 1 次 push，修复 ring buffer 同 round
-	# 多次写入的污染）。算法层完全复用 use_gdext_season_refresh 的 12 个 stage
-	# C++ 实装；本 flag 仅切换调度路径。验收：1000-tick A/B diff
-	# (terrain/landform/vegetation/cover/moisture, epsilon=0/1e-5) +
-	# fast_ms p95 ≤5ms + stage 7 atomic 单帧 ≤3ms。
-	{
-		name = &"use_gdext_season_round",
-		owner = "simulation.season_refresh",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase B+: season refresh full round in single C++ call with stage-boundary slicing.",
-	},
-	# ─── DOTS-Final-Push (plan/dots-final-push)：stage_b 三件套 C++ 化 ───────
-	# 目标：weather_refresh p95 27.66ms → ≤ 5ms。三个 flag 独立切换；C++ 不可用
-	# 时透明 fallback 到 GDScript 并打印一次 [stage_b] gdext path UNAVAILABLE。
-	# 默认 false：上线前需完成 SAME_SOURCE A/B 30 tick numeric drift ≤ 1e-5 验收。
-	{
-		name = &"use_gdext_albedo",
-		owner = "climate.albedo",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_albedo_pass C++ 化；目标 ~3.6ms → < 0.5ms。验收 PASS，默认开启",
-	},
-	{
-		name = &"use_gdext_vegetation_dynamics",
-		owner = "biology.vegetation_dynamics",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_vegetation_dynamics C++ 化（返回 vegetation_dirty 标志）；目标 ~9.2ms → < 1.0ms。验收 PASS，默认开启",
-	},
-	{
-		name = &"use_gdext_climate_feedback",
-		owner = "climate.weather_feedback",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：_apply_weather_to_map_feedback_pass C++ 化（小权重累加 ≤ 0.5%/日）；目标 ~6.1ms → < 0.5ms。验收 PASS，默认开启",
-	},
+	# ─── 注：use_hexcell_facade / use_dc_system_scheduler 已在 dots-flag-prune-pr1
+	# （2026-05-22）连同 ClimateProfile 字段一并删除——HexCell facade 与 DCSystemScheduler
+	# 已恒走单路径，不再有 legacy 兼容分支。
+	# ─── Phase F / dots-full-migration §F.1-F.6（已删除）─────────────────────
+	# 17 个 hot pass C++ 化 flag（climate_pass_a/b / ocean_water/land /
+	# sea_ice + sea_ice_atlas_prepare / transpiration / weather_front/field/
+	# distribute/summary/field_pixel / albedo / vegetation_dynamics /
+	# climate_feedback / ocean_currents_pixel / sea_ice_atlas_pack /
+	# enum_atlas_pack）已在 dots-flag-prune-pr1（2026-05-22）随 ClimateProfile
+	# 字段一同删除——所有 hot pass 已恒走 ext != null + has_method 探测分支，
+	# C++ 不可用时仍透明 fallback 到 GDScript（保留 ext.is_null 单边分支）。
+
+	# ─── Weather Hot-Path C++ 化（已删除）────────────────────────────────────
+	# use_gdext_weather_distribute / use_gdext_weather_summary 同上批删除。
+	# use_gdext_wind_field / use_gdext_physical_circulation / use_gdext_season_refresh
+	# 已在 dots-flag-prune-pr1 round 2（2026-05-22）随 ClimateProfile 字段一同删除——
+	# 三个 hot pass 已恒走 ext != null + has_method 探测分支，C++ 不可用时透明 fallback
+	# 到 GDScript（保留 ext.is_null 单边分支），不再需要 caller 端 flag 控制。
+	# ─── Phase B+：season refresh round 一次跨界整 round 切片调度（已删除）─
+	# use_gdext_season_round 已在 dots-flag-prune-pr1（2026-05-22）随
+	# ClimateProfile 字段一同删除——season round 已恒走单路径。
+	# ─── DOTS-Final-Push（已删除）：stage_b 三件套独立 flag 已固化为单路径 ──
+	# use_gdext_albedo / use_gdext_vegetation_dynamics / use_gdext_climate_feedback
+	# 已在 dots-flag-prune-pr1（2026-05-22）随 ClimateProfile 字段一同删除。
+	# stage_b_combined 走双轨入口仍由独立 flag 控制（保留下面）。
 	# ─── 方案 B：stage_b 三段合并（plan/stage-b-combine）─────────────────────
 	# refresh_daily_stage_b 入口走单 cpp call run_stage_b_pass，把 albedo +
 	# veg_dyn + feedback 三段合并执行，消除 GDScript 端 3 次 pack/unpack 围栏。
 	# 前置条件：上面三个独立 cpp 路径已 ACTIVE（日志 first run elapsed < 0.1ms）。
 	# 验收：SAME_SOURCE A/B 30 tick；目标 stage_b 累加 6–15ms → ≤ 1.5ms，
 	# weather_refresh ran p95 3.51ms → ≤ 1.0ms。
-	{
-		name = &"use_gdext_stage_b_combined",
-		owner = "climate.stage_b_combined",
-		default = false,
-		resource = "ClimateProfile",
-		description = "方案 B：stage_b albedo+veg_dyn+feedback 合并单 cpp call，消除 pack/unpack 围栏；目标 6–15ms → ≤ 1.5ms",
-	},
-	# ─── DOTS-Final-Push：atlas pack C++ 化 ──────────────────────────────────
-	# 与已有的 use_gdext_sea_ice_atlas_prepare 协作。目标：sea_ice_atlas_upload
-	# p95 49.23ms → ≤ 8ms；enum_atlas_upload p95 ≤ 3ms。
-	{
-		name = &"use_gdext_enum_atlas_pack",
-		owner = "rendering.enum_atlas",
-		default = false,
-		resource = "ClimateProfile",
-		description = "DOTS-Final-Push：enum_atlas_upload 的 cell→PackedByteArray 打包走 C++（climate_vector / vegetation 等枚举轴）",
-	},
-	# ─── DOTS-Total-CPP（plan/dots-total-cpp Phase A.2）：unified fast tick ──
-	# native_daily_sim_mode=ACTIVE 时，把 weather refresh daily 的 4 组 super_knobs
-	# 平铺进 run_native_daily_tick 的 bundle["weather_knobs"]，让 C++ 端单次跨界
-	# 跑完 11 段 native_daily + 5 段 weather（共 16 段）。前置：use_gdext_weather_refresh_daily
-	# ACTIVE + native_daily_sim_mode=ACTIVE。验收：SAME_SOURCE 1000-tick A/B
-	# fronts diff ≤ 1e-5 + breakdown 字段集合一致 + elapsed_ms ≤ A*1.02。
-	{
-		name = &"use_gdext_unified_fast_tick",
-		owner = "climate.unified_fast_tick",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase A.2：把 weather refresh daily 嵌入 run_native_daily_tick 的 bundle.weather_knobs，单次跨界跑完 16 段；目标省 1 次 Variant marshalling fix-cost ≈ 50-100μs/帧",
-	},
-	# ─── Phase C.1（plan/dots-total-cpp）：System schedule graph 静态 DAG ────
-	# 把 run_native_daily_tick 内 line 960-1063 的 11 段手写 if-bundle 块抽象
-	# 为 system_schedule.cpp 的 SCHEDULE_GRAPH[] + dispatch_system_schedule
-	# loop。算法零改动，输出 dict bit-equal。注入：map_generator
-	# ._build_native_daily_bundle 在 flag=true 时把 bundle["use_system_schedule"]
-	# =true，C++ 端在 line 958 后走双轨 if/else。受益：C.3 job_graph 可基于
-	# 同一张表自动拓扑分组；"加新 pass = 在表里加一行"。验收：SAME_SOURCE
-	# 1000-tick A/B breakdown 全 ms 字段 epsilon 1e-5 + fronts bit-equal +
-	# succession_indices/to_veg 完全相等。
-	{
-		name = &"use_gdext_system_schedule",
-		owner = "climate.system_schedule",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase C.1：把 run_native_daily_tick 内 11 段手写 if-chain 抽象为 system_schedule.cpp 静态 DAG + dispatch loop，输出 bit-equal；为 C.3 job_graph 自动拓扑分组奠基。",
-	},
-	# ─── DOTS-Total-CPP（plan/dots-total-cpp）：所有剩余热点下沉 C++ ──────
-	# 5 个新 flag 中 2 个复用已有的 use_gdext_season_refresh / use_gdext_ocean_water；
-	# 下面三个为本计划新增。全部默认 false，SAME_SOURCE A/B 验收后才翻 true。
-	{
-		name = &"use_gdext_ocean_currents_pixel",
-		owner = "rendering.ocean_currents",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：bake_ocean_currents_slice 像素填充走 C++（仅产 PackedByteArray，不调 RenderingServer）。目标 25ms slice → < 6ms。验收 PASS，默认开启",
-	},
-	{
-		name = &"use_gdext_weather_field_pixel",
-		owner = "rendering.weather_field",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：bake_weather_field_only 像素填充走 C++（仅产 PackedByteArray）。目标 wrapper ≤ 2ms。验收 PASS，默认开启",
-	},
-	{
-		name = &"use_gdext_sea_ice_atlas_pack",
-		owner = "rendering.sea_ice_atlas",
-		default = true,
-		resource = "ClimateProfile",
-		description = "DOTS-Total-CPP：sea_ice_atlas_upload pack 走 C++ dirty-tile 增量打包（与 use_gdext_sea_ice_atlas_prepare 互补）。验收 PASS，默认开启",
-	},
+	# use_gdext_stage_b_combined 已在 dots-flag-prune-pr1 round 2（2026-05-22）一并删除——
+	# stage_b 合并单 cpp call 入口已恒走 ext + has_method 探测分支。
+	# ─── DOTS-Final-Push：atlas pack C++ 化（部分已删除）──────────────────────
+	# use_gdext_enum_atlas_pack 已在 dots-flag-prune-pr1（2026-05-22）随
+	# ClimateProfile 字段一同删除——enum_atlas pack 已恒走单路径。
+	# ─── DOTS-Total-CPP Phase A.2 / C.1（已删除）：unified fast tick + schedule graph ──
+	# use_gdext_unified_fast_tick / use_gdext_system_schedule 已在
+	# dots-flag-prune-pr1（2026-05-22）随 ClimateProfile 字段一同删除——
+	# 调度路径与 native bundle 已恒走单路径。
+	# ─── DOTS-Total-CPP：剩余 GDScript 残余下沉 C++（已删除）──────────────
+	# use_gdext_ocean_currents_pixel / use_gdext_weather_field_pixel /
+	# use_gdext_sea_ice_atlas_pack 已在 dots-flag-prune-pr1（2026-05-22）
+	# 随 ClimateProfile 字段一同删除——所有像素 baker 与 atlas pack 已恒走 C++ 单路径
+	# （C++ 不可用时 baker 内部仍会透明 fallback 到 GDScript，不需要 caller 端 flag）。
 	# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA ───────────
 	# C++ 端 run_weather_summary_fronts_pass 在原 out["fronts"]: Array[Dict] 之外
 	# 额外输出 out["fronts_soa"]: Dict{front_*: Packed*Array}（23 列，命名与
 	# scripts/data_core/fronts_schema.gd FRONTS_SCHEMA cpp_name 严格 1:1）。
 	# 跨语言 Variant entry 从 ~17*N → ~24 ref（与 N 无关），marshalling ~90% 削减。
-	# 默认 false：先做 1000-tick A/B fronts 字段 epsilon ≤ 1e-5 验收。
-	{
-		name = &"use_gdext_fronts_soa",
-		owner = "weather.summary_fronts",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase A.1：run_weather_summary_fronts_pass 走 fronts_soa Dict 路径（PackedArray 列），削减 ~90% Variant marshalling 开销",
-	},
+	# use_gdext_fronts_soa 已在 dots-flag-prune-pr1 round 2（2026-05-22）一并删除——
+	# fronts_soa 路径已恒走 ext + has_method 探测分支，缺失字段时自动回退 Array[Dict]。
 	# ─── Phase A.3（dots-total-cpp roadmap）：常驻 knobs RID ─────────────────
 	# weather_system / map_generator 持久化 KnobsHandle（C++ POD struct + dirty-
 	# write 缓存 Dict）；ClimateProfile.changed 时触发段级 invalidate；hot path 4 个
 	# _build_*_knobs 拿 to_*_knobs_dict() 缓存输出（稳态 CoW 零分配）。
 	# 实测节省 ~71 标量 Variant 装箱 / 帧 ≈ 0.05-0.1ms。
-	{
-		name = &"use_gdext_resident_knobs",
-		owner = "weather.knobs_marshalling",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase A.3：常驻 KnobsHandle RID，4 个 hot-path _build_*_knobs 走 dirty-write 缓存 Dict，节省 ~71 标量 Variant 装箱 / 帧",
-	},
+	# use_gdext_resident_knobs 已在 dots-flag-prune-pr1 round 2（2026-05-22）一并删除——
+	# resident knobs 路径已恒走 ClassDB.class_exists('KnobsHandle') 探测分支。
 	# ─── Dirty-Push Atlas Encode（plan/dirty-push-atlas-encode）──────────────
 	# 4 张运行期 atlas baker 改造：sim 端 setter / DCWorld write API 漏斗式
 	# 推送 cell-level dirty mask；baker 入口 read_and_clear 一次拿 dirty cells
 	# 喂给 chunk_step，避免 N=1e5 全图扫。配 sig 二防线避免量化后无变化的
 	# GPU upload。阶段 F 接 DCWorldExt encode_* pass 走 C++/SIMD。
-	{
-		name = &"dirty_push_enabled",
-		owner = "rendering.atlas",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase D：baker 入口走 DCWorld.read_and_clear_dirty_mask() 拿 dirty cells 替换 all_cells；fallback 到 all_cells 当 mask 不可用",
-	},
-	{
-		name = &"cpp_atlas_encode_enabled",
-		owner = "rendering.atlas",
-		default = false,
-		resource = "ClimateProfile",
-		description = "Phase F：DCWorldExt encode_dynamic_cell_atlas / encode_ecology_visual_atlas / encode_dyn_smooth_atlas / encode_ice_state_atlas 4 个 C++/SIMD pass 启用；ext 缺失自动回退到 dirty_push_enabled 的 GDScript mask 路径",
-	},
+	# dirty_push_enabled / cpp_atlas_encode_enabled 已在 dots-flag-prune-pr1 round 2
+	# （2026-05-22）一并删除——dirty mask 推送已恒走单路径，cpp encode 路径已恒走
+	# ext + has_method 探测分支（缺失自动回退 GDScript mask 路径）。
 	# ─── Atlas Pipeline CPP（plan/atlas-pipeline-cpp，2026-05-20）─────────────
 	# dynamic_visual_atlas_upload_system 每帧热路径整套搬到 C++：dirty 消费 →
 	# 4 张 atlas value-diff（per-atlas prev_sigs snapshot 兜底 dirty 语义 bug）
@@ -441,84 +212,32 @@ const FLAGS: Array = [
 	# 与 cpp_atlas_encode_enabled 互补：本 flag 涵盖 dirty/diff/dilate/CSR/调度的
 	# 全部 GDScript 计算下沉，cpp_atlas_encode_enabled 仅控制 per-phase encode-only。
 	# true 时 ext 缺失自动回退到旧 GD 4-phase 状态机。
-	{
-		name = &"cpp_atlas_pipeline_enabled",
-		owner = "rendering.atlas",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase G：4 张运行期 atlas（dynamic_cell/ecology_visual/dyn_smooth/ice_state）全管线 C++ 化。GD 端只剩 ImageTexture.update 薄壳。ext 缺失或 has_method 失败自动回退到旧 GD 4-phase 状态机",
-	},
+	# cpp_atlas_pipeline_enabled 已在 dots-flag-prune-pr1 round 2（2026-05-22）一并删除——
+	# atlas pipeline 已恒走 ext + has_method 探测分支（ext 缺失自动回退到旧 GD 4-phase）。
 	# ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：SIMD 内核 + 线程兜底 ─
 	# 复刻 bench_pass_a_full_simd 模板把 climate Pass-B / ocean water / ocean
 	# land 三大 hot pass 升级到 AVX2 SIMD 8-lane + scalar tail；线程兜底独立
 	# 总开关。所有 flag 默认 false，1000-tick mean ≥ 30% 加速 + 年度统计 |Δ|
 	# < 0.5% 验收后逐项开启。前置 use_gdext_climate_pass_b / use_gdext_ocean_*
 	# 必须 ACTIVE，否则 simd flag 静默忽略。
-	{
-		name = &"use_gdext_pass_b_simd",
-		owner = "climate.pass_b",
-		default = false,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget：climate Pass-B AVX2 SIMD 8-lane kernel；目标 0.86ms → < 0.15ms",
-	},
-	{
-		name = &"use_gdext_ocean_water_simd",
-		owner = "ocean.heat_transport",
-		default = false,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget：ocean water pass AVX2 SIMD 8-lane kernel；目标 0.4ms → < 0.1ms",
-	},
-	{
-		name = &"use_gdext_ocean_land_simd",
-		owner = "ocean.heat_transport",
-		default = false,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget：ocean land pass AVX2 SIMD 8-lane kernel；目标 0.4ms → < 0.1ms",
-	},
-	{
-		name = &"use_gdext_thread_fallback",
-		owner = "data_core.thread_fallback",
-		default = false,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget：总开关，SIMD 路径不达标或大地图场景时启用 WorkerThreadPool _thread 降级（复刻 bench_pass_a_full_thread 模板）",
-	},
-	{
-		name = &"use_atlas_dirty_throttle",
-		owner = "rendering.map_baker",
-		default = false,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget：enum atlas upload 节流。累积 dirty cell 数 / 跳过次数 / 距上次 flush 的 tick 数，达阈值才 image_create + texture.update。Godot 4 无 partial texture upload API（#65762），整图 1.8MB upload 是 1.27ms 瓶颈；节流目标 ≥50% 跳过率 → 节省 ~0.6-0.9ms。视觉残影由 64-tick 自愈 + 强制 flush 钩子兜底",
-	},
+	# use_gdext_pass_b_simd / use_gdext_ocean_water_simd / use_gdext_ocean_land_simd /
+	# use_gdext_thread_fallback / use_atlas_dirty_throttle 已在 dots-flag-prune-pr1
+	# round 2（2026-05-22）一并删除——SIMD 内核与 thread fallback 已固化为 C++ 端
+	# 内部实现细节（C++ 内部根据 CPU 特性 / 数据规模自动选择 scalar/SIMD/threaded
+	# 三档执行路径），不再需要 caller 端 flag 控制。enum atlas upload 节流同理。
 	# plan/sim-2ms-simd-dirty-budget 任务 7（2026-05-21）：dynamic_visual_atlas pipeline
 	# 4 个工作 phase（DYNAMIC / ECOLOGY / SMOOTH / ICE）的 dirty 路径 kill-switch。
 	# 默认 true 与 cpp run_atlas_pipeline_step 现行 dirty 编码行为一致；false 时
 	# dvas_system 不向 cpp 传 dirty_indices 且加 force_full_encode=true，cpp 覆盖
 	# dirty_path_used=false → 4 phase 全部走 all_cells（与 cache_invalid 首帧路径
 	# 等价），保留 SAME_SOURCE A/B 30 tick 校验能力（任务 7 验收 + 回归排障入口）。
-	{
-		name = &"use_gdext_dynamic_atlas_terminal_dirty",
-		owner = "rendering.dynamic_visual_atlas",
-		default = true,
-		resource = "ClimateProfile",
-		description = "plan/sim-2ms-simd-dirty-budget 任务 7：dynamic_visual_atlas 4 phase dirty 编码 kill-switch。默认 true 走 cpp 现行 dirty 路径；false 时 dvas_system 跳过传 dirty_indices 且 opts.force_full_encode=true 让 cpp 覆盖 dirty_path_used=false 强制全集编码。仅作为 A/B 对照与回归排障入口，生产无理由切 false",
-	},
-	# ─── Phase 1A（plan/sus-cpp-port）：SUS 调度外壳 native 化 ────────────
-	# SusScheduler.tick / register_job / report_* 全部 forward 到 SusSchedulerExt
-	# （C++）。Job.run_slice() 仍跑在 GDScript（Phase 1B 升级 NativeDailySimJob
-	# 为真 native kind 暂缓——NativeDailySimJob 当前 native_daily_authoritative_ready
-	# 仍 false，等它 ACTIVE 后再做；Phase 2 才把 baker/generator hot 方法 port C++）。
-	# Phase 1C（2026-05-22）：SAME_SOURCE 30+1000 tick A/B 双段验收 PASS（scalar
-	# diff 全 ≤ 0.1，terrain/dirty_mask/wind_y EXPECTED 假红已确认非同时间片差异），
-	# C.4 全矩阵 + sus_scheduler 矩阵均 verdict 接受，默认值翻 true。GDScript 兜底
-	# 双分支保留（A/B runner 通过 start_flag_profile 临时 dict 覆盖即可对照测）。
-	# Verdict：drop per-tick GD↔native crossings from ~30-40 to ~5-10。
-	{
-		name = &"use_gdext_sus_scheduler",
-		owner = "simulation.sus_scheduler",
-		default = true,
-		resource = "ClimateProfile",
-		description = "Phase 1A/1C：SUS 调度外壳 native 化。SusScheduler.tick / register_job / report_* forward 到 SusSchedulerExt（C++）；Job.run_slice 仍 GDScript。Phase 1C 默认开启",
-	},
+	# use_gdext_dynamic_atlas_terminal_dirty 已在 dots-flag-prune-pr1 round 2
+	# （2026-05-22）一并删除——dynamic_visual_atlas dirty 编码恒走 cpp 现行 dirty 路径，
+	# 不再保留 A/B 对照 kill-switch（生产无理由切 false 已实证）。
+	# ─── Phase 1A（plan/sus-cpp-port）：SUS 调度外壳 native 化（已删除）────
+	# use_gdext_sus_scheduler 已在 dots-flag-prune-pr1（2026-05-22）随
+	# ClimateProfile 字段一同删除——SusScheduler/DCSystemScheduler 上的同名
+	# 字段、10 处 hot-path if 与失败 fallback 写回均同步清理，恒走 C++ 单路径。
 ]
 
 
