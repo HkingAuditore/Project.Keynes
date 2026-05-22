@@ -171,6 +171,7 @@ const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/seas
 const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
 const SeaIceAtlasUploadSystemScript = preload("res://scripts/simulation/systems/sea_ice_atlas_upload_system.gd")
 const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
+const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -839,6 +840,7 @@ var _dynamic_visual_atlas_upload_job = null
 var _dyn_atlas_upload_stride: int = 2
 var _enum_atlas_upload_job = null
 var _native_daily_sim_job = null
+var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
 var _native_daily_last_result: Dictionary = {}
 var _native_daily_shadow_probe_logged: bool = false
@@ -847,6 +849,7 @@ var _unified_fast_tick_first_log_done: bool = false
 var _unified_fast_tick_warned_fallback: bool = false
 var _sus_map: MapData = null
 var _sus_world: WorldData = null
+var _environment_runtime: RefCounted = null
 var _season_refresh_job = null
 # main.gd 在 _ready 末尾通过 set_world_clock_ref(world_clock) 注入，给
 # OceanCurrentsJob 的 season_phase getter 用。
@@ -1038,6 +1041,10 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
+	var env_pixel_size: Vector2i = Vector2i.ZERO
+	if world != null and "derived_size" in world:
+		env_pixel_size = world.derived_size
+	ensure_environment_runtime(map, env_pixel_size)
 	# B1-A：SoA 就位后立即 bake 每 cell 的常量 LUT（归一化纬度 + 年均温度）。
 	# Pass A 运行期内层仅需数组索引，不再调用 _cube_row_norm / pow / cos。
 	map.bake_lat_temp_year_lut(self)
@@ -1344,6 +1351,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
 		_sus.register_job(_dynamic_visual_atlas_upload_job)
+	_try_register_native_environment_runtime_system(map, cp)
 
 	# 0.4.1：DCSystemScheduler 路径必须在所有 register_system 之后调一次
 	# build_topology()。它按 declare_reads/writes 构造 DAG + Kahn 拓扑排序，
@@ -1448,6 +1456,78 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 ## 在 _setup_sus 完成之前返回 null。
 func get_sus_bootstrap() -> RefCounted:
 	return _sus_bootstrap
+
+
+func get_environment_runtime() -> RefCounted:
+	if _environment_runtime != null:
+		return _environment_runtime
+	if not ClassDB.class_exists("EnvironmentRuntime"):
+		return null
+	_environment_runtime = ClassDB.instantiate("EnvironmentRuntime") as RefCounted
+	return _environment_runtime
+
+
+func ensure_environment_runtime(map: MapData, pixel_size: Vector2i = Vector2i.ZERO) -> RefCounted:
+	var rt: RefCounted = get_environment_runtime()
+	if rt == null:
+		return null
+	var cell_count: int = map.cell_count() if map != null else 0
+	if rt.has_method("initialize_with_sizes"):
+		rt.call("initialize_with_sizes", cell_count, pixel_size)
+	if map != null and map.has_method("neighbor_indices_packed") and rt.has_method("build_topology_from_arrays"):
+		var pixel_to_cell: PackedInt32Array = PackedInt32Array()
+		rt.call("build_topology_from_arrays", map.neighbor_indices_packed(), map.is_water_arr, map.terrain_arr, pixel_to_cell)
+	if map != null and rt.has_method("bind_core_buffers"):
+		rt.call("bind_core_buffers", map.elevation_arr, map.temp_arr, map.moisture_arr, map.slp_arr, map.wind_x_arr, map.wind_y_arr, map.ocean_current_x_arr, map.ocean_current_y_arr)
+	if map != null and rt.has_method("bind_weather_buffers"):
+		rt.call("bind_weather_buffers", map.weather_vapor_arr, map.weather_cloud_arr, map.weather_precip_arr)
+	return rt
+
+
+func environment_runtime_status() -> Dictionary:
+	var rt: RefCounted = get_environment_runtime()
+	if rt == null or not rt.has_method("status"):
+		return {}
+	var out: Dictionary = rt.call("status")
+	if rt.has_method("buffer_summary"):
+		out["buffers"] = rt.call("buffer_summary")
+	if rt.has_method("topology_summary"):
+		out["topology"] = rt.call("topology_summary")
+	if rt.has_method("snapshot_summary"):
+		out["snapshot"] = rt.call("snapshot_summary")
+	if rt.has_method("progress_summary"):
+		out["progress"] = rt.call("progress_summary")
+	if rt.has_method("export_runtime_state"):
+		out["runtime_state"] = rt.call("export_runtime_state")
+	return out
+
+
+func export_environment_runtime_state() -> Dictionary:
+	var rt: RefCounted = get_environment_runtime()
+	if rt == null or not rt.has_method("export_runtime_state"):
+		return {}
+	return rt.call("export_runtime_state")
+
+
+func restore_environment_runtime_state(state: Dictionary) -> void:
+	var rt: RefCounted = get_environment_runtime()
+	if rt != null and rt.has_method("restore_runtime_state"):
+		rt.call("restore_runtime_state", state)
+
+
+func environment_runtime_step_budgeted(budget_ms: float, max_cells: int = 0, max_pixels: int = 0, max_indices: int = 0, pipeline: StringName = &"ocean") -> Dictionary:
+	var rt: RefCounted = get_environment_runtime()
+	if rt == null:
+		return {"done": true, "stage": "missing_runtime", "work_done": 0, "elapsed_ms": 0.0}
+	if pipeline == &"climate" and rt.has_method("step_climate_budgeted"):
+		return rt.call("step_climate_budgeted", budget_ms, max_cells, max_pixels, max_indices)
+	if pipeline == &"weather" and rt.has_method("step_weather_budgeted"):
+		return rt.call("step_weather_budgeted", budget_ms, max_cells, max_pixels, max_indices)
+	if pipeline == &"ocean" and rt.has_method("step_ocean_budgeted"):
+		return rt.call("step_ocean_budgeted", budget_ms, max_cells, max_pixels, max_indices)
+	if rt.has_method("step_budgeted"):
+		return rt.call("step_budgeted", budget_ms, max_cells, max_pixels, max_indices)
+	return {"done": true, "stage": "missing_step", "work_done": 0, "elapsed_ms": 0.0}
 
 
 ## 2026-05-19：dynamic/ecology/smooth/ice atlas 上传 stride 的运行时调整入口。
@@ -1737,6 +1817,26 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 		_sus.register_system(_native_daily_sim_job)
 	else:
 		_sus.register_job(_native_daily_sim_job)
+	return true
+
+
+func _try_register_native_environment_runtime_system(map: MapData, cp) -> bool:
+	_native_environment_runtime_job = null
+	if cp == null or cp.get("native_environment_runtime_enabled") == null or not bool(cp.native_environment_runtime_enabled):
+		return false
+	if get_environment_runtime() == null:
+		push_warning("[native_env_runtime] enabled but EnvironmentRuntime class is unavailable; skipping thin native scheduler job")
+		return false
+	_native_environment_runtime_job = NativeEnvironmentRuntimeSystemScript.new(self, map)
+	_apply_sim_budget_profile_to_job(_native_environment_runtime_job, cp, false)
+	_native_environment_runtime_job.slice_budget_ms = min(float(_native_environment_runtime_job.slice_budget_ms), 0.5)
+	_native_environment_runtime_job.must_run = false
+	if _use_dc_system_scheduler:
+		_sus.register_system(_native_environment_runtime_job)
+	else:
+		_sus.register_job(_native_environment_runtime_job)
+	if OS.is_debug_build():
+		print("[native_env_runtime] SHADOW: registered thin EnvironmentRuntime step job")
 	return true
 
 

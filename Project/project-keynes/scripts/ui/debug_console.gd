@@ -754,6 +754,8 @@ func _build_snapshot_payload() -> Dictionary:
 		out["sus_last_tick_jobs"] = _main.call("get_sus_last_tick_report")
 	if _main.has_method("get_sim_breakdowns"):
 		out["sim_breakdowns"] = _main.call("get_sim_breakdowns")
+	if _main.has_method("get_environment_perf_summary"):
+		out["environment_perf_summary"] = _main.call("get_environment_perf_summary")
 	if _main.has_method("get_fast_tick_count"):
 		out["fast_tick_count"] = _main.call("get_fast_tick_count")
 	if _main.has_method("get_last_fast_tick_ms"):

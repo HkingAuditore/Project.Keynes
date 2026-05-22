@@ -42,9 +42,24 @@ const FIXED_COLUMNS: Array = [
 	"largest_slice_substage",
 	"largest_slice_path",
 	"largest_slice_ms",
+	"largest_slice_work_done",
+	"largest_slice_processed_cells",
+	"largest_slice_processed_pixels",
+	"largest_slice_processed_indices",
+	"largest_slice_cursor_start",
+	"largest_slice_cursor_end",
+	"largest_slice_fallback_path",
+	"largest_slice_processed_per_ms",
+	"sus_sim_avg_300",
 	"sus_sim_p95_300",
 	"sus_sim_max_300",
 	"over_1ms_count_300",
+	"sim_frame_budget_ms",
+	"sim_slice_budget_ms",
+	"sim_upload_slice_budget_ms",
+	"sim_strict_budget_enabled",
+	"sim_budget_warn_ms",
+	"economy_reserved_budget_ms",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。
@@ -54,6 +69,33 @@ const JOB_COL_PREFIX: String = "j_"
 const JOB_COL_MS_SUFFIX: String = "_ms"
 const JOB_COL_SLICES_SUFFIX: String = "_slices"
 const JOB_COL_SKIP_SUFFIX: String = "_skip"
+const JOB_COL_WORK_SUFFIX: String = "_work_done"
+const JOB_COL_PROGRESS_SUFFIX: String = "_progress"
+const JOB_COL_STAGE_SUFFIX: String = "_stage"
+const JOB_COL_SUBSTAGE_SUFFIX: String = "_substage"
+const JOB_COL_PATH_SUFFIX: String = "_path"
+const JOB_COL_CELLS_SUFFIX: String = "_processed_cells"
+const JOB_COL_PIXELS_SUFFIX: String = "_processed_pixels"
+const JOB_COL_INDICES_SUFFIX: String = "_processed_indices"
+const JOB_COL_CURSOR_START_SUFFIX: String = "_cursor_start"
+const JOB_COL_CURSOR_END_SUFFIX: String = "_cursor_end"
+const JOB_COL_FALLBACK_SUFFIX: String = "_fallback"
+const JOB_SUFFIXES: Array = [
+	JOB_COL_FALLBACK_SUFFIX,
+	JOB_COL_CURSOR_START_SUFFIX,
+	JOB_COL_CURSOR_END_SUFFIX,
+	JOB_COL_INDICES_SUFFIX,
+	JOB_COL_PIXELS_SUFFIX,
+	JOB_COL_CELLS_SUFFIX,
+	JOB_COL_SUBSTAGE_SUFFIX,
+	JOB_COL_PROGRESS_SUFFIX,
+	JOB_COL_SLICES_SUFFIX,
+	JOB_COL_STAGE_SUFFIX,
+	JOB_COL_WORK_SUFFIX,
+	JOB_COL_PATH_SUFFIX,
+	JOB_COL_SKIP_SUFFIX,
+	JOB_COL_MS_SUFFIX,
+]
 const BD_COL_PREFIX: String = "bd_"
 const EXPORT_DIR_RELATIVE: String = "../../tmp"
 
@@ -188,8 +230,14 @@ func _merge_summary(row: Dictionary, summary: Dictionary) -> void:
 		return
 	for k in [
 		"largest_slice_job", "largest_slice_stage", "largest_slice_substage",
-		"largest_slice_path", "largest_slice_ms",
-		"sus_sim_p95_300", "sus_sim_max_300", "over_1ms_count_300",
+		"largest_slice_path", "largest_slice_ms", "largest_slice_work_done",
+		"largest_slice_processed_cells", "largest_slice_processed_pixels",
+		"largest_slice_processed_indices", "largest_slice_cursor_start",
+		"largest_slice_cursor_end", "largest_slice_fallback_path",
+		"largest_slice_processed_per_ms", "sus_sim_avg_300", "sus_sim_p95_300",
+		"sus_sim_max_300", "over_1ms_count_300", "sim_frame_budget_ms",
+		"sim_slice_budget_ms", "sim_upload_slice_budget_ms",
+		"sim_strict_budget_enabled", "sim_budget_warn_ms", "economy_reserved_budget_ms",
 	]:
 		if summary.has(k):
 			row[k] = summary[k]
@@ -205,9 +253,31 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 		var key_ms: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_MS_SUFFIX
 		var key_slices: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICES_SUFFIX
 		var key_skip: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SKIP_SUFFIX
+		var key_work: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_WORK_SUFFIX
+		var key_progress: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_PROGRESS_SUFFIX
+		var key_stage: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_STAGE_SUFFIX
+		var key_substage: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SUBSTAGE_SUFFIX
+		var key_path: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_PATH_SUFFIX
+		var key_cells: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_CELLS_SUFFIX
+		var key_pixels: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_PIXELS_SUFFIX
+		var key_indices: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_INDICES_SUFFIX
+		var key_cursor_start: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_CURSOR_START_SUFFIX
+		var key_cursor_end: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_CURSOR_END_SUFFIX
+		var key_fallback: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_FALLBACK_SUFFIX
 		row[key_ms] = float(r.get("elapsed_ms", 0.0))
 		row[key_slices] = int(r.get("slices_run", 0))
 		row[key_skip] = str(r.get("skipped_reason", ""))
+		row[key_work] = int(r.get("work_done", r.get("last_slice_work_done", 0)))
+		row[key_progress] = float(r.get("progress_ratio", 0.0))
+		row[key_stage] = str(r.get("stage", ""))
+		row[key_substage] = str(r.get("substage", ""))
+		row[key_path] = str(r.get("path", ""))
+		row[key_cells] = int(r.get("last_slice_processed_cells", 0))
+		row[key_pixels] = int(r.get("last_slice_processed_pixels", 0))
+		row[key_indices] = int(r.get("last_slice_processed_indices", 0))
+		row[key_cursor_start] = int(r.get("last_slice_cursor_start", -1))
+		row[key_cursor_end] = int(r.get("last_slice_cursor_end", -1))
+		row[key_fallback] = str(r.get("last_slice_fallback_path", ""))
 
 
 # breakdowns = { "climate": {...}, "weather": {...}, "enum_atlas": {...}, "sea_ice_atlas": {...} }
@@ -256,7 +326,7 @@ static func _collect_columns(rows: Array) -> PackedStringArray:
 		out.append(c)
 		seen[c] = true
 
-	# Phase 2：扫描 rows，按首次出现顺序收集 job 与 bd 的"基名"（不含 _ms/_slices/_skip）
+	# Phase 2：扫描 rows，按首次出现顺序收集 job 与 bd 的"基名"（不含 job 后缀）
 	var job_bases: Array = []
 	var job_base_seen: Dictionary = {}
 	var bd_keys: Array = []
@@ -269,14 +339,13 @@ static func _collect_columns(rows: Array) -> PackedStringArray:
 			if seen.has(ks):
 				continue
 			if ks.begins_with(JOB_COL_PREFIX):
-				# 找最长后缀匹配（"_skip" / "_slices" / "_ms"）
+				# 找最长后缀匹配，避免 _cursor_start 被 _stage 之类短后缀误伤。
 				var base: String = ""
-				if ks.ends_with(JOB_COL_SKIP_SUFFIX):
-					base = ks.substr(0, ks.length() - JOB_COL_SKIP_SUFFIX.length())
-				elif ks.ends_with(JOB_COL_SLICES_SUFFIX):
-					base = ks.substr(0, ks.length() - JOB_COL_SLICES_SUFFIX.length())
-				elif ks.ends_with(JOB_COL_MS_SUFFIX):
-					base = ks.substr(0, ks.length() - JOB_COL_MS_SUFFIX.length())
+				for suffix in JOB_SUFFIXES:
+					var suffix_s: String = str(suffix)
+					if ks.ends_with(suffix_s):
+						base = ks.substr(0, ks.length() - suffix_s.length())
+						break
 				if base != "" and not job_base_seen.has(base):
 					job_base_seen[base] = true
 					job_bases.append(base)
@@ -285,11 +354,22 @@ static func _collect_columns(rows: Array) -> PackedStringArray:
 					bd_key_seen[ks] = true
 					bd_keys.append(ks)
 
-	# Phase 3：每个 job_base 输出三元组（_ms / _slices / _skip）
+	# Phase 3：每个 job_base 输出固定聚簇列
 	for base in job_bases:
 		out.append(base + JOB_COL_MS_SUFFIX)
 		out.append(base + JOB_COL_SLICES_SUFFIX)
 		out.append(base + JOB_COL_SKIP_SUFFIX)
+		out.append(base + JOB_COL_WORK_SUFFIX)
+		out.append(base + JOB_COL_PROGRESS_SUFFIX)
+		out.append(base + JOB_COL_STAGE_SUFFIX)
+		out.append(base + JOB_COL_SUBSTAGE_SUFFIX)
+		out.append(base + JOB_COL_PATH_SUFFIX)
+		out.append(base + JOB_COL_CELLS_SUFFIX)
+		out.append(base + JOB_COL_PIXELS_SUFFIX)
+		out.append(base + JOB_COL_INDICES_SUFFIX)
+		out.append(base + JOB_COL_CURSOR_START_SUFFIX)
+		out.append(base + JOB_COL_CURSOR_END_SUFFIX)
+		out.append(base + JOB_COL_FALLBACK_SUFFIX)
 
 	# Phase 4：bd 列
 	for k in bd_keys:

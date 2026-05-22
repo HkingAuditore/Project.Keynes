@@ -1910,6 +1910,40 @@ func get_sim_breakdowns() -> Dictionary:
 	return out.duplicate(false)
 
 
+func get_environment_perf_summary() -> Dictionary:
+	var summary: Dictionary = get_sus_last_tick_summary()
+	var out: Dictionary = {
+		"target_avg_ms": 2.0,
+		"target_p95_ms": 3.5,
+		"target_max_ms": 5.0,
+		"tick_idx": _fast_tick_count,
+		"fast_ms": _overlay_last_fast_tick_ms,
+		"map_cells": 0,
+		"map_pixels": 0,
+		"budget": {},
+		"last_tick": summary,
+		"window": {},
+	}
+	if _current_map != null and _current_map.has_method("cell_count"):
+		out["map_cells"] = int(_current_map.cell_count())
+	if _current_world != null and "derived_size" in _current_world:
+		var ds: Vector2i = _current_world.derived_size
+		out["map_pixels"] = int(ds.x * ds.y)
+	if _generator != null and _generator.has_method("sus_report_sim_budget_window"):
+		out["window"] = _generator.sus_report_sim_budget_window()
+	if _generator != null and _generator.has_method("environment_runtime_status"):
+		out["environment_runtime"] = _generator.environment_runtime_status()
+	out["budget"] = {
+		"sim_frame_budget_ms": float(summary.get("sim_frame_budget_ms", 0.0)),
+		"sim_slice_budget_ms": float(summary.get("sim_slice_budget_ms", 0.0)),
+		"sim_upload_slice_budget_ms": float(summary.get("sim_upload_slice_budget_ms", 0.0)),
+		"sim_strict_budget_enabled": bool(summary.get("sim_strict_budget_enabled", false)),
+		"sim_budget_warn_ms": float(summary.get("sim_budget_warn_ms", 0.0)),
+		"economy_reserved_budget_ms": float(summary.get("economy_reserved_budget_ms", 0.0)),
+	}
+	return out
+
+
 # Plan: perf-recording-csv-export
 # DebugConsole 在 set_main 时实例化 PerfRecorder 并注入；fast_tick 末尾会把本帧
 # 指标 forward 给 recorder.on_fast_tick。传 null 等价于卸载（PerfRecorder 自身会
