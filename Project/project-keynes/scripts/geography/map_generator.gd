@@ -840,6 +840,9 @@ var _native_daily_sim_job = null
 var _native_daily_configured: bool = false
 var _native_daily_last_result: Dictionary = {}
 var _native_daily_shadow_probe_logged: bool = false
+# Phase A.2 unified fast tick：once-log + fallback once-warn。
+var _unified_fast_tick_first_log_done: bool = false
+var _unified_fast_tick_warned_fallback: bool = false
 var _sus_map: MapData = null
 var _sus_world: WorldData = null
 var _season_refresh_job = null
@@ -1385,14 +1388,24 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 			_sus.sim_budget_warn_ms = float(cp.sim_frame_budget_ms)
 		else:
 			_sus.sim_budget_warn_ms = 1.0
+	# Phase 1A — sus-cpp-port: 把 SUS 调度外壳 native flag 透传给 scheduler。
+	# 适用于 SusScheduler 与 DCSystemScheduler 两路（后者透传给内部 _sus）。
+	# 必须在 register_job 之前生效——本方法在 _setup_sus 创建 scheduler 后立刻
+	# 调用，仍早于所有 register_job，符合时序。
+	if "use_gdext_sus_scheduler" in _sus and cp.get("use_gdext_sus_scheduler") != null:
+		_sus.use_gdext_sus_scheduler = bool(cp.use_gdext_sus_scheduler)
 	if OS.is_debug_build():
-		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s"
+		var native_sus_on: bool = false
+		if "use_gdext_sus_scheduler" in _sus:
+			native_sus_on = bool(_sus.use_gdext_sus_scheduler)
+		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=%s"
 			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
 				float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms),
 				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
 				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
 				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
-				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
+				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler",
+				str(native_sus_on)])
 
 
 func _sim_job_should_must_run(job, upload_job: bool) -> bool:
@@ -1596,6 +1609,23 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 		"refresh_slots_from_map": true,
 		"flush_slots_to_map": true,
 	}
+	# Phase C.1（dots-total-cpp roadmap）：System schedule graph 双轨入口。
+	# cp.use_gdext_system_schedule=true 时，C++ 端 run_native_daily_tick 跳过
+	# 原 11 段手写 if-chain，改走 system_schedule.cpp 的 dispatch_system_schedule
+	# loop 遍历 SCHEDULE_GRAPH[]。输出 dict（breakdown / fronts / succession_*）
+	# 必须 bit-equal（dots_soak_ab_runner SAME_SOURCE 1000-tick A/B 验收）。
+	# 任意节点失败 → C++ 端 finish_with_failure 短路返回 rc=-1，与原 if-chain
+	# 同语义（caller 在 run_native_daily_tick_from_job 已有 fallback 处理）。
+	if "use_gdext_system_schedule" in cp_now and bool(cp_now.use_gdext_system_schedule):
+		bundle["use_system_schedule"] = true
+	# Phase A.2 unified fast tick：当 cp.use_gdext_unified_fast_tick=true 时，把
+	# weather refresh daily 的 4 组 super_knobs（field/distribute/summary + stage_b 平铺）
+	# 嵌入 bundle["weather_knobs"]，让 C++ 端 run_native_daily_tick 内部 line 1052 的
+	# bundle.has("weather_knobs") 分支自动转调 run_weather_refresh_daily_pass，省去
+	# weather_refresh_job 独立的一次跨界（节省 1 次 Variant marshalling fix-cost ≈ 50-100μs）。
+	# 任意前置不满足（flag off / weather_system null / fast_indexed 缺失）自动返回空 dict，
+	# 此时 bundle 不含 weather_knobs，C++ 端短路跳过 weather 段——bit-equal 兜底，
+	# weather 段在传统 SUS 调度下仍可由独立 weather_refresh_job 跑（如果它被注册）。
 	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 		map,
 		cp_now,
@@ -1603,6 +1633,36 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 	)
 	if not stage_b_knobs.is_empty():
 		bundle["stage_b_knobs"] = stage_b_knobs
+	var unified_on: bool = "use_gdext_unified_fast_tick" in cp_now \
+			and bool(cp_now.use_gdext_unified_fast_tick) \
+			and ("use_gdext_weather_refresh_daily" in cp_now) \
+			and bool(cp_now.use_gdext_weather_refresh_daily)
+	if unified_on and _weather_system != null and _world != null \
+			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
+		var season_idx_local: int = 0
+		var anomaly_local: float = 0.0
+		var season_phase_local: float = -1.0
+		if _world_clock_ref != null:
+			if _world_clock_ref.has_method("season_index"):
+				season_idx_local = int(_world_clock_ref.season_index())
+			var v_anom = _world_clock_ref.get("climate_anomaly")
+			if v_anom != null:
+				anomaly_local = float(v_anom)
+			var v_phase = _world_clock_ref.get("season_phase") if _world_clock_ref.get("season_phase") != null else null
+			if v_phase != null:
+				season_phase_local = float(v_phase)
+		# 同步推进 stage_b call_index：unified 路径完全绕过 weather_refresh_job /
+		# refresh_weather_daily facade，stride 计数必须自己 ++（与 facade line 8448 等价）。
+		# fallback（caller 端 res.rc!=0）情形会回滚（见 run_native_daily_tick_from_job）。
+		_weather_stage_b_call_index += 1
+		var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
+			map, _world, season_idx_local, anomaly_local, season_phase_local, stage_b_knobs
+		)
+		if not weather_super.is_empty():
+			bundle["weather_knobs"] = weather_super
+		else:
+			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
+			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 	return bundle
 
 
@@ -1734,6 +1794,7 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
 	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world)
+	var unified_weather_embedded: bool = bundle.has("weather_knobs")
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	tick_knobs["native_daily_bundle"] = bundle
 	var res: Dictionary = _data_core_world_ext.run_native_daily_tick(tick_knobs)
@@ -1745,6 +1806,46 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
 	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
 	_dump_weather_breakdown_if_slow()
+	# Phase A.2 unified fast tick：成功路径下同步 weather state（fronts + cyclone +
+	# cover_dirty + slice cleanup）。失败路径下回滚 stage_b call_index 并清 slice state
+	# 让下次有机会重试 / 让独立 weather_refresh_job 接手（如果它被注册）。
+	if unified_weather_embedded and _weather_system != null:
+		var rc_int: int = int(res.get("rc", -1))
+		if rc_int == 0:
+			if not _unified_fast_tick_first_log_done:
+				_unified_fast_tick_first_log_done = true
+				print("[native_daily/unified] gdext path ACTIVE — weather_knobs embedded in native_daily_bundle; 16-pass single-marshal tick first run total_ms=%.2f weather_ms=%.2f"
+						% [float(breakdown.get("total_ms", 0.0)), float(breakdown.get("weather_ms", 0.0))])
+			if _weather_system.has_method("apply_unified_fast_tick_result"):
+				# breakdown 顶层就是 weather 段产出（C++ 端 copy_dict_into 把
+				# run_weather_refresh_daily_pass 返回值合进 native_daily breakdown）。
+				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
+				_last_active_fronts = fronts_out
+				_weather_round_fronts = fronts_out
+				res["fronts"] = fronts_out
+				res["fronts_changed"] = true
+				# enum_atlas dirty mark：与 refresh_weather_daily facade line 8497-8506 等价。
+				if _baker != null:
+					if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
+						_mark_enum_atlas_dirty(true, false)
+					var succ_indices = breakdown.get("succession_indices", null)
+					var veg_dirty: bool = succ_indices != null \
+							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
+							and (succ_indices as PackedInt32Array).size() > 0
+					if not veg_dirty:
+						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
+					if veg_dirty:
+						_mark_enum_atlas_dirty(false, true)
+		else:
+			# 失败回滚：stage_b call_index 还原 + 清理 slice state（weather_system 内部
+			# 已自我守护，但 caller 端也防御性清一次，避免泄漏到下个 tick）。
+			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+			if _weather_system.has_method("_clear_weather_field_slice_state"):
+				_weather_system._clear_weather_field_slice_state()
+			if not _unified_fast_tick_warned_fallback:
+				_unified_fast_tick_warned_fallback = true
+				push_warning("[native_daily/unified] embedded weather_knobs path rc=%d fail_stage=%s; weather_refresh state cleared; will fallback to independent jobs next tick"
+						% [rc_int, String(res.get("fail_stage", "unknown"))])
 	return res
 
 
@@ -5733,7 +5834,17 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"sea_level":        float(_last_cfg.sea_level),
 			"insol_dev_lut":    _insol_dev_lut,
 		}
-		var rc: float = float(_data_core_world_ext.run_climate_pass_a(cp_struct, float(season_phase), float(season_phase)))
+		var rc: float = -1.0
+		# [Phase C.3c] climate_pass_a 双轨：use_gdext_thread_fallback=true 时走
+		# WorkerThreadPool 并行变体（cell-local map，无 race，N=2400 约 4 核加速）；
+		# false 时走原 scalar 路径。两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
+		var _use_a_thread: bool = false
+		if "use_gdext_thread_fallback" in cp:
+			_use_a_thread = bool(cp.use_gdext_thread_fallback)
+		if _use_a_thread and _data_core_world_ext.has_method("run_climate_pass_a_thread"):
+			rc = float(_data_core_world_ext.run_climate_pass_a_thread(cp_struct, float(season_phase), float(season_phase), 0))
+		else:
+			rc = float(_data_core_world_ext.run_climate_pass_a(cp_struct, float(season_phase), float(season_phase)))
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] C++ Pass-A 路径 rc + DCWorld dirty
 		# 即时观测：rc>=0 表示 C++ 接管并已 return；此处 peek 一次 dirty count 看 C++
 		# 端是否在 set() 推回 MapData 时也副作用 mark 到 DCWorld（理论上不会）。
@@ -6318,6 +6429,23 @@ func _dump_weather_breakdown_if_slow() -> void:
 		float(b.get("veg_rebake_ms", 0.0)),
 		int(b.get("fronts", 0)),
 	])
+	# Phase B.2 cyclone 细粒度遥测：仅在 cyclone 段实际有耗时（≥0.5ms）且 C++
+	# combined path 提供了 phase1/phase2 拆分时打印第二行。常态 cyclone≈0.15ms
+	# 时此分支不触发，避免噪音；一旦未来真出现 cyclone 突刺立即可定位是衰减循环
+	# (phase1) vs 注入循环 (phase2)、是大量 evict vs 大量 replace。
+	var phase1_ms: float = float(b.get("cyclone_phase1_decay_ms", 0.0))
+	var phase2_ms: float = float(b.get("cyclone_phase2_inject_ms", 0.0))
+	if cyclone_ms_v >= 0.5 and (phase1_ms > 0.0 or phase2_ms > 0.0):
+		print("[weather/slow-dump-cyclone] tick=%d phase1_decay=%.2fms phase2_inject=%.2fms (n_decayed=%d n_evicted=%d n_replaced=%d n_injected=%d pool_size=%d)" % [
+			_current_fast_tick_idx,
+			phase1_ms,
+			phase2_ms,
+			int(b.get("cyclone_n_decayed", 0)),
+			int(b.get("cyclone_n_evicted", 0)),
+			int(b.get("cyclone_n_replaced", 0)),
+			int(b.get("cyclone_n_injected", 0)),
+			int(b.get("cyclone_pool_size", 0)),
+		])
 
 
 # QA 异常守卫：当日 SEA_ICE 翻转 cell 数 > 总水体数 3% 时打印一次 WARN
@@ -6499,8 +6627,20 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			var t_refresh_us: int = Time.get_ticks_usec()
 			_data_core_world_ext.refresh_slots_from_map()
 			refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+		# C.3d dispatch：thread fallback flag 开 + _thread 入口 export 时优先走
+		# WorkerThreadPool 路径；n_tasks=0 让 C++ 端按 ~1024 cells/task 自适应。
+		# 任意条件不满足 → 走原 scalar 入口。
+		var _use_sea_ice_thread: bool = bool(cp.use_gdext_thread_fallback) \
+				and _data_core_world_ext.has_method("run_sea_ice_daily_pass_thread")
+		var _sea_ice_dispatch_path: String = "scalar"
 		var t_native_us: int = Time.get_ticks_usec()
-		var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
+		var rc: float
+		if _use_sea_ice_thread:
+			rc = float(_data_core_world_ext.run_sea_ice_daily_pass_thread(knobs, season_phase, 0))
+			_sea_ice_dispatch_path = "thread"
+		else:
+			rc = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
+			_sea_ice_dispatch_path = "scalar"
 		var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
 		# === Plan-C diag (临时) === 检查 CPU 端海冰浮点是否真的在动
 		if Engine.get_process_frames() % 60 == 0:
@@ -6582,9 +6722,9 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				str(_facade_on), _arr_size, _arr_nonzero, _arr_max, _nonzero, _max_f, _w_cpp, _f_cpp, _flip_list_n])
 		# === end diag ===
 		if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 3:
-			print("[sea_ice/F.4] DEBUG call#%d: rc=%.4f n_cells=%d enable_oht=%s" % [
+			print("[sea_ice/F.4] DEBUG call#%d: path=%s rc=%.4f n_cells=%d enable_oht=%s" % [
 				_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
-				rc, n_cells_fast, str(_last_cfg.enable_ocean_heat_transport),
+				_sea_ice_dispatch_path, rc, n_cells_fast, str(_last_cfg.enable_ocean_heat_transport),
 			])
 		if rc >= 0.0:
 			# C++ 已写 DCWorldExt cell_sea_ice_frac slot 并 flush 回 MapData。
@@ -6657,7 +6797,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			_gdext_sea_ice_runs += 1
 			_gdext_sea_ice_total_ms += rc
 			if _gdext_sea_ice_runs == 1:
-				print("[sea_ice/F.4] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)" % rc)
+				print("[sea_ice/F.4] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)" % [_sea_ice_dispatch_path, rc])
 
 			# 节流打点（每 365 天）
 			if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
@@ -9102,7 +9242,17 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0) -
 		# storage A/B 同源契约：refresh 让 SoA 取得最新值（接 weather_refresh 上一段）
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc: float = float(_data_core_world_ext.run_climate_feedback_pass(knobs))
+		# [Phase C.3c] climate_feedback 双轨：use_gdext_thread_fallback=true 时走
+		# WorkerThreadPool 并行变体（cell-local map，无 race）；false 时走原 scalar 路径。
+		# 两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
+		var rc: float = -1.0
+		var _use_fb_thread: bool = false
+		if "use_gdext_thread_fallback" in cp:
+			_use_fb_thread = bool(cp.use_gdext_thread_fallback)
+		if _use_fb_thread and _data_core_world_ext.has_method("run_climate_feedback_pass_thread"):
+			rc = float(_data_core_world_ext.run_climate_feedback_pass_thread(knobs, 0))
+		else:
+			rc = float(_data_core_world_ext.run_climate_feedback_pass(knobs))
 		if _gdext_feedback_runs + _gdext_feedback_fallbacks < 3:
 			print("[feedback/stage_b] DEBUG call#%d: rc=%.4f n_cells=%d scale=%.2f" % [
 				_gdext_feedback_runs + _gdext_feedback_fallbacks + 1,
@@ -9437,7 +9587,17 @@ func _apply_albedo_pass(map: MapData) -> void:
 		# 取得最新值再计算（与 transp/F.5 同模式）。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc: float = float(_data_core_world_ext.run_albedo_pass(knobs))
+		# [Phase C.3c] albedo 双轨：use_gdext_thread_fallback=true 时走
+		# WorkerThreadPool 并行变体（cell-local map，无 race）；false 时走原 scalar 路径。
+		# 两路径主循环 body 严格 1:1（共用 lambda），返回值同语义。
+		var rc: float = -1.0
+		var _use_alb_thread: bool = false
+		if "use_gdext_thread_fallback" in cp_alb:
+			_use_alb_thread = bool(cp_alb.use_gdext_thread_fallback)
+		if _use_alb_thread and _data_core_world_ext.has_method("run_albedo_pass_thread"):
+			rc = float(_data_core_world_ext.run_albedo_pass_thread(knobs, 0))
+		else:
+			rc = float(_data_core_world_ext.run_albedo_pass(knobs))
 		if _gdext_albedo_runs + _gdext_albedo_fallbacks < 3:
 			print("[albedo/stage_b] DEBUG call#%d: rc=%.4f albedo_table.size()=%d n_cells=%d ref_alb=%.3f gain=%.4f" % [
 				_gdext_albedo_runs + _gdext_albedo_fallbacks + 1,
@@ -9623,11 +9783,22 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		# storage A/B 同源契约：与 albedo / transp 同模式，refresh 让 SoA 取得最新值
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
-		var rc: float = float(_data_core_world_ext.run_vegetation_dynamics_pass(knobs))
+		# C.3d dispatch：thread fallback flag 开 + _thread 入口 export 时优先走
+		# WorkerThreadPool 路径；n_tasks=0 让 C++ 端按 ~1024 cells/task 自适应。
+		var _use_vegdyn_thread: bool = bool(cp_vd.use_gdext_thread_fallback) \
+				and _data_core_world_ext.has_method("run_vegetation_dynamics_pass_thread")
+		var _vegdyn_dispatch_path: String = "scalar"
+		var rc: float
+		if _use_vegdyn_thread:
+			rc = float(_data_core_world_ext.run_vegetation_dynamics_pass_thread(knobs, 0))
+			_vegdyn_dispatch_path = "thread"
+		else:
+			rc = float(_data_core_world_ext.run_vegetation_dynamics_pass(knobs))
+			_vegdyn_dispatch_path = "scalar"
 		if _gdext_vegdyn_runs + _gdext_vegdyn_fallbacks < 3:
-			print("[veg_dyn/stage_b] DEBUG call#%d: rc=%.4f n_cells=%d scale=%.2f" % [
+			print("[veg_dyn/stage_b] DEBUG call#%d: path=%s rc=%.4f n_cells=%d scale=%.2f" % [
 				_gdext_vegdyn_runs + _gdext_vegdyn_fallbacks + 1,
-				rc, n_cells, scale,
+				_vegdyn_dispatch_path, rc, n_cells, scale,
 			])
 		if rc >= 0.0:
 			# 写回 vitality / streak —— knobs in/out 模式
@@ -9684,7 +9855,7 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			_gdext_vegdyn_runs += 1
 			_gdext_vegdyn_total_ms += rc
 			if _gdext_vegdyn_runs == 1:
-				print("[veg_dyn/stage_b] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 9.2ms; target < 1.0ms)" % rc)
+				print("[veg_dyn/stage_b] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 9.2ms; target < 1.0ms)" % [_vegdyn_dispatch_path, rc])
 			return any_changed
 		_gdext_vegdyn_fallbacks += 1
 		if _gdext_vegdyn_fallbacks == 1:

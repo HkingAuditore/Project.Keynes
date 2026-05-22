@@ -198,6 +198,10 @@ var _tod_profile: TODProfile = null
 var _current_map: MapData = null
 var _generator: MapGenerator = null
 
+# DOTS-Total-CPP C.4 acceptance：串行批跑队列。空数组表示当前没有 C.4 顶层流程。
+# 由 start_soak_ab_phase_c4_acceptance_debug 填充，_on_c4_batch_completed 消费。
+var _c4_acceptance_queue: Array[String] = []
+
 # DOTS-Final-Push 任务 9：startup acceptance 日志一次性标记。首次 generate
 # 完成后打印 DCDotsCompletionGate 的 5 段状态行 + evaluate() BLOCK 警告。
 # R 键重新生成不再重复打印（避免刷屏）。
@@ -536,6 +540,126 @@ func start_soak_ab_season_round_batch_debug() -> void:
 	var ok: bool = DCSoakABRunner.instance.start_season_round_batch(self)
 	if not ok:
 		print("[main] start_season_round_batch failed (generator not ready?)")
+
+## DOTS-Total-CPP C.3d/C.3e 直接验收入口：跑两段（30 + 1000 tick）SAME_SOURCE A/B
+## （A=use_gdext_thread_fallback off / B=on），覆盖全部 5 个 _thread 入口：
+##   climate Pass-B / ocean_water / ocean_land / sea_ice / vegetation_dynamics
+## 预期：bit-equal（reduce 严格按 task_idx 升序，无 race），N≥2400 + WTP 可用时
+## thread on 略快或持平。
+func start_soak_ab_thread_batch_debug() -> void:
+	if DCSoakABRunner.instance != null \
+			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
+		print("[main] thread batch ignored: A/B runner already running")
+		return
+	if DCSoakABRunner.instance == null:
+		DCSoakABRunner.instance = DCSoakABRunner.new()
+	var ok: bool = DCSoakABRunner.instance.start_thread_batch(self)
+	if not ok:
+		print("[main] start_thread_batch failed (generator not ready?)")
+
+
+## Phase 1A.4 (plan/sus-cpp-port) 验收入口：跑两段（30 + 1000 tick）SAME_SOURCE A/B
+## （A=use_gdext_sus_scheduler off / B=on），验证 SUS 调度外壳 native 化与
+## GDScript 路径行为完全等价（buffer hash + perf）。
+##
+## 跑完后报告写到 user://soak/last_report.txt（与 F3 / 其他 batch 共享通道）；
+## 完整历史追加到 user://soak/report_history.txt。
+##
+## 预期 verdict：PASS（scalar ≤ 0.05、long-term ≤ 0.01）。
+## 如果 30-tick 段就 FAIL，多半是 _descriptor_from_policy 漏了某种 policy
+## 子类 / depends_on 序列化丢字段；先看 last_report.txt 里 worst_field 是哪个 job。
+##
+## 与 start_soak_ab_thread_batch_debug 同构。
+func start_soak_ab_sus_scheduler_batch_debug() -> void:
+	if DCSoakABRunner.instance != null \
+			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
+		print("[main] sus_scheduler batch ignored: A/B runner already running")
+		return
+	if DCSoakABRunner.instance == null:
+		DCSoakABRunner.instance = DCSoakABRunner.new()
+	var ok: bool = DCSoakABRunner.instance.start_sus_scheduler_batch(self)
+	if not ok:
+		print("[main] start_sus_scheduler_batch failed (generator not ready?)")
+
+## DOTS-Total-CPP C.4 顶层验收入口：串行跑 4 个核心 batch，一次覆盖
+## Phase A/B/C 全套 flag 矩阵：
+##   1. unified_fast_tick (mega-tick 顶层入口 on/off)
+##   2. system_schedule (Phase C.1 静态 DAG dispatch loop on/off)
+##   3. thread (C.3d/e 5 个 _thread 入口 + WorkerThreadPool 并行 on/off)
+##   4. season_round (Phase B+ 12-stage season 路径 on/off)
+## 每个 batch 内部跑 30 + 1000 tick 两段。
+## 跑完后最新报告写到 user://soak/last_report.txt，完整历史追加到
+## user://soak/report_history.txt（与现有 F3 共享通道）。
+##
+## 注意：单次完整跑 4 batch × 2 profiles × (30 + 1000) = 8240 sim-tick，
+## 按 x20 ≈ 800s 实墙时；建议 x20 速度 + 离开 15min 自动跑完。
+## 中间任一 batch 失败不阻塞后续 batch 启动。
+func start_soak_ab_phase_c4_acceptance_debug() -> void:
+	if _generator == null:
+		print("[main] C.4 acceptance ignored: generator not ready")
+		return
+	if DCSoakABRunner.instance != null \
+			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
+		print("[main] C.4 acceptance ignored: A/B runner already running")
+		return
+	if DCSoakABRunner.instance == null:
+		DCSoakABRunner.instance = DCSoakABRunner.new()
+	print("[main] === Phase C.4 acceptance: kicking off 4 batches sequentially ===")
+	print("[main]   1) unified_fast_tick on/off (mega-tick 顶层)")
+	print("[main]   2) system_schedule on/off (静态 DAG)")
+	print("[main]   3) thread on/off (5 个 _thread 入口 + WTP)")
+	print("[main]   4) season_round on/off (12-stage season)")
+	print("[main]   每个 batch 跑 30 + 1000 tick 两段，预计 ~800s @ x20 速度")
+	# 第 1 个 batch 直接启动；后续 batch 通过 batch completion 链式触发。
+	_c4_acceptance_queue = ["system_schedule", "thread", "season_round"]
+	var ok: bool = DCSoakABRunner.instance.start_unified_fast_tick_batch(self)
+	if not ok:
+		print("[main] C.4 acceptance: unified_fast_tick batch failed to start, abort chain")
+		_c4_acceptance_queue.clear()
+		return
+	# 监听 completed 信号串行下一个 batch（去重防多次连接）。
+	if not DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
+		DCSoakABRunner.instance.completed.connect(_on_c4_batch_completed)
+
+
+func _on_c4_batch_completed(_report: Dictionary) -> void:
+	# completed 信号触发时，runner 自己的 batch handler 也在处理 _batch_index / _batch_active。
+	# 后续 batch 的连接顺序可能让本回调先于内部 handler 执行；统一 deferred 一帧后判断，
+	# 确保 batch 内部 multi tick_counts 状态已经稳定。
+	call_deferred("_try_start_next_c4_batch")
+
+
+func _try_start_next_c4_batch() -> void:
+	if DCSoakABRunner.instance == null:
+		_c4_acceptance_queue.clear()
+		return
+	if DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active():
+		# 当前 batch 还在跑；multi tick_counts 段间会短暂回到 IDLE，
+		# 必须等 runner 内部 batch_active=false 后才能切下一个 batch。
+		return
+	if _c4_acceptance_queue.is_empty():
+		if DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
+			DCSoakABRunner.instance.completed.disconnect(_on_c4_batch_completed)
+		print("[main] === Phase C.4 acceptance: all batches complete ===")
+		return
+	var next_kind: String = _c4_acceptance_queue[0]
+	_c4_acceptance_queue.remove_at(0)
+	print("[main] C.4 acceptance: starting next batch = %s" % next_kind)
+	var ok: bool = false
+	match next_kind:
+		"system_schedule":
+			ok = DCSoakABRunner.instance.start_system_schedule_batch(self)
+		"thread":
+			ok = DCSoakABRunner.instance.start_thread_batch(self)
+		"season_round":
+			ok = DCSoakABRunner.instance.start_season_round_batch(self)
+		_:
+			print("[main] C.4 acceptance: unknown batch kind %s, skip" % next_kind)
+			call_deferred("_try_start_next_c4_batch")
+			return
+	if not ok:
+		print("[main] C.4 acceptance: batch %s failed to start, skip to next" % next_kind)
+		call_deferred("_try_start_next_c4_batch")
 
 func cancel_soak_debug() -> void:
 	_soak_ab_hotkey_cancel()
@@ -2185,6 +2309,16 @@ func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE,
 ## 用户可按 Alt+F3 强制解卡。同时 dump 内置 stall 守门会在 200 次同 day record 后
 ## 自动 abort（约 8s @ 40ms/tick），Alt+F3 是更快的手动出口。
 func _soak_ab_hotkey_cancel() -> void:
+	var cleared_c4_chain: bool = false
+	if not _c4_acceptance_queue.is_empty():
+		_c4_acceptance_queue.clear()
+		cleared_c4_chain = true
+	if DCSoakABRunner.instance != null \
+			and DCSoakABRunner.instance.completed.is_connected(_on_c4_batch_completed):
+		DCSoakABRunner.instance.completed.disconnect(_on_c4_batch_completed)
+		cleared_c4_chain = true
+	if cleared_c4_chain:
+		print("[main] C.4 acceptance queue cleared")
 	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
 		DCSoakABRunner.instance.cancel()
 		print("[soak-ab] Alt+F3: A/B runner cancelled by user")

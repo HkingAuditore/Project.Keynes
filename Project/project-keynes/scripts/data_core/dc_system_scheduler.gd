@@ -54,6 +54,12 @@ var sim_budget_window_size: int = 300
 var sim_budget_warn_ms: float = 1.0
 var log_interval_ticks: int = 30
 
+## Phase 1A — sus-cpp-port: 透传给内部 SusScheduler。caller 写本字段后下次 tick
+## 同步给 _sus；翻 true 时 _sus 内部会把所有 register 过的 job forward 到
+## SusSchedulerExt（C++）。本类零行为变化——纯透传。
+## Phase 1C (2026-05-22)：默认值翻 true 与 SusScheduler / ClimateProfile 对齐。
+var use_gdext_sus_scheduler: bool = true
+
 
 # ─── 注入 World ──────────────────────────────────────────────────────
 
@@ -153,6 +159,10 @@ func tick(ctx) -> void:
 	_sus.sim_budget_window_size = sim_budget_window_size
 	_sus.sim_budget_warn_ms = sim_budget_warn_ms
 	_sus.log_interval_ticks = log_interval_ticks
+	# Phase 1A: native scheduler flag forwarding. 注意——若在已 register_system 之
+	# 后才翻 true，SusScheduler._ensure_ext 会做 lazy 迁移，把已注册 job 全部
+	# replay 给 SusSchedulerExt。
+	_sus.use_gdext_sus_scheduler = use_gdext_sus_scheduler
 	# debug-only reads/writes 校验：让每个 system 自己 begin/end pass
 	# DCSystem 提供 _scheduler_debug_pass_begin/end；SUS 真正调 run_slice 时
 	# 这两个钩子还没被触发——所以我们目前选择"在 tick 入口 begin、tick 结束 end"

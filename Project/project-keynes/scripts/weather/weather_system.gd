@@ -146,6 +146,16 @@ var _data_core_world_ext: RefCounted = null
 # （保留双写是 PR-2.3 facade 化前的兼容路径）。详见 master 手册 §3.9。
 var _data_core_world = null  # DCWorld（GDScript）
 
+# ─── Phase A.3（dots-total-cpp roadmap）：常驻 KnobsHandle ──────────────
+# 启用 use_gdext_resident_knobs 时由 configure_gdext_acceleration 装配；
+# ClimateProfile.changed 触发段级 invalidate；hot-path 3 个 _build_*_knobs
+# 走 to_*_knobs_dict() 缓存输出（map_generator 端持有自己的 _knobs_handle
+# 用于 stage_b，两侧共享同一份 cp 但各自走自己的 dirty-write，避免跨节点
+# 信号 fan-out）。
+# 默认 null：未启用 / stale .dll / ClassDB 无该类时所有 hot-path 走原 builder。
+var _knobs_handle: RefCounted = null
+var _knobs_handle_first_use_logged: bool = false
+
 # 任务 2（dots-completion）：HexCell facade 启用时跳过 AoS 直写。
 # - false（default）：兼容路径，hot loop 仍写 out_cell.weather_*（setter 落到
 #   _backing；legacy reader 如 map_baker.gd 走 cell.weather_xxx 仍能取到值）。
@@ -195,6 +205,17 @@ var _gdext_summary_fallbacks: int = 0
 var _gdext_summary_total_ms: float = 0.0
 var _gdext_summary_warned_fallback: bool = false
 var _gdext_summary_first_attempt_logged: bool = false
+# Phase A.1 fronts_soa zero-copy 路径：once-log + once-warn 标志
+var _fronts_soa_path_logged: bool = false
+var _fronts_soa_warned_fallback: bool = false
+# Phase B "Z 锁死" 实测遥测：包夹 _unpack_summary_soa_to_fronts 的 wall-clock μs。
+# 100 样本 ring 满即一次性 print(p50/p95/mean)，然后归零再采下一窗口。
+# gate：OS.has_feature("editor") + use_gdext_fronts_soa（caller 已确认）。
+# 若 p95 > 100μs/tick → 推翻 Z 回 X1（archetype 化优先级 ↑）；否则 Z 锁死。
+const _FRONTS_SOA_TELEMETRY_WINDOW: int = 100
+var _fronts_soa_unpack_us_ring: PackedInt32Array = PackedInt32Array()
+var _fronts_soa_unpack_window_idx: int = 0
+var _fronts_soa_unpack_window_count: int = 0
 
 # plan/weather-refresh-cpp-all PR-2：weather refresh daily 合并 facade 运行时统计。
 # 仅在 try_run_refresh_daily_combined_gdext 成功路径累计；rc!=0 路径走 fallback
@@ -731,6 +752,28 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 	for i in range(n_cells):
 		var c: HexCell = cells_l[i]
 		temp_anom_arr[i] = float(c.temperature_transport_anomaly)
+	# ─── Phase A.3 fast path：从 KnobsHandle 拿标量段缓存 Dict ──────────
+	# 动态字段（SoA cache / PackedArray ref / temp_anom_arr）仍每帧准备并 merge。
+	# 标量段在 ClimateProfile 不变的稳态下复用缓存 Dict（CoW 引用 ++）。
+	if _knobs_handle != null and _knobs_handle.has_method("to_field_knobs_dict"):
+		# day_counter / season_phase 每帧可能变 → 这里同步推一次（dirty-write 内部
+		# 走值比较，无变化时不拉 dirty，缓存 Dict 命中）。
+		_push_resident_knobs_from_cp(_cp_for_front_flag)
+		var dynamic_fields: Dictionary = {
+			"start_idx": 0,
+			"end_idx": n_cells,
+			"n_cells": n_cells,
+			"season_idx": _field_solver._field_slice_season_idx,
+			"climate_anomaly": _field_solver._field_slice_climate_anomaly,
+			"refresh_convergence": _field_solver._field_slice_refresh_convergence,
+			"cell_pos": _field_solver._field_slice_cell_pos,
+			"neighbor_indices": _field_solver._field_slice_neighbor_indices,
+			"prev_vapor": _field_solver._field_slice_prev_vapor,
+			"prev_precip": _field_solver._field_slice_prev_precip,
+			"temp_transport_anomaly": temp_anom_arr,
+		}
+		return _merge_resident_knobs_with_dynamic(_knobs_handle.to_field_knobs_dict(), dynamic_fields)
+	# ─── Fallback：原 builder 路径（与 Phase A.3 之前 100% bit-equal）──
 	return {
 		"start_idx": 0,
 		"end_idx": n_cells,
@@ -845,6 +888,17 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		moist_d[w] = WeatherType.moisture_delta(w)
 		cfs[w] = 1 if WeatherType.can_form_snow(w) else 0
 		cff[w] = 1 if WeatherType.can_form_flood(w) else 0
+	# ─── Phase A.3 fast path：从 KnobsHandle 拿 distribute 段缓存 Dict ──
+	if _knobs_handle != null and _knobs_handle.has_method("to_distribute_knobs_dict"):
+		# 标量段与 LUT 由 _push_resident_knobs_from_cp 在 changed signal 时已推送；
+		# 这里仅 merge 动态字段（n_cells / SoA AoS cache）。
+		var dynamic_fields_dist: Dictionary = {
+			"n_cells": n_cells,
+			"accumulated_snow_days": _dist_acc_snow_cache,
+			"pre_snow_cover": _dist_pre_cover_cache,
+		}
+		return _merge_resident_knobs_with_dynamic(
+			_knobs_handle.to_distribute_knobs_dict(), dynamic_fields_dist)
 	return {
 		"n_cells": n_cells,
 		# _apply_snow_accumulation 用到的 cover/温度阈值（任务 4 中 C++ 复刻 GDScript
@@ -955,6 +1009,20 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 		_summary_cache_n = n_cells
 	# wind_x / wind_y 已是 SoA（map.wind_x_arr / wind_y_arr）；C++ 通过 _slots
 	# 直接读，不必通过 knobs 传。
+	# ─── Phase A.3 fast path：从 KnobsHandle 拿 summary 段缓存 Dict ──
+	if _knobs_handle != null and _knobs_handle.has_method("to_summary_knobs_dict"):
+		# day_counter 每帧变化 → 走单字段细粒度入口（无变化时不拉 dirty）
+		if _knobs_handle.has_method("set_day_counter"):
+			_knobs_handle.set_day_counter(_day_counter)
+		var dynamic_fields_sum: Dictionary = {
+			"n_cells": n_cells,
+			"hex_size": _hex_size,
+			"cell_q_arr": _summary_q_cache,
+			"cell_r_arr": _summary_r_cache,
+			"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+		}
+		return _merge_resident_knobs_with_dynamic(
+			_knobs_handle.to_summary_knobs_dict(), dynamic_fields_sum)
 	return {
 		"n_cells": n_cells,
 		"hex_size": _hex_size,
@@ -1007,6 +1075,252 @@ func _unpack_summary_dict_to_front(d: Dictionary) -> WeatherFront:
 	f.edge_seed = float(d.get("edge_seed", 0.0))
 	return f
 
+# ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA 解包 ─────
+# 从 C++ 端 run_weather_summary_fronts_pass 返回的 out["fronts_soa"]: Dict
+# 中读取 23 个 PackedArray 列（命名严格沿用 fronts_schema.gd FRONTS_SCHEMA
+# cpp_name），按 idx 1:1 构造 WeatherFront 实例数组。
+#
+# 与 _unpack_summary_dict_to_front 等价但 marshalling 大幅减负：
+#   - 旧路径：每 front N=12 个 → 跨语言 ~17*12 = 204 个 Variant entry
+#   - SoA 路径：固定 ~24 个 PackedArray 引用（与 N 无关）
+#
+# 容错策略：任意必需列缺失或 size 不匹配 → 返回 null 触发 caller fallback
+# 到旧 dict 路径（保证向前兼容 stale .dll）。
+func _unpack_summary_soa_to_fronts(soa: Dictionary) -> Variant:
+	var n: int = int(soa.get("n_fronts", -1))
+	if n < 0:
+		return null
+	if n == 0:
+		return [] as Array[WeatherFront]
+	var center_x: PackedFloat32Array = soa.get("front_center_x", PackedFloat32Array())
+	var center_y: PackedFloat32Array = soa.get("front_center_y", PackedFloat32Array())
+	var radius_arr: PackedFloat32Array = soa.get("front_radius", PackedFloat32Array())
+	var velocity_x: PackedFloat32Array = soa.get("front_velocity_x", PackedFloat32Array())
+	var velocity_y: PackedFloat32Array = soa.get("front_velocity_y", PackedFloat32Array())
+	var axis_x: PackedFloat32Array = soa.get("front_axis_x", PackedFloat32Array())
+	var axis_y: PackedFloat32Array = soa.get("front_axis_y", PackedFloat32Array())
+	var stable_axis_x: PackedFloat32Array = soa.get("front_stable_axis_x", PackedFloat32Array())
+	var stable_axis_y: PackedFloat32Array = soa.get("front_stable_axis_y", PackedFloat32Array())
+	var major_scale_arr: PackedFloat32Array = soa.get("front_major_scale", PackedFloat32Array())
+	var minor_scale_arr: PackedFloat32Array = soa.get("front_minor_scale", PackedFloat32Array())
+	var edge_seed_arr: PackedFloat32Array = soa.get("front_edge_seed", PackedFloat32Array())
+	var intensity_arr: PackedFloat32Array = soa.get("front_intensity", PackedFloat32Array())
+	var decay_arr: PackedFloat32Array = soa.get("front_decay_per_day", PackedFloat32Array())
+	var life_arr: PackedFloat32Array = soa.get("front_life_progress", PackedFloat32Array())
+	var cloud_arr: PackedFloat32Array = soa.get("front_cloud_amount", PackedFloat32Array())
+	var precip_arr: PackedFloat32Array = soa.get("front_precip_amount", PackedFloat32Array())
+	var dissolve_arr: PackedFloat32Array = soa.get("front_dissolve_amount", PackedFloat32Array())
+	var type_arr: PackedInt32Array = soa.get("front_type", PackedInt32Array())
+	var ttl_arr: PackedInt32Array = soa.get("front_ttl_days", PackedInt32Array())
+	var age_arr: PackedInt32Array = soa.get("front_age_days", PackedInt32Array())
+	# 必需列长度全检查（任一不匹配立即放弃，让 caller 走 dict fallback）
+	if center_x.size() != n or center_y.size() != n: return null
+	if radius_arr.size() != n: return null
+	if velocity_x.size() != n or velocity_y.size() != n: return null
+	if axis_x.size() != n or axis_y.size() != n: return null
+	if stable_axis_x.size() != n or stable_axis_y.size() != n: return null
+	if major_scale_arr.size() != n or minor_scale_arr.size() != n: return null
+	if edge_seed_arr.size() != n: return null
+	if intensity_arr.size() != n: return null
+	if decay_arr.size() != n: return null
+	if life_arr.size() != n: return null
+	if cloud_arr.size() != n or precip_arr.size() != n: return null
+	if dissolve_arr.size() != n: return null
+	if type_arr.size() != n or ttl_arr.size() != n or age_arr.size() != n: return null
+
+	var out: Array[WeatherFront] = [] as Array[WeatherFront]
+	out.resize(n)
+	for i in range(n):
+		var f := WeatherFront.new()
+		f.type = type_arr[i]
+		f.center = Vector2(center_x[i], center_y[i])
+		f.intensity = clampf(intensity_arr[i], 0.0, 1.0)
+		f.radius = radius_arr[i]
+		# axis 归一化与 dict 路径等价（C++ 端已经 normalize 但 GDScript fallback 也照同样语义守护）
+		var ax := Vector2(axis_x[i], axis_y[i])
+		if ax.length_squared() <= 0.0001:
+			ax = Vector2.RIGHT
+		f.axis = ax.normalized()
+		var sax := Vector2(stable_axis_x[i], stable_axis_y[i])
+		if sax.length_squared() <= 0.0001:
+			sax = f.axis
+		f.stable_axis = sax
+		f.velocity = Vector2(velocity_x[i], velocity_y[i])
+		f.major_scale = major_scale_arr[i]
+		f.minor_scale = minor_scale_arr[i]
+		f.age_days = age_arr[i]
+		f.ttl_days = ttl_arr[i]
+		f.decay_per_day = decay_arr[i]
+		f.life_progress = clampf(life_arr[i], 0.0, 1.0)
+		f.cloud_amount = clampf(cloud_arr[i], 0.0, 1.0)
+		f.precip_amount = clampf(precip_arr[i], 0.0, 1.0)
+		f.dissolve_amount = dissolve_arr[i]
+		f.edge_seed = edge_seed_arr[i]
+		out[i] = f
+	return out
+
+# ─── Phase A.1 helper：把 C++ 返回值优先走 SoA 路径，缺失 / flag off 时
+# fallback 到 Array[Dict] 路径。集中在一个 helper 里供 summary 与 combined
+# 两处复用，避免重复 dispatch 逻辑分叉。
+func _build_fronts_from_rc(rc_dict: Dictionary) -> Array[WeatherFront]:
+	var soa_enabled: bool = false
+	if _cp_for_front_flag != null and "use_gdext_fronts_soa" in _cp_for_front_flag:
+		soa_enabled = bool(_cp_for_front_flag.use_gdext_fronts_soa)
+	if soa_enabled and rc_dict.has("fronts_soa"):
+		var soa: Dictionary = rc_dict["fronts_soa"]
+		# Phase B Z-lock 实测遥测：editor-only 包夹 unpack 调用，100 样本 ring 满 print。
+		var _telemetry_on: bool = OS.has_feature("editor")
+		var _t0_us: int = Time.get_ticks_usec() if _telemetry_on else 0
+		var soa_out: Variant = _unpack_summary_soa_to_fronts(soa)
+		if _telemetry_on:
+			var _dt_us: int = Time.get_ticks_usec() - _t0_us
+			if _fronts_soa_unpack_us_ring.size() < _FRONTS_SOA_TELEMETRY_WINDOW:
+				_fronts_soa_unpack_us_ring.resize(_FRONTS_SOA_TELEMETRY_WINDOW)
+			_fronts_soa_unpack_us_ring[_fronts_soa_unpack_window_idx] = _dt_us
+			_fronts_soa_unpack_window_idx = (_fronts_soa_unpack_window_idx + 1) % _FRONTS_SOA_TELEMETRY_WINDOW
+			_fronts_soa_unpack_window_count += 1
+			if _fronts_soa_unpack_window_count >= _FRONTS_SOA_TELEMETRY_WINDOW:
+				# 窗口满：计算 p50/p95/mean，print 后归零再采（持续观测，便于跨阶段对比）
+				var _samples: PackedInt32Array = _fronts_soa_unpack_us_ring.duplicate()
+				_samples.sort()
+				var _w: int = _samples.size()
+				var _p50: int = _samples[_w / 2]
+				var _p95: int = _samples[int(float(_w) * 0.95)]
+				var _sum: int = 0
+				for _v in _samples:
+					_sum += int(_v)
+				var _mean: float = float(_sum) / float(_w)
+				print("[weather/summary] fronts_soa unpack telemetry — n=%d mean=%.1fμs p50=%dμs p95=%dμs (Z-lock threshold: p95<100μs)" % [_w, _mean, _p50, _p95])
+				_fronts_soa_unpack_window_count = 0
+				_fronts_soa_unpack_window_idx = 0
+		if soa_out != null:
+			if not _fronts_soa_path_logged:
+				_fronts_soa_path_logged = true
+				print("[weather/summary] fronts_soa path ACTIVE — first run n=%d (PackedArray columns, marshalling ~90%% slim vs Array[Dict])" % int(soa.get("n_fronts", 0)))
+			return soa_out as Array[WeatherFront]
+		else:
+			if not _fronts_soa_warned_fallback:
+				_fronts_soa_warned_fallback = true
+				push_warning("[weather/summary] fronts_soa columns missing/invalid; falling back to Array[Dict] path (will retry next tick)")
+	# Fallback: 走旧 Array[Dict] 路径
+	var fronts_arr: Array = rc_dict.get("fronts", [])
+	var out: Array[WeatherFront] = [] as Array[WeatherFront]
+	for d in fronts_arr:
+		out.append(_unpack_summary_dict_to_front(d))
+	return out
+
+# ─── Phase A.3（dots-total-cpp roadmap）：KnobsHandle dirty-write helper ─
+# 把 ClimateProfile + weather_system 自身 _field_* 持久旋钮一次性推送到
+# KnobsHandle 的所有段。caller：configure_gdext_acceleration 首次装配 + 后续
+# ClimateProfile.changed 信号触发（信号 cb 会再调一次本函数）。
+#
+# 注意：动态 PackedArray ref（_field_slice_* / _summary_q_cache / map.* SoA /
+# neighbor_indices）不在这里推送 —— 它们每帧由 caller 在 _build_*_knobs
+# 外层 merge 进 to_*_knobs_dict() 输出（保留每帧 ref 替换语义）。
+func _push_resident_knobs_from_cp(cp: Resource) -> void:
+	if _knobs_handle == null or cp == null:
+		return
+
+	# ─── field 段标量 ──
+	if _knobs_handle.has_method("set_field_scalars"):
+		_knobs_handle.set_field_scalars(
+			_world_bounds.position.y,
+			_world_bounds.size.y,
+			not _field_verify_enabled,  # apply_convergence_boost = (not verify_mode)
+			_hex_size,
+			_field_advect_steps,
+			_field_diffusion,
+			_field_condensation_gain,
+			_field_orographic_lift_gain,
+			_field_convergence_gain,
+			_field_ocean_evap_gain,
+			_field_precip_decay,
+			_season_phase,
+		)
+
+	# ─── distribute 段标量（snow/flood 阈值与 _build_weather_distribute_knobs 严格同源）──
+	if _knobs_handle.has_method("set_distribute_scalars"):
+		_knobs_handle.set_distribute_scalars(
+			0.001,    # snow_min_intensity
+			0.30,     # snow_freeze_t
+			0.34,     # snow_melt_t
+			0.4,      # snow_intensity_for_snowing
+			3,        # snow_accum_days_req
+			0.55,     # flood_heavy_intensity
+			0.55,     # flood_heavy_precip
+			0.32,     # flood_lowland_intensity
+			0.50,     # flood_lowland_elev
+			0.60,     # flood_lowland_moisture
+			int(WeatherType.WT.CLEAR),
+			int(CoverType.CV.SNOW),
+			int(CoverType.CV.NONE),
+			int(CoverType.CV.FLOODING),
+		)
+	# distribute WT LUT（8-长度）—— 每次重建（cp.WeatherType 静态表理论上不会变，
+	# 但 push 全路径覆盖一次更稳）
+	if _knobs_handle.has_method("set_distribute_wt_tables"):
+		var temp_d: PackedFloat32Array = PackedFloat32Array()
+		var moist_d: PackedFloat32Array = PackedFloat32Array()
+		var cfs: PackedByteArray = PackedByteArray()
+		var cff: PackedByteArray = PackedByteArray()
+		temp_d.resize(8)
+		moist_d.resize(8)
+		cfs.resize(8)
+		cff.resize(8)
+		for w in range(8):
+			temp_d[w] = WeatherType.temp_delta(w)
+			moist_d[w] = WeatherType.moisture_delta(w)
+			cfs[w] = 1 if WeatherType.can_form_snow(w) else 0
+			cff[w] = 1 if WeatherType.can_form_flood(w) else 0
+		_knobs_handle.set_distribute_wt_tables(temp_d, moist_d, cfs, cff)
+
+	# ─── summary 段标量 ──
+	if _knobs_handle.has_method("set_summary_scalars"):
+		_knobs_handle.set_summary_scalars(
+			_field_summary_limit,
+			0.10,   # intensity_enter
+			0.06,   # intensity_hold
+			0.65,   # merge_ratio
+			4,      # merge_max_rounds
+			1.6,    # radius_base
+			1.05,   # radius_scale
+			false,  # drift_debug_log
+			_day_counter,
+		)
+
+
+# ClimateProfile.changed 信号回调：段级 invalidate + 重新推送。
+# cp 通过 .bind(cp) 透传到这里（Resource.changed 信号自身不带 sender 参数）。
+func _on_climate_profile_changed_for_knobs(cp: Resource) -> void:
+	if _knobs_handle == null:
+		return
+	if _knobs_handle.has_method("invalidate_all"):
+		_knobs_handle.invalidate_all()
+	_push_resident_knobs_from_cp(cp)
+
+
+# 把 to_*_knobs_dict 缓存 Dict 与每帧动态字段（PackedArray ref / cache）合并。
+# 用于 _build_weather_field_knobs / _build_weather_distribute_knobs /
+# _build_weather_summary_knobs 三个 hot path 的 fast path。
+#
+# 实现要点：to_*_knobs_dict 返回的 Dict 是缓存 Dict 的 CoW 引用，duplicate(false)
+# 浅拷贝出一份后 merge 动态字段（不污染缓存 Dict）。duplicate(false) 在 standard
+# Godot Dictionary 是 O(N_keys)，N≤30 标量段约 0.01ms 量级，比标量段重建省一个量级。
+func _merge_resident_knobs_with_dynamic(base_dict: Dictionary, dynamic_fields: Dictionary) -> Dictionary:
+	if base_dict.is_empty():
+		# KnobsHandle 拿不到缓存（首次或 invalidate 后），caller 应已 fallback 旧路径
+		return dynamic_fields
+	var out: Dictionary = base_dict.duplicate(false)
+	for k in dynamic_fields:
+		out[k] = dynamic_fields[k]
+	if not _knobs_handle_first_use_logged:
+		_knobs_handle_first_use_logged = true
+		var fr: int = -1
+		if _knobs_handle != null and _knobs_handle.has_method("get_field_rebuild_count"):
+			fr = int(_knobs_handle.get_field_rebuild_count())
+		print("[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=%d expected ≤1; stable Hz target ≤1 Hz)" % fr)
+	return out
+
 # 调用 C++ pass。返回 Variant：
 #   Array[WeatherFront]  → 成功（替换原 _build_field_summary_fronts 的输出）
 #   null                 → 失败（GDScript fallback）
@@ -1027,11 +1341,8 @@ func _try_run_weather_summary_fronts_gdext(map: MapData, world: WorldData) -> Va
 	_gdext_summary_total_ms += rc
 	if _gdext_summary_runs == 1:
 		print("[weather/summary] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 17.8ms; charter target < 3.0ms)" % rc)
-	var fronts_arr: Array = rc_dict.get("fronts", [])
-	var out: Array[WeatherFront] = [] as Array[WeatherFront]
-	for d in fronts_arr:
-		out.append(_unpack_summary_dict_to_front(d))
-	return out
+	# Phase A.1: SoA 优先 + Dict fallback（旧 Array[Dict] 路径仍兼容 stale .dll）
+	return _build_fronts_from_rc(rc_dict)
 
 # ─── plan/weather-refresh-cpp-all PR-2 facade ─────────────────────────────
 # 单 cpp call 跑完 weather refresh daily 全套（field_solve + distribute +
@@ -1132,10 +1443,9 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 
 	# Step 4：解包 fronts，写 _active_fronts（替代 commit() summary 段 +
 	# tick_one_day 末端 _active_fronts 写入）。
-	var fronts_arr: Array = rc_dict.get("fronts", [])
-	var fronts_out: Array[WeatherFront] = [] as Array[WeatherFront]
-	for d in fronts_arr:
-		fronts_out.append(_unpack_summary_dict_to_front(d))
+	# Phase A.1: SoA 优先 + Dict fallback（与 _try_run_weather_summary_fronts_gdext
+	# 共享 _build_fronts_from_rc helper，single source of truth）。
+	var fronts_out: Array[WeatherFront] = _build_fronts_from_rc(rc_dict)
 	_active_fronts = fronts_out
 
 	# Step 5：cover_dirty 同步（distribute 段输出）。
@@ -1159,6 +1469,16 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 		"distribute_ms": float(rc_dict.get("distribute_ms", 0.0)),
 		"summary_ms": float(rc_dict.get("summary_ms", 0.0)),
 		"cyclone_ms": float(rc_dict.get("cyclone_ms", 0.0)),
+		# Phase B.2 cyclone 细粒度遥测（C++ cyclone_wake_step by-ref 写回 6 字段
+		# + caller 写回 cyclone_pool_size，map_generator._dump_weather_breakdown_if_slow
+		# 触发时立即定位是衰减循环 vs 注入循环、是大量 evict vs 大量 replace）
+		"cyclone_phase1_decay_ms": float(rc_dict.get("cyclone_phase1_decay_ms", 0.0)),
+		"cyclone_phase2_inject_ms": float(rc_dict.get("cyclone_phase2_inject_ms", 0.0)),
+		"cyclone_n_decayed": int(rc_dict.get("cyclone_n_decayed", 0)),
+		"cyclone_n_evicted": int(rc_dict.get("cyclone_n_evicted", 0)),
+		"cyclone_n_replaced": int(rc_dict.get("cyclone_n_replaced", 0)),
+		"cyclone_n_injected": int(rc_dict.get("cyclone_n_injected", 0)),
+		"cyclone_pool_size": int(rc_dict.get("cyclone_pool_size", 0)),
 		"stage_b_ms": float(rc_dict.get("stage_b_ms", 0.0)),
 		"albedo_ms": float(rc_dict.get("albedo_ms", 0.0)),
 		"veg_dyn_ms": float(rc_dict.get("veg_dyn_ms", 0.0)),
@@ -1186,6 +1506,97 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 	ret["breakdown"] = br
 	ret["fail_stage"] = ""
 	return ret
+
+
+# ─── Phase A.2 unified fast tick：weather_knobs 嵌入 native_daily_bundle ─────
+# 当 native_daily_sim_mode=ACTIVE 且 use_gdext_unified_fast_tick=true 时，由
+# map_generator._build_native_daily_bundle 调用本 helper 构造平铺 weather super_knobs，
+# 由 run_native_daily_tick 内部的 bundle["weather_knobs"] 分支自动转调
+# run_weather_refresh_daily_pass，省去 weather_refresh_job 独立的一次跨界。
+#
+# 与 try_run_refresh_daily_combined_gdext step 1-2 同源逻辑（field_slice state
+# 初始化 + 3 组 weather knobs builder + 顶层平铺 stage_b knobs）。失败时返回
+# 空 dict，caller 据此跳过 weather_knobs 嵌入退回 stage_b-only bundle。
+#
+# 副作用（成功路径）：
+#   - 推进 _day_counter（与 tick_one_day 语义一致，count_day=true）
+#   - 初始化 _field_solver._field_slice_* state（_field_slice_fast_indexed 必须为 true）
+#   - 设置 _current_map_for_tick = map
+# 这些状态会在 apply_unified_fast_tick_result 内被 _clear_weather_field_slice_state 清理。
+func build_unified_fast_tick_weather_knobs(map: MapData, world: WorldData,
+		season_idx: int, climate_anomaly: float, season_phase: float,
+		stage_b_knobs: Dictionary) -> Dictionary:
+	if _data_core_world_ext == null:
+		return {}
+	if not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
+		return {}
+	if map == null or world == null:
+		return {}
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return {}
+
+	# Step 1：初始化 field slice state（与 try_run_refresh_daily_combined_gdext line 1361 同源）。
+	_current_map_for_tick = map
+	begin_weather_field_solve(map, world, season_idx, climate_anomaly, season_phase, true)
+	if not _field_solver._field_slice_fast_indexed:
+		# fast-indexed 是 cpp 5 段的硬前置；缺失 → 清理 + 让 caller fallback 不嵌入 weather_knobs。
+		_clear_weather_field_slice_state()
+		_current_map_for_tick = null
+		return {}
+
+	# Step 2：合并 4 组 knobs（与 line 1374-1395 同源）。
+	var super_knobs: Dictionary = _build_weather_field_knobs(map, world, n_cells)
+	var dist_knobs: Dictionary = _build_weather_distribute_knobs(map, n_cells)
+	for k in dist_knobs.keys():
+		super_knobs[k] = dist_knobs[k]
+	var summary_knobs: Dictionary = _build_weather_summary_knobs(map, world)
+	for k in summary_knobs.keys():
+		super_knobs[k] = summary_knobs[k]
+	if not stage_b_knobs.is_empty():
+		for k in stage_b_knobs.keys():
+			if not super_knobs.has(k):
+				super_knobs[k] = stage_b_knobs[k]
+	return super_knobs
+
+
+# 与 try_run_refresh_daily_combined_gdext step 4-8 同源：从 native_daily 返回的
+# breakdown 字典里取 weather 段子字典（C++ 端 run_native_daily_tick 把 weather
+# 段产出 copy_dict_into 进顶层 breakdown），解 fronts、同步 _active_fronts、
+# cyclone mirror、cover_dirty，清理 slice state。
+#
+# 入参 weather_rc：bundle.weather_knobs 触发的 run_weather_refresh_daily_pass
+# 返回 dict，由 native_daily breakdown 透传上来。
+#
+# 返回 fronts_out：与 try_run_refresh_daily_combined_gdext 一致的 Array[WeatherFront]，
+# 由 caller（map_generator）写入 _last_active_fronts / _weather_round_fronts。
+func apply_unified_fast_tick_result(weather_rc: Dictionary) -> Array[WeatherFront]:
+	if _data_core_world_ext == null:
+		_clear_weather_field_slice_state()
+		_current_map_for_tick = null
+		return [] as Array[WeatherFront]
+
+	# Step 4：解包 fronts，写 _active_fronts。
+	var fronts_out: Array[WeatherFront] = _build_fronts_from_rc(weather_rc)
+	_active_fronts = fronts_out
+
+	# Step 5：cover_dirty 同步。
+	_cover_dirty = bool(weather_rc.get("cover_dirty", false)) or _cover_dirty
+
+	# Step 6：cyclone_wake 镜像。
+	if _data_core_world_ext.has_method("get_cyclone_perturbations_dict"):
+		var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
+		ocean_current_perturbation = cyclone_mirror
+
+	# Step 7：清理 slice state。
+	_clear_weather_field_slice_state()
+	_current_map_for_tick = null
+
+	# Step 8：runs/total_ms 统计（与 combined path 共享计数器）。
+	_gdext_combined_runs += 1
+	_gdext_combined_total_ms += float(weather_rc.get("total_ms", 0.0))
+	return fronts_out
+
 
 # C++ 完成后 SoA 已经写好，把 8 个数组的内容按 i 拷回 _field_solver._field_slice_next_*
 # 让 commit_weather_field_solve() 用同样的 GDScript 数据流 commit 回 cells +
@@ -2341,6 +2752,34 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 		_hexcell_facade_on = bool(cp.use_hexcell_facade)
 		if _hexcell_facade_on:
 			print("[weather] hexcell facade ON (skip AoS double-write in hot loop)")
+
+	# ─── Phase A.3：常驻 KnobsHandle 装配 ─────────────────────────────────
+	# 启用条件（任一失败永久 fallback 到 GDScript builder）：
+	#   1. cp.use_gdext_resident_knobs == true
+	#   2. ClassDB 内有 "KnobsHandle" 类（rebuild 后 stale .dll 无此类则 instantiate 失败）
+	#   3. ext != null 且 enabled 整体启用
+	_knobs_handle = null
+	_knobs_handle_first_use_logged = false
+	var resident_knobs_flag: bool = false
+	if cp != null and "use_gdext_resident_knobs" in cp:
+		resident_knobs_flag = bool(cp.use_gdext_resident_knobs)
+	if enabled and ext != null and resident_knobs_flag:
+		if ClassDB.class_exists("KnobsHandle"):
+			_knobs_handle = ClassDB.instantiate("KnobsHandle")
+			if _knobs_handle != null and _knobs_handle.has_method("invalidate_all"):
+				# 首次装配 → all-dirty。caller 应立刻通过 _push_resident_knobs_from_cp(cp)
+				# 把当前 ClimateProfile 全字段写入；后续 ClimateProfile.changed 信号触发同样路径。
+				_knobs_handle.invalidate_all()
+				_push_resident_knobs_from_cp(cp)
+				# 连接 ClimateProfile.changed 信号（Resource 内置）→ 段级 invalidate
+				if cp.has_signal("changed") and not cp.changed.is_connected(_on_climate_profile_changed_for_knobs):
+					cp.changed.connect(_on_climate_profile_changed_for_knobs.bind(cp))
+				print("[weather] gdext resident knobs ON (use_gdext_resident_knobs=true; class=KnobsHandle)")
+			else:
+				push_warning("[weather] KnobsHandle instantiate returned invalid object; resident knobs DISABLED")
+				_knobs_handle = null
+		else:
+			push_warning("[weather] use_gdext_resident_knobs=true but ClassDB lacks 'KnobsHandle' (stale .dll); resident knobs DISABLED. REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'")
 
 # Stale .dll probe：验证 run_weather_field_solve_pass 实际签名。旧 stub 6 参，新
 # 实装 1 参 (Dictionary knobs)。不匹配时 push_warning 一次 + 返回 false 让外层

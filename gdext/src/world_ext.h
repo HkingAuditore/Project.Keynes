@@ -176,6 +176,12 @@ public:
     // GDScript-side caller checks `< 0` and routes to the legacy path.
     double run_climate_pass_a(const godot::Dictionary &cp_struct, double phase, double season_phase);
 
+    // [Phase C.3c] climate_pass_a 的 WorkerThreadPool 并行变体。
+    // 主循环纯 cell-local map（无 race），按 cell range 拆 n_tasks 段并行；
+    // n_tasks=0 时自适应（ceil(n/1024) 截 [1,16]，与 ocean_water/land_thread 一致）。
+    // 算法与 run_climate_pass_a 严格 1:1（共用 prelude 与 main loop body）；返回值同语义。
+    double run_climate_pass_a_thread(const godot::Dictionary &cp_struct, double phase, double season_phase, int n_tasks);
+
     // ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ scaffolding ──
     //
     // 6 个待 C++ 化的 hot pass，本提交为 **stub**——每个函数 sig 已就位、
@@ -435,6 +441,16 @@ public:
     //             实际是 ref 共享，写回是合法行为（与 F.2 ocean_water/land 同模式）。
     double run_sea_ice_daily_pass(godot::Dictionary knobs, float season_phase);
 
+    // [Phase C.3d] sea_ice 并行变体
+    //   行为 = run_sea_ice_daily_pass，但 Phase A (cold_neighbor 快照) +
+    //   Phase B (主循环 + flip emit) 都走 WorkerThreadPool 并行。
+    //   emit lists (flip_to_ice / flip_to_base / flip_to_base_terrain) 通过
+    //   thread-local Emit + 串行 reduce (按 task_idx 升序) 保持与 scalar
+    //   bit-equal（任务内部 cell idx 升序 + 任务顺序合并 = 整体升序）。
+    //   counters (water_count / flipped_count) 同模式 reduce。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 时调用。
+    double run_sea_ice_daily_pass_thread(godot::Dictionary knobs, float season_phase, int n_tasks);
+
     // F.5 (P2): transpiration pass
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_transpiration_pass (line 4938+)
     //   ClimateProfile flag：use_gdext_transpiration
@@ -485,6 +501,11 @@ public:
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_albedo_pass(const godot::Dictionary &knobs);
+
+    // [Phase C.3c] albedo 的 WorkerThreadPool 并行变体。
+    // 主循环纯 cell-local map（IW 跳水 + 自身写 T[i]），按 cell range 拆 n_tasks 段并行；
+    // n_tasks=0 时自适应。算法与 run_albedo_pass 严格 1:1。
+    double run_albedo_pass_thread(const godot::Dictionary &knobs, int n_tasks);
 
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）：vegetation dynamics ─
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_vegetation_dynamics
@@ -554,6 +575,13 @@ public:
     //   knobs 走 by-value（非 const&），让 C++ 端能写回 succession lists（与 sea_ice 同模式）。
     double run_vegetation_dynamics_pass(godot::Dictionary knobs);
 
+    // [Phase C.3d] vegetation_dynamics 并行变体
+    //   行为 = run_vegetation_dynamics_pass，主循环走 WorkerThreadPool 并行。
+    //   thread-local emit (succession_indices / succession_to_veg) 通过
+    //   Emit + 串行 reduce 保持 bit-equal。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 时调用。
+    double run_vegetation_dynamics_pass_thread(godot::Dictionary knobs, int n_tasks);
+
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）：climate feedback ─
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass
     //   ClimateProfile flag：use_gdext_climate_feedback
@@ -607,6 +635,12 @@ public:
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_climate_feedback_pass(godot::Dictionary knobs);
+
+    // [Phase C.3c] climate_feedback 的 WorkerThreadPool 并行变体。
+    // 主循环：read NB+TTA+IW+WTT+WTI+WTIN，仅 write self（BM[i]+SOIL[i]+VG[i]），
+    // gather neighbor 但不 scatter，无 race；按 cell range 拆 n_tasks 段并行；
+    // n_tasks=0 时自适应。算法与 run_climate_feedback_pass 严格 1:1。
+    double run_climate_feedback_pass_thread(godot::Dictionary knobs, int n_tasks);
 
     // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine） ──────────────────
     //   GDScript 源：scripts/geography/map_generator.gd::refresh_daily_stage_b
@@ -900,6 +934,9 @@ public:
     //
     //   入参 `knobs` Dictionary：
     //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
+    //     可选标量：start_idx (int, 默认 0), end_idx (int, 默认 W*H)
+    //               — 像素区间 [start_idx, end_idx)，用于 sub-tick 切片
+    //                 把 4.7ms 整图 raster 拆成 N 片 ~1.2ms（每像素独立无依赖）
     //     PackedArray：
     //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
     //           dst_currents      : PackedByteArray  (W*H*2)，输出 R+G byte
@@ -908,7 +945,8 @@ public:
     //   读：cell_terrain / cell_ocean_current_x / cell_ocean_current_y /
     //       cell_upwelling_strength SoA
     //   写：dst_currents / dst_upwelling / atlas_data（in/out via knobs ptrw）
-    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels", "atlas_updated" }
+    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels",
+    //                     "atlas_updated", "start_idx", "end_idx" }
     godot::Dictionary run_ocean_field_rasterize(godot::Dictionary knobs);
 
     // ─── DOTS-Total-CPP（A 方案 / wind raster 孪生）─────────────────────
@@ -1057,6 +1095,52 @@ public:
     //   GDScript 端通过 get_cyclone_perturbations_dict() 取镜像，落到
     //   weather_system.ocean_current_perturbation Dictionary。
     godot::Dictionary run_weather_refresh_daily_pass(const godot::Dictionary &knobs);
+
+    // ─── Phase C.1（dots-total-cpp roadmap）：System schedule graph 节点 ──
+    //
+    // 这组 _exec_node_* 是 system_schedule.h 内 SystemNode.exec_fn 的成员函数
+    // 指针目标。public 仅是为了让 `&DCWorldExt::_exec_node_xxx` 能在 cpp
+    // 全局静态表 SCHEDULE_GRAPH 中取地址；**不**对外提供调用语义——只能由
+    // system_schedule.cpp 的 dispatch_system_schedule loop 调用。
+    //
+    // 每个节点直接镜像 run_native_daily_tick line 960-1063 内对应 if-bundle
+    // 块的语义：读 bundle key → 调 run_<X>_pass → 累加 breakdown（含 climate_ms
+    // / ocean_ms / stage_b_ms 跨 pass 累加）→ 写节点级 side-effect（stage_b 的
+    // 4 个 breakdown 回填、weather 的 _native_fronts_snapshot 写入）。
+    // 返回 true=成功；false=fallback 触发，dispatch loop 走 finish_with_failure。
+    bool _exec_node_climate_pass_a     (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_ocean_water        (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_ocean_land         (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_climate_pass_b     (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_sea_ice            (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_transpiration      (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_albedo             (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_vegetation_dynamics(const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_climate_feedback   (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_stage_b            (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_weather            (const godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
 
     // 镜像 API：把 C++ 端 _cyclone_perturbations 导出成 GDScript Dictionary，
     // 结构与 weather_system.ocean_current_perturbation 1:1（key = cell.q*10000+cell.r 的
@@ -1521,8 +1605,18 @@ private:
     // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
     // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]
     // （含 type/center/intensity/velocity 字段，与 GDScript WeatherFront 1:1）。
-    // 返回耗时 ms。
-    double cyclone_wake_step(const godot::Dictionary &knobs,
+    // 返回耗时 ms（含 phase1 衰减/淘汰 + phase2 注入）。
+    //
+    // 细粒度遥测（Phase B.2）：通过 knobs by-ref 写回 6 个字段（与 stage_b 同模式）：
+    //   cyclone_phase1_decay_ms : double  Phase 1 总耗时 ms
+    //   cyclone_phase2_inject_ms: double  Phase 2 总耗时 ms
+    //   cyclone_n_decayed       : int     Phase 1 衰减后仍存活的 entry 数
+    //   cyclone_n_evicted       : int     Phase 1 淘汰的 entry 数
+    //   cyclone_n_replaced      : int     Phase 2 命中已有 key 覆盖更新的次数
+    //   cyclone_n_injected      : int     Phase 2 新增 entry 的次数
+    // caller 需要 by-value 复制 knobs 再传入（避免污染上游 Dictionary 引用），
+    // 等价于 stage_b_pass 的处理模式（world_ext.cpp:7750）。
+    double cyclone_wake_step(godot::Dictionary &knobs,
                              const godot::Array &fronts_from_summary);
 
     // ---- helpers ----
