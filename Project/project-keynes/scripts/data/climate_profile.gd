@@ -197,6 +197,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
+@export var native_environment_runtime_enabled: bool = false
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
 @export var native_shadow_diff_enabled: bool = true
 

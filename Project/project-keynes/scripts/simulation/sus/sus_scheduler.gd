@@ -284,6 +284,13 @@ func tick(ctx: SusTickContext) -> void:
 	var largest_slice_substage_tick: String = ""
 	var largest_slice_path_tick: String = ""
 	var largest_slice_ms_tick: float = 0.0
+	var largest_slice_work_done_tick: int = 0
+	var largest_slice_processed_cells_tick: int = 0
+	var largest_slice_processed_pixels_tick: int = 0
+	var largest_slice_processed_indices_tick: int = 0
+	var largest_slice_cursor_start_tick: int = -1
+	var largest_slice_cursor_end_tick: int = -1
+	var largest_slice_fallback_path_tick: String = ""
 
 	var ordered_jobs: Array[SusJob] = _jobs
 	if strict_budget_enabled and _jobs.size() > 1:
@@ -368,6 +375,13 @@ func tick(ctx: SusTickContext) -> void:
 		var last_slice_stage: String = ""
 		var last_slice_substage: String = ""
 		var last_slice_path: String = ""
+		var last_slice_work_done: int = 0
+		var last_slice_processed_cells: int = 0
+		var last_slice_processed_pixels: int = 0
+		var last_slice_processed_indices: int = 0
+		var last_slice_cursor_start: int = -1
+		var last_slice_cursor_end: int = -1
+		var last_slice_fallback_path: String = ""
 		job._in_flight = true
 
 		while true:
@@ -403,12 +417,34 @@ func tick(ctx: SusTickContext) -> void:
 			last_slice_stage = _slice_stage_name(slice_result)
 			last_slice_substage = _slice_substage_name(slice_result)
 			last_slice_path = str(slice_result.get("path", ""))
+			last_slice_work_done = int(slice_result.get("work_done", 0))
+			last_slice_processed_cells = int(slice_result.get("processed_cells", 0))
+			last_slice_processed_pixels = int(slice_result.get("processed_pixels", 0))
+			last_slice_processed_indices = int(slice_result.get("processed_indices", 0))
+			if last_slice_processed_cells <= 0 and _slice_stage_looks_cell_based(last_slice_stage):
+				last_slice_processed_cells = last_slice_work_done
+			if last_slice_processed_pixels <= 0 and _slice_stage_looks_pixel_based(last_slice_stage):
+				last_slice_processed_pixels = last_slice_work_done
+			if last_slice_processed_indices <= 0 and last_slice_processed_cells <= 0 and last_slice_processed_pixels <= 0:
+				last_slice_processed_indices = last_slice_work_done
+			last_slice_cursor_start = int(slice_result.get("cursor_start", slice_result.get("start_idx", -1)))
+			last_slice_cursor_end = int(slice_result.get("cursor_end", slice_result.get("end_idx", -1)))
+			last_slice_fallback_path = str(slice_result.get("fallback_path", ""))
+			if last_slice_fallback_path == "" and bool(slice_result.get("fallback", false)):
+				last_slice_fallback_path = last_slice_path
 			if not _is_upload_job(job.id) and slice_ms > largest_slice_ms_tick:
 				largest_slice_ms_tick = slice_ms
 				largest_slice_job_tick = job.id
 				largest_slice_stage_tick = last_slice_stage
 				largest_slice_substage_tick = last_slice_substage
 				largest_slice_path_tick = last_slice_path
+				largest_slice_work_done_tick = last_slice_work_done
+				largest_slice_processed_cells_tick = last_slice_processed_cells
+				largest_slice_processed_pixels_tick = last_slice_processed_pixels
+				largest_slice_processed_indices_tick = last_slice_processed_indices
+				largest_slice_cursor_start_tick = last_slice_cursor_start
+				largest_slice_cursor_end_tick = last_slice_cursor_end
+				largest_slice_fallback_path_tick = last_slice_fallback_path
 
 			done = bool(slice_result.get("done", true))
 			work_done_total += int(slice_result.get("work_done", 0))
@@ -429,6 +465,14 @@ func tick(ctx: SusTickContext) -> void:
 		report["stage"] = last_slice_stage
 		report["substage"] = last_slice_substage
 		report["path"] = last_slice_path
+		report["work_done"] = work_done_total
+		report["last_slice_work_done"] = last_slice_work_done
+		report["last_slice_processed_cells"] = last_slice_processed_cells
+		report["last_slice_processed_pixels"] = last_slice_processed_pixels
+		report["last_slice_processed_indices"] = last_slice_processed_indices
+		report["last_slice_cursor_start"] = last_slice_cursor_start
+		report["last_slice_cursor_end"] = last_slice_cursor_end
+		report["last_slice_fallback_path"] = last_slice_fallback_path
 		_last_report[job.id] = report
 		_record_stats(job.id, job_elapsed_ms, slices_run)
 		if not _is_upload_job(job.id):
@@ -457,7 +501,11 @@ func tick(ctx: SusTickContext) -> void:
 	# Perf instrumentation: 单次 tick 摘要，便于 main.gd 取来打印或触发 WARN。
 	var total_ms: float = (Time.get_ticks_usec() - tick_start_us) / 1000.0
 	_record_tick_budget_sample(sim_total_ms_tick, largest_slice_job_tick, largest_slice_stage_tick,
-		largest_slice_substage_tick, largest_slice_path_tick, largest_slice_ms_tick)
+		largest_slice_substage_tick, largest_slice_path_tick, largest_slice_ms_tick,
+		largest_slice_work_done_tick, largest_slice_processed_cells_tick,
+		largest_slice_processed_pixels_tick, largest_slice_processed_indices_tick,
+		largest_slice_cursor_start_tick, largest_slice_cursor_end_tick,
+		largest_slice_fallback_path_tick)
 	var budget_window: Dictionary = _sim_budget_window_dict()
 	_last_tick_summary = {
 		"tick_index": ctx.tick_index,
@@ -471,6 +519,23 @@ func tick(ctx: SusTickContext) -> void:
 		"largest_slice_substage": largest_slice_substage_tick,
 		"largest_slice_path": largest_slice_path_tick,
 		"largest_slice_ms": largest_slice_ms_tick,
+		"largest_slice_work_done": largest_slice_work_done_tick,
+		"largest_slice_processed_cells": largest_slice_processed_cells_tick,
+		"largest_slice_processed_pixels": largest_slice_processed_pixels_tick,
+		"largest_slice_processed_indices": largest_slice_processed_indices_tick,
+		"largest_slice_cursor_start": largest_slice_cursor_start_tick,
+		"largest_slice_cursor_end": largest_slice_cursor_end_tick,
+		"largest_slice_fallback_path": largest_slice_fallback_path_tick,
+		"largest_slice_processed_per_ms": _processed_per_ms(largest_slice_work_done_tick,
+			largest_slice_processed_cells_tick, largest_slice_processed_pixels_tick,
+			largest_slice_processed_indices_tick, largest_slice_ms_tick),
+		"sus_sim_avg_300": float(budget_window.get("sus_sim_avg_300", 0.0)),
+		"sim_frame_budget_ms": frame_budget_ms,
+		"sim_slice_budget_ms": _max_registered_slice_budget_ms(false),
+		"sim_upload_slice_budget_ms": _max_registered_slice_budget_ms(true),
+		"sim_strict_budget_enabled": strict_budget_enabled,
+		"sim_budget_warn_ms": sim_budget_warn_ms,
+		"economy_reserved_budget_ms": maxf(0.0, 16.666 - frame_budget_ms),
 		"sus_sim_p95_300": float(budget_window.get("sus_sim_p95_300", 0.0)),
 		"sus_sim_max_300": float(budget_window.get("sus_sim_max_300", 0.0)),
 		"over_1ms_count_300": int(budget_window.get("over_1ms_count_300", 0)),
@@ -563,7 +628,11 @@ func report_job_stats() -> Dictionary:
 
 
 func _record_tick_budget_sample(total_ms: float, largest_job: StringName, largest_stage: String,
-		largest_substage: String, largest_path: String, largest_ms: float) -> void:
+		largest_substage: String, largest_path: String, largest_ms: float,
+		largest_work_done: int = 0, largest_processed_cells: int = 0,
+		largest_processed_pixels: int = 0, largest_processed_indices: int = 0,
+		largest_cursor_start: int = -1, largest_cursor_end: int = -1,
+		largest_fallback_path: String = "") -> void:
 	_tick_budget_samples.append({
 		"total_ms": total_ms,
 		"largest_slice_job": largest_job,
@@ -571,6 +640,13 @@ func _record_tick_budget_sample(total_ms: float, largest_job: StringName, larges
 		"largest_slice_substage": largest_substage,
 		"largest_slice_path": largest_path,
 		"largest_slice_ms": largest_ms,
+		"largest_slice_work_done": largest_work_done,
+		"largest_slice_processed_cells": largest_processed_cells,
+		"largest_slice_processed_pixels": largest_processed_pixels,
+		"largest_slice_processed_indices": largest_processed_indices,
+		"largest_slice_cursor_start": largest_cursor_start,
+		"largest_slice_cursor_end": largest_cursor_end,
+		"largest_slice_fallback_path": largest_fallback_path,
 	})
 	while _tick_budget_samples.size() > maxi(1, sim_budget_window_size):
 		_tick_budget_samples.remove_at(0)
@@ -588,9 +664,25 @@ func _sim_budget_window_dict() -> Dictionary:
 			"largest_slice_substage": "",
 			"largest_slice_path": "",
 			"largest_slice_ms": 0.0,
+			"largest_slice_work_done": 0,
+			"largest_slice_processed_cells": 0,
+			"largest_slice_processed_pixels": 0,
+			"largest_slice_processed_indices": 0,
+			"largest_slice_cursor_start": -1,
+			"largest_slice_cursor_end": -1,
+			"largest_slice_fallback_path": "",
+			"largest_slice_processed_per_ms": 0.0,
+			"sus_sim_avg_300": 0.0,
+			"sim_frame_budget_ms": frame_budget_ms,
+			"sim_slice_budget_ms": _max_registered_slice_budget_ms(false),
+			"sim_upload_slice_budget_ms": _max_registered_slice_budget_ms(true),
+			"sim_strict_budget_enabled": strict_budget_enabled,
+			"sim_budget_warn_ms": sim_budget_warn_ms,
+			"economy_reserved_budget_ms": maxf(0.0, 16.666 - frame_budget_ms),
 			"sample_count": 0,
 		}
 	var totals: Array = []
+	var sum_total_ms: float = 0.0
 	var max_total_ms: float = 0.0
 	var over_count: int = 0
 	var largest_job: StringName = &""
@@ -598,10 +690,18 @@ func _sim_budget_window_dict() -> Dictionary:
 	var largest_substage: String = ""
 	var largest_path: String = ""
 	var largest_ms: float = 0.0
+	var largest_work_done: int = 0
+	var largest_processed_cells: int = 0
+	var largest_processed_pixels: int = 0
+	var largest_processed_indices: int = 0
+	var largest_cursor_start: int = -1
+	var largest_cursor_end: int = -1
+	var largest_fallback_path: String = ""
 	for sample in _tick_budget_samples:
 		var d: Dictionary = sample
 		var total_ms: float = float(d.get("total_ms", 0.0))
 		totals.append(total_ms)
+		sum_total_ms += total_ms
 		max_total_ms = maxf(max_total_ms, total_ms)
 		if total_ms > sim_budget_warn_ms:
 			over_count += 1
@@ -612,9 +712,20 @@ func _sim_budget_window_dict() -> Dictionary:
 			largest_stage = str(d.get("largest_slice_stage", ""))
 			largest_substage = str(d.get("largest_slice_substage", ""))
 			largest_path = str(d.get("largest_slice_path", ""))
+			largest_work_done = int(d.get("largest_slice_work_done", 0))
+			largest_processed_cells = int(d.get("largest_slice_processed_cells", 0))
+			largest_processed_pixels = int(d.get("largest_slice_processed_pixels", 0))
+			largest_processed_indices = int(d.get("largest_slice_processed_indices", 0))
+			largest_cursor_start = int(d.get("largest_slice_cursor_start", -1))
+			largest_cursor_end = int(d.get("largest_slice_cursor_end", -1))
+			largest_fallback_path = str(d.get("largest_slice_fallback_path", ""))
 	totals.sort()
 	var p95_idx: int = clampi(int(ceil(totals.size() * 0.95)) - 1, 0, totals.size() - 1)
+	var avg_total_ms: float = sum_total_ms / float(maxi(1, sample_count))
+	var processed_per_ms: float = _processed_per_ms(largest_work_done, largest_processed_cells,
+		largest_processed_pixels, largest_processed_indices, largest_ms)
 	return {
+		"sus_sim_avg_300": avg_total_ms,
 		"sus_sim_p95_300": float(totals[p95_idx]),
 		"sus_sim_max_300": max_total_ms,
 		"over_1ms_count_300": over_count,
@@ -623,6 +734,20 @@ func _sim_budget_window_dict() -> Dictionary:
 		"largest_slice_substage": largest_substage,
 		"largest_slice_path": largest_path,
 		"largest_slice_ms": largest_ms,
+		"largest_slice_work_done": largest_work_done,
+		"largest_slice_processed_cells": largest_processed_cells,
+		"largest_slice_processed_pixels": largest_processed_pixels,
+		"largest_slice_processed_indices": largest_processed_indices,
+		"largest_slice_cursor_start": largest_cursor_start,
+		"largest_slice_cursor_end": largest_cursor_end,
+		"largest_slice_fallback_path": largest_fallback_path,
+		"largest_slice_processed_per_ms": processed_per_ms,
+		"sim_frame_budget_ms": frame_budget_ms,
+		"sim_slice_budget_ms": _max_registered_slice_budget_ms(false),
+		"sim_upload_slice_budget_ms": _max_registered_slice_budget_ms(true),
+		"sim_strict_budget_enabled": strict_budget_enabled,
+		"sim_budget_warn_ms": sim_budget_warn_ms,
+		"economy_reserved_budget_ms": maxf(0.0, 16.666 - frame_budget_ms),
 		"sample_count": sample_count,
 	}
 
@@ -643,6 +768,32 @@ func _slice_substage_name(slice_result: Dictionary) -> String:
 
 func _is_upload_job(job_id: StringName) -> bool:
 	return job_id == &"enum_atlas_upload" or job_id == &"sea_ice_atlas_upload"
+
+
+func _slice_stage_looks_cell_based(stage: String) -> bool:
+	return stage.begins_with("weather_") or stage.begins_with("pass_") \
+		or stage == "ocean_water" or stage == "ocean_land" \
+		or stage == "sea_ice" or stage == "transp"
+
+
+func _slice_stage_looks_pixel_based(stage: String) -> bool:
+	return stage.find("pixel") >= 0 or stage.find("raster") >= 0
+
+
+func _processed_per_ms(work_done: int, processed_cells: int, processed_pixels: int,
+		processed_indices: int, elapsed_ms: float) -> float:
+	if elapsed_ms <= 0.0:
+		return 0.0
+	var processed: int = max(work_done, max(processed_cells, max(processed_pixels, processed_indices)))
+	return float(processed) / elapsed_ms
+
+
+func _max_registered_slice_budget_ms(upload_jobs: bool) -> float:
+	var out: float = 0.0
+	for j in _jobs:
+		if _is_upload_job(j.id) == upload_jobs:
+			out = maxf(out, float(j.slice_budget_ms))
+	return out
 
 
 func _record_stats(job_id: StringName, elapsed_ms: float, slices_run: int) -> void:

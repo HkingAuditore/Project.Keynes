@@ -321,7 +321,14 @@ void SusSchedulerExt::_record_tick_budget_sample(float total_ms,
                                                  const String &largest_stage,
                                                  const String &largest_substage,
                                                  const String &largest_path,
-                                                 float largest_ms) {
+                                                 float largest_ms,
+                                                 int largest_work_done,
+                                                 int largest_processed_cells,
+                                                 int largest_processed_pixels,
+                                                 int largest_processed_indices,
+                                                 int largest_cursor_start,
+                                                 int largest_cursor_end,
+                                                 const String &largest_fallback_path) {
     BudgetSample s;
     s.total_ms              = total_ms;
     s.largest_slice_job     = largest_job;
@@ -329,6 +336,13 @@ void SusSchedulerExt::_record_tick_budget_sample(float total_ms,
     s.largest_slice_substage= largest_substage;
     s.largest_slice_path    = largest_path;
     s.largest_slice_ms      = largest_ms;
+    s.largest_slice_work_done = largest_work_done;
+    s.largest_slice_processed_cells = largest_processed_cells;
+    s.largest_slice_processed_pixels = largest_processed_pixels;
+    s.largest_slice_processed_indices = largest_processed_indices;
+    s.largest_slice_cursor_start = largest_cursor_start;
+    s.largest_slice_cursor_end = largest_cursor_end;
+    s.largest_slice_fallback_path = largest_fallback_path;
     _tick_budget_samples.push_back(s);
     int cap = std::max(1, _sim_budget_window_size);
     while ((int)_tick_budget_samples.size() > cap) {
@@ -356,6 +370,34 @@ bool SusSchedulerExt::_is_upload_job(const StringName &id) {
     static const StringName k_enum_atlas("enum_atlas_upload");
     static const StringName k_sea_ice("sea_ice_atlas_upload");
     return id == k_enum_atlas || id == k_sea_ice;
+}
+
+bool SusSchedulerExt::_slice_stage_looks_cell_based(const String &stage) {
+    return stage.begins_with("weather_") || stage.begins_with("pass_")
+        || stage == "ocean_water" || stage == "ocean_land"
+        || stage == "sea_ice" || stage == "transp";
+}
+
+bool SusSchedulerExt::_slice_stage_looks_pixel_based(const String &stage) {
+    return stage.find("pixel") >= 0 || stage.find("raster") >= 0;
+}
+
+double SusSchedulerExt::_processed_per_ms(int work_done, int processed_cells,
+                                          int processed_pixels, int processed_indices,
+                                          float elapsed_ms) {
+    if (elapsed_ms <= 0.0f) return 0.0;
+    int processed = std::max(work_done, std::max(processed_cells, std::max(processed_pixels, processed_indices)));
+    return (double)processed / (double)elapsed_ms;
+}
+
+float SusSchedulerExt::_max_registered_slice_budget_ms(bool upload_jobs) const {
+    float out = 0.0f;
+    for (const auto &job : _jobs) {
+        if (_is_upload_job(job.id) == upload_jobs) {
+            out = std::max(out, job.slice_budget_ms);
+        }
+    }
+    return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -387,6 +429,13 @@ void SusSchedulerExt::tick(Object *ctx) {
     String largest_slice_substage_tick;
     String largest_slice_path_tick;
     float  largest_slice_ms_tick   = 0.0f;
+    int    largest_slice_work_done_tick = 0;
+    int    largest_slice_processed_cells_tick = 0;
+    int    largest_slice_processed_pixels_tick = 0;
+    int    largest_slice_processed_indices_tick = 0;
+    int    largest_slice_cursor_start_tick = -1;
+    int    largest_slice_cursor_end_tick = -1;
+    String largest_slice_fallback_path_tick;
     float  sim_total_ms_tick       = 0.0f;
 
     // Build ordered_jobs (strict_budget rotation mirrors GDScript line 150-155).
@@ -488,6 +537,13 @@ void SusSchedulerExt::tick(Object *ctx) {
         String  last_slice_stage;
         String  last_slice_substage;
         String  last_slice_path;
+        int     last_slice_work_done = 0;
+        int     last_slice_processed_cells = 0;
+        int     last_slice_processed_pixels = 0;
+        int     last_slice_processed_indices = 0;
+        int     last_slice_cursor_start = -1;
+        int     last_slice_cursor_end = -1;
+        String  last_slice_fallback_path;
         job.in_flight = true;
 
         // Mirror sus_job.gd:_in_flight via Object::set so GDScript-side
@@ -530,6 +586,25 @@ void SusSchedulerExt::tick(Object *ctx) {
             last_slice_stage    = _slice_stage_name(slice_result);
             last_slice_substage = _slice_substage_name(slice_result);
             last_slice_path     = String(slice_result.get("path", String()));
+            last_slice_work_done = (int)slice_result.get("work_done", 0);
+            last_slice_processed_cells = (int)slice_result.get("processed_cells", 0);
+            last_slice_processed_pixels = (int)slice_result.get("processed_pixels", 0);
+            last_slice_processed_indices = (int)slice_result.get("processed_indices", 0);
+            if (last_slice_processed_cells <= 0 && _slice_stage_looks_cell_based(last_slice_stage)) {
+                last_slice_processed_cells = last_slice_work_done;
+            }
+            if (last_slice_processed_pixels <= 0 && _slice_stage_looks_pixel_based(last_slice_stage)) {
+                last_slice_processed_pixels = last_slice_work_done;
+            }
+            if (last_slice_processed_indices <= 0 && last_slice_processed_cells <= 0 && last_slice_processed_pixels <= 0) {
+                last_slice_processed_indices = last_slice_work_done;
+            }
+            last_slice_cursor_start = (int)slice_result.get("cursor_start", slice_result.get("start_idx", -1));
+            last_slice_cursor_end = (int)slice_result.get("cursor_end", slice_result.get("end_idx", -1));
+            last_slice_fallback_path = String(slice_result.get("fallback_path", String()));
+            if (last_slice_fallback_path.is_empty() && (bool)slice_result.get("fallback", false)) {
+                last_slice_fallback_path = last_slice_path;
+            }
 
             if (!_is_upload_job(job.id) && slice_ms > largest_slice_ms_tick) {
                 largest_slice_ms_tick       = slice_ms;
@@ -537,6 +612,13 @@ void SusSchedulerExt::tick(Object *ctx) {
                 largest_slice_stage_tick    = last_slice_stage;
                 largest_slice_substage_tick = last_slice_substage;
                 largest_slice_path_tick     = last_slice_path;
+                largest_slice_work_done_tick = last_slice_work_done;
+                largest_slice_processed_cells_tick = last_slice_processed_cells;
+                largest_slice_processed_pixels_tick = last_slice_processed_pixels;
+                largest_slice_processed_indices_tick = last_slice_processed_indices;
+                largest_slice_cursor_start_tick = last_slice_cursor_start;
+                largest_slice_cursor_end_tick = last_slice_cursor_end;
+                largest_slice_fallback_path_tick = last_slice_fallback_path;
             }
 
             done                = (bool)slice_result.get("done", true);
@@ -555,6 +637,14 @@ void SusSchedulerExt::tick(Object *ctx) {
         report["stage"]          = last_slice_stage;
         report["substage"]       = last_slice_substage;
         report["path"]           = last_slice_path;
+        report["work_done"]      = work_done_total;
+        report["last_slice_work_done"] = last_slice_work_done;
+        report["last_slice_processed_cells"] = last_slice_processed_cells;
+        report["last_slice_processed_pixels"] = last_slice_processed_pixels;
+        report["last_slice_processed_indices"] = last_slice_processed_indices;
+        report["last_slice_cursor_start"] = last_slice_cursor_start;
+        report["last_slice_cursor_end"] = last_slice_cursor_end;
+        report["last_slice_fallback_path"] = last_slice_fallback_path;
         _last_report[Variant(job.id)] = report;
         _record_stats(job.id, job_elapsed_ms, slices_run);
         if (!_is_upload_job(job.id)) sim_total_ms_tick += job_elapsed_ms;
@@ -591,7 +681,14 @@ void SusSchedulerExt::tick(Object *ctx) {
                                largest_slice_stage_tick,
                                largest_slice_substage_tick,
                                largest_slice_path_tick,
-                               largest_slice_ms_tick);
+                               largest_slice_ms_tick,
+                               largest_slice_work_done_tick,
+                               largest_slice_processed_cells_tick,
+                               largest_slice_processed_pixels_tick,
+                               largest_slice_processed_indices_tick,
+                               largest_slice_cursor_start_tick,
+                               largest_slice_cursor_end_tick,
+                               largest_slice_fallback_path_tick);
     Dictionary budget_window = _sim_budget_window_dict();
 
     _last_tick_summary.clear();
@@ -606,6 +703,26 @@ void SusSchedulerExt::tick(Object *ctx) {
     _last_tick_summary["largest_slice_substage"]= largest_slice_substage_tick;
     _last_tick_summary["largest_slice_path"]    = largest_slice_path_tick;
     _last_tick_summary["largest_slice_ms"]      = (double)largest_slice_ms_tick;
+    _last_tick_summary["largest_slice_work_done"] = largest_slice_work_done_tick;
+    _last_tick_summary["largest_slice_processed_cells"] = largest_slice_processed_cells_tick;
+    _last_tick_summary["largest_slice_processed_pixels"] = largest_slice_processed_pixels_tick;
+    _last_tick_summary["largest_slice_processed_indices"] = largest_slice_processed_indices_tick;
+    _last_tick_summary["largest_slice_cursor_start"] = largest_slice_cursor_start_tick;
+    _last_tick_summary["largest_slice_cursor_end"] = largest_slice_cursor_end_tick;
+    _last_tick_summary["largest_slice_fallback_path"] = largest_slice_fallback_path_tick;
+    _last_tick_summary["largest_slice_processed_per_ms"] = _processed_per_ms(
+        largest_slice_work_done_tick,
+        largest_slice_processed_cells_tick,
+        largest_slice_processed_pixels_tick,
+        largest_slice_processed_indices_tick,
+        largest_slice_ms_tick);
+    _last_tick_summary["sus_sim_avg_300"]       = (double)(float)budget_window.get("sus_sim_avg_300", 0.0);
+    _last_tick_summary["sim_frame_budget_ms"]   = (double)_frame_budget_ms;
+    _last_tick_summary["sim_slice_budget_ms"]   = (double)_max_registered_slice_budget_ms(false);
+    _last_tick_summary["sim_upload_slice_budget_ms"] = (double)_max_registered_slice_budget_ms(true);
+    _last_tick_summary["sim_strict_budget_enabled"] = _strict_budget_enabled;
+    _last_tick_summary["sim_budget_warn_ms"]    = (double)_sim_budget_warn_ms;
+    _last_tick_summary["economy_reserved_budget_ms"] = (double)std::max(0.0f, 16.666f - _frame_budget_ms);
     _last_tick_summary["sus_sim_p95_300"]       = (double)(float)budget_window.get("sus_sim_p95_300", 0.0);
     _last_tick_summary["sus_sim_max_300"]       = (double)(float)budget_window.get("sus_sim_max_300", 0.0);
     _last_tick_summary["over_1ms_count_300"]    = (int)budget_window.get("over_1ms_count_300", 0);
@@ -684,6 +801,7 @@ Dictionary SusSchedulerExt::_sim_budget_window_dict() const {
     int sample_count = (int)_tick_budget_samples.size();
     Dictionary out;
     if (sample_count <= 0) {
+        out["sus_sim_avg_300"]    = 0.0;
         out["sus_sim_p95_300"]    = 0.0;
         out["sus_sim_max_300"]    = 0.0;
         out["over_1ms_count_300"] = 0;
@@ -692,18 +810,41 @@ Dictionary SusSchedulerExt::_sim_budget_window_dict() const {
         out["largest_slice_substage"]= String();
         out["largest_slice_path"] = String();
         out["largest_slice_ms"]   = 0.0;
+        out["largest_slice_work_done"] = 0;
+        out["largest_slice_processed_cells"] = 0;
+        out["largest_slice_processed_pixels"] = 0;
+        out["largest_slice_processed_indices"] = 0;
+        out["largest_slice_cursor_start"] = -1;
+        out["largest_slice_cursor_end"] = -1;
+        out["largest_slice_fallback_path"] = String();
+        out["largest_slice_processed_per_ms"] = 0.0;
+        out["sim_frame_budget_ms"] = (double)_frame_budget_ms;
+        out["sim_slice_budget_ms"] = (double)_max_registered_slice_budget_ms(false);
+        out["sim_upload_slice_budget_ms"] = (double)_max_registered_slice_budget_ms(true);
+        out["sim_strict_budget_enabled"] = _strict_budget_enabled;
+        out["sim_budget_warn_ms"] = (double)_sim_budget_warn_ms;
+        out["economy_reserved_budget_ms"] = (double)std::max(0.0f, 16.666f - _frame_budget_ms);
         out["sample_count"]       = 0;
         return out;
     }
     std::vector<float> totals;
     totals.reserve(sample_count);
+    float sum_total_ms = 0.0f;
     float max_total_ms = 0.0f;
     int   over_count   = 0;
     StringName largest_job;
     String largest_stage, largest_substage, largest_path;
     float  largest_ms = 0.0f;
+    int largest_work_done = 0;
+    int largest_processed_cells = 0;
+    int largest_processed_pixels = 0;
+    int largest_processed_indices = 0;
+    int largest_cursor_start = -1;
+    int largest_cursor_end = -1;
+    String largest_fallback_path;
     for (const auto &s : _tick_budget_samples) {
         totals.push_back(s.total_ms);
+        sum_total_ms += s.total_ms;
         if (s.total_ms > max_total_ms) max_total_ms = s.total_ms;
         if (s.total_ms > _sim_budget_warn_ms) over_count += 1;
         if (s.largest_slice_ms > largest_ms) {
@@ -712,12 +853,24 @@ Dictionary SusSchedulerExt::_sim_budget_window_dict() const {
             largest_stage    = s.largest_slice_stage;
             largest_substage = s.largest_slice_substage;
             largest_path     = s.largest_slice_path;
+            largest_work_done = s.largest_slice_work_done;
+            largest_processed_cells = s.largest_slice_processed_cells;
+            largest_processed_pixels = s.largest_slice_processed_pixels;
+            largest_processed_indices = s.largest_slice_processed_indices;
+            largest_cursor_start = s.largest_slice_cursor_start;
+            largest_cursor_end = s.largest_slice_cursor_end;
+            largest_fallback_path = s.largest_slice_fallback_path;
         }
     }
     std::sort(totals.begin(), totals.end());
     int p95_idx = (int)std::ceil(totals.size() * 0.95) - 1;
     if (p95_idx < 0) p95_idx = 0;
     if (p95_idx >= (int)totals.size()) p95_idx = (int)totals.size() - 1;
+    float avg_total_ms = sum_total_ms / (float)std::max(1, sample_count);
+    double processed_per_ms = _processed_per_ms(largest_work_done, largest_processed_cells,
+                                                largest_processed_pixels, largest_processed_indices,
+                                                largest_ms);
+    out["sus_sim_avg_300"]      = (double)avg_total_ms;
     out["sus_sim_p95_300"]      = (double)totals[p95_idx];
     out["sus_sim_max_300"]      = (double)max_total_ms;
     out["over_1ms_count_300"]   = over_count;
@@ -726,6 +879,20 @@ Dictionary SusSchedulerExt::_sim_budget_window_dict() const {
     out["largest_slice_substage"]= largest_substage;
     out["largest_slice_path"]   = largest_path;
     out["largest_slice_ms"]     = (double)largest_ms;
+    out["largest_slice_work_done"] = largest_work_done;
+    out["largest_slice_processed_cells"] = largest_processed_cells;
+    out["largest_slice_processed_pixels"] = largest_processed_pixels;
+    out["largest_slice_processed_indices"] = largest_processed_indices;
+    out["largest_slice_cursor_start"] = largest_cursor_start;
+    out["largest_slice_cursor_end"] = largest_cursor_end;
+    out["largest_slice_fallback_path"] = largest_fallback_path;
+    out["largest_slice_processed_per_ms"] = processed_per_ms;
+    out["sim_frame_budget_ms"] = (double)_frame_budget_ms;
+    out["sim_slice_budget_ms"] = (double)_max_registered_slice_budget_ms(false);
+    out["sim_upload_slice_budget_ms"] = (double)_max_registered_slice_budget_ms(true);
+    out["sim_strict_budget_enabled"] = _strict_budget_enabled;
+    out["sim_budget_warn_ms"] = (double)_sim_budget_warn_ms;
+    out["economy_reserved_budget_ms"] = (double)std::max(0.0f, 16.666f - _frame_budget_ms);
     out["sample_count"]         = sample_count;
     return out;
 }

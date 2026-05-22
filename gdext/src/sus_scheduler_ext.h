@@ -200,6 +200,13 @@ private:
         godot::String     largest_slice_substage;
         godot::String     largest_slice_path;
         float           largest_slice_ms;
+        int             largest_slice_work_done = 0;
+        int             largest_slice_processed_cells = 0;
+        int             largest_slice_processed_pixels = 0;
+        int             largest_slice_processed_indices = 0;
+        int             largest_slice_cursor_start = -1;
+        int             largest_slice_cursor_end = -1;
+        godot::String   largest_slice_fallback_path;
     };
 
     // ─── Helpers ─────────────────────────────────────────────────────────
@@ -219,12 +226,25 @@ private:
                                            const godot::String &largest_stage,
                                            const godot::String &largest_substage,
                                            const godot::String &largest_path,
-                                           float largest_ms);
+                                           float largest_ms,
+                                           int largest_work_done = 0,
+                                           int largest_processed_cells = 0,
+                                           int largest_processed_pixels = 0,
+                                           int largest_processed_indices = 0,
+                                           int largest_cursor_start = -1,
+                                           int largest_cursor_end = -1,
+                                           const godot::String &largest_fallback_path = godot::String());
     godot::Dictionary _sim_budget_window_dict() const;
 
     static godot::String _slice_stage_name   (const godot::Dictionary &slice_result);
     static godot::String _slice_substage_name(const godot::Dictionary &slice_result);
     static bool          _is_upload_job      (const godot::StringName &id);
+    static bool          _slice_stage_looks_cell_based (const godot::String &stage);
+    static bool          _slice_stage_looks_pixel_based(const godot::String &stage);
+    static double        _processed_per_ms(int work_done, int processed_cells,
+                                           int processed_pixels, int processed_indices,
+                                           float elapsed_ms);
+    float       _max_registered_slice_budget_ms(bool upload_jobs) const;
 
     void        _emit_periodic_log();
 

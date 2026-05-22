@@ -8,6 +8,7 @@
 #include "world_ext.h"
 #include "knobs_struct.h"
 #include "sus_scheduler_ext.h"
+#include "environment_runtime.h"
 
 using namespace godot;
 
@@ -25,6 +26,10 @@ void initialize_dots_ext_module(ModuleInitializationLevel p_level) {
     // 这里注册的 SusSchedulerExt，把 register_job / tick / report_* 全部
     // forward 过来；C++ 内部仅在每 slice 跨界一次调 SusJob.run_slice(ctx)。
     ClassDB::register_class<pk::SusSchedulerExt>();
+    // Environment native runtime skeleton: owns long-lived SoA/work buffers,
+    // dirty masks and snapshot versions. Hot pipelines bind to this in later
+    // tasks while GDScript remains the high-level scheduler.
+    ClassDB::register_class<pk::EnvironmentRuntime>();
 }
 
 void uninitialize_dots_ext_module(ModuleInitializationLevel p_level) {
