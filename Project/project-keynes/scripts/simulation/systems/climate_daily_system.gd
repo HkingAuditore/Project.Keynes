@@ -67,6 +67,23 @@ const _PASS_NAMES: PackedStringArray = [
 	"pass_a", "pass_b", "ocean_water", "ocean_land", "sea_ice", "transp"
 ]
 
+# 通用 climate pass 生命周期状态。先在 ClimateDailySystem 内落地，后续
+# begin_climate_pass/run_climate_pass_slice/abort_climate_pass 直接复用同一 schema。
+const _PASS_STATE_IDLE: String = "idle"
+const _PASS_STATE_RUNNING: String = "running"
+const _PASS_STATE_DONE: String = "done"
+const _PASS_STATE_FAILED: String = "failed"
+const _PASS_STATE_ABORTED: String = "aborted"
+
+const _PASS_RESULT_DONE: String = "done"
+const _PASS_RESULT_CONTINUE: String = "continue"
+const _PASS_RESULT_FAILED: String = "failed"
+const _PASS_RESULT_ABORTED: String = "aborted"
+
+const _ABORT_REASON_RESET: String = "reset"
+const _ABORT_REASON_RESTART: String = "restart"
+const _ABORT_REASON_REPLACED: String = "replaced"
+
 # External references — wired up by MapGenerator at registration time.
 var generator = null  # MapGenerator (untyped to avoid circular preload)
 var map: MapData = null
@@ -93,6 +110,21 @@ var _round_t_transp_ms: float = 0.0
 var _round_t_round_start_ms: int = 0  # 用于算整 round total_ms
 var ran_this_tick: bool = false
 var _last_slice_elapsed_ms: float = 0.0
+var _last_pass_processed_cells: int = 0
+var _last_pass_cursor_start: int = -1
+var _last_pass_cursor_end: int = -1
+var _last_pass_stage: String = ""
+var _last_pass_substage: String = ""
+var _last_pass_path: String = ""
+var _last_pass_budget_interrupted: bool = false
+var _last_pass_status: String = _PASS_RESULT_DONE
+
+# 通用 pass generation/token：每次 round 开始递增 token；slice 返回时校验 token，
+# 防止 reset/restart 后旧 pass 结果覆盖新 round 诊断或发布结果。
+var _pass_generation: int = 0
+var _active_pass_token: int = 0
+var _active_pass_state: Dictionary = {}
+var _last_pass_diag: Dictionary = {}
 
 # A.2.1.A4 — Dirty Mask 季节强制全图 / 每 30 日 full sweep 钩子。
 # _last_phase_int_seen：上一次 round 进入时 floor(_phase_locked) 的整数部分；
@@ -223,6 +255,14 @@ func should_run(ctx: SusTickContext) -> bool:
 
 func reset_progress() -> void:
 	super.reset_progress()
+	_abort_active_pass(_ABORT_REASON_RESET)
+	# Fix R4 (climate-pipeline-spike-reduction)：在 budget=2ms / 每帧 1 pass 节奏下，
+	# ocean_water/land 的 cursor 跨 round 持续累加。如果不在 reset 时同步清掉
+	# generator._climate_ocean_slice_state，下一 round 进来会发现 slice_state 非空 +
+	# map_id 一致 → 跳过 _begin_ocean_heat_transport_sliced → 继续从旧 cursor 推进 →
+	# 永远不会从 0 开始一个新 round 的洋流计算，洋流热输运彻底"消失"。
+	if generator != null and generator.has_method("_abort_all_climate_passes"):
+		generator._abort_all_climate_passes("daily_reset")
 	_pass_cursor = 0
 	_round_active = false
 	_phase_locked = 0.0
@@ -234,9 +274,142 @@ func reset_progress() -> void:
 	_round_t_round_start_ms = 0
 	ran_this_tick = false
 	_last_slice_elapsed_ms = 0.0
+	_reset_last_pass_diag()
 	# A.2.1.A4 — 重置 Dirty Mask 季节钩子状态，保证加载存档后首日 mark_all
 	_last_phase_int_seen = -9999
 	_full_sweep_counter = 30
+
+
+func _reset_last_pass_diag() -> void:
+	_last_pass_processed_cells = 0
+	_last_pass_cursor_start = -1
+	_last_pass_cursor_end = -1
+	_last_pass_stage = ""
+	_last_pass_substage = ""
+	_last_pass_path = ""
+	_last_pass_budget_interrupted = false
+	_last_pass_status = _PASS_RESULT_DONE
+	_last_pass_diag = {}
+
+
+func _diagnostics_enabled() -> bool:
+	var cp = generator._c() if generator != null else null
+	if cp == null:
+		return true
+	if cp.get("climate_pass_diagnostics_enabled") != null:
+		return bool(cp.climate_pass_diagnostics_enabled)
+	if cp.get("performance_diagnostics_enabled") != null:
+		return bool(cp.performance_diagnostics_enabled)
+	return true
+
+
+func _begin_round_pass_state() -> void:
+	_pass_generation += 1
+	_active_pass_token = _pass_generation
+	_active_pass_state = {
+		"token": _active_pass_token,
+		"state": _PASS_STATE_RUNNING,
+		"pass_cursor": 0,
+		"stage": "round_begin",
+		"substage": "init",
+		"phase": _phase_locked,
+		"cursor_start": 0,
+		"cursor_end": 0,
+		"processed_cells": 0,
+		"budget_interrupted": false,
+		"abort_reason": "",
+		"started_msec": Time.get_ticks_msec(),
+		"diagnostics_enabled": _diagnostics_enabled(),
+	}
+	_reset_last_pass_diag()
+
+
+func _abort_active_pass(reason: String) -> void:
+	if _active_pass_state.is_empty():
+		return
+	_active_pass_state["state"] = _PASS_STATE_ABORTED
+	_active_pass_state["abort_reason"] = reason
+	_active_pass_state["budget_interrupted"] = false
+	_active_pass_state["ended_msec"] = Time.get_ticks_msec()
+	_last_pass_status = _PASS_RESULT_ABORTED
+	_last_pass_diag = _active_pass_state.duplicate(true)
+	_active_pass_token = 0
+	_active_pass_state = {}
+
+
+func _is_active_pass_token(token: int) -> bool:
+	return token > 0 and token == _active_pass_token and not _active_pass_state.is_empty()
+
+
+func _make_pass_result(done: bool, elapsed_ms: float, processed_cells: int,
+		cursor_start: int, cursor_end: int, status: String = "") -> Dictionary:
+	var result_status: String = status
+	if result_status == "":
+		result_status = _PASS_RESULT_DONE if done else _PASS_RESULT_CONTINUE
+	return {
+		"done": done,
+		"status": result_status,
+		"elapsed_ms": elapsed_ms,
+		"processed_cells": processed_cells,
+		"cursor_start": cursor_start,
+		"cursor_end": cursor_end,
+		"budget_interrupted": not done,
+	}
+
+
+func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_ms: float,
+		stage_override: String = "", substage_override: String = "", path_override: String = "") -> bool:
+	if not _is_active_pass_token(token):
+		return false
+	var pass_name: String = stage_override
+	if pass_name == "" and pass_id >= 0 and pass_id < _PASS_NAMES.size():
+		pass_name = _PASS_NAMES[pass_id]
+	var result_done: bool = bool(result.get("done", true))
+	var result_status: String = str(result.get("status", _PASS_RESULT_DONE if result_done else _PASS_RESULT_CONTINUE))
+	_last_pass_processed_cells = int(result.get("processed_cells", 0))
+	_last_pass_cursor_start = int(result.get("cursor_start", result.get("start_idx", -1)))
+	_last_pass_cursor_end = int(result.get("cursor_end", result.get("end_idx", -1)))
+	_last_pass_stage = pass_name
+	_last_pass_substage = substage_override
+	_last_pass_path = path_override
+	_last_pass_budget_interrupted = bool(result.get("budget_interrupted", not result_done))
+	_last_pass_status = result_status
+	_active_pass_state["token"] = token
+	_active_pass_state["state"] = _PASS_STATE_DONE if result_done else _PASS_STATE_RUNNING
+	_active_pass_state["pass_cursor"] = _pass_cursor
+	_active_pass_state["stage"] = pass_name
+	_active_pass_state["substage"] = substage_override
+	_active_pass_state["path"] = path_override
+	_active_pass_state["elapsed_ms"] = elapsed_ms
+	_active_pass_state["reported_elapsed_ms"] = float(result.get("elapsed_ms", elapsed_ms))
+	_active_pass_state["processed_cells"] = _last_pass_processed_cells
+	_active_pass_state["cursor_start"] = _last_pass_cursor_start
+	_active_pass_state["cursor_end"] = _last_pass_cursor_end
+	_active_pass_state["budget_interrupted"] = _last_pass_budget_interrupted
+	_active_pass_state["status"] = result_status
+	_active_pass_state["progress_ratio"] = float(_pass_cursor) / float(_PASS_COUNT)
+	if result.has("cursor_remaining"):
+		_active_pass_state["cursor_remaining"] = int(result.get("cursor_remaining", 0))
+	if result.has("budget_cells"):
+		_active_pass_state["budget_cells"] = int(result.get("budget_cells", 0))
+	if result.has("next_stage"):
+		_active_pass_state["next_stage"] = str(result.get("next_stage", ""))
+	if result.has("abort_reason"):
+		_active_pass_state["abort_reason"] = str(result.get("abort_reason", ""))
+	if bool(_active_pass_state.get("diagnostics_enabled", true)):
+		_last_pass_diag = _active_pass_state.duplicate(true)
+	return true
+
+
+func _finish_active_pass() -> void:
+	if _active_pass_state.is_empty():
+		return
+	_active_pass_state["state"] = _PASS_STATE_DONE
+	_active_pass_state["ended_msec"] = Time.get_ticks_msec()
+	_active_pass_state["progress_ratio"] = 1.0
+	_last_pass_diag = _active_pass_state.duplicate(true)
+	_active_pass_token = 0
+	_active_pass_state = {}
 
 
 ## 主 tick / run_slice 入口。基类 DCSystem.run_slice 默认转发到 tick(ctx)，
@@ -259,6 +432,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_t_transp_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
 		_round_active = true
+		_begin_round_pass_state()
 		# A.2.1.A4 — Dirty Mask 启动时整 round 边界处理：
 		#   1) season 跨整数 / 每 30 日 full sweep / 加载存档首日 → mark_all_climate_dirty
 		#   2) 否则保留上一日 dirty 增量（Pass A 内层 epsilon 比对会继续覆写）
@@ -289,6 +463,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var ocean_enabled: bool = bool(generator._last_cfg.enable_ocean_heat_transport)
 	var slice_elapsed_ms: float = 0.0
 	var ran_pass_id: int = -1
+	_reset_last_pass_diag()
 
 	while _pass_cursor < _PASS_COUNT:
 		var pass_id: int = _pass_cursor
@@ -307,9 +482,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_pass_cursor += 1
 			continue
 		# 找到当前应执行的段——执行它并退出 while（每 tick 只跑 1 段）
-		_run_pass(pass_id)
+		var pass_done: bool = _run_pass(pass_id)
 		ran_pass_id = pass_id
-		_pass_cursor += 1
+		if pass_done:
+			_pass_cursor += 1
 		slice_elapsed_ms = (Time.get_ticks_usec() - t_slice_us0) / 1000.0
 		break
 
@@ -342,6 +518,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var path_out: String = "data_core" if data_core_ready() else "data_core_cells_only"
 	if ran_pass_id == _PASS_B and generator != null and "_last_climate_pass_b_path" in generator:
 		substage_out = "pass_b_%s" % str(generator._last_climate_pass_b_path)
+	elif _last_pass_substage != "":
+		substage_out = _last_pass_substage
+	if _last_pass_stage != "":
+		stage_name_out = _last_pass_stage
+	var processed_cells_out: int = _last_pass_processed_cells
 	return {
 		"done": done,
 		"work_done": map.cell_count() if done else 0,
@@ -350,31 +531,78 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"stage_name": stage_name_out,
 		"substage": substage_out,
 		"path": path_out,
+		"processed_cells": processed_cells_out,
+		"cursor_start": _last_pass_cursor_start,
+		"cursor_end": _last_pass_cursor_end,
+		"budget_interrupted": _last_pass_budget_interrupted,
+		"status": _last_pass_status,
+		"pass_token": _active_pass_token,
 	}
 
 
 # ─── 内部：按 pass_id 调用 generator 上的 sub-pass 并累积埋点 ─────────────
-func _run_pass(pass_id: int) -> void:
+func _run_pass(pass_id: int) -> bool:
+	var token: int = _active_pass_token
 	var t_us0: int = Time.get_ticks_usec()
 	match pass_id:
 		_PASS_A:
 			generator._climate_pass_a(map, _phase_locked)
 			_round_t_pass_a_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			var r_a: Dictionary = _make_pass_result(true, _round_t_pass_a_ms, map.cell_count(), 0, map.cell_count())
+			_record_pass_result(pass_id, token, r_a, _round_t_pass_a_ms, "pass_a", "native_or_gd", "data_core" if data_core_ready() else "data_core_cells_only")
+			return true
 		_PASS_B:
 			generator._climate_pass_b(map, _phase_locked)
 			_round_t_pass_b_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			var r_b: Dictionary = _make_pass_result(true, _round_t_pass_b_ms, map.cell_count(), 0, map.cell_count())
+			var pb_substage: String = "pass_b_%s" % str(generator._last_climate_pass_b_path) if generator != null and "_last_climate_pass_b_path" in generator else "pass_b"
+			_record_pass_result(pass_id, token, r_b, _round_t_pass_b_ms, "pass_b", pb_substage, "data_core" if data_core_ready() else "data_core_cells_only")
+			return true
 		_PASS_OCEAN_WATER:
-			generator._ocean_water_pass(map, _phase_locked)
-			_round_t_ocean_ms += (Time.get_ticks_usec() - t_us0) / 1000.0
+			if generator.has_method("run_ocean_water_pass_slice"):
+				var r_w: Dictionary = generator.run_ocean_water_pass_slice(map, _phase_locked)
+				_round_t_ocean_ms += float(r_w.get("elapsed_ms", 0.0))
+				_record_pass_result(pass_id, token, r_w, float(r_w.get("elapsed_ms", 0.0)), "ocean_water", "range_cursor", "native_chunk")
+				return bool(r_w.get("done", true))
+			else:
+				generator._ocean_water_pass(map, _phase_locked)
+				var ow_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+				_round_t_ocean_ms += ow_ms
+				var r_ow: Dictionary = _make_pass_result(true, ow_ms, map.cell_count(), 0, map.cell_count())
+				_record_pass_result(pass_id, token, r_ow, ow_ms, "ocean_water", "oneshot", "gdscript")
+				return true
 		_PASS_OCEAN_LAND:
-			generator._ocean_land_pass(map, _phase_locked)
-			_round_t_ocean_ms += (Time.get_ticks_usec() - t_us0) / 1000.0
+			if generator.has_method("run_ocean_land_pass_slice"):
+				var r_l: Dictionary = generator.run_ocean_land_pass_slice(map, _phase_locked)
+				_round_t_ocean_ms += float(r_l.get("elapsed_ms", 0.0))
+				_record_pass_result(pass_id, token, r_l, float(r_l.get("elapsed_ms", 0.0)), "ocean_land", "range_cursor", "native_chunk")
+				return bool(r_l.get("done", true))
+			else:
+				generator._ocean_land_pass(map, _phase_locked)
+				var ol_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+				_round_t_ocean_ms += ol_ms
+				var r_ol: Dictionary = _make_pass_result(true, ol_ms, map.cell_count(), 0, map.cell_count())
+				_record_pass_result(pass_id, token, r_ol, ol_ms, "ocean_land", "oneshot", "gdscript")
+				return true
 		_PASS_SEA_ICE:
-			generator._apply_sea_ice_daily_pass(map, _phase_locked)
-			_round_t_sea_ice_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			if generator.has_method("run_climate_pass_slice"):
+				var r_si: Dictionary = generator.run_climate_pass_slice("sea_ice", map, _phase_locked)
+				_round_t_sea_ice_ms += float(r_si.get("elapsed_ms", 0.0))
+				_record_pass_result(pass_id, token, r_si, float(r_si.get("elapsed_ms", 0.0)), "sea_ice", str(r_si.get("stage", "state_machine")), "climate_chunk_api")
+				return bool(r_si.get("done", true))
+			else:
+				generator._apply_sea_ice_daily_pass(map, _phase_locked)
+				_round_t_sea_ice_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+				var r_si: Dictionary = _make_pass_result(true, _round_t_sea_ice_ms, map.cell_count(), 0, map.cell_count())
+				_record_pass_result(pass_id, token, r_si, _round_t_sea_ice_ms, "sea_ice", "oneshot_fallback", "native_or_gd")
+				return true
 		_PASS_TRANSP:
 			generator._apply_transpiration_pass(map)
 			_round_t_transp_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
+			var r_tr: Dictionary = _make_pass_result(true, _round_t_transp_ms, map.cell_count(), 0, map.cell_count())
+			_record_pass_result(pass_id, token, r_tr, _round_t_transp_ms, "transp", "oneshot", "gdscript")
+			return true
+	return true
 
 
 func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: float) -> void:
@@ -402,7 +630,14 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 		"partial": true,
 		"current_pass": pass_name,
 		"slice_ms": slice_elapsed_ms,
+		"processed_cells": _last_pass_processed_cells,
+		"cursor_start": _last_pass_cursor_start,
+		"cursor_end": _last_pass_cursor_end,
 		"progress_ratio": progress,
+		"budget_interrupted": _last_pass_budget_interrupted,
+		"pass_status": _last_pass_status,
+		"pass_token": _active_pass_token,
+		"pass_diag": _last_pass_diag.duplicate(true),
 		"dirty_ratio": dirty_ratio_out,
 		"visited_ratio": visited_ratio_out,
 		"pass_b_path": pass_b_path_out,
@@ -441,7 +676,14 @@ func _finalize_round() -> void:
 			"cells": map.cell_count(),
 			"partial": false,
 			"current_pass": "done",
+			"processed_cells": 0,
+			"cursor_start": -1,
+			"cursor_end": -1,
 			"progress_ratio": 1.0,
+			"budget_interrupted": false,
+			"pass_status": _PASS_RESULT_DONE,
+			"pass_token": _active_pass_token,
+			"pass_diag": _last_pass_diag.duplicate(true),
 			"dirty_ratio": dirty_ratio_out,
 			"visited_ratio": visited_ratio_out,
 			"pass_b_path": pass_b_path_out,
@@ -487,25 +729,6 @@ func _finalize_round() -> void:
 	if generator != null:
 		var cp_for_flush = generator._c()
 		if cp_for_flush != null and bool(cp_for_flush.use_soa_pipeline) and map != null and map.has_soa():
-			# [DIAG 2026-05-12] round 末尾、flush 前打一次温度统计（前 8 round）。
-			# 与 Pass-A / Pass-B 末尾配对：若 round 末 mean ≈ 0 但 Pass-B 末尾正常
-			# → bug 在 ocean_water / ocean_land / sea_ice / transp 之一。
-			var _diag_n: int = int(generator._daily_climate_call_count)
-			if _diag_n <= 8:
-				var _ta: PackedFloat32Array = map.temp_arr
-				var _tmin: float = 1.0
-				var _tmax: float = 0.0
-				var _tsum: float = 0.0
-				var _tcnt: int = _ta.size()
-				for _ti in range(_tcnt):
-					var _tv: float = _ta[_ti]
-					if _tv < _tmin: _tmin = _tv
-					if _tv > _tmax: _tmax = _tv
-					_tsum += _tv
-				var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
-				print("[DIAG round_end ] day=%d phase=%.3f temp_arr min=%.4f max=%.4f mean=%.4f n=%d (pre-flush)" % [
-					_diag_n, _phase_locked, _tmin, _tmax, _tmean, _tcnt
-				])
 			# PR-2.4（2026-05-14）：flush_soa_to_cells 已删除。
 			# HexCell facade 让 cell.<field> getter 直接走 SoA，不再需要反向同步。
 			pass
@@ -517,8 +740,13 @@ func _finalize_round() -> void:
 		if generator != null and "_daily_climate_call_count" in generator:
 			sim_day = int(generator._daily_climate_call_count)
 		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
+	_finish_active_pass()
 	_round_active = false
 	_pass_cursor = 0
+
+
+func get_last_pass_diag() -> Dictionary:
+	return _last_pass_diag.duplicate(true)
 
 
 ## Allow MapGenerator to retune the stride on the fly (speed_changed callback).

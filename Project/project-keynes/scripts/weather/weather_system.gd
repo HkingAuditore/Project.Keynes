@@ -744,17 +744,18 @@ func commit_weather_field_solve() -> Array[WeatherFront]:
 # 把 GDScript 端的所有 cp/profile/_field_* 旋钮、世界边界、预先打包好的
 # PackedArray 输入打包成一个 Dictionary 交给 C++。所有 key 名与 world_ext.h
 # 的 F.1 文档块一一对应；任何 key 缺失都会让 C++ return -1.0 透明 fallback。
-func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) -> Dictionary:
-	# temperature_transport_anomaly 还没有 SoA 镜像（schema 里没注册），需要按
-	# i 顺序临时从 cells 提取。N=2400 时一次提取 ≈ 0.05ms，远小于 C++ 节省的
-	# 11ms。F.x phase II 数据所有权下移 PR 会把这个字段也搬到 schema，届时
-	# 这里改一行：直接 map.temperature_transport_anomaly_arr 即可。
-	var temp_anom_arr: PackedFloat32Array = PackedFloat32Array()
-	temp_anom_arr.resize(n_cells)
-	var cells_l: Array = _field_solver._field_slice_cells
-	for i in range(n_cells):
-		var c: HexCell = cells_l[i]
-		temp_anom_arr[i] = float(c.temperature_transport_anomaly)
+func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, start_idx: int = 0, end_idx: int = -1) -> Dictionary:
+	var end_idx_resolved: int = n_cells if end_idx < 0 else end_idx
+	var temp_anom_arr: PackedFloat32Array = _field_solver._field_slice_temp_anom
+	if temp_anom_arr.size() != n_cells:
+		temp_anom_arr = map.temperature_transport_anomaly_arr
+	if temp_anom_arr.size() != n_cells:
+		temp_anom_arr = PackedFloat32Array()
+		temp_anom_arr.resize(n_cells)
+		var cells_l: Array = _field_solver._field_slice_cells
+		for i in range(n_cells):
+			var c: HexCell = cells_l[i]
+			temp_anom_arr[i] = float(c.temperature_transport_anomaly)
 	# ─── Phase A.3 fast path：从 KnobsHandle 拿标量段缓存 Dict ──────────
 	# 动态字段（SoA cache / PackedArray ref / temp_anom_arr）仍每帧准备并 merge。
 	# 标量段在 ClimateProfile 不变的稳态下复用缓存 Dict（CoW 引用 ++）。
@@ -763,8 +764,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 		# 走值比较，无变化时不拉 dirty，缓存 Dict 命中）。
 		_push_resident_knobs_from_cp(_cp_for_front_flag)
 		var dynamic_fields: Dictionary = {
-			"start_idx": 0,
-			"end_idx": n_cells,
+			"start_idx": start_idx,
+			"end_idx": end_idx_resolved,
 			"n_cells": n_cells,
 			"season_idx": _field_solver._field_slice_season_idx,
 			"climate_anomaly": _field_solver._field_slice_climate_anomaly,
@@ -778,8 +779,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 		return _merge_resident_knobs_with_dynamic(_knobs_handle.to_field_knobs_dict(), dynamic_fields)
 	# ─── Fallback：原 builder 路径（与 Phase A.3 之前 100% bit-equal）──
 	return {
-		"start_idx": 0,
-		"end_idx": n_cells,
+		"start_idx": start_idx,
+		"end_idx": end_idx_resolved,
 		"n_cells": n_cells,
 		"season_idx": _field_solver._field_slice_season_idx,
 		"climate_anomaly": _field_solver._field_slice_climate_anomaly,
@@ -805,10 +806,16 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int) ->
 
 # 调用 C++ 端 run_weather_field_solve_pass。返回 elapsed_ms (≥0) 或 -1.0。
 # 任何异常都被 catch 成 -1.0，让上层透明回退。
-func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells: int) -> float:
+func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells: int, start_idx: int = 0, end_idx: int = -1) -> float:
 	if _data_core_world_ext == null:
 		return -1.0
-	var knobs: Dictionary = _build_weather_field_knobs(map, world, n_cells)
+	var end_idx_resolved: int = n_cells if end_idx < 0 else end_idx
+	var knobs: Dictionary = _field_solver._field_slice_native_knobs
+	if knobs.is_empty():
+		knobs = _build_weather_field_knobs(map, world, n_cells, start_idx, end_idx_resolved)
+	else:
+		knobs["start_idx"] = start_idx
+		knobs["end_idx"] = end_idx_resolved
 	var rc: float = float(_data_core_world_ext.run_weather_field_solve_pass(knobs))
 	# C++ 在失败时已经 push_warning；这里只在第一次 fallback 时打一条 GDScript
 	# 侧提示，避免每 tick spam。
@@ -1838,6 +1845,8 @@ func _clear_weather_field_slice_state() -> void:
 	_field_solver._field_slice_last_ms = 0.0
 	_field_solver._field_slice_results_in_soa = false
 	_field_solver._field_slice_native_convergence_boost = false
+	_field_solver._field_slice_temp_anom = PackedFloat32Array()
+	_field_solver._field_slice_native_knobs.clear()
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
 	# dots-monolith-split §1.2 / PR-6：250 行 dead code 已删除；逻辑入口

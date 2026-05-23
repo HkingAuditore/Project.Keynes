@@ -369,7 +369,8 @@ String SusSchedulerExt::_slice_substage_name(const Dictionary &r) {
 bool SusSchedulerExt::_is_upload_job(const StringName &id) {
     static const StringName k_enum_atlas("enum_atlas_upload");
     static const StringName k_sea_ice("sea_ice_atlas_upload");
-    return id == k_enum_atlas || id == k_sea_ice;
+    static const StringName k_dynamic_visual("dynamic_visual_atlas_upload");
+    return id == k_enum_atlas || id == k_sea_ice || id == k_dynamic_visual;
 }
 
 bool SusSchedulerExt::_slice_stage_looks_cell_based(const String &stage) {
