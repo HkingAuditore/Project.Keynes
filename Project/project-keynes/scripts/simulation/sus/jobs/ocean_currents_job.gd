@@ -24,11 +24,8 @@ const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const SusJobScript = preload("res://scripts/simulation/sus/sus_job.gd")
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
-const _MAX_CLIMATE_DEFER_STREAK: int = 4
-const _PIXEL_TARGET_MS: float = 0.85
-const _PIXEL_MIN_QUOTA: int = 512
-const _PIXEL_MAX_QUOTA: int = 8192
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 9.0
+const _MAX_CLIMATE_DEFER_STREAK: int = 2
 
 # External references — wired up by MapGenerator at registration time.
 var baker: MapBakerScript = null
@@ -75,9 +72,6 @@ var _phys_solve_done: bool = false
 var _phase_int_seen: int = -9999
 var _need_pixel_this_round: bool = false
 var _climate_defer_streak: int = 0
-var _last_pixel_quota: int = _PIXEL_MAX_QUOTA
-var _last_pixel_slice_ms: float = 0.0
-var _last_pixel_slice_pixels: int = 0
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
@@ -121,17 +115,6 @@ func _pixels_per_slice() -> int:
 	return int(ceil(float(_total_pixels) / float(max(1, slice_count))))
 
 
-func _pixel_quota_for_next_slice() -> int:
-	var base_quota: int = mini(_pixels_per_slice(), _PIXEL_MAX_QUOTA)
-	if base_quota <= _PIXEL_MIN_QUOTA:
-		return max(1, base_quota)
-	if _last_pixel_slice_ms <= 0.0 or _last_pixel_slice_pixels <= 0:
-		return base_quota
-	var scaled: int = int(floor(float(_last_pixel_slice_pixels) * (_PIXEL_TARGET_MS / _last_pixel_slice_ms)))
-	var smoothed: int = int(round(lerpf(float(_last_pixel_quota), float(scaled), 0.5)))
-	return clampi(smoothed, _PIXEL_MIN_QUOTA, base_quota)
-
-
 func reset_progress() -> void:
 	super.reset_progress()
 	_next_pixel_idx = 0
@@ -144,9 +127,6 @@ func reset_progress() -> void:
 	_phase_int_seen = -9999
 	_need_pixel_this_round = false
 	_climate_defer_streak = 0
-	_last_pixel_quota = _PIXEL_MAX_QUOTA
-	_last_pixel_slice_ms = 0.0
-	_last_pixel_slice_pixels = 0
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
@@ -155,14 +135,16 @@ func should_run(ctx: SusTickContext) -> bool:
 	# Guard against missing dependencies (e.g. before bake_world finishes).
 	if baker == null or world == null or map == null or cfg == null:
 		return false
-	# Commit Defer：raster 已完成、commit 待跑 → 绕过 climate-defer 让位
-	# （commit 极轻 ~1.5ms 且必须尽快上传纹理，否则 shader 看的是旧 buffer）。
+	# Commit Defer：raster 已完成、commit 待跑 → 绕过 phase short-circuit
+	# 与 climate-defer 让位（commit 极轻 ~1.5ms 且必须尽快上传纹理，否则 shader 看的是旧 buffer）。
 	if _pending_commit:
 		return super.should_run(ctx)
-	# 不要在 should_run 里按 phase_int 拦截整轮 ocean_currents。
-	# phase_int 只用于 run_slice 起点判断本轮是否需要刷新像素 atlas；物理化路径下
-	# wind / ocean_current / upwelling 仍必须按 ContinuousSlicedPolicy 的节奏更新，
-	# 否则天气与 ocean heat transport 会在同一季内读到冻结的 per-cell 场。
+	if not _round_active and _phase_int_seen != -9999:
+		var phase_now: float = ctx.season_phase
+		if season_phase_getter.is_valid():
+			phase_now = float(season_phase_getter.call())
+		if int(floor(phase_now)) == _phase_int_seen:
+			return false
 	# Always defer to policy, even when a round is in flight: that keeps the
 	# 'one slice every ticks_per_slice ticks' cadence intact (e.g. 1 slice
 	# every 3 days). Drift of mid-round phase is bounded by the locked
@@ -317,7 +299,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# Event-driven rebake notification — 每次跨季节进入像素阶段时打一条日志，
 	# 让玩家/开发者能在 console 看到"vector_atlas 在 phase=X.XX 重 bake"提示。
 	# 只在 round 的第一次像素 slice (s == 0) 打。
-	var pps: int = _pixel_quota_for_next_slice()
+	var pps: int = _pixels_per_slice()
 	var s: int = _next_pixel_idx
 	var e: int = mini(_total_pixels, s + pps)
 	if s == 0 and _need_pixel_this_round:
@@ -334,7 +316,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# transparent fallback 到旧 slice 路径）。
 	#
 	# Sub-slice 切片（plan/ocean-raster-subslice 2026-05-22）：
-	# 每片只 raster 一段像素区间，并额外限制最大像素数，最后一片完成后挂 _pending_commit。
+	# 把 4.7ms 整图 raster 拆成 ocean_pixel_subslice_count 片（默认 4，每片 ~1.2ms）
+	# 跑在多个 SUS tick 上。每片只 raster 一段像素区间，最后一片完成后挂 _pending_commit。
+	# subslice_count=1 → 旧"一次吃完"行为（kill-switch）。
 	var used_cpp_raster: bool = false
 	var raster_native_ms: float = -1.0
 	var raster_wall_ms: float = -1.0
@@ -349,7 +333,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			if "ocean_pixel_subslice_count" in cp_oc:
 				sub_count = max(1, int(cp_oc.ocean_pixel_subslice_count))
 			# 每片像素数 = ceil(total / sub_count)，最后一片可能更短。
-			var sub_pps: int = mini(int(ceil(float(_total_pixels) / float(sub_count))), pps)
+			var sub_pps: int = int(ceil(float(_total_pixels) / float(sub_count)))
 			var sub_s: int = _next_pixel_idx
 			var sub_e: int = mini(_total_pixels, sub_s + sub_pps)
 			var t_raster_us: int = Time.get_ticks_usec()
@@ -407,10 +391,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# work_done = 本片实际 raster 的像素数。GD fallback 路径与 C++ sub-slice
 	# 路径都是 (e - s)；旧"C++ 一次吃完"路径已被 sub-slice 替代。
 	var work_done_pixels: int = e - s
-	if work_done_pixels > 0:
-		_last_pixel_slice_ms = elapsed_ms
-		_last_pixel_slice_pixels = work_done_pixels
-		_last_pixel_quota = work_done_pixels
 	# Commit Defer：raster 完成片标 ocean_pixel_raster_done；
 	# 普通中途 slice 标 ocean_pixel_slice；done=true 不再可能（raster 完即转 commit defer）。
 	var slice_stage_name: String = "ocean_pixel_slice"
@@ -426,9 +406,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"stage_name": slice_stage_name,
 		"substage": "pixels_%d_%d" % [s, e],
 		"path": "gdext_raster" if used_cpp_raster else "gdscript_slice",
-		"processed_pixels": work_done_pixels,
-		"cursor_start": s,
-		"cursor_end": e,
 	}
 
 

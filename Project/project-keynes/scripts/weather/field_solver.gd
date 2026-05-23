@@ -112,8 +112,6 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_last_ms = 0.0
 	_field_slice_results_in_soa = false
 	_field_slice_native_convergence_boost = false
-	_field_slice_temp_anom = PackedFloat32Array()
-	_field_slice_native_knobs.clear()
 	_field_slice_refresh_convergence = ((_weather_system._field_solve_tick - 1) % _weather_system._field_convergence_refresh_stride) == 0
 	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = _field_slice_cells.size()
@@ -176,22 +174,10 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 		else:
 			_field_slice_prev_vapor[i] = soa_moisture[i]
 			_field_slice_prev_precip[i] = 0.0
-	var tta_soa: PackedFloat32Array = map.temperature_transport_anomaly_arr
-	if tta_soa.size() == n_cells:
-		_field_slice_temp_anom = tta_soa
-	else:
-		_field_slice_temp_anom = PackedFloat32Array()
-		_field_slice_temp_anom.resize(n_cells)
-		for ti in range(n_cells):
-			var tc: HexCell = _field_slice_cells[ti]
-			_field_slice_temp_anom[ti] = float(tc.temperature_transport_anomaly)
-	if _weather_system._use_gdext_weather_field and _field_slice_fast_indexed \
-			and _weather_system._data_core_world_ext != null:
-		_field_slice_native_knobs = _weather_system._build_weather_field_knobs(map, world, n_cells, 0, n_cells)
 
 
 ## 切片单步：在 [start_i, end_i) 范围内跑 vapor/cloud/precip 三段式 hot loop。
-## 优先走 DCWorldExt C++ range fast path；失败时回退到 GDScript range loop。
+## fresh start（start_i == 0）时优先走 DCWorldExt C++ 全量 fast path。
 func run_slice(cell_budget: int) -> Dictionary:
 	if not _field_slice_active:
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
@@ -203,12 +189,22 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var start_i: int = _field_slice_cursor
 	var end_i: int = mini(n_cells, start_i + maxi(1, cell_budget))
 
-	# ─── Phase F.1：DCWorldExt C++ range 快路径 ────────────────────────
+	# ─── Phase F.1：DCWorldExt C++ 单 shot 快路径 ───────────────────────
 	# 触发条件：
 	#   1. configure_gdext_acceleration(_weather_system._data_core_world_ext, true) 已生效
-	#   2. _field_slice_fast_indexed（neighbor_indices_packed 完整）
-	#   3. C++ 端 run_weather_field_solve_pass 支持 start_idx/end_idx 并返回 ≥ 0
-	if _weather_system._use_gdext_weather_field \
+	#   2. 本次 slice 处于 fresh start（start_i == 0）——只要从 0 开始，
+	#      C++ 就一次性把 [0, n_cells) 全部跑完（覆盖 SUS 给的任何 cell_budget）。
+	#      C++ 全量约 < 2ms，永远塞得进 SUS 任何 budget。
+	#   3. _field_slice_fast_indexed（neighbor_indices_packed 完整）
+	#   4. C++ 端 run_weather_field_solve_pass 返回 ≥ 0
+	#
+	# 历史 bug（2026-05-13 用户 soak 暴露）：
+	#   早期版本要求 `start_i == 0 AND end_i >= n_cells`。SUS 调度按
+	#   cell_budget 切片（典型 1200 / slice），第 1 slice end_i=1200 < 2400，
+	#   F.1 永远 fallback。修复后只看 start_i == 0：从 0 开始就强制全量
+	#   跑完，cursor 跳到 n_cells，slice 标记 done，下个 tick 的 begin_*
+	#   会重置 cursor，weather_refresh.has_more=false 单 slice 完成。
+	if _weather_system._use_gdext_weather_field and start_i == 0 \
 			and _field_slice_fast_indexed and _weather_system._data_core_world_ext != null:
 		# 一次性诊断：第一次进入 fast path 时打一条日志，把 5 个 precondition
 		# 的真实状态以及 n_cells / cell_budget 全打出，方便排查。已成功跑过
@@ -218,10 +214,10 @@ func run_slice(cell_budget: int) -> Dictionary:
 			print("[weather/F.1] first fast-path attempt: n_cells=%d cell_budget=%d (would-end_i=%d) fast_indexed=%s ext_bound=%s" % [
 				n_cells, cell_budget, end_i, str(_field_slice_fast_indexed), str(_weather_system._data_core_world_ext != null)
 			])
-		var rc: float = _weather_system._try_run_weather_field_solve_gdext(map, world, n_cells, start_i, end_i)
+		var rc: float = _weather_system._try_run_weather_field_solve_gdext(map, world, n_cells)
 		if rc >= 0.0:
-			# C++ 完成当前 range。写入 SoA 暂不发布；只有 commit() 才让 renderer/UI
-			# 看到完整 round，保持中间态不可见。
+			# C++ 完成全量。把 SoA 拷回 _field_slice_next_*，让 commit_* 看到一致
+			# 数据；cursor 推进到末尾，slice 标记为 done。
 			_field_slice_results_in_soa = true
 			_field_slice_native_convergence_boost = _field_slice_refresh_convergence \
 				and not _weather_system._field_verify_enabled
@@ -229,12 +225,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 			# 复位 SoA、跑一遍 GDScript loop 写到独立缓冲区，然后逐 cell 对账。
 			# 失败时 push_warning 并打首次发散位置；不影响本 tick commit（commit
 			# 仍走 C++ 结果——出 bug 时玩家肉眼能看到，verify 只是给 dev 抓证据）。
-			var done_native: bool = end_i >= n_cells
-			if done_native and (_weather_system._field_verify_enabled or not _weather_system._hexcell_facade_on):
+			if _weather_system._field_verify_enabled or not _weather_system._hexcell_facade_on:
 				_weather_system._pull_gdext_field_results_to_next(map, n_cells)
 				if _weather_system._field_verify_enabled:
 					_weather_system._verify_gdext_field_against_gdscript(map, world, n_cells)
-			_field_slice_cursor = end_i
+			_field_slice_cursor = n_cells
 			_field_slice_solve_ms += rc
 			_field_slice_last_ms = rc
 			_weather_system._gdext_field_runs += 1
@@ -243,13 +238,10 @@ func run_slice(cell_budget: int) -> Dictionary:
 			if _weather_system._gdext_field_runs == 1:
 				print("[weather/F.1] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 13ms; charter §7 target < 2ms)" % rc)
 			return {
-				"done": done_native,
-				"work_done": end_i - start_i,
+				"done": true,
+				"work_done": n_cells,
 				"elapsed_ms": rc,
-				"progress_ratio": float(_field_slice_cursor) / float(maxi(n_cells, 1)),
-				"processed_cells": end_i - start_i,
-				"cursor_start": start_i,
-				"cursor_end": end_i,
+				"progress_ratio": 1.0,
 			}
 		_weather_system._gdext_field_fallbacks += 1
 		# rc<0 时 C++ 已经在 console push_warning 了，不需要再叠加日志。
@@ -370,9 +362,6 @@ func run_slice(cell_budget: int) -> Dictionary:
 		"work_done": end_i - start_i,
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": float(_field_slice_cursor) / float(maxi(n_cells, 1)),
-		"processed_cells": end_i - start_i,
-		"cursor_start": start_i,
-		"cursor_end": end_i,
 	}
 
 
@@ -978,8 +967,6 @@ var _field_slice_solve_ms: float = 0.0
 var _field_slice_last_ms: float = 0.0
 var _field_slice_results_in_soa: bool = false
 var _field_slice_native_convergence_boost: bool = false
-var _field_slice_temp_anom: PackedFloat32Array = PackedFloat32Array()
-var _field_slice_native_knobs: Dictionary = {}
 var _cached_cell_pos: PackedVector2Array = PackedVector2Array()
 var _cached_cell_pos_map_id: int = 0
 var _cached_cell_pos_n: int = 0

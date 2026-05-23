@@ -819,36 +819,6 @@ func set_estuary_plume_strength(v: float) -> void:
 var _set_weather_fronts_log_count: int = 0
 var _set_weather_fronts_last_n: int = -1
 const _set_weather_fronts_log_budget: int = 3
-var _weather_fronts_signature: String = ""
-var _weather_fronts_diag: Dictionary = {
-	"published": 0,
-	"skipped": 0,
-	"fallback_full_sync": 0,
-	"changed_slots_count": 0,
-}
-
-func sync_weather_fronts_signature(fronts: Array, diff: Dictionary) -> Dictionary:
-	var next_sig: String = str(diff.get("signature", ""))
-	var changed: bool = bool(diff.get("changed", false))
-	if changed:
-		set_weather_fronts(fronts)
-		_weather_fronts_signature = next_sig
-		_weather_fronts_diag["published"] = int(_weather_fronts_diag.get("published", 0)) + 1
-	elif next_sig != "" and next_sig != _weather_fronts_signature:
-		set_weather_fronts(fronts)
-		_weather_fronts_signature = next_sig
-		_weather_fronts_diag["fallback_full_sync"] = int(_weather_fronts_diag.get("fallback_full_sync", 0)) + 1
-	else:
-		_weather_fronts_diag["skipped"] = int(_weather_fronts_diag.get("skipped", 0)) + 1
-	_weather_fronts_diag["changed_slots_count"] = int(diff.get("changed_slots_count", 0))
-	_weather_fronts_diag["added_slots"] = int(diff.get("added_slots", 0))
-	_weather_fronts_diag["removed_slots"] = int(diff.get("removed_slots", 0))
-	_weather_fronts_diag["unchanged_slots"] = int(diff.get("unchanged_slots", 0))
-	return _weather_fronts_diag.duplicate(true)
-
-func weather_fronts_diag() -> Dictionary:
-	return _weather_fronts_diag.duplicate(true)
-
 func set_weather_fronts(fronts: Array) -> void:
 	var n_now: int = fronts.size()
 	var should_log: bool = false

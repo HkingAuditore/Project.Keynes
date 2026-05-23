@@ -230,8 +230,9 @@ public:
     //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
     //
     //   bit-equal 容差：1e-4（含 sqrt + clamp + lerp 链）。
-    //   切片：支持 start_idx / end_idx。读侧使用 begin 时的 prev_vapor /
-    //         prev_precip 快照，写侧只覆盖目标 SoA range；commit 仍统一发布。
+    //   切片限制：本实现要求 start_idx == 0 且 end_idx == n_cells（即"全量"）。
+    //             因为多 slice 共享 SoA 写会污染下一 slice 的读，单元格预算 < n
+    //             一律 fallback。F.x 后续 PR 可加 dirty-flag 双缓冲解锁。
     double run_weather_field_solve_pass(const godot::Dictionary &knobs);
 
     // F.2 (P1): ocean water + land 两个独立 pass
