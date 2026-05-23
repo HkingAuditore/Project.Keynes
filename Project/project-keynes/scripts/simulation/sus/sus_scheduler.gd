@@ -21,7 +21,7 @@ class_name SlicedUpdateScheduler
 ## Soft total budget per tick (ms). When exceeded, SUS stops *starting* new
 ## jobs but does not interrupt the slice currently in flight (avoids leaving
 ## half-baked state).
-var frame_budget_ms: float = 12.0
+var frame_budget_ms: float = 2.0
 
 ## Strict mode is used by the 1ms simulation profile. It prevents a job from
 ## consuming multiple slices in one tick unless that job explicitly opts out
@@ -102,6 +102,24 @@ var world = null    # DCWorld
 ## the C++ class is not registered (e.g. editor tests without gdext .dll);
 ## cached after first ensure call.
 var _ext = null
+
+
+func set_frame_budget_ms(v: float) -> void:
+	frame_budget_ms = clampf(v, 0.25, 2.0)
+	if _ext != null:
+		_ext.set_frame_budget_ms(frame_budget_ms)
+
+
+func set_strict_budget_enabled(v: bool) -> void:
+	strict_budget_enabled = v
+	if _ext != null:
+		_ext.set_strict_budget_enabled(strict_budget_enabled)
+
+
+func set_sim_budget_warn_ms(v: float) -> void:
+	sim_budget_warn_ms = clampf(v, 0.25, 2.0)
+	if _ext != null:
+		_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
 
 
 func _ensure_ext() -> void:
@@ -767,7 +785,9 @@ func _slice_substage_name(slice_result: Dictionary) -> String:
 
 
 func _is_upload_job(job_id: StringName) -> bool:
-	return job_id == &"enum_atlas_upload" or job_id == &"sea_ice_atlas_upload"
+	return job_id == &"enum_atlas_upload" \
+		or job_id == &"sea_ice_atlas_upload" \
+		or job_id == &"dynamic_visual_atlas_upload"
 
 
 func _slice_stage_looks_cell_based(stage: String) -> bool:
