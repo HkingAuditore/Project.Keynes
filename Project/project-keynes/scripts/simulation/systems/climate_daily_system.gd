@@ -256,6 +256,13 @@ func should_run(ctx: SusTickContext) -> bool:
 func reset_progress() -> void:
 	super.reset_progress()
 	_abort_active_pass(_ABORT_REASON_RESET)
+	# Fix R4 (climate-pipeline-spike-reduction)：在 budget=2ms / 每帧 1 pass 节奏下，
+	# ocean_water/land 的 cursor 跨 round 持续累加。如果不在 reset 时同步清掉
+	# generator._climate_ocean_slice_state，下一 round 进来会发现 slice_state 非空 +
+	# map_id 一致 → 跳过 _begin_ocean_heat_transport_sliced → 继续从旧 cursor 推进 →
+	# 永远不会从 0 开始一个新 round 的洋流计算，洋流热输运彻底"消失"。
+	if generator != null and generator.has_method("_abort_all_climate_passes"):
+		generator._abort_all_climate_passes("daily_reset")
 	_pass_cursor = 0
 	_round_active = false
 	_phase_locked = 0.0
