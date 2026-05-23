@@ -57,7 +57,9 @@ public:
     ~SusSchedulerExt() override;
 
     // ─── Configuration mirrors of SlicedUpdateScheduler exports ──────────
-    void   set_frame_budget_ms      (float v) { _frame_budget_ms = v; }
+    void   set_frame_budget_ms      (float v) {
+        _frame_budget_ms = v < 0.25f ? 0.25f : (v > 2.0f ? 2.0f : v);
+    }
     float  get_frame_budget_ms      () const  { return _frame_budget_ms; }
     void   set_strict_budget_enabled(bool v)  { _strict_budget_enabled = v; }
     bool   get_strict_budget_enabled() const  { return _strict_budget_enabled; }
@@ -249,7 +251,7 @@ private:
     void        _emit_periodic_log();
 
     // ─── State ───────────────────────────────────────────────────────────
-    float _frame_budget_ms        = 12.0f;
+    float _frame_budget_ms        = 2.0f;
     bool  _strict_budget_enabled  = false;
     int   _sim_budget_window_size = 300;
     float _sim_budget_warn_ms     = 1.0f;

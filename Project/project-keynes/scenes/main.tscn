@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
 [ext_resource type="Script" uid="uid://cv6opgqbl5anq" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
 [ext_resource type="Script" uid="uid://6x4pu0j1xdr2" path="res://scripts/geography/world_clock.gd" id="4_clock"]
-[ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
+[ext_resource type="Script" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
 [ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="6_overlay"]
 [ext_resource type="Script" uid="uid://cw5wodk76aaby" path="res://scripts/ui/debug_console.gd" id="7_console"]
 [ext_resource type="Script" uid="uid://bbdihyphoivd7" path="res://scripts/ui/overlay_legend.gd" id="8_legend"]
