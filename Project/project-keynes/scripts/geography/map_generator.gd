@@ -6615,6 +6615,15 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
 
+	# ─── [S2 fix 2026-05-23 三轮] dt_days 补偿（状态机入口路径）─────────
+	# 之前 dt_days 补偿只加在 _apply_sea_ice_daily_pass，但 SUS sliced 调度走
+	# 的是本函数（_begin_sea_ice_state_machine），导致 k_freeze/k_melt 仍按
+	# "per-call = per-day" 原值传给 C++ → 海冰几乎不动。这里复用 daily_pass
+	# 同款 dt_days 计算（_consume_sea_ice_dt_days）并把 k 放大。
+	var dt_days: float = _consume_sea_ice_dt_days()
+	var k_freeze_scaled: float = k_freeze * dt_days
+	var k_melt_scaled: float = k_melt * dt_days
+
 	var t_total_us: int = Time.get_ticks_usec()
 	var t_pack_us: int = Time.get_ticks_usec()
 	var base_terrain_input: PackedByteArray
@@ -6665,8 +6674,10 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 	])
 	var knobs: Dictionary = {
 		"n_cells": n_cells_fast,
-		"k_freeze": k_freeze,
-		"k_melt": k_melt,
+		# [S2 fix 2026-05-23 三轮] k_freeze / k_melt 已在 GDScript 端乘过 dt_days，
+		# C++ 端无需感知 dt（兼容旧 .dylib，无需重编）。
+		"k_freeze": k_freeze_scaled,
+		"k_melt": k_melt_scaled,
 		"t_form": t_form,
 		"t_melt": t_melt,
 		"contagion": contagion,
@@ -6689,6 +6700,13 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		var t_refresh_us: int = Time.get_ticks_usec()
 		_data_core_world_ext.refresh_slots_from_map()
 		refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+	# [BUG-FIX 2026-05-23 海冰看似不动] 在 C++ pass 修改 SIF 之前，先 snapshot
+	# pre-pass 状态。dense_sync_chunk 阶段会用它和 post-pass 比对，对真正变化
+	# 的 cell 调 mark_dirty_indexed —— 否则 atlas pipeline 永远拿不到 SIF dirty。
+	# 见 _run_sea_ice_state_machine_slice DENSE_SYNC_CHUNK 分支注释。
+	var pre_sif_snapshot: PackedFloat32Array = PackedFloat32Array()
+	if map.sea_ice_frac_arr.size() == n_cells_fast:
+		pre_sif_snapshot = map.sea_ice_frac_arr.duplicate()
 	var t_native_us: int = Time.get_ticks_usec()
 	var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
 	var dispatch_path: String = "scalar"
@@ -6726,7 +6744,79 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		"water": int(knobs.get("stat_water_count", 0)),
 		"flipped": int(knobs.get("stat_flipped_count", 0)),
 		"dispatch_path": dispatch_path,
+		# [BUG-FIX 2026-05-23 海冰看似不动] pre-pass SIF 快照：dense_sync_chunk 用
+		# 来比对找真正变化 cell + 显式 mark_dirty_indexed。见同函数注释。
+		"pre_sif_snapshot": pre_sif_snapshot,
+		"dirty_marked_count": 0,
 	}
+	# [DIAG 2026-05-23] 海冰不动排障：状态机入口（实际运行主路径）。
+	# 每 365 次 pass + 前 5 次打印一次温度 / SIF 分布。
+	# 关键问诊：t_eff 实际有没有 < t_form？SIF 是否在累积但卡在 threshold 下？
+	if _gdext_sea_ice_runs < 5 or (_gdext_sea_ice_runs % 365) == 0:
+		var _diag_water: int = 0
+		var _diag_below_form: int = 0
+		var _diag_sif_pos: int = 0
+		var _diag_sif_near_thr: int = 0
+		var _diag_t_min: float = 9.99
+		var _diag_t_max: float = -9.99
+		var _diag_t_sum: float = 0.0
+		var _diag_t_min_water: float = 9.99
+		var _diag_sif_max: float = 0.0
+		var _diag_sif_sum: float = 0.0
+		var _diag_d_frac_max: float = 0.0    # 单 cell 单 pass 最大 d_frac 估算
+		var _terrain_arr_diag: PackedByteArray = map.terrain_arr
+		var _sif_arr_diag: PackedFloat32Array = map.sea_ice_frac_arr
+		var _temp_n: int = temp_input.size()
+		var _sif_n: int = _sif_arr_diag.size()
+		var _terr_n: int = _terrain_arr_diag.size()
+		for _i_diag in range(n_cells_fast):
+			var _t_d: float = temp_input[_i_diag] if _i_diag < _temp_n else 0.0
+			if _t_d < _diag_t_min: _diag_t_min = _t_d
+			if _t_d > _diag_t_max: _diag_t_max = _t_d
+			_diag_t_sum += _t_d
+			var _terr_d: int = int(_terrain_arr_diag[_i_diag]) if _i_diag < _terr_n else -1
+			var _is_w: bool = (_terr_d == int(TerrainType.TERRAIN.OCEAN) \
+				or _terr_d == int(TerrainType.TERRAIN.COAST) \
+				or _terr_d == int(TerrainType.TERRAIN.REEF) \
+				or _terr_d == int(TerrainType.TERRAIN.KELP) \
+				or _terr_d == int(TerrainType.TERRAIN.SEA_ICE))
+			if _is_w:
+				_diag_water += 1
+				if _t_d < _diag_t_min_water: _diag_t_min_water = _t_d
+				if _t_d < t_form:
+					_diag_below_form += 1
+					var _df: float = k_freeze_scaled * (t_form - _t_d)
+					if _df > _diag_d_frac_max: _diag_d_frac_max = _df
+				var _sf_d: float = _sif_arr_diag[_i_diag] if _i_diag < _sif_n else 0.0
+				_diag_sif_sum += _sf_d
+				if _sf_d > _diag_sif_max: _diag_sif_max = _sf_d
+				if _sf_d > 0.01: _diag_sif_pos += 1
+				if _sf_d >= threshold * 0.5 and _sf_d < threshold: _diag_sif_near_thr += 1
+		var _avg_t: float = _diag_t_sum / max(1, n_cells_fast)
+		var _avg_sif_w: float = _diag_sif_sum / max(1, _diag_water)
+		# [DIAG 2026-05-23 四轮] 海冰看似不动排障：把 C++ 端写回的 flip 列表 + 计数也打出来。
+		# 关键问诊：terrain 真的没翻吗？flip_to_ice_list 有没有元素？
+		var _flip_to_ice_diag: PackedInt32Array = knobs.get("flip_to_ice_list", PackedInt32Array())
+		var _flip_to_base_diag: PackedInt32Array = knobs.get("flip_to_base_list", PackedInt32Array())
+		var _stat_water_diag: int = int(knobs.get("stat_water_count", 0))
+		var _stat_flipped_diag: int = int(knobs.get("stat_flipped_count", 0))
+		# 当前 terrain 已是 SEA_ICE 的 cell 数（用于交叉核对：若已翻 cell 多但 SIF avg_w 仍低 = 渲染层问题）
+		var _existing_ice_terrain: int = 0
+		for _i_terr in range(n_cells_fast):
+			if _i_terr < _terr_n and int(_terrain_arr_diag[_i_terr]) == int(TerrainType.TERRAIN.SEA_ICE):
+				_existing_ice_terrain += 1
+		print("[sea_ice/DIAG-SM] run#%d phase=%.3f | thr_eff t_form=%.3f t_melt=%.3f flip_thr=%.3f | k_f=%.3f k_m=%.3f dt=%.2f | temp all min=%.3f max=%.3f avg=%.3f | water n=%d t_min_w=%.3f below_form=%d (%.1f%%) max_dfrac=%.4f | SIF pos=%d max=%.3f avg_w=%.4f near_thr=%d | FLIP to_ice=%d to_base=%d stat_water=%d stat_flipped=%d existing_ice_terr=%d | climate_anom=%.3f" % [
+			_gdext_sea_ice_runs + 1, season_phase,
+			t_form, t_melt, threshold,
+			k_freeze_scaled, k_melt_scaled, dt_days,
+			_diag_t_min, _diag_t_max, _avg_t,
+			_diag_water, _diag_t_min_water,
+			_diag_below_form, 100.0 * float(_diag_below_form) / max(1, _diag_water), _diag_d_frac_max,
+			_diag_sif_pos, _diag_sif_max, _avg_sif_w, _diag_sif_near_thr,
+			_flip_to_ice_diag.size(), _flip_to_base_diag.size(),
+			_stat_water_diag, _stat_flipped_diag, _existing_ice_terrain,
+			climate_anomaly_now,
+		])
 	_gdext_sea_ice_runs += 1
 	_gdext_sea_ice_total_ms += rc
 	return true
@@ -6763,6 +6853,87 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 					idx[k] = ci
 					vals[k] = map.sea_ice_frac_arr[ci]
 				_data_core_world.write_f32_indexed(cid_si, idx, vals)
+				# [B-Surgical 2026-05-23 海冰看似不动] 同步写 DCWorldExt 的 SIF slot。
+				# 真因：C++ ice atlas raster（world_ext.cpp::encode_ice_state_atlas_*）
+				# 从 DCWorldExt 自己的 cell_sea_ice_frac slot.arr_f32 读，不读
+				# MapData.sea_ice_frac_arr，也不读 GDScript DCWorld。状态机只写
+				# MapData + GDScript DCWorld，DCWorldExt slot 永远停留在初始 0 →
+				# atlas pixel 全 0 → 视觉上海冰一直不动。
+				# 修复：在已经备好 idx/vals 的同一处，向 DCWorldExt 镜像一次。
+				# 双 world 架构由 GDScript DCWorld（ECS 容器）+ DCWorldExt（C++ 镜像
+				# slot）组成，本来就是 superset/subset 关系；这里属于补足缺失的一条
+				# 镜像链路（B-Surgical），不动其它系统的写入路径。
+				# 见 docs/dots-master-execution-handbook.md §sea-ice-dual-world-sync。
+				if _data_core_world_ext != null \
+						and _data_core_world_ext.has_method("write_f32_indexed") \
+						and _data_core_world_ext.has_method("component_id"):
+					# [B-Surgical 命名空间不一致] DCComponentIds 用点号风格
+					# (`cell.sea_ice_frac`)，但 DCWorldExt 的 BIND_TABLE 用下划线
+					# 风格 (`cell_sea_ice_frac`，见 component_bind_table.gen.h)。
+					# C++ component_id 是按字面量 hash 查表，找不到点号版本。
+					# 这里两种都试一遍，下划线版作为 ext 端的真名 fallback。
+					var cid_si_ext: int = int(_data_core_world_ext.component_id(DCComponentIds.CELL_SEA_ICE_FRAC))
+					if cid_si_ext < 0:
+						cid_si_ext = int(_data_core_world_ext.component_id(&"cell_sea_ice_frac"))
+					if cid_si_ext >= 0:
+						_data_core_world_ext.write_f32_indexed(cid_si_ext, idx, vals)
+						# [DIAG B-Surgical 2026-05-23] 验证写入是否真的命中。
+						if _gdext_sea_ice_runs <= 5 and _data_core_world_ext.has_method("view_f32"):
+							var _probe_idx: int = -1
+							var _probe_val: float = 0.0
+							for _pk in range(vals.size()):
+								if vals[_pk] > 0.0:
+									_probe_idx = idx[_pk]
+									_probe_val = vals[_pk]
+									break
+							var _ext_arr: PackedFloat32Array = _data_core_world_ext.view_f32(cid_si_ext)
+							var _read_back: float = -999.0
+							if _probe_idx >= 0 and _probe_idx < _ext_arr.size():
+								_read_back = _ext_arr[_probe_idx]
+							print("[B-Surgical/DIAG] run=%d sync=[%d,%d) cid_ext=%d ext_arr_size=%d probe_idx=%d wrote=%.4f read_back=%.4f" % [
+								_gdext_sea_ice_runs, sync_start, sync_end,
+								cid_si_ext, _ext_arr.size(),
+								_probe_idx, _probe_val, _read_back,
+							])
+					else:
+						if _gdext_sea_ice_runs <= 3:
+							print("[B-Surgical/DIAG] run=%d cid_si_ext < 0 — even underscore lookup failed!" % _gdext_sea_ice_runs)
+				# [BUG-FIX 2026-05-23 海冰看似不动] C++ sea_ice pass 直接改 DCWorld
+				# slot.arr_f32 + _flush_slot_to_map(set MapData)，slot 已是新值。
+				# 上面 write_f32_indexed 的 value-diff 因此命中"未变" → 不 mark dirty
+				# → atlas_pipeline read_and_clear_dirty_mask 拿不到 SIF 变化 cell
+				# → ice_state_atlas 永远空 → 海冰看似不动。
+				# 修复：用 _begin 时缓存的 pre-pass SIF 快照比对 + 显式 mark_dirty_indexed。
+				# 海冰 pass 一天一次，开销可接受。
+				if _data_core_world.has_method("mark_dirty_indexed"):
+					var pre_arr: PackedFloat32Array = _sea_ice_state_machine.get("pre_sif_snapshot", PackedFloat32Array())
+					if pre_arr.size() >= sync_end:
+						var dirty_idx: PackedInt32Array = PackedInt32Array()
+						dirty_idx.resize(sync_end - sync_start)
+						var dw: int = 0
+						# [DIAG 2026-05-23 海冰排障第二轮] 收集 SIF>0 的 dirty cell 计数
+						# + 最大 SIF 值，用来核对 atlas COMMIT 收到的 nonzero=0 是否
+						# 因为 dirty_idx 里的 cell SIF 实际上都是 0（量化后 byte=0）。
+						var dw_pos: int = 0
+						var dw_sif_max: float = 0.0
+						for k2 in range(sync_end - sync_start):
+							var ci2: int = sync_start + k2
+							var v_now: float = map.sea_ice_frac_arr[ci2]
+							if v_now != pre_arr[ci2]:
+								dirty_idx[dw] = ci2
+								dw += 1
+								if v_now > 0.0:
+									dw_pos += 1
+									if v_now > dw_sif_max:
+										dw_sif_max = v_now
+						if dw > 0:
+							dirty_idx.resize(dw)
+							_data_core_world.mark_dirty_indexed(dirty_idx)
+							_sea_ice_state_machine["dirty_marked_count"] = int(_sea_ice_state_machine.get("dirty_marked_count", 0)) + dw
+							_sea_ice_state_machine["dirty_marked_sif_pos"] = int(_sea_ice_state_machine.get("dirty_marked_sif_pos", 0)) + dw_pos
+							var prev_max: float = float(_sea_ice_state_machine.get("dirty_marked_sif_max", 0.0))
+							if dw_sif_max > prev_max:
+								_sea_ice_state_machine["dirty_marked_sif_max"] = dw_sif_max
 			else:
 				var cells_sync: Array = _sea_ice_state_machine.get("cells", [])
 				for i_sync in range(sync_start, sync_end):
@@ -6829,6 +7000,17 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 			_data_core_world.write_u8_dense(cid_terrain, map.terrain_arr)
 	var water_count: int = int(_sea_ice_state_machine.get("water", 0))
 	var flipped_count: int = int(_sea_ice_state_machine.get("flipped", 0))
+	# [BUG-FIX 2026-05-23 海冰看似不动] 诊断：本 pass 我们显式 mark_dirty 的 cell 数。
+	# 期望：当 SIF 有变化时 dirty_marked > 0；若仍 ==0 而 SIF 在变，说明 fix 没生效。
+	# 节流：前 5 次 + 每 365 次（与 DIAG-SM 同步）。
+	var _dirty_marked_count: int = int(_sea_ice_state_machine.get("dirty_marked_count", 0))
+	if _gdext_sea_ice_runs <= 5 or (_gdext_sea_ice_runs % 365) == 0:
+		print("[sea_ice/DIRTY-MARK] run#%d marked_dirty_cells=%d (sif_pos=%d sif_max=%.4f) water=%d flipped=%d" % [
+			_gdext_sea_ice_runs, _dirty_marked_count,
+			int(_sea_ice_state_machine.get("dirty_marked_sif_pos", 0)),
+			float(_sea_ice_state_machine.get("dirty_marked_sif_max", 0.0)),
+			water_count, flipped_count
+		])
 	if water_count > 0:
 		var ratio: float = float(flipped_count) / float(water_count)
 		if ratio > 0.03:
@@ -6855,6 +7037,41 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 	_sea_ice_state_machine = {}
 	return _make_climate_pass_result(_CLIMATE_PASS_SEA_ICE, true, (Time.get_ticks_usec() - t_commit_us) / 1000.0,
 			0, -1, -1, _CLIMATE_PASS_STATUS_DONE, token, _SEA_ICE_STAGE_COMMIT)
+
+
+# ─── [S2 fix 2026-05-23 三轮] sea_ice dt_days 补偿辅助函数 ────────────────────
+# 抽自原 _apply_sea_ice_daily_pass 内联段。两条调用链共用：
+#   - SUS sliced 路径：_begin_sea_ice_state_machine（实际运行时主路径）
+#   - 非 sliced 整轮 / fallback 路径：_apply_sea_ice_daily_pass
+# 同 tick 只命中其中一条，所以游标 _last_sea_ice_pass_day 不会双更新。
+#
+# 返回 dt_days ∈ (0, 30]，调用方应将其乘到 k_freeze / k_melt 上：
+#   k_freeze_scaled = k_freeze * dt_days
+# 这样 C++ 端公式 d_frac = k * Δt 等价于 d_frac = (k * dt) * 1，无需新增 knob。
+# clamp 上限 30：防 pause 复位 / 开局过冲；下限 ≥ 0 后再 floor 到 1.0：阻断
+# 同 tick 重入。第一次调用（_last_sea_ice_pass_day < 0）保持默认 1.0。
+func _consume_sea_ice_dt_days() -> float:
+	var dt_days: float = 1.0
+	if _world_clock_ref != null:
+		var now_day_v = _world_clock_ref.get("current_day")
+		if now_day_v != null:
+			var now_day: float = float(now_day_v)
+			if _last_sea_ice_pass_day >= 0.0:
+				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, 30.0)
+				if dt_days <= 0.0:
+					dt_days = 1.0  # 同 tick 重入兜底
+			# else: 第一次调用，保持 dt_days = 1.0 默认
+			_last_sea_ice_pass_day = now_day
+	# 诊断：每 365 次或前 5 次打印一次 dt_days，验证补偿是否在工作。
+	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
+			or ((_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks) % 365) == 0:
+		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k x%.2f)" % [
+			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
+			dt_days,
+			_last_sea_ice_pass_day,
+			dt_days,
+		])
+	return dt_days
 
 
 # QA 异常守卫：当日 SEA_ICE 翻转 cell 数 > 总水体数 3% 时打印一次 WARN
@@ -6896,47 +7113,13 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
 
-	# ─── [S2 fix 2026-05-23] dt_days 补偿（修"d_frac per-call 没乘 dt"）──
-	# 原 d_frac 公式 = k * (t_form - t_eff) - k_melt * (t_eff - t_melt)，假定
-	# "每天调一次"。但 daily_climate_refresh_stride=2 + round 内 6 sub-pass 串行
-	# 推进，实际两次 sea_ice pass 间隔常达 10-30 游戏天 → 海冰只增长了 1 天的量
-	# → 季节流逝但海冰几乎不动。解法：用 WorldClock.current_day 单调天计差作为
-	# dt_days，乘到 d_frac 上。current_day 是浮点累加（不取模），跨年也安全。
-	# clamp [0, 30]：上限防 pause 复位 / 开局过冲；下限阻断负值（同 tick 重入）。
-	#
-	# 关键实现细节（2026-05-23 二轮修复）：
-	# 不通过新增 knob 把 dt_days 传给 C++，而是直接把 k_freeze / k_melt 在 GDScript
-	# 端先乘以 dt_days 再传给 C++。这样：
-	#   1. 无需重编 gdext .dylib 即可生效（兼容旧二进制）；
-	#   2. C++ 端公式 d_frac = k * Δt 形式上等价于 d_frac = (k * dt) * 1；
-	#   3. fallback GDScript 路径仍按 k_freeze * dt_days 显式乘，与 C++ 路径数值一致。
-	var dt_days: float = 1.0
-	if _world_clock_ref != null:
-		var now_day_v = _world_clock_ref.get("current_day")
-		if now_day_v != null:
-			var now_day: float = float(now_day_v)
-			if _last_sea_ice_pass_day >= 0.0:
-				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, 30.0)
-				if dt_days <= 0.0:
-					dt_days = 1.0  # 同 tick 重入兜底
-			# else: 第一次调用，保持 dt_days = 1.0 默认
-			_last_sea_ice_pass_day = now_day
-
-	# 把 k 放大到"积累 dt_days 个游戏日的总变化率"。C++ 与 GDScript fallback
-	# 都从这两个 _scaled 变量取值。
+	# ─── [S2 fix 2026-05-23] dt_days 补偿 ──────────────────────────────
+	# 详见 _consume_sea_ice_dt_days()。本函数是 daily_climate_refresh 非 sliced
+	# 整轮路径 / fallback 路径；状态机 sliced 路径在 _begin_sea_ice_state_machine
+	# 同样调用 _consume_sea_ice_dt_days，两路径互斥（同 tick 只命中一条）。
+	var dt_days: float = _consume_sea_ice_dt_days()
 	var k_freeze_scaled: float = k_freeze * dt_days
 	var k_melt_scaled: float = k_melt * dt_days
-
-	# 诊断：每 365 次或前 5 次打印一次 dt_days，验证补偿是否在工作。
-	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
-			or ((_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks) % 365) == 0:
-		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k_freeze x%.2f, k_melt x%.2f)" % [
-			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
-			dt_days,
-			_last_sea_ice_pass_day,
-			dt_days,
-			dt_days,
-		])
 
 	# ─── Phase F.4：DCWorldExt C++ 快路径（charter §7 P2，5.1ms → 0.5ms）─
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sea_ice flag 已删，现走 ext +
@@ -7181,6 +7364,57 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
 				print("_apply_sea_ice_daily_pass[F.4]: %.2fms (water=%d, flipped=%d, phase=%.3f)" % [
 					rc, water_count_cpp, flipped_count_cpp, season_phase
+				])
+				# [DIAG 2026-05-23] 海冰不动排障：统计水体 cell 的温度分布与 SIF 分布。
+				# 关键问题：t_eff 是否真的有 < t_form？SIF 是否在涨但没到 threshold？
+				# 用 temp_input（与 C++ 端读的同一份）+ map.sea_ice_frac_arr（C++ 已 flush）。
+				var _diag_t_form: float = t_form          # 已带 climate_anomaly 偏移
+				var _diag_t_melt: float = t_melt
+				var _diag_thr: float = threshold
+				var _diag_n: int = n_cells_fast
+				var _diag_water: int = 0
+				var _diag_below_form: int = 0     # t_eff < t_form
+				var _diag_sif_pos: int = 0        # SIF > 0.01
+				var _diag_sif_near_thr: int = 0   # SIF ∈ [thr*0.5, thr)
+				var _diag_t_min: float = 9.99
+				var _diag_t_max: float = -9.99
+				var _diag_t_sum: float = 0.0
+				var _diag_t_min_water: float = 9.99    # 仅水体
+				var _diag_sif_max: float = 0.0
+				var _diag_sif_sum: float = 0.0
+				var _terrain_arr_diag: PackedByteArray = map.terrain_arr
+				var _sif_arr_diag: PackedFloat32Array = map.sea_ice_frac_arr
+				var _temp_n: int = temp_input.size()
+				var _sif_n: int = _sif_arr_diag.size()
+				for _i_diag in range(_diag_n):
+					var _t_d: float = temp_input[_i_diag] if _i_diag < _temp_n else 0.0
+					if _t_d < _diag_t_min: _diag_t_min = _t_d
+					if _t_d > _diag_t_max: _diag_t_max = _t_d
+					_diag_t_sum += _t_d
+					var _terr_d: int = int(_terrain_arr_diag[_i_diag]) if _i_diag < _terrain_arr_diag.size() else -1
+					var _is_w: bool = (_terr_d == int(TerrainType.TERRAIN.OCEAN) \
+						or _terr_d == int(TerrainType.TERRAIN.COAST) \
+						or _terr_d == int(TerrainType.TERRAIN.REEF) \
+						or _terr_d == int(TerrainType.TERRAIN.KELP) \
+						or _terr_d == int(TerrainType.TERRAIN.SEA_ICE))
+					if _is_w:
+						_diag_water += 1
+						if _t_d < _diag_t_min_water: _diag_t_min_water = _t_d
+						if _t_d < _diag_t_form: _diag_below_form += 1
+						var _sf_d: float = _sif_arr_diag[_i_diag] if _i_diag < _sif_n else 0.0
+						_diag_sif_sum += _sf_d
+						if _sf_d > _diag_sif_max: _diag_sif_max = _sf_d
+						if _sf_d > 0.01: _diag_sif_pos += 1
+						if _sf_d >= _diag_thr * 0.5 and _sf_d < _diag_thr: _diag_sif_near_thr += 1
+				var _avg_t: float = _diag_t_sum / max(1, _diag_n)
+				var _avg_sif_w: float = _diag_sif_sum / max(1, _diag_water)
+				print("[sea_ice/DIAG] thr_eff t_form=%.3f t_melt=%.3f flip_thr=%.3f | temp all min=%.3f max=%.3f avg=%.3f | water n=%d t_min_w=%.3f below_form=%d (%.1f%%) | SIF pos=%d max=%.3f avg_w=%.4f near_thr=%d | climate_anom=%.3f" % [
+					_diag_t_form, _diag_t_melt, _diag_thr,
+					_diag_t_min, _diag_t_max, _avg_t,
+					_diag_water, _diag_t_min_water,
+					_diag_below_form, 100.0 * float(_diag_below_form) / max(1, _diag_water),
+					_diag_sif_pos, _diag_sif_max, _avg_sif_w, _diag_sif_near_thr,
+					climate_anomaly_now,
 				])
 			_last_sea_ice_daily_breakdown = {
 				"path": "gdext",
