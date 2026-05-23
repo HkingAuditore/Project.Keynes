@@ -77,6 +77,11 @@ const SOFT_BUDGET_MULTIPLIER: float = 2.0
 # 配合 C++ AtlasPipelineState 跨 call 持有 stride snapshot（dirty/cache/nb_arr/prep_*），
 # 仅在 stride 起点传 dirty_indices；mid-stride tick 跳过 commit GPU。
 const CPP_PIPELINE_PHASE_BUDGET: int = 1
+# C++ smooth phase 内部再按 cell cursor 切片，避免 dirty/full sweep 时单次 2ms+。
+const CPP_SMOOTH_CELLS_PER_CALL: int = 512
+# fallback GDScript smooth dirty/prep 子阶段预算：把 merge / one-hop dilation
+# 拆出 baker prepare，避免极端 dirty/full sweep 在单 tick 内完成全部预处理。
+const SMOOTH_PREP_CELLS_PER_TICK: int = 512
 
 var baker: MapBakerScript = null
 var map: MapData = null
@@ -117,6 +122,14 @@ var _stride_dirty_cells: Array = []           # 反查后的 HexCell 列表（dy
 var _stride_dirty_path_used: bool = false     # 诊断：本 stride 是否走了 mask 路径（影响 report）
 var _stride_dirty_noop: bool = false
 var _stride_dirty_reason: String = ""
+
+# dyn_atlas_smooth fallback dirty/prep 状态机。
+# 阶段：merge_seed → dilate_mark → collect_sorted，完成后 _phase_cells 才交给 baker chunk_step。
+var _smooth_prep_state: Dictionary = {}
+var _smooth_prep_generation: int = 0
+var _smooth_prep_abort_count: int = 0
+var _smooth_prep_equiv_checks: int = 0
+var _smooth_prep_equiv_failures: int = 0
 
 # 诊断采样（沿用 _wf_diag_* 风格）。
 var _dvas_diag_stride_count: int = 0
@@ -457,6 +470,190 @@ func _advance_current_phase(remaining_budget: int, deadline_us: int) -> bool:
 			return true
 
 
+func _abort_smooth_prep(reason: String) -> void:
+	if _smooth_prep_state.is_empty():
+		return
+	_smooth_prep_abort_count += 1
+	_aggregated_report["smooth_prep_abort_reason"] = reason
+	_aggregated_report["smooth_prep_abort_count"] = _smooth_prep_abort_count
+	_smooth_prep_generation += 1
+	_smooth_prep_state = {}
+
+
+func _start_smooth_prep(source: String, seed_cells: Array, decay_set: Dictionary = {}) -> void:
+	var n: int = map.cell_count() if map != null else 0
+	_smooth_prep_generation += 1
+	var seen: PackedByteArray = PackedByteArray()
+	seen.resize(maxi(0, n))
+	var seed_seen: PackedByteArray = PackedByteArray()
+	seed_seen.resize(maxi(0, n))
+	_smooth_prep_state = {
+		"generation": _smooth_prep_generation,
+		"stage": "merge_seed",
+		"source": source,
+		"input_cells": seed_cells if seed_cells != null else [],
+		"input_cursor": 0,
+		"decay_keys": decay_set.keys() if decay_set != null and not decay_set.is_empty() else [],
+		"decay_cursor": 0,
+		"seed_cells": [],
+		"dilate_cursor": 0,
+		"collect_cursor": 0,
+		"seen": seen,
+		"seed_seen": seed_seen,
+		"candidates": PackedInt32Array(),
+		"candidate_sorted": false,
+		"out": [],
+		"n": n,
+		"prepared": false,
+	}
+
+
+func _smooth_prep_push_candidate(idx: int) -> void:
+	var n: int = int(_smooth_prep_state.get("n", 0))
+	if idx < 0 or idx >= n:
+		return
+	var seen: PackedByteArray = _smooth_prep_state.get("seen", PackedByteArray())
+	if seen.size() < n or seen[idx] != 0:
+		return
+	seen[idx] = 1
+	_smooth_prep_state["seen"] = seen
+	var candidates: PackedInt32Array = _smooth_prep_state.get("candidates", PackedInt32Array())
+	candidates.append(idx)
+	_smooth_prep_state["candidates"] = candidates
+
+
+func _advance_smooth_prep(remaining_budget: int, deadline_us: int) -> bool:
+	if _smooth_prep_state.is_empty():
+		return true
+	if int(_smooth_prep_state.get("generation", -1)) != _smooth_prep_generation:
+		_abort_smooth_prep("stale_generation")
+		return false
+	var t_prep_us: int = Time.get_ticks_usec()
+	var budget: int = maxi(1, mini(SMOOTH_PREP_CELLS_PER_TICK, remaining_budget))
+	var seed_cells: Array = _smooth_prep_state.get("seed_cells", [])
+	var n: int = int(_smooth_prep_state.get("n", 0))
+	var nb_indices: PackedInt32Array = map.neighbor_indices_packed() if map != null and map.has_method("neighbor_indices_packed") else PackedInt32Array()
+	var fast_indexed: bool = nb_indices.size() >= n * 6
+	var worked: int = 0
+	while worked < budget:
+		if worked > 0 and Time.get_ticks_usec() >= deadline_us:
+			break
+		var stage: String = str(_smooth_prep_state.get("stage", "merge_seed"))
+		if stage == "merge_seed":
+			var input_cells: Array = _smooth_prep_state.get("input_cells", [])
+			var decay_keys: Array = _smooth_prep_state.get("decay_keys", [])
+			var input_cursor: int = int(_smooth_prep_state.get("input_cursor", 0))
+			var decay_cursor: int = int(_smooth_prep_state.get("decay_cursor", 0))
+			var merged_seed: Array = _smooth_prep_state.get("seed_cells", [])
+			var c = null
+			if input_cursor < input_cells.size():
+				c = input_cells[input_cursor]
+				_smooth_prep_state["input_cursor"] = input_cursor + 1
+			elif decay_cursor < decay_keys.size():
+				c = decay_keys[decay_cursor]
+				_smooth_prep_state["decay_cursor"] = decay_cursor + 1
+			else:
+				_smooth_prep_state["seed_cells"] = merged_seed
+				_smooth_prep_state["stage"] = "dilate_mark"
+				seed_cells = merged_seed
+				continue
+			if c != null:
+				var idx_seed: int = int(c.index)
+				var seed_seen: PackedByteArray = _smooth_prep_state.get("seed_seen", PackedByteArray())
+				if idx_seed >= 0 and idx_seed < n and seed_seen[idx_seed] == 0:
+					seed_seen[idx_seed] = 1
+					_smooth_prep_state["seed_seen"] = seed_seen
+					merged_seed.append(c)
+					_smooth_prep_state["seed_cells"] = merged_seed
+			worked += 1
+		elif stage == "dilate_mark":
+			var dilate_cursor: int = int(_smooth_prep_state.get("dilate_cursor", 0))
+			if dilate_cursor >= seed_cells.size():
+				_smooth_prep_state["stage"] = "collect_sorted"
+				continue
+			var c2 = seed_cells[dilate_cursor]
+			if c2 != null:
+				var idx2: int = int(c2.index)
+				if idx2 >= 0 and idx2 < n:
+					_smooth_prep_push_candidate(idx2)
+					if fast_indexed:
+						var base: int = idx2 * 6
+						for d in range(6):
+							_smooth_prep_push_candidate(nb_indices[base + d])
+					elif map.has_method("get_neighbors"):
+						for nb_cell in map.get_neighbors(c2):
+							if nb_cell != null:
+								_smooth_prep_push_candidate(int(nb_cell.index))
+			_smooth_prep_state["dilate_cursor"] = dilate_cursor + 1
+			worked += 1
+		elif stage == "collect_sorted":
+			var candidates: PackedInt32Array = _smooth_prep_state.get("candidates", PackedInt32Array())
+			if not bool(_smooth_prep_state.get("candidate_sorted", false)):
+				candidates.sort()
+				_smooth_prep_state["candidates"] = candidates
+				_smooth_prep_state["candidate_sorted"] = true
+			var collect_cursor: int = int(_smooth_prep_state.get("collect_cursor", 0))
+			if collect_cursor >= candidates.size():
+				_smooth_prep_state["stage"] = "done"
+				_smooth_prep_state["prepared"] = true
+				break
+			var collect_end: int = mini(candidates.size(), collect_cursor + (budget - worked))
+			var out: Array = _smooth_prep_state.get("out", [])
+			for i in range(collect_cursor, collect_end):
+				out.append(map.cell_at(candidates[i]))
+			_smooth_prep_state["out"] = out
+			_smooth_prep_state["collect_cursor"] = collect_end
+			worked += collect_end - collect_cursor
+		else:
+			break
+	_aggregated_report["smooth_prepare_ms"] = float(_aggregated_report.get("smooth_prepare_ms", 0.0)) \
+			+ float(Time.get_ticks_usec() - t_prep_us) / 1000.0
+	_aggregated_report["smooth_prep_stage"] = str(_smooth_prep_state.get("stage", ""))
+	_aggregated_report["smooth_prep_input_cursor"] = int(_smooth_prep_state.get("input_cursor", 0))
+	_aggregated_report["smooth_prep_decay_cursor"] = int(_smooth_prep_state.get("decay_cursor", 0))
+	_aggregated_report["smooth_prep_seed_count"] = int((_smooth_prep_state.get("seed_cells", []) as Array).size())
+	_aggregated_report["smooth_prep_dilate_cursor"] = int(_smooth_prep_state.get("dilate_cursor", 0))
+	_aggregated_report["smooth_prep_collect_cursor"] = int(_smooth_prep_state.get("collect_cursor", 0))
+	_aggregated_report["smooth_prep_candidates"] = int((_smooth_prep_state.get("candidates", PackedInt32Array()) as PackedInt32Array).size())
+	_aggregated_report["_cells_scanned_this_tick"] = int(_aggregated_report.get("_cells_scanned_this_tick", 0)) + worked
+	return bool(_smooth_prep_state.get("prepared", false))
+
+
+func _validate_smooth_prep_equivalence_if_small() -> void:
+	if _smooth_prep_state.is_empty() or map == null:
+		return
+	var input_cells: Array = _smooth_prep_state.get("input_cells", [])
+	var decay_keys: Array = _smooth_prep_state.get("decay_keys", [])
+	var total_input: int = input_cells.size() + decay_keys.size()
+	if total_input > 256:
+		return
+	_smooth_prep_equiv_checks += 1
+	var seed_expected: Array = BakerDirtyHelpersScript.merge_with_eco_decay(input_cells, {})
+	if not decay_keys.is_empty():
+		var decay_set: Dictionary = {}
+		for c in decay_keys:
+			if c != null:
+				decay_set[c] = true
+		seed_expected = BakerDirtyHelpersScript.merge_with_eco_decay(seed_expected, decay_set)
+	var expected: Array = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, seed_expected)
+	var actual: Array = _smooth_prep_state.get("out", [])
+	var equal: bool = expected.size() == actual.size()
+	if equal:
+		for i in range(expected.size()):
+			var e = expected[i]
+			var a = actual[i]
+			var ei: int = int(e.index) if e != null else -1
+			var ai: int = int(a.index) if a != null else -1
+			if ei != ai:
+				equal = false
+				break
+	if not equal:
+		_smooth_prep_equiv_failures += 1
+		push_warning("[dyn_atlas_smooth/prep] sliced dirty expansion mismatch expected=%d actual=%d" % [expected.size(), actual.size()])
+	_aggregated_report["smooth_prep_equiv_checks"] = _smooth_prep_equiv_checks
+	_aggregated_report["smooth_prep_equiv_failures"] = _smooth_prep_equiv_failures
+
+
 # Phase 1..4：通用 baker chunk 推进。
 # baker_key 决定调用哪组 chunk_begin/step/finalize；
 # agg_dirty_key / agg_ms_key 是 aggregated_report 里的累计字段名。
@@ -558,14 +755,25 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 					_phase_cells = []
 					source = "no_dirty"
 				else:
-					_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(
-							map, baker._eco_active_decay_set.keys())
-					source = "decay_one_hop"
+					source = "decay_one_hop_sliced"
+					if _smooth_prep_state.is_empty():
+						_start_smooth_prep(source, baker._eco_active_decay_set.keys())
+					if not _advance_smooth_prep(remaining_budget, deadline_us):
+						_aggregated_report[phase_key + "_source"] = source
+						return false
+					_validate_smooth_prep_equivalence_if_small()
+					_phase_cells = _smooth_prep_state.get("out", [])
+					_smooth_prep_state = {}
 			else:
-				var smooth_seed: Array = BakerDirtyHelpersScript.merge_with_eco_decay(
-						_stride_dirty_cells, baker._eco_active_decay_set)
-				_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, smooth_seed)
-				source = "dirty_decay_one_hop"
+				source = "dirty_decay_one_hop_sliced"
+				if _smooth_prep_state.is_empty():
+					_start_smooth_prep(source, _stride_dirty_cells, baker._eco_active_decay_set)
+				if not _advance_smooth_prep(remaining_budget, deadline_us):
+					_aggregated_report[phase_key + "_source"] = source
+					return false
+				_validate_smooth_prep_equivalence_if_small()
+				_phase_cells = _smooth_prep_state.get("out", [])
+				_smooth_prep_state = {}
 		else:
 			_phase_cells = map.all_cells()
 		_phase_cursor = 0
@@ -704,6 +912,7 @@ func _reset_state_machine() -> void:
 	_stride_dirty_path_used = false
 	_stride_dirty_noop = false
 	_stride_dirty_reason = ""
+	_smooth_prep_state = {}
 
 
 # ─── plan/atlas-pipeline-cpp 薄壳路径 ─────────────────────────────────────
@@ -803,6 +1012,7 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"veg_none": int(VegetationTypeScript.VEG.NONE),
 		"enable_diag": true,
 		"phase_budget": CPP_PIPELINE_PHASE_BUDGET,
+		"max_smooth_cells_per_call": CPP_SMOOTH_CELLS_PER_CALL,
 	}
 	# dirty_indices 仅在 stride 起点传一次（mid-stride 时 C++ 从 stride snapshot 复用）。
 	# 任务 7 kill-switch：flag=false 时显式不传 dirty_indices 并设置 force_full_encode，
@@ -1108,10 +1318,12 @@ func _print_phase_breakdown_window(path_tag: String) -> void:
 # 让下一次 _tick_cpp_pipeline 重新做 ecology burn-in。
 func notify_eco_burnin_pending() -> void:
 	_pending_burnin = true
+	_abort_smooth_prep("eco_burnin_pending")
 
 
 # ─── 紧急回退：one-shot 路径 ───────────────────────────────────────────────
 func _tick_oneshot(t_start_us: int) -> Dictionary:
+	_abort_smooth_prep("oneshot_fallback")
 	var dynamic_report: Dictionary = {}
 	if baker.has_method("rebake_dynamic_cell_atlas_only"):
 		dynamic_report = baker.rebake_dynamic_cell_atlas_only(map, world_data)
@@ -1155,6 +1367,9 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 
 
 func reconfigure(p_stride: int) -> void:
+	_abort_smooth_prep("reconfigure")
+	_reset_state_machine()
+	_cpp_stride_in_progress = false
 	stride = max(1, p_stride)
 	policy = SusPolicyScript.StridePolicy.new(stride, 0)
 
@@ -1209,6 +1424,9 @@ func _copy_phase_metrics(out: Dictionary, phase_key: String) -> void:
 		"cells_considered", "total_cells", "pixels_written",
 		"cpp_calls", "gd_calls", "empty_calls",
 		"source", "path", "fallback_reason",
+		"prep_stage", "prep_input_cursor", "prep_decay_cursor", "prep_seed_count",
+		"prep_seed_cursor", "prep_dilate_cursor", "prep_collect_cursor", "prep_candidates",
+		"prep_equiv_checks", "prep_equiv_failures", "prep_abort_reason", "prep_abort_count",
 	]:
 		var key: String = phase_key + "_" + suffix
 		if _aggregated_report.has(key):
