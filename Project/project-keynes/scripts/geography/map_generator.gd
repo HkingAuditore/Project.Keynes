@@ -752,6 +752,17 @@ var _gdext_sea_ice_first_attempt_logged: bool = false
 var _gdext_sea_ice_signature_checked: bool = false
 var _gdext_sea_ice_signature_ok: bool = false
 
+# [S2 fix 2026-05-23] sea_ice dt 补偿：sea_ice pass 原本假定"每天调一次"，
+# 但 daily_climate_refresh_stride=2 + climate_daily round 内 6 个 sub-pass 串行
+# 推进，导致两次 sea_ice pass 的真实游戏日间隔从 1 天滑到 ~10-30 天，海冰
+# 推进显著滞后于温度/季节相位。修复：记录上次 pass 时的 WorldClock.current_day，
+# 本次 pass 用 (now - last) 作为 dt_days 乘到 d_frac 上，让物理推进按"实际
+# 经过游戏天数"而不是"调用次数"驱动。clamp 上限 30 天用于：
+#   1) 开局（_last_sea_ice_pass_day = -1）走 1.0 默认，避免大跳；
+#   2) 长时间 pause 后恢复，避免一次推进几百天导致全图冻死/全融。
+# 详见 docs/dots-master-execution-handbook.md §sea_ice-dt-compensation。
+var _last_sea_ice_pass_day: float = -1.0
+
 # Sea ice 多 tick 状态机阶段。native 快路径会拆成：
 # native_compute → dense_sync_chunk → terrain_flip_chunk → commit。
 const _SEA_ICE_STAGE_NATIVE_COMPUTE: String = "native_compute"
@@ -1399,7 +1410,10 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	if _sus == null or cp == null:
 		return
 	var frame_ms: float = float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms)
-	frame_ms = clampf(frame_ms, 0.25, 2.0)
+	# DEBUG 2026-05-23：clamp 上限从 2.0 临时抬到 50.0，验证「洋流/风更新慢」是否
+	# 是 budget 太紧导致。earth_like.tres 里 sim_frame_budget_ms=1600.0 本意就是「几乎
+	# 不限、为慢系统释放预算」，但之前被这里 clamp 砍回了 2.0。排查完成后需回滚到 2.0。
+	frame_ms = clampf(frame_ms, 0.25, 50.0)
 	if cp.get("sim_frame_budget_ms") != null:
 		if _sus.has_method("set_frame_budget_ms"):
 			_sus.set_frame_budget_ms(frame_ms)
@@ -1414,7 +1428,8 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 		_sus.sim_budget_window_size = 300
 	if _sus.get("sim_budget_warn_ms") != null:
 		if cp.get("sim_budget_warn_ms") != null:
-			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 2.0)
+			# DEBUG 2026-05-23：同步放宽 warn 上限到 50.0，避免高 frame_budget 下 WARN 污染日志。
+			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 50.0)
 			if _sus.has_method("set_sim_budget_warn_ms"):
 				_sus.set_sim_budget_warn_ms(warn_ms)
 			else:
@@ -1455,12 +1470,12 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		slice_ms = float(cp.sim_upload_slice_budget_ms)
 	elif cp.get("sim_slice_budget_ms") != null:
 		slice_ms = float(cp.sim_slice_budget_ms)
-	# Extreme performance profile: resource files may request larger budgets for
-	# experiments, but hot jobs still get a hard ceiling before entering SUS.
+	# DEBUG 2026-05-23：slice clamp 上限临时抬到 50ms，避免在 frame_budget 放到 50ms
+	# 后这里仍限死单 slice 质量。排查完成后需回滚到 (0.10, 1.5)/(0.10, 1.0)。
 	if upload_job:
-		slice_ms = clampf(slice_ms, 0.10, 1.5)
+		slice_ms = clampf(slice_ms, 0.10, 50.0)
 	else:
-		slice_ms = clampf(slice_ms, 0.10, 1.0)
+		slice_ms = clampf(slice_ms, 0.10, 50.0)
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
@@ -1468,7 +1483,10 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		var raw_id = job.get("id")
 		if raw_id != null:
 			job_id = StringName(str(raw_id))
-		if upload_job or job_id == &"ocean_currents" or job_id == &"season_refresh":
+		# DEBUG 2026-05-23：ocean_currents / season_refresh 原本被强制 max_slices_per_tick=1，
+		# 与高 frame_budget 验证互斥（会看到 ran=6）。临时让 ocean_currents 跟随 strict_on
+		# 同路径，strict_off 时 0=不限，strict_on 时 1。排查完成后需回滚到原逻辑。
+		if upload_job or job_id == &"season_refresh":
 			job.max_slices_per_tick = 1
 		else:
 			job.max_slices_per_tick = 1 if strict_on else 0
@@ -6878,6 +6896,48 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
 
+	# ─── [S2 fix 2026-05-23] dt_days 补偿（修"d_frac per-call 没乘 dt"）──
+	# 原 d_frac 公式 = k * (t_form - t_eff) - k_melt * (t_eff - t_melt)，假定
+	# "每天调一次"。但 daily_climate_refresh_stride=2 + round 内 6 sub-pass 串行
+	# 推进，实际两次 sea_ice pass 间隔常达 10-30 游戏天 → 海冰只增长了 1 天的量
+	# → 季节流逝但海冰几乎不动。解法：用 WorldClock.current_day 单调天计差作为
+	# dt_days，乘到 d_frac 上。current_day 是浮点累加（不取模），跨年也安全。
+	# clamp [0, 30]：上限防 pause 复位 / 开局过冲；下限阻断负值（同 tick 重入）。
+	#
+	# 关键实现细节（2026-05-23 二轮修复）：
+	# 不通过新增 knob 把 dt_days 传给 C++，而是直接把 k_freeze / k_melt 在 GDScript
+	# 端先乘以 dt_days 再传给 C++。这样：
+	#   1. 无需重编 gdext .dylib 即可生效（兼容旧二进制）；
+	#   2. C++ 端公式 d_frac = k * Δt 形式上等价于 d_frac = (k * dt) * 1；
+	#   3. fallback GDScript 路径仍按 k_freeze * dt_days 显式乘，与 C++ 路径数值一致。
+	var dt_days: float = 1.0
+	if _world_clock_ref != null:
+		var now_day_v = _world_clock_ref.get("current_day")
+		if now_day_v != null:
+			var now_day: float = float(now_day_v)
+			if _last_sea_ice_pass_day >= 0.0:
+				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, 30.0)
+				if dt_days <= 0.0:
+					dt_days = 1.0  # 同 tick 重入兜底
+			# else: 第一次调用，保持 dt_days = 1.0 默认
+			_last_sea_ice_pass_day = now_day
+
+	# 把 k 放大到"积累 dt_days 个游戏日的总变化率"。C++ 与 GDScript fallback
+	# 都从这两个 _scaled 变量取值。
+	var k_freeze_scaled: float = k_freeze * dt_days
+	var k_melt_scaled: float = k_melt * dt_days
+
+	# 诊断：每 365 次或前 5 次打印一次 dt_days，验证补偿是否在工作。
+	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
+			or ((_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks) % 365) == 0:
+		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k_freeze x%.2f, k_melt x%.2f)" % [
+			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
+			dt_days,
+			_last_sea_ice_pass_day,
+			dt_days,
+			dt_days,
+		])
+
 	# ─── Phase F.4：DCWorldExt C++ 快路径（charter §7 P2，5.1ms → 0.5ms）─
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sea_ice flag 已删，现走 ext +
 	# has_method 探测。触发条件：
@@ -6987,8 +7047,10 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 		var knobs: Dictionary = {
 			"n_cells": n_cells_fast,
-			"k_freeze": k_freeze,
-			"k_melt": k_melt,
+			# [S2 fix 2026-05-23] k_freeze / k_melt 已在 GDScript 端乘过 dt_days，
+			# 让 C++ 端按"每调用一次"语义算就是正确的物理推进量。
+			"k_freeze": k_freeze_scaled,
+			"k_melt": k_melt_scaled,
 			"t_form": t_form,
 			"t_melt": t_melt,
 			"contagion": contagion,
@@ -7222,9 +7284,10 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var k_melt_eff: float = k_melt
 
 		# 增量更新：温度低于结冰阈值 → 增长；高于融化阈值 → 衰减
+		# [S2 fix 2026-05-23] 乘 dt_days：见函数入口 dt_days 计算注释。
 		var delta_freeze: float = k_freeze_eff * maxf(0.0, t_form - t_eff)
 		var delta_melt: float = k_melt_eff * maxf(0.0, t_eff - t_melt)
-		var d_frac: float = delta_freeze - delta_melt
+		var d_frac: float = (delta_freeze - delta_melt) * dt_days
 		var prev_frac: float = cell.sea_ice_fraction
 		var new_frac: float = clampf(prev_frac + d_frac, 0.0, 1.0)
 		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
@@ -9026,6 +9089,27 @@ func _run_ocean_water_pass_slice_impl(map: MapData, season_phase: float, token: 
 	land_knobs["anomaly_inout"] = anomaly
 	_gdext_ocean_anomaly_buf_cached = anomaly
 	_gdext_ocean_baseline_arr_cached = _climate_ocean_slice_state["baseline"]
+	# Incremental publish (climate-pipeline-spike-reduction)：每片都把当前 anomaly
+	# 推到 map / DCWorld dense buffer，避免 budget=2ms 节奏下 round 跨多帧时读方
+	# (weather field_solver / map_generator feedback 路径) 长时间读到陈旧的洋流热
+	# 输运。区间外格子保留上一片旧值（C++ run_ocean_water_pass §11 CoW duplicate
+	# 保证），即「水格新值 + 陆格旧值」的混合态——比「完全冻结到几日前」好得多。
+	map.temperature_transport_anomaly_arr = anomaly
+	if _data_core_world != null:
+		var _cid_tta_inc_w: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_inc_w >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_inc_w, anomaly)
+	# A2 增量回写 HexCell.temperature_transport_anomaly：该字段尚未 facade 化
+	# (HexCell 内是裸 var)，baker / info_panel / weather fallback 都通过
+	# cell.temperature_transport_anomaly 这条 AoS 路径读，必须显式赋值。仅写当
+	# 前 slice 区间，开销 ~slice_budget 个 cell 一次循环（≤0.05ms 量级），区间外
+	# 保留上一片旧值，配合 land 阶段最终 done 全图回写，渲染层可逐片看到合并视图。
+	var _cells_inc_w: Array = _climate_ocean_slice_state.get("cells", [])
+	if _cells_inc_w.size() == n:
+		for _ci_w in range(start, end):
+			var _c_w = _cells_inc_w[_ci_w]
+			if _c_w != null:
+				_c_w.temperature_transport_anomaly = anomaly[_ci_w]
 	var done: bool = end >= n
 	if _climate_pass_states.has(_CLIMATE_PASS_OCEAN_WATER):
 		var state: Dictionary = _climate_pass_states[_CLIMATE_PASS_OCEAN_WATER]
@@ -9077,18 +9161,39 @@ func _run_ocean_land_pass_slice_impl(map: MapData, season_phase: float, token: i
 		state["processed_cells"] = end - start
 		state["status"] = _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING
 		_climate_pass_states[_CLIMATE_PASS_OCEAN_LAND] = state
+	# Incremental publish (climate-pipeline-spike-reduction)：每片都把当前 anomaly
+	# 推到 map / DCWorld dense buffer。read 方 (weather/field_solver/feedback) 始
+	# 终能拿到「已计算部分新值 + 未计算部分上一片旧值」的合并视图，避免在 ocean_land
+	# 整轮跨多帧时洋流热输运彻底冻结。逐 cell HexCell 回写代价较大，仅在 done 时
+	# 执行（且只对 facade-off 路径，新代码默认 facade-on）。
+	map.temperature_transport_anomaly_arr = anomaly
+	if _data_core_world != null:
+		var _cid_tta_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_dense >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_dense, anomaly)
+	_gdext_ocean_anomaly_buf_cached = anomaly
+	# A2 增量回写 HexCell.temperature_transport_anomaly：land 阶段对 [start, end)
+	# 内的陆格 anomaly 做了更新（水格保留 water 阶段值），区间外保留上一片旧值。
+	# 与 water 阶段对称，让 baker / info_panel 在 budget=2ms 节奏下也能逐片看到
+	# 渐进合并视图，避免「洋流热输运一直白」的现象。done 分支额外做的全图回写
+	# 保留作为兜底（应对极端 reset 后某片尚未触达的格子）。
+	var _cells_inc_l: Array = _climate_ocean_slice_state.get("cells", [])
+	if _cells_inc_l.size() == n:
+		for _ci_l in range(start, end):
+			var _c_l = _cells_inc_l[_ci_l]
+			if _c_l != null:
+				_c_l.temperature_transport_anomaly = anomaly[_ci_l]
 	if done:
-		map.temperature_transport_anomaly_arr = anomaly
-		if _data_core_world != null:
-			var _cid_tta_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
-			if _cid_tta_dense >= 0 and _data_core_world.has_method("write_f32_dense"):
-				_data_core_world.write_f32_dense(_cid_tta_dense, anomaly)
 		var cells: Array = _climate_ocean_slice_state.get("cells", [])
-		var facade_on: bool = n > 0 and cells.size() > 0 and cells[0] != null and (cells[0] as HexCell).is_facade_enabled()
-		if not facade_on:
+		# 兜底全图回写：确保任何因为 reset / cells 数组变更等原因未被增量段覆盖到的
+		# 格子在 round 末尾拿到最新 anomaly。即使 facade 化后 (cell.temperature_
+		# transport_anomaly 走 SoA) 这次冗余写也无害——facade getter/setter 不存在
+		# 时这段就是唯一的最终回写。
+		if n > 0 and cells.size() == n:
 			for ci in range(n):
-				cells[ci].temperature_transport_anomaly = anomaly[ci]
-		_gdext_ocean_anomaly_buf_cached = anomaly
+				var _cf = cells[ci]
+				if _cf != null:
+					_cf.temperature_transport_anomaly = anomaly[ci]
 		_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
 		_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
 		_gdext_ocean_current_y_arr_cached = PackedFloat32Array()

@@ -5205,6 +5205,16 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
+    // [S2 fix 2026-05-23] dt_days：optional knob。缺省 1.0 → 与历史 1:1 兼容；
+    // GDScript 端用 WorldClock.current_day 算"上次到本次的真实游戏天数差"。
+    // clamp [0, 30] 与 GDScript 端一致，防意外越界。详见 GDScript 入口注释。
+    float dt_days = 1.0f;
+    if (knobs.has("dt_days")) {
+        dt_days = float(knobs["dt_days"]);
+        if (dt_days < 0.0f) dt_days = 0.0f;
+        else if (dt_days > 30.0f) dt_days = 30.0f;
+    }
+
     PackedInt32Array  nb_arr   = knobs["neighbor_indices"];
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
     PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
@@ -5319,9 +5329,10 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         }
 
         // 增量更新
+        // [S2 fix 2026-05-23] 乘 dt_days：见 prelude dt_days 注释。
         const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
         const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-        const float d_frac = k_freeze_eff * diff_freeze - k_melt * diff_melt;
+        const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
         const float prev_frac = SIF[i];
         float new_frac = prev_frac + d_frac;
         if (new_frac < 0.0f) new_frac = 0.0f;
@@ -5421,6 +5432,14 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     const int   id_sea_ice  = int(knobs["terrain_sea_ice_id"]);
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    // [S2 fix 2026-05-23] dt_days：与 scalar 路径同步（optional, default 1.0）。
+    float dt_days = 1.0f;
+    if (knobs.has("dt_days")) {
+        dt_days = float(knobs["dt_days"]);
+        if (dt_days < 0.0f) dt_days = 0.0f;
+        else if (dt_days > 30.0f) dt_days = 30.0f;
+    }
 
     PackedInt32Array  nb_arr   = knobs["neighbor_indices"];
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
@@ -5538,7 +5557,8 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
 
                 const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
                 const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-                const float d_frac = k_freeze_eff * diff_freeze - k_melt * diff_melt;
+                // [S2 fix 2026-05-23] 乘 dt_days：与 scalar 路径 1:1。
+                const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
                 const float prev_frac = SIF[i];
                 float new_frac = prev_frac + d_frac;
                 if (new_frac < 0.0f) new_frac = 0.0f;

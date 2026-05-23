@@ -21,7 +21,10 @@ class_name SlicedUpdateScheduler
 ## Soft total budget per tick (ms). When exceeded, SUS stops *starting* new
 ## jobs but does not interrupt the slice currently in flight (avoids leaving
 ## half-baked state).
-var frame_budget_ms: float = 2.0
+## DEBUG 2026-05-23：临时把默认值从 2.0 抬到 50.0，配合 set_frame_budget_ms
+## clamp 上限同步放宽到 50.0，用来验证「洋流/风更新慢」是否纯粹是 budget 太紧。
+## 排查完毕后需回滚到 2.0 / clamp 上限 2.0。
+var frame_budget_ms: float = 50.0
 
 ## Strict mode is used by the 1ms simulation profile. It prevents a job from
 ## consuming multiple slices in one tick unless that job explicitly opts out
@@ -105,7 +108,9 @@ var _ext = null
 
 
 func set_frame_budget_ms(v: float) -> void:
-	frame_budget_ms = clampf(v, 0.25, 2.0)
+	# DEBUG 2026-05-23：clamp 上限从 2.0 临时抬到 50.0，验证 budget 紧张是否是
+	# 「洋流/风方向/强度更新缓慢」的根因；排查完成后回滚为 clampf(v, 0.25, 2.0)。
+	frame_budget_ms = clampf(v, 0.25, 50.0)
 	if _ext != null:
 		_ext.set_frame_budget_ms(frame_budget_ms)
 
@@ -117,7 +122,9 @@ func set_strict_budget_enabled(v: bool) -> void:
 
 
 func set_sim_budget_warn_ms(v: float) -> void:
-	sim_budget_warn_ms = clampf(v, 0.25, 2.0)
+	# DEBUG 2026-05-23：与 frame_budget_ms 同步把 clamp 上限放宽到 50.0，避免
+	# warn 阈值仍被锁在 2ms 导致大量误 WARN 污染排查日志。回滚时一并恢复为 2.0。
+	sim_budget_warn_ms = clampf(v, 0.25, 50.0)
 	if _ext != null:
 		_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
 
