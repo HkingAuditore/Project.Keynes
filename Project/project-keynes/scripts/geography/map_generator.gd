@@ -1410,10 +1410,9 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	if _sus == null or cp == null:
 		return
 	var frame_ms: float = float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms)
-	# DEBUG 2026-05-23：clamp 上限从 2.0 临时抬到 50.0，验证「洋流/风更新慢」是否
-	# 是 budget 太紧导致。earth_like.tres 里 sim_frame_budget_ms=1600.0 本意就是「几乎
-	# 不限、为慢系统释放预算」，但之前被这里 clamp 砍回了 2.0。排查完成后需回滚到 2.0。
-	frame_ms = clampf(frame_ms, 0.25, 50.0)
+	# Runtime safety clamp：resource 里允许保留极大预算做实验输入，但实际
+	# fast tick 不能放开到几十 ms，否则 SUS 会在同一帧连续吃完整轮重型 job。
+	frame_ms = clampf(frame_ms, 0.25, 2.0)
 	if cp.get("sim_frame_budget_ms") != null:
 		if _sus.has_method("set_frame_budget_ms"):
 			_sus.set_frame_budget_ms(frame_ms)
@@ -1428,8 +1427,7 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 		_sus.sim_budget_window_size = 300
 	if _sus.get("sim_budget_warn_ms") != null:
 		if cp.get("sim_budget_warn_ms") != null:
-			# DEBUG 2026-05-23：同步放宽 warn 上限到 50.0，避免高 frame_budget 下 WARN 污染日志。
-			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 50.0)
+			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 2.0)
 			if _sus.has_method("set_sim_budget_warn_ms"):
 				_sus.set_sim_budget_warn_ms(warn_ms)
 			else:
@@ -1445,12 +1443,18 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	# scheduler native 路径现恒走 ext != null 单边分支，scheduler 内部自动
 	# 探测 _ext，无需 caller 在这里透传 flag。
 	if OS.is_debug_build():
+		var log_slice_ms: float = 0.0
+		if cp.get("sim_slice_budget_ms") != null:
+			log_slice_ms = clampf(float(cp.sim_slice_budget_ms), 0.10, 1.0)
+		var log_upload_slice_ms: float = 0.0
+		if cp.get("sim_upload_slice_budget_ms") != null:
+			log_upload_slice_ms = clampf(float(cp.sim_upload_slice_budget_ms), 0.10, 1.5)
 		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
 			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
 				frame_ms,
 				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
-				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
-				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
+				log_slice_ms,
+				log_upload_slice_ms,
 				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
 
 
@@ -1470,12 +1474,10 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		slice_ms = float(cp.sim_upload_slice_budget_ms)
 	elif cp.get("sim_slice_budget_ms") != null:
 		slice_ms = float(cp.sim_slice_budget_ms)
-	# DEBUG 2026-05-23：slice clamp 上限临时抬到 50ms，避免在 frame_budget 放到 50ms
-	# 后这里仍限死单 slice 质量。排查完成后需回滚到 (0.10, 1.5)/(0.10, 1.0)。
 	if upload_job:
-		slice_ms = clampf(slice_ms, 0.10, 50.0)
+		slice_ms = clampf(slice_ms, 0.10, 1.5)
 	else:
-		slice_ms = clampf(slice_ms, 0.10, 50.0)
+		slice_ms = clampf(slice_ms, 0.10, 1.0)
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
@@ -1483,10 +1485,11 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		var raw_id = job.get("id")
 		if raw_id != null:
 			job_id = StringName(str(raw_id))
-		# DEBUG 2026-05-23：ocean_currents / season_refresh 原本被强制 max_slices_per_tick=1，
-		# 与高 frame_budget 验证互斥（会看到 ran=6）。临时让 ocean_currents 跟随 strict_on
-		# 同路径，strict_off 时 0=不限，strict_on 时 1。排查完成后需回滚到原逻辑。
-		if upload_job or job_id == &"season_refresh":
+		# Heavy/latency-sensitive jobs must yield after one slice. This keeps
+		# climate rounds and ocean raster/commit work spread across fast ticks.
+		if upload_job or job_id == &"season_refresh" \
+				or job_id == &"refresh_climate_daily" \
+				or job_id == &"ocean_currents":
 			job.max_slices_per_tick = 1
 		else:
 			job.max_slices_per_tick = 1 if strict_on else 0
@@ -6877,27 +6880,6 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 						cid_si_ext = int(_data_core_world_ext.component_id(&"cell_sea_ice_frac"))
 					if cid_si_ext >= 0:
 						_data_core_world_ext.write_f32_indexed(cid_si_ext, idx, vals)
-						# [DIAG B-Surgical 2026-05-23] 验证写入是否真的命中。
-						if _gdext_sea_ice_runs <= 5 and _data_core_world_ext.has_method("view_f32"):
-							var _probe_idx: int = -1
-							var _probe_val: float = 0.0
-							for _pk in range(vals.size()):
-								if vals[_pk] > 0.0:
-									_probe_idx = idx[_pk]
-									_probe_val = vals[_pk]
-									break
-							var _ext_arr: PackedFloat32Array = _data_core_world_ext.view_f32(cid_si_ext)
-							var _read_back: float = -999.0
-							if _probe_idx >= 0 and _probe_idx < _ext_arr.size():
-								_read_back = _ext_arr[_probe_idx]
-							print("[B-Surgical/DIAG] run=%d sync=[%d,%d) cid_ext=%d ext_arr_size=%d probe_idx=%d wrote=%.4f read_back=%.4f" % [
-								_gdext_sea_ice_runs, sync_start, sync_end,
-								cid_si_ext, _ext_arr.size(),
-								_probe_idx, _probe_val, _read_back,
-							])
-					else:
-						if _gdext_sea_ice_runs <= 3:
-							print("[B-Surgical/DIAG] run=%d cid_si_ext < 0 — even underscore lookup failed!" % _gdext_sea_ice_runs)
 				# [BUG-FIX 2026-05-23 海冰看似不动] C++ sea_ice pass 直接改 DCWorld
 				# slot.arr_f32 + _flush_slot_to_map(set MapData)，slot 已是新值。
 				# 上面 write_f32_indexed 的 value-diff 因此命中"未变" → 不 mark dirty

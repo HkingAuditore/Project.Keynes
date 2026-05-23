@@ -1052,64 +1052,6 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 	var stride_real: Dictionary = res.get("stride_real", {})
 	var pixels_written_total: int = 0
 	if stride_done:
-		# [DIAG B-Surgical 2026-05-23] 在 commit 前先看 atlas_buffers["ice"]
-		# 是不是已经全 0。前 5 次 stride_done 各打一次。如果这里就全 0，说明
-		# C++ encode_ice_state_atlas 没真的把字节写进 buf_ice，瓶颈在 C++ 内部。
-		if _dvas_ice_commit_runs < 5:
-			var _pre_buf_ice: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
-			var _pre_nonzero: int = 0
-			var _pre_max: int = 0
-			for _bi2 in range(_pre_buf_ice.size()):
-				var _bv2: int = int(_pre_buf_ice[_bi2])
-				if _bv2 > 0:
-					_pre_nonzero += 1
-					if _bv2 > _pre_max:
-						_pre_max = _bv2
-			# 同时直接从 DCWorldExt SIF slot 拉一份现状采样
-			var _ext = ext
-			var _slot_pos: int = 0
-			var _slot_max: float = 0.0
-			var _slot_sum: float = 0.0
-			var _slot_n: int = 0
-			if _ext != null and _ext.has_method("view_f32") and _ext.has_method("component_id"):
-				var _cid_si_ext: int = int(_ext.component_id("cell_sea_ice_frac"))
-				if _cid_si_ext >= 0:
-					var _sif_arr: PackedFloat32Array = _ext.view_f32(_cid_si_ext)
-					_slot_n = _sif_arr.size()
-					for _ii in range(_slot_n):
-						var _vv: float = float(_sif_arr[_ii])
-						if _vv > 0.0:
-							_slot_pos += 1
-							_slot_sum += _vv
-							if _vv > _slot_max:
-								_slot_max = _vv
-			print("[B-Surgical/PRE-COMMIT] stride_done #%d ice_buf_size=%d ice_nonzero=%d ice_max=%d stride_real_ice=%d ms_ice_step=%.3f ms_ice_prep=%.3f | SIF_slot n=%d pos=%d max=%.3f avg_pos=%.3f" % [
-				_dvas_ice_commit_runs + 1,
-				_pre_buf_ice.size(),
-				_pre_nonzero, _pre_max,
-				int(stride_real.get("ice", -999)),
-				float(res.get("ms_breakdown", {}).get("ice_step_ms", -1.0)),
-				float(res.get("ms_breakdown", {}).get("ice_prepare_ms", -1.0)),
-				_slot_n, _slot_pos, _slot_max,
-				(_slot_sum / float(max(_slot_pos, 1))),
-			])
-			# B-Surgical 诊断：dump encode 内部状态
-			var _ice_dbg: Dictionary = res.get("ice_encode_dbg", {})
-			if not _ice_dbg.is_empty():
-				print("[B-Surgical/ENCODE-DBG] stride_done #%d K=%d pos_in_loop=%d max_ice_val=%.3f max_byte_v=%d first_nz(ci=%d ice_val=%.3f byte=%d) | post_buf(nonzero=%d max=%d size=%d) pixels_written=%d" % [
-					_dvas_ice_commit_runs + 1,
-					int(_ice_dbg.get("K", -1)),
-					int(_ice_dbg.get("pos_in_loop", -1)),
-					float(_ice_dbg.get("max_ice_val", -1.0)),
-					int(_ice_dbg.get("max_byte_v", -1)),
-					int(_ice_dbg.get("first_nz_ci", -2)),
-					float(_ice_dbg.get("first_nz_ice_val", -1.0)),
-					int(_ice_dbg.get("first_nz_byte", -1)),
-					int(_ice_dbg.get("buf_post_nonzero", -1)),
-					int(_ice_dbg.get("buf_post_max", -1)),
-					int(_ice_dbg.get("buf_size", -1)),
-					int(_ice_dbg.get("pixels_written", -1)),
-				])
 		pixels_written_total = _commit_atlas_buffers_to_gpu(
 				atlas_buffers, W, H, stride_real)
 
@@ -1359,51 +1301,9 @@ func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int,
 					_ice_nonzero += 1
 					if _bv > _ice_max:
 						_ice_max = _bv
-			# [DIAG 2026-05-23 海冰排障第二轮] 同时采样 GDScript 端 DCWorld（dirty_world）
-			# 与 C++ 端 DCWorldExt 的 SIF slot。两者来源不同：
-			#   - dirty_world (DCWorld, GDScript) ← map_generator 通过 write_f32_dense 灌入
-			#   - world_ext   (DCWorldExt, C++)    ← C++ sea_ice_pass 直接写
-			# 若 GDScript slot 全 0 而 C++ slot 非 0 → write_f32_dense 没跑或同步失败
-			# 若两者都全 0 而 MapData.sea_ice_frac_arr 非 0 → 本系统 world ref 错了
-			var _gd_pos: int = 0
-			var _gd_max: float = 0.0
-			var _cpp_pos: int = 0
-			var _cpp_max: float = 0.0
-			var _gd_world = dirty_world if dirty_world != null else world_data
-			if _gd_world != null and _gd_world.has_method("view_f32") \
-					and _gd_world.has_method("component_id"):
-				var _cid_gd: int = int(_gd_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC))
-				if _cid_gd >= 0:
-					var _gd_arr: PackedFloat32Array = _gd_world.view_f32(_cid_gd)
-					for _gi in range(_gd_arr.size()):
-						var _gv: float = _gd_arr[_gi]
-						if _gv > 0.0:
-							_gd_pos += 1
-							if _gv > _gd_max:
-								_gd_max = _gv
-			var _cpp_world = _get_world_ext()
-			if _cpp_world != null and _cpp_world != _gd_world \
-					and _cpp_world.has_method("view_f32") \
-					and _cpp_world.has_method("component_id"):
-				# [B-Surgical 命名空间不一致] DCWorldExt 用下划线名字风格
-				# (`cell_sea_ice_frac`)，DCComponentIds 是点号风格。
-				# 见 map_generator.gd 同名注释。
-				var _cid_cpp: int = int(_cpp_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC))
-				if _cid_cpp < 0:
-					_cid_cpp = int(_cpp_world.component_id(&"cell_sea_ice_frac"))
-				if _cid_cpp >= 0:
-					var _cpp_arr: PackedFloat32Array = _cpp_world.view_f32(_cid_cpp)
-					for _ci in range(_cpp_arr.size()):
-						var _cv: float = _cpp_arr[_ci]
-						if _cv > 0.0:
-							_cpp_pos += 1
-							if _cv > _cpp_max:
-								_cpp_max = _cv
-			print("[ice_atlas/COMMIT] run#%d need_init=%s stride=%d buf_n=%d nonzero=%d max=%d gd_pos=%d gd_max=%.4f cpp_pos=%d cpp_max=%.4f gd_src=%s tex_rid=%s" % [
+			print("[ice_atlas/COMMIT] run#%d need_init=%s stride=%d buf_n=%d nonzero=%d max=%d tex_rid=%s" % [
 				_dvas_ice_commit_runs, str(ice_need_init), int(stride_real.get("ice", 0)),
 				_ice_n, _ice_nonzero, _ice_max,
-				_gd_pos, _gd_max, _cpp_pos, _cpp_max,
-				("dirty_world" if dirty_world != null else ("world_data" if world_data != null else "<null>")),
 				str(world_data.ice_state_tex.get_rid()) if world_data.ice_state_tex != null else "<null>",
 			])
 	else:
