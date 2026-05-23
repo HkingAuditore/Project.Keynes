@@ -178,6 +178,8 @@ struct AtlasPipelineState {
     bool             prep_eco_skip = false;
     bool             prep_smo_skip = false;
     bool             prep_ice_skip = false;
+    bool             prep_smo_ready = false;
+    int              prep_smo_cursor = 0;
 
     // 整段 stride 起始时间戳（用于 total_ms 跨 call 累加）。
     std::chrono::high_resolution_clock::time_point stride_t_start;
@@ -3016,15 +3018,9 @@ inline void wf_apply_frontal_convergence_boost_idx(
 
 // ─── F.1 main pass ──────────────────────────────────────────────────────────
 //
-// Single-shot full sweep over [start_idx, end_idx). Writes 8 cell-level
-// SoA component slots in place; GDScript caller copies them out to its
-// _field_slice_next_* scratch arrays after the call returns so that
-// commit_weather_field_solve() (snow accumulation, fronts, distribution)
-// is unchanged.
-//
-// LIMITATION (locked in world_ext.h doc block): start_idx == 0 && end_idx
-// == n_cells is required. Slice budget < n falls back to GDScript because
-// mid-slice writes to the SoA would corrupt the next slice's SoA reads.
+// Range sweep over [start_idx, end_idx). Writes 8 cell-level SoA component
+// slots in place. Read-side vapor/precip uses the begin-slice snapshots, so
+// multiple native slices can safely build one hidden round before commit().
 double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     using godot::StringName;
     using godot::PackedFloat32Array;
@@ -3090,11 +3086,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const bool  apply_convergence_boost = knobs.has("apply_convergence_boost")
                                             ? bool(knobs["apply_convergence_boost"]) : true;
 
-    if (start_idx != 0 || end_idx != n_cells) {
-        diag("partial slice not yet supported (must be full-pass)");
+    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    if (start_idx < 0 || start_idx > n_cells || end_idx < start_idx || end_idx > n_cells) {
+        diag("invalid start_idx/end_idx range");
         return -1.0;
     }
-    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     const int   field_advect_steps      = knobs.has("field_advect_steps")
                                             ? int(knobs["field_advect_steps"]) : 1;
@@ -3203,7 +3199,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // ─── Tight loop — 1:1 mirror of run_weather_field_solve_slice fast path ──
     // Source: weather_system.gd:678-757. Branch annotations preserved as
     // line-number citations so the next bit-equal failure is one diff away.
-    for (int i = 0; i < n_cells; ++i) {
+    for (int i = start_idx; i < end_idx; ++i) {
         // (line 681) temp = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0, 1)
         float temp = T[i] + climate_anomaly + AA[i];
         if (temp < 0.0f) temp = 0.0f;
@@ -3462,6 +3458,10 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
+    const int end_idx_raw = knobs.has("end_idx") ? int(knobs["end_idx"]) : n_cells;
+    const int end_idx = std::min(std::max(end_idx_raw, start_idx), n_cells);
+    if (start_idx < 0 || start_idx > n_cells) { diag("invalid start_idx"); return -1.0; }
 
     PackedInt32Array   nb_arr = knobs["neighbor_indices"];
     PackedFloat32Array baseline_arr = knobs["baseline_arr"];
@@ -3474,12 +3474,15 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     if (ocx_arr.size()         != n_cells) { diag("ocean_current_x_arr size mismatch"); return -1.0; }
     if (ocy_arr.size()         != n_cells) { diag("ocean_current_y_arr size mismatch"); return -1.0; }
 
-    // §11 CoW fix: create a FRESH anomaly array (refcount=1) so ptrw()
-    // does not CoW-detach. After the loop we write it back into the
-    // Dictionary; since Dictionary is a shared reference type the
-    // GDScript caller will see the replacement.
-    PackedFloat32Array anomaly_out;
-    anomaly_out.resize(n_cells);
+    // §11 CoW fix: duplicate the caller buffer when chunking, preserving
+    // previous chunks while still obtaining a refcount=1 ptrw() target.
+    PackedFloat32Array anomaly_src = knobs["anomaly_out"];
+    PackedFloat32Array anomaly_out = anomaly_src.size() == n_cells
+        ? anomaly_src.duplicate()
+        : PackedFloat32Array();
+    if (anomaly_out.size() != n_cells) {
+        anomaly_out.resize(n_cells);
+    }
 
     Slot &s_temp    = _slots.write[sid_temp];
     Slot &s_iswater = _slots.write[sid_iswater];
@@ -3505,7 +3508,7 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < n_cells; ++i) {
+    for (int i = start_idx; i < end_idx; ++i) {
         if (IW[i] == 0) continue; // skip land
         const float cur_x = OCX[i];
         const float cur_y = OCY[i];
@@ -3556,6 +3559,9 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     // §11 CoW fix: write the freshly-computed anomaly back into the
     // Dictionary so GDScript can read it after the call.
     knobs["anomaly_out"] = anomaly_out;
+    knobs["cursor_start"] = start_idx;
+    knobs["cursor_end"] = end_idx;
+    knobs["processed_cells"] = end_idx - start_idx;
 
     // §11.2 flush: push CoW-detached cell_temp back to MapData
     _flush_slot_to_map(sid_temp);
@@ -3609,6 +3615,10 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+    const int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
+    const int end_idx_raw = knobs.has("end_idx") ? int(knobs["end_idx"]) : n_cells;
+    const int end_idx = std::min(std::max(end_idx_raw, start_idx), n_cells);
+    if (start_idx < 0 || start_idx > n_cells) { diag("invalid start_idx"); return -1.0; }
 
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
     PackedFloat32Array fallback_baseline = knobs["fallback_baseline_arr"];
@@ -3654,7 +3664,7 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     // （water pass 已经在 anomaly_inout 里写好）。所以读写不冲突——所有 land
     // i 都不在自身 6 邻居读到的 water cell 集合里（water cell 的 anomaly 在
     // water pass 已 finalized）。可以安全用同一个数组 in-place。
-    for (int i = 0; i < n_cells; ++i) {
+    for (int i = start_idx; i < end_idx; ++i) {
         if (IW[i] != 0) continue; // skip water
         const float swx = POSX[i];
         const float swy = POSY[i];
@@ -3705,6 +3715,9 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
 
     // §11 CoW fix: write the modified anomaly back into the Dictionary
     knobs["anomaly_inout"] = anomaly_inout;
+    knobs["cursor_start"] = start_idx;
+    knobs["cursor_end"] = end_idx;
+    knobs["processed_cells"] = end_idx - start_idx;
 
     // §11.2 flush: push CoW-detached cell_temp back to MapData
     _flush_slot_to_map(sid_temp);
@@ -5192,6 +5205,16 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
+    // [S2 fix 2026-05-23] dt_days：optional knob。缺省 1.0 → 与历史 1:1 兼容；
+    // GDScript 端用 WorldClock.current_day 算"上次到本次的真实游戏天数差"。
+    // clamp [0, 30] 与 GDScript 端一致，防意外越界。详见 GDScript 入口注释。
+    float dt_days = 1.0f;
+    if (knobs.has("dt_days")) {
+        dt_days = float(knobs["dt_days"]);
+        if (dt_days < 0.0f) dt_days = 0.0f;
+        else if (dt_days > 30.0f) dt_days = 30.0f;
+    }
+
     PackedInt32Array  nb_arr   = knobs["neighbor_indices"];
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
     PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
@@ -5306,9 +5329,10 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         }
 
         // 增量更新
+        // [S2 fix 2026-05-23] 乘 dt_days：见 prelude dt_days 注释。
         const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
         const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-        const float d_frac = k_freeze_eff * diff_freeze - k_melt * diff_melt;
+        const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
         const float prev_frac = SIF[i];
         float new_frac = prev_frac + d_frac;
         if (new_frac < 0.0f) new_frac = 0.0f;
@@ -5408,6 +5432,14 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     const int   id_sea_ice  = int(knobs["terrain_sea_ice_id"]);
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
+
+    // [S2 fix 2026-05-23] dt_days：与 scalar 路径同步（optional, default 1.0）。
+    float dt_days = 1.0f;
+    if (knobs.has("dt_days")) {
+        dt_days = float(knobs["dt_days"]);
+        if (dt_days < 0.0f) dt_days = 0.0f;
+        else if (dt_days > 30.0f) dt_days = 30.0f;
+    }
 
     PackedInt32Array  nb_arr   = knobs["neighbor_indices"];
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
@@ -5525,7 +5557,8 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
 
                 const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
                 const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-                const float d_frac = k_freeze_eff * diff_freeze - k_melt * diff_melt;
+                // [S2 fix 2026-05-23] 乘 dt_days：与 scalar 路径 1:1。
+                const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
                 const float prev_frac = SIF[i];
                 float new_frac = prev_frac + d_frac;
                 if (new_frac < 0.0f) new_frac = 0.0f;
@@ -12743,6 +12776,9 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->stride_cache_valid_eco = cache_valid_eco;
         st->stride_cache_valid_smo = cache_valid_smo;
         st->stride_cache_valid_ice = cache_valid_ice;
+        st->prep_smo_ready = false;
+        st->prep_smo_cursor = 0;
+        st->prep_smo_real_indices = PackedInt32Array();
         st->stride_have_nb = have_nb;
         st->stride_nb_arr = nb_arr;
         st->stride_n_pix = n_pix;
@@ -13017,70 +13053,84 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     // Phase SMOOTH：(eco_real ∪ dirty) 1-跳邻居膨胀；需要 neighbor SoA
     // ────────────────────────────────────────────────────────────────────
     if (!yielded && st->phase == AtlasPipelineState::SMOOTH) {
-    PackedInt32Array smo_real_indices;
-    t_p = std::chrono::high_resolution_clock::now();
-    {
-        bool skip_phase = false;
-        if (!have_nb) {
-            // 没有 neighbor SoA：缺乏 smooth 数据源 → 跳过（GD 端旧路径会 fallback）
-            skip_phase = true;
-        } else if (!cache_valid_smo) {
-            // cache_invalid → 全集
-            smo_real_indices.resize(n_cells);
-            for (int i = 0; i < n_cells; ++i) smo_real_indices[i] = i;
-        } else if (dirty_path_used && dirty_noop && st->eco_active_decay_indices.size() == 0) {
-            // 完全无变化：跳过
-            skip_phase = true;
-        } else {
-            // seed = dirty ∪ decay；膨胀 = seed ∪ 6 邻居
-            std::vector<uint8_t> seen(n_cells, 0);
-            std::vector<int32_t> seed;
-            seed.reserve(dirty_indices.size() + st->eco_active_decay_indices.size());
-            if (dirty_path_used && !dirty_noop) {
-                const int32_t * const D = dirty_indices.ptr();
-                for (int i = 0; i < dirty_indices.size(); ++i) {
-                    const int idx = D[i];
+    int max_smooth_cells_per_call = opts.has("max_smooth_cells_per_call")
+        ? int(opts["max_smooth_cells_per_call"]) : 512;
+    if (max_smooth_cells_per_call < 128) max_smooth_cells_per_call = 128;
+    if (max_smooth_cells_per_call > n_cells) max_smooth_cells_per_call = n_cells;
+    if (!st->prep_smo_ready) {
+        PackedInt32Array smo_real_indices;
+        t_p = std::chrono::high_resolution_clock::now();
+        {
+            bool skip_phase = false;
+            if (!have_nb) {
+                // 没有 neighbor SoA：缺乏 smooth 数据源 → 跳过（GD 端旧路径会 fallback）
+                skip_phase = true;
+            } else if (!cache_valid_smo) {
+                // cache_invalid → 全集
+                smo_real_indices.resize(n_cells);
+                for (int i = 0; i < n_cells; ++i) smo_real_indices[i] = i;
+            } else if (dirty_path_used && dirty_noop && st->eco_active_decay_indices.size() == 0) {
+                // 完全无变化：跳过
+                skip_phase = true;
+            } else {
+                // seed = dirty ∪ decay；膨胀 = seed ∪ 6 邻居
+                std::vector<uint8_t> seen(n_cells, 0);
+                std::vector<int32_t> seed;
+                seed.reserve(dirty_indices.size() + st->eco_active_decay_indices.size());
+                if (dirty_path_used && !dirty_noop) {
+                    const int32_t * const D = dirty_indices.ptr();
+                    for (int i = 0; i < dirty_indices.size(); ++i) {
+                        const int idx = D[i];
+                        if (idx < 0 || idx >= n_cells || seen[idx]) continue;
+                        seen[idx] = 1;
+                        seed.push_back(idx);
+                    }
+                }
+                const int32_t * const A = st->eco_active_decay_indices.ptr();
+                for (int i = 0; i < st->eco_active_decay_indices.size(); ++i) {
+                    const int idx = A[i];
                     if (idx < 0 || idx >= n_cells || seen[idx]) continue;
                     seen[idx] = 1;
                     seed.push_back(idx);
                 }
-            }
-            const int32_t * const A = st->eco_active_decay_indices.ptr();
-            for (int i = 0; i < st->eco_active_decay_indices.size(); ++i) {
-                const int idx = A[i];
-                if (idx < 0 || idx >= n_cells || seen[idx]) continue;
-                seen[idx] = 1;
-                seed.push_back(idx);
-            }
-            // 1-跳膨胀（自适应稀疏 / 稠密同 baker_dirty_helpers.gd 行为）
-            const int32_t * const NB = nb_arr.ptr();
-            std::vector<int32_t> dilated;
-            dilated.reserve(seed.size() * 7);
-            for (int32_t idx : seed) {
-                dilated.push_back(idx);
-                const int base = idx * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0 || ni >= n_cells || seen[ni]) continue;
-                    seen[ni] = 1;
-                    dilated.push_back(ni);
+                // 1-跳膨胀（自适应稀疏 / 稠密同 baker_dirty_helpers.gd 行为）
+                const int32_t * const NB = nb_arr.ptr();
+                std::vector<int32_t> dilated;
+                dilated.reserve(seed.size() * 7);
+                for (int32_t idx : seed) {
+                    dilated.push_back(idx);
+                    const int base = idx * 6;
+                    for (int d = 0; d < 6; ++d) {
+                        const int32_t ni = NB[base + d];
+                        if (ni < 0 || ni >= n_cells || seen[ni]) continue;
+                        seen[ni] = 1;
+                        dilated.push_back(ni);
+                    }
                 }
+                smo_real_indices.resize(int(dilated.size()));
+                int32_t *p = smo_real_indices.ptrw();
+                for (size_t i = 0; i < dilated.size(); ++i) p[i] = dilated[i];
             }
-            smo_real_indices.resize(int(dilated.size()));
-            int32_t *p = smo_real_indices.ptrw();
-            for (size_t i = 0; i < dilated.size(); ++i) p[i] = dilated[i];
+            // skip_phase 时 smo_real_indices 保持空
+            (void)skip_phase;
         }
-        // skip_phase 时 smo_real_indices 保持空
-        (void)skip_phase;
+        t_q = std::chrono::high_resolution_clock::now();
+        st->ms_smo_prep = std::chrono::duration<double, std::milli>(t_q - t_p).count();
+        st->prep_smo_real_indices = smo_real_indices;
+        st->prep_smo_ready = true;
+        st->prep_smo_cursor = 0;
+    } else {
+        st->ms_smo_prep = 0.0;
     }
-    t_q = std::chrono::high_resolution_clock::now();
-    st->ms_smo_prep = std::chrono::duration<double, std::milli>(t_q - t_p).count();
+    PackedInt32Array &smo_real_indices = st->prep_smo_real_indices;
+    const int K = smo_real_indices.size();
+    const int k_begin = st->prep_smo_cursor;
+    const int k_end = std::min(K, k_begin + max_smooth_cells_per_call);
 
     // smooth phase 直接写 buffer：避免构造 Dictionary / K 级临时 CSR 数组 / neighbor_passable_sea。
     {
         t_p = std::chrono::high_resolution_clock::now();
-        const int K = smo_real_indices.size();
-        if (K > 0 && have_nb) {
+        if (K > 0 && have_nb && k_begin < k_end) {
             const int32_t * const REAL = smo_real_indices.ptr();
             const int32_t * const SF = soa.cell_first_px.ptr();
             const int32_t * const SC = soa.cell_px_count.ptr();
@@ -13096,7 +13146,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                     double(SNOW[idx]), double(VIT[idx]), cell_psea(idx));
             };
 
-            for (int k = 0; k < K; ++k) {
+            for (int k = k_begin; k < k_end; ++k) {
                 const int ci = REAL[k];
                 if (ci < 0 || ci >= n_cells) continue;
 
@@ -13162,10 +13212,18 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         st->ms_smo_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
         st->ms_smo_fin = 0.0;
     }
+    st->prep_smo_cursor = k_end;
     smo_real_count = smo_real_indices.size();
-    st->phase = AtlasPipelineState::ICE;
-    ++phases_done_this_call;
-    if (phases_done_this_call >= phase_budget) yielded = true;
+    if (st->prep_smo_cursor < smo_real_count) {
+        yielded = true;
+    } else {
+        st->prep_smo_ready = false;
+        st->prep_smo_cursor = 0;
+        st->prep_smo_real_indices = PackedInt32Array();
+        st->phase = AtlasPipelineState::ICE;
+        ++phases_done_this_call;
+        if (phases_done_this_call >= phase_budget) yielded = true;
+    }
     }  // end Phase SMOOTH gate
 
     // ────────────────────────────────────────────────────────────────────
