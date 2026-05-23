@@ -1926,8 +1926,8 @@ func get_environment_perf_summary() -> Dictionary:
 	}
 	if _current_map != null and _current_map.has_method("cell_count"):
 		out["map_cells"] = int(_current_map.cell_count())
-	if _current_world != null and "derived_size" in _current_world:
-		var ds: Vector2i = _current_world.derived_size
+	if _world_data != null and "derived_size" in _world_data:
+		var ds: Vector2i = _world_data.derived_size
 		out["map_pixels"] = int(ds.x * ds.y)
 	if _generator != null and _generator.has_method("sus_report_sim_budget_window"):
 		out["window"] = _generator.sus_report_sim_budget_window()
