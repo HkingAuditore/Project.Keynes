@@ -141,19 +141,6 @@ struct AtlasPipelineState {
     // 累计 stride 计数（采样诊断节流用：每 30 stride 打一次）。
     int stride_counter = 0;
 
-    // B-Surgical 诊断字段：encode_ice_state_atlas 内部状态透传给 GD 端打印。
-    int    ice_dbg_K = -1;
-    int    ice_dbg_pos_in_loop = -1;
-    double ice_dbg_max_ice_val = -1.0;
-    int    ice_dbg_max_byte_v = -1;
-    int    ice_dbg_first_nz_ci = -2;
-    double ice_dbg_first_nz_ice_val = -1.0;
-    int    ice_dbg_first_nz_byte = -1;
-    int    ice_dbg_buf_post_nonzero = -1;
-    int    ice_dbg_buf_post_max = -1;
-    int    ice_dbg_buf_size = -1;
-    int    ice_dbg_pixels_written = -1;
-
     // ── plan/atlas-phase-slicing（2026-05-21）：phase-by-phase 时间切片 ──
     // 当 opts["phase_budget"] < 4 时，run_atlas_pipeline_step 会在跑完
     // budget 个 phase 后提前 return，把 phase 状态留在 IDLE..ICE 之间，下一
@@ -12359,54 +12346,12 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ★★★ 关键修复 v3：在 ICE 指针上加 volatile 来打破 Apple Clang 在 ARM64 上
-    // 对 PackedFloat32Array.ptr() 返回值做的 alias-based DCE（死代码消除）。
-    // 之前的诊断证明：同一地址用 const float* ICE 扫描得 0 个非零（被静态折叠），
-    // 但用 volatile/独立指针扫描得到正确的非零数。
-    // v1 用 memcpy + ptr() 闪退（CoW reallocate 导致 ptr 悬空）。
-    // v2 用 vector + operator[] 也闪退（与 PIPELINE-ENTRY 在不同时机访问同一 slot
-    // 导致 godot-cpp 内部状态冲突）。
-    // v3 最小修改：volatile 强制每次 ICE[i] 从内存重读，不引入新内存分配/拷贝。
+    // ICE 指针保留 volatile：Apple Clang 在 ARM64 对 PackedFloat32Array.ptr()
+    // 返回值做 alias-based DCE，加 volatile 强制每次 ICE[i] 从内存重读。
+    // （process_atlas_pipeline_step 里 ICE phase 已改为完全内联编码循环，
+    //  本函数仅作为非热路径 caller 的 fallback 入口。）
     const volatile float * const ICE = s_ice.arr_f32.ptr();
 
-    // B-Surgical 诊断：encode 入口处独立 dump SIF slot 状态
-    // 使用 volatile + 通过 size() 间接读 size 防止编译器优化循环
-    static int _dbg_encode_calls = 0;
-    if (_dbg_encode_calls < 5) {
-        ++_dbg_encode_calls;
-        // 用 set 收集独立索引，避免 -restrict 干扰
-        const PackedFloat32Array &arr_ref = s_ice.arr_f32;
-        volatile int dbg_pos = 0;
-        volatile float dbg_max = 0.0f;
-        volatile int dbg_first_nz = -1;
-        const int sz = arr_ref.size();
-        // 独立路径 1：经 PackedArray::operator[]（虚函数 / set），编译器无法 inline 优化
-        for (int i = 0; i < sz; ++i) {
-            float v = arr_ref[i];
-            if (v > 0.0f) {
-                dbg_pos = dbg_pos + 1;
-                if (v > dbg_max) dbg_max = v;
-                if (dbg_first_nz < 0) dbg_first_nz = i;
-            }
-        }
-        // 独立路径 2：直接访问 ICE 指针前 8 元素，编译器看不见 alias
-        float p0 = ICE[0], p1 = ICE[1], p2 = ICE[2], p3 = ICE[3];
-        // 独立路径 3：用 ICE 指针自己再统计一遍
-        volatile int dbg_pos_via_ptr = 0;
-        for (int i = 0; i < sz; ++i) {
-            if (ICE[i] > 0.0f) dbg_pos_via_ptr = dbg_pos_via_ptr + 1;
-        }
-        UtilityFunctions::print(
-            "[B-Surgical/ENCODE-ENTRY] call=", _dbg_encode_calls,
-            " sid_ice=", sid_ice,
-            " arr_size=", sz,
-            " pos_via_subscript=", int(dbg_pos),
-            " pos_via_ptr=", int(dbg_pos_via_ptr),
-            " max=", float(dbg_max),
-            " first_nz=", int(dbg_first_nz),
-            " p[0..3]=", p0, ",", p1, ",", p2, ",", p3,
-            " ICE_addr=", uint64_t(uintptr_t(ICE)));
-    }
     const int32_t * const CELLS = c.cell_indices.ptr();
     const int32_t * const FIRST = c.first_px.ptr();
     const int32_t * const CNT = c.px_count.ptr();
@@ -12415,137 +12360,11 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
 
     PackedByteArray new_bytes; new_bytes.resize(c.K); uint8_t * const NB_OUT = new_bytes.ptrw();
 
-    // B-Surgical 诊断：dump CELLS[k] 前 8 个 ci 与 ICE[ci]，并检查"入口看到的 first_nz"是否在 CELLS 列表里
-    static int _dbg_cells_calls = 0;
-    if (_dbg_cells_calls < 5) {
-        ++_dbg_cells_calls;
-        // ★关键：重新取一次 ICE 指针（绕过 __restrict 编译器假设），看是否还能读到非零
-        Slot &s_ice2 = _slots.write[sid_ice];
-        const PackedFloat32Array &arr_ref2 = s_ice2.arr_f32;
-        const float * ICE2 = arr_ref2.ptr();
-        // 用 volatile 强制每次循环重新读
-        volatile int dbg_pos2 = 0;
-        volatile int dbg_first2 = -1;
-        const int sz2 = arr_ref2.size();
-        for (int i = 0; i < sz2; ++i) {
-            float v = ICE2[i];
-            if (v > 0.0f) {
-                dbg_pos2 = dbg_pos2 + 1;
-                if (dbg_first2 < 0) dbg_first2 = i;
-            }
-        }
-        // 用 subscript 再扫一遍（不经 ptr）
-        volatile int dbg_pos3 = 0;
-        volatile int dbg_first3 = -1;
-        for (int i = 0; i < sz2; ++i) {
-            float v = arr_ref2[i];
-            if (v > 0.0f) {
-                dbg_pos3 = dbg_pos3 + 1;
-                if (dbg_first3 < 0) dbg_first3 = i;
-            }
-        }
-        // 找到入口看到的第一个非零 ci（用 ICE 旧指针）
-        int entry_first_nz = -1;
-        for (int i = 0; i < n_cells; ++i) {
-            if (ICE[i] > 0.0f) { entry_first_nz = i; break; }
-        }
-        // 检查 entry_first_nz 是否在 CELLS 列表里
-        bool entry_first_nz_in_cells = false;
-        int matched_k = -1;
-        for (int k = 0; k < c.K; ++k) {
-            if (CELLS[k] == entry_first_nz) {
-                entry_first_nz_in_cells = true;
-                matched_k = k;
-                break;
-            }
-        }
-        // 统计 CELLS 列表里 ICE>0 的 ci 数量（用新指针 ICE2）
-        int cells_with_ice = 0;
-        int cells_first_with_ice = -1;
-        float cells_first_with_ice_val = 0.0f;
-        for (int k = 0; k < c.K; ++k) {
-            const int ci = CELLS[k];
-            if (ci >= 0 && ci < n_cells && ICE2[ci] > 0.0f) {
-                ++cells_with_ice;
-                if (cells_first_with_ice < 0) {
-                    cells_first_with_ice = ci;
-                    cells_first_with_ice_val = ICE2[ci];
-                }
-            }
-        }
-        // ★ 强诊断：用 volatile float* 重新取 ptr，确保编译器无法优化掉
-        // 读 entry_first_nz 位置（应该是非零）以及 CELLS[0] 位置
-        volatile const float * VICE = arr_ref2.ptr();
-        // ★ 用 volatile int32_t* 强制重新读 CELLS（绕过编译器缓存）
-        volatile const int32_t * VCELLS = c.cell_indices.ptr();
-        const int vcells_0 = (c.K > 0) ? int(VCELLS[0]) : -77;
-        const int vcells_1 = (c.K > 1) ? int(VCELLS[1]) : -77;
-        const int vcells_2 = (c.K > 2) ? int(VCELLS[2]) : -77;
-        // 用普通指针读 CELLS[0]，对比是否 vcells_0 != cells_0
-        const int cells_0 = (c.K > 0) ? int(CELLS[0]) : -77;
-        const int probe_idx_a = (dbg_first2 >= 0 && dbg_first2 < n_cells) ? dbg_first2 : 0;
-        const int probe_idx_b = (c.K > 0 && CELLS[0] >= 0 && CELLS[0] < n_cells) ? CELLS[0] : 0;
-        const float vice_a = VICE[probe_idx_a];
-        const float vice_b = VICE[probe_idx_b];
-        // 同时通过 byte 级别 memcpy 读取 1827 位置确证内存值
-        float vice_a_via_memcpy = -999.0f;
-        if (probe_idx_a >= 0 && probe_idx_a < n_cells) {
-            std::memcpy(&vice_a_via_memcpy, ((const char*)arr_ref2.ptr()) + probe_idx_a * sizeof(float), sizeof(float));
-        }
-        // 用 volatile + CELLS[k] 重新统计 cells_with_ice（防止编译器把上面的循环 fold 成 0）
-        volatile int cells_with_ice_v = 0;
-        for (int k = 0; k < c.K; ++k) {
-            const int ci = int(VCELLS[k]);
-            if (ci >= 0 && ci < n_cells) {
-                if (VICE[ci] > 0.0f) cells_with_ice_v = cells_with_ice_v + 1;
-            }
-        }
-        UtilityFunctions::print(
-            "[B-Surgical/CELLS-DUMP] call=", _dbg_cells_calls,
-            " K=", c.K,
-            " ICE_addr_old=", uint64_t(uintptr_t(ICE)),
-            " ICE_addr_new=", uint64_t(uintptr_t(ICE2)),
-            " VICE_addr=", uint64_t(uintptr_t(const_cast<const float*>(VICE))),
-            " VCELLS_addr=", uint64_t(uintptr_t(const_cast<const int32_t*>(VCELLS))),
-            " CELLS_addr=", uint64_t(uintptr_t(CELLS)),
-            " vcells_0=", vcells_0, " vcells_1=", vcells_1, " vcells_2=", vcells_2,
-            " cells_0=", cells_0,
-            " pos_via_old_ptr=", entry_first_nz >= 0 ? "FOUND" : "ZERO",
-            " pos_via_new_ptr=", int(dbg_pos2),
-            " pos_via_subscript=", int(dbg_pos3),
-            " new_first_nz=", int(dbg_first2),
-            " sub_first_nz=", int(dbg_first3),
-            " entry_first_nz=", entry_first_nz,
-            " entry_first_nz_in_cells=", entry_first_nz_in_cells,
-            " cells_with_ice=", cells_with_ice,
-            " cells_with_ice_v=", int(cells_with_ice_v),
-            " VICE[probe_a=", probe_idx_a, "]=", vice_a, " (memcpy=", vice_a_via_memcpy, ")",
-            " VICE[probe_b=", probe_idx_b, "]=", vice_b,
-            " cells_first_with_ice=(ci=", cells_first_with_ice,
-            " val=", cells_first_with_ice_val, ")",
-            " CELLS[0..7]=", c.K > 0 ? CELLS[0] : -1,
-            ",", c.K > 1 ? CELLS[1] : -1,
-            ",", c.K > 2 ? CELLS[2] : -1,
-            ",", c.K > 3 ? CELLS[3] : -1,
-            ",", c.K > 4 ? CELLS[4] : -1,
-            ",", c.K > 5 ? CELLS[5] : -1,
-            ",", c.K > 6 ? CELLS[6] : -1,
-            ",", c.K > 7 ? CELLS[7] : -1);
-    }
-
     int pixels_written = 0;
-    int debug_first_nonzero_byte = 0;
-    int debug_first_nonzero_ice_ci = -1;
-    float debug_first_nonzero_ice_val = 0.0f;
-    int debug_max_byte_v = 0;
-    float debug_max_ice_val = 0.0f;
-    int debug_pos_count_in_loop = 0;  // ICE[ci] > 0 的 cell 计数
 
     // ★ 优先用调用方预打包好的 cell_ice_values（K 个值，按 CELLS 顺序）。
     // 这条路径绕过 encode 内部对 ICE slot 的间接读，避免 Apple Clang ARM64
     // 在 ICE2[CELLS[k]] 这种间接索引上做的激进 alias DCE。
-    // 当 caller 是 process_atlas_pipeline_step（Phase ICE）时一定有；
-    // 直接调 encode_ice_state_atlas 的 caller（如果存在）走 fallback。
     bool have_iv = false;
     PackedFloat32Array iv_arr;
     if (knobs.has("cell_ice_values")) {
@@ -12558,17 +12377,7 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
         const int ci = CELLS[k];
         if (ci < 0 || ci >= n_cells) { NB_OUT[k] = 0; continue; }
         const float ice_v = have_iv ? IV[k] : ICE[ci];
-        if (ice_v > 0.0f) {
-            ++debug_pos_count_in_loop;
-            if (ice_v > debug_max_ice_val) debug_max_ice_val = ice_v;
-        }
         const int byte_v = pk_q01_byte_ice(double(ice_v));
-        if (byte_v > debug_max_byte_v) debug_max_byte_v = byte_v;
-        if (byte_v > 0 && debug_first_nonzero_ice_ci < 0) {
-            debug_first_nonzero_byte = byte_v;
-            debug_first_nonzero_ice_ci = ci;
-            debug_first_nonzero_ice_val = ice_v;
-        }
         NB_OUT[k] = uint8_t(byte_v);
         const int first = FIRST[k];
         const int count = CNT[k];
@@ -12577,21 +12386,6 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
             if (px_idx < 0 || px_idx >= c.n_pix) continue;
             BUF[px_idx] = uint8_t(byte_v);
             ++pixels_written;
-        }
-    }
-
-    // 写完循环后，立即从 c.buffer 反读 sample，验证写入是否真的落到 buffer 内存
-    int debug_buffer_post_nonzero = 0;
-    int debug_buffer_post_max = 0;
-    {
-        const uint8_t * const BUF_RO = c.buffer.ptr();
-        const int sample_n = c.buffer.size();
-        for (int i = 0; i < sample_n; ++i) {
-            const int v = int(BUF_RO[i]);
-            if (v > 0) {
-                ++debug_buffer_post_nonzero;
-                if (v > debug_buffer_post_max) debug_buffer_post_max = v;
-            }
         }
     }
 
@@ -12604,17 +12398,6 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
     out["atlas_buffer"] = c.buffer;
     // ice atlas 走 cell_byte cache（见 _last_ice_state_cell_bytes），返回 PackedByteArray
     out["new_bytes"] = new_bytes;
-    // B-Surgical 诊断（可在 fix 后删除）：dump encode 内部状态供 GD 端打印
-    out["dbg_K"] = c.K;
-    out["dbg_pos_in_loop"] = debug_pos_count_in_loop;
-    out["dbg_max_ice_val"] = double(debug_max_ice_val);
-    out["dbg_max_byte_v"] = debug_max_byte_v;
-    out["dbg_first_nz_ci"] = debug_first_nonzero_ice_ci;
-    out["dbg_first_nz_ice_val"] = double(debug_first_nonzero_ice_val);
-    out["dbg_first_nz_byte"] = debug_first_nonzero_byte;
-    out["dbg_buf_post_nonzero"] = debug_buffer_post_nonzero;
-    out["dbg_buf_post_max"] = debug_buffer_post_max;
-    out["dbg_buf_size"] = c.buffer.size();
     return out;
 }
 
@@ -12926,34 +12709,6 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     const float * const ICE = s_ice.arr_f32.ptr();
     const uint8_t * const TERR = s_terr.arr_u8.ptr();
     const uint8_t * const VEG = s_veg.arr_u8.ptr();
-
-    // B-Surgical 诊断：atlas pipeline stride 入口 dump SIF slot 的前 8 个非零位
-    static int _dbg_pipeline_calls = 0;
-    if (_dbg_pipeline_calls < 5) {
-        ++_dbg_pipeline_calls;
-        int dbg_pos = 0; float dbg_max = 0.0f;
-        int dbg_first_nz_idx = -1; float dbg_first_nz_val = 0.0f;
-        for (int i = 0; i < n_cells; ++i) {
-            const float v = ICE[i];
-            if (v > 0.0f) {
-                ++dbg_pos;
-                if (v > dbg_max) dbg_max = v;
-                if (dbg_first_nz_idx < 0) {
-                    dbg_first_nz_idx = i;
-                    dbg_first_nz_val = v;
-                }
-            }
-        }
-        UtilityFunctions::print(
-            "[B-Surgical/PIPELINE-ENTRY] call=", _dbg_pipeline_calls,
-            " sid_ice=", sid_ice,
-            " arr_size=", s_ice.arr_f32.size(),
-            " ICE_pos=", dbg_pos,
-            " ICE_max=", dbg_max,
-            " first_nz=(idx=", dbg_first_nz_idx, " val=", dbg_first_nz_val, ")",
-            " in_mid_stride=", in_mid_stride,
-            " ICE_addr=", uint64_t(uintptr_t(ICE)));
-    }
 
     // ── prev_sigs 长度对齐：首帧或 n_cells 变化时 resize/reset ──
     auto ensure_int_arr = [n_cells](PackedInt32Array &a) {
@@ -13591,29 +13346,11 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             }
             uint8_t * const BUF = st->buf_ice.ptrw();
 
-            int pixels_written = 0;
-            int dbg_pos_in_loop = 0;
-            int dbg_max_byte_v = 0;
-            float dbg_max_ice_val = 0.0f;
-            int dbg_first_nz_ci = -1;
-            float dbg_first_nz_ice_val = 0.0f;
-            int dbg_first_nz_byte = 0;
-
             for (int k = 0; k < K; ++k) {
                 const int ci = REAL[k];
                 if (ci < 0 || ci >= n_cells) continue;
                 const float ice_v = ICE[ci];   // ★ 外层 ICE 已证可信
-                if (ice_v > 0.0f) {
-                    ++dbg_pos_in_loop;
-                    if (ice_v > dbg_max_ice_val) dbg_max_ice_val = ice_v;
-                }
                 const int byte_v = pk_q01_byte_ice(double(ice_v));
-                if (byte_v > dbg_max_byte_v) dbg_max_byte_v = byte_v;
-                if (byte_v > 0 && dbg_first_nz_ci < 0) {
-                    dbg_first_nz_ci = ci;
-                    dbg_first_nz_ice_val = ice_v;
-                    dbg_first_nz_byte = byte_v;
-                }
                 // 同步 prev_sigs_ice，使后续 dirty path 的 value-diff 正确
                 PV[ci] = int32_t(byte_v);
                 // 写像素
@@ -13626,30 +13363,8 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                     const int px_idx = FLAT[fi];
                     if (px_idx < 0 || px_idx >= n_pix_local) continue;
                     BUF[px_idx] = uint8_t(byte_v);
-                    ++pixels_written;
                 }
             }
-
-            // 保留 dbg 字段透传给 GD 端
-            st->ice_dbg_K = K;
-            st->ice_dbg_pos_in_loop = dbg_pos_in_loop;
-            st->ice_dbg_max_ice_val = double(dbg_max_ice_val);
-            st->ice_dbg_max_byte_v = dbg_max_byte_v;
-            st->ice_dbg_first_nz_ci = dbg_first_nz_ci;
-            st->ice_dbg_first_nz_ice_val = double(dbg_first_nz_ice_val);
-            st->ice_dbg_first_nz_byte = dbg_first_nz_byte;
-            st->ice_dbg_buf_size = n_pix_local;
-            st->ice_dbg_pixels_written = pixels_written;
-            // post 统计：扫一遍 buf 算 nonzero/max（小规模诊断，可后续移除）
-            int post_nonzero = 0;
-            int post_max = 0;
-            for (int p = 0; p < n_pix_local; ++p) {
-                const int v = int(BUF[p]);
-                if (v > 0) ++post_nonzero;
-                if (v > post_max) post_max = v;
-            }
-            st->ice_dbg_buf_post_nonzero = post_nonzero;
-            st->ice_dbg_buf_post_max = post_max;
         }
         t_q = std::chrono::high_resolution_clock::now();
         st->ms_ice_step = std::chrono::duration<double, std::milli>(t_q - t_p).count();
@@ -13713,23 +13428,6 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     stride_real["smo"] = smo_real_count;
     stride_real["ice"] = ice_real_count;
     out["stride_real"] = stride_real;
-
-    // B-Surgical 诊断：把 ICE encode 内部状态透传，让 GD 端打印
-    if (stride_done) {
-        Dictionary ice_dbg;
-        ice_dbg["K"] = st->ice_dbg_K;
-        ice_dbg["pos_in_loop"] = st->ice_dbg_pos_in_loop;
-        ice_dbg["max_ice_val"] = st->ice_dbg_max_ice_val;
-        ice_dbg["max_byte_v"] = st->ice_dbg_max_byte_v;
-        ice_dbg["first_nz_ci"] = st->ice_dbg_first_nz_ci;
-        ice_dbg["first_nz_ice_val"] = st->ice_dbg_first_nz_ice_val;
-        ice_dbg["first_nz_byte"] = st->ice_dbg_first_nz_byte;
-        ice_dbg["buf_post_nonzero"] = st->ice_dbg_buf_post_nonzero;
-        ice_dbg["buf_post_max"] = st->ice_dbg_buf_post_max;
-        ice_dbg["buf_size"] = st->ice_dbg_buf_size;
-        ice_dbg["pixels_written"] = st->ice_dbg_pixels_written;
-        out["ice_encode_dbg"] = ice_dbg;
-    }
 
     if (bool(opts.get("enable_diag", false))) {
         Dictionary ms;

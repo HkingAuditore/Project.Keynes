@@ -149,10 +149,19 @@ func tick(ctx) -> void:
 		push_error("[DCSystemScheduler] tick: topology not built; call build_topology() after register_system()")
 		return
 	# 同步配置
-	_sus.frame_budget_ms = frame_budget_ms
-	_sus.strict_budget_enabled = strict_budget_enabled
+	if _sus.has_method("set_frame_budget_ms"):
+		_sus.set_frame_budget_ms(frame_budget_ms)
+	else:
+		_sus.frame_budget_ms = frame_budget_ms
+	if _sus.has_method("set_strict_budget_enabled"):
+		_sus.set_strict_budget_enabled(strict_budget_enabled)
+	else:
+		_sus.strict_budget_enabled = strict_budget_enabled
 	_sus.sim_budget_window_size = sim_budget_window_size
-	_sus.sim_budget_warn_ms = sim_budget_warn_ms
+	if _sus.has_method("set_sim_budget_warn_ms"):
+		_sus.set_sim_budget_warn_ms(sim_budget_warn_ms)
+	else:
+		_sus.sim_budget_warn_ms = sim_budget_warn_ms
 	_sus.log_interval_ticks = log_interval_ticks
 	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_sus_scheduler 透传已删除——
 	# SusScheduler 现恒走 _ensure_ext＋ext-null fallback 单边分支。
