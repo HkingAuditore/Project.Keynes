@@ -244,7 +244,6 @@ var _fast_tick_count: int = 0
 const PERF_VERDICT_WINDOW: int = 200
 var _perf_verdict_total_ms: Array = []
 var _perf_verdict_warn_marks: Array = []  # 与 _perf_verdict_total_ms 平行：bool 数组
-var _last_weather_fronts_diff: Dictionary = {}
 var _fast_tick_warn_last_frame: int = 0
 var _slow_tick_count: int = 0
 
@@ -672,8 +671,6 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 否则 stage_a tick 会把上一份 fronts 重推一次 → weather_layer reset blend +
 	# forward-bias 算出"起点≈终点"→ 云冻结。
 	var fronts_changed: bool = bool(sus_result.get("fronts_changed", false))
-	var fronts_diff: Dictionary = sus_result.get("fronts_diff", {})
-	_last_weather_fronts_diff = fronts_diff.duplicate(true)
 	var t_sus_ms: float = (Time.get_ticks_usec() - t_sus_us0) / 1000.0
 
 	# Renderer 与 UI 同步：fronts 在跳日时会沿用 WeatherRefreshJob.last_fronts() 的
@@ -701,9 +698,7 @@ func _on_day_changed(_day_idx: int) -> void:
 		# 让海面分支按 hex 真值做风暴变色 + 风浪条纹（weather_layer 仍走 null 路径）。
 		if _renderer.has_method("refresh_terrain_weather_field_tex"):
 			_renderer.refresh_terrain_weather_field_tex()
-		if _renderer.has_method("sync_weather_fronts_signature") and not fronts_diff.is_empty():
-			_last_weather_fronts_diff["renderer"] = _renderer.sync_weather_fronts_signature(fronts, fronts_diff)
-		elif fronts_changed:
+		if fronts_changed:
 			_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
 

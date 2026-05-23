@@ -731,18 +731,6 @@ var _gdext_ocean_current_y_arr_cached: PackedFloat32Array = PackedFloat32Array()
 var _gdext_ocean_baseline_work_buf: PackedFloat32Array = PackedFloat32Array()
 var _gdext_ocean_temp_before_work_buf: PackedFloat32Array = PackedFloat32Array()
 var _gdext_ocean_anomaly_work_buf: PackedFloat32Array = PackedFloat32Array()
-var _climate_ocean_slice_state: Dictionary = {}
-
-# Generic climate chunk API：统一管理 pass 生命周期、token、游标与 abort。
-const _CLIMATE_PASS_OCEAN_WATER: String = "ocean_water"
-const _CLIMATE_PASS_OCEAN_LAND: String = "ocean_land"
-const _CLIMATE_PASS_SEA_ICE: String = "sea_ice"
-const _CLIMATE_PASS_STATUS_RUNNING: String = "running"
-const _CLIMATE_PASS_STATUS_DONE: String = "done"
-const _CLIMATE_PASS_STATUS_FAILED: String = "failed"
-const _CLIMATE_PASS_STATUS_ABORTED: String = "aborted"
-var _climate_pass_generation: int = 0
-var _climate_pass_states: Dictionary = {}
 
 # F.4 sea_ice daily pass C++ 加速运行时统计（charter §7 P2，5.1ms → 0.5ms 目标）。
 var _gdext_sea_ice_runs: int = 0
@@ -751,25 +739,6 @@ var _gdext_sea_ice_total_ms: float = 0.0
 var _gdext_sea_ice_first_attempt_logged: bool = false
 var _gdext_sea_ice_signature_checked: bool = false
 var _gdext_sea_ice_signature_ok: bool = false
-
-# [S2 fix 2026-05-23] sea_ice dt 补偿：sea_ice pass 原本假定"每天调一次"，
-# 但 daily_climate_refresh_stride=2 + climate_daily round 内 6 个 sub-pass 串行
-# 推进，导致两次 sea_ice pass 的真实游戏日间隔从 1 天滑到 ~10-30 天，海冰
-# 推进显著滞后于温度/季节相位。修复：记录上次 pass 时的 WorldClock.current_day，
-# 本次 pass 用 (now - last) 作为 dt_days 乘到 d_frac 上，让物理推进按"实际
-# 经过游戏天数"而不是"调用次数"驱动。clamp 上限 30 天用于：
-#   1) 开局（_last_sea_ice_pass_day = -1）走 1.0 默认，避免大跳；
-#   2) 长时间 pause 后恢复，避免一次推进几百天导致全图冻死/全融。
-# 详见 docs/dots-master-execution-handbook.md §sea_ice-dt-compensation。
-var _last_sea_ice_pass_day: float = -1.0
-
-# Sea ice 多 tick 状态机阶段。native 快路径会拆成：
-# native_compute → dense_sync_chunk → terrain_flip_chunk → commit。
-const _SEA_ICE_STAGE_NATIVE_COMPUTE: String = "native_compute"
-const _SEA_ICE_STAGE_DENSE_SYNC_CHUNK: String = "dense_sync_chunk"
-const _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK: String = "terrain_flip_chunk"
-const _SEA_ICE_STAGE_COMMIT: String = "commit"
-var _sea_ice_state_machine: Dictionary = {}
 
 # 方案 ① Step 1（确诊）：sea_ice pass total_wall_ms ≥ SLOW_DUMP_THRESHOLD_MS 时
 # 强制打印 _last_sea_ice_daily_breakdown 全字段（path/pack/refresh/native/native_wall/
@@ -932,7 +901,6 @@ func _ensure_row_tables(cfg: MapConfig, season: int) -> void:
 
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	cfg.validate()
-	_abort_all_climate_passes("generate_restart")
 
 	var effective_seed: int = cfg.seed if cfg.seed != 0 else randi()
 	_rng = RandomNumberGenerator.new()
@@ -1409,36 +1377,17 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	if _sus == null or cp == null:
 		return
-	var frame_ms: float = float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms)
-	# DEBUG 2026-05-23：clamp 上限从 2.0 临时抬到 50.0，验证「洋流/风更新慢」是否
-	# 是 budget 太紧导致。earth_like.tres 里 sim_frame_budget_ms=1600.0 本意就是「几乎
-	# 不限、为慢系统释放预算」，但之前被这里 clamp 砍回了 2.0。排查完成后需回滚到 2.0。
-	frame_ms = clampf(frame_ms, 0.25, 50.0)
 	if cp.get("sim_frame_budget_ms") != null:
-		if _sus.has_method("set_frame_budget_ms"):
-			_sus.set_frame_budget_ms(frame_ms)
-		else:
-			_sus.frame_budget_ms = frame_ms
+		_sus.frame_budget_ms = float(cp.sim_frame_budget_ms)
 	if cp.get("sim_strict_budget_enabled") != null:
-		if _sus.has_method("set_strict_budget_enabled"):
-			_sus.set_strict_budget_enabled(bool(cp.sim_strict_budget_enabled))
-		else:
-			_sus.strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
+		_sus.strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
 	if _sus.get("sim_budget_window_size") != null:
 		_sus.sim_budget_window_size = 300
 	if _sus.get("sim_budget_warn_ms") != null:
 		if cp.get("sim_budget_warn_ms") != null:
-			# DEBUG 2026-05-23：同步放宽 warn 上限到 50.0，避免高 frame_budget 下 WARN 污染日志。
-			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 50.0)
-			if _sus.has_method("set_sim_budget_warn_ms"):
-				_sus.set_sim_budget_warn_ms(warn_ms)
-			else:
-				_sus.sim_budget_warn_ms = warn_ms
+			_sus.sim_budget_warn_ms = float(cp.sim_budget_warn_ms)
 		elif cp.get("sim_frame_budget_ms") != null:
-			if _sus.has_method("set_sim_budget_warn_ms"):
-				_sus.set_sim_budget_warn_ms(frame_ms)
-			else:
-				_sus.sim_budget_warn_ms = frame_ms
+			_sus.sim_budget_warn_ms = float(cp.sim_frame_budget_ms)
 		else:
 			_sus.sim_budget_warn_ms = 1.0
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler flag 已删除——SUS
@@ -1447,18 +1396,25 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	if OS.is_debug_build():
 		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
 			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
-				frame_ms,
+				float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms),
 				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
 				float(cp.sim_slice_budget_ms) if cp.get("sim_slice_budget_ms") != null else 0.0,
 				float(cp.sim_upload_slice_budget_ms) if cp.get("sim_upload_slice_budget_ms") != null else 0.0,
 				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
 
 
-func _sim_job_should_must_run(_job, _upload_job: bool) -> bool:
-	# Extreme performance mode: no simulation job may bypass the global frame
-	# budget. It is acceptable for simulation rounds to lag; it is not acceptable
-	# for a mandatory job to create a main-thread spike.
-	return false
+func _sim_job_should_must_run(job, upload_job: bool) -> bool:
+	if upload_job or job == null:
+		return false
+	var job_id: StringName = &""
+	var raw_id = job.get("id")
+	if raw_id != null:
+		job_id = StringName(str(raw_id))
+	match job_id:
+		&"native_daily_sim", &"refresh_climate_daily", &"weather_refresh":
+			return true
+		_:
+			return false
 
 
 func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
@@ -1470,12 +1426,15 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		slice_ms = float(cp.sim_upload_slice_budget_ms)
 	elif cp.get("sim_slice_budget_ms") != null:
 		slice_ms = float(cp.sim_slice_budget_ms)
-	# DEBUG 2026-05-23：slice clamp 上限临时抬到 50ms，避免在 frame_budget 放到 50ms
-	# 后这里仍限死单 slice 质量。排查完成后需回滚到 (0.10, 1.5)/(0.10, 1.0)。
+	# plan/atlas-phase-slicing（2026-05-21）：upload Job 强制限上限。
+	# 原因：earth_like.tres 把 sim_upload_slice_budget_ms 设为 800ms（几乎不限），
+	# 与 phase-slicing（每 tick 推 1 phase ≈ 4ms）期望的"单 slice 跑超就让出"
+	# 矛盾——SUS 永远不会因为 slice_budget_us 触顶 break，只能靠 max_slices_per_tick=1
+	# 单线兜底。把 upload_job 的 slice_budget_ms 钳到 4ms（≈ 单 phase 上限），
+	# 形成 max_slices + slice_budget 双保险，即使 C++ DLL 是旧版（不识别 phase_budget）
+	# 也保留时间维度的 yield 能力。
 	if upload_job:
-		slice_ms = clampf(slice_ms, 0.10, 50.0)
-	else:
-		slice_ms = clampf(slice_ms, 0.10, 50.0)
+		slice_ms = clampf(slice_ms, 0.10, 4.0)
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
@@ -1483,10 +1442,7 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		var raw_id = job.get("id")
 		if raw_id != null:
 			job_id = StringName(str(raw_id))
-		# DEBUG 2026-05-23：ocean_currents / season_refresh 原本被强制 max_slices_per_tick=1，
-		# 与高 frame_budget 验证互斥（会看到 ran=6）。临时让 ocean_currents 跟随 strict_on
-		# 同路径，strict_off 时 0=不限，strict_on 时 1。排查完成后需回滚到原逻辑。
-		if upload_job or job_id == &"season_refresh":
+		if upload_job or job_id == &"ocean_currents" or job_id == &"season_refresh":
 			job.max_slices_per_tick = 1
 		else:
 			job.max_slices_per_tick = 1 if strict_on else 0
@@ -2012,25 +1968,20 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 	# main.gd 用它 gate renderer.set_weather_fronts 调用，避免每隔一 tick 重复推送
 	# 同一份 fronts 触发 weather_layer 内部的 blend reset → 云视觉冻结。
 	var fronts_changed: bool = false
-	var fronts_diff: Dictionary = {}
 	if _weather_refresh_job != null:
 		fronts = _weather_refresh_job.last_fronts()
 		weather_ran = _weather_refresh_job.did_run_last_tick()
 		fronts_changed = _weather_refresh_job.did_change_fronts_last_tick()
-		if _weather_refresh_job.has_method("last_fronts_diff_report"):
-			fronts_diff = _weather_refresh_job.last_fronts_diff_report()
 	elif _native_daily_sim_job != null:
 		var native_res: Dictionary = _native_daily_last_result
 		weather_ran = int(native_res.get("rc", -1)) == 0
 		fronts_changed = bool(native_res.get("fronts_changed", false))
 		fronts = native_res.get("fronts", [] as Array[WeatherFront])
-		fronts_diff = native_res.get("fronts_diff", {})
-	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed, "fronts_diff": fronts_diff }
+	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed }
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
 func sus_reset_all() -> void:
-	_abort_all_climate_passes("sus_reset_all")
 	if _sus != null:
 		_sus.reset_all_progress()
 
@@ -2333,15 +2284,19 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	var max_usec: int = 550
 	if cp.get("sim_slice_budget_ms") != null:
 		max_usec = maxi(50, int(round(float(cp.sim_slice_budget_ms) * 1000.0)))
-	max_usec = clampi(max_usec, 50, 1000)
 
 	# plan/season-stage4-chunking（2026-05-21）：stage_4_veg_feedback chunk 化。
-	# 内部 deadline 必须有 hard cap，否则资源调试预算会把 stage_4 退化为一次跑完 n*3 cell-iter。
+	# 原因：earth_like.tres 把 sim_slice_budget_ms 设为 800ms，导致 max_usec=800000us
+	# ≈ 不限，stage_4 内部的 deadline 检查永不触发 → 一次跑完 n*3 = 7200 cell-iter
 	# spike 到 15ms。stage_4 是 11 stage 中最重的（_vegetation_donor_amount × 6 邻居
 	# + Vector3i 哈希 + redecide 三段），单 stage 用 ~12ms 时实测会顶到 max_tick。
-	const STAGE2_MAX_USEC: int = 1000
-	const STAGE3_MAX_USEC: int = 1000
-	const STAGE4_MAX_USEC: int = 1000
+	# 这里把 stage_4 的预算压到 1.5ms（5/21 perf 显示 stage_4 cursor 4 帧 × 3ms，
+	# 拍打到 ~1.5ms 后会变 ~6-8 帧 × 1.5ms，不再撑爆 fast tick 10ms 预算）。
+	# 其它 stage（2/3）也加 cap：earth_like.tres 的 800ms budget 是上限，不是 SUS
+	# 想让单 slice 用满的预算。这里给各 stage 单独压到 ~2.5ms 同样原因。
+	const STAGE2_MAX_USEC: int = 2500
+	const STAGE3_MAX_USEC: int = 2500
+	const STAGE4_MAX_USEC: int = 1500
 	if stage == 2:
 		var stage2_usec: int = mini(max_usec, STAGE2_MAX_USEC)
 		return _run_season_stage2_micro(map, season_idx, cursor, stage2_usec)
@@ -3449,7 +3404,6 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 		if cp != null and cp.get("sim_slice_budget_ms") != null:
 			ms = float(cp.sim_slice_budget_ms)
 		budget_us = maxi(50, int(round(ms * 1000.0)))
-	budget_us = clampi(budget_us, 50, 1000)
 	var res: Dictionary = _data_core_world_ext.run_season_round_slice(_season_round_b_plus_handle, budget_us)
 	if res.is_empty() or bool(res.get("fallback", false)):
 		out["fallback"] = true
@@ -6561,302 +6515,6 @@ func _dump_weather_breakdown_if_slow() -> void:
 		])
 
 
-func _sea_ice_slice_budget_cells() -> int:
-	var cp := _c()
-	var slice_ms: float = 0.75
-	if cp != null and cp.get("sim_slice_budget_ms") != null:
-		slice_ms = float(cp.sim_slice_budget_ms)
-	return clampi(int(round(512.0 * clampf(slice_ms / 0.75, 0.5, 2.0))), 128, 1024)
-
-
-func _abort_sea_ice_state_machine(reason: String = "abort") -> void:
-	if _sea_ice_state_machine.is_empty():
-		return
-	_sea_ice_state_machine["status"] = _CLIMATE_PASS_STATUS_ABORTED
-	_sea_ice_state_machine["abort_reason"] = reason
-	_sea_ice_state_machine["ended_msec"] = Time.get_ticks_msec()
-	_sea_ice_state_machine = {}
-
-
-func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int) -> bool:
-	if map == null or _last_cfg == null:
-		return false
-	var cp := _c()
-	if cp == null:
-		return false
-	var cells_fast: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	var n_cells_fast: int = cells_fast.size()
-	var nb_idx_fast: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
-	var fast_indexed: bool = nb_idx_fast.size() >= n_cells_fast * 6
-	if _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_sea_ice_daily_pass") \
-			or not fast_indexed:
-		return false
-	if not _gdext_sea_ice_signature_checked:
-		_gdext_sea_ice_signature_checked = true
-		_gdext_sea_ice_signature_ok = _validate_gdext_method_signature("run_sea_ice_daily_pass", 2)
-		print("[sea_ice/F.4] sig probe result = %s（仅作诊断，不阻止下方 C++ 调用）" % str(_gdext_sea_ice_signature_ok))
-
-	var k_freeze: float = float(cp.sea_ice_freeze_rate)
-	var k_melt: float = float(cp.sea_ice_melt_rate)
-	var t_form: float = float(cp.sea_ice_form_threshold)
-	var t_melt: float = float(cp.sea_ice_melt_threshold)
-	var contagion: float = float(cp.sea_ice_neighbor_contagion)
-	var threshold: float = float(cp.sea_ice_terrain_threshold)
-	var hysteresis: float = float(cp.sea_ice_terrain_hysteresis)
-	var ice_delay: float = float(_last_cfg.OCEAN_CURRENT_ICE_DELAY)
-	var climate_anomaly_now: float = 0.0
-	if _world_clock_ref != null:
-		var ca_v = _world_clock_ref.get("climate_anomaly")
-		if ca_v != null:
-			climate_anomaly_now = float(ca_v)
-	if not is_equal_approx(climate_anomaly_now, 0.0):
-		var ice_thr_shift: float = 0.10 * climate_anomaly_now
-		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
-		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
-
-	var t_total_us: int = Time.get_ticks_usec()
-	var t_pack_us: int = Time.get_ticks_usec()
-	var base_terrain_input: PackedByteArray
-	if map.base_terrain_arr.size() == n_cells_fast:
-		base_terrain_input = map.base_terrain_arr
-	else:
-		if _gdext_sea_ice_base_terrain_buf.size() != n_cells_fast:
-			_gdext_sea_ice_base_terrain_buf.resize(n_cells_fast)
-		base_terrain_input = _gdext_sea_ice_base_terrain_buf
-		for i_build in range(n_cells_fast):
-			var c_build: HexCell = cells_fast[i_build]
-			_gdext_sea_ice_base_terrain_buf[i_build] = int(c_build.base_terrain) & 0xFF
-	var tta_input: PackedFloat32Array
-	if _gdext_ocean_anomaly_buf_cached.size() == n_cells_fast:
-		tta_input = _gdext_ocean_anomaly_buf_cached
-	elif map.temperature_transport_anomaly_arr.size() == n_cells_fast:
-		tta_input = map.temperature_transport_anomaly_arr
-	else:
-		if _gdext_sea_ice_tta_buf.size() != n_cells_fast:
-			_gdext_sea_ice_tta_buf.resize(n_cells_fast)
-		tta_input = _gdext_sea_ice_tta_buf
-		for i_tta in range(n_cells_fast):
-			tta_input[i_tta] = cells_fast[i_tta].temperature_transport_anomaly
-	var upw_input: PackedFloat32Array = map.upwelling_strength_arr \
-			if map.upwelling_strength_arr.size() == n_cells_fast \
-			else _gdext_sea_ice_upw_buf
-	if upw_input.size() != n_cells_fast:
-		_gdext_sea_ice_upw_buf.resize(n_cells_fast)
-		upw_input = _gdext_sea_ice_upw_buf
-		for i_upw in range(n_cells_fast):
-			upw_input[i_upw] = cells_fast[i_upw].upwelling_strength
-	var temp_input: PackedFloat32Array = map.temp_arr \
-			if map.temp_arr.size() == n_cells_fast \
-			else _gdext_sea_ice_temp_buf
-	if temp_input.size() != n_cells_fast:
-		_gdext_sea_ice_temp_buf.resize(n_cells_fast)
-		temp_input = _gdext_sea_ice_temp_buf
-		for i_temp in range(n_cells_fast):
-			temp_input[i_temp] = cells_fast[i_temp].temperature
-	var pack_ms: float = (Time.get_ticks_usec() - t_pack_us) / 1000.0
-	var water_ids: PackedByteArray = PackedByteArray([
-		int(TerrainType.TERRAIN.OCEAN) & 0xFF,
-		int(TerrainType.TERRAIN.COAST) & 0xFF,
-		int(TerrainType.TERRAIN.LAKE) & 0xFF,
-		int(TerrainType.TERRAIN.REEF) & 0xFF,
-		int(TerrainType.TERRAIN.KELP) & 0xFF,
-		int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
-	])
-	var knobs: Dictionary = {
-		"n_cells": n_cells_fast,
-		"k_freeze": k_freeze,
-		"k_melt": k_melt,
-		"t_form": t_form,
-		"t_melt": t_melt,
-		"contagion": contagion,
-		"threshold": threshold,
-		"hysteresis": hysteresis,
-		"ice_delay": ice_delay,
-		"enable_ocean_heat_transport": bool(_last_cfg.enable_ocean_heat_transport),
-		"terrain_lake_id": int(TerrainType.TERRAIN.LAKE),
-		"terrain_sea_ice_id": int(TerrainType.TERRAIN.SEA_ICE),
-		"terrain_ocean_id": int(TerrainType.TERRAIN.OCEAN),
-		"water_terrain_ids": water_ids,
-		"neighbor_indices": nb_idx_fast,
-		"base_terrain_arr": base_terrain_input,
-		"temp_transport_anomaly": tta_input,
-		"upwelling_strength": upw_input,
-		"cell_temperature_arr": temp_input,
-	}
-	var refresh_ms: float = 0.0
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		var t_refresh_us: int = Time.get_ticks_usec()
-		_data_core_world_ext.refresh_slots_from_map()
-		refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
-	var t_native_us: int = Time.get_ticks_usec()
-	var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
-	var dispatch_path: String = "scalar"
-	if rc < 0.0 and _data_core_world_ext.has_method("run_sea_ice_daily_pass_thread"):
-		dispatch_path = "thread_fallback"
-		rc = float(_data_core_world_ext.run_sea_ice_daily_pass_thread(knobs, season_phase, 4))
-	var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
-	if rc < 0.0:
-		_gdext_sea_ice_fallbacks += 1
-		return false
-	var facade_on: bool = false
-	if n_cells_fast > 0 and cells_fast[0] != null:
-		var c0_sync: HexCell = cells_fast[0] as HexCell
-		facade_on = c0_sync != null and c0_sync.is_facade_enabled()
-	_sea_ice_state_machine = {
-		"token": token,
-		"map_id": map.get_instance_id(),
-		"season_phase": season_phase,
-		"stage": _SEA_ICE_STAGE_DENSE_SYNC_CHUNK,
-		"cells": cells_fast,
-		"n": n_cells_fast,
-		"facade_on": facade_on,
-		"sync_cursor": 0,
-		"flip_cursor": 0,
-		"flip_to_ice_list": knobs.get("flip_to_ice_list", PackedInt32Array()),
-		"flip_to_base_list": knobs.get("flip_to_base_list", PackedInt32Array()),
-		"flip_to_base_terrain": knobs.get("flip_to_base_terrain", PackedByteArray()),
-		"pack_ms": pack_ms,
-		"refresh_ms": refresh_ms,
-		"native_ms": rc,
-		"native_wall_ms": native_wall_ms,
-		"sync_ms": 0.0,
-		"flip_ms": 0.0,
-		"total_start_us": t_total_us,
-		"water": int(knobs.get("stat_water_count", 0)),
-		"flipped": int(knobs.get("stat_flipped_count", 0)),
-		"dispatch_path": dispatch_path,
-	}
-	_gdext_sea_ice_runs += 1
-	_gdext_sea_ice_total_ms += rc
-	return true
-
-
-func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: int) -> Dictionary:
-	if _sea_ice_state_machine.is_empty() \
-			or int(_sea_ice_state_machine.get("map_id", -1)) != map.get_instance_id() \
-			or int(_sea_ice_state_machine.get("token", 0)) != token:
-		if not _begin_sea_ice_state_machine(map, season_phase, token):
-			var fb: Dictionary = _run_climate_pass_legacy_fallback(_CLIMATE_PASS_SEA_ICE, map, season_phase, token, "native_unavailable")
-			_climate_pass_states.erase(_CLIMATE_PASS_SEA_ICE)
-			return fb
-		var native_result: Dictionary = _make_climate_pass_result(_CLIMATE_PASS_SEA_ICE, false, 0.0, 0, 0, 0, _CLIMATE_PASS_STATUS_RUNNING, token, _SEA_ICE_STAGE_NATIVE_COMPUTE)
-		native_result["cursor_remaining"] = int(_sea_ice_state_machine.get("n", 0))
-		native_result["budget_cells"] = _sea_ice_slice_budget_cells()
-		return native_result
-	var stage: String = str(_sea_ice_state_machine.get("stage", _SEA_ICE_STAGE_DENSE_SYNC_CHUNK))
-	var n: int = int(_sea_ice_state_machine.get("n", 0))
-	var budget: int = _sea_ice_slice_budget_cells()
-	if stage == _SEA_ICE_STAGE_DENSE_SYNC_CHUNK:
-		var sync_start: int = int(_sea_ice_state_machine.get("sync_cursor", 0))
-		var sync_end: int = mini(n, sync_start + budget)
-		var t_sync_us: int = Time.get_ticks_usec()
-		if bool(_sea_ice_state_machine.get("facade_on", false)) and _data_core_world != null and map.sea_ice_frac_arr.size() >= n:
-			var cid_si: int = _data_core_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC)
-			if cid_si >= 0 and _data_core_world.has_method("write_f32_indexed"):
-				var idx: PackedInt32Array = PackedInt32Array()
-				var vals: PackedFloat32Array = PackedFloat32Array()
-				idx.resize(sync_end - sync_start)
-				vals.resize(sync_end - sync_start)
-				for k in range(sync_end - sync_start):
-					var ci: int = sync_start + k
-					idx[k] = ci
-					vals[k] = map.sea_ice_frac_arr[ci]
-				_data_core_world.write_f32_indexed(cid_si, idx, vals)
-			else:
-				var cells_sync: Array = _sea_ice_state_machine.get("cells", [])
-				for i_sync in range(sync_start, sync_end):
-					(cells_sync[i_sync] as HexCell).sea_ice_fraction = map.sea_ice_frac_arr[i_sync]
-		else:
-			var cells_sync_fb: Array = _sea_ice_state_machine.get("cells", [])
-			for i_sync_fb in range(sync_start, sync_end):
-				(cells_sync_fb[i_sync_fb] as HexCell).sea_ice_fraction = map.sea_ice_frac_arr[i_sync_fb]
-		_sea_ice_state_machine["sync_ms"] = float(_sea_ice_state_machine.get("sync_ms", 0.0)) + (Time.get_ticks_usec() - t_sync_us) / 1000.0
-		_sea_ice_state_machine["sync_cursor"] = sync_end
-		if sync_end >= n:
-			_sea_ice_state_machine["stage"] = _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK
-		var sync_result: Dictionary = _make_climate_pass_result(_CLIMATE_PASS_SEA_ICE, false, (Time.get_ticks_usec() - t_sync_us) / 1000.0,
-				sync_end - sync_start, sync_start, sync_end, _CLIMATE_PASS_STATUS_RUNNING, token, _SEA_ICE_STAGE_DENSE_SYNC_CHUNK)
-		sync_result["cursor_remaining"] = maxi(0, n - sync_end)
-		sync_result["budget_cells"] = budget
-		sync_result["next_stage"] = str(_sea_ice_state_machine.get("stage", _SEA_ICE_STAGE_DENSE_SYNC_CHUNK))
-		return sync_result
-	if stage == _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK:
-		var flip_to_ice_list: PackedInt32Array = _sea_ice_state_machine.get("flip_to_ice_list", PackedInt32Array())
-		var flip_to_base_list: PackedInt32Array = _sea_ice_state_machine.get("flip_to_base_list", PackedInt32Array())
-		var flip_to_base_terrain: PackedByteArray = _sea_ice_state_machine.get("flip_to_base_terrain", PackedByteArray())
-		var total_flips: int = flip_to_ice_list.size() + flip_to_base_list.size()
-		var flip_start: int = int(_sea_ice_state_machine.get("flip_cursor", 0))
-		var flip_end: int = mini(total_flips, flip_start + budget)
-		var t_flip_us: int = Time.get_ticks_usec()
-		var terrain_arr_ref: PackedByteArray = map.terrain_arr
-		var terrain_arr_n: int = terrain_arr_ref.size()
-		var sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
-		var terrain_facade_on: bool = bool(_sea_ice_state_machine.get("facade_on", false))
-		var cells_flip: Array = _sea_ice_state_machine.get("cells", [])
-		for f in range(flip_start, flip_end):
-			if f < flip_to_ice_list.size():
-				var idx_i: int = flip_to_ice_list[f]
-				if idx_i >= 0 and idx_i < n:
-					if not terrain_facade_on:
-						(cells_flip[idx_i] as HexCell).apply_terrain(TerrainType.TERRAIN.SEA_ICE)
-					if idx_i < terrain_arr_n:
-						terrain_arr_ref[idx_i] = sea_ice_id
-			else:
-				var base_i: int = f - flip_to_ice_list.size()
-				var idx_b: int = flip_to_base_list[base_i]
-				if idx_b >= 0 and idx_b < n and base_i < flip_to_base_terrain.size():
-					var target_terr: int = int(flip_to_base_terrain[base_i])
-					if not terrain_facade_on:
-						(cells_flip[idx_b] as HexCell).apply_terrain(target_terr)
-					if idx_b < terrain_arr_n:
-						terrain_arr_ref[idx_b] = target_terr & 0xFF
-		map.terrain_arr = terrain_arr_ref
-		_sea_ice_state_machine["flip_ms"] = float(_sea_ice_state_machine.get("flip_ms", 0.0)) + (Time.get_ticks_usec() - t_flip_us) / 1000.0
-		_sea_ice_state_machine["flip_cursor"] = flip_end
-		if flip_end >= total_flips:
-			_sea_ice_state_machine["stage"] = _SEA_ICE_STAGE_COMMIT
-		var flip_result: Dictionary = _make_climate_pass_result(_CLIMATE_PASS_SEA_ICE, false, (Time.get_ticks_usec() - t_flip_us) / 1000.0,
-				flip_end - flip_start, flip_start, flip_end, _CLIMATE_PASS_STATUS_RUNNING, token, _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK)
-		flip_result["cursor_remaining"] = maxi(0, total_flips - flip_end)
-		flip_result["budget_cells"] = budget
-		flip_result["next_stage"] = str(_sea_ice_state_machine.get("stage", _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK))
-		return flip_result
-	var t_commit_us: int = Time.get_ticks_usec()
-	if bool(_sea_ice_state_machine.get("facade_on", false)) and _data_core_world != null and _data_core_world.has_method("write_u8_dense"):
-		var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-		if cid_terrain >= 0:
-			_data_core_world.write_u8_dense(cid_terrain, map.terrain_arr)
-	var water_count: int = int(_sea_ice_state_machine.get("water", 0))
-	var flipped_count: int = int(_sea_ice_state_machine.get("flipped", 0))
-	if water_count > 0:
-		var ratio: float = float(flipped_count) / float(water_count)
-		if ratio > 0.03:
-			push_warning("[sea_ice_daily/F.4] %d/%d (%.1f%%) cells flipped on phase=%.3f — possible bulk-switch regression" % [
-				flipped_count, water_count, ratio * 100.0, season_phase
-			])
-	_last_sea_ice_daily_breakdown = {
-		"path": "gdext_state_machine",
-		"stage": _SEA_ICE_STAGE_COMMIT,
-		"pack_ms": float(_sea_ice_state_machine.get("pack_ms", 0.0)),
-		"refresh_ms": float(_sea_ice_state_machine.get("refresh_ms", 0.0)),
-		"native_ms": float(_sea_ice_state_machine.get("native_ms", 0.0)),
-		"native_wall_ms": float(_sea_ice_state_machine.get("native_wall_ms", 0.0)),
-		"sync_ms": float(_sea_ice_state_machine.get("sync_ms", 0.0)),
-		"flip_ms": float(_sea_ice_state_machine.get("flip_ms", 0.0)),
-		"commit_ms": (Time.get_ticks_usec() - t_commit_us) / 1000.0,
-		"total_wall_ms": (Time.get_ticks_usec() - int(_sea_ice_state_machine.get("total_start_us", Time.get_ticks_usec()))) / 1000.0,
-		"water": water_count,
-		"flipped": flipped_count,
-	}
-	_dump_sea_ice_breakdown_if_slow()
-	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
-	_climate_pass_states.erase(_CLIMATE_PASS_SEA_ICE)
-	_sea_ice_state_machine = {}
-	return _make_climate_pass_result(_CLIMATE_PASS_SEA_ICE, true, (Time.get_ticks_usec() - t_commit_us) / 1000.0,
-			0, -1, -1, _CLIMATE_PASS_STATUS_DONE, token, _SEA_ICE_STAGE_COMMIT)
-
-
 # QA 异常守卫：当日 SEA_ICE 翻转 cell 数 > 总水体数 3% 时打印一次 WARN
 # （帮助定位"全图统一切换"的回归）。
 func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
@@ -6895,48 +6553,6 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var ice_thr_shift: float = sea_ice_climate_anomaly_strength * climate_anomaly_now
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
-
-	# ─── [S2 fix 2026-05-23] dt_days 补偿（修"d_frac per-call 没乘 dt"）──
-	# 原 d_frac 公式 = k * (t_form - t_eff) - k_melt * (t_eff - t_melt)，假定
-	# "每天调一次"。但 daily_climate_refresh_stride=2 + round 内 6 sub-pass 串行
-	# 推进，实际两次 sea_ice pass 间隔常达 10-30 游戏天 → 海冰只增长了 1 天的量
-	# → 季节流逝但海冰几乎不动。解法：用 WorldClock.current_day 单调天计差作为
-	# dt_days，乘到 d_frac 上。current_day 是浮点累加（不取模），跨年也安全。
-	# clamp [0, 30]：上限防 pause 复位 / 开局过冲；下限阻断负值（同 tick 重入）。
-	#
-	# 关键实现细节（2026-05-23 二轮修复）：
-	# 不通过新增 knob 把 dt_days 传给 C++，而是直接把 k_freeze / k_melt 在 GDScript
-	# 端先乘以 dt_days 再传给 C++。这样：
-	#   1. 无需重编 gdext .dylib 即可生效（兼容旧二进制）；
-	#   2. C++ 端公式 d_frac = k * Δt 形式上等价于 d_frac = (k * dt) * 1；
-	#   3. fallback GDScript 路径仍按 k_freeze * dt_days 显式乘，与 C++ 路径数值一致。
-	var dt_days: float = 1.0
-	if _world_clock_ref != null:
-		var now_day_v = _world_clock_ref.get("current_day")
-		if now_day_v != null:
-			var now_day: float = float(now_day_v)
-			if _last_sea_ice_pass_day >= 0.0:
-				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, 30.0)
-				if dt_days <= 0.0:
-					dt_days = 1.0  # 同 tick 重入兜底
-			# else: 第一次调用，保持 dt_days = 1.0 默认
-			_last_sea_ice_pass_day = now_day
-
-	# 把 k 放大到"积累 dt_days 个游戏日的总变化率"。C++ 与 GDScript fallback
-	# 都从这两个 _scaled 变量取值。
-	var k_freeze_scaled: float = k_freeze * dt_days
-	var k_melt_scaled: float = k_melt * dt_days
-
-	# 诊断：每 365 次或前 5 次打印一次 dt_days，验证补偿是否在工作。
-	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
-			or ((_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks) % 365) == 0:
-		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k_freeze x%.2f, k_melt x%.2f)" % [
-			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
-			dt_days,
-			_last_sea_ice_pass_day,
-			dt_days,
-			dt_days,
-		])
 
 	# ─── Phase F.4：DCWorldExt C++ 快路径（charter §7 P2，5.1ms → 0.5ms）─
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sea_ice flag 已删，现走 ext +
@@ -7047,10 +6663,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 		var knobs: Dictionary = {
 			"n_cells": n_cells_fast,
-			# [S2 fix 2026-05-23] k_freeze / k_melt 已在 GDScript 端乘过 dt_days，
-			# 让 C++ 端按"每调用一次"语义算就是正确的物理推进量。
-			"k_freeze": k_freeze_scaled,
-			"k_melt": k_melt_scaled,
+			"k_freeze": k_freeze,
+			"k_melt": k_melt,
 			"t_form": t_form,
 			"t_melt": t_melt,
 			"contagion": contagion,
@@ -7084,12 +6698,86 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var _sea_ice_dispatch_path: String = "scalar"
 		var t_native_us: int = Time.get_ticks_usec()
 		var rc: float = float(_data_core_world_ext.run_sea_ice_daily_pass(knobs, season_phase))
-		if rc < 0.0 and _data_core_world_ext.has_method("run_sea_ice_daily_pass_thread"):
-			_sea_ice_dispatch_path = "thread_fallback"
-			rc = float(_data_core_world_ext.run_sea_ice_daily_pass_thread(knobs, season_phase, 4))
 		var native_wall_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
-		# Plan-C full-map diagnostics were removed from this hot path. Slow-path
-		# breakdown logging below is retained and uses already-collected timings.
+		# === Plan-C diag (临时) === 检查 CPU 端海冰浮点是否真的在动
+		if Engine.get_process_frames() % 60 == 0:
+			var _max_f: float = 0.0
+			var _nonzero: int = 0
+			for _ci in range(n_cells_fast):
+				var _f: float = float(cells_fast[_ci].sea_ice_fraction)
+				if _f > 0.0:
+					_nonzero += 1
+					if _f > _max_f:
+						_max_f = _f
+			# 同时读 map.sea_ice_frac_arr（C++ flush 的目标）做对比
+			var _arr_max: float = 0.0
+			var _arr_nonzero: int = 0
+			var _arr_size: int = map.sea_ice_frac_arr.size()
+			for _ai in range(_arr_size):
+				var _af: float = float(map.sea_ice_frac_arr[_ai])
+				if _af > 0.0:
+					_arr_nonzero += 1
+					if _af > _arr_max: _arr_max = _af
+			# facade 是否启用？
+			var _facade_on: bool = false
+			if n_cells_fast > 0 and cells_fast[0] != null:
+				_facade_on = cells_fast[0].is_facade_enabled()
+			# 温度统计
+			var _t_min: float = 1.0e9
+			var _t_max: float = -1.0e9
+			var _t_sum: float = 0.0
+			var _t_n: int = 0
+			var _t_below_form: int = 0
+			var _t_below_form_water: int = 0
+			for _ti in range(n_cells_fast):
+				var _t: float = float(temp_input[_ti])
+				_t_sum += _t
+				_t_n += 1
+				if _t < _t_min: _t_min = _t
+				if _t > _t_max: _t_max = _t
+				if _t < t_form:
+					_t_below_form += 1
+					if int(base_terrain_input[_ti]) in [int(TerrainType.TERRAIN.OCEAN), int(TerrainType.TERRAIN.COAST), int(TerrainType.TERRAIN.SEA_ICE)]:
+						_t_below_form_water += 1
+			var _t_mean: float = (_t_sum / float(_t_n)) if _t_n > 0 else 0.0
+			print("[plan-c/sea_ice] frame=%d season_phase=%.3f rc=%.3f t_form=%.3f t_melt=%.3f k_freeze=%.3f k_melt=%.3f thr=%.3f hys=%.3f nonzero=%d max_frac=%.3f" % [
+				Engine.get_process_frames(), season_phase, rc, t_form, t_melt, k_freeze, k_melt, threshold, hysteresis, _nonzero, _max_f])
+			print("[plan-c/temp_in] t_min=%.3f t_max=%.3f t_mean=%.3f below_t_form=%d below_t_form_water=%d temp_input_size=%d" % [
+				_t_min, _t_max, _t_mean, _t_below_form, _t_below_form_water, temp_input.size()])
+			# 2026-05-19 plan-c：极点温度抽样诊断（4 个 water cell：最北 / 最南 / 25%N / 75%S 各 1）
+			# 目的：定位"南北极同时白"的真因——是季节信号反相？是 _insol_dev 极区截断？
+			var _poles_dump: PackedStringArray = PackedStringArray()
+			var _pole_ny_targets: PackedFloat32Array = PackedFloat32Array([0.02, 0.25, 0.75, 0.98])
+			for _pole_t in _pole_ny_targets:
+				var _best_i: int = -1
+				var _best_d: float = 1.0e9
+				for _pi in range(n_cells_fast):
+					if int(base_terrain_input[_pi]) != int(TerrainType.TERRAIN.OCEAN) \
+							and int(base_terrain_input[_pi]) != int(TerrainType.TERRAIN.SEA_ICE):
+						continue
+					var _ny_pi: float = _cube_row_norm(cells_fast[_pi], _last_cfg)
+					var _d: float = absf(_ny_pi - _pole_t)
+					if _d < _best_d:
+						_best_d = _d
+						_best_i = _pi
+				if _best_i < 0:
+					_poles_dump.append("ny~%.2f=NONE" % _pole_t)
+					continue
+				var _c_pi: HexCell = cells_fast[_best_i]
+				var _ny_v: float = _cube_row_norm(_c_pi, _last_cfg)
+				_poles_dump.append("ny=%.2f temp=%.3f baseline=%.3f off=%.3f sif=%.3f terr=%d" % [
+					_ny_v, float(temp_input[_best_i]), _c_pi.temp_baseline,
+					_c_pi.temp_season_offset, _c_pi.sea_ice_fraction, int(_c_pi.terrain)])
+			print("[plan-c/poles] phase=%.3f | %s" % [season_phase, " | ".join(_poles_dump)])
+			# 关键对比：map.sea_ice_frac_arr (C++ flush target) vs cell.sea_ice_fraction (facade getter)
+			# 以及 C++ 给的统计数字
+			var _w_cpp: int = int(knobs.get("stat_water_count", -1))
+			var _f_cpp: int = int(knobs.get("stat_flipped_count", -1))
+			var _has_flip_list: bool = knobs.has("flip_to_ice_list")
+			var _flip_list_n: int = (knobs.get("flip_to_ice_list", PackedInt32Array()) as PackedInt32Array).size() if _has_flip_list else -1
+			print("[plan-c/flush] facade=%s map.arr_size=%d arr_nonzero=%d arr_max=%.3f cells_nonzero=%d cells_max=%.3f cpp_water=%d cpp_flipped=%d flip_list_n=%d" % [
+				str(_facade_on), _arr_size, _arr_nonzero, _arr_max, _nonzero, _max_f, _w_cpp, _f_cpp, _flip_list_n])
+		# === end diag ===
 		if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 3:
 			print("[sea_ice/F.4] DEBUG call#%d: path=%s rc=%.4f n_cells=%d enable_oht=%s" % [
 				_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
@@ -7134,31 +6822,22 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			var _terrain_arr_ref: PackedByteArray = map.terrain_arr
 			var _terrain_arr_n: int = _terrain_arr_ref.size()
 			var _sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
-			var _terrain_facade_on: bool = n_cells_fast > 0 and cells_fast[0] != null \
-				and (cells_fast[0] as HexCell).is_facade_enabled()
 			for i_flip in range(flip_to_ice_list.size()):
 				var idx_i: int = flip_to_ice_list[i_flip]
 				if idx_i >= 0 and idx_i < n_cells_fast:
-					if not _terrain_facade_on:
-						(cells_fast[idx_i] as HexCell).apply_terrain(TerrainType.TERRAIN.SEA_ICE)
+					(cells_fast[idx_i] as HexCell).apply_terrain(TerrainType.TERRAIN.SEA_ICE)
 					if idx_i < _terrain_arr_n:
 						_terrain_arr_ref[idx_i] = _sea_ice_id
 			for i_back in range(flip_to_base_list.size()):
 				var idx_b: int = flip_to_base_list[i_back]
 				if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
 					var target_terr: int = int(flip_to_base_terrain[i_back])
-					if not _terrain_facade_on:
-						(cells_fast[idx_b] as HexCell).apply_terrain(target_terr)
+					(cells_fast[idx_b] as HexCell).apply_terrain(target_terr as TerrainType.TERRAIN)
 					if idx_b < _terrain_arr_n:
 						_terrain_arr_ref[idx_b] = target_terr & 0xFF
 			# CoW：PackedByteArray 是引用语义，但写回 map.terrain_arr 让 detach 后的 CoW
 			# buffer 与 map_data 持有的 backing 同步（防御性赋值）
 			map.terrain_arr = _terrain_arr_ref
-			if _terrain_facade_on and _data_core_world != null \
-					and _data_core_world.has_method("write_u8_dense"):
-				var _cid_terrain_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-				if _cid_terrain_dense >= 0:
-					_data_core_world.write_u8_dense(_cid_terrain_dense, _terrain_arr_ref)
 			var flip_ms: float = (Time.get_ticks_usec() - t_flip_us) / 1000.0
 
 			var water_count_cpp: int = int(knobs.get("stat_water_count", 0))
@@ -7284,10 +6963,9 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var k_melt_eff: float = k_melt
 
 		# 增量更新：温度低于结冰阈值 → 增长；高于融化阈值 → 衰减
-		# [S2 fix 2026-05-23] 乘 dt_days：见函数入口 dt_days 计算注释。
 		var delta_freeze: float = k_freeze_eff * maxf(0.0, t_form - t_eff)
 		var delta_melt: float = k_melt_eff * maxf(0.0, t_eff - t_melt)
-		var d_frac: float = (delta_freeze - delta_melt) * dt_days
+		var d_frac: float = delta_freeze - delta_melt
 		var prev_frac: float = cell.sea_ice_fraction
 		var new_frac: float = clampf(prev_frac + d_frac, 0.0, 1.0)
 		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
@@ -7970,6 +7648,24 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		_dm_global_yesterday = lerpf(_dm_global_yesterday, dm_today, _DRIFT_EMA_ALPHA)
 		_ds_global_yesterday = lerpf(_ds_global_yesterday, ds_today, _DRIFT_EMA_ALPHA)
 
+	# [DIAG 2026-05-12] 全蓝退化定位：Pass-A 末尾打 temp_a 全图 min/max/mean，
+	# 仅前 8 个 round 打一次。如果 Pass-A 末尾已是 mean ≈ 0.5 但其他 sub-pass 后 mean ≈ 0
+	# → bug 在后续 pass。如果 Pass-A 末尾 mean 已经 ≈ 0 → bug 在 Pass-A 内或 SoA view 错连。
+	if _daily_climate_call_count <= 8:
+		var _tmin: float = 1.0
+		var _tmax: float = 0.0
+		var _tsum: float = 0.0
+		var _tcnt: int = temp_a.size()
+		for _ti in range(_tcnt):
+			var _tv: float = temp_a[_ti]
+			if _tv < _tmin: _tmin = _tv
+			if _tv > _tmax: _tmax = _tv
+			_tsum += _tv
+		var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
+		print("[DIAG pass_a_end] day=%d phase=%.3f temp_a min=%.4f max=%.4f mean=%.4f n=%d" % [
+			_daily_climate_call_count, season_phase, _tmin, _tmax, _tmean, _tcnt
+		])
+
 # F.3 helper：按 VegetationType.VEG enum 顺序构建 foliage density table。
 # 与 _vegetation_foliage_density() 等价（clamp(transp/0.06, 0, 1)）。第一次调用
 # 时填好 cache，后续 zero-cost。
@@ -8055,14 +7751,13 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_gdext_climate_b_signature_checked = true
 			_gdext_climate_b_signature_ok = _validate_gdext_method_signature("run_climate_pass_b", 1)
 			print("[climate_b/F.3] sig probe result = %s（仅作诊断）" % str(_gdext_climate_b_signature_ok))
-		var tta_arr: PackedFloat32Array = map.temperature_transport_anomaly_arr
-		if tta_arr.size() != n_for_f3:
-			var cells_for_f3: Array = map.iter_cells()
-			tta_arr = PackedFloat32Array()
-			tta_arr.resize(n_for_f3)
-			for ti in range(n_for_f3):
-				var cti: HexCell = cells_for_f3[ti]
-				tta_arr[ti] = float(cti.temperature_transport_anomaly)
+		# 提取 cells[i].temperature_transport_anomaly 到 PackedFloat32Array（同 F.1）
+		var cells_for_f3: Array = map.iter_cells()
+		var tta_arr: PackedFloat32Array = PackedFloat32Array()
+		tta_arr.resize(n_for_f3)
+		for ti in range(n_for_f3):
+			var cti: HexCell = cells_for_f3[ti]
+			tta_arr[ti] = float(cti.temperature_transport_anomaly)
 		var foliage_table: PackedFloat32Array = _build_climate_b_foliage_table()
 		var knobs_b: Dictionary = {
 			"n_cells": n_for_f3,
@@ -8092,16 +7787,8 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# dots-flag-prune-pr1 round 2: use_gdext_pass_b_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_climate_pass_b，C++ 内部根据 CPU 特性 /
 		# n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
+		var rc_b: float = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
 		var _b_dispatch_path: String = "scalar"
-		var rc_b: float = -1.0
-		if _data_core_world_ext.has_method("run_climate_pass_b_simd"):
-			_b_dispatch_path = "simd"
-			rc_b = float(_data_core_world_ext.run_climate_pass_b_simd(knobs_b))
-		else:
-			rc_b = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
-		if rc_b < 0.0 and _b_dispatch_path == "simd":
-			_b_dispatch_path = "scalar_fallback"
-			rc_b = float(_data_core_world_ext.run_climate_pass_b(knobs_b))
 		# 强制无脑诊断：前 3 次调用打 rc 值 + 派发路径
 		if _gdext_climate_b_runs + _gdext_climate_b_fallbacks < 3:
 			print("[climate_b/F.3] DEBUG call#%d: path=%s rc=%.4f n_cells=%d rs_lookback=%d" % [
@@ -8111,10 +7798,14 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if rc_b >= 0.0:
 			# C++ 写完 cell_temp / cell_moisture SoA。fastpath HexCell 模式下 cell.temperature
 			# / cell.moisture 是 SoA alias，下游 pass 直接看到 C++ 写入；不需要回写。
-			# 注意：C++ 没写 cell.temperature_breakdown UI dict；该字段只在 inspector
-			# 选中时有用，允许 GDScript fallback 路径按需补回。
+			# 注意：C++ 没写 cell.temperature_breakdown UI dict 也没打 [DIAG pass_b_end]——
+			# 前者只在 inspector 选中时有用（百分之零点几的 cell），后者仅前 8 个 round 的诊断
+			# 信息，两者都允许 GDScript fallback 路径"按需"补回。当前 F.3 接管的稳态运行
+			# 不需要这两项。
 			_gdext_climate_b_runs += 1
 			_gdext_climate_b_total_ms += rc_b
+			# 末尾 [DIAG pass_b_end] 由 C++ 路径不打；如果 _daily_climate_call_count <= 8
+			# 期间想保留 baseline 对照，可以在这里打一行（GDScript 自己 dump SoA 即可）。
 			if _gdext_climate_b_runs == 1:
 				print("[climate_b/F.3] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)" % [_b_dispatch_path, rc_b])
 			return
@@ -8391,6 +8082,24 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 				_pb_dirty_mask.size(), _pb_dirty_count_local, _dirty_after_pb,
 			])
 
+	# [DIAG 2026-05-12] Pass-B 末尾打 temp_a 全图统计（前 8 个 round）。
+	# 与 Pass-A 末尾配对解读：若 Pass-B 末尾 mean ≈ 0 但 Pass-A 末尾正常 → bug 在 Pass-B 内
+	# （albedo / coastal / landform 的 d_albedo / d_coastal / d_landform 累加错误）。
+	if _daily_climate_call_count <= 8:
+		var _tmin: float = 1.0
+		var _tmax: float = 0.0
+		var _tsum: float = 0.0
+		var _tcnt: int = temp_a.size()
+		for _ti in range(_tcnt):
+			var _tv: float = temp_a[_ti]
+			if _tv < _tmin: _tmin = _tv
+			if _tv > _tmax: _tmax = _tv
+			_tsum += _tv
+		var _tmean: float = (_tsum / float(_tcnt)) if _tcnt > 0 else 0.0
+		print("[DIAG pass_b_end] day=%d phase=%.3f temp_a min=%.4f max=%.4f mean=%.4f n=%d" % [
+			_daily_climate_call_count, season_phase, _tmin, _tmax, _tmean, _tcnt
+		])
+
 func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0)
@@ -8408,12 +8117,10 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 	var pos_y_a: PackedFloat32Array = _dc_views["pos_y"] if _use_dc else map.cell_pos_y_arr
 	var ocx_a: PackedFloat32Array = _dc_views["ocean_current_x"] if _use_dc else map.ocean_current_x_arr
 	var ocy_a: PackedFloat32Array = _dc_views["ocean_current_y"] if _use_dc else map.ocean_current_y_arr
-	var lat_a: PackedFloat32Array = _dc_views["lat_norm"] if _use_dc else map.cell_lat_norm_arr
 	# Phase 3a Step 2.1.a：ema_initialized SoA 别名
 	var ema_init_a: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
 
 	# baseline + temp_before 快照。复用 PackedArray，避免每个 climate round 分配。
-	# DOTS boundary：优先读 lat_norm SoA，避免逐 HexCell 调 _cube_row_norm。
 	if _gdext_ocean_baseline_work_buf.size() != n:
 		_gdext_ocean_baseline_work_buf.resize(n)
 	if _gdext_ocean_temp_before_work_buf.size() != n:
@@ -8421,10 +8128,11 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 	var baseline: PackedFloat32Array = _gdext_ocean_baseline_work_buf
 	var temp_before: PackedFloat32Array = _gdext_ocean_temp_before_work_buf
 	for i in range(n):
+		var c: HexCell = cells[i]
 		if ema_init_a[i] != 0:
 			baseline[i] = temp_baseline_a[i]
 		else:
-			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
+			var ny: float = _cube_row_norm(c, _last_cfg)
 			baseline[i] = _compute_temperature(ny, elev_a[i])
 		var t0: float = temp_a[i]
 		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
@@ -8487,11 +8195,8 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		# dots-flag-prune-pr1 round 2: use_gdext_ocean_water_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_water_pass，C++ 内部根据 CPU
 		# 特性 / n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
-		var _w_dispatch_path: String = "scalar"
 		var rc_w: float = float(_data_core_world_ext.run_ocean_water_pass(knobs_w))
-		if rc_w < 0.0 and _data_core_world_ext.has_method("run_ocean_water_pass_thread"):
-			_w_dispatch_path = "thread_fallback"
-			rc_w = float(_data_core_world_ext.run_ocean_water_pass_thread(knobs_w, 4))
+		var _w_dispatch_path: String = "scalar"
 		if _gdext_ocean_water_runs + _gdext_ocean_water_fallbacks < 3:
 			print("[ocean_water/F.2a] DEBUG call#%d: path=%s rc=%.4f n=%d advect=%d" % [
 				_gdext_ocean_water_runs + _gdext_ocean_water_fallbacks + 1,
@@ -8669,13 +8374,13 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			fallback_baseline_arr.resize(n)
 			var temp_baseline_a_l: PackedFloat32Array = _dc_views["temp_baseline"] if _use_dc else map.temp_baseline_arr
 			var elev_a_l: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
-			var lat_a_l: PackedFloat32Array = _dc_views["lat_norm"] if _use_dc else map.cell_lat_norm_arr
 			var ema_init_a_l: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
 			for bi in range(n):
 				if ema_init_a_l[bi] != 0:
 					fallback_baseline_arr[bi] = temp_baseline_a_l[bi]
 				else:
-					var ny_b: float = lat_a_l[bi] if lat_a_l.size() > bi else _cube_row_norm(cells[bi], _last_cfg)
+					var c_b: HexCell = cells[bi]
+					var ny_b: float = _cube_row_norm(c_b, _last_cfg)
 					fallback_baseline_arr[bi] = _compute_temperature(ny_b, elev_a_l[bi])
 		# 准备 ocean_current x/y：优先复用 water pass cache；否则从 cells 提取
 		var ocx_arr_l: PackedFloat32Array
@@ -8709,11 +8414,8 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		# dots-flag-prune-pr1 round 2: use_gdext_ocean_land_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_land_pass，C++ 内部根据 CPU
 		# 特性 / n_cells 自动选择 scalar / SIMD / threaded 三档执行路径。
-		var _l_dispatch_path: String = "scalar"
 		var rc_l: float = float(_data_core_world_ext.run_ocean_land_pass(knobs_l))
-		if rc_l < 0.0 and _data_core_world_ext.has_method("run_ocean_land_pass_thread"):
-			_l_dispatch_path = "thread_fallback"
-			rc_l = float(_data_core_world_ext.run_ocean_land_pass_thread(knobs_l, 4))
+		var _l_dispatch_path: String = "scalar"
 		if _gdext_ocean_land_runs + _gdext_ocean_land_fallbacks < 3:
 			print("[ocean_land/F.2b] DEBUG call#%d: path=%s rc=%.4f n=%d effective_leak=%.4f" % [
 				_gdext_ocean_land_runs + _gdext_ocean_land_fallbacks + 1,
@@ -8733,15 +8435,8 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			# anomaly_io 在进入 land pass 时复用 water pass cache（含水域 anomaly）
 			# 且 land pass C++ 只写 land cell；这里把水陆两部分一起 flush 回 HexCell，
 			# 与 GDScript 完整路径保持一致（line 5089 / 5177）。
-			map.temperature_transport_anomaly_arr = anomaly_io
-			if _data_core_world != null:
-				var _cid_tta_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
-				if _cid_tta_dense >= 0 and _data_core_world.has_method("write_f32_dense"):
-					_data_core_world.write_f32_dense(_cid_tta_dense, anomaly_io)
-			var _tta_facade_on: bool = n > 0 and cells[0] != null and (cells[0] as HexCell).is_facade_enabled()
-			if not _tta_facade_on:
-				for ci in range(n):
-					cells[ci].temperature_transport_anomaly = anomaly_io[ci]
+			for ci in range(n):
+				cells[ci].temperature_transport_anomaly = anomaly_io[ci]
 			# anomaly 继续保留给同轮 sea_ice，避免 sea_ice 再从 HexCell 打包 TTA。
 			_gdext_ocean_anomaly_buf_cached = anomaly_io
 			_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
@@ -8832,374 +8527,6 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		var _cid_temp_ols: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		if _cid_temp_ols >= 0:
 			_data_core_world.write_f32_indexed(_cid_temp_ols, _ol_changed_idx, _ol_changed_temp)
-
-
-func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: ClimateProfile) -> bool:
-	if map == null or cp == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_ocean_water_pass") \
-			or not _data_core_world_ext.has_method("run_ocean_land_pass"):
-		return false
-	var n: int = map.soa_size()
-	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
-	if n <= 0 or nb_idx.size() < n * 6:
-		return false
-	var cells: Array[HexCell] = map.iter_cells()
-	var _dc_views: Dictionary = _climate_views_from_world(cp)
-	var _use_dc: bool = not _dc_views.is_empty()
-	var temp_a: PackedFloat32Array = _dc_views["temp"] if _use_dc else map.temp_arr
-	var temp_baseline_a: PackedFloat32Array = _dc_views["temp_baseline"] if _use_dc else map.temp_baseline_arr
-	var elev_a: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
-	var lat_a: PackedFloat32Array = _dc_views["lat_norm"] if _use_dc else map.cell_lat_norm_arr
-	var ema_init_a: PackedByteArray = _dc_views["ema_initialized"] if _use_dc else map.ema_initialized_arr
-	var ocx_a: PackedFloat32Array = _dc_views["ocean_current_x"] if _use_dc else map.ocean_current_x_arr
-	var ocy_a: PackedFloat32Array = _dc_views["ocean_current_y"] if _use_dc else map.ocean_current_y_arr
-	if _gdext_ocean_baseline_work_buf.size() != n:
-		_gdext_ocean_baseline_work_buf.resize(n)
-	if _gdext_ocean_temp_before_work_buf.size() != n:
-		_gdext_ocean_temp_before_work_buf.resize(n)
-	if _gdext_ocean_anomaly_work_buf.size() != n:
-		_gdext_ocean_anomaly_work_buf.resize(n)
-	var baseline: PackedFloat32Array = _gdext_ocean_baseline_work_buf
-	var temp_before: PackedFloat32Array = _gdext_ocean_temp_before_work_buf
-	for i in range(n):
-		if ema_init_a[i] != 0:
-			baseline[i] = temp_baseline_a[i]
-		else:
-			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
-			baseline[i] = _compute_temperature(ny, elev_a[i])
-		var t0: float = temp_a[i]
-		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
-	var anomaly: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
-	for ai in range(n):
-		anomaly[ai] = 0.0
-	var phase_mod: float = fposmod(season_phase, 4.0)
-	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
-	var effective_leak: float = float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost
-	_climate_ocean_slice_state = {
-		"map_id": map.get_instance_id(),
-		"n": n,
-		"cells": cells,
-		"water_cursor": 0,
-		"land_cursor": 0,
-		"anomaly": anomaly,
-		"baseline": baseline,
-		"water_knobs": {
-			"n_cells": n,
-			"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
-			"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
-			"neighbor_indices": nb_idx,
-			"baseline_arr": baseline,
-			"temp_before_arr": temp_before,
-			"anomaly_out": anomaly,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
-		"land_knobs": {
-			"n_cells": n,
-			"effective_leak": effective_leak,
-			"neighbor_indices": nb_idx,
-			"anomaly_inout": anomaly,
-			"fallback_baseline_arr": baseline,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
-	}
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
-	return true
-
-
-func _ocean_slice_budget_cells() -> int:
-	var cp := _c()
-	var slice_ms: float = 0.75
-	if cp != null and cp.get("sim_slice_budget_ms") != null:
-		slice_ms = float(cp.sim_slice_budget_ms)
-	return clampi(int(round(700.0 * clampf(slice_ms / 0.75, 0.5, 1.5))), 256, 900)
-
-
-func _make_climate_pass_result(pass_type: String, done: bool, elapsed_ms: float, processed_cells: int,
-		cursor_start: int, cursor_end: int, status: String = "", token: int = 0,
-		stage: String = "", abort_reason: String = "") -> Dictionary:
-	var out_status: String = status
-	if out_status == "":
-		out_status = _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING
-	return {
-		"pass_type": pass_type,
-		"done": done,
-		"status": out_status,
-		"elapsed_ms": elapsed_ms,
-		"processed_cells": processed_cells,
-		"cursor_start": cursor_start,
-		"cursor_end": cursor_end,
-		"budget_interrupted": not done,
-		"token": token,
-		"stage": stage if stage != "" else pass_type,
-		"abort_reason": abort_reason,
-	}
-
-
-func _climate_pass_state_matches(pass_type: String, map: MapData, token: int = 0) -> bool:
-	if not _climate_pass_states.has(pass_type):
-		return false
-	var state: Dictionary = _climate_pass_states[pass_type]
-	if map != null and int(state.get("map_id", -1)) != map.get_instance_id():
-		return false
-	if token > 0 and int(state.get("token", 0)) != token:
-		return false
-	return str(state.get("status", "")) == _CLIMATE_PASS_STATUS_RUNNING
-
-
-func begin_climate_pass(pass_type: String, map: MapData, season_phase: float, opts: Dictionary = {}) -> Dictionary:
-	var cp := _c()
-	if map == null or cp == null:
-		return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_FAILED, 0, pass_type, "missing_context")
-	if _climate_pass_state_matches(pass_type, map):
-		return _climate_pass_states[pass_type].duplicate(true)
-	_climate_pass_generation += 1
-	var token: int = _climate_pass_generation
-	var stage: String = str(opts.get("stage", pass_type))
-	var state: Dictionary = {
-		"pass_type": pass_type,
-		"token": token,
-		"status": _CLIMATE_PASS_STATUS_RUNNING,
-		"map_id": map.get_instance_id(),
-		"season_phase": season_phase,
-		"stage": stage,
-		"cursor": 0,
-		"cursor_start": 0,
-		"cursor_end": 0,
-		"processed_cells": 0,
-		"budget_cells": int(opts.get("budget_cells", _ocean_slice_budget_cells())),
-		"started_msec": Time.get_ticks_msec(),
-	}
-	match pass_type:
-		_CLIMATE_PASS_OCEAN_WATER, _CLIMATE_PASS_OCEAN_LAND:
-			if _climate_ocean_slice_state.is_empty() \
-					or int(_climate_ocean_slice_state.get("map_id", -1)) != map.get_instance_id():
-				if not _begin_ocean_heat_transport_sliced(map, season_phase, cp):
-					return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_FAILED, token, stage, "begin_failed")
-			state["n"] = int(_climate_ocean_slice_state.get("n", 0))
-			state["water_cursor"] = int(_climate_ocean_slice_state.get("water_cursor", 0))
-			state["land_cursor"] = int(_climate_ocean_slice_state.get("land_cursor", 0))
-		_CLIMATE_PASS_SEA_ICE:
-			state["n"] = map.cell_count()
-		_:
-			return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_FAILED, token, stage, "unknown_pass")
-	_climate_pass_states[pass_type] = state
-	return state.duplicate(true)
-
-
-func abort_climate_pass(pass_type: String, reason: String = "abort") -> Dictionary:
-	if not _climate_pass_states.has(pass_type):
-		return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_ABORTED, 0, pass_type, reason)
-	var state: Dictionary = _climate_pass_states[pass_type]
-	state["status"] = _CLIMATE_PASS_STATUS_ABORTED
-	state["abort_reason"] = reason
-	state["ended_msec"] = Time.get_ticks_msec()
-	_climate_pass_states.erase(pass_type)
-	if pass_type == _CLIMATE_PASS_OCEAN_WATER or pass_type == _CLIMATE_PASS_OCEAN_LAND:
-		_climate_ocean_slice_state.clear()
-		_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
-		_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
-		_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
-		_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
-		_ocean_water_done_phase = NAN
-	elif pass_type == _CLIMATE_PASS_SEA_ICE:
-		_abort_sea_ice_state_machine(reason)
-	return _make_climate_pass_result(pass_type, true, 0.0, int(state.get("processed_cells", 0)),
-			int(state.get("cursor_start", -1)), int(state.get("cursor_end", -1)),
-			_CLIMATE_PASS_STATUS_ABORTED, int(state.get("token", 0)), str(state.get("stage", pass_type)), reason)
-
-
-func _abort_all_climate_passes(reason: String = "abort_all") -> void:
-	var pass_types: Array = _climate_pass_states.keys()
-	for pass_type in pass_types:
-		abort_climate_pass(str(pass_type), reason)
-	_climate_pass_states.clear()
-	_climate_ocean_slice_state.clear()
-	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
-	_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
-	_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
-	_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
-	_ocean_water_done_phase = NAN
-
-
-func _run_climate_pass_legacy_fallback(pass_type: String, map: MapData, season_phase: float, token: int, reason: String) -> Dictionary:
-	var t_fb: int = Time.get_ticks_usec()
-	match pass_type:
-		_CLIMATE_PASS_OCEAN_WATER:
-			_ocean_water_pass(map, season_phase)
-			return _make_climate_pass_result(pass_type, true, (Time.get_ticks_usec() - t_fb) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_water_fallback", reason)
-		_CLIMATE_PASS_OCEAN_LAND:
-			_ocean_land_pass(map, season_phase)
-			return _make_climate_pass_result(pass_type, true, (Time.get_ticks_usec() - t_fb) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_land_fallback", reason)
-		_CLIMATE_PASS_SEA_ICE:
-			_apply_sea_ice_daily_pass(map, season_phase)
-			return _make_climate_pass_result(pass_type, true, (Time.get_ticks_usec() - t_fb) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "sea_ice_fallback", reason)
-	return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_FAILED, token, pass_type, reason)
-
-
-func run_climate_pass_slice(pass_type: String, map: MapData, season_phase: float, opts: Dictionary = {}) -> Dictionary:
-	var state: Dictionary = begin_climate_pass(pass_type, map, season_phase, opts)
-	var token: int = int(state.get("token", 0))
-	if str(state.get("status", "")) == _CLIMATE_PASS_STATUS_FAILED:
-		return _run_climate_pass_legacy_fallback(pass_type, map, season_phase, token, str(state.get("abort_reason", "begin_failed")))
-	if not _climate_pass_state_matches(pass_type, map, token):
-		return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_ABORTED, token, pass_type, "stale_token")
-	match pass_type:
-		_CLIMATE_PASS_OCEAN_WATER:
-			return _run_ocean_water_pass_slice_impl(map, season_phase, token)
-		_CLIMATE_PASS_OCEAN_LAND:
-			return _run_ocean_land_pass_slice_impl(map, season_phase, token)
-		_CLIMATE_PASS_SEA_ICE:
-			return _run_sea_ice_state_machine_slice(map, season_phase, token)
-	return _make_climate_pass_result(pass_type, true, 0.0, 0, -1, -1, _CLIMATE_PASS_STATUS_FAILED, token, pass_type, "unknown_pass")
-
-
-func run_ocean_water_pass_slice(map: MapData, season_phase: float) -> Dictionary:
-	return run_climate_pass_slice(_CLIMATE_PASS_OCEAN_WATER, map, season_phase)
-
-
-func _run_ocean_water_pass_slice_impl(map: MapData, season_phase: float, token: int = 0) -> Dictionary:
-	var cp := _c()
-	if _climate_ocean_slice_state.is_empty() \
-			or int(_climate_ocean_slice_state.get("map_id", -1)) != map.get_instance_id():
-		if not _begin_ocean_heat_transport_sliced(map, season_phase, cp):
-			var t_fb: int = Time.get_ticks_usec()
-			_ocean_water_pass(map, season_phase)
-			return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_WATER, true, (Time.get_ticks_usec() - t_fb) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_water_fallback")
-	var n: int = int(_climate_ocean_slice_state.get("n", 0))
-	var start: int = int(_climate_ocean_slice_state.get("water_cursor", 0))
-	var end: int = mini(n, start + _ocean_slice_budget_cells())
-	var knobs: Dictionary = _climate_ocean_slice_state["water_knobs"]
-	knobs["start_idx"] = start
-	knobs["end_idx"] = end
-	var rc: float = float(_data_core_world_ext.run_ocean_water_pass(knobs))
-	if rc < 0.0:
-		_climate_ocean_slice_state.clear()
-		_climate_pass_states.erase(_CLIMATE_PASS_OCEAN_WATER)
-		var t_fb2: int = Time.get_ticks_usec()
-		_ocean_water_pass(map, season_phase)
-		return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_WATER, true, (Time.get_ticks_usec() - t_fb2) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_water_fallback")
-	var anomaly: PackedFloat32Array = knobs["anomaly_out"]
-	_climate_ocean_slice_state["anomaly"] = anomaly
-	_climate_ocean_slice_state["water_cursor"] = end
-	var land_knobs: Dictionary = _climate_ocean_slice_state["land_knobs"]
-	land_knobs["anomaly_inout"] = anomaly
-	_gdext_ocean_anomaly_buf_cached = anomaly
-	_gdext_ocean_baseline_arr_cached = _climate_ocean_slice_state["baseline"]
-	# Incremental publish (climate-pipeline-spike-reduction)：每片都把当前 anomaly
-	# 推到 map / DCWorld dense buffer，避免 budget=2ms 节奏下 round 跨多帧时读方
-	# (weather field_solver / map_generator feedback 路径) 长时间读到陈旧的洋流热
-	# 输运。区间外格子保留上一片旧值（C++ run_ocean_water_pass §11 CoW duplicate
-	# 保证），即「水格新值 + 陆格旧值」的混合态——比「完全冻结到几日前」好得多。
-	map.temperature_transport_anomaly_arr = anomaly
-	if _data_core_world != null:
-		var _cid_tta_inc_w: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
-		if _cid_tta_inc_w >= 0 and _data_core_world.has_method("write_f32_dense"):
-			_data_core_world.write_f32_dense(_cid_tta_inc_w, anomaly)
-	# A2 增量回写 HexCell.temperature_transport_anomaly：该字段尚未 facade 化
-	# (HexCell 内是裸 var)，baker / info_panel / weather fallback 都通过
-	# cell.temperature_transport_anomaly 这条 AoS 路径读，必须显式赋值。仅写当
-	# 前 slice 区间，开销 ~slice_budget 个 cell 一次循环（≤0.05ms 量级），区间外
-	# 保留上一片旧值，配合 land 阶段最终 done 全图回写，渲染层可逐片看到合并视图。
-	var _cells_inc_w: Array = _climate_ocean_slice_state.get("cells", [])
-	if _cells_inc_w.size() == n:
-		for _ci_w in range(start, end):
-			var _c_w = _cells_inc_w[_ci_w]
-			if _c_w != null:
-				_c_w.temperature_transport_anomaly = anomaly[_ci_w]
-	var done: bool = end >= n
-	if _climate_pass_states.has(_CLIMATE_PASS_OCEAN_WATER):
-		var state: Dictionary = _climate_pass_states[_CLIMATE_PASS_OCEAN_WATER]
-		state["water_cursor"] = end
-		state["cursor_start"] = start
-		state["cursor_end"] = end
-		state["processed_cells"] = end - start
-		state["status"] = _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING
-		_climate_pass_states[_CLIMATE_PASS_OCEAN_WATER] = state
-	if done:
-		_climate_pass_states.erase(_CLIMATE_PASS_OCEAN_WATER)
-	return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_WATER, done, rc, end - start, start, end, _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING, token, "ocean_water")
-
-
-func run_ocean_land_pass_slice(map: MapData, season_phase: float) -> Dictionary:
-	return run_climate_pass_slice(_CLIMATE_PASS_OCEAN_LAND, map, season_phase)
-
-
-func _run_ocean_land_pass_slice_impl(map: MapData, season_phase: float, token: int = 0) -> Dictionary:
-	var cp := _c()
-	if _climate_ocean_slice_state.is_empty() \
-			or int(_climate_ocean_slice_state.get("map_id", -1)) != map.get_instance_id():
-		if not _begin_ocean_heat_transport_sliced(map, season_phase, cp):
-			var t_fb: int = Time.get_ticks_usec()
-			_ocean_land_pass(map, season_phase)
-			return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_LAND, true, (Time.get_ticks_usec() - t_fb) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_land_fallback")
-	var n: int = int(_climate_ocean_slice_state.get("n", 0))
-	var start: int = int(_climate_ocean_slice_state.get("land_cursor", 0))
-	var end: int = mini(n, start + _ocean_slice_budget_cells())
-	var knobs: Dictionary = _climate_ocean_slice_state["land_knobs"]
-	knobs["start_idx"] = start
-	knobs["end_idx"] = end
-	var rc: float = float(_data_core_world_ext.run_ocean_land_pass(knobs))
-	if rc < 0.0:
-		_climate_ocean_slice_state.clear()
-		_climate_pass_states.erase(_CLIMATE_PASS_OCEAN_LAND)
-		var t_fb2: int = Time.get_ticks_usec()
-		_ocean_land_pass(map, season_phase)
-		return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_LAND, true, (Time.get_ticks_usec() - t_fb2) / 1000.0, map.cell_count(), 0, map.cell_count(), _CLIMATE_PASS_STATUS_DONE, token, "ocean_land_fallback")
-	var anomaly: PackedFloat32Array = knobs["anomaly_inout"]
-	_climate_ocean_slice_state["anomaly"] = anomaly
-	_climate_ocean_slice_state["land_cursor"] = end
-	var done: bool = end >= n
-	if _climate_pass_states.has(_CLIMATE_PASS_OCEAN_LAND):
-		var state: Dictionary = _climate_pass_states[_CLIMATE_PASS_OCEAN_LAND]
-		state["land_cursor"] = end
-		state["cursor_start"] = start
-		state["cursor_end"] = end
-		state["processed_cells"] = end - start
-		state["status"] = _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING
-		_climate_pass_states[_CLIMATE_PASS_OCEAN_LAND] = state
-	# Incremental publish (climate-pipeline-spike-reduction)：每片都把当前 anomaly
-	# 推到 map / DCWorld dense buffer。read 方 (weather/field_solver/feedback) 始
-	# 终能拿到「已计算部分新值 + 未计算部分上一片旧值」的合并视图，避免在 ocean_land
-	# 整轮跨多帧时洋流热输运彻底冻结。逐 cell HexCell 回写代价较大，仅在 done 时
-	# 执行（且只对 facade-off 路径，新代码默认 facade-on）。
-	map.temperature_transport_anomaly_arr = anomaly
-	if _data_core_world != null:
-		var _cid_tta_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
-		if _cid_tta_dense >= 0 and _data_core_world.has_method("write_f32_dense"):
-			_data_core_world.write_f32_dense(_cid_tta_dense, anomaly)
-	_gdext_ocean_anomaly_buf_cached = anomaly
-	# A2 增量回写 HexCell.temperature_transport_anomaly：land 阶段对 [start, end)
-	# 内的陆格 anomaly 做了更新（水格保留 water 阶段值），区间外保留上一片旧值。
-	# 与 water 阶段对称，让 baker / info_panel 在 budget=2ms 节奏下也能逐片看到
-	# 渐进合并视图，避免「洋流热输运一直白」的现象。done 分支额外做的全图回写
-	# 保留作为兜底（应对极端 reset 后某片尚未触达的格子）。
-	var _cells_inc_l: Array = _climate_ocean_slice_state.get("cells", [])
-	if _cells_inc_l.size() == n:
-		for _ci_l in range(start, end):
-			var _c_l = _cells_inc_l[_ci_l]
-			if _c_l != null:
-				_c_l.temperature_transport_anomaly = anomaly[_ci_l]
-	if done:
-		var cells: Array = _climate_ocean_slice_state.get("cells", [])
-		# 兜底全图回写：确保任何因为 reset / cells 数组变更等原因未被增量段覆盖到的
-		# 格子在 round 末尾拿到最新 anomaly。即使 facade 化后 (cell.temperature_
-		# transport_anomaly 走 SoA) 这次冗余写也无害——facade getter/setter 不存在
-		# 时这段就是唯一的最终回写。
-		if n > 0 and cells.size() == n:
-			for ci in range(n):
-				var _cf = cells[ci]
-				if _cf != null:
-					_cf.temperature_transport_anomaly = anomaly[ci]
-		_gdext_ocean_baseline_arr_cached = PackedFloat32Array()
-		_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
-		_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
-		_climate_ocean_slice_state.clear()
-		_climate_pass_states.erase(_CLIMATE_PASS_OCEAN_LAND)
-	return _make_climate_pass_result(_CLIMATE_PASS_OCEAN_LAND, done, rc, end - start, start, end, _CLIMATE_PASS_STATUS_DONE if done else _CLIMATE_PASS_STATUS_RUNNING, token, "ocean_land")
 
 # ─── Milestone 3：天气子系统每日推进 ────────────────────────────────────
 # 由 main.gd 的 _on_day_changed 触发。流程：
@@ -9352,7 +8679,7 @@ func weather_field_slice_cells() -> int:
 	var cp_now := _c()
 	if cp_now == null:
 		return 500
-	return clampi(int(cp_now.weather_field_slice_cells), 100, 500)
+	return clampi(int(cp_now.weather_field_slice_cells), 100, 2400)
 
 
 func begin_weather_refresh_stage_a(map: MapData, world: WorldData, season_idx: int,
@@ -9370,9 +8697,6 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
 	var result: Dictionary = _weather_system.run_weather_field_solve_slice(maxi(1, cell_budget))
 	var elapsed_ms: float = float(result.get("elapsed_ms", 0.0))
-	var processed_cells: int = int(result.get("processed_cells", result.get("work_done", 0)))
-	var cursor_start: int = int(result.get("cursor_start", -1))
-	var cursor_end: int = int(result.get("cursor_end", -1))
 	_last_weather_breakdown = {
 		"weather_tick_ms": elapsed_ms,
 		"advance_ms": elapsed_ms,
@@ -9388,9 +8712,6 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		"feedback_ms": 0.0,
 		"total_ms": (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0,
 		"fronts": _weather_round_fronts.size(),
-		"processed_cells": processed_cells,
-		"cursor_start": cursor_start,
-		"cursor_end": cursor_end,
 		"partial": not bool(result.get("done", true)),
 		"progress_ratio": float(result.get("progress_ratio", 0.0)),
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放

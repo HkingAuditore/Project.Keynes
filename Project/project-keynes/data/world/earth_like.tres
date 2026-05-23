@@ -4,14 +4,15 @@
 
 [resource]
 script = ExtResource("1")
-native_environment_runtime_enabled = true
 sim_frame_budget_ms = 1600.0
 sim_slice_budget_ms = 800.0
 sim_upload_slice_budget_ms = 800.0
+sim_budget_warn_ms = 1600.0
 ocean_currents_period_ticks = 360
 ocean_pixel_subslice_count = 16
 succession_upgrade_days = 91
 weather_field_advect_steps = 2
+weather_component_summary_limit = 16
 use_sparse_weather = true
 use_low_freq_ocean_psi = true
 demo_thermal_gradient_path = 1
