@@ -1789,7 +1789,263 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 	return knobs
 
 
-func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: WorldData) -> Dictionary:
+func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phase: float) -> Dictionary:
+	if map == null or cp_now == null or _last_cfg == null:
+		return {}
+	if bool(cp_now.true_insolation_enabled):
+		_rebuild_insol_now_lut(season_phase)
+	return {
+		"use_insol": bool(cp_now.true_insolation_enabled),
+		"use_sparse": bool(cp_now.use_sparse_climate),
+		"insol_amp": float(cp_now.get("season_temp_amp")) if cp_now.get("season_temp_amp") != null else 0.20,
+		"insol_gain": float(cp_now.get("insolation_season_gain")) if cp_now.get("insolation_season_gain") != null else 1.0,
+		"moist_scale_now": DataOverlayBaker._moisture_scale_at_phase(cp_now, season_phase),
+		"sea_level": float(_last_cfg.sea_level),
+		"insol_dev_lut": _insol_dev_lut,
+	}
+
+
+func _build_native_daily_climate_pass_b_knobs(map: MapData, cp_now, season_phase: float) -> Dictionary:
+	if map == null or cp_now == null or _last_cfg == null or not bool(cp_now.enable_local_climate_coupling):
+		return {}
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+	var n_cells: int = map.soa_size()
+	if n_cells <= 0 or nb_idx.size() < n_cells * 6:
+		return {}
+	var phase_mod: float = fposmod(season_phase, 4.0)
+	var dist_to_winter: float = minf(absf(phase_mod - 3.0), minf(absf(phase_mod - 3.0 + 4.0), absf(phase_mod - 3.0 - 4.0)))
+	var tta_arr: PackedFloat32Array = map.temperature_transport_anomaly_arr
+	if tta_arr.size() != n_cells:
+		var cells: Array = map.iter_cells()
+		tta_arr = PackedFloat32Array()
+		tta_arr.resize(n_cells)
+		for i in range(n_cells):
+			tta_arr[i] = float((cells[i] as HexCell).temperature_transport_anomaly)
+	return {
+		"n_cells": n_cells,
+		"winter_boost": lerpf(cp_now.coastal_heat_leak_winter_boost, 1.0, clampf(dist_to_winter, 0.0, 1.0)),
+		"snow_cool": float(cp_now.snow_albedo_cooling),
+		"veg_cool": float(cp_now.vegetation_cooling),
+		"diurnal_amp": float(cp_now.landform_diurnal_amp),
+		"evap_gain": float(cp_now.evaporation_gain),
+		"rs_threshold": float(cp_now.rain_shadow_threshold),
+		"rs_factor": float(cp_now.rain_shadow_factor),
+		"rs_lookback": max(0, int(cp_now.rain_shadow_lookback)),
+		"t_freeze": float(cp_now.sea_ice_form_threshold),
+		"coupling_gain": float(cp_now.ocean_moisture_coupling_gain),
+		"coast_leak": float(_last_cfg.COASTAL_HEAT_LEAK),
+		"landform_phase_factor": (cos((phase_mod - 1.0) * 0.5 * PI) + 1.0) * 0.5,
+		"season_phase": season_phase,
+		"go_sparse": false,
+		"neighbor_indices": nb_idx,
+		"temp_transport_anomaly": tta_arr,
+		"foliage_table": _build_climate_b_foliage_table(),
+	}
+
+
+func _build_native_daily_transpiration_knobs(map: MapData, cp_now) -> Dictionary:
+	if map == null or cp_now == null:
+		return {}
+	var n_cells: int = map.cell_count()
+	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	if n_cells <= 0 or neighbor_indices.size() < n_cells * 6:
+		return {}
+	return {
+		"n_cells": n_cells,
+		"outflow_rate": float(cp_now.transpiration_outflow_rate),
+		"self_rate": float(cp_now.transpiration_self_rate),
+		"neighbor_indices": neighbor_indices,
+		"donor_table": _build_transpiration_donor_table(),
+	}
+
+
+func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) -> Dictionary:
+	if map == null or cp_now == null or _last_cfg == null or not bool(_last_cfg.enable_ocean_heat_transport):
+		return {}
+	var n: int = map.soa_size()
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+	if n <= 0 or nb_idx.size() < n * 6:
+		return {}
+	var cells: Array = map.iter_cells()
+	var dc_views: Dictionary = _climate_views_from_world(cp_now)
+	var use_dc: bool = not dc_views.is_empty()
+	var temp_a: PackedFloat32Array = dc_views["temp"] if use_dc else map.temp_arr
+	var temp_baseline_a: PackedFloat32Array = dc_views["temp_baseline"] if use_dc else map.temp_baseline_arr
+	var elev_a: PackedFloat32Array = dc_views["elevation"] if use_dc else map.elevation_arr
+	var lat_a: PackedFloat32Array = dc_views["lat_norm"] if use_dc else map.cell_lat_norm_arr
+	var ema_init_a: PackedByteArray = dc_views["ema_initialized"] if use_dc else map.ema_initialized_arr
+	var ocx_a: PackedFloat32Array = dc_views["ocean_current_x"] if use_dc else map.ocean_current_x_arr
+	var ocy_a: PackedFloat32Array = dc_views["ocean_current_y"] if use_dc else map.ocean_current_y_arr
+	if temp_a.size() < n or elev_a.size() < n:
+		return {}
+	if _gdext_ocean_baseline_work_buf.size() != n:
+		_gdext_ocean_baseline_work_buf.resize(n)
+	if _gdext_ocean_temp_before_work_buf.size() != n:
+		_gdext_ocean_temp_before_work_buf.resize(n)
+	if _gdext_ocean_anomaly_work_buf.size() != n:
+		_gdext_ocean_anomaly_work_buf.resize(n)
+	var baseline: PackedFloat32Array = _gdext_ocean_baseline_work_buf
+	var temp_before: PackedFloat32Array = _gdext_ocean_temp_before_work_buf
+	for i in range(n):
+		if ema_init_a.size() > i and ema_init_a[i] != 0 and temp_baseline_a.size() > i:
+			baseline[i] = temp_baseline_a[i]
+		else:
+			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
+			baseline[i] = _compute_temperature(ny, elev_a[i])
+		var t0: float = temp_a[i]
+		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
+	var anomaly: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
+	for ai in range(n):
+		anomaly[ai] = 0.0
+	var phase_mod: float = fposmod(season_phase, 4.0)
+	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
+	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	return {
+		"water": {
+			"n_cells": n,
+			"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
+			"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
+			"neighbor_indices": nb_idx,
+			"baseline_arr": baseline,
+			"temp_before_arr": temp_before,
+			"anomaly_out": anomaly,
+			"ocean_current_x_arr": ocx_a,
+			"ocean_current_y_arr": ocy_a,
+		},
+		"land": {
+			"n_cells": n,
+			"effective_leak": float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost,
+			"neighbor_indices": nb_idx,
+			"anomaly_inout": anomaly,
+			"fallback_baseline_arr": baseline,
+			"ocean_current_x_arr": ocx_a,
+			"ocean_current_y_arr": ocy_a,
+		},
+	}
+
+
+func _build_native_daily_sea_ice_knobs(map: MapData, cp_now, commit_side_effects: bool) -> Dictionary:
+	if map == null or cp_now == null or _last_cfg == null:
+		return {}
+	var cells_fast: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var n_cells_fast: int = cells_fast.size()
+	var nb_idx_fast: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	if n_cells_fast <= 0 or nb_idx_fast.size() < n_cells_fast * 6:
+		return {}
+	var k_freeze: float = float(cp_now.sea_ice_freeze_rate)
+	var k_melt: float = float(cp_now.sea_ice_melt_rate)
+	var t_form: float = float(cp_now.sea_ice_form_threshold)
+	var t_melt: float = float(cp_now.sea_ice_melt_threshold)
+	var climate_anomaly_now: float = 0.0
+	if _world_clock_ref != null:
+		var ca_v = _world_clock_ref.get("climate_anomaly")
+		if ca_v != null:
+			climate_anomaly_now = float(ca_v)
+	if not is_equal_approx(climate_anomaly_now, 0.0):
+		var ice_thr_shift: float = 0.10 * climate_anomaly_now
+		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
+		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
+	var dt_days: float = _consume_sea_ice_dt_days() if commit_side_effects else 1.0
+	var base_terrain_input: PackedByteArray
+	if map.base_terrain_arr.size() == n_cells_fast:
+		base_terrain_input = map.base_terrain_arr
+	else:
+		if _gdext_sea_ice_base_terrain_buf.size() != n_cells_fast:
+			_gdext_sea_ice_base_terrain_buf.resize(n_cells_fast)
+		base_terrain_input = _gdext_sea_ice_base_terrain_buf
+		for i_build in range(n_cells_fast):
+			var c_build: HexCell = cells_fast[i_build]
+			_gdext_sea_ice_base_terrain_buf[i_build] = int(c_build.base_terrain) & 0xFF
+	var tta_input: PackedFloat32Array
+	if _gdext_ocean_anomaly_buf_cached.size() == n_cells_fast:
+		tta_input = _gdext_ocean_anomaly_buf_cached
+	elif map.temperature_transport_anomaly_arr.size() == n_cells_fast:
+		tta_input = map.temperature_transport_anomaly_arr
+	else:
+		if _gdext_sea_ice_tta_buf.size() != n_cells_fast:
+			_gdext_sea_ice_tta_buf.resize(n_cells_fast)
+		tta_input = _gdext_sea_ice_tta_buf
+		for i_tta in range(n_cells_fast):
+			tta_input[i_tta] = cells_fast[i_tta].temperature_transport_anomaly
+	var upw_input: PackedFloat32Array = map.upwelling_strength_arr \
+			if map.upwelling_strength_arr.size() == n_cells_fast \
+			else _gdext_sea_ice_upw_buf
+	if upw_input.size() != n_cells_fast:
+		_gdext_sea_ice_upw_buf.resize(n_cells_fast)
+		upw_input = _gdext_sea_ice_upw_buf
+		for i_upw in range(n_cells_fast):
+			upw_input[i_upw] = cells_fast[i_upw].upwelling_strength
+	var temp_input: PackedFloat32Array = map.temp_arr \
+			if map.temp_arr.size() == n_cells_fast \
+			else _gdext_sea_ice_temp_buf
+	if temp_input.size() != n_cells_fast:
+		_gdext_sea_ice_temp_buf.resize(n_cells_fast)
+		temp_input = _gdext_sea_ice_temp_buf
+		for i_temp in range(n_cells_fast):
+			temp_input[i_temp] = cells_fast[i_temp].temperature
+	var water_ids: PackedByteArray = PackedByteArray([
+		int(TerrainType.TERRAIN.OCEAN) & 0xFF,
+		int(TerrainType.TERRAIN.COAST) & 0xFF,
+		int(TerrainType.TERRAIN.LAKE) & 0xFF,
+		int(TerrainType.TERRAIN.REEF) & 0xFF,
+		int(TerrainType.TERRAIN.KELP) & 0xFF,
+		int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
+	])
+	return {
+		"n_cells": n_cells_fast,
+		"k_freeze": k_freeze * dt_days,
+		"k_melt": k_melt * dt_days,
+		"t_form": t_form,
+		"t_melt": t_melt,
+		"contagion": float(cp_now.sea_ice_neighbor_contagion),
+		"threshold": float(cp_now.sea_ice_terrain_threshold),
+		"hysteresis": float(cp_now.sea_ice_terrain_hysteresis),
+		"ice_delay": float(_last_cfg.OCEAN_CURRENT_ICE_DELAY),
+		"enable_ocean_heat_transport": bool(_last_cfg.enable_ocean_heat_transport),
+		"terrain_lake_id": int(TerrainType.TERRAIN.LAKE),
+		"terrain_sea_ice_id": int(TerrainType.TERRAIN.SEA_ICE),
+		"terrain_ocean_id": int(TerrainType.TERRAIN.OCEAN),
+		"water_terrain_ids": water_ids,
+		"neighbor_indices": nb_idx_fast,
+		"base_terrain_arr": base_terrain_input,
+		"temp_transport_anomaly": tta_input,
+		"upwelling_strength": upw_input,
+		"cell_temperature_arr": temp_input,
+		"apply_terrain_flips": commit_side_effects,
+	}
+
+
+func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
+	var keys := PackedStringArray(["climate_pass_a_struct"])
+	if cp_now != null and bool(cp_now.enable_local_climate_coupling):
+		keys.append("climate_pass_b_knobs")
+		keys.append("transpiration_knobs")
+	if _last_cfg != null and bool(_last_cfg.enable_ocean_heat_transport):
+		keys.append("ocean_water_knobs")
+		keys.append("ocean_land_knobs")
+	keys.append("sea_ice_knobs")
+	keys.append("stage_b_knobs")
+	keys.append("weather_knobs")
+	return keys
+
+
+func _native_daily_required_pass_keys_array(cp_now) -> Array[String]:
+	var out: Array[String] = []
+	for key in _native_daily_required_pass_keys(cp_now):
+		out.append(String(key))
+	return out
+
+
+func _native_daily_missing_required_pass_keys(bundle: Dictionary, required: PackedStringArray) -> PackedStringArray:
+	var missing := PackedStringArray()
+	for key in required:
+		if not bundle.has(key):
+			missing.append(key)
+	return missing
+
+
+func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: WorldData,
+		commit_side_effects: bool = false) -> Dictionary:
 	var cp_now := _c()
 	if map == null or cp_now == null:
 		return {}
@@ -1805,6 +2061,22 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 	# 任意节点失败 → C++ 端 finish_with_failure 短路返回 rc=-1，与原 if-chain
 	# 同语义（caller 在 run_native_daily_tick_from_job 已有 fallback 处理）。
 	bundle["use_system_schedule"] = true
+	var pass_a_struct: Dictionary = _build_native_daily_climate_pass_a_struct(map, cp_now, ctx.season_phase)
+	if not pass_a_struct.is_empty():
+		bundle["climate_pass_a_struct"] = pass_a_struct
+	var pass_b_knobs: Dictionary = _build_native_daily_climate_pass_b_knobs(map, cp_now, ctx.season_phase)
+	if not pass_b_knobs.is_empty():
+		bundle["climate_pass_b_knobs"] = pass_b_knobs
+	var transp_knobs: Dictionary = _build_native_daily_transpiration_knobs(map, cp_now)
+	if not transp_knobs.is_empty():
+		bundle["transpiration_knobs"] = transp_knobs
+	var ocean_knobs: Dictionary = _build_native_daily_ocean_knobs(map, cp_now, ctx.season_phase)
+	if not ocean_knobs.is_empty():
+		bundle["ocean_water_knobs"] = ocean_knobs.get("water", {})
+		bundle["ocean_land_knobs"] = ocean_knobs.get("land", {})
+	var sea_ice_knobs: Dictionary = _build_native_daily_sea_ice_knobs(map, cp_now, commit_side_effects)
+	if not sea_ice_knobs.is_empty():
+		bundle["sea_ice_knobs"] = sea_ice_knobs
 	# Phase A.2 unified fast tick: dots-flag-prune-pr1 round 2 (2026-05-22):
 	# use_gdext_unified_fast_tick / use_gdext_weather_refresh_daily flag 均已删除——
 	# weather refresh daily 的 4 组 super_knobs（field/distribute/summary + stage_b
@@ -1835,7 +2107,8 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 		# 同步推进 stage_b call_index：unified 路径完全绕过 weather_refresh_job /
 		# refresh_weather_daily facade，stride 计数必须自己 ++（与 facade line 8448 等价）。
 		# fallback（caller 端 res.rc!=0）情形会回滚（见 run_native_daily_tick_from_job）。
-		_weather_stage_b_call_index += 1
+		if commit_side_effects:
+			_weather_stage_b_call_index += 1
 		var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
 			map, _world, season_idx_local, anomaly_local, season_phase_local, stage_b_knobs
 		)
@@ -1843,7 +2116,8 @@ func _build_native_daily_bundle(_ctx: SusTickContext, map: MapData, _world: Worl
 			bundle["weather_knobs"] = weather_super
 		else:
 			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
-			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+			if commit_side_effects:
+				_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 	return bundle
 
 
@@ -1872,6 +2146,7 @@ func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: Wo
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	tick_knobs["probe"] = true
 	tick_knobs["native_daily_bundle"] = bundle
+	tick_knobs["required_pass_keys"] = _native_daily_required_pass_keys_array(cp)
 	var res: Dictionary = _data_core_world_ext.run_native_daily_tick(tick_knobs)
 	res["mode"] = "shadow_probe"
 	res["bundle_pass_keys"] = pass_keys
@@ -1918,19 +2193,30 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 		return false
 	var probe_ctx: SusTickContext = SusTickContext.make(0, 0, 0.0, 1.0, &"native_daily_probe")
 	var probe_bundle: Dictionary = _build_native_daily_bundle(probe_ctx, map, world)
+	var required_pass_keys_packed: PackedStringArray = _native_daily_required_pass_keys(cp)
+	var required_pass_keys: Array[String] = _native_daily_required_pass_keys_array(cp)
+	var missing_required: PackedStringArray = _native_daily_missing_required_pass_keys(
+			probe_bundle, required_pass_keys_packed)
 	var probe: Dictionary = _data_core_world_ext.run_native_daily_tick({
 		"probe": true,
 		"native_daily_bundle": probe_bundle,
+		"required_pass_keys": required_pass_keys,
 	})
 	if int(probe.get("rc", -1)) != 0:
 		push_warning("[native_daily] ACTIVE requested but native tick is not ready (%s); falling back to legacy SUS jobs"
 			% str(probe.get("fail_stage", probe.get("reason", ""))))
 		return false
-	# 第一阶段只把现有 C++ pass 串进 dispatcher 并验证 GDScript bundle 通道。
-	# climate/weather/ocean 尚未全部 authoritative，下放 ACTIVE 会跳过旧 job，行为风险太高。
-	var native_daily_authoritative_ready: bool = false
+	if not missing_required.is_empty():
+		push_warning("[native_daily] ACTIVE requested but native bundle is missing required passes: %s; falling back to legacy SUS jobs"
+			% ", ".join(missing_required))
+		return false
+	var native_daily_authoritative_ready: bool = bool(probe.get("authoritative_ready", false))
 	if not native_daily_authoritative_ready:
-		push_warning("[native_daily] ACTIVE requested but native bundle is diagnostic-only; falling back to legacy SUS jobs")
+		var probe_missing := PackedStringArray()
+		for key in probe.get("missing_pass_keys", []):
+			probe_missing.append(String(key))
+		push_warning("[native_daily] ACTIVE requested but native probe did not authorize handoff (missing=%s); falling back to legacy SUS jobs"
+			% ", ".join(probe_missing))
 		return false
 	var native_stride: int = 1
 	if cp != null and cp.get("native_daily_sim_stride") != null:
@@ -2008,7 +2294,7 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
-	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world)
+	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
 	var unified_weather_embedded: bool = bundle.has("weather_knobs")
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	tick_knobs["native_daily_bundle"] = bundle
@@ -2060,6 +2346,58 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 			if not _unified_fast_tick_warned_fallback:
 				_unified_fast_tick_warned_fallback = true
 				push_warning("[native_daily/unified] embedded weather_knobs path rc=%d fail_stage=%s; weather_refresh state cleared; will fallback to independent jobs next tick"
+						% [rc_int, String(res.get("fail_stage", "unknown"))])
+	return res
+
+
+func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
+	if _data_core_world_ext == null:
+		return { "rc": -1, "fail_stage": "gdext_unavailable" }
+	if not _data_core_world_ext.has_method("run_native_sim_tick"):
+		return run_native_daily_tick_from_job(ctx, _map, _world)
+	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
+	var unified_weather_embedded: bool = bundle.has("weather_knobs")
+	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
+	tick_knobs["native_daily_bundle"] = bundle
+	tick_knobs["shadow_diff_enabled"] = bool(_c().native_shadow_diff_enabled) if _c() != null and _c().get("native_shadow_diff_enabled") != null else false
+	var res: Dictionary = _data_core_world_ext.run_native_sim_tick(tick_knobs)
+	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
+	_native_daily_last_result = res.duplicate(true)
+	var breakdown: Dictionary = res.get("breakdown", {})
+	_last_weather_breakdown = breakdown.duplicate(true)
+	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	_dump_weather_breakdown_if_slow()
+	if unified_weather_embedded and _weather_system != null:
+		var rc_int: int = int(res.get("rc", -1))
+		if rc_int == 0:
+			if not _unified_fast_tick_first_log_done:
+				_unified_fast_tick_first_log_done = true
+				print("[native_daily/unified] native sim tick ACTIVE — weather_knobs embedded; total_ms=%.2f weather_ms=%.2f"
+						% [float(breakdown.get("total_ms", 0.0)), float(breakdown.get("weather_ms", 0.0))])
+			if _weather_system.has_method("apply_unified_fast_tick_result"):
+				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
+				_last_active_fronts = fronts_out
+				_weather_round_fronts = fronts_out
+				res["fronts"] = fronts_out
+				res["fronts_changed"] = true
+				if _baker != null:
+					if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
+						_mark_enum_atlas_dirty(true, false)
+					var succ_indices = breakdown.get("succession_indices", null)
+					var veg_dirty: bool = succ_indices != null \
+							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
+							and (succ_indices as PackedInt32Array).size() > 0
+					if not veg_dirty:
+						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
+					if veg_dirty:
+						_mark_enum_atlas_dirty(false, true)
+		else:
+			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+			if _weather_system.has_method("_clear_weather_field_slice_state"):
+				_weather_system._clear_weather_field_slice_state()
+			if not _unified_fast_tick_warned_fallback:
+				_unified_fast_tick_warned_fallback = true
+				push_warning("[native_daily/unified] native sim tick rc=%d fail_stage=%s; weather state cleared"
 						% [rc_int, String(res.get("fail_stage", "unknown"))])
 	return res
 

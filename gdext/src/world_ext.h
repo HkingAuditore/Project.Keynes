@@ -149,11 +149,20 @@ public:
     // this surface without changing GDScript orchestration again.
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
+    godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
+    godot::Dictionary get_native_daily_report() const;
+    godot::Dictionary get_native_shadow_diff_report() const;
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
     godot::Array get_native_fronts_snapshot() const;
+    godot::Dictionary get_native_fronts_snapshot_packed() const;
     godot::Dictionary get_native_dirty_report() const;
+    godot::Dictionary start_native_generation(int seed,
+                                              const godot::Dictionary &cfg,
+                                              const godot::Dictionary &profile);
+    godot::Dictionary run_native_generation_slice(const godot::Dictionary &budget);
+    godot::Dictionary finish_native_generation();
 
     // ─── CoW flush / refresh (performance-charter §11.2) ─────────────────
     // After any C++ pass calls ptrw() on a slot, CoW detaches the buffer.
@@ -1542,6 +1551,11 @@ private:
     double                                    _native_daily_perf_target_ms = 1.0;
     godot::Array                              _native_fronts_snapshot;
     godot::Dictionary                        _native_dirty_report;
+    godot::Dictionary                        _native_daily_report;
+    godot::Dictionary                        _native_shadow_diff_report;
+    godot::Dictionary                        _native_generation_report;
+    bool                                      _native_generation_active = false;
+    int                                       _native_generation_seed = 0;
 
     // ---- archetype ----
     godot::Vector<godot::Array>               _archetypes;          // each entry = comp_ids
