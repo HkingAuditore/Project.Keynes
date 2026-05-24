@@ -43,6 +43,8 @@
 // - C.3 job graph：在本文件加 in_mask / out_mask 字段，遍历 SCHEDULE_GRAPH
 //   分组到 WorkerThreadPool
 
+#include <cstdint>
+
 #include <godot_cpp/variant/dictionary.hpp>
 
 namespace pk {
@@ -53,12 +55,23 @@ struct SystemNode {
     const char* name;        // 调试日志用："climate_pass_a"
     const char* bundle_key;  // 在 native_daily_bundle 内的 key，如 "climate_pass_a_struct"
     const char* fail_stage;  // 失败时 finish_with_failure 第一参，如 "climate_pass_a"
+    uint64_t read_mask;      // NativeSystemScheduler 预留：component/read group mask
+    uint64_t write_mask;     // NativeSystemScheduler 预留：component/write group mask
     // 节点执行函数（DCWorldExt 成员指针）。返回 true=成功；false=触发 fallback。
     // 节点 *自己负责*：读 bundle[bundle_key]、调 run_<X>_pass、累加 breakdown、
     // 写 side-effect（如 _native_fronts_snapshot）。
     bool (DCWorldExt::*exec_fn)(const godot::Dictionary& bundle,
                                 const godot::Dictionary& tick_knobs,
                                 godot::Dictionary& breakdown);
+};
+
+enum SystemMask : uint64_t {
+    SYS_MASK_CLIMATE = 1ull << 0,
+    SYS_MASK_OCEAN   = 1ull << 1,
+    SYS_MASK_SEA_ICE = 1ull << 2,
+    SYS_MASK_STAGE_B = 1ull << 3,
+    SYS_MASK_WEATHER = 1ull << 4,
+    SYS_MASK_TERRAIN = 1ull << 5,
 };
 
 // 静态调度图。定义在 system_schedule.cpp。节点顺序与 run_native_daily_tick

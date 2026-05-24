@@ -62,10 +62,14 @@ var _topn_label: Label
 # 性能录制按钮 + 录制器实例（与 _pause_btn / _snapshot_btn 同行展示）。
 # _perf_recorder 在 set_main() 时创建并注入到 _main，避免与 main 自己生命周期解耦。
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+const TileDataRecorderScript = preload("res://scripts/ui/tile_data_recorder.gd")
 var _record_btn: Button
 var _perf_recorder: RefCounted = null
+var _tile_record_btn: Button
+var _tile_data_recorder: RefCounted = null
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
+var _tile_record_btn_toast_until_msec: int = 0
 
 
 # --- 布局常量 -------------------------------------------------------------
@@ -122,6 +126,12 @@ func set_main(m: Node) -> void:
 		_perf_recorder.call("bind_main", m)
 	if m != null and m.has_method("set_perf_recorder"):
 		m.call("set_perf_recorder", _perf_recorder)
+	if _tile_data_recorder == null:
+		_tile_data_recorder = TileDataRecorderScript.new()
+	if _tile_data_recorder.has_method("bind_main"):
+		_tile_data_recorder.call("bind_main", m)
+	if m != null and m.has_method("set_tile_data_recorder"):
+		m.call("set_tile_data_recorder", _tile_data_recorder)
 	_refresh_from_state()
 
 # 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
@@ -336,6 +346,16 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)
 	parent.add_child(ctrl_row)
+
+	var tile_ctrl_row := HBoxContainer.new()
+	tile_ctrl_row.add_theme_constant_override("separation", 6)
+	_tile_record_btn = Button.new()
+	_tile_record_btn.text = "⏺ 开始地块数据录制"
+	_tile_record_btn.tooltip_text = "录制每个 fast_tick 的每个地块 SoA 数据 → ../../tmp/tile_data_record_<时间>.csv"
+	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
+	tile_ctrl_row.add_child(_tile_record_btn)
+	parent.add_child(tile_ctrl_row)
 
 	_telemetry_vbox = VBoxContainer.new()
 	_telemetry_vbox.add_theme_constant_override("separation", 4)
@@ -692,6 +712,7 @@ func _refresh_sim_perf_lines() -> void:
 	# 录制中按钮文案随帧数刷新（"⏹ 停止并导出（已录 N 帧）"），
 	# 复用 _telemetry_timer，不新建 Timer。
 	_refresh_record_btn_text()
+	_refresh_tile_record_btn_text()
 
 
 # 2026-05-19：新增 ── 暂停 / 快照 / Top-N 工具函数
@@ -854,6 +875,65 @@ func _show_record_toast(msg: String, is_error: bool) -> void:
 		if _record_btn != null and is_instance_valid(_record_btn):
 			_record_btn.remove_theme_color_override("font_color")
 			_refresh_record_btn_text(true)
+	)
+
+
+# 地块数据录制按钮按下：
+#   - 未录制 → start：打开 CSV 并写 header
+#   - 录制中 → stop_and_export：关闭文件，按钮短暂显示导出结果
+func _on_btn_toggle_tile_record() -> void:
+	if _tile_data_recorder == null:
+		return
+	if _tile_data_recorder.has_method("is_recording") and bool(_tile_data_recorder.call("is_recording")):
+		var path: String = ""
+		if _tile_data_recorder.has_method("stop_and_export"):
+			path = String(_tile_data_recorder.call("stop_and_export"))
+		if path == "":
+			_show_tile_record_toast("导出失败（无数据或写盘失败）", true)
+		else:
+			_show_tile_record_toast("已导出 " + path.get_file(), false)
+	else:
+		if _tile_data_recorder.has_method("start"):
+			_tile_data_recorder.call("start")
+		_refresh_tile_record_btn_text(true)
+
+
+func _refresh_tile_record_btn_text(force: bool = false) -> void:
+	if _tile_record_btn == null or _tile_data_recorder == null:
+		return
+	if not force and Time.get_ticks_msec() < _tile_record_btn_toast_until_msec:
+		return
+	var recording: bool = false
+	if _tile_data_recorder.has_method("is_recording"):
+		recording = bool(_tile_data_recorder.call("is_recording"))
+	if recording:
+		var ticks: int = 0
+		var rows: int = 0
+		if _tile_data_recorder.has_method("tick_count"):
+			ticks = int(_tile_data_recorder.call("tick_count"))
+		if _tile_data_recorder.has_method("row_count"):
+			rows = int(_tile_data_recorder.call("row_count"))
+		_tile_record_btn.text = "⏹ 停止并导出（已录 %d tick / %d 行）" % [ticks, rows]
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
+	else:
+		_tile_record_btn.text = "⏺ 开始地块数据录制"
+		_tile_record_btn.remove_theme_color_override("font_color")
+
+
+func _show_tile_record_toast(msg: String, is_error: bool) -> void:
+	if _tile_record_btn == null:
+		return
+	_tile_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	if is_error:
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	else:
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	_tile_record_btn_toast_until_msec = Time.get_ticks_msec() + 2000
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(func() -> void:
+		if _tile_record_btn != null and is_instance_valid(_tile_record_btn):
+			_tile_record_btn.remove_theme_color_override("font_color")
+			_refresh_tile_record_btn_text(true)
 	)
 
 

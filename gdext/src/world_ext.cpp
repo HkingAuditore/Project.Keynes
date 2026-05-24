@@ -870,30 +870,55 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     if (bool(tick_knobs.get("probe", false))) {
         bool has_bundle = false;
         bool has_pass = false;
+        Array pass_keys;
+        Array required_keys;
+        Array missing_pass_keys;
+        Variant required_v = tick_knobs.get("required_pass_keys", Array());
+        if (required_v.get_type() == Variant::ARRAY) {
+            required_keys = required_v;
+        }
         if (tick_knobs.has("native_daily_bundle") &&
             Variant(tick_knobs["native_daily_bundle"]).get_type() == Variant::DICTIONARY) {
             Dictionary bundle = tick_knobs["native_daily_bundle"];
             has_bundle = !bundle.is_empty();
-            has_pass =
-                bundle.has("climate_pass_a_struct") ||
-                bundle.has("ocean_water_knobs") ||
-                bundle.has("ocean_land_knobs") ||
-                bundle.has("climate_pass_b_knobs") ||
-                bundle.has("sea_ice_knobs") ||
-                bundle.has("transpiration_knobs") ||
-                bundle.has("albedo_knobs") ||
-                bundle.has("vegetation_dynamics_knobs") ||
-                bundle.has("climate_feedback_knobs") ||
-                bundle.has("stage_b_knobs") ||
-                bundle.has("weather_knobs");
+            auto record_pass = [&](const char *key) {
+                if (bundle.has(key)) {
+                    has_pass = true;
+                    pass_keys.append(String(key));
+                }
+            };
+            record_pass("climate_pass_a_struct");
+            record_pass("ocean_water_knobs");
+            record_pass("ocean_land_knobs");
+            record_pass("climate_pass_b_knobs");
+            record_pass("sea_ice_knobs");
+            record_pass("transpiration_knobs");
+            record_pass("albedo_knobs");
+            record_pass("vegetation_dynamics_knobs");
+            record_pass("climate_feedback_knobs");
+            record_pass("stage_b_knobs");
+            record_pass("weather_knobs");
+            for (int i = 0; i < required_keys.size(); ++i) {
+                const String key = String(required_keys[i]);
+                if (!bundle.has(key)) {
+                    missing_pass_keys.append(key);
+                }
+            }
         }
-        out["rc"] = (has_bundle && has_pass) ? 0 : -1;
-        out["fail_stage"] = (has_bundle && has_pass)
+        const bool has_required_passes = missing_pass_keys.is_empty();
+        const bool authoritative_ready = has_bundle && has_pass && has_required_passes;
+        out["rc"] = authoritative_ready ? 0 : -1;
+        out["fail_stage"] = authoritative_ready
             ? String()
-            : (has_bundle ? String("native_daily_bundle_no_passes")
-                          : String("native_daily_bundle_missing"));
+            : (!has_bundle ? String("native_daily_bundle_missing")
+                           : (!has_pass ? String("native_daily_bundle_no_passes")
+                                        : String("native_daily_bundle_missing_required_passes")));
         out["configured"] = true;
         out["cell_count"] = _native_world_cell_count;
+        out["pass_keys"] = pass_keys;
+        out["required_pass_keys"] = required_keys;
+        out["missing_pass_keys"] = missing_pass_keys;
+        out["authoritative_ready"] = authoritative_ready;
         out["total_ms"] = 0.0;
         return out;
     }
@@ -902,6 +927,9 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     _native_dirty_report["last_day_index"] = int(tick_knobs.get("day_index", 0));
     _native_dirty_report["last_season_phase"] = double(tick_knobs.get("season_phase", 0.0));
     _native_dirty_report["atlas_dirty"] = false;
+    _native_dirty_report["enum_atlas_dirty"] = false;
+    _native_dirty_report["sea_ice_atlas_dirty"] = false;
+    _native_dirty_report["sea_ice_terrain_flip_count"] = 0;
     _native_dirty_report["dirty_cell_count"] = 0;
 
     Dictionary breakdown;
@@ -1128,6 +1156,93 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     return out;
 }
 
+Dictionary DCWorldExt::run_native_sim_tick(const Dictionary &ctx) {
+    Dictionary tick_knobs = ctx.duplicate(true);
+    if (ctx.has("tick_knobs") && Variant(ctx["tick_knobs"]).get_type() == Variant::DICTIONARY) {
+        tick_knobs = Dictionary(ctx["tick_knobs"]).duplicate(true);
+    }
+
+    Dictionary out = run_native_daily_tick(tick_knobs);
+    _native_daily_report = out.duplicate(true);
+
+    Dictionary hash_diff;
+    hash_diff["enabled"] = bool(ctx.get("shadow_diff_enabled", false));
+    hash_diff["rc"] = int(out.get("rc", -1));
+    hash_diff["fail_stage"] = out.get("fail_stage", String());
+    hash_diff["checked_cell_count"] = _native_world_cell_count;
+
+    auto hash_f32_slot = [&](const char *slot_name) -> uint64_t {
+        const int sid = component_id(StringName(slot_name));
+        if (sid < 0 || sid >= _slots.size()) return 0;
+        const Slot &s = _slots.write[sid];
+        uint64_t h = 1469598103934665603ull;
+        const int n = s.arr_f32.size();
+        const float *p = s.arr_f32.ptr();
+        for (int i = 0; i < n; ++i) {
+            uint32_t bits = 0;
+            static_assert(sizeof(bits) == sizeof(float), "float hash assumes 32-bit float");
+            std::memcpy(&bits, &p[i], sizeof(float));
+            h ^= uint64_t(bits);
+            h *= 1099511628211ull;
+        }
+        return h;
+    };
+    auto hash_u8_slot = [&](const char *slot_name) -> uint64_t {
+        const int sid = component_id(StringName(slot_name));
+        if (sid < 0 || sid >= _slots.size()) return 0;
+        const Slot &s = _slots.write[sid];
+        uint64_t h = 1469598103934665603ull;
+        const int n = s.arr_u8.size();
+        const uint8_t *p = s.arr_u8.ptr();
+        for (int i = 0; i < n; ++i) {
+            h ^= uint64_t(p[i]);
+            h *= 1099511628211ull;
+        }
+        return h;
+    };
+
+    Dictionary native_hashes;
+    native_hashes["temp"] = String::num_uint64(hash_f32_slot("cell_temp"), 16);
+    native_hashes["moisture"] = String::num_uint64(hash_f32_slot("cell_moisture"), 16);
+    native_hashes["snow"] = String::num_uint64(hash_f32_slot("cell_snow_cover"), 16);
+    native_hashes["sea_ice_frac"] = String::num_uint64(hash_f32_slot("cell_sea_ice_frac"), 16);
+    native_hashes["terrain"] = String::num_uint64(hash_u8_slot("cell_terrain"), 16);
+    native_hashes["vegetation"] = String::num_uint64(hash_u8_slot("cell_vegetation"), 16);
+    native_hashes["weather_type"] = String::num_uint64(hash_u8_slot("cell_weather_type"), 16);
+    hash_diff["native_hashes"] = native_hashes;
+
+    Dictionary legacy_hashes;
+    if (ctx.has("legacy_hashes") && Variant(ctx["legacy_hashes"]).get_type() == Variant::DICTIONARY) {
+        legacy_hashes = ctx["legacy_hashes"];
+    }
+    hash_diff["legacy_hashes"] = legacy_hashes;
+    Array mismatched;
+    if (!legacy_hashes.is_empty()) {
+        Array keys = native_hashes.keys();
+        for (int i = 0; i < keys.size(); ++i) {
+            Variant k = keys[i];
+            if (legacy_hashes.has(k) && String(legacy_hashes[k]) != String(native_hashes[k])) {
+                mismatched.append(k);
+            }
+        }
+    }
+    hash_diff["mismatched_fields"] = mismatched;
+    hash_diff["match"] = legacy_hashes.is_empty() ? false : mismatched.is_empty();
+    _native_shadow_diff_report = hash_diff.duplicate(true);
+
+    out["hash_diff"] = hash_diff;
+    _native_daily_report = out.duplicate(true);
+    return out;
+}
+
+Dictionary DCWorldExt::get_native_daily_report() const {
+    return _native_daily_report.duplicate(true);
+}
+
+Dictionary DCWorldExt::get_native_shadow_diff_report() const {
+    return _native_shadow_diff_report.duplicate(true);
+}
+
 Dictionary DCWorldExt::run_native_world_generate_pass(int seed,
                                                       const Dictionary &cfg,
                                                       const Dictionary &profile) {
@@ -1137,6 +1252,7 @@ Dictionary DCWorldExt::run_native_world_generate_pass(int seed,
     out["seed"] = seed;
     out["has_config"] = !cfg.is_empty();
     out["has_profile"] = !profile.is_empty();
+    out["generation_progress"] = 0.0;
     return out;
 }
 
@@ -1144,8 +1260,118 @@ Array DCWorldExt::get_native_fronts_snapshot() const {
     return _native_fronts_snapshot.duplicate();
 }
 
+Dictionary DCWorldExt::get_native_fronts_snapshot_packed() const {
+    PackedFloat32Array center_x;
+    PackedFloat32Array center_y;
+    PackedFloat32Array intensity;
+    PackedFloat32Array radius;
+    PackedFloat32Array axis_x;
+    PackedFloat32Array axis_y;
+    PackedFloat32Array cloud_amount;
+    PackedFloat32Array precip_amount;
+    PackedInt32Array type;
+
+    const int n = _native_fronts_snapshot.size();
+    center_x.resize(n);
+    center_y.resize(n);
+    intensity.resize(n);
+    radius.resize(n);
+    axis_x.resize(n);
+    axis_y.resize(n);
+    cloud_amount.resize(n);
+    precip_amount.resize(n);
+    type.resize(n);
+
+    int packed_count = 0;
+    for (int i = 0; i < n; ++i) {
+        if (Variant(_native_fronts_snapshot[i]).get_type() != Variant::DICTIONARY) {
+            continue;
+        }
+        Dictionary f = _native_fronts_snapshot[i];
+        Vector2 c = f.get("center", Vector2());
+        Vector2 axis = f.get("axis", Vector2(1.0, 0.0));
+        center_x.set(packed_count, c.x);
+        center_y.set(packed_count, c.y);
+        intensity.set(packed_count, float(f.get("intensity", 0.0)));
+        radius.set(packed_count, float(f.get("radius", 0.0)));
+        axis_x.set(packed_count, axis.x);
+        axis_y.set(packed_count, axis.y);
+        cloud_amount.set(packed_count, float(f.get("cloud_amount", 0.0)));
+        precip_amount.set(packed_count, float(f.get("precip_amount", 0.0)));
+        type.set(packed_count, int(f.get("type", 0)));
+        ++packed_count;
+    }
+    center_x.resize(packed_count);
+    center_y.resize(packed_count);
+    intensity.resize(packed_count);
+    radius.resize(packed_count);
+    axis_x.resize(packed_count);
+    axis_y.resize(packed_count);
+    cloud_amount.resize(packed_count);
+    precip_amount.resize(packed_count);
+    type.resize(packed_count);
+
+    Dictionary out;
+    out["count"] = packed_count;
+    out["source_count"] = n;
+    out["center_x"] = center_x;
+    out["center_y"] = center_y;
+    out["intensity"] = intensity;
+    out["radius"] = radius;
+    out["axis_x"] = axis_x;
+    out["axis_y"] = axis_y;
+    out["cloud_amount"] = cloud_amount;
+    out["precip_amount"] = precip_amount;
+    out["type"] = type;
+    return out;
+}
+
 Dictionary DCWorldExt::get_native_dirty_report() const {
     return _native_dirty_report.duplicate();
+}
+
+Dictionary DCWorldExt::start_native_generation(int seed,
+                                               const Dictionary &cfg,
+                                               const Dictionary &profile) {
+    _native_generation_active = true;
+    _native_generation_seed = seed;
+    _native_generation_report.clear();
+    _native_generation_report["rc"] = 0;
+    _native_generation_report["status"] = String("started");
+    _native_generation_report["seed"] = seed;
+    _native_generation_report["has_config"] = !cfg.is_empty();
+    _native_generation_report["has_profile"] = !profile.is_empty();
+    _native_generation_report["generation_progress"] = 0.0;
+    _native_generation_report["implemented"] = false;
+    _native_generation_report["fail_stage"] = String();
+    return _native_generation_report.duplicate(true);
+}
+
+Dictionary DCWorldExt::run_native_generation_slice(const Dictionary &budget) {
+    Dictionary out;
+    out["rc"] = -1;
+    out["status"] = _native_generation_active ? String("failed") : String("idle");
+    out["fail_stage"] = String("generation_kernels_unimplemented");
+    out["reason"] = String("NativeWorldGenerator API is present, but generation kernels have not been migrated yet");
+    out["seed"] = _native_generation_seed;
+    out["budget"] = budget.duplicate(true);
+    out["generation_progress"] = 0.0;
+    _native_generation_active = false;
+    _native_generation_report = out.duplicate(true);
+    return out;
+}
+
+Dictionary DCWorldExt::finish_native_generation() {
+    Dictionary out;
+    out["rc"] = -1;
+    out["status"] = _native_generation_active ? String("incomplete") : String("failed");
+    out["fail_stage"] = String("generation_kernels_unimplemented");
+    out["reason"] = String("NativeWorldGenerator cannot finish until generation kernels are implemented");
+    out["seed"] = _native_generation_seed;
+    out["generation_progress"] = 0.0;
+    _native_generation_active = false;
+    _native_generation_report = out.duplicate(true);
+    return out;
 }
 
 // ─── Archetype ─────────────────────────────────────────────────────────────
@@ -5200,6 +5426,7 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const float hysteresis  = float(knobs["hysteresis"]);
     const float ice_delay   = float(knobs["ice_delay"]);
     const bool  enable_oht  = bool(knobs["enable_ocean_heat_transport"]);
+    const bool  apply_terrain_flips = bool(knobs.get("apply_terrain_flips", false));
     const int   id_lake     = int(knobs["terrain_lake_id"]);
     const int   id_sea_ice  = int(knobs["terrain_sea_ice_id"]);
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
@@ -5356,6 +5583,25 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
 
     // 写 SIF slot（cell_sea_ice_frac CoW-detached buffer 同步回 MapData）
     _flush_slot_to_map(sid_sea_ice);
+    if (apply_terrain_flips && flipped_count > 0) {
+        uint8_t * const __restrict TRW = s_terrain.arr_u8.ptrw();
+        for (int i = 0; i < flip_to_ice.size(); ++i) {
+            const int idx = int(flip_to_ice[i]);
+            if (idx >= 0 && idx < n_cells) {
+                TRW[idx] = uint8_t(id_sea_ice & 0xFF);
+            }
+        }
+        for (int i = 0; i < flip_to_base.size(); ++i) {
+            const int idx = int(flip_to_base[i]);
+            if (idx >= 0 && idx < n_cells && i < flip_to_base_terrain.size()) {
+                TRW[idx] = uint8_t(int(flip_to_base_terrain[i]) & 0xFF);
+            }
+        }
+        _flush_slot_to_map(sid_terrain);
+        _native_dirty_report["atlas_dirty"] = true;
+        _native_dirty_report["sea_ice_atlas_dirty"] = true;
+        _native_dirty_report["sea_ice_terrain_flip_count"] = flipped_count;
+    }
 
     // 输出回填到 knobs（让 GDScript caller 拿到 flip 列表 + 统计）
     knobs["flip_to_ice_list"]     = flip_to_ice;
@@ -14851,12 +15097,26 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::configure_native_world);
     ClassDB::bind_method(D_METHOD("run_native_daily_tick", "tick_knobs"),
                          &DCWorldExt::run_native_daily_tick);
+    ClassDB::bind_method(D_METHOD("run_native_sim_tick", "ctx"),
+                         &DCWorldExt::run_native_sim_tick);
+    ClassDB::bind_method(D_METHOD("get_native_daily_report"),
+                         &DCWorldExt::get_native_daily_report);
+    ClassDB::bind_method(D_METHOD("get_native_shadow_diff_report"),
+                         &DCWorldExt::get_native_shadow_diff_report);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),
                          &DCWorldExt::get_native_fronts_snapshot);
+    ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot_packed"),
+                         &DCWorldExt::get_native_fronts_snapshot_packed);
     ClassDB::bind_method(D_METHOD("get_native_dirty_report"),
                          &DCWorldExt::get_native_dirty_report);
+    ClassDB::bind_method(D_METHOD("start_native_generation", "seed", "cfg", "profile"),
+                         &DCWorldExt::start_native_generation);
+    ClassDB::bind_method(D_METHOD("run_native_generation_slice", "budget"),
+                         &DCWorldExt::run_native_generation_slice);
+    ClassDB::bind_method(D_METHOD("finish_native_generation"),
+                         &DCWorldExt::finish_native_generation);
 
     // CoW flush / refresh (performance-charter §11.2)
     ClassDB::bind_method(D_METHOD("flush_slots_to_map"),    &DCWorldExt::flush_slots_to_map);

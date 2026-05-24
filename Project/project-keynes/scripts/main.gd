@@ -253,6 +253,9 @@ var _slow_tick_count: int = 0
 # 主循环只做"非空时调 on_fast_tick"的快路径，避免污染主类。具体录制逻辑、
 # CSV 拼装、状态机全部在 scripts/ui/perf_recorder.gd 内。
 var _perf_recorder: RefCounted = null
+# DebugConsole 地块数据录制按钮注入的 TileDataRecorder 实例。与 PerfRecorder
+# 共用 fast_tick sample 时机，但 recorder 自己从 MapData 读取 cell-level SoA。
+var _tile_data_recorder: RefCounted = null
 
 # ─── Data Overlay 状态 ─────────────────────────────────────────────
 # _overlay_mode   : OverlayMode.MODE 的整数值，NONE=0
@@ -778,25 +781,22 @@ func _on_day_changed(_day_idx: int) -> void:
 			_perf_verdict_total_ms.pop_front()
 			_perf_verdict_warn_marks.pop_front()
 
-	# Plan: perf-recording-csv-export
+	# Plan: perf-recording-csv-export + tile-data debug recording
 	# 把本帧 main 局部才知道的指标（三段 ms / 跳日标志 / fps / 时间戳）发布给
-	# PerfRecorder。recorder 自己再去拉 SUS report / summary / breakdowns。
-	# 未挂载录制器时 _publish_fast_tick_perf_sample 内部走 null 早返路径，
-	# 零开销；跳日帧也录入（CSV 里用 was_skipped_day 列区分），保证录制连贯。
+	# 已挂接的录制器。PerfRecorder 自己拉 SUS breakdown；TileDataRecorder
+	# 自己拉 MapData SoA。未挂载或未录制时内部早返，跳日帧也录入。
 	_publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
 		float(fast_ms), was_skipped_day)
 
 
 # Plan: perf-recording-csv-export
-# 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给 _perf_recorder。
-# 不持有 recorder 引用时直接 return，零开销快路径。
+# 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给已挂接的录制器。
+# 不持有 recorder 引用或未录制时直接 return，零开销快路径。
 func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> void:
-	if _perf_recorder == null:
-		return
-	if not _perf_recorder.has_method("on_fast_tick"):
-		return
-	if _perf_recorder.has_method("is_recording") and not bool(_perf_recorder.call("is_recording")):
+	var perf_ready: bool = _recorder_ready(_perf_recorder)
+	var tile_ready: bool = _recorder_ready(_tile_data_recorder)
+	if not perf_ready and not tile_ready:
 		return
 	var sample: Dictionary = {
 		"tick_idx": _fast_tick_count,
@@ -808,7 +808,20 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		"t_render_ms": t_render_ms,
 		"t_ui_ms": t_ui_ms,
 	}
-	_perf_recorder.call("on_fast_tick", sample)
+	if perf_ready:
+		_perf_recorder.call("on_fast_tick", sample)
+	if tile_ready:
+		_tile_data_recorder.call("on_fast_tick", sample)
+
+
+func _recorder_ready(rec: RefCounted) -> bool:
+	if rec == null:
+		return false
+	if not rec.has_method("on_fast_tick"):
+		return false
+	if rec.has_method("is_recording") and not bool(rec.call("is_recording")):
+		return false
+	return true
 
 
 # Daily-sim perf instrumentation：把 SUS.report_last_tick() 翻译成可读日志。
@@ -1964,6 +1977,14 @@ func set_perf_recorder(rec: RefCounted) -> void:
 
 func get_perf_recorder() -> RefCounted:
 	return _perf_recorder
+
+
+func set_tile_data_recorder(rec: RefCounted) -> void:
+	_tile_data_recorder = rec
+
+
+func get_tile_data_recorder() -> RefCounted:
+	return _tile_data_recorder
 
 
 # DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。

@@ -64,8 +64,13 @@ bool DCWorldExt::_exec_node_climate_pass_a(const Dictionary& bundle,
 bool DCWorldExt::_exec_node_ocean_water(const Dictionary& bundle,
                                          const Dictionary& /*tick_knobs*/,
                                          Dictionary& breakdown) {
-    const double ms = run_ocean_water_pass(as_dict_local(bundle["ocean_water_knobs"]));
+    Dictionary water_knobs = as_dict_local(bundle["ocean_water_knobs"]);
+    const double ms = run_ocean_water_pass(water_knobs);
     if (ms < 0.0) return false;
+    if (water_knobs.has("anomaly_out") && bundle.has("ocean_land_knobs")) {
+        Dictionary land_knobs = as_dict_local(bundle["ocean_land_knobs"]);
+        land_knobs["anomaly_inout"] = water_knobs["anomaly_out"];
+    }
     breakdown["ocean_water_ms"] = ms;
     breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
     return true;
@@ -184,26 +189,37 @@ bool DCWorldExt::_exec_node_weather(const Dictionary& bundle,
 // ─── SCHEDULE_GRAPH 静态表 ─────────────────────────────────────────────────
 const SystemNode SCHEDULE_GRAPH[] = {
     {"climate_pass_a",       "climate_pass_a_struct",       "climate_pass_a",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
      &DCWorldExt::_exec_node_climate_pass_a},
     {"ocean_water",          "ocean_water_knobs",           "ocean_water",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN, SYS_MASK_OCEAN,
      &DCWorldExt::_exec_node_ocean_water},
     {"ocean_land",           "ocean_land_knobs",            "ocean_land",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_OCEAN,
      &DCWorldExt::_exec_node_ocean_land},
     {"climate_pass_b",       "climate_pass_b_knobs",        "climate_pass_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
      &DCWorldExt::_exec_node_climate_pass_b},
     {"sea_ice",              "sea_ice_knobs",               "sea_ice",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_SEA_ICE | SYS_MASK_TERRAIN,
      &DCWorldExt::_exec_node_sea_ice},
     {"transpiration",        "transpiration_knobs",         "transpiration",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
      &DCWorldExt::_exec_node_transpiration},
     {"albedo",               "albedo_knobs",                "albedo",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_albedo},
     {"vegetation_dynamics",  "vegetation_dynamics_knobs",   "vegetation_dynamics",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_vegetation_dynamics},
     {"climate_feedback",     "climate_feedback_knobs",      "climate_feedback",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_climate_feedback},
     {"stage_b",              "stage_b_knobs",               "stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_stage_b},
     {"weather",              "weather_knobs",               "weather",
+     SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER | SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_weather},
 };
 const int SCHEDULE_GRAPH_SIZE = sizeof(SCHEDULE_GRAPH) / sizeof(SystemNode);

@@ -36,12 +36,19 @@ func last_result() -> Dictionary:
 
 
 func should_run(ctx: SusTickContext) -> bool:
-	return generator != null and generator.has_method("run_native_daily_tick_from_job") and super.should_run(ctx)
+	return generator != null \
+			and (generator.has_method("run_native_sim_tick_from_job")
+				or generator.has_method("run_native_daily_tick_from_job")) \
+			and super.should_run(ctx)
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t0: int = Time.get_ticks_usec()
-	var res: Dictionary = generator.run_native_daily_tick_from_job(ctx, map, world)
+	var res: Dictionary
+	if generator.has_method("run_native_sim_tick_from_job"):
+		res = generator.run_native_sim_tick_from_job(ctx, map, world)
+	else:
+		res = generator.run_native_daily_tick_from_job(ctx, map, world)
 	_last_result = res.duplicate(true)
 	_did_run_last_tick = int(res.get("rc", -1)) == 0
 	var elapsed_ms: float = float(res.get("total_ms", (Time.get_ticks_usec() - t0) / 1000.0))
