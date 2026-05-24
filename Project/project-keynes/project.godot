@@ -24,6 +24,10 @@ window/size/viewport_height=960
 
 run/main_run_args="--use_data_core --use_data_core_weather"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg")
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

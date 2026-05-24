@@ -583,14 +583,19 @@ func _set_speed(s: float) -> void:
 func _on_speed_changed(new_speed: float) -> void:
 	if _generator == null:
 		return
-	var stride: int = 1
-	if new_speed >= 15.0:
-		stride = 8
-	elif new_speed >= 3.0:
-		stride = 4
-	else:
-		stride = 1
-	_generator.set_weather_refresh_stride(stride)
+	var cp = _generator._c() if _generator.has_method("_c") else null
+	var auto_weather_stride: bool = true
+	if cp != null and cp.get("weather_refresh_auto_stride_by_speed") != null:
+		auto_weather_stride = bool(cp.weather_refresh_auto_stride_by_speed)
+	if auto_weather_stride:
+		var stride: int = 1
+		if new_speed >= 15.0:
+			stride = 8
+		elif new_speed >= 3.0:
+			stride = 4
+		else:
+			stride = 1
+		_generator.set_weather_refresh_stride(stride)
 	# 抽动修复（2026-05-18）：切档瞬间 weather_layer 内的 snapshot_interval 估计
 	# 会因为"上次 push 到现在"的墙钟差变得不真实（x20→x1 时尤其严重），导致下
 	# 一次 set_weather_fronts 算出超长 blend_duration → 云第一段几乎不动。重置

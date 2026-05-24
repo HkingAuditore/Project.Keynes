@@ -17,6 +17,8 @@ extends Resource
 # ══════════════════════════════════════════════════════════════════════
 # [Continent shaping]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("世界生成")
+@export_group("大陆形态")
 
 # Low-frequency noise warp applied to the distance-to-coast field.
 @export var continent_warp_amp: float = 0.15
@@ -69,6 +71,7 @@ extends Resource
 # ══════════════════════════════════════════════════════════════════════
 # [Moisture & precipitation]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("水汽与降水")
 
 # Ocean-adjacent cells receive this additional moisture bonus.
 @export var coastal_moisture_boost: float = 0.20
@@ -99,6 +102,9 @@ extends Resource
 # ══════════════════════════════════════════════════════════════════════
 # [Seasons]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("模拟频率与预算")
+@export_group("季节与日气候")
+@export_subgroup("基础季节信号")
 
 # Per-season moisture scaler. Length must be 4 (Spring/Summer/Autumn/Winter).
 @export var seasonal_moisture_scale: Array[float] = [1.05, 1.20, 0.92, 0.78]
@@ -121,6 +127,7 @@ extends Resource
 @export var daily_climate_interpolation: bool = true
 
 # ── Season-Refresh periodic driver (2026-05-18) ──────────────────────────
+@export_subgroup("慢变量刷新")
 # 慢变量批量重算的驱动方式。
 #
 # 设计背景：refresh_climate_daily 已经在每天连续更新温度 / 湿度 / 海冰，
@@ -147,6 +154,7 @@ extends Resource
 @export_range(1, 360, 1) var season_refresh_period_ticks: int = 30
 @export var season_refresh_legacy_signal: bool = false
 
+@export_subgroup("气候与天气频率")
 # Stride (in days) for daily-continuous refresh: 1 = every day, N>1 = every
 # N days (cheap downgrade if profiling shows the per-day pass too costly).
 # Has no effect when daily_climate_interpolation == false.
@@ -157,6 +165,9 @@ extends Resource
 # 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。如需严格回归测试可在 Inspector
 # 中改回 1。
 @export_range(1, 8, 1) var daily_climate_refresh_stride: int = 2
+
+@export var sea_ice_independent_system_enabled: bool = true
+@export_range(1, 8, 1) var sea_ice_daily_stride: int = 1
 
 # Stride (in days) for the sea-ice atlas GPU upload (SeaIceAtlasUploadJob).
 # Daily Sim SoA Refactor 阶段 1：把原先内嵌在 refresh_climate_daily 末尾、每日 ~105ms
@@ -173,11 +184,26 @@ extends Resource
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
 @export_range(1, 8, 1) var weather_refresh_stride: int = 1
+# When true, main.gd may retune weather_refresh_stride on speed changes
+# (x1=1, x5=4, x20=8). Disable this when the profile should be the single
+# source of truth for weather cadence.
+@export var weather_refresh_auto_stride_by_speed: bool = true
 @export_range(1, 30, 1) var weather_albedo_stride: int = 10
 # 2026-05-19 vegetation-survival-rebalance v2：植被 pass 频率从 10 → 5，
 # 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
 @export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
+
+@export_subgroup("视觉上传频率")
+# Enum atlas upload updates terrain/biome/cover/vegetation lookup textures after
+# simulation changes. It still only runs when dirty; this stride controls how
+# often a pending dirty upload is allowed to consume one axis.
+@export_range(1, 8, 1) var enum_atlas_upload_stride: int = 2
+
+# Dynamic visual atlas upload updates dynamic_cell/ecology/smooth/ice atlases.
+# 1 = most responsive, 2 = default balance, higher values save main-thread/GPU
+# time at the cost of visibly slower snow/ecology/ice visual response.
+@export_range(1, 8, 1) var dynamic_visual_atlas_upload_stride: int = 2
 
 # ─── DataCore（已删除字段）─────────────────────────────────────────
 # use_data_core / use_data_core_weather / use_data_core_climate 已在
@@ -190,6 +216,8 @@ const NATIVE_MODE_OFF: int = 0
 const NATIVE_MODE_SHADOW: int = 1
 const NATIVE_MODE_ACTIVE: int = 2
 
+@export_group("原生管线")
+
 # Native top-level migration modes. OFF preserves the current pass-by-pass
 # path, SHADOW runs native diagnostics beside legacy paths, ACTIVE is allowed
 # to replace the corresponding GDScript orchestration when the native probe
@@ -198,6 +226,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
 @export var native_environment_runtime_enabled: bool = false
+@export_range(1, 8, 1) var native_daily_sim_stride: int = 1
+@export_range(1, 8, 1) var native_environment_runtime_stride: int = 1
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
 @export var native_shadow_diff_enabled: bool = true
 
@@ -212,6 +242,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Native-normal simulation budget profile. Strict 1ms can still be restored per
 # resource, but the default favors completing lightweight DOTS/native transactions
 # in the same fast tick under a 2ms envelope.
+@export_group("每帧预算")
 @export var sim_strict_budget_enabled: bool = false
 @export_range(0.25, 1600.0, 0.05) var sim_frame_budget_ms: float = 2.0
 @export_range(0.10, 800.0, 0.05) var sim_slice_budget_ms: float = 0.75
@@ -351,6 +382,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
 # Default 240 days keeps currents on a seasonal/slow layer. Lower → fresher
 # currents at the cost of more frequent slices.
+@export_group("洋流频率")
 @export_range(7, 360, 1) var ocean_currents_period_ticks: int = 240
 
 # SUS OceanCurrentsJob — number of slices each round is split into. Each
@@ -381,6 +413,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("地表与生态")
+@export_group("水文")
 
 # Top (1 - percentile) flux cells become rivers.
 @export var river_flow_percentile: float = 0.78
@@ -399,6 +433,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Vegetation → climate feedback (moisture donor)]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("植被水汽反馈")
 # Per-terrain moisture donation (positive = humid, negative = dessicating).
 # STEPPE is deliberately absent from _vegetation_donor_amount's match
 # (treated as neutral 0.0).
@@ -433,6 +468,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Ecosystem vitality & succession]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("生态活力与演替")
 # Per-day vitality change rate; low/high thresholds; and number of
 # consecutive days required to trigger succession up/down. Values mirror
 # the original Phase 8 / Milestone 4 constants in map_generator.gd.
@@ -461,6 +497,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Emergent climate coupling — Phase E]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("气候与天气模型")
+@export_group("涌现气候耦合")
 # Master switches for the "Emergent Climate Coupling" rework. All four
 # default to true (new behavior). Flipping any one to false routes the
 # corresponding pass back to the legacy hard-coded path, so old saves and
@@ -514,6 +552,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
 # Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
+@export_group("海冰")
 # 2026-05-19 Plan-C 三次调参（用户报告"南北极同时白 + 不化"）：
 # 现象：截图里两极同时大量永久冰盖，夏季不消退。
 # 进一步诊断：bootstrap 给两极满冰；运行时 _insol_dev 在两极 mean ≈ 0.05~0.10
@@ -529,6 +568,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var sea_ice_neighbor_contagion: float = 0.35     # extra k_freeze if any neighbor frac ≥ 0.6
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
+@export_group("局地气候耦合")
 @export var coastal_heat_leak_winter_boost: float = 1.5
 @export var snow_albedo_cooling: float = 0.04            # extra cooling per unit snow_cover
 @export var vegetation_cooling: float = 0.025            # extra cooling per unit foliage cover
@@ -561,6 +601,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # vapor/cloud/precip/instability fields and derives weather type directly from
 # local climate, terrain, wind and ocean signals. Legacy fronts remain only as a
 # visual/compatibility summary.
+@export_group("天气场求解")
 @export var weather_field_enabled: bool = true
 @export_range(0, 1, 1) var weather_field_advect_steps: int = 1
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.08
@@ -576,6 +617,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("物理风场与洋流")
 # 把风场/洋流从纯 ny-only 像素函数升级为"二维海陆耦合 + 海盆环流"的
 # 物理化简化模型。求解粒度落在 hex 中心；像素 buffer 由 hex 场光栅化得到，
 # 与现有 shader (wind_field_buffer / ocean_current_buffer / sea_ice_tex / etc) 完全兼容。
@@ -605,6 +647,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [True insolation-driven climate — Phase F]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("真实日照")
 # Switches the "season signal" upstream source from independent cosine
 # curves (one per subsystem) to a single physical quantity: insolation,
 # derived from a real sub-solar latitude that moves sinusoidally between
@@ -637,6 +680,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("DOTS 优化开关")
+@export_group("气候天气预算治理")
 # 5 个独立总开关，分别控制 climate-weather-2ms-budget plan 的优化路径上线。
 # 全部默认 false → 走 legacy 路径，行为 0 漂移；任意一个翻 true → 在下一次
 # round 入口安全切换到 SoA / 稀疏 / 低频 / 部分上传新路径。
@@ -683,6 +728,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("特殊功能")
+@export_group("海冰阈值")
 
 # Sea-ice cover thresholds (temperature).
 # 2026-05-19 Plan-C 调参：form 0.07→0.10 / melt 0.12→0.16。理由：t_eff 受
@@ -693,6 +740,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var sea_ice_melt_threshold: float = 0.25
 
 # Volcano placement.
+@export_group("火山")
 @export var max_volcanoes: int = 8
 @export var volcano_min_dist: int = 6           # minimum hex-distance between volcanoes
 @export var volcano_min_land_h: float = 0.65    # minimum elevation to qualify as volcano
@@ -700,6 +748,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Reference-impl demo channels — DO NOT use in real game logic]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("调试与演示")
+@export_group("热力梯度演示")
 # These switches drive the C++/GDScript communication-contract reference
 # passes documented in `docs/performance-charter.md` §12.5 (Pass #1) and
 # §12.6 (Pass #2). They are **demo-only** — real climate / weather / biome
@@ -751,6 +801,7 @@ enum DemoTGPath { LEGACY = 0, ECS = 1, ECS_ARCHETYPE = 2 }
 @export_range(0.0, 5.0, 0.05) var demo_thermal_gradient_normalize_k: float = 0.5
 
 # ── Pass #3 knobs (`run_demo_complex_pass`, charter §12.6.6) ─────────
+@export_subgroup("复杂扩散演示")
 # These four knobs upgrade the Pass #2 kernel from a one-shot 4-neighbour
 # gradient to an iterated anisotropic-diffusion + multi-scale wind
 # approximation. They share `demo_thermal_gradient_enabled` as the master
