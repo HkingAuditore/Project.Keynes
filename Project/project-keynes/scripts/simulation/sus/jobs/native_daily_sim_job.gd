@@ -1,6 +1,8 @@
 extends DCSystem
 class_name NativeDailySimJob
 
+const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+
 var generator = null
 var map: MapData = null
 var world: WorldData = null
@@ -8,7 +10,7 @@ var _did_run_last_tick: bool = false
 var _last_result: Dictionary = {}
 
 
-func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
+func _init(p_generator, p_map: MapData, p_world: WorldData, p_stride: int = 1) -> void:
 	generator = p_generator
 	map = p_map
 	world = p_world
@@ -18,6 +20,7 @@ func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
 	max_slices_per_tick = 1
 	slice_budget_ms = 1.0
 	starvation_threshold = 0
+	policy = SusPolicyScript.StridePolicy.new(max(1, p_stride), 0)
 
 
 func reset_run_flag() -> void:

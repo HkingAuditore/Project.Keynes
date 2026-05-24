@@ -4,7 +4,9 @@
 
 [resource]
 script = ExtResource("1")
+daily_climate_refresh_stride = 1
 native_environment_runtime_enabled = true
+native_daily_perf_target_ms = 3.0
 sim_frame_budget_ms = 1600.0
 sim_slice_budget_ms = 800.0
 sim_upload_slice_budget_ms = 800.0

@@ -154,7 +154,7 @@ func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int)
 func declare_reads() -> Array[StringName]:
 	# 与原 RefreshClimateDailyJob._on_world_bound 内手写 25 个 _comp_cell_*
 	# cache 1:1 对齐（基类 DCSystem.setup() 自动 cache 到 _cid）
-	return [
+	var reads: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
 		DCComponentIds.CELL_TEMP_BASELINE,
 		DCComponentIds.CELL_TEMP_30D,
@@ -181,10 +181,13 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_EMA_INITIALIZED,
 		DCComponentIds.CELL_TEMP_SEASON_OFFSET,
 	]
+	if _standalone_sea_ice_enabled():
+		reads.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
+	return reads
 
 
 func declare_writes() -> Array[StringName]:
-	return [
+	var writes: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
 		DCComponentIds.CELL_TEMP_30D,
 		DCComponentIds.CELL_TEMP_365D,
@@ -198,6 +201,9 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_CLIMATE_DIRTY,
 		DCComponentIds.CELL_EMA_INITIALIZED,
 	]
+	if _standalone_sea_ice_enabled():
+		writes.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
+	return writes
 
 
 func declare_pools() -> Array[StringName]:
@@ -301,6 +307,13 @@ func _diagnostics_enabled() -> bool:
 	if cp.get("performance_diagnostics_enabled") != null:
 		return bool(cp.performance_diagnostics_enabled)
 	return true
+
+
+func _standalone_sea_ice_enabled() -> bool:
+	var cp = generator._c() if generator != null else null
+	return cp != null \
+			and cp.get("sea_ice_independent_system_enabled") != null \
+			and bool(cp.sea_ice_independent_system_enabled)
 
 
 func _begin_round_pass_state() -> void:
@@ -474,6 +487,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				should_skip = not local_coupling
 			_PASS_OCEAN_WATER, _PASS_OCEAN_LAND:
 				should_skip = not ocean_enabled
+			_PASS_SEA_ICE:
+				should_skip = _standalone_sea_ice_enabled()
 			_PASS_TRANSP:
 				should_skip = not local_coupling
 			_:

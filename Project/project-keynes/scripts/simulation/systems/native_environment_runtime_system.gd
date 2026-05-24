@@ -1,6 +1,8 @@
 extends DCSystem
 class_name NativeEnvironmentRuntimeSystem
 
+const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+
 var generator = null
 var map: MapData = null
 var _last_result: Dictionary = {}
@@ -8,7 +10,7 @@ var _did_run_last_tick: bool = false
 var _pipeline_cursor: StringName = &"ocean"
 
 
-func _init(p_generator, p_map: MapData) -> void:
+func _init(p_generator, p_map: MapData, p_stride: int = 1) -> void:
 	generator = p_generator
 	map = p_map
 	id = &"native_environment_runtime"
@@ -17,6 +19,7 @@ func _init(p_generator, p_map: MapData) -> void:
 	max_slices_per_tick = 1
 	slice_budget_ms = 0.5
 	starvation_threshold = 0
+	policy = SusPolicyScript.StridePolicy.new(max(1, p_stride), 0)
 
 
 func feature_flag() -> StringName:

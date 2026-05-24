@@ -146,6 +146,7 @@ const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 # SUS 实例并把所有"周期性模拟工作"作为 Job 注册进来。任务 4：注册
 # OceanCurrentsJob，把年首 ~1605ms 的洋流烘焙切成多日 ≤4ms 的小切片。
 const SlicedUpdateSchedulerScript = preload("res://scripts/simulation/sus/sus_scheduler.gd")
+const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 const SusTickContextScript = preload("res://scripts/simulation/sus/sus_tick_context.gd")
 const OceanCurrentsJobScript = preload("res://scripts/simulation/sus/jobs/ocean_currents_job.gd")
 # 任务 8：把 refresh_climate_daily / refresh_daily 收编为 SUS Job。
@@ -165,6 +166,7 @@ const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season
 # 是原生 DCSystem 实现）。flag=false 时维持既有 SusJob 直注册路径，零行为差异。
 const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
+const SeaIceDailySystemScript = preload("res://scripts/simulation/systems/sea_ice_daily_system.gd")
 const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocean_currents_system.gd")
 const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_system.gd")
 const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
@@ -857,6 +859,7 @@ var _ocean_currents_job: OceanCurrentsJob = null
 # 当 use_dc_system_scheduler=false 时直接 new RefreshClimateDailyJob（仍是
 # ClimateDailySystem 子类）。改 untyped 容纳两种返回类型。
 var _refresh_climate_daily_job = null
+var _sea_ice_daily_job = null
 var _weather_refresh_job: WeatherRefreshJob = null
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传 Job。
 # 0.4.1：以下 3 个引用类型放宽为 untyped。原因：当 use_dc_system_scheduler=true
@@ -1113,6 +1116,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	var cp_sched := _c()
 	_use_dc_system_scheduler = true
 	_sus = DCSystemSchedulerScript.new()
+	_sea_ice_daily_job = null
 	_apply_sim_budget_profile_to_scheduler(cp_sched)
 	# DataCore World 接入（dots-foundation-and-weather-migration）：
 	# 在 SUS 注册任何 job 前先把 World 实例创建出来并 bind 到 MapData，
@@ -1236,6 +1240,14 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 从 ClimateProfile 删除——原有的 deprecated warning 不再需要。SUS 路径仅
 	# 读 ocean_currents_period_ticks / ocean_currents_slice_count。
 	var cp := _c()
+	var enum_atlas_stride: int = 2
+	var dynamic_visual_atlas_stride: int = _dyn_atlas_upload_stride
+	if cp != null:
+		if cp.get("enum_atlas_upload_stride") != null:
+			enum_atlas_stride = clampi(int(cp.enum_atlas_upload_stride), 1, 8)
+		if cp.get("dynamic_visual_atlas_upload_stride") != null:
+			dynamic_visual_atlas_stride = clampi(int(cp.dynamic_visual_atlas_upload_stride), 1, 8)
+	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
 	# 注册 OceanCurrentsJob。
 	var period_ticks: int = 30
 	var slice_count: int = 10
@@ -1278,9 +1290,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# set_weather_refresh_stride / set_daily_climate_refresh_stride 改写并
 	# 调 reconfigure。stride 跳日的语义完全由 SusPolicy 承担。
 	var climate_stride: int = 1
+	var sea_ice_stride: int = 1
 	var weather_stride: int = 1
 	if cp != null:
 		climate_stride = max(1, int(cp.daily_climate_refresh_stride))
+		if cp.get("sea_ice_daily_stride") != null:
+			sea_ice_stride = clampi(int(cp.sea_ice_daily_stride), 1, 8)
 		weather_stride = max(1, int(cp.weather_refresh_stride))
 	# RefreshClimateDailyJob：写连续气候基线（priority 100）
 	var climate_phase_getter := Callable()
@@ -1300,17 +1315,26 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
 		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
 		_sus.register_job(_refresh_climate_daily_job)
+	_sea_ice_daily_job = null
+	if cp != null and cp.get("sea_ice_independent_system_enabled") != null \
+			and bool(cp.sea_ice_independent_system_enabled):
+		_sea_ice_daily_job = SeaIceDailySystemScript.new(self, map, climate_phase_getter, sea_ice_stride)
+		_apply_sim_budget_profile_to_job(_sea_ice_daily_job, cp)
+		if _use_dc_system_scheduler:
+			_sus.register_system(_sea_ice_daily_job)
+		else:
+			_sus.register_job(_sea_ice_daily_job)
 	if _ocean_currents_job != null:
 		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
 		_ocean_currents_job.climate_slice_ms_getter = Callable(self, "last_refresh_climate_slice_ms")
 	# 0.4.1：use_dc_system_scheduler 时用 EnumAtlasUploadSystem（native DCSystem，
 	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
 	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_job(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
@@ -1489,6 +1513,7 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		# climate rounds and ocean raster/commit work spread across fast ticks.
 		if upload_job or job_id == &"season_refresh" \
 				or job_id == &"refresh_climate_daily" \
+				or job_id == &"sea_ice_daily" \
 				or job_id == &"ocean_currents":
 			job.max_slices_per_tick = 1
 		else:
@@ -1582,8 +1607,55 @@ func environment_runtime_step_budgeted(budget_ms: float, max_cells: int = 0, max
 ## 跑过（_dynamic_visual_atlas_upload_job == null），先存到字段，等下次 setup 用。
 func set_dyn_atlas_upload_stride(p_stride: int) -> void:
 	_dyn_atlas_upload_stride = clampi(p_stride, 1, 8)
+	var cp := _c()
+	if cp != null and cp.get("dynamic_visual_atlas_upload_stride") != null:
+		cp.dynamic_visual_atlas_upload_stride = _dyn_atlas_upload_stride
 	if _dynamic_visual_atlas_upload_job != null and _dynamic_visual_atlas_upload_job.has_method("reconfigure"):
 		_dynamic_visual_atlas_upload_job.reconfigure(_dyn_atlas_upload_stride)
+
+
+func set_enum_atlas_upload_stride(p_stride: int) -> void:
+	var stride: int = clampi(p_stride, 1, 8)
+	var cp := _c()
+	if cp != null and cp.get("enum_atlas_upload_stride") != null:
+		cp.enum_atlas_upload_stride = stride
+	if _enum_atlas_upload_job != null and _enum_atlas_upload_job.has_method("reconfigure"):
+		_enum_atlas_upload_job.reconfigure(stride)
+
+
+## Applies the cadence knobs currently stored in ClimateProfile to already
+## registered SUS/DC systems. Regenerating the world also reads the same knobs
+## during _setup_sus; this entry point is for debug UI / inspector tooling.
+func apply_simulation_cadence_from_profile() -> void:
+	var cp := _c()
+	if cp == null:
+		return
+	if cp.get("daily_climate_refresh_stride") != null:
+		set_daily_climate_refresh_stride(int(cp.daily_climate_refresh_stride))
+	if _sea_ice_daily_job != null and _sea_ice_daily_job.has_method("reconfigure") \
+			and cp.get("sea_ice_daily_stride") != null:
+		_sea_ice_daily_job.reconfigure(clampi(int(cp.sea_ice_daily_stride), 1, 8))
+	if cp.get("weather_refresh_stride") != null:
+		set_weather_refresh_stride(int(cp.weather_refresh_stride))
+	if _season_refresh_job != null and _season_refresh_job.get("period_ticks") != null \
+			and cp.get("season_refresh_period_ticks") != null:
+		_season_refresh_job.period_ticks = max(1, int(cp.season_refresh_period_ticks))
+	if _ocean_currents_job != null and _ocean_currents_job.has_method("reconfigure") \
+			and cp.get("ocean_currents_period_ticks") != null \
+			and cp.get("ocean_currents_slice_count") != null:
+		_ocean_currents_job.reconfigure(
+				max(1, int(cp.ocean_currents_period_ticks)),
+				max(1, int(cp.ocean_currents_slice_count)))
+	if cp.get("enum_atlas_upload_stride") != null:
+		set_enum_atlas_upload_stride(int(cp.enum_atlas_upload_stride))
+	if cp.get("dynamic_visual_atlas_upload_stride") != null:
+		set_dyn_atlas_upload_stride(int(cp.dynamic_visual_atlas_upload_stride))
+	if _native_daily_sim_job != null and cp.get("native_daily_sim_stride") != null:
+		_native_daily_sim_job.policy = SusPolicyScript.StridePolicy.new(
+				clampi(int(cp.native_daily_sim_stride), 1, 8), 0)
+	if _native_environment_runtime_job != null and cp.get("native_environment_runtime_stride") != null:
+		_native_environment_runtime_job.policy = SusPolicyScript.StridePolicy.new(
+				clampi(int(cp.native_environment_runtime_stride), 1, 8), 0)
 
 
 ## main.gd 在 _ready 末尾调用，让 OceanCurrentsJob 拿到 season_phase 连续浮点。
@@ -1596,6 +1668,8 @@ func set_world_clock_ref(world_clock_node) -> void:
 	# 任务 8：把 world_clock getter 注入给气候 / 天气 Job。
 	if _refresh_climate_daily_job != null:
 		_refresh_climate_daily_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
+	if _sea_ice_daily_job != null:
+		_sea_ice_daily_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
 	if _weather_refresh_job != null:
 		_weather_refresh_job.season_index_getter = Callable(_world_clock_ref, "season_index")
 		_weather_refresh_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
@@ -1858,7 +1932,10 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	if not native_daily_authoritative_ready:
 		push_warning("[native_daily] ACTIVE requested but native bundle is diagnostic-only; falling back to legacy SUS jobs")
 		return false
-	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world)
+	var native_stride: int = 1
+	if cp != null and cp.get("native_daily_sim_stride") != null:
+		native_stride = clampi(int(cp.native_daily_sim_stride), 1, 8)
+	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world, native_stride)
 	_apply_sim_budget_profile_to_job(_native_daily_sim_job, cp, false)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_native_daily_sim_job)
@@ -1874,7 +1951,10 @@ func _try_register_native_environment_runtime_system(map: MapData, cp) -> bool:
 	if get_environment_runtime() == null:
 		push_warning("[native_env_runtime] enabled but EnvironmentRuntime class is unavailable; skipping thin native scheduler job")
 		return false
-	_native_environment_runtime_job = NativeEnvironmentRuntimeSystemScript.new(self, map)
+	var runtime_stride: int = 1
+	if cp.get("native_environment_runtime_stride") != null:
+		runtime_stride = clampi(int(cp.native_environment_runtime_stride), 1, 8)
+	_native_environment_runtime_job = NativeEnvironmentRuntimeSystemScript.new(self, map, runtime_stride)
 	_apply_sim_budget_profile_to_job(_native_environment_runtime_job, cp, false)
 	_native_environment_runtime_job.slice_budget_ms = min(float(_native_environment_runtime_job.slice_budget_ms), 0.5)
 	_native_environment_runtime_job.must_run = false
@@ -1888,12 +1968,20 @@ func _try_register_native_environment_runtime_system(map: MapData, cp) -> bool:
 
 
 func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: float, cp) -> void:
+	var enum_atlas_stride: int = 2
+	var dynamic_visual_atlas_stride: int = _dyn_atlas_upload_stride
+	if cp != null:
+		if cp.get("enum_atlas_upload_stride") != null:
+			enum_atlas_stride = clampi(int(cp.enum_atlas_upload_stride), 1, 8)
+		if cp.get("dynamic_visual_atlas_upload_stride") != null:
+			dynamic_visual_atlas_stride = clampi(int(cp.dynamic_visual_atlas_upload_stride), 1, 8)
+	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
 	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
+		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_system(_enum_atlas_upload_job)
 	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, 2, _data_core_world_ext)
+		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
 		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
 		_sus.register_job(_enum_atlas_upload_job)
 	# 海冰主视觉由 shader 按 current_temp/latitude/depth 直接派生；停用旧 atlas upload。
@@ -1999,6 +2087,8 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
 	if _refresh_climate_daily_job != null:
 		_refresh_climate_daily_job.reset_run_flag()
+	if _sea_ice_daily_job != null and _sea_ice_daily_job.has_method("reset_run_flag"):
+		_sea_ice_daily_job.reset_run_flag()
 	if _weather_refresh_job != null:
 		_weather_refresh_job.reset_run_flag()
 	if _native_daily_sim_job != null and _native_daily_sim_job.has_method("reset_run_flag"):
@@ -9239,6 +9329,7 @@ func _abort_all_climate_passes(reason: String = "abort_all") -> void:
 	_gdext_ocean_current_x_arr_cached = PackedFloat32Array()
 	_gdext_ocean_current_y_arr_cached = PackedFloat32Array()
 	_ocean_water_done_phase = NAN
+	_abort_sea_ice_state_machine(reason)
 
 
 func _run_climate_pass_legacy_fallback(pass_type: String, map: MapData, season_phase: float, token: int, reason: String) -> Dictionary:
