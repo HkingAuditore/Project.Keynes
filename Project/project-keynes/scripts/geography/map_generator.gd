@@ -456,9 +456,6 @@ var _insol_driven_path_logged: bool = false           # 首次进入 insolation 
 # 完全消除 _compute_insolation / _insol_dev / _insolation_season_offset 内的
 # cos×4 + clamp。一日内复用，phase 变化才重建。
 const _INSOL_DAILY_LUT_SIZE: int = 64
-var _insol_now_lut: PackedFloat32Array = PackedFloat32Array()
-var _insol_dev_lut: PackedFloat32Array = PackedFloat32Array()
-var _insol_now_lut_phase: float = -999.0              # 上次构表 phase；< -100 视为未建
 var _last_hex_size: float = 22.0
 # 当前季节（0..3）。-1 = 还没生成
 var _current_season: int = -1
@@ -1387,15 +1384,17 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	else:
 		_sus.register_job(_weather_refresh_job)
 
-	# 海冰主视觉已改为 shader 按逐像素水温派生，不再需要 sea_ice_atlas_upload
-	# 周期性光栅化 / GPU 上传。保留 sea_ice_tex 作为兼容空纹理，但不注册 SUS job。
+	# 海冰主视觉数据通道：水路径 shader 从 dyn_atlas_smooth_atlas.A 通道读取
+	# sea_ice_fraction（与 UI/info_panel 同源；sea-ice-render-source-unify 阶段 A）。
+	# 不再需要 sea_ice_atlas_upload 周期性光栅化 / GPU 上传作为 shader 主源；
+	# 保留 sea_ice_tex 作为兼容空纹理，但不注册 SUS job。
 	_sea_ice_atlas_upload_job = null
 	_last_sea_ice_atlas_upload_breakdown = {
 		"done": true,
 		"phase": "disabled",
 		"stage_name": "sea_ice_atlas_upload",
 		"elapsed_ms": 0.0,
-		"reason": "shader_temperature_derived",
+		"reason": "dyn_atlas_smooth_a_unified_source",
 	}
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
@@ -1792,16 +1791,17 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null:
 		return {}
-	if bool(cp_now.true_insolation_enabled):
-		_rebuild_insol_now_lut(season_phase)
 	return {
 		"use_insol": bool(cp_now.true_insolation_enabled),
 		"use_sparse": bool(cp_now.use_sparse_climate),
 		"insol_amp": float(cp_now.get("season_temp_amp")) if cp_now.get("season_temp_amp") != null else 0.20,
 		"insol_gain": float(cp_now.get("insolation_season_gain")) if cp_now.get("insolation_season_gain") != null else 1.0,
-		"moist_scale_now": DataOverlayBaker._moisture_scale_at_phase(cp_now, season_phase),
+		"moist_scale_now": 1.0,
+		"season_phase": float(season_phase),
+		"axial_tilt_deg": float(cp_now.get("axial_tilt_deg")) if cp_now.get("axial_tilt_deg") != null else 23.5,
+		"day_length_gain": float(cp_now.get("insolation_daylen_amp")) if cp_now.get("insolation_daylen_amp") != null else 0.35,
+		"solar_gain": float(cp_now.get("solar_gain")) if cp_now.get("solar_gain") != null else 1.0,
 		"sea_level": float(_last_cfg.sea_level),
-		"insol_dev_lut": _insol_dev_lut,
 	}
 
 
@@ -1823,7 +1823,7 @@ func _build_native_daily_climate_pass_b_knobs(map: MapData, cp_now, season_phase
 			tta_arr[i] = float((cells[i] as HexCell).temperature_transport_anomaly)
 	return {
 		"n_cells": n_cells,
-		"winter_boost": lerpf(cp_now.coastal_heat_leak_winter_boost, 1.0, clampf(dist_to_winter, 0.0, 1.0)),
+		"winter_boost": 1.0,
 		"snow_cool": float(cp_now.snow_albedo_cooling),
 		"veg_cool": float(cp_now.vegetation_cooling),
 		"diurnal_amp": float(cp_now.landform_diurnal_amp),
@@ -1899,7 +1899,7 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 		anomaly[ai] = 0.0
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	return {
 		"water": {
 			"n_cells": n,
@@ -1993,8 +1993,9 @@ func _build_native_daily_sea_ice_knobs(map: MapData, cp_now, commit_side_effects
 	])
 	return {
 		"n_cells": n_cells_fast,
-		"k_freeze": k_freeze * dt_days,
-		"k_melt": k_melt * dt_days,
+		"k_freeze": k_freeze,
+		"k_melt": k_melt,
+		"dt_days": dt_days,
 		"t_form": t_form,
 		"t_melt": t_melt,
 		"contagion": float(cp_now.sea_ice_neighbor_contagion),
@@ -2644,6 +2645,12 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 	#  11: consume_feedback_buffers
 	var t_us0: int = Time.get_ticks_usec()
 	var season := clampi(season_idx, 0, 3)
+	if stage >= 0 and stage <= 8:
+		_last_world = world
+		_current_season = season
+		_last_season_refresh_breakdown["stage_%d_ms" % stage] = 0.0
+		_last_season_refresh_breakdown["stage_%d_path" % stage] = "emergent_noop"
+		return
 	# DOTS-Total-CPP 真·收尾（2026-05-21）：第一次进入 run_season_refresh_stage 时打一条
 	# 启动 banner，让 rebuild 后立刻能看到 ext 引用 / has_method 的真实状态——
 	# 这是验证 8 stage 是否能走 gdext 路径的最快诊断。
@@ -2667,7 +2674,7 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			_ensure_row_tables(cfg_local, season)
 			# DOTS-Total-CPP（任务 2）：stage 0 优先 gdext SoA pass；未导出/失败 fallback。
 			if not _run_season_refresh_stage0_gdext(map, world, season):
-				var moist_scale: float = _c().seasonal_moisture_scale[season]
+				var moist_scale: float = 1.0
 				for cell: HexCell in map.all_cells():
 					if _is_water(cell.terrain):
 						cell.moisture = cell.base_moisture
@@ -2760,6 +2767,14 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	}
 	var cp := _c()
 	if cp == null:
+		return out
+	if stage >= 0 and stage <= 8:
+		out["handled"] = true
+		out["done"] = true
+		out["cursor"] = 0
+		out["elapsed_ms"] = 0.0
+		out["work_done"] = 0
+		out["stage_name"] = "emergent_noop"
 		return out
 	var max_usec: int = 550
 	if cp.get("sim_slice_budget_ms") != null:
@@ -3280,7 +3295,7 @@ func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: i
 		_season_log_path_once("stage0", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	_ensure_season_round_slots_fresh()
-	var moist_scale: float = float(cp.seasonal_moisture_scale[clampi(season, 0, 3)])
+	var moist_scale: float = 1.0
 	var knobs: Dictionary = {
 		"stage": 0,
 		"season": season,
@@ -3782,7 +3797,7 @@ func _build_season_round_knobs(map: MapData, season: int) -> Dictionary:
 	if jitter_arr.size() != n_cells:
 		return {}
 	var donor_table: PackedFloat32Array = _build_vegetation_donor_table_for_gdext()
-	var moist_scale: float = float(cp.seasonal_moisture_scale[clampi(season, 0, 3)])
+	var moist_scale: float = 1.0
 	var soil_arr: PackedFloat32Array = map.soil_moisture_arr
 	var vg_arr: PackedFloat32Array = map.vegetation_growth_pressure_arr
 	# B+ 路径暂不暴露 stage 11（feedback_decay）的 in/out array 写回路径——
@@ -5088,15 +5103,17 @@ func _apply_reef_kelp_pass(map: MapData, cfg: MapConfig) -> void:
 		if ocean_enabled and not has_land_neighbor and t == TerrainType.TERRAIN.OCEAN and up > 0.6:
 			cell.cover = CoverType.CV.PELAGIC_BLOOM
 
-# SEA_ICE（海冰）：每季都重判定（用当季温度），需要 base_terrain 当 revert target
-# 阈值带 hysteresis：形成 temp < 0.07，融化 temp > 0.12，避免季节边界抖动
+# SEA_ICE（海冰）：连续 sea_ice_fraction，由逐日温度 pass 推进；
+# base_terrain 只作为消融后的 revert target。
+# 阈值带 hysteresis：具体 form/melt/terrain 阈值来自 ClimateProfile。
 # const SEA_ICE_FORM_THRESHOLD (migrated to ClimateProfile.sea_ice_form_threshold)
 # const SEA_ICE_MELT_THRESHOLD (migrated to ClimateProfile.sea_ice_melt_threshold)
 
 func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
-	# generate() 里的一次性初始化：为每个海洋 cell 按 summer 基线温度给出 sea_ice_fraction 平衡值。
+	# generate() 里的一次性初始化：为每个海洋 cell 按年基线温度给出 sea_ice_fraction 平衡值。
 	# 目的：让 refresh_climate_daily 首次运行前就有合理的初值，而不是全 0（否则高纬该冻的地方
 	# 需要几十天才爬到 ice_terrain_threshold，视觉上出现"开局一片无冰"的假象）。
+	# 不使用固定 summer/winter 相位；季节性由后续 daily temperature pass 连续注入。
 	#
 	# 平衡值取法（与 _apply_sea_ice_daily_pass 的阈值语义一致）：
 	#   temp < form_threshold  →  fraction = smoothstep 向 1 走
@@ -5118,23 +5135,19 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 			continue
 		var ny: float = _cube_row_norm(cell, cfg)
 		var temp_year: float = _compute_temperature(ny, cell.elevation)
-		var temp_summer: float = clampf(temp_year + _season_temp_offset(ny, 1), 0.0, 1.0)
-		# Note: bootstrap 保守取全年最冷相位（season=3，冬），避免首帧过于"夏感"
-		var temp_winter: float = clampf(temp_year + _season_temp_offset(ny, 3), 0.0, 1.0)
-		# 取两者均值当"年平均 + 偏冬"估计，让极地区域也能初始结冰
-		var temp_ref: float = (temp_summer + temp_winter) * 0.5
+		var temp_ref: float = clampf(temp_year, 0.0, 1.0)
 		var frac: float = 0.0
 		if temp_ref < t_form:
 			# 冷：按离阈距离给个饱和度
 			frac = clampf((t_form - temp_ref) / maxf(t_form, 0.001), 0.0, 1.0)
-			# 用 smoothstep 映射到 0..1，避开接近阈值时就近乎满冰
-			frac = smoothstep(0.0, 0.6, frac)
+			# 用更宽的 smoothstep，避免接近阈值的低浓度冰在开局就变成满冰带。
+			frac = smoothstep(0.10, 0.85, frac)
 		elif temp_ref > t_melt:
 			frac = 0.0
 		else:
 			# 迟滞带：线性从 form→melt 对应 1→0
 			var span: float = maxf(t_melt - t_form, 0.001)
-			frac = clampf((t_melt - temp_ref) / span, 0.0, 1.0) * 0.5
+			frac = clampf((t_melt - temp_ref) / span, 0.0, 1.0) * 0.35
 		cell.sea_ice_fraction = frac
 		# 超过 terrain 阈值 → 翻成 SEA_ICE（保留 base_terrain 可由原 setup 逻辑维持）
 		if frac >= thr_terrain and cell.terrain != TerrainType.TERRAIN.SEA_ICE:
@@ -6030,6 +6043,8 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 	# Emergent Climate Coupling：确保 refresh_climate_daily 能取到最新 world
 	_last_world = world
 	_current_season = season_idx
+	_mark_enum_atlas_dirty(true, true, true)
+	return
 	var season := clampi(season_idx, 0, 3)
 	# 任务 6（方案 C）：缓存 cfg 到 local var，避免 per-cell 多次访问字段；
 	# 一次性建立行级温度查表（lat_temp + season_off），主循环 5 处全图遍历复用。
@@ -6039,7 +6054,7 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 	var off_tab: PackedFloat32Array = _row_season_off
 
 	# 1) 复位湿度到年均基线（pre-rain-shadow） + 全局季节缩放
-	var moist_scale: float = _c().seasonal_moisture_scale[season]
+	var moist_scale: float = 1.0
 	for cell: HexCell in map.all_cells():
 		if _is_water(cell.terrain):
 			cell.moisture = cell.base_moisture
@@ -6364,25 +6379,20 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			_data_core_world_ext.refresh_slots_from_map()
 		# Step 3b-1: 真实 cp_struct packing。
 		# 这些字段必须与 world_ext.cpp::run_climate_pass_a 第 3 节读取顺序一一对应。
-		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0，自动 fallback 到 legacy。
+		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0；strict-native 下保留上一帧结果。
 		# truth source for 各 cp.xxx 字段：scripts/geography/climate_profile.gd。
-		# Bug-fix（DOTS-Final-Push 后续观测）：原本只有 SoA fallback 在 round 入口
-		# bake _insol_dev_lut（line ~4803），C++ 路径直接 packing 时 LUT 仍是空数组，
-		# 触发 world_ext.cpp::run_climate_pass_a 的 "insol_dev_lut wrong size" 兜底，
-		# 每天都回退到 GDScript 慢路径（A=15.6ms）。这里在 packing 前主动 bake 一次，
-		# 内部有 phase 复用判断（一日内多次调用直接早返），开销可忽略。
-		# 仅当 use_insol=true 时 bake；C++ 在 use_insol=false 时也会 return -1，
-		# 走 GDScript 路径（与历史行为一致）。
-		if bool(cp.true_insolation_enabled):
-			_rebuild_insol_now_lut(season_phase)
+		# 日照/昼长/热输入由 C++ pass 逐格写入 SoA，不再从 GDScript 打包日照 LUT。
 		var cp_struct: Dictionary = {
 			"use_insol":        bool(cp.true_insolation_enabled),
 			"use_sparse":       bool(cp.use_sparse_climate),
 			"insol_amp":        float(cp.season_temp_amp) if "season_temp_amp" in cp else 0.20,
 			"insol_gain":       float(cp.insolation_season_gain) if "insolation_season_gain" in cp else 1.0,
-			"moist_scale_now":  DataOverlayBaker._moisture_scale_at_phase(cp, season_phase),
+			"moist_scale_now":  1.0,
+			"season_phase":     float(season_phase),
+			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
+			"day_length_gain":  float(cp.insolation_daylen_amp) if "insolation_daylen_amp" in cp else 0.35,
+			"solar_gain":       float(cp.solar_gain) if "solar_gain" in cp else 1.0,
 			"sea_level":        float(_last_cfg.sea_level),
-			"insol_dev_lut":    _insol_dev_lut,
 		}
 		var rc: float = -1.0
 		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
@@ -6403,8 +6413,23 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			# C++ 路径已接管整段 Pass-A 并已通过 set() 把结果推回 MapData。
 			# 与 SoA 路径一样，这里直接返回；其余 sub-pass（B/ocean/sea_ice/transp）
 			# 继续读 map.*_arr 强类型字段，与 GDScript 路径无差异。
+			# 但 C++ 直接写 MapData 会绕过 GDScript SoA value-diff 路径；
+			# dynamic visual atlas 依赖 DCWorld dirty mask，因此这里显式发布一次
+			# 全气候 dirty，避免温度/雪/海冰 GPU Atlas 滞后到下一次全量 sweep。
+			var native_dirty_cells: int = 0
+			if map != null and map.has_method("cell_count"):
+				native_dirty_cells = int(map.cell_count())
+			elif map != null and map.has_method("all_cells"):
+				native_dirty_cells = int(map.all_cells().size())
+			_pa_last_total_cells = native_dirty_cells
+			_pa_last_pushed_cells = native_dirty_cells
+			if map != null and map.has_method("mark_all_climate_dirty"):
+				map.mark_all_climate_dirty()
+			if _data_core_world != null and _data_core_world.has_method("mark_dirty_all"):
+				_data_core_world.mark_dirty_all()
 			return
-		# rc < 0：C++ 端尚未实装或主动拒绝（运行期 fallback），继续走 SoA / legacy。
+		push_warning("[climate/pass_a] native path failed; keeping previous climate fields for strict-native simulation")
+		return
 
 	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 分发。
 	# use_soa_pipeline = true 时，走 SoA 路径重写的热循环；legacy 路径仅作为默认 / 回退。
@@ -6432,9 +6457,9 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		])
 		_insol_driven_path_logged = true
 
-	# 1) 当日连续湿度倍率（相邻两季 seasonal_moisture_scale 线性插值）
-	var moist_scale_now: float = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase)
-	# 2) 派生当日"季节中点"整数索引（写回 current_state.season，供下游消费者用）
+	# 湿度由 native weather/climate 字段演化；旧四季湿度表不再作为输入。
+	var moist_scale_now: float = 1.0
+	# Legacy telemetry only. 不用于数值判定。
 	var season_idx: int = int(floor(fposmod(season_phase, 4.0))) & 3
 
 	# PR-2.1.1（climate Pass-A 写路径下移）：legacy fallback 9 写位预分配 batch buffer。
@@ -6628,7 +6653,7 @@ func _climate_pass_b(map: MapData, season_phase: float) -> void:
 	# 冬季加成（与 _apply_ocean_heat_transport_pass 同源）：用于沿岸热泄漏在冬季 ×1.5
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(absf(phase_mod - 3.0), minf(absf(phase_mod - 3.0 + 4.0), absf(phase_mod - 3.0 - 4.0)))
-	var winter_boost: float = lerpf(cp.coastal_heat_leak_winter_boost, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	_apply_local_climate_coupling_pass(map, season_phase, winter_boost)
 
 # ─── Emergent Climate Coupling：本地温度/湿度耦合 pass ──────────────────
@@ -7046,11 +7071,9 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
 
-	# ─── [S2 fix 2026-05-23 三轮] dt_days 补偿（状态机入口路径）─────────
-	# 之前 dt_days 补偿只加在 _apply_sea_ice_daily_pass，但 SUS sliced 调度走
-	# 的是本函数（_begin_sea_ice_state_machine），导致 k_freeze/k_melt 仍按
-	# "per-call = per-day" 原值传给 C++ → 海冰几乎不动。这里复用 daily_pass
-	# 同款 dt_days 计算（_consume_sea_ice_dt_days）并把 k 放大。
+	# ─── sea_ice dt_days 补偿（状态机入口路径）────────────────────────────
+	# C++ 路径传 per-day k + dt_days；GDScript fallback 才在本地公式中乘 dt。
+	# 这样既补偿 SUS sliced 调度间隔，又避免 native 路径出现 dt^2 过冲。
 	var dt_days: float = _consume_sea_ice_dt_days()
 	var k_freeze_scaled: float = k_freeze * dt_days
 	var k_melt_scaled: float = k_melt * dt_days
@@ -7105,10 +7128,10 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 	])
 	var knobs: Dictionary = {
 		"n_cells": n_cells_fast,
-		# [S2 fix 2026-05-23 三轮] k_freeze / k_melt 已在 GDScript 端乘过 dt_days，
-		# C++ 端无需感知 dt（兼容旧 .dylib，无需重编）。
-		"k_freeze": k_freeze_scaled,
-		"k_melt": k_melt_scaled,
+		# C++ 端会用 dt_days 乘一次；这里传原始 per-day 速率，避免 dt^2 过冲。
+		"k_freeze": k_freeze,
+		"k_melt": k_melt,
+		"dt_days": dt_days,
 		"t_form": t_form,
 		"t_melt": t_melt,
 		"contagion": contagion,
@@ -7455,9 +7478,8 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 #   - 非 sliced 整轮 / fallback 路径：_apply_sea_ice_daily_pass
 # 同 tick 只命中其中一条，所以游标 _last_sea_ice_pass_day 不会双更新。
 #
-# 返回 dt_days ∈ (0, 30]，调用方应将其乘到 k_freeze / k_melt 上：
-#   k_freeze_scaled = k_freeze * dt_days
-# 这样 C++ 端公式 d_frac = k * Δt 等价于 d_frac = (k * dt) * 1，无需新增 knob。
+# 返回 dt_days ∈ (0, 30]。C++ 路径传原始 k + dt_days；GDScript fallback
+# 在本地公式里乘 dt_days。不要在传给 C++ 前预乘 k，避免 d_frac 变成 dt^2。
 # clamp 上限 30：防 pause 复位 / 开局过冲；下限 ≥ 0 后再 floor 到 1.0：阻断
 # 同 tick 重入。第一次调用（_last_sea_ice_pass_day < 0）保持默认 1.0。
 func _consume_sea_ice_dt_days() -> float:
@@ -7640,10 +7662,10 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 		var knobs: Dictionary = {
 			"n_cells": n_cells_fast,
-			# [S2 fix 2026-05-23] k_freeze / k_melt 已在 GDScript 端乘过 dt_days，
-			# 让 C++ 端按"每调用一次"语义算就是正确的物理推进量。
-			"k_freeze": k_freeze_scaled,
-			"k_melt": k_melt_scaled,
+			# C++ 端会用 dt_days 乘一次；这里传原始 per-day 速率，避免 dt^2 过冲。
+			"k_freeze": k_freeze,
+			"k_melt": k_melt,
+			"dt_days": dt_days,
 			"t_form": t_form,
 			"t_melt": t_melt,
 			"contagion": contagion,
@@ -7843,7 +7865,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 			return
 		_gdext_sea_ice_fallbacks += 1
-		# rc<0：C++ 已 push_warning；继续 fall through 到 GDScript 路径
+		push_warning("[sea_ice_daily] native path failed; keeping previous sea-ice fields for strict-native simulation")
+		return
 
 	# Pass A：先把每个水体 cell 的"是否有冷邻居"快照（用前一日的 sea_ice_fraction）
 	# Daily-Sim SoA Refactor 阶段 2：通过 _neighbor_indices 直接索引，避免每帧
@@ -8013,7 +8036,7 @@ func _apply_ocean_heat_transport_pass(map: MapData, season_phase: float) -> void
 	if _heat_transport_call_count == 1 or (_heat_transport_call_count % 365) == 0:
 		var phase_mod := fposmod(season_phase, 4.0)
 		var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-		var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+		var winter_boost: float = 1.0
 		print("ocean_heat_transport #%d: %dms (cells=%d, phase=%.3f, winter_boost=%.2f)" % [
 			_heat_transport_call_count,
 			Time.get_ticks_msec() - t0,
@@ -8162,7 +8185,7 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 	# phase=0（或 4）±0.5 窗口内线性抬升。
 	var phase_mod := fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	var effective_leak: float = coast_leak * winter_boost
 
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
@@ -8272,15 +8295,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		])
 		_insol_driven_path_logged = true
 
-	var moist_scale_now: float = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase)
+	var moist_scale_now: float = 1.0
 	var season_idx: int = int(floor(fposmod(season_phase, 4.0))) & 3
 	var sea_level: float = float(_last_cfg.sea_level)
 	var inv_above_sea: float = 1.0 / maxf(1.0 - sea_level, 0.001)
 	var use_insol: bool = bool(cp.true_insolation_enabled)
-	# B1-B：每日 round 入口烘焙 _insol_now_lut / _insol_dev_lut，内层直接查表
-	# 不再走 _insol_dev(ny, phase) → _compute_insolation 三角函数链。
-	if use_insol:
-		_rebuild_insol_now_lut(season_phase)
+	# Native path writes per-cell insolation SoA; this legacy GDScript path keeps direct math only.
 	# B1-C：season_offset 的 amp/gain 提到循环外（一日内常量）。
 	var insol_amp: float = 0.20
 	var insol_gain: float = 1.0
@@ -8341,9 +8361,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var season_off_a: PackedFloat32Array = _dc_views["temp_season_offset"] if _use_dc else map.temp_season_offset_arr
 	var has_lat_lut: bool = map.has_lat_lut() and lat_arr.size() == n and temp_year_arr.size() == n
 	# B1-B：内层查表条件（lut 大小已确认且 size = LUT_SIZE+1）。
-	var has_insol_lut: bool = use_insol and _insol_dev_lut.size() == _INSOL_DAILY_LUT_SIZE + 1
-	var insol_lut_size_f: float = float(_INSOL_DAILY_LUT_SIZE)
-
 	for i in range(n):
 		var c: HexCell = cells[i]
 		# current_state 守卫：旧存档 → 建骨架（这部分仍然走 cell；非热点）
@@ -8371,18 +8388,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			temp_year_lat = pow(cos(lat_signed_fb * PI * 0.5), 1.2)
 			if temp_year_lat < 0.0: temp_year_lat = 0.0
 			elif temp_year_lat > 1.0: temp_year_lat = 1.0
-		# B1-B：内联双线性 dev 查表（避免函数调用开销）。
 		var dev_today: float = 0.0
-		if has_insol_lut:
-			var x: float = (ny if ny >= 0.0 else 0.0)
-			if x > 1.0: x = 1.0
-			x *= insol_lut_size_f
-			var i0: int = int(x)
-			var i1: int = i0 + 1
-			if i1 > _INSOL_DAILY_LUT_SIZE: i1 = _INSOL_DAILY_LUT_SIZE
-			var t: float = x - float(i0)
-			dev_today = _insol_dev_lut[i0] + (_insol_dev_lut[i1] - _insol_dev_lut[i0]) * t
-		elif use_insol:
+		if use_insol:
 			dev_today = _insol_dev(ny, season_phase)
 
 		var elevation: float = elev_a[i]
@@ -8638,7 +8645,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# evap / rain_shadow 湿度修正。复用 legacy 同段算法常量。
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(absf(phase_mod - 3.0), minf(absf(phase_mod - 3.0 + 4.0), absf(phase_mod - 3.0 - 4.0)))
-	var winter_boost: float = lerpf(cp.coastal_heat_leak_winter_boost, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	var coast_leak: float = float(_last_cfg.COASTAL_HEAT_LEAK)
 	var snow_cool: float = float(cp.snow_albedo_cooling)
 	var veg_cool: float = float(cp.vegetation_cooling)
@@ -9252,7 +9259,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 	var coast_leak: float = _last_cfg.COASTAL_HEAT_LEAK
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	var effective_leak: float = coast_leak * winter_boost
 
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化（Ocean Land）
@@ -9518,7 +9525,7 @@ func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: C
 		anomaly[ai] = 0.0
 	var phase_mod: float = fposmod(season_phase, 4.0)
 	var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
-	var winter_boost: float = lerpf(1.5, 1.0, clampf(dist_to_winter, 0.0, 1.0))
+	var winter_boost: float = 1.0
 	var effective_leak: float = float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost
 	_climate_ocean_slice_state = {
 		"map_id": map.get_instance_id(),
@@ -11434,77 +11441,38 @@ func _insolation_season_offset(ny: float, season_phase: float) -> float:
 	var dev: float = _insol_dev(ny, season_phase)
 	return gain * dev * amp
 
-# ─── B1-B：每日 round 入口 LUT — _insol_now_lut / _insol_dev_lut ──────────
-# Pass A round 入口调用 _rebuild_insol_now_lut(season_phase)；之后内层循环
-# 通过 _insol_dev_at(ny) / _insol_now_at(ny) 走 65 桶双线性插值，O(1) 无三角函数。
-# phase 变化 < 1/360（约游戏内 1/3 日）时直接复用上次结果。
-func _rebuild_insol_now_lut(season_phase: float) -> void:
-	# 复用条件：上次构表 phase 与当前 phase 接近（一日内反复调用直接早返）。
-	if _insol_now_lut.size() == _INSOL_DAILY_LUT_SIZE + 1 \
-			and absf(_insol_now_lut_phase - season_phase) < (1.0 / 360.0):
-		return
-	# 确保 mean LUT 也就位（_insol_dev_at 依赖 mean）。
-	if _insol_mean_lut.size() != _INSOL_MEAN_LUT_SIZE + 1:
-		_rebuild_insol_mean_lut()
-	_insol_now_lut.resize(_INSOL_DAILY_LUT_SIZE + 1)
-	_insol_dev_lut.resize(_INSOL_DAILY_LUT_SIZE + 1)
-	for i in range(_INSOL_DAILY_LUT_SIZE + 1):
-		var ny: float = float(i) / float(_INSOL_DAILY_LUT_SIZE)
-		var now_val: float = _compute_insolation(ny, season_phase)
-		_insol_now_lut[i] = now_val
-		# dev 与 _insol_dev 公式严格一致
-		var mean_val: float = _insol_mean_lut[i]
-		var dev: float
-		if mean_val <= 1e-4:
-			dev = 0.0
-		else:
-			dev = (now_val - mean_val) / mean_val
-			if dev < -1.0: dev = -1.0
-			elif dev > 1.5: dev = 1.5
-		_insol_dev_lut[i] = dev
-	_insol_now_lut_phase = season_phase
-
-# 双线性查表版 _insol_dev(ny, current_phase)。调用方必须先 _rebuild_insol_now_lut(phase)。
-func _insol_dev_at(ny: float) -> float:
-	if _insol_dev_lut.size() != _INSOL_DAILY_LUT_SIZE + 1:
-		# 兜底：未 bake 时退到原函数（不应该发生）
-		return _insol_dev(ny, _insol_now_lut_phase)
-	var x: float = clampf(ny, 0.0, 1.0) * float(_INSOL_DAILY_LUT_SIZE)
-	var i0: int = int(floor(x))
-	var i1: int = mini(i0 + 1, _INSOL_DAILY_LUT_SIZE)
-	var t: float = x - float(i0)
-	return _insol_dev_lut[i0] + (_insol_dev_lut[i1] - _insol_dev_lut[i0]) * t
-
-func _insol_now_at(ny: float) -> float:
-	if _insol_now_lut.size() != _INSOL_DAILY_LUT_SIZE + 1:
-		return _compute_insolation(ny, _insol_now_lut_phase)
-	var x: float = clampf(ny, 0.0, 1.0) * float(_INSOL_DAILY_LUT_SIZE)
-	var i0: int = int(floor(x))
-	var i1: int = mini(i0 + 1, _INSOL_DAILY_LUT_SIZE)
-	var t: float = x - float(i0)
-	return _insol_now_lut[i0] + (_insol_now_lut[i1] - _insol_now_lut[i0]) * t
-
 # ─── Emergent Climate Coupling：UI 用名义季节标签 ────────────────────────
 # 仅供选中面板 / HUD 显示，不参与任何物理 pass。返回 {label, transition}：
-#   label      ∈ {"Spring", "Summer", "Autumn", "Winter"}
+#   label      ∈ {"Winter", "Spring", "Summer", "Autumn"}（北半球日历语义）
 #   transition ∈ [0, 1]，当前 season 已走完的百分比（0 = 季首，1 = 季末）
 func nominal_season_label(season_phase: float) -> Dictionary:
 	var p: float = fposmod(season_phase, 4.0)
 	var idx: int = int(floor(p)) & 3
 	var frac: float = p - float(idx)
-	var labels: Array[String] = ["Spring", "Summer", "Autumn", "Winter"]
+	var labels: Array[String] = ["Winter", "Spring", "Summer", "Autumn"]
 	return {"label": labels[idx], "transition": frac}
 
 # ─── True Insolation-Driven：日历月份 ────────────────────────────────────
-# 全年 = 4 季 × 30 日 = 120 天 → 12 个月、每月 10 天。
-# 约定 season_phase = 0 对应 1 月 1 日（春分前后）。
-# 返回 {month: 1..12, day_of_month: 1..10, day_of_year: 1..120}
+# 全年 = 365 天。约定 season_phase = 0 对应 1 月 1 日（北半球冬季），
+# phase=1≈4 月、phase=2≈7 月、phase=3≈10 月；返回 1-based 日期。
 func month_of_year(season_phase: float) -> Dictionary:
+	const MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 	var p: float = fposmod(season_phase, 4.0)
-	var day_of_year: int = int(floor(p * 30.0))  # 0..119
-	var month: int = (day_of_year / 10) + 1      # 1..12
-	var day_of_month: int = (day_of_year % 10) + 1  # 1..10
-	return {"month": month, "day_of_month": day_of_month, "day_of_year": day_of_year + 1}
+	var day_of_year: int = clampi(int(floor((p / 4.0) * 365.0)), 0, 364)
+	var month: int = 1
+	var day_rem: int = day_of_year
+	for i in range(MONTH_LENGTHS.size()):
+		var ml: int = int(MONTH_LENGTHS[i])
+		if day_rem < ml:
+			month = i + 1
+			break
+		day_rem -= ml
+	return {
+		"month": month,
+		"day_of_month": day_rem + 1,
+		"day_of_year": day_of_year + 1,
+		"days_per_year": 365,
+	}
 
 # True Insolation-Driven：UI 便利接口。给外部（main.gd 面板）用当前 _last_cfg
 # 快速拿到某 cell 的归一化纬度 ny ∈ [0, 1]，0 = 北极 / 0.5 = 赤道 / 1 = 南极。

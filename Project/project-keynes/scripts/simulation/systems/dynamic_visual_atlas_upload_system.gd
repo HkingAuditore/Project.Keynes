@@ -3,7 +3,7 @@ class_name DynamicVisualAtlasUploadSystem
 
 ## Updates low-frequency visual atlases used by the main map shader.
 ##
-## Stride=2 default：每 2 个仿真日跑一次（StridePolicy 控制）。
+## Stride=1 default：每个仿真日跑一次（StridePolicy 控制），保持温度/雪/海冰视觉同步。
 ##
 ## v3：湿迹/龟裂短期痕迹视觉已删除；本系统只更新 dynamic/ecology/smooth/ice 四类视觉 atlas。
 ## 回退：`enable_time_slicing = false` 走 one-shot 路径。
@@ -50,6 +50,9 @@ const PHASE_IDLE: int = 0
 const PHASE_DYNAMIC: int = 1
 const PHASE_ECOLOGY: int = 2
 const PHASE_SMOOTH: int = 3
+# DEPRECATED(plan-A sea-ice-render-source-unify): kept for non-water shaders（hillshade_tod /
+# weather_overlay 仍引用 ice_state_atlas 兼容通道），will be removed in plan-C 任务 10
+# 之后（届时所有消费方迁移到 dyn_atlas_smooth.A 或退出 ice_state_atlas）。
 const PHASE_ICE: int = 4
 const PHASE_DONE: int = 5
 const PHASE_COUNT: int = 4  # 实际工作 phase 数（1..4）
@@ -72,17 +75,21 @@ const CPP_TIME_CHECK_CELLS_PER_STEP: int = 4096
 const SOFT_BUDGET_MULTIPLIER: float = 2.0
 
 # ─── plan/atlas-phase-slicing（2026-05-21）：CPP pipeline phase 切片预算 ───
-# 默认 1 = 每 tick 推 1 phase，4 个 phase 拆到 4 个 tick。
-# 调高到 4 = 单 tick 一气呵成（旧行为，回归）。
+# 默认 4 = 单 tick 一气呵成，dyn/eco/smooth/ice 同一轮产出并提交。
+# 调低到 1 = 每 tick 推 1 phase，4 个 phase 拆到 4 个 tick（严格预算/诊断用）。
 # 配合 C++ AtlasPipelineState 跨 call 持有 stride snapshot（dirty/cache/nb_arr/prep_*），
 # 仅在 stride 起点传 dirty_indices；mid-stride tick 跳过 commit GPU。
-const CPP_PIPELINE_PHASE_BUDGET: int = 1
+const CPP_PIPELINE_PHASE_BUDGET: int = 4
 # C++ smooth phase 内部再按 cell cursor 切片，避免 dirty/full sweep 时单次 2ms+。
 const CPP_SMOOTH_CELLS_PER_CALL: int = 512
 # C++ 计算完成后，GPU texture commit 仍必须走主线程。一次 stride 可能同时
-# 产出 dyn/eco/smo/ice 多张 atlas；这里把它们排成队列，每个 SUS tick 最多
-# 提交 1 张，避免多张 ImageTexture.update 在同一帧叠加成长帧。
-const CPP_COMMIT_TEXTURES_PER_TICK: int = 1
+# 产出 dyn/eco/smo/ice 多张 atlas；这里把它们排成队列。
+# 修复（2026-05-26）：原值=1 会导致 4 张 atlas 跨 4 个 tick 才上传完成，
+# 叠加 stride 本身的 4-phase 推进 + 频繁的 frame_budget_exhausted，
+# 实测一次完整渲染更新需要 100+ 帧。提到 4 后 stride_done 那帧立即把 4 张
+# 全部 drain 上传；单张 ImageTexture.update ~0.3-0.5ms，4 张 ≤ 2ms，仍在
+# upload budget(1.5ms 软阈值) 边界范围内，超出由 SUS 自然在下一帧回归。
+const CPP_COMMIT_TEXTURES_PER_TICK: int = 4
 # fallback GDScript smooth dirty/prep 子阶段预算：把 merge / one-hop dilation
 # 拆出 baker prepare，避免极端 dirty/full sweep 在单 tick 内完成全部预处理。
 const SMOOTH_PREP_CELLS_PER_TICK: int = 512
@@ -186,7 +193,7 @@ var _cpp_commit_context: Dictionary = {}
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
-		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null,
+		p_stride: int = 1, p_climate_profile = null, p_dirty_world = null,
 		p_world_ext = null) -> void:
 	id = &"dynamic_visual_atlas_upload"
 	priority = 250
@@ -1048,6 +1055,23 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 	var t_call_us: int = Time.get_ticks_usec()
 	var res: Dictionary = ext.call(&"run_atlas_pipeline_step", opts)
 	var call_ms: float = float(Time.get_ticks_usec() - t_call_us) / 1000.0
+	# [TEMP DIAG sea-ice cpp-res]
+	if not Engine.has_meta("_diag_cpp_res_dumped"):
+		Engine.set_meta("_diag_cpp_res_dumped", 0)
+	var _crd: int = int(Engine.get_meta("_diag_cpp_res_dumped"))
+	if _crd < 6:
+		var _ab: Dictionary = res.get("atlas_buffers", {})
+		var _sr: Dictionary = res.get("stride_real", {})
+		var _smo_buf: PackedByteArray = _ab.get("smo", PackedByteArray())
+		var _dyn_buf: PackedByteArray = _ab.get("dyn", PackedByteArray())
+		print("[CPP-RES] fallback=", res.get("fallback", "?"),
+			" done=", res.get("done", "?"),
+			" reason=", res.get("reason", ""),
+			" ab.keys=", _ab.keys(),
+			" smo.sz=", _smo_buf.size(), " dyn.sz=", _dyn_buf.size(),
+			" stride_real=", _sr,
+			" call_ms=", call_ms)
+		Engine.set_meta("_diag_cpp_res_dumped", _crd + 1)
 
 	if bool(res.get("fallback", true)):
 		# C++ 端在前置校验失败时会返回 fallback=true。退化为旧路径以保安全。
@@ -1219,34 +1243,51 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
 		stride_real: Dictionary, base_report: Dictionary) -> void:
 	_cpp_commit_queue.clear()
-	_cpp_commit_context = {}
 	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
 		return
+	# [TEMP DIAG sea-ice begin-commit]
+	if not Engine.has_meta("_diag_begin_commit_dumped"):
+		Engine.set_meta("_diag_begin_commit_dumped", 0)
+	var _bcd: int = int(Engine.get_meta("_diag_begin_commit_dumped"))
+	if _bcd < 6:
+		var _bd: PackedByteArray = atlas_buffers.get("dyn", PackedByteArray())
+		var _bs: PackedByteArray = atlas_buffers.get("smo", PackedByteArray())
+		var _be: PackedByteArray = atlas_buffers.get("eco", PackedByteArray())
+		var _bi: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
+		print("[BEGIN-COMMIT] W=", W, " H=", H,
+			" dyn.sz=", _bd.size(), " smo.sz=", _bs.size(),
+			" eco.sz=", _be.size(), " ice.sz=", _bi.size(),
+			" stride_real=", stride_real)
+		Engine.set_meta("_diag_begin_commit_dumped", _bcd + 1)
 	var n_pix: int = W * H
+	# 方案A 修复（2026-05-26）：当 stride_done=true 进入此函数时，atlas_buffers 已是
+	# 完整全量图（C++ pipeline 跨 4 phase 累计写完后才会一次性返回）。但 stride_real
+	# 只反映当前最后一个 phase 的单次写入计数，因此 dyn/smo/eco 的 stride_real 常为 0。
+	# 必须用 force_commit=true 绕过单 phase stride 守卫，把 4 张图一次性入队。
 	_maybe_enqueue_cpp_commit_task("dyn", atlas_buffers.get("dyn", PackedByteArray()),
 			Image.FORMAT_RGBA8, 4, int(stride_real.get("dyn", 0)),
 			world_data.dynamic_cell_atlas_tex == null
 					or world_data.dynamic_cell_atlas_tex.get_size() != Vector2(float(W), float(H))
 					or world_data.dynamic_cell_atlas_buffer.size() != n_pix * 4,
-			W, H, n_pix)
+			W, H, n_pix, true)
 	_maybe_enqueue_cpp_commit_task("eco", atlas_buffers.get("eco", PackedByteArray()),
 			Image.FORMAT_RGBA8, 4, int(stride_real.get("eco", 0)),
 			world_data.ecology_visual_atlas_tex == null
 					or world_data.ecology_visual_atlas_tex.get_size() != Vector2(float(W), float(H))
 					or world_data.ecology_visual_atlas_buffer.size() != n_pix * 4,
-			W, H, n_pix)
+			W, H, n_pix, true)
 	_maybe_enqueue_cpp_commit_task("smo", atlas_buffers.get("smo", PackedByteArray()),
 			Image.FORMAT_RGBA8, 4, int(stride_real.get("smo", 0)),
 			world_data.dyn_atlas_smooth_tex == null
 					or world_data.dyn_atlas_smooth_tex.get_size() != Vector2(float(W), float(H))
 					or world_data.dyn_atlas_smooth_buffer.size() != n_pix * 4,
-			W, H, n_pix)
+			W, H, n_pix, true)
 	_maybe_enqueue_cpp_commit_task("ice", atlas_buffers.get("ice", PackedByteArray()),
 			Image.FORMAT_R8, 1, int(stride_real.get("ice", 0)),
 			world_data.ice_state_tex == null
 					or world_data.ice_state_tex.get_size() != Vector2(float(W), float(H))
 					or world_data.ice_state_buffer.size() != n_pix,
-			W, H, n_pix)
+			W, H, n_pix, true)
 	if _cpp_commit_queue.is_empty():
 		return
 	_cpp_commit_context = base_report.duplicate(true)
@@ -1263,11 +1304,14 @@ func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
 
 func _maybe_enqueue_cpp_commit_task(channel: String, buf: PackedByteArray,
 		image_format: int, bytes_per_pixel: int, stride_count: int,
-		need_init: bool, W: int, H: int, n_pix: int) -> void:
+		need_init: bool, W: int, H: int, n_pix: int,
+		force_commit: bool = false) -> void:
 	var expected_size: int = n_pix * bytes_per_pixel
 	if buf.size() != expected_size:
 		return
-	if stride_count <= 0 and not need_init:
+	# 方案A 修复（2026-05-26）：force_commit 用于 stride_done 路径绕过单 phase 增量
+	# 守卫；C++ 在 stride 完成时给的是完整全量图，必须无条件入队上传。
+	if not force_commit and stride_count <= 0 and not need_init:
 		return
 	_cpp_commit_queue.append({
 		"channel": channel,
@@ -1332,6 +1376,23 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 	var pixels: int = int(task.get("pixels", 0))
 	if W <= 0 or H <= 0 or pixels <= 0:
 		return 0
+	# [TEMP DIAG sea-ice cpp-commit]
+	if not Engine.has_meta("_diag_cpp_commit_dumped"):
+		Engine.set_meta("_diag_cpp_commit_dumped", 0)
+	var _ndump: int = int(Engine.get_meta("_diag_cpp_commit_dumped"))
+	if _ndump < 12:
+		var _samp_pxs: Array = [8584, 4586, 4843, 5091, 719]
+		var _samp: String = ""
+		for _px in _samp_pxs:
+			var _i: int = int(_px)
+			var _stride: int = 4 if channel != "ice" else 1
+			var _byte_off: int = _i * _stride + (3 if _stride == 4 else 0)
+			if _byte_off >= 0 and _byte_off < buf.size():
+				_samp += " px%d.A=%d" % [_i, int(buf[_byte_off])]
+		print("[CPP-COMMIT] ch=", channel, " buf.size=", buf.size(),
+			" expected=", pixels * (1 if channel == "ice" else 4),
+			" W=", W, " H=", H, _samp)
+		Engine.set_meta("_diag_cpp_commit_dumped", _ndump + 1)
 	var image_format: int = int(task.get("format", Image.FORMAT_RGBA8))
 	var img := Image.create_from_data(
 			W, H, false,

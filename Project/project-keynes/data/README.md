@@ -91,8 +91,8 @@
 
    | 字段 | earth_like | ice_age 建议 | 说明 |
    |---|---|---|---|
-   | `sea_ice_form_threshold` | `0.07` | `0.15` | 更容易结冰 |
-   | `sea_ice_melt_threshold` | `0.12` | `0.22` | 更难融化 |
+   | `sea_ice_form_threshold` | `0.10` | `0.15` | 更容易结冰 |
+   | `sea_ice_melt_threshold` | `0.22` | `0.30` | 更难融化 |
    | `seasonal_moisture_scale` | `[1.05, 1.20, 0.92, 0.78]` | `[0.85, 0.95, 0.75, 0.60]` | 全年偏干 |
    | `orographic_boost` | `1.5` | `2.0` | 山地降雪更多 |
    | `veg_forest_donor` | `0.06` | `0.02` | 冻土森林蒸腾弱 |

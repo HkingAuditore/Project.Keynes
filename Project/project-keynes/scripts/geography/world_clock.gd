@@ -2,13 +2,13 @@
 # 实时时间核心：游戏内时间持续推进，提供日/季/年三层信号 + 速度/暂停控制
 #
 # 设计：
-#   1 day = 1 game second × speed_multiplier。所以 x1 速度下，1 现实秒 = 1 游戏天，
-#   1 季 = 30 现实秒（默认），1 年 = 120 现实秒（4 季）。
+#   1 day = 1 game second × speed_multiplier。所以 x1 速度下，1 现实秒 = 1 游戏天。
+#   年历固定 365 天；season_phase 由 day_of_year / 365 映射到 [0, 4)，供气候/日照使用。
 #   x5/x20 加速倍率简化等比缩放。
 #
 # 信号：
 #   day_changed(day_idx)        — 跨整数日触发
-#   season_changed(season_idx)  — 跨整数季触发（0=春 1=夏 2=秋 3=冬）
+#   season_changed(season_idx)  — 跨整数季触发（0=冬 1=春 2=夏 3=秋；北半球日历语义）
 #   year_changed(year_idx)      — 跨整数年触发
 #
 # Phase 4：year_changed 时长期 climate_anomaly 做随机游走漂移。
@@ -22,16 +22,15 @@ signal season_changed(season_idx: int)
 signal year_changed(year_idx: int)
 signal season_phase_changed(season_phase: float)
 # 任务 2：昼夜相位信号。由 _process 默认逐帧发射；day_phase_emit_step > 0 时可选节流。
-# 1 游戏季 = 1 次完整昼夜循环，默认 days_per_season = 30 意味着 x1 速度下
-# 30 秒走完一次日出→正午→日落→午夜的循环。
+# 与年历一致：current_day 的小数部分是一日内时刻。
 signal day_phase_changed(day_phase: float)
 # Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
 # 实现 stride 自动调档、phase 节流自动调档等。
 signal speed_changed(new_speed: float)
 
 # ─── 可调参数 ────────────────────────────────────────────────────────────
-# 一季有多少天。默认 30 → 1 年 120 天。
-@export var days_per_season: int = 30
+# 一年多少天。默认 365；如果调试时压缩年份，也应只改这里这一处。
+@export_range(1, 3660, 1) var days_per_year_count: int = 365
 # 启动后立即自动推进；false 时进入暂停状态由 UI 唤醒
 @export var auto_start: bool = true
 # 启动初速（x1 倍）
@@ -73,6 +72,8 @@ var _last_day: int = -1
 var _last_season: int = -1
 var _last_year: int = -1
 var _rng: RandomNumberGenerator
+const _MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+const _MONTH_NAMES_SHORT: Array[String] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 func _ready() -> void:
 	_rng = RandomNumberGenerator.new()
@@ -141,7 +142,7 @@ func _process(delta: float) -> void:
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 
 func days_per_year() -> int:
-	return days_per_season * 4
+	return max(1, days_per_year_count)
 
 func day_index() -> int:
 	return int(floor(current_day))
@@ -149,11 +150,14 @@ func day_index() -> int:
 func day_in_year() -> int:
 	return int(fposmod(current_day, float(days_per_year())))
 
-# 0=春 1=夏 2=秋 3=冬（整数）
+# 1-based day-of-year for display.
+func day_of_year() -> int:
+	return day_in_year() + 1
+
+# 北半球日历季节：0=冬 1=春 2=夏 3=秋。物理上南半球会自然反相，
+# UI 顶栏只显示全局日历季节，不参与气候计算。
 func season_index() -> int:
-	var dpy := days_per_year()
-	var day := fposmod(current_day, float(dpy))
-	return int(floor(day / float(days_per_season))) % 4
+	return int(floor(season_phase())) & 3
 
 func year_index() -> int:
 	return int(floor(current_day / float(days_per_year())))
@@ -162,13 +166,12 @@ func year_index() -> int:
 func season_phase() -> float:
 	var dpy := days_per_year()
 	var day := fposmod(current_day, float(dpy))
-	return day / float(days_per_season)
+	return (day / float(dpy)) * 4.0
 
 # 任务 2：昼夜相位 ∈ [0, 1)
 # 映射：0.0=日出, 0.25=正午, 0.5=日落, 0.75=午夜。
-# 1 游戏季 = 1 次完整昼夜循环（关键决策 2）。
 func day_phase() -> float:
-	return fposmod(current_day, float(days_per_season)) / float(days_per_season)
+	return fposmod(current_day, 1.0)
 
 # 将 day_phase 映射为 0−24 小时（UI 仅用），精度到整小时。
 # 与 day_phase 约定对齐：0.0=06:00（日出），0.25=12:00（正午），
@@ -199,17 +202,37 @@ func _should_emit_season_phase(sp: float) -> bool:
 
 func season_name(idx: int) -> String:
 	match idx:
-		0: return "Spring"
-		1: return "Summer"
-		2: return "Autumn"
-		_: return "Winter"
+		0: return "Winter"
+		1: return "Spring"
+		2: return "Summer"
+		_: return "Autumn"
 
 func season_name_cn(idx: int) -> String:
 	match idx:
-		0: return "春"
-		1: return "夏"
-		2: return "秋"
-		_: return "冬"
+		0: return "冬"
+		1: return "春"
+		2: return "夏"
+		_: return "秋"
+
+func calendar_date() -> Dictionary:
+	var day0: int = day_in_year()
+	var dpy: int = days_per_year()
+	var calendar_day0: int = clampi(int(floor((float(day0) / float(dpy)) * 365.0)), 0, 364)
+	var month_idx: int = 0
+	var day_rem: int = calendar_day0
+	for i in range(_MONTH_LENGTHS.size()):
+		var ml: int = int(_MONTH_LENGTHS[i])
+		if day_rem < ml:
+			month_idx = i
+			break
+		day_rem -= ml
+	return {
+		"month": month_idx + 1,
+		"month_name": _MONTH_NAMES_SHORT[month_idx],
+		"day_of_month": day_rem + 1,
+		"day_of_year": day0 + 1,
+		"days_per_year": dpy,
+	}
 
 # ─── 控制 ────────────────────────────────────────────────────────────────
 

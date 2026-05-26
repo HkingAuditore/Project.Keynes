@@ -1,0 +1,6 @@
+2: tick_idx
+10: cell_index
+43: elevation_arr
+58: terrain_arr
+61: base_terrain_arr
+66: is_water_arr

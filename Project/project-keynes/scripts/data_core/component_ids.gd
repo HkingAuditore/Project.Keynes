@@ -86,6 +86,10 @@ const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/
 #         决定是否冷启动），UI breakdown（temp_season_offset，flush 后从 cell 读）。
 const CELL_EMA_INITIALIZED: StringName = &"cell.ema_initialized"             # u8 0/1
 const CELL_TEMP_SEASON_OFFSET: StringName = &"cell.temp_season_offset"       # f32
+const CELL_INSOLATION_NOW: StringName = &"cell.insolation_now"               # f32, [0,1]
+const CELL_INSOLATION_DEV: StringName = &"cell.insolation_dev"               # f32, normalized anomaly
+const CELL_DAY_LENGTH: StringName = &"cell.day_length"                       # f32, [0,1]
+const CELL_HEAT_INPUT: StringName = &"cell.heat_input"                       # f32, [0,1]
 
 # ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
 # 历史：这 6 个字段原先只在 HexCell 上做强类型 var，stage_b combined pass

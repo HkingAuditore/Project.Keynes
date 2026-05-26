@@ -2005,6 +2005,51 @@ void DCWorldExt::run_demo_complex_pass_archetyped(int grid_w,
     }
 }
 
+static inline float dc_clamp01f(float v) {
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
+
+static inline float dc_phase_progress(float season_phase) {
+    float p = std::fmod(season_phase, 4.0f);
+    if (p < 0.0f) p += 4.0f;
+    return p * 0.25f;
+}
+
+static inline float dc_subsolar_lat_rad(float season_phase, float axial_tilt_deg) {
+    constexpr float TAU_F = 6.2831853071795864769f;
+    return axial_tilt_deg * float(M_PI / 180.0) *
+           std::cos(TAU_F * dc_phase_progress(season_phase));
+}
+
+static inline float dc_day_length_norm(float ny, float season_phase, float daylen_amp) {
+    constexpr float TAU_F = 6.2831853071795864769f;
+    const float lat_rad = (ny - 0.5f) * float(M_PI);
+    const float lat_sign = (lat_rad > 0.0f) ? 1.0f : ((lat_rad < 0.0f) ? -1.0f : 0.0f);
+    const float factor = 1.0f + daylen_amp * std::cos(TAU_F * dc_phase_progress(season_phase)) * lat_sign;
+    if (daylen_amp <= 1e-5f) return 0.5f;
+    return dc_clamp01f((factor - (1.0f - daylen_amp)) / (2.0f * daylen_amp));
+}
+
+static inline float dc_insolation_now(float ny, float season_phase, float axial_tilt_deg, float daylen_amp) {
+    constexpr float TAU_F = 6.2831853071795864769f;
+    const float lat_rad = (ny - 0.5f) * float(M_PI);
+    const float subsolar = dc_subsolar_lat_rad(season_phase, axial_tilt_deg);
+    float cos_zenith = std::cos(lat_rad - subsolar);
+    if (cos_zenith < 0.0f) cos_zenith = 0.0f;
+    const float lat_sign = (lat_rad > 0.0f) ? 1.0f : ((lat_rad < 0.0f) ? -1.0f : 0.0f);
+    const float daylen_factor = 1.0f + daylen_amp * std::cos(TAU_F * dc_phase_progress(season_phase)) * lat_sign;
+    return dc_clamp01f(cos_zenith * daylen_factor);
+}
+
+static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, float daylen_amp) {
+    constexpr int SAMPLES = 16;
+    float acc = 0.0f;
+    for (int s = 0; s < SAMPLES; ++s) {
+        acc += dc_insolation_now(ny, (float(s) + 0.5f) * (4.0f / float(SAMPLES)), axial_tilt_deg, daylen_amp);
+    }
+    return acc / float(SAMPLES);
+}
+
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
@@ -2045,6 +2090,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const int sid_terrain        = component_id(StringName("cell_terrain"));
     const int sid_cover          = component_id(StringName("cell_cover"));
     const int sid_ema_init       = component_id(StringName("cell_ema_initialized"));
+    const int sid_insol_now      = component_id(StringName("cell_insolation_now"));
+    const int sid_insol_dev      = component_id(StringName("cell_insolation_dev"));
+    const int sid_day_length     = component_id(StringName("cell_day_length"));
+    const int sid_heat_input     = component_id(StringName("cell_heat_input"));
 
     if (sid_temp           < 0 || sid_moisture      < 0 || sid_snow      < 0 ||
         sid_temp_baseline  < 0 || sid_temp_30d      < 0 || sid_temp_365d < 0 ||
@@ -2052,48 +2101,41 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         sid_elev           < 0 || sid_base_moist    < 0 ||
         sid_lat_norm       < 0 || sid_temp_year     < 0 ||
         sid_is_water       < 0 || sid_terrain       < 0 || sid_cover     < 0 ||
-        sid_ema_init       < 0) {
+        sid_ema_init       < 0 || sid_insol_now     < 0 || sid_insol_dev < 0 ||
+        sid_day_length     < 0 || sid_heat_input    < 0) {
         diag("slot id <0 (some BIND_TABLE component missing)");
         return -1.0;
     }
 
     // ─── 3. Pull cp_struct scalars (with conservative defaults) ─────────
-    if (!cp_struct.has("insol_dev_lut") || !cp_struct.has("moist_scale_now")) {
-        diag("cp_struct missing insol_dev_lut/moist_scale_now");
-        return -1.0; // packing contract violated — fallback
+    if (!cp_struct.has("season_phase")) {
+        diag("cp_struct missing season_phase");
+        return -1.0;
     }
     const bool   use_insol      = cp_struct.has("use_insol")
-                                    ? bool(cp_struct["use_insol"]) : false;
+                                    ? bool(cp_struct["use_insol"]) : true;
     const float  insol_amp      = cp_struct.has("insol_amp")
                                     ? float(cp_struct["insol_amp"]) : 0.20f;
     const float  insol_gain     = cp_struct.has("insol_gain")
                                     ? float(cp_struct["insol_gain"]) : 1.0f;
     const float  insol_amp_gain = insol_amp * insol_gain;
-    const float  moist_scale    = float(cp_struct["moist_scale_now"]);
+    const float  moist_scale    = cp_struct.has("moist_scale_now")
+                                    ? float(cp_struct["moist_scale_now"]) : 1.0f;
+    const float  axial_tilt_deg = cp_struct.has("axial_tilt_deg")
+                                    ? float(cp_struct["axial_tilt_deg"]) : 23.5f;
+    const float  daylen_amp     = cp_struct.has("day_length_gain")
+                                    ? float(cp_struct["day_length_gain"])
+                                    : (cp_struct.has("insolation_daylen_amp")
+                                        ? float(cp_struct["insolation_daylen_amp"]) : 0.35f);
+    const float  solar_gain     = cp_struct.has("solar_gain")
+                                    ? float(cp_struct["solar_gain"]) : 1.0f;
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
 
-    PackedFloat32Array lut_pack = cp_struct["insol_dev_lut"];
-    const int          lut_size_p1 = lut_pack.size();
-    // Truth source: map_generator.gd `const _INSOL_DAILY_LUT_SIZE: int = 64`.
-    // LUT has size+1 entries (indices [0..size]) so bilinear lookup at the
-    // boundary doesn't OOB. If GDScript ever changes 64, update here too.
-    constexpr int      INSOL_DAILY_LUT_SIZE = 64;
-    if (lut_size_p1 != INSOL_DAILY_LUT_SIZE + 1) {
-        diag("insol_dev_lut wrong size");
-        return -1.0; // wrong-sized LUT — fallback
-    }
-    const float * const lut = lut_pack.ptr();
-    const float  lut_size_f = float(INSOL_DAILY_LUT_SIZE);
-
-    // ─── 4. Fix-up: this Step omits use_insol=false fallback path on C++ ──
-    // architecture.md §F — when use_insol=false we let GDScript handle it
-    // (calls `_season_temp_offset_phase`). Step 3b-1 keeps the C++ branch
-    // narrow on the high-traffic case (use_insol=true).
     if (!use_insol) {
-        diag("use_insol=false (cp.true_insolation_enabled is false)");
+        diag("use_insol=false");
         return -1.0;
     }
 
@@ -2116,6 +2158,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     PackedByteArray    &terrain_a       = _slots.write[sid_terrain].arr_u8;
     PackedByteArray    &cover_a         = _slots.write[sid_cover].arr_u8;
     PackedByteArray    &ema_init_a      = _slots.write[sid_ema_init].arr_u8;
+    PackedFloat32Array &insol_now_a     = _slots.write[sid_insol_now].arr_f32;
+    PackedFloat32Array &insol_dev_a     = _slots.write[sid_insol_dev].arr_f32;
+    PackedFloat32Array &day_length_a    = _slots.write[sid_day_length].arr_f32;
+    PackedFloat32Array &heat_input_a    = _slots.write[sid_heat_input].arr_f32;
 
     const int n = temp_a.size();
     if (n <= 0) { diag("temp_a empty (n<=0)"); return -1.0; }
@@ -2129,7 +2175,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         base_moist_a.size()    != n || lat_a.size()       != n ||
         temp_year_a.size()     != n || is_water_a.size()  != n ||
         terrain_a.size()       != n || cover_a.size()     != n ||
-        ema_init_a.size()      != n) {
+        ema_init_a.size()      != n || insol_now_a.size() != n ||
+        insol_dev_a.size()     != n || day_length_a.size()!= n ||
+        heat_input_a.size()    != n) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
@@ -2151,6 +2199,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const uint8_t * const    pterr= terrain_a.ptr();
     const uint8_t * const    pcov = cover_a.ptr();
     uint8_t * const __restrict pei = ema_init_a.ptrw();
+    float * const __restrict pinsol = insol_now_a.ptrw();
+    float * const __restrict pdev   = insol_dev_a.ptrw();
+    float * const __restrict pday   = day_length_a.ptrw();
+    float * const __restrict pheat  = heat_input_a.ptrw();
 
     // GDScript constants (architecture.md §G.6 / TERRAIN/CV enums)
     constexpr uint8_t TERRAIN_SNOW = 9;  // TerrainType.TERRAIN.SNOW
@@ -2167,15 +2219,14 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             const bool  is_water       = piw[i] != 0;
 
             // (a) dev_today — bilinear LUT lookup
-            float x = ny;
-            if (x < 0.0f)      x = 0.0f;
-            else if (x > 1.0f) x = 1.0f;
-            x *= lut_size_f;
-            int   i0 = int(x);
-            int   i1 = i0 + 1;
-            if (i1 > INSOL_DAILY_LUT_SIZE) i1 = INSOL_DAILY_LUT_SIZE;
-            const float t_lut    = x - float(i0);
-            const float dev_today = lut[i0] + (lut[i1] - lut[i0]) * t_lut;
+            const float ny_clamped = dc_clamp01f(ny);
+            const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
+            const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+            const float dev_today = (insol_mean > 1e-4f)
+                    ? ((insol_now - insol_mean) / insol_mean)
+                    : 0.0f;
+            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
+            const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
             // (b) moisture
             float moisture_now;
@@ -2244,6 +2295,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             ps[i]   = snow_cover;
             ptb[i]  = temp_year;
             pso[i]  = season_offset;
+            pinsol[i] = insol_now;
+            pdev[i]   = dev_today;
+            pday[i]   = day_length;
+            pheat[i]  = heat_input;
 
             // (f) EMA
             float m30, m365;
@@ -2277,6 +2332,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     _flush_slot_to_map(sid_temp_30d);
     _flush_slot_to_map(sid_temp_365d);
     _flush_slot_to_map(sid_temp_anom);
+    _flush_slot_to_map(sid_insol_now);
+    _flush_slot_to_map(sid_insol_dev);
+    _flush_slot_to_map(sid_day_length);
+    _flush_slot_to_map(sid_heat_input);
 
     return 0.0;
 }
@@ -2325,6 +2384,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const int sid_terrain        = component_id(StringName("cell_terrain"));
     const int sid_cover          = component_id(StringName("cell_cover"));
     const int sid_ema_init       = component_id(StringName("cell_ema_initialized"));
+    const int sid_insol_now      = component_id(StringName("cell_insolation_now"));
+    const int sid_insol_dev      = component_id(StringName("cell_insolation_dev"));
+    const int sid_day_length     = component_id(StringName("cell_day_length"));
+    const int sid_heat_input     = component_id(StringName("cell_heat_input"));
 
     if (sid_temp           < 0 || sid_moisture      < 0 || sid_snow      < 0 ||
         sid_temp_baseline  < 0 || sid_temp_30d      < 0 || sid_temp_365d < 0 ||
@@ -2332,36 +2395,34 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
         sid_elev           < 0 || sid_base_moist    < 0 ||
         sid_lat_norm       < 0 || sid_temp_year     < 0 ||
         sid_is_water       < 0 || sid_terrain       < 0 || sid_cover     < 0 ||
-        sid_ema_init       < 0) {
+        sid_ema_init       < 0 || sid_insol_now     < 0 || sid_insol_dev < 0 ||
+        sid_day_length     < 0 || sid_heat_input    < 0) {
         diag("slot id <0");
         return -1.0;
     }
 
     // ─── 3. Pull cp_struct scalars ───────────────────────────────────────
-    if (!cp_struct.has("insol_dev_lut") || !cp_struct.has("moist_scale_now")) {
-        diag("cp_struct missing keys"); return -1.0;
-    }
     const bool   use_insol      = cp_struct.has("use_insol")
-                                    ? bool(cp_struct["use_insol"]) : false;
+                                    ? bool(cp_struct["use_insol"]) : true;
     const float  insol_amp      = cp_struct.has("insol_amp")
                                     ? float(cp_struct["insol_amp"]) : 0.20f;
     const float  insol_gain     = cp_struct.has("insol_gain")
                                     ? float(cp_struct["insol_gain"]) : 1.0f;
     const float  insol_amp_gain = insol_amp * insol_gain;
-    const float  moist_scale    = float(cp_struct["moist_scale_now"]);
+    const float  moist_scale    = cp_struct.has("moist_scale_now")
+                                    ? float(cp_struct["moist_scale_now"]) : 1.0f;
+    const float  axial_tilt_deg = cp_struct.has("axial_tilt_deg")
+                                    ? float(cp_struct["axial_tilt_deg"]) : 23.5f;
+    const float  daylen_amp     = cp_struct.has("day_length_gain")
+                                    ? float(cp_struct["day_length_gain"])
+                                    : (cp_struct.has("insolation_daylen_amp")
+                                        ? float(cp_struct["insolation_daylen_amp"]) : 0.35f);
+    const float  solar_gain     = cp_struct.has("solar_gain")
+                                    ? float(cp_struct["solar_gain"]) : 1.0f;
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
-
-    PackedFloat32Array lut_pack = cp_struct["insol_dev_lut"];
-    const int          lut_size_p1 = lut_pack.size();
-    constexpr int      INSOL_DAILY_LUT_SIZE = 64;
-    if (lut_size_p1 != INSOL_DAILY_LUT_SIZE + 1) {
-        diag("insol_dev_lut wrong size"); return -1.0;
-    }
-    const float * const lut = lut_pack.ptr();
-    const float  lut_size_f = float(INSOL_DAILY_LUT_SIZE);
 
     if (!use_insol) { diag("use_insol=false"); return -1.0; }
 
@@ -2382,6 +2443,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     PackedByteArray    &terrain_a       = _slots.write[sid_terrain].arr_u8;
     PackedByteArray    &cover_a         = _slots.write[sid_cover].arr_u8;
     PackedByteArray    &ema_init_a      = _slots.write[sid_ema_init].arr_u8;
+    PackedFloat32Array &insol_now_a     = _slots.write[sid_insol_now].arr_f32;
+    PackedFloat32Array &insol_dev_a     = _slots.write[sid_insol_dev].arr_f32;
+    PackedFloat32Array &day_length_a    = _slots.write[sid_day_length].arr_f32;
+    PackedFloat32Array &heat_input_a    = _slots.write[sid_heat_input].arr_f32;
 
     const int n = temp_a.size();
     if (n <= 0) { diag("temp_a empty"); return -1.0; }
@@ -2393,7 +2458,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
         base_moist_a.size()    != n || lat_a.size()       != n ||
         temp_year_a.size()     != n || is_water_a.size()  != n ||
         terrain_a.size()       != n || cover_a.size()     != n ||
-        ema_init_a.size()      != n) {
+        ema_init_a.size()      != n || insol_now_a.size() != n ||
+        insol_dev_a.size()     != n || day_length_a.size()!= n ||
+        heat_input_a.size()    != n) {
         diag("size mismatch"); return -1.0;
     }
 
@@ -2414,6 +2481,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const uint8_t * const    pterr= terrain_a.ptr();
     const uint8_t * const    pcov = cover_a.ptr();
     uint8_t * const __restrict pei = ema_init_a.ptrw();
+    float * const __restrict pinsol = insol_now_a.ptrw();
+    float * const __restrict pdev   = insol_dev_a.ptrw();
+    float * const __restrict pday   = day_length_a.ptrw();
+    float * const __restrict pheat  = heat_input_a.ptrw();
 
     constexpr uint8_t TERRAIN_SNOW = 9;
     constexpr uint8_t COVER_GLACIER = 2;
@@ -2426,15 +2497,14 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             const float elevation      = pe[i];
             const bool  is_water       = piw[i] != 0;
 
-            float x = ny;
-            if (x < 0.0f)      x = 0.0f;
-            else if (x > 1.0f) x = 1.0f;
-            x *= lut_size_f;
-            int   i0 = int(x);
-            int   i1 = i0 + 1;
-            if (i1 > INSOL_DAILY_LUT_SIZE) i1 = INSOL_DAILY_LUT_SIZE;
-            const float t_lut    = x - float(i0);
-            const float dev_today = lut[i0] + (lut[i1] - lut[i0]) * t_lut;
+            const float ny_clamped = dc_clamp01f(ny);
+            const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
+            const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+            const float dev_today = (insol_mean > 1e-4f)
+                    ? ((insol_now - insol_mean) / insol_mean)
+                    : 0.0f;
+            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
+            const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
             float moisture_now;
             if (is_water) {
@@ -2493,6 +2563,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             ps[i]   = snow_cover;
             ptb[i]  = temp_year;
             pso[i]  = season_offset;
+            pinsol[i] = insol_now;
+            pdev[i]   = dev_today;
+            pday[i]   = day_length;
+            pheat[i]  = heat_input;
 
             float m30, m365;
             if (pei[i] == 0) {
@@ -2521,6 +2595,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     _flush_slot_to_map(sid_temp_30d);
     _flush_slot_to_map(sid_temp_365d);
     _flush_slot_to_map(sid_temp_anom);
+    _flush_slot_to_map(sid_insol_now);
+    _flush_slot_to_map(sid_insol_dev);
+    _flush_slot_to_map(sid_day_length);
+    _flush_slot_to_map(sid_heat_input);
 
     return 0.0;
 }
@@ -3112,6 +3190,8 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
                                             float ocean_an,
                                             float wb_pos_y, float wb_size_y,
                                             float season_phase) {
+    (void)season_idx;
+    (void)season_phase;
     float lat_abs = 0.5f;
     if (wb_size_y > 0.001f) {
         float n = (pos_y - wb_pos_y) / wb_size_y;
@@ -3123,16 +3203,13 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
     const bool warm      = temp  > 0.58f;
     const bool cold      = temp  < 0.32f;
     const bool humid     = vapor > 0.55f;
-    const bool summerish = (season_idx & 3) == 1;
     const bool low_lat   = lat_abs < 0.48f;
 
     if (cold && (precip > 0.50f || (cloud > 0.78f && vapor > 0.75f)))
         return 3; // BLIZZARD
     if (warm && humid && instability > 0.85f && precip > 0.58f)
         return 2; // STORM
-    if (warm && humid && low_lat &&
-        (summerish || (season_phase > 0.75f && season_phase < 2.25f)) &&
-        precip > 0.48f)
+    if (warm && humid && low_lat && precip > 0.48f)
         return 7; // MONSOON
     if (precip > 0.52f || (cloud > 0.82f && vapor > 0.72f))
         return 1; // RAIN
@@ -5405,7 +5482,7 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         "water_terrain_ids", // PackedByteArray，与 GDScript _is_water 1:1 对齐
         "neighbor_indices", "base_terrain_arr",
         "temp_transport_anomaly", "upwelling_strength",
-        "cell_temperature_arr", // 1:1 mirror with cell.temperature (NOT SoA cell_temp)
+        "cell_temperature_arr", // climate/ocean-adjusted temperature; no direct season signal here
     };
     for (const char *k : required_keys) {
         if (!knobs.has(k)) {
@@ -12039,9 +12116,9 @@ godot::Dictionary DCWorldExt::encode_dynamic_cell_atlas(godot::Dictionary knobs)
 
     auto c = parse_csr_common(knobs, 4);
     if (!c.valid) return fail(c.err);
-    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
-    PackedByteArray pass_sea = knobs["cell_passable_sea"];
-    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+    if (!knobs.has("cell_is_water")) return fail("missing cell_is_water");
+    PackedByteArray is_water = knobs["cell_is_water"];
+    if (is_water.size() != c.K) return fail("cell_is_water size mismatch");
 
     // [perf 2026-05-20 sig-diff-skip] 与 GDScript 路径对齐的 sig cache：
     //   GD 端 dynamic_cell_atlas_chunk_step line 727:
@@ -12062,16 +12139,22 @@ godot::Dictionary DCWorldExt::encode_dynamic_cell_atlas(godot::Dictionary knobs)
     const int sid_moist = component_id(StringName("cell_moisture"));
     const int sid_snow = component_id(StringName("cell_snow_cover"));
     const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
-    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0) {
-        return fail("missing slot id (temp/moist/snow/vitality)");
+    // [sea-ice-render-source-unify 阶段 A] A 通道双语义：
+    //   水格 A = q01_byte_ice(sea_ice_fraction)，shader 水路径单源消费；
+    //   陆格 A = q01_byte(vegetation_vitality)（保持原语义）。
+    const int sid_sif = component_id(StringName("cell_sea_ice_frac"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0 || sid_sif < 0) {
+        return fail("missing slot id (temp/moist/snow/vitality/sea_ice_frac)");
     }
     Slot &s_temp = _slots.write[sid_temp];
     Slot &s_moist = _slots.write[sid_moist];
     Slot &s_snow = _slots.write[sid_snow];
     Slot &s_vit = _slots.write[sid_vit];
+    Slot &s_sif = _slots.write[sid_sif];
     const int n_cells = _entity_count;
     if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
-        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells) {
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells ||
+        s_sif.arr_f32.size() < n_cells) {
         return fail("slot array size < entity_count");
     }
 
@@ -12081,11 +12164,12 @@ godot::Dictionary DCWorldExt::encode_dynamic_cell_atlas(godot::Dictionary knobs)
     const float * const __restrict MOIST = s_moist.arr_f32.ptr();
     const float * const __restrict SNOW = s_snow.arr_f32.ptr();
     const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const float * const __restrict SIF = s_sif.arr_f32.ptr();
     const int32_t * const __restrict CELLS = c.cell_indices.ptr();
     const int32_t * const __restrict FIRST = c.first_px.ptr();
     const int32_t * const __restrict CNT = c.px_count.ptr();
     const int32_t * const __restrict FLAT = c.flat_px.ptr();
-    const uint8_t * const __restrict PSEA = pass_sea.ptr();
+    const uint8_t * const __restrict PSEA = is_water.ptr();
     const int32_t * const __restrict PREV_SIGS =
         prev_sigs_usable ? prev_sigs.ptr() : nullptr;
     uint8_t * const __restrict BUF = c.buffer.ptrw();
@@ -12105,7 +12189,11 @@ godot::Dictionary DCWorldExt::encode_dynamic_cell_atlas(godot::Dictionary knobs)
         const int r = pk_q01_byte(double(TEMP[ci]));
         const int g = pk_q01_byte(double(MOIST[ci]));
         const int b = pk_q01_byte(double(SNOW[ci]));
-        const int a = (PSEA[k] != 0) ? 0 : pk_q01_byte(double(VIT[ci]));
+        // [sea-ice-render-source-unify 阶段 C] A 通道：水格存海冰、陆格存植被活力。
+        // 水陆判定基于 is_water 语义（含 SEA_ICE）；GDScript 侧统一从 is_water_arr/LUT 喂入。
+        const int a = (PSEA[k] != 0)
+            ? pk_q01_byte_ice(double(SIF[ci]))
+            : pk_q01_byte(double(VIT[ci]));
         const uint32_t sig = uint32_t(r) | (uint32_t(g) << 8) |
                              (uint32_t(b) << 16) | (uint32_t(a) << 24);
         SIGS[k] = int32_t(sig);
@@ -12213,9 +12301,9 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
     const int TERRAIN_SEA_ICE = int(knobs.get("terrain_sea_ice", -1));
     const int VEG_NONE = int(knobs.get("veg_none", -1));
 
-    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
-    PackedByteArray pass_sea = knobs["cell_passable_sea"];
-    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+    if (!knobs.has("cell_is_water")) return fail("missing cell_is_water");
+    PackedByteArray is_water = knobs["cell_is_water"];
+    if (is_water.size() != c.K) return fail("cell_is_water size mismatch");
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -12229,7 +12317,7 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
     const int32_t * const __restrict FIRST = c.first_px.ptr();
     const int32_t * const __restrict CNT = c.px_count.ptr();
     const int32_t * const __restrict FLAT = c.flat_px.ptr();
-    const uint8_t * const __restrict PSEA = pass_sea.ptr();
+    const uint8_t * const __restrict PSEA = is_water.ptr();
     const uint8_t * const __restrict PV_VEG = prev_veg.ptr();
     const uint8_t * const __restrict PV_VIT = prev_vit.ptr();
     const uint8_t * const __restrict PV_TR = prev_tr.ptr();
@@ -12276,6 +12364,8 @@ godot::Dictionary DCWorldExt::encode_ecology_visual_atlas(godot::Dictionary knob
         }
 
         // ── _ecology_visual_signature 镜像 ─────────────────────────
+        // sea-ice-render-source-unify 阶段 C：PSEA 已是 is_water 语义（含 SEA_ICE/LAKE），
+        // 后两个 terrain 兜底成为防御性冗余（保留以防 GDScript 端误传 passable_sea）。
         const int terrain_id = int(TERR[ci]);
         const bool is_water_cell = (PSEA[k] != 0) ||
             (terrain_id == TERRAIN_LAKE) ||
@@ -12381,10 +12471,10 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
     if (!c.valid) return fail(c.err);
 
     if (!knobs.has("neighbor_indices")) return fail("missing neighbor_indices");
-    if (!knobs.has("cell_passable_sea")) return fail("missing cell_passable_sea");
+    if (!knobs.has("cell_is_water")) return fail("missing cell_is_water");
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
-    PackedByteArray pass_sea = knobs["cell_passable_sea"];
-    if (pass_sea.size() != c.K) return fail("cell_passable_sea size mismatch");
+    PackedByteArray cell_iw = knobs["cell_is_water"];
+    if (cell_iw.size() != c.K) return fail("cell_is_water size mismatch");
     const bool cache_valid = bool(knobs.get("cache_valid", false));
     PackedInt32Array prev_sigs;
     bool prev_sigs_usable = false;
@@ -12393,29 +12483,31 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
         prev_sigs_usable = (prev_sigs.size() == c.K);
     }
 
-    // C++ 端没有 cell_passable_sea SoA slot，但中心 cell + 邻居 cell 都需要算 sig。
-    // 邻居的 passable_sea 通过 SoA cell_is_water 槽位作为 proxy 取得 ——
-    // 注意：cell.is_water 与 cell.passable_sea 不完全等价（mountain/snow 也是 is_water=true）。
-    // 为保证 bit-equal，调用方必须在 GDScript 端"扁平化"：对所有 dirty cell 的 6 个邻居
-    // 也提供 passable_sea byte 数组（neighbor_passable_sea，长度 = K * 6，与 nb_arr 对齐）。
-    if (!knobs.has("neighbor_passable_sea")) return fail("missing neighbor_passable_sea");
-    PackedByteArray nb_psea = knobs["neighbor_passable_sea"];
-    if (nb_psea.size() != c.K * 6) return fail("neighbor_passable_sea size mismatch (need K*6)");
-
+    // sea-ice-render-source-unify 阶段 C：中心 cell + 邻居都需要“是否水域”进行
+    // A 通道双语义判定 + 邻居均值分裂。调用方必须使用 is_water 语义（含
+    // SEA_ICE）而非 passable_sea，否则 SEA_ICE cell 会被误归入陆格分支。
+    // GDScript 端走 map.is_water_arr 或 MapData.is_water_lut() 填充。
+    if (!knobs.has("neighbor_is_water")) return fail("missing neighbor_is_water");
+    PackedByteArray nb_iw = knobs["neighbor_is_water"];
+    if (nb_iw.size() != c.K * 6) return fail("neighbor_is_water size mismatch (need K*6)");
     const int sid_temp = component_id(StringName("cell_temp"));
     const int sid_moist = component_id(StringName("cell_moisture"));
     const int sid_snow = component_id(StringName("cell_snow_cover"));
     const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
-    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0) {
-        return fail("missing slot id (temp/moist/snow/vitality)");
+    // [sea-ice-render-source-unify 阶段 A] sig A 字节双语义需要 sea_ice_frac slot。
+    const int sid_sif = component_id(StringName("cell_sea_ice_frac"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0 || sid_sif < 0) {
+        return fail("missing slot id (temp/moist/snow/vitality/sea_ice_frac)");
     }
     Slot &s_temp = _slots.write[sid_temp];
     Slot &s_moist = _slots.write[sid_moist];
     Slot &s_snow = _slots.write[sid_snow];
     Slot &s_vit = _slots.write[sid_vit];
+    Slot &s_sif = _slots.write[sid_sif];
     const int n_cells = _entity_count;
     if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
-        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells) {
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells ||
+        s_sif.arr_f32.size() < n_cells) {
         return fail("slot array size < entity_count");
     }
     if (nb_arr.size() < n_cells * 6) return fail("neighbor_indices size < n_cells*6");
@@ -12426,12 +12518,13 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
     const float * const __restrict MOIST = s_moist.arr_f32.ptr();
     const float * const __restrict SNOW = s_snow.arr_f32.ptr();
     const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const float * const __restrict SIF = s_sif.arr_f32.ptr();
     const int32_t * const __restrict CELLS = c.cell_indices.ptr();
     const int32_t * const __restrict FIRST = c.first_px.ptr();
     const int32_t * const __restrict CNT = c.px_count.ptr();
     const int32_t * const __restrict FLAT = c.flat_px.ptr();
-    const uint8_t * const __restrict PSEA = pass_sea.ptr();
-    const uint8_t * const __restrict NB_PSEA = nb_psea.ptr();
+    const uint8_t * const __restrict PSEA = cell_iw.ptr();
+    const uint8_t * const __restrict NB_PSEA = nb_iw.ptr();
     const int32_t * const __restrict NB = nb_arr.ptr();
     const int32_t * const __restrict PREV_SIGS = prev_sigs_usable ? prev_sigs.ptr() : nullptr;
     uint8_t * const __restrict BUF = c.buffer.ptrw();
@@ -12439,12 +12532,18 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
     PackedInt32Array new_sigs; new_sigs.resize(c.K); int32_t * const SIGS = new_sigs.ptrw();
 
     // 内联 sig 计算（与 _dynamic_cell_signature 等价）：
-    //   r=q01(temp), g=q01(moist), b=q01(snow), a = passable_sea ? 0 : q01(vit)
-    auto sig_of = [&](int idx, bool psea) -> uint32_t {
+    //   r=q01(temp), g=q01(moist), b=q01(snow)
+    //   [sea-ice-render-source-unify 阶段 C] A 通道双语义：
+    //     水格 (is_water=true)：a = q01_byte_ice(sea_ice_frac)
+    //     陆格 (is_water=false)：a = q01_byte(vit)
+    //   is_water 语义含 SEA_ICE，不同于只看航行性的 passable_sea。
+    auto sig_of = [&](int idx, bool iw) -> uint32_t {
         const int r = pk_q01_byte(double(TEMP[idx]));
         const int g = pk_q01_byte(double(MOIST[idx]));
         const int b = pk_q01_byte(double(SNOW[idx]));
-        const int a = psea ? 0 : pk_q01_byte(double(VIT[idx]));
+        const int a = iw
+            ? pk_q01_byte_ice(double(SIF[idx]))
+            : pk_q01_byte(double(VIT[idx]));
         return uint32_t(r) | (uint32_t(g) << 8) | (uint32_t(b) << 16) | (uint32_t(a) << 24);
     };
 
@@ -12458,6 +12557,7 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
         const int cg = int((c_sig >> 8) & 0xFF);
         const int cb = int((c_sig >> 16) & 0xFF);
         const int ca = int((c_sig >> 24) & 0xFF);
+        const bool center_is_water = (PSEA[k] != 0);
 
         // FNV-1a 32-bit hood hash（中心 + 邻居各 4 byte），与 GDScript 1:1 镜像。
         uint32_t hood_h = 0x811C9DC5u;
@@ -12480,14 +12580,18 @@ godot::Dictionary DCWorldExt::encode_dyn_smooth_atlas(godot::Dictionary knobs) {
             const int nab = int((n_sig >> 24) & 0xFF);
             nr += nrb; ng += ngb; nb_sum += nbb; nc += 1;
             // ─────────────────────────────────────────────────────────
-            // 2026-05-21 修复 (issue: 海岸陆地 cell 季节振幅 -10%)：
-            // A 通道（vitality）在 encode 时被强制 `passable_sea ? 0 : vit`，
-            // 海域邻居恒为 0；如果与 R/G 一起做全邻居平均，会把海岸陆地 cell
-            // 的 vitality 系统性拖低（最严重情况孤岛 5 海邻 → -42%）。
-            // 只让"非海域邻居"参与 A 累加；R/G 仍走全邻居（海陆温/湿度都是
-            // 真值，跳过海邻反而会失真）。SAME_SOURCE 见 map_baker.gd。
+            // [sea-ice-render-source-unify 阶段 A] A 通道水陆分裂平均：
+            //   - 中心陆格：A=vit，仅累加陆地邻居（海邻 A=ice_byte 与 vit 异语义）。
+            //   - 中心水格：A=sea_ice_frac，仅累加水域邻居（陆邻 A=vit 与 ice 异语义）。
+            // 历史背景（2026-05-21 修复）：陆地 A 累加海邻会被海格 0 系统性拖低；
+            // 现海格 A 不再为 0 而是 ice_byte，必须更严格地按语义同类分组。
+            // SAME_SOURCE：scripts/rendering/map_baker.gd::dyn_atlas_smooth_chunk_step。
             // ─────────────────────────────────────────────────────────
-            if (!n_psea) { na += nab; na_c += 1; }
+            if (center_is_water) {
+                if (n_psea) { na += nab; na_c += 1; }
+            } else {
+                if (!n_psea) { na += nab; na_c += 1; }
+            }
             hood_h = (hood_h ^ uint32_t(nrb)) * 0x01000193u;
             hood_h = (hood_h ^ uint32_t(ngb)) * 0x01000193u;
             hood_h = (hood_h ^ uint32_t(nbb)) * 0x01000193u;
@@ -12673,14 +12777,21 @@ inline AtlasPipelineState *get_or_create_atlas_state(void *&p) {
     return static_cast<AtlasPipelineState *>(p);
 }
 
-// 与 GDScript map_baker.gd::_dynamic_cell_signature 1:1 镜像：
-//   r=q01(temp), g=q01(moist), b=q01(snow), a = passable_sea ? 0 : q01(vit)
+// 与 GDScript map_baker.gd::_dynamic_cell_signature 1:1 镜像
+// （sea-ice-render-source-unify 阶段 C 修订）：
+//   r=q01(temp), g=q01(moist), b=q01(snow)
+//   A 通道双语义：
+//     水格 (is_water=true)：a = q01_byte_ice(sea_ice_frac)
+//     陆格 (is_water=false)：a = q01_byte(vit)
+// 关键：判定"水格"必须用 is_water 语义（含 SEA_ICE 等所有非陆地），
+// 不能用 passable_sea（SEA_ICE 因冰面阻断航行 passable_sea=false 但
+// 视觉上仍是水域，A 通道必须写 ice_byte 让 shader 水路径渲染冰）。
 inline uint32_t pk_atlas_sig_dynamic(double temp, double moist, double snow,
-                                     double vit, bool passable_sea) {
+                                     double vit, double sea_ice_frac, bool is_water) {
     const int r = pk_q01_byte(temp);
     const int g = pk_q01_byte(moist);
     const int b = pk_q01_byte(snow);
-    const int a = passable_sea ? 0 : pk_q01_byte(vit);
+    const int a = is_water ? pk_q01_byte_ice(sea_ice_frac) : pk_q01_byte(vit);
     return uint32_t(r) | (uint32_t(g) << 8) | (uint32_t(b) << 16) | (uint32_t(a) << 24);
 }
 
@@ -12697,8 +12808,9 @@ struct WorldSoARefs {
     PackedInt32Array    cell_first_px;
     PackedInt32Array    cell_px_count;
     PackedInt32Array    flat_px_indices;
-    PackedByteArray     terrain_arr;        // 用于 LUT 查 passable_sea
-    PackedByteArray     passable_sea_lut;   // 256 byte LUT
+    PackedByteArray     terrain_arr;        // 用于 LUT 查 passable_sea / is_water
+    PackedByteArray     passable_sea_lut;   // 256 byte LUT (航行性语义)
+    PackedByteArray     is_water_lut;       // 256 byte LUT (视觉水陆语义，含 SEA_ICE)
     bool                have_lut = false;
     Dictionary          water_cell_pixel_lists; // 仅 ice phase 用 (HexCell key 无法 SoA 化)
     bool                have_water_lists = false;
@@ -12730,8 +12842,15 @@ inline WorldSoARefs fetch_world_soa(Object *world, Object *map) {
         if (v_lut.get_type() == Variant::PACKED_BYTE_ARRAY) {
             r.passable_sea_lut = v_lut;
         }
+        // sea-ice-render-source-unify 阶段 D：渲染语义专用 LUT（含 SEA_ICE）
+        // 取代 is_water_lut——后者是通行性语义，把 SEA_ICE 当陆，会让 atlas 走错分支。
+        Variant v_iwlut = map->call(StringName("is_water_render_lut"));
+        if (v_iwlut.get_type() == Variant::PACKED_BYTE_ARRAY) {
+            r.is_water_lut = v_iwlut;
+        }
         r.have_lut = (r.terrain_arr.size() == r.n_cells &&
-                      r.passable_sea_lut.size() >= 256);
+                      r.passable_sea_lut.size() >= 256 &&
+                      r.is_water_lut.size() >= 256);
     }
     Variant v_wpl = world->get(StringName("water_cell_pixel_lists"));
     if (v_wpl.get_type() == Variant::DICTIONARY) {
@@ -13004,10 +13123,37 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         cache_valid_ice = ensure_buf(st->buf_ice, 1);
     }
 
-    // ── helper: passable_sea by cell.index (LUT or fallback to false) ──
+    // ── helper: passable_sea by cell.index ──
+    // 数据源切换 2026-05-25：原读 soa.terrain_arr（已废弃，本项目运行期未填充）
+    // → 改读 cpp 端权威的 cell_terrain SoA slot (TERR)；passable_sea_lut 来自
+    // MapData.passable_sea_lut() 的 static method，不依赖 terrain_arr 状态。
     auto cell_psea = [&](int idx) -> bool {
-        if (soa.have_lut && idx >= 0 && idx < n_cells) {
-            const uint8_t terrain = soa.terrain_arr[idx];
+        if (idx < 0 || idx >= n_cells) return false;
+        if (soa.passable_sea_lut.size() >= 256) {
+            return soa.passable_sea_lut[TERR[idx]] != 0;
+        }
+        return false;
+    };
+    // ── helper: is_water by cell.index ──
+    // sea-ice-render-source-unify 阶段 C：dyn_atlas / dyn_smooth 用此判定
+    // A 通道双语义。与 cell_psea 的差异：SEA_ICE 因冰面阻断航行 cell_psea=false，
+    // 但视觉上仍是水域 → cell_is_water=true，A 通道写 ice_byte 让 shader 水路径
+    // 正确渲染冰。1:1 镜像 GDScript map_baker.gd::_dynamic_cell_signature 的
+    // is_water 判定（基于 cell.is_water == not passable_land 语义）。
+    //
+    // ── helper: 视觉水陆判定 ──────────────────────────────────────
+    // 数据源（关键修复 2026-05-25）：
+    //   - terrain：直读 cpp 端权威 cell_terrain SoA slot (TERR 指针)；
+    //     不读 MapData.terrain_arr（运行期可能未填充）。
+    //   - LUT：soa.is_water_lut 已切换为 MapData.is_water_render_lut()
+    //     （阶段 D），SEA_ICE(20) 已直接编为 1，无需任何散点兜底。
+    auto cell_is_water = [&](int idx) -> bool {
+        if (idx < 0 || idx >= n_cells) return false;
+        const uint8_t terrain = TERR[idx];
+        if (soa.is_water_lut.size() >= 256) {
+            return soa.is_water_lut[terrain] != 0;
+        }
+        if (soa.passable_sea_lut.size() >= 256) {
             return soa.passable_sea_lut[terrain] != 0;
         }
         return false;
@@ -13023,10 +13169,8 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     auto cell_is_ice_renderable = [&](int idx) -> bool {
         if (idx < 0 || idx >= n_cells) return false;
         if (cell_psea(idx)) return true;
-        if (soa.have_lut) {
-            return soa.terrain_arr[idx] == TERRAIN_SEA_ICE;
-        }
-        return false;
+        // 数据源切换 2026-05-25：从 soa.terrain_arr 改为 TERR (cell_terrain SoA slot)。
+        return TERR[idx] == TERRAIN_SEA_ICE;
     };
 
     // ── neighbor SoA: 从 map.neighbor_indices_packed() 取 ──
@@ -13109,14 +13253,37 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             int32_t * const OUT = dyn_real_indices.ptrw();
             int32_t * const OUT_SIG = dyn_real_sigs.ptrw();
             int kw = 0;
+            // [TEMP DIAG sea-ice phase D] 一次性 dump：确认 lambda 实际数据源
+            int _diag_d_dumped = 0;
+            // 加 use_all + dirty_size 让我们看 atlas pipeline 是否在 SIF 升到 1.0 之后还被触发。
             for (int i = 0; i < N; ++i) {
                 const int idx = use_all ? i : SRC[i];
                 if (idx < 0 || idx >= n_cells) continue;
-                const bool psea = cell_psea(idx);
+                // sea-ice-render-source-unify 阶段 D：cell_is_water 走 is_water_render_lut
+                //   （含 SEA_ICE）→ atlas A 通道一致写 ice byte，不再走陆路径写 vit byte。
+                const bool iw = cell_is_water(idx);
                 const uint32_t sig = pk_atlas_sig_dynamic(
                     double(TEMP[idx]), double(MOIST[idx]),
-                    double(SNOW[idx]), double(VIT[idx]), psea);
-                if (cache_valid_dyn && uint32_t(PREV[idx]) == sig) continue;  // skip
+                    double(SNOW[idx]), double(VIT[idx]), double(ICE[idx]), iw);
+                // 仅 dump 用户实际关心的 SEA_ICE cell（idx 区间常见为 1900~2400）
+                // 且 ICE>0.5 才是探针点击的"应当渲染冰"格。
+                const bool _diag_match = (TERR[idx] == 20) && (double(ICE[idx]) > 0.5);
+                const bool _diag_skip = cache_valid_dyn && uint32_t(PREV[idx]) == sig;
+                if (_diag_d_dumped < 8 && _diag_match) {
+                    UtilityFunctions::print(
+                        "[PHASE-D-DIAG] idx=", idx,
+                        " TERR=", int(TERR[idx]),
+                        " use_all=", use_all,
+                        " N=", N, " dirty_sz=", dirty_indices.size(),
+                        " iw=", iw,
+                        " ICE=", double(ICE[idx]),
+                        " sig.A=", int((sig >> 24) & 0xFFu),
+                        " PREV.A=", int(uint32_t(PREV[idx]) >> 24) & 0xFF,
+                        " cache_valid=", cache_valid_dyn,
+                        " skip=", _diag_skip);
+                    ++_diag_d_dumped;
+                }
+                if (_diag_skip) continue;  // skip
                 PREV[idx] = int32_t(sig);
                 OUT[kw] = idx;
                 OUT_SIG[kw] = int32_t(sig);
@@ -13250,7 +13417,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                 const int c = (idx < soa.n_cells) ? SC[idx] : 0;
                 first_px[k] = (c <= 0 || f < 0) ? 0 : f;
                 px_count[k] = (c <= 0 || f < 0) ? 0 : c;
-                pass_sea[k] = cell_psea(idx) ? 1 : 0;
+                pass_sea[k] = cell_is_water(idx) ? 1 : 0;
                 // prev_veg / prev_vit 从 SoA 读 cur 即可（GD 路径下 ecology baker
                 // 维护的是"上一次写入"的镜像，本管线整体下沉后，cur 直接代表上一帧
                 // 本 cell 的 vegetation/vitality —— 因为 sim 在 priority<250 写完，
@@ -13274,7 +13441,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             knobs["cell_first_px"] = first_px;
             knobs["cell_px_count"] = px_count;
             knobs["flat_px_indices"] = soa.flat_px_indices;
-            knobs["cell_passable_sea"] = pass_sea;
+            knobs["cell_is_water"] = pass_sea;
             knobs["prev_veg"] = prev_veg;
             knobs["prev_vitality"] = prev_vit;
             knobs["prev_transition"] = prev_tr;
@@ -13333,6 +13500,21 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     // Phase SMOOTH：(eco_real ∪ dirty) 1-跳邻居膨胀；需要 neighbor SoA
     // ────────────────────────────────────────────────────────────────────
     if (!yielded && st->phase == AtlasPipelineState::SMOOTH) {
+    // [TEMP DIAG sea-ice phase D-smo-entry]
+    {
+        static int _diag_smo_entry_dumped = 0;
+        if (_diag_smo_entry_dumped < 4) {
+            UtilityFunctions::print(
+                "[PHASE-D-SMO-ENTRY] have_nb=", have_nb,
+                " cache_valid_smo=", cache_valid_smo,
+                " dirty_path_used=", dirty_path_used,
+                " dirty_noop=", dirty_noop,
+                " dirty_sz=", dirty_indices.size(),
+                " eco_decay_sz=", st->eco_active_decay_indices.size(),
+                " prep_smo_ready=", st->prep_smo_ready);
+            ++_diag_smo_entry_dumped;
+        }
+    }
     int max_smooth_cells_per_call = opts.has("max_smooth_cells_per_call")
         ? int(opts["max_smooth_cells_per_call"]) : 512;
     if (max_smooth_cells_per_call < 128) max_smooth_cells_per_call = 128;
@@ -13407,7 +13589,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
     const int k_begin = st->prep_smo_cursor;
     const int k_end = std::min(K, k_begin + max_smooth_cells_per_call);
 
-    // smooth phase 直接写 buffer：避免构造 Dictionary / K 级临时 CSR 数组 / neighbor_passable_sea。
+    // smooth phase 直接写 buffer：避免构造 Dictionary / K 级临时 CSR 数组 / neighbor_is_water。
     {
         t_p = std::chrono::high_resolution_clock::now();
         if (K > 0 && have_nb && k_begin < k_end) {
@@ -13420,10 +13602,14 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             uint8_t * const BUF = st->buf_smo.ptrw();
             const int flat_n = soa.flat_px_indices.size();
 
+            // sea-ice-render-source-unify 阶段 C：sig_of 改用 is_water + sea_ice_frac，
+            // 让 SEA_ICE / OCEAN 等水域 cell 的 A 通道写 ice_byte（与 GDScript fallback
+            // _dynamic_cell_signature 1:1 对齐）。
             auto sig_of = [&](int idx) -> uint32_t {
                 return pk_atlas_sig_dynamic(
                     double(TEMP[idx]), double(MOIST[idx]),
-                    double(SNOW[idx]), double(VIT[idx]), cell_psea(idx));
+                    double(SNOW[idx]), double(VIT[idx]),
+                    double(ICE[idx]), cell_is_water(idx));
             };
 
             for (int k = k_begin; k < k_end; ++k) {
@@ -13435,6 +13621,10 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                 const int cg = int((c_sig >> 8) & 0xFFu);
                 const int cb = int((c_sig >> 16) & 0xFFu);
                 const int ca = int((c_sig >> 24) & 0xFFu);
+                // sea-ice-render-source-unify 阶段 C：A 通道水陆分裂均值，
+                // 与 GDScript dyn_atlas_smooth_chunk_step / encode_dyn_smooth_atlas
+                // 函数版 1:1 对齐。中心 is_water 决定只累加同语义邻居 A。
+                const bool center_is_water = cell_is_water(ci);
 
                 uint32_t hood_h = 0x811C9DC5u;
                 hood_h = (hood_h ^ uint32_t(cr)) * 0x01000193u;
@@ -13442,7 +13632,7 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                 hood_h = (hood_h ^ uint32_t(cb)) * 0x01000193u;
                 hood_h = (hood_h ^ uint32_t(ca)) * 0x01000193u;
 
-                int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0;
+                int nr = 0, ng = 0, nb_sum = 0, na = 0, nc = 0, na_c = 0;
                 const int nb_base = ci * 6;
                 for (int d = 0; d < 6; ++d) {
                     const int32_t ni = NB[nb_base + d];
@@ -13452,14 +13642,37 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                     const int ngb = int((n_sig >> 8) & 0xFFu);
                     const int nbb = int((n_sig >> 16) & 0xFFu);
                     const int nab = int((n_sig >> 24) & 0xFFu);
-                    nr += nrb; ng += ngb; nb_sum += nbb; na += nab; ++nc;
+                    nr += nrb; ng += ngb; nb_sum += nbb; ++nc;
+                    // A 通道独立计数：仅累加与中心同水/陆类的邻居，避免
+                    // sea_ice_frac 与 vegetation_vitality 异语义数据互相污染。
+                    const bool n_is_water = cell_is_water(int(ni));
+                    if (center_is_water == n_is_water) {
+                        na += nab;
+                        ++na_c;
+                    }
                     hood_h = (hood_h ^ uint32_t(nrb)) * 0x01000193u;
                     hood_h = (hood_h ^ uint32_t(ngb)) * 0x01000193u;
                     hood_h = (hood_h ^ uint32_t(nbb)) * 0x01000193u;
                     hood_h = (hood_h ^ uint32_t(nab)) * 0x01000193u;
                 }
 
-                if (cache_valid_smo && uint32_t(PS[ci]) == hood_h) {
+                // [TEMP DIAG sea-ice phase D-smo]
+                const bool _diag_smo_match = (TERR[ci] == 20) && (double(ICE[ci]) > 0.5);
+                const bool _diag_smo_skip = cache_valid_smo && uint32_t(PS[ci]) == hood_h;
+                static int _diag_smo_dumped = 0;
+                if (_diag_smo_dumped < 8 && _diag_smo_match) {
+                    UtilityFunctions::print(
+                        "[PHASE-D-SMO] ci=", ci, " TERR=", int(TERR[ci]),
+                        " ICE=", double(ICE[ci]),
+                        " ca=", ca, " nc=", nc, " na_c=", na_c,
+                        " na_sum=", na,
+                        " hood_h=", String::num_uint64(uint64_t(hood_h), 16),
+                        " PS_hood=", String::num_uint64(uint64_t(uint32_t(PS[ci])), 16),
+                        " skip=", _diag_smo_skip,
+                        " cache_valid_smo=", cache_valid_smo);
+                    ++_diag_smo_dumped;
+                }
+                if (_diag_smo_skip) {
                     continue;
                 }
                 PS[ci] = int32_t(hood_h);
@@ -13468,10 +13681,30 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
                 if (nc > 0) {
                     or_ = (cr + (nr / nc)) / 2;
                     og = (cg + (ng / nc)) / 2;
-                    ob = (cb + (nb_sum / nc)) / 2;
-                    oa = (ca + (na / nc)) / 2;
+                    // sea-ice-render-source-unify 阶段 C：B 通道（snow_cover）
+                    // 改为 passthrough（与 encode_dyn_smooth_atlas 函数版 1:1）。
+                    // 历史原因：单格 95% 雪盖会被无雪邻居拖到 ~47.5%，shader 后段
+                    // smoothstep 直接压成不可见。对 B 不做 box blur 是必要妥协。
+                    ob = cb;
+                    // A 通道：用同水陆类邻居数 na_c 做均值，全异类 (na_c=0) 退回中心值。
+                    if (na_c > 0) {
+                        oa = (ca + (na / na_c)) / 2;
+                    } else {
+                        oa = ca;
+                    }
                 } else {
                     or_ = cr; og = cg; ob = cb; oa = ca;
+                }
+
+                // [TEMP DIAG sea-ice phase D-smo-final]
+                static int _diag_smo_oa_dumped = 0;
+                if (_diag_smo_oa_dumped < 8 && TERR[ci] == 20 && double(ICE[ci]) > 0.5) {
+                    UtilityFunctions::print(
+                        "[PHASE-D-SMO-OA] ci=", ci, " ICE=", double(ICE[ci]),
+                        " ca=", ca, " na=", na, " na_c=", na_c,
+                        " oa=", oa,
+                        " first_px=", SF[ci], " count=", SC[ci]);
+                    ++_diag_smo_oa_dumped;
                 }
 
                 const int first = SF[ci];

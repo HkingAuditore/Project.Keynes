@@ -1049,10 +1049,24 @@ func dynamic_cell_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report
 			world.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img)
 
 func _dynamic_cell_signature(cell: HexCell) -> int:
+	# A 通道双语义（sea-ice-render-source-unify 阶段 C）：
+	#   - 水格（is_water=true，等价于 not passable_land）：A = q01_byte_ice(sea_ice_fraction)
+	#       让 shader 水路径直接从 dyn_atlas_smooth.A 读取海冰覆盖率；同源于
+	#       UI/info_panel.sea_ice_fraction，根除"UI 100% 但画面无冰"类病灶。
+	#   - 陆格：A = q01_byte(vegetation_vitality)（保持原语义，陆地植被通道）
+	# 关键：用 is_water 而非 passable_sea——SEA_ICE 因冰面阻断航行 passable_sea=false，
+	# 但视觉上仍是水域；用 passable_sea 会把 SEA_ICE 误归入陆格写 vit，shader 水路径
+	# 拿到错误数据完全看不到冰。
+	# SAME_SOURCE：gdext/src/world_ext.cpp::encode_dynamic_cell_atlas / encode_dyn_smooth_atlas /
+	#              monolithic atlas pipeline pk_atlas_sig_dynamic（统一用 is_water 语义）。
 	var r: int = _q01_byte(float(cell.temperature))
 	var g: int = _q01_byte(float(cell.moisture))
 	var b: int = _q01_byte(float(cell.snow_cover))
-	var a: int = 0 if bool(cell.passable_sea) else _q01_byte(float(cell.vegetation_vitality))
+	var a: int
+	if not cell.passable_land:
+		a = _q01_byte_ice(float(cell.sea_ice_fraction))
+	else:
+		a = _q01_byte(float(cell.vegetation_vitality))
 	return r | (g << 8) | (b << 16) | (a << 24)
 
 # 生态视觉 atlas：RGBA8，derived_size。
@@ -1275,8 +1289,8 @@ static func _q01_byte(v: float) -> int:
 	return clampi(int(round(clampf(v, 0.0, 1.0) * 255.0)), 0, 255)
 
 # 2026-05-19 Plan-C：海冰专用量化（不影响 temp/moist/snow/vitality 等其他通道）。
-# 当 fraction > 0 时使用 ceil 并保证至少 byte=1，让微量海冰首日就能在 shader
-# smoothstep(0.02, 0.85) 中触发可见。fraction == 0 仍写 0，避免水域全黑像素被错误抬高。
+# 当 fraction > 0 时使用 ceil 并保证至少 byte=1，避免低浓度冰在量化时丢失；
+# shader 端再用更高、更宽的 smoothstep 决定可见强度。fraction == 0 仍写 0。
 # 仅由 ice_state_atlas_chunk_step 在海冰写入路径调用。
 static func _q01_byte_ice(v: float) -> int:
 	if v <= 0.0:
@@ -1417,14 +1431,26 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 			ng += (n_sig >> 8) & 0xFF
 			nb += (n_sig >> 16) & 0xFF
 			nc += 1
-			# A 通道（vitality）encode 时被强制 `passable_sea ? 0 : vit`，海域邻
-			# 居恒为 0；若与 R/G 一起做全邻居平均，会把海岸陆地 cell 的 vitality
-			# 系统性拖低（孤岛 5 海邻 → -42%）。仅累加非海域邻居以避免该偏置；
-			# R/G 仍走全邻居（海陆温/湿度都是真值，跳过海邻反而会失真）。
-			# SAME_SOURCE：gdext/src/world_ext.cpp::encode_dyn_smooth_atlas。
-			if not nb_cell.passable_sea:
-				na += (n_sig >> 24) & 0xFF
-				na_c += 1
+			# A 通道水陆分裂语义（sea-ice-render-source-unify 阶段 C）：
+			#   - 中心是陆格：A=vitality，仅累加陆地邻居（sea-ice 邻居恒持 ice_byte，
+			#     若纳入会污染陆地 vitality blur）；保持 2026-05-21 既有修复语义。
+			#   - 中心是水格：A=sea_ice_fraction，仅累加水域邻居（陆地邻居 A=vit
+			#     与海冰物理无关，纳入会拖偏冰边界）。陆地邻居恒持 vit，对中心海
+			#     冰 box blur 是噪声源，必须排除。
+			# 关键：水陆分类必须用 is_water 语义（含 SEA_ICE），不能用 passable_sea，
+			# 否则 SEA_ICE 邻居会被错归"陆地邻居"导致 A 通道污染。
+			# SAME_SOURCE：gdext/src/world_ext.cpp::encode_dyn_smooth_atlas /
+			#              monolithic atlas pipeline smooth phase。
+			var center_is_water: bool = not cell.passable_land
+			var nb_is_water: bool = not nb_cell.passable_land
+			if center_is_water:
+				if nb_is_water:
+					na += (n_sig >> 24) & 0xFF
+					na_c += 1
+			else:
+				if not nb_is_water:
+					na += (n_sig >> 24) & 0xFF
+					na_c += 1
 			hood_h = ((hood_h ^ (n_sig & 0xFF)) * 0x01000193) & 0xFFFFFFFF
 			hood_h = ((hood_h ^ ((n_sig >> 8) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
 			hood_h = ((hood_h ^ ((n_sig >> 16) & 0xFF)) * 0x01000193) & 0xFFFFFFFF
@@ -1461,6 +1487,16 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 		var pixels: PackedInt32Array = PackedInt32Array()
 		if use_pixel_lists:
 			pixels = world.cell_pixel_lists.get(cell, PackedInt32Array())
+		# [TEMP DIAG sea-ice GD-smo-write]
+		if cell != null and not cell.passable_land and float(cell.sea_ice_fraction) > 0.5:
+			if not Engine.has_meta("_diag_gd_smo_dumped"):
+				Engine.set_meta("_diag_gd_smo_dumped", 0)
+			var _diag_n: int = int(Engine.get_meta("_diag_gd_smo_dumped"))
+			if _diag_n < 8:
+				print("[GD-SMO-WRITE] cell=", cell, " ICE=", float(cell.sea_ice_fraction),
+					" ca=", ca, " oa=", oa, " nc=", nc, " na_c=", na_c, " na=", na,
+					" px0=", (pixels[0] if pixels.size() > 0 else -1))
+				Engine.set_meta("_diag_gd_smo_dumped", _diag_n + 1)
 		for px_idx in pixels:
 			if px_idx < 0 or px_idx >= n:
 				continue
@@ -1600,9 +1636,13 @@ func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary,
 			report.pixels_written = int(report.pixels_written) + pixels.size()
 	else:
 		# Fallback：扫所有 cell 但只处理水格。
+		# sea-ice-render-source-unify 阶段 C：用 is_water (not passable_land) 而非
+		# passable_sea，否则 SEA_ICE cell 会被漏掉（passable_sea=false），
+		# ice_state atlas 拿不到它的 sea_ice_fraction。与 cpp monolithic
+		# pipeline cell_is_ice_renderable 语义一致。
 		for i in range(span.x, span.y):
 			var cell: HexCell = cells[i]
-			if cell == null or not bool(cell.passable_sea):
+			if cell == null or cell.passable_land:
 				continue
 			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
 			if cache_valid and int(_last_ice_state_cell_bytes.get(cell, -1)) == byte_v:
@@ -1685,37 +1725,40 @@ func _cell_range(cells, start_idx: int = 0, end_idx: int = -1) -> Vector2i:
 # - use_water_lists: ice_state pass 走 water_cell_pixel_lists；其他走 cell_pixel_lists
 # - n_pix: W*H，用于越界过滤
 # 返回 Dictionary：含 cell_indices / cell_first_px / cell_px_count / flat_px_indices /
-#                 cell_passable_sea / valid_count（实际有效 cell 数；剔除 null/idx<0/无 pixel list）
+#                 cell_is_water / valid_count（实际有效 cell 数；剔除 null/idx<0/无 pixel list）
 # 如果 valid_count == 0，caller 应直接 return（无需调 cpp）。
+#
+# sea-ice-render-source-unify 阶段 C：cell_is_water 语义代替原来的 cell_passable_sea。
+# is_water = not passable_land，含 OCEAN/COAST/LAKE/SEA_ICE/REEF/KELP 等所有水域；
+# 原 passable_sea 仅指“可航行”造成 SEA_ICE 被误归入陆格，是本阶段修复的根因。
 #
 # P1：当 `world.cell_first_px_arr` 已构建（_bake_height_biome_moisture 跑过）
 # 且 use_water_lists=false 时，走 SoA fast path：
 #   - 直接读 `world.cell_first_px_arr[idx]` 拿 flat 起始 / `cell_px_count_arr[idx]`
 #     拿长度，不再走 `cell_pixel_lists.has(cell)` + `.get(cell)` 的 K 次 Dict 查找。
-#   - passable_sea 改用 `MapData.passable_sea_lut()[map.terrain_arr[idx]]`，
-#     消除 `cell.passable_sea` 字段读取（PR-2.x 后该字段已是 view alias，但仍要
-#     走 GDScript 属性路径，远比 PackedByteArray 索引贵）。
+#   - is_water 改用 `MapData.is_water_lut()[map.terrain_arr[idx]]`，消除 `cell.is_water`/
+#     `cell.passable_land` 字段读取（均需走 GDScript 属性路径，远比 PackedByteArray 索引贵）。
 # fallback：use_water_lists=true / SoA 未 build / map==null / terrain_arr 大小不符 →
-#           走 Dict + cell.passable_sea 旧路径（行为完全一致）。
+#           走 Dict + “not cell.passable_land” 旧路径（行为完全一致）。
 func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: int,
 		start_idx: int = 0, end_idx: int = -1, map: MapData = null) -> Dictionary:
-	# ── P1 SoA fast path ──────────────────────────────────────────────────
+	# ── P1 SoA fast path ──────────────────────────────────────────────
 	if (not use_water_lists) and world != null and world.cell_first_px_arr.size() > 0:
 		var _soa_n: int = world.cell_first_px_arr.size()
-		# terrain_arr / passable_sea_lut 二选一：map 若没传或 size 不符则退化为
-		# 字段读取（仍比走 Dict 快）。
+		# terrain_arr / is_water_render_lut 二选一：map 若没传或 size 不符则退化为
+		# “not cell.passable_land + SEA_ICE 兜底”字段读取（仍比走 Dict 快）。
+		# 阶段 D：渲染语义专用 LUT（SEA_ICE 强制视为水），与 gameplay is_water_lut 解耦。
 		var _have_lut: bool = map != null \
 				and map.terrain_arr.size() == _soa_n \
-				and MapData.passable_sea_lut().size() >= 256
+				and MapData.is_water_render_lut().size() >= 256
 		var _terrain_arr: PackedByteArray = map.terrain_arr if _have_lut else PackedByteArray()
-		var _psea_lut: PackedByteArray = MapData.passable_sea_lut() if _have_lut else PackedByteArray()
-
+		var _iw_lut: PackedByteArray = MapData.is_water_render_lut() if _have_lut else PackedByteArray()
 		var _span_fast: Vector2i = _cell_range(cells, start_idx, end_idx)
 		var _kmax_fast: int = _span_fast.y - _span_fast.x
 		var _ci_fast: PackedInt32Array = PackedInt32Array(); _ci_fast.resize(_kmax_fast)
 		var _fpx_fast: PackedInt32Array = PackedInt32Array(); _fpx_fast.resize(_kmax_fast)
 		var _pxc_fast: PackedInt32Array = PackedInt32Array(); _pxc_fast.resize(_kmax_fast)
-		var _psea_fast: PackedByteArray = PackedByteArray(); _psea_fast.resize(_kmax_fast)
+		var _iw_fast: PackedByteArray = PackedByteArray(); _iw_fast.resize(_kmax_fast)
 		# [perf 2026-05-20] 方案 B：flat_px 整图静态复用。
 		# 之前注释提到"caller 期望 flat_px_indices 是按 K 个 cell 顺序串接的紧凑数组"——
 		# 实际上 C++ 端 parse_csr_common 只校验 `last_first + last_count <= total_px`，
@@ -1750,23 +1793,26 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 			else:
 				_fpx_fast[_k_fast] = _first
 				_pxc_fast[_k_fast] = _cnt
-			# passable_sea：LUT 查表 / 字段 fallback
+			# is_water：LUT 查表 / 字段 fallback。
+			# 阶段 D：使用 is_water_render_lut（含 SEA_ICE）→ 不再需要 `or _t_idx == 20` 散点兜底；
+			# fallback 路径保留 SEA_ICE 兜底以确保 LUT 不可用时（极不应触发）仍正确。
 			if _have_lut:
-				_psea_fast[_k_fast] = _psea_lut[_terrain_arr[_idx]]
+				_iw_fast[_k_fast] = _iw_lut[_terrain_arr[_idx]]
 			else:
-				_psea_fast[_k_fast] = 1 if _cell.passable_sea else 0
+				var _t_fb: int = int(_cell.terrain) & 0xFF
+				_iw_fast[_k_fast] = 1 if ((not _cell.passable_land) or _t_fb == 20) else 0
 			_k_fast += 1
 		_ci_fast.resize(_k_fast)
 		_fpx_fast.resize(_k_fast)
 		_pxc_fast.resize(_k_fast)
-		_psea_fast.resize(_k_fast)
+		_iw_fast.resize(_k_fast)
 		# flat_px_indices 直接传整图（不再拷贝；C++ 用 FIRST/CNT 索引即可）。
 		return {
 			"cell_indices": _ci_fast,
 			"cell_first_px": _fpx_fast,
 			"cell_px_count": _pxc_fast,
 			"flat_px_indices": _src_flat,
-			"cell_passable_sea": _psea_fast,
+			"cell_is_water": _iw_fast,
 			"valid_count": _k_fast,
 		}
 
@@ -1785,8 +1831,8 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 	first_px.resize(k_max)
 	var px_count: PackedInt32Array = PackedInt32Array()
 	px_count.resize(k_max)
-	var passable_sea: PackedByteArray = PackedByteArray()
-	passable_sea.resize(k_max)
+	var is_water_arr: PackedByteArray = PackedByteArray()
+	is_water_arr.resize(k_max)
 
 	var flat_px: PackedInt32Array = PackedInt32Array()
 	# 估算 flat_px 容量：典型每 cell 30-100 px。先粗占 64×k_max；resize 仅在结尾一次校准。
@@ -1808,7 +1854,8 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 		cell_indices[k] = cell.index
 		first_px[k] = flat_w
 		px_count[k] = pixels.size()
-		passable_sea[k] = 1 if cell.passable_sea else 0
+		# sea-ice-render-source-unify 阶段 C：is_water = not passable_land，含 SEA_ICE 等所有水域。
+		is_water_arr[k] = 0 if cell.passable_land else 1
 		# 拷贝 pixel idx 到 flat 数组
 		var nx: int = pixels.size()
 		if flat_w + nx > flat_px.size():
@@ -1821,7 +1868,7 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 	cell_indices.resize(k)
 	first_px.resize(k)
 	px_count.resize(k)
-	passable_sea.resize(k)
+	is_water_arr.resize(k)
 	flat_px.resize(flat_w)
 
 	return {
@@ -1829,7 +1876,7 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 		"cell_first_px": first_px,
 		"cell_px_count": px_count,
 		"flat_px_indices": flat_px,
-		"cell_passable_sea": passable_sea,
+		"cell_is_water": is_water_arr,
 		"valid_count": k,
 	}
 
@@ -1882,7 +1929,7 @@ func _try_cpp_dynamic_cell_atlas_encode(map: MapData, world: WorldData, ctx: Dic
 		"cell_first_px": csr["cell_first_px"],
 		"cell_px_count": csr["cell_px_count"],
 		"flat_px_indices": csr["flat_px_indices"],
-		"cell_passable_sea": csr["cell_passable_sea"],
+		"cell_is_water": csr["cell_is_water"],
 		"cache_valid": cache_valid,
 		"prev_sigs": prev_sigs,
 	}
@@ -1972,7 +2019,7 @@ func _try_cpp_ecology_visual_atlas_encode(map: MapData, world: WorldData, ctx: D
 		"cell_first_px": csr["cell_first_px"],
 		"cell_px_count": csr["cell_px_count"],
 		"flat_px_indices": csr["flat_px_indices"],
-		"cell_passable_sea": csr["cell_passable_sea"],
+		"cell_is_water": csr["cell_is_water"],
 		"prev_veg": prev_veg,
 		"prev_vitality": prev_vit,
 		"prev_transition": prev_tr,
@@ -2021,7 +2068,7 @@ func _try_cpp_ecology_visual_atlas_encode(map: MapData, world: WorldData, ctx: D
 	return true
 
 
-# dyn_atlas_smooth C++ fast-path。需要 neighbor_indices（n_cells*6）+ neighbor_passable_sea（K*6）。
+# dyn_atlas_smooth C++ fast-path。需要 neighbor_indices（n_cells*6）+ neighbor_is_water（K*6）。
 func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dictionary, cells,
 		report: Dictionary, start_idx: int = 0, end_idx: int = -1) -> bool:
 	var n: int = int(ctx.n)
@@ -2042,16 +2089,18 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 		# 没有 neighbor SoA 不能走 cpp（fallback 到 GDScript 的 map.get_neighbors）
 		report["fallback_reason"] = "neighbor_indices_missing"
 		return false
-	# neighbor_passable_sea：长度 K*6，按 cells 顺序对每个 dirty cell 的 6 邻居打包 passable_sea。
-	var nb_pseas: PackedByteArray = PackedByteArray()
-	nb_pseas.resize(k * 6)
-	# P1-D：K*6 邻居 passable_sea 走 terrain_arr + passable_sea_lut 查表，消除
-	# K*6 次 `map.cell_at(ni)` (Dictionary 哈希反查) + `nb_cell.passable_sea`
-	# (字段属性读取) 的双开销。fallback 路径保持原 cell_at + 字段读取行为。
+	# neighbor_is_water：长度 K*6，按 cells 顺序对每个 dirty cell 的 6 邻居打包 is_water。
+	# sea-ice-render-source-unify 阶段 C：语义从 passable_sea 切换为 is_water（含 SEA_ICE）。
+	var nb_iws: PackedByteArray = PackedByteArray()
+	nb_iws.resize(k * 6)
+	# P1-D：K*6 邻居 is_water 走 terrain_arr + is_water_lut 查表，消除
+	# K*6 次 `map.cell_at(ni)` (Dictionary 哈希反查) + 字段读取双开销。
+	# fallback 路径保持原 cell_at + `not passable_land` 字段读取行为。
 	var _smooth_terrain_arr: PackedByteArray = map.terrain_arr if map != null else PackedByteArray()
-	var _smooth_psea_lut: PackedByteArray = MapData.passable_sea_lut()
+	# 阶段 D：渲染语义专用 LUT（含 SEA_ICE）取代 is_water_lut，与 cpp / fast path 对齐。
+	var _smooth_iw_lut: PackedByteArray = MapData.is_water_render_lut()
 	var _smooth_have_lut: bool = _smooth_terrain_arr.size() > 0 \
-			and _smooth_psea_lut.size() >= 256 \
+			and _smooth_iw_lut.size() >= 256 \
 			and _smooth_terrain_arr.size() == map.cell_count()
 	var k_idx: int = 0
 	for i in range(span.x, span.y):
@@ -2064,23 +2113,25 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 		var base_g: int = ci_idx * 6
 		var base_l: int = k_idx * 6
 		if _smooth_have_lut:
-			# Fast path：纯 PackedArray 索引，0 字段解引用。
+			# Fast path：纯 PackedArray 索引；is_water_render_lut 已含 SEA_ICE，零分支。
 			for d in range(6):
 				var ni_f: int = nb_indices[base_g + d] if base_g + d < nb_indices.size() else -1
 				if ni_f >= 0 and ni_f < _smooth_terrain_arr.size():
-					nb_pseas[base_l + d] = _smooth_psea_lut[_smooth_terrain_arr[ni_f]]
+					nb_iws[base_l + d] = _smooth_iw_lut[_smooth_terrain_arr[ni_f]]
 				else:
-					nb_pseas[base_l + d] = 0
+					nb_iws[base_l + d] = 0
 		else:
-			# Fallback：cell_at + 字段读取（与原实现完全一致）。
+			# Fallback：cell_at + `not passable_land + SEA_ICE 兜底` 字段读取。
 			for d in range(6):
 				var ni: int = nb_indices[base_g + d] if base_g + d < nb_indices.size() else -1
-				var nb_psea: int = 0
+				var nb_iw: int = 0
 				if ni >= 0:
 					var nb_cell: HexCell = map.cell_at(ni)
-					if nb_cell != null and nb_cell.passable_sea:
-						nb_psea = 1
-				nb_pseas[base_l + d] = nb_psea
+					if nb_cell != null:
+						var _t_nb: int = int(nb_cell.terrain) & 0xFF
+						if (not nb_cell.passable_land) or _t_nb == 20:
+							nb_iw = 1
+				nb_iws[base_l + d] = nb_iw
 		k_idx += 1
 	var knobs := {
 		"n_pix": n,
@@ -2090,9 +2141,9 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 		"cell_first_px": csr["cell_first_px"],
 		"cell_px_count": csr["cell_px_count"],
 		"flat_px_indices": csr["flat_px_indices"],
-		"cell_passable_sea": csr["cell_passable_sea"],
+		"cell_is_water": csr["cell_is_water"],
 		"neighbor_indices": nb_indices,
-		"neighbor_passable_sea": nb_pseas,
+		"neighbor_is_water": nb_iws,
 	}
 	var out: Dictionary = _world_ext.call("encode_dyn_smooth_atlas", knobs)
 	if bool(out.get("fallback", true)):
@@ -2147,9 +2198,9 @@ func _try_cpp_ice_state_atlas_encode(map: MapData, world: WorldData, ctx: Dictio
 		"cell_first_px": csr["cell_first_px"],
 		"cell_px_count": csr["cell_px_count"],
 		"flat_px_indices": csr["flat_px_indices"],
-		# ice pass 不需要 passable_sea，但为了 CSR parse 共享 sanity（C++ 端会校验 K 匹配）
-		# 仍然把 cell_passable_sea 字段塞进去（C++ ice 路径不读取）。
-		"cell_passable_sea": csr["cell_passable_sea"],
+		# ice pass 不需要 is_water，但为了 CSR parse 共享 sanity（C++ 端会校验 K 匹配）
+		# 仍然把 cell_is_water 字段塞进去（C++ ice 路径不读取）。
+		"cell_is_water": csr["cell_is_water"],
 	}
 	var out: Dictionary = _world_ext.call("encode_ice_state_atlas", knobs)
 	if bool(out.get("fallback", true)):
@@ -4111,8 +4162,8 @@ func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, 
 		var cell: HexCell = map.cell_at(i)
 		var b: int = 0
 		if cell != null and _is_water(cell.terrain):
-			# 2026-05-19 Plan-C：使用 _q01_byte_ice 量化兜底，让微量海冰首日可见。
-			# 与 ice_state_atlas_chunk_step 的语义一致（fraction>0 → byte≥1）。
+			# 使用 _q01_byte_ice 保留低浓度冰的连续数据；可见强度由 shader 阈值决定。
+			# 与 ice_state_atlas_chunk_step 的语义一致（fraction>0 → byte>=1）。
 			b = _q01_byte_ice(float(cell.sea_ice_fraction))
 		cell_bytes[i] = b
 		if _last_sea_ice_cell_bytes_packed.size() <= i or int(_last_sea_ice_cell_bytes_packed[i]) != b:

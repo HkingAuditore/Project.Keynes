@@ -1,0 +1,3 @@
+tick=1559 elev=0.734883 terrain=9 baseTerr=9 isW=1 lat=0.205128 base_yr=0.542533 base=0 temp=0.209726 sOff=0.209726
+tick=1560 elev=0.734883 terrain=9 baseTerr=9 isW=1 lat=0.205128 base_yr=0.542533 base=0 temp=0.209726 sOff=0.209726
+tick=1577 elev=0.734883 terrain=9 baseTerr=9 isW=1 lat=0.205128 base_yr=0.542533 base=0 temp=0 sOff=-0.114862

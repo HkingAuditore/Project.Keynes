@@ -856,7 +856,8 @@ public:
     //     "cell_first_px"    : PackedInt32Array（长度 K，CSR row-ptr：第 i 个 cell 在 flat_px_indices 起始）
     //     "cell_px_count"    : PackedInt32Array（长度 K，第 i 个 cell 的像素数）
     //     "flat_px_indices"  : PackedInt32Array（长度 = sum(px_count)，所有像素 idx 顺序拼接）
-    //     "cell_passable_sea": PackedByteArray（长度 K，0/1；dynamic / dyn_smooth pass 必需）
+    //     "cell_is_water"    : PackedByteArray（长度 K，0/1；dynamic / dyn_smooth pass 必需）
+    //                          语义：is_water = not passable_land（含 SEA_ICE/LAKE 等所有水域）
     //     # ecology pass 额外：
     //     "prev_veg"         : PackedByteArray（长度 K）
     //     "prev_vitality"    : PackedByteArray（长度 K）
@@ -864,6 +865,7 @@ public:
     //     "cache_valid"      : bool（false 时 transition_age 强制清 0）
     //     # dyn_smooth pass 额外：
     //     "neighbor_indices" : PackedInt32Array（长度 n_cells * 6，-1 表示越界邻居）
+    //     "neighbor_is_water": PackedByteArray（长度 K * 6，按 cell_indices 顺序对每个邻居打包 is_water）
     //
     // 返回 Dictionary：
     //   "elapsed_ms"     : double（C++ 端 hot loop 耗时）

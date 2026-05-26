@@ -468,16 +468,25 @@ func set_season_phase(phase: float) -> void:
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("season_phase", _season_phase)
 		_update_season_transition()
-	# === Plan-C diag (临时) === 检查 season/uniform 推送 & ice_state_tex 是否绑了
+	# === Plan-C/sea-ice-render-source-unify 阶段 A diag (临时) ===
+	# 检查 season/uniform 推送 & 海冰单源数据通道（dyn_atlas_smooth.A）是否就绪。
+	# ice_state_atlas 仍打印作为旧通道在场监控（已不再是 shader 水路径主源）。
 	if Engine.get_process_frames() % 120 == 0:
 		var _ice_tex_str: String = "null"
 		if _world != null and _world.ice_state_tex != null:
 			_ice_tex_str = "size=%s rid=%s" % [str(_world.ice_state_tex.get_size()), str(_world.ice_state_tex.get_rid())]
+		var _dyn_smooth_str: String = "null"
+		if _world != null and _world.dyn_atlas_smooth_tex != null:
+			_dyn_smooth_str = "size=%s rid=%s" % [str(_world.dyn_atlas_smooth_tex.get_size()), str(_world.dyn_atlas_smooth_tex.get_rid())]
 		var _mat_ice: Object = null
+		var _mat_dyn_smooth: Object = null
 		if _shader_mat != null:
 			_mat_ice = _shader_mat.get_shader_parameter("ice_state_atlas")
-		print("[plan-c/uni] frame=%d season_phase=%.3f season_temp_amp=%.3f world.ice_state_tex=%s shader.ice_state_atlas=%s" % [
-			Engine.get_process_frames(), _season_phase, season_temp_amp, _ice_tex_str, str(_mat_ice)])
+			_mat_dyn_smooth = _shader_mat.get_shader_parameter("dyn_atlas_smooth_atlas")
+		print("[plan-c/uni] frame=%d season_phase=%.3f season_temp_amp=%.3f world.dyn_atlas_smooth=%s shader.dyn_atlas_smooth=%s world.ice_state_tex=%s shader.ice_state_atlas=%s" % [
+			Engine.get_process_frames(), _season_phase, season_temp_amp,
+			_dyn_smooth_str, str(_mat_dyn_smooth),
+			_ice_tex_str, str(_mat_ice)])
 	# === end diag ===
 
 func set_climate_anomaly(v: float) -> void:
@@ -1025,8 +1034,14 @@ func _apply_uniforms() -> void:
 	# 单点采样即可拿到跨 cell 平滑场（消除"颜色按 hex 块切"的硬阶梯）。
 	# 原 dynamic_cell_atlas 仍保留供调试 UI / info panel 消费。
 	sm.set_shader_parameter("dyn_atlas_smooth_atlas", _world.dyn_atlas_smooth_tex)
-	# 海冰生命化：复用 cell.sea_ice_fraction 的滞后积分结果，让极地核心终年不化、
-	# 中纬冬扩夏退；climate_anomaly 升高 → 极区可见缩水。
+	# DEPRECATED(plan-A sea-ice-render-source-unify): water_pipeline 已切换到
+	# dyn_atlas_smooth.A 单源（与 UI/info_panel 同源），ice_state_atlas 不再是
+	# 水路径数据源。本 uniform 仍绑定，原因：
+	#   1. hillshade_tod.gdshaderinc 当前还按 biome==B_SEA_ICE 派生岩面阴影
+	#      （阶段 C 任务 8 会改为读 sea_ice_fraction）；
+	#   2. weather_overlay.gdshader 仍引用 B_SEA_ICE 兼容兜底；
+	#   3. 调试 UI / info panel 兼容路径。
+	# 阶段 C 任务 10 完成后将彻底移除该绑定与 PHASE_ICE。
 	sm.set_shader_parameter("ice_state_atlas", _world.ice_state_tex)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
@@ -1241,3 +1256,156 @@ func set_cover_tex_only(world: WorldData) -> void:
 func set_vegetation_tex_only(world: WorldData) -> void:
 	# 同上：vegetation 通道与 biome 共用 enum_atlas。
 	set_biome_tex_only(world)
+
+
+# ─── [sea-ice-render-source-unify 阶段 A] 海冰单源诊断探针 ────────────────
+# 用法（调试用，控制台/F8 调）：
+#   HexRenderer.debug_sea_ice_probe(cell)  → 打印三元组：
+#     (sea_ice_fraction_cpu, dyn_atlas_smooth.A 像素字节, biome id)
+#
+# 三者必须满足：
+#   q01_byte_ice(sea_ice_fraction_cpu) == dyn_atlas_smooth_buffer[px_idx*4 + 3]
+# 否则说明 GD↔C++ 编码漂移或 cache 滞后。
+#
+# biome id 仅作上下文参考——阶段 A 之后 shader 已不依赖 biome 决定海冰渲染。
+func debug_sea_ice_probe(cell) -> Dictionary:
+	var report := {
+		"ok": false,
+		"reason": "",
+		"sea_ice_fraction_cpu": 0.0,
+		"dyn_smooth_a_byte": -1,
+		"dyn_smooth_a_norm": 0.0,
+		"biome": -1,
+		"px_idx": -1,
+	}
+	if cell == null:
+		report.reason = "cell is null"
+		print("[sea-ice/probe] %s" % report.reason)
+		return report
+	if _world == null or _map == null:
+		report.reason = "world/map not bound"
+		print("[sea-ice/probe] %s" % report.reason)
+		return report
+	report.sea_ice_fraction_cpu = float(cell.sea_ice_fraction)
+	if "terrain" in cell:
+		report.biome = int(cell.terrain)
+	# 取该 cell 第一个 derived 像素的 dyn_atlas_smooth.A 字节
+	var pixels: PackedInt32Array = PackedInt32Array()
+	if not _world.cell_pixel_lists.is_empty() and _world.cell_pixel_lists.has(cell):
+		pixels = _world.cell_pixel_lists[cell]
+	if pixels.size() <= 0:
+		report.reason = "cell has no pixels in cell_pixel_lists"
+		print("[sea-ice/probe] cell=%s frac_cpu=%.4f biome=%d %s" % [
+			str(cell), report.sea_ice_fraction_cpu, report.biome, report.reason])
+		return report
+	var px_idx: int = pixels[0]
+	report.px_idx = px_idx
+	var buf: PackedByteArray = _world.dyn_atlas_smooth_buffer
+	# sea-ice-render-source-unify 阶段 C 探针扩展：
+	# 同时读 dynamic_cell_atlas（未 smooth 的源 buffer）的 A 字节，便于区分
+	# A_byte 错误是发生在 dynamic phase 还是 smooth phase。
+	var raw_buf: PackedByteArray = _world.dynamic_cell_atlas_buffer
+	var W: int = int(_world.derived_size.x)
+	var H: int = int(_world.derived_size.y)
+	var n_pix: int = W * H
+	if buf.size() < n_pix * 4:
+		report.reason = "dyn_atlas_smooth_buffer not ready (size=%d expected=%d)" % [buf.size(), n_pix * 4]
+		print("[sea-ice/probe] %s" % report.reason)
+		return report
+	if px_idx < 0 or px_idx >= n_pix:
+		report.reason = "px_idx out of range (%d not in [0,%d))" % [px_idx, n_pix]
+		print("[sea-ice/probe] %s" % report.reason)
+		return report
+	var a_byte: int = int(buf[px_idx * 4 + 3])
+	var raw_r: int = -1
+	var raw_g: int = -1
+	var raw_b: int = -1
+	var raw_a_byte: int = -1
+	if raw_buf.size() >= n_pix * 4:
+		raw_r = int(raw_buf[px_idx * 4 + 0])
+		raw_g = int(raw_buf[px_idx * 4 + 1])
+		raw_b = int(raw_buf[px_idx * 4 + 2])
+		raw_a_byte = int(raw_buf[px_idx * 4 + 3])
+	report.dyn_smooth_a_byte = a_byte
+	report.dyn_smooth_a_norm = float(a_byte) / 255.0
+	report.ok = true
+	# 同源校验：水格上 a_byte 应 == q01_byte_ice(sea_ice_fraction_cpu)。
+	var expected_byte: int = 0
+	var v: float = report.sea_ice_fraction_cpu
+	if v > 0.0:
+		expected_byte = clampi(maxi(1, int(ceil(clampf(v, 0.0, 1.0) * 255.0))), 1, 255)
+	var passable_sea_str: String = "?"
+	if "passable_sea" in cell:
+		passable_sea_str = "true" if bool(cell.passable_sea) else "false"
+	var passable_land_str: String = "?"
+	if "passable_land" in cell:
+		passable_land_str = "true" if bool(cell.passable_land) else "false"
+	# 双源 SIF 对照：facade getter (cell.sea_ice_fraction) vs cpp read_f32 (cell_sea_ice_frac slot)
+	# 理论上 facade 已直读 cpp slot，这里再调一次 read_f32 直读 cpp，能确认 cpp slot 在探针时刻的真值。
+	var sif_via_facade: float = float(cell.sea_ice_fraction)
+	var sif_via_ext: float = -1.0
+	# 从 cell 里反射拿 _world_ext（HexCell facade 已存有该 ext 引用）
+	var ext = null
+	if "_world_ext" in cell:
+		ext = cell.get("_world_ext")
+	# 同时读 MapData.terrain_arr[idx]（cpp pipeline 用来查 is_water_lut 的源）
+	# 与 cell.terrain（HexCell facade 实时值）对比，验证 SoA 是否陈旧。
+	var terrain_via_facade: int = int(cell.terrain) if "terrain" in cell else -1
+	var terrain_via_soa: int = -1
+	# 探针使用 hex_renderer 已有的 _map 字段（不要走 world.map_data —— world_data.gd
+	# 没有 map_data 字段，会返回 null）。
+	var map_data_ref: MapData = _map
+	if map_data_ref != null and "index" in cell:
+		var tarr: PackedByteArray = map_data_ref.terrain_arr
+		var tidx: int = int(cell.index)
+		if tidx >= 0 and tidx < tarr.size():
+			terrain_via_soa = int(tarr[tidx])
+	var iw_via_lut: int = -1
+	var iw_via_render_lut: int = -1
+	if map_data_ref != null and terrain_via_soa >= 0:
+		var iwlut: PackedByteArray = MapData.is_water_lut()
+		if terrain_via_soa < iwlut.size():
+			iw_via_lut = int(iwlut[terrain_via_soa])
+		var iwlut_render: PackedByteArray = MapData.is_water_render_lut()
+		if terrain_via_soa < iwlut_render.size():
+			iw_via_render_lut = int(iwlut_render[terrain_via_soa])
+	if ext != null and ext.has_method(&"read_f32"):
+		# component_id 反查 cell_sea_ice_frac slot
+		var sif_cid: int = -1
+		if ext.has_method(&"component_id"):
+			sif_cid = int(ext.call(&"component_id", &"cell_sea_ice_frac"))
+		if sif_cid >= 0 and "index" in cell:
+			sif_via_ext = float(ext.call(&"read_f32", sif_cid, int(cell.index)))
+	# RGBA 全字节打印：raw_r/g/b 应是 q01(temp)/q01(moist)/q01(snow)
+	# raw_a 应是 q01_byte_ice(sif) for water cells
+	# 预期 R~q01(temp=0)=0, G~q01(moist≈适中)≈?, B~q01(snow=0)=0, A=q01_byte_ice(1.0)=255
+	print("[sea-ice/probe] cell=%s idx=%s passable_sea=%s passable_land=%s biome=%d" % [
+		str(cell), str(cell.index) if "index" in cell else "?",
+		passable_sea_str, passable_land_str, report.biome])
+	print("  SIF: facade=%.4f  cpp_slot=%.4f  → expected_a=%d" % [
+		sif_via_facade, sif_via_ext, expected_byte])
+	print("  terrain: facade=%d  soa(MapData.terrain_arr)=%d  → is_water_lut[soa]=%d render_lut[soa]=%d (1=water,0=land)" % [
+		terrain_via_facade, terrain_via_soa, iw_via_lut, iw_via_render_lut])
+	print("  raw_dyn RGBA = (%d, %d, %d, %d)  smooth.A = %d (norm=%.4f)  match=%s" % [
+		raw_r, raw_g, raw_b, raw_a_byte, a_byte, report.dyn_smooth_a_norm,
+		"YES" if a_byte == expected_byte else "MISMATCH"])
+	# [TEMP DIAG sea-ice probe-cpp-known]
+	# cpp [PHASE-D-SMO-OA] 已知写过 first_px=8584/4586/4843/5091/719/5245/274/961
+	# 且 oa=255。这里直接读 buf 这些位置的 A 字节，验证 cpp 写入是否真的到达了
+	# world.dyn_atlas_smooth_buffer 这个对象。
+	var _check_pxs: Array = [8584, 4586, 4843, 5091, 719, 5245, 274, 961]
+	var _check_str: String = "  cpp_written_check buf[smo].A @ "
+	for _px in _check_pxs:
+		var _i: int = int(_px)
+		if _i >= 0 and _i < n_pix:
+			_check_str += "%d=%d " % [_i, int(buf[_i * 4 + 3])]
+	print(_check_str)
+	# raw_dyn 同样位置 A 字节（cpp dyn 应该写 sig.A=255）
+	if raw_buf.size() >= n_pix * 4:
+		var _check_raw: String = "  cpp_written_check buf[dyn].A @ "
+		for _px in _check_pxs:
+			var _i: int = int(_px)
+			if _i >= 0 and _i < n_pix:
+				_check_raw += "%d=%d " % [_i, int(raw_buf[_i * 4 + 3])]
+		print(_check_raw)
+	return report

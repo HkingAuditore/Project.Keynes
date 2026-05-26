@@ -1,0 +1,12 @@
+14: temp_arr
+15: temp_arr_prev
+20: temp_baseline_arr
+21: temp_30d_arr
+22: temp_365d_arr
+23: temp_anomaly_arr
+24: sea_ice_frac_arr
+25: sea_ice_frac_arr_prev
+33: air_mass_temp_anomaly_arr
+36: temp_season_offset_arr
+42: temperature_transport_anomaly_arr
+57: temp_baseline_year_arr
