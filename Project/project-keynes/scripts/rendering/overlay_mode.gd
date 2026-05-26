@@ -62,7 +62,7 @@ enum CATEGORY_KIND {
 const DISPLAY_NAME: Dictionary = {
 	MODE.NONE: "关闭",
 	MODE.TEMPERATURE: "温度",
-	MODE.PRECIPITATION: "当季降水",
+	MODE.PRECIPITATION: "实时降水",
 	MODE.CLIMATE_ZONE: "气候带",
 	MODE.HUMIDITY: "湿度",
 	MODE.WEATHER: "天气",
@@ -84,7 +84,7 @@ const DISPLAY_NAME: Dictionary = {
 # 连续通道的数值两端标签（Legend 显示用）。离散通道留空。
 const RANGE_LABEL: Dictionary = {
 	MODE.TEMPERATURE: ["0.00", "1.00"],
-	MODE.PRECIPITATION: ["0.00", "1.50"], # 季节系数 × base，上限放宽
+	MODE.PRECIPITATION: ["0.00", "1.00"],
 	MODE.HUMIDITY: ["0.00", "1.00"],
 	MODE.VEGETATION_VITALITY: ["0.00", "1.00"],
 	MODE.OCEAN_CURRENT: ["0", "强"],         # 归一化模长：0 = 静水 / 陆地无效

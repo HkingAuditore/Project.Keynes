@@ -1103,12 +1103,20 @@ func _refresh_time_label() -> void:
 	if _world_clock == null or _time_label == null:
 		return
 	var y := _world_clock.year_index()
-	var d := _world_clock.day_in_year()
+	var cal: Dictionary = _world_clock.calendar_date() if _world_clock.has_method("calendar_date") else {}
+	var d: int = int(cal.get("day_of_year", _world_clock.day_in_year() + 1))
 	var s := _world_clock.season_index()
 	# 任务 2：扩展为 "Y%d D%d %s %02d:00" 包含当前小时位
 	var h := _world_clock.hour_of_day()
 	_last_time_label_hour = h
-	_time_label.text = "Y%d D%d %s %02d:00" % [y, d, _world_clock.season_name(s), h]
+	var month_name: String = str(cal.get("month_name", ""))
+	var month_day: int = int(cal.get("day_of_month", 0))
+	if month_name != "" and month_day > 0:
+		_time_label.text = "Y%d D%03d %s %d %s %02d:00" % [
+			y, d, month_name, month_day, _world_clock.season_name(s), h
+		]
+	else:
+		_time_label.text = "Y%d D%03d %s %02d:00" % [y, d, _world_clock.season_name(s), h]
 
 func _refresh_climate_label() -> void:
 	if _world_clock == null or _climate_label == null:
@@ -1325,6 +1333,14 @@ func _select_cell(cell: HexCell) -> void:
 	# 面板弹出后地图可见区域变窄，重新 fit 一次让整张地图仍完整显示
 	if _camera != null:
 		_camera.fit_to_viewport(1.05, _map_safe_area())
+	# [TEMP DEBUG] sea-ice-render-source-unify 阶段 A 同源校验：
+	# 选中任意 cell 时打印 (sea_ice_fraction_cpu, dyn_atlas_smooth.A_byte, biome)。
+	# 期望：q01_byte_ice(frac_cpu) == dyn_smooth.A_byte。
+	# 若 MISMATCH → GD↔C++ 编码漂移或 buffer 滞后；
+	# 若 MATCH 但 shader 端依然不冰 → shader uniform/纹理上传链有问题。
+	# 验证完成后请删除这段调试调用。
+	if cell != null and _renderer != null and _renderer.has_method("debug_sea_ice_probe"):
+		_renderer.debug_sea_ice_probe(cell)
 
 func _clear_selection() -> void:
 	_selected_cell = null

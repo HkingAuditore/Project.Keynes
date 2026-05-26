@@ -28,9 +28,8 @@ class_name DataOverlayBaker
 # 风带采样靠静态函数；这里 preload 一次以避免每 cell 反复 load。
 const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 
-# 降水估算时的归一化上限：base_moisture × seasonal_moisture_scale 理论极值 ~1.5
-# （base∈[0,1] × scale∈[0, ~1.3]），给一点余量避免长尾被 clip 到同色。
-const PRECIPITATION_NORM_MAX: float = 1.5
+# 降水 overlay 直接显示 weather pass 写出的实时 precipitation 字段。
+const PRECIPITATION_NORM_MAX: float = 1.0
 
 # 洋流模长归一化上限：cell.ocean_current.length() 的实际分布。
 # 历史注释假设 [0, 0.6]，但物理化路径（PhysicalCirculationSolver.psi_to_ocean_current）
@@ -66,8 +65,8 @@ static func get_empty_texture() -> ImageTexture:
 #   map             : MapData（all_cells / cell_pixel_lists 的数据源）
 #   world           : WorldData（提供 derived_size 与 cell_pixel_lists）
 #   mode            : OverlayMode.MODE
-#   climate         : ClimateProfile（用于 PRECIPITATION 的季节系数查询）
-#   season_phase    : 当前季节相位 [0, 4)（0..1=春, 1..2=夏, ...）
+#   climate         : ClimateProfile（保留签名兼容；真实降水不再读取四季表）
+#   season_phase    : 天文相位输入（保留签名兼容；真实降水不再由相位估算）
 #   adapter_override: 可选 DCViewAdapter 实例。若提供则 baker 直接使用它，
 #                     否则按 legacy 行为新建 DCViewAdapter.Cell。设计目的：
 #                     让 baker 与 info_panel / 其他 UI 共用 main._view_adapter
@@ -286,10 +285,7 @@ static func _sample_cell(
 				"valid": true,
 			}
 		OverlayMode.MODE.PRECIPITATION:
-			# 估算：base_moisture × 当前 season_phase 下的 moisture scale。
-			# climate.seasonal_moisture_scale 按 4 季离散存储；按 phase 线性插值。
-			var scale: float = _moisture_scale_at_phase(climate, season_phase)
-			var precip: float = adapter.get_base_moisture(idx) * scale
+			var precip: float = adapter.get_weather_precip(idx)
 			return {
 				"value": clampf(precip / PRECIPITATION_NORM_MAX, 0.0, 1.0),
 				"valid": true,
@@ -496,8 +492,7 @@ static func _is_near_zero_sample(mode: int, value: float, intensity: float, is_v
 		_:
 			return false
 
-# 根据季节相位在 climate.seasonal_moisture_scale 的 4 个值间线性插值。
-# season_phase ∈ [0, 4)；整数部分 = 当前季，小数部分 = 过渡进度。
+# Legacy compatibility only. 真实模拟与降水 overlay 不再读取 seasonal_moisture_scale。
 static func _moisture_scale_at_phase(climate, season_phase: float) -> float:
 	if climate == null:
 		return 1.0

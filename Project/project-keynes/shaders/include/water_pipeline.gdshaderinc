@@ -14,7 +14,8 @@
 //
 // 性能（Cost）
 //   主要 fetch：5×5 邻域 (visual_quality≥1) 用于 offshore，水侧 biome_weights，
-//   ice_state_atlas，scalar_atlas (river plume)。BRDF 已抽到 brdf.gdshaderinc。
+//   dyn_atlas_smooth_atlas.a (sea_ice_frac，sea-ice-render-source-unify 阶段 A
+//   起作为唯一海冰数据源)，scalar_atlas (river plume)。BRDF 已抽到 brdf.gdshaderinc。
 //   apply_water_specials 在 day_night_enabled 关时被旁路。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,10 @@ SurfaceParams make_water_surface_params(
 		float w_ice,
 		float w_lake,
 		float w_kelp) {
+	// [sea-ice-render-source-unify 阶段 A] 海冰 roughness 完全由 w_ice 连续驱动，
+	// 不再依赖 biome == B_SEA_ICE 硬切换。w_ice 来自 dyn_atlas_smooth.a 的连续
+	// sea_ice_fraction，与 UI/info_panel 同源；biome 仍按其他类型（lake/reef/kelp）
+	// 决定基础粗糙度，海冰 mix 走 w_ice 路径。
 	float roughness = 0.20;
 	if (biome == B_LAKE) {
 		roughness = 0.12;          // ⟵ 平静湖面：更光滑，BRDF 自动产生紧高光
@@ -77,8 +82,6 @@ SurfaceParams make_water_surface_params(
 		roughness = 0.30;
 	} else if (biome == B_KELP) {
 		roughness = 0.46;
-	} else if (biome == B_SEA_ICE) {
-		roughness = 0.34;
 	}
 	roughness = mix(roughness, 0.34, clamp(w_ice, 0.0, 1.0));
 	roughness = mix(roughness, 0.50, clamp(w_kelp * 0.35, 0.0, 1.0));
@@ -181,7 +184,11 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 			ctx.biome == B_LAKE    ? 1.0 : 0.0,
 			ctx.biome == B_REEF    ? 1.0 : 0.0,
 			ctx.biome == B_KELP    ? 1.0 : 0.0,
-			ctx.biome == B_SEA_ICE ? 1.0 : 0.0
+			// [sea-ice-render-source-unify 阶段 A] 海冰不再用 biome 硬切换；
+			// w_ice 全部由 dyn_atlas_smooth.a 的 sea_ice_fraction 驱动。该向量
+			// 第 4 分量保留（向下兼容字段位序），写 0 即可——后段 ww.w_ice 直接
+			// 从 ice_frac 推导，不读取 bw.w。
+			0.0
 		);
 	}
 	float transition_soft = clamp(max(water_boundary_softness, water_transition_softness), 0.0, 1.0);
@@ -191,16 +198,18 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	ww.w_reef = smoothstep(blend_entry, blend_full, bw.y);
 	ww.w_kelp = smoothstep(blend_entry, blend_full, bw.z);
 
-	// map-visual-overhaul-v1：海冰主视觉由 ice_state_atlas + fbm 撕碎驱动
-	// 2026-05-19 Plan-C：smoothstep 范围从 (0.05, 0.95) 收紧到 (0.02, 0.85)。
-	// 下限 0.02 让微量海冰（fraction ≈ 1/255 经 baker ceil 兜底后）即时可见；
-	// 上限 0.85 让 fraction ≈ 0.85 就近似全冰，避免大部分像素停在"灰冰"区。
-	float ice_frac = texture(ice_state_atlas, ctx.uv).r;
+	// [sea-ice-render-source-unify 阶段 A] 海冰单源化（治本方案）：
+	//   - 数据源：dyn_atlas_smooth_atlas.a（box-blurred sea_ice_fraction），
+	//     与 dynamic_cell_atlas.a 同 byte 量化，跨 cell 平滑无 hex 阶梯。
+	//   - 与 UI/info_panel 完全同源（cell.sea_ice_fraction → q01_byte_ice）。
+	//   - smoothstep(0.22, 0.72, frac)：低浓度薄冰保留为过渡，不提前刷成满白。
+	//   - 不再读 ice_state_atlas（保留为调试通道，主路径不消费）。
+	//   - 不再有 `if (biome == B_SEA_ICE) max(w_ice, 0.28)` 兜底——这是
+	//     旧路径的根因 bug：当 fraction=0 但 terrain==SEA_ICE 时会强制冰；
+	//     当 fraction=1 但 terrain==OCEAN 时却无冰。
+	float ice_frac = texture(dyn_atlas_smooth_atlas, ctx.uv).a;
 	float ridge_n = fbm(ctx.wpw * 0.045 + vec2(-71.0, 23.0), 2);
-	ww.w_ice = clamp(smoothstep(0.02, 0.85, ice_frac + (ridge_n - 0.5) * 0.18), 0.0, 1.0);
-	if (ctx.biome == B_SEA_ICE) {
-		ww.w_ice = max(ww.w_ice, 0.28);
-	}
+	ww.w_ice = clamp(smoothstep(0.22, 0.72, ice_frac + (ridge_n - 0.5) * 0.06), 0.0, 1.0);
 	// 归一以避免叠加过曝
 	float special_sum = max(ww.w_lake + ww.w_reef + ww.w_kelp + ww.w_ice, 1.0);
 	ww.w_lake /= special_sum;
@@ -363,6 +372,14 @@ vec3 apply_kelp_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(ww.w_ice > 0.001)) return col;
 
+	// [sea-ice-render-source-unify 阶段 A] 调试可观测性：
+	// 打开 DEBUG_SEA_ICE 宏（在 world_map.gdshader 顶部 #define DEBUG_SEA_ICE）即可
+	// 把 w_ice 强度用纯红覆盖在水面上，用于目视核验"shader 端 w_ice 与
+	// dyn_atlas_smooth.A 是否吻合预期的海冰分布"。生产构建保持注释。
+#ifdef DEBUG_SEA_ICE
+	return mix(col, vec3(1.0, 0.0, 0.0), clamp(ww.w_ice, 0.0, 1.0));
+#endif
+
 	vec3 ice_base = mix(water_depth_gradient(ctx.offshore_depth * 0.65, ctx.elev),
 						 vec3(0.88, 0.94, 0.97), 0.90);
 	float crack_factor = 0.55;
@@ -373,8 +390,8 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float ice_noise = fbm(ctx.wpw * 0.12 + vec2(-9.0, 31.0), ctx.detail_oct);
 	vec3 ice_col = mix(ice_base * 0.76, ice_base * 1.08, crack_factor);
 	ice_col *= mix(0.94, 1.055, ice_noise);
-	float ice_edge = smoothstep(0.08, 0.70, ww.w_ice);
-	col = mix(col, ice_col, clamp(ww.w_ice * 1.18 + ice_edge * 0.08, 0.0, 0.98));
+	float ice_edge = smoothstep(0.18, 0.82, ww.w_ice);
+	col = mix(col, ice_col, clamp(ww.w_ice * 1.05 + ice_edge * 0.05, 0.0, 0.94));
 	return col;
 }
 
@@ -495,7 +512,7 @@ vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 //   → calm noise 亮度+色相微调。
 //   返回最终 col；同时通过 inout vec3 N 输出水面法线。
 // ─────────────────────────────────────────────────────────────────────
-vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, inout vec3 N_out) {
+vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, float w_ice, inout vec3 N_out) {
 	float wave_amp_scale  = 1.0;
 	float wave_freq_scale = 1.0;
 	float current_align_w = 0.0;
@@ -530,10 +547,13 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, inout vec3 N_out) 
 
 	// Water Calm Noise（仅作为材质亮度/色相柔噪声，不参与几何法线）
 	if (water_wave_line_strength > 0.001 && waves_on && ctx.quality >= 1) {
+		// [sea-ice-render-source-unify 阶段 A] 海冰处 calm noise 抑制由 w_ice 连续驱动，
+		// 不再依赖 biome == B_SEA_ICE 硬切换。w_ice ≈ 1 时压到 0（与原 SEA_ICE 等价）；
+		// 边界冰带 (0 < w_ice < 1) 平滑过渡而非直接断开。
 		float calm_amp_mul = 1.0;
 		if (ctx.biome == B_LAKE)         calm_amp_mul = 0.65;
 		else if (ctx.biome == B_KELP)    calm_amp_mul = 0.28;
-		else if (ctx.biome == B_SEA_ICE) calm_amp_mul = 0.0;
+		calm_amp_mul = mix(calm_amp_mul, 0.0, clamp(w_ice, 0.0, 1.0));
 
 		float calm = water_calm_brightness(wave_wp, world_time);
 		float bright_amp = water_wave_line_strength * water_calm_noise_brightness * calm_amp_mul;
@@ -619,7 +639,7 @@ SurfaceParams compute_water_base_surface(
 
 	// ── SEA 1.14: 法线 + calm noise ───────────────────────────────────
 	vec3 N_water = vec3(0.0, 0.0, 1.0);
-	col = build_water_normal_and_calm(col, ctx, N_water);
+	col = build_water_normal_and_calm(col, ctx, ww.w_ice, N_water);
 
 	// ── SEA 1.15: 装配 SurfaceParams ──────────────────────────────────
 	return make_water_surface_params(col, N_water, biome, ww.w_ice, ww.w_lake, ww.w_kelp);

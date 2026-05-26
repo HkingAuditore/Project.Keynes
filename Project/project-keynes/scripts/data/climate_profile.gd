@@ -107,7 +107,9 @@ extends Resource
 @export_subgroup("基础季节信号")
 
 # Per-season moisture scaler. Length must be 4 (Spring/Summer/Autumn/Winter).
-@export var seasonal_moisture_scale: Array[float] = [1.05, 1.20, 0.92, 0.78]
+## Legacy compatibility only. Runtime climate no longer reads a four-season
+## moisture table; precipitation/moisture must emerge from native fields.
+@export var seasonal_moisture_scale: Array[float] = [1.0, 1.0, 1.0, 1.0]
 
 # Seasonal temperature amplitude: peak |Δtemp| between summer-mid and
 # winter-mid (mid-latitudes, ny ≈ 0.5 → 0). Mirrors the shader-side
@@ -160,11 +162,15 @@ extends Resource
 # Has no effect when daily_climate_interpolation == false.
 # Used by SUS RefreshClimateDailyJob via StridePolicy.
 #
-# 2026-05-18：默认从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
-# 玩家完全无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
-# 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。如需严格回归测试可在 Inspector
-# 中改回 1。
-@export_range(1, 8, 1) var daily_climate_refresh_stride: int = 2
+# 2026-05-18：默认曾从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
+# 玩家"理论上"无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
+# 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。
+# 2026-05-25：默认改回 1。原因：玩家肉眼能明显感觉到海冰/雪线/水温视觉相位
+# 滞后（shader 派生海冰直接采样 cell.temperature，stride=2 导致 +1 仿真日延迟，
+# 叠加 dynamic_visual_atlas_upload_stride=2 后总延迟达 ~3 仿真日）。性能成本：
+# refresh_climate_daily ran 12/30 → 24/30，p95 +0.5ms，可接受。如需严格性能
+# 回归对照可在 Inspector / 具体 profile (.tres) 中改回 2。
+@export_range(1, 8, 1) var daily_climate_refresh_stride: int = 1
 
 @export var sea_ice_independent_system_enabled: bool = true
 @export_range(1, 8, 1) var sea_ice_daily_stride: int = 1
@@ -201,9 +207,9 @@ extends Resource
 @export_range(1, 8, 1) var enum_atlas_upload_stride: int = 2
 
 # Dynamic visual atlas upload updates dynamic_cell/ecology/smooth/ice atlases.
-# 1 = most responsive, 2 = default balance, higher values save main-thread/GPU
-# time at the cost of visibly slower snow/ecology/ice visual response.
-@export_range(1, 8, 1) var dynamic_visual_atlas_upload_stride: int = 2
+# Default 1 keeps temperature/snow/ice visuals aligned with the daily climate
+# pass. Raise to 2+ only for profiling-driven GPU/main-thread savings.
+@export_range(1, 8, 1) var dynamic_visual_atlas_upload_stride: int = 1
 
 # ─── DataCore（已删除字段）─────────────────────────────────────────
 # use_data_core / use_data_core_weather / use_data_core_climate 已在
@@ -559,13 +565,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 不会触发 1e-4 兜底，理论上夏至 temp ≈ 0.48 应该化冰，但用户单次 sea_ice pass
 # 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
 # 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
-# 修复：freeze 与 melt **对称**（1.50:1.50），让夏季的高温 cell 有足够融化速率。
-# 物理上海冰生消速率确实接近（极地冬季冻 0.5 米/月，夏季融 0.5 米/月）。
-@export var sea_ice_freeze_rate: float = 1.50            # k_freeze per "degree" below T_form
-@export var sea_ice_melt_rate: float = 1.50              # k_melt per "degree" above T_melt — 与 freeze 对称
-@export var sea_ice_terrain_threshold: float = 0.25      # frac at which terrain flips to SEA_ICE
-@export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
-@export var sea_ice_neighbor_contagion: float = 0.35     # extra k_freeze if any neighbor frac ≥ 0.6
+# 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
+@export var sea_ice_freeze_rate: float = 0.85            # k_freeze per "degree" below T_form
+@export var sea_ice_melt_rate: float = 1.20              # k_melt per "degree" above T_melt
+@export var sea_ice_terrain_threshold: float = 0.45      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.16     # flip back when frac < threshold - hyst
+@export var sea_ice_neighbor_contagion: float = 0.12     # extra k_freeze if any neighbor frac >= 0.6
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
@@ -657,8 +662,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   • Temperature seasonal offset in refresh_climate_daily uses
 #     insolation_season_gain × (insol_now − insol_annual_mean) × season_temp_amp
 #     instead of _season_temp_offset_phase's standalone cosine.
-#   • Sea-ice daily pass reads insol_dev = (insol_now − insol_mean)/insol_mean
-#     for its "winter strength" factor (replaces dist_to_winter cosine).
+#   • Sea-ice daily pass does not read season/insolation directly; it consumes
+#     the temperature field after this pass has already applied insolation.
 #   • Moisture seasonal scale at _moisture_scale_at_phase is further modulated
 #     by (1 + 0.2 × insol_dev) so equator ≈ invariant, high-lat amplified.
 #   • Shader-side season_temp_offset() in world_map.gdshader is kept in sync
@@ -725,6 +730,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # const, exposed here for per-profile tuning.
 @export_range(0.0, 1.0, 0.01) var insolation_daylen_amp: float = 0.35
 
+## Native astronomy heat gain applied to per-cell insolation before it is
+## exposed as cell.heat_input. Keep at 1.0 for Earth-like balance.
+@export_range(0.0, 2.0, 0.05) var solar_gain: float = 1.0
+
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]
 # ══════════════════════════════════════════════════════════════════════
@@ -732,12 +741,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_group("海冰阈值")
 
 # Sea-ice cover thresholds (temperature).
-# 2026-05-19 Plan-C 调参：form 0.07→0.10 / melt 0.12→0.16。理由：t_eff 受
-# ice_delay×ocean_anomaly 项常上抬 0.05~0.15，原 0.07 窗口在赤道-极地洋流
-# 影响下几乎闭合。放宽到 0.10 把可结冰纬度带向赤道方向扩展约 5°；form-melt
-# 间距保持 0.06 避免边界来回闪烁。
-@export var sea_ice_form_threshold: float = 0.15
-@export var sea_ice_melt_threshold: float = 0.25
+# 2026-05-26：form 保持较低，melt 保持迟滞窗口；海冰范围由温度场持续越阈决定。
+@export var sea_ice_form_threshold: float = 0.10
+@export var sea_ice_melt_threshold: float = 0.22
 
 # Volcano placement.
 @export_group("火山")

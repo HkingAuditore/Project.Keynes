@@ -86,6 +86,10 @@ var has_river_arr:             PackedByteArray   = PackedByteArray()
 #   读 cell 字段，运行期纯 SoA 内部使用）。
 var ema_initialized_arr:       PackedByteArray   = PackedByteArray()
 var temp_season_offset_arr:    PackedFloat32Array = PackedFloat32Array()
+var insolation_now_arr:        PackedFloat32Array = PackedFloat32Array()
+var insolation_dev_arr:        PackedFloat32Array = PackedFloat32Array()
+var day_length_arr:            PackedFloat32Array = PackedFloat32Array()
+var heat_input_arr:            PackedFloat32Array = PackedFloat32Array()
 
 # ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
 # 6 个字段（4 f32 + 2 i32），由 cpp run_stage_b_pass 在阶段 2 之后直读直写
@@ -303,6 +307,68 @@ static func passable_sea_lut() -> PackedByteArray:
 	_passable_sea_lut_built = true
 	return lut
 
+# ─── sea-ice-render-source-unify 阶段 C：terrain → is_water 静态 LUT ─────
+# 与 passable_sea_lut() 互补：is_water 语义包含所有"非陆地"地块（OCEAN/COAST/
+# LAKE/REEF/KELP/SEA_ICE 等），而 passable_sea 仅表示"可航行海域"——SEA_ICE
+# 因冰面阻断船只 passable_sea=false 但 is_water=true。dyn_atlas / dyn_smooth /
+# ice_state 这些视觉 atlas 关心的是"该 cell 是否水域"（决定 A 通道是 ice_byte
+# 还是 vit_byte），必须用 is_water 而非 passable_sea，否则 SEA_ICE cell 会
+# 被错误归入"陆格"分支。
+#
+# 真理源：is_water == not passable_land（与 rebuild_soa_from_cells 中
+# `is_water_arr[i] = 1 if not passable_land else 0` 一致）。
+static var _is_water_lut_cache: PackedByteArray = PackedByteArray()
+static var _is_water_lut_built: bool = false
+
+## 256-byte LUT：lut[terrain_byte] = 1 if is_water (即 not passable_land)。
+## 用于 dyn_atlas / dyn_smooth / ice_state pipeline 判定中心+邻居水陆。
+static func is_water_lut() -> PackedByteArray:
+	if _is_water_lut_built:
+		return _is_water_lut_cache
+	var lut: PackedByteArray = PackedByteArray()
+	lut.resize(256)
+	for t_int in range(256):
+		# is_water = not passable_land（与 is_water_arr 灌注语义 1:1 对齐）
+		lut[t_int] = 0 if _PassableSeaLUT_TerrainTypeScript.is_passable_land(t_int) else 1
+	_is_water_lut_cache = lut
+	_is_water_lut_built = true
+	return lut
+
+# ─── sea-ice-render-source-unify 阶段 D：渲染水陆判定 LUT（与通行性解耦） ──
+# 真正给 atlas 渲染管线（dyn_atlas / dyn_smooth / ice_state / sea_ice tints）
+# 消费的水陆 LUT。语义：
+#   render_water = (not passable_land) OR (terrain == SEA_ICE)
+# 即"渲染上把 SEA_ICE 当作水"——用以避免 SEA_ICE cell 走陆地分支（vit byte）
+# 而错过 ice byte。区别于 `is_water_lut()`：
+#   - is_water_lut：通行性语义（is_passable_land 取反），SEA_ICE.passable_land=true
+#     时它=0（陆），符合 gameplay（陆地单位能踩冰）；
+#   - is_water_render_lut：纯视觉语义，SEA_ICE 永远=1（水），让 atlas A 通道
+#     一致写出 ice byte。
+#
+# 重要：不要把这两个 LUT 混用——通行性 / 寻路 / AI 决策仍读 is_water_lut；
+#       atlas 渲染 / smooth / ice_state 必须读 is_water_render_lut。
+static var _is_water_render_lut_cache: PackedByteArray = PackedByteArray()
+static var _is_water_render_lut_built: bool = false
+
+const _SEA_ICE_TERRAIN_INT: int = 20  # TerrainType.TERRAIN.SEA_ICE 的 int 值
+
+## 256-byte LUT：lut[terrain_byte] = 1 if 渲染上视为水（含 SEA_ICE）。
+static func is_water_render_lut() -> PackedByteArray:
+	if _is_water_render_lut_built:
+		return _is_water_render_lut_cache
+	var lut: PackedByteArray = PackedByteArray()
+	lut.resize(256)
+	for t_int in range(256):
+		var passable_land: bool = _PassableSeaLUT_TerrainTypeScript.is_passable_land(t_int)
+		var is_water: int = 0 if passable_land else 1
+		# SEA_ICE 强制为 render-water，无论 passable_land 字段如何
+		if t_int == _SEA_ICE_TERRAIN_INT:
+			is_water = 1
+		lut[t_int] = is_water
+	_is_water_render_lut_cache = lut
+	_is_water_render_lut_built = true
+	return lut
+
 # ─── Climate-Weather 2ms Budget — Phase A.1：SoA 构造 / 同步 API ─────────
 # 调用关系（PR-2.4 之后）：
 #   - bake_world / 加载存档完成后调用 rebuild_soa_from_cells() 一次同步全部字段
@@ -366,6 +432,10 @@ func _alloc_soa(n: int) -> void:
 	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段
 	ema_initialized_arr.resize(n)
 	temp_season_offset_arr.resize(n)
+	insolation_now_arr.resize(n)
+	insolation_dev_arr.resize(n)
+	day_length_arr.resize(n)
+	heat_input_arr.resize(n)
 	# B3b：植被动力学字段全量下沉 SoA（4 f32 + 2 i32）
 	vegetation_vitality_arr.resize(n)
 	vitality_low_streak_arr.resize(n)
@@ -443,6 +513,10 @@ func rebuild_soa_from_cells() -> void:
 		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
 		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
 		temp_season_offset_arr[i] = c.temp_season_offset
+		insolation_now_arr[i] = 0.0
+		insolation_dev_arr[i] = 0.0
+		day_length_arr[i] = 0.5
+		heat_input_arr[i] = 0.0
 		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
 		vegetation_vitality_arr[i] = c.vegetation_vitality
 		vitality_low_streak_arr[i] = c._vitality_low_streak

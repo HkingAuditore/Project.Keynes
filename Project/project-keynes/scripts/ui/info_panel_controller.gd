@@ -444,12 +444,20 @@ func refresh_emergent_lines() -> void:
 		var vp: float = float(cell.get("vegetation_growth_pressure"))
 		_emergent_feedback_label.text = "反馈缓冲：土壤湿度 %+.3f  植被压力 %+.3f（本季累计）" % [sm, vp]
 
-	# 行 3：日历月份（显示给玩家看的是月份、而非春夏秋冬——因南北半球相反）
+	# 行 3：日历日期。优先读 WorldClock，确保与顶部 HUD 同源。
 	if _emergent_ice_label != null:
-		if _world_clock != null and _generator != null:
-			var phase: float = _world_clock.season_phase()
-			var cal: Dictionary = _generator.month_of_year(phase)
-			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/120 天）" % [int(cal.month), int(cal.day_of_month), int(cal.day_of_year)]
+		if _world_clock != null and _world_clock.has_method("calendar_date"):
+			var cal: Dictionary = _world_clock.calendar_date()
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+				int(cal.month), int(cal.day_of_month), int(cal.day_of_year), int(cal.days_per_year)
+			]
+		elif _generator != null:
+			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
+			var cal_fallback: Dictionary = _generator.month_of_year(phase)
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+				int(cal_fallback.month), int(cal_fallback.day_of_month),
+				int(cal_fallback.day_of_year), int(cal_fallback.get("days_per_year", 365))
+			]
 		else:
 			_emergent_ice_label.text = "日历：—"
 

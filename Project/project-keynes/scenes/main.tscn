@@ -20,6 +20,7 @@ show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
 dynamic_snow_strength = 1.0
+dyn_atlas_upload_stride = 1
 snowline_visual_strength = 1.0
 river_width_factor = 0.14
 

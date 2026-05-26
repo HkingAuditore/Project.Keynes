@@ -57,7 +57,6 @@ const SPAWN_TRIES_PER_DAY := 2
 # 新生 front 在边界排队 → 还是看起来像"忽闪"。这里把 spawn 概率统一 ×0.7，
 # 与寿命延长相抵后，池子里的 front 数量大致与改动前持平，但每个个体都
 # 待得更久、走得更远。
-const SPAWN_PROB_BY_SEASON := [0.28, 0.35, 0.32, 0.39]  # 春 / 夏 / 秋 / 冬
 # Phase E（方案 A）：寿命整体翻倍后，相同 spawn 频率会让池子常态打满，
 # 新生 front 在边界排队 → 还是看起来
 
@@ -399,7 +398,7 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 
 	# 3) Spawn 新 front
 	t_us0 = Time.get_ticks_usec()
-	var spawn_prob: float = float(SPAWN_PROB_BY_SEASON[season_idx % 4])
+	var spawn_prob: float = 0.34
 	for i in range(SPAWN_TRIES_PER_DAY):
 		if _active_fronts.size() >= MAX_FRONTS:
 			break
@@ -572,6 +571,7 @@ func _apply_front_shape_by_type(front: WeatherFront) -> void:
 #   on_water：海面禁用 HEATWAVE / DROUGHT；MONSOON 仅低纬度 + 夏季
 #   climate_anomaly：全球暖化 → HEATWAVE/DROUGHT 概率上调；冷化 → BLIZZARD 上调
 func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate_anomaly: float) -> int:
+	season_idx = -1
 	var weights: Dictionary = {
 		WeatherType.WT.RAIN:     1.0,
 		WeatherType.WT.STORM:    0.5,
@@ -583,7 +583,7 @@ func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate
 	}
 
 	# 季节调权
-	match season_idx % 4:
+	match -1:
 		0:  # 春
 			weights[WeatherType.WT.RAIN]     = 1.4
 			weights[WeatherType.WT.STORM]    = 0.6
@@ -2160,14 +2160,13 @@ func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapo
 	var warm: bool = temp > 0.58
 	var cold: bool = temp < 0.32
 	var humid: bool = vapor > 0.55
-	var summerish: bool = (season_idx % 4) == 1
 	var low_lat: bool = lat_abs < 0.48
 
 	if cold and (precip > 0.50 or (cloud > 0.78 and vapor > 0.75)):
 		return WeatherType.WT.BLIZZARD
 	if warm and humid and instability > 0.85 and precip > 0.58:
 		return WeatherType.WT.STORM
-	if warm and humid and low_lat and (summerish or _season_phase > 0.75 and _season_phase < 2.25) and precip > 0.48:
+	if warm and humid and low_lat and precip > 0.48:
 		return WeatherType.WT.MONSOON
 	if precip > 0.52 or (cloud > 0.82 and vapor > 0.72):
 		return WeatherType.WT.RAIN
@@ -2187,7 +2186,6 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 	var warm: bool = temp > 0.58
 	var cold: bool = temp < 0.32
 	var humid: bool = vapor > 0.55
-	var summerish: bool = (season_idx % 4) == 1
 	var low_lat: bool = lat_abs < 0.48
 
 	# 修（v5）：STORM 必须真正"猛"才触发，不再让中纬度风带普通湿天气也进 STORM
@@ -2195,7 +2193,7 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 		return WeatherType.WT.BLIZZARD
 	if warm and humid and instability > 0.85 and precip > 0.58:
 		return WeatherType.WT.STORM
-	if warm and humid and low_lat and (summerish or _season_phase > 0.75 and _season_phase < 2.25) and precip > 0.48:
+	if warm and humid and low_lat and precip > 0.48:
 		return WeatherType.WT.MONSOON
 	if precip > 0.52 or (cloud > 0.82 and vapor > 0.72):
 		return WeatherType.WT.RAIN
@@ -3294,34 +3292,28 @@ func _local_temp_moist_gradient(cell: HexCell, map: MapData) -> float:
 	return maxf(max_dt, max_dm)
 
 # 由本地温度带/湿度带 + season_phase 决定 front 类型。
-# 规则（Plan B 日历对齐：本地夏 = 各半球本地 hemi_phase ≈ 1）：
-#   暖湿陆地 + 本地夏 → STORM
+# 规则：
+#   暖湿陆地 + 强实际升温 → STORM
 #   寒冷海面          → BLIZZARD
-#   暖干陆地 + 本地夏 → HEATWAVE
-#   暖干陆地 + 非本地夏 → DROUGHT
+#   暖干陆地 + 高温     → HEATWAVE
+#   暖干陆地           → DROUGHT
 #   寒湿 / 暖湿海岸   → RAIN
-#   低温湿 + 本地秋冬  → FOG
+#   低温湿             → FOG
 # 其余返回 CLEAR（不 spawn）。
 func _pick_weather_type_emergent(cell: HexCell, season_idx: int, climate_anomaly: float, map: MapData = null) -> int:
+	season_idx = -1
 	# Fast-tick perf opt (C)：temperature / moisture 已升级为强类型成员，直接读。
 	var t: float = cell.temperature + climate_anomaly
 	var m: float = cell.moisture
-	# Plan B：按 cell 所在半球把全局 season_phase 映射为 "本地季节 phase"
-	# (本地春=0, 本地夏=1, 本地秋=2, 本地冬=3)；赤道按北半球近似。
 	var cell_world: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
 	var lat_norm: float = 0.5
 	if _world_bounds.size.y > 0.001:
 		lat_norm = clampf((cell_world.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
 	var lat_signed: float = lat_norm * 2.0 - 1.0
-	var phase: float
-	if lat_signed < 0.0:
-		phase = fposmod(_season_phase - 1.0, 4.0)  # 北半球
-	else:
-		phase = fposmod(_season_phase + 1.0, 4.0)  # 南半球（含赤道）
-	var is_summer: bool = (phase >= 0.5 and phase < 1.5)
-	var is_winter: bool = (phase >= 2.5 and phase < 3.5)
+	var low_lat: bool = absf(lat_signed) < 0.42
 	var on_water: bool = _is_water_terrain(int(cell.terrain))
 	var warm: bool = t > 0.55
+	var hot: bool = t > 0.68
 	var cold: bool = t < 0.30
 	var humid: bool = m > 0.55
 	var dry: bool = m < 0.35
@@ -3334,21 +3326,19 @@ func _pick_weather_type_emergent(cell: HexCell, season_idx: int, climate_anomaly
 			return _ocean_filter_precip(cell, map, WeatherType.WT.STORM)
 		return _ocean_filter_precip(cell, map, WeatherType.WT.RAIN)
 	# 陆地路径
-	if warm and humid and is_summer:
+	if hot and humid:
 		return _ocean_filter_precip(cell, map, WeatherType.WT.STORM)
 	if warm and dry:
-		if is_summer:
+		if hot:
 			return WeatherType.WT.HEATWAVE
 		return WeatherType.WT.DROUGHT
-	if cold and (is_winter or phase < 0.3):
+	if cold:
 		return WeatherType.WT.BLIZZARD
 	if humid:
-		# 暖湿陆地（非夏）→ RAIN；低纬夏季内陆湿带 → MONSOON
-		if warm and is_summer and m > 0.65:
+		if warm and low_lat and m > 0.65:
 			return _ocean_filter_precip(cell, map, WeatherType.WT.MONSOON)
 		return _ocean_filter_precip(cell, map, WeatherType.WT.RAIN)
-	# 低温中湿 + 秋冬 → FOG
-	if t < 0.45 and m > 0.40 and (phase > 1.8):
+	if t < 0.45 and m > 0.40:
 		return WeatherType.WT.FOG
 	return WeatherType.WT.CLEAR
 

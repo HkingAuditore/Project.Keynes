@@ -99,6 +99,10 @@ const CELL_SCHEMA: Array = [
 	# ─── Phase 3a Step 2.1.a（2 条，对应 world.gd 711-712）─────────────────
 	{ name = &"cell.ema_initialized",       cpp_name = "cell_ema_initialized",       dtype = U8,  track_prev = false, map_field = "ema_initialized_arr",       prev_field = "", owner = "climate.pass_a" },
 	{ name = &"cell.temp_season_offset",    cpp_name = "cell_temp_season_offset",    dtype = F32, track_prev = false, map_field = "temp_season_offset_arr",    prev_field = "", owner = "climate.pass_a" },
+	{ name = &"cell.insolation_now",        cpp_name = "cell_insolation_now",        dtype = F32, track_prev = false, map_field = "insolation_now_arr",        prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.insolation_dev",        cpp_name = "cell_insolation_dev",        dtype = F32, track_prev = false, map_field = "insolation_dev_arr",        prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.day_length",            cpp_name = "cell_day_length",            dtype = F32, track_prev = false, map_field = "day_length_arr",            prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.heat_input",            cpp_name = "cell_heat_input",            dtype = F32, track_prev = false, map_field = "heat_input_arr",            prev_field = "", owner = "climate.astronomy" },
 	# ─── B3b：植被动力学字段全量下沉 SoA（6 条，4 f32 + 2 i32）─────────────
 	# 消除 stage_b combined pass 的 pack/unpack hot loop（原 ~7ms wall 的 95%）。
 	# 命名严格 1:1 对齐 HexCell 字段名，方便阶段 3 把 _trigger_succession /
