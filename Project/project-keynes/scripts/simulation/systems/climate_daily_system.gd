@@ -180,6 +180,9 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_IS_WATER,
 		DCComponentIds.CELL_EMA_INITIALIZED,
 		DCComponentIds.CELL_TEMP_SEASON_OFFSET,
+		DCComponentIds.CELL_THERMAL_ENERGY,
+		DCComponentIds.CELL_SNOWPACK,
+		DCComponentIds.CELL_WATER_BALANCE_30D,
 	]
 	if _standalone_sea_ice_enabled():
 		reads.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
@@ -200,6 +203,9 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY,
 		DCComponentIds.CELL_CLIMATE_DIRTY,
 		DCComponentIds.CELL_EMA_INITIALIZED,
+		DCComponentIds.CELL_THERMAL_ENERGY,
+		DCComponentIds.CELL_SNOWPACK,
+		DCComponentIds.CELL_WATER_BALANCE_30D,
 	]
 	if _standalone_sea_ice_enabled():
 		writes.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
@@ -446,6 +452,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_t_round_start_ms = Time.get_ticks_msec()
 		_round_active = true
 		_begin_round_pass_state()
+		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
+			map.soa_begin_climate_transaction()
 		# A.2.1.A4 — Dirty Mask 启动时整 round 边界处理：
 		#   1) season 跨整数 / 每 30 日 full sweep / 加载存档首日 → mark_all_climate_dirty
 		#   2) 否则保留上一日 dirty 增量（Pass A 内层 epsilon 比对会继续覆写）

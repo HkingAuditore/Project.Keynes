@@ -117,6 +117,9 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_refresh_convergence = ((_weather_system._field_solve_tick - 1) % _weather_system._field_convergence_refresh_stride) == 0
 	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = _field_slice_cells.size()
+	_field_slice_temp_read = map.temp_arr_prev if map.temp_arr_prev.size() == n_cells else map.temp_arr
+	_field_slice_moisture_read = map.moisture_arr_prev if map.moisture_arr_prev.size() == n_cells else map.moisture_arr
+	_field_slice_snow_cover_read = map.snow_cover_arr_prev if map.snow_cover_arr_prev.size() == n_cells else map.snow_cover_arr
 	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
 	var map_id: int = map.get_instance_id()
@@ -168,7 +171,7 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	var soa_vapor_in: PackedFloat32Array = map.weather_vapor_arr
 	var soa_precip_in: PackedFloat32Array = map.weather_precip_arr
 	var soa_field_init: PackedByteArray = map.weather_field_init_arr
-	var soa_moisture: PackedFloat32Array = map.moisture_arr
+	var soa_moisture: PackedFloat32Array = _field_slice_moisture_read if _field_slice_moisture_read.size() == n_cells else map.moisture_arr
 	for i in range(n_cells):
 		if soa_field_init[i] > 0:
 			_field_slice_prev_vapor[i] = soa_vapor_in[i]
@@ -273,9 +276,10 @@ func run_slice(cell_budget: int) -> Dictionary:
 	# 循环内全部走 PackedArray index 访问，消除 cell.xxx 强类型成员访问。
 	# 唯一保留 AoS 的字段是 temperature_transport_anomaly（在 _avg_ocean_anomaly_at_idx
 	# helper 中），不在本 plan 范围（属 climate ocean heat transport pass 改造）。
-	var soa_temp: PackedFloat32Array = map.temp_arr
+	var soa_temp: PackedFloat32Array = _field_slice_temp_read if _field_slice_temp_read.size() == n_cells else map.temp_arr
 	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
-	var soa_moisture_loop: PackedFloat32Array = map.moisture_arr
+	var soa_moisture_loop: PackedFloat32Array = _field_slice_moisture_read if _field_slice_moisture_read.size() == n_cells else map.moisture_arr
+	var soa_elevation: PackedFloat32Array = map.elevation_arr
 	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
 	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
 	var soa_terrain: PackedByteArray = map.terrain_arr
@@ -286,6 +290,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var pos: Vector2 = cell_pos[i]
 		var temp: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
 		var base_m: float = clampf(soa_moisture_loop[i], 0.0, 1.0)
+		var vapor_capacity: float = clampf(0.25 + 0.75 * temp - 0.20 * soa_elevation[i], 0.18, 1.0)
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
 		var on_water: bool = _weather_system._is_water_terrain(int(soa_terrain[i]))
 
@@ -317,23 +322,24 @@ func run_slice(cell_budget: int) -> Dictionary:
 		elif has_river:
 			effective_ocean_an = maxf(ocean_an, 0.08)
 		var evap: float = _weather_system._evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _weather_system._evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
-		vapor = clampf(vapor + evap, 0.0, 1.0)
+		var saturation_deficit: float = clampf((vapor_capacity - vapor) / maxf(vapor_capacity, 0.001), 0.0, 1.0)
+		vapor = clampf(vapor + evap * saturation_deficit, 0.0, vapor_capacity)
 
 		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
 		var convergence: float = soa_convergence_in[i]
 		if refresh_convergence:
 			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		if lift < 0.0:
-			vapor = clampf(vapor + lift * 0.22, 0.0, 1.0)
+			vapor = clampf(vapor + lift * 0.30, 0.0, vapor_capacity)
 
-		var saturation: float = clampf(0.40 + temp * 0.30, 0.34, 0.74)
+		var saturation: float = clampf(vapor_capacity * 0.68, 0.16, 0.80)
 		var humid_excess: float = maxf(vapor - saturation, 0.0)
 		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
 		var cloud: float = clampf(
-			humid_excess * _weather_system._field_condensation_gain * 2.2
+			humid_excess * _weather_system._field_condensation_gain * 1.8
 			+ lift_supply * _weather_system._field_orographic_lift_gain
 			+ convergence * _weather_system._field_convergence_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.12,
+			+ maxf(effective_ocean_an, 0.0) * 0.08,
 			0.0, 1.0
 		)
 		var instability: float = clampf(
@@ -345,16 +351,27 @@ func run_slice(cell_budget: int) -> Dictionary:
 			+ maxf(effective_ocean_an, 0.0) * 0.25,
 			0.0, 1.0
 		)
-		var precip_raw: float = cloud * (0.30 + instability * 0.70) + lift_supply * 0.18 - maxf(-lift, 0.0) * 0.45
+		var cloud_core: float = smoothstep(0.18, 0.42, cloud)
+		var terrain_trigger: float = clampf(lift_supply * 2.8 + maxf(convergence, 0.0) * 1.4, 0.0, 1.0)
+		var vapor_gate: float = clampf((vapor - 0.16) / 0.34, 0.0, 1.0)
+		var rain_focus: float = clampf(maxf(cloud_core, terrain_trigger) * vapor_gate, 0.0, 1.0)
+		var precip_source: float = cloud * (0.30 + instability * 0.76) + lift_supply * 0.36 - maxf(-lift, 0.0) * 0.55
+		var precip_raw: float = maxf(precip_source, 0.0) * 1.05 * rain_focus
 		var old_precip: float = prev_precip[i]
-		var vapor_floor_factor: float = clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		var vapor_floor_factor: float = clampf((vapor - 0.18) / 0.36, 0.0, 1.0)
 		var dyn_decay: float = _weather_system._field_precip_decay + wind_mag * 0.25
-		var precip_floor: float = old_precip * (1.0 - dyn_decay) * vapor_floor_factor
+		var carry_limit: float = _weather_system._field_precip_carryover_max
+		var precip_floor: float = 0.0
+		if vapor >= 0.50 and old_precip >= 0.08:
+			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.35)
 		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
+		if precip < 0.02:
+			precip = 0.0
+		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
 
 		var wt: int = _weather_system._classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _weather_system._classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
-		next_vapor[i] = vapor
+		next_vapor[i] = vapor_after_precip
 		next_cloud[i] = cloud
 		next_precip[i] = precip
 		next_instability[i] = instability
@@ -965,6 +982,9 @@ var _field_slice_cells: Array = []
 var _field_slice_cell_pos: PackedVector2Array = PackedVector2Array()
 var _field_slice_neighbor_indices: PackedInt32Array = PackedInt32Array()
 var _field_slice_fast_indexed: bool = false
+var _field_slice_temp_read: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_moisture_read: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_snow_cover_read: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_prev_vapor: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_prev_precip: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_vapor: PackedFloat32Array = PackedFloat32Array()

@@ -1,2 +1,0 @@
-tile_data_record_20260525_125522.csv rows=278400 first_tick=3255 last_tick=3370 unique_ticks=116
-tile_data_record_20260525_125609.csv rows=158400 first_tick=3635 last_tick=3700 unique_ticks=66

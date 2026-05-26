@@ -18,6 +18,8 @@ func _run() -> void:
 	_test_orographic_rain_shadow()
 	_test_warm_convection_prefers_storm()
 	_test_cold_precip_prefers_blizzard()
+	_test_precip_consumes_vapor()
+	_test_snowpack_distribute_budget()
 	_test_deterministic_same_seed_same_map()
 	print("=== done: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -51,6 +53,43 @@ func _test_cold_precip_prefers_blizzard() -> void:
 	var q := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
 	_expect(int(q.get("type", WeatherType.WT.CLEAR)) == WeatherType.WT.BLIZZARD,
 		"cold humid precipitating region should classify as BLIZZARD")
+
+func _test_precip_consumes_vapor() -> void:
+	var map := MapData.new(1, 1)
+	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.COAST, LandformType.LF.COAST, 0.08, 0.84, 0.98, Vector2.RIGHT, 0.20))
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
+	ws.tick_one_day(map, _world(), 1, 0.05, 1.5)
+	var q := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
+	var precip := float(q.get("precip", 0.0))
+	var vapor := float(q.get("vapor", 1.0))
+	_expect(precip < 0.20 or vapor < 0.90,
+		"precipitating cell should spend vapor instead of retaining saturated vapor")
+
+func _test_snowpack_distribute_budget() -> void:
+	var map := MapData.new(3, 1)
+	var cold := _cell(0, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.86, 0.14, 0.86, Vector2.RIGHT)
+	var warm := _cell(1, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.12, 0.62, 0.86, Vector2.RIGHT)
+	var glacier := _cell(2, 0, TerrainType.TERRAIN.GLACIER, LandformType.LF.MOUNTAIN, 0.90, 0.48, 0.60, Vector2.RIGHT)
+	glacier.cover = CoverType.CV.GLACIER
+	map.set_cell(cold)
+	map.set_cell(warm)
+	map.set_cell(glacier)
+	map.rebuild_soa_from_cells()
+	_mark_weather(cold, WeatherType.WT.BLIZZARD, 0.80, 0.70)
+	_mark_weather(warm, WeatherType.WT.RAIN, 0.80, 0.70)
+	_mark_weather(glacier, WeatherType.WT.CLEAR, 0.0, 0.0)
+
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(180.0, 100.0)))
+	ws._distribute_weather_field_to_cells(map)
+	var cold_idx: int = cold.index
+	var warm_idx: int = warm.index
+	var glacier_idx: int = glacier.index
+	_expect(map.snowpack_arr[cold_idx] > 0.05, "cold wet mountain should accumulate snowpack")
+	_expect(map.snow_cover_arr[cold_idx] < 0.95, "cold wet mountain should not jump to full snow cover in one day")
+	_expect(map.snowpack_arr[warm_idx] < 0.02 and map.snow_cover_arr[warm_idx] < 0.05,
+		"warm lowland rain should not create visible snowpack")
+	_expect(map.snowpack_arr[glacier_idx] >= 0.79 and map.snow_cover_arr[glacier_idx] >= 0.79,
+		"glacier should keep snowpack and snow cover floor")
 
 func _test_deterministic_same_seed_same_map() -> void:
 	var ws_a := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(180.0, 100.0)))
@@ -99,6 +138,12 @@ func _cell(q: int, r: int, terrain: TerrainType.TERRAIN, landform: int, elevatio
 	c.temperature_transport_anomaly = ocean_anomaly
 	c.current_state = {}
 	return c
+
+func _mark_weather(cell: HexCell, wt: int, intensity: float, precip: float) -> void:
+	cell.weather_field_initialized = true
+	cell.weather_type = wt
+	cell.weather_intensity = intensity
+	cell.weather_precip = precip
 
 func _expect(cond: bool, msg: String) -> void:
 	_checks += 1
