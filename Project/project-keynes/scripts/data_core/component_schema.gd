@@ -41,7 +41,7 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 50 条（截至 2026-05-17，B3b 新增 6 条植被动力学字段；
+# ─── CELL_SCHEMA — 57 条（截至 2026-05-26，新增热惯性/雪包/水分平衡字段；
 #     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
@@ -52,7 +52,7 @@ const U8: int  = DCComponentIds.U8
 # 字段 owner：业务模块归属，仅作 lint / dot-graph 用，**无运行期影响**。
 # 后续 dots_lint 工具会校验"声明 owner=X 但实际有 Y 在写"的违约。
 const CELL_SCHEMA: Array = [
-	# ─── Climate F32（21 条，对应 world.gd 668-688 + component_ids.gd CELL_TEMP..CELL_TEMP_BASELINE_YEAR）──
+	# ─── Climate / Weather F32（含日照、热惯性、雪包、水分平衡）────────
 	{ name = &"cell.temp",               cpp_name = "cell_temp",                  dtype = F32, track_prev = true,  map_field = "temp_arr",                  prev_field = "temp_arr_prev",            owner = "climate.pass_a" },
 	{ name = &"cell.temp_baseline",      cpp_name = "cell_temp_baseline",         dtype = F32, track_prev = false, map_field = "temp_baseline_arr",         prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.temp_30d",           cpp_name = "cell_temp_30d",              dtype = F32, track_prev = false, map_field = "temp_30d_arr",              prev_field = "",                         owner = "climate.pass_a" },
@@ -103,6 +103,9 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.insolation_dev",        cpp_name = "cell_insolation_dev",        dtype = F32, track_prev = false, map_field = "insolation_dev_arr",        prev_field = "", owner = "climate.astronomy" },
 	{ name = &"cell.day_length",            cpp_name = "cell_day_length",            dtype = F32, track_prev = false, map_field = "day_length_arr",            prev_field = "", owner = "climate.astronomy" },
 	{ name = &"cell.heat_input",            cpp_name = "cell_heat_input",            dtype = F32, track_prev = false, map_field = "heat_input_arr",            prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.thermal_energy",        cpp_name = "cell_thermal_energy",        dtype = F32, track_prev = false, map_field = "thermal_energy_arr",        prev_field = "", owner = "climate.pass_a" },
+	{ name = &"cell.snowpack",              cpp_name = "cell_snowpack",              dtype = F32, track_prev = false, map_field = "snowpack_arr",              prev_field = "", owner = "climate.snowpack" },
+	{ name = &"cell.water_balance_30d",     cpp_name = "cell_water_balance_30d",     dtype = F32, track_prev = false, map_field = "water_balance_30d_arr",     prev_field = "", owner = "climate.feedback" },
 	# ─── B3b：植被动力学字段全量下沉 SoA（6 条，4 f32 + 2 i32）─────────────
 	# 消除 stage_b combined pass 的 pack/unpack hot loop（原 ~7ms wall 的 95%）。
 	# 命名严格 1:1 对齐 HexCell 字段名，方便阶段 3 把 _trigger_succession /

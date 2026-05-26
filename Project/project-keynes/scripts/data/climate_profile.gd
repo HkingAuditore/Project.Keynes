@@ -81,8 +81,8 @@ extends Resource
 
 # Leeward rain-shadow: if upstream elevation delta ≥ threshold, the cell's
 # moisture is multiplied by factor (0 = completely dry; 1 = no shadow).
-@export var rain_shadow_threshold: float = 0.12
-@export var rain_shadow_factor: float = 0.55
+@export var rain_shadow_threshold: float = 0.16
+@export var rain_shadow_factor: float = 0.68
 
 # How many cells upwind to look back when detecting rain shadow.
 @export var rain_shadow_lookback: int = 2
@@ -482,7 +482,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 2026-05-19 vegetation-survival-rebalance v2：rate 从 0.004 → 0.015
 # （≈ 67 天可从 0 到 1），让暴雨/极旱在数周内即可看到 vitality 漂移。
 # 死区同步从 (0.4, 0.6) 收窄到 (0.48, 0.52)，避免大量 cell 永远卡在 dv=0。
-@export var vitality_change_rate: float = 0.015         # per day, at most ±0.015 (~67 days from 0 to 1)
+@export var vitality_change_rate: float = 0.010         # per day, at most ±0.010 (~100 days from 0 to 1)
 # 2026-05-18：演替门槛大幅放宽，让暴雨/极旱/连续不利气候有机会在 1.5 个月内触发
 # 可见的植被退化/升级。原 (0.15 / 0.90 / 180 / 360) 几乎需要 9 个月不间断的恶劣
 # 气候才能触发一次演替，玩家完全感受不到天气对地块的中长期影响。
@@ -494,7 +494,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
-@export var compat_harshness: float = 0.8
+@export var compat_harshness: float = 0.55
+@export_range(0.0, 1.0, 0.05) var vegetation_weather_penalty_scale: float = 0.25
 
 # Long-term base_moisture drift from eco_score (Phase 8).
 @export var eco_drift_amp: float = 0.012                # max ±0.012 / year
@@ -552,8 +553,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Sub-knobs for the feedback pass (consumed by _apply_weather_to_map_feedback_pass
 # and refresh_seasonal). All values intentionally small to keep "weather → map"
 # coupling on a slow timescale.
-@export var weather_to_soil_gain: float = 0.008          # daily ↑ on soil_moisture per unit precip
-@export var weather_to_vegetation_gain: float = 0.005    # daily ↑ on growth_pressure per unit precip
+@export var weather_to_soil_gain: float = 0.014          # daily ↑ on soil_moisture per unit precip
+@export var weather_to_vegetation_gain: float = 0.008    # daily ↑ on growth_pressure per unit precip
 @export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
@@ -566,11 +567,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
 # 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
 # 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
-@export var sea_ice_freeze_rate: float = 0.85            # k_freeze per "degree" below T_form
-@export var sea_ice_melt_rate: float = 1.20              # k_melt per "degree" above T_melt
-@export var sea_ice_terrain_threshold: float = 0.45      # frac at which terrain flips to SEA_ICE
-@export var sea_ice_terrain_hysteresis: float = 0.16     # flip back when frac < threshold - hyst
-@export var sea_ice_neighbor_contagion: float = 0.12     # extra k_freeze if any neighbor frac >= 0.6
+@export var sea_ice_freeze_rate: float = 0.55            # k_freeze per "degree" below T_form
+@export var sea_ice_melt_rate: float = 1.45              # k_melt per "degree" above T_melt
+@export var sea_ice_terrain_threshold: float = 0.68      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
+@export var sea_ice_neighbor_contagion: float = 0.06     # extra k_freeze if any neighbor frac >= 0.6
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
@@ -608,10 +609,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # visual/compatibility summary.
 @export_group("天气场求解")
 @export var weather_field_enabled: bool = true
-@export_range(0, 1, 1) var weather_field_advect_steps: int = 1
-@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.08
-@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.55
-@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.35
+@export_range(0, 2, 1) var weather_field_advect_steps: int = 2
+@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
+@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.85
+@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.48
+@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.25
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.62
+@export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
 @export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 4
@@ -680,7 +684,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Gain applied to (insol_now - insol_annual_mean) when deriving the temperature
 # seasonal offset. Default 1.0 keeps amplitude roughly aligned with legacy
 # season_temp_amp at mid-latitudes.
-@export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.0
+@export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.25
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
@@ -733,6 +737,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 ## Native astronomy heat gain applied to per-cell insolation before it is
 ## exposed as cell.heat_input. Keep at 1.0 for Earth-like balance.
 @export_range(0.0, 2.0, 0.05) var solar_gain: float = 1.0
+@export_range(-2.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
+@export_range(0.0, 3.0, 0.05) var insolation_dev_clamp_max: float = 1.5
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.24
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_water: float = 0.07
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_snow: float = 0.09
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_high_mountain: float = 0.16
+@export_range(0.0, 0.25, 0.005) var thermal_daily_delta_cap: float = 0.085
+@export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.10
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.08
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.03
+@export_range(0.0, 0.5, 0.005) var snowpack_cover_low: float = 0.03
+@export_range(0.0, 1.0, 0.005) var snowpack_cover_full: float = 0.25
 
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]
@@ -742,7 +758,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 
 # Sea-ice cover thresholds (temperature).
 # 2026-05-26：form 保持较低，melt 保持迟滞窗口；海冰范围由温度场持续越阈决定。
-@export var sea_ice_form_threshold: float = 0.10
+@export var sea_ice_form_threshold: float = 0.12
 @export var sea_ice_melt_threshold: float = 0.22
 
 # Volcano placement.

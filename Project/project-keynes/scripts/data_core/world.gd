@@ -1595,11 +1595,11 @@ func pool_count() -> int:
 # ─── Phase 4.1：序列化 / 反序列化 API（dots-phase4-followup.md §4.1）─────
 #
 # 当前实现：**骨架阶段**——按 component_schema.gd CELL_SCHEMA 自动遍历
-# 38 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。
+# 生产 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。
 # fronts 序列化在 Phase 1.2 SoA 化升权威之后扩展（当前 _serialize_fronts 返回空 dict）。
 #
 # 调用语义：
-#   - serialize() 在游戏暂停期 / 季节末调用，开销 ~10ms（38 字段 × n_cells × COW copy）
+#   - serialize() 在游戏暂停期 / 季节末调用，开销随生产字段数 × n_cells 线性增长
 #   - deserialize(d) 在 load 时调用，要求当前已 bind_map_data 到 *相同 size* 的 MapData
 #     （否则 size 不匹配直接 push_error）
 #   - version 字段触发 schema migration 钩子（Phase 4.2）。
@@ -1614,7 +1614,7 @@ const SAVE_VERSION: int = 1
 ##     "version": int (= SAVE_VERSION),
 ##     "n_cells": int,
 ##     "n_fronts": int,
-##     "cells": Dictionary { cpp_name: PackedArray },  # 38 字段（demo 跳过）
+##     "cells": Dictionary { cpp_name: PackedArray },  # 生产字段（demo 跳过）
 ##     "fronts": Dictionary,                            # Phase 4.1 PR-4.1.2 后扩展
 ##   }
 ##

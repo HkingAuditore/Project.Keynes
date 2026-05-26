@@ -90,6 +90,9 @@ var insolation_now_arr:        PackedFloat32Array = PackedFloat32Array()
 var insolation_dev_arr:        PackedFloat32Array = PackedFloat32Array()
 var day_length_arr:            PackedFloat32Array = PackedFloat32Array()
 var heat_input_arr:            PackedFloat32Array = PackedFloat32Array()
+var thermal_energy_arr:        PackedFloat32Array = PackedFloat32Array()
+var snowpack_arr:              PackedFloat32Array = PackedFloat32Array()
+var water_balance_30d_arr:     PackedFloat32Array = PackedFloat32Array()
 
 # ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
 # 6 个字段（4 f32 + 2 i32），由 cpp run_stage_b_pass 在阶段 2 之后直读直写
@@ -436,6 +439,9 @@ func _alloc_soa(n: int) -> void:
 	insolation_dev_arr.resize(n)
 	day_length_arr.resize(n)
 	heat_input_arr.resize(n)
+	thermal_energy_arr.resize(n)
+	snowpack_arr.resize(n)
+	water_balance_30d_arr.resize(n)
 	# B3b：植被动力学字段全量下沉 SoA（4 f32 + 2 i32）
 	vegetation_vitality_arr.resize(n)
 	vitality_low_streak_arr.resize(n)
@@ -517,6 +523,9 @@ func rebuild_soa_from_cells() -> void:
 		insolation_dev_arr[i] = 0.0
 		day_length_arr[i] = 0.5
 		heat_input_arr[i] = 0.0
+		thermal_energy_arr[i] = c.temperature
+		snowpack_arr[i] = 0.8 if c.cover == CoverType.CV.GLACIER else clampf(c.snow_cover * 0.35, 0.0, 1.0)
+		water_balance_30d_arr[i] = 0.0
 		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
 		vegetation_vitality_arr[i] = c.vegetation_vitality
 		vitality_low_streak_arr[i] = c._vitality_low_streak
@@ -592,6 +601,11 @@ func soa_swap_double_buffer() -> void:
 	moisture_arr_prev = moisture_arr.duplicate()
 	snow_cover_arr_prev = snow_cover_arr.duplicate()
 	sea_ice_frac_arr_prev = sea_ice_frac_arr.duplicate()
+
+## 每日 climate round 开始前冻结上一个 committed 快照。weather/recorder/visual
+## 插值可以读 *_prev，避免切片期间看到一半旧值、一半新值。
+func soa_begin_climate_transaction() -> void:
+	soa_swap_double_buffer()
 
 # ─── Dirty Mask 操作 API（阶段 A.1 仅占位；阶段 A.2 正式投入使用） ──────────
 func mark_climate_dirty(idx: int) -> void:
