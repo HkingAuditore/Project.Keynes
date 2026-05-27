@@ -6436,11 +6436,12 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
     const int sid_moist    = component_id(StringName("cell_moisture"));
     const int sid_water_bal = component_id(StringName("cell_water_balance_30d"));
+    const int sid_soil     = component_id(StringName("cell_soil_moisture"));
     const int sid_wt_type  = component_id(StringName("cell_weather_type"));
     const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
     const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
     if (sid_iswater < 0 || sid_veg < 0 || sid_temp < 0 || sid_temp_30d < 0 ||
-        sid_moist < 0 || sid_water_bal < 0 ||
+        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 ||
         sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
         diag("missing slot id (cell_is_water/vegetation/temp/moisture/weather_type/weather_intensity/weather_field_init)");
         return -1.0;
@@ -6523,12 +6524,14 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     Slot &s_temp30  = _slots.write[sid_temp_30d];
     Slot &s_moist   = _slots.write[sid_moist];
     Slot &s_wb      = _slots.write[sid_water_bal];
+    Slot &s_soil    = _slots.write[sid_soil];
     Slot &s_wt_type = _slots.write[sid_wt_type];
     Slot &s_wt_int  = _slots.write[sid_wt_int];
     Slot &s_wt_init = _slots.write[sid_wt_init];
     if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_temp.arr_f32.size()   != n_cells || s_temp30.arr_f32.size() != n_cells ||
         s_moist.arr_f32.size()  != n_cells || s_wb.arr_f32.size()     != n_cells ||
+        s_soil.arr_f32.size()   != n_cells ||
         s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
         s_wt_init.arr_u8.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
@@ -6542,6 +6545,7 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const float   * const __restrict T30  = s_temp30.arr_f32.ptr();
     const float   * const __restrict M    = s_moist.arr_f32.ptr();
     const float   * const __restrict WBAL = s_wb.arr_f32.ptr();
+    const float   * const __restrict SOILC = s_soil.arr_f32.ptr();
     const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
     const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
     const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
@@ -6570,7 +6574,8 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
         if (IW[i] != 0) continue;                                  // skip water
         const uint8_t v_id = VG[i];
         const float temp = T30[i];
-        float moist = M[i] + WBAL[i] * 0.25f;
+        const float soil_buffer = SOILC[i] > 0.0f ? SOILC[i] : 0.0f;
+        float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
         if (moist < 0.0f) moist = 0.0f;
         else if (moist > 1.0f) moist = 1.0f;
 
@@ -6596,6 +6601,11 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
                 dv = (compat - 0.5f) * 2.0f * rate;
             } else if (compat <= 0.48f) {
                 dv = -(0.5f - compat) * 2.0f * rate * harshness;
+            }
+            if (dv < 0.0f) {
+                float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
+                if (water_buffer > 0.60f) water_buffer = 0.60f;
+                dv *= (1.0f - water_buffer);
             }
         }
 
@@ -6716,11 +6726,12 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
     const int sid_moist    = component_id(StringName("cell_moisture"));
     const int sid_water_bal = component_id(StringName("cell_water_balance_30d"));
+    const int sid_soil     = component_id(StringName("cell_soil_moisture"));
     const int sid_wt_type  = component_id(StringName("cell_weather_type"));
     const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
     const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
     if (sid_iswater < 0 || sid_veg < 0 || sid_temp < 0 || sid_temp_30d < 0 ||
-        sid_moist < 0 || sid_water_bal < 0 ||
+        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 ||
         sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
         diag("missing slot id");
         return -1.0;
@@ -6800,12 +6811,14 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     Slot &s_temp30  = _slots.write[sid_temp_30d];
     Slot &s_moist   = _slots.write[sid_moist];
     Slot &s_wb      = _slots.write[sid_water_bal];
+    Slot &s_soil    = _slots.write[sid_soil];
     Slot &s_wt_type = _slots.write[sid_wt_type];
     Slot &s_wt_int  = _slots.write[sid_wt_int];
     Slot &s_wt_init = _slots.write[sid_wt_init];
     if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_temp.arr_f32.size()   != n_cells || s_temp30.arr_f32.size() != n_cells ||
         s_moist.arr_f32.size()  != n_cells || s_wb.arr_f32.size()     != n_cells ||
+        s_soil.arr_f32.size()   != n_cells ||
         s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
         s_wt_init.arr_u8.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
@@ -6819,6 +6832,7 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const float   * const __restrict T30  = s_temp30.arr_f32.ptr();
     const float   * const __restrict M    = s_moist.arr_f32.ptr();
     const float   * const __restrict WBAL = s_wb.arr_f32.ptr();
+    const float   * const __restrict SOILC = s_soil.arr_f32.ptr();
     const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
     const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
     const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
@@ -6855,7 +6869,8 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
             const float temp = T30[i];
-            float moist = M[i] + WBAL[i] * 0.25f;
+            const float soil_buffer = SOILC[i] > 0.0f ? SOILC[i] : 0.0f;
+            float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
             if (moist < 0.0f) moist = 0.0f;
             else if (moist > 1.0f) moist = 1.0f;
 
@@ -6875,6 +6890,11 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
                     dv = (compat - 0.5f) * 2.0f * rate;
                 } else if (compat <= 0.48f) {
                     dv = -(0.5f - compat) * 2.0f * rate * harshness;
+                }
+                if (dv < 0.0f) {
+                    float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
+                    if (water_buffer > 0.60f) water_buffer = 0.60f;
+                    dv *= (1.0f - water_buffer);
                 }
             }
 
@@ -7445,6 +7465,15 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
     const float   * const __restrict WTI   = s_wt_int.arr_f32.ptr();
     const uint8_t * const __restrict WTIN  = s_wt_init.arr_u8.ptr();
     float         * const __restrict BM    = s_base_m.arr_f32.ptrw();
+    const float   *SOIL_COMP = nullptr;
+    if (use_soa) {
+        const Slot &s_soil_comp = _slots[sid_soil];
+        if (s_soil_comp.arr_f32.size() != n_cells) {
+            diag("[use_soa] soil_moisture slot size != n_cells");
+            return -1.0;
+        }
+        SOIL_COMP = s_soil_comp.arr_f32.ptr();
+    }
 
     auto t_total_0 = std::chrono::high_resolution_clock::now();
     bool flush_temp = false;     // albedo 跑了才需要 flush
@@ -7628,7 +7657,8 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
             const float temp = T30[i];
-            float moist = M[i] + WBAL[i] * 0.25f;
+            const float soil_buffer = (SOIL_COMP != nullptr && SOIL_COMP[i] > 0.0f) ? SOIL_COMP[i] : 0.0f;
+            float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
             if (moist < 0.0f) moist = 0.0f;
             else if (moist > 1.0f) moist = 1.0f;
 
@@ -7648,6 +7678,11 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                     dv = (compat - 0.5f) * 2.0f * rate;
                 } else if (compat <= 0.48f) {
                     dv = -(0.5f - compat) * 2.0f * rate * harshness;
+                }
+                if (dv < 0.0f) {
+                    float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
+                    if (water_buffer > 0.60f) water_buffer = 0.60f;
+                    dv *= (1.0f - water_buffer);
                 }
             }
 
@@ -8464,9 +8499,18 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                 if (melt_off > 0.10f) melt_off = 0.10f;
                 else if (melt_off < -0.10f) melt_off = -0.10f;
                 const float melt_t_local = snow_melt_t + melt_off;
+                float freeze_off = elev_delta * 0.20f;
+                if (freeze_off > 0.06f) freeze_off = 0.06f;
+                else if (freeze_off < -0.06f) freeze_off = -0.06f;
+                const float freeze_t_local = snow_freeze_t + freeze_off;
+                const bool cold_precip = (T[i] < freeze_t_local) && (precip > 0.002f);
+                float snow_accum = cold_precip ? precip * snowpack_accum_gain * 0.75f : 0.0f;
+                if (cold_precip) {
+                    snow_accum += (intensity < 0.15f ? intensity : 0.15f) * 0.006f;
+                }
                 const float melt = ((T[i] - melt_t_local) > 0.0f ? (T[i] - melt_t_local) : 0.0f) * snowpack_melt_temp_gain
                     + HEAT[i] * snowpack_melt_sun_gain;
-                sp = clampf(sp - melt, 0.0f, 1.0f);
+                sp = clampf(sp + snow_accum - melt, 0.0f, 1.0f);
                 if (CV[i] == COVER_GLACIER && sp < 0.80f) sp = 0.80f;
                 const float evap_proxy = clampf((0.01f + ((M[i] - 0.45f) > 0.0f ? (M[i] - 0.45f) : 0.0f) * 0.03f)
                     * (0.35f + T[i] * 1.05f) * 0.65f, 0.0f, 1.0f);
@@ -8517,7 +8561,8 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
             const float freeze_t_sp = snow_freeze_t + freeze_off_sp;
             const float melt_t_sp = snow_melt_t + melt_off_sp;
             const bool can_snow_sp = (wt >= 0 && wt < 8) && (CFS[wt] != 0);
-            const bool snowing_sp = can_snow_sp && (temp_now < freeze_t_sp) && (precip > 0.0f);
+            const bool precip_can_snow_sp = (wt != wt_clear) && (wt != 4) && (wt != 6);
+            const bool snowing_sp = (can_snow_sp || precip_can_snow_sp) && (temp_now < freeze_t_sp) && (precip > 0.0f);
             float snow_accum = snowing_sp ? (precip * snowpack_accum_gain + intensity * 0.015f) : 0.0f;
             const float warm_rain_melt = (temp_now > melt_t_sp) ? precip * 0.03f : 0.0f;
             const float melt = ((temp_now - melt_t_sp) > 0.0f ? (temp_now - melt_t_sp) : 0.0f) * snowpack_melt_temp_gain

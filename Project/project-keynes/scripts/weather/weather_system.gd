@@ -124,11 +124,11 @@ var _field_convergence_gain: float = 0.25
 var _field_convergence_refresh_stride: int = 4
 var _field_solve_tick: int = 0
 var _field_ocean_evap_gain: float = 0.30
-var _snowpack_accum_gain: float = 0.10
+var _snowpack_accum_gain: float = 0.16
 var _snowpack_melt_temp_gain: float = 0.08
-var _snowpack_melt_sun_gain: float = 0.03
-var _snowpack_cover_low: float = 0.03
-var _snowpack_cover_full: float = 0.25
+var _snowpack_melt_sun_gain: float = 0.015
+var _snowpack_cover_low: float = 0.02
+var _snowpack_cover_full: float = 0.18
 var _field_summary_limit: int = 12
 var _summary_q_cache: PackedInt32Array = PackedInt32Array()
 var _summary_r_cache: PackedInt32Array = PackedInt32Array()
@@ -943,10 +943,10 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		# SNOW_ELEV_NEUTRAL=0.30 / FREEZE_GAIN=0.20 / MELT_GAIN=0.30，常数硬编码不走 knobs）。
 		# 若日后调参，需双侧同步修改。
 		"snow_min_intensity": 0.001,
-		"snow_freeze_t": 0.30,
-		"snow_melt_t": 0.34,
+		"snow_freeze_t": SNOW_FREEZE_T,
+		"snow_melt_t": SNOW_MELT_T,
 		"snow_intensity_for_snowing": 0.4,
-		"snow_accum_days_req": 3,
+		"snow_accum_days_req": SNOW_ACCUM_DAYS_REQ,
 		"flood_heavy_intensity": 0.55,
 		"flood_heavy_precip": 0.55,
 		"flood_lowland_intensity": 0.32,
@@ -1282,10 +1282,10 @@ func _push_resident_knobs_from_cp(cp: Resource) -> void:
 	if _knobs_handle.has_method("set_distribute_scalars"):
 		_knobs_handle.set_distribute_scalars(
 			0.001,    # snow_min_intensity
-			0.30,     # snow_freeze_t
-			0.34,     # snow_melt_t
+			SNOW_FREEZE_T,
+			SNOW_MELT_T,
 			0.4,      # snow_intensity_for_snowing
-			3,        # snow_accum_days_req
+			SNOW_ACCUM_DAYS_REQ,
 			0.55,     # flood_heavy_intensity
 			0.55,     # flood_heavy_precip
 			0.32,     # flood_lowland_intensity
@@ -2041,8 +2041,8 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 #   3) 累计达阈值且当前不是 SNOW → 备份原 cover，写 cover=SNOW
 #   4) 累计回零且当前是 SNOW 且有备份 → 恢复 cover=pre_snow_cover
 const SNOW_ACCUM_DAYS_REQ: int = 1      # 连续 N 天才落地积雪（v6：从3降到1，匹配天气周期1-2天）
-const SNOW_FREEZE_T: float = 0.22       # 低于此温度才算"可降雪冷度"（v6：从0.30降到0.22，让更多低温区域能积雪）
-const SNOW_MELT_T: float = 0.28         # 高于此温度开始消融（v6：从0.34降到0.28，保持滞回防抖）
+const SNOW_FREEZE_T: float = 0.24       # 低于此温度才算"可降雪冷度"
+const SNOW_MELT_T: float = 0.31         # 高于此温度开始消融，保持滞回防抖
 
 # 2026-05-18 雪线修正：海拔放宽 → 高山易积雪、平原难积雪。
 # 以 elev=0.30 为中性（freeze_t = 0.30、melt_t = 0.34），
@@ -2320,10 +2320,16 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 					clear_wb = lerpf(clear_wb, 0.0, 1.0 / 30.0)
 				else:
 					var clear_elev_delta: float = cell.elevation - SNOW_ELEV_NEUTRAL
+					var clear_freeze_off: float = clampf(clear_elev_delta * SNOW_ELEV_FREEZE_GAIN, -SNOW_ELEV_FREEZE_MAX_OFF, SNOW_ELEV_FREEZE_MAX_OFF)
 					var clear_melt_off: float = clampf(clear_elev_delta * SNOW_ELEV_MELT_GAIN, -SNOW_ELEV_MELT_MAX_OFF, SNOW_ELEV_MELT_MAX_OFF)
+					var clear_freeze_t: float = SNOW_FREEZE_T + clear_freeze_off
 					var clear_melt_t: float = SNOW_MELT_T + clear_melt_off
 					var clear_melt: float = maxf(temp_now - clear_melt_t, 0.0) * _snowpack_melt_temp_gain + clear_heat * _snowpack_melt_sun_gain
-					clear_sp = clampf(clear_sp - clear_melt, 0.0, 1.0)
+					var clear_cold_precip: bool = temp_now < clear_freeze_t and precip > 0.002
+					var clear_snow_accum: float = precip * _snowpack_accum_gain * 0.75 if clear_cold_precip else 0.0
+					if clear_cold_precip:
+						clear_snow_accum += minf(intensity, 0.15) * 0.006
+					clear_sp = clampf(clear_sp + clear_snow_accum - clear_melt, 0.0, 1.0)
 					if cell.cover == CoverType.CV.GLACIER and clear_sp < 0.80:
 						clear_sp = 0.80
 					var clear_evap: float = clampf((0.01 + maxf(moist_now - 0.45, 0.0) * 0.03) * (0.35 + temp_now * 1.05) * 0.65, 0.0, 1.0)
@@ -2382,7 +2388,8 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 				var melt_off: float = clampf(elev_delta * SNOW_ELEV_MELT_GAIN, -SNOW_ELEV_MELT_MAX_OFF, SNOW_ELEV_MELT_MAX_OFF)
 				var freeze_t_local: float = SNOW_FREEZE_T + freeze_off
 				var melt_t_local: float = SNOW_MELT_T + melt_off
-				var snowing: bool = WeatherType.can_form_snow(wt) and temp_now < freeze_t_local and precip > 0.0
+				var precip_can_snow: bool = wt != WeatherType.WT.DROUGHT and wt != WeatherType.WT.HEATWAVE and wt != WeatherType.WT.CLEAR
+				var snowing: bool = (WeatherType.can_form_snow(wt) or precip_can_snow) and temp_now < freeze_t_local and precip > 0.0
 				var snow_accum: float = precip * _snowpack_accum_gain if snowing else 0.0
 				if snowing:
 					snow_accum += intensity * 0.015
@@ -3256,11 +3263,11 @@ func configure_weather_field(
 		convergence_refresh_stride: int = 4,
 		precip_carryover_max: float = 0.25,
 		vapor_precip_sink: float = 0.62,
-		snowpack_accum_gain: float = 0.10,
+		snowpack_accum_gain: float = 0.16,
 		snowpack_melt_temp_gain: float = 0.08,
-		snowpack_melt_sun_gain: float = 0.03,
-		snowpack_cover_low: float = 0.03,
-		snowpack_cover_full: float = 0.25,
+		snowpack_melt_sun_gain: float = 0.015,
+		snowpack_cover_low: float = 0.02,
+		snowpack_cover_full: float = 0.18,
 		weather_temp_anomaly_cap: float = 0.025) -> void:
 	_weather_field_enabled = enabled
 	_field_advect_steps = clampi(advect_steps, 0, 2)

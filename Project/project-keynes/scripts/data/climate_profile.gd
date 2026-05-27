@@ -494,7 +494,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
-@export var compat_harshness: float = 0.55
+@export var compat_harshness: float = 0.35
 @export_range(0.0, 1.0, 0.05) var vegetation_weather_penalty_scale: float = 0.25
 
 # Long-term base_moisture drift from eco_score (Phase 8).
