@@ -5157,6 +5157,7 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 		var ny: float = _cube_row_norm(cell, cfg)
 		var temp_year: float = _compute_temperature(ny, cell.elevation)
 		var temp_ref: float = clampf(temp_year, 0.0, 1.0)
+		var polar_w: float = absf(ny * 2.0 - 1.0)
 		var frac: float = 0.0
 		if temp_ref < t_form:
 			# 冷：按离阈距离给个饱和度
@@ -5169,9 +5170,12 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 			# 迟滞带：线性从 form→melt 对应 1→0
 			var span: float = maxf(t_melt - t_form, 0.001)
 			frac = clampf((t_melt - temp_ref) / span, 0.0, 1.0) * 0.35
+		var stable_polar_pack: bool = polar_w >= 0.78 and temp_ref < t_form * 0.85
+		if not stable_polar_pack and frac >= thr_terrain:
+			frac = maxf(0.0, thr_terrain - 0.08)
 		cell.sea_ice_fraction = frac
-		# 超过 terrain 阈值 → 翻成 SEA_ICE（保留 base_terrain 可由原 setup 逻辑维持）
-		if frac >= thr_terrain and cell.terrain != TerrainType.TERRAIN.SEA_ICE:
+		# 生成期只把稳定极地多年冰落成 terrain；过渡冰由 daily pass 自行生长/消退。
+		if stable_polar_pack and frac >= thr_terrain and cell.terrain != TerrainType.TERRAIN.SEA_ICE:
 			cell.apply_terrain(TerrainType.TERRAIN.SEA_ICE)
 
 # ─── Phase 14：奇观地标 5 pass ──────────────────────────────────────────────
@@ -11241,6 +11245,10 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			temp = map.temp_30d_arr[idx_vd]
 		if idx_vd >= 0 and idx_vd < map.water_balance_30d_arr.size():
 			moist = clampf(moist + map.water_balance_30d_arr[idx_vd] * 0.25, 0.0, 1.0)
+		var soil_buffer: float = 0.0
+		if idx_vd >= 0 and idx_vd < map.soil_moisture_arr.size():
+			soil_buffer = maxf(map.soil_moisture_arr[idx_vd], 0.0)
+			moist = clampf(moist + soil_buffer * 0.20, 0.0, 1.0)
 		var compat: float = VegetationType.climate_compat_score(cell.vegetation, temp, moist)
 		# vegetation-survival-rebalance v2：非对称漂移 + 极小死区（仅过滤数值噪声）。
 		#   compat ≥ 0.52 → 正向恢复
@@ -11259,6 +11267,11 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			elif compat <= 0.48:
 				dv = -(0.5 - compat) * 2.0 * rate * _c().compat_harshness
 			# else: 死区保持 dv = 0
+			if dv < 0.0:
+				var water_buffer: float = clampf(soil_buffer * 0.8, 0.0, 0.60)
+				if idx_vd >= 0 and idx_vd < map.water_balance_30d_arr.size():
+					water_buffer = clampf(maxf(map.water_balance_30d_arr[idx_vd], 0.0) * 1.5 + soil_buffer * 0.8, 0.0, 0.60)
+				dv *= 1.0 - water_buffer
 		# weather 额外惩罚（方案 C：按植被抗性缩放 penalty *= (1 - resistance)）
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var wi: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
