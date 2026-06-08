@@ -17,6 +17,12 @@ const FIXED_COLUMNS: Array = [
 	"t_sus_ms",
 	"t_render_ms",
 	"t_ui_ms",
+	"climate_max_temp_delta",
+	"climate_p99_temp_delta",
+	"climate_max_transport_anomaly",
+	"climate_sea_ice_delta_max",
+	"climate_precip_p95",
+	"climate_thermal_finalizer_applied",
 	"cell_index",
 	"q",
 	"r",
@@ -276,6 +282,7 @@ func _current_map():
 
 
 func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
+	var climate: Dictionary = sample.get("climate", {})
 	return {
 		"row_idx": _row_count,
 		"tick_idx": int(sample.get("tick_idx", 0)),
@@ -286,6 +293,12 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"t_sus_ms": float(sample.get("t_sus_ms", 0.0)),
 		"t_render_ms": float(sample.get("t_render_ms", 0.0)),
 		"t_ui_ms": float(sample.get("t_ui_ms", 0.0)),
+		"climate_max_temp_delta": float(climate.get("max_temp_delta", 0.0)),
+		"climate_p99_temp_delta": float(climate.get("p99_temp_delta", 0.0)),
+		"climate_max_transport_anomaly": float(climate.get("max_transport_anomaly", 0.0)),
+		"climate_sea_ice_delta_max": float(climate.get("sea_ice_delta_max", 0.0)),
+		"climate_precip_p95": float(climate.get("precip_p95", 0.0)),
+		"climate_thermal_finalizer_applied": bool(climate.get("thermal_finalizer_applied", false)),
 		"cell_index": idx,
 		"q": int(cell.q),
 		"r": int(cell.r),

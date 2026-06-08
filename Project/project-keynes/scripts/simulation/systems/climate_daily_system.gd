@@ -60,11 +60,16 @@ const _PASS_A: int = 0
 const _PASS_B: int = 1
 const _PASS_OCEAN_WATER: int = 2
 const _PASS_OCEAN_LAND: int = 3
-const _PASS_SEA_ICE: int = 4
-const _PASS_TRANSP: int = 5
-const _PASS_COUNT: int = 6
+# climate-loop-closure Phase 1.1：风致热平流接入 sliced round（ocean_land 之后、
+# sea_ice 之前）。气团段先把上风温度混合写回 temp + air_mass_temp_anomaly，地表段
+# 再把邻格 anomaly 注入；顺序必须 wind_air → wind_surface（地表段读气团段产物）。
+const _PASS_WIND_AIR: int = 4
+const _PASS_WIND_SURFACE: int = 5
+const _PASS_SEA_ICE: int = 6
+const _PASS_TRANSP: int = 7
+const _PASS_COUNT: int = 8
 const _PASS_NAMES: PackedStringArray = [
-	"pass_a", "pass_b", "ocean_water", "ocean_land", "sea_ice", "transp"
+	"pass_a", "pass_b", "ocean_water", "ocean_land", "wind_air", "wind_surface", "sea_ice", "transp"
 ]
 
 # 通用 climate pass 生命周期状态。先在 ClimateDailySystem 内落地，后续
@@ -105,6 +110,7 @@ var _phase_locked: float = 0.0
 var _round_t_pass_a_ms: float = 0.0
 var _round_t_pass_b_ms: float = 0.0
 var _round_t_ocean_ms: float = 0.0   # 水段 + 陆段累积
+var _round_t_wind_ms: float = 0.0    # 风温气团段 + 地表段累积
 var _round_t_sea_ice_ms: float = 0.0
 var _round_t_transp_ms: float = 0.0
 var _round_t_round_start_ms: int = 0  # 用于算整 round total_ms
@@ -125,14 +131,22 @@ var _pass_generation: int = 0
 var _active_pass_token: int = 0
 var _active_pass_state: Dictionary = {}
 var _last_pass_diag: Dictionary = {}
+var _temp_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
+var _tta_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
+var _last_finalizer_diag: Dictionary = {}
 
 # A.2.1.A4 — Dirty Mask 季节强制全图 / 每 30 日 full sweep 钩子。
 # _last_phase_int_seen：上一次 round 进入时 floor(_phase_locked) 的整数部分；
 #   跨过整数（季节切换）→ 本 round 开始时 mark_all_climate_dirty()
 # _full_sweep_counter：每完成一 round +1，达到 30 时下一 round 入口 mark_all
-# 初始化为 30：让"加载存档后首日"立刻强制全图，建立稳态 baseline
+# 初始化为 _FULL_SWEEP_PERIOD：让"加载存档后首日"立刻强制全图，建立稳态 baseline
+# climate-loop-closure Phase 5.2：full sweep 周期 30 → 8 日。
+# 根因：稀疏 push 扣除全图季节 drift 后，均匀季节升温的 cell 不超 epsilon → 不推 GPU，
+# 直到 full sweep 才一次性补帧，造成"每 30 日视觉温度台阶跳变"。把周期缩到 8 日，把
+# 最大视觉滞后从 ~30 日降到 ~8 日，台阶幅度大幅减小、过渡更平滑（代价：push 频率略升）。
+const _FULL_SWEEP_PERIOD: int = 8
 var _last_phase_int_seen: int = -9999
-var _full_sweep_counter: int = 30
+var _full_sweep_counter: int = 8
 
 
 func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int) -> void:
@@ -183,6 +197,7 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_THERMAL_ENERGY,
 		DCComponentIds.CELL_SNOWPACK,
 		DCComponentIds.CELL_WATER_BALANCE_30D,
+		DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY,
 	]
 	if _standalone_sea_ice_enabled():
 		reads.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
@@ -206,6 +221,7 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_THERMAL_ENERGY,
 		DCComponentIds.CELL_SNOWPACK,
 		DCComponentIds.CELL_WATER_BALANCE_30D,
+		DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY,
 	]
 	if _standalone_sea_ice_enabled():
 		writes.erase(DCComponentIds.CELL_SEA_ICE_FRAC)
@@ -281,15 +297,19 @@ func reset_progress() -> void:
 	_round_t_pass_a_ms = 0.0
 	_round_t_pass_b_ms = 0.0
 	_round_t_ocean_ms = 0.0
+	_round_t_wind_ms = 0.0
 	_round_t_sea_ice_ms = 0.0
 	_round_t_transp_ms = 0.0
 	_round_t_round_start_ms = 0
+	_temp_start_of_day_arr = PackedFloat32Array()
+	_tta_start_of_day_arr = PackedFloat32Array()
+	_last_finalizer_diag = {}
 	ran_this_tick = false
 	_last_slice_elapsed_ms = 0.0
 	_reset_last_pass_diag()
 	# A.2.1.A4 — 重置 Dirty Mask 季节钩子状态，保证加载存档后首日 mark_all
 	_last_phase_int_seen = -9999
-	_full_sweep_counter = 30
+	_full_sweep_counter = _FULL_SWEEP_PERIOD
 
 
 func _reset_last_pass_diag() -> void:
@@ -325,6 +345,7 @@ func _standalone_sea_ice_enabled() -> bool:
 func _begin_round_pass_state() -> void:
 	_pass_generation += 1
 	_active_pass_token = _pass_generation
+	_capture_daily_finalizer_start_state()
 	_active_pass_state = {
 		"token": _active_pass_token,
 		"state": _PASS_STATE_RUNNING,
@@ -341,6 +362,120 @@ func _begin_round_pass_state() -> void:
 		"diagnostics_enabled": _diagnostics_enabled(),
 	}
 	_reset_last_pass_diag()
+
+
+func _capture_daily_finalizer_start_state() -> void:
+	_temp_start_of_day_arr = PackedFloat32Array()
+	_tta_start_of_day_arr = PackedFloat32Array()
+	_last_finalizer_diag = {}
+	if map == null:
+		return
+	var n: int = map.cell_count()
+	if n <= 0:
+		return
+	if map.temp_arr.size() == n:
+		_temp_start_of_day_arr = map.temp_arr.duplicate()
+	if map.temperature_transport_anomaly_arr.size() == n:
+		_tta_start_of_day_arr = map.temperature_transport_anomaly_arr.duplicate()
+
+
+func _percentile_from_sorted(values: Array, p: float) -> float:
+	if values.is_empty():
+		return 0.0
+	var idx: int = clampi(int(floor(float(values.size() - 1) * clampf(p, 0.0, 1.0))), 0, values.size() - 1)
+	return float(values[idx])
+
+
+func _apply_daily_climate_finalizer() -> Dictionary:
+	var diag: Dictionary = {
+		"max_temp_delta": 0.0,
+		"p99_temp_delta": 0.0,
+		"max_transport_anomaly": 0.0,
+		"sea_ice_delta_max": 0.0,
+		"precip_p95": 0.0,
+		"thermal_finalizer_applied": false,
+	}
+	if generator == null or map == null:
+		_last_finalizer_diag = diag
+		return diag
+	var cp = generator._c()
+	var n: int = map.cell_count()
+	if cp == null or n <= 0:
+		_last_finalizer_diag = diag
+		return diag
+	var temp_cap_enabled: bool = true
+	if cp.get("thermal_final_delta_cap_enabled") != null:
+		temp_cap_enabled = bool(cp.thermal_final_delta_cap_enabled)
+	var temp_cap: float = float(cp.thermal_daily_delta_cap) if cp.get("thermal_daily_delta_cap") != null else 0.15
+	var tta_cap: float = float(cp.temperature_transport_anomaly_daily_cap) if cp.get("temperature_transport_anomaly_daily_cap") != null else 0.12
+	var temp_a: PackedFloat32Array = map.temp_arr
+	var tta_a: PackedFloat32Array = map.temperature_transport_anomaly_arr
+	var temp_deltas: Array = []
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var has_temp_start: bool = _temp_start_of_day_arr.size() == n
+	var has_tta_start: bool = _tta_start_of_day_arr.size() == n
+	var temp_limit: int = mini(n, temp_a.size())
+	for i in range(temp_limit):
+		var start_t: float = _temp_start_of_day_arr[i] if has_temp_start else temp_a[i]
+		var final_t: float = temp_a[i]
+		if temp_cap_enabled and has_temp_start:
+			final_t = clampf(final_t, start_t - temp_cap, start_t + temp_cap)
+			final_t = clampf(final_t, 0.0, 1.0)
+			temp_a[i] = final_t
+		var abs_dt: float = absf(final_t - start_t)
+		temp_deltas.append(abs_dt)
+		if abs_dt > float(diag["max_temp_delta"]):
+			diag["max_temp_delta"] = abs_dt
+		if i < cells.size() and cells[i] != null:
+			cells[i].temperature = final_t
+			cells[i].current_state["temperature"] = final_t
+	var tta_limit: int = mini(n, tta_a.size())
+	for i in range(tta_limit):
+		var start_tta: float = _tta_start_of_day_arr[i] if has_tta_start else 0.0
+		var final_tta: float = tta_a[i]
+		if tta_cap > 0.0 and has_tta_start:
+			final_tta = clampf(final_tta, start_tta - tta_cap, start_tta + tta_cap)
+			tta_a[i] = final_tta
+		var abs_tta: float = absf(final_tta)
+		if abs_tta > float(diag["max_transport_anomaly"]):
+			diag["max_transport_anomaly"] = abs_tta
+		if i < cells.size() and cells[i] != null:
+			cells[i].temperature_transport_anomaly = final_tta
+	var thermal_a: PackedFloat32Array = map.thermal_energy_arr
+	var ema_a: PackedByteArray = map.ema_initialized_arr
+	var thermal_limit: int = mini(n, thermal_a.size())
+	for i in range(thermal_limit):
+		var needs_init: bool = is_nan(thermal_a[i]) or is_inf(thermal_a[i])
+		if i < ema_a.size() and ema_a[i] == 0:
+			needs_init = true
+		if needs_init and i < temp_a.size():
+			thermal_a[i] = temp_a[i]
+	temp_deltas.sort()
+	diag["p99_temp_delta"] = _percentile_from_sorted(temp_deltas, 0.99)
+	if map.sea_ice_frac_arr.size() == n and map.sea_ice_frac_arr_prev.size() == n:
+		for i in range(n):
+			var ds: float = absf(map.sea_ice_frac_arr[i] - map.sea_ice_frac_arr_prev[i])
+			if ds > float(diag["sea_ice_delta_max"]):
+				diag["sea_ice_delta_max"] = ds
+	if map.weather_precip_arr.size() == n:
+		var precip_vals: Array = []
+		for i in range(n):
+			precip_vals.append(map.weather_precip_arr[i])
+		precip_vals.sort()
+		diag["precip_p95"] = _percentile_from_sorted(precip_vals, 0.95)
+	if _world != null and _world.is_bound():
+		var cid_temp: int = int(_cid.get(DCComponentIds.CELL_TEMP, -1))
+		if cid_temp >= 0 and _world.has_method("write_f32_dense"):
+			_world.write_f32_dense(cid_temp, temp_a)
+		var cid_tta: int = int(_cid.get(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY, -1))
+		if cid_tta >= 0 and _world.has_method("write_f32_dense"):
+			_world.write_f32_dense(cid_tta, tta_a)
+		var cid_heat: int = int(_cid.get(DCComponentIds.CELL_THERMAL_ENERGY, -1))
+		if cid_heat >= 0 and _world.has_method("write_f32_dense"):
+			_world.write_f32_dense(cid_heat, thermal_a)
+	diag["thermal_finalizer_applied"] = true
+	_last_finalizer_diag = diag
+	return diag
 
 
 func _abort_active_pass(reason: String) -> void:
@@ -447,6 +582,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_t_pass_a_ms = 0.0
 		_round_t_pass_b_ms = 0.0
 		_round_t_ocean_ms = 0.0
+		_round_t_wind_ms = 0.0
 		_round_t_sea_ice_ms = 0.0
 		_round_t_transp_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
@@ -462,7 +598,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		if cp_round != null and bool(cp_round.use_sparse_climate) and map != null and map.has_soa():
 			var phase_int: int = int(floor(_phase_locked))
 			var season_changed: bool = (_last_phase_int_seen != -9999) and (phase_int != _last_phase_int_seen)
-			var full_sweep_due: bool = _full_sweep_counter >= 30
+			var full_sweep_due: bool = _full_sweep_counter >= _FULL_SWEEP_PERIOD
 			if season_changed or full_sweep_due:
 				map.mark_all_climate_dirty()
 				_full_sweep_counter = 0
@@ -482,6 +618,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_slice_us0: int = Time.get_ticks_usec()
 	var local_coupling: bool = bool(cp.enable_local_climate_coupling)
 	var ocean_enabled: bool = bool(generator._last_cfg.enable_ocean_heat_transport)
+	# climate-loop-closure Phase 1.1：风温段开关（profile 缺字段时默认 true）。
+	var wind_heat_enabled: bool = true
+	if cp.get("enable_wind_heat_transport") != null:
+		wind_heat_enabled = bool(cp.enable_wind_heat_transport)
 	var slice_elapsed_ms: float = 0.0
 	var ran_pass_id: int = -1
 	_reset_last_pass_diag()
@@ -495,6 +635,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				should_skip = not local_coupling
 			_PASS_OCEAN_WATER, _PASS_OCEAN_LAND:
 				should_skip = not ocean_enabled
+			_PASS_WIND_AIR, _PASS_WIND_SURFACE:
+				should_skip = not wind_heat_enabled
 			_PASS_SEA_ICE:
 				should_skip = _standalone_sea_ice_enabled()
 			_PASS_TRANSP:
@@ -607,6 +749,22 @@ func _run_pass(pass_id: int) -> bool:
 				var r_ol: Dictionary = _make_pass_result(true, ol_ms, map.cell_count(), 0, map.cell_count())
 				_record_pass_result(pass_id, token, r_ol, ol_ms, "ocean_land", "oneshot", "gdscript")
 				return true
+		_PASS_WIND_AIR:
+			# climate-loop-closure Phase 1.1：风温气团段（沿 -wind 回溯混合上风温度）。
+			generator._wind_air_mass_pass(map, _phase_locked)
+			var wa_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+			_round_t_wind_ms += wa_ms
+			var r_wa: Dictionary = _make_pass_result(true, wa_ms, map.cell_count(), 0, map.cell_count())
+			_record_pass_result(pass_id, token, r_wa, wa_ms, "wind_air", "oneshot", "gdscript")
+			return true
+		_PASS_WIND_SURFACE:
+			# 必须在 wind_air 之后：读取气团段写入的 air_mass_temp_anomaly 注入地表温度。
+			generator._wind_surface_pass(map, _phase_locked)
+			var ws_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+			_round_t_wind_ms += ws_ms
+			var r_ws: Dictionary = _make_pass_result(true, ws_ms, map.cell_count(), 0, map.cell_count())
+			_record_pass_result(pass_id, token, r_ws, ws_ms, "wind_surface", "oneshot", "gdscript")
+			return true
 		_PASS_SEA_ICE:
 			if generator.has_method("run_climate_pass_slice"):
 				var r_si: Dictionary = generator.run_climate_pass_slice("sea_ice", map, _phase_locked)
@@ -645,6 +803,7 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 		"pass_a_ms": _round_t_pass_a_ms,
 		"pass_b_ms": _round_t_pass_b_ms,
 		"ocean_ms": _round_t_ocean_ms,
+		"wind_ms": _round_t_wind_ms,
 		"sea_ice_ms": _round_t_sea_ice_ms,
 		"ice_bake_ms": 0.0,
 		"transp_ms": _round_t_transp_ms,
@@ -671,6 +830,7 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 
 # ─── 内部：round 结束时把累积埋点写回 generator + 重置游标 ────────────────
 func _finalize_round() -> void:
+	var finalizer_diag: Dictionary = _apply_daily_climate_finalizer()
 	# A.2.1.A4 — 一 round 完成 → counter +1（30 日 full sweep 触发逻辑在下次 round 入口）
 	_full_sweep_counter += 1
 	# A.2.1.A5 — 把 Pass B 写到 generator 的稀疏指标合并进 breakdown，方便 main.gd 输出
@@ -692,6 +852,7 @@ func _finalize_round() -> void:
 			"pass_a_ms": _round_t_pass_a_ms,
 			"pass_b_ms": _round_t_pass_b_ms,
 			"ocean_ms": _round_t_ocean_ms,
+			"wind_ms": _round_t_wind_ms,
 			"sea_ice_ms": _round_t_sea_ice_ms,
 			"ice_bake_ms": 0.0,  # GPU 海冰上传已迁到 SeaIceAtlasUploadJob
 			"transp_ms": _round_t_transp_ms,
@@ -714,6 +875,12 @@ func _finalize_round() -> void:
 			"pa_pushed_cells": _pa_pushed_out,
 			"pa_total_cells": _pa_total_out,
 			"pa_push_ratio": _pa_push_ratio_out,
+			"max_temp_delta": float(finalizer_diag.get("max_temp_delta", 0.0)),
+			"p99_temp_delta": float(finalizer_diag.get("p99_temp_delta", 0.0)),
+			"max_transport_anomaly": float(finalizer_diag.get("max_transport_anomaly", 0.0)),
+			"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
+			"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),
+			"thermal_finalizer_applied": bool(finalizer_diag.get("thermal_finalizer_applied", false)),
 			# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
 			"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 		}
@@ -736,12 +903,12 @@ func _finalize_round() -> void:
 				var _w_ext = generator.get_data_core_world_ext()
 				if _w_ext != null:
 					_path_str += "+cpp_ext"
-			print("refresh_climate_daily(sliced) #%d: %dms across sub-ticks (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f sea_ice=%.1f transp=%.1f path=%s" % [
+			print("refresh_climate_daily(sliced) #%d: %dms across sub-ticks (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f wind=%.1f sea_ice=%.1f transp=%.1f path=%s" % [
 				n,
 				int(Time.get_ticks_msec() - _round_t_round_start_ms),
 				map.cell_count(),
 				_phase_locked,
-				_round_t_pass_a_ms, _round_t_pass_b_ms, _round_t_ocean_ms, _round_t_sea_ice_ms, _round_t_transp_ms,
+				_round_t_pass_a_ms, _round_t_pass_b_ms, _round_t_ocean_ms, _round_t_wind_ms, _round_t_sea_ice_ms, _round_t_transp_ms,
 				_path_str,
 			])
 	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 启用时，整 round 完成

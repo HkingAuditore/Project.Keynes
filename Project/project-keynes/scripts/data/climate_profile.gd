@@ -119,6 +119,8 @@ extends Resource
 # 导致大多数纬度全年困在雪线一侧（要么常年有雪要么常年无雪）。抬到 0.32
 # 之后 temp_year ∈ [0.10, 0.62] 的纬度带能在一年中真正穿过雪线，雪线随
 # 季节南北推移；高纬海域冬季也能进入海冰窗口 [0, 0.10]。
+# 注意：season_temp_amp 同时影响雪线/海冰/温度偏移——调大可能让极地夏季
+# 过度升温、海冰消失。如需仅放大中纬度季节温差，改 insolation_season_gain。
 @export var season_temp_amp: float = 0.32
 
 # Master switch for daily-continuous climate refresh. When true, MapGenerator
@@ -492,10 +494,17 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var vitality_high_threshold: float = 0.75       # above → upgrade streak
 @export var succession_degrade_days: int = 45           # ~1.5 个月的低 vitality
 @export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
+@export_range(0.0, 1.0, 0.01) var vegetation_degrade_reset_target: float = 0.75
+@export_range(0.0, 1.0, 0.01) var vegetation_low_vitality_damping_threshold: float = 0.40
+@export_range(0, 365, 1) var vegetation_succession_cooldown_days: int = 30
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
 @export var compat_harshness: float = 0.35
 @export_range(0.0, 1.0, 0.05) var vegetation_weather_penalty_scale: float = 0.25
+@export var plant_water_balance_weight: float = 0.35
+@export var plant_soil_buffer_weight: float = 0.30
+@export var plant_drought_penalty: float = 0.25
+@export var succession_min_compat_gain: float = 0.06
 
 # Long-term base_moisture drift from eco_score (Phase 8).
 @export var eco_drift_amp: float = 0.012                # max ±0.012 / year
@@ -572,12 +581,24 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var sea_ice_terrain_threshold: float = 0.68      # frac at which terrain flips to SEA_ICE
 @export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
 @export var sea_ice_neighbor_contagion: float = 0.06     # extra k_freeze if any neighbor frac >= 0.6
+@export var sea_ice_solar_gate_enabled: bool = true      # high current insolation blocks tropical ice growth
+@export var sea_ice_freeze_insol_low: float = 0.30       # freeze gate is fully open below this insolation
+@export var sea_ice_freeze_insol_high: float = 0.55      # freeze gate is fully closed above this insolation
+@export var sea_ice_solar_melt_start: float = 0.45       # current insolation above this adds melt pressure
+@export var sea_ice_solar_melt_gain: float = 0.65        # extra melt per insolation unit above start
+@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.08
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
 @export var coastal_heat_leak_winter_boost: float = 1.5
 @export var snow_albedo_cooling: float = 0.04            # extra cooling per unit snow_cover
 @export var vegetation_cooling: float = 0.025            # extra cooling per unit foliage cover
+# climate-loop-closure Phase 4.1：海冰反照率→温度反馈。Pass B 对水域 cell 按
+# sea_ice_fraction 施加降温 d_temp = -sea_ice_albedo_cooling * sea_ice_frac，闭合
+# "更多海冰→更冷→更多海冰"的温和正反馈(此前海冰是单向温度→冰，缺反照率回写)。
+# Pass B 在海冰 pass 之前跑，读到的是前一日 sea_ice_frac(1 日滞后，稳定)。系数取
+# 小值并配阻尼(每日重算非累积)避免失控；设 0 关闭(回归 legacy 无反馈，A/B 对照)。
+@export_range(0.0, 0.3, 0.005) var sea_ice_albedo_cooling: float = 0.06
 @export var evaporation_gain: float = 0.06               # moisture gain per warm water-neighbor
 @export var landform_diurnal_amp: float = 0.015          # valley/basin diurnal amplification
 
@@ -613,8 +634,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
 @export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.85
 @export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.48
-@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.25
-@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.62
+@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.12
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.80
+@export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
+@export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
@@ -653,6 +676,16 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
 
+# 4) enable_wind_heat_transport
+#    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流
+#    热输运）接入 ClimateDailySystem 的逐日 sliced round。true → 每日在 ocean_land
+#    之后、sea_ice 之前跑 _wind_air_mass_pass + _wind_surface_pass，让上风方向温度
+#    被混合（空间梯度平滑 + 内陆海洋性调节）。false → 跳过（回归到无横向热输运的
+#    legacy 行为）。默认 true。
+#    注：legacy 非切片 wrapper refresh_climate_daily 仍按 enable_ocean_heat_transport
+#    统一控制风温段；本开关只管 sliced 生产路径。
+@export var enable_wind_heat_transport: bool = true
+
 # ══════════════════════════════════════════════════════════════════════
 # [True insolation-driven climate — Phase F]
 # ══════════════════════════════════════════════════════════════════════
@@ -681,10 +714,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # at high latitudes; higher → more extreme. Used to compute subsolar_lat.
 @export_range(0.0, 45.0, 0.5) var axial_tilt_deg: float = 23.5
 
-# Gain applied to (insol_now - insol_annual_mean) when deriving the temperature
-# seasonal offset. Default 1.0 keeps amplitude roughly aligned with legacy
-# season_temp_amp at mid-latitudes.
-@export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.25
+# Gain applied to (insol_now - insol_mean) absolute deviation when deriving
+# the temperature seasonal offset: season_offset = gain × dev × season_temp_amp.
+# C++ native + GDScript SoA 双路径同步生效。
+# dev 已改为绝对日射差(insol_now−insol_mean ∈ [−1,+1])，不再分数化。
+# 配合 thermal_inertia_land=0.35 + delta_cap=0.15，中纬度实际温差 ≈ 增益×0.12。
+# gain=2.0 → 40°N 冬夏温差 ~0.27（基线 63%），肉眼明确可见。
+@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 2.5
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
@@ -737,18 +773,34 @@ const NATIVE_MODE_ACTIVE: int = 2
 ## Native astronomy heat gain applied to per-cell insolation before it is
 ## exposed as cell.heat_input. Keep at 1.0 for Earth-like balance.
 @export_range(0.0, 2.0, 0.05) var solar_gain: float = 1.0
-@export_range(-2.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
-@export_range(0.0, 3.0, 0.05) var insolation_dev_clamp_max: float = 1.5
-@export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.24
+@export_range(-1.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
+@export_range(0.0, 1.0, 0.05) var insolation_dev_clamp_max: float = 1.0
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.35
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_water: float = 0.07
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_snow: float = 0.09
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_high_mountain: float = 0.16
-@export_range(0.0, 0.25, 0.005) var thermal_daily_delta_cap: float = 0.085
+@export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15
+@export var thermal_final_delta_cap_enabled: bool = true
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_daily_cap: float = 0.12
 @export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.10
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.08
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.03
 @export_range(0.0, 0.5, 0.005) var snowpack_cover_low: float = 0.03
 @export_range(0.0, 1.0, 0.005) var snowpack_cover_full: float = 0.25
+
+# climate-loop-closure Phase 2.1：气候态物理雪线（snowline）。
+# 现状问题：snow_cover 完全由天气 snowpack 派生，而冷区往往无降水 → 雪几乎从不
+# 累积（recorder 实测全程 snowpack 峰值仅 0.0136，山顶 snow=0）。物理雪线给每个
+# 陆地 cell 一个"按当前温度决定的基线雪盖"：当 temp_now 低于 snowline_temp_threshold
+# 时，按越阈深度 (threshold - temp_now)/snowline_band 线性升到 1。temp_now 已含
+# 海拔 lapse + 季节项，因此雪线自然随海拔升高、随季节南北推移；天气降雪在此基线
+# 之上叠加波动。在 weather distribute（snow_cover/snowpack 的最终写入处）应用：
+#   climatic_floor = clamp((snowline_temp_threshold - temp_now) / snowline_band, 0, 1)
+#   snowpack   = max(snowpack, climatic_floor)
+#   snow_cover = max(snow_cover, climatic_floor)
+# 设 snowline_temp_threshold=0 可完全关闭（回归到纯天气驱动，用于 A/B 对照）。
+@export_range(0.0, 1.0, 0.005) var snowline_temp_threshold: float = 0.34
+@export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.18
 
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]

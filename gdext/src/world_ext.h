@@ -428,7 +428,7 @@ public:
     //                ↑ 必填（同上）
     //
     //   读：cell_terrain (U8), cell_sea_ice_frac (F32, prev), cell_temp (F32)
-    //       + 入参 PackedArray
+    //       + 入参 PackedArray（含 insolation_now_arr 当前辐照）
     //   写：cell_sea_ice_frac slot；**不**写 cell_terrain slot（terrain 翻转走
     //       GDScript 端 apply_terrain，保持 multi-axis 同步语义；charter §2.5
     //       STRUCT-001 反模式规避）
@@ -544,6 +544,8 @@ public:
     //            streak_days (int)                 — round(scale)
     //            vitality_change_rate (float)
     //            compat_harshness (float)
+    //            plant_water_balance_weight / plant_soil_buffer_weight (float)
+    //            plant_drought_penalty / succession_min_compat_gain (float)
     //            low_threshold (float)
     //            high_threshold (float)
     //            succession_degrade_days (int)
@@ -568,10 +570,11 @@ public:
 	//            low_streak_arr    : PackedInt32Array    (n_cells)
 	//            high_streak_arr   : PackedInt32Array    (n_cells)
 	//
-	//   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp (F32) /
-	//       cell_moisture (F32) / cell_weather_type (U8) /
+	//   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp_30d (F32) /
+	//       cell_moisture / water_balance_30d / soil_moisture (F32) / cell_weather_type (U8) /
 	//       cell_weather_intensity (F32) / cell_weather_field_init (U8)
-	//   写：vitality_arr / low_streak_arr / high_streak_arr (in/out)
+	//   写：vitality_arr / low_streak_arr / high_streak_arr (in/out) /
+	//       cell_vegetation_growth_pressure (target - previous vitality)
     //
     //   knobs 输出回填（C++ 写进 knobs）：
     //     succession_indices : PackedInt32Array  — 触发演替的 cell idx
@@ -618,6 +621,7 @@ public:
     //     标量： n_cells (int)
     //            soil_gain (float)
     //            veg_gain (float)
+    //            write_weather_veg_pressure (bool, optional, default true)
     //            scale (float)              — max(day_scale, 1.0)
     //            per_day_clamp (float)      — feedback_per_day_clamp * scale
     //            ocean_drift_gain (float)   — 0 表示禁用 ocean→base 漂移
@@ -640,6 +644,8 @@ public:
     //       cell_base_moisture (F32) — direct write
     //       + 入参 PackedArray
     //   写：cell_base_moisture (F32) / soil_moisture_arr / veg_growth_pressure_arr (in/out)
+    //       write_weather_veg_pressure=false 时保留 vegetation_dynamics 当 tick 写入的
+    //       target-vitality 生态压力信号。
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_climate_feedback_pass(godot::Dictionary knobs);
@@ -690,6 +696,8 @@ public:
     //       day_scale (float)
     //       streak_days (int)
     //       vitality_change_rate / compat_harshness (float)
+    //       plant_water_balance_weight / plant_soil_buffer_weight (float)
+    //       plant_drought_penalty / succession_min_compat_gain (float)
     //       low_threshold / high_threshold (float)
     //       succession_degrade_days / succession_upgrade_days (int)
     //       n_wt (int)
@@ -704,6 +712,7 @@ public:
     //
     //     feedback 段（仅 run_feedback=true 时读）：
     //       soil_gain / veg_gain / scale / per_day_clamp / ocean_drift_gain (float)
+    //       write_weather_veg_pressure (bool, optional, default true)
     //       wt_rain_id / wt_storm_id / wt_monsoon_id /
     //       wt_blizzard_id / wt_drought_id / wt_heatwave_id (int)
 	//       neighbor_indices : PackedInt32Array (n_cells * 6)

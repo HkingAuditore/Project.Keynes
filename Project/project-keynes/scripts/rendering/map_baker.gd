@@ -385,6 +385,10 @@ var _slp_commit_diag_count: int = 0
 var _slp_first_run_logged: bool = false
 var _slp_native_ms_last: float = -1.0
 var _slp_path_str_last: String = "gdscript"
+# 临时根因诊断（SLP/wind 冻结排查 2026-06-08）：运行期每 N 次调用打印一次
+# rc / size / 是否进入 commit，区分 C++ fallback(rc<0) 与 commit gate 拦截(size 不符)。
+# 不受上面 3 次上限限制，定位"为何 map.slp_arr 全程不更新"。排查完可删除。
+var _slp_rt_diag_count: int = 0
 # plan/dots-slp-psi-cpp — PSI stage 3+4+5 fused C++ path diagnostics.
 var _psi_path_log_count: int = 0
 var _psi_commit_diag_count: int = 0
@@ -4829,6 +4833,18 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d" % [
 								_slp_commit_diag_count, rc_slp, slp_out.size(), n_slp, map.slp_arr.size()
 							])
+						# 运行期根因诊断（每 200 次调用 + 前 5 次打印一次），定位 SLP 冻结：
+						# - commit_ok=true  → 已写回 map.slp_arr，理应随 season 变化
+						# - rc<0            → C++ pass 内部走了 fallback(返回 dict 但无效)
+						# - size_mismatch   → commit gate 因 slp_out.size()!=n_cells 拦截
+						_slp_rt_diag_count += 1
+						if _slp_rt_diag_count <= 5 or _slp_rt_diag_count % 200 == 0:
+							var _commit_ok: bool = rc_slp >= 0.0 and slp_out.size() == n_slp
+							var _reason: String = "commit_ok" if _commit_ok else \
+								("rc<0(cpp_fallback)" if rc_slp < 0.0 else "size_mismatch(gate_block)")
+							print("[slp_field][RT-DIAG] call#%d phase=%.4f rc=%.3f slp_out=%d n=%d -> %s" % [
+								_slp_rt_diag_count, season_phase, rc_slp, slp_out.size(), n_slp, _reason
+							])
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
 							# SLP slice 优化（2026-05-18）：原 commit 走两轮：
 							#   1) for i: cells_for_slp_cpp[i].slp = slp_out[i]
@@ -4853,6 +4869,15 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if not _slp_done_by_cpp:
 				if _slp_path_log_count > 0 and _slp_path_log_count <= 3:
 					print("[slp_field] FALLBACK to GDScript solve_slp_field (call#%d) — see preceding path-decision / commit-diag for reason" % _slp_path_log_count)
+				# 运行期诊断：进入此分支即说明 C++ commit 未成功（没进 C++ 分支 /
+				# 返回 null / gate 拦截）。打印 has_soa——若为 true，下面镜像写回被跳过，
+				# GDScript 只写了 HexCell.slp(SoA)，若 SoA 与 map.slp_arr 不同步则冻结。
+				_slp_rt_diag_count += 1
+				if _slp_rt_diag_count <= 5 or _slp_rt_diag_count % 200 == 0:
+					print("[slp_field][RT-DIAG] call#%d phase=%.4f -> GDSCRIPT_FALLBACK has_soa=%s (镜像写回 %s)" % [
+						_slp_rt_diag_count, season_phase, str(map.has_soa()),
+						"SKIP" if map.has_soa() else "DONE"
+					])
 				PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
 				# Fallback path 内部用 HexCell.slp setter（_facade_enabled=true 时已
 				# 写 SoA），这里仅在 facade 关闭/非完整迁移的兼容窗口里做兜底镜像。
