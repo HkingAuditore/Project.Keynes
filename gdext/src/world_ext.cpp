@@ -2248,19 +2248,22 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             const float elevation      = pe[i];
             const bool  is_water       = piw[i] != 0;
 
-            // (a) dev_today — bilinear LUT lookup
+            // (a) dev_today — absolute insolation deviation (not fractional).
+            // Absolute (insol_now − mean) keeps the seasonal signal scale
+            // uniform across latitudes (~0.15–0.35), whereas fractional
+            // (insol_now/mean − 1) diverges by >100× between equator and pole.
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
             const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
-            float dev_today = (insol_mean > 1e-4f)
-                    ? ((insol_now - insol_mean) / insol_mean)
-                    : 0.0f;
+            float dev_today = insol_now - insol_mean;
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
             const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
-            // (b) moisture
+            // (b) moisture — note: dev_today is now absolute, not fractional,
+            // so the (1 + 0.2*dev) modifier becomes (1 + 0.2*abs_dev).
+            // abs_dev ∈ [−1,1] gives modifier range [0.8, 1.2] — still safe.
             float moisture_now;
             if (is_water) {
                 moisture_now = pbm[i];
@@ -2273,14 +2276,13 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             }
 
             // (c) temperature
-            // 2026-05-18 雪线修正：alt_penalty 双段式（与 GDScript _alt_penalty / shader compute_current_temp SAME_SOURCE）。
-            //   lin = elev * 0.55；hi = smoothstep(0.45, 1.0, elev) * 0.30
-            //   高山顶（elev=0.85）总扣减 ≈ 0.467 + 0.198 ≈ 0.665（vs 旧 0.425）。
-            const float alt_pen_lin = elevation * 0.55f;
+            // alt_penalty 双段式（0.55→0.40, 0.30→0.22：降低海拔效应，让季节温差占主导）。
+            //   lin = elev * 0.40；hi = smoothstep(0.45, 1.0, elev) * 0.22
+            const float alt_pen_lin = elevation * 0.40f;
             float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
             if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
             else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
-            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.30f;
+            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.22f;
             float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
@@ -2574,9 +2576,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
             const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
-            float dev_today = (insol_mean > 1e-4f)
-                    ? ((insol_now - insol_mean) / insol_mean)
-                    : 0.0f;
+            float dev_today = insol_now - insol_mean;
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
@@ -2593,11 +2593,11 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 moisture_now = bm;
             }
 
-            const float alt_pen_lin = elevation * 0.55f;
+            const float alt_pen_lin = elevation * 0.40f;
             float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
             if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
             else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
-            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.30f;
+            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.22f;
             float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
@@ -3509,9 +3509,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_precip_decay      = knobs.has("field_precip_decay")
                                             ? float(knobs["field_precip_decay"]) : 0.48f;
     const float field_precip_carryover_max = knobs.has("field_precip_carryover_max")
-                                            ? float(knobs["field_precip_carryover_max"]) : 0.25f;
+                                            ? float(knobs["field_precip_carryover_max"]) : 0.12f;
     const float field_vapor_precip_sink = knobs.has("field_vapor_precip_sink")
-                                            ? float(knobs["field_vapor_precip_sink"]) : 0.62f;
+                                            ? float(knobs["field_vapor_precip_sink"]) : 0.80f;
+    const float field_vapor_relax_rate = knobs.has("field_vapor_relax_rate")
+                                            ? float(knobs["field_vapor_relax_rate"]) : 0.08f;
+    const float field_orographic_lift_cap = knobs.has("field_orographic_lift_cap")
+                                            ? float(knobs["field_orographic_lift_cap"]) : 0.35f;
     const float hex_size                = knobs.has("hex_size")
                                             ? float(knobs["hex_size"]) : 22.0f;
 
@@ -3753,7 +3757,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         float lift_gate = (vapor - 0.10f) / 0.40f;
         if (lift_gate < 0.0f) lift_gate = 0.0f;
         else if (lift_gate > 1.0f) lift_gate = 1.0f;
-        const float lift_supply = lift_pos * lift_gate;
+        float lift_supply = lift_pos * lift_gate;
+        if (lift_supply > field_orographic_lift_cap) lift_supply = field_orographic_lift_cap;
 
         // (line 726-732) cloud
         float effective_oa_pos = (effective_ocean_an > 0.0f) ? effective_ocean_an : 0.0f;
@@ -3791,7 +3796,14 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                             - lift_neg * 0.55f;
         if (precip_source < 0.0f) precip_source = 0.0f;
         const float precip_raw = precip_source * 1.05f * rain_focus;
-        const float old_precip = PP[i];
+        // climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格
+        // (upstream_idx) 继承，权重随 wind_mag 增大 → 雨带随锋面下风迁移。
+        // 1:1 mirror of field_solver.gd precip-advection block. advect_steps==0
+        // → upstream_idx<0 → 退回 legacy 同格 carryover。
+        float old_precip = PP[i];
+        if (upstream_idx >= 0 && upstream_idx < n_cells) {
+            old_precip = old_precip + (PP[upstream_idx] - old_precip) * wind_mag;
+        }
         float vapor_floor_factor = (vapor - 0.18f) / 0.36f;
         if (vapor_floor_factor < 0.0f) vapor_floor_factor = 0.0f;
         else if (vapor_floor_factor > 1.0f) vapor_floor_factor = 1.0f;
@@ -3809,6 +3821,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (precip < 0.02f) precip = 0.0f;
         float vapor_after_precip = vapor - precip * field_vapor_precip_sink;
         if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
+        if (precip < 0.02f && cloud < 0.12f && field_vapor_relax_rate > 0.0f) {
+            vapor_after_precip = vapor_after_precip + (base_m - vapor_after_precip) * field_vapor_relax_rate;
+        }
 
         // (line 749-750) classify + intensity
         uint8_t wt = wf_classify_field_weather_at(
@@ -4331,6 +4346,12 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     const int foliage_size = foliage_arr.size();
     if (foliage_size <= 0) { diag("foliage_table empty"); return -1.0; }
 
+    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈（可选 knobs；缺省 0 = 关闭）。
+    const float sea_ice_albedo_cooling = knobs.has("sea_ice_albedo_cooling") ? float(knobs["sea_ice_albedo_cooling"]) : 0.0f;
+    PackedFloat32Array sif_arr_pb;
+    if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
+    const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+
     // ─── Acquire slot arrays + validate sizes ───────────────────────────
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_moist    = _slots.write[sid_moist];
@@ -4525,6 +4546,17 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
         if (moisture_final < 0.0f) moisture_final = 0.0f;
         else if (moisture_final > 1.0f) moisture_final = 1.0f;
         M[i] = moisture_final;
+    }
+
+    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域）。
+    // 标量小循环，scalar/SIMD 两个入口共用同一形态 → A/B bit-equal。
+    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            if (IW[i] == 0) continue;
+            float t = T[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (t < 0.0f) t = 0.0f;
+            T[i] = t;
+        }
     }
 
     // §11.2 flush: push CoW-detached temp + moisture back to MapData
@@ -4831,6 +4863,12 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     ctx.foliage_size = foliage_arr.size();
     if (ctx.foliage_size <= 0) { diag("foliage_table empty"); return -1.0; }
 
+    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈（可选 knobs；缺省 0 = 关闭）。
+    const float sea_ice_albedo_cooling = knobs.has("sea_ice_albedo_cooling") ? float(knobs["sea_ice_albedo_cooling"]) : 0.0f;
+    PackedFloat32Array sif_arr_pb;
+    if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
+    const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_moist    = _slots.write[sid_moist];
     Slot &s_snow     = _slots.write[sid_snow];
@@ -4882,6 +4920,16 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
 
     // Hot loop：仅遍历 land cells，直线代码无 if-water 分支。
     pass_b_run_land_range(ctx, land_idx.data(), 0, n_land);
+
+    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域；与 scalar 同形态）。
+    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            if (ctx.IW[i] == 0) continue;
+            float t = ctx.T[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (t < 0.0f) t = 0.0f;
+            ctx.T[i] = t;
+        }
+    }
 
     _flush_slot_to_map(sid_temp);
     _flush_slot_to_map(sid_moist);
@@ -5587,6 +5635,31 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
 // terrain 翻转**不**在 C++ 端写——只输出 flip lists，由 GDScript apply_terrain
 // 维护 multi-axis 同步（passable_land / passable_sea / landform 等派生字段）。
 // 这是 charter §2.5 STRUCT-001 反模式规避：C++ 不应直接改 multi-axis enum。
+static inline float sea_ice_smoothstep(float edge0, float edge1, float x) {
+    const float span = edge1 - edge0;
+    if (span == 0.0f) {
+        return x < edge0 ? 0.0f : 1.0f;
+    }
+    float t = (x - edge0) / span;
+    if (t < 0.0f) t = 0.0f;
+    else if (t > 1.0f) t = 1.0f;
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static inline float sea_ice_freeze_gate(float insolation_now, float freeze_low, float freeze_high) {
+    const float high = std::max(freeze_high, freeze_low + 0.001f);
+    const float gate = 1.0f - sea_ice_smoothstep(freeze_low, high, insolation_now);
+    if (gate < 0.0f) return 0.0f;
+    if (gate > 1.0f) return 1.0f;
+    return gate;
+}
+
+static inline float sea_ice_solar_melt(float insolation_now, float melt_start, float melt_gain) {
+    const float gain = std::max(melt_gain, 0.0f);
+    const float excess = insolation_now - melt_start;
+    return excess > 0.0f ? gain * excess : 0.0f;
+}
+
 double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) {
     using godot::StringName;
     using godot::PackedFloat32Array;
@@ -5622,6 +5695,9 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         "water_terrain_ids", // PackedByteArray，与 GDScript _is_water 1:1 对齐
         "neighbor_indices", "base_terrain_arr",
         "temp_transport_anomaly", "upwelling_strength",
+        "insolation_now_arr", "solar_gate_enabled",
+        "freeze_insol_low", "freeze_insol_high",
+        "solar_melt_start", "solar_melt_gain",
         "cell_temperature_arr", // climate/ocean-adjusted temperature; no direct season signal here
     };
     for (const char *k : required_keys) {
@@ -5644,6 +5720,12 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const float ice_delay   = float(knobs["ice_delay"]);
     const bool  enable_oht  = bool(knobs["enable_ocean_heat_transport"]);
     const bool  apply_terrain_flips = bool(knobs.get("apply_terrain_flips", false));
+    const bool  solar_gate_enabled = bool(knobs["solar_gate_enabled"]);
+    const float freeze_insol_low = float(knobs["freeze_insol_low"]);
+    const float freeze_insol_high = float(knobs["freeze_insol_high"]);
+    const float solar_melt_start = float(knobs["solar_melt_start"]);
+    const float solar_melt_gain = float(knobs["solar_melt_gain"]);
+    const float daily_delta_cap = knobs.has("daily_delta_cap") ? float(knobs["daily_delta_cap"]) : 0.08f;
     const int   id_lake     = int(knobs["terrain_lake_id"]);
     const int   id_sea_ice  = int(knobs["terrain_sea_ice_id"]);
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
@@ -5663,12 +5745,14 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
     PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
     PackedFloat32Array upw_arr = knobs["upwelling_strength"];
+    PackedFloat32Array insol_arr = knobs["insolation_now_arr"];
     PackedByteArray   water_ids_arr = knobs["water_terrain_ids"];
     PackedFloat32Array cell_temp_arr = knobs["cell_temperature_arr"];
     if (nb_arr.size() < n_cells * 6) { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
     if (base_terr_arr.size() < n_cells) { diag("base_terrain_arr size < n_cells"); return -1.0; }
     if (tta_arr.size() < n_cells)       { diag("temp_transport_anomaly size < n_cells"); return -1.0; }
     if (upw_arr.size() < n_cells)       { diag("upwelling_strength size < n_cells"); return -1.0; }
+    if (insol_arr.size() < n_cells)     { diag("insolation_now_arr size < n_cells"); return -1.0; }
     if (water_ids_arr.size() <= 0)      { diag("water_terrain_ids empty"); return -1.0; }
     if (cell_temp_arr.size() < n_cells) { diag("cell_temperature_arr size < n_cells"); return -1.0; }
 
@@ -5699,6 +5783,7 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const uint8_t * const __restrict BT   = base_terr_arr.ptr();
     const float   * const __restrict TTA  = tta_arr.ptr();
     const float   * const __restrict UPW  = upw_arr.ptr();
+    const float   * const __restrict INS  = insol_arr.ptr();
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -5776,7 +5861,19 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         // [S2 fix 2026-05-23] 乘 dt_days：见 prelude dt_days 注释。
         const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
         const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-        const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
+        float freeze_gate = 1.0f;
+        float solar_melt = 0.0f;
+        if (solar_gate_enabled) {
+            const float insolation_now = INS[i];
+            freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
+            solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain);
+        }
+        float d_frac = (k_freeze_eff * diff_freeze * freeze_gate
+                      - (k_melt * diff_melt + solar_melt)) * dt_days;
+        if (daily_delta_cap > 0.0f) {
+            if (d_frac > daily_delta_cap) d_frac = daily_delta_cap;
+            else if (d_frac < -daily_delta_cap) d_frac = -daily_delta_cap;
+        }
         const float prev_frac = SIF[i];
         float new_frac = prev_frac + d_frac;
         if (new_frac < 0.0f) new_frac = 0.0f;
@@ -5870,6 +5967,9 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
         "water_terrain_ids",
         "neighbor_indices", "base_terrain_arr",
         "temp_transport_anomaly", "upwelling_strength",
+        "insolation_now_arr", "solar_gate_enabled",
+        "freeze_insol_low", "freeze_insol_high",
+        "solar_melt_start", "solar_melt_gain",
         "cell_temperature_arr",
     };
     for (const char *k : required_keys) {
@@ -5891,6 +5991,12 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     const float hysteresis  = float(knobs["hysteresis"]);
     const float ice_delay   = float(knobs["ice_delay"]);
     const bool  enable_oht  = bool(knobs["enable_ocean_heat_transport"]);
+    const bool  solar_gate_enabled = bool(knobs["solar_gate_enabled"]);
+    const float freeze_insol_low = float(knobs["freeze_insol_low"]);
+    const float freeze_insol_high = float(knobs["freeze_insol_high"]);
+    const float solar_melt_start = float(knobs["solar_melt_start"]);
+    const float solar_melt_gain = float(knobs["solar_melt_gain"]);
+    const float daily_delta_cap = knobs.has("daily_delta_cap") ? float(knobs["daily_delta_cap"]) : 0.08f;
     const int   id_lake     = int(knobs["terrain_lake_id"]);
     const int   id_sea_ice  = int(knobs["terrain_sea_ice_id"]);
     const int   id_ocean    = int(knobs["terrain_ocean_id"]);
@@ -5908,12 +6014,14 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     PackedByteArray   base_terr_arr = knobs["base_terrain_arr"];
     PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
     PackedFloat32Array upw_arr = knobs["upwelling_strength"];
+    PackedFloat32Array insol_arr = knobs["insolation_now_arr"];
     PackedByteArray   water_ids_arr = knobs["water_terrain_ids"];
     PackedFloat32Array cell_temp_arr = knobs["cell_temperature_arr"];
     if (nb_arr.size() < n_cells * 6) { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
     if (base_terr_arr.size() < n_cells) { diag("base_terrain_arr size < n_cells"); return -1.0; }
     if (tta_arr.size() < n_cells)       { diag("temp_transport_anomaly size < n_cells"); return -1.0; }
     if (upw_arr.size() < n_cells)       { diag("upwelling_strength size < n_cells"); return -1.0; }
+    if (insol_arr.size() < n_cells)     { diag("insolation_now_arr size < n_cells"); return -1.0; }
     if (water_ids_arr.size() <= 0)      { diag("water_terrain_ids empty"); return -1.0; }
     if (cell_temp_arr.size() < n_cells) { diag("cell_temperature_arr size < n_cells"); return -1.0; }
 
@@ -5939,6 +6047,7 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     const uint8_t * const __restrict BT   = base_terr_arr.ptr();
     const float   * const __restrict TTA  = tta_arr.ptr();
     const float   * const __restrict UPW  = upw_arr.ptr();
+    const float   * const __restrict INS  = insol_arr.ptr();
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -6020,8 +6129,20 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
 
                 const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
                 const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
+                float freeze_gate = 1.0f;
+                float solar_melt = 0.0f;
+                if (solar_gate_enabled) {
+                    const float insolation_now = INS[i];
+                    freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
+                    solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain);
+                }
                 // [S2 fix 2026-05-23] 乘 dt_days：与 scalar 路径 1:1。
-                const float d_frac = (k_freeze_eff * diff_freeze - k_melt * diff_melt) * dt_days;
+                float d_frac = (k_freeze_eff * diff_freeze * freeze_gate
+                              - (k_melt * diff_melt + solar_melt)) * dt_days;
+                if (daily_delta_cap > 0.0f) {
+                    if (d_frac > daily_delta_cap) d_frac = daily_delta_cap;
+                    else if (d_frac < -daily_delta_cap) d_frac = -daily_delta_cap;
+                }
                 const float prev_frac = SIF[i];
                 float new_frac = prev_frac + d_frac;
                 if (new_frac < 0.0f) new_frac = 0.0f;
@@ -6415,6 +6536,65 @@ double DCWorldExt::run_albedo_pass_thread(const Dictionary &knobs, int n_tasks) 
 // 私有字段），所以走 knobs in/out PackedArray 模式：caller pack 进入 → C++
 // 写回 → caller unpack 回 cell。N=2400 时 6 个 PackedArray 一进一出的总开销
 // 约 0.05ms，远小于跑算法的 ~9ms。
+
+static inline float vegdyn_clamp01(float v) {
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
+
+static inline float vegdyn_plant_water(
+        float moisture,
+        float water_balance_30d,
+        float soil_moisture,
+        float water_balance_weight,
+        float soil_buffer_weight,
+        float drought_penalty) {
+    const float wb_pos = water_balance_30d > 0.0f ? water_balance_30d : 0.0f;
+    const float wb_neg = water_balance_30d < 0.0f ? water_balance_30d : 0.0f;
+    const float soil_pos = soil_moisture > 0.0f ? soil_moisture : 0.0f;
+    return vegdyn_clamp01(
+        moisture
+        + wb_pos * water_balance_weight
+        + soil_pos * soil_buffer_weight
+        + wb_neg * drought_penalty);
+}
+
+static inline float vegdyn_compat_of(
+        int vg,
+        float temp,
+        float plant_water,
+        int n_veg,
+        const float *IDT,
+        const float *IDM,
+        const float *TLT,
+        const float *TLM) {
+    if (vg < 0 || vg >= n_veg) return -1.0f;
+    const float tt = TLT[vg] < 0.01f ? 0.01f : TLT[vg];
+    const float tm = TLM[vg] < 0.01f ? 0.01f : TLM[vg];
+    const float dt = (temp - IDT[vg]) / tt;
+    const float dm = (plant_water - IDM[vg]) / tm;
+    return std::exp(-0.5f * (dt * dt + dm * dm));
+}
+
+static inline float vegdyn_weather_stress(
+        uint8_t v_id,
+        int wt,
+        float wi,
+        int n_veg,
+        int n_wt,
+        int wt_pen_size,
+        const float *WPN,
+        const float *RES,
+        float weather_penalty_scale) {
+    const float base_pen = (wt >= 0 && wt < wt_pen_size) ? WPN[wt] : 0.0f;
+    float resist = 0.0f;
+    if (v_id < n_veg && wt >= 0 && wt < n_wt) {
+        resist = RES[int(v_id) * n_wt + wt];
+    }
+    return base_pen * weather_penalty_scale * (wi > 0.0f ? wi : 0.0f) * (1.0f - resist);
+}
+
 double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     using godot::StringName;
     using godot::PackedFloat32Array;
@@ -6437,11 +6617,12 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const int sid_moist    = component_id(StringName("cell_moisture"));
     const int sid_water_bal = component_id(StringName("cell_water_balance_30d"));
     const int sid_soil     = component_id(StringName("cell_soil_moisture"));
+    const int sid_vgp      = component_id(StringName("cell_vegetation_growth_pressure"));
     const int sid_wt_type  = component_id(StringName("cell_weather_type"));
     const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
     const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
     if (sid_iswater < 0 || sid_veg < 0 || sid_temp < 0 || sid_temp_30d < 0 ||
-        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 ||
+        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 || sid_vgp < 0 ||
         sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
         diag("missing slot id (cell_is_water/vegetation/temp/moisture/weather_type/weather_intensity/weather_field_init)");
         return -1.0;
@@ -6451,6 +6632,8 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     static const char *required_scalars[] = {
         "n_cells", "day_scale", "streak_days",
         "vitality_change_rate", "compat_harshness",
+        "plant_water_balance_weight", "plant_soil_buffer_weight",
+        "plant_drought_penalty", "succession_min_compat_gain",
         "low_threshold", "high_threshold",
         "succession_degrade_days", "succession_upgrade_days",
         "n_wt", "wt_clear_id", "veg_none_id",
@@ -6472,7 +6655,16 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const int   n_wt          = int(knobs["n_wt"]);
     const int   wt_clear_id   = int(knobs["wt_clear_id"]);
     const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
+    (void)veg_none_id;
     const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
+    const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
+    const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
+    const float plant_drought_penalty = float(knobs["plant_drought_penalty"]);
+    const float succession_min_compat_gain = float(knobs["succession_min_compat_gain"]);
+    const float low_vitality_damping_threshold = knobs.has("vegetation_low_vitality_damping_threshold")
+                                               ? float(knobs["vegetation_low_vitality_damping_threshold"]) : 0.40f;
+    const int   succession_cooldown_days = knobs.has("vegetation_succession_cooldown_days")
+                                         ? int(knobs["vegetation_succession_cooldown_days"]) : 30;
     if (n_wt <= 0) { diag("n_wt <= 0"); return -1.0; }
 
     // ─── Pull tables ────────────────────────────────────────────────────
@@ -6525,13 +6717,14 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     Slot &s_moist   = _slots.write[sid_moist];
     Slot &s_wb      = _slots.write[sid_water_bal];
     Slot &s_soil    = _slots.write[sid_soil];
+    Slot &s_vgp     = _slots.write[sid_vgp];
     Slot &s_wt_type = _slots.write[sid_wt_type];
     Slot &s_wt_int  = _slots.write[sid_wt_int];
     Slot &s_wt_init = _slots.write[sid_wt_init];
     if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_temp.arr_f32.size()   != n_cells || s_temp30.arr_f32.size() != n_cells ||
         s_moist.arr_f32.size()  != n_cells || s_wb.arr_f32.size()     != n_cells ||
-        s_soil.arr_f32.size()   != n_cells ||
+        s_soil.arr_f32.size()   != n_cells || s_vgp.arr_f32.size()    != n_cells ||
         s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
         s_wt_init.arr_u8.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
@@ -6546,6 +6739,7 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const float   * const __restrict M    = s_moist.arr_f32.ptr();
     const float   * const __restrict WBAL = s_wb.arr_f32.ptr();
     const float   * const __restrict SOILC = s_soil.arr_f32.ptr();
+    float         * const __restrict VGP  = s_vgp.arr_f32.ptrw();
     const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
     const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
     const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
@@ -6574,40 +6768,10 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
         if (IW[i] != 0) continue;                                  // skip water
         const uint8_t v_id = VG[i];
         const float temp = T30[i];
-        const float soil_buffer = SOILC[i] > 0.0f ? SOILC[i] : 0.0f;
-        float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
-        if (moist < 0.0f) moist = 0.0f;
-        else if (moist > 1.0f) moist = 1.0f;
-
-        // compat = exp(-0.5 * (dt² + dm²)) — guard tol > 0.01 (mirror GDScript max(tol,0.01))
-        float compat = 0.0f;
-        if (v_id < n_veg) {
-            const float tt = TLT[v_id] < 0.01f ? 0.01f : TLT[v_id];
-            const float tm = TLM[v_id] < 0.01f ? 0.01f : TLM[v_id];
-            const float dt = (temp  - IDT[v_id]) / tt;
-            const float dm = (moist - IDM[v_id]) / tm;
-            const float k = 0.5f * (dt * dt + dm * dm);
-            compat = std::exp(-k);
-        }
-
-        // dv (asymmetric drift + tiny dead zone in (0.48, 0.52); NONE skipped)
-        // vegetation-survival-rebalance v2 (方案 B 收窄死区)：
-        //   compat ≥ 0.52 → 正向恢复
-        //   compat ≤ 0.48 → 负向退化，乘 harshness
-        //   compat ∈ (0.48, 0.52) → 死区 dv = 0（仅过滤数值噪声）
-        float dv = 0.0f;
-        if (v_id != veg_none_id) {
-            if (compat >= 0.52f) {
-                dv = (compat - 0.5f) * 2.0f * rate;
-            } else if (compat <= 0.48f) {
-                dv = -(0.5f - compat) * 2.0f * rate * harshness;
-            }
-            if (dv < 0.0f) {
-                float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
-                if (water_buffer > 0.60f) water_buffer = 0.60f;
-                dv *= (1.0f - water_buffer);
-            }
-        }
+        const float plant_water = vegdyn_plant_water(
+            M[i], WBAL[i], SOILC[i],
+            plant_water_balance_weight, plant_soil_buffer_weight, plant_drought_penalty);
+        const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
 
         // weather penalty (clamp wt to valid id range; no init → CLEAR)
         int wt = wt_clear_id;
@@ -6616,27 +6780,40 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
             wt = int(WTT[i]);
             wi = WTI[i];
         }
-        float base_pen = (wt >= 0 && wt < wt_pen_arr.size()) ? WPN[wt] : 0.0f;
-        float resist = 0.0f;
-        if (v_id < n_veg && wt >= 0 && wt < n_wt) {
-            resist = RES[int(v_id) * n_wt + wt];
+        const float weather_stress = vegdyn_weather_stress(
+            v_id, wt, wi, n_veg, n_wt, wt_pen_arr.size(), WPN, RES, weather_penalty_scale);
+        const float target = vegdyn_clamp01(compat - weather_stress);
+        const float prev_vit = VIT[i];
+        float dv = (target - prev_vit) * rate;
+        if (dv < 0.0f) {
+            dv *= harshness;
+            if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
+                float damping = prev_vit / low_vitality_damping_threshold;
+                if (damping < 0.25f) damping = 0.25f;
+                else if (damping > 1.0f) damping = 1.0f;
+                dv *= damping;
+            }
         }
-        const float penalty = base_pen * weather_penalty_scale * wi * (1.0f - resist);
-        dv -= penalty;
+        VGP[i] = target - prev_vit;
 
         // vitality update (clamp 0..1)
-        float vit = VIT[i] + dv * scale;
-        if (vit < 0.0f) vit = 0.0f;
-        else if (vit > 1.0f) vit = 1.0f;
+        float vit = vegdyn_clamp01(prev_vit + dv * scale);
         VIT[i] = vit;
 
         // streak update
         int ls = LSK[i];
         int hs = HSK[i];
-        if (vit < low_thresh) {
+        if (ls < 0 || hs < 0) {
+            ls += streak_days; if (ls > 0) ls = 0;
+            hs += streak_days; if (hs > 0) hs = 0;
+            LSK[i] = ls;
+            HSK[i] = hs;
+            continue;
+        }
+        if (vit < low_thresh && target < low_thresh) {
             ls += streak_days;
             hs = 0;
-        } else if (vit > high_thresh) {
+        } else if (vit > high_thresh && target > high_thresh) {
             hs += streak_days;
             ls = 0;
         } else {
@@ -6647,12 +6824,25 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
         // succession candidate decision (degrade priority — mirror GDScript order)
         bool fired = false;
         if (ls >= degrade_days) {
-            uint8_t nxt = (v_id < n_veg) ? NXD[v_id] : v_id;
-            if (nxt != v_id) {
+            // climate-loop-closure Phase 3.2：气候导向退化目标——在 harsher/richer
+            // 两候选里挑 compat 更高者(过湿→richer 湿生，过旱→harsher 荒漠)。
+            uint8_t nxt = v_id;
+            float best_sc = -1.0f;
+            if (v_id < n_veg) {
+                const uint8_t cand_d = NXD[v_id];
+                const uint8_t cand_u = NXU[v_id];
+                if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
+                if (cand_u != v_id) {
+                    const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
+                    if (su > best_sc) { nxt = cand_u; best_sc = su; }
+                }
+            }
+            if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
                 succ_indices.push_back(i);
                 succ_to_veg.push_back(nxt);
-                ls = 0;
-                hs = 0;
+                const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                ls = cooldown;
+                hs = cooldown;
                 fired = true;
             } else {
                 // 没有下家：把 ls 清零防止反复触发（与 GDScript 一致）
@@ -6661,11 +6851,13 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
         }
         if (!fired && hs >= upgrade_days) {
             uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-            if (nxt != v_id) {
+            const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM) : -1.0f;
+            if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                 succ_indices.push_back(i);
                 succ_to_veg.push_back(nxt);
-                ls = 0;
-                hs = 0;
+                const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                ls = cooldown;
+                hs = cooldown;
             } else {
                 hs = 0;
             }
@@ -6692,6 +6884,7 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     knobs["vitality_arr"]   = vitality_arr;
     knobs["low_streak_arr"] = low_streak;
     knobs["high_streak_arr"]= high_streak;
+    _flush_slot_to_map(sid_vgp);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -6727,11 +6920,12 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const int sid_moist    = component_id(StringName("cell_moisture"));
     const int sid_water_bal = component_id(StringName("cell_water_balance_30d"));
     const int sid_soil     = component_id(StringName("cell_soil_moisture"));
+    const int sid_vgp      = component_id(StringName("cell_vegetation_growth_pressure"));
     const int sid_wt_type  = component_id(StringName("cell_weather_type"));
     const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
     const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
     if (sid_iswater < 0 || sid_veg < 0 || sid_temp < 0 || sid_temp_30d < 0 ||
-        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 ||
+        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 || sid_vgp < 0 ||
         sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
         diag("missing slot id");
         return -1.0;
@@ -6740,6 +6934,8 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     static const char *required_scalars[] = {
         "n_cells", "day_scale", "streak_days",
         "vitality_change_rate", "compat_harshness",
+        "plant_water_balance_weight", "plant_soil_buffer_weight",
+        "plant_drought_penalty", "succession_min_compat_gain",
         "low_threshold", "high_threshold",
         "succession_degrade_days", "succession_upgrade_days",
         "n_wt", "wt_clear_id", "veg_none_id",
@@ -6761,7 +6957,16 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const int   n_wt          = int(knobs["n_wt"]);
     const int   wt_clear_id   = int(knobs["wt_clear_id"]);
     const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
+    (void)veg_none_id;
     const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
+    const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
+    const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
+    const float plant_drought_penalty = float(knobs["plant_drought_penalty"]);
+    const float succession_min_compat_gain = float(knobs["succession_min_compat_gain"]);
+    const float low_vitality_damping_threshold = knobs.has("vegetation_low_vitality_damping_threshold")
+                                               ? float(knobs["vegetation_low_vitality_damping_threshold"]) : 0.40f;
+    const int   succession_cooldown_days = knobs.has("vegetation_succession_cooldown_days")
+                                         ? int(knobs["vegetation_succession_cooldown_days"]) : 30;
     if (n_wt <= 0) { diag("n_wt <= 0"); return -1.0; }
 
     static const char *required_tables[] = {
@@ -6812,13 +7017,14 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     Slot &s_moist   = _slots.write[sid_moist];
     Slot &s_wb      = _slots.write[sid_water_bal];
     Slot &s_soil    = _slots.write[sid_soil];
+    Slot &s_vgp     = _slots.write[sid_vgp];
     Slot &s_wt_type = _slots.write[sid_wt_type];
     Slot &s_wt_int  = _slots.write[sid_wt_int];
     Slot &s_wt_init = _slots.write[sid_wt_init];
     if (s_iswater.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_temp.arr_f32.size()   != n_cells || s_temp30.arr_f32.size() != n_cells ||
         s_moist.arr_f32.size()  != n_cells || s_wb.arr_f32.size()     != n_cells ||
-        s_soil.arr_f32.size()   != n_cells ||
+        s_soil.arr_f32.size()   != n_cells || s_vgp.arr_f32.size()    != n_cells ||
         s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
         s_wt_init.arr_u8.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
@@ -6833,6 +7039,7 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const float   * const __restrict M    = s_moist.arr_f32.ptr();
     const float   * const __restrict WBAL = s_wb.arr_f32.ptr();
     const float   * const __restrict SOILC = s_soil.arr_f32.ptr();
+    float         * const __restrict VGP  = s_vgp.arr_f32.ptrw();
     const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
     const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
     const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
@@ -6869,34 +7076,10 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
             const float temp = T30[i];
-            const float soil_buffer = SOILC[i] > 0.0f ? SOILC[i] : 0.0f;
-            float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
-            if (moist < 0.0f) moist = 0.0f;
-            else if (moist > 1.0f) moist = 1.0f;
-
-            float compat = 0.0f;
-            if (v_id < n_veg) {
-                const float tt = TLT[v_id] < 0.01f ? 0.01f : TLT[v_id];
-                const float tm = TLM[v_id] < 0.01f ? 0.01f : TLM[v_id];
-                const float dt = (temp  - IDT[v_id]) / tt;
-                const float dm = (moist - IDM[v_id]) / tm;
-                const float k = 0.5f * (dt * dt + dm * dm);
-                compat = std::exp(-k);
-            }
-
-            float dv = 0.0f;
-            if (v_id != veg_none_id) {
-                if (compat >= 0.52f) {
-                    dv = (compat - 0.5f) * 2.0f * rate;
-                } else if (compat <= 0.48f) {
-                    dv = -(0.5f - compat) * 2.0f * rate * harshness;
-                }
-                if (dv < 0.0f) {
-                    float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
-                    if (water_buffer > 0.60f) water_buffer = 0.60f;
-                    dv *= (1.0f - water_buffer);
-                }
-            }
+            const float plant_water = vegdyn_plant_water(
+                M[i], WBAL[i], SOILC[i],
+                plant_water_balance_weight, plant_soil_buffer_weight, plant_drought_penalty);
+            const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
 
             int wt = wt_clear_id;
             float wi = 0.0f;
@@ -6904,25 +7087,38 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
                 wt = int(WTT[i]);
                 wi = WTI[i];
             }
-            float base_pen = (wt >= 0 && wt < wt_pen_size) ? WPN[wt] : 0.0f;
-            float resist = 0.0f;
-            if (v_id < n_veg && wt >= 0 && wt < n_wt) {
-                resist = RES[int(v_id) * n_wt + wt];
+            const float weather_stress = vegdyn_weather_stress(
+                v_id, wt, wi, n_veg, n_wt, wt_pen_size, WPN, RES, weather_penalty_scale);
+            const float target = vegdyn_clamp01(compat - weather_stress);
+            const float prev_vit = VIT[i];
+            float dv = (target - prev_vit) * rate;
+            if (dv < 0.0f) {
+                dv *= harshness;
+                if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
+                    float damping = prev_vit / low_vitality_damping_threshold;
+                    if (damping < 0.25f) damping = 0.25f;
+                    else if (damping > 1.0f) damping = 1.0f;
+                    dv *= damping;
+                }
             }
-            const float penalty = base_pen * weather_penalty_scale * wi * (1.0f - resist);
-            dv -= penalty;
+            VGP[i] = target - prev_vit;
 
-            float vit = VIT[i] + dv * scale;
-            if (vit < 0.0f) vit = 0.0f;
-            else if (vit > 1.0f) vit = 1.0f;
+            float vit = vegdyn_clamp01(prev_vit + dv * scale);
             VIT[i] = vit;
 
             int ls = LSK[i];
             int hs = HSK[i];
-            if (vit < low_thresh) {
+            if (ls < 0 || hs < 0) {
+                ls += streak_days; if (ls > 0) ls = 0;
+                hs += streak_days; if (hs > 0) hs = 0;
+                LSK[i] = ls;
+                HSK[i] = hs;
+                continue;
+            }
+            if (vit < low_thresh && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
-            } else if (vit > high_thresh) {
+            } else if (vit > high_thresh && target > high_thresh) {
                 hs += streak_days;
                 ls = 0;
             } else {
@@ -6932,12 +7128,23 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
 
             bool fired = false;
             if (ls >= degrade_days) {
-                uint8_t nxt = (v_id < n_veg) ? NXD[v_id] : v_id;
-                if (nxt != v_id) {
+                uint8_t nxt = v_id;
+                float best_sc = -1.0f;
+                if (v_id < n_veg) {
+                    const uint8_t cand_d = NXD[v_id];
+                    const uint8_t cand_u = NXU[v_id];
+                    if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
+                    if (cand_u != v_id) {
+                        const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
+                        if (su > best_sc) { nxt = cand_u; best_sc = su; }
+                    }
+                }
+                if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
                     local.indices.push_back(i);
                     local.to_veg.push_back(nxt);
-                    ls = 0;
-                    hs = 0;
+                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                    ls = cooldown;
+                    hs = cooldown;
                     fired = true;
                 } else {
                     ls = 0;
@@ -6945,11 +7152,13 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             }
             if (!fired && hs >= upgrade_days) {
                 uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                if (nxt != v_id) {
+                const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM) : -1.0f;
+                if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                     local.indices.push_back(i);
                     local.to_veg.push_back(nxt);
-                    ls = 0;
-                    hs = 0;
+                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                    ls = cooldown;
+                    hs = cooldown;
                 } else {
                     hs = 0;
                 }
@@ -6977,6 +7186,7 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     knobs["vitality_arr"]   = vitality_arr;
     knobs["low_streak_arr"] = low_streak;
     knobs["high_streak_arr"]= high_streak;
+    _flush_slot_to_map(sid_vgp);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -7030,6 +7240,7 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
     const float soil_gain        = float(knobs["soil_gain"]);
     const float veg_gain         = float(knobs["veg_gain"]);
+    const bool  write_weather_veg_pressure = bool(knobs.get("write_weather_veg_pressure", true));
     const float scale            = float(knobs["scale"]);
     const float per_day_clamp    = float(knobs["per_day_clamp"]);
     const float ocean_drift_gain = float(knobs["ocean_drift_gain"]);
@@ -7140,14 +7351,16 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
             else if (soil > 0.5f) soil = 0.5f;
             SOIL[i] = soil;
 
-            // vegetation_growth_pressure (clamp -0.5..0.5)
-            float d_veg = veg_gain * precip * scale;
-            if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-            else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-            float vg_v = VG[i] + d_veg;
-            if (vg_v < -0.5f) vg_v = -0.5f;
-            else if (vg_v > 0.5f) vg_v = 0.5f;
-            VG[i] = vg_v;
+            if (write_weather_veg_pressure) {
+                // vegetation_growth_pressure (clamp -0.5..0.5)
+                float d_veg = veg_gain * precip * scale;
+                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
+                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
+                float vg_v = VG[i] + d_veg;
+                if (vg_v < -0.5f) vg_v = -0.5f;
+                else if (vg_v > 0.5f) vg_v = 0.5f;
+                VG[i] = vg_v;
+            }
         }
     };
     run_range(0, n_cells);
@@ -7210,6 +7423,7 @@ double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_task
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
     const float soil_gain        = float(knobs["soil_gain"]);
     const float veg_gain         = float(knobs["veg_gain"]);
+    const bool  write_weather_veg_pressure = bool(knobs.get("write_weather_veg_pressure", true));
     const float scale            = float(knobs["scale"]);
     const float per_day_clamp    = float(knobs["per_day_clamp"]);
     const float ocean_drift_gain = float(knobs["ocean_drift_gain"]);
@@ -7314,13 +7528,15 @@ double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_task
             else if (soil > 0.5f) soil = 0.5f;
             SOIL[i] = soil;
 
-            float d_veg = veg_gain * precip * scale;
-            if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-            else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-            float vg_v = VG[i] + d_veg;
-            if (vg_v < -0.5f) vg_v = -0.5f;
-            else if (vg_v > 0.5f) vg_v = 0.5f;
-            VG[i] = vg_v;
+            if (write_weather_veg_pressure) {
+                float d_veg = veg_gain * precip * scale;
+                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
+                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
+                float vg_v = VG[i] + d_veg;
+                if (vg_v < -0.5f) vg_v = -0.5f;
+                else if (vg_v > 0.5f) vg_v = 0.5f;
+                VG[i] = vg_v;
+            }
         }
     };
 
@@ -7466,13 +7682,16 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
     const uint8_t * const __restrict WTIN  = s_wt_init.arr_u8.ptr();
     float         * const __restrict BM    = s_base_m.arr_f32.ptrw();
     const float   *SOIL_COMP = nullptr;
+    float         *VGP_COMP = nullptr;
     if (use_soa) {
         const Slot &s_soil_comp = _slots[sid_soil];
-        if (s_soil_comp.arr_f32.size() != n_cells) {
-            diag("[use_soa] soil_moisture slot size != n_cells");
+        Slot &s_vgp_comp = _slots.write[sid_vgp];
+        if (s_soil_comp.arr_f32.size() != n_cells || s_vgp_comp.arr_f32.size() != n_cells) {
+            diag("[use_soa] soil_moisture/vegetation_growth_pressure slot size != n_cells");
             return -1.0;
         }
         SOIL_COMP = s_soil_comp.arr_f32.ptr();
+        VGP_COMP = s_vgp_comp.arr_f32.ptrw();
     }
 
     auto t_total_0 = std::chrono::high_resolution_clock::now();
@@ -7537,6 +7756,8 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
         static const char *required_scalars[] = {
             "day_scale", "streak_days",
             "vitality_change_rate", "compat_harshness",
+            "plant_water_balance_weight", "plant_soil_buffer_weight",
+            "plant_drought_penalty", "succession_min_compat_gain",
             "low_threshold", "high_threshold",
             "succession_degrade_days", "succession_upgrade_days",
             "n_wt", "wt_clear_id", "veg_none_id",
@@ -7556,7 +7777,16 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
         const int   n_wt          = int(knobs["n_wt"]);
         const int   wt_clear_id   = int(knobs["wt_clear_id"]);
         const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
+        (void)veg_none_id;
         const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
+        const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
+        const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
+        const float plant_drought_penalty = float(knobs["plant_drought_penalty"]);
+        const float succession_min_compat_gain = float(knobs["succession_min_compat_gain"]);
+        const float low_vitality_damping_threshold = knobs.has("vegetation_low_vitality_damping_threshold")
+                                                   ? float(knobs["vegetation_low_vitality_damping_threshold"]) : 0.40f;
+        const int   succession_cooldown_days = knobs.has("vegetation_succession_cooldown_days")
+                                             ? int(knobs["vegetation_succession_cooldown_days"]) : 30;
         if (n_wt <= 0) { diag("[veg_dyn] n_wt <= 0"); return -1.0; }
 
         // 表
@@ -7657,34 +7887,11 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
             const float temp = T30[i];
-            const float soil_buffer = (SOIL_COMP != nullptr && SOIL_COMP[i] > 0.0f) ? SOIL_COMP[i] : 0.0f;
-            float moist = M[i] + WBAL[i] * 0.25f + soil_buffer * 0.20f;
-            if (moist < 0.0f) moist = 0.0f;
-            else if (moist > 1.0f) moist = 1.0f;
-
-            float compat = 0.0f;
-            if (v_id < n_veg) {
-                const float tt = TLT[v_id] < 0.01f ? 0.01f : TLT[v_id];
-                const float tm = TLM[v_id] < 0.01f ? 0.01f : TLM[v_id];
-                const float dt = (temp  - IDT[v_id]) / tt;
-                const float dm = (moist - IDM[v_id]) / tm;
-                const float k = 0.5f * (dt * dt + dm * dm);
-                compat = std::exp(-k);
-            }
-
-            float dv = 0.0f;
-            if (v_id != veg_none_id) {
-                if (compat >= 0.52f) {
-                    dv = (compat - 0.5f) * 2.0f * rate;
-                } else if (compat <= 0.48f) {
-                    dv = -(0.5f - compat) * 2.0f * rate * harshness;
-                }
-                if (dv < 0.0f) {
-                    float water_buffer = (WBAL[i] > 0.0f ? WBAL[i] * 1.5f : 0.0f) + soil_buffer * 0.8f;
-                    if (water_buffer > 0.60f) water_buffer = 0.60f;
-                    dv *= (1.0f - water_buffer);
-                }
-            }
+            const float soil_now = SOIL_COMP != nullptr ? SOIL_COMP[i] : 0.0f;
+            const float plant_water = vegdyn_plant_water(
+                M[i], WBAL[i], soil_now,
+                plant_water_balance_weight, plant_soil_buffer_weight, plant_drought_penalty);
+            const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
 
             int wt = wt_clear_id;
             float wi = 0.0f;
@@ -7692,25 +7899,38 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 wt = int(WTT[i]);
                 wi = WTI[i];
             }
-            float base_pen = (wt >= 0 && wt < wt_pen_arr.size()) ? WPN[wt] : 0.0f;
-            float resist = 0.0f;
-            if (v_id < n_veg && wt >= 0 && wt < n_wt) {
-                resist = RES[int(v_id) * n_wt + wt];
+            const float weather_stress = vegdyn_weather_stress(
+                v_id, wt, wi, n_veg, n_wt, wt_pen_arr.size(), WPN, RES, weather_penalty_scale);
+            const float target = vegdyn_clamp01(compat - weather_stress);
+            const float prev_vit = VIT[i];
+            float dv = (target - prev_vit) * rate;
+            if (dv < 0.0f) {
+                dv *= harshness;
+                if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
+                    float damping = prev_vit / low_vitality_damping_threshold;
+                    if (damping < 0.25f) damping = 0.25f;
+                    else if (damping > 1.0f) damping = 1.0f;
+                    dv *= damping;
+                }
             }
-            const float penalty = base_pen * weather_penalty_scale * wi * (1.0f - resist);
-            dv -= penalty;
+            if (VGP_COMP != nullptr) VGP_COMP[i] = target - prev_vit;
 
-            float vit = VIT[i] + dv * scale;
-            if (vit < 0.0f) vit = 0.0f;
-            else if (vit > 1.0f) vit = 1.0f;
+            float vit = vegdyn_clamp01(prev_vit + dv * scale);
             VIT[i] = vit;
 
             int ls = LSK[i];
             int hs = HSK[i];
-            if (vit < low_thresh) {
+            if (ls < 0 || hs < 0) {
+                ls += streak_days; if (ls > 0) ls = 0;
+                hs += streak_days; if (hs > 0) hs = 0;
+                LSK[i] = ls;
+                HSK[i] = hs;
+                continue;
+            }
+            if (vit < low_thresh && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
-            } else if (vit > high_thresh) {
+            } else if (vit > high_thresh && target > high_thresh) {
                 hs += streak_days;
                 ls = 0;
             } else {
@@ -7720,12 +7940,23 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
             bool fired = false;
             if (ls >= degrade_days) {
-                uint8_t nxt = (v_id < n_veg) ? NXD[v_id] : v_id;
-                if (nxt != v_id) {
+                uint8_t nxt = v_id;
+                float best_sc = -1.0f;
+                if (v_id < n_veg) {
+                    const uint8_t cand_d = NXD[v_id];
+                    const uint8_t cand_u = NXU[v_id];
+                    if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
+                    if (cand_u != v_id) {
+                        const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
+                        if (su > best_sc) { nxt = cand_u; best_sc = su; }
+                    }
+                }
+                if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
                     succ_indices.push_back(i);
                     succ_to_veg.push_back(nxt);
-                    ls = 0;
-                    hs = 0;
+                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                    ls = cooldown;
+                    hs = cooldown;
                     fired = true;
                 } else {
                     ls = 0;
@@ -7733,11 +7964,13 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             }
             if (!fired && hs >= upgrade_days) {
                 uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                if (nxt != v_id) {
+                const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM) : -1.0f;
+                if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                     succ_indices.push_back(i);
                     succ_to_veg.push_back(nxt);
-                    ls = 0;
-                    hs = 0;
+                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
+                    ls = cooldown;
+                    hs = cooldown;
                 } else {
                     hs = 0;
                 }
@@ -7797,6 +8030,7 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
         const int   wt_blizzard_id   = int(knobs["wt_blizzard_id"]);
         const int   wt_drought_id    = int(knobs["wt_drought_id"]);
         const int   wt_heatwave_id   = int(knobs["wt_heatwave_id"]);
+        const bool  write_weather_veg_pressure = bool(knobs.get("write_weather_veg_pressure", true));
 
         if (!knobs.has("neighbor_indices")) {
             diag("[feedback] knobs missing neighbor_indices");
@@ -7903,13 +8137,15 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             else if (soil > 0.5f) soil = 0.5f;
             SOIL[i] = soil;
 
-            float d_veg = veg_gain * precip * scale;
-            if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-            else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-            float vg_v = VGP[i] + d_veg;
-            if (vg_v < -0.5f) vg_v = -0.5f;
-            else if (vg_v > 0.5f) vg_v = 0.5f;
-            VGP[i] = vg_v;
+            if (write_weather_veg_pressure) {
+                float d_veg = veg_gain * precip * scale;
+                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
+                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
+                float vg_v = VGP[i] + d_veg;
+                if (vg_v < -0.5f) vg_v = -0.5f;
+                else if (vg_v > 0.5f) vg_v = 0.5f;
+                VGP[i] = vg_v;
+            }
         }
 
         // 写回 in/out arrays —— 仅老路径需要把 soil/vg 重新塞回 knobs；
@@ -7938,6 +8174,7 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             _flush_slot_to_map(sid_vit);
             _flush_slot_to_map(sid_low_streak);
             _flush_slot_to_map(sid_high_streak);
+            _flush_slot_to_map(sid_vgp);
         }
         if (run_feedback) {
             _flush_slot_to_map(sid_soil);
@@ -8353,6 +8590,10 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     const float snowpack_cover_full  = knobs.has("snowpack_cover_full") ? float(knobs["snowpack_cover_full"]) : 0.25f;
     const float snowpack_cover_span  = (snowpack_cover_full - snowpack_cover_low) > 0.001f
         ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
+    // climate-loop-closure Phase 2.1：气候态物理雪线 floor 参数（threshold=0 关闭）。
+    const float snowline_temp_threshold = knobs.has("snowline_temp_threshold") ? float(knobs["snowline_temp_threshold"]) : 0.34f;
+    const float snowline_band = knobs.has("snowline_band") ? float(knobs["snowline_band"]) : 0.18f;
+    const float snowline_band_safe = snowline_band > 0.001f ? snowline_band : 0.001f;
     float weather_temp_anomaly_cap = knobs.has("weather_temp_anomaly_cap") ? float(knobs["weather_temp_anomaly_cap"]) : 0.025f;
     if (weather_temp_anomaly_cap < 0.0f) weather_temp_anomaly_cap = 0.0f;
     else if (weather_temp_anomaly_cap > 0.10f) weather_temp_anomaly_cap = 0.10f;
@@ -8518,12 +8759,20 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                     + ((EL[i] - 0.70f) > 0.0f ? (EL[i] - 0.70f) : 0.0f) * precip * 0.06f;
                 const float daily_balance = clampf(precip - evap_proxy - runoff, -1.0f, 1.0f);
                 wb = wb + (daily_balance - wb) * (1.0f / 30.0f);
-                soil = clampf(soil + daily_balance * 0.08f, -0.5f, 0.5f);
+                // climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97)，停雨后排干。
+                soil = clampf(soil * 0.97f + daily_balance * 0.08f, -0.5f, 0.5f);
                 M[i] = clamp01(M[i] + precip * 0.35f
                     + ((daily_balance > 0.0f) ? daily_balance * 0.04f : 0.0f));
+                // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
+                float snow_floor_c = 0.0f;
+                if (snowline_temp_threshold > 0.0f) {
+                    snow_floor_c = clampf((snowline_temp_threshold - T[i]) / snowline_band_safe, 0.0f, 1.0f);
+                    if (snow_floor_c * snowpack_cover_full > sp) sp = snow_floor_c * snowpack_cover_full;
+                }
                 float u = (sp - snowpack_cover_low) / snowpack_cover_span;
                 if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
                 sc = u * u * (3.0f - 2.0f * u);
+                if (snow_floor_c > sc) sc = snow_floor_c;
                 if (CV[i] == COVER_GLACIER && sc < 0.80f) sc = 0.80f;
                 SP[i] = sp;
                 WB[i] = wb;
@@ -8576,11 +8825,19 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                 * (0.35f + temp_now * 1.05f) * 0.65f, 0.0f, 1.0f);
             const float daily_balance = clampf(precip * 1.15f + meltwater * 0.65f - evap_proxy - runoff, -1.0f, 1.0f);
             wb_now = wb_now + (daily_balance - wb_now) * (1.0f / 30.0f);
-            soil_now = clampf(soil_now + daily_balance * 0.08f, -0.5f, 0.5f);
+            // climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97)，停雨后排干。
+            soil_now = clampf(soil_now * 0.97f + daily_balance * 0.08f, -0.5f, 0.5f);
+        }
+        // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
+        float snow_floor_w = 0.0f;
+        if (snowline_temp_threshold > 0.0f && !is_water_lf(LF[i])) {
+            snow_floor_w = clampf((snowline_temp_threshold - temp_now) / snowline_band_safe, 0.0f, 1.0f);
+            if (snow_floor_w * snowpack_cover_full > sp_now) sp_now = snow_floor_w * snowpack_cover_full;
         }
         float u_sp = (sp_now - snowpack_cover_low) / snowpack_cover_span;
         if (u_sp < 0.0f) u_sp = 0.0f; else if (u_sp > 1.0f) u_sp = 1.0f;
         float snow_cover_now = u_sp * u_sp * (3.0f - 2.0f * u_sp);
+        if (snow_floor_w > snow_cover_now) snow_cover_now = snow_floor_w;
         if (CV[i] == COVER_GLACIER && snow_cover_now < 0.80f) snow_cover_now = 0.80f;
         SP[i] = sp_now;
         SC[i] = snow_cover_now;
@@ -10162,10 +10419,10 @@ static inline double pk_smoothstep(double a, double b, double x) {
 }
 
 // SAME_SOURCE: map_generator.gd::_alt_penalty (line 3059).
-//   ALT_PEN_LINEAR=0.55, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.30
+//   ALT_PEN_LINEAR=0.40, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.22
 static inline double pk_alt_penalty(double e) {
-    const double lin = e * 0.55;
-    const double hi = pk_smoothstep(0.45, 1.00, e) * 0.30;
+    const double lin = e * 0.40;
+    const double hi = pk_smoothstep(0.45, 1.00, e) * 0.22;
     return lin + hi;
 }
 
@@ -11301,11 +11558,11 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         else if (row > max_row) row = max_row;
         // 2026-05-18 雪线修正：alt_penalty 双段式 + 雪线新公式（与 GDScript SAME_SOURCE）。
         const double e = double(ELEV[i]);
-        const double alt_pen_lin = e * 0.55;
+        const double alt_pen_lin = e * 0.40;
         double alt_pen_hi_t = (e - 0.45) / (1.0 - 0.45);
         if (alt_pen_hi_t < 0.0) alt_pen_hi_t = 0.0;
         else if (alt_pen_hi_t > 1.0) alt_pen_hi_t = 1.0;
-        const double alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0 - 2.0 * alt_pen_hi_t) * 0.30;
+        const double alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0 - 2.0 * alt_pen_hi_t) * 0.22;
         const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - (alt_pen_lin + alt_pen_hi));
         const float temp_now = float(pk_clamp01(temp_year + double(ROW_OFF[row])));
         float snow = 0.0f;

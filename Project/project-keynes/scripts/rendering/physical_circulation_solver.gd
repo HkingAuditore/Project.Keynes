@@ -100,7 +100,7 @@ static func _is_water_terrain(t: int) -> bool:
 #       slp_new = (slp + Σ slp_neighbor) / (1 + count_neighbor)
 #    平滑后压力中心连贯，无单格噪点。
 
-const _SLP_LAT_AMP := 0.40              # 纬度基线幅度（±）
+const _SLP_LAT_AMP := 0.10              # 纬度基线幅度（±）。0.10 → 峰峰值 0.20，与海陆调制合成后 ~0.25-0.35。
 const _SLP_LAND_AMP := 0.55             # 陆地海陆性幅度（夏低冬高峰值）
 const _SLP_WATER_DAMP := 0.20           # 水域海陆季节响应缩放
 const _SLP_SMOOTH_PASSES := 1           # 默认 6 邻域 Jacobi 平滑次数（2026-05：2→1，少磨一次保留陆地细节）
@@ -143,12 +143,12 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 		var lat_temp: float = _lat_temp_for(ls_abs)
 
 		# 纬度基线：赤道低压、副热带高压、副极地低压、极地高压。
-		# 用 cos(2π * ls_abs * cycles) + 二次小修正得到 4 段对称曲线。
-		# 这里近似：base = -A * cos(ls_abs * π * 2) * (1 - ls_abs)
-		#                    + A * 0.5 * cos(ls_abs * π * 4) * ls_abs
-		# 物理直观：双频叠加，让 0 / 0.6 处低压、0.3 / 1.0 处高压。
-		var base_lat: float = -_SLP_LAT_AMP * cos(ls_abs * PI * 2.0) * (1.0 - 0.5 * ls_abs)
-		base_lat += 0.15 * cos(ls_abs * PI * 4.0) * ls_abs
+		# 使用 -cos(3π * ls_abs) 精确锁定三圈环流节点：
+		#   ls_abs=0.00 → -1.0 (ITCZ 低压) ✓
+		#   ls_abs=0.33 → +1.0 (30°副热带高压) ✓
+		#   ls_abs=0.67 → -1.0 (60°副极地低压) ✓
+		#   ls_abs=1.00 → +1.0 (极地高压) ✓
+		var base_lat: float = -_SLP_LAT_AMP * cos(ls_abs * PI * 3.0)
 
 		# 海陆性
 		var hemi_sign: float = signf(ls) if absf(ls) > 0.001 else 1.0
@@ -228,10 +228,10 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 #   北半球用 +θ_hemi（顺时针 = 右偏）；南半球用 -θ_hemi。
 #   |θ_hemi| 随 |lat_signed| 从 0 → 0.78（约 45°）非线性增长，赤道无偏转。
 
-# 2026-05 全做：调权重让"压力梯度风（地形/海陆唯一来源）"占比上升、"纬度基线"
-# 不再绝对主导；同时启用季风"距海岸渗透"和"山脉绕流"两条增强通路。
-const _WIND_W_LAT := 0.30              # 纬度基线权重（0.50 → 0.30：让纬度只是"大势"，不再压住地形信号）
-const _WIND_W_GRAD := 0.85             # 压力梯度风权重（0.55 → 0.85：海陆 SLP 差/山地 SLP 抬升 → 主导方向）
+# SLP 公式已修复 → 梯度风方向正确。纬度基线(WindBelt)也正确 → 两者等权合成。
+# 0.55/0.50 让纬度基线与压力梯度各贡献一半，海陆季风提供局地修正。
+const _WIND_W_LAT := 0.55              # 纬度基线权重
+const _WIND_W_GRAD := 0.50             # 压力梯度风权重
 const _WIND_W_MONSOON := 0.65          # 沿海季风附加权重（0.35 → 0.65：陆海热力对比期望肉眼可见）
 const _WIND_MONSOON_MAX_DIST := 5      # 季风从海岸向内陆渗透的格数（3 → 5：渗透更深，覆盖大陆边缘）
 const _WIND_CORIOLIS_MAX_RAD := 0.78   # 最大科氏偏转角（约 45°，仅作用于压力梯度风）
@@ -673,8 +673,8 @@ static func commit_psi_to_cells(state: PsiSolverState) -> void:
 # ocean_current 期望幅度 ~ [0, 1]（与现有 RG8 编码 [-1, 1] 兼容）。
 # 这里用 _OCEAN_CURRENT_SCALE 经验缩放，再 clamp。
 
-const _UPWELLING_HIGHLAT_ABS_SOLVER := 0.6
-const _OCEAN_CURRENT_SCALE := 0.05      # ψ 梯度 → ocean_current 量级缩放
+const _UPWELLING_HIGHLAT_ABS_SOLVER := 0.75 	# 冷沉仅限极圈内(|lat|>67.5°)
+const _OCEAN_CURRENT_SCALE := 0.18      # ψ 梯度 → ocean_current 量级缩放（原 0.05 太弱）
 const _THERMOHALINE_WEIGHT := 0.18      # 高纬热盐 y 修正权重（≤ 0.2）
 
 ## psi_to_ocean_current —— 把 ψ 场转为 cell.ocean_current。
@@ -821,7 +821,7 @@ static func solve_ocean_current_fallback(map: MapData, hex_size: float, \
 # 用 _UPWELLING_EKMAN_GAIN 缩放。
 
 const _UPWELLING_EKMAN_GAIN := 0.6     # Ekman 主项整体缩放
-const _UPWELLING_COLD_SINK_GAIN := 0.5 # 高纬冷沉叠加的负向幅度
+const _UPWELLING_COLD_SINK_GAIN := 0.15 # 高纬冷沉叠加的负向幅度（原 0.5 压制了所有上升流）
 
 ## solve_upwelling —— hex 域沿岸 Ekman 上升流求解。
 ##

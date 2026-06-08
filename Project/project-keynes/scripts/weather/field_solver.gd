@@ -335,6 +335,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var saturation: float = clampf(vapor_capacity * 0.68, 0.16, 0.80)
 		var humid_excess: float = maxf(vapor - saturation, 0.0)
 		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		lift_supply = minf(lift_supply, _weather_system._field_orographic_lift_cap)
 		var cloud: float = clampf(
 			humid_excess * _weather_system._field_condensation_gain * 1.8
 			+ lift_supply * _weather_system._field_orographic_lift_gain
@@ -358,6 +359,12 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var precip_source: float = cloud * (0.30 + instability * 0.76) + lift_supply * 0.36 - maxf(-lift, 0.0) * 0.55
 		var precip_raw: float = maxf(precip_source, 0.0) * 1.05 * rain_focus
 		var old_precip: float = prev_precip[i]
+		# climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格(-wind 对齐
+		# 邻居 upstream_idx)继承，权重随风速 wind_mag 增大 → 雨带随锋面下风迁移，而非
+		# 永久钉在原格。复用既有 upstream_idx / wind_mag，无新增 knob；advect_steps=0
+		# 时 upstream_idx=-1 自动退回 legacy 同格 carryover（可用于 A/B 回归）。
+		if upstream_idx >= 0:
+			old_precip = lerpf(old_precip, prev_precip[upstream_idx], wind_mag)
 		var vapor_floor_factor: float = clampf((vapor - 0.18) / 0.36, 0.0, 1.0)
 		var dyn_decay: float = _weather_system._field_precip_decay + wind_mag * 0.25
 		var carry_limit: float = _weather_system._field_precip_carryover_max
@@ -368,6 +375,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if precip < 0.02:
 			precip = 0.0
 		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
+		if precip < 0.02 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
+			vapor_after_precip = lerpf(vapor_after_precip, base_m, _weather_system._field_vapor_relax_rate)
 
 		var wt: int = _weather_system._classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _weather_system._classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
