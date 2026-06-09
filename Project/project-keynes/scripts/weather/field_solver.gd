@@ -150,6 +150,7 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_prev_precip = PackedFloat32Array()
 	_field_slice_next_vapor = PackedFloat32Array()
 	_field_slice_next_cloud = PackedFloat32Array()
+	_field_slice_next_cloud_water = PackedFloat32Array()
 	_field_slice_next_precip = PackedFloat32Array()
 	_field_slice_next_instability = PackedFloat32Array()
 	_field_slice_next_intensity = PackedFloat32Array()
@@ -159,6 +160,7 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_prev_precip.resize(n_cells)
 	_field_slice_next_vapor.resize(n_cells)
 	_field_slice_next_cloud.resize(n_cells)
+	_field_slice_next_cloud_water.resize(n_cells)
 	_field_slice_next_precip.resize(n_cells)
 	_field_slice_next_instability.resize(n_cells)
 	_field_slice_next_intensity.resize(n_cells)
@@ -225,7 +227,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if rc >= 0.0:
 			# C++ 完成当前 range。写入 SoA 暂不发布；只有 commit() 才让 renderer/UI
 			# 看到完整 round，保持中间态不可见。
-			_field_slice_results_in_soa = true
+			_field_slice_results_in_soa = false
 			_field_slice_native_convergence_boost = _field_slice_refresh_convergence \
 				and not _weather_system._field_verify_enabled
 			# A/B 验证（dev 诊断 only）：在 C++ 写完 SoA 之后，把 next_* 快照、
@@ -237,11 +239,13 @@ func run_slice(cell_budget: int) -> Dictionary:
 			var cp_native = _weather_system._cp_for_front_flag
 			if cp_native != null and cp_native.get("weather_transition_enabled") != null:
 				transition_enabled_native = bool(cp_native.weather_transition_enabled)
-			if done_native and (
-					_weather_system._field_verify_enabled
-					or not _weather_system._hexcell_facade_on
-					or transition_enabled_native):
-				_weather_system._pull_gdext_field_results_to_next(map, n_cells)
+			var native_wrote_next: bool = bool(_field_slice_native_knobs.get("weather_field_wrote_next", false))
+			if done_native:
+				if not native_wrote_next and (
+						_weather_system._field_verify_enabled
+						or not _weather_system._hexcell_facade_on
+						or transition_enabled_native):
+					_weather_system._pull_gdext_field_results_to_next(map, n_cells)
 				if _weather_system._field_verify_enabled:
 					_weather_system._verify_gdext_field_against_gdscript(map, world, n_cells)
 			_field_slice_cursor = end_i
@@ -271,6 +275,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var prev_precip: PackedFloat32Array = _field_slice_prev_precip
 	var next_vapor: PackedFloat32Array = _field_slice_next_vapor
 	var next_cloud: PackedFloat32Array = _field_slice_next_cloud
+	var next_cloud_water: PackedFloat32Array = _field_slice_next_cloud_water
 	var next_precip: PackedFloat32Array = _field_slice_next_precip
 	var next_instability: PackedFloat32Array = _field_slice_next_instability
 	var next_intensity: PackedFloat32Array = _field_slice_next_intensity
@@ -350,6 +355,13 @@ func run_slice(cell_budget: int) -> Dictionary:
 			+ maxf(effective_ocean_an, 0.0) * 0.08,
 			0.0, 1.0
 		)
+		var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
+		var old_cloud_water: float = prev_cloud_water_arr[i] if prev_cloud_water_arr.size() == n_cells else cloud * 0.5
+		var cloud_water: float = clampf(
+			old_cloud_water * 0.70 + cloud * 0.55 + humid_excess * 0.18 + lift_supply * 0.12,
+			0.0, 1.0
+		)
+		cloud = clampf(maxf(cloud, cloud_water * 0.75), 0.0, 1.0)
 		var instability: float = clampf(
 			(temp - 0.45) * 1.15
 			+ vapor * 0.55
@@ -361,10 +373,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 		)
 		var cloud_core: float = smoothstep(0.18, 0.42, cloud)
 		var terrain_trigger: float = clampf(lift_supply * 2.8 + maxf(convergence, 0.0) * 1.4, 0.0, 1.0)
-		var vapor_gate: float = clampf((vapor - 0.16) / 0.34, 0.0, 1.0)
-		var rain_focus: float = clampf(maxf(cloud_core, terrain_trigger) * vapor_gate, 0.0, 1.0)
+		var vapor_gate: float = clampf((vapor - 0.12) / 0.30, 0.0, 1.0)
+		var trigger_focus: float = maxf(maxf(cloud_core, terrain_trigger), cloud_water * 0.55)
+		var rain_focus: float = clampf(trigger_focus * vapor_gate, 0.0, 1.0)
 		var precip_source: float = cloud * (0.30 + instability * 0.76) + lift_supply * 0.36 - maxf(-lift, 0.0) * 0.55
-		var precip_raw: float = maxf(precip_source, 0.0) * 1.05 * rain_focus
+		var precip_raw: float = maxf(precip_source, 0.0) * 1.18 * rain_focus
 		var old_precip: float = prev_precip[i]
 		# climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格(-wind 对齐
 		# 邻居 upstream_idx)继承，权重随风速 wind_mag 增大 → 雨带随锋面下风迁移，而非
@@ -372,23 +385,24 @@ func run_slice(cell_budget: int) -> Dictionary:
 		# 时 upstream_idx=-1 自动退回 legacy 同格 carryover（可用于 A/B 回归）。
 		if upstream_idx >= 0:
 			old_precip = lerpf(old_precip, prev_precip[upstream_idx], wind_mag)
-		var vapor_floor_factor: float = clampf((vapor - 0.18) / 0.36, 0.0, 1.0)
+		var vapor_floor_factor: float = clampf((vapor - 0.12) / 0.34, 0.0, 1.0)
 		var dyn_decay: float = _weather_system._field_precip_decay + wind_mag * 0.25
 		var carry_limit: float = _weather_system._field_precip_carryover_max
 		var precip_floor: float = 0.0
-		if vapor >= 0.50 and old_precip >= 0.08:
-			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.35)
-		var precip: float = clampf(maxf(precip_raw, precip_floor), 0.0, 1.0)
-		if precip < 0.02:
-			precip = 0.0
+		if vapor >= 0.42 and old_precip >= 0.04:
+			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.30)
+		var cloud_water_rain: float = cloud_water * maxf(rain_focus, 0.18) * (0.14 + instability * 0.16)
+		var precip: float = clampf(maxf(maxf(precip_raw, precip_floor), cloud_water_rain), 0.0, 1.0)
+		cloud_water = clampf(cloud_water - precip * 0.32, 0.0, 1.0)
 		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
-		if precip < 0.02 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
+		if precip < 0.005 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
 			vapor_after_precip = lerpf(vapor_after_precip, base_m, _weather_system._field_vapor_relax_rate)
 
 		var wt: int = _weather_system._classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _weather_system._classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
 		next_vapor[i] = vapor_after_precip
 		next_cloud[i] = cloud
+		next_cloud_water[i] = cloud_water
 		next_precip[i] = precip
 		next_instability[i] = instability
 		next_type[i] = wt
@@ -433,6 +447,7 @@ func commit() -> Array[WeatherFront]:
 	# 的 CELL_WEATHER_INTENSITY/CLOUD/PRECIP/TYPE 4 个 component。
 	var soa_intensity: PackedFloat32Array = map.weather_intensity_arr
 	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
+	var soa_cloud_water: PackedFloat32Array = map.weather_cloud_water_arr
 	var soa_precip: PackedFloat32Array = map.weather_precip_arr
 	var soa_type: PackedByteArray = map.weather_type_arr
 	var soa_prev_type: PackedByteArray = map.weather_prev_type_arr
@@ -446,6 +461,11 @@ func commit() -> Array[WeatherFront]:
 	var soa_field_init: PackedByteArray = map.weather_field_init_arr
 	var commit_n: int = cells.size()
 	var commit_setup_ms: float = (Time.get_ticks_usec() - t_commit_total_us) / 1000.0
+	var weather_dirty: PackedByteArray = map.weather_dirty_mask
+	var weather_dirty_count: int = 0
+	if weather_dirty.size() == commit_n:
+		for di in range(commit_n):
+			weather_dirty[di] = 0
 
 	var t_commit_loop_us: int = Time.get_ticks_usec()
 	var hexcell_facade_on: bool = _weather_system._hexcell_facade_on
@@ -456,17 +476,22 @@ func commit() -> Array[WeatherFront]:
 	var transition_rate: float = 1.0
 	if transition_enabled and cp_transition.get("weather_transition_alpha_rate") != null:
 		transition_rate = clampf(float(cp_transition.weather_transition_alpha_rate), 0.0, 1.0)
+	var water_budget_error_acc: float = 0.0
 	for i in range(cells.size()):
 		if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
 			break
 		var out_cell: HexCell = cells[i]
 		var v_cloud: float = _field_slice_next_cloud[i]
+		var v_cloud_water: float = _field_slice_next_cloud_water[i] if _field_slice_next_cloud_water.size() > i else v_cloud * 0.5
 		var v_precip: float = _field_slice_next_precip[i]
 		var v_type: int = _field_slice_next_type[i]
 		var v_intensity: float = _field_slice_next_intensity[i]
 		var v_vapor: float = _field_slice_next_vapor[i]
 		var v_convergence: float = _field_slice_next_convergence[i]
 		var v_instability: float = _field_slice_next_instability[i]
+		var prev_budget_vapor: float = _field_slice_prev_vapor[i] if _field_slice_prev_vapor.size() > i else (soa_vapor[i] if soa_vapor.size() > i else 0.0)
+		var prev_budget_cloud_water: float = soa_cloud_water[i] if soa_cloud_water.size() > i else 0.0
+		water_budget_error_acc += absf((v_vapor + v_cloud_water + v_precip) - (prev_budget_vapor + prev_budget_cloud_water))
 		var display_type: int = v_type
 		var prev_type: int = v_type
 		var target_type: int = v_type
@@ -504,8 +529,33 @@ func commit() -> Array[WeatherFront]:
 			out_cell.weather_convergence = v_convergence
 		# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
 		# flush_soa_to_cells() 拿一致快照）
+		var weather_changed: bool = false
+		if soa_vapor.size() > i:
+			weather_changed = weather_changed or absf(soa_vapor[i] - v_vapor) > 0.002
+		if soa_cloud.size() > i:
+			weather_changed = weather_changed or absf(soa_cloud[i] - v_cloud) > 0.002
+		if soa_cloud_water.size() > i:
+			weather_changed = weather_changed or absf(soa_cloud_water[i] - v_cloud_water) > 0.002
+		if soa_precip.size() > i:
+			weather_changed = weather_changed or absf(soa_precip[i] - v_precip) > 0.002
+		if soa_type.size() > i:
+			weather_changed = weather_changed or int(soa_type[i]) != display_type
+		if weather_changed and weather_dirty.size() == commit_n:
+			if weather_dirty[i] == 0:
+				weather_dirty_count += 1
+			weather_dirty[i] = 1
+			if _field_slice_fast_indexed and _field_slice_neighbor_indices.size() >= commit_n * 6:
+				var nb_base: int = i * 6
+				for nd in range(6):
+					var nb_i: int = _field_slice_neighbor_indices[nb_base + nd]
+					if nb_i >= 0 and nb_i < commit_n:
+						if weather_dirty[nb_i] == 0:
+							weather_dirty_count += 1
+						weather_dirty[nb_i] = 1
 		soa_intensity[i] = v_intensity
 		soa_cloud[i] = v_cloud
+		if soa_cloud_water.size() > i:
+			soa_cloud_water[i] = v_cloud_water
 		soa_precip[i] = v_precip
 		soa_type[i] = display_type & 0xFF
 		if soa_prev_type.size() > i:
@@ -533,6 +583,9 @@ func commit() -> Array[WeatherFront]:
 			var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
 			if _cid_wc >= 0:
 				_data_core_world.write_f32_range(_cid_wc, 0, soa_cloud)
+			var _cid_wcw: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD_WATER)
+			if _cid_wcw >= 0:
+				_data_core_world.write_f32_range(_cid_wcw, 0, soa_cloud_water)
 			var _cid_wp: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PRECIP)
 			if _cid_wp >= 0:
 				_data_core_world.write_f32_range(_cid_wp, 0, soa_precip)
@@ -677,6 +730,9 @@ func commit() -> Array[WeatherFront]:
 		"field_commit_loop_ms": commit_loop_ms,
 		"field_commit_dc_ms": commit_dc_ms,
 		"field_commit_convergence_ms": commit_convergence_ms,
+		"weather_dirty_count": weather_dirty_count,
+		"water_budget_error": water_budget_error_acc / float(maxi(commit_n, 1)),
+		"active_weather_ratio": float(weather_dirty_count) / float(maxi(commit_n, 1)),
 		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
 	}
 	# 任务 9：节流式回归告警（dist/summary 各自门槛 × 2 ring buffer 检测）
@@ -1054,6 +1110,7 @@ var _field_slice_prev_vapor: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_prev_precip: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_vapor: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_cloud: PackedFloat32Array = PackedFloat32Array()
+var _field_slice_next_cloud_water: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_precip: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_instability: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_next_intensity: PackedFloat32Array = PackedFloat32Array()

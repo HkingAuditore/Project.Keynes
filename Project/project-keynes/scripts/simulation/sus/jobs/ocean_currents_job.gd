@@ -246,6 +246,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_phase_locked = ctx.season_phase
 		_round_active = true
 		_run_ocean_this_round = _should_run_ocean_this_round(ctx)
+		if _ocean_rt_diag_count < 24:
+			print("[ocean_currents][RT] round_start#%d tick=%d phase=%.4f wind_period=%d ocean_period=%d run_ocean=%s phase_seen=%d" % [
+				_ocean_rt_diag_count + 1, ctx.tick_index, _phase_locked, wind_period_ticks, ocean_period_ticks,
+				str(_run_ocean_this_round), _phase_int_seen,
+			])
 		# Phys Solve Sliced：新一轮起点 → 把 baker 的求解状态机复位（_phys_stage,
 		# _pending_phys_solved_phase 等），让接下来的 step_one 从 SLP 阶段重新跑。
 		# 旧路径（ny-only）下 _phys_solve_done 立即设为 true，本轮所有 slice 全用于像素工作。
@@ -295,6 +300,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_phys_solve_done = true
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
+		if _ocean_rt_diag_count < 24:
+			_ocean_rt_diag_count += 1
+			print("[ocean_currents][RT] slice#%d tick=%d stage=%s->%s done=%s ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
+				_ocean_rt_diag_count, ctx.tick_index,
+				str(phys_report.get("stage_name", "?")), str(phys_report.get("next_stage_name", "?")),
+				str(_phys_solve_done), float(phys_report.get("ocean_delta_p95", 0.0)),
+				float(phys_report.get("wind_delta_p95", 0.0)), float(phys_report.get("slp_delta_p95", 0.0)),
+				str(phys_report.get("stage_psi_path", "?")),
+			])
 		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 8ms → 打印来源 stage。
 		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
 		# return 漏掉了；ocean_currents p95 outlier 通常就是这里。
@@ -525,6 +539,7 @@ func _current_phys_stage_report(stage_before: int, elapsed_ms: float) -> Diction
 		"stage_psi_path": baker.get_psi_path_str() if baker != null and baker.has_method("get_psi_path_str") else "gdscript",
 		"stage_psi_native_ms": baker.get_psi_native_ms() if baker != null and baker.has_method("get_psi_native_ms") else -1.0,
 		"slp_thermal_p95": baker.get_slp_thermal_p95() if baker != null and baker.has_method("get_slp_thermal_p95") else 0.0,
+		"slp_delta_p95": baker.get_slp_delta_p95() if baker != null and baker.has_method("get_slp_delta_p95") else 0.0,
 		"wind_delta_p95": baker.get_wind_delta_p95() if baker != null and baker.has_method("get_wind_delta_p95") else 0.0,
 		"ocean_delta_p95": baker.get_ocean_delta_p95() if baker != null and baker.has_method("get_ocean_delta_p95") else 0.0,
 		"thermal_current_p95": baker.get_thermal_current_p95() if baker != null and baker.has_method("get_thermal_current_p95") else 0.0,

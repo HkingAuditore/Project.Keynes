@@ -386,6 +386,17 @@ func _percentile_from_sorted(values: Array, p: float) -> float:
 	return float(values[idx])
 
 
+func _calendar_days_per_year() -> int:
+	if generator != null and generator.has_method("_calendar_days_per_year"):
+		return clampi(int(generator._calendar_days_per_year()), 1, 3660)
+	return 365
+
+
+func _is_annual_log_tick(counter: int) -> bool:
+	var dpy: int = _calendar_days_per_year()
+	return counter == 1 or (counter > 0 and (counter % dpy) == 0)
+
+
 func _apply_daily_climate_finalizer() -> Dictionary:
 	var diag: Dictionary = {
 		"max_temp_delta": 0.0,
@@ -646,13 +657,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		if should_skip:
 			_pass_cursor += 1
 			continue
-		# 找到当前应执行的段——执行它并退出 while（每 tick 只跑 1 段）
+		# 本 round 对应一个日级气候调度点：能立即完成的 pass 在同一调度点连续推进，
+		# 避免 SLP/wind/ocean/soil 读取半成品。只有 chunked pass 返回未完成时暂停。
 		var pass_done: bool = _run_pass(pass_id)
 		ran_pass_id = pass_id
 		if pass_done:
 			_pass_cursor += 1
 		slice_elapsed_ms = (Time.get_ticks_usec() - t_slice_us0) / 1000.0
-		break
+		if not pass_done:
+			break
 
 	# 检查 round 是否结束：cursor ≥ _PASS_COUNT 表示所有段（含 skip）都过了
 	var done: bool = _pass_cursor >= _PASS_COUNT
@@ -885,7 +898,7 @@ func _finalize_round() -> void:
 			"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 		}
 		var n: int = generator._daily_climate_call_count
-		if n == 1 or (n % 365) == 0:
+		if _is_annual_log_tick(n):
 			# I1.A-1: 在 round summary 末尾追加 path=... 标识，与 weather 日志对齐，
 			# 便于 grep / A-B 桶聚合。dots-flag-prune-pr1 (2026-05-22)：
 			# use_data_core_climate flag 已删除——climate 现恒走 DataCore 单路径：

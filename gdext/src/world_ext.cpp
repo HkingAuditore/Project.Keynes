@@ -2050,6 +2050,19 @@ static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, fl
     return acc / float(SAMPLES);
 }
 
+static inline float dc_insolation_season_dev(float ny, float insol_now, float insol_mean) {
+    const float dev_abs = insol_now - insol_mean;
+    float dev_rel = dev_abs / ((insol_mean > 0.18f) ? insol_mean : 0.18f);
+    if (dev_rel < -1.0f) dev_rel = -1.0f;
+    else if (dev_rel > 1.0f) dev_rel = 1.0f;
+    const float abs_lat = std::fabs((dc_clamp01f(ny) - 0.5f) * 2.0f);
+    float polar_w = (abs_lat - 0.55f) / 0.35f;
+    if (polar_w < 0.0f) polar_w = 0.0f;
+    else if (polar_w > 1.0f) polar_w = 1.0f;
+    polar_w = polar_w * polar_w * (3.0f - 2.0f * polar_w) * 0.55f;
+    return dev_abs + (dev_rel - dev_abs) * polar_w;
+}
+
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
@@ -2154,6 +2167,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                                     ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
+    int days_per_year = cp_struct.has("days_per_year") ? int(cp_struct["days_per_year"]) : 365;
+    if (days_per_year < 1) days_per_year = 1;
+    else if (days_per_year > 3660) days_per_year = 3660;
+    const float annual_ema_alpha = 1.0f / float(days_per_year);
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
     (void)sea_level;
@@ -2248,14 +2265,13 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             const float elevation      = pe[i];
             const bool  is_water       = piw[i] != 0;
 
-            // (a) dev_today — absolute insolation deviation (not fractional).
-            // Absolute (insol_now − mean) keeps the seasonal signal scale
-            // uniform across latitudes (~0.15–0.35), whereas fractional
-            // (insol_now/mean − 1) diverges by >100× between equator and pole.
+            // (a) dev_today — absolute deviation with a high-latitude relative
+            // blend. Pure absolute insol_now-mean under-amplifies polar seasons;
+            // pure fractional deviation explodes near polar-night mean values.
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
             const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
-            float dev_today = insol_now - insol_mean;
+            float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
@@ -2353,7 +2369,7 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             } else {
                 // lerp(a, b, t) = a + (b - a) * t
                 m30  = p30[i]  + (temp_now - p30[i])  * (1.0f / 30.0f);
-                m365 = p365[i] + (temp_now - p365[i]) * (1.0f / 365.0f);
+                m365 = p365[i] + (temp_now - p365[i]) * annual_ema_alpha;
             }
             p30[i]  = m30;
             p365[i] = m365;
@@ -2490,6 +2506,10 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                                     ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
+    int days_per_year = cp_struct.has("days_per_year") ? int(cp_struct["days_per_year"]) : 365;
+    if (days_per_year < 1) days_per_year = 1;
+    else if (days_per_year > 3660) days_per_year = 3660;
+    const float annual_ema_alpha = 1.0f / float(days_per_year);
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
     (void)sea_level;
@@ -2576,7 +2596,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
             const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
-            float dev_today = insol_now - insol_mean;
+            float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
@@ -2663,7 +2683,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 pei[i] = 1;
             } else {
                 m30  = p30[i]  + (temp_now - p30[i])  * (1.0f / 30.0f);
-                m365 = p365[i] + (temp_now - p365[i]) * (1.0f / 365.0f);
+                m365 = p365[i] + (temp_now - p365[i]) * annual_ema_alpha;
             }
             p30[i]  = m30;
             p365[i] = m365;
@@ -3301,14 +3321,14 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
     const bool cold      = temp  < 0.32f;
     const bool humid     = vapor > 0.30f;
     const bool low_lat   = lat_abs < 0.48f;
-    const bool meaningful_precip = precip > 0.095f ||
-        (precip > 0.055f && cloud > 0.24f && vapor > 0.28f);
+    const bool meaningful_precip = precip > 0.080f ||
+        (precip > 0.045f && cloud > 0.20f && vapor > 0.24f);
 
-    if (cold && (precip > 0.10f || (precip > 0.055f && cloud > 0.26f && vapor > 0.28f)))
+    if (cold && (precip > 0.085f || (precip > 0.045f && cloud > 0.22f && vapor > 0.24f)))
         return 3; // BLIZZARD
-    if (warm && humid && instability > 0.56f && precip > 0.18f)
+    if (warm && humid && instability > 0.56f && precip > 0.16f)
         return 2; // STORM
-    if (warm && humid && low_lat && precip > 0.15f)
+    if (warm && humid && low_lat && precip > 0.13f)
         return 7; // MONSOON
     if (meaningful_precip)
         return 1; // RAIN
@@ -3523,7 +3543,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_precip_carryover_max = knobs.has("field_precip_carryover_max")
                                             ? float(knobs["field_precip_carryover_max"]) : 0.12f;
     const float field_vapor_precip_sink = knobs.has("field_vapor_precip_sink")
-                                            ? float(knobs["field_vapor_precip_sink"]) : 0.80f;
+                                            ? float(knobs["field_vapor_precip_sink"]) : 0.58f;
     const float field_vapor_relax_rate = knobs.has("field_vapor_relax_rate")
                                             ? float(knobs["field_vapor_relax_rate"]) : 0.08f;
     const float field_orographic_lift_cap = knobs.has("field_orographic_lift_cap")
@@ -3543,8 +3563,20 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     PackedFloat32Array prev_vapor_arr  = knobs["prev_vapor"];
     PackedFloat32Array prev_precip_arr = knobs["prev_precip"];
     PackedFloat32Array temp_anom_arr   = knobs["temp_transport_anomaly"];
+    PackedFloat32Array prev_cloud_water_arr;
     PackedFloat32Array temp_read_arr;
     PackedFloat32Array moist_read_arr;
+    PackedFloat32Array out_vapor_arr;
+    PackedFloat32Array out_cloud_arr;
+    PackedFloat32Array out_cloud_water_arr;
+    PackedFloat32Array out_precip_arr;
+    PackedFloat32Array out_instability_arr;
+    PackedFloat32Array out_intensity_arr;
+    PackedFloat32Array out_convergence_arr;
+    PackedInt32Array out_type_arr;
+    if (knobs.has("prev_cloud_water")) {
+        prev_cloud_water_arr = knobs["prev_cloud_water"];
+    }
     if (knobs.has("temp_read_arr")) {
         temp_read_arr = knobs["temp_read_arr"];
     }
@@ -3563,6 +3595,41 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         prev_precip_arr.size() != n_cells ||
         temp_anom_arr.size()   != n_cells) {
         diag("prev/temp_anom array size mismatch"); return -1.0;
+    }
+    if (prev_cloud_water_arr.size() != 0 && prev_cloud_water_arr.size() != n_cells) {
+        diag("prev_cloud_water array size mismatch"); return -1.0;
+    }
+
+    const bool use_next_outputs =
+        knobs.has("out_vapor") && knobs.has("out_cloud") &&
+        knobs.has("out_precip") && knobs.has("out_instability") &&
+        knobs.has("out_intensity") && knobs.has("out_convergence") &&
+        knobs.has("out_type");
+    if (use_next_outputs) {
+        out_vapor_arr       = knobs["out_vapor"];
+        out_cloud_arr       = knobs["out_cloud"];
+        out_precip_arr      = knobs["out_precip"];
+        out_instability_arr = knobs["out_instability"];
+        out_intensity_arr   = knobs["out_intensity"];
+        out_convergence_arr = knobs["out_convergence"];
+        out_type_arr        = knobs["out_type"];
+        if (knobs.has("out_cloud_water")) {
+            out_cloud_water_arr = knobs["out_cloud_water"];
+        }
+        if (out_vapor_arr.size()       != n_cells ||
+            out_cloud_arr.size()       != n_cells ||
+            out_precip_arr.size()      != n_cells ||
+            out_instability_arr.size() != n_cells ||
+            out_intensity_arr.size()   != n_cells ||
+            out_convergence_arr.size() != n_cells ||
+            out_type_arr.size()        != n_cells) {
+            diag("out array size mismatch");
+            return -1.0;
+        }
+        if (out_cloud_water_arr.size() != 0 && out_cloud_water_arr.size() != n_cells) {
+            diag("out_cloud_water array size mismatch");
+            return -1.0;
+        }
     }
 
     // ─── Acquire slot arrays + validate sizes ───────────────────────────
@@ -3624,19 +3691,23 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const int32_t * const __restrict NB   = nb_arr.ptr();
     const float   * const __restrict PV   = prev_vapor_arr.ptr();
     const float   * const __restrict PP   = prev_precip_arr.ptr();
+    const float   * const __restrict PCW  = (prev_cloud_water_arr.size() == n_cells) ? prev_cloud_water_arr.ptr() : nullptr;
     const float   * const __restrict TA   = temp_anom_arr.ptr();
+    const float   * const __restrict PREV_CNV = s_wcnv.arr_f32.ptr();
 
-    float   * const __restrict OUT_VAP   = s_wvap.arr_f32.ptrw();
-    float   * const __restrict OUT_CLD   = s_wcld.arr_f32.ptrw();
-    float   * const __restrict OUT_PRE   = s_wpre.arr_f32.ptrw();
-    float   * const __restrict OUT_INS   = s_wins.arr_f32.ptrw();
-    float   * const __restrict OUT_INT   = s_wint.arr_f32.ptrw();
-    float   * const __restrict OUT_CNV   = s_wcnv.arr_f32.ptrw();
-    uint8_t * const __restrict OUT_TYP   = s_wtyp.arr_u8.ptrw();
-    uint8_t * const __restrict OUT_PREV_TYP = (weather_transition_enabled && s_wprev != nullptr) ? s_wprev->arr_u8.ptrw() : nullptr;
-    uint8_t * const __restrict OUT_TARGET_TYP = (weather_transition_enabled && s_wtarget != nullptr) ? s_wtarget->arr_u8.ptrw() : nullptr;
-    float   * const __restrict OUT_ALPHA = (weather_transition_enabled && s_walpha != nullptr) ? s_walpha->arr_f32.ptrw() : nullptr;
-    uint8_t * const __restrict OUT_FIN   = s_wfin.arr_u8.ptrw();
+    float   * const __restrict OUT_VAP = use_next_outputs ? out_vapor_arr.ptrw() : s_wvap.arr_f32.ptrw();
+    float   * const __restrict OUT_CLD = use_next_outputs ? out_cloud_arr.ptrw() : s_wcld.arr_f32.ptrw();
+    float   * const __restrict OUT_CW  = (use_next_outputs && out_cloud_water_arr.size() == n_cells) ? out_cloud_water_arr.ptrw() : nullptr;
+    float   * const __restrict OUT_PRE = use_next_outputs ? out_precip_arr.ptrw() : s_wpre.arr_f32.ptrw();
+    float   * const __restrict OUT_INS = use_next_outputs ? out_instability_arr.ptrw() : s_wins.arr_f32.ptrw();
+    float   * const __restrict OUT_INT = use_next_outputs ? out_intensity_arr.ptrw() : s_wint.arr_f32.ptrw();
+    float   * const __restrict OUT_CNV = use_next_outputs ? out_convergence_arr.ptrw() : s_wcnv.arr_f32.ptrw();
+    uint8_t * const __restrict OUT_TYP = use_next_outputs ? nullptr : s_wtyp.arr_u8.ptrw();
+    int32_t * const __restrict OUT_TYP_I32 = use_next_outputs ? out_type_arr.ptrw() : nullptr;
+    uint8_t * const __restrict OUT_PREV_TYP = (!use_next_outputs && weather_transition_enabled && s_wprev != nullptr) ? s_wprev->arr_u8.ptrw() : nullptr;
+    uint8_t * const __restrict OUT_TARGET_TYP = (!use_next_outputs && weather_transition_enabled && s_wtarget != nullptr) ? s_wtarget->arr_u8.ptrw() : nullptr;
+    float   * const __restrict OUT_ALPHA = (!use_next_outputs && weather_transition_enabled && s_walpha != nullptr) ? s_walpha->arr_f32.ptrw() : nullptr;
+    uint8_t * const __restrict OUT_FIN   = use_next_outputs ? nullptr : s_wfin.arr_u8.ptrw();
 
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -3762,7 +3833,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // any cell j > i overwrites it (cells are processed in order, and
         // cell i only writes OUT_CNV[i], never OUT_CNV[j]). So the read sees
         // the stable prev-tick value. Bit-equal to GDScript path.
-        float convergence = OUT_CNV[i];
+        float convergence = PREV_CNV[i];
         if (refresh_convergence) {
             convergence = wf_wind_convergence_idx(i, POS, NB, WX, WY);
         }
@@ -3793,6 +3864,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                     + effective_oa_pos * 0.08f;
         if (cloud < 0.0f) cloud = 0.0f;
         else if (cloud > 1.0f) cloud = 1.0f;
+        float cloud_water = PCW != nullptr ? PCW[i] : cloud * 0.5f;
+        cloud_water = cloud_water * 0.70f + cloud * 0.55f + humid_excess * 0.18f + lift_supply * 0.12f;
+        if (cloud_water < 0.0f) cloud_water = 0.0f;
+        else if (cloud_water > 1.0f) cloud_water = 1.0f;
+        const float cloud_from_water = cloud_water * 0.75f;
+        if (cloud < cloud_from_water) cloud = cloud_from_water;
+        if (cloud > 1.0f) cloud = 1.0f;
 
         // (line 733-741) instability
         float instability = (temp - 0.45f) * 1.15f
@@ -3810,17 +3888,20 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         float terrain_trigger = lift_supply * 2.8f + ((convergence > 0.0f) ? convergence : 0.0f) * 1.4f;
         if (terrain_trigger < 0.0f) terrain_trigger = 0.0f;
         else if (terrain_trigger > 1.0f) terrain_trigger = 1.0f;
-        float vapor_gate = (vapor - 0.16f) / 0.34f;
+        float vapor_gate = (vapor - 0.12f) / 0.30f;
         if (vapor_gate < 0.0f) vapor_gate = 0.0f;
         else if (vapor_gate > 1.0f) vapor_gate = 1.0f;
-        float rain_focus = ((cloud_core > terrain_trigger) ? cloud_core : terrain_trigger) * vapor_gate;
+        float trigger_focus = (cloud_core > terrain_trigger) ? cloud_core : terrain_trigger;
+        const float cloud_water_focus = cloud_water * 0.55f;
+        if (trigger_focus < cloud_water_focus) trigger_focus = cloud_water_focus;
+        float rain_focus = trigger_focus * vapor_gate;
         if (rain_focus < 0.0f) rain_focus = 0.0f;
         else if (rain_focus > 1.0f) rain_focus = 1.0f;
         float precip_source = cloud * (0.30f + instability * 0.76f)
                             + lift_supply * 0.36f
                             - lift_neg * 0.55f;
         if (precip_source < 0.0f) precip_source = 0.0f;
-        const float precip_raw = precip_source * 1.05f * rain_focus;
+        const float precip_raw = precip_source * 1.18f * rain_focus;
         // climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格
         // (upstream_idx) 继承，权重随 wind_mag 增大 → 雨带随锋面下风迁移。
         // 1:1 mirror of field_solver.gd precip-advection block. advect_steps==0
@@ -3829,24 +3910,27 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (upstream_idx >= 0 && upstream_idx < n_cells) {
             old_precip = old_precip + (PP[upstream_idx] - old_precip) * wind_mag;
         }
-        float vapor_floor_factor = (vapor - 0.18f) / 0.36f;
+        float vapor_floor_factor = (vapor - 0.12f) / 0.34f;
         if (vapor_floor_factor < 0.0f) vapor_floor_factor = 0.0f;
         else if (vapor_floor_factor > 1.0f) vapor_floor_factor = 1.0f;
         const float dyn_decay = field_precip_decay + wind_mag * 0.25f;
         float keep_ratio = 1.0f - dyn_decay;
         if (keep_ratio < 0.0f) keep_ratio = 0.0f;
         if (keep_ratio > field_precip_carryover_max) keep_ratio = field_precip_carryover_max;
-        const float rain_floor_focus = (rain_focus > 0.35f) ? rain_focus : 0.35f;
-        const float precip_floor = (vapor >= 0.50f && old_precip >= 0.08f)
+        const float rain_floor_focus = (rain_focus > 0.30f) ? rain_focus : 0.30f;
+        const float precip_floor = (vapor >= 0.42f && old_precip >= 0.04f)
             ? old_precip * keep_ratio * vapor_floor_factor * rain_floor_focus
             : 0.0f;
+        const float cloud_water_rain = cloud_water * ((rain_focus > 0.18f) ? rain_focus : 0.18f) * (0.14f + instability * 0.16f);
         float precip = (precip_raw > precip_floor) ? precip_raw : precip_floor;
+        if (precip < cloud_water_rain) precip = cloud_water_rain;
         if (precip < 0.0f) precip = 0.0f;
         else if (precip > 1.0f) precip = 1.0f;
-        if (precip < 0.02f) precip = 0.0f;
+        cloud_water -= precip * 0.32f;
+        if (cloud_water < 0.0f) cloud_water = 0.0f;
         float vapor_after_precip = vapor - precip * field_vapor_precip_sink;
         if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
-        if (precip < 0.02f && cloud < 0.12f && field_vapor_relax_rate > 0.0f) {
+        if (precip < 0.005f && cloud < 0.12f && field_vapor_relax_rate > 0.0f) {
             vapor_after_precip = vapor_after_precip + (base_m - vapor_after_precip) * field_vapor_relax_rate;
         }
 
@@ -3888,15 +3972,39 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // (line 751-757) write outputs
         OUT_VAP[i] = vapor_after_precip;
         OUT_CLD[i] = cloud;
+        if (OUT_CW != nullptr) {
+            OUT_CW[i] = cloud_water;
+        }
         OUT_PRE[i] = precip;
         OUT_INS[i] = instability;
         OUT_INT[i] = intensity;
         OUT_CNV[i] = convergence;
-        OUT_TYP[i] = display_wt;
-        OUT_FIN[i] = 1; // weather_field_initialized = true
+        if (use_next_outputs) {
+            OUT_TYP_I32[i] = int32_t(wt);
+        } else {
+            OUT_TYP[i] = display_wt;
+            OUT_FIN[i] = 1; // weather_field_initialized = true
+        }
     }
 
     // §11.2 flush: push CoW-detached weather output slots back to MapData
+    if (use_next_outputs) {
+        Dictionary &mutable_knobs = const_cast<Dictionary &>(knobs);
+        mutable_knobs["out_vapor"] = out_vapor_arr;
+        mutable_knobs["out_cloud"] = out_cloud_arr;
+        if (out_cloud_water_arr.size() == n_cells) {
+            mutable_knobs["out_cloud_water"] = out_cloud_water_arr;
+        }
+        mutable_knobs["out_precip"] = out_precip_arr;
+        mutable_knobs["out_instability"] = out_instability_arr;
+        mutable_knobs["out_intensity"] = out_intensity_arr;
+        mutable_knobs["out_convergence"] = out_convergence_arr;
+        mutable_knobs["out_type"] = out_type_arr;
+        mutable_knobs["weather_field_wrote_next"] = true;
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
     _flush_slot_to_map(sid_w_vapor);
     _flush_slot_to_map(sid_w_cloud);
     _flush_slot_to_map(sid_w_precip);
@@ -4263,8 +4371,9 @@ inline void wind_belt_at(double ny, double season_phase,
 
     // smoothstep(a, b, x) = (clamp((x-a)/(b-a), 0, 1))^2 * (3 - 2*t)
     auto smoothstep = [](double a, double b, double x) -> double {
-        if (b <= a) return (x >= a) ? 1.0 : 0.0;
-        double t = (x - a) / (b - a);
+        const double span = b - a;
+        if (std::abs(span) < 1e-12) return (x >= a) ? 1.0 : 0.0;
+        double t = (x - a) / span;
         if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
         return t * t * (3.0 - 2.0 * t);
     };
@@ -4278,7 +4387,7 @@ inline void wind_belt_at(double ny, double season_phase,
     const double base_x = w_itcz_b * ITCZ_X + w_trade_b * TRADE_X + w_west_b * WEST_X + w_polar_b * POLAR_X;
     const double base_y = w_trade_b * (-TRADE_Y_AMP * sl) + w_west_b * (WEST_Y_AMP * sl) + w_polar_b * (-POLAR_Y_AMP * sl);
 
-    // hemi_phase 与 monsoon polarity（mirror wind_belt.gd:93-101）
+    // hemi_phase 与 monsoon polarity（mirror wind_belt.gd::monsoon_offset_at cubic ease）
     auto fposmod = [](double x, double m) -> double {
         double r = std::fmod(x, m);
         if (r < 0.0) r += m;
@@ -4286,7 +4395,10 @@ inline void wind_belt_at(double ny, double season_phase,
     };
     double hemi_phase = (lat_signed < 0.0) ? fposmod(season_phase - 1.0, 4.0)
                                            : fposmod(season_phase + 1.0, 4.0);
-    const double monsoon_polarity = std::sin(hemi_phase * PI_HALF);
+    const double raw_sin = std::sin(hemi_phase * PI_HALF);
+    double monsoon_polarity = raw_sin * raw_sin * raw_sin * 1.18;
+    if (monsoon_polarity < -1.0) monsoon_polarity = -1.0;
+    else if (monsoon_polarity > 1.0) monsoon_polarity = 1.0;
     const double tropical_w       = smoothstep(TRADE_TOP, ITCZ_HALF_WIDTH, abs_lat);
     const double y_offset         = monsoon_polarity * tropical_w * MONSOON_AMP * sl;
 
@@ -9975,9 +10087,9 @@ constexpr double NB_DIR_Y[6] = {
 };
 
 // physical_circulation_solver.gd 内常量（line 233-244）。
-constexpr double WIND_W_LAT                    = 0.30;
-constexpr double WIND_W_GRAD                   = 0.85;
-constexpr double WIND_W_MONSOON                = 0.65;
+constexpr double WIND_W_LAT                    = 0.85;
+constexpr double WIND_W_GRAD                   = 0.35;
+constexpr double WIND_W_MONSOON                = 0.45;
 constexpr int    WIND_MONSOON_MAX_DIST         = 5;
 constexpr double WIND_CORIOLIS_MAX_RAD         = 0.78;
 constexpr double WIND_TERRAIN_MOUNTAIN_DAMP    = 0.55;
@@ -10000,8 +10112,9 @@ inline double wind_belt_speed_at(double ny, double season_phase) {
     constexpr double PI_HALF         = 1.5707963267948966;
 
     auto smoothstep = [](double a, double b, double x) -> double {
-        if (b <= a) return (x >= a) ? 1.0 : 0.0;
-        double t = (x - a) / (b - a);
+        const double span = b - a;
+        if (std::abs(span) < 1e-12) return (x >= a) ? 1.0 : 0.0;
+        double t = (x - a) / span;
         if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
         return t * t * (3.0 - 2.0 * t);
     };
@@ -10119,9 +10232,18 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int    lf_mountain   = int(knobs["land_lf_mountain"]);
     const int    lf_peak       = int(knobs["land_lf_peak"]);
     const int    lf_hill       = int(knobs["land_lf_hill"]);
-    float response_rate = float(knobs.has("wind_response_rate") ? double(knobs["wind_response_rate"]) : 1.0);
+    const bool   wind_belt_only = bool(knobs.has("wind_belt_only_debug") ? bool(knobs["wind_belt_only_debug"]) : false);
+    float response_rate = float(knobs.has("wind_response_rate") ? double(knobs["wind_response_rate"]) : 0.25);
     if (response_rate < 0.0f) response_rate = 0.0f;
     else if (response_rate > 1.0f) response_rate = 1.0f;
+    const double synoptic_amp = double(knobs.has("wind_synoptic_amp") ? double(knobs["wind_synoptic_amp"]) : 0.055);
+    int days_per_year = int(knobs.has("days_per_year") ? int(knobs["days_per_year"]) : 365);
+    if (days_per_year < 1) days_per_year = 1;
+    else if (days_per_year > 3660) days_per_year = 3660;
+    double year_phase = std::fmod(season_phase, 4.0);
+    if (year_phase < 0.0) year_phase += 4.0;
+    const int sim_day = int(knobs.has("sim_day") ? int(knobs["sim_day"]) : int(std::floor((year_phase / 4.0) * double(days_per_year))));
+    const int world_seed = int(knobs.has("world_seed") ? int(knobs["world_seed"]) : 0);
     if (n_cells <= 0)         { diag("n_cells <= 0"); return -1.0; }
     if (bounds_size_y <= 0.001) { diag("world_bounds_size_y <= 0.001"); return -1.0; }
 
@@ -10305,6 +10427,15 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             v_sum_x += WIND_W_MONSOON * monsoon_w_dist * v_monsoon_x;
             v_sum_y += WIND_W_MONSOON * monsoon_w_dist * v_monsoon_y;
         }
+        if (synoptic_amp > 0.0) {
+            const double wave_a = std::sin(double(i) * 12.9898 + double(world_seed) * 0.00013 + double(sim_day) * 0.173 + ls * 4.7);
+            const double wave_b = std::cos(double(i) * 7.233 + double(world_seed) * 0.00021 - double(sim_day) * 0.119 + ls_abs * 6.1);
+            const double syn_x = wave_a * 0.72 + wave_b * 0.28;
+            const double syn_y = wave_b * 0.68 - wave_a * 0.32;
+            const double amp_lat = synoptic_amp * (0.45 + 0.55 * ls_abs);
+            v_sum_x += syn_x * amp_lat;
+            v_sum_y += syn_y * amp_lat;
+        }
         const double v_sum_len2 = v_sum_x * v_sum_x + v_sum_y * v_sum_y;
         if (v_sum_len2 < 0.0001) {
             // 退化保护
@@ -10324,6 +10455,20 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
 
         // (e) 地形 / 摩擦衰减
         if (!is_water) spd *= WIND_LAND_FRICTION;
+        if (wind_belt_only) {
+            const double old_dir_x = double(WX[i]);
+            const double old_dir_y = double(WY[i]);
+            const double old_spd = double(WSP_SLOT[i]);
+            WX[i] = float(v_base_x);
+            WY[i] = float(v_base_y);
+            WSP_SLOT[i] = float(spd);
+            WSPD[i] = float(spd);
+            const double dx = v_base_x - old_dir_x;
+            const double dy = v_base_y - old_dir_y;
+            const double ds = spd - old_spd;
+            wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
+            continue;
+        }
         if (ta) {
             // (e1) 山脉绕流
             double mtn_dx = 0.0, mtn_dy = 0.0;
@@ -14933,7 +15078,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (bounds_size_y <= 0.001)  return fail("world_bounds_size_y <= 0.001");
 
     // Tunables (defaults match GDScript constants; allow override via knobs).
-    const float A_LAT          = float(knobs.has("slp_lat_amp")        ? double(knobs["slp_lat_amp"])        : 0.10);
+    const float A_LAT          = float(knobs.has("slp_lat_amp")        ? double(knobs["slp_lat_amp"])        : 0.16);
     const float A_LAND         = float(knobs.has("slp_land_amp")       ? double(knobs["slp_land_amp"])       : 0.55);
     const float WATER_DAMP     = float(knobs.has("slp_water_damp")     ? double(knobs["slp_water_damp"])     : 0.20);
     const float INTERIOR_BOOST = float(knobs.has("slp_interior_boost") ? double(knobs["slp_interior_boost"]) : 1.30);
@@ -14941,11 +15086,32 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const float THERMAL_WEIGHT = float(knobs.has("wind_thermal_slp_weight") ? double(knobs["wind_thermal_slp_weight"]) : 0.0);
     const float ICE_HIGH_WEIGHT = float(knobs.has("slp_ice_high_weight") ? double(knobs["slp_ice_high_weight"]) : 0.0);
     const float SNOW_HIGH_WEIGHT = float(knobs.has("slp_snow_high_weight") ? double(knobs["slp_snow_high_weight"]) : 0.0);
+    float slp_response_rate = float(knobs.has("slp_response_rate") ? double(knobs["slp_response_rate"]) : 0.55);
+    if (slp_response_rate < 0.0f) slp_response_rate = 0.0f;
+    else if (slp_response_rate > 1.0f) slp_response_rate = 1.0f;
+    const float SLP_SYNOPTIC_AMP = float(knobs.has("slp_synoptic_amp") ? double(knobs["slp_synoptic_amp"]) : 0.075);
+    const float MOIST_LOW_WEIGHT = float(knobs.has("slp_moist_low_weight") ? double(knobs["slp_moist_low_weight"]) : 0.12);
+    const bool SLP_RECENTER = bool(knobs.has("slp_recenter") ? bool(knobs["slp_recenter"]) : true);
+    const float SLP_TARGET_P95 = float(knobs.has("slp_target_p95") ? double(knobs["slp_target_p95"]) : 0.18);
+    int days_per_year = int(knobs.has("days_per_year") ? int(knobs["days_per_year"]) : 365);
+    if (days_per_year < 1) days_per_year = 1;
+    else if (days_per_year > 3660) days_per_year = 3660;
+    double year_phase = std::fmod(season_phase, 4.0);
+    if (year_phase < 0.0) year_phase += 4.0;
+    const int sim_day = int(knobs.has("sim_day") ? int(knobs["sim_day"]) : int(std::floor((year_phase / 4.0) * double(days_per_year))));
+    const int world_seed = int(knobs.has("world_seed") ? int(knobs["world_seed"]) : 0);
 
     PackedInt32Array nb_arr   = knobs["neighbor_indices"];
     PackedByteArray  water_ids = knobs["water_terrain_ids"];
+    PackedFloat32Array prev_slp_arr;
+    if (knobs.has("prev_slp_arr")) {
+        prev_slp_arr = knobs["prev_slp_arr"];
+    }
     if (nb_arr.size()  < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
     if (water_ids.size() <= 0)         return fail("water_terrain_ids empty");
+    if (prev_slp_arr.size() != 0 && prev_slp_arr.size() != n_cells) {
+        return fail("prev_slp_arr size mismatch");
+    }
 
     // Slot resolution: cell_pos_y + cell_terrain plus optional closed-loop fields.
     const int sid_pos_y   = component_id(StringName("cell_pos_y"));
@@ -14953,6 +15119,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const int sid_temp_an = component_id(StringName("cell_temp_anomaly"));
     const int sid_snow    = component_id(StringName("cell_snow_cover"));
     const int sid_ice     = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_w_vapor = component_id(StringName("cell_weather_vapor"));
+    const int sid_w_cloud = component_id(StringName("cell_weather_cloud"));
     if (sid_pos_y < 0 || sid_terrain < 0) {
         return fail("missing slot id (cell_pos_y/cell_terrain)");
     }
@@ -14977,6 +15145,9 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const float *TEMP_AN = nullptr;
     const float *SNOW = nullptr;
     const float *ICE = nullptr;
+    const float *WVAP = nullptr;
+    const float *WCLD = nullptr;
+    const float *PREV_SLP = (prev_slp_arr.size() == n_cells) ? prev_slp_arr.ptr() : nullptr;
     if (sid_temp_an >= 0 && _slots.write[sid_temp_an].arr_f32.size() == n_cells) {
         TEMP_AN = _slots.write[sid_temp_an].arr_f32.ptr();
     }
@@ -14985,6 +15156,12 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     }
     if (sid_ice >= 0 && _slots.write[sid_ice].arr_f32.size() == n_cells) {
         ICE = _slots.write[sid_ice].arr_f32.ptr();
+    }
+    if (sid_w_vapor >= 0 && _slots.write[sid_w_vapor].arr_f32.size() == n_cells) {
+        WVAP = _slots.write[sid_w_vapor].arr_f32.ptr();
+    }
+    if (sid_w_cloud >= 0 && _slots.write[sid_w_cloud].arr_f32.size() == n_cells) {
+        WCLD = _slots.write[sid_w_cloud].arr_f32.ptr();
     }
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -14995,6 +15172,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
 
     // Output buffer (n_cells floats); will become slp_out PackedFloat32Array.
     std::vector<float> slp_buf(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<float> slp_delta(static_cast<size_t>(n_cells), 0.0f);
     std::vector<float> thermal_abs;
     if (THERMAL_WEIGHT != 0.0f || ICE_HIGH_WEIGHT != 0.0f || SNOW_HIGH_WEIGHT != 0.0f) {
         thermal_abs.resize(static_cast<size_t>(n_cells), 0.0f);
@@ -15048,9 +15226,15 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         const float thermal_slp = -THERMAL_WEIGHT * temp_anom * thermal_response;
         const float ice_high = ICE_HIGH_WEIGHT * ((ICE != nullptr) ? std::clamp(ICE[i], 0.0f, 1.0f) : 0.0f);
         const float snow_high = SNOW_HIGH_WEIGHT * ((SNOW != nullptr) ? std::clamp(SNOW[i], 0.0f, 1.0f) : 0.0f);
-        slp_buf[i] = base_lat + landsea + thermal_slp + ice_high + snow_high;
+        const float vapor_low = (WVAP != nullptr) ? std::clamp(WVAP[i], 0.0f, 1.0f) : 0.0f;
+        const float cloud_low = (WCLD != nullptr) ? std::clamp(WCLD[i], 0.0f, 1.0f) : 0.0f;
+        const float moist_low = -MOIST_LOW_WEIGHT * (vapor_low * 0.65f + cloud_low * 0.35f) * (0.45f + 0.55f * (1.0f - ls_abs));
+        const float synoptic = SLP_SYNOPTIC_AMP * float(
+            0.65 * std::sin(double(i) * 4.886 + double(world_seed) * 0.00011 + double(sim_day) * 0.071 + double(ls) * 5.3) +
+            0.35 * std::cos(double(i) * 2.191 - double(world_seed) * 0.00017 + double(sim_day) * 0.047 + double(ls_abs) * 8.1));
+        slp_buf[i] = base_lat + landsea + thermal_slp + ice_high + snow_high + moist_low + synoptic;
         if (!thermal_abs.empty()) {
-            thermal_abs[i] = std::fabs(thermal_slp) + std::fabs(ice_high) + std::fabs(snow_high);
+            thermal_abs[i] = std::fabs(thermal_slp) + std::fabs(ice_high) + std::fabs(snow_high) + std::fabs(moist_low);
         }
     }
 
@@ -15075,7 +15259,58 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         }
     }
 
+    if (SLP_RECENTER && n_cells > 1) {
+        double mean = 0.0;
+        for (int i = 0; i < n_cells; ++i) {
+            mean += double(slp_buf[i]);
+        }
+        mean /= double(n_cells);
+        std::vector<float> slp_abs(static_cast<size_t>(n_cells), 0.0f);
+        for (int i = 0; i < n_cells; ++i) {
+            slp_buf[i] = float(double(slp_buf[i]) - mean);
+            slp_abs[static_cast<size_t>(i)] = std::fabs(slp_buf[i]);
+        }
+        std::sort(slp_abs.begin(), slp_abs.end());
+        const size_t p95_i = std::min(slp_abs.size() - 1, size_t(std::floor(double(slp_abs.size() - 1) * 0.95)));
+        const float p95 = slp_abs[p95_i];
+        if (p95 > 1e-5f && SLP_TARGET_P95 > 1e-5f) {
+            float scale = SLP_TARGET_P95 / p95;
+            if (scale < 0.75f) scale = 0.75f;
+            else if (scale > 3.60f) scale = 3.60f;
+            for (int i = 0; i < n_cells; ++i) {
+                slp_buf[i] *= scale;
+            }
+        }
+    }
+
     // ─── Marshall slp_out ─────────────────────────────────────────────────
+    if (PREV_SLP != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            const float prev = PREV_SLP[i];
+            const float next = prev + (slp_buf[i] - prev) * slp_response_rate;
+            slp_buf[i] = next;
+        }
+    }
+    if (SLP_RECENTER && n_cells > 1) {
+        double mean = 0.0;
+        for (int i = 0; i < n_cells; ++i) {
+            mean += double(slp_buf[i]);
+        }
+        mean /= double(n_cells);
+        for (int i = 0; i < n_cells; ++i) {
+            slp_buf[i] = float(double(slp_buf[i]) - mean);
+        }
+    }
+    if (PREV_SLP != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            slp_delta[static_cast<size_t>(i)] = std::fabs(slp_buf[i] - PREV_SLP[i]);
+        }
+    } else {
+        for (int i = 0; i < n_cells; ++i) {
+            slp_delta[static_cast<size_t>(i)] = std::fabs(slp_buf[i]);
+        }
+    }
+
     PackedFloat32Array slp_out;
     slp_out.resize(n_cells);
     {
@@ -15093,6 +15328,30 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         std::sort(thermal_abs.begin(), thermal_abs.end());
         const size_t p95_i = thermal_abs.empty() ? 0 : std::min(thermal_abs.size() - 1, size_t(std::floor(double(thermal_abs.size() - 1) * 0.95)));
         out["slp_thermal_p95"] = double(thermal_abs[p95_i]);
+    }
+    if (n_cells > 0) {
+        double mean = 0.0;
+        for (int i = 0; i < n_cells; ++i) {
+            mean += double(slp_buf[i]);
+        }
+        mean /= double(n_cells);
+        double var = 0.0;
+        std::vector<float> slp_abs(static_cast<size_t>(n_cells), 0.0f);
+        for (int i = 0; i < n_cells; ++i) {
+            const double d = double(slp_buf[i]) - mean;
+            var += d * d;
+            slp_abs[static_cast<size_t>(i)] = std::fabs(slp_buf[i]);
+        }
+        std::sort(slp_abs.begin(), slp_abs.end());
+        const size_t p95_i = std::min(slp_abs.size() - 1, size_t(std::floor(double(slp_abs.size() - 1) * 0.95)));
+        out["slp_mean"] = mean;
+        out["slp_std"] = std::sqrt(var / double(n_cells));
+        out["slp_abs_p95"] = double(slp_abs[p95_i]);
+    }
+    if (!slp_delta.empty()) {
+        std::sort(slp_delta.begin(), slp_delta.end());
+        const size_t p95_i = std::min(slp_delta.size() - 1, size_t(std::floor(double(slp_delta.size() - 1) * 0.95)));
+        out["slp_delta_p95"] = double(slp_delta[p95_i]);
     }
     return out;
 }
@@ -15179,21 +15438,21 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     if (bounds_size_y <= 0.001)  return fail("world_bounds_size_y <= 0.001");
 
     // Numeric constants (defaults must mirror physical_circulation_solver.gd).
-    const int   PSI_TOTAL_ITERS = int(knobs.has("psi_total_iters")     ? int(knobs["psi_total_iters"])     : 24);
-    const float PSI_OMEGA       = float(knobs.has("psi_sor_omega")     ? double(knobs["psi_sor_omega"])    : 1.20);
-    const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.10);
+    const int   PSI_TOTAL_ITERS = int(knobs.has("psi_total_iters")     ? int(knobs["psi_total_iters"])     : 40);
+    const float PSI_OMEGA       = float(knobs.has("psi_sor_omega")     ? double(knobs["psi_sor_omega"])    : 1.40);
+    const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.18);
     const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
     const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 1.0);
-    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.05);
+    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.18);
     const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.18);
-    const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.6);
+    const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.60);
     const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
     float response_rate = float(knobs.has("ocean_current_response_rate") ? double(knobs["ocean_current_response_rate"]) : 1.0);
     if (response_rate < 0.0f) response_rate = 0.0f;
     else if (response_rate > 1.0f) response_rate = 1.0f;
     const float THERMAL_CURRENT_WEIGHT = float(knobs.has("ocean_thermal_current_weight") ? double(knobs["ocean_thermal_current_weight"]) : TH_WEIGHT);
-    const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.35);
-    const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.20);
+    const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.40);
+    const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.25);
 
     PackedInt32Array nb_arr     = knobs["neighbor_indices"];
     PackedByteArray  water_ids  = knobs["water_terrain_ids"];

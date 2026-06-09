@@ -727,7 +727,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	var t_ui_ms: float = (Time.get_ticks_usec() - t_ui_us0) / 1000.0
 
 	# Emergent Climate Coupling：fast tick 总耗时打点
-	# 首次必打；随后按 365 日节流。合计 > 12ms 触发 WARN（不阻塞主循环）。
+	# 首次必打；随后按 WorldClock 年长节流。合计 > 12ms 触发 WARN（不阻塞主循环）。
 	var fast_ms: int = Time.get_ticks_msec() - t_fast0
 	_fast_tick_count += 1
 
@@ -737,11 +737,13 @@ func _on_day_changed(_day_idx: int) -> void:
 		and perf_log_daily_stride > 0 \
 		and (_fast_tick_count == 1 or (_fast_tick_count % perf_log_daily_stride) == 0)
 	# 老牌 fast tick 日志（保留兼容 perf-report.md 已有数据格式）
-	if _fast_tick_count == 1 or (_fast_tick_count % 365) == 0:
+	var annual_log_stride: int = _world_clock.days_per_year() if _world_clock != null and _world_clock.has_method("days_per_year") else 365
+	annual_log_stride = maxi(1, annual_log_stride)
+	if _fast_tick_count == 1 or (_fast_tick_count % annual_log_stride) == 0:
 		print("fast tick #%d: %dms (sus=%.2f render=%.2f ui=%.2f skipped_day=%s)"
 			% [_fast_tick_count, fast_ms, t_sus_ms, t_render_ms, t_ui_ms, str(was_skipped_day)])
 	# Fast-tick perf opt (A)：跳日路径本就是低成本，跳过 > 12ms 警告误报判定。
-	# Daily-sim perf instrumentation：原 365 帧节流过松（卡顿期 400ms 一年才提醒一次），
+	# Daily-sim perf instrumentation：原年度节流过松（卡顿期 400ms 一年才提醒一次），
 	# 改为指数退让——首次必报，之后按 30 帧节流，避免刷屏又能持续看到趋势。
 	var sus_budget_warn: bool = t_sus_ms > 1.0
 	var trigger_warn: bool = (not was_skipped_day) and (fast_ms > 12 or sus_budget_warn) \

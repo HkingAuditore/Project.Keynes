@@ -31,9 +31,11 @@ class_name OceanCurrentsSystem
 ## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
 ##
 ## reads / writes 声明：
-##   - reads:  cell.elevation / cell.is_water / cell.terrain（baker 烘焙洋流时
-##             读这些慢层字段）
-##   - writes: cell.ocean_current_x / .ocean_current_y（per-cell 洋流向量）
+##   - reads:  仅声明同 tick 拓扑依赖所需的稳定慢层字段。温度/雪冰/上一帧风场与洋流
+##             是物理环流的时序反馈输入，按上一轮快照读取，不能声明为同 tick reads，
+##             否则会与 ClimateDaily/SeaIce 构成拓扑环。
+##   - writes: SLP、风向/风速、洋流、上升流。声明必须覆盖真实写集，确保
+##             weather/climate 读到本轮物理环流产物。
 ##
 ## feature_flag：留空（洋流是世界推进必跑流程）。
 
@@ -66,14 +68,23 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_ELEVATION,
 		DCComponentIds.CELL_IS_WATER,
 		DCComponentIds.CELL_TERRAIN,
+		DCComponentIds.CELL_LANDFORM,
+		DCComponentIds.CELL_COVER,
 		DCComponentIds.CELL_LAT_NORM,
+		DCComponentIds.CELL_POS_X,
+		DCComponentIds.CELL_POS_Y,
 	]
 
 
 func declare_writes() -> Array[StringName]:
 	return [
+		DCComponentIds.CELL_SLP,
+		DCComponentIds.CELL_WIND_X,
+		DCComponentIds.CELL_WIND_Y,
+		DCComponentIds.CELL_WIND_SPEED,
 		DCComponentIds.CELL_OCEAN_CURRENT_X,
 		DCComponentIds.CELL_OCEAN_CURRENT_Y,
+		DCComponentIds.CELL_UPWELLING_STRENGTH,
 	]
 
 

@@ -63,6 +63,7 @@ var sea_ice_frac_arr_prev:  PackedFloat32Array = PackedFloat32Array()
 # float32 — 天气场
 var weather_intensity_arr:  PackedFloat32Array = PackedFloat32Array()
 var weather_cloud_arr:      PackedFloat32Array = PackedFloat32Array()
+var weather_cloud_water_arr: PackedFloat32Array = PackedFloat32Array()
 var weather_precip_arr:     PackedFloat32Array = PackedFloat32Array()
 var weather_transition_alpha_arr: PackedFloat32Array = PackedFloat32Array()
 
@@ -405,6 +406,7 @@ func _alloc_soa(n: int) -> void:
 	sea_ice_frac_arr.resize(n);      sea_ice_frac_arr_prev.resize(n)
 	weather_intensity_arr.resize(n)
 	weather_cloud_arr.resize(n)
+	weather_cloud_water_arr.resize(n)
 	weather_precip_arr.resize(n)
 	weather_transition_alpha_arr.resize(n)
 	elevation_arr.resize(n)
@@ -497,6 +499,7 @@ func rebuild_soa_from_cells() -> void:
 		sea_ice_frac_arr[i] = c.sea_ice_fraction
 		weather_intensity_arr[i] = c.weather_intensity
 		weather_cloud_arr[i] = c.weather_cloud
+		weather_cloud_water_arr[i] = c.weather_cloud * 0.5 if c.weather_field_initialized else 0.0
 		weather_precip_arr[i] = c.weather_precip
 		weather_transition_alpha_arr[i] = c.weather_transition_alpha
 		elevation_arr[i] = c.elevation

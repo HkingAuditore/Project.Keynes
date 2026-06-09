@@ -148,6 +148,7 @@ func tick(ctx) -> void:
 	if not _topology_built:
 		push_error("[DCSystemScheduler] tick: topology not built; call build_topology() after register_system()")
 		return
+
 	# 同步配置
 	if _sus.has_method("set_frame_budget_ms"):
 		_sus.set_frame_budget_ms(frame_budget_ms)

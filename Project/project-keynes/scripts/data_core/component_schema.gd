@@ -41,7 +41,7 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 57 条（截至 2026-05-26，新增热惯性/雪包/水分平衡字段；
+# ─── CELL_SCHEMA — 65 条（截至 2026-06-09，含云水/热惯性/雪包/水分平衡字段；
 #     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
@@ -63,6 +63,7 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.sea_ice_frac",       cpp_name = "cell_sea_ice_frac",          dtype = F32, track_prev = true,  map_field = "sea_ice_frac_arr",          prev_field = "sea_ice_frac_arr_prev",    owner = "climate.sea_ice" },
 	{ name = &"cell.weather_intensity",  cpp_name = "cell_weather_intensity",     dtype = F32, track_prev = false, map_field = "weather_intensity_arr",     prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_cloud",      cpp_name = "cell_weather_cloud",         dtype = F32, track_prev = false, map_field = "weather_cloud_arr",         prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_cloud_water", cpp_name = "cell_weather_cloud_water",  dtype = F32, track_prev = false, map_field = "weather_cloud_water_arr",   prev_field = "",                         owner = "weather.field_solver" },
 	{ name = &"cell.weather_precip",     cpp_name = "cell_weather_precip",        dtype = F32, track_prev = false, map_field = "weather_precip_arr",        prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_transition_alpha", cpp_name = "cell_weather_transition_alpha", dtype = F32, track_prev = false, map_field = "weather_transition_alpha_arr", prev_field = "",                  owner = "weather.commit" },
 	{ name = &"cell.elevation",          cpp_name = "cell_elevation",             dtype = F32, track_prev = false, map_field = "elevation_arr",             prev_field = "",                         owner = "map_generation" },

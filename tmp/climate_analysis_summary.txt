@@ -1,0 +1,11 @@
+Climate Analysis Summary - Tick 45
+Sample rate: 1/10
+Land: 229130, Water: 270790
+
+Global flags:
+  climate_max_temp_delta: 0
+  climate_p99_temp_delta: 0
+  climate_max_transport_anomaly: 0
+  climate_sea_ice_delta_max: 0
+  climate_precip_p95: 0.090338
+  climate_thermal_finalizer_applied: False
