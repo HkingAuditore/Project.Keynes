@@ -505,6 +505,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var plant_soil_buffer_weight: float = 0.30
 @export var plant_drought_penalty: float = 0.25
 @export var succession_min_compat_gain: float = 0.06
+@export var vegetation_stress_enabled: bool = true
+@export_range(1, 365, 1) var vegetation_stress_memory_days: int = 30
 
 # Long-term base_moisture drift from eco_score (Phase 8).
 @export var eco_drift_amp: float = 0.012                # max ±0.012 / year
@@ -645,6 +647,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
+@export var weather_transition_enabled: bool = true
+@export_range(0.0, 1.0, 0.01) var weather_transition_alpha_rate: float = 0.35
 
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]
@@ -660,6 +664,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 走旧的 WindBelt.wind_at + Ekman ±45° + 海岸高度梯度 + 噪声路径，
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
+@export_range(1, 60, 1) var wind_circulation_period_ticks: int = 6
+@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.25
+@export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.20
+@export_range(0.0, 1.0, 0.01) var slp_ice_high_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var slp_snow_high_weight: float = 0.06
 
 # 2) enable_terrain_aware_wind
 #    当 physical_circulation_enabled = true 时附加生效。true → 物理化风场求解器
@@ -675,6 +684,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 跳过 ψ 求解，直接用纬度风场 + Ekman ±45° 写出 hex ocean_current
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
+@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.06
+@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.20
+@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
+@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.20
 
 # 4) enable_wind_heat_transport
 #    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流

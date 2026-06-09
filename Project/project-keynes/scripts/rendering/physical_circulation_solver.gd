@@ -68,6 +68,42 @@ static func _is_water_terrain(t: int) -> bool:
 			or t == TerrainType.TERRAIN.REEF \
 			or t == TerrainType.TERRAIN.KELP
 
+static func _cell_idx(map: MapData, cell: HexCell) -> int:
+	if map == null or cell == null:
+		return -1
+	if cell.index >= 0:
+		return cell.index
+	if map.has_indices():
+		return map.index_of(cell)
+	return -1
+
+static func _read_temp_anomaly(map: MapData, cell: HexCell) -> float:
+	var idx: int = _cell_idx(map, cell)
+	if idx >= 0 and map.temp_anomaly_arr.size() > idx:
+		return map.temp_anomaly_arr[idx]
+	return cell.temp_dev_from_annual if cell != null else 0.0
+
+static func _read_snow_cover(map: MapData, cell: HexCell) -> float:
+	var idx: int = _cell_idx(map, cell)
+	if idx >= 0 and map.snow_cover_arr.size() > idx:
+		return map.snow_cover_arr[idx]
+	return cell.snow_cover if cell != null else 0.0
+
+static func _read_sea_ice_frac(map: MapData, cell: HexCell) -> float:
+	var idx: int = _cell_idx(map, cell)
+	if idx >= 0 and map.sea_ice_frac_arr.size() > idx:
+		return map.sea_ice_frac_arr[idx]
+	return cell.sea_ice_fraction if cell != null else 0.0
+
+static func _density_proxy(map: MapData, cell: HexCell, cold_weight: float,
+		ice_weight: float) -> float:
+	if cell == null or not _is_water_terrain(int(cell.terrain)):
+		return 0.0
+	var temp_now: float = clampf(cell.temperature, 0.0, 1.0)
+	var temp_anom: float = _read_temp_anomaly(map, cell)
+	var ice: float = clampf(_read_sea_ice_frac(map, cell), 0.0, 1.0)
+	return cold_weight * (1.0 - temp_now) + ice_weight * ice - temp_anom
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 任务 2：海陆压力场（SLP）求解器
 # ═══════════════════════════════════════════════════════════════════════════
@@ -118,12 +154,16 @@ const _SLP_COAST_DAMP := 0.60           # 沿海 cell 海陆性系数
 ##
 ## 输出：写入 cell.slp ∈ ~[-1, 1]（不严格 clamp）。
 static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, \
-		season_phase: float, smooth_passes: int = _SLP_SMOOTH_PASSES) -> void:
+		season_phase: float, smooth_passes: int = _SLP_SMOOTH_PASSES,
+		profile: ClimateProfile = null) -> void:
 	if map == null:
 		return
 	var cells: Array = map.all_cells()
 	if cells.is_empty():
 		return
+	var thermal_weight: float = profile.wind_thermal_slp_weight if profile != null else 0.0
+	var ice_high_weight: float = profile.slp_ice_high_weight if profile != null else 0.0
+	var snow_high_weight: float = profile.slp_snow_high_weight if profile != null else 0.0
 
 	# season_signal_n_hemi：北半球的"夏-/冬+"符号。phase=0(春)=0,phase=1(夏)=-1,
 	# phase=2(秋)=0, phase=3(冬)=+1。
@@ -171,7 +211,12 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 			var continentality: float = _SLP_COAST_DAMP if is_coast else _SLP_INTERIOR_BOOST
 			landsea = -hemi_sign * season_signal_n_hemi * _SLP_LAND_AMP * lat_temp_factor * continentality
 
-		cell.slp = base_lat + landsea
+		var temp_anomaly: float = _read_temp_anomaly(map, cell)
+		var thermal_response: float = 0.55 if is_water else 1.0
+		var thermal_slp: float = -thermal_weight * temp_anomaly * thermal_response
+		var ice_high: float = ice_high_weight * clampf(_read_sea_ice_frac(map, cell), 0.0, 1.0)
+		var snow_high: float = snow_high_weight * clampf(_read_snow_cover(map, cell), 0.0, 1.0)
+		cell.slp = base_lat + landsea + thermal_slp + ice_high + snow_high
 
 	# Pass B：6 邻域 Jacobi 平滑 N 次。每次先把所有 cell 的新值读入临时数组，
 	# 再一次性写回，避免传播顺序依赖。
@@ -256,12 +301,14 @@ const _WIND_MOUNTAIN_UPSTREAM_DAMP := 0.55  # 山脉迎风格的额外速度衰�
 ##
 ## 输出：cell.wind_vector ∈ 单位向量；cell.wind_speed ∈ 物理量级（约 [0.1, 2.0]）。
 static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2, \
-		season_phase: float, terrain_aware: bool = true) -> void:
+		season_phase: float, terrain_aware: bool = true,
+		profile: ClimateProfile = null) -> void:
 	if map == null:
 		return
 	var cells: Array = map.all_cells()
 	if cells.is_empty():
 		return
+	var response_rate: float = clampf(profile.wind_response_rate if profile != null else 1.0, 0.0, 1.0)
 
 	# Pass 0：BFS 计算每个陆地 cell 到最近海岸的距离（格数），用于季风渗透。
 	# 同时缓存"指向海洋方向"的合成单位向量（沿距离梯度反方向 = 朝海洋）。
@@ -450,8 +497,28 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				_:
 					pass
 
-		cell.wind_vector = dir
-		cell.wind_speed = spd
+		var old_dir: Vector2 = cell.wind_vector
+		var old_spd: float = cell.wind_speed
+		var effective_rate: float = response_rate
+		if old_dir.length_squared() < 0.0001 or old_spd <= 0.0001:
+			effective_rate = 1.0
+		var old_flux: Vector2 = Vector2.ZERO
+		if old_dir.length_squared() > 0.0001:
+			old_flux = old_dir.normalized() * old_spd
+		var target_flux: Vector2 = dir * spd
+		var final_flux: Vector2 = old_flux.lerp(target_flux, effective_rate)
+		var final_spd: float = lerpf(old_spd, spd, effective_rate)
+		var final_dir: Vector2 = final_flux.normalized() if final_flux.length_squared() > 0.0001 else dir
+		cell.wind_vector = final_dir
+		cell.wind_speed = final_spd
+		var idx_w: int = _cell_idx(map, cell)
+		if idx_w >= 0:
+			if map.wind_x_arr.size() > idx_w:
+				map.wind_x_arr[idx_w] = final_dir.x
+			if map.wind_y_arr.size() > idx_w:
+				map.wind_y_arr[idx_w] = final_dir.y
+			if map.wind_speed_arr.size() > idx_w:
+				map.wind_speed_arr[idx_w] = final_spd
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -690,11 +757,15 @@ const _THERMOHALINE_WEIGHT := 0.18      # 高纬热盐 y 修正权重（≤ 0.2�
 ##   world_bounds  —— 用于推 ny
 ##   cfg           —— MapConfig，可选（提供 COLD_SINK_TEMP）
 static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: float, \
-		world_bounds: Rect2, cfg: MapConfig = null) -> void:
+		world_bounds: Rect2, cfg: MapConfig = null, profile: ClimateProfile = null) -> void:
 	if state == null or state.size() == 0:
 		return
 	var n: int = state.size()
 	var cold_sink_temp: float = cfg.COLD_SINK_TEMP if cfg != null else -0.05
+	var response_rate: float = clampf(profile.ocean_current_response_rate if profile != null else 1.0, 0.0, 1.0)
+	var thermal_weight: float = profile.ocean_thermal_current_weight if profile != null else _THERMOHALINE_WEIGHT
+	var density_cold_weight: float = profile.ocean_density_cold_weight if profile != null else 0.35
+	var density_ice_weight: float = profile.ocean_density_ice_weight if profile != null else 0.20
 
 	var ocx_arr: PackedFloat32Array = map.ocean_current_x_arr
 	var ocy_arr: PackedFloat32Array = map.ocean_current_y_arr
@@ -707,15 +778,14 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 			and ocy_arr.size() >= map.soa_size() \
 			and map.soa_size() > 0
 
-	# 先把所有水域清零，避免"上一轮残留 ocean_current"（旧像素路径写过）。
-	for k in range(n):
-		var c: HexCell = state.water_cells[k]
-		if c != null:
-			if soa_ok:
-				ocx_arr[c.index] = 0.0
-				ocy_arr[c.index] = 0.0
-			else:
-				c.ocean_current = Vector2.ZERO
+	for land_cell: HexCell in map.all_cells():
+		if land_cell == null or _is_water_terrain(int(land_cell.terrain)):
+			continue
+		land_cell.ocean_current = Vector2.ZERO
+		var land_idx: int = _cell_idx(map, land_cell)
+		if land_idx >= 0 and soa_ok:
+			ocx_arr[land_idx] = 0.0
+			ocy_arr[land_idx] = 0.0
 
 	for k in range(n):
 		var c: HexCell = state.water_cells[k]
@@ -731,7 +801,20 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		grad_psi /= 3.0   # 与 SLP / curl 一致的六邻域规范化系数
 
 		# 旋转 90° 逆时针：(x, y) → (-y, x) 等价于 (u, v) = (-∂ψ/∂y, ∂ψ/∂x)
-		var cur: Vector2 = Vector2(-grad_psi.y, grad_psi.x) * _OCEAN_CURRENT_SCALE
+		var target_cur: Vector2 = Vector2(-grad_psi.y, grad_psi.x) * _OCEAN_CURRENT_SCALE
+
+		var density_self: float = _density_proxy(map, c, density_cold_weight, density_ice_weight)
+		var grad_density: Vector2 = Vector2.ZERO
+		for d_den in range(6):
+			var dv_den: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[d_den]
+			var nb_den: HexCell = map.get_cell_by_cube(Vector3i(c.q + dv_den.x, c.r + dv_den.y, c.s + dv_den.z))
+			if nb_den == null or not _is_water_terrain(int(nb_den.terrain)):
+				continue
+			var density_nb: float = _density_proxy(map, nb_den, density_cold_weight, density_ice_weight)
+			grad_density += (density_nb - density_self) * NEIGHBOR_DIRS[d_den]
+		grad_density /= 3.0
+		var thermal_cur: Vector2 = -grad_density * thermal_weight
+		target_cur += thermal_cur
 
 		# 副极地 / 高纬热盐叠加（保留旧"高纬向极冷流"语义）
 		var ny: float = _ny_for_cell(c, hex_size, world_bounds)
@@ -742,16 +825,21 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		if ls_abs > _UPWELLING_HIGHLAT_ABS_SOLVER and temp_rel < cold_sink_temp:
 			var pole_dir_y: float = signf(ls)         # 北半球 ls<0 → -1 = 向北/向极
 			var grad_mag: float = sin(ls_abs * PI)
-			cur.y += pole_dir_y * grad_mag * _THERMOHALINE_WEIGHT
+			target_cur.y += pole_dir_y * grad_mag * thermal_weight
+
+		var old_cur: Vector2 = c.ocean_current
+		var idx_cur: int = _cell_idx(map, c)
+		if idx_cur >= 0 and soa_ok:
+			old_cur = Vector2(ocx_arr[idx_cur], ocy_arr[idx_cur])
+		var cur: Vector2 = old_cur.lerp(target_cur, response_rate)
 
 		# 限幅 [-1, 1]
 		cur.x = clampf(cur.x, -1.0, 1.0)
 		cur.y = clampf(cur.y, -1.0, 1.0)
-		if soa_ok:
-			ocx_arr[c.index] = cur.x
-			ocy_arr[c.index] = cur.y
-		else:
-			c.ocean_current = cur
+		c.ocean_current = cur
+		if idx_cur >= 0 and soa_ok:
+			ocx_arr[idx_cur] = cur.x
+			ocy_arr[idx_cur] = cur.y
 
 ## solve_ocean_current_fallback —— 当 enable_ocean_heat_transport = false 时使用。
 ##

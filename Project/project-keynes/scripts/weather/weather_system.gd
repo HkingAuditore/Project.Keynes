@@ -796,6 +796,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"field_vapor_precip_sink": _field_vapor_precip_sink,
 			"field_vapor_relax_rate": _field_vapor_relax_rate,
 			"field_orographic_lift_cap": _field_orographic_lift_cap,
+			"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
+			"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
 		}
 		return _merge_resident_knobs_with_dynamic(_knobs_handle.to_field_knobs_dict(), dynamic_fields)
 	# ─── Fallback：原 builder 路径（与 Phase A.3 之前 100% bit-equal）──
@@ -830,6 +832,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_vapor_precip_sink": _field_vapor_precip_sink,
 		"field_vapor_relax_rate": _field_vapor_relax_rate,
 		"field_orographic_lift_cap": _field_orographic_lift_cap,
+		"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
+		"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
 	}
 
 # 调用 C++ 端 run_weather_field_solve_pass。返回 elapsed_ms (≥0) 或 -1.0。

@@ -233,7 +233,14 @@ func run_slice(cell_budget: int) -> Dictionary:
 			# 失败时 push_warning 并打首次发散位置；不影响本 tick commit（commit
 			# 仍走 C++ 结果——出 bug 时玩家肉眼能看到，verify 只是给 dev 抓证据）。
 			var done_native: bool = end_i >= n_cells
-			if done_native and (_weather_system._field_verify_enabled or not _weather_system._hexcell_facade_on):
+			var transition_enabled_native: bool = false
+			var cp_native = _weather_system._cp_for_front_flag
+			if cp_native != null and cp_native.get("weather_transition_enabled") != null:
+				transition_enabled_native = bool(cp_native.weather_transition_enabled)
+			if done_native and (
+					_weather_system._field_verify_enabled
+					or not _weather_system._hexcell_facade_on
+					or transition_enabled_native):
 				_weather_system._pull_gdext_field_results_to_next(map, n_cells)
 				if _weather_system._field_verify_enabled:
 					_weather_system._verify_gdext_field_against_gdscript(map, world, n_cells)
@@ -428,6 +435,9 @@ func commit() -> Array[WeatherFront]:
 	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
 	var soa_precip: PackedFloat32Array = map.weather_precip_arr
 	var soa_type: PackedByteArray = map.weather_type_arr
+	var soa_prev_type: PackedByteArray = map.weather_prev_type_arr
+	var soa_target_type: PackedByteArray = map.weather_target_type_arr
+	var soa_transition_alpha: PackedFloat32Array = map.weather_transition_alpha_arr
 	# B-full Step-2：4 个新 SoA（vapor/convergence/instability/field_init）一并写出。
 	# 与 weather_intensity/cloud/precip/type 一组，hot loop 自身的 11 个写入字段全部 SoA 化。
 	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
@@ -439,8 +449,15 @@ func commit() -> Array[WeatherFront]:
 
 	var t_commit_loop_us: int = Time.get_ticks_usec()
 	var hexcell_facade_on: bool = _weather_system._hexcell_facade_on
+	var cp_transition = _weather_system._cp_for_front_flag
+	var transition_enabled: bool = cp_transition != null \
+			and cp_transition.get("weather_transition_enabled") != null \
+			and bool(cp_transition.weather_transition_enabled)
+	var transition_rate: float = 1.0
+	if transition_enabled and cp_transition.get("weather_transition_alpha_rate") != null:
+		transition_rate = clampf(float(cp_transition.weather_transition_alpha_rate), 0.0, 1.0)
 	for i in range(cells.size()):
-		if _field_slice_results_in_soa and hexcell_facade_on:
+		if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
 			break
 		var out_cell: HexCell = cells[i]
 		var v_cloud: float = _field_slice_next_cloud[i]
@@ -450,6 +467,27 @@ func commit() -> Array[WeatherFront]:
 		var v_vapor: float = _field_slice_next_vapor[i]
 		var v_convergence: float = _field_slice_next_convergence[i]
 		var v_instability: float = _field_slice_next_instability[i]
+		var display_type: int = v_type
+		var prev_type: int = v_type
+		var target_type: int = v_type
+		var alpha: float = 1.0
+		if transition_enabled and soa_prev_type.size() > i \
+				and soa_target_type.size() > i and soa_transition_alpha.size() > i:
+			var current_display: int = v_type
+			if soa_type.size() > i:
+				current_display = int(soa_type[i])
+			elif out_cell != null:
+				current_display = out_cell.weather_type
+			prev_type = int(soa_prev_type[i])
+			target_type = int(soa_target_type[i])
+			alpha = clampf(soa_transition_alpha[i], 0.0, 1.0)
+			if target_type != v_type:
+				prev_type = current_display
+				target_type = v_type
+				alpha = 0.0
+			else:
+				alpha = clampf(alpha + transition_rate, 0.0, 1.0)
+			display_type = target_type if alpha >= 1.0 else prev_type
 		# 任务 2：facade 开启后跳过 AoS 双写（SoA 由本函数末尾的 batch indexed 写入）。
 		# facade=false 时仍保留 AoS 写，让 legacy reader（map_baker / map_generator）能读到值。
 		if not hexcell_facade_on:
@@ -458,7 +496,10 @@ func commit() -> Array[WeatherFront]:
 			out_cell.weather_cloud = v_cloud
 			out_cell.weather_precip = v_precip
 			out_cell.weather_instability = v_instability
-			out_cell.weather_type = v_type
+			out_cell.weather_type = display_type
+			out_cell.weather_prev_type = prev_type
+			out_cell.weather_target_type = target_type
+			out_cell.weather_transition_alpha = alpha
 			out_cell.weather_intensity = v_intensity
 			out_cell.weather_convergence = v_convergence
 		# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
@@ -466,7 +507,13 @@ func commit() -> Array[WeatherFront]:
 		soa_intensity[i] = v_intensity
 		soa_cloud[i] = v_cloud
 		soa_precip[i] = v_precip
-		soa_type[i] = v_type & 0xFF
+		soa_type[i] = display_type & 0xFF
+		if soa_prev_type.size() > i:
+			soa_prev_type[i] = prev_type & 0xFF
+		if soa_target_type.size() > i:
+			soa_target_type[i] = target_type & 0xFF
+		if soa_transition_alpha.size() > i:
+			soa_transition_alpha[i] = alpha
 		soa_vapor[i] = v_vapor
 		soa_convergence[i] = v_convergence
 		soa_instability[i] = v_instability
@@ -501,6 +548,15 @@ func commit() -> Array[WeatherFront]:
 			var _cid_wt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
 			if _cid_wt >= 0:
 				_data_core_world.write_u8_range(_cid_wt, 0, soa_type)
+			var _cid_wpt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PREV_TYPE)
+			if _cid_wpt >= 0:
+				_data_core_world.write_u8_range(_cid_wpt, 0, soa_prev_type)
+			var _cid_wtt: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TARGET_TYPE)
+			if _cid_wtt >= 0:
+				_data_core_world.write_u8_range(_cid_wtt, 0, soa_target_type)
+			var _cid_wta: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TRANSITION_ALPHA)
+			if _cid_wta >= 0:
+				_data_core_world.write_f32_range(_cid_wta, 0, soa_transition_alpha)
 			var _cid_wfi: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_FIELD_INIT)
 			if _cid_wfi >= 0:
 				_data_core_world.write_u8_range(_cid_wfi, 0, soa_field_init)

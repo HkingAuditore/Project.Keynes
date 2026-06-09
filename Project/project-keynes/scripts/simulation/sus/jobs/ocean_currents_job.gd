@@ -81,12 +81,15 @@ var _last_pixel_slice_pixels: int = 0
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
+var wind_period_ticks: int = 30
+var ocean_period_ticks: int = 30
 var slice_count: int = 10
+var _run_ocean_this_round: bool = true
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_cfg: MapConfig, p_hex_size: float,
-		p_period_ticks: int, p_slice_count: int) -> void:
+		p_period_ticks: int, p_slice_count: int, p_ocean_period_ticks: int = -1) -> void:
 	id = &"ocean_currents"
 	priority = 200  # runs after refresh_climate_daily (100) / weather (150)
 	slice_budget_ms = 0.55
@@ -104,7 +107,9 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	world = p_world
 	cfg = p_cfg
 	hex_size = p_hex_size
-	period_ticks = max(1, p_period_ticks)
+	wind_period_ticks = max(1, p_period_ticks)
+	ocean_period_ticks = max(1, p_ocean_period_ticks if p_ocean_period_ticks > 0 else p_period_ticks)
+	period_ticks = wind_period_ticks
 	slice_count = max(1, p_slice_count)
 	policy = SusPolicyScript.ContinuousSlicedPolicy.new(period_ticks, slice_count)
 
@@ -143,6 +148,7 @@ func reset_progress() -> void:
 	# 保证场景重载/换地图后第一帧像素 buffer 正确。
 	_phase_int_seen = -9999
 	_need_pixel_this_round = false
+	_run_ocean_this_round = true
 	_climate_defer_streak = 0
 	_last_pixel_quota = _PIXEL_MAX_QUOTA
 	_last_pixel_slice_ms = 0.0
@@ -190,6 +196,14 @@ func _should_defer_after_climate_slice() -> bool:
 	return true
 
 
+func _should_run_ocean_this_round(ctx: SusTickContext) -> bool:
+	if baker == null or not baker._use_physical_circulation(cfg):
+		return true
+	if _phase_int_seen == -9999:
+		return true
+	return (ctx.tick_index % max(1, ocean_period_ticks)) == 0
+
+
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or world == null or map == null:
@@ -231,6 +245,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		else:
 			_phase_locked = ctx.season_phase
 		_round_active = true
+		_run_ocean_this_round = _should_run_ocean_this_round(ctx)
 		# Phys Solve Sliced：新一轮起点 → 把 baker 的求解状态机复位（_phys_stage,
 		# _pending_phys_solved_phase 等），让接下来的 step_one 从 SLP 阶段重新跑。
 		# 旧路径（ny-only）下 _phys_solve_done 立即设为 true，本轮所有 slice 全用于像素工作。
@@ -244,10 +259,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		#   旧 ny-only 路径没有独立 hex 求解阶段，保留每轮像素刷新。
 		var phase_int: int = int(floor(_phase_locked))
 		if baker._use_physical_circulation(cfg):
-			_need_pixel_this_round = (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
+			_need_pixel_this_round = _run_ocean_this_round \
+					and (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
+			if _run_ocean_this_round:
+				_phase_int_seen = phase_int
 		else:
 			_need_pixel_this_round = true
-		_phase_int_seen = phase_int
+			_phase_int_seen = phase_int
 
 	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
 	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
@@ -259,7 +277,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# pixel slices + commit — 把 day_changed 路径砍掉 ~25-30ms。
 	if not _phys_solve_done:
 		var phys_stage_before: int = _baker_phys_stage_id()
-		_phys_solve_done = baker._physical_solve_step_one(map, world, hex_size, cfg, _phase_locked)
+		_phys_solve_done = baker._physical_solve_step_one(
+				map, world, hex_size, cfg, _phase_locked, _run_ocean_this_round)
 		# 短路检测：baker 跑完 stage 6 (UPWELLING) 后会把 _phys_stage 设为 7
 		# (_PHYS_STAGE_WIND_RASTER)。本轮不需要像素 → 手动推到 _PHYS_STAGE_DONE
 		# 并把 _pending_phys_solved_phase 锁定到当前 phase，下次同 phase 调入
@@ -296,6 +315,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			phys_report["work_done"] = 0
 			phys_report["elapsed_ms"] = elapsed_solve_ms
 			phys_report["progress_ratio"] = 0.0
+			phys_report["ocean_solve_enabled"] = _run_ocean_this_round
 			return phys_report
 		# _phys_solve_done = true & !_need_pixel_this_round → 跳过像素阶段，
 		# 立刻 round_done。on_commit 仍要触发，让 MapGenerator 重置 per-cell
@@ -311,6 +331,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			phys_report["elapsed_ms"] = elapsed_solve_ms
 			phys_report["progress_ratio"] = 1.0
 			phys_report["pixel_skipped"] = true
+			phys_report["ocean_solve_enabled"] = _run_ocean_this_round
 			return phys_report
 		# 否则（_need_pixel_this_round=true）→ 落入下面的 pixel slice 分支
 
@@ -503,14 +524,20 @@ func _current_phys_stage_report(stage_before: int, elapsed_ms: float) -> Diction
 		"stage_slp_native_ms": baker.get_slp_native_ms() if baker != null and baker.has_method("get_slp_native_ms") else -1.0,
 		"stage_psi_path": baker.get_psi_path_str() if baker != null and baker.has_method("get_psi_path_str") else "gdscript",
 		"stage_psi_native_ms": baker.get_psi_native_ms() if baker != null and baker.has_method("get_psi_native_ms") else -1.0,
+		"slp_thermal_p95": baker.get_slp_thermal_p95() if baker != null and baker.has_method("get_slp_thermal_p95") else 0.0,
+		"wind_delta_p95": baker.get_wind_delta_p95() if baker != null and baker.has_method("get_wind_delta_p95") else 0.0,
+		"ocean_delta_p95": baker.get_ocean_delta_p95() if baker != null and baker.has_method("get_ocean_delta_p95") else 0.0,
+		"thermal_current_p95": baker.get_thermal_current_p95() if baker != null and baker.has_method("get_thermal_current_p95") else 0.0,
 	}
 	return report
 
 
 ## Allow MapGenerator to retune the policy on the fly (e.g. after climate
 ## profile reload). Re-creates the underlying ContinuousSlicedPolicy.
-func reconfigure(p_period_ticks: int, p_slice_count: int) -> void:
-	period_ticks = max(1, p_period_ticks)
+func reconfigure(p_period_ticks: int, p_slice_count: int, p_ocean_period_ticks: int = -1) -> void:
+	wind_period_ticks = max(1, p_period_ticks)
+	ocean_period_ticks = max(1, p_ocean_period_ticks if p_ocean_period_ticks > 0 else p_period_ticks)
+	period_ticks = wind_period_ticks
 	slice_count = max(1, p_slice_count)
 	policy = SusPolicyScript.ContinuousSlicedPolicy.new(period_ticks, slice_count)
 	# A round mid-flight stays as-is — only future rounds use the new pace.

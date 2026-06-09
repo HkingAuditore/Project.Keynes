@@ -45,11 +45,11 @@ var _inner: _OceanCurrentsJobScript = null
 
 func _init(p_baker: _MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_cfg: MapConfig, p_hex_size: float,
-		p_period_ticks: int, p_slice_count: int) -> void:
+		p_period_ticks: int, p_slice_count: int, p_ocean_period_ticks: int = -1) -> void:
 	# 委托给现有 OceanCurrentsJob 完成所有内部状态初始化（policy / 切片游标 /
 	# 锁定 phase 等）。本 wrapper 只暴露 DCSystem 接口。
 	_inner = _OceanCurrentsJobScript.new(p_baker, p_map, p_world, p_cfg, p_hex_size,
-		p_period_ticks, p_slice_count)
+		p_period_ticks, p_slice_count, p_ocean_period_ticks)
 	# 把内部 SusJob 的运行时字段 mirror 到本 system，让 SUS 兼容路径能直接读
 	id = _inner.id
 	priority = _inner.priority

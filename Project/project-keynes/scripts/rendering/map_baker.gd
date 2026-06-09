@@ -395,6 +395,10 @@ var _psi_commit_diag_count: int = 0
 var _psi_first_run_logged: bool = false
 var _psi_native_ms_last: float = -1.0
 var _psi_path_str_last: String = "gdscript"
+var _slp_thermal_p95_last: float = 0.0
+var _wind_delta_p95_last: float = 0.0
+var _ocean_delta_p95_last: float = 0.0
+var _thermal_current_p95_last: float = 0.0
 
 # Phys Solve Sliced：求解状态机阶段。
 const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
@@ -4734,6 +4738,10 @@ func reset_physical_solve_state() -> void:
 	_slp_path_str_last = "gdscript"
 	_psi_native_ms_last = -1.0
 	_psi_path_str_last = "gdscript"
+	_slp_thermal_p95_last = 0.0
+	_wind_delta_p95_last = 0.0
+	_ocean_delta_p95_last = 0.0
+	_thermal_current_p95_last = 0.0
 
 # plan/dots-slp-psi-cpp — diagnostics getters for ocean_currents_job to attach
 # stage_slp_path / stage_slp_native_ms / stage_psi_path / stage_psi_native_ms
@@ -4747,6 +4755,14 @@ func get_psi_path_str() -> String:
 	return _psi_path_str_last
 func get_psi_native_ms() -> float:
 	return _psi_native_ms_last
+func get_slp_thermal_p95() -> float:
+	return _slp_thermal_p95_last
+func get_wind_delta_p95() -> float:
+	return _wind_delta_p95_last
+func get_ocean_delta_p95() -> float:
+	return _ocean_delta_p95_last
+func get_thermal_current_p95() -> float:
+	return _thermal_current_p95_last
 
 # Phys Solve Sliced 入口 ② ：把 7 阶段求解推进 1 步，返回 true 表示本轮已彻底完成
 # （`_pending_phys_solved_phase = season_phase` 同时被设好）。
@@ -4762,7 +4778,7 @@ func get_psi_native_ms() -> float:
 #   WIND_RASTER ~5ms    —— NaN 守门 + 风场 RG8 写盘
 # 第一片最坏 ~5ms（远低于一次性路径的 ~200ms 毛刺）。
 func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
-		cfg: MapConfig, season_phase: float) -> bool:
+		cfg: MapConfig, season_phase: float, solve_ocean: bool = true) -> bool:
 	if world == null or map == null:
 		return true
 	# 同 phase 已求解过 → idempotent fast path（caller 不需要外层判断）。
@@ -4779,6 +4795,16 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
 	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
 	var heat_transport: bool = profile.enable_ocean_heat_transport if profile != null else true
+	var slp_wind_gdscript_required: bool = profile != null and (
+			absf(profile.wind_thermal_slp_weight) > 0.0001
+			or absf(profile.slp_ice_high_weight) > 0.0001
+			or absf(profile.slp_snow_high_weight) > 0.0001
+			or profile.wind_response_rate < 0.999)
+	var ocean_gdscript_required: bool = profile != null and (
+			profile.ocean_current_response_rate < 0.999
+			or absf(profile.ocean_thermal_current_weight) > 0.0001
+			or absf(profile.ocean_density_cold_weight) > 0.0001
+			or absf(profile.ocean_density_ice_weight) > 0.0001)
 	var bounds: Rect2 = world.world_bounds
 
 	match _phys_stage:
@@ -4824,6 +4850,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"neighbor_indices": nb_idx_for_slp,
 						"water_terrain_ids": water_ids_slp,
 					}
+					if profile != null:
+						knobs_slp["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
+						knobs_slp["slp_ice_high_weight"] = profile.slp_ice_high_weight
+						knobs_slp["slp_snow_high_weight"] = profile.slp_snow_high_weight
 					var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
 					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
@@ -4846,6 +4876,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 								_slp_rt_diag_count, season_phase, rc_slp, slp_out.size(), n_slp, _reason
 							])
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
+							_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
 							# SLP slice 优化（2026-05-18）：原 commit 走两轮：
 							#   1) for i: cells_for_slp_cpp[i].slp = slp_out[i]
 							#      → 2400× HexCell.slp setter（_facade_enabled 时还要再
@@ -4878,7 +4909,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						_slp_rt_diag_count, season_phase, str(map.has_soa()),
 						"SKIP" if map.has_soa() else "DONE"
 					])
-				PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase)
+				PhysCircSolverScript.solve_slp_field(map, hex_size, bounds, season_phase, 1, profile)
 				# Fallback path 内部用 HexCell.slp setter（_facade_enabled=true 时已
 				# 写 SoA），这里仅在 facade 关闭/非完整迁移的兼容窗口里做兜底镜像。
 				# 用 has_soa() 守门避免无谓 2400× loop。
@@ -4946,6 +4977,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"land_lf_peak": int(LandformType.LF.PEAK),
 						"land_lf_hill": int(LandformType.LF.HILL),
 					}
+					if profile != null:
+						knobs_wind["wind_response_rate"] = profile.wind_response_rate
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
 					if _rc_wind != null and float(_rc_wind) >= 0.0:
 						# Commit：从 SoA wind_x/y + wind_speed_out 写回每 cell。
@@ -4962,7 +4995,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							])
 						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
 								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
-							var psi_cpp_expected: bool = heat_transport \
+							var psi_cpp_expected: bool = solve_ocean and heat_transport \
 									and _world_ext != null and _world_ext.has_method("run_psi_solver_pass")
 							for _i_w in range(n_wind):
 								map.wind_speed_arr[_i_w] = wspd_arr[_i_w]
@@ -4971,6 +5004,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 									if _c_w != null:
 										_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
 										_c_w.wind_speed = wspd_arr[_i_w]
+							_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
 							_wind_done_by_cpp = true
 							_phys_wind_done_by_cpp = true
 							if not _wind_b_first_run_logged:
@@ -4982,7 +5016,13 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				# commit-diag 形成完整诊断三角（gate 失败 / commit size mismatch / 默默 fallback）。
 				if _wind_b_path_log_count > 0 and _wind_b_path_log_count <= 3:
 					print("[wind_field/B] FALLBACK to GDScript solve_wind_field (call#%d) — see preceding path-decision / commit-diag for reason" % _wind_b_path_log_count)
-				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware)
+				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware, profile)
+			if not solve_ocean:
+				_pending_psi_state = null
+				_phys_psi_iters_done = 0
+				_pending_phys_solved_phase = season_phase
+				_phys_stage = _PHYS_STAGE_DONE
+				return true
 			if heat_transport:
 				_phys_stage = _PHYS_STAGE_PSI_INIT
 			else:
@@ -5066,11 +5106,16 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
 						"psi_source_scale": 1.0,
-						"ocean_current_scale": 0.05,
+						"ocean_current_scale": 0.18,
 						"thermohaline_weight": 0.18,
 						"upwelling_highlat_abs": 0.6,
 						"cold_sink_temp": cold_sink_temp,
 					}
+					if profile != null:
+						knobs_psi["ocean_current_response_rate"] = profile.ocean_current_response_rate
+						knobs_psi["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
+						knobs_psi["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
+						knobs_psi["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
 					var ret_psi = _world_ext.run_psi_solver_pass(knobs_psi)
 					if ret_psi != null and typeof(ret_psi) == TYPE_DICTIONARY:
 						var rc_psi: float = float(ret_psi.get("elapsed_ms", -1.0))
@@ -5087,6 +5132,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							])
 						if rc_psi >= 0.0 and curl_out.size() == n_psi and psi_out.size() == n_psi \
 								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
+							_ocean_delta_p95_last = float(ret_psi.get("ocean_delta_p95", 0.0))
+							_thermal_current_p95_last = float(ret_psi.get("thermal_current_p95", 0.0))
 							# Commit hot path: keep current in SoA. HexCell facade reads the
 							# same components, while climate ocean_water can consume arrays
 							# without a second cell → PackedArray pack.
@@ -5137,7 +5184,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				_phys_stage = _PHYS_STAGE_PSI_FINALIZE
 		_PHYS_STAGE_PSI_FINALIZE:
 			if _pending_psi_state != null:
-				PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg)
+				PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg, profile)
 				PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
 				if map.has_indices() and map.wind_stress_curl_arr.size() == map.soa_size() \
 						and map.ocean_psi_arr.size() == map.soa_size():
