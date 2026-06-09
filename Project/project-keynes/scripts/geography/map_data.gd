@@ -318,46 +318,43 @@ static func passable_sea_lut() -> PackedByteArray:
 	_passable_sea_lut_built = true
 	return lut
 
-# ─── sea-ice-render-source-unify 阶段 C：terrain → is_water 静态 LUT ─────
-# 与 passable_sea_lut() 互补：is_water 语义包含所有"非陆地"地块（OCEAN/COAST/
-# LAKE/REEF/KELP/SEA_ICE 等），而 passable_sea 仅表示"可航行海域"——SEA_ICE
-# 因冰面阻断船只 passable_sea=false 但 is_water=true。dyn_atlas / dyn_smooth /
-# ice_state 这些视觉 atlas 关心的是"该 cell 是否水域"（决定 A 通道是 ice_byte
-# 还是 vit_byte），必须用 is_water 而非 passable_sea，否则 SEA_ICE cell 会
-# 被错误归入"陆格"分支。
-#
-# 真理源：is_water == not passable_land（与 rebuild_soa_from_cells 中
-# `is_water_arr[i] = 1 if not passable_land else 0` 一致）。
+# ─── terrain → physical water 静态 LUT ────────────────────────────────
+# cell.is_water 是气候/海洋系统的物理水体掩码，不是通行性掩码。
+# 不能用 `not passable_land` 推导：MOUNTAIN/SNOW/GLACIER 也不可陆行，但它们
+# 不是水体；SEA_ICE 可陆行，但底层仍是海域，必须视为 water。
 static var _is_water_lut_cache: PackedByteArray = PackedByteArray()
 static var _is_water_lut_built: bool = false
 
-## 256-byte LUT：lut[terrain_byte] = 1 if is_water (即 not passable_land)。
-## 用于 dyn_atlas / dyn_smooth / ice_state pipeline 判定中心+邻居水陆。
+static func terrain_is_water(t: int) -> bool:
+	return t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.OCEAN) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.COAST) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.LAKE) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.REEF) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.SEA_ICE) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.KELP)
+
+static func terrain_is_water_u8(t: int) -> int:
+	return 1 if terrain_is_water(t) else 0
+
+## 256-byte LUT：lut[terrain_byte] = 1 if physical water body.
 static func is_water_lut() -> PackedByteArray:
 	if _is_water_lut_built:
 		return _is_water_lut_cache
 	var lut: PackedByteArray = PackedByteArray()
 	lut.resize(256)
 	for t_int in range(256):
-		# is_water = not passable_land（与 is_water_arr 灌注语义 1:1 对齐）
-		lut[t_int] = 0 if _PassableSeaLUT_TerrainTypeScript.is_passable_land(t_int) else 1
+		lut[t_int] = terrain_is_water_u8(t_int)
 	_is_water_lut_cache = lut
 	_is_water_lut_built = true
 	return lut
 
-# ─── sea-ice-render-source-unify 阶段 D：渲染水陆判定 LUT（与通行性解耦） ──
-# 真正给 atlas 渲染管线（dyn_atlas / dyn_smooth / ice_state / sea_ice tints）
-# 消费的水陆 LUT。语义：
-#   render_water = (not passable_land) OR (terrain == SEA_ICE)
-# 即"渲染上把 SEA_ICE 当作水"——用以避免 SEA_ICE cell 走陆地分支（vit byte）
-# 而错过 ice byte。区别于 `is_water_lut()`：
-#   - is_water_lut：通行性语义（is_passable_land 取反），SEA_ICE.passable_land=true
-#     时它=0（陆），符合 gameplay（陆地单位能踩冰）；
-#   - is_water_render_lut：纯视觉语义，SEA_ICE 永远=1（水），让 atlas A 通道
-#     一致写出 ice byte。
+# ─── sea-ice-render-source-unify 阶段 D：渲染水陆判定 LUT ───────────────
+# 渲染管线与气候/海洋系统现在共享同一套物理水体语义：
+# OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP 为 water，其余地形为 land。不要用
+# passable_land/passable_sea 推导，否则山地、雪地、冰面会被错误归类。
 #
-# 重要：不要把这两个 LUT 混用——通行性 / 寻路 / AI 决策仍读 is_water_lut；
-#       atlas 渲染 / smooth / ice_state 必须读 is_water_render_lut。
+# 重要：is_water_lut / is_water_render_lut 都是物理水体语义；通行性、寻路、
+#       AI 移动决策必须读 terrain profile 的 passable_land/passable_sea。
 static var _is_water_render_lut_cache: PackedByteArray = PackedByteArray()
 static var _is_water_render_lut_built: bool = false
 
@@ -370,12 +367,7 @@ static func is_water_render_lut() -> PackedByteArray:
 	var lut: PackedByteArray = PackedByteArray()
 	lut.resize(256)
 	for t_int in range(256):
-		var passable_land: bool = _PassableSeaLUT_TerrainTypeScript.is_passable_land(t_int)
-		var is_water: int = 0 if passable_land else 1
-		# SEA_ICE 强制为 render-water，无论 passable_land 字段如何
-		if t_int == _SEA_ICE_TERRAIN_INT:
-			is_water = 1
-		lut[t_int] = is_water
+		lut[t_int] = terrain_is_water_u8(t_int)
 	_is_water_render_lut_cache = lut
 	_is_water_render_lut_built = true
 	return lut
@@ -393,6 +385,39 @@ func has_soa() -> bool:
 
 func soa_size() -> int:
 	return _cell_array.size()
+
+func sync_is_water_arr_from_terrain() -> void:
+	var n: int = mini(terrain_arr.size(), is_water_arr.size())
+	var lut: PackedByteArray = MapData.is_water_lut()
+	for i in range(n):
+		is_water_arr[i] = lut[int(terrain_arr[i])]
+
+func sync_runtime_terrain_facade_from_soa() -> int:
+	var n: int = mini(_cell_array.size(), terrain_arr.size())
+	var changed: int = 0
+	var lut: PackedByteArray = MapData.is_water_lut()
+	for i in range(n):
+		var terrain_byte: int = int(terrain_arr[i]) & 0xFF
+		if i < is_water_arr.size():
+			is_water_arr[i] = lut[terrain_byte]
+		var cell: HexCell = _cell_array[i]
+		if cell != null and int(cell.terrain) != terrain_byte:
+			cell.apply_terrain(terrain_byte)
+			changed += 1
+	return changed
+
+func set_runtime_terrain(idx: int, terrain_id: int, sync_cell: bool = true) -> void:
+	if idx < 0 or idx >= _cell_array.size():
+		return
+	var terrain_byte: int = terrain_id & 0xFF
+	if idx < terrain_arr.size():
+		terrain_arr[idx] = terrain_byte
+	if idx < is_water_arr.size():
+		is_water_arr[idx] = MapData.terrain_is_water_u8(terrain_byte)
+	if sync_cell:
+		var cell: HexCell = cell_at(idx)
+		if cell != null:
+			cell.apply_terrain(terrain_byte)
 
 ## 一次性按 _cell_array.size() 预分配所有 SoA 数组与 dirty mask。重复调用是安全的。
 func _alloc_soa(n: int) -> void:
@@ -526,7 +551,7 @@ func rebuild_soa_from_cells() -> void:
 		weather_type_arr[i] = c.weather_type & 0xFF
 		weather_prev_type_arr[i] = c.weather_prev_type & 0xFF
 		weather_target_type_arr[i] = c.weather_target_type & 0xFF
-		is_water_arr[i] = (1 if (not c.passable_land) else 0)
+		is_water_arr[i] = MapData.terrain_is_water_u8(int(terrain_arr[i]))
 		climate_dirty_mask[i] = 0
 		weather_dirty_mask[i] = 0
 		# B-full Step-2：6 个新字段 AoS → SoA 一次性镜像
