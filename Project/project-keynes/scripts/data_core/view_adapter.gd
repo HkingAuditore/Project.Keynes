@@ -72,6 +72,7 @@ func get_air_mass_temp_anomaly(_idx: int) -> float: return 0.0
 # ─── Weather scalar (F32) ────────────────────────────────────────────────
 func get_weather_intensity(_idx: int) -> float: return 0.0
 func get_weather_cloud(_idx: int) -> float: return 0.0
+func get_weather_cloud_water(_idx: int) -> float: return 0.0
 func get_weather_precip(_idx: int) -> float: return 0.0
 func get_weather_vapor(_idx: int) -> float: return 0.0
 func get_weather_convergence(_idx: int) -> float: return 0.0
@@ -171,6 +172,7 @@ class Cell extends DCViewAdapter:
 	# Weather scalar
 	func get_weather_intensity(idx: int) -> float: return float(_cells[idx].weather_intensity)
 	func get_weather_cloud(idx: int) -> float: return float(_cells[idx].weather_cloud)
+	func get_weather_cloud_water(_idx: int) -> float: return 0.0
 	func get_weather_precip(idx: int) -> float: return float(_cells[idx].weather_precip)
 	func get_weather_vapor(idx: int) -> float: return float(_cells[idx].weather_vapor)
 	func get_weather_convergence(idx: int) -> float: return float(_cells[idx].weather_convergence)
@@ -311,6 +313,7 @@ class World extends DCViewAdapter:
 	# Weather scalar
 	func get_weather_intensity(idx: int) -> float:   return _f(_arr_f32(&"weather_intensity_arr"), idx)
 	func get_weather_cloud(idx: int) -> float:       return _f(_arr_f32(&"weather_cloud_arr"), idx)
+	func get_weather_cloud_water(idx: int) -> float: return _f(_arr_f32(&"weather_cloud_water_arr"), idx)
 	func get_weather_precip(idx: int) -> float:      return _f(_arr_f32(&"weather_precip_arr"), idx)
 	func get_weather_vapor(idx: int) -> float:       return _f(_arr_f32(&"weather_vapor_arr"), idx)
 	func get_weather_convergence(idx: int) -> float: return _f(_arr_f32(&"weather_convergence_arr"), idx)

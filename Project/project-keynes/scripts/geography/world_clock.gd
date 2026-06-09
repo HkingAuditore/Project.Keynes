@@ -3,7 +3,8 @@
 #
 # 设计：
 #   1 day = 1 game second × speed_multiplier。所以 x1 速度下，1 现实秒 = 1 游戏天。
-#   年历固定 365 天；season_phase 由 day_of_year / 365 映射到 [0, 4)，供气候/日照使用。
+#   年历长度由 days_per_year_count 决定；season_phase 由 day_in_year / days_per_year
+#   映射到 [0, 4)，供气候/日照使用。
 #   x5/x20 加速倍率简化等比缩放。
 #
 # 信号：
@@ -217,7 +218,13 @@ func season_name_cn(idx: int) -> String:
 func calendar_date() -> Dictionary:
 	var day0: int = day_in_year()
 	var dpy: int = days_per_year()
-	var calendar_day0: int = clampi(int(floor((float(day0) / float(dpy)) * 365.0)), 0, 364)
+	var display_days: int = 0
+	for ml_display in _MONTH_LENGTHS:
+		display_days += int(ml_display)
+	var calendar_day0: int = clampi(
+			int(floor((float(day0) / float(dpy)) * float(display_days))),
+			0,
+			display_days - 1)
 	var month_idx: int = 0
 	var day_rem: int = calendar_day0
 	for i in range(_MONTH_LENGTHS.size()):

@@ -123,6 +123,10 @@ extends Resource
 # 过度升温、海冰消失。如需仅放大中纬度季节温差，改 insolation_season_gain。
 @export var season_temp_amp: float = 0.32
 
+# Fallback orbital year length used by resource-only/native paths before a
+# WorldClock is injected. At runtime WorldClock.days_per_year() is authoritative.
+@export_range(1, 3660, 1) var orbital_days_per_year: int = 365
+
 # Master switch for daily-continuous climate refresh. When true, MapGenerator
 # updates each cell's current_state.temperature / moisture / snow_cover every
 # day along the continuous season_phase ∈ [0, 4) curve, instead of the
@@ -387,11 +391,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # warning sentinel 状态，本轮统一清理。请使用下方 ocean_currents_period_ticks /
 # ocean_currents_slice_count 配置 ocean current 切片节奏。
 
-# SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
-# Default 240 days keeps currents on a seasonal/slow layer. Lower → fresher
-# currents at the cost of more frequent slices.
+# SUS OceanCurrentsJob — period (in days) of one full ocean current solve.
+# Default 1 keeps ocean stream-function coupled to the now-daily wind/SLP field;
+# pixel atlas rebake is still season-gated, so this affects simulation state, not GPU upload cadence.
 @export_group("洋流频率")
-@export_range(7, 360, 1) var ocean_currents_period_ticks: int = 240
+@export_range(1, 360, 1) var ocean_currents_period_ticks: int = 1
 
 # SUS OceanCurrentsJob — number of slices each round is split into. Each
 # slice processes ⌈total_pixels / slice_count⌉ pixels. Default 120 slices
@@ -637,7 +641,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.85
 @export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.48
 @export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.12
-@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.80
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.58
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
@@ -664,9 +668,16 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 走旧的 WindBelt.wind_at + Ekman ±45° + 海岸高度梯度 + 噪声路径，
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
-@export_range(1, 60, 1) var wind_circulation_period_ticks: int = 6
-@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.25
-@export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.20
+@export_range(1, 60, 1) var wind_circulation_period_ticks: int = 1
+@export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
+@export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.075
+@export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.55
+@export_range(0.0, 0.20, 0.005) var wind_synoptic_amp: float = 0.075
+# Debug isolation: true forces physical wind solve to output WindBelt only,
+# bypassing pressure-gradient/monsoon/synoptic/old-wind inertia.
+@export var wind_belt_only_debug: bool = true
+@export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.28
 @export_range(0.0, 1.0, 0.01) var slp_ice_high_weight: float = 0.12
 @export_range(0.0, 1.0, 0.01) var slp_snow_high_weight: float = 0.06
 
@@ -684,7 +695,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 跳过 ψ 求解，直接用纬度风场 + Ekman ±45° 写出 hex ocean_current
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
-@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.06
+@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.45
 @export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.20
 @export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
 @export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.20
@@ -768,7 +779,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 4) use_low_freq_ocean_psi
 #    OceanCurrentsJob 默认 stride 升到 30 个 game-day（约一月一次）；季节切换日
 #    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
-#    ocean_currents_period_ticks 设置（默认 240 + 120 切片）。
+#    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
 
 # 5) use_partial_atlas_upload

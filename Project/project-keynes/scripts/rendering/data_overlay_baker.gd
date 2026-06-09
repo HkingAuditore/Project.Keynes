@@ -32,14 +32,10 @@ const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 const PRECIPITATION_NORM_MAX: float = 1.0
 
 # 洋流模长归一化上限：cell.ocean_current.length() 的实际分布。
-# 历史注释假设 [0, 0.6]，但物理化路径（PhysicalCirculationSolver.psi_to_ocean_current）
-# 用 _OCEAN_CURRENT_SCALE = 0.05 把 ψ 梯度缩小后写入，实测海面分布大多在 [0, 0.15]，
-# 个别热点不超过 0.25。设上限 0.18 让"中等强度洋流" ≈ 35% 归一化值落到色带中段，
-# "强洋流" ≈ 0.15 接近顶部高亮色——避免之前 0.8 上限让整片海面都压缩在色带最低 8%
-# 区段（用户视觉看到全部"深青黑"，与陆地的"无 overlay"几乎无法区分）。
-# 同步影响 OCEAN_CURRENT_DIR 通道：dir_intensity = mag / 0.18 也被相应放大，
-# hsv2rgb_dir 的亮度 vv = mix(0.45, 1.0, dir_intensity) 才能撑到 ~0.7+ 显出色环。
-const OCEAN_CURRENT_NORM_MAX: float = 0.18
+# 物理化路径已把 _OCEAN_CURRENT_SCALE 提高到 0.30，目标海面均值回到 0.18~0.35。
+# 上限同步提高到 0.35，避免强流大面积饱和，同时让 0.15~0.25 的中强洋流落在色带中段。
+# 同步影响 OCEAN_CURRENT_DIR 通道：dir_intensity = mag / OCEAN_CURRENT_NORM_MAX。
+const OCEAN_CURRENT_NORM_MAX: float = 0.35
 
 # 双向连续通道的对称半幅：value = 0.5 + clamp(raw / RANGE, -0.5, 0.5)
 # OCEAN_HEAT_TRANSPORT 与 UPWELLING 都是带符号的异常量，0=中性、负=冷/下沉、正=暖/上升。

@@ -356,6 +356,7 @@ var _world_ext = null
 # `use_native` 一直 false 走 48ms GDScript 回扫）。改由 MapGenerator 在 bake_world
 # 末尾通过 set_climate_profile() 显式注入。null 时回退到旧的 cfg 参数路径。
 var _climate_profile = null
+var _world_clock_ref = null
 var _enum_atlas_cpp_skip_reason: String = ""
 # Block B (wind_field/B) 一次性诊断标记 — 仿 climate_b/F.3 / weather/F.1 路径。
 var _wind_b_first_run_logged: bool = false
@@ -396,6 +397,7 @@ var _psi_first_run_logged: bool = false
 var _psi_native_ms_last: float = -1.0
 var _psi_path_str_last: String = "gdscript"
 var _slp_thermal_p95_last: float = 0.0
+var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
@@ -425,6 +427,7 @@ var _phys_stage: int = _PHYS_STAGE_NONE
 var _phys_psi_iters_done: int = 0
 var _phys_wind_raster_idx: int = 0
 var _phys_wind_done_by_cpp: bool = false
+var _initial_physical_deferred: bool = false
 
 # ─── 公开接口 ─────────────────────────────────────────────────────────────
 
@@ -432,14 +435,34 @@ const _INITIAL_PHYSICAL_SEASON_PHASE: float = 1.5
 
 
 func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> void:
+	_initial_physical_deferred = false
 	if not _use_physical_circulation(cfg):
+		return
+	var ext_ready_now: bool = _world_ext != null and map != null and map.has_indices() and map.has_soa()
+	if not ext_ready_now and ClassDB.class_exists("DCWorldExt"):
+		_initial_physical_deferred = true
+		_pending_currents_buf = PackedByteArray()
+		_pending_upwelling_buf = PackedByteArray()
+		_pending_upwelling_mask = PackedByteArray()
+		_pending_upwelling_row_built = PackedByteArray()
+		_pending_wind_buf = PackedByteArray()
+		_pending_size = Vector2i.ZERO
+		_pending_phys_solved_phase = NAN
+		_pending_psi_state = null
+		_phys_stage = _PHYS_STAGE_NONE
+		_phys_psi_iters_done = 0
+		_phys_wind_raster_idx = 0
+		_phys_wind_done_by_cpp = false
+		print("  physical circulation hex solve: deferred until DCWorldExt bind (ext=%s idx=%s soa=%s)" % [
+			str(_world_ext != null), str(map != null and map.has_indices()), str(map != null and map.has_soa())
+		])
 		return
 	var t_phys := Time.get_ticks_msec()
 	var saved_world_ext = _world_ext
-	# bake_world may run before the new DCWorldExt is rebound, especially on regenerate.
-	# Force the bake-time solve through the HexCell fallback so the initial SoA mirror
-	# cannot read stale native slots from the previous map.
-	_world_ext = null
+	# 若 native 尚未满足安全条件且本平台没有 DCWorldExt 可用于后置刷新，保留旧的
+	# GDScript 兜底；否则 ext_ready_now=true 时直接使用已绑定的当前 map slots。
+	if not ext_ready_now:
+		_world_ext = null
 	_physical_solve_for_phase(map, world, hex_size, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
 	_world_ext = saved_world_ext
 	# Vector atlas was removed; only the per-cell fields are needed before
@@ -465,11 +488,33 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 	var pix_total: int = world.derived_size.x * world.derived_size.y
 	if pix_total <= 0:
 		return
+	if _use_physical_circulation(cfg) and _initial_physical_deferred:
+		world.wind_field_buffer = PackedByteArray()
+		world.ocean_current_buffer = PackedByteArray()
+		world.ocean_upwelling_buffer = PackedByteArray()
+		_pending_currents_buf = PackedByteArray()
+		_pending_upwelling_buf = PackedByteArray()
+		_pending_upwelling_mask = PackedByteArray()
+		_pending_upwelling_row_built = PackedByteArray()
+		_pending_wind_buf = PackedByteArray()
+		_pending_size = Vector2i.ZERO
+		print("  wind/ocean/upwelling pixel buffers: deferred until DCWorldExt bind (%dms)" % (Time.get_ticks_msec() - t_vec))
+		return
 	if _use_physical_circulation(cfg):
 		_ensure_pending_currents_size(world)
 		_ensure_pending_wind_size(world)
-		_rasterize_wind_slice_from_hex(world, _pending_wind_buf, 0, pix_total)
-		_rasterize_ocean_current_slice_from_hex(world, _pending_currents_buf, 0, pix_total)
+		var wind_raster_done: bool = _pending_wind_buf.size() >= pix_total * 2
+		var ocean_raster_done: bool = false
+		if _world_ext != null:
+			if not wind_raster_done:
+				var wind_ret: Dictionary = run_wind_field_rasterize_full(map, world, cfg)
+				wind_raster_done = not bool(wind_ret.get("fallback", true))
+			var ocean_ret: Dictionary = run_ocean_field_rasterize_full(map, world, cfg)
+			ocean_raster_done = not bool(ocean_ret.get("fallback", true))
+		if not wind_raster_done:
+			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, 0, pix_total)
+		if not ocean_raster_done:
+			_rasterize_ocean_current_slice_from_hex(world, _pending_currents_buf, 0, pix_total)
 		# 方案 B-1：物理路径下不再光栅化 ocean_upwelling_buffer
 		# （per-cell SoA / 主视觉路径无消费者，F6 调试由 lazy bake 现场光栅化）。
 		world.wind_field_buffer = _pending_wind_buf
@@ -489,6 +534,36 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	print("  wind/ocean/upwelling pixel buffers: %dms" % (Time.get_ticks_msec() - t_vec))
+
+func run_deferred_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> bool:
+	if not _initial_physical_deferred:
+		return false
+	if not _use_physical_circulation(cfg):
+		_initial_physical_deferred = false
+		return false
+	var t_deferred := Time.get_ticks_msec()
+	_initial_physical_deferred = false
+	_physical_solve_for_phase(map, world, hex_size, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
+	_bake_initial_vector_buffers(map, world, hex_size, cfg)
+	world.vector_atlas_tex = _encode_vector_atlas(
+		world.ocean_current_buffer, world.wind_field_buffer,
+		world.derived_size, world.vector_atlas_tex
+	)
+	world.upwelling_tex = null
+	_pending_currents_buf = PackedByteArray()
+	_pending_upwelling_buf = PackedByteArray()
+	_pending_upwelling_mask = PackedByteArray()
+	_pending_upwelling_row_built = PackedByteArray()
+	_pending_wind_buf = PackedByteArray()
+	_pending_size = Vector2i.ZERO
+	_pending_phys_solved_phase = NAN
+	_pending_psi_state = null
+	_phys_stage = _PHYS_STAGE_NONE
+	_phys_psi_iters_done = 0
+	_phys_wind_raster_idx = 0
+	_phys_wind_done_by_cpp = false
+	print("[physical_init] deferred native refresh complete: %dms" % (Time.get_ticks_msec() - t_deferred))
+	return true
 
 static func compute_world_bounds(width: int, height: int, hex_size: float) -> Rect2:
 	if width <= 0 or height <= 0:
@@ -4281,10 +4356,22 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 
 	# 增量路径：遍历 cell，比 sig，仅写翻面的。
 	var dirty_count: int = 0
+	var weather_dirty_mask: PackedByteArray = map.weather_dirty_mask
+	var use_weather_dirty: bool = weather_dirty_mask.size() == map.cell_count()
+	var has_weather_dirty: bool = false
+	if use_weather_dirty:
+		for _wd in weather_dirty_mask:
+			if int(_wd) != 0:
+				has_weather_dirty = true
+				break
 	for cell_key in cell_lists.keys():
 		var cell: HexCell = cell_key
 		if cell == null:
 			continue
+		if use_weather_dirty and has_weather_dirty:
+			var cell_idx: int = map.index_of(cell)
+			if cell_idx < 0 or cell_idx >= weather_dirty_mask.size() or weather_dirty_mask[cell_idx] == 0:
+				continue
 		var wt: int = cell.weather_type if cell.weather_field_initialized else int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
 		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else float(cell.current_state.get("weather_intensity", 0.0))
 		var cloud: float = cell.weather_cloud if cell.weather_field_initialized else float(cell.current_state.get("weather_cloud", 0.0))
@@ -4699,6 +4786,19 @@ func _use_physical_circulation(cfg: MapConfig) -> bool:
 		return false
 	return bool(cfg.climate_profile.physical_circulation_enabled)
 
+func _calendar_days_per_year(profile = null) -> int:
+	if _world_clock_ref != null and _world_clock_ref.has_method("days_per_year"):
+		return clampi(int(_world_clock_ref.days_per_year()), 1, 3660)
+	var cp = profile if profile != null else _climate_profile
+	if cp != null and cp.get("orbital_days_per_year") != null:
+		return clampi(int(cp.get("orbital_days_per_year")), 1, 3660)
+	return 365
+
+func _season_phase_to_day_of_year(season_phase: float, days_per_year: int = 0) -> int:
+	var dpy: int = clampi(days_per_year if days_per_year > 0 else _calendar_days_per_year(), 1, 3660)
+	var p: float = fposmod(season_phase, 4.0)
+	return clampi(int(floor((p / 4.0) * float(dpy))), 0, dpy - 1)
+
 # 强制下一次 _physical_solve_step_one 从 SLP 阶段重新开始。OceanCurrentsJob
 # 在新一轮（_round_active=false → true）转换时调一次，确保季节相位变更被
 # 重新求解；一次性入口 _physical_solve_for_phase 也调一次，避免和切片路径
@@ -4714,7 +4814,13 @@ func set_world_ext(ext) -> void:
 	_wind_b_first_run_logged = false
 	_wind_b_path_log_count = 0
 	_wind_b_commit_diag_count = 0
+	_slp_path_log_count = 0
+	_slp_commit_diag_count = 0
+	_slp_rt_diag_count = 0
+	_psi_path_log_count = 0
+	_psi_commit_diag_count = 0
 	_upwelling_path_logged = false
+	_upwelling_diag_count = 0
 	_sea_ice_path_logged = false
 
 ## DOTS-Final-Push 修复：注入 ClimateProfile 引用，让 sea_ice / albedo / veg_dyn /
@@ -4722,6 +4828,9 @@ func set_world_ext(ext) -> void:
 ## `world.get("config")` 路径。
 func set_climate_profile(cp) -> void:
 	_climate_profile = cp
+
+func set_world_clock_ref(world_clock_node) -> void:
+	_world_clock_ref = world_clock_node
 
 func reset_physical_solve_state() -> void:
 	_phys_stage = _PHYS_STAGE_NONE
@@ -4739,6 +4848,7 @@ func reset_physical_solve_state() -> void:
 	_psi_native_ms_last = -1.0
 	_psi_path_str_last = "gdscript"
 	_slp_thermal_p95_last = 0.0
+	_slp_delta_p95_last = 0.0
 	_wind_delta_p95_last = 0.0
 	_ocean_delta_p95_last = 0.0
 	_thermal_current_p95_last = 0.0
@@ -4757,6 +4867,8 @@ func get_psi_native_ms() -> float:
 	return _psi_native_ms_last
 func get_slp_thermal_p95() -> float:
 	return _slp_thermal_p95_last
+func get_slp_delta_p95() -> float:
+	return _slp_delta_p95_last
 func get_wind_delta_p95() -> float:
 	return _wind_delta_p95_last
 func get_ocean_delta_p95() -> float:
@@ -4806,6 +4918,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			or absf(profile.ocean_density_cold_weight) > 0.0001
 			or absf(profile.ocean_density_ice_weight) > 0.0001)
 	var bounds: Rect2 = world.world_bounds
+	var days_per_year_phys: int = _calendar_days_per_year(profile)
+	var sim_day_phys: int = _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
 
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
@@ -4849,11 +4964,24 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"world_bounds_size_y": bounds.size.y,
 						"neighbor_indices": nb_idx_for_slp,
 						"water_terrain_ids": water_ids_slp,
+						"prev_slp_arr": map.slp_arr,
+						"slp_lat_amp": 0.16,
+						"slp_land_amp": 0.55,
+						"slp_water_damp": 0.20,
+						"slp_interior_boost": 1.30,
+						"slp_coast_damp": 0.60,
+						"slp_target_p95": 0.18,
+						"days_per_year": days_per_year_phys,
+						"sim_day": sim_day_phys,
+						"world_seed": world_seed_phys,
 					}
 					if profile != null:
 						knobs_slp["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
 						knobs_slp["slp_ice_high_weight"] = profile.slp_ice_high_weight
 						knobs_slp["slp_snow_high_weight"] = profile.slp_snow_high_weight
+						knobs_slp["slp_response_rate"] = profile.slp_response_rate
+						knobs_slp["slp_synoptic_amp"] = profile.slp_synoptic_amp
+						knobs_slp["slp_moist_low_weight"] = profile.slp_moist_low_weight
 					var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
 					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
@@ -4877,6 +5005,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							])
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
 							_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
+							_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
 							# SLP slice 优化（2026-05-18）：原 commit 走两轮：
 							#   1) for i: cells_for_slp_cpp[i].slp = slp_out[i]
 							#      → 2400× HexCell.slp setter（_facade_enabled 时还要再
@@ -4951,12 +5080,12 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				var nb_idx_for_wind: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 				var fast_indexed_wind: bool = nb_idx_for_wind.size() >= n_wind * 6
 				if fast_indexed_wind and n_wind > 0:
-					# Pack cell.slp in index order; C++ wind pass consumes this snapshot.
-					var slp_arr: PackedFloat32Array = PackedFloat32Array()
-					slp_arr.resize(n_wind)
-					for _i_slp in range(n_wind):
-						var _c_slp: HexCell = cells_for_wind[_i_slp]
-						slp_arr[_i_slp] = _c_slp.slp if _c_slp != null else 0.0
+					var slp_arr: PackedFloat32Array = map.slp_arr if map.slp_arr.size() == n_wind else PackedFloat32Array()
+					if slp_arr.is_empty():
+						slp_arr.resize(n_wind)
+						for _i_slp in range(n_wind):
+							var _c_slp: HexCell = cells_for_wind[_i_slp]
+							slp_arr[_i_slp] = _c_slp.slp if _c_slp != null else 0.0
 					# water_terrain_ids：与 PhysicalCirculationSolver._is_water_terrain 1:1
 					var water_ids := PackedByteArray()
 					water_ids.append(int(TerrainType.TERRAIN.OCEAN))
@@ -4976,9 +5105,13 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
 						"land_lf_peak": int(LandformType.LF.PEAK),
 						"land_lf_hill": int(LandformType.LF.HILL),
+						"days_per_year": days_per_year_phys,
+						"sim_day": sim_day_phys,
+						"world_seed": world_seed_phys,
 					}
 					if profile != null:
 						knobs_wind["wind_response_rate"] = profile.wind_response_rate
+						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
 					if _rc_wind != null and float(_rc_wind) >= 0.0:
 						# Commit：从 SoA wind_x/y + wind_speed_out 写回每 cell。
@@ -5108,7 +5241,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_source_scale": 1.0,
 						"ocean_current_scale": 0.18,
 						"thermohaline_weight": 0.18,
-						"upwelling_highlat_abs": 0.6,
+						"upwelling_highlat_abs": 0.60,
 						"cold_sink_temp": cold_sink_temp,
 					}
 					if profile != null:

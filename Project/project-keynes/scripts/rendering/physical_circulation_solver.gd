@@ -136,9 +136,9 @@ static func _density_proxy(map: MapData, cell: HexCell, cold_weight: float,
 #       slp_new = (slp + Σ slp_neighbor) / (1 + count_neighbor)
 #    平滑后压力中心连贯，无单格噪点。
 
-const _SLP_LAT_AMP := 0.10              # 纬度基线幅度（±）。0.10 → 峰峰值 0.20，与海陆调制合成后 ~0.25-0.35。
+const _SLP_LAT_AMP := 0.26              # 纬度基线幅度（±）。提高三圈环流压差，避免 SLP range 被压到 0.1 量级。
 const _SLP_LAND_AMP := 0.55             # 陆地海陆性幅度（夏低冬高峰值）
-const _SLP_WATER_DAMP := 0.20           # 水域海陆季节响应缩放
+const _SLP_WATER_DAMP := 0.35           # 水域海陆季节响应缩放；水面也需保留足够压差驱动风应力。
 const _SLP_SMOOTH_PASSES := 1           # 默认 6 邻域 Jacobi 平滑次数（2026-05：2→1，少磨一次保留陆地细节）
 const _SLP_INTERIOR_BOOST := 1.30       # 内陆 cell 海陆性系数
 const _SLP_COAST_DAMP := 0.60           # 沿海 cell 海陆性系数
@@ -220,30 +220,57 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 
 	# Pass B：6 邻域 Jacobi 平滑 N 次。每次先把所有 cell 的新值读入临时数组，
 	# 再一次性写回，避免传播顺序依赖。
-	if smooth_passes <= 0:
-		return
 	var n_cells: int = cells.size()
-	var buf := PackedFloat32Array()
-	buf.resize(n_cells)
-	for pass_idx in range(smooth_passes):
-		for i in range(n_cells):
-			var c: HexCell = cells[i]
-			if c == null:
-				buf[i] = 0.0
-				continue
-			var sum_slp: float = c.slp
-			var cnt: int = 1
-			for nb: HexCell in map.get_neighbors(c):
-				if nb == null:
+	if smooth_passes > 0:
+		var buf := PackedFloat32Array()
+		buf.resize(n_cells)
+		for pass_idx in range(smooth_passes):
+			for i in range(n_cells):
+				var c: HexCell = cells[i]
+				if c == null:
+					buf[i] = 0.0
 					continue
-				sum_slp += nb.slp
-				cnt += 1
-			buf[i] = sum_slp / float(cnt)
-		# 写回
-		for i in range(n_cells):
-			var c2: HexCell = cells[i]
-			if c2 != null:
-				c2.slp = buf[i]
+				var sum_slp: float = c.slp
+				var cnt: int = 1
+				for nb: HexCell in map.get_neighbors(c):
+					if nb == null:
+						continue
+					sum_slp += nb.slp
+					cnt += 1
+				buf[i] = sum_slp / float(cnt)
+			# 写回
+			for i in range(n_cells):
+				var c2: HexCell = cells[i]
+				if c2 != null:
+					c2.slp = buf[i]
+
+	var mean_slp: float = 0.0
+	var valid_count: int = 0
+	for cell: HexCell in cells:
+		if cell == null:
+			continue
+		mean_slp += cell.slp
+		valid_count += 1
+	if valid_count <= 0:
+		return
+	mean_slp /= float(valid_count)
+	var abs_vals: Array[float] = []
+	abs_vals.resize(valid_count)
+	var wi: int = 0
+	for cell: HexCell in cells:
+		if cell == null:
+			continue
+		cell.slp -= mean_slp
+		abs_vals[wi] = absf(cell.slp)
+		wi += 1
+	abs_vals.sort()
+	var p95_idx: int = clampi(int(floor(float(valid_count - 1) * 0.95)), 0, valid_count - 1)
+	var p95: float = abs_vals[p95_idx]
+	if p95 > 0.00001:
+		var scale: float = clampf(0.32 / p95, 0.75, 3.60)
+		for cell: HexCell in cells:
+			if cell != null:
+				cell.slp *= scale
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -273,11 +300,11 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 #   北半球用 +θ_hemi（顺时针 = 右偏）；南半球用 -θ_hemi。
 #   |θ_hemi| 随 |lat_signed| 从 0 → 0.78（约 45°）非线性增长，赤道无偏转。
 
-# SLP 公式已修复 → 梯度风方向正确。纬度基线(WindBelt)也正确 → 两者等权合成。
-# 0.55/0.50 让纬度基线与压力梯度各贡献一半，海陆季风提供局地修正。
-const _WIND_W_LAT := 0.55              # 纬度基线权重
-const _WIND_W_GRAD := 0.50             # 压力梯度风权重
-const _WIND_W_MONSOON := 0.65          # 沿海季风附加权重（0.35 → 0.65：陆海热力对比期望肉眼可见）
+# SLP 公式已修复 → 梯度风方向正确。V4 中压力梯度/季风项过强会淹没
+# WindBelt 的信风/西风/极地东风交替结构，因此提高纬度基线、降低梯度/季风权重。
+const _WIND_W_LAT := 0.85              # 纬度基线权重，优先保留三圈环流风带交替
+const _WIND_W_GRAD := 0.35             # 压力梯度风权重，作为天气/海陆局地修正
+const _WIND_W_MONSOON := 0.45          # 沿海季风附加权重，避免中高纬风带被季风偏置吞没
 const _WIND_MONSOON_MAX_DIST := 5      # 季风从海岸向内陆渗透的格数（3 → 5：渗透更深，覆盖大陆边缘）
 const _WIND_CORIOLIS_MAX_RAD := 0.78   # 最大科氏偏转角（约 45°，仅作用于压力梯度风）
 const _WIND_TERRAIN_MOUNTAIN_DAMP := 0.55  # 山地风速衰减
@@ -451,6 +478,19 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		# (e) 地形 / 摩擦衰减
 		if not is_water:
 			spd *= _WIND_LAND_FRICTION
+		if profile != null and profile.get("wind_belt_only_debug") != null and bool(profile.wind_belt_only_debug):
+			dir = v_base.normalized() if v_base.length_squared() > 0.0001 else Vector2(1.0, 0.0)
+			cell.wind_vector = dir
+			cell.wind_speed = spd
+			var idx_wb: int = _cell_idx(map, cell)
+			if idx_wb >= 0:
+				if map.wind_x_arr.size() > idx_wb:
+					map.wind_x_arr[idx_wb] = dir.x
+				if map.wind_y_arr.size() > idx_wb:
+					map.wind_y_arr[idx_wb] = dir.y
+				if map.wind_speed_arr.size() > idx_wb:
+					map.wind_speed_arr[idx_wb] = spd
+			continue
 		if terrain_aware:
 			# (e1) 山脉绕流：检查邻居中是否存在山地/peak。如有，沿其切向偏转风向，
 			# 风"撞向山"时被推向沿等高线方向。
@@ -741,8 +781,8 @@ static func commit_psi_to_cells(state: PsiSolverState) -> void:
 # 这里用 _OCEAN_CURRENT_SCALE 经验缩放，再 clamp。
 
 const _UPWELLING_HIGHLAT_ABS_SOLVER := 0.75 	# 冷沉仅限极圈内(|lat|>67.5°)
-const _OCEAN_CURRENT_SCALE := 0.18      # ψ 梯度 → ocean_current 量级缩放（原 0.05 太弱）
-const _THERMOHALINE_WEIGHT := 0.18      # 高纬热盐 y 修正权重（≤ 0.2）
+const _OCEAN_CURRENT_SCALE := 0.30      # ψ 梯度 → ocean_current 量级缩放，目标把全球 ocean_mag 拉回 0.18~0.35。
+const _THERMOHALINE_WEIGHT := 0.25      # 高纬热盐 y 修正权重，补足弱风应力下的高纬密度流。
 
 ## psi_to_ocean_current —— 把 ψ 场转为 cell.ocean_current。
 ##

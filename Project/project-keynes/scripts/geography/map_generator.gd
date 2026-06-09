@@ -202,6 +202,23 @@ func _c() -> ClimateProfile:
 		climate_profile = loaded
 	return climate_profile
 
+func _calendar_days_per_year() -> int:
+	if _world_clock_ref != null and _world_clock_ref.has_method("days_per_year"):
+		return clampi(int(_world_clock_ref.days_per_year()), 1, 3660)
+	var cp := _c()
+	if cp != null and cp.get("orbital_days_per_year") != null:
+		return clampi(int(cp.get("orbital_days_per_year")), 1, 3660)
+	return 365
+
+func _season_phase_to_day_of_year(season_phase: float, days_per_year: int = 0) -> int:
+	var dpy: int = clampi(days_per_year if days_per_year > 0 else _calendar_days_per_year(), 1, 3660)
+	var p: float = fposmod(season_phase, 4.0)
+	return clampi(int(floor((p / 4.0) * float(dpy))), 0, dpy - 1)
+
+func _is_annual_log_tick(counter: int) -> bool:
+	var dpy: int = _calendar_days_per_year()
+	return counter == 1 or (counter > 0 and (counter % dpy) == 0)
+
 # （下面各组调参说明仍保留，方便阅读；实际数值取自 ClimateProfile。）
 
 # ─── 河流参数 ────────────────────────────────────────────────────────────
@@ -326,7 +343,7 @@ var _baker: MapBaker = null
 var _last_cfg: MapConfig = null
 
 # Seasonal Continuous Climate：refresh_climate_daily 调用计数器（耗时打点节流用）。
-# 首次调用必打、之后每 365 次（≈ 1 年）打一次，避免日志被高频日级刷新淹没。
+# 首次调用必打，之后每个 WorldClock 年长打一次，避免日志被高频日级刷新淹没。
 var _daily_climate_call_count: int = 0
 # Systemic Ocean Currents：_apply_ocean_heat_transport_pass 调用计数器（同节流策略）。
 var _heat_transport_call_count: int = 0
@@ -981,6 +998,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
+	if _world_clock_ref != null and _baker.has_method("set_world_clock_ref"):
+		_baker.set_world_clock_ref(_world_clock_ref)
 	# Physical Wind & Ocean Circulation：把 ClimateProfile 注入 cfg，让 MapBaker
 	# 在 bake_world 内部检测 physical_circulation_enabled 等开关。生成阶段先注入一次；
 	# OceanCurrentsJob 注册时还会重复注入一次，保持 cfg.climate_profile 始终为
@@ -1227,6 +1246,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var cp_for_baker = _c()
 		_baker.set_climate_profile(cp_for_baker)
 		print("[DataCore] _baker climate_profile injected=%s (fixes WorldData.config==null sea_ice prepare path)" % str(cp_for_baker != null))
+	if cfg != null:
+		cfg.climate_profile = _c()
+	if _baker != null and _baker.has_method("run_deferred_initial_physical_circulation"):
+		_baker.run_deferred_initial_physical_circulation(map, world, hex_size, cfg)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -1517,10 +1540,16 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 
 
 func _sim_job_should_must_run(_job, _upload_job: bool) -> bool:
-	# Extreme performance mode: no simulation job may bypass the global frame
-	# budget. It is acceptable for simulation rounds to lag; it is not acceptable
-	# for a mandatory job to create a main-thread spike.
-	return false
+	if _upload_job or _job == null:
+		return false
+	var raw_id = _job.get("id")
+	if raw_id == null:
+		return false
+	var job_id: StringName = StringName(str(raw_id))
+	return job_id == &"refresh_climate_daily" \
+			or job_id == &"weather_refresh" \
+			or job_id == &"sea_ice_daily" \
+			or job_id == &"ocean_currents"
 
 
 func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
@@ -1555,7 +1584,20 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 	if job.get("must_run") != null:
 		job.must_run = strict_on and _sim_job_should_must_run(job, upload_job)
 	if job.get("starvation_threshold") != null:
-		job.starvation_threshold = 0
+		var starvation_job_id: StringName = &""
+		var starvation_raw_id = job.get("id")
+		if starvation_raw_id != null:
+			starvation_job_id = StringName(str(starvation_raw_id))
+		if upload_job:
+			job.starvation_threshold = 0
+		elif starvation_job_id == &"refresh_climate_daily" \
+				or starvation_job_id == &"weather_refresh" \
+				or starvation_job_id == &"sea_ice_daily":
+			job.starvation_threshold = 3
+		elif starvation_job_id == &"ocean_currents":
+			job.starvation_threshold = 6
+		else:
+			job.starvation_threshold = 0
 
 
 ## Phase 1.4 — 让 main.gd / debug overlay 拿到 sus_systems_bootstrap 引用。
@@ -1700,6 +1742,8 @@ func apply_simulation_cadence_from_profile() -> void:
 ## main.gd 在 _ready 末尾调用，让 OceanCurrentsJob 拿到 season_phase 连续浮点。
 func set_world_clock_ref(world_clock_node) -> void:
 	_world_clock_ref = world_clock_node
+	if _baker != null and _baker.has_method("set_world_clock_ref"):
+		_baker.set_world_clock_ref(_world_clock_ref)
 	if _world_clock_ref == null:
 		return
 	if _ocean_currents_job != null:
@@ -1737,6 +1781,10 @@ func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 	var season_idx: int = 0
 	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
 		season_idx = int(_world_clock_ref.season_index())
+	var days_per_year: int = _calendar_days_per_year()
+	var day_of_year: int = _season_phase_to_day_of_year(ctx.season_phase, days_per_year)
+	if _world_clock_ref != null and _world_clock_ref.has_method("day_in_year"):
+		day_of_year = clampi(int(_world_clock_ref.day_in_year()), 0, days_per_year - 1)
 	var anomaly: float = 0.0
 	if _world_clock_ref != null:
 		var v = _world_clock_ref.get("climate_anomaly")
@@ -1744,6 +1792,8 @@ func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 			anomaly = float(v)
 	return {
 		"day_index": ctx.day_index,
+		"day_of_year": day_of_year,
+		"days_per_year": days_per_year,
 		"tick_index": ctx.tick_index,
 		"season_phase": ctx.season_phase,
 		"season_index": season_idx,
@@ -1845,6 +1895,7 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null:
 		return {}
+	var days_per_year: int = _calendar_days_per_year()
 	return {
 		"use_insol": bool(cp_now.true_insolation_enabled),
 		"use_sparse": bool(cp_now.use_sparse_climate),
@@ -1852,6 +1903,7 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"insol_gain": float(cp_now.get("insolation_season_gain")) if cp_now.get("insolation_season_gain") != null else 1.0,
 		"moist_scale_now": 1.0,
 		"season_phase": float(season_phase),
+		"days_per_year": days_per_year,
 		"axial_tilt_deg": float(cp_now.get("axial_tilt_deg")) if cp_now.get("axial_tilt_deg") != null else 23.5,
 		"day_length_gain": float(cp_now.get("insolation_daylen_amp")) if cp_now.get("insolation_daylen_amp") != null else 0.35,
 		"solar_gain": float(cp_now.get("solar_gain")) if cp_now.get("solar_gain") != null else 1.0,
@@ -6408,7 +6460,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		"cells": map.cell_count(),
 		"_tick_idx": _current_fast_tick_idx,
 	}
-	if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
+	if _is_annual_log_tick(_daily_climate_call_count):
 		# I1.A-1: wrapper 路径也补上 path=... 标识，与 sliced 路径输出格式对齐。
 		# 实际该路径在 SUS 接管后基本不触发（已走 RefreshClimateDailyJob.sliced），
 		# 但保留对齐避免日志解析脚本分歧。
@@ -6473,12 +6525,14 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	var cp := _c()
 	if cp == null or _last_cfg == null:
 		return
+	var days_per_year: int = _calendar_days_per_year()
+	var annual_ema_alpha: float = 1.0 / float(days_per_year)
 
 	# [DIAG mask_dirty=2400 排查 · 2026-05-20] 入口 flag dump（仅前 3 个 round，
-	# 之后每 365 次打一次）。诊断完成后整段删除。
+	# 之后按 WorldClock 年长节流）。诊断完成后整段删除。
 	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_climate_pass_a / use_data_core_climate
 	# flag 已删除——这里保留原原生 DIAG 输出格式不变，但打印常量 true。
-	if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+	if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
 		print("[DIAG pass_a_entry] day=%d phase=%.3f gdext_pass_a=%s use_data_core_climate=%s use_soa_pipeline=%s use_sparse_climate=%s ext_bound=%s" % [
 			_daily_climate_call_count, season_phase,
 			"true",
@@ -6519,6 +6573,7 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"insol_gain":       float(cp.insolation_season_gain) if "insolation_season_gain" in cp else 1.0,
 			"moist_scale_now":  1.0,
 			"season_phase":     float(season_phase),
+			"days_per_year":    _calendar_days_per_year(),
 			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
 			"day_length_gain":  float(cp.insolation_daylen_amp) if "insolation_daylen_amp" in cp else 0.35,
 			"solar_gain":       float(cp.solar_gain) if "solar_gain" in cp else 1.0,
@@ -6532,7 +6587,7 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] C++ Pass-A 路径 rc + DCWorld dirty
 		# 即时观测：rc>=0 表示 C++ 接管并已 return；此处 peek 一次 dirty count 看 C++
 		# 端是否在 set() 推回 MapData 时也副作用 mark 到 DCWorld（理论上不会）。
-		if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+		if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
 			var _dirty_after_cpp: int = -1
 			if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
 				_dirty_after_cpp = int(_data_core_world.peek_dirty_count())
@@ -6687,8 +6742,8 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		cell.temp_baseline = temp_year
 		cell.temp_season_offset = season_offset
 
-		# —— 5) True Insolation-Driven：温度 EMA（30 日 / 365 日）用于"观测月份"面板派生 ——
-		# α_30 ≈ 1/30、α_365 ≈ 1/365；首次出现时用 temp_now 初始化避免长尾收敛拖影。
+		# —— 5) True Insolation-Driven：温度 EMA（30 日 / 日历年长）用于"观测月份"面板派生 ——
+		# α_30 ≈ 1/30、α_year ≈ 1/days_per_year；首次出现时用 temp_now 初始化避免长尾收敛拖影。
 		# Fast-tick perf opt (C)：用 < 0 哨兵判"首次"，现在改用独立 bool 标志——
 		# temp_30d_mean / temp_365d_mean 默认 0.0 是合法气候值，不能靠值域判"未初始化"。
 		# 这里用 cell._ema_initialized 作为一次性标志。
@@ -6701,7 +6756,7 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			cell._ema_initialized = true
 		else:
 			m30 = lerpf(cell.temp_30d_mean, temp_now, 1.0 / 30.0)
-			m365 = lerpf(cell.temp_365d_mean, temp_now, 1.0 / 365.0)
+			m365 = lerpf(cell.temp_365d_mean, temp_now, annual_ema_alpha)
 		cell.temp_30d_mean = m30
 		cell.temp_365d_mean = m365
 		cell.temp_dev_from_annual = m30 - m365
@@ -7369,9 +7424,9 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		"dirty_marked_count": 0,
 	}
 	# [DIAG 2026-05-23] 海冰不动排障：状态机入口（实际运行主路径）。
-	# 每 365 次 pass + 前 5 次打印一次温度 / SIF 分布。
+	# 每个日历年长 + 前 5 次打印一次温度 / SIF 分布。
 	# 关键问诊：t_eff 实际有没有 < t_form？SIF 是否在累积但卡在 threshold 下？
-	if _gdext_sea_ice_runs < 5 or (_gdext_sea_ice_runs % 365) == 0:
+	if _gdext_sea_ice_runs < 5 or _is_annual_log_tick(_gdext_sea_ice_runs):
 		var _diag_water: int = 0
 		var _diag_below_form: int = 0
 		var _diag_sif_pos: int = 0
@@ -7600,9 +7655,9 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 	var flipped_count: int = int(_sea_ice_state_machine.get("flipped", 0))
 	# [BUG-FIX 2026-05-23 海冰看似不动] 诊断：本 pass 我们显式 mark_dirty 的 cell 数。
 	# 期望：当 SIF 有变化时 dirty_marked > 0；若仍 ==0 而 SIF 在变，说明 fix 没生效。
-	# 节流：前 5 次 + 每 365 次（与 DIAG-SM 同步）。
+	# 节流：前 5 次 + 每个日历年长（与 DIAG-SM 同步）。
 	var _dirty_marked_count: int = int(_sea_ice_state_machine.get("dirty_marked_count", 0))
-	if _gdext_sea_ice_runs <= 5 or (_gdext_sea_ice_runs % 365) == 0:
+	if _gdext_sea_ice_runs <= 5 or _is_annual_log_tick(_gdext_sea_ice_runs):
 		print("[sea_ice/DIRTY-MARK] run#%d marked_dirty_cells=%d (sif_pos=%d sif_max=%.4f) water=%d flipped=%d" % [
 			_gdext_sea_ice_runs, _dirty_marked_count,
 			int(_sea_ice_state_machine.get("dirty_marked_sif_pos", 0)),
@@ -7659,9 +7714,9 @@ func _consume_sea_ice_dt_days() -> float:
 					dt_days = 1.0  # 同 tick 重入兜底
 			# else: 第一次调用，保持 dt_days = 1.0 默认
 			_last_sea_ice_pass_day = now_day
-	# 诊断：每 365 次或前 5 次打印一次 dt_days，验证补偿是否在工作。
+	# 诊断：每个日历年长或前 5 次打印一次 dt_days，验证补偿是否在工作。
 	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
-			or ((_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks) % 365) == 0:
+			or _is_annual_log_tick(_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks):
 		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k x%.2f)" % [
 			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
 			dt_days,
@@ -7965,8 +8020,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			if _gdext_sea_ice_runs == 1:
 				print("[sea_ice/F.4] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)" % [_sea_ice_dispatch_path, rc])
 
-			# 节流打点（每 365 天）
-			if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
+			# 节流打点（每个日历年长）
+			if _is_annual_log_tick(_daily_climate_call_count):
 				print("_apply_sea_ice_daily_pass[F.4]: %.2fms (water=%d, flipped=%d, phase=%.3f)" % [
 					rc, water_count_cpp, flipped_count_cpp, season_phase
 				])
@@ -8194,8 +8249,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	_dump_sea_ice_breakdown_if_slow()
 	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 
-	# 节流打点（每 365 天打一次）
-	if _daily_climate_call_count == 1 or (_daily_climate_call_count % 365) == 0:
+	# 节流打点（每个日历年长）
+	if _is_annual_log_tick(_daily_climate_call_count):
 		print("_apply_sea_ice_daily_pass: %dms (water=%d, flipped=%d, phase=%.3f)" % [
 			Time.get_ticks_msec() - t0, water_count, flipped_count, season_phase
 		])
@@ -8222,7 +8277,7 @@ func _apply_ocean_heat_transport_pass(map: MapData, season_phase: float) -> void
 	_ocean_water_pass(map, season_phase)
 	_ocean_land_pass(map, season_phase)
 	_heat_transport_call_count += 1
-	if _heat_transport_call_count == 1 or (_heat_transport_call_count % 365) == 0:
+	if _is_annual_log_tick(_heat_transport_call_count):
 		var phase_mod := fposmod(season_phase, 4.0)
 		var dist_to_winter: float = minf(phase_mod, 4.0 - phase_mod)
 		var winter_boost: float = 1.0
@@ -8488,6 +8543,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var season_idx: int = int(floor(fposmod(season_phase, 4.0))) & 3
 	var sea_level: float = float(_last_cfg.sea_level)
 	var inv_above_sea: float = 1.0 / maxf(1.0 - sea_level, 0.001)
+	var days_per_year: int = _calendar_days_per_year()
+	var annual_ema_alpha: float = 1.0 / float(days_per_year)
 	var use_insol: bool = bool(cp.true_insolation_enabled)
 	# Native path writes per-cell insolation SoA; this legacy GDScript path keeps direct math only.
 	# B1-C：season_offset 的 amp/gain 提到循环外（一日内常量）。
@@ -8700,7 +8757,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			ema_init_a[i] = 1
 		else:
 			m30 = lerpf(temp_30d_a[i], temp_now, 1.0 / 30.0)
-			m365 = lerpf(temp_365d_a[i], temp_now, 1.0 / 365.0)
+			m365 = lerpf(temp_365d_a[i], temp_now, annual_ema_alpha)
 		temp_30d_a[i] = m30
 		temp_365d_a[i] = m365
 		temp_anom_a[i] = m30 - m365
@@ -8825,7 +8882,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_pa_last_total_cells = n
 
 	# [DIAG mask_dirty=2400 排查 · 2026-05-20] SoA Pass-A push 末尾路径 dump
-	if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+	if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
 		var _dirty_after_pa: int = -1
 		if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
 			_dirty_after_pa = int(_data_core_world.peek_dirty_count())
@@ -9267,7 +9324,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_pb_path_tag = "fallback_full"
 			_pb_dirty_count_local = n
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] Pass-B push 完成后路径 dump
-		if _daily_climate_call_count <= 3 or (_daily_climate_call_count % 365) == 0:
+		if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
 			var _dirty_after_pb: int = -1
 			if _data_core_world.has_method("peek_dirty_count"):
 				_dirty_after_pb = int(_data_core_world.peek_dirty_count())
@@ -10277,6 +10334,9 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		"processed_cells": processed_cells,
 		"cursor_start": cursor_start,
 		"cursor_end": cursor_end,
+		"weather_dirty_count": int(result.get("weather_dirty_count", 0)),
+		"water_budget_error": float(result.get("water_budget_error", 0.0)),
+		"active_weather_ratio": float(result.get("active_weather_ratio", 0.0)),
 		"partial": not bool(result.get("done", true)),
 		"progress_ratio": float(result.get("progress_ratio", 0.0)),
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
@@ -10678,6 +10738,9 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"field_commit_loop_ms": float(sub.get("field_commit_loop_ms", 0.0)),
 		"field_commit_dc_ms": float(sub.get("field_commit_dc_ms", 0.0)),
 		"field_commit_convergence_ms": float(sub.get("field_commit_convergence_ms", 0.0)),
+		"weather_dirty_count": int(sub.get("weather_dirty_count", 0)),
+		"water_budget_error": float(sub.get("water_budget_error", 0.0)),
+		"active_weather_ratio": float(sub.get("active_weather_ratio", 0.0)),
 		"weather_field_bake_ms": weather_field_bake_ms,
 		"transp_ms": transp_ms,
 		"albedo_ms": albedo_ms,
@@ -11806,14 +11869,17 @@ func _rebuild_insol_mean_lut() -> void:
 		_insol_mean_lut[i] = acc / float(_INSOL_ANNUAL_SAMPLES)
 	_insol_mean_lut_tilt = tilt_deg
 
-# 日射绝对偏差：insol_now − insol_mean ∈ [−1, +1]。
-# 改用绝对差值而非分数比，使各纬度季节信号幅度一致（~0.15–0.35），
-# 消除原分数公式在极地放大>100×、中纬度压至近0的跨纬度失衡。
+# 日射季节偏差：中低纬用绝对差，高纬混入受限相对差。
+# 纯绝对差会压平极区季节，纯相对差会在极夜年均值很小时发散。
 # C++ 端同步修改（world_ext.cpp:2255,2580）。
 func _insol_dev(ny: float, season_phase: float) -> float:
 	var mean_val: float = _insolation_annual_mean(ny)
 	var now_val: float = _compute_insolation(ny, season_phase)
-	return clampf(now_val - mean_val, -1.0, 1.0)
+	var dev_abs: float = now_val - mean_val
+	var dev_rel: float = clampf(dev_abs / maxf(mean_val, 0.18), -1.0, 1.0)
+	var abs_lat: float = absf((clampf(ny, 0.0, 1.0) - 0.5) * 2.0)
+	var polar_w: float = smoothstep(0.55, 0.90, abs_lat) * 0.55
+	return clampf(lerpf(dev_abs, dev_rel, polar_w), -1.0, 1.0)
 
 # True Insolation-Driven：温度季节偏移的"主路径"。
 # offset = gain × dev × season_temp_amp
@@ -11845,14 +11911,21 @@ func nominal_season_label(season_phase: float) -> Dictionary:
 	return {"label": labels[idx], "transition": frac}
 
 # ─── True Insolation-Driven：日历月份 ────────────────────────────────────
-# 全年 = 365 天。约定 season_phase = 0 对应 1 月 1 日（北半球冬季），
-# phase=1≈4 月、phase=2≈7 月、phase=3≈10 月；返回 1-based 日期。
+# 约定 season_phase = 0 对应年初（北半球冬季），phase=1/2/3 对应年内
+# 25%/50%/75% 进度；真实年长来自 WorldClock.days_per_year()。
 func month_of_year(season_phase: float) -> Dictionary:
 	const MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-	var p: float = fposmod(season_phase, 4.0)
-	var day_of_year: int = clampi(int(floor((p / 4.0) * 365.0)), 0, 364)
+	var days_per_year: int = _calendar_days_per_year()
+	var day_of_year: int = _season_phase_to_day_of_year(season_phase, days_per_year)
+	var display_days: int = 0
+	for ml_display in MONTH_LENGTHS:
+		display_days += int(ml_display)
+	var calendar_day0: int = clampi(
+			int(floor((float(day_of_year) / float(days_per_year)) * float(display_days))),
+			0,
+			display_days - 1)
 	var month: int = 1
-	var day_rem: int = day_of_year
+	var day_rem: int = calendar_day0
 	for i in range(MONTH_LENGTHS.size()):
 		var ml: int = int(MONTH_LENGTHS[i])
 		if day_rem < ml:
@@ -11863,7 +11936,8 @@ func month_of_year(season_phase: float) -> Dictionary:
 		"month": month,
 		"day_of_month": day_rem + 1,
 		"day_of_year": day_of_year + 1,
-		"days_per_year": 365,
+		"calendar_day_display": calendar_day0 + 1,
+		"days_per_year": days_per_year,
 	}
 
 # True Insolation-Driven：UI 便利接口。给外部（main.gd 面板）用当前 _last_cfg
@@ -11875,7 +11949,7 @@ func cell_ny(cell: HexCell) -> float:
 	return _cube_row_norm(cell, _last_cfg)
 
 # ─── True Insolation-Driven：本地温度 EMA → 观测月份 ─────────────────────
-# 由选中面板使用。用本地温度 30 日 EMA 相对 365 日 EMA 的偏差，结合当前日历
+# 由选中面板使用。用本地温度 30 日 EMA 相对年均 EMA 的偏差，结合当前日历
 # 月份的 "该半球理论温度方向"，给出一个观测描述。
 # 不返回春夏秋冬标签（南北半球相反、赤道无季节），只给出：
 #   {calendar_month: 1..12, dev: m30 - m365, warmer_than_annual: bool/null,
@@ -11945,7 +12019,7 @@ func _apply_wind_heat_transport_pass(map: MapData, season_phase: float) -> void:
 	_wind_air_mass_pass(map, season_phase)
 	_wind_surface_pass(map, season_phase)
 	_wind_heat_call_count += 1
-	if _wind_heat_call_count == 1 or (_wind_heat_call_count % 365) == 0:
+	if _is_annual_log_tick(_wind_heat_call_count):
 		print("wind_heat_transport #%d: %dms (cells=%d, phase=%.3f)" % [
 			_wind_heat_call_count,
 			Time.get_ticks_msec() - t0,

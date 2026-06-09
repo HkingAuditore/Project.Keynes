@@ -22,6 +22,12 @@ const FIXED_COLUMNS: Array = [
 	"climate_max_transport_anomaly",
 	"climate_sea_ice_delta_max",
 	"climate_precip_p95",
+	"climate_slp_delta_p95",
+	"climate_wind_delta_p95",
+	"climate_ocean_delta_p95",
+	"weather_dirty_count",
+	"water_budget_error",
+	"active_weather_ratio",
 	"climate_thermal_finalizer_applied",
 	"cell_index",
 	"q",
@@ -46,6 +52,7 @@ const SOA_FIELD_CANDIDATES: Array = [
 	"sea_ice_frac_arr_prev",
 	"weather_intensity_arr",
 	"weather_cloud_arr",
+	"weather_cloud_water_arr",
 	"weather_precip_arr",
 	"weather_transition_alpha_arr",
 	"weather_vapor_arr",
@@ -256,6 +263,12 @@ func on_fast_tick(sample: Dictionary) -> void:
 			return
 		arrays[field] = arr
 
+	var climate: Dictionary = sample.get("climate", {})
+	var precip_arr = map_data.get("weather_precip_arr")
+	if _array_size(precip_arr) == _cell_count:
+		climate["precip_p95"] = _packed_float_p95(precip_arr)
+		sample["climate"] = climate
+
 	for idx in range(_cell_count):
 		var cell = map_data.cell_at(idx)
 		if cell == null:
@@ -305,6 +318,12 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"climate_max_transport_anomaly": float(climate.get("max_transport_anomaly", 0.0)),
 		"climate_sea_ice_delta_max": float(climate.get("sea_ice_delta_max", 0.0)),
 		"climate_precip_p95": float(climate.get("precip_p95", 0.0)),
+		"climate_slp_delta_p95": float(climate.get("slp_delta_p95", 0.0)),
+		"climate_wind_delta_p95": float(climate.get("wind_delta_p95", 0.0)),
+		"climate_ocean_delta_p95": float(climate.get("ocean_delta_p95", 0.0)),
+		"weather_dirty_count": int(climate.get("weather_dirty_count", 0)),
+		"water_budget_error": float(climate.get("water_budget_error", 0.0)),
+		"active_weather_ratio": float(climate.get("active_weather_ratio", 0.0)),
 		"climate_thermal_finalizer_applied": bool(climate.get("thermal_finalizer_applied", false)),
 		"cell_index": idx,
 		"q": int(cell.q),
@@ -334,6 +353,18 @@ static func _array_size(arr) -> int:
 
 static func _array_value(arr, idx: int):
 	return arr[idx]
+
+
+static func _packed_float_p95(arr) -> float:
+	var values: Array = []
+	values.resize(arr.size())
+	for i in range(arr.size()):
+		values[i] = float(arr[i])
+	values.sort()
+	if values.is_empty():
+		return 0.0
+	var pos: int = clampi(int(floor(float(values.size() - 1) * 0.95)), 0, values.size() - 1)
+	return float(values[pos])
 
 
 static func _format_header_line(columns: PackedStringArray) -> String:
