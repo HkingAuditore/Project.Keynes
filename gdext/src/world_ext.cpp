@@ -3456,7 +3456,14 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const int sid_w_intens    = component_id(StringName("cell_weather_intensity"));
     const int sid_w_conv      = component_id(StringName("cell_weather_convergence"));
     const int sid_w_type      = component_id(StringName("cell_weather_type"));
+    const int sid_w_prev_type = component_id(StringName("cell_weather_prev_type"));
+    const int sid_w_target_type = component_id(StringName("cell_weather_target_type"));
+    const int sid_w_transition_alpha = component_id(StringName("cell_weather_transition_alpha"));
     const int sid_w_finit     = component_id(StringName("cell_weather_field_init"));
+    const bool weather_transition_enabled = bool(knobs.get("weather_transition_enabled", false));
+    float weather_transition_alpha_rate = float(knobs.get("weather_transition_alpha_rate", 1.0));
+    if (weather_transition_alpha_rate < 0.0f) weather_transition_alpha_rate = 0.0f;
+    else if (weather_transition_alpha_rate > 1.0f) weather_transition_alpha_rate = 1.0f;
     if (sid_temp       < 0 || sid_moisture   < 0 || sid_air_anom    < 0 ||
         sid_wind_x     < 0 || sid_wind_y     < 0 || sid_terrain     < 0 ||
         sid_has_river  < 0 || sid_elev       < 0 || sid_vegetation  < 0 ||
@@ -3464,6 +3471,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         sid_w_inst     < 0 || sid_w_intens   < 0 || sid_w_conv      < 0 ||
         sid_w_type     < 0 || sid_w_finit    < 0) {
         diag("missing slot id (some weather component not bound)");
+        return -1.0;
+    }
+    if (weather_transition_enabled &&
+        (sid_w_prev_type < 0 || sid_w_target_type < 0 || sid_w_transition_alpha < 0)) {
+        diag("weather transition enabled but prev/target/alpha slots are missing");
         return -1.0;
     }
 
@@ -3570,6 +3582,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     Slot &s_wint     = _slots.write[sid_w_intens];
     Slot &s_wcnv     = _slots.write[sid_w_conv];
     Slot &s_wtyp     = _slots.write[sid_w_type];
+    Slot *s_wprev    = (sid_w_prev_type >= 0) ? &_slots.write[sid_w_prev_type] : nullptr;
+    Slot *s_wtarget  = (sid_w_target_type >= 0) ? &_slots.write[sid_w_target_type] : nullptr;
+    Slot *s_walpha   = (sid_w_transition_alpha >= 0) ? &_slots.write[sid_w_transition_alpha] : nullptr;
     Slot &s_wfin     = _slots.write[sid_w_finit];
 
     if (s_temp.arr_f32.size()     != n_cells || s_moist.arr_f32.size()  != n_cells ||
@@ -3582,6 +3597,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         s_wint.arr_f32.size()     != n_cells || s_wcnv.arr_f32.size()   != n_cells ||
         s_wtyp.arr_u8.size()      != n_cells || s_wfin.arr_u8.size()    != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
+        return -1.0;
+    }
+    if (weather_transition_enabled &&
+        (s_wprev == nullptr || s_wtarget == nullptr || s_walpha == nullptr ||
+         s_wprev->arr_u8.size() != n_cells || s_wtarget->arr_u8.size() != n_cells ||
+         s_walpha->arr_f32.size() != n_cells)) {
+        diag("weather transition slot size mismatch");
         return -1.0;
     }
 
@@ -3611,6 +3633,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     float   * const __restrict OUT_INT   = s_wint.arr_f32.ptrw();
     float   * const __restrict OUT_CNV   = s_wcnv.arr_f32.ptrw();
     uint8_t * const __restrict OUT_TYP   = s_wtyp.arr_u8.ptrw();
+    uint8_t * const __restrict OUT_PREV_TYP = (weather_transition_enabled && s_wprev != nullptr) ? s_wprev->arr_u8.ptrw() : nullptr;
+    uint8_t * const __restrict OUT_TARGET_TYP = (weather_transition_enabled && s_wtarget != nullptr) ? s_wtarget->arr_u8.ptrw() : nullptr;
+    float   * const __restrict OUT_ALPHA = (weather_transition_enabled && s_walpha != nullptr) ? s_walpha->arr_f32.ptrw() : nullptr;
     uint8_t * const __restrict OUT_FIN   = s_wfin.arr_u8.ptrw();
 
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────
@@ -3838,6 +3863,28 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                 cloud, precip, instability, wt, intensity);
         }
 
+        uint8_t display_wt = wt;
+        if (weather_transition_enabled && OUT_PREV_TYP != nullptr && OUT_TARGET_TYP != nullptr && OUT_ALPHA != nullptr) {
+            const uint8_t current_display = OUT_TYP[i];
+            uint8_t prev_type = OUT_PREV_TYP[i];
+            uint8_t target_type = OUT_TARGET_TYP[i];
+            float alpha = OUT_ALPHA[i];
+            if (alpha < 0.0f) alpha = 0.0f;
+            else if (alpha > 1.0f) alpha = 1.0f;
+            if (target_type != wt) {
+                prev_type = current_display;
+                target_type = wt;
+                alpha = 0.0f;
+            } else {
+                alpha += weather_transition_alpha_rate;
+                if (alpha > 1.0f) alpha = 1.0f;
+            }
+            display_wt = (alpha >= 1.0f) ? target_type : prev_type;
+            OUT_PREV_TYP[i] = prev_type;
+            OUT_TARGET_TYP[i] = target_type;
+            OUT_ALPHA[i] = alpha;
+        }
+
         // (line 751-757) write outputs
         OUT_VAP[i] = vapor_after_precip;
         OUT_CLD[i] = cloud;
@@ -3845,7 +3892,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         OUT_INS[i] = instability;
         OUT_INT[i] = intensity;
         OUT_CNV[i] = convergence;
-        OUT_TYP[i] = wt;
+        OUT_TYP[i] = display_wt;
         OUT_FIN[i] = 1; // weather_field_initialized = true
     }
 
@@ -3857,6 +3904,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     _flush_slot_to_map(sid_w_intens);
     _flush_slot_to_map(sid_w_conv);
     _flush_slot_to_map(sid_w_type);
+    if (weather_transition_enabled) {
+        _flush_slot_to_map(sid_w_prev_type);
+        _flush_slot_to_map(sid_w_target_type);
+        _flush_slot_to_map(sid_w_transition_alpha);
+    }
     _flush_slot_to_map(sid_w_finit);
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -7630,12 +7682,17 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
     // use_soa = false 时（向后兼容），仍走 knobs PackedArray 路径，slot id 仅做
     // 一次性 resolve 不消费——保证老 caller 的 SAME_SOURCE A/B 不破坏。
     const bool use_soa = bool(knobs.get("use_soa", false));
+    const bool vegetation_stress_enabled_stage_b = bool(knobs.get("vegetation_stress_enabled", false));
     const int sid_vit       = component_id(StringName("cell_vegetation_vitality"));
     const int sid_low_streak  = component_id(StringName("cell_vitality_low_streak"));
     const int sid_high_streak = component_id(StringName("cell_vitality_high_streak"));
     const int sid_soil      = component_id(StringName("cell_soil_moisture"));
     const int sid_vgp       = component_id(StringName("cell_vegetation_growth_pressure"));
     const int sid_tta       = component_id(StringName("cell_temperature_transport_anomaly"));
+    const int sid_v_heat    = component_id(StringName("cell_vegetation_heat_stress"));
+    const int sid_v_drought = component_id(StringName("cell_vegetation_drought_stress"));
+    const int sid_v_cold    = component_id(StringName("cell_vegetation_cold_stress"));
+    const int sid_v_regen   = component_id(StringName("cell_vegetation_regen_score"));
     if (use_soa) {
         if (sid_vit < 0 || sid_low_streak < 0 || sid_high_streak < 0 ||
             sid_soil < 0 || sid_vgp < 0 || sid_tta < 0) {
@@ -7643,6 +7700,12 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                  "cell_vitality_low_streak / cell_vitality_high_streak / "
                  "cell_soil_moisture / cell_vegetation_growth_pressure / "
                  "cell_temperature_transport_anomaly — did bind_map_data run after schema update?");
+            return -1.0;
+        }
+        if (vegetation_stress_enabled_stage_b &&
+            (sid_v_heat < 0 || sid_v_drought < 0 || sid_v_cold < 0 || sid_v_regen < 0)) {
+            diag("[use_soa] missing vegetation stress slots "
+                 "(cell_vegetation_heat_stress / drought / cold / regen_score)");
             return -1.0;
         }
     }
@@ -7787,6 +7850,12 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                                                    ? float(knobs["vegetation_low_vitality_damping_threshold"]) : 0.40f;
         const int   succession_cooldown_days = knobs.has("vegetation_succession_cooldown_days")
                                              ? int(knobs["vegetation_succession_cooldown_days"]) : 30;
+        const bool  vegetation_stress_enabled = vegetation_stress_enabled_stage_b;
+        const float vegetation_stress_memory_days = std::max(1.0f, float(knobs.get("vegetation_stress_memory_days", 30.0f)));
+        const float vegetation_stress_blend = std::clamp(scale / vegetation_stress_memory_days, 0.0f, 1.0f);
+        const int   wt_blizzard_id = int(knobs.get("wt_blizzard_id", 3));
+        const int   wt_drought_id  = int(knobs.get("wt_drought_id", 4));
+        const int   wt_heatwave_id = int(knobs.get("wt_heatwave_id", 6));
         if (n_wt <= 0) { diag("[veg_dyn] n_wt <= 0"); return -1.0; }
 
         // 表
@@ -7820,6 +7889,10 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
         float   *VIT = nullptr;
         int32_t *LSK = nullptr;
         int32_t *HSK = nullptr;
+        float   *VHEAT = nullptr;
+        float   *VDROUGHT = nullptr;
+        float   *VCOLD = nullptr;
+        float   *VREGEN = nullptr;
         // 持有引用确保 ptrw 生命周期跨越整个 loop（老路径用 knobs 入口的 PackedArray，
         // 新路径用 _slots 内部的 PackedArray —— 后者由 _slots 持有）
         PackedFloat32Array vitality_arr;  // 老路径用
@@ -7838,7 +7911,28 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             VIT = s_vit.arr_f32.ptrw();
             LSK = s_lsk.arr_i32.ptrw();
             HSK = s_hsk.arr_i32.ptrw();
+            if (vegetation_stress_enabled) {
+                Slot &s_v_heat    = _slots.write[sid_v_heat];
+                Slot &s_v_drought = _slots.write[sid_v_drought];
+                Slot &s_v_cold    = _slots.write[sid_v_cold];
+                Slot &s_v_regen   = _slots.write[sid_v_regen];
+                if (s_v_heat.arr_f32.size() != n_cells ||
+                    s_v_drought.arr_f32.size() != n_cells ||
+                    s_v_cold.arr_f32.size() != n_cells ||
+                    s_v_regen.arr_f32.size() != n_cells) {
+                    diag("[veg_dyn] use_soa: vegetation stress slot size != n_cells");
+                    return -1.0;
+                }
+                VHEAT = s_v_heat.arr_f32.ptrw();
+                VDROUGHT = s_v_drought.arr_f32.ptrw();
+                VCOLD = s_v_cold.arr_f32.ptrw();
+                VREGEN = s_v_regen.arr_f32.ptrw();
+            }
         } else {
+            if (vegetation_stress_enabled) {
+                diag("[veg_dyn] vegetation_stress_enabled requires use_soa=true");
+                return -1.0;
+            }
             vitality_arr = knobs["vitality_arr"];
             low_streak   = knobs["low_streak_arr"];
             high_streak  = knobs["high_streak_arr"];
@@ -7901,7 +7995,44 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             }
             const float weather_stress = vegdyn_weather_stress(
                 v_id, wt, wi, n_veg, n_wt, wt_pen_arr.size(), WPN, RES, weather_penalty_scale);
-            const float target = vegdyn_clamp01(compat - weather_stress);
+            float stress_max = 0.0f;
+            float regen_score = 0.0f;
+            if (vegetation_stress_enabled) {
+                float heat_input = 0.0f;
+                float cold_input = 0.0f;
+                float drought_input = 0.0f;
+                if (v_id < n_veg) {
+                    const float temp_tol = std::max(TLT[v_id], 0.05f);
+                    const float moist_tol = std::max(TLM[v_id], 0.05f);
+                    heat_input = vegdyn_clamp01((temp - (IDT[v_id] + temp_tol)) / temp_tol);
+                    cold_input = vegdyn_clamp01(((IDT[v_id] - temp_tol) - temp) / temp_tol);
+                    drought_input = vegdyn_clamp01(((IDM[v_id] - moist_tol) - plant_water) / moist_tol);
+                }
+                if (WTIN[i] != 0) {
+                    const float wi_clamped = vegdyn_clamp01(wi);
+                    if (wt == wt_heatwave_id) {
+                        heat_input = std::max(heat_input, wi_clamped);
+                    } else if (wt == wt_drought_id) {
+                        drought_input = std::max(drought_input, wi_clamped);
+                    } else if (wt == wt_blizzard_id) {
+                        cold_input = std::max(cold_input, wi_clamped);
+                    }
+                }
+                const float regen_input = vegdyn_clamp01(compat * (1.0f - weather_stress) * (0.5f + 0.5f * plant_water));
+                const float heat = VHEAT[i] + (heat_input - VHEAT[i]) * vegetation_stress_blend;
+                const float drought = VDROUGHT[i] + (drought_input - VDROUGHT[i]) * vegetation_stress_blend;
+                const float cold = VCOLD[i] + (cold_input - VCOLD[i]) * vegetation_stress_blend;
+                const float regen = VREGEN[i] + (regen_input - VREGEN[i]) * vegetation_stress_blend;
+                VHEAT[i] = heat;
+                VDROUGHT[i] = drought;
+                VCOLD[i] = cold;
+                VREGEN[i] = regen;
+                stress_max = std::max(heat, std::max(drought, cold));
+                regen_score = regen;
+            }
+            const float target = vegetation_stress_enabled
+                ? vegdyn_clamp01(compat - weather_stress - stress_max * 0.25f + regen_score * 0.10f)
+                : vegdyn_clamp01(compat - weather_stress);
             const float prev_vit = VIT[i];
             float dv = (target - prev_vit) * rate;
             if (dv < 0.0f) {
@@ -7927,10 +8058,15 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 HSK[i] = hs;
                 continue;
             }
-            if (vit < low_thresh && target < low_thresh) {
+            if (vegetation_stress_enabled && stress_max > 0.65f && target < high_thresh) {
+                const int stress_days = std::max(streak_days, int(std::round(float(streak_days) * stress_max)));
+                ls += stress_days;
+                hs = 0;
+            } else if (vit < low_thresh && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
-            } else if (vit > high_thresh && target > high_thresh) {
+            } else if (vit > high_thresh && target > high_thresh &&
+                       (!vegetation_stress_enabled || regen_score > 0.55f)) {
                 hs += streak_days;
                 ls = 0;
             } else {
@@ -8175,6 +8311,12 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             _flush_slot_to_map(sid_low_streak);
             _flush_slot_to_map(sid_high_streak);
             _flush_slot_to_map(sid_vgp);
+            if (vegetation_stress_enabled_stage_b) {
+                _flush_slot_to_map(sid_v_heat);
+                _flush_slot_to_map(sid_v_drought);
+                _flush_slot_to_map(sid_v_cold);
+                _flush_slot_to_map(sid_v_regen);
+            }
         }
         if (run_feedback) {
             _flush_slot_to_map(sid_soil);
@@ -9945,9 +10087,10 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int sid_landform = component_id(StringName("cell_landform"));
     const int sid_wind_x   = component_id(StringName("cell_wind_x"));
     const int sid_wind_y   = component_id(StringName("cell_wind_y"));
+    const int sid_wind_spd = component_id(StringName("cell_wind_speed"));
     if (sid_pos_y < 0 || sid_terrain < 0 || sid_landform < 0 ||
-        sid_wind_x < 0 || sid_wind_y < 0) {
-        diag("missing slot id (cell_pos_y/terrain/landform/wind_x/wind_y)");
+        sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0) {
+        diag("missing slot id (cell_pos_y/terrain/landform/wind_x/wind_y/wind_speed)");
         return -1.0;
     }
 
@@ -9976,6 +10119,9 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int    lf_mountain   = int(knobs["land_lf_mountain"]);
     const int    lf_peak       = int(knobs["land_lf_peak"]);
     const int    lf_hill       = int(knobs["land_lf_hill"]);
+    float response_rate = float(knobs.has("wind_response_rate") ? double(knobs["wind_response_rate"]) : 1.0);
+    if (response_rate < 0.0f) response_rate = 0.0f;
+    else if (response_rate > 1.0f) response_rate = 1.0f;
     if (n_cells <= 0)         { diag("n_cells <= 0"); return -1.0; }
     if (bounds_size_y <= 0.001) { diag("world_bounds_size_y <= 0.001"); return -1.0; }
 
@@ -10000,11 +10146,13 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     Slot &s_landform = _slots.write[sid_landform];
     Slot &s_wind_x   = _slots.write[sid_wind_x];
     Slot &s_wind_y   = _slots.write[sid_wind_y];
+    Slot &s_wind_spd = _slots.write[sid_wind_spd];
     if (s_pos_y.arr_f32.size()    != n_cells ||
         s_terrain.arr_u8.size()   != n_cells ||
         s_landform.arr_u8.size()  != n_cells ||
         s_wind_x.arr_f32.size()   != n_cells ||
-        s_wind_y.arr_f32.size()   != n_cells) {
+        s_wind_y.arr_f32.size()   != n_cells ||
+        s_wind_spd.arr_f32.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
@@ -10015,6 +10163,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const uint8_t * const __restrict LF   = s_landform.arr_u8.ptr();
     float         * const __restrict WX   = s_wind_x.arr_f32.ptrw();
     float         * const __restrict WY   = s_wind_y.arr_f32.ptrw();
+    float         * const __restrict WSP_SLOT = s_wind_spd.arr_f32.ptrw();
     const int32_t * const __restrict NB   = nb_arr.ptr();
     const float   * const __restrict SLP  = slp_arr.ptr();
 
@@ -10083,6 +10232,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     PackedFloat32Array wind_speed_out;
     wind_speed_out.resize(n_cells);
     float * const __restrict WSPD = wind_speed_out.ptrw();
+    std::vector<float> wind_delta(static_cast<size_t>(n_cells), 0.0f);
 
     const double inv_bounds_h = 1.0 / bounds_size_y;
     const bool   ta = terrain_aware;
@@ -10248,17 +10398,56 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             }
         }
 
-        WX[i]   = float(dir_x);
-        WY[i]   = float(dir_y);
-        WSPD[i] = float(spd);
+        const double old_dir_x = double(WX[i]);
+        const double old_dir_y = double(WY[i]);
+        const double old_spd = double(WSP_SLOT[i]);
+        double effective_rate = double(response_rate);
+        const double old_len2 = old_dir_x * old_dir_x + old_dir_y * old_dir_y;
+        if (old_len2 < 0.0001 || old_spd <= 0.0001) {
+            effective_rate = 1.0;
+        }
+        double old_flux_x = 0.0;
+        double old_flux_y = 0.0;
+        if (old_len2 > 0.0001) {
+            const double inv_old = 1.0 / std::sqrt(old_len2);
+            old_flux_x = old_dir_x * inv_old * old_spd;
+            old_flux_y = old_dir_y * inv_old * old_spd;
+        }
+        const double target_flux_x = dir_x * spd;
+        const double target_flux_y = dir_y * spd;
+        const double final_flux_x = old_flux_x + (target_flux_x - old_flux_x) * effective_rate;
+        const double final_flux_y = old_flux_y + (target_flux_y - old_flux_y) * effective_rate;
+        const double final_spd = old_spd + (spd - old_spd) * effective_rate;
+        double final_dir_x = dir_x;
+        double final_dir_y = dir_y;
+        const double final_len2 = final_flux_x * final_flux_x + final_flux_y * final_flux_y;
+        if (final_len2 > 0.0001) {
+            const double inv_final = 1.0 / std::sqrt(final_len2);
+            final_dir_x = final_flux_x * inv_final;
+            final_dir_y = final_flux_y * inv_final;
+        }
+        WX[i] = float(final_dir_x);
+        WY[i] = float(final_dir_y);
+        WSP_SLOT[i] = float(final_spd);
+        WSPD[i] = float(final_spd);
+        const double dx = final_dir_x - old_dir_x;
+        const double dy = final_dir_y - old_dir_y;
+        const double ds = final_spd - old_spd;
+        wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
     }
 
     // §11.2 flush: push CoW-detached cell_wind_x/y back to MapData
     _flush_slot_to_map(sid_wind_x);
     _flush_slot_to_map(sid_wind_y);
+    _flush_slot_to_map(sid_wind_spd);
 
     // 输出回填到 knobs（让 GDScript caller 拿到 wind_speed_out 写每 cell.wind_speed）
     knobs["wind_speed_out"] = wind_speed_out;
+    if (!wind_delta.empty()) {
+        std::sort(wind_delta.begin(), wind_delta.end());
+        const size_t p95_i = std::min(wind_delta.size() - 1, size_t(std::floor(double(wind_delta.size() - 1) * 0.95)));
+        knobs["wind_delta_p95"] = double(wind_delta[p95_i]);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -14744,20 +14933,26 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (bounds_size_y <= 0.001)  return fail("world_bounds_size_y <= 0.001");
 
     // Tunables (defaults match GDScript constants; allow override via knobs).
-    const float A_LAT          = float(knobs.has("slp_lat_amp")        ? double(knobs["slp_lat_amp"])        : 0.40);
+    const float A_LAT          = float(knobs.has("slp_lat_amp")        ? double(knobs["slp_lat_amp"])        : 0.10);
     const float A_LAND         = float(knobs.has("slp_land_amp")       ? double(knobs["slp_land_amp"])       : 0.55);
     const float WATER_DAMP     = float(knobs.has("slp_water_damp")     ? double(knobs["slp_water_damp"])     : 0.20);
     const float INTERIOR_BOOST = float(knobs.has("slp_interior_boost") ? double(knobs["slp_interior_boost"]) : 1.30);
     const float COAST_DAMP     = float(knobs.has("slp_coast_damp")     ? double(knobs["slp_coast_damp"])     : 0.60);
+    const float THERMAL_WEIGHT = float(knobs.has("wind_thermal_slp_weight") ? double(knobs["wind_thermal_slp_weight"]) : 0.0);
+    const float ICE_HIGH_WEIGHT = float(knobs.has("slp_ice_high_weight") ? double(knobs["slp_ice_high_weight"]) : 0.0);
+    const float SNOW_HIGH_WEIGHT = float(knobs.has("slp_snow_high_weight") ? double(knobs["slp_snow_high_weight"]) : 0.0);
 
     PackedInt32Array nb_arr   = knobs["neighbor_indices"];
     PackedByteArray  water_ids = knobs["water_terrain_ids"];
     if (nb_arr.size()  < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
     if (water_ids.size() <= 0)         return fail("water_terrain_ids empty");
 
-    // Slot resolution: cell_pos_y + cell_terrain.
+    // Slot resolution: cell_pos_y + cell_terrain plus optional closed-loop fields.
     const int sid_pos_y   = component_id(StringName("cell_pos_y"));
     const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_temp_an = component_id(StringName("cell_temp_anomaly"));
+    const int sid_snow    = component_id(StringName("cell_snow_cover"));
+    const int sid_ice     = component_id(StringName("cell_sea_ice_frac"));
     if (sid_pos_y < 0 || sid_terrain < 0) {
         return fail("missing slot id (cell_pos_y/cell_terrain)");
     }
@@ -14779,6 +14974,18 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
     const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
     const int32_t * const __restrict NB   = nb_arr.ptr();
+    const float *TEMP_AN = nullptr;
+    const float *SNOW = nullptr;
+    const float *ICE = nullptr;
+    if (sid_temp_an >= 0 && _slots.write[sid_temp_an].arr_f32.size() == n_cells) {
+        TEMP_AN = _slots.write[sid_temp_an].arr_f32.ptr();
+    }
+    if (sid_snow >= 0 && _slots.write[sid_snow].arr_f32.size() == n_cells) {
+        SNOW = _slots.write[sid_snow].arr_f32.ptr();
+    }
+    if (sid_ice >= 0 && _slots.write[sid_ice].arr_f32.size() == n_cells) {
+        ICE = _slots.write[sid_ice].arr_f32.ptr();
+    }
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -14788,6 +14995,10 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
 
     // Output buffer (n_cells floats); will become slp_out PackedFloat32Array.
     std::vector<float> slp_buf(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<float> thermal_abs;
+    if (THERMAL_WEIGHT != 0.0f || ICE_HIGH_WEIGHT != 0.0f || SNOW_HIGH_WEIGHT != 0.0f) {
+        thermal_abs.resize(static_cast<size_t>(n_cells), 0.0f);
+    }
 
     // ─── Pass A: per-cell baseline ────────────────────────────────────────
     for (int i = 0; i < n_cells; ++i) {
@@ -14798,9 +15009,10 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         const float ls     = (ny - 0.5f) * 2.0f;
         const float ls_abs = std::fabs(ls);
 
-        // base_lat (double-frequency cosine bell)
-        float base_lat = -A_LAT * std::cos(ls_abs * 3.14159265358979323846f * 2.0f) * (1.0f - 0.5f * ls_abs);
-        base_lat += 0.15f * std::cos(ls_abs * 3.14159265358979323846f * 4.0f) * ls_abs;
+        // Three-cell circulation baseline: equatorial low, subtropical high,
+        // subpolar low, polar high. Mirrors GDScript -cos(3*pi*|lat|).
+        const float PI_F = 3.14159265358979323846f;
+        const float base_lat = -A_LAT * std::cos(ls_abs * PI_F * 3.0f);
 
         // hemi_sign
         float hemi_sign;
@@ -14831,7 +15043,15 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             const float continentality = is_coast ? COAST_DAMP : INTERIOR_BOOST;
             landsea = -hemi_sign * season_signal_n_hemi * A_LAND * lat_temp_factor * continentality;
         }
-        slp_buf[i] = base_lat + landsea;
+        const float temp_anom = (TEMP_AN != nullptr) ? TEMP_AN[i] : 0.0f;
+        const float thermal_response = is_water ? 0.55f : 1.0f;
+        const float thermal_slp = -THERMAL_WEIGHT * temp_anom * thermal_response;
+        const float ice_high = ICE_HIGH_WEIGHT * ((ICE != nullptr) ? std::clamp(ICE[i], 0.0f, 1.0f) : 0.0f);
+        const float snow_high = SNOW_HIGH_WEIGHT * ((SNOW != nullptr) ? std::clamp(SNOW[i], 0.0f, 1.0f) : 0.0f);
+        slp_buf[i] = base_lat + landsea + thermal_slp + ice_high + snow_high;
+        if (!thermal_abs.empty()) {
+            thermal_abs[i] = std::fabs(thermal_slp) + std::fabs(ice_high) + std::fabs(snow_high);
+        }
     }
 
     // ─── Pass B: 6-neighbor Jacobi smoothing ──────────────────────────────
@@ -14869,6 +15089,11 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     out["fallback"]   = false;
     out["reason"]     = String();
     out["slp_out"]    = slp_out;
+    if (!thermal_abs.empty()) {
+        std::sort(thermal_abs.begin(), thermal_abs.end());
+        const size_t p95_i = thermal_abs.empty() ? 0 : std::min(thermal_abs.size() - 1, size_t(std::floor(double(thermal_abs.size() - 1) * 0.95)));
+        out["slp_thermal_p95"] = double(thermal_abs[p95_i]);
+    }
     return out;
 }
 
@@ -14963,6 +15188,12 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.18);
     const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.6);
     const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
+    float response_rate = float(knobs.has("ocean_current_response_rate") ? double(knobs["ocean_current_response_rate"]) : 1.0);
+    if (response_rate < 0.0f) response_rate = 0.0f;
+    else if (response_rate > 1.0f) response_rate = 1.0f;
+    const float THERMAL_CURRENT_WEIGHT = float(knobs.has("ocean_thermal_current_weight") ? double(knobs["ocean_thermal_current_weight"]) : TH_WEIGHT);
+    const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.35);
+    const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.20);
 
     PackedInt32Array nb_arr     = knobs["neighbor_indices"];
     PackedByteArray  water_ids  = knobs["water_terrain_ids"];
@@ -14977,6 +15208,11 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
 
     const int sid_pos_y   = component_id(StringName("cell_pos_y"));
     const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_temp    = component_id(StringName("cell_temp"));
+    const int sid_temp_an = component_id(StringName("cell_temp_anomaly"));
+    const int sid_ice     = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_ocx     = component_id(StringName("cell_ocean_current_x"));
+    const int sid_ocy     = component_id(StringName("cell_ocean_current_y"));
     if (sid_pos_y < 0 || sid_terrain < 0) {
         return fail("missing slot id (cell_pos_y/cell_terrain)");
     }
@@ -15000,6 +15236,26 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float   * const __restrict WX   = wind_x.ptr();
     const float   * const __restrict WY   = wind_y.ptr();
     const float   * const __restrict WSP  = wind_spd.ptr();
+    const float *TEMP = nullptr;
+    const float *TEMP_AN = nullptr;
+    const float *ICE = nullptr;
+    const float *OLD_OCX = nullptr;
+    const float *OLD_OCY = nullptr;
+    if (sid_temp >= 0 && _slots.write[sid_temp].arr_f32.size() == n_cells) {
+        TEMP = _slots.write[sid_temp].arr_f32.ptr();
+    }
+    if (sid_temp_an >= 0 && _slots.write[sid_temp_an].arr_f32.size() == n_cells) {
+        TEMP_AN = _slots.write[sid_temp_an].arr_f32.ptr();
+    }
+    if (sid_ice >= 0 && _slots.write[sid_ice].arr_f32.size() == n_cells) {
+        ICE = _slots.write[sid_ice].arr_f32.ptr();
+    }
+    if (sid_ocx >= 0 && _slots.write[sid_ocx].arr_f32.size() == n_cells) {
+        OLD_OCX = _slots.write[sid_ocx].arr_f32.ptr();
+    }
+    if (sid_ocy >= 0 && _slots.write[sid_ocy].arr_f32.size() == n_cells) {
+        OLD_OCY = _slots.write[sid_ocy].arr_f32.ptr();
+    }
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -15154,6 +15410,8 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     float * const __restrict P_PSI  = psi_out.ptrw();
     float * const __restrict P_OCX  = ocx_out.ptrw();
     float * const __restrict P_OCY  = ocy_out.ptrw();
+    std::vector<float> ocean_delta(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<float> thermal_current_mag(static_cast<size_t>(n_water), 0.0f);
     for (int i = 0; i < n_cells; ++i) {
         P_CURL[i] = 0.0f;
         P_PSI[i]  = 0.0f;
@@ -15163,6 +15421,19 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
 
     const float HALF_PI = 1.5707963267948966f;
     const float PI_F    = 3.14159265358979323846f;
+    auto density_proxy = [&](int cell_idx) -> float {
+        if (cell_idx < 0 || cell_idx >= n_cells || !is_water_lut[TR[cell_idx]]) {
+            return 0.0f;
+        }
+        float temp_now = (TEMP != nullptr) ? TEMP[cell_idx] : 0.5f;
+        if (temp_now < 0.0f) temp_now = 0.0f;
+        else if (temp_now > 1.0f) temp_now = 1.0f;
+        const float temp_anom = (TEMP_AN != nullptr) ? TEMP_AN[cell_idx] : 0.0f;
+        float ice = (ICE != nullptr) ? ICE[cell_idx] : 0.0f;
+        if (ice < 0.0f) ice = 0.0f;
+        else if (ice > 1.0f) ice = 1.0f;
+        return DENSITY_COLD_WEIGHT * (1.0f - temp_now) + DENSITY_ICE_WEIGHT * ice - temp_anom;
+    };
 
     for (int k = 0; k < n_water; ++k) {
         const int i = water_to_cell[k];
@@ -15184,6 +15455,25 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         float cx = -gy * OC_SCALE;
         float cy =  gx * OC_SCALE;
 
+        const float density_self = density_proxy(i);
+        float grad_den_x = 0.0f;
+        float grad_den_y = 0.0f;
+        const int base_i = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[base_i + d];
+            if (ni < 0 || ni >= n_cells || !is_water_lut[TR[ni]]) continue;
+            const float dden = density_proxy(ni) - density_self;
+            grad_den_x += dden * NB_DIR_X[d];
+            grad_den_y += dden * NB_DIR_Y[d];
+        }
+        grad_den_x /= 3.0f;
+        grad_den_y /= 3.0f;
+        const float thermal_x = -grad_den_x * THERMAL_CURRENT_WEIGHT;
+        const float thermal_y = -grad_den_y * THERMAL_CURRENT_WEIGHT;
+        cx += thermal_x;
+        cy += thermal_y;
+        thermal_current_mag[static_cast<size_t>(k)] = std::sqrt(thermal_x * thermal_x + thermal_y * thermal_y);
+
         // High-lat thermohaline overlay (preserve "polar cold sinker" semantics).
         const float ls     = ls_w[k];
         const float ls_abs = std::fabs(ls);
@@ -15195,13 +15485,21 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
             if (temp_rel < COLD_SINK_TEMP) {
                 const float pole_dir_y = (ls > 0.0f) ? 1.0f : ((ls < 0.0f) ? -1.0f : 0.0f);
                 const float grad_mag   = std::sin(ls_abs * PI_F);
-                cy += pole_dir_y * grad_mag * TH_WEIGHT;
+                cy += pole_dir_y * grad_mag * THERMAL_CURRENT_WEIGHT;
             }
         }
+
+        const float old_cx = (OLD_OCX != nullptr) ? OLD_OCX[i] : 0.0f;
+        const float old_cy = (OLD_OCY != nullptr) ? OLD_OCY[i] : 0.0f;
+        cx = old_cx + (cx - old_cx) * response_rate;
+        cy = old_cy + (cy - old_cy) * response_rate;
 
         // Clamp to [-1, 1].
         if (cx >  1.0f) cx =  1.0f; else if (cx < -1.0f) cx = -1.0f;
         if (cy >  1.0f) cy =  1.0f; else if (cy < -1.0f) cy = -1.0f;
+        const float odx = cx - old_cx;
+        const float ody = cy - old_cy;
+        ocean_delta[static_cast<size_t>(i)] = std::sqrt(odx * odx + ody * ody);
 
         P_CURL[i] = curl[k];
         P_PSI[i]  = psi[k];
@@ -15223,6 +15521,16 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     out["ocean_psi_out"]        = psi_out;
     out["ocean_current_x_out"]  = ocx_out;
     out["ocean_current_y_out"]  = ocy_out;
+    if (!ocean_delta.empty()) {
+        std::sort(ocean_delta.begin(), ocean_delta.end());
+        const size_t p95_i = std::min(ocean_delta.size() - 1, size_t(std::floor(double(ocean_delta.size() - 1) * 0.95)));
+        out["ocean_delta_p95"] = double(ocean_delta[p95_i]);
+    }
+    if (!thermal_current_mag.empty()) {
+        std::sort(thermal_current_mag.begin(), thermal_current_mag.end());
+        const size_t p95_t = std::min(thermal_current_mag.size() - 1, size_t(std::floor(double(thermal_current_mag.size() - 1) * 0.95)));
+        out["thermal_current_p95"] = double(thermal_current_mag[p95_t]);
+    }
     return out;
 }
 

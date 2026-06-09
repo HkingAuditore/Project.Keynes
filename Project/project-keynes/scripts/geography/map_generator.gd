@@ -1276,9 +1276,13 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
 	# 注册 OceanCurrentsJob。
 	var period_ticks: int = 30
+	var ocean_period_ticks: int = 30
 	var slice_count: int = 10
 	if cp != null:
-		period_ticks = max(1, int(cp.ocean_currents_period_ticks))
+		ocean_period_ticks = max(1, int(cp.ocean_currents_period_ticks))
+		period_ticks = ocean_period_ticks
+		if cp.get("wind_circulation_period_ticks") != null:
+			period_ticks = max(1, int(cp.wind_circulation_period_ticks))
 		slice_count = max(1, int(cp.ocean_currents_slice_count))
 	# Physical Wind & Ocean Circulation：把激活的 ClimateProfile 引用注入 cfg，
 	# 让 MapBaker 在切片烘焙时（OceanCurrentsJob.run_slice 调用 baker.bake_*_slice）
@@ -1291,7 +1295,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# on_commit / season_phase_getter / depends_on 等 SusJob-面字段的既有写入路径
 	# 1:1 沿用。
 	if _use_dc_system_scheduler:
-		var ocean_sys = OceanCurrentsSystemScript.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+		var ocean_sys = OceanCurrentsSystemScript.new(
+				_baker, map, world, cfg, hex_size, period_ticks, slice_count, ocean_period_ticks)
 		_ocean_currents_job = ocean_sys.get_inner()
 		_apply_sim_budget_profile_to_job(ocean_sys, cp)
 		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
@@ -1301,7 +1306,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
 		_sus.register_system(ocean_sys)
 	else:
-		_ocean_currents_job = OceanCurrentsJob.new(_baker, map, world, cfg, hex_size, period_ticks, slice_count)
+		_ocean_currents_job = OceanCurrentsJob.new(
+				_baker, map, world, cfg, hex_size, period_ticks, slice_count, ocean_period_ticks)
 		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
 		# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
 		_ocean_currents_job.on_commit = func():
@@ -1671,9 +1677,14 @@ func apply_simulation_cadence_from_profile() -> void:
 	if _ocean_currents_job != null and _ocean_currents_job.has_method("reconfigure") \
 			and cp.get("ocean_currents_period_ticks") != null \
 			and cp.get("ocean_currents_slice_count") != null:
+		var ocean_period_ticks: int = max(1, int(cp.ocean_currents_period_ticks))
+		var phys_period_ticks: int = ocean_period_ticks
+		if cp.get("wind_circulation_period_ticks") != null:
+			phys_period_ticks = max(1, int(cp.wind_circulation_period_ticks))
 		_ocean_currents_job.reconfigure(
-				max(1, int(cp.ocean_currents_period_ticks)),
-				max(1, int(cp.ocean_currents_slice_count)))
+				phys_period_ticks,
+				max(1, int(cp.ocean_currents_slice_count)),
+				ocean_period_ticks)
 	if cp.get("enum_atlas_upload_stride") != null:
 		set_enum_atlas_upload_stride(int(cp.enum_atlas_upload_stride))
 	if cp.get("dynamic_visual_atlas_upload_stride") != null:
@@ -1789,8 +1800,13 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 		knobs["vegetation_degrade_reset_target"] = float(cp_now.vegetation_degrade_reset_target) if cp_now.get("vegetation_degrade_reset_target") != null else 0.75
 		knobs["vegetation_low_vitality_damping_threshold"] = float(cp_now.vegetation_low_vitality_damping_threshold) if cp_now.get("vegetation_low_vitality_damping_threshold") != null else 0.40
 		knobs["vegetation_succession_cooldown_days"] = int(cp_now.vegetation_succession_cooldown_days) if cp_now.get("vegetation_succession_cooldown_days") != null else 30
+		knobs["vegetation_stress_enabled"] = bool(cp_now.vegetation_stress_enabled) if cp_now.get("vegetation_stress_enabled") != null else false
+		knobs["vegetation_stress_memory_days"] = float(cp_now.vegetation_stress_memory_days) if cp_now.get("vegetation_stress_memory_days") != null else 30.0
 		knobs["n_wt"] = int(WeatherType.WT.size())
 		knobs["wt_clear_id"] = int(WeatherType.WT.CLEAR)
+		knobs["wt_blizzard_id"] = int(WeatherType.WT.BLIZZARD)
+		knobs["wt_drought_id"] = int(WeatherType.WT.DROUGHT)
+		knobs["wt_heatwave_id"] = int(WeatherType.WT.HEATWAVE)
 		knobs["veg_none_id"] = int(VegetationType.VEG.NONE)
 		knobs["ideal_temp_table"] = _gdext_vegdyn_ideal_temp_cached
 		knobs["ideal_moist_table"] = _gdext_vegdyn_ideal_moist_cached
@@ -2080,7 +2096,9 @@ func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
 		keys.append("ocean_water_knobs")
 		keys.append("ocean_land_knobs")
 	keys.append("sea_ice_knobs")
-	keys.append("stage_b_knobs")
+	# stage_b follows albedo / vegetation / feedback strides and is legitimately
+	# absent on most probe ticks. Requiring it here prevents native_daily active
+	# handoff even though the scheduler can simply skip that node for the tick.
 	keys.append("weather_knobs")
 	return keys
 
@@ -2144,8 +2162,7 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 		cp_now,
 		maxi(1, _weather_stage_b_call_index)
 	)
-	if not stage_b_knobs.is_empty():
-		bundle["stage_b_knobs"] = stage_b_knobs
+	var stage_b_embedded_in_weather: bool = false
 	if _weather_system != null and _world != null \
 			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		var season_idx_local: int = 0
@@ -2170,10 +2187,13 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 		)
 		if not weather_super.is_empty():
 			bundle["weather_knobs"] = weather_super
+			stage_b_embedded_in_weather = true
 		else:
 			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
 			if commit_side_effects:
 				_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+	if not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
+		bundle["stage_b_knobs"] = stage_b_knobs
 	return bundle
 
 
@@ -2512,7 +2532,52 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 		fronts_changed = bool(native_res.get("fronts_changed", false))
 		fronts = native_res.get("fronts", [] as Array[WeatherFront])
 		fronts_diff = native_res.get("fronts_diff", {})
+	if not weather_ran:
+		_advance_weather_transition_alpha_tick(_sus_map)
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed, "fronts_diff": fronts_diff }
+
+
+func _advance_weather_transition_alpha_tick(map: MapData) -> void:
+	var cp := _c()
+	if cp == null or cp.get("weather_transition_enabled") == null \
+			or not bool(cp.weather_transition_enabled):
+		return
+	if map == null:
+		return
+	var alpha_arr: PackedFloat32Array = map.weather_transition_alpha_arr
+	var prev_arr: PackedByteArray = map.weather_prev_type_arr
+	var target_arr: PackedByteArray = map.weather_target_type_arr
+	var type_arr: PackedByteArray = map.weather_type_arr
+	var n: int = mini(alpha_arr.size(), mini(prev_arr.size(), mini(target_arr.size(), type_arr.size())))
+	if n <= 0:
+		return
+	var rate: float = clampf(float(cp.weather_transition_alpha_rate), 0.0, 1.0)
+	if rate <= 0.0:
+		return
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	for i in range(n):
+		var alpha: float = clampf(alpha_arr[i], 0.0, 1.0)
+		if alpha >= 1.0:
+			continue
+		alpha = clampf(alpha + rate, 0.0, 1.0)
+		alpha_arr[i] = alpha
+		if alpha >= 1.0:
+			type_arr[i] = target_arr[i]
+		if i < cells.size():
+			var c: HexCell = cells[i]
+			if c != null:
+				c.weather_transition_alpha = alpha
+				c.weather_prev_type = int(prev_arr[i])
+				c.weather_target_type = int(target_arr[i])
+				if alpha >= 1.0:
+					c.weather_type = int(target_arr[i])
+	if _data_core_world != null:
+		var cid_alpha: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TRANSITION_ALPHA)
+		var cid_type: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+		if cid_alpha >= 0:
+			_data_core_world.write_f32_range(cid_alpha, 0, alpha_arr)
+		if cid_type >= 0:
+			_data_core_world.write_u8_range(cid_type, 0, type_arr)
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
@@ -10370,8 +10435,13 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 			knobs_c["vegetation_degrade_reset_target"] = float(cp_now.vegetation_degrade_reset_target) if cp_now.get("vegetation_degrade_reset_target") != null else 0.75
 			knobs_c["vegetation_low_vitality_damping_threshold"] = float(cp_now.vegetation_low_vitality_damping_threshold) if cp_now.get("vegetation_low_vitality_damping_threshold") != null else 0.40
 			knobs_c["vegetation_succession_cooldown_days"] = int(cp_now.vegetation_succession_cooldown_days) if cp_now.get("vegetation_succession_cooldown_days") != null else 30
+			knobs_c["vegetation_stress_enabled"] = bool(cp_now.vegetation_stress_enabled) if cp_now.get("vegetation_stress_enabled") != null else false
+			knobs_c["vegetation_stress_memory_days"] = float(cp_now.vegetation_stress_memory_days) if cp_now.get("vegetation_stress_memory_days") != null else 30.0
 			knobs_c["n_wt"]                    = int(WeatherType.WT.size())
 			knobs_c["wt_clear_id"]             = int(WeatherType.WT.CLEAR)
+			knobs_c["wt_blizzard_id"]          = int(WeatherType.WT.BLIZZARD)
+			knobs_c["wt_drought_id"]           = int(WeatherType.WT.DROUGHT)
+			knobs_c["wt_heatwave_id"]          = int(WeatherType.WT.HEATWAVE)
 			knobs_c["veg_none_id"]             = int(VegetationType.VEG.NONE)
 			knobs_c["ideal_temp_table"]        = _gdext_vegdyn_ideal_temp_cached
 			knobs_c["ideal_moist_table"]       = _gdext_vegdyn_ideal_moist_cached
@@ -11220,6 +11290,62 @@ func _vegetation_weather_stress(veg: int, wt: int, wi: float) -> float:
 	return base_penalty * maxf(wi, 0.0) * (1.0 - resistance) * float(_c().vegetation_weather_penalty_scale)
 
 
+func _update_vegetation_stress(cell: HexCell, map: MapData, idx: int, temp: float,
+		plant_water: float, compat: float, weather_stress: float,
+		day_scale: float) -> Dictionary:
+	var cp := _c()
+	var memory_days: float = maxf(float(cp.vegetation_stress_memory_days), 1.0)
+	var blend: float = clampf(day_scale / memory_days, 0.0, 1.0)
+	var prof := VegetationProfileRegistry.get_profile(int(cell.vegetation))
+	var temp_tol: float = maxf(float(prof.temp_tolerance), 0.05)
+	var moist_tol: float = maxf(float(prof.moist_tolerance), 0.05)
+	var heat_input: float = clampf((temp - (float(prof.ideal_temp) + temp_tol)) / temp_tol, 0.0, 1.0)
+	var cold_input: float = clampf(((float(prof.ideal_temp) - temp_tol) - temp) / temp_tol, 0.0, 1.0)
+	var drought_input: float = clampf(((float(prof.ideal_moist) - moist_tol) - plant_water) / moist_tol, 0.0, 1.0)
+	if cell.weather_field_initialized:
+		if int(cell.weather_type) == int(WeatherType.WT.HEATWAVE):
+			heat_input = maxf(heat_input, clampf(cell.weather_intensity, 0.0, 1.0))
+		elif int(cell.weather_type) == int(WeatherType.WT.DROUGHT):
+			drought_input = maxf(drought_input, clampf(cell.weather_intensity, 0.0, 1.0))
+		elif int(cell.weather_type) == int(WeatherType.WT.BLIZZARD):
+			cold_input = maxf(cold_input, clampf(cell.weather_intensity, 0.0, 1.0))
+	var old_heat: float = cell.vegetation_heat_stress
+	var old_drought: float = cell.vegetation_drought_stress
+	var old_cold: float = cell.vegetation_cold_stress
+	var old_regen: float = cell.vegetation_regen_score
+	if idx >= 0:
+		if idx < map.vegetation_heat_stress_arr.size():
+			old_heat = map.vegetation_heat_stress_arr[idx]
+		if idx < map.vegetation_drought_stress_arr.size():
+			old_drought = map.vegetation_drought_stress_arr[idx]
+		if idx < map.vegetation_cold_stress_arr.size():
+			old_cold = map.vegetation_cold_stress_arr[idx]
+		if idx < map.vegetation_regen_score_arr.size():
+			old_regen = map.vegetation_regen_score_arr[idx]
+	var regen_input: float = clampf(compat * (1.0 - weather_stress) * (0.5 + 0.5 * plant_water), 0.0, 1.0)
+	var heat: float = lerpf(old_heat, heat_input, blend)
+	var drought: float = lerpf(old_drought, drought_input, blend)
+	var cold: float = lerpf(old_cold, cold_input, blend)
+	var regen: float = lerpf(old_regen, regen_input, blend)
+	cell.vegetation_heat_stress = heat
+	cell.vegetation_drought_stress = drought
+	cell.vegetation_cold_stress = cold
+	cell.vegetation_regen_score = regen
+	if idx >= 0:
+		if idx < map.vegetation_heat_stress_arr.size():
+			map.vegetation_heat_stress_arr[idx] = heat
+		if idx < map.vegetation_drought_stress_arr.size():
+			map.vegetation_drought_stress_arr[idx] = drought
+		if idx < map.vegetation_cold_stress_arr.size():
+			map.vegetation_cold_stress_arr[idx] = cold
+		if idx < map.vegetation_regen_score_arr.size():
+			map.vegetation_regen_score_arr[idx] = regen
+	return {
+		"stress": maxf(heat, maxf(drought, cold)),
+		"regen": regen,
+	}
+
+
 func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 	var any_changed: bool = false
 	var scale: float = maxf(day_scale, 1.0)
@@ -11253,7 +11379,8 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		print("  _data_core_world_ext != null = %s" % str(ext_ok))
 		print("  ext.has_method('run_vegetation_dynamics_pass') = %s" % str(has_method_ok))
 		print("  verdict = %s" % verdict)
-	if cp_vd != null and _data_core_world_ext != null \
+	if cp_vd != null and not bool(cp_vd.vegetation_stress_enabled) \
+			and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("run_vegetation_dynamics_pass"):
 		if not _gdext_vegdyn_signature_checked:
 			_gdext_vegdyn_signature_checked = true
@@ -11417,7 +11544,14 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var wi: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		var weather_stress: float = _vegetation_weather_stress(int(cell.vegetation), wt, wi)
-		var target: float = clampf(compat - weather_stress, 0.0, 1.0)
+		var stress_max: float = 0.0
+		var regen_score: float = 0.0
+		if bool(cp_vd.vegetation_stress_enabled):
+			var stress_info: Dictionary = _update_vegetation_stress(
+					cell, map, idx_vd, temp, plant_water, compat, weather_stress, scale)
+			stress_max = float(stress_info.get("stress", 0.0))
+			regen_score = float(stress_info.get("regen", 0.0))
+		var target: float = clampf(compat - weather_stress - stress_max * 0.25 + regen_score * 0.10, 0.0, 1.0)
 		var prev_vitality: float = cell.vegetation_vitality
 		var dv: float = (target - prev_vitality) * float(_c().vitality_change_rate)
 		if dv < 0.0:
@@ -11438,10 +11572,14 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			continue
 
 		# Streak 计数同时要求历史活力和当前目标都在触发区，过滤短期天气残留。
-		if cell.vegetation_vitality < _c().vitality_low_threshold and target < _c().vitality_low_threshold:
+		if stress_max > 0.65 and target < _c().vitality_high_threshold:
+			cell._vitality_low_streak += maxi(streak_days, int(round(float(streak_days) * stress_max)))
+			cell._vitality_high_streak = 0
+		elif cell.vegetation_vitality < _c().vitality_low_threshold and target < _c().vitality_low_threshold:
 			cell._vitality_low_streak += streak_days
 			cell._vitality_high_streak = 0
-		elif cell.vegetation_vitality > _c().vitality_high_threshold and target > _c().vitality_high_threshold:
+		elif cell.vegetation_vitality > _c().vitality_high_threshold \
+				and target > _c().vitality_high_threshold and regen_score > 0.55:
 			cell._vitality_high_streak += streak_days
 			cell._vitality_low_streak = 0
 		else:
@@ -11452,6 +11590,19 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		# 触发演替（climate-loop-closure Phase 3.2：传入 temp/plant_water 供气候导向退化）
 		if _trigger_succession(cell, temp, plant_water, compat):
 			any_changed = true
+	if bool(cp_vd.vegetation_stress_enabled) and _data_core_world != null:
+		var _cid_vhs: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION_HEAT_STRESS)
+		var _cid_vds: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION_DROUGHT_STRESS)
+		var _cid_vcs: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION_COLD_STRESS)
+		var _cid_vrs: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION_REGEN_SCORE)
+		if _cid_vhs >= 0:
+			_data_core_world.write_f32_dense(_cid_vhs, map.vegetation_heat_stress_arr)
+		if _cid_vds >= 0:
+			_data_core_world.write_f32_dense(_cid_vds, map.vegetation_drought_stress_arr)
+		if _cid_vcs >= 0:
+			_data_core_world.write_f32_dense(_cid_vcs, map.vegetation_cold_stress_arr)
+		if _cid_vrs >= 0:
+			_data_core_world.write_f32_dense(_cid_vrs, map.vegetation_regen_score_arr)
 	return any_changed
 
 # 演替触发判定：streak 达到阈值且有可演替的下一阶 → 写 cell.vegetation 并 reset。

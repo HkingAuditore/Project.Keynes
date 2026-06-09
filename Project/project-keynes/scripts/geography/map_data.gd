@@ -64,6 +64,7 @@ var sea_ice_frac_arr_prev:  PackedFloat32Array = PackedFloat32Array()
 var weather_intensity_arr:  PackedFloat32Array = PackedFloat32Array()
 var weather_cloud_arr:      PackedFloat32Array = PackedFloat32Array()
 var weather_precip_arr:     PackedFloat32Array = PackedFloat32Array()
+var weather_transition_alpha_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── B-full Step-2：weather hot loop 直读字段（写少读多） ────────────
 # 与 weather_intensity/cloud/precip 一组，由 weather_system.commit 写入。
@@ -107,6 +108,10 @@ var vitality_high_streak_arr:          PackedInt32Array   = PackedInt32Array()
 var soil_moisture_arr:                 PackedFloat32Array = PackedFloat32Array()
 var vegetation_growth_pressure_arr:    PackedFloat32Array = PackedFloat32Array()
 var temperature_transport_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+var vegetation_heat_stress_arr:        PackedFloat32Array = PackedFloat32Array()
+var vegetation_drought_stress_arr:     PackedFloat32Array = PackedFloat32Array()
+var vegetation_cold_stress_arr:        PackedFloat32Array = PackedFloat32Array()
+var vegetation_regen_score_arr:        PackedFloat32Array = PackedFloat32Array()
 
 
 # ─── Reference-impl Pass #2 (demo-only, performance-charter §12.6) ──
@@ -153,6 +158,8 @@ var base_landform_arr:      PackedByteArray = PackedByteArray()
 var base_vegetation_arr:    PackedByteArray = PackedByteArray()
 var cover_arr:              PackedByteArray = PackedByteArray()
 var weather_type_arr:       PackedByteArray = PackedByteArray()
+var weather_prev_type_arr:  PackedByteArray = PackedByteArray()
+var weather_target_type_arr: PackedByteArray = PackedByteArray()
 var is_water_arr:           PackedByteArray = PackedByteArray()
 
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
@@ -399,6 +406,7 @@ func _alloc_soa(n: int) -> void:
 	weather_intensity_arr.resize(n)
 	weather_cloud_arr.resize(n)
 	weather_precip_arr.resize(n)
+	weather_transition_alpha_arr.resize(n)
 	elevation_arr.resize(n)
 	base_moisture_arr.resize(n)
 	ocean_current_x_arr.resize(n)
@@ -422,6 +430,8 @@ func _alloc_soa(n: int) -> void:
 	base_vegetation_arr.resize(n)
 	cover_arr.resize(n)
 	weather_type_arr.resize(n)
+	weather_prev_type_arr.resize(n)
+	weather_target_type_arr.resize(n)
 	is_water_arr.resize(n)
 	climate_dirty_mask.resize(n)
 	weather_dirty_mask.resize(n)
@@ -449,6 +459,10 @@ func _alloc_soa(n: int) -> void:
 	soil_moisture_arr.resize(n)
 	vegetation_growth_pressure_arr.resize(n)
 	temperature_transport_anomaly_arr.resize(n)
+	vegetation_heat_stress_arr.resize(n)
+	vegetation_drought_stress_arr.resize(n)
+	vegetation_cold_stress_arr.resize(n)
+	vegetation_regen_score_arr.resize(n)
 
 ## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
 ## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。
@@ -484,6 +498,7 @@ func rebuild_soa_from_cells() -> void:
 		weather_intensity_arr[i] = c.weather_intensity
 		weather_cloud_arr[i] = c.weather_cloud
 		weather_precip_arr[i] = c.weather_precip
+		weather_transition_alpha_arr[i] = c.weather_transition_alpha
 		elevation_arr[i] = c.elevation
 		base_moisture_arr[i] = c.base_moisture
 		ocean_current_x_arr[i] = c.ocean_current.x
@@ -506,6 +521,8 @@ func rebuild_soa_from_cells() -> void:
 		base_vegetation_arr[i] = c.base_vegetation & 0xFF
 		cover_arr[i] = c.cover & 0xFF
 		weather_type_arr[i] = c.weather_type & 0xFF
+		weather_prev_type_arr[i] = c.weather_prev_type & 0xFF
+		weather_target_type_arr[i] = c.weather_target_type & 0xFF
 		is_water_arr[i] = (1 if (not c.passable_land) else 0)
 		climate_dirty_mask[i] = 0
 		weather_dirty_mask[i] = 0
@@ -533,6 +550,10 @@ func rebuild_soa_from_cells() -> void:
 		soil_moisture_arr[i] = c.soil_moisture
 		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure
 		temperature_transport_anomaly_arr[i] = c.temperature_transport_anomaly
+		vegetation_heat_stress_arr[i] = c.vegetation_heat_stress
+		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress
+		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress
+		vegetation_regen_score_arr[i] = c.vegetation_regen_score
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

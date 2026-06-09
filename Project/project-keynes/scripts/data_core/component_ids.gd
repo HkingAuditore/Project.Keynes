@@ -43,6 +43,9 @@ const CELL_WEATHER_INTENSITY: StringName = &"cell.weather_intensity"
 const CELL_WEATHER_CLOUD: StringName = &"cell.weather_cloud"
 const CELL_WEATHER_PRECIP: StringName = &"cell.weather_precip"
 const CELL_WEATHER_TYPE: StringName = &"cell.weather_type"
+const CELL_WEATHER_PREV_TYPE: StringName = &"cell.weather_prev_type"
+const CELL_WEATHER_TARGET_TYPE: StringName = &"cell.weather_target_type"
+const CELL_WEATHER_TRANSITION_ALPHA: StringName = &"cell.weather_transition_alpha"
 const CELL_ELEVATION: StringName = &"cell.elevation"
 const CELL_BASE_MOISTURE: StringName = &"cell.base_moisture"
 const CELL_OCEAN_CURRENT_X: StringName = &"cell.ocean_current_x"
@@ -114,6 +117,10 @@ const CELL_VITALITY_HIGH_STREAK: StringName      = &"cell.vitality_high_streak" 
 const CELL_SOIL_MOISTURE: StringName             = &"cell.soil_moisture"              # f32
 const CELL_VEGETATION_GROWTH_PRESSURE: StringName = &"cell.vegetation_growth_pressure" # f32
 const CELL_TEMPERATURE_TRANSPORT_ANOMALY: StringName = &"cell.temperature_transport_anomaly" # f32
+const CELL_VEGETATION_HEAT_STRESS: StringName = &"cell.vegetation_heat_stress" # f32
+const CELL_VEGETATION_DROUGHT_STRESS: StringName = &"cell.vegetation_drought_stress" # f32
+const CELL_VEGETATION_COLD_STRESS: StringName = &"cell.vegetation_cold_stress" # f32
+const CELL_VEGETATION_REGEN_SCORE: StringName = &"cell.vegetation_regen_score" # f32
 
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────

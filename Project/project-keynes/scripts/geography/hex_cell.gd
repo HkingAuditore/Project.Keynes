@@ -91,7 +91,14 @@ const _CID_VITALITY_LOW_STREAK  := 27  # I32  cell.vitality_low_streak
 const _CID_VITALITY_HIGH_STREAK := 28  # I32  cell.vitality_high_streak
 const _CID_SOIL_MOISTURE        := 29  # F32  cell.soil_moisture
 const _CID_VEG_GROWTH_PRESSURE  := 30  # F32  cell.vegetation_growth_pressure
-const _CID_COUNT                := 31
+const _CID_WEATHER_PREV_TYPE    := 31  # U8   cell.weather_prev_type
+const _CID_WEATHER_TARGET_TYPE  := 32  # U8   cell.weather_target_type
+const _CID_WEATHER_TRANS_ALPHA  := 33  # F32  cell.weather_transition_alpha
+const _CID_VEG_HEAT_STRESS      := 34  # F32  cell.vegetation_heat_stress
+const _CID_VEG_DROUGHT_STRESS   := 35  # F32  cell.vegetation_drought_stress
+const _CID_VEG_COLD_STRESS      := 36  # F32  cell.vegetation_cold_stress
+const _CID_VEG_REGEN_SCORE      := 37  # F32  cell.vegetation_regen_score
+const _CID_COUNT                := 38
 
 # StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
 # 字面量是合法 const expression，可以直接用。
@@ -128,6 +135,13 @@ const _COMP_NAMES: Array[StringName] = [
 	&"cell.vitality_high_streak",
 	&"cell.soil_moisture",
 	&"cell.vegetation_growth_pressure",
+	&"cell.weather_prev_type",
+	&"cell.weather_target_type",
+	&"cell.weather_transition_alpha",
+	&"cell.vegetation_heat_stress",
+	&"cell.vegetation_drought_stress",
+	&"cell.vegetation_cold_stress",
+	&"cell.vegetation_regen_score",
 ]
 
 # 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
@@ -290,6 +304,54 @@ var weather_type: int = 0:
 			var cid: int = _cid_array[_CID_WEATHER_TYPE]
 			if cid >= 0:
 				_world.write_u8(cid, index, v)
+var _weather_prev_type_backing: int = 0
+var weather_prev_type: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_PREV_TYPE] >= 0:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_PREV_TYPE], index)
+				return _world.read_u8(cid, index)
+		return _weather_prev_type_backing
+	set(v):
+		_weather_prev_type_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
+			if cid >= 0:
+				_world.write_u8(cid, index, v)
+var _weather_target_type_backing: int = 0
+var weather_target_type: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TARGET_TYPE] >= 0:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_TARGET_TYPE], index)
+				return _world.read_u8(cid, index)
+		return _weather_target_type_backing
+	set(v):
+		_weather_target_type_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
+			if cid >= 0:
+				_world.write_u8(cid, index, v)
+var _weather_transition_alpha_backing: float = 1.0
+var weather_transition_alpha: float = 1.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TRANS_ALPHA] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_TRANS_ALPHA], index)
+				return _world.read_f32(cid, index)
+		return _weather_transition_alpha_backing
+	set(v):
+		_weather_transition_alpha_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 var _weather_intensity_backing: float = 0.0
 var weather_intensity: float = 0.0:
 	get:
@@ -858,6 +920,70 @@ var vegetation_growth_pressure: float = 0.0:
 		_vegetation_growth_pressure_backing = v
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_heat_stress_backing: float = 0.0
+var vegetation_heat_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_HEAT_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_HEAT_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_heat_stress_backing
+	set(v):
+		_vegetation_heat_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_drought_stress_backing: float = 0.0
+var vegetation_drought_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_DROUGHT_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_DROUGHT_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_drought_stress_backing
+	set(v):
+		_vegetation_drought_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_cold_stress_backing: float = 0.0
+var vegetation_cold_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_COLD_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_COLD_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_cold_stress_backing
+	set(v):
+		_vegetation_cold_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_regen_score_backing: float = 0.0
+var vegetation_regen_score: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_REGEN_SCORE] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_REGEN_SCORE], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_regen_score_backing
+	set(v):
+		_vegetation_regen_score_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
 			if cid >= 0:
 				_world.write_f32(cid, index, v)
 

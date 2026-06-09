@@ -64,6 +64,7 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.weather_intensity",  cpp_name = "cell_weather_intensity",     dtype = F32, track_prev = false, map_field = "weather_intensity_arr",     prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_cloud",      cpp_name = "cell_weather_cloud",         dtype = F32, track_prev = false, map_field = "weather_cloud_arr",         prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_precip",     cpp_name = "cell_weather_precip",        dtype = F32, track_prev = false, map_field = "weather_precip_arr",        prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_transition_alpha", cpp_name = "cell_weather_transition_alpha", dtype = F32, track_prev = false, map_field = "weather_transition_alpha_arr", prev_field = "",                  owner = "weather.commit" },
 	{ name = &"cell.elevation",          cpp_name = "cell_elevation",             dtype = F32, track_prev = false, map_field = "elevation_arr",             prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.base_moisture",      cpp_name = "cell_base_moisture",         dtype = F32, track_prev = false, map_field = "base_moisture_arr",         prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.ocean_current_x",    cpp_name = "cell_ocean_current_x",       dtype = F32, track_prev = false, map_field = "ocean_current_x_arr",       prev_field = "",                         owner = "ocean.currents" },
@@ -86,6 +87,8 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.base_vegetation",    cpp_name = "cell_base_vegetation",       dtype = U8,  track_prev = false, map_field = "base_vegetation_arr",       prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.cover",              cpp_name = "cell_cover",                 dtype = U8,  track_prev = false, map_field = "cover_arr",                 prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.weather_type",       cpp_name = "cell_weather_type",          dtype = U8,  track_prev = false, map_field = "weather_type_arr",          prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_prev_type",  cpp_name = "cell_weather_prev_type",     dtype = U8,  track_prev = false, map_field = "weather_prev_type_arr",     prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_target_type", cpp_name = "cell_weather_target_type",  dtype = U8,  track_prev = false, map_field = "weather_target_type_arr",   prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.is_water",           cpp_name = "cell_is_water",              dtype = U8,  track_prev = false, map_field = "is_water_arr",              prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.climate_dirty_mask", cpp_name = "cell_climate_dirty",         dtype = U8,  track_prev = false, map_field = "climate_dirty_mask",        prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.weather_dirty_mask", cpp_name = "cell_weather_dirty",         dtype = U8,  track_prev = false, map_field = "weather_dirty_mask",        prev_field = "",                         owner = "weather.commit" },
@@ -116,6 +119,10 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.soil_moisture",              cpp_name = "cell_soil_moisture",              dtype = F32, track_prev = false, map_field = "soil_moisture_arr",              prev_field = "", owner = "climate.feedback" },
 	{ name = &"cell.vegetation_growth_pressure", cpp_name = "cell_vegetation_growth_pressure", dtype = F32, track_prev = false, map_field = "vegetation_growth_pressure_arr", prev_field = "", owner = "climate.feedback" },
 	{ name = &"cell.temperature_transport_anomaly", cpp_name = "cell_temperature_transport_anomaly", dtype = F32, track_prev = false, map_field = "temperature_transport_anomaly_arr", prev_field = "", owner = "climate.feedback" },
+	{ name = &"cell.vegetation_heat_stress", cpp_name = "cell_vegetation_heat_stress", dtype = F32, track_prev = false, map_field = "vegetation_heat_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_drought_stress", cpp_name = "cell_vegetation_drought_stress", dtype = F32, track_prev = false, map_field = "vegetation_drought_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_cold_stress", cpp_name = "cell_vegetation_cold_stress", dtype = F32, track_prev = false, map_field = "vegetation_cold_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_regen_score", cpp_name = "cell_vegetation_regen_score", dtype = F32, track_prev = false, map_field = "vegetation_regen_score_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。
