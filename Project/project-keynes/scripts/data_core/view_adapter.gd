@@ -213,9 +213,7 @@ class Cell extends DCViewAdapter:
 	func get_weather_target_type(idx: int) -> int: return int(_cells[idx].weather_target_type)
 
 	# Booleans
-	# is_water 在 HexCell 上没有独立字段；用"非 passable_land"等价（与 MapData.is_water_arr
-	# 的填充逻辑 1:1 对齐：rebuild_soa_from_cells 里 is_water_arr[i] = (1 if not passable_land else 0)）
-	func get_is_water(idx: int) -> bool: return not _cells[idx].passable_land
+	func get_is_water(idx: int) -> bool: return MapData.terrain_is_water(int(_cells[idx].terrain))
 	func get_has_river(idx: int) -> bool: return bool(_cells[idx].has_river)
 	func get_weather_field_init(idx: int) -> bool: return bool(_cells[idx].weather_field_initialized)
 	func get_ema_initialized(idx: int) -> bool: return bool(_cells[idx]._ema_initialized)

@@ -1146,7 +1146,7 @@ func _dynamic_cell_signature(cell: HexCell) -> int:
 	var g: int = _q01_byte(float(cell.moisture))
 	var b: int = _q01_byte(float(cell.snow_cover))
 	var a: int
-	if not cell.passable_land:
+	if MapData.terrain_is_water(int(cell.terrain)):
 		a = _q01_byte_ice(float(cell.sea_ice_fraction))
 	else:
 		a = _q01_byte(float(cell.vegetation_vitality))
@@ -1334,9 +1334,7 @@ func ecology_visual_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, repo
 
 func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality_byte: int) -> int:
 	var terrain_id: int = int(cell.terrain)
-	var is_water_cell: bool = bool(cell.passable_sea) \
-			or terrain_id == int(TerrainType.TERRAIN.LAKE) \
-			or terrain_id == int(TerrainType.TERRAIN.SEA_ICE)
+	var is_water_cell: bool = MapData.terrain_is_water(terrain_id)
 	var veg_id: int = int(cell.vegetation)
 	var vitality: float = clampf(float(cell.vegetation_vitality), 0.0, 1.0)
 	var moist: float = clampf(float(cell.moisture), 0.0, 1.0)
@@ -1524,8 +1522,8 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 			# 否则 SEA_ICE 邻居会被错归"陆地邻居"导致 A 通道污染。
 			# SAME_SOURCE：gdext/src/world_ext.cpp::encode_dyn_smooth_atlas /
 			#              monolithic atlas pipeline smooth phase。
-			var center_is_water: bool = not cell.passable_land
-			var nb_is_water: bool = not nb_cell.passable_land
+			var center_is_water: bool = MapData.terrain_is_water(int(cell.terrain))
+			var nb_is_water: bool = MapData.terrain_is_water(int(nb_cell.terrain))
 			if center_is_water:
 				if nb_is_water:
 					na += (n_sig >> 24) & 0xFF
@@ -1571,7 +1569,7 @@ func dyn_atlas_smooth_chunk_step(map: MapData, world: WorldData, ctx: Dictionary
 		if use_pixel_lists:
 			pixels = world.cell_pixel_lists.get(cell, PackedInt32Array())
 		# [TEMP DIAG sea-ice GD-smo-write]
-		if cell != null and not cell.passable_land and float(cell.sea_ice_fraction) > 0.5:
+		if cell != null and MapData.terrain_is_water(int(cell.terrain)) and float(cell.sea_ice_fraction) > 0.5:
 			if not Engine.has_meta("_diag_gd_smo_dumped"):
 				Engine.set_meta("_diag_gd_smo_dumped", 0)
 			var _diag_n: int = int(Engine.get_meta("_diag_gd_smo_dumped"))
@@ -1725,7 +1723,7 @@ func ice_state_atlas_chunk_step(map: MapData, world: WorldData, ctx: Dictionary,
 		# pipeline cell_is_ice_renderable 语义一致。
 		for i in range(span.x, span.y):
 			var cell: HexCell = cells[i]
-			if cell == null or cell.passable_land:
+			if cell == null or not MapData.terrain_is_water(int(cell.terrain)):
 				continue
 			var byte_v: int = _q01_byte_ice(float(cell.sea_ice_fraction))
 			if cache_valid and int(_last_ice_state_cell_bytes.get(cell, -1)) == byte_v:
@@ -1883,7 +1881,7 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 				_iw_fast[_k_fast] = _iw_lut[_terrain_arr[_idx]]
 			else:
 				var _t_fb: int = int(_cell.terrain) & 0xFF
-				_iw_fast[_k_fast] = 1 if ((not _cell.passable_land) or _t_fb == 20) else 0
+				_iw_fast[_k_fast] = MapData.terrain_is_water_u8(_t_fb)
 			_k_fast += 1
 		_ci_fast.resize(_k_fast)
 		_fpx_fast.resize(_k_fast)
@@ -1938,7 +1936,7 @@ func _pack_csr_for_cells(world: WorldData, cells, use_water_lists: bool, n_pix: 
 		first_px[k] = flat_w
 		px_count[k] = pixels.size()
 		# sea-ice-render-source-unify 阶段 C：is_water = not passable_land，含 SEA_ICE 等所有水域。
-		is_water_arr[k] = 0 if cell.passable_land else 1
+		is_water_arr[k] = MapData.terrain_is_water_u8(int(cell.terrain))
 		# 拷贝 pixel idx 到 flat 数组
 		var nx: int = pixels.size()
 		if flat_w + nx > flat_px.size():
@@ -2212,7 +2210,7 @@ func _try_cpp_dyn_smooth_atlas_encode(map: MapData, world: WorldData, ctx: Dicti
 					var nb_cell: HexCell = map.cell_at(ni)
 					if nb_cell != null:
 						var _t_nb: int = int(nb_cell.terrain) & 0xFF
-						if (not nb_cell.passable_land) or _t_nb == 20:
+						if MapData.terrain_is_water(_t_nb):
 							nb_iw = 1
 				nb_iws[base_l + d] = nb_iw
 		k_idx += 1

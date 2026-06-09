@@ -212,10 +212,10 @@ func refresh_info_panel() -> void:
 	_feature_label.text = "地理特征：%s" % ("无" if feats.is_empty() else ", ".join(feats))
 
 	# ── 通行（基础通行 + 当季通行）
-	# B.1：is_water 通过 adapter（== !passable_land 的 SoA 镜像）；passable_sea
-	# 与 is_passable_in_season 无 SoA 对位仍直读 cell。
-	var passable_land_v: bool = (not ad.get_is_water(idx)) if ad != null else cell.passable_land
+	# B.1：陆行能力来自 terrain profile；is_water 是物理水体语义，不能反推陆行。
+	# passable_sea 与 is_passable_in_season 无 SoA 对位仍直读 cell。
 	var terrain_v: int = ad.get_terrain(idx) if ad != null else int(cell.terrain)
+	var passable_land_v: bool = TerrainType.is_passable_land(terrain_v)
 	_mobility_label.text = "通行：陆 %s / 海 %s   move_cost=%d   当季可通行：%s" % [
 		"是" if passable_land_v else "否",
 		"是" if cell.passable_sea else "否",

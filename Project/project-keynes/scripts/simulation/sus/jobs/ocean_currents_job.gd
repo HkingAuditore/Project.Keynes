@@ -78,6 +78,7 @@ var _climate_defer_streak: int = 0
 var _last_pixel_quota: int = _PIXEL_MAX_QUOTA
 var _last_pixel_slice_ms: float = 0.0
 var _last_pixel_slice_pixels: int = 0
+var _ocean_rt_diag_count: int = 0
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
@@ -153,6 +154,7 @@ func reset_progress() -> void:
 	_last_pixel_quota = _PIXEL_MAX_QUOTA
 	_last_pixel_slice_ms = 0.0
 	_last_pixel_slice_pixels = 0
+	_ocean_rt_diag_count = 0
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
