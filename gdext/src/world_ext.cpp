@@ -2021,24 +2021,30 @@ static inline float dc_subsolar_lat_rad(float season_phase, float axial_tilt_deg
            std::cos(TAU_F * dc_phase_progress(season_phase));
 }
 
-static inline float dc_day_length_norm(float ny, float season_phase, float daylen_amp) {
-    constexpr float TAU_F = 6.2831853071795864769f;
+static inline float dc_sunset_hour_angle(float lat_rad, float decl_rad) {
+    if (std::fabs(decl_rad) <= 1e-6f) return float(M_PI) * 0.5f;
+    const float polar_test = -std::tan(lat_rad) * std::tan(decl_rad);
+    if (polar_test <= -1.0f) return float(M_PI);
+    if (polar_test >= 1.0f) return 0.0f;
+    return std::acos(polar_test);
+}
+
+static inline float dc_day_length_norm(float ny, float season_phase, float axial_tilt_deg) {
     const float lat_rad = (ny - 0.5f) * float(M_PI);
-    const float lat_sign = (lat_rad > 0.0f) ? 1.0f : ((lat_rad < 0.0f) ? -1.0f : 0.0f);
-    const float factor = 1.0f + daylen_amp * std::cos(TAU_F * dc_phase_progress(season_phase)) * lat_sign;
-    if (daylen_amp <= 1e-5f) return 0.5f;
-    return dc_clamp01f((factor - (1.0f - daylen_amp)) / (2.0f * daylen_amp));
+    const float decl_rad = dc_subsolar_lat_rad(season_phase, axial_tilt_deg);
+    return dc_clamp01f(dc_sunset_hour_angle(lat_rad, decl_rad) / float(M_PI));
 }
 
 static inline float dc_insolation_now(float ny, float season_phase, float axial_tilt_deg, float daylen_amp) {
-    constexpr float TAU_F = 6.2831853071795864769f;
+    (void)daylen_amp;
     const float lat_rad = (ny - 0.5f) * float(M_PI);
     const float subsolar = dc_subsolar_lat_rad(season_phase, axial_tilt_deg);
-    float cos_zenith = std::cos(lat_rad - subsolar);
-    if (cos_zenith < 0.0f) cos_zenith = 0.0f;
-    const float lat_sign = (lat_rad > 0.0f) ? 1.0f : ((lat_rad < 0.0f) ? -1.0f : 0.0f);
-    const float daylen_factor = 1.0f + daylen_amp * std::cos(TAU_F * dc_phase_progress(season_phase)) * lat_sign;
-    return dc_clamp01f(cos_zenith * daylen_factor);
+    const float h0 = dc_sunset_hour_angle(lat_rad, subsolar);
+    if (h0 <= 1e-6f) return 0.0f;
+    const float daily =
+        h0 * std::sin(lat_rad) * std::sin(subsolar) +
+        std::cos(lat_rad) * std::cos(subsolar) * std::sin(h0);
+    return dc_clamp01f(daily);
 }
 
 static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, float daylen_amp) {
@@ -2274,7 +2280,7 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
+            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
             const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
             // (b) moisture — note: dev_today is now absolute, not fractional,
@@ -2599,7 +2605,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), daylen_amp);
+            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
             const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
             float moisture_now;
@@ -6819,7 +6825,6 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     const int   n_wt          = int(knobs["n_wt"]);
     const int   wt_clear_id   = int(knobs["wt_clear_id"]);
     const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
-    (void)veg_none_id;
     const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
     const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
     const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
@@ -6929,8 +6934,14 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
 
     // ─── Main loop ──────────────────────────────────────────────────────
     for (int i = 0; i < n_cells; ++i) {
-        if (IW[i] != 0) continue;                                  // skip water
         const uint8_t v_id = VG[i];
+        if (IW[i] != 0 || v_id == veg_none_id) {
+            VIT[i] = 0.0f;
+            LSK[i] = 0;
+            HSK[i] = 0;
+            VGP[i] = 0.0f;
+            continue;
+        }
         const float temp = T30[i];
         const float plant_water = vegdyn_plant_water(
             M[i], WBAL[i], SOILC[i],
@@ -7121,7 +7132,6 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     const int   n_wt          = int(knobs["n_wt"]);
     const int   wt_clear_id   = int(knobs["wt_clear_id"]);
     const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
-    (void)veg_none_id;
     const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
     const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
     const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
@@ -7237,8 +7247,14 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
 
     auto run = [&](int begin, int end, VegEmit &local) {
         for (int i = begin; i < end; ++i) {
-            if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
+            if (IW[i] != 0 || v_id == veg_none_id) {
+                VIT[i] = 0.0f;
+                LSK[i] = 0;
+                HSK[i] = 0;
+                VGP[i] = 0.0f;
+                continue;
+            }
             const float temp = T30[i];
             const float plant_water = vegdyn_plant_water(
                 M[i], WBAL[i], SOILC[i],
@@ -7952,7 +7968,6 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
         const int   n_wt          = int(knobs["n_wt"]);
         const int   wt_clear_id   = int(knobs["wt_clear_id"]);
         const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
-        (void)veg_none_id;
         const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
         const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
         const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
@@ -8090,8 +8105,20 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
         // ─── Main loop（与 run_vegetation_dynamics_pass:3778-3868 完全一致）─
         for (int i = 0; i < n_cells; ++i) {
-            if (IW[i] != 0) continue;
             const uint8_t v_id = VG[i];
+            if (IW[i] != 0 || v_id == veg_none_id) {
+                VIT[i] = 0.0f;
+                LSK[i] = 0;
+                HSK[i] = 0;
+                if (VGP_COMP != nullptr) VGP_COMP[i] = 0.0f;
+                if (vegetation_stress_enabled) {
+                    VHEAT[i] = 0.0f;
+                    VDROUGHT[i] = 0.0f;
+                    VCOLD[i] = 0.0f;
+                    VREGEN[i] = 0.0f;
+                }
+                continue;
+            }
             const float temp = T30[i];
             const float soil_now = SOIL_COMP != nullptr ? SOIL_COMP[i] : 0.0f;
             const float plant_water = vegdyn_plant_water(

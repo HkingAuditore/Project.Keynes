@@ -572,16 +572,17 @@ func rebuild_soa_from_cells() -> void:
 		snowpack_arr[i] = 0.8 if c.cover == CoverType.CV.GLACIER else clampf(c.snow_cover * 0.35, 0.0, 1.0)
 		water_balance_30d_arr[i] = 0.0
 		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
-		vegetation_vitality_arr[i] = c.vegetation_vitality
-		vitality_low_streak_arr[i] = c._vitality_low_streak
-		vitality_high_streak_arr[i] = c._vitality_high_streak
+		var has_live_vegetation: bool = is_water_arr[i] == 0 and int(c.vegetation) != int(VegetationType.VEG.NONE)
+		vegetation_vitality_arr[i] = c.vegetation_vitality if has_live_vegetation else 0.0
+		vitality_low_streak_arr[i] = c._vitality_low_streak if has_live_vegetation else 0
+		vitality_high_streak_arr[i] = c._vitality_high_streak if has_live_vegetation else 0
 		soil_moisture_arr[i] = c.soil_moisture
-		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure
+		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure if has_live_vegetation else 0.0
 		temperature_transport_anomaly_arr[i] = c.temperature_transport_anomaly
-		vegetation_heat_stress_arr[i] = c.vegetation_heat_stress
-		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress
-		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress
-		vegetation_regen_score_arr[i] = c.vegetation_regen_score
+		vegetation_heat_stress_arr[i] = c.vegetation_heat_stress if has_live_vegetation else 0.0
+		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress if has_live_vegetation else 0.0
+		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress if has_live_vegetation else 0.0
+		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()
