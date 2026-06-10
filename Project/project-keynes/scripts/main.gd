@@ -810,6 +810,10 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		"t_render_ms": t_render_ms,
 		"t_ui_ms": t_ui_ms,
 	}
+	if _generator != null and _generator.has_method("sus_climate_breakdown"):
+		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
+		if not climate_diag.is_empty():
+			sample["climate"] = climate_diag
 	if perf_ready:
 		_perf_recorder.call("on_fast_tick", sample)
 	if tile_ready:

@@ -25,6 +25,10 @@ const FIXED_COLUMNS: Array = [
 	"climate_slp_delta_p95",
 	"climate_wind_delta_p95",
 	"climate_ocean_delta_p95",
+	"climate_slp_abs_p95",
+	"climate_wind_mag_p95",
+	"climate_ocean_mag_p95",
+	"climate_upwelling_abs_p95",
 	"weather_dirty_count",
 	"water_budget_error",
 	"active_weather_ratio",
@@ -267,7 +271,10 @@ func on_fast_tick(sample: Dictionary) -> void:
 	var precip_arr = map_data.get("weather_precip_arr")
 	if _array_size(precip_arr) == _cell_count:
 		climate["precip_p95"] = _packed_float_p95(precip_arr)
-		sample["climate"] = climate
+	var physical_stats: Dictionary = _physical_field_stats(map_data)
+	for key in physical_stats.keys():
+		climate[key] = physical_stats[key]
+	sample["climate"] = climate
 
 	for idx in range(_cell_count):
 		var cell = map_data.cell_at(idx)
@@ -321,6 +328,10 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"climate_slp_delta_p95": float(climate.get("slp_delta_p95", 0.0)),
 		"climate_wind_delta_p95": float(climate.get("wind_delta_p95", 0.0)),
 		"climate_ocean_delta_p95": float(climate.get("ocean_delta_p95", 0.0)),
+		"climate_slp_abs_p95": float(climate.get("slp_abs_p95", 0.0)),
+		"climate_wind_mag_p95": float(climate.get("wind_mag_p95", 0.0)),
+		"climate_ocean_mag_p95": float(climate.get("ocean_mag_p95", 0.0)),
+		"climate_upwelling_abs_p95": float(climate.get("upwelling_abs_p95", 0.0)),
 		"weather_dirty_count": int(climate.get("weather_dirty_count", 0)),
 		"water_budget_error": float(climate.get("water_budget_error", 0.0)),
 		"active_weather_ratio": float(climate.get("active_weather_ratio", 0.0)),
@@ -355,12 +366,63 @@ static func _array_value(arr, idx: int):
 	return arr[idx]
 
 
+static func _physical_field_stats(map_data) -> Dictionary:
+	var out: Dictionary = {}
+	var slp_arr = map_data.get("slp_arr")
+	if typeof(slp_arr) == TYPE_PACKED_FLOAT32_ARRAY and not slp_arr.is_empty():
+		out["slp_abs_p95"] = _packed_float_abs_p95(slp_arr)
+	var wind_stats: Dictionary = _packed_vector_mag_stats(map_data.get("wind_x_arr"), map_data.get("wind_y_arr"))
+	if not wind_stats.is_empty():
+		out["wind_mag_p95"] = wind_stats["p95"]
+	var ocean_stats: Dictionary = _packed_vector_mag_stats(map_data.get("ocean_current_x_arr"), map_data.get("ocean_current_y_arr"))
+	if not ocean_stats.is_empty():
+		out["ocean_mag_p95"] = ocean_stats["p95"]
+	var upwelling_arr = map_data.get("upwelling_strength_arr")
+	if typeof(upwelling_arr) == TYPE_PACKED_FLOAT32_ARRAY and not upwelling_arr.is_empty():
+		out["upwelling_abs_p95"] = _packed_float_abs_p95(upwelling_arr)
+	return out
+
+
+static func _packed_vector_mag_stats(x_arr, y_arr) -> Dictionary:
+	if typeof(x_arr) != TYPE_PACKED_FLOAT32_ARRAY or typeof(y_arr) != TYPE_PACKED_FLOAT32_ARRAY:
+		return {}
+	var n: int = mini(x_arr.size(), y_arr.size())
+	if n <= 0:
+		return {}
+	var values: Array = []
+	for i in range(n):
+		var x: float = float(x_arr[i])
+		var y: float = float(y_arr[i])
+		if is_nan(x) or is_inf(x) or is_nan(y) or is_inf(y):
+			continue
+		values.append(sqrt(x * x + y * y))
+	values.sort()
+	if values.is_empty():
+		return {}
+	return { "p95": _sorted_p95(values) }
+
+
+static func _packed_float_abs_p95(arr) -> float:
+	var values: Array = []
+	for i in range(arr.size()):
+		var v: float = float(arr[i])
+		if is_nan(v) or is_inf(v):
+			continue
+		values.append(absf(v))
+	values.sort()
+	return _sorted_p95(values)
+
+
 static func _packed_float_p95(arr) -> float:
 	var values: Array = []
 	values.resize(arr.size())
 	for i in range(arr.size()):
 		values[i] = float(arr[i])
 	values.sort()
+	return _sorted_p95(values)
+
+
+static func _sorted_p95(values: Array) -> float:
 	if values.is_empty():
 		return 0.0
 	var pos: int = clampi(int(floor(float(values.size() - 1) * 0.95)), 0, values.size() - 1)

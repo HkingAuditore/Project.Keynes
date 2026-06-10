@@ -3140,14 +3140,14 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 				# 所以 base 永远是 MOUNTAIN，不会被翻雪后污染（见 hex_cell.gd:812）。
 				var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 				if is_permanent_climate or _is_permanent_landform(cell.base_terrain):
-					_set_cell_runtime_terrain(map, cell, cell.base_terrain)
+					_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 				else:
 					var r_idx: int = _cube_to_row(cell, cfg_local)
 					var lat_temp: float = lat_tab[r_idx]
 					var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 					var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
-					_set_cell_runtime_terrain(map, cell, new_terrain)
+					_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
 		cur += 1
 		touched += 1
 		if (touched & 7) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
@@ -3219,9 +3219,9 @@ func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_us
 						var ny: float = float(_cube_to_row(cell, cfg_local)) / float(cfg_local.height - 1)
 						var temp: float = _compute_temperature(ny, cell.elevation)
 						if temp > 0.55:
-							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.FOREST)
+							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.FOREST, true, temp, cell.snow_cover)
 						elif temp > 0.30:
-							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.GRASSLAND)
+							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.GRASSLAND, true, temp, cell.snow_cover)
 		cur += 1
 		work_done += 1
 		if (work_done & 31) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
@@ -3323,7 +3323,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 					var lat_temp: float = _row_lat_temp[r_idx]
 					var temp: float = clampf(lat_temp - _alt_penalty(cell_re.elevation), 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell_re.elevation, temp, cell_re.moisture, _last_cfg)
-					_set_cell_runtime_terrain(map, cell_re, new_terrain)
+					_set_cell_runtime_terrain(map, cell_re, new_terrain, true, temp, cell_re.snow_cover)
 
 		cur += 1
 		work_done += 1
@@ -3352,15 +3352,9 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 		_last_season_refresh_breakdown["terrain_facade_fixed"] = terrain_facade_fixed
 		if terrain_facade_fixed > 0:
 			_season_log_path_once("finish", "soa_to_facade_sync", "terrain_fixed=%d" % terrain_facade_fixed)
-	if _map != null and _data_core_world != null and _data_core_world.has_method("write_u8_dense"):
-		var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-		if cid_terrain >= 0:
-			_data_core_world.write_u8_dense(cid_terrain, _map.terrain_arr)
-			_last_season_refresh_breakdown["terrain_dense_written"] = true
-		var cid_is_water: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
-		if cid_is_water >= 0:
-			_data_core_world.write_u8_dense(cid_is_water, _map.is_water_arr)
-			_last_season_refresh_breakdown["is_water_dense_written"] = true
+	if _map != null:
+		var enum_axes_written: int = _write_runtime_enum_axes_dense(_map)
+		_last_season_refresh_breakdown["runtime_enum_axes_dense_written"] = enum_axes_written
 	# X2-精简版（2026-05-21）：once-log round 的 slots refresh / skip 计数。
 	# 期望全 gdext 路径下：refresh=1, skip=11（同 round 12 个 stage helper 共享一次 refresh）。
 	# 若 refresh 大于 1 → 说明 round 内某 stage 走了 GDScript fallback 改 cell，触发自动补刷
@@ -3574,7 +3568,9 @@ func _build_row_indices_for_gdext(map: MapData, cfg: MapConfig) -> PackedInt32Ar
 	return out
 
 
-func _set_cell_runtime_terrain(map: MapData, cell: HexCell, terrain_id: int) -> void:
+func _set_cell_runtime_terrain(map: MapData, cell: HexCell, terrain_id: int,
+		sync_axes: bool = false, temperature_for_vegetation: float = -1.0,
+		snow_cover: float = -1.0) -> void:
 	if cell == null:
 		return
 	if map != null and map.has_soa():
@@ -3583,8 +3579,118 @@ func _set_cell_runtime_terrain(map: MapData, cell: HexCell, terrain_id: int) -> 
 			idx = map.index_of(cell)
 		if idx >= 0 and idx < map.cell_count():
 			map.set_runtime_terrain(idx, terrain_id, true)
+			if sync_axes:
+				_sync_runtime_axes_after_terrain(map, cell, idx, temperature_for_vegetation, snow_cover)
 			return
 	cell.apply_terrain(terrain_id)
+	if sync_axes:
+		_sync_runtime_axes_after_terrain(map, cell, -1, temperature_for_vegetation, snow_cover)
+
+
+func _sync_runtime_axes_after_terrain(map: MapData, cell: HexCell, idx: int,
+		temperature_for_vegetation: float = -1.0, snow_cover: float = -1.0) -> void:
+	if cell == null or _last_cfg == null:
+		return
+	var cfg: MapConfig = _last_cfg
+	var landform: int = _derive_landform(cell, cfg)
+	var temp_for_veg: float = temperature_for_vegetation
+	if temp_for_veg < 0.0:
+		temp_for_veg = _compute_temperature(_cube_row_norm(cell, cfg), cell.elevation)
+	var cover_snow: float = snow_cover if snow_cover >= 0.0 else cell.snow_cover
+	var vegetation: int = _derive_vegetation(cell, landform, temp_for_veg)
+	var cover: int = _derive_cover(cell, cover_snow)
+	cell.landform = landform
+	cell.vegetation = vegetation
+	cell.cover = cover
+	if cell.current_state != null and not cell.current_state.is_empty():
+		cell.current_state["biome"] = int(cell.terrain)
+		cell.current_state["landform"] = int(landform)
+		cell.current_state["vegetation"] = int(vegetation)
+		cell.current_state["cover"] = int(cover)
+	if map != null and map.has_soa():
+		var safe_idx: int = idx
+		if safe_idx < 0 or safe_idx >= map.cell_count():
+			safe_idx = int(cell.index)
+		if safe_idx < 0 or safe_idx >= map.cell_count():
+			safe_idx = map.index_of(cell)
+		if safe_idx >= 0 and safe_idx < map.cell_count():
+			if safe_idx < map.terrain_arr.size():
+				map.terrain_arr[safe_idx] = int(cell.terrain) & 0xFF
+			if safe_idx < map.is_water_arr.size():
+				map.is_water_arr[safe_idx] = MapData.terrain_is_water_u8(int(cell.terrain))
+			if safe_idx < map.landform_arr.size():
+				map.landform_arr[safe_idx] = landform & 0xFF
+			if safe_idx < map.vegetation_arr.size():
+				map.vegetation_arr[safe_idx] = vegetation & 0xFF
+			if safe_idx < map.cover_arr.size():
+				map.cover_arr[safe_idx] = cover & 0xFF
+			if MapData.terrain_is_water_u8(int(cell.terrain)) != 0 or vegetation == VegetationType.VEG.NONE:
+				_clear_cell_vegetation_state(map, cell, safe_idx)
+
+
+func _clear_cell_vegetation_state(map: MapData, cell: HexCell, idx: int = -1) -> void:
+	if cell == null:
+		return
+	cell.vegetation_vitality = 0.0
+	cell._vitality_low_streak = 0
+	cell._vitality_high_streak = 0
+	cell.vegetation_growth_pressure = 0.0
+	cell.vegetation_heat_stress = 0.0
+	cell.vegetation_drought_stress = 0.0
+	cell.vegetation_cold_stress = 0.0
+	cell.vegetation_regen_score = 0.0
+	if map == null or not map.has_soa():
+		return
+	var safe_idx: int = idx
+	if safe_idx < 0 or safe_idx >= map.cell_count():
+		safe_idx = int(cell.index)
+	if safe_idx < 0 or safe_idx >= map.cell_count():
+		safe_idx = map.index_of(cell)
+	if safe_idx < 0 or safe_idx >= map.cell_count():
+		return
+	if safe_idx < map.vegetation_vitality_arr.size():
+		map.vegetation_vitality_arr[safe_idx] = 0.0
+	if safe_idx < map.vitality_low_streak_arr.size():
+		map.vitality_low_streak_arr[safe_idx] = 0
+	if safe_idx < map.vitality_high_streak_arr.size():
+		map.vitality_high_streak_arr[safe_idx] = 0
+	if safe_idx < map.vegetation_growth_pressure_arr.size():
+		map.vegetation_growth_pressure_arr[safe_idx] = 0.0
+	if safe_idx < map.vegetation_heat_stress_arr.size():
+		map.vegetation_heat_stress_arr[safe_idx] = 0.0
+	if safe_idx < map.vegetation_drought_stress_arr.size():
+		map.vegetation_drought_stress_arr[safe_idx] = 0.0
+	if safe_idx < map.vegetation_cold_stress_arr.size():
+		map.vegetation_cold_stress_arr[safe_idx] = 0.0
+	if safe_idx < map.vegetation_regen_score_arr.size():
+		map.vegetation_regen_score_arr[safe_idx] = 0.0
+
+
+func _write_runtime_enum_axes_dense(map: MapData) -> int:
+	if map == null or _data_core_world == null or not _data_core_world.has_method("write_u8_dense"):
+		return 0
+	var written: int = 0
+	var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
+	if cid_terrain >= 0:
+		_data_core_world.write_u8_dense(cid_terrain, map.terrain_arr)
+		written += 1
+	var cid_is_water: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
+	if cid_is_water >= 0:
+		_data_core_world.write_u8_dense(cid_is_water, map.is_water_arr)
+		written += 1
+	var cid_landform: int = _data_core_world.component_id(DCComponentIds.CELL_LANDFORM)
+	if cid_landform >= 0:
+		_data_core_world.write_u8_dense(cid_landform, map.landform_arr)
+		written += 1
+	var cid_vegetation: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION)
+	if cid_vegetation >= 0:
+		_data_core_world.write_u8_dense(cid_vegetation, map.vegetation_arr)
+		written += 1
+	var cid_cover: int = _data_core_world.component_id(DCComponentIds.CELL_COVER)
+	if cid_cover >= 0:
+		_data_core_world.write_u8_dense(cid_cover, map.cover_arr)
+		written += 1
+	return written
 
 
 # stage 4 用的 donor_table（PackedFloat32Array, size=26, 按 terrain enum 索引）。
@@ -4346,17 +4452,17 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 		# 2026-05-18：解除 MOUNTAIN lock-in，仅 SNOW 永久。详见 _run_season_stage2_micro 注释。
 		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 		if is_permanent_climate:
-			_set_cell_runtime_terrain(map, cell, cell.base_terrain)
+			_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			continue
 		if _is_permanent_landform(cell.base_terrain):
-			_set_cell_runtime_terrain(map, cell, cell.base_terrain)
+			_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg_local)
 		var lat_temp: float = lat_tab[r_idx]
 		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
-		_set_cell_runtime_terrain(map, cell, new_terrain)
+		_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
 
 
 func _seasonal_sync_current_state(map: MapData, season: int) -> void:
@@ -6332,18 +6438,18 @@ func refresh_seasonal(map: MapData, world: WorldData, season_idx: int) -> void:
 		# 2026-05-18：解除 MOUNTAIN lock-in，仅 SNOW 永久。详见 _run_season_stage2_micro 注释。
 		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 		if is_permanent_climate:
-			_set_cell_runtime_terrain(map, cell, cell.base_terrain)
+			_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			continue
 		# Phase 14：永久地标（OASIS/DELTA/SALT_FLAT/BADLANDS）由 base_terrain 还原后保持
 		if _is_permanent_landform(cell.base_terrain):
-			_set_cell_runtime_terrain(map, cell, cell.base_terrain)
+			_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			continue
 		var r_idx: int = _cube_to_row(cell, cfg_local)
 		var lat_temp: float = lat_tab[r_idx]
 		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
-		_set_cell_runtime_terrain(map, cell, new_terrain)
+		_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
 
 	# 4) 河岸生态（已有的 _apply_river_ecology 是幂等的：moisture 提升到 0.65 + DESERT/PLAIN 翻转）
 	_apply_river_ecology(map, _last_cfg)
@@ -7693,13 +7799,17 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 			if f < flip_to_ice_list.size():
 				var idx_i: int = flip_to_ice_list[f]
 				if idx_i >= 0 and idx_i < n:
-					map.set_runtime_terrain(idx_i, sea_ice_id, true)
+					var sm_cell_i: HexCell = map.cell_at(idx_i)
+					if sm_cell_i != null:
+						_set_cell_runtime_terrain(map, sm_cell_i, sea_ice_id, true, -1.0, sm_cell_i.snow_cover)
 			else:
 				var base_i: int = f - flip_to_ice_list.size()
 				var idx_b: int = flip_to_base_list[base_i]
 				if idx_b >= 0 and idx_b < n and base_i < flip_to_base_terrain.size():
 					var target_terr: int = int(flip_to_base_terrain[base_i])
-					map.set_runtime_terrain(idx_b, target_terr, true)
+					var sm_cell_b: HexCell = map.cell_at(idx_b)
+					if sm_cell_b != null:
+						_set_cell_runtime_terrain(map, sm_cell_b, target_terr, true, -1.0, sm_cell_b.snow_cover)
 		_sea_ice_state_machine["flip_ms"] = float(_sea_ice_state_machine.get("flip_ms", 0.0)) + (Time.get_ticks_usec() - t_flip_us) / 1000.0
 		_sea_ice_state_machine["flip_cursor"] = flip_end
 		if flip_end >= total_flips:
@@ -7711,13 +7821,7 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 		flip_result["next_stage"] = str(_sea_ice_state_machine.get("stage", _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK))
 		return flip_result
 	var t_commit_us: int = Time.get_ticks_usec()
-	if _data_core_world != null and _data_core_world.has_method("write_u8_dense"):
-		var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-		if cid_terrain >= 0:
-			_data_core_world.write_u8_dense(cid_terrain, map.terrain_arr)
-		var cid_is_water: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
-		if cid_is_water >= 0:
-			_data_core_world.write_u8_dense(cid_is_water, map.is_water_arr)
+	_write_runtime_enum_axes_dense(map)
 	var water_count: int = int(_sea_ice_state_machine.get("water", 0))
 	var flipped_count: int = int(_sea_ice_state_machine.get("flipped", 0))
 	# [BUG-FIX 2026-05-23 海冰看似不动] 诊断：本 pass 我们显式 mark_dirty 的 cell 数。
@@ -8045,19 +8149,17 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			for i_flip in range(flip_to_ice_list.size()):
 				var idx_i: int = flip_to_ice_list[i_flip]
 				if idx_i >= 0 and idx_i < n_cells_fast:
-					map.set_runtime_terrain(idx_i, _sea_ice_id, true)
+					var fast_cell_i: HexCell = map.cell_at(idx_i)
+					if fast_cell_i != null:
+						_set_cell_runtime_terrain(map, fast_cell_i, _sea_ice_id, true, -1.0, fast_cell_i.snow_cover)
 			for i_back in range(flip_to_base_list.size()):
 				var idx_b: int = flip_to_base_list[i_back]
 				if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
 					var target_terr: int = int(flip_to_base_terrain[i_back])
-					map.set_runtime_terrain(idx_b, target_terr, true)
-			if _data_core_world != null and _data_core_world.has_method("write_u8_dense"):
-				var _cid_terrain_dense: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-				if _cid_terrain_dense >= 0:
-					_data_core_world.write_u8_dense(_cid_terrain_dense, map.terrain_arr)
-				var _cid_iswater_dense: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
-				if _cid_iswater_dense >= 0:
-					_data_core_world.write_u8_dense(_cid_iswater_dense, map.is_water_arr)
+					var fast_cell_b: HexCell = map.cell_at(idx_b)
+					if fast_cell_b != null:
+						_set_cell_runtime_terrain(map, fast_cell_b, target_terr, true, -1.0, fast_cell_b.snow_cover)
+			_write_runtime_enum_axes_dense(map)
 			var flip_ms: float = (Time.get_ticks_usec() - t_flip_us) / 1000.0
 
 			var water_count_cpp: int = int(knobs.get("stat_water_count", 0))
@@ -8265,15 +8367,15 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var was_ice: bool = (cell.terrain == TerrainType.TERRAIN.SEA_ICE)
 		if not was_ice and new_frac >= threshold:
 			# 形成海冰：保留 base_terrain 以便回退（不动 base_terrain 自身）
-			map.set_runtime_terrain(i, TerrainType.TERRAIN.SEA_ICE, true)
+			_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SEA_ICE, true, t_eff, cell.snow_cover)
 			flipped_count += 1
 		elif was_ice and new_frac < threshold - hysteresis:
 			# 融化退出：还原到 base_terrain
 			var base: int = int(cell.base_terrain)
 			if base == TerrainType.TERRAIN.SEA_ICE:
-				map.set_runtime_terrain(i, TerrainType.TERRAIN.OCEAN, true)
+				_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.OCEAN, true, t_eff, cell.snow_cover)
 			else:
-				map.set_runtime_terrain(i, base, true)
+				_set_cell_runtime_terrain(map, cell, base, true, t_eff, cell.snow_cover)
 			flipped_count += 1
 
 	# QA 异常守卫：当日翻转 > 3% 总水体 → WARN（统一切换的旧回归特征）
@@ -8289,13 +8391,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var _cid_si: int = _data_core_world.component_id(DCComponentIds.CELL_SEA_ICE_FRAC)
 		if _cid_si >= 0:
 			_data_core_world.write_f32_indexed(_cid_si, _si_indices, _si_frac)
-		if _data_core_world.has_method("write_u8_dense"):
-			var _cid_terrain_fb: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
-			if _cid_terrain_fb >= 0:
-				_data_core_world.write_u8_dense(_cid_terrain_fb, map.terrain_arr)
-			var _cid_iswater_fb: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
-			if _cid_iswater_fb >= 0:
-				_data_core_world.write_u8_dense(_cid_iswater_fb, map.is_water_arr)
+		_write_runtime_enum_axes_dense(map)
 	_last_sea_ice_daily_breakdown = {
 		"path": "gdscript",
 		"pack_ms": 0.0,
@@ -11653,6 +11749,10 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 
 	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
+			_clear_cell_vegetation_state(map, cell)
+			continue
+		if int(cell.vegetation) == int(VegetationType.VEG.NONE):
+			_clear_cell_vegetation_state(map, cell)
 			continue
 		# 生态慢层读 30 日温度与 30 日水分平衡，单日天气只作为小惩罚项。
 		var idx_vd: int = int(cell.index)

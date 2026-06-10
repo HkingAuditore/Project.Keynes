@@ -35,6 +35,12 @@ class _MockMap:
 	var thermal_energy_arr: PackedFloat32Array = PackedFloat32Array()
 	var snowpack_arr: PackedFloat32Array = PackedFloat32Array()
 	var water_balance_30d_arr: PackedFloat32Array = PackedFloat32Array()
+	var slp_arr: PackedFloat32Array = PackedFloat32Array()
+	var wind_x_arr: PackedFloat32Array = PackedFloat32Array()
+	var wind_y_arr: PackedFloat32Array = PackedFloat32Array()
+	var ocean_current_x_arr: PackedFloat32Array = PackedFloat32Array()
+	var ocean_current_y_arr: PackedFloat32Array = PackedFloat32Array()
+	var upwelling_strength_arr: PackedFloat32Array = PackedFloat32Array()
 	var terrain_arr: PackedByteArray = PackedByteArray()
 	var _neighbor_indices: PackedInt32Array = PackedInt32Array()
 	var demo_thermal_gradient_arr: PackedFloat32Array = PackedFloat32Array()
@@ -52,6 +58,12 @@ class _MockMap:
 		thermal_energy_arr.resize(n)
 		snowpack_arr.resize(n)
 		water_balance_30d_arr.resize(n)
+		slp_arr.resize(n)
+		wind_x_arr.resize(n)
+		wind_y_arr.resize(n)
+		ocean_current_x_arr.resize(n)
+		ocean_current_y_arr.resize(n)
+		upwelling_strength_arr.resize(n)
 		terrain_arr.resize(n)
 		_neighbor_indices.resize(n * 6)
 		for i in range(n):
@@ -64,6 +76,12 @@ class _MockMap:
 			thermal_energy_arr[i] = temp_arr[i]
 			snowpack_arr[i] = 0.03 + 0.02 * float(i)
 			water_balance_30d_arr[i] = -0.10 + 0.05 * float(i)
+			slp_arr[i] = -0.25 + 0.50 * float(i)
+			wind_x_arr[i] = 1.0
+			wind_y_arr[i] = 0.0
+			ocean_current_x_arr[i] = 0.0
+			ocean_current_y_arr[i] = 0.20 * float(i)
+			upwelling_strength_arr[i] = -0.10 * float(i)
 			terrain_arr[i] = i + 3
 
 	func has_soa() -> bool:
@@ -145,6 +163,7 @@ func _test_collect_soa_fields() -> void:
 	_expect(fields.find("thermal_energy_arr") != -1, "thermal_energy_arr included")
 	_expect(fields.find("snowpack_arr") != -1, "snowpack_arr included")
 	_expect(fields.find("water_balance_30d_arr") != -1, "water_balance_30d_arr included")
+	_expect(fields.find("slp_arr") != -1 and fields.find("wind_x_arr") != -1, "physical field SoA columns included")
 	_expect(fields.find("terrain_arr") != -1, "terrain_arr included")
 	_expect(fields.find("demo_thermal_gradient_arr") == -1, "size 0 demo array excluded")
 	_expect(fields.find("_neighbor_indices") == -1, "neighbor topology excluded")
@@ -181,12 +200,17 @@ func _test_state_machine_and_export() -> void:
 	_expect(cols.find("q") != -1 and cols.find("r") != -1 and cols.find("s") != -1, "cube columns present")
 	_expect(cols.find("temp_arr") != -1 and cols.find("temp_arr_prev") != -1 and cols.find("terrain_arr") != -1, "SoA columns present")
 	_expect(cols.find("snowpack_arr") != -1 and cols.find("water_balance_30d_arr") != -1, "new climate closure columns present")
+	_expect(cols.find("climate_slp_abs_p95") != -1, "slp p95 column present")
+	_expect(cols.find("climate_wind_mag_p95") != -1, "wind magnitude p95 column present")
+	_expect(cols.find("climate_ocean_mag_p95") != -1, "ocean magnitude p95 column present")
+	_expect(cols.find("climate_upwelling_abs_p95") != -1, "upwelling p95 column present")
 	var parts0: PackedStringArray = line0.split(",")
 	var parts1: PackedStringArray = line1.split(",")
 	_expect(parts0[cols.find("row_idx")] == "0", "row 0 row_idx")
 	_expect(parts1[cols.find("row_idx")] == "1", "row 1 row_idx")
 	_expect(parts0[cols.find("cell_index")] == "0", "row 0 cell_index")
 	_expect(parts1[cols.find("cell_index")] == "1", "row 1 cell_index")
+	_expect(parts0[cols.find("climate_wind_mag_p95")] == "1", "wind magnitude p95 value")
 
 
 func _test_auto_stop_on_map_change() -> void:
