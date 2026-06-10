@@ -371,9 +371,9 @@ static func _physical_field_stats(map_data) -> Dictionary:
 	var slp_arr = map_data.get("slp_arr")
 	if typeof(slp_arr) == TYPE_PACKED_FLOAT32_ARRAY and not slp_arr.is_empty():
 		out["slp_abs_p95"] = _packed_float_abs_p95(slp_arr)
-	var wind_stats: Dictionary = _packed_vector_mag_stats(map_data.get("wind_x_arr"), map_data.get("wind_y_arr"))
-	if not wind_stats.is_empty():
-		out["wind_mag_p95"] = wind_stats["p95"]
+	var wind_speed_arr = map_data.get("wind_speed_arr")
+	if typeof(wind_speed_arr) == TYPE_PACKED_FLOAT32_ARRAY and not wind_speed_arr.is_empty():
+		out["wind_mag_p95"] = _packed_float_abs_p95(wind_speed_arr)
 	var ocean_stats: Dictionary = _packed_vector_mag_stats(map_data.get("ocean_current_x_arr"), map_data.get("ocean_current_y_arr"))
 	if not ocean_stats.is_empty():
 		out["ocean_mag_p95"] = ocean_stats["p95"]

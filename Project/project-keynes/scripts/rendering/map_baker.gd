@@ -5110,6 +5110,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					if profile != null:
 						knobs_wind["wind_response_rate"] = profile.wind_response_rate
 						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
+						knobs_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
 					if _rc_wind != null and float(_rc_wind) >= 0.0:
 						# Commit：从 SoA wind_x/y + wind_speed_out 写回每 cell。
@@ -5237,9 +5238,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
 						"psi_source_scale": 1.0,
-						"ocean_current_scale": 0.18,
-						"thermohaline_weight": 0.18,
-						"upwelling_highlat_abs": 0.60,
+						"ocean_current_scale": 0.30,
+						"thermohaline_weight": 0.25,
+						"upwelling_highlat_abs": 0.75,
 						"cold_sink_temp": cold_sink_temp,
 					}
 					if profile != null:

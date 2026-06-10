@@ -14974,8 +14974,8 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
 
     constexpr double PI_HALF = 1.5707963267948966;
     constexpr double UPWELLING_EKMAN_GAIN = 0.6;
-    constexpr double UPWELLING_COLD_SINK_GAIN = 0.5;
-    constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.6;
+    constexpr double UPWELLING_COLD_SINK_GAIN = 0.15;
+    constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.75;
     const double inv_bounds_h = 1.0 / bounds_size_y;
 
     for (int i = 0; i < n_cells; ++i) {
@@ -15470,9 +15470,9 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.18);
     const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
     const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 1.0);
-    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.18);
-    const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.18);
-    const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.60);
+    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.30);
+    const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.25);
+    const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.75);
     const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
     float response_rate = float(knobs.has("ocean_current_response_rate") ? double(knobs["ocean_current_response_rate"]) : 1.0);
     if (response_rate < 0.0f) response_rate = 0.0f;
