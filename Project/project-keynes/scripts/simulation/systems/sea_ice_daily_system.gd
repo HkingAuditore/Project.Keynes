@@ -18,6 +18,7 @@ var _round_active: bool = false
 var _phase_locked: float = 0.0
 var ran_this_tick: bool = false
 var _last_slice_elapsed_ms: float = 0.0
+var _terrain_facade_sync_log_count: int = 0
 
 
 func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int) -> void:
@@ -62,6 +63,19 @@ func feature_flag() -> StringName:
 	return &""
 
 
+func _sync_runtime_terrain_facade(reason: String) -> void:
+	if map == null or not map.has_soa() or not map.has_method("sync_runtime_terrain_facade_from_soa"):
+		return
+	var fixed: int = int(map.sync_runtime_terrain_facade_from_soa())
+	if fixed <= 0:
+		return
+	if _terrain_facade_sync_log_count < 12:
+		_terrain_facade_sync_log_count += 1
+		print("[sea_ice/terrain_sync] reason=%s phase=%.3f facade_fixed=%d" % [
+			reason, _phase_locked, fixed
+		])
+
+
 func should_run(ctx: SusTickContext) -> bool:
 	if generator == null or map == null:
 		return false
@@ -101,6 +115,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_round_active = not done
 	ran_this_tick = true
 	_last_slice_elapsed_ms = elapsed_ms
+	if done:
+		_sync_runtime_terrain_facade("sea_ice_done")
 
 	var stage: String = str(result.get("stage", result.get("stage_name", "sea_ice")))
 	var progress: float = 1.0 if done else 0.0
