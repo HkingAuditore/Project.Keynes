@@ -527,6 +527,59 @@ func get_data_core_world_ext():
 ##     哈希成本约 ~5μs，相对 round 整体 ~10ms 完全可忽略；
 ##   - 内层 for 循环不应再 lookup 此 Dictionary；调用方必须一次性 .get(...) 出来
 ##     存到本地 var 再用。
+## 调度边界同步：MapData.terrain_arr 是运行期 terrain 的权威源。
+## C++/GDScript 写回可能让 GDScript DCWorld 的 U8 mirror 持有旧 PackedArray；
+## 在 SUS/DCSystem tick 前按需补齐，避免天气/洋流/气候读取旧地形。
+func _sync_data_core_runtime_terrain_mirror(map: MapData, reason: String) -> Dictionary:
+	var diag: Dictionary = {
+		"terrain_mismatch": 0,
+		"is_water_mismatch": 0,
+		"terrain_written": false,
+		"is_water_written": false,
+	}
+	if map == null or _data_core_world == null or not _data_core_world.is_bound():
+		return diag
+	if not _data_core_world.has_method("view_u8") or not _data_core_world.has_method("write_u8_dense"):
+		return diag
+	var n: int = mini(map.cell_count(), map.terrain_arr.size())
+	if n <= 0:
+		return diag
+
+	var terrain_mismatch: int = 0
+	var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
+	if cid_terrain >= 0:
+		var dc_terrain: PackedByteArray = _data_core_world.view_u8(cid_terrain)
+		for i in range(mini(n, dc_terrain.size())):
+			if int(dc_terrain[i]) != int(map.terrain_arr[i]):
+				terrain_mismatch += 1
+		if terrain_mismatch > 0:
+			_data_core_world.write_u8_dense(cid_terrain, map.terrain_arr)
+			diag["terrain_written"] = true
+
+	var is_water_mismatch: int = 0
+	var water_n: int = mini(map.cell_count(), map.is_water_arr.size())
+	var cid_is_water: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
+	if cid_is_water >= 0 and water_n > 0:
+		var dc_is_water: PackedByteArray = _data_core_world.view_u8(cid_is_water)
+		for i in range(mini(water_n, dc_is_water.size())):
+			if int(dc_is_water[i]) != int(map.is_water_arr[i]):
+				is_water_mismatch += 1
+		if is_water_mismatch > 0:
+			_data_core_world.write_u8_dense(cid_is_water, map.is_water_arr)
+			diag["is_water_written"] = true
+
+	diag["terrain_mismatch"] = terrain_mismatch
+	diag["is_water_mismatch"] = is_water_mismatch
+	if (terrain_mismatch > 0 or is_water_mismatch > 0) \
+			and _dc_terrain_mirror_sync_log_count < _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS:
+		_dc_terrain_mirror_sync_log_count += 1
+		print("[dc/terrain_mirror_sync] reason=%s terrain_mis=%d isw_mis=%d terrain_written=%s isw_written=%s" % [
+			reason, terrain_mismatch, is_water_mismatch,
+			str(bool(diag["terrain_written"])), str(bool(diag["is_water_written"])),
+		])
+	return diag
+
+
 func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	if cp == null:
 		return {}
@@ -633,6 +686,8 @@ var _data_core_world: DCWorld = null
 #   决定是否走 C++ 加速；任何失败一律 fallback 到 DataCore-GDScript 路径
 # - ClassDB.instantiate("DCWorldExt") 由 gdext/src/register_types.cpp 注册
 var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
+var _dc_terrain_mirror_sync_log_count: int = 0
 # DOTS-Total-CPP（任务 6）：ocean_water_pass 同 tick 复用 short-circuit。
 # climate_daily 与 ocean_currents_job 都可能调 _ocean_water_pass；同一 phase
 # 只跑一次。NaN = 未跑过；reset_progress 时清回 NaN。
@@ -2560,6 +2615,7 @@ func sus_tick_daily(world_clock_node) -> Dictionary:
 	if _native_daily_sim_job != null and _native_daily_sim_job.has_method("reset_run_flag"):
 		_native_daily_sim_job.reset_run_flag()
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
+	_sync_data_core_runtime_terrain_mirror(_sus_map, "sus_tick_pre")
 	_sus.tick(ctx)
 	if _native_daily_sim_job == null:
 		_run_native_daily_shadow_probe(ctx, _sus_map, _sus_world)

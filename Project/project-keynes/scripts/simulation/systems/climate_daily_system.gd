@@ -152,10 +152,13 @@ const _CLIMATE_INTEGRITY_INITIAL_LOGS: int = 18
 const _CLIMATE_INTEGRITY_MIN_INTERVAL_MSEC: int = 2500
 const _CLIMATE_INTEGRITY_TEMP_EDGE_WARN: float = 0.35
 const _CLIMATE_INTEGRITY_EPS: float = 0.00001
+const _CLIMATE_TERRAIN_VIEW_SYNC_INITIAL_LOGS: int = 12
 var _climate_integrity_log_count: int = 0
 var _climate_integrity_last_msec: int = -1000000
+var _climate_terrain_view_sync_log_count: int = 0
 var _climate_integrity_prev_wind_x: PackedFloat32Array = PackedFloat32Array()
 var _climate_integrity_prev_wind_y: PackedFloat32Array = PackedFloat32Array()
+var _climate_integrity_prev_wind_speed: PackedFloat32Array = PackedFloat32Array()
 var _climate_integrity_prev_ocean_x: PackedFloat32Array = PackedFloat32Array()
 var _climate_integrity_prev_ocean_y: PackedFloat32Array = PackedFloat32Array()
 
@@ -351,6 +354,69 @@ func _standalone_sea_ice_enabled() -> bool:
 	return cp != null \
 			and cp.get("sea_ice_independent_system_enabled") != null \
 			and bool(cp.sea_ice_independent_system_enabled)
+
+
+func _sync_runtime_terrain_views(reason: String) -> Dictionary:
+	var diag: Dictionary = {}
+	if map == null or not map.has_soa():
+		return diag
+	var n: int = mini(map.cell_count(), map.terrain_arr.size())
+	if n <= 0:
+		return diag
+	var samples: PackedStringArray = PackedStringArray()
+	var cell_terrain_mismatch: int = 0
+	for i in range(n):
+		var cell: HexCell = map.cell_at(i)
+		if cell == null:
+			continue
+		var soa_terrain: int = int(map.terrain_arr[i]) & 0xFF
+		if int(cell.terrain) != soa_terrain:
+			cell_terrain_mismatch += 1
+			if samples.size() < 3:
+				samples.append("idx=%d q=%s r=%s cell=%d soa=%d" % [
+					i, str(cell.q), str(cell.r), int(cell.terrain), soa_terrain
+				])
+	var facade_fixed: int = 0
+	if map.has_method("sync_runtime_terrain_facade_from_soa"):
+		facade_fixed = int(map.sync_runtime_terrain_facade_from_soa())
+
+	var dc_terrain_mismatch_observed: int = 0
+	var dc_iswater_mismatch_observed: int = 0
+	if _world != null and _world.is_bound() and _world.has_method("view_u8"):
+		var cid_terrain: int = int(_cid.get(DCComponentIds.CELL_TERRAIN, -1))
+		if cid_terrain >= 0:
+			var dc_terrain: PackedByteArray = _world.view_u8(cid_terrain)
+			for i in range(mini(n, mini(dc_terrain.size(), map.terrain_arr.size()))):
+				if int(dc_terrain[i]) != int(map.terrain_arr[i]):
+					dc_terrain_mismatch_observed += 1
+		var cid_iswater: int = int(_cid.get(DCComponentIds.CELL_IS_WATER, -1))
+		if cid_iswater >= 0:
+			var dc_iswater: PackedByteArray = _world.view_u8(cid_iswater)
+			for i in range(mini(n, mini(dc_iswater.size(), map.is_water_arr.size()))):
+				if int(dc_iswater[i]) != int(map.is_water_arr[i]):
+					dc_iswater_mismatch_observed += 1
+
+	if cell_terrain_mismatch <= 0 and facade_fixed <= 0 \
+			and dc_terrain_mismatch_observed <= 0 and dc_iswater_mismatch_observed <= 0:
+		return diag
+
+	diag = {
+		"reason": reason,
+		"cell_terr_mis_before": cell_terrain_mismatch,
+		"facade_fixed": facade_fixed,
+		"dc_terr_mis_observed": dc_terrain_mismatch_observed,
+		"dc_isw_mis_observed": dc_iswater_mismatch_observed,
+	}
+	if _diagnostics_enabled() or _climate_terrain_view_sync_log_count < _CLIMATE_TERRAIN_VIEW_SYNC_INITIAL_LOGS:
+		_climate_terrain_view_sync_log_count += 1
+		var sample_text: String = ""
+		if samples.size() > 0:
+			sample_text = " samples=%s" % " | ".join(samples)
+		print("[climate/terrain_sync] reason=%s phase=%.3f cell_terr_mis_before=%d facade_fixed=%d dc_terr_mis_observed=%d dc_isw_mis_observed=%d%s" % [
+			reason, _phase_locked, cell_terrain_mismatch, facade_fixed,
+			dc_terrain_mismatch_observed, dc_iswater_mismatch_observed, sample_text,
+		])
+	return diag
 
 
 func _begin_round_pass_state() -> void:
@@ -673,6 +739,7 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 	var tta_a: PackedFloat32Array = map.temperature_transport_anomaly_arr
 	var wind_x_a: PackedFloat32Array = map.wind_x_arr
 	var wind_y_a: PackedFloat32Array = map.wind_y_arr
+	var wind_speed_a: PackedFloat32Array = map.wind_speed_arr
 	var ocean_x_a: PackedFloat32Array = map.ocean_current_x_arr
 	var ocean_y_a: PackedFloat32Array = map.ocean_current_y_arr
 	var sea_ice_a: PackedFloat32Array = map.sea_ice_frac_arr
@@ -848,6 +915,24 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 	var wind_mag_avg: float = wind_mag_sum / maxf(1.0, float(wind_n))
 	var wind_delta_p95: float = _percentile_from_sorted(wind_delta_vals, 0.95)
 
+	var wind_speed_min: float = 999999.0
+	var wind_speed_max: float = 0.0
+	var wind_speed_sum: float = 0.0
+	var wind_speed_delta_vals: Array = []
+	var wind_speed_n: int = mini(n, wind_speed_a.size())
+	for i in range(wind_speed_n):
+		var wspd: float = wind_speed_a[i]
+		wind_speed_min = minf(wind_speed_min, wspd)
+		wind_speed_max = maxf(wind_speed_max, wspd)
+		wind_speed_sum += wspd
+		if _climate_integrity_prev_wind_speed.size() == wind_speed_a.size():
+			wind_speed_delta_vals.append(absf(wspd - _climate_integrity_prev_wind_speed[i]))
+	wind_speed_delta_vals.sort()
+	if wind_speed_n <= 0:
+		wind_speed_min = 0.0
+	var wind_speed_avg: float = wind_speed_sum / maxf(1.0, float(wind_speed_n))
+	var wind_speed_delta_p95: float = _percentile_from_sorted(wind_speed_delta_vals, 0.95)
+
 	var ocean_mag_max: float = 0.0
 	var ocean_mag_sum: float = 0.0
 	var ocean_delta_vals: Array = []
@@ -874,13 +959,14 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 
 	_climate_integrity_log_count += 1
 	_climate_integrity_last_msec = now_msec
-	print("[climate/integrity] #%d stage=%s phase=%.3f n=%d terr_isw_mis=%d terr_lut_mis=%d cell_terr_mis=%d cell_pass_mis=%d cell_isw_mis=%d dc_terr_mis=%d dc_isw_mis=%d temp_edge_max=%.3f temp_edge_p99=%.3f temp_edge_warn=%d lat_band_max=%.3f air_nonzero=%d air_abs_max=%.5f tta_abs_max=%.5f wind_mag=%.3f/%.3f/%.3f wind_delta_p95=%.6f ocean_mag_avg=%.3f ocean_mag_max=%.3f ocean_delta_p95=%.6f ocean_water_zero=%d non_ocean_nonzero=%d moisture_base_r=%.3f precip_vapor_r=%.3f precip_cloud_r=%.3f precip_instab_r=%.3f precip_p95=%.3f" % [
+	print("[climate/integrity] #%d stage=%s phase=%.3f n=%d terr_isw_mis=%d terr_lut_mis=%d cell_terr_mis=%d cell_pass_mis=%d cell_isw_mis=%d dc_terr_mis=%d dc_isw_mis=%d temp_edge_max=%.3f temp_edge_p99=%.3f temp_edge_warn=%d lat_band_max=%.3f air_nonzero=%d air_abs_max=%.5f tta_abs_max=%.5f wind_dir_mag=%.3f/%.3f/%.3f wind_dir_delta_p95=%.6f wind_speed=%.3f/%.3f/%.3f wind_speed_delta_p95=%.6f ocean_mag_avg=%.3f ocean_mag_max=%.3f ocean_delta_p95=%.6f ocean_water_zero=%d non_ocean_nonzero=%d moisture_base_r=%.3f precip_vapor_r=%.3f precip_cloud_r=%.3f precip_instab_r=%.3f precip_p95=%.3f" % [
 		_climate_integrity_log_count, stage_name, _phase_locked, n,
 		terrain_iswater_mismatch, terrain_lut_mismatch, cell_terrain_mismatch,
 		cell_passable_mismatch, cell_iswater_mismatch, dc_terrain_mismatch,
 		dc_iswater_mismatch, temp_edge_max, temp_edge_p99, temp_edge_warn,
 		lat_band_max, air_nonzero, air_abs_max, tta_abs_max,
 		wind_mag_min, wind_mag_avg, wind_mag_max, wind_delta_p95,
+		wind_speed_min, wind_speed_avg, wind_speed_max, wind_speed_delta_p95,
 		ocean_mag_avg, ocean_mag_max, ocean_delta_p95,
 		ocean_water_zero_current, non_ocean_nonzero_current,
 		moisture_base_r, precip_vapor_r, precip_cloud_r, precip_instability_r,
@@ -895,6 +981,7 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 
 	_climate_integrity_prev_wind_x = wind_x_a.duplicate()
 	_climate_integrity_prev_wind_y = wind_y_a.duplicate()
+	_climate_integrity_prev_wind_speed = wind_speed_a.duplicate()
 	_climate_integrity_prev_ocean_x = ocean_x_a.duplicate()
 	_climate_integrity_prev_ocean_y = ocean_y_a.duplicate()
 
@@ -918,6 +1005,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_t_transp_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
 		_round_active = true
+		_sync_runtime_terrain_views("round_start")
 		_begin_round_pass_state()
 		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
 			map.soa_begin_climate_transaction()
@@ -1102,12 +1190,14 @@ func _run_pass(pass_id: int) -> bool:
 			if generator.has_method("run_climate_pass_slice"):
 				var r_si: Dictionary = generator.run_climate_pass_slice("sea_ice", map, _phase_locked)
 				_round_t_sea_ice_ms += float(r_si.get("elapsed_ms", 0.0))
+				_sync_runtime_terrain_views("sea_ice_slice")
 				_record_pass_result(pass_id, token, r_si, float(r_si.get("elapsed_ms", 0.0)), "sea_ice", str(r_si.get("stage", "state_machine")), "climate_chunk_api")
 				return bool(r_si.get("done", true))
 			else:
 				generator._apply_sea_ice_daily_pass(map, _phase_locked)
 				_round_t_sea_ice_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
 				var r_si: Dictionary = _make_pass_result(true, _round_t_sea_ice_ms, map.cell_count(), 0, map.cell_count())
+				_sync_runtime_terrain_views("sea_ice_fallback")
 				_record_pass_result(pass_id, token, r_si, _round_t_sea_ice_ms, "sea_ice", "oneshot_fallback", "native_or_gd")
 				return true
 		_PASS_TRANSP:
