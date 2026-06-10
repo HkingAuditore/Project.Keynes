@@ -38,6 +38,7 @@ class _MockMap:
 	var slp_arr: PackedFloat32Array = PackedFloat32Array()
 	var wind_x_arr: PackedFloat32Array = PackedFloat32Array()
 	var wind_y_arr: PackedFloat32Array = PackedFloat32Array()
+	var wind_speed_arr: PackedFloat32Array = PackedFloat32Array()
 	var ocean_current_x_arr: PackedFloat32Array = PackedFloat32Array()
 	var ocean_current_y_arr: PackedFloat32Array = PackedFloat32Array()
 	var upwelling_strength_arr: PackedFloat32Array = PackedFloat32Array()
@@ -61,6 +62,7 @@ class _MockMap:
 		slp_arr.resize(n)
 		wind_x_arr.resize(n)
 		wind_y_arr.resize(n)
+		wind_speed_arr.resize(n)
 		ocean_current_x_arr.resize(n)
 		ocean_current_y_arr.resize(n)
 		upwelling_strength_arr.resize(n)
@@ -79,6 +81,7 @@ class _MockMap:
 			slp_arr[i] = -0.25 + 0.50 * float(i)
 			wind_x_arr[i] = 1.0
 			wind_y_arr[i] = 0.0
+			wind_speed_arr[i] = 0.75 + 0.25 * float(i)
 			ocean_current_x_arr[i] = 0.0
 			ocean_current_y_arr[i] = 0.20 * float(i)
 			upwelling_strength_arr[i] = -0.10 * float(i)
@@ -210,7 +213,7 @@ func _test_state_machine_and_export() -> void:
 	_expect(parts1[cols.find("row_idx")] == "1", "row 1 row_idx")
 	_expect(parts0[cols.find("cell_index")] == "0", "row 0 cell_index")
 	_expect(parts1[cols.find("cell_index")] == "1", "row 1 cell_index")
-	_expect(parts0[cols.find("climate_wind_mag_p95")] == "1", "wind magnitude p95 value")
+	_expect(parts0[cols.find("climate_wind_mag_p95")] == "0.75", "wind speed p95 value")
 
 
 func _test_auto_stop_on_map_change() -> void:

@@ -25,7 +25,7 @@ const SusJobScript = preload("res://scripts/simulation/sus/sus_job.gd")
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
 const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
-const _MAX_CLIMATE_DEFER_STREAK: int = 4
+const _MAX_CLIMATE_DEFER_STREAK: int = 1
 const _PIXEL_TARGET_MS: float = 0.85
 const _PIXEL_MIN_QUOTA: int = 512
 const _PIXEL_MAX_QUOTA: int = 8192
@@ -95,14 +95,11 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	priority = 200  # runs after refresh_climate_daily (100) / weather (150)
 	slice_budget_ms = 0.55
 	max_slices_per_tick = 1
-	# Ocean currents are a slow visual/simulation layer. Let the scheduler defer
-	# slices when the frame budget is already exhausted instead of forcing a
-	# fast-tick spike.
-	must_run = false
-	# Starvation 防护（2026-05-11）：连续被 frame_budget_exhausted 跳过 6 次后
-	# 强制让步一次。配合 ContinuousSlicedPolicy 的 period_ticks 节流，依然能
-	# 保证慢层视觉/物理推进不冻结。
-	starvation_threshold = 0
+	# Wind/ocean per-cell fields feed climate and weather. Keep one small slice
+	# moving each eligible tick so physical circulation cannot freeze behind
+	# frame-budget pressure.
+	must_run = true
+	starvation_threshold = 4
 	baker = p_baker
 	map = p_map
 	world = p_world

@@ -672,11 +672,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
 @export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.075
 @export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12
-@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.55
+@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
 @export_range(0.0, 0.20, 0.005) var wind_synoptic_amp: float = 0.075
 # Debug isolation: true forces physical wind solve to output WindBelt only,
 # bypassing pressure-gradient/monsoon/synoptic/old-wind inertia.
-@export var wind_belt_only_debug: bool = true
+@export var wind_belt_only_debug: bool = false
 @export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.28
 @export_range(0.0, 1.0, 0.01) var slp_ice_high_weight: float = 0.12
 @export_range(0.0, 1.0, 0.01) var slp_snow_high_weight: float = 0.06
@@ -695,7 +695,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 跳过 ψ 求解，直接用纬度风场 + Ekman ±45° 写出 hex ocean_current
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
-@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.45
+@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
 @export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.20
 @export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
 @export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.20
