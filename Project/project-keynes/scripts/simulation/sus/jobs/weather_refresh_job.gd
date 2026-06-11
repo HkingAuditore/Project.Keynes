@@ -65,6 +65,7 @@ var _round_stage: int = 0
 var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _climate_defer_streak: int = 0
 var _merged_native_first_log_done: bool = false
+var _weather_rt_diag_count: int = 0
 
 
 func _publish_fronts_if_changed(fronts: Array[WeatherFront]) -> bool:
@@ -141,6 +142,20 @@ func _fronts_signature_diff(prev: PackedStringArray, next: PackedStringArray) ->
 		"added_slots": added,
 		"removed_slots": removed,
 	}
+
+
+func _weather_rt_log(ctx: SusTickContext, stage_name: String, detail: String = "") -> void:
+	if _weather_rt_diag_count >= 32:
+		return
+	_weather_rt_diag_count += 1
+	var suffix: String = ""
+	if detail != "":
+		suffix = " " + detail
+	print("[weather_refresh][RT] #%d tick=%d stage=%s stride=%d round=%s rstage=%d fronts=%d changed=%s%s" % [
+		_weather_rt_diag_count, ctx.tick_index, stage_name, stride,
+		str(_round_active), _round_stage, _last_fronts.size(),
+		str(_fronts_changed_this_tick), suffix,
+	])
 
 
 # ─── DataCore: weather component 注册与缓存（Task 8） ───────────────────
@@ -700,6 +715,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"prelude_ms": prelude_ms,
 	}
 	var use_merged_native_weather: bool = _should_use_merged_native_weather(can_slice_field)
+	_weather_rt_log(ctx, "entry", "can_slice=%s merged=%s dc=%s prelude=%.3f phase=%.3f" % [
+		str(can_slice_field), str(use_merged_native_weather), str(is_data_core_on),
+		prelude_ms, season_phase,
+	])
 	if use_merged_native_weather and not _merged_native_first_log_done:
 		_merged_native_first_log_done = true
 		print("[weather/native-daily] merged transaction ACTIVE — field/distribute/summary/stage_b run in one SUS slice; legacy sliced path remains fallback")
@@ -747,6 +766,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"path": "data_core_cells_only" if is_data_core_on else "legacy",
 		}
 		merged_report.merge(_last_fronts_diff_report, true)
+		_weather_rt_log(ctx, "merged_done", "elapsed=%.3f changed_slots=%d" % [
+			merged_elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+		])
 		return merged_report
 
 	if can_slice_field and not use_merged_native_weather:
@@ -759,6 +781,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_round_fronts = _last_fronts
 			var begin_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 			_publish_job_timing(timing, begin_elapsed_ms, "weather_begin")
+			_weather_rt_log(ctx, "begin", "elapsed=%.3f dc=%s" % [
+				begin_elapsed_ms, str(is_data_core_on),
+			])
 			return {
 				"done": false,
 				"work_done": 0,
@@ -780,6 +805,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var solve_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 			_publish_job_timing(timing, solve_elapsed_ms, "weather_solve")
 			if not slice_done:
+				_weather_rt_log(ctx, "solve", "elapsed=%.3f work=%d cursor=%d..%d progress=%.3f" % [
+					solve_elapsed_ms,
+					int(slice_result.get("work_done", 0)),
+					int(slice_result.get("cursor_start", -1)),
+					int(slice_result.get("cursor_end", -1)),
+					float(slice_result.get("progress_ratio", 0.0)),
+				])
 				return {
 					"done": false,
 					"work_done": int(slice_result.get("work_done", 0)),
@@ -793,6 +825,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 					"cursor_end": int(slice_result.get("cursor_end", -1)),
 				}
 			_round_stage = 2
+			_weather_rt_log(ctx, "solve_done", "elapsed=%.3f work=%d cursor=%d..%d" % [
+				solve_elapsed_ms,
+				int(slice_result.get("work_done", 0)),
+				int(slice_result.get("cursor_start", -1)),
+				int(slice_result.get("cursor_end", -1)),
+			])
 			return {
 				"done": false,
 				"work_done": int(slice_result.get("work_done", 0)),
@@ -813,6 +851,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_round_stage = 3
 			var commit_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 			_publish_job_timing(timing, commit_elapsed_ms, "weather_summary")
+			_weather_rt_log(ctx, "summary", "elapsed=%.3f fronts=%d" % [
+				commit_elapsed_ms, committed_fronts.size(),
+			])
 			return {
 				"done": false,
 				"work_done": committed_fronts.size(),
@@ -851,6 +892,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"path": "data_core_cells_only" if is_data_core_on else "legacy",
 		}
 		sliced_report.merge(_last_fronts_diff_report, true)
+		_weather_rt_log(ctx, "commit", "elapsed=%.3f changed_slots=%d" % [
+			sliced_elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+		])
 		return sliced_report
 
 	var t_direct_a_us: int = Time.get_ticks_usec()
@@ -886,6 +930,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"path": "data_core_cells_only" if is_data_core_on else "legacy",
 	}
 	direct_report.merge(_last_fronts_diff_report, true)
+	_weather_rt_log(ctx, "direct", "elapsed=%.3f changed_slots=%d" % [
+		elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+	])
 	return direct_report
 
 
@@ -1010,6 +1057,7 @@ func reset_progress() -> void:
 	_fronts_changed_this_tick = false
 	_climate_defer_streak = 0
 	_merged_native_first_log_done = false
+	_weather_rt_diag_count = 0
 	# 强制下一次 run_slice 重新探测 merged-native gate（generator/ext 可能在
 	# scene reload 期间被替换或新 facade 被注入；缓存失效后下一 slice 自检即可）。
 	_merged_native_gate_probed = false

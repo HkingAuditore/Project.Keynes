@@ -40,6 +40,7 @@ var _topology_built: bool = false
 
 # 拓扑顺序（_systems 的索引序列；与 DCEcsScheduler.topo_sort 同算法）
 var _topo_order: PackedInt32Array = PackedInt32Array()
+var _ocean_scheduler_diag_count: int = 0
 
 
 # ─── 配置（与 SusScheduler 同名透传） ────────────────────────────────
@@ -183,6 +184,7 @@ func tick(ctx) -> void:
 					all_reads.append(r_name)
 		_world._debug_begin_pass(all_writes, all_reads, &"dc_system_scheduler.tick")
 	_sus.tick(ctx)
+	_log_ocean_scheduler_report(ctx)
 	if OS.is_debug_build() and _world != null and _world.has_method("_debug_end_pass"):
 		_world._debug_end_pass(&"dc_system_scheduler.tick")
 
@@ -215,6 +217,39 @@ func report_skipped_summary() -> Dictionary:
 	return _sus.report_skipped_summary()
 
 
+func _log_ocean_scheduler_report(ctx) -> void:
+	if _ocean_scheduler_diag_count >= 64:
+		return
+	if _sus == null or not _sus.has_method("report_last_tick"):
+		return
+	var report: Dictionary = _sus.report_last_tick()
+	var ocean_report: Dictionary = {}
+	if report.has(&"ocean_currents"):
+		ocean_report = report[&"ocean_currents"]
+	elif report.has("ocean_currents"):
+		ocean_report = report["ocean_currents"]
+	if ocean_report.is_empty():
+		return
+	var skipped: String = str(ocean_report.get("skipped_reason", ""))
+	if skipped == "":
+		return
+	_ocean_scheduler_diag_count += 1
+	var tick_idx: int = -1
+	var source: String = ""
+	if ctx != null:
+		tick_idx = int(ctx.tick_index)
+		source = str(ctx.source)
+	print("[DCSystemScheduler][RT] ocean_skip#%d tick=%d reason=%s slices=%d elapsed=%.3f progress=%.3f source=%s" % [
+		_ocean_scheduler_diag_count,
+		tick_idx,
+		skipped,
+		int(ocean_report.get("slices_run", 0)),
+		float(ocean_report.get("elapsed_ms", 0.0)),
+		float(ocean_report.get("progress_ratio", 0.0)),
+		source,
+	])
+
+
 ## 当前注册 system 数。
 func system_count() -> int:
 	return _systems.size()
@@ -236,10 +271,15 @@ func topology_order_names() -> Array[String]:
 func _build_dag() -> Dictionary:
 	var n: int = _systems.size()
 	var children: Dictionary = {}
+	var edge_reasons: Dictionary = {}
 	var in_degree: PackedInt32Array = PackedInt32Array()
 	in_degree.resize(n)
 	for k in range(n):
 		children[k] = []
+
+	var id_to_index: Dictionary = {}
+	for i in range(n):
+		id_to_index[_systems[i].id] = i
 
 	for a in range(n):
 		var sa: DCSystem = _systems[a]
@@ -250,15 +290,31 @@ func _build_dag() -> Dictionary:
 			if a == b:
 				continue
 			var sb: DCSystem = _systems[b]
-			var write_to_read: bool = _intersects_string(sa_writes, sb.declare_reads())
-			var write_to_write: bool = (a < b) and _intersects_string(sa_writes, sb.declare_writes())
-			if write_to_read or write_to_write:
-				var arr: Array = children[a]
-				if not arr.has(b):
-					arr.append(b)
-					children[a] = arr
+			var read_hits: PackedStringArray = _intersection_names(sa_writes, sb.declare_reads())
+			if not read_hits.is_empty():
+				if _add_dag_edge(children, edge_reasons, a, b,
+						"write/read:%s" % ",".join(read_hits)):
 					in_degree[b] += 1
-	return {"children": children, "in_degree": in_degree}
+			if a < b:
+				var write_hits: PackedStringArray = _intersection_names(sa_writes, sb.declare_writes())
+				if not write_hits.is_empty():
+					if _add_dag_edge(children, edge_reasons, a, b,
+							"write/write:%s" % ",".join(write_hits)):
+						in_degree[b] += 1
+
+	for b in range(n):
+		for dep_id in _systems[b].depends_on:
+			if id_to_index.has(dep_id):
+				var a_dep: int = int(id_to_index[dep_id])
+				if a_dep != b:
+					if _add_dag_edge(children, edge_reasons, a_dep, b,
+							"depends_on:%s" % String(dep_id)):
+						in_degree[b] += 1
+			elif OS.is_debug_build():
+				push_warning("[DCSystemScheduler] system '%s' depends_on missing system '%s'"
+					% [String(_systems[b].id), String(dep_id)])
+
+	return {"children": children, "in_degree": in_degree, "edge_reasons": edge_reasons}
 
 
 # Kahn 拓扑排序，stable by registration order。返回 _systems 的索引序列；
@@ -267,6 +323,7 @@ func _topo_sort() -> PackedInt32Array:
 	var dag: Dictionary = _build_dag()
 	var children: Dictionary = dag["children"]
 	var in_degree: PackedInt32Array = dag["in_degree"]
+	var edge_reasons: Dictionary = dag.get("edge_reasons", {})
 	var n: int = _systems.size()
 
 	var ready: Array = []
@@ -295,6 +352,7 @@ func _topo_sort() -> PackedInt32Array:
 	if order.size() != n:
 		push_error("[DCSystemScheduler] cycle detected — declared %d systems, sorted %d"
 			% [n, order.size()])
+		_log_cycle_details(order, children, in_degree, edge_reasons)
 		return PackedInt32Array()
 	return order
 
@@ -307,3 +365,80 @@ static func _intersects_string(a: Array, b: Array) -> bool:
 		if b.has(x):
 			return true
 	return false
+
+
+static func _intersection_names(a: Array, b: Array, limit: int = 5) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	if a.is_empty() or b.is_empty():
+		return out
+	for x in a:
+		if b.has(x):
+			out.append(String(x))
+			if out.size() >= limit:
+				break
+	return out
+
+
+static func _edge_key(a: int, b: int) -> String:
+	return "%d>%d" % [a, b]
+
+
+static func _add_dag_edge(children: Dictionary, edge_reasons: Dictionary,
+		a: int, b: int, reason: String) -> bool:
+	var arr: Array = children[a]
+	var key: String = _edge_key(a, b)
+	var added: bool = false
+	if not arr.has(b):
+		arr.append(b)
+		children[a] = arr
+		added = true
+	if not edge_reasons.has(key):
+		edge_reasons[key] = []
+	var reasons: Array = edge_reasons[key]
+	if not reasons.has(reason):
+		reasons.append(reason)
+		edge_reasons[key] = reasons
+	return added
+
+
+func _log_cycle_details(order: PackedInt32Array, children: Dictionary,
+		in_degree: PackedInt32Array, edge_reasons: Dictionary) -> void:
+	var sorted: Dictionary = {}
+	for idx in order:
+		sorted[int(idx)] = true
+	var remaining: Array = []
+	for i in range(_systems.size()):
+		if not sorted.has(i):
+			remaining.append(i)
+
+	var node_lines: PackedStringArray = PackedStringArray()
+	for idx in remaining:
+		var s: DCSystem = _systems[idx]
+		node_lines.append("%s(in=%d r=%d w=%d deps=%d)" % [
+			String(s.id), in_degree[idx], s.declare_reads().size(),
+			s.declare_writes().size(), s.depends_on.size(),
+		])
+	push_error("[DCSystemScheduler] cycle residue nodes: %s" % " | ".join(node_lines))
+
+	var edge_lines: PackedStringArray = PackedStringArray()
+	for a in remaining:
+		for b_raw in children[a]:
+			var b: int = int(b_raw)
+			if not remaining.has(b):
+				continue
+			var key: String = _edge_key(a, b)
+			var reasons: Array = edge_reasons.get(key, [])
+			var reason_lines: PackedStringArray = PackedStringArray()
+			for r in reasons:
+				reason_lines.append(str(r))
+			edge_lines.append("%s -> %s via %s" % [
+				String(_systems[a].id), String(_systems[b].id), ";".join(reason_lines),
+			])
+			if edge_lines.size() >= 24:
+				break
+		if edge_lines.size() >= 24:
+			break
+	if edge_lines.is_empty():
+		push_error("[DCSystemScheduler] cycle residue edges: <none logged>")
+	else:
+		push_error("[DCSystemScheduler] cycle residue edges: %s" % " | ".join(edge_lines))

@@ -79,6 +79,9 @@ var _last_pixel_quota: int = _PIXEL_MAX_QUOTA
 var _last_pixel_slice_ms: float = 0.0
 var _last_pixel_slice_pixels: int = 0
 var _ocean_rt_diag_count: int = 0
+var _ocean_policy_diag_count: int = 0
+var _ocean_pixel_rt_diag_count: int = 0
+var _last_defer_climate_ms: float = 0.0
 # Tunables — sourced from ClimateProfile at registration time, but stored
 # here so policy and job stay in sync.
 var period_ticks: int = 30
@@ -152,18 +155,66 @@ func reset_progress() -> void:
 	_last_pixel_slice_ms = 0.0
 	_last_pixel_slice_pixels = 0
 	_ocean_rt_diag_count = 0
+	_ocean_policy_diag_count = 0
+	_ocean_pixel_rt_diag_count = 0
+	_last_defer_climate_ms = 0.0
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
+
+
+func _ticks_per_slice_diag() -> int:
+	if policy != null and policy.has_method("ticks_per_slice"):
+		return int(policy.ticks_per_slice())
+	return 0
+
+
+func _log_should_skip(ctx: SusTickContext, reason: String, detail: String = "") -> void:
+	if _ocean_policy_diag_count >= 32:
+		return
+	_ocean_policy_diag_count += 1
+	var suffix: String = ""
+	if detail != "":
+		suffix = " " + detail
+	print("[ocean_currents][RT] skip#%d tick=%d reason=%s round=%s phys_done=%s pending_commit=%s cursor=%d/%d tps=%d streak=%d%s" % [
+		_ocean_policy_diag_count, ctx.tick_index, reason, str(_round_active),
+		str(_phys_solve_done), str(_pending_commit), _next_pixel_idx, _total_pixels,
+		_ticks_per_slice_diag(), _climate_defer_streak, suffix,
+	])
+
+
+func _log_pixel_slice(ctx: SusTickContext, stage_name: String, s: int, e: int,
+		elapsed_ms: float, progress: float, used_cpp_raster: bool,
+		raster_wall_ms: float, raster_native_ms: float) -> void:
+	if _ocean_pixel_rt_diag_count >= 64:
+		return
+	var should_log: bool = _ocean_pixel_rt_diag_count < 16 \
+			or stage_name == "ocean_pixel_raster_done" \
+			or stage_name == "ocean_pixel_commit_deferred" \
+			or (ctx.tick_index % 60) == 0
+	if not should_log:
+		return
+	_ocean_pixel_rt_diag_count += 1
+	print("[ocean_currents][RT] pixel#%d tick=%d stage=%s cursor=%d..%d/%d progress=%.3f elapsed=%.3f pps=%d quota_last=%d path=%s raster_wall=%.3f raster_native=%.3f pending_commit=%s" % [
+		_ocean_pixel_rt_diag_count, ctx.tick_index, stage_name,
+		s, e, _total_pixels, progress, elapsed_ms,
+		max(0, e - s), _last_pixel_quota,
+		"gdext_raster" if used_cpp_raster else "gdscript_slice",
+		raster_wall_ms, raster_native_ms, str(_pending_commit),
+	])
 
 
 func should_run(ctx: SusTickContext) -> bool:
 	# Guard against missing dependencies (e.g. before bake_world finishes).
 	if baker == null or world == null or map == null or cfg == null:
+		_log_should_skip(ctx, "missing_refs")
 		return false
 	# Commit Defer：raster 已完成、commit 待跑 → 绕过 climate-defer 让位
 	# （commit 极轻 ~1.5ms 且必须尽快上传纹理，否则 shader 看的是旧 buffer）。
 	if _pending_commit:
-		return super.should_run(ctx)
+		var commit_allowed: bool = super.should_run(ctx)
+		if not commit_allowed:
+			_log_should_skip(ctx, "policy_pending_commit")
+		return commit_allowed
 	# 不要在 should_run 里按 phase_int 拦截整轮 ocean_currents。
 	# phase_int 只用于 run_slice 起点判断本轮是否需要刷新像素 atlas；物理化路径下
 	# wind / ocean_current / upwelling 仍必须按 ContinuousSlicedPolicy 的节奏更新，
@@ -174,8 +225,10 @@ func should_run(ctx: SusTickContext) -> bool:
 	# _phase_locked, so spreading slices across the full period_ticks window
 	# is exactly the desired behavior.
 	if not super.should_run(ctx):
+		_log_should_skip(ctx, "policy_gated", "tick_mod=%d" % (ctx.tick_index % max(1, _ticks_per_slice_diag())))
 		return false
 	if _should_defer_after_climate_slice():
+		_log_should_skip(ctx, "climate_defer", "climate_ms=%.3f" % _last_defer_climate_ms)
 		return false
 	_climate_defer_streak = 0
 	return true
@@ -187,6 +240,7 @@ func _should_defer_after_climate_slice() -> bool:
 	if not bool(climate_ran_this_tick_getter.call()):
 		return false
 	var climate_ms: float = float(climate_slice_ms_getter.call())
+	_last_defer_climate_ms = climate_ms
 	if climate_ms < _DEFER_AFTER_CLIMATE_SLICE_MS:
 		return false
 	if _climate_defer_streak >= _MAX_CLIMATE_DEFER_STREAK:
@@ -222,6 +276,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_next_pixel_idx = 0
 		_phys_solve_done = false
 		var elapsed_commit_only: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		_log_pixel_slice(ctx, "ocean_pixel_commit_deferred", _next_pixel_idx, _next_pixel_idx,
+			elapsed_commit_only, 1.0, true, -1.0, -1.0)
 		return {
 			"done": true,
 			"work_done": 0,
@@ -245,11 +301,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_phase_locked = ctx.season_phase
 		_round_active = true
 		_run_ocean_this_round = _should_run_ocean_this_round(ctx)
-		if _ocean_rt_diag_count < 24:
-			print("[ocean_currents][RT] round_start#%d tick=%d phase=%.4f wind_period=%d ocean_period=%d run_ocean=%s phase_seen=%d" % [
-				_ocean_rt_diag_count + 1, ctx.tick_index, _phase_locked, wind_period_ticks, ocean_period_ticks,
-				str(_run_ocean_this_round), _phase_int_seen,
-			])
 		# Phys Solve Sliced：新一轮起点 → 把 baker 的求解状态机复位（_phys_stage,
 		# _pending_phys_solved_phase 等），让接下来的 step_one 从 SLP 阶段重新跑。
 		# 旧路径（ny-only）下 _phys_solve_done 立即设为 true，本轮所有 slice 全用于像素工作。
@@ -270,6 +321,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		else:
 			_need_pixel_this_round = true
 			_phase_int_seen = phase_int
+		if _ocean_rt_diag_count < 24:
+			var tps: int = 0
+			if policy != null and policy.has_method("ticks_per_slice"):
+				tps = int(policy.ticks_per_slice())
+			print("[ocean_currents][RT] round_start#%d tick=%d phase=%.4f physical=%s wind_period=%d ocean_period=%d slice_count=%d tps=%d max_slices=%d run_ocean=%s need_pixel=%s phase_int=%d phase_seen=%d total_pixels=%d" % [
+				_ocean_rt_diag_count + 1, ctx.tick_index, _phase_locked,
+				str(baker._use_physical_circulation(cfg)), wind_period_ticks, ocean_period_ticks,
+				slice_count, tps, max_slices_per_tick, str(_run_ocean_this_round),
+				str(_need_pixel_this_round), phase_int, _phase_int_seen, _total_pixels,
+			])
 
 	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
 	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
@@ -301,10 +362,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
 		if _ocean_rt_diag_count < 24:
 			_ocean_rt_diag_count += 1
-			print("[ocean_currents][RT] slice#%d tick=%d stage=%s->%s done=%s ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
+			print("[ocean_currents][RT] slice#%d tick=%d stage=%s->%s done=%s run_ocean=%s need_pixel=%s elapsed=%.3f ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
 				_ocean_rt_diag_count, ctx.tick_index,
 				str(phys_report.get("stage_name", "?")), str(phys_report.get("next_stage_name", "?")),
-				str(_phys_solve_done), float(phys_report.get("ocean_delta_p95", 0.0)),
+				str(_phys_solve_done), str(_run_ocean_this_round), str(_need_pixel_this_round),
+				elapsed_solve_ms, float(phys_report.get("ocean_delta_p95", 0.0)),
 				float(phys_report.get("wind_delta_p95", 0.0)), float(phys_report.get("slp_delta_p95", 0.0)),
 				str(phys_report.get("stage_psi_path", "?")),
 			])
@@ -452,6 +514,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		slice_stage_name = "ocean_pixel_raster_done"
 	elif done:
 		slice_stage_name = "ocean_pixel_commit"
+	_log_pixel_slice(ctx, slice_stage_name, s, e, elapsed_ms, progress,
+		used_cpp_raster, raster_wall_ms, raster_native_ms)
 	return {
 		"done": done,
 		"work_done": work_done_pixels,
