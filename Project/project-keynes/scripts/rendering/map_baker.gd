@@ -401,6 +401,7 @@ var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
+var _phys_solve_rt_diag_count: int = 0
 
 # Phys Solve Sliced：求解状态机阶段。
 const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
@@ -4894,9 +4895,22 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	# 同 phase 已求解过 → idempotent fast path（caller 不需要外层判断）。
 	if not is_nan(_pending_phys_solved_phase) \
 			and absf(_pending_phys_solved_phase - season_phase) < 0.001:
+		if _phys_solve_rt_diag_count < 24:
+			_phys_solve_rt_diag_count += 1
+			print("[phys_solve][RT] cache_hit#%d phase=%.4f pending=%s stage=%d solve_ocean=%s" % [
+				_phys_solve_rt_diag_count, season_phase,
+				str(_pending_phys_solved_phase), _phys_stage, str(solve_ocean),
+			])
 		_phys_stage = _PHYS_STAGE_DONE
 		return true
 	if _phys_stage == _PHYS_STAGE_NONE:
+		if _phys_solve_rt_diag_count < 24:
+			_phys_solve_rt_diag_count += 1
+			print("[phys_solve][RT] start#%d phase=%.4f pending=%s solve_ocean=%s ext=%s idx=%s soa=%s" % [
+				_phys_solve_rt_diag_count, season_phase,
+				str(_pending_phys_solved_phase), str(solve_ocean),
+				str(_world_ext != null), str(map.has_indices()), str(map.has_soa()),
+			])
 		_phys_stage = _PHYS_STAGE_SLP
 		_phys_psi_iters_done = 0
 		_phys_wind_done_by_cpp = false

@@ -89,6 +89,14 @@ const _ABORT_REASON_RESET: String = "reset"
 const _ABORT_REASON_RESTART: String = "restart"
 const _ABORT_REASON_REPLACED: String = "replaced"
 
+const _TRANSP_STAGE_IDLE: int = 0
+const _TRANSP_STAGE_COMPUTE: int = 1
+const _TRANSP_STAGE_APPLY: int = 2
+const _TRANSP_STAGE_DONE: int = 3
+const _TRANSP_MIN_CELLS_PER_SLICE: int = 64
+const _TRANSP_TIME_CHECK_INTERVAL: int = 32
+const _TRANSP_WATER_LANDFORM_MAX: int = 3
+
 # External references — wired up by MapGenerator at registration time.
 var generator = null  # MapGenerator (untyped to avoid circular preload)
 var map: MapData = null
@@ -134,6 +142,17 @@ var _last_pass_diag: Dictionary = {}
 var _temp_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
 var _tta_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
 var _last_finalizer_diag: Dictionary = {}
+var _transp_stage: int = _TRANSP_STAGE_IDLE
+var _transp_cells: Array = []
+var _transp_neighbor_indices: PackedInt32Array = PackedInt32Array()
+var _transp_deltas: PackedFloat32Array = PackedFloat32Array()
+var _transp_landform_arr: PackedByteArray = PackedByteArray()
+var _transp_vegetation_arr: PackedByteArray = PackedByteArray()
+var _transp_moisture_arr: PackedFloat32Array = PackedFloat32Array()
+var _transp_donor_table: PackedFloat32Array = PackedFloat32Array()
+var _transp_cursor: int = 0
+var _transp_n_cells: int = 0
+var _transp_fast_indexed: bool = false
 
 # A.2.1.A4 — Dirty Mask 季节强制全图 / 每 30 日 full sweep 钩子。
 # _last_phase_int_seen：上一次 round 进入时 floor(_phase_locked) 的整数部分；
@@ -193,10 +212,6 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_SEA_ICE_FRAC,
 		DCComponentIds.CELL_ELEVATION,
 		DCComponentIds.CELL_BASE_MOISTURE,
-		DCComponentIds.CELL_OCEAN_CURRENT_X,
-		DCComponentIds.CELL_OCEAN_CURRENT_Y,
-		DCComponentIds.CELL_WIND_X,
-		DCComponentIds.CELL_WIND_Y,
 		DCComponentIds.CELL_POS_X,
 		DCComponentIds.CELL_POS_Y,
 		DCComponentIds.CELL_LAT_NORM,
@@ -318,6 +333,7 @@ func reset_progress() -> void:
 	_temp_start_of_day_arr = PackedFloat32Array()
 	_tta_start_of_day_arr = PackedFloat32Array()
 	_last_finalizer_diag = {}
+	_reset_transpiration_slice_state()
 	ran_this_tick = false
 	_last_slice_elapsed_ms = 0.0
 	_reset_last_pass_diag()
@@ -336,6 +352,20 @@ func _reset_last_pass_diag() -> void:
 	_last_pass_budget_interrupted = false
 	_last_pass_status = _PASS_RESULT_DONE
 	_last_pass_diag = {}
+
+
+func _reset_transpiration_slice_state() -> void:
+	_transp_stage = _TRANSP_STAGE_IDLE
+	_transp_cells = []
+	_transp_neighbor_indices = PackedInt32Array()
+	_transp_deltas = PackedFloat32Array()
+	_transp_landform_arr = PackedByteArray()
+	_transp_vegetation_arr = PackedByteArray()
+	_transp_moisture_arr = PackedFloat32Array()
+	_transp_donor_table = PackedFloat32Array()
+	_transp_cursor = 0
+	_transp_n_cells = 0
+	_transp_fast_indexed = false
 
 
 func _diagnostics_enabled() -> bool:
@@ -845,15 +875,29 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 					temp_edge_max = dt_edge
 					var ci: HexCell = map.cell_at(i)
 					var cn: HexCell = map.cell_at(ni)
-					temp_edge_sample = "%d(%s,%s,t%d,iw%d,e%.3f)->%d(%s,%s,t%d,iw%d,e%.3f)" % [
+					var ox_i: float = ocean_x_a[i] if i < ocean_x_a.size() else 0.0
+					var oy_i: float = ocean_y_a[i] if i < ocean_y_a.size() else 0.0
+					var ox_n: float = ocean_x_a[ni] if ni < ocean_x_a.size() else 0.0
+					var oy_n: float = ocean_y_a[ni] if ni < ocean_y_a.size() else 0.0
+					temp_edge_sample = "%d(%s,%s,t%d,iw%d,e%.3f,T%.3f,bm%.3f,si%.3f,tta%.3f,om%.3f)->%d(%s,%s,t%d,iw%d,e%.3f,T%.3f,bm%.3f,si%.3f,tta%.3f,om%.3f)" % [
 						i, str(ci.q) if ci != null else "?", str(ci.r) if ci != null else "?",
 						int(terrain_a[i]) if i < terrain_a.size() else -1,
 						int(is_water_a[i]) if i < is_water_a.size() else -1,
 						elev_a[i] if i < elev_a.size() else -1.0,
+						temp_a[i] if i < temp_a.size() else -1.0,
+						base_moisture_a[i] if i < base_moisture_a.size() else -1.0,
+						sea_ice_a[i] if i < sea_ice_a.size() else -1.0,
+						tta_a[i] if i < tta_a.size() else 0.0,
+						sqrt(ox_i * ox_i + oy_i * oy_i),
 						ni, str(cn.q) if cn != null else "?", str(cn.r) if cn != null else "?",
 						int(terrain_a[ni]) if ni < terrain_a.size() else -1,
 						int(is_water_a[ni]) if ni < is_water_a.size() else -1,
 						elev_a[ni] if ni < elev_a.size() else -1.0,
+						temp_a[ni] if ni < temp_a.size() else -1.0,
+						base_moisture_a[ni] if ni < base_moisture_a.size() else -1.0,
+						sea_ice_a[ni] if ni < sea_ice_a.size() else -1.0,
+						tta_a[ni] if ni < tta_a.size() else 0.0,
+						sqrt(ox_n * ox_n + oy_n * oy_n),
 					]
 	edge_vals.sort()
 	var temp_edge_p99: float = _percentile_from_sorted(edge_vals, 0.99)
@@ -1007,6 +1051,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_round_active = true
 		_sync_runtime_terrain_views("round_start")
 		_begin_round_pass_state()
+		_reset_transpiration_slice_state()
 		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
 			map.soa_begin_climate_transaction()
 		# A.2.1.A4 — Dirty Mask 启动时整 round 边界处理：
@@ -1074,6 +1119,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		slice_elapsed_ms = (Time.get_ticks_usec() - t_slice_us0) / 1000.0
 		if not pass_done:
 			break
+		break
 
 	# 检查 round 是否结束：cursor ≥ _PASS_COUNT 表示所有段（含 skip）都过了
 	var done: bool = _pass_cursor >= _PASS_COUNT
@@ -1108,6 +1154,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		substage_out = _last_pass_substage
 	if _last_pass_stage != "":
 		stage_name_out = _last_pass_stage
+	if _last_pass_path != "":
+		path_out = _last_pass_path
 	var processed_cells_out: int = _last_pass_processed_cells
 	return {
 		"done": done,
@@ -1201,12 +1249,195 @@ func _run_pass(pass_id: int) -> bool:
 				_record_pass_result(pass_id, token, r_si, _round_t_sea_ice_ms, "sea_ice", "oneshot_fallback", "native_or_gd")
 				return true
 		_PASS_TRANSP:
-			generator._apply_transpiration_pass(map)
-			_round_t_transp_ms = (Time.get_ticks_usec() - t_us0) / 1000.0
-			var r_tr: Dictionary = _make_pass_result(true, _round_t_transp_ms, map.cell_count(), 0, map.cell_count())
-			_record_pass_result(pass_id, token, r_tr, _round_t_transp_ms, "transp", "oneshot", "gdscript")
-			return true
+			var r_tr: Dictionary = _run_transpiration_pass_slice()
+			var tr_ms: float = float(r_tr.get("elapsed_ms", 0.0))
+			_round_t_transp_ms += tr_ms
+			_record_pass_result(pass_id, token, r_tr, tr_ms,
+				"transp", str(r_tr.get("stage", "sliced")), "gdscript_sliced")
+			return bool(r_tr.get("done", true))
 	return true
+
+
+func _begin_transpiration_sliced() -> void:
+	if map == null:
+		_transp_stage = _TRANSP_STAGE_DONE
+		return
+	_transp_cells = map.iter_cells() if map.has_indices() else map.all_cells()
+	_transp_n_cells = _transp_cells.size()
+	_transp_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	_transp_fast_indexed = _transp_neighbor_indices.size() >= _transp_n_cells * 6
+	_transp_landform_arr = map.landform_arr
+	_transp_vegetation_arr = map.vegetation_arr
+	_transp_moisture_arr = map.moisture_arr
+	if generator != null and generator.has_method("_build_transpiration_donor_table"):
+		_transp_donor_table = generator._build_transpiration_donor_table()
+	else:
+		_transp_donor_table = PackedFloat32Array()
+		_transp_donor_table.resize(VegetationType.VEG.size())
+		for v in range(_transp_donor_table.size()):
+			_transp_donor_table[v] = VegetationType.transpiration(v)
+	_transp_deltas = PackedFloat32Array()
+	_transp_deltas.resize(_transp_n_cells)
+	_transp_cursor = 0
+	_transp_stage = _TRANSP_STAGE_COMPUTE if _transp_n_cells > 0 else _TRANSP_STAGE_DONE
+
+
+func _transp_stage_label(stage_id: int) -> String:
+	match stage_id:
+		_TRANSP_STAGE_COMPUTE:
+			return "compute"
+		_TRANSP_STAGE_APPLY:
+			return "apply"
+		_TRANSP_STAGE_DONE:
+			return "done"
+		_:
+			return "idle"
+
+
+func _transp_should_yield(t_us0: int, processed: int) -> bool:
+	if processed < _TRANSP_MIN_CELLS_PER_SLICE:
+		return false
+	if processed % _TRANSP_TIME_CHECK_INTERVAL != 0:
+		return false
+	var elapsed_ms: float = float(Time.get_ticks_usec() - t_us0) / 1000.0
+	return elapsed_ms >= maxf(0.2, slice_budget_ms)
+
+
+func _transp_is_water_idx(idx: int) -> bool:
+	if idx >= 0 and idx < _transp_landform_arr.size():
+		return int(_transp_landform_arr[idx]) <= _TRANSP_WATER_LANDFORM_MAX
+	if idx >= 0 and idx < _transp_cells.size():
+		var cell: HexCell = _transp_cells[idx]
+		return cell == null or LandformType.is_water(cell.landform)
+	return true
+
+
+func _transp_factor_idx(idx: int) -> float:
+	if idx < 0 or idx >= _transp_vegetation_arr.size():
+		return 0.0
+	var veg_id: int = int(_transp_vegetation_arr[idx])
+	if veg_id < 0 or veg_id >= _transp_donor_table.size():
+		return 0.0
+	return _transp_donor_table[veg_id]
+
+
+func _transp_moisture_idx(idx: int) -> float:
+	if idx >= 0 and idx < _transp_moisture_arr.size():
+		return _transp_moisture_arr[idx]
+	if idx >= 0 and idx < _transp_cells.size():
+		var cell: HexCell = _transp_cells[idx]
+		return cell.moisture if cell != null else 0.0
+	return 0.0
+
+
+func _run_transpiration_pass_slice() -> Dictionary:
+	if _transp_stage == _TRANSP_STAGE_IDLE:
+		_begin_transpiration_sliced()
+	var t_us0: int = Time.get_ticks_usec()
+	var stage_at_start: int = _transp_stage
+	var cursor_start: int = _transp_cursor
+	var processed: int = 0
+
+	if _transp_stage == _TRANSP_STAGE_COMPUTE:
+		var cp = generator._c() if generator != null else null
+		var outflow_rate: float = 0.025
+		var self_rate: float = 0.015
+		if cp != null:
+			if cp.get("transpiration_outflow_rate") != null:
+				outflow_rate = float(cp.transpiration_outflow_rate)
+			if cp.get("transpiration_self_rate") != null:
+				self_rate = float(cp.transpiration_self_rate)
+		var nb_share_factor: float = outflow_rate / 6.0
+		while _transp_cursor < _transp_n_cells:
+			var i: int = _transp_cursor
+			_transp_cursor += 1
+			processed += 1
+			if _transp_is_water_idx(i):
+				if _transp_should_yield(t_us0, processed):
+					break
+				continue
+			var trans: float = _transp_factor_idx(i)
+			if trans >= 0.01:
+				var output: float = trans * _transp_moisture_idx(i)
+				_transp_deltas[i] = _transp_deltas[i] + output * self_rate
+				var nb_share: float = output * nb_share_factor
+				if _transp_fast_indexed:
+					var base: int = i * 6
+					for d_idx in range(6):
+						var nb_idx: int = _transp_neighbor_indices[base + d_idx]
+						if nb_idx < 0 or nb_idx >= _transp_n_cells:
+							continue
+						if _transp_is_water_idx(nb_idx):
+							continue
+						_transp_deltas[nb_idx] = _transp_deltas[nb_idx] + nb_share
+				else:
+					var cell: HexCell = _transp_cells[i]
+					if cell == null:
+						if _transp_should_yield(t_us0, processed):
+							break
+						continue
+					for nb: HexCell in map.get_neighbors(cell):
+						if nb == null or LandformType.is_water(nb.landform):
+							continue
+						var nb_idx_fallback: int = map.index_of(nb)
+						if nb_idx_fallback >= 0 and nb_idx_fallback < _transp_n_cells:
+							_transp_deltas[nb_idx_fallback] = _transp_deltas[nb_idx_fallback] + nb_share
+			if _transp_should_yield(t_us0, processed):
+				break
+		if _transp_cursor >= _transp_n_cells:
+			_transp_stage = _TRANSP_STAGE_APPLY
+			_transp_cursor = 0
+
+	elif _transp_stage == _TRANSP_STAGE_APPLY:
+		var dirty_idx: PackedInt32Array = PackedInt32Array()
+		var dirty_val: PackedFloat32Array = PackedFloat32Array()
+		var has_moisture_arr: bool = map != null and map.moisture_arr.size() == _transp_n_cells
+		while _transp_cursor < _transp_n_cells:
+			var i: int = _transp_cursor
+			_transp_cursor += 1
+			processed += 1
+			var d: float = _transp_deltas[i]
+			if d != 0.0:
+				var cell: HexCell = _transp_cells[i]
+				if cell != null:
+					var new_moist: float = clampf(_transp_moisture_idx(i) + d, 0.0, 1.0)
+					if i < _transp_moisture_arr.size():
+						_transp_moisture_arr[i] = new_moist
+					if has_moisture_arr:
+						map.moisture_arr[i] = new_moist
+					cell.moisture = new_moist
+					dirty_idx.append(i)
+					dirty_val.append(new_moist)
+			if _transp_should_yield(t_us0, processed):
+				break
+		if _world != null and _world.is_bound() and dirty_idx.size() > 0:
+			var cid_moist: int = int(_cid.get(DCComponentIds.CELL_MOISTURE, -1))
+			if cid_moist >= 0 and _world.has_method("write_f32_indexed"):
+				_world.write_f32_indexed(cid_moist, dirty_idx, dirty_val)
+		if _transp_cursor >= _transp_n_cells:
+			_transp_stage = _TRANSP_STAGE_DONE
+
+	var elapsed_ms: float = float(Time.get_ticks_usec() - t_us0) / 1000.0
+	var done: bool = _transp_stage == _TRANSP_STAGE_DONE
+	var cursor_end: int = _transp_cursor
+	if stage_at_start == _TRANSP_STAGE_COMPUTE and _transp_stage == _TRANSP_STAGE_APPLY:
+		cursor_end = _transp_n_cells
+	var stage_label: String = _transp_stage_label(stage_at_start)
+	if stage_at_start == _TRANSP_STAGE_COMPUTE:
+		stage_label = "compute_fast" if _transp_fast_indexed else "compute_fallback"
+	return {
+		"done": done,
+		"status": _PASS_RESULT_DONE if done else _PASS_RESULT_CONTINUE,
+		"elapsed_ms": elapsed_ms,
+		"processed_cells": processed,
+		"cursor_start": cursor_start,
+		"cursor_end": cursor_end,
+		"cursor_remaining": maxi(0, _transp_n_cells - _transp_cursor),
+		"budget_interrupted": not done,
+		"stage": stage_label,
+		"next_stage": _transp_stage_label(_transp_stage),
+		"budget_cells": _TRANSP_MIN_CELLS_PER_SLICE,
+	}
 
 
 func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: float) -> void:
@@ -1355,6 +1586,7 @@ func _finalize_round() -> void:
 		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
 	_debug_climate_integrity("round_done", true)
 	_finish_active_pass()
+	_reset_transpiration_slice_state()
 	_round_active = false
 	_pass_cursor = 0
 
