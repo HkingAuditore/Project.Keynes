@@ -250,15 +250,16 @@ var has_volcano: bool = false
 
 # --- 大气候系统（Phase 2 + 5 + 8） ---
 # base_moisture：生成阶段最终敲定的"年均湿度基线"（包含 coastal boost）。
-# 季节湿度刷新会从这里出发，叠加当季雨影/季风，避免 moisture 跨季累积漂移。
+# 运行时湿度/降水不再从四季倍率表刷新；由 weather field、水汽、风、地形抬升
+# 和反馈缓冲逐日演化。
 # Phase 8：每年由 refresh_yearly 微调，让长期 FOREST → +base_moisture，长期 DESERT → -。
 var base_moisture: float = 0.5
 # base_terrain：第一次定型的"年均"地形，给季节重决策做参考（譬如雪地的真正持久性）。
 var base_terrain: TerrainType.TERRAIN = TerrainType.TERRAIN.OCEAN
-# Milestone 1：年均基线的三轴快照，季节波动从这里出发
+# Milestone 1：年均基线的三轴快照，日照/天气演化围绕这些慢层基线展开
 var base_landform: int = LandformType.LF.OCEAN
 var base_vegetation: int = VegetationType.VEG.NONE
-# current_state：当季实时气候数据，由 MapGenerator.refresh_seasonal 写入。
+# current_state：实时气候/天气数据，由每日 C++/DOTS 气候与 weather pass 写入。
 # 其他系统（农业 / 移动 / AI）通过它读取"现在能不能种地"。
 # 字段（Fast-tick perf opt C 之后）：{ "season": int, "biome": int,
 #         "landform": int, "vegetation": int, "cover": int,

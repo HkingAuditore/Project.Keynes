@@ -114,8 +114,23 @@ func _process(delta: float) -> void:
 	current_day += delta * speed_multiplier
 	var d := day_index()
 	if d != _last_day:
-		_last_day = d
-		day_changed.emit(d)
+		if d > _last_day:
+			var next_day: int = _last_day + 1
+			while next_day <= d:
+				_last_day = next_day
+				day_changed.emit(next_day)
+				var day_season: int = season_index_for_day(next_day)
+				if day_season != _last_season:
+					_last_season = day_season
+					season_changed.emit(day_season)
+				var day_year: int = year_index_for_day(next_day)
+				if day_year != _last_year:
+					_last_year = day_year
+					_apply_year_rollover(day_year)
+				next_day += 1
+		else:
+			_last_day = d
+			day_changed.emit(d)
 	var s := season_index()
 	if s != _last_season:
 		_last_season = s
@@ -123,12 +138,7 @@ func _process(delta: float) -> void:
 	var y := year_index()
 	if y != _last_year:
 		_last_year = y
-		# Phase 4：年度气候漂移（pink-noise 风格随机游走）
-		climate_anomaly = clampf(
-			climate_anomaly + _rng.randf_range(-climate_random_drift, climate_random_drift),
-			-climate_anomaly_max, climate_anomaly_max
-		)
-		year_changed.emit(y)
+		_apply_year_rollover(y)
 	# 任务 2：day_phase 节流发射
 	var dp := day_phase()
 	if _should_emit_day_phase(dp):
@@ -168,6 +178,25 @@ func season_phase() -> float:
 	var dpy := days_per_year()
 	var day := fposmod(current_day, float(dpy))
 	return (day / float(dpy)) * 4.0
+
+func season_phase_for_day(day_idx: int) -> float:
+	var dpy := days_per_year()
+	var day := fposmod(float(day_idx), float(dpy))
+	return (day / float(dpy)) * 4.0
+
+func season_index_for_day(day_idx: int) -> int:
+	return int(floor(season_phase_for_day(day_idx))) & 3
+
+func year_index_for_day(day_idx: int) -> int:
+	return int(floor(float(day_idx) / float(days_per_year())))
+
+func _apply_year_rollover(year_idx: int) -> void:
+	# Phase 4：年度气候漂移（pink-noise 风格随机游走）
+	climate_anomaly = clampf(
+		climate_anomaly + _rng.randf_range(-climate_random_drift, climate_random_drift),
+		-climate_anomaly_max, climate_anomaly_max
+	)
+	year_changed.emit(year_idx)
 
 # 任务 2：昼夜相位 ∈ [0, 1)
 # 映射：0.0=日出, 0.25=正午, 0.5=日落, 0.75=午夜。

@@ -28,7 +28,7 @@ enum MODE {
 	OCEAN_CURRENT = 7,           # 洋流强度（连续，仅水域有效）
 	OCEAN_HEAT_TRANSPORT = 8,    # 洋流热输运异常（连续，双向，0 = 中性）
 	UPWELLING = 9,               # 上升流强度（连续，双向，0 = 中性）
-	WIND_SPEED = 10,             # 盛行风+季风合成模长（连续，全图）
+	WIND_SPEED = 10,             # 当前物理风速（连续，全图）
 	BIOME_GROUP = 11,            # 植被/Biome 分组（离散 10 档）
 	LANDFORM = 12,               # 地形大类（离散 6 档）
 	WIND_DIR = 13,               # 风向（地形扰动后；色相=方向，亮度=强度）
@@ -147,7 +147,7 @@ const CLIMATE_ZONE_NAMES: Array = [
 
 # WeatherType.WT 的展示名（CLEAR 透明处理，不在图例列出）。
 const WEATHER_NAMES: Array = [
-	"晴朗", "雨", "雷暴", "暴风雪", "干旱", "雾", "热浪", "季风暴雨",
+	"晴朗", "雨", "雷暴", "暴风雪", "干旱", "雾", "热浪", "热带暴雨",
 ]
 
 # BIOME_GROUP 通道：把 TerrainType.TERRAIN 的 27 种细粒度地形聚合成 10 类

@@ -43,7 +43,7 @@ const OCEAN_CURRENT_NORM_MAX: float = 0.35
 const HEAT_TRANSPORT_NORM_RANGE: float = 0.4
 const UPWELLING_NORM_RANGE: float = 1.0
 
-# 风速归一化：wind_at 已 normalize 到 1.0，叠加 monsoon_offset 后理论极值约 1.6。
+# 风速归一化：读取物理风场写入的 cell.wind_speed；fallback 纬度风带约 0.15~1.1。
 const WIND_SPEED_NORM_MAX: float = 1.7
 const SLP_OVERLAY_NORM_RANGE: float = 0.35
 
@@ -388,11 +388,14 @@ static func _sample_cell(
 			}
 		OverlayMode.MODE.WIND_DIR:
 			# 方向型通道：hue = atan2(dy, dx) / (2π) + 0.5（[0,1]），value = mag/NORM_MAX
-			# 使用 cell.wind_vector（地形扰动后），全图都有效。
+			# 使用 cell.wind_vector 给方向，cell.wind_speed 给强度。
 			var wv: Vector2 = adapter.get_wind_vector(idx)
 			var mag_w: float = wv.length()
 			if mag_w < 0.0001:
 				return { "value": 0.0, "valid": false }
+			var speed_w: float = adapter.get_wind_speed(idx)
+			if speed_w <= 0.0001:
+				speed_w = mag_w
 			var ang_w: float = atan2(wv.y, wv.x)
 			var hue_w: float = (ang_w / TAU) + 0.5  # [0, 1)
 			hue_w = fposmod(hue_w, 1.0)
@@ -401,7 +404,7 @@ static func _sample_cell(
 			# 通过返回特殊字段 hue / dir_intensity，主循环里特别处理写入。
 			return {
 				"hue": hue_w,
-				"dir_intensity": clampf(mag_w / WIND_SPEED_NORM_MAX, 0.0, 1.0),
+				"dir_intensity": clampf(speed_w / WIND_SPEED_NORM_MAX, 0.0, 1.0),
 				"valid": true,
 				"vector_mode": true,
 			}
@@ -487,19 +490,6 @@ static func _is_near_zero_sample(mode: int, value: float, intensity: float, is_v
 			return absf(value - 0.5) <= 0.01
 		_:
 			return false
-
-# Legacy compatibility only. 真实模拟与降水 overlay 不再读取 seasonal_moisture_scale。
-static func _moisture_scale_at_phase(climate, season_phase: float) -> float:
-	if climate == null:
-		return 1.0
-	var arr: Array = climate.seasonal_moisture_scale
-	if arr == null or arr.size() < 4:
-		return 1.0
-	var phase: float = fposmod(season_phase, 4.0)
-	var i0: int = int(floor(phase)) % 4
-	var i1: int = (i0 + 1) % 4
-	var t: float = phase - float(int(floor(phase)))
-	return lerpf(float(arr[i0]), float(arr[i1]), t)
 
 # 取得 cell 的真实归一化纬度 ny ∈ [0, 1]。
 # 优先级：

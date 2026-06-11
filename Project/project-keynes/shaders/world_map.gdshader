@@ -151,7 +151,7 @@ void fragment() {
 	// 注：赤道带的软混合在下方 vegetation tint 块单独处理；这里保留 eff_phase 给可能
 	// 的其它消费者，但实际 vegetation 走南/北两次 tint 颜色 mix（见 N7 注释）。
 	float eff_phase = hemi_phase(season_phase, lat_signed);
-	// True Insolation-Driven：CPU / GPU 同源季节偏移（true_insolation_enabled == true 时走 insolation 派生）
+	// True Insolation-Driven：CPU / GPU 同源日照偏移；兼容 bool 不再切换 legacy 分支。
 	float season_offset = season_offset_unified(lat_signed, season_phase);
 	float derived_temp = compute_current_temp(elev, lat_signed, season_offset);
 	float current_temp = mix(derived_temp, dyn_temp, dyn_valid);

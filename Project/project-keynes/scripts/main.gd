@@ -388,7 +388,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# 2026-05-19：Mini Perf HUD 显隐切换（右上角常驻浮窗）。
 			toggle_perf_mini_hud()
 		KEY_F8:
-			# Emergent Climate Coupling + True Insolation-Driven：一键切换"纯回退模式"。
+			# Emergent Climate Coupling：一键切换耦合调试项。
+			# 真日射链条保持运行时强制启用，不再随 F8 切回 legacy 余弦季节项。
 			toggle_emergent_debug_switches()
 		KEY_F6:
 			# 任务 9：切换 ocean_current_debug uniform（高/低对比流线）
@@ -476,10 +477,10 @@ func toggle_emergent_debug_switches() -> void:
 	cp.enable_local_climate_coupling = new_state
 	cp.emergent_weather_coupling = new_state
 	cp.fast_slow_layering_enabled = new_state
-	cp.true_insolation_enabled = new_state
-	print("[Emergent+Insolation] 5 switches → %s" % str(new_state))
+	cp.true_insolation_enabled = true
+	print("[Emergent+Insolation] coupling switches → %s; true insolation remains authoritative" % str(new_state))
 	if _renderer != null and _renderer.has_method("set_true_insolation_enabled"):
-		_renderer.set_true_insolation_enabled(new_state)
+		_renderer.set_true_insolation_enabled(true)
 	var ws: Object = _generator.call("get_weather_system") if _generator.has_method("get_weather_system") else null
 	if ws != null and ws.has_method("configure_emergent_coupling"):
 		ws.call("configure_emergent_coupling",
@@ -621,9 +622,12 @@ func _sync_clock_running_to_weather_layer() -> void:
 
 func _on_day_changed(_day_idx: int) -> void:
 	_refresh_time_label()
+	var dispatch_season_phase: float = _world_clock.season_phase()
+	if _world_clock != null and _world_clock.has_method("season_phase_for_day"):
+		dispatch_season_phase = float(_world_clock.season_phase_for_day(_day_idx))
 	# Phase 1：每"日"刷新一次 shader 季节相位
 	if _renderer != null:
-		_renderer.set_season_phase(_world_clock.season_phase())
+		_renderer.set_season_phase(dispatch_season_phase)
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
 	# ───────────────────────────────────────────────────────────────────
 	# Emergent Climate Coupling — 每日调用顺序契约（fast tick）：
@@ -659,7 +663,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 等价于此前的 was_skipped_day 行为。
 	var sus_result: Dictionary = {}
 	if _generator != null and _world_clock != null:
-		sus_result = _generator.sus_tick_daily(_world_clock)
+		sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
 	# ───────────────────────────────────────────────────────────────────
 	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时启用：
@@ -814,6 +818,10 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
 		if not climate_diag.is_empty():
 			sample["climate"] = climate_diag
+	if _generator != null and _generator.has_method("sus_ocean_currents_breakdown"):
+		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
+		if not ocean_diag.is_empty():
+			sample["ocean_currents"] = ocean_diag
 	if perf_ready:
 		_perf_recorder.call("on_fast_tick", sample)
 	if tile_ready:
@@ -904,6 +912,23 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
+					var _pass_diag: Dictionary = b.get("pass_diag", {})
+					if str(_pass_diag.get("stage", "")) == "transp" and str(_pass_diag.get("path", "")) == "gdext":
+						print("        transp gdext wall=%.2f native=%.3f call=%.3f compute=%.3f apply=%.3f flush=%.3f refresh=%.3f sync=%.3f write=%.3f mark=%.3f integrity=%.3f dirty=%d sync_path=%s" % [
+							float(_pass_diag.get("diagnostic_wall_ms", _pass_diag.get("elapsed_ms", 0.0))),
+							float(_pass_diag.get("native_ms", 0.0)),
+							float(_pass_diag.get("native_call_ms", 0.0)),
+							float(_pass_diag.get("native_compute_ms", 0.0)),
+							float(_pass_diag.get("native_apply_ms", 0.0)),
+							float(_pass_diag.get("native_flush_ms", 0.0)),
+							float(_pass_diag.get("refresh_ms", 0.0)),
+							float(_pass_diag.get("sync_ms", 0.0)),
+							float(_pass_diag.get("sync_write_ms", 0.0)),
+							float(_pass_diag.get("sync_mark_ms", 0.0)),
+							float(_pass_diag.get("integrity_ms", 0.0)),
+							int(_pass_diag.get("dirty_count", 0)),
+							str(_pass_diag.get("sync_path", "")),
+						])
 					# Ocean pass C++ vs fallback diag：当本片是 ocean_water / ocean_land
 					# 时附带 gdext runs / fallbacks / last rc，定位"为何 fallback"
 					var _cur_pass: String = str(b.get("current_pass", ""))
@@ -987,7 +1012,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("job_unattributed_ms", 0.0)),
 						])
 					if wb.has("field_commit_total_ms"):
-						print("        weather_commit inner=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f dist=%.1f summary=%.1f" % [
+						print("        weather_commit inner=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f dist=%.1f summary=%.1f path=%s" % [
 							float(wb.get("field_commit_total_ms", 0.0)),
 							float(wb.get("field_commit_setup_ms", 0.0)),
 							float(wb.get("field_commit_loop_ms", 0.0)),
@@ -995,6 +1020,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("field_commit_convergence_ms", 0.0)),
 							float(wb.get("distribute_ms", 0.0)),
 							float(wb.get("field_summary_ms", 0.0)),
+							str(wb.get("field_commit_path", "")),
 						])
 					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
 					# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除。
@@ -2092,15 +2118,9 @@ func _update_overlay_pointer_for_cell() -> void:
 			var t_v: float = ovs_ad.get_temp(ovs_idx) if ovs_ad != null else float(_selected_cell.temperature)
 			v = clampf(t_v, 0.0, 1.0)
 		OverlayMode.MODE.PRECIPITATION:
-			# 与 baker 同源的 1.5 上限（PRECIPITATION_NORM_MAX）
-			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
-			var scale: float = 1.0
-			if _generator != null:
-				var cp = _generator._c()
-				scale = DataOverlayBaker._moisture_scale_at_phase(cp, phase)
-			var bm_v: float = ovs_ad.get_base_moisture(ovs_idx) if ovs_ad != null else float(_selected_cell.base_moisture)
-			var precip: float = scale * bm_v
-			v = clampf(precip / 1.5, 0.0, 1.0)
+			# 与 baker 同源：降水 overlay 直接读取 weather pass 输出。
+			var precip: float = ovs_ad.get_weather_precip(ovs_idx) if ovs_ad != null else float(_selected_cell.weather_precip)
+			v = clampf(precip / DataOverlayBaker.PRECIPITATION_NORM_MAX, 0.0, 1.0)
 		OverlayMode.MODE.HUMIDITY:
 			var m_v: float = ovs_ad.get_moisture(ovs_idx) if ovs_ad != null else float(_selected_cell.moisture)
 			v = clampf(m_v, 0.0, 1.0)

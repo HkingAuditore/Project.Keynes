@@ -294,6 +294,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var soa_elevation: PackedFloat32Array = map.elevation_arr
 	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
 	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
+	var soa_wind_speed: PackedFloat32Array = map.wind_speed_arr
 	var soa_terrain: PackedByteArray = map.terrain_arr
 	var soa_has_river: PackedByteArray = map.has_river_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
@@ -317,7 +318,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _weather_system._field_advect_steps > 0 else -1
 		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
 		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
-		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
+		var raw_wind_speed: float = soa_wind_speed[i] if soa_wind_speed.size() == n_cells else wind.length()
+		var wind_mag: float = clampf(raw_wind_speed / 1.2, 0.0, 1.0)
 		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
 		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
 		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
@@ -477,98 +479,123 @@ func commit() -> Array[WeatherFront]:
 	if transition_enabled and cp_transition.get("weather_transition_alpha_rate") != null:
 		transition_rate = clampf(float(cp_transition.weather_transition_alpha_rate), 0.0, 1.0)
 	var water_budget_error_acc: float = 0.0
-	for i in range(cells.size()):
-		if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
-			break
-		var out_cell: HexCell = cells[i]
-		var v_cloud: float = _field_slice_next_cloud[i]
-		var v_cloud_water: float = _field_slice_next_cloud_water[i] if _field_slice_next_cloud_water.size() > i else v_cloud * 0.5
-		var v_precip: float = _field_slice_next_precip[i]
-		var v_type: int = _field_slice_next_type[i]
-		var v_intensity: float = _field_slice_next_intensity[i]
-		var v_vapor: float = _field_slice_next_vapor[i]
-		var v_convergence: float = _field_slice_next_convergence[i]
-		var v_instability: float = _field_slice_next_instability[i]
-		var prev_budget_vapor: float = _field_slice_prev_vapor[i] if _field_slice_prev_vapor.size() > i else (soa_vapor[i] if soa_vapor.size() > i else 0.0)
-		var prev_budget_cloud_water: float = soa_cloud_water[i] if soa_cloud_water.size() > i else 0.0
-		water_budget_error_acc += absf((v_vapor + v_cloud_water + v_precip) - (prev_budget_vapor + prev_budget_cloud_water))
-		var display_type: int = v_type
-		var prev_type: int = v_type
-		var target_type: int = v_type
-		var alpha: float = 1.0
-		if transition_enabled and soa_prev_type.size() > i \
-				and soa_target_type.size() > i and soa_transition_alpha.size() > i:
-			var current_display: int = v_type
+	var commit_path: String = "gdscript"
+	var commit_loop_ms: float = 0.0
+	var native_commit_done: bool = false
+	var native_wrote_next: bool = bool(_field_slice_native_knobs.get("weather_field_wrote_next", false))
+	if _weather_system._use_gdext_weather_field_commit \
+			and _weather_system._data_core_world_ext != null \
+			and _field_slice_fast_indexed \
+			and hexcell_facade_on \
+			and native_wrote_next \
+			and _field_slice_next_vapor.size() == commit_n \
+			and _field_slice_next_cloud.size() == commit_n \
+			and _field_slice_next_precip.size() == commit_n \
+			and _field_slice_next_instability.size() == commit_n \
+			and _field_slice_next_intensity.size() == commit_n \
+			and _field_slice_next_convergence.size() == commit_n \
+			and _field_slice_next_type.size() == commit_n:
+		var commit_rc: Dictionary = _weather_system._try_run_weather_field_commit_gdext(map, commit_n)
+		if float(commit_rc.get("elapsed_ms", -1.0)) >= 0.0:
+			native_commit_done = true
+			_field_slice_results_in_soa = true
+			commit_path = str(commit_rc.get("path", "gdext_commit"))
+			weather_dirty_count = int(commit_rc.get("weather_dirty_count", 0))
+			water_budget_error_acc = float(commit_rc.get("water_budget_error", 0.0)) * float(maxi(commit_n, 1))
+			commit_loop_ms = float(commit_rc.get("commit_loop_ms", commit_rc.get("elapsed_ms", 0.0)))
+	if not native_commit_done:
+		for i in range(cells.size()):
+			if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
+				break
+			var out_cell: HexCell = cells[i]
+			var v_cloud: float = _field_slice_next_cloud[i]
+			var v_cloud_water: float = _field_slice_next_cloud_water[i] if _field_slice_next_cloud_water.size() > i else v_cloud * 0.5
+			var v_precip: float = _field_slice_next_precip[i]
+			var v_type: int = _field_slice_next_type[i]
+			var v_intensity: float = _field_slice_next_intensity[i]
+			var v_vapor: float = _field_slice_next_vapor[i]
+			var v_convergence: float = _field_slice_next_convergence[i]
+			var v_instability: float = _field_slice_next_instability[i]
+			var prev_budget_vapor: float = _field_slice_prev_vapor[i] if _field_slice_prev_vapor.size() > i else (soa_vapor[i] if soa_vapor.size() > i else 0.0)
+			var prev_budget_cloud_water: float = soa_cloud_water[i] if soa_cloud_water.size() > i else 0.0
+			water_budget_error_acc += absf((v_vapor + v_cloud_water + v_precip) - (prev_budget_vapor + prev_budget_cloud_water))
+			var display_type: int = v_type
+			var prev_type: int = v_type
+			var target_type: int = v_type
+			var alpha: float = 1.0
+			if transition_enabled and soa_prev_type.size() > i \
+					and soa_target_type.size() > i and soa_transition_alpha.size() > i:
+				var current_display: int = v_type
+				if soa_type.size() > i:
+					current_display = int(soa_type[i])
+				elif out_cell != null:
+					current_display = out_cell.weather_type
+				prev_type = int(soa_prev_type[i])
+				target_type = int(soa_target_type[i])
+				alpha = clampf(soa_transition_alpha[i], 0.0, 1.0)
+				if target_type != v_type:
+					prev_type = current_display
+					target_type = v_type
+					alpha = 0.0
+				else:
+					alpha = clampf(alpha + transition_rate, 0.0, 1.0)
+				display_type = target_type if alpha >= 1.0 else prev_type
+			# 任务 2：facade 开启后跳过 AoS 双写（SoA 由本函数末尾的 batch indexed 写入）。
+			# facade=false 时仍保留 AoS 写，让 legacy reader（map_baker / map_generator）能读到值。
+			if not hexcell_facade_on:
+				out_cell.weather_field_initialized = true
+				out_cell.weather_vapor = v_vapor
+				out_cell.weather_cloud = v_cloud
+				out_cell.weather_precip = v_precip
+				out_cell.weather_instability = v_instability
+				out_cell.weather_type = display_type
+				out_cell.weather_prev_type = prev_type
+				out_cell.weather_target_type = target_type
+				out_cell.weather_transition_alpha = alpha
+				out_cell.weather_intensity = v_intensity
+				out_cell.weather_convergence = v_convergence
+			# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
+			# flush_soa_to_cells() 拿一致快照）
+			var weather_changed: bool = false
+			if soa_vapor.size() > i:
+				weather_changed = weather_changed or absf(soa_vapor[i] - v_vapor) > 0.002
+			if soa_cloud.size() > i:
+				weather_changed = weather_changed or absf(soa_cloud[i] - v_cloud) > 0.002
+			if soa_cloud_water.size() > i:
+				weather_changed = weather_changed or absf(soa_cloud_water[i] - v_cloud_water) > 0.002
+			if soa_precip.size() > i:
+				weather_changed = weather_changed or absf(soa_precip[i] - v_precip) > 0.002
 			if soa_type.size() > i:
-				current_display = int(soa_type[i])
-			elif out_cell != null:
-				current_display = out_cell.weather_type
-			prev_type = int(soa_prev_type[i])
-			target_type = int(soa_target_type[i])
-			alpha = clampf(soa_transition_alpha[i], 0.0, 1.0)
-			if target_type != v_type:
-				prev_type = current_display
-				target_type = v_type
-				alpha = 0.0
-			else:
-				alpha = clampf(alpha + transition_rate, 0.0, 1.0)
-			display_type = target_type if alpha >= 1.0 else prev_type
-		# 任务 2：facade 开启后跳过 AoS 双写（SoA 由本函数末尾的 batch indexed 写入）。
-		# facade=false 时仍保留 AoS 写，让 legacy reader（map_baker / map_generator）能读到值。
-		if not hexcell_facade_on:
-			out_cell.weather_field_initialized = true
-			out_cell.weather_vapor = v_vapor
-			out_cell.weather_cloud = v_cloud
-			out_cell.weather_precip = v_precip
-			out_cell.weather_instability = v_instability
-			out_cell.weather_type = display_type
-			out_cell.weather_prev_type = prev_type
-			out_cell.weather_target_type = target_type
-			out_cell.weather_transition_alpha = alpha
-			out_cell.weather_intensity = v_intensity
-			out_cell.weather_convergence = v_convergence
-		# SoA 镜像（与 DCWorld view_f32 同引用；renderer 在 round 末经
-		# flush_soa_to_cells() 拿一致快照）
-		var weather_changed: bool = false
-		if soa_vapor.size() > i:
-			weather_changed = weather_changed or absf(soa_vapor[i] - v_vapor) > 0.002
-		if soa_cloud.size() > i:
-			weather_changed = weather_changed or absf(soa_cloud[i] - v_cloud) > 0.002
-		if soa_cloud_water.size() > i:
-			weather_changed = weather_changed or absf(soa_cloud_water[i] - v_cloud_water) > 0.002
-		if soa_precip.size() > i:
-			weather_changed = weather_changed or absf(soa_precip[i] - v_precip) > 0.002
-		if soa_type.size() > i:
-			weather_changed = weather_changed or int(soa_type[i]) != display_type
-		if weather_changed and weather_dirty.size() == commit_n:
-			if weather_dirty[i] == 0:
-				weather_dirty_count += 1
-			weather_dirty[i] = 1
-			if _field_slice_fast_indexed and _field_slice_neighbor_indices.size() >= commit_n * 6:
-				var nb_base: int = i * 6
-				for nd in range(6):
-					var nb_i: int = _field_slice_neighbor_indices[nb_base + nd]
-					if nb_i >= 0 and nb_i < commit_n:
-						if weather_dirty[nb_i] == 0:
-							weather_dirty_count += 1
-						weather_dirty[nb_i] = 1
-		soa_intensity[i] = v_intensity
-		soa_cloud[i] = v_cloud
-		if soa_cloud_water.size() > i:
-			soa_cloud_water[i] = v_cloud_water
-		soa_precip[i] = v_precip
-		soa_type[i] = display_type & 0xFF
-		if soa_prev_type.size() > i:
-			soa_prev_type[i] = prev_type & 0xFF
-		if soa_target_type.size() > i:
-			soa_target_type[i] = target_type & 0xFF
-		if soa_transition_alpha.size() > i:
-			soa_transition_alpha[i] = alpha
-		soa_vapor[i] = v_vapor
-		soa_convergence[i] = v_convergence
-		soa_instability[i] = v_instability
-		soa_field_init[i] = 1
-	var commit_loop_ms: float = (Time.get_ticks_usec() - t_commit_loop_us) / 1000.0
+				weather_changed = weather_changed or int(soa_type[i]) != display_type
+			if weather_changed and weather_dirty.size() == commit_n:
+				if weather_dirty[i] == 0:
+					weather_dirty_count += 1
+				weather_dirty[i] = 1
+				if _field_slice_fast_indexed and _field_slice_neighbor_indices.size() >= commit_n * 6:
+					var nb_base: int = i * 6
+					for nd in range(6):
+						var nb_i: int = _field_slice_neighbor_indices[nb_base + nd]
+						if nb_i >= 0 and nb_i < commit_n:
+							if weather_dirty[nb_i] == 0:
+								weather_dirty_count += 1
+							weather_dirty[nb_i] = 1
+			soa_intensity[i] = v_intensity
+			soa_cloud[i] = v_cloud
+			if soa_cloud_water.size() > i:
+				soa_cloud_water[i] = v_cloud_water
+			soa_precip[i] = v_precip
+			soa_type[i] = display_type & 0xFF
+			if soa_prev_type.size() > i:
+				soa_prev_type[i] = prev_type & 0xFF
+			if soa_target_type.size() > i:
+				soa_target_type[i] = target_type & 0xFF
+			if soa_transition_alpha.size() > i:
+				soa_transition_alpha[i] = alpha
+			soa_vapor[i] = v_vapor
+			soa_convergence[i] = v_convergence
+			soa_instability[i] = v_instability
+			soa_field_init[i] = 1
+		commit_loop_ms = (Time.get_ticks_usec() - t_commit_loop_us) / 1000.0
 	# Full-field commit 始终覆盖 [0,n)，用 range 写避免构造 idx/value batch。
 	var t_commit_dc_us: int = Time.get_ticks_usec()
 	var _data_core_world = _weather_system._data_core_world
@@ -728,6 +755,7 @@ func commit() -> Array[WeatherFront]:
 		"field_commit_total_ms": commit_total_ms,
 		"field_commit_setup_ms": commit_setup_ms,
 		"field_commit_loop_ms": commit_loop_ms,
+		"field_commit_path": commit_path,
 		"field_commit_dc_ms": commit_dc_ms,
 		"field_commit_convergence_ms": commit_convergence_ms,
 		"weather_dirty_count": weather_dirty_count,

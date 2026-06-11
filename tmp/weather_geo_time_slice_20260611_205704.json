@@ -1,0 +1,1018 @@
+{
+  "geo": {
+    "water": {
+      "cells": 1380,
+      "precip_mean": 0.0387103371322155,
+      "cloud_mean": 0.1656060814857483,
+      "intensity_mean": 0.04181208088994026,
+      "temp_mean": 0.4734492599964142,
+      "moisture_mean": 0.5194774270057678,
+      "snow_mean": 0.0,
+      "sea_ice_mean": 0.08774536848068237,
+      "type_pct": {
+        "CLEAR": 0.7826139753438399,
+        "RAIN": 0.08345080647290198,
+        "STORM": 0.006074285261740715,
+        "BLIZZARD": 0.06358332673371875,
+        "FOG": 0.06427760618779864
+      }
+    },
+    "land": {
+      "cells": 1020,
+      "precip_mean": 0.07789646834135056,
+      "cloud_mean": 0.2522360682487488,
+      "intensity_mean": 0.13648530840873718,
+      "temp_mean": 0.39259690046310425,
+      "moisture_mean": 0.7906901836395264,
+      "snow_mean": 0.37315917015075684,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.4632844030143934,
+        "RAIN": 0.3717364905889496,
+        "STORM": 0.061152184006571665,
+        "BLIZZARD": 0.07032751169684631,
+        "FOG": 0.03349941069323904
+      }
+    },
+    "equatorial": {
+      "cells": 600,
+      "precip_mean": 0.07220327109098434,
+      "cloud_mean": 0.15972857177257538,
+      "intensity_mean": 0.10585203766822815,
+      "temp_mean": 0.7458351254463196,
+      "moisture_mean": 0.6368257403373718,
+      "snow_mean": 0.0016745300963521004,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.6620188221007893,
+        "RAIN": 0.25715543412264724,
+        "STORM": 0.07447176684881603,
+        "BLIZZARD": 0.0006314511232544019,
+        "FOG": 0.005722525804493017
+      }
+    },
+    "subtropical": {
+      "cells": 600,
+      "precip_mean": 0.06648144125938416,
+      "cloud_mean": 0.20231792330741882,
+      "intensity_mean": 0.10363418608903885,
+      "temp_mean": 0.529274046421051,
+      "moisture_mean": 0.6572425365447998,
+      "snow_mean": 0.07563351839780807,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.5836399514268367,
+        "RAIN": 0.285986642380085,
+        "STORM": 0.040506982392228295,
+        "BLIZZARD": 0.04259259259259259,
+        "FOG": 0.047273831208257434
+      }
+    },
+    "midlat": {
+      "cells": 600,
+      "precip_mean": 0.03650197014212608,
+      "cloud_mean": 0.20861229300498962,
+      "intensity_mean": 0.05922824889421463,
+      "temp_mean": 0.2953662574291229,
+      "moisture_mean": 0.6293298006057739,
+      "snow_mean": 0.3513420522212982,
+      "sea_ice_mean": 0.000996964517980814,
+      "type_pct": {
+        "CLEAR": 0.6697207043108683,
+        "RAIN": 0.14827261687917426,
+        "STORM": 0.0010595021250758955,
+        "BLIZZARD": 0.0867304189435337,
+        "FOG": 0.09421675774134791
+      }
+    },
+    "polar": {
+      "cells": 600,
+      "precip_mean": 0.04627111181616783,
+      "cloud_mean": 0.23903657495975494,
+      "intensity_mean": 0.05947829410433769,
+      "temp_mean": 0.1858723759651184,
+      "moisture_mean": 0.6155733466148376,
+      "snow_mean": 0.20572057366371155,
+      "sea_ice_mean": 0.20081739127635956,
+      "type_pct": {
+        "CLEAR": 0.6722161505768063,
+        "RAIN": 0.1324741955069824,
+        "STORM": 0.001891317547055252,
+        "BLIZZARD": 0.13584395871281116,
+        "FOG": 0.05757437765634487
+      }
+    },
+    "equatorial_water": {
+      "cells": 331,
+      "precip_mean": 0.034569744020700455,
+      "cloud_mean": 0.08014780282974243,
+      "intensity_mean": 0.013325968757271767,
+      "temp_mean": 0.8449513912200928,
+      "moisture_mean": 0.49140599370002747,
+      "snow_mean": 0.0,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.9792426768802381,
+        "RAIN": 0.005701109955480715,
+        "STORM": 0.015056213164281115
+      }
+    },
+    "equatorial_land": {
+      "cells": 269,
+      "precip_mean": 0.11851070076227188,
+      "cloud_mean": 0.25765135884284973,
+      "intensity_mean": 0.219703808426857,
+      "temp_mean": 0.623874306678772,
+      "moisture_mean": 0.8157623410224915,
+      "snow_mean": 0.0037350114434957504,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.27168017551343776,
+        "RAIN": 0.5665657735253689,
+        "STORM": 0.1475816117171471,
+        "BLIZZARD": 0.0014084411671101901,
+        "FOG": 0.012763998076936098
+      }
+    },
+    "polar_water": {
+      "cells": 467,
+      "precip_mean": 0.0387970507144928,
+      "cloud_mean": 0.22811582684516907,
+      "intensity_mean": 0.043548308312892914,
+      "temp_mean": 0.18230395019054413,
+      "moisture_mean": 0.5572486519813538,
+      "snow_mean": 0.0,
+      "sea_ice_mean": 0.25800949335098267,
+      "type_pct": {
+        "CLEAR": 0.7382158723472305,
+        "RAIN": 0.08059426717060024,
+        "STORM": 3.1203316912587806e-05,
+        "BLIZZARD": 0.11783542590577378,
+        "FOG": 0.06332323125948289
+      }
+    },
+    "polar_land": {
+      "cells": 133,
+      "precip_mean": 0.07251464575529099,
+      "cloud_mean": 0.2773825228214264,
+      "intensity_mean": 0.11541292071342468,
+      "temp_mean": 0.1984020173549652,
+      "moisture_mean": 0.8203676342964172,
+      "snow_mean": 0.9280626773834229,
+      "sea_ice_mean": 0.0,
+      "type_pct": {
+        "CLEAR": 0.44047276661599355,
+        "RAIN": 0.31463905665803854,
+        "STORM": 0.008422696084473479,
+        "BLIZZARD": 0.19907692729090487,
+        "FOG": 0.03738855335058959
+      }
+    }
+  },
+  "time": {
+    "day_28": {
+      "tick_count": 4,
+      "tick_range": [
+        483,
+        486
+      ],
+      "day_range": [
+        28,
+        28
+      ],
+      "precip_mean": 0.05681219696998596,
+      "cloud_mean": 0.20220084488391876,
+      "temp_mean": 0.4471622109413147,
+      "moisture_mean": 0.6366735100746155,
+      "dirty_cells_mean": 2388.0,
+      "type_pct": {
+        "CLEAR": 0.7008333333333333,
+        "RAIN": 0.17333333333333334,
+        "STORM": 0.05395833333333333,
+        "BLIZZARD": 0.04833333333333333,
+        "FOG": 0.023541666666666666
+      }
+    },
+    "day_50": {
+      "tick_count": 11,
+      "tick_range": [
+        487,
+        497
+      ],
+      "day_range": [
+        50,
+        50
+      ],
+      "precip_mean": 0.05728049576282501,
+      "cloud_mean": 0.20035511255264282,
+      "temp_mean": 0.451896071434021,
+      "moisture_mean": 0.6241016387939453,
+      "dirty_cells_mean": 2397.4545454545455,
+      "type_pct": {
+        "CLEAR": 0.7126515151515151,
+        "RAIN": 0.16890151515151516,
+        "STORM": 0.05503787878787879,
+        "BLIZZARD": 0.04367424242424242,
+        "FOG": 0.019734848484848484
+      }
+    },
+    "day_79": {
+      "tick_count": 12,
+      "tick_range": [
+        498,
+        509
+      ],
+      "day_range": [
+        79,
+        79
+      ],
+      "precip_mean": 0.05700506269931793,
+      "cloud_mean": 0.19623954594135284,
+      "temp_mean": 0.44461187720298767,
+      "moisture_mean": 0.6328051686286926,
+      "dirty_cells_mean": 2397.0,
+      "type_pct": {
+        "CLEAR": 0.7286111111111111,
+        "RAIN": 0.1544097222222222,
+        "STORM": 0.06111111111111111,
+        "BLIZZARD": 0.03774305555555556,
+        "FOG": 0.018125
+      }
+    },
+    "day_111": {
+      "tick_count": 452,
+      "tick_range": [
+        510,
+        961
+      ],
+      "day_range": [
+        111,
+        111
+      ],
+      "precip_mean": 0.05555794760584831,
+      "cloud_mean": 0.20328442752361298,
+      "temp_mean": 0.43827855587005615,
+      "moisture_mean": 0.635971188545227,
+      "dirty_cells_mean": 2201.734513274336,
+      "type_pct": {
+        "CLEAR": 0.6454839601769912,
+        "RAIN": 0.20514841445427728,
+        "STORM": 0.029716076696165192,
+        "BLIZZARD": 0.06865136430678466,
+        "FOG": 0.05100018436578171
+      }
+    },
+    "day_222": {
+      "tick_count": 70,
+      "tick_range": [
+        962,
+        1031
+      ],
+      "day_range": [
+        222,
+        222
+      ],
+      "precip_mean": 0.053449876606464386,
+      "cloud_mean": 0.19826455414295197,
+      "temp_mean": 0.44088634848594666,
+      "moisture_mean": 0.6287038326263428,
+      "dirty_cells_mean": 2346.2714285714287,
+      "type_pct": {
+        "CLEAR": 0.6286130952380953,
+        "RAIN": 0.22782142857142856,
+        "STORM": 0.017136904761904763,
+        "BLIZZARD": 0.061767857142857145,
+        "FOG": 0.06466071428571428
+      }
+    },
+    "first_60_ticks": {
+      "tick_count": 60,
+      "tick_range": [
+        483,
+        542
+      ],
+      "day_range": [
+        28,
+        111
+      ],
+      "precip_mean": 0.05743851140141487,
+      "cloud_mean": 0.19864408671855927,
+      "temp_mean": 0.4431590437889099,
+      "moisture_mean": 0.6236598491668701,
+      "dirty_cells_mean": 2398.0666666666666,
+      "type_pct": {
+        "CLEAR": 0.7269513888888889,
+        "RAIN": 0.164,
+        "STORM": 0.05709722222222222,
+        "BLIZZARD": 0.03352083333333333,
+        "FOG": 0.018430555555555554
+      }
+    },
+    "middle_60_ticks": {
+      "tick_count": 60,
+      "tick_range": [
+        727,
+        786
+      ],
+      "day_range": [
+        111,
+        111
+      ],
+      "precip_mean": 0.05695553869009018,
+      "cloud_mean": 0.20612847805023193,
+      "temp_mean": 0.44049185514450073,
+      "moisture_mean": 0.6414719223976135,
+      "dirty_cells_mean": 2161.8166666666666,
+      "type_pct": {
+        "CLEAR": 0.6182361111111111,
+        "RAIN": 0.2153125,
+        "STORM": 0.030916666666666665,
+        "BLIZZARD": 0.08097916666666667,
+        "FOG": 0.05455555555555556
+      }
+    },
+    "last_60_ticks": {
+      "tick_count": 60,
+      "tick_range": [
+        972,
+        1031
+      ],
+      "day_range": [
+        222,
+        222
+      ],
+      "precip_mean": 0.05326366797089577,
+      "cloud_mean": 0.19740143418312073,
+      "temp_mean": 0.44099172949790955,
+      "moisture_mean": 0.6282318830490112,
+      "dirty_cells_mean": 2367.95,
+      "type_pct": {
+        "CLEAR": 0.6293125,
+        "RAIN": 0.22761805555555556,
+        "STORM": 0.017618055555555557,
+        "BLIZZARD": 0.06154861111111111,
+        "FOG": 0.06390277777777778
+      }
+    }
+  },
+  "transition_alpha_lt1_by_type": {
+    "CLEAR": 0.01586782017800116,
+    "RAIN": 0.05138749175537697,
+    "STORM": 0.06927354167739279,
+    "BLIZZARD": 0.11041186010918976,
+    "DROUGHT": 0.0,
+    "FOG": 0.11917221341002417,
+    "HEATWAVE": 0.0,
+    "MONSOON": 0.0
+  },
+  "weather_field_changed_tick_count": 122,
+  "weather_field_changed_by_day": {
+    "28": 0,
+    "50": 2,
+    "79": 3,
+    "111": 104,
+    "222": 13
+  },
+  "weather_field_changed_events_first_80": [
+    {
+      "tick": 489,
+      "day": 50,
+      "field_delta_sum_mean": 0.04606624320149422,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05476132780313492,
+      "cloud_mean": 0.19864045083522797
+    },
+    {
+      "tick": 490,
+      "day": 50,
+      "field_delta_sum_mean": 0.05525119975209236,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05771246552467346,
+      "cloud_mean": 0.20010800659656525
+    },
+    {
+      "tick": 498,
+      "day": 79,
+      "field_delta_sum_mean": 0.02097174897789955,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05743591487407684,
+      "cloud_mean": 0.19905172288417816
+    },
+    {
+      "tick": 500,
+      "day": 79,
+      "field_delta_sum_mean": 0.04297592490911484,
+      "type_changed_cells": 0,
+      "precip_mean": 0.054555296897888184,
+      "cloud_mean": 0.19490444660186768
+    },
+    {
+      "tick": 501,
+      "day": 79,
+      "field_delta_sum_mean": 0.026709947735071182,
+      "type_changed_cells": 64,
+      "precip_mean": 0.05718151852488518,
+      "cloud_mean": 0.19576293230056763
+    },
+    {
+      "tick": 511,
+      "day": 111,
+      "field_delta_sum_mean": 0.04368824511766434,
+      "type_changed_cells": 0,
+      "precip_mean": 0.057042788714170456,
+      "cloud_mean": 0.19625747203826904
+    },
+    {
+      "tick": 512,
+      "day": 111,
+      "field_delta_sum_mean": 0.053221337497234344,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05894707515835762,
+      "cloud_mean": 0.19854456186294556
+    },
+    {
+      "tick": 522,
+      "day": 111,
+      "field_delta_sum_mean": 0.02518857829272747,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05866480618715286,
+      "cloud_mean": 0.1990075707435608
+    },
+    {
+      "tick": 525,
+      "day": 111,
+      "field_delta_sum_mean": 0.06067827343940735,
+      "type_changed_cells": 70,
+      "precip_mean": 0.05777674540877342,
+      "cloud_mean": 0.19923929870128632
+    },
+    {
+      "tick": 535,
+      "day": 111,
+      "field_delta_sum_mean": 0.0517888143658638,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05603603273630142,
+      "cloud_mean": 0.19802545011043549
+    },
+    {
+      "tick": 542,
+      "day": 111,
+      "field_delta_sum_mean": 0.08962929993867874,
+      "type_changed_cells": 0,
+      "precip_mean": 0.055206310003995895,
+      "cloud_mean": 0.1980021595954895
+    },
+    {
+      "tick": 545,
+      "day": 111,
+      "field_delta_sum_mean": 0.075551837682724,
+      "type_changed_cells": 214,
+      "precip_mean": 0.05145540088415146,
+      "cloud_mean": 0.19572985172271729
+    },
+    {
+      "tick": 554,
+      "day": 111,
+      "field_delta_sum_mean": 0.03157886117696762,
+      "type_changed_cells": 0,
+      "precip_mean": 0.0500880628824234,
+      "cloud_mean": 0.19454626739025116
+    },
+    {
+      "tick": 556,
+      "day": 111,
+      "field_delta_sum_mean": 0.07935715466737747,
+      "type_changed_cells": 119,
+      "precip_mean": 0.04938789829611778,
+      "cloud_mean": 0.19557616114616394
+    },
+    {
+      "tick": 558,
+      "day": 111,
+      "field_delta_sum_mean": 0.015846630558371544,
+      "type_changed_cells": 8,
+      "precip_mean": 0.050092168152332306,
+      "cloud_mean": 0.1963222622871399
+    },
+    {
+      "tick": 567,
+      "day": 111,
+      "field_delta_sum_mean": 0.07194008678197861,
+      "type_changed_cells": 0,
+      "precip_mean": 0.04938748851418495,
+      "cloud_mean": 0.19611859321594238
+    },
+    {
+      "tick": 568,
+      "day": 111,
+      "field_delta_sum_mean": 0.018712272867560387,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05090665817260742,
+      "cloud_mean": 0.19713784754276276
+    },
+    {
+      "tick": 575,
+      "day": 111,
+      "field_delta_sum_mean": 0.014157747849822044,
+      "type_changed_cells": 0,
+      "precip_mean": 0.051328666508197784,
+      "cloud_mean": 0.1976555585861206
+    },
+    {
+      "tick": 578,
+      "day": 111,
+      "field_delta_sum_mean": 0.038297977298498154,
+      "type_changed_cells": 0,
+      "precip_mean": 0.051187437027692795,
+      "cloud_mean": 0.1967095285654068
+    },
+    {
+      "tick": 580,
+      "day": 111,
+      "field_delta_sum_mean": 0.012929830700159073,
+      "type_changed_cells": 42,
+      "precip_mean": 0.0522666871547699,
+      "cloud_mean": 0.19731292128562927
+    },
+    {
+      "tick": 586,
+      "day": 111,
+      "field_delta_sum_mean": 0.03919010981917381,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05266455188393593,
+      "cloud_mean": 0.1998499482870102
+    },
+    {
+      "tick": 588,
+      "day": 111,
+      "field_delta_sum_mean": 0.01263089757412672,
+      "type_changed_cells": 182,
+      "precip_mean": 0.05341465026140213,
+      "cloud_mean": 0.20132112503051758
+    },
+    {
+      "tick": 592,
+      "day": 111,
+      "field_delta_sum_mean": 0.01195492222905159,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05461975187063217,
+      "cloud_mean": 0.20289428532123566
+    },
+    {
+      "tick": 597,
+      "day": 111,
+      "field_delta_sum_mean": 0.056996360421180725,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05509214475750923,
+      "cloud_mean": 0.20462507009506226
+    },
+    {
+      "tick": 600,
+      "day": 111,
+      "field_delta_sum_mean": 0.010184137150645256,
+      "type_changed_cells": 244,
+      "precip_mean": 0.05590016022324562,
+      "cloud_mean": 0.20602470636367798
+    },
+    {
+      "tick": 608,
+      "day": 111,
+      "field_delta_sum_mean": 0.017414608970284462,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05660858005285263,
+      "cloud_mean": 0.20701682567596436
+    },
+    {
+      "tick": 611,
+      "day": 111,
+      "field_delta_sum_mean": 0.05699280649423599,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05421736463904381,
+      "cloud_mean": 0.2065793126821518
+    },
+    {
+      "tick": 612,
+      "day": 111,
+      "field_delta_sum_mean": 0.017655283212661743,
+      "type_changed_cells": 58,
+      "precip_mean": 0.05545239895582199,
+      "cloud_mean": 0.20772840082645416
+    },
+    {
+      "tick": 620,
+      "day": 111,
+      "field_delta_sum_mean": 0.06304846704006195,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05557006224989891,
+      "cloud_mean": 0.20946812629699707
+    },
+    {
+      "tick": 623,
+      "day": 111,
+      "field_delta_sum_mean": 0.011839322745800018,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05671607330441475,
+      "cloud_mean": 0.21081878244876862
+    },
+    {
+      "tick": 630,
+      "day": 111,
+      "field_delta_sum_mean": 0.01597580686211586,
+      "type_changed_cells": 0,
+      "precip_mean": 0.057011961936950684,
+      "cloud_mean": 0.21092349290847778
+    },
+    {
+      "tick": 633,
+      "day": 111,
+      "field_delta_sum_mean": 0.04942361265420914,
+      "type_changed_cells": 0,
+      "precip_mean": 0.055849622935056686,
+      "cloud_mean": 0.20812104642391205
+    },
+    {
+      "tick": 635,
+      "day": 111,
+      "field_delta_sum_mean": 0.01040888112038374,
+      "type_changed_cells": 65,
+      "precip_mean": 0.056623924523591995,
+      "cloud_mean": 0.20720607042312622
+    },
+    {
+      "tick": 641,
+      "day": 111,
+      "field_delta_sum_mean": 0.03007301315665245,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05702295899391174,
+      "cloud_mean": 0.2074500173330307
+    },
+    {
+      "tick": 644,
+      "day": 111,
+      "field_delta_sum_mean": 0.007448534481227398,
+      "type_changed_cells": 160,
+      "precip_mean": 0.05722757801413536,
+      "cloud_mean": 0.2073797583580017
+    },
+    {
+      "tick": 652,
+      "day": 111,
+      "field_delta_sum_mean": 0.008659224025905132,
+      "type_changed_cells": 0,
+      "precip_mean": 0.0570392981171608,
+      "cloud_mean": 0.20707616209983826
+    },
+    {
+      "tick": 654,
+      "day": 111,
+      "field_delta_sum_mean": 0.03987623006105423,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05493249371647835,
+      "cloud_mean": 0.20402587950229645
+    },
+    {
+      "tick": 657,
+      "day": 111,
+      "field_delta_sum_mean": 0.014864616096019745,
+      "type_changed_cells": 121,
+      "precip_mean": 0.05579468980431557,
+      "cloud_mean": 0.2036789208650589
+    },
+    {
+      "tick": 663,
+      "day": 111,
+      "field_delta_sum_mean": 0.06974981725215912,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05547359958291054,
+      "cloud_mean": 0.20474301278591156
+    },
+    {
+      "tick": 666,
+      "day": 111,
+      "field_delta_sum_mean": 0.01932196132838726,
+      "type_changed_cells": 259,
+      "precip_mean": 0.054905448108911514,
+      "cloud_mean": 0.20421110093593597
+    },
+    {
+      "tick": 668,
+      "day": 111,
+      "field_delta_sum_mean": 0.014102265238761902,
+      "type_changed_cells": 0,
+      "precip_mean": 0.055239468812942505,
+      "cloud_mean": 0.2047654241323471
+    },
+    {
+      "tick": 674,
+      "day": 111,
+      "field_delta_sum_mean": 0.07176229357719421,
+      "type_changed_cells": 0,
+      "precip_mean": 0.054993513971567154,
+      "cloud_mean": 0.20498241484165192
+    },
+    {
+      "tick": 676,
+      "day": 111,
+      "field_delta_sum_mean": 0.019043389707803726,
+      "type_changed_cells": 245,
+      "precip_mean": 0.05435570329427719,
+      "cloud_mean": 0.2042217254638672
+    },
+    {
+      "tick": 678,
+      "day": 111,
+      "field_delta_sum_mean": 0.013641547411680222,
+      "type_changed_cells": 9,
+      "precip_mean": 0.05480070784687996,
+      "cloud_mean": 0.20464187860488892
+    },
+    {
+      "tick": 686,
+      "day": 111,
+      "field_delta_sum_mean": 0.07754161953926086,
+      "type_changed_cells": 0,
+      "precip_mean": 0.053323809057474136,
+      "cloud_mean": 0.2044450342655182
+    },
+    {
+      "tick": 688,
+      "day": 111,
+      "field_delta_sum_mean": 0.013136135414242744,
+      "type_changed_cells": 278,
+      "precip_mean": 0.0536918006837368,
+      "cloud_mean": 0.20449408888816833
+    },
+    {
+      "tick": 690,
+      "day": 111,
+      "field_delta_sum_mean": 0.007769083138555288,
+      "type_changed_cells": 13,
+      "precip_mean": 0.05347087234258652,
+      "cloud_mean": 0.20429077744483948
+    },
+    {
+      "tick": 696,
+      "day": 111,
+      "field_delta_sum_mean": 0.06053578853607178,
+      "type_changed_cells": 0,
+      "precip_mean": 0.053751640021800995,
+      "cloud_mean": 0.20321008563041687
+    },
+    {
+      "tick": 700,
+      "day": 111,
+      "field_delta_sum_mean": 0.01020556315779686,
+      "type_changed_cells": 278,
+      "precip_mean": 0.0540359690785408,
+      "cloud_mean": 0.20254135131835938
+    },
+    {
+      "tick": 701,
+      "day": 111,
+      "field_delta_sum_mean": 0.006719436030834913,
+      "type_changed_cells": 251,
+      "precip_mean": 0.05414821580052376,
+      "cloud_mean": 0.20214998722076416
+    },
+    {
+      "tick": 707,
+      "day": 111,
+      "field_delta_sum_mean": 0.039609551429748535,
+      "type_changed_cells": 0,
+      "precip_mean": 0.054640285670757294,
+      "cloud_mean": 0.2011372148990631
+    },
+    {
+      "tick": 710,
+      "day": 111,
+      "field_delta_sum_mean": 0.0077661024406552315,
+      "type_changed_cells": 181,
+      "precip_mean": 0.05503120273351669,
+      "cloud_mean": 0.200725257396698
+    },
+    {
+      "tick": 717,
+      "day": 111,
+      "field_delta_sum_mean": 0.005530291702598333,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05545647814869881,
+      "cloud_mean": 0.20062094926834106
+    },
+    {
+      "tick": 720,
+      "day": 111,
+      "field_delta_sum_mean": 0.03234339505434036,
+      "type_changed_cells": 17,
+      "precip_mean": 0.05361846834421158,
+      "cloud_mean": 0.19884935021400452
+    },
+    {
+      "tick": 723,
+      "day": 111,
+      "field_delta_sum_mean": 0.01016201637685299,
+      "type_changed_cells": 122,
+      "precip_mean": 0.05398792773485184,
+      "cloud_mean": 0.19866089522838593
+    },
+    {
+      "tick": 729,
+      "day": 111,
+      "field_delta_sum_mean": 0.05183892697095871,
+      "type_changed_cells": 0,
+      "precip_mean": 0.0547608956694603,
+      "cloud_mean": 0.2017153799533844
+    },
+    {
+      "tick": 731,
+      "day": 111,
+      "field_delta_sum_mean": 0.01332136057317257,
+      "type_changed_cells": 0,
+      "precip_mean": 0.055469781160354614,
+      "cloud_mean": 0.20307931303977966
+    },
+    {
+      "tick": 739,
+      "day": 111,
+      "field_delta_sum_mean": 0.011720335111021996,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05652018263936043,
+      "cloud_mean": 0.2045057862997055
+    },
+    {
+      "tick": 742,
+      "day": 111,
+      "field_delta_sum_mean": 0.06883037090301514,
+      "type_changed_cells": 0,
+      "precip_mean": 0.0543915256857872,
+      "cloud_mean": 0.20310650765895844
+    },
+    {
+      "tick": 743,
+      "day": 111,
+      "field_delta_sum_mean": 0.02247585542500019,
+      "type_changed_cells": 21,
+      "precip_mean": 0.05553678050637245,
+      "cloud_mean": 0.203273743391037
+    },
+    {
+      "tick": 752,
+      "day": 111,
+      "field_delta_sum_mean": 0.014130903407931328,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05658765137195587,
+      "cloud_mean": 0.2034256011247635
+    },
+    {
+      "tick": 754,
+      "day": 111,
+      "field_delta_sum_mean": 0.07036759704351425,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05693848803639412,
+      "cloud_mean": 0.2063056379556656
+    },
+    {
+      "tick": 756,
+      "day": 111,
+      "field_delta_sum_mean": 0.011724337004125118,
+      "type_changed_cells": 67,
+      "precip_mean": 0.05843925476074219,
+      "cloud_mean": 0.20849940180778503
+    },
+    {
+      "tick": 762,
+      "day": 111,
+      "field_delta_sum_mean": 0.058888666331768036,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05778610333800316,
+      "cloud_mean": 0.2090413123369217
+    },
+    {
+      "tick": 765,
+      "day": 111,
+      "field_delta_sum_mean": 0.011639834381639957,
+      "type_changed_cells": 238,
+      "precip_mean": 0.058466892689466476,
+      "cloud_mean": 0.2096787840127945
+    },
+    {
+      "tick": 767,
+      "day": 111,
+      "field_delta_sum_mean": 0.00710513349622488,
+      "type_changed_cells": 56,
+      "precip_mean": 0.058868397027254105,
+      "cloud_mean": 0.2099299281835556
+    },
+    {
+      "tick": 774,
+      "day": 111,
+      "field_delta_sum_mean": 0.042978934943675995,
+      "type_changed_cells": 0,
+      "precip_mean": 0.056665752083063126,
+      "cloud_mean": 0.20808279514312744
+    },
+    {
+      "tick": 777,
+      "day": 111,
+      "field_delta_sum_mean": 0.016476571559906006,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05835464969277382,
+      "cloud_mean": 0.2088712602853775
+    },
+    {
+      "tick": 784,
+      "day": 111,
+      "field_delta_sum_mean": 0.009201974608004093,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05886184796690941,
+      "cloud_mean": 0.20896083116531372
+    },
+    {
+      "tick": 786,
+      "day": 111,
+      "field_delta_sum_mean": 0.034318212419748306,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05603056773543358,
+      "cloud_mean": 0.20551466941833496
+    },
+    {
+      "tick": 789,
+      "day": 111,
+      "field_delta_sum_mean": 0.013788865879178047,
+      "type_changed_cells": 105,
+      "precip_mean": 0.05698497220873833,
+      "cloud_mean": 0.2050524801015854
+    },
+    {
+      "tick": 795,
+      "day": 111,
+      "field_delta_sum_mean": 0.055175237357616425,
+      "type_changed_cells": 0,
+      "precip_mean": 0.0570744052529335,
+      "cloud_mean": 0.2062760591506958
+    },
+    {
+      "tick": 799,
+      "day": 111,
+      "field_delta_sum_mean": 0.010932747274637222,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05726802721619606,
+      "cloud_mean": 0.20664435625076294
+    },
+    {
+      "tick": 806,
+      "day": 111,
+      "field_delta_sum_mean": 0.017579158768057823,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05708353593945503,
+      "cloud_mean": 0.2066529393196106
+    },
+    {
+      "tick": 809,
+      "day": 111,
+      "field_delta_sum_mean": 0.06275779753923416,
+      "type_changed_cells": 60,
+      "precip_mean": 0.05647539719939232,
+      "cloud_mean": 0.20512083172798157
+    },
+    {
+      "tick": 811,
+      "day": 111,
+      "field_delta_sum_mean": 0.011609763838350773,
+      "type_changed_cells": 196,
+      "precip_mean": 0.05570783093571663,
+      "cloud_mean": 0.203850656747818
+    },
+    {
+      "tick": 817,
+      "day": 111,
+      "field_delta_sum_mean": 0.08391483128070831,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05432732775807381,
+      "cloud_mean": 0.2043861448764801
+    },
+    {
+      "tick": 821,
+      "day": 111,
+      "field_delta_sum_mean": 0.015459812246263027,
+      "type_changed_cells": 0,
+      "precip_mean": 0.05511678010225296,
+      "cloud_mean": 0.2048160880804062
+    },
+    {
+      "tick": 828,
+      "day": 111,
+      "field_delta_sum_mean": 0.06698116660118103,
+      "type_changed_cells": 0,
+      "precip_mean": 0.053887754678726196,
+      "cloud_mean": 0.20235595107078552
+    },
+    {
+      "tick": 830,
+      "day": 111,
+      "field_delta_sum_mean": 0.01735488697886467,
+      "type_changed_cells": 301,
+      "precip_mean": 0.05309756100177765,
+      "cloud_mean": 0.20037463307380676
+    }
+  ]
+}

@@ -75,13 +75,13 @@ var _tile_record_btn_toast_until_msec: int = 0
 # --- 布局常量 -------------------------------------------------------------
 const PANEL_WIDTH: float = 360.0
 
-# 5 个"涌现耦合"开关映射到 ClimateProfile 字段。下拉 / CheckBox 生成顺序与展示名一致。
+# "涌现耦合"开关映射到 ClimateProfile 字段。下拉 / CheckBox 生成顺序与展示名一致。
+# true_insolation_enabled 是兼容字段，运行时日照链条强制启用，不在这里提供回退开关。
 const SIM_SWITCHES: Array = [
 	["emergent_season_enabled", "涌现季节（Emergent Season）"],
 	["enable_local_climate_coupling", "本地气候耦合（Local Coupling）"],
 	["emergent_weather_coupling", "天气耦合（Weather Coupling）"],
 	["fast_slow_layering_enabled", "快慢分层（Fast/Slow Layering）"],
-	["true_insolation_enabled", "真日射驱动（True Insolation）"],
 ]
 
 # 视觉开关映射：main.gd 上的 @export 字段名 + HexRenderer 对应 setter。
@@ -238,7 +238,7 @@ func _build_overlay_group(parent: VBoxContainer) -> void:
 	parent.add_child(row_alpha)
 
 func _build_sim_group(parent: VBoxContainer) -> void:
-	parent.add_child(_make_section_header("模拟开关（F8 等价）"))
+	parent.add_child(_make_section_header("模拟开关（F8 等价，真日射常开）"))
 	for entry in SIM_SWITCHES:
 		var field: String = entry[0]
 		var label_text: String = entry[1]
@@ -264,7 +264,7 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("移动端调试动作"))
 	_add_action_button(parent, "重新生成地图（R）", &"regenerate_debug_map")
 	_add_action_button(parent, "适配视口（F）", &"fit_debug_map")
-	_add_action_button(parent, "切换 5 项涌现/日射（F8）", &"toggle_emergent_debug_switches")
+	_add_action_button(parent, "切换涌现耦合（F8）", &"toggle_emergent_debug_switches")
 	_add_action_button(parent, "切换洋流高对比（F6）", &"toggle_ocean_current_debug")
 
 	parent.add_child(_make_section_header("诊断打印"))
@@ -421,7 +421,7 @@ func _on_overlay_alpha_changed(v: float) -> void:
 	if _main != null and _main.has_method("_set_overlay_alpha"):
 		_main.call("_set_overlay_alpha", v)
 
-# 模拟开关：复用 main.gd 里 F8 的 5-开关同步路径，确保与 shader / WeatherSystem 一致。
+# 模拟开关：复用 main.gd 里 F8 的耦合同步语义，真日射链条保持常开。
 func _on_sim_switch_toggled(pressed: bool, field: String) -> void:
 	if _suppress_sync_signals:
 		return
@@ -433,11 +433,11 @@ func _on_sim_switch_toggled(pressed: bool, field: String) -> void:
 	if cp == null:
 		return
 	cp.set(field, pressed)
-	# 跟 F8 行为一致：emergent_* / true_insolation_enabled 任一变化都要推到 shader
-	# + WeatherSystem，才能让画面 / 天气/ 海冰 / 温度同步响应。
+	cp.set("true_insolation_enabled", true)
+	# 跟 F8 行为一致：emergent_* 变化推到 WeatherSystem；shader 始终保持真日射分支。
 	var renderer = _get_renderer()
 	if renderer != null and renderer.has_method("set_true_insolation_enabled"):
-		renderer.set_true_insolation_enabled(bool(cp.get("true_insolation_enabled")))
+		renderer.set_true_insolation_enabled(true)
 	if gen._weather_system != null and gen._weather_system.has_method("configure_emergent_coupling"):
 		gen._weather_system.configure_emergent_coupling(
 			bool(cp.get("emergent_weather_coupling")),

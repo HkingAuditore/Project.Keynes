@@ -37,7 +37,7 @@ var ocean_current_buffer: PackedByteArray = PackedByteArray()  # RG8
 # 陆地像素维持 128（0）。由 MapGenerator._compute_ocean_currents 回填到
 # HexCell.upwelling_strength，下游海冰 / 海洋生物 / 调试可视化共用。
 var ocean_upwelling_buffer: PackedByteArray = PackedByteArray()  # R8
-# Phase 6：每像素盛行风向（按纬度风带模型 + 大陆扰动 + 季风偏置）。RG8。
+# Phase 6：每像素当前物理风向（C++/DOTS 风场快照光栅化；fallback 为纬度背景风）。RG8。
 # 海洋洋流通过 Ekman 偏转读它当主驱动力；主地图水面和 WeatherLayer 仍消费它。
 
 var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8

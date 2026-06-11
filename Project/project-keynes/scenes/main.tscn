@@ -175,7 +175,7 @@ autowrap_mode = 2
 
 [node name="PrecipLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=2026345711]
 layout_mode = 2
-text = "当季降水：—"
+text = "当前降水：—"
 autowrap_mode = 2
 
 [node name="LandformLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=973485122]

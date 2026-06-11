@@ -6,8 +6,8 @@
 
 负责：
 - 全图天气场求解（vapor / cloud / precip / instability，per-cell 网格场）
-- 锋面对象（`WeatherFront`：暴风/雷暴/季风/暴雪/雾的连续团块，跨日演化）
-- 风带模型（`WindBelt`：纬度带的稳定主轴，叠加季节性 monsoon 偏置）
+- 锋面对象（`WeatherFront`：暴风/雷暴/强热带降水/暴雪/雾的连续团块，跨日演化）
+- 风带模型（`WindBelt`：纬度带背景风；运行时风场变化来自 SLP/压力梯度/地形）
 - 锋面散度检测（冷暖气流交汇处升级为可见走廊）
 - 积雪累积/融化的多日逻辑（写回 `HexCell.cover`）
 
