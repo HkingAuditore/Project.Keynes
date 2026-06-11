@@ -12,7 +12,7 @@
 #   DROUGHT  — 旱灾，强 -moisture，温度上升，长期持续会触发 Phase 8 base_moisture 下漂
 #   FOG      — 雾，几乎不影响数值，主要是视觉效果（影响视野，未来玩法用）
 #   HEATWAVE — 热浪，温度大幅上升，-moisture，加速 SNOW/SEA_ICE 融化
-#   MONSOON  — 季风暴雨，STORM 加强版，热带季节性强降水（仅低纬度 + 夏季 spawn）
+#   MONSOON  — 兼容枚举名：强热带暴雨，STORM 加强版；由温度/水汽/云/降水/不稳定度判定
 #
 # v-data-driven：所有数值与视觉参数已迁出到 WeatherProfile (.tres)。
 # 本文件现在是一个薄 Facade：保留枚举与静态查询签名，实现转发到 WeatherProfileRegistry。

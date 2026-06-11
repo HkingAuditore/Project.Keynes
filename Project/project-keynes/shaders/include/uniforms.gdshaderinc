@@ -197,7 +197,7 @@ uniform bool extreme_weather_ground_effect_enabled = true;
 // 此默认值仅在 shader 单独编译/调试时生效。
 uniform float season_temp_amp : hint_range(0.0, 0.4) = 0.32;
 // ─── True Insolation-Driven Climate（Phase F）: CPU/GPU 同源参数 ──────
-// 主开关 — 关闭时回退到 legacy hemi_phase + 余弦路径。
+// 兼容开关。运行时由 renderer 强制保持 true；false 仅用于旧材质/离线对比。
 uniform bool true_insolation_enabled = true;
 // 黄赤交角（弧度），23.5° ≈ 0.4101523
 uniform float axial_tilt_rad : hint_range(0.0, 0.7854) = 0.4101523;

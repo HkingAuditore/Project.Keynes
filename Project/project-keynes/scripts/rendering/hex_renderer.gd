@@ -92,8 +92,8 @@ extends Node2D
 # 用于验证"info_panel 显示的 snow_cover 是否真的体现在屏幕像素上"。
 @export var debug_force_dyn_snow_only: bool = false
 
-# True Insolation-Driven（Phase F）：CPU / GPU 同源的四个参数。默认与 ClimateProfile 一致。
-# 运行时由 main.gd 通过 set_true_insolation_params() 同步（F8 切换时）。
+# True Insolation-Driven（Phase F）：CPU / GPU 同源的四个参数。
+# true_insolation_enabled 保留给旧资源/旧 shader 兼容；运行时会强制保持 true。
 @export_group("True Insolation (Phase F)")
 @export var true_insolation_enabled: bool = true
 @export_range(0.0, 45.0, 0.5) var axial_tilt_deg: float = 23.5
@@ -496,10 +496,11 @@ func set_climate_anomaly(v: float) -> void:
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("climate_anomaly", _climate_anomaly)
 
-# True Insolation-Driven（Phase F）：运行时切换 insolation 主开关（F8 配套），
-# 让 shader 画面与 CPU 端温度物理保持同步。
+# True Insolation-Driven（Phase F）：旧兼容 setter。运行时和 shader 统一保持
+# insolation 分支，bool 只保留给旧材质参数兼容。
 func set_true_insolation_enabled(v: bool) -> void:
-	true_insolation_enabled = v
+	var _unused_v: bool = v
+	true_insolation_enabled = true
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
 	if _season_transition_mat != null:

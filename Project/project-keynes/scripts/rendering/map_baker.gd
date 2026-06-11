@@ -402,6 +402,19 @@ var _wind_delta_p95_last: float = 0.0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
 var _phys_solve_rt_diag_count: int = 0
+var _phys_last_season_phase: float = NAN
+var _phys_last_sim_day: int = -1
+var _phys_last_slp_rc_ms: float = -1.0
+var _phys_last_slp_out_size: int = -1
+var _phys_last_slp_published_to_slot: bool = false
+var _phys_last_slp_commit_ok: bool = false
+var _phys_last_wind_rc_ms: float = -1.0
+var _phys_last_wind_wx_size: int = -1
+var _phys_last_wind_wy_size: int = -1
+var _phys_last_wind_speed_out_size: int = -1
+var _phys_last_wind_map_speed_size: int = -1
+var _phys_last_wind_commit_ok: bool = false
+var _daily_wind_diag_last: Dictionary = {}
 
 # Phys Solve Sliced：求解状态机阶段。
 const _PHYS_STAGE_NONE: int = 0           # 还未开始 / 已完成 idle
@@ -2403,15 +2416,15 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 	_vegetation_cache_size = Vector2i(W, H)
 	_biome_cache_size = Vector2i(W, H)
 
-# Systemic Ocean Currents：季节切换时重烘洋流 + 上升流 buffer。
-# 与夏季基线静态烘焙不同——调用方传入当前 season_phase ∈ [0, 4)，内部在读
-# wind_field_buffer 的每一像素后叠加 WindBelt.monsoon_offset_at(ny, phase)，
-# 与 WeatherSystem 的融合规则保持一致。热盐驱动项同样按 cfg 权重叠加。
+# Systemic Ocean Currents：重烘洋流 + 上升流 buffer。
+# season_phase 只作为切片锁相/兼容参数；运行时风场已经由 C++ SLP/solar
+# chain 逐日写入 wind_field_buffer，不再在像素路径叠加独立季节风向偏置。
+# 热盐驱动项仍按 cfg 权重叠加。
 # 产出：
 #   - world.ocean_current_buffer（RG8，重写）
 #   - world.ocean_upwelling_buffer（R8，重写）
 #   - world.vector_atlas_tex（重编码，包含新 RG = ocean_current）
-# 注意：wind_field_buffer 本身保持夏季基线不变，monsoon 仅作为 CPU 端融合项。
+# 注意：wind_field_buffer 是当前物理风场快照，而不是夏季基线。
 func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 		cfg: MapConfig, season_phase: float) -> void:
 	if map == null or world == null:
@@ -2570,17 +2583,6 @@ func bake_ocean_currents_slice(map: MapData, world: WorldData, hex_size: float,
 	var biome_buf := world.biome_buffer
 	var has_biome_buf: bool = biome_buf.size() >= W * H
 	var hm_match: bool = (hm_W == W and hm_H == H)
-	var phase_use: float = _pending_phase
-
-	# 缓存当前切片涉及的行级 monsoon offset。区间 [s, e) 跨多行时按 y 分组缓存。
-	var y_start: int = s / W
-	var y_end: int = (e - 1) / W  # inclusive
-	var monsoons: Array = []
-	monsoons.resize(y_end - y_start + 1)
-	for yy in range(y_start, y_end + 1):
-		var ny0 := float(yy) / float(maxi(H - 1, 1))
-		monsoons[yy - y_start] = WindBeltScript.monsoon_offset_at(ny0, phase_use)
-
 	for idx in range(s, e):
 		var y: int = idx / W
 		var x: int = idx - y * W
@@ -2614,7 +2616,6 @@ func bake_ocean_currents_slice(map: MapData, world: WorldData, hex_size: float,
 			)
 		else:
 			wind = Vector2(1.0, 0.0)
-		wind += monsoons[y - y_start] as Vector2
 
 		var lat_signed := (ny - 0.5) * 2.0
 		var ekman_sign: float = -1.0 if lat_signed < 0.0 else 1.0
@@ -2687,14 +2688,13 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 	var wind_buf := world.wind_field_buffer
 	var has_wind: bool = not wind_buf.is_empty() and wind_buf.size() >= W * H * 2
 	var cold_sink_temp: float = (cfg.COLD_SINK_TEMP if cfg != null else -0.05)
-	var phase_use: float = _pending_phase
 
 	# 行级缓存：对切片覆盖的每一行预算一次。
 	var y_start: int = s / W
 	var y_end: int = (e - 1) / W
 	var row_data: Array = []  # element: { lat_signed, lat_signed_abs, lat_temp,
 							  # is_cold_sink, cold_sink_byte, ekman_sign,
-							  # rot_angle, monsoon, near_edge_y }
+							  # rot_angle, near_edge_y }
 	row_data.resize(y_end - y_start + 1)
 	for yy in range(y_start, y_end + 1):
 		var ny := float(yy) / float(maxi(H - 1, 1))
@@ -2708,12 +2708,10 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 		var cold_sink_byte: int = clampi(int(round(128.0 * (1.0 - t_cold))), 0, 128)
 		var ekman_sign: float = -1.0 if lat_signed < 0.0 else 1.0
 		var rot_angle: float = -ekman_sign * EKMAN_DEFLECTION_RAD
-		var monsoon_row: Vector2 = WindBeltScript.monsoon_offset_at(ny, phase_use)
 		row_data[yy - y_start] = {
 			"is_cold_sink": is_cold_sink,
 			"cold_sink_byte": cold_sink_byte,
 			"rot_angle": rot_angle,
-			"monsoon": monsoon_row,
 		}
 
 	for idx in range(s, e):
@@ -2757,7 +2755,7 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 		var wind := Vector2(
 			float(wind_buf[wb_idx]) / 255.0 * 2.0 - 1.0,
 			float(wind_buf[wb_idx + 1]) / 255.0 * 2.0 - 1.0
-		) + (rd["monsoon"] as Vector2)
+		)
 		if wind.length_squared() < 1e-6:
 			continue
 		wind = wind.normalized()
@@ -4478,7 +4476,8 @@ func _bake_latitude_buffer(bounds: Rect2, size: Vector2i) -> PackedFloat32Array:
 # ─── Phase 6：风带 buffer（每像素盛行风向，RG8） ──────────────────────────
 # 用 WindBelt.wind_at(ny, season_phase, lat_jitter) 算每像素风向。
 # 加 _warp_noise_lo 给 ny 做小扰动（±0.04），避免风带边界呈现明显纬向条纹。
-# season_phase = 2.0 当 baseline（Plan B 日历对齐：phase=2 = 7 月 = 北半球夏至，对应北半球夏季风 / 南半球冬季风的基线），后续如需季风变化由 shader 端的 season_phase uniform 自己处理（不重烤）。
+# season_phase 仅保留给 WindBelt.wind_at 的旧签名；运行时物理风场由 C++ SLP/pressure
+# chain 每日写入，静态 wind_field bake 只作为缺失物理风时的纬向基线。
 
 func _bake_wind_field(bounds: Rect2, size: Vector2i, season_phase: float) -> PackedByteArray:
 	var W := size.x
@@ -4544,8 +4543,6 @@ func _bake_ocean_currents(map: MapData, hex_size: float, world: WorldData, cfg: 
 	for y in range(H):
 		var ny := float(y) / float(maxi(H - 1, 1))
 		var wy_base := origin.y + (float(y) + 0.5) * size.y / float(H)
-		# Systemic Ocean Currents：当季 monsoon offset（与 weather_system 融合规则一致）
-		var monsoon: Vector2 = WindBeltScript.monsoon_offset_at(ny, season_phase)
 		for x in range(W):
 			var wx_base := origin.x + (float(x) + 0.5) * size.x / float(W)
 			var idx := y * W + x
@@ -4568,7 +4565,7 @@ func _bake_ocean_currents(map: MapData, hex_size: float, world: WorldData, cfg: 
 				buf[idx * 2 + 1] = 128
 				continue
 
-			# 1) 风驱动：读 wind_field 当主流向（+ 当季 monsoon offset）
+			# 1) 风驱动：读当前物理 wind_field 当主流向。
 			var wind: Vector2
 			if has_wind:
 				var wb_idx := idx * 2
@@ -4578,7 +4575,6 @@ func _bake_ocean_currents(map: MapData, hex_size: float, world: WorldData, cfg: 
 				)
 			else:
 				wind = Vector2(1.0, 0.0)
-			wind += monsoon
 
 			# 2) Ekman 偏转：北半球右偏（顺时针），南半球左偏（逆时针）
 			# 屏幕坐标 +y = 下 = 南，所以"右"在屏幕上是顺时针 = +x 旋转
@@ -4690,8 +4686,6 @@ func _bake_ocean_upwelling(map: MapData, hex_size: float, world: WorldData, cfg:
 		# Ekman sign 也只与半球有关（行级常量）
 		var ekman_sign: float = -1.0 if lat_signed < 0.0 else 1.0
 		var rot_angle: float = -ekman_sign * EKMAN_DEFLECTION_RAD
-		# 当季 monsoon offset 也是 ny 的函数（行级常量）
-		var monsoon_row: Vector2 = WindBeltScript.monsoon_offset_at(ny, season_phase)
 		var row_off := y * W
 
 		for x in range(W):
@@ -4725,14 +4719,14 @@ func _bake_ocean_upwelling(map: MapData, hex_size: float, world: WorldData, cfg:
 				continue
 			nvec = nvec.normalized()
 
-			# 读风（无风则跳过），还得叠加当季 monsoon offset
+			# 读当前物理风（无风则跳过）。
 			if not has_wind:
 				continue
 			var wb_idx := idx * 2
 			var wind := Vector2(
 				float(wind_buf[wb_idx]) / 255.0 * 2.0 - 1.0,
 				float(wind_buf[wb_idx + 1]) / 255.0 * 2.0 - 1.0
-			) + monsoon_row
+			)
 			if wind.length_squared() < 1e-6:
 				continue
 			wind = wind.normalized()
@@ -4851,6 +4845,18 @@ func reset_physical_solve_state() -> void:
 	_wind_delta_p95_last = 0.0
 	_ocean_delta_p95_last = 0.0
 	_thermal_current_p95_last = 0.0
+	_phys_last_season_phase = NAN
+	_phys_last_sim_day = -1
+	_phys_last_slp_rc_ms = -1.0
+	_phys_last_slp_out_size = -1
+	_phys_last_slp_published_to_slot = false
+	_phys_last_slp_commit_ok = false
+	_phys_last_wind_rc_ms = -1.0
+	_phys_last_wind_wx_size = -1
+	_phys_last_wind_wy_size = -1
+	_phys_last_wind_speed_out_size = -1
+	_phys_last_wind_map_speed_size = -1
+	_phys_last_wind_commit_ok = false
 
 # plan/dots-slp-psi-cpp — diagnostics getters for ocean_currents_job to attach
 # stage_slp_path / stage_slp_native_ms / stage_psi_path / stage_psi_native_ms
@@ -4874,6 +4880,255 @@ func get_ocean_delta_p95() -> float:
 	return _ocean_delta_p95_last
 func get_thermal_current_p95() -> float:
 	return _thermal_current_p95_last
+func _physical_stage_name(stage: int) -> String:
+	match stage:
+		_PHYS_STAGE_NONE: return "phys_none"
+		_PHYS_STAGE_SLP: return "phys_slp"
+		_PHYS_STAGE_WIND: return "phys_wind"
+		_PHYS_STAGE_PSI_INIT: return "phys_psi_init"
+		_PHYS_STAGE_PSI_ITERS: return "phys_psi_iters"
+		_PHYS_STAGE_PSI_FINALIZE: return "phys_psi_finalize"
+		_PHYS_STAGE_UPWELLING: return "phys_upwelling"
+		_PHYS_STAGE_WIND_RASTER: return "phys_wind_raster"
+		_PHYS_STAGE_DONE: return "phys_done"
+		_: return "phys_unknown"
+func get_physical_circulation_diag() -> Dictionary:
+	return {
+		"season_phase": _phys_last_season_phase,
+		"sim_day": _phys_last_sim_day,
+		"phys_stage": _phys_stage,
+		"phys_stage_name": _physical_stage_name(_phys_stage),
+		"slp_path": _slp_path_str_last,
+		"slp_native_ms": _slp_native_ms_last,
+		"slp_rc_ms": _phys_last_slp_rc_ms,
+		"slp_out_size": _phys_last_slp_out_size,
+		"slp_published_to_slot": _phys_last_slp_published_to_slot,
+		"slp_commit_ok": _phys_last_slp_commit_ok,
+		"slp_thermal_p95": _slp_thermal_p95_last,
+		"slp_delta_p95": _slp_delta_p95_last,
+		"wind_cpp_done": _phys_wind_done_by_cpp,
+		"wind_rc_ms": _phys_last_wind_rc_ms,
+		"wind_wx_size": _phys_last_wind_wx_size,
+		"wind_wy_size": _phys_last_wind_wy_size,
+		"wind_speed_out_size": _phys_last_wind_speed_out_size,
+		"wind_map_speed_size": _phys_last_wind_map_speed_size,
+		"wind_commit_ok": _phys_last_wind_commit_ok,
+		"wind_delta_p95": _wind_delta_p95_last,
+		"daily_wind_ran": bool(_daily_wind_diag_last.get("ran", false)),
+		"daily_wind_path": str(_daily_wind_diag_last.get("path", "")),
+		"daily_wind_elapsed_ms": float(_daily_wind_diag_last.get("elapsed_ms", -1.0)),
+		"daily_wind_refresh_ms": float(_daily_wind_diag_last.get("refresh_ms", -1.0)),
+		"daily_wind_slp_ms": float(_daily_wind_diag_last.get("slp_ms", -1.0)),
+		"daily_wind_wind_ms": float(_daily_wind_diag_last.get("wind_ms", -1.0)),
+		"daily_wind_fallback_reason": str(_daily_wind_diag_last.get("fallback_reason", "")),
+		"daily_wind_commit_ok": bool(_daily_wind_diag_last.get("wind_commit_ok", false)),
+		"daily_wind_slp_delta_p95": float(_daily_wind_diag_last.get("slp_delta_p95", 0.0)),
+		"daily_wind_delta_p95": float(_daily_wind_diag_last.get("wind_delta_p95", 0.0)),
+		"psi_path": _psi_path_str_last,
+		"psi_native_ms": _psi_native_ms_last,
+		"ocean_delta_p95": _ocean_delta_p95_last,
+		"thermal_current_p95": _thermal_current_p95_last,
+	}
+
+
+func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
+		hex_size: float, season_phase: float, sim_day_override: int = -1) -> Dictionary:
+	var t0_us: int = Time.get_ticks_usec()
+	var out: Dictionary = {
+		"ran": false,
+		"path": "daily_wind_skip",
+		"elapsed_ms": 0.0,
+		"refresh_ms": 0.0,
+		"slp_ms": -1.0,
+		"wind_ms": -1.0,
+		"fallback_reason": "",
+		"slp_commit_ok": false,
+		"wind_commit_ok": false,
+		"wind_cpp_done": false,
+		"slp_published_to_slot": false,
+		"slp_delta_p95": 0.0,
+		"slp_thermal_p95": 0.0,
+		"wind_delta_p95": 0.0,
+	}
+	var fail := func(reason: String) -> Dictionary:
+		out["fallback_reason"] = reason
+		out["elapsed_ms"] = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_daily_wind_diag_last = out.duplicate(true)
+		return out
+
+	if map == null or world == null or cfg == null:
+		return fail.call("missing_refs")
+	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
+	if profile == null or not bool(profile.physical_circulation_enabled):
+		out["path"] = "daily_wind_disabled"
+		return fail.call("physical_disabled")
+	if _world_ext == null:
+		return fail.call("missing_world_ext")
+	if not _world_ext.has_method("run_slp_field_pass") \
+			or not _world_ext.has_method("run_wind_field_pass"):
+		return fail.call("missing_cpp_method")
+	if not map.has_indices():
+		return fail.call("missing_indices")
+
+	var cells: Array = map.iter_cells()
+	var n_cells: int = cells.size()
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+	if n_cells <= 0:
+		return fail.call("empty_map")
+	if nb_idx.size() < n_cells * 6:
+		return fail.call("neighbor_indices_too_small")
+
+	var t_refresh_us: int = Time.get_ticks_usec()
+	if _world_ext.has_method("refresh_slots_from_map"):
+		_world_ext.refresh_slots_from_map()
+	out["refresh_ms"] = float(Time.get_ticks_usec() - t_refresh_us) / 1000.0
+
+	var bounds: Rect2 = world.world_bounds
+	var days_per_year_phys: int = _calendar_days_per_year(profile)
+	var sim_day_phys: int = sim_day_override if sim_day_override >= 0 \
+			else _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
+	_phys_last_season_phase = season_phase
+	_phys_last_sim_day = sim_day_phys
+	out["sim_day"] = sim_day_phys
+
+	var water_ids := PackedByteArray()
+	water_ids.append(int(TerrainType.TERRAIN.OCEAN))
+	water_ids.append(int(TerrainType.TERRAIN.COAST))
+	water_ids.append(int(TerrainType.TERRAIN.REEF))
+	water_ids.append(int(TerrainType.TERRAIN.KELP))
+
+	var knobs_slp := {
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"season_phase": season_phase,
+		"smooth_passes": 1,
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb_idx,
+		"water_terrain_ids": water_ids,
+		"prev_slp_arr": map.slp_arr,
+		"slp_lat_amp": 0.16,
+		"slp_land_amp": 0.55,
+		"slp_water_damp": 0.20,
+		"slp_interior_boost": 1.30,
+		"slp_coast_damp": 0.60,
+		"slp_target_p95": 0.18,
+		"days_per_year": days_per_year_phys,
+		"sim_day": sim_day_phys,
+		"world_seed": world_seed_phys,
+		"axial_tilt_deg": profile.axial_tilt_deg,
+		"insolation_daylen_amp": profile.insolation_daylen_amp,
+		"wind_thermal_slp_weight": profile.wind_thermal_slp_weight,
+		"slp_ice_high_weight": profile.slp_ice_high_weight,
+		"slp_snow_high_weight": profile.slp_snow_high_weight,
+		"slp_response_rate": profile.slp_response_rate,
+		"slp_synoptic_amp": profile.slp_synoptic_amp,
+		"slp_moist_low_weight": profile.slp_moist_low_weight,
+	}
+	var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
+	if ret_slp == null or typeof(ret_slp) != TYPE_DICTIONARY:
+		return fail.call("slp_non_dict")
+	var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
+	var slp_out: PackedFloat32Array = ret_slp.get("slp_out", PackedFloat32Array())
+	var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
+	out["slp_ms"] = rc_slp
+	out["slp_published_to_slot"] = slp_published_to_slot
+	_phys_last_slp_rc_ms = rc_slp
+	_phys_last_slp_out_size = slp_out.size()
+	_phys_last_slp_published_to_slot = slp_published_to_slot
+	_phys_last_slp_commit_ok = rc_slp >= 0.0 and slp_out.size() == n_cells
+	if rc_slp < 0.0 or slp_out.size() != n_cells:
+		return fail.call("slp_failed:%s" % str(ret_slp.get("reason", "")))
+	if not slp_published_to_slot:
+		for i_slp in range(n_cells):
+			map.slp_arr[i_slp] = slp_out[i_slp]
+	_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
+	_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
+	_slp_native_ms_last = rc_slp
+	_slp_path_str_last = "gdext"
+	out["slp_commit_ok"] = true
+	out["slp_delta_p95"] = _slp_delta_p95_last
+	out["slp_thermal_p95"] = _slp_thermal_p95_last
+
+	var slp_for_wind: PackedFloat32Array = map.slp_arr if map.slp_arr.size() == n_cells else slp_out
+	var terrain_aware: bool = profile.enable_terrain_aware_wind
+	var knobs_wind := {
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"season_phase": season_phase,
+		"terrain_aware": (1 if terrain_aware else 0),
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb_idx,
+		"slp_arr": slp_for_wind,
+		"water_terrain_ids": water_ids,
+		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
+		"land_lf_peak": int(LandformType.LF.PEAK),
+		"land_lf_hill": int(LandformType.LF.HILL),
+		"days_per_year": days_per_year_phys,
+		"sim_day": sim_day_phys,
+		"world_seed": world_seed_phys,
+		"axial_tilt_deg": profile.axial_tilt_deg,
+		"wind_response_rate": profile.wind_response_rate,
+		"wind_synoptic_amp": profile.wind_synoptic_amp,
+		"wind_belt_only_debug": profile.wind_belt_only_debug,
+	}
+	var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
+	var rc_wind: float = float(rc_wind_raw) if rc_wind_raw != null else -1.0
+	out["wind_ms"] = rc_wind
+	_phys_last_wind_rc_ms = rc_wind
+	if rc_wind < 0.0:
+		_phys_wind_done_by_cpp = false
+		return fail.call("wind_failed")
+
+	var wx_arr: PackedFloat32Array = map.wind_x_arr
+	var wy_arr: PackedFloat32Array = map.wind_y_arr
+	var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
+	_phys_last_wind_wx_size = wx_arr.size()
+	_phys_last_wind_wy_size = wy_arr.size()
+	_phys_last_wind_speed_out_size = wspd_arr.size()
+	_phys_last_wind_map_speed_size = map.wind_speed_arr.size()
+	_phys_last_wind_commit_ok = wx_arr.size() == n_cells and wy_arr.size() == n_cells \
+			and wspd_arr.size() == n_cells and map.wind_speed_arr.size() == n_cells
+	if not _phys_last_wind_commit_ok:
+		_phys_wind_done_by_cpp = false
+		return fail.call("wind_size_mismatch")
+
+	_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
+	_phys_wind_done_by_cpp = true
+	out["ran"] = true
+	out["path"] = "gdext_daily_wind"
+	out["wind_cpp_done"] = true
+	out["wind_commit_ok"] = true
+	out["wind_delta_p95"] = _wind_delta_p95_last
+	out["elapsed_ms"] = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_daily_wind_diag_last = out.duplicate(true)
+	return out
+
+
+func prime_physical_solve_from_current_wind(map: MapData, season_phase: float) -> bool:
+	if map == null:
+		return false
+	var n_cells: int = map.soa_size()
+	if n_cells <= 0:
+		return false
+	if map.wind_x_arr.size() != n_cells or map.wind_y_arr.size() != n_cells \
+			or map.wind_speed_arr.size() != n_cells:
+		return false
+	_phys_stage = _PHYS_STAGE_PSI_INIT
+	_phys_psi_iters_done = 0
+	_phys_wind_raster_idx = 0
+	_pending_psi_state = null
+	_pending_phys_solved_phase = NAN
+	_phys_wind_done_by_cpp = true
+	_phys_last_season_phase = season_phase
+	_phys_last_wind_wx_size = map.wind_x_arr.size()
+	_phys_last_wind_wy_size = map.wind_y_arr.size()
+	_phys_last_wind_speed_out_size = map.wind_speed_arr.size()
+	_phys_last_wind_map_speed_size = map.wind_speed_arr.size()
+	_phys_last_wind_commit_ok = true
+	return true
 
 # Phys Solve Sliced 入口 ② ：把 7 阶段求解推进 1 步，返回 true 表示本轮已彻底完成
 # （`_pending_phys_solved_phase = season_phase` 同时被设好）。
@@ -4933,6 +5188,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	var days_per_year_phys: int = _calendar_days_per_year(profile)
 	var sim_day_phys: int = _season_phase_to_day_of_year(season_phase, days_per_year_phys)
 	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
+	_phys_last_season_phase = season_phase
+	_phys_last_sim_day = sim_day_phys
 
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
@@ -4986,6 +5243,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"days_per_year": days_per_year_phys,
 						"sim_day": sim_day_phys,
 						"world_seed": world_seed_phys,
+						"axial_tilt_deg": profile.axial_tilt_deg if profile != null else 23.5,
+						"insolation_daylen_amp": profile.insolation_daylen_amp if profile != null else 0.35,
 					}
 					if profile != null:
 						knobs_slp["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
@@ -4998,10 +5257,16 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
 						var slp_out: PackedFloat32Array = ret_slp.get("slp_out", PackedFloat32Array())
+						var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
+						_phys_last_slp_rc_ms = rc_slp
+						_phys_last_slp_out_size = slp_out.size()
+						_phys_last_slp_published_to_slot = slp_published_to_slot
+						_phys_last_slp_commit_ok = rc_slp >= 0.0 and slp_out.size() == n_slp
 						if _slp_commit_diag_count < 3:
 							_slp_commit_diag_count += 1
-							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d" % [
-								_slp_commit_diag_count, rc_slp, slp_out.size(), n_slp, map.slp_arr.size()
+							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d published=%s" % [
+								_slp_commit_diag_count, rc_slp, slp_out.size(), n_slp, map.slp_arr.size(),
+								str(slp_published_to_slot)
 							])
 						# 运行期根因诊断（每 200 次调用 + 前 5 次打印一次），定位 SLP 冻结：
 						# - commit_ok=true  → 已写回 map.slp_arr，理应随 season 变化
@@ -5012,33 +5277,26 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							var _commit_ok: bool = rc_slp >= 0.0 and slp_out.size() == n_slp
 							var _reason: String = "commit_ok" if _commit_ok else \
 								("rc<0(cpp_fallback)" if rc_slp < 0.0 else "size_mismatch(gate_block)")
-							print("[slp_field][RT-DIAG] call#%d phase=%.4f rc=%.3f slp_out=%d n=%d -> %s" % [
-								_slp_rt_diag_count, season_phase, rc_slp, slp_out.size(), n_slp, _reason
+							print("[slp_field][RT-DIAG] call#%d phase=%.4f rc=%.3f slp_out=%d n=%d published=%s -> %s" % [
+								_slp_rt_diag_count, season_phase, rc_slp, slp_out.size(), n_slp,
+								str(slp_published_to_slot), _reason
 							])
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
 							_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
 							_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
-							# SLP slice 优化（2026-05-18）：原 commit 走两轮：
-							#   1) for i: cells_for_slp_cpp[i].slp = slp_out[i]
-							#      → 2400× HexCell.slp setter（_facade_enabled 时还要再
-							#        调一次 _world.write_f32），加起来 ~3-5ms
-							#   2) for i: map.slp_arr[i] = slp_out[i]  PackedArray 写，~0.2ms
-							# 而 HexCell.slp 的 getter 在 facade 模式下直接从 World/SoA 视图读，
-							# 与 map.slp_arr 是同一片内存（component schema 第 73 行
-							# `map_field = "slp_arr"`）。因此只需保留 PackedArray 一轮写入。
-							#
-							# 注意不能用 `map.slp_arr = slp_out.duplicate()` 之类的整体赋值：
-							# DCWorld.bind_map_data() 把 _Slot.arr_f32 按引用挂在 bind 那一刻
-							# 的 buffer 上，重新赋值会让 World slot 指向旧 buffer。
-							# 用 in-place index 赋值则 PackedArray buffer 没换，World/SoA 都看到。
-							for _i_slp_arr in range(n_slp):
-								map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
+							if not slp_published_to_slot:
+								for _i_slp_arr in range(n_slp):
+									map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
 							_slp_done_by_cpp = true
 							_slp_native_ms = rc_slp
 							if not _slp_first_run_logged:
 								_slp_first_run_logged = true
 								print("[slp_field] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ~36ms; target < 3ms)" % rc_slp)
 			if not _slp_done_by_cpp:
+				_phys_last_slp_rc_ms = -1.0
+				_phys_last_slp_out_size = -1
+				_phys_last_slp_published_to_slot = false
+				_phys_last_slp_commit_ok = false
 				if _slp_path_log_count > 0 and _slp_path_log_count <= 3:
 					print("[slp_field] FALLBACK to GDScript solve_slp_field (call#%d) — see preceding path-decision / commit-diag for reason" % _slp_path_log_count)
 				# 运行期诊断：进入此分支即说明 C++ commit 未成功（没进 C++ 分支 /
@@ -5069,6 +5327,12 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			# has_method(run_wind_field_pass) 探测分支（C++ 返回 fallback 或 ext 未 bind 时
 			# 透明 fallback 到 GDScript solve_wind_field）。DIAG 块保留原状。
 			var _wind_done_by_cpp: bool = false
+			_phys_last_wind_rc_ms = -1.0
+			_phys_last_wind_wx_size = -1
+			_phys_last_wind_wy_size = -1
+			_phys_last_wind_speed_out_size = -1
+			_phys_last_wind_map_speed_size = -1
+			_phys_last_wind_commit_ok = false
 			# DOTS-Final-Push 后续诊断 — once-only 路径决策（仿 upwelling stage 6）。
 			# 与 _wind_b_first_run_logged 不同：那个只在 C++ 路径首次成功后打印；
 			# 这里在 stage 2 第一次执行时无条件打印各子条件命中状态。
@@ -5120,17 +5384,26 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"days_per_year": days_per_year_phys,
 						"sim_day": sim_day_phys,
 						"world_seed": world_seed_phys,
+						"axial_tilt_deg": profile.axial_tilt_deg if profile != null else 23.5,
 					}
 					if profile != null:
 						knobs_wind["wind_response_rate"] = profile.wind_response_rate
 						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
 						knobs_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
+					_phys_last_wind_rc_ms = float(_rc_wind) if _rc_wind != null else -1.0
 					if _rc_wind != null and float(_rc_wind) >= 0.0:
-						# Commit：从 SoA wind_x/y + wind_speed_out 写回每 cell。
+						# C++ 已写入并 flush wind_x/y/speed；这里保留 size gate 与
+						# 非 PSI fallback 的 HexCell 同步，避免成功路径重复写 PackedArray。
 						var wx_arr: PackedFloat32Array = map.wind_x_arr
 						var wy_arr: PackedFloat32Array = map.wind_y_arr
 						var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
+						_phys_last_wind_wx_size = wx_arr.size()
+						_phys_last_wind_wy_size = wy_arr.size()
+						_phys_last_wind_speed_out_size = wspd_arr.size()
+						_phys_last_wind_map_speed_size = map.wind_speed_arr.size()
+						_phys_last_wind_commit_ok = wx_arr.size() == n_wind and wy_arr.size() == n_wind \
+								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind
 						# DOTS-Final-Push 后续诊断：commit size 检查是 silent
 						# fallback 唯一缺口（rc>=0 但 size 不齐 → _phys_wind_done_by_cpp
 						# 仍是 false，stage 6 走 GDScript upwelling 92ms）。一次性 print。
@@ -5139,13 +5412,11 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							print("[wind_field/B] commit-diag call#%d: rc=%.3f n_wind=%d wx=%d wy=%d wspd=%d map_wspd=%d" % [
 								_wind_b_commit_diag_count, float(_rc_wind), n_wind, wx_arr.size(), wy_arr.size(), wspd_arr.size(), map.wind_speed_arr.size()
 							])
-						if wx_arr.size() == n_wind and wy_arr.size() == n_wind \
-								and wspd_arr.size() == n_wind and map.wind_speed_arr.size() == n_wind:
+						if _phys_last_wind_commit_ok:
 							var psi_cpp_expected: bool = solve_ocean and heat_transport \
 									and _world_ext != null and _world_ext.has_method("run_psi_solver_pass")
-							for _i_w in range(n_wind):
-								map.wind_speed_arr[_i_w] = wspd_arr[_i_w]
-								if not psi_cpp_expected:
+							if not psi_cpp_expected:
+								for _i_w in range(n_wind):
 									var _c_w: HexCell = cells_for_wind[_i_w]
 									if _c_w != null:
 										_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
@@ -5269,28 +5540,33 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						var psi_out: PackedFloat32Array = ret_psi.get("ocean_psi_out", PackedFloat32Array())
 						var ocx_out: PackedFloat32Array = ret_psi.get("ocean_current_x_out", PackedFloat32Array())
 						var ocy_out: PackedFloat32Array = ret_psi.get("ocean_current_y_out", PackedFloat32Array())
+						var psi_published_to_slot: bool = bool(ret_psi.get("published_to_slot", false))
 						if _psi_commit_diag_count < 3:
 							_psi_commit_diag_count += 1
-							print("[psi_solver] commit-diag call#%d: rc=%.3f n_water=%d curl=%d psi=%d ocx=%d ocy=%d n_cells=%d" % [
+							print("[psi_solver] commit-diag call#%d: rc=%.3f n_water=%d curl=%d psi=%d ocx=%d ocy=%d n_cells=%d published=%s" % [
 								_psi_commit_diag_count, rc_psi,
 								int(ret_psi.get("n_water", -1)),
-								curl_out.size(), psi_out.size(), ocx_out.size(), ocy_out.size(), n_psi
+								curl_out.size(), psi_out.size(), ocx_out.size(), ocy_out.size(), n_psi,
+								str(psi_published_to_slot)
 							])
 						if rc_psi >= 0.0 and curl_out.size() == n_psi and psi_out.size() == n_psi \
 								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
 							_ocean_delta_p95_last = float(ret_psi.get("ocean_delta_p95", 0.0))
 							_thermal_current_p95_last = float(ret_psi.get("thermal_current_p95", 0.0))
-							# Commit hot path: keep current in SoA. HexCell facade reads the
-							# same components, while climate ocean_water can consume arrays
-							# without a second cell → PackedArray pack.
 							var _has_psi_debug_arr: bool = map.wind_stress_curl_arr.size() == n_psi \
 									and map.ocean_psi_arr.size() == n_psi
-							for _i_pc in range(n_psi):
-								map.ocean_current_x_arr[_i_pc] = ocx_out[_i_pc]
-								map.ocean_current_y_arr[_i_pc] = ocy_out[_i_pc]
+							if psi_published_to_slot:
 								if _has_psi_debug_arr:
-									map.wind_stress_curl_arr[_i_pc] = curl_out[_i_pc]
-									map.ocean_psi_arr[_i_pc] = psi_out[_i_pc]
+									for _i_pc_debug in range(n_psi):
+										map.wind_stress_curl_arr[_i_pc_debug] = curl_out[_i_pc_debug]
+										map.ocean_psi_arr[_i_pc_debug] = psi_out[_i_pc_debug]
+							else:
+								for _i_pc in range(n_psi):
+									map.ocean_current_x_arr[_i_pc] = ocx_out[_i_pc]
+									map.ocean_current_y_arr[_i_pc] = ocy_out[_i_pc]
+									if _has_psi_debug_arr:
+										map.wind_stress_curl_arr[_i_pc] = curl_out[_i_pc]
+										map.ocean_psi_arr[_i_pc] = psi_out[_i_pc]
 							_psi_done_by_cpp = true
 							_psi_native_ms = rc_psi
 							if not _psi_first_run_logged:
@@ -5576,7 +5852,7 @@ func _ensure_pending_wind_size(world: WorldData) -> void:
 
 # 把 cell.wind_vector 量化进区间 [s, e)（按像素索引）。s 必须是非负，e ≤ W*H。
 # 用 pixel_to_cell_lookup 直接查最近 hex，无 cube_round 成本。
-# wind_vector 已是单位向量，speed 不进 RG8（与现有 shader 一致）。
+# wind_vector 是单位方向；RG8 写入 dir * wind_speed_norm，让 shader length() 表示风速。
 # L: 同 ocean_current_slice，同步写持久 _vector_atlas_data 的 BA 通道（[idx*4+2, idx*4+3]）。
 func _rasterize_wind_slice_from_hex(world: WorldData, buf: PackedByteArray,
 		s: int, e: int) -> void:
@@ -5595,8 +5871,9 @@ func _rasterize_wind_slice_from_hex(world: WorldData, buf: PackedByteArray,
 		var wx: float = 1.0
 		var wy: float = 0.0
 		if cell != null:
-			wx = cell.wind_vector.x
-			wy = cell.wind_vector.y
+			var wind_speed_norm: float = clampf(cell.wind_speed / 1.7, 0.0, 1.0)
+			wx = cell.wind_vector.x * wind_speed_norm
+			wy = cell.wind_vector.y * wind_speed_norm
 		var bx: int = clampi(int(round((wx * 0.5 + 0.5) * 255.0)), 0, 255)
 		var by: int = clampi(int(round((wy * 0.5 + 0.5) * 255.0)), 0, 255)
 		buf[i * 2]     = bx

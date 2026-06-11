@@ -146,7 +146,7 @@ vec2 blue_jitter(vec2 wp, float scale) {
 }
 
 // Phase 2：高云（卷云带）—— 大尺度纤维状云，alpha 弱、覆盖广，
-// 主要在 storm/monsoon 系统的"上空"提供一层"高空大气"质感。
+// 主要在 storm/热带暴雨系统的"上空"提供一层"高空大气"质感。
 // 用拉长的各向异性 fbm 模拟卷云的拉丝形态：水平方向频率 0.0035、
 // 垂直方向 0.011，让条带沿主风向延展。
 float sample_high_cloud(vec2 wp, vec2 axis, float intensity) {
@@ -542,7 +542,7 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 
 FrontField sample_front_field(vec2 wp, vec2 uv) {
 	// Phase 0：去掉旧的 early-return，让 field（连续天气场）与 fronts（局部强对流）共存。
-	// 大尺度的云带 / 季风走廊由 field 提供底层覆盖；局部的 storm/rain 团块由 fronts
+	// 大尺度的云带 / 热带暴雨走廊由 field 提供底层覆盖；局部的 storm/rain 团块由 fronts
 	// 在其上叠加。修复前 field 命中即 return，导致云带与强对流互斥，画面缺乏层次。
 	FrontField field_sample = sample_weather_field(wp, uv);
 	float field_score = max(field_sample.cloud, field_sample.precip * 1.08);
@@ -969,7 +969,7 @@ void fragment() {
 
 			// Ground-projected cloud shadow, drawn by the overlay pass so it stays
 			// exactly aligned with the same front field as clouds and rain.
-			// dramatic-fx：阴影系数 0.26→0.40，上限 0.36→0.55，让雷暴/季风看起来"压在地上"。
+			// dramatic-fx：阴影系数 0.26→0.40，上限 0.36→0.55，让雷暴/热带暴雨看起来"压在地上"。
 			float shadow_alpha = clamp(w.shadow * weather_strength * 0.40 * (1.0 - tod_night_factor * 0.35), 0.0, 0.55);
 			// ambient-shadow：与 front shadow 取 max，避免有云区域被双倍压暗。
 			shadow_alpha = max(shadow_alpha, ambient_shadow);
@@ -1019,7 +1019,7 @@ void fragment() {
 			}
 
 			// Phase 2：高云（卷云带）在最上层叠加，alpha 较弱，颜色偏白带暖色（受 tod_sun_color 染）。
-			// 强度受 storm/monsoon 系统强度限制；夜间稍冷蓝。
+			// 强度受 storm/热带暴雨系统强度限制；夜间稍冷蓝。
 			if (cirrus > 0.001) {
 				vec3 cirrus_col = mix(vec3(0.92, 0.94, 0.98), tod_sun_color, 0.35);
 				cirrus_col = mix(cirrus_col, vec3(0.72, 0.78, 0.88), tod_night_factor);

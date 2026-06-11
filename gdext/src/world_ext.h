@@ -242,6 +242,7 @@ public:
     //   切片：支持 start_idx / end_idx。读侧使用 begin 时的 prev_vapor /
     //         prev_precip 快照，写侧只覆盖目标 SoA range；commit 仍统一发布。
     double run_weather_field_solve_pass(const godot::Dictionary &knobs);
+    godot::Dictionary run_weather_field_commit_pass(godot::Dictionary knobs);
 
     // F.2 (P1): ocean water + land 两个独立 pass
     //   GDScript 源：map_generator.gd::_ocean_water_pass_soa (line 4679+) +
@@ -299,6 +300,12 @@ public:
     double run_ocean_water_pass(godot::Dictionary knobs);
     double run_ocean_land_pass (godot::Dictionary knobs);
 
+    // Wind heat transport, split to match ClimateDailySystem ordering:
+    // air mass first writes cell_temp + cell_air_mass_temp_anomaly, then
+    // surface reads that anomaly and injects neighbor air mass heat into temp.
+    double run_wind_air_mass_pass(godot::Dictionary knobs);
+    double run_wind_surface_pass(godot::Dictionary knobs);
+
     // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for ocean passes.
     //
     // run_ocean_water_pass_simd / run_ocean_land_pass_simd:
@@ -330,7 +337,7 @@ public:
     //     标量： n_cells (int)
     //            winter_boost, snow_cool, veg_cool, diurnal_amp, evap_gain,
     //            rs_threshold, rs_factor, t_freeze, coupling_gain, coast_leak,
-    //            landform_phase_factor, season_phase (float)
+    //            season_phase (float, orbital/year phase only)
     //            rs_lookback (int)
     //            go_sparse (bool；本实现不支持稀疏路径，go_sparse=true 时
     //                       直接 return -1.0 fallback；后续 PR 加 dirty mask
@@ -345,7 +352,7 @@ public:
     //
     //   读：cell_temp, cell_moisture, cell_snow_cover, cell_is_water,
     //       cell_landform, cell_vegetation, cell_elevation, cell_lat_norm,
-    //       cell_pos_x, cell_pos_y
+    //       cell_pos_x, cell_pos_y, cell_insolation_dev
     //   写：cell_temp, cell_moisture
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)
@@ -478,7 +485,7 @@ public:
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
     //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
-    double run_transpiration_pass(const godot::Dictionary &knobs);
+    double run_transpiration_pass(godot::Dictionary knobs);
 
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
@@ -1180,21 +1187,21 @@ public:
     //   性能目标：35.55ms p95 → < 5ms（charter §7 / dots-wind-validation.md）
     //
     //   算法结构（与 GDScript 1:1 镜像）：
-    //     Pass 0 — 海岸 BFS（≤ _WIND_MONSOON_MAX_DIST=5 步）：
-    //       识别每个陆地 cell 距海岸的格数 + 朝向海洋的单位向量
+    //     Pass 0 — 海岸 BFS（≤ _WIND_COAST_THERMAL_MAX_DIST=5 步）：
+    //       识别每个陆地 cell 距海岸的格数，用作沿海热力压差权重
     //     主循环 — 每 cell：
-    //       (a) 纬度基线 v_base = wind_belt_at(ny, season_phase)
+    //       (a) 纬度基线 v_base = wind_belt_at(ny shifted by solar declination)
     //       (b) 6 邻域离散梯度 grad_slp = (1/3)*Σ(slp_nb-slp_self)*d_unit
     //       (d) 科氏偏转：仅对 -grad_slp 做（北半球右偏 / 南半球左偏）
-    //       (c) 海陆季风附加：BFS 距离权重 × sea_dir × 季节符号
-    //       合成 v_sum = w_lat*v_base + w_grad*v_grad + w_monsoon*v_monsoon
+    //       (c) 沿海权重只放大 SLP 梯度项；方向由 pressure gradient 决定
+    //       合成 v_sum = w_lat*v_base + w_grad*v_grad + synoptic perturbation
     //       (e) 地形/摩擦衰减 + 山脉绕流（mountain neighbor 切向偏转）
     //       写 wind_x_arr[i], wind_y_arr[i], wind_speed_out[i]
     //
     //   入参 `knobs` Dictionary：
     //     标量： n_cells (int)
     //            hex_size (float)
-    //            season_phase (float)
+    //            season_phase (float, orbital/year phase only)
     //            terrain_aware (int 0/1)  — 见 ClimateProfile.enable_terrain_aware_wind
     //            world_bounds_pos_y (float)
     //            world_bounds_size_y (float)
@@ -1229,15 +1236,17 @@ public:
     godot::Dictionary run_physical_circulation_pass(godot::Dictionary knobs);
 
     // ─── plan/dots-slp-psi-cpp: SLP field solver (stage 1) ───────────────
-    // Mirrors GDScript PhysicalCirculationSolver.solve_slp_field 1:1:
-    //   Pass A: per-cell baseline (lat amp + landsea + coast detect)
+    // Native SLP authority:
+    //   Pass A: latitude pressure belts + insolation-driven land/sea thermal
+    //           pressure + closed-loop thermal/ice/snow/moist terms.
     //   Pass B: smooth_passes-round 6-neighbor Jacobi smoothing
     //
     // knobs in:   n_cells, hex_size, season_phase, smooth_passes,
     //             world_bounds_pos_y, world_bounds_size_y,
     //             neighbor_indices, water_terrain_ids,
     //             slp_lat_amp, slp_land_amp, slp_water_damp,
-    //             slp_interior_boost, slp_coast_damp
+    //             slp_interior_boost, slp_coast_damp,
+    //             axial_tilt_deg, insolation_daylen_amp
     // knobs out:  slp_out (PackedFloat32Array, length n_cells)
     //
     // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }

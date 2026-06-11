@@ -49,7 +49,7 @@ const BASELINE_CAN_FLOOD := {
 
 const BASELINE_NAME := {
 	0: "晴朗", 1: "降雨", 2: "雷暴", 3: "暴风雪",
-	4: "旱灾", 5: "浓雾", 6: "热浪", 7: "季风暴雨",
+	4: "旱灾", 5: "浓雾", 6: "热浪", 7: "热带暴雨",
 }
 
 var _failures: int = 0

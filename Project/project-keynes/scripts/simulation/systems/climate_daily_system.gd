@@ -174,6 +174,8 @@ const _CLIMATE_INTEGRITY_EPS: float = 0.00001
 const _CLIMATE_TERRAIN_VIEW_SYNC_INITIAL_LOGS: int = 12
 var _climate_integrity_log_count: int = 0
 var _climate_integrity_last_msec: int = -1000000
+var _last_integrity_diag_ms: float = 0.0
+var _last_integrity_diag_stage: String = ""
 var _climate_terrain_view_sync_log_count: int = 0
 var _climate_integrity_prev_wind_x: PackedFloat32Array = PackedFloat32Array()
 var _climate_integrity_prev_wind_y: PackedFloat32Array = PackedFloat32Array()
@@ -223,6 +225,10 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_IS_WATER,
 		DCComponentIds.CELL_EMA_INITIALIZED,
 		DCComponentIds.CELL_TEMP_SEASON_OFFSET,
+		DCComponentIds.CELL_INSOLATION_NOW,
+		DCComponentIds.CELL_INSOLATION_DEV,
+		DCComponentIds.CELL_DAY_LENGTH,
+		DCComponentIds.CELL_HEAT_INPUT,
 		DCComponentIds.CELL_THERMAL_ENERGY,
 		DCComponentIds.CELL_SNOWPACK,
 		DCComponentIds.CELL_WATER_BALANCE_30D,
@@ -247,6 +253,10 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY,
 		DCComponentIds.CELL_CLIMATE_DIRTY,
 		DCComponentIds.CELL_EMA_INITIALIZED,
+		DCComponentIds.CELL_INSOLATION_NOW,
+		DCComponentIds.CELL_INSOLATION_DEV,
+		DCComponentIds.CELL_DAY_LENGTH,
+		DCComponentIds.CELL_HEAT_INPUT,
 		DCComponentIds.CELL_THERMAL_ENERGY,
 		DCComponentIds.CELL_SNOWPACK,
 		DCComponentIds.CELL_WATER_BALANCE_30D,
@@ -646,6 +656,8 @@ func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_m
 	_last_pass_path = path_override
 	_last_pass_budget_interrupted = bool(result.get("budget_interrupted", not result_done))
 	_last_pass_status = result_status
+	var diag_enabled: bool = bool(_active_pass_state.get("diagnostics_enabled", true))
+	var integrity_ms: float = 0.0
 	_active_pass_state["token"] = token
 	_active_pass_state["state"] = _PASS_STATE_DONE if result_done else _PASS_STATE_RUNNING
 	_active_pass_state["pass_cursor"] = _pass_cursor
@@ -668,9 +680,22 @@ func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_m
 		_active_pass_state["next_stage"] = str(result.get("next_stage", ""))
 	if result.has("abort_reason"):
 		_active_pass_state["abort_reason"] = str(result.get("abort_reason", ""))
-	if bool(_active_pass_state.get("diagnostics_enabled", true)):
-		_last_pass_diag = _active_pass_state.duplicate(true)
+	for k in [
+		"native_ms", "native_call_ms", "native_compute_ms", "native_apply_ms",
+		"native_flush_ms", "refresh_ms", "sync_ms", "sync_total_ms",
+		"sync_write_ms", "sync_mark_ms", "sync_path", "dirty_count",
+		"diagnostic_wall_ms",
+	]:
+		if result.has(k):
+			_active_pass_state[k] = result[k]
+	if diag_enabled:
+		var t_integrity_us: int = Time.get_ticks_usec()
 		_debug_climate_integrity("%s:%s" % [pass_name, result_status])
+		integrity_ms = (Time.get_ticks_usec() - t_integrity_us) / 1000.0
+		_last_integrity_diag_ms = integrity_ms
+		_last_integrity_diag_stage = "%s:%s" % [pass_name, result_status]
+		_active_pass_state["integrity_ms"] = integrity_ms
+		_last_pass_diag = _active_pass_state.duplicate(true)
 	return true
 
 
@@ -758,6 +783,7 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 			and _climate_integrity_log_count >= _CLIMATE_INTEGRITY_INITIAL_LOGS \
 			and now_msec - _climate_integrity_last_msec < _CLIMATE_INTEGRITY_MIN_INTERVAL_MSEC:
 		return
+	_climate_integrity_last_msec = now_msec
 
 	var terrain_a: PackedByteArray = map.terrain_arr
 	var base_terrain_a: PackedByteArray = map.base_terrain_arr
@@ -1002,7 +1028,6 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 	var precip_p95: float = _climate_diag_p95(precip_a, n)
 
 	_climate_integrity_log_count += 1
-	_climate_integrity_last_msec = now_msec
 	print("[climate/integrity] #%d stage=%s phase=%.3f n=%d terr_isw_mis=%d terr_lut_mis=%d cell_terr_mis=%d cell_pass_mis=%d cell_isw_mis=%d dc_terr_mis=%d dc_isw_mis=%d temp_edge_max=%.3f temp_edge_p99=%.3f temp_edge_warn=%d lat_band_max=%.3f air_nonzero=%d air_abs_max=%.5f tta_abs_max=%.5f wind_dir_mag=%.3f/%.3f/%.3f wind_dir_delta_p95=%.6f wind_speed=%.3f/%.3f/%.3f wind_speed_delta_p95=%.6f ocean_mag_avg=%.3f ocean_mag_max=%.3f ocean_delta_p95=%.6f ocean_water_zero=%d non_ocean_nonzero=%d moisture_base_r=%.3f precip_vapor_r=%.3f precip_cloud_r=%.3f precip_instab_r=%.3f precip_p95=%.3f" % [
 		_climate_integrity_log_count, stage_name, _phase_locked, n,
 		terrain_iswater_mismatch, terrain_lut_mismatch, cell_terrain_mismatch,
@@ -1220,19 +1245,35 @@ func _run_pass(pass_id: int) -> bool:
 				return true
 		_PASS_WIND_AIR:
 			# climate-loop-closure Phase 1.1：风温气团段（沿 -wind 回溯混合上风温度）。
-			generator._wind_air_mass_pass(map, _phase_locked)
-			var wa_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+			var r_wa: Dictionary
+			if generator.has_method("run_wind_air_mass_pass_native"):
+				r_wa = generator.run_wind_air_mass_pass_native(map, _phase_locked)
+			else:
+				generator._wind_air_mass_pass(map, _phase_locked)
+				var wa_fb_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+				r_wa = _make_pass_result(true, wa_fb_ms, map.cell_count(), 0, map.cell_count())
+				r_wa["path"] = "gdscript"
+				r_wa["stage"] = "oneshot"
+			var wa_ms: float = float(r_wa.get("elapsed_ms", (Time.get_ticks_usec() - t_us0) / 1000.0))
 			_round_t_wind_ms += wa_ms
-			var r_wa: Dictionary = _make_pass_result(true, wa_ms, map.cell_count(), 0, map.cell_count())
-			_record_pass_result(pass_id, token, r_wa, wa_ms, "wind_air", "oneshot", "gdscript")
+			_record_pass_result(pass_id, token, r_wa, wa_ms, "wind_air",
+				str(r_wa.get("stage", "oneshot")), str(r_wa.get("path", "gdscript")))
 			return true
 		_PASS_WIND_SURFACE:
 			# 必须在 wind_air 之后：读取气团段写入的 air_mass_temp_anomaly 注入地表温度。
-			generator._wind_surface_pass(map, _phase_locked)
-			var ws_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+			var r_ws: Dictionary
+			if generator.has_method("run_wind_surface_pass_native"):
+				r_ws = generator.run_wind_surface_pass_native(map, _phase_locked)
+			else:
+				generator._wind_surface_pass(map, _phase_locked)
+				var ws_fb_ms: float = (Time.get_ticks_usec() - t_us0) / 1000.0
+				r_ws = _make_pass_result(true, ws_fb_ms, map.cell_count(), 0, map.cell_count())
+				r_ws["path"] = "gdscript"
+				r_ws["stage"] = "oneshot"
+			var ws_ms: float = float(r_ws.get("elapsed_ms", (Time.get_ticks_usec() - t_us0) / 1000.0))
 			_round_t_wind_ms += ws_ms
-			var r_ws: Dictionary = _make_pass_result(true, ws_ms, map.cell_count(), 0, map.cell_count())
-			_record_pass_result(pass_id, token, r_ws, ws_ms, "wind_surface", "oneshot", "gdscript")
+			_record_pass_result(pass_id, token, r_ws, ws_ms, "wind_surface",
+				str(r_ws.get("stage", "oneshot")), str(r_ws.get("path", "gdscript")))
 			return true
 		_PASS_SEA_ICE:
 			if generator.has_method("run_climate_pass_slice"):
@@ -1253,7 +1294,7 @@ func _run_pass(pass_id: int) -> bool:
 			var tr_ms: float = float(r_tr.get("elapsed_ms", 0.0))
 			_round_t_transp_ms += tr_ms
 			_record_pass_result(pass_id, token, r_tr, tr_ms,
-				"transp", str(r_tr.get("stage", "sliced")), "gdscript_sliced")
+				"transp", str(r_tr.get("stage", "sliced")), str(r_tr.get("path", "gdscript_sliced")))
 			return bool(r_tr.get("done", true))
 	return true
 
@@ -1332,6 +1373,15 @@ func _transp_moisture_idx(idx: int) -> float:
 
 func _run_transpiration_pass_slice() -> Dictionary:
 	if _transp_stage == _TRANSP_STAGE_IDLE:
+		if generator != null and generator.has_method("run_transpiration_pass_native"):
+			var native_result: Dictionary = generator.run_transpiration_pass_native(map)
+			if bool(native_result.get("done", false)) and str(native_result.get("path", "")) == "gdext":
+				_transp_stage = _TRANSP_STAGE_DONE
+				_transp_cursor = int(native_result.get("processed_cells", map.cell_count() if map != null else 0))
+				_transp_n_cells = _transp_cursor
+				native_result["status"] = _PASS_RESULT_DONE
+				native_result["budget_interrupted"] = false
+				return native_result
 		_begin_transpiration_sliced()
 	var t_us0: int = Time.get_ticks_usec()
 	var stage_at_start: int = _transp_stage
@@ -1437,6 +1487,7 @@ func _run_transpiration_pass_slice() -> Dictionary:
 		"stage": stage_label,
 		"next_stage": _transp_stage_label(_transp_stage),
 		"budget_cells": _TRANSP_MIN_CELLS_PER_SLICE,
+		"path": "gdscript_sliced",
 	}
 
 
@@ -1584,7 +1635,7 @@ func _finalize_round() -> void:
 		if generator != null and "_daily_climate_call_count" in generator:
 			sim_day = int(generator._daily_climate_call_count)
 		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
-	_debug_climate_integrity("round_done", true)
+	_debug_climate_integrity("round_done")
 	_finish_active_pass()
 	_reset_transpiration_slice_state()
 	_round_active = false

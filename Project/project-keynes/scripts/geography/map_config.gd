@@ -41,7 +41,7 @@ var COLD_SINK_TEMP: float = -0.05
 var OCEAN_HEAT_ADVECT_STEPS: int = 3
 # 每步与上游温度的混合系数。
 var OCEAN_HEAT_MIX: float = 0.25
-# 沿岸水→陆热量泄漏权重（基础）；冬季相位会再 × 1.5。
+# 沿岸水→陆热量泄漏权重（基础）；不再叠加独立冬季倍率。
 var COASTAL_HEAT_LEAK: float = 0.35
 
 # 海冰修正：暖流输运异常×此系数后加到有效温度上用于与结冰阈值比较。

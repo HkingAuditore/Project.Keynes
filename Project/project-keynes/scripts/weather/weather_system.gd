@@ -65,10 +65,9 @@ var _active_fronts: Array[WeatherFront] = []
 var _world_bounds: Rect2 = Rect2()
 var _hex_size: float = 22.0
 var _day_counter: int = 0
-# Phase D：当前游戏季节相位（连续浮点，0=春 1=夏 2=秋 3=冬）。
-# 在 tick_one_day 里由调用方写入，用于动态计算季风偏置——
-# 静态烘焙的 wind_field_buffer 是夏季基线，加上当前季节的 monsoon offset
-# 才能让"夏吹向极、冬吹向赤道"的季风真正在 GPU/CPU 同步可见。
+# 当前年内轨道相位（连续浮点 [0, 4)）。
+# 只用于向 field solver 传递太阳几何/日照链条的年内位置；
+# 风向变化来自 SLP、压力梯度和 terrain-aware wind，不再由天气层叠加独立季节风向偏置。
 var _season_phase: float = 1.0
 # Milestone 3：上次 tick 是否改写过任何 cell.cover（给 baker 决定要不要 rebake cover_tex）
 var _cover_dirty: bool = false
@@ -181,12 +180,14 @@ var _diag_wd_commit_count: int = 0
 var _diag_fb_commit_count: int = 0
 
 var _use_gdext_weather_field: bool = false
+var _use_gdext_weather_field_commit: bool = false
 # F.1 运行时统计：cpp_runs / cpp_fallbacks / cpp_total_ms（_last_breakdown 暴露给上层 HUD）
 var _gdext_field_runs: int = 0
 var _gdext_field_fallbacks: int = 0
 var _gdext_field_total_ms: float = 0.0
 # F.1 fallback 节流：避免 cells size mismatch 时每 tick 都 push_warning。
 var _gdext_field_warned_fallback: bool = false
+var _gdext_field_commit_warned_fallback: bool = false
 # F.1 一次性诊断：第一次 fast-path attempt 时打一条 precondition 状态日志。
 var _gdext_field_first_attempt_logged: bool = false
 # F.1 运行时 A/B 验证：开关后每 tick 同时跑 C++ + GDScript，逐 cell 比较结果。
@@ -375,13 +376,11 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 		return _active_fronts
 	_day_counter += 1
 	_current_map_for_tick = map
-	# Phase D：缓存当前 season_phase 给 wind_fn / spawn 用。
+	# 缓存当前轨道相位给 wind_fn / spawn 的兼容签名。
 	# fallback：如果 caller 没提供（旧调用方兼容），按 season_idx 取季中点。
 	_season_phase = season_phase if season_phase >= 0.0 else float(season_idx) + 0.5
 
-	# Phase D：wind_fn 在静态 buffer 风的基础上叠加当季 monsoon 偏置。
-	# 这样 dry summer→winter 切换时，已存在的 MONSOON front 会立刻顺着新季风方向飘转，
-	# 而不是被困在夏季基线方向上。
+	# wind_fn 优先读 per-cell 风场；fallback 只给无风场时的纬向基线。
 	var bounds := _world_bounds
 	var sp := _season_phase
 	var map_ref := map
@@ -513,7 +512,7 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 			front.ttl_days = _rng.randi_range(12, 22)
 			front.decay_per_day = 1.0 / float(front.ttl_days) * 0.9
 		WeatherType.WT.STORM, WeatherType.WT.MONSOON:
-			# 暴风/季风：原 6-11 天 → 4-8 天，避免单地连下一周
+			# 强对流/热带暴雨：原 6-11 天 → 4-8 天，避免单地连下一周
 			front.ttl_days = _rng.randi_range(4, 8)
 			front.decay_per_day = 0.14
 		WeatherType.WT.BLIZZARD:
@@ -527,9 +526,7 @@ func _spawn_random_front(world: WorldData, season_idx: int, climate_anomaly: flo
 			# RAIN：原 10-16 天 → 6-11 天
 			front.ttl_days = _rng.randi_range(6, 11)
 			front.decay_per_day = 0.07
-	# 初始速度沿当前 spawn 点风向
-	# Phase D：与 wind_fn 同源——叠加当季 monsoon 偏置，让新生 MONSOON front
-	# 一出生就朝向真正的当季季风方向，而不是夏季基线方向。
+	# 初始速度沿当前 spawn 点风向。
 	var ny_spawn: float = 0.5
 	if size.y > 0.001:
 		ny_spawn = clampf((sy - origin.y) / size.y, 0.0, 1.0)
@@ -581,7 +578,7 @@ func _apply_front_shape_by_type(front: WeatherFront) -> void:
 
 # 加权类型抽样：
 #   abs_lat ∈ [0, 1]：0=赤道, 1=极地
-#   on_water：海面禁用 HEATWAVE / DROUGHT；MONSOON 仅低纬度 + 夏季
+#   on_water：海面禁用 HEATWAVE / DROUGHT；WT.MONSOON 作为强热带降水兼容类型
 #   climate_anomaly：全球暖化 → HEATWAVE/DROUGHT 概率上调；冷化 → BLIZZARD 上调
 func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate_anomaly: float) -> int:
 	season_idx = -1
@@ -595,7 +592,7 @@ func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate
 		WeatherType.WT.MONSOON:  0.0,
 	}
 
-	# 季节调权
+	# 旧季节调权分支已禁用；front 类型不再由 season_idx 直接指定。
 	match -1:
 		0:  # 春
 			weights[WeatherType.WT.RAIN]     = 1.4
@@ -605,7 +602,7 @@ func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate
 			weights[WeatherType.WT.STORM]    = 1.2
 			weights[WeatherType.WT.HEATWAVE] = 0.7 if not on_water else 0.0
 			weights[WeatherType.WT.DROUGHT]  = 0.5 if not on_water else 0.0
-			# 夏季低纬度大量 MONSOON
+			# Legacy only：旧夏季低纬强降水权重，当前分支不会进入。
 			if abs_lat < 0.45:
 				weights[WeatherType.WT.MONSOON] = 1.0
 		2:  # 秋
@@ -615,7 +612,7 @@ func _pick_weather_type(season_idx: int, abs_lat: float, on_water: bool, climate
 		3:  # 冬
 			weights[WeatherType.WT.RAIN]     = 0.6
 			weights[WeatherType.WT.STORM]    = 0.4
-			# 冬季高纬度大量 BLIZZARD
+			# Legacy only：旧冬季高纬暴雪权重，当前分支不会进入。
 			if abs_lat > 0.45:
 				weights[WeatherType.WT.BLIZZARD] = 1.6
 			weights[WeatherType.WT.FOG] = 0.7
@@ -891,6 +888,36 @@ func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells:
 		_gdext_field_warned_fallback = true
 		push_warning("[weather] gdext run_weather_field_solve_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
 	return rc
+
+
+func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_weather_field_commit_pass"):
+		return { "elapsed_ms": -1.0, "reason": "native_unavailable" }
+	var knobs: Dictionary = _field_solver._field_slice_native_knobs
+	if knobs.is_empty():
+		knobs = {}
+	knobs["n_cells"] = n_cells
+	knobs["neighbor_indices"] = _field_solver._field_slice_neighbor_indices
+	knobs["prev_vapor"] = _field_solver._field_slice_prev_vapor
+	knobs["out_vapor"] = _field_solver._field_slice_next_vapor
+	knobs["out_cloud"] = _field_solver._field_slice_next_cloud
+	knobs["out_cloud_water"] = _field_solver._field_slice_next_cloud_water
+	knobs["out_precip"] = _field_solver._field_slice_next_precip
+	knobs["out_instability"] = _field_solver._field_slice_next_instability
+	knobs["out_intensity"] = _field_solver._field_slice_next_intensity
+	knobs["out_convergence"] = _field_solver._field_slice_next_convergence
+	knobs["out_type"] = _field_solver._field_slice_next_type
+	knobs["weather_transition_enabled"] = bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false
+	knobs["weather_transition_alpha_rate"] = float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0
+	var rc_dict: Dictionary = _data_core_world_ext.run_weather_field_commit_pass(knobs)
+	var rc: float = float(rc_dict.get("elapsed_ms", -1.0))
+	if rc < 0.0 and not _gdext_field_commit_warned_fallback:
+		_gdext_field_commit_warned_fallback = true
+		push_warning("[weather] gdext run_weather_field_commit_pass returned %.2f (%s); falling back to GDScript commit loop" % [
+			rc,
+			str(rc_dict.get("reason", "unknown")),
+		])
+	return rc_dict
 
 # ─── Weather Hot-Path：dist GDExt 接入点（plan/weather-hotpath-cpp 任务 3）──
 # 与 F.1 同款套路：sig 校验 + knobs 构造 + try。任务 4 实装 C++ 主体后；本接入
@@ -1847,6 +1874,7 @@ func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_
 	var soa_elevation: PackedFloat32Array = map.elevation_arr
 	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
 	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
+	var soa_wind_speed: PackedFloat32Array = map.wind_speed_arr
 	var soa_terrain: PackedByteArray = map.terrain_arr
 	var soa_has_river: PackedByteArray = map.has_river_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
@@ -1868,7 +1896,8 @@ func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_
 		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
 		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
 		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
-		var wind_mag: float = clampf(wind.length() / 1.2, 0.0, 1.0)
+		var raw_wind_speed: float = soa_wind_speed[i] if soa_wind_speed.size() == n_cells else wind.length()
+		var wind_mag: float = clampf(raw_wind_speed / 1.2, 0.0, 1.0)
 		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
 		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
 		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
@@ -2978,8 +3007,11 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 	# 三个 cp 字段已删除——赋值现恒走 ext+has_method+sig 探测（仅保留
 	# enabled 参数作为 caller 主动 kill-switch）。
 	var sig_ok: bool = _validate_weather_field_signature(ext)
+	var commit_sig_ok: bool = _validate_weather_field_commit_signature(ext)
 	_use_gdext_weather_field = enabled and ext != null and ext.has_method("run_weather_field_solve_pass") and sig_ok
+	_use_gdext_weather_field_commit = enabled and ext != null and ext.has_method("run_weather_field_commit_pass") and commit_sig_ok
 	_gdext_field_warned_fallback = false
+	_gdext_field_commit_warned_fallback = false
 	# F.6 / fronts_soa / resident_knobs：cache cp reference 供 advect / soa / knobs 同步读。
 	_cp_for_front_flag = cp
 	if _use_gdext_weather_field:
@@ -2989,6 +3021,10 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 		push_warning("[weather] gdext acceleration DISABLED for this session: stale .dll signature mismatch (rebuild gdext to enable)")
 	elif ext != null and enabled:
 		push_warning("[weather] gdext acceleration requested but ext lacks run_weather_field_solve_pass; staying on GDScript path")
+	if _use_gdext_weather_field_commit:
+		print("[weather] gdext field commit ON")
+	elif ext != null and enabled and ext.has_method("run_weather_field_commit_pass") and not commit_sig_ok:
+		push_warning("[weather] gdext field commit DISABLED: stale .dll signature mismatch")
 
 	# ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────────
 	# dist + summary 两个 pass 的能力探测：方法存在 + 签名 arg-count = 1。任一失败镜像 flag
@@ -3060,6 +3096,22 @@ func _validate_weather_field_signature(ext: RefCounted) -> bool:
 			if args.size() == 1:
 				return true
 			push_warning("[gdext sig] run_weather_field_solve_pass has %d args (expected 1); gdext .dll is STALE. REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'." % args.size())
+			return false
+	return false
+
+
+func _validate_weather_field_commit_signature(ext: RefCounted) -> bool:
+	if ext == null:
+		return false
+	if not ext.has_method("run_weather_field_commit_pass"):
+		return false
+	var ml: Array = ext.get_method_list()
+	for m: Dictionary in ml:
+		if String(m.get("name", "")) == "run_weather_field_commit_pass":
+			var args: Array = m.get("args", [])
+			if args.size() == 1:
+				return true
+			push_warning("[gdext sig] run_weather_field_commit_pass has %d args (expected 1); gdext .dll is STALE. REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'." % args.size())
 			return false
 	return false
 
@@ -3318,8 +3370,8 @@ func push_summary_perf_sample(elapsed_ms: float) -> void:
 #   1. 推进前按 front 中心 cell 的 local 状态调整本日 decay_per_day（类型匹配 ×0.7、不匹配 ×1.5）
 #   2. 推进时如经过山脉迎风坡：本格 precip 强度叠加；经过背风坡：额外衰减
 #   3. spawn 概率按本地 1 环温湿梯度加权（梯度大处更易生成 front）
-#   4. spawn 类型由 (本地温度带, 湿度带, season_phase) 三者联合决定
-# 关闭时所有耦合行为退回旧的均匀/季节硬切路径（兼容回退）。
+#   4. spawn 类型由本地温度带、湿度带、水陆条件和实际气候异常决定。
+# 关闭时保留旧 front 行为作为兼容回退，但不重新启用季节硬切气候 forcing。
 func configure_emergent_coupling(enabled: bool, rain_shadow_threshold: float, rain_shadow_factor: float, orographic_boost: float) -> void:
 	_emergent_coupling = enabled
 	_emergent_rain_shadow_threshold = rain_shadow_threshold
@@ -3387,13 +3439,11 @@ func configure_weather_field(
 
 # v11 风场采样统一入口：
 #   - 开关为 true 且能反查到 cell 且 cell.wind_vector 足够大 → 直接返回 cell.wind_vector。
-#     这是地形扰动后的 per-cell 实际风，本身已含山脈绕流与海岸热力加速，
-#     另外包含了费老的季节偏移资源 → 不再叠加 monsoon offset（避免双重叠加）。
+#     这是地形扰动后的 per-cell 实际风，本身已含山脈绕流、海岸热力加速和压力场响应。
 #   - fallback（开关为 false / 反查失败 / wind_vector 太小）
 #     C3 plan (vector_atlas removal)：原 fallback 调 world.sample_wind(pos)
 #     从 wind_field_buffer 双线性采样，但 buffer 已停止 bake（is_empty）。
-#     新 fallback：直接走 WindBelt.wind_at(ny, season_phase) 的纯纬度风基线 +
-#     monsoon_offset，与原 fallback 行为等价但跳过空 buffer 采样开销。
+#     新 fallback：直接走 WindBelt.wind_at(ny, season_phase) 的纯纬度风基线。
 func _sample_terrain_wind(map: MapData, _world: WorldData, world_pos: Vector2, ny: float, season_phase: float) -> Vector2:
 	if _use_wind_vector_for_advect and map != null:
 		var cube := HexUtils.world_to_cube(world_pos, _hex_size)
@@ -3402,9 +3452,8 @@ func _sample_terrain_wind(map: MapData, _world: WorldData, world_pos: Vector2, n
 			var wv: Vector2 = cell.wind_vector
 			if wv.length() > 0.01:
 				return wv
-	# Pure-baseline fallback：纬度风 + monsoon offset（不再走像素 buffer 采样）。
-	var base: Vector2 = WindBelt.wind_at(ny, season_phase)
-	return base + WindBelt.monsoon_offset_at(ny, season_phase)
+	# Pure-baseline fallback：纬度风基线（不再走像素 buffer 采样）。
+	return WindBelt.wind_at(ny, season_phase)
 
 # spawn 路径（_spawn_random_front / _build_front_at）复用 _current_map_for_tick 取 map
 # 引用；if tick 未运行（外部直接调 _build_front_at）则返回 null → _sample_terrain_wind
@@ -3516,7 +3565,7 @@ func _front_orographic_precip_bonus(front: WeatherFront, cell: HexCell, map: Map
 	return 0.0
 
 # Emergent spawn：按本地 1 环温湿梯度加权抽 1 个 cell 作为 spawn 源，
-# 类型由 (本地温度带 × 湿度带 × season_phase) 联合决定。
+# 类型由本地温度带、湿度带、水陆条件和实际气候异常共同决定。
 func _spawn_emergent_front(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> WeatherFront:
 	if map == null:
 		return null
@@ -3557,7 +3606,7 @@ func _spawn_emergent_front(map: MapData, world: WorldData, season_idx: int, clim
 			break
 	if best_cell == null:
 		return null
-	# Step 2：用该 cell 的温湿 + season_phase 决定类型
+	# Step 2：用该 cell 的温湿、水陆条件和实际气候异常决定类型。
 	var wt: int = _pick_weather_type_emergent(best_cell, season_idx, climate_anomaly, map)
 	if wt == WeatherType.WT.CLEAR:
 		return null
@@ -3581,7 +3630,7 @@ func _local_temp_moist_gradient(cell: HexCell, map: MapData) -> float:
 		if dm > max_dm: max_dm = dm
 	return maxf(max_dt, max_dm)
 
-# 由本地温度带/湿度带 + season_phase 决定 front 类型。
+# 由本地温度带、湿度带、水陆条件和实际气候异常决定 front 类型。
 # 规则：
 #   暖湿陆地 + 强实际升温 → STORM
 #   寒冷海面          → BLIZZARD
@@ -3704,7 +3753,7 @@ func _build_front_at(spawn_pos: Vector2, wt: int, world: WorldData) -> WeatherFr
 			front.ttl_days = _rng.randi_range(12, 22)
 			front.decay_per_day = 1.0 / float(front.ttl_days) * 0.9
 		WeatherType.WT.STORM, WeatherType.WT.MONSOON:
-			# 暴风/季风：原 6-11 天 → 4-8 天，避免单地连下一周
+			# 强对流/热带暴雨：原 6-11 天 → 4-8 天，避免单地连下一周
 			front.ttl_days = _rng.randi_range(4, 8)
 			front.decay_per_day = 0.14
 		WeatherType.WT.BLIZZARD:

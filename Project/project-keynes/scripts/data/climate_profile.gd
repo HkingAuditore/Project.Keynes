@@ -96,31 +96,24 @@ extends Resource
 ## wind (HexCell.wind_vector) instead of the latitude-only baseline
 ## wind_field_buffer. This makes weather fronts feel mountains (deflection,
 ## piling, slow-down) without changing the baker. Set false to fall back to
-## the legacy world.sample_wind() + monsoon_offset path for regression. Default true.
+## the legacy world.sample_wind() baseline for regression. Default true.
 @export var weather_advect_use_wind_vector: bool = true
 
 # ══════════════════════════════════════════════════════════════════════
-# [Seasons]
+# [Orbital Daily Climate]
 # ══════════════════════════════════════════════════════════════════════
 @export_category("模拟频率与预算")
-@export_group("季节与日气候")
-@export_subgroup("基础季节信号")
+@export_group("轨道相位与日气候")
+@export_subgroup("兼容字段")
 
-# Per-season moisture scaler. Length must be 4 (Spring/Summer/Autumn/Winter).
 ## Legacy compatibility only. Runtime climate no longer reads a four-season
 ## moisture table; precipitation/moisture must emerge from native fields.
 @export var seasonal_moisture_scale: Array[float] = [1.0, 1.0, 1.0, 1.0]
 
-# Seasonal temperature amplitude: peak |Δtemp| between summer-mid and
-# winter-mid (mid-latitudes, ny ≈ 0.5 → 0). Mirrors the shader-side
-# `season_temp_amp` uniform (uniforms.gdshaderinc) and hex_renderer.gd
-# export; keep all three in sync.
-# 2026-05-19 Plan-C 调参：0.20 → 0.32。理由：原振幅 0.20 < 雪线带宽 0.26
-# 导致大多数纬度全年困在雪线一侧（要么常年有雪要么常年无雪）。抬到 0.32
-# 之后 temp_year ∈ [0.10, 0.62] 的纬度带能在一年中真正穿过雪线，雪线随
-# 季节南北推移；高纬海域冬季也能进入海冰窗口 [0, 0.10]。
-# 注意：season_temp_amp 同时影响雪线/海冰/温度偏移——调大可能让极地夏季
-# 过度升温、海冰消失。如需仅放大中纬度季节温差，改 insolation_season_gain。
+# Temperature response amplitude used by the insolation chain:
+# temp_delta = insolation_season_gain * insolation_dev * season_temp_amp.
+# This is not an independent season cosine. Tune axial_tilt_deg,
+# insolation_season_gain, day length, and thermal inertia for seasonal shape.
 @export var season_temp_amp: float = 0.32
 
 # Fallback orbital year length used by resource-only/native paths before a
@@ -664,7 +657,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #
 # 1) physical_circulation_enabled
 #    总开关。true → MapBaker 在风场/洋流烘焙路径里启用 hex 物理求解器
-#    （SLP → 地转风 + 海陆季风 → ψ 求解 → 西边界强化 → 沿岸 Ekman 上升流 → 光栅化）。
+#    （日照/热惯性 → SLP → 压力梯度/地转风 + 沿海热力环流 → ψ 求解 → 西边界强化 → 沿岸 Ekman 上升流 → 光栅化）。
 #    false → 走旧的 WindBelt.wind_at + Ekman ±45° + 海岸高度梯度 + 噪声路径，
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
@@ -675,7 +668,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
 @export_range(0.0, 0.20, 0.005) var wind_synoptic_amp: float = 0.075
 # Debug isolation: true forces physical wind solve to output WindBelt only,
-# bypassing pressure-gradient/monsoon/synoptic/old-wind inertia.
+# bypassing pressure-gradient/coastal-thermal/synoptic/old-wind inertia.
 @export var wind_belt_only_debug: bool = false
 @export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.28
 @export_range(0.0, 1.0, 0.01) var slp_ice_high_weight: float = 0.12
@@ -685,7 +678,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    当 physical_circulation_enabled = true 时附加生效。true → 物理化风场求解器
 #    在山地 cell 处对结果向量做地形偏转修正（背风侧降压、山脊阻挡 + 转向），
 #    直接调制 cell.wind_vector，不新增独立 buffer。false → 跳过地形修正，
-#    只保留地转风 + 海陆季风。默认 true。
+#    只保留纬度背景风 + SLP 压力梯度响应。默认 true。
 @export var enable_terrain_aware_wind: bool = true
 
 # 3) enable_ocean_heat_transport
@@ -714,24 +707,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 # [True insolation-driven climate — Phase F]
 # ══════════════════════════════════════════════════════════════════════
 @export_group("真实日照")
-# Switches the "season signal" upstream source from independent cosine
-# curves (one per subsystem) to a single physical quantity: insolation,
-# derived from a real sub-solar latitude that moves sinusoidally between
-# the tropics as year_progress sweeps [0, 1).
+# Deprecated compatibility field. Runtime climate no longer has a switchable
+# independent season signal: C++/DOTS Pass-A always derives climate forcing
+# from sub-solar latitude, daily insolation, day length, thermal inertia,
+# pressure/wind, and moisture. This bool is kept only for old UI/shader wiring
+# that still expects the property to exist.
 #
-# When true_insolation_enabled == true:
-#   • Temperature seasonal offset in refresh_climate_daily uses
-#     insolation_season_gain × (insol_now − insol_annual_mean) × season_temp_amp
-#     instead of _season_temp_offset_phase's standalone cosine.
-#   • Sea-ice daily pass does not read season/insolation directly; it consumes
-#     the temperature field after this pass has already applied insolation.
-#   • Moisture seasonal scale at _moisture_scale_at_phase is further modulated
-#     by (1 + 0.2 × insol_dev) so equator ≈ invariant, high-lat amplified.
-#   • Shader-side season_temp_offset() in world_map.gdshader is kept in sync
-#     via the same closed formula (CPU/GPU single source of truth).
-#
-# When false: all paths fall back to the legacy independent-cosine path
-# (seasonal-continuous-climate + emergent-climate-coupling baselines).
+# Setting this false must not re-enable legacy independent-cosine climate
+# forcing. Use axial_tilt_deg / insolation_season_gain / thermal inertia
+# parameters to tune seasonal amplitude.
 @export var true_insolation_enabled: bool = true
 
 # Axial tilt (obliquity). 23.5° ≈ Earth. Lower values → milder seasons even
@@ -817,7 +801,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 累积（recorder 实测全程 snowpack 峰值仅 0.0136，山顶 snow=0）。物理雪线给每个
 # 陆地 cell 一个"按当前温度决定的基线雪盖"：当 temp_now 低于 snowline_temp_threshold
 # 时，按越阈深度 (threshold - temp_now)/snowline_band 线性升到 1。temp_now 已含
-# 海拔 lapse + 季节项，因此雪线自然随海拔升高、随季节南北推移；天气降雪在此基线
+# 海拔 lapse + 日照/热惯性派生温度项，因此雪线自然随海拔升高、随太阳直射点南北推移；天气降雪在此基线
 # 之上叠加波动。在 weather distribute（snow_cover/snowpack 的最终写入处）应用：
 #   climatic_floor = clamp((snowline_temp_threshold - temp_now) / snowline_band, 0, 1)
 #   snowpack   = max(snowpack, climatic_floor)

@@ -75,3 +75,64 @@ static func compute_insolation(ny: float, season_phase: float,
 	var daylen_factor: float = 1.0 + insolation_daylen_amp * cos(TAU * year_progress) * lat_sign
 	return clampf(cos_zenith * daylen_factor, 0.0, 1.0)
 
+
+static func sunset_hour_angle(lat_rad: float, decl_rad: float) -> float:
+	if absf(decl_rad) <= 0.000001:
+		return PI * 0.5
+	var polar_test: float = -tan(lat_rad) * tan(decl_rad)
+	if polar_test <= -1.0:
+		return PI
+	if polar_test >= 1.0:
+		return 0.0
+	return acos(polar_test)
+
+
+static func compute_day_length_norm(ny: float, season_phase: float,
+		axial_tilt_deg: float = 23.5) -> float:
+	var lat_rad: float = (clampf(ny, 0.0, 1.0) - 0.5) * PI
+	var decl_rad: float = subsolar_lat_rad(season_phase, axial_tilt_deg)
+	return clampf(sunset_hour_angle(lat_rad, decl_rad) / PI, 0.0, 1.0)
+
+
+static func compute_daily_insolation(ny: float, season_phase: float,
+		axial_tilt_deg: float = 23.5,
+		_insolation_daylen_amp: float = 0.35) -> float:
+	var lat_rad: float = (clampf(ny, 0.0, 1.0) - 0.5) * PI
+	var subsolar: float = subsolar_lat_rad(season_phase, axial_tilt_deg)
+	var h0: float = sunset_hour_angle(lat_rad, subsolar)
+	if h0 <= 0.000001:
+		return 0.0
+	var daily: float = h0 * sin(lat_rad) * sin(subsolar) \
+			+ cos(lat_rad) * cos(subsolar) * sin(h0)
+	return clampf(daily, 0.0, 1.0)
+
+
+static func compute_annual_insolation_mean(ny: float,
+		axial_tilt_deg: float = 23.5,
+		insolation_daylen_amp: float = 0.35,
+		samples: int = 16) -> float:
+	var count: int = maxi(1, samples)
+	var acc: float = 0.0
+	for s in range(count):
+		var phase: float = (float(s) + 0.5) * (4.0 / float(count))
+		acc += compute_daily_insolation(ny, phase, axial_tilt_deg, insolation_daylen_amp)
+	return acc / float(count)
+
+
+static func compute_insolation_dev_from_values(ny: float, insol_now: float,
+		insol_mean: float) -> float:
+	var dev_abs: float = insol_now - insol_mean
+	var dev_rel: float = clampf(dev_abs / maxf(insol_mean, 0.18), -1.0, 1.0)
+	var abs_lat: float = absf((clampf(ny, 0.0, 1.0) - 0.5) * 2.0)
+	var polar_w: float = smoothstep(0.55, 0.90, abs_lat) * 0.55
+	return dev_abs + (dev_rel - dev_abs) * polar_w
+
+
+static func compute_insolation_dev(ny: float, season_phase: float,
+		axial_tilt_deg: float = 23.5,
+		insolation_daylen_amp: float = 0.35,
+		samples: int = 16) -> float:
+	var now_val: float = compute_daily_insolation(ny, season_phase, axial_tilt_deg, insolation_daylen_amp)
+	var mean_val: float = compute_annual_insolation_mean(ny, axial_tilt_deg, insolation_daylen_amp, samples)
+	return compute_insolation_dev_from_values(ny, now_val, mean_val)
+

@@ -7,6 +7,7 @@
 > - [`dots-phase3-followup.md`](./dots-phase3-followup.md)
 > - [`dots-phase4-followup.md`](./dots-phase4-followup.md)
 > - [`dots-stage-ii-data-ownership-plan.md`](./dots-stage-ii-data-ownership-plan.md)
+> - 当前运行期 C++/DOTS 架构、调度、通信和性能诊断参考见 [`cpp-dots-runtime/index.md`](./cpp-dots-runtime/index.md)。
 >
 > 路线图引用（保持有效）：[`dots-migration-roadmap.md`](./dots-migration-roadmap.md)、
 > [`performance-charter.md`](./performance-charter.md)、
