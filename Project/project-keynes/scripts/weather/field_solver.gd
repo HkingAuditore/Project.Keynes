@@ -119,6 +119,10 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	var n_cells: int = _field_slice_cells.size()
 	_field_slice_temp_read = map.temp_arr_prev if map.temp_arr_prev.size() == n_cells else map.temp_arr
 	_field_slice_moisture_read = map.moisture_arr_prev if map.moisture_arr_prev.size() == n_cells else map.moisture_arr
+	if map.weather_classification_temp_arr.size() == n_cells:
+		map.weather_classification_temp_arr = _field_slice_temp_read.duplicate()
+	if map.weather_classification_moisture_arr.size() == n_cells:
+		map.weather_classification_moisture_arr = _field_slice_moisture_read.duplicate()
 	_field_slice_snow_cover_read = map.snow_cover_arr_prev if map.snow_cover_arr_prev.size() == n_cells else map.snow_cover_arr
 	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
@@ -395,6 +399,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.30)
 		var cloud_water_rain: float = cloud_water * maxf(rain_focus, 0.18) * (0.14 + instability * 0.16)
 		var precip: float = clampf(maxf(maxf(precip_raw, precip_floor), cloud_water_rain), 0.0, 1.0)
+		precip = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip)
 		cloud_water = clampf(cloud_water - precip * 0.32, 0.0, 1.0)
 		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
 		if precip < 0.005 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
@@ -482,6 +487,10 @@ func commit() -> Array[WeatherFront]:
 	var commit_path: String = "gdscript"
 	var commit_loop_ms: float = 0.0
 	var native_commit_done: bool = false
+	var convergence_delta_samples: PackedFloat32Array = PackedFloat32Array()
+	var convergence_delta_count: int = 0
+	if _field_slice_refresh_convergence and commit_n > 0:
+		convergence_delta_samples.resize(commit_n)
 	var native_wrote_next: bool = bool(_field_slice_native_knobs.get("weather_field_wrote_next", false))
 	if _weather_system._use_gdext_weather_field_commit \
 			and _weather_system._data_core_world_ext != null \
@@ -503,6 +512,9 @@ func commit() -> Array[WeatherFront]:
 			weather_dirty_count = int(commit_rc.get("weather_dirty_count", 0))
 			water_budget_error_acc = float(commit_rc.get("water_budget_error", 0.0)) * float(maxi(commit_n, 1))
 			commit_loop_ms = float(commit_rc.get("commit_loop_ms", commit_rc.get("elapsed_ms", 0.0)))
+			convergence_delta_count = int(commit_rc.get("weather_convergence_dirty_count", 0))
+			if _field_slice_refresh_convergence:
+				convergence_delta_samples = commit_rc.get("weather_convergence_deltas", PackedFloat32Array())
 	if not native_commit_done:
 		for i in range(cells.size()):
 			if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
@@ -516,6 +528,11 @@ func commit() -> Array[WeatherFront]:
 			var v_vapor: float = _field_slice_next_vapor[i]
 			var v_convergence: float = _field_slice_next_convergence[i]
 			var v_instability: float = _field_slice_next_instability[i]
+			if _field_slice_refresh_convergence and soa_convergence.size() > i:
+				var conv_delta: float = absf(soa_convergence[i] - v_convergence)
+				if conv_delta > 0.0005:
+					convergence_delta_samples[convergence_delta_count] = conv_delta
+					convergence_delta_count += 1
 			var prev_budget_vapor: float = _field_slice_prev_vapor[i] if _field_slice_prev_vapor.size() > i else (soa_vapor[i] if soa_vapor.size() > i else 0.0)
 			var prev_budget_cloud_water: float = soa_cloud_water[i] if soa_cloud_water.size() > i else 0.0
 			water_budget_error_acc += absf((v_vapor + v_cloud_water + v_precip) - (prev_budget_vapor + prev_budget_cloud_water))
@@ -537,9 +554,15 @@ func commit() -> Array[WeatherFront]:
 					prev_type = current_display
 					target_type = v_type
 					alpha = 0.0
+				elif prev_type == target_type or current_display == target_type:
+					prev_type = target_type
+					alpha = 0.0
 				else:
 					alpha = clampf(alpha + transition_rate, 0.0, 1.0)
 				display_type = target_type if alpha >= 1.0 else prev_type
+				if alpha >= 1.0:
+					prev_type = target_type
+					alpha = 0.0
 			# 任务 2：facade 开启后跳过 AoS 双写（SoA 由本函数末尾的 batch indexed 写入）。
 			# facade=false 时仍保留 AoS 写，让 legacy reader（map_baker / map_generator）能读到值。
 			if not hexcell_facade_on:
@@ -647,6 +670,9 @@ func commit() -> Array[WeatherFront]:
 		_weather_system._apply_frontal_convergence_boost(map, cells, _field_slice_climate_anomaly, _field_slice_neighbor_indices, _field_slice_fast_indexed)
 		commit_convergence_ms = (Time.get_ticks_usec() - t_commit_conv_us) / 1000.0
 	var commit_total_ms: float = (Time.get_ticks_usec() - t_commit_total_us) / 1000.0
+	if convergence_delta_samples.size() > convergence_delta_count:
+		convergence_delta_samples.resize(convergence_delta_count)
+	var convergence_delta_p95: float = _weather_system._percentile_abs_from_array(convergence_delta_samples, 0.95) if convergence_delta_count > 0 else 0.0
 
 	var t_us0_field: int = Time.get_ticks_usec()
 	# ─── Weather Hot-Path：dist fast-path（plan/weather-hotpath-cpp 任务 3）──
@@ -758,6 +784,14 @@ func commit() -> Array[WeatherFront]:
 		"field_commit_path": commit_path,
 		"field_commit_dc_ms": commit_dc_ms,
 		"field_commit_convergence_ms": commit_convergence_ms,
+		"field_solve_tick": _weather_system._field_solve_tick,
+		"field_convergence_refresh_stride": _weather_system._field_convergence_refresh_stride,
+		"refresh_convergence": _field_slice_refresh_convergence,
+		"native_convergence_boost": _field_slice_native_convergence_boost,
+		"weather_convergence_dirty_count": convergence_delta_count,
+		"weather_convergence_delta_p95": convergence_delta_p95,
+		"convergence_published": _field_slice_refresh_convergence \
+				and (_field_slice_native_convergence_boost or commit_convergence_ms > 0.0 or convergence_delta_count > 0),
 		"weather_dirty_count": weather_dirty_count,
 		"water_budget_error": water_budget_error_acc / float(maxi(commit_n, 1)),
 		"active_weather_ratio": float(weather_dirty_count) / float(maxi(commit_n, 1)),

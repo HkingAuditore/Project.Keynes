@@ -1161,7 +1161,12 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 				float(cp_ec.snowline_temp_threshold) if cp_ec.get("snowline_temp_threshold") != null else 0.34,
 				float(cp_ec.snowline_band) if cp_ec.get("snowline_band") != null else 0.18,
 				float(cp_ec.weather_vapor_relax_rate) if cp_ec.get("weather_vapor_relax_rate") != null else 0.08,
-				float(cp_ec.weather_orographic_lift_cap) if cp_ec.get("weather_orographic_lift_cap") != null else 0.35
+				float(cp_ec.weather_orographic_lift_cap) if cp_ec.get("weather_orographic_lift_cap") != null else 0.35,
+				float(cp_ec.weather_wet_terrain_precip_damping) if cp_ec.get("weather_wet_terrain_precip_damping") != null else 0.22,
+				float(cp_ec.weather_lake_precip_damping) if cp_ec.get("weather_lake_precip_damping") != null else 0.35,
+				float(cp_ec.weather_lake_evap_scale) if cp_ec.get("weather_lake_evap_scale") != null else 0.35,
+				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.24,
+				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.35
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -2032,6 +2037,76 @@ func _build_native_daily_transpiration_knobs(map: MapData, cp_now) -> Dictionary
 	}
 
 
+func _temperature_transport_anomaly_knobs(cp_now) -> Dictionary:
+	var source_cap: float = 0.08
+	var blend_rate: float = 0.35
+	var decay_rate: float = 0.12
+	var zero_current_decay: float = 0.20
+	if cp_now != null:
+		if cp_now.get("temperature_transport_anomaly_source_cap") != null:
+			source_cap = float(cp_now.temperature_transport_anomaly_source_cap)
+		if cp_now.get("temperature_transport_anomaly_blend_rate") != null:
+			blend_rate = float(cp_now.temperature_transport_anomaly_blend_rate)
+		if cp_now.get("temperature_transport_anomaly_decay_rate") != null:
+			decay_rate = float(cp_now.temperature_transport_anomaly_decay_rate)
+		if cp_now.get("temperature_transport_anomaly_zero_current_decay") != null:
+			zero_current_decay = float(cp_now.temperature_transport_anomaly_zero_current_decay)
+	return {
+		"tta_source_cap": clampf(source_cap, 0.0, 0.5),
+		"tta_blend_rate": clampf(blend_rate, 0.0, 1.0),
+		"tta_decay_rate": clampf(decay_rate, 0.0, 1.0),
+		"tta_zero_current_decay": clampf(zero_current_decay, 0.0, 1.0),
+	}
+
+
+func _apply_temperature_transport_anomaly_knobs(target: Dictionary, tta: Dictionary) -> void:
+	for key in tta.keys():
+		target[key] = tta[key]
+
+
+func _prepare_temperature_transport_anomaly_state(map: MapData, n: int, cells: Array = [], prefer_cached: bool = false) -> PackedFloat32Array:
+	var out: PackedFloat32Array = PackedFloat32Array()
+	out.resize(maxi(n, 0))
+	if n <= 0:
+		return out
+	if prefer_cached and _gdext_ocean_anomaly_buf_cached.size() == n:
+		var cached: PackedFloat32Array = _gdext_ocean_anomaly_buf_cached
+		for ci in range(n):
+			out[ci] = float(cached[ci])
+		return out
+	if map != null and map.temperature_transport_anomaly_arr.size() == n:
+		var arr: PackedFloat32Array = map.temperature_transport_anomaly_arr
+		for ai in range(n):
+			out[ai] = float(arr[ai])
+		return out
+	if not prefer_cached and _gdext_ocean_anomaly_buf_cached.size() == n:
+		var cached_after_map: PackedFloat32Array = _gdext_ocean_anomaly_buf_cached
+		for cmi in range(n):
+			out[cmi] = float(cached_after_map[cmi])
+		return out
+	if cells.size() == n:
+		for i in range(n):
+			var cell = cells[i]
+			if cell != null:
+				out[i] = float((cell as HexCell).temperature_transport_anomaly)
+	return out
+
+
+func _stabilize_temperature_transport_anomaly(prev: float, source: float, source_cap: float, blend_rate: float) -> float:
+	var cap: float = absf(source_cap)
+	var capped_source: float = clampf(source, -cap, cap)
+	var blend: float = clampf(blend_rate, 0.0, 1.0)
+	return lerpf(prev, capped_source, blend)
+
+
+func _decay_temperature_transport_anomaly(prev: float, decay_rate: float) -> float:
+	return prev * (1.0 - clampf(decay_rate, 0.0, 1.0))
+
+
+func _valid_runtime_temp_or_baseline(temp_value: float, baseline: float) -> float:
+	return baseline if is_nan(temp_value) or is_inf(temp_value) else temp_value
+
+
 func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null or not bool(_last_cfg.enable_ocean_heat_transport):
 		return {}
@@ -2066,32 +2141,38 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
 			baseline[i] = _compute_temperature(ny, elev_a[i])
 		var t0: float = temp_a[i]
-		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
+		temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
 	var anomaly: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
+	var prev_anomaly: PackedFloat32Array = _prepare_temperature_transport_anomaly_state(map, n, cells)
 	for ai in range(n):
-		anomaly[ai] = 0.0
+		anomaly[ai] = prev_anomaly[ai]
 	var winter_boost: float = 1.0
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp_now)
+	var water_knobs: Dictionary = {
+		"n_cells": n,
+		"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
+		"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
+		"neighbor_indices": nb_idx,
+		"baseline_arr": baseline,
+		"temp_before_arr": temp_before,
+		"anomaly_out": anomaly,
+		"ocean_current_x_arr": ocx_a,
+		"ocean_current_y_arr": ocy_a,
+	}
+	var land_knobs: Dictionary = {
+		"n_cells": n,
+		"effective_leak": float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost,
+		"neighbor_indices": nb_idx,
+		"anomaly_inout": anomaly,
+		"fallback_baseline_arr": baseline,
+		"ocean_current_x_arr": ocx_a,
+		"ocean_current_y_arr": ocy_a,
+	}
+	_apply_temperature_transport_anomaly_knobs(water_knobs, tta)
+	_apply_temperature_transport_anomaly_knobs(land_knobs, tta)
 	return {
-		"water": {
-			"n_cells": n,
-			"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
-			"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
-			"neighbor_indices": nb_idx,
-			"baseline_arr": baseline,
-			"temp_before_arr": temp_before,
-			"anomaly_out": anomaly,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
-		"land": {
-			"n_cells": n,
-			"effective_leak": float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost,
-			"neighbor_indices": nb_idx,
-			"anomaly_inout": anomaly,
-			"fallback_baseline_arr": baseline,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
+		"water": water_knobs,
+		"land": land_knobs,
 	}
 
 
@@ -2671,27 +2752,49 @@ func _advance_weather_transition_alpha_tick(map: MapData) -> void:
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for i in range(n):
 		var alpha: float = clampf(alpha_arr[i], 0.0, 1.0)
-		if alpha >= 1.0:
+		var target_type: int = int(target_arr[i])
+		var prev_type: int = int(prev_arr[i])
+		var current_type: int = int(type_arr[i])
+		if alpha >= 1.0 or prev_type == target_type or current_type == target_type:
+			type_arr[i] = target_type & 0xFF
+			prev_arr[i] = target_type & 0xFF
+			alpha_arr[i] = 0.0
+			if i < cells.size():
+				var c_done: HexCell = cells[i]
+				if c_done != null:
+					c_done.weather_type = target_type
+					c_done.weather_prev_type = target_type
+					c_done.weather_target_type = target_type
+					c_done.weather_transition_alpha = 0.0
 			continue
 		alpha = clampf(alpha + rate, 0.0, 1.0)
-		alpha_arr[i] = alpha
 		if alpha >= 1.0:
-			type_arr[i] = target_arr[i]
+			type_arr[i] = target_type & 0xFF
+			prev_arr[i] = target_type & 0xFF
+			alpha_arr[i] = 0.0
+		else:
+			alpha_arr[i] = alpha
 		if i < cells.size():
 			var c: HexCell = cells[i]
 			if c != null:
-				c.weather_transition_alpha = alpha
+				c.weather_transition_alpha = float(alpha_arr[i])
 				c.weather_prev_type = int(prev_arr[i])
-				c.weather_target_type = int(target_arr[i])
+				c.weather_target_type = target_type
 				if alpha >= 1.0:
-					c.weather_type = int(target_arr[i])
+					c.weather_type = target_type
 	if _data_core_world != null:
 		var cid_alpha: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TRANSITION_ALPHA)
 		var cid_type: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
+		var cid_prev: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PREV_TYPE)
+		var cid_target: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TARGET_TYPE)
 		if cid_alpha >= 0:
 			_data_core_world.write_f32_range(cid_alpha, 0, alpha_arr)
 		if cid_type >= 0:
 			_data_core_world.write_u8_range(cid_type, 0, type_arr)
+		if cid_prev >= 0:
+			_data_core_world.write_u8_range(cid_prev, 0, prev_arr)
+		if cid_target >= 0:
+			_data_core_world.write_u8_range(cid_target, 0, target_arr)
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
@@ -8404,6 +8507,11 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
 	var baseline := PackedFloat32Array()
 	var temp_before := PackedFloat32Array()
+	var anomaly_state: PackedFloat32Array = _prepare_temperature_transport_anomaly_state(map, n_cells, cells)
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
+	var tta_source_cap: float = float(tta["tta_source_cap"])
+	var tta_blend_rate: float = float(tta["tta_blend_rate"])
+	var tta_zero_current_decay: float = float(tta["tta_zero_current_decay"])
 	var cell_pos := PackedVector2Array()
 	baseline.resize(n_cells)
 	temp_before.resize(n_cells)
@@ -8416,7 +8524,7 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 		else:
 			var ny: float = _cube_row_norm(src_cell, _last_cfg)
 			baseline[i] = _compute_temperature(ny, src_cell.elevation)
-		temp_before[i] = src_cell.temperature if src_cell.temperature > 0.0 else baseline[i]
+		temp_before[i] = _valid_runtime_temp_or_baseline(src_cell.temperature, baseline[i])
 		if has_idx:
 			cell_pos[i] = HexUtils.cube_to_world(src_cell.q, src_cell.r, _last_hex_size)
 
@@ -8426,7 +8534,9 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 			continue
 		var cur: Vector2 = cell.ocean_current
 		if cur.length_squared() < 1e-6 or advect_steps == 0:
-			cell.temperature_transport_anomaly = 0.0
+			var decayed_zero: float = _decay_temperature_transport_anomaly(anomaly_state[i], tta_zero_current_decay)
+			anomaly_state[i] = decayed_zero
+			cell.temperature_transport_anomaly = decayed_zero
 			continue
 		# 沿 -cur 方向回溯 advect_steps 步，每步选最对齐的水邻居
 		var upstream_idx: int = i
@@ -8489,11 +8599,19 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 		# PR-2.1.3a（ocean water legacy 写路径下移）：cell.temperature 单点 write_f32。
 		# temperature_transport_anomaly 字段不在 schema 内，保留 cell.* 直写
 		# （由 PR-2.3 HexCell facade 化时统一决定是否加 cid，详见 master 手册 §3.6.2）。
-		cell.temperature_transport_anomaly = temp_mixed - baseline[i]
+		var anomaly_new: float = _stabilize_temperature_transport_anomaly(
+				anomaly_state[i], temp_mixed - baseline[i], tta_source_cap, tta_blend_rate)
+		anomaly_state[i] = anomaly_new
+		cell.temperature_transport_anomaly = anomaly_new
 		if _data_core_world != null:
 			var _cid_temp_ow: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 			if _cid_temp_ow >= 0 and cell.index >= 0:
 				_data_core_world.write_f32(_cid_temp_ow, int(cell.index), temp_clamped)
+	map.temperature_transport_anomaly_arr = anomaly_state
+	if _data_core_world != null:
+		var _cid_tta_ow: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_ow >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_ow, anomaly_state)
 	# DOTS-Total-CPP（任务 6）：标记本 phase 已跑完，让同 tick caller 短路。
 	_ocean_water_done_phase = season_phase
 
@@ -8513,6 +8631,10 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 	# 沿岸热泄漏不再使用独立冬季倍率；热异常由水体温度/洋流路径决定。
 	var winter_boost: float = 1.0
 	var effective_leak: float = coast_leak * winter_boost
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
+	var tta_source_cap: float = float(tta["tta_source_cap"])
+	var tta_blend_rate: float = float(tta["tta_blend_rate"])
+	var tta_decay_rate: float = float(tta["tta_decay_rate"])
 
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = cells.size()
@@ -8570,9 +8692,12 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 					continue
 				weighted_sum += nb.temperature_transport_anomaly * w_nb
 				weight_total += w_nb
-		var anomaly_in: float = 0.0
+		var prev_anomaly: float = cell.temperature_transport_anomaly
+		var anomaly_in: float = _decay_temperature_transport_anomaly(prev_anomaly, tta_decay_rate)
 		if weight_total > 0.0:
-			anomaly_in = (weighted_sum / weight_total) * effective_leak
+			anomaly_in = _stabilize_temperature_transport_anomaly(
+					prev_anomaly, (weighted_sum / weight_total) * effective_leak,
+					tta_source_cap, tta_blend_rate)
 		cell.temperature_transport_anomaly = anomaly_in
 		if absf(anomaly_in) > 1e-5:
 			# Fast-tick perf opt (C)：直接读写强类型成员（双写）。
@@ -8580,7 +8705,7 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 			if not cell._ema_initialized:
 				var ny: float = _cube_row_norm(cell, _last_cfg)
 				fallback_baseline = _compute_temperature(ny, cell.elevation)
-			var t_prev: float = cell.temperature if cell.temperature > 0.0 else fallback_baseline
+			var t_prev: float = _valid_runtime_temp_or_baseline(cell.temperature, fallback_baseline)
 			var t_new: float = clampf(t_prev + anomaly_in, 0.0, 1.0)
 			cell.temperature = t_new
 			# PR-2.1.3b（ocean land legacy 写路径下移）：单点 write_f32。
@@ -8588,6 +8713,16 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 				var _cid_temp_ol: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 				if _cid_temp_ol >= 0 and cell.index >= 0:
 					_data_core_world.write_f32(_cid_temp_ol, int(cell.index), t_new)
+	var anomaly_land_state: PackedFloat32Array = PackedFloat32Array()
+	anomaly_land_state.resize(n_cells)
+	for tta_i in range(n_cells):
+		var tta_cell = cells[tta_i]
+		anomaly_land_state[tta_i] = float((tta_cell as HexCell).temperature_transport_anomaly) if tta_cell != null else 0.0
+	map.temperature_transport_anomaly_arr = anomaly_land_state
+	if _data_core_world != null:
+		var _cid_tta_ol: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_ol >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_ol, anomaly_land_state)
 
 # ══════════════════════════════════════════════════════════════════════
 # Climate-Weather 2ms Budget — Phase A.3：4 段 sub-pass 的 SoA 重写版本
@@ -9447,6 +9582,10 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0)
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
+	var tta_source_cap: float = float(tta["tta_source_cap"])
+	var tta_blend_rate: float = float(tta["tta_blend_rate"])
+	var tta_zero_current_decay: float = float(tta["tta_zero_current_decay"])
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化（Ocean Water）
 	var _dc_views: Dictionary = _climate_views_from_world(cp)
 	var _use_dc: bool = not _dc_views.is_empty()
@@ -9480,7 +9619,7 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
 			baseline[i] = _compute_temperature(ny, elev_a[i])
 		var t0: float = temp_a[i]
-		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
+		temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
 
 	# ─── Phase F.2a：DCWorldExt C++ 快路径（charter §7 P1，3.4ms → < 0.5ms）──
 	# baseline + temp_before 已经预算，不需要再翻译 _compute_temperature 到 C++。
@@ -9520,6 +9659,9 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		if _gdext_ocean_anomaly_work_buf.size() != n:
 			_gdext_ocean_anomaly_work_buf.resize(n)
 		var anomaly_buf: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
+		var prev_anomaly: PackedFloat32Array = _prepare_temperature_transport_anomaly_state(map, n, cells)
+		for ai in range(n):
+			anomaly_buf[ai] = prev_anomaly[ai]
 		var knobs_w: Dictionary = {
 			"n_cells": n,
 			"advect_steps": advect_steps,
@@ -9531,6 +9673,7 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			"ocean_current_x_arr": ocx_a,
 			"ocean_current_y_arr": ocy_a,
 		}
+		_apply_temperature_transport_anomaly_knobs(knobs_w, tta)
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
 		# 但本 pass 还要读 map.is_water_arr / cell_lat_norm_arr 等静态/上一段写过的字段；
 		# refresh 后保证 C++ slot 与 map 一致。详见 docs/dots-f4-validation.md §2.2.b。
@@ -9581,7 +9724,9 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		var cur_y: float = ocy_a[i]
 		var cur_len2: float = cur_x * cur_x + cur_y * cur_y
 		if cur_len2 < 1e-6 or advect_steps == 0:
-			cells[i].temperature_transport_anomaly = 0.0
+			var decayed_zero: float = _decay_temperature_transport_anomaly(
+					cells[i].temperature_transport_anomaly, tta_zero_current_decay)
+			cells[i].temperature_transport_anomaly = decayed_zero
 			continue
 		var inv_cur: float = 1.0 / sqrt(cur_len2)
 		var up_dx: float = -cur_x * inv_cur
@@ -9620,7 +9765,9 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		if temp_mixed < 0.0: temp_mixed = 0.0
 		elif temp_mixed > 1.0: temp_mixed = 1.0
 		temp_a[i] = temp_mixed
-		cells[i].temperature_transport_anomaly = temp_mixed - baseline[i]
+		cells[i].temperature_transport_anomaly = _stabilize_temperature_transport_anomaly(
+				cells[i].temperature_transport_anomaly, temp_mixed - baseline[i],
+				tta_source_cap, tta_blend_rate)
 
 	# PR-2.1.3a（ocean water SoA 路径）：循环结束后批量 push temp_a 到 DCWorld。
 	#
@@ -9656,11 +9803,24 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			var _cid_temp_ows: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 			if _cid_temp_ows >= 0:
 				_data_core_world.write_f32_indexed(_cid_temp_ows, _ow_indices, _ow_temp)
+	var anomaly_soa_state: PackedFloat32Array = PackedFloat32Array()
+	anomaly_soa_state.resize(n)
+	for tta_i in range(n):
+		anomaly_soa_state[tta_i] = float(cells[tta_i].temperature_transport_anomaly) if cells[tta_i] != null else 0.0
+	map.temperature_transport_anomaly_arr = anomaly_soa_state
+	if _data_core_world != null:
+		var _cid_tta_ows: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_ows >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_ows, anomaly_soa_state)
 
 func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
 	var coast_leak: float = _last_cfg.COASTAL_HEAT_LEAK
 	var winter_boost: float = 1.0
 	var effective_leak: float = coast_leak * winter_boost
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
+	var tta_source_cap: float = float(tta["tta_source_cap"])
+	var tta_blend_rate: float = float(tta["tta_blend_rate"])
+	var tta_decay_rate: float = float(tta["tta_decay_rate"])
 
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化（Ocean Land）
 	var _dc_views: Dictionary = _climate_views_from_world(cp)
@@ -9752,6 +9912,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			"ocean_current_x_arr": ocx_arr_l,
 			"ocean_current_y_arr": ocy_arr_l,
 		}
+		_apply_temperature_transport_anomaly_knobs(knobs_l, _temperature_transport_anomaly_knobs(cp))
 		# storage A/B 同源契约（修复 B 2026-05-14）：ocean_water 已 flush 到 map，
 		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/dots-f4-validation.md §2.2.b。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
@@ -9851,9 +10012,12 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 				continue
 			weighted_sum += cells[ni].temperature_transport_anomaly * dot_v
 			weight_total += dot_v
-		var anomaly_in: float = 0.0
+		var prev_anomaly: float = cells[i].temperature_transport_anomaly
+		var anomaly_in: float = _decay_temperature_transport_anomaly(prev_anomaly, tta_decay_rate)
 		if weight_total > 0.0:
-			anomaly_in = (weighted_sum / weight_total) * effective_leak
+			anomaly_in = _stabilize_temperature_transport_anomaly(
+					prev_anomaly, (weighted_sum / weight_total) * effective_leak,
+					tta_source_cap, tta_blend_rate)
 		cells[i].temperature_transport_anomaly = anomaly_in
 		if absf(anomaly_in) > 1e-5:
 			var c: HexCell = cells[i]
@@ -9861,7 +10025,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			if ema_init_a[i] == 0:
 				var ny: float = _cube_row_norm(c, _last_cfg)
 				fallback_baseline = _compute_temperature(ny, elev_a[i])
-			var t_prev: float = temp_a[i] if temp_a[i] > 0.0 else fallback_baseline
+			var t_prev: float = _valid_runtime_temp_or_baseline(temp_a[i], fallback_baseline)
 			var tnew: float = t_prev + anomaly_in
 			if tnew < 0.0: tnew = 0.0
 			elif tnew > 1.0: tnew = 1.0
@@ -9883,6 +10047,15 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		var _cid_temp_ols: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		if _cid_temp_ols >= 0:
 			_data_core_world.write_f32_indexed(_cid_temp_ols, _ol_changed_idx, _ol_changed_temp)
+	var anomaly_land_state: PackedFloat32Array = PackedFloat32Array()
+	anomaly_land_state.resize(n)
+	for tta_i in range(n):
+		anomaly_land_state[tta_i] = float(cells[tta_i].temperature_transport_anomaly) if cells[tta_i] != null else 0.0
+	map.temperature_transport_anomaly_arr = anomaly_land_state
+	if _data_core_world != null:
+		var _cid_tta_ols: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if _cid_tta_ols >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(_cid_tta_ols, anomaly_land_state)
 
 
 func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: ClimateProfile) -> bool:
@@ -9919,12 +10092,36 @@ func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: C
 			var ny: float = lat_a[i] if lat_a.size() > i else _cube_row_norm(cells[i], _last_cfg)
 			baseline[i] = _compute_temperature(ny, elev_a[i])
 		var t0: float = temp_a[i]
-		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
+		temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
 	var anomaly: PackedFloat32Array = _gdext_ocean_anomaly_work_buf
+	var prev_anomaly: PackedFloat32Array = _prepare_temperature_transport_anomaly_state(map, n, cells)
 	for ai in range(n):
-		anomaly[ai] = 0.0
+		anomaly[ai] = prev_anomaly[ai]
 	var winter_boost: float = 1.0
 	var effective_leak: float = float(_last_cfg.COASTAL_HEAT_LEAK) * winter_boost
+	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
+	var water_knobs: Dictionary = {
+		"n_cells": n,
+		"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
+		"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
+		"neighbor_indices": nb_idx,
+		"baseline_arr": baseline,
+		"temp_before_arr": temp_before,
+		"anomaly_out": anomaly,
+		"ocean_current_x_arr": ocx_a,
+		"ocean_current_y_arr": ocy_a,
+	}
+	var land_knobs: Dictionary = {
+		"n_cells": n,
+		"effective_leak": effective_leak,
+		"neighbor_indices": nb_idx,
+		"anomaly_inout": anomaly,
+		"fallback_baseline_arr": baseline,
+		"ocean_current_x_arr": ocx_a,
+		"ocean_current_y_arr": ocy_a,
+	}
+	_apply_temperature_transport_anomaly_knobs(water_knobs, tta)
+	_apply_temperature_transport_anomaly_knobs(land_knobs, tta)
 	_climate_ocean_slice_state = {
 		"map_id": map.get_instance_id(),
 		"n": n,
@@ -9933,26 +10130,8 @@ func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: C
 		"land_cursor": 0,
 		"anomaly": anomaly,
 		"baseline": baseline,
-		"water_knobs": {
-			"n_cells": n,
-			"advect_steps": max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS),
-			"heat_mix": clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0),
-			"neighbor_indices": nb_idx,
-			"baseline_arr": baseline,
-			"temp_before_arr": temp_before,
-			"anomaly_out": anomaly,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
-		"land_knobs": {
-			"n_cells": n,
-			"effective_leak": effective_leak,
-			"neighbor_indices": nb_idx,
-			"anomaly_inout": anomaly,
-			"fallback_baseline_arr": baseline,
-			"ocean_current_x_arr": ocx_a,
-			"ocean_current_y_arr": ocy_a,
-		},
+		"water_knobs": water_knobs,
+		"land_knobs": land_knobs,
 	}
 	if _data_core_world_ext.has_method("refresh_slots_from_map"):
 		_data_core_world_ext.refresh_slots_from_map()
@@ -10402,7 +10581,7 @@ func weather_field_slice_cells() -> int:
 	var cp_now := _c()
 	if cp_now == null:
 		return 500
-	return clampi(int(cp_now.weather_field_slice_cells), 100, 500)
+	return clampi(int(cp_now.weather_field_slice_cells), 100, 2400)
 
 
 func begin_weather_refresh_stage_a(map: MapData, world: WorldData, season_idx: int,
@@ -10423,6 +10602,7 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 	var processed_cells: int = int(result.get("processed_cells", result.get("work_done", 0)))
 	var cursor_start: int = int(result.get("cursor_start", -1))
 	var cursor_end: int = int(result.get("cursor_end", -1))
+	var sub: Dictionary = _weather_system.last_breakdown() if _weather_system.has_method("last_breakdown") else {}
 	_last_weather_breakdown = {
 		"weather_tick_ms": elapsed_ms,
 		"advance_ms": elapsed_ms,
@@ -10444,6 +10624,13 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		"weather_dirty_count": int(result.get("weather_dirty_count", 0)),
 		"water_budget_error": float(result.get("water_budget_error", 0.0)),
 		"active_weather_ratio": float(result.get("active_weather_ratio", 0.0)),
+		"field_solve_tick": int(sub.get("field_solve_tick", -1)),
+		"field_convergence_refresh_stride": int(sub.get("field_convergence_refresh_stride", 0)),
+		"refresh_convergence": bool(sub.get("refresh_convergence", false)),
+		"native_convergence_boost": bool(sub.get("native_convergence_boost", false)),
+		"weather_convergence_dirty_count": int(sub.get("weather_convergence_dirty_count", 0)),
+		"weather_convergence_delta_p95": float(sub.get("weather_convergence_delta_p95", 0.0)),
+		"convergence_published": bool(sub.get("convergence_published", false)),
 		"partial": not bool(result.get("done", true)),
 		"progress_ratio": float(result.get("progress_ratio", 0.0)),
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
@@ -10846,6 +11033,13 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"field_commit_path": str(sub.get("field_commit_path", "")),
 		"field_commit_dc_ms": float(sub.get("field_commit_dc_ms", 0.0)),
 		"field_commit_convergence_ms": float(sub.get("field_commit_convergence_ms", 0.0)),
+		"field_solve_tick": int(sub.get("field_solve_tick", -1)),
+		"field_convergence_refresh_stride": int(sub.get("field_convergence_refresh_stride", 0)),
+		"refresh_convergence": bool(sub.get("refresh_convergence", false)),
+		"native_convergence_boost": bool(sub.get("native_convergence_boost", false)),
+		"weather_convergence_dirty_count": int(sub.get("weather_convergence_dirty_count", 0)),
+		"weather_convergence_delta_p95": float(sub.get("weather_convergence_delta_p95", 0.0)),
+		"convergence_published": bool(sub.get("convergence_published", false)),
 		"weather_dirty_count": int(sub.get("weather_dirty_count", 0)),
 		"water_budget_error": float(sub.get("water_budget_error", 0.0)),
 		"active_weather_ratio": float(sub.get("active_weather_ratio", 0.0)),
@@ -12320,7 +12514,7 @@ func run_wind_air_mass_pass_native(map: MapData, season_phase: float) -> Diction
 	var temp_a: PackedFloat32Array = map.temp_arr
 	for i in range(n):
 		var t0: float = temp_a[i]
-		temp_before[i] = t0 if t0 > 0.0 else baseline[i]
+		temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
 	var knobs: Dictionary = {
 		"n_cells": n,
 		"advect_steps": max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS),
@@ -12373,7 +12567,7 @@ func run_wind_surface_pass_native(map: MapData, season_phase: float) -> Dictiona
 
 # 风温耦合的"气团段"——
 # 所有 cell 沿 -wind_vector 回溯 advect_steps 步、与上游 cell 温度做 lerp 混合，
-# 写回 cell.temperature 与 cell.air_mass_temp_anomaly。
+# 只写回 cell.air_mass_temp_anomaly；temperature 由紧随其后的 surface pass 注入。
 # [perf 2026-05-20] 不再循环 cell.X = setter（每帧 N 次 _dirty_mark_one 风暴），
 # 改成累积到 PackedFloat32Array → 末尾 write_f32_dense 一次性 commit + 一次性 mark dirty range。
 func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
@@ -12391,19 +12585,15 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	# 先把所有 cell 的当前 temperature 拷贝出来（避免半途被覆盖）
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
-		temp_before[cell] = cell.temperature if cell.temperature > 0.0 else float(baseline[cell])
+		temp_before[cell] = _valid_runtime_temp_or_baseline(cell.temperature, float(baseline[cell]))
 	
 	# [perf] 累积输出，循环结束后批量 commit
 	var n_cells_air: int = map.iter_cells().size() if map.has_indices() else map.all_cells().size()
-	var temp_out_arr: PackedFloat32Array = PackedFloat32Array()
 	var anom_out_arr: PackedFloat32Array = PackedFloat32Array()
-	temp_out_arr.resize(n_cells_air)
 	anom_out_arr.resize(n_cells_air)
-	# 默认值：保持当前 temp、anom=0
+	# 默认值：anom=0，temperature 保持原值。
 	var iter_cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for ic in range(n_cells_air):
-		var c0: HexCell = iter_cells[ic]
-		temp_out_arr[ic] = float(temp_before.get(c0, baseline.get(c0, 0.0)))
 		anom_out_arr[ic] = 0.0
 	
 	# climate-loop-closure 修复：直接读 SoA 风场（wind_x_arr/wind_y_arr，与 weather
@@ -12454,29 +12644,21 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 		
 		var idx_cell: int = int(cell.index)
 		if idx_cell >= 0 and idx_cell < n_cells_air:
-			temp_out_arr[idx_cell] = clampf(temp_mixed, 0.0, 1.0)
 			anom_out_arr[idx_cell] = temp_mixed - float(baseline[cell])
 	
 	# climate-loop-closure 修复 v2：直接写 map SoA（property 原地索引，与 weather
 	# distribute 的 snowpack 写法同源，recorder/下游已验证可见）。此前 write_f32_dense
 	# 在本路径未反映到 map.air_mass_temp_anomaly_arr → air_mass 恒 0。
-	var _temp_ok: bool = map.temp_arr.size() == n_cells_air
 	var _anom_ok: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_air
 	for ic in range(n_cells_air):
-		if _temp_ok:
-			map.temp_arr[ic] = temp_out_arr[ic]
 		if _anom_ok:
 			map.air_mass_temp_anomaly_arr[ic] = anom_out_arr[ic]
-		if not (_temp_ok and _anom_ok):
+		else:
 			var cf: HexCell = iter_cells[ic]
-			cf.temperature = temp_out_arr[ic]
 			cf.air_mass_temp_anomaly = anom_out_arr[ic]
 	# DCWorld view 兜底 push（facade 启用时 map.*_arr 即 view alias，幂等）。
 	if _data_core_world != null:
-		var _cid_temp_a: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		var _cid_anom_a: int = _data_core_world.component_id(DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY)
-		if _cid_temp_a >= 0:
-			_data_core_world.write_f32_dense(_cid_temp_a, temp_out_arr)
 		if _cid_anom_a >= 0:
 			_data_core_world.write_f32_dense(_cid_anom_a, anom_out_arr)
 
@@ -12559,7 +12741,7 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 			continue
 		anom_out_s[idx_cell_s] = anomaly_in
 		if absf(anomaly_in) > 1e-5:
-			var t_prev: float = temp_out_s[idx_cell_s] if temp_out_s[idx_cell_s] > 0.0 else float(baseline[cell])
+			var t_prev: float = _valid_runtime_temp_or_baseline(temp_out_s[idx_cell_s], float(baseline[cell]))
 			temp_out_s[idx_cell_s] = clampf(t_prev + anomaly_in, 0.0, 1.0)
 	
 	# climate-loop-closure 修复 v2：直接写 map SoA（property 原地索引，见 air pass 同注释）。

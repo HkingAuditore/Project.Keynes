@@ -291,3 +291,85 @@ skipped[frame_budget_exhausted=25]
 - `refresh_slots_from_map()` 每 round 次数可解释。
 - atlas dirty 不因无变化 dense write 被全图标脏。
 - `skipped[frame_budget_exhausted]` 不会长期饿死 simulation authority job。
+
+## Climate stability diagnostics
+
+Weather CSV fields should be read from `sample["weather"]`, not from
+`sample["climate"]`. If `weather_dirty_mask` changes but `weather_dirty_count`
+is permanently zero, first check the recorder input path before changing
+weather math.
+
+Important weather fields:
+
+- `weather_diag_present`: the sample carried a weather breakdown.
+- `weather_field_commit_path`: native or fallback commit path.
+- `weather_refresh_convergence`: whether this tick should publish convergence.
+- `weather_field_solve_tick` and `weather_convergence_refresh_stride`: cadence
+  source for convergence refresh.
+- `weather_convergence_dirty_count`, `weather_convergence_delta_p95`, and
+  `weather_convergence_published`: convergence publication diagnostics.
+- `weather_target_mismatch_count`, `weather_transitioning_count`,
+  `weather_transition_alpha_mean`, and `weather_transition_alpha_p95`: per-tick
+  lifecycle diagnostics from `weather_type_arr`, `weather_target_type_arr`, and
+  `weather_transition_alpha_arr`. A permanently high mismatch count with flat
+  alpha values points to transition commit/cadence, not field generation.
+  Stable cells should have `weather_prev_type_arr == weather_target_type_arr`
+  and `weather_transition_alpha_arr == 0`; nonzero alpha on stable cells is a
+  transition bookkeeping bug, not real weather generation.
+- `weather_classification_temp_arr` and
+  `weather_classification_moisture_arr`: per-cell snapshots read by the weather
+  field solver for classification. Compare these with `temp_arr` and
+  `moisture_arr` before treating cold rain or warm blizzard rows as a classifier
+  bug; a large delta means the CSV is showing post-climate current state against
+  a previous-snapshot weather decision.
+
+`refresh_convergence=false` means convergence is intentionally held for this
+tick. Treat `weather_convergence_published=false` or zero
+`weather_convergence_delta_p95` as cadence information unless the same fields
+stay flat on refresh ticks.
+
+When investigating local temperature ping-pong, first check for jumps from
+exactly `0.0` to the geometric baseline. Runtime code must not use
+`temp > 0.0` as a validity test; zero is a valid frozen temperature, while NaN
+or Inf are the only values that should trigger baseline fallback.
+
+Use the climate finalizer CSV fields before changing pass cadence:
+
+- `climate_current_pass`, `climate_partial`, `climate_progress_ratio`,
+  `climate_processed_cells`, `climate_cursor_start`, and
+  `climate_cursor_end` identify which climate daily sub-pass owned the current
+  tick slice.
+- `climate_pass_stage`, `climate_pass_substage`, `climate_pass_path`,
+  `climate_pass_status`, `climate_budget_interrupted`, and
+  `climate_pass_token` mirror `ClimateDailySystem.pass_diag`. Use them to
+  separate a real temperature/precipitation rule problem from a partially
+  completed climate round or native/fallback path switch.
+- `climate_p95_temp_delta` / `climate_p99_temp_delta` show actual post-clamp
+  daily movement distribution.
+- `climate_preclamp_max_temp_delta` /
+  `climate_preclamp_p99_temp_delta` show what the climate chain attempted
+  before finalizer limiting.
+- `climate_temp_delta_gt_005_count`, `climate_temp_delta_gt_010_count`, and
+  `climate_temp_delta_gt_020_count` count how many cells moved by more than the
+  local thresholds on that tick.
+- `climate_temp_delta_clamped_count` indicates the daily cap is actively
+  preventing larger jumps. If this is high for many ticks, inspect upstream heat
+  transport/pass inputs instead of only loosening the final cap.
+- If large local jumps line up with `climate_pass_stage=wind_air`, the expected
+  output is `air_mass_temp_anomaly_arr` only. A simultaneous `cell_temp` rewrite
+  from that stage indicates the GDScript/C++ publish contract regressed.
+
+When diagnosing ocean cadence, separate physical authority from visual catch-up.
+
+- Physical fields: `phys_round_active`, `physical_round_id`, physical
+  `stage_name`, PSI path, SLP/wind/current/upwelling delta fields.
+- Visual fields: `visual_round_active`, `visual_round_id`,
+  `visual_pending_commit`, `visual_lag_ticks`, `visual_pixel_progress`,
+  `visual_next_pixel_idx`, and `visual_total_pixels`.
+- A large `largest=ocean_currents/ocean_pixel_slice/... path=gdext_raster`
+  entry can be a visual raster cost. It does not by itself prove that physical
+  ocean fields are frozen. Check whether `physical_round_id` advances and
+  whether SLP/wind/current delta diagnostics keep changing.
+- If `visual_lag_ticks` grows while physical fields continue updating, the
+  simulation is healthy but the atlas is stale. Inspect raster quota, commit
+  cost, and `ocean_visual_rebake_drop_stale` before changing physical cadence.

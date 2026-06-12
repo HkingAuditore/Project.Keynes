@@ -818,6 +818,10 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
 		if not climate_diag.is_empty():
 			sample["climate"] = climate_diag
+	if _generator != null and _generator.has_method("sus_weather_breakdown"):
+		var weather_diag: Dictionary = _generator.sus_weather_breakdown()
+		if not weather_diag.is_empty():
+			sample["weather"] = weather_diag
 	if _generator != null and _generator.has_method("sus_ocean_currents_breakdown"):
 		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
 		if not ocean_diag.is_empty():

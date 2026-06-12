@@ -41,6 +41,15 @@ struct NativeKnobs {
     float field_ocean_evap_gain = 0.0f;
     float field_precip_decay = 0.0f;
     float season_phase = 0.0f;
+    float field_precip_carryover_max = 0.12f;
+    float field_vapor_precip_sink = 0.58f;
+    float field_vapor_relax_rate = 0.08f;
+    float field_orographic_lift_cap = 0.35f;
+    float field_wet_terrain_precip_damping = 0.22f;
+    float field_lake_precip_damping = 0.35f;
+    float field_lake_evap_scale = 0.35f;
+    float field_extreme_precip_soft_cap = 0.24f;
+    float field_extreme_precip_softness = 0.35f;
 
     // ─── distribute knobs（_build_weather_distribute_knobs，~14 标量 + 4 LUT）──
     float snow_min_intensity = 0.001f;
@@ -140,6 +149,16 @@ public:
         float field_condensation_gain, float field_orographic_lift_gain,
         float field_convergence_gain, float field_ocean_evap_gain,
         float field_precip_decay, float season_phase);
+    void set_field_precip_stability_scalars(
+        float field_precip_carryover_max,
+        float field_vapor_precip_sink,
+        float field_vapor_relax_rate,
+        float field_orographic_lift_cap,
+        float field_wet_terrain_precip_damping,
+        float field_lake_precip_damping,
+        float field_lake_evap_scale,
+        float field_extreme_precip_soft_cap,
+        float field_extreme_precip_softness);
 
     // ─── distribute 段 setter ────────────────────────────────────
     void set_distribute_scalars(

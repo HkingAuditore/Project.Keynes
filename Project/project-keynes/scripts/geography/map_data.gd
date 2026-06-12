@@ -66,6 +66,8 @@ var weather_cloud_arr:      PackedFloat32Array = PackedFloat32Array()
 var weather_cloud_water_arr: PackedFloat32Array = PackedFloat32Array()
 var weather_precip_arr:     PackedFloat32Array = PackedFloat32Array()
 var weather_transition_alpha_arr: PackedFloat32Array = PackedFloat32Array()
+var weather_classification_temp_arr: PackedFloat32Array = PackedFloat32Array()
+var weather_classification_moisture_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── B-full Step-2：weather hot loop 直读字段（写少读多） ────────────
 # 与 weather_intensity/cloud/precip 一组，由 weather_system.commit 写入。
@@ -434,6 +436,8 @@ func _alloc_soa(n: int) -> void:
 	weather_cloud_water_arr.resize(n)
 	weather_precip_arr.resize(n)
 	weather_transition_alpha_arr.resize(n)
+	weather_classification_temp_arr.resize(n)
+	weather_classification_moisture_arr.resize(n)
 	elevation_arr.resize(n)
 	base_moisture_arr.resize(n)
 	ocean_current_x_arr.resize(n)
@@ -527,6 +531,8 @@ func rebuild_soa_from_cells() -> void:
 		weather_cloud_water_arr[i] = c.weather_cloud * 0.5 if c.weather_field_initialized else 0.0
 		weather_precip_arr[i] = c.weather_precip
 		weather_transition_alpha_arr[i] = c.weather_transition_alpha
+		weather_classification_temp_arr[i] = c.temperature
+		weather_classification_moisture_arr[i] = c.moisture
 		elevation_arr[i] = c.elevation
 		base_moisture_arr[i] = c.base_moisture
 		ocean_current_x_arr[i] = c.ocean_current.x

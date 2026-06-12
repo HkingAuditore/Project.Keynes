@@ -5445,7 +5445,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			else:
 				# 跳过 ψ 求解，直接走 fallback ocean current；下一片做 upwelling。
 				_pending_psi_state = null
-				PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
+				PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg, profile)
 				_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_PSI_INIT:
 			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
@@ -5523,7 +5523,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
 						"psi_source_scale": 1.0,
-						"ocean_current_scale": 0.30,
+						"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.30,
+						"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50,
 						"thermohaline_weight": 0.25,
 						"upwelling_highlat_abs": 0.75,
 						"cold_sink_temp": cold_sink_temp,
@@ -5747,7 +5748,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							n_bad += 1
 				if n_bad > 0:
 					push_warning("PhysicalCirculation: detected %d cells with NaN/Inf, falling back to ny-only solver" % n_bad)
-					PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg)
+					PhysCircSolverScript.solve_ocean_current_fallback(map, hex_size, bounds, cfg, profile)
 					PhysCircSolverScript.solve_upwelling(map, hex_size, bounds, cfg)
 				var t_nan_ms: float = (Time.get_ticks_usec() - t_wr_us) / 1000.0
 				var t_ensure0_us: int = Time.get_ticks_usec()

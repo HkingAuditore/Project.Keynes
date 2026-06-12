@@ -781,6 +781,15 @@ const _UPWELLING_HIGHLAT_ABS_SOLVER := 0.75 	# 冷沉仅限极圈内(|lat|>67.5�
 const _OCEAN_CURRENT_SCALE := 0.30      # ψ 梯度 → ocean_current 量级缩放，目标把全球 ocean_mag 拉回 0.18~0.35。
 const _THERMOHALINE_WEIGHT := 0.25      # 高纬热盐 y 修正权重，补足弱风应力下的高纬密度流。
 
+static func _limit_ocean_current(cur: Vector2, max_mag: float) -> Vector2:
+	var limit: float = clampf(max_mag, 0.01, 1.4142136)
+	var len_sq: float = cur.length_squared()
+	if len_sq > limit * limit:
+		cur *= limit / sqrt(len_sq)
+	cur.x = clampf(cur.x, -1.0, 1.0)
+	cur.y = clampf(cur.y, -1.0, 1.0)
+	return cur
+
 ## psi_to_ocean_current —— 把 ψ 场转为 cell.ocean_current。
 ##
 ## 同时叠加副极地 / 高纬冷沉的 thermohaline 小幅修正，保留旧语义。
@@ -803,6 +812,8 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 	var thermal_weight: float = profile.ocean_thermal_current_weight if profile != null else _THERMOHALINE_WEIGHT
 	var density_cold_weight: float = profile.ocean_density_cold_weight if profile != null else 0.35
 	var density_ice_weight: float = profile.ocean_density_ice_weight if profile != null else 0.20
+	var current_scale: float = clampf(profile.ocean_current_scale if profile != null and profile.get("ocean_current_scale") != null else _OCEAN_CURRENT_SCALE, 0.0, 2.0)
+	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50, 0.01, 1.4142136)
 
 	var ocx_arr: PackedFloat32Array = map.ocean_current_x_arr
 	var ocy_arr: PackedFloat32Array = map.ocean_current_y_arr
@@ -838,7 +849,7 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		grad_psi /= 3.0   # 与 SLP / curl 一致的六邻域规范化系数
 
 		# 旋转 90° 逆时针：(x, y) → (-y, x) 等价于 (u, v) = (-∂ψ/∂y, ∂ψ/∂x)
-		var target_cur: Vector2 = Vector2(-grad_psi.y, grad_psi.x) * _OCEAN_CURRENT_SCALE
+		var target_cur: Vector2 = Vector2(-grad_psi.y, grad_psi.x) * current_scale
 
 		var density_self: float = _density_proxy(map, c, density_cold_weight, density_ice_weight)
 		var grad_density: Vector2 = Vector2.ZERO
@@ -870,9 +881,7 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 			old_cur = Vector2(ocx_arr[idx_cur], ocy_arr[idx_cur])
 		var cur: Vector2 = old_cur.lerp(target_cur, response_rate)
 
-		# 限幅 [-1, 1]
-		cur.x = clampf(cur.x, -1.0, 1.0)
-		cur.y = clampf(cur.y, -1.0, 1.0)
+		cur = _limit_ocean_current(cur, current_max_mag)
 		c.ocean_current = cur
 		if idx_cur >= 0 and soa_ok:
 			ocx_arr[idx_cur] = cur.x
@@ -887,10 +896,11 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 const _EKMAN_DEFLECTION_RAD := PI * 0.25  # ±45°
 
 static func solve_ocean_current_fallback(map: MapData, hex_size: float, \
-		world_bounds: Rect2, cfg: MapConfig = null) -> void:
+		world_bounds: Rect2, cfg: MapConfig = null, profile: ClimateProfile = null) -> void:
 	if map == null:
 		return
 	var cold_sink_temp: float = cfg.COLD_SINK_TEMP if cfg != null else -0.05
+	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50, 0.01, 1.4142136)
 	for cell: HexCell in map.all_cells():
 		if cell == null:
 			continue
@@ -917,8 +927,7 @@ static func solve_ocean_current_fallback(map: MapData, hex_size: float, \
 			var pole_dir_y: float = signf(ls)
 			var grad_mag: float = sin(ls_abs * PI)
 			cur.y += pole_dir_y * grad_mag * _THERMOHALINE_WEIGHT
-		cur.x = clampf(cur.x, -1.0, 1.0)
-		cur.y = clampf(cur.y, -1.0, 1.0)
+		cur = _limit_ocean_current(cur, current_max_mag)
 		cell.ocean_current = cur
 		cell.wind_stress_curl = 0.0
 		cell.ocean_psi = 0.0

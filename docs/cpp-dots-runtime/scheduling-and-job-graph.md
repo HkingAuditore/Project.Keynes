@@ -105,6 +105,11 @@ job-local soft budget。它由 job 的 `run_slice(ctx)` 使用，例如：
 
 `slice_budget_ms` 是协作式预算，不是硬中断。
 
+Weather field 的 cell budget 来自 `weather_field_slice_cells()`，当前按
+`ClimateProfile.weather_field_slice_cells` clamp 到 `100..2400`。在 2400-cell
+地图上，若该值被压得太低，field solve/commit 会跨过多 tick，CSV 中会表现为
+天气生成、变化、消失频率偏慢；这属于切片 cadence 问题，不一定是分类规则问题。
+
 ### `must_run`
 
 `must_run=true` 只绕过 frame budget gate。它用于避免关键物理/气候推进被长时间饿死。
@@ -221,3 +226,27 @@ Expected daily reports:
   ocean/raster chain, not the daily wind chain.
 - `daily_wind_sim_day` / `sim_day` should advance by one for each SUS daily
   tick, including catch-up ticks emitted from one rendered frame.
+
+## Ocean physical / visual scheduling
+
+`ocean_currents` now separates simulation authority from visual atlas work
+inside the existing job.
+
+- Physical state is reported with fields such as `phys_round_active`,
+  `physical_round_id`, `phys_phase_locked`, and the usual physical stage/path
+  breakdown. This state owns SLP, wind, PSI, ocean current, and upwelling
+  authority.
+- Visual state is reported with `visual_round_active`, `visual_round_id`,
+  `visual_pending_commit`, `visual_pixel_progress`, `visual_lag_ticks`,
+  `visual_next_pixel_idx`, and `visual_total_pixels`. This state only describes
+  raster/atlas catch-up.
+- `should_run()` should remain a pure eligibility check where possible.
+  Climate-defer bookkeeping and physical/visual state mutation belong in
+  `run_slice()` so scheduler probes do not change job state.
+- A visual raster or pending visual commit may make the job eligible, but it
+  must not block the next physical round. If visual work falls behind and
+  `ocean_visual_rebake_drop_stale=true`, stale visual work can be discarded and
+  restarted from the newest physical fields.
+- Legacy report aliases such as `round_active`, `pending_commit`, and
+  `next_pixel_idx` are compatibility fields. Prefer the `phys_*` and
+  `visual_*` fields for new diagnostics.

@@ -72,8 +72,8 @@ func _test_precip_carryover_and_vapor_relaxation() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
 	_expect(is_equal_approx(ws._field_precip_carryover_max, 0.12),
 		"precip carryover cap should default to 0.12")
-	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.80),
-		"vapor precip sink should default to 0.80")
+	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.58),
+		"vapor precip sink should default to 0.58")
 	var carried: float = _precip_carryover(0.90, 0.95, ws._field_precip_carryover_max)
 	_expect(carried <= ws._field_precip_carryover_max + 0.0001,
 		"precip carryover should be capped")
@@ -139,7 +139,7 @@ func _determinism_map() -> MapData:
 func _weather_system(bounds: Rect2) -> WeatherSystem:
 	var ws := WeatherSystem.new()
 	ws.init(12345, bounds, HEX_SIZE)
-	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16)
+	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16, 4, 0.12, 0.58, 0.16, 0.08, 0.015, 0.02, 0.18, 0.025, 0.34, 0.18, 0.08, 0.35, 0.22, 0.35, 0.35, 0.24, 0.35)
 	ws.configure_terrain_wind(true)
 	return ws
 

@@ -121,9 +121,16 @@ var _field_vapor_relax_rate: float = 0.08
 var _weather_temp_anomaly_cap: float = 0.025
 var _field_orographic_lift_gain: float = 0.35
 var _field_orographic_lift_cap: float = 0.35
+var _field_wet_terrain_precip_damping: float = 0.22
+var _field_lake_precip_damping: float = 0.35
+var _field_lake_evap_scale: float = 0.35
+var _field_extreme_precip_soft_cap: float = 0.24
+var _field_extreme_precip_softness: float = 0.35
 var _field_convergence_gain: float = 0.25
 var _field_convergence_refresh_stride: int = 4
 var _field_solve_tick: int = 0
+var _cold_precip_as_blizzard: bool = true
+var _snow_classification_margin: float = 0.03
 var _field_ocean_evap_gain: float = 0.30
 var _snowpack_accum_gain: float = 0.16
 var _snowpack_melt_temp_gain: float = 0.08
@@ -340,6 +347,18 @@ func _cell_neighbors(cell: HexCell, map: MapData) -> Array:
 
 func last_breakdown() -> Dictionary:
 	return _last_breakdown
+
+func _percentile_abs_from_array(values: PackedFloat32Array, q: float) -> float:
+	var n: int = values.size()
+	if n <= 0:
+		return 0.0
+	var sorted: Array[float] = []
+	sorted.resize(n)
+	for i in range(n):
+		sorted[i] = absf(values[i])
+	sorted.sort()
+	var qi: int = clampi(int(floor(float(n - 1) * clampf(q, 0.0, 1.0))), 0, n - 1)
+	return float(sorted[qi])
 
 # --- 初始化 ---
 
@@ -802,6 +821,13 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"field_vapor_precip_sink": _field_vapor_precip_sink,
 			"field_vapor_relax_rate": _field_vapor_relax_rate,
 			"field_orographic_lift_cap": _field_orographic_lift_cap,
+			"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
+			"field_lake_precip_damping": _field_lake_precip_damping,
+			"field_lake_evap_scale": _field_lake_evap_scale,
+			"field_extreme_precip_soft_cap": _field_extreme_precip_soft_cap,
+			"field_extreme_precip_softness": _field_extreme_precip_softness,
+			"cold_precip_as_blizzard": _cold_precip_as_blizzard,
+			"snow_classification_margin": _snow_classification_margin,
 			"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
 			"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
 		}
@@ -847,6 +873,13 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_vapor_precip_sink": _field_vapor_precip_sink,
 		"field_vapor_relax_rate": _field_vapor_relax_rate,
 		"field_orographic_lift_cap": _field_orographic_lift_cap,
+		"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
+		"field_lake_precip_damping": _field_lake_precip_damping,
+		"field_lake_evap_scale": _field_lake_evap_scale,
+		"field_extreme_precip_soft_cap": _field_extreme_precip_soft_cap,
+		"field_extreme_precip_softness": _field_extreme_precip_softness,
+		"cold_precip_as_blizzard": _cold_precip_as_blizzard,
+		"snow_classification_margin": _snow_classification_margin,
 		"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
 		"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
 	}
@@ -907,6 +940,7 @@ func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictiona
 	knobs["out_intensity"] = _field_solver._field_slice_next_intensity
 	knobs["out_convergence"] = _field_solver._field_slice_next_convergence
 	knobs["out_type"] = _field_solver._field_slice_next_type
+	knobs["refresh_convergence"] = _field_solver._field_slice_refresh_convergence
 	knobs["weather_transition_enabled"] = bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false
 	knobs["weather_transition_alpha_rate"] = float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0
 	var rc_dict: Dictionary = _data_core_world_ext.run_weather_field_commit_pass(knobs)
@@ -1356,6 +1390,19 @@ func _push_resident_knobs_from_cp(cp: Resource) -> void:
 			_field_ocean_evap_gain,
 			_field_precip_decay,
 			_season_phase,
+		)
+	var field_extra_scalars_available: bool = _knobs_handle.has_method("set_field_precip_stability_scalars")
+	if field_extra_scalars_available:
+		_knobs_handle.set_field_precip_stability_scalars(
+			_field_precip_carryover_max,
+			_field_vapor_precip_sink,
+			_field_vapor_relax_rate,
+			_field_orographic_lift_cap,
+			_field_wet_terrain_precip_damping,
+			_field_lake_precip_damping,
+			_field_lake_evap_scale,
+			_field_extreme_precip_soft_cap,
+			_field_extreme_precip_softness,
 		)
 
 	# ─── distribute 段标量（snow/flood 阈值与 _build_weather_distribute_knobs 严格同源）──
@@ -2228,6 +2275,8 @@ func _avg_ocean_anomaly_at_idx(idx: int, cells: Array, neighbor_indices: PackedI
 func _evaporation_for_cell_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array, temp: float, moisture: float, ocean_an: float, on_water: bool) -> float:
 	var cell: HexCell = cells[idx]
 	var evap: float = 0.028 if on_water else 0.006
+	if int(cell.terrain) == TerrainType.TERRAIN.LAKE:
+		evap *= _field_lake_evap_scale
 	evap += maxf(moisture - 0.45, 0.0) * 0.018
 	evap += _vegetation_transpiration_factor(cell) * 0.012
 	if not on_water:
@@ -2248,6 +2297,8 @@ func _evaporation_for_cell_idx(idx: int, cells: Array, neighbor_indices: PackedI
 
 func _evaporation_for_cell(cell: HexCell, map: MapData, temp: float, moisture: float, ocean_an: float, on_water: bool) -> float:
 	var evap: float = 0.028 if on_water else 0.006
+	if int(cell.terrain) == TerrainType.TERRAIN.LAKE:
+		evap *= _field_lake_evap_scale
 	evap += maxf(moisture - 0.45, 0.0) * 0.018
 	evap += _vegetation_transpiration_factor(cell) * 0.012
 	if not on_water:
@@ -2306,7 +2357,7 @@ func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapo
 	var low_lat: bool = lat_abs < 0.48
 	var meaningful_precip: bool = precip > 0.080 or (precip > 0.045 and cloud > 0.20 and vapor > 0.24)
 
-	if cold and (precip > 0.085 or (precip > 0.045 and cloud > 0.22 and vapor > 0.24)):
+	if _cold_precip_should_snow(temp, vapor, cloud, precip, meaningful_precip):
 		return WeatherType.WT.BLIZZARD
 	if warm and humid and instability > 0.56 and precip > 0.16:
 		return WeatherType.WT.STORM
@@ -2334,7 +2385,7 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 	var meaningful_precip: bool = precip > 0.080 or (precip > 0.045 and cloud > 0.20 and vapor > 0.24)
 
 	# 修（v5）：STORM 必须真正"猛"才触发，不再让中纬度风带普通湿天气也进 STORM
-	if cold and (precip > 0.085 or (precip > 0.045 and cloud > 0.22 and vapor > 0.24)):
+	if _cold_precip_should_snow(temp, vapor, cloud, precip, meaningful_precip):
 		return WeatherType.WT.BLIZZARD
 	if warm and humid and instability > 0.56 and precip > 0.16:
 		return WeatherType.WT.STORM
@@ -2349,6 +2400,35 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 	if vapor < 0.16 and cloud < 0.08 and precip < 0.03 and (temp > 0.60 or ocean_an < -0.08):
 		return WeatherType.WT.DROUGHT
 	return WeatherType.WT.CLEAR
+
+
+func _weather_precip_terrain_damping_factor(terrain: int) -> float:
+	match terrain:
+		TerrainType.TERRAIN.LAKE:
+			return 1.0
+		TerrainType.TERRAIN.DELTA:
+			return 1.0
+		TerrainType.TERRAIN.SWAMP:
+			return 0.8
+		TerrainType.TERRAIN.JUNGLE:
+			return 0.55
+		TerrainType.TERRAIN.HILL:
+			return 0.45
+		_:
+			return 0.0
+
+
+func _moderate_field_precip_for_terrain(terrain: int, precip: float) -> float:
+	var out: float = clampf(precip, 0.0, 1.0)
+	var factor: float = _weather_precip_terrain_damping_factor(terrain)
+	if factor > 0.0 and out > 0.08:
+		var damp: float = _field_lake_precip_damping if terrain == TerrainType.TERRAIN.LAKE else _field_wet_terrain_precip_damping
+		out -= (out - 0.08) * clampf(damp, 0.0, 1.0) * factor
+	var cap: float = clampf(_field_extreme_precip_soft_cap, 0.0, 1.0)
+	if cap > 0.0 and out > cap:
+		out = cap + (out - cap) * clampf(_field_extreme_precip_softness, 0.0, 1.0)
+	return clampf(out, 0.0, 1.0)
+
 
 func _field_intensity_for_type(wt: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> float:
 	match wt:
@@ -3014,6 +3094,21 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 	_gdext_field_commit_warned_fallback = false
 	# F.6 / fronts_soa / resident_knobs：cache cp reference 供 advect / soa / knobs 同步读。
 	_cp_for_front_flag = cp
+	if cp != null:
+		if cp.get("weather_cold_precip_as_blizzard") != null:
+			_cold_precip_as_blizzard = bool(cp.weather_cold_precip_as_blizzard)
+		if cp.get("weather_snow_classification_margin") != null:
+			_snow_classification_margin = clampf(float(cp.weather_snow_classification_margin), 0.0, 0.12)
+		if cp.get("weather_wet_terrain_precip_damping") != null:
+			_field_wet_terrain_precip_damping = clampf(float(cp.weather_wet_terrain_precip_damping), 0.0, 1.0)
+		if cp.get("weather_lake_precip_damping") != null:
+			_field_lake_precip_damping = clampf(float(cp.weather_lake_precip_damping), 0.0, 1.0)
+		if cp.get("weather_lake_evap_scale") != null:
+			_field_lake_evap_scale = clampf(float(cp.weather_lake_evap_scale), 0.0, 1.0)
+		if cp.get("weather_extreme_precip_soft_cap") != null:
+			_field_extreme_precip_soft_cap = clampf(float(cp.weather_extreme_precip_soft_cap), 0.0, 1.0)
+		if cp.get("weather_extreme_precip_softness") != null:
+			_field_extreme_precip_softness = clampf(float(cp.weather_extreme_precip_softness), 0.0, 1.0)
 	if _use_gdext_weather_field:
 		print("[weather] gdext acceleration ON (class=DCWorldExt)")
 	elif ext != null and enabled and not sig_ok:
@@ -3411,7 +3506,12 @@ func configure_weather_field(
 		snowline_temp_threshold: float = 0.34,
 		snowline_band: float = 0.18,
 		vapor_relax_rate: float = 0.08,
-		orographic_lift_cap: float = 0.35) -> void:
+		orographic_lift_cap: float = 0.35,
+		wet_terrain_precip_damping: float = 0.22,
+		lake_precip_damping: float = 0.35,
+		lake_evap_scale: float = 0.35,
+		extreme_precip_soft_cap: float = 0.24,
+		extreme_precip_softness: float = 0.35) -> void:
 	_weather_field_enabled = enabled
 	_field_advect_steps = clampi(advect_steps, 0, 2)
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)
@@ -3422,6 +3522,11 @@ func configure_weather_field(
 	_field_vapor_relax_rate = clampf(vapor_relax_rate, 0.0, 1.0)
 	_field_orographic_lift_gain = maxf(0.0, orographic_lift_gain)
 	_field_orographic_lift_cap = clampf(orographic_lift_cap, 0.0, 1.0)
+	_field_wet_terrain_precip_damping = clampf(wet_terrain_precip_damping, 0.0, 1.0)
+	_field_lake_precip_damping = clampf(lake_precip_damping, 0.0, 1.0)
+	_field_lake_evap_scale = clampf(lake_evap_scale, 0.0, 1.0)
+	_field_extreme_precip_soft_cap = clampf(extreme_precip_soft_cap, 0.0, 1.0)
+	_field_extreme_precip_softness = clampf(extreme_precip_softness, 0.0, 1.0)
 	_field_convergence_gain = maxf(0.0, convergence_gain)
 	_field_convergence_refresh_stride = clampi(convergence_refresh_stride, 1, 12)
 	_field_ocean_evap_gain = maxf(0.0, ocean_evap_gain)
@@ -3433,6 +3538,21 @@ func configure_weather_field(
 	_snowline_temp_threshold = clampf(snowline_temp_threshold, 0.0, 1.0)
 	_snowline_band = clampf(snowline_band, 0.02, 0.6)
 	_weather_temp_anomaly_cap = clampf(weather_temp_anomaly_cap, 0.0, 0.10)
+	if _cp_for_front_flag != null:
+		if _cp_for_front_flag.get("weather_cold_precip_as_blizzard") != null:
+			_cold_precip_as_blizzard = bool(_cp_for_front_flag.weather_cold_precip_as_blizzard)
+		if _cp_for_front_flag.get("weather_snow_classification_margin") != null:
+			_snow_classification_margin = clampf(float(_cp_for_front_flag.weather_snow_classification_margin), 0.0, 0.12)
+		if _cp_for_front_flag.get("weather_wet_terrain_precip_damping") != null:
+			_field_wet_terrain_precip_damping = clampf(float(_cp_for_front_flag.weather_wet_terrain_precip_damping), 0.0, 1.0)
+		if _cp_for_front_flag.get("weather_lake_precip_damping") != null:
+			_field_lake_precip_damping = clampf(float(_cp_for_front_flag.weather_lake_precip_damping), 0.0, 1.0)
+		if _cp_for_front_flag.get("weather_lake_evap_scale") != null:
+			_field_lake_evap_scale = clampf(float(_cp_for_front_flag.weather_lake_evap_scale), 0.0, 1.0)
+		if _cp_for_front_flag.get("weather_extreme_precip_soft_cap") != null:
+			_field_extreme_precip_soft_cap = clampf(float(_cp_for_front_flag.weather_extreme_precip_soft_cap), 0.0, 1.0)
+		if _cp_for_front_flag.get("weather_extreme_precip_softness") != null:
+			_field_extreme_precip_softness = clampf(float(_cp_for_front_flag.weather_extreme_precip_softness), 0.0, 1.0)
 	_field_summary_limit = clampi(summary_limit, 1, 12)
 	if not enabled:
 		_weather_field.clear()
@@ -3524,6 +3644,14 @@ func _front_decay_modifier(front: WeatherFront, cell: HexCell) -> float:
 		WeatherType.WT.FOG:
 			if humid and cold: return 0.7
 	return 1.0
+
+func _cold_precip_should_snow(temp: float, vapor: float, cloud: float, precip: float, meaningful_precip: bool) -> bool:
+	if not _cold_precip_as_blizzard or not meaningful_precip:
+		return false
+	if temp <= SNOW_FREEZE_T:
+		return true
+	return temp < SNOW_MELT_T + _snow_classification_margin \
+			and cloud > 0.18 and vapor > 0.20 and precip > 0.04
 
 # 迎风坡降水加成 / 背风坡额外衰减：
 #   沿 front.velocity 方向找上风 cell：若上风 cell 海拔比本格高出阈值 → 迎风坡（返回正 bonus）
