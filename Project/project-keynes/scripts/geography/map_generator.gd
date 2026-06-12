@@ -1530,6 +1530,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
+	# sea-ice-snow-visual-fix-v3 (2026-06) 诊断：确认 DVAS 真的被注册 + must_run/starvation 状态。
+	print("[map_gen][diag] DVAS registered (line 1529): id=", _dynamic_visual_atlas_upload_job.id,
+		" must_run=", _dynamic_visual_atlas_upload_job.must_run,
+		" starvation_threshold=", _dynamic_visual_atlas_upload_job.starvation_threshold,
+		" use_dc_scheduler=", _use_dc_system_scheduler)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
@@ -1656,14 +1661,26 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		var must_raw_id = job.get("id")
 		if must_raw_id != null:
 			must_job_id = StringName(str(must_raw_id))
-		job.must_run = must_job_id == &"ocean_currents" \
+		# sea-ice-snow-visual-fix-v3 (2026-06)：DVAS / SeaIceAtlasUpload 必须每 tick
+		# 跑一次，否则海冰/雪/温度热力图视觉永远不刷新。原 `must_run = ocean_currents OR ...`
+		# 把 _init 里设的 true 直接擦掉。这里显式放行视觉上传 job。
+		var force_must_run: bool = (must_job_id == &"dynamic_visual_atlas_upload" \
+				or must_job_id == &"sea_ice_atlas_upload")
+		job.must_run = force_must_run \
+				or must_job_id == &"ocean_currents" \
 				or (strict_on and _sim_job_should_must_run(job, upload_job))
 	if job.get("starvation_threshold") != null:
 		var starvation_job_id: StringName = &""
 		var starvation_raw_id = job.get("id")
 		if starvation_raw_id != null:
 			starvation_job_id = StringName(str(starvation_raw_id))
-		if upload_job:
+		# sea-ice-snow-visual-fix-v3：原 `if upload_job: starvation_threshold = 0`
+		# 把 _init 里设的 8 擦掉，导致 atlas pipeline 在 frame_budget_exhausted 时
+		# 完全饿死。视觉 upload job 强制保留 starvation 防护。
+		if starvation_job_id == &"dynamic_visual_atlas_upload" \
+				or starvation_job_id == &"sea_ice_atlas_upload":
+			job.starvation_threshold = 8
+		elif upload_job:
 			job.starvation_threshold = 0
 		elif starvation_job_id == &"refresh_climate_daily" \
 				or starvation_job_id == &"weather_refresh" \
@@ -2556,6 +2573,10 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
+	# sea-ice-snow-visual-fix-v3 (2026-06) 诊断：native_daily_sim 路径下 DVAS 注册。
+	print("[map_gen][diag] DVAS registered (line 2555 native_daily path): id=", _dynamic_visual_atlas_upload_job.id,
+		" must_run=", _dynamic_visual_atlas_upload_job.must_run,
+		" starvation_threshold=", _dynamic_visual_atlas_upload_job.starvation_threshold)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
