@@ -735,7 +735,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # dev 已改为绝对日射差(insol_now−insol_mean ∈ [−1,+1])，不再分数化。
 # 配合 thermal_inertia_land=0.35 + delta_cap=0.15，中纬度实际温差 ≈ 增益×0.12。
 # gain=2.0 → 40°N 冬夏温差 ~0.27（基线 63%），肉眼明确可见。
-@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 0.6
+@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 1.5
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]

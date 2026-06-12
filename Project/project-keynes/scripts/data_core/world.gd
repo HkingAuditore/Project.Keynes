@@ -716,7 +716,17 @@ func mark_dirty_indexed(indices: PackedInt32Array) -> void:
 ## 公开 API：把全脏标志强制设为全 1（首帧 baker bake_world / regenerate 用）。
 func mark_dirty_all() -> void:
 	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
+		# v3 一次性诊断（sea-ice-snow-visual-fix-v3 2026-06）：mark_dirty_all 被 C++ 触发但
+		# 内部 mask 关掉了 / size=0 → 整个 dirty 通道失效。
+		if not Engine.has_meta("_diag_mda_null"):
+			Engine.set_meta("_diag_mda_null", 1)
+			print("[DCWorld][diag] mark_dirty_all: NO-OP (dirty_mask_enabled=",
+				dirty_mask_enabled, " size=", _dirty_cell_mask_size, ")")
 		return
+	# v3 一次性诊断：第一次成功 mark 全图。
+	if not Engine.has_meta("_diag_mda_ok"):
+		Engine.set_meta("_diag_mda_ok", 1)
+		print("[DCWorld][diag] mark_dirty_all: FIRST CALL ok, size=", _dirty_cell_mask_size)
 	for i in range(_dirty_cell_mask_size):
 		_dirty_cell_mask[i] = 1
 
