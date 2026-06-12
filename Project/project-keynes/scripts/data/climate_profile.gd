@@ -637,10 +637,17 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.58
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.22
+@export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_lake_evap_scale: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.24
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.35
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
 @export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 4
+@export var weather_cold_precip_as_blizzard: bool = true
+@export_range(0.0, 0.12, 0.005) var weather_snow_classification_margin: float = 0.03
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
@@ -765,6 +772,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
 #    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.30
+@export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.50
+@export var ocean_decoupled_visual_raster: bool = true
+@export var ocean_visual_rebake_drop_stale: bool = true
 
 # 5) use_partial_atlas_upload
 #    enum_atlas_upload / sea_ice_atlas_upload 改 tile dirty 部分上传：
@@ -790,6 +801,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15
 @export var thermal_final_delta_cap_enabled: bool = true
 @export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_daily_cap: float = 0.12
+@export_range(0.0, 0.5, 0.005) var temperature_transport_anomaly_source_cap: float = 0.08
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_blend_rate: float = 0.35
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_decay_rate: float = 0.12
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_zero_current_decay: float = 0.20
 @export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.10
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.08
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.03

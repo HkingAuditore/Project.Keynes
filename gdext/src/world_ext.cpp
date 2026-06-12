@@ -2009,6 +2009,22 @@ static inline float dc_clamp01f(float v) {
     return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
 }
 
+static inline float dc_clampf(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static inline float dc_stabilize_tta(float prev, float source,
+                                     float source_cap, float blend_rate) {
+    const float cap = std::fabs(source_cap);
+    const float capped_source = dc_clampf(source, -cap, cap);
+    const float blend = dc_clampf(blend_rate, 0.0f, 1.0f);
+    return prev + (capped_source - prev) * blend;
+}
+
+static inline float dc_decay_tta(float prev, float decay_rate) {
+    return prev * (1.0f - dc_clampf(decay_rate, 0.0f, 1.0f));
+}
+
 static inline float dc_phase_progress(float season_phase) {
     float p = std::fmod(season_phase, 4.0f);
     if (p < 0.0f) p += 4.0f;
@@ -3208,8 +3224,12 @@ inline float wf_evaporation_for_cell_idx(int idx, const uint8_t *TERR,
                                          const int32_t *NB,
                                          float temp, float moisture,
                                          float ocean_an, bool on_water,
-                                         float field_ocean_evap_gain) {
+                                         float field_ocean_evap_gain,
+                                         float field_lake_evap_scale) {
     float evap = on_water ? 0.028f : 0.006f;
+    if (TERR[idx] == 18) {
+        evap *= field_lake_evap_scale;
+    }
     const float excess_moist = moisture - 0.45f;
     if (excess_moist > 0.0f) evap += excess_moist * 0.018f;
     evap += wf_vegetation_transp_factor(VEG[idx]) * 0.012f;
@@ -3307,12 +3327,51 @@ inline float wf_smoothstep(float edge0, float edge1, float x) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+inline float wf_precip_terrain_damping_factor(uint8_t terrain) {
+    // TerrainType.TERRAIN enum: HILL=5, SWAMP=10, JUNGLE=11, LAKE=18, DELTA=22.
+    switch (terrain) {
+        case 18: return 1.0f;  // LAKE
+        case 22: return 1.0f;  // DELTA
+        case 10: return 0.8f;  // SWAMP
+        case 11: return 0.55f; // JUNGLE
+        case 5:  return 0.45f; // HILL
+        default: return 0.0f;
+    }
+}
+
+inline float wf_apply_precip_stability(uint8_t terrain, float precip,
+                                       float wet_damp, float lake_damp,
+                                       float soft_cap, float softness) {
+    float out = precip;
+    if (out < 0.0f) out = 0.0f;
+    else if (out > 1.0f) out = 1.0f;
+    const float factor = wf_precip_terrain_damping_factor(terrain);
+    if (factor > 0.0f && out > 0.08f) {
+        float damp = (terrain == 18) ? lake_damp : wet_damp;
+        if (damp < 0.0f) damp = 0.0f;
+        else if (damp > 1.0f) damp = 1.0f;
+        out -= (out - 0.08f) * damp * factor;
+    }
+    if (soft_cap < 0.0f) soft_cap = 0.0f;
+    else if (soft_cap > 1.0f) soft_cap = 1.0f;
+    if (softness < 0.0f) softness = 0.0f;
+    else if (softness > 1.0f) softness = 1.0f;
+    if (soft_cap > 0.0f && out > soft_cap) {
+        out = soft_cap + (out - soft_cap) * softness;
+    }
+    if (out < 0.0f) out = 0.0f;
+    else if (out > 1.0f) out = 1.0f;
+    return out;
+}
+
 inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
                                             float temp, float vapor, float cloud,
                                             float precip, float instability,
                                             float ocean_an,
                                             float wb_pos_y, float wb_size_y,
-                                            float season_phase) {
+                                            float season_phase,
+                                            bool cold_precip_as_blizzard,
+                                            float snow_classification_margin) {
     (void)season_idx;
     (void)season_phase;
     float lat_abs = 0.5f;
@@ -3330,7 +3389,11 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
     const bool meaningful_precip = precip > 0.080f ||
         (precip > 0.045f && cloud > 0.20f && vapor > 0.24f);
 
-    if (cold && (precip > 0.085f || (precip > 0.045f && cloud > 0.22f && vapor > 0.24f)))
+    const bool cold_precip_snow = cold_precip_as_blizzard && meaningful_precip &&
+        (temp <= 0.24f ||
+         (temp < 0.31f + snow_classification_margin &&
+          cloud > 0.18f && vapor > 0.20f && precip > 0.04f));
+    if (cold_precip_snow)
         return 3; // BLIZZARD
     if (warm && humid && instability > 0.56f && precip > 0.16f)
         return 2; // STORM
@@ -3558,6 +3621,32 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                                             ? float(knobs["field_orographic_lift_cap"]) : 0.35f;
     const float hex_size                = knobs.has("hex_size")
                                             ? float(knobs["hex_size"]) : 22.0f;
+    const bool cold_precip_as_blizzard = knobs.has("cold_precip_as_blizzard")
+                                            ? bool(knobs["cold_precip_as_blizzard"]) : true;
+    float snow_classification_margin = knobs.has("snow_classification_margin")
+                                            ? float(knobs["snow_classification_margin"]) : 0.03f;
+    if (snow_classification_margin < 0.0f) snow_classification_margin = 0.0f;
+    else if (snow_classification_margin > 0.12f) snow_classification_margin = 0.12f;
+    float field_wet_terrain_precip_damping = knobs.has("field_wet_terrain_precip_damping")
+                                            ? float(knobs["field_wet_terrain_precip_damping"]) : 0.22f;
+    float field_lake_precip_damping = knobs.has("field_lake_precip_damping")
+                                            ? float(knobs["field_lake_precip_damping"]) : 0.35f;
+    float field_lake_evap_scale = knobs.has("field_lake_evap_scale")
+                                            ? float(knobs["field_lake_evap_scale"]) : 0.35f;
+    float field_extreme_precip_soft_cap = knobs.has("field_extreme_precip_soft_cap")
+                                            ? float(knobs["field_extreme_precip_soft_cap"]) : 0.24f;
+    float field_extreme_precip_softness = knobs.has("field_extreme_precip_softness")
+                                            ? float(knobs["field_extreme_precip_softness"]) : 0.35f;
+    if (field_wet_terrain_precip_damping < 0.0f) field_wet_terrain_precip_damping = 0.0f;
+    else if (field_wet_terrain_precip_damping > 1.0f) field_wet_terrain_precip_damping = 1.0f;
+    if (field_lake_precip_damping < 0.0f) field_lake_precip_damping = 0.0f;
+    else if (field_lake_precip_damping > 1.0f) field_lake_precip_damping = 1.0f;
+    if (field_lake_evap_scale < 0.0f) field_lake_evap_scale = 0.0f;
+    else if (field_lake_evap_scale > 1.0f) field_lake_evap_scale = 1.0f;
+    if (field_extreme_precip_soft_cap < 0.0f) field_extreme_precip_soft_cap = 0.0f;
+    else if (field_extreme_precip_soft_cap > 1.0f) field_extreme_precip_soft_cap = 1.0f;
+    if (field_extreme_precip_softness < 0.0f) field_extreme_precip_softness = 0.0f;
+    else if (field_extreme_precip_softness > 1.0f) field_extreme_precip_softness = 1.0f;
 
     // ─── Pull pre-computed PackedArrays from knobs (zero-copy reads) ────
     if (!knobs.has("cell_pos") || !knobs.has("neighbor_indices") ||
@@ -3822,7 +3911,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // (line 713) evap
         const float evap = wf_evaporation_for_cell_idx(
             i, TERR, VEG, RIV, NB, temp, base_m, effective_ocean_an, on_water,
-            field_ocean_evap_gain);
+            field_ocean_evap_gain, field_lake_evap_scale);
 
         // (line 714) evaporation is limited by saturation deficit.
         float saturation_deficit = (vapor_capacity - vapor) / ((vapor_capacity > 0.001f) ? vapor_capacity : 0.001f);
@@ -3937,6 +4026,12 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (precip < cloud_water_rain) precip = cloud_water_rain;
         if (precip < 0.0f) precip = 0.0f;
         else if (precip > 1.0f) precip = 1.0f;
+        precip = wf_apply_precip_stability(
+            TERR[i], precip,
+            field_wet_terrain_precip_damping,
+            field_lake_precip_damping,
+            field_extreme_precip_soft_cap,
+            field_extreme_precip_softness);
         cloud_water -= precip * 0.32f;
         if (cloud_water < 0.0f) cloud_water = 0.0f;
         float vapor_after_precip = vapor - precip * field_vapor_precip_sink;
@@ -3948,7 +4043,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // (line 749-750) classify + intensity
         uint8_t wt = wf_classify_field_weather_at(
             POS[i].y, season_idx, temp, vapor, cloud, precip, instability,
-            ocean_an, wb_pos_y, wb_size_y, season_phase);
+            ocean_an, wb_pos_y, wb_size_y, season_phase,
+            cold_precip_as_blizzard, snow_classification_margin);
         float intensity = wf_field_intensity_for_type(
             wt, temp, vapor, cloud, precip, instability, ocean_an);
         if (refresh_convergence && apply_convergence_boost) {
@@ -3970,11 +4066,18 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                 prev_type = current_display;
                 target_type = wt;
                 alpha = 0.0f;
+            } else if (prev_type == target_type || current_display == target_type) {
+                prev_type = target_type;
+                alpha = 0.0f;
             } else {
                 alpha += weather_transition_alpha_rate;
                 if (alpha > 1.0f) alpha = 1.0f;
             }
             display_wt = (alpha >= 1.0f) ? target_type : prev_type;
+            if (alpha >= 1.0f) {
+                prev_type = target_type;
+                alpha = 0.0f;
+            }
             OUT_PREV_TYP[i] = prev_type;
             OUT_TARGET_TYP[i] = target_type;
             OUT_ALPHA[i] = alpha;
@@ -4049,6 +4152,9 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     out["weather_dirty_count"] = 0;
     out["water_budget_error"] = 0.0;
     out["active_weather_ratio"] = 0.0;
+    out["weather_convergence_dirty_count"] = 0;
+    out["weather_convergence_deltas"] = PackedFloat32Array();
+    out["convergence_published"] = false;
     out["path"] = String("gdext_commit");
     out["reason"] = String();
 
@@ -4072,6 +4178,8 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
 
     const int n_cells = int(knobs["n_cells"]);
     if (n_cells <= 0) return fail("n_cells <= 0");
+    const bool refresh_convergence = knobs.has("refresh_convergence")
+        ? bool(knobs["refresh_convergence"]) : false;
 
     const bool weather_transition_enabled = bool(knobs.get("weather_transition_enabled", false));
     float transition_rate = float(knobs.get("weather_transition_alpha_rate", 1.0));
@@ -4198,6 +4306,13 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     }
 
     int dirty_count = 0;
+    int convergence_dirty_count = 0;
+    PackedFloat32Array convergence_deltas;
+    if (refresh_convergence) {
+        convergence_deltas.resize(n_cells);
+    }
+    float * const __restrict CONV_DELTA =
+        refresh_convergence ? convergence_deltas.ptrw() : nullptr;
     double water_budget_error_acc = 0.0;
     constexpr float CHANGE_EPS = 0.002f;
 
@@ -4211,6 +4326,12 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
         const float v_intensity = NEXT_INT[i];
         const float v_convergence = NEXT_CNV[i];
         const uint8_t v_type = static_cast<uint8_t>(NEXT_TYP[i] & 0xFF);
+        if (refresh_convergence) {
+            const float conv_delta = std::fabs(W_CNV[i] - v_convergence);
+            if (conv_delta > 0.0005f && CONV_DELTA != nullptr) {
+                CONV_DELTA[convergence_dirty_count++] = conv_delta;
+            }
+        }
 
         const float prev_budget_cloud_water = (W_CW != nullptr) ? W_CW[i] : 0.0f;
         water_budget_error_acc += std::fabs(
@@ -4232,11 +4353,18 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
                 prev_type = current_display;
                 target_type = v_type;
                 alpha = 0.0f;
+            } else if (prev_type == target_type || current_display == target_type) {
+                prev_type = target_type;
+                alpha = 0.0f;
             } else {
                 alpha += transition_rate;
                 if (alpha > 1.0f) alpha = 1.0f;
             }
             display_type = (alpha >= 1.0f) ? target_type : prev_type;
+            if (alpha >= 1.0f) {
+                prev_type = target_type;
+                alpha = 0.0f;
+            }
         }
 
         bool weather_changed = false;
@@ -4304,6 +4432,12 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     out["elapsed_ms"] = elapsed_ms;
     out["commit_loop_ms"] = elapsed_ms;
     out["weather_dirty_count"] = dirty_count;
+    if (refresh_convergence && convergence_deltas.size() > convergence_dirty_count) {
+        convergence_deltas.resize(convergence_dirty_count);
+    }
+    out["weather_convergence_dirty_count"] = convergence_dirty_count;
+    out["weather_convergence_deltas"] = convergence_deltas;
+    out["convergence_published"] = refresh_convergence;
     out["water_budget_error"] = water_budget_error_acc / double(std::max(n_cells, 1));
     out["active_weather_ratio"] = double(dirty_count) / double(std::max(n_cells, 1));
     return out;
@@ -4317,9 +4451,9 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
 //     advect upstream `advect_steps` times (pick best dot vs -current dir)
 //     temp_mixed = lerp(temp_before[i], temp_before[upstream], heat_mix)
 //     temp_a[i] = clamp(temp_mixed, 0, 1)
-//     anomaly_out[i] = temp_mixed - baseline[i]
+//     anomaly_out[i] = lerp(prev_tta, clamp(temp_mixed - baseline[i], source_cap), blend)
 //   for each WATER cell i with zero current OR advect_steps==0:
-//     anomaly_out[i] = 0.0
+//     anomaly_out[i] = prev_tta * (1 - zero_current_decay)
 //
 // Caller-side responsibility (与 GDScript path 一致)：
 //   * pre-compute baseline[]  (ema_init=true → temp_baseline_a, else compute_temperature)
@@ -4361,6 +4495,12 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
     const int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
     const int end_idx_raw = knobs.has("end_idx") ? int(knobs["end_idx"]) : n_cells;
@@ -4418,7 +4558,7 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
         const float cur_y = OCY[i];
         const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
         if (cur_len2 < 1e-6f || advect_steps == 0) {
-            AOUT[i] = 0.0f;
+            AOUT[i] = dc_decay_tta(AOUT[i], tta_zero_current_decay);
             continue;
         }
         const float inv_cur = 1.0f / std::sqrt(cur_len2);
@@ -4457,7 +4597,8 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
         if (temp_mixed < 0.0f) temp_mixed = 0.0f;
         else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
         T[i] = temp_mixed;
-        AOUT[i] = temp_mixed - BL[i];
+        AOUT[i] = dc_stabilize_tta(
+            AOUT[i], temp_mixed - BL[i], tta_source_cap, tta_blend_rate);
     }
 
     // §11 CoW fix: write the freshly-computed anomaly back into the
@@ -4518,6 +4659,12 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
     const int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
     const int end_idx_raw = knobs.has("end_idx") ? int(knobs["end_idx"]) : n_cells;
@@ -4592,9 +4739,12 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
             weighted_sum += A[ni] * dot_v;
             weight_total += dot_v;
         }
-        float anomaly_in = 0.0f;
+        const float prev_anomaly = A[i];
+        float anomaly_in = dc_decay_tta(prev_anomaly, tta_decay_rate);
         if (weight_total > 0.0f) {
-            anomaly_in = (weighted_sum / weight_total) * effective_leak;
+            anomaly_in = dc_stabilize_tta(
+                prev_anomaly, (weighted_sum / weight_total) * effective_leak,
+                tta_source_cap, tta_blend_rate);
         }
         A[i] = anomaly_in;
         // (line 4819-4829) only write temp if anomaly significant
@@ -4607,7 +4757,7 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
             // 方传入的 fallback_baseline_arr（= GDScript water pass 已计算的
             // baseline_arr，含 ema_init 分支 + _compute_temperature 兜底）。
             float t_prev = T[i];
-            if (t_prev <= 0.0f) {
+            if (!std::isfinite(t_prev)) {
                 t_prev = FBL[i];
             }
             float tnew = t_prev + anomaly_in;
@@ -4695,7 +4845,6 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         return -1.0;
     }
 
-    float * const __restrict T = s_temp.arr_f32.ptrw();
     const float * const __restrict WX = s_wind_x.arr_f32.ptr();
     const float * const __restrict WY = s_wind_y.arr_f32.ptr();
     const float * const __restrict WSP = s_wind_spd.arr_f32.ptr();
@@ -4709,7 +4858,6 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     for (int i = start_idx; i < end_idx; ++i) {
-        T[i] = TB[i];
         A[i] = 0.0f;
 
         const float wind_x = WX[i];
@@ -4754,10 +4902,6 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         if (speed_mix < 0.25f) speed_mix = 0.25f;
         else if (speed_mix > 1.35f) speed_mix = 1.35f;
         const float temp_mixed_raw = temp_self + (temp_up - temp_self) * heat_mix * speed_mix;
-        float temp_mixed = temp_mixed_raw;
-        if (temp_mixed < 0.0f) temp_mixed = 0.0f;
-        else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
-        T[i] = temp_mixed;
         A[i] = temp_mixed_raw - BL[i];
     }
 
@@ -4765,7 +4909,6 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
 
-    _flush_slot_to_map(sid_temp);
     _flush_slot_to_map(sid_air_anom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -4885,7 +5028,7 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
         const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
         if (abs_anom > 1e-5f) {
             float t_prev = T[i];
-            if (t_prev <= 0.0f) {
+            if (!std::isfinite(t_prev)) {
                 t_prev = FBL[i];
             }
             float tnew = t_prev + anomaly_in;
@@ -5812,6 +5955,9 @@ struct OceanWaterCtx {
     int             n_cells;
     int             advect_steps;
     float           heat_mix;
+    float           tta_source_cap;
+    float           tta_blend_rate;
+    float           tta_zero_current_decay;
     const int32_t  *NB;        // n_cells * 6
     const uint8_t  *IW;        // n_cells
     const float    *POSX;      // n_cells
@@ -5831,7 +5977,7 @@ inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
     const float cur_y = c.OCY[i];
     const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
     if (cur_len2 < 1e-6f || c.advect_steps == 0) {
-        c.AOUT[i] = 0.0f;
+        c.AOUT[i] = dc_decay_tta(c.AOUT[i], c.tta_zero_current_decay);
         return;
     }
     const float inv_cur = 1.0f / std::sqrt(cur_len2);
@@ -5870,7 +6016,8 @@ inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
     if (temp_mixed < 0.0f) temp_mixed = 0.0f;
     else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
     c.T[i] = temp_mixed;
-    c.AOUT[i] = temp_mixed - c.BL[i];
+    c.AOUT[i] = dc_stabilize_tta(
+        c.AOUT[i], temp_mixed - c.BL[i], c.tta_source_cap, c.tta_blend_rate);
 }
 
 inline void ocean_water_run_water_range(const OceanWaterCtx &c,
@@ -5920,6 +6067,12 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     PackedInt32Array   nb_arr = knobs["neighbor_indices"];
@@ -5933,9 +6086,14 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     if (ocx_arr.size()         != n_cells)   { diag("ocx_arr size"); return -1.0; }
     if (ocy_arr.size()         != n_cells)   { diag("ocy_arr size"); return -1.0; }
 
-    // CoW fix: fresh anomaly_out array (refcount=1)
-    PackedFloat32Array anomaly_out;
-    anomaly_out.resize(n_cells);
+    // CoW fix: duplicate caller state so unchanged cells keep previous TTA.
+    PackedFloat32Array anomaly_src = knobs["anomaly_out"];
+    PackedFloat32Array anomaly_out = anomaly_src.size() == n_cells
+        ? anomaly_src.duplicate()
+        : PackedFloat32Array();
+    if (anomaly_out.size() != n_cells) {
+        anomaly_out.resize(n_cells);
+    }
 
     Slot &s_temp    = _slots.write[sid_temp];
     Slot &s_iswater = _slots.write[sid_iswater];
@@ -5951,6 +6109,9 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     ctx.n_cells      = n_cells;
     ctx.advect_steps = advect_steps;
     ctx.heat_mix     = heat_mix;
+    ctx.tta_source_cap = tta_source_cap;
+    ctx.tta_blend_rate = tta_blend_rate;
+    ctx.tta_zero_current_decay = tta_zero_current_decay;
     ctx.NB           = nb_arr.ptr();
     ctx.IW           = s_iswater.arr_u8.ptr();
     ctx.POSX         = s_pos_x.arr_f32.ptr();
@@ -6012,6 +6173,12 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     PackedInt32Array   nb_arr = knobs["neighbor_indices"];
@@ -6025,8 +6192,13 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     if (ocx_arr.size()         != n_cells)   { diag("ocx size"); return -1.0; }
     if (ocy_arr.size()         != n_cells)   { diag("ocy size"); return -1.0; }
 
-    PackedFloat32Array anomaly_out;
-    anomaly_out.resize(n_cells);
+    PackedFloat32Array anomaly_src = knobs["anomaly_out"];
+    PackedFloat32Array anomaly_out = anomaly_src.size() == n_cells
+        ? anomaly_src.duplicate()
+        : PackedFloat32Array();
+    if (anomaly_out.size() != n_cells) {
+        anomaly_out.resize(n_cells);
+    }
 
     Slot &s_temp    = _slots.write[sid_temp];
     Slot &s_iswater = _slots.write[sid_iswater];
@@ -6041,6 +6213,9 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.n_cells      = n_cells;
     ctx.advect_steps = advect_steps;
     ctx.heat_mix     = heat_mix;
+    ctx.tta_source_cap = tta_source_cap;
+    ctx.tta_blend_rate = tta_blend_rate;
+    ctx.tta_zero_current_decay = tta_zero_current_decay;
     ctx.NB           = nb_arr.ptr();
     ctx.IW           = s_iswater.arr_u8.ptr();
     ctx.POSX         = s_pos_x.arr_f32.ptr();
@@ -6096,6 +6271,9 @@ namespace {
 struct OceanLandCtx {
     int             n_cells;
     float           effective_leak;
+    float           tta_source_cap;
+    float           tta_blend_rate;
+    float           tta_decay_rate;
     const int32_t  *NB;        // n_cells * 6
     const uint8_t  *IW;        // n_cells
     const float    *POSX;      // n_cells
@@ -6132,15 +6310,18 @@ inline void ocean_land_compute_one(const OceanLandCtx &c, int i) {
         weighted_sum += c.A[ni] * dot_v;
         weight_total += dot_v;
     }
-    float anomaly_in = 0.0f;
+    const float prev_anomaly = c.A[i];
+    float anomaly_in = dc_decay_tta(prev_anomaly, c.tta_decay_rate);
     if (weight_total > 0.0f) {
-        anomaly_in = (weighted_sum / weight_total) * c.effective_leak;
+        anomaly_in = dc_stabilize_tta(
+            prev_anomaly, (weighted_sum / weight_total) * c.effective_leak,
+            c.tta_source_cap, c.tta_blend_rate);
     }
     c.A[i] = anomaly_in;
     const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
     if (abs_anom > 1e-5f) {
         float t_prev = c.T[i];
-        if (t_prev <= 0.0f) t_prev = c.FBL[i];
+        if (!std::isfinite(t_prev)) t_prev = c.FBL[i];
         float tnew = t_prev + anomaly_in;
         if (tnew < 0.0f) tnew = 0.0f;
         else if (tnew > 1.0f) tnew = 1.0f;
@@ -6190,6 +6371,12 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
@@ -6218,6 +6405,9 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     OceanLandCtx ctx{};
     ctx.n_cells        = n_cells;
     ctx.effective_leak = effective_leak;
+    ctx.tta_source_cap = tta_source_cap;
+    ctx.tta_blend_rate = tta_blend_rate;
+    ctx.tta_decay_rate = tta_decay_rate;
     ctx.NB             = nb_arr.ptr();
     ctx.IW             = s_iswater.arr_u8.ptr();
     ctx.POSX           = s_pos_x.arr_f32.ptr();
@@ -6275,6 +6465,12 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
+    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
+    tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
@@ -6302,6 +6498,9 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     OceanLandCtx ctx{};
     ctx.n_cells        = n_cells;
     ctx.effective_leak = effective_leak;
+    ctx.tta_source_cap = tta_source_cap;
+    ctx.tta_blend_rate = tta_blend_rate;
+    ctx.tta_decay_rate = tta_decay_rate;
     ctx.NB             = nb_arr.ptr();
     ctx.IW             = s_iswater.arr_u8.ptr();
     ctx.POSX           = s_pos_x.arr_f32.ptr();
@@ -16105,6 +16304,9 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
     const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 1.0);
     const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.30);
+    float OC_MAX_MAG            = float(knobs.has("ocean_current_max_magnitude") ? double(knobs["ocean_current_max_magnitude"]) : 0.50);
+    if (OC_MAX_MAG < 0.01f) OC_MAX_MAG = 0.01f;
+    else if (OC_MAX_MAG > 1.4142136f) OC_MAX_MAG = 1.4142136f;
     const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.25);
     const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.75);
     const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
@@ -16414,7 +16616,14 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         cx = old_cx + (cx - old_cx) * response_rate;
         cy = old_cy + (cy - old_cy) * response_rate;
 
-        // Clamp to [-1, 1].
+        const float mag2 = cx * cx + cy * cy;
+        const float max2 = OC_MAX_MAG * OC_MAX_MAG;
+        if (mag2 > max2 && mag2 > 1e-12f) {
+            const float inv_scale = OC_MAX_MAG / std::sqrt(mag2);
+            cx *= inv_scale;
+            cy *= inv_scale;
+        }
+        // Final safety clamp for atlas encoding compatibility.
         if (cx >  1.0f) cx =  1.0f; else if (cx < -1.0f) cx = -1.0f;
         if (cy >  1.0f) cy =  1.0f; else if (cy < -1.0f) cy = -1.0f;
         const float odx = cx - old_cx;

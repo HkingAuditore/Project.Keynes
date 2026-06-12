@@ -209,6 +209,17 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 
 如果某个 C++ 或 GDScript 消费端用 `sqrt(wind_x^2 + wind_y^2)` 当风速，结果会因为单位方向模长接近 1 而退化成全图恒定强风。
 
+### Wind air-mass publish contract
+
+`run_wind_air_mass_pass` 与 GDScript fallback `_wind_air_mass_pass` 只写
+`cell_air_mass_temp_anomaly` / `MapData.air_mass_temp_anomaly_arr`，并 flush 该
+slot 供后续 surface pass 读取。它们不发布 `cell_temp`，也不应调用
+`_flush_slot_to_map(cell_temp)`。
+
+`run_wind_surface_pass` / `_wind_surface_pass` 是气团异常写入 `cell_temp` 的
+唯一阶段。这个边界用于避免同一 climate round 内先由 air-mass 覆盖当前温度、
+再由 surface pass 二次注入造成局部温度 ping-pong。
+
 ## C++ Pass 返回契约
 
 简单 pass 可能返回 `elapsed_ms` 浮点数，复杂 pass 应返回 Dictionary。
@@ -308,3 +319,25 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 8. 输出是否 `_flush_slot_to_map()` 或 `snapshot_*`？
 9. caller 是否识别 `published_to_slot=true` 并跳过重复 copy？
 10. 后续 GDScript/C++ stage 是否需要 `refresh_slots_from_map()`？
+
+## Climate stability bridge notes
+
+The current climate/weather/ocean stability fixes intentionally reuse existing
+bridge surfaces and component slots.
+
+- `cell_temperature_transport_anomaly` remains the bridge slot for ocean heat
+  transport anomaly state. `MapData.temperature_transport_anomaly_arr` is the
+  GDScript mirror consumed by fallback code and diagnostics. Do not add a
+  parallel TTA array unless the schema/codegen workflow explicitly requires it.
+- Ocean water and land native passes receive the previous TTA state through the
+  existing anomaly array knobs and publish the stabilized value back through the
+  same slot/mirror boundary. Callers must keep honoring `published_to_slot` and
+  dense writes so later climate stages do not read stale state.
+- `cell_ocean_current_x/y` are still independent float slots, but the physical
+  expectation is a final vector-magnitude limit. Diagnostics should compute
+  `sqrt(x*x + y*y)` when validating saturation, not inspect per-component max
+  values alone.
+- Weather CSV diagnostics are not slot schema. They are sampled reports from
+  `sample["weather"]`. `weather_dirty_count`, `weather_convergence_dirty_count`,
+  and `weather_convergence_delta_p95` must be interpreted as weather commit
+  report fields, not as climate pass fields.

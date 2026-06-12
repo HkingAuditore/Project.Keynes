@@ -41,6 +41,29 @@ void KnobsHandle::set_field_scalars(
     if (changed) _field_dirty = true;
 }
 
+void KnobsHandle::set_field_precip_stability_scalars(
+        float field_precip_carryover_max,
+        float field_vapor_precip_sink,
+        float field_vapor_relax_rate,
+        float field_orographic_lift_cap,
+        float field_wet_terrain_precip_damping,
+        float field_lake_precip_damping,
+        float field_lake_evap_scale,
+        float field_extreme_precip_soft_cap,
+        float field_extreme_precip_softness) {
+    bool changed = false;
+    if (_k.field_precip_carryover_max != field_precip_carryover_max) { _k.field_precip_carryover_max = field_precip_carryover_max; changed = true; }
+    if (_k.field_vapor_precip_sink != field_vapor_precip_sink) { _k.field_vapor_precip_sink = field_vapor_precip_sink; changed = true; }
+    if (_k.field_vapor_relax_rate != field_vapor_relax_rate) { _k.field_vapor_relax_rate = field_vapor_relax_rate; changed = true; }
+    if (_k.field_orographic_lift_cap != field_orographic_lift_cap) { _k.field_orographic_lift_cap = field_orographic_lift_cap; changed = true; }
+    if (_k.field_wet_terrain_precip_damping != field_wet_terrain_precip_damping) { _k.field_wet_terrain_precip_damping = field_wet_terrain_precip_damping; changed = true; }
+    if (_k.field_lake_precip_damping != field_lake_precip_damping) { _k.field_lake_precip_damping = field_lake_precip_damping; changed = true; }
+    if (_k.field_lake_evap_scale != field_lake_evap_scale) { _k.field_lake_evap_scale = field_lake_evap_scale; changed = true; }
+    if (_k.field_extreme_precip_soft_cap != field_extreme_precip_soft_cap) { _k.field_extreme_precip_soft_cap = field_extreme_precip_soft_cap; changed = true; }
+    if (_k.field_extreme_precip_softness != field_extreme_precip_softness) { _k.field_extreme_precip_softness = field_extreme_precip_softness; changed = true; }
+    if (changed) _field_dirty = true;
+}
+
 // ─── distribute 段 ─────────────────────────────────────────────────────
 void KnobsHandle::set_distribute_scalars(
         float snow_min_intensity, float snow_freeze_t, float snow_melt_t,
@@ -205,6 +228,15 @@ Dictionary KnobsHandle::to_field_knobs_dict() {
     d["field_ocean_evap_gain"]      = _k.field_ocean_evap_gain;
     d["field_precip_decay"]         = _k.field_precip_decay;
     d["season_phase"]               = _k.season_phase;
+    d["field_precip_carryover_max"] = _k.field_precip_carryover_max;
+    d["field_vapor_precip_sink"]    = _k.field_vapor_precip_sink;
+    d["field_vapor_relax_rate"]     = _k.field_vapor_relax_rate;
+    d["field_orographic_lift_cap"]  = _k.field_orographic_lift_cap;
+    d["field_wet_terrain_precip_damping"] = _k.field_wet_terrain_precip_damping;
+    d["field_lake_precip_damping"] = _k.field_lake_precip_damping;
+    d["field_lake_evap_scale"] = _k.field_lake_evap_scale;
+    d["field_extreme_precip_soft_cap"] = _k.field_extreme_precip_soft_cap;
+    d["field_extreme_precip_softness"] = _k.field_extreme_precip_softness;
     _cached_field_dict = d;
     return d;
 }
@@ -322,6 +354,17 @@ void KnobsHandle::_bind_methods() {
         "field_convergence_gain", "field_ocean_evap_gain",
         "field_precip_decay", "season_phase"),
         &KnobsHandle::set_field_scalars);
+    ClassDB::bind_method(D_METHOD("set_field_precip_stability_scalars",
+        "field_precip_carryover_max",
+        "field_vapor_precip_sink",
+        "field_vapor_relax_rate",
+        "field_orographic_lift_cap",
+        "field_wet_terrain_precip_damping",
+        "field_lake_precip_damping",
+        "field_lake_evap_scale",
+        "field_extreme_precip_soft_cap",
+        "field_extreme_precip_softness"),
+        &KnobsHandle::set_field_precip_stability_scalars);
     ClassDB::bind_method(D_METHOD("to_field_knobs_dict"), &KnobsHandle::to_field_knobs_dict);
 
     // distribute

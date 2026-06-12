@@ -18,7 +18,14 @@ const FIXED_COLUMNS: Array = [
 	"t_render_ms",
 	"t_ui_ms",
 	"climate_max_temp_delta",
+	"climate_p95_temp_delta",
 	"climate_p99_temp_delta",
+	"climate_preclamp_max_temp_delta",
+	"climate_preclamp_p99_temp_delta",
+	"climate_temp_delta_gt_005_count",
+	"climate_temp_delta_gt_010_count",
+	"climate_temp_delta_gt_020_count",
+	"climate_temp_delta_clamped_count",
 	"climate_max_transport_anomaly",
 	"climate_sea_ice_delta_max",
 	"climate_precip_p95",
@@ -29,9 +36,34 @@ const FIXED_COLUMNS: Array = [
 	"climate_wind_mag_p95",
 	"climate_ocean_mag_p95",
 	"climate_upwelling_abs_p95",
+	"climate_current_pass",
+	"climate_partial",
+	"climate_progress_ratio",
+	"climate_processed_cells",
+	"climate_cursor_start",
+	"climate_cursor_end",
+	"climate_pass_status",
+	"climate_pass_stage",
+	"climate_pass_substage",
+	"climate_pass_path",
+	"climate_budget_interrupted",
+	"climate_pass_token",
 	"weather_dirty_count",
 	"water_budget_error",
 	"active_weather_ratio",
+	"weather_diag_present",
+	"weather_field_commit_path",
+	"weather_refresh_convergence",
+	"weather_field_solve_tick",
+	"weather_convergence_refresh_stride",
+	"weather_native_convergence_boost",
+	"weather_convergence_dirty_count",
+	"weather_convergence_delta_p95",
+	"weather_convergence_published",
+	"weather_target_mismatch_count",
+	"weather_transitioning_count",
+	"weather_transition_alpha_mean",
+	"weather_transition_alpha_p95",
 	"climate_thermal_finalizer_applied",
 	"phys_phase_locked",
 	"phys_diag_tick_idx",
@@ -43,6 +75,14 @@ const FIXED_COLUMNS: Array = [
 	"phys_path",
 	"phys_done",
 	"phys_round_active",
+	"phys_physical_round_id",
+	"phys_visual_round_active",
+	"phys_visual_round_id",
+	"phys_visual_pending_commit",
+	"phys_visual_lag_ticks",
+	"phys_visual_pixel_progress",
+	"phys_visual_next_pixel_idx",
+	"phys_visual_total_pixels",
 	"phys_pending_commit",
 	"phys_need_pixel",
 	"phys_run_ocean",
@@ -131,6 +171,8 @@ const SOA_FIELD_CANDIDATES: Array = [
 	"weather_cloud_water_arr",
 	"weather_precip_arr",
 	"weather_transition_alpha_arr",
+	"weather_classification_temp_arr",
+	"weather_classification_moisture_arr",
 	"weather_vapor_arr",
 	"weather_convergence_arr",
 	"weather_instability_arr",
@@ -347,6 +389,11 @@ func on_fast_tick(sample: Dictionary) -> void:
 	for key in physical_stats.keys():
 		climate[key] = physical_stats[key]
 	sample["climate"] = climate
+	var weather: Dictionary = sample.get("weather", {})
+	var transition_stats: Dictionary = _weather_transition_stats(map_data)
+	for key in transition_stats.keys():
+		weather[key] = transition_stats[key]
+	sample["weather"] = weather
 
 	for idx in range(_cell_count):
 		var cell = map_data.cell_at(idx)
@@ -382,6 +429,8 @@ func _current_map():
 
 func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 	var climate: Dictionary = sample.get("climate", {})
+	var pass_diag: Dictionary = climate.get("pass_diag", {})
+	var weather: Dictionary = sample.get("weather", {})
 	var phys: Dictionary = sample.get("ocean_currents", {})
 	return {
 		"row_idx": _row_count,
@@ -394,7 +443,14 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"t_render_ms": float(sample.get("t_render_ms", 0.0)),
 		"t_ui_ms": float(sample.get("t_ui_ms", 0.0)),
 		"climate_max_temp_delta": float(climate.get("max_temp_delta", 0.0)),
+		"climate_p95_temp_delta": float(climate.get("p95_temp_delta", 0.0)),
 		"climate_p99_temp_delta": float(climate.get("p99_temp_delta", 0.0)),
+		"climate_preclamp_max_temp_delta": float(climate.get("preclamp_max_temp_delta", 0.0)),
+		"climate_preclamp_p99_temp_delta": float(climate.get("preclamp_p99_temp_delta", 0.0)),
+		"climate_temp_delta_gt_005_count": int(climate.get("temp_delta_gt_005_count", 0)),
+		"climate_temp_delta_gt_010_count": int(climate.get("temp_delta_gt_010_count", 0)),
+		"climate_temp_delta_gt_020_count": int(climate.get("temp_delta_gt_020_count", 0)),
+		"climate_temp_delta_clamped_count": int(climate.get("temp_delta_clamped_count", 0)),
 		"climate_max_transport_anomaly": float(climate.get("max_transport_anomaly", 0.0)),
 		"climate_sea_ice_delta_max": float(climate.get("sea_ice_delta_max", 0.0)),
 		"climate_precip_p95": float(climate.get("precip_p95", 0.0)),
@@ -405,9 +461,34 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"climate_wind_mag_p95": float(climate.get("wind_mag_p95", 0.0)),
 		"climate_ocean_mag_p95": float(climate.get("ocean_mag_p95", 0.0)),
 		"climate_upwelling_abs_p95": float(climate.get("upwelling_abs_p95", 0.0)),
-		"weather_dirty_count": int(climate.get("weather_dirty_count", 0)),
-		"water_budget_error": float(climate.get("water_budget_error", 0.0)),
-		"active_weather_ratio": float(climate.get("active_weather_ratio", 0.0)),
+		"climate_current_pass": str(climate.get("current_pass", "")),
+		"climate_partial": bool(climate.get("partial", false)),
+		"climate_progress_ratio": float(climate.get("progress_ratio", 0.0)),
+		"climate_processed_cells": int(climate.get("processed_cells", 0)),
+		"climate_cursor_start": int(climate.get("cursor_start", -1)),
+		"climate_cursor_end": int(climate.get("cursor_end", -1)),
+		"climate_pass_status": str(climate.get("pass_status", "")),
+		"climate_pass_stage": str(pass_diag.get("stage", "")),
+		"climate_pass_substage": str(pass_diag.get("substage", "")),
+		"climate_pass_path": str(pass_diag.get("path", climate.get("path", ""))),
+		"climate_budget_interrupted": bool(climate.get("budget_interrupted", pass_diag.get("budget_interrupted", false))),
+		"climate_pass_token": int(climate.get("pass_token", pass_diag.get("token", 0))),
+		"weather_dirty_count": int(weather.get("weather_dirty_count", climate.get("weather_dirty_count", 0))),
+		"water_budget_error": float(weather.get("water_budget_error", climate.get("water_budget_error", 0.0))),
+		"active_weather_ratio": float(weather.get("active_weather_ratio", climate.get("active_weather_ratio", 0.0))),
+		"weather_diag_present": not weather.is_empty(),
+		"weather_field_commit_path": str(weather.get("field_commit_path", "")),
+		"weather_refresh_convergence": bool(weather.get("refresh_convergence", false)),
+		"weather_field_solve_tick": int(weather.get("field_solve_tick", -1)),
+		"weather_convergence_refresh_stride": int(weather.get("field_convergence_refresh_stride", 0)),
+		"weather_native_convergence_boost": bool(weather.get("native_convergence_boost", false)),
+		"weather_convergence_dirty_count": int(weather.get("weather_convergence_dirty_count", 0)),
+		"weather_convergence_delta_p95": float(weather.get("weather_convergence_delta_p95", 0.0)),
+		"weather_convergence_published": bool(weather.get("convergence_published", false)),
+		"weather_target_mismatch_count": int(weather.get("target_mismatch_count", 0)),
+		"weather_transitioning_count": int(weather.get("transitioning_count", 0)),
+		"weather_transition_alpha_mean": float(weather.get("transition_alpha_mean", 0.0)),
+		"weather_transition_alpha_p95": float(weather.get("transition_alpha_p95", 0.0)),
 		"climate_thermal_finalizer_applied": bool(climate.get("thermal_finalizer_applied", false)),
 		"phys_phase_locked": float(phys.get("phase_locked", phys.get("season_phase", 0.0))),
 		"phys_diag_tick_idx": int(phys.get("tick_idx", -1)),
@@ -418,8 +499,16 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"phys_next_stage_name": str(phys.get("next_stage_name", "")),
 		"phys_path": str(phys.get("path", "")),
 		"phys_done": bool(phys.get("done", false)),
-		"phys_round_active": bool(phys.get("round_active", false)),
-		"phys_pending_commit": bool(phys.get("pending_commit", false)),
+		"phys_round_active": bool(phys.get("phys_round_active", phys.get("round_active", false))),
+		"phys_physical_round_id": int(phys.get("physical_round_id", 0)),
+		"phys_visual_round_active": bool(phys.get("visual_round_active", false)),
+		"phys_visual_round_id": int(phys.get("visual_round_id", 0)),
+		"phys_visual_pending_commit": bool(phys.get("visual_pending_commit", phys.get("pending_commit", false))),
+		"phys_visual_lag_ticks": int(phys.get("visual_lag_ticks", 0)),
+		"phys_visual_pixel_progress": float(phys.get("visual_pixel_progress", 1.0)),
+		"phys_visual_next_pixel_idx": int(phys.get("visual_next_pixel_idx", phys.get("next_pixel_idx", 0))),
+		"phys_visual_total_pixels": int(phys.get("visual_total_pixels", phys.get("total_pixels", 0))),
+		"phys_pending_commit": bool(phys.get("pending_commit", phys.get("visual_pending_commit", false))),
 		"phys_need_pixel": bool(phys.get("need_pixel", false)),
 		"phys_run_ocean": bool(phys.get("run_ocean", false)),
 		"phys_phase_int_seen": int(phys.get("phase_int_seen", -9999)),
@@ -526,6 +615,37 @@ static func _physical_field_stats(map_data) -> Dictionary:
 	if typeof(upwelling_arr) == TYPE_PACKED_FLOAT32_ARRAY and not upwelling_arr.is_empty():
 		out["upwelling_abs_p95"] = _packed_float_abs_p95(upwelling_arr)
 	return out
+
+
+static func _weather_transition_stats(map_data) -> Dictionary:
+	var type_arr = map_data.get("weather_type_arr")
+	var target_arr = map_data.get("weather_target_type_arr")
+	var alpha_arr = map_data.get("weather_transition_alpha_arr")
+	if _array_size(type_arr) <= 0 or _array_size(target_arr) != _array_size(type_arr) or _array_size(alpha_arr) != _array_size(type_arr):
+		return {}
+	var n: int = _array_size(type_arr)
+	var mismatch_count: int = 0
+	var transitioning_count: int = 0
+	var alpha_sum: float = 0.0
+	var alpha_values: Array = []
+	for i in range(n):
+		if int(type_arr[i]) != int(target_arr[i]):
+			mismatch_count += 1
+		var alpha: float = float(alpha_arr[i])
+		if is_nan(alpha) or is_inf(alpha):
+			alpha = 0.0
+		alpha = clampf(alpha, 0.0, 1.0)
+		if alpha > 0.0 and alpha < 0.999:
+			transitioning_count += 1
+			alpha_sum += alpha
+			alpha_values.append(alpha)
+	alpha_values.sort()
+	return {
+		"target_mismatch_count": mismatch_count,
+		"transitioning_count": transitioning_count,
+		"transition_alpha_mean": alpha_sum / float(maxi(transitioning_count, 1)),
+		"transition_alpha_p95": _sorted_p95(alpha_values),
+	}
 
 
 static func _packed_vector_mag_stats(x_arr, y_arr) -> Dictionary:

@@ -68,6 +68,24 @@ var _pending_commit: bool = false
 # True 表示求解阶段已完成，本轮余下 slice 全部用于像素工作。
 var _phys_solve_done: bool = false
 
+# Authoritative state is split so physical ocean solves can finish and start
+# again while the visual pixel atlas is still rasterizing or waiting to commit.
+# The legacy fields above remain as report aliases for existing diagnostics.
+var _phys_round_active: bool = false
+var _phys_phase_locked: float = 0.0
+var _phys_need_visual: bool = false
+var _phys_run_ocean_this_round: bool = true
+var _physical_round_id: int = 0
+var _last_physical_complete_tick: int = _NO_DAILY_WIND_TICK
+
+var _visual_round_active: bool = false
+var _visual_phase_locked: float = 0.0
+var _visual_next_pixel_idx: int = 0
+var _visual_total_pixels: int = 0
+var _visual_pending_commit: bool = false
+var _visual_round_id: int = 0
+var _visual_enqueued_tick: int = _NO_DAILY_WIND_TICK
+
 # Event-driven pixel rebake gate（2026-05-15 新增）：
 #   每日只跑 hex 求解（per-cell 数据），像素 buffer 只在 season_phase 跨整数时
 #   重 bake 一次。_phase_int_seen = -9999 视作"从未跑过"，第一次 round 强制 rebake。
@@ -135,7 +153,8 @@ func _total_pixels_for(p_world: WorldData) -> int:
 
 ## Pixel quota per slice — ceil(total / slice_count).
 func _pixels_per_slice() -> int:
-	return int(ceil(float(_total_pixels) / float(max(1, slice_count))))
+	var total: int = _visual_total_pixels if _visual_total_pixels > 0 else _total_pixels
+	return int(ceil(float(total) / float(max(1, slice_count))))
 
 
 func _pixel_quota_for_next_slice(use_adaptive: bool = true) -> int:
@@ -151,6 +170,70 @@ func _pixel_quota_for_next_slice(use_adaptive: bool = true) -> int:
 	return clampi(smoothed, _PIXEL_MIN_QUOTA, base_quota)
 
 
+func _sync_legacy_round_state() -> void:
+	_next_pixel_idx = _visual_next_pixel_idx
+	_total_pixels = _visual_total_pixels
+	_phase_locked = _phys_phase_locked if _phys_round_active else _visual_phase_locked
+	_round_active = _phys_round_active or _visual_round_active
+	_pending_commit = _visual_pending_commit
+	_need_pixel_this_round = _phys_need_visual
+	_run_ocean_this_round = _phys_run_ocean_this_round
+
+
+func _drop_visual_round() -> void:
+	_visual_round_active = false
+	_visual_pending_commit = false
+	_visual_next_pixel_idx = 0
+	_visual_total_pixels = 0
+	_visual_phase_locked = 0.0
+	_visual_enqueued_tick = _NO_DAILY_WIND_TICK
+	_sync_legacy_round_state()
+
+
+func _profile_drop_stale_visual() -> bool:
+	var cp = cfg.climate_profile if cfg != null else null
+	if cp != null and cp.get("ocean_decoupled_visual_raster") != null \
+			and not bool(cp.ocean_decoupled_visual_raster):
+		return false
+	if cp != null and cp.get("ocean_visual_rebake_drop_stale") != null:
+		return bool(cp.ocean_visual_rebake_drop_stale)
+	return true
+
+
+func _enqueue_visual_round(ctx: SusTickContext, phase: float) -> void:
+	if _visual_round_active and _profile_drop_stale_visual():
+		_drop_visual_round()
+	if _visual_round_active:
+		_sync_legacy_round_state()
+		return
+	_visual_total_pixels = _total_pixels_for(world)
+	if _visual_total_pixels <= 0:
+		_sync_legacy_round_state()
+		return
+	_visual_round_active = true
+	_visual_pending_commit = false
+	_visual_next_pixel_idx = 0
+	_visual_phase_locked = phase
+	_visual_round_id += 1
+	_visual_enqueued_tick = ctx.tick_index
+	_sync_legacy_round_state()
+
+
+func _finish_physical_round(ctx: SusTickContext) -> void:
+	_last_physical_complete_tick = ctx.tick_index
+	_phys_round_active = false
+	_phys_solve_done = false
+	_phys_need_visual = false
+	_phys_run_ocean_this_round = true
+	_sync_legacy_round_state()
+
+
+func _visual_lag_ticks(ctx: SusTickContext) -> int:
+	if not _visual_round_active or _visual_enqueued_tick == _NO_DAILY_WIND_TICK:
+		return 0
+	return max(0, ctx.tick_index - _visual_enqueued_tick)
+
+
 func reset_progress() -> void:
 	super.reset_progress()
 	_next_pixel_idx = 0
@@ -158,6 +241,19 @@ func reset_progress() -> void:
 	_round_active = false
 	_phys_solve_done = false
 	_pending_commit = false
+	_phys_round_active = false
+	_phys_phase_locked = 0.0
+	_phys_need_visual = false
+	_phys_run_ocean_this_round = true
+	_physical_round_id = 0
+	_last_physical_complete_tick = _NO_DAILY_WIND_TICK
+	_visual_round_active = false
+	_visual_phase_locked = 0.0
+	_visual_next_pixel_idx = 0
+	_visual_total_pixels = 0
+	_visual_pending_commit = false
+	_visual_round_id = 0
+	_visual_enqueued_tick = _NO_DAILY_WIND_TICK
 	# 重置事件驱动门 — 下一次 round 会因 _phase_int_seen=-9999 而强制 rebake，
 	# 保证场景重载/换地图后第一帧像素 buffer 正确。
 	_phase_int_seen = -9999
@@ -176,6 +272,7 @@ func reset_progress() -> void:
 	_last_daily_wind_tick = _NO_DAILY_WIND_TICK
 	_last_daily_wind_report = {}
 	_daily_wind_rt_diag_count = 0
+	_sync_legacy_round_state()
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
 
@@ -189,6 +286,7 @@ func _ticks_per_slice_diag() -> int:
 
 
 func _record_phys_diag(ctx: SusTickContext, report: Dictionary, done: bool) -> Dictionary:
+	_sync_legacy_round_state()
 	var out: Dictionary = report.duplicate(true)
 	out["tick_idx"] = ctx.tick_index
 	out["day_index"] = ctx.day_index
@@ -202,6 +300,17 @@ func _record_phys_diag(ctx: SusTickContext, report: Dictionary, done: bool) -> D
 	out["pending_commit"] = _pending_commit
 	out["next_pixel_idx"] = _next_pixel_idx
 	out["total_pixels"] = _total_pixels
+	out["phys_round_active"] = _phys_round_active
+	out["visual_round_active"] = _visual_round_active
+	out["physical_round_id"] = _physical_round_id
+	out["visual_round_id"] = _visual_round_id
+	out["phys_phase_locked"] = _phys_phase_locked
+	out["visual_phase_locked"] = _visual_phase_locked
+	out["visual_pending_commit"] = _visual_pending_commit
+	out["visual_next_pixel_idx"] = _visual_next_pixel_idx
+	out["visual_total_pixels"] = _visual_total_pixels
+	out["visual_pixel_progress"] = float(_visual_next_pixel_idx) / float(max(1, _visual_total_pixels)) if _visual_round_active else 1.0
+	out["visual_lag_ticks"] = _visual_lag_ticks(ctx)
 	out["current_pixel_quota"] = _current_pixel_quota_diag
 	out["wind_period_ticks"] = wind_period_ticks
 	out["ocean_period_ticks"] = ocean_period_ticks
@@ -226,9 +335,9 @@ func _log_should_skip(ctx: SusTickContext, reason: String, detail: String = "") 
 	var suffix: String = ""
 	if detail != "":
 		suffix = " " + detail
-	print("[ocean_currents][RT] skip#%d tick=%d reason=%s round=%s phys_done=%s pending_commit=%s cursor=%d/%d tps=%d streak=%d%s" % [
-		_ocean_policy_diag_count, ctx.tick_index, reason, str(_round_active),
-		str(_phys_solve_done), str(_pending_commit), _next_pixel_idx, _total_pixels,
+	print("[ocean_currents][RT] skip#%d tick=%d reason=%s phys_round=%s visual_round=%s phys_done=%s pending_commit=%s cursor=%d/%d tps=%d streak=%d%s" % [
+		_ocean_policy_diag_count, ctx.tick_index, reason, str(_phys_round_active), str(_visual_round_active),
+		str(_phys_solve_done), str(_visual_pending_commit), _visual_next_pixel_idx, _visual_total_pixels,
 		_ticks_per_slice_diag(), _climate_defer_streak, suffix,
 	])
 
@@ -247,10 +356,10 @@ func _log_pixel_slice(ctx: SusTickContext, stage_name: String, s: int, e: int,
 	_ocean_pixel_rt_diag_count += 1
 	print("[ocean_currents][RT] pixel#%d tick=%d stage=%s cursor=%d..%d/%d progress=%.3f elapsed=%.3f pps=%d quota_last=%d path=%s raster_wall=%.3f raster_native=%.3f pending_commit=%s" % [
 		_ocean_pixel_rt_diag_count, ctx.tick_index, stage_name,
-		s, e, _total_pixels, progress, elapsed_ms,
+		s, e, _visual_total_pixels, progress, elapsed_ms,
 		max(0, e - s), _last_pixel_quota,
 		"gdext_raster" if used_cpp_raster else "gdscript_slice",
-		raster_wall_ms, raster_native_ms, str(_pending_commit),
+		raster_wall_ms, raster_native_ms, str(_visual_pending_commit),
 	])
 
 
@@ -263,11 +372,10 @@ func should_run(ctx: SusTickContext) -> bool:
 	var slow_due: bool = _slow_slice_policy_allows(ctx)
 	# Commit Defer：raster 已完成、commit 待跑 → 绕过 climate-defer 让位
 	# （commit 极轻 ~1.5ms 且必须尽快上传纹理，否则 shader 看的是旧 buffer）。
-	if _pending_commit:
-		var commit_allowed: bool = slow_due or daily_due
-		if not commit_allowed:
-			_log_should_skip(ctx, "policy_pending_commit")
-		return commit_allowed
+	if _visual_pending_commit:
+		return true
+	if _visual_round_active and not _phys_round_active:
+		return true
 	# 不要在 should_run 里按 phase_int 拦截整轮 ocean_currents。
 	# phase_int 只用于 run_slice 起点判断本轮是否需要刷新像素 atlas；物理化路径下
 	# wind / ocean_current / upwelling 仍必须按 ContinuousSlicedPolicy 的节奏更新，
@@ -278,12 +386,10 @@ func should_run(ctx: SusTickContext) -> bool:
 	# _phase_locked, so spreading slices across the full period_ticks window
 	# is exactly the desired behavior.
 	if not slow_due and not daily_due:
-		_log_should_skip(ctx, "policy_gated", "tick_mod=%d" % (ctx.tick_index % max(1, _ticks_per_slice_diag())))
+		_log_should_skip(ctx, "physical_policy_gated", "tick_mod=%d" % (ctx.tick_index % max(1, _ticks_per_slice_diag())))
 		return false
-	if slow_due and _should_defer_after_climate_slice() and not daily_due:
-		_log_should_skip(ctx, "climate_defer", "climate_ms=%.3f" % _last_defer_climate_ms)
-		return false
-	_climate_defer_streak = 0
+	# Climate-defer mutates a streak counter, so keep it in run_slice().
+	# should_run() stays a pure eligibility check for the GDScript fallback path.
 	return true
 
 
@@ -379,53 +485,168 @@ func _should_run_ocean_this_round(ctx: SusTickContext) -> bool:
 	return (ctx.tick_index % max(1, ocean_period_ticks)) == 0
 
 
-func run_slice(ctx: SusTickContext) -> Dictionary:
-	var t_start_us: int = Time.get_ticks_usec()
-	if baker == null or world == null or map == null:
-		return _record_phys_diag(ctx, {
+func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dictionary:
+	_visual_total_pixels = _total_pixels_for(world)
+	if _visual_total_pixels <= 0:
+		return {
+			"ok": false,
+			"report": {
+				"done": true,
+				"work_done": 0,
+				"elapsed_ms": 0.0,
+				"stage_name": "ocean_no_pixels",
+				"path": "no_pixels",
+			},
+		}
+	_phys_phase_locked = _current_phase(ctx)
+	_phase_locked = _phys_phase_locked
+	_phys_round_active = true
+	_phys_solve_done = not baker._use_physical_circulation(cfg)
+	_phys_run_ocean_this_round = _should_run_ocean_this_round(ctx)
+	_physical_round_id += 1
+	if not _phys_solve_done:
+		var primed_from_daily_wind: bool = false
+		if not daily_report.is_empty() and bool(daily_report.get("ran", false)) \
+				and baker.has_method("prime_physical_solve_from_current_wind"):
+			primed_from_daily_wind = baker.prime_physical_solve_from_current_wind(map, _phys_phase_locked)
+		if not primed_from_daily_wind and baker.has_method("reset_physical_solve_state"):
+			baker.reset_physical_solve_state()
+	var phase_int: int = int(floor(_phys_phase_locked))
+	if baker._use_physical_circulation(cfg):
+		_phys_need_visual = _phys_run_ocean_this_round \
+				and (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
+		if _phys_run_ocean_this_round:
+			_phase_int_seen = phase_int
+	else:
+		_phys_need_visual = true
+		_phase_int_seen = phase_int
+	_sync_legacy_round_state()
+	if _ocean_rt_diag_count < 24:
+		var tps: int = 0
+		if _slow_slice_policy != null and _slow_slice_policy.has_method("ticks_per_slice"):
+			tps = int(_slow_slice_policy.ticks_per_slice())
+		print("[ocean_currents][RT] phys_round_start#%d tick=%d phase=%.4f physical=%s wind_period=%d ocean_period=%d slice_count=%d tps=%d max_slices=%d run_ocean=%s need_visual=%s phase_int=%d phase_seen=%d total_pixels=%d visual_active=%s" % [
+			_physical_round_id, ctx.tick_index, _phys_phase_locked,
+			str(baker._use_physical_circulation(cfg)), wind_period_ticks, ocean_period_ticks,
+			slice_count, tps, max_slices_per_tick, str(_phys_run_ocean_this_round),
+			str(_phys_need_visual), phase_int, _phase_int_seen, _visual_total_pixels,
+			str(_visual_round_active),
+		])
+	return {"ok": true}
+
+
+func _run_physical_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
+	if not _phys_round_active:
+		return {}
+	if not _phys_solve_done:
+		var phys_stage_before: int = _baker_phys_stage_id()
+		_phys_solve_done = baker._physical_solve_step_one(
+				map, world, hex_size, cfg, _phys_phase_locked, _phys_run_ocean_this_round)
+		if not _phys_solve_done and not _phys_need_visual \
+				and baker.has_method("_use_physical_circulation") \
+				and "_phys_stage" in baker \
+				and "_PHYS_STAGE_WIND_RASTER" in baker \
+				and "_PHYS_STAGE_DONE" in baker \
+				and int(baker._phys_stage) == int(baker._PHYS_STAGE_WIND_RASTER):
+			baker._phys_stage = baker._PHYS_STAGE_DONE
+			if "_pending_phys_solved_phase" in baker:
+				baker._pending_phys_solved_phase = _phys_phase_locked
+			_phys_solve_done = true
+		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
+		if _ocean_rt_diag_count < 24:
+			_ocean_rt_diag_count += 1
+			print("[ocean_currents][RT] phys_slice#%d tick=%d round=%d stage=%s->%s done=%s run_ocean=%s need_visual=%s elapsed=%.3f ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
+				_ocean_rt_diag_count, ctx.tick_index, _physical_round_id,
+				str(phys_report.get("stage_name", "?")), str(phys_report.get("next_stage_name", "?")),
+				str(_phys_solve_done), str(_phys_run_ocean_this_round), str(_phys_need_visual),
+				elapsed_solve_ms, float(phys_report.get("ocean_delta_p95", 0.0)),
+				float(phys_report.get("wind_delta_p95", 0.0)), float(phys_report.get("slp_delta_p95", 0.0)),
+				str(phys_report.get("stage_psi_path", "?")),
+			])
+		if elapsed_solve_ms > 8.0:
+			print("  [ocean_currents] slow phys slice=%.1fms (just-finished stage=%d/%s, next=%d/%s, path=%s, round_done=%s)" % [
+				elapsed_solve_ms,
+				int(phys_report.get("stage", -1)),
+				str(phys_report.get("stage_name", "?")),
+				int(phys_report.get("next_stage", -1)),
+				str(phys_report.get("next_stage_name", "?")),
+				str(phys_report.get("path", "")),
+				str(_phys_solve_done),
+			])
+		if not _phys_solve_done:
+			phys_report["done"] = false
+			phys_report["work_done"] = 0
+			phys_report["elapsed_ms"] = elapsed_solve_ms
+			phys_report["progress_ratio"] = 0.0
+			phys_report["ocean_solve_enabled"] = _phys_run_ocean_this_round
+			return _record_phys_diag(ctx, phys_report, false)
+		phys_report["done"] = true
+		phys_report["work_done"] = 0
+		phys_report["elapsed_ms"] = elapsed_solve_ms
+		phys_report["progress_ratio"] = 1.0
+		phys_report["ocean_solve_enabled"] = _phys_run_ocean_this_round
+		phys_report["physical_round_complete"] = true
+		if _phys_need_visual:
+			_enqueue_visual_round(ctx, _phys_phase_locked)
+			phys_report["visual_enqueued"] = _visual_round_active
+		else:
+			phys_report["pixel_skipped"] = true
+			if on_commit.is_valid():
+				on_commit.call()
+		_finish_physical_round(ctx)
+		return _record_phys_diag(ctx, phys_report, true)
+
+	if _phys_need_visual:
+		_enqueue_visual_round(ctx, _phys_phase_locked)
+		var queued_report: Dictionary = {
 			"done": true,
 			"work_done": 0,
-			"elapsed_ms": 0.0,
-			"stage_name": "ocean_missing_refs",
-			"path": "missing_refs",
-		}, true)
-
-	var slow_due: bool = _slow_slice_policy_allows(ctx)
-	var daily_report: Dictionary = {}
-	if _daily_wind_due(ctx):
-		daily_report = _run_daily_wind_prepass(ctx)
-	if not slow_due and not _pending_commit:
-		var elapsed_daily_only: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
-		var daily_cells: int = int(map.soa_size()) if map != null and map.has_method("soa_size") else 0
-		var daily_only_report: Dictionary = {
-			"done": true,
-			"work_done": daily_cells if not daily_report.is_empty() else 0,
-			"processed_cells": daily_cells if not daily_report.is_empty() else 0,
-			"elapsed_ms": elapsed_daily_only,
+			"elapsed_ms": (Time.get_ticks_usec() - t_start_us) / 1000.0,
 			"progress_ratio": 1.0,
-			"stage_name": "daily_wind_prepass" if not daily_report.is_empty() else "ocean_policy_wait",
-			"substage": "slp_wind" if not daily_report.is_empty() else "slow_slice_not_due",
-			"path": str(daily_report.get("path", "daily_wind")) if not daily_report.is_empty() else "policy_wait",
-			"ocean_solve_enabled": false,
-			"pixel_skipped": true,
+			"stage_name": "ocean_visual_enqueued",
+			"substage": "physical_complete",
+			"path": "scheduler",
+			"visual_enqueued": true,
+			"physical_round_complete": true,
 		}
-		return _record_phys_diag(ctx, daily_only_report, true)
+		_finish_physical_round(ctx)
+		return _record_phys_diag(ctx, queued_report, true)
 
-	# Commit Defer fast-path：上一片 raster 完成后挂了 _pending_commit。
-	# 本片专门跑 commit_ocean_buffers（一次同步 620k×4 byte tex.update + 杂项），
-	# 跑完即 round_done。把 raster 与 commit 错峰到两帧上。
-	if _pending_commit:
+	var skip_report: Dictionary = {
+		"done": true,
+		"work_done": 0,
+		"elapsed_ms": (Time.get_ticks_usec() - t_start_us) / 1000.0,
+		"progress_ratio": 1.0,
+		"stage_name": "phys_done",
+		"substage": "no_visual",
+		"path": "physical_circulation",
+		"pixel_skipped": true,
+		"ocean_solve_enabled": _phys_run_ocean_this_round,
+	}
+	if on_commit.is_valid():
+		on_commit.call()
+	_finish_physical_round(ctx)
+	return _record_phys_diag(ctx, skip_report, true)
+
+
+func _run_visual_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
+	_sync_legacy_round_state()
+	if _visual_pending_commit:
 		var t_commit2_us: int = Time.get_ticks_usec()
 		baker.commit_ocean_buffers(world, true)
 		var commit_only_ms: float = (Time.get_ticks_usec() - t_commit2_us) / 1000.0
 		if on_commit.is_valid():
 			on_commit.call()
-		_pending_commit = false
-		_round_active = false
-		_next_pixel_idx = 0
-		_phys_solve_done = false
 		var elapsed_commit_only: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		_log_pixel_slice(ctx, "ocean_pixel_commit_deferred", _next_pixel_idx, _next_pixel_idx,
+		var committed_round_id: int = _visual_round_id
+		_visual_pending_commit = false
+		_visual_round_active = false
+		_visual_next_pixel_idx = 0
+		_visual_total_pixels = 0
+		_visual_enqueued_tick = _NO_DAILY_WIND_TICK
+		_sync_legacy_round_state()
+		_log_pixel_slice(ctx, "ocean_pixel_commit_deferred", 0, 0,
 			elapsed_commit_only, 1.0, true, -1.0, -1.0)
 		var commit_report: Dictionary = {
 			"done": true,
@@ -436,165 +657,26 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"substage": "commit_only",
 			"path": "gpu_upload",
 			"commit_wall_ms": commit_only_ms,
+			"visual_round_id": committed_round_id,
 		}
 		return _record_phys_diag(ctx, commit_report, true)
 
-	# Begin a new round: lock total pixels and phase.
-	if not _round_active:
-		_total_pixels = _total_pixels_for(world)
-		if _total_pixels <= 0:
-			return _record_phys_diag(ctx, {
-				"done": true,
-				"work_done": 0,
-				"elapsed_ms": 0.0,
-				"stage_name": "ocean_no_pixels",
-				"path": "no_pixels",
-			}, true)
-		_next_pixel_idx = 0
-		_phase_locked = _current_phase(ctx)
-		_round_active = true
-		_run_ocean_this_round = _should_run_ocean_this_round(ctx)
-		# Phys Solve Sliced：新一轮起点 → 把 baker 的求解状态机复位（_phys_stage,
-		# _pending_phys_solved_phase 等），让接下来的 step_one 从 SLP 阶段重新跑。
-		# 旧路径（ny-only）下 _phys_solve_done 立即设为 true，本轮所有 slice 全用于像素工作。
-		_phys_solve_done = not baker._use_physical_circulation(cfg)
-		if not _phys_solve_done:
-			var primed_from_daily_wind: bool = false
-			if not daily_report.is_empty() and bool(daily_report.get("ran", false)) \
-					and baker.has_method("prime_physical_solve_from_current_wind"):
-				primed_from_daily_wind = baker.prime_physical_solve_from_current_wind(map, _phase_locked)
-			if not primed_from_daily_wind and baker.has_method("reset_physical_solve_state"):
-				baker.reset_physical_solve_state()
-		# Event-driven pixel rebake：决定本轮是否需要重 bake 像素 buffer。
-		#   像素 buffer (vector_atlas / wind_field_buffer / ocean_current_buffer) 只
-		#   被视觉 shader 消费；模拟逻辑全部走 HexCell.* per-cell。
-		#   物理化路径下仅在首次 round 或 season_phase 跨整数时刷新 GPU atlas；
-		#   旧 ny-only 路径没有独立 hex 求解阶段，保留每轮像素刷新。
-		var phase_int: int = int(floor(_phase_locked))
-		if baker._use_physical_circulation(cfg):
-			_need_pixel_this_round = _run_ocean_this_round \
-					and (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
-			if _run_ocean_this_round:
-				_phase_int_seen = phase_int
-		else:
-			_need_pixel_this_round = true
-			_phase_int_seen = phase_int
-		if _ocean_rt_diag_count < 24:
-			var tps: int = 0
-			if _slow_slice_policy != null and _slow_slice_policy.has_method("ticks_per_slice"):
-				tps = int(_slow_slice_policy.ticks_per_slice())
-			print("[ocean_currents][RT] round_start#%d tick=%d phase=%.4f physical=%s wind_period=%d ocean_period=%d slice_count=%d tps=%d max_slices=%d run_ocean=%s need_pixel=%s phase_int=%d phase_seen=%d total_pixels=%d" % [
-				_ocean_rt_diag_count + 1, ctx.tick_index, _phase_locked,
-				str(baker._use_physical_circulation(cfg)), wind_period_ticks, ocean_period_ticks,
-				slice_count, tps, max_slices_per_tick, str(_run_ocean_this_round),
-				str(_need_pixel_this_round), phase_int, _phase_int_seen, _total_pixels,
-			])
+	if not _visual_round_active:
+		return {}
 
-	# Phys Solve Sliced：先把物理求解推进 1 阶段（~5ms）。完成前不做像素工作，
-	# 把单 slice 的最大耗时从 ~200ms 降到 ~10ms。求解共有 7 阶段（见 map_baker
-	# `_PHYS_STAGE_*` 常量），因此一轮新增 7 个 slice；用 ContinuousSlicedPolicy
-	# 的 period_ticks/slice_count 决定每天跑几片即可。
-	#
-	# Event-driven pixel rebake 短路：_need_pixel_this_round=false 时，跑完
-	# stage 6 (UPWELLING) 即认为求解完成，跳过 stage 7 (WIND_RASTER) 与后续
-	# pixel slices + commit — 把 day_changed 路径砍掉 ~25-30ms。
-	if not _phys_solve_done:
-		var phys_stage_before: int = _baker_phys_stage_id()
-		_phys_solve_done = baker._physical_solve_step_one(
-				map, world, hex_size, cfg, _phase_locked, _run_ocean_this_round)
-		# 短路检测：baker 跑完 stage 6 (UPWELLING) 后会把 _phys_stage 设为 7
-		# (_PHYS_STAGE_WIND_RASTER)。本轮不需要像素 → 手动推到 _PHYS_STAGE_DONE
-		# 并把 _pending_phys_solved_phase 锁定到当前 phase，下次同 phase 调入
-		# step_one 也会瞬间命中 NaN 守门 short-circuit。
-		if not _phys_solve_done and not _need_pixel_this_round \
-				and baker.has_method("_use_physical_circulation") \
-				and "_phys_stage" in baker \
-				and "_PHYS_STAGE_WIND_RASTER" in baker \
-				and "_PHYS_STAGE_DONE" in baker \
-				and int(baker._phys_stage) == int(baker._PHYS_STAGE_WIND_RASTER):
-			baker._phys_stage = baker._PHYS_STAGE_DONE
-			if "_pending_phys_solved_phase" in baker:
-				baker._pending_phys_solved_phase = _phase_locked
-			_phys_solve_done = true
-		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
-		if _ocean_rt_diag_count < 24:
-			_ocean_rt_diag_count += 1
-			print("[ocean_currents][RT] slice#%d tick=%d stage=%s->%s done=%s run_ocean=%s need_pixel=%s elapsed=%.3f ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
-				_ocean_rt_diag_count, ctx.tick_index,
-				str(phys_report.get("stage_name", "?")), str(phys_report.get("next_stage_name", "?")),
-				str(_phys_solve_done), str(_run_ocean_this_round), str(_need_pixel_this_round),
-				elapsed_solve_ms, float(phys_report.get("ocean_delta_p95", 0.0)),
-				float(phys_report.get("wind_delta_p95", 0.0)), float(phys_report.get("slp_delta_p95", 0.0)),
-				str(phys_report.get("stage_psi_path", "?")),
-			])
-		# H 诊断（2026-05-14 补丁）：phys_solve 单 stage > 8ms → 打印来源 stage。
-		# 历史 line 167 的诊断只覆盖 pixel/commit slice，phys_solve stage 走 early
-		# return 漏掉了；ocean_currents p95 outlier 通常就是这里。
-		if elapsed_solve_ms > 8.0:
-			print("  [ocean_currents] slow slice=%.1fms (just-finished stage=%d/%s, next=%d/%s, path=%s, round_done=%s)" % [
-				elapsed_solve_ms,
-				int(phys_report.get("stage", -1)),
-				str(phys_report.get("stage_name", "?")),
-				int(phys_report.get("next_stage", -1)),
-				str(phys_report.get("next_stage_name", "?")),
-				str(phys_report.get("path", "")),
-				str(_phys_solve_done),
-			])
-		# 求解未完成 → 本片返回，等下一个 SUS tick 继续；
-		# 求解完成且不需要像素 rebake → 立刻收尾本轮，不进入 pixel slice 分支
-		if not _phys_solve_done:
-			phys_report["done"] = false
-			phys_report["work_done"] = 0
-			phys_report["elapsed_ms"] = elapsed_solve_ms
-			phys_report["progress_ratio"] = 0.0
-			phys_report["ocean_solve_enabled"] = _run_ocean_this_round
-			return _record_phys_diag(ctx, phys_report, false)
-		# _phys_solve_done = true & !_need_pixel_this_round → 跳过像素阶段，
-		# 立刻 round_done。on_commit 仍要触发，让 MapGenerator 重置 per-cell
-		# sample 缓存 / 通知下游 dirty。但不调 baker.commit_ocean_buffers（无新像素）。
-		if not _need_pixel_this_round:
-			phys_report["done"] = true
-			phys_report["work_done"] = 0
-			phys_report["elapsed_ms"] = elapsed_solve_ms
-			phys_report["progress_ratio"] = 1.0
-			phys_report["pixel_skipped"] = true
-			phys_report["ocean_solve_enabled"] = _run_ocean_this_round
-			var skip_report: Dictionary = _record_phys_diag(ctx, phys_report, true)
-			if on_commit.is_valid():
-				on_commit.call()
-			_round_active = false
-			_next_pixel_idx = 0
-			_phys_solve_done = false
-			return skip_report
-		# 否则（_need_pixel_this_round=true）→ 落入下面的 pixel slice 分支
-
-	# Event-driven rebake notification — 每次跨季节进入像素阶段时打一条日志，
-	# 让玩家/开发者能在 console 看到"vector_atlas 在 phase=X.XX 重 bake"提示。
-	# 只在 round 的第一次像素 slice (s == 0) 打。
 	var use_cpp_raster_plan: bool = baker._use_physical_circulation(cfg) \
 			and cfg != null \
 			and cfg.climate_profile != null \
 			and baker.has_method("run_ocean_field_rasterize_full")
 	var pps: int = _pixel_quota_for_next_slice(not use_cpp_raster_plan)
 	_current_pixel_quota_diag = pps
-	var s: int = _next_pixel_idx
-	var e: int = mini(_total_pixels, s + pps)
-	if s == 0 and _need_pixel_this_round:
-		print("[ocean_currents] season_crossed → rebaking pixel atlas at phase=%.3f (phase_int=%d, total_pixels=%d)" % [
-			_phase_locked, _phase_int_seen, _total_pixels
+	var s: int = _visual_next_pixel_idx
+	var e: int = mini(_visual_total_pixels, s + pps)
+	if s == 0:
+		print("[ocean_currents] season_crossed -> rebaking pixel atlas at phase=%.3f (phase_int=%d, total_pixels=%d)" % [
+			_visual_phase_locked, _phase_int_seen, _visual_total_pixels
 		])
-	# DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）：
-	# 物理化路径下，rasterize 改为 C++ 一次性 hex→pixel 直出（替代 10 个 GDScript pixel slice）。
-	# Gate：baker.has_method("run_ocean_field_rasterize_full") + ext 路径 ACTIVE。
-	# 失败/未导出 → fallback 到旧 slice 路径。
-	#
-	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_ocean_currents_pixel flag 已从
-	# ClimateProfile 删除——hot pass 现恒走 has_method 探测单边分支（rc<0 时
-	# transparent fallback 到旧 slice 路径）。
-	#
-	# Sub-slice 切片（plan/ocean-raster-subslice 2026-05-22）：
-	# 每片只 raster 一段像素区间，并额外限制最大像素数，最后一片完成后挂 _pending_commit。
+
 	var used_cpp_raster: bool = false
 	var raster_native_ms: float = -1.0
 	var raster_wall_ms: float = -1.0
@@ -611,16 +693,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if use_cpp_raster_plan:
 		var cp_oc: ClimateProfile = cfg.climate_profile if cfg != null else null
 		if cp_oc != null and baker.has_method("run_ocean_field_rasterize_full"):
-			# 计算本片像素区间 [sub_s, sub_e)。
-			# subslice_count 至少 1；越大每片越小（更平滑），越小越粗（旧行为）。
 			var sub_count: int = 1
 			if "ocean_pixel_subslice_count" in cp_oc:
 				sub_count = max(1, int(cp_oc.ocean_pixel_subslice_count))
-			# C++ raster 只在这里受 ocean_pixel_subslice_count 限制；外层 pps
-			# 已按 ocean_currents_slice_count 固定，避免自适应降到 512 后拖慢整轮。
-			var sub_pps: int = mini(int(ceil(float(_total_pixels) / float(sub_count))), pps)
-			var sub_s: int = _next_pixel_idx
-			var sub_e: int = mini(_total_pixels, sub_s + sub_pps)
+			var sub_pps: int = mini(int(ceil(float(_visual_total_pixels) / float(sub_count))), pps)
+			var sub_s: int = _visual_next_pixel_idx
+			var sub_e: int = mini(_visual_total_pixels, sub_s + sub_pps)
 			raster_requested_start = sub_s
 			raster_requested_end = sub_e
 			var t_raster_us: int = Time.get_ticks_usec()
@@ -639,12 +717,12 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				var returned_span: int = max(0, cpp_sub_e - cpp_sub_s)
 				var returned_range_ok: bool = (cpp_sub_s == sub_s \
 						and cpp_sub_e > sub_s \
-						and cpp_sub_e <= _total_pixels \
+						and cpp_sub_e <= _visual_total_pixels \
 						and cpp_sub_e <= sub_e)
 				var returned_pixels_ok: bool = (raster_pixels == returned_span)
 				if returned_range_ok and returned_pixels_ok:
 					used_cpp_raster = true
-					_next_pixel_idx = cpp_sub_e
+					_visual_next_pixel_idx = cpp_sub_e
 					s = cpp_sub_s
 					e = cpp_sub_e
 					raster_fallback_reason = ""
@@ -654,59 +732,45 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 						cpp_sub_s, cpp_sub_e, raster_pixels, sub_s, sub_e,
 					]
 	if not used_cpp_raster:
-		# Fallback / 旧路径：按 [s, e) 切片光栅化。
-		baker.bake_ocean_currents_slice(map, world, hex_size, cfg, _phase_locked, s, e)
-		baker.bake_ocean_upwelling_slice(map, world, hex_size, cfg, _phase_locked, s, e)
-		_next_pixel_idx = e
+		baker.bake_ocean_currents_slice(map, world, hex_size, cfg, _visual_phase_locked, s, e)
+		baker.bake_ocean_upwelling_slice(map, world, hex_size, cfg, _visual_phase_locked, s, e)
+		_visual_next_pixel_idx = e
 
-	var done: bool = (_next_pixel_idx >= _total_pixels)
+	var done: bool = (_visual_next_pixel_idx >= _visual_total_pixels)
 	var commit_wall_ms: float = -1.0
 	if done:
-		# Commit Defer：raster 完成 → 仅挂 _pending_commit，本片不立即 commit_ocean_buffers。
-		# 下一个 SUS tick 入口的 fast-path 会专门跑 commit。这样把单片峰值
-		# raster(3ms)+commit(1.5ms)≈4.7ms 拆成两片各 ~3ms / ~1.5ms，
-		# 不再撑爆任何单帧 budget。
-		_pending_commit = true
-		# 强制本片返回 done=false，让 SUS round 续到下一个调度点。
-		# round_active / _next_pixel_idx 状态保持不变（commit-defer fast-path 会清）。
+		_visual_pending_commit = true
 		done = false
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-	# H 诊断：单 slice > 25ms → 标注是 commit 那一片还是普通像素片，定位 78ms 尖峰来源。
-	# 拆分 raster_wall（包含 ext 调用 + ensure_pending + refresh_slots）/
-	# raster_native（C++ 内部 elapsed_ms）/ commit_wall（Image.create_from_data + tex.update）/
-	# rest（on_commit 回调 + slice 头尾杂项）。
 	if elapsed_ms > 25.0:
-		var marker: String = "commit" if done else "pixel"
+		var marker: String = "pixel_commit_pending" if _visual_pending_commit else "pixel"
 		var rest_ms: float = elapsed_ms
 		if raster_wall_ms >= 0.0:
 			rest_ms -= raster_wall_ms
 		if commit_wall_ms >= 0.0:
 			rest_ms -= commit_wall_ms
-		print("  [ocean_currents] slow slice=%.1fms (%s, pixels=%d-%d / %d) raster_wall=%.1f raster_native=%.1f commit_wall=%.1f rest=%.1f" % [
-			elapsed_ms, marker, s, e, _total_pixels,
+		print("  [ocean_currents] slow visual slice=%.1fms (%s, pixels=%d-%d / %d) raster_wall=%.1f raster_native=%.1f commit_wall=%.1f rest=%.1f" % [
+			elapsed_ms, marker, s, e, _visual_total_pixels,
 			raster_wall_ms, raster_native_ms, commit_wall_ms, rest_ms
 		])
 	var progress: float = 0.0
-	if _total_pixels > 0:
-		if done or _pending_commit:
+	if _visual_total_pixels > 0:
+		if done or _visual_pending_commit:
 			progress = 1.0
 		else:
-			progress = float(_next_pixel_idx) / float(_total_pixels)
-	# work_done = 本片实际 raster 的像素数。GD fallback 路径与 C++ sub-slice
-	# 路径都是 (e - s)；旧"C++ 一次吃完"路径已被 sub-slice 替代。
+			progress = float(_visual_next_pixel_idx) / float(_visual_total_pixels)
 	var work_done_pixels: int = e - s
 	if work_done_pixels > 0:
 		_last_pixel_slice_ms = elapsed_ms
 		_last_pixel_slice_pixels = work_done_pixels
 		_last_pixel_quota = work_done_pixels
-	# Commit Defer：raster 完成片标 ocean_pixel_raster_done；
-	# 普通中途 slice 标 ocean_pixel_slice；done=true 不再可能（raster 完即转 commit defer）。
 	var slice_stage_name: String = "ocean_pixel_slice"
-	if _pending_commit:
+	if _visual_pending_commit:
 		slice_stage_name = "ocean_pixel_raster_done"
 	elif done:
 		slice_stage_name = "ocean_pixel_commit"
+	_sync_legacy_round_state()
 	_log_pixel_slice(ctx, slice_stage_name, s, e, elapsed_ms, progress,
 		used_cpp_raster, raster_wall_ms, raster_native_ms)
 	var pixel_report: Dictionary = {
@@ -735,6 +799,92 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	}
 	return _record_phys_diag(ctx, pixel_report, done)
 
+
+func run_slice(ctx: SusTickContext) -> Dictionary:
+	var t_start_us: int = Time.get_ticks_usec()
+	if baker == null or world == null or map == null:
+		return _record_phys_diag(ctx, {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": 0.0,
+			"stage_name": "ocean_missing_refs",
+			"path": "missing_refs",
+		}, true)
+
+	var slow_due: bool = _slow_slice_policy_allows(ctx)
+	var daily_report: Dictionary = {}
+	if _daily_wind_due(ctx):
+		daily_report = _run_daily_wind_prepass(ctx)
+
+	if not slow_due:
+		if _visual_pending_commit or _visual_round_active:
+			return _run_visual_slice(ctx, t_start_us)
+		var elapsed_daily_only: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+		var daily_cells: int = int(map.soa_size()) if map != null and map.has_method("soa_size") else 0
+		var daily_only_report: Dictionary = {
+			"done": true,
+			"work_done": daily_cells if not daily_report.is_empty() else 0,
+			"processed_cells": daily_cells if not daily_report.is_empty() else 0,
+			"elapsed_ms": elapsed_daily_only,
+			"progress_ratio": 1.0,
+			"stage_name": "daily_wind_prepass" if not daily_report.is_empty() else "ocean_policy_wait",
+			"substage": "slp_wind" if not daily_report.is_empty() else "slow_slice_not_due",
+			"path": str(daily_report.get("path", "daily_wind")) if not daily_report.is_empty() else "policy_wait",
+			"ocean_solve_enabled": false,
+			"pixel_skipped": true,
+		}
+		return _record_phys_diag(ctx, daily_only_report, true)
+
+	if slow_due and not _phys_round_active:
+		if _should_defer_after_climate_slice():
+			if _visual_pending_commit or _visual_round_active:
+				return _run_visual_slice(ctx, t_start_us)
+			_log_should_skip(ctx, "climate_defer", "climate_ms=%.3f" % _last_defer_climate_ms)
+			return _record_phys_diag(ctx, {
+				"done": true,
+				"work_done": 0,
+				"elapsed_ms": (Time.get_ticks_usec() - t_start_us) / 1000.0,
+				"progress_ratio": 1.0,
+				"stage_name": "ocean_climate_defer",
+				"path": "climate_defer",
+				"defer_climate_ms": _last_defer_climate_ms,
+			}, true)
+		_climate_defer_streak = 0
+		var begin_res: Dictionary = _begin_physical_round(ctx, daily_report)
+		if not bool(begin_res.get("ok", false)):
+			return _record_phys_diag(ctx, begin_res.get("report", {}), true)
+
+	if _phys_round_active:
+		_climate_defer_streak = 0
+		return _run_physical_slice(ctx, t_start_us)
+
+	if _visual_pending_commit or _visual_round_active:
+		return _run_visual_slice(ctx, t_start_us)
+
+	var elapsed_wait_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+	var wait_report: Dictionary = {
+		"done": true,
+		"work_done": 0,
+		"processed_cells": 0,
+		"elapsed_ms": elapsed_wait_ms,
+		"progress_ratio": 1.0,
+		"stage_name": "ocean_policy_wait",
+		"substage": "idle",
+		"path": "policy_wait",
+		"ocean_solve_enabled": false,
+		"pixel_skipped": true,
+	}
+	return _record_phys_diag(ctx, wait_report, true)
+
+
+func __run_slice_legacy_unused(_ctx: SusTickContext) -> Dictionary:
+	return {
+		"done": true,
+		"work_done": 0,
+		"elapsed_ms": 0.0,
+		"stage_name": "legacy_disabled",
+		"path": "legacy_disabled",
+	}
 
 func _baker_phys_stage_id() -> int:
 	if baker != null and "_phys_stage" in baker:

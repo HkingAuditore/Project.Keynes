@@ -517,7 +517,14 @@ func _is_annual_log_tick(counter: int) -> bool:
 func _apply_daily_climate_finalizer() -> Dictionary:
 	var diag: Dictionary = {
 		"max_temp_delta": 0.0,
+		"p95_temp_delta": 0.0,
 		"p99_temp_delta": 0.0,
+		"preclamp_max_temp_delta": 0.0,
+		"preclamp_p99_temp_delta": 0.0,
+		"temp_delta_gt_005_count": 0,
+		"temp_delta_gt_010_count": 0,
+		"temp_delta_gt_020_count": 0,
+		"temp_delta_clamped_count": 0,
 		"max_transport_anomaly": 0.0,
 		"sea_ice_delta_max": 0.0,
 		"precip_p95": 0.0,
@@ -539,19 +546,33 @@ func _apply_daily_climate_finalizer() -> Dictionary:
 	var temp_a: PackedFloat32Array = map.temp_arr
 	var tta_a: PackedFloat32Array = map.temperature_transport_anomaly_arr
 	var temp_deltas: Array = []
+	var preclamp_temp_deltas: Array = []
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var has_temp_start: bool = _temp_start_of_day_arr.size() == n
 	var has_tta_start: bool = _tta_start_of_day_arr.size() == n
 	var temp_limit: int = mini(n, temp_a.size())
 	for i in range(temp_limit):
 		var start_t: float = _temp_start_of_day_arr[i] if has_temp_start else temp_a[i]
-		var final_t: float = temp_a[i]
+		var raw_final_t: float = temp_a[i]
+		var final_t: float = raw_final_t
+		var pre_abs_dt: float = absf(raw_final_t - start_t)
+		preclamp_temp_deltas.append(pre_abs_dt)
+		if pre_abs_dt > float(diag["preclamp_max_temp_delta"]):
+			diag["preclamp_max_temp_delta"] = pre_abs_dt
 		if temp_cap_enabled and has_temp_start:
 			final_t = clampf(final_t, start_t - temp_cap, start_t + temp_cap)
 			final_t = clampf(final_t, 0.0, 1.0)
+			if absf(final_t - raw_final_t) > 0.000001:
+				diag["temp_delta_clamped_count"] = int(diag["temp_delta_clamped_count"]) + 1
 			temp_a[i] = final_t
 		var abs_dt: float = absf(final_t - start_t)
 		temp_deltas.append(abs_dt)
+		if abs_dt > 0.005:
+			diag["temp_delta_gt_005_count"] = int(diag["temp_delta_gt_005_count"]) + 1
+		if abs_dt > 0.010:
+			diag["temp_delta_gt_010_count"] = int(diag["temp_delta_gt_010_count"]) + 1
+		if abs_dt > 0.020:
+			diag["temp_delta_gt_020_count"] = int(diag["temp_delta_gt_020_count"]) + 1
 		if abs_dt > float(diag["max_temp_delta"]):
 			diag["max_temp_delta"] = abs_dt
 		if i < cells.size() and cells[i] != null:
@@ -579,7 +600,10 @@ func _apply_daily_climate_finalizer() -> Dictionary:
 		if needs_init and i < temp_a.size():
 			thermal_a[i] = temp_a[i]
 	temp_deltas.sort()
+	preclamp_temp_deltas.sort()
+	diag["p95_temp_delta"] = _percentile_from_sorted(temp_deltas, 0.95)
 	diag["p99_temp_delta"] = _percentile_from_sorted(temp_deltas, 0.99)
+	diag["preclamp_p99_temp_delta"] = _percentile_from_sorted(preclamp_temp_deltas, 0.99)
 	if map.sea_ice_frac_arr.size() == n and map.sea_ice_frac_arr_prev.size() == n:
 		for i in range(n):
 			var ds: float = absf(map.sea_ice_frac_arr[i] - map.sea_ice_frac_arr_prev[i])
@@ -1581,7 +1605,14 @@ func _finalize_round() -> void:
 			"pa_total_cells": _pa_total_out,
 			"pa_push_ratio": _pa_push_ratio_out,
 			"max_temp_delta": float(finalizer_diag.get("max_temp_delta", 0.0)),
+			"p95_temp_delta": float(finalizer_diag.get("p95_temp_delta", 0.0)),
 			"p99_temp_delta": float(finalizer_diag.get("p99_temp_delta", 0.0)),
+			"preclamp_max_temp_delta": float(finalizer_diag.get("preclamp_max_temp_delta", 0.0)),
+			"preclamp_p99_temp_delta": float(finalizer_diag.get("preclamp_p99_temp_delta", 0.0)),
+			"temp_delta_gt_005_count": int(finalizer_diag.get("temp_delta_gt_005_count", 0)),
+			"temp_delta_gt_010_count": int(finalizer_diag.get("temp_delta_gt_010_count", 0)),
+			"temp_delta_gt_020_count": int(finalizer_diag.get("temp_delta_gt_020_count", 0)),
+			"temp_delta_clamped_count": int(finalizer_diag.get("temp_delta_clamped_count", 0)),
 			"max_transport_anomaly": float(finalizer_diag.get("max_transport_anomaly", 0.0)),
 			"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
 			"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),

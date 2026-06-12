@@ -186,13 +186,19 @@ Ocean land 算法概要：
 - `cell_wind_x`
 - `cell_wind_y`
 - `cell_wind_speed`
-- heat/air mass 相关 slots
+- `cell_air_mass_temp_anomaly`
+- `cell_temp` 只由 surface injection 阶段写入
 
 数据契约：
 
 - `cell_wind_x/y` 是单位方向向量，不存速度。
 - `cell_wind_speed` 是物理化强度，weather field、wind heat transport、surface injection、PSI/upwelling 都应读它做强度权重。
 - `wind_field_buffer` / vector atlas 的 BA 通道是渲染速度向量：`dir * clamp(wind_speed / 1.7, 0, 1)`。shader 对 BA 求 `length()` 得到的是归一化风速，不是恒定 1 的方向模长。
+- `run_wind_air_mass_pass` / `_wind_air_mass_pass` 只发布
+  `cell_air_mass_temp_anomaly`。它们不再直接覆盖 `cell_temp`；后续
+  `run_wind_surface_pass` / `_wind_surface_pass` 是风热异常注入温度的唯一
+  阶段。排查局部温度 ping-pong 时先确认 air-mass 阶段没有重新获得
+  `cell_temp` 写权。
 
 风险：
 
@@ -289,12 +295,22 @@ Merged native 路径：
 - weather cell components：vapor、cloud、precip、instability、intensity 等。
 - environment components：snow_cover、snowpack、soil moisture、water balance 等。
 - fronts packed snapshot / object compatibility layer。
+- transition components：`weather_type`、`weather_prev_type`、
+  `weather_target_type`、`weather_transition_alpha`。当 alpha 到达 1.0 时，
+  native 与 fallback commit 都必须提交为稳定态：`type=target`、
+  `prev_type=target`、`alpha=0`，避免 CSV 中长期出现 `alpha=1` 或
+  `prev_type` 滞后造成的假 transition。稳定格（`prev_type == target_type`
+  或 display 已等于 target）不得继续累加 alpha；否则 CSV 会把没有实际天气
+  切换的格子统计为 transitioning。
 
 风险：
 
 - weather fronts 数量低，但对象层复杂；不应盲目 SIMD。
 - field solve 是 hot-loop，适合 C++。
 - GDScript object unpack 仍可能造成 commit/sync 长尾。
+- `weather_field_slice_cells()` 的配置上限与当前 2400-cell 地图规模对齐；
+  profile 可在 `100..2400` 间调度 field solve cell budget。若切片过小，
+  天气场会长期处于同一 field phase，看起来像生成/消失频率异常。
 
 ## Ocean currents physical chain
 
@@ -428,3 +444,83 @@ enum_atlas_upload axis= path=cpp_cached_patch elapsed=0.01 patch=0.42 img=0.00 u
 3. 把临时 knobs PackedArray 输入补成 schema slot，减少每 tick packing。
 4. 将 ocean physical stage 状态机中可纯数据化的部分移入 C++ schedule graph。
 5. 保留 GDScript object/UI/debug 层，但确保它们只读已发布 snapshot，不参与 hot-loop authority。
+
+## Climate / weather / ocean stability notes
+
+This section records the current runtime contract for the climate stability
+work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
+
+### Weather field diagnostics and cold precipitation
+
+- `main.gd` tile-data samples must carry `sample["weather"]` separately from
+  `sample["climate"]`. CSV weather fields such as `weather_dirty_count`,
+  `active_weather_ratio`, `field_commit_path`, and convergence diagnostics are
+  authored by the weather breakdown, not by the climate daily breakdown.
+- `WeatherSystem` passes cold-precipitation knobs into the field solve path:
+  `cold_precip_as_blizzard` and `snow_classification_margin`. Both GDScript
+  classification and `DCWorldExt::run_weather_field_solve_pass` use the same
+  guard so meaningful precipitation below the snow band becomes `BLIZZARD`
+  instead of cold `RAIN`.
+- Field precipitation now has a shared high-tail stability step in both
+  `weather/field_solver.gd` and `DCWorldExt::run_weather_field_solve_pass`.
+  `ClimateProfile` owns the tuning knobs:
+  `weather_wet_terrain_precip_damping`, `weather_lake_precip_damping`,
+  `weather_lake_evap_scale`,
+  `weather_extreme_precip_soft_cap`, and
+  `weather_extreme_precip_softness`. The damping is applied after
+  `precip_raw / precip_floor / cloud_water_rain` are merged and clamped, before
+  cloud-water and vapor sinks consume the rain amount. `weather_lake_evap_scale`
+  is applied earlier at the evaporation source so lakes do not behave like open
+  ocean vapor pumps before the lake precipitation damping tail step. Keep these
+  positions synchronized across native and fallback paths.
+- `MapData.weather_classification_temp_arr` and
+  `MapData.weather_classification_moisture_arr` are recorder-only diagnostic
+  mirrors of the field solver read snapshot. They are not DataCore schema
+  slots. Use them to compare weather classification input against current
+  `temp_arr` / `moisture_arr` when investigating cold rain or warm blizzard
+  reports.
+- `DCWorldExt::run_weather_field_commit_pass` reports convergence refresh
+  data only for ticks where `refresh_convergence=true`. A flat convergence
+  array on other ticks is expected cadence behavior, not a stale-write bug.
+
+### Ocean current vector limits
+
+- `PhysicalCirculationSolver.psi_to_ocean_current()` and
+  `DCWorldExt::run_psi_solver_pass` apply the same final vector-magnitude
+  clamp after response blending. `ocean_current_scale` controls PSI-gradient
+  conversion; `ocean_current_max_magnitude` controls the final vector length.
+- Per-component safety clamping may still exist as a guard, but the expected
+  physical limit is the vector magnitude, not independent `x/y` saturation.
+  Water-cell current magnitudes should therefore be bounded by
+  `ocean_current_max_magnitude` in normal runs.
+
+### Ocean physical / visual split
+
+- `OceanCurrentsJob` owns two internal state machines. The physical authority
+  round advances SLP, wind, PSI, currents, and upwelling. The visual round
+  rasterizes and commits the pixel atlas from the latest published fields.
+- A visual raster or pending visual commit must not keep the physical round
+  alive. Physical solves can finish and start again while a visual raster is
+  still catching up.
+- With `ocean_visual_rebake_drop_stale=true`, a stale visual raster may be
+  dropped and restarted from the newest physical snapshot. This preserves
+  simulation authority at the cost of a temporarily stale atlas.
+
+### Temperature transport anomaly state
+
+- `cell_temperature_transport_anomaly` and
+  `MapData.temperature_transport_anomaly_arr` are the authoritative low-pass
+  TTA state. No schema change is required for the current plan.
+- Ocean water and land paths no longer treat TTA as a scratch value that is
+  reset to zero each round. The source anomaly is capped by
+  `temperature_transport_anomaly_source_cap`, blended by
+  `temperature_transport_anomaly_blend_rate`, and decayed by either
+  `temperature_transport_anomaly_decay_rate` or
+  `temperature_transport_anomaly_zero_current_decay`.
+- Native scalar, SIMD, and threaded ocean water/land variants must use the same
+  TTA knobs as the GDScript fallback path so A/B checks compare formulas rather
+  than different stabilization policies.
+- Runtime temperature values at exactly `0.0` are valid frozen-cell readings.
+  Climate/ocean/wind paths must only fall back to geometric baseline when a
+  temperature is NaN or infinite; using `temp > 0.0` as a validity check creates
+  discontinuous jumps near the lower clamp.

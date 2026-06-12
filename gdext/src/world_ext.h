@@ -301,8 +301,8 @@ public:
     double run_ocean_land_pass (godot::Dictionary knobs);
 
     // Wind heat transport, split to match ClimateDailySystem ordering:
-    // air mass first writes cell_temp + cell_air_mass_temp_anomaly, then
-    // surface reads that anomaly and injects neighbor air mass heat into temp.
+    // air mass writes only cell_air_mass_temp_anomaly; surface reads that
+    // anomaly and is the sole wind-air stage that injects heat into cell_temp.
     double run_wind_air_mass_pass(godot::Dictionary knobs);
     double run_wind_surface_pass(godot::Dictionary knobs);
 
