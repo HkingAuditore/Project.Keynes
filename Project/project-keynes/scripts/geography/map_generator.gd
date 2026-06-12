@@ -1271,6 +1271,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					push_warning("[DataCore] DCWorldExt.bind_map_data returned false; climate Pass-A C++ acceleration disabled (will fall back to DataCore/GDScript path)")
 					_data_core_world_ext = null
 				else:
+					# sea-ice-snow-visual-fix-2026-06：bind 后注入 DCWorld 句柄。C++ pass
+					# `_flush_slot_to_map` 末尾会 call("mark_dirty_all")，让 atlas pipeline
+					# 在下个 stride 通过 `read_and_clear_dirty_mask` 拿到信号。修复 wind_surface
+					# / pass_b / ocean_* 写 slot 后 atlas 不知道脏 → 视觉冻结。
+					if _data_core_world != null and _data_core_world_ext.has_method("bind_dirty_world"):
+						_data_core_world_ext.bind_dirty_world(_data_core_world)
 					# Block B（master 手册 §4）：把 DCWorldExt 注入 MapBaker，
 					# 让 _PHYS_STAGE_WIND 等 C++ hook 在启用 use_gdext_wind_field 时使用。
 					if _baker != null and _baker.has_method("set_world_ext"):
@@ -8742,6 +8748,15 @@ func _ocean_land_pass(map: MapData, season_phase: float) -> void:
 # ══════════════════════════════════════════════════════════════════════
 
 func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
+	# A 修复（climate-temp-pingpong-fix-2026-06）：本 fallback 仍维持旧 schema 语义
+	# (写 cell.temperature 直接对应 temp_arr)。在 C++ 接管时（绝大多数生产路径）这
+	# 个函数不会被执行——climate_pass_distribution 中所有 stage 都是 path=gdext/data_core，
+	# 无 path=gdscript 命中。一旦真的回退到 GDScript 主跑，会偏离 C++ 的 anomaly 合成
+	# 语义（baseline + ocean_anom + local_anom + air_anom）；对玩家可见的是温度在
+	# 那个 round 内可能跟 wind_surface 的 SoA 值不一致。如果 fallback 命中率上升，
+	# 优先级 P1：把 d_albedo/d_coastal/d_landform 写到 map.local_thermal_anomaly_arr，
+	# ocean_water/land 的 temp_mixed-baseline 写到 map.ocean_thermal_anomaly_arr，
+	# wind_surface_pass 末端做 baseline+anomaly 合成。
 	if not _typed_fields_migrated:
 		_typed_fields_migrated = true
 		print("[fastpath] HexCell typed fields active (SoA)")
@@ -9165,6 +9180,8 @@ func _build_climate_b_foliage_table() -> PackedFloat32Array:
 	return _gdext_climate_b_foliage_table_cached
 
 func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
+	# A 修复（climate-temp-pingpong-fix-2026-06）：同 _climate_pass_a_soa 的 TODO。
+	# 当前 fallback 仍写 cell.temperature 直接；C++ 路径写 cell.local_thermal_anomaly。
 	# 局部气候耦合 SoA 版本：在 SoA 上做 albedo / coastal / landform 温度修正 +
 	# evap / rain_shadow 湿度修正。复用 legacy 同段算法常量。
 	var winter_boost: float = 1.0
@@ -9580,6 +9597,8 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			])
 
 func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
+	# A 修复（climate-temp-pingpong-fix-2026-06）：同 _climate_pass_a_soa 的 TODO。
+	# 当前 fallback 仍写 cell.temperature 直接；C++ 路径写 cell.ocean_thermal_anomaly。
 	var advect_steps: int = max(0, _last_cfg.OCEAN_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.OCEAN_HEAT_MIX, 0.0, 1.0)
 	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp)
@@ -9814,6 +9833,8 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			_data_core_world.write_f32_dense(_cid_tta_ows, anomaly_soa_state)
 
 func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
+	# A 修复（climate-temp-pingpong-fix-2026-06）：同 _climate_pass_a_soa 的 TODO。
+	# 当前 fallback 仍写 cell.temperature 直接；C++ 路径累加到 cell.ocean_thermal_anomaly。
 	var coast_leak: float = _last_cfg.COASTAL_HEAT_LEAK
 	var winter_boost: float = 1.0
 	var effective_leak: float = coast_leak * winter_boost
@@ -12493,6 +12514,20 @@ func _publish_wind_heat_native_outputs(map: MapData) -> void:
 		_data_core_world.write_f32_dense(_cid_temp, map.temp_arr)
 	if _cid_anom >= 0 and map.air_mass_temp_anomaly_arr.size() == n:
 		_data_core_world.write_f32_dense(_cid_anom, map.air_mass_temp_anomaly_arr)
+	# A 修复（climate-temp-pingpong-fix-2026-06）：3 条新写权字段定义后，wind_surface 末端
+	# 也需要把 baseline / ocean_anom / local_anom 的 GDScript 镜像推回 C++ slot，保持
+	# C++ 视角的 SoA 与 GDScript 视角一致。pass_a / ocean_* / pass_b 的 _flush_slot_to_map
+	# 已经把 C++ slot 推到 map.* arr；这里走"补救式 push back"，与温度/air_anom 的旧逻辑
+	# 等价（idempotent — 若 GDScript 没动 arr 这就是 no-op 拷贝）。
+	var _cid_baseline: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP_BASELINE)
+	var _cid_oanom: int = _data_core_world.component_id(DCComponentIds.CELL_OCEAN_THERMAL_ANOMALY)
+	var _cid_lanom: int = _data_core_world.component_id(DCComponentIds.CELL_LOCAL_THERMAL_ANOMALY)
+	if _cid_baseline >= 0 and map.temp_baseline_arr.size() == n:
+		_data_core_world.write_f32_dense(_cid_baseline, map.temp_baseline_arr)
+	if _cid_oanom >= 0 and map.ocean_thermal_anomaly_arr.size() == n:
+		_data_core_world.write_f32_dense(_cid_oanom, map.ocean_thermal_anomaly_arr)
+	if _cid_lanom >= 0 and map.local_thermal_anomaly_arr.size() == n:
+		_data_core_world.write_f32_dense(_cid_lanom, map.local_thermal_anomaly_arr)
 
 
 func run_wind_air_mass_pass_native(map: MapData, season_phase: float) -> Dictionary:
@@ -12667,6 +12702,11 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 # 必须在 _wind_air_mass_pass 之后调用——读取的是气团段写完的 anomaly。
 # [perf 2026-05-20] 同 _wind_air_mass_pass：循环只累积到 array，末尾 dense 一次性 commit。
 func _wind_surface_pass(map: MapData, season_phase: float) -> void:
+	# A 修复（climate-temp-pingpong-fix-2026-06）：C++ 路径在此 pass 末端做合成
+	# cell_temp = clamp(baseline + ocean_anom + local_anom + air_anom)。GDScript fallback
+	# 当前仍按旧"在自身温度上 += 风热 anomaly"的方式实现；fallback 命中率应趋近 0
+	# (climate_pass_distribution 显示 path=gdext)。若 fallback 接管率上升，应在此处
+	# 调用统一的 `_compose_temp_from_anomalies(map, n)` 写 cell.temperature 与 SoA。
 	if _last_cfg == null:
 		return
 	var air_leak: float = _last_cfg.AIR_MASS_HEAT_LEAK

@@ -145,6 +145,11 @@ const FIXED_COLUMNS: Array = [
 	"phys_psi_native_ms",
 	"phys_ocean_delta_p95",
 	"phys_thermal_current_p95",
+	"phys_ocean_current_preclamp_p95",
+	"phys_ocean_current_preclamp_max",
+	"phys_ocean_current_clamp_count",
+	"phys_ocean_current_clamp_ratio",
+	"phys_ocean_current_max_magnitude",
 	"cell_index",
 	"q",
 	"r",
@@ -231,6 +236,37 @@ const SOA_FIELD_CANDIDATES: Array = [
 
 const EXPORT_DIR_RELATIVE: String = "../../tmp"
 const HARD_ROW_LIMIT: int = 5000000
+const DEFAULT_TICK_STRIDE: int = 1
+const DEFAULT_CELL_STRIDE: int = 1
+const BATCH_LINE_LIMIT: int = 2048
+const DEFAULT_COMPACT_FIELDS: bool = false
+
+# Optional compact preset for targeted investigations. The default remains full
+# fidelity: every recorded tick, every cell, and every available SoA field.
+const COMPACT_SOA_FIELD_CANDIDATES: Array = [
+	"temp_arr",
+	"moisture_arr",
+	"sea_ice_frac_arr",
+	"weather_precip_arr",
+	"weather_transition_alpha_arr",
+	"air_mass_temp_anomaly_arr",
+	"temperature_transport_anomaly_arr",
+	"ocean_current_x_arr",
+	"ocean_current_y_arr",
+	"wind_x_arr",
+	"wind_y_arr",
+	"slp_arr",
+	"wind_speed_arr",
+	"upwelling_strength_arr",
+	"terrain_arr",
+	"landform_arr",
+	"vegetation_arr",
+	"weather_type_arr",
+	"weather_target_type_arr",
+	"is_water_arr",
+	"climate_dirty_mask",
+	"weather_dirty_mask",
+]
 
 
 var _main = null
@@ -245,6 +281,25 @@ var _columns: PackedStringArray = PackedStringArray()
 var _soa_fields: PackedStringArray = PackedStringArray()
 var _file: FileAccess = null
 var _path: String = ""
+var _tick_stride: int = DEFAULT_TICK_STRIDE
+var _cell_stride: int = DEFAULT_CELL_STRIDE
+var _max_rows: int = HARD_ROW_LIMIT
+var _compact_fields: bool = DEFAULT_COMPACT_FIELDS
+var _recorded_tick_count: int = 0
+var _skipped_tick_count: int = 0
+var _last_tick_ms: float = 0.0
+var _last_tick_rows: int = 0
+var _line_batch: PackedStringArray = PackedStringArray()
+var _cell_q_arr: PackedInt32Array = PackedInt32Array()
+var _cell_r_arr: PackedInt32Array = PackedInt32Array()
+var _cell_s_arr: PackedInt32Array = PackedInt32Array()
+var _soa_field_types: PackedInt32Array = PackedInt32Array()
+var _csv_encoder_ext = null
+var _last_tick_collect_ms: float = 0.0
+var _last_tick_stats_ms: float = 0.0
+var _last_tick_format_ms: float = 0.0
+var _last_tick_flush_ms: float = 0.0
+var _last_tick_encoder_path: String = "gdscript"
 
 
 func bind_main(m) -> void:
@@ -263,8 +318,51 @@ func tick_count() -> int:
 	return _tick_count
 
 
+func recorded_tick_count() -> int:
+	return _recorded_tick_count
+
+
+func skipped_tick_count() -> int:
+	return _skipped_tick_count
+
+
 func hit_limit() -> bool:
 	return _hit_limit
+
+
+func last_tick_ms() -> float:
+	return _last_tick_ms
+
+
+func sampling_summary() -> Dictionary:
+	return {
+		"tick_stride": _tick_stride,
+		"cell_stride": _cell_stride,
+		"max_rows": _max_rows,
+		"compact_fields": _compact_fields,
+		"last_tick_ms": _last_tick_ms,
+		"last_tick_rows": _last_tick_rows,
+		"last_tick_collect_ms": _last_tick_collect_ms,
+		"last_tick_stats_ms": _last_tick_stats_ms,
+		"last_tick_format_ms": _last_tick_format_ms,
+		"last_tick_flush_ms": _last_tick_flush_ms,
+		"last_tick_encoder_path": _last_tick_encoder_path,
+		"recorded_ticks": _recorded_tick_count,
+		"skipped_ticks": _skipped_tick_count,
+	}
+
+
+func set_sampling_config(tick_stride: int = DEFAULT_TICK_STRIDE,
+		cell_stride: int = DEFAULT_CELL_STRIDE,
+		max_rows: int = HARD_ROW_LIMIT,
+		compact_fields: bool = DEFAULT_COMPACT_FIELDS) -> void:
+	if _recording:
+		push_warning("[tile-data-record] sampling config ignored while recording")
+		return
+	_tick_stride = maxi(1, tick_stride)
+	_cell_stride = maxi(1, cell_stride)
+	_max_rows = clampi(max_rows, 1, HARD_ROW_LIMIT)
+	_compact_fields = compact_fields
 
 
 func start() -> void:
@@ -273,6 +371,21 @@ func start() -> void:
 	_hit_limit = false
 	_row_count = 0
 	_tick_count = 0
+	_recorded_tick_count = 0
+	_skipped_tick_count = 0
+	_last_tick_ms = 0.0
+	_last_tick_rows = 0
+	_last_tick_collect_ms = 0.0
+	_last_tick_stats_ms = 0.0
+	_last_tick_format_ms = 0.0
+	_last_tick_flush_ms = 0.0
+	_last_tick_encoder_path = "gdscript"
+	_line_batch.clear()
+	_cell_q_arr = PackedInt32Array()
+	_cell_r_arr = PackedInt32Array()
+	_cell_s_arr = PackedInt32Array()
+	_soa_field_types = PackedInt32Array()
+	_csv_encoder_ext = null
 	_path = ""
 
 	var map_data = _current_map()
@@ -291,10 +404,28 @@ func start() -> void:
 		push_warning("[tile-data-record] start failed: no cells")
 		return
 
-	_soa_fields = _collect_soa_fields(map_data, _cell_count)
+	_cell_q_arr.resize(_cell_count)
+	_cell_r_arr.resize(_cell_count)
+	_cell_s_arr.resize(_cell_count)
+	for idx in range(_cell_count):
+		var cell = map_data.cell_at(idx)
+		if cell == null:
+			push_warning("[tile-data-record] start failed: null cell at index %d" % idx)
+			_cell_q_arr = PackedInt32Array()
+			_cell_r_arr = PackedInt32Array()
+			_cell_s_arr = PackedInt32Array()
+			return
+		_cell_q_arr[idx] = int(cell.q)
+		_cell_r_arr[idx] = int(cell.r)
+		_cell_s_arr[idx] = int(cell.s)
+
+	_soa_fields = _collect_soa_fields(map_data, _cell_count, _compact_fields)
 	if _soa_fields.is_empty():
 		push_warning("[tile-data-record] start failed: no cell-level SoA fields found")
 		return
+	_soa_field_types.resize(_soa_fields.size())
+	for i in range(_soa_fields.size()):
+		_soa_field_types[i] = typeof(map_data.get(_soa_fields[i]))
 
 	_columns = PackedStringArray()
 	for c in FIXED_COLUMNS:
@@ -321,6 +452,7 @@ func start() -> void:
 	_file.store_8(0xBB)
 	_file.store_8(0xBF)
 	_file.store_line(_format_header_line(_columns))
+	_csv_encoder_ext = _discover_csv_encoder_ext()
 
 	_map_ref = map_data
 	if _main != null and _main.has_method("get_fast_tick_count"):
@@ -328,59 +460,91 @@ func start() -> void:
 	else:
 		_start_tick = 0
 	_recording = true
-	print("[tile-data-record] start cells=%d soa_cols=%d start_tick=%d path=%s" % [
-		_cell_count, _soa_fields.size(), _start_tick, _path,
+	print("[tile-data-record] start cells=%d soa_cols=%d tick_stride=%d cell_stride=%d max_rows=%d compact=%s start_tick=%d path=%s" % [
+		_cell_count, _soa_fields.size(), _tick_stride, _cell_stride, _max_rows,
+		str(_compact_fields), _start_tick, _path,
 	])
 
 
 func stop_and_export() -> String:
 	var out_path: String = _path
 	_recording = false
+	_flush_line_batch()
 	_close_file()
 	if _row_count <= 0:
 		print("[tile-data-record] stop: no rows captured")
 		return ""
-	print("[tile-data-record] exported ticks=%d rows=%d cols=%d -> %s%s" % [
-		_tick_count, _row_count, _columns.size(), out_path,
+	print("[tile-data-record] exported seen_ticks=%d recorded_ticks=%d skipped_ticks=%d rows=%d cols=%d -> %s%s" % [
+		_tick_count, _recorded_tick_count, _skipped_tick_count, _row_count,
+		_columns.size(), out_path,
 		"  (HIT LIMIT)" if _hit_limit else "",
 	])
 	return out_path
 
 
-func on_fast_tick(sample: Dictionary) -> void:
+func on_fast_tick(sample: Dictionary) -> Dictionary:
+	var t_tick_us0: int = Time.get_ticks_usec()
+	_last_tick_rows = 0
+	_last_tick_collect_ms = 0.0
+	_last_tick_stats_ms = 0.0
+	_last_tick_format_ms = 0.0
+	_last_tick_flush_ms = 0.0
+	_last_tick_encoder_path = "gdscript"
 	if not _recording or _file == null:
-		return
+		return {"recorded": false, "rows": 0, "reason": "not_recording"}
 	if _hit_limit:
-		return
+		return {"recorded": false, "rows": 0, "reason": "hit_limit"}
+	_tick_count += 1
+
+	var global_tick: int = int(sample.get("tick_idx", _start_tick + _tick_count))
+	var local_tick: int = maxi(0, global_tick - _start_tick)
+	if _tick_stride > 1 and (local_tick % _tick_stride) != 0:
+		_skipped_tick_count += 1
+		_last_tick_ms = (Time.get_ticks_usec() - t_tick_us0) / 1000.0
+		return {
+			"recorded": false,
+			"rows": 0,
+			"reason": "tick_stride",
+			"tick_stride": _tick_stride,
+			"cell_stride": _cell_stride,
+		}
 
 	var map_data = _current_map()
 	if map_data == null:
 		_abort_recording("current map became null")
-		return
+		return {"recorded": false, "rows": 0, "reason": "map_null"}
 	if map_data != _map_ref:
 		_abort_recording("map changed during recording")
-		return
+		return {"recorded": false, "rows": 0, "reason": "map_changed"}
 	if not map_data.has_method("cell_count") or int(map_data.cell_count()) != _cell_count:
 		_abort_recording("cell_count changed during recording")
-		return
+		return {"recorded": false, "rows": 0, "reason": "cell_count_changed"}
 	if map_data.has_method("has_soa") and not bool(map_data.has_soa()):
 		_abort_recording("MapData SoA became unavailable")
-		return
-	if _row_count + _cell_count > HARD_ROW_LIMIT:
+		return {"recorded": false, "rows": 0, "reason": "soa_unavailable"}
+
+	var sampled_rows: int = int(ceil(float(_cell_count) / float(_cell_stride)))
+	if _row_count + sampled_rows > _max_rows:
 		_hit_limit = true
 		_recording = false
+		_flush_line_batch()
 		_close_file()
-		push_warning("[tile-data-record] hit hard row limit (%d), auto-stopped before writing a partial tick." % HARD_ROW_LIMIT)
-		return
+		push_warning("[tile-data-record] hit row limit (%d), auto-stopped before writing a partial tick." % _max_rows)
+		return {"recorded": false, "rows": 0, "reason": "row_limit"}
 
-	var arrays: Dictionary = {}
-	for field in _soa_fields:
+	var t_collect_us0: int = Time.get_ticks_usec()
+	var arrays: Array = []
+	arrays.resize(_soa_fields.size())
+	for field_i in range(_soa_fields.size()):
+		var field: String = _soa_fields[field_i]
 		var arr = map_data.get(field)
 		if _array_size(arr) != _cell_count:
 			_abort_recording("SoA field changed size: %s" % field)
-			return
-		arrays[field] = arr
+			return {"recorded": false, "rows": 0, "reason": "soa_size_changed"}
+		arrays[field_i] = arr
+	_last_tick_collect_ms = (Time.get_ticks_usec() - t_collect_us0) / 1000.0
 
+	var t_stats_us0: int = Time.get_ticks_usec()
 	var climate: Dictionary = sample.get("climate", {})
 	var precip_arr = map_data.get("weather_precip_arr")
 	if _array_size(precip_arr) == _cell_count:
@@ -394,26 +558,64 @@ func on_fast_tick(sample: Dictionary) -> void:
 	for key in transition_stats.keys():
 		weather[key] = transition_stats[key]
 	sample["weather"] = weather
+	_last_tick_stats_ms = (Time.get_ticks_usec() - t_stats_us0) / 1000.0
+	var first_cell = map_data.cell_at(0)
+	if first_cell == null:
+		_abort_recording("cell 0 became null during recording")
+		return {"recorded": false, "rows": 0, "reason": "cell_null"}
+	var fixed_suffix: String = _tick_fixed_suffix(sample, first_cell)
 
-	for idx in range(_cell_count):
-		var cell = map_data.cell_at(idx)
-		if cell == null:
-			continue
-		var row: Dictionary = _base_row(sample, idx, cell)
-		for field in _soa_fields:
-			row[field] = _array_value(arrays[field], idx)
-		_file.store_line(_format_row_line(row, _columns))
-		_row_count += 1
-	_tick_count += 1
+	var t_format_us0: int = Time.get_ticks_usec()
+	if _try_write_native_csv_rows(fixed_suffix, arrays):
+		_last_tick_encoder_path = "gdext"
+		_last_tick_format_ms = (Time.get_ticks_usec() - t_format_us0) / 1000.0 - _last_tick_flush_ms
+		if _last_tick_format_ms < 0.0:
+			_last_tick_format_ms = 0.0
+	else:
+		_last_tick_encoder_path = "gdscript"
+		for idx in range(0, _cell_count, _cell_stride):
+			_line_batch.append(_format_record_line(
+				_row_count,
+				fixed_suffix,
+				idx,
+				_cell_q_arr[idx],
+				_cell_r_arr[idx],
+				_cell_s_arr[idx],
+				arrays,
+				_soa_field_types
+			))
+			_row_count += 1
+			_last_tick_rows += 1
+			if _line_batch.size() >= BATCH_LINE_LIMIT:
+				_last_tick_flush_ms += _flush_line_batch()
+		_last_tick_format_ms = (Time.get_ticks_usec() - t_format_us0) / 1000.0 - _last_tick_flush_ms
+		if _last_tick_format_ms < 0.0:
+			_last_tick_format_ms = 0.0
+	_recorded_tick_count += 1
+	_last_tick_ms = (Time.get_ticks_usec() - t_tick_us0) / 1000.0
+	return {
+		"recorded": true,
+		"rows": _last_tick_rows,
+		"reason": "",
+		"elapsed_ms": _last_tick_ms,
+		"collect_ms": _last_tick_collect_ms,
+		"stats_ms": _last_tick_stats_ms,
+		"format_ms": _last_tick_format_ms,
+		"flush_ms": _last_tick_flush_ms,
+		"encoder_path": _last_tick_encoder_path,
+		"tick_stride": _tick_stride,
+		"cell_stride": _cell_stride,
+	}
 
 
 static func _export_dir_absolute() -> String:
 	return ProjectSettings.globalize_path("res://").path_join(EXPORT_DIR_RELATIVE).simplify_path()
 
 
-static func _collect_soa_fields(map_data, cell_count: int) -> PackedStringArray:
+static func _collect_soa_fields(map_data, cell_count: int, compact_fields: bool = DEFAULT_COMPACT_FIELDS) -> PackedStringArray:
 	var fields: PackedStringArray = PackedStringArray()
-	for name in SOA_FIELD_CANDIDATES:
+	var candidates: Array = COMPACT_SOA_FIELD_CANDIDATES if compact_fields else SOA_FIELD_CANDIDATES
+	for name in candidates:
 		var field: String = str(name)
 		var arr = map_data.get(field)
 		if _array_size(arr) == cell_count:
@@ -425,6 +627,52 @@ func _current_map():
 	if _main == null or not _main.has_method("get_current_map"):
 		return null
 	return _main.get_current_map()
+
+
+func _discover_csv_encoder_ext():
+	if _main == null or not _main.has_method("get_generator"):
+		return null
+	var gen = _main.get_generator()
+	if gen == null or not gen.has_method("get_data_core_world_ext"):
+		return null
+	var ext = gen.get_data_core_world_ext()
+	if ext != null and ext.has_method("encode_tile_csv_rows"):
+		return ext
+	return null
+
+
+func _try_write_native_csv_rows(fixed_suffix: String, arrays: Array) -> bool:
+	if _csv_encoder_ext == null or _file == null:
+		return false
+	if not _csv_encoder_ext.has_method("encode_tile_csv_rows"):
+		_csv_encoder_ext = null
+		return false
+	var rows: int = int(ceil(float(_cell_count) / float(_cell_stride)))
+	if rows <= 0:
+		return false
+	var encoded = _csv_encoder_ext.call("encode_tile_csv_rows", {
+		"row_start": _row_count,
+		"fixed_suffix": fixed_suffix,
+		"cell_start": 0,
+		"cell_count": _cell_count,
+		"cell_stride": _cell_stride,
+		"q_arr": _cell_q_arr,
+		"r_arr": _cell_r_arr,
+		"s_arr": _cell_s_arr,
+		"arrays": arrays,
+	})
+	if not (encoded is PackedByteArray):
+		return false
+	var buf: PackedByteArray = encoded
+	if buf.is_empty():
+		return false
+	var t_flush_us0: int = Time.get_ticks_usec()
+	_flush_line_batch()
+	_file.store_buffer(buf)
+	_last_tick_flush_ms += (Time.get_ticks_usec() - t_flush_us0) / 1000.0
+	_row_count += rows
+	_last_tick_rows = rows
+	return true
 
 
 func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
@@ -570,6 +818,11 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"phys_psi_native_ms": float(phys.get("psi_native_ms", phys.get("stage_psi_native_ms", -1.0))),
 		"phys_ocean_delta_p95": float(phys.get("ocean_delta_p95", 0.0)),
 		"phys_thermal_current_p95": float(phys.get("thermal_current_p95", 0.0)),
+		"phys_ocean_current_preclamp_p95": float(phys.get("ocean_current_preclamp_p95", 0.0)),
+		"phys_ocean_current_preclamp_max": float(phys.get("ocean_current_preclamp_max", 0.0)),
+		"phys_ocean_current_clamp_count": int(phys.get("ocean_current_clamp_count", 0)),
+		"phys_ocean_current_clamp_ratio": float(phys.get("ocean_current_clamp_ratio", 0.0)),
+		"phys_ocean_current_max_magnitude": float(phys.get("ocean_current_max_magnitude", 0.0)),
 		"cell_index": idx,
 		"q": int(cell.q),
 		"r": int(cell.r),
@@ -577,16 +830,63 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 	}
 
 
+func _tick_fixed_suffix(sample: Dictionary, cell) -> String:
+	var row: Dictionary = _base_row(sample, 0, cell)
+	var cell_col: int = FIXED_COLUMNS.find("cell_index")
+	if cell_col <= 1:
+		return ""
+	var parts: PackedStringArray = PackedStringArray()
+	for i in range(1, cell_col):
+		var col: String = str(FIXED_COLUMNS[i])
+		parts.append(_csv_escape(row[col]) if row.has(col) else "")
+	return "," + ",".join(parts)
+
+
+static func _format_record_line(row_idx: int, fixed_suffix: String,
+		cell_index: int, q: int, r: int, s: int,
+		arrays: Array, field_types: PackedInt32Array) -> String:
+	var tail: PackedStringArray = PackedStringArray()
+	var field_count: int = arrays.size()
+	tail.resize(4 + field_count)
+	tail[0] = str(cell_index)
+	tail[1] = str(q)
+	tail[2] = str(r)
+	tail[3] = str(s)
+	for i in range(field_count):
+		match int(field_types[i]):
+			TYPE_PACKED_FLOAT32_ARRAY:
+				tail[4 + i] = _csv_float(float(arrays[i][cell_index]))
+			TYPE_PACKED_INT32_ARRAY:
+				tail[4 + i] = str(int(arrays[i][cell_index]))
+			TYPE_PACKED_BYTE_ARRAY:
+				tail[4 + i] = str(int(arrays[i][cell_index]))
+			_:
+				tail[4 + i] = _csv_escape(_array_value(arrays[i], cell_index))
+	return str(row_idx) + fixed_suffix + "," + ",".join(tail)
+
+
 func _abort_recording(reason: String) -> void:
 	_recording = false
+	_flush_line_batch()
 	_close_file()
 	push_warning("[tile-data-record] auto-stop: %s; partial CSV kept at %s" % [reason, _path])
 
 
 func _close_file() -> void:
 	if _file != null:
+		_flush_line_batch()
 		_file.close()
 	_file = null
+
+
+func _flush_line_batch() -> float:
+	if _file == null or _line_batch.is_empty():
+		return 0.0
+	var t_us0: int = Time.get_ticks_usec()
+	_file.store_string("\n".join(_line_batch))
+	_file.store_string("\n")
+	_line_batch.clear()
+	return (Time.get_ticks_usec() - t_us0) / 1000.0
 
 
 static func _array_size(arr) -> int:
@@ -730,4 +1030,13 @@ static func _csv_escape(value) -> String:
 	if s.find(",") != -1 or s.find("\"") != -1 or s.find("\n") != -1 or s.find("\r") != -1:
 		s = s.replace("\"", "\"\"")
 		return "\"" + s + "\""
+	return s
+
+
+static func _csv_float(value: float) -> String:
+	if is_nan(value) or is_inf(value):
+		return ""
+	var s: String = ("%.6f" % value).rstrip("0").rstrip(".")
+	if s == "" or s == "-":
+		return "0"
 	return s

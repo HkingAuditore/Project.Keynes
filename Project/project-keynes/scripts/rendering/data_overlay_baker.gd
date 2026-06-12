@@ -72,15 +72,37 @@ static func get_empty_texture() -> ImageTexture:
 #                     (C++ flush CoW / resize) 而产生的"overlay 颜色 vs
 #                     详情面板温度"不一致问题。详见 docs/dots-f4-validation
 #                     §2.2.b 与 view_adapter.gd 头部注释。
+#   existing_tex    : 可选 ImageTexture。若提供且 size 匹配，走 .update(img)
+#                     路径复用 GPU 资源；否则新建一张。设计动机：
+#                     debug-overlay-perf v1（2026-06-12）发现 x20 倍速下每个
+#                     游戏日重建 1080×574 ImageTexture 触发 GPU 资源销毁 +
+#                     VRAM 重分配，单次 ~8-15ms 同步阻塞，是温度/天气 overlay
+#                     卡顿主因。返回结果里同时给出 texture 字段（与旧契约一致）。
+#   existing_buf    : 可选 PackedByteArray。若提供且 size 匹配，复用并清零
+#                     而非每帧 resize 2.4MB；进一步降低 GC 压力。
+#   world_ext       : 可选 DCWorldExt（C++ co-processor）。若提供且实现了
+#                     encode_overlay_atlas 且 world 的 SoA pixel CSR 已构建，
+#                     则把 O(n_pixels) 的内层像素 fan-out 下沉到 C++（debug
+#                     模式温度/天气 overlay 卡顿主因之一）。per-cell 采样仍在
+#                     GDScript（仅 ~n_cells 次，分支重、含非 schema 字段，留
+#                     GDScript 零 bit-divergence 风险）。ext 缺失 / 旧 DLL /
+#                     SoA 未建 / C++ 返回 fallback 时透明回退到 GDScript fan-out。
+#                     详见 docs/cpp-dots-runtime/computation-pipelines.md。
 # 返回上面注释中的 Dictionary；任一前置缺失都返回一个"空但有效"的结果，
 # 调用方据此把 overlay 退回 NONE 即可，不会污染 shader 参数。
+# 返回额外字段：
+#   "path"               : "gdext_fanout" / "gdscript_fanout" / "gdscript_fanout_soa"
+#   "cpp_fallback_reason": String（C++ 返回 fallback 时的理由，否则空）
 static func bake(
 	map,
 	world,
 	mode: int,
 	climate,
 	season_phase: float,
-	adapter_override: DCViewAdapter = null
+	adapter_override: DCViewAdapter = null,
+	existing_tex: ImageTexture = null,
+	existing_buf: PackedByteArray = PackedByteArray(),
+	world_ext = null
 ) -> Dictionary:
 	var empty_result := {
 		"texture": get_empty_texture(),
@@ -117,25 +139,63 @@ static func bake(
 		adapter = DCViewAdapter.Cell.new(map.iter_cells())
 
 	var total_px: int = derived.x * derived.y
-	var buf := PackedByteArray()
-	buf.resize(total_px * 4)
+	# P0/P2（debug-overlay-perf v1，2026-06-12）：复用 caller 提供的 buf，避免
+	# 每帧重新分配 2.4MB（1080×574×4）触发 GDScript GC + 堆碎片。size 不匹配
+	# 时安全回退到新建。fill(0) 是 PackedByteArray 原生方法（C++ memset），
+	# 比 GDScript `for i in range(620544): buf[i*4+3] = 0` 快 ~50 倍。
+	var buf: PackedByteArray = existing_buf
+	var n_bytes: int = total_px * 4
+	if buf.size() != n_bytes:
+		buf = PackedByteArray()
+		buf.resize(n_bytes)
+
+	# DOTS（debug-overlay-perf v2，2026-06-12）：把 O(n_pixels) 的内层像素 fan-out
+	# 下沉 C++（encode_overlay_atlas）。前置：world_ext 实现该 method（向前兼容
+	# 旧 DLL）+ world 的 SoA pixel CSR（cell_first_px_arr 等，map_baker 在
+	# _ensure_world_cell_pixel_csr 里整图一次性构建）已就绪。任一不满足 → cpp_path
+	# = false，走原 GDScript Dict fan-out。约定与 4 张视觉 atlas 一致：恒走 ext +
+	# has_method 探测，无 ClimateProfile flag（dots-flag-prune-pr1 round 2）。
+	var soa_ready: bool = world.cell_first_px_arr.size() > 0 \
+		and world.cell_px_count_arr.size() > 0 \
+		and not world.flat_px_indices_arr.is_empty()
+	var ext_ready: bool = world_ext != null \
+		and world_ext.has_method(&"encode_overlay_atlas")
+	var cpp_path: bool = soa_ready and ext_ready
+	var n_cells_soa: int = world.cell_first_px_arr.size() if cpp_path else 0
+	# cpp_path 下按 cell.index 收集 per-cell R/G byte + 有效标记；C++ 端做 fan-out。
+	# resize 会零填充 → 无效 cell 天然 valid=0、不写像素。
+	var cell_r_arr: PackedByteArray = PackedByteArray()
+	var cell_g_arr: PackedByteArray = PackedByteArray()
+	var cell_valid_arr: PackedByteArray = PackedByteArray()
+	if cpp_path:
+		cell_r_arr.resize(n_cells_soa)
+		cell_g_arr.resize(n_cells_soa)
+		cell_valid_arr.resize(n_cells_soa)
+	else:
+		# 非 cpp_path（GDScript Dict / SoA fan-out）需要先清零 buffer；cpp_path
+		# 让 C++ memset，省一次 GDScript fill（C++ 返回 fallback 时再补 fill）。
+		buf.fill(0)
 	# 默认：全部像素 alpha=0（无效），shader 端渲染为中性灰。
 	# 这样地图外/未覆盖像素不会出现颜色残影。
-	for i in range(total_px):
-		buf[i * 4 + 3] = 0
+	# （旧实现：for i in range(total_px): buf[i*4+3] = 0；现在改为 fill(0) 后
+	# 在 cell 循环里仅对有效 cell 的覆盖像素写 alpha=255，达到等价语义但
+	# 省去 62 万次 GDScript 字节赋值。）
 
-	var stats := {
-		"min": INF,
-		"max": -INF,
-		"mean": 0.0,
-		"median": 0.0,
-		"count": 0,
-		"invalid_count": 0,
-		"near_zero_count": 0,
-		"buckets": {},
-		"sum": 0.0,
-	}
-	var values_for_median: Array = []
+	# P2（debug-overlay-perf v1，2026-06-12）：把 stats 字段从 Dictionary 里拎
+	# 出来变成强类型局部变量。原实现每 cell 至少 3-5 次 `int(stats.xxx) + 1`
+	# 的 Variant→int 转换 + Dictionary key 查找，2400 cells × 5 次 ≈ 12000 次
+	# Variant 装箱/拆箱。改成局部变量后 cell 循环完毕再一次性写回 Dictionary。
+	var stats_min: float = INF
+	var stats_max: float = -INF
+	var stats_sum: float = 0.0
+	var stats_count: int = 0
+	var stats_invalid: int = 0
+	var stats_near_zero: int = 0
+	var stats_buckets: Dictionary = {}
+	# values_for_median 改用 PackedFloat32Array，消除 Variant 装箱开销。
+	var values_for_median: PackedFloat32Array = PackedFloat32Array()
+	values_for_median.resize(cells_size_hint(map))
+	var values_for_median_n: int = 0  # 真实长度（resize 是上限预分配）
 
 	var cells: Array = map.all_cells()
 	var use_pixel_lists: bool = world.cell_pixel_lists != null \
@@ -146,6 +206,10 @@ static func bake(
 	# 标签、shader 的半球判断完全一致。
 	var lat_buf: PackedFloat32Array = world.latitude_buffer
 	var lat_buf_size: int = lat_buf.size()
+
+	# P2 hoist：mode 谓词外提，避免每 cell 重复跑 OverlayMode.is_discrete 函数调用。
+	var mode_is_discrete: bool = OverlayMode.is_discrete(mode)
+	var mode_is_climate_zone: bool = (mode == OverlayMode.MODE.CLIMATE_ZONE)
 
 	for cell in cells:
 		if cell == null:
@@ -167,50 +231,68 @@ static func bake(
 			is_valid = false
 		# CLIMATE_ZONE 按 |ny - 0.5| 自己推导，不来自 cell；永远 valid
 		# （即使数值类字段 NaN，气候带也能画）
-		if mode == OverlayMode.MODE.CLIMATE_ZONE:
+		if mode_is_climate_zone:
 			is_valid = true
 
 		# 分离编码：连续通道 → R=归一化值；离散通道 → R=类别/档位；G=强度
 		# 方向型通道 → R=hue(归一化角度)、G=强度
+		# P2：用 `int(x * 255.0 + 0.5)` 替代 `int(round(x * 255.0))`，少一个函数调用。
 		var r_byte: int = 0
 		var g_byte: int = 0
 		if is_valid:
-			if OverlayMode.is_discrete(mode):
+			if mode_is_discrete:
 				r_byte = clampi(bucket, 0, 255)
-				g_byte = clampi(int(round(intensity * 255.0)), 0, 255)
+				g_byte = clampi(int(intensity * 255.0 + 0.5), 0, 255)
 			elif is_vector_mode:
-				r_byte = clampi(int(round(clampf(value, 0.0, 1.0) * 255.0)), 0, 255)
-				g_byte = clampi(int(round(intensity * 255.0)), 0, 255)
+				r_byte = clampi(int(clampf(value, 0.0, 1.0) * 255.0 + 0.5), 0, 255)
+				g_byte = clampi(int(intensity * 255.0 + 0.5), 0, 255)
 			else:
-				r_byte = clampi(int(round(clampf(value, 0.0, 1.0) * 255.0)), 0, 255)
+				r_byte = clampi(int(clampf(value, 0.0, 1.0) * 255.0 + 0.5), 0, 255)
 
 		# 统计（离散/连续/方向 分别记账）
 		if not is_valid:
-			stats.invalid_count = int(stats.invalid_count) + 1
+			stats_invalid += 1
 		else:
-			if not OverlayMode.is_discrete(mode) and _is_near_zero_sample(mode, value, intensity, is_vector_mode):
-				stats.near_zero_count = int(stats.near_zero_count) + 1
-			if OverlayMode.is_discrete(mode):
-				var bk: Dictionary = stats.buckets
-				bk[bucket] = int(bk.get(bucket, 0)) + 1
-				stats.buckets = bk
-				stats.count = int(stats.count) + 1
+			if not mode_is_discrete and _is_near_zero_sample(mode, value, intensity, is_vector_mode):
+				stats_near_zero += 1
+			if mode_is_discrete:
+				stats_buckets[bucket] = int(stats_buckets.get(bucket, 0)) + 1
+				stats_count += 1
 			elif is_vector_mode:
 				# 方向型通道 stats 描述的是"强度"分布（hue 的 min/max 没意义）。
-				stats.min = minf(float(stats.min), intensity)
-				stats.max = maxf(float(stats.max), intensity)
-				stats.sum = float(stats.sum) + intensity
-				stats.count = int(stats.count) + 1
-				values_for_median.append(intensity)
+				if intensity < stats_min: stats_min = intensity
+				if intensity > stats_max: stats_max = intensity
+				stats_sum += intensity
+				stats_count += 1
+				if values_for_median_n < values_for_median.size():
+					values_for_median[values_for_median_n] = intensity
+				else:
+					values_for_median.append(intensity)
+				values_for_median_n += 1
 			else:
-				stats.min = minf(float(stats.min), value)
-				stats.max = maxf(float(stats.max), value)
-				stats.sum = float(stats.sum) + value
-				stats.count = int(stats.count) + 1
-				values_for_median.append(value)
+				if value < stats_min: stats_min = value
+				if value > stats_max: stats_max = value
+				stats_sum += value
+				stats_count += 1
+				if values_for_median_n < values_for_median.size():
+					values_for_median[values_for_median_n] = value
+				else:
+					values_for_median.append(value)
+				values_for_median_n += 1
 
 		# 把该 cell 的结果写入它覆盖的所有像素。
-		if use_pixel_lists:
+		# P2（debug-overlay-perf v1，2026-06-12）：buf 已 fill(0)，无效 cell 的
+		# 像素天然保留 alpha=0；只在 is_valid 时写四字节，省去无效 cell 的
+		# 像素循环（小幅度收益，但配合 fill(0) 让无效像素从两次写变零次写）。
+		# DOTS（debug-overlay-perf v2，2026-06-12）：cpp_path 下不在 GDScript 写
+		# 像素，只按 cell.index 记录 R/G byte + 有效标记，留给 C++ fan-out。
+		if cpp_path:
+			var ci: int = int(cell.index)
+			if is_valid and ci >= 0 and ci < n_cells_soa:
+				cell_r_arr[ci] = r_byte
+				cell_g_arr[ci] = g_byte
+				cell_valid_arr[ci] = 1
+		elif use_pixel_lists and is_valid:
 			var pixels: PackedInt32Array = world.cell_pixel_lists.get(
 				cell, PackedInt32Array()
 			)
@@ -220,39 +302,138 @@ static func bake(
 				var base := px_idx * 4
 				buf[base] = r_byte
 				buf[base + 1] = g_byte
-				buf[base + 2] = 0
-				buf[base + 3] = 255 if is_valid else 0
+				# buf[base + 2] = 0  # fill(0) 已写 0
+				buf[base + 3] = 255
 		# 若 cell_pixel_lists 未建（老地图），跳过像素写入，
 		# 但仍保留统计，避免 Telemetry 崩溃。
 
-	if int(stats.count) > 0 and not OverlayMode.is_discrete(mode):
-		stats.mean = float(stats.sum) / float(stats.count)
+	# P2 统计写回：把强类型局部变量装回 Dictionary。median 用 PackedFloat32Array
+	# 的 in-place sort，避免 Variant 装箱。values_for_median 的真实长度由
+	# values_for_median_n 控制（resize 是上限预分配，可能尾部有零值）。
+	var stats := {
+		"min": 0.0,
+		"max": 0.0,
+		"mean": 0.0,
+		"median": 0.0,
+		"count": stats_count,
+		"invalid_count": stats_invalid,
+		"near_zero_count": stats_near_zero,
+		"buckets": stats_buckets,
+		"sum": stats_sum,
+	}
+	if stats_count > 0 and not mode_is_discrete:
+		stats["mean"] = stats_sum / float(stats_count)
+		# 截断到真实长度后排序。PackedFloat32Array 没有 resize-shrink-without-copy，
+		# 取子集后 sort。注意 sort 影响 values_for_median 内容（caller 不再读）。
+		if values_for_median_n < values_for_median.size():
+			values_for_median.resize(values_for_median_n)
 		values_for_median.sort()
-		var mid := values_for_median.size() / 2
-		if values_for_median.size() % 2 == 1:
-			stats.median = values_for_median[mid]
+		var mid := values_for_median_n / 2
+		if values_for_median_n % 2 == 1:
+			stats["median"] = values_for_median[mid]
 		else:
-			stats.median = (values_for_median[mid - 1] + values_for_median[mid]) * 0.5
-	else:
-		stats.mean = 0.0
-		stats.median = 0.0
-	if stats.min == INF:
-		stats.min = 0.0
-	if stats.max == -INF:
-		stats.max = 0.0
+			stats["median"] = (values_for_median[mid - 1] + values_for_median[mid]) * 0.5
+	stats["min"] = 0.0 if stats_min == INF else stats_min
+	stats["max"] = 0.0 if stats_max == -INF else stats_max
+
+	# DOTS（debug-overlay-perf v2，2026-06-12）：cpp_path 下把 per-cell R/G byte +
+	# 有效标记 + world 持久 SoA CSR 交给 C++ encode_overlay_atlas，由它清零 buffer
+	# 并扇出写像素（典型 ~62 万次写）。复用 world.flat_px_indices_arr 整图 flat，
+	# first/count 直接索引（与 4 张视觉 atlas 共用语义），传参仅引用计数 +1。
+	# C++ 返回 fallback（理论上仅参数非法）时透明回退到 GDScript SoA fan-out。
+	var bake_path: String = "gdscript_fanout"
+	var cpp_fallback_reason: String = ""
+	if cpp_path:
+		var res: Dictionary = world_ext.encode_overlay_atlas({
+			"n_pix": total_px,
+			"n_cells": n_cells_soa,
+			"atlas_buffer": buf,
+			"cell_first_px": world.cell_first_px_arr,
+			"cell_px_count": world.cell_px_count_arr,
+			"flat_px_indices": world.flat_px_indices_arr,
+			"cell_r": cell_r_arr,
+			"cell_g": cell_g_arr,
+			"cell_valid": cell_valid_arr,
+		})
+		if not bool(res.get("fallback", true)):
+			buf = res.get("atlas_buffer", buf)
+			bake_path = "gdext_fanout"
+		else:
+			# C++ 拒绝（参数非法）→ GDScript SoA fan-out 兜底。先清零 buffer
+			# （cpp_path 没在 GDScript 提前 fill），再用同一份 per-cell byte +
+			# SoA CSR 复刻 C++ 写像素逻辑，保证 bit-equal。
+			cpp_fallback_reason = String(res.get("reason", "cpp_fallback"))
+			buf.fill(0)
+			_fanout_cell_bytes_soa(
+				buf, world, cell_r_arr, cell_g_arr, cell_valid_arr,
+				total_px, n_cells_soa
+			)
+			bake_path = "gdscript_fanout_soa"
 
 	var img := Image.create_from_data(
 		derived.x, derived.y, false, Image.FORMAT_RGBA8, buf
 	)
-	var tex := ImageTexture.create_from_image(img)
+	# P0（debug-overlay-perf v1，2026-06-12）：优先复用 caller 提供的
+	# ImageTexture，走 .update(img) 路径——比 create_from_image 快 5-10 倍
+	# 且不触发 GPU 资源销毁/重建。size 不匹配（首帧 / derived_size 变更）
+	# 时安全 fallback 到新建。
+	# Hot path 假设 caller（main._refresh_overlay_data）持久化 _overlay_tex
+	# 并在每次调用时回传。
+	var tex: ImageTexture = existing_tex
+	var need_new: bool = (tex == null) or (tex.get_size() != Vector2(float(derived.x), float(derived.y)))
+	if need_new:
+		tex = ImageTexture.create_from_image(img)
+	else:
+		tex.update(img)
 
 	return {
 		"texture": tex,
+		"buf": buf,                     # 让 caller 缓存复用（P0）
 		"stats": stats,
 		"mode": mode,
 		"value_scale": 1.0,
 		"value_offset": 0.0,
+		"path": bake_path,
+		"cpp_fallback_reason": cpp_fallback_reason,
 	}
+
+# DOTS（debug-overlay-perf v2，2026-06-12）：encode_overlay_atlas 的 GDScript 等价
+# fan-out，仅在 cpp_path 命中但 C++ 返回 fallback 时用作兜底。逻辑与 C++ 端
+# byte-for-byte 一致：按 cell.index 读 SoA CSR，把有效 cell 的 (R, G, 0, 255)
+# 写到它覆盖的全部像素。调用前 caller 须已 buf.fill(0)。
+static func _fanout_cell_bytes_soa(
+	buf: PackedByteArray,
+	world,
+	cell_r_arr: PackedByteArray,
+	cell_g_arr: PackedByteArray,
+	cell_valid_arr: PackedByteArray,
+	total_px: int,
+	n_cells_soa: int
+) -> void:
+	var first_px: PackedInt32Array = world.cell_first_px_arr
+	var px_count: PackedInt32Array = world.cell_px_count_arr
+	var flat_px: PackedInt32Array = world.flat_px_indices_arr
+	var flat_n: int = flat_px.size()
+	for ci in range(n_cells_soa):
+		if cell_valid_arr[ci] == 0:
+			continue
+		var first: int = first_px[ci]
+		var count: int = px_count[ci]
+		if first < 0 or count <= 0:
+			continue
+		var r_byte: int = cell_r_arr[ci]
+		var g_byte: int = cell_g_arr[ci]
+		for p in range(count):
+			var fi: int = first + p
+			if fi < 0 or fi >= flat_n:
+				continue
+			var px_idx: int = flat_px[fi]
+			if px_idx < 0 or px_idx >= total_px:
+				continue
+			var base: int = px_idx * 4
+			buf[base] = r_byte
+			buf[base + 1] = g_byte
+			buf[base + 3] = 255
 
 # 逐 cell 按 mode 做采样。
 # 返回 { value: float(0..1), bucket: int, intensity: float(0..1), valid: bool }
@@ -539,3 +720,16 @@ static func _empty_stats() -> Dictionary:
 		"buckets": {},
 		"sum": 0.0,
 	}
+
+
+# P2（debug-overlay-perf v1，2026-06-12）：给 values_for_median 预分配 cell 上限，
+# 消除 PackedFloat32Array 反复 append 触发的 reallocation。Map 没有 cell_count
+# 方法时退到一个保守上限（4096），不会错算结果——多余位会被 resize 截断。
+static func cells_size_hint(map) -> int:
+	if map == null:
+		return 4096
+	if map.has_method("cell_count"):
+		return int(map.cell_count())
+	if map.has_method("all_cells"):
+		return int(map.all_cells().size())
+	return 4096

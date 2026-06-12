@@ -382,8 +382,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var vapor_gate: float = clampf((vapor - 0.12) / 0.30, 0.0, 1.0)
 		var trigger_focus: float = maxf(maxf(cloud_core, terrain_trigger), cloud_water * 0.55)
 		var rain_focus: float = clampf(trigger_focus * vapor_gate, 0.0, 1.0)
-		var precip_source: float = cloud * (0.30 + instability * 0.76) + lift_supply * 0.36 - maxf(-lift, 0.0) * 0.55
-		var precip_raw: float = maxf(precip_source, 0.0) * 1.18 * rain_focus
+		# B 修复（precip-too-wet-fix-2026-06）：1:1 mirror of C++ run_weather_field_solve_pass。
+		# (1) precip_source 系数下调；(2) cloud_water_rain 加严；(3) <0.005 清零；(4) CLEAR 强制干。
+		# 目标：wet_any 99.9%→~60-70%，equatorial land wet_heavy 59%→<25%。
+		var precip_source: float = cloud * (0.22 + instability * 0.55) + lift_supply * 0.30 - maxf(-lift, 0.0) * 0.60
+		var precip_raw: float = maxf(precip_source, 0.0) * 0.95 * rain_focus
 		var old_precip: float = prev_precip[i]
 		# climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格(-wind 对齐
 		# 邻居 upstream_idx)继承，权重随风速 wind_mag 增大 → 雨带随锋面下风迁移，而非
@@ -397,15 +400,21 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var precip_floor: float = 0.0
 		if vapor >= 0.42 and old_precip >= 0.04:
 			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.30)
-		var cloud_water_rain: float = cloud_water * maxf(rain_focus, 0.18) * (0.14 + instability * 0.16)
+		var cloud_water_rain: float = (cloud_water * rain_focus * (0.10 + instability * 0.14)) if (rain_focus > 0.10 and instability > 0.10) else 0.0
 		var precip: float = clampf(maxf(maxf(precip_raw, precip_floor), cloud_water_rain), 0.0, 1.0)
 		precip = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip)
+		if precip < 0.005:
+			precip = 0.0
 		cloud_water = clampf(cloud_water - precip * 0.32, 0.0, 1.0)
 		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
 		if precip < 0.005 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
 			vapor_after_precip = lerpf(vapor_after_precip, base_m, _weather_system._field_vapor_relax_rate)
 
 		var wt: int = _weather_system._classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _weather_system._classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
+		# B 修复 (4)：CLEAR 强制 precip=0 + 加速 cloud_water 衰减（与 C++ 镜像）。
+		if wt == 0:
+			precip = 0.0
+			cloud_water *= 0.6
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
 		next_vapor[i] = vapor_after_precip
 		next_cloud[i] = cloud

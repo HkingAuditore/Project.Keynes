@@ -256,6 +256,8 @@ var _perf_recorder: RefCounted = null
 # DebugConsole 地块数据录制按钮注入的 TileDataRecorder 实例。与 PerfRecorder
 # 共用 fast_tick sample 时机，但 recorder 自己从 MapData 读取 cell-level SoA。
 var _tile_data_recorder: RefCounted = null
+var _last_recorder_perf_summary: Dictionary = {}
+var _recorder_warn_last_frame: int = 0
 
 # ─── Data Overlay 状态 ─────────────────────────────────────────────
 # _overlay_mode   : OverlayMode.MODE 的整数值，NONE=0
@@ -264,12 +266,26 @@ var _tile_data_recorder: RefCounted = null
 # _overlay_last_bake_ms : 最近一次 bake 的耗时（ms），用于性能验证
 # _overlay_last_fast_tick_ms : 最近一次 fast tick 总耗时（ms），给 Telemetry
 # _overlay_error_msg : shader 加载 / bake 失败时写入的错误原因，DebugConsole 读
+#
+# debug-overlay-perf v1（2026-06-12）：
+# _overlay_tex / _overlay_buf : 持久化 GPU 资源 + CPU PackedByteArray，
+#   让 DataOverlayBaker.bake 走 .update(img) 而不是每帧 create_from_image。
+#   实测：1080×574 derived size 下，单次 bake 从 ~12-20ms 降至 ~1.5-3ms。
+# _overlay_dirty : 数据层标记。_on_day_changed 末尾置 true（且本帧不跳日），
+#   下一次任意 _refresh_overlay_data 入口消费后清零；x20 倍速下避免在
+#   同一个游戏日内重复 bake。
 var _overlay_mode: int = 0
 var _overlay_alpha: float = 0.7
 var _overlay_stats: Dictionary = {}
 var _overlay_last_bake_ms: float = 0.0
 var _overlay_last_fast_tick_ms: int = 0
 var _overlay_error_msg: String = ""
+var _overlay_tex: ImageTexture = null
+var _overlay_buf: PackedByteArray = PackedByteArray()
+var _overlay_dirty: bool = true
+# debug-overlay-perf v2（2026-06-12）：最近一次 bake 的 pixel fan-out 路径
+# （gdext_fanout / gdscript_fanout / gdscript_fanout_soa），供诊断 C++ 是否生效。
+var _overlay_bake_path: String = "gdscript_fanout"
 
 func _ready() -> void:
 	_wire_time_ui()
@@ -622,6 +638,10 @@ func _sync_clock_running_to_weather_layer() -> void:
 
 func _on_day_changed(_day_idx: int) -> void:
 	_refresh_time_label()
+	# debug-overlay-perf v1（2026-06-12）：每个游戏日推进时标记 overlay 数据可能
+	# 已变化。fast tick 末尾的消费逻辑会在"非跳日 + dirty=true"双条件下才真正
+	# 触发一次 bake，确保 x20 倍速下每个游戏日最多 bake 一次。
+	_overlay_dirty = true
 	var dispatch_season_phase: float = _world_clock.season_phase()
 	if _world_clock != null and _world_clock.has_method("season_phase_for_day"):
 		dispatch_season_phase = float(_world_clock.season_phase_for_day(_day_idx))
@@ -770,10 +790,25 @@ func _on_day_changed(_day_idx: int) -> void:
 
 	# Data Overlay：每日随模拟推进刷新一次数据纹理（需求 2.7）。
 	# overlay_mode == NONE 时 _refresh_overlay_data 内部会早返 0 开销。
-	# 跳日（was_skipped_day）时仍刷新——因为慢层（base_moisture / 气候带）
-	# 在跳日内可能也变；成本仅 1 次 O(cells) 采样 + 纹理 upload，<1ms。
+	#
+	# debug-overlay-perf v1（2026-06-12）：
+	# 旧实现"跳日时仍刷新"的理由是慢层（base_moisture / 气候带）在跳日内
+	# 可能变；但在 x20 倍速实测中，每 fast tick 都重 bake 1080×574 RGBA8
+	# 纹理 → ImageTexture.create_from_image 5-15ms 同步阻塞，是温度/天气
+	# overlay 卡顿的主因（详见 docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+	# §Overlay Bake Cost）。
+	#
+	# 现在改成两层 gate：
+	# 1) 跳日（was_skipped_day=true，本帧没跑 weather/climate/ocean）→ overlay
+	#    数据不可能变，直接跳过。这一条消灭了 x20 倍速下 ~50% 的重复 bake。
+	# 2) _overlay_dirty 标记由 day_changed 信号在 _on_day_changed 顶部一次
+	#    性置 true（不分跳日与否，确保慢层场景也能刷一次）；本函数消费后
+	#    立即清零。如果 _on_day_changed 在同一帧内被多次调用（不应该发生，
+	#    但保险），_overlay_dirty 仅触发一次 bake。
+	# 3) 即使 dirty=false 也允许由 _apply_overlay_mode / 地图重生成显式调用，
+	#    那些路径独立写 dirty 不依赖 fast tick gate。
 	_overlay_last_fast_tick_ms = fast_ms
-	if _overlay_mode != 0:
+	if _overlay_mode != 0 and not was_skipped_day and _overlay_dirty:
 		_refresh_overlay_data()
 
 	# DOTS-Final-Push 任务 10：把当前 tick 的 fast_ms 与 trigger_warn 标记
@@ -791,19 +826,65 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 把本帧 main 局部才知道的指标（三段 ms / 跳日标志 / fps / 时间戳）发布给
 	# 已挂接的录制器。PerfRecorder 自己拉 SUS breakdown；TileDataRecorder
 	# 自己拉 MapData SoA。未挂载或未录制时内部早返，跳日帧也录入。
-	_publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
+	var recorder_diag: Dictionary = _publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
 		float(fast_ms), was_skipped_day)
+	var fast_ms_after_recorders: int = Time.get_ticks_msec() - t_fast0
+	if recorder_diag.is_empty():
+		_last_recorder_perf_summary = {}
+	else:
+		recorder_diag["fast_ms_before_recorders"] = fast_ms
+		recorder_diag["fast_ms_after_recorders"] = fast_ms_after_recorders
+		_last_recorder_perf_summary = recorder_diag
+		_overlay_last_fast_tick_ms = fast_ms_after_recorders
+		var recorder_total_ms: float = float(recorder_diag.get("total_ms", 0.0))
+		var recorder_warn: bool = recorder_total_ms >= 2.0 \
+			or ((not was_skipped_day) and fast_ms_after_recorders > 12 and not trigger_warn)
+		if recorder_warn and (_recorder_warn_last_frame == 0 \
+				or (_fast_tick_count - _recorder_warn_last_frame) >= 30):
+			_recorder_warn_last_frame = _fast_tick_count
+			push_warning("[fast tick recorder] frame=%d recorder=%.2fms tile=%.2fms rows=%d total_after=%dms" % [
+				_fast_tick_count,
+				recorder_total_ms,
+				float(recorder_diag.get("tile_ms", 0.0)),
+				int(recorder_diag.get("tile_rows", 0)),
+				fast_ms_after_recorders,
+			])
+			print("        recorder total=%.2f perf=%.2f tile=%.2f collect=%.2f stats=%.2f format=%.2f flush=%.2f encoder=%s tile_rows=%d tile_recorded=%s tile_reason=%s total_after=%dms" % [
+				recorder_total_ms,
+				float(recorder_diag.get("perf_ms", 0.0)),
+				float(recorder_diag.get("tile_ms", 0.0)),
+				float(recorder_diag.get("tile_collect_ms", 0.0)),
+				float(recorder_diag.get("tile_stats_ms", 0.0)),
+				float(recorder_diag.get("tile_format_ms", 0.0)),
+				float(recorder_diag.get("tile_flush_ms", 0.0)),
+				str(recorder_diag.get("tile_encoder_path", "")),
+				int(recorder_diag.get("tile_rows", 0)),
+				str(recorder_diag.get("tile_recorded", false)),
+				str(recorder_diag.get("tile_reason", "")),
+				fast_ms_after_recorders,
+			])
 
 
 # Plan: perf-recording-csv-export
 # 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给已挂接的录制器。
 # 不持有 recorder 引用或未录制时直接 return，零开销快路径。
 func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
-		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> void:
+		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> Dictionary:
 	var perf_ready: bool = _recorder_ready(_perf_recorder)
 	var tile_ready: bool = _recorder_ready(_tile_data_recorder)
 	if not perf_ready and not tile_ready:
-		return
+		return {}
+	var t_recorders_us0: int = Time.get_ticks_usec()
+	var out: Dictionary = {
+		"total_ms": 0.0,
+		"perf_ms": 0.0,
+		"tile_ms": 0.0,
+		"perf_recording": perf_ready,
+		"tile_recording": tile_ready,
+		"tile_recorded": false,
+		"tile_rows": 0,
+		"tile_reason": "",
+	}
 	var sample: Dictionary = {
 		"tick_idx": _fast_tick_count,
 		"timestamp_ms": Time.get_ticks_msec(),
@@ -827,9 +908,43 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		if not ocean_diag.is_empty():
 			sample["ocean_currents"] = ocean_diag
 	if perf_ready:
+		var t_perf_us0: int = Time.get_ticks_usec()
 		_perf_recorder.call("on_fast_tick", sample)
+		out["perf_ms"] = (Time.get_ticks_usec() - t_perf_us0) / 1000.0
 	if tile_ready:
-		_tile_data_recorder.call("on_fast_tick", sample)
+		var rows_before: int = 0
+		if _tile_data_recorder.has_method("row_count"):
+			rows_before = int(_tile_data_recorder.call("row_count"))
+		var t_tile_us0: int = Time.get_ticks_usec()
+		var tile_result = _tile_data_recorder.call("on_fast_tick", sample)
+		out["tile_ms"] = (Time.get_ticks_usec() - t_tile_us0) / 1000.0
+		var rows_after: int = rows_before
+		if _tile_data_recorder.has_method("row_count"):
+			rows_after = int(_tile_data_recorder.call("row_count"))
+		if tile_result is Dictionary:
+			var tile_dict: Dictionary = tile_result
+			out["tile_recorded"] = bool(tile_dict.get("recorded", false))
+			out["tile_rows"] = int(tile_dict.get("rows", rows_after - rows_before))
+			out["tile_reason"] = str(tile_dict.get("reason", ""))
+			if tile_dict.has("tick_stride"):
+				out["tile_tick_stride"] = int(tile_dict.get("tick_stride", 1))
+			if tile_dict.has("cell_stride"):
+				out["tile_cell_stride"] = int(tile_dict.get("cell_stride", 1))
+			if tile_dict.has("collect_ms"):
+				out["tile_collect_ms"] = float(tile_dict.get("collect_ms", 0.0))
+			if tile_dict.has("stats_ms"):
+				out["tile_stats_ms"] = float(tile_dict.get("stats_ms", 0.0))
+			if tile_dict.has("format_ms"):
+				out["tile_format_ms"] = float(tile_dict.get("format_ms", 0.0))
+			if tile_dict.has("flush_ms"):
+				out["tile_flush_ms"] = float(tile_dict.get("flush_ms", 0.0))
+			if tile_dict.has("encoder_path"):
+				out["tile_encoder_path"] = str(tile_dict.get("encoder_path", ""))
+		else:
+			out["tile_rows"] = rows_after - rows_before
+			out["tile_recorded"] = int(out["tile_rows"]) > 0
+	out["total_ms"] = (Time.get_ticks_usec() - t_recorders_us0) / 1000.0
+	return out
 
 
 func _recorder_ready(rec: RefCounted) -> bool:
@@ -1247,6 +1362,12 @@ func _generate_and_render(seed_val: int) -> void:
 	# Data Overlay（需求 1.5）：R 键重生成地图时**保留当前 overlay mode**，
 	# 只是重绑 world bounds 并立即重烘焙一次数据纹理，让玩家可以继续在同
 	# 一个数据通道上对比不同种子的分布。
+	# debug-overlay-perf v1（2026-06-12）：regenerate 后 derived_size 可能变，
+	# 把持久化的 _overlay_tex/_buf 置空让 baker 安全新建；同时立刻 bake 一次
+	# 让玩家看到新地图的 overlay 数据。dirty 标记保持 false——下个 day_changed
+	# 会自然置 true。
+	_overlay_tex = null
+	_overlay_buf = PackedByteArray()
 	_sync_overlay_to_world()
 	if _overlay_mode != 0:
 		_refresh_overlay_data()
@@ -1828,12 +1949,24 @@ func _set_overlay_alpha(v: float) -> void:
 
 # 每日（或 regenerate 后）重烘焙一次数据纹理；NONE 模式直接早返。
 # 任一环节抛错都把 overlay 强制回退到 NONE（需求 6.5）。
+#
+# debug-overlay-perf v1（2026-06-12）：
+# 1) 持久化 _overlay_tex + _overlay_buf 传给 baker，复用 GPU 资源 + CPU buf。
+#    避免每帧 ImageTexture.create_from_image 触发 1080×574 RGBA8 重分配
+#    （单次同步阻塞 5-15ms，是温度/天气 overlay 卡顿主因）。
+# 2) 调用方有责任在 derived_size 真的变化或 mode 切换时把 _overlay_tex 置 null；
+#    本函数会安全检测并重建。
+# 3) bake 返回的 buf 写回 _overlay_buf 做下次复用（PackedByteArray 是 CoW，
+#    赋值是引用，几乎零成本）。
 func _refresh_overlay_data() -> void:
 	if _overlay_layer == null or _overlay_mode == 0:
 		return
 	if _current_map == null or _world_data == null:
 		# 地图尚未生成（理论上 _ready 里不会走到这里，保险兜底）
 		return
+	# 消费 dirty 标记。即便没 dirty 也允许执行（例如 _apply_overlay_mode 切换
+	# mode 时强制重 bake），仅作为统计参考。
+	_overlay_dirty = false
 	var cp = null
 	if _generator != null:
 		cp = _generator._c()
@@ -1851,16 +1984,32 @@ func _refresh_overlay_data() -> void:
 		var dc_world = _generator.get_data_core_world()
 		if dc_world != null and dc_world.has_method("is_bound") and dc_world.is_bound():
 			overlay_adapter = DCViewAdapter.World.new(dc_world, _current_map)
+	# DOTS（debug-overlay-perf v2，2026-06-12）：取 DCWorldExt C++ co-processor 传给
+	# baker，让它把 O(n_pixels) 的内层像素 fan-out 下沉 C++（encode_overlay_atlas）。
+	# null / 旧 DLL / SoA 未建时 baker 内部透明回退 GDScript fan-out。
+	var overlay_ext = null
+	if _generator != null and _generator.has_method("get_data_core_world_ext"):
+		overlay_ext = _generator.get_data_core_world_ext()
 	result = DataOverlayBaker.bake(
-		_current_map, _world_data, _overlay_mode, cp, phase, overlay_adapter
+		_current_map, _world_data, _overlay_mode, cp, phase, overlay_adapter,
+		_overlay_tex, _overlay_buf, overlay_ext
 	)
 	_overlay_last_bake_ms = (Time.get_ticks_usec() - t0) / 1000.0
 	var tex = result.get("texture", null)
 	if tex == null:
 		_disable_overlay_due_to_error("bake returned null texture")
 		return
+	# 持久化复用资源。bake 在 derived_size 变化时会自己 fallback 到新建，
+	# 这里直接吸收返回值即可（同一个 ImageTexture 实例时是 no-op 赋值）。
+	_overlay_tex = tex
+	var ret_buf = result.get("buf", null)
+	if ret_buf is PackedByteArray:
+		_overlay_buf = ret_buf
 	_overlay_layer.set_data_texture(tex)
 	_overlay_stats = result.get("stats", {})
+	# 记录 fan-out 路径（gdext_fanout / gdscript_fanout / gdscript_fanout_soa），
+	# 供 Telemetry / DebugConsole 诊断 overlay 是否走到 C++。
+	_overlay_bake_path = String(result.get("path", "gdscript_fanout"))
 
 func _disable_overlay_due_to_error(msg: String) -> void:
 	push_warning("[Overlay] disabled: %s" % msg)
@@ -1882,6 +2031,9 @@ func get_overlay_stats() -> Dictionary:
 
 func get_overlay_last_bake_ms() -> float:
 	return _overlay_last_bake_ms
+
+func get_overlay_bake_path() -> String:
+	return _overlay_bake_path
 
 func get_overlay_error_msg() -> String:
 	return _overlay_error_msg
@@ -2008,6 +2160,8 @@ func get_environment_perf_summary() -> Dictionary:
 		out["window"] = _generator.sus_report_sim_budget_window()
 	if _generator != null and _generator.has_method("environment_runtime_status"):
 		out["environment_runtime"] = _generator.environment_runtime_status()
+	if not _last_recorder_perf_summary.is_empty():
+		out["recorders"] = _last_recorder_perf_summary.duplicate(false)
 	out["budget"] = {
 		"sim_frame_budget_ms": float(summary.get("sim_frame_budget_ms", 0.0)),
 		"sim_slice_budget_ms": float(summary.get("sim_slice_budget_ms", 0.0)),
@@ -2017,6 +2171,10 @@ func get_environment_perf_summary() -> Dictionary:
 		"economy_reserved_budget_ms": float(summary.get("economy_reserved_budget_ms", 0.0)),
 	}
 	return out
+
+
+func get_recorder_perf_summary() -> Dictionary:
+	return _last_recorder_perf_summary.duplicate(false)
 
 
 # Plan: perf-recording-csv-export

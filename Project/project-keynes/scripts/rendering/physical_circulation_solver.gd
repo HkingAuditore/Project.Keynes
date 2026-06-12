@@ -593,7 +593,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 const _PSI_SOR_OMEGA := 1.4            # SOR 松弛因子（1.0 = Gauss-Seidel）
 const _PSI_R_BASE := 0.18              # Stommel 西边界强化系数基准
 const _PSI_BETA_FLOOR := 0.05          # |β| 下限（赤道附近避免除零放大）
-const _PSI_SOURCE_SCALE := 1.0         # 源项整体缩放
+const _PSI_SOURCE_SCALE := 0.08        # 源项整体缩放
 const _PSI_DEFAULT_ITERS := 40         # 默认 step 次数（一次性求解时）
 # 调优记录：60 次 SOR 残差 ≈1%，40 次 ≈3%，30 次 ≈7%。
 # 抑制到 40 次让一次性求解从 ~30ms 降到 ~20ms，玩家不可见。

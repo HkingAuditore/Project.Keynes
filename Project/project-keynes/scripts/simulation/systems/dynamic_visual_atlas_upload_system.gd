@@ -201,8 +201,12 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# 让一个 phase 在单 tick 内扫完。仍可被 climate_profile.sim_upload_slice_budget_ms 覆盖。
 	slice_budget_ms = 1.5
 	max_slices_per_tick = 1
-	must_run = false
-	starvation_threshold = 0
+	# sea-ice-snow-visual-fix-2026-06 v2：原 must_run=false 让 atlas pipeline 在
+	# frame_budget_exhausted 时被跳过，导致海冰/雪/温度热力图视觉数十秒不刷新。
+	# 改 true 保证每个 fast tick 都跑 ≥ 1 个 phase；CPP 路径单 tick ~1-3ms，可接受。
+	must_run = true
+	# starvation_threshold 保留作冗余 fallback（理论上 must_run=true 时不再触发）。
+	starvation_threshold = 8
 	baker = p_baker
 	map = p_map
 	world_data = p_world

@@ -15,13 +15,16 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/core/math.hpp>
+#include <godot_cpp/variant/char_string.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -30,6 +33,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -2131,6 +2135,10 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const int sid_heat_input     = component_id(StringName("cell_heat_input"));
     const int sid_thermal_energy = component_id(StringName("cell_thermal_energy"));
     const int sid_snowpack       = component_id(StringName("cell_snowpack"));
+    // A 修复（2026-06）：anomaly 合成的两条新 slot；pass_a 末尾把它们置 0，
+    // 由本日的 ocean/pass_b 后续累加，wind_surface 末端合成回 cell_temp。
+    const int sid_ocean_anom     = component_id(StringName("cell_ocean_thermal_anomaly"));
+    const int sid_local_anom     = component_id(StringName("cell_local_thermal_anomaly"));
 
     if (sid_temp           < 0 || sid_moisture      < 0 || sid_snow      < 0 ||
         sid_temp_baseline  < 0 || sid_temp_30d      < 0 || sid_temp_365d < 0 ||
@@ -2140,7 +2148,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         sid_is_water       < 0 || sid_terrain       < 0 || sid_cover     < 0 ||
         sid_ema_init       < 0 || sid_insol_now     < 0 || sid_insol_dev < 0 ||
         sid_day_length     < 0 || sid_heat_input    < 0 ||
-        sid_thermal_energy < 0 || sid_snowpack      < 0) {
+        sid_thermal_energy < 0 || sid_snowpack      < 0 ||
+        sid_ocean_anom     < 0 || sid_local_anom    < 0) {
         diag("slot id <0 (some BIND_TABLE component missing)");
         return -1.0;
     }
@@ -2221,6 +2230,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     PackedFloat32Array &heat_input_a    = _slots.write[sid_heat_input].arr_f32;
     PackedFloat32Array &thermal_a       = _slots.write[sid_thermal_energy].arr_f32;
     PackedFloat32Array &snowpack_a      = _slots.write[sid_snowpack].arr_f32;
+    // A 修复：anomaly 合成 slot — pass_a 末尾 fill 0，开启新一日累加。
+    PackedFloat32Array &ocean_anom_a    = _slots.write[sid_ocean_anom].arr_f32;
+    PackedFloat32Array &local_anom_a    = _slots.write[sid_local_anom].arr_f32;
 
     const int n = temp_a.size();
     if (n <= 0) { diag("temp_a empty (n<=0)"); return -1.0; }
@@ -2237,7 +2249,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
         ema_init_a.size()      != n || insol_now_a.size() != n ||
         insol_dev_a.size()     != n || day_length_a.size()!= n ||
         heat_input_a.size()    != n || thermal_a.size()   != n ||
-        snowpack_a.size()      != n) {
+        snowpack_a.size()      != n ||
+        ocean_anom_a.size()    != n || local_anom_a.size() != n) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
@@ -2265,6 +2278,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     float * const __restrict pheat  = heat_input_a.ptrw();
     float * const __restrict pthermal = thermal_a.ptrw();
     float * const __restrict psnowpack = snowpack_a.ptrw();
+    // A 修复：anomaly 合成 slot 的写指针；pass_a 末尾全图清 0（开启新一日累加）。
+    float * const __restrict poanom = ocean_anom_a.ptrw();
+    float * const __restrict planom = local_anom_a.ptrw();
 
     // GDScript constants (architecture.md §G.6 / TERRAIN/CV enums)
     (void)pterr;
@@ -2365,10 +2381,15 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             }
 
             // (e) write SoA outputs
-            pt[i]   = temp_now;
+            // A 修复（2026-06）：pass_a 不再写 cell_temp。把含热惯性的运行时
+            // baseline 写入 cell_temp_baseline (ptb)；wind_surface 末端用它做合成基准。
+            // cell_temp_baseline_year (pty) 是年级静态 LUT，pass_a 只读不写（与改前一致）。
+            // 同时把 ocean / local anomaly 在 pass_a 末尾清 0，开启新一日累加。
+            ptb[i]  = temp_now;
+            poanom[i] = 0.0f;
+            planom[i] = 0.0f;
             pm[i]   = moisture_now;
             ps[i]   = snow_cover;
-            ptb[i]  = temp_year;
             pso[i]  = season_offset;
             pinsol[i] = insol_now;
             pdev[i]   = dev_today;
@@ -2398,7 +2419,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     // will temporarily walk the full grid (degraded but correct).
 
     // §11.2 flush: push CoW-detached output slots back to GDScript MapData
-    _flush_slot_to_map(sid_temp);
+    // A 修复（2026-06）：pass_a 不再 flush cell_temp（不再写）；改 flush 两条
+    // 新 anomaly slot（pass_a 末尾 clear 0 也算一次写）。
     _flush_slot_to_map(sid_moisture);
     _flush_slot_to_map(sid_snow);
     _flush_slot_to_map(sid_temp_baseline);
@@ -2413,6 +2435,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     _flush_slot_to_map(sid_heat_input);
     _flush_slot_to_map(sid_thermal_energy);
     _flush_slot_to_map(sid_snowpack);
+    _flush_slot_to_map(sid_ocean_anom);
+    _flush_slot_to_map(sid_local_anom);
 
     return 0.0;
 }
@@ -2467,6 +2491,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const int sid_heat_input     = component_id(StringName("cell_heat_input"));
     const int sid_thermal_energy = component_id(StringName("cell_thermal_energy"));
     const int sid_snowpack       = component_id(StringName("cell_snowpack"));
+    // A 修复（2026-06）：见 run_climate_pass_a 同段注释。
+    const int sid_ocean_anom     = component_id(StringName("cell_ocean_thermal_anomaly"));
+    const int sid_local_anom     = component_id(StringName("cell_local_thermal_anomaly"));
 
     if (sid_temp           < 0 || sid_moisture      < 0 || sid_snow      < 0 ||
         sid_temp_baseline  < 0 || sid_temp_30d      < 0 || sid_temp_365d < 0 ||
@@ -2476,7 +2503,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
         sid_is_water       < 0 || sid_terrain       < 0 || sid_cover     < 0 ||
         sid_ema_init       < 0 || sid_insol_now     < 0 || sid_insol_dev < 0 ||
         sid_day_length     < 0 || sid_heat_input    < 0 ||
-        sid_thermal_energy < 0 || sid_snowpack      < 0) {
+        sid_thermal_energy < 0 || sid_snowpack      < 0 ||
+        sid_ocean_anom     < 0 || sid_local_anom    < 0) {
         diag("slot id <0");
         return -1.0;
     }
@@ -2551,6 +2579,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     PackedFloat32Array &heat_input_a    = _slots.write[sid_heat_input].arr_f32;
     PackedFloat32Array &thermal_a       = _slots.write[sid_thermal_energy].arr_f32;
     PackedFloat32Array &snowpack_a      = _slots.write[sid_snowpack].arr_f32;
+    // A 修复（2026-06）：anomaly 合成 slot — pass_a 末尾 fill 0。
+    PackedFloat32Array &ocean_anom_a    = _slots.write[sid_ocean_anom].arr_f32;
+    PackedFloat32Array &local_anom_a    = _slots.write[sid_local_anom].arr_f32;
 
     const int n = temp_a.size();
     if (n <= 0) { diag("temp_a empty"); return -1.0; }
@@ -2565,7 +2596,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
         ema_init_a.size()      != n || insol_now_a.size() != n ||
         insol_dev_a.size()     != n || day_length_a.size()!= n ||
         heat_input_a.size()    != n || thermal_a.size()   != n ||
-        snowpack_a.size()      != n) {
+        snowpack_a.size()      != n ||
+        ocean_anom_a.size()    != n || local_anom_a.size() != n) {
         diag("size mismatch"); return -1.0;
     }
 
@@ -2592,6 +2624,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     float * const __restrict pheat  = heat_input_a.ptrw();
     float * const __restrict pthermal = thermal_a.ptrw();
     float * const __restrict psnowpack = snowpack_a.ptrw();
+    // A 修复（2026-06）：anomaly 合成 slot 写指针。
+    float * const __restrict poanom = ocean_anom_a.ptrw();
+    float * const __restrict planom = local_anom_a.ptrw();
 
     (void)pterr;
     constexpr uint8_t COVER_GLACIER = 2;
@@ -2677,10 +2712,13 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 psnowpack[i] = 0.0f;
             }
 
-            pt[i]   = temp_now;
+            // A 修复（2026-06）：pass_a 不再写 cell_temp；ptb 承载运行时 baseline，
+            // 同时清零 ocean / local anomaly（开启新一日累加）。详见 run_climate_pass_a。
+            ptb[i]  = temp_now;
+            poanom[i] = 0.0f;
+            planom[i] = 0.0f;
             pm[i]   = moisture_now;
             ps[i]   = snow_cover;
-            ptb[i]  = temp_year;
             pso[i]  = season_offset;
             pinsol[i] = insol_now;
             pdev[i]   = dev_today;
@@ -2704,8 +2742,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
 
     pk::parallel_for_range("pk_climate_pass_a", n, n_tasks, /*seq_threshold=*/256, run_range);
 
-    // §11.2 flush — 与主 pass 一致
-    _flush_slot_to_map(sid_temp);
+    // §11.2 flush — 与主 pass 一致。A 修复（2026-06）：不再 flush cell_temp，
+    // 改 flush 两条 anomaly slot。
     _flush_slot_to_map(sid_moisture);
     _flush_slot_to_map(sid_snow);
     _flush_slot_to_map(sid_temp_baseline);
@@ -2720,6 +2758,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     _flush_slot_to_map(sid_heat_input);
     _flush_slot_to_map(sid_thermal_energy);
     _flush_slot_to_map(sid_snowpack);
+    _flush_slot_to_map(sid_ocean_anom);
+    _flush_slot_to_map(sid_local_anom);
 
     return 0.0;
 }
@@ -2890,6 +2930,14 @@ float DCWorldExt::_debug_poke_f32_with_flush(int comp_id, int idx, float sentine
 // flush_slots_to_map / refresh_slots_from_map: bulk versions that iterate
 //   all bound slots.
 
+void DCWorldExt::bind_dirty_world(godot::Object *dirty_world) {
+    // sea-ice-snow-visual-fix-2026-06：从 GDScript 接收 DCWorld 句柄。
+    // 之后 _flush_slot_to_map 末尾会 call("mark_dirty_all") 把 atlas pipeline
+    // 的 dirty mask 信号补齐——C++ pass 用 _map_data->set() 直写 MapData，
+    // 绕过 GDScript write_* 上的自动 _dirty_mark_*，atlas 4 通道因此跳过编码。
+    _dirty_world = dirty_world;
+}
+
 void DCWorldExt::_flush_slot_to_map(int comp_id) {
     if (!_map_data || comp_id < 0 || comp_id >= _slots.size()) return;
     const Slot &s = _slots[comp_id];
@@ -2905,6 +2953,12 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
                 case SlotDType::U8:
                     _map_data->set(StringName(BIND_TABLE[i].property_name), s.arr_u8);
                     break;
+            }
+            // sea-ice-snow-visual-fix-2026-06：通知 DCWorld 全 cell 脏，
+            // 让 atlas pipeline `read_and_clear_dirty_mask` 在下个 stride 拿到信号。
+            // 若 _dirty_world 未注入或 dirty_mask 关闭，mark_dirty_all 是 no-op。
+            if (_dirty_world) {
+                _dirty_world->call(StringName("mark_dirty_all"));
             }
             return;
         }
@@ -2924,6 +2978,10 @@ void DCWorldExt::flush_slots_to_map() {
             case SlotDType::I32: _map_data->set(prop_name, s.arr_i32); break;
             case SlotDType::U8:  _map_data->set(prop_name, s.arr_u8);  break;
         }
+    }
+    // sea-ice-snow-visual-fix-2026-06：批量 flush 末尾一次 mark dirty。
+    if (_dirty_world) {
+        _dirty_world->call(StringName("mark_dirty_all"));
     }
 }
 
@@ -3997,11 +4055,16 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         float rain_focus = trigger_focus * vapor_gate;
         if (rain_focus < 0.0f) rain_focus = 0.0f;
         else if (rain_focus > 1.0f) rain_focus = 1.0f;
-        float precip_source = cloud * (0.30f + instability * 0.76f)
-                            + lift_supply * 0.36f
-                            - lift_neg * 0.55f;
+        // B 修复（precip-too-wet-fix-2026-06）：原系数让 99.9% (cell,tick) 永远有微量降水。
+        // (1) precip_source: cloud/instability gain 偏高 → 0.30→0.22, 0.76→0.55, lift_supply 0.36→0.30；
+        //     lift_neg 抑制略加强 0.55→0.60。
+        // (2) precip_raw 总乘数 1.18→0.95。
+        // 目标：把 wet_any 从 99.9% → ~60-70%，equatorial land wet_heavy 59%→<25%。
+        float precip_source = cloud * (0.22f + instability * 0.55f)
+                            + lift_supply * 0.30f
+                            - lift_neg * 0.60f;
         if (precip_source < 0.0f) precip_source = 0.0f;
-        const float precip_raw = precip_source * 1.18f * rain_focus;
+        const float precip_raw = precip_source * 0.95f * rain_focus;
         // climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格
         // (upstream_idx) 继承，权重随 wind_mag 增大 → 雨带随锋面下风迁移。
         // 1:1 mirror of field_solver.gd precip-advection block. advect_steps==0
@@ -4021,7 +4084,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         const float precip_floor = (vapor >= 0.42f && old_precip >= 0.04f)
             ? old_precip * keep_ratio * vapor_floor_factor * rain_floor_focus
             : 0.0f;
-        const float cloud_water_rain = cloud_water * ((rain_focus > 0.18f) ? rain_focus : 0.18f) * (0.14f + instability * 0.16f);
+        // B 修复 (2)：cloud_water_rain floor 加严：只在 rain_focus>0.10 且 instability>0.10 时
+        // 才贡献 floor，否则 0。原来始终至少 0.18*0.14 = 0.025 的最低 floor，正是 wet_any=99.9% 的根源。
+        const float cloud_water_rain = (rain_focus > 0.10f && instability > 0.10f)
+            ? (cloud_water * rain_focus * (0.10f + instability * 0.14f))
+            : 0.0f;
         float precip = (precip_raw > precip_floor) ? precip_raw : precip_floor;
         if (precip < cloud_water_rain) precip = cloud_water_rain;
         if (precip < 0.0f) precip = 0.0f;
@@ -4032,6 +4099,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             field_lake_precip_damping,
             field_extreme_precip_soft_cap,
             field_extreme_precip_softness);
+        // B 修复 (3)：< 0.005 微量降水清零（消除毛毛雨地毯）。
+        if (precip < 0.005f) precip = 0.0f;
         cloud_water -= precip * 0.32f;
         if (cloud_water < 0.0f) cloud_water = 0.0f;
         float vapor_after_precip = vapor - precip * field_vapor_precip_sink;
@@ -4045,6 +4114,12 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             POS[i].y, season_idx, temp, vapor, cloud, precip, instability,
             ocean_an, wb_pos_y, wb_size_y, season_phase,
             cold_precip_as_blizzard, snow_classification_margin);
+        // B 修复 (4)：classifier 返回 CLEAR (0) 时强制 precip=0，并加速 cloud_water 衰减。
+        // 修前 67% 的 CLEAR cell 仍在下毛毛雨，weather_type 与 precip 严重解耦。
+        if (wt == 0) {
+            precip = 0.0f;
+            cloud_water *= 0.6f;
+        }
         float intensity = wf_field_intensity_for_type(
             wt, temp, vapor, cloud, precip, instability, ocean_an);
         if (refresh_convergence && apply_convergence_boost) {
@@ -4479,8 +4554,10 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
-        diag("missing slot id (cell_temp/is_water/pos_x/pos_y)");
+    // A 修复（2026-06）：ocean_water 不再写 cell_temp，改写 cell_ocean_thermal_anomaly。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
+        diag("missing slot id (cell_temp/is_water/pos_x/pos_y/ocean_thermal_anomaly)");
         return -1.0;
     }
 
@@ -4532,13 +4609,17 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch");
         return -1.0;
     }
 
-    float       * const __restrict T    = s_temp.arr_f32.ptrw();
+    // A 修复（2026-06）：T 不再被写，只读 — 实际未使用，留 (void) 以备后续诊断。
+    (void)s_temp;
+    float       * const __restrict OANOM_SLOT = s_oanom.arr_f32.ptrw();
     const uint8_t * const __restrict IW = s_iswater.arr_u8.ptr();
     const float * const __restrict POSX = s_pos_x.arr_f32.ptr();
     const float * const __restrict POSY = s_pos_y.arr_f32.ptr();
@@ -4559,6 +4640,8 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
         const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
         if (cur_len2 < 1e-6f || advect_steps == 0) {
             AOUT[i] = dc_decay_tta(AOUT[i], tta_zero_current_decay);
+            // A 修复：current 不足时 ocean anomaly 也朝 0 衰减（避免上轮残值滞留）。
+            OANOM_SLOT[i] = OANOM_SLOT[i] * (1.0f - tta_zero_current_decay);
             continue;
         }
         const float inv_cur = 1.0f / std::sqrt(cur_len2);
@@ -4596,7 +4679,11 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
         float temp_mixed = temp_self + (temp_up - temp_self) * heat_mix; // = lerpf
         if (temp_mixed < 0.0f) temp_mixed = 0.0f;
         else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
-        T[i] = temp_mixed;
+        // A 修复（2026-06）：不再写 T；只写 ocean anomaly slot（temp_mixed - baseline）。
+        float oanom = temp_mixed - BL[i];
+        if (oanom < -0.08f) oanom = -0.08f;
+        else if (oanom > 0.08f) oanom = 0.08f;
+        OANOM_SLOT[i] = oanom;
         AOUT[i] = dc_stabilize_tta(
             AOUT[i], temp_mixed - BL[i], tta_source_cap, tta_blend_rate);
     }
@@ -4608,8 +4695,8 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
 
-    // §11.2 flush: push CoW-detached cell_temp back to MapData
-    _flush_slot_to_map(sid_temp);
+    // §11.2 flush: A 修复后只 flush ocean anomaly slot（不再写 cell_temp）。
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -4645,8 +4732,10 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
-        diag("missing slot id (cell_temp/is_water/pos_x/pos_y)");
+    // A 修复（2026-06）：ocean_land 不再写 cell_temp，累加到 cell_ocean_thermal_anomaly。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
+        diag("missing slot id (cell_temp/is_water/pos_x/pos_y/ocean_thermal_anomaly)");
         return -1.0;
     }
 
@@ -4692,13 +4781,17 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch");
         return -1.0;
     }
 
-    float       * const __restrict T    = s_temp.arr_f32.ptrw();
+    // A 修复（2026-06）：T 不再被写。
+    (void)s_temp;
+    float       * const __restrict OANOM_SLOT = s_oanom.arr_f32.ptrw();
     const uint8_t * const __restrict IW = s_iswater.arr_u8.ptr();
     const float * const __restrict POSX = s_pos_x.arr_f32.ptr();
     const float * const __restrict POSY = s_pos_y.arr_f32.ptr();
@@ -4708,6 +4801,7 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     const int32_t * const __restrict NB = nb_arr.ptr();
     float       * const __restrict A    = anomaly_inout.ptrw();
     const float * const __restrict FBL  = fallback_baseline.ptr();
+    (void)FBL;
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -4747,23 +4841,13 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
                 tta_source_cap, tta_blend_rate);
         }
         A[i] = anomaly_in;
-        // (line 4819-4829) only write temp if anomaly significant
-        const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
-        if (abs_anom > 1e-5f) {
-            // FIX (2026-05-13)：t_prev fallback 必须用 baseline，否则正反馈
-            // 把 cell 锁死在 0：cell temp clamped 0 → +负 anomaly 又 clamp 0
-            // → F.3 下一 tick 读到 0 算更负的 d_coastal → 全图沿海 cascading
-            // 到 0。GDScript 原版用 temp_baseline_a[i] 救场，C++ 现复用调用
-            // 方传入的 fallback_baseline_arr（= GDScript water pass 已计算的
-            // baseline_arr，含 ema_init 分支 + _compute_temperature 兜底）。
-            float t_prev = T[i];
-            if (!std::isfinite(t_prev)) {
-                t_prev = FBL[i];
-            }
-            float tnew = t_prev + anomaly_in;
-            if (tnew < 0.0f) tnew = 0.0f;
-            else if (tnew > 1.0f) tnew = 1.0f;
-            T[i] = tnew;
+        // A 修复（2026-06）：land cell 累加 anomaly_in 到 ocean thermal anomaly slot；
+        // 不再直接改写 cell_temp。anomaly_in 已包含 dc_decay/stabilize，本身有界。
+        if ((anomaly_in < 0.0f ? -anomaly_in : anomaly_in) > 1e-5f) {
+            float oanom = OANOM_SLOT[i] + anomaly_in;
+            if (oanom < -0.08f) oanom = -0.08f;
+            else if (oanom > 0.08f) oanom = 0.08f;
+            OANOM_SLOT[i] = oanom;
         }
     }
 
@@ -4773,8 +4857,8 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
 
-    // §11.2 flush: push CoW-detached cell_temp back to MapData
-    _flush_slot_to_map(sid_temp);
+    // §11.2 flush: A 修复后只 flush ocean anomaly slot（不再写 cell_temp）。
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -4936,9 +5020,15 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
     const int sid_air_anom = component_id(StringName("cell_air_mass_temp_anomaly"));
+    // A 修复（2026-06）：wind_surface 是 climate-daily 链中唯一写 cell_temp 的 pass。
+    // 末端把 baseline + ocean_anom + local_anom + air_anom (本 pass 平流后) 合成为 cell_temp。
+    const int sid_baseline = component_id(StringName("cell_temp_baseline"));
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    const int sid_lanom    = component_id(StringName("cell_local_thermal_anomaly"));
     if (sid_temp < 0 || sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0 ||
-        sid_pos_x < 0 || sid_pos_y < 0 || sid_air_anom < 0) {
-        diag("missing slot id (temp/wind/wind_speed/pos/air_anom)");
+        sid_pos_x < 0 || sid_pos_y < 0 || sid_air_anom < 0 ||
+        sid_baseline < 0 || sid_oanom < 0 || sid_lanom < 0) {
+        diag("missing slot id (temp/wind/wind_speed/pos/air_anom/baseline/ocean_anom/local_anom)");
         return -1.0;
     }
 
@@ -4968,10 +5058,15 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
     Slot &s_pos_x    = _slots.write[sid_pos_x];
     Slot &s_pos_y    = _slots.write[sid_pos_y];
     Slot &s_air_anom = _slots.write[sid_air_anom];
+    Slot &s_baseline = _slots.write[sid_baseline];
+    Slot &s_oanom    = _slots.write[sid_oanom];
+    Slot &s_lanom    = _slots.write[sid_lanom];
     if (s_temp.arr_f32.size() != n_cells || s_wind_x.arr_f32.size() != n_cells ||
         s_wind_y.arr_f32.size() != n_cells || s_wind_spd.arr_f32.size() != n_cells ||
         s_pos_x.arr_f32.size() != n_cells ||
-        s_pos_y.arr_f32.size() != n_cells || s_air_anom.arr_f32.size() != n_cells) {
+        s_pos_y.arr_f32.size() != n_cells || s_air_anom.arr_f32.size() != n_cells ||
+        s_baseline.arr_f32.size() != n_cells || s_oanom.arr_f32.size() != n_cells ||
+        s_lanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch");
         return -1.0;
     }
@@ -4990,6 +5085,10 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
     float * const __restrict AOUT = anomaly_out.ptrw();
     const int32_t * const __restrict NB = nb_arr.ptr();
     const float * const __restrict FBL = fallback_baseline.ptr();
+    // A 修复（2026-06）：合成需要 baseline / ocean anomaly / local anomaly。
+    const float * const __restrict BL_RUNTIME = s_baseline.arr_f32.ptr();
+    const float * const __restrict OANOM      = s_oanom.arr_f32.ptr();
+    const float * const __restrict LANOM      = s_lanom.arr_f32.ptr();
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -5020,22 +5119,31 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
             weight_total += adv_weight;
         }
 
+        // 风致 air-mass 平流：把邻接 air-mass anomaly 加权平均到本 cell 的 air anomaly。
         float anomaly_in = 0.0f;
         if (weight_total > 0.0f) {
             anomaly_in = (weighted_sum / weight_total) * air_leak;
         }
-        AOUT[i] = anomaly_in;
-        const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
-        if (abs_anom > 1e-5f) {
-            float t_prev = T[i];
-            if (!std::isfinite(t_prev)) {
-                t_prev = FBL[i];
-            }
-            float tnew = t_prev + anomaly_in;
-            if (tnew < 0.0f) tnew = 0.0f;
-            else if (tnew > 1.0f) tnew = 1.0f;
-            T[i] = tnew;
-        }
+        // A 修复（2026-06）：air anomaly 是单 round 的瞬时 deviation（不持久），
+        // 改为 OVERWRITE 而非 accumulate。原 scalar 实现里 AOUT[i] = anomaly_in (覆写)，
+        // 后面 T[i] += anomaly_in 把本日 air 注入一次。新架构合成 T = baseline + ocean_anom
+        // + local_anom + air_anom，同样要求 air_anom 每天重写（否则会日复一日累加到 cap）。
+        float air_final = anomaly_in;
+        if (air_final < -0.08f) air_final = -0.08f;
+        else if (air_final > 0.08f) air_final = 0.08f;
+        AOUT[i] = air_final;
+
+        // 合成 cell_temp：baseline + ocean anom + local anom + air anom，
+        // 总 anomaly 再限 ±0.15（避免三层叠加突破合理物理量级）。
+        float base = BL_RUNTIME[i];
+        if (!std::isfinite(base) || base <= 0.0f) base = FBL[i];
+        float total_anom = OANOM[i] + LANOM[i] + air_final;
+        if (total_anom < -0.15f) total_anom = -0.15f;
+        else if (total_anom > 0.15f) total_anom = 0.15f;
+        float total = base + total_anom;
+        if (total < 0.0f) total = 0.0f;
+        else if (total > 1.0f) total = 1.0f;
+        T[i] = total;
     }
 
     s_air_anom.arr_f32 = anomaly_out;
@@ -5152,10 +5260,12 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
     const int sid_insol_dev= component_id(StringName("cell_insolation_dev"));
+    // A 修复（2026-06）：pass_b 不再写 cell_temp，改累加到 cell_local_thermal_anomaly。
+    const int sid_lanom    = component_id(StringName("cell_local_thermal_anomaly"));
     if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_iswater < 0 ||
         sid_landform < 0 || sid_veg < 0 || sid_elev < 0 || sid_lat < 0 ||
-        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0) {
-        diag("missing slot id (cell_temp/moisture/snow_cover/is_water/landform/vegetation/elevation/lat_norm/pos_x/pos_y/insolation_dev)");
+        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0 || sid_lanom < 0) {
+        diag("missing slot id (cell_temp/moisture/snow_cover/is_water/landform/vegetation/elevation/lat_norm/pos_x/pos_y/insolation_dev/local_thermal_anomaly)");
         return -1.0;
     }
 
@@ -5218,18 +5328,23 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     Slot &s_pos_x    = _slots.write[sid_pos_x];
     Slot &s_pos_y    = _slots.write[sid_pos_y];
     Slot &s_insol_dev= _slots.write[sid_insol_dev];
+    Slot &s_lanom    = _slots.write[sid_lanom];
     if (s_temp.arr_f32.size()  != n_cells || s_moist.arr_f32.size()    != n_cells ||
         s_snow.arr_f32.size()  != n_cells || s_iswater.arr_u8.size()   != n_cells ||
         s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_elev.arr_f32.size()  != n_cells || s_lat.arr_f32.size()      != n_cells ||
         s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()    != n_cells ||
-        s_insol_dev.arr_f32.size() != n_cells) {
+        s_insol_dev.arr_f32.size() != n_cells ||
+        s_lanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
 
     // ─── Hot pointers ───────────────────────────────────────────────────
-    float       * const __restrict T    = s_temp.arr_f32.ptrw();
+    // A 修复（2026-06）：T 只读快照（用于 evap 的 t_eff）。pass_b 写 local anomaly，
+    // 由 wind_surface 末端合成回 cell_temp。
+    const float * const __restrict T_RO = s_temp.arr_f32.ptr();
+    float       * const __restrict LANOM = s_lanom.arr_f32.ptrw();
     float       * const __restrict M    = s_moist.arr_f32.ptrw();
     const float * const __restrict SNOW = s_snow.arr_f32.ptr();
     const uint8_t * const __restrict IW = s_iswater.arr_u8.ptr();
@@ -5247,11 +5362,10 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // ─── Snapshot temp BEFORE any writes ────────────────────────────────
-    // 与 GDScript line 4347 `temp_snapshot = temp_a.duplicate()` 等价。
-    // 之后所有 d_albedo / d_coastal / d_landform 用 snapshot 读，避免邻居
-    // 写互相干扰。
+    // A 修复（2026-06）：TS 是 yesterday's composed cell_temp（pass_b 不再就地写 T）。
+    // d_albedo / d_coastal / d_landform 仍然以 TS 为基准计算（与 GDScript bit-equal）。
     std::vector<float> temp_snapshot(n_cells);
-    std::memcpy(temp_snapshot.data(), T, n_cells * sizeof(float));
+    std::memcpy(temp_snapshot.data(), T_RO, n_cells * sizeof(float));
     const float * const __restrict TS = temp_snapshot.data();
 
     // LandformType.LF: LOWLAND=5, HILL=6, MOUNTAIN=7, PEAK=8, DELTA=9,
@@ -5313,11 +5427,18 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
             }
         }
 
-        // (line 4442-4445) write temp
-        float temp_final = temp_now + d_albedo + d_coastal + d_landform;
+        // (line 4442-4445) A 修复（2026-06）：原 `T[i] = clamp(temp_now + d_*)`
+        // 改为累加到 cell_local_thermal_anomaly。temp_final 仍计算用于下面 evap
+        // 阶段的 t_eff（保持 GDScript bit-equal 的语义：evap 用 "本日 d_* 注入后" 的 t）。
+        float local_anom_contrib = d_albedo + d_coastal + d_landform;
+        if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
+        else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
+        LANOM[i] = LANOM[i] + local_anom_contrib;
+        if (LANOM[i] < -0.08f) LANOM[i] = -0.08f;
+        else if (LANOM[i] > 0.08f) LANOM[i] = 0.08f;
+        float temp_final = temp_now + local_anom_contrib;
         if (temp_final < 0.0f) temp_final = 0.0f;
         else if (temp_final > 1.0f) temp_final = 1.0f;
-        T[i] = temp_final;
 
         // (line 4456-4481) ④ evap (land only)
         if (!is_water) {
@@ -5406,18 +5527,21 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     }
 
     // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域）。
-    // 标量小循环，scalar/SIMD 两个入口共用同一形态 → A/B bit-equal。
+    // A 修复（2026-06）：水域 cell sea-ice 反照率冷却也作为 local anomaly 贡献，
+    // 不再直接改写 cell_temp。LANOM 已被 pass_a 末尾清零，pass_b 主循环对 water cell
+    // 也不写（与原 scalar 一致），所以此处直接累加为水域唯一的 LANOM 贡献。
     if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
         for (int i = 0; i < n_cells; ++i) {
             if (IW[i] == 0) continue;
-            float t = T[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (t < 0.0f) t = 0.0f;
-            T[i] = t;
+            float water_local = LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (water_local < -0.08f) water_local = -0.08f;
+            else if (water_local > 0.08f) water_local = 0.08f;
+            LANOM[i] = water_local;
         }
     }
 
-    // §11.2 flush: push CoW-detached temp + moisture back to MapData
-    _flush_slot_to_map(sid_temp);
+    // §11.2 flush: A 修复（2026-06）— pass_b 不再 flush cell_temp，改 flush local anomaly。
+    _flush_slot_to_map(sid_lanom);
     _flush_slot_to_map(sid_moist);
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -5467,7 +5591,10 @@ constexpr uint8_t kLF_SALT_FLAT = 11;
 // pass_b 共享输入指针 + 标量 knobs 的不变 view，避免重复传 20+ 参数。
 struct PassBCtx {
     // 输出
-    float       * __restrict T;
+    // A 修复（2026-06）：pass_b 不再写 cell_temp；T 字段保留为只读快照入口，
+    // 改写 LANOM（cell_local_thermal_anomaly）。M（cell_moisture）写权不变。
+    const float * __restrict T;
+    float       * __restrict LANOM;
     float       * __restrict M;
     // 只读
     const float * __restrict TS;       // temp snapshot (pre-write)
@@ -5534,11 +5661,19 @@ inline float pass_b_land_compute_temp(const PassBCtx &c, int i) {
         d_landform = -c.diurnal_amp * 0.5f * std::max(0.0f, -solar_factor);
     }
 
-    // ④ write temp（clamp 到 [0,1]）
-    float temp_final = temp_now + d_albedo + d_coastal + d_landform;
+    // ④ A 修复（2026-06）：累加到 cell_local_thermal_anomaly，不再写 cell_temp。
+    // temp_final 仍按原公式 = snapshot + d_albedo + d_coastal + d_landform 返回，
+    // 供 evap 段做 t_eff（保持 GDScript bit-equal 的"d_* 注入后温度"语义）。
+    float local_anom_contrib = d_albedo + d_coastal + d_landform;
+    if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
+    else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
+    float new_lanom = c.LANOM[i] + local_anom_contrib;
+    if (new_lanom < -0.08f) new_lanom = -0.08f;
+    else if (new_lanom > 0.08f) new_lanom = 0.08f;
+    c.LANOM[i] = new_lanom;
+    float temp_final = temp_now + local_anom_contrib;
     if (temp_final < 0.0f) temp_final = 0.0f;
     else if (temp_final > 1.0f) temp_final = 1.0f;
-    c.T[i] = temp_final;
     return temp_final;
 }
 
@@ -5672,9 +5807,11 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
     const int sid_insol_dev= component_id(StringName("cell_insolation_dev"));
+    // A 修复（2026-06）：pass_b SIMD 同样不再写 cell_temp。
+    const int sid_lanom    = component_id(StringName("cell_local_thermal_anomaly"));
     if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_iswater < 0 ||
         sid_landform < 0 || sid_veg < 0 || sid_elev < 0 || sid_lat < 0 ||
-        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0) {
+        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0 || sid_lanom < 0) {
         diag("missing slot id");
         return -1.0;
     }
@@ -5737,19 +5874,23 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     Slot &s_pos_x    = _slots.write[sid_pos_x];
     Slot &s_pos_y    = _slots.write[sid_pos_y];
     Slot &s_insol_dev= _slots.write[sid_insol_dev];
+    Slot &s_lanom    = _slots.write[sid_lanom];
     if (s_temp.arr_f32.size()  != n_cells || s_moist.arr_f32.size()    != n_cells ||
         s_snow.arr_f32.size()  != n_cells || s_iswater.arr_u8.size()   != n_cells ||
         s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_elev.arr_f32.size()  != n_cells || s_lat.arr_f32.size()      != n_cells ||
         s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()    != n_cells ||
-        s_insol_dev.arr_f32.size() != n_cells) {
+        s_insol_dev.arr_f32.size() != n_cells ||
+        s_lanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    ctx.T    = s_temp.arr_f32.ptrw();
+    // A 修复（2026-06）：pass_b SIMD 不再写 T；改写 LANOM。T 只读供 TS snapshot。
+    ctx.T     = s_temp.arr_f32.ptr();
+    ctx.LANOM = s_lanom.arr_f32.ptrw();
     ctx.M    = s_moist.arr_f32.ptrw();
     ctx.SNOW = s_snow.arr_f32.ptr();
     ctx.IW   = s_iswater.arr_u8.ptr();
@@ -5782,16 +5923,18 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     pass_b_run_land_range(ctx, land_idx.data(), 0, n_land);
 
     // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域；与 scalar 同形态）。
+    // A 修复（2026-06）：写入 LANOM 而非 T。
     if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
         for (int i = 0; i < n_cells; ++i) {
             if (ctx.IW[i] == 0) continue;
-            float t = ctx.T[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (t < 0.0f) t = 0.0f;
-            ctx.T[i] = t;
+            float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (water_local < -0.08f) water_local = -0.08f;
+            else if (water_local > 0.08f) water_local = 0.08f;
+            ctx.LANOM[i] = water_local;
         }
     }
 
-    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_lanom);
     _flush_slot_to_map(sid_moist);
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -5825,9 +5968,11 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
     const int sid_insol_dev= component_id(StringName("cell_insolation_dev"));
+    // A 修复（2026-06）：pass_b thread 同样不再写 cell_temp。
+    const int sid_lanom    = component_id(StringName("cell_local_thermal_anomaly"));
     if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_iswater < 0 ||
         sid_landform < 0 || sid_veg < 0 || sid_elev < 0 || sid_lat < 0 ||
-        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0) {
+        sid_pos_x < 0 || sid_pos_y < 0 || sid_insol_dev < 0 || sid_lanom < 0) {
         diag("missing slot id");
         return -1.0;
     }
@@ -5877,19 +6022,23 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     Slot &s_pos_x    = _slots.write[sid_pos_x];
     Slot &s_pos_y    = _slots.write[sid_pos_y];
     Slot &s_insol_dev= _slots.write[sid_insol_dev];
+    Slot &s_lanom    = _slots.write[sid_lanom];
     if (s_temp.arr_f32.size()  != n_cells || s_moist.arr_f32.size()    != n_cells ||
         s_snow.arr_f32.size()  != n_cells || s_iswater.arr_u8.size()   != n_cells ||
         s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
         s_elev.arr_f32.size()  != n_cells || s_lat.arr_f32.size()      != n_cells ||
         s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()    != n_cells ||
-        s_insol_dev.arr_f32.size() != n_cells) {
+        s_insol_dev.arr_f32.size() != n_cells ||
+        s_lanom.arr_f32.size() != n_cells) {
         diag("slot array size mismatch");
         return -1.0;
     }
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    ctx.T    = s_temp.arr_f32.ptrw();
+    // A 修复（2026-06）：thread 变体不再写 T；ctx.T 只读供 TS snapshot。
+    ctx.T     = s_temp.arr_f32.ptr();
+    ctx.LANOM = s_lanom.arr_f32.ptrw();
     ctx.M    = s_moist.arr_f32.ptrw();
     ctx.SNOW = s_snow.arr_f32.ptr();
     ctx.IW   = s_iswater.arr_u8.ptr();
@@ -5916,7 +6065,8 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     const int n_land = static_cast<int>(land_idx.size());
 
     if (n_land == 0) {
-        _flush_slot_to_map(sid_temp);
+        // A 修复（2026-06）：不再 flush cell_temp，改 flush local_anom。
+        _flush_slot_to_map(sid_lanom);
         _flush_slot_to_map(sid_moist);
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -5934,7 +6084,7 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
             pass_b_run_land_range(ctx, land_idx.data(), begin, end);
         });
 
-    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_lanom);
     _flush_slot_to_map(sid_moist);
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -5966,7 +6116,9 @@ struct OceanWaterCtx {
     const float    *OCY;       // n_cells
     const float    *BL;        // baseline, n_cells
     const float    *TB;        // temp_before, n_cells
-    float          *T;         // cell_temp out (in-place via slot ptrw)
+    // A 修复（2026-06）：T 已不再被写；保留只读指针仅作未来诊断。
+    const float    *T_RO;
+    float          *OANOM_SLOT;// cell_ocean_thermal_anomaly out
     float          *AOUT;      // anomaly_out, n_cells (water cells written)
 };
 
@@ -5978,6 +6130,8 @@ inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
     const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
     if (cur_len2 < 1e-6f || c.advect_steps == 0) {
         c.AOUT[i] = dc_decay_tta(c.AOUT[i], c.tta_zero_current_decay);
+        // A 修复：current 不足时 ocean anomaly 也朝 0 衰减。
+        c.OANOM_SLOT[i] = c.OANOM_SLOT[i] * (1.0f - c.tta_zero_current_decay);
         return;
     }
     const float inv_cur = 1.0f / std::sqrt(cur_len2);
@@ -6015,7 +6169,11 @@ inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
     float temp_mixed = temp_self + (temp_up - temp_self) * c.heat_mix; // = lerpf
     if (temp_mixed < 0.0f) temp_mixed = 0.0f;
     else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
-    c.T[i] = temp_mixed;
+    // A 修复（2026-06）：不再写 T；写入 ocean thermal anomaly slot。
+    float oanom = temp_mixed - c.BL[i];
+    if (oanom < -0.08f) oanom = -0.08f;
+    else if (oanom > 0.08f) oanom = 0.08f;
+    c.OANOM_SLOT[i] = oanom;
     c.AOUT[i] = dc_stabilize_tta(
         c.AOUT[i], temp_mixed - c.BL[i], c.tta_source_cap, c.tta_blend_rate);
 }
@@ -6051,7 +6209,9 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+    // A 修复（2026-06）：ocean_water SIMD 改写 ocean thermal anomaly slot。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
         diag("missing slot id");
         return -1.0;
     }
@@ -6099,8 +6259,10 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot array size");
         return -1.0;
     }
@@ -6120,7 +6282,8 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     ctx.OCY          = ocy_arr.ptr();
     ctx.BL           = baseline_arr.ptr();
     ctx.TB           = temp_before_arr.ptr();
-    ctx.T            = s_temp.arr_f32.ptrw();
+    ctx.T_RO         = s_temp.arr_f32.ptr();
+    ctx.OANOM_SLOT   = s_oanom.arr_f32.ptrw();
     ctx.AOUT         = anomaly_out.ptrw();
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -6136,7 +6299,8 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
 
     knobs["anomaly_out"] = anomaly_out;
-    _flush_slot_to_map(sid_temp);
+    // A 修复（2026-06）：不再 flush cell_temp，改 flush ocean anomaly slot。
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -6159,7 +6323,9 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+    // A 修复（2026-06）：ocean_water thread 改写 ocean thermal anomaly slot。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
         diag("missing slot id"); return -1.0;
     }
 
@@ -6204,8 +6370,10 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot size"); return -1.0;
     }
 
@@ -6224,7 +6392,8 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.OCY          = ocy_arr.ptr();
     ctx.BL           = baseline_arr.ptr();
     ctx.TB           = temp_before_arr.ptr();
-    ctx.T            = s_temp.arr_f32.ptrw();
+    ctx.T_RO         = s_temp.arr_f32.ptr();
+    ctx.OANOM_SLOT   = s_oanom.arr_f32.ptrw();
     ctx.AOUT         = anomaly_out.ptrw();
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -6244,7 +6413,8 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     if (n_water < 256 || n_tasks == 1) {
         ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
         knobs["anomaly_out"] = anomaly_out;
-        _flush_slot_to_map(sid_temp);
+        // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
+        _flush_slot_to_map(sid_oanom);
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
@@ -6259,7 +6429,7 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
         });
 
     knobs["anomaly_out"] = anomaly_out;
-    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -6281,7 +6451,9 @@ struct OceanLandCtx {
     const float    *OCX;       // n_cells
     const float    *OCY;       // n_cells
     const float    *FBL;       // fallback_baseline, n_cells
-    float          *T;         // cell_temp inout (slot ptrw)
+    // A 修复（2026-06）：T 已不再被写；保留只读供未来诊断。
+    const float    *T_RO;
+    float          *OANOM_SLOT;// cell_ocean_thermal_anomaly inout
     float          *A;         // anomaly_inout, n_cells (land cells written, read water nbs)
 };
 
@@ -6318,14 +6490,13 @@ inline void ocean_land_compute_one(const OceanLandCtx &c, int i) {
             c.tta_source_cap, c.tta_blend_rate);
     }
     c.A[i] = anomaly_in;
+    // A 修复（2026-06）：land cell 累加 anomaly_in 到 ocean thermal anomaly slot；不再改写 cell_temp。
     const float abs_anom = (anomaly_in < 0.0f) ? -anomaly_in : anomaly_in;
     if (abs_anom > 1e-5f) {
-        float t_prev = c.T[i];
-        if (!std::isfinite(t_prev)) t_prev = c.FBL[i];
-        float tnew = t_prev + anomaly_in;
-        if (tnew < 0.0f) tnew = 0.0f;
-        else if (tnew > 1.0f) tnew = 1.0f;
-        c.T[i] = tnew;
+        float oanom = c.OANOM_SLOT[i] + anomaly_in;
+        if (oanom < -0.08f) oanom = -0.08f;
+        else if (oanom > 0.08f) oanom = 0.08f;
+        c.OANOM_SLOT[i] = oanom;
     }
 }
 
@@ -6359,7 +6530,9 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+    // A 修复（2026-06）：ocean_land SIMD 改累加 ocean thermal anomaly slot。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
         diag("missing slot id"); return -1.0;
     }
 
@@ -6397,8 +6570,10 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot size"); return -1.0;
     }
 
@@ -6415,7 +6590,8 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     ctx.OCX            = ocx_arr.ptr();
     ctx.OCY            = ocy_arr.ptr();
     ctx.FBL            = fallback_baseline.ptr();
-    ctx.T              = s_temp.arr_f32.ptrw();
+    ctx.T_RO           = s_temp.arr_f32.ptr();
+    ctx.OANOM_SLOT     = s_oanom.arr_f32.ptrw();
     ctx.A              = anomaly_inout.ptrw();
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -6430,7 +6606,8 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
 
     knobs["anomaly_inout"] = anomaly_inout;
-    _flush_slot_to_map(sid_temp);
+    // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -6453,7 +6630,9 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     const int sid_iswater  = component_id(StringName("cell_is_water"));
     const int sid_pos_x    = component_id(StringName("cell_pos_x"));
     const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0) {
+    // A 修复（2026-06）：ocean_land SIMD 改累加 ocean thermal anomaly slot。
+    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
+    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
         diag("missing slot id"); return -1.0;
     }
 
@@ -6490,8 +6669,10 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     Slot &s_iswater = _slots.write[sid_iswater];
     Slot &s_pos_x   = _slots.write[sid_pos_x];
     Slot &s_pos_y   = _slots.write[sid_pos_y];
+    Slot &s_oanom   = _slots.write[sid_oanom];
     if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells) {
+        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
+        s_oanom.arr_f32.size() != n_cells) {
         diag("slot size"); return -1.0;
     }
 
@@ -6508,7 +6689,8 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.OCX            = ocx_arr.ptr();
     ctx.OCY            = ocy_arr.ptr();
     ctx.FBL            = fallback_baseline.ptr();
-    ctx.T              = s_temp.arr_f32.ptrw();
+    ctx.T_RO           = s_temp.arr_f32.ptr();
+    ctx.OANOM_SLOT     = s_oanom.arr_f32.ptrw();
     ctx.A              = anomaly_inout.ptrw();
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -6526,7 +6708,8 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     if (n_land < 256 || n_tasks == 1) {
         ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
         knobs["anomaly_inout"] = anomaly_inout;
-        _flush_slot_to_map(sid_temp);
+        // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
+        _flush_slot_to_map(sid_oanom);
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
@@ -6539,7 +6722,7 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
         });
 
     knobs["anomaly_inout"] = anomaly_inout;
-    _flush_slot_to_map(sid_temp);
+    _flush_slot_to_map(sid_oanom);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -14541,6 +14724,110 @@ godot::Dictionary DCWorldExt::encode_ice_state_atlas(godot::Dictionary knobs) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// plan/debug-overlay-perf v2（2026-06-12）：Debug Data Overlay pixel fan-out 下沉 C++
+//   data_overlay_baker.gd 把 18 个 overlay mode 的 per-cell 采样结果（R/G byte +
+//   有效标记）按 cell.index 打包传入，本方法负责清零 buffer + 把每个有效 cell
+//   的 (R, G, 0, 255) 扇出写到它覆盖的全部像素。镜像 GDScript 内层像素循环，
+//   与之 byte-for-byte 等价。协议详见 world_ext.h::encode_overlay_atlas。
+// ────────────────────────────────────────────────────────────────────────────
+godot::Dictionary DCWorldExt::encode_overlay_atlas(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["elapsed_ms"] = -1.0;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["pixels_written"] = 0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    // 本 pass 不读 _slots，无需 _bound：overlay 数据全部由 GDScript 预采样喂入。
+    if (!knobs.has("n_pix") || !knobs.has("n_cells") ||
+        !knobs.has("atlas_buffer") || !knobs.has("cell_first_px") ||
+        !knobs.has("cell_px_count") || !knobs.has("flat_px_indices") ||
+        !knobs.has("cell_r") || !knobs.has("cell_g") || !knobs.has("cell_valid")) {
+        return fail("missing required overlay knob");
+    }
+
+    const int n_pix = int(knobs["n_pix"]);
+    const int n_cells = int(knobs["n_cells"]);
+    if (n_pix <= 0) return fail("n_pix <= 0");
+    if (n_cells <= 0) return fail("n_cells <= 0");
+
+    PackedByteArray buffer = knobs["atlas_buffer"];
+    if (int64_t(buffer.size()) != int64_t(n_pix) * 4) {
+        return fail("atlas_buffer size mismatch");
+    }
+
+    PackedInt32Array first_px = knobs["cell_first_px"];
+    PackedInt32Array px_count = knobs["cell_px_count"];
+    PackedInt32Array flat_px = knobs["flat_px_indices"];
+    PackedByteArray cell_r = knobs["cell_r"];
+    PackedByteArray cell_g = knobs["cell_g"];
+    PackedByteArray cell_valid = knobs["cell_valid"];
+
+    if (first_px.size() < n_cells || px_count.size() < n_cells) {
+        return fail("cell CSR array size < n_cells");
+    }
+    if (cell_r.size() < n_cells || cell_g.size() < n_cells ||
+        cell_valid.size() < n_cells) {
+        return fail("per-cell byte array size < n_cells");
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const int32_t * const __restrict FIRST = first_px.ptr();
+    const int32_t * const __restrict CNT = px_count.ptr();
+    const int32_t * const __restrict FLAT = flat_px.ptr();
+    const int flat_n = flat_px.size();
+    const uint8_t * const __restrict R = cell_r.ptr();
+    const uint8_t * const __restrict G = cell_g.ptr();
+    const uint8_t * const __restrict VALID = cell_valid.ptr();
+    uint8_t * const __restrict BUF = buffer.ptrw();
+
+    // 默认全像素清零：alpha=0（无效/未覆盖 → shader 渲染中性/透明）。
+    // memset 比 GDScript PackedByteArray.fill(0) 略快，且让本方法自给自足。
+    std::memset(BUF, 0, size_t(n_pix) * 4);
+
+    int pixels_written = 0;
+    for (int ci = 0; ci < n_cells; ++ci) {
+        if (VALID[ci] == 0) continue;
+        const int first = FIRST[ci];
+        const int count = CNT[ci];
+        if (first < 0 || count <= 0) continue;
+        const uint8_t r = R[ci];
+        const uint8_t g = G[ci];
+        for (int p = 0; p < count; ++p) {
+            const int fi = first + p;
+            if (fi < 0 || fi >= flat_n) continue;
+            const int px_idx = FLAT[fi];
+            if (px_idx < 0 || px_idx >= n_pix) continue;
+            const int base = px_idx * 4;
+            BUF[base    ] = r;
+            BUF[base + 1] = g;
+            BUF[base + 2] = 0;
+            BUF[base + 3] = 255;
+            ++pixels_written;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["pixels_written"] = pixels_written;
+    out["atlas_buffer"] = buffer;
+    return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // plan/atlas-pipeline-cpp（2026-05-20）：4 张运行期视觉 atlas 全管线 C++ 主入口
 //
 // 设计要点（复用最大化）：
@@ -16302,7 +16589,7 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float PSI_OMEGA       = float(knobs.has("psi_sor_omega")     ? double(knobs["psi_sor_omega"])    : 1.40);
     const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.18);
     const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
-    const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 1.0);
+    const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 0.08);
     const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.30);
     float OC_MAX_MAG            = float(knobs.has("ocean_current_max_magnitude") ? double(knobs["ocean_current_max_magnitude"]) : 0.50);
     if (OC_MAX_MAG < 0.01f) OC_MAX_MAG = 0.01f;
@@ -16533,7 +16820,10 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     float * const __restrict P_OCX  = ocx_out.ptrw();
     float * const __restrict P_OCY  = ocy_out.ptrw();
     std::vector<float> ocean_delta(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<float> ocean_preclamp_mag(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> thermal_current_mag(static_cast<size_t>(n_water), 0.0f);
+    int ocean_current_clamp_count = 0;
+    float ocean_preclamp_max = 0.0f;
     for (int i = 0; i < n_cells; ++i) {
         P_CURL[i] = 0.0f;
         P_PSI[i]  = 0.0f;
@@ -16617,11 +16907,15 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         cy = old_cy + (cy - old_cy) * response_rate;
 
         const float mag2 = cx * cx + cy * cy;
+        const float pre_mag = std::sqrt(mag2);
+        ocean_preclamp_mag[static_cast<size_t>(k)] = pre_mag;
+        if (pre_mag > ocean_preclamp_max) ocean_preclamp_max = pre_mag;
         const float max2 = OC_MAX_MAG * OC_MAX_MAG;
         if (mag2 > max2 && mag2 > 1e-12f) {
             const float inv_scale = OC_MAX_MAG / std::sqrt(mag2);
             cx *= inv_scale;
             cy *= inv_scale;
+            ++ocean_current_clamp_count;
         }
         // Final safety clamp for atlas encoding compatibility.
         if (cx >  1.0f) cx =  1.0f; else if (cx < -1.0f) cx = -1.0f;
@@ -16677,6 +16971,15 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         std::sort(thermal_current_mag.begin(), thermal_current_mag.end());
         const size_t p95_t = std::min(thermal_current_mag.size() - 1, size_t(std::floor(double(thermal_current_mag.size() - 1) * 0.95)));
         out["thermal_current_p95"] = double(thermal_current_mag[p95_t]);
+    }
+    if (!ocean_preclamp_mag.empty()) {
+        std::sort(ocean_preclamp_mag.begin(), ocean_preclamp_mag.end());
+        const size_t p95_pre = std::min(ocean_preclamp_mag.size() - 1, size_t(std::floor(double(ocean_preclamp_mag.size() - 1) * 0.95)));
+        out["ocean_current_preclamp_p95"] = double(ocean_preclamp_mag[p95_pre]);
+        out["ocean_current_preclamp_max"] = double(ocean_preclamp_max);
+        out["ocean_current_clamp_count"] = ocean_current_clamp_count;
+        out["ocean_current_clamp_ratio"] = double(ocean_current_clamp_count) / double(ocean_preclamp_mag.size());
+        out["ocean_current_max_magnitude"] = double(OC_MAX_MAG);
     }
     return out;
 }
@@ -17328,6 +17631,177 @@ void DCWorldExt::async_climate_shutdown_all() {
 
 // ─── Class binding ─────────────────────────────────────────────────────────
 
+namespace {
+
+inline void pk_csv_append_int(std::string &out, int64_t v) {
+    char buf[32];
+    auto res = std::to_chars(buf, buf + sizeof(buf), v);
+    if (res.ec == std::errc()) {
+        out.append(buf, res.ptr);
+    }
+}
+
+inline void pk_csv_append_float(std::string &out, float v) {
+    if (!std::isfinite(v)) {
+        return;
+    }
+    char buf[64];
+    const int n = std::snprintf(buf, sizeof(buf), "%.6f", double(v));
+    if (n <= 0) {
+        return;
+    }
+    int end = n;
+    while (end > 0 && buf[end - 1] == '0') {
+        --end;
+    }
+    if (end > 0 && buf[end - 1] == '.') {
+        --end;
+    }
+    if (end <= 0 || (end == 1 && buf[0] == '-')) {
+        out.push_back('0');
+        return;
+    }
+    out.append(buf, buf + end);
+}
+
+struct TileCsvFieldRef {
+    enum Kind : int {
+        F32 = 0,
+        I32 = 1,
+        U8 = 2,
+    };
+
+    Kind kind = F32;
+    PackedFloat32Array f32;
+    PackedInt32Array i32;
+    PackedByteArray u8;
+    const float *f32_ptr = nullptr;
+    const int32_t *i32_ptr = nullptr;
+    const uint8_t *u8_ptr = nullptr;
+};
+
+} // anonymous namespace
+
+godot::PackedByteArray DCWorldExt::encode_tile_csv_rows(godot::Dictionary knobs) {
+    using godot::Array;
+    using godot::CharString;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::Variant;
+
+    auto fail = []() -> PackedByteArray {
+        return PackedByteArray();
+    };
+
+    if (!knobs.has("row_start") || !knobs.has("fixed_suffix") ||
+        !knobs.has("cell_count") || !knobs.has("q_arr") ||
+        !knobs.has("r_arr") || !knobs.has("s_arr") || !knobs.has("arrays")) {
+        return fail();
+    }
+
+    const int row_start = int(knobs["row_start"]);
+    const int cell_start = std::max(0, int(knobs.get("cell_start", 0)));
+    const int cell_count = int(knobs["cell_count"]);
+    const int cell_stride = std::max(1, int(knobs.get("cell_stride", 1)));
+    if (row_start < 0 || cell_count <= 0 || cell_start >= cell_count) {
+        return fail();
+    }
+
+    const String fixed_suffix = knobs.get("fixed_suffix", String());
+    const CharString fixed_utf8 = fixed_suffix.utf8();
+    const char *fixed_data = fixed_utf8.get_data();
+    const int fixed_len = fixed_utf8.length();
+
+    PackedInt32Array q_arr = knobs["q_arr"];
+    PackedInt32Array r_arr = knobs["r_arr"];
+    PackedInt32Array s_arr = knobs["s_arr"];
+    if (q_arr.size() < cell_count || r_arr.size() < cell_count || s_arr.size() < cell_count) {
+        return fail();
+    }
+    const int32_t * const q_ptr = q_arr.ptr();
+    const int32_t * const r_ptr = r_arr.ptr();
+    const int32_t * const s_ptr = s_arr.ptr();
+
+    Array arrays = knobs["arrays"];
+    std::vector<TileCsvFieldRef> fields;
+    fields.reserve(size_t(arrays.size()));
+    for (int i = 0; i < arrays.size(); ++i) {
+        const Variant v = arrays[i];
+        TileCsvFieldRef ref;
+        switch (v.get_type()) {
+            case Variant::PACKED_FLOAT32_ARRAY:
+                ref.kind = TileCsvFieldRef::F32;
+                ref.f32 = v;
+                if (ref.f32.size() < cell_count) return fail();
+                ref.f32_ptr = ref.f32.ptr();
+                break;
+            case Variant::PACKED_INT32_ARRAY:
+                ref.kind = TileCsvFieldRef::I32;
+                ref.i32 = v;
+                if (ref.i32.size() < cell_count) return fail();
+                ref.i32_ptr = ref.i32.ptr();
+                break;
+            case Variant::PACKED_BYTE_ARRAY:
+                ref.kind = TileCsvFieldRef::U8;
+                ref.u8 = v;
+                if (ref.u8.size() < cell_count) return fail();
+                ref.u8_ptr = ref.u8.ptr();
+                break;
+            default:
+                return fail();
+        }
+        fields.push_back(ref);
+    }
+
+    const int rows = ((cell_count - cell_start - 1) / cell_stride) + 1;
+    const size_t estimated = size_t(rows) *
+        (size_t(std::max(0, fixed_len)) + 32u + size_t(fields.size()) * 12u);
+    std::string text;
+    text.reserve(estimated);
+
+    int row_idx = row_start;
+    for (int cell_idx = cell_start; cell_idx < cell_count; cell_idx += cell_stride, ++row_idx) {
+        pk_csv_append_int(text, row_idx);
+        if (fixed_len > 0) {
+            text.append(fixed_data, fixed_data + fixed_len);
+        }
+        text.push_back(',');
+        pk_csv_append_int(text, cell_idx);
+        text.push_back(',');
+        pk_csv_append_int(text, q_ptr[cell_idx]);
+        text.push_back(',');
+        pk_csv_append_int(text, r_ptr[cell_idx]);
+        text.push_back(',');
+        pk_csv_append_int(text, s_ptr[cell_idx]);
+        for (const TileCsvFieldRef &field : fields) {
+            text.push_back(',');
+            switch (field.kind) {
+                case TileCsvFieldRef::F32:
+                    pk_csv_append_float(text, field.f32_ptr[cell_idx]);
+                    break;
+                case TileCsvFieldRef::I32:
+                    pk_csv_append_int(text, field.i32_ptr[cell_idx]);
+                    break;
+                case TileCsvFieldRef::U8:
+                    pk_csv_append_int(text, int(field.u8_ptr[cell_idx]));
+                    break;
+            }
+        }
+        text.push_back('\n');
+    }
+
+    if (text.empty()) {
+        return fail();
+    }
+
+    PackedByteArray out;
+    out.resize(int(text.size()));
+    std::memcpy(out.ptrw(), text.data(), text.size());
+    return out;
+}
+
 void DCWorldExt::_bind_methods() {
     using namespace godot;
 
@@ -17355,6 +17829,7 @@ void DCWorldExt::_bind_methods() {
     // B3b：snapshot_i32 / snapshot_u8 给 streak（I32）+ 后续 save/overlay 补齐
     ClassDB::bind_method(D_METHOD("snapshot_i32", "comp_id"), &DCWorldExt::snapshot_i32);
     ClassDB::bind_method(D_METHOD("snapshot_u8",  "comp_id"), &DCWorldExt::snapshot_u8);
+    ClassDB::bind_method(D_METHOD("encode_tile_csv_rows", "knobs"), &DCWorldExt::encode_tile_csv_rows);
 
     // Mode-B per-cell read API（plan/3b-single-read-source；HexCell facade
     // 21 hot getter 的 read 源——结构性消除 C++ flush 与 GDScript-DCWorld
@@ -17378,6 +17853,8 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("write_u8_scalar_indexed",  "comp_id", "indices", "v"), &DCWorldExt::write_u8_scalar_indexed);
 
     ClassDB::bind_method(D_METHOD("bind_map_data", "map_data"), &DCWorldExt::bind_map_data);
+    // sea-ice-snow-visual-fix-2026-06：bind 后注入 DCWorld 句柄，让 C++ 自动 mark dirty。
+    ClassDB::bind_method(D_METHOD("bind_dirty_world", "dirty_world"), &DCWorldExt::bind_dirty_world);
     ClassDB::bind_method(D_METHOD("is_bound"),                  &DCWorldExt::is_bound);
     ClassDB::bind_method(D_METHOD("configure_native_world", "knobs"),
                          &DCWorldExt::configure_native_world);
@@ -17595,6 +18072,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("encode_ice_state_atlas", "knobs"),
         &DCWorldExt::encode_ice_state_atlas);
+    // plan/debug-overlay-perf v2（2026-06-12）：debug data overlay pixel fan-out 下沉 C++。
+    ClassDB::bind_method(
+        D_METHOD("encode_overlay_atlas", "knobs"),
+        &DCWorldExt::encode_overlay_atlas);
     // ────────────────────────────────────────────────────────────────────
     // DOTS-Total-CPP（atlas-pipeline-cpp）：4 atlas 全量 DOTS 化主入口
     //   - run_atlas_pipeline_step：每 tick 单一入口，4-phase 状态机驱动
