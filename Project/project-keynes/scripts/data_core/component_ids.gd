@@ -84,6 +84,21 @@ const CELL_WEATHER_FIELD_INIT: StringName = &"cell.weather_field_init"   # u8 0/
 const CELL_AIR_MASS_TEMP_ANOMALY: StringName = &"cell.air_mass_temp_anomaly"
 const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/1
 
+# ─── A 修复（climate-temp-pingpong-fix-2026-06）— 显式 anomaly 合成新增 2 个 ──
+# 历史：在 2026-06-12 的 tile_data 分析中，pass_a / pass_b / ocean_water / ocean_land
+#       与 wind_surface 都在写 cell_temp，导致 stage 周期级 ping-pong（p99|ΔT|=0.11，
+#       max=0.28，52% cells 出现 sign flip）。
+# 修复架构：
+#   - pass_a → cell_temp_baseline（不再写 cell_temp；temp_baseline 含义改为
+#       "radiative + 热惯性后的瞬时 baseline"，每日重写）
+#   - ocean_water/land → cell.ocean_thermal_anomaly（不再写 cell_temp）
+#   - pass_b → cell.local_thermal_anomaly（不再写 cell_temp）
+#   - wind_air_mass → cell.air_mass_temp_anomaly（已合规，不动）
+#   - wind_surface → cell_temp = clamp(baseline + ocean_anom + local_anom + air_anom)
+#       唯一写者，下游 weather_field_solve 才读 cell_temp。
+const CELL_OCEAN_THERMAL_ANOMALY: StringName = &"cell.ocean_thermal_anomaly" # f32
+const CELL_LOCAL_THERMAL_ANOMALY: StringName = &"cell.local_thermal_anomaly" # f32
+
 # ─── Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个 component ──────
 # 写入侧：map_generator._climate_pass_a_soa（每天每 cell 写一次）。
 # 读取侧：_apply_ocean_heat_transport_water_soa / _land_soa（读 ema_initialized

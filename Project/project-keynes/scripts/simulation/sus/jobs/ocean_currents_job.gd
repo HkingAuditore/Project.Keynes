@@ -962,6 +962,11 @@ func _current_phys_stage_report(stage_before: int, elapsed_ms: float) -> Diction
 		"wind_delta_p95": baker.get_wind_delta_p95() if baker != null and baker.has_method("get_wind_delta_p95") else 0.0,
 		"ocean_delta_p95": baker.get_ocean_delta_p95() if baker != null and baker.has_method("get_ocean_delta_p95") else 0.0,
 		"thermal_current_p95": baker.get_thermal_current_p95() if baker != null and baker.has_method("get_thermal_current_p95") else 0.0,
+		"ocean_current_preclamp_p95": baker.get_ocean_current_preclamp_p95() if baker != null and baker.has_method("get_ocean_current_preclamp_p95") else 0.0,
+		"ocean_current_preclamp_max": baker.get_ocean_current_preclamp_max() if baker != null and baker.has_method("get_ocean_current_preclamp_max") else 0.0,
+		"ocean_current_clamp_count": baker.get_ocean_current_clamp_count() if baker != null and baker.has_method("get_ocean_current_clamp_count") else 0,
+		"ocean_current_clamp_ratio": baker.get_ocean_current_clamp_ratio() if baker != null and baker.has_method("get_ocean_current_clamp_ratio") else 0.0,
+		"ocean_current_max_magnitude": baker.get_ocean_current_max_magnitude() if baker != null and baker.has_method("get_ocean_current_max_magnitude") else 0.0,
 	}
 	return report
 

@@ -696,9 +696,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
 @export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
-@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.20
-@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
-@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.20
+@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.22
+@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.12
 
 # 4) enable_wind_heat_transport
 #    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流
@@ -735,7 +735,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # dev 已改为绝对日射差(insol_now−insol_mean ∈ [−1,+1])，不再分数化。
 # 配合 thermal_inertia_land=0.35 + delta_cap=0.15，中纬度实际温差 ≈ 增益×0.12。
 # gain=2.0 → 40°N 冬夏温差 ~0.27（基线 63%），肉眼明确可见。
-@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 2.5
+@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 0.6
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
@@ -772,8 +772,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
 #    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
-@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.30
-@export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.50
+@export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.08
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.16
+@export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.65
 @export var ocean_decoupled_visual_raster: bool = true
 @export var ocean_visual_rebake_drop_stale: bool = true
 

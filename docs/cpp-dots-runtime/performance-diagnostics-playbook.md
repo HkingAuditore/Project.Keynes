@@ -110,6 +110,11 @@ stage=slp->wind ... psi_path=gdscript
 - 看 `stage_psi_path` 是否变成 `gdext`。
 - 看 `run_psi_solver_pass` 是否返回 `published_to_slot=true`。
 - 看 ocean current x/y slots 是否被发布。
+- 看 `phys_ocean_current_preclamp_p95/max` 与
+  `phys_ocean_current_clamp_count/ratio`。如果 pre-clamp p95 长期高于
+  `phys_ocean_current_max_magnitude` 且 clamp ratio 很高，说明强度被最终
+  vector clamp 压平；优先调低 `ocean_psi_source_scale`，其次才是
+  `ocean_current_scale`、热盐/密度权重或上限。不要先排查 CSV encoder。
 
 只有 PSI stage 执行后仍持续 `psi_path=gdscript`，并伴随 fallback reason，才说明 C++ PSI 未接管。
 
@@ -266,6 +271,77 @@ skipped[frame_budget_exhausted=25]
 | C++ `compute=0.02ms` 但 wall 高 | C++ 慢 | 多半是 refresh/flush/sync/write/dirty。 |
 | `skipped` 多 | 计算错 | 可能只是 visual upload 被预算延后。 |
 | `upload=1.5ms` | C++ patch 慢 | GPU/ImageTexture upload，不是 C++ kernel。 |
+| 日志 `total=13ms` 但 FPS 仅 18 | 模拟没拖累帧 | `_run_fast_tick` 末尾的 `_refresh_overlay_data` **不计入** `sus/render/ui`；overlay bake 可能独自吃掉 10ms+。详见下节。 |
+
+## Overlay Bake Cost（debug 模式温度/天气图层卡顿）
+
+**症状**：玩家切到温度 / 降水 / 湿度等 Debug Overlay 通道后，FPS 显著下降（实测从 60 降到 18）。但 `[fast tick WARN]` 报告中 `sus/render/ui` 三段加起来仍然只有 5-15ms，看似正常。
+
+**原因**：`main.gd::_refresh_overlay_data` → `DataOverlayBaker.bake` 在 `_run_fast_tick` 末尾、`fast_ms` 计时**之后**才执行，整段开销**不被纳入** `sus/render/ui` 任何统计字段。它在主线程同步阻塞，直接影响 `_process` 帧率，但 SUS 日志对此一无所知。
+
+历史问题点（debug-overlay-perf v1 之前）：
+
+1. **每帧 `ImageTexture.create_from_image()`**：1080×574 RGBA8 = 2.4MB，触发 GPU 资源销毁 + VRAM 重分配，单次 ~5-15ms 同步阻塞。
+2. **每帧 `PackedByteArray.resize(2,482,176)`**：GDScript GC 压力。
+3. **`for i in range(620544): buf[i*4+3] = 0`**：62 万次解释字节赋值清 alpha。
+4. **跳日帧也重 bake**：x20 倍速下每秒触发 20+ 次。
+
+修复后（debug-overlay-perf v1，2026-06-12）：
+
+- 在 `main.gd` 持久化 `_overlay_tex: ImageTexture` 与 `_overlay_buf: PackedByteArray`，传给 baker 复用。bake 内部用 `tex.update(img)` 代替 `create_from_image`；用 `buf.fill(0)` 代替 GDScript 循环清零。
+- 引入 `_overlay_dirty` 标记：`_on_day_changed` 顶部置 true；fast tick 末尾仅在「`overlay_mode != NONE` AND 非跳日 AND dirty」三条件全满足时才 bake，bake 后立即清 dirty。
+- `_apply_overlay_mode` / `_generate_and_render` 等显式入口绕过 dirty gate，并在 regenerate 时把 `_overlay_tex/_buf` 置 null 让 baker 安全新建（derived_size 可能已变）。
+- baker 热路径优化：`stats` 改用强类型局部变量、`values_for_median` 用 `PackedFloat32Array` 预分配、`mode_is_discrete` 谓词外提、`int(x*255.0+0.5)` 替代 `int(round(x*255.0))`。
+
+**实测收益**：1080×574 derived size、x20 倍速下，每个游戏日 bake 时间从 ~12-20ms 降到 ~1.5-3ms；FPS 从 18 回到 60。
+
+**诊断技巧**：
+
+- 如果用户报告"开 Debug 通道就卡"但 SUS 日志正常，先看是否 `_overlay_mode != 0`。
+- `main.get_overlay_last_bake_ms()` 暴露最近一次 bake 耗时；超过 5ms 都应警觉。
+- `main.get_overlay_bake_path()` 暴露 pixel fan-out 路径，正常应为 `gdext_fanout`；若为 `gdscript_fanout`（旧 DLL / SoA 未建）或 `gdscript_fanout_soa`（C++ 返回参数错）说明未走到 C++，可结合 push_warning 的 `reason` 排查。
+- 关闭 overlay（切到 NONE）能定位是否瓶颈在 bake：FPS 恢复即坐实。
+- pixel fan-out（典型 ~62 万次写）已于 debug-overlay-perf v2（2026-06-12）下沉 `world_ext.cpp::encode_overlay_atlas`；per-cell 采样仍在 GDScript（~n_cells 次，分支重）。若 `gdext_fanout` 下 bake 仍偏高，先看 GPU `tex.update` 与 per-cell 采样，而非 fan-out。
+
+## Tile Data Recorder Cost（全量地块 CSV 录制卡顿）
+
+**症状**：点击 DebugConsole 的“开始地块全量录制”后，游戏写入 `tmp/tile_data_record_*.csv` 时明显卡顿；普通 `[fast tick WARN]` 中的 `sus/render/ui` 不一定能解释全部耗时。
+
+**原因**：这条路径不是 `DCWorldExt.snapshot_f32()` 慢。`snapshot_f32/snapshot_i32/snapshot_u8` 只是返回 C++ slot 的 PackedArray 快照；当前卡顿主因是 `TileDataRecorder.on_fast_tick()` 在主线程同步完成：
+
+1. 每个 fast tick 读取当前 `MapData`。
+2. 每个 cell 写一行 CSV。
+3. 每行包含所有可用 SoA 字段以及固定诊断字段。
+4. 把这些值格式化成文本，再同步写到 `tmp/tile_data_record_*.csv`。
+
+在 2400 cells、几十个 SoA 字段的配置下，这等价于每个 tick 生成数千行、MB 级文本。历史录制文件常见 600MB-3GB，说明磁盘与字符串格式化都会进入帧预算。用户要求“每个 tick、每个 cell、所有 SoA 字段”时，不应通过采样、跳 cell 或删字段来隐藏成本；应先用诊断确认成本，再做不丢数据的优化。
+
+当前 recorder 诊断字段：
+
+```text
+[fast tick recorder] frame=... recorder=...ms tile=...ms rows=... total_after=...ms
+        recorder total=... perf=... tile=... collect=... stats=... format=... flush=... encoder=... tile_rows=... tile_recorded=... tile_reason=... total_after=...ms
+```
+
+含义：
+
+- `fast_ms_before_recorders` 是旧的 fast tick 计时，通常只覆盖 `sus/render/ui` 与 overlay gate 前后的逻辑。
+- `fast_ms_after_recorders` / `total_after` 把 recorder 同步成本也算进去。
+- `tile_ms` 是 `TileDataRecorder.on_fast_tick()` 本 tick 的墙钟。
+- `collect/stats/format/flush` 分别是 SoA 数组收集、派生统计、CSV 编码、文件写入耗时。
+- `encoder=gdext` 表示本 tick 走 `DCWorldExt.encode_tile_csv_rows()` 批量编码；`encoder=gdscript` 表示旧 DLL、方法探测失败或 C++ 返回空 buffer 后走 GDScript 兜底。
+- `tile_rows` 在全量默认配置下应约等于 `cell_count`。
+- `tile_reason` 只有未录制、达到行数上限、MapData 改变、SoA 尺寸改变等情况才非空。
+
+当前实现做了不丢数据的降阻塞优化：
+
+- 默认仍是 `tick_stride=1`、`cell_stride=1`、`compact_fields=false`，即每个 tick、每个 cell、所有可用 SoA 字段。
+- CSV 行用批量 `store_string()` 写入，避免每个 cell 一次 `store_line()`。
+- q/r/s 在 `start()` 时按 cell index 缓存，录制中不再每行读取 `HexCell` 对象。
+- 每 tick 固定诊断列只格式化一次，行内只追加 `row_idx/cell_index/q/r/s` 与 SoA 值。
+- 如果当前 DLL 暴露 `DCWorldExt.encode_tile_csv_rows()`，每 tick 的全部行文本由 C++ 从 GDScript 传入的 `MapData` PackedArray 快照批量编码成 `PackedByteArray`，GDScript 侧用 `FileAccess.store_buffer()` 一次写入。字段顺序、行数、float 格式、NaN/Inf 空值语义保持与 GDScript formatter 等价。
+
+如果 `encoder=gdext` 后全量录制仍明显卡顿，下一步优化应保持完整性：优先考虑后台线程/双缓冲写盘或二进制无损格式；不要默认改成 stride 采样或 compact 字段。
 
 ## 标准诊断流程
 

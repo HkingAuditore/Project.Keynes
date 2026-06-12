@@ -401,6 +401,11 @@ var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
+var _ocean_current_preclamp_p95_last: float = 0.0
+var _ocean_current_preclamp_max_last: float = 0.0
+var _ocean_current_clamp_count_last: int = 0
+var _ocean_current_clamp_ratio_last: float = 0.0
+var _ocean_current_max_magnitude_last: float = 0.0
 var _phys_solve_rt_diag_count: int = 0
 var _phys_last_season_phase: float = NAN
 var _phys_last_sim_day: int = -1
@@ -4845,6 +4850,11 @@ func reset_physical_solve_state() -> void:
 	_wind_delta_p95_last = 0.0
 	_ocean_delta_p95_last = 0.0
 	_thermal_current_p95_last = 0.0
+	_ocean_current_preclamp_p95_last = 0.0
+	_ocean_current_preclamp_max_last = 0.0
+	_ocean_current_clamp_count_last = 0
+	_ocean_current_clamp_ratio_last = 0.0
+	_ocean_current_max_magnitude_last = 0.0
 	_phys_last_season_phase = NAN
 	_phys_last_sim_day = -1
 	_phys_last_slp_rc_ms = -1.0
@@ -4880,6 +4890,16 @@ func get_ocean_delta_p95() -> float:
 	return _ocean_delta_p95_last
 func get_thermal_current_p95() -> float:
 	return _thermal_current_p95_last
+func get_ocean_current_preclamp_p95() -> float:
+	return _ocean_current_preclamp_p95_last
+func get_ocean_current_preclamp_max() -> float:
+	return _ocean_current_preclamp_max_last
+func get_ocean_current_clamp_count() -> int:
+	return _ocean_current_clamp_count_last
+func get_ocean_current_clamp_ratio() -> float:
+	return _ocean_current_clamp_ratio_last
+func get_ocean_current_max_magnitude() -> float:
+	return _ocean_current_max_magnitude_last
 func _physical_stage_name(stage: int) -> String:
 	match stage:
 		_PHYS_STAGE_NONE: return "phys_none"
@@ -4928,6 +4948,11 @@ func get_physical_circulation_diag() -> Dictionary:
 		"psi_native_ms": _psi_native_ms_last,
 		"ocean_delta_p95": _ocean_delta_p95_last,
 		"thermal_current_p95": _thermal_current_p95_last,
+		"ocean_current_preclamp_p95": _ocean_current_preclamp_p95_last,
+		"ocean_current_preclamp_max": _ocean_current_preclamp_max_last,
+		"ocean_current_clamp_count": _ocean_current_clamp_count_last,
+		"ocean_current_clamp_ratio": _ocean_current_clamp_ratio_last,
+		"ocean_current_max_magnitude": _ocean_current_max_magnitude_last,
 	}
 
 
@@ -5522,7 +5547,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_sor_omega": 1.4,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
-						"psi_source_scale": 1.0,
+						"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.08,
 						"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.30,
 						"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50,
 						"thermohaline_weight": 0.25,
@@ -5554,6 +5579,11 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
 							_ocean_delta_p95_last = float(ret_psi.get("ocean_delta_p95", 0.0))
 							_thermal_current_p95_last = float(ret_psi.get("thermal_current_p95", 0.0))
+							_ocean_current_preclamp_p95_last = float(ret_psi.get("ocean_current_preclamp_p95", 0.0))
+							_ocean_current_preclamp_max_last = float(ret_psi.get("ocean_current_preclamp_max", 0.0))
+							_ocean_current_clamp_count_last = int(ret_psi.get("ocean_current_clamp_count", 0))
+							_ocean_current_clamp_ratio_last = float(ret_psi.get("ocean_current_clamp_ratio", 0.0))
+							_ocean_current_max_magnitude_last = float(ret_psi.get("ocean_current_max_magnitude", 0.0))
 							var _has_psi_debug_arr: bool = map.wind_stress_curl_arr.size() == n_psi \
 									and map.ocean_psi_arr.size() == n_psi
 							if psi_published_to_slot:

@@ -129,6 +129,7 @@ func _run() -> void:
 	print("=== tile_data_recorder test ===")
 	_test_csv_escape()
 	_test_collect_soa_fields()
+	_test_native_csv_encoder_if_available()
 	_test_state_machine_and_export()
 	_test_auto_stop_on_map_change()
 	_test_auto_stop_on_cell_count_change()
@@ -170,6 +171,48 @@ func _test_collect_soa_fields() -> void:
 	_expect(fields.find("terrain_arr") != -1, "terrain_arr included")
 	_expect(fields.find("demo_thermal_gradient_arr") == -1, "size 0 demo array excluded")
 	_expect(fields.find("_neighbor_indices") == -1, "neighbor topology excluded")
+
+
+func _test_native_csv_encoder_if_available() -> void:
+	if not ClassDB.class_exists("DCWorldExt"):
+		print("  [SKIP] native csv encoder unavailable")
+		return
+	var ext = ClassDB.instantiate("DCWorldExt")
+	if ext == null or not ext.has_method("encode_tile_csv_rows"):
+		print("  [SKIP] native csv encoder method unavailable")
+		return
+
+	var arrays: Array = [
+		PackedFloat32Array([1.25, NAN]),
+		PackedInt32Array([7, -8]),
+		PackedByteArray([255, 0]),
+	]
+	var field_types := PackedInt32Array([
+		TYPE_PACKED_FLOAT32_ARRAY,
+		TYPE_PACKED_INT32_ARRAY,
+		TYPE_PACKED_BYTE_ARRAY,
+	])
+	var q_arr := PackedInt32Array([10, 11])
+	var r_arr := PackedInt32Array([20, 21])
+	var s_arr := PackedInt32Array([-30, -32])
+	var fixed_suffix: String = ",101,2000,false"
+	var encoded: PackedByteArray = ext.call("encode_tile_csv_rows", {
+		"row_start": 5,
+		"fixed_suffix": fixed_suffix,
+		"cell_start": 0,
+		"cell_count": 2,
+		"cell_stride": 1,
+		"q_arr": q_arr,
+		"r_arr": r_arr,
+		"s_arr": s_arr,
+		"arrays": arrays,
+	})
+	var expected: String = TileDataRecorder._format_record_line(
+		5, fixed_suffix, 0, q_arr[0], r_arr[0], s_arr[0], arrays, field_types
+	) + "\n" + TileDataRecorder._format_record_line(
+		6, fixed_suffix, 1, q_arr[1], r_arr[1], s_arr[1], arrays, field_types
+	) + "\n"
+	_expect(encoded.get_string_from_utf8() == expected, "native csv encoder matches GDScript formatter")
 
 
 func _test_state_machine_and_export() -> void:

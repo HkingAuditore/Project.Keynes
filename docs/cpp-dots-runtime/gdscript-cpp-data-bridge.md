@@ -199,6 +199,40 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 
 当前 SLP 和 PSI 链路已经使用该字段避免重复 copy。排查 ocean currents 时，应把 `published=true` 视为 C++ slot publish 生效的强信号。
 
+### Atlas buffer 直写发布（CSR fan-out 家族）
+
+视觉 / 调试 atlas 的 byte-fill pass（`encode_dynamic_cell_atlas` /
+`encode_ecology_visual_atlas` / `encode_dyn_smooth_atlas` /
+`encode_ice_state_atlas` / `encode_overlay_atlas`）走另一种发布形态：
+
+- 不写 DataCore slot，而是 GDScript 把一块 `atlas_buffer: PackedByteArray`（长度
+  `n_pix * stride`）连同 CSR pixel 列表（`cell_first_px` / `cell_px_count` /
+  `flat_px_indices`，复用 `WorldData` 持久 SoA，按 `cell.index` 索引）传入。
+- C++ 端 `ptrw()` 直写该 buffer（必要时先 `memset` 清零），再把它原样放回返回
+  Dictionary 的 `atlas_buffer` 字段。CoW 公理下，GDScript caller **必须**用返回的
+  buffer（`buf = res["atlas_buffer"]`）而不是假设入参被原地改写。
+- 失败时返回 `fallback=true` + `reason`，caller 走 GDScript 等价 fan-out。
+- `encode_overlay_atlas`（debug-overlay-perf v2）是其中唯一**不读 `_slots`、不要求
+  `_bound`** 的成员：overlay 的 per-cell R/G/valid 全部由 GDScript 预采样按
+  `cell.index` 喂入，因此地图刚生成 / climate slot 未绑定也能工作。GDScript 侧
+  `_fanout_cell_bytes_soa` 是其 bit-equal 兜底。
+
+### Recorder CSV byte buffer
+
+`DCWorldExt.encode_tile_csv_rows(knobs)` 是 tile data recorder 专用的
+buffer encoder，不是 slot pass：
+
+- GDScript 仍是权威 orchestration 层：选择 `MapData` 当前 SoA PackedArrays、
+  生成固定诊断列、检查 row limit、决定 fallback。
+- C++ 不读 `_slots`，也不需要 `refresh_slots_from_map()`；它只接收
+  `q_arr/r_arr/s_arr` 和 `arrays: Array[PackedFloat32Array|PackedInt32Array|PackedByteArray]`，
+  按既有 CSV 列顺序把一个 tick 的所有 cell 行编码成 UTF-8 `PackedByteArray`。
+- GDScript caller 用 `FileAccess.store_buffer()` 写返回 bytes。返回空
+  `PackedByteArray` 表示参数非法或旧方法不可用，caller 必须回退到 GDScript
+  `_format_record_line()`，不能丢 tick、丢 cell 或丢字段。
+- 该路径不发布 DataCore slot，不使用 `published_to_slot`。诊断看
+  `tile_encoder_path` / 日志 `encoder=gdext|gdscript`。
+
 ### Wind vector contract
 
 风场有两个不同语义的表示，不能混用：
@@ -337,6 +371,12 @@ bridge surfaces and component slots.
   expectation is a final vector-magnitude limit. Diagnostics should compute
   `sqrt(x*x + y*y)` when validating saturation, not inspect per-component max
   values alone.
+- PSI clamp diagnostics are pass reports, not schema slots. `DCWorldExt`
+  returns `ocean_current_preclamp_p95`, `ocean_current_preclamp_max`,
+  `ocean_current_clamp_count`, `ocean_current_clamp_ratio`, and
+  `ocean_current_max_magnitude`; `MapBaker` caches them for
+  `OceanCurrentsJob`, and the tile recorder exports the same values with a
+  `phys_` prefix.
 - Weather CSV diagnostics are not slot schema. They are sampled reports from
   `sample["weather"]`. `weather_dirty_count`, `weather_convergence_dirty_count`,
   and `weather_convergence_delta_p95` must be interpreted as weather commit

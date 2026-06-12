@@ -350,8 +350,8 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	var tile_ctrl_row := HBoxContainer.new()
 	tile_ctrl_row.add_theme_constant_override("separation", 6)
 	_tile_record_btn = Button.new()
-	_tile_record_btn.text = "⏺ 开始地块数据录制"
-	_tile_record_btn.tooltip_text = "录制每个 fast_tick 的每个地块 SoA 数据 → ../../tmp/tile_data_record_<时间>.csv"
+	_tile_record_btn.text = "⏺ 开始地块全量录制"
+	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → ../../tmp/tile_data_record_<时间>.csv"
 	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
 	tile_ctrl_row.add_child(_tile_record_btn)
@@ -908,15 +908,34 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 		recording = bool(_tile_data_recorder.call("is_recording"))
 	if recording:
 		var ticks: int = 0
+		var recorded_ticks: int = 0
 		var rows: int = 0
+		var stride_txt: String = ""
+		var last_ms: float = 0.0
+		var detail_txt: String = ""
 		if _tile_data_recorder.has_method("tick_count"):
 			ticks = int(_tile_data_recorder.call("tick_count"))
+		if _tile_data_recorder.has_method("recorded_tick_count"):
+			recorded_ticks = int(_tile_data_recorder.call("recorded_tick_count"))
 		if _tile_data_recorder.has_method("row_count"):
 			rows = int(_tile_data_recorder.call("row_count"))
-		_tile_record_btn.text = "⏹ 停止并导出（已录 %d tick / %d 行）" % [ticks, rows]
+		if _tile_data_recorder.has_method("sampling_summary"):
+			var summary: Dictionary = _tile_data_recorder.call("sampling_summary")
+			stride_txt = " / t%d c%d" % [
+				int(summary.get("tick_stride", 1)),
+				int(summary.get("cell_stride", 1)),
+			]
+			last_ms = float(summary.get("last_tick_ms", 0.0))
+			detail_txt = " f%.1f/w%.1f" % [
+				float(summary.get("last_tick_format_ms", 0.0)),
+				float(summary.get("last_tick_flush_ms", 0.0)),
+			]
+		_tile_record_btn.text = "⏹ 停止并导出（全量 %d/%d tick / %d 行%s / %.1fms%s）" % [
+			recorded_ticks, ticks, rows, stride_txt, last_ms, detail_txt,
+		]
 		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
 	else:
-		_tile_record_btn.text = "⏺ 开始地块数据录制"
+		_tile_record_btn.text = "⏺ 开始地块全量录制"
 		_tile_record_btn.remove_theme_color_override("font_color")
 
 

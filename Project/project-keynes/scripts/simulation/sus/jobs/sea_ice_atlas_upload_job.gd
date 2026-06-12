@@ -47,12 +47,18 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# 切片预算：单次完整一遍 lookup + 增量水格扫，~10-20ms。不强切片化。
 	slice_budget_ms = 0.45
 	max_slices_per_tick = 1
-	# 海冰可视化允许滞后；不要让 atlas 上传绕过 frame_budget 造成主线程长尾。
-	must_run = false
-	# Starvation 防护（2026-05-11）：海冰上传被 frame_budget_exhausted 长期饿死
-	# (ran=0 于 30 个 tick 中)，导致海冰可视化几十秒不刷新。阈值 8 ≈ 8 个 fast
-	# tick 后强制让步一次（仍然比每日刷新慢得多，能避免完全冻结）。
-	starvation_threshold = 0
+	# sea-ice-snow-visual-fix-2026-06 v2：原 must_run=false 让 atlas pipeline 在
+	# frame_budget_exhausted 时被跳过，导致海冰视觉数十秒不刷新。改 true 保证每
+	# 个 fast tick 都跑；stride=2 + 单 tick 上传 ~0.4ms，开销可接受。
+	# NOTE: 此 Job 当前在 map_generator 中未实例化（_sea_ice_atlas_upload_job 永远 null）；
+	# 主要 atlas 上传走 DynamicVisualAtlasUploadSystem。must_run=true 仅为未来启用准备。
+	must_run = true
+	# Starvation 防护（2026-05-11 / 2026-06-12 复活）：海冰上传被 frame_budget_exhausted
+	# 长期饿死 (ran=0 于 30 个 tick 中)，导致海冰可视化几十秒不刷新。阈值 8 ≈ 8 个
+	# fast tick 后强制让步一次（仍然比每日刷新慢得多，能避免完全冻结）。
+	# 2026-06-12: 与 sea-ice-snow-visual-fix-2026-06 配套——dirty mask 修好后这条
+	# 防护仍保留，覆盖 frame_budget 极端拥挤时的兜底。
+	starvation_threshold = 8
 	baker = p_baker
 	map = p_map
 	world = p_world

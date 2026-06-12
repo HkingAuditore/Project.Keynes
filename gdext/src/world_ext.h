@@ -143,6 +143,11 @@ public:
     bool bind_map_data(godot::Object *map_data);
     bool is_bound() const { return _bound; }
 
+    // sea-ice-snow-visual-fix-2026-06：GDScript 在 bind_map_data 后注入 DCWorld
+    // 句柄。`_flush_slot_to_map` 末尾会 call("mark_dirty_all")，让 atlas pipeline
+    // 能感知 C++ pass 写过的 cell。`nullptr` 关闭自动 mark（退化）。
+    void bind_dirty_world(godot::Object *dirty_world);
+
     // Top-level native orchestration scaffold. These APIs are intentionally
     // coarse-grained: GDScript configures once after bind_map_data(), then a
     // daily tick passes only scalar clock values. Kernels can be fused behind
@@ -902,6 +907,50 @@ public:
     godot::Dictionary encode_dyn_smooth_atlas(godot::Dictionary knobs);
     godot::Dictionary encode_ice_state_atlas(godot::Dictionary knobs);
 
+    // ─── Debug Data Overlay Atlas Encode (plan/debug-overlay-perf v2, 2026-06-12) ──
+    // data_overlay_baker.gd 的 O(n_pixels) pixel fan-out 下沉 C++（debug 模式
+    // 温度/天气等 overlay 卡顿主因之一）。GDScript 端仍负责 18 个 overlay mode
+    // 的 per-cell 采样（仅 ~n_cells 次，分支重、含 latitude_buffer / atan2 /
+    // 非 schema 字段，留 GDScript 最稳、零 bit-divergence 风险），把每个 cell
+    // 编码后的 R/G byte + 有效标记打包成 per-cell 数组传入；本方法负责把每个
+    // 有效 cell 的 (R, G, 0, 255) 扇出写到它覆盖的全部像素（典型 ~62 万次写），
+    // 并先 memset 清零（无效/未覆盖像素 alpha=0）。
+    //
+    // 复用 WorldData 持久 SoA CSR（cell_first_px_arr / cell_px_count_arr /
+    // flat_px_indices_arr，按 cell.index 索引，整图一次性构建），零大数组拷贝。
+    // 与 encode_dynamic_cell_atlas 等共用 flat_px 复用语义（first/count 直接索
+    // 引整图 flat，不要求紧凑串接）。
+    //
+    // 不依赖 _bound / _slots —— overlay 数据全部由 GDScript 预采样喂入，因此即
+    // 便 climate slot 未绑定（或地图刚生成）也能工作。
+    //
+    // knobs:
+    //   "n_pix"           : int  (= W*H)
+    //   "n_cells"         : int  (= cell_first_px / cell_r / cell_g / cell_valid 长度)
+    //   "atlas_buffer"    : PackedByteArray (n_pix*4，RGBA8，C++ ptrw 直写)
+    //   "cell_first_px"   : PackedInt32Array (n_cells；world.cell_first_px_arr，-1=空)
+    //   "cell_px_count"   : PackedInt32Array (n_cells；world.cell_px_count_arr)
+    //   "flat_px_indices" : PackedInt32Array (整图 flat；world.flat_px_indices_arr)
+    //   "cell_r"          : PackedByteArray (n_cells；按 cell.index 的 R byte)
+    //   "cell_g"          : PackedByteArray (n_cells；G byte)
+    //   "cell_valid"      : PackedByteArray (n_cells；0/1，0=该 cell 不写像素)
+    //
+    // 返回:
+    //   "elapsed_ms"     : double（hot loop 耗时）
+    //   "fallback"       : bool（true=参数非法，调用方走 GDScript fan-out）
+    //   "reason"         : String
+    //   "pixels_written" : int
+    //   "atlas_buffer"   : PackedByteArray（直写后的 buffer，调用方取回上传纹理）
+    godot::Dictionary encode_overlay_atlas(godot::Dictionary knobs);
+
+    // Tile data recorder CSV encoder. GDScript remains the authority for
+    // selecting MapData SoA arrays and fixed diagnostic columns; C++ only
+    // formats one full tick worth of numeric rows into UTF-8 CSV bytes.
+    //
+    // Returns an empty PackedByteArray on invalid input so the GDScript caller
+    // can fall back to the reference formatter.
+    godot::PackedByteArray encode_tile_csv_rows(godot::Dictionary knobs);
+
     // ─── plan/atlas-pipeline-cpp（2026-05-20）：4 张 atlas 全管线主入口 ─────
     // dynamic_visual_atlas_upload_system 每帧热路径整套搬到 C++：dirty 消费 →
     // 4 张 atlas value-diff（per-atlas prev_sigs snapshot 兜底 dirty 语义 bug）
@@ -1564,6 +1613,12 @@ private:
 
     // ---- bind state ----
     godot::Object                            *_map_data = nullptr; // weak (GDScript holds strong ref)
+    // sea-ice-snow-visual-fix-2026-06：DCWorld 句柄。C++ pass 通过
+    // `_flush_slot_to_map` 直写 MapData，原本绕过 DCWorld dirty mask。
+    // 持有此句柄后每次 flush 末尾自动 `mark_dirty_all`，确保 atlas pipeline
+    // 能在下个 stride 看到 dirty 信号。`bind_dirty_world` 在 GDScript setup
+    // 完成后由 world.gd::bind_map_data 注入；nullptr 时退化为旧行为。
+    godot::Object                            *_dirty_world = nullptr; // weak
     bool                                      _bound    = false;
     bool                                      _native_world_configured = false;
     int                                       _native_world_cell_count = 0;

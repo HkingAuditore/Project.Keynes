@@ -22,6 +22,7 @@
 | Ocean currents physical | C++ kernels + GDScript stage machine | `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | `_phys_stage` 状态机、pixel commit、fallback。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload。 |
+| Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
 
 ## Season refresh
@@ -95,8 +96,8 @@ C++ 入口：
 
 输出：
 
-- `cell_temp`
-- `cell_temperature_transport_anomaly`
+- `cell_temp_baseline`（runtime baseline = radiative + 热惯性积分；A 修复 2026-06，原来写 `cell_temp` 已下放给 `wind_surface` 合成阶段）
+- `cell_ocean_thermal_anomaly` / `cell_local_thermal_anomaly`（在 pass_a 末尾清零，开启新一日的累加；wind_surface 末端用这两个 + `cell_air_mass_temp_anomaly` 与 baseline 合成回 `cell_temp`）
 - thermal/insolation/moisture base 相关 slots
 - dirty mask / DataCore writes 视具体路径而定
 
@@ -123,6 +124,7 @@ C++ 入口：
 
 - 基于 Pass-A 结果进行后续气候平滑、湿度、异常修正。
 - 通过 `write_f32_indexed` / dense 写回 DataCore，减少单点 setter。
+- **A 修复（2026-06）**：原来直接覆盖 `cell_temp = clamp(snapshot + d_albedo + d_coastal + d_landform)`；现在累加到 `cell_local_thermal_anomaly` slot，由 `wind_surface` 末端合成。海冰反照率反馈 (`sea_ice_albedo_cooling`) 也对应累加为水域 cell 的负 local anomaly，不再就地改 cell_temp。`cell_moisture` 写权不变。
 
 风险：
 
@@ -154,7 +156,7 @@ Ocean land 算法概要：
 数据契约：
 
 - C++ 读取 C++ slot 或 knobs PackedArray。
-- 输出应写回 `cell_temp`、`cell_temperature_transport_anomaly` 等 DataCore 字段。
+- **A 修复（2026-06）**：ocean_water / ocean_land **不再写 `cell_temp`**——它们的洋流 advect & 邻接渗透结果累加到 `cell_ocean_thermal_anomaly` slot，由 `wind_surface` 末端的合成阶段统一发布回 `cell_temp`。`cell_temperature_transport_anomaly` 这条独立的低通 anomaly（由 `dc_stabilize_tta` 维护）保持不变，供 weather field reader / pass_b coastal-leak 消费。
 - 如果 GDScript fallback 后下一个 C++ stage 依赖结果，需要 `refresh_slots_from_map()`。
 
 风险：
@@ -186,8 +188,10 @@ Ocean land 算法概要：
 - `cell_wind_x`
 - `cell_wind_y`
 - `cell_wind_speed`
-- `cell_air_mass_temp_anomaly`
-- `cell_temp` 只由 surface injection 阶段写入
+- `cell_air_mass_temp_anomaly`（air-mass pass 唯一输出；surface pass 在累加邻接 anomaly 后也把 air anomaly 写回这个 slot）
+- `cell_temp` — **A 修复（2026-06）：climate-daily 链条中 `wind_surface` 是唯一写者**。末端公式：
+  `cell_temp[i] = clamp(cell_temp_baseline[i] + cell_ocean_thermal_anomaly[i] + cell_local_thermal_anomaly[i] + air_anom_after_advect[i], 0, 1)`。
+  baseline / ocean_anom / local_anom 分别由 pass_a / ocean_water+ocean_land / pass_b 写入；air_anom 由 wind_air_mass 注入、wind_surface 在邻接平流后更新。
 
 数据契约：
 
@@ -196,9 +200,9 @@ Ocean land 算法概要：
 - `wind_field_buffer` / vector atlas 的 BA 通道是渲染速度向量：`dir * clamp(wind_speed / 1.7, 0, 1)`。shader 对 BA 求 `length()` 得到的是归一化风速，不是恒定 1 的方向模长。
 - `run_wind_air_mass_pass` / `_wind_air_mass_pass` 只发布
   `cell_air_mass_temp_anomaly`。它们不再直接覆盖 `cell_temp`；后续
-  `run_wind_surface_pass` / `_wind_surface_pass` 是风热异常注入温度的唯一
-  阶段。排查局部温度 ping-pong 时先确认 air-mass 阶段没有重新获得
-  `cell_temp` 写权。
+  `run_wind_surface_pass` / `_wind_surface_pass` 是 **climate-daily 链条中 `cell_temp` 唯一的写者**
+  （A 修复 2026-06），通过 baseline + ocean_anom + local_anom + air_anom 的合成把全部贡献汇总成单点写。
+  排查局部温度 ping-pong 时先确认 pass_a / pass_b / ocean_* 都没再获得 `cell_temp` 写权。
 
 风险：
 
@@ -437,6 +441,50 @@ enum_atlas_upload axis= path=cpp_cached_patch elapsed=0.01 patch=0.42 img=0.00 u
 - 把 job graph、read/write masks、stride policy、front packed snapshot、dirty lists 继续下移到 C++。
 - GDScript fast tick 最终只调用 `run_native_sim_tick(ctx)` 并消费结构化 report。
 
+## Debug Data Overlay bake
+
+主要入口：
+
+- GDScript orchestration：`main.gd::_refresh_overlay_data` → `scripts/rendering/data_overlay_baker.gd::DataOverlayBaker.bake`
+- C++ pixel fan-out：`gdext/src/world_ext.cpp::DCWorldExt::encode_overlay_atlas`
+- 触发：`_on_day_changed` 顶部置 `_overlay_dirty=true`；fast tick 末尾消费。
+- 不属于 SUS scheduler job，不计入 `sus/render/ui`，但同步阻塞主线程。
+
+当前状态：**混合 C++/GDScript**（debug-overlay-perf v2，2026-06-12）。18 个 overlay mode 的 per-cell 采样（含 `latitude_buffer` / `atan2` / 非 schema 字段）留在 GDScript（仅 ~n_cells 次，分支重、零 bit-divergence 风险）；O(n_pixels) 的内层像素 fan-out（典型 ~62 万次写）+ buffer 清零下沉 `encode_overlay_atlas`。ext 缺失 / 旧 DLL / SoA 未建 / C++ 返回 fallback 时透明回退到 GDScript fan-out（`gdscript_fanout` / `gdscript_fanout_soa`）。
+
+输入 / 输出：
+
+| 项 | 来源 | 备注 |
+| --- | --- | --- |
+| cell SoA / facade 值 | `DCViewAdapter`（World 优先，Cell 兜底） | 与 info_panel 同一 adapter 实例避免 drift。 |
+| `world.cell_pixel_lists` | MapBaker | 每 cell 覆盖像素 idx 列表（GDScript Dict fan-out 兜底用）。 |
+| `world.cell_first_px_arr` / `cell_px_count_arr` / `flat_px_indices_arr` | MapBaker `_ensure_world_cell_pixel_csr` | 持久 SoA pixel CSR（按 `cell.index` 索引，整图一次性构建）；`encode_overlay_atlas` 零拷贝复用。 |
+| `world.latitude_buffer` | MapBaker | CLIMATE_ZONE 通道用真实 ny。 |
+| `world_ext: DCWorldExt` | main `get_data_core_world_ext()` | 提供 `encode_overlay_atlas`；缺失/旧 DLL 时透明回退。 |
+| `existing_tex: ImageTexture` | main `_overlay_tex` 持久化 | size 匹配走 `update(img)`，不匹配 fallback 新建。 |
+| `existing_buf: PackedByteArray` | main `_overlay_buf` 持久化 | 复用，避免每帧 2.4MB resize。 |
+| `texture` + `buf` + `path` | 返回值 | caller 缓存复用；`path` ∈ {gdext_fanout, gdscript_fanout, gdscript_fanout_soa}。 |
+
+关键性能契约（debug-overlay-perf v1 + v2）：
+
+- **必须**持久化 `_overlay_tex` 跨调用。直接 `ImageTexture.create_from_image()` 每帧重建会触发 GPU 资源销毁 + VRAM 重分配，单次 5-15ms。
+- **必须**让 buf 跨调用复用。每帧 `PackedByteArray.resize(N*4)` 触发 GC 抖动。
+- **必须**用 dirty + skip_day 双 gate 节流。x20 倍速下 day_changed 每秒可触发 20-40 次；跳日帧 climate/weather 字段不变，重 bake 无意义。
+- **应当**走 `encode_overlay_atlas`：cpp_path 下 GDScript 不再做 O(n_pixels) 内层像素写，buffer 清零由 C++ memset 承担；GDScript 仅清零用于兜底路径。
+
+C++ fan-out 协议（debug-overlay-perf v2，2026-06-12，已实现）：
+
+- GDScript 端 per-cell 采样产出三组 per-cell（按 `cell.index`）数组：`cell_r` / `cell_g`（RGBA8 的 R/G byte）+ `cell_valid`（0/1）。B 恒 0、有效 cell A=255。
+- `encode_overlay_atlas` 复用 `world.cell_first_px_arr` / `cell_px_count_arr` / `flat_px_indices_arr`（整图 flat，first/count 直接索引，与 4 张视觉 atlas 共用语义），把每个有效 cell 的 `(R,G,0,255)` 扇出写到它覆盖的全部像素，并 `memset` 清零。
+- 该 pass 不读 `_slots` / 不要求 `_bound`：overlay 数据全部由 GDScript 预采样喂入，地图刚生成 / climate slot 未绑定也能工作。
+- bit-equal 由 `_fanout_cell_bytes_soa`（GDScript 等价兜底）保证；C++ 返回 `fallback=true`（仅参数非法）时调用它。
+
+诊断字段：
+
+- `main.get_overlay_last_bake_ms()` 暴露最近一次 bake 耗时；> 5ms 应警觉。
+- `main.get_overlay_bake_path()` 暴露 fan-out 路径，确认 C++ 是否生效（应为 `gdext_fanout`）。
+- `_overlay_stats` 内部含 `count / invalid_count / near_zero_count / buckets`，DebugConsole Telemetry 读取。
+
 ## 后续迁移优先级
 
 1. 消除仍会进入 `largest` 的 GDScript sliced apply，例如 transp/apply、weather commit object unpack、Pass-B sparse apply。
@@ -444,6 +492,7 @@ enum_atlas_upload axis= path=cpp_cached_patch elapsed=0.01 patch=0.42 img=0.00 u
 3. 把临时 knobs PackedArray 输入补成 schema slot，减少每 tick packing。
 4. 将 ocean physical stage 状态机中可纯数据化的部分移入 C++ schedule graph。
 5. 保留 GDScript object/UI/debug 层，但确保它们只读已发布 snapshot，不参与 hot-loop authority。
+6. **Debug overlay bake**（已落地 v2）：pixel fan-out 已下沉 `encode_overlay_atlas`。后续可选项是把热门连续通道（TEMPERATURE/HUMIDITY/PRECIPITATION）的 per-cell 采样也搬到 C++（直读 schema slot），进一步消除 GDScript 的 ~n_cells 次 Dictionary 采样；收益边际，仅在长时间停留 Debug 通道时有意义。
 
 ## Climate / weather / ocean stability notes
 
@@ -489,10 +538,20 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   `DCWorldExt::run_psi_solver_pass` apply the same final vector-magnitude
   clamp after response blending. `ocean_current_scale` controls PSI-gradient
   conversion; `ocean_current_max_magnitude` controls the final vector length.
+- Current defaults keep the physical field below the old near-unit plateau:
+  `ocean_psi_source_scale=0.08`, `ocean_current_scale=0.16`,
+  `ocean_current_max_magnitude=0.65`, `ocean_thermal_current_weight=0.12`,
+  `ocean_density_cold_weight=0.22`, and `ocean_density_ice_weight=0.12`.
+  These are profile knobs, so existing saved resources may still override them.
 - Per-component safety clamping may still exist as a guard, but the expected
   physical limit is the vector magnitude, not independent `x/y` saturation.
   Water-cell current magnitudes should therefore be bounded by
   `ocean_current_max_magnitude` in normal runs.
+- `run_psi_solver_pass` reports `ocean_current_preclamp_p95`,
+  `ocean_current_preclamp_max`, `ocean_current_clamp_count`,
+  `ocean_current_clamp_ratio`, and `ocean_current_max_magnitude`. The same
+  fields are cached by `MapBaker`, forwarded through `OceanCurrentsJob`, and
+  exported by `TileDataRecorder` as `phys_ocean_current_*` columns.
 
 ### Ocean physical / visual split
 

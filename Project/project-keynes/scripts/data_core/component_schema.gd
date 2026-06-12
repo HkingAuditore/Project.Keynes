@@ -53,8 +53,8 @@ const U8: int  = DCComponentIds.U8
 # 后续 dots_lint 工具会校验"声明 owner=X 但实际有 Y 在写"的违约。
 const CELL_SCHEMA: Array = [
 	# ─── Climate / Weather F32（含日照、热惯性、雪包、水分平衡）────────
-	{ name = &"cell.temp",               cpp_name = "cell_temp",                  dtype = F32, track_prev = true,  map_field = "temp_arr",                  prev_field = "temp_arr_prev",            owner = "climate.pass_a" },
-	{ name = &"cell.temp_baseline",      cpp_name = "cell_temp_baseline",         dtype = F32, track_prev = false, map_field = "temp_baseline_arr",         prev_field = "",                         owner = "map_generation" },
+	{ name = &"cell.temp",               cpp_name = "cell_temp",                  dtype = F32, track_prev = true,  map_field = "temp_arr",                  prev_field = "temp_arr_prev",            owner = "climate.wind_surface" },
+	{ name = &"cell.temp_baseline",      cpp_name = "cell_temp_baseline",         dtype = F32, track_prev = false, map_field = "temp_baseline_arr",         prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_30d",           cpp_name = "cell_temp_30d",              dtype = F32, track_prev = false, map_field = "temp_30d_arr",              prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_365d",          cpp_name = "cell_temp_365d",             dtype = F32, track_prev = false, map_field = "temp_365d_arr",             prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_anomaly",       cpp_name = "cell_temp_anomaly",          dtype = F32, track_prev = false, map_field = "temp_anomaly_arr",          prev_field = "",                         owner = "climate.pass_a" },
@@ -99,6 +99,13 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.weather_instability",   cpp_name = "cell_weather_instability",   dtype = F32, track_prev = false, map_field = "weather_instability_arr",   prev_field = "", owner = "weather.field_solver" },
 	{ name = &"cell.weather_field_init",    cpp_name = "cell_weather_field_init",    dtype = U8,  track_prev = false, map_field = "weather_field_init_arr",    prev_field = "", owner = "weather.field_solver" },
 	{ name = &"cell.air_mass_temp_anomaly", cpp_name = "cell_air_mass_temp_anomaly", dtype = F32, track_prev = false, map_field = "air_mass_temp_anomaly_arr", prev_field = "", owner = "climate.pass_b" },
+	# ─── A 修复（climate-temp-pingpong-fix-2026-06）— 显式 anomaly 合成新增 2 条 ─
+	# 与 cell.air_mass_temp_anomaly 并列：
+	#   ocean_thermal_anomaly  由 ocean_water/ocean_land pass 写（ocean.composition）
+	#   local_thermal_anomaly  由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）
+	# wind_surface 末端把这三条 anomaly 与 cell.temp_baseline 合成回 cell.temp。
+	{ name = &"cell.ocean_thermal_anomaly", cpp_name = "cell_ocean_thermal_anomaly", dtype = F32, track_prev = false, map_field = "ocean_thermal_anomaly_arr", prev_field = "", owner = "ocean.composition" },
+	{ name = &"cell.local_thermal_anomaly", cpp_name = "cell_local_thermal_anomaly", dtype = F32, track_prev = false, map_field = "local_thermal_anomaly_arr", prev_field = "", owner = "climate.pass_b" },
 	{ name = &"cell.has_river",             cpp_name = "cell_has_river",             dtype = U8,  track_prev = false, map_field = "has_river_arr",             prev_field = "", owner = "map_generation" },
 	# ─── Phase 3a Step 2.1.a（2 条，对应 world.gd 711-712）─────────────────
 	{ name = &"cell.ema_initialized",       cpp_name = "cell_ema_initialized",       dtype = U8,  track_prev = false, map_field = "ema_initialized_arr",       prev_field = "", owner = "climate.pass_a" },

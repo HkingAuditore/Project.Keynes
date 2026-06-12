@@ -83,6 +83,13 @@ var weather_field_init_arr:   PackedByteArray   = PackedByteArray()
 var air_mass_temp_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 var has_river_arr:             PackedByteArray   = PackedByteArray()
 
+# ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
+# ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
+# local_thermal_anomaly_arr: 由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）。
+# 二者由 _alloc_soa() 分配；不参与 rebuild_soa_from_cells（无 HexCell 镜像，纯运行期 SoA）。
+var ocean_thermal_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+var local_thermal_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+
 # ─── Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段 ──────
 # ema_initialized_arr: 1 字节，0 / 1。冷启动判定（Pass-A 冷启动赋初值；后续
 #   ocean_heat_transport_water/land_soa 读它决定是否参与 EMA 平滑）。
@@ -473,6 +480,9 @@ func _alloc_soa(n: int) -> void:
 	weather_field_init_arr.resize(n)
 	air_mass_temp_anomaly_arr.resize(n)
 	has_river_arr.resize(n)
+	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
+	ocean_thermal_anomaly_arr.resize(n)
+	local_thermal_anomaly_arr.resize(n)
 	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段
 	ema_initialized_arr.resize(n)
 	temp_season_offset_arr.resize(n)
@@ -589,6 +599,11 @@ func rebuild_soa_from_cells() -> void:
 		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress if has_live_vegetation else 0.0
 		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress if has_live_vegetation else 0.0
 		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
+	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成字段无 HexCell 镜像，
+	# 全图 fill 为 0（resize 已经填 0，这里显式 fill 防止后续手动 resize 残值）。
+	for i in range(n):
+		ocean_thermal_anomaly_arr[i] = 0.0
+		local_thermal_anomaly_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()
