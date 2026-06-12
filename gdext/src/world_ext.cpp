@@ -2936,15 +2936,6 @@ void DCWorldExt::bind_dirty_world(godot::Object *dirty_world) {
     // 的 dirty mask 信号补齐——C++ pass 用 _map_data->set() 直写 MapData，
     // 绕过 GDScript write_* 上的自动 _dirty_mark_*，atlas 4 通道因此跳过编码。
     _dirty_world = dirty_world;
-    // v3 一次性诊断（sea-ice-snow-visual-fix-v3 2026-06）：印一行确认 bind_dirty_world
-    // 真的被 GDScript 调用了，且 DLL 加载的是新版本。
-    static bool _diag_dw_printed = false;
-    if (!_diag_dw_printed) {
-        _diag_dw_printed = true;
-        UtilityFunctions::print(
-            "[DCWorldExt][diag] bind_dirty_world: dirty_world=",
-            (dirty_world == nullptr ? "nullptr" : "OK"));
-    }
 }
 
 void DCWorldExt::_flush_slot_to_map(int comp_id) {
@@ -2966,25 +2957,10 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
             // sea-ice-snow-visual-fix-2026-06：通知 DCWorld 全 cell 脏，
             // 让 atlas pipeline `read_and_clear_dirty_mask` 在下个 stride 拿到信号。
             // 若 _dirty_world 未注入或 dirty_mask 关闭，mark_dirty_all 是 no-op。
+            // v3 验证完成（2026-06-13）：dirty 路径正常工作，mark_dirty_all 每个 climate
+            // pass 都被触发。诊断 print 已移除。
             if (_dirty_world) {
                 _dirty_world->call(StringName("mark_dirty_all"));
-                // v3 诊断：前 8 次 mark_dirty 验证 path 真的活着。
-                static int _diag_md_counter = 0;
-                if (_diag_md_counter < 8) {
-                    _diag_md_counter++;
-                    UtilityFunctions::print(
-                        "[DCWorldExt][diag] _flush_slot_to_map: mark_dirty_all #",
-                        _diag_md_counter, " comp_id=", comp_id);
-                }
-            } else {
-                // v3 诊断：前 4 次提示 _dirty_world 未注入。
-                static int _diag_null_counter = 0;
-                if (_diag_null_counter < 4) {
-                    _diag_null_counter++;
-                    UtilityFunctions::print(
-                        "[DCWorldExt][diag] _flush_slot_to_map: NO _dirty_world #",
-                        _diag_null_counter, " comp_id=", comp_id);
-                }
             }
             return;
         }

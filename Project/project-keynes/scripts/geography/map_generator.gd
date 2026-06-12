@@ -1530,11 +1530,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
-	# sea-ice-snow-visual-fix-v3 (2026-06) 诊断：确认 DVAS 真的被注册 + must_run/starvation 状态。
-	print("[map_gen][diag] DVAS registered (line 1529): id=", _dynamic_visual_atlas_upload_job.id,
-		" must_run=", _dynamic_visual_atlas_upload_job.must_run,
-		" starvation_threshold=", _dynamic_visual_atlas_upload_job.starvation_threshold,
-		" use_dc_scheduler=", _use_dc_system_scheduler)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
@@ -2573,10 +2568,6 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
 	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
-	# sea-ice-snow-visual-fix-v3 (2026-06) 诊断：native_daily_sim 路径下 DVAS 注册。
-	print("[map_gen][diag] DVAS registered (line 2555 native_daily path): id=", _dynamic_visual_atlas_upload_job.id,
-		" must_run=", _dynamic_visual_atlas_upload_job.must_run,
-		" starvation_threshold=", _dynamic_visual_atlas_upload_job.starvation_threshold)
 	if _use_dc_system_scheduler:
 		_sus.register_system(_dynamic_visual_atlas_upload_job)
 	else:
