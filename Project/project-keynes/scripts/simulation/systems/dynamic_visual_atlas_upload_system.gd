@@ -241,6 +241,10 @@ func _rebuild_baker_callables() -> void:
 
 
 func tick(_ctx) -> Dictionary:
+	# v3 一次性诊断：确认 DVAS.tick 真的被调度（即 must_run=true 起效）。
+	if not Engine.has_meta("_diag_dvas_tick"):
+		Engine.set_meta("_diag_dvas_tick", 1)
+		print("[DVAS][diag] tick() FIRST CALL, baker=", baker != null, " map=", map != null, " world=", world_data != null)
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
@@ -1016,6 +1020,13 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 				dirty_indices = dirty_source.read_and_clear_dirty_mask()
 				dirty_path_used = true
 				dirty_reason = "dirty" if dirty_indices.size() > 0 else "no_dirty"
+				# v3 一次性诊断（sea-ice-snow-visual-fix-v3 2026-06）：cpp pipeline 路径首次读 dirty。
+				# 期望：dirty_count > 0（climate pass 已通过 C++ flush 触发 mark_dirty_all）。
+				if not Engine.has_meta("_diag_dvas_cpp"):
+					Engine.set_meta("_diag_dvas_cpp", 1)
+					print("[DVAS][diag] cpp_pipeline FIRST READ: source=", dirty_source_tag,
+						" dirty_count=", dirty_indices.size(),
+						" mask_size=", (int(dirty_source.dirty_mask_size()) if dirty_source.has_method("dirty_mask_size") else -1))
 		else:
 			dirty_reason = "read_and_clear_missing"
 	elif is_mid_stride:
@@ -1419,11 +1430,21 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 				world_data.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
 		"smo":
 			world_data.dyn_atlas_smooth_buffer = buf
+			# v3 一次性诊断：前 2 次 commit 看 path（update vs create）。
+			var _smo_path_tag: String = "?"
 			if world_data.dyn_atlas_smooth_tex != null \
 					and world_data.dyn_atlas_smooth_tex.get_size() == Vector2(float(W), float(H)):
+				_smo_path_tag = "update"
 				world_data.dyn_atlas_smooth_tex.update(img)
 			else:
+				_smo_path_tag = "create"
 				world_data.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img)
+			var _smo_cnt: int = int(Engine.get_meta("_diag_smo_commit", 0))
+			if _smo_cnt < 2:
+				Engine.set_meta("_diag_smo_commit", _smo_cnt + 1)
+				print("[DVAS][diag] smo commit #", _smo_cnt + 1, " path=", _smo_path_tag,
+					" W=", W, " H=", H, " buf_sz=", buf.size(),
+					" tex_rid=", (str(world_data.dyn_atlas_smooth_tex.get_rid()) if world_data.dyn_atlas_smooth_tex != null else "<null>"))
 		"ice":
 			world_data.ice_state_buffer = buf
 			if world_data.ice_state_tex != null \
