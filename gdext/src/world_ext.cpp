@@ -2959,12 +2959,22 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
             // 若 _dirty_world 未注入或 dirty_mask 关闭，mark_dirty_all 是 no-op。
             // v3 验证完成（2026-06-13）：dirty 路径正常工作，mark_dirty_all 每个 climate
             // pass 都被触发。诊断 print 已移除。
-            if (_dirty_world) {
-                _dirty_world->call(StringName("mark_dirty_all"));
-            }
+            // dirty-mark-batch-2026-06：原先每 flush 立即跨边界 call mark_dirty_all，
+            // pass_a 16 slot flush = 16 次跨界开销 ~1.6-4.8ms。改为仅置 pending 标志，
+            // 由 climate_daily_system 在 round 末尾调 flush_pending_mark_dirty_all()
+            // 合并为 1 次跨界 call。atlas pipeline 在下个 stride 仍能拿到 dirty 信号。
+            _pending_mark_dirty_all = true;
             return;
         }
     }
+}
+
+void DCWorldExt::flush_pending_mark_dirty_all() {
+    // 主线程调用：把累积的 mark_dirty_all 合并 emit 一次。多次调用幂等。
+    if (_pending_mark_dirty_all && _dirty_world) {
+        _dirty_world->call(StringName("mark_dirty_all"));
+    }
+    _pending_mark_dirty_all = false;
 }
 
 void DCWorldExt::flush_slots_to_map() {
@@ -2982,9 +2992,12 @@ void DCWorldExt::flush_slots_to_map() {
         }
     }
     // sea-ice-snow-visual-fix-2026-06：批量 flush 末尾一次 mark dirty。
+    // dirty-mark-batch-2026-06：本路径立即 emit 并清 pending，避免后续 round 末尾
+    // 的 flush_pending_mark_dirty_all() 重复发布。
     if (_dirty_world) {
         _dirty_world->call(StringName("mark_dirty_all"));
     }
+    _pending_mark_dirty_all = false;
 }
 
 void DCWorldExt::refresh_slots_from_map() {
@@ -17886,6 +17899,9 @@ void DCWorldExt::_bind_methods() {
     // CoW flush / refresh (performance-charter §11.2)
     ClassDB::bind_method(D_METHOD("flush_slots_to_map"),    &DCWorldExt::flush_slots_to_map);
     ClassDB::bind_method(D_METHOD("refresh_slots_from_map"), &DCWorldExt::refresh_slots_from_map);
+    // dirty-mark-batch-2026-06
+    ClassDB::bind_method(D_METHOD("flush_pending_mark_dirty_all"),
+                         &DCWorldExt::flush_pending_mark_dirty_all);
 
     ClassDB::bind_method(D_METHOD("create_archetype", "name", "comp_ids"), &DCWorldExt::create_archetype);
     ClassDB::bind_method(D_METHOD("assign_archetype", "idx", "arch_id"),   &DCWorldExt::assign_archetype);

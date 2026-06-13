@@ -178,6 +178,10 @@ public:
     // map.*_arr between C++ passes).
     void flush_slots_to_map();
     void refresh_slots_from_map();
+    // dirty-mark-batch-2026-06：把所有 pending 的 mark_dirty_all 信号一次性 emit
+    // 到 _dirty_world。调用方（climate_daily_system 在 round 末尾）持锁主线程
+    // 时调用即可。多次重复调用是幂等的（pending 清零）。
+    void flush_pending_mark_dirty_all();
 
     // ─── Archetype system (mirrors I2.B in GDScript) ─────────────────────
     int  create_archetype(const godot::StringName &name, const godot::Array &comp_ids);
@@ -1619,6 +1623,11 @@ private:
     // 能在下个 stride 看到 dirty 信号。`bind_dirty_world` 在 GDScript setup
     // 完成后由 world.gd::bind_map_data 注入；nullptr 时退化为旧行为。
     godot::Object                            *_dirty_world = nullptr; // weak
+    // dirty-mark-batch-2026-06：_flush_slot_to_map 末尾不再立即 call
+    // mark_dirty_all，而是把 pending 标志置 true。climate_daily_system 在 round
+    // 末尾调 flush_pending_mark_dirty_all() 一次性发布。pass_a 16 slot flush
+    // 原本触发 16 次 GD 跨边界 call，现合并为 1 次，每 round 省 1.5-5ms。
+    bool                                      _pending_mark_dirty_all = false;
     bool                                      _bound    = false;
     bool                                      _native_world_configured = false;
     int                                       _native_world_cell_count = 0;

@@ -168,17 +168,6 @@ var _tod_profile: TODProfile = null
 var _splash_layer: CanvasLayer = null
 var _splash_label: Label = null
 
-# 移动端仿真节流：每 _sim_tick_stride 个 day_changed 才真正跑一次 sus_tick_daily，
-# 其余 day_changed 只更新 UI 时间标签 + renderer phase push（轻量，<1ms），
-# 让 60Hz 渲染不被 ~17ms 仿真打断。x1 速度下 mobile 默认 stride=2 → 0.5Hz 仿真。
-# Desktop 保持每 day_changed 即 1 sus_tick（stride=1）。
-# 用户层面：游戏内"1 天"的视觉/仿真耦合变松——season_phase 仍每帧推送，但温度/
-# 湿度/海冰这类全图状态每 2 个游戏日才前进一步。x5/x20 倍速下游戏日推进更快，
-# 仿真节流相对延迟仍可接受（被 stride 平摊到多个 day）。
-var _sim_tick_stride: int = 1
-var _sim_tick_counter: int = 0
-var _last_sus_result: Dictionary = {}
-
 # 地块信息面板（右侧）— 由 _select_cell / _refresh_info_panel 维护
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
 @onready var _overlay_layer: DataOverlayLayer = $WorldRoot/DataOverlayLayer
@@ -307,11 +296,6 @@ var _overlay_bake_path: String = "gdscript_fanout"
 func _ready() -> void:
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
-
-	# 移动端仿真节流：每 2 个 day_changed 才跑一次 sus_tick_daily，让 60Hz
-	# 渲染不被仿真重活打断。详细见 _sim_tick_stride 注释。
-	if OS.has_feature("mobile"):
-		_sim_tick_stride = 2
 
 	# 安卓黑屏体感修复：bake_world 同步耗时 ~13s（移动端 GDScript 双重循环）。
 	# 在 generate 调用前显示一个简单 splash overlay 让用户看到"在生成"，
@@ -722,25 +706,9 @@ func _on_day_changed(_day_idx: int) -> void:
 	# weather_ran=false 表示本日被 weather_refresh_job.policy（StridePolicy）跳过，
 	# 这条信息被用来抑制 UI 的 weather/vitality/climate/emergent 四行刷新——
 	# 等价于此前的 was_skipped_day 行为。
-	#
-	# 移动端仿真节流（2026-06-13）：每 _sim_tick_stride 个 day_changed 才真正跑
-	# 一次 sus_tick_daily。跳过的 day_changed 复用上次缓存的 sus_result，让
-	# 60Hz 渲染不被 ~17ms 仿真打断。下游消费（fronts/weather_ran/UI）逻辑不变。
 	var sus_result: Dictionary = {}
-	_sim_tick_counter += 1
-	var should_run_sim: bool = (_sim_tick_counter >= _sim_tick_stride)
-	if should_run_sim:
-		_sim_tick_counter = 0
-		if _generator != null and _world_clock != null:
-			sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
-			_last_sus_result = sus_result
-	else:
-		# Cached path：用上次仿真结果，UI/renderer 仍能消费 fronts，但所有仿真
-		# 状态字段（climate/sea_ice/weather）保持上次值。weather_ran=false 让
-		# 下游天气 UI 不再做"换帧"工作，避免错觉变化。
-		sus_result = _last_sus_result.duplicate(true) if not _last_sus_result.is_empty() else {}
-		sus_result["weather_ran"] = false
-		sus_result["fronts_changed"] = false
+	if _generator != null and _world_clock != null:
+		sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
 	# ───────────────────────────────────────────────────────────────────
 	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时启用：
