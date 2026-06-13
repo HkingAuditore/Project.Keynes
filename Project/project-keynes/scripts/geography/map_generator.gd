@@ -135,6 +135,12 @@
 
 class_name MapGenerator
 
+# bake_world 阶段进度转发信号。MapBaker 内部的 stage_progress 在 _baker = new() 后
+# 立刻被 connect 转发到这里，让 main.gd 不需要触达内部 _baker 引用就能订阅。
+# main.gd 在 `_generator = MapGenerator.new()` 之后、`generate()` 调用之前
+# 订阅本信号；详细 stage 含义见 map_baker.gd 顶部 stage_progress 信号注释。
+signal bake_progress(stage: String, fraction: float)
+
 # 显式 preload，避免新建 class_name 文件时 Godot 全局类注册表偶发未拾取的问题
 const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd")
@@ -1060,6 +1066,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
+	# 转发 baker.stage_progress → generator.bake_progress（main.gd 已订阅）。
+	if _baker.has_signal("stage_progress") and not _baker.stage_progress.is_connected(_on_baker_stage_progress):
+		_baker.stage_progress.connect(_on_baker_stage_progress)
 	if _world_clock_ref != null and _baker.has_method("set_world_clock_ref"):
 		_baker.set_world_clock_ref(_world_clock_ref)
 	# Physical Wind & Ocean Circulation：把 ClimateProfile 注入 cfg，让 MapBaker
@@ -12822,3 +12831,9 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 		var n_air: int = map.iter_cells().size()
 		for i_air in range(n_air):
 			soa_air[i_air] = map.cell_at(i_air).air_mass_temp_anomaly
+
+
+# bake_world 阶段进度信号 forwarder：MapBaker.stage_progress → MapGenerator.bake_progress。
+# 详细 stage 含义见 map_baker.gd 顶部 stage_progress 信号注释。
+func _on_baker_stage_progress(stage: String, fraction: float) -> void:
+	bake_progress.emit(stage, fraction)
