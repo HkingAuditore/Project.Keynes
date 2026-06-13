@@ -434,6 +434,22 @@ var _last_season_refresh_breakdown: Dictionary = {}
 var _season_round_slots_fresh: bool = false
 # X2 once-log：累计当 round 内 ensure helper 的 skip / refresh 次数，用于 A/B 验证。
 var _season_round_slots_skip_count: int = 0
+
+# refresh-consolidation-2026-06：climate daily round 内 SoA-slots 同步守门员。
+# 仿照 _season_round_slots_fresh 模式，但**独立**于 season_refresh round，
+# 因为 climate daily 和 season refresh 不重叠（不同 SUS job）。
+# 用法：每个 climate sub-pass 入口（pass_a / pass_b / ocean_water / ocean_land /
+# sea_ice / transp / wind_air / wind_surface 等）原本调 refresh_slots_from_map()
+# 的位置改调 _ensure_climate_daily_round_slots_fresh()。
+# climate_daily_system._run_pass 在跨 pass 边界（pass_a→pass_b、ocean_water→ocean_land
+# 等）调 _mark_climate_daily_round_slots_stale() 强制下一次 refresh，保证下游
+# pass 读到上游 flush 进 MapData 的最新值。round 末尾 climate_daily_system 也调
+# _mark_climate_daily_round_slots_stale()，下一 round 启动时重 refresh。
+# 实测 ARM 上 refresh_slots_from_map 单次 ~1.5ms（67 component variant unpack），
+# climate daily round 内原本 9-12 次调用 → 收编为 3-5 次，预期省 8-12ms/round。
+var _climate_daily_round_slots_fresh: bool = false
+var _climate_daily_round_slots_skip_count: int = 0
+var _climate_daily_round_slots_refresh_count: int = 0
 var _season_round_slots_refresh_count: int = 0
 
 # ── DOTS-Final-Frontier Phase B+：season refresh full-round single-call 状态 ──
@@ -3560,6 +3576,39 @@ func _ensure_season_round_slots_fresh() -> void:
 	_season_round_slots_fresh = true
 	_season_round_slots_refresh_count += 1
 
+
+# refresh-consolidation-2026-06：climate daily round 内 SoA-slots 同步守门员。
+# 见 _climate_daily_round_slots_fresh 注释。每个 climate sub-pass 入口调本函数
+# 替换原 refresh_slots_from_map()。守门员逻辑与 season 版完全对称。
+func _ensure_climate_daily_round_slots_fresh() -> void:
+	if _data_core_world_ext == null:
+		return
+	if not _data_core_world_ext.has_method("refresh_slots_from_map"):
+		return
+	if _climate_daily_round_slots_fresh:
+		_climate_daily_round_slots_skip_count += 1
+		return
+	_data_core_world_ext.refresh_slots_from_map()
+	_climate_daily_round_slots_fresh = true
+	_climate_daily_round_slots_refresh_count += 1
+
+
+# 跨 pass 边界 / fallback 写 cell / round 末尾时调用，让下一次
+# _ensure_climate_daily_round_slots_fresh() 重新跑 refresh_slots_from_map()。
+func _mark_climate_daily_round_slots_stale() -> void:
+	_climate_daily_round_slots_fresh = false
+
+
+# Soak 验收用：把 round 内 refresh/skip 计数打印出来。climate_daily_system 在
+# round 末尾调一次，便于核对 "原本 N 次 refresh → 现在 M 次" 的优化幅度。
+func dump_climate_daily_round_slots_stats() -> Dictionary:
+	var out: Dictionary = {
+		"refresh_count": _climate_daily_round_slots_refresh_count,
+		"skip_count": _climate_daily_round_slots_skip_count,
+	}
+	_climate_daily_round_slots_refresh_count = 0
+	_climate_daily_round_slots_skip_count = 0
+	return out
 
 func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: int) -> bool:
 	var cp := _c()
@@ -6758,8 +6807,9 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	if _data_core_world_ext != null and map != null:
 		# §11.2: Pass-A is the first C++ pass in the pipeline. Refresh all
 		# slots from MapData so C++ reads GDScript-side changes since last flush.
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		# refresh-consolidation-2026-06：改走 round 守门员，整个 climate daily round
+		# 内多次调用收编为最多 ~3 次实际 refresh。详见 _ensure_climate_daily_round_slots_fresh。
+		_ensure_climate_daily_round_slots_fresh()
 		# Step 3b-1: 真实 cp_struct packing。
 		# 这些字段必须与 world_ext.cpp::run_climate_pass_a 第 3 节读取顺序一一对应。
 		# 任何字段缺失 / 类型不符都会让 C++ 端 return -1.0；strict-native 下保留上一帧结果。
@@ -8146,11 +8196,16 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		# 仍指向 CoW 解耦前的旧 buffer。先 refresh 让 C++ 读到 GDScript 端最新状态。
 		# 开销 ~14μs / 35 component（map_data->get + Variant 类型分发），可接受；
 		# 后续 Phase 2.1 GDScript 改走 world.write_f32_indexed 后可移除。
+		# refresh-consolidation-2026-06：走 climate daily round 守门员。
+		# 同 round 内若 pass_a/B/ocean 已 refresh 过则跳过；refresh_ms 仅记录真实
+		# refresh 那次的耗时，否则保持 0。
 		var refresh_ms: float = 0.0
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+		if _data_core_world_ext.has_method("refresh_slots_from_map") and not _climate_daily_round_slots_fresh:
 			var t_refresh_us: int = Time.get_ticks_usec()
-			_data_core_world_ext.refresh_slots_from_map()
+			_ensure_climate_daily_round_slots_fresh()
 			refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+		else:
+			_ensure_climate_daily_round_slots_fresh()  # may skip
 		# dots-flag-prune-pr1 round 2: use_gdext_thread_fallback flag 已删除——恒走
 		# C++ scalar 入口 run_sea_ice_daily_pass，C++ 内部根据 CPU 特性 / n_cells 自动选择
 		# scalar / SIMD / threaded 三档执行路径。
@@ -9300,8 +9355,9 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：pass_a 刚写过 map.temp_arr，C++
 		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/dots-f4-validation.md §2.2.b。
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		# refresh-consolidation-2026-06：climate_daily round 守门员，跨 pass 边界由
+		# climate_daily_system 在 _run_pass 切换 pass_id 时 mark stale。
+		_ensure_climate_daily_round_slots_fresh()
 		# ─── sim-2ms-perf-push（plan/climate-pass-b-simd）派发 ───────────────
 		# dots-flag-prune-pr1 round 2: use_gdext_pass_b_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_climate_pass_b，C++ 内部根据 CPU 特性 /
@@ -9717,8 +9773,8 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
 		# 但本 pass 还要读 map.is_water_arr / cell_lat_norm_arr 等静态/上一段写过的字段；
 		# refresh 后保证 C++ slot 与 map 一致。详见 docs/dots-f4-validation.md §2.2.b。
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		# refresh-consolidation-2026-06：climate_daily round 守门员。
+		_ensure_climate_daily_round_slots_fresh()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
 		# dots-flag-prune-pr1 round 2: use_gdext_ocean_water_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_water_pass，C++ 内部根据 CPU
@@ -9957,8 +10013,9 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		_apply_temperature_transport_anomaly_knobs(knobs_l, _temperature_transport_anomaly_knobs(cp))
 		# storage A/B 同源契约（修复 B 2026-05-14）：ocean_water 已 flush 到 map，
 		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/dots-f4-validation.md §2.2.b。
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		# refresh-consolidation-2026-06：climate_daily round 守门员；ocean_water→ocean_land
+		# 的跨 pass mark stale 由 climate_daily_system._run_pass 负责。
+		_ensure_climate_daily_round_slots_fresh()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
 		# dots-flag-prune-pr1 round 2: use_gdext_ocean_land_simd / use_gdext_thread_fallback
 		# flag 均已删除——恒走 C++ scalar 入口 run_ocean_land_pass，C++ 内部根据 CPU
@@ -11446,10 +11503,14 @@ func run_transpiration_pass_native(map: MapData) -> Dictionary:
 		"donor_table": donor_table,
 	}
 	var refresh_ms: float = 0.0
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
+	# refresh-consolidation-2026-06：climate_daily round 守门员。仅当未在本 round
+	# 内 refresh 过时才计时，避免 skip 路径误报 refresh_ms。
+	if _data_core_world_ext.has_method("refresh_slots_from_map") and not _climate_daily_round_slots_fresh:
 		var t_refresh_us: int = Time.get_ticks_usec()
-		_data_core_world_ext.refresh_slots_from_map()
+		_ensure_climate_daily_round_slots_fresh()
 		refresh_ms = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+	else:
+		_ensure_climate_daily_round_slots_fresh()  # may skip
 	var t_native_us: int = Time.get_ticks_usec()
 	var rc: float = float(_data_core_world_ext.run_transpiration_pass(knobs))
 	var native_call_ms: float = (Time.get_ticks_usec() - t_native_us) / 1000.0
@@ -12579,8 +12640,10 @@ func run_wind_air_mass_pass_native(map: MapData, season_phase: float) -> Diction
 		"baseline_arr": baseline,
 		"temp_before_arr": temp_before,
 	}
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	# refresh-consolidation-2026-06：climate_daily round 守门员。wind_air 通常无须
+	# 真实 refresh —— 它读温度 temp_arr，前序 ocean_land flush 了 ocean_anom 但
+	# climate_daily_system 会在跨 pass 边界 mark stale，这里 ensure 时会按需 refresh。
+	_ensure_climate_daily_round_slots_fresh()
 	var rc: float = float(_data_core_world_ext.run_wind_air_mass_pass(knobs))
 	if rc < 0.0:
 		return _fallback_wind_air_mass_pass_result(map, season_phase, "native_failed")
@@ -12610,8 +12673,9 @@ func run_wind_surface_pass_native(map: MapData, season_phase: float) -> Dictiona
 		"neighbor_indices": nb_idx,
 		"fallback_baseline_arr": baseline,
 	}
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	# refresh-consolidation-2026-06：climate_daily round 守门员。wind_surface 通常
+	# 跟在 wind_air 之后，仅读 wind_air 写入的 C++ slot（不绕 MapData），故可 skip。
+	_ensure_climate_daily_round_slots_fresh()
 	var rc: float = float(_data_core_world_ext.run_wind_surface_pass(knobs))
 	if rc < 0.0:
 		return _fallback_wind_surface_pass_result(map, season_phase, "native_failed")

@@ -1107,6 +1107,11 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_sync_runtime_terrain_views("round_start")
 		_begin_round_pass_state()
 		_reset_transpiration_slice_state()
+		# refresh-consolidation-2026-06：round 入口 mark stale，让 pass_a 入口的
+		# _ensure_climate_daily_round_slots_fresh() 做一次真实 refresh；同 round 内
+		# 后续 pass 的 ensure 调用全部跳过（除非跨 pass 边界由本 system 再次 mark stale）。
+		if generator != null and generator.has_method("_mark_climate_daily_round_slots_stale"):
+			generator._mark_climate_daily_round_slots_stale()
 		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
 			map.soa_begin_climate_transaction()
 		# A.2.1.A4 — Dirty Mask 启动时整 round 边界处理：
@@ -1233,6 +1238,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 func _run_pass(pass_id: int) -> bool:
 	var token: int = _active_pass_token
 	var t_us0: int = Time.get_ticks_usec()
+	# refresh-consolidation-2026-06：跨 pass 边界处理 climate_daily round 守门员。
+	# 凡是依赖前序 pass 写入 MapData 的 pass，进入前 mark stale 让 ensure 真实 refresh。
+	# - PASS_A：round 入口已 mark stale，不需要再 mark
+	# - PASS_B / OCEAN_LAND / SEA_ICE / TRANSP：读前序 pass flush 到 MapData 的输出
+	# - WIND_AIR / WIND_SURFACE：仅读已 sync 的 C++ slot 内的 temp/wind/anomaly，跳过
+	# - OCEAN_WATER：紧跟 pass_b 之后；pass_b 已改 moisture/local_anom 并 flush
+	if generator != null and generator.has_method("_mark_climate_daily_round_slots_stale"):
+		match pass_id:
+			_PASS_B, _PASS_OCEAN_WATER, _PASS_OCEAN_LAND, _PASS_SEA_ICE, _PASS_TRANSP:
+				generator._mark_climate_daily_round_slots_stale()
 	match pass_id:
 		_PASS_A:
 			generator._climate_pass_a(map, _phase_locked)
@@ -1677,6 +1692,27 @@ func _finalize_round() -> void:
 	_reset_transpiration_slice_state()
 	_round_active = false
 	_pass_cursor = 0
+	# dirty-mark-batch-2026-06：round 末尾合并发布 mark_dirty_all。pass_a 16 slot
+	# flush 原本触发 16 次跨 GDExtension 边界 call，现合并为 1 次。atlas pipeline
+	# 在下个 stride 看到的 dirty 信号语义不变（全图脏 → 增量消费）。
+	if generator != null and generator._data_core_world_ext != null \
+			and generator._data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
+		generator._data_core_world_ext.flush_pending_mark_dirty_all()
+	# refresh-consolidation-2026-06：round 末尾 mark stale，下一 round 必 refresh。
+	# 同时 dump 计数到 logcat，便于验收"原本 N 次 refresh → 现在 M 次"的效果。
+	if generator != null:
+		if generator.has_method("_mark_climate_daily_round_slots_stale"):
+			generator._mark_climate_daily_round_slots_stale()
+		if generator.has_method("dump_climate_daily_round_slots_stats"):
+			var stats: Dictionary = generator.dump_climate_daily_round_slots_stats()
+			# 每 20 round 打一次，避免刷屏
+			if int(stats.get("refresh_count", 0)) > 0 \
+					and generator.get("_daily_climate_call_count") != null \
+					and int(generator._daily_climate_call_count) % 20 == 1:
+				print("[climate/round] refresh_count=%d skip_count=%d (per round)" % [
+					int(stats.get("refresh_count", 0)),
+					int(stats.get("skip_count", 0)),
+				])
 
 
 func get_last_pass_diag() -> Dictionary:
