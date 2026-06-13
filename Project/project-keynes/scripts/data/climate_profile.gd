@@ -827,6 +827,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.18
 
 # ══════════════════════════════════════════════════════════════════════
+# [Diagnostics — runtime perf opt-in]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("运行时诊断")
+# climate_daily_system._debug_climate_integrity 会在每个 climate pass 末尾跑一遍
+# 2400 cell 比对循环（17 PackedArray reads + cell facade compare + samples 构造），
+# 8 个 pass × 每 tick ≈ 6ms 纯 GDScript 开销。移动端实测占 refresh_climate_daily
+# avg 28ms 中的 ~80%。default false 让生产环境关闭诊断；开发期手动改 true 重启
+# 即可在编辑器/PC build 上恢复完整 integrity check。代码里也对 OS.has_feature("mobile")
+# 做了硬短路兜底——即使误把 cp 改 true，移动端仍不跑。
+@export var climate_pass_diagnostics_enabled: bool = false
+
+# ══════════════════════════════════════════════════════════════════════
 # [Special features]
 # ══════════════════════════════════════════════════════════════════════
 @export_category("特殊功能")

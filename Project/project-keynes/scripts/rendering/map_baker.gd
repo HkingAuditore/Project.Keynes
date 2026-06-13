@@ -71,7 +71,21 @@ const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 const PhysCircSolverScript = preload("res://scripts/rendering/physical_circulation_solver.gd")
 
 # ─── 分辨率 ───────────────────────────────────────────────────────────────
-const HM_MAX_DIM := 1024  # hex-driven 模式下不需要 2048（hex 网格本身只 60×40，1024 已经远超）
+# 桌面 1024×N，移动端 512×N。hex 网格本身只 60×40，1024 已远超；移动端 512
+# 让 derived_size 从 1024×606 (620k px) 降到 512×303 (155k px) — atlas RGBA
+# 从 2.4MB 降到 0.6MB，4 张总 GPU 上传从 9.6MB 降到 2.4MB，Adreno 830 上单
+# tick atlas commit 从 12ms 降到 ~3ms。地形细节肉眼可分辨度差异可接受
+# （hex 边界已被 warp noise 模糊）。需要时把 _hm_max_dim() 改回 1024 即可
+# 强制移动端走桌面分辨率。
+const HM_MAX_DIM_DESKTOP := 1024
+const HM_MAX_DIM_MOBILE := 512
+
+static func _hm_max_dim() -> int:
+	return HM_MAX_DIM_MOBILE if OS.has_feature("mobile") else HM_MAX_DIM_DESKTOP
+
+# 兼容：保留旧常量名，值跟 desktop 一致。其它文件仍引用 HM_MAX_DIM 时不破坏；
+# 真正决定渲染分辨率的是 _resolve_hm_size() 里调 _hm_max_dim()。
+const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -3346,17 +3360,19 @@ func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> v
 # ─── 内部：分辨率 / 噪声初始化 ──────────────────────────────────────────
 
 func _resolve_hm_size(bounds: Rect2) -> Vector2i:
+	# 移动端走 512，桌面走 1024。详见 HM_MAX_DIM_DESKTOP/MOBILE 注释。
+	var dim_max: int = _hm_max_dim()
 	if bounds.size.x < 0.01 or bounds.size.y < 0.01:
-		return Vector2i(HM_MAX_DIM, HM_MAX_DIM)
+		return Vector2i(dim_max, dim_max)
 	var aspect := bounds.size.x / bounds.size.y
 	var w: int
 	var h: int
 	if aspect >= 1.0:
-		w = HM_MAX_DIM
-		h = int(round(float(HM_MAX_DIM) / aspect))
+		w = dim_max
+		h = int(round(float(dim_max) / aspect))
 	else:
-		h = HM_MAX_DIM
-		w = int(round(float(HM_MAX_DIM) * aspect))
+		h = dim_max
+		w = int(round(float(dim_max) * aspect))
 	w = (w / 2) * 2
 	h = (h / 2) * 2
 	return Vector2i(maxi(w, 256), maxi(h, 256))
