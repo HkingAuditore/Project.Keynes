@@ -162,6 +162,12 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # 之后随 WorldClock.day_phase_changed 推动 recompute。
 var _tod_profile: TODProfile = null
 
+# Splash overlay：bake_world 期间显示加载提示，避免移动端开场 ~13s 黑屏体感。
+# 节点在 _ensure_splash_overlay() 里 lazy 创建，在 _generate_and_render 入口
+# show + await 一帧让它能绘制，bake 结束后 hide。
+var _splash_layer: CanvasLayer = null
+var _splash_label: Label = null
+
 # 地块信息面板（右侧）— 由 _select_cell / _refresh_info_panel 维护
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
 @onready var _overlay_layer: DataOverlayLayer = $WorldRoot/DataOverlayLayer
@@ -291,6 +297,13 @@ func _ready() -> void:
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
 
+	# 安卓黑屏体感修复：bake_world 同步耗时 ~13s（移动端 GDScript 双重循环）。
+	# 在 generate 调用前显示一个简单 splash overlay 让用户看到"在生成"，
+	# bake 结束后 hide。期间主线程被 baker 占用 → UI 不会刷新阶段进度，
+	# 所以这里只显示一行静态提示；阶段细分通过 baker.stage_progress 信号
+	# print 到日志，未来 main 把 bake_world 改 deferred 后可让 UI 实时变化。
+	_ensure_splash_overlay()
+
 	# 0.4.2 — info panel controller 实例化（在 _generate_and_render 之前，
 	# 否则首次重生成结束时如果 _select_cell 触发 refresh_info_panel 会 NRE）。
 	# 静态 Label refs 都已 @onready 完毕；动态上下文（map / generator / view_adapter）
@@ -326,7 +339,14 @@ func _ready() -> void:
 	# 注：generator 此时尚未 new，先把 CLI 结果缓存，等 _generate_and_render
 	# 创建 generator 后立即应用。
 	_parse_data_core_cli()
+	# 移动端黑屏体感修复：show splash → await 让它真正绘制 → 同步 bake →
+	# hide splash。await 必须在 _ready（async）里做，不能塞进 _generate_and_render
+	# 否则会让该 func 变 async，破坏 regenerate_debug_map 等同步调用方。
+	_splash_show()
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_generate_and_render(initial_seed)
+	_splash_hide()
 	# DataCore CLI：generator 已创建，把 CLI 缓存覆盖到 ClimateProfile。
 	_apply_data_core_cli_to_profile()
 	# 把时钟信号接到 renderer + UI（在第一次生成完成后）
@@ -473,7 +493,12 @@ func _mark_debug_console_state_dirty() -> void:
 		_debug_console.call("request_state_sync")
 
 func regenerate_debug_map() -> void:
+	# 重新生成同样会触发 ~13s bake_world，给一次 splash 体感。
+	_splash_show()
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_generate_and_render(0)
+	_splash_hide()
 
 func fit_debug_map() -> void:
 	if _camera != null:
@@ -1297,6 +1322,10 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
+	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
+	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。
+	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
+		_generator.bake_progress.connect(_on_baker_stage_progress)
 	var result := _generator.generate(cfg, hex_size)
 	_current_map = result["map"]
 	_world_data = result["world_data"]
@@ -2502,3 +2531,66 @@ func _rebuild_view_adapter() -> void:
 
 # PR-3.4.1（M4 拆分）：_on_dcflag_changed 已迁至 DCDotsBootstrap；
 # main 通过 _dots_bootstrap 委派持有 signal connection 生命周期。
+
+
+# ─── Splash overlay（移动端开场加载体感修复）─────────────────────────────────
+#
+# 问题：bake_world 同步耗时 ~13s（620k 像素 × GDScript 双重循环 × FastNoiseLite
+# 4 频段），期间主线程被占用，UI 完全黑屏。移动端用户体感"应用挂了"。
+#
+# 当前修复（最小侵入）：
+#   1. _ready() 入口建一个 CanvasLayer + Label 显示"正在生成世界…"
+#   2. _generate_and_render() 入口 show + `await get_tree().process_frame` × 2
+#      让 splash 真正被绘制一帧，再调用 _generator.generate(...)
+#   3. generate 返回后 hide
+#
+# 期间 baker.stage_progress 信号也会被订阅并 print，便于诊断；UI 不实时变化是
+# 因为主线程被同步 bake 占满，未来 main 把 bake_world 改成 deferred / 协程
+# 切片后才能让 UI 跟着 stage 切换。
+#
+# 后续可优化方向（不在本次 PR 内）：
+#   - 把 _bake_height_biome_moisture 写 C++ kernel（预期 7.2s → ~250ms）
+#   - 按 seed 缓存 bake 产物到 user://，重启秒进
+#   - Use Engine.process_frame await 让 baker 内部按 chunk yield，UI 真正更新
+
+func _ensure_splash_overlay() -> void:
+	if _splash_layer != null:
+		return
+	_splash_layer = CanvasLayer.new()
+	_splash_layer.layer = 100  # 盖在 UI 之上
+	_splash_layer.name = "SplashOverlay"
+	# 全屏黑底
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.05, 0.08, 1.0)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_splash_layer.add_child(bg)
+	# 居中文字
+	_splash_label = Label.new()
+	_splash_label.text = "正在生成世界…"
+	_splash_label.add_theme_font_size_override("font_size", 28)
+	_splash_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95, 1.0))
+	_splash_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_splash_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_splash_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_splash_layer.add_child(_splash_label)
+	add_child(_splash_layer)
+	_splash_layer.visible = false
+
+
+func _splash_show(text: String = "正在生成世界…") -> void:
+	if _splash_label != null:
+		_splash_label.text = text
+	if _splash_layer != null:
+		_splash_layer.visible = true
+
+
+func _splash_hide() -> void:
+	if _splash_layer != null:
+		_splash_layer.visible = false
+
+
+# 由 baker.stage_progress signal 触发。bake_world 同步执行期间 UI 不会重绘，
+# 这里只 print 进度便于 logcat 诊断。
+func _on_baker_stage_progress(stage: String, fraction: float) -> void:
+	if OS.is_debug_build():
+		print("[splash] bake stage=%s fraction=%.2f" % [stage, fraction])

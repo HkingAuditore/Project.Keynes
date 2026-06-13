@@ -51,6 +51,18 @@
 
 class_name MapBaker
 
+# 生成期阶段进度信号。main.gd 的 splash overlay 接此信号显示阶段提示，
+# 避免开场 ~13 秒黑屏体感。fraction 是该阶段相对总耗时的估计值（0.0..1.0
+# 累积），不是精确百分比；目的是让用户知道在跑哪一步、还差多少。
+# stage 取值（按 emit 顺序）：
+#   "terrain"    — _bake_height_biome_moisture / erosion / river SDF / latitude
+#   "physical"   — _bake_initial_physical_circulation / vector buffers
+#   "volcano"    — _bake_volcano_field
+#   "atlas"      — dynamic / ecology / smooth / ice atlas 初始化
+#   "encode"     — _encode_*_tex / atlas 整体编码
+#   "done"       — bake_world 全部完成（fraction=1.0）
+signal stage_progress(stage: String, fraction: float)
+
 const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 # Physical Wind & Ocean Circulation：hex 域物理化求解器。当
 # ClimateProfile.physical_circulation_enabled = true 时，bake_world / 切片烘焙
@@ -666,6 +678,10 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	var t_total := Time.get_ticks_msec()
 	print("MapBaker v6: hm=%s seed=%d" % [world.hm_size, seed_val])
+	# 安卓黑屏体感修复：bake_world 一次性 ~13s 期间 main.gd 的 splash overlay
+	# 接 stage_progress 信号显示阶段进度。fraction 是按 logcat 实测耗时估的累积
+	# 进度（不是精确百分比）。
+	stage_progress.emit("terrain", 0.0)
 
 	# 一次循环同时算 heightmap + biome + moisture + vegetation + cover（共享 warp 计算）
 	# Milestone 2：vegetation_buf / cover_buf 与 biome_buf 完全同 warp、同 cube_round，
@@ -711,10 +727,12 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 风/洋流/上升流像素 buffer：先在 hex 域求解物理场，再把 per-cell 真值
 	# 光栅化回 vector_atlas，供主地图海洋 tint / 水面风驱细节和 WeatherLayer advection 消费。
 
+	stage_progress.emit("physical", 0.62)
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
 	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减
+	stage_progress.emit("volcano", 0.70)
 	t = Time.get_ticks_msec()
 	world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
 	print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
@@ -725,6 +743,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.sea_ice_fraction_buffer.resize(world.derived_size.x * world.derived_size.y)
 
 	# 主地图动态状态 atlas：初始化为当前 cell.temperature/moisture/snow/vitality 快照。
+	stage_progress.emit("atlas", 0.82)
 	rebake_dynamic_cell_atlas_only(map, world)
 	rebake_ecology_visual_atlas_only(map, world)
 	# map-visual-overhaul-v1：新 atlas 初始化（必须在 dynamic_cell_atlas 之后，因为
@@ -734,6 +753,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	rebake_ice_state_atlas(map, world)
 
 	# 编码纹理：v9.atlas → 9 张 derived 贴图合并成 3 张 atlas + 独立 height_tex
+	stage_progress.emit("encode", 0.88)
 	t = Time.get_ticks_msec()
 	world.height_tex = _encode_height_tex(world.height_buffer, world.hm_size)
 	world.enum_atlas_tex = _encode_enum_atlas(
@@ -767,6 +787,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
+	stage_progress.emit("done", 1.0)
 	return world
 
 # ─── Phase 2：增量重新烘焙 biome_tex ────────────────────────────────────────
