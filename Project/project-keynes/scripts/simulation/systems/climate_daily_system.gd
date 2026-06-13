@@ -795,6 +795,12 @@ func _climate_diag_push_sample(samples: PackedStringArray, text: String) -> void
 
 
 func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
+	# 移动端硬短路：诊断在 ARM 上跑 2400 cell × 17 PackedArray read × 8 pass / tick
+	# ≈ 6ms 纯 GDScript 开销，吃掉 refresh_climate_daily 80% 的 SUS budget。无论
+	# ClimateProfile.climate_pass_diagnostics_enabled 是不是被误设为 true，这里
+	# 都不跑——避免移动端误开诊断后 fps 直接塌。force=true 也不破例。
+	if OS.has_feature("mobile"):
+		return
 	if not _diagnostics_enabled():
 		return
 	if map == null or not map.has_soa():

@@ -1,0 +1,631 @@
+PS C:\Users\HkingAuditore>   adb logcat -s godot:V
+--------- beginning of main
+06-13 19:33:26.331  8024 20830 I godot   : Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+06-13 19:33:26.407  8024 20830 I godot   : Vulkan 1.3.284 - Forward Mobile - Using Device #0: Qualcomm - Adreno (TM) 830
+06-13 19:33:27.528  8024 20830 I godot   :
+06-13 19:33:31.539  8024 20830 I godot   : Phase 13: 27 lake seeds
+06-13 19:33:32.603  8024 20830 I godot   : Phase 13: 35 lake cells
+06-13 19:33:32.719  8024 20830 I godot   : Phase 14: 8 volcanoes
+06-13 19:33:32.746  8024 20830 I godot   : MapGenerator v7: per-cell 1329ms (2400 cells)
+06-13 19:33:32.795  8024 20830 I godot   : MapBaker v6: hm=(1024, 606) seed=408952337
+06-13 19:33:32.795  8024 20830 I godot   : [splash] bake stage=terrain fraction=0.00
+06-13 19:33:41.975  8024 20830 I godot   :   height+biome+moisture+veg+cover: 9180ms
+06-13 19:33:42.263  8024 20830 I godot   :   light erosion: 288ms
+06-13 19:33:43.236  8024 20830 I godot   :   river SDF: 973ms
+06-13 19:33:43.283  8024 20830 I godot   :   latitude: 46ms
+06-13 19:33:43.283  8024 20830 I godot   : [splash] bake stage=physical fraction=0.62
+06-13 19:33:43.283  8024 20830 I godot   :   physical circulation hex solve: deferred until DCWorldExt bind (ext=false idx=false soa=false)
+06-13 19:33:43.284  8024 20830 I godot   :   wind/ocean/upwelling pixel buffers: deferred until DCWorldExt bind (0ms)
+06-13 19:33:43.284  8024 20830 I godot   : [splash] bake stage=volcano fraction=0.70
+06-13 19:33:44.635  8024 20830 I godot   :   volcano field: 1351ms
+06-13 19:33:44.635  8024 20830 I godot   : [splash] bake stage=atlas fraction=0.82
+06-13 19:33:45.019  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(0,0,0) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=206 nc=2 na_c=2 na=393 px0=10255
+06-13 19:33:45.019  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(1,0,-1) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=803 px0=7202
+06-13 19:33:45.019  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(2,0,-2) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=211 nc=4 na_c=4 na=824 px0=10287
+06-13 19:33:45.020  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(3,0,-3) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=210 nc=4 na_c=4 na=818 px0=9285
+06-13 19:33:45.020  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(4,0,-4) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=802 px0=10317
+06-13 19:33:45.020  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(5,0,-5) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=797 px0=8292
+06-13 19:33:45.020  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(6,0,-6) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=798 px0=7285
+06-13 19:33:45.020  8024 20830 I godot   : [GD-SMO-WRITE] cell=HexCell(7,0,-7) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=800 px0=9349
+06-13 19:33:45.305  8024 20830 I godot   : [splash] bake stage=encode fraction=0.88
+06-13 19:33:47.414  8024 20830 I godot   :   encode: 2108ms
+06-13 19:33:47.414  8024 20830 I godot   : MapBaker v6: total 14619ms
+06-13 19:33:47.414  8024 20830 I godot   : [splash] bake stage=done fraction=1.00
+06-13 19:33:47.422  8024 20830 I godot   : MapGenerator v7: bake 14627ms
+06-13 19:33:47.422  8024 20830 I godot   : MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+06-13 19:33:47.422  8024 20830 I godot   : MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+06-13 19:33:47.536  8024 20830 I godot   : [SUS] sim budget strict=false frame=2.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+06-13 19:33:47.542  8024 20830 I godot   : [DCWorldExt] bind_map_data: 67 components bound (auto-registered=67; snapshot model; see world_ext.cpp comment & charter Â§11)
+06-13 19:33:47.542  8024 20830 I godot   : [DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+06-13 19:33:47.542  8024 20830 I godot   : [native_world] configure rc=0 reason=configured cells=2400
+06-13 19:33:47.729  8024 20830 I godot   : [hex_cell] facade ENABLED (2400 cells bound; ext=true)
+06-13 19:33:47.729  8024 20830 I godot   : [DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+06-13 19:33:47.729  8024 20830 I godot   : [phys_solve][RT] start#1 phase=1.5000 pending=nan solve_ocean=true ext=true idx=true soa=true
+06-13 19:33:47.729  8024 20830 I godot   : [slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-13 19:33:47.732  8024 20830 I godot   : [slp_field] commit-diag call#1: rc=2.517 slp_out=2400 n_cells=2400 map_slp=2400 published=true
+06-13 19:33:47.732  8024 20830 I godot   : [slp_field][RT-DIAG] call#1 phase=1.5000 rc=2.517 slp_out=2400 n=2400 published=true -> commit_ok
+06-13 19:33:47.732  8024 20830 I godot   : [slp_field] gdext path ACTIVE — first run elapsed=2.52ms (legacy GDScript baseline ~36ms; target < 3ms)
+06-13 19:33:47.732  8024 20830 I godot   : [wind_field/B] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-13 19:33:47.734  8024 20830 I godot   : [wind_field/B] commit-diag call#1: rc=1.339 n_wind=2400 wx=2400 wy=2400 wspd=2400 map_wspd=2400
+06-13 19:33:47.734  8024 20830 I godot   : [wind_field/B] gdext path ACTIVE — first run elapsed=1.34ms (legacy GDScript baseline ≈ 35ms; charter §7 / dots-wind-validation.md target < 5ms)
+06-13 19:33:47.734  8024 20830 I godot   : [psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:33:47.735  8024 20830 I godot   : [psi_solver] commit-diag call#1: rc=1.109 n_water=1055 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:33:47.736  8024 20830 I godot   : [psi_solver] gdext path ACTIVE — first run elapsed=1.11ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+06-13 19:33:47.737  8024 20830 I godot   : [upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+06-13 19:33:47.737  8024 20830 I godot   : [upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.263
+06-13 19:33:47.737  8024 20830 I godot   : [upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.02ms T3_refresh_slots=0.09ms T4_cpp_call=0.49ms (n=2400)
+06-13 19:33:47.737  8024 20830 I godot   : [upwelling/DIAG#1] CPP-PATH-OK (no GDScript fallback)
+06-13 19:33:47.737  8024 20830 I godot   : [upwelling/DIAG#1] STAGE-TOTAL=0.76ms (matches slow_slice if > 25ms)
+06-13 19:33:48.251  8024 20830 I godot   :   [phys_wind_raster] total=513.7ms nan_guard=0.1 ensure_buf=0.2 cpp_raster=513.5 (cells=2400)
+06-13 19:33:48.251  8024 20830 E godot   : WARNING: PhysicalCirculation solve@phase=1.50 total=523ms (slp=0ms wind=1ms psi=3ms finalize=0ms upwelling=1ms wind_raster=514ms) — exceeds 25ms soft budget
+06-13 19:33:48.251  8024 20830 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-13 19:33:48.251  8024 20830 E godot   :    GDScript backtrace (most recent call first):
+06-13 19:33:48.251  8024 20830 E godot   :        [0] _physical_solve_for_phase (res://scripts/rendering/map_baker.gd:5891)
+06-13 19:33:48.251  8024 20830 E godot   :        [1] run_deferred_initial_physical_circulation (res://scripts/rendering/map_baker.gd:577)
+06-13 19:33:48.251  8024 20830 E godot   :        [2] _setup_sus (res://scripts/geography/map_generator.gd:1334)
+06-13 19:33:48.251  8024 20830 E godot   :        [3] generate (res://scripts/geography/map_generator.gd:1214)
+06-13 19:33:48.251  8024 20830 E godot   :        [4] _generate_and_render (res://scripts/main.gd:1329)
+06-13 19:33:48.251  8024 20830 E godot   :        [5] _ready (res://scripts/main.gd:348)
+06-13 19:33:48.517  8024 20830 I godot   :   wind/ocean/upwelling pixel buffers: 266ms
+06-13 19:33:48.764  8024 20830 I godot   : [physical_init] deferred native refresh complete: 1035ms
+06-13 19:33:48.772  8024 20830 I godot   : [weather] gdext acceleration ON (class=DCWorldExt)
+06-13 19:33:48.772  8024 20830 I godot   : [weather] gdext field commit ON
+06-13 19:33:48.777  8024 20830 I godot   : [weather] gdext distribute ON
+06-13 19:33:48.777  8024 20830 I godot   : [weather] gdext summary ON
+06-13 19:33:48.777  8024 20830 I godot   : [weather] hexcell facade ON (skip AoS double-write in hot loop)
+06-13 19:33:48.783  8024 20830 I godot   : [weather] gdext resident knobs ON (class=KnobsHandle)
+06-13 19:33:48.785  8024 20830 I godot   : [DCSystemScheduler] topology: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-13 19:33:48.785  8024 20830 I godot   : [map_generator] DCSystemScheduler topology built: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-13 19:33:48.786  8024 20830 I godot   : [map_generator] [SusBootstrap] dc_system_scheduler | 7 systems | season_refresh,ocean_currents,refresh_climate_daily,sea_ice_daily,enum_atlas_upload,weather_refresh,dynamic_visual_atlas_upload
+06-13 19:33:48.786  8024 20830 I godot   : [main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=2400, components=66, src=map_data)
+06-13 19:33:48.793  8024 20830 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-13 19:33:48.793  8024 20830 I godot   : [DIAG pass_a_entry] day=0 phase=0.002 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-13 19:33:48.798  8024 20830 I godot   : [DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+06-13 19:33:48.798  8024 20830 I godot   : [climate_b/F.3] precondition probe (one-time):
+06-13 19:33:48.798  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:33:48.798  8024 20830 I godot   :   cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+06-13 19:33:48.798  8024 20830 I godot   :   cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+06-13 19:33:48.798  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:33:48.798  8024 20830 I godot   :   ext.has_method('run_climate_pass_b') = true
+06-13 19:33:48.798  8024 20830 I godot   :   fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+06-13 19:33:48.798  8024 20830 I godot   :   rs_lookback = 2, t_freeze = 0.1200, coupling_gain = 1.5000
+06-13 19:33:48.798  8024 20830 I godot   :   verdict = OK → will try C++
+06-13 19:33:48.801  8024 20830 I godot   : [gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15006
+06-13 19:33:48.801  8024 20830 I godot   : [gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+06-13 19:33:48.802  8024 20830 I godot   : [climate_b/F.3] sig probe result = true（仅作诊断）
+06-13 19:33:48.803  8024 20830 I godot   : [climate_b/F.3] DEBUG call#1: path=simd rc=0.4167 n_cells=2400 rs_lookback=2
+06-13 19:33:48.803  8024 20830 I godot   : [climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.42ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+06-13 19:33:48.804  8024 20830 I godot   : [ocean_water/F.2a] precondition probe (one-time):
+06-13 19:33:48.804  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:33:48.804  8024 20830 I godot   :   cp.use_gdext_ocean_water = true (flag removed; constant true)
+06-13 19:33:48.804  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:33:48.804  8024 20830 I godot   :   ext.has_method('run_ocean_water_pass') = true
+06-13 19:33:48.804  8024 20830 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-13 19:33:48.804  8024 20830 I godot   :   advect_steps=3 heat_mix=0.2500
+06-13 19:33:48.804  8024 20830 I godot   :   verdict = OK → will try C++
+06-13 19:33:48.806  8024 20830 I godot   : [gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=14998
+06-13 19:33:48.806  8024 20830 I godot   : [gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+06-13 19:33:48.808  8024 20830 I godot   : [ocean_water/F.2a] sig probe result = true（仅作诊断）
+06-13 19:33:48.808  8024 20830 I godot   : [ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.3020 n=2400 advect=3
+06-13 19:33:48.808  8024 20830 I godot   : [ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.30ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+06-13 19:33:48.809  8024 20830 I godot   : [ocean_land/F.2b] precondition probe (one-time):
+06-13 19:33:48.809  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:33:48.809  8024 20830 I godot   :   cp.use_gdext_ocean_land = true (flag removed; constant true)
+06-13 19:33:48.809  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:33:48.809  8024 20830 I godot   :   ext.has_method('run_ocean_land_pass') = true
+06-13 19:33:48.809  8024 20830 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-13 19:33:48.809  8024 20830 I godot   :   effective_leak=0.3500 (coast_leak=0.3500 winter_boost=1.0000)
+06-13 19:33:48.809  8024 20830 I godot   :   verdict = OK → will try C++
+06-13 19:33:48.811  8024 20830 I godot   : [gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=14999
+06-13 19:33:48.811  8024 20830 I godot   : [gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+06-13 19:33:48.812  8024 20830 I godot   : [ocean_land/F.2b] sig probe result = true（仅作诊断）
+06-13 19:33:48.812  8024 20830 I godot   : [ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.1770 n=2400 effective_leak=0.3500
+06-13 19:33:48.812  8024 20830 I godot   : [ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.18ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+06-13 19:33:48.984  8024 20830 I godot   : [sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.150, k x1.00)
+06-13 19:33:48.984  8024 20830 I godot   : [sea_ice/F.4] precondition probe (one-time):
+06-13 19:33:48.984  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:33:48.984  8024 20830 I godot   :   cp.use_gdext_sea_ice = true (flag removed; constant true)
+06-13 19:33:48.984  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:33:48.984  8024 20830 I godot   :   ext.has_method('run_sea_ice_daily_pass') = true
+06-13 19:33:48.984  8024 20830 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-13 19:33:48.984  8024 20830 I godot   :   verdict = OK → will try C++
+06-13 19:33:48.986  8024 20830 I godot   : [gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15009
+06-13 19:33:48.986  8024 20830 I godot   : [gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+06-13 19:33:48.987  8024 20830 I godot   : [sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+06-13 19:33:48.988  8024 20830 I godot   : [sea_ice/F.4] DEBUG call#1: path=scalar rc=0.1958 n_cells=2400 enable_oht=true
+06-13 19:33:48.990  8024 20830 I godot   : [sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.20ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+06-13 19:33:48.990  8024 20830 I godot   : _apply_sea_ice_daily_pass[F.4]: 0.20ms (water=1307, flipped=15, phase=0.002)
+06-13 19:33:48.992  8024 20830 I godot   : [sea_ice/DIAG] thr_eff t_form=0.120 t_melt=0.220 flip_thr=0.680 | temp all min=0.000 max=0.988 avg=0.396 | water n=1307 t_min_w=0.000 below_form=429 (32.8%) | SIF pos=492 max=0.920 avg_w=0.1936 near_thr=57 | climate_anom=0.000
+06-13 19:33:48.992  8024 20830 I godot   : [sea_ice/slow-dump] tick=0 path=gdext total_wall=8.30ms (pack=0.01 refresh=0.15 native=0.20 native_wall=0.23 sync=0.27 flip=2.01) water=1307 flipped=15
+06-13 19:33:48.992  8024 20830 I godot   : [transp/F.5] precondition probe (one-time):
+06-13 19:33:48.992  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:33:48.992  8024 20830 I godot   :   cp.use_gdext_transpiration = true (flag removed; constant true)
+06-13 19:33:48.992  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:33:48.992  8024 20830 I godot   :   ext.has_method('run_transpiration_pass') = true
+06-13 19:33:48.993  8024 20830 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-13 19:33:48.993  8024 20830 I godot   :   verdict = OK → will try C++
+06-13 19:33:48.995  8024 20830 I godot   : [gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15011
+06-13 19:33:48.995  8024 20830 I godot   : [gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+06-13 19:33:48.996  8024 20830 I godot   : [transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+06-13 19:33:48.996  8024 20830 I godot   : [transp/F.5] DEBUG call#1: rc=0.1938 donor_table.size()=24 n_cells=2400 outflow=0.0250 self=0.0150
+06-13 19:33:48.996  8024 20830 I godot   : [transp/F.5] gdext path ACTIVE — first run elapsed=0.19ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+06-13 19:33:48.996  8024 20830 I godot   : refresh_climate_daily #1: 203ms (cells=2400, phase=0.002) | A=5.2 B=4.3 ocean=9.7 wind=171.4 sea_ice=8.4 ice_bake=0.0 transp=4.0 path=data_core
+06-13 19:33:48.998  8024 20830 I godot   : === World baked in 17370ms ===
+06-13 19:33:48.998  8024 20830 I godot   :   SEA_ICE: 267
+06-13 19:33:48.998  8024 20830 I godot   :   OCEAN: 749
+06-13 19:33:48.998  8024 20830 I godot   :   GLACIER: 27
+06-13 19:33:48.998  8024 20830 I godot   :   SNOW: 42
+06-13 19:33:48.998  8024 20830 I godot   :   MOUNTAIN: 267
+06-13 19:33:48.998  8024 20830 I godot   :   COAST: 191
+06-13 19:33:48.998  8024 20830 I godot   :   TUNDRA: 86
+06-13 19:33:48.998  8024 20830 I godot   :   TAIGA: 28
+06-13 19:33:48.998  8024 20830 I godot   :   KELP: 59
+06-13 19:33:48.998  8024 20830 I godot   :   HILL: 327
+06-13 19:33:48.998  8024 20830 I godot   :   SWAMP: 89
+06-13 19:33:48.998  8024 20830 I godot   :   LAKE: 35
+06-13 19:33:48.998  8024 20830 I godot   :   DELTA: 22
+06-13 19:33:48.998  8024 20830 I godot   :   FOREST: 24
+06-13 19:33:48.998  8024 20830 I godot   :   JUNGLE: 115
+06-13 19:33:48.998  8024 20830 I godot   :   SAVANNA: 31
+06-13 19:33:48.998  8024 20830 I godot   :   REEF: 41
+06-13 19:33:48.999  8024 20830 I godot   : [DOTS-Final-Push] (no profile bound)
+06-13 19:33:50.907  8024 20830 I godot   : [season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+06-13 19:33:50.913  8024 20830 I godot   : [ocean_currents][daily_wind] #1 tick=1 ran=true path=gdext_daily_wind elapsed=4.840 slp=2.764 wind=1.488 delta=1.997860 reason=
+06-13 19:33:50.913  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#1 tick=1 phase=0.0111 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=true phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+06-13 19:33:50.913  8024 20830 I godot   : [psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:33:50.915  8024 20830 I godot   : [psi_solver] commit-diag call#2: rc=1.130 n_water=1040 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:33:50.916  8024 20830 I godot   : [ocean_currents][RT] phys_slice#1 tick=1 round=1 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=true elapsed=7.969 ocean_delta_p95=0.295970 wind_delta_p95=1.997860 slp_delta_p95=0.069140 psi_path=gdext
+06-13 19:33:50.948  8024 20830 E godot   : WARNING: [demo_thermal_gradient] pass skipped — disabled (ClimateProfile.demo_thermal_gradient_enabled=false or no _c())
+06-13 19:33:50.948  8024 20830 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-13 19:33:50.948  8024 20830 E godot   :    GDScript backtrace (most recent call first):
+06-13 19:33:50.948  8024 20830 E godot   :        [0] _demo_tg_diag_once (res://scripts/main.gd:1651)
+06-13 19:33:50.948  8024 20830 E godot   :        [1] _run_demo_thermal_gradient_pass_if_enabled (res://scripts/main.gd:1666)
+06-13 19:33:50.948  8024 20830 E godot   :        [2] _on_day_changed (res://scripts/main.gd:722)
+06-13 19:33:50.948  8024 20830 E godot   :        [3] _process (res://scripts/geography/world_clock.gd:121)
+06-13 19:33:50.948  8024 20830 I godot   : fast tick #1: 51ms (sus=51.77 render=0.02 ui=0.00 skipped_day=true)
+06-13 19:33:51.904  8024 20830 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=352 isw_mis=0 terrain_written=true isw_written=false
+06-13 19:33:51.912  8024 20830 I godot   : [climate/terrain_sync] reason=round_start phase=0.022 cell_terr_mis_before=184 facade_fixed=184 dc_terr_mis_observed=230 dc_isw_mis_observed=0 samples=idx=138 q=17 r=2 cell=17 soa=9 | idx=140 q=19 r=2 cell=17 soa=9 | idx=198 q=17 r=3 cell=17 soa=9
+06-13 19:33:51.912  8024 20830 I godot   : [DIAG pass_a_entry] day=1 phase=0.022 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-13 19:33:51.917  8024 20830 I godot   : [DIAG pass_a_cpp] day=1 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+06-13 19:33:51.943  8024 20830 I godot   : [climate/integrity] #1 stage=pass_a:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=230 dc_isw_mis=0 temp_edge_max=0.469 temp_edge_p99=0.348 temp_edge_warn=68 lat_band_max=0.096 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.02800 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.000000 wind_speed=0.201/0.785/1.409 wind_speed_delta_p95=0.000000 ocean_mag_avg=0.089 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.984 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:51.943  8024 20830 I godot   :   [climate/integrity edge] max=0.469 1639(6,27,t18,iw1,e0.380,T0.635,bm0.449,si0.000,tta0.000,om0.000)->1700(6,28,t9,iw0,e0.896,T0.166,bm0.900,si0.000,tta0.000,om0.000)
+06-13 19:33:51.943  8024 20830 I godot   :   [climate/integrity lat] max=0.096 0.230769->0.256410 mean 0.414->0.510
+06-13 19:33:51.949  8024 20830 I godot   : [ocean_currents][daily_wind] #2 tick=2 ran=true path=gdext_daily_wind elapsed=4.906 slp=2.807 wind=1.508 delta=1.148385 reason=
+06-13 19:33:51.949  8024 20830 I godot   : [ocean_currents][RT] phys_slice#2 tick=2 round=1 stage=phys_upwelling->phys_wind_raster done=false run_ocean=true need_visual=true elapsed=5.322 ocean_delta_p95=0.295970 wind_delta_p95=1.148385 slp_delta_p95=0.030661 psi_path=gdext
+06-13 19:33:51.950  8024 20830 I godot   : [atlas-pipeline-cpp] eco burn-in: transition_age=2400 active_decay=0
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.91958141326904 sig.A=235 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.959  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.9161342382431 sig.A=234 PREV.A=255 cache_valid=false skip=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO] ci=0 TERR=20 ICE=0.91958141326904 ca=235 nc=2 na_c=2 na_sum=423 hood_h=c4bf4cc1 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=0 ICE=0.91958141326904 ca=235 na=423 na_c=2 oa=223 first_px=-1 count=0
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO] ci=1 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=864 hood_h=328db3f2 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=1 ICE=0.91958141326904 ca=235 na=864 na_c=4 oa=225 first_px=-1 count=0
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO] ci=2 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=886 hood_h=15184a65 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=2 ICE=0.91958141326904 ca=235 na=886 na_c=4 oa=228 first_px=-1 count=0
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO] ci=3 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=879 hood_h=e1797630 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=3 ICE=0.91958141326904 ca=235 na=879 na_c=4 oa=227 first_px=-1 count=0
+06-13 19:33:51.960  8024 20830 I godot   : [PHASE-D-SMO] ci=4 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=862 hood_h=668fe6d8 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=4 ICE=0.91958141326904 ca=235 na=862 na_c=4 oa=225 first_px=-1 count=0
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO] ci=5 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=857 hood_h=9f3b7437 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=5 ICE=0.91958141326904 ca=235 na=857 na_c=4 oa=224 first_px=-1 count=0
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO] ci=6 TERR=20 ICE=0.91958141326904 ca=235 nc=4 na_c=4 na_sum=858 hood_h=1e94dc22 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=6 ICE=0.91958141326904 ca=235 na=858 na_c=4 oa=224 first_px=-1 count=0
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO] ci=7 TERR=20 ICE=0.9161342382431 ca=234 nc=4 na_c=4 na_sum=861 hood_h=30fc05b8 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-13 19:33:51.961  8024 20830 I godot   : [PHASE-D-SMO-OA] ci=7 ICE=0.9161342382431 ca=234 na=861 na_c=4 oa=224 first_px=-1 count=0
+06-13 19:33:51.961  8024 20830 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2400, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=11.015
+06-13 19:33:52.880  8024 20830 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=230 isw_mis=0 terrain_written=true isw_written=false
+06-13 19:33:52.883  8024 20830 I godot   : [climate_b/F.3] DEBUG call#2: path=simd rc=0.7512 n_cells=2400 rs_lookback=2
+06-13 19:33:52.912  8024 20830 I godot   : [climate/integrity] #2 stage=pass_b:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=31 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=31 dc_isw_mis=0 temp_edge_max=0.469 temp_edge_p99=0.348 temp_edge_warn=68 lat_band_max=0.096 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.02800 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=1.148385 wind_speed=0.195/0.860/1.426 wind_speed_delta_p95=0.215516 ocean_mag_avg=0.089 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:52.912  8024 20830 I godot   :   [climate/integrity edge] max=0.469 1639(6,27,t18,iw1,e0.380,T0.635,bm0.449,si0.000,tta0.000,om0.000)->1700(6,28,t9,iw0,e0.896,T0.166,bm0.900,si0.000,tta0.000,om0.000)
+06-13 19:33:52.912  8024 20830 I godot   :   [climate/integrity lat] max=0.096 0.230769->0.256410 mean 0.414->0.510
+06-13 19:33:52.912  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.002 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.001 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.001
+06-13 19:33:52.917  8024 20830 I godot   : [ocean_currents][daily_wind] #3 tick=3 ran=true path=gdext_daily_wind elapsed=4.867 slp=2.793 wind=1.454 delta=0.352060 reason=
+06-13 19:33:52.923  8024 20830 I godot   : [ocean_currents][RT] phys_slice#3 tick=3 round=1 stage=phys_wind_raster->phys_done done=true run_ocean=true need_visual=true elapsed=10.803 ocean_delta_p95=0.295970 wind_delta_p95=0.352060 slp_delta_p95=0.014762 psi_path=gdext
+06-13 19:33:52.923  8024 20830 I godot   :   [ocean_currents] slow phys slice=10.8ms (just-finished stage=7/phys_wind_raster, next=8/phys_done, path=wind_raster, round_done=true)
+06-13 19:33:53.420  8024 20830 I godot   : [plan-c/uni] frame=120 season_phase=0.039 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:33:53.884  8024 20830 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=31 isw_mis=0 terrain_written=true isw_written=false
+06-13 19:33:53.923  8024 20830 I godot   : [climate/integrity] #3 stage=ocean_water:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=45 dc_isw_mis=0 temp_edge_max=0.469 temp_edge_p99=0.348 temp_edge_warn=68 lat_band_max=0.096 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.349207 wind_speed=0.192/0.904/1.430 wind_speed_delta_p95=0.124385 ocean_mag_avg=0.089 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:53.923  8024 20830 I godot   :   [climate/integrity edge] max=0.469 1639(6,27,t18,iw1,e0.380,T0.635,bm0.449,si0.000,tta0.000,om0.000)->1700(6,28,t9,iw0,e0.896,T0.166,bm0.900,si0.000,tta0.000,om0.000)
+06-13 19:33:53.923  8024 20830 I godot   :   [climate/integrity lat] max=0.096 0.230769->0.256410 mean 0.414->0.510
+06-13 19:33:53.923  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.002 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.001 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.001
+06-13 19:33:53.923  8024 20830 I godot   : [sea_ice/dt] call#2 dt_days=3.850 (last_pass_day=4.000, k x3.85)
+06-13 19:33:53.925  8024 20830 I godot   : [sea_ice/DIAG-SM] run#2 phase=0.044 | thr_eff t_form=0.120 t_melt=0.220 flip_thr=0.680 | k_f=2.118 k_m=5.582 dt=3.85 | temp all min=0.000 max=0.988 avg=0.396 | water n=1307 t_min_w=0.000 below_form=429 (32.8%) max_dfrac=0.2541 | SIF pos=453 max=1.000 avg_w=0.2005 near_thr=88 | FLIP to_ice=1 to_base=12 stat_water=1307 stat_flipped=13 existing_ice_terr=267 | climate_anom=0.000
+06-13 19:33:53.926  8024 20830 I godot   : [weather_refresh][RT] #1 tick=4 stage=entry stride=1 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.044 phase=0.044
+06-13 19:33:53.927  8024 20830 I godot   : [weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+06-13 19:33:53.927  8024 20830 I godot   : [weather_refresh][RT] #2 tick=4 stage=begin stride=1 round=true rstage=1 fronts=0 changed=false elapsed=1.146 dc=false
+06-13 19:33:53.932  8024 20830 I godot   : [ocean_currents][daily_wind] #4 tick=4 ran=true path=gdext_daily_wind elapsed=4.933 slp=2.877 wind=1.500 delta=0.198735 reason=
+06-13 19:33:53.932  8024 20830 I godot   : [ocean_currents] season_crossed -> rebaking pixel atlas at phase=0.011 (phase_int=0, total_pixels=620544)
+06-13 19:33:53.933  8024 20830 I godot   : [ocean_currents][RT] pixel#1 tick=4 stage=ocean_pixel_slice cursor=0..8192/620544 progress=0.013 elapsed=6.536 pps=8192 quota_last=8192 path=gdext_raster raster_wall=1.258 raster_native=0.043 pending_commit=false
+06-13 19:33:53.934  8024 20830 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-13 19:33:53.934  8024 20830 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.255
+06-13 19:33:54.905  8024 20830 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=45 isw_mis=0 terrain_written=true isw_written=false
+06-13 19:33:54.917  8024 20830 I godot   : [ocean_currents][daily_wind] #5 tick=5 ran=true path=gdext_daily_wind elapsed=9.007 slp=6.639 wind=1.608 delta=0.494988 reason=
+06-13 19:33:54.917  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#2 tick=5 phase=0.0549 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:33:54.917  8024 20830 I godot   : [psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:33:54.919  8024 20830 I godot   : [psi_solver] commit-diag call#3: rc=1.127 n_water=1040 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:33:54.920  8024 20830 I godot   : [ocean_currents][RT] phys_slice#4 tick=5 round=2 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=11.928 ocean_delta_p95=0.278727 wind_delta_p95=0.494988 slp_delta_p95=0.020508 psi_path=gdext
+06-13 19:33:54.920  8024 20830 I godot   :   [ocean_currents] slow phys slice=11.9ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:33:55.399  8024 20830 I godot   : [sea-ice/probe] cell=HexCell(23,20,-43) terrain=HILL river=false idx=1233 passable_sea=false passable_land=true biome=5
+06-13 19:33:55.399  8024 20830 I godot   :   SIF: facade=0.0000  cpp_slot=0.0000  → expected_a=0
+06-13 19:33:55.399  8024 20830 I godot   :   terrain: facade=5  soa(MapData.terrain_arr)=5  → is_water_lut[soa]=0 render_lut[soa]=0 (1=water,0=land)
+06-13 19:33:55.399  8024 20830 I godot   :   raw_dyn RGBA = (0, 171, 0, 179)  smooth.A = 179 (norm=0.7020)  match=MISMATCH
+06-13 19:33:55.399  8024 20830 I godot   :   cpp_written_check buf[smo].A @ 8584=209 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:55.399  8024 20830 I godot   :   cpp_written_check buf[dyn].A @ 8584=217 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:55.929  8024 20830 I godot   : [climate/integrity] #4 stage=ocean_water:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.612597 wind_speed=0.198/0.943/1.431 wind_speed_delta_p95=0.159323 ocean_mag_avg=0.134 ocean_mag_max=0.650 ocean_delta_p95=0.278727 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:55.929  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:33:55.929  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:33:55.929  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:33:55.934  8024 20830 I godot   : [ocean_currents][daily_wind] #6 tick=6 ran=true path=gdext_daily_wind elapsed=4.888 slp=2.820 wind=1.450 delta=0.296515 reason=
+06-13 19:33:55.935  8024 20830 I godot   : [ocean_currents][RT] phys_slice#5 tick=6 round=2 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=5.317 ocean_delta_p95=0.278727 wind_delta_p95=0.296515 slp_delta_p95=0.009591 psi_path=gdext
+06-13 19:33:55.935  8024 20830 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-13 19:33:55.935  8024 20830 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.25
+06-13 19:33:56.092  8024 20830 I godot   : [sea-ice/probe] cell=HexCell(21,22,-43) terrain=HILL river=false idx=1352 passable_sea=false passable_land=true biome=5
+06-13 19:33:56.093  8024 20830 I godot   :   SIF: facade=0.0000  cpp_slot=0.0000  → expected_a=0
+06-13 19:33:56.093  8024 20830 I godot   :   terrain: facade=5  soa(MapData.terrain_arr)=5  → is_water_lut[soa]=0 render_lut[soa]=0 (1=water,0=land)
+06-13 19:33:56.093  8024 20830 I godot   :   raw_dyn RGBA = (0, 177, 0, 179)  smooth.A = 179 (norm=0.7020)  match=MISMATCH
+06-13 19:33:56.093  8024 20830 I godot   :   cpp_written_check buf[smo].A @ 8584=209 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:56.093  8024 20830 I godot   :   cpp_written_check buf[dyn].A @ 8584=217 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:56.444  8024 20830 I godot   : [plan-c/uni] frame=240 season_phase=0.072 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:33:56.569  8024 20830 I godot   : [sea-ice/probe] cell=HexCell(42,29,-71) terrain=OCEAN river=false idx=1796 passable_sea=true passable_land=false biome=0
+06-13 19:33:56.569  8024 20830 I godot   :   SIF: facade=0.0000  cpp_slot=0.0000  → expected_a=0
+06-13 19:33:56.569  8024 20830 I godot   :   terrain: facade=0  soa(MapData.terrain_arr)=0  → is_water_lut[soa]=1 render_lut[soa]=1 (1=water,0=land)
+06-13 19:33:56.569  8024 20830 I godot   :   raw_dyn RGBA = (0, 173, 0, 0)  smooth.A = 0 (norm=0.0000)  match=YES
+06-13 19:33:56.569  8024 20830 I godot   :   cpp_written_check buf[smo].A @ 8584=209 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:56.569  8024 20830 I godot   :   cpp_written_check buf[dyn].A @ 8584=217 4586=0 4843=0 5091=0 719=0 5245=0 274=0 961=0
+06-13 19:33:56.931  8024 20830 I godot   : [climate/integrity] #5 stage=ocean_water:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.279110 wind_speed=0.185/0.956/1.431 wind_speed_delta_p95=0.085837 ocean_mag_avg=0.134 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:56.931  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:33:56.931  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:33:56.931  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:33:56.936  8024 20830 I godot   : [ocean_currents][daily_wind] #7 tick=7 ran=true path=gdext_daily_wind elapsed=4.954 slp=2.815 wind=1.502 delta=0.181306 reason=
+06-13 19:33:56.937  8024 20830 I godot   : [ocean_currents][RT] pixel#2 tick=7 stage=ocean_pixel_slice cursor=8192..16384/620544 progress=0.026 elapsed=6.000 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.904 raster_native=0.065 pending_commit=false
+06-13 19:33:57.944  8024 20830 I godot   : [climate/integrity] #6 stage=ocean_water:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.180671 wind_speed=0.196/0.963/1.431 wind_speed_delta_p95=0.046865 ocean_mag_avg=0.134 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:57.944  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:33:57.944  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:33:57.944  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:33:57.945  8024 20830 I godot   : [weather_refresh][RT] #3 tick=8 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.023 phase=0.088
+06-13 19:33:57.946  8024 20830 I godot   : [weather/F.1] first fast-path attempt: n_cells=2400 cell_budget=500 (would-end_i=500) fast_indexed=true ext_bound=true
+06-13 19:33:57.946  8024 20830 I godot   : [weather/F.1] gdext path ACTIVE — first run elapsed=0.15ms (legacy GDScript baseline ≈ 13ms; charter §7 target < 2ms)
+06-13 19:33:57.946  8024 20830 I godot   : [weather_refresh][RT] #4 tick=8 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.567 work=500 cursor=0..500 progress=0.208
+06-13 19:33:57.951  8024 20830 I godot   : [ocean_currents][daily_wind] #8 tick=8 ran=true path=gdext_daily_wind elapsed=4.897 slp=2.833 wind=1.445 delta=0.144088 reason=
+06-13 19:33:57.951  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#3 tick=8 phase=0.0879 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:33:57.954  8024 20830 I godot   : [ocean_currents][RT] phys_slice#6 tick=8 round=3 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.810 ocean_delta_p95=0.136936 wind_delta_p95=0.144088 slp_delta_p95=0.002423 psi_path=gdext
+06-13 19:33:57.954  8024 20830 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-13 19:33:57.954  8024 20830 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.252
+06-13 19:33:58.936  8024 20830 I godot   : [climate/integrity] #7 stage=ocean_land:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.144085 wind_speed=0.194/0.965/1.431 wind_speed_delta_p95=0.027190 ocean_mag_avg=0.159 ocean_mag_max=0.650 ocean_delta_p95=0.136936 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:58.936  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:33:58.936  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:33:58.936  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:33:58.941  8024 20830 I godot   : [ocean_currents][daily_wind] #9 tick=9 ran=true path=gdext_daily_wind elapsed=4.893 slp=2.800 wind=1.482 delta=0.125301 reason=
+06-13 19:33:58.941  8024 20830 I godot   : [ocean_currents][RT] phys_slice#7 tick=9 round=3 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=5.312 ocean_delta_p95=0.136936 wind_delta_p95=0.125301 slp_delta_p95=0.001900 psi_path=gdext
+06-13 19:33:59.488  8024 20830 I godot   : [plan-c/uni] frame=360 season_phase=0.105 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:33:59.944  8024 20830 I godot   : [climate/integrity] #8 stage=ocean_land:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.124094 wind_speed=0.201/0.967/1.431 wind_speed_delta_p95=0.023261 ocean_mag_avg=0.159 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:33:59.944  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:33:59.944  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:33:59.944  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:33:59.949  8024 20830 I godot   : [ocean_currents][daily_wind] #10 tick=10 ran=true path=gdext_daily_wind elapsed=4.914 slp=2.785 wind=1.447 delta=0.127491 reason=
+06-13 19:33:59.950  8024 20830 I godot   : [ocean_currents][RT] pixel#3 tick=10 stage=ocean_pixel_slice cursor=16384..24576/620544 progress=0.040 elapsed=5.969 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.912 raster_native=0.070 pending_commit=false
+06-13 19:33:59.951  8024 20830 I godot   : [CPP-RES] fallback=false done=true reason= ab.keys=["dyn", "eco", "smo", "ice"] smo.sz=2482176 dyn.sz=2482176 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1342 } call_ms=0.237
+06-13 19:33:59.951  8024 20830 I godot   : [BEGIN-COMMIT] W=1024 H=606 dyn.sz=2482176 smo.sz=2482176 eco.sz=2482176 ice.sz=620544 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1342 }
+06-13 19:33:59.951  8024 20830 I godot   : [CPP-COMMIT] ch=dyn buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:33:59.952  8024 20830 I godot   : [CPP-COMMIT] ch=eco buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:33:59.952  8024 20830 I godot   : [CPP-COMMIT] ch=smo buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:33:59.952  8024 20830 I godot   : [CPP-COMMIT] ch=ice buf.size=620544 expected=620544 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:00.006  8024 20830 I godot   : [ice_atlas/COMMIT] run#1 need_init=false stride=1342 buf_n=620544 nonzero=0 max=0 tex_rid=RID(18661632901148)
+06-13 19:34:00.925  8024 20830 I godot   : [climate/integrity] #9 stage=ocean_land:running phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.126633 wind_speed=0.204/0.967/1.431 wind_speed_delta_p95=0.022445 ocean_mag_avg=0.159 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:00.925  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:00.925  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:34:00.925  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:00.928  8024 20830 I godot   : [ocean_currents][daily_wind] #11 tick=11 ran=true path=gdext_daily_wind elapsed=2.348 slp=1.176 wind=0.735 delta=0.133369 reason=
+06-13 19:34:00.928  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#4 tick=11 phase=0.1208 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:00.929  8024 20830 I godot   : [ocean_currents][RT] phys_slice#8 tick=11 round=4 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=3.858 ocean_delta_p95=0.083750 wind_delta_p95=0.133369 slp_delta_p95=0.001504 psi_path=gdext
+06-13 19:34:01.406  8024 20830 E godot   : ERROR: QueuePresentKHR failed with error: VK_ERROR_SURFACE_LOST_KHR
+06-13 19:34:01.406  8024 20830 E godot   :    at: command_queue_execute_and_present (drivers/vulkan/rendering_device_driver_vulkan.cpp:3064)
+06-13 19:34:03.689  8024 20830 I godot   : [climate/integrity] #10 stage=ocean_land:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2310 air_abs_max=0.04748 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.133223 wind_speed=0.202/0.968/1.431 wind_speed_delta_p95=0.022101 ocean_mag_avg=0.168 ocean_mag_max=0.650 ocean_delta_p95=0.083750 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:03.689  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:03.689  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:34:03.689  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:03.689  8024 20830 I godot   : [weather_refresh][RT] #5 tick=12 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.016 phase=0.132
+06-13 19:34:03.690  8024 20830 I godot   : [weather_refresh][RT] #6 tick=12 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.243 work=500 cursor=500..1000 progress=0.417
+06-13 19:34:03.692  8024 20830 I godot   : [ocean_currents][daily_wind] #12 tick=12 ran=true path=gdext_daily_wind elapsed=2.370 slp=1.159 wind=0.791 delta=0.133296 reason=
+06-13 19:34:03.692  8024 20830 I godot   : [ocean_currents][RT] phys_slice#9 tick=12 round=4 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=2.604 ocean_delta_p95=0.083750 wind_delta_p95=0.133296 slp_delta_p95=0.001597 psi_path=gdext
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=235 cache_valid=true skip=false
+06-13 19:34:03.693  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.9961342215538 sig.A=255 PREV.A=234 cache_valid=true skip=false
+06-13 19:34:03.694  8024 20830 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2389, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=1.336
+06-13 19:34:04.681  8024 20830 I godot   : [climate/integrity] #11 stage=wind_air:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.460 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.109 air_nonzero=2282 air_abs_max=0.39805 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.132578 wind_speed=0.197/0.968/1.431 wind_speed_delta_p95=0.022105 ocean_mag_avg=0.168 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:04.681  8024 20830 I godot   :   [climate/integrity edge] max=0.460 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.597,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:04.681  8024 20830 I godot   :   [climate/integrity lat] max=0.109 0.230769->0.256410 mean 0.272->0.381
+06-13 19:34:04.681  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:04.684  8024 20830 I godot   : [ocean_currents][daily_wind] #13 tick=13 ran=true path=gdext_daily_wind elapsed=2.535 slp=1.262 wind=0.795 delta=0.132040 reason=
+06-13 19:34:04.684  8024 20830 I godot   : [ocean_currents][RT] pixel#4 tick=13 stage=ocean_pixel_slice cursor=24576..32768/620544 progress=0.053 elapsed=3.246 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.606 raster_native=0.028 pending_commit=false
+06-13 19:34:04.752  8024 20830 I godot   : [plan-c/uni] frame=480 season_phase=0.144 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:05.701  8024 20830 I godot   : [climate/integrity] #12 stage=wind_surface:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.371 temp_edge_warn=91 lat_band_max=0.098 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.131006 wind_speed=0.193/0.969/1.431 wind_speed_delta_p95=0.022338 ocean_mag_avg=0.168 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:05.701  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:05.701  8024 20830 I godot   :   [climate/integrity lat] max=0.098 0.205128->0.230769 mean 0.243->0.341
+06-13 19:34:05.701  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:05.707  8024 20830 I godot   : [ocean_currents][daily_wind] #14 tick=14 ran=true path=gdext_daily_wind elapsed=4.942 slp=2.860 wind=1.463 delta=0.145233 reason=
+06-13 19:34:05.707  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#5 tick=14 phase=0.1536 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:05.710  8024 20830 I godot   : [ocean_currents][RT] phys_slice#10 tick=14 round=5 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.832 ocean_delta_p95=0.078573 wind_delta_p95=0.145233 slp_delta_p95=0.001506 psi_path=gdext
+06-13 19:34:06.667  8024 20830 I godot   : [transp/F.5] DEBUG call#2: rc=0.5847 donor_table.size()=24 n_cells=2400 outflow=0.0250 self=0.0150
+06-13 19:34:06.704  8024 20830 I godot   : [climate/integrity] #13 stage=transp:done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.371 temp_edge_warn=91 lat_band_max=0.098 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.145220 wind_speed=0.188/0.969/1.431 wind_speed_delta_p95=0.022113 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.078573 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.949 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:06.704  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:06.704  8024 20830 I godot   :   [climate/integrity lat] max=0.098 0.205128->0.230769 mean 0.243->0.341
+06-13 19:34:06.704  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:06.755  8024 20830 I godot   : [climate/integrity] #14 stage=round_done phase=0.022 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=76 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.000000 wind_speed=0.188/0.969/1.431 wind_speed_delta_p95=0.000000 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.949 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:06.755  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:06.755  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:06.755  8024 20830 I godot   :   [climate/integrity samples] cellTerrMismatch idx=138 q=17 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=140 q=19 r=2 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000 | cellTerrMismatch idx=198 q=17 r=3 cellTerr=9 soaTerr=17 cellBase=17 soaBase=17 isw=0 seaIce=0.000 temp=0.000
+06-13 19:34:06.760  8024 20830 I godot   : [ocean_currents][daily_wind] #15 tick=15 ran=true path=gdext_daily_wind elapsed=4.893 slp=2.813 wind=1.467 delta=0.143465 reason=
+06-13 19:34:06.760  8024 20830 I godot   : [ocean_currents][RT] phys_slice#11 tick=15 round=5 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=5.318 ocean_delta_p95=0.078573 wind_delta_p95=0.143465 slp_delta_p95=0.001506 psi_path=gdext
+06-13 19:34:07.703  8024 20830 I godot   : [climate/terrain_sync] reason=round_start phase=0.176 cell_terr_mis_before=76 facade_fixed=76 dc_terr_mis_observed=0 dc_isw_mis_observed=0 samples=idx=138 q=17 r=2 cell=9 soa=17 | idx=140 q=19 r=2 cell=9 soa=17 | idx=198 q=17 r=3 cell=9 soa=17
+06-13 19:34:07.704  8024 20830 I godot   : [DIAG pass_a_entry] day=2 phase=0.176 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-13 19:34:07.709  8024 20830 I godot   : [DIAG pass_a_cpp] day=2 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+06-13 19:34:07.737  8024 20830 I godot   : [climate/integrity] #15 stage=pass_a:done phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.143458 wind_speed=0.184/0.969/1.431 wind_speed_delta_p95=0.021899 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.985 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:07.737  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:07.737  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:07.738  8024 20830 I godot   : [weather_refresh][RT] #7 tick=16 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.023 phase=0.176
+06-13 19:34:07.738  8024 20830 I godot   : [weather_refresh][RT] #8 tick=16 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.381 work=500 cursor=1000..1500 progress=0.625
+06-13 19:34:07.743  8024 20830 I godot   : [ocean_currents][daily_wind] #16 tick=16 ran=true path=gdext_daily_wind elapsed=4.917 slp=2.897 wind=1.442 delta=0.372992 reason=
+06-13 19:34:07.744  8024 20830 I godot   : [ocean_currents][RT] pixel#5 tick=16 stage=ocean_pixel_slice cursor=32768..40960/620544 progress=0.066 elapsed=5.995 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.951 raster_native=0.070 pending_commit=false
+06-13 19:34:08.202  8024 20830 I godot   : [plan-c/uni] frame=600 season_phase=0.181 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:08.692  8024 20830 I godot   : [climate_b/F.3] DEBUG call#3: path=simd rc=1.4364 n_cells=2400 rs_lookback=2
+06-13 19:34:08.727  8024 20830 I godot   : [climate/integrity] #16 stage=pass_b:done phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.04620 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.355419 wind_speed=0.180/0.955/1.431 wind_speed_delta_p95=0.108683 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:08.727  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:08.727  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:08.732  8024 20830 I godot   : [ocean_currents][daily_wind] #17 tick=17 ran=true path=gdext_daily_wind elapsed=4.898 slp=2.811 wind=1.501 delta=0.290634 reason=
+06-13 19:34:08.732  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#6 tick=17 phase=0.1863 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:08.735  8024 20830 I godot   : [ocean_currents][RT] phys_slice#12 tick=17 round=6 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.748 ocean_delta_p95=0.086352 wind_delta_p95=0.290634 slp_delta_p95=0.008831 psi_path=gdext
+06-13 19:34:09.730  8024 20830 I godot   : [climate/integrity] #17 stage=ocean_water:running phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.05793 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.288738 wind_speed=0.192/0.945/1.431 wind_speed_delta_p95=0.079112 ocean_mag_avg=0.169 ocean_mag_max=0.650 ocean_delta_p95=0.086352 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:09.730  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:09.730  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:09.735  8024 20830 I godot   : [ocean_currents][daily_wind] #18 tick=18 ran=true path=gdext_daily_wind elapsed=4.848 slp=2.827 wind=1.442 delta=0.226671 reason=
+06-13 19:34:09.736  8024 20830 I godot   : [ocean_currents][RT] phys_slice#13 tick=18 round=6 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=5.285 ocean_delta_p95=0.086352 wind_delta_p95=0.226671 slp_delta_p95=0.004141 psi_path=gdext
+06-13 19:34:10.729  8024 20830 I godot   : [climate/integrity] #18 stage=ocean_water:running phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.05793 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.226416 wind_speed=0.192/0.940/1.431 wind_speed_delta_p95=0.043536 ocean_mag_avg=0.169 ocean_mag_max=0.650 ocean_delta_p95=0.000000 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:10.729  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:10.729  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:10.735  8024 20830 I godot   : [ocean_currents][daily_wind] #19 tick=19 ran=true path=gdext_daily_wind elapsed=4.913 slp=2.801 wind=1.456 delta=0.165379 reason=
+06-13 19:34:10.735  8024 20830 I godot   : [ocean_currents][RT] pixel#6 tick=19 stage=ocean_pixel_slice cursor=40960..49152/620544 progress=0.079 elapsed=5.964 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.908 raster_native=0.099 pending_commit=false
+06-13 19:34:11.254  8024 20830 I godot   : [plan-c/uni] frame=720 season_phase=0.214 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:11.699  8024 20830 I godot   : [weather_refresh][RT] #9 tick=20 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.025 phase=0.219
+06-13 19:34:11.699  8024 20830 I godot   : [weather_refresh][RT] #10 tick=20 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.444 work=500 cursor=1500..2000 progress=0.833
+06-13 19:34:11.704  8024 20830 I godot   : [ocean_currents][daily_wind] #20 tick=20 ran=true path=gdext_daily_wind elapsed=4.823 slp=2.755 wind=1.464 delta=0.148546 reason=
+06-13 19:34:11.705  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#7 tick=20 phase=0.2194 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:11.705  8024 20830 I godot   : [psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:34:11.706  8024 20830 I godot   : [psi_solver] commit-diag call#1: rc=1.115 n_water=1040 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:34:11.707  8024 20830 I godot   : [ocean_currents][RT] phys_slice#14 tick=20 round=7 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.705 ocean_delta_p95=0.084864 wind_delta_p95=0.148546 slp_delta_p95=0.001774 psi_path=gdext
+06-13 19:34:11.708  8024 20830 I godot   : [BEGIN-COMMIT] W=1024 H=606 dyn.sz=2482176 smo.sz=2482176 eco.sz=2482176 ice.sz=620544 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 }
+06-13 19:34:11.708  8024 20830 I godot   : [CPP-COMMIT] ch=dyn buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:11.708  8024 20830 I godot   : [CPP-COMMIT] ch=eco buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:11.709  8024 20830 I godot   : [CPP-COMMIT] ch=smo buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:11.709  8024 20830 I godot   : [CPP-COMMIT] ch=ice buf.size=620544 expected=620544 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:11.762  8024 20830 I godot   : [ice_atlas/COMMIT] run#2 need_init=false stride=0 buf_n=620544 nonzero=0 max=0 tex_rid=RID(18661632901148)
+06-13 19:34:12.701  8024 20830 I godot   : [ocean_currents][daily_wind] #21 tick=21 ran=true path=gdext_daily_wind elapsed=9.327 slp=6.603 wind=1.460 delta=0.143684 reason=
+06-13 19:34:12.701  8024 20830 I godot   : [upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+06-13 19:34:12.702  8024 20830 I godot   : [upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.325
+06-13 19:34:12.702  8024 20830 I godot   : [upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.00ms T3_refresh_slots=0.05ms T4_cpp_call=0.34ms (n=2400)
+06-13 19:34:12.702  8024 20830 I godot   : [upwelling/DIAG#1] CPP-PATH-OK (no GDScript fallback)
+06-13 19:34:12.702  8024 20830 I godot   : [upwelling/DIAG#1] STAGE-TOTAL=0.50ms (matches slow_slice if > 25ms)
+06-13 19:34:12.702  8024 20830 I godot   : [ocean_currents][RT] phys_slice#15 tick=21 round=7 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=10.067 ocean_delta_p95=0.084864 wind_delta_p95=0.143684 slp_delta_p95=0.001531 psi_path=gdext
+06-13 19:34:12.702  8024 20830 I godot   :   [ocean_currents] slow phys slice=10.1ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-13 19:34:13.744  8024 20830 I godot   : [climate/integrity] #19 stage=ocean_land:running phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.05803 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.453182 wind_speed=0.183/0.937/1.431 wind_speed_delta_p95=0.070920 ocean_mag_avg=0.166 ocean_mag_max=0.650 ocean_delta_p95=0.084864 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:13.744  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:13.745  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:13.750  8024 20830 I godot   : [ocean_currents][daily_wind] #22 tick=22 ran=true path=gdext_daily_wind elapsed=4.899 slp=2.831 wind=1.455 delta=0.156423 reason=
+06-13 19:34:13.751  8024 20830 I godot   : [ocean_currents][RT] pixel#7 tick=22 stage=ocean_pixel_slice cursor=49152..57344/620544 progress=0.092 elapsed=5.887 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.852 raster_native=0.068 pending_commit=false
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:13.751  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.9961342215538 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:14.364  8024 20830 I godot   : [plan-c/uni] frame=840 season_phase=0.249 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:14.696  8024 20830 I godot   : [ocean_currents][daily_wind] #23 tick=23 ran=true path=gdext_daily_wind elapsed=9.383 slp=6.505 wind=1.927 delta=0.165362 reason=
+06-13 19:34:14.696  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#8 tick=23 phase=0.2521 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:14.696  8024 20830 I godot   : [psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:34:14.698  8024 20830 I godot   : [psi_solver] commit-diag call#2: rc=1.442 n_water=1040 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:34:14.699  8024 20830 I godot   : [ocean_currents][RT] phys_slice#16 tick=23 round=8 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=13.155 ocean_delta_p95=0.090464 wind_delta_p95=0.165362 slp_delta_p95=0.001456 psi_path=gdext
+06-13 19:34:14.699  8024 20830 I godot   :   [ocean_currents] slow phys slice=13.2ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:15.690  8024 20830 I godot   : [weather_refresh][RT] #11 tick=24 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.052 phase=0.263
+06-13 19:34:15.691  8024 20830 I godot   : [weather_refresh][RT] #12 tick=24 stage=solve_done stride=1 round=true rstage=2 fronts=0 changed=false elapsed=1.077 work=400 cursor=2000..2400
+06-13 19:34:15.697  8024 20830 I godot   : [ocean_currents][daily_wind] #24 tick=24 ran=true path=gdext_daily_wind elapsed=6.473 slp=3.636 wind=1.935 delta=0.165484 reason=
+06-13 19:34:15.698  8024 20830 I godot   : [ocean_currents][RT] phys_slice#17 tick=24 round=8 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=7.032 ocean_delta_p95=0.090464 wind_delta_p95=0.165484 slp_delta_p95=0.001486 psi_path=gdext
+06-13 19:34:16.745  8024 20830 I godot   : [climate/integrity] #20 stage=ocean_land:done phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.533 temp_edge_p99=0.367 temp_edge_warn=89 lat_band_max=0.095 air_nonzero=2320 air_abs_max=0.08000 tta_abs_max=0.05803 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.512846 wind_speed=0.189/0.938/1.431 wind_speed_delta_p95=0.067409 ocean_mag_avg=0.164 ocean_mag_max=0.650 ocean_delta_p95=0.090464 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.947 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:16.745  8024 20830 I godot   :   [climate/integrity edge] max=0.533 763(37,12,t6,iw0,e0.883,T0.137,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.670,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:16.745  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.230769->0.256410 mean 0.343->0.438
+06-13 19:34:16.751  8024 20830 I godot   : [ocean_currents][RT] pixel#8 tick=25 stage=ocean_pixel_slice cursor=57344..65536/620544 progress=0.106 elapsed=5.813 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.841 raster_native=0.069 pending_commit=false
+06-13 19:34:17.330  8024 20830 I godot   : [plan-c/uni] frame=960 season_phase=0.281 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:17.712  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#9 tick=26 phase=0.2850 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:17.712  8024 20830 I godot   : [psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-13 19:34:17.713  8024 20830 I godot   : [psi_solver] commit-diag call#3: rc=1.134 n_water=1040 curl=2400 psi=2400 ocx=2400 ocy=2400 n_cells=2400 published=true
+06-13 19:34:17.715  8024 20830 I godot   : [ocean_currents][RT] phys_slice#18 tick=26 round=9 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=8.090 ocean_delta_p95=0.095250 wind_delta_p95=0.162131 slp_delta_p95=0.001511 psi_path=gdext
+06-13 19:34:17.715  8024 20830 I godot   :   [ocean_currents] slow phys slice=8.1ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:18.711  8024 20830 I godot   : [ocean_currents][RT] phys_slice#19 tick=27 round=9 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=6.285 ocean_delta_p95=0.095250 wind_delta_p95=0.155227 slp_delta_p95=0.001462 psi_path=gdext
+06-13 19:34:19.725  8024 20830 I godot   : [transp/F.5] DEBUG call#3: rc=0.5864 donor_table.size()=24 n_cells=2400 outflow=0.0250 self=0.0150
+06-13 19:34:19.760  8024 20830 I godot   : [climate/integrity] #21 stage=transp:done phase=0.176 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.512 temp_edge_p99=0.356 temp_edge_warn=78 lat_band_max=0.095 air_nonzero=2329 air_abs_max=0.08000 tta_abs_max=0.05803 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.551184 wind_speed=0.195/0.937/1.431 wind_speed_delta_p95=0.066178 ocean_mag_avg=0.162 ocean_mag_max=0.650 ocean_delta_p95=0.095250 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.949 precip_vapor_r=0.000 precip_cloud_r=0.000 precip_instab_r=0.000 precip_p95=0.000
+06-13 19:34:19.760  8024 20830 I godot   :   [climate/integrity edge] max=0.512 762(36,12,t6,iw0,e0.857,T0.122,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.634,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:19.760  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.205128->0.230769 mean 0.225->0.320
+06-13 19:34:19.784  8024 20830 I godot   : [weather_refresh][RT] #13 tick=28 stage=entry stride=1 round=true rstage=2 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.023 phase=0.307
+06-13 19:34:19.787  8024 20830 I godot   : [weather/dist] first fast-path attempt: n_cells=2400 ext_bound=true
+06-13 19:34:19.790  8024 20830 I godot   : [weather/dist] gdext path ACTIVE — first run elapsed=0.95ms (legacy GDScript baseline ≈ 11.6ms; charter target < 1.5ms)
+06-13 19:34:19.790  8024 20830 I godot   : [weather/summary] first fast-path attempt: n_cells=2400 ext_bound=true
+06-13 19:34:19.791  8024 20830 I godot   : [weather/summary] gdext path ACTIVE — first run elapsed=0.26ms (legacy GDScript baseline ≈ 17.8ms; charter target < 3.0ms)
+06-13 19:34:19.792  8024 20830 I godot   : [weather/summary] fronts_soa path ACTIVE — first run n=0 (PackedArray columns, marshalling ~90% slim vs Array[Dict])
+06-13 19:34:19.792  8024 20830 I godot   : [weather_refresh][RT] #14 tick=28 stage=summary stride=1 round=true rstage=3 fronts=0 changed=false elapsed=7.386 fronts=0
+06-13 19:34:19.798  8024 20830 I godot   : [ocean_currents][RT] pixel#9 tick=28 stage=ocean_pixel_slice cursor=65536..73728/620544 progress=0.119 elapsed=5.875 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.850 raster_native=0.068 pending_commit=false
+06-13 19:34:20.608  8024 20830 I godot   : [plan-c/uni] frame=1080 season_phase=0.317 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:20.740  8024 20830 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=13 isw_mis=0 terrain_written=true isw_written=false
+06-13 19:34:20.751  8024 20830 I godot   : [DIAG pass_a_entry] day=3 phase=0.318 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-13 19:34:20.758  8024 20830 I godot   : [DIAG pass_a_cpp] day=3 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+06-13 19:34:20.763  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#10 tick=29 phase=0.3180 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:20.766  8024 20830 I godot   : [ocean_currents][RT] phys_slice#20 tick=29 round=10 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.777 ocean_delta_p95=0.126086 wind_delta_p95=0.321659 slp_delta_p95=0.011738 psi_path=gdext
+06-13 19:34:21.729  8024 20830 I godot   : [ocean_currents][RT] phys_slice#21 tick=30 round=10 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=8.265 ocean_delta_p95=0.126086 wind_delta_p95=0.185579 slp_delta_p95=0.005272 psi_path=gdext
+06-13 19:34:21.729  8024 20830 I godot   :   [ocean_currents] slow phys slice=8.3ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-13 19:34:21.729  8024 20830 I godot   : [BEGIN-COMMIT] W=1024 H=606 dyn.sz=2482176 smo.sz=2482176 eco.sz=2482176 ice.sz=620544 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 }
+06-13 19:34:21.730  8024 20830 I godot   : [CPP-COMMIT] ch=dyn buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:21.731  8024 20830 I godot   : [CPP-COMMIT] ch=eco buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:21.731  8024 20830 I godot   : [CPP-COMMIT] ch=smo buf.size=2482176 expected=2482176 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:21.731  8024 20830 I godot   : [CPP-COMMIT] ch=ice buf.size=620544 expected=620544 W=1024 H=606 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-13 19:34:21.785  8024 20830 I godot   : [ice_atlas/COMMIT] run#3 need_init=false stride=0 buf_n=620544 nonzero=0 max=0 tex_rid=RID(18661632901148)
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.68ms p95=2.33ms max=10.22ms slices=30
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: refresh_climate_daily ran=28 avg=28.56ms p95=59.18ms max=88.39ms slices=28 skipped[frame_budget_exhausted=2]
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: sea_ice_daily ran=7 avg=0.92ms p95=2.31ms max=2.31ms slices=7 skipped[frame_budget_exhausted=23]
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: enum_atlas_upload ran=1 avg=0.04ms p95=0.04ms max=0.04ms slices=1 skipped[frame_budget_exhausted=29]
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: weather_refresh ran=7 avg=1.71ms p95=7.46ms max=7.46ms slices=7 skipped[frame_budget_exhausted=23]
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=7.11ms p95=12.15ms max=13.43ms slices=30
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=15 avg=12.3ms p95=55.61ms max=55.61ms slices=15 skipped[policy_gated=15]
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] budget last 30 ticks: total_p95=73.9ms max=94.08ms over_1ms=30 largest=refresh_climate_daily/transp/native path=gdext 88.37ms
+06-13 19:34:21.785  8024 20830 I godot   : [SUS-cpp] world: bound=true entities=2400 components=66 pools=1
+06-13 19:34:22.888  8024 20830 I godot   : [climate/integrity] #22 stage=ocean_water:running phase=0.318 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.512 temp_edge_p99=0.356 temp_edge_warn=78 lat_band_max=0.095 air_nonzero=2329 air_abs_max=0.08000 tta_abs_max=0.06566 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=1.261112 wind_speed=0.193/0.961/1.431 wind_speed_delta_p95=0.259369 ocean_mag_avg=0.168 ocean_mag_max=0.650 ocean_delta_p95=0.126288 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.948 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:22.888  8024 20830 I godot   :   [climate/integrity edge] max=0.512 762(36,12,t6,iw0,e0.857,T0.122,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.634,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:22.888  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.205128->0.230769 mean 0.225->0.320
+06-13 19:34:22.894  8024 20830 I godot   : [ocean_currents][RT] pixel#10 tick=31 stage=ocean_pixel_slice cursor=73728..81920/620544 progress=0.132 elapsed=5.925 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.848 raster_native=0.067 pending_commit=false
+06-13 19:34:23.858  8024 20830 I godot   : [sea_ice/DIRTY-MARK] run#2 marked_dirty_cells=429 (sif_pos=371 sif_max=0.9996) water=1307 flipped=13
+06-13 19:34:23.858  8024 20830 I godot   : [sea_ice/slow-dump] tick=32 path=gdext_state_machine total_wall=29934.29ms (pack=0.01 refresh=0.07 native=0.19 native_wall=0.23 sync=2.57 flip=0.90) water=1307 flipped=13
+06-13 19:34:23.861  8024 20830 I godot   : [weather_refresh][RT] #15 tick=32 stage=entry stride=1 round=true rstage=3 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.029 phase=0.351
+06-13 19:34:23.861  8024 20830 I godot   : [stage_b/combined] precondition probe (one-time):
+06-13 19:34:23.861  8024 20830 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-13 19:34:23.861  8024 20830 I godot   :   cp.use_gdext_stage_b_combined = true
+06-13 19:34:23.861  8024 20830 I godot   :   _data_core_world_ext != null = true
+06-13 19:34:23.861  8024 20830 I godot   :   ext.has_method('run_stage_b_pass') = true
+06-13 19:34:23.861  8024 20830 I godot   :   verdict = OK → will try C++ combined pass
+06-13 19:34:23.864  8024 20830 I godot   : [stage_b/combined] gdext path ACTIVE — first run elapsed=2.21ms (legacy three-pass total ≈ 6–15ms; target ≤ 1.5ms)
+06-13 19:34:23.864  8024 20830 I godot   :   per-stage: albedo=0.02ms veg_dyn=0.13ms feedback=0.06ms
+06-13 19:34:23.864  8024 20830 I godot   : [stage_b/combined] DEBUG call#1: rc=2.2098 wall=2.96ms run_a=true run_v=true run_f=true
+06-13 19:34:23.864  8024 20830 I godot   :   breakdown(ms): iter=0.01 pack_albedo=0.09 pack_vegdyn=0.47 pack_feedback=0.01 refresh=0.12 call=2.23 unpack=0.05
+06-13 19:34:23.864  8024 20830 I godot   : [weather_refresh][RT] #16 tick=32 stage=commit stride=1 round=false rstage=0 fronts=0 changed=true elapsed=3.337 changed_slots=0
+06-13 19:34:23.870  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#11 tick=32 phase=0.3508 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:23.873  8024 20830 I godot   : [ocean_currents][RT] phys_slice#22 tick=32 round=11 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=9.021 ocean_delta_p95=0.098130 wind_delta_p95=0.138150 slp_delta_p95=0.001779 psi_path=gdext
+06-13 19:34:23.873  8024 20830 I godot   :   [ocean_currents] slow phys slice=9.0ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.99958139657974 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.874  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=0.9961342215538 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:23.876  8024 20830 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-13 19:34:23.876  8024 20830 E godot   : WARNING: [fast tick] frame=32 total=30ms sus=29.14ms render=0.18ms ui=0.33ms cells=2400 budgets(total>12ms or sus>1ms)
+06-13 19:34:23.876  8024 20830 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-13 19:34:23.876  8024 20830 E godot   :    GDScript backtrace (most recent call first):
+06-13 19:34:23.876  8024 20830 E godot   :        [0] _on_day_changed (res://scripts/main.gd:801)
+06-13 19:34:23.876  8024 20830 E godot   :        [1] _process (res://scripts/geography/world_clock.gd:121)
+06-13 19:34:23.876  8024 20830 I godot   : [fast tick WARN] #32 sus=29.14 render=0.18 ui=0.33 total=30ms skip_day=false
+06-13 19:34:23.876  8024 20830 I godot   :     sus_window p95=73.90ms max=94.08ms over1ms=32 largest=ocean_currents/phys_psi_init/next_phys_upwelling path=gdext 9.24ms
+06-13 19:34:23.877  8024 20830 I godot   :     season_refresh ran=0.16ms slices=1 progress=0.00
+06-13 19:34:23.877  8024 20830 I godot   :         season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+06-13 19:34:23.877  8024 20830 I godot   :     refresh_climate_daily ran=2.72ms slices=1 progress=0.25
+06-13 19:34:23.877  8024 20830 I godot   :         A=6.5 B=1.8 ocean=1.0 sea_ice=0.0 ice_bake=0.0 transp=0.0 cells=2400 pass=ocean_water partial=true dirty=1.00 visited=1.00 path=full
+06-13 19:34:23.877  8024 20830 I godot   :         climate path=data_core dc=data_core
+06-13 19:34:23.877  8024 20830 I godot   :         ocean_water gdext flag=true runs=1 fallbacks=0 avg_native=0.30ms
+06-13 19:34:23.877  8024 20830 I godot   :     sea_ice_daily ran=7.01ms slices=1 progress=1.00
+06-13 19:34:23.877  8024 20830 I godot   :     enum_atlas_upload skipped(frame_budget_exhausted)
+06-13 19:34:23.877  8024 20830 I godot   :     weather_refresh ran=3.44ms slices=1 progress=1.00
+06-13 19:34:23.877  8024 20830 I godot   :         weather_tick=3.1 (adv=0.4 spawn=1.8 dist=0.9 cyc=0.0) field_bake=0.0 transp=0.0 albedo=0.0 veg_dyn=0.1 rebake_cv=0.0 rebake_vg=0.0 feedback=0.1 fronts=0
+06-13 19:34:23.877  8024 20830 I godot   :         weather_job total=3.3 prelude=0.0 begin=0.0 run_slice=0.0 direct_a=0.0 commit=0.0 stage_b=3.2 sync=0.0 soak=0.0 unattributed=0.1
+06-13 19:34:23.877  8024 20830 I godot   :         weather_commit inner=1.9 setup=0.0 loop=1.6 dc=0.0 conv=0.0 dist=0.9 summary=1.8 path=gdext_commit
+06-13 19:34:23.877  8024 20830 I godot   :         weather path=data_core_cells_only
+06-13 19:34:23.877  8024 20830 I godot   :     ocean_currents ran=9.27ms slices=1 progress=0.00
+06-13 19:34:23.877  8024 20830 I godot   :     dynamic_visual_atlas_upload ran=2.40ms slices=1 progress=0.00
+06-13 19:34:24.184  8024 20830 I godot   : [plan-c/uni] frame=1200 season_phase=0.354 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:24.930  8024 20830 I godot   : [ocean_currents][RT] phys_slice#23 tick=33 round=11 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=6.964 ocean_delta_p95=0.098130 wind_delta_p95=0.128282 slp_delta_p95=0.001496 psi_path=gdext
+06-13 19:34:24.963  8024 20830 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-13 19:34:25.985  8024 20830 I godot   : [climate/integrity] #23 stage=ocean_water:done phase=0.318 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.512 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.095 air_nonzero=2329 air_abs_max=0.08000 tta_abs_max=0.06572 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.418717 wind_speed=0.201/0.963/1.431 wind_speed_delta_p95=0.068364 ocean_mag_avg=0.170 ocean_mag_max=0.650 ocean_delta_p95=0.098130 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.948 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:25.985  8024 20830 I godot   :   [climate/integrity edge] max=0.512 762(36,12,t6,iw0,e0.857,T0.122,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.634,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:25.985  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.205128->0.230769 mean 0.226->0.321
+06-13 19:34:25.991  8024 20830 I godot   : [ocean_currents][RT] pixel#11 tick=34 stage=ocean_pixel_slice cursor=81920..90112/620544 progress=0.145 elapsed=5.876 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.854 raster_native=0.068 pending_commit=false
+06-13 19:34:26.965  8024 20830 I godot   : [sea_ice/dt] call#3 dt_days=30.000 (last_pass_day=35.005, k x30.00)
+06-13 19:34:26.968  8024 20830 I godot   : [sea_ice/DIAG-SM] run#3 phase=0.384 | thr_eff t_form=0.120 t_melt=0.220 flip_thr=0.680 | k_f=16.500 k_m=43.500 dt=30.00 | temp all min=0.000 max=0.938 avg=0.386 | water n=1307 t_min_w=0.000 below_form=435 (33.3%) max_dfrac=1.9800 | SIF pos=451 max=1.000 avg_w=0.2070 near_thr=88 | FLIP to_ice=1 to_base=19 stat_water=1307 stat_flipped=20 existing_ice_terr=256 | climate_anom=0.000
+06-13 19:34:26.973  8024 20830 I godot   : [ocean_currents][RT] phys_round_start#12 tick=35 phase=0.3836 physical=true wind_period=1 ocean_period=1 slice_count=16 tps=1 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=true
+06-13 19:34:26.976  8024 20830 I godot   : [ocean_currents][RT] phys_slice#24 tick=35 round=12 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=7.765 ocean_delta_p95=0.090127 wind_delta_p95=0.149566 slp_delta_p95=0.006588 psi_path=gdext
+06-13 19:34:27.368  8024 20830 I godot   : [plan-c/uni] frame=1320 season_phase=0.388 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:27.971  8024 20830 I godot   : [weather_refresh][RT] #17 tick=36 stage=entry stride=1 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.027 phase=0.395
+06-13 19:34:27.972  8024 20830 I godot   : [weather_refresh][RT] #18 tick=36 stage=begin stride=1 round=true rstage=1 fronts=0 changed=false elapsed=1.094 dc=false
+06-13 19:34:27.983  8024 20830 I godot   :   [ocean_currents] slow phys slice=10.2ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-13 19:34:28.998  8024 20830 I godot   : [climate/integrity] #24 stage=ocean_land:running phase=0.318 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.512 temp_edge_p99=0.352 temp_edge_warn=72 lat_band_max=0.095 air_nonzero=2329 air_abs_max=0.08000 tta_abs_max=0.06572 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.425643 wind_speed=0.188/0.961/1.431 wind_speed_delta_p95=0.069573 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.090127 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.948 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:28.998  8024 20830 I godot   :   [climate/integrity edge] max=0.512 762(36,12,t6,iw0,e0.857,T0.122,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.634,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:28.998  8024 20830 I godot   :   [climate/integrity lat] max=0.095 0.205128->0.230769 mean 0.226->0.321
+06-13 19:34:29.004  8024 20830 I godot   : [ocean_currents][RT] pixel#12 tick=37 stage=ocean_pixel_slice cursor=90112..98304/620544 progress=0.158 elapsed=6.166 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.941 raster_native=0.053 pending_commit=false
+06-13 19:34:29.989  8024 20830 I godot   :   [ocean_currents] slow phys slice=9.6ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:30.450  8024 20830 I godot   : [plan-c/uni] frame=1440 season_phase=0.422 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:32.014  8024 20830 I godot   : [climate/integrity] #25 stage=wind_surface:done phase=0.318 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.549 temp_edge_p99=0.361 temp_edge_warn=85 lat_band_max=0.101 air_nonzero=2305 air_abs_max=0.08000 tta_abs_max=0.06572 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.347829 wind_speed=0.201/0.960/1.431 wind_speed_delta_p95=0.060284 ocean_mag_avg=0.173 ocean_mag_max=0.650 ocean_delta_p95=0.088640 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.948 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:32.014  8024 20830 I godot   :   [climate/integrity edge] max=0.549 762(36,12,t6,iw0,e0.857,T0.064,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.613,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:32.014  8024 20830 I godot   :   [climate/integrity lat] max=0.101 0.205128->0.230769 mean 0.190->0.291
+06-13 19:34:32.015  8024 20830 I godot   : [weather_refresh][RT] #19 tick=40 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.025 phase=0.439
+06-13 19:34:32.015  8024 20830 I godot   : [weather_refresh][RT] #20 tick=40 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.370 work=500 cursor=0..500 progress=0.208
+06-13 19:34:32.021  8024 20830 I godot   : [ocean_currents][RT] pixel#13 tick=40 stage=ocean_pixel_slice cursor=98304..106496/620544 progress=0.172 elapsed=5.889 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.839 raster_native=0.066 pending_commit=false
+06-13 19:34:32.022  8024 20830 I godot   : [BEGIN-COMMIT] W=1024 H=606 dyn.sz=2482176 smo.sz=2482176 eco.sz=2482176 ice.sz=620544 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 353 }
+06-13 19:34:33.496  8024 20830 I godot   : [plan-c/uni] frame=1560 season_phase=0.455 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:34.000  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:35.000  8024 20830 I godot   : [climate/integrity] #26 stage=pass_b:done phase=0.460 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.549 temp_edge_p99=0.361 temp_edge_warn=85 lat_band_max=0.101 air_nonzero=2305 air_abs_max=0.08000 tta_abs_max=0.06572 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.357618 wind_speed=0.201/0.960/1.431 wind_speed_delta_p95=0.059529 ocean_mag_avg=0.174 ocean_mag_max=0.650 ocean_delta_p95=0.079052 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.951 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:35.000  8024 20830 I godot   :   [climate/integrity edge] max=0.549 762(36,12,t6,iw0,e0.857,T0.064,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.613,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:35.000  8024 20830 I godot   :   [climate/integrity lat] max=0.101 0.205128->0.230769 mean 0.190->0.291
+06-13 19:34:35.007  8024 20830 I godot   : [ocean_currents][RT] pixel#14 tick=43 stage=ocean_pixel_slice cursor=106496..114688/620544 progress=0.185 elapsed=5.843 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.867 raster_native=0.066 pending_commit=false
+06-13 19:34:35.972  8024 20830 I godot   : [weather_refresh][RT] #21 tick=44 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.042 phase=0.482
+06-13 19:34:35.972  8024 20830 I godot   : [weather_refresh][RT] #22 tick=44 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.462 work=500 cursor=500..1000 progress=0.417
+06-13 19:34:35.981  8024 20830 I godot   :   [ocean_currents] slow phys slice=8.7ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:36.607  8024 20830 I godot   : [plan-c/uni] frame=1680 season_phase=0.490 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:36.984  8024 20830 I godot   :   [ocean_currents] slow phys slice=9.4ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-13 19:34:37.994  8024 20830 I godot   : [climate/integrity] #27 stage=ocean_water:running phase=0.460 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.549 temp_edge_p99=0.361 temp_edge_warn=85 lat_band_max=0.101 air_nonzero=2305 air_abs_max=0.08000 tta_abs_max=0.07072 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.373831 wind_speed=0.195/0.959/1.431 wind_speed_delta_p95=0.059071 ocean_mag_avg=0.174 ocean_mag_max=0.650 ocean_delta_p95=0.071618 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.951 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:37.994  8024 20830 I godot   :   [climate/integrity edge] max=0.549 762(36,12,t6,iw0,e0.857,T0.064,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.613,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:37.994  8024 20830 I godot   :   [climate/integrity lat] max=0.101 0.205128->0.230769 mean 0.190->0.291
+06-13 19:34:38.000  8024 20830 I godot   : [ocean_currents][RT] pixel#15 tick=46 stage=ocean_pixel_slice cursor=114688..122880/620544 progress=0.198 elapsed=5.997 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.868 raster_native=0.066 pending_commit=false
+06-13 19:34:38.980  8024 20830 I godot   :   [ocean_currents] slow phys slice=11.9ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:39.979  8024 20830 I godot   : [plan-c/uni] frame=1800 season_phase=0.526 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:40.028  8024 20830 I godot   : [weather_refresh][RT] #23 tick=48 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.040 phase=0.526
+06-13 19:34:40.029  8024 20830 I godot   : [weather_refresh][RT] #24 tick=48 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.894 work=500 cursor=1000..1500 progress=0.625
+06-13 19:34:40.038  8024 20830 I godot   :   [ocean_currents] slow phys slice=9.1ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-13 19:34:41.064  8024 20830 I godot   : [climate/integrity] #28 stage=ocean_land:running phase=0.460 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.549 temp_edge_p99=0.361 temp_edge_warn=85 lat_band_max=0.101 air_nonzero=2305 air_abs_max=0.08000 tta_abs_max=0.07072 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.410432 wind_speed=0.188/0.959/1.431 wind_speed_delta_p95=0.059150 ocean_mag_avg=0.174 ocean_mag_max=0.650 ocean_delta_p95=0.075713 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.951 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:41.064  8024 20830 I godot   :   [climate/integrity edge] max=0.549 762(36,12,t6,iw0,e0.857,T0.064,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.613,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:41.064  8024 20830 I godot   :   [climate/integrity lat] max=0.101 0.205128->0.230769 mean 0.190->0.291
+06-13 19:34:41.070  8024 20830 I godot   : [ocean_currents][RT] pixel#16 tick=49 stage=ocean_pixel_slice cursor=122880..131072/620544 progress=0.211 elapsed=5.971 pps=8192 quota_last=8192 path=gdext_raster raster_wall=0.839 raster_native=0.066 pending_commit=false
+06-13 19:34:42.045  8024 20830 I godot   :   [ocean_currents] slow phys slice=10.2ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:42.045  8024 20830 I godot   : [BEGIN-COMMIT] W=1024 H=606 dyn.sz=2482176 smo.sz=2482176 eco.sz=2482176 ice.sz=620544 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 }
+06-13 19:34:42.964  8024 20830 I godot   : [plan-c/uni] frame=1920 season_phase=0.558 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:44.080  8024 20830 I godot   : [climate/integrity] #29 stage=wind_air:done phase=0.460 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.549 temp_edge_p99=0.361 temp_edge_warn=85 lat_band_max=0.101 air_nonzero=2232 air_abs_max=0.32038 tta_abs_max=0.07072 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.449775 wind_speed=0.182/0.957/1.431 wind_speed_delta_p95=0.059322 ocean_mag_avg=0.173 ocean_mag_max=0.650 ocean_delta_p95=0.078865 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.951 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:44.080  8024 20830 I godot   :   [climate/integrity edge] max=0.549 762(36,12,t6,iw0,e0.857,T0.064,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.613,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:44.080  8024 20830 I godot   :   [climate/integrity lat] max=0.101 0.205128->0.230769 mean 0.190->0.291
+06-13 19:34:44.080  8024 20830 I godot   : [weather_refresh][RT] #25 tick=52 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.025 phase=0.570
+06-13 19:34:44.080  8024 20830 I godot   : [weather_refresh][RT] #26 tick=52 stage=solve stride=1 round=true rstage=1 fronts=0 changed=false elapsed=0.368 work=500 cursor=1500..2000 progress=0.833
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:44.087  8024 20830 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=false N=2400 dirty_sz=2400 iw=true ICE=1.0 sig.A=255 PREV.A=255 cache_valid=true skip=true
+06-13 19:34:45.043  8024 20830 I godot   :   [ocean_currents] slow phys slice=9.3ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:45.959  8024 20830 I godot   : [plan-c/uni] frame=2040 season_phase=0.591 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:47.077  8024 20830 I godot   : [climate/integrity] #30 stage=pass_a:done phase=0.603 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.550 temp_edge_p99=0.354 temp_edge_warn=78 lat_band_max=0.100 air_nonzero=2306 air_abs_max=0.08000 tta_abs_max=0.07072 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.412393 wind_speed=0.188/0.956/1.431 wind_speed_delta_p95=0.059288 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.077607 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.992 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:47.077  8024 20830 I godot   :   [climate/integrity edge] max=0.550 762(36,12,t6,iw0,e0.857,T0.046,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.596,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:47.077  8024 20830 I godot   :   [climate/integrity lat] max=0.100 0.205128->0.230769 mean 0.168->0.268
+06-13 19:34:48.023  8024 20830 I godot   : [weather_refresh][RT] #27 tick=56 stage=entry stride=1 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.052 phase=0.614
+06-13 19:34:48.024  8024 20830 I godot   : [weather_refresh][RT] #28 tick=56 stage=solve_done stride=1 round=true rstage=2 fronts=0 changed=false elapsed=0.904 work=400 cursor=2000..2400
+06-13 19:34:48.038  8024 20830 I godot   :   [ocean_currents] slow phys slice=14.6ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-13 19:34:49.074  8024 20830 I godot   : [plan-c/uni] frame=2160 season_phase=0.625 season_temp_amp=0.320 world.dyn_atlas_smooth=size=(1024.0, 606.0) rid=RID(18648747999259) shader.dyn_atlas_smooth=():<ImageTexture#-9223371910170013379> world.ice_state_tex=size=(1024.0, 606.0) rid=RID(18661632901148) shader.ice_state_atlas=():<ImageTexture#-9223371910119681730>
+06-13 19:34:50.072  8024 20830 I godot   : [climate/integrity] #31 stage=ocean_water:running phase=0.603 n=2400 terr_isw_mis=0 terr_lut_mis=0 cell_terr_mis=0 cell_pass_mis=0 cell_isw_mis=0 dc_terr_mis=0 dc_isw_mis=0 temp_edge_max=0.550 temp_edge_p99=0.354 temp_edge_warn=78 lat_band_max=0.100 air_nonzero=2306 air_abs_max=0.08000 tta_abs_max=0.07349 wind_dir_mag=1.000/1.000/1.000 wind_dir_delta_p95=0.442989 wind_speed=0.188/0.953/1.431 wind_speed_delta_p95=0.061780 ocean_mag_avg=0.171 ocean_mag_max=0.650 ocean_delta_p95=0.084881 ocean_water_zero=0 non_ocean_nonzero=0 moisture_base_r=0.955 precip_vapor_r=0.622 precip_cloud_r=0.811 precip_instab_r=0.660 precip_p95=0.238
+06-13 19:34:50.072  8024 20830 I godot   :   [climate/integrity edge] max=0.550 762(36,12,t6,iw0,e0.857,T0.046,bm1.000,si0.000,tta0.000,om0.000)->822(36,13,t18,iw1,e0.380,T0.596,bm0.736,si0.000,tta0.000,om0.000)
+06-13 19:34:50.072  8024 20830 I godot   :   [climate/integrity lat] max=0.100 0.205128->0.230769 mean 0.168->0.268
+06-13 19:34:51.261  8024 20830 E godot   : ERROR: QueuePresentKHR failed with error: VK_ERROR_SURFACE_LOST_KHR
+06-13 19:34:51.261  8024 20830 E godot   :    at: command_queue_execute_and_present (drivers/vulkan/rendering_device_driver_vulkan.cpp:3064)

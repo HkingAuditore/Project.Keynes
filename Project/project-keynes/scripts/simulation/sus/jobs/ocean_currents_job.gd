@@ -28,7 +28,13 @@ const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
 const _MAX_CLIMATE_DEFER_STREAK: int = 1
 const _PIXEL_TARGET_MS: float = 0.85
 const _PIXEL_MIN_QUOTA: int = 512
-const _PIXEL_MAX_QUOTA: int = 8192
+# 修复（2026-06-13）：原值 8192 把 base_quota 锁死。配合 climate_profile.tres
+# 的 ocean_currents_slice_count=16（pixels_per_slice = ceil(620544/16) = 38784），
+# 8192 cap 让全图填充实际跨 ~78 ticks（@x1 = 78s）而非预期 16s。C++ raster
+# kernel 实测 ~0.07ms / 5172px → 65536 px 仅 ~0.9ms 仍在 sim budget 内。移动端
+# HM_MAX_DIM=512 时 pixels_per_slice = ceil(155136/16) = 9696，65536 cap 几乎
+# 没碰到下限，但保留余量给 quota=20 等更激进的 slice_count 配置。
+const _PIXEL_MAX_QUOTA: int = 65536
 const _NO_DAILY_WIND_TICK: int = -2147483648
 
 # External references — wired up by MapGenerator at registration time.

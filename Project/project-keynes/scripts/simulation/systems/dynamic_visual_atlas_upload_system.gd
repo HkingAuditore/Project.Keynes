@@ -89,7 +89,20 @@ const CPP_SMOOTH_CELLS_PER_CALL: int = 512
 # 实测一次完整渲染更新需要 100+ 帧。提到 4 后 stride_done 那帧立即把 4 张
 # 全部 drain 上传；单张 ImageTexture.update ~0.3-0.5ms，4 张 ≤ 2ms，仍在
 # upload budget(1.5ms 软阈值) 边界范围内，超出由 SUS 自然在下一帧回归。
-const CPP_COMMIT_TEXTURES_PER_TICK: int = 4
+#
+# 修复（2026-06-13，android 性能）：实测 Adreno 830 上 4 张 1024×606 atlas
+# 单 tick drain spike 12-55ms，吃掉两帧 vsync。改成移动端 1 张/tick，4 张分到
+# 4 tick；配合 stride=2，整体视觉延迟从 1-2 day → ~4 day，肉眼可接受。配合
+# HM_MAX_DIM_MOBILE=512 后单张 atlas 0.6MB（vs 桌面 2.4MB），单 tick commit
+# 实测 < 5ms，回到单帧预算内。
+const CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP: int = 4
+const CPP_COMMIT_TEXTURES_PER_TICK_MOBILE: int = 1
+
+static func _cpp_commit_textures_per_tick() -> int:
+	return CPP_COMMIT_TEXTURES_PER_TICK_MOBILE if OS.has_feature("mobile") else CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP
+
+# 兼容：保留旧名，值=桌面默认。真正分流由 _cpp_commit_textures_per_tick()。
+const CPP_COMMIT_TEXTURES_PER_TICK: int = CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP
 # fallback GDScript smooth dirty/prep 子阶段预算：把 merge / one-hop dilation
 # 拆出 baker prepare，避免极端 dirty/full sweep 在单 tick 内完成全部预处理。
 const SMOOTH_PREP_CELLS_PER_TICK: int = 512
@@ -1331,7 +1344,8 @@ func _maybe_enqueue_cpp_commit_task(channel: String, buf: PackedByteArray,
 
 func _drain_cpp_commit_queue(t_start_us: int) -> Dictionary:
 	var report: Dictionary = _cpp_commit_context.duplicate(true)
-	var textures_this_tick: int = mini(CPP_COMMIT_TEXTURES_PER_TICK, _cpp_commit_queue.size())
+	# 移动端每 tick 只 commit 1 张 atlas，桌面 4 张。see CPP_COMMIT_TEXTURES_PER_TICK_*.
+	var textures_this_tick: int = mini(_cpp_commit_textures_per_tick(), _cpp_commit_queue.size())
 	var tick_commit_ms: float = 0.0
 	var tick_pixels: int = 0
 	var last_channel: String = ""
