@@ -306,6 +306,73 @@ Stage 3（plan §async-stage-3，2026-06-14）GDScript orchestration 整合：
 切换方式：把 ClimateProfile 资源里的 `use_climate_round_async` 翻到 true，restart
 游戏即可。**dev 期建议先用 KEY_B / KEY_V 跑 bench 验证 bit-equal**，再翻开本 flag。
 
+#### Stage 3 字段名修复（2026-06-14）
+
+**关键教训：** `_build_async_kick_input` 里所有 `cp.xxx` 字段名必须与 sync 路径里
+inline 构造的 knobs dict **逐字对照**——不能凭直觉命名。Stage 3 落地时发现一批
+字段名拼错，导致 daily round 异步路径的输出偏离 sync 路径：
+
+| 错误命名（已修） | 正确命名（sync 用） | 出现位置 |
+|---|---|---|
+| `cp.snow_cool` | `cp.snow_albedo_cooling` | pass_b |
+| `cp.veg_cool` | `cp.vegetation_cooling` | pass_b |
+| `cp.diurnal_amp` | `cp.landform_diurnal_amp` | pass_b |
+| `cp.evap_gain` | `cp.evaporation_gain` | pass_b |
+| `cp.rs_threshold/factor/lookback` | `cp.rain_shadow_*` | pass_b |
+| `cp.t_freeze` | `cp.sea_ice_form_threshold` | pass_b |
+| `cp.coupling_gain` | `cp.ocean_moisture_coupling_gain` | pass_b |
+| `cp.coast_leak` | `_last_cfg.COASTAL_HEAT_LEAK`（**不在 cp**） | pass_b, ocean_land |
+| `cp.sea_ice_k_freeze` | `cp.sea_ice_freeze_rate` | sea_ice |
+| `cp.sea_ice_k_melt` | `cp.sea_ice_melt_rate` | sea_ice |
+| `cp.sea_ice_t_form` | `cp.sea_ice_form_threshold` | sea_ice |
+| `cp.sea_ice_t_melt` | `cp.sea_ice_melt_threshold` | sea_ice |
+| `cp.sea_ice_threshold` | `cp.sea_ice_terrain_threshold` | sea_ice |
+| `cp.sea_ice_hysteresis` | `cp.sea_ice_terrain_hysteresis` | sea_ice |
+| `_last_cfg.WIND_HEAT_ADVECT_STEPS` | `_last_cfg.OCEAN_HEAT_ADVECT_STEPS` | ocean_water |
+| 缺少 | `cp.sea_ice_neighbor_contagion` | sea_ice |
+| 缺少 | `cp.sea_ice_solar_gate_enabled` | sea_ice |
+| 缺少 | `cp.sea_ice_freeze_insol_low/high` | sea_ice |
+| 缺少 | `cp.sea_ice_solar_melt_start/gain` | sea_ice |
+| 缺少 | `cp.sea_ice_daily_delta_cap` | sea_ice |
+| 缺少 | `_last_cfg.OCEAN_CURRENT_ICE_DELAY` | sea_ice |
+| 缺少 | `_last_cfg.enable_ocean_heat_transport` | sea_ice |
+| 缺少 | `generator._consume_sea_ice_dt_days()` | sea_ice（必须 mirror sync 的 stride 补偿） |
+| 缺少 | TTA 4 个 scalar（source_cap/blend_rate/decay_rate/zero_current_decay） | ocean_water/ocean_land |
+| 缺少 | climate_anomaly 阈值 shift（sea_ice t_form/t_melt） | sea_ice |
+
+**还有：** `thermal_inertia_*` 和 `thermal_daily_delta_cap` / `snowpack_cover_*` /
+`insol_dev_*` 这些 scalar **不能**读 `cp.xxx`！sync 路径在 `_climate_pass_a::cp_struct`
+里**故意没传**这些字段（map_generator.gd:6818-6830 只传 11 个 scalar），C++ 端走
+内部默认值（0.24/0.07/0.09/0.16/0.085/0.03/0.25/-1/1.5）。`climate_profile.gd` 里
+的 @export 0.35/0.15 等是给 **GDScript fallback** 用，C++ 路径不读。**async daily
+round 要跟 sync 生产路径 bit-equal，绝不能读 cp.thermal_inertia_***。
+
+bench helper（`run_async_climate_round_bench` in `map_generator.gd`）跟实际
+`_build_async_kick_input` 共享同一份契约：bench 用 hardcoded scalar mirror sync 的
+默认值；`_build_async_kick_input` 用同样的 hardcoded（避免 climate_profile.gd 的
+@export 默认值跟 C++ 内部默认值不一致导致 diff）。
+
+bench 互斥保护：`run_async_climate_round_bench` 入口临时关 `use_climate_round_async`
+flag，bench 完成后恢复——避免 daily round async 路径跟 bench 都用同一个 global
+worker singleton 互相污染（`worker_compute_us=1700` 而非 ≈1400 即是症状）。
+
+#### Stage 3 sea_ice independent job 互斥（2026-06-14）
+
+SUS scheduler 注册了 `sea_ice_daily` 独立 job（`SeaIceDailySystem`，priority=115），
+跟 `refresh_climate_daily` 平行跑。它调 `generator.run_climate_pass_slice("sea_ice")`
+路由到 sync `_apply_sea_ice_daily_pass`。
+
+`use_climate_round_async=true` 时 worker 内部 sea_ice pass 也跑——**两边同时存在
+就会**：
+- 每 tick 调两次 `_consume_sea_ice_dt_days()`，第二次拿到的 dt_days 偏移（已实测
+  `[sea_ice/dt] call#2 ... call#2` 同 tick 出现）。
+- terrain 翻转两遍——sync 翻一次写 `_slots[cell_terrain]`，async worker 也翻一次写
+  output 然后 poll 时再写 slot，结果取决于谁先 mark dirty。
+
+解决：`SeaIceDailySystem::_enabled_from_profile` 检查 `cp.use_climate_round_async`，
+true 时 return false（job 整个 short-circuit）。回退路径（async flag false）走原
+独立 job。
+
 ## Sea ice daily
 
 主要入口：

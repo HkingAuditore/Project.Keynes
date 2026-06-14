@@ -123,6 +123,8 @@ var _async_round_poll_attempts: int = 0
 var _async_round_kick_tick: int = -1
 # Stage 3 一次性 boot probe 打印（"async path active 第 N 次 round"）。
 var _async_first_round_logged: bool = false
+# Stage 3 调试一次性 probe，run_slice 第一次进时 dump async branch condition
+var _async_branch_probe_logged: bool = false
 
 # 跨段累积的耗时埋点：sub-pass 各段 elapsed_ms，整 round 完成时一次性写入
 # generator._last_climate_breakdown，让 main.gd 的 fast tick WARN 详细日志读到
@@ -1318,25 +1320,82 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	# coast_leak 来自 _last_cfg.COASTAL_HEAT_LEAK，不是 cp 字段
 	input["pb_coast_leak"]    = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.0
 	input["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if "sea_ice_albedo_cooling" in cp else 0.0
-	# ocean knobs
-	input["ow_advect_steps"] = int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS) if generator._last_cfg != null else 3
-	input["ow_heat_mix"]     = 0.25
+	# ocean_water knobs — sync 用 _last_cfg.OCEAN_HEAT_* （map_generator.gd:9679-9680）
+	input["ow_advect_steps"] = max(0, int(generator._last_cfg.OCEAN_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
+	input["ow_heat_mix"]     = clampf(float(generator._last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.25
+	# ocean TTA scalars — sync 用 _temperature_transport_anomaly_knobs (map_generator.gd:2083-2104)
+	# 来源：cp.temperature_transport_anomaly_source_cap / blend_rate / decay_rate / zero_current_decay
+	# 缺省值：source_cap=0.08, blend_rate=0.35, decay_rate=0.12, zero_current_decay=0.20
+	var _tta_source_cap: float = 0.08
+	var _tta_blend_rate: float = 0.35
+	var _tta_decay_rate: float = 0.12
+	var _tta_zero_curr_decay: float = 0.20
+	if cp != null:
+		if "temperature_transport_anomaly_source_cap" in cp:
+			_tta_source_cap = clampf(float(cp.temperature_transport_anomaly_source_cap), 0.0, 0.5)
+		if "temperature_transport_anomaly_blend_rate" in cp:
+			_tta_blend_rate = clampf(float(cp.temperature_transport_anomaly_blend_rate), 0.0, 1.0)
+		if "temperature_transport_anomaly_decay_rate" in cp:
+			_tta_decay_rate = clampf(float(cp.temperature_transport_anomaly_decay_rate), 0.0, 1.0)
+		if "temperature_transport_anomaly_zero_current_decay" in cp:
+			_tta_zero_curr_decay = clampf(float(cp.temperature_transport_anomaly_zero_current_decay), 0.0, 1.0)
+	# ocean_water 和 ocean_land 都需要这 4 个；C++ 端用 ow_tta_*/ol_tta_* 分别取
+	input["ow_tta_source_cap"]          = _tta_source_cap
+	input["ow_tta_blend_rate"]          = _tta_blend_rate
+	input["ow_tta_zero_current_decay"]  = _tta_zero_curr_decay
+	input["ol_tta_source_cap"]          = _tta_source_cap
+	input["ol_tta_blend_rate"]          = _tta_blend_rate
+	input["ol_tta_decay_rate"]          = _tta_decay_rate
+	# ocean_land knobs — sync 用 _last_cfg.COASTAL_HEAT_LEAK * winter_boost(1.0)（map_generator.gd:9916-9917）
 	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.35
-	# wind knobs
-	input["wa_advect_steps"] = int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS) if generator._last_cfg != null else 3
-	input["wa_heat_mix"]     = float(generator._last_cfg.WIND_HEAT_MIX) if generator._last_cfg != null else 0.25
+	# wind_air knobs — sync 用 _last_cfg.WIND_HEAT_*（map_generator.gd:12637-12638）
+	input["wa_advect_steps"] = max(0, int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
+	input["wa_heat_mix"]     = clampf(float(generator._last_cfg.WIND_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.25
+	# wind_surface knobs — sync 用 _last_cfg.AIR_MASS_HEAT_LEAK（map_generator.gd:12672）
 	input["ws_air_leak"]     = float(generator._last_cfg.AIR_MASS_HEAT_LEAK) if generator._last_cfg != null else 0.35
-	# sea_ice knobs（与 sync run_sea_ice_daily_pass 同源）
-	input["si_k_freeze"]     = float(cp.sea_ice_k_freeze) if "sea_ice_k_freeze" in cp else 0.05
-	input["si_k_melt"]       = float(cp.sea_ice_k_melt)   if "sea_ice_k_melt"   in cp else 0.05
-	input["si_t_form"]       = float(cp.sea_ice_t_form)   if "sea_ice_t_form"   in cp else 0.12
-	input["si_t_melt"]       = float(cp.sea_ice_t_melt)   if "sea_ice_t_melt"   in cp else 0.20
-	input["si_threshold"]    = float(cp.sea_ice_threshold) if "sea_ice_threshold" in cp else 0.6
-	input["si_hysteresis"]   = float(cp.sea_ice_hysteresis) if "sea_ice_hysteresis" in cp else 0.05
+	# sea_ice knobs — sync 用 cp.sea_ice_freeze_rate / sea_ice_melt_rate / sea_ice_form_threshold /
+	#   sea_ice_melt_threshold / sea_ice_neighbor_contagion / sea_ice_terrain_threshold /
+	#   sea_ice_terrain_hysteresis（_apply_sea_ice_daily_pass map_generator.gd:8020-8026）
+	# 还有 sea_ice_freeze_insol_low/high / sea_ice_solar_melt_start/gain / sea_ice_daily_delta_cap /
+	#   sea_ice_solar_gate_enabled / OCEAN_CURRENT_ICE_DELAY / enable_ocean_heat_transport
+	input["si_k_freeze"]     = float(cp.sea_ice_freeze_rate) if "sea_ice_freeze_rate" in cp else 0.55
+	input["si_k_melt"]       = float(cp.sea_ice_melt_rate)   if "sea_ice_melt_rate"   in cp else 1.45
+	input["si_t_form"]       = float(cp.sea_ice_form_threshold) if "sea_ice_form_threshold" in cp else 0.12
+	input["si_t_melt"]       = float(cp.sea_ice_melt_threshold) if "sea_ice_melt_threshold" in cp else 0.22
+	input["si_contagion"]    = float(cp.sea_ice_neighbor_contagion) if "sea_ice_neighbor_contagion" in cp else 0.06
+	input["si_threshold"]    = float(cp.sea_ice_terrain_threshold) if "sea_ice_terrain_threshold" in cp else 0.68
+	input["si_hysteresis"]   = float(cp.sea_ice_terrain_hysteresis) if "sea_ice_terrain_hysteresis" in cp else 0.12
+	input["si_ice_delay"]    = float(generator._last_cfg.OCEAN_CURRENT_ICE_DELAY) if generator._last_cfg != null else 0.0
+	input["si_solar_gate_enabled"] = bool(cp.sea_ice_solar_gate_enabled) if "sea_ice_solar_gate_enabled" in cp else true
+	input["si_freeze_insol_low"]  = float(cp.sea_ice_freeze_insol_low) if "sea_ice_freeze_insol_low" in cp else 0.30
+	input["si_freeze_insol_high"] = float(cp.sea_ice_freeze_insol_high) if "sea_ice_freeze_insol_high" in cp else 0.55
+	input["si_solar_melt_start"]  = float(cp.sea_ice_solar_melt_start) if "sea_ice_solar_melt_start" in cp else 0.45
+	input["si_solar_melt_gain"]   = float(cp.sea_ice_solar_melt_gain) if "sea_ice_solar_melt_gain" in cp else 0.65
+	input["si_daily_delta_cap"]   = float(cp.sea_ice_daily_delta_cap) if "sea_ice_daily_delta_cap" in cp else 0.08
+	input["si_enable_oht"]        = bool(generator._last_cfg.enable_ocean_heat_transport) if generator._last_cfg != null else true
+	# climate_anomaly 阈值偏移（与 _apply_sea_ice_daily_pass map_generator.gd:8044-8046 同源）
+	# sync 路径在调 C++ run_sea_ice_daily_pass 前已把 t_form/t_melt 减去 climate_anomaly_now * 0.10。
+	# async 模式要 mirror 这个 shift —— worker 用相同 t_form/t_melt 才能 bit-equal。
+	var _ca_now: float = 0.0
+	if generator._world_clock_ref != null:
+		var _ca_v = generator._world_clock_ref.get("climate_anomaly")
+		if _ca_v != null:
+			_ca_now = float(_ca_v)
+	if not is_equal_approx(_ca_now, 0.0):
+		var _ice_thr_shift: float = 0.10 * _ca_now
+		input["si_t_form"] = clampf(float(input["si_t_form"]) - _ice_thr_shift, 0.0, 1.0)
+		input["si_t_melt"] = clampf(float(input["si_t_melt"]) - _ice_thr_shift, 0.0, 1.0)
 	# apply_terrain_flips：sync 路径里由 GDScript caller 处理翻转，async 模式建议
 	# 让 C++ worker 写好 out.terrain（apply=true）→ poll 写回 _slots[cell_terrain]，
 	# 减少主线程处理量。
 	input["si_apply_terrain_flips"] = true
+	# si_dt_days：sync 路径每次调 sea_ice 时从 generator consume（map_generator.gd:8011
+	# `_apply_sea_ice_daily_pass` 调用 `_consume_sea_ice_dt_days()`）。async 模式在
+	# kick 时 consume，传给 worker 用。
+	if generator.has_method("_consume_sea_ice_dt_days"):
+		input["si_dt_days"] = float(generator._consume_sea_ice_dt_days())
+	else:
+		input["si_dt_days"] = 1.0
 	return input
 
 
@@ -1382,6 +1441,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var async_enabled: bool = false
 	if cp_async_check != null and "use_climate_round_async" in cp_async_check:
 		async_enabled = bool(cp_async_check.use_climate_round_async)
+	# Stage 3 调试 print（一次性）：第一次进 run_slice 时 dump 实际 condition
+	if not _async_branch_probe_logged:
+		_async_branch_probe_logged = true
+		var ext_ok: bool = generator._data_core_world_ext != null
+		var has_kick: bool = ext_ok and generator._data_core_world_ext.has_method("async_climate_round_kick")
+		var has_poll: bool = ext_ok and generator._data_core_world_ext.has_method("async_climate_round_poll")
+		var cp_path: String = "<null>" if cp_async_check == null else (cp_async_check.resource_path if cp_async_check.resource_path != "" else "<in-memory>")
+		print("[climate/async PROBE] cp=%s async_enabled=%s ext=%s has_kick=%s has_poll=%s" % [
+			cp_path, str(async_enabled), str(ext_ok), str(has_kick), str(has_poll),
+		])
 	if async_enabled and generator._data_core_world_ext != null \
 			and generator._data_core_world_ext.has_method("async_climate_round_kick") \
 			and generator._data_core_world_ext.has_method("async_climate_round_poll"):
