@@ -482,9 +482,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# DataCore weather mirror 现恒走单路径，F9 hot-toggle 不再生效。
 			print("[DataCore] F9 deprecated: use_data_core_weather flag removed (single-path).")
 		KEY_F10:
-			# dots-flag-prune-pr1 (2026-05-22)： use_data_core master flag 已删除——
-			# DataCore 现恒挂载，F10 master toggle 不再生效。
-			print("[DataCore] F10 deprecated: use_data_core flag removed (single-path).")
+			# 2026-06-14：toggle WeatherLayer visible（60 FPS 瓶颈调查）。
+			# 完全隐藏 weather overlay → shader 不跑 → 直接测出 weather_overlay 占
+			# 多少 ms/帧。如果 FPS 从 40 升到 55+，weather_overlay 是真凶；如果只升
+			# 到 45，瓶颈在别处（SUS / 其他 shader / Canvas）。
+			toggle_weather_layer_visible()
 		KEY_F2:
 			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
 			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
@@ -629,6 +631,27 @@ func toggle_atlas_resolution() -> void:
 		256 if _render_profile_atlas_quarter_size else 512,
 	])
 	regenerate_debug_map()
+
+
+# F10 / mobile 按钮：toggle WeatherLayer visible（60 FPS 瓶颈调查，2026-06-14）。
+# 完全隐藏 weather overlay → 整个 1046 行 fragment shader 不再为屏幕每个像素跑一次。
+# 用 ΔFPS 反推 weather_overlay 占主线程多少 ms：
+#   - FPS 40→55+：weather 是真凶（visual_quality 降级方向正确）
+#   - FPS 40→45：weather 占 ~5ms，瓶颈分散
+#   - FPS 40→40：weather 不是瓶颈，找其他 shader / SUS
+var _render_profile_weather_hidden: bool = false
+
+func toggle_weather_layer_visible() -> void:
+	if _renderer == null:
+		print("[render-profile] renderer null, cannot toggle WeatherLayer")
+		return
+	var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+	if weather_layer_node == null:
+		print("[render-profile] WeatherLayer node not found")
+		return
+	_render_profile_weather_hidden = not _render_profile_weather_hidden
+	weather_layer_node.visible = not _render_profile_weather_hidden
+	print("[render-profile] WeatherLayer hidden=%s — 用 ΔFPS 判断 weather_overlay shader 占多少" % str(_render_profile_weather_hidden))
 
 
 func _mark_debug_console_state_dirty() -> void:
@@ -1562,6 +1585,9 @@ func _generate_and_render(seed_val: int) -> void:
 # 把六个 @export 开关一次性推到 HexRenderer / WeatherLayer。
 # 开关 → 具体 shader 分支的绑定由后续任务消费这些 setter 完成。
 func _push_visual_toggles() -> void:
+	# 注意（2026-06-14）：之前曾把 mobile 强制 visual_quality=0，但还没证明 weather_overlay
+	# 是真凶就降级 default 不严谨。先撤回；用 F10 / Weather toggle 按钮做 A/B 实测，
+	# ΔFPS 显著时再决定是否把 mobile default 降到 0。
 	if _renderer != null:
 		_renderer.set_visual_quality(visual_quality)
 		_renderer.set_day_night_enabled(day_night_enabled)
@@ -1578,6 +1604,11 @@ func _push_visual_toggles() -> void:
 			_renderer.set_rain_density_boost_enabled(rain_density_boost_enabled)
 		if _renderer.has_method("set_cloud_tod_tint_enabled"):
 			_renderer.set_cloud_tod_tint_enabled(cloud_tod_tint_enabled)
+		# weather_layer 之前没被 push visual_quality，1046 行 shader 一直跑 quality=2。
+		# 这次先推下去，后续按需调。
+		var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+		if weather_layer_node != null and weather_layer_node.has_method("set_visual_quality"):
+			weather_layer_node.set_visual_quality(visual_quality)
 
 		# Water Visual Overhaul：把本轮的 13 个参数 + 5 个子开关一起推下去。
 		# visual_quality==0 时，各子特性由 renderer/shader 内部做降级，不在这里改值。
@@ -2735,8 +2766,8 @@ func _ensure_mobile_debug_overlay() -> void:
 	box.name = "MobileDebugOverlay"
 	box.add_theme_constant_override("separation", 8)
 	box.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	box.position = Vector2(8.0, -100.0)  # 中线略上一点
-	box.size = Vector2(140.0, 200.0)
+	box.position = Vector2(8.0, -132.0)  # 4 个按钮居中
+	box.size = Vector2(140.0, 264.0)
 	# Profile 按钮 — 不切状态，只 dump
 	var btn_profile: Button = Button.new()
 	btn_profile.text = "Profile"
@@ -2759,8 +2790,16 @@ func _ensure_mobile_debug_overlay() -> void:
 	btn_atlas.custom_minimum_size = Vector2(132.0, 56.0)
 	btn_atlas.pressed.connect(_on_mobile_atlas_btn_pressed)
 	box.add_child(btn_atlas)
+	# Weather Layer toggle (60 FPS 瓶颈调查：完全隐藏 weather overlay 看 ΔFPS)
+	var btn_weather: Button = Button.new()
+	btn_weather.name = "BtnWeather"
+	btn_weather.text = "Weather: ON"
+	btn_weather.toggle_mode = true
+	btn_weather.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_weather.pressed.connect(_on_mobile_weather_btn_pressed)
+	box.add_child(btn_weather)
 	ui_layer.add_child(box)
-	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas 三个按钮）")
+	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas / Weather 四个按钮）")
 
 
 func _on_mobile_dva_btn_pressed() -> void:
@@ -2781,6 +2820,16 @@ func _on_mobile_atlas_btn_pressed() -> void:
 	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnAtlas") as Button
 	if btn != null:
 		btn.text = "Atlas: 256" if _render_profile_atlas_quarter_size else "Atlas: 512"
+
+
+func _on_mobile_weather_btn_pressed() -> void:
+	toggle_weather_layer_visible()
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnWeather") as Button
+	if btn != null:
+		btn.text = "Weather: OFF" if _render_profile_weather_hidden else "Weather: ON"
 
 
 func _ensure_splash_overlay() -> void:
