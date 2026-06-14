@@ -112,6 +112,18 @@ var _pass_cursor: int = 0
 var _round_active: bool = false
 var _phase_locked: float = 0.0
 
+# ─── Async climate round（plan §async-stage-3，2026-06-14） ──────────
+# 当 cp.use_climate_round_async=true 时启用：worker thread 后台跑完整 round，
+# 主线程 run_slice 入口 kick + poll。
+# _async_round_kicked：当前 round 已 kick 但 worker 还没完成。
+# _async_round_poll_attempts：从 kick 到现在试过的 poll 次数（diagnostic）。
+# _async_round_kick_tick：kick 时的 tick_index，用于"超时强制 finalize"兜底。
+var _async_round_kicked: bool = false
+var _async_round_poll_attempts: int = 0
+var _async_round_kick_tick: int = -1
+# Stage 3 一次性 boot probe 打印（"async path active 第 N 次 round"）。
+var _async_first_round_logged: bool = false
+
 # 跨段累积的耗时埋点：sub-pass 各段 elapsed_ms，整 round 完成时一次性写入
 # generator._last_climate_breakdown，让 main.gd 的 fast tick WARN 详细日志读到
 # 与 wrapper 路径一致的 6 段拆解。
@@ -1085,10 +1097,297 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 	_climate_integrity_prev_ocean_y = ocean_y_a.duplicate()
 
 
+# ─── Async climate round helpers（plan §async-stage-3，2026-06-14） ─────
+#
+# 设计：当 cp.use_climate_round_async=true，sync sliced run_slice 路径完全短路。
+# 代之以两阶段状态机：
+#   _round_active=false, _async_round_kicked=false
+#     → kick worker，置 _async_round_kicked=true，return partial (round 还没完)
+#   _round_active=true, _async_round_kicked=true
+#     → 调 poll；返空（worker 没完）→ return partial；返非空 → 同步回 _slots +
+#       同步 sea_ice flip events + _finalize_round() 走原逻辑（埋点 / dirty mask）
+#
+# 主线程单帧开销：kick ~100us + memcpy 220 KB ≈ 0.5ms；poll busy 0；
+# 完成 poll 那帧 ≈ memcpy 220 KB + flush_slots_to_map + dirty mark ≈ 2-5ms。
+# x1 速度下每 game day = 每 ~1 sec 一次 round；worker 在后台跑 30-50ms 不阻塞主线程。
+#
+# Stage 3 不再用 _PASS_CURSOR / _pass_cursor 状态机推进（async path 一次性
+# 跑完整 round）。breakdown 字段仍照 sync 路径填好以便 main.gd fast tick WARN
+# 解析无差异。
+func _run_slice_async(ctx: SusTickContext) -> Dictionary:
+	var ext = generator._data_core_world_ext
+	if ext == null:
+		return _async_round_partial_report(0.0, "ext null")
+	# Worker 没注册 → first time enter → register（幂等）。
+	if not _async_first_round_logged:
+		_async_first_round_logged = true
+		ext.async_climate_round_register()
+		# 静态 knobs 推一次（neighbor_indices + donor_table + foliage_table）
+		var static_knobs: Dictionary = _build_async_static_knobs()
+		ext.async_climate_round_set_static_knobs(static_knobs)
+		print("[climate/async] worker registered + static knobs set (n_cells=%d)" % map.cell_count())
+
+	# Round 启动：kick
+	if not _round_active:
+		_pass_cursor = 0
+		if season_phase_getter.is_valid():
+			_phase_locked = float(season_phase_getter.call())
+		else:
+			_phase_locked = ctx.season_phase
+		_round_t_pass_a_ms = 0.0
+		_round_t_pass_b_ms = 0.0
+		_round_t_ocean_ms = 0.0
+		_round_t_wind_ms = 0.0
+		_round_t_sea_ice_ms = 0.0
+		_round_t_transp_ms = 0.0
+		_round_t_round_start_ms = Time.get_ticks_msec()
+		_round_active = true
+		_async_round_kicked = false
+		_async_round_poll_attempts = 0
+		_async_round_kick_tick = ctx.tick_index
+		_sync_runtime_terrain_views("round_start")
+		_begin_round_pass_state()
+
+	# Worker pending 时不重复 kick（kick 返回 false → reused++）。
+	if not _async_round_kicked:
+		var kick_t0: int = Time.get_ticks_usec()
+		var input: Dictionary = _build_async_kick_input(_phase_locked)
+		var kicked: bool = bool(ext.async_climate_round_kick(input))
+		var kick_ms: float = (Time.get_ticks_usec() - kick_t0) / 1000.0
+		if kicked:
+			_async_round_kicked = true
+		else:
+			# Worker busy 处理上一 round → 本 tick 继续等。下个 tick 还可以 poll。
+			pass
+		return _async_round_partial_report(kick_ms, "kicked" if kicked else "worker_busy")
+
+	# 已 kick → poll
+	_async_round_poll_attempts += 1
+	var poll_t0: int = Time.get_ticks_usec()
+	var poll_result: Dictionary = ext.async_climate_round_poll()
+	var poll_ms: float = (Time.get_ticks_usec() - poll_t0) / 1000.0
+	if poll_result.is_empty():
+		return _async_round_partial_report(poll_ms, "poll_pending")
+
+	# Worker 完成：poll 已经把 19 个 slot 写回 _slots + flush 到 MapData。
+	# 主线程要处理 sea_ice flip events（map.terrain_arr 镜像 + atlas dirty）。
+	_handle_async_sea_ice_flips(poll_result)
+
+	# 填充 per-pass breakdown 让 main.gd 日志解析无差异
+	_round_t_pass_a_ms     = float(poll_result.get("pass_a_us", 0)) / 1000.0
+	_round_t_pass_b_ms     = float(poll_result.get("pass_b_us", 0)) / 1000.0
+	_round_t_ocean_ms      = (float(poll_result.get("ocean_water_us", 0)) + float(poll_result.get("ocean_land_us", 0))) / 1000.0
+	_round_t_wind_ms       = (float(poll_result.get("wind_air_us", 0)) + float(poll_result.get("wind_surface_us", 0))) / 1000.0
+	_round_t_sea_ice_ms    = float(poll_result.get("sea_ice_us", 0)) / 1000.0
+	_round_t_transp_ms     = float(poll_result.get("transp_us", 0)) / 1000.0
+
+	# Round 结束：原 _finalize_round 处理 dirty mask / climate breakdown / annual log。
+	_pass_cursor = _PASS_COUNT
+	_finalize_round()
+
+	if int(poll_result.get("worker_total_us", 0)) > 50_000:
+		# Worker 跑超 50ms 偶尔可见，但不严重。可以提示。
+		print("[climate/async] slow round worker_total_us=%d kick_to_poll_attempts=%d" % [
+			int(poll_result.get("worker_total_us", 0)), _async_round_poll_attempts,
+		])
+
+	return {
+		"done": true,
+		"work_done": map.cell_count(),
+		"elapsed_ms": poll_ms,
+		"progress_ratio": 1.0,
+		"stage_name": "async_round_done",
+		"substage": "pass_count=%d" % _PASS_COUNT,
+		"path": "data_core_async",
+	}
+
+
+# 返回 partial report 给 SUS scheduler（round 还没完）。
+func _async_round_partial_report(slice_ms: float, stage_label: String) -> Dictionary:
+	return {
+		"done": false,
+		"work_done": 0,
+		"elapsed_ms": slice_ms,
+		"progress_ratio": 0.0,
+		"stage_name": "async_round_" + stage_label,
+		"substage": "attempts=%d" % _async_round_poll_attempts,
+		"path": "data_core_async",
+	}
+
+
+# 构造 async kick 用的 input Dictionary（所有 climate pass 需要读的字段 + cp scalars）。
+# 主线程跑一次 ~0.5ms（memcpy 220 KB），值得：worker 在后台 30-50ms 不阻塞主线程。
+func _build_async_kick_input(season_phase: float) -> Dictionary:
+	var cp: ClimateProfile = generator._c()
+	var n_cells: int = map.cell_count()
+	# 默认 mask = 0xFF（全开 round 模式）。Stage 3 把开关字段也放进来便于调试。
+	var input: Dictionary = {
+		"n_cells": n_cells,
+		"passes_mask": 0xFF,
+		# pass_a 用
+		"is_water": map.is_water_arr,
+		"terrain": map.terrain_arr,
+		"cover": map.cover_arr,
+		"ema_initialized": map.ema_initialized_arr,
+		"elevation": map.elevation_arr,
+		"base_moisture": map.base_moisture_arr,
+		"lat_norm": map.cell_lat_norm_arr,
+		"temp_baseline_year": map.temp_baseline_year_arr,
+		"temp": map.temp_arr,
+		"temp_30d": map.temp_30d_arr,
+		"temp_365d": map.temp_365d_arr,
+		"thermal_energy": map.thermal_energy_arr,
+		"snowpack": map.snowpack_arr,
+		# pass_b 共享
+		"landform": map.landform_arr,
+		"vegetation": map.vegetation_arr,
+		"moisture": map.moisture_arr,
+		"snow_cover": map.snow_cover_arr,
+		"pos_x": map.cell_pos_x_arr,
+		"pos_y": map.cell_pos_y_arr,
+		"insolation_dev": map.insolation_dev_arr,
+		"temp_transport_anomaly": map.temperature_transport_anomaly_arr,
+		"local_thermal_anomaly": map.local_thermal_anomaly_arr,
+		"sea_ice_frac": map.sea_ice_frac_arr,
+		"sea_ice_frac_inout": map.sea_ice_frac_arr,  # sea_ice 也用
+		"base_terrain": map.base_terrain_arr,
+		"upwelling_strength": map.upwelling_strength_arr if "upwelling_strength_arr" in map else PackedFloat32Array(),
+		"insolation_now": map.insolation_now_arr,
+		"cell_temperature_arr": map.temp_arr,  # sea_ice 期望 climate-adjusted T（round 内 wind_surface 写完更新）
+		# ocean_water/land 共享
+		"ocean_current_x": map.ocean_current_x_arr,
+		"ocean_current_y": map.ocean_current_y_arr,
+		"ocean_thermal_anomaly": map.ocean_thermal_anomaly_arr,
+		# wind_air/surface 共享
+		"wind_x": map.wind_x_arr,
+		"wind_y": map.wind_y_arr,
+		"wind_speed": map.wind_speed_arr,
+		"temp_baseline": map.temp_baseline_arr,
+		"air_mass_temp_anomaly": map.air_mass_temp_anomaly_arr,
+		# water_terrain_ids LUT（与 sync run_sea_ice_daily_pass 同源）
+		"water_terrain_ids": PackedByteArray([
+			int(TerrainType.TERRAIN.OCEAN) & 0xFF,
+			int(TerrainType.TERRAIN.COAST) & 0xFF,
+			int(TerrainType.TERRAIN.LAKE) & 0xFF,
+			int(TerrainType.TERRAIN.REEF) & 0xFF,
+			int(TerrainType.TERRAIN.KELP) & 0xFF,
+			int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
+		]),
+		# sea_ice 翻转用的 terrain enum ids
+		"si_terrain_lake_id":    int(TerrainType.TERRAIN.LAKE) & 0xFF,
+		"si_terrain_sea_ice_id": int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
+		"si_terrain_ocean_id":   int(TerrainType.TERRAIN.OCEAN) & 0xFF,
+		# round scalars
+		"season_phase": season_phase,
+		"axial_tilt_deg": float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
+		"day_length_gain": float(cp.insolation_daylen_amp) if "insolation_daylen_amp" in cp else 0.35,
+		"solar_gain": float(cp.solar_gain) if "solar_gain" in cp else 1.0,
+		"insol_amp": float(cp.season_temp_amp) if "season_temp_amp" in cp else 0.20,
+		"insol_gain": float(cp.insolation_season_gain) if "insolation_season_gain" in cp else 1.0,
+		"moist_scale_now": 1.0,
+		"days_per_year": generator._calendar_days_per_year(),
+		"sea_level": float(generator._last_cfg.sea_level) if generator._last_cfg != null else 0.5,
+		# pass_a 扩展 scalars — **必须 mirror sync `_climate_pass_a` 的 cp_struct**
+		# sync 路径（map_generator.gd:6818-6830）只塞 11 字段，下面这些 C++ 用内部默认值。
+		# climate_profile.gd 里的 @export 0.35/0.15 等是给 GDScript fallback 用，C++ 路径不读。
+		# async daily round 要跟 sync 生产路径 bit-equal，**绝不能**读 cp.thermal_inertia_*。
+		"thermal_inertia_land":  0.24,
+		"thermal_inertia_water": 0.07,
+		"thermal_inertia_snow":  0.09,
+		"thermal_inertia_high_mountain": 0.16,
+		"thermal_daily_delta_cap": 0.085,
+		"snowpack_cover_low":  0.03,
+		"snowpack_cover_full": 0.25,
+		"insol_dev_min": -1.0,
+		"insol_dev_max": 1.5,
+		# transp scalars
+		"transp_outflow_rate": float(cp.transpiration_outflow_rate) if "transpiration_outflow_rate" in cp else 0.025,
+		"transp_self_rate":    float(cp.transpiration_self_rate)    if "transpiration_self_rate"    in cp else 0.015,
+	}
+	# pass_b knobs（移植自 sync _build_native_daily_climate_pass_b_knobs，字段名必须 mirror）
+	input["pb_winter_boost"]  = 1.0
+	input["pb_snow_cool"]     = float(cp.snow_albedo_cooling) if "snow_albedo_cooling" in cp else 0.0
+	input["pb_veg_cool"]      = float(cp.vegetation_cooling) if "vegetation_cooling" in cp else 0.0
+	input["pb_diurnal_amp"]   = float(cp.landform_diurnal_amp) if "landform_diurnal_amp" in cp else 0.0
+	input["pb_evap_gain"]     = float(cp.evaporation_gain) if "evaporation_gain" in cp else 0.0
+	input["pb_rs_threshold"]  = float(cp.rain_shadow_threshold) if "rain_shadow_threshold" in cp else 0.0
+	input["pb_rs_factor"]     = float(cp.rain_shadow_factor) if "rain_shadow_factor" in cp else 1.0
+	input["pb_rs_lookback"]   = max(0, int(cp.rain_shadow_lookback)) if "rain_shadow_lookback" in cp else 0
+	input["pb_t_freeze"]      = float(cp.sea_ice_form_threshold) if "sea_ice_form_threshold" in cp else 0.0
+	input["pb_coupling_gain"] = float(cp.ocean_moisture_coupling_gain) if "ocean_moisture_coupling_gain" in cp else 0.0
+	# coast_leak 来自 _last_cfg.COASTAL_HEAT_LEAK，不是 cp 字段
+	input["pb_coast_leak"]    = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.0
+	input["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if "sea_ice_albedo_cooling" in cp else 0.0
+	# ocean knobs
+	input["ow_advect_steps"] = int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS) if generator._last_cfg != null else 3
+	input["ow_heat_mix"]     = 0.25
+	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.35
+	# wind knobs
+	input["wa_advect_steps"] = int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS) if generator._last_cfg != null else 3
+	input["wa_heat_mix"]     = float(generator._last_cfg.WIND_HEAT_MIX) if generator._last_cfg != null else 0.25
+	input["ws_air_leak"]     = float(generator._last_cfg.AIR_MASS_HEAT_LEAK) if generator._last_cfg != null else 0.35
+	# sea_ice knobs（与 sync run_sea_ice_daily_pass 同源）
+	input["si_k_freeze"]     = float(cp.sea_ice_k_freeze) if "sea_ice_k_freeze" in cp else 0.05
+	input["si_k_melt"]       = float(cp.sea_ice_k_melt)   if "sea_ice_k_melt"   in cp else 0.05
+	input["si_t_form"]       = float(cp.sea_ice_t_form)   if "sea_ice_t_form"   in cp else 0.12
+	input["si_t_melt"]       = float(cp.sea_ice_t_melt)   if "sea_ice_t_melt"   in cp else 0.20
+	input["si_threshold"]    = float(cp.sea_ice_threshold) if "sea_ice_threshold" in cp else 0.6
+	input["si_hysteresis"]   = float(cp.sea_ice_hysteresis) if "sea_ice_hysteresis" in cp else 0.05
+	# apply_terrain_flips：sync 路径里由 GDScript caller 处理翻转，async 模式建议
+	# 让 C++ worker 写好 out.terrain（apply=true）→ poll 写回 _slots[cell_terrain]，
+	# 减少主线程处理量。
+	input["si_apply_terrain_flips"] = true
+	return input
+
+
+# 静态 knobs（round 间不变化）。register 后第一次 set，round 间复用。
+func _build_async_static_knobs() -> Dictionary:
+	var n_cells: int = map.cell_count()
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
+	var donor_table: PackedFloat32Array = generator._build_transpiration_donor_table()
+	var foliage_table: PackedFloat32Array = generator._build_climate_b_foliage_table() if generator.has_method("_build_climate_b_foliage_table") else PackedFloat32Array()
+	return {
+		"n_cells": n_cells,
+		"neighbor_indices": nb_idx,
+		"donor_table": donor_table,
+		"foliage_table": foliage_table,
+	}
+
+
+# Worker poll 完成时处理 sea_ice flip events。
+# - 写 _slots[cell_terrain] 已由 C++ poll 完成（apply_terrain_flips=true）。
+# - 这里只做 GDScript 端的：map.terrain_arr 已被 flush 同步过；
+#   告诉 atlas pipeline / sea_ice atlas 把翻转 cell 标 dirty。
+func _handle_async_sea_ice_flips(poll_result: Dictionary) -> void:
+	if not poll_result.has("flipped_cell_indices"):
+		return
+	var indices: PackedInt32Array = poll_result["flipped_cell_indices"]
+	if indices.size() <= 0:
+		return
+	# 调 map.mark_terrain_dirty_indexed 或 mark_all_climate_dirty（保守）
+	if map.has_method("mark_all_climate_dirty"):
+		map.mark_all_climate_dirty()
+	# 如 dirty_world 存在，C++ 端 _flush_slot_to_map(cell_terrain) 已 mark dirty。
+	# 这里不需要重复。
+
+
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	if generator == null or map == null:
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
 
+	# ─── Async climate round 分支（plan §async-stage-3） ──────────────
+	# cp.use_climate_round_async=true + ext 支持 → worker thread 跑完整 round。
+	# 主线程 run_slice 只 kick / poll，单帧 < 1.5ms。sync path 保留作 fallback。
+	var cp_async_check = generator._c() if generator != null else null
+	var async_enabled: bool = false
+	if cp_async_check != null and "use_climate_round_async" in cp_async_check:
+		async_enabled = bool(cp_async_check.use_climate_round_async)
+	if async_enabled and generator._data_core_world_ext != null \
+			and generator._data_core_world_ext.has_method("async_climate_round_kick") \
+			and generator._data_core_world_ext.has_method("async_climate_round_poll"):
+		return _run_slice_async(ctx)
+
+	# ─── Sync sliced round（原行为，保留作 fallback）──────────────────
 	# Round 启动：锁 phase + 清埋点累加器
 	if not _round_active:
 		_pass_cursor = 0

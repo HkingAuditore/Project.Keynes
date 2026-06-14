@@ -411,6 +411,26 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			regenerate_debug_map()
 		KEY_F:
 			fit_debug_map()
+		KEY_B:
+			# Async climate round Stage 1 — A-B 验证热键（plan §async-stage-1）。
+			# 触发后 generator 跑一次 sync run_transpiration_pass_native 拿参考结果，
+			# 然后跑一次 async path（worker thread 跑 transp pure kernel），对比
+			# moisture 输出 bit-equal。完整报告打到 logcat 里 [async/bench] 前缀。
+			# 安全性：bench 自己 snapshot moisture 并 restore，不会污染持久 sim 状态。
+			if _generator != null and _generator.has_method("run_async_climate_round_bench"):
+				_generator.run_async_climate_round_bench("transp")
+			elif _generator != null and _generator.has_method("run_async_climate_round_stage1_bench"):
+				_generator.run_async_climate_round_stage1_bench()
+			else:
+				push_warning("[async/bench] generator missing run_async_climate_round_bench")
+		KEY_V:
+			# Async climate round Stage 2 — pass_a A-B 验证热键。
+			# 验证 worker thread 跑 pass_a pure kernel 输出的 16 字段 bit-equal sync。
+			# 流程同 KEY_B，但 passes_mask=0x01 仅跑 pass_a；snapshot 全部 16 字段 + ema_initialized。
+			if _generator != null and _generator.has_method("run_async_climate_round_bench"):
+				_generator.run_async_climate_round_bench("pass_a")
+			else:
+				push_warning("[async/bench pass_a] generator missing run_async_climate_round_bench")
 		KEY_SPACE:
 			_world_clock.toggle_pause()
 			_sync_pause_btn()

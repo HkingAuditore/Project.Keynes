@@ -1593,6 +1593,55 @@ public:
     void async_climate_shutdown_task(int task_id);
     void async_climate_shutdown_all();
 
+    // ───────────────────────────────────────────────────────────────────
+    // Async Climate Round（plan §async-stage-1，2026-06-14）
+    //
+    // Goal：把整个 climate daily round（pass_a → pass_b → ocean_water →
+    // ocean_land → wind_air → wind_surface → sea_ice → transp 8 个 pass）
+    // 整体扔给 worker thread 跑，主线程只做 kick/poll 和短暂 memcpy。
+    // 主线程目标：每帧 climate 相关工作 < 1.5ms（kick + poll + flush）。
+    //
+    // 本阶段（Stage 1）：
+    //   - 搭好 round-level async 框架（input/output/work buf + 单 worker
+    //     thread + std::condition_variable wake/wait）
+    //   - 8 pass 中只有 transpiration 实现 pure std::vector kernel；
+    //     其它 7 pass 留 stub（input → output 直传，不修改）
+    //   - GDScript 端用一个隔离的测试入口（cp.use_climate_round_async = true
+    //     时 climate_daily_system 走 async 路径，否则走原 sync 路径）
+    //
+    // 线程安全契约（与 demo async 完全一致，不重复说明）：worker 全程只碰
+    // std::vector / atomic / mutex / cv，绝不调任何 Godot API。
+    //
+    // 单例语义：本机制只支持一个 async climate round 任务（不需要 task_id
+    // 多路），全局状态指针 _async_climate_round_state 由 lazy alloc 维护。
+    // 析构时由 ~DCWorldExt 调 async_climate_round_shutdown 安全 join。
+
+    // 注册并启动 worker thread。重复调用是幂等的（已 register 直接 return）。
+    void async_climate_round_register();
+
+    // 在 bind_map_data 之后 / 第一次 kick 之前调一次。把 round-invariant 的
+    // 静态数据（neighbor_indices / donor_table / foliage_table）从 GDScript
+    // 提取到 worker buffer。round 间复用，不在每次 kick 时重序列化。
+    void async_climate_round_set_static_knobs(const godot::Dictionary &knobs);
+
+    // 主线程入口：把当前 _slots[] 内容快照到 input_buf，传入 round-level
+    // scalars（season_phase / cp 字段），唤醒 worker。返回 false 表示
+    // worker 还没消费上一次 request（total_reused++），主线程应继续用
+    // 上一次 result_buf。
+    bool async_climate_round_kick(const godot::Dictionary &input);
+
+    // 主线程出口：检查 worker 是否完成；完成则把 output_buf 反序列化回
+    // _slots[]，并调 _flush_slot_to_map 系列推到 MapData。返回包含
+    // sea_ice flip events / dirty_count / per-pass timing 的报告。
+    // result_ready=false 时返回 {} 空字典。
+    godot::Dictionary async_climate_round_poll();
+
+    // 调试 / 验收用：返回 worker 计数 + 上次耗时。
+    godot::Dictionary async_climate_round_stats();
+
+    // 析构 hook + GDScript 主动调用入口。安全 join worker。
+    void async_climate_round_shutdown();
+
 protected:
     static void _bind_methods();
 
@@ -1650,6 +1699,13 @@ private:
     // Holds the std::unordered_map<int, AsyncTask> and a global mutex.
     // Allocated lazily on first async_* call; freed in shutdown_all().
     void                                     *_async_state = nullptr;
+
+    // ---- Async Climate Round opaque state（plan §async-stage-1，2026-06-14） ----
+    // 实际类型 pk_async_climate::AsyncClimateRoundState 在 .cpp 内部定义。
+    // lazy alloc 在 async_climate_round_register；析构走 async_climate_round_shutdown
+    // (~DCWorldExt 也会兜底调用)。与 _async_state 同模式（void* opaque pointer）。
+    // 单实例：只支持一个 round-level async task。
+    void                                     *_async_climate_round_state = nullptr;
 
     // ---- Weather summary pass 持久化状态（plan/weather-hotpath-cpp）------
     // GDScript 侧 _prev_summary_seeds (Array[Dictionary]) 与
