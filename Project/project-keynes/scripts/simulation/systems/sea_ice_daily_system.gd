@@ -160,8 +160,15 @@ func _enabled_from_profile() -> bool:
 	if generator == null or not generator.has_method("_c"):
 		return true
 	var cp = generator._c()
-	return cp == null \
-			or cp.get("sea_ice_independent_system_enabled") == null \
+	if cp == null:
+		return true
+	# Async climate round 接管 sea_ice（plan §async-stage-3）：当 use_climate_round_async=true
+	# 时，climate_daily_system._run_slice_async 走 worker 路径，worker 内部 sea_ice pass 已经
+	# 跑了；此时本独立 job 必须禁用，否则两边都跑 sea_ice 会重复 flip terrain + 双重 consume
+	# dt_days，结果是 sea_ice 推进速率翻倍 / 翻转出错。
+	if "use_climate_round_async" in cp and bool(cp.use_climate_round_async):
+		return false
+	return cp.get("sea_ice_independent_system_enabled") == null \
 			or bool(cp.sea_ice_independent_system_enabled)
 
 
