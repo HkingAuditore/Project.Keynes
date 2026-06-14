@@ -1161,7 +1161,21 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		else:
 			# Worker busy 处理上一 round → 本 tick 继续等。下个 tick 还可以 poll。
 			pass
-		return _async_round_partial_report(kick_ms, "kicked" if kicked else "worker_busy")
+		# 真异步关键：kick 完立刻让 SUS 把 budget 让给后续 jobs（atlas / weather / ocean）。
+		# 报 done=true progress=1.0 → SUS 不会同 tick 内 re-entry。**下一个 tick** 才会
+		# 再进 run_slice，那时 worker 已经在后台跑完，poll 直接拿结果。
+		# bug 修复 2026-06-14（plan §async-stage-4 真机验证）：之前报 done=false
+		# 导致 SUS 同 tick re-entry → busy-wait worker → 主线程 30+ms 全卡死，atlas / weather
+		# 拿不到 budget → 视觉冻结。
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": kick_ms,
+			"progress_ratio": 1.0,
+			"stage_name": "async_round_kicked",
+			"substage": "kicked" if kicked else "worker_busy",
+			"path": "data_core_async",
+		}
 
 	# 已 kick → poll
 	_async_round_poll_attempts += 1
@@ -1169,7 +1183,17 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	var poll_result: Dictionary = ext.async_climate_round_poll()
 	var poll_ms: float = (Time.get_ticks_usec() - poll_t0) / 1000.0
 	if poll_result.is_empty():
-		return _async_round_partial_report(poll_ms, "poll_pending")
+		# Worker 还没完成 → 报 done=true 让出 budget。下一 tick 再 poll。
+		# bug 修复 2026-06-14（同上）：之前报 done=false 导致 busy-wait。
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": poll_ms,
+			"progress_ratio": 1.0,
+			"stage_name": "async_round_poll_pending",
+			"substage": "attempts=%d" % _async_round_poll_attempts,
+			"path": "data_core_async",
+		}
 
 	# Worker 完成：poll 已经把 19 个 slot 写回 _slots + flush 到 MapData。
 	# 主线程要处理 sea_ice flip events（map.terrain_arr 镜像 + atlas dirty）。

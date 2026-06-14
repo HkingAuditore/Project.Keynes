@@ -373,6 +373,29 @@ SUS scheduler 注册了 `sea_ice_daily` 独立 job（`SeaIceDailySystem`，prior
 true 时 return false（job 整个 short-circuit）。回退路径（async flag false）走原
 独立 job。
 
+#### Stage 3 真异步修复（2026-06-14 真机验证后）
+
+桌面 desktop 跑出来 SUS budget `largest=refresh_climate_daily/async_round_done/pass_count=8`
+12ms 看起来好；移动端真机（Adreno 830）跑出来 `34ms`，**比 sync 旧路径还慢**。
+
+**根因：** SUS scheduler 在同 tick 内**反复调 `run_slice` 直到 done=true 或 budget exhausted**
+（`sus_scheduler_ext.cpp:558` 的 `while(true)` 循环）。
+
+之前 async 路径 kick 完报 `done=false progress_ratio=0.0`，下一秒 SUS 立刻 re-entry
+调 `run_slice` → 进入 poll 分支 → worker 还在跑 → `poll_result.is_empty()` →
+再 return partial → SUS 又 re-entry → ... 直到 worker 完成 poll 拿到结果。
+
+效果是**主线程 busy-wait 在一个 SUS slice 里 30+ms**。worker 跑得快，但主线程跟它
+绑在同一 SUS tick 里转完，atlas / weather / ocean 完全拿不到 budget → 视觉冻结。
+
+修复：kick 完返回 `done=true progress_ratio=1.0`，让 SUS **不**同 tick re-entry。
+下一 tick `should_run` 因 `_round_active=true` 仍返回 true，那时 worker 已经在后台
+跑完，poll 直接拿结果。Worker thread 才真的 **off-thread** 跟主线程并行。
+
+代价：climate round 跨 2-3 个 tick（kick → idle → poll），每 tick 占主线程 ~0.5ms。
+实际 climate 视觉延迟从"每秒一轮"变成"每 2-3 秒一轮"——可接受，因 climate 状态本身
+是 game-day 量级，2-3 tick 不可见。
+
 ## Sea ice daily
 
 主要入口：
