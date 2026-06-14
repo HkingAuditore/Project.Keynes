@@ -449,3 +449,33 @@ When diagnosing ocean cadence, separate physical authority from visual catch-up.
 - If `visual_lag_ticks` grows while physical fields continue updating, the
   simulation is healthy but the atlas is stale. Inspect raster quota, commit
   cost, and `ocean_visual_rebake_drop_stale` before changing physical cadence.
+
+## Render frame profile 热键（2026-06-14）
+
+`main.gd::_unhandled_key_input` 加了三个 60 FPS 调查热键，专门定位"主线程仿真已优化但
+仍 26 FPS"的非 SUS 帧时间消耗（GPU / Canvas rebuild / atlas commit）：
+
+- **F3 — `dump_render_profile()`**：打印当前 FPS / TIME_PROCESS / TIME_PHYSICS_PROCESS /
+  TIME_NAVIGATION_PROCESS / draw_calls / primitives / objects / VRAM (total / texture /
+  buffer) / node + resource + orphan count / atlas hm_size / msaa / fxaa / mobile flag。
+  RenderingServer 的 view_calls / view_prims 也包含。一行 print 给完整 GPU 端时间。
+
+- **F11 — `toggle_dynamic_visual_atlas_upload()`**：通过 `Engine.set_meta(&"force_disable_dva_upload", true)`
+  让 DVA 的 `should_run` 直接 return false。**用来对比关掉 atlas commit 后 FPS 改善多少**——
+  如果关掉后 FPS 显著回升（5+ 帧），说明 atlas commit 是 GPU/CPU 瓶颈来源；不变则瓶颈在别处。
+
+- **F12 — `toggle_atlas_resolution()`**：通过 `Engine.set_meta(&"force_atlas_quarter_size", true)`
+  让 `MapBaker._hm_max_dim()` 返回 256（默认 mobile 是 512）。会触发 regenerate
+  （重 bake atlas ~5 秒）。**用来验证 GPU 负载是否随 atlas 像素总量线性变化**。
+
+调查手册（移动端 60 FPS 未达时按顺序排查）：
+
+1. F3 抓基线（climate async on，DVA on，atlas mobile 512）。
+2. F11 关 DVA → 等 5 秒稳定 → F3 抓数据。FPS 回升 5+ 帧 → DVA 是瓶颈。
+3. F12 降 atlas 256 → 等 regenerate → F3 抓数据。FPS 回升说明 GPU fillrate 受限；不变说明
+   GPU 不是瓶颈，瓶颈在 CPU / Canvas / shader 复杂度。
+4. F11 + F12 同时开 → 看上限。
+5. 看 draw_calls：若 > 200 说明 Canvas 没 batched，渲染 submit 端是瓶颈。
+6. 看 RenderingServer.view_calls：跟 Performance.draw_calls 对比，差距大说明有不可见 viewport
+   在白做工。
+
