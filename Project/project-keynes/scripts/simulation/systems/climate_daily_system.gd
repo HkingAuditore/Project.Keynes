@@ -1207,6 +1207,21 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	_round_t_sea_ice_ms    = float(poll_result.get("sea_ice_us", 0)) / 1000.0
 	_round_t_transp_ms     = float(poll_result.get("transp_us", 0)) / 1000.0
 
+	# Stage 4 真机诊断（前 5 round 打一次）：判断每个 pass 是否真的跑了。
+	# 每个 pass kernel 守卫失败时 us=0，证明该 pass 因 input size mismatch 跳过。
+	if _async_round_poll_attempts <= 5 or (_async_round_poll_attempts % 60 == 0):
+		var sip: int = int(poll_result.get("sea_ice_us", 0))
+		var pap: int = int(poll_result.get("pass_a_us", 0))
+		var pbp: int = int(poll_result.get("pass_b_us", 0))
+		var owp: int = int(poll_result.get("ocean_water_us", 0))
+		var olp: int = int(poll_result.get("ocean_land_us", 0))
+		var wap: int = int(poll_result.get("wind_air_us", 0))
+		var wsp: int = int(poll_result.get("wind_surface_us", 0))
+		var trp: int = int(poll_result.get("transp_us", 0))
+		var fci: int = int(poll_result.get("flipped_cell_indices", PackedInt32Array()).size())
+		print("[climate/async DIAG] poll #%d: pa=%dus pb=%dus ow=%dus ol=%dus wa=%dus ws=%dus si=%dus tr=%dus | flipped=%d" % [
+			_async_round_poll_attempts, pap, pbp, owp, olp, wap, wsp, sip, trp, fci])
+
 	# Round 结束：原 _finalize_round 处理 dirty mask / climate breakdown / annual log。
 	_pass_cursor = _PASS_COUNT
 	_finalize_round()
@@ -1277,7 +1292,7 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		"sea_ice_frac": map.sea_ice_frac_arr,
 		"sea_ice_frac_inout": map.sea_ice_frac_arr,  # sea_ice 也用
 		"base_terrain": map.base_terrain_arr,
-		"upwelling_strength": map.upwelling_strength_arr if "upwelling_strength_arr" in map else PackedFloat32Array(),
+		"upwelling_strength": map.upwelling_strength_arr,
 		"insolation_now": map.insolation_now_arr,
 		"cell_temperature_arr": map.temp_arr,  # sea_ice 期望 climate-adjusted T（round 内 wind_surface 写完更新）
 		# ocean_water/land 共享
