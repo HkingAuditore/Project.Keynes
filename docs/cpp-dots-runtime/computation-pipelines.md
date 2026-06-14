@@ -111,6 +111,23 @@ C++ 入口：
 - 如果 `largest=refresh_climate_daily/pass_a/native_or_gd path=data_core` 出现 spike，需要看 stage breakdown 内 A 的细分和是否有 `cpp_taken_over=true` 等诊断。
 - `path=data_core` 不是失败；要看是否有 fallback reason 或 native method missing。
 
+#### Async parity（plan §async-stage-2，2026-06-14）
+
+`pk_async_climate::_async_pass_a_kernel_pure` 是 `run_climate_pass_a` 的纯
+`std::vector` 镜像（worker thread 跑、零 Godot API）：
+- 算法逐行 1:1 (run_climate_pass_a line 2293-2417 的 run_range lambda body)
+- 24 个 input field + 16 个 output field（与 sync 路径末尾 16 个 `_flush_slot_to_map`
+  一一对应）
+- 复用现有 `dc_insolation_now` / `dc_insolation_annual_mean` / `dc_clamp01f` 等
+  inline helper（它们已是 pure function，worker 安全）
+- pass_a cell-local 无邻居依赖，分 in/out buffer 不影响 bit-equal
+
+A-B 验证 hot key：游戏运行时按 `V` 键触发
+`MapGenerator.run_async_climate_round_bench("pass_a")`：跑一次 sync
+`_climate_pass_a` 拿 16 字段参考，再跑 async path（`passes_mask=0x01`），对比
+全部 16 输出字段是否 bit-equal，print `[async/bench pass_a] === A-B verification ===`
+报告（total_diff_count_f32 / total_diff_count_u8 应为 0）。
+
 ### Climate Pass-B
 
 入口：
@@ -240,6 +257,54 @@ transp gdext wall=0.35 native=0.029 call=... compute=... apply=... flush=... ref
 
 - GDScript sliced apply 的旧路径仍可能进入统计窗口。
 - 如果 C++ pass 已发布，caller 应避免重复 dense/indexed 写。
+
+### Async parity（plan §async-stage-1，2026-06-14）
+
+Stage 1 落地的异步 climate round 框架已经把 transpiration 移植成 pure
+`std::vector` kernel（`pk_async_climate::_async_transp_kernel_pure`），
+跑在长驻 worker thread 上，主线程只 kick + poll。算法本体逐行 1:1 镜像
+`run_transpiration_pass`：
+
+- 输入：`landform`(U8) / `vegetation`(U8) / `moisture`(F32) per cell + 静态
+  `neighbor_indices`(I32) + `donor_table`(F32) + scalar `outflow_rate`/`self_rate`
+- 输出：`moisture` per cell + `dirty_indices/values` 列表
+- 误差：bit-equal（同样 float32 顺序计算，无 reduction reorder）
+
+A-B 验证 hot key：在游戏运行时按 `B` 键触发
+`MapGenerator.run_async_climate_round_bench("transp")`，会跑一次 sync
+`run_transpiration_pass_native` 拿参考结果，然后跑 async path，对比 moisture
+是否 bit-equal，print `[async/bench transp]` 报告（diff_count 应为 0）。
+
+Stage 2（plan §async-stage-2，2026-06-14）扩展：
+- pass_a pure kernel 已移植（`_async_pass_a_kernel_pure`，16 字段输出）
+- pass_b pure kernel 已移植（`_async_pass_b_kernel_pure`，写 moisture + local_thermal_anomaly + 海冰反照率尾循环）
+- ocean_water + ocean_land pure kernel 已移植（`_async_ocean_water_kernel_pure` / `_async_ocean_land_kernel_pure`，写 ocean_thermal_anomaly + work scratch buffer ocean_tta_inout）
+- wind_air + wind_surface pure kernel 已移植（`_async_wind_air_kernel_pure` / `_async_wind_surface_kernel_pure`，wind_surface 是 climate round 唯一写 cell_temp 的 pass）
+- sea_ice pure kernel 已移植（`_async_sea_ice_kernel_pure`，输出 sea_ice_frac + terrain + flip events list）
+- kick `passes_mask` (int) 控制 worker 跑哪些 pass：bit 0=pass_a, 1=pass_b, 2=ocean_water, 3=ocean_land, 4=wind_air, 5=wind_surface, 6=sea_ice, 7=transp
+- A-B 验证 hot key `V` 触发 pass_a bench（`run_async_climate_round_bench("pass_a")`）
+- Stage 2 范围内每个 pass 单独验证 bit-equal；round 模式（mask=0xFF）的数据流
+  整合在 Stage 3 处理（pass_a → transp 的 moisture 传递；ocean_water → ocean_land
+  的 work.ocean_tta_inout 共享；wind_air → wind_surface 的 air_anom 传递）
+
+Stage 1+2 完成范围：**全部 8 个 climate pass 都已实装 pure std::vector kernel**。
+
+Stage 3（plan §async-stage-3，2026-06-14）GDScript orchestration 整合：
+- `climate_daily_system.gd::run_slice` 顶部加 async 分支：`cp.use_climate_round_async=true` +
+  `ext.has_method("async_climate_round_kick/poll")` 时走 worker 模式
+- 状态机：`_round_active=false` → kick → `_async_round_kicked=true` → poll →
+  完成 → `_finalize_round()` 走原逻辑（埋点 / breakdown / annual log）
+- `_build_async_kick_input` 一次性 dump 全部 22 个 PackedArray 输入字段 + ~40 个 scalar
+- `_handle_async_sea_ice_flips` 在 poll 完成时调 `map.mark_all_climate_dirty()`
+  让 atlas pipeline 在下个 stride 看到 terrain 翻转
+- Worker 内 round-internal data flow：每 pass 跑完后 `std::memcpy(in.field, out.field, n*sizeof(float))`
+  让后续 pass 读到 fresh 值（pass_a 写 moisture/snow_cover/temp_baseline →
+  pass_b 读；pass_b 写 moisture/local_thermal_anomaly → 后续读；ocean_water 写
+  ocean_thermal_anomaly → ocean_land 读；wind_air 写 air_mass_temp_anomaly →
+  wind_surface 读；wind_surface 写 cell_temp → sea_ice 读 cell_temperature_arr）
+
+切换方式：把 ClimateProfile 资源里的 `use_climate_round_async` 翻到 true，restart
+游戏即可。**dev 期建议先用 KEY_B / KEY_V 跑 bench 验证 bit-equal**，再翻开本 flag。
 
 ## Sea ice daily
 

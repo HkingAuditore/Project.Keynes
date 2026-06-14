@@ -4,13 +4,11 @@
 
 [resource]
 script = ExtResource("1")
-sea_ice_atlas_upload_stride = 2
 weather_refresh_auto_stride_by_speed = false
-enum_atlas_upload_stride = 2
 dynamic_visual_atlas_upload_stride = 2
-native_environment_runtime_enabled = false
 native_daily_perf_target_ms = 3.0
 ocean_currents_slice_count = 16
 ocean_pixel_subslice_count = 16
 succession_upgrade_days = 91
+use_climate_round_async = true
 demo_thermal_gradient_path = 1
