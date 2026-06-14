@@ -547,6 +547,24 @@ func dump_render_profile() -> void:
 	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	var nav_ms: float = Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0
+	# 取 30 帧采样：实际跑 30 个 process_frame，记录每帧 wall time（含 GPU 等待 / vsync）
+	var frame_samples: PackedFloat32Array = PackedFloat32Array()
+	frame_samples.resize(30)
+	var sample_t0: int = Time.get_ticks_usec()
+	for i in range(30):
+		var t0: int = Time.get_ticks_usec()
+		await get_tree().process_frame
+		frame_samples[i] = float(Time.get_ticks_usec() - t0) / 1000.0
+	var sample_total_ms: float = float(Time.get_ticks_usec() - sample_t0) / 1000.0
+	# 算 min / avg / max / p95
+	var arr: Array = []
+	for i in range(30):
+		arr.append(frame_samples[i])
+	arr.sort()
+	var f_min: float = arr[0]
+	var f_max: float = arr[29]
+	var f_p95: float = arr[28]  # 接近 max
+	var f_avg: float = sample_total_ms / 30.0
 	var draw_calls: float = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var primitives: float = Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 	var objects: float = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
@@ -565,11 +583,15 @@ func dump_render_profile() -> void:
 		rs_view_prims = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
 	var msaa_setting: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
 	var fxaa_setting: bool = bool(ProjectSettings.get_setting("rendering/anti_aliasing/quality/use_fxaa", false))
+	var vsync_setting: int = int(DisplayServer.window_get_vsync_mode())  # 0=Disabled, 1=Enabled, 2=Adaptive, 3=Mailbox
+	var max_fps_setting: int = int(Engine.max_fps)
 	var hm_size: Vector2i = Vector2i.ZERO
 	if _world_data != null and _world_data.get("hm_size") != null:
 		hm_size = _world_data.hm_size
 	print("[render-profile] === GPU / Frame metrics @ frame %d ===" % Engine.get_frames_drawn())
-	print("  FPS=%.1f  process=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	print("  FPS=%.1f  process(sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	print("  frame wall ms over 30 samples: min=%.2f avg=%.2f p95=%.2f max=%.2f" % [f_min, f_avg, f_p95, f_max])
+	print("  vsync_mode=%d  max_fps=%d  (0=Off 1=On 2=Adaptive 3=Mailbox)" % [vsync_setting, max_fps_setting])
 	print("  draw_calls=%d  primitives=%d  objects=%d (Performance monitor)" % [int(draw_calls), int(primitives), int(objects)])
 	print("  RenderingServer view_calls=%d view_prims=%d" % [rs_view_calls, rs_view_prims])
 	print("  vram total=%.1f MB  tex=%.1f MB  buf=%.1f MB" % [vram_total, vram_tex, vram_buf])
