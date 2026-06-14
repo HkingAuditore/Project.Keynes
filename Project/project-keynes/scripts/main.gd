@@ -297,6 +297,17 @@ func _ready() -> void:
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
 
+	# Mobile safe area + 大按钮（plan §mobile-ui-safe-area，2026-06-14）：
+	# 移动端圆角屏顶部最右上区域被裁切，TopBar 默认 offset_bottom=36 紧贴顶部，
+	# 用户点不到右上角的 x5/x20 按钮。运行时给移动端：
+	#   1. TopBar 整体下移 ~50px 留出 status bar / 圆角 safe area
+	#   2. 按钮 custom_minimum_size 加大让 touch target 更稳
+	_apply_mobile_topbar_safe_area()
+
+	# Mobile debug overlay（plan §60fps，2026-06-14）：APK 没键盘点不到 F3/F11/F12，
+	# 给移动端贴 3 个浮动按钮做 60 FPS 调查。桌面隐藏。
+	_ensure_mobile_debug_overlay()
+
 	# 安卓黑屏体感修复：bake_world 同步耗时 ~13s（移动端 GDScript 双重循环）。
 	# 在 generate 调用前显示一个简单 splash overlay 让用户看到"在生成"，
 	# bake 结束后 hide。期间主线程被 baker 占用 → UI 不会刷新阶段进度，
@@ -443,6 +454,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_F4:
 			# 2026-05-19：Mini Perf HUD 显隐切换（右上角常驻浮窗）。
 			toggle_perf_mini_hud()
+		KEY_F3:
+			# 2026-06-14：GPU/Render frame profile dump（mobile 60 FPS 调查）。
+			# 一键 dump Performance monitor 数据：FPS / 主循环 / 物理 / 渲染 / GPU /
+			# 内存 / draw calls / vertex count，定位非 SUS 时间花在哪儿。
+			dump_render_profile()
+		KEY_F11:
+			# 2026-06-14：toggle dynamic_visual_atlas_upload job（atlas 旁路实验）。
+			# 关掉此 job 看 FPS 是否改善 → 判断 atlas commit 是否是 GPU 瓶颈来源。
+			toggle_dynamic_visual_atlas_upload()
+		KEY_F12:
+			# 2026-06-14：toggle atlas resolution（256 vs 512）→ 看 GPU 负载减半否。
+			# 注意：会触发 regenerate（重 bake atlas），等待 ~5 秒。
+			toggle_atlas_resolution()
 		KEY_F8:
 			# Emergent Climate Coupling：一键切换耦合调试项。
 			# 真日射链条保持运行时强制启用，不再随 F8 切回 legacy 余弦季节项。
@@ -507,6 +531,83 @@ func toggle_debug_console() -> void:
 func toggle_perf_mini_hud() -> void:
 	if _perf_mini_hud != null and _perf_mini_hud.has_method("toggle_visible"):
 		_perf_mini_hud.toggle_visible()
+
+
+# ─── 60 FPS 调查热键（2026-06-14） ─────────────────────────────────────
+# F3: dump Performance monitor 全量数据（GPU / draw calls / 内存 / 渲染时间）。
+# 在移动端定位"主线程仿真已优化但仍 26 FPS"的真凶——是 GPU 端、Canvas 重建、
+# 还是 atlas commit 拖慢了。
+func dump_render_profile() -> void:
+	# Godot 4 Performance.get_monitor 提供以下精确 ms 计数：
+	# - TIME_FPS / TIME_PROCESS / TIME_PHYSICS_PROCESS / TIME_NAVIGATION_PROCESS
+	# - RENDER_TOTAL_OBJECTS_IN_FRAME / TOTAL_PRIMITIVES / TOTAL_DRAW_CALLS
+	# - RENDER_VIDEO_MEM_USED / RENDER_TEXTURE_MEM_USED / RENDER_BUFFER_MEM_USED
+	# - OBJECT_NODE_COUNT / OBJECT_RESOURCE_COUNT
+	var fps: float = Engine.get_frames_per_second()
+	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	var nav_ms: float = Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0
+	var draw_calls: float = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var primitives: float = Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+	var objects: float = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+	var vram_total: float = Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0
+	var vram_tex: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576.0
+	var vram_buf: float = Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED) / 1048576.0
+	var nodes: float = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var resources: float = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var orphan_nodes: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	# 注意：Godot 4 没有"GPU 时间"单独 monitor；TIME_PROCESS 包含 GDScript + render submit。
+	# 真正 GPU 用时要靠 RenderingServer.get_rendering_info(VIEWPORT_DRAW_CALLS_IN_FRAME) 等。
+	var rs_view_calls: int = -1
+	var rs_view_prims: int = -1
+	if Engine.has_singleton("RenderingServer"):
+		rs_view_calls = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+		rs_view_prims = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
+	var msaa_setting: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
+	var fxaa_setting: bool = bool(ProjectSettings.get_setting("rendering/anti_aliasing/quality/use_fxaa", false))
+	var hm_size: Vector2i = Vector2i.ZERO
+	if _world_data != null and _world_data.get("hm_size") != null:
+		hm_size = _world_data.hm_size
+	print("[render-profile] === GPU / Frame metrics @ frame %d ===" % Engine.get_frames_drawn())
+	print("  FPS=%.1f  process=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	print("  draw_calls=%d  primitives=%d  objects=%d (Performance monitor)" % [int(draw_calls), int(primitives), int(objects)])
+	print("  RenderingServer view_calls=%d view_prims=%d" % [rs_view_calls, rs_view_prims])
+	print("  vram total=%.1f MB  tex=%.1f MB  buf=%.1f MB" % [vram_total, vram_tex, vram_buf])
+	print("  nodes=%d resources=%d orphan_nodes=%d" % [int(nodes), int(resources), int(orphan_nodes)])
+	print("  atlas hm_size=%dx%d  msaa=%d  fxaa=%s  mobile=%s" % [
+		hm_size.x, hm_size.y, msaa_setting, str(fxaa_setting), str(OS.has_feature("mobile"))
+	])
+	print("  dynamic_visual_atlas_upload_disabled=%s  atlas_force_quarter_size=%s" % [
+		str(_render_profile_atlas_disabled), str(_render_profile_atlas_quarter_size)
+	])
+
+
+# F11: 临时禁用 / 恢复 dynamic_visual_atlas_upload job。关闭后看 FPS 改善多少。
+var _render_profile_atlas_disabled: bool = false
+
+func toggle_dynamic_visual_atlas_upload() -> void:
+	_render_profile_atlas_disabled = not _render_profile_atlas_disabled
+	# 通过 Engine.set_meta 全局通信，DVA 的 should_run 会读这个 flag。
+	# 不调 unregister_job，保持 SUS topology 不变；下次 should_run 直接 return false。
+	Engine.set_meta(&"force_disable_dva_upload", _render_profile_atlas_disabled)
+	print("[render-profile] dynamic_visual_atlas_upload disabled=%s (toggle to compare FPS)" % str(_render_profile_atlas_disabled))
+
+
+# F12: toggle atlas 强制 256 size（vs 默认 mobile 512）→ 重 bake 后 GPU 负载理论减半。
+var _render_profile_atlas_quarter_size: bool = false
+
+func toggle_atlas_resolution() -> void:
+	_render_profile_atlas_quarter_size = not _render_profile_atlas_quarter_size
+	# MapBaker._hm_max_dim 是 static 函数，不能直接 monkey-patch。最简单：
+	# 用一个全局 flag，bake 时检测；或直接修 ProjectSettings 的某个值传递。
+	# 这里用 Engine.set_meta 全局通信，MapBaker 入口检测：
+	Engine.set_meta(&"force_atlas_quarter_size", _render_profile_atlas_quarter_size)
+	print("[render-profile] atlas_quarter_size=%s — triggering regenerate to rebake at %dpx" % [
+		str(_render_profile_atlas_quarter_size),
+		256 if _render_profile_atlas_quarter_size else 512,
+	])
+	regenerate_debug_map()
+
 
 func _mark_debug_console_state_dirty() -> void:
 	if _debug_console != null and _debug_console.has_method("request_state_sync"):
@@ -2572,6 +2673,93 @@ func _rebuild_view_adapter() -> void:
 #   - 把 _bake_height_biome_moisture 写 C++ kernel（预期 7.2s → ~250ms）
 #   - 按 seed 缓存 bake 产物到 user://，重启秒进
 #   - Use Engine.process_frame await 让 baker 内部按 chunk yield，UI 真正更新
+
+# Mobile UI safe area helper：圆角屏幕 / 高刘海机型 TopBar 被切问题（2026-06-14）。
+# 桌面环境完全不动；只在 OS.has_feature("mobile") 时下移 TopBar 并加大按钮。
+func _apply_mobile_topbar_safe_area() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	var top_bar: Control = get_node_or_null("UI/TopBar") as Control
+	if top_bar == null:
+		return
+	# 下移 ~48 像素让 TopBar 离开 status bar / 圆角 safe area。
+	# 高度 36 → 48 让 touch target 更易点。
+	top_bar.offset_top = 48.0
+	top_bar.offset_bottom = 96.0
+	# 给所有子按钮加大 minimum_size，touch target 至少 ~64x44（mobile guideline）。
+	var hbox: HBoxContainer = get_node_or_null("UI/TopBar/HBox") as HBoxContainer
+	if hbox != null:
+		for child in hbox.get_children():
+			if child is Button:
+				var btn: Button = child as Button
+				var min_w: float = max(btn.custom_minimum_size.x, 64.0)
+				btn.custom_minimum_size = Vector2(min_w, 44.0)
+	print("[mobile/safe-area] TopBar 下移 48px + 按钮 minimum 64x44 (圆角屏 safe area)")
+
+
+# Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的 3 个按钮。
+# 屏幕左侧中部竖排 [Profile] [DVA off] [Atlas 1/2]，桌面端不创建。
+func _ensure_mobile_debug_overlay() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	# 复用 UI CanvasLayer，避免新建 layer 跟 splash 等冲突
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	if ui_layer.get_node_or_null("MobileDebugOverlay") != null:
+		return  # 已建过
+	# Container：左侧中部，固定宽 140
+	var box: VBoxContainer = VBoxContainer.new()
+	box.name = "MobileDebugOverlay"
+	box.add_theme_constant_override("separation", 8)
+	box.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+	box.position = Vector2(8.0, -100.0)  # 中线略上一点
+	box.size = Vector2(140.0, 200.0)
+	# Profile 按钮 — 不切状态，只 dump
+	var btn_profile: Button = Button.new()
+	btn_profile.text = "Profile"
+	btn_profile.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_profile.pressed.connect(dump_render_profile)
+	box.add_child(btn_profile)
+	# DVA toggle — 文本随状态变
+	var btn_dva: Button = Button.new()
+	btn_dva.name = "BtnDVA"
+	btn_dva.text = "DVA: ON"
+	btn_dva.toggle_mode = true
+	btn_dva.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_dva.pressed.connect(_on_mobile_dva_btn_pressed)
+	box.add_child(btn_dva)
+	# Atlas size toggle
+	var btn_atlas: Button = Button.new()
+	btn_atlas.name = "BtnAtlas"
+	btn_atlas.text = "Atlas: 512"
+	btn_atlas.toggle_mode = true
+	btn_atlas.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_atlas.pressed.connect(_on_mobile_atlas_btn_pressed)
+	box.add_child(btn_atlas)
+	ui_layer.add_child(box)
+	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas 三个按钮）")
+
+
+func _on_mobile_dva_btn_pressed() -> void:
+	toggle_dynamic_visual_atlas_upload()
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnDVA") as Button
+	if btn != null:
+		btn.text = "DVA: OFF" if _render_profile_atlas_disabled else "DVA: ON"
+
+
+func _on_mobile_atlas_btn_pressed() -> void:
+	toggle_atlas_resolution()
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnAtlas") as Button
+	if btn != null:
+		btn.text = "Atlas: 256" if _render_profile_atlas_quarter_size else "Atlas: 512"
+
 
 func _ensure_splash_overlay() -> void:
 	if _splash_layer != null:

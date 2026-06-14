@@ -81,6 +81,10 @@ const HM_MAX_DIM_DESKTOP := 1024
 const HM_MAX_DIM_MOBILE := 512
 
 static func _hm_max_dim() -> int:
+	# F12 调试热键（2026-06-14）：force_atlas_quarter_size meta 临时把移动端
+	# atlas 从 512 进一步降到 256，看 GPU 负载减半 FPS 提升多少。重启失效。
+	if Engine.has_meta(&"force_atlas_quarter_size") and bool(Engine.get_meta(&"force_atlas_quarter_size")):
+		return 256
 	return HM_MAX_DIM_MOBILE if OS.has_feature("mobile") else HM_MAX_DIM_DESKTOP
 
 # 兼容：保留旧常量名，值跟 desktop 一致。其它文件仍引用 HM_MAX_DIM 时不破坏；

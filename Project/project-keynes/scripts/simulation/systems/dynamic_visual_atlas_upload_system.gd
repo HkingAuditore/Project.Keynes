@@ -328,6 +328,10 @@ func tick(_ctx) -> Dictionary:
 
 
 func should_run(ctx: SusTickContext) -> bool:
+	# F11 调试热键（2026-06-14）：force_disable meta 临时禁用整个 DVA pipeline。
+	# 用来对比关掉 atlas commit 后 FPS 改善多少，定位 GPU 瓶颈。
+	if Engine.has_meta(&"force_disable_dva_upload") and bool(Engine.get_meta(&"force_disable_dva_upload")):
+		return false
 	if not _cpp_commit_queue.is_empty() or _cpp_stride_in_progress:
 		return true
 	if policy == null:
