@@ -71,7 +71,7 @@ vec3 apply_snow_cover(
 	float snow_slope_mag = 0.0;
 	bool slope_ready = false;
 	float slope_shed = 0.0;
-	if (ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
+	if (raw_snow_signal > 0.01 && ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
 		vec2 snow_texel = 1.0 / hm_resolution;
 		float sl = decode_height_rg8(uv - vec2(snow_texel.x, 0.0));
 		float sr = decode_height_rg8(uv + vec2(snow_texel.x, 0.0));

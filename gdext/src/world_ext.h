@@ -46,6 +46,14 @@ public:
     DCWorldExt();
     ~DCWorldExt() override;
 
+    // ─── Diag log toggle (Fix #11 second pass, 2026-06-16) ──────────────
+    // Mirror of GDScript PKLog.enabled. Pass kernels themselves don't print
+    // hot-loop（all hot path are scalar tight loops），but a few startup-time
+    // path-decision / commit-diag prints + native fallback warnings respect
+    // this flag. Hot kernels never log inside the tight loop regardless.
+    void set_diag_logs_enabled(bool v) { _diag_logs_enabled = v; }
+    bool get_diag_logs_enabled() const { return _diag_logs_enabled; }
+
     // ─── Component registry ──────────────────────────────────────────────
     int register_component(const godot::StringName &name, int dtype, int stride = 1, bool track_prev = false);
     int component_id(const godot::StringName &name) const;
@@ -1646,6 +1654,9 @@ protected:
     static void _bind_methods();
 
 private:
+    // ---- diag log toggle (Fix #11 second pass, 2026-06-16) ----
+    bool _diag_logs_enabled = true;
+
     // ---- registry ----
     godot::Vector<Slot>                       _slots;
     godot::HashMap<godot::StringName, int>    _slot_by_name;

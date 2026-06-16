@@ -75,6 +75,12 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.slp",                cpp_name = "cell_slp",                   dtype = F32, track_prev = false, map_field = "slp_arr",                   prev_field = "",                         owner = "ocean.physical" },
 	{ name = &"cell.wind_speed",         cpp_name = "cell_wind_speed",            dtype = F32, track_prev = false, map_field = "wind_speed_arr",            prev_field = "",                         owner = "ocean.physical" },
 	{ name = &"cell.upwelling_strength", cpp_name = "cell_upwelling_strength",    dtype = F32, track_prev = false, map_field = "upwelling_strength_arr",    prev_field = "",                         owner = "ocean.currents" },
+	# Fix #11 (2026-06-15): wind_stress_curl + ocean_psi 加进 schema，让 C++ run_psi_solver_pass
+	# 直接 published_to_slot 后 GDScript caller 跳过 2400-loop 写回 (map_baker.gd PSI_INIT
+	# stage)。这两个数组之前只在 MapData PackedArray 存在，仅 tile_data_recorder 读取。
+	# Schema 化后 view_adapter / DataCore consumer 也能直读 slot。
+	{ name = &"cell.wind_stress_curl",   cpp_name = "cell_wind_stress_curl",      dtype = F32, track_prev = false, map_field = "wind_stress_curl_arr",      prev_field = "",                         owner = "ocean.currents" },
+	{ name = &"cell.ocean_psi",          cpp_name = "cell_ocean_psi",             dtype = F32, track_prev = false, map_field = "ocean_psi_arr",             prev_field = "",                         owner = "ocean.currents" },
 	{ name = &"cell.pos_x",              cpp_name = "cell_pos_x",                 dtype = F32, track_prev = false, map_field = "cell_pos_x_arr",            prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.pos_y",              cpp_name = "cell_pos_y",                 dtype = F32, track_prev = false, map_field = "cell_pos_y_arr",            prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.lat_norm",           cpp_name = "cell_lat_norm",              dtype = F32, track_prev = false, map_field = "cell_lat_norm_arr",         prev_field = "",                         owner = "map_generation" },

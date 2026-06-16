@@ -40,7 +40,13 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 	hex_size = p_hex_size
 	stride = max(1, p_stride)
 	world_ext = p_world_ext
-	policy = _SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #11 (2026-06-15): mobile B 桶错峰 stride=8 phase=4 → tick 4, 12, 20, 28
+	# 跟 weather_refresh 同桶 (因为它们都是 climate 完成后才有意义的下游 job)。
+	if OS.has_feature("mobile"):
+		stride = 8
+		policy = _SusPolicyScript.StridePolicy.new(8, 4)
+	else:
+		policy = _SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 # ─── DCSystem 声明 ─────────────────────────────────────────────────
@@ -112,4 +118,9 @@ func tick(_ctx) -> Dictionary:
 
 func reconfigure(p_stride: int) -> void:
 	stride = max(1, p_stride)
-	policy = _SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #11: mobile B 桶 s8 p4 与 _init 一致
+	if OS.has_feature("mobile"):
+		stride = 8
+		policy = _SusPolicyScript.StridePolicy.new(8, 4)
+	else:
+		policy = _SusPolicyScript.StridePolicy.new(stride, 0)

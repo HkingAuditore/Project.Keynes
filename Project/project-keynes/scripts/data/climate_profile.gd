@@ -77,15 +77,15 @@ extends Resource
 @export var coastal_moisture_boost: float = 0.20
 
 # Windward upslope boost (orographic rainfall).
-@export var orographic_boost: float = 1.5
+@export var orographic_boost: float = 1.2
 
 # Leeward rain-shadow: if upstream elevation delta ≥ threshold, the cell's
 # moisture is multiplied by factor (0 = completely dry; 1 = no shadow).
-@export var rain_shadow_threshold: float = 0.16
-@export var rain_shadow_factor: float = 0.68
+@export var rain_shadow_threshold: float = 0.13
+@export var rain_shadow_factor: float = 0.50
 
 # How many cells upwind to look back when detecting rain shadow.
-@export var rain_shadow_lookback: int = 2
+@export var rain_shadow_lookback: int = 3
 
 # Legacy global wind vector. DEPRECATED since Phase 6 — MapGenerator now
 # queries WindBelt.wind_at(ny, phase) per cell. Retained for backwards
@@ -575,17 +575,17 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
 # 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
 # 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
-@export var sea_ice_freeze_rate: float = 0.55            # k_freeze per "degree" below T_form
+@export var sea_ice_freeze_rate: float = 0.40            # k_freeze per "degree" below T_form
 @export var sea_ice_melt_rate: float = 1.45              # k_melt per "degree" above T_melt
 @export var sea_ice_terrain_threshold: float = 0.68      # frac at which terrain flips to SEA_ICE
 @export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
-@export var sea_ice_neighbor_contagion: float = 0.06     # extra k_freeze if any neighbor frac >= 0.6
+@export var sea_ice_neighbor_contagion: float = 0.035    # extra k_freeze if any neighbor frac >= 0.6
 @export var sea_ice_solar_gate_enabled: bool = true      # high current insolation blocks tropical ice growth
 @export var sea_ice_freeze_insol_low: float = 0.30       # freeze gate is fully open below this insolation
 @export var sea_ice_freeze_insol_high: float = 0.55      # freeze gate is fully closed above this insolation
-@export var sea_ice_solar_melt_start: float = 0.45       # current insolation above this adds melt pressure
-@export var sea_ice_solar_melt_gain: float = 0.65        # extra melt per insolation unit above start
-@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.08
+@export var sea_ice_solar_melt_start: float = 0.40       # current insolation above this adds melt pressure
+@export var sea_ice_solar_melt_gain: float = 0.80        # extra melt per insolation unit above start
+@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.05
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
@@ -631,24 +631,24 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var weather_field_enabled: bool = true
 @export_range(0, 2, 1) var weather_field_advect_steps: int = 2
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
-@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.85
-@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.48
-@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.12
-@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.58
+@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.68
+@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.62
+@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.08
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.70
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
-@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.22
+@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.28
 @export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.35
 @export_range(0.0, 1.0, 0.01) var weather_lake_evap_scale: float = 0.35
-@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.24
-@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.20
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.30
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
-@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
-@export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 4
+@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.32
+@export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 2
 @export var weather_cold_precip_as_blizzard: bool = true
 @export_range(0.0, 0.12, 0.005) var weather_snow_classification_margin: float = 0.03
-@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
+@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.34
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
 @export var weather_transition_enabled: bool = true
@@ -735,7 +735,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # dev 已改为绝对日射差(insol_now−insol_mean ∈ [−1,+1])，不再分数化。
 # 配合 thermal_inertia_land=0.35 + delta_cap=0.15，中纬度实际温差 ≈ 增益×0.12。
 # gain=2.0 → 40°N 冬夏温差 ~0.27（基线 63%），肉眼明确可见。
-@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 1.5
+@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 1.8
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
@@ -772,8 +772,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
 #    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
-@export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.08
-@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.16
+@export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.06
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.13
 @export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.65
 @export var ocean_decoupled_visual_raster: bool = true
 @export var ocean_visual_rebake_drop_stale: bool = true
@@ -806,11 +806,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_blend_rate: float = 0.35
 @export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_decay_rate: float = 0.12
 @export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_zero_current_decay: float = 0.20
-@export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.10
-@export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.08
-@export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.03
-@export_range(0.0, 0.5, 0.005) var snowpack_cover_low: float = 0.03
-@export_range(0.0, 1.0, 0.005) var snowpack_cover_full: float = 0.25
+@export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.08
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.22
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.12
+@export_range(0.0, 0.5, 0.005) var snowpack_cover_low: float = 0.05
+@export_range(0.0, 1.0, 0.005) var snowpack_cover_full: float = 0.32
+@export_range(1, 8, 1) var snow_accum_days_req: int = 2
 
 # climate-loop-closure Phase 2.1：气候态物理雪线（snowline）。
 # 现状问题：snow_cover 完全由天气 snowpack 派生，而冷区往往无降水 → 雪几乎从不
@@ -823,8 +824,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   snowpack   = max(snowpack, climatic_floor)
 #   snow_cover = max(snow_cover, climatic_floor)
 # 设 snowline_temp_threshold=0 可完全关闭（回归到纯天气驱动，用于 A/B 对照）。
-@export_range(0.0, 1.0, 0.005) var snowline_temp_threshold: float = 0.34
-@export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.18
+@export_range(0.0, 1.0, 0.005) var snowline_temp_threshold: float = 0.24
+@export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.22
 
 # ══════════════════════════════════════════════════════════════════════
 # [Diagnostics — runtime perf opt-in]
@@ -860,7 +861,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 
 # Sea-ice cover thresholds (temperature).
 # 2026-05-26：form 保持较低，melt 保持迟滞窗口；海冰范围由温度场持续越阈决定。
-@export var sea_ice_form_threshold: float = 0.12
+@export var sea_ice_form_threshold: float = 0.14
 @export var sea_ice_melt_threshold: float = 0.22
 
 # Volcano placement.

@@ -56,6 +56,10 @@ const CELL_WIND_Y: StringName = &"cell.wind_y"
 const CELL_SLP: StringName = &"cell.slp"
 const CELL_WIND_SPEED: StringName = &"cell.wind_speed"
 const CELL_UPWELLING_STRENGTH: StringName = &"cell.upwelling_strength"
+# Fix #11 (2026-06-15): PSI 求解的中间诊断数组，schema 化以让 C++ run_psi_solver_pass
+# 直接 published_to_slot，跳过 GDScript 2400-loop 写回。
+const CELL_WIND_STRESS_CURL: StringName = &"cell.wind_stress_curl"
+const CELL_OCEAN_PSI: StringName = &"cell.ocean_psi"
 const CELL_POS_X: StringName = &"cell.pos_x"
 const CELL_POS_Y: StringName = &"cell.pos_y"
 const CELL_LAT_NORM: StringName = &"cell.lat_norm"

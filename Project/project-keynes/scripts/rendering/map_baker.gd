@@ -422,6 +422,10 @@ var _slp_path_str_last: String = "gdscript"
 var _slp_rt_diag_count: int = 0
 # plan/dots-slp-psi-cpp — PSI stage 3+4+5 fused C++ path diagnostics.
 var _psi_path_log_count: int = 0
+# Fix #11 second pass (2026-06-16)：BREAKDOWN print 独立计数（避免和 path-decision
+# 的 _psi_path_log_count 混用，后者只在 path-decision 块自增，卡在 3 后让 BREAKDOWN
+# 误命中 <=3 一直打）。
+var _psi_breakdown_log_count: int = 0
 var _psi_commit_diag_count: int = 0
 var _psi_first_run_logged: bool = false
 var _psi_native_ms_last: float = -1.0
@@ -4845,6 +4849,12 @@ func _season_phase_to_day_of_year(season_phase: float, days_per_year: int = 0) -
 ## Block B（master 手册 §4）：MapGenerator 在 bake_world / 加载存档时注入 DCWorldExt。
 ## ext == null 时所有 C++ hook 退化为 GDScript path，行为零回归。
 func set_world_ext(ext) -> void:
+	# Fix #4 (2026-06-15)：enum_atlas_upload_system / enum_atlas_upload_job 每个
+	# slice 都 re-inject 同一个 ext 对象，之前会把所有 diag counter 清零，
+	# 导致 upwelling/DIAG#1 在 log 里出现 225 次（每个 ext 注入重置 → 每 round
+	# 又打 8 行）。同 ext re-inject 不动 counter。
+	if _world_ext == ext:
+		return
 	_world_ext = ext
 	# DOTS-Final-Push 后续诊断：启动期烘焙阶段 _world_ext 还是 null（注入晚于
 	# bake_world），所以 once-only 诊断旗标在启动期就被消耗（打印过 ext=false /
@@ -5259,6 +5269,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
+			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：记录 wrapper 整体耗时（包括 iter_cells +
+			# Dict 构造 + C++ call + writeback fallback）。配合 ocean_currents/STAGE-DIAG
+			# 在 SUS slice 层定位 stage 1 wall time。
+			var _slp_stage_t0_us: int = Time.get_ticks_usec()
 			# plan/dots-slp-psi-cpp — once-only path-decision (fronts 3 hits).
 			# dots-flag-prune-pr1 round 2: use_gdext_slp_field flag 已删除——恒走 ext +
 			# has_method(run_slp_field_pass) + map.has_indices() 探测分支。DIAG 块保留原状，
@@ -5386,8 +5400,23 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							map.slp_arr[_i_slp_commit] = _c_slp_commit.slp if _c_slp_commit != null else 0.0
 			_slp_native_ms_last = _slp_native_ms
 			_slp_path_str_last = "gdext" if _slp_done_by_cpp else "gdscript"
+			var _slp_stage_total_ms: float = float(Time.get_ticks_usec() - _slp_stage_t0_us) / 1000.0
+			# 前 3 次必打 + >= 5ms 异常打。配合 [ocean_currents/STAGE-DIAG] 做交叉验证。
+			# 注意：call#1 内还有 path-decision / commit-diag / RT-DIAG / ACTIVE 共 4 个 print，
+			#       Windows stdout flush 每行 ~12-15ms → call#1 wall 会被污染 ~50-60ms。
+			#       真实 stage wall ≈ call#1_wall - 15ms × (该 call 同 stage 内已打印的 print 行数)。
+			#       call#2+ 后 path-decision / commit-diag 命中前 3 次封顶，wall 才反映真实开销。
+			if _slp_path_log_count <= 3 or _slp_stage_total_ms >= 5.0:
+				print("[slp_field/STAGE-TOTAL] call#%d wall=%.2fms native=%.2fms path=%s commit_ok=%s (call#1 wall pollution: ~15ms/print × 4 prints; trust call#4+ or wall>=5ms warn)" % [
+					_slp_path_log_count, _slp_stage_total_ms,
+					float(_slp_native_ms),
+					_slp_path_str_last,
+					str(_phys_last_slp_commit_ok),
+				])
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
+			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：见 _PHYS_STAGE_SLP。
+			var _wind_stage_t0_us: int = Time.get_ticks_usec()
 			# Block B（master 手册 §4 / dots-wind-validation.md）：wind solver C++ 化 hook。
 			# dots-flag-prune-pr1 round 2: use_gdext_wind_field flag 已删除——恒走 ext +
 			# has_method(run_wind_field_pass) 探测分支（C++ 返回 fallback 或 ext 未 bind 时
@@ -5500,6 +5529,14 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				if _wind_b_path_log_count > 0 and _wind_b_path_log_count <= 3:
 					print("[wind_field/B] FALLBACK to GDScript solve_wind_field (call#%d) — see preceding path-decision / commit-diag for reason" % _wind_b_path_log_count)
 				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware, profile)
+			var _wind_stage_total_ms: float = float(Time.get_ticks_usec() - _wind_stage_t0_us) / 1000.0
+			if _wind_b_path_log_count <= 3 or _wind_stage_total_ms >= 5.0:
+				print("[wind_field/STAGE-TOTAL] call#%d wall=%.2fms native=%.2fms path=%s commit_ok=%s" % [
+					_wind_b_path_log_count, _wind_stage_total_ms,
+					float(_phys_last_wind_rc_ms),
+					"gdext" if _wind_done_by_cpp else "gdscript",
+					str(_phys_last_wind_commit_ok),
+				])
 			if not solve_ocean:
 				_pending_psi_state = null
 				_phys_psi_iters_done = 0
@@ -5538,6 +5575,16 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if heat_transport \
 					and _world_ext != null and _world_ext.has_method("run_psi_solver_pass") \
 					and map != null and map.has_indices():
+				# Fix #11 grounding (2026-06-15)：精确测量 PSI_INIT wrapper 时间分布。
+				# log 实测 phys_slice elapsed=8-13ms，C++ kernel 仅 0.4ms。剩 7-12ms
+				# 在哪？分 4 段测量：
+				#   T1_prepack: iter_cells + neighbor_indices_packed + wind PackedArray ref/build
+				#   T2_knobs:   构造 knobs Dictionary（25+ 字段）
+				#   T3_call:    跨 GDExtension run_psi_solver_pass C++ kernel
+				#   T4_writeback: 解 ret Dict + 2400 loop 写 wind_stress_curl_arr / ocean_psi_arr
+				# 前 3 次完整 dump，之后只在异常 (>5ms) 时打印。
+				var _psi_t_stage_us: int = Time.get_ticks_usec()
+				var _psi_t1_us: int = Time.get_ticks_usec()
 				var cells_for_psi: Array = map.iter_cells()
 				var n_psi: int = cells_for_psi.size()
 				var nb_idx_for_psi: PackedInt32Array = map.neighbor_indices_packed()
@@ -5566,6 +5613,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							wy_arr_psi[_i_w_pack] = _c_wp.wind_vector.y
 							wspd_arr_psi[_i_w_pack] = _c_wp.wind_speed
 				if n_psi > 0 and nb_idx_for_psi.size() >= n_psi * 6:
+					var _psi_t1_ms: float = float(Time.get_ticks_usec() - _psi_t1_us) / 1000.0
+					var _psi_t2_us: int = Time.get_ticks_usec()
 					var water_ids_psi := PackedByteArray()
 					water_ids_psi.append(int(TerrainType.TERRAIN.OCEAN))
 					water_ids_psi.append(int(TerrainType.TERRAIN.COAST))
@@ -5600,24 +5649,35 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						knobs_psi["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
 						knobs_psi["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
 						knobs_psi["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
+					var _psi_t2_ms: float = float(Time.get_ticks_usec() - _psi_t2_us) / 1000.0
+					var _psi_t3_us: int = Time.get_ticks_usec()
 					var ret_psi = _world_ext.run_psi_solver_pass(knobs_psi)
+					var _psi_t3_ms: float = float(Time.get_ticks_usec() - _psi_t3_us) / 1000.0
+					# Fix #11 (2026-06-15)：published_to_slot=true 时 C++ 已写 slot + flush 到 map.*，
+					# GDScript 跳过 4 次 PackedArray dict.get（每次会 deep copy 2400 floats）+ 2400-loop writeback。
+					# 实测 fast path STAGE 从 15ms → 0.67ms（kernel 0.45ms + 边界 0.16ms + dict 0.06ms）。
+					# fallback 路径（rc>=0 但 published_to_slot=false）走 4 array get + 2400-loop 兜底，
+					# 兼容旧 DLL（不认识 curl/psi slot）的情况。
+					var _psi_t4_us: int = Time.get_ticks_usec()
 					if ret_psi != null and typeof(ret_psi) == TYPE_DICTIONARY:
 						var rc_psi: float = float(ret_psi.get("elapsed_ms", -1.0))
-						var curl_out: PackedFloat32Array = ret_psi.get("wind_stress_curl_out", PackedFloat32Array())
-						var psi_out: PackedFloat32Array = ret_psi.get("ocean_psi_out", PackedFloat32Array())
-						var ocx_out: PackedFloat32Array = ret_psi.get("ocean_current_x_out", PackedFloat32Array())
-						var ocy_out: PackedFloat32Array = ret_psi.get("ocean_current_y_out", PackedFloat32Array())
 						var psi_published_to_slot: bool = bool(ret_psi.get("published_to_slot", false))
-						if _psi_commit_diag_count < 3:
+						var curl_out: PackedFloat32Array
+						var psi_out: PackedFloat32Array
+						var ocx_out: PackedFloat32Array
+						var ocy_out: PackedFloat32Array
+						if not psi_published_to_slot:
+							curl_out = ret_psi.get("wind_stress_curl_out", PackedFloat32Array())
+							psi_out = ret_psi.get("ocean_psi_out", PackedFloat32Array())
+							ocx_out = ret_psi.get("ocean_current_x_out", PackedFloat32Array())
+							ocy_out = ret_psi.get("ocean_current_y_out", PackedFloat32Array())
+						# commit-diag print 移到 STAGE 测量外（Windows ConHost stdout flush ~15ms/line 会污染 T4）
+						var _do_commit_diag_print: bool = (_psi_commit_diag_count < 3)
+						if _do_commit_diag_print:
 							_psi_commit_diag_count += 1
-							print("[psi_solver] commit-diag call#%d: rc=%.3f n_water=%d curl=%d psi=%d ocx=%d ocy=%d n_cells=%d published=%s" % [
-								_psi_commit_diag_count, rc_psi,
-								int(ret_psi.get("n_water", -1)),
-								curl_out.size(), psi_out.size(), ocx_out.size(), ocy_out.size(), n_psi,
-								str(psi_published_to_slot)
-							])
-						if rc_psi >= 0.0 and curl_out.size() == n_psi and psi_out.size() == n_psi \
-								and ocx_out.size() == n_psi and ocy_out.size() == n_psi:
+						if rc_psi >= 0.0 and (psi_published_to_slot or (
+								curl_out.size() == n_psi and psi_out.size() == n_psi
+								and ocx_out.size() == n_psi and ocy_out.size() == n_psi)):
 							_ocean_delta_p95_last = float(ret_psi.get("ocean_delta_p95", 0.0))
 							_thermal_current_p95_last = float(ret_psi.get("thermal_current_p95", 0.0))
 							_ocean_current_preclamp_p95_last = float(ret_psi.get("ocean_current_preclamp_p95", 0.0))
@@ -5627,12 +5687,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							_ocean_current_max_magnitude_last = float(ret_psi.get("ocean_current_max_magnitude", 0.0))
 							var _has_psi_debug_arr: bool = map.wind_stress_curl_arr.size() == n_psi \
 									and map.ocean_psi_arr.size() == n_psi
-							if psi_published_to_slot:
-								if _has_psi_debug_arr:
-									for _i_pc_debug in range(n_psi):
-										map.wind_stress_curl_arr[_i_pc_debug] = curl_out[_i_pc_debug]
-										map.ocean_psi_arr[_i_pc_debug] = psi_out[_i_pc_debug]
-							else:
+							# Fix #11 (2026-06-15)：published_to_slot=true 时 C++ 已写 slot + flush 到 map.*，
+							# GDScript 完全跳过 2400 loop writeback。fallback 路径走兜底循环（旧 DLL 不认识 slot）。
+							if not psi_published_to_slot:
 								for _i_pc in range(n_psi):
 									map.ocean_current_x_arr[_i_pc] = ocx_out[_i_pc]
 									map.ocean_current_y_arr[_i_pc] = ocy_out[_i_pc]
@@ -5641,9 +5698,32 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 										map.ocean_psi_arr[_i_pc] = psi_out[_i_pc]
 							_psi_done_by_cpp = true
 							_psi_native_ms = rc_psi
+							var _psi_t4_ms: float = float(Time.get_ticks_usec() - _psi_t4_us) / 1000.0
+							var _psi_stage_ms: float = float(Time.get_ticks_usec() - _psi_t_stage_us) / 1000.0
+							# Fix #11 grounding：前 3 次完整打印，之后异常 (>5ms) 才打。
+							# 注意：commit-diag 打印移到 STAGE 测量之后，避免 stdout flush ~15ms 污染 T4。
+							# Fix #11 second pass (2026-06-16)：原 `_psi_path_log_count <= 3` 误用——
+							# 该计数只在 line 5555 path-decision 块自增（封顶 3），不在 BREAKDOWN 块自增，
+							# 所以 BREAKDOWN 永远命中 `<=3` 一直 print，mobile 上 61 次 / 2min 污染 logcat。
+							# 改为独立 _psi_breakdown_log_count 计数 + 5ms warn 阈值（mobile 实测 STAGE
+							# 0.6-1.2ms，不会触发 warn）。
+							_psi_breakdown_log_count += 1
+							if PKLog.enabled and (_psi_breakdown_log_count <= 3 or _psi_stage_ms > 5.0):
+								print("[psi_solver/BREAKDOWN] call#%d STAGE=%.2fms T1_prepack=%.2fms T2_knobs=%.2fms T3_call=%.2fms (kernel=%.2fms gdext_overhead=%.2fms) T4_writeback=%.2fms (n_psi=%d published=%s has_debug=%s)" % [
+									_psi_breakdown_log_count,
+									_psi_stage_ms, _psi_t1_ms, _psi_t2_ms, _psi_t3_ms, rc_psi, maxf(0.0, _psi_t3_ms - rc_psi),
+									_psi_t4_ms, n_psi, str(psi_published_to_slot), str(_has_psi_debug_arr)
+								])
 							if not _psi_first_run_logged:
 								_psi_first_run_logged = true
 								print("[psi_solver] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)" % rc_psi)
+							# 推迟到 STAGE 测量之外的 commit-diag print（避免 print stdout flush 污染 T4）
+							if _do_commit_diag_print:
+								print("[psi_solver] commit-diag call#%d: rc=%.3f n_water=%d n_cells=%d published=%s" % [
+									_psi_commit_diag_count, rc_psi,
+									int(ret_psi.get("n_water", -1)),
+									n_psi, str(psi_published_to_slot)
+								])
 			_psi_native_ms_last = _psi_native_ms
 			_psi_path_str_last = "gdext" if _psi_done_by_cpp else "gdscript"
 			if _psi_done_by_cpp:
@@ -5667,6 +5747,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				_phys_psi_iters_done = 0
 				_phys_stage = _PHYS_STAGE_PSI_ITERS
 		_PHYS_STAGE_PSI_ITERS:
+			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：mobile 上 C++ 路径 PSI_INIT 跳过 ITERS/
+			# FINALIZE，进这里就说明走了 fallback（GDScript SOR 40 iters），是高优先级排查目标。
+			var _psi_iters_stage_t0_us: int = Time.get_ticks_usec()
 			var iters_to_do: int = mini(
 				_PHYS_PSI_ITERS_PER_STEP,
 				_PHYS_PSI_TOTAL_ITERS - _phys_psi_iters_done
@@ -5674,9 +5757,18 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if iters_to_do > 0 and _pending_psi_state != null:
 				PhysCircSolverScript.step_psi_solver(_pending_psi_state, iters_to_do)
 				_phys_psi_iters_done += iters_to_do
+			var _psi_iters_stage_total_ms: float = float(Time.get_ticks_usec() - _psi_iters_stage_t0_us) / 1000.0
+			# 进入这里就是 fallback，每次都打（频次不会高 — 40/8 = 5 slice 才完成一轮）。
+			print("[psi_iters/STAGE-TOTAL] wall=%.2fms iters_done=%d/%d iters_this_slice=%d (FALLBACK path — C++ run_psi_solver_pass not available)" % [
+				_psi_iters_stage_total_ms, _phys_psi_iters_done, _PHYS_PSI_TOTAL_ITERS, iters_to_do,
+			])
 			if _phys_psi_iters_done >= _PHYS_PSI_TOTAL_ITERS:
 				_phys_stage = _PHYS_STAGE_PSI_FINALIZE
 		_PHYS_STAGE_PSI_FINALIZE:
+			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：同 PSI_ITERS，进这里是 fallback。
+			# psi_to_ocean_current 在 GDScript 跑 2400-loop 6 邻居梯度 + density gradient + lat_temp，
+			# 是 ocean fallback 路径的最大单 stage 嫌疑（~20-40ms / slice）。
+			var _psi_fin_stage_t0_us: int = Time.get_ticks_usec()
 			if _pending_psi_state != null:
 				PhysCircSolverScript.psi_to_ocean_current(_pending_psi_state, map, hex_size, bounds, cfg, profile)
 				PhysCircSolverScript.commit_psi_to_cells(_pending_psi_state)
@@ -5687,6 +5779,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						var _c_psi_debug: HexCell = cells_for_psi_debug[_i_psi_debug]
 						map.wind_stress_curl_arr[_i_psi_debug] = _c_psi_debug.wind_stress_curl if _c_psi_debug != null else 0.0
 						map.ocean_psi_arr[_i_psi_debug] = _c_psi_debug.ocean_psi if _c_psi_debug != null else 0.0
+			var _psi_fin_stage_total_ms: float = float(Time.get_ticks_usec() - _psi_fin_stage_t0_us) / 1000.0
+			print("[psi_finalize/STAGE-TOTAL] wall=%.2fms (FALLBACK path — psi_to_ocean_current + commit_psi + 2400-loop curl/psi writeback in GDScript)" % _psi_fin_stage_total_ms)
 			_phys_stage = _PHYS_STAGE_UPWELLING
 		_PHYS_STAGE_UPWELLING:
 			var _upwelling_done_by_cpp: bool = false
@@ -5787,8 +5881,21 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				print("[upwelling/DIAG#%d] STAGE-TOTAL=%.2fms (matches slow_slice if > 25ms)" % [
 					_upwelling_diag_count, _ms_stage
 				])
+			# Fix #11 (2026-06-15)：原 _UPWELLING_DIAG_BUDGET=1 封顶后整个 stage 静音，
+			# 但 STAGE >= 5ms 的异常应该一直报。补一行 warn-only 路径，与 _diag_active 解耦。
+			if not _diag_active:
+				var _ms_stage_warn: float = float(Time.get_ticks_usec() - _t_stage_us) / 1000.0
+				if _ms_stage_warn >= 5.0:
+					print("[upwelling/STAGE-TOTAL] warn wall=%.2fms cpp=%s (>= 5ms threshold; mobile ocean candidate hotspot)" % [
+						_ms_stage_warn, str(_upwelling_done_by_cpp),
+					])
 			_phys_stage = _PHYS_STAGE_WIND_RASTER
 		_PHYS_STAGE_WIND_RASTER:
+			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：第一次进入 stage 时整段 wall time 已被
+			# 内部 `t_wr_us > 8.0ms` 报警覆盖。这里给 GDScript slice 路径再加一行 wall warn，
+			# mobile 上 Fix #1 已经禁用了 phys_need_visual 跨季 rebake，所以 stage 7 进入即
+			# 异常（应该不再来这里）。这条诊断帮我们捕获回退。
+			var _wr_stage_t0_us: int = Time.get_ticks_usec()
 			# 第一次进入 WIND_RASTER 时跑 NaN 守门 + 分配 buffer，之后每次推进
 			# 一片像素，全部写完才 _PHYS_STAGE_DONE。
 			var W := world.derived_size.x
@@ -5850,6 +5957,11 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			var e_idx: int = mini(pix_total, s_idx + _PHYS_WIND_RASTER_PIXELS_PER_STEP)
 			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, s_idx, e_idx)
 			_phys_wind_raster_idx = e_idx
+			var _wr_slice_total_ms: float = float(Time.get_ticks_usec() - _wr_stage_t0_us) / 1000.0
+			if _wr_slice_total_ms >= 5.0:
+				print("[wind_raster/STAGE-TOTAL] warn slice wall=%.2fms (pix %d..%d / %d) [GDScript slice path; mobile Fix #1 expected to skip this stage entirely]" % [
+					_wr_slice_total_ms, s_idx, e_idx, pix_total,
+				])
 			if _phys_wind_raster_idx >= pix_total:
 				_pending_phys_solved_phase = season_phase
 				_phys_stage = _PHYS_STAGE_DONE

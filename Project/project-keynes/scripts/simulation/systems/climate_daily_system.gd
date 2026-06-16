@@ -111,6 +111,10 @@ var stride: int = 1
 var _pass_cursor: int = 0
 var _round_active: bool = false
 var _phase_locked: float = 0.0
+# Fix #6 (2026-06-15): finalizer 拆 slice 跨帧。所有 pass 完成后不立即 finalize，
+# 把 5-8ms 的 finalizer cell loop 推到下一片，让本片 p95 下降。
+# false → 还没进入 finalize 队列；true → 下一片专门跑 _finalize_round()。
+var _finalize_pending: bool = false
 
 # ─── Async climate round（plan §async-stage-3，2026-06-14） ──────────
 # 当 cp.use_climate_round_async=true 时启用：worker thread 后台跑完整 round，
@@ -120,6 +124,9 @@ var _phase_locked: float = 0.0
 # _async_round_kick_tick：kick 时的 tick_index，用于"超时强制 finalize"兜底。
 var _async_round_kicked: bool = false
 var _async_round_poll_attempts: int = 0
+# Fix #11 second pass (2026-06-16)：async DIAG print 用 round 计数节流（之前
+# 用 poll_attempts，worker 快时每 round 都打）。
+var _async_round_log_count: int = 0
 var _async_round_kick_tick: int = -1
 # Stage 3 一次性 boot probe 打印（"async path active 第 N 次 round"）。
 var _async_first_round_logged: bool = false
@@ -153,8 +160,14 @@ var _pass_generation: int = 0
 var _active_pass_token: int = 0
 var _active_pass_state: Dictionary = {}
 var _last_pass_diag: Dictionary = {}
+var _last_transp_native_diag: Dictionary = {}
+var _last_round_start_diag: Dictionary = {}
+var _last_finalize_diag: Dictionary = {}
+var _last_slice_pass_overhead_ms: float = 0.0
 var _temp_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
 var _tta_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
+# Stage 9 / Fix #11 (2026-06-16) STAGE-TOTAL 打印 budget。
+var _fin_stage_log_count: int = 0
 var _last_finalizer_diag: Dictionary = {}
 var _transp_stage: int = _TRANSP_STAGE_IDLE
 var _transp_cells: Array = []
@@ -209,7 +222,15 @@ func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int)
 	map = p_map
 	season_phase_getter = p_phase_getter
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #10 (2026-06-15): mobile 上 climate 落奇 tick 错峰调度。
+	# 用户提议："1, 3, 5, 7, 9 跑 climate，2 跑 A，4 跑 B，6 跑 C"。
+	# Mobile climate stride=2 phase=1 → 仿真每 2 仿真日推进一次（玩家肉眼可察觉
+	# +1 仿真日延迟，但收益是单 tick load 大幅下降）。Desktop 不变（profile 默认 1）。
+	if OS.has_feature("mobile"):
+		stride = 2
+		policy = SusPolicyScript.StridePolicy.new(2, 1)
+	else:
+		policy = SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 # ─── DCSystem 声明 ──────────────────────────────────────────────────
@@ -347,6 +368,7 @@ func reset_progress() -> void:
 	_pass_cursor = 0
 	_round_active = false
 	_phase_locked = 0.0
+	_finalize_pending = false
 	_round_t_pass_a_ms = 0.0
 	_round_t_pass_b_ms = 0.0
 	_round_t_ocean_ms = 0.0
@@ -357,6 +379,9 @@ func reset_progress() -> void:
 	_temp_start_of_day_arr = PackedFloat32Array()
 	_tta_start_of_day_arr = PackedFloat32Array()
 	_last_finalizer_diag = {}
+	_last_round_start_diag = {}
+	_last_finalize_diag = {}
+	_last_slice_pass_overhead_ms = 0.0
 	_reset_transpiration_slice_state()
 	ran_this_tick = false
 	_last_slice_elapsed_ms = 0.0
@@ -376,6 +401,17 @@ func _reset_last_pass_diag() -> void:
 	_last_pass_budget_interrupted = false
 	_last_pass_status = _PASS_RESULT_DONE
 	_last_pass_diag = {}
+	_last_slice_pass_overhead_ms = 0.0
+
+
+func _merge_climate_wrapper_diag(breakdown: Dictionary) -> void:
+	breakdown["pass_overhead_ms"] = _last_slice_pass_overhead_ms
+	breakdown["round_start_diag"] = _last_round_start_diag.duplicate(true)
+	breakdown["finalize_diag"] = _last_finalize_diag.duplicate(true)
+	for k in _last_round_start_diag.keys():
+		breakdown[k] = _last_round_start_diag[k]
+	for k in _last_finalize_diag.keys():
+		breakdown[k] = _last_finalize_diag[k]
 
 
 func _reset_transpiration_slice_state() -> void:
@@ -401,6 +437,25 @@ func _diagnostics_enabled() -> bool:
 	if cp.get("performance_diagnostics_enabled") != null:
 		return bool(cp.performance_diagnostics_enabled)
 	return true
+
+
+func _should_sync_runtime_terrain_views(reason: String) -> bool:
+	if reason != "round_start":
+		return true
+	var cp = generator._c() if generator != null else null
+	if cp != null and cp.get("climate_round_start_terrain_sync_enabled") != null:
+		return bool(cp.climate_round_start_terrain_sync_enabled)
+	return not (OS.has_feature("android") or OS.has_feature("mobile"))
+
+
+func _sync_runtime_terrain_views_for_reason(reason: String) -> Dictionary:
+	if _should_sync_runtime_terrain_views(reason):
+		return _sync_runtime_terrain_views(reason)
+	return {
+		"reason": reason,
+		"skipped": true,
+		"skip_reason": "mobile_round_start",
+	}
 
 
 func _standalone_sea_ice_enabled() -> bool:
@@ -476,12 +531,17 @@ func _sync_runtime_terrain_views(reason: String) -> Dictionary:
 func _begin_round_pass_state() -> void:
 	_pass_generation += 1
 	_active_pass_token = _pass_generation
+	var t_capture_us: int = Time.get_ticks_usec()
 	_capture_daily_finalizer_start_state()
+	if not _last_round_start_diag.is_empty():
+		_last_round_start_diag["capture_start_state_ms"] = float(Time.get_ticks_usec() - t_capture_us) / 1000.0
+	_last_transp_native_diag = {}
 	_active_pass_state = {
 		"token": _active_pass_token,
 		"state": _PASS_STATE_RUNNING,
 		"pass_cursor": 0,
 		"stage": "round_begin",
+		"stage_name": "round_begin",
 		"substage": "init",
 		"phase": _phase_locked,
 		"cursor_start": 0,
@@ -510,7 +570,7 @@ func _capture_daily_finalizer_start_state() -> void:
 		_tta_start_of_day_arr = map.temperature_transport_anomaly_arr.duplicate()
 
 
-func _percentile_from_sorted(values: Array, p: float) -> float:
+func _percentile_from_sorted(values, p: float) -> float:
 	if values.is_empty():
 		return 0.0
 	var idx: int = clampi(int(floor(float(values.size() - 1) * clampf(p, 0.0, 1.0))), 0, values.size() - 1)
@@ -528,7 +588,50 @@ func _is_annual_log_tick(counter: int) -> bool:
 	return counter == 1 or (counter > 0 and (counter % dpy) == 0)
 
 
+# Stage 9 / Fix #11 (2026-06-16)：C++ worker 已跑 finalizer 时，把 poll_result 里
+# fin_* 字段 平移到 GDScript 期望的 diag schema。返回字段必须 1:1 兼容
+# _apply_daily_climate_finalizer() 的 return shape（main.gd / generator 解析这些字段）。
+# 与 sync GDScript path 的区别：finalizer_total_ms / finalizer_cell_ms 用 worker 算的
+# 整个 finalizer_us（一个数表示整个 kernel wall time），不细分。temperature/tta cell
+# mirror 字段恒 false（C++ worker 不能碰 HexCell；GDScript facade 启用时 cell.temperature
+# getter 直接走 SoA，所以 worker 写 slot 即等价）。
+func _build_finalizer_diag_from_worker(poll: Dictionary) -> Dictionary:
+	var fin_us: float = float(poll.get("finalizer_us", 0))
+	var fin_ms: float = fin_us / 1000.0
+	return {
+		"max_temp_delta":              float(poll.get("fin_max_temp_delta", 0.0)),
+		"p95_temp_delta":              float(poll.get("fin_p95_temp_delta", 0.0)),
+		"p99_temp_delta":              float(poll.get("fin_p99_temp_delta", 0.0)),
+		"preclamp_max_temp_delta":     float(poll.get("fin_preclamp_max_temp_delta", 0.0)),
+		"preclamp_p99_temp_delta":     float(poll.get("fin_preclamp_p99_temp_delta", 0.0)),
+		"temp_delta_gt_005_count":     int(poll.get("fin_temp_delta_gt_005_count", 0)),
+		"temp_delta_gt_010_count":     int(poll.get("fin_temp_delta_gt_010_count", 0)),
+		"temp_delta_gt_020_count":     int(poll.get("fin_temp_delta_gt_020_count", 0)),
+		"temp_delta_clamped_count":    int(poll.get("fin_temp_delta_clamped_count", 0)),
+		"max_transport_anomaly":       float(poll.get("fin_max_transport_anomaly", 0.0)),
+		"sea_ice_delta_max":           float(poll.get("fin_sea_ice_delta_max", 0.0)),
+		"precip_p95":                  float(poll.get("fin_precip_p95", 0.0)),
+		"thermal_finalizer_applied":   true,
+		"finalizer_total_ms":          fin_ms,
+		"finalizer_cell_ms":           fin_ms,  # worker kernel 不细分
+		"finalizer_temp_ms":           0.0,
+		"finalizer_tta_ms":            0.0,
+		"finalizer_thermal_ms":        0.0,
+		"finalizer_sort_ms":           0.0,
+		"finalizer_sea_ice_ms":        0.0,
+		"finalizer_precip_ms":         0.0,
+		"finalizer_write_dense_ms":    0.0,  # worker 已 publish slot；main thread 不再 write_f32_dense
+		"finalizer_cells_seen":        int(poll.get("fin_cells_seen", 0)),
+		"finalizer_temperature_cell_mirror": false,
+		"finalizer_tta_cell_mirror":         false,
+		"finalizer_tta_cell_mirror_count":   0,
+		"finalizer_tta_clamped_count":       int(poll.get("fin_tta_clamped_count", 0)),
+		"finalizer_thermal_init_count":      int(poll.get("fin_thermal_init_count", 0)),
+	}
+
+
 func _apply_daily_climate_finalizer() -> Dictionary:
+	var t_total_us: int = Time.get_ticks_usec()
 	var diag: Dictionary = {
 		"max_temp_delta": 0.0,
 		"p95_temp_delta": 0.0,
@@ -543,6 +646,21 @@ func _apply_daily_climate_finalizer() -> Dictionary:
 		"sea_ice_delta_max": 0.0,
 		"precip_p95": 0.0,
 		"thermal_finalizer_applied": false,
+		"finalizer_total_ms": 0.0,
+		"finalizer_cell_ms": 0.0,
+		"finalizer_temp_ms": 0.0,
+		"finalizer_tta_ms": 0.0,
+		"finalizer_thermal_ms": 0.0,
+		"finalizer_sort_ms": 0.0,
+		"finalizer_sea_ice_ms": 0.0,
+		"finalizer_precip_ms": 0.0,
+		"finalizer_write_dense_ms": 0.0,
+		"finalizer_cells_seen": 0,
+		"finalizer_temperature_cell_mirror": false,
+		"finalizer_tta_cell_mirror": false,
+		"finalizer_tta_cell_mirror_count": 0,
+		"finalizer_tta_clamped_count": 0,
+		"finalizer_thermal_init_count": 0,
 	}
 	if generator == null or map == null:
 		_last_finalizer_diag = diag
@@ -559,77 +677,128 @@ func _apply_daily_climate_finalizer() -> Dictionary:
 	var tta_cap: float = float(cp.temperature_transport_anomaly_daily_cap) if cp.get("temperature_transport_anomaly_daily_cap") != null else 0.12
 	var temp_a: PackedFloat32Array = map.temp_arr
 	var tta_a: PackedFloat32Array = map.temperature_transport_anomaly_arr
-	var temp_deltas: Array = []
-	var preclamp_temp_deltas: Array = []
-	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var mirror_temperature_cells: bool = true
+	if map.has_indices() and n > 0:
+		var probe_cell: HexCell = map.cell_at(0)
+		mirror_temperature_cells = probe_cell == null or not probe_cell.is_facade_enabled()
+	diag["finalizer_temperature_cell_mirror"] = mirror_temperature_cells
+	var mirror_tta_cells: bool = mirror_temperature_cells
+	diag["finalizer_tta_cell_mirror"] = mirror_tta_cells
+	var cells: Array = []
+	if mirror_temperature_cells or mirror_tta_cells:
+		cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var has_temp_start: bool = _temp_start_of_day_arr.size() == n
 	var has_tta_start: bool = _tta_start_of_day_arr.size() == n
+	var t_cells_us: int = Time.get_ticks_usec()
+	var t_part_us: int = t_cells_us
 	var temp_limit: int = mini(n, temp_a.size())
+	var temp_deltas: PackedFloat32Array = PackedFloat32Array()
+	var preclamp_temp_deltas: PackedFloat32Array = PackedFloat32Array()
+	temp_deltas.resize(temp_limit)
+	preclamp_temp_deltas.resize(temp_limit)
+	var max_temp_delta: float = 0.0
+	var preclamp_max_temp_delta: float = 0.0
+	var temp_delta_gt_005_count: int = 0
+	var temp_delta_gt_010_count: int = 0
+	var temp_delta_gt_020_count: int = 0
+	var temp_delta_clamped_count: int = 0
 	for i in range(temp_limit):
 		var start_t: float = _temp_start_of_day_arr[i] if has_temp_start else temp_a[i]
 		var raw_final_t: float = temp_a[i]
 		var final_t: float = raw_final_t
 		var pre_abs_dt: float = absf(raw_final_t - start_t)
-		preclamp_temp_deltas.append(pre_abs_dt)
-		if pre_abs_dt > float(diag["preclamp_max_temp_delta"]):
-			diag["preclamp_max_temp_delta"] = pre_abs_dt
+		preclamp_temp_deltas[i] = pre_abs_dt
+		if pre_abs_dt > preclamp_max_temp_delta:
+			preclamp_max_temp_delta = pre_abs_dt
 		if temp_cap_enabled and has_temp_start:
 			final_t = clampf(final_t, start_t - temp_cap, start_t + temp_cap)
 			final_t = clampf(final_t, 0.0, 1.0)
 			if absf(final_t - raw_final_t) > 0.000001:
-				diag["temp_delta_clamped_count"] = int(diag["temp_delta_clamped_count"]) + 1
+				temp_delta_clamped_count += 1
 			temp_a[i] = final_t
 		var abs_dt: float = absf(final_t - start_t)
-		temp_deltas.append(abs_dt)
+		temp_deltas[i] = abs_dt
 		if abs_dt > 0.005:
-			diag["temp_delta_gt_005_count"] = int(diag["temp_delta_gt_005_count"]) + 1
+			temp_delta_gt_005_count += 1
 		if abs_dt > 0.010:
-			diag["temp_delta_gt_010_count"] = int(diag["temp_delta_gt_010_count"]) + 1
+			temp_delta_gt_010_count += 1
 		if abs_dt > 0.020:
-			diag["temp_delta_gt_020_count"] = int(diag["temp_delta_gt_020_count"]) + 1
-		if abs_dt > float(diag["max_temp_delta"]):
-			diag["max_temp_delta"] = abs_dt
-		if i < cells.size() and cells[i] != null:
+			temp_delta_gt_020_count += 1
+		if abs_dt > max_temp_delta:
+			max_temp_delta = abs_dt
+		if mirror_temperature_cells and i < cells.size() and cells[i] != null:
 			cells[i].temperature = final_t
-			cells[i].current_state["temperature"] = final_t
+	diag["max_temp_delta"] = max_temp_delta
+	diag["preclamp_max_temp_delta"] = preclamp_max_temp_delta
+	diag["temp_delta_gt_005_count"] = temp_delta_gt_005_count
+	diag["temp_delta_gt_010_count"] = temp_delta_gt_010_count
+	diag["temp_delta_gt_020_count"] = temp_delta_gt_020_count
+	diag["temp_delta_clamped_count"] = temp_delta_clamped_count
+	diag["finalizer_temp_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	t_part_us = Time.get_ticks_usec()
 	var tta_limit: int = mini(n, tta_a.size())
+	var max_transport_anomaly: float = 0.0
+	var finalizer_tta_clamped_count: int = 0
+	var finalizer_tta_cell_mirror_count: int = 0
 	for i in range(tta_limit):
 		var start_tta: float = _tta_start_of_day_arr[i] if has_tta_start else 0.0
-		var final_tta: float = tta_a[i]
+		var raw_final_tta: float = tta_a[i]
+		var final_tta: float = raw_final_tta
+		var tta_clamped: bool = false
 		if tta_cap > 0.0 and has_tta_start:
 			final_tta = clampf(final_tta, start_tta - tta_cap, start_tta + tta_cap)
-			tta_a[i] = final_tta
+			if absf(final_tta - raw_final_tta) > 0.000001:
+				tta_a[i] = final_tta
+				tta_clamped = true
+				finalizer_tta_clamped_count += 1
 		var abs_tta: float = absf(final_tta)
-		if abs_tta > float(diag["max_transport_anomaly"]):
-			diag["max_transport_anomaly"] = abs_tta
-		if i < cells.size() and cells[i] != null:
+		if abs_tta > max_transport_anomaly:
+			max_transport_anomaly = abs_tta
+		if mirror_tta_cells and tta_clamped and i < cells.size() and cells[i] != null:
 			cells[i].temperature_transport_anomaly = final_tta
+			finalizer_tta_cell_mirror_count += 1
+	diag["max_transport_anomaly"] = max_transport_anomaly
+	diag["finalizer_tta_clamped_count"] = finalizer_tta_clamped_count
+	diag["finalizer_tta_cell_mirror_count"] = finalizer_tta_cell_mirror_count
+	diag["finalizer_tta_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	t_part_us = Time.get_ticks_usec()
 	var thermal_a: PackedFloat32Array = map.thermal_energy_arr
 	var ema_a: PackedByteArray = map.ema_initialized_arr
 	var thermal_limit: int = mini(n, thermal_a.size())
+	var finalizer_thermal_init_count: int = 0
 	for i in range(thermal_limit):
 		var needs_init: bool = is_nan(thermal_a[i]) or is_inf(thermal_a[i])
 		if i < ema_a.size() and ema_a[i] == 0:
 			needs_init = true
 		if needs_init and i < temp_a.size():
 			thermal_a[i] = temp_a[i]
+			finalizer_thermal_init_count += 1
+	diag["finalizer_thermal_init_count"] = finalizer_thermal_init_count
+	diag["finalizer_thermal_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	diag["finalizer_cell_ms"] = float(Time.get_ticks_usec() - t_cells_us) / 1000.0
+	diag["finalizer_cells_seen"] = n
+	var t_sort_us: int = Time.get_ticks_usec()
 	temp_deltas.sort()
 	preclamp_temp_deltas.sort()
 	diag["p95_temp_delta"] = _percentile_from_sorted(temp_deltas, 0.95)
 	diag["p99_temp_delta"] = _percentile_from_sorted(temp_deltas, 0.99)
 	diag["preclamp_p99_temp_delta"] = _percentile_from_sorted(preclamp_temp_deltas, 0.99)
+	diag["finalizer_sort_ms"] = float(Time.get_ticks_usec() - t_sort_us) / 1000.0
+	var t_sea_ice_us: int = Time.get_ticks_usec()
 	if map.sea_ice_frac_arr.size() == n and map.sea_ice_frac_arr_prev.size() == n:
 		for i in range(n):
 			var ds: float = absf(map.sea_ice_frac_arr[i] - map.sea_ice_frac_arr_prev[i])
 			if ds > float(diag["sea_ice_delta_max"]):
 				diag["sea_ice_delta_max"] = ds
+	diag["finalizer_sea_ice_ms"] = float(Time.get_ticks_usec() - t_sea_ice_us) / 1000.0
+	var t_precip_us: int = Time.get_ticks_usec()
 	if map.weather_precip_arr.size() == n:
-		var precip_vals: Array = []
-		for i in range(n):
-			precip_vals.append(map.weather_precip_arr[i])
+		var precip_vals: PackedFloat32Array = map.weather_precip_arr.duplicate()
 		precip_vals.sort()
 		diag["precip_p95"] = _percentile_from_sorted(precip_vals, 0.95)
+	diag["finalizer_precip_ms"] = float(Time.get_ticks_usec() - t_precip_us) / 1000.0
 	if _world != null and _world.is_bound():
+		var t_write_us: int = Time.get_ticks_usec()
 		var cid_temp: int = int(_cid.get(DCComponentIds.CELL_TEMP, -1))
 		if cid_temp >= 0 and _world.has_method("write_f32_dense"):
 			_world.write_f32_dense(cid_temp, temp_a)
@@ -639,7 +808,9 @@ func _apply_daily_climate_finalizer() -> Dictionary:
 		var cid_heat: int = int(_cid.get(DCComponentIds.CELL_THERMAL_ENERGY, -1))
 		if cid_heat >= 0 and _world.has_method("write_f32_dense"):
 			_world.write_f32_dense(cid_heat, thermal_a)
+		diag["finalizer_write_dense_ms"] = float(Time.get_ticks_usec() - t_write_us) / 1000.0
 	diag["thermal_finalizer_applied"] = true
+	diag["finalizer_total_ms"] = float(Time.get_ticks_usec() - t_total_us) / 1000.0
 	_last_finalizer_diag = diag
 	return diag
 
@@ -700,6 +871,7 @@ func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_m
 	_active_pass_state["state"] = _PASS_STATE_DONE if result_done else _PASS_STATE_RUNNING
 	_active_pass_state["pass_cursor"] = _pass_cursor
 	_active_pass_state["stage"] = pass_name
+	_active_pass_state["stage_name"] = pass_name
 	_active_pass_state["substage"] = substage_override
 	_active_pass_state["path"] = path_override
 	_active_pass_state["elapsed_ms"] = elapsed_ms
@@ -726,6 +898,8 @@ func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_m
 	]:
 		if result.has(k):
 			_active_pass_state[k] = result[k]
+	if generator != null and "_current_fast_tick_idx" in generator:
+		_active_pass_state["_tick_idx"] = int(generator._current_fast_tick_idx)
 	if diag_enabled:
 		var t_integrity_us: int = Time.get_ticks_usec()
 		_debug_climate_integrity("%s:%s" % [pass_name, result_status])
@@ -733,7 +907,9 @@ func _record_pass_result(pass_id: int, token: int, result: Dictionary, elapsed_m
 		_last_integrity_diag_ms = integrity_ms
 		_last_integrity_diag_stage = "%s:%s" % [pass_name, result_status]
 		_active_pass_state["integrity_ms"] = integrity_ms
-		_last_pass_diag = _active_pass_state.duplicate(true)
+	_last_pass_diag = _active_pass_state.duplicate(true)
+	if pass_name == "transp" and path_override == "gdext":
+		_last_transp_native_diag = _last_pass_diag.duplicate(true)
 	return true
 
 
@@ -1131,11 +1307,26 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 
 	# Round 启动：kick
 	if not _round_active:
+		var t_round_start_us: int = Time.get_ticks_usec()
+		var t_round_part_us: int = t_round_start_us
+		_last_round_start_diag = {
+			"round_start_total_ms": 0.0,
+			"round_start_phase_ms": 0.0,
+			"round_start_terrain_sync_ms": 0.0,
+			"round_start_terrain_sync_skipped": false,
+			"capture_start_state_ms": 0.0,
+			"round_start_state_ms": 0.0,
+			"round_start_reset_transp_ms": 0.0,
+			"round_start_mark_stale_ms": 0.0,
+			"round_start_soa_begin_ms": 0.0,
+			"round_start_dirty_ms": 0.0,
+		}
 		_pass_cursor = 0
 		if season_phase_getter.is_valid():
 			_phase_locked = float(season_phase_getter.call())
 		else:
 			_phase_locked = ctx.season_phase
+		_last_round_start_diag["round_start_phase_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		_round_t_pass_a_ms = 0.0
 		_round_t_pass_b_ms = 0.0
 		_round_t_ocean_ms = 0.0
@@ -1147,8 +1338,16 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		_async_round_kicked = false
 		_async_round_poll_attempts = 0
 		_async_round_kick_tick = ctx.tick_index
-		_sync_runtime_terrain_views("round_start")
+		t_round_part_us = Time.get_ticks_usec()
+		var async_terrain_diag: Dictionary = _sync_runtime_terrain_views_for_reason("round_start")
+		_last_round_start_diag["round_start_terrain_sync_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		_last_round_start_diag["round_start_terrain_sync_skipped"] = bool(async_terrain_diag.get("skipped", false))
+		if not async_terrain_diag.is_empty():
+			_last_round_start_diag["round_start_terrain_sync_diag"] = async_terrain_diag.duplicate(true)
+		t_round_part_us = Time.get_ticks_usec()
 		_begin_round_pass_state()
+		_last_round_start_diag["round_start_state_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		_last_round_start_diag["round_start_total_ms"] = float(Time.get_ticks_usec() - t_round_start_us) / 1000.0
 
 	# Worker pending 时不重复 kick（kick 返回 false → reused++）。
 	if not _async_round_kicked:
@@ -1197,7 +1396,10 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 
 	# Worker 完成：poll 已经把 19 个 slot 写回 _slots + flush 到 MapData。
 	# 主线程要处理 sea_ice flip events（map.terrain_arr 镜像 + atlas dirty）。
+	var finish_t0: int = Time.get_ticks_usec()
+	var flip_t0: int = Time.get_ticks_usec()
 	_handle_async_sea_ice_flips(poll_result)
+	var flip_ms: float = float(Time.get_ticks_usec() - flip_t0) / 1000.0
 
 	# 填充 per-pass breakdown 让 main.gd 日志解析无差异
 	_round_t_pass_a_ms     = float(poll_result.get("pass_a_us", 0)) / 1000.0
@@ -1209,7 +1411,11 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 
 	# Stage 4 真机诊断（前 5 round 打一次）：判断每个 pass 是否真的跑了。
 	# 每个 pass kernel 守卫失败时 us=0，证明该 pass 因 input size mismatch 跳过。
-	if _async_round_poll_attempts <= 5 or (_async_round_poll_attempts % 60 == 0):
+	# Fix #11 second pass (2026-06-16)：原条件 `_async_round_poll_attempts <= 5`
+	# 在 worker 完成快时（每 round 都只 1 个 attempt）变成每 round 都触发，
+	# 50 lines/10s 污染 logcat。改为按 round 计数（_async_round_log_count）。
+	_async_round_log_count += 1
+	if PKLog.enabled and (_async_round_log_count <= 5 or (_async_round_log_count % 60 == 0)):
 		var sip: int = int(poll_result.get("sea_ice_us", 0))
 		var pap: int = int(poll_result.get("pass_a_us", 0))
 		var pbp: int = int(poll_result.get("pass_b_us", 0))
@@ -1219,12 +1425,27 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		var wsp: int = int(poll_result.get("wind_surface_us", 0))
 		var trp: int = int(poll_result.get("transp_us", 0))
 		var fci: int = int(poll_result.get("flipped_cell_indices", PackedInt32Array()).size())
-		print("[climate/async DIAG] poll #%d: pa=%dus pb=%dus ow=%dus ol=%dus wa=%dus ws=%dus si=%dus tr=%dus | flipped=%d" % [
-			_async_round_poll_attempts, pap, pbp, owp, olp, wap, wsp, sip, trp, fci])
+		print("[climate/async DIAG] round #%d: pa=%dus pb=%dus ow=%dus ol=%dus wa=%dus ws=%dus si=%dus tr=%dus | flipped=%d" % [
+			_async_round_log_count, pap, pbp, owp, olp, wap, wsp, sip, trp, fci])
 
+	# Fix #6 async (2026-06-15 v3 已回退)：实测显示拆 slice 让 sus_ticks/120 从 61
+	# 涨到 79（+30%），sus_frame_avg 28→36ms，FPS 66→29。每个 SUS slice 都有
+	# scheduler 边界开销 + 让更多帧承担 SUS 工作。finalize 5-8ms 是确定性 cost
+	# 不是随机 spike，拆 slice 反而恶化整体。保留代码作为 reference。
+	# 直接走原行为：同 tick 跑完 finalize，return done=true。
 	# Round 结束：原 _finalize_round 处理 dirty mask / climate breakdown / annual log。
 	_pass_cursor = _PASS_COUNT
-	_finalize_round()
+	var finalize_t0: int = Time.get_ticks_usec()
+	# Stage 9 / Fix #11 (2026-06-16)：传 poll_result 进 _finalize_round，
+	# 让它优先用 worker 已算好的 finalizer diag，跳过同名 GDScript 2400-loop。
+	_finalize_round(poll_result)
+	var finalize_ms: float = float(Time.get_ticks_usec() - finalize_t0) / 1000.0
+	var finish_ms: float = float(Time.get_ticks_usec() - finish_t0) / 1000.0
+	if generator != null and "_last_climate_breakdown" in generator:
+		generator._last_climate_breakdown["async_poll_ms"] = poll_ms
+		generator._last_climate_breakdown["async_flip_ms"] = flip_ms
+		generator._last_climate_breakdown["async_finalize_ms"] = finalize_ms
+		generator._last_climate_breakdown["async_finish_ms"] = finish_ms
 
 	if int(poll_result.get("worker_total_us", 0)) > 50_000:
 		# Worker 跑超 50ms 偶尔可见，但不严重。可以提示。
@@ -1240,6 +1461,10 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		"stage_name": "async_round_done",
 		"substage": "pass_count=%d" % _PASS_COUNT,
 		"path": "data_core_async",
+		"poll_ms": poll_ms,
+		"flip_ms": flip_ms,
+		"finalize_ms": finalize_ms,
+		"finish_ms": finish_ms,
 	}
 
 
@@ -1328,19 +1553,16 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		"moist_scale_now": 1.0,
 		"days_per_year": generator._calendar_days_per_year(),
 		"sea_level": float(generator._last_cfg.sea_level) if generator._last_cfg != null else 0.5,
-		# pass_a 扩展 scalars — **必须 mirror sync `_climate_pass_a` 的 cp_struct**
-		# sync 路径（map_generator.gd:6818-6830）只塞 11 字段，下面这些 C++ 用内部默认值。
-		# climate_profile.gd 里的 @export 0.35/0.15 等是给 GDScript fallback 用，C++ 路径不读。
-		# async daily round 要跟 sync 生产路径 bit-equal，**绝不能**读 cp.thermal_inertia_*。
-		"thermal_inertia_land":  0.24,
-		"thermal_inertia_water": 0.07,
-		"thermal_inertia_snow":  0.09,
-		"thermal_inertia_high_mountain": 0.16,
-		"thermal_daily_delta_cap": 0.085,
-		"snowpack_cover_low":  0.03,
-		"snowpack_cover_full": 0.25,
-		"insol_dev_min": -1.0,
-		"insol_dev_max": 1.5,
+		# pass_a 扩展 scalars — mirror sync `_climate_pass_a` cp_struct。
+		"thermal_inertia_land": float(cp.thermal_inertia_land) if "thermal_inertia_land" in cp else 0.35,
+		"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.07,
+		"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
+		"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
+		"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
+		"snowpack_cover_low": float(cp.snowpack_cover_low) if "snowpack_cover_low" in cp else 0.05,
+		"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
+		"insol_dev_min": float(cp.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp else -1.0,
+		"insol_dev_max": float(cp.insolation_dev_clamp_max) if "insolation_dev_clamp_max" in cp else 1.0,
 		# transp scalars
 		"transp_outflow_rate": float(cp.transpiration_outflow_rate) if "transpiration_outflow_rate" in cp else 0.025,
 		"transp_self_rate":    float(cp.transpiration_self_rate)    if "transpiration_self_rate"    in cp else 0.015,
@@ -1435,6 +1657,21 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		input["si_dt_days"] = float(generator._consume_sea_ice_dt_days())
 	else:
 		input["si_dt_days"] = 1.0
+	# ─── finalizer pass fields（Stage 9 / Fix #11, 2026-06-16） ─────────────
+	# C++ worker 的 finalizer kernel 等价 _apply_daily_climate_finalizer，
+	# 跳过 main thread 上 4 个 2400-loop + 2 个 sort + 3 个 write_f32_dense（实测 13-17ms）。
+	# 关键输入：round-start snapshot（temp / TTA / sea_ice_prev / precip）。
+	input["fin_temp_start_of_day"] = _temp_start_of_day_arr
+	input["fin_tta_start_of_day"]  = _tta_start_of_day_arr
+	input["fin_sea_ice_frac_prev"] = map.sea_ice_frac_arr_prev if map.sea_ice_frac_arr_prev.size() == n_cells else PackedFloat32Array()
+	input["fin_weather_precip"]    = map.weather_precip_arr if map.weather_precip_arr.size() == n_cells else PackedFloat32Array()
+	input["fin_temp_cap_enabled"]  = bool(cp.thermal_final_delta_cap_enabled) if cp != null and "thermal_final_delta_cap_enabled" in cp else true
+	input["fin_temp_cap"]          = float(cp.thermal_daily_delta_cap) if cp != null and "thermal_daily_delta_cap" in cp else 0.15
+	input["fin_tta_cap"]           = float(cp.temperature_transport_anomaly_daily_cap) if cp != null and "temperature_transport_anomaly_daily_cap" in cp else 0.12
+	input["fin_has_temp_start"]    = _temp_start_of_day_arr.size() == n_cells
+	input["fin_has_tta_start"]     = _tta_start_of_day_arr.size() == n_cells
+	# passes_mask: 0x1FF 全开（默认含 finalizer bit 8）；旧 DLL 看不到 bit 8 还是 fallback。
+	input["passes_mask"] = 0x1FF
 	return input
 
 
@@ -1462,16 +1699,53 @@ func _handle_async_sea_ice_flips(poll_result: Dictionary) -> void:
 	var indices: PackedInt32Array = poll_result["flipped_cell_indices"]
 	if indices.size() <= 0:
 		return
-	# 调 map.mark_terrain_dirty_indexed 或 mark_all_climate_dirty（保守）
-	if map.has_method("mark_all_climate_dirty"):
-		map.mark_all_climate_dirty()
-	# 如 dirty_world 存在，C++ 端 _flush_slot_to_map(cell_terrain) 已 mark dirty。
-	# 这里不需要重复。
+	for idx in indices:
+		if map.has_method("mark_climate_dirty"):
+			map.mark_climate_dirty(int(idx))
+	if _world != null and _world.has_method("mark_dirty_indexed"):
+		_world.mark_dirty_indexed(indices)
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	if generator == null or map == null:
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0 }
+
+	# Fix #6 (2026-06-15): finalizer 拆 slice 跨帧。上一片（async 或 sync）设了
+	# _finalize_pending，本片专门跑 _finalize_round() —— 把 5-8ms finalizer 从
+	# 最后一个 pass slice 剥离出来，让 mobile p95 下降。
+	# 必须在 async branch 之前，避免 next-tick 再进 _run_slice_async 又跑一遍 round。
+	# 仅 mobile 启用（桌面端不会设 _finalize_pending，所以分支不会触发）。
+	if _finalize_pending:
+		var t_fin_us: int = Time.get_ticks_usec()
+		_pass_cursor = _PASS_COUNT
+		_finalize_round()
+		_finalize_pending = false
+		_round_active = false
+		# async path 也要清 kick 标志，否则下个 round 入 _run_slice_async 跳过 kick
+		# 直接 poll 返回 empty 等结果，永远循环。
+		_async_round_kicked = false
+		_async_round_poll_attempts = 0
+		ran_this_tick = true
+		var fin_elapsed_ms: float = float(Time.get_ticks_usec() - t_fin_us) / 1000.0
+		_last_slice_elapsed_ms = fin_elapsed_ms
+		return {
+			"done": true,
+			"work_done": map.cell_count() if map != null else 0,
+			"elapsed_ms": fin_elapsed_ms,
+			"progress_ratio": 1.0,
+			"stage_name": "round_finalize",
+			"substage": "finalizer_split",
+			"path": "data_core_finalizer",
+			"processed_cells": 0,
+			"cursor_start": -1,
+			"cursor_end": -1,
+			"budget_interrupted": false,
+			"status": _PASS_RESULT_DONE,
+			"pass_token": _active_pass_token,
+			"kernel_ms": 0.0,
+			"slice_wall_ms": fin_elapsed_ms,
+			"finalizer_ms": float(_last_finalize_diag.get("finalize_total_ms", fin_elapsed_ms)),
+		}
 
 	# ─── Async climate round 分支（plan §async-stage-3） ──────────────
 	# cp.use_climate_round_async=true + ext 支持 → worker thread 跑完整 round。
@@ -1480,6 +1754,14 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var async_enabled: bool = false
 	if cp_async_check != null and "use_climate_round_async" in cp_async_check:
 		async_enabled = bool(cp_async_check.use_climate_round_async)
+	# Mobile 默认开启 climate async（Fix #2, 2026-06-15）：log_next.txt 显示
+	# transp/finalizer 持续报到 SUS-cpp largest 19ms（实际 kernel 0.06ms，
+	# 其余 8ms 在 finalize_finalizer_ms 拼 cell_ms/sort_ms）。worker thread 框架
+	# 已在 plan §async-stage-1/3 落地（async_climate_round_kick/poll），
+	# desktop 上 KEY_B bench 验过 bit-equal，所以 mobile 默认开。
+	# 桌面端继续按 ClimateProfile.use_climate_round_async 显式 opt-in。
+	if not async_enabled and OS.has_feature("mobile"):
+		async_enabled = true
 	# Stage 3 调试 print（一次性）：第一次进 run_slice 时 dump 实际 condition
 	if not _async_branch_probe_logged:
 		_async_branch_probe_logged = true
@@ -1498,33 +1780,64 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# ─── Sync sliced round（原行为，保留作 fallback）──────────────────
 	# Round 启动：锁 phase + 清埋点累加器
 	if not _round_active:
+		var t_round_start_us: int = Time.get_ticks_usec()
+		var t_round_part_us: int = t_round_start_us
+		_last_round_start_diag = {
+			"round_start_total_ms": 0.0,
+			"round_start_phase_ms": 0.0,
+			"round_start_terrain_sync_ms": 0.0,
+			"round_start_terrain_sync_skipped": false,
+			"capture_start_state_ms": 0.0,
+			"round_start_state_ms": 0.0,
+			"round_start_reset_transp_ms": 0.0,
+			"round_start_mark_stale_ms": 0.0,
+			"round_start_soa_begin_ms": 0.0,
+			"round_start_dirty_ms": 0.0,
+		}
 		_pass_cursor = 0
 		if season_phase_getter.is_valid():
 			_phase_locked = float(season_phase_getter.call())
 		else:
 			_phase_locked = ctx.season_phase
+		_last_round_start_diag["round_start_phase_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		_round_t_pass_a_ms = 0.0
 		_round_t_pass_b_ms = 0.0
 		_round_t_ocean_ms = 0.0
 		_round_t_wind_ms = 0.0
 		_round_t_sea_ice_ms = 0.0
 		_round_t_transp_ms = 0.0
+		_last_finalize_diag = {}
+		_last_slice_pass_overhead_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
 		_round_active = true
-		_sync_runtime_terrain_views("round_start")
+		t_round_part_us = Time.get_ticks_usec()
+		var terrain_diag: Dictionary = _sync_runtime_terrain_views_for_reason("round_start")
+		_last_round_start_diag["round_start_terrain_sync_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		_last_round_start_diag["round_start_terrain_sync_skipped"] = bool(terrain_diag.get("skipped", false))
+		if not terrain_diag.is_empty():
+			_last_round_start_diag["round_start_terrain_sync_diag"] = terrain_diag.duplicate(true)
+		t_round_part_us = Time.get_ticks_usec()
 		_begin_round_pass_state()
+		_last_round_start_diag["round_start_state_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		t_round_part_us = Time.get_ticks_usec()
 		_reset_transpiration_slice_state()
+		_last_round_start_diag["round_start_reset_transp_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		# refresh-consolidation-2026-06：round 入口 mark stale，让 pass_a 入口的
 		# _ensure_climate_daily_round_slots_fresh() 做一次真实 refresh；同 round 内
 		# 后续 pass 的 ensure 调用全部跳过（除非跨 pass 边界由本 system 再次 mark stale）。
+		t_round_part_us = Time.get_ticks_usec()
 		if generator != null and generator.has_method("_mark_climate_daily_round_slots_stale"):
 			generator._mark_climate_daily_round_slots_stale()
+		_last_round_start_diag["round_start_mark_stale_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		t_round_part_us = Time.get_ticks_usec()
 		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
 			map.soa_begin_climate_transaction()
+		_last_round_start_diag["round_start_soa_begin_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		# A.2.1.A4 — Dirty Mask 启动时整 round 边界处理：
 		#   1) season 跨整数 / 每 30 日 full sweep / 加载存档首日 → mark_all_climate_dirty
 		#   2) 否则保留上一日 dirty 增量（Pass A 内层 epsilon 比对会继续覆写）
 		# 这里只在 use_sparse_climate=true 时维护 mask；为 false 时 mask 保持全 0 不影响。
+		t_round_part_us = Time.get_ticks_usec()
 		var cp_round = generator._c() if generator != null else null
 		if cp_round != null and bool(cp_round.use_sparse_climate) and map != null and map.has_soa():
 			var phase_int: int = int(floor(_phase_locked))
@@ -1537,6 +1850,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				# 增量模式：清空上一 round 残留的 dirty 标记，让 Pass A epsilon 比对从零开始
 				map.clear_climate_dirty()
 			_last_phase_int_seen = phase_int
+		_last_round_start_diag["round_start_dirty_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		_last_round_start_diag["round_start_total_ms"] = float(Time.get_ticks_usec() - t_round_start_us) / 1000.0
 
 	# 守卫：daily_climate_interpolation 关闭 → 一次性短路收尾整 round
 	# （行为等同旧 wrapper 的 "if not cp.daily_climate_interpolation: return"）
@@ -1588,8 +1903,24 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			break
 		break
 
+	if ran_pass_id >= 0:
+		var pass_reported_ms: float = float(_last_pass_diag.get(
+			"diagnostic_wall_ms",
+			_last_pass_diag.get("reported_elapsed_ms", _last_pass_diag.get("elapsed_ms", 0.0))
+		))
+		_last_slice_pass_overhead_ms = maxf(0.0, slice_elapsed_ms - pass_reported_ms)
+	else:
+		_last_slice_pass_overhead_ms = 0.0
+
 	# 检查 round 是否结束：cursor ≥ _PASS_COUNT 表示所有段（含 skip）都过了
 	var done: bool = _pass_cursor >= _PASS_COUNT
+	# Fix #6 已回退 (2026-06-15 v3)：实测把 finalize 拆 slice 反而让 sus_ticks/120 从 61
+	# 涨到 79，sus_frame_avg 从 28ms 涨到 36ms，FPS 从 66 跌到 29。原因：每个 SUS slice
+	# 都有边界 schedule overhead，把 1 个 22ms slice 拆成 16ms+6ms 反而让 2 帧都承担
+	# SUS 工作（之前只 1 帧）。finalize 5-8ms 是确定性 cost 不是随机 spike，无法通过
+	# 拆 slice 优化。真正瓶颈在 GPU fragment shader（fronts=12 时 draw_calls 41 /
+	# primitives 5400），不在 climate finalize。
+	# 保留 _finalize_pending 状态字段，但不再触发（done 时直接调 _finalize_round）。
 	if done:
 		_finalize_round()
 	else:
@@ -1624,6 +1955,22 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if _last_pass_path != "":
 		path_out = _last_pass_path
 	var processed_cells_out: int = _last_pass_processed_cells
+	# Fix #5 (2026-06-15): SUS-cpp largest 归因修复。当 round 结束时 (done=true)，
+	# _finalize_round 已经跑完整套 finalizer (cell loop / sort / tta / thermal)。
+	# 之前 SUS 看 largest=refresh_climate_daily/transp/native path=gdext 19ms，
+	# 但实际 transp/native 0.06ms，剩 18ms 全在 finalizer。让 substage 和 path
+	# 在 round 结束帧明确反映 finalizer 主导，不让 transp 背锅。
+	# kernel_wall = native_ms（C++ pass 自身），slice_wall = slice_elapsed_ms（含
+	# finalizer + sync）—— 把两者都暴露给上层方便区分。
+	var native_kernel_ms_out: float = float(_last_pass_diag.get("native_ms", 0.0))
+	if done:
+		var finalize_ms: float = float(_last_finalize_diag.get("finalize_total_ms", 0.0))
+		if finalize_ms >= maxf(2.0, native_kernel_ms_out * 4.0):
+			# 当 finalizer 比 kernel 大 4x 以上且超过 2ms 时（典型 5-8ms），
+			# 重新指认为 finalizer 主导，避免 SUS-cpp 把 transp 当瓶颈追错方向。
+			substage_out = "finalizer"
+			path_out = "data_core_finalizer"
+			stage_name_out = "round_finalize"
 	return {
 		"done": done,
 		"work_done": map.cell_count() if done else 0,
@@ -1638,6 +1985,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"budget_interrupted": _last_pass_budget_interrupted,
 		"status": _last_pass_status,
 		"pass_token": _active_pass_token,
+		# Fix #5 双口径暴露给 main.gd / scheduler diag：kernel_ms 是 C++ 算子
+		# 单独耗时（path=gdext 真实成本），elapsed_ms 是整片墙钟（含 finalizer
+		# / sync / write）。SUS-cpp 用 elapsed_ms 算 largest，但消费方拿 kernel_ms
+		# 才能判断 C++ 优化是否还有空间。
+		"kernel_ms": native_kernel_ms_out,
+		"slice_wall_ms": slice_elapsed_ms,
+		"finalizer_ms": float(_last_finalize_diag.get("finalize_total_ms", 0.0)) if done else 0.0,
 	}
 
 
@@ -1977,17 +2331,48 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 		"pass_status": _last_pass_status,
 		"pass_token": _active_pass_token,
 		"pass_diag": _last_pass_diag.duplicate(true),
+		"transp_native_diag": _last_transp_native_diag.duplicate(true),
 		"dirty_ratio": dirty_ratio_out,
 		"visited_ratio": visited_ratio_out,
 		"pass_b_path": pass_b_path_out,
 		# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
 		"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 	}
+	_merge_climate_wrapper_diag(generator._last_climate_breakdown)
 
 
 # ─── 内部：round 结束时把累积埋点写回 generator + 重置游标 ────────────────
-func _finalize_round() -> void:
-	var finalizer_diag: Dictionary = _apply_daily_climate_finalizer()
+func _finalize_round(async_poll_result: Dictionary = {}) -> void:
+	var t_finalize_us: int = Time.get_ticks_usec()
+	var t_finalize_part_us: int = t_finalize_us
+	# Stage 9 / Fix #11 (2026-06-16)：worker 跑了 finalizer kernel 时（fin_applied=true）
+	# 直接复用 worker 算好的 13 个 diag 字段；跳过同名 _apply_daily_climate_finalizer 的
+	# 4 个 2400-loop + 2 个 sort + 3 个 write_f32_dense（实测 main thread 13-17ms）。
+	# poll_result 里 fin_applied=false 时（旧 DLL / mask bit 8 关闭 / 维度不齐 fallback）
+	# 走原 GDScript 路径，保持行为等价。
+	var finalizer_diag: Dictionary
+	var _async_finalizer_used: bool = false
+	if bool(async_poll_result.get("fin_applied", false)):
+		# 把 worker 返回的字段平移到 _last_finalizer_diag 兼容 schema（main.gd 解析这堆字段）。
+		finalizer_diag = _build_finalizer_diag_from_worker(async_poll_result)
+		_last_finalizer_diag = finalizer_diag
+		_async_finalizer_used = true
+	else:
+		finalizer_diag = _apply_daily_climate_finalizer()
+	_last_finalize_diag = {
+		"finalize_total_ms": 0.0,
+		"finalize_finalizer_ms": float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0,
+		"finalize_breakdown_ms": 0.0,
+		"finalize_annual_log_ms": 0.0,
+		"finalize_soa_noop_ms": 0.0,
+		"finalize_soak_ms": 0.0,
+		"finalize_integrity_ms": 0.0,
+		"finalize_finish_pass_ms": 0.0,
+		"finalize_reset_transp_ms": 0.0,
+		"finalize_flush_dirty_ms": 0.0,
+		"finalize_mark_stale_ms": 0.0,
+		"finalize_dump_stats_ms": 0.0,
+	}
 	# A.2.1.A4 — 一 round 完成 → counter +1（30 日 full sweep 触发逻辑在下次 round 入口）
 	_full_sweep_counter += 1
 	# A.2.1.A5 — 把 Pass B 写到 generator 的稀疏指标合并进 breakdown，方便 main.gd 输出
@@ -2002,6 +2387,7 @@ func _finalize_round() -> void:
 	if generator != null:
 		generator._daily_climate_call_count += 1
 		# A.2.1.B — Pass-A push 稀疏度（dynamic_visual_atlas M1 AB 验证字段）
+		t_finalize_part_us = Time.get_ticks_usec()
 		var _pa_pushed_out: int = int(generator._pa_last_pushed_cells) if "_pa_last_pushed_cells" in generator else 0
 		var _pa_total_out: int = int(generator._pa_last_total_cells) if "_pa_last_total_cells" in generator else 0
 		var _pa_push_ratio_out: float = (float(_pa_pushed_out) / float(_pa_total_out)) if _pa_total_out > 0 else 1.0
@@ -2025,6 +2411,7 @@ func _finalize_round() -> void:
 			"pass_status": _PASS_RESULT_DONE,
 			"pass_token": _active_pass_token,
 			"pass_diag": _last_pass_diag.duplicate(true),
+			"transp_native_diag": _last_transp_native_diag.duplicate(true),
 			"dirty_ratio": dirty_ratio_out,
 			"visited_ratio": visited_ratio_out,
 			"pass_b_path": pass_b_path_out,
@@ -2045,10 +2432,28 @@ func _finalize_round() -> void:
 			"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
 			"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),
 			"thermal_finalizer_applied": bool(finalizer_diag.get("thermal_finalizer_applied", false)),
+			"finalizer_total_ms": float(finalizer_diag.get("finalizer_total_ms", 0.0)),
+			"finalizer_cell_ms": float(finalizer_diag.get("finalizer_cell_ms", 0.0)),
+			"finalizer_temp_ms": float(finalizer_diag.get("finalizer_temp_ms", 0.0)),
+			"finalizer_tta_ms": float(finalizer_diag.get("finalizer_tta_ms", 0.0)),
+			"finalizer_thermal_ms": float(finalizer_diag.get("finalizer_thermal_ms", 0.0)),
+			"finalizer_sort_ms": float(finalizer_diag.get("finalizer_sort_ms", 0.0)),
+			"finalizer_sea_ice_ms": float(finalizer_diag.get("finalizer_sea_ice_ms", 0.0)),
+			"finalizer_precip_ms": float(finalizer_diag.get("finalizer_precip_ms", 0.0)),
+			"finalizer_write_dense_ms": float(finalizer_diag.get("finalizer_write_dense_ms", 0.0)),
+			"finalizer_cells_seen": int(finalizer_diag.get("finalizer_cells_seen", 0)),
+			"finalizer_temperature_cell_mirror": bool(finalizer_diag.get("finalizer_temperature_cell_mirror", false)),
+			"finalizer_tta_cell_mirror": bool(finalizer_diag.get("finalizer_tta_cell_mirror", false)),
+			"finalizer_tta_cell_mirror_count": int(finalizer_diag.get("finalizer_tta_cell_mirror_count", 0)),
+			"finalizer_tta_clamped_count": int(finalizer_diag.get("finalizer_tta_clamped_count", 0)),
+			"finalizer_thermal_init_count": int(finalizer_diag.get("finalizer_thermal_init_count", 0)),
 			# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
 			"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
 		}
+		_merge_climate_wrapper_diag(generator._last_climate_breakdown)
+		_last_finalize_diag["finalize_breakdown_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
 		var n: int = generator._daily_climate_call_count
+		t_finalize_part_us = Time.get_ticks_usec()
 		if _is_annual_log_tick(n):
 			# I1.A-1: 在 round summary 末尾追加 path=... 标识，与 weather 日志对齐，
 			# 便于 grep / A-B 桶聚合。dots-flag-prune-pr1 (2026-05-22)：
@@ -2075,41 +2480,57 @@ func _finalize_round() -> void:
 				_round_t_pass_a_ms, _round_t_pass_b_ms, _round_t_ocean_ms, _round_t_wind_ms, _round_t_sea_ice_ms, _round_t_transp_ms,
 				_path_str,
 			])
+		_last_finalize_diag["finalize_annual_log_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
 	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 启用时，整 round 完成
 	# 后一次性把 SoA 数组 flush 回 HexCell 强类型成员，让 UI / Baker / Overlay 等
 	# 只读消费者继续工作。开关关闭时 has_soa() 仍为 true，但所有 sub-pass 走的都是
 	# legacy 路径直写 cell.*，flush 是幂等的（只是把当前 cell 值往 SoA 镜像里同步
 	# 一遍，再读出来——开销与 cell 数量成正比，只在 round 末跑一次，可接受）。
+	t_finalize_part_us = Time.get_ticks_usec()
 	if generator != null:
 		var cp_for_flush = generator._c()
 		if cp_for_flush != null and bool(cp_for_flush.use_soa_pipeline) and map != null and map.has_soa():
 			# PR-2.4（2026-05-14）：flush_soa_to_cells 已删除。
 			# HexCell facade 让 cell.<field> getter 直接走 SoA，不再需要反向同步。
 			pass
+	_last_finalize_diag["finalize_soa_noop_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
 	# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：climate pipeline 末尾，
 	# 写一段 climate-phase 记录。is_active() 失败时本调用是 nop，不引入额外开销；
 	# 启动后会在 N tick 后自动 stop。
+	t_finalize_part_us = Time.get_ticks_usec()
 	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
 		var sim_day: int = 0
 		if generator != null and "_daily_climate_call_count" in generator:
 			sim_day = int(generator._daily_climate_call_count)
 		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
+	_last_finalize_diag["finalize_soak_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+	t_finalize_part_us = Time.get_ticks_usec()
 	_debug_climate_integrity("round_done")
+	_last_finalize_diag["finalize_integrity_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+	t_finalize_part_us = Time.get_ticks_usec()
 	_finish_active_pass()
+	_last_finalize_diag["finalize_finish_pass_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+	t_finalize_part_us = Time.get_ticks_usec()
 	_reset_transpiration_slice_state()
+	_last_finalize_diag["finalize_reset_transp_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
 	_round_active = false
 	_pass_cursor = 0
 	# dirty-mark-batch-2026-06：round 末尾合并发布 mark_dirty_all。pass_a 16 slot
 	# flush 原本触发 16 次跨 GDExtension 边界 call，现合并为 1 次。atlas pipeline
 	# 在下个 stride 看到的 dirty 信号语义不变（全图脏 → 增量消费）。
+	t_finalize_part_us = Time.get_ticks_usec()
 	if generator != null and generator._data_core_world_ext != null \
 			and generator._data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
 		generator._data_core_world_ext.flush_pending_mark_dirty_all()
+	_last_finalize_diag["finalize_flush_dirty_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
 	# refresh-consolidation-2026-06：round 末尾 mark stale，下一 round 必 refresh。
 	# 同时 dump 计数到 logcat，便于验收"原本 N 次 refresh → 现在 M 次"的效果。
 	if generator != null:
+		t_finalize_part_us = Time.get_ticks_usec()
 		if generator.has_method("_mark_climate_daily_round_slots_stale"):
 			generator._mark_climate_daily_round_slots_stale()
+		_last_finalize_diag["finalize_mark_stale_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+		t_finalize_part_us = Time.get_ticks_usec()
 		if generator.has_method("dump_climate_daily_round_slots_stats"):
 			var stats: Dictionary = generator.dump_climate_daily_round_slots_stats()
 			# 每 20 round 打一次，避免刷屏
@@ -2120,6 +2541,19 @@ func _finalize_round() -> void:
 					int(stats.get("refresh_count", 0)),
 					int(stats.get("skip_count", 0)),
 				])
+		_last_finalize_diag["finalize_dump_stats_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+	_last_finalize_diag["finalize_total_ms"] = float(Time.get_ticks_usec() - t_finalize_us) / 1000.0
+	# Stage 9 / Fix #11 (2026-06-16) STAGE-TOTAL 埋点：观察 C++ worker finalizer 是否启用。
+	# 启用时 finalize_total_ms 应 < 3ms（之前 main thread 跑 _apply_*_finalizer 是 13-17ms）。
+	# 前 5 round 必打，后续仅 >= 5ms 异常打。
+	var _fin_total_ms: float = float(_last_finalize_diag["finalize_total_ms"])
+	if PKLog.enabled and (_fin_stage_log_count < 5 or _fin_total_ms >= 5.0):
+		_fin_stage_log_count += 1
+		print("[climate_finalizer/STAGE-TOTAL] call#%d wall=%.2fms cpp_worker=%s (target: <3ms cpp / 13-17ms gdscript_fallback)" % [
+			_fin_stage_log_count, _fin_total_ms, str(_async_finalizer_used),
+		])
+	if generator != null and "_last_climate_breakdown" in generator:
+		_merge_climate_wrapper_diag(generator._last_climate_breakdown)
 
 
 func get_last_pass_diag() -> Dictionary:

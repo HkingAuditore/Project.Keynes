@@ -35,7 +35,7 @@
 //                     RG = ocean_current (-1..1 mapped from 0..1)
 //                     BA = wind_field    (-1..1 mapped from 0..1)
 //   dynamic_cell_atlas (RGBA8, derived_size, LINEAR)
-//                     R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality
+//                     R=temp, G=wetness/moisture, B=snow_cover, A=water sea_ice / land vitality
 //   sea_ice_tex      (R8, derived_size, LINEAR)
 
 //                     兼容旧调试/数据通道；主视觉海冰由 shader 按水温实时派生。
@@ -49,6 +49,7 @@ uniform sampler2D vector_atlas : filter_linear,  repeat_disable;
 // 未绑定时 Godot 默认 fallback 是白纹理（vec4(1)），错误地解码为 (1,1) 强洋流向；
 // 用此 flag 让 shader 在 false 时直接把 vects 当 0.5 中性值，等价于"没有洋流/风"。
 uniform bool vector_atlas_valid = false;
+// A channel note: water pixels carry sea_ice_fraction; land pixels carry vegetation_vitality.
 // dynamic_cell_atlas RGBA8：R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality。
 // map-visual-overhaul-v1：主 shader 已切换到 `dyn_atlas_smooth_tex` 消费（消除 hex 阶梯）；
 // 本 uniform 保留给调试/info 面板（hex_renderer 仍按旧接口绑定），shader 自身不再读它。

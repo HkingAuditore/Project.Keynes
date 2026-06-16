@@ -21,7 +21,7 @@
    - 每个机制都记录 GDScript wrapper、C++ kernel、输入输出、publish/flush、fallback 和性能风险。
 
 5. [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)
-   - 解释 `[SUS-cpp]`、`[fast tick WARN]`、`largest=... path=...`、`published=true`、`psi_path=gdscript`、`transp gdext wall/native/...` 等日志。
+   - 解释 `[SUS-cpp]`、`[fast tick WARN]`、`largest=... path=...`、`published=true`、`psi_path=gdscript`、`transp/native breakdown ...` 等日志。
    - 用于根据用户贴回的 runtime log 判断当前输出是否符合预期。
 
 ## 与现有文档的关系

@@ -24,8 +24,11 @@
 struct LandModInputs {
 	int biome;
 	int veg;
+	float elev;
 	float moist;
 	float lat_signed;
+	float current_temp;
+	vec2 wind_v;
 	float dyn_valid;
 	float dyn_vitality;
 	float eco_foliage;
@@ -44,7 +47,8 @@ SurfaceParams compute_land_base_surface(
 		int biome,
 		float elev,
 		vec2 wp,
-		vec2 uv) {
+		vec2 uv,
+		vec4 scals) {
 	vec3 col;
 
 	// LAND 1.1：底色 = hypsometric × biome hue × procedural detail
@@ -53,9 +57,10 @@ SurfaceParams compute_land_base_surface(
 	col *= procedural_biome_detail(biome, wp);
 
 	// LAND 1.2：河水 basecolor（含河岸边缘 fbm 软边）
-	// 河岸边缘使用更宽、更低频的扰动，避免细河变成锯齿噪声线。
-	// visual_quality=0 直接读 atlas，跳过 2 次 fbm 河岸扰动以保留性能。
+	// 60 FPS 优化（2026-06-15）：mobile 三档全用 scals.g（SETUP 已采样），不再额外 sample。
+	// 河岸 fbm 扰动只在桌面跑。
 	vec2 river_edge_warp = vec2(0.0);
+#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
 	if (visual_quality >= 1) {
 		river_edge_warp = vec2(
 			fbm(wp * 0.075 + vec2(7.0, -3.0), 1),
@@ -63,6 +68,9 @@ SurfaceParams compute_land_base_surface(
 		) - 0.5;
 	}
 	float flow = texture(scalar_atlas, uv + river_edge_warp * 0.0024).g;
+#else
+	float flow = scals.g;  // 复用 SETUP 阶段 scalar_atlas sample
+#endif
 	float river_t_raw = smoothstep(river_threshold_low, river_threshold_high, flow);
 	float river_t = river_t_raw;
 	float outline_t = smoothstep(river_threshold_low * 0.78, river_threshold_low, flow)
@@ -195,6 +203,28 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 }
 
 // ─── LAND 2.3：植被轴 tint（vegetation_axis_strength） ─────────────────
+// LAND 2.3: climate / altitude / wind tint; pure ALU, no extra texture fetch.
+SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) {
+	float temp_w = clamp((i.current_temp - 0.5) * 2.0, -1.0, 1.0);
+	vec3 cool_tint = vec3(0.84, 0.93, 1.08);
+	vec3 warm_tint = vec3(1.12, 0.94, 0.78);
+	float temp_amp = mix(0.055, 0.125, abs(temp_w));
+	surface.base_color *= mix(
+			vec3(1.0),
+			(temp_w >= 0.0) ? warm_tint : cool_tint,
+			temp_amp);
+
+	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
+	float alpine_w = smoothstep(0.46, 0.96, land_h);
+	surface.base_color *= mix(vec3(1.0), vec3(0.88, 0.92, 0.96), alpine_w * 0.18);
+
+	float wind_mag = clamp(length(i.wind_v), 0.0, 1.4);
+	float wind_dry = wind_mag * (1.0 - smoothstep(0.36, 0.84, i.moist));
+	surface.base_color *= mix(vec3(1.0), vec3(1.10, 0.98, 0.86), wind_dry * 0.10);
+	return surface;
+}
+
+// LAND 2.4: vegetation axis tint.
 SurfaceParams apply_vegetation_axis_tint(SurfaceParams surface, LandModInputs i) {
 	if (vegetation_axis_strength <= 0.001
 			|| i.veg == V_NONE
@@ -245,6 +275,7 @@ SurfaceParams apply_ecology_tint(SurfaceParams surface, LandModInputs i) {
 SurfaceParams apply_land_material_modifiers(SurfaceParams surface, LandModInputs i) {
 	surface = apply_seasonal_vegetation_tint(surface, i);
 	surface = apply_moisture_tint(surface, i);
+	surface = apply_climate_relief_tint(surface, i);
 	surface = apply_vegetation_axis_tint(surface, i);
 	surface = apply_ecology_tint(surface, i);
 	return surface;
@@ -302,9 +333,14 @@ SurfaceParams apply_land_color_overlays(
 	vec3 col = surface.base_color;
 
 	// LAND 3.1.a：海岸 / 湖岸 / 河口柔和过渡（shore_common 共享）
+	// 60 FPS 优化（2026-06-15）：mobile LOW/MID 跳过 shore neighborhood 邻域 sample
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	// 无 halo
+#else
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, scals.g, 0);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
+#endif
 
 	// LAND 3.1.b：统一雪盖色（季节性雪线 / 真实积雪 / BLIZZARD 新雪）
 	col = apply_snow_cover(
@@ -380,6 +416,7 @@ vec3 render_land_pipeline(
 		vec4 scals,
 		float lat_signed,
 		float current_temp,
+		vec2 wind_v,
 		float dyn_snow,
 		float dyn_valid,
 		float dyn_vitality,
@@ -389,13 +426,16 @@ vec3 render_land_pipeline(
 		float eco_growth,
 		float eco_valid,
 		vec4 pixel_noise) {
-	SurfaceParams surface = compute_land_base_surface(biome, elev, wp, uv);
+	SurfaceParams surface = compute_land_base_surface(biome, elev, wp, uv, scals);
 
 	LandModInputs mi;
 	mi.biome = biome;
 	mi.veg = veg;
+	mi.elev = elev;
 	mi.moist = moist;
 	mi.lat_signed = lat_signed;
+	mi.current_temp = current_temp;
+	mi.wind_v = wind_v;
 	mi.dyn_valid = dyn_valid;
 	mi.dyn_vitality = dyn_vitality;
 	mi.eco_foliage = eco_foliage;

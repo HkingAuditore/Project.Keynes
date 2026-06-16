@@ -40,6 +40,29 @@
 // ─── 锐利程序化贴图（不依赖 hex，世界坐标连续） ─────────────────────────
 
 vec3 procedural_biome_detail(int biome, vec2 wp) {
+	// 60 FPS 优化（2026-06-15）：mobile 三档全跳 biome 内部纹理（1-3 fbm/voronoi 每 biome）
+	// 视觉损失：陆地 biome 内部纯色（无纹理颗粒），但 biome 间颜色区分仍清晰。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	return vec3(1.0);  // 无 detail modulator
+#else
+	if (visual_quality <= 0) {
+		return vec3(1.0);
+	}
+	if (visual_quality == 1) {
+		float n = fbm(wp * 0.18, 2);
+		float amp = 0.060;
+		if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) {
+			amp = 0.095;
+		} else if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_GLACIER) {
+			amp = 0.085;
+		} else if (biome == B_DESERT || biome == B_SALT_FLAT) {
+			float bands = sin(dot(wp, vec2(0.85, 0.30)) * 0.040 + n * 4.0) * 0.5 + 0.5;
+			return vec3(mix(0.94, 1.07, bands));
+		} else if (biome == B_SWAMP || biome == B_DELTA || biome == B_OASIS) {
+			amp = 0.075;
+		}
+		return vec3(mix(1.0 - amp, 1.0 + amp, n));
+	}
 	if (biome == B_FOREST) {
 		float vor = voronoi_cell(wp * 0.30);
 		float n = fbm(wp * 0.40, 3);
@@ -185,4 +208,5 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 		return vec3(mix(0.85, 1.18, bands) * mix(0.92, 1.06, sand));
 	}
 	return vec3(1.0);
+#endif
 }

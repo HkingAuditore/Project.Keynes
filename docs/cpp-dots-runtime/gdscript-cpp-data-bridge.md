@@ -363,6 +363,11 @@ bridge surfaces and component slots.
   transport anomaly state. `MapData.temperature_transport_anomaly_arr` is the
   GDScript mirror consumed by fallback code and diagnostics. Do not add a
   parallel TTA array unless the schema/codegen workflow explicitly requires it.
+- `HexCell.temperature_transport_anomaly` is a facade-backed compatibility
+  property, but its getter intentionally reads GDScript `DCWorld` instead of
+  `DCWorldExt`. The climate finalizer writes this value through
+  `DCWorld.write_f32_dense()` / `MapData` and only marks the C++ mirror stale for
+  the next round, so an ext read can observe a previous native snapshot.
 - Ocean water and land native passes receive the previous TTA state through the
   existing anomaly array knobs and publish the stabilized value back through the
   same slot/mirror boundary. Callers must keep honoring `published_to_slot` and

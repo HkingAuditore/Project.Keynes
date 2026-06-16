@@ -131,8 +131,20 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 // 从 height_tex 采样得到 tangent-space 法线（Sobel 3x3 或 4-tap 中心差分）
 vec3 compute_terrain_normal(vec2 uv, int quality) {
 	vec2 texel = 1.0 / hm_resolution;
-	if (quality <= 0) {
-		// 低质：4-tap 中心差分（与原 hillshading 一致）
+	// 60 FPS 优化（2026-06-15）：mobile 三档变体
+	// LOW: 完全平面法线（0 sample）→ 无 hillshade 立体感
+	// MID: 2-tap 水平 + 0 垂直简化法线（2 sample）→ 仅 X 方向阴影
+	// HIGH: 4-tap 完整中心差分（4 sample）= 桌面 q=0 同
+#ifdef MOBILE_QUALITY_LOW
+	return vec3(0.0, 0.0, 1.0);
+#elif defined(MOBILE_QUALITY_MID)
+	float l0 = decode_height_rg8(uv - vec2(texel.x, 0.0));
+	float r0 = decode_height_rg8(uv + vec2(texel.x, 0.0));
+	float dx0 = (r0 - l0) * hillshade_slope_gain;
+	return normalize(vec3(-dx0, 0.0, 1.0));
+#else
+	if (quality <= 2) {
+		// 默认桌面质量也走 4-tap。Sobel 8-tap 保留给未来更高质量档。
 		float l0 = decode_height_rg8(uv - vec2(texel.x, 0.0));
 		float r0 = decode_height_rg8(uv + vec2(texel.x, 0.0));
 		float u0 = decode_height_rg8(uv - vec2(0.0, texel.y));
@@ -156,6 +168,7 @@ vec3 compute_terrain_normal(vec2 uv, int quality) {
 	gx *= hillshade_slope_gain;
 	gy *= hillshade_slope_gain;
 	return normalize(vec3(-gx, -gy, 1.0));
+#endif
 }
 
 // 按 biome 查表粗糙度（需求 3.3）：雪/冰光滑、沙中等、森林/草原粗糙

@@ -41,8 +41,8 @@ struct NativeKnobs {
     float field_ocean_evap_gain = 0.0f;
     float field_precip_decay = 0.0f;
     float season_phase = 0.0f;
-    float field_precip_carryover_max = 0.12f;
-    float field_vapor_precip_sink = 0.58f;
+    float field_precip_carryover_max = 0.08f;
+    float field_vapor_precip_sink = 0.70f;
     float field_vapor_relax_rate = 0.08f;
     float field_orographic_lift_cap = 0.35f;
     float field_wet_terrain_precip_damping = 0.22f;

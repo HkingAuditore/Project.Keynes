@@ -1182,16 +1182,17 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 				float(cp_ec.snowpack_melt_sun_gain),
 				float(cp_ec.snowpack_cover_low),
 				float(cp_ec.snowpack_cover_full),
+				int(cp_ec.snow_accum_days_req) if cp_ec.get("snow_accum_days_req") != null else 2,
 				float(cp_ec.weather_temp_anomaly_cap),
-				float(cp_ec.snowline_temp_threshold) if cp_ec.get("snowline_temp_threshold") != null else 0.34,
-				float(cp_ec.snowline_band) if cp_ec.get("snowline_band") != null else 0.18,
+				float(cp_ec.snowline_temp_threshold) if cp_ec.get("snowline_temp_threshold") != null else 0.24,
+				float(cp_ec.snowline_band) if cp_ec.get("snowline_band") != null else 0.22,
 				float(cp_ec.weather_vapor_relax_rate) if cp_ec.get("weather_vapor_relax_rate") != null else 0.08,
 				float(cp_ec.weather_orographic_lift_cap) if cp_ec.get("weather_orographic_lift_cap") != null else 0.35,
-				float(cp_ec.weather_wet_terrain_precip_damping) if cp_ec.get("weather_wet_terrain_precip_damping") != null else 0.22,
+				float(cp_ec.weather_wet_terrain_precip_damping) if cp_ec.get("weather_wet_terrain_precip_damping") != null else 0.28,
 				float(cp_ec.weather_lake_precip_damping) if cp_ec.get("weather_lake_precip_damping") != null else 0.35,
 				float(cp_ec.weather_lake_evap_scale) if cp_ec.get("weather_lake_evap_scale") != null else 0.35,
-				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.24,
-				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.35
+				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.20,
+				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.30
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -1439,6 +1440,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 两者的 stride 直接读 ClimateProfile，speed_changed 时由 main.gd 通过
 	# set_weather_refresh_stride / set_daily_climate_refresh_stride 改写并
 	# 调 reconfigure。stride 跳日的语义完全由 SusPolicy 承担。
+	# Fix #9 (2026-06-15): 不动 stride（保持仿真权威性），只用 phase 错峰。
+	# climate/sea_ice/ocean phase=0 落偶 tick；weather/atlas/dynamic_visual phase=1
+	# 落奇 tick。stride=1 时无视 phase（每 tick 都跑），所以仿真层不受影响。
+	# 当 atlas 配 stride=2 时（earth_like.tres dynamic_visual_atlas_upload_stride=2），
+	# phase=1 让它落在奇 tick，跟 climate spike tick 错开 → 不再被饿死。
 	var climate_stride: int = 1
 	var sea_ice_stride: int = 1
 	var weather_stride: int = 1
@@ -1588,7 +1594,16 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 	var frame_ms: float = float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms)
 	# Runtime safety clamp：resource 里允许保留极大预算做实验输入，但实际
 	# fast tick 不能放开到几十 ms，否则 SUS 会在同一帧连续吃完整轮重型 job。
-	frame_ms = clampf(frame_ms, 0.25, 2.0)
+	# Fix #8A (2026-06-15): mobile 上限改为 4.0ms（log_next.txt 实测 SUS p95=9-15ms，
+	# budget=2ms 让 dynamic_visual_atlas_upload 80% 被饿死，雪线/海冰视觉延迟 2-3s）。
+	# 4ms 仍远 < 16.6ms 60FPS frame budget，给低优先级 atlas upload 有上车机会。
+	# Mobile 默认 4.0，desktop 继续 2.0（profile 里默认 sim_frame_budget_ms=2.0）。
+	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
+	# Mobile 上无视 profile 设置，强制至少 4.0（如果 profile 写得更低就用 profile，
+	# 比如调试时强制 2.0 复现旧行为）。
+	if OS.has_feature("mobile") and frame_ms < max_budget:
+		frame_ms = max_budget
+	frame_ms = clampf(frame_ms, 0.25, max_budget)
 	if cp.get("sim_frame_budget_ms") != null:
 		if _sus.has_method("set_frame_budget_ms"):
 			_sus.set_frame_budget_ms(frame_ms)
@@ -1603,7 +1618,8 @@ func _apply_sim_budget_profile_to_scheduler(cp) -> void:
 		_sus.sim_budget_window_size = 300
 	if _sus.get("sim_budget_warn_ms") != null:
 		if cp.get("sim_budget_warn_ms") != null:
-			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, 2.0)
+			# Fix #8A: warn_ms 上限也跟 frame_ms 走，mobile 4.0/desktop 2.0
+			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, max_budget)
 			if _sus.has_method("set_sim_budget_warn_ms"):
 				_sus.set_sim_budget_warn_ms(warn_ms)
 			else:
@@ -1681,13 +1697,8 @@ func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void
 		var must_raw_id = job.get("id")
 		if must_raw_id != null:
 			must_job_id = StringName(str(must_raw_id))
-		# sea-ice-snow-visual-fix-v3 (2026-06)：DVAS / SeaIceAtlasUpload 必须每 tick
-		# 跑一次，否则海冰/雪/温度热力图视觉永远不刷新。原 `must_run = ocean_currents OR ...`
-		# 把 _init 里设的 true 直接擦掉。这里显式放行视觉上传 job。
-		var force_must_run: bool = (must_job_id == &"dynamic_visual_atlas_upload" \
-				or must_job_id == &"sea_ice_atlas_upload")
+		var force_must_run: bool = (must_job_id == &"sea_ice_atlas_upload")
 		job.must_run = force_must_run \
-				or must_job_id == &"ocean_currents" \
 				or (strict_on and _sim_job_should_must_run(job, upload_job))
 	if job.get("starvation_threshold") != null:
 		var starvation_job_id: StringName = &""
@@ -2017,14 +2028,14 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"day_length_gain": float(cp_now.get("insolation_daylen_amp")) if cp_now.get("insolation_daylen_amp") != null else 0.35,
 		"solar_gain": float(cp_now.get("solar_gain")) if cp_now.get("solar_gain") != null else 1.0,
 		"insol_dev_min": float(cp_now.get("insolation_dev_clamp_min")) if cp_now.get("insolation_dev_clamp_min") != null else -1.0,
-		"insol_dev_max": float(cp_now.get("insolation_dev_clamp_max")) if cp_now.get("insolation_dev_clamp_max") != null else 1.5,
-		"thermal_inertia_land": float(cp_now.get("thermal_inertia_land")) if cp_now.get("thermal_inertia_land") != null else 0.24,
+		"insol_dev_max": float(cp_now.get("insolation_dev_clamp_max")) if cp_now.get("insolation_dev_clamp_max") != null else 1.0,
+		"thermal_inertia_land": float(cp_now.get("thermal_inertia_land")) if cp_now.get("thermal_inertia_land") != null else 0.35,
 		"thermal_inertia_water": float(cp_now.get("thermal_inertia_water")) if cp_now.get("thermal_inertia_water") != null else 0.07,
 		"thermal_inertia_snow": float(cp_now.get("thermal_inertia_snow")) if cp_now.get("thermal_inertia_snow") != null else 0.09,
 		"thermal_inertia_high_mountain": float(cp_now.get("thermal_inertia_high_mountain")) if cp_now.get("thermal_inertia_high_mountain") != null else 0.16,
-		"thermal_daily_delta_cap": float(cp_now.get("thermal_daily_delta_cap")) if cp_now.get("thermal_daily_delta_cap") != null else 0.085,
-		"snowpack_cover_low": float(cp_now.get("snowpack_cover_low")) if cp_now.get("snowpack_cover_low") != null else 0.03,
-		"snowpack_cover_full": float(cp_now.get("snowpack_cover_full")) if cp_now.get("snowpack_cover_full") != null else 0.25,
+		"thermal_daily_delta_cap": float(cp_now.get("thermal_daily_delta_cap")) if cp_now.get("thermal_daily_delta_cap") != null else 0.15,
+		"snowpack_cover_low": float(cp_now.get("snowpack_cover_low")) if cp_now.get("snowpack_cover_low") != null else 0.05,
+		"snowpack_cover_full": float(cp_now.get("snowpack_cover_full")) if cp_now.get("snowpack_cover_full") != null else 0.32,
 		"sea_level": float(_last_cfg.sea_level),
 	}
 
@@ -6826,6 +6837,15 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
 			"day_length_gain":  float(cp.insolation_daylen_amp) if "insolation_daylen_amp" in cp else 0.35,
 			"solar_gain":       float(cp.solar_gain) if "solar_gain" in cp else 1.0,
+			"insol_dev_min":    float(cp.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp else -1.0,
+			"insol_dev_max":    float(cp.insolation_dev_clamp_max) if "insolation_dev_clamp_max" in cp else 1.0,
+			"thermal_inertia_land": float(cp.thermal_inertia_land) if "thermal_inertia_land" in cp else 0.35,
+			"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.07,
+			"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
+			"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
+			"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
+			"snowpack_cover_low": float(cp.snowpack_cover_low) if "snowpack_cover_low" in cp else 0.05,
+			"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
 			"sea_level":        float(_last_cfg.sea_level),
 		}
 		var rc: float = -1.0
@@ -7995,8 +8015,17 @@ func _consume_sea_ice_dt_days() -> float:
 			# else: 第一次调用，保持 dt_days = 1.0 默认
 			_last_sea_ice_pass_day = now_day
 	# 诊断：每个日历年长或前 5 次打印一次 dt_days，验证补偿是否在工作。
-	if _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks < 5 \
-			or _is_annual_log_tick(_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks):
+	# Fix #11 second pass (2026-06-16) mobile：x20 速度下 1 仿真年 ~6 秒，mobile
+	# 每秒触发 ~0.16 次 print。logcat overhead ~10ms/行 → 1.6ms/秒。改为 mobile 上
+	# 前 5 次后只在 sea_ice 行为异常时打（dt_days > 10 或 < 0.5 = 速度档异常）。
+	var _sea_ice_call_total: int = _gdext_sea_ice_runs + _gdext_sea_ice_fallbacks
+	var _should_log_dt: bool = _sea_ice_call_total < 5
+	if not _should_log_dt and not OS.has_feature("mobile"):
+		_should_log_dt = _is_annual_log_tick(_sea_ice_call_total)
+	if not _should_log_dt and OS.has_feature("mobile"):
+		# mobile：超出 5 次后只在 dt_days 偏离常规时打（异常 dt 才有诊断价值）。
+		_should_log_dt = dt_days > 10.0 or dt_days < 0.5
+	if _should_log_dt and PKLog.enabled:
 		print("[sea_ice/dt] call#%d dt_days=%.3f (last_pass_day=%.3f, k x%.2f)" % [
 			_gdext_sea_ice_runs + _gdext_sea_ice_fallbacks + 1,
 			dt_days,
@@ -8867,13 +8896,13 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var axial_tilt_deg: float = float(cp.get("axial_tilt_deg")) if cp.get("axial_tilt_deg") != null else 23.5
 	var daylen_amp: float = float(cp.get("insolation_daylen_amp")) if cp.get("insolation_daylen_amp") != null else _INSOLATION_DAYLEN_AMP
 	var solar_gain: float = float(cp.get("solar_gain")) if cp.get("solar_gain") != null else 1.0
-	var thermal_land: float = float(cp.get("thermal_inertia_land")) if cp.get("thermal_inertia_land") != null else 0.24
+	var thermal_land: float = float(cp.get("thermal_inertia_land")) if cp.get("thermal_inertia_land") != null else 0.35
 	var thermal_water: float = float(cp.get("thermal_inertia_water")) if cp.get("thermal_inertia_water") != null else 0.07
 	var thermal_snow: float = float(cp.get("thermal_inertia_snow")) if cp.get("thermal_inertia_snow") != null else 0.09
 	var thermal_high: float = float(cp.get("thermal_inertia_high_mountain")) if cp.get("thermal_inertia_high_mountain") != null else 0.16
-	var thermal_delta_cap: float = float(cp.get("thermal_daily_delta_cap")) if cp.get("thermal_daily_delta_cap") != null else 0.085
-	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.03
-	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.25
+	var thermal_delta_cap: float = float(cp.get("thermal_daily_delta_cap")) if cp.get("thermal_daily_delta_cap") != null else 0.15
+	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
+	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化。
 	# _dc_views 非空 → 走 World view（统一数据通道，为 C++ 化扫前置）；
 	# 空 → 走 legacy map.xxx_arr 字段访问（行为 100% 等价，bind_map_data 保证
@@ -13163,19 +13192,16 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		"moist_scale_now": 1.0,
 		"days_per_year": _calendar_days_per_year(),
 		"sea_level": float(_last_cfg.sea_level) if _last_cfg != null else 0.5,
-		# pass_a 扩展 scalars — **不能**读 cp_f5，必须跟 sync `_climate_pass_a` 的 cp_struct 一致
-		# sync 只传 11 个字段（见 map_generator.gd:6818-6830），其余 scalars C++ 端用内部默认值：
-		# thermal_inertia_*  / thermal_daily_delta_cap / snowpack_cover_* / insol_dev_*
-		# C++ 内部默认值见 world_ext.cpp::run_climate_pass_a，bench 必须 mirror 以保证 bit-equal。
-		"thermal_inertia_land":  0.24,
-		"thermal_inertia_water": 0.07,
-		"thermal_inertia_snow":  0.09,
-		"thermal_inertia_high_mountain": 0.16,
-		"thermal_daily_delta_cap": 0.085,
-		"snowpack_cover_low":  0.03,
-		"snowpack_cover_full": 0.25,
-		"insol_dev_min": -1.0,
-		"insol_dev_max": 1.5,
+		# pass_a 扩展 scalars — mirror sync `_climate_pass_a` 的 cp_struct。
+		"thermal_inertia_land": float(cp_f5.thermal_inertia_land) if "thermal_inertia_land" in cp_f5 else 0.35,
+		"thermal_inertia_water": float(cp_f5.thermal_inertia_water) if "thermal_inertia_water" in cp_f5 else 0.07,
+		"thermal_inertia_snow": float(cp_f5.thermal_inertia_snow) if "thermal_inertia_snow" in cp_f5 else 0.09,
+		"thermal_inertia_high_mountain": float(cp_f5.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp_f5 else 0.16,
+		"thermal_daily_delta_cap": float(cp_f5.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp_f5 else 0.15,
+		"snowpack_cover_low": float(cp_f5.snowpack_cover_low) if "snowpack_cover_low" in cp_f5 else 0.05,
+		"snowpack_cover_full": float(cp_f5.snowpack_cover_full) if "snowpack_cover_full" in cp_f5 else 0.32,
+		"insol_dev_min": float(cp_f5.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp_f5 else -1.0,
+		"insol_dev_max": float(cp_f5.insolation_dev_clamp_max) if "insolation_dev_clamp_max" in cp_f5 else 1.0,
 	}
 	var async_t0: int = Time.get_ticks_usec()
 	if not bool(_data_core_world_ext.async_climate_round_kick(input)):

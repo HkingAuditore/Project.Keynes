@@ -98,7 +98,8 @@ const _CID_VEG_HEAT_STRESS      := 34  # F32  cell.vegetation_heat_stress
 const _CID_VEG_DROUGHT_STRESS   := 35  # F32  cell.vegetation_drought_stress
 const _CID_VEG_COLD_STRESS      := 36  # F32  cell.vegetation_cold_stress
 const _CID_VEG_REGEN_SCORE      := 37  # F32  cell.vegetation_regen_score
-const _CID_COUNT                := 38
+const _CID_TEMP_TRANSPORT_ANOM  := 38  # F32  cell.temperature_transport_anomaly
+const _CID_COUNT                := 39
 
 # StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
 # 字面量是合法 const expression，可以直接用。
@@ -142,6 +143,7 @@ const _COMP_NAMES: Array[StringName] = [
 	&"cell.vegetation_drought_stress",
 	&"cell.vegetation_cold_stress",
 	&"cell.vegetation_regen_score",
+	&"cell.temperature_transport_anomaly",
 ]
 
 # 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
@@ -491,7 +493,7 @@ var snow_cover: float = 0.0:
 # accumulated_snow_days：BLIZZARD 命中天数计数器（>=0）。每个有效降雪日 +1，
 #   温度高于 0.30（约 -2°C）时反向衰减（实际 -1）。
 # pre_snow_cover：被 SNOW 替换前的原 cover（CoverType.CV）；融化后恢复。-1 表示未触发过。
-# 阈值：accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ（3）时正式把 cover 升为 SNOW；
+# 阈值：accumulated_snow_days >= ClimateProfile.snow_accum_days_req 时正式把 cover 升为 SNOW；
 # accumulated_snow_days <= 0 且 cover==SNOW 时融化恢复 pre_snow_cover。
 var accumulated_snow_days: int = 0
 var pre_snow_cover: int = -1
@@ -836,7 +838,20 @@ var ocean_psi: float = 0.0
 #   水 cell：自身沿 -ocean_current 方向回溯上游温度混合后的偏差；
 #   陆地 cell：沿岸水 cell 异常按 dot(邻接方向, current) 加权平均后的注入值。
 #   供海冰 pass / F7 调试可视化 / 未来玩法读取。
-var temperature_transport_anomaly: float = 0.0
+var _temperature_transport_anomaly_backing: float = 0.0
+var temperature_transport_anomaly: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_TRANSPORT_ANOM]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temperature_transport_anomaly_backing
+	set(v):
+		_temperature_transport_anomaly_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_TRANSPORT_ANOM]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # air_mass_temp_anomaly：
 #   由风温耦合系统写入的"气团输运带来的温度偏差"，

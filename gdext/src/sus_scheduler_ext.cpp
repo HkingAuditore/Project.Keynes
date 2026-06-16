@@ -728,7 +728,9 @@ void SusSchedulerExt::tick(Object *ctx) {
     _last_tick_summary["sus_sim_max_300"]       = (double)(float)budget_window.get("sus_sim_max_300", 0.0);
     _last_tick_summary["over_1ms_count_300"]    = (int)budget_window.get("over_1ms_count_300", 0);
 
-    if (_log_interval_ticks > 0 && (_tick_counter % _log_interval_ticks) == 0) {
+    // Fix #11 second pass (2026-06-16) — _diag_logs_enabled=false 时整段跳过 print。
+    // 8-9 行 print 单次 logcat ~50-90ms 是 mobile budget 杀手。
+    if (_diag_logs_enabled && _log_interval_ticks > 0 && (_tick_counter % _log_interval_ticks) == 0) {
         _emit_periodic_log();
     }
 }
@@ -979,6 +981,9 @@ void SusSchedulerExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_strict_budget_enabled"),        &SusSchedulerExt::get_strict_budget_enabled);
     ClassDB::bind_method(D_METHOD("set_log_interval_ticks",    "v"),  &SusSchedulerExt::set_log_interval_ticks);
     ClassDB::bind_method(D_METHOD("get_log_interval_ticks"),           &SusSchedulerExt::get_log_interval_ticks);
+    // Fix #11 second pass (2026-06-16) — PKLog.enabled C++ mirror。
+    ClassDB::bind_method(D_METHOD("set_diag_logs_enabled",     "v"),  &SusSchedulerExt::set_diag_logs_enabled);
+    ClassDB::bind_method(D_METHOD("get_diag_logs_enabled"),            &SusSchedulerExt::get_diag_logs_enabled);
     ClassDB::bind_method(D_METHOD("set_sim_budget_window_size","v"),  &SusSchedulerExt::set_sim_budget_window_size);
     ClassDB::bind_method(D_METHOD("get_sim_budget_window_size"),       &SusSchedulerExt::get_sim_budget_window_size);
     ClassDB::bind_method(D_METHOD("set_sim_budget_warn_ms",    "v"),  &SusSchedulerExt::set_sim_budget_warn_ms);
