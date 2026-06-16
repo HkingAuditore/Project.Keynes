@@ -186,6 +186,28 @@ static func surface_absorbed_factor(is_water: bool, temp_annual: float) -> float
 	return (1.0 - a_eff) / (1.0 - ALBEDO_LAND)
 
 
+## ─── 季节项冷侧软压缩（冬季过冷托底 物理化 v2 2026-06-16）──────────────────
+## 物理依据：地球中/高纬冬季远比"纯局地辐射平衡"暖，因为大气与海洋的极向热量
+## 输送（冬季最强）＋海洋/地表热库在持续向冬季半球释放储热。原"season_offset =
+## 增益×dev"是纯局地线性强迫，缺这层托底 → 中纬冬季无限过冷（实测温带平原被压到
+## 0=极寒，比极地还冷，不物理）。本函数对【降温侧】做 tanh 软饱和模拟该托底：
+##   · 暖侧 s≥0（夏季/极昼）原样返回 → 完全保留季节性与极地夏季吸收因子效果；
+##   · 冷侧 s<0 → −KNEE·tanh(|s|/KNEE)：|s| 小（春秋/低纬）几乎不变，
+##     |s| 大（中高纬深冬）软饱和到约 −KNEE，不再无限变冷。
+## KNEE=0.13：数值实验（tmp/verify_physical_temp_20260616.py §5）取得
+##   温带平原冬季 min 0.087→0.21（叠加 pass_b 后≈0.13 严寒、脱离极寒），
+##   夏季峰值不变，深极地海陆冬季仍冻结（海冰核与冰带不塌），中纬陆/海大陆性≈1.8。
+## 跨语言镜像（改这些常量须人工同步并重编/重载）：
+##   · C++    gdext/src/world_ext.cpp :: pk_compress_season_cooling / PK_WINTER_COOL_KNEE
+##   · Shader shaders/include/climate_season.gdshaderinc :: insolation_season_offset_shader
+const WINTER_COOL_KNEE: float = 0.13
+
+static func compress_season_cooling(season_offset: float) -> float:
+	if season_offset >= 0.0:
+		return season_offset
+	return -WINTER_COOL_KNEE * tanh(absf(season_offset) / WINTER_COOL_KNEE)
+
+
 static func compute_insolation_dev(ny: float, season_phase: float,
 		axial_tilt_deg: float = 23.5,
 		insolation_daylen_amp: float = 0.35,

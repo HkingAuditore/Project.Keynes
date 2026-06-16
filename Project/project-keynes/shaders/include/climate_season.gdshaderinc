@@ -70,6 +70,9 @@ float insolation_annual_mean_shader(float lat_rad) {
 // ALBEDO_LAND / ALBEDO_ICE 须与 GDScript climate_math.gd / C++ world_ext.cpp 同步。
 const float ALBEDO_LAND_SHADER = 0.20;
 const float ALBEDO_ICE_SHADER  = 0.62;
+// 季节项冷侧软压缩（冬季过冷托底 v2 2026-06-16）——须与 GDScript/C++ 同步。
+// 暖侧原样、冷侧 tanh 软饱和到 −KNEE，模拟极向热输送/海洋热库对中高纬冬季的托底。
+const float WINTER_COOL_KNEE_SHADER = 0.13;
 float insolation_season_offset_shader(float lat_signed, float phase) {
 	// lat_signed ∈ [-1, 1] → lat_rad ∈ [-π/2, π/2]
 	float lat_rad = lat_signed * 1.5707963;
@@ -80,7 +83,12 @@ float insolation_season_offset_shader(float lat_signed, float phase) {
 	float ice_w = smoothstep(0.62, 0.90, abs(lat_signed));
 	float a_eff = ALBEDO_LAND_SHADER + (ALBEDO_ICE_SHADER - ALBEDO_LAND_SHADER) * ice_w;
 	float absorb_factor = (1.0 - a_eff) / (1.0 - ALBEDO_LAND_SHADER);
-	return insolation_season_gain * absorb_factor * dev * season_temp_amp;
+	float s = insolation_season_gain * absorb_factor * dev * season_temp_amp;
+	// 冷侧软压缩（与 DCClimateMath.compress_season_cooling 同源）
+	if (s < 0.0) {
+		s = -WINTER_COOL_KNEE_SHADER * tanh(-s / WINTER_COOL_KNEE_SHADER);
+	}
+	return s;
 }
 
 // 统一入口：无条件走 insolation 派生。true_insolation_enabled 只保留给旧材质

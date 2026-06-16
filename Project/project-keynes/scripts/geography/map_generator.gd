@@ -7075,7 +7075,8 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# 用【年均温度 cell.temp_365d_mean】作冰封代理，避免夏季融化正反馈失控。
 		var temp_year: float = _compute_temperature(ny, cell.elevation)
 		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(_is_water(cell.terrain), cell.temp_365d_mean)
-		var season_offset: float = insol_amp_gain * absorb_factor * dev_today
+		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 SoA/C++ 同源。
+		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
 		var temp_now: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# —— 4) 当日雪盖（双段公式与 refresh_seasonal 严格一致；永久态特例处理） ——
@@ -9127,7 +9128,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
 		# 用【年均温度 temp_365d_a[i]】作冰封代理（与 C++ p365[i] 同源），避免夏季融化正反馈失控。
 		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(is_water_a[i] != 0, temp_365d_a[i])
-		var season_offset: float = insol_amp_gain * absorb_factor * dev_today
+		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 legacy/C++ 同源。
+		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
 		var radiative_target: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# 3) 热惯性：日照只生成 radiative target，最终 temp 由长期热储量缓慢逼近。
@@ -12570,7 +12572,8 @@ func _insolation_season_offset(ny: float, season_phase: float) -> float:
 		if "insolation_season_gain" in cp:
 			gain = cp.insolation_season_gain
 	var dev: float = _insol_dev(ny, season_phase)
-	return gain * dev * amp
+	# 冷侧软压缩（v2）：与 pass_a 同源，使 UI/legacy 读出的季节偏移在降温侧与实际一致。
+	return DCClimateMath.compress_season_cooling(gain * dev * amp)
 
 # ─── Emergent Climate Coupling：UI 用名义季节标签 ────────────────────────
 # 仅供选中面板 / HUD 显示，不参与任何物理 pass。返回 {label, transition}：

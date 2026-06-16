@@ -2126,6 +2126,20 @@ static inline float pk_surface_absorbed_factor(bool is_water, float temp_annual)
     return (1.0f - a_eff) / (1.0f - PK_ALBEDO_LAND);
 }
 
+// ─── 季节项冷侧软压缩（冬季过冷托底 物理化 v2 2026-06-16）──────────────────
+// SAME_SOURCE（C++ 镜像）: DCClimateMath.compress_season_cooling / WINTER_COOL_KNEE。
+// 物理依据：极向热量输送 + 海洋/地表热库在冬季半球托底，使中/高纬冬季远比纯局地
+// 辐射平衡暖。暖侧(s≥0)原样返回（保留夏季/极昼季节性与吸收因子效果）；冷侧(s<0)
+// 按 tanh 软饱和到约 −KNEE：小幅降温几乎不变，深冬大幅降温不再无限过冷。
+// KNEE=0.13：温带平原冬季 min 0.087→0.21（叠加 pass_b≈0.13 严寒、脱离极寒），
+// 夏峰不变，深极地仍冻结（海冰核/冰带不塌），中纬陆/海大陆性≈1.8。
+static constexpr float PK_WINTER_COOL_KNEE = 0.13f;
+
+static inline float pk_compress_season_cooling(float season_offset) {
+    if (season_offset >= 0.0f) return season_offset;
+    return -PK_WINTER_COOL_KNEE * std::tanh(-season_offset / PK_WINTER_COOL_KNEE);
+}
+
 // 热惯性松弛系数的多日积分：单日 α 表示"每日向 radiative target 逼近 α 比例"。
 // 经过 dt 天（加速/跳日）后等效一次性系数 α_eff = 1 - (1-α)^dt（target 视作窗口内
 // 近似恒定）。dt<=1 时退化为原 α，保持非加速档 bit-equal。SAME_SOURCE：
@@ -2393,7 +2407,7 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
             // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today;
+            const float season_offset = pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today);
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -2737,7 +2751,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
             // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today;
+            const float season_offset = pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today);
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -18748,7 +18762,7 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         else if (temp_year > 1.0f) temp_year = 1.0f;
         // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
         // 用【年均温度 P365_IN[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-        const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, P365_IN[i]) * dev_today;
+        const float season_offset = pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, P365_IN[i]) * dev_today);
         float radiative_target = temp_year + season_offset;
         if (radiative_target < 0.0f) radiative_target = 0.0f;
         else if (radiative_target > 1.0f) radiative_target = 1.0f;
