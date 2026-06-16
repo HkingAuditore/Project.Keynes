@@ -92,7 +92,7 @@ class ContinuousSlicedPolicy extends SusPolicy:
 
 	## Number of ticks between two consecutive slice starts.
 	func ticks_per_slice() -> int:
-		return max(1, period_ticks / slice_count)
+		return max(1, int(ceil(float(period_ticks) / float(slice_count))))
 
 	func should_run(_job, ctx: SusTickContext) -> bool:
 		var tps: int = ticks_per_slice()

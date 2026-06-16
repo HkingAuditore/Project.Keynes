@@ -1,0 +1,1369 @@
+﻿--------- beginning of main
+06-16 11:56:08.631 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=2721us pb=129us ow=68us ol=21us wa=155us ws=142us si=34us tr=18us | flipped=2
+06-16 11:56:08.845 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=1512us pb=546us ow=74us ol=21us wa=156us ws=144us si=35us tr=19us | flipped=2
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.06ms p95=0.18ms max=0.19ms slices=30
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: refresh_climate_daily ran=15 avg=0.59ms p95=2.46ms max=2.46ms slices=15 skipped[policy_gated=15]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: sea_ice_daily ran=4 avg=1.43ms p95=3.4ms max=3.4ms slices=4 skipped[policy_gated=26]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.13ms p95=0.41ms max=0.41ms slices=4 skipped[policy_gated=26]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: weather_refresh ran=4 avg=0.84ms p95=1.22ms max=1.22ms slices=8 skipped[policy_gated=26]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: ocean_currents ran=4 avg=4.28ms p95=5.97ms max=5.97ms slices=4 skipped[policy_gated=26]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.55ms p95=1.02ms max=1.02ms slices=3 skipped[policy_gated=24,frame_budget_exhausted=3]
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] budget last 300 ticks: total_p95=5.9ms max=9.54ms over_1ms=51 largest=ocean_currents/phys_psi_init/next_phys_upwelling path=gdext 9.4ms
+06-16 11:56:09.002 14684 24990 I godot   : [SUS-cpp] world: bound=true entities=2400 components=68 pools=1
+06-16 11:56:09.036 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=1511us pb=129us ow=70us ol=21us wa=155us ws=141us si=34us tr=18us | flipped=1
+06-16 11:56:09.201 14684 24990 I godot   : [psi_solver/BREAKDOWN] call#3 STAGE=0.40ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.39ms (kernel=0.27ms gdext_overhead=0.12ms) T4_writeback=0.00ms (n_psi=2400 published=true has_debug=true)
+06-16 11:56:09.233 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=1482us pb=127us ow=68us ol=22us wa=157us ws=144us si=34us tr=18us | flipped=0
+06-16 11:56:09.430 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=1888us pb=164us ow=90us ol=27us wa=198us ws=180us si=44us tr=24us | flipped=16
+06-16 11:56:09.644 14684 24990 I godot   : [climate/async DIAG] poll #1: pa=1959us pb=163us ow=90us ol=27us wa=202us ws=181us si=44us tr=23us | flipped=0
+06-16 12:16:51.285 25678 29971 I godot   : Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+06-16 12:16:51.360 25678 29971 I godot   : Vulkan 1.3.284 - Forward Mobile - Using Device #0: Qualcomm - Adreno (TM) 830
+06-16 12:16:51.535 25678 29971 I godot   : 
+06-16 12:16:53.244 25678 29971 I godot   : [mobile/safe-area] TopBar 涓嬬Щ 48px + 鎸夐挳 minimum 64x44 (鍦嗚灞?safe area)
+06-16 12:16:53.245 25678 29971 I godot   : [mobile/debug-overlay] 60 FPS 璋冩煡闈㈡澘鎸傝浇瀹屾垚锛圥rofile / DVA / Atlas / Weather / Shader / Quality 鍏釜鎸夐挳锛?
+06-16 12:16:53.342 25678 29971 I godot   : Phase 13: 32 lake seeds
+06-16 12:16:53.502 25678 29971 I godot   : Phase 13: 59 lake cells
+06-16 12:16:53.556 25678 29971 I godot   : Phase 14: 8 volcanoes
+06-16 12:16:53.570 25678 29971 I godot   : MapGenerator v7: per-cell 300ms (2400 cells)
+06-16 12:16:53.595 25678 29971 I godot   : MapBaker v6: hm=(512, 304) seed=328664862
+06-16 12:16:53.595 25678 29971 I godot   : [splash] bake stage=terrain fraction=0.00
+06-16 12:16:54.672 25678 29971 I godot   :   height+biome+moisture+veg+cover: 1077ms
+06-16 12:16:54.797 25678 29971 I godot   :   light erosion: 125ms
+06-16 12:16:54.939 25678 29971 I godot   :   river SDF: 142ms
+06-16 12:16:54.944 25678 29971 I godot   :   latitude: 6ms
+06-16 12:16:54.944 25678 29971 I godot   : [splash] bake stage=physical fraction=0.62
+06-16 12:16:54.944 25678 29971 I godot   :   physical circulation hex solve: deferred until DCWorldExt bind (ext=false idx=false soa=false)
+06-16 12:16:54.944 25678 29971 I godot   :   wind/ocean/upwelling pixel buffers: deferred until DCWorldExt bind (0ms)
+06-16 12:16:54.944 25678 29971 I godot   : [splash] bake stage=volcano fraction=0.70
+06-16 12:16:55.152 25678 29971 I godot   :   volcano field: 208ms
+06-16 12:16:55.153 25678 29971 I godot   : [splash] bake stage=atlas fraction=0.82
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(0,0,0) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=2 na_c=2 na=423 px0=2566
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(1,0,-1) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2575
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(2,0,-2) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=3095
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(3,0,-3) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2081
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(4,0,-4) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2600
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(5,0,-5) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2610
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(6,0,-6) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2617
+06-16 12:16:55.215 25678 29971 I godot   : [GD-SMO-WRITE] cell=HexCell(7,0,-7) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2625
+06-16 12:16:55.279 25678 29971 I godot   : [splash] bake stage=encode fraction=0.88
+06-16 12:16:55.838 25678 29971 I godot   :   encode: 559ms
+06-16 12:16:55.838 25678 29971 I godot   : MapBaker v6: total 2243ms
+06-16 12:16:55.838 25678 29971 I godot   : [splash] bake stage=done fraction=1.00
+06-16 12:16:55.841 25678 29971 I godot   : MapGenerator v7: bake 2246ms
+06-16 12:16:55.841 25678 29971 I godot   : MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+06-16 12:16:55.841 25678 29971 I godot   : MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+06-16 12:16:55.889 25678 29971 I godot   : [SUS] sim budget strict=false frame=4.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+06-16 12:16:55.891 25678 29971 I godot   : [DCWorldExt] bind_map_data: 69 components bound (auto-registered=69; snapshot model; see world_ext.cpp comment & charter 脗搂11)
+06-16 12:16:55.891 25678 29971 I godot   : [DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+06-16 12:16:55.891 25678 29971 I godot   : [native_world] configure rc=0 reason=configured cells=2400
+06-16 12:16:55.985 25678 29971 I godot   : [hex_cell] facade ENABLED (2400 cells bound; ext=true)
+06-16 12:16:55.985 25678 29971 I godot   : [DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+06-16 12:16:55.985 25678 29971 I godot   : [phys_solve][RT] start#1 phase=1.5000 pending=nan solve_ocean=true ext=true idx=true soa=true
+06-16 12:16:55.985 25678 29971 I godot   : [slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-16 12:16:55.987 25678 29971 I godot   : [slp_field] commit-diag call#1: rc=1.102 slp_out=2400 n_cells=2400 map_slp=2400 published=true
+06-16 12:16:55.987 25678 29971 I godot   : [slp_field][RT-DIAG] call#1 phase=1.5000 rc=1.102 slp_out=2400 n=2400 published=true -> commit_ok
+06-16 12:16:55.987 25678 29971 I godot   : [slp_field] gdext path ACTIVE 鈥?first run elapsed=1.10ms (legacy GDScript baseline ~36ms; target < 3ms)
+06-16 12:16:55.987 25678 29971 I godot   : [slp_field/STAGE-TOTAL] call#1 wall=1.55ms native=1.10ms path=gdext commit_ok=true (call#1 wall pollution: ~15ms/print 脳 4 prints; trust call#4+ or wall>=5ms warn)
+06-16 12:16:55.987 25678 29971 I godot   : [wind_field/B] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-16 12:16:55.987 25678 29971 I godot   : [wind_field/B] commit-diag call#1: rc=0.505 n_wind=2400 wx=2400 wy=2400 wspd=2400 map_wspd=2400
+06-16 12:16:55.987 25678 29971 I godot   : [wind_field/B] gdext path ACTIVE 鈥?first run elapsed=0.50ms (legacy GDScript baseline 鈮?35ms; charter 搂7 / dots-wind-validation.md target < 5ms)
+06-16 12:16:55.987 25678 29971 I godot   : [wind_field/STAGE-TOTAL] call#1 wall=0.58ms native=0.50ms path=gdext commit_ok=true
+06-16 12:16:55.987 25678 29971 I godot   : [psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:16:55.988 25678 29971 I godot   : [psi_solver/BREAKDOWN] call#1 STAGE=0.74ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.72ms (kernel=0.50ms gdext_overhead=0.22ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:16:55.988 25678 29971 I godot   : [psi_solver] gdext path ACTIVE 鈥?first run elapsed=0.50ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+06-16 12:16:55.988 25678 29971 I godot   : [psi_solver] commit-diag call#1: rc=0.504 n_water=1025 n_cells=2400 published=true
+06-16 12:16:55.988 25678 29971 I godot   : [upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+06-16 12:16:55.988 25678 29971 I godot   : [upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.033
+06-16 12:16:55.988 25678 29971 I godot   : [upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.00ms T3_refresh_slots=0.04ms T4_cpp_call=0.06ms (n=2400)
+06-16 12:16:55.988 25678 29971 I godot   : [upwelling/DIAG#1] CPP-PATH-OK (no GDScript fallback)
+06-16 12:16:55.988 25678 29971 I godot   : [upwelling/DIAG#1] STAGE-TOTAL=0.15ms (matches slow_slice if > 25ms)
+06-16 12:16:56.054 25678 29971 I godot   :   [phys_wind_raster] total=65.5ms nan_guard=0.0 ensure_buf=0.0 cpp_raster=65.5 (cells=2400)
+06-16 12:16:56.054 25678 29971 E godot   : WARNING: PhysicalCirculation solve@phase=1.50 total=69ms (slp=0ms wind=1ms psi=0ms finalize=0ms upwelling=1ms wind_raster=65ms) 鈥?exceeds 25ms soft budget
+06-16 12:16:56.054 25678 29971 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-16 12:16:56.054 25678 29971 E godot   :    GDScript backtrace (most recent call first):
+06-16 12:16:56.054 25678 29971 E godot   :        [0] _physical_solve_for_phase (res://scripts/rendering/map_baker.gd:6023)
+06-16 12:16:56.054 25678 29971 E godot   :        [1] run_deferred_initial_physical_circulation (res://scripts/rendering/map_baker.gd:599)
+06-16 12:16:56.054 25678 29971 E godot   :        [2] _setup_sus (res://scripts/geography/map_generator.gd:1351)
+06-16 12:16:56.054 25678 29971 E godot   :        [3] generate (res://scripts/geography/map_generator.gd:1231)
+06-16 12:16:56.054 25678 29971 E godot   :        [4] _generate_and_render (res://scripts/main.gd:1641)
+06-16 12:16:56.054 25678 29971 E godot   :        [5] _ready (res://scripts/main.gd:375)
+06-16 12:16:56.094 25678 29971 I godot   :   wind/ocean/upwelling pixel buffers: 40ms
+06-16 12:16:56.135 25678 29971 I godot   : [physical_init] deferred native refresh complete: 150ms
+06-16 12:16:56.139 25678 29971 I godot   : [weather] gdext acceleration ON (class=DCWorldExt)
+06-16 12:16:56.139 25678 29971 I godot   : [weather] gdext field commit ON
+06-16 12:16:56.142 25678 29971 I godot   : [weather] gdext distribute ON
+06-16 12:16:56.142 25678 29971 I godot   : [weather] gdext summary ON
+06-16 12:16:56.142 25678 29971 I godot   : [weather] hexcell facade ON (skip AoS double-write in hot loop)
+06-16 12:16:56.144 25678 29971 I godot   : [weather] gdext resident knobs ON (class=KnobsHandle)
+06-16 12:16:56.145 25678 29971 I godot   : [DCSystemScheduler] topology: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-16 12:16:56.145 25678 29971 I godot   : [map_generator] DCSystemScheduler topology built: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-16 12:16:56.145 25678 29971 I godot   : [map_generator] [SusBootstrap] dc_system_scheduler | 7 systems | season_refresh,ocean_currents,refresh_climate_daily,sea_ice_daily,enum_atlas_upload,weather_refresh,dynamic_visual_atlas_upload
+06-16 12:16:56.145 25678 29971 I godot   : [main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=2400, components=68, src=map_data)
+06-16 12:16:56.148 25678 29971 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:16:56.148 25678 29971 I godot   : [DIAG pass_a_entry] day=0 phase=0.002 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-16 12:16:56.150 25678 29971 I godot   : [DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=0
+06-16 12:16:56.150 25678 29971 I godot   : [climate_b/F.3] precondition probe (one-time):
+06-16 12:16:56.150 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:16:56.150 25678 29971 I godot   :   cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+06-16 12:16:56.150 25678 29971 I godot   :   cp.use_sparse_climate = true锛圕++ 浼氳窇 full path 绛変环缁撴灉锛屼笉闃绘锛?
+06-16 12:16:56.150 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:16:56.150 25678 29971 I godot   :   ext.has_method('run_climate_pass_b') = true
+06-16 12:16:56.150 25678 29971 I godot   :   fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+06-16 12:16:56.150 25678 29971 I godot   :   rs_lookback = 3, t_freeze = 0.1400, coupling_gain = 1.5000
+06-16 12:16:56.150 25678 29971 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:16:56.151 25678 29971 I godot   : [gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15007
+06-16 12:16:56.151 25678 29971 I godot   : [gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+06-16 12:16:56.152 25678 29971 I godot   : [climate_b/F.3] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:16:56.152 25678 29971 I godot   : [climate_b/F.3] DEBUG call#1: path=simd rc=0.1526 n_cells=2400 rs_lookback=3
+06-16 12:16:56.152 25678 29971 I godot   : [climate_b/F.3] gdext path ACTIVE (dispatch=simd) 鈥?first run elapsed=0.15ms (legacy GDScript baseline 鈮?5.2ms; charter 搂7 target < 0.5ms)
+06-16 12:16:56.153 25678 29971 I godot   : [ocean_water/F.2a] precondition probe (one-time):
+06-16 12:16:56.153 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:16:56.153 25678 29971 I godot   :   cp.use_gdext_ocean_water = true (flag removed; constant true)
+06-16 12:16:56.153 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:16:56.153 25678 29971 I godot   :   ext.has_method('run_ocean_water_pass') = true
+06-16 12:16:56.153 25678 29971 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-16 12:16:56.153 25678 29971 I godot   :   advect_steps=3 heat_mix=0.2500
+06-16 12:16:56.153 25678 29971 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:16:56.154 25678 29971 I godot   : [gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=14999
+06-16 12:16:56.154 25678 29971 I godot   : [gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+06-16 12:16:56.154 25678 29971 I godot   : [ocean_water/F.2a] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:16:56.154 25678 29971 I godot   : [ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0758 n=2400 advect=3
+06-16 12:16:56.154 25678 29971 I godot   : [ocean_water/F.2a] gdext path ACTIVE 鈥?first run elapsed=0.08ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+06-16 12:16:56.154 25678 29971 I godot   : [ocean_land/F.2b] precondition probe (one-time):
+06-16 12:16:56.154 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:16:56.154 25678 29971 I godot   :   cp.use_gdext_ocean_land = true (flag removed; constant true)
+06-16 12:16:56.154 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:16:56.154 25678 29971 I godot   :   ext.has_method('run_ocean_land_pass') = true
+06-16 12:16:56.155 25678 29971 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-16 12:16:56.155 25678 29971 I godot   :   effective_leak=0.3500 (coast_leak=0.3500 winter_boost=1.0000)
+06-16 12:16:56.155 25678 29971 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:16:56.156 25678 29971 I godot   : [gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15000
+06-16 12:16:56.156 25678 29971 I godot   : [gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+06-16 12:16:56.156 25678 29971 I godot   : [ocean_land/F.2b] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:16:56.156 25678 29971 I godot   : [ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0282 n=2400 effective_leak=0.3500
+06-16 12:16:56.156 25678 29971 I godot   : [ocean_land/F.2b] gdext path ACTIVE 鈥?first run elapsed=0.03ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+06-16 12:16:56.240 25678 29971 I godot   : [sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.148, k x1.00)
+06-16 12:16:56.240 25678 29971 I godot   : [sea_ice/F.4] precondition probe (one-time):
+06-16 12:16:56.240 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:16:56.240 25678 29971 I godot   :   cp.use_gdext_sea_ice = true (flag removed; constant true)
+06-16 12:16:56.240 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:16:56.240 25678 29971 I godot   :   ext.has_method('run_sea_ice_daily_pass') = true
+06-16 12:16:56.240 25678 29971 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-16 12:16:56.240 25678 29971 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:16:56.241 25678 29971 I godot   : [gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15010
+06-16 12:16:56.241 25678 29971 I godot   : [gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+06-16 12:16:56.242 25678 29971 I godot   : [sea_ice/F.4] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+06-16 12:16:56.242 25678 29971 I godot   : [sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0506 n_cells=2400 enable_oht=true
+06-16 12:16:56.243 25678 29971 I godot   : [sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) 鈥?first run elapsed=0.05ms (legacy GDScript baseline 鈮?5.1ms; charter 搂7 target < 0.5ms)
+06-16 12:16:56.243 25678 29971 I godot   : _apply_sea_ice_daily_pass[F.4]: 0.05ms (water=1330, flipped=12, phase=0.002)
+06-16 12:16:56.244 25678 29971 I godot   : [sea_ice/DIAG] thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | temp all min=0.000 max=0.973 avg=0.400 | water n=1330 t_min_w=0.000 below_form=517 (38.9%) | SIF pos=521 max=0.900 avg_w=0.2388 near_thr=103 | climate_anom=0.000
+06-16 12:16:56.244 25678 29971 I godot   : [transp/F.5] precondition probe (one-time):
+06-16 12:16:56.244 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:16:56.244 25678 29971 I godot   :   cp.use_gdext_transpiration = true (flag removed; constant true)
+06-16 12:16:56.244 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:16:56.244 25678 29971 I godot   :   ext.has_method('run_transpiration_pass') = true
+06-16 12:16:56.244 25678 29971 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-16 12:16:56.244 25678 29971 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:16:56.245 25678 29971 I godot   : [gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15012
+06-16 12:16:56.245 25678 29971 I godot   : [gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+06-16 12:16:56.246 25678 29971 I godot   : [transp/F.5] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+06-16 12:16:56.246 25678 29971 I godot   : [transp/F.5] DEBUG call#1: rc=0.0314 donor_table.size()=24 n_cells=2400 outflow=0.0250 self=0.0150
+06-16 12:16:56.246 25678 29971 I godot   : [transp/F.5] gdext path ACTIVE 鈥?first run elapsed=0.03ms (legacy GDScript baseline 鈮?3.2ms; charter 搂7 target < 0.3ms)
+06-16 12:16:56.246 25678 29971 I godot   : refresh_climate_daily #1: 98ms (cells=2400, phase=0.002) | A=1.6 B=2.0 ocean=4.6 wind=83.8 sea_ice=4.1 ice_bake=0.0 transp=1.8 path=data_core
+06-16 12:16:56.247 25678 29971 I godot   : === World baked in 2877ms ===
+06-16 12:16:56.247 25678 29971 I godot   :   SEA_ICE: 317
+06-16 12:16:56.247 25678 29971 I godot   :   GLACIER: 29
+06-16 12:16:56.247 25678 29971 I godot   :   SNOW: 22
+06-16 12:16:56.247 25678 29971 I godot   :   OCEAN: 846
+06-16 12:16:56.247 25678 29971 I godot   :   DELTA: 28
+06-16 12:16:56.247 25678 29971 I godot   :   COAST: 95
+06-16 12:16:56.247 25678 29971 I godot   :   TUNDRA: 103
+06-16 12:16:56.247 25678 29971 I godot   :   MOUNTAIN: 224
+06-16 12:16:56.247 25678 29971 I godot   :   TAIGA: 43
+06-16 12:16:56.247 25678 29971 I godot   :   STEPPE: 9
+06-16 12:16:56.247 25678 29971 I godot   :   KELP: 29
+06-16 12:16:56.247 25678 29971 I godot   :   HILL: 289
+06-16 12:16:56.247 25678 29971 I godot   :   LAKE: 59
+06-16 12:16:56.247 25678 29971 I godot   :   SWAMP: 43
+06-16 12:16:56.247 25678 29971 I godot   :   FOREST: 28
+06-16 12:16:56.247 25678 29971 I godot   :   GRASSLAND: 8
+06-16 12:16:56.247 25678 29971 I godot   :   JUNGLE: 96
+06-16 12:16:56.247 25678 29971 I godot   :   SHRUBLAND: 6
+06-16 12:16:56.247 25678 29971 I godot   :   REEF: 43
+06-16 12:16:56.247 25678 29971 I godot   :   SAVANNA: 77
+06-16 12:16:56.247 25678 29971 I godot   :   BADLANDS: 6
+06-16 12:16:56.247 25678 29971 I godot   : [mobile/visual-quality] 寮哄埗 visual_quality=0 (60 FPS 浼樺寲锛泂hader 涓诲 70%% 甯ф椂闂?
+06-16 12:16:56.269 25678 29971 I godot   : [hex_renderer/quality] prepended #define MOBILE_QUALITY_MID to res://shaders/world_map.gdshader
+06-16 12:16:56.328 25678 29971 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:16:56.328 25678 29971 I godot   : [DOTS-Final-Push] (no profile bound)
+06-16 12:16:57.357 25678 29971 I godot   : [season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+06-16 12:16:57.358 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=frame_budget_exhausted slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:16:57.377 25678 29971 E godot   : WARNING: [demo_thermal_gradient] pass skipped 鈥?disabled (ClimateProfile.demo_thermal_gradient_enabled=false or no _c())
+06-16 12:16:57.377 25678 29971 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-16 12:16:57.377 25678 29971 E godot   :    GDScript backtrace (most recent call first):
+06-16 12:16:57.377 25678 29971 E godot   :        [0] _demo_tg_diag_once (res://scripts/main.gd:2008)
+06-16 12:16:57.377 25678 29971 E godot   :        [1] _run_demo_thermal_gradient_pass_if_enabled (res://scripts/main.gd:2023)
+06-16 12:16:57.377 25678 29971 E godot   :        [2] _on_day_changed (res://scripts/main.gd:975)
+06-16 12:16:57.377 25678 29971 E godot   :        [3] _process (res://scripts/geography/world_clock.gd:121)
+06-16 12:16:57.377 25678 29971 I godot   : fast tick #1: 35ms (sus=34.77 render=0.01 ui=0.00 skipped_day=true)
+06-16 12:16:58.340 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=237 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:16:58.341 25678 29971 I godot   : [sea_ice/dt] call#2 dt_days=1.854 (last_pass_day=2.002, k x1.85)
+06-16 12:16:58.346 25678 29971 I godot   : [sea_ice/DIAG-SM] run#2 phase=0.022 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=0.742 k_m=2.689 dt=1.85 | temp all min=0.000 max=1.000 avg=0.460 | water n=1330 t_min_w=0.000 below_form=331 (24.9%) max_dfrac=0.1038 | SIF pos=565 max=0.950 avg_w=0.2411 near_thr=150 | FLIP to_ice=5 to_base=0 stat_water=1330 stat_flipped=5 existing_ice_terr=317 | climate_anom=0.000
+06-16 12:16:58.346 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=frame_budget_exhausted slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:16:59.346 25678 29971 I godot   : [climate/async PROBE] cp=res://data/world/earth_like.tres async_enabled=true ext=true has_kick=true has_poll=true
+06-16 12:16:59.347 25678 29971 I godot   : [async_climate_round] worker thread started
+06-16 12:16:59.347 25678 29971 I godot   : [climate/async] worker registered + static knobs set (n_cells=2400)
+06-16 12:16:59.348 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=1.005 (last_pass_day=3.006, k x1.00)
+06-16 12:16:59.349 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:00.344 25678 29971 I godot   : [weather_refresh][RT] #1 tick=4 stage=entry stride=8 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.054 phase=0.044
+06-16 12:17:00.347 25678 29971 I godot   : [weather/knobs] resident KnobsHandle path ACTIVE 鈥?first to_*_knobs_dict hit (field_rebuild_count=1 expected 鈮?; stable Hz target 鈮? Hz)
+06-16 12:17:00.347 25678 29971 I godot   : [weather_refresh][RT] #2 tick=4 stage=begin stride=8 round=true rstage=1 fronts=0 changed=false elapsed=3.169 dc=false
+06-16 12:17:00.347 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#4 tick=4 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:01.337 25678 29971 I godot   : [climate/async DIAG] round #1: pa=5224us pb=314us ow=195us ol=80us wa=489us ws=355us si=98us tr=46us | flipped=28
+06-16 12:17:01.337 25678 29971 I godot   : [climate_finalizer/STAGE-TOTAL] call#1 wall=0.20ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:01.337 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#5 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:02.344 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=28 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:02.346 25678 29971 I godot   : [atlas-pipeline-cpp] eco burn-in: transition_age=2400 active_decay=0
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.351 25678 29971 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO] ci=0 TERR=20 ICE=0.99962145090103 ca=255 nc=2 na_c=2 na_sum=499 hood_h=845d6978 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=0 ICE=0.99962145090103 ca=255 na=499 na_c=2 oa=252 first_px=-1 count=0
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO] ci=1 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=b82d3e9e PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=1 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO] ci=2 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=79846a2e PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=2 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO] ci=3 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=3221c90e PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=3 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO] ci=4 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=fbdf310e PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.352 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=4 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO] ci=5 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=d1a41ef2 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=5 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO] ci=6 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=4c2cbef PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=6 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO] ci=7 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=7af1e0ff PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:02.353 25678 29971 I godot   : [PHASE-D-SMO-OA] ci=7 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:02.353 25678 29971 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2400, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=6.96
+06-16 12:17:02.353 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#6 tick=6 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:03.335 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.997 (last_pass_day=7.003, k x4.00)
+06-16 12:17:03.335 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#7 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:04.339 25678 29971 I godot   : [ocean_currents][daily_wind] #1 tick=8 ran=true path=gdext_daily_wind elapsed=7.320 slp=4.773 wind=1.540 delta=1.998434 reason=
+06-16 12:17:04.339 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#1 tick=8 phase=0.0877 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=true need_visual=true phase_int=0 phase_seen=0 total_pixels=155648 visual_active=false
+06-16 12:17:04.339 25678 29971 I godot   : [psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:17:04.341 25678 29971 I godot   : [psi_solver/BREAKDOWN] call#2 STAGE=1.70ms T1_prepack=0.01ms T2_knobs=0.02ms T3_call=1.66ms (kernel=1.16ms gdext_overhead=0.49ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:17:04.341 25678 29971 I godot   : [psi_solver] commit-diag call#2: rc=1.164 n_water=1007 n_cells=2400 published=true
+06-16 12:17:04.341 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=8 round=1 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=9.41 slp_native=4.77 psi_native=1.16 wind_dp95=1.998434 ocean_dp95=0.157963 slp_dp95=0.062090 phys_done=false need_visual=true
+06-16 12:17:04.341 25678 29971 I godot   : [ocean_currents][RT] phys_slice#1 tick=8 round=1 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=true elapsed=9.409 ocean_delta_p95=0.157963 wind_delta_p95=1.998434 slp_delta_p95=0.062090 psi_path=gdext
+06-16 12:17:04.341 25678 29971 I godot   :   [ocean_currents] slow phys slice=9.4ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:17:05.345 25678 29971 I godot   : [climate/async DIAG] round #2: pa=4223us pb=363us ow=198us ol=74us wa=475us ws=361us si=94us tr=45us | flipped=52
+06-16 12:17:05.346 25678 29971 I godot   : [climate_finalizer/STAGE-TOTAL] call#2 wall=0.82ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:05.346 25678 29971 I godot   : [DCSystemScheduler][RT] ocean_skip#8 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:06.340 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=52 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:06.931 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.052 (last_pass_day=11.055, k x4.05)
+06-16 12:17:06.980 25678 29971 I godot   : [weather_refresh][RT] #3 tick=12 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.034 phase=0.133
+06-16 12:17:06.980 25678 29971 I godot   : [weather/F.1] first fast-path attempt: n_cells=2400 cell_budget=500 (would-end_i=500) fast_indexed=true ext_bound=true
+06-16 12:17:06.981 25678 29971 I godot   : [weather/F.1] gdext path ACTIVE 鈥?first run elapsed=0.32ms (legacy GDScript baseline 鈮?13ms; charter 搂7 target < 2ms)
+06-16 12:17:06.981 25678 29971 I godot   : [weather_refresh][RT] #4 tick=12 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=1.038 work=500 cursor=0..500 progress=0.208
+06-16 12:17:07.021 25678 29971 I godot   : [climate/async DIAG] round #3: pa=3818us pb=372us ow=229us ol=62us wa=565us ws=454us si=109us tr=56us | flipped=46
+06-16 12:17:07.021 25678 29971 I godot   : [climate_finalizer/STAGE-TOTAL] call#3 wall=0.40ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:07.072 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=46 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:07.073 25678 29971 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:17:07.074 25678 29971 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.79
+06-16 12:17:07.129 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.991 (last_pass_day=15.046, k x3.99)
+06-16 12:17:07.175 25678 29971 I godot   : [ocean_currents][daily_wind] #2 tick=16 ran=true path=gdext_daily_wind elapsed=4.827 slp=2.910 wind=0.980 delta=1.303198 reason=
+06-16 12:17:07.175 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=16 round=1 stage=6/phys_upwelling path=physical_circulation next=phys_wind_raster elapsed_ms=5.00 slp_native=2.91 psi_native=1.16 wind_dp95=1.303198 ocean_dp95=0.157963 slp_dp95=0.025361 phys_done=false need_visual=true
+06-16 12:17:07.175 25678 29971 I godot   : [ocean_currents][RT] phys_slice#2 tick=16 round=1 stage=phys_upwelling->phys_wind_raster done=false run_ocean=true need_visual=true elapsed=5.000 ocean_delta_p95=0.157963 wind_delta_p95=1.303198 slp_delta_p95=0.025361 psi_path=gdext
+06-16 12:17:07.220 25678 29971 I godot   : [climate/async DIAG] round #4: pa=6925us pb=571us ow=353us ol=95us wa=729us ws=637us si=165us tr=80us | flipped=5
+06-16 12:17:07.220 25678 29971 I godot   : [climate_finalizer/STAGE-TOTAL] call#4 wall=0.37ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:07.272 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=5 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:07.326 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.037 (last_pass_day=19.083, k x4.04)
+06-16 12:17:07.376 25678 29971 I godot   : [weather_refresh][RT] #5 tick=20 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.024 phase=0.220
+06-16 12:17:07.377 25678 29971 I godot   : [weather_refresh][RT] #6 tick=20 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.530 work=500 cursor=500..1000 progress=0.417
+06-16 12:17:07.377 25678 29971 I godot   : [weather_refresh][RT] #7 tick=20 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.013 phase=0.220
+06-16 12:17:07.377 25678 29971 I godot   : [weather_refresh][RT] #8 tick=20 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.359 work=500 cursor=1000..1500 progress=0.625
+06-16 12:17:07.425 25678 29971 I godot   : [climate/async DIAG] round #5: pa=7164us pb=708us ow=97us ol=26us wa=229us ws=192us si=46us tr=22us | flipped=1
+06-16 12:17:07.425 25678 29971 I godot   : [climate_finalizer/STAGE-TOTAL] call#5 wall=0.36ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:07.475 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:07.476 25678 29971 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:17:07.476 25678 29971 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.297
+06-16 12:17:07.524 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.011 (last_pass_day=23.094, k x4.01)
+06-16 12:17:07.580 25678 29971 I godot   : [ocean_currents][daily_wind] #3 tick=24 ran=true path=gdext_daily_wind elapsed=5.110 slp=2.820 wind=1.291 delta=0.809856 reason=
+06-16 12:17:07.582 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=24 round=1 stage=7/phys_wind_raster path=wind_raster next=phys_done elapsed_ms=6.59 slp_native=2.82 psi_native=1.16 wind_dp95=0.809856 ocean_dp95=0.157963 slp_dp95=0.016751 phys_done=true need_visual=true
+06-16 12:17:07.582 25678 29971 I godot   : [ocean_currents][RT] phys_slice#3 tick=24 round=1 stage=phys_wind_raster->phys_done done=true run_ocean=true need_visual=true elapsed=6.590 ocean_delta_p95=0.157963 wind_delta_p95=0.809856 slp_delta_p95=0.016751 psi_path=gdext
+06-16 12:17:07.689 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=2 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:07.740 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.151 (last_pass_day=27.245, k x4.15)
+06-16 12:17:07.788 25678 29971 I godot   : [weather_refresh][RT] #9 tick=28 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.026 phase=0.310
+06-16 12:17:07.788 25678 29971 I godot   : [weather_refresh][RT] #10 tick=28 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.495 work=500 cursor=1500..2000 progress=0.833
+06-16 12:17:07.789 25678 29971 I godot   : [weather_refresh][RT] #11 tick=28 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.014 phase=0.310
+06-16 12:17:07.789 25678 29971 I godot   : [weather_refresh][RT] #12 tick=28 stage=solve_done stride=8 round=true rstage=2 fronts=0 changed=false elapsed=0.319 work=400 cursor=2000..2400
+06-16 12:17:07.888 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=4 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:07.888 25678 29971 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:17:07.888 25678 29971 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.282
+06-16 12:17:07.928 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.920 (last_pass_day=31.165, k x3.92)
+06-16 12:17:07.976 25678 29971 I godot   : [ocean_currents][daily_wind] #4 tick=32 ran=true path=gdext_daily_wind elapsed=4.560 slp=2.824 wind=0.934 delta=1.188898 reason=
+06-16 12:17:07.976 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#2 tick=32 phase=0.3507 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:07.976 25678 29971 I godot   : [psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:17:07.977 25678 29971 I godot   : [psi_solver/BREAKDOWN] call#3 STAGE=1.42ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=1.39ms (kernel=0.98ms gdext_overhead=0.41ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:17:07.977 25678 29971 I godot   : [psi_solver] commit-diag call#3: rc=0.983 n_water=1075 n_cells=2400 published=true
+06-16 12:17:07.977 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=32 round=2 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=6.28 slp_native=2.82 psi_native=0.98 wind_dp95=1.188898 ocean_dp95=0.161324 slp_dp95=0.017603 phys_done=false need_visual=false
+06-16 12:17:07.977 25678 29971 I godot   : [ocean_currents][RT] phys_slice#4 tick=32 round=2 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=6.279 ocean_delta_p95=0.161324 wind_delta_p95=1.188898 slp_delta_p95=0.017603 psi_path=gdext
+06-16 12:17:08.077 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:08.133 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.012 (last_pass_day=35.177, k x4.01)
+06-16 12:17:08.183 25678 29971 I godot   : [weather_refresh][RT] #13 tick=36 stage=entry stride=8 round=true rstage=2 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.023 phase=0.395
+06-16 12:17:08.185 25678 29971 I godot   : [weather/dist] first fast-path attempt: n_cells=2400 ext_bound=true
+06-16 12:17:08.188 25678 29971 I godot   : [weather/dist] gdext path ACTIVE 鈥?first run elapsed=0.32ms (legacy GDScript baseline 鈮?11.6ms; charter target < 1.5ms)
+06-16 12:17:08.188 25678 29971 I godot   : [weather/summary] first fast-path attempt: n_cells=2400 ext_bound=true
+06-16 12:17:08.190 25678 29971 I godot   : [weather/summary] gdext path ACTIVE 鈥?first run elapsed=0.50ms (legacy GDScript baseline 鈮?17.8ms; charter target < 3.0ms)
+06-16 12:17:08.190 25678 29971 I godot   : [weather/summary] fronts_soa path ACTIVE 鈥?first run n=0 (PackedArray columns, marshalling ~90% slim vs Array[Dict])
+06-16 12:17:08.190 25678 29971 I godot   : [weather_refresh][RT] #14 tick=36 stage=summary stride=8 round=true rstage=3 fronts=0 changed=false elapsed=7.134 fronts=0
+06-16 12:17:08.290 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=6 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:08.291 25678 29971 I godot   : [CPP-RES] fallback=false done=true reason= ab.keys=["dyn", "eco", "smo", "ice"] smo.sz=622592 dyn.sz=622592 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1389 } call_ms=0.337
+06-16 12:17:08.291 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1389 }
+06-16 12:17:08.291 25678 29971 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:08.340 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.997 (last_pass_day=39.173, k x4.00)
+06-16 12:17:08.394 25678 29971 I godot   : [ocean_currents][daily_wind] #5 tick=40 ran=true path=gdext_daily_wind elapsed=5.176 slp=2.856 wind=1.294 delta=1.314183 reason=
+06-16 12:17:08.395 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=40 round=2 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=5.59 slp_native=2.86 psi_native=0.98 wind_dp95=1.314183 ocean_dp95=0.161324 slp_dp95=0.014884 phys_done=true need_visual=false
+06-16 12:17:08.395 25678 29971 I godot   : [ocean_currents][RT] phys_slice#5 tick=40 round=2 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.587 ocean_delta_p95=0.161324 wind_delta_p95=1.314183 slp_delta_p95=0.014884 psi_path=gdext
+06-16 12:17:08.490 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=11 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:08.544 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.981 (last_pass_day=43.154, k x3.98)
+06-16 12:17:08.590 25678 29971 I godot   : [weather_refresh][RT] #15 tick=44 stage=entry stride=8 round=true rstage=3 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.031 phase=0.484
+06-16 12:17:08.590 25678 29971 I godot   : [stage_b/combined] precondition probe (one-time):
+06-16 12:17:08.590 25678 29971 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:08.590 25678 29971 I godot   :   cp.use_gdext_stage_b_combined = true
+06-16 12:17:08.591 25678 29971 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:08.591 25678 29971 I godot   :   ext.has_method('run_stage_b_pass') = true
+06-16 12:17:08.591 25678 29971 I godot   :   verdict = OK 鈫?will try C++ combined pass
+06-16 12:17:08.592 25678 29971 I godot   : [stage_b/combined] gdext path ACTIVE 鈥?first run elapsed=0.48ms (legacy three-pass total 鈮?6鈥?5ms; target 鈮?1.5ms)
+06-16 12:17:08.592 25678 29971 I godot   :   per-stage: albedo=0.02ms veg_dyn=0.16ms feedback=0.06ms
+06-16 12:17:08.592 25678 29971 I godot   : [stage_b/combined] DEBUG call#1: rc=0.4776 wall=1.44ms run_a=true run_v=true run_f=true
+06-16 12:17:08.592 25678 29971 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.14 pack_vegdyn=0.45 pack_feedback=0.01 refresh=0.16 call=0.62 unpack=0.06
+06-16 12:17:08.592 25678 29971 I godot   : [weather_refresh][RT] #16 tick=44 stage=commit stride=8 round=false rstage=0 fronts=0 changed=true elapsed=1.841 changed_slots=0
+06-16 12:17:08.592 25678 29971 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:17:08.673 25678 29971 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=16 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:08.674 25678 29971 I godot   : [CPP-COMMIT] ch=eco buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:08.723 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.879 (last_pass_day=47.033, k x3.88)
+06-16 12:17:08.775 25678 29971 I godot   : [ocean_currents][daily_wind] #6 tick=48 ran=true path=gdext_daily_wind elapsed=2.134 slp=1.031 wind=0.571 delta=1.400609 reason=
+06-16 12:17:08.775 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#3 tick=48 phase=0.5261 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:08.776 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=48 round=3 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=3.34 slp_native=1.03 psi_native=0.66 wind_dp95=1.400609 ocean_dp95=0.141716 slp_dp95=0.015451 phys_done=false need_visual=false
+06-16 12:17:08.776 25678 29971 I godot   : [ocean_currents][RT] phys_slice#6 tick=48 round=3 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.342 ocean_delta_p95=0.141716 wind_delta_p95=1.400609 slp_delta_p95=0.015451 psi_path=gdext
+06-16 12:17:08.938 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.072 (last_pass_day=51.104, k x4.07)
+06-16 12:17:09.099 25678 29971 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:09.152 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.170 (last_pass_day=55.274, k x4.17)
+06-16 12:17:09.220 25678 29971 I godot   : [ocean_currents][daily_wind] #7 tick=56 ran=true path=gdext_daily_wind elapsed=5.989 slp=2.906 wind=1.336 delta=1.320694 reason=
+06-16 12:17:09.221 25678 29971 I godot   : [ocean_currents/STAGE-DIAG] init tick=56 round=3 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=6.50 slp_native=2.91 psi_native=0.66 wind_dp95=1.320694 ocean_dp95=0.141716 slp_dp95=0.016186 phys_done=true need_visual=false
+06-16 12:17:09.221 25678 29971 I godot   : [ocean_currents][RT] phys_slice#7 tick=56 round=3 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=6.498 ocean_delta_p95=0.141716 wind_delta_p95=1.320694 slp_delta_p95=0.016186 psi_path=gdext
+06-16 12:17:09.297 25678 29971 I godot   : [sea_ice/DIRTY-MARK] run#2 marked_dirty_cells=595 (sif_pos=504 sif_max=1.0000) water=1330 flipped=5
+06-16 12:17:09.297 25678 29971 I godot   : [sea_ice/slow-dump] tick=58 path=gdext_state_machine total_wall=10956.07ms (pack=0.02 refresh=0.18 native=0.17 native_wall=0.23 sync=2.49 flip=0.62) water=1330 flipped=5
+06-16 12:17:09.301 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=0.022 facade_fixed=482
+06-16 12:17:09.320 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.769 (last_pass_day=59.043, k x3.77)
+06-16 12:17:09.387 25678 29971 I godot   : [weather_refresh][RT] #17 tick=60 stage=entry stride=8 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.042 phase=0.661
+06-16 12:17:09.388 25678 29971 I godot   : [weather_refresh][RT] #18 tick=60 stage=begin stride=8 round=true rstage=1 fronts=0 changed=false elapsed=1.206 dc=false
+06-16 12:17:09.481 25678 29971 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:09.491 25678 29971 I godot   : [ice_atlas/COMMIT] run#1 need_init=false stride=1389 buf_n=155648 nonzero=0 max=0 tex_rid=RID(18622978195483)
+06-16 12:17:09.533 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=4.110 (last_pass_day=63.153, k x4.11)
+06-16 12:17:09.580 25678 29971 I godot   : [ocean_currents][daily_wind] #8 tick=64 ran=true path=gdext_daily_wind elapsed=2.652 slp=1.300 wind=0.603 delta=1.422032 reason=
+06-16 12:17:09.580 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#4 tick=64 phase=0.7022 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:09.581 25678 29971 I godot   : [ocean_currents][RT] phys_slice#8 tick=64 round=4 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.685 ocean_delta_p95=0.135339 wind_delta_p95=1.422032 slp_delta_p95=0.015920 psi_path=gdext
+06-16 12:17:09.693 25678 29971 I godot   : [sea_ice/dt] call#3 dt_days=3.217 (last_pass_day=66.370, k x3.22)
+06-16 12:17:09.695 25678 29971 I godot   : [sea_ice/DIAG-SM] run#3 phase=0.727 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.287 k_m=4.664 dt=3.22 | temp all min=0.000 max=1.000 avg=0.387 | water n=1330 t_min_w=0.000 below_form=413 (31.1%) max_dfrac=0.1801 | SIF pos=413 max=1.000 avg_w=0.2868 near_thr=12 | FLIP to_ice=5 to_base=0 stat_water=1330 stat_flipped=5 existing_ice_terr=378 | climate_anom=0.000
+06-16 12:17:09.745 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=0.925 (last_pass_day=67.295, k x0.92)
+06-16 12:17:09.811 25678 29971 I godot   : [weather_refresh][RT] #19 tick=68 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.039 phase=0.752
+06-16 12:17:09.812 25678 29971 I godot   : [weather_refresh][RT] #20 tick=68 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.635 work=500 cursor=0..500 progress=0.208
+06-16 12:17:09.896 25678 29971 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2329, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=1.08
+06-16 12:17:09.937 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.085 (last_pass_day=71.380, k x4.09)
+06-16 12:17:09.996 25678 29971 I godot   : [ocean_currents][daily_wind] #9 tick=72 ran=true path=gdext_daily_wind elapsed=4.312 slp=2.918 wind=0.515 delta=1.489990 reason=
+06-16 12:17:09.996 25678 29971 I godot   : [ocean_currents][RT] phys_slice#9 tick=72 round=4 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=4.622 ocean_delta_p95=0.135339 wind_delta_p95=1.489990 slp_delta_p95=0.015099 psi_path=gdext
+06-16 12:17:10.143 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.876 (last_pass_day=75.256, k x3.88)
+06-16 12:17:10.188 25678 29971 I godot   : [weather_refresh][RT] #21 tick=76 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.024 phase=0.836
+06-16 12:17:10.188 25678 29971 I godot   : [weather_refresh][RT] #22 tick=76 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.393 work=500 cursor=500..1000 progress=0.417
+06-16 12:17:10.188 25678 29971 I godot   : [weather_refresh][RT] #23 tick=76 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.008 phase=0.836
+06-16 12:17:10.189 25678 29971 I godot   : [weather_refresh][RT] #24 tick=76 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.209 work=500 cursor=1000..1500 progress=0.625
+06-16 12:17:10.189 25678 29971 I godot   : [weather_refresh][RT] #25 tick=76 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.007 phase=0.836
+06-16 12:17:10.189 25678 29971 I godot   : [weather_refresh][RT] #26 tick=76 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.195 work=500 cursor=1500..2000 progress=0.833
+06-16 12:17:10.338 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.924 (last_pass_day=79.180, k x3.92)
+06-16 12:17:10.386 25678 29971 I godot   : [ocean_currents][daily_wind] #10 tick=80 ran=true path=gdext_daily_wind elapsed=2.058 slp=1.070 wind=0.480 delta=1.550675 reason=
+06-16 12:17:10.386 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#5 tick=80 phase=0.8784 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:10.386 25678 29971 I godot   : [ocean_currents][RT] phys_slice#10 tick=80 round=5 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=2.877 ocean_delta_p95=0.138185 wind_delta_p95=1.550675 slp_delta_p95=0.011717 psi_path=gdext
+06-16 12:17:10.539 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.929 (last_pass_day=83.109, k x3.93)
+06-16 12:17:10.581 25678 29971 I godot   : [weather_refresh][RT] #27 tick=84 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.027 phase=0.922
+06-16 12:17:10.581 25678 29971 I godot   : [weather_refresh][RT] #28 tick=84 stage=solve_done stride=8 round=true rstage=2 fronts=0 changed=false elapsed=0.404 work=400 cursor=2000..2400
+06-16 12:17:10.581 25678 29971 I godot   : [weather_refresh][RT] #29 tick=84 stage=entry stride=8 round=true rstage=2 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.005 phase=0.922
+06-16 12:17:10.582 25678 29971 I godot   : [weather_refresh][RT] #30 tick=84 stage=summary stride=8 round=true rstage=3 fronts=0 changed=false elapsed=1.401 fronts=12
+06-16 12:17:10.728 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.955 (last_pass_day=87.064, k x3.95)
+06-16 12:17:10.802 25678 29971 I godot   : [ocean_currents][daily_wind] #11 tick=88 ran=true path=gdext_daily_wind elapsed=5.439 slp=2.947 wind=1.316 delta=1.435841 reason=
+06-16 12:17:10.802 25678 29971 I godot   : [ocean_currents][RT] phys_slice#11 tick=88 round=5 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.935 ocean_delta_p95=0.138185 wind_delta_p95=1.435841 slp_delta_p95=0.010234 psi_path=gdext
+06-16 12:17:10.950 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.362 (last_pass_day=91.426, k x4.36)
+06-16 12:17:11.013 25678 29971 I godot   : [weather_refresh][RT] #31 tick=92 stage=entry stride=8 round=true rstage=3 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.038 phase=1.014
+06-16 12:17:11.013 25678 29971 I godot   : [weather_refresh][RT] #32 tick=92 stage=commit stride=8 round=false rstage=0 fronts=12 changed=true elapsed=0.498 changed_slots=12
+06-16 12:17:11.014 25678 29971 I godot   : [hex-renderer] set_weather_fronts(n=4) layer=WeatherLayer
+06-16 12:17:11.125 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.625 (last_pass_day=95.051, k x3.62)
+06-16 12:17:11.183 25678 29971 I godot   : [ocean_currents][daily_wind] #12 tick=96 ran=true path=gdext_daily_wind elapsed=4.436 slp=2.908 wind=0.550 delta=1.519787 reason=
+06-16 12:17:11.183 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#6 tick=96 phase=1.0526 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:11.184 25678 29971 I godot   : [ocean_currents][RT] phys_slice#12 tick=96 round=6 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=5.372 ocean_delta_p95=0.132100 wind_delta_p95=1.519787 slp_delta_p95=0.010468 psi_path=gdext
+06-16 12:17:11.324 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.015 (last_pass_day=99.066, k x4.02)
+06-16 12:17:11.474 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 311 }
+06-16 12:17:11.474 25678 29971 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=255 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:11.527 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.964 (last_pass_day=103.030, k x3.96)
+06-16 12:17:11.575 25678 29971 I godot   : [ocean_currents][daily_wind] #13 tick=104 ran=true path=gdext_daily_wind elapsed=3.756 slp=2.467 wind=0.583 delta=1.652143 reason=
+06-16 12:17:11.575 25678 29971 I godot   : [ocean_currents][RT] phys_slice#13 tick=104 round=6 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=4.052 ocean_delta_p95=0.132100 wind_delta_p95=1.652143 slp_delta_p95=0.011374 psi_path=gdext
+06-16 12:17:11.743 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.153 (last_pass_day=107.183, k x4.15)
+06-16 12:17:11.890 25678 29971 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=255 px4586.A=0 px4843.A=255 px5091.A=44 px719.A=0
+06-16 12:17:11.932 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.827 (last_pass_day=111.010, k x3.83)
+06-16 12:17:11.991 25678 29971 I godot   : [ocean_currents][daily_wind] #14 tick=112 ran=true path=gdext_daily_wind elapsed=4.740 slp=2.906 wind=0.649 delta=1.621361 reason=
+06-16 12:17:11.991 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#7 tick=112 phase=1.2275 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:11.992 25678 29971 I godot   : [ocean_currents][RT] phys_slice#14 tick=112 round=7 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=5.584 ocean_delta_p95=0.133790 wind_delta_p95=1.621361 slp_delta_p95=0.012347 psi_path=gdext
+06-16 12:17:12.147 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.305 (last_pass_day=115.315, k x4.30)
+06-16 12:17:12.286 25678 29971 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:12.294 25678 29971 I godot   : [ice_atlas/COMMIT] run#2 need_init=false stride=311 buf_n=155648 nonzero=9004 max=255 tex_rid=RID(18622978195483)
+06-16 12:17:12.347 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.227 (last_pass_day=119.542, k x4.23)
+06-16 12:17:12.371 25678 29971 I godot   : [ocean_currents][daily_wind] #15 tick=120 ran=true path=gdext_daily_wind elapsed=2.295 slp=1.082 wind=0.491 delta=1.686304 reason=
+06-16 12:17:12.372 25678 29971 I godot   : [ocean_currents][RT] phys_slice#15 tick=120 round=7 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=2.515 ocean_delta_p95=0.133790 wind_delta_p95=1.686304 slp_delta_p95=0.013980 psi_path=gdext
+06-16 12:17:12.480 25678 29971 I godot   : [sea_ice/DIRTY-MARK] run#3 marked_dirty_cells=150 (sif_pos=146 sif_max=1.0000) water=1330 flipped=5
+06-16 12:17:12.480 25678 29971 I godot   : [sea_ice/slow-dump] tick=122 path=gdext_state_machine total_wall=2787.57ms (pack=0.02 refresh=0.17 native=0.09 native_wall=0.14 sync=2.64 flip=0.68) water=1330 flipped=5
+06-16 12:17:12.483 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=0.727 facade_fixed=8
+06-16 12:17:12.532 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.685 (last_pass_day=123.227, k x3.68)
+06-16 12:17:12.745 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=4.103 (last_pass_day=127.330, k x4.10)
+06-16 12:17:12.817 25678 29971 I godot   : [ocean_currents][daily_wind] #16 tick=128 ran=true path=gdext_daily_wind elapsed=3.653 slp=1.950 wind=0.797 delta=1.590382 reason=
+06-16 12:17:12.817 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#8 tick=128 phase=1.4083 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:12.819 25678 29971 I godot   : [ocean_currents][RT] phys_slice#16 tick=128 round=8 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=5.073 ocean_delta_p95=0.150831 wind_delta_p95=1.590382 slp_delta_p95=0.016895 psi_path=gdext
+06-16 12:17:12.895 25678 29971 I godot   : [sea_ice/dt] call#4 dt_days=3.176 (last_pass_day=130.506, k x3.18)
+06-16 12:17:12.896 25678 29971 I godot   : [sea_ice/DIAG-SM] run#4 phase=1.430 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.270 k_m=4.606 dt=3.18 | temp all min=0.000 max=0.939 avg=0.340 | water n=1330 t_min_w=0.000 below_form=528 (39.7%) max_dfrac=0.1779 | SIF pos=564 max=1.000 avg_w=0.2546 near_thr=100 | FLIP to_ice=0 to_base=0 stat_water=1330 stat_flipped=0 existing_ice_terr=345 | climate_anom=0.000
+06-16 12:17:12.940 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=0.918 (last_pass_day=131.424, k x0.92)
+06-16 12:17:13.155 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.946 (last_pass_day=135.370, k x3.95)
+06-16 12:17:13.219 25678 29971 I godot   : [ocean_currents][daily_wind] #17 tick=136 ran=true path=gdext_daily_wind elapsed=7.731 slp=4.986 wind=1.480 delta=1.293573 reason=
+06-16 12:17:13.220 25678 29971 I godot   : [ocean_currents][RT] phys_slice#17 tick=136 round=8 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=8.499 ocean_delta_p95=0.150831 wind_delta_p95=1.293573 slp_delta_p95=0.017910 psi_path=gdext
+06-16 12:17:13.220 25678 29971 I godot   :   [ocean_currents] slow phys slice=8.5ms (just-finished stage=6/phys_upwelling, next=8/phys_done, path=physical_circulation, round_done=true)
+06-16 12:17:13.335 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.954 (last_pass_day=139.324, k x3.95)
+06-16 12:17:13.535 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.748 (last_pass_day=143.072, k x3.75)
+06-16 12:17:13.592 25678 29971 I godot   : [ocean_currents][daily_wind] #18 tick=144 ran=true path=gdext_daily_wind elapsed=3.938 slp=2.674 wind=0.577 delta=1.172115 reason=
+06-16 12:17:13.592 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#9 tick=144 phase=1.5782 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:13.593 25678 29971 I godot   : [ocean_currents][RT] phys_slice#18 tick=144 round=9 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=4.999 ocean_delta_p95=0.165060 wind_delta_p95=1.172115 slp_delta_p95=0.015659 psi_path=gdext
+06-16 12:17:13.732 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.017 (last_pass_day=147.089, k x4.02)
+06-16 12:17:13.928 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.028 (last_pass_day=151.117, k x4.03)
+06-16 12:17:13.981 25678 29971 I godot   : [ocean_currents][daily_wind] #19 tick=152 ran=true path=gdext_daily_wind elapsed=3.095 slp=1.721 wind=0.697 delta=0.976051 reason=
+06-16 12:17:13.981 25678 29971 I godot   : [ocean_currents][RT] phys_slice#19 tick=152 round=9 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=3.388 ocean_delta_p95=0.165060 wind_delta_p95=0.976051 slp_delta_p95=0.016049 psi_path=gdext
+06-16 12:17:14.142 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.258 (last_pass_day=155.375, k x4.26)
+06-16 12:17:14.313 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 604 }
+06-16 12:17:14.313 25678 29971 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=230 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:14.338 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.960 (last_pass_day=159.335, k x3.96)
+06-16 12:17:14.375 25678 29971 I godot   : [ocean_currents][daily_wind] #20 tick=160 ran=true path=gdext_daily_wind elapsed=2.071 slp=1.029 wind=0.537 delta=1.212292 reason=
+06-16 12:17:14.375 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#10 tick=160 phase=1.7534 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:14.376 25678 29971 I godot   : [ocean_currents][RT] phys_slice#20 tick=160 round=10 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.204 ocean_delta_p95=0.169395 wind_delta_p95=1.212292 slp_delta_p95=0.016755 psi_path=gdext
+06-16 12:17:14.539 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.036 (last_pass_day=163.371, k x4.04)
+06-16 12:17:14.685 25678 29971 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=234 px4586.A=255 px4843.A=248 px5091.A=44 px719.A=0
+06-16 12:17:14.736 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.885 (last_pass_day=167.256, k x3.89)
+06-16 12:17:14.789 25678 29971 I godot   : [ocean_currents][daily_wind] #21 tick=168 ran=true path=gdext_daily_wind elapsed=5.419 slp=2.903 wind=1.353 delta=1.012101 reason=
+06-16 12:17:14.790 25678 29971 I godot   : [ocean_currents][RT] phys_slice#21 tick=168 round=10 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.893 ocean_delta_p95=0.169395 wind_delta_p95=1.012101 slp_delta_p95=0.018870 psi_path=gdext
+06-16 12:17:14.936 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.897 (last_pass_day=171.153, k x3.90)
+06-16 12:17:15.081 25678 29971 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=115 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:15.091 25678 29971 I godot   : [ice_atlas/COMMIT] run#3 need_init=false stride=604 buf_n=155648 nonzero=33516 max=203 tex_rid=RID(18622978195483)
+06-16 12:17:15.130 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.889 (last_pass_day=175.042, k x3.89)
+06-16 12:17:15.200 25678 29971 I godot   : [ocean_currents][daily_wind] #22 tick=176 ran=true path=gdext_daily_wind elapsed=2.696 slp=1.631 wind=0.491 delta=0.946445 reason=
+06-16 12:17:15.200 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#11 tick=176 phase=1.9333 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:15.201 25678 29971 I godot   : [ocean_currents][RT] phys_slice#22 tick=176 round=11 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.712 ocean_delta_p95=0.148448 wind_delta_p95=0.946445 slp_delta_p95=0.018630 psi_path=gdext
+06-16 12:17:15.346 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.285 (last_pass_day=179.327, k x4.29)
+06-16 12:17:15.546 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.000 (last_pass_day=183.327, k x4.00)
+06-16 12:17:15.615 25678 29971 I godot   : [ocean_currents][daily_wind] #23 tick=184 ran=true path=gdext_daily_wind elapsed=4.944 slp=2.899 wind=0.661 delta=1.129316 reason=
+06-16 12:17:15.615 25678 29971 I godot   : [ocean_currents][RT] phys_slice#23 tick=184 round=11 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.188 ocean_delta_p95=0.148448 wind_delta_p95=1.129316 slp_delta_p95=0.020719 psi_path=gdext
+06-16 12:17:15.710 25678 29971 I godot   : [sea_ice/DIRTY-MARK] run#4 marked_dirty_cells=641 (sif_pos=640 sif_max=0.9446) water=1330 flipped=0
+06-16 12:17:15.710 25678 29971 I godot   : [sea_ice/slow-dump] tick=186 path=gdext_state_machine total_wall=2815.46ms (pack=0.02 refresh=0.20 native=0.04 native_wall=0.06 sync=2.08 flip=0.00) water=1330 flipped=0
+06-16 12:17:15.713 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=1.430 facade_fixed=423
+06-16 12:17:15.774 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=4.418 (last_pass_day=187.745, k x4.42)
+06-16 12:17:15.931 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.316 (last_pass_day=191.061, k x3.32)
+06-16 12:17:15.995 25678 29971 I godot   : [ocean_currents][daily_wind] #24 tick=192 ran=true path=gdext_daily_wind elapsed=4.602 slp=2.404 wind=1.213 delta=1.177075 reason=
+06-16 12:17:15.995 25678 29971 I godot   : [ocean_currents][RT] phys_round_start#12 tick=192 phase=2.1058 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=2 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:17:15.997 25678 29971 I godot   : [ocean_currents][RT] phys_slice#24 tick=192 round=12 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=6.477 ocean_delta_p95=0.159574 wind_delta_p95=1.177075 slp_delta_p95=0.022456 psi_path=gdext
+06-16 12:17:16.080 25678 29971 I godot   : [sea_ice/dt] call#5 dt_days=3.001 (last_pass_day=194.062, k x3.00)
+06-16 12:17:16.081 25678 29971 I godot   : [sea_ice/DIAG-SM] run#5 phase=2.127 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.200 k_m=4.352 dt=3.00 | temp all min=0.000 max=1.000 avg=0.385 | water n=1330 t_min_w=0.000 below_form=512 (38.5%) max_dfrac=0.1681 | SIF pos=537 max=1.000 avg_w=0.3138 near_thr=118 | FLIP to_ice=19 to_base=0 stat_water=1330 stat_flipped=19 existing_ice_terr=347 | climate_anom=0.000
+06-16 12:17:17.092 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 680 }
+06-16 12:17:17.092 25678 29971 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=39 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:17:17.491 25678 29971 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=75 px4586.A=255 px4843.A=201 px5091.A=44 px719.A=0
+06-16 12:17:18.193 25678 29971 I godot   : [stage_b/combined] DEBUG call#2: rc=0.1127 wall=0.26ms run_a=false run_v=true run_f=false
+06-16 12:17:18.193 25678 29971 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.00 pack_vegdyn=0.02 pack_feedback=0.00 refresh=0.11 call=0.13 unpack=0.00
+06-16 12:17:18.448 25678 29971 I godot   : [climate/async DIAG] round #60: pa=1898us pb=156us ow=83us ol=26us wa=199us ws=182us si=114us tr=24us | flipped=1
+06-16 12:17:18.909 25678 29971 I godot   : [sea_ice/DIRTY-MARK] run#5 marked_dirty_cells=340 (sif_pos=336 sif_max=1.0000) water=1330 flipped=19
+06-16 12:17:18.909 25678 29971 I godot   : [sea_ice/slow-dump] tick=250 path=gdext_state_machine total_wall=2829.08ms (pack=0.01 refresh=0.06 native=0.04 native_wall=0.05 sync=2.28 flip=0.65) water=1330 flipped=19
+06-16 12:17:18.912 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=2.127 facade_fixed=207
+06-16 12:17:19.895 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 218 }
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: season_refresh ran=300 avg=0.11ms p95=0.15ms max=11.63ms slices=300
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: refresh_climate_daily ran=149 avg=0.72ms p95=1.3ms max=2.29ms slices=149 skipped[frame_budget_exhausted=1,policy_gated=150]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: sea_ice_daily ran=38 avg=1.21ms p95=4.77ms max=5.12ms slices=38 skipped[frame_budget_exhausted=1,policy_gated=261]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: enum_atlas_upload ran=38 avg=0.46ms p95=1.12ms max=11.05ms slices=38 skipped[frame_budget_exhausted=6,policy_gated=256]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: weather_refresh ran=37 avg=1.33ms p95=3.39ms max=7.24ms slices=65 skipped[frame_budget_exhausted=7,policy_gated=256]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: ocean_currents ran=37 avg=4.92ms p95=8.89ms max=9.7ms slices=37 skipped[frame_budget_exhausted=8,policy_gated=255]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] last 300 ticks: dynamic_visual_atlas_upload ran=37 avg=1.73ms p95=9.95ms max=10.66ms slices=37 skipped[frame_budget_exhausted=32,policy_gated=231]
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] budget last 300 ticks: total_p95=5.71ms max=11.63ms over_1ms=55 largest=season_refresh/b_plus_round/stages_done_0 path=b_plus 11.53ms
+06-16 12:17:21.408 25678 29971 I godot   : [SUS-cpp] world: bound=true entities=2400 components=68 pools=1
+06-16 12:17:22.089 25678 29971 I godot   : [sea_ice/slow-dump] tick=314 path=gdext_state_machine total_wall=2806.72ms (pack=0.01 refresh=0.09 native=0.09 native_wall=0.13 sync=1.65 flip=0.00) water=1330 flipped=0
+06-16 12:17:22.091 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=2.830 facade_fixed=112
+06-16 12:17:22.691 25678 29971 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 547 }
+06-16 12:17:24.690 25678 29971 I godot   : fast tick #365: 23ms (sus=22.25 render=0.41 ui=0.00 skipped_day=true)
+06-16 12:17:24.695 25678 29971 I godot   : Yearly refresh 3ms
+06-16 12:17:25.293 25678 29971 E godot   : WARNING: [sea_ice_daily/F.4] 58/1330 (4.4%) cells flipped on phase=3.530 鈥?possible bulk-switch regression
+06-16 12:17:25.293 25678 29971 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-16 12:17:25.293 25678 29971 E godot   :    GDScript backtrace (most recent call first):
+06-16 12:17:25.293 25678 29971 E godot   :        [0] _run_sea_ice_state_machine_slice (res://scripts/geography/map_generator.gd:7970)
+06-16 12:17:25.293 25678 29971 E godot   :        [1] run_climate_pass_slice (res://scripts/geography/map_generator.gd:10404)
+06-16 12:17:25.293 25678 29971 E godot   :        [2] run_slice (res://scripts/simulation/systems/sea_ice_daily_system.gd:119)
+06-16 12:17:25.293 25678 29971 E godot   :        [3] tick (res://scripts/simulation/sus/sus_scheduler.gd:292)
+06-16 12:17:25.293 25678 29971 E godot   :        [4] tick (res://scripts/data_core/dc_system_scheduler.gd:186)
+06-16 12:17:25.293 25678 29971 E godot   :        [5] sus_tick_daily (res://scripts/geography/map_generator.gd:2760)
+06-16 12:17:25.293 25678 29971 E godot   :        [6] _on_day_changed (res://scripts/main.gd:964)
+06-16 12:17:25.293 25678 29971 E godot   :        [7] _process (res://scripts/geography/world_clock.gd:121)
+06-16 12:17:25.293 25678 29971 I godot   : [sea_ice/slow-dump] tick=378 path=gdext_state_machine total_wall=2818.76ms (pack=0.01 refresh=0.15 native=0.10 native_wall=0.14 sync=2.33 flip=1.79) water=1330 flipped=58
+06-16 12:17:25.297 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=3.530 facade_fixed=349
+06-16 12:17:25.785 25678 29971 I godot   : [stage_b/combined] DEBUG call#3: rc=0.1590 wall=0.26ms run_a=true run_v=true run_f=true
+06-16 12:17:25.785 25678 29971 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.01 pack_vegdyn=0.02 pack_feedback=0.01 refresh=0.05 call=0.17 unpack=0.00
+06-16 12:17:28.493 25678 29971 I godot   : [sea_ice/slow-dump] tick=442 path=gdext_state_machine total_wall=2768.68ms (pack=0.02 refresh=0.18 native=0.10 native_wall=0.14 sync=2.31 flip=1.53) water=1330 flipped=19
+06-16 12:17:28.496 25678 29971 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=0.238 facade_fixed=156
+06-16 12:17:38.436 11207 30410 I godot   : Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+06-16 12:17:38.495 11207 30410 I godot   : Vulkan 1.3.284 - Forward Mobile - Using Device #0: Qualcomm - Adreno (TM) 830
+06-16 12:17:38.628 11207 30410 I godot   : 
+06-16 12:17:40.200 11207 30410 I godot   : [mobile/safe-area] TopBar 涓嬬Щ 48px + 鎸夐挳 minimum 64x44 (鍦嗚灞?safe area)
+06-16 12:17:40.201 11207 30410 I godot   : [mobile/debug-overlay] 60 FPS 璋冩煡闈㈡澘鎸傝浇瀹屾垚锛圥rofile / DVA / Atlas / Weather / Shader / Quality 鍏釜鎸夐挳锛?
+06-16 12:17:40.282 11207 30410 I godot   : Phase 13: 19 lake seeds
+06-16 12:17:40.747 11207 30410 I godot   : Phase 13: 26 lake cells
+06-16 12:17:40.798 11207 30410 I godot   : Phase 14: 8 volcanoes
+06-16 12:17:40.813 11207 30410 I godot   : MapGenerator v7: per-cell 595ms (2400 cells)
+06-16 12:17:40.837 11207 30410 I godot   : MapBaker v6: hm=(512, 304) seed=3627461809
+06-16 12:17:40.837 11207 30410 I godot   : [splash] bake stage=terrain fraction=0.00
+06-16 12:17:41.942 11207 30410 I godot   :   height+biome+moisture+veg+cover: 1105ms
+06-16 12:17:42.077 11207 30410 I godot   :   light erosion: 135ms
+06-16 12:17:42.220 11207 30410 I godot   :   river SDF: 142ms
+06-16 12:17:42.226 11207 30410 I godot   :   latitude: 7ms
+06-16 12:17:42.226 11207 30410 I godot   : [splash] bake stage=physical fraction=0.62
+06-16 12:17:42.226 11207 30410 I godot   :   physical circulation hex solve: deferred until DCWorldExt bind (ext=false idx=false soa=false)
+06-16 12:17:42.226 11207 30410 I godot   :   wind/ocean/upwelling pixel buffers: deferred until DCWorldExt bind (0ms)
+06-16 12:17:42.226 11207 30410 I godot   : [splash] bake stage=volcano fraction=0.70
+06-16 12:17:42.444 11207 30410 I godot   :   volcano field: 217ms
+06-16 12:17:42.444 11207 30410 I godot   : [splash] bake stage=atlas fraction=0.82
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(0,0,0) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=2 na_c=2 na=398 px0=2567
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(1,0,-1) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=208 nc=4 na_c=4 na=798 px0=2063
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(2,0,-2) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=207 nc=4 na_c=4 na=795 px0=2582
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(3,0,-3) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=207 nc=4 na_c=4 na=790 px0=2592
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(4,0,-4) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=207 nc=4 na_c=4 na=790 px0=2089
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(5,0,-5) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=210 nc=4 na_c=4 na=818 px0=2608
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(6,0,-6) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=2105
+06-16 12:17:42.513 11207 30410 I godot   : [GD-SMO-WRITE] cell=HexCell(7,0,-7) terrain=SEA_ICE river=false ICE=0.84962141360191 ca=217 oa=214 nc=4 na_c=4 na=846 px0=3134
+06-16 12:17:42.583 11207 30410 I godot   : [splash] bake stage=encode fraction=0.88
+06-16 12:17:43.185 11207 30410 I godot   :   encode: 602ms
+06-16 12:17:43.185 11207 30410 I godot   : MapBaker v6: total 2348ms
+06-16 12:17:43.185 11207 30410 I godot   : [splash] bake stage=done fraction=1.00
+06-16 12:17:43.189 11207 30410 I godot   : MapGenerator v7: bake 2351ms
+06-16 12:17:43.189 11207 30410 I godot   : MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+06-16 12:17:43.189 11207 30410 I godot   : MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+06-16 12:17:43.238 11207 30410 I godot   : [SUS] sim budget strict=false frame=4.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+06-16 12:17:43.240 11207 30410 I godot   : [DCWorldExt] bind_map_data: 69 components bound (auto-registered=69; snapshot model; see world_ext.cpp comment & charter 脗搂11)
+06-16 12:17:43.240 11207 30410 I godot   : [DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+06-16 12:17:43.240 11207 30410 I godot   : [native_world] configure rc=0 reason=configured cells=2400
+06-16 12:17:43.340 11207 30410 I godot   : [hex_cell] facade ENABLED (2400 cells bound; ext=true)
+06-16 12:17:43.340 11207 30410 I godot   : [DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+06-16 12:17:43.340 11207 30410 I godot   : [phys_solve][RT] start#1 phase=1.5000 pending=nan solve_ocean=true ext=true idx=true soa=true
+06-16 12:17:43.340 11207 30410 I godot   : [slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-16 12:17:43.341 11207 30410 I godot   : [slp_field] commit-diag call#1: rc=1.079 slp_out=2400 n_cells=2400 map_slp=2400 published=true
+06-16 12:17:43.341 11207 30410 I godot   : [slp_field][RT-DIAG] call#1 phase=1.5000 rc=1.079 slp_out=2400 n=2400 published=true -> commit_ok
+06-16 12:17:43.341 11207 30410 I godot   : [slp_field] gdext path ACTIVE 鈥?first run elapsed=1.08ms (legacy GDScript baseline ~36ms; target < 3ms)
+06-16 12:17:43.341 11207 30410 I godot   : [slp_field/STAGE-TOTAL] call#1 wall=1.39ms native=1.08ms path=gdext commit_ok=true (call#1 wall pollution: ~15ms/print 脳 4 prints; trust call#4+ or wall>=5ms warn)
+06-16 12:17:43.341 11207 30410 I godot   : [wind_field/B] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+06-16 12:17:43.342 11207 30410 I godot   : [wind_field/B] commit-diag call#1: rc=0.526 n_wind=2400 wx=2400 wy=2400 wspd=2400 map_wspd=2400
+06-16 12:17:43.342 11207 30410 I godot   : [wind_field/B] gdext path ACTIVE 鈥?first run elapsed=0.53ms (legacy GDScript baseline 鈮?35ms; charter 搂7 / dots-wind-validation.md target < 5ms)
+06-16 12:17:43.342 11207 30410 I godot   : [wind_field/STAGE-TOTAL] call#1 wall=0.60ms native=0.53ms path=gdext commit_ok=true
+06-16 12:17:43.342 11207 30410 I godot   : [psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:17:43.343 11207 30410 I godot   : [psi_solver/BREAKDOWN] call#1 STAGE=0.80ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.79ms (kernel=0.53ms gdext_overhead=0.26ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:17:43.343 11207 30410 I godot   : [psi_solver] gdext path ACTIVE 鈥?first run elapsed=0.53ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+06-16 12:17:43.343 11207 30410 I godot   : [psi_solver] commit-diag call#1: rc=0.529 n_water=1137 n_cells=2400 published=true
+06-16 12:17:43.343 11207 30410 I godot   : [upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+06-16 12:17:43.343 11207 30410 I godot   : [upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.040
+06-16 12:17:43.343 11207 30410 I godot   : [upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.00ms T3_refresh_slots=0.05ms T4_cpp_call=0.05ms (n=2400)
+06-16 12:17:43.343 11207 30410 I godot   : [upwelling/DIAG#1] CPP-PATH-OK (no GDScript fallback)
+06-16 12:17:43.343 11207 30410 I godot   : [upwelling/DIAG#1] STAGE-TOTAL=0.13ms (matches slow_slice if > 25ms)
+06-16 12:17:43.415 11207 30410 I godot   :   [phys_wind_raster] total=71.7ms nan_guard=0.0 ensure_buf=0.0 cpp_raster=71.7 (cells=2400)
+06-16 12:17:43.415 11207 30410 E godot   : WARNING: PhysicalCirculation solve@phase=1.50 total=75ms (slp=0ms wind=1ms psi=1ms finalize=0ms upwelling=0ms wind_raster=72ms) 鈥?exceeds 25ms soft budget
+06-16 12:17:43.415 11207 30410 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-16 12:17:43.415 11207 30410 E godot   :    GDScript backtrace (most recent call first):
+06-16 12:17:43.415 11207 30410 E godot   :        [0] _physical_solve_for_phase (res://scripts/rendering/map_baker.gd:6023)
+06-16 12:17:43.415 11207 30410 E godot   :        [1] run_deferred_initial_physical_circulation (res://scripts/rendering/map_baker.gd:599)
+06-16 12:17:43.415 11207 30410 E godot   :        [2] _setup_sus (res://scripts/geography/map_generator.gd:1351)
+06-16 12:17:43.415 11207 30410 E godot   :        [3] generate (res://scripts/geography/map_generator.gd:1231)
+06-16 12:17:43.415 11207 30410 E godot   :        [4] _generate_and_render (res://scripts/main.gd:1641)
+06-16 12:17:43.415 11207 30410 E godot   :        [5] _ready (res://scripts/main.gd:375)
+06-16 12:17:43.459 11207 30410 I godot   :   wind/ocean/upwelling pixel buffers: 44ms
+06-16 12:17:43.502 11207 30410 I godot   : [physical_init] deferred native refresh complete: 162ms
+06-16 12:17:43.507 11207 30410 I godot   : [weather] gdext acceleration ON (class=DCWorldExt)
+06-16 12:17:43.507 11207 30410 I godot   : [weather] gdext field commit ON
+06-16 12:17:43.510 11207 30410 I godot   : [weather] gdext distribute ON
+06-16 12:17:43.510 11207 30410 I godot   : [weather] gdext summary ON
+06-16 12:17:43.510 11207 30410 I godot   : [weather] hexcell facade ON (skip AoS double-write in hot loop)
+06-16 12:17:43.512 11207 30410 I godot   : [weather] gdext resident knobs ON (class=KnobsHandle)
+06-16 12:17:43.513 11207 30410 I godot   : [DCSystemScheduler] topology: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-16 12:17:43.513 11207 30410 I godot   : [map_generator] DCSystemScheduler topology built: ["season_refresh", "refresh_climate_daily", "enum_atlas_upload", "ocean_currents", "sea_ice_daily", "weather_refresh", "dynamic_visual_atlas_upload"]
+06-16 12:17:43.513 11207 30410 I godot   : [map_generator] [SusBootstrap] dc_system_scheduler | 7 systems | season_refresh,ocean_currents,refresh_climate_daily,sea_ice_daily,enum_atlas_upload,weather_refresh,dynamic_visual_atlas_upload
+06-16 12:17:43.513 11207 30410 I godot   : [main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=2400, components=68, src=map_data)
+06-16 12:17:43.516 11207 30410 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:17:43.516 11207 30410 I godot   : [DIAG pass_a_entry] day=0 phase=0.002 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+06-16 12:17:43.517 11207 30410 I godot   : [DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=0
+06-16 12:17:43.517 11207 30410 I godot   : [climate_b/F.3] precondition probe (one-time):
+06-16 12:17:43.517 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:43.517 11207 30410 I godot   :   cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+06-16 12:17:43.517 11207 30410 I godot   :   cp.use_sparse_climate = true锛圕++ 浼氳窇 full path 绛変环缁撴灉锛屼笉闃绘锛?
+06-16 12:17:43.517 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:43.517 11207 30410 I godot   :   ext.has_method('run_climate_pass_b') = true
+06-16 12:17:43.517 11207 30410 I godot   :   fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+06-16 12:17:43.517 11207 30410 I godot   :   rs_lookback = 3, t_freeze = 0.1400, coupling_gain = 1.5000
+06-16 12:17:43.517 11207 30410 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:17:43.519 11207 30410 I godot   : [gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15007
+06-16 12:17:43.519 11207 30410 I godot   : [gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+06-16 12:17:43.519 11207 30410 I godot   : [climate_b/F.3] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:17:43.519 11207 30410 I godot   : [climate_b/F.3] DEBUG call#1: path=simd rc=0.1191 n_cells=2400 rs_lookback=3
+06-16 12:17:43.519 11207 30410 I godot   : [climate_b/F.3] gdext path ACTIVE (dispatch=simd) 鈥?first run elapsed=0.12ms (legacy GDScript baseline 鈮?5.2ms; charter 搂7 target < 0.5ms)
+06-16 12:17:43.520 11207 30410 I godot   : [ocean_water/F.2a] precondition probe (one-time):
+06-16 12:17:43.520 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:43.520 11207 30410 I godot   :   cp.use_gdext_ocean_water = true (flag removed; constant true)
+06-16 12:17:43.520 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:43.520 11207 30410 I godot   :   ext.has_method('run_ocean_water_pass') = true
+06-16 12:17:43.520 11207 30410 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-16 12:17:43.520 11207 30410 I godot   :   advect_steps=3 heat_mix=0.2500
+06-16 12:17:43.520 11207 30410 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:17:43.521 11207 30410 I godot   : [gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=14999
+06-16 12:17:43.521 11207 30410 I godot   : [gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+06-16 12:17:43.522 11207 30410 I godot   : [ocean_water/F.2a] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:17:43.522 11207 30410 I godot   : [ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0927 n=2400 advect=3
+06-16 12:17:43.522 11207 30410 I godot   : [ocean_water/F.2a] gdext path ACTIVE 鈥?first run elapsed=0.09ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+06-16 12:17:43.522 11207 30410 I godot   : [ocean_land/F.2b] precondition probe (one-time):
+06-16 12:17:43.522 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:43.522 11207 30410 I godot   :   cp.use_gdext_ocean_land = true (flag removed; constant true)
+06-16 12:17:43.522 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:43.522 11207 30410 I godot   :   ext.has_method('run_ocean_land_pass') = true
+06-16 12:17:43.522 11207 30410 I godot   :   fast_indexed = true (n=2400 nb=14400)
+06-16 12:17:43.522 11207 30410 I godot   :   effective_leak=0.3500 (coast_leak=0.3500 winter_boost=1.0000)
+06-16 12:17:43.522 11207 30410 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:17:43.523 11207 30410 I godot   : [gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15000
+06-16 12:17:43.523 11207 30410 I godot   : [gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+06-16 12:17:43.524 11207 30410 I godot   : [ocean_land/F.2b] sig probe result = true锛堜粎浣滆瘖鏂級
+06-16 12:17:43.524 11207 30410 I godot   : [ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0335 n=2400 effective_leak=0.3500
+06-16 12:17:43.524 11207 30410 I godot   : [ocean_land/F.2b] gdext path ACTIVE 鈥?first run elapsed=0.03ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+06-16 12:17:43.613 11207 30410 I godot   : [sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.150, k x1.00)
+06-16 12:17:43.613 11207 30410 I godot   : [sea_ice/F.4] precondition probe (one-time):
+06-16 12:17:43.613 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:43.613 11207 30410 I godot   :   cp.use_gdext_sea_ice = true (flag removed; constant true)
+06-16 12:17:43.613 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:43.613 11207 30410 I godot   :   ext.has_method('run_sea_ice_daily_pass') = true
+06-16 12:17:43.613 11207 30410 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-16 12:17:43.613 11207 30410 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:17:43.615 11207 30410 I godot   : [gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15010
+06-16 12:17:43.615 11207 30410 I godot   : [gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+06-16 12:17:43.615 11207 30410 I godot   : [sea_ice/F.4] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+06-16 12:17:43.615 11207 30410 I godot   : [sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0445 n_cells=2400 enable_oht=true
+06-16 12:17:43.617 11207 30410 I godot   : [sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) 鈥?first run elapsed=0.04ms (legacy GDScript baseline 鈮?5.1ms; charter 搂7 target < 0.5ms)
+06-16 12:17:43.617 11207 30410 I godot   : _apply_sea_ice_daily_pass[F.4]: 0.04ms (water=1418, flipped=13, phase=0.002)
+06-16 12:17:43.618 11207 30410 I godot   : [sea_ice/DIAG] thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | temp all min=0.000 max=0.993 avg=0.410 | water n=1418 t_min_w=0.000 below_form=457 (32.2%) | SIF pos=492 max=0.900 avg_w=0.2025 near_thr=65 | climate_anom=0.000
+06-16 12:17:43.618 11207 30410 I godot   : [transp/F.5] precondition probe (one-time):
+06-16 12:17:43.618 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:17:43.618 11207 30410 I godot   :   cp.use_gdext_transpiration = true (flag removed; constant true)
+06-16 12:17:43.618 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:17:43.618 11207 30410 I godot   :   ext.has_method('run_transpiration_pass') = true
+06-16 12:17:43.618 11207 30410 I godot   :   fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+06-16 12:17:43.618 11207 30410 I godot   :   verdict = OK 鈫?will try C++
+06-16 12:17:43.619 11207 30410 I godot   : [gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15012
+06-16 12:17:43.619 11207 30410 I godot   : [gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+06-16 12:17:43.619 11207 30410 I godot   : [transp/F.5] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+06-16 12:17:43.620 11207 30410 I godot   : [transp/F.5] DEBUG call#1: rc=0.0324 donor_table.size()=24 n_cells=2400 outflow=0.0250 self=0.0150
+06-16 12:17:43.620 11207 30410 I godot   : [transp/F.5] gdext path ACTIVE 鈥?first run elapsed=0.03ms (legacy GDScript baseline 鈮?3.2ms; charter 搂7 target < 0.3ms)
+06-16 12:17:43.620 11207 30410 I godot   : refresh_climate_daily #1: 104ms (cells=2400, phase=0.002) | A=1.7 B=2.1 ocean=4.9 wind=89.0 sea_ice=4.5 ice_bake=0.0 transp=1.9 path=data_core
+06-16 12:17:43.620 11207 30410 I godot   : === World baked in 3295ms ===
+06-16 12:17:43.620 11207 30410 I godot   :   SEA_ICE: 294
+06-16 12:17:43.620 11207 30410 I godot   :   OCEAN: 858
+06-16 12:17:43.620 11207 30410 I godot   :   GLACIER: 65
+06-16 12:17:43.620 11207 30410 I godot   :   COAST: 131
+06-16 12:17:43.620 11207 30410 I godot   :   MOUNTAIN: 146
+06-16 12:17:43.620 11207 30410 I godot   :   DELTA: 31
+06-16 12:17:43.620 11207 30410 I godot   :   SNOW: 56
+06-16 12:17:43.620 11207 30410 I godot   :   TUNDRA: 84
+06-16 12:17:43.620 11207 30410 I godot   :   TAIGA: 49
+06-16 12:17:43.620 11207 30410 I godot   :   LAKE: 26
+06-16 12:17:43.620 11207 30410 I godot   :   STEPPE: 8
+06-16 12:17:43.620 11207 30410 I godot   :   HILL: 279
+06-16 12:17:43.620 11207 30410 I godot   :   KELP: 51
+06-16 12:17:43.620 11207 30410 I godot   :   SWAMP: 51
+06-16 12:17:43.620 11207 30410 I godot   :   FOREST: 28
+06-16 12:17:43.620 11207 30410 I godot   :   GRASSLAND: 13
+06-16 12:17:43.620 11207 30410 I godot   :   REEF: 84
+06-16 12:17:43.620 11207 30410 I godot   :   JUNGLE: 76
+06-16 12:17:43.620 11207 30410 I godot   :   SAVANNA: 63
+06-16 12:17:43.620 11207 30410 I godot   :   BADLANDS: 3
+06-16 12:17:43.620 11207 30410 I godot   :   SHRUBLAND: 3
+06-16 12:17:43.620 11207 30410 I godot   :   SALT_FLAT: 1
+06-16 12:17:43.620 11207 30410 I godot   : [mobile/visual-quality] 寮哄埗 visual_quality=0 (60 FPS 浼樺寲锛泂hader 涓诲 70%% 甯ф椂闂?
+06-16 12:17:43.643 11207 30410 I godot   : [hex_renderer/quality] prepended #define MOBILE_QUALITY_MID to res://shaders/world_map.gdshader
+06-16 12:17:43.703 11207 30410 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:17:43.703 11207 30410 I godot   : [DOTS-Final-Push] (no profile bound)
+06-16 12:17:44.727 11207 30410 I godot   : [season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+06-16 12:17:44.728 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=frame_budget_exhausted slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:44.750 11207 30410 E godot   : WARNING: [demo_thermal_gradient] pass skipped 鈥?disabled (ClimateProfile.demo_thermal_gradient_enabled=false or no _c())
+06-16 12:17:44.750 11207 30410 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1034)
+06-16 12:17:44.750 11207 30410 E godot   :    GDScript backtrace (most recent call first):
+06-16 12:17:44.750 11207 30410 E godot   :        [0] _demo_tg_diag_once (res://scripts/main.gd:2008)
+06-16 12:17:44.750 11207 30410 E godot   :        [1] _run_demo_thermal_gradient_pass_if_enabled (res://scripts/main.gd:2023)
+06-16 12:17:44.750 11207 30410 E godot   :        [2] _on_day_changed (res://scripts/main.gd:975)
+06-16 12:17:44.750 11207 30410 E godot   :        [3] _process (res://scripts/geography/world_clock.gd:121)
+06-16 12:17:44.751 11207 30410 I godot   : fast tick #1: 38ms (sus=38.10 render=0.04 ui=0.00 skipped_day=true)
+06-16 12:17:45.722 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=133 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:45.724 11207 30410 I godot   : [sea_ice/dt] call#2 dt_days=1.863 (last_pass_day=2.013, k x1.86)
+06-16 12:17:45.728 11207 30410 I godot   : [sea_ice/DIAG-SM] run#2 phase=0.022 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=0.745 k_m=2.701 dt=1.86 | temp all min=0.000 max=1.000 avg=0.469 | water n=1418 t_min_w=0.000 below_form=373 (26.3%) max_dfrac=0.1043 | SIF pos=568 max=0.950 avg_w=0.2077 near_thr=86 | FLIP to_ice=5 to_base=0 stat_water=1418 stat_flipped=5 existing_ice_terr=294 | climate_anom=0.000
+06-16 12:17:45.728 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=frame_budget_exhausted slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:46.727 11207 30410 I godot   : [climate/async PROBE] cp=res://data/world/earth_like.tres async_enabled=true ext=true has_kick=true has_poll=true
+06-16 12:17:46.728 11207 30410 I godot   : [async_climate_round] worker thread started
+06-16 12:17:46.728 11207 30410 I godot   : [climate/async] worker registered + static knobs set (n_cells=2400)
+06-16 12:17:46.728 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=1.004 (last_pass_day=3.017, k x1.00)
+06-16 12:17:46.729 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:47.716 11207 30410 I godot   : [weather_refresh][RT] #1 tick=4 stage=entry stride=8 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.163 phase=0.044
+06-16 12:17:47.718 11207 30410 I godot   : [weather/knobs] resident KnobsHandle path ACTIVE 鈥?first to_*_knobs_dict hit (field_rebuild_count=1 expected 鈮?; stable Hz target 鈮? Hz)
+06-16 12:17:47.719 11207 30410 I godot   : [weather_refresh][RT] #2 tick=4 stage=begin stride=8 round=true rstage=1 fronts=0 changed=false elapsed=3.188 dc=false
+06-16 12:17:47.719 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#4 tick=4 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:48.721 11207 30410 I godot   : [climate/async DIAG] round #1: pa=1929us pb=176us ow=129us ol=28us wa=201us ws=184us si=53us tr=31us | flipped=11
+06-16 12:17:48.721 11207 30410 I godot   : [climate_finalizer/STAGE-TOTAL] call#1 wall=0.48ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:48.722 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#5 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:49.721 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=11 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:49.722 11207 30410 I godot   : [atlas-pipeline-cpp] eco burn-in: transition_age=2400 active_decay=0
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=0 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=1 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=2 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=3 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=4 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=5 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=6 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.724 11207 30410 I godot   : [PHASE-D-DIAG] idx=7 TERR=20 use_all=true N=2400 dirty_sz=2400 iw=true ICE=0.99962145090103 sig.A=255 PREV.A=255 cache_valid=false skip=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=0 TERR=20 ICE=0.99962145090103 ca=255 nc=2 na_c=2 na_sum=472 hood_h=147882a1 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=0 ICE=0.99962145090103 ca=255 na=472 na_c=2 oa=245 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=1 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=946 hood_h=d949c8ca PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=1 ICE=0.99962145090103 ca=255 na=946 na_c=4 oa=245 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=2 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=943 hood_h=752b0432 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=2 ICE=0.99962145090103 ca=255 na=943 na_c=4 oa=245 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=3 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=937 hood_h=f14df0f3 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=3 ICE=0.99962145090103 ca=255 na=937 na_c=4 oa=244 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=4 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=936 hood_h=fb9893b1 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=4 ICE=0.99962145090103 ca=255 na=936 na_c=4 oa=244 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=5 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=967 hood_h=fc0645e5 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=5 ICE=0.99962145090103 ca=255 na=967 na_c=4 oa=248 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=6 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=4ebe410c PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=6 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO] ci=7 TERR=20 ICE=0.99962145090103 ca=255 nc=4 na_c=4 na_sum=998 hood_h=680ffab1 PS_hood=ffffffff skip=false cache_valid_smo=false
+06-16 12:17:49.728 11207 30410 I godot   : [PHASE-D-SMO-OA] ci=7 ICE=0.99962145090103 ca=255 na=998 na_c=4 oa=252 first_px=-1 count=0
+06-16 12:17:49.728 11207 30410 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2400, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=5.943
+06-16 12:17:49.728 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#6 tick=6 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:50.715 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.988 (last_pass_day=7.005, k x3.99)
+06-16 12:17:50.715 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#7 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:51.730 11207 30410 I godot   : [ocean_currents][daily_wind] #1 tick=8 ran=true path=gdext_daily_wind elapsed=10.112 slp=7.357 wind=1.474 delta=1.998273 reason=
+06-16 12:17:51.730 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#1 tick=8 phase=0.0878 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=true need_visual=true phase_int=0 phase_seen=0 total_pixels=155648 visual_active=false
+06-16 12:17:51.730 11207 30410 I godot   : [psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:17:51.732 11207 30410 I godot   : [psi_solver/BREAKDOWN] call#2 STAGE=1.64ms T1_prepack=0.01ms T2_knobs=0.02ms T3_call=1.60ms (kernel=1.11ms gdext_overhead=0.49ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:17:51.732 11207 30410 I godot   : [psi_solver] commit-diag call#2: rc=1.107 n_water=1115 n_cells=2400 published=true
+06-16 12:17:51.732 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=8 round=1 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=12.27 slp_native=7.36 psi_native=1.11 wind_dp95=1.998273 ocean_dp95=0.175101 slp_dp95=0.066981 phys_done=false need_visual=true
+06-16 12:17:51.732 11207 30410 I godot   : [ocean_currents][RT] phys_slice#1 tick=8 round=1 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=true elapsed=12.271 ocean_delta_p95=0.175101 wind_delta_p95=1.998273 slp_delta_p95=0.066981 psi_path=gdext
+06-16 12:17:51.732 11207 30410 I godot   :   [ocean_currents] slow phys slice=12.3ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:17:52.725 11207 30410 I godot   : [climate/async DIAG] round #2: pa=3374us pb=401us ow=222us ol=57us wa=403us ws=377us si=103us tr=45us | flipped=44
+06-16 12:17:52.726 11207 30410 I godot   : [climate_finalizer/STAGE-TOTAL] call#2 wall=0.94ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:52.726 11207 30410 I godot   : [DCSystemScheduler][RT] ocean_skip#8 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+06-16 12:17:53.713 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=44 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:54.702 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.005 (last_pass_day=11.010, k x4.00)
+06-16 12:17:55.707 11207 30410 I godot   : [weather_refresh][RT] #3 tick=12 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.071 phase=0.132
+06-16 12:17:55.707 11207 30410 I godot   : [weather/F.1] first fast-path attempt: n_cells=2400 cell_budget=500 (would-end_i=500) fast_indexed=true ext_bound=true
+06-16 12:17:55.708 11207 30410 I godot   : [weather/F.1] gdext path ACTIVE 鈥?first run elapsed=0.46ms (legacy GDScript baseline 鈮?13ms; charter 搂7 target < 2ms)
+06-16 12:17:55.708 11207 30410 I godot   : [weather_refresh][RT] #4 tick=12 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=1.514 work=500 cursor=0..500 progress=0.208
+06-16 12:17:56.710 11207 30410 I godot   : [climate/async DIAG] round #3: pa=4127us pb=302us ow=200us ol=50us wa=354us ws=317us si=94us tr=43us | flipped=55
+06-16 12:17:56.710 11207 30410 I godot   : [climate_finalizer/STAGE-TOTAL] call#3 wall=0.49ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:17:57.697 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=55 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:17:57.698 11207 30410 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:17:57.699 11207 30410 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.598
+06-16 12:17:58.706 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.000 (last_pass_day=15.010, k x4.00)
+06-16 12:17:59.726 11207 30410 I godot   : [ocean_currents][daily_wind] #2 tick=16 ran=true path=gdext_daily_wind elapsed=14.873 slp=8.848 wind=4.046 delta=1.165387 reason=
+06-16 12:17:59.727 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] warn tick=16 round=1 stage=6/phys_upwelling path=physical_circulation next=phys_wind_raster elapsed_ms=15.56 slp_native=8.85 psi_native=1.11 wind_dp95=1.165387 ocean_dp95=0.175101 slp_dp95=0.026277 phys_done=false need_visual=true
+06-16 12:17:59.727 11207 30410 I godot   : [ocean_currents][RT] phys_slice#2 tick=16 round=1 stage=phys_upwelling->phys_wind_raster done=false run_ocean=true need_visual=true elapsed=15.561 ocean_delta_p95=0.175101 wind_delta_p95=1.165387 slp_delta_p95=0.026277 psi_path=gdext
+06-16 12:17:59.727 11207 30410 I godot   :   [ocean_currents] slow phys slice=15.6ms (just-finished stage=6/phys_upwelling, next=7/phys_wind_raster, path=physical_circulation, round_done=false)
+06-16 12:18:00.719 11207 30410 I godot   : [climate/async DIAG] round #4: pa=7369us pb=598us ow=1678us ol=484us wa=570us ws=514us si=142us tr=67us | flipped=2
+06-16 12:18:00.720 11207 30410 I godot   : [climate_finalizer/STAGE-TOTAL] call#4 wall=0.90ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:18:01.704 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=2 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:02.711 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.000 (last_pass_day=19.010, k x4.00)
+06-16 12:18:03.714 11207 30410 I godot   : [weather_refresh][RT] #5 tick=20 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.068 phase=0.219
+06-16 12:18:03.715 11207 30410 I godot   : [weather_refresh][RT] #6 tick=20 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=1.294 work=500 cursor=500..1000 progress=0.417
+06-16 12:18:04.722 11207 30410 I godot   : [climate/async DIAG] round #5: pa=8517us pb=306us ow=857us ol=57us wa=402us ws=398us si=101us tr=48us | flipped=5
+06-16 12:18:04.723 11207 30410 I godot   : [climate_finalizer/STAGE-TOTAL] call#5 wall=0.91ms cpp_worker=true (target: <3ms cpp / 13-17ms gdscript_fallback)
+06-16 12:18:05.711 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=5 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:05.712 11207 30410 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:18:05.713 11207 30410 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.848
+06-16 12:18:06.025 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.266 (last_pass_day=23.275, k x4.27)
+06-16 12:18:06.099 11207 30410 I godot   : [ocean_currents][daily_wind] #3 tick=24 ran=true path=gdext_daily_wind elapsed=2.987 slp=1.735 wind=0.744 delta=0.924148 reason=
+06-16 12:18:06.100 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=24 round=1 stage=7/phys_wind_raster path=wind_raster next=phys_done elapsed_ms=4.32 slp_native=1.73 psi_native=1.11 wind_dp95=0.924148 ocean_dp95=0.175101 slp_dp95=0.017349 phys_done=true need_visual=true
+06-16 12:18:06.100 11207 30410 I godot   : [ocean_currents][RT] phys_slice#3 tick=24 round=1 stage=phys_wind_raster->phys_done done=true run_ocean=true need_visual=true elapsed=4.318 ocean_delta_p95=0.175101 wind_delta_p95=0.924148 slp_delta_p95=0.017349 psi_path=gdext
+06-16 12:18:06.186 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:06.246 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.825 (last_pass_day=27.101, k x3.83)
+06-16 12:18:06.288 11207 30410 I godot   : [weather_refresh][RT] #7 tick=28 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.039 phase=0.308
+06-16 12:18:06.289 11207 30410 I godot   : [weather_refresh][RT] #8 tick=28 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.749 work=500 cursor=1000..1500 progress=0.625
+06-16 12:18:06.399 11207 30410 I godot   : [PHASE-D-SMO-ENTRY] have_nb=true cache_valid_smo=false dirty_path_used=true dirty_noop=false dirty_sz=2400 eco_decay_sz=0 prep_smo_ready=true
+06-16 12:18:06.399 11207 30410 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 0 } call_ms=0.2
+06-16 12:18:06.450 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.185 (last_pass_day=31.285, k x4.18)
+06-16 12:18:06.497 11207 30410 I godot   : [ocean_currents][daily_wind] #4 tick=32 ran=true path=gdext_daily_wind elapsed=5.182 slp=2.847 wind=1.326 delta=1.100033 reason=
+06-16 12:18:06.498 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#2 tick=32 phase=0.3526 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:06.498 11207 30410 I godot   : [psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+06-16 12:18:06.499 11207 30410 I godot   : [psi_solver/BREAKDOWN] call#3 STAGE=1.82ms T1_prepack=0.01ms T2_knobs=0.02ms T3_call=1.79ms (kernel=1.11ms gdext_overhead=0.67ms) T4_writeback=0.01ms (n_psi=2400 published=true has_debug=true)
+06-16 12:18:06.500 11207 30410 I godot   : [psi_solver] commit-diag call#3: rc=1.115 n_water=1174 n_cells=2400 published=true
+06-16 12:18:06.500 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=32 round=2 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=7.43 slp_native=2.85 psi_native=1.11 wind_dp95=1.100033 ocean_dp95=0.161075 slp_dp95=0.016540 phys_done=false need_visual=false
+06-16 12:18:06.500 11207 30410 I godot   : [ocean_currents][RT] phys_slice#4 tick=32 round=2 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=7.426 ocean_delta_p95=0.161075 wind_delta_p95=1.100033 slp_delta_p95=0.016540 psi_path=gdext
+06-16 12:18:06.591 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=2 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:06.650 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.069 (last_pass_day=35.355, k x4.07)
+06-16 12:18:06.689 11207 30410 I godot   : [weather_refresh][RT] #9 tick=36 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.032 phase=0.396
+06-16 12:18:06.690 11207 30410 I godot   : [weather_refresh][RT] #10 tick=36 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.598 work=500 cursor=1500..2000 progress=0.833
+06-16 12:18:06.690 11207 30410 I godot   : [weather_refresh][RT] #11 tick=36 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.013 phase=0.396
+06-16 12:18:06.690 11207 30410 I godot   : [weather_refresh][RT] #12 tick=36 stage=solve_done stride=8 round=true rstage=2 fronts=0 changed=false elapsed=0.314 work=400 cursor=2000..2400
+06-16 12:18:06.805 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=6 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:06.806 11207 30410 I godot   : [CPP-RES] fallback=false done=true reason= ab.keys=["dyn", "eco", "smo", "ice"] smo.sz=622592 dyn.sz=622592 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1444 } call_ms=0.402
+06-16 12:18:06.807 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 1444 }
+06-16 12:18:06.807 11207 30410 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:06.847 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.981 (last_pass_day=39.336, k x3.98)
+06-16 12:18:06.893 11207 30410 I godot   : [ocean_currents][daily_wind] #5 tick=40 ran=true path=gdext_daily_wind elapsed=5.285 slp=2.841 wind=1.328 delta=1.050143 reason=
+06-16 12:18:06.894 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=40 round=2 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=5.76 slp_native=2.84 psi_native=1.11 wind_dp95=1.050143 ocean_dp95=0.161075 slp_dp95=0.016972 phys_done=true need_visual=false
+06-16 12:18:06.894 11207 30410 I godot   : [ocean_currents][RT] phys_slice#5 tick=40 round=2 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.761 ocean_delta_p95=0.161075 wind_delta_p95=1.050143 slp_delta_p95=0.016972 psi_path=gdext
+06-16 12:18:06.986 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=14 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:07.044 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.957 (last_pass_day=43.292, k x3.96)
+06-16 12:18:07.086 11207 30410 I godot   : [weather_refresh][RT] #13 tick=44 stage=entry stride=8 round=true rstage=2 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.031 phase=0.484
+06-16 12:18:07.087 11207 30410 I godot   : [weather/dist] first fast-path attempt: n_cells=2400 ext_bound=true
+06-16 12:18:07.090 11207 30410 I godot   : [weather/dist] gdext path ACTIVE 鈥?first run elapsed=0.20ms (legacy GDScript baseline 鈮?11.6ms; charter target < 1.5ms)
+06-16 12:18:07.090 11207 30410 I godot   : [weather/summary] first fast-path attempt: n_cells=2400 ext_bound=true
+06-16 12:18:07.091 11207 30410 I godot   : [weather/summary] gdext path ACTIVE 鈥?first run elapsed=0.23ms (legacy GDScript baseline 鈮?17.8ms; charter target < 3.0ms)
+06-16 12:18:07.091 11207 30410 I godot   : [weather/summary] fronts_soa path ACTIVE 鈥?first run n=0 (PackedArray columns, marshalling ~90% slim vs Array[Dict])
+06-16 12:18:07.091 11207 30410 I godot   : [weather_refresh][RT] #14 tick=44 stage=summary stride=8 round=true rstage=3 fronts=0 changed=false elapsed=5.962 fronts=0
+06-16 12:18:07.184 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=27 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:07.185 11207 30410 I godot   : [CPP-COMMIT] ch=eco buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:07.242 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.912 (last_pass_day=47.204, k x3.91)
+06-16 12:18:07.304 11207 30410 I godot   : [ocean_currents][daily_wind] #6 tick=48 ran=true path=gdext_daily_wind elapsed=3.735 slp=2.671 wind=0.526 delta=1.300247 reason=
+06-16 12:18:07.304 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#3 tick=48 phase=0.5298 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:07.305 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=48 round=3 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=4.69 slp_native=2.67 psi_native=0.51 wind_dp95=1.300247 ocean_dp95=0.139164 slp_dp95=0.015038 phys_done=false need_visual=false
+06-16 12:18:07.305 11207 30410 I godot   : [ocean_currents][RT] phys_slice#6 tick=48 round=3 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=4.691 ocean_delta_p95=0.139164 wind_delta_p95=1.300247 slp_delta_p95=0.015038 psi_path=gdext
+06-16 12:18:07.399 11207 30410 I godot   : [dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=25 isw_mis=0 terrain_written=true isw_written=false
+06-16 12:18:07.440 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.817 (last_pass_day=51.021, k x3.82)
+06-16 12:18:07.492 11207 30410 I godot   : [weather_refresh][RT] #15 tick=52 stage=entry stride=8 round=true rstage=3 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.028 phase=0.572
+06-16 12:18:07.492 11207 30410 I godot   : [stage_b/combined] precondition probe (one-time):
+06-16 12:18:07.492 11207 30410 I godot   :   active ClimateProfile = res://data/world/earth_like.tres
+06-16 12:18:07.492 11207 30410 I godot   :   cp.use_gdext_stage_b_combined = true
+06-16 12:18:07.492 11207 30410 I godot   :   _data_core_world_ext != null = true
+06-16 12:18:07.492 11207 30410 I godot   :   ext.has_method('run_stage_b_pass') = true
+06-16 12:18:07.492 11207 30410 I godot   :   verdict = OK 鈫?will try C++ combined pass
+06-16 12:18:07.494 11207 30410 I godot   : [stage_b/combined] gdext path ACTIVE 鈥?first run elapsed=0.41ms (legacy three-pass total 鈮?6鈥?5ms; target 鈮?1.5ms)
+06-16 12:18:07.494 11207 30410 I godot   :   per-stage: albedo=0.02ms veg_dyn=0.13ms feedback=0.06ms
+06-16 12:18:07.494 11207 30410 I godot   : [stage_b/combined] DEBUG call#1: rc=0.4078 wall=1.16ms run_a=true run_v=true run_f=true
+06-16 12:18:07.494 11207 30410 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.11 pack_vegdyn=0.44 pack_feedback=0.01 refresh=0.11 call=0.43 unpack=0.06
+06-16 12:18:07.494 11207 30410 I godot   : [weather_refresh][RT] #16 tick=52 stage=commit stride=8 round=false rstage=0 fronts=0 changed=true elapsed=1.656 changed_slots=0
+06-16 12:18:07.494 11207 30410 I godot   : [hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+06-16 12:18:07.598 11207 30410 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:07.650 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.127 (last_pass_day=55.148, k x4.13)
+06-16 12:18:07.707 11207 30410 I godot   : [ocean_currents][daily_wind] #7 tick=56 ran=true path=gdext_daily_wind elapsed=5.178 slp=2.888 wind=1.135 delta=1.088763 reason=
+06-16 12:18:07.708 11207 30410 I godot   : [ocean_currents/STAGE-DIAG] init tick=56 round=3 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=5.56 slp_native=2.89 psi_native=0.51 wind_dp95=1.088763 ocean_dp95=0.139164 slp_dp95=0.018114 phys_done=true need_visual=false
+06-16 12:18:07.708 11207 30410 I godot   : [ocean_currents][RT] phys_slice#7 tick=56 round=3 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.557 ocean_delta_p95=0.139164 wind_delta_p95=1.088763 slp_delta_p95=0.018114 psi_path=gdext
+06-16 12:18:07.805 11207 30410 I godot   : [sea_ice/DIRTY-MARK] run#2 marked_dirty_cells=594 (sif_pos=525 sif_max=1.0000) water=1418 flipped=5
+06-16 12:18:07.805 11207 30410 I godot   : [sea_ice/slow-dump] tick=58 path=gdext_state_machine total_wall=22081.39ms (pack=0.03 refresh=0.29 native=0.25 native_wall=0.34 sync=4.37 flip=0.61) water=1418 flipped=5
+06-16 12:18:07.809 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=0.022 facade_fixed=410
+06-16 12:18:07.846 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.952 (last_pass_day=59.101, k x3.95)
+06-16 12:18:07.988 11207 30410 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:07.994 11207 30410 I godot   : [ice_atlas/COMMIT] run#1 need_init=false stride=1444 buf_n=155648 nonzero=0 max=0 tex_rid=RID(18622978195483)
+06-16 12:18:08.046 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=4.139 (last_pass_day=63.240, k x4.14)
+06-16 12:18:08.104 11207 30410 I godot   : [ocean_currents][daily_wind] #8 tick=64 ran=true path=gdext_daily_wind elapsed=8.201 slp=5.966 wind=0.872 delta=1.093905 reason=
+06-16 12:18:08.104 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#4 tick=64 phase=0.7039 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:08.105 11207 30410 I godot   : [ocean_currents][RT] phys_slice#8 tick=64 round=4 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=9.510 ocean_delta_p95=0.133711 wind_delta_p95=1.093905 slp_delta_p95=0.017805 psi_path=gdext
+06-16 12:18:08.105 11207 30410 I godot   :   [ocean_currents] slow phys slice=9.5ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:18:08.216 11207 30410 I godot   : [sea_ice/dt] call#3 dt_days=3.214 (last_pass_day=66.454, k x3.21)
+06-16 12:18:08.219 11207 30410 I godot   : [sea_ice/DIAG-SM] run#3 phase=0.728 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.286 k_m=4.661 dt=3.21 | temp all min=0.000 max=0.909 avg=0.385 | water n=1418 t_min_w=0.000 below_form=450 (31.7%) max_dfrac=0.1800 | SIF pos=451 max=1.000 avg_w=0.2957 near_thr=15 | FLIP to_ice=7 to_base=0 stat_water=1418 stat_flipped=7 existing_ice_terr=418 | climate_anom=0.000
+06-16 12:18:08.242 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=0.556 (last_pass_day=67.009, k x0.56)
+06-16 12:18:08.293 11207 30410 I godot   : [weather_refresh][RT] #17 tick=68 stage=entry stride=8 round=false rstage=0 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.036 phase=0.748
+06-16 12:18:08.294 11207 30410 I godot   : [weather_refresh][RT] #18 tick=68 stage=begin stride=8 round=true rstage=1 fronts=0 changed=false elapsed=1.122 dc=false
+06-16 12:18:08.395 11207 30410 I godot   : [CPP-RES] fallback=false done=false reason= ab.keys=[] smo.sz=0 dyn.sz=0 stride_real={ "dyn": 2337, "eco": 2400, "smo": 2400, "ice": 0 } call_ms=1.051
+06-16 12:18:08.439 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.105 (last_pass_day=71.115, k x4.11)
+06-16 12:18:08.497 11207 30410 I godot   : [ocean_currents][daily_wind] #9 tick=72 ran=true path=gdext_daily_wind elapsed=5.028 slp=2.863 wind=1.130 delta=1.363939 reason=
+06-16 12:18:08.497 11207 30410 I godot   : [ocean_currents][RT] phys_slice#9 tick=72 round=4 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.454 ocean_delta_p95=0.133711 wind_delta_p95=1.363939 slp_delta_p95=0.015166 psi_path=gdext
+06-16 12:18:08.657 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.085 (last_pass_day=75.200, k x4.09)
+06-16 12:18:08.704 11207 30410 I godot   : [weather_refresh][RT] #19 tick=76 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.037 phase=0.838
+06-16 12:18:08.704 11207 30410 I godot   : [weather_refresh][RT] #20 tick=76 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.655 work=500 cursor=0..500 progress=0.208
+06-16 12:18:08.838 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=3.934 (last_pass_day=79.134, k x3.93)
+06-16 12:18:08.893 11207 30410 I godot   : [ocean_currents][daily_wind] #10 tick=80 ran=true path=gdext_daily_wind elapsed=5.332 slp=2.901 wind=1.329 delta=1.491230 reason=
+06-16 12:18:08.893 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#5 tick=80 phase=0.8781 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:08.895 11207 30410 I godot   : [ocean_currents][RT] phys_slice#10 tick=80 round=5 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=6.776 ocean_delta_p95=0.144951 wind_delta_p95=1.491230 slp_delta_p95=0.012565 psi_path=gdext
+06-16 12:18:09.049 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.214 (last_pass_day=83.348, k x4.21)
+06-16 12:18:09.099 11207 30410 I godot   : [weather_refresh][RT] #21 tick=84 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.032 phase=0.924
+06-16 12:18:09.100 11207 30410 I godot   : [weather_refresh][RT] #22 tick=84 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.532 work=500 cursor=500..1000 progress=0.417
+06-16 12:18:09.100 11207 30410 I godot   : [weather_refresh][RT] #23 tick=84 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.014 phase=0.924
+06-16 12:18:09.100 11207 30410 I godot   : [weather_refresh][RT] #24 tick=84 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.318 work=500 cursor=1000..1500 progress=0.625
+06-16 12:18:09.286 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.389 (last_pass_day=87.736, k x4.39)
+06-16 12:18:09.312 11207 30410 I godot   : [ocean_currents][daily_wind] #11 tick=88 ran=true path=gdext_daily_wind elapsed=2.300 slp=1.227 wind=0.565 delta=1.426706 reason=
+06-16 12:18:09.312 11207 30410 I godot   : [ocean_currents][RT] phys_slice#11 tick=88 round=5 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=2.517 ocean_delta_p95=0.144951 wind_delta_p95=1.426706 slp_delta_p95=0.011469 psi_path=gdext
+06-16 12:18:09.449 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=3.364 (last_pass_day=91.101, k x3.36)
+06-16 12:18:09.501 11207 30410 I godot   : [weather_refresh][RT] #25 tick=92 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.025 phase=1.011
+06-16 12:18:09.502 11207 30410 I godot   : [weather_refresh][RT] #26 tick=92 stage=solve stride=8 round=true rstage=1 fronts=0 changed=false elapsed=0.413 work=500 cursor=1500..2000 progress=0.833
+06-16 12:18:09.502 11207 30410 I godot   : [weather_refresh][RT] #27 tick=92 stage=entry stride=8 round=true rstage=1 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.006 phase=1.011
+06-16 12:18:09.502 11207 30410 I godot   : [weather_refresh][RT] #28 tick=92 stage=solve_done stride=8 round=true rstage=2 fronts=0 changed=false elapsed=0.177 work=400 cursor=2000..2400
+06-16 12:18:09.502 11207 30410 I godot   : [weather_refresh][RT] #29 tick=92 stage=entry stride=8 round=true rstage=2 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.005 phase=1.011
+06-16 12:18:09.503 11207 30410 I godot   : [weather_refresh][RT] #30 tick=92 stage=summary stride=8 round=true rstage=3 fronts=0 changed=false elapsed=1.016 fronts=12
+06-16 12:18:09.646 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.000 (last_pass_day=95.101, k x4.00)
+06-16 12:18:09.696 11207 30410 I godot   : [ocean_currents][daily_wind] #12 tick=96 ran=true path=gdext_daily_wind elapsed=4.229 slp=2.668 wind=0.629 delta=1.380388 reason=
+06-16 12:18:09.696 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#6 tick=96 phase=1.0543 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:09.697 11207 30410 I godot   : [ocean_currents][RT] phys_slice#12 tick=96 round=6 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=5.185 ocean_delta_p95=0.129630 wind_delta_p95=1.380388 slp_delta_p95=0.011495 psi_path=gdext
+06-16 12:18:09.841 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.089 (last_pass_day=99.189, k x4.09)
+06-16 12:18:09.889 11207 30410 I godot   : [weather_refresh][RT] #31 tick=100 stage=entry stride=8 round=true rstage=3 fronts=0 changed=false can_slice=true merged=false dc=false prelude=0.023 phase=1.098
+06-16 12:18:09.889 11207 30410 I godot   : [weather_refresh][RT] #32 tick=100 stage=commit stride=8 round=false rstage=0 fronts=12 changed=true elapsed=0.261 changed_slots=12
+06-16 12:18:09.889 11207 30410 I godot   : [hex-renderer] set_weather_fronts(n=4) layer=WeatherLayer
+06-16 12:18:10.009 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 312 }
+06-16 12:18:10.010 11207 30410 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=255 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:10.076 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.256 (last_pass_day=103.446, k x4.26)
+06-16 12:18:10.114 11207 30410 I godot   : [ocean_currents][daily_wind] #13 tick=104 ran=true path=gdext_daily_wind elapsed=2.181 slp=1.130 wind=0.518 delta=1.532497 reason=
+06-16 12:18:10.115 11207 30410 I godot   : [ocean_currents][RT] phys_slice#13 tick=104 round=6 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=2.509 ocean_delta_p95=0.129630 wind_delta_p95=1.532497 slp_delta_p95=0.012535 psi_path=gdext
+06-16 12:18:10.258 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=3.748 (last_pass_day=107.194, k x3.75)
+06-16 12:18:10.405 11207 30410 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=255 px4586.A=255 px4843.A=255 px5091.A=255 px719.A=0
+06-16 12:18:10.456 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.264 (last_pass_day=111.458, k x4.26)
+06-16 12:18:10.484 11207 30410 I godot   : [ocean_currents][daily_wind] #14 tick=112 ran=true path=gdext_daily_wind elapsed=2.122 slp=1.122 wind=0.519 delta=1.667746 reason=
+06-16 12:18:10.484 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#7 tick=112 phase=1.2275 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:10.485 11207 30410 I godot   : [ocean_currents][RT] phys_slice#14 tick=112 round=7 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=2.936 ocean_delta_p95=0.135992 wind_delta_p95=1.667746 slp_delta_p95=0.013553 psi_path=gdext
+06-16 12:18:10.684 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.224 (last_pass_day=115.682, k x4.22)
+06-16 12:18:10.834 11207 30410 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=0 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:10.844 11207 30410 I godot   : [ice_atlas/COMMIT] run#2 need_init=false stride=312 buf_n=155648 nonzero=12448 max=255 tex_rid=RID(18622978195483)
+06-16 12:18:10.866 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=3.686 (last_pass_day=119.368, k x3.69)
+06-16 12:18:10.920 11207 30410 I godot   : [ocean_currents][daily_wind] #15 tick=120 ran=true path=gdext_daily_wind elapsed=3.891 slp=2.679 wind=0.525 delta=1.637113 reason=
+06-16 12:18:10.920 11207 30410 I godot   : [ocean_currents][RT] phys_slice#15 tick=120 round=7 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=4.169 ocean_delta_p95=0.135992 wind_delta_p95=1.637113 slp_delta_p95=0.016733 psi_path=gdext
+06-16 12:18:10.994 11207 30410 I godot   : [sea_ice/DIRTY-MARK] run#3 marked_dirty_cells=208 (sif_pos=205 sif_max=1.0000) water=1418 flipped=7
+06-16 12:18:10.994 11207 30410 I godot   : [sea_ice/slow-dump] tick=122 path=gdext_state_machine total_wall=2778.12ms (pack=0.02 refresh=0.22 native=0.10 native_wall=0.14 sync=2.19 flip=0.71) water=1418 flipped=7
+06-16 12:18:10.997 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=0.728 facade_fixed=11
+06-16 12:18:11.049 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=3.964 (last_pass_day=123.332, k x3.96)
+06-16 12:18:11.278 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=4.240 (last_pass_day=127.572, k x4.24)
+06-16 12:18:11.302 11207 30410 I godot   : [ocean_currents][daily_wind] #16 tick=128 ran=true path=gdext_daily_wind elapsed=2.094 slp=1.094 wind=0.520 delta=1.542050 reason=
+06-16 12:18:11.303 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#8 tick=128 phase=1.4046 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:11.303 11207 30410 I godot   : [ocean_currents][RT] phys_slice#16 tick=128 round=8 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.122 ocean_delta_p95=0.143953 wind_delta_p95=1.542050 slp_delta_p95=0.019524 psi_path=gdext
+06-16 12:18:11.428 11207 30410 I godot   : [sea_ice/dt] call#4 dt_days=2.993 (last_pass_day=130.564, k x2.99)
+06-16 12:18:11.432 11207 30410 I godot   : [sea_ice/DIAG-SM] run#4 phase=1.431 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.197 k_m=4.339 dt=2.99 | temp all min=0.000 max=0.926 avg=0.332 | water n=1418 t_min_w=0.000 below_form=476 (33.6%) max_dfrac=0.1676 | SIF pos=527 max=1.000 avg_w=0.2455 near_thr=136 | FLIP to_ice=0 to_base=0 stat_water=1418 stat_flipped=0 existing_ice_terr=380 | climate_anom=0.000
+06-16 12:18:11.467 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=0.830 (last_pass_day=131.394, k x0.83)
+06-16 12:18:11.656 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.926 (last_pass_day=135.320, k x3.93)
+06-16 12:18:11.727 11207 30410 I godot   : [ocean_currents][daily_wind] #17 tick=136 ran=true path=gdext_daily_wind elapsed=5.312 slp=2.937 wind=1.236 delta=1.395220 reason=
+06-16 12:18:11.727 11207 30410 I godot   : [ocean_currents][RT] phys_slice#17 tick=136 round=8 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.630 ocean_delta_p95=0.143953 wind_delta_p95=1.395220 slp_delta_p95=0.017716 psi_path=gdext
+06-16 12:18:11.850 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.050 (last_pass_day=139.370, k x4.05)
+06-16 12:18:12.057 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.999 (last_pass_day=143.369, k x4.00)
+06-16 12:18:12.117 11207 30410 I godot   : [ocean_currents][daily_wind] #18 tick=144 ran=true path=gdext_daily_wind elapsed=5.225 slp=2.901 wind=1.200 delta=1.196714 reason=
+06-16 12:18:12.117 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#9 tick=144 phase=1.5828 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:12.118 11207 30410 I godot   : [ocean_currents][RT] phys_slice#18 tick=144 round=9 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=6.175 ocean_delta_p95=0.168989 wind_delta_p95=1.196714 slp_delta_p95=0.014885 psi_path=gdext
+06-16 12:18:12.240 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.651 (last_pass_day=147.020, k x3.65)
+06-16 12:18:12.441 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.121 (last_pass_day=151.141, k x4.12)
+06-16 12:18:12.495 11207 30410 I godot   : [ocean_currents][daily_wind] #19 tick=152 ran=true path=gdext_daily_wind elapsed=5.279 slp=2.946 wind=1.284 delta=1.122810 reason=
+06-16 12:18:12.495 11207 30410 I godot   : [ocean_currents][RT] phys_slice#19 tick=152 round=9 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.539 ocean_delta_p95=0.168989 wind_delta_p95=1.122810 slp_delta_p95=0.014779 psi_path=gdext
+06-16 12:18:12.639 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.967 (last_pass_day=155.108, k x3.97)
+06-16 12:18:12.787 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 563 }
+06-16 12:18:12.787 11207 30410 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=226 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:12.836 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.919 (last_pass_day=159.026, k x3.92)
+06-16 12:18:12.910 11207 30410 I godot   : [ocean_currents][daily_wind] #20 tick=160 ran=true path=gdext_daily_wind elapsed=6.873 slp=5.059 wind=0.792 delta=1.231567 reason=
+06-16 12:18:12.910 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#10 tick=160 phase=1.7577 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:12.911 11207 30410 I godot   : [ocean_currents][RT] phys_slice#20 tick=160 round=10 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=8.205 ocean_delta_p95=0.156260 wind_delta_p95=1.231567 slp_delta_p95=0.015835 psi_path=gdext
+06-16 12:18:12.911 11207 30410 I godot   :   [ocean_currents] slow phys slice=8.2ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:18:13.066 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.315 (last_pass_day=163.342, k x4.32)
+06-16 12:18:13.198 11207 30410 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=230 px4586.A=245 px4843.A=247 px5091.A=247 px719.A=0
+06-16 12:18:13.240 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.817 (last_pass_day=167.159, k x3.82)
+06-16 12:18:13.304 11207 30410 I godot   : [ocean_currents][daily_wind] #21 tick=168 ran=true path=gdext_daily_wind elapsed=5.232 slp=3.635 wind=0.770 delta=1.000520 reason=
+06-16 12:18:13.305 11207 30410 I godot   : [ocean_currents][RT] phys_slice#21 tick=168 round=10 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.576 ocean_delta_p95=0.156260 wind_delta_p95=1.000520 slp_delta_p95=0.016642 psi_path=gdext
+06-16 12:18:13.462 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.275 (last_pass_day=171.434, k x4.28)
+06-16 12:18:13.600 11207 30410 I godot   : [CPP-COMMIT] ch=ice buf.size=155648 expected=155648 W=512 H=304 px8584.A=111 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:13.611 11207 30410 I godot   : [ice_atlas/COMMIT] run#3 need_init=false stride=563 buf_n=155648 nonzero=30842 max=255 tex_rid=RID(18622978195483)
+06-16 12:18:13.659 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.065 (last_pass_day=175.499, k x4.07)
+06-16 12:18:13.692 11207 30410 I godot   : [ocean_currents][daily_wind] #22 tick=176 ran=true path=gdext_daily_wind elapsed=3.368 slp=1.813 wind=0.840 delta=1.170828 reason=
+06-16 12:18:13.692 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#11 tick=176 phase=1.9305 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=1 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:13.694 11207 30410 I godot   : [ocean_currents][RT] phys_slice#22 tick=176 round=11 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=4.873 ocean_delta_p95=0.145055 wind_delta_p95=1.170828 slp_delta_p95=0.018564 psi_path=gdext
+06-16 12:18:13.840 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.660 (last_pass_day=179.159, k x3.66)
+06-16 12:18:14.040 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.008 (last_pass_day=183.167, k x4.01)
+06-16 12:18:14.118 11207 30410 I godot   : [ocean_currents][daily_wind] #23 tick=184 ran=true path=gdext_daily_wind elapsed=5.303 slp=2.837 wind=1.363 delta=1.021843 reason=
+06-16 12:18:14.118 11207 30410 I godot   : [ocean_currents][RT] phys_slice#23 tick=184 round=11 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=5.773 ocean_delta_p95=0.145055 wind_delta_p95=1.021843 slp_delta_p95=0.019276 psi_path=gdext
+06-16 12:18:14.221 11207 30410 I godot   : [sea_ice/DIRTY-MARK] run#4 marked_dirty_cells=588 (sif_pos=586 sif_max=1.0000) water=1418 flipped=0
+06-16 12:18:14.221 11207 30410 I godot   : [sea_ice/slow-dump] tick=186 path=gdext_state_machine total_wall=2792.29ms (pack=0.04 refresh=0.39 native=0.25 native_wall=0.34 sync=2.79 flip=0.00) water=1418 flipped=0
+06-16 12:18:14.224 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=1.431 facade_fixed=382
+06-16 12:18:14.269 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=4.236 (last_pass_day=187.403, k x4.24)
+06-16 12:18:14.458 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=3.946 (last_pass_day=191.350, k x3.95)
+06-16 12:18:14.512 11207 30410 I godot   : [ocean_currents][daily_wind] #24 tick=192 ran=true path=gdext_daily_wind elapsed=4.928 slp=2.833 wind=1.144 delta=1.091631 reason=
+06-16 12:18:14.512 11207 30410 I godot   : [ocean_currents][RT] phys_round_start#12 tick=192 phase=2.1078 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=2 phase_seen=0 total_pixels=155648 visual_active=true
+06-16 12:18:14.514 11207 30410 I godot   : [ocean_currents][RT] phys_slice#24 tick=192 round=12 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=6.787 ocean_delta_p95=0.173037 wind_delta_p95=1.091631 slp_delta_p95=0.018916 psi_path=gdext
+06-16 12:18:14.598 11207 30410 I godot   : [sea_ice/dt] call#5 dt_days=2.902 (last_pass_day=194.252, k x2.90)
+06-16 12:18:14.602 11207 30410 I godot   : [sea_ice/DIAG-SM] run#5 phase=2.129 | thr_eff t_form=0.140 t_melt=0.220 flip_thr=0.680 | k_f=1.161 k_m=4.209 dt=2.90 | temp all min=0.000 max=1.000 avg=0.387 | water n=1418 t_min_w=0.000 below_form=408 (28.8%) max_dfrac=0.1625 | SIF pos=424 max=1.000 avg_w=0.2307 near_thr=102 | FLIP to_ice=8 to_base=0 stat_water=1418 stat_flipped=8 existing_ice_terr=275 | climate_anom=0.000
+06-16 12:18:15.163 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1650 ===
+06-16 12:18:15.163 11207 30410 I godot   :   FPS=34.0  process(sample)=43.90ms  physics=0.13ms  nav=0.01ms
+06-16 12:18:15.163 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.22 avg=23.95 p50=24.36 p95=32.55 max=45.21
+06-16 12:18:15.163 11207 30410 I godot   :   sus_ticks=58/120 sus_frame_avg=25.89ms non_sus_frame_avg=22.13ms
+06-16 12:18:15.163 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=0 [12-16)=2 [16-20)=23 [20-24)=31 [24-28)=43 [28-32)=13 [32-36)=4 [36-40)=2 [40+)=1
+06-16 12:18:15.163 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:15.163 11207 30410 I godot   :   draw_calls=33  primitives=1634  objects=289 (Performance monitor)
+06-16 12:18:15.163 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1634
+06-16 12:18:15.163 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:15.163 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:15.163 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:15.163 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:15.354 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1659 ===
+06-16 12:18:15.354 11207 30410 I godot   :   FPS=37.0  process(sample)=44.58ms  physics=0.24ms  nav=0.01ms
+06-16 12:18:15.354 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.10 avg=23.67 p50=24.00 p95=32.54 max=45.18
+06-16 12:18:15.354 11207 30410 I godot   :   sus_ticks=56/120 sus_frame_avg=25.95ms non_sus_frame_avg=21.68ms
+06-16 12:18:15.354 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=0 [12-16)=2 [16-20)=27 [20-24)=30 [24-28)=40 [28-32)=13 [32-36)=4 [36-40)=2 [40+)=1
+06-16 12:18:15.354 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:15.354 11207 30410 I godot   :   draw_calls=33  primitives=1640  objects=292 (Performance monitor)
+06-16 12:18:15.354 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1640
+06-16 12:18:15.354 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:15.354 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:15.354 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:15.354 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:15.484 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1665 ===
+06-16 12:18:15.484 11207 30410 I godot   :   FPS=37.0  process(sample)=44.58ms  physics=0.24ms  nav=0.01ms
+06-16 12:18:15.484 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.10 avg=23.52 p50=23.71 p95=32.54 max=45.16
+06-16 12:18:15.484 11207 30410 I godot   :   sus_ticks=56/120 sus_frame_avg=25.88ms non_sus_frame_avg=21.45ms
+06-16 12:18:15.484 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=0 [12-16)=2 [16-20)=29 [20-24)=30 [24-28)=38 [28-32)=13 [32-36)=4 [36-40)=2 [40+)=1
+06-16 12:18:15.484 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:15.484 11207 30410 I godot   :   draw_calls=33  primitives=1640  objects=292 (Performance monitor)
+06-16 12:18:15.484 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1640
+06-16 12:18:15.484 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:15.484 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:15.484 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:15.484 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:15.596 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 606 }
+06-16 12:18:15.596 11207 30410 I godot   : [CPP-COMMIT] ch=dyn buf.size=622592 expected=622592 W=512 H=304 px8584.A=34 px4586.A=0 px4843.A=0 px5091.A=0 px719.A=0
+06-16 12:18:15.882 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1685 ===
+06-16 12:18:15.882 11207 30410 I godot   :   FPS=37.0  process(sample)=44.58ms  physics=0.24ms  nav=0.01ms
+06-16 12:18:15.882 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.26 avg=22.72 p50=23.55 p95=32.53 max=45.15
+06-16 12:18:15.882 11207 30410 I godot   :   sus_ticks=55/120 sus_frame_avg=26.39ms non_sus_frame_avg=19.62ms
+06-16 12:18:15.882 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=1 [8-12)=1 [12-16)=7 [16-20)=30 [20-24)=26 [24-28)=36 [28-32)=11 [32-36)=5 [36-40)=1 [40+)=1
+06-16 12:18:15.882 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:15.882 11207 30410 I godot   :   draw_calls=32  primitives=1656  objects=300 (Performance monitor)
+06-16 12:18:15.882 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1656
+06-16 12:18:15.882 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:15.882 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:15.882 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:15.882 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:15.990 11207 30410 I godot   : [CPP-COMMIT] ch=smo buf.size=622592 expected=622592 W=512 H=304 px8584.A=70 px4586.A=181 px4843.A=199 px5091.A=199 px719.A=0
+06-16 12:18:16.112 11207 30410 I godot   :   [ocean_currents] slow phys slice=9.2ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:18:16.167 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1701 ===
+06-16 12:18:16.167 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.167 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.27 avg=22.15 p50=23.39 p95=32.78 max=45.13
+06-16 12:18:16.167 11207 30410 I godot   :   sus_ticks=54/120 sus_frame_avg=26.24ms non_sus_frame_avg=18.80ms
+06-16 12:18:16.167 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=5 [12-16)=9 [16-20)=26 [20-24)=24 [24-28)=37 [28-32)=9 [32-36)=4 [36-40)=2 [40+)=1
+06-16 12:18:16.167 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.167 11207 30410 I godot   :   draw_calls=32  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:16.167 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1658
+06-16 12:18:16.167 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.167 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.167 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.167 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.287 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1708 ===
+06-16 12:18:16.287 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.287 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.18 avg=21.39 p50=22.67 p95=31.36 max=45.12
+06-16 12:18:16.287 11207 30410 I godot   :   sus_ticks=51/120 sus_frame_avg=25.32ms non_sus_frame_avg=18.47ms
+06-16 12:18:16.287 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=6 [12-16)=10 [16-20)=27 [20-24)=27 [24-28)=36 [28-32)=7 [32-36)=2 [36-40)=1 [40+)=1
+06-16 12:18:16.287 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.287 11207 30410 I godot   :   draw_calls=32  primitives=1650  objects=297 (Performance monitor)
+06-16 12:18:16.287 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1650
+06-16 12:18:16.287 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.287 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.287 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.287 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.411 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1715 ===
+06-16 12:18:16.411 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.411 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.32 avg=21.09 p50=22.60 p95=29.86 max=45.11
+06-16 12:18:16.411 11207 30410 I godot   :   sus_ticks=50/120 sus_frame_avg=25.02ms non_sus_frame_avg=18.29ms
+06-16 12:18:16.411 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=3 [8-12)=6 [12-16)=10 [16-20)=27 [20-24)=27 [24-28)=37 [28-32)=6 [32-36)=1 [36-40)=1 [40+)=1
+06-16 12:18:16.412 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.412 11207 30410 I godot   :   draw_calls=32  primitives=1650  objects=297 (Performance monitor)
+06-16 12:18:16.412 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1650
+06-16 12:18:16.412 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.412 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.412 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.412 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.624 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1724 ===
+06-16 12:18:16.624 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.624 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.19 avg=21.29 p50=22.62 p95=30.28 max=45.09
+06-16 12:18:16.624 11207 30410 I godot   :   sus_ticks=51/120 sus_frame_avg=25.27ms non_sus_frame_avg=18.35ms
+06-16 12:18:16.624 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=3 [8-12)=6 [12-16)=9 [16-20)=26 [20-24)=27 [24-28)=39 [28-32)=5 [32-36)=1 [36-40)=2 [40+)=1
+06-16 12:18:16.624 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.624 11207 30410 I godot   :   draw_calls=32  primitives=1644  objects=294 (Performance monitor)
+06-16 12:18:16.624 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1644
+06-16 12:18:16.624 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.624 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.624 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.624 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.772 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1731 ===
+06-16 12:18:16.772 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.772 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.16 avg=21.08 p50=22.20 p95=31.49 max=45.08
+06-16 12:18:16.772 11207 30410 I godot   :   sus_ticks=51/120 sus_frame_avg=25.24ms non_sus_frame_avg=18.00ms
+06-16 12:18:16.772 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=3 [8-12)=6 [12-16)=10 [16-20)=28 [20-24)=28 [24-28)=35 [28-32)=4 [32-36)=2 [36-40)=2 [40+)=1
+06-16 12:18:16.772 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.772 11207 30410 I godot   :   draw_calls=32  primitives=1638  objects=291 (Performance monitor)
+06-16 12:18:16.772 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1638
+06-16 12:18:16.772 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.772 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.772 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.772 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.887 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1737 ===
+06-16 12:18:16.887 11207 30410 I godot   :   FPS=42.0  process(sample)=37.09ms  physics=0.46ms  nav=0.01ms
+06-16 12:18:16.887 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.12 avg=20.81 p50=21.57 p95=31.48 max=45.06
+06-16 12:18:16.887 11207 30410 I godot   :   sus_ticks=50/120 sus_frame_avg=25.36ms non_sus_frame_avg=17.56ms
+06-16 12:18:16.887 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=4 [8-12)=6 [12-16)=11 [16-20)=29 [20-24)=28 [24-28)=32 [28-32)=4 [32-36)=2 [36-40)=2 [40+)=1
+06-16 12:18:16.887 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:16.887 11207 30410 I godot   :   draw_calls=32  primitives=1638  objects=291 (Performance monitor)
+06-16 12:18:16.887 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1638
+06-16 12:18:16.887 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:16.887 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:16.887 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:16.887 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:16.960 11207 30410 I godot   : [climate/async DIAG] round #60: pa=5469us pb=430us ow=289us ol=75us wa=698us ws=438us si=110us tr=54us | flipped=0
+06-16 12:18:17.059 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1744 ===
+06-16 12:18:17.060 11207 30410 I godot   :   FPS=41.0  process(sample)=39.80ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:17.060 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.31 avg=20.87 p50=21.57 p95=33.87 max=45.05
+06-16 12:18:17.060 11207 30410 I godot   :   sus_ticks=50/120 sus_frame_avg=25.69ms non_sus_frame_avg=17.43ms
+06-16 12:18:17.060 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=4 [8-12)=6 [12-16)=11 [16-20)=30 [20-24)=27 [24-28)=32 [28-32)=3 [32-36)=2 [36-40)=3 [40+)=1
+06-16 12:18:17.060 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:17.060 11207 30410 I godot   :   draw_calls=32  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:17.060 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1658
+06-16 12:18:17.060 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:17.060 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:17.060 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:17.060 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:17.112 11207 30410 I godot   : [stage_b/combined] DEBUG call#2: rc=0.2766 wall=0.52ms run_a=false run_v=true run_f=false
+06-16 12:18:17.112 11207 30410 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.00 pack_vegdyn=0.04 pack_feedback=0.00 refresh=0.17 call=0.30 unpack=0.01
+06-16 12:18:17.225 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1751 ===
+06-16 12:18:17.226 11207 30410 I godot   :   FPS=41.0  process(sample)=39.80ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:17.226 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.39 avg=20.82 p50=21.29 p95=34.23 max=45.04
+06-16 12:18:17.226 11207 30410 I godot   :   sus_ticks=50/120 sus_frame_avg=25.78ms non_sus_frame_avg=17.28ms
+06-16 12:18:17.226 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=4 [8-12)=6 [12-16)=11 [16-20)=32 [20-24)=27 [24-28)=30 [28-32)=2 [32-36)=3 [36-40)=3 [40+)=1
+06-16 12:18:17.226 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:17.226 11207 30410 I godot   :   draw_calls=32  primitives=1656  objects=300 (Performance monitor)
+06-16 12:18:17.226 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1656
+06-16 12:18:17.226 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:17.226 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:17.226 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:17.226 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:17.410 11207 30410 I godot   : [sea_ice/DIRTY-MARK] run#5 marked_dirty_cells=273 (sif_pos=270 sif_max=1.0000) water=1418 flipped=8
+06-16 12:18:17.410 11207 30410 I godot   : [sea_ice/slow-dump] tick=250 path=gdext_state_machine total_wall=2811.32ms (pack=0.01 refresh=0.08 native=0.13 native_wall=0.17 sync=2.54 flip=0.78) water=1418 flipped=8
+06-16 12:18:17.413 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=2.129 facade_fixed=193
+06-16 12:18:18.222 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1788 ===
+06-16 12:18:18.222 11207 30410 I godot   :   FPS=43.0  process(sample)=44.88ms  physics=0.34ms  nav=0.01ms
+06-16 12:18:18.222 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.12 avg=22.03 p50=22.37 p95=34.23 max=38.73
+06-16 12:18:18.222 11207 30410 I godot   :   sus_ticks=52/120 sus_frame_avg=27.72ms non_sus_frame_avg=17.68ms
+06-16 12:18:18.222 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=4 [8-12)=6 [12-16)=11 [16-20)=24 [20-24)=25 [24-28)=26 [28-32)=13 [32-36)=7 [36-40)=3 [40+)=0
+06-16 12:18:18.222 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:18.222 11207 30410 I godot   :   draw_calls=32  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:18.222 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1658
+06-16 12:18:18.222 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:18.222 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:18.222 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:18.222 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:18.405 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 168 }
+06-16 12:18:18.492 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1797 ===
+06-16 12:18:18.492 11207 30410 I godot   :   FPS=43.0  process(sample)=44.88ms  physics=0.34ms  nav=0.01ms
+06-16 12:18:18.492 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.30 avg=22.92 p50=23.74 p95=34.29 max=38.76
+06-16 12:18:18.492 11207 30410 I godot   :   sus_ticks=55/120 sus_frame_avg=28.13ms non_sus_frame_avg=18.51ms
+06-16 12:18:18.493 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=3 [8-12)=6 [12-16)=7 [16-20)=23 [20-24)=24 [24-28)=26 [28-32)=19 [32-36)=8 [36-40)=3 [40+)=0
+06-16 12:18:18.493 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:18.493 11207 30410 I godot   :   draw_calls=32  primitives=1650  objects=297 (Performance monitor)
+06-16 12:18:18.493 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1650
+06-16 12:18:18.493 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:18.493 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:18.493 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:18.493 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:18.830 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1807 ===
+06-16 12:18:18.830 11207 30410 I godot   :   FPS=43.0  process(sample)=44.88ms  physics=0.34ms  nav=0.01ms
+06-16 12:18:18.830 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.29 avg=24.09 p50=24.44 p95=36.69 max=42.60
+06-16 12:18:18.830 11207 30410 I godot   :   sus_ticks=58/120 sus_frame_avg=28.95ms non_sus_frame_avg=19.55ms
+06-16 12:18:18.830 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=3 [8-12)=4 [12-16)=5 [16-20)=21 [20-24)=24 [24-28)=26 [28-32)=20 [32-36)=10 [36-40)=3 [40+)=3
+06-16 12:18:18.830 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:18.830 11207 30410 I godot   :   draw_calls=33  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:18.830 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1658
+06-16 12:18:18.830 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:18.830 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:18.830 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:18.830 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:19.120 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1818 ===
+06-16 12:18:19.120 11207 30410 I godot   :   FPS=43.0  process(sample)=44.88ms  physics=0.34ms  nav=0.01ms
+06-16 12:18:19.120 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.18 avg=24.88 p50=24.70 p95=35.56 max=42.61
+06-16 12:18:19.120 11207 30410 I godot   :   sus_ticks=60/120 sus_frame_avg=28.64ms non_sus_frame_avg=21.12ms
+06-16 12:18:19.120 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=2 [12-16)=3 [16-20)=19 [20-24)=27 [24-28)=26 [28-32)=22 [32-36)=13 [36-40)=2 [40+)=3
+06-16 12:18:19.120 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:19.120 11207 30410 I godot   :   draw_calls=33  primitives=1660  objects=302 (Performance monitor)
+06-16 12:18:19.120 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1660
+06-16 12:18:19.120 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:19.120 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:19.120 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:19.120 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:19.573 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1836 ===
+06-16 12:18:19.573 11207 30410 I godot   :   FPS=53.0  process(sample)=36.97ms  physics=0.17ms  nav=0.01ms
+06-16 12:18:19.573 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.20 avg=25.85 p50=26.03 p95=35.56 max=42.62
+06-16 12:18:19.573 11207 30410 I godot   :   sus_ticks=62/120 sus_frame_avg=28.85ms non_sus_frame_avg=22.65ms
+06-16 12:18:19.573 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=1 [8-12)=0 [12-16)=2 [16-20)=13 [20-24)=29 [24-28)=33 [28-32)=23 [32-36)=13 [36-40)=2 [40+)=3
+06-16 12:18:19.573 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:19.573 11207 30410 I godot   :   draw_calls=33  primitives=1638  objects=291 (Performance monitor)
+06-16 12:18:19.573 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1638
+06-16 12:18:19.573 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:19.573 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:19.573 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:19.573 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: season_refresh ran=300 avg=0.12ms p95=0.19ms max=11.69ms slices=300
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: refresh_climate_daily ran=149 avg=0.82ms p95=1.47ms max=2.66ms slices=149 skipped[frame_budget_exhausted=1,policy_gated=150]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: sea_ice_daily ran=38 avg=1.5ms p95=4.94ms max=6.02ms slices=38 skipped[frame_budget_exhausted=1,policy_gated=261]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: enum_atlas_upload ran=38 avg=0.65ms p95=1.3ms max=17.03ms slices=38 skipped[frame_budget_exhausted=6,policy_gated=256]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: weather_refresh ran=37 avg=1.51ms p95=6.02ms max=6.45ms slices=59 skipped[frame_budget_exhausted=7,policy_gated=256]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: ocean_currents ran=37 avg=6.31ms p95=12.6ms max=15.94ms slices=37 skipped[frame_budget_exhausted=9,policy_gated=254]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] last 300 ticks: dynamic_visual_atlas_upload ran=37 avg=1.79ms p95=10.22ms max=11.74ms slices=37 skipped[frame_budget_exhausted=42,policy_gated=221]
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] budget last 300 ticks: total_p95=6.2ms max=16.11ms over_1ms=58 largest=ocean_currents/phys_upwelling/next_phys_wind_raster path=physical_circulation 15.9ms
+06-16 12:18:19.913 11207 30410 I godot   : [SUS-cpp] world: bound=true entities=2400 components=68 pools=1
+06-16 12:18:20.019 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1853 ===
+06-16 12:18:20.019 11207 30410 I godot   :   FPS=53.0  process(sample)=36.97ms  physics=0.17ms  nav=0.01ms
+06-16 12:18:20.019 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.33 avg=26.51 p50=26.23 p95=37.45 max=42.62
+06-16 12:18:20.019 11207 30410 I godot   :   sus_ticks=64/120 sus_frame_avg=28.93ms non_sus_frame_avg=23.75ms
+06-16 12:18:20.019 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=1 [8-12)=0 [12-16)=0 [16-20)=8 [20-24)=29 [24-28)=38 [28-32)=24 [32-36)=12 [36-40)=4 [40+)=3
+06-16 12:18:20.019 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.019 11207 30410 I godot   :   draw_calls=33  primitives=1640  objects=292 (Performance monitor)
+06-16 12:18:20.019 11207 30410 I godot   :   RenderingServer view_calls=33 view_prims=1640
+06-16 12:18:20.019 11207 30410 I godot   :   vram total=43.4 MB  tex=18.8 MB  buf=5.6 MB
+06-16 12:18:20.019 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.019 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.019 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.205 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1861 ===
+06-16 12:18:20.205 11207 30410 I godot   :   FPS=53.0  process(sample)=36.97ms  physics=0.17ms  nav=0.01ms
+06-16 12:18:20.205 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.34 avg=26.63 p50=26.27 p95=36.42 max=42.62
+06-16 12:18:20.205 11207 30410 I godot   :   sus_ticks=65/120 sus_frame_avg=28.62ms non_sus_frame_avg=24.27ms
+06-16 12:18:20.205 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=0 [12-16)=0 [16-20)=6 [20-24)=33 [24-28)=38 [28-32)=24 [32-36)=12 [36-40)=3 [40+)=3
+06-16 12:18:20.205 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.205 11207 30410 I godot   :   draw_calls=32  primitives=1636  objects=290 (Performance monitor)
+06-16 12:18:20.205 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1636
+06-16 12:18:20.205 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.205 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.205 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.205 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.330 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1869 ===
+06-16 12:18:20.330 11207 30410 I godot   :   FPS=53.0  process(sample)=36.97ms  physics=0.17ms  nav=0.01ms
+06-16 12:18:20.330 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.34 avg=26.09 p50=26.20 p95=36.41 max=42.63
+06-16 12:18:20.330 11207 30410 I godot   :   sus_ticks=63/120 sus_frame_avg=28.56ms non_sus_frame_avg=23.35ms
+06-16 12:18:20.330 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=3 [12-16)=0 [16-20)=7 [20-24)=32 [24-28)=35 [28-32)=25 [32-36)=11 [36-40)=3 [40+)=3
+06-16 12:18:20.330 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.330 11207 30410 I godot   :   draw_calls=32  primitives=1632  objects=288 (Performance monitor)
+06-16 12:18:20.330 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1632
+06-16 12:18:20.330 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.330 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.330 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.330 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.438 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1876 ===
+06-16 12:18:20.438 11207 30410 I godot   :   FPS=53.0  process(sample)=36.97ms  physics=0.17ms  nav=0.01ms
+06-16 12:18:20.438 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.25 avg=25.44 p50=26.05 p95=36.41 max=42.63
+06-16 12:18:20.438 11207 30410 I godot   :   sus_ticks=61/120 sus_frame_avg=28.35ms non_sus_frame_avg=22.43ms
+06-16 12:18:20.438 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=6 [12-16)=0 [16-20)=8 [20-24)=32 [24-28)=33 [28-32)=24 [32-36)=10 [36-40)=3 [40+)=3
+06-16 12:18:20.438 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.438 11207 30410 I godot   :   draw_calls=32  primitives=1632  objects=288 (Performance monitor)
+06-16 12:18:20.438 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1632
+06-16 12:18:20.438 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.438 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.438 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.438 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.544 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1882 ===
+06-16 12:18:20.544 11207 30410 I godot   :   FPS=43.0  process(sample)=39.63ms  physics=0.38ms  nav=0.01ms
+06-16 12:18:20.544 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.17 avg=25.02 p50=25.55 p95=36.41 max=42.63
+06-16 12:18:20.544 11207 30410 I godot   :   sus_ticks=60/120 sus_frame_avg=28.07ms non_sus_frame_avg=21.97ms
+06-16 12:18:20.544 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=7 [12-16)=1 [16-20)=9 [20-24)=32 [24-28)=33 [28-32)=21 [32-36)=10 [36-40)=3 [40+)=3
+06-16 12:18:20.544 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.544 11207 30410 I godot   :   draw_calls=32  primitives=1642  objects=293 (Performance monitor)
+06-16 12:18:20.544 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1642
+06-16 12:18:20.544 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.544 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.544 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.544 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.598 11207 30410 I godot   : [sea_ice/slow-dump] tick=314 path=gdext_state_machine total_wall=2802.75ms (pack=0.01 refresh=0.10 native=0.10 native_wall=0.14 sync=2.63 flip=0.00) water=1418 flipped=0
+06-16 12:18:20.600 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=2.830 facade_fixed=81
+06-16 12:18:20.685 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1890 ===
+06-16 12:18:20.685 11207 30410 I godot   :   FPS=43.0  process(sample)=39.63ms  physics=0.38ms  nav=0.01ms
+06-16 12:18:20.685 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.31 avg=24.51 p50=24.89 p95=36.40 max=42.64
+06-16 12:18:20.685 11207 30410 I godot   :   sus_ticks=59/120 sus_frame_avg=27.75ms non_sus_frame_avg=21.37ms
+06-16 12:18:20.685 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=9 [12-16)=1 [16-20)=11 [20-24)=33 [24-28)=30 [28-32)=20 [32-36)=9 [36-40)=3 [40+)=3
+06-16 12:18:20.685 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.685 11207 30410 I godot   :   draw_calls=32  primitives=1644  objects=294 (Performance monitor)
+06-16 12:18:20.685 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1644
+06-16 12:18:20.685 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.685 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.685 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.685 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.762 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1895 ===
+06-16 12:18:20.763 11207 30410 I godot   :   FPS=43.0  process(sample)=39.63ms  physics=0.38ms  nav=0.01ms
+06-16 12:18:20.763 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.19 avg=24.09 p50=24.46 p95=36.40 max=42.64
+06-16 12:18:20.763 11207 30410 I godot   :   sus_ticks=58/120 sus_frame_avg=27.52ms non_sus_frame_avg=20.87ms
+06-16 12:18:20.763 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=1 [8-12)=10 [12-16)=1 [16-20)=12 [20-24)=32 [24-28)=30 [28-32)=18 [32-36)=9 [36-40)=3 [40+)=3
+06-16 12:18:20.763 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:20.763 11207 30410 I godot   :   draw_calls=32  primitives=1638  objects=291 (Performance monitor)
+06-16 12:18:20.763 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1638
+06-16 12:18:20.763 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:20.763 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:20.763 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:20.763 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:20.908 11207 30410 I godot   :   [ocean_currents] slow phys slice=11.7ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+06-16 12:18:21.194 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1917 ===
+06-16 12:18:21.194 11207 30410 I godot   :   FPS=37.0  process(sample)=34.56ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:21.194 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.31 avg=22.29 p50=22.66 p95=37.65 max=42.64
+06-16 12:18:21.194 11207 30410 I godot   :   sus_ticks=54/120 sus_frame_avg=26.16ms non_sus_frame_avg=19.13ms
+06-16 12:18:21.194 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=11 [12-16)=4 [16-20)=21 [20-24)=35 [24-28)=26 [28-32)=8 [32-36)=5 [36-40)=4 [40+)=3
+06-16 12:18:21.194 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:21.194 11207 30410 I godot   :   draw_calls=32  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:21.194 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1658
+06-16 12:18:21.194 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:21.194 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:21.194 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:21.194 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:21.202 11207 30410 I godot   : [BEGIN-COMMIT] W=512 H=304 dyn.sz=622592 smo.sz=622592 eco.sz=622592 ice.sz=155648 stride_real={ "dyn": 0, "eco": 0, "smo": 2400, "ice": 455 }
+06-16 12:18:21.331 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1922 ===
+06-16 12:18:21.331 11207 30410 I godot   :   FPS=37.0  process(sample)=34.56ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:21.331 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.34 avg=22.07 p50=22.63 p95=37.63 max=42.64
+06-16 12:18:21.331 11207 30410 I godot   :   sus_ticks=54/120 sus_frame_avg=26.08ms non_sus_frame_avg=18.79ms
+06-16 12:18:21.331 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=11 [12-16)=5 [16-20)=21 [20-24)=35 [24-28)=27 [28-32)=8 [32-36)=3 [36-40)=5 [40+)=2
+06-16 12:18:21.331 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:21.331 11207 30410 I godot   :   draw_calls=32  primitives=1650  objects=297 (Performance monitor)
+06-16 12:18:21.331 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1650
+06-16 12:18:21.331 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:21.331 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:21.331 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:21.331 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:21.455 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1927 ===
+06-16 12:18:21.455 11207 30410 I godot   :   FPS=37.0  process(sample)=34.56ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:21.455 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.31 avg=21.59 p50=22.47 p95=33.03 max=39.07
+06-16 12:18:21.455 11207 30410 I godot   :   sus_ticks=52/120 sus_frame_avg=25.28ms non_sus_frame_avg=18.76ms
+06-16 12:18:21.455 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=11 [12-16)=5 [16-20)=22 [20-24)=35 [24-28)=30 [28-32)=8 [32-36)=1 [36-40)=5 [40+)=0
+06-16 12:18:21.455 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:21.455 11207 30410 I godot   :   draw_calls=32  primitives=1650  objects=297 (Performance monitor)
+06-16 12:18:21.455 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1650
+06-16 12:18:21.455 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:21.455 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:21.455 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:21.455 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:21.624 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1934 ===
+06-16 12:18:21.624 11207 30410 I godot   :   FPS=37.0  process(sample)=34.56ms  physics=0.18ms  nav=0.00ms
+06-16 12:18:21.624 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.32 avg=21.42 p50=22.44 p95=29.92 max=39.06
+06-16 12:18:21.624 11207 30410 I godot   :   sus_ticks=52/120 sus_frame_avg=25.20ms non_sus_frame_avg=18.53ms
+06-16 12:18:21.624 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=11 [12-16)=5 [16-20)=23 [20-24)=35 [24-28)=32 [28-32)=6 [32-36)=0 [36-40)=5 [40+)=0
+06-16 12:18:21.624 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:21.624 11207 30410 I godot   :   draw_calls=32  primitives=1648  objects=296 (Performance monitor)
+06-16 12:18:21.624 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1648
+06-16 12:18:21.624 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:21.624 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:21.624 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:21.624 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:22.195 11207 30410 I godot   : [render-profile] === GPU / Frame metrics @ frame 1957 ===
+06-16 12:18:22.195 11207 30410 I godot   :   FPS=35.0  process(sample)=42.47ms  physics=0.18ms  nav=0.01ms
+06-16 12:18:22.195 11207 30410 I godot   :   frame wall ms over 120 samples: min=0.13 avg=21.45 p50=22.24 p95=31.30 max=39.05
+06-16 12:18:22.195 11207 30410 I godot   :   sus_ticks=51/120 sus_frame_avg=25.33ms non_sus_frame_avg=18.58ms
+06-16 12:18:22.195 11207 30410 I godot   :   histogram (4ms bins): [0-4)=1 [4-8)=2 [8-12)=11 [12-16)=8 [16-20)=26 [20-24)=27 [24-28)=26 [28-32)=14 [32-36)=1 [36-40)=4 [40+)=0
+06-16 12:18:22.195 11207 30410 I godot   :   vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+06-16 12:18:22.195 11207 30410 I godot   :   draw_calls=32  primitives=1658  objects=301 (Performance monitor)
+06-16 12:18:22.195 11207 30410 I godot   :   RenderingServer view_calls=32 view_prims=1658
+06-16 12:18:22.195 11207 30410 I godot   :   vram total=42.8 MB  tex=18.2 MB  buf=5.6 MB
+06-16 12:18:22.195 11207 30410 I godot   :   nodes=185 resources=166 orphan_nodes=0
+06-16 12:18:22.195 11207 30410 I godot   :   atlas hm_size=512x304  msaa=0  fxaa=false  mobile=true
+06-16 12:18:22.195 11207 30410 I godot   :   dynamic_visual_atlas_upload_disabled=false  atlas_force_quarter_size=false
+06-16 12:18:23.197 11207 30410 I godot   : fast tick #365: 30ms (sus=29.96 render=0.61 ui=0.00 skipped_day=true)
+06-16 12:18:23.205 11207 30410 I godot   : Yearly refresh 5ms
+06-16 12:18:23.815 11207 30410 I godot   : [sea_ice/slow-dump] tick=378 path=gdext_state_machine total_wall=2807.58ms (pack=0.01 refresh=0.08 native=0.04 native_wall=0.06 sync=1.61 flip=1.26) water=1418 flipped=31
+06-16 12:18:23.817 11207 30410 I godot   : [sea_ice/terrain_sync] reason=sea_ice_done phase=3.532 facade_fixed=302
+06-16 12:18:26.697 11207 30410 I godot   : [stage_b/combined] DEBUG call#3: rc=0.1508 wall=0.34ms run_a=true run_v=true run_f=true
+06-16 12:18:26.697 11207 30410 I godot   :   breakdown(ms): iter=0.00 pack_albedo=0.00 pack_vegdyn=0.01 pack_feedback=0.01 refresh=0.14 call=0.18 unpack=0.00

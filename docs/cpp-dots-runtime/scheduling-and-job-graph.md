@@ -185,7 +185,8 @@ legacy `SusJob` 和 C++ `SusSchedulerExt` 都维护 skip 统计。长期 `frame_
 
 它不等于“当前 tick 仍然在 GDScript 路径”。要结合最新 job breakdown：
 
-- 如果同一段日志后面出现 `transp gdext wall=0.35 native=0.029 ...`，说明当前 transp native compute 很小，`largest` 可能保留了窗口内旧 spike。
+- 如果同一段 `[fast tick WARN]` 日志后面出现 `transp/native breakdown source=current diagnostic_wall_ms=0.35 native_compute_ms=0.016 ...`，说明当前 transp native compute 很小，`largest` 可能保留了窗口内旧 spike。
+- `source=cached` 表示当前 WARN 打印发生在 climate round finalize 后，日志使用的是同一 breakdown 中缓存的最后一次 transp/native 诊断。
 - 如果连续多个窗口 `largest` 都指向同一 `path=gdscript` 且 stage breakdown 也没有 native 字段，才说明当前仍在 fallback。
 
 ## Job 开发规则

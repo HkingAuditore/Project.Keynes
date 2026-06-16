@@ -121,7 +121,7 @@ extends Node2D
 # 这组变量由 main.gd 通过 set_*() 推进；shader 分支逐步在任务 3~9 中接入。
 # 默认值与 main.gd 一致，保证 renderer 被单独调试时也有合理初值。
 @export_group("Visual Overhaul")
-@export_range(0, 2, 1) var visual_quality: int = 2
+@export_range(0, 2, 1) var visual_quality: int = 1
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
 @export var ocean_current_enabled: bool = true
@@ -362,7 +362,38 @@ func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 	if shader == null:
 		push_warning("HexRenderer: shader not found at %s" % source_path)
 		return mat.shader
+	# Mobile quality tier 编译时变体（2026-06-15）：移动端 prepend #define MOBILE_QUALITY_*
+	# 让 GPU 编译三种独立 shader 二进制（GPU warp 不再为所有 if 分支保留 register）。
+	# tier 由 main.gd::_mobile_shader_quality_tier_for_define() 推送（onready 时机）。
+	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+		var src: String = shader.code
+		# 检查是否已经 prepend 过（避免热重载重复加）
+		if not src.begins_with("#define"):
+			shader = shader.duplicate() as Shader
+			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			print("[hex_renderer/quality] prepended #define %s to %s" % [
+				_mobile_quality_tier_define, source_path
+			])
 	return shader
+
+
+# Mobile shader quality tier（2026-06-15）：由 main.gd::_push_visual_toggles 推过来。
+# 空字符串 = 桌面端 / 不 prepend define。可选值 "MOBILE_QUALITY_LOW" / "MID" / "HIGH"。
+var _mobile_quality_tier_define: String = ""
+
+func set_mobile_quality_tier(tier_define: String) -> void:
+	if _mobile_quality_tier_define == tier_define:
+		return
+	_mobile_quality_tier_define = tier_define
+	# 重新加载 shader 让 #define 生效（hot toggle 时也走这条）
+	if _shader_mat != null:
+		_load_shader()
+		# 关键：_load_shader 创建了新 ShaderMaterial 实例（disk source_mat.duplicate()），
+		# 原本的 atlas uniform (height_tex/enum_atlas/dyn_atlas_smooth_atlas 等) 都是 null。
+		# 必须重新 push 所有 uniform，否则 fragment 拿到 null texture → 输出全白 / 失败。
+		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
+		if _map != null and _world != null and _shader_mat != null:
+			_apply_uniforms()
 
 func _poll_shader_hot_reload(delta: float) -> void:
 	if not shader_hot_reload_enabled:
@@ -471,7 +502,9 @@ func set_season_phase(phase: float) -> void:
 	# === Plan-C/sea-ice-render-source-unify 阶段 A diag (临时) ===
 	# 检查 season/uniform 推送 & 海冰单源数据通道（dyn_atlas_smooth.A）是否就绪。
 	# ice_state_atlas 仍打印作为旧通道在场监控（已不再是 shader 水路径主源）。
-	if Engine.get_process_frames() % 120 == 0:
+	# Fix #4 (2026-06-15): mobile 上禁用，每行 print + 多次 RID/size 字符串化在
+	# Adreno 端是真实开销，60 FPS 下每秒 1 行累积 ~0.2ms/帧。
+	if not OS.has_feature("mobile") and Engine.get_process_frames() % 120 == 0:
 		var _ice_tex_str: String = "null"
 		if _world != null and _world.ice_state_tex != null:
 			_ice_tex_str = "size=%s rid=%s" % [str(_world.ice_state_tex.get_size()), str(_world.ice_state_tex.get_rid())]
@@ -525,6 +558,32 @@ func set_visual_quality(q: int) -> void:
 		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
 	if _weather_layer != null:
 		_weather_layer.set_visual_quality(visual_quality)
+
+
+# 60 FPS 调查（2026-06-14）：完全禁用主地形 shader。
+# 把 _world_quad.material = null → fragment shader 不跑，只剩 GPU 清屏 + canvas
+# composite。用 ΔFPS 反推 hex_terrain/world_map shader 占多少 GPU 时间。
+# 实验结束后再 toggle 回来恢复 _shader_mat。
+var _shader_disabled_by_toggle: bool = false
+
+func toggle_world_shader_disabled() -> bool:
+	if _world_quad == null:
+		print("[hex_renderer] _world_quad null, cannot toggle shader")
+		return false
+	_shader_disabled_by_toggle = not _shader_disabled_by_toggle
+	if _shader_disabled_by_toggle:
+		_world_quad.material = null
+	else:
+		_world_quad.material = _shader_mat
+	print("[hex_renderer] world shader disabled=%s — material=%s" % [
+		str(_shader_disabled_by_toggle),
+		str(_world_quad.material)
+	])
+	return _shader_disabled_by_toggle
+
+
+func is_world_shader_disabled() -> bool:
+	return _shader_disabled_by_toggle
 
 func set_ecology_visual_quality(q: int) -> void:
 	ecology_visual_quality = clampi(q, 0, 2)
@@ -860,6 +919,15 @@ func weather_fronts_diag() -> Dictionary:
 	return _weather_fronts_diag.duplicate(true)
 
 func set_weather_fronts(fronts: Array) -> void:
+	# Fix #7A (2026-06-15): mobile 限 fronts 上限 4（桌面继续 16）。
+	# log_next.txt 实测 fronts=12 时 draw_calls 32→41 / primitives 1644→5418，
+	# 主要来自 12 个 GPUParticles2D 实例（每个 ~300 粒子）+ overlay shader
+	# 内 16-loop 内部计算。截断到 4 减少：
+	#   - GPUParticles primitives: ~3600→1200 (-2400)
+	#   - 内部 16-loop 早 break（weather_front_count uniform 写 4）
+	# 选 4 而非 0 保留视觉效果："最近 4 个 front 仍可见，远处天气只在 cell 数据上推进"。
+	if OS.has_feature("mobile") and fronts.size() > 4:
+		fronts = fronts.slice(0, 4)
 	var n_now: int = fronts.size()
 	var should_log: bool = false
 	if _set_weather_fronts_log_count < _set_weather_fronts_log_budget:

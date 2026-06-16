@@ -2181,9 +2181,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const float  insol_dev_min  = cp_struct.has("insol_dev_min")
                                     ? float(cp_struct["insol_dev_min"]) : -1.0f;
     const float  insol_dev_max  = cp_struct.has("insol_dev_max")
-                                    ? float(cp_struct["insol_dev_max"]) : 1.5f;
+                                    ? float(cp_struct["insol_dev_max"]) : 1.0f;
     const float  thermal_land   = cp_struct.has("thermal_inertia_land")
-                                    ? float(cp_struct["thermal_inertia_land"]) : 0.24f;
+                                    ? float(cp_struct["thermal_inertia_land"]) : 0.35f;
     const float  thermal_water  = cp_struct.has("thermal_inertia_water")
                                     ? float(cp_struct["thermal_inertia_water"]) : 0.07f;
     const float  thermal_snow   = cp_struct.has("thermal_inertia_snow")
@@ -2191,11 +2191,11 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const float  thermal_high   = cp_struct.has("thermal_inertia_high_mountain")
                                     ? float(cp_struct["thermal_inertia_high_mountain"]) : 0.16f;
     const float  thermal_delta_cap = cp_struct.has("thermal_daily_delta_cap")
-                                    ? float(cp_struct["thermal_daily_delta_cap"]) : 0.085f;
+                                    ? float(cp_struct["thermal_daily_delta_cap"]) : 0.15f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
-                                    ? float(cp_struct["snowpack_cover_low"]) : 0.03f;
+                                    ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     const float  snowpack_cover_full = cp_struct.has("snowpack_cover_full")
-                                    ? float(cp_struct["snowpack_cover_full"]) : 0.25f;
+                                    ? float(cp_struct["snowpack_cover_full"]) : 0.32f;
     const float  snowpack_cover_span = (snowpack_cover_full - snowpack_cover_low) > 0.001f
                                     ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
     const float  sea_level      = cp_struct.has("sea_level")
@@ -2532,9 +2532,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const float  insol_dev_min  = cp_struct.has("insol_dev_min")
                                     ? float(cp_struct["insol_dev_min"]) : -1.0f;
     const float  insol_dev_max  = cp_struct.has("insol_dev_max")
-                                    ? float(cp_struct["insol_dev_max"]) : 1.5f;
+                                    ? float(cp_struct["insol_dev_max"]) : 1.0f;
     const float  thermal_land   = cp_struct.has("thermal_inertia_land")
-                                    ? float(cp_struct["thermal_inertia_land"]) : 0.24f;
+                                    ? float(cp_struct["thermal_inertia_land"]) : 0.35f;
     const float  thermal_water  = cp_struct.has("thermal_inertia_water")
                                     ? float(cp_struct["thermal_inertia_water"]) : 0.07f;
     const float  thermal_snow   = cp_struct.has("thermal_inertia_snow")
@@ -2542,11 +2542,11 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const float  thermal_high   = cp_struct.has("thermal_inertia_high_mountain")
                                     ? float(cp_struct["thermal_inertia_high_mountain"]) : 0.16f;
     const float  thermal_delta_cap = cp_struct.has("thermal_daily_delta_cap")
-                                    ? float(cp_struct["thermal_daily_delta_cap"]) : 0.085f;
+                                    ? float(cp_struct["thermal_daily_delta_cap"]) : 0.15f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
-                                    ? float(cp_struct["snowpack_cover_low"]) : 0.03f;
+                                    ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     const float  snowpack_cover_full = cp_struct.has("snowpack_cover_full")
-                                    ? float(cp_struct["snowpack_cover_full"]) : 0.25f;
+                                    ? float(cp_struct["snowpack_cover_full"]) : 0.32f;
     const float  snowpack_cover_span = (snowpack_cover_full - snowpack_cover_low) > 0.001f
                                     ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
     const float  sea_level      = cp_struct.has("sea_level")
@@ -3465,6 +3465,8 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
     const bool low_lat   = lat_abs < 0.48f;
     const bool meaningful_precip = precip > 0.080f ||
         (precip > 0.045f && cloud > 0.20f && vapor > 0.24f);
+    const bool warm_ocean_core = ocean_an > 0.12f &&
+        instability > 0.80f && precip > 0.10f && cloud > 0.26f;
 
     const bool cold_precip_snow = cold_precip_as_blizzard && meaningful_precip &&
         (temp <= 0.24f ||
@@ -3472,7 +3474,7 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
           cloud > 0.18f && vapor > 0.20f && precip > 0.04f));
     if (cold_precip_snow)
         return 3; // BLIZZARD
-    if (warm && humid && instability > 0.56f && precip > 0.16f)
+    if (warm && humid && ((instability > 0.56f && precip > 0.16f) || warm_ocean_core))
         return 2; // STORM
     if (warm && humid && low_lat && precip > 0.13f)
         return 7; // MONSOON
@@ -3679,19 +3681,19 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_diffusion         = knobs.has("field_diffusion")
                                             ? float(knobs["field_diffusion"]) : 0.04f;
     const float field_condensation_gain = knobs.has("field_condensation_gain")
-                                            ? float(knobs["field_condensation_gain"]) : 0.85f;
+                                            ? float(knobs["field_condensation_gain"]) : 0.68f;
     const float field_orographic_lift_gain = knobs.has("field_orographic_lift_gain")
                                             ? float(knobs["field_orographic_lift_gain"]) : 0.35f;
     const float field_convergence_gain  = knobs.has("field_convergence_gain")
-                                            ? float(knobs["field_convergence_gain"]) : 0.25f;
+                                            ? float(knobs["field_convergence_gain"]) : 0.32f;
     const float field_ocean_evap_gain   = knobs.has("field_ocean_evap_gain")
-                                            ? float(knobs["field_ocean_evap_gain"]) : 0.30f;
+                                            ? float(knobs["field_ocean_evap_gain"]) : 0.34f;
     const float field_precip_decay      = knobs.has("field_precip_decay")
-                                            ? float(knobs["field_precip_decay"]) : 0.48f;
+                                            ? float(knobs["field_precip_decay"]) : 0.62f;
     const float field_precip_carryover_max = knobs.has("field_precip_carryover_max")
-                                            ? float(knobs["field_precip_carryover_max"]) : 0.12f;
+                                            ? float(knobs["field_precip_carryover_max"]) : 0.08f;
     const float field_vapor_precip_sink = knobs.has("field_vapor_precip_sink")
-                                            ? float(knobs["field_vapor_precip_sink"]) : 0.58f;
+                                            ? float(knobs["field_vapor_precip_sink"]) : 0.70f;
     const float field_vapor_relax_rate = knobs.has("field_vapor_relax_rate")
                                             ? float(knobs["field_vapor_relax_rate"]) : 0.08f;
     const float field_orographic_lift_cap = knobs.has("field_orographic_lift_cap")
@@ -3705,15 +3707,15 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     if (snow_classification_margin < 0.0f) snow_classification_margin = 0.0f;
     else if (snow_classification_margin > 0.12f) snow_classification_margin = 0.12f;
     float field_wet_terrain_precip_damping = knobs.has("field_wet_terrain_precip_damping")
-                                            ? float(knobs["field_wet_terrain_precip_damping"]) : 0.22f;
+                                            ? float(knobs["field_wet_terrain_precip_damping"]) : 0.28f;
     float field_lake_precip_damping = knobs.has("field_lake_precip_damping")
                                             ? float(knobs["field_lake_precip_damping"]) : 0.35f;
     float field_lake_evap_scale = knobs.has("field_lake_evap_scale")
                                             ? float(knobs["field_lake_evap_scale"]) : 0.35f;
     float field_extreme_precip_soft_cap = knobs.has("field_extreme_precip_soft_cap")
-                                            ? float(knobs["field_extreme_precip_soft_cap"]) : 0.24f;
+                                            ? float(knobs["field_extreme_precip_soft_cap"]) : 0.20f;
     float field_extreme_precip_softness = knobs.has("field_extreme_precip_softness")
-                                            ? float(knobs["field_extreme_precip_softness"]) : 0.35f;
+                                            ? float(knobs["field_extreme_precip_softness"]) : 0.30f;
     if (field_wet_terrain_precip_damping < 0.0f) field_wet_terrain_precip_damping = 0.0f;
     else if (field_wet_terrain_precip_damping > 1.0f) field_wet_terrain_precip_damping = 1.0f;
     if (field_lake_precip_damping < 0.0f) field_lake_precip_damping = 0.0f;
@@ -9786,6 +9788,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     const int sid_heat_input  = component_id(StringName("cell_heat_input"));
     const int sid_cover       = component_id(StringName("cell_cover"));
     const int sid_landform    = component_id(StringName("cell_landform"));
+    const int sid_terrain     = component_id(StringName("cell_terrain"));
     const int sid_elevation   = component_id(StringName("cell_elevation"));
     const int sid_w_intens    = component_id(StringName("cell_weather_intensity"));
     const int sid_w_precip    = component_id(StringName("cell_weather_precip"));
@@ -9794,7 +9797,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     if (sid_temp     < 0 || sid_moisture  < 0 || sid_snow_cover < 0 ||
         sid_snowpack < 0 || sid_water_bal < 0 || sid_soil_moist < 0 ||
         sid_heat_input < 0 || sid_cover   < 0 ||
-        sid_landform < 0 || sid_elevation < 0 || sid_w_intens  < 0 ||
+        sid_landform < 0 || sid_terrain  < 0 || sid_elevation < 0 || sid_w_intens  < 0 ||
         sid_w_precip < 0 || sid_w_type    < 0 || sid_w_finit   < 0) {
         diag("missing slot id (some weather/cover/landform component not bound)");
         return out;
@@ -9836,15 +9839,15 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     const int   cv_none              = int(knobs["cv_none"]);
     const int   cv_flooding          = int(knobs["cv_flooding"]);
     const float snowpack_accum_gain  = knobs.has("snowpack_accum_gain") ? float(knobs["snowpack_accum_gain"]) : 0.10f;
-    const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.08f;
-    const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.03f;
-    const float snowpack_cover_low   = knobs.has("snowpack_cover_low") ? float(knobs["snowpack_cover_low"]) : 0.03f;
-    const float snowpack_cover_full  = knobs.has("snowpack_cover_full") ? float(knobs["snowpack_cover_full"]) : 0.25f;
+    const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
+    const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
+    const float snowpack_cover_low   = knobs.has("snowpack_cover_low") ? float(knobs["snowpack_cover_low"]) : 0.05f;
+    const float snowpack_cover_full  = knobs.has("snowpack_cover_full") ? float(knobs["snowpack_cover_full"]) : 0.32f;
     const float snowpack_cover_span  = (snowpack_cover_full - snowpack_cover_low) > 0.001f
         ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
     // climate-loop-closure Phase 2.1：气候态物理雪线 floor 参数（threshold=0 关闭）。
-    const float snowline_temp_threshold = knobs.has("snowline_temp_threshold") ? float(knobs["snowline_temp_threshold"]) : 0.34f;
-    const float snowline_band = knobs.has("snowline_band") ? float(knobs["snowline_band"]) : 0.18f;
+    const float snowline_temp_threshold = knobs.has("snowline_temp_threshold") ? float(knobs["snowline_temp_threshold"]) : 0.24f;
+    const float snowline_band = knobs.has("snowline_band") ? float(knobs["snowline_band"]) : 0.22f;
     const float snowline_band_safe = snowline_band > 0.001f ? snowline_band : 0.001f;
     float weather_temp_anomaly_cap = knobs.has("weather_temp_anomaly_cap") ? float(knobs["weather_temp_anomaly_cap"]) : 0.025f;
     if (weather_temp_anomaly_cap < 0.0f) weather_temp_anomaly_cap = 0.0f;
@@ -9881,6 +9884,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     const Slot &s_heat = _slots[sid_heat_input];
     Slot &s_cover    = _slots.write[sid_cover];
     const Slot &s_lf       = _slots[sid_landform];
+    const Slot &s_terrain  = _slots[sid_terrain];
     const Slot &s_elev     = _slots[sid_elevation];
     const Slot &s_w_int    = _slots[sid_w_intens];
     const Slot &s_w_pre    = _slots[sid_w_precip];
@@ -9892,6 +9896,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
         s_waterbal.arr_f32.size() < n_cells || s_soil.arr_f32.size() < n_cells ||
         s_heat.arr_f32.size() < n_cells ||
         s_cover.arr_u8.size() < n_cells || s_lf.arr_u8.size() < n_cells ||
+        s_terrain.arr_u8.size() < n_cells ||
         s_elev.arr_f32.size() < n_cells || s_w_int.arr_f32.size() < n_cells ||
         s_w_pre.arr_f32.size() < n_cells || s_w_typ.arr_u8.size() < n_cells ||
         s_w_fin.arr_u8.size() < n_cells) {
@@ -9908,6 +9913,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     float * const __restrict SOIL = s_soil.arr_f32.ptrw();
     uint8_t * const __restrict CV = s_cover.arr_u8.ptrw();
     const uint8_t * const __restrict LF = s_lf.arr_u8.ptr();
+    const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
     const float * const __restrict EL = s_elev.arr_f32.ptr();
     const float * const __restrict HEAT = s_heat.arr_f32.ptr();
     const float * const __restrict WI = s_w_int.arr_f32.ptr();
@@ -9929,11 +9935,43 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     auto clampf = [](float v, float lo, float hi) -> float {
         return v < lo ? lo : (v > hi ? hi : v);
     };
+    auto smoothstep_local = [&](float a, float b, float x) -> float {
+        if (b <= a) return x >= b ? 1.0f : 0.0f;
+        float t = (x - a) / (b - a);
+        if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+        return t * t * (3.0f - 2.0f * t);
+    };
     constexpr uint8_t COVER_GLACIER = 2;
+
+    auto snow_summer_melt_bonus = [&](float heat_input, float elevation) -> float {
+        const float sun = smoothstep_local(0.55f, 0.90f, clampf(heat_input, 0.0f, 1.0f));
+        const float high_elev = smoothstep_local(0.62f, 0.95f, clampf(elevation, 0.0f, 1.0f));
+        return sun * (1.0f - high_elev * 0.60f) * 0.045f;
+    };
+
+    auto snowline_floor_for_cell = [&](float temp_now, float heat_input, float elevation,
+                                       float snowline_temp_threshold,
+                                       float snowline_band_safe) -> float {
+        if (snowline_temp_threshold <= 0.0f) return 0.0f;
+        const float sun = smoothstep_local(0.45f, 0.85f, clampf(heat_input, 0.0f, 1.0f));
+        const float high_elev = smoothstep_local(0.60f, 0.95f, clampf(elevation, 0.0f, 1.0f));
+        const float summer_drop = sun * (0.14f + (0.045f - 0.14f) * high_elev);
+        const float elev_bonus = clampf((elevation - 0.30f) * 0.10f, 0.0f, 0.08f);
+        const float effective_threshold = snowline_temp_threshold + elev_bonus - summer_drop;
+        return clampf((effective_threshold - temp_now) / snowline_band_safe, 0.0f, 1.0f);
+    };
 
     // LandformType.is_water：DEEP_OCEAN(0) / OCEAN(1) / COAST(2) / LAKE(3) → true
     auto is_water_lf = [](uint8_t lf) -> bool {
         return lf <= 3;
+    };
+    auto is_water_terrain = [](uint8_t t) -> bool {
+        return t == 0  ||  // OCEAN
+               t == 1  ||  // COAST
+               t == 18 ||  // LAKE
+               t == 19 ||  // REEF
+               t == 20 ||  // SEA_ICE
+               t == 21;    // KELP
     };
 
     // ─── 主循环（1:1 复刻 _distribute_weather_field_to_cells + _apply_snow_accumulation）─
@@ -9947,8 +9985,8 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
 
         // CLEAR / 低强度退化分支
         if (wt == wt_clear || intensity <= snow_min_intensity) {
-            const bool water_lf = is_water_lf(LF[i]);
-            if (!is_water_lf(LF[i]) && (ACC[i] > 0 || CV[i] == cv_snow)) {
+            const bool water_lf = is_water_lf(LF[i]) || is_water_terrain(TERR[i]);
+            if (!water_lf && (ACC[i] > 0 || CV[i] == cv_snow)) {
                 // _apply_snow_accumulation(cell, wt, cell.temperature, 0.0)
                 // intensity = 0 ⇒ snowing 永假；只有融化 / 升级判定可能触发。
                 // 2026-05-18 雪线修正：melt_t 加 elev 偏移（高山难融，平原易融）。
@@ -10002,7 +10040,8 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                     snow_accum += (intensity < 0.15f ? intensity : 0.15f) * 0.006f;
                 }
                 const float melt = ((T[i] - melt_t_local) > 0.0f ? (T[i] - melt_t_local) : 0.0f) * snowpack_melt_temp_gain
-                    + HEAT[i] * snowpack_melt_sun_gain;
+                    + HEAT[i] * snowpack_melt_sun_gain
+                    + snow_summer_melt_bonus(HEAT[i], EL[i]);
                 sp = clampf(sp + snow_accum - melt, 0.0f, 1.0f);
                 if (CV[i] == COVER_GLACIER && sp < 0.80f) sp = 0.80f;
                 const float evap_proxy = clampf((0.01f + ((M[i] - 0.45f) > 0.0f ? (M[i] - 0.45f) : 0.0f) * 0.03f)
@@ -10018,7 +10057,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                 // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
                 float snow_floor_c = 0.0f;
                 if (snowline_temp_threshold > 0.0f) {
-                    snow_floor_c = clampf((snowline_temp_threshold - T[i]) / snowline_band_safe, 0.0f, 1.0f);
+                    snow_floor_c = snowline_floor_for_cell(T[i], HEAT[i], EL[i], snowline_temp_threshold, snowline_band_safe);
                     if (snow_floor_c * snowpack_cover_full > sp) sp = snow_floor_c * snowpack_cover_full;
                 }
                 float u = (sp - snowpack_cover_low) / snowpack_cover_span;
@@ -10048,7 +10087,8 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
         const float prev_sp = sp_now;
         float wb_now = WB[i];
         float soil_now = SOIL[i];
-        if (is_water_lf(LF[i])) {
+        const bool water_lf_weather = is_water_lf(LF[i]) || is_water_terrain(TERR[i]);
+        if (water_lf_weather) {
             sp_now = 0.0f;
             wb_now = wb_now + (0.0f - wb_now) * (1.0f / 30.0f);
         } else {
@@ -10067,7 +10107,9 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
             float snow_accum = snowing_sp ? (precip * snowpack_accum_gain + intensity * 0.015f) : 0.0f;
             const float warm_rain_melt = (temp_now > melt_t_sp) ? precip * 0.03f : 0.0f;
             const float melt = ((temp_now - melt_t_sp) > 0.0f ? (temp_now - melt_t_sp) : 0.0f) * snowpack_melt_temp_gain
-                + HEAT[i] * snowpack_melt_sun_gain + warm_rain_melt;
+                + HEAT[i] * snowpack_melt_sun_gain
+                + snow_summer_melt_bonus(HEAT[i], EL[i])
+                + warm_rain_melt;
             sp_now = clampf(sp_now + snow_accum - melt, 0.0f, 1.0f);
             if (CV[i] == COVER_GLACIER && sp_now < 0.80f) sp_now = 0.80f;
             const float meltwater = (prev_sp - sp_now) > 0.0f ? (prev_sp - sp_now) : 0.0f;
@@ -10082,8 +10124,8 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
         }
         // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
         float snow_floor_w = 0.0f;
-        if (snowline_temp_threshold > 0.0f && !is_water_lf(LF[i])) {
-            snow_floor_w = clampf((snowline_temp_threshold - temp_now) / snowline_band_safe, 0.0f, 1.0f);
+        if (snowline_temp_threshold > 0.0f && !water_lf_weather) {
+            snow_floor_w = snowline_floor_for_cell(temp_now, HEAT[i], EL[i], snowline_temp_threshold, snowline_band_safe);
             if (snow_floor_w * snowpack_cover_full > sp_now) sp_now = snow_floor_w * snowpack_cover_full;
         }
         float u_sp = (sp_now - snowpack_cover_low) / snowpack_cover_span;
@@ -10096,7 +10138,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
         WB[i] = wb_now;
         SOIL[i] = soil_now;
 
-        if (!is_water_lf(LF[i])) {
+        if (!water_lf_weather) {
             // 雪：累积式 _apply_snow_accumulation(cell, wt, temp_now, intensity)
             // 2026-05-18 雪线修正：freeze_t / melt_t 随 elev 偏移（与 GDScript SAME_SOURCE）。
             //   neutral=0.30；freeze_gain=0.20，max_off=±0.06；melt_gain=0.30，max_off=±0.10。
@@ -15348,8 +15390,11 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
             int32_t * const OUT = dyn_real_indices.ptrw();
             int32_t * const OUT_SIG = dyn_real_sigs.ptrw();
             int kw = 0;
-            // [TEMP DIAG sea-ice phase D] 一次性 dump：确认 lambda 实际数据源
-            int _diag_d_dumped = 0;
+            // [TEMP DIAG sea-ice phase D]：Fix #4 (2026-06-15) — 改为 static
+            // life-of-process 计数器（之前是 lambda 局部变量，每次 round 都重置
+            // 8 次 PHASE-D-DIAG，移动端热路径累积 ~0.5ms/frame）。现在全局
+            // 累计 8 行，调试完毕后整段可删。
+            static int _diag_d_dumped = 0;
             // 加 use_all + dirty_size 让我们看 atlas pipeline 是否在 SIF 升到 1.0 之后还被触发。
             for (int i = 0; i < N; ++i) {
                 const int idx = use_all ? i : SRC[i];
@@ -16968,6 +17013,26 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
             sizeof(float) * static_cast<size_t>(n_cells));
         _flush_slot_to_map(sid_ocx);
         _flush_slot_to_map(sid_ocy);
+        // Fix #11 (2026-06-15): wind_stress_curl + ocean_psi 加入 schema 后也 publish。
+        // 之前 GDScript caller 必须 2400-loop 写 map.wind_stress_curl_arr / ocean_psi_arr，
+        // 这两个 slot 化后 caller 完全跳过 unpack（节省 2400 × 2 = 4800 GDScript array writes）。
+        // 仅 tile_data_recorder 读 PackedArray，flush_slot 后 map.* 仍是同步的。
+        const int sid_curl = component_id(StringName("cell_wind_stress_curl"));
+        const int sid_psi  = component_id(StringName("cell_ocean_psi"));
+        if (sid_curl >= 0 && _slots.write[sid_curl].arr_f32.size() == n_cells) {
+            std::memcpy(
+                _slots.write[sid_curl].arr_f32.ptrw(),
+                curl_out.ptr(),
+                sizeof(float) * static_cast<size_t>(n_cells));
+            _flush_slot_to_map(sid_curl);
+        }
+        if (sid_psi >= 0 && _slots.write[sid_psi].arr_f32.size() == n_cells) {
+            std::memcpy(
+                _slots.write[sid_psi].arr_f32.ptrw(),
+                psi_out.ptr(),
+                sizeof(float) * static_cast<size_t>(n_cells));
+            _flush_slot_to_map(sid_psi);
+        }
         published_to_slot = true;
     }
 
@@ -17696,14 +17761,14 @@ struct ClimateRoundScalars {
     // snowpack_cover_* / insol_dev_min/max）。sync 路径 default 与
     // run_climate_pass_a 顶部一致。
     double insol_dev_min = -1.0;
-    double insol_dev_max = 1.5;
-    double thermal_inertia_land = 0.24;
+    double insol_dev_max = 1.0;
+    double thermal_inertia_land = 0.35;
     double thermal_inertia_water = 0.07;
     double thermal_inertia_snow = 0.09;
     double thermal_inertia_high_mountain = 0.16;
-    double thermal_daily_delta_cap = 0.085;
-    double snowpack_cover_low = 0.03;
-    double snowpack_cover_full = 0.25;
+    double thermal_daily_delta_cap = 0.15;
+    double snowpack_cover_low = 0.05;
+    double snowpack_cover_full = 0.32;
 
     // transp pass 用（Stage 1 实装）
     float  transp_outflow_rate = 0.025f;
@@ -17761,6 +17826,19 @@ struct ClimateRoundScalars {
     int   si_terrain_sea_ice_id = -1;
     int   si_terrain_ocean_id   = -1;
 
+    // ─── finalizer pass knobs（Stage 9，2026-06-16） ──────────────────────
+    // 与 GDScript _apply_daily_climate_finalizer 一一对应：
+    //   temp_cap_enabled = cp.thermal_final_delta_cap_enabled
+    //   temp_cap         = cp.thermal_daily_delta_cap (默认 0.15)
+    //   tta_cap          = cp.temperature_transport_anomaly_daily_cap (默认 0.12)
+    //   has_temp_start   = _temp_start_of_day_arr.size() == n
+    //   has_tta_start    = _tta_start_of_day_arr.size() == n
+    bool  fin_temp_cap_enabled = true;
+    float fin_temp_cap         = 0.15f;
+    float fin_tta_cap          = 0.12f;
+    bool  fin_has_temp_start   = false;
+    bool  fin_has_tta_start    = false;
+
     // ─── passes_mask（plan §async-stage-2，2026-06-14） ──────────────────
     // bit-mask 控制 worker 跑哪几个 pass。kick 时 GDScript 传入。
     //   bit 0: pass_a
@@ -17771,11 +17849,12 @@ struct ClimateRoundScalars {
     //   bit 5: wind_surface
     //   bit 6: sea_ice
     //   bit 7: transp
-    // 默认 0xFF 全开（round 模式）。Stage 2 A/B 验证时 bench 单独跑一个 pass，
-    // 设 mask=0x01（仅 pass_a）或 0x80（仅 transp）。
+    //   bit 8: finalizer (Stage 9，2026-06-16)
+    // 默认 0x1FF 全开（含 finalizer）。Stage 2 A/B 验证时 bench 单独跑一个 pass，
+    // 设 mask=0x01（仅 pass_a）或 0x100（仅 finalizer）。
     // Stage 2 期间 stub 的 pass（pass_b/ocean_*/wind_*/sea_ice）即使被 mask
     // 启用，worker 内部仍是 no-op；不会影响 A/B（验证字段不被它们触碰）。
-    int    passes_mask = 0xFF;
+    int    passes_mask = 0x1FF;
 };
 
 // 主线程序列化进 input_buf 的字段集合。所有 cell-level 数据都是 std::vector<float>
@@ -17835,8 +17914,16 @@ struct ClimateInputBuf {
     std::vector<float>   cell_temperature_arr; // sea_ice: 主线程传 climate/ocean-adjusted T
     std::vector<uint8_t> water_terrain_ids; // sea_ice: 256-entry water LUT 源
     std::vector<float>   sea_ice_frac_inout; // sea_ice: in/out（pass_b 也读它）
+    // ─── finalizer pass 输入字段（Stage 9，2026-06-16） ─────────────────
+    // 主线程在 begin_round 时把 round-start snapshot 传进来。worker finalizer
+    // pass 用它做 clamp(temp - start ± temp_cap) + Δ 统计。GDScript 端的
+    // _temp_start_of_day_arr / _tta_start_of_day_arr 一一对应。
+    std::vector<float>   temp_start_of_day;     // finalizer: temp clamp baseline
+    std::vector<float>   tta_start_of_day;      // finalizer: TTA clamp baseline
+    std::vector<float>   sea_ice_frac_prev;     // finalizer: sea_ice_delta_max
+    std::vector<float>   weather_precip;        // finalizer: precip_p95
     // ─── 后续 pass 占位 ──────────────────────────────────────────────────
-    // 全部 8 pass 输入字段已覆盖
+    // 全部 9 pass 输入字段已覆盖
 
     // round-level scalars（在 kick 时设值）
     ClimateRoundScalars scalars;
@@ -17897,6 +17984,29 @@ struct ClimateOutputBuf {
     // 据此调用 GDScript 端的 mark_terrain_dirty / atlas update 等钩子。
     std::vector<int32_t> flipped_cell_indices;
     std::vector<uint8_t> flipped_new_terrain;
+
+    // ─── finalizer pass diag（Stage 9，2026-06-16） ─────────────────────
+    // 与 GDScript _apply_daily_climate_finalizer 返回的 diag 字段一一对应。
+    // worker 写完后主线程 poll 拿来填 _last_finalizer_diag，跳过同名 GDScript loop。
+    // 全部 scalars / counters，无 PackedArray，poll 端 marshalling cost 可忽略。
+    bool   fin_applied = false;
+    float  fin_max_temp_delta = 0.0f;
+    float  fin_p95_temp_delta = 0.0f;
+    float  fin_p99_temp_delta = 0.0f;
+    float  fin_preclamp_max_temp_delta = 0.0f;
+    float  fin_preclamp_p99_temp_delta = 0.0f;
+    int32_t fin_temp_delta_gt_005_count = 0;
+    int32_t fin_temp_delta_gt_010_count = 0;
+    int32_t fin_temp_delta_gt_020_count = 0;
+    int32_t fin_temp_delta_clamped_count = 0;
+    float  fin_max_transport_anomaly = 0.0f;
+    int32_t fin_tta_clamped_count = 0;
+    int32_t fin_thermal_init_count = 0;
+    float  fin_sea_ice_delta_max = 0.0f;
+    float  fin_precip_p95 = 0.0f;
+    int32_t fin_cells_seen = 0;
+    // finalizer 写出的 final TTA（in/out aliasing，独立 buffer 避免和 wind_air 输出冲突）
+    std::vector<float> tta_final;
 };
 
 // worker 私有临时 buffer（一次 alloc，round 间复用）。所有 pass 都从这里
@@ -17961,6 +18071,8 @@ struct AsyncClimateRoundTask {
     std::atomic<int64_t> last_wind_surface_us{0};
     std::atomic<int64_t> last_sea_ice_us{0};
     std::atomic<int64_t> last_transp_us{0};
+    // Stage 9（2026-06-16）finalizer pass timing
+    std::atomic<int64_t> last_finalizer_us{0};
 };
 
 struct AsyncClimateRoundState {
@@ -19177,6 +19289,188 @@ static bool _async_transp_kernel_pure(const ClimateInputBuf &in,
     return true;
 }
 
+// ─── finalizer kernel（Stage 9，2026-06-16） ──────────────────────────────
+// 移植自 GDScript ClimateDailySystem::_apply_daily_climate_finalizer
+// (climate_daily_system.gd:586)。
+//
+// 行为完全 1:1（含 mirror_temperature_cells / TTA clamp / thermal init / sort /
+// percentile / sea_ice_delta_max / precip_p95）。但有几点关键区别：
+//   1. 不写 HexCell facade（worker thread 不能碰 Godot Object）。GDScript 端
+//      在 facade 启用时 mirror=false，cell.temperature getter 直接走 SoA，所以
+//      worker 写 out.temp + 主线程 publish_to_slot 完全等价。facade 关闭时
+//      （兼容 fallback 路径）GDScript 自己跑 finalizer。
+//   2. 读 in.temp / in.tta / in.thermal_energy / in.ema_initialized / in.sea_ice_frac /
+//      in.sea_ice_frac_prev / in.weather_precip。
+//   3. 输入 baseline：in.temp_start_of_day / in.tta_start_of_day。size==n 时
+//      启用 clamp，否则跳过（diag 仍累计 max_delta）。
+//   4. 写 out.temp（覆盖 wind_surface 的输出）/ out.tta（in/out aliasing —
+//      需要先 copy in→out 再 clamp）/ out.thermal_energy（覆盖 pass_a 的输出）。
+//
+// 返回 true 成功 / false 输入维度问题。
+static bool _async_finalizer_kernel_pure(const ClimateInputBuf &in,
+                                         ClimateOutputBuf &out) {
+    const int n = in.n_cells;
+    if (n <= 0) return false;
+    if ((int)in.temp.size() != n) return false;
+    if ((int)in.temp_transport_anomaly.size() != n) return false;
+    if ((int)in.thermal_energy.size() != n) return false;
+
+    // wind_surface 可能在前面已经写 out.temp；如果没写过（pass mask 关闭 wind_surface）
+    // 则用 in.temp 兜底。注意：从 ClimateOutputBuf 的注释看 out.temp 是
+    // wind_surface 唯一写者（climate round 最终 temp），所以 wind_surface 跑过
+    // 时 out.temp == final 输出；finalizer 在它之上 clamp。
+    if ((int)out.temp.size() != n) {
+        out.temp.assign(n, 0.0f);
+        std::memcpy(out.temp.data(), in.temp.data(), n * sizeof(float));
+    }
+
+    const float *T_in       = in.temp.data();
+    float       *T_out      = out.temp.data();
+    const float *TTA_in     = in.temp_transport_anomaly.data();
+    const float *HEAT_in    = in.thermal_energy.data();
+    const uint8_t *EMA_in   = in.ema_initialized.empty() ? nullptr : in.ema_initialized.data();
+
+    const float temp_cap        = in.scalars.fin_temp_cap;
+    const float tta_cap         = in.scalars.fin_tta_cap;
+    const bool  temp_cap_enable = in.scalars.fin_temp_cap_enabled;
+    const bool  has_temp_start  = in.scalars.fin_has_temp_start
+                                  && (int)in.temp_start_of_day.size() == n;
+    const bool  has_tta_start   = in.scalars.fin_has_tta_start
+                                  && (int)in.tta_start_of_day.size() == n;
+    const float *TS = has_temp_start ? in.temp_start_of_day.data() : nullptr;
+    const float *TTS = has_tta_start ? in.tta_start_of_day.data() : nullptr;
+
+    // 准备 TTA 输出（in/out aliasing — finalizer 写 cell.temperature_transport_anomaly
+    // 时可能同时被同 round 的 pass_b 写过；为不打断 pass_b → finalizer 数据流，
+    // out.temperature_transport_anomaly 先 copy in 再 in-place clamp）。
+    if ((int)out.temp.size() != n) out.temp.assign(n, 0.0f);
+    // 我们需要一个 out 端的 tta buffer。复用 out.air_mass_temp_anomaly 风格——
+    // 但 finalizer 写自己的 tta 单独一个 vector（避免和 wind_air 冲突）。
+    // 简单做法：直接写回 in 不可（worker 不应该回写 in）；新增 out.tta 字段。
+    // 这里走临时方案：复用 in 在 worker 内的拷贝——还不行。
+    // 决策：finalizer 写到一个新 output 字段 out.temp_transport_anomaly。
+    // 该字段需要在 ClimateOutputBuf 加入。Step 4.1 已加。
+
+    // ── temp loop + delta 统计 ──
+    std::vector<float> temp_deltas(n, 0.0f);
+    std::vector<float> preclamp_temp_deltas(n, 0.0f);
+    float max_temp_delta = 0.0f;
+    float preclamp_max_temp_delta = 0.0f;
+    int32_t gt005 = 0, gt010 = 0, gt020 = 0, clamped = 0;
+    for (int i = 0; i < n; ++i) {
+        const float start_t = has_temp_start ? TS[i] : T_out[i];
+        const float raw_t = T_out[i];
+        float final_t = raw_t;
+        const float pre_abs = std::fabs(raw_t - start_t);
+        preclamp_temp_deltas[i] = pre_abs;
+        if (pre_abs > preclamp_max_temp_delta) preclamp_max_temp_delta = pre_abs;
+        if (temp_cap_enable && has_temp_start) {
+            if (final_t < start_t - temp_cap) final_t = start_t - temp_cap;
+            else if (final_t > start_t + temp_cap) final_t = start_t + temp_cap;
+            if (final_t < 0.0f) final_t = 0.0f;
+            else if (final_t > 1.0f) final_t = 1.0f;
+            if (std::fabs(final_t - raw_t) > 0.000001f) ++clamped;
+            T_out[i] = final_t;
+        }
+        const float abs_dt = std::fabs(final_t - start_t);
+        temp_deltas[i] = abs_dt;
+        if (abs_dt > 0.005f) ++gt005;
+        if (abs_dt > 0.010f) ++gt010;
+        if (abs_dt > 0.020f) ++gt020;
+        if (abs_dt > max_temp_delta) max_temp_delta = abs_dt;
+    }
+    out.fin_max_temp_delta = max_temp_delta;
+    out.fin_preclamp_max_temp_delta = preclamp_max_temp_delta;
+    out.fin_temp_delta_gt_005_count = gt005;
+    out.fin_temp_delta_gt_010_count = gt010;
+    out.fin_temp_delta_gt_020_count = gt020;
+    out.fin_temp_delta_clamped_count = clamped;
+
+    // ── TTA loop + clamp + max ──
+    // 注：sync GDScript path 直接在 map.temperature_transport_anomaly_arr in-place clamp。
+    // worker 这里写到独立 buffer，主线程 poll 后 publish 到 slot。
+    // 临时方案：复用 out.air_mass_temp_anomaly buffer 容易和 wind_air 输出
+    // 冲突。改为：用 std::vector 局部，主线程 poll 时通过 PackedFloat32Array
+    // 输出 (out.tta_final)。先临时 in-place 修改 in.temp_transport_anomaly?
+    // —— 不行，in 是 const&。所以加 out.temp_transport_anomaly。
+    if ((int)out.tta_final.size() != n) out.tta_final.assign(n, 0.0f);
+    std::memcpy(out.tta_final.data(), TTA_in, n * sizeof(float));
+    float *TTA_out = out.tta_final.data();
+    float max_tta = 0.0f;
+    int32_t tta_clamped_count = 0;
+    for (int i = 0; i < n; ++i) {
+        const float start_tta = has_tta_start ? TTS[i] : 0.0f;
+        const float raw_tta = TTA_out[i];
+        float final_tta = raw_tta;
+        if (tta_cap > 0.0f && has_tta_start) {
+            if (final_tta < start_tta - tta_cap) final_tta = start_tta - tta_cap;
+            else if (final_tta > start_tta + tta_cap) final_tta = start_tta + tta_cap;
+            if (std::fabs(final_tta - raw_tta) > 0.000001f) {
+                TTA_out[i] = final_tta;
+                ++tta_clamped_count;
+            }
+        }
+        const float abs_tta = std::fabs(final_tta);
+        if (abs_tta > max_tta) max_tta = abs_tta;
+    }
+    out.fin_max_transport_anomaly = max_tta;
+    out.fin_tta_clamped_count = tta_clamped_count;
+
+    // ── thermal_energy init loop（NaN/Inf 或 ema=0 → temp） ──
+    if ((int)out.thermal_energy.size() != n) out.thermal_energy.assign(n, 0.0f);
+    std::memcpy(out.thermal_energy.data(), HEAT_in, n * sizeof(float));
+    float *HEAT_out = out.thermal_energy.data();
+    int32_t thermal_init = 0;
+    for (int i = 0; i < n; ++i) {
+        const float v = HEAT_out[i];
+        bool needs_init = !std::isfinite(v);
+        if (!needs_init && EMA_in != nullptr && EMA_in[i] == 0) needs_init = true;
+        if (needs_init) {
+            HEAT_out[i] = T_out[i];
+            ++thermal_init;
+        }
+    }
+    out.fin_thermal_init_count = thermal_init;
+
+    // ── sort + percentile（p95 / p99） ──
+    std::sort(temp_deltas.begin(), temp_deltas.end());
+    std::sort(preclamp_temp_deltas.begin(), preclamp_temp_deltas.end());
+    auto percentile = [](const std::vector<float> &sorted, float pct) -> float {
+        if (sorted.empty()) return 0.0f;
+        const int idx = std::min((int)sorted.size() - 1,
+                                  (int)std::floor((double)(sorted.size() - 1) * pct));
+        return sorted[idx];
+    };
+    out.fin_p95_temp_delta = percentile(temp_deltas, 0.95f);
+    out.fin_p99_temp_delta = percentile(temp_deltas, 0.99f);
+    out.fin_preclamp_p99_temp_delta = percentile(preclamp_temp_deltas, 0.99f);
+
+    // ── sea_ice_delta_max（仅当 in.sea_ice_frac / in.sea_ice_frac_prev 都齐） ──
+    out.fin_sea_ice_delta_max = 0.0f;
+    if ((int)in.sea_ice_frac.size() == n && (int)in.sea_ice_frac_prev.size() == n) {
+        const float *SIF = in.sea_ice_frac.data();
+        const float *SIFp = in.sea_ice_frac_prev.data();
+        float max_ds = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            const float ds = std::fabs(SIF[i] - SIFp[i]);
+            if (ds > max_ds) max_ds = ds;
+        }
+        out.fin_sea_ice_delta_max = max_ds;
+    }
+
+    // ── precip_p95（sort weather_precip duplicate） ──
+    out.fin_precip_p95 = 0.0f;
+    if ((int)in.weather_precip.size() == n) {
+        std::vector<float> precip_vals(in.weather_precip);
+        std::sort(precip_vals.begin(), precip_vals.end());
+        out.fin_precip_p95 = percentile(precip_vals, 0.95f);
+    }
+
+    out.fin_cells_seen = n;
+    out.fin_applied = true;
+    return true;
+}
+
 // ─── 7 个 stub kernel（Stage 2 替换为 pure kernel） ─────────────────────────
 // 当前行为：直接把 input 拷贝到 output（如果 output 字段存在），不修改 climate
 // 状态。GDScript 端在 cp.use_climate_round_async=true 时，仍然走原 sync sub-pass
@@ -19477,6 +19771,26 @@ static void _async_climate_round_worker_main(AsyncClimateRoundTask *t) {
             (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count(),
             std::memory_order_relaxed);
 
+        // ─── finalizer（bit 8，Stage 9 2026-06-16） ──────────────────────
+        // 在 round 末尾跑一次：clamp temp/TTA、统计 Δ percentile、thermal init、
+        // sea_ice_delta_max、precip_p95。等价 GDScript _apply_daily_climate_finalizer。
+        const auto fi0 = clock::now();
+        if ((mask & 0x100) != 0
+                && (int)t->w_in_buf.temp.size() == t->w_in_buf.n_cells
+                && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells
+                && (int)t->w_in_buf.thermal_energy.size() == t->w_in_buf.n_cells) {
+            // out.temp 已被 wind_surface 写入（mask bit 5 启用时）；finalizer
+            // 在它之上 clamp。若 wind_surface 没写过（mask bit 5 关闭），kernel
+            // 内部用 in.temp 兜底初始化 out.temp。
+            if (!_async_finalizer_kernel_pure(t->w_in_buf, t->w_out_buf)) {
+                ok = false;
+            }
+        }
+        const auto fi1 = clock::now();
+        t->last_finalizer_us.store(
+            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(fi1 - fi0).count(),
+            std::memory_order_relaxed);
+
         const auto compute_t1 = clock::now();
         t->w_out_buf.n_cells = t->w_in_buf.n_cells;
 
@@ -19703,14 +20017,14 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.sea_level        = double(input.get("sea_level", 0.5));
         // pass_a 扩展 scalars
         t->in_buf.scalars.insol_dev_min               = double(input.get("insol_dev_min", -1.0));
-        t->in_buf.scalars.insol_dev_max               = double(input.get("insol_dev_max", 1.5));
-        t->in_buf.scalars.thermal_inertia_land        = double(input.get("thermal_inertia_land", 0.24));
+        t->in_buf.scalars.insol_dev_max               = double(input.get("insol_dev_max", 1.0));
+        t->in_buf.scalars.thermal_inertia_land        = double(input.get("thermal_inertia_land", 0.35));
         t->in_buf.scalars.thermal_inertia_water       = double(input.get("thermal_inertia_water", 0.07));
         t->in_buf.scalars.thermal_inertia_snow        = double(input.get("thermal_inertia_snow", 0.09));
         t->in_buf.scalars.thermal_inertia_high_mountain = double(input.get("thermal_inertia_high_mountain", 0.16));
-        t->in_buf.scalars.thermal_daily_delta_cap     = double(input.get("thermal_daily_delta_cap", 0.085));
-        t->in_buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.03));
-        t->in_buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.25));
+        t->in_buf.scalars.thermal_daily_delta_cap     = double(input.get("thermal_daily_delta_cap", 0.15));
+        t->in_buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.05));
+        t->in_buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.32));
         // transp scalars
         t->in_buf.scalars.transp_outflow_rate = float(input.get("transp_outflow_rate", 0.025));
         t->in_buf.scalars.transp_self_rate    = float(input.get("transp_self_rate", 0.015));
@@ -19767,8 +20081,21 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.si_terrain_sea_ice_id = int(input.get("si_terrain_sea_ice_id", -1));
         t->in_buf.scalars.si_terrain_ocean_id   = int(input.get("si_terrain_ocean_id", -1));
 
-        // passes_mask
-        t->in_buf.scalars.passes_mask = int(input.get("passes_mask", 0xFF));
+        // ─── finalizer pass fields（Stage 9，2026-06-16） ─────────────────
+        // _temp_start_of_day_arr / _tta_start_of_day_arr / sea_ice_frac_prev /
+        // weather_precip 由 GDScript 主线程在 begin_round 时打快照传入。
+        _read_pf32_to_vec(input, "fin_temp_start_of_day",   t->in_buf.temp_start_of_day,   n_cells);
+        _read_pf32_to_vec(input, "fin_tta_start_of_day",    t->in_buf.tta_start_of_day,    n_cells);
+        _read_pf32_to_vec(input, "fin_sea_ice_frac_prev",   t->in_buf.sea_ice_frac_prev,   n_cells);
+        _read_pf32_to_vec(input, "fin_weather_precip",      t->in_buf.weather_precip,      n_cells);
+        t->in_buf.scalars.fin_temp_cap_enabled = bool(input.get("fin_temp_cap_enabled", true));
+        t->in_buf.scalars.fin_temp_cap         = float(input.get("fin_temp_cap", 0.15));
+        t->in_buf.scalars.fin_tta_cap          = float(input.get("fin_tta_cap", 0.12));
+        t->in_buf.scalars.fin_has_temp_start   = bool(input.get("fin_has_temp_start", false));
+        t->in_buf.scalars.fin_has_tta_start    = bool(input.get("fin_has_tta_start", false));
+
+        // passes_mask（默认 0x1FF 含 finalizer bit）
+        t->in_buf.scalars.passes_mask = int(input.get("passes_mask", 0x1FF));
 
         t->request_pending.store(true, std::memory_order_release);
     }
@@ -19858,6 +20185,17 @@ Dictionary DCWorldExt::async_climate_round_poll() {
         write_u8_slot ("cell_terrain",                 snapshot.terrain);
         // transp 的 moisture 输出（若 transp 跑过会覆盖 pass_a 的 moisture）。
         // write_f32_slot 是幂等的；如果 transp 没跑 moisture 用 pass_a 的值。
+
+        // ─── finalizer 输出（Stage 9，2026-06-16） ────────────────────────
+        // finalizer 写 cell_temp / cell_temperature_transport_anomaly / cell_thermal_energy。
+        // cell_temp 已经被 wind_surface 写过（snapshot.temp 上面写过了），finalizer
+        // 在 kernel 内对 out.temp in-place clamp。再 write_f32_slot 即覆盖之前的非 clamped 值。
+        // TTA 是 finalizer 独有 buffer（tta_final）。thermal_energy 在 kernel 里 init NaN/inf 后写出。
+        if (snapshot.fin_applied) {
+            write_f32_slot("cell_temp",                         snapshot.temp);          // 已 clamp 后版本
+            write_f32_slot("cell_temperature_transport_anomaly", snapshot.tta_final);    // 已 clamp
+            write_f32_slot("cell_thermal_energy",                snapshot.thermal_energy); // 已 init
+        }
     }
 
     // 返回 round-level metrics + dirty info 供 GDScript 后处理。
@@ -19865,6 +20203,7 @@ Dictionary DCWorldExt::async_climate_round_poll() {
     out["worker_compute_us"]  = (int64_t)t->last_worker_compute_us.load(std::memory_order_relaxed);
     out["worker_total_us"]    = (int64_t)t->last_worker_total_us.load(std::memory_order_relaxed);
     out["transp_us"]          = (int64_t)t->last_transp_us.load(std::memory_order_relaxed);
+    out["finalizer_us"]       = (int64_t)t->last_finalizer_us.load(std::memory_order_relaxed);
     out["pass_a_us"]          = (int64_t)t->last_pass_a_us.load(std::memory_order_relaxed);
     out["pass_b_us"]          = (int64_t)t->last_pass_b_us.load(std::memory_order_relaxed);
     out["ocean_water_us"]     = (int64_t)t->last_ocean_water_us.load(std::memory_order_relaxed);
@@ -19873,6 +20212,25 @@ Dictionary DCWorldExt::async_climate_round_poll() {
     out["wind_surface_us"]    = (int64_t)t->last_wind_surface_us.load(std::memory_order_relaxed);
     out["sea_ice_us"]         = (int64_t)t->last_sea_ice_us.load(std::memory_order_relaxed);
     out["moisture_dirty_count"] = (int64_t)snapshot.moisture_dirty_indices.size();
+    // ─── finalizer diag（Stage 9，2026-06-16） ───────────────────────────
+    // 一一对应 GDScript _apply_daily_climate_finalizer 返回 diag 的字段名。
+    // GDScript 端 _finalize_round 优先用这些 worker 算好的值，跳过 _apply_*_finalizer。
+    out["fin_applied"]                  = snapshot.fin_applied;
+    out["fin_max_temp_delta"]           = double(snapshot.fin_max_temp_delta);
+    out["fin_p95_temp_delta"]           = double(snapshot.fin_p95_temp_delta);
+    out["fin_p99_temp_delta"]           = double(snapshot.fin_p99_temp_delta);
+    out["fin_preclamp_max_temp_delta"]  = double(snapshot.fin_preclamp_max_temp_delta);
+    out["fin_preclamp_p99_temp_delta"]  = double(snapshot.fin_preclamp_p99_temp_delta);
+    out["fin_temp_delta_gt_005_count"]  = (int64_t)snapshot.fin_temp_delta_gt_005_count;
+    out["fin_temp_delta_gt_010_count"]  = (int64_t)snapshot.fin_temp_delta_gt_010_count;
+    out["fin_temp_delta_gt_020_count"]  = (int64_t)snapshot.fin_temp_delta_gt_020_count;
+    out["fin_temp_delta_clamped_count"] = (int64_t)snapshot.fin_temp_delta_clamped_count;
+    out["fin_max_transport_anomaly"]    = double(snapshot.fin_max_transport_anomaly);
+    out["fin_tta_clamped_count"]        = (int64_t)snapshot.fin_tta_clamped_count;
+    out["fin_thermal_init_count"]       = (int64_t)snapshot.fin_thermal_init_count;
+    out["fin_sea_ice_delta_max"]        = double(snapshot.fin_sea_ice_delta_max);
+    out["fin_precip_p95"]               = double(snapshot.fin_precip_p95);
+    out["fin_cells_seen"]               = (int64_t)snapshot.fin_cells_seen;
     // sea_ice flip events（Stage 2）：主线程 poll 后可据此做 atlas dirty mark /
     // map.terrain mirror sync。GDScript 端把它当 PackedInt32Array / PackedByteArray
     // 消费即可。
@@ -20112,6 +20470,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("component_id", "name"),     &DCWorldExt::component_id);
     ClassDB::bind_method(D_METHOD("component_count"),          &DCWorldExt::component_count);
     ClassDB::bind_method(D_METHOD("has_component", "name"),    &DCWorldExt::has_component);
+    // Fix #11 second pass (2026-06-16) — PKLog.enabled C++ mirror。
+    ClassDB::bind_method(D_METHOD("set_diag_logs_enabled", "v"), &DCWorldExt::set_diag_logs_enabled);
+    ClassDB::bind_method(D_METHOD("get_diag_logs_enabled"),       &DCWorldExt::get_diag_logs_enabled);
 
     ClassDB::bind_method(D_METHOD("create_entities", "count"), &DCWorldExt::create_entities);
     ClassDB::bind_method(D_METHOD("entity_count"),             &DCWorldExt::entity_count);

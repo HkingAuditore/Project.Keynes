@@ -16,7 +16,7 @@ render_mode blend_mix;
 //   scalar_atlas (RGBA8 LINEAR)    R=moisture  G=flow_accum  B=latitude_norm  A=保留
 //   vector_atlas (RGBA8 LINEAR)    RG=ocean_current (-1..1)  BA=wind_field (-1..1)
 //   dynamic_cell_atlas / dyn_atlas_smooth_atlas (RGBA8 LINEAR):
-//                                   R=temp G=wetness B=snow_cover A=vegetation_vitality
+//                                   R=temp G=wetness B=snow_cover A=water sea_ice / land vitality
 //   sea_ice_tex / ice_state_atlas  R=sea_ice_fraction（动态海冰主视觉）
 //   ecology_visual_atlas           R=foliage_density G=stress B=transition_age A=growth
 // ═══════════════════════════════════════════════════════════════════════════
@@ -91,12 +91,19 @@ void fragment() {
 	// 这 4 个分量在 v10.noise-pack 中是 raw value + fbm-2/3/4-octave 的预积分，
 	// 谱形不同但仍是同坐标采样，对"独立 RV"的要求是软约束。下游若需严格独立
 	// 随机数，应另调 derive_independent_noise4(wp + offset)。
+	// 60 FPS 优化（2026-06-15）：mobile 三档变体砍 SETUP 阶段冗余 sample。
+	// LOW: 只保留 elev/enum/scalar/dyn（4 sample）→ 无 noise/vector/eco
+	// MID: 加 noise_tex（5 sample）→ 让 base_ripple 有数据源
+	// HIGH: 加 noise/vector（6 sample）→ 洋流方向
+	// Desktop: 7 sample 全跑
+#ifdef MOBILE_QUALITY_LOW
+	vec4 pixel_noise = vec4(0.5);  // 中性灰值，不调 fbm 也不影响
+#else
 	vec4 pixel_noise = texture(noise_tex, (wp * 0.071 + vec2(19.0, -23.0)) / NOISE_TEX_SCALE);
-	// 旧 R8 noise_tex 热重载兜底：G/B≈0 且 A≈1 时，用纯 ALU hash 派生 4 个相互
-	// 独立的随机数（取代旧 fract(R + offset) 的单一序列派生）。
 	if ((pixel_noise.g + pixel_noise.b) <= 0.0001 && pixel_noise.a >= 0.98) {
 		pixel_noise = derive_independent_noise4(wp * 0.071 + vec2(19.0, -23.0));
 	}
+#endif
 
 	float elev = decode_height_rg8(uv);
 
@@ -104,13 +111,19 @@ void fragment() {
 	vec4 enums = texture(enum_atlas,   uv);
 	vec4 scals = texture(scalar_atlas, uv);
 	// vector_atlas：RG=洋流、BA=风场，均为 [-1,1] 映射到 [0,1]。
-	// 仅在 vector_atlas_valid=true（CPU 已写入真值）时使用；否则当作零向量中性 0.5。
+	// Mobile LOW/MID：完全跳过 vector_atlas（洋流可视化在低配机不显示）。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	vec4 vects = vec4(0.5);  // 中性零向量
+#else
 	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
-	// map-visual-overhaul-v1：主消费路径切到 dyn_atlas_smooth_atlas（沿 hex 邻接 box blur 后的版本）。
-	// 通道语义与 dynamic_cell_atlas 完全一致（R=temp, G=moist, B=snow, A=vitality），
-	// 但跨 cell 平滑，单点采样得到的就是连续场——hex 边阶梯彻底消除（病灶 B 解药）。
+#endif
 	vec4 dyns = texture(dyn_atlas_smooth_atlas, uv);
+	// Mobile 三档全跳 ecology atlas（eco_valid=0 等同 dynamic 路径）
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
+#else
 	vec4 ecos = texture(ecology_visual_atlas, uv);
+#endif
 
 	int biome = int(enums.r * 255.0 + 0.5);
 	int veg   = int(enums.g * 255.0 + 0.5);
@@ -169,12 +182,12 @@ void fragment() {
 	if (!is_water) {
 		col = render_land_pipeline(
 			biome, veg, cover, elev, moist, wp, uv, scals, lat_signed, current_temp,
-			dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
+			wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 			eco_transition, eco_growth, eco_valid, pixel_noise);
 	} else {
 		col = render_water_pipeline(
 			biome, elev, wp, uv, scals, lat_signed, current_temp,
-			ocean_current_v, wind_v);
+			ocean_current_v, wind_v, dyns.a);
 	}
 
 	COLOR = apply_global_adjustments(col, wp, pixel_noise);

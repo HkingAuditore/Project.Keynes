@@ -218,7 +218,10 @@ func report_skipped_summary() -> Dictionary:
 
 
 func _log_ocean_scheduler_report(ctx) -> void:
-	if _ocean_scheduler_diag_count >= 64:
+	# Fix #4 (2026-06-15): mobile 上把 ocean_skip 诊断从 64 降到 8。每行 print +
+	# Android logcat binder 同步 ~0.2ms，60 FPS budget 16.6ms 容不下。
+	var diag_budget: int = 8 if OS.has_feature("mobile") else 64
+	if _ocean_scheduler_diag_count >= diag_budget:
 		return
 	if _sus == null or not _sus.has_method("report_last_tick"):
 		return

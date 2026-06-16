@@ -147,6 +147,8 @@ func _fronts_signature_diff(prev: PackedStringArray, next: PackedStringArray) ->
 func _weather_rt_log(ctx: SusTickContext, stage_name: String, detail: String = "") -> void:
 	if _weather_rt_diag_count >= 32:
 		return
+	if not PKLog.enabled:
+		return
 	_weather_rt_diag_count += 1
 	var suffix: String = ""
 	if detail != "":
@@ -597,7 +599,14 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 	season_phase_getter = p_season_phase_getter
 	climate_anomaly_getter = p_climate_anomaly_getter
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #11 (2026-06-15): mobile B 桶错峰 stride=8 phase=4 → tick 4, 12, 20, 28
+	# 配套 Fix #11 完整分桶：A sea_ice (s8 p6), B weather+enum (s8 p4),
+	# C dyn_visual (s8 p2), D ocean (s8 p0)，climate s2 p1 落奇 tick。
+	if OS.has_feature("mobile"):
+		stride = 8
+		policy = SusPolicyScript.StridePolicy.new(8, 4)
+	else:
+		policy = SusPolicyScript.StridePolicy.new(stride, 0)
 	# Drift-fix（2026-05-10）：原 depends_on=[refresh_climate_daily] 是导致云"几十天才动一次"
 	# 的真凶。RefreshClimateDailyJob 是 6-sub-pass 切片（每 tick 一个 sub-pass，整 round 6 游戏日），
 	# round 期间 in_flight=true → SUS 把 weather 标 dep_pending 并 skip，所以 weather 实际上每

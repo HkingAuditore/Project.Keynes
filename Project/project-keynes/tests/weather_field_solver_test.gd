@@ -22,6 +22,8 @@ func _run() -> void:
 	_test_precip_carryover_and_vapor_relaxation()
 	_test_orographic_lift_cap_formula()
 	_test_snowpack_distribute_budget()
+	_test_summer_sun_reduces_snow_floor()
+	_test_legacy_front_water_terrain_gate()
 	_test_deterministic_same_seed_same_map()
 	print("=== done: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -47,7 +49,13 @@ func _test_warm_convection_prefers_storm() -> void:
 	ws.tick_one_day(map, _world(), 1, 0.04, 1.5)
 	var q := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
 	_expect(int(q.get("type", WeatherType.WT.CLEAR)) == WeatherType.WT.STORM,
-		"warm humid water with positive ocean anomaly should classify as STORM")
+		"warm humid water with positive ocean anomaly should classify as STORM (type=%d precip=%.3f cloud=%.3f vapor=%.3f instability=%.3f)" % [
+			int(q.get("type", WeatherType.WT.CLEAR)),
+			float(q.get("precip", 0.0)),
+			float(q.get("cloud", 0.0)),
+			float(q.get("vapor", 0.0)),
+			float(q.get("instability", 0.0)),
+		])
 
 func _test_cold_precip_prefers_blizzard() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
@@ -70,10 +78,10 @@ func _test_precip_consumes_vapor() -> void:
 
 func _test_precip_carryover_and_vapor_relaxation() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
-	_expect(is_equal_approx(ws._field_precip_carryover_max, 0.12),
-		"precip carryover cap should default to 0.12")
-	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.58),
-		"vapor precip sink should default to 0.58")
+	_expect(is_equal_approx(ws._field_precip_carryover_max, 0.08),
+		"precip carryover cap should default to 0.08")
+	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.70),
+		"vapor precip sink should default to 0.70")
 	var carried: float = _precip_carryover(0.90, 0.95, ws._field_precip_carryover_max)
 	_expect(carried <= ws._field_precip_carryover_max + 0.0001,
 		"precip carryover should be capped")
@@ -90,30 +98,90 @@ func _test_orographic_lift_cap_formula() -> void:
 
 
 func _test_snowpack_distribute_budget() -> void:
-	var map := MapData.new(3, 1)
+	var map := MapData.new(5, 1)
 	var cold := _cell(0, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.86, 0.14, 0.86, Vector2.RIGHT)
 	var warm := _cell(1, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.12, 0.62, 0.86, Vector2.RIGHT)
 	var glacier := _cell(2, 0, TerrainType.TERRAIN.GLACIER, LandformType.LF.MOUNTAIN, 0.90, 0.48, 0.60, Vector2.RIGHT)
+	var sea_ice := _cell(3, 0, TerrainType.TERRAIN.SEA_ICE, LandformType.LF.OCEAN, 0.03, 0.10, 0.80, Vector2.RIGHT)
+	var lake := _cell(4, 0, TerrainType.TERRAIN.LAKE, LandformType.LF.LAKE, 0.05, 0.12, 0.80, Vector2.RIGHT)
 	glacier.cover = CoverType.CV.GLACIER
 	map.set_cell(cold)
 	map.set_cell(warm)
 	map.set_cell(glacier)
+	map.set_cell(sea_ice)
+	map.set_cell(lake)
 	map.rebuild_soa_from_cells()
 	_mark_weather(cold, WeatherType.WT.BLIZZARD, 0.80, 0.70)
 	_mark_weather(warm, WeatherType.WT.RAIN, 0.80, 0.70)
 	_mark_weather(glacier, WeatherType.WT.CLEAR, 0.0, 0.0)
+	_mark_weather(sea_ice, WeatherType.WT.BLIZZARD, 0.80, 0.70)
+	_mark_weather(lake, WeatherType.WT.BLIZZARD, 0.80, 0.70)
 
-	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(180.0, 100.0)))
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(260.0, 100.0)))
 	ws._distribute_weather_field_to_cells(map)
 	var cold_idx: int = cold.index
 	var warm_idx: int = warm.index
 	var glacier_idx: int = glacier.index
+	var sea_ice_idx: int = sea_ice.index
+	var lake_idx: int = lake.index
 	_expect(map.snowpack_arr[cold_idx] > 0.05, "cold wet mountain should accumulate snowpack")
-	_expect(map.snow_cover_arr[cold_idx] > 0.95, "cold wet mountain below snowline should get physical snowline cover")
+	_expect(map.snow_cover_arr[cold_idx] > 0.70, "cold wet mountain below snowline should keep strong physical snow cover")
 	_expect(map.snowpack_arr[warm_idx] < 0.02 and map.snow_cover_arr[warm_idx] < 0.05,
 		"warm lowland rain should not create visible snowpack")
 	_expect(map.snowpack_arr[glacier_idx] >= 0.79 and map.snow_cover_arr[glacier_idx] >= 0.79,
 		"glacier should keep snowpack and snow cover floor")
+	_expect(map.snowpack_arr[sea_ice_idx] == 0.0 and map.snow_cover_arr[sea_ice_idx] == 0.0,
+		"sea ice terrain should stay water-like and not get land snowpack")
+	_expect(map.snowpack_arr[lake_idx] == 0.0 and map.snow_cover_arr[lake_idx] == 0.0,
+		"lake terrain should stay water-like and not get land snowpack")
+
+
+func _test_summer_sun_reduces_snow_floor() -> void:
+	var map := MapData.new(2, 1)
+	var summer_low := _cell(0, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.20, 0.26, 0.45, Vector2.RIGHT)
+	var cold_high := _cell(1, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.82, 0.18, 0.55, Vector2.RIGHT)
+	map.set_cell(summer_low)
+	map.set_cell(cold_high)
+	map.rebuild_soa_from_cells()
+	map.heat_input_arr[summer_low.index] = 0.95
+	map.heat_input_arr[cold_high.index] = 0.95
+	_mark_weather(summer_low, WeatherType.WT.CLEAR, 0.0, 0.0)
+	_mark_weather(cold_high, WeatherType.WT.CLEAR, 0.0, 0.0)
+
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(160.0, 100.0)))
+	ws._distribute_weather_field_to_cells(map)
+	_expect(map.snow_cover_arr[summer_low.index] < 0.05,
+		"sunny summer lowland near threshold should not keep physical snow floor")
+	_expect(map.snow_cover_arr[cold_high.index] > 0.10,
+		"sunny high mountain should retain some altitude snow floor when still cold")
+
+func _test_legacy_front_water_terrain_gate() -> void:
+	var map := MapData.new(1, 1)
+	var stale_sea_ice := _cell(0, 0, TerrainType.TERRAIN.SEA_ICE, LandformType.LF.PLAIN, 0.05, 0.12, 0.90, Vector2.RIGHT)
+	stale_sea_ice.cover = CoverType.CV.SEA_ICE
+	stale_sea_ice.current_state["cover"] = int(stale_sea_ice.cover)
+	map.set_cell(stale_sea_ice)
+	map.rebuild_soa_from_cells()
+
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(120.0, 100.0)))
+	ws.configure_weather_field(false, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16)
+	var front := WeatherFront.new()
+	front.center = HexUtils.cube_to_world(0, 0, HEX_SIZE)
+	front.radius = 80.0
+	front.type = WeatherType.WT.STORM
+	front.intensity = 1.0
+	front.ttl_days = 4
+	front.age_days = 1
+	front.cloud_amount = 1.0
+	front.precip_amount = 1.0
+	ws._active_fronts.clear()
+	ws._active_fronts.append(front)
+
+	ws._distribute_to_cells(map)
+	_expect(stale_sea_ice.cover == CoverType.CV.SEA_ICE,
+		"legacy front distribute should not flood or snow SEA_ICE terrain when landform is stale")
+	_expect(stale_sea_ice.accumulated_snow_days == 0,
+		"legacy front distribute should not accumulate land snow days on SEA_ICE terrain")
 
 func _test_deterministic_same_seed_same_map() -> void:
 	var ws_a := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(180.0, 100.0)))
@@ -139,7 +207,7 @@ func _determinism_map() -> MapData:
 func _weather_system(bounds: Rect2) -> WeatherSystem:
 	var ws := WeatherSystem.new()
 	ws.init(12345, bounds, HEX_SIZE)
-	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16, 4, 0.12, 0.58, 0.16, 0.08, 0.015, 0.02, 0.18, 0.025, 0.34, 0.18, 0.08, 0.35, 0.22, 0.35, 0.35, 0.24, 0.35)
+	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16, 4, 0.08, 0.70, 0.16, 0.22, 0.12, 0.02, 0.18, 2, 0.025, 0.24, 0.22, 0.08, 0.35, 0.28, 0.35, 0.35, 0.20, 0.30)
 	ws.configure_terrain_wind(true)
 	return ws
 

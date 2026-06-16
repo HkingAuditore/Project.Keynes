@@ -203,6 +203,7 @@ var _pending_fallback_reason: String = ""
 var _cpp_stride_in_progress: bool = false
 var _cpp_commit_queue: Array = []
 var _cpp_commit_context: Dictionary = {}
+var _cpp_commit_skip_count: int = 0
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
@@ -214,11 +215,13 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# 让一个 phase 在单 tick 内扫完。仍可被 climate_profile.sim_upload_slice_budget_ms 覆盖。
 	slice_budget_ms = 1.5
 	max_slices_per_tick = 1
-	# sea-ice-snow-visual-fix-2026-06 v2：原 must_run=false 让 atlas pipeline 在
-	# frame_budget_exhausted 时被跳过，导致海冰/雪/温度热力图视觉数十秒不刷新。
-	# 改 true 保证每个 fast tick 都跑 ≥ 1 个 phase；CPP 路径单 tick ~1-3ms，可接受。
-	must_run = true
-	# starvation_threshold 保留作冗余 fallback（理论上 must_run=true 时不再触发）。
+	# Fix #8B 已回退 (2026-06-15 v2)：must_run=true 是"绕过预算"而非"合理调度"，
+	# 跟玩家"用预算时间卡执行会发生逻辑漂移"的设计批评一致。改回 false 让
+	# frame_budget gate 生效，并配合 Fix #9 用 phase 错峰：让 dynamic_visual_atlas
+	# 跟 sea_ice_daily / weather_refresh 等同落在 climate 不跑的 phase=1 tick，
+	# 这样 SUS budget 2-4ms 在两 tick 之间均摊，单 tick 不再撞车。
+	must_run = false
+	# Keep visual upload budgeted; starvation protection catches long stalls.
 	starvation_threshold = 8
 	baker = p_baker
 	map = p_map
@@ -227,7 +230,15 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	world_ext = p_world_ext
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #11 (2026-06-15): mobile C 桶错峰 stride=8 phase=2 → tick 6, 14, 22, 30
+	# 完整分桶: A sea_ice (s8 p6), B weather+enum (s8 p4), C dyn_visual (s8 p2),
+	# D ocean (s8 p0)。每 8 仿真日 atlas commit 一次。
+	# 单 tick 1-3ms，不再被 ocean (D 桶 8ms) 或 climate (1-12ms) 撞 budget。
+	if OS.has_feature("mobile"):
+		stride = 8
+		policy = SusPolicyScript.StridePolicy.new(8, 2)
+	else:
+		policy = SusPolicyScript.StridePolicy.new(stride, 0)
 	_rebuild_baker_callables()
 
 
@@ -1200,6 +1211,7 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"commit_pixels_written": 0,
 		"commit_ms": 0.0,
 		"commit_channel": "",
+		"commit_skipped_unchanged": 0,
 		"total_ticks_used": 1,
 		"mask_path": dirty_path_used,
 		"mask_dirty_count": dirty_indices.size(),
@@ -1264,6 +1276,7 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
 		stride_real: Dictionary, base_report: Dictionary) -> void:
 	_cpp_commit_queue.clear()
+	_cpp_commit_skip_count = 0
 	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
 		return
 	# [TEMP DIAG sea-ice begin-commit]
@@ -1310,6 +1323,7 @@ func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
 					or world_data.ice_state_buffer.size() != n_pix,
 			W, H, n_pix, true)
 	if _cpp_commit_queue.is_empty():
+		base_report["commit_skipped_unchanged"] = _cpp_commit_skip_count
 		return
 	_cpp_commit_context = base_report.duplicate(true)
 	_cpp_commit_context["path"] = "cpp_pipeline_commit_queue"
@@ -1320,7 +1334,22 @@ func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
 	_cpp_commit_context["commit_pixels_written"] = 0
 	_cpp_commit_context["commit_ms"] = 0.0
 	_cpp_commit_context["commit_channel"] = ""
+	_cpp_commit_context["commit_skipped_unchanged"] = _cpp_commit_skip_count
 	_cpp_commit_context["commit_ticks_used"] = 0
+
+
+func _current_cpp_atlas_buffer(channel: String) -> PackedByteArray:
+	match channel:
+		"dyn":
+			return world_data.dynamic_cell_atlas_buffer
+		"eco":
+			return world_data.ecology_visual_atlas_buffer
+		"smo":
+			return world_data.dyn_atlas_smooth_buffer
+		"ice":
+			return world_data.ice_state_buffer
+		_:
+			return PackedByteArray()
 
 
 func _maybe_enqueue_cpp_commit_task(channel: String, buf: PackedByteArray,
@@ -1330,8 +1359,14 @@ func _maybe_enqueue_cpp_commit_task(channel: String, buf: PackedByteArray,
 	var expected_size: int = n_pix * bytes_per_pixel
 	if buf.size() != expected_size:
 		return
-	# 方案A 修复（2026-05-26）：force_commit 用于 stride_done 路径绕过单 phase 增量
-	# 守卫；C++ 在 stride 完成时给的是完整全量图，必须无条件入队上传。
+	if stride_count <= 0 and not need_init:
+		var current_buf: PackedByteArray = _current_cpp_atlas_buffer(channel)
+		if current_buf.size() == expected_size and current_buf == buf:
+			_cpp_commit_skip_count += 1
+			return
+		if not force_commit:
+			return
+	# force_commit 仍允许初始化或 buffer 真变化时上传；完全相同的全量图不再碰 GPU。
 	if not force_commit and stride_count <= 0 and not need_init:
 		return
 	_cpp_commit_queue.append({
@@ -1375,6 +1410,7 @@ func _drain_cpp_commit_queue(t_start_us: int) -> Dictionary:
 	report["commit_queue_remaining"] = _cpp_commit_queue.size()
 	report["commit_textures_done"] = committed
 	report["commit_pixels_written"] = pixels_done
+	report["commit_skipped_unchanged"] = int(report.get("commit_skipped_unchanged", 0))
 	report["pixels_written"] = pixels_done
 	report["commit_ticks_used"] = commit_ticks
 	report["ticks_used"] = int(report.get("ticks_used", 1)) + commit_ticks - 1
@@ -1416,10 +1452,19 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 			" W=", W, " H=", H, _samp)
 		Engine.set_meta("_diag_cpp_commit_dumped", _ndump + 1)
 	var image_format: int = int(task.get("format", Image.FORMAT_RGBA8))
+	# Fix #3 (2026-06-15)：包 profile 到 GPU upload。frame=2587/3520 max=549.95ms /
+	# 521.18ms spike 与 ice atlas commit 时间对齐；嫌疑是
+	# ImageTexture.create_from_image() 首次为通道分配 VRAM 时的同步 stall
+	# （Adreno 830 GPU 内存 mapping）。打点确认 root cause 后再决定是否
+	# defer 到 RenderingServer 队列。
+	var _commit_t0_us: int = Time.get_ticks_usec()
 	var img := Image.create_from_data(
 			W, H, false,
 			Image.FORMAT_R8 if image_format == int(Image.FORMAT_R8) else Image.FORMAT_RGBA8,
 			buf)
+	var _img_create_ms: float = float(Time.get_ticks_usec() - _commit_t0_us) / 1000.0
+	var _create_from_image_path: bool = false
+	var _commit_t1_us: int = Time.get_ticks_usec()
 	match channel:
 		"dyn":
 			world_data.dynamic_cell_atlas_buffer = buf
@@ -1428,6 +1473,7 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 				world_data.dynamic_cell_atlas_tex.update(img)
 			else:
 				world_data.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
 		"eco":
 			world_data.ecology_visual_atlas_buffer = buf
 			if world_data.ecology_visual_atlas_tex != null \
@@ -1435,6 +1481,7 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 				world_data.ecology_visual_atlas_tex.update(img)
 			else:
 				world_data.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
 		"smo":
 			world_data.dyn_atlas_smooth_buffer = buf
 			if world_data.dyn_atlas_smooth_tex != null \
@@ -1442,6 +1489,7 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 				world_data.dyn_atlas_smooth_tex.update(img)
 			else:
 				world_data.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
 		"ice":
 			world_data.ice_state_buffer = buf
 			if world_data.ice_state_tex != null \
@@ -1449,12 +1497,24 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 				world_data.ice_state_tex.update(img)
 			else:
 				world_data.ice_state_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
 			_dvas_ice_commit_runs = int(_dvas_ice_commit_runs) + 1
 			if _dvas_ice_commit_runs <= 3 or (_dvas_ice_commit_runs % 60) == 0:
 				_log_ice_commit_sample(buf, bool(task.get("need_init", false)),
 						int(task.get("stride_count", 0)))
 		_:
 			return 0
+	var _tex_phase_ms: float = float(Time.get_ticks_usec() - _commit_t1_us) / 1000.0
+	var _total_commit_ms: float = float(Time.get_ticks_usec() - _commit_t0_us) / 1000.0
+	# Fix #3：高耗时直接打 warn，spike 时定位 root cause。25ms 阈值挑得偏严，
+	# 但 mobile commit 期望 ≤ 5ms，>25ms 就是真实问题。
+	if _total_commit_ms > 25.0:
+		push_warning("[atlas/commit-spike] ch=%s total=%.1fms img_create=%.1fms tex_%s=%.1fms W=%d H=%d buf=%dB path=%s" % [
+			channel, _total_commit_ms, _img_create_ms,
+			"create" if _create_from_image_path else "update",
+			_tex_phase_ms, W, H, buf.size(),
+			"ImageTexture.create_from_image" if _create_from_image_path else "ImageTexture.update",
+		])
 	return pixels
 
 
@@ -1589,7 +1649,12 @@ func reconfigure(p_stride: int) -> void:
 	_clear_cpp_commit_queue()
 	_cpp_stride_in_progress = false
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	# Fix #11: mobile C 桶 s8 p2 与 _init 一致
+	if OS.has_feature("mobile"):
+		stride = 8
+		policy = SusPolicyScript.StridePolicy.new(8, 2)
+	else:
+		policy = SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 func reset_progress() -> void:

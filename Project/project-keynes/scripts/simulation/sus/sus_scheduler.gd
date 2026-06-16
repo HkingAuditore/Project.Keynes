@@ -105,7 +105,10 @@ var _ext = null
 
 
 func set_frame_budget_ms(v: float) -> void:
-	frame_budget_ms = clampf(v, 0.25, 2.0)
+	# Fix #8A (2026-06-15): mobile 上限 4.0ms（log_next.txt 实测 SUS p95=9-15ms 远超
+	# 老上限 2.0ms，导致 dynamic_visual_atlas_upload 80% 被饿死）。Desktop 仍 2.0。
+	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
+	frame_budget_ms = clampf(v, 0.25, max_budget)
 	if _ext != null:
 		_ext.set_frame_budget_ms(frame_budget_ms)
 
@@ -137,7 +140,13 @@ func _ensure_ext() -> void:
 		return
 	_ext.set_frame_budget_ms(frame_budget_ms)
 	_ext.set_strict_budget_enabled(strict_budget_enabled)
-	_ext.set_log_interval_ticks(log_interval_ticks)
+	# Fix #11 second pass (2026-06-16) mobile：SUS-cpp report 每 log_interval 打
+	# 8-9 行（7 job + 1 budget summary），desktop 30 ticks=0.5s OK，mobile 上每秒
+	# ~16 行 SUS-cpp logcat 自身吃 ~80ms/秒。mobile 放到 300 ticks = 5s。
+	var effective_log_interval: int = log_interval_ticks
+	if OS.has_feature("mobile"):
+		effective_log_interval = maxi(log_interval_ticks, 300)
+	_ext.set_log_interval_ticks(effective_log_interval)
 	_ext.set_sim_budget_window_size(sim_budget_window_size)
 	_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
 	if world != null:
@@ -559,7 +568,11 @@ func tick(ctx: SusTickContext) -> void:
 		"over_1ms_count_300": int(budget_window.get("over_1ms_count_300", 0)),
 	}
 
-	if log_interval_ticks > 0 and (_tick_counter % log_interval_ticks) == 0:
+	# Fix #11 second pass (2026-06-16) mobile：同 _ext.set_log_interval_ticks 处的 effective_log_interval。
+	var effective_log_interval: int = log_interval_ticks
+	if OS.has_feature("mobile"):
+		effective_log_interval = maxi(log_interval_ticks, 300)
+	if effective_log_interval > 0 and (_tick_counter % effective_log_interval) == 0:
 		_emit_periodic_log()
 
 

@@ -71,7 +71,16 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # 这里只存储值 + 在生成/信号触发时推给 renderer / weather_layer；具体 shader
 # 分支由后续任务 3~9 接入。
 @export_group("Visual Overhaul")
-@export_range(0, 2, 1) var visual_quality: int = 2
+@export_range(0, 2, 1) var visual_quality: int = 1
+# Mobile shader quality tier（2026-06-15）：三档编译时变体，控制 fragment shader
+# 每像素 texture sample 预算。在 hex_renderer._load_shader 里 prepend
+# `#define MOBILE_QUALITY_HIGH/MID/LOW` 到 shader code，让 GPU 实际编译三种
+# 二进制变体。runtime `if` 无效（GPU warp 编译所有分支）。
+#   0 = LOW   ≤4 sample/像素，纯 atlas 颜色 + 海陆判断
+#   1 = MID   ≤6 sample/像素，加 base_ripple + 单方向 hillshade
+#   2 = HIGH  ≤9 sample/像素，加 vector_atlas（洋流）+ plus-pattern offshore
+# 桌面端不受此控制，走原 shader 代码（无 MOBILE_QUALITY_* define）。
+@export_range(0, 2, 1) var mobile_quality_tier: int = 1
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
 @export var ocean_current_enabled: bool = true
@@ -303,6 +312,13 @@ func _ready() -> void:
 	#   1. TopBar 整体下移 ~50px 留出 status bar / 圆角 safe area
 	#   2. 按钮 custom_minimum_size 加大让 touch target 更稳
 	_apply_mobile_topbar_safe_area()
+	# Mobile viewport scale（plan §60fps 路线 C，2026-06-14）：渲染分辨率降到 0.66。
+	# 实测 fragment shader 主导 70% 帧时间 → 像素总数 × 0.44（0.66² = 0.4356）→
+	# 单帧 GPU 时间从 ~13ms 降到 ~6ms，留出余量给其他工作。视觉变模糊但 60 FPS 可达。
+	# viewport scale 路线 C 已撤回（2026-06-15）：实测 content_scale_mode=VIEWPORT
+	# + factor=0.66 让屏幕显示区域变得极小，无法使用。改为只走 shader 编译时变体
+	# （MOBILE_QUALITY_LOW/MID/HIGH）减少 fragment 计算量，不动 viewport 物理大小。
+	# _apply_mobile_viewport_scale()
 
 	# Mobile debug overlay（plan §60fps，2026-06-14）：APK 没键盘点不到 F3/F11/F12，
 	# 给移动端贴 3 个浮动按钮做 60 FPS 调查。桌面隐藏。
@@ -478,15 +494,26 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# Systemic Ocean Currents：ocean_heat_debug 轻量控制台打印
 			diagnose_ocean_heat()
 		KEY_F9:
-			# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除——
-			# DataCore weather mirror 现恒走单路径，F9 hot-toggle 不再生效。
-			print("[DataCore] F9 deprecated: use_data_core_weather flag removed (single-path).")
+			# 2026-06-14：toggle 主地形 shader（_world_quad.material = null）。
+			# 60 FPS 瓶颈调查：fragment shader 不跑 → 直接测出 hex_terrain/world_map
+			# shader 占多少 GPU 时间。FPS 飙升 → shader 是真凶；不变 → Vulkan/驱动瓶颈。
+			toggle_world_shader_disabled()
 		KEY_F10:
 			# 2026-06-14：toggle WeatherLayer visible（60 FPS 瓶颈调查）。
 			# 完全隐藏 weather overlay → shader 不跑 → 直接测出 weather_overlay 占
 			# 多少 ms/帧。如果 FPS 从 40 升到 55+，weather_overlay 是真凶；如果只升
 			# 到 45，瓶颈在别处（SUS / 其他 shader / Canvas）。
 			toggle_weather_layer_visible()
+		KEY_L:
+			# Fix #11 second pass (2026-06-16) — 全局诊断日志开关。
+			# mobile bench 显示 print 自身（logcat ~5-10ms/行 + GDScript Variant %
+			# 格式化）每秒消耗 ~150-300ms / 30+ 行。关掉之后所有守门的 print 站点
+			# 字符串构造和 print 都 short-circuit，立即看到真实硬件天花板。
+			# 镜像到 C++ 端（DCWorldExt / SusSchedulerExt），让原生 print 也响应。
+			PKLog.set_enabled(not PKLog.enabled,
+				_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
+				_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
+			)
 		KEY_F2:
 			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
 			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
@@ -549,24 +576,57 @@ func dump_render_profile() -> void:
 	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	var nav_ms: float = Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0
-	# 取 30 帧采样：实际跑 30 个 process_frame，记录每帧 wall time（含 GPU 等待 / vsync）
+	# 取 120 帧采样 + 直方图 + SUS 关联（plan §60fps，2026-06-14）
+	# 之前用 30 帧 sample 只给 min/avg/p95/max，无法区分"60 FPS 帧 + 30 FPS 帧混合"
+	# 跟"全部稳定 25ms"。现在加直方图：哪 N 帧在哪个 ms 区间，能看出真分布。
+	const _SAMPLE_FRAMES: int = 120
 	var frame_samples: PackedFloat32Array = PackedFloat32Array()
-	frame_samples.resize(30)
+	frame_samples.resize(_SAMPLE_FRAMES)
+	# 记录每帧前 _on_day_changed 是否被触发（fast tick 帧 vs 非 fast tick 帧）
+	var sus_tick_marks: PackedByteArray = PackedByteArray()
+	sus_tick_marks.resize(_SAMPLE_FRAMES)
+	var sus_tick_count_t0: int = _fast_tick_count
 	var sample_t0: int = Time.get_ticks_usec()
-	for i in range(30):
+	for i in range(_SAMPLE_FRAMES):
 		var t0: int = Time.get_ticks_usec()
+		var sus_before: int = _fast_tick_count
 		await get_tree().process_frame
 		frame_samples[i] = float(Time.get_ticks_usec() - t0) / 1000.0
+		sus_tick_marks[i] = 1 if _fast_tick_count > sus_before else 0
 	var sample_total_ms: float = float(Time.get_ticks_usec() - sample_t0) / 1000.0
+	var sus_ticks_in_window: int = _fast_tick_count - sus_tick_count_t0
 	# 算 min / avg / max / p95
 	var arr: Array = []
-	for i in range(30):
+	for i in range(_SAMPLE_FRAMES):
 		arr.append(frame_samples[i])
 	arr.sort()
 	var f_min: float = arr[0]
-	var f_max: float = arr[29]
-	var f_p95: float = arr[28]  # 接近 max
-	var f_avg: float = sample_total_ms / 30.0
+	var f_max: float = arr[_SAMPLE_FRAMES - 1]
+	var f_p50: float = arr[_SAMPLE_FRAMES / 2]
+	var f_p95: float = arr[int(_SAMPLE_FRAMES * 0.95)]
+	var f_avg: float = sample_total_ms / float(_SAMPLE_FRAMES)
+	# 直方图：每 4ms 一个 bin，0-40ms 共 10 个 bin，> 40ms 算 overflow
+	var bins: PackedInt32Array = PackedInt32Array()
+	bins.resize(11)  # [0-4) [4-8) [8-12) [12-16) [16-20) [20-24) [24-28) [28-32) [32-36) [36-40) [40+)
+	for v in arr:
+		var idx: int = int(v / 4.0)
+		if idx >= 10:
+			idx = 10
+		bins[idx] += 1
+	# SUS 帧 vs 非 SUS 帧的 avg
+	var sus_frame_total_ms: float = 0.0
+	var non_sus_frame_total_ms: float = 0.0
+	var sus_count: int = 0
+	var non_sus_count: int = 0
+	for i in range(_SAMPLE_FRAMES):
+		if sus_tick_marks[i] == 1:
+			sus_frame_total_ms += frame_samples[i]
+			sus_count += 1
+		else:
+			non_sus_frame_total_ms += frame_samples[i]
+			non_sus_count += 1
+	var sus_frame_avg: float = sus_frame_total_ms / float(maxi(1, sus_count))
+	var non_sus_frame_avg: float = non_sus_frame_total_ms / float(maxi(1, non_sus_count))
 	var draw_calls: float = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var primitives: float = Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 	var objects: float = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
@@ -592,7 +652,13 @@ func dump_render_profile() -> void:
 		hm_size = _world_data.hm_size
 	print("[render-profile] === GPU / Frame metrics @ frame %d ===" % Engine.get_frames_drawn())
 	print("  FPS=%.1f  process(sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
-	print("  frame wall ms over 30 samples: min=%.2f avg=%.2f p95=%.2f max=%.2f" % [f_min, f_avg, f_p95, f_max])
+	print("  frame wall ms over %d samples: min=%.2f avg=%.2f p50=%.2f p95=%.2f max=%.2f" % [_SAMPLE_FRAMES, f_min, f_avg, f_p50, f_p95, f_max])
+	# SUS frame vs non-SUS frame avg
+	print("  sus_ticks=%d/%d sus_frame_avg=%.2fms non_sus_frame_avg=%.2fms" % [sus_count, _SAMPLE_FRAMES, sus_frame_avg, non_sus_frame_avg])
+	# 直方图（4ms bins）
+	print("  histogram (4ms bins): [0-4)=%d [4-8)=%d [8-12)=%d [12-16)=%d [16-20)=%d [20-24)=%d [24-28)=%d [28-32)=%d [32-36)=%d [36-40)=%d [40+)=%d" % [
+		bins[0], bins[1], bins[2], bins[3], bins[4], bins[5], bins[6], bins[7], bins[8], bins[9], bins[10]
+	])
 	print("  vsync_mode=%d  max_fps=%d  (0=Off 1=On 2=Adaptive 3=Mailbox)" % [vsync_setting, max_fps_setting])
 	print("  draw_calls=%d  primitives=%d  objects=%d (Performance monitor)" % [int(draw_calls), int(primitives), int(objects)])
 	print("  RenderingServer view_calls=%d view_prims=%d" % [rs_view_calls, rs_view_prims])
@@ -652,6 +718,37 @@ func toggle_weather_layer_visible() -> void:
 	_render_profile_weather_hidden = not _render_profile_weather_hidden
 	weather_layer_node.visible = not _render_profile_weather_hidden
 	print("[render-profile] WeatherLayer hidden=%s — 用 ΔFPS 判断 weather_overlay shader 占多少" % str(_render_profile_weather_hidden))
+
+
+# 60 FPS 调查（2026-06-14）：toggle 主地形 shader（hex_terrain + world_map）。
+# 把 _world_quad.material = null → fragment shader 不跑。如果 FPS 飙升说明
+# 主地形 shader 是 GPU 瓶颈；如果不变则瓶颈在 Vulkan 驱动 / 其他全屏 quad。
+var _render_profile_world_shader_disabled: bool = false
+
+func toggle_world_shader_disabled() -> void:
+	if _renderer == null:
+		print("[render-profile] renderer null, cannot toggle world shader")
+		return
+	if not _renderer.has_method("toggle_world_shader_disabled"):
+		print("[render-profile] renderer missing toggle_world_shader_disabled method")
+		return
+	_render_profile_world_shader_disabled = bool(_renderer.toggle_world_shader_disabled())
+
+
+# 60 FPS 调查（2026-06-14）：cycle visual_quality 0/1/2。
+# 实测移动端 shader=OFF 时 frame=8ms，shader=ON 时 frame=28ms → 主地形 shader 占 20ms。
+# visual_quality=0 跳过：河岸 fbm 扰动 / river flow / shore 4 对角 sample / fbm octave。
+# 用户手机 toggle 看 q=2/1/0 各自 FPS 实际差异，再决定是否把 mobile default 锁 0。
+func cycle_visual_quality() -> void:
+	visual_quality = (visual_quality + 2) % 3  # 2→1→0→2 循环（按下次序符合"渐降"直觉）
+	if _renderer != null and _renderer.has_method("set_visual_quality"):
+		_renderer.set_visual_quality(visual_quality)
+	# weather_layer 同步（之前漏了）
+	if _renderer != null:
+		var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+		if weather_layer_node != null and weather_layer_node.has_method("set_visual_quality"):
+			weather_layer_node.set_visual_quality(visual_quality)
+	print("[render-profile] visual_quality 切换为 %d" % visual_quality)
 
 
 func _mark_debug_console_state_dirty() -> void:
@@ -960,10 +1057,24 @@ func _on_day_changed(_day_idx: int) -> void:
 	# Fast-tick perf opt (A)：跳日路径本就是低成本，跳过 > 12ms 警告误报判定。
 	# Daily-sim perf instrumentation：原年度节流过松（卡顿期 400ms 一年才提醒一次），
 	# 改为指数退让——首次必报，之后按 30 帧节流，避免刷屏又能持续看到趋势。
-	var sus_budget_warn: bool = t_sus_ms > 1.0
-	var trigger_warn: bool = (not was_skipped_day) and (fast_ms > 12 or sus_budget_warn) \
-		and (_fast_tick_warn_last_frame == 0 or (_fast_tick_count - _fast_tick_warn_last_frame) >= 30)
-	if trigger_warn:
+	# Fix #11 (2026-06-16) mobile：阈值 sus>1ms/total>12ms 在 mobile 上误报严重。
+	# 每次 WARN 触发 25 行 print + push_warning stack trace = ~30 行日志，每行
+	# logcat 5-10ms → 单次 WARN 自身 >150ms，反而把 frame_wall 拉爆。mobile 把
+	# 节流间隔放到 120 帧（~2s）且阈值放到 sus>8ms / fast>16ms（60FPS budget），
+	# 让诊断只在真实问题时触发。desktop 保留原行为方便开发期排查。
+	var sus_budget_warn: bool = false
+	var fast_budget_warn: bool = false
+	var warn_throttle: int = 30
+	if OS.has_feature("mobile"):
+		sus_budget_warn = t_sus_ms > 8.0
+		fast_budget_warn = fast_ms > 16
+		warn_throttle = 120
+	else:
+		sus_budget_warn = t_sus_ms > 1.0
+		fast_budget_warn = fast_ms > 12
+	var trigger_warn: bool = (not was_skipped_day) and (fast_budget_warn or sus_budget_warn) \
+		and (_fast_tick_warn_last_frame == 0 or (_fast_tick_count - _fast_tick_warn_last_frame) >= warn_throttle)
+	if trigger_warn and PKLog.enabled:
 		push_warning("[fast tick] frame=%d total=%dms sus=%.2fms render=%.2fms ui=%.2fms cells=%d budgets(total>12ms or sus>1ms)" % [
 			_fast_tick_count, fast_ms, t_sus_ms, t_render_ms, t_ui_ms,
 			_current_map.cell_count() if _current_map != null else 0
@@ -975,7 +1086,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	#   [fast tick #N] sus=A render=B ui=C total=D skip=<bool>
 	#       <job_id> ran=<ms> slices=<n>
 	#       <job_id> skipped(<reason>)
-	if should_log_breakdown or trigger_warn:
+	if (should_log_breakdown or trigger_warn) and PKLog.enabled:
 		_print_daily_breakdown(_fast_tick_count, t_sus_ms, t_render_ms, t_ui_ms,
 			float(fast_ms), was_skipped_day, trigger_warn)
 
@@ -1222,22 +1333,67 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
+					if is_warn:
+						print("        climate wrapper breakdown round_start_total_ms=%.3f round_start_terrain_sync_ms=%.3f capture_start_state_ms=%.3f round_start_mark_stale_ms=%.3f round_start_soa_begin_ms=%.3f round_start_dirty_ms=%.3f pass_overhead_ms=%.3f finalize_total_ms=%.3f finalize_finalizer_ms=%.3f finalize_breakdown_ms=%.3f finalize_soak_ms=%.3f finalize_finish_pass_ms=%.3f finalize_reset_transp_ms=%.3f finalize_flush_dirty_ms=%.3f finalize_mark_stale_ms=%.3f finalize_dump_stats_ms=%.3f finalizer_total_ms=%.3f finalizer_cell_ms=%.3f finalizer_temp_ms=%.3f finalizer_tta_ms=%.3f finalizer_thermal_ms=%.3f finalizer_sort_ms=%.3f finalizer_write_dense_ms=%.3f tta_mirror=%s/%d tta_clamped=%d thermal_init=%d temp_mirror=%s" % [
+							float(b.get("round_start_total_ms", 0.0)),
+							float(b.get("round_start_terrain_sync_ms", 0.0)),
+							float(b.get("capture_start_state_ms", 0.0)),
+							float(b.get("round_start_mark_stale_ms", 0.0)),
+							float(b.get("round_start_soa_begin_ms", 0.0)),
+							float(b.get("round_start_dirty_ms", 0.0)),
+							float(b.get("pass_overhead_ms", 0.0)),
+							float(b.get("finalize_total_ms", 0.0)),
+							float(b.get("finalize_finalizer_ms", 0.0)),
+							float(b.get("finalize_breakdown_ms", 0.0)),
+							float(b.get("finalize_soak_ms", 0.0)),
+							float(b.get("finalize_finish_pass_ms", 0.0)),
+							float(b.get("finalize_reset_transp_ms", 0.0)),
+							float(b.get("finalize_flush_dirty_ms", 0.0)),
+							float(b.get("finalize_mark_stale_ms", 0.0)),
+							float(b.get("finalize_dump_stats_ms", 0.0)),
+							float(b.get("finalizer_total_ms", 0.0)),
+							float(b.get("finalizer_cell_ms", 0.0)),
+							float(b.get("finalizer_temp_ms", 0.0)),
+							float(b.get("finalizer_tta_ms", 0.0)),
+							float(b.get("finalizer_thermal_ms", 0.0)),
+							float(b.get("finalizer_sort_ms", 0.0)),
+							float(b.get("finalizer_write_dense_ms", 0.0)),
+							str(b.get("finalizer_tta_cell_mirror", false)),
+							int(b.get("finalizer_tta_cell_mirror_count", 0)),
+							int(b.get("finalizer_tta_clamped_count", 0)),
+							int(b.get("finalizer_thermal_init_count", 0)),
+							str(b.get("finalizer_temperature_cell_mirror", false)),
+						])
 					var _pass_diag: Dictionary = b.get("pass_diag", {})
-					if str(_pass_diag.get("stage", "")) == "transp" and str(_pass_diag.get("path", "")) == "gdext":
-						print("        transp gdext wall=%.2f native=%.3f call=%.3f compute=%.3f apply=%.3f flush=%.3f refresh=%.3f sync=%.3f write=%.3f mark=%.3f integrity=%.3f dirty=%d sync_path=%s" % [
-							float(_pass_diag.get("diagnostic_wall_ms", _pass_diag.get("elapsed_ms", 0.0))),
-							float(_pass_diag.get("native_ms", 0.0)),
-							float(_pass_diag.get("native_call_ms", 0.0)),
-							float(_pass_diag.get("native_compute_ms", 0.0)),
-							float(_pass_diag.get("native_apply_ms", 0.0)),
-							float(_pass_diag.get("native_flush_ms", 0.0)),
-							float(_pass_diag.get("refresh_ms", 0.0)),
-							float(_pass_diag.get("sync_ms", 0.0)),
-							float(_pass_diag.get("sync_write_ms", 0.0)),
-							float(_pass_diag.get("sync_mark_ms", 0.0)),
-							float(_pass_diag.get("integrity_ms", 0.0)),
-							int(_pass_diag.get("dirty_count", 0)),
-							str(_pass_diag.get("sync_path", "")),
+					var _transp_diag: Dictionary = {}
+					var _transp_diag_source: String = ""
+					var _pass_stage: String = str(_pass_diag.get("stage_name", _pass_diag.get("stage", "")))
+					if _pass_stage == "transp" and str(_pass_diag.get("path", "")) == "gdext":
+						_transp_diag = _pass_diag
+						_transp_diag_source = "current"
+					else:
+						var _cached_transp_diag: Dictionary = b.get("transp_native_diag", {})
+						var _cached_tick: int = int(_cached_transp_diag.get("_tick_idx", -1))
+						var _breakdown_tick: int = int(b.get("_tick_idx", -2))
+						if str(_cached_transp_diag.get("path", "")) == "gdext" \
+								and (_cached_tick == _breakdown_tick or _breakdown_tick < 0):
+							_transp_diag = _cached_transp_diag
+							_transp_diag_source = "cached"
+					if is_warn and not _transp_diag.is_empty():
+						print("        transp/native breakdown source=%s diagnostic_wall_ms=%.2f refresh_ms=%.3f native_call_ms=%.3f native_ms=%.3f native_compute_ms=%.3f native_apply_ms=%.3f native_flush_ms=%.3f sync_total_ms=%.3f sync_write_ms=%.3f sync_mark_ms=%.3f dirty_count=%d sync_path=%s" % [
+							_transp_diag_source,
+							float(_transp_diag.get("diagnostic_wall_ms", _transp_diag.get("elapsed_ms", 0.0))),
+							float(_transp_diag.get("refresh_ms", 0.0)),
+							float(_transp_diag.get("native_call_ms", 0.0)),
+							float(_transp_diag.get("native_ms", 0.0)),
+							float(_transp_diag.get("native_compute_ms", 0.0)),
+							float(_transp_diag.get("native_apply_ms", 0.0)),
+							float(_transp_diag.get("native_flush_ms", 0.0)),
+							float(_transp_diag.get("sync_total_ms", _transp_diag.get("sync_ms", 0.0))),
+							float(_transp_diag.get("sync_write_ms", 0.0)),
+							float(_transp_diag.get("sync_mark_ms", 0.0)),
+							int(_transp_diag.get("dirty_count", 0)),
+							str(_transp_diag.get("sync_path", "")),
 						])
 					# Ocean pass C++ vs fallback diag：当本片是 ocean_water / ocean_land
 					# 时附带 gdext runs / fallbacks / last rc，定位"为何 fallback"
@@ -1581,15 +1737,52 @@ func _generate_and_render(seed_val: int) -> void:
 			for _f in _failures:
 				push_warning(String(_f))
 
+# ─── Mobile shader quality tier helper（2026-06-15）──────────────────
+# tier 整数 → shader #define 字符串。tier 越低 sample 预算越紧。
+func _mobile_quality_tier_to_define(tier: int) -> String:
+	match tier:
+		0: return "MOBILE_QUALITY_LOW"   # ≤4 sample
+		1: return "MOBILE_QUALITY_MID"   # ≤6 sample
+		2: return "MOBILE_QUALITY_HIGH"  # ≤9 sample
+		_: return "MOBILE_QUALITY_MID"
+
+
+# Mobile debug overlay cycle handler：手指点 Quality 按钮 0→1→2→0 循环 + 重 push shader。
+func cycle_mobile_quality_tier() -> void:
+	mobile_quality_tier = (mobile_quality_tier + 1) % 3
+	print("[mobile/quality-tier] 切到 tier=%d (%s)" % [
+		mobile_quality_tier, _mobile_quality_tier_to_define(mobile_quality_tier)
+	])
+	_push_visual_toggles()
+
+
 # ─── 任务 1：视觉总开关推送 ─────────────────────────────────────────────
 # 把六个 @export 开关一次性推到 HexRenderer / WeatherLayer。
 # 开关 → 具体 shader 分支的绑定由后续任务消费这些 setter 完成。
 func _push_visual_toggles() -> void:
-	# 注意（2026-06-14）：之前曾把 mobile 强制 visual_quality=0，但还没证明 weather_overlay
-	# 是真凶就降级 default 不严谨。先撤回；用 F10 / Weather toggle 按钮做 A/B 实测，
-	# ΔFPS 显著时再决定是否把 mobile default 降到 0。
+	# 实测证据（log_next.txt 2026-06-15 11:32）：
+	#   shader=ON  非 SUS 帧 avg=27.90ms（直方图主峰 [24-28)=59 帧）
+	#   shader=OFF 非 SUS 帧 avg= 8.42ms（直方图主峰 [8-12)=92 帧）
+	#   主地形 fragment shader 占 19.5ms / 帧 = ~70% 帧时间
+	# visual_quality=0 跳过：河岸 fbm 扰动 / river flow / shore 4 对角 sample /
+	#   fbm octave / 多层云 / day_night / 部分 hillshade。预期 frame ms 12-16ms
+	#   → 60 FPS 可达（vsync_mode=1 锁 60Hz/120Hz）。
+	# 桌面端继续走 @export default visual_quality=1。
+	if OS.has_feature("mobile") and visual_quality > 0:
+		visual_quality = 0
+		print("[mobile/visual-quality] 强制 visual_quality=0 (60 FPS 优化；shader 主导 70%% 帧时间)")
 	if _renderer != null:
+		# Mobile quality tier 推送（2026-06-15）：必须在 set_visual_quality 之前，
+		# 这样 set_mobile_quality_tier 触发的 _load_shader() 就能拿到正确 tier。
+		if OS.has_feature("mobile") and _renderer.has_method("set_mobile_quality_tier"):
+			var tier_define: String = _mobile_quality_tier_to_define(mobile_quality_tier)
+			_renderer.set_mobile_quality_tier(tier_define)
 		_renderer.set_visual_quality(visual_quality)
+		# 60 FPS 优化（2026-06-14 路线 B）：ecology_visual_quality 也锁 0。
+		# 之前 main.gd 从来没 push 过这个值，renderer @export default=2 一直生效。
+		# eco_q≥2 跑 snowline_visual_strength（额外 fbm + bloom）+ 跨 cell 平滑等。
+		if OS.has_feature("mobile") and _renderer.has_method("set_ecology_visual_quality"):
+			_renderer.set_ecology_visual_quality(0)
 		_renderer.set_day_night_enabled(day_night_enabled)
 		_renderer.set_water_effect_enabled(water_effect_enabled)
 		_renderer.set_ocean_current_enabled(ocean_current_enabled)
@@ -2750,6 +2943,36 @@ func _apply_mobile_topbar_safe_area() -> void:
 	print("[mobile/safe-area] TopBar 下移 48px + 按钮 minimum 64x44 (圆角屏 safe area)")
 
 
+# Mobile viewport scale（2026-06-14 路线 C）：把渲染分辨率降到 0.66x。
+# 实测 fragment shader 主导 70% 帧时间；像素总数减到 0.66² ≈ 0.44 → fragment
+# 时间从 ~13ms 降到 ~6ms。视觉变模糊但 60 FPS 可达。
+#
+# Godot 4.6 API：上轮试 Viewport.size_2d_override 失败（Window 类没该属性，运行时报错）。
+# 正确路径 (https://docs.godotengine.org/en/stable/classes/class_window.html)：
+#   1. get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+#      （让 canvas_item 在 base buffer 栅格化 → fragment 跑在 base 大小上）
+#   2. get_window().content_scale_factor = 0.66
+#      （base size = window_size * factor）
+# 必须**同时**切 mode + factor，否则 factor 只影响 UI 元素缩放但 fragment 仍跑全分辨率。
+func _apply_mobile_viewport_scale() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	var w: Window = get_window()
+	if w == null:
+		print("[mobile/viewport-scale] get_window() null, 跳过")
+		return
+	var win_size: Vector2i = w.size
+	var target_factor: float = 0.66
+	# 先记录原 mode 以便 toggle 回；切到 VIEWPORT mode 让 fragment 真的在小 buffer 跑
+	var orig_mode: int = w.content_scale_mode
+	w.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	w.content_scale_factor = target_factor
+	# 保持 aspect 不变（一般 KEEP / IGNORE 都行）
+	print("[mobile/viewport-scale] window=%dx%d  factor=%.2f  mode: %d → %d (VIEWPORT)" % [
+		win_size.x, win_size.y, target_factor, orig_mode, w.content_scale_mode
+	])
+
+
 # Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的 3 个按钮。
 # 屏幕左侧中部竖排 [Profile] [DVA off] [Atlas 1/2]，桌面端不创建。
 func _ensure_mobile_debug_overlay() -> void:
@@ -2766,8 +2989,9 @@ func _ensure_mobile_debug_overlay() -> void:
 	box.name = "MobileDebugOverlay"
 	box.add_theme_constant_override("separation", 8)
 	box.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	box.position = Vector2(8.0, -132.0)  # 4 个按钮居中
-	box.size = Vector2(140.0, 264.0)
+	# Fix #11 second pass (2026-06-16)：7 个按钮（+ Log），box 高度 392→456
+	box.position = Vector2(8.0, -228.0)
+	box.size = Vector2(140.0, 456.0)
 	# Profile 按钮 — 不切状态，只 dump
 	var btn_profile: Button = Button.new()
 	btn_profile.text = "Profile"
@@ -2798,8 +3022,34 @@ func _ensure_mobile_debug_overlay() -> void:
 	btn_weather.custom_minimum_size = Vector2(132.0, 56.0)
 	btn_weather.pressed.connect(_on_mobile_weather_btn_pressed)
 	box.add_child(btn_weather)
+	# Shader toggle (60 FPS 瓶颈调查：禁用主地形 shader 看 ΔFPS)
+	var btn_shader: Button = Button.new()
+	btn_shader.name = "BtnShader"
+	btn_shader.text = "Shader: ON"
+	btn_shader.toggle_mode = true
+	btn_shader.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_shader.pressed.connect(_on_mobile_shader_btn_pressed)
+	box.add_child(btn_shader)
+	# Quality tier cycle 按钮（2026-06-15）：LOW (≤4 sample) → MID (≤6) → HIGH (≤9) 循环
+	var btn_quality: Button = Button.new()
+	btn_quality.name = "BtnQuality"
+	btn_quality.text = "Quality: MID"
+	btn_quality.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_quality.pressed.connect(_on_mobile_quality_btn_pressed)
+	box.add_child(btn_quality)
+	# Log toggle (Fix #11 second pass, 2026-06-16)：全局诊断日志开关
+	# 关掉所有 GDScript print + 字符串构造 + C++ SUS-cpp periodic log，
+	# 让 mobile 看到真实硬件天花板（去掉 print 自身 ~150-300ms/秒 overhead）。
+	# 镜像到 DCWorldExt + SusSchedulerExt 的 set_diag_logs_enabled。
+	var btn_log: Button = Button.new()
+	btn_log.name = "BtnLog"
+	btn_log.text = "Log: ON"
+	btn_log.toggle_mode = true
+	btn_log.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_log.pressed.connect(_on_mobile_log_btn_pressed)
+	box.add_child(btn_log)
 	ui_layer.add_child(box)
-	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas / Weather 四个按钮）")
+	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas / Weather / Shader / Quality / Log 七个按钮）")
 
 
 func _on_mobile_dva_btn_pressed() -> void:
@@ -2830,6 +3080,54 @@ func _on_mobile_weather_btn_pressed() -> void:
 	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnWeather") as Button
 	if btn != null:
 		btn.text = "Weather: OFF" if _render_profile_weather_hidden else "Weather: ON"
+
+
+func _on_mobile_shader_btn_pressed() -> void:
+	toggle_world_shader_disabled()
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnShader") as Button
+	if btn != null:
+		btn.text = "Shader: OFF" if _render_profile_world_shader_disabled else "Shader: ON"
+
+
+func _on_mobile_quality_btn_pressed() -> void:
+	cycle_mobile_quality_tier()
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnQuality") as Button
+	if btn != null:
+		var label: String = "MID"
+		if mobile_quality_tier == 0:
+			label = "LOW"
+		elif mobile_quality_tier == 2:
+			label = "HIGH"
+		btn.text = "Quality: %s" % label
+
+
+# Fix #11 second pass (2026-06-16) — Log toggle (KEY_L 等价)。
+# 关掉 PKLog.enabled 后所有加守门的 GDScript print 站点跳过（含 % 字符串构造），
+# 镜像到 C++ 端的 DCWorldExt / SusSchedulerExt::set_diag_logs_enabled 让 native
+# print 站点也响应。mobile 上 print 自身 ~150-300ms/秒 是 frame budget 杀手。
+func _on_mobile_log_btn_pressed() -> void:
+	var new_enabled: bool = not PKLog.enabled
+	var world_ext_ref = null
+	var sus_ext_ref = null
+	if _generator != null:
+		if "_data_core_world_ext" in _generator:
+			world_ext_ref = _generator._data_core_world_ext
+		if "_sus_scheduler" in _generator and _generator._sus_scheduler != null \
+				and "_ext" in _generator._sus_scheduler:
+			sus_ext_ref = _generator._sus_scheduler._ext
+	PKLog.set_enabled(new_enabled, world_ext_ref, sus_ext_ref)
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnLog") as Button
+	if btn != null:
+		btn.text = "Log: ON" if PKLog.enabled else "Log: OFF"
 
 
 func _ensure_splash_overlay() -> void:

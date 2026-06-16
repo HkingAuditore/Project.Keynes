@@ -123,31 +123,55 @@ stage=slp->wind ... psi_path=gdscript
 示例：
 
 ```text
-transp gdext wall=0.35 native=0.029 call=0.040 compute=0.016 apply=0.011 flush=0.002 refresh=0.000 sync=0.159 write=0.000 mark=0.000 integrity=0.000 dirty=...
+transp/native breakdown source=current diagnostic_wall_ms=0.35 refresh_ms=0.000 native_call_ms=0.040 native_ms=0.029 native_compute_ms=0.016 native_apply_ms=0.011 native_flush_ms=0.002 sync_total_ms=0.159 sync_write_ms=0.000 sync_mark_ms=0.000 dirty_count=...
 ```
 
 字段解释：
 
 | 字段 | 含义 |
 | --- | --- |
-| `wall` | GDScript caller 看到的总墙钟。 |
-| `native` | C++ pass 内部总耗时。 |
-| `call` | 跨 GDExtension 调用和返回封装成本。 |
-| `compute` | C++ tight-loop 计算成本。 |
-| `apply` | 应用结果到 slot/输出 buffer。 |
-| `flush` | C++ slot flush 到 MapData。 |
-| `refresh` | 调用前 `refresh_slots_from_map()`。 |
-| `sync` | caller 侧同步、等待、snapshot 或其他 glue 成本。 |
-| `write` | GDScript DataCore write API 成本。 |
-| `mark` | dirty mark 成本。 |
-| `integrity` | integrity diagnostics 成本。 |
+| `source` | `current` 表示来自当前 `pass_diag`；`cached` 表示同一 climate breakdown 中 finalize 后保留的最后一次 transp/native 诊断。 |
+| `diagnostic_wall_ms` | GDScript caller 看到的总墙钟。 |
+| `native_ms` | C++ pass 内部总耗时。 |
+| `native_call_ms` | 跨 GDExtension 调用和返回封装成本。 |
+| `native_compute_ms` | C++ tight-loop 计算成本。 |
+| `native_apply_ms` | 应用结果到 slot/输出 buffer。 |
+| `native_flush_ms` | C++ slot flush 到 MapData。 |
+| `refresh_ms` | 调用前 `refresh_slots_from_map()`。 |
+| `sync_total_ms` | caller 侧同步、等待、snapshot 或其他 glue 成本。 |
+| `sync_write_ms` | GDScript DataCore write API 成本。 |
+| `sync_mark_ms` | dirty mark 成本。 |
+| `dirty_count` | native pass 返回并同步的 dirty cell 数。 |
 
 判断：
 
-- `compute` 很低但 `wall` 高：边界/同步问题。
-- `native` 很低但 `largest=transp/apply path=gdscript_sliced`：多半是窗口旧 spike 或 fallback apply 仍偶发。
-- `write/mark` 高：检查是否又走了单点 setter 或全图 dirty。
-- `refresh/sync` 高：检查是否重复 `refresh_slots_from_map()` 或不必要 snapshot。
+- `native_compute_ms` 很低但 `diagnostic_wall_ms` 高：边界/同步问题。
+- `native_ms` 很低但 `largest=transp/apply path=gdscript_sliced`：多半是窗口旧 spike 或 fallback apply 仍偶发。
+- `sync_write_ms` / `sync_mark_ms` 高：检查是否又走了单点 setter 或全图 dirty。
+- `refresh_ms` / `sync_total_ms` 高：检查是否重复 `refresh_slots_from_map()` 或不必要 snapshot。
+
+## Climate wrapper breakdown
+
+`[fast tick WARN]` 会在 `refresh_climate_daily` 下额外打印：
+
+```text
+climate wrapper breakdown round_start_total_ms=... round_start_terrain_sync_ms=... capture_start_state_ms=... pass_overhead_ms=... finalize_total_ms=... finalize_finalizer_ms=... finalizer_total_ms=... finalizer_cell_ms=... finalizer_temp_ms=... finalizer_tta_ms=... finalizer_thermal_ms=... finalizer_sort_ms=... finalizer_write_dense_ms=... tta_mirror=false/0 tta_clamped=0 thermal_init=0 temp_mirror=false
+```
+
+这行解释 `largest=refresh_climate_daily/...` 的外层墙钟。`pass_overhead_ms`
+是当前 slice 墙钟减去 pass report 的差值；`round_start_*` 是 round 入口锁相位、
+terrain sync、start-state capture、mark stale、SoA transaction 和 dirty mask；
+`finalize_*` 是 `_finalize_round()` wrapper；`finalizer_*` 是
+`_apply_daily_climate_finalizer()` 内部 cell loop、sort、sea ice、precip 和 dense write。
+
+判断：
+
+- `transp/native diagnostic_wall_ms` 低但 `finalize_total_ms` 高：热点在 round 收尾，不在 transp C++。
+- `finalize_finalizer_ms` 高：继续看 `finalizer_cell_ms`、`finalizer_temp_ms`、`finalizer_tta_ms`、`finalizer_thermal_ms`、`finalizer_sort_ms`、`finalizer_write_dense_ms`。
+- Android 默认跳过 round-start terrain facade 全图同步，`round_start_terrain_sync_ms` 应接近 0；sea-ice slice 后仍会同步，因为 terrain/water facade 可能真实变化。
+- facade 开启时 finalizer 不再把 `temperature` 或 TTA 逐 cell 镜像回 `HexCell`；TTA 兼容读者通过 `HexCell.temperature_transport_anomaly` facade 从 GDScript `DCWorld` 读取。`tta_mirror=true/N` 只应出现在 facade 关闭或 TTA clamp 需要修正 legacy backing 的场景。
+- `round_start_terrain_sync_ms` 或 `round_start_mark_stale_ms` 高：查 round boundary sync/stale 标记；如需临时恢复 round-start terrain sync，可显式设置 `climate_round_start_terrain_sync_enabled=true`。
+- `pass_overhead_ms` 高：查 `_run_pass()` wrapper、pre-pass mark stale、integrity diagnostic 或 report 字段遗漏。
 
 ## `refresh_climate_daily` 高 p95 排查
 
@@ -450,7 +474,45 @@ When diagnosing ocean cadence, separate physical authority from visual catch-up.
   simulation is healthy but the atlas is stale. Inspect raster quota, commit
   cost, and `ocean_visual_rebake_drop_stale` before changing physical cadence.
 
-## Render frame profile 热键（2026-06-14）
+## Mobile 60 FPS 调查（2026-06-14 完成定位）
+
+实测瓶颈分布（Adreno 830，vsync_mode=1，atlas mobile=512）：
+
+```
+120 帧 sample (Shader ON, climate async on):
+  frame wall ms: min=0.31  avg=25.08  p50=24.75  p95=34.57  max=58.44
+  sus_ticks=3/120 sus_frame_avg=58.18ms  non_sus_frame_avg=24.23ms
+  histogram: [12-16)=23 [16-20)=36 [20-24)=10 [24-28)=111 (主峰) [32-36)=40
+
+120 帧 sample (Shader OFF, _world_quad.material=null):
+  frame wall ms: min=0.10  avg=10.82  p50=8.26  p95=46.17
+  sus_ticks=7/120 non_sus_frame_avg=8.42ms
+  histogram: [4-8)=17 [8-12)=92 (主峰) [40+)=6
+```
+
+**结论**：
+- SUS 帧（C++ + GDScript SUS）只占 **3/120 = 2.5%**，单帧 60ms 但平均贡献微乎其微
+- 非 SUS 帧 117 帧每帧 ~24ms，**99% 是 GPU shader 时间**
+- `_world_quad.material = null` 实测让非 SUS 帧从 24ms → 8.4ms（**主地形 shader 占 70% 帧时间**）
+- weather_overlay shader 实测无影响（已用 F10 toggle 排除）
+- atlas size 256 vs 512 实测无影响（已用 F12 toggle 排除）
+- DVA upload 关掉只减 ~1.5ms（已用 F11 toggle 排除）
+
+**已落地修复**（main.gd::_push_visual_toggles）：mobile 入口强制 `visual_quality=0`，
+跳过：河岸 fbm 扰动 / river flow / shore 4 对角 sample / fbm octave。预期非 SUS 帧
+~8-12ms → 60 FPS 可达。
+
+调查工具（保留作未来 baseline）：
+
+| 热键 / mobile 按钮 | 函数 | 用途 |
+|---|---|---|
+| F3 / Profile | `dump_render_profile()` | 120 帧 sample + 直方图 + SUS 帧关联统计 |
+| F9 / Shader | `toggle_world_shader_disabled()` | _world_quad.material = null 实测 GPU 端 |
+| F10 / Weather | `toggle_weather_layer_visible()` | weather overlay 排除测试 |
+| F11 / DVA | `toggle_dynamic_visual_atlas_upload()` | atlas commit 排除测试 |
+| F12 / Atlas | `toggle_atlas_resolution()` | atlas 256/512 GPU fillrate 测试 |
+
+
 
 `main.gd::_unhandled_key_input` 加了三个 60 FPS 调查热键，专门定位"主线程仿真已优化但
 仍 26 FPS"的非 SUS 帧时间消耗（GPU / Canvas rebuild / atlas commit）：
@@ -478,4 +540,239 @@ When diagnosing ocean cadence, separate physical authority from visual catch-up.
 5. 看 draw_calls：若 > 200 说明 Canvas 没 batched，渲染 submit 端是瓶颈。
 6. 看 RenderingServer.view_calls：跟 Performance.draw_calls 对比，差距大说明有不可见 viewport
    在白做工。
+
+
+## Shader 像素 sample 预算（2026-06-15 审计后）
+
+之前路线 A（water fbm 砍 4 个）+ B（ecology_visual_quality=0）实测合计仅省 0.3ms。
+重新拆解后定位**真正大头**：**水面像素 36+ 个 texture sample，主因是 5×5 / 3×3 邻域采样**：
+
+| 操作 | 修复前 sample 数 | 修复后（q=0）|
+|---|---|---|
+| SETUP（noise+height+enum+scalar+vector+dyn+eco）| 7 | 7 |
+| `compute_offshore_depth`（height）| 25 (q≥1) / 9 (q=0) | **5**（plus pattern: center + 4 邻居）|
+| `compute_water_biome_weights`（enum_atlas 3×3）| 9 | **0**（hard-cut，q=0 跳过）|
+| 水面其他 fbm / features / plume / overlay shore | ~10 | ~10 |
+| **水面总** | **~36** | **~23** |
+
+陆地像素：
+- SETUP 7
+- `compute_terrain_normal` 4-tap = 4 height sample
+- biome_detail 2-3 fbm
+- shore_neighborhood q=0 = 4 enum sample
+- 总约 18 sample
+
+**关键 takeaway**：3×3 / 5×5 neighborhood sample 是 GPU 隐藏开销大头，远超 fbm（已经 packed
+成 noise_tex 一次 sample 即可）。`hex_terrain shader` 本体行数（296）不代表 GPU 成本——
+真正贵的是每像素 30+ texture sample，移动端 GPU bandwidth bound。
+
+修复点：
+1. `water_pipeline.gdshaderinc::compute_offshore_depth` q=0 用 5-sample plus pattern（中心+上下左右）
+2. `water_pipeline.gdshaderinc::compute_water_biome_weights` q=0 hard-cut（不调 3×3 邻域）
+3. q=0 仍跳过 deep_ripple / ridge_n / gyre / caustics / sparkle / lane 等（已经 gated）
+
+预期收益：水面像素 sample 减少 ~36%，移动端水面占屏幕 50% → 总 sample 减 ~18%。
+GPU fragment 时间从 13ms 预期降到 ~8-10ms → 60 FPS 接近达成。
+
+
+## Mobile 60 FPS 二阶段（2026-06-15 log_next.txt 修复 6 项）
+
+shader 路线收敛后，log_next.txt 暴露**第二轮瓶颈**：
+
+```
+frame 407–999  (visual_active=false, atlas 不可见):  FPS=117, p50=8.2ms, non_sus=8.2ms
+frame 2412+    (visual_active=true,  atlas 可见):    FPS=33,  p50=25ms,  non_sus=22ms
+frame 2587     ice atlas commit 期:                  max=549.95ms 巨型 spike
+```
+
+Visual active 开启后 `draw_calls 32→45`，`primitives 1654→7096` —— ocean atlas
+shader 多采样 4 张 RGBA8 atlas，fragment bandwidth 翻 3 倍。
+
+同时 SUS-cpp 持续报 `largest=refresh_climate_daily/transp/native path=gdext 19ms`，
+但 transp/native breakdown 显示 `native_compute_ms=0.06`，剩余 18ms 全在
+`finalize_finalizer_ms`（cell loop 5.26ms + sort 0.96ms + write_dense 0.65ms 等）。
+**SUS 归因错把 transp 当瓶颈**。
+
+落地 6 项修复（commit hash 待补，2026-06-15）：
+
+| Fix | 位置 | 行为 |
+|---|---|---|
+| **#1** | `ocean_currents_job.gd::_begin_physical_round` | mobile 上 `_phys_need_visual` 在首次 bake 后强制 false。物理 solve 照跑（authority 在 cell_ocean_x/y），仅跳过 pixel atlas rebake → primitives 7096→1644，non_sus 22ms→8ms 预期。|
+| **#2** | `climate_daily_system.gd::run_slice` | mobile 默认 `async_enabled=true` —— 即使 `cp.use_climate_round_async=false` 也强开。worker thread 跑整个 round（plan §async-stage-3 框架），transp/finalizer 19ms 移出主线程。|
+| **#3** | `dynamic_visual_atlas_upload_system.gd::_apply_cpp_commit_task` | 包 profile 到 `Image.create_from_data` + `ImageTexture.update`/`create_from_image`。`total > 25ms` 触发 `push_warning("[atlas/commit-spike]")` 暴露 frame 2587 stall 的真实 root cause（是 VRAM alloc 同步 wait 还是别的）。|
+| **#4** | 多处 print gate | (a) `world_ext.cpp` PHASE-D-DIAG 计数器改 `static int`（之前 lambda 局部变量，每 round 重置 8 次 → 累 144 行）；(b) `hex_renderer.gd` plan-c/uni 加 mobile gate；(c) `dc_system_scheduler.gd` ocean_skip diag budget mobile 8/desktop 64；(d) `map_baker.gd::set_world_ext` 同 ext re-inject 短路（之前 enum_atlas slice 每片重置 upwelling/DIAG#1 计数器，225 行）。|
+| **#5** | `climate_daily_system.gd::run_slice` 返回 dict | 加 `kernel_ms` / `slice_wall_ms` / `finalizer_ms` 三个独立口径。当 `finalize_ms >= max(2ms, native_kernel * 4)` 时改 `substage→finalizer / path→data_core_finalizer / stage_name→round_finalize`，让 SUS-cpp `largest=` 不再把 transp 当瓶颈追错方向。|
+| **#6** | `climate_daily_system.gd::run_slice` | mobile 上把 `_finalize_round()` 推到下一片专门跑（`_finalize_pending` 标志）。本片 done=false 返回 progress=1.0；下一 tick 入口检测 → 跑 finalize → done=true。把 5-8ms finalizer 从最后一个 pass slice 剥离出来。仅 mobile 启用，桌面端 sync slice 走原路径不动。|
+
+排查/重读时注意：
+
+- Fix #2 和 #6 协同：**优先级**是 #2 async（整 round 异步）；只有 ext 失败回退到 sync 时 #6 defer 才生效。两者不冲突，不重复。
+- Fix #5 仅当 `finalize_ms >= max(2ms, kernel_ms * 4)` 才改 substage，所以 round 中间片不会误报 finalizer。
+- Fix #4 `set_world_ext` 短路是关键：之前 enum_atlas 每个 slice 都 `set_world_ext(world_ext)` 重新注入相同对象，触发所有诊断 counter 清零；现在改成 `if _world_ext == ext: return` 让 ext 真正变化时才重置。
+- Fix #1 保留首次 bake（`_phase_int_seen == -9999` 或 `_visual_round_id == 0`），避免 shader 拿到空 atlas 渲染异常。
+
+预期总收益（mobile，2400 cells，Adreno 830）：
+
+- non_sus_frame_avg 22ms → 8ms（Fix #1 主导）
+- SUS-cpp largest 不再误指向 transp，真正瓶颈可见
+- finalizer 不再制造 8ms spike（Fix #6 拆 slice + #2 async 双保险）
+- 500ms commit spike 通过 `[atlas/commit-spike]` warn 自报，root cause 可定位
+- 热路径打印总量降 70%（PHASE-D 系列、upwelling/DIAG#1、plan-c/uni 等被 mobile gate）
+
+
+## Mobile 60 FPS 第三轮：Fix #6 实测反效果，已回退（2026-06-15）
+
+Fix #6（finalizer 拆 slice 跨帧）真机日志显示**让 FPS 变差**：
+
+| 指标 | Fix #1-5 中间状态 | + Fix #6 |
+|---|---|---|
+| FPS (fronts=12 期) | 47-66 | **27-29** |
+| sus_ticks/120 | 61 | **76-79** ⬆ |
+| sus_frame_avg | 28ms | **36ms** ⬆ |
+| 直方图 [40+) | 2 帧 | **34 帧** ⬆ |
+
+**Root cause**：把 round 末尾的 finalize 拆成独立 SUS slice 后：
+- 每个 SUS slice 都带 scheduler 边界开销
+- 1 个 round 现在占 2 个 SUS slice → 带 SUS 工作的帧数 +30%
+- **finalize 5-8ms 是确定性 cost，不是随机 spike**，拆 slice 无法降低总开销，只是搬运
+
+**Lesson**：拆 slice 不是无脑好。对于 SUS budget 已经足够（< 16.6ms / 60FPS budget）的情况下，把工作分散到更多帧反而让更多帧承担 scheduler overhead。仅当单 slice 真的撑爆 budget 时（>16ms 等）才值得拆。
+
+Fix #6 sync + async 两条路径已在 `climate_daily_system.gd::run_slice` 和 `_run_slice_async` 中回退到原行为（done 帧立即 `_finalize_round()`）。`_finalize_pending` 状态字段保留作 sentinel，便于未来重新启用时只需切回 if 分支。
+
+
+## Mobile 60 FPS 第四轮：weather fronts 三件套（Fix #7A/B/C）
+
+log_next.txt 显示 fronts=12 时：
+- `draw_calls 32→41` (+9)
+- `primitives 1644→5418` (+3774)
+- `non_sus_frame_avg 8→22ms`
+
+WeatherLayer 三套并行系统：
+
+1. **WeatherOverlayQuad** + `weather_overlay.gdshader` (1046 行) — 共享全屏 fragment shader，每像素 30+ texture sample（6-邻域 fbm + per-cell wind advection + 16-front loop）
+2. **CloudShadows 池** — 16 个 Sprite2D + `BLEND_MUL`。**实际已 dead code**（云阴影迁移到 overlay shader 内），但 `_init_shadow_pool` 仍构造 16 sprite + 256×256 alpha 圆盘
+3. **WeatherParticles 池** — 16 个 GPUParticles2D，每个 amount=80-900 粒子按 area 缩放。**primitives 5400 的真正来源**
+
+落地 3 项 mobile gate（2026-06-15）：
+
+| Fix | 位置 | 行为 |
+|---|---|---|
+| **#7A** | `hex_renderer.gd::set_weather_fronts` | mobile 入口 `fronts = fronts.slice(0, 4)`。桌面 16 不变。预计 primitives -2400，draw_calls -8。|
+| **#7B** | `weather_layer.gd::_init_particles_pool` | mobile early return 跳过 16 个 GPUParticles2D 构造。雨/雪降级为 shader 内 streak/grain effect（line 405-460 那段）。`_sync_particles_pool` 的 `if _particles_pool.is_empty(): return` 守卫保证 NPE-safe。|
+| **#7C** | `weather_layer.gd::_init_shadow_pool` | mobile early return 跳过 16 个 Sprite2D + 256×256 alpha 圆盘 ImageTexture（~262KB VRAM）。`_sync_shadow_pool` 本就已是 dead code（line 605-612 提前 return），mobile 顺便省 setup 成本。|
+
+排查注意：
+
+- `_sync_particles_pool` 和 `_sync_shadow_pool` 入口的 `is_empty()` 守卫是关键，让 mobile 上空池不会 NPE。
+- Fix #7A 截断是在 hex_renderer 入口（最外层），下游 `_make_front_snapshots / _push_fronts_to_overlay / _sync_particles_pool` 都只看 trimmed array，`_active_count <= 4`。
+- shader 内 `weather_front_count` uniform 写 4 让 `for (int i = 0; i < MAX_WEATHER_FRONTS; i++)` 早 break 跳过 12 个空 slot 的距离计算。
+
+预期收益（mobile，fronts=12 → 实际处理 4）：
+
+- draw_calls 41 → ~33（-8 sprite + -4 particles 收益）
+- primitives 5418 → ~2000（少 ~3500 粒子）
+- non_sus_frame_avg 22ms → 12-15ms 预期
+- FPS 27-29 → 45-55 预期
+
+
+## Mobile 60 FPS 第五轮：SUS frame budget + atlas must_run（Fix #8A/B）
+
+log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家反馈"雪线和海冰更新特别慢，严重跟不上时间变化"。日志精确数据：
+
+```
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 ... skipped[frame_budget_exhausted=24, policy_gated=3]
+[SUS-cpp] last 30 ticks: refresh_climate_daily ran=29 ... avg=5.78ms p95=12.97ms max=14.59ms
+[SUS] sim budget strict=false frame=2.00ms ...
+```
+
+- **SUS frame budget 仅 2ms**，但 `refresh_climate_daily` p95=12.97ms (climate async path 主线程 finalize + sea_ice handoff)，**一个 job 就吃光后续所有 budget**
+- `dynamic_visual_atlas_upload` 优先级 250（最低），**ran=3/30 (10%)**，frame_budget_exhausted=24/30 (**80% 被饿死**)
+- 雪线 / 海冰视觉源是 `dyn_atlas_smooth.B` (snow) / `ice_state_atlas.R` (ice)，profile 配置 `dynamic_visual_atlas_upload_stride=2`，但实际饿死后 **~20 仿真日才完整 commit 一次**
+- 真实玩家感受：x1 速度（~10 仿真日/秒）下 atlas 每 2 秒上传一次，**远超 1 秒人眼可察觉阈值**
+
+落地 2 项 mobile 修复（2026-06-15）：
+
+| Fix | 位置 | 行为 |
+|---|---|---|
+| **#8A** | `map_generator.gd::_apply_sim_budget_profile_to_scheduler` + `sus_scheduler.gd::set_frame_budget_ms` + `gdext/sus_scheduler_ext.h::set_frame_budget_ms` | 三层 clamp 上限从 2.0ms 改 4.0ms（C++ 端无条件放开上界）。Mobile 启动时强制 `frame_ms = max(profile, 4.0)`，desktop 仍 clamp 到 2.0ms。SUS 总预算 +2ms 给所有 job 上车机会。|
+| **#8B** | `dynamic_visual_atlas_upload_system.gd::_init` | `must_run = false` → `must_run = true`。绕过 frame_budget gate，每 SUS tick 都跑 1 个 phase。slice_budget_ms=1.5 单 phase 完成单层 atlas，4 phase（dyn/eco/smo/ice）共 ~6ms 跨 4 tick 完成完整 commit。|
+
+预期收益：
+
+- `dynamic_visual_atlas_upload ran` 从 3/30 (10%) → ~25-30/30 (90%+)
+- atlas commit 频率从 ~20 仿真日/次 → ~2 仿真日/次（stride=2 配置生效）
+- 雪线/海冰视觉延迟 x1 速度 2-3s → 0.2-0.3s（玩家不可察觉）
+- mobile SUS p95 维持 9-15ms 之间，仍 < 16.6ms 60FPS 单帧 budget
+
+注意事项：
+
+- 三层 clamp（GDScript map_generator / GDScript sus_scheduler / C++ sus_scheduler_ext.h）都要同步放开，否则任何一层会把 4.0 压回 2.0
+- C++ 改动需要 rebuild arm64 .so（已完成）
+- 副作用：Android NDK 严格编译时 `world_ext.cpp` 暴露了 `smoothstep_fn` 跨函数引用 bug（Windows 编译时 dead-code 优化吃掉了），顺手在原地用 `smoothstep_local` lambda 修复（不影响功能）。
+
+
+## Mobile 60 FPS 第六轮：phase 错峰调度（Fix #9，#8B 已回退）
+
+玩家评估 Fix #8A/B 时指出：**"纯用预算时间来卡执行内容很不合理，这样可能导致游戏的逻辑计算发生严重的漂移。难道就不能规定每几个逻辑帧执行一次吗，然后每个逻辑帧的执行内容错开。"**
+
+这是 SUS 设计本意。`SusPolicy.StridePolicy(stride, phase)` 第二参数就是 phase 错峰，但**全代码库 ~15 处 StridePolicy 构造全部 phase=0**：
+
+```
+搜索结果（grep StridePolicy.new(stride）：
+  climate_daily_system.gd: phase=0
+  sea_ice_daily_system.gd: phase=0
+  dynamic_visual_atlas_upload_system.gd: phase=0
+  enum_atlas_upload_system.gd: phase=0
+  weather_refresh_job.gd: phase=0
+  sea_ice_atlas_upload_system.gd: phase=0
+  ... 全部 phase=0
+```
+
+后果：所有 stride=2 的 job 都落在偶 tick（tick 0, 2, 4...），跟 stride=1 的 climate 撞车。SUS budget 2ms 在偶 tick 被 climate + sea_ice + weather + ocean 累积超 6ms 全部抢光 → atlas 80% 饿死。奇 tick 没有 job 跑（空 tick）。
+
+落地 Fix #9（2026-06-15）：
+
+| 改动 | 文件 | 行为 |
+|---|---|---|
+| **atlas phase=1** | `dynamic_visual_atlas_upload_system.gd::_init` + `reconfigure` | mobile `phase_offset = 1`，stride=2 时落奇 tick |
+| **enum_atlas phase=1** | `enum_atlas_upload_system.gd::_init` + `reconfigure` | 同上，跟 dynamic_visual 同片错峰 |
+| **climate/sea_ice/weather 注释更正** | 三个 system.gd | stride=1 时 phase 无效，注释明确仿真层不动 |
+| **Fix #8B 回退** | `dynamic_visual_atlas_upload_system.gd` | `must_run = true → false`，遵循 SUS 调度语义而非绕过 budget |
+| **Fix #8A 保留** | `map_generator.gd` + `sus_scheduler*` | mobile budget 4ms 给偶 tick 累积工作留余地，奇 tick 让 atlas 单独跑 |
+
+调度效果：
+
+```
+偶 tick (phase=0)：
+  season_refresh (0.07ms) + climate (~1ms typical/12ms finalize) +
+  sea_ice (1.33ms) + weather (0.85ms) + ocean_currents (3.66ms when due) =
+  累 ~3-7ms，超 budget 时 ocean/weather 部分饿死（自适应）
+
+奇 tick (phase=1)：
+  season_refresh (0.07ms) + climate (0ms, 不跑) +
+  sea_ice (0ms, 不跑) + weather (0ms, 不跑) + ocean_currents (0ms, 不跑) +
+  enum_atlas (0.27ms) + dynamic_visual_atlas (1-3ms) =
+  累 ~3ms，atlas 不再被饿死 ✅
+```
+
+仿真权威性保持：
+
+- climate/sea_ice/weather 都 stride=1（每仿真日跑），phase 无影响
+- atlas 配 stride=2 ≈ 每 2 仿真日上传一次（玩家不可察觉 0.2 秒延迟）
+- ocean_currents 内部用 ContinuousSlicedPolicy，本身就跨 30 tick 分摊
+
+预期收益（对比 Fix #1-7 状态）：
+
+- `dynamic_visual_atlas_upload ran/30` 从 3 (10%) → ~15 (50%) — atlas 落奇 tick 不再被饿死
+- atlas commit 实际频率 ~20 仿真日 → ~2 仿真日（profile stride=2 真正生效）
+- 雪线/海冰视觉延迟 2-3s → 0.2-0.3s
+- 偶 tick budget 仍可能撞，但 atlas 不在受影响 list 里
+
+设计原则确认：
+
+- 不再用 `must_run = true` 绕过 budget（这种"硬性兜底"等于设计错误的事后补救）
+- phase 错峰是 SUS 调度的合理用法，每个 job 在自己的 tick 上跑完整 slice 而不被截断
+- starvation_threshold 仍是兜底，但希望永远不触发
+
 

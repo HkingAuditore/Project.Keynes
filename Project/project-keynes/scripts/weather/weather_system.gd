@@ -87,9 +87,9 @@ var _cyclone_wake_days: int = 3
 # 由外部 MapGenerator 在 init/refresh_daily 前写入，tick_one_day 内消费。
 # 关闭时所有耦合行为退回到旧的均匀/季节硬切路径（兼容回退）。
 var _emergent_coupling: bool = false
-var _emergent_rain_shadow_threshold: float = 0.12
-var _emergent_rain_shadow_factor: float = 0.55
-var _emergent_orographic_boost: float = 1.5
+var _emergent_rain_shadow_threshold: float = 0.13
+var _emergent_rain_shadow_factor: float = 0.50
+var _emergent_orographic_boost: float = 1.2
 
 # v11 地形—水汽耦合：开启后，weather 锁面 advection / spawn 优先采样
 # HexCell.wind_vector（地形扰动后的六边形尺度实际风），而不是纣红度基线
@@ -111,35 +111,36 @@ var _ocean_spawn_bias: float = 0.0
 var _weather_field_enabled: bool = true
 var _field_advect_steps: int = 2
 var _field_diffusion: float = 0.04
-var _field_condensation_gain: float = 0.85
+var _field_condensation_gain: float = 0.68
 # 衰减系数：每天 precip 至少损失这么多比例（max 公式：保留率 = 1 - decay）
 # v6：从 0.82 降到 0.55（保留 45%），配合自然蒸发机制让降水能够正常消退
-var _field_precip_decay: float = 0.48
-var _field_precip_carryover_max: float = 0.12
-var _field_vapor_precip_sink: float = 0.58
+var _field_precip_decay: float = 0.62
+var _field_precip_carryover_max: float = 0.08
+var _field_vapor_precip_sink: float = 0.70
 var _field_vapor_relax_rate: float = 0.08
 var _weather_temp_anomaly_cap: float = 0.025
 var _field_orographic_lift_gain: float = 0.35
 var _field_orographic_lift_cap: float = 0.35
-var _field_wet_terrain_precip_damping: float = 0.22
+var _field_wet_terrain_precip_damping: float = 0.28
 var _field_lake_precip_damping: float = 0.35
 var _field_lake_evap_scale: float = 0.35
-var _field_extreme_precip_soft_cap: float = 0.24
-var _field_extreme_precip_softness: float = 0.35
-var _field_convergence_gain: float = 0.25
-var _field_convergence_refresh_stride: int = 4
+var _field_extreme_precip_soft_cap: float = 0.20
+var _field_extreme_precip_softness: float = 0.30
+var _field_convergence_gain: float = 0.32
+var _field_convergence_refresh_stride: int = 2
 var _field_solve_tick: int = 0
 var _cold_precip_as_blizzard: bool = true
 var _snow_classification_margin: float = 0.03
-var _field_ocean_evap_gain: float = 0.30
-var _snowpack_accum_gain: float = 0.16
-var _snowpack_melt_temp_gain: float = 0.08
-var _snowpack_melt_sun_gain: float = 0.015
-var _snowpack_cover_low: float = 0.02
-var _snowpack_cover_full: float = 0.18
+var _field_ocean_evap_gain: float = 0.34
+var _snowpack_accum_gain: float = 0.08
+var _snowpack_melt_temp_gain: float = 0.22
+var _snowpack_melt_sun_gain: float = 0.12
+var _snowpack_cover_low: float = 0.05
+var _snowpack_cover_full: float = 0.32
+var _snow_accum_days_req: int = 2
 # climate-loop-closure Phase 2.1：物理雪线参数（由 ClimateProfile 配置）。
-var _snowline_temp_threshold: float = 0.34
-var _snowline_band: float = 0.18
+var _snowline_temp_threshold: float = 0.24
+var _snowline_band: float = 0.22
 var _field_summary_limit: int = 12
 var _summary_q_cache: PackedInt32Array = PackedInt32Array()
 var _summary_r_cache: PackedInt32Array = PackedInt32Array()
@@ -715,7 +716,8 @@ func _distribute_to_cells(map: MapData) -> void:
 			_wd_w += 1
 		# 临时覆盖物：FLOODING 仍走即时写入；SNOW 改走 _apply_snow_accumulation 累积式
 		# 累积式好处：(1) 雪不再随单帧 BLIZZARD 闪烁出现；(2) 温升时按节律消融
-		if not LandformType.is_water(cell.landform):
+		var is_water_cell: bool = LandformType.is_water(cell.landform) or _is_water_terrain(int(cell.terrain))
+		if not is_water_cell:
 			# 1) 雪：累积 / 融化
 			if _apply_snow_accumulation(cell, wt, temp_now, intensity):
 				_cover_dirty = true
@@ -1058,7 +1060,7 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		"snow_freeze_t": SNOW_FREEZE_T,
 		"snow_melt_t": SNOW_MELT_T,
 		"snow_intensity_for_snowing": 0.4,
-		"snow_accum_days_req": SNOW_ACCUM_DAYS_REQ,
+		"snow_accum_days_req": _snow_accum_days_req,
 		"flood_heavy_intensity": 0.55,
 		"flood_heavy_precip": 0.55,
 		"flood_lowland_intensity": 0.32,
@@ -1371,9 +1373,75 @@ func _build_fronts_from_rc(rc_dict: Dictionary) -> Array[WeatherFront]:
 # 注意：动态 PackedArray ref（_field_slice_* / _summary_q_cache / map.* SoA /
 # neighbor_indices）不在这里推送 —— 它们每帧由 caller 在 _build_*_knobs
 # 外层 merge 进 to_*_knobs_dict() 输出（保留每帧 ref 替换语义）。
+func _sync_profile_weather_knobs(cp: Resource) -> void:
+	if cp == null:
+		return
+	if cp.get("weather_field_enabled") != null:
+		_weather_field_enabled = bool(cp.weather_field_enabled)
+	if cp.get("weather_field_advect_steps") != null:
+		_field_advect_steps = clampi(int(cp.weather_field_advect_steps), 0, 2)
+	if cp.get("weather_field_diffusion") != null:
+		_field_diffusion = clampf(float(cp.weather_field_diffusion), 0.0, 0.5)
+	if cp.get("weather_condensation_gain") != null:
+		_field_condensation_gain = maxf(0.0, float(cp.weather_condensation_gain))
+	if cp.get("weather_precip_decay") != null:
+		_field_precip_decay = clampf(float(cp.weather_precip_decay), 0.0, 1.0)
+	if cp.get("weather_orographic_lift_gain") != null:
+		_field_orographic_lift_gain = maxf(0.0, float(cp.weather_orographic_lift_gain))
+	if cp.get("weather_convergence_gain") != null:
+		_field_convergence_gain = maxf(0.0, float(cp.weather_convergence_gain))
+	if cp.get("weather_ocean_evap_gain") != null:
+		_field_ocean_evap_gain = maxf(0.0, float(cp.weather_ocean_evap_gain))
+	if cp.get("weather_component_summary_limit") != null:
+		_field_summary_limit = clampi(int(cp.weather_component_summary_limit), 1, 12)
+	if cp.get("weather_convergence_refresh_stride") != null:
+		_field_convergence_refresh_stride = clampi(int(cp.weather_convergence_refresh_stride), 1, 12)
+	if cp.get("weather_precip_carryover_max") != null:
+		_field_precip_carryover_max = clampf(float(cp.weather_precip_carryover_max), 0.0, 1.0)
+	if cp.get("weather_vapor_precip_sink") != null:
+		_field_vapor_precip_sink = clampf(float(cp.weather_vapor_precip_sink), 0.0, 1.0)
+	if cp.get("snowpack_accum_gain") != null:
+		_snowpack_accum_gain = clampf(float(cp.snowpack_accum_gain), 0.0, 1.0)
+	if cp.get("snowpack_melt_temp_gain") != null:
+		_snowpack_melt_temp_gain = clampf(float(cp.snowpack_melt_temp_gain), 0.0, 1.0)
+	if cp.get("snowpack_melt_sun_gain") != null:
+		_snowpack_melt_sun_gain = clampf(float(cp.snowpack_melt_sun_gain), 0.0, 1.0)
+	if cp.get("snowpack_cover_low") != null:
+		_snowpack_cover_low = clampf(float(cp.snowpack_cover_low), 0.0, 0.5)
+	if cp.get("snowpack_cover_full") != null:
+		_snowpack_cover_full = maxf(_snowpack_cover_low + 0.001, clampf(float(cp.snowpack_cover_full), 0.0, 1.0))
+	if cp.get("snow_accum_days_req") != null:
+		_snow_accum_days_req = clampi(int(cp.snow_accum_days_req), 1, 8)
+	if cp.get("weather_temp_anomaly_cap") != null:
+		_weather_temp_anomaly_cap = clampf(float(cp.weather_temp_anomaly_cap), 0.0, 0.10)
+	if cp.get("snowline_temp_threshold") != null:
+		_snowline_temp_threshold = clampf(float(cp.snowline_temp_threshold), 0.0, 1.0)
+	if cp.get("snowline_band") != null:
+		_snowline_band = clampf(float(cp.snowline_band), 0.02, 0.6)
+	if cp.get("weather_vapor_relax_rate") != null:
+		_field_vapor_relax_rate = clampf(float(cp.weather_vapor_relax_rate), 0.0, 1.0)
+	if cp.get("weather_orographic_lift_cap") != null:
+		_field_orographic_lift_cap = clampf(float(cp.weather_orographic_lift_cap), 0.0, 1.0)
+	if cp.get("weather_wet_terrain_precip_damping") != null:
+		_field_wet_terrain_precip_damping = clampf(float(cp.weather_wet_terrain_precip_damping), 0.0, 1.0)
+	if cp.get("weather_lake_precip_damping") != null:
+		_field_lake_precip_damping = clampf(float(cp.weather_lake_precip_damping), 0.0, 1.0)
+	if cp.get("weather_lake_evap_scale") != null:
+		_field_lake_evap_scale = clampf(float(cp.weather_lake_evap_scale), 0.0, 1.0)
+	if cp.get("weather_extreme_precip_soft_cap") != null:
+		_field_extreme_precip_soft_cap = clampf(float(cp.weather_extreme_precip_soft_cap), 0.0, 1.0)
+	if cp.get("weather_extreme_precip_softness") != null:
+		_field_extreme_precip_softness = clampf(float(cp.weather_extreme_precip_softness), 0.0, 1.0)
+	if cp.get("weather_cold_precip_as_blizzard") != null:
+		_cold_precip_as_blizzard = bool(cp.weather_cold_precip_as_blizzard)
+	if cp.get("weather_snow_classification_margin") != null:
+		_snow_classification_margin = clampf(float(cp.weather_snow_classification_margin), 0.0, 0.12)
+
+
 func _push_resident_knobs_from_cp(cp: Resource) -> void:
 	if _knobs_handle == null or cp == null:
 		return
+	_sync_profile_weather_knobs(cp)
 
 	# ─── field 段标量 ──
 	if _knobs_handle.has_method("set_field_scalars"):
@@ -1412,7 +1480,7 @@ func _push_resident_knobs_from_cp(cp: Resource) -> void:
 			SNOW_FREEZE_T,
 			SNOW_MELT_T,
 			0.4,      # snow_intensity_for_snowing
-			SNOW_ACCUM_DAYS_REQ,
+			_snow_accum_days_req,
 			0.55,     # flood_heavy_intensity
 			0.55,     # flood_heavy_precip
 			0.32,     # flood_lowland_intensity
@@ -2185,7 +2253,7 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 #   2) 否则若 temp 高于解冻阈值 → accumulated_snow_days -= 1（不再降雪即缓慢消融）
 #   3) 累计达阈值且当前不是 SNOW → 备份原 cover，写 cover=SNOW
 #   4) 累计回零且当前是 SNOW 且有备份 → 恢复 cover=pre_snow_cover
-const SNOW_ACCUM_DAYS_REQ: int = 1      # 连续 N 天才落地积雪（v6：从3降到1，匹配天气周期1-2天）
+const SNOW_ACCUM_DAYS_REQ: int = 2      # legacy fallback；运行时由 ClimateProfile.snow_accum_days_req 覆盖。
 const SNOW_FREEZE_T: float = 0.24       # 低于此温度才算"可降雪冷度"
 const SNOW_MELT_T: float = 0.31         # 高于此温度开始消融，保持滞回防抖
 
@@ -2202,9 +2270,24 @@ const SNOW_ELEV_FREEZE_MAX_OFF: float = 0.06
 const SNOW_ELEV_MELT_GAIN: float = 0.30      # elev 每升 1.0 → melt_t 上抬 0.30（高山难融）
 const SNOW_ELEV_MELT_MAX_OFF: float = 0.10
 
+func _summer_snow_melt_bonus(heat_input: float, elevation: float) -> float:
+	var sun: float = smoothstep(0.55, 0.90, clampf(heat_input, 0.0, 1.0))
+	var high_elev: float = smoothstep(0.62, 0.95, clampf(elevation, 0.0, 1.0))
+	return sun * (1.0 - high_elev * 0.60) * 0.045
+
+func _snowline_floor_for_cell(temp_now: float, heat_input: float, elevation: float) -> float:
+	if _snowline_temp_threshold <= 0.0:
+		return 0.0
+	var sun: float = smoothstep(0.45, 0.85, clampf(heat_input, 0.0, 1.0))
+	var high_elev: float = smoothstep(0.60, 0.95, clampf(elevation, 0.0, 1.0))
+	var summer_drop: float = sun * lerpf(0.14, 0.045, high_elev)
+	var elev_bonus: float = clampf((elevation - SNOW_ELEV_NEUTRAL) * 0.10, 0.0, 0.08)
+	var effective_threshold: float = _snowline_temp_threshold + elev_bonus - summer_drop
+	return clampf((effective_threshold - temp_now) / maxf(_snowline_band, 0.001), 0.0, 1.0)
+
 func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity: float) -> bool:
 	# 返回 true 表示本调用改写了 cell.cover（caller 据此设置 _cover_dirty）。
-	if LandformType.is_water(cell.landform):
+	if LandformType.is_water(cell.landform) or _is_water_terrain(int(cell.terrain)):
 		return false
 	var changed: bool = false
 	# 海拔偏移（雪线修正）：让高山即使 temp_now 较高也能积雪，平原相反。
@@ -2219,7 +2302,7 @@ func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity
 	elif temp_now > melt_t_local:
 		cell.accumulated_snow_days = max(0, cell.accumulated_snow_days - 1)
 	# 升级：累积够了且当前还不是 SNOW → 备份并覆盖
-	if cell.accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ and cell.cover != CoverType.CV.SNOW:
+	if cell.accumulated_snow_days >= _snow_accum_days_req and cell.cover != CoverType.CV.SNOW:
 		cell.pre_snow_cover = int(cell.cover)
 		cell.cover = CoverType.CV.SNOW
 		cell.current_state["cover"] = int(cell.cover)
@@ -2356,10 +2439,11 @@ func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapo
 	var humid: bool = vapor > 0.30
 	var low_lat: bool = lat_abs < 0.48
 	var meaningful_precip: bool = precip > 0.080 or (precip > 0.045 and cloud > 0.20 and vapor > 0.24)
+	var warm_ocean_core: bool = ocean_an > 0.12 and instability > 0.80 and precip > 0.10 and cloud > 0.26
 
 	if _cold_precip_should_snow(temp, vapor, cloud, precip, meaningful_precip):
 		return WeatherType.WT.BLIZZARD
-	if warm and humid and instability > 0.56 and precip > 0.16:
+	if warm and humid and (instability > 0.56 and precip > 0.16 or warm_ocean_core):
 		return WeatherType.WT.STORM
 	if warm and humid and low_lat and precip > 0.13:
 		return WeatherType.WT.MONSOON
@@ -2383,11 +2467,12 @@ func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor:
 	var humid: bool = vapor > 0.30
 	var low_lat: bool = lat_abs < 0.48
 	var meaningful_precip: bool = precip > 0.080 or (precip > 0.045 and cloud > 0.20 and vapor > 0.24)
+	var warm_ocean_core: bool = ocean_an > 0.12 and instability > 0.80 and precip > 0.10 and cloud > 0.26
 
 	# 修（v5）：STORM 必须真正"猛"才触发，不再让中纬度风带普通湿天气也进 STORM
 	if _cold_precip_should_snow(temp, vapor, cloud, precip, meaningful_precip):
 		return WeatherType.WT.BLIZZARD
-	if warm and humid and instability > 0.56 and precip > 0.16:
+	if warm and humid and (instability > 0.56 and precip > 0.16 or warm_ocean_core):
 		return WeatherType.WT.STORM
 	if warm and humid and low_lat and precip > 0.13:
 		return WeatherType.WT.MONSOON
@@ -2478,13 +2563,14 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 	var has_heat_arr: bool = map.heat_input_arr.size() == _wfd_n
 	for cell: HexCell in cells:
 		var idx: int = int(cell.index)
+		var is_water_cell: bool = LandformType.is_water(cell.landform) or _is_water_terrain(int(cell.terrain))
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		var precip: float = cell.weather_precip if cell.weather_field_initialized else 0.0
 		var moist_now: float = cell.moisture
 		var temp_now: float = cell.temperature
 		if wt == WeatherType.WT.CLEAR or intensity <= 0.001:
-			if not LandformType.is_water(cell.landform) \
+			if not is_water_cell \
 					and (cell.accumulated_snow_days > 0 or cell.cover == CoverType.CV.SNOW):
 				if _apply_snow_accumulation(cell, wt, cell.temperature, 0.0):
 					_cover_dirty = true
@@ -2493,7 +2579,7 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 				var clear_wb: float = map.water_balance_30d_arr[idx] if has_water_balance_arr else 0.0
 				var clear_soil: float = map.soil_moisture_arr[idx] if has_soil_arr else cell.soil_moisture
 				var clear_heat: float = map.heat_input_arr[idx] if has_heat_arr else 0.0
-				if LandformType.is_water(cell.landform):
+				if is_water_cell:
 					clear_sp = 0.0
 					clear_wb = lerpf(clear_wb, 0.0, 1.0 / 30.0)
 				else:
@@ -2502,7 +2588,7 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 					var clear_melt_off: float = clampf(clear_elev_delta * SNOW_ELEV_MELT_GAIN, -SNOW_ELEV_MELT_MAX_OFF, SNOW_ELEV_MELT_MAX_OFF)
 					var clear_freeze_t: float = SNOW_FREEZE_T + clear_freeze_off
 					var clear_melt_t: float = SNOW_MELT_T + clear_melt_off
-					var clear_melt: float = maxf(temp_now - clear_melt_t, 0.0) * _snowpack_melt_temp_gain + clear_heat * _snowpack_melt_sun_gain
+					var clear_melt: float = maxf(temp_now - clear_melt_t, 0.0) * _snowpack_melt_temp_gain + clear_heat * _snowpack_melt_sun_gain + _summer_snow_melt_bonus(clear_heat, cell.elevation)
 					var clear_cold_precip: bool = temp_now < clear_freeze_t and precip > 0.002
 					var clear_snow_accum: float = precip * _snowpack_accum_gain * 0.75 if clear_cold_precip else 0.0
 					if clear_cold_precip:
@@ -2527,13 +2613,13 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 						_wfd_w += 1
 				# climate-loop-closure Phase 2.1/2.2：气候态物理雪线 floor（仅陆地）。
 				# 冷区即便无降水也按当前温度获得基线雪盖；雪线随海拔/季节自然升降。
-				if _snowline_temp_threshold > 0.0 and not LandformType.is_water(cell.landform):
-					var clear_floor: float = clampf((_snowline_temp_threshold - temp_now) / _snowline_band, 0.0, 1.0)
+				if _snowline_temp_threshold > 0.0 and not is_water_cell:
+					var clear_floor: float = _snowline_floor_for_cell(temp_now, clear_heat, cell.elevation)
 					if clear_floor > 0.0:
 						clear_sp = maxf(clear_sp, clear_floor * _snowpack_cover_full)
 				var clear_sc: float = smoothstep(_snowpack_cover_low, _snowpack_cover_full, clear_sp)
-				if _snowline_temp_threshold > 0.0 and not LandformType.is_water(cell.landform):
-					clear_sc = maxf(clear_sc, clampf((_snowline_temp_threshold - temp_now) / _snowline_band, 0.0, 1.0))
+				if _snowline_temp_threshold > 0.0 and not is_water_cell:
+					clear_sc = maxf(clear_sc, _snowline_floor_for_cell(temp_now, clear_heat, cell.elevation))
 				if cell.cover == CoverType.CV.GLACIER and clear_sc < 0.80:
 					clear_sc = 0.80
 				if has_snowpack_arr: map.snowpack_arr[idx] = clear_sp
@@ -2567,7 +2653,8 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 			var wb_now: float = map.water_balance_30d_arr[idx] if has_water_balance_arr else 0.0
 			var soil_now: float = map.soil_moisture_arr[idx] if has_soil_arr else cell.soil_moisture
 			var snow_cover_now: float = 0.0
-			if LandformType.is_water(cell.landform):
+			var heat_input: float = map.heat_input_arr[idx] if has_heat_arr else 0.0
+			if is_water_cell:
 				sp_now = 0.0
 				wb_now = lerpf(wb_now, 0.0, 1.0 / 30.0)
 			else:
@@ -2581,9 +2668,8 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 				var snow_accum: float = precip * _snowpack_accum_gain if snowing else 0.0
 				if snowing:
 					snow_accum += intensity * 0.015
-				var heat_input: float = map.heat_input_arr[idx] if has_heat_arr else 0.0
 				var warm_rain_melt: float = precip * 0.03 if temp_now > melt_t_local else 0.0
-				var melt: float = maxf(temp_now - melt_t_local, 0.0) * _snowpack_melt_temp_gain + heat_input * _snowpack_melt_sun_gain + warm_rain_melt
+				var melt: float = maxf(temp_now - melt_t_local, 0.0) * _snowpack_melt_temp_gain + heat_input * _snowpack_melt_sun_gain + _summer_snow_melt_bonus(heat_input, cell.elevation) + warm_rain_melt
 				sp_now = clampf(sp_now + snow_accum - melt, 0.0, 1.0)
 				if cell.cover == CoverType.CV.GLACIER and sp_now < 0.80:
 					sp_now = 0.80
@@ -2595,13 +2681,13 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 				# climate-loop-closure Phase 3.1：土壤水每日衰减(见 clear 分支同段注释)。
 				soil_now = clampf(soil_now * 0.97 + daily_balance * 0.08, -0.5, 0.5)
 			# climate-loop-closure Phase 2.1/2.2：气候态物理雪线 floor（仅陆地）。
-			if _snowline_temp_threshold > 0.0 and not LandformType.is_water(cell.landform):
-				var snow_floor: float = clampf((_snowline_temp_threshold - temp_now) / _snowline_band, 0.0, 1.0)
+			if _snowline_temp_threshold > 0.0 and not is_water_cell:
+				var snow_floor: float = _snowline_floor_for_cell(temp_now, heat_input, cell.elevation)
 				if snow_floor > 0.0:
 					sp_now = maxf(sp_now, snow_floor * _snowpack_cover_full)
 			snow_cover_now = smoothstep(_snowpack_cover_low, _snowpack_cover_full, sp_now)
-			if _snowline_temp_threshold > 0.0 and not LandformType.is_water(cell.landform):
-				snow_cover_now = maxf(snow_cover_now, clampf((_snowline_temp_threshold - temp_now) / _snowline_band, 0.0, 1.0))
+			if _snowline_temp_threshold > 0.0 and not is_water_cell:
+				snow_cover_now = maxf(snow_cover_now, _snowline_floor_for_cell(temp_now, heat_input, cell.elevation))
 			if cell.cover == CoverType.CV.GLACIER and snow_cover_now < 0.80:
 				snow_cover_now = 0.80
 			if has_snowpack_arr: map.snowpack_arr[idx] = sp_now
@@ -2615,7 +2701,7 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 			_wfd_soil[_wfd_env_w] = soil_now
 			_wfd_env_w += 1
 
-		if not LandformType.is_water(cell.landform):
+		if not is_water_cell:
 			# 雪：累积式（同 fronts 路径，避免两条分支不一致）
 			if _apply_snow_accumulation(cell, wt, temp_now, intensity):
 				_cover_dirty = true
@@ -3094,21 +3180,7 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 	_gdext_field_commit_warned_fallback = false
 	# F.6 / fronts_soa / resident_knobs：cache cp reference 供 advect / soa / knobs 同步读。
 	_cp_for_front_flag = cp
-	if cp != null:
-		if cp.get("weather_cold_precip_as_blizzard") != null:
-			_cold_precip_as_blizzard = bool(cp.weather_cold_precip_as_blizzard)
-		if cp.get("weather_snow_classification_margin") != null:
-			_snow_classification_margin = clampf(float(cp.weather_snow_classification_margin), 0.0, 0.12)
-		if cp.get("weather_wet_terrain_precip_damping") != null:
-			_field_wet_terrain_precip_damping = clampf(float(cp.weather_wet_terrain_precip_damping), 0.0, 1.0)
-		if cp.get("weather_lake_precip_damping") != null:
-			_field_lake_precip_damping = clampf(float(cp.weather_lake_precip_damping), 0.0, 1.0)
-		if cp.get("weather_lake_evap_scale") != null:
-			_field_lake_evap_scale = clampf(float(cp.weather_lake_evap_scale), 0.0, 1.0)
-		if cp.get("weather_extreme_precip_soft_cap") != null:
-			_field_extreme_precip_soft_cap = clampf(float(cp.weather_extreme_precip_soft_cap), 0.0, 1.0)
-		if cp.get("weather_extreme_precip_softness") != null:
-			_field_extreme_precip_softness = clampf(float(cp.weather_extreme_precip_softness), 0.0, 1.0)
+	_sync_profile_weather_knobs(cp)
 	if _use_gdext_weather_field:
 		print("[weather] gdext acceleration ON (class=DCWorldExt)")
 	elif ext != null and enabled and not sig_ok:
@@ -3494,24 +3566,25 @@ func configure_weather_field(
 		convergence_gain: float,
 		ocean_evap_gain: float,
 		summary_limit: int,
-		convergence_refresh_stride: int = 4,
-		precip_carryover_max: float = 0.12,
-		vapor_precip_sink: float = 0.58,
-		snowpack_accum_gain: float = 0.16,
-		snowpack_melt_temp_gain: float = 0.08,
-		snowpack_melt_sun_gain: float = 0.015,
-		snowpack_cover_low: float = 0.02,
-		snowpack_cover_full: float = 0.18,
+		convergence_refresh_stride: int = 2,
+		precip_carryover_max: float = 0.08,
+		vapor_precip_sink: float = 0.70,
+		snowpack_accum_gain: float = 0.08,
+		snowpack_melt_temp_gain: float = 0.22,
+		snowpack_melt_sun_gain: float = 0.12,
+		snowpack_cover_low: float = 0.05,
+		snowpack_cover_full: float = 0.32,
+		snow_accum_days_req: int = 2,
 		weather_temp_anomaly_cap: float = 0.025,
-		snowline_temp_threshold: float = 0.34,
-		snowline_band: float = 0.18,
+		snowline_temp_threshold: float = 0.24,
+		snowline_band: float = 0.22,
 		vapor_relax_rate: float = 0.08,
 		orographic_lift_cap: float = 0.35,
-		wet_terrain_precip_damping: float = 0.22,
+		wet_terrain_precip_damping: float = 0.28,
 		lake_precip_damping: float = 0.35,
 		lake_evap_scale: float = 0.35,
-		extreme_precip_soft_cap: float = 0.24,
-		extreme_precip_softness: float = 0.35) -> void:
+		extreme_precip_soft_cap: float = 0.20,
+		extreme_precip_softness: float = 0.30) -> void:
 	_weather_field_enabled = enabled
 	_field_advect_steps = clampi(advect_steps, 0, 2)
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)
@@ -3535,6 +3608,7 @@ func configure_weather_field(
 	_snowpack_melt_sun_gain = clampf(snowpack_melt_sun_gain, 0.0, 1.0)
 	_snowpack_cover_low = clampf(snowpack_cover_low, 0.0, 0.5)
 	_snowpack_cover_full = maxf(_snowpack_cover_low + 0.001, clampf(snowpack_cover_full, 0.0, 1.0))
+	_snow_accum_days_req = clampi(snow_accum_days_req, 1, 8)
 	_snowline_temp_threshold = clampf(snowline_temp_threshold, 0.0, 1.0)
 	_snowline_band = clampf(snowline_band, 0.02, 0.6)
 	_weather_temp_anomaly_cap = clampf(weather_temp_anomaly_cap, 0.0, 0.10)

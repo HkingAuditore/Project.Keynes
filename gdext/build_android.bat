@@ -1,103 +1,114 @@
 @echo off
-REM ============================================================================
-REM build_android.bat — 在安卓 arm64 上构建 dots_ext GDExtension
-REM ============================================================================
-REM 使用前提：
-REM   1. 已通过 Android Studio → SDK Manager → SDK Tools 安装 NDK (Side by side)
-REM      推荐版本 r27c 或更新 (NDK 27.x)。
-REM   2. 设置好环境变量（本脚本顶端会做兜底）。
-REM
-REM 用法：
-REM   双击或在 cmd / PowerShell 里执行：
-REM       cd D:\Godot\ProjectKeynes\Project.Keynes\gdext
-REM       build_android.bat
-REM
-REM   只构建 release 版（更小更快）：
-REM       build_android.bat release
-REM
-REM   只构建 debug 版：
-REM       build_android.bat debug
-REM ============================================================================
+setlocal EnableExtensions DisableDelayedExpansion
 
-setlocal ENABLEDELAYEDEXPANSION
+rem build_android.bat - build ProjectKeynes dots_ext for Android arm64.
+rem
+rem Usage:
+rem   build_android.bat          build release, then debug
+rem   build_android.bat release  build template_release only
+rem   build_android.bat debug    build template_debug only
+rem
+rem Requirements:
+rem   Android Studio SDK with "NDK (Side by side)" installed.
+rem   SCons available on PATH.
 
-REM --- 0. 兜底环境变量 ----------------------------------------------------
-if "%ANDROID_HOME%"=="" set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
+set "ANDROID_HOME_DEFAULT=%LOCALAPPDATA%\Android\Sdk"
+if "%ANDROID_HOME%"=="" set "ANDROID_HOME=%ANDROID_HOME_DEFAULT%"
 if "%ANDROID_SDK_ROOT%"=="" set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 
-REM 自动定位最新的 NDK（Side-by-Side 安装位置：%ANDROID_HOME%\ndk\<version>）
-if "%ANDROID_NDK_ROOT%"=="" (
-    if exist "%ANDROID_HOME%\ndk" (
-        for /f "delims=" %%v in ('dir /b /ad /o-n "%ANDROID_HOME%\ndk" 2^>nul') do (
-            set "ANDROID_NDK_ROOT=%ANDROID_HOME%\ndk\%%v"
-            goto :ndk_found
-        )
-    )
-)
-:ndk_found
-
-if not exist "%ANDROID_NDK_ROOT%\build\cmake\android.toolchain.cmake" (
-    echo.
-    echo [ERROR] Android NDK not found.
-    echo   ANDROID_HOME      = %ANDROID_HOME%
-    echo   ANDROID_NDK_ROOT  = %ANDROID_NDK_ROOT%
-    echo.
-    echo Open Android Studio - SDK Manager - SDK Tools - check "NDK (Side by side)" and install.
-    echo Or set ANDROID_NDK_ROOT manually before re-running this script.
-    exit /b 1
-)
+if "%ANDROID_NDK_ROOT%"=="" call :find_latest_ndk
+if "%ANDROID_NDK_ROOT%"=="" goto ndk_missing
+if not exist "%ANDROID_NDK_ROOT%\build\cmake\android.toolchain.cmake" goto ndk_missing
 
 if "%ANDROID_NDK_HOME%"=="" set "ANDROID_NDK_HOME=%ANDROID_NDK_ROOT%"
-
-REM godot-cpp 的 SCons 默认锁定 28.1.13356709，需要把当前实际版本号传给它。
-REM 解析 ANDROID_NDK_ROOT 的最后一段目录名作为 ndk_version。
 for %%I in ("%ANDROID_NDK_ROOT%") do set "NDK_VER=%%~nxI"
+if "%NDK_VER%"=="" goto ndk_missing
 
 echo.
-echo [build_android] ANDROID_HOME      = %ANDROID_HOME%
-echo [build_android] ANDROID_NDK_ROOT  = %ANDROID_NDK_ROOT%
-echo [build_android] NDK_VER (passed to SCons as ndk_version=) = %NDK_VER%
+echo [build_android] ANDROID_HOME     = %ANDROID_HOME%
+echo [build_android] ANDROID_NDK_ROOT = %ANDROID_NDK_ROOT%
+echo [build_android] ndk_version      = %NDK_VER%
 echo.
 
-REM --- 1. 选择 target ----------------------------------------------------
+where scons >nul 2>nul
+if errorlevel 1 goto scons_missing
+
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=both"
 
 pushd "%~dp0"
+set "RC=0"
 
-if /i "%TARGET%"=="release" (
-    call :build template_release
-    goto :done
-)
-if /i "%TARGET%"=="debug" (
-    call :build template_debug
-    goto :done
-)
-if /i "%TARGET%"=="both" (
-    call :build template_release || goto :fail
-    call :build template_debug   || goto :fail
-    goto :done
-)
+if /I "%TARGET%"=="release" goto build_release
+if /I "%TARGET%"=="debug" goto build_debug
+if /I "%TARGET%"=="both" goto build_both
 
-echo [ERROR] Unknown target: %TARGET%   (expected: release / debug / both)
-popd
-exit /b 1
+echo [ERROR] Unknown target: %TARGET%  (expected: release / debug / both)
+set "RC=1"
+goto finish
+
+:build_release
+call :build template_release
+set "RC=%ERRORLEVEL%"
+goto finish
+
+:build_debug
+call :build template_debug
+set "RC=%ERRORLEVEL%"
+goto finish
+
+:build_both
+call :build template_release
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" goto finish
+call :build template_debug
+set "RC=%ERRORLEVEL%"
+goto finish
 
 :build
 echo.
 echo === scons platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% ===
-scons platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER%
+scons platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% -j8
 exit /b %ERRORLEVEL%
 
-:fail
-echo.
-echo [build_android] BUILD FAILED.
-popd
-exit /b 1
-
-:done
+:finish
+if not "%RC%"=="0" goto fail
 echo.
 echo [build_android] OK. Output:
 dir /b "..\Project\project-keynes\addons\dots_ext\bin\android\*.so" 2>nul
 popd
 endlocal
+exit /b 0
+
+:fail
+echo.
+echo [build_android] BUILD FAILED. exit_code=%RC%
+popd
+endlocal
+exit /b %RC%
+
+:find_latest_ndk
+if not exist "%ANDROID_HOME%\ndk" exit /b 0
+for /f "delims=" %%V in ('dir /b /ad /o-n "%ANDROID_HOME%\ndk" 2^>nul') do (
+    set "ANDROID_NDK_ROOT=%ANDROID_HOME%\ndk\%%V"
+    exit /b 0
+)
+exit /b 0
+
+:ndk_missing
+echo.
+echo [ERROR] Android NDK not found.
+echo   ANDROID_HOME     = %ANDROID_HOME%
+echo   ANDROID_NDK_ROOT = %ANDROID_NDK_ROOT%
+echo.
+echo Install Android Studio SDK Tools: NDK (Side by side).
+echo Or set ANDROID_NDK_ROOT to the installed NDK directory.
+endlocal
+exit /b 1
+
+:scons_missing
+echo.
+echo [ERROR] SCons was not found on PATH.
+echo Install with: python -m pip install scons
+endlocal
+exit /b 1

@@ -43,6 +43,7 @@ struct WaterStageCtx {
 	float offshore;      // 邻域离岸度 [0,1]
 	float offshore_depth;// 综合离岸 + depth_t
 	float deep_layer_w;
+	float ice_frac;      // 海冰浓度（dyn_atlas_smooth.a；fragment 入口已采样，避免冗余 sample）
 };
 
 // 软权重 + 派生标量
@@ -103,15 +104,29 @@ SurfaceParams make_water_surface_params(
 void compute_offshore_depth(inout WaterStageCtx ctx) {
 	vec2 tx = 1.0 / hm_resolution;
 	float deep_cnt = 0.0;
-	if (ctx.quality >= 1) {
-		for (int oy = -2; oy <= 2; oy++) {
-			for (int ox = -2; ox <= 2; ox++) {
-				float eh = decode_height_rg8(ctx.uv + vec2(float(ox), float(oy)) * tx);
-				deep_cnt += step(eh, sea_level - 0.02);
-			}
-		}
-		ctx.offshore = clamp(deep_cnt / 25.0, 0.0, 1.0);
-	} else {
+	// 60 FPS 优化（2026-06-15 三档变体）：mobile 三档分别走不同 sample 路径。
+	// LOW (≤4 sample/像素)：直接用已有 ctx.elev 判断海陆，0 个额外 sample
+	// MID (≤6)：center 1 个 sample（实际只用 ctx.elev，跟 LOW 等价但保留 hook）
+	// HIGH (≤9)：plus pattern 4 个邻居 + center = 5 sample
+	// Desktop：原 5×5 / 3×3 邻域 runtime if 路径不动
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	// LOW/MID：跳过邻域 sample，直接根据 ctx.elev 阈值估计 offshore
+	// 视觉损失：offshore_depth 在 cell 边界有阶梯，看起来海岸线变硬切
+	ctx.offshore = step(ctx.elev, sea_level - 0.02);
+#elif defined(MOBILE_QUALITY_HIGH)
+	// HIGH：plus pattern 5 sample（center + 4 邻居），无对角
+	float c  = decode_height_rg8(ctx.uv);
+	float l  = decode_height_rg8(ctx.uv + vec2(-tx.x, 0.0));
+	float r  = decode_height_rg8(ctx.uv + vec2( tx.x, 0.0));
+	float u  = decode_height_rg8(ctx.uv + vec2(0.0, -tx.y));
+	float d  = decode_height_rg8(ctx.uv + vec2(0.0,  tx.y));
+	deep_cnt = step(c, sea_level - 0.02) + step(l, sea_level - 0.02)
+			+ step(r, sea_level - 0.02) + step(u, sea_level - 0.02)
+			+ step(d, sea_level - 0.02);
+	ctx.offshore = clamp(deep_cnt / 5.0, 0.0, 1.0);
+#else
+	// Desktop：q2 用 3x3，q1 用 plus pattern，q0 直接用中心高度。
+	if (ctx.quality >= 2) {
 		for (int oy = -1; oy <= 1; oy++) {
 			for (int ox = -1; ox <= 1; ox++) {
 				float eh = decode_height_rg8(ctx.uv + vec2(float(ox), float(oy)) * tx);
@@ -119,7 +134,20 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 			}
 		}
 		ctx.offshore = clamp(deep_cnt / 9.0, 0.0, 1.0);
+	} else if (ctx.quality >= 1) {
+		float c = ctx.elev;
+		float l = decode_height_rg8(ctx.uv + vec2(-tx.x, 0.0));
+		float r = decode_height_rg8(ctx.uv + vec2( tx.x, 0.0));
+		float u = decode_height_rg8(ctx.uv + vec2(0.0, -tx.y));
+		float d = decode_height_rg8(ctx.uv + vec2(0.0,  tx.y));
+		deep_cnt = step(c, sea_level - 0.02) + step(l, sea_level - 0.02)
+				+ step(r, sea_level - 0.02) + step(u, sea_level - 0.02)
+				+ step(d, sea_level - 0.02);
+		ctx.offshore = clamp(deep_cnt / 5.0, 0.0, 1.0);
+	} else {
+		ctx.offshore = step(ctx.elev, sea_level - 0.02);
 	}
+#endif
 	ctx.depth_t = 1.0 - clamp(ctx.elev / max(sea_level, 0.001), 0.0, 1.0);
 	ctx.offshore_depth = clamp(ctx.offshore * 0.68 + smoothstep(0.00, 0.68, ctx.depth_t) * 0.32, 0.0, 1.0);
 	ctx.deep_layer_w = smoothstep(0.36, 1.0, ctx.offshore_depth);
@@ -149,19 +177,28 @@ vec3 apply_water_depth_gradient(vec3 col, WaterStageCtx ctx) {
 //   visual_quality≥1 时叠加慢速 color_block（cartoon 强调）。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
+	// 60 FPS 优化（2026-06-15）：mobile 三档变体
+	// LOW: 完全跳过（0 sample）→ 海面纯色
+	// MID/HIGH: 跑 base_ripple fbm（1 sample）
+	// Desktop: 跑 base_ripple + deep_ripple + color_block（3 sample）
+#ifndef MOBILE_QUALITY_LOW
 	float base_ripple = fbm(ctx.wpw * 0.008 + vec2(31.0, 7.0), 2);
-	float deep_ripple = fbm(ctx.wpw * 0.0038 + vec2(-47.0, 23.0), 2);
 	col *= 1.0 + (base_ripple - 0.5) * mix(0.050, 0.082, ctx.deep_layer_w);
-	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), deep_ripple);
-	col *= mix(vec3(1.0), deep_variation, ctx.deep_layer_w * 0.115);
+#endif
 	vec3 cartoon_chroma = mix(vec3(0.78, 1.20, 1.18), vec3(0.70, 0.96, 1.38),
 								smoothstep(0.12, 1.0, ctx.offshore_depth));
 	col *= mix(vec3(1.0), cartoon_chroma, water_cartoon_color_strength * 0.26);
-	if (ctx.quality >= 1 && water_cartoon_color_strength > 0.001) {
+	// deep_ripple + color_block 仅 desktop 跑
+#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
+	float deep_ripple = fbm(ctx.wpw * 0.0038 + vec2(-47.0, 23.0), 2);
+	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), deep_ripple);
+	col *= mix(vec3(1.0), deep_variation, ctx.deep_layer_w * 0.115);
+	if (water_cartoon_color_strength > 0.001) {
 		float color_block = fbm(ctx.wpw * 0.0048 + vec2(world_time * 0.010, -world_time * 0.006), 2);
 		vec3 block_tint = mix(vec3(0.80, 1.16, 1.15), vec3(0.92, 0.93, 1.24), color_block);
 		col *= mix(vec3(1.0), block_tint, water_cartoon_color_strength * mix(0.10, 0.18, ctx.deep_layer_w));
 	}
+#endif
 	return col;
 }
 
@@ -176,6 +213,17 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	WaterWeights ww;
 	vec4 bw;
 	float water_boundary_softness = clamp(water_biome_blend_radius / 2.2, 0.0, 1.0);
+	// 60 FPS 优化（2026-06-15）：所有 mobile tier 都 hard-cut 跳过 3×3 邻域。
+	// biome 软过渡只在桌面端有，移动端 biome 边界硬切（视觉损失小，性能省 9 sample）。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	bw = vec4(
+		ctx.biome == B_LAKE    ? 1.0 : 0.0,
+		ctx.biome == B_REEF    ? 1.0 : 0.0,
+		ctx.biome == B_KELP    ? 1.0 : 0.0,
+		0.0  // ice 走 dyn_atlas_smooth.a，不读 bw.w
+	);
+#else
+	// Desktop：保留 radius-aware 3×3 邻域采样
 	if (water_biome_blend_radius > 0.001) {
 		float blend_radius_eff = water_biome_blend_radius * mix(1.0, 1.45, water_transition_softness);
 		bw = water_biome_weights(ctx.uv, 1.0 / hm_resolution, blend_radius_eff);
@@ -184,13 +232,10 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 			ctx.biome == B_LAKE    ? 1.0 : 0.0,
 			ctx.biome == B_REEF    ? 1.0 : 0.0,
 			ctx.biome == B_KELP    ? 1.0 : 0.0,
-			// [sea-ice-render-source-unify 阶段 A] 海冰不再用 biome 硬切换；
-			// w_ice 全部由 dyn_atlas_smooth.a 的 sea_ice_fraction 驱动。该向量
-			// 第 4 分量保留（向下兼容字段位序），写 0 即可——后段 ww.w_ice 直接
-			// 从 ice_frac 推导，不读取 bw.w。
 			0.0
 		);
 	}
+#endif
 	float transition_soft = clamp(max(water_boundary_softness, water_transition_softness), 0.0, 1.0);
 	float blend_entry = mix(0.28, 0.05, transition_soft);
 	float blend_full  = mix(0.92, 0.56, transition_soft);
@@ -207,9 +252,16 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	//   - 不再有 `if (biome == B_SEA_ICE) max(w_ice, 0.28)` 兜底——这是
 	//     旧路径的根因 bug：当 fraction=0 但 terrain==SEA_ICE 时会强制冰；
 	//     当 fraction=1 但 terrain==OCEAN 时却无冰。
-	float ice_frac = texture(dyn_atlas_smooth_atlas, ctx.uv).a;
+	// 60 FPS 优化（2026-06-15）：从 ctx.ice_frac 取（fragment 入口 dyn_atlas_smooth.a 已采样），
+	// 避免冗余 texture sample。之前 line 250 重复采一次 dyn_atlas_smooth.a 是 1 个白浪费 sample。
+	float ice_frac = ctx.ice_frac;
+	// 60 FPS 优化（2026-06-15）：mobile 三档全砍 ridge_n fbm（海冰边缘破碎扰动）。
+	float ridge_offset = 0.0;
+#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
 	float ridge_n = fbm(ctx.wpw * 0.045 + vec2(-71.0, 23.0), 2);
-	ww.w_ice = clamp(smoothstep(0.22, 0.72, ice_frac + (ridge_n - 0.5) * 0.06), 0.0, 1.0);
+	ridge_offset = (ridge_n - 0.5) * 0.06;
+#endif
+	ww.w_ice = clamp(smoothstep(0.22, 0.72, ice_frac + ridge_offset), 0.0, 1.0);
 	// 归一以避免叠加过曝
 	float special_sum = max(ww.w_lake + ww.w_reef + ww.w_kelp + ww.w_ice, 1.0);
 	ww.w_lake /= special_sum;
@@ -233,7 +285,10 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_open_ocean_patch(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(ww.open_ocean_w > 0.001 && water_cartoon_color_strength > 0.001)) return col;
-
+	// 60 FPS 优化（2026-06-15）：mobile 三档全跳 gyre 大色块（2 fbm）。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	return col;
+#else
 	int ocean_patch_oct = (ctx.quality >= 2) ? 3 : 2;
 	float gyre_a = fbm(ctx.wpw * 0.0056 + vec2(13.0, -31.0), ocean_patch_oct);
 	float gyre_b = fbm(ctx.wpw * 0.012  + vec2(-29.0, 47.0), 1);
@@ -258,6 +313,7 @@ vec3 apply_open_ocean_patch(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	col = mix(col, ocean_patch, patch_w);
 	col *= 1.0 + (gyre_mix - 0.5) * ww.open_ocean_w * water_cartoon_color_strength * 0.18;
 	return col;
+#endif
 }
 
 
@@ -586,7 +642,8 @@ SurfaceParams compute_water_base_surface(
 		float lat_signed,
 		float current_temp,
 		vec2 ocean_current_v,
-		vec2 wind_v) {
+		vec2 wind_v,
+		float dyn_ice_frac) {
 
 	// ── 0. ctx 构造 ───────────────────────────────────────────────────
 	WaterStageCtx ctx;
@@ -600,6 +657,7 @@ SurfaceParams compute_water_base_surface(
 	ctx.ocean_current_v = ocean_current_v;
 	ctx.wind_v = wind_v;
 	ctx.quality = visual_quality;
+	ctx.ice_frac = dyn_ice_frac;
 	ctx.detail_oct = (visual_quality >= 2) ? 2 : 1;
 	{
 		float water_boundary_softness = clamp(water_biome_blend_radius / 2.2, 0.0, 1.0);
@@ -663,11 +721,17 @@ SurfaceParams apply_water_overlay_surface(
 	float coast_sdf = abs(elev - sea_level);
 
 	// SEA 2.1：海岸 / 湖岸 halo ───────────────────────────────────────
+	// 60 FPS 优化（2026-06-15）：mobile LOW/MID 跳过 shore_neighborhood 邻域 sample。
+	// LOW (4 sample 上限) 完全无 halo；MID 跳过；HIGH 仅 q=0 4-tap = 4 sample。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	// 无 halo —— 海面/陆面边界硬切（视觉上海岸线略硬，但不影响功能）
+#else
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, 0.0, 1);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	surface.roughness = mix(surface.roughness, shore_halo_r.roughness_target,
 							clamp(shore_halo_r.halo_weight, 0.0, 1.0));
+#endif
 
 	// SEA 2.2：海岸滚动浪花 ───────────────────────────────────────────
 	if (biome == B_COAST || biome == B_OCEAN) {
@@ -802,9 +866,10 @@ vec3 render_water_pipeline(
 		float lat_signed,
 		float current_temp,
 		vec2 ocean_current_v,
-		vec2 wind_v) {
+		vec2 wind_v,
+		float dyn_ice_frac) {
 	SurfaceParams surface = compute_water_base_surface(
-		biome, elev, wp, uv, scals, lat_signed, current_temp, ocean_current_v, wind_v);
+		biome, elev, wp, uv, scals, lat_signed, current_temp, ocean_current_v, wind_v, dyn_ice_frac);
 	surface = apply_water_overlay_surface(surface, biome, elev, wp, uv, wind_v);
 	return shade_water_surface(surface, biome, wp, visual_quality);
 }

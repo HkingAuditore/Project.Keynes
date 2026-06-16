@@ -1076,6 +1076,16 @@ func _load_overlay_shader() -> void:
 # 改为 MIX 后，四角 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
 
 func _init_shadow_pool() -> void:
+	# Fix #7C (2026-06-15): mobile 完全跳过云阴影 Sprite 池。
+	# 注意：_sync_shadow_pool (line 605-612) 已是 dead code（云阴影现在在
+	# weather_overlay shader 内画），所有 sprite 永远 invisible。但
+	# _init_shadow_pool 仍构造 16 个 Sprite2D + 1 张 256x256 alpha 圆盘贴图
+	# （~262KB VRAM）+ 添加到 SceneTree。mobile 跳过这些 setup 省启动 hitch
+	# + 16 个永久不可见节点的 culling 评估开销。
+	# _sync_shadow_pool 入口 `if _shadow_pool.is_empty(): return` 保证空池安全。
+	if OS.has_feature("mobile"):
+		_shadow_pool.clear()
+		return
 	_shadow_texture = _build_radial_fade_texture(SHADOW_BASE_RADIUS_PX)
 	_shadow_material = CanvasItemMaterial.new()
 	_shadow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_MIX
@@ -1158,6 +1168,22 @@ func _hash_noise_2d(ix: int, iy: int) -> float:
 # _particles_pool 中每个节点保持未赋材质状态，由 _configure_particles_for_type 首次切换时赋值。
 
 func _init_particles_pool() -> void:
+	# Fix #7B (2026-06-15): mobile 完全跳过 GPU 粒子池构造。
+	# log_next.txt 实测 fronts=12 时 primitives 1644→5418，~3700 增量主要来自
+	# 12 个 GPUParticles2D 实例（每个 amount=80-900 粒子，按 area 缩放）。
+	# Adreno 830 上 GPUParticles 内部 visibility_rect / process_material 切换
+	# 累积明显帧消耗。雨/雪视觉降级为 weather_overlay shader 内的 streak/grain
+	# effect（line 405-460 那段），mobile 玩家仍能看到天气表现。
+	# _sync_particles_pool 入口的 `if _particles_pool.is_empty(): return` 守卫
+	# 保证空池不会触发 NPE。
+	if OS.has_feature("mobile"):
+		_fallback_particle_texture = _build_fallback_particle_texture()
+		_process_material_cache.clear()
+		_particles_pool.clear()
+		_particles_type_cache.clear()
+		_particles_amount_cache.clear()
+		_particles_vis_radius_cache.clear()
+		return
 	_fallback_particle_texture = _build_fallback_particle_texture()
 	_process_material_cache.clear()
 	_particles_pool.clear()

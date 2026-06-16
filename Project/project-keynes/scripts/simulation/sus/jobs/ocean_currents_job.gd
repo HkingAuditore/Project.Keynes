@@ -106,6 +106,18 @@ var _last_pixel_slice_pixels: int = 0
 var _ocean_rt_diag_count: int = 0
 var _ocean_policy_diag_count: int = 0
 var _ocean_pixel_rt_diag_count: int = 0
+# Fix #11 (2026-06-15)：每个 phys stage 单独的诊断 budget。原 _ocean_rt_diag_count 24
+# 次封顶后整个 ocean 静音，但 STAGE-TOTAL ≥ warn 阈值的异常应该一直报。
+# _phys_stage_diag_count[stage_id] 记录该 stage 已打印的诊断次数（前 3 次必打，之后
+# 仅在异常 >= warn 阈值时打）。budget 不与 _ocean_rt_diag_count 共享。
+# stage_id 用 baker._PHYS_STAGE_* 值（1=SLP, 2=WIND, 3=PSI_INIT, 4=PSI_ITERS,
+# 5=PSI_FINALIZE, 6=UPWELLING, 7=WIND_RASTER）。
+# Fix #11 second pass (2026-06-16)：warn 阈值从 5ms 提到 15ms（mobile 60FPS budget
+# 16.67ms / 8-tick D 桶平均 2ms/tick + 偶尔 daily_wind 叠 5-7ms 都正常，5ms 太严会
+# 一直打印污染 logcat ~50× 触发 7 行 STAGE-DIAG 单次 spam）。
+var _phys_stage_diag_count: Dictionary = {}
+const _PHYS_STAGE_DIAG_INITIAL_PRINTS: int = 3
+const _PHYS_STAGE_DIAG_WARN_MS: float = 15.0
 var _last_defer_climate_ms: float = 0.0
 var _current_pixel_quota_diag: int = 0
 # Tunables — sourced from ClimateProfile at registration time, but stored
@@ -147,7 +159,15 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# The native SUS scheduler evaluates only the registered policy descriptor.
 	# Keep this job eligible every day; run_slice() gates the slow ocean/pixel
 	# chain internally while always allowing the C++ daily wind prepass.
-	policy = SusPolicyScript.AlwaysPolicy.new()
+	# Fix #11 (2026-06-15): mobile 上把 ocean 整体进 D 桶 (stride=8 phase=0)，
+	# 落 tick 8, 16, 24...，避免 ocean 单 slice 8-13ms 每 2 仿真日就吃光 budget。
+	# daily_wind prepass 也跟着 8 仿真日才跑一次（climate 读 wind 最多旧 7 仿真日）。
+	# 仿真精度让步换 atlas 视觉可见性。
+	# Desktop 不动（AlwaysPolicy + 内部 ContinuousSliced + climate-defer 自适应）。
+	if OS.has_feature("mobile"):
+		policy = SusPolicyScript.StridePolicy.new(8, 0)
+	else:
+		policy = SusPolicyScript.AlwaysPolicy.new()
 
 
 ## Total pixels for the current world. Cached at round start.
@@ -272,6 +292,7 @@ func reset_progress() -> void:
 	_ocean_rt_diag_count = 0
 	_ocean_policy_diag_count = 0
 	_ocean_pixel_rt_diag_count = 0
+	_phys_stage_diag_count = {}
 	_last_defer_climate_ms = 0.0
 	_current_pixel_quota_diag = 0
 	_last_phys_diag = {}
@@ -337,6 +358,8 @@ func last_physical_diag() -> Dictionary:
 func _log_should_skip(ctx: SusTickContext, reason: String, detail: String = "") -> void:
 	if _ocean_policy_diag_count >= 32:
 		return
+	if not PKLog.enabled:
+		return
 	_ocean_policy_diag_count += 1
 	var suffix: String = ""
 	if detail != "":
@@ -353,6 +376,8 @@ func _log_pixel_slice(ctx: SusTickContext, stage_name: String, s: int, e: int,
 		raster_wall_ms: float, raster_native_ms: float) -> void:
 	if _ocean_pixel_rt_diag_count >= 64:
 		return
+	if not PKLog.enabled:
+		return
 	var should_log: bool = _ocean_pixel_rt_diag_count < 16 \
 			or stage_name == "ocean_pixel_raster_done" \
 			or stage_name == "ocean_pixel_commit_deferred" \
@@ -367,6 +392,13 @@ func _log_pixel_slice(ctx: SusTickContext, stage_name: String, s: int, e: int,
 		"gdext_raster" if used_cpp_raster else "gdscript_slice",
 		raster_wall_ms, raster_native_ms, str(_visual_pending_commit),
 	])
+
+
+# Fix #11 second pass (2026-06-16) mobile：[ocean_currents][RT] / [daily_wind] 24 行
+# 上限对 mobile 仍然太多（logcat ~10ms/行 → 240ms 的 startup overhead）。
+# mobile 收紧到 6 行（前几个 round 看完算）。desktop 保留 24 方便开发期排查。
+func _ocean_rt_log_budget() -> int:
+	return 6 if OS.has_feature("mobile") else 24
 
 
 func should_run(ctx: SusTickContext) -> bool:
@@ -467,7 +499,7 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 	report["due"] = true
 	_last_daily_wind_tick = ctx.tick_index
 	_last_daily_wind_report = report.duplicate(true)
-	if _daily_wind_rt_diag_count < 24:
+	if PKLog.enabled and _daily_wind_rt_diag_count < _ocean_rt_log_budget():
 		_daily_wind_rt_diag_count += 1
 		print("[ocean_currents][daily_wind] #%d tick=%d ran=%s path=%s elapsed=%.3f slp=%.3f wind=%.3f delta=%.6f reason=%s" % [
 			_daily_wind_rt_diag_count,
@@ -526,8 +558,19 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	else:
 		_phys_need_visual = true
 		_phase_int_seen = phase_int
+	# Mobile 60 FPS（Fix #1, 2026-06-15）：每次 phase_int 跨整数都 rebake ocean
+	# 像素 atlas 是 frame=2412 起 non_sus_frame_avg 8→22ms 的直接原因
+	#   （atlas 一旦可见，hex_terrain shader 多采样 dyn/eco/smo/ice 4 张 RGBA8
+	#   512×304，移动端 fragment bandwidth 翻 3 倍）。
+	# 移动端策略：只允许首次 bake 一次（让 shader 拿到非全黑的 ocean overlay
+	#   纹理避免 NaN），后续物理 solve 继续运行（authority 保留在 cell_ocean_*）
+	#   但视觉层不再 rebake → primitives 7096 → 1644，non_sus 22ms → 8ms。
+	# 桌面端不动。
+	if _phys_need_visual and OS.has_feature("mobile") and _phase_int_seen != -9999 \
+			and _visual_round_id > 0:
+		_phys_need_visual = false
 	_sync_legacy_round_state()
-	if _ocean_rt_diag_count < 24:
+	if PKLog.enabled and _ocean_rt_diag_count < _ocean_rt_log_budget():
 		var tps: int = 0
 		if _slow_slice_policy != null and _slow_slice_policy.has_method("ticks_per_slice"):
 			tps = int(_slow_slice_policy.ticks_per_slice())
@@ -560,7 +603,31 @@ func _run_physical_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
 			_phys_solve_done = true
 		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
-		if _ocean_rt_diag_count < 24:
+		# Fix #11 (2026-06-15) stage-level diag：前 3 次每 stage 必打，之后只在 >= 5ms 时打。
+		# stage_id 取自 phys_report.stage（_phys_stage_name 已映射好）。每个 stage 独立 budget，
+		# 不与 _ocean_rt_diag_count 24 上限互相吃。配合 mobile 60FPS bench 用：哪个 stage 在
+		# 8 tick 桶里出现峰值，下一次 bench log 会清楚标出来。
+		var _stage_id_for_diag: int = int(phys_report.get("stage", -1))
+		if _stage_id_for_diag > 0:
+			var _stage_diag_seen: int = int(_phys_stage_diag_count.get(_stage_id_for_diag, 0))
+			var _should_stage_diag: bool = (_stage_diag_seen < _PHYS_STAGE_DIAG_INITIAL_PRINTS) \
+					or (elapsed_solve_ms >= _PHYS_STAGE_DIAG_WARN_MS)
+			if _should_stage_diag and PKLog.enabled:
+				_phys_stage_diag_count[_stage_id_for_diag] = _stage_diag_seen + 1
+				var _stage_kind: String = "warn" if elapsed_solve_ms >= _PHYS_STAGE_DIAG_WARN_MS else "init"
+				print("[ocean_currents/STAGE-DIAG] %s tick=%d round=%d stage=%d/%s path=%s next=%s elapsed_ms=%.2f slp_native=%.2f psi_native=%.2f wind_dp95=%.6f ocean_dp95=%.6f slp_dp95=%.6f phys_done=%s need_visual=%s" % [
+					_stage_kind, ctx.tick_index, _physical_round_id,
+					_stage_id_for_diag, str(phys_report.get("stage_name", "?")),
+					str(phys_report.get("path", "?")), str(phys_report.get("next_stage_name", "?")),
+					elapsed_solve_ms,
+					float(phys_report.get("stage_slp_native_ms", -1.0)),
+					float(phys_report.get("stage_psi_native_ms", -1.0)),
+					float(phys_report.get("wind_delta_p95", 0.0)),
+					float(phys_report.get("ocean_delta_p95", 0.0)),
+					float(phys_report.get("slp_delta_p95", 0.0)),
+					str(_phys_solve_done), str(_phys_need_visual),
+				])
+		if PKLog.enabled and _ocean_rt_diag_count < _ocean_rt_log_budget():
 			_ocean_rt_diag_count += 1
 			print("[ocean_currents][RT] phys_slice#%d tick=%d round=%d stage=%s->%s done=%s run_ocean=%s need_visual=%s elapsed=%.3f ocean_delta_p95=%.6f wind_delta_p95=%.6f slp_delta_p95=%.6f psi_path=%s" % [
 				_ocean_rt_diag_count, ctx.tick_index, _physical_round_id,

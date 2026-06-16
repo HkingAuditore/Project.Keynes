@@ -244,13 +244,13 @@ Ocean land 算法概要：
 日志字段：
 
 ```text
-transp gdext wall=0.35 native=0.029 call=... compute=... apply=... flush=... refresh=... sync=...
+transp/native breakdown source=current diagnostic_wall_ms=0.35 refresh_ms=... native_call_ms=... native_ms=0.029 native_compute_ms=... native_apply_ms=... native_flush_ms=... sync_total_ms=... sync_write_ms=... sync_mark_ms=... dirty_count=...
 ```
 
 解释：
 
-- `native` / `compute` 很低时，说明 C++ 算法本体不是瓶颈。
-- `sync`、`refresh`、`write`、`mark` 变高时，问题在边界同步或 dirty。
+- `native_ms` / `native_compute_ms` 很低时，说明 C++ 算法本体不是瓶颈。
+- `sync_total_ms`、`refresh_ms`、`sync_write_ms`、`sync_mark_ms` 变高时，问题在边界同步或 dirty。
 - `largest=...transp/apply path=gdscript_sliced 28ms` 可能是旧窗口 spike，不一定代表当前 tick 仍在 GDScript compute。
 
 风险：
@@ -410,6 +410,9 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
 - 根据温度、水体、纬度/季节、邻域和阈值更新 `sea_ice_frac`。
 - 可触发 terrain flip 或 ice bake。
 - 结果影响 climate、render atlas 和 ocean physical mask。
+- Earth-like 默认值降低 `sea_ice_freeze_rate` / `sea_ice_neighbor_contagion`，
+  同时提高太阳融化响应并收紧 `sea_ice_daily_delta_cap`，用来减弱暖季残冰和
+  海冰边界的突变扩散；这些都是 `ClimateProfile` profile knob。
 
 输出：
 
@@ -442,6 +445,17 @@ Stage-A 链路：
 Stage-B 链路：
 
 - 根据 field/fronts 更新 albedo、vegetation dynamics、feedback、snow/soil/water balance 等。
+- 雪盖入口同时受 `snowpack_*`、`snowline_*` 和
+  `ClimateProfile.snow_accum_days_req` 控制。`MapGenerator` 将该值注入
+  `WeatherSystem.configure_weather_field()`，GDScript fallback、resident knobs 和
+  `DCWorldExt::run_weather_distribute_pass` 的 `snow_accum_days_req` 必须保持同源。
+- 陆地雪盖 / 雪线 floor / 洪涝覆盖物的 water gate 必须同时读取
+  `LandformType.is_water(cell.landform)` 和 terrain water 语义
+  (`OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP`)。原因是 sea-ice daily pass 会把
+  `cell_terrain` 翻成 `SEA_ICE`，而 landform 可能在同一 tick 或 fallback
+  路径中滞后；此时 `SEA_ICE`/`LAKE` 仍必须按水体处理，不得获得陆地
+  snowpack、snow_cover 或 FLOODING cover。C++ `run_weather_distribute_pass`
+  必须 mirror 这个组合谓词。
 
 Merged native 路径：
 
@@ -665,6 +679,13 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   classification and `DCWorldExt::run_weather_field_solve_pass` use the same
   guard so meaningful precipitation below the snow band becomes `BLIZZARD`
   instead of cold `RAIN`.
+- Warm ocean cores use the same exception in GDScript and
+  `DCWorldExt::run_weather_field_solve_pass`: a warm/humid cell with
+  `ocean_an > 0.12`, `instability > 0.80`, `precip > 0.10`, and `cloud > 0.26`
+  classifies as `STORM` even if high-tail precipitation damping has pulled
+  precip below the ordinary `0.16` storm threshold. This keeps tropical warm
+  water convection from being downgraded to ordinary rain after the damping
+  stage.
 - Field precipitation now has a shared high-tail stability step in both
   `weather/field_solver.gd` and `DCWorldExt::run_weather_field_solve_pass`.
   `ClimateProfile` owns the tuning knobs:
@@ -686,6 +707,13 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
 - `DCWorldExt::run_weather_field_commit_pass` reports convergence refresh
   data only for ticks where `refresh_convergence=true`. A flat convergence
   array on other ticks is expected cadence behavior, not a stale-write bug.
+- Earth-like defaults now strengthen weather convergence cadence and gain
+  (`weather_convergence_gain=0.50`,
+  `weather_convergence_refresh_stride=2`) while reducing broad snow cover
+  (`snowpack_accum_gain=0.08`, stronger melt, `snowpack_cover_full=0.32`,
+  `snowline_temp_threshold=0.29`, `snowline_band=0.27`,
+  `snow_accum_days_req=2`). This is intended to keep cold/elevated land snowy
+  without letting lowland/plain snow coverage dominate the CSV distribution.
 
 ### Ocean current vector limits
 
@@ -694,7 +722,7 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   clamp after response blending. `ocean_current_scale` controls PSI-gradient
   conversion; `ocean_current_max_magnitude` controls the final vector length.
 - Current defaults keep the physical field below the old near-unit plateau:
-  `ocean_psi_source_scale=0.08`, `ocean_current_scale=0.16`,
+  `ocean_psi_source_scale=0.06`, `ocean_current_scale=0.13`,
   `ocean_current_max_magnitude=0.65`, `ocean_thermal_current_weight=0.12`,
   `ocean_density_cold_weight=0.22`, and `ocean_density_ice_weight=0.12`.
   These are profile knobs, so existing saved resources may still override them.
