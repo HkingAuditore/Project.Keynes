@@ -271,6 +271,25 @@ func tick(_ctx) -> Dictionary:
 	if not _cpp_commit_queue.is_empty():
 		return _drain_cpp_commit_queue(t_start_us)
 
+	# [cell-indirect single-path 2026-06-16] flag 开 → 主 shader 全量走 per-cell LUT，
+	# 旧逐像素动态 atlas（dynamic/ecology/smooth/ice）已无任何 shader 消费者。这里每
+	# stride 只全量重烘 per-cell LUT（~0.1-0.3ms / 2400 cell，含海冰写入 dyn_lut.a），
+	# 随后直接结束本 tick：彻底跳过下方 C++ run_atlas_pipeline_step 与 4-phase 逐像素
+	# 上传，省每日 GPU 上传 + 4 张 derived RGBA8 显存。stride 节奏不变（StridePolicy
+	# 控制 tick 频率），刷新频率与改前等价（旧码也是每 stride 起点重烘一次 LUT）。
+	# flag 关时本分支零触达，旧 per-pixel 路径（_tick_cpp_pipeline / 4-phase / _tick_oneshot）
+	# 行为完全不变，即 flag 充当 A/B fallback 开关（skill rule 11）。
+	if FeatureFlagsScript.cell_indirection_active():
+		baker.refresh_cell_luts_daily(map, world_data)
+		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+		return {
+			"done": true,
+			"work_done": map.cell_count() if map != null else 0,
+			"elapsed_ms": _lut_ms,
+			"progress_ratio": 1.0,
+			"path": "cell_indirection_lut",
+		}
+
 	# 紧急回退：走旧 one-shot 路径。
 	if not enable_time_slicing:
 		return _tick_oneshot(t_start_us)

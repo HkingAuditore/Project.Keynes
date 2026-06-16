@@ -47,7 +47,7 @@ const NEIGHBOR_DIRS: Array[Vector2] = [
 #
 # 与现有 MapBaker 中各处计算保持一致：ny = (cell_world_y - bounds.y) / bounds.h
 # clampf 到 [0,1]。lat_signed = (ny - 0.5) * 2 ∈ [-1, +1]，正南半球、负北半球。
-# lat_temp = pow(cos(|lat_signed| * π/2), 1.2) 是温度钟形曲线代理。
+# lat_temp = DCClimateMath.lat_temp_bell(|lat_signed|) 是温度钟形曲线代理（全工程单一来源）。
 static func _ny_for_cell(cell: HexCell, hex_size: float, world_bounds: Rect2) -> float:
 	if world_bounds.size.y <= 0.001:
 		return 0.5
@@ -59,7 +59,8 @@ static func _lat_signed_for(ny: float) -> float:
 	return (ny - 0.5) * 2.0
 
 static func _lat_temp_for(lat_signed_abs: float) -> float:
-	return pow(cos(lat_signed_abs * PI * 0.5), 1.2)
+	# 纬度温度钟形统一走 DCClimateMath.lat_temp_bell（全工程单一来源）。
+	return DCClimateMath.lat_temp_bell(lat_signed_abs)
 
 # 水域判断：与 MapBaker._is_water 同语义（OCEAN/COAST/REEF/KELP）。
 # 注意：LAKE 不算入海盆环流（水文层独立处理），SEA_ICE 在覆盖物层翻转。

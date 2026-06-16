@@ -866,6 +866,16 @@ var _gdext_sea_ice_signature_ok: bool = false
 # 详见 docs/dots-master-execution-handbook.md §sea_ice-dt-compensation。
 var _last_sea_ice_pass_day: float = -1.0
 
+# [thermal dt 补偿 2026-06-16] climate pass_a 热惯性与 sea_ice 同病：原本假定
+# "每天松弛一次 α"，但加速/跳日运行下两次 pass_a 的真实间隔会滑到 ~10-30 天，
+# 导致温度（尤其低 α 的海洋）严重欠积分、滞后太阳直射点、极地降不下来。
+# 修复与 sea_ice 对称：记录上次 pass_a 的 current_day，本次用 (now-last) 作为
+# dt_days，把 α 换算为多日等效 α_eff=1-(1-α)^dt、delta_cap 乘 dt。
+# _climate_dt_cached_* 用于同一仿真日内多个 knob builder 取到一致 dt 且只推进一次游标。
+var _last_climate_pass_day: float = -1.0
+var _climate_dt_cached_day: float = -1.0
+var _climate_dt_cached_val: float = 1.0
+
 # Sea ice 多 tick 状态机阶段。native 快路径会拆成：
 # native_compute → dense_sync_chunk → terrain_flip_chunk → commit。
 const _SEA_ICE_STAGE_NATIVE_COMPUTE: String = "native_compute"
@@ -1008,6 +1018,8 @@ var _season_stage_path_logged: Dictionary = {}
 # 仅缓存当前 season 一份；season 切换时自动重建（O(height)，对 256 行约 1ms）。
 # 对其他子 pass（rain_shadow / river_ecology / shrubland / mangrove / glacier）
 # 暂不渗透，保持改动面最小，风险最低。
+# 纬度温度钟形曲线统一到 DCClimateMath.lat_temp_bell（全工程单一来源）；本文件不再
+# 就地重写 pow(cos(...))。极地温度/海冰调参改 DCClimateMath.LAT_TEMP_CURVE_EXP。
 var _row_lat_temp: PackedFloat32Array = PackedFloat32Array()
 var _row_season_off: PackedFloat32Array = PackedFloat32Array()
 var _row_tables_season: int = -1
@@ -1028,7 +1040,7 @@ func _ensure_row_tables(cfg: MapConfig, season: int) -> void:
 	for r in range(H):
 		var ny: float = float(r) * inv
 		var lat_signed: float = (ny - 0.5) * 2.0
-		_row_lat_temp[r] = pow(cos(lat_signed * PI * 0.5), 1.2)
+		_row_lat_temp[r] = DCClimateMath.lat_temp_bell(lat_signed)
 		_row_season_off[r] = _season_temp_offset(ny, season)
 	_row_tables_season = season
 	_row_tables_height = H
@@ -1093,26 +1105,28 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 当前激活的 profile。
 	if cfg != null:
 		cfg.climate_profile = _c()
-	var world := _baker.bake_world(map, cfg, hex_size, effective_seed)
-	if _baker.has_method("prewarm_dynamic_axis_caches"):
-		_baker.prewarm_dynamic_axis_caches(map, world)
-	_last_world = world
-	print("MapGenerator v7: bake %dms" % (Time.get_ticks_msec() - t_bake))
-
-	# 任务 7：在 bake 后新增一个轻量级 pass，把 MapBaker 烤好的 per-pixel 洋流场
-	# 折返为 per-cell HexCell.ocean_current。这是逻辑层的洋流字段——渲染层从这里
-	# 开始读取（任务 8），未来的 AI / 鱼群 / 航运也从这里读取。不改动 height /
-	# temperature / moisture / vegetation 生成（需求显式非目标）。
-	_compute_ocean_currents(map, world, hex_size)
-
-	# 地形扰动风场（六边形尺度）：在洋流计算之后，借用已经定型的 cell.terrain /
-	# cell.elevation + 邻居拓扑，对 WindBelt.wind_at 给出的"纬度风基线"做局地
-	# 修正——海陆摩擦衰减、山脉上风阻挡（降速 + 旁侧绕流）、山脊伯努利加速、
-	# 海岸热力风加速。结果写入 cell.wind_vector，仅给 Data Overlay 与未来局地
-	# 玩法系统读；天气锋面 advection / 洋流 Ekman 偏转**仍读** WorldData.
-	# wind_field_buffer，保留地球级纬向稳定形态。
-	_compute_terrain_perturbed_wind(map)
-
+	# [fix cell-indirect 2026-06-16] cell.index 必须在 bake_world 之前赋值。
+	# bake_world 内部 _bake_height_biome_moisture 会按 cell.index 建 CSR
+	# (cell_first_px_arr/flat_px_indices_arr)，bake_cell_index_tex 也按 cell.index
+	# fan-out per-pixel 间接索引图。原 _build_indices() 在 bake 之后(下方 ~L1205)才跑，
+	# 导致 bake 期间 cell.index 全是默认 -1 → CSR 全跳过(flat=0)、cell_index_tex 整张
+	# 写哨兵(0xFFFF) → shader 解码全 -1 → 间接寻址地面全黑/全海。这里提前建一次索引
+	# (幂等：下方 _build_indices / init_soa_from_bake 会按同一 _cells 顺序再建，
+	# cell.index 与 SoA terrain_arr 排布严格一致)。此刻 has_soa() 仍为 false，
+	# 物理环流 defer 分支(MapBaker._bake_initial_physical_circulation)行为不变。
+	map._build_indices()
+	# [snow-dyn-valid-fix 2026-06-16] 温度 Bootstrap 必须在 bake_world 之前执行。
+	# 原因：bake_world 内部 rebake_dynamic_cell_atlas_only / bake_cell_luts 会把
+	# cell.temperature 烘进动态 atlas/LUT 的 R 通道。若此刻温度仍是默认 0.0，首帧
+	# atlas 全图 temp=0；旧 shader 靠 dyn_valid=step(0.02,dyn_temp) 兜底回退到
+	# derived_temp，但该哨兵会把真实极寒格(温度=0)误判为"未初始化"→ 整格动态状态
+	# (含雪盖)被清零。前移后 atlas 从第 0 帧即带真实纬度温度，dyn_valid 不再需要
+	# （shader 端已同步移除）。
+	# 依赖：cfg / cell.elevation / base_moisture / terrain / landform / vegetation /
+	# cover 均在 _generate_cells（bake 前）就绪；不依赖 bake 产物。下方 bake 后的
+	# _compute_ocean_currents / _compute_terrain_perturbed_wind 均不读 cell.temperature，
+	# 故前移对它们 bit-for-bit 无影响。
+	#
 	# 初始 current_state（认为是夏季中段，等 main.gd 推第一次 season_changed 再更新）
 	# Bootstrap: 同时把温度写入 HexCell backing field，确保 init_soa_from_bake()
 	# 的 SoA 镜像（temp_arr / temp_30d_arr / temp_365d_arr / thermal_energy_arr）
@@ -1141,6 +1155,25 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		cell._temp_365d_mean_backing = _boot_temp
 		cell._temp_dev_from_annual_backing = 0.0
 		cell._ema_initialized = true
+	var world := _baker.bake_world(map, cfg, hex_size, effective_seed)
+	if _baker.has_method("prewarm_dynamic_axis_caches"):
+		_baker.prewarm_dynamic_axis_caches(map, world)
+	_last_world = world
+	print("MapGenerator v7: bake %dms" % (Time.get_ticks_msec() - t_bake))
+
+	# 任务 7：在 bake 后新增一个轻量级 pass，把 MapBaker 烤好的 per-pixel 洋流场
+	# 折返为 per-cell HexCell.ocean_current。这是逻辑层的洋流字段——渲染层从这里
+	# 开始读取（任务 8），未来的 AI / 鱼群 / 航运也从这里读取。不改动 height /
+	# temperature / moisture / vegetation 生成（需求显式非目标）。
+	_compute_ocean_currents(map, world, hex_size)
+
+	# 地形扰动风场（六边形尺度）：在洋流计算之后，借用已经定型的 cell.terrain /
+	# cell.elevation + 邻居拓扑，对 WindBelt.wind_at 给出的"纬度风基线"做局地
+	# 修正——海陆摩擦衰减、山脉上风阻挡（降速 + 旁侧绕流）、山脊伯努利加速、
+	# 海岸热力风加速。结果写入 cell.wind_vector，仅给 Data Overlay 与未来局地
+	# 玩法系统读；天气锋面 advection / 洋流 Ekman 偏转**仍读** WorldData.
+	# wind_field_buffer，保留地球级纬向稳定形态。
+	_compute_terrain_perturbed_wind(map)
 
 	# Milestone 3：天气子系统初始化（与 generator 同 seed，复盘可重现）
 	_weather_system = WeatherSystem.new()
@@ -1308,6 +1341,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					if _baker != null and _baker.has_method("set_world_ext"):
 						_baker.set_world_ext(_data_core_world_ext)
 					_configure_native_world_context(map, world, cfg, hex_size)
+					# cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year
+					# （海冰 + 显示温度的运行期 baseline）权威计算归 C++。L1235 的
+					# bake_lat_temp_year_lut 已用 GDScript fallback 填好 cell_lat_norm +
+					# temp_baseline_year；ext 现已 bind，把 temp_baseline_year 交给 C++
+					# pk_lat_temp_bell 权威重算并 flush 回 MapData（ext 未就绪则保留 GDScript 值）。
+					_bake_temp_baseline_year_native(map)
 			else:
 				push_warning("[DataCore] ClassDB.instantiate(\"DCWorldExt\") returned null/non-RefCounted; gdext likely not loaded — climate C++ accel disabled")
 		else:
@@ -2034,6 +2073,7 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"thermal_inertia_snow": float(cp_now.get("thermal_inertia_snow")) if cp_now.get("thermal_inertia_snow") != null else 0.09,
 		"thermal_inertia_high_mountain": float(cp_now.get("thermal_inertia_high_mountain")) if cp_now.get("thermal_inertia_high_mountain") != null else 0.16,
 		"thermal_daily_delta_cap": float(cp_now.get("thermal_daily_delta_cap")) if cp_now.get("thermal_daily_delta_cap") != null else 0.15,
+		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_now.get("snowpack_cover_low")) if cp_now.get("snowpack_cover_low") != null else 0.05,
 		"snowpack_cover_full": float(cp_now.get("snowpack_cover_full")) if cp_now.get("snowpack_cover_full") != null else 0.32,
 		"sea_level": float(_last_cfg.sea_level),
@@ -5265,9 +5305,8 @@ func _derived_snow_cover(temp_now: float, land_h: float, terrain: int, cover: in
 	return snow_cover
 
 func _compute_temperature(ny: float, elevation: float) -> float:
-	# 用余弦做平滑钟形：赤道（ny=0.5）最高 ~1.0，两极 0
-	var lat_signed: float = (ny - 0.5) * 2.0   # [-1, +1]
-	var lat_temp: float = pow(cos(lat_signed * PI * 0.5), 1.2)
+	# 纬度温度钟形统一走 DCClimateMath.lat_temp_bell（全工程单一来源），再叠海拔惩罚。
+	var lat_temp: float = DCClimateMath.lat_temp_bell_from_ny(ny)
 	var alt_penalty: float = _alt_penalty(elevation)
 	return clampf(lat_temp - alt_penalty, 0.0, 1.0)
 
@@ -6598,6 +6637,26 @@ func public_cube_row_norm(cell: HexCell) -> float:
 		return 0.5
 	return _cube_row_norm(cell, _last_cfg)
 
+# cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year 的权威 C++ 烘焙。
+# 海冰 + 显示温度的运行期 baseline 是 lat_temp_bell(lat_norm) 的纯仿真量——计算权威归
+# C++（DCWorldExt.run_temp_baseline_year_bake / pk_lat_temp_bell），写 cell_temp_baseline_year
+# slot 并 flush 回 MapData.temp_baseline_year_arr。本函数在 DCWorldExt bind 完成后调用一次。
+# ext 未编译 / 未 bind / 缺方法 → 静默保留 bake_lat_temp_year_lut 已填的 GDScript fallback 值。
+func _bake_temp_baseline_year_native(map: MapData) -> void:
+	if map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_temp_baseline_year_bake"):
+		return
+	if int(_data_core_world_ext.component_id("cell_temp_baseline_year")) < 0:
+		return
+	var lat: PackedFloat32Array = map.cell_lat_norm_arr
+	if lat.is_empty():
+		return
+	var res: Dictionary = _data_core_world_ext.run_temp_baseline_year_bake({"lat_norm": lat})
+	if bool(res.get("fallback", true)):
+		push_warning("[DataCore] run_temp_baseline_year_bake fallback (%s); 保留 GDScript baseline" % String(res.get("reason", "unknown")))
+	else:
+		print("[DataCore] cell_temp_baseline_year baked by C++ (pk_lat_temp_bell): n=%d native_ms=%.3f" % [int(res.get("n_cells", 0)), float(res.get("elapsed_ms", 0.0))])
+
 # ─── 轨道相位边界刷新（慢层维护）────────────────────────────────────
 # 每次 WorldClock.season_changed 触发。这里不再直接重置湿度、温度、雨影或风；
 # 气候变化由每日 C++/DOTS 链条推进：太阳直射点 -> 日照/昼长 -> 热惯性 ->
@@ -6844,6 +6903,7 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
 			"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
 			"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
+			"thermal_dt_days": _consume_climate_dt_days(),
 			"snowpack_cover_low": float(cp.snowpack_cover_low) if "snowpack_cover_low" in cp else 0.05,
 			"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
 			"sea_level":        float(_last_cfg.sea_level),
@@ -7011,8 +7071,11 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			moisture_now = clampf(cell.base_moisture * scale_eff, 0.0, 1.0)
 
 		# —— 3) 当日温度：日照异常生成辐射目标，后续路径再施加热惯性 ——
+		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收），与 SoA/C++ 同源。
+		# 用【年均温度 cell.temp_365d_mean】作冰封代理，避免夏季融化正反馈失控。
 		var temp_year: float = _compute_temperature(ny, cell.elevation)
-		var season_offset: float = insol_amp_gain * dev_today
+		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(_is_water(cell.terrain), cell.temp_365d_mean)
+		var season_offset: float = insol_amp_gain * absorb_factor * dev_today
 		var temp_now: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# —— 4) 当日雪盖（双段公式与 refresh_seasonal 严格一致；永久态特例处理） ——
@@ -8035,6 +8098,31 @@ func _consume_sea_ice_dt_days() -> float:
 	return dt_days
 
 
+# [thermal dt 补偿 2026-06-16] 与 _consume_sea_ice_dt_days 对称：返回本次 climate
+# pass_a 距上次实际经过的仿真天数 ∈ (0, 30]。C++/GDScript pass_a 用它把单日 α
+# 换算为多日等效 α_eff、并把 delta_cap 乘以 dt。
+# 同一仿真日内多个 knob builder（cp_struct / async kick / fallback 循环）可能各调
+# 一次：用 _climate_dt_cached_day 缓存，保证返回同一 dt 且只推进一次游标。
+func _consume_climate_dt_days() -> float:
+	var dt_days: float = 1.0
+	if _world_clock_ref != null:
+		var now_day_v = _world_clock_ref.get("current_day")
+		if now_day_v != null:
+			var now_day: float = float(now_day_v)
+			# 同一仿真日重复取值 → 命中缓存，不再推进游标。
+			if _climate_dt_cached_day >= 0.0 and is_equal_approx(now_day, _climate_dt_cached_day):
+				return _climate_dt_cached_val
+			if _last_climate_pass_day >= 0.0:
+				dt_days = clampf(now_day - _last_climate_pass_day, 0.0, 30.0)
+				if dt_days <= 0.0:
+					dt_days = 1.0  # 同 tick 重入兜底
+			# else: 第一次调用，保持 dt_days = 1.0 默认
+			_last_climate_pass_day = now_day
+			_climate_dt_cached_day = now_day
+			_climate_dt_cached_val = dt_days
+	return dt_days
+
+
 # QA 异常守卫：当日 SEA_ICE 翻转 cell 数 > 总水体数 3% 时打印一次 WARN
 # （帮助定位"全图统一切换"的回归）。
 func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
@@ -8497,9 +8585,12 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			solar_melt = _sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain)
 		var delta_freeze: float = k_freeze_eff * maxf(0.0, t_form - t_eff) * freeze_gate
 		var delta_melt: float = k_melt_eff * maxf(0.0, t_eff - t_melt) + solar_melt
-		var d_frac: float = (delta_freeze - delta_melt) * dt_days
+		# [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：先裁剪日速率再乘
+		# dt_days（与 C++ 三核 1:1）。否则加速档每轮最多长 cap，亚极地涨不到翻转阈值。
+		var rate: float = delta_freeze - delta_melt
 		if daily_delta_cap > 0.0:
-			d_frac = clampf(d_frac, -daily_delta_cap, daily_delta_cap)
+			rate = clampf(rate, -daily_delta_cap, daily_delta_cap)
+		var d_frac: float = rate * dt_days
 		var prev_frac: float = cell.sea_ice_fraction
 		var new_frac: float = clampf(prev_frac + d_frac, 0.0, 1.0)
 		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
@@ -8901,6 +8992,14 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var thermal_snow: float = float(cp.get("thermal_inertia_snow")) if cp.get("thermal_inertia_snow") != null else 0.09
 	var thermal_high: float = float(cp.get("thermal_inertia_high_mountain")) if cp.get("thermal_inertia_high_mountain") != null else 0.16
 	var thermal_delta_cap: float = float(cp.get("thermal_daily_delta_cap")) if cp.get("thermal_daily_delta_cap") != null else 0.15
+	# 加速/跳日补偿：把单日 α 换算为多日等效 α_eff=1-(1-α)^dt、delta_cap 乘 dt。
+	# dt<=1 时退化为原值，与 C++ pk_thermal_alpha_eff / sea_ice dt 同源。
+	var thermal_dt: float = clampf(_consume_climate_dt_days(), 1.0, 30.0)
+	var thermal_land_eff: float = thermal_land if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_land, 0.0, 1.0), thermal_dt)
+	var thermal_water_eff: float = thermal_water if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_water, 0.0, 1.0), thermal_dt)
+	var thermal_snow_eff: float = thermal_snow if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_snow, 0.0, 1.0), thermal_dt)
+	var thermal_high_eff: float = thermal_high if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_high, 0.0, 1.0), thermal_dt)
+	var thermal_delta_cap_eff: float = thermal_delta_cap * thermal_dt
 	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
 	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化。
@@ -8984,8 +9083,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			temp_year_lat = temp_year_arr[i]
 		else:
 			ny = _cube_row_norm(c, _last_cfg)
-			var lat_signed_fb: float = (ny - 0.5) * 2.0
-			temp_year_lat = pow(cos(lat_signed_fb * PI * 0.5), 1.2)
+			temp_year_lat = DCClimateMath.lat_temp_bell_from_ny(ny)
 			if temp_year_lat < 0.0: temp_year_lat = 0.0
 			elif temp_year_lat > 1.0: temp_year_lat = 1.0
 		var dev_today: float = 0.0
@@ -9016,8 +9114,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 				moisture_now = 0.0
 
 		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - alt_penalty(elev)，clamp）
-		# 2026-05-18 雪线修正：alt_penalty 内联双段式（同 _alt_penalty）。
-		# lin = elev*0.55；hi = smoothstep(0.45, 1.00, elev) * 0.30
+		# alt_penalty 内联双段式，常量走 ALT_PEN_*（同 _alt_penalty / pk_alt_penalty）：
+		# lin = elev*ALT_PEN_LINEAR(0.40)；hi = smoothstep(0.45, 1.00, elev) * ALT_PEN_HIGH_AMP(0.22)
 		var alt_pen_lin: float = elevation * ALT_PEN_LINEAR
 		var alt_pen_hi_t: float = (elevation - ALT_PEN_HIGH_LO) / (ALT_PEN_HIGH_HI - ALT_PEN_HIGH_LO)
 		if alt_pen_hi_t < 0.0: alt_pen_hi_t = 0.0
@@ -9026,7 +9124,10 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		var temp_year: float = temp_year_lat - (alt_pen_lin + alt_pen_hi)
 		if temp_year < 0.0: temp_year = 0.0
 		elif temp_year > 1.0: temp_year = 1.0
-		var season_offset: float = insol_amp_gain * dev_today
+		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
+		# 用【年均温度 temp_365d_a[i]】作冰封代理（与 C++ p365[i] 同源），避免夏季融化正反馈失控。
+		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(is_water_a[i] != 0, temp_365d_a[i])
+		var season_offset: float = insol_amp_gain * absorb_factor * dev_today
 		var radiative_target: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# 3) 热惯性：日照只生成 radiative target，最终 temp 由长期热储量缓慢逼近。
@@ -9035,17 +9136,17 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if ema_init_a[i] == 0:
 			prev_temp_for_thermal = temp_a[i]
 			prev_energy = prev_temp_for_thermal
-		var alpha_thermal: float = thermal_land
+		var alpha_thermal: float = thermal_land_eff
 		if is_water_a[i] != 0:
-			alpha_thermal = thermal_water
+			alpha_thermal = thermal_water_eff
 		elif c.cover == CoverType.CV.GLACIER:
-			alpha_thermal = thermal_snow
+			alpha_thermal = thermal_snow_eff
 		elif snowpack_a.size() == n and snowpack_a[i] > snowpack_cover_low:
-			alpha_thermal = thermal_snow
+			alpha_thermal = thermal_snow_eff
 		elif elevation > 0.70:
-			alpha_thermal = thermal_high
+			alpha_thermal = thermal_high_eff
 		var heat_next: float = lerpf(prev_energy, radiative_target, clampf(alpha_thermal, 0.0, 1.0))
-		var temp_now: float = clampf(prev_temp_for_thermal + clampf(heat_next - prev_temp_for_thermal, -thermal_delta_cap, thermal_delta_cap), 0.0, 1.0)
+		var temp_now: float = clampf(prev_temp_for_thermal + clampf(heat_next - prev_temp_for_thermal, -thermal_delta_cap_eff, thermal_delta_cap_eff), 0.0, 1.0)
 		if thermal_a.size() == n:
 			thermal_a[i] = heat_next
 
@@ -12446,17 +12547,13 @@ func _rebuild_insol_mean_lut() -> void:
 		_insol_mean_lut[i] = acc / float(_INSOL_ANNUAL_SAMPLES)
 	_insol_mean_lut_tilt = tilt_deg
 
-# 日射季节偏差：中低纬用绝对差，高纬混入受限相对差。
-# 纯绝对差会压平极区季节，纯相对差会在极夜年均值很小时发散。
-# C++ 端同步修改（world_ext.cpp:2255,2580）。
+# 日射季节偏差（legacy 气压求解 / UI 读法）：直接路由到 DCClimateMath 单一来源。
+# 2026-06-16 物理化：删除"极地放大/衰减"band-aid，dev 还原为纯物理偏差。极地夏季
+# 过热改由吸收短波因子（DCClimateMath.surface_absorbed_factor）在 pass_a season_offset 处理。
 func _insol_dev(ny: float, season_phase: float) -> float:
 	var mean_val: float = _insolation_annual_mean(ny)
 	var now_val: float = _compute_insolation(ny, season_phase)
-	var dev_abs: float = now_val - mean_val
-	var dev_rel: float = clampf(dev_abs / maxf(mean_val, 0.18), -1.0, 1.0)
-	var abs_lat: float = absf((clampf(ny, 0.0, 1.0) - 0.5) * 2.0)
-	var polar_w: float = smoothstep(0.55, 0.90, abs_lat) * 0.55
-	return clampf(lerpf(dev_abs, dev_rel, polar_w), -1.0, 1.0)
+	return clampf(DCClimateMath.compute_insolation_dev_from_values(ny, now_val, mean_val), -1.0, 1.0)
 
 # True Insolation-Driven：温度季节偏移的兼容读法。
 # offset = gain × dev × season_temp_amp
@@ -13198,6 +13295,7 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		"thermal_inertia_snow": float(cp_f5.thermal_inertia_snow) if "thermal_inertia_snow" in cp_f5 else 0.09,
 		"thermal_inertia_high_mountain": float(cp_f5.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp_f5 else 0.16,
 		"thermal_daily_delta_cap": float(cp_f5.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp_f5 else 0.15,
+		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_f5.snowpack_cover_low) if "snowpack_cover_low" in cp_f5 else 0.05,
 		"snowpack_cover_full": float(cp_f5.snowpack_cover_full) if "snowpack_cover_full" in cp_f5 else 0.32,
 		"insol_dev_min": float(cp_f5.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp_f5 else -1.0,

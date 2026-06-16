@@ -79,6 +79,25 @@ uniform sampler2D sea_ice_tex : filter_linear, repeat_disable;
 uniform sampler2D noise_tex    : filter_linear_mipmap, repeat_enable;
 const float NOISE_TEX_SCALE = 256.0;
 
+// =========================================================================
+// 【Cell-index 间接寻址组（province-ID indirection）】
+// =========================================================================
+// plan: cell-index atlas indirection。把"hex 内恒定"的 atlas 改为
+//   静态 cell 索引图 + per-cell LUT，shader 自己做 pixel→cell 解析。
+//   use_cell_indirection=false（默认）时全部分支退回旧 per-pixel atlas，
+//   逐像素 bit-identical。绑定与开关由 hex_renderer 推送。
+// cell_index_tex（RG8 NEAREST）：R=cell.index 低字节、G=高字节；0xFFFF=map 外哨兵。
+//   **必须 NEAREST**：索引插值会得到垃圾 cell。
+// enum_lut（RGB8 NEAREST）：per-cell R=biome G=veg B=cover（enum_atlas 的 LUT 形态）。
+// dyn_lut（RGBA8 NEAREST）：per-cell R=temp G=wet B=snow A=ice|vitality。
+// eco_lut（RGBA8 NEAREST）：per-cell ecology。
+// lut_dims：(lut_w, lut_h) LUT 纹理网格尺寸，shader 据此把 cell.index → texel uv。
+uniform bool use_cell_indirection = false;
+uniform sampler2D cell_index_tex : filter_nearest, repeat_disable;
+uniform sampler2D enum_lut : filter_nearest, repeat_disable;
+uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
+uniform sampler2D eco_lut  : filter_nearest, repeat_disable;
+uniform vec2 lut_dims = vec2(1.0, 1.0);
 
 
 // =========================================================================

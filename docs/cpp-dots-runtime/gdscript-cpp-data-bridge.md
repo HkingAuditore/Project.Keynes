@@ -122,6 +122,36 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 
 - 如果每 tick 都 dense 写大量字段，即使 value-diff 已优化，仍会有遍历成本。
 
+## Cell-index 间接寻址 LUT 是渲染产物，不进 schema
+
+plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-index 间接寻址」节）。
+
+- `cell_index_tex` / `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` 是
+  **渲染层产物（`WorldData` 上的 `ImageTexture`）**，不是 DataCore slot：
+  **schema / `component_bind_table.gen.h` 无需改动**。
+- **编码权威路径是 C++（DCWorldExt）**，GDScript 仅做薄壳 + fallback（2026-06-16，用户
+  决策"严格按 skill，哪怕只有 2400 个 cell 也在 CPP 做"）：
+  - `encode_cell_luts(opts) → Dictionary{enum_lut/dyn_lut/eco_lut: PackedByteArray,
+    path, elapsed_ms, fallback, published_to_slot=false}`：C++ 读 8 个 SoA slot
+    （`cell_temp/cell_moisture/cell_snow_cover/cell_vegetation_vitality/cell_sea_ice_frac/
+    cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 3 张 LUT 的
+    `PackedByteArray`；GDScript 只负责 `Image.create_from_data` + `ImageTexture.update`。
+  - `encode_cell_index_tex(opts) → Dictionary{index_tex: PackedByteArray, path, fallback}`：
+    C++ 反射读 `world.cell_first_px_arr/cell_px_count_arr/flat_px_indices_arr`（CSR）→ RG8 buffer。
+  - LUT/index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
+    无 `flush`/`snapshot` 需求；C++ 直接把字节缓冲塞进返回 Dict，GDScript 端零额外 marshalling 拷贝
+    （CoW 引用传递）。
+  - eco `transition_age` 的 per-cell prev 状态由 C++ 端 `AtlasPipelineState::lut_prev_veg/
+    lut_prev_vit/lut_transition_age` 持久维护（`invalidate_atlas_csr_cache` 同步失效），
+    **不经 GDScript 来回传**——`map_baker` 不再持有该状态。
+- 量化公式与 fan-out 编码器同源（C++ `pk_atlas_sig_dynamic` / `pk_atlas_sig_ecology`，
+  GDScript fallback `_dynamic_cell_signature` / `_ecology_visual_signature`），保证 LUT 与旧
+  per-pixel atlas **bit-equivalent**。
+- fan-out 方向反转：旧 `n_cells → n_pix` 直写 atlas_buffer（每日数 MB）改为
+  `n_cells → n_cells` LUT（~7KB）；`cell_index_tex` 静态，不进 DataCore、不参与每日 sync。
+- flag 关时本路径零触达，CoW 公理 / `published_to_slot` / `flush` / `snapshot`
+  语义均不受影响。
+
 ## C++ 读取 GDScript 最新值
 
 `DCWorldExt.refresh_slots_from_map()`
@@ -170,6 +200,7 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 
 - pass 输出要被渲染、debug、GDScript fallback 或后续 GDScript stage 读取。
 - SLP/PSI 等 C++ pass 返回 `published_to_slot=true` 并在 C++ 内 flush 对应 slot 时，GDScript caller 可以跳过重复拷贝。
+- 生成期 `run_temp_baseline_year_bake`（cell_temp_baseline_year 权威烘焙）即采用此路径：以 `lat_norm` knob 入参，C++ 写 `cell_temp_baseline_year` slot 后 `_flush_slot_to_map` 回 `MapData.temp_baseline_year_arr`，返回 `published_to_slot=true`；ext 不可用时 GDScript `bake_lat_temp_year_lut` 兜底（详见 computation-pipelines.md "Temp baseline year bake"）。
 
 ### Snapshot
 

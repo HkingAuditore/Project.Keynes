@@ -24,6 +24,33 @@
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload。 |
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
+| Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
+
+> `cell_temp_baseline_year`（海冰 + 显示温度的运行期年 baseline）权威计算已收回 C++，见下文 "Temp baseline year bake" 节。注意它与 pass_a 每日写的运行期 `cell_temp_baseline`（辐射 + 热惯性积分）是两个不同字段。
+
+## Temp baseline year bake（生成期 cell_temp_baseline_year）
+
+主要入口：
+
+- `DCWorldExt::run_temp_baseline_year_bake`（C++ 权威）
+- `map_generator.gd::_bake_temp_baseline_year_native`（编排：DCWorldExt bind 后调一次）
+- `map_data.gd::bake_lat_temp_year_lut`（GDScript fallback + 几何量 `cell_lat_norm` 烘焙）
+
+背景：`cell_temp_baseline_year`（每 cell 年均纬度温度钟形）是海冰判定与显示温度的运行期 baseline，被 C++ pass_a（`TEMP_YEAR_BASE`）、GDScript pass-A fallback、`climate_daily_system`、debug overlay 共同消费。它原本由 GDScript `bake_lat_temp_year_lut` 就地 `pow(cos(lat·π/2), exp)` 烤出来再经 `refresh_slots_from_map` 推给 slot——仿真量的权威落在 GDScript，逼着 GDScript / C++ / Shader 三处镜像同一条 `lat_temp_bell`。
+
+链路（temp-baseline-authority-2026-06 之后）：
+
+1. 生成期 `bake_lat_temp_year_lut` 烤 `cell_lat_norm`（依赖地图几何 `cube_row_norm`，权威留在 GDScript），并用 `DCClimateMath.lat_temp_bell_from_ny` 填一份 `temp_baseline_year` 作为 **fallback**。
+2. `_data_core_world_ext` bind + `configure_native_world` 完成后，`_bake_temp_baseline_year_native` 把 `cell_lat_norm_arr` 作为 `lat_norm` knob 传入 `run_temp_baseline_year_bake`。
+3. C++ 用唯一实现 `pk_lat_temp_bell` 算 `temp = clamp01(bell((ny-0.5)·2))` 写满 `cell_temp_baseline_year` slot，`_flush_slot_to_map` 回 `MapData.temp_baseline_year_arr`，返回 `path=gdext / published_to_slot=true / n_cells / elapsed_ms`。
+4. ext 未编译 / 未 bind / 缺 slot / 缺 knob → 返回 `fallback=true`，保留步骤 1 的 GDScript 值。
+
+I/O：
+
+- 输入：`knobs["lat_norm"]`（`PackedFloat32Array`，ny∈[0,1]）。走 knob 而非 slot，因为本 pass 在 `cell_lat_norm` slot refresh 之前调用。
+- 输出：`cell_temp_baseline_year` slot + `MapData.temp_baseline_year_arr`（flush 同步）。
+
+权威：C++ slot（ext 可用时）；GDScript `lat_temp_bell` 仅作 fallback 与纯 GDScript 生成期 `_compute_temperature` / 地形决策使用。公式跨语言仍是 SAME_SOURCE 镜像（`DCClimateMath.lat_temp_bell` ↔ `pk_lat_temp_bell` ↔ shader `lat_temp_bell`），改指数须三处同步并重编 gdext。
 
 ## Season refresh
 
@@ -589,6 +616,124 @@ enum_atlas_upload axis= path=cpp_cached_patch elapsed=0.01 patch=0.42 img=0.00 u
 
 - `frame_budget_exhausted` 可导致上传滞后，但不一定影响模拟权威。
 - `_cpp_stride_in_progress` 表示 C++/patch stride 跨 tick 推进中。
+
+### Cell-index 间接寻址（province-ID indirection，feature-flag）
+
+plan: *cell-index atlas indirection*。把"hex 内恒定"的视觉 atlas 改为
+**静态 cell 索引图 + per-cell LUT** 间接寻址，让 shader 自己做 pixel→cell 解析，
+把 fan-out 目标从 `n_pix`（~62 万）压到 `n_cells`（~2400），消除每日数 MB 的
+per-pixel GPU 上传。
+
+开关（一键勾选）：`Main` 节点 Inspector → **Visual Overhaul → `cell_indirection_enabled`**
+（`main.gd` `@export var`，与 `map_width`/`sea_level`/`visual_quality` 等同组配置）。
+`_generate_and_render` 入口把勾选值推给进程级 meta：`DCFeatureFlags.set_cell_indirection(...)`
+→ `cell_indirection_active()` 读 `Engine.get_meta(&"cell_indirection_enabled")`，bake / upload /
+render 三处统一读这一个 accessor。**改勾选后需重新生成地图才生效**（语义同 `force_atlas_quarter_size`
+热键）。**默认关，关时旧 per-pixel atlas 路径逐像素 bit-identical**，全部新路径只在 flag 开时介入。
+（debug console / 自动化仍可直接调 `DCFeatureFlags.set_cell_indirection(true)` 临时覆盖 meta。）
+
+数据结构（`WorldData`）：
+
+| 字段 | 格式 / 滤波 | 内容 | 更新频率 |
+| --- | --- | --- | --- |
+| `cell_index_tex` | RG8 / **NEAREST** / derived_size | R=cell.index 低字节、G=高字节；`0xFFFF`=map 外哨兵 | 仅 `bake_world`（每日零上传） |
+| `enum_lut_tex` | RGB8 / NEAREST / lut_dims | per-cell biome/veg/cover | daily 全量重烘（~0.1-0.3ms） |
+| `dyn_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell temp/wet/snow/(ice\|vitality) | daily |
+| `eco_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell foliage/stress/transition/growth | daily |
+| `lut_dims` | Vector2i | `(min(n_cells,2048), ceil(n_cells/lut_w))` | bake_world |
+
+入口：
+
+- 烘焙：`map_baker.gd::bake_cell_index_tex` / `bake_cell_luts`（`bake_world` 末尾，flag 开时）。
+- daily 刷新：`map_baker.gd::refresh_cell_luts_daily`，由
+  `dynamic_visual_atlas_upload_system.gd::tick` 每 stride 调用一次（flag 开时该 tick
+  跑完 LUT 重烘即 **early-return**，整段 4-phase / C++ `run_atlas_pipeline_step` 逐像素
+  上传被跳过，见下方"单一间接寻址路径"）。stride 节奏由 `StridePolicy` 控制，刷新频率
+  与旧路径等价。
+- **编码权威路径：C++（DCWorldExt）**——`bake_cell_index_tex` / `bake_cell_luts` 都
+  优先探测 `_world_ext` 并调原生 pass，仅在 ext 缺失 / 校验失败时回退 GDScript（skill rule 11，
+  保留至 A/B parity 验证通过）：
+  - `DCWorldExt::encode_cell_index_tex(opts)`：CSR（`cell_first_px_arr/cell_px_count_arr/
+    flat_px_indices_arr`）反向 fan-out → per-pixel `cell.index` RG8 buffer（一次性，~62 万像素循环搬进 C++）。
+  - `DCWorldExt::encode_cell_luts(opts)`：读 8 个 SoA slot（temp/moist/snow/vit/sea_ice/
+    terrain/vegetation/cover）→ per-cell enum/dyn/eco LUT（scalar tight loop，n_cells≈2400）。
+    复用 `pk_atlas_sig_dynamic` / `pk_atlas_sig_ecology`（与 fan-out 编码器同一公式 → bit-equivalent）。
+    eco `transition_age` 由 `AtlasPipelineState::lut_prev_veg/lut_prev_vit/lut_transition_age`
+    自维护（与 4-phase pipeline 的 eco 状态相互独立；`cache_valid=false` / 首帧 / `invalidate_atlas_csr_cache`
+    后冷启归零）。返回 `path`/`elapsed_ms`/`published_to_slot=false`（LUT 是渲染产物，不进 slot）。
+- shader：`shaders/include/cell_indirect.gdshaderinc`（`decode_cell_index` / `cell_lut_uv`
+  / `sample_dyn_lut_smooth` / `sample_eco_lut_smooth`），由 `world_map.gdshader` SETUP 消费。
+- 绑定：`hex_renderer.gd::_apply_uniforms`（`use_cell_indirection` + 5 个 uniform）。
+
+shader 路径（`world_map.gdshader` fragment SETUP，`use_cell_indirection` 为真时）：
+
+- **enum**（Stage B）：`enum_lut[decode_cell_index(uv)]`，与 `enum_atlas` 同源 bit-identical。
+- **dyn/eco/ice**（Stage C）：desktop 4-tap 双线性（在索引图 bilinear footprint 上取
+  4 个 cell 的 LUT 值按子像素权重混合，补回跨 cell 边界平滑，替代旧 CPU box-blur 的 LINEAR
+  消边）；mobile 三档退单点 NEAREST（接受轻微 hex 阶梯，省 fetch）。海冰随 `dyn_lut.a` 一并迁移。
+- **scalar**（Stage D）：moisture 取 `dyn_lut.g`、latitude 用 `uv.y` 解析重建；
+  **flow（`scalar_atlas.g`）是亚六边形河流 SDF，永远保留全分辨率**，`scalar_atlas` 仍绑定/采样。
+
+**单一间接寻址路径（2026-06-16）**：flag 开时贴图按"是否被间接寻址替代"分两类处理：
+
+- **保留贴图（各自独立更新路径，与本次退役的 DVA 逐像素动态 atlas 路径无关）**——
+  注意它们**并非都"静态"**，只是其更新通道不是间接寻址要替代的那条：
+  - `enum_atlas`（biome/veg/cover）：**游戏内会更新**，由 `EnumAtlasUploadSystem` +
+    C++ `patch_enum_atlas_axes` 按 cell 变更（地形改造 / 植被演替）dirty 驱动。主 shader
+    中心 enum 读已走 `enum_lut`，但 `shore_common` / `water` / `weather_overlay` 在邻居
+    偏移 UV **逐像素采样邻居 biome**，仍需整张 per-pixel atlas，故保留。
+  - `scalar_atlas`（moisture / flow / latitude）：每次 `bake_world` 烤一次，**游戏内不刷新**；
+    `flow` 是亚六边形河流 SDF，非"hex 内恒定"，不能压成 per-cell。
+  - `vector_atlas`（洋流 / 风，RG=洋流、BA=风场）：**纯视觉 overlay**，由
+    `commit_ocean_buffers` 随洋流 / 风场演化重编码上传（`world_map` 海面流动感 +
+    `weather_overlay` 云随风漂）。亚六边形梯度场，非"hex 内恒定"，间接寻址替代不了——
+    但它**不喂仿真**（天气降水/锋面/地形抬升、洋流热输送读的是 per-cell `HexCell.wind_vector` /
+    洋流场，不读本贴图），所以单独提供"退化开关"，见下。
+  这几类要么是亚六边形信号、要么是邻域采样，间接寻址（per-cell 共享值）替代不了，行为不变。
+
+**洋流/风场逐像素视觉退役开关（`ocean_current_visual_enabled`，2026-06-16）**：与 cell-indirection
+正交的独立开关。`DCFeatureFlags.ocean_current_visual_active()`（Engine meta，默认缺失=**true 保持现状**），
+由 `main.gd` 的 `@export var ocean_current_visual_enabled` 在 `_generate_and_render` 入口推送，
+**改勾选后需重新生成地图**。关时跳过 `vector_atlas` 的逐像素光栅 + encode + GPU 上传，
+省 ~2.4MB 显存 + 每年几次的 ~30-50ms 光栅 + 主 shader 每帧 1 次 fetch；**只丢"海面洋流流动感 +
+云随风漂"两个纯视觉效果，per-cell 风/洋流求解与气候/天气/海冰仿真完全不受影响**。收敛在三个 choke point：
+  1. `map_baker.gd::_bake_initial_vector_buffers` 关时清空像素 buffer 提前返回
+     （per-cell solve 已在前一行 `_bake_initial_physical_circulation` / 物理 solve 写入 `HexCell`）；
+     `_encode_vector_atlas` 关时直接返回 `null`（覆盖 `bake_world` 初始 + 延迟物理 + `rebake_ocean_currents`）；
+     `commit_ocean_buffers` 关时跳过 `vector_atlas_tex` 重建/更新（防御性，正常走不到）。
+  2. `ocean_currents_job.gd` 关时强制 `_phys_need_visual=false` → 求解完成即 `round_done`，
+     跳过 stage 7 `WIND_RASTER` + pixel slices + `commit_ocean_buffers`；per-cell SLP/风/洋流
+     solve（上方 stages + `run_daily_wind_field_update` daily_wind prepass）照常跑。
+  3. 着色器侧零改动，已有 null 兜底：`hex_renderer` 绑 `vector_atlas_valid = (tex!=null)`、
+     `weather_layer.set_vector_atlas_texture(null)` → `wind_field_enabled=false`；
+     `world_map` 回退 `vects=vec4(0.5)`，`weather_overlay` 回退 axis-only 漂移。
+- **动态逐像素 atlas 在 flag 开时退役（不烤、不每日刷新）**：`dynamic_cell_atlas` /
+  `dyn_atlas_smooth` / `ecology_visual_atlas` / `ice_state_atlas` 已被 `dyn_lut` / `eco_lut`
+  （海冰走 `dyn_lut.a`）完全替代，flag 开时无任何 shader 消费者。收敛在两个 choke point：
+  1. `map_baker.gd` 的 4 个 `rebake_*`（`rebake_dynamic_cell_atlas_only` /
+     `rebake_ecology_visual_atlas_only` / `rebake_dyn_atlas_smooth` / `rebake_ice_state_atlas`）
+     在 `cell_indirection_active()` 时返回 `_indirection_skip_atlas_report()`（no-op）。
+     覆盖 `bake_world` 初始烘 + `SeaIceAtlasUploadSystem|Job` 顺带重烘 + DVA `_tick_oneshot`。
+  2. `dynamic_visual_atlas_upload_system.gd::tick` flag 开时跑完 `refresh_cell_luts_daily`
+     立即 early-return，跳过 C++ `run_atlas_pipeline_step` 与 4-phase 逐像素上传。
+  这 4 张贴图的 `*_tex` 此时为 null（`hex_renderer` 绑 null 安全，shader 在 `use_cell_indirection`
+  下不采样这些 sampler）；省每日 GPU 上传 + 4 张 derived RGBA8 显存。仅 `hex_renderer`
+  的 `[sea-ice/probe]` 开发探针读其 CPU buffer 会得到 stale/empty（探针自带 size 容错）。
+
+plan 风险条款"保留旧路径直到 A/B + soak 验证 parity 才删旧码"仍满足：**flag 充当 A/B 开关**，
+关时上述全部零触达、旧 per-pixel 路径逐像素 bit-identical；本期不删任何旧编码器代码。
+
+**`sea_ice_tex`（R8）退役开关（`sea_ice_atlas_enabled`，2026-06-16）**：与 cell-indirection 正交。
+`sea_ice_tex` 是**已死贴图**——任何着色器都不 `texture()` 它（主海冰视觉由水路径 shader 按
+水温/纬度/水深派生，indirection 开时走 `dyn_lut.a`），运行时 `SeaIceAtlasUploadSystem|Job`
+早已不注册（`map_generator` 两条路径都 `_sea_ice_atlas_upload_job = null`），`bake_sea_ice_fraction_only`
+也无 live 调用者。`DCFeatureFlags.sea_ice_atlas_active()`（Engine meta，默认缺失=**false 退役**），
+由 `main.gd` 的 `@export var sea_ice_atlas_enabled`（默认 `false`）推送，**改勾选后需重新生成地图**。
+关时（默认）：`bake_world` 不再 encode 那张全零 R8（省 ~0.6MB 显存 + 编码）、不分配
+`sea_ice_fraction_buffer`；`prepare_sea_ice_fraction_atlas` / `upload_prepared_sea_ice_fraction_atlas` /
+`bake_sea_ice_fraction_only` 全部 no-op。`hex_renderer` 绑 `sea_ice_tex=null` 安全（uniform 从不被采样）。
+开为 `true` 仅为兼容旧调试/数据通道（`dots_soak_dump` 读 `sea_ice_fraction_buffer` 做哈希；
+关时该 buffer 为空，dump 走 `n==0` 兜底）。**不影响任何海冰仿真**（仿真读 `cell.sea_ice_frac`）。
 
 ## Native daily / EnvironmentRuntime
 

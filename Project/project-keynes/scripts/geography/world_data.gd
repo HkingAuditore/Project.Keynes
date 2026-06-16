@@ -122,6 +122,23 @@ var upwelling_tex: ImageTexture
 # 全局降为 1 次 texture fetch，由 MapBaker lazy 生成，跨 world 实例共享同一张 ImageTexture。
 var noise_tex: ImageTexture
 
+# ─── Cell-index indirection（province-ID 间接寻址，feature-flag 可回退）───────
+# 把"hex 内恒定"的视觉 atlas 改为"静态 cell 索引图 + per-cell LUT"间接寻址，
+# 让 shader 自己做 pixel→cell 解析，把 fan-out 目标从 n_pix 压到 n_cells。
+#
+# cell_index_tex：RG8 NEAREST，derived_size。R=cell.index 低字节、G=高字节
+#   （支持 65536 cell）。map 外像素写哨兵 0xFFFF。仅 bake_world / regenerate
+#   重建，每日零上传 —— 这是相对旧 per-pixel atlas 的核心优势。**shader 必须 NEAREST**。
+# enum_lut / dyn_lut / eco_lut：per-cell LUT 纹理（lut_dims 网格，NEAREST）。
+#   enum_lut(RGB8)=biome/veg/cover；dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
+#   eco_lut(RGBA8)=foliage/stress/transition/growth。更新=写 n_cells texel + 一次 update。
+# lut_dims：(lut_w, lut_h)，lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
+var cell_index_tex: ImageTexture
+var enum_lut_tex: ImageTexture
+var dyn_lut_tex: ImageTexture
+var eco_lut_tex: ImageTexture
+var lut_dims: Vector2i = Vector2i.ZERO
+
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
 # 在 _bake_height_biome_moisture 里第一遍 warp + cube_round 时顺手填好；之后
 # rebake_*_only / rebake_biome_axes_only 不再需要重跑 noise 与 cube_round —— 

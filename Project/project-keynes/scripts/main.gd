@@ -89,6 +89,30 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # 平均帧时间 + P95，方便基线 / 优化前 / 优化后三次对齐。
 @export var perf_sampler_enabled: bool = false
 
+# ─── Cell-index 间接寻址（province-ID indirection，实验性）──────────────────
+# 勾选后下次地图生成（启动 / 重新生成）会烘焙 cell 索引图 + per-cell LUT，让
+# world_map shader 走"pixel→cell 间接寻址"渲染，把每日 atlas GPU 上传从
+# n_pix(~62 万) 压到 n_cells(~2400)。编码权威路径在 C++（DCWorldExt.encode_cell_luts
+# / encode_cell_index_tex，失败回退 GDScript）。**改这个勾选后需要重新生成地图才生效**
+# （与 Atlas 256/512 热键同语义）。关时旧 per-pixel atlas 路径逐字节不变。
+# 值在 _generate_and_render 入口推给 DCFeatureFlags（Engine meta 进程级单一数据源），
+# bake / upload / render 三处统一读 DCFeatureFlags.cell_indirection_active()。
+@export var cell_indirection_enabled: bool = false
+
+# 洋流/风场"逐像素视觉"开关（vector_atlas）。默认 true=保持现状。
+# 关掉 → 跳过 vector_atlas 的逐像素光栅 + encode + GPU 上传，只丢"海面洋流流动感 +
+# 云随风漂"两个纯视觉效果；per-cell 风/洋流求解与气候/天气仿真完全不受影响
+# （仿真读 HexCell.wind_vector，不读本贴图）。省 ~2.4MB 显存 + 偶发光栅 + 主 shader
+# 每帧 1 次 fetch。值在 _generate_and_render 入口推给 DCFeatureFlags，bake / commit /
+# ocean_currents_job / render 统一读 ocean_current_visual_active()。**改勾选后需重新生成地图**。
+@export var ocean_current_visual_enabled: bool = true
+
+# 旧 sea_ice_tex（R8）逐像素海冰贴图开关。默认 false=退役（已无任何 shader 采样者，
+# 运行时 upload job 早已不注册，主海冰视觉由 shader 按水温派生）。关时 bake_world 不再
+# encode 那张全零 R8（省 ~0.6MB），prepare/upload 全部 no-op。开为 true 仅为兼容旧调试 /
+# 数据通道（dots_soak_dump 的 sea_ice_fraction_buffer 哈希）。**改勾选后需重新生成地图**。
+@export var sea_ice_atlas_enabled: bool = false
+
 # Daily-sim perf instrumentation：每日模拟性能埋点。
 #  ① perf_log_daily_breakdown=true 时，每隔 perf_log_daily_stride 个 fast tick
 #     就打印一行 "[fast tick #N] sus=Xms ui=Yms total=Zms" + 各 SUS Job 的细分
@@ -1635,6 +1659,17 @@ func _generate_and_render(seed_val: int) -> void:
 	# 这一行能保证 pending buffer 被丢弃，不串味到新地图。
 	if _generator != null and _generator.has_method("sus_reset_all"):
 		_generator.sus_reset_all()
+
+	# Cell-index 间接寻址开关：把 @export 勾选值推给进程级 meta（DCFeatureFlags），
+	# 必须在 _generator.generate(...)（内部调 bake_world）之前设置，bake /
+	# dynamic_visual_atlas_upload / hex_renderer 三处统一读。一键勾选 → 重新生成即生效。
+	DCFeatureFlags.set_cell_indirection(cell_indirection_enabled)
+	# 洋流/风场逐像素视觉开关（同样必须在 bake_world 前推送）。关时 bake / job 跳过
+	# vector_atlas 像素光栅 + 上传，纯视觉退化，仿真不受影响。
+	DCFeatureFlags.set_ocean_current_visual(ocean_current_visual_enabled)
+	# 旧 sea_ice_tex 逐像素海冰贴图开关（同样必须在 bake_world 前推送）。默认关 → bake
+	# 不再产出那张死贴图，prepare/upload no-op；主海冰视觉走 shader 派生不受影响。
+	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
 
 	var cfg := MapConfig.make(map_width, map_height)
 	cfg.num_continents = num_continents

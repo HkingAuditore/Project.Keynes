@@ -569,6 +569,13 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	if _phys_need_visual and OS.has_feature("mobile") and _phase_int_seen != -9999 \
 			and _visual_round_id > 0:
 		_phys_need_visual = false
+	# [ocean-visual-skip 2026-06-16] ocean_current_visual 开关关 → 永不做逐像素视觉
+	# 光栅 / commit（vector_atlas 是纯视觉 overlay）。need_visual=false 时本 round 求解
+	# 完成即 round_done（见下方 stage 推进），跳过 stage 7 WIND_RASTER + pixel slices +
+	# commit_ocean_buffers。per-cell SLP/风/洋流 solve（上方 stages + daily_wind prepass）
+	# 照常跑并写 HexCell，气候/天气仿真完全不受影响。
+	if _phys_need_visual and not DCFeatureFlags.ocean_current_visual_active():
+		_phys_need_visual = false
 	_sync_legacy_round_state()
 	if PKLog.enabled and _ocean_rt_diag_count < _ocean_rt_log_budget():
 		var tps: int = 0
