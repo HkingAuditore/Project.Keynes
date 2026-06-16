@@ -12,6 +12,8 @@
 
 [node name="Main" type="Node2D" unique_id=1962249106]
 script = ExtResource("1_main")
+cell_indirection_enabled = true
+ocean_current_visual_enabled = false
 
 [node name="WorldRoot" type="Node2D" parent="." unique_id=1656162754]
 

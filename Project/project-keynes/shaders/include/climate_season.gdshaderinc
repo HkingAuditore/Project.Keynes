@@ -63,16 +63,24 @@ float insolation_annual_mean_shader(float lat_rad) {
 	return acc * 0.0625;
 }
 
+// 表面吸收短波因子（海陆/极地物理化 2026-06-16）——仅可视化回退路径。
+// 主路径用仿真 dyn_temp（逐格 DCClimateMath.surface_absorbed_factor，温度驱动冰反照率反馈）；
+// shader 拿不到 is_water / 温度，这里用【纬度近似】：高纬假定冰雪覆盖 → 吸收因子下降，
+// 近似复现"极地夏季因高反照率自然变冷"。dev 已删除"极地放大/衰减"hack，为纯物理偏差。
+// ALBEDO_LAND / ALBEDO_ICE 须与 GDScript climate_math.gd / C++ world_ext.cpp 同步。
+const float ALBEDO_LAND_SHADER = 0.20;
+const float ALBEDO_ICE_SHADER  = 0.62;
 float insolation_season_offset_shader(float lat_signed, float phase) {
 	// lat_signed ∈ [-1, 1] → lat_rad ∈ [-π/2, π/2]
 	float lat_rad = lat_signed * 1.5707963;
 	float now_val = compute_insolation_shader(lat_rad, phase);
 	float mean_val = insolation_annual_mean_shader(lat_rad);
-	float dev_abs = now_val - mean_val;
-	float dev_rel = clamp(dev_abs / max(mean_val, 0.18), -1.0, 1.0);
-	float polar_w = smoothstep(0.55, 0.90, abs(lat_signed)) * 0.55;
-	float dev = dev_abs + (dev_rel - dev_abs) * polar_w;
-	return insolation_season_gain * dev * season_temp_amp;
+	float dev = now_val - mean_val;
+	// 纬度近似冰盖：|lat|>~0.62 起冰雪反照率渐入（贴合 cos^1.6 基线跌破冻结带的纬度）。
+	float ice_w = smoothstep(0.62, 0.90, abs(lat_signed));
+	float a_eff = ALBEDO_LAND_SHADER + (ALBEDO_ICE_SHADER - ALBEDO_LAND_SHADER) * ice_w;
+	float absorb_factor = (1.0 - a_eff) / (1.0 - ALBEDO_LAND_SHADER);
+	return insolation_season_gain * absorb_factor * dev * season_temp_amp;
 }
 
 // 统一入口：无条件走 insolation 派生。true_insolation_enabled 只保留给旧材质
@@ -81,17 +89,24 @@ float season_offset_unified(float lat_signed, float phase) {
 	return insolation_season_offset_shader(lat_signed, phase);
 }
 
-// 当前实时温度：[0, 1]。和 map_generator._compute_temperature 同公式：
-// lat_temp = pow(cos(lat_signed * π/2), 1.2) - alt_penalty(elev)
-// 然后叠 + season_offset + climate_anomaly
-// 2026-05-18 雪线修正：alt_penalty 改双段式，与 GDScript _alt_penalty 严格 SAME_SOURCE。
-//   lin = elev * 0.55；hi = smoothstep(0.45, 1.0, elev) * 0.30
-//   高山顶（elev=0.85）总扣减 ≈ 0.467 + 0.198 ≈ 0.665（vs 旧 0.425），
-//   赤道高山温度从 ≈ 0.575 跌到 ≈ 0.335，立刻进入雪线分支。
+// SAME_SOURCE（Shader 镜像）: DCClimateMath.lat_temp_bell —— 纬度温度钟形的唯一 GLSL 实现。
+// 跨语言同步本指数（2026-06-16: 1.2→1.6 高纬降温）；lat_signed ∈ [-1, 1]，返回 [0, 1]。
+const float LAT_TEMP_CURVE_EXP = 1.6;
+float lat_temp_bell(float lat_signed) {
+	return pow(max(cos(lat_signed * 1.5707963), 0.0), LAT_TEMP_CURVE_EXP);
+}
+
+// 当前实时温度：[0, 1]。钟形走 lat_temp_bell（单一来源），再叠 season_offset + climate_anomaly
+// 与 alt_penalty。注意：本函数仅在 dyn 数据无效时作 fallback（主路径用仿真 dyn_temp）。
+// SAME_SOURCE（Shader 镜像）: map_generator.gd::_alt_penalty（ALT_PEN_LINEAR=0.40 /
+//   ALT_PEN_HIGH_LO=0.45 / ALT_PEN_HIGH_HI=1.00 / ALT_PEN_HIGH_AMP=0.22）+ world_ext.cpp::pk_alt_penalty。
+//   alt_penalty = elev*0.40 + smoothstep(0.45,1.0,elev)*0.22（高山顶 elev=0.85 总扣减 ≈ 0.52）。
+//   2026-06-16：从旧值 0.55/0.30 校正到与 GDScript/C++ 权威一致——此前 GDScript+C++ 已调成 0.40/0.22，
+//   shader 漏改导致 fallback 路径高海拔偏冷。改本数值须同步上面两处。
 float compute_current_temp(float elev, float lat_signed, float season_offset) {
-	float lat_temp = pow(max(cos(lat_signed * 1.5707963), 0.0), 1.2);
-	float alt_pen_lin = elev * 0.55;
-	float alt_pen_hi = smoothstep(0.45, 1.0, elev) * 0.30;
+	float lat_temp = lat_temp_bell(lat_signed);
+	float alt_pen_lin = elev * 0.40;
+	float alt_pen_hi = smoothstep(0.45, 1.0, elev) * 0.22;
 	float alt_penalty = alt_pen_lin + alt_pen_hi;
 	return clamp(lat_temp + season_offset + climate_anomaly - alt_penalty, 0.0, 1.0);
 }

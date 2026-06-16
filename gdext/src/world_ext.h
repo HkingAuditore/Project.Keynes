@@ -809,6 +809,12 @@ public:
     //   sig 设计：knobs 走 by-value（非 const&），与 F.4 同模式（让 C++
     //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
     double run_weather_front_advect_pass(godot::Dictionary knobs);
+    // cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year 的权威 C++ 烘焙。
+    // 海冰 + 显示温度的运行期 baseline 原由 GDScript map_data.bake_lat_temp_year_lut 就地
+    // pow(cos,..) 烤出来再推给 slot——仿真量权威落在 GDScript。本 pass 用唯一 C++ 实现
+    // pk_lat_temp_bell 从 knobs["lat_norm"]（ny∈[0,1] 几何量）算 baseline，写
+    // cell_temp_baseline_year slot 并 _flush_slot_to_map 回 MapData。GDScript 自烤改为 fallback。
+    godot::Dictionary run_temp_baseline_year_bake(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
     godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
     // ─── Phase B+：season refresh round 一次跨界整 round 切片调度 ──────────
@@ -1007,6 +1013,18 @@ public:
     //
     // 容错：缺失字段以默认 0 填充；长度不匹配以 n_cells 截断/补 0。
     void migrate_eco_persistent_from_gd(godot::Dictionary state);
+
+    // ─── Cell-index 间接寻址（province-ID indirection）─────────────────────
+    // encode_cell_luts：per-cell（n_cells texel）enum/dyn/eco LUT 编码。与 4-phase
+    //   fan-out pipeline 共用 pk_atlas_sig_dynamic / pk_atlas_sig_ecology 公式，
+    //   保证 LUT 与全分辨率 atlas bit-equivalent。eco transition_age 由
+    //   AtlasPipelineState::lut_* 持久状态自维护（与 pipeline eco 状态独立）。
+    //   SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd。
+    // encode_cell_index_tex：一次性把 CSR 像素列表反向 fan-out 成 per-pixel
+    //   cell.index 间接图（RG8，0xFFFF sentinel）。
+    //   SAME_SOURCE: map_baker.gd::bake_cell_index_tex / _gd_cell_index_tex。
+    godot::Dictionary encode_cell_luts(godot::Dictionary opts);
+    godot::Dictionary encode_cell_index_tex(godot::Dictionary opts);
 
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。

@@ -152,7 +152,7 @@ var cell_pos_y_arr:         PackedFloat32Array = PackedFloat32Array()
 # 由 bake_lat_temp_year_lut(generator) 在 rebuild_soa_from_cells 完成后立即
 # bake 一次。运行期 Pass A 内层只是数组索引，彻底取消 _cube_row_norm 调用。
 #   cell_lat_norm_arr[i] = _cube_row_norm(cell_i, _last_cfg)              ∈ [0, 1]
-#   temp_baseline_year_arr[i] = pow(cos((ny-0.5)*π), 1.2)                  ∈ [0, 1]
+#   temp_baseline_year_arr[i] = DCClimateMath.lat_temp_bell_from_ny(ny)             ∈ [0, 1]
 # Pass A 当日温度 = clamp(temp_baseline_year_arr[i] - alt_penalty(elev), 0, 1) + season_offset
 #   alt_penalty(elev) = elev*0.55 + smoothstep(0.45, 1.0, elev) * 0.30  （2026-05-18 雪线修正）
 var cell_lat_norm_arr:        PackedFloat32Array = PackedFloat32Array()
@@ -635,6 +635,12 @@ func init_soa_from_bake() -> void:
 ## generator 参数提供 _cube_row_norm / _compute_temperature 数值的权威来源——
 ## 我们直接借用其私有方法保证与 legacy 1:1 对齐（避免在 MapData 重复实现）。
 ## 重复调用是安全的；运行期不再变化。
+##
+## cpp-dots（temp-baseline-authority-2026-06）：cell_lat_norm 是几何量（依赖
+## cube_row_norm），始终由 GDScript 烤；temp_baseline_year 是 lat_temp_bell(lat_norm)
+## 的纯仿真量——其【权威计算】已上交 C++ run_temp_baseline_year_bake（pk_lat_temp_bell），
+## 由 map_generator._bake_temp_baseline_year_native 在 DCWorldExt bind 后调用并 flush 回本数组。
+## 本函数里的 temp_baseline_year 循环仅作 GDScript fallback（ext 未编译 / 未 bind 时兜底）。
 func bake_lat_temp_year_lut(generator) -> void:
 	if not _soa_built:
 		push_warning("[map_data] bake_lat_temp_year_lut: SoA not built; call rebuild_soa_from_cells() first")
@@ -649,9 +655,9 @@ func bake_lat_temp_year_lut(generator) -> void:
 		var c: HexCell = _cell_array[i]
 		var ny: float = float(generator.public_cube_row_norm(c))
 		cell_lat_norm_arr[i] = ny
-		# 与 _compute_temperature(ny, 0.0) 1:1 对齐：lat_temp = pow(cos(lat_signed*π/2), 1.2)
-		var lat_signed: float = (ny - 0.5) * 2.0
-		var lat_temp: float = pow(cos(lat_signed * PI * 0.5), 1.2)
+		# fallback only：权威值由 C++ run_temp_baseline_year_bake 写入（见函数顶部注释）。
+		# 公式统一走 DCClimateMath.lat_temp_bell（全工程单一来源），与 C++ pk_lat_temp_bell 同源。
+		var lat_temp: float = DCClimateMath.lat_temp_bell_from_ny(ny)
 		if lat_temp < 0.0:
 			lat_temp = 0.0
 		elif lat_temp > 1.0:

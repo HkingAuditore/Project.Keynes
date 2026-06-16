@@ -26,8 +26,14 @@ func _run() -> void:
 	_expect("high sun blocks neighbor contagion", _delta_frac(0.0, 1.0, true) < 0.0)
 	_expect("low sun allows cold freeze", _delta_frac(0.0, 0.1, false) > 0.0)
 	_expect("shoulder sun partially gates freeze", _freeze_gate(0.45) > 0.0 and _freeze_gate(0.45) < 1.0)
-	_expect("daily delta cap limits rapid growth", absf(_delta_frac_capped(0.0, 0.0, true, 30.0)) <= float(_cp.sea_ice_daily_delta_cap) + 0.0001)
-	_expect("high latitude summer solar melt is capped", absf(_delta_frac_capped(0.75, 1.0, false, 30.0)) <= float(_cp.sea_ice_daily_delta_cap) + 0.0001)
+	# [seaice dt 修复 2026-06-16] cap 现为"每日"速率上限：先裁剪日速率再乘 dt_days，
+	# 因此单 pass 变化上限 = cap * dt_days（加速档下海冰才能跟上季节）。
+	_expect("per-day rate is capped before dt scaling",
+		absf(_delta_frac_capped(0.0, 0.0, true, 30.0)) <= float(_cp.sea_ice_daily_delta_cap) * 30.0 + 0.0001)
+	_expect("dt scaling lets ice accumulate faster than a single day",
+		absf(_delta_frac_capped(0.0, 0.0, true, 30.0)) > float(_cp.sea_ice_daily_delta_cap) + 0.0001)
+	_expect("high latitude summer melt per-day rate is capped",
+		absf(_delta_frac_capped(0.75, 1.0, false, 30.0)) <= float(_cp.sea_ice_daily_delta_cap) * 30.0 + 0.0001)
 	_finish()
 
 
@@ -45,8 +51,10 @@ func _delta_frac(temp_now: float, insolation_now: float, has_cold_neighbor: bool
 
 
 func _delta_frac_capped(temp_now: float, insolation_now: float, has_cold_neighbor: bool, dt_days: float) -> float:
-	var raw: float = _delta_frac(temp_now, insolation_now, has_cold_neighbor) * dt_days
-	return clampf(raw, -float(_cp.sea_ice_daily_delta_cap), float(_cp.sea_ice_daily_delta_cap))
+	# 与运行时一致：先裁剪"每日"速率，再乘 dt_days。
+	var rate: float = _delta_frac(temp_now, insolation_now, has_cold_neighbor)
+	rate = clampf(rate, -float(_cp.sea_ice_daily_delta_cap), float(_cp.sea_ice_daily_delta_cap))
+	return rate * dt_days
 
 
 func _freeze_gate(insolation_now: float) -> float:

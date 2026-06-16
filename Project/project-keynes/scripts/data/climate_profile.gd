@@ -796,7 +796,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(-1.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
 @export_range(0.0, 1.0, 0.05) var insolation_dev_clamp_max: float = 1.0
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.35
-@export_range(0.0, 1.0, 0.005) var thermal_inertia_water: float = 0.07
+# 2026-06-16 物理化（大陆性对比，"中等"档）：海洋热容远大于陆地。把 α_water 0.07→0.008
+# （时间常数 τ≈14d→125d）。注意：pass_a 的吸收短波因子给海洋 1.15×季节强迫（低反照率
+# 多吸收），单靠 τ≈25d(α=0.04) 对"全年"周期几乎不衰减，反而让海洋摆幅>陆地；数值实验
+# （tmp/verify_physical_temp_20260616.py）显示需 α≈0.008 才能把同纬陆/海振幅拉到≈1.9:1、
+# 海洋振幅≈0.20 仍清晰可见且滞后~1.5 月——大陆性对比明显。配合吸收短波因子共同体现
+# 海陆/极地真实温差。调高→海洋更跟随季节（大陆性减弱）；调低→更接近真实 SST 小摆幅。
+@export_range(0.0, 1.0, 0.001) var thermal_inertia_water: float = 0.008
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_snow: float = 0.09
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_high_mountain: float = 0.16
 @export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15

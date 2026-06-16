@@ -1657,6 +1657,12 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		input["si_dt_days"] = float(generator._consume_sea_ice_dt_days())
 	else:
 		input["si_dt_days"] = 1.0
+	# thermal_dt_days：与 si_dt_days 同源。pass_a 热惯性松弛/delta_cap 按实际经过
+	# 天数积分，否则加速档下海洋温度欠积分、滞后太阳直射点。worker 默认 1.0（缺键时）。
+	if generator.has_method("_consume_climate_dt_days"):
+		input["thermal_dt_days"] = float(generator._consume_climate_dt_days())
+	else:
+		input["thermal_dt_days"] = 1.0
 	# ─── finalizer pass fields（Stage 9 / Fix #11, 2026-06-16） ─────────────
 	# C++ worker 的 finalizer kernel 等价 _apply_daily_climate_finalizer，
 	# 跳过 main thread 上 4 个 2400-loop + 2 个 sort + 3 个 write_f32_dense（实测 13-17ms）。

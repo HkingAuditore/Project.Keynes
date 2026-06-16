@@ -117,6 +117,15 @@ struct AtlasPipelineState {
     PackedFloat32Array eco_growth_damage;
     PackedInt32Array   eco_active_decay_indices;  // 替代 GDScript Dictionary set
 
+    // ── Cell-index 间接寻址 LUT 路径专用持久 prev 状态（encode_cell_luts 自维护）──
+    // 与上面 4-phase fan-out pipeline 的 eco 状态相互独立：两条路径读同一 SoA，
+    // 各自维护 transition_age，结果 bit-equivalent。lut_initialized=false 时首帧
+    // （冷启 / invalidate_atlas_csr_cache 之后）强制 transition_age=0、prev_vit=cur。
+    bool             lut_initialized = false;
+    PackedByteArray  lut_prev_veg;          // per-cell 上一帧 vegetation enum byte
+    PackedByteArray  lut_prev_vit;          // per-cell 上一帧 q01(vitality) byte
+    PackedByteArray  lut_transition_age;    // per-cell transition_age（0..255）
+
     // CSR 缓存：地图稳定时常驻，invalidate_atlas_csr_cache 失效。
     PackedInt32Array csr_first_px;
     PackedInt32Array csr_px_count;
@@ -2080,17 +2089,52 @@ static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, fl
     return acc / float(SAMPLES);
 }
 
+// SAME_SOURCE（C++ 镜像）: DCClimateMath.compute_insolation_dev_from_values。
+// 2026-06-16 物理化：删除"极地放大/衰减"band-aid，dev 还原为纯物理偏差
+//   dev = insol_now - insol_mean。极地夏季过热改由 pk_surface_absorbed_factor
+//   （吸收短波 / 冰反照率反馈）在 season_offset 处处理，更物理。
+// ny 保留入参以稳定签名与调用点，但不再参与计算。
 static inline float dc_insolation_season_dev(float ny, float insol_now, float insol_mean) {
-    const float dev_abs = insol_now - insol_mean;
-    float dev_rel = dev_abs / ((insol_mean > 0.18f) ? insol_mean : 0.18f);
-    if (dev_rel < -1.0f) dev_rel = -1.0f;
-    else if (dev_rel > 1.0f) dev_rel = 1.0f;
-    const float abs_lat = std::fabs((dc_clamp01f(ny) - 0.5f) * 2.0f);
-    float polar_w = (abs_lat - 0.55f) / 0.35f;
-    if (polar_w < 0.0f) polar_w = 0.0f;
-    else if (polar_w > 1.0f) polar_w = 1.0f;
-    polar_w = polar_w * polar_w * (3.0f - 2.0f * polar_w) * 0.55f;
-    return dev_abs + (dev_rel - dev_abs) * polar_w;
+    (void)ny;
+    return insol_now - insol_mean;
+}
+
+// ─── 表面吸收短波因子（海陆/极地物理化 2026-06-16，年均代理版）──────────────
+// SAME_SOURCE（C++ 镜像）: DCClimateMath.surface_absorbed_factor / ALBEDO_*。
+// absorb = 1 - 反照率；冰雪高反照率反射极昼强日射 → 极地夏季自然变冷，并形成
+// "冷→结冰→反照率升高→更冷"的自洽冰反照率正反馈。海洋反照率低于陆地→吸收更多
+// （季节强迫更大），但其高热容（低 thermal_inertia_water）阻尼实际摆幅→大陆性对比。
+// 归一化基准 = 无冰陆地 (1-PK_ALBEDO_LAND)，使无冰陆地 factor=1.0（中纬零重调）。
+// 仅缩放 season_offset，不动 cos^1.6 年均基线 → 反馈有下界、不失控。
+static constexpr float PK_ALBEDO_OCEAN = 0.08f;   // 开阔水面
+static constexpr float PK_ALBEDO_LAND  = 0.20f;   // 一般陆地（归一化基准面）
+static constexpr float PK_ALBEDO_ICE   = 0.62f;   // 冰雪覆盖
+static constexpr float PK_T_ICE_LO     = 0.12f;   // ≤ 此温度视为完全冰封
+static constexpr float PK_T_ICE_HI     = 0.30f;   // ≥ 此温度视为无冰
+// temp_annual 必须传【年均温度 temp_365d】（慢 EMA），不能传瞬时温度——否则
+// "暖→脱冰→吸收增→更暖"会形成夏季融化正反馈使极地夏季失控变热（实测 0.43）。
+// 用年均温度作"持久冰封气候"代理：深极地年均≈0.05 常年冰封 → 因子≈0.475 →
+// 极地夏季自然压低且稳定（夏峰 0.30→0.22）；中纬年均高 → 因子=1.0 → 季节性不变。
+static inline float pk_surface_absorbed_factor(bool is_water, float temp_annual) {
+    const float a_base = is_water ? PK_ALBEDO_OCEAN : PK_ALBEDO_LAND;
+    // ice_w：年均温度落入冻结带时升到 1（端点反序 smoothstep(HI,LO,t) → 冷=1, 暖=0）。
+    float t = (temp_annual - PK_T_ICE_HI) / (PK_T_ICE_LO - PK_T_ICE_HI);
+    if (t < 0.0f) t = 0.0f;
+    else if (t > 1.0f) t = 1.0f;
+    const float ice_w = t * t * (3.0f - 2.0f * t);
+    const float a_eff = a_base + (PK_ALBEDO_ICE - a_base) * ice_w;
+    return (1.0f - a_eff) / (1.0f - PK_ALBEDO_LAND);
+}
+
+// 热惯性松弛系数的多日积分：单日 α 表示"每日向 radiative target 逼近 α 比例"。
+// 经过 dt 天（加速/跳日）后等效一次性系数 α_eff = 1 - (1-α)^dt（target 视作窗口内
+// 近似恒定）。dt<=1 时退化为原 α，保持非加速档 bit-equal。SAME_SOURCE：
+// map_generator.gd 同名内联与 climate_daily_system 共享同一公式。
+static inline float pk_thermal_alpha_eff(float alpha, float dt_days) {
+    if (alpha < 0.0f) alpha = 0.0f;
+    else if (alpha > 1.0f) alpha = 1.0f;
+    if (dt_days <= 1.0f) return alpha;
+    return 1.0f - std::pow(1.0f - alpha, dt_days);
 }
 
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
@@ -2192,6 +2236,16 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                                     ? float(cp_struct["thermal_inertia_high_mountain"]) : 0.16f;
     const float  thermal_delta_cap = cp_struct.has("thermal_daily_delta_cap")
                                     ? float(cp_struct["thermal_daily_delta_cap"]) : 0.15f;
+    // 加速/跳日补偿：α 与 delta_cap 按经过天数积分（dt<=1 退化为原值）。
+    float thermal_dt = cp_struct.has("thermal_dt_days")
+                                    ? float(cp_struct["thermal_dt_days"]) : 1.0f;
+    if (thermal_dt < 1.0f) thermal_dt = 1.0f;
+    else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
+    const float  thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
+    const float  thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
+    const float  thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
+    const float  thermal_high_eff  = pk_thermal_alpha_eff(thermal_high,  thermal_dt);
+    const float  thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     const float  snowpack_cover_full = cp_struct.has("snowpack_cover_full")
@@ -2337,7 +2391,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
-            const float season_offset = insol_amp_gain * dev_today;
+            // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
+            // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
+            const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today;
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -2349,17 +2405,15 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                 prev_energy = current_temp;
             }
             const float prev_temp = prev_energy;
-            float alpha = thermal_land;
-            if (is_water) alpha = thermal_water;
-            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow;
-            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow;
-            else if (elevation > 0.70f) alpha = thermal_high;
-            if (alpha < 0.0f) alpha = 0.0f;
-            else if (alpha > 1.0f) alpha = 1.0f;
+            float alpha = thermal_land_eff;
+            if (is_water) alpha = thermal_water_eff;
+            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow_eff;
+            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow_eff;
+            else if (elevation > 0.70f) alpha = thermal_high_eff;
             const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
             float temp_delta = heat_next - prev_temp;
-            if (temp_delta > thermal_delta_cap) temp_delta = thermal_delta_cap;
-            else if (temp_delta < -thermal_delta_cap) temp_delta = -thermal_delta_cap;
+            if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
+            else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
             float temp_now = prev_temp + temp_delta;
             if (temp_now < 0.0f) temp_now = 0.0f;
             else if (temp_now > 1.0f) temp_now = 1.0f;
@@ -2543,6 +2597,16 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                                     ? float(cp_struct["thermal_inertia_high_mountain"]) : 0.16f;
     const float  thermal_delta_cap = cp_struct.has("thermal_daily_delta_cap")
                                     ? float(cp_struct["thermal_daily_delta_cap"]) : 0.15f;
+    // 加速/跳日补偿：α 与 delta_cap 按经过天数积分（dt<=1 退化为原值）。
+    float thermal_dt = cp_struct.has("thermal_dt_days")
+                                    ? float(cp_struct["thermal_dt_days"]) : 1.0f;
+    if (thermal_dt < 1.0f) thermal_dt = 1.0f;
+    else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
+    const float  thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
+    const float  thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
+    const float  thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
+    const float  thermal_high_eff  = pk_thermal_alpha_eff(thermal_high,  thermal_dt);
+    const float  thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     const float  snowpack_cover_full = cp_struct.has("snowpack_cover_full")
@@ -2671,7 +2735,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
-            const float season_offset = insol_amp_gain * dev_today;
+            // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
+            // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
+            const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, p365[i]) * dev_today;
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -2682,17 +2748,15 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 prev_energy = current_temp;
             }
             const float prev_temp = prev_energy;
-            float alpha = thermal_land;
-            if (is_water) alpha = thermal_water;
-            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow;
-            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow;
-            else if (elevation > 0.70f) alpha = thermal_high;
-            if (alpha < 0.0f) alpha = 0.0f;
-            else if (alpha > 1.0f) alpha = 1.0f;
+            float alpha = thermal_land_eff;
+            if (is_water) alpha = thermal_water_eff;
+            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow_eff;
+            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow_eff;
+            else if (elevation > 0.70f) alpha = thermal_high_eff;
             const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
             float temp_delta = heat_next - prev_temp;
-            if (temp_delta > thermal_delta_cap) temp_delta = thermal_delta_cap;
-            else if (temp_delta < -thermal_delta_cap) temp_delta = -thermal_delta_cap;
+            if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
+            else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
             float temp_now = prev_temp + temp_delta;
             if (temp_now < 0.0f) temp_now = 0.0f;
             else if (temp_now > 1.0f) temp_now = 1.0f;
@@ -6991,12 +7055,17 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
             freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
             solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain);
         }
-        float d_frac = (k_freeze_eff * diff_freeze * freeze_gate
-                      - (k_melt * diff_melt + solar_melt)) * dt_days;
+        // [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：必须先裁剪
+        // 日速率、再乘 dt_days。否则加速档（dt_days≫1）下每轮 d_frac 被砍到
+        // ≤cap，海冰每轮最多只长 cap，亚极地短暂冷却窗口里永远涨不到翻转阈值
+        // → "已很冷却无冰"。melt 侧对称。
+        float rate = k_freeze_eff * diff_freeze * freeze_gate
+                   - (k_melt * diff_melt + solar_melt);
         if (daily_delta_cap > 0.0f) {
-            if (d_frac > daily_delta_cap) d_frac = daily_delta_cap;
-            else if (d_frac < -daily_delta_cap) d_frac = -daily_delta_cap;
+            if (rate > daily_delta_cap) rate = daily_delta_cap;
+            else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
         }
+        float d_frac = rate * dt_days;
         const float prev_frac = SIF[i];
         float new_frac = prev_frac + d_frac;
         if (new_frac < 0.0f) new_frac = 0.0f;
@@ -7260,12 +7329,14 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
                     solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain);
                 }
                 // [S2 fix 2026-05-23] 乘 dt_days：与 scalar 路径 1:1。
-                float d_frac = (k_freeze_eff * diff_freeze * freeze_gate
-                              - (k_melt * diff_melt + solar_melt)) * dt_days;
+                // [seaice dt 修复 2026-06-16] 见 scalar 路径注释：先裁剪日速率再乘 dt_days。
+                float rate = k_freeze_eff * diff_freeze * freeze_gate
+                           - (k_melt * diff_melt + solar_melt);
                 if (daily_delta_cap > 0.0f) {
-                    if (d_frac > daily_delta_cap) d_frac = daily_delta_cap;
-                    else if (d_frac < -daily_delta_cap) d_frac = -daily_delta_cap;
+                    if (rate > daily_delta_cap) rate = daily_delta_cap;
+                    else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
                 }
+                float d_frac = rate * dt_days;
                 const float prev_frac = SIF[i];
                 float new_frac = prev_frac + d_frac;
                 if (new_frac < 0.0f) new_frac = 0.0f;
@@ -11878,14 +11949,23 @@ static inline double pk_alt_penalty(double e) {
     return lin + hi;
 }
 
-// SAME_SOURCE: map_generator.gd::_compute_temperature (line 3093).
-//   lat_signed = (ny - 0.5) * 2; lat_temp = pow(cos(lat_signed * π/2), 1.2);
-//   return clamp(lat_temp - alt_penalty, 0, 1).
+// SAME_SOURCE（C++ 镜像）: DCClimateMath.LAT_TEMP_CURVE_EXP —— 纬度温度钟形曲线指数的
+// 唯一 C++ 值。赤道=1、两极=0，指数越大高纬越冷。2026-06-16：1.2→1.6（调低极地温度、
+// 拓宽海冰带）。改这里务必同步 DCClimateMath.LAT_TEMP_CURVE_EXP（GDScript）+
+// climate_season.gdshaderinc（Shader），并重编 gdext。
+static constexpr double PK_LAT_TEMP_CURVE_EXP = 1.6;
+
+// SAME_SOURCE（C++ 镜像）: DCClimateMath.lat_temp_bell —— 全工程纬度温度钟形的唯一 C++ 实现。
+//   lat_temp = pow(cos(lat_signed * π/2), PK_LAT_TEMP_CURVE_EXP) ∈ [0,1]（cos 偶函数，传 |ls| 等价）。
+// 下方 pk_compute_temperature + 洋流上升流/热盐 cold-sink 一律调用本函数，不再就地重写 pow(cos,...)。
+static inline double pk_lat_temp_bell(double lat_signed) {
+    const double c = std::cos(lat_signed * M_PI * 0.5);
+    return std::pow(c < 0.0 ? 0.0 : c, PK_LAT_TEMP_CURVE_EXP);
+}
+
+// SAME_SOURCE: map_generator.gd::_compute_temperature —— 钟形 - 海拔惩罚，clamp[0,1]。
 static inline float pk_compute_temperature(double ny, double elevation) {
-    const double lat_signed = (ny - 0.5) * 2.0;
-    const double cos_v = std::cos(lat_signed * M_PI * 0.5);
-    const double cos_safe = cos_v < 0.0 ? 0.0 : cos_v;
-    const double lat_temp = std::pow(cos_safe, 1.2);
+    const double lat_temp = pk_lat_temp_bell((ny - 0.5) * 2.0);
     return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation)));
 }
 
@@ -11990,6 +12070,71 @@ static inline PkWind2 pk_wind_belt_wind_at(double ny, double season_phase, doubl
 // 返回值是 0..5 的索引；caller 拿后从 neighbor_indices_packed[idx*6 + dir] 取邻居。
 
 } // namespace
+
+// ─────────────────────────────────────────────────────────────────────────
+// run_temp_baseline_year_bake — cell_temp_baseline_year 的权威 C++ 烘焙
+//   (cpp-dots-runtime：仿真量计算归 C++，GDScript 仅留 fallback)。
+//
+// 海冰 + 显示温度的运行期 baseline (cell_temp_baseline_year) 原本由 GDScript
+//   map_data.bake_lat_temp_year_lut 就地 pow(cos,..) 烤出来再经
+//   refresh_slots_from_map 推给 slot——仿真量的权威落在 GDScript，逼着
+//   GDScript / C++ / Shader 三处镜像同一条 lat_temp_bell。本 pass 把这步收回 C++：
+//   用唯一 C++ 实现 pk_lat_temp_bell 从 lat_norm 算 baseline，写
+//   cell_temp_baseline_year slot 并 _flush_slot_to_map 回 MapData。
+//
+// 输入：knobs["lat_norm"] = PackedFloat32Array（归一化纬度 ny∈[0,1]，0=北极/1=南极；
+//   依赖地图几何 cube_row_norm，仍由 GDScript 生成期烤）。lat_norm 走 knob 而非 slot：
+//   本 pass 在生成期 bake_lat_temp_year_lut 之后立即调，此刻 cell_lat_norm slot 可能尚未 refresh。
+// 输出：cell_temp_baseline_year slot（写满 + flush 回 MapData.temp_baseline_year_arr，
+//   供 GDScript fallback pass / climate_daily / debug 消费）。
+// fallback：未 bind / 缺 slot / 缺 knob / n<=0 → fallback=true，GDScript 自烤兜底。
+godot::Dictionary DCWorldExt::run_temp_baseline_year_bake(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["path"] = String("gdscript_fallback");
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    const int sid_ty = component_id(StringName("cell_temp_baseline_year"));
+    if (sid_ty < 0) return fail("no cell_temp_baseline_year slot");
+    if (!knobs.has("lat_norm")) return fail("missing lat_norm knob");
+    const PackedFloat32Array lat = knobs["lat_norm"];
+    const int n = lat.size();
+    if (n <= 0) return fail("lat_norm empty");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    Slot &s_ty = _slots.write[sid_ty];
+    if (s_ty.arr_f32.size() != n) s_ty.arr_f32.resize(n);
+    const float * const __restrict LAT = lat.ptr();
+    float       * const __restrict TY  = s_ty.arr_f32.ptrw();
+    for (int i = 0; i < n; ++i) {
+        // SAME_SOURCE: DCClimateMath.lat_temp_bell_from_ny —— ny∈[0,1] → 钟形∈[0,1]。
+        TY[i] = float(pk_clamp01(pk_lat_temp_bell((double(LAT[i]) - 0.5) * 2.0)));
+    }
+
+    // 写回 MapData.temp_baseline_year_arr（GDScript fallback pass / climate_daily / debug 消费）。
+    _flush_slot_to_map(sid_ty);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["path"] = String("gdext");
+    out["fallback"] = false;
+    out["n_cells"] = n;
+    out["published_to_slot"] = true;
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
 
 godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -14932,6 +15077,56 @@ inline uint32_t pk_atlas_sig_dynamic(double temp, double moist, double snow,
     return uint32_t(r) | (uint32_t(g) << 8) | (uint32_t(b) << 16) | (uint32_t(a) << 24);
 }
 
+// 与 GDScript map_baker.gd::_ecology_visual_signature / 本文件
+// encode_ecology_visual_atlas（14399-14440 行）1:1 镜像。提炼成可复用 helper，
+// 供 cell-index 间接寻址 LUT 路径（encode_cell_luts）与现有 fan-out 路径共用同一公式，
+// 保证 eco_lut 与 ecology_visual_atlas bit-equivalent。
+//   r=q01(foliage), g=q01(stress), b=transition_age(byte), a=q01(growth_damage)
+inline uint32_t pk_atlas_sig_ecology(double temp, double moist, double snow,
+                                     double vit, int veg_id, bool is_water,
+                                     int transition_age, int prev_vit_byte,
+                                     int veg_none) {
+    auto smoothstep = [](double e0, double e1, double x) {
+        if (e1 <= e0) return x < e0 ? 0.0 : 1.0;
+        double t = (x - e0) / (e1 - e0);
+        if (t < 0.0) t = 0.0;
+        else if (t > 1.0) t = 1.0;
+        return t * t * (3.0 - 2.0 * t);
+    };
+    auto clamp01 = [](double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); };
+    const double vitality = clamp01(vit);
+    const double m = clamp01(moist);
+    const double t = clamp01(temp);
+    const double sn = clamp01(snow);
+    double foliage = 0.0;
+    if (!is_water && veg_id != veg_none) {
+        const double cold_loss = (1.0 - smoothstep(0.02, 0.18, t)) * 0.55;
+        const double snow_loss = smoothstep(0.12, 0.75, sn) * 0.70;
+        const double dry_loss = (1.0 - smoothstep(0.05, 0.35, m)) * 0.45;
+        foliage = clamp01(vitality * 0.72 + m * 0.28 - cold_loss - snow_loss - dry_loss);
+    }
+    double stress = 0.0;
+    if (!is_water) {
+        const double dryness = 1.0 - m;
+        const double heat_stress = smoothstep(0.72, 0.95, t);
+        const double cold_stress = 1.0 - smoothstep(0.03, 0.20, t);
+        const double vit_stress = 1.0 - vitality;
+        const double a1 = dryness * 0.70;
+        const double a2 = (heat_stress > cold_stress ? heat_stress : cold_stress) * 0.65;
+        const double a3 = (a1 > a2 ? a1 : a2);
+        stress = clamp01(a3 + vit_stress * 0.45);
+    }
+    const double vit_delta = (double(pk_q01_byte(vitality)) - double(prev_vit_byte)) / 255.0;
+    const double growth = clamp01(0.5 + vit_delta * 5.0 + (foliage - 0.5) * 0.12 - stress * 0.10);
+    const int r = pk_q01_byte(foliage);
+    const int g = pk_q01_byte(stress);
+    int b = transition_age;
+    if (b < 0) b = 0;
+    else if (b > 255) b = 255;
+    const int a = pk_q01_byte(growth);
+    return uint32_t(r) | (uint32_t(g) << 8) | (uint32_t(b) << 16) | (uint32_t(a) << 24);
+}
+
 // ice byte：与 GDScript _q01_byte_ice 完全一致（v>0 时 byte≥1）。
 inline uint8_t pk_atlas_byte_ice(double v) {
     return uint8_t(pk_q01_byte_ice(v));
@@ -15028,6 +15223,11 @@ void DCWorldExt::invalidate_atlas_csr_cache() {
     st->eco_transition_age = PackedFloat32Array();
     st->eco_growth_damage = PackedFloat32Array();
     st->eco_active_decay_indices = PackedInt32Array();
+    // Cell-index 间接寻址 LUT 持久状态同步失效（地图重生成 → cell.index 重排）。
+    st->lut_initialized = false;
+    st->lut_prev_veg = PackedByteArray();
+    st->lut_prev_vit = PackedByteArray();
+    st->lut_transition_age = PackedByteArray();
     st->phase = AtlasPipelineState::IDLE;
     st->cursor = 0;
 }
@@ -15075,6 +15275,301 @@ void DCWorldExt::migrate_eco_persistent_from_gd(godot::Dictionary state) {
         Variant v = state["growth_damage"];
         if (v.get_type() == Variant::PACKED_FLOAT32_ARRAY) st->eco_growth_damage = v;
     }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cell-index 间接寻址（province-ID indirection）：per-cell LUT 编码
+// ────────────────────────────────────────────────────────────────────────────
+// SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd（GDScript fallback）。
+// 本方法把"每 cell 一个 texel"的 enum/dyn/eco LUT 编码搬进 C++ 热路径——即便
+// n_cells≈2400，也走 scalar C++ tight loop（用户决策 2026-06-16：严格按 skill 在
+// CPP 做），与 fan-out 路径共用 pk_atlas_sig_dynamic / pk_atlas_sig_ecology 公式，
+// 保证 LUT 与全分辨率 atlas bit-equivalent。
+//
+// 输出 3 张 LUT（行优先，宽 lut_w；texel ci 落在 (ci%lut_w, ci/lut_w)，
+// 即扁平偏移恰为 ci）：
+//   enum_lut : RGB8  R=terrain G=vegetation B=cover
+//   dyn_lut  : RGBA8 R=q01(temp) G=q01(moist) B=q01(snow) A=水:q01_ice(sif)/陆:q01(vit)
+//   eco_lut  : RGBA8 R=q01(foliage) G=q01(stress) B=transition_age A=q01(growth)
+//
+// opts 字段：
+//   "map"             : Object（取 is_water_render_lut；缺则 fallback）
+//   "lut_w"/"lut_h"   : int（LUT 网格尺寸，lut_w*lut_h >= n_cells）
+//   "n_cells"         : int（map.cell_count()）
+//   "terrain_lake"/"terrain_sea_ice"/"veg_none" : int（eco is_water / VEG_NONE 透传）
+//   "cache_valid"     : bool（true=日常 refresh，按 prev 推进 transition；
+//                             false=初次 bake，transition 归零）
+// 返回：{ enum_lut, dyn_lut, eco_lut, lut_w, lut_h, n_cells, elapsed_ms,
+//         fallback, reason, path, published_to_slot=false }
+godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["elapsed_ms"] = -1.0;
+    out["path"] = String("gdscript");
+    out["published_to_slot"] = false;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_cell_luts: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!opts.has("lut_w") || !opts.has("lut_h")) return fail("missing lut dims");
+    const int lut_w = int(opts["lut_w"]);
+    const int lut_h = int(opts["lut_h"]);
+    if (lut_w <= 0 || lut_h <= 0) return fail("invalid lut dims");
+    const int n_cells = opts.has("n_cells") ? int(opts["n_cells"]) : 0;
+    if (n_cells <= 0) return fail("missing n_cells");
+    const int slots_total = lut_w * lut_h;
+    if (slots_total < n_cells) return fail("lut grid smaller than n_cells");
+
+    Object *map = opts.has("map") ? Object::cast_to<Object>(opts["map"]) : nullptr;
+
+    // SoA 槽位（与 run_atlas_pipeline_step / encode_ecology_visual_atlas 同源）。
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_snow = component_id(StringName("cell_snow_cover"));
+    const int sid_vit = component_id(StringName("cell_vegetation_vitality"));
+    const int sid_ice = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_terr = component_id(StringName("cell_terrain"));
+    const int sid_veg = component_id(StringName("cell_vegetation"));
+    const int sid_cover = component_id(StringName("cell_cover"));
+    if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_vit < 0 ||
+        sid_ice < 0 || sid_terr < 0 || sid_veg < 0 || sid_cover < 0) {
+        return fail("missing component slot");
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_moist = _slots.write[sid_moist];
+    Slot &s_snow = _slots.write[sid_snow];
+    Slot &s_vit = _slots.write[sid_vit];
+    Slot &s_ice = _slots.write[sid_ice];
+    Slot &s_terr = _slots.write[sid_terr];
+    Slot &s_veg = _slots.write[sid_veg];
+    Slot &s_cover = _slots.write[sid_cover];
+    if (s_temp.arr_f32.size() < n_cells || s_moist.arr_f32.size() < n_cells ||
+        s_snow.arr_f32.size() < n_cells || s_vit.arr_f32.size() < n_cells ||
+        s_ice.arr_f32.size() < n_cells || s_terr.arr_u8.size() < n_cells ||
+        s_veg.arr_u8.size() < n_cells || s_cover.arr_u8.size() < n_cells) {
+        return fail("slot array size < n_cells");
+    }
+    const float * const __restrict TEMP = s_temp.arr_f32.ptr();
+    const float * const __restrict MOIST = s_moist.arr_f32.ptr();
+    const float * const __restrict SNOW = s_snow.arr_f32.ptr();
+    const float * const __restrict VIT = s_vit.arr_f32.ptr();
+    const float * const __restrict ICE = s_ice.arr_f32.ptr();
+    const uint8_t * const __restrict TERR = s_terr.arr_u8.ptr();
+    const uint8_t * const __restrict VEG = s_veg.arr_u8.ptr();
+    const uint8_t * const __restrict COVER = s_cover.arr_u8.ptr();
+
+    // is_water 渲染语义 LUT（含 SEA_ICE/LAKE）：dyn A 通道双语义 + eco is_water 判定。
+    // 缺失则 fallback——C++ 路径不允许 water cell 误走陆路径。
+    PackedByteArray is_water_lut;
+    if (map != nullptr) {
+        Variant v = map->call(StringName("is_water_render_lut"));
+        if (v.get_type() == Variant::PACKED_BYTE_ARRAY) is_water_lut = v;
+    }
+    if (is_water_lut.size() < 256) return fail("missing is_water render lut");
+    const uint8_t * const __restrict IWLUT = is_water_lut.ptr();
+
+    const int terrain_lake = int(opts.get("terrain_lake", -1));
+    const int terrain_sea_ice = int(opts.get("terrain_sea_ice", -1));
+    const int veg_none = int(opts.get("veg_none", -1));
+    const bool cache_valid_opt = bool(opts.get("cache_valid", false));
+
+    // 持久 prev 状态（transition_age tracking）。首帧 / 尺寸变化时重置为冷启。
+    auto *st = get_or_create_atlas_state(_atlas_state);
+    const bool lut_state_ok = st->lut_initialized &&
+        st->lut_prev_veg.size() == n_cells &&
+        st->lut_prev_vit.size() == n_cells &&
+        st->lut_transition_age.size() == n_cells;
+    if (!lut_state_ok) {
+        st->lut_prev_veg.resize(n_cells);
+        st->lut_prev_vit.resize(n_cells);
+        st->lut_transition_age.resize(n_cells);
+    }
+    uint8_t * const __restrict PV_VEG = st->lut_prev_veg.ptrw();
+    uint8_t * const __restrict PV_VIT = st->lut_prev_vit.ptrw();
+    uint8_t * const __restrict TR = st->lut_transition_age.ptrw();
+    const bool eff_cache_valid = cache_valid_opt && lut_state_ok;
+
+    PackedByteArray enum_data; enum_data.resize(slots_total * 3);
+    PackedByteArray dyn_data;  dyn_data.resize(slots_total * 4);
+    PackedByteArray eco_data;  eco_data.resize(slots_total * 4);
+    uint8_t * const __restrict ENUM = enum_data.ptrw();
+    uint8_t * const __restrict DYN = dyn_data.ptrw();
+    uint8_t * const __restrict ECO = eco_data.ptrw();
+    for (int i = 0; i < slots_total * 3; ++i) ENUM[i] = 0;
+    for (int i = 0; i < slots_total * 4; ++i) { DYN[i] = 0; ECO[i] = 0; }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int ci = 0; ci < n_cells; ++ci) {
+        const uint8_t terrain = TERR[ci];
+        const bool is_water = IWLUT[terrain] != 0;
+
+        // enum LUT：R=terrain G=vegetation B=cover
+        const int e3 = ci * 3;
+        ENUM[e3] = terrain;
+        ENUM[e3 + 1] = VEG[ci];
+        ENUM[e3 + 2] = COVER[ci];
+
+        // dyn LUT
+        const uint32_t dsig = pk_atlas_sig_dynamic(
+            double(TEMP[ci]), double(MOIST[ci]), double(SNOW[ci]),
+            double(VIT[ci]), double(ICE[ci]), is_water);
+        const int d4 = ci * 4;
+        DYN[d4]     = uint8_t(dsig & 0xFFu);
+        DYN[d4 + 1] = uint8_t((dsig >> 8) & 0xFFu);
+        DYN[d4 + 2] = uint8_t((dsig >> 16) & 0xFFu);
+        DYN[d4 + 3] = uint8_t((dsig >> 24) & 0xFFu);
+
+        // eco LUT：transition_age tracking（镜像 encode_ecology_visual_atlas）
+        const int cur_veg = int(VEG[ci]) & 0xFF;
+        const int cur_vit_byte = pk_q01_byte(double(VIT[ci]));
+        int transition_age;
+        int prev_vit_byte;
+        if (eff_cache_valid) {
+            const int prev_veg = int(PV_VEG[ci]);
+            prev_vit_byte = int(PV_VIT[ci]);
+            transition_age = int(TR[ci]);
+            if (cur_veg != prev_veg) transition_age = 255;
+            else if (transition_age > 0) {
+                transition_age -= 18;
+                if (transition_age < 0) transition_age = 0;
+            }
+        } else {
+            transition_age = 0;
+            prev_vit_byte = cur_vit_byte;
+        }
+        const bool eco_is_water = is_water ||
+            (int(terrain) == terrain_lake) || (int(terrain) == terrain_sea_ice);
+        const uint32_t esig = pk_atlas_sig_ecology(
+            double(TEMP[ci]), double(MOIST[ci]), double(SNOW[ci]), double(VIT[ci]),
+            cur_veg, eco_is_water, transition_age, prev_vit_byte, veg_none);
+        const int c4 = ci * 4;
+        ECO[c4]     = uint8_t(esig & 0xFFu);
+        ECO[c4 + 1] = uint8_t((esig >> 8) & 0xFFu);
+        ECO[c4 + 2] = uint8_t((esig >> 16) & 0xFFu);
+        ECO[c4 + 3] = uint8_t((esig >> 24) & 0xFFu);
+
+        // 写回 prev 状态
+        PV_VEG[ci] = uint8_t(cur_veg);
+        PV_VIT[ci] = uint8_t(cur_vit_byte);
+        int tr_store = transition_age;
+        if (tr_store < 0) tr_store = 0;
+        else if (tr_store > 255) tr_store = 255;
+        TR[ci] = uint8_t(tr_store);
+    }
+    st->lut_initialized = true;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    out["enum_lut"] = enum_data;
+    out["dyn_lut"] = dyn_data;
+    out["eco_lut"] = eco_data;
+    out["lut_w"] = lut_w;
+    out["lut_h"] = lut_h;
+    out["n_cells"] = n_cells;
+    out["elapsed_ms"] = ms;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["published_to_slot"] = false;  // LUT 是渲染产物（ImageTexture），不进 slot
+    return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cell-index 间接寻址：per-pixel → cell.index 间接图（RG8）编码
+// ────────────────────────────────────────────────────────────────────────────
+// SAME_SOURCE: map_baker.gd::bake_cell_index_tex / _gd_cell_index_tex（fallback）。
+// 一次性（地图重生成时）把 CSR 像素列表反向 fan-out 成 per-pixel 的 cell.index：
+//   RG8: R=index&0xFF G=(index>>8)&0xFF；未覆盖像素 = 0xFFFF（shader sentinel→-1）。
+// CSR 取自 world.cell_first_px_arr / cell_px_count_arr / flat_px_indices_arr。
+// 即便是 ~620k 像素的一次性循环，也按用户决策在 C++ 做（避免 GDScript 大循环）。
+//
+// opts: { "world": Object, "width": int, "height": int }
+// 返回: { index_tex: PackedByteArray(width*height*2), fallback, reason, path }
+godot::Dictionary DCWorldExt::encode_cell_index_tex(godot::Dictionary opts) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        UtilityFunctions::push_warning("[DCWorldExt] encode_cell_index_tex: ", why,
+                                       " - fallback to GDScript");
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    if (!opts.has("width") || !opts.has("height")) return fail("missing width/height");
+    const int W = int(opts["width"]);
+    const int H = int(opts["height"]);
+    const int n_pix = W * H;
+    if (n_pix <= 0) return fail("invalid texture size");
+    Object *world = opts.has("world") ? Object::cast_to<Object>(opts["world"]) : nullptr;
+    if (world == nullptr) return fail("world is null");
+
+    Variant v_first = world->get(StringName("cell_first_px_arr"));
+    Variant v_count = world->get(StringName("cell_px_count_arr"));
+    Variant v_flat  = world->get(StringName("flat_px_indices_arr"));
+    if (v_first.get_type() != Variant::PACKED_INT32_ARRAY ||
+        v_count.get_type() != Variant::PACKED_INT32_ARRAY ||
+        v_flat.get_type()  != Variant::PACKED_INT32_ARRAY) {
+        return fail("missing/invalid CSR arrays");
+    }
+    PackedInt32Array first = v_first;
+    PackedInt32Array count = v_count;
+    PackedInt32Array flat  = v_flat;
+    const int n_cells = first.size();
+    if (n_cells <= 0 || count.size() != n_cells) return fail("CSR size mismatch");
+
+    PackedByteArray data;
+    data.resize(n_pix * 2);
+    uint8_t * const __restrict D = data.ptrw();
+    for (int i = 0; i < n_pix * 2; ++i) D[i] = 0xFF;  // 0xFFFF sentinel
+
+    const int32_t * const __restrict FIRST = first.ptr();
+    const int32_t * const __restrict CNT = count.ptr();
+    const int32_t * const __restrict FLAT = flat.ptr();
+    const int flat_n = flat.size();
+
+    for (int k = 0; k < n_cells; ++k) {
+        if (k >= 65535) continue;  // 65535 是 sentinel，无法编码（2400 远低于此）
+        const int f = FIRST[k];
+        const int c = CNT[k];
+        if (f < 0 || c <= 0) continue;
+        const uint8_t lo = uint8_t(k & 0xFF);
+        const uint8_t hi = uint8_t((k >> 8) & 0xFF);
+        for (int p = 0; p < c; ++p) {
+            const int fi = f + p;
+            if (fi < 0 || fi >= flat_n) continue;
+            const int px = FLAT[fi];
+            if (px < 0 || px >= n_pix) continue;
+            D[px * 2]     = lo;
+            D[px * 2 + 1] = hi;
+        }
+    }
+
+    out["index_tex"] = data;
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    return out;
 }
 
 // 主入口：4-phase atlas pipeline 一次推进。
@@ -16170,7 +16665,7 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
         else if (ny > 1.0) ny = 1.0;
         const double ls = (ny - 0.5) * 2.0;
         const double ls_abs = (ls < 0.0) ? -ls : ls;
-        double lat_temp = std::pow(std::cos(ls_abs * PI_HALF), 1.2);
+        double lat_temp = pk_lat_temp_bell(ls_abs);  // 纬度温度钟形单一来源
         if (lat_temp < 0.0) lat_temp = 0.0;
         else if (lat_temp > 1.0) lat_temp = 1.0;
         const double temp_rel = lat_temp - 0.5;
@@ -16954,9 +17449,8 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         const float ls     = ls_w[k];
         const float ls_abs = std::fabs(ls);
         if (ls_abs > UPW_HIGHLAT_ABS) {
-            // lat_temp = pow(cos(ls_abs * pi/2), 1.2); temp_rel = lat_temp - 0.5
-            const float c_ls    = std::cos(ls_abs * HALF_PI);
-            const float lat_t   = std::pow(c_ls > 0.0f ? c_ls : 0.0f, 1.2f);
+            // lat_temp = pk_lat_temp_bell(ls_abs); temp_rel = lat_temp - 0.5（纬度温度钟形单一来源）
+            const float lat_t   = float(pk_lat_temp_bell(double(ls_abs)));
             const float temp_rel = lat_t - 0.5f;
             if (temp_rel < COLD_SINK_TEMP) {
                 const float pole_dir_y = (ls > 0.0f) ? 1.0f : ((ls < 0.0f) ? -1.0f : 0.0f);
@@ -17767,6 +18261,10 @@ struct ClimateRoundScalars {
     double thermal_inertia_snow = 0.09;
     double thermal_inertia_high_mountain = 0.16;
     double thermal_daily_delta_cap = 0.15;
+    // 加速/跳日补偿：本次 pass_a 距上次实际经过的仿真天数（默认 1.0）。
+    // 热惯性松弛与 delta_cap 按此天数积分，否则加速档下海洋温度会严重欠积分、
+    // 滞后于太阳直射点。见 climate_daily_system._build_async_kick_input。
+    double thermal_dt_days = 1.0;
     double snowpack_cover_low = 0.05;
     double snowpack_cover_full = 0.32;
 
@@ -18134,6 +18632,15 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float thermal_snow   = (float)in.scalars.thermal_inertia_snow;
     const float thermal_high   = (float)in.scalars.thermal_inertia_high_mountain;
     const float thermal_delta_cap = (float)in.scalars.thermal_daily_delta_cap;
+    // 加速/跳日补偿：α 与 delta_cap 按经过天数积分（dt<=1 退化为原值）。
+    float thermal_dt = (float)in.scalars.thermal_dt_days;
+    if (thermal_dt < 1.0f) thermal_dt = 1.0f;
+    else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
+    const float thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
+    const float thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
+    const float thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
+    const float thermal_high_eff  = pk_thermal_alpha_eff(thermal_high,  thermal_dt);
+    const float thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
     const float snowpack_cover_low  = (float)in.scalars.snowpack_cover_low;
     const float snowpack_cover_full = (float)in.scalars.snowpack_cover_full;
     const float snowpack_cover_span = (snowpack_cover_full - snowpack_cover_low) > 0.001f
@@ -18239,7 +18746,9 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
         if (temp_year < 0.0f) temp_year = 0.0f;
         else if (temp_year > 1.0f) temp_year = 1.0f;
-        const float season_offset = insol_amp_gain * dev_today;
+        // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
+        // 用【年均温度 P365_IN[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
+        const float season_offset = insol_amp_gain * pk_surface_absorbed_factor(is_water, P365_IN[i]) * dev_today;
         float radiative_target = temp_year + season_offset;
         if (radiative_target < 0.0f) radiative_target = 0.0f;
         else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -18251,17 +18760,15 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
             prev_energy = current_temp;
         }
         const float prev_temp = prev_energy;
-        float alpha = thermal_land;
-        if (is_water) alpha = thermal_water;
-        else if (COV[i] == COVER_GLACIER) alpha = thermal_snow;
-        else if (PSP_IN[i] > snowpack_cover_low) alpha = thermal_snow;
-        else if (elevation > 0.70f) alpha = thermal_high;
-        if (alpha < 0.0f) alpha = 0.0f;
-        else if (alpha > 1.0f) alpha = 1.0f;
+        float alpha = thermal_land_eff;
+        if (is_water) alpha = thermal_water_eff;
+        else if (COV[i] == COVER_GLACIER) alpha = thermal_snow_eff;
+        else if (PSP_IN[i] > snowpack_cover_low) alpha = thermal_snow_eff;
+        else if (elevation > 0.70f) alpha = thermal_high_eff;
         const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
         float temp_delta = heat_next - prev_temp;
-        if (temp_delta > thermal_delta_cap) temp_delta = thermal_delta_cap;
-        else if (temp_delta < -thermal_delta_cap) temp_delta = -thermal_delta_cap;
+        if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
+        else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
         float temp_now = prev_temp + temp_delta;
         if (temp_now < 0.0f) temp_now = 0.0f;
         else if (temp_now > 1.0f) temp_now = 1.0f;
@@ -19161,12 +19668,17 @@ static bool _async_sea_ice_kernel_pure(const ClimateInputBuf &in,
             freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
             solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain);
         }
-        float d_frac = (k_freeze_eff * diff_freeze * freeze_gate
-                      - (k_melt * diff_melt + solar_melt)) * dt_days;
+        // [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：必须先裁剪
+        // 日速率、再乘 dt_days。否则加速档（dt_days≫1）下每轮 d_frac 被砍到
+        // ≤cap，海冰每轮最多只长 cap，亚极地短暂冷却窗口里永远涨不到翻转阈值
+        // → "已很冷却无冰"。melt 侧对称。
+        float rate = k_freeze_eff * diff_freeze * freeze_gate
+                   - (k_melt * diff_melt + solar_melt);
         if (daily_delta_cap > 0.0f) {
-            if (d_frac > daily_delta_cap) d_frac = daily_delta_cap;
-            else if (d_frac < -daily_delta_cap) d_frac = -daily_delta_cap;
+            if (rate > daily_delta_cap) rate = daily_delta_cap;
+            else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
         }
+        float d_frac = rate * dt_days;
         const float prev_frac = SIF[i];
         float new_frac = prev_frac + d_frac;
         if (new_frac < 0.0f) new_frac = 0.0f;
@@ -20023,6 +20535,7 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.thermal_inertia_snow        = double(input.get("thermal_inertia_snow", 0.09));
         t->in_buf.scalars.thermal_inertia_high_mountain = double(input.get("thermal_inertia_high_mountain", 0.16));
         t->in_buf.scalars.thermal_daily_delta_cap     = double(input.get("thermal_daily_delta_cap", 0.15));
+        t->in_buf.scalars.thermal_dt_days             = double(input.get("thermal_dt_days", 1.0));
         t->in_buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.05));
         t->in_buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.32));
         // transp scalars
@@ -20700,6 +21213,9 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_psi_solver_pass", "knobs"),
         &DCWorldExt::run_psi_solver_pass);
     ClassDB::bind_method(
+        D_METHOD("run_temp_baseline_year_bake", "knobs"),
+        &DCWorldExt::run_temp_baseline_year_bake);
+    ClassDB::bind_method(
         D_METHOD("run_season_refresh_stage", "knobs"),
         &DCWorldExt::run_season_refresh_stage);
     ClassDB::bind_method(
@@ -20762,6 +21278,15 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("migrate_eco_persistent_from_gd", "state"),
         &DCWorldExt::migrate_eco_persistent_from_gd);
+    // ─── Cell-index 间接寻址（province-ID indirection）──────────────────
+    //   encode_cell_luts：per-cell enum/dyn/eco LUT 编码（n_cells texel）
+    //   encode_cell_index_tex：per-pixel cell.index 间接图（RG8）
+    ClassDB::bind_method(
+        D_METHOD("encode_cell_luts", "opts"),
+        &DCWorldExt::encode_cell_luts);
+    ClassDB::bind_method(
+        D_METHOD("encode_cell_index_tex", "opts"),
+        &DCWorldExt::encode_cell_index_tex);
     // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
     ClassDB::bind_method(
         D_METHOD("run_ocean_field_rasterize", "knobs"),

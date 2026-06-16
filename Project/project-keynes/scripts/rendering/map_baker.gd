@@ -541,6 +541,17 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 	var pix_total: int = world.derived_size.x * world.derived_size.y
 	if pix_total <= 0:
 		return
+	# [ocean-visual-skip 2026-06-16] flag 关 → 跳过逐像素风/洋流光栅（纯视觉）。
+	# per-cell 风/洋流求解已在 _bake_initial_physical_circulation / 物理 solve 写入
+	# HexCell（气候/天气仿真读它，不读这些像素 buffer），故清空像素 buffer 并提前返回。
+	# 随后 _encode_vector_atlas 返回 null，shader 走 vector_atlas_valid / wind_field_enabled
+	# = false 兜底。
+	if not DCFeatureFlags.ocean_current_visual_active():
+		world.wind_field_buffer = PackedByteArray()
+		world.ocean_current_buffer = PackedByteArray()
+		world.ocean_upwelling_buffer = PackedByteArray()
+		print("  wind/ocean pixel buffers: skipped (ocean_current_visual off)")
+		return
 	if _use_physical_circulation(cfg) and _initial_physical_deferred:
 		world.wind_field_buffer = PackedByteArray()
 		world.ocean_current_buffer = PackedByteArray()
@@ -761,8 +772,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	# Emergent Climate Coupling：sea_ice_fraction buffer 保持兼容数据通道。
 	# 主地图海冰视觉已改为 shader 直接按水温派生，不依赖此贴图光栅化。
+	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 不再分配空 R8 buffer（无采样者，
+	# 仅 dots_soak_dump 调试哈希读它，n==0 时自有兜底）。
 	world.sea_ice_fraction_buffer = PackedByteArray()
-	world.sea_ice_fraction_buffer.resize(world.derived_size.x * world.derived_size.y)
+	if DCFeatureFlags.sea_ice_atlas_active():
+		world.sea_ice_fraction_buffer.resize(world.derived_size.x * world.derived_size.y)
 
 	# 主地图动态状态 atlas：初始化为当前 cell.temperature/moisture/snow/vitality 快照。
 	stage_progress.emit("atlas", 0.82)
@@ -792,7 +806,12 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.derived_size
 	)
 	# 兼容旧调试/数据通道；主视觉不再读此贴图决定海冰。
-	world.sea_ice_tex = _encode_r8_tex(world.sea_ice_fraction_buffer, world.derived_size, world.sea_ice_tex)
+	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 置 null，不 encode 那张全零 R8
+	# （省 ~0.6MB 显存 + 编码）。hex_renderer 绑 null 安全（着色器从不采样 sea_ice_tex）。
+	if DCFeatureFlags.sea_ice_atlas_active():
+		world.sea_ice_tex = _encode_r8_tex(world.sea_ice_fraction_buffer, world.derived_size, world.sea_ice_tex)
+	else:
+		world.sea_ice_tex = null
 	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
 	# vector_atlas 恢复：RG=洋流，BA=风场。
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -806,6 +825,12 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
+	# Cell-index 间接寻址（plan: cell-index atlas indirection）：仅 flag 开启时烘焙
+	# 静态索引图 + per-cell LUT（enum/dyn/eco）。flag 切换需触发 regenerate
+	# 让本段重新执行（与 force_atlas_quarter_size 热键同语义）。flag 关时零开销。
+	if DCFeatureFlags.cell_indirection_active():
+		bake_cell_index_tex(map, world)
+		bake_cell_luts(map, world)
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
@@ -1075,7 +1100,26 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 
 # 主地图动态状态 atlas：RGBA8，R=temp, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
 # 使用 world.cell_pixel_lists 按 cell dirty 写入，避免每次重新 cube_round / 逐像素取字段。
+# [cell-indirect single-path 2026-06-16] flag 开时这组逐像素动态 atlas
+# (dynamic_cell_atlas / ecology_visual_atlas / dyn_atlas_smooth / ice_state_atlas)
+# 主 shader 已改读 per-cell LUT（dyn_lut/eco_lut，海冰走 dyn_lut.a），不再被采样，
+# 故所有 rebake 入口统一返回此 no-op 报告。字段与正常 rebake 报告同构，调用方
+# （bake_world / DVA oneshot / SeaIceAtlasUploadSystem|Job）的 dirty/ms 累加安全。
+func _indirection_skip_atlas_report() -> Dictionary:
+	return {
+		"prepared": false,
+		"dirty": false,
+		"dirty_cells": 0,
+		"pixels_written": 0,
+		"elapsed_ms": 0.0,
+		"skipped_indirection": true,
+	}
+
+
 func rebake_dynamic_cell_atlas_only(map: MapData, world: WorldData) -> Dictionary:
+	# [cell-indirect single-path] flag 开 → 间接寻址 dyn_lut 接管，跳过逐像素重烤。
+	if DCFeatureFlags.cell_indirection_active():
+		return _indirection_skip_atlas_report()
 	# Thin wrapper：保持旧签名 100% 兼容（synthesize_world 初始烘走这条）。
 	# 走完整 chunk_begin → chunk_step(all_cells) → chunk_finalize 三段。
 	var report := {
@@ -1217,6 +1261,9 @@ func _dynamic_cell_signature(cell: HexCell) -> int:
 # 生态视觉 atlas：RGBA8，derived_size。
 # R=叶量/冠层密度，G=胁迫/干旱，B=植被 enum 变化后的过渡年龄，A=近期生长/受损。
 func rebake_ecology_visual_atlas_only(map: MapData, world: WorldData) -> Dictionary:
+	# [cell-indirect single-path] flag 开 → 间接寻址 eco_lut 接管，跳过逐像素重烤。
+	if DCFeatureFlags.cell_indirection_active():
+		return _indirection_skip_atlas_report()
 	# Thin wrapper：保持旧签名 100% 兼容。chunk_step 走 all_cells，一次性完成。
 	var report := {
 		"prepared": false,
@@ -1461,6 +1508,9 @@ static func _q01_byte_ice(v: float) -> int:
 # 邻居变动，造成视觉滞后。改造为"自己 4-byte + 6 邻居 4-byte，FNV-1a 哈希"作 cache
 # sig，保证邻居 sig 任一 bit 变化都能立刻触发本 cell 重算。
 func rebake_dyn_atlas_smooth(map: MapData, world: WorldData) -> Dictionary:
+	# [cell-indirect single-path] flag 开 → 间接寻址 dyn_lut 跨 cell 平滑接管，跳过 box-blur 重烤。
+	if DCFeatureFlags.cell_indirection_active():
+		return _indirection_skip_atlas_report()
 	# Thin wrapper：保持旧签名 100% 兼容。
 	var report := {
 		"prepared": false,
@@ -1673,6 +1723,9 @@ func dyn_atlas_smooth_chunk_finalize(world: WorldData, ctx: Dictionary, report: 
 # 走 cell-level byte dirty 缓存（与 bake_sea_ice_fraction_only 同构但本路径独立，
 # 因为目标 buffer 不同 + shader uniform 不同）。
 func rebake_ice_state_atlas(map: MapData, world: WorldData) -> Dictionary:
+	# [cell-indirect single-path] flag 开 → 海冰随 dyn_lut.a 迁移，ice_state_atlas 无消费者，跳过。
+	if DCFeatureFlags.cell_indirection_active():
+		return _indirection_skip_atlas_report()
 	# Thin wrapper：保持旧签名 100% 兼容。
 	var report := {
 		"prepared": false,
@@ -2480,29 +2533,43 @@ func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 	var total: int = world.derived_size.x * world.derived_size.y
 	if total <= 0:
 		return
+	# [ocean-visual-skip 2026-06-16] flag 关 → 保留 per-cell 物理 solve（写 HexCell），
+	# 跳过像素光栅 + 交错重建 + encode（纯视觉）。
+	var _ocean_visual: bool = DCFeatureFlags.ocean_current_visual_active()
 	if _use_physical_circulation(cfg):
 		var saved_world_ext = _world_ext
 		_world_ext = null
 		_physical_solve_for_phase(map, world, hex_size, cfg, season_phase)
 		_world_ext = saved_world_ext
-		if _pending_wind_buf.is_empty():
-			_ensure_pending_wind_size(world)
-			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, 0, total)
-		_ensure_pending_currents_size(world)
-		_rasterize_ocean_current_slice_from_hex(world, _pending_currents_buf, 0, total)
-		# 方案 B-1：物理路径下不再生成 ocean_upwelling_buffer
-		# （唯一消费者是 F6 调试 shader 通过 _rasterize_upwelling_slice_from_hex 重建，
-		#  per-cell SoA / 主视觉路径都不依赖此 buffer）。
-		world.wind_field_buffer = _pending_wind_buf
-		world.ocean_current_buffer = _pending_currents_buf
-		world.ocean_upwelling_buffer = PackedByteArray()
-	else:
+		if _ocean_visual:
+			if _pending_wind_buf.is_empty():
+				_ensure_pending_wind_size(world)
+				_rasterize_wind_slice_from_hex(world, _pending_wind_buf, 0, total)
+			_ensure_pending_currents_size(world)
+			_rasterize_ocean_current_slice_from_hex(world, _pending_currents_buf, 0, total)
+			# 方案 B-1：物理路径下不再生成 ocean_upwelling_buffer
+			# （唯一消费者是 F6 调试 shader 通过 _rasterize_upwelling_slice_from_hex 重建，
+			#  per-cell SoA / 主视觉路径都不依赖此 buffer）。
+			world.wind_field_buffer = _pending_wind_buf
+			world.ocean_current_buffer = _pending_currents_buf
+			world.ocean_upwelling_buffer = PackedByteArray()
+		else:
+			world.wind_field_buffer = PackedByteArray()
+			world.ocean_current_buffer = PackedByteArray()
+			world.ocean_upwelling_buffer = PackedByteArray()
+	elif _ocean_visual:
 		world.wind_field_buffer = _bake_wind_field(world.world_bounds, world.derived_size, season_phase)
 		world.ocean_current_buffer = _bake_ocean_currents(map, hex_size, world, cfg, season_phase)
 		# 旧 ny-only 路径保留 upwelling buffer 计算（其它 GD 调用方可能仍读它），
 		# 但贴图编码方案 0 一并跳过。
 		world.ocean_upwelling_buffer = _bake_ocean_upwelling(map, hex_size, world, cfg, season_phase)
-	_rebuild_vector_atlas_data_from_buffers(world)
+	else:
+		world.wind_field_buffer = PackedByteArray()
+		world.ocean_current_buffer = PackedByteArray()
+		world.ocean_upwelling_buffer = PackedByteArray()
+	if _ocean_visual:
+		_rebuild_vector_atlas_data_from_buffers(world)
+	# flag 关时 _encode_vector_atlas 直接返回 null（shader 走 vector_atlas_valid 兜底）。
 	world.vector_atlas_tex = _encode_vector_atlas(world.ocean_current_buffer, world.wind_field_buffer, world.derived_size, world.vector_atlas_tex)
 	# 方案 0：upwelling_tex 不在 rebake 路径里烘焙；F6 调试模式再 lazy build。
 	world.upwelling_tex = null
@@ -2748,7 +2815,7 @@ func bake_ocean_upwelling_slice(map: MapData, world: WorldData, hex_size: float,
 		var ny := float(yy) / float(maxi(H - 1, 1))
 		var lat_signed := (ny - 0.5) * 2.0
 		var lat_signed_abs: float = absf(lat_signed)
-		var lat_temp: float = pow(cos(lat_signed_abs * PI * 0.5), 1.2)
+		var lat_temp: float = DCClimateMath.lat_temp_bell(lat_signed_abs)  # 纬度温度钟形单一来源
 		var temp_rel: float = lat_temp - 0.5
 		var is_highlat: bool = lat_signed_abs > _UPWELLING_HIGHLAT_ABS
 		var is_cold_sink: bool = is_highlat and temp_rel < cold_sink_temp
@@ -2843,7 +2910,10 @@ func commit_ocean_buffers(world: WorldData, update_textures: bool = true) -> Dic
 	# 为空，跳过。
 	if not _pending_wind_buf.is_empty():
 		world.wind_field_buffer = _pending_wind_buf
-	if update_textures:
+	# [ocean-visual-skip 2026-06-16] flag 关 → 不重建/更新 vector_atlas_tex（纯视觉）。
+	# 正常路径下 ocean_currents_job 已用 _phys_need_visual=false 提前 round_done、根本
+	# 走不到 commit；此处的额外条件是防御性兜底（避免任何其它调用方在 flag 关时重建纹理）。
+	if update_textures and DCFeatureFlags.ocean_current_visual_active():
 		# I + L: 复用 GPU 句柄 + 持久交错缓冲（方案 A：fast path 永远成立）。
 		# 典型 round 收尾下 _vector_atlas_data 已被 pixel slices 同步更新；
 		# 缓存未就绪时（首次 commit / regenerate）直接从已 commit 的 buffer 重建
@@ -4062,6 +4132,177 @@ func _encode_enum_atlas(biome_buf: PackedByteArray, veg_buf: PackedByteArray,
 		return existing
 	return ImageTexture.create_from_image(img)
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# Cell-index 间接寻址（province-ID indirection）烘焙
+# plan: cell-index atlas indirection。bake_world 一次性烘出静态索引图 + per-cell LUT。
+#   - cell_index_tex 永不每日更新（仅地图重生）；
+#   - LUT 由 daily 路径增量刷新（refresh_cell_luts_daily）。
+# 全程 feature-flag（DCFeatureFlags.cell_indirection_active）：flag 关时本组函数
+# 不被 bake_world 调用，旧 per-pixel atlas 路径逐字节不变。
+# ═══════════════════════════════════════════════════════════════════════
+
+# 静态 cell 索引图：pixel_to_cell_lookup -> RG8（R=index 低字节, G=高字节, 0xFFFF=map 外哨兵）。
+# 同时算 lut_dims（per-cell LUT 网格）。NEAREST 由 shader uniform hint 保证。
+func bake_cell_index_tex(map: MapData, world: WorldData) -> void:
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	if n <= 0:
+		return
+	# RG8 per-pixel cell.index 间接图：C++ 优先（避免 ~620k GDScript 循环），
+	# 失败回退 GDScript（skill rule 11）。SAME_SOURCE: world_ext.cpp::encode_cell_index_tex。
+	var data: PackedByteArray = PackedByteArray()
+	if _world_ext != null and _world_ext.has_method("encode_cell_index_tex"):
+		var out: Dictionary = _world_ext.encode_cell_index_tex({
+			"world": world, "width": W, "height": H,
+		})
+		if not bool(out.get("fallback", true)):
+			var d = out.get("index_tex", null)
+			if d is PackedByteArray and (d as PackedByteArray).size() == n * 2:
+				data = d
+	if data.size() != n * 2:
+		data = _gd_cell_index_buffer(world, W, H, n)
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RG8, data)
+	if world.cell_index_tex != null and world.cell_index_tex.get_size() == Vector2(float(W), float(H)):
+		world.cell_index_tex.update(img)
+	else:
+		world.cell_index_tex = ImageTexture.create_from_image(img)
+	# LUT 网格尺寸：lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
+	var n_cells: int = map.cell_count() if map != null else 0
+	if n_cells <= 0:
+		n_cells = 1
+	var lut_w: int = mini(n_cells, 2048)
+	if lut_w < 1:
+		lut_w = 1
+	var lut_h: int = int(ceil(float(n_cells) / float(lut_w)))
+	if lut_h < 1:
+		lut_h = 1
+	world.lut_dims = Vector2i(lut_w, lut_h)
+
+
+# GDScript fallback：CSR pixel_to_cell_lookup → RG8 per-pixel cell.index buffer。
+# 仅 C++ encode_cell_index_tex 不可用 / 失败时调用（skill rule 11）。
+func _gd_cell_index_buffer(world: WorldData, W: int, H: int, n: int) -> PackedByteArray:
+	var lookup: Array = world.pixel_to_cell_lookup
+	var has_lookup: bool = lookup.size() == n
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var di: int = i * 2
+		var cid: int = -1
+		if has_lookup:
+			var cell = lookup[i]
+			if cell != null:
+				cid = int(cell.index)
+		if cid < 0 or cid >= 65535:
+			data[di] = 0xFF
+			data[di + 1] = 0xFF
+		else:
+			data[di] = cid & 0xFF
+			data[di + 1] = (cid >> 8) & 0xFF
+	return data
+
+
+# per-cell LUT 全量烘焙 dispatcher：C++（DCWorldExt.encode_cell_luts）优先，
+# 失败回退 GDScript（skill rule 11，保留至 A/B parity 验证通过）。
+# 字节量化与 fan-out 路径同源（enum=terrain/vegetation/cover、
+# dyn=_dynamic_cell_signature/pk_atlas_sig_dynamic、
+# eco=_ecology_visual_signature/pk_atlas_sig_ecology），保证间接寻址与旧 atlas
+# bit-equivalent。cache_valid=true 时 C++ 端按 prev 推进 eco transition_age；
+# 初次 bake 传 false（transition 归零）。daily 刷新走 refresh_cell_luts_daily。
+func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -> void:
+	if map == null or world == null:
+		return
+	var lw: int = world.lut_dims.x
+	var lh: int = world.lut_dims.y
+	if lw <= 0 or lh <= 0:
+		return
+	# C++ 优先路径：scalar tight loop（即便 n_cells≈2400 也在 CPP 做，含 transition tracking）。
+	if _world_ext != null and _world_ext.has_method("encode_cell_luts"):
+		# [fix cell-indirect 2026-06-16] 不再在此 refresh_slots_from_map()：
+		# encode_cell_luts 与 encode_dynamic_cell_atlas / encode_dyn_smooth_atlas 同读
+		# _slots（cell_temp/moisture/snow/vegetation_vitality/sea_ice_frac），那几个旧
+		# pass 在同一 atlas 阶段直接读 *live* _slots 且不 refresh 也渲染正确——证明此处
+		# _slots 已是当前帧值。之前误加的 refresh_slots_from_map() 反而把 _slots 用
+		# *未回流的* MapData.*_arr 镜像（temp_arr/terrain_arr 等，原生气候 pass 只写
+		# _slots、不每 tick flush 回 MapData）覆盖成陈旧/空值 → enum/dyn/eco LUT 全 0
+		# （间接寻址地面发白、海冰消失、浮雕被糊）。skill §数据契约：两侧无可靠零拷贝，
+		# 不能假设 MapData 镜像与 _slots 同步。
+		var out: Dictionary = _world_ext.encode_cell_luts({
+			"map": map,
+			"lut_w": lw,
+			"lut_h": lh,
+			"n_cells": map.cell_count(),
+			"terrain_lake": int(TerrainType.TERRAIN.LAKE),
+			"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
+			"veg_none": int(VegetationType.VEG.NONE),
+			"cache_valid": cache_valid,
+		})
+		if not bool(out.get("fallback", true)):
+			var e = out.get("enum_lut", null)
+			var d = out.get("dyn_lut", null)
+			var c = out.get("eco_lut", null)
+			if e is PackedByteArray and d is PackedByteArray and c is PackedByteArray:
+				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
+				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+				return
+	_bake_cell_luts_gd(map, world, lw, lh)
+
+
+# GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
+func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int) -> void:
+	var slots: int = lw * lh
+	var enum_data := PackedByteArray(); enum_data.resize(slots * 3)
+	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
+	var eco_data := PackedByteArray(); eco_data.resize(slots * 4)
+	for cell in map.all_cells():
+		if cell == null:
+			continue
+		var ci: int = int(cell.index)
+		if ci < 0 or ci >= slots:
+			continue
+		var e3: int = ci * 3
+		enum_data[e3]     = int(cell.terrain) & 0xFF
+		enum_data[e3 + 1] = int(cell.vegetation) & 0xFF
+		enum_data[e3 + 2] = int(cell.cover) & 0xFF
+		var dsig: int = _dynamic_cell_signature(cell)
+		var d4: int = ci * 4
+		dyn_data[d4]     = dsig & 0xFF
+		dyn_data[d4 + 1] = (dsig >> 8) & 0xFF
+		dyn_data[d4 + 2] = (dsig >> 16) & 0xFF
+		dyn_data[d4 + 3] = (dsig >> 24) & 0xFF
+		var cur_vit_byte: int = _q01_byte(float(cell.vegetation_vitality))
+		var esig: int = _ecology_visual_signature(cell, 0, cur_vit_byte)
+		var c4: int = ci * 4
+		eco_data[c4]     = esig & 0xFF
+		eco_data[c4 + 1] = (esig >> 8) & 0xFF
+		eco_data[c4 + 2] = (esig >> 16) & 0xFF
+		eco_data[c4 + 3] = (esig >> 24) & 0xFF
+	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
+	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+
+
+func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existing: ImageTexture) -> ImageTexture:
+	var img := Image.create_from_data(w, h, false, fmt, data)
+	if existing != null and existing.get_size() == Vector2(float(w), float(h)):
+		existing.update(img)
+		return existing
+	return ImageTexture.create_from_image(img)
+
+
+# daily LUT 全量刷新：cell 视觉状态每日变化（enum 翻面 / temp / snow / vitality 等），
+# per-cell LUT（n_cells ~2400）全量重烘 ~0.1-0.3ms，远小于旧 per-pixel fan-out。
+# 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）。
+func refresh_cell_luts_daily(map: MapData, world: WorldData) -> void:
+	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
+		return
+	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
+	bake_cell_luts(map, world, true)
+
+
 # scalar_atlas: RGBA8 LINEAR (R=moisture, G=flow, B=latitude, A=0 reserved)
 # moisture/flow/latitude 是 [0,1] 的 float → quantize 到 byte。
 # Daily Sim SoA Refactor 阶段 1：A 通道恒为 0（保留位）；海冰已拆到独立 sea_ice_tex。
@@ -4089,6 +4330,11 @@ func _encode_scalar_atlas(moist_buf: PackedFloat32Array, flow_buf: PackedFloat32
 # 两个源 buffer 都是 RG8 packed byte（每像素 2 字节）
 func _encode_vector_atlas(ocean_buf: PackedByteArray, wind_buf: PackedByteArray,
 		size: Vector2i, existing: ImageTexture = null) -> ImageTexture:
+	# [ocean-visual-skip 2026-06-16] flag 关 → 不产出 vector_atlas（纯视觉）。返回 null
+	# 让 world.vector_atlas_tex 置空，shader 侧已有兜底（vector_atlas_valid /
+	# wind_field_enabled = false）。省整张 620k×4 byte 编码 + GPU 上传。
+	if not DCFeatureFlags.ocean_current_visual_active():
+		return null
 	var W := size.x
 	var H := size.y
 	var n := W * H
@@ -4158,6 +4404,10 @@ func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture
 #
 # 调用约定：SeaIceAtlasUploadJob 每 stride 日调用一次（之前是 refresh_climate_daily 末尾）。
 func bake_sea_ice_fraction_only(map: MapData, world: WorldData) -> void:
+	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 整条 prepare/upload no-op
+	# （sea_ice_tex 已退役，无 shader 采样者，运行时 upload job 也不注册）。
+	if not DCFeatureFlags.sea_ice_atlas_active():
+		return
 	var prep: Dictionary = prepare_sea_ice_fraction_atlas(map, world)
 	if bool(prep.get("prepared", false)) and bool(prep.get("dirty", true)):
 		upload_prepared_sea_ice_fraction_atlas(world)
@@ -4173,6 +4423,11 @@ func prepare_sea_ice_fraction_atlas(map: MapData, world: WorldData) -> Dictionar
 		"dirty_cells": 0,
 		"dirty_ratio": 0.0,
 	}
+	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 直接返回 not-prepared，
+	# 调用方据此不会 enqueue upload。sea_ice_tex 已退役（无 shader 采样者）。
+	if not DCFeatureFlags.sea_ice_atlas_active():
+		out["path"] = "disabled"
+		return out
 	if world == null or map == null:
 		return out
 	var W: int = int(world.derived_size.x)
@@ -4244,6 +4499,9 @@ func prepare_sea_ice_fraction_atlas(map: MapData, world: WorldData) -> Dictionar
 
 func upload_prepared_sea_ice_fraction_atlas(world: WorldData) -> Dictionary:
 	var out: Dictionary = {"uploaded": false, "image_ms": 0.0, "upload_ms": 0.0, "elapsed_ms": 0.0}
+	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ no-op（不 create/update sea_ice_tex）。
+	if not DCFeatureFlags.sea_ice_atlas_active():
+		return out
 	if world == null:
 		return out
 	var W: int = int(world.derived_size.x)
@@ -4727,7 +4985,7 @@ func _bake_ocean_upwelling(map: MapData, hex_size: float, world: WorldData, cfg:
 		# F3 优化：行级缓存与像素无关的量，避免在 W 次内层循环里反复算
 		var lat_signed := (ny - 0.5) * 2.0
 		var lat_signed_abs: float = absf(lat_signed)
-		var lat_temp: float = pow(cos(lat_signed_abs * PI * 0.5), 1.2)
+		var lat_temp: float = DCClimateMath.lat_temp_bell(lat_signed_abs)  # 纬度温度钟形单一来源
 		var temp_rel: float = lat_temp - 0.5
 		var is_highlat: bool = lat_signed_abs > _UPWELLING_HIGHLAT_ABS
 		var is_cold_sink: bool = is_highlat and temp_rel < cold_sink_temp

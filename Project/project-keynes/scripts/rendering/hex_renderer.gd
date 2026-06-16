@@ -127,6 +127,21 @@ extends Node2D
 @export var ocean_current_enabled: bool = true
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
+@export var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
+	set(value):
+		shrub_visual_profile = value
+		if _shrub_layer != null:
+			_shrub_layer.profile = shrub_visual_profile
+@export var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
+	set(value):
+		tree_visual_profile = value
+		if _tree_layer != null:
+			_tree_layer.profile = tree_visual_profile
+@export var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
+	set(value):
+		grass_visual_profile = value
+		if _grass_layer != null:
+			_grass_layer.profile = grass_visual_profile
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
@@ -198,6 +213,9 @@ var _season_transition_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _season_transition_mat: ShaderMaterial = null
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
+var _shrub_layer: ShrubLayer = null
+var _tree_layer: ShrubLayer = null
+var _grass_layer: ShrubLayer = null
 var _map: MapData = null
 var _world: WorldData = null
 
@@ -286,6 +304,21 @@ func _ready() -> void:
 	_season_transition_quad.z_index = 0
 	_season_transition_quad.visible = false
 	add_child(_season_transition_quad)
+	_grass_layer = ShrubLayer.new()
+	_grass_layer.name = "GrassLayer"
+	_grass_layer.profile = grass_visual_profile
+	_grass_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
+	add_child(_grass_layer)
+	_shrub_layer = ShrubLayer.new()
+	_shrub_layer.name = "ShrubLayer"
+	_shrub_layer.profile = shrub_visual_profile
+	_shrub_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
+	add_child(_shrub_layer)
+	_tree_layer = ShrubLayer.new()
+	_tree_layer.name = "TreeLayer"
+	_tree_layer.profile = tree_visual_profile
+	_tree_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
+	add_child(_tree_layer)
 	# v9.split：天气表现层
 	_weather_layer = WeatherLayer.new()
 	_weather_layer.name = "WeatherLayer"
@@ -304,6 +337,9 @@ func _process(delta: float) -> void:
 		return
 	_world_time += delta
 	_shader_mat.set_shader_parameter("world_time", _world_time)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_world_time(_world_time)
+	)
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("world_time", _world_time)
 		_update_season_transition()
@@ -382,6 +418,10 @@ func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 var _mobile_quality_tier_define: String = ""
 
 func set_mobile_quality_tier(tier_define: String) -> void:
+	var veg_tier := _mobile_quality_tier_from_define(tier_define)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_mobile_quality_tier(veg_tier)
+	)
 	if _mobile_quality_tier_define == tier_define:
 		return
 	_mobile_quality_tier_define = tier_define
@@ -394,6 +434,26 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
 		if _map != null and _world != null and _shader_mat != null:
 			_apply_uniforms()
+
+
+func _mobile_quality_tier_from_define(tier_define: String) -> int:
+	match tier_define:
+		"MOBILE_QUALITY_LOW":
+			return 0
+		"MOBILE_QUALITY_HIGH":
+			return 2
+		_:
+			return 1
+
+
+func _for_each_vegetation_layer(callable: Callable) -> void:
+	if _grass_layer != null:
+		callable.call(_grass_layer)
+	if _shrub_layer != null:
+		callable.call(_shrub_layer)
+	if _tree_layer != null:
+		callable.call(_tree_layer)
+
 
 func _poll_shader_hot_reload(delta: float) -> void:
 	if not shader_hot_reload_enabled:
@@ -499,6 +559,9 @@ func set_season_phase(phase: float) -> void:
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("season_phase", _season_phase)
 		_update_season_transition()
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_season_phase(_season_phase)
+	)
 	# === Plan-C/sea-ice-render-source-unify 阶段 A diag (临时) ===
 	# 检查 season/uniform 推送 & 海冰单源数据通道（dyn_atlas_smooth.A）是否就绪。
 	# ice_state_atlas 仍打印作为旧通道在场监控（已不再是 shader 水路径主源）。
@@ -549,6 +612,9 @@ func set_day_phase(v: float) -> void:
 		_season_transition_mat.set_shader_parameter("day_phase", _day_phase)
 	if _weather_layer != null:
 		_weather_layer.set_day_phase(_day_phase)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_day_phase(_day_phase)
+	)
 
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
@@ -558,6 +624,9 @@ func set_visual_quality(q: int) -> void:
 		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
 	if _weather_layer != null:
 		_weather_layer.set_visual_quality(visual_quality)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_visual_quality(visual_quality)
+	)
 
 
 # 60 FPS 调查（2026-06-14）：完全禁用主地形 shader。
@@ -1062,9 +1131,15 @@ func _rebuild() -> void:
 		return
 	if _map == null or _world == null or _map.cell_count() == 0:
 		_world_quad.mesh = null
+		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+			layer.clear()
+		)
 		return
 
 	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
+	)
 	if _shader_mat == null:
 		return
 	_apply_uniforms()
@@ -1126,6 +1201,21 @@ func _apply_uniforms() -> void:
 		sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
 	# v10.noise-pack：把共享 RGBA 噪声包喂给地形 shader，fbm(p,N) 全局单次采样。
 	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
+
+	# Cell-index 间接寻址（plan: cell-index atlas indirection）。静态索引图 + per-cell LUT。
+	# use_cell_indirection 仅在 flag 开启且纹理已烘焙时为 true；否则 shader 走旧 per-pixel atlas
+	# （逐像素 bit-identical）。LUT 为 null 时 set_shader_parameter 安全（未消费）。
+	var _indirect_ready: bool = DCFeatureFlags.cell_indirection_active() \
+			and _world.cell_index_tex != null and _world.enum_lut_tex != null
+	sm.set_shader_parameter("use_cell_indirection", _indirect_ready)
+	sm.set_shader_parameter("cell_index_tex", _world.cell_index_tex)
+	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
+	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
+	sm.set_shader_parameter("eco_lut", _world.eco_lut_tex)
+	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
+	)
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)

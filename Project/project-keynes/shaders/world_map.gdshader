@@ -44,6 +44,7 @@ render_mode blend_mix;
 // ─────────────────────────────────────────────────────────────────────────
 #include "res://shaders/include/uniforms.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
+#include "res://shaders/include/cell_indirect.gdshaderinc"
 #include "res://shaders/include/common_noise.gdshaderinc"
 #include "res://shaders/include/height.gdshaderinc"
 #include "res://shaders/include/climate_season.gdshaderinc"
@@ -117,19 +118,61 @@ void fragment() {
 #else
 	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
 #endif
-	vec4 dyns = texture(dyn_atlas_smooth_atlas, uv);
+	// Stage C：use_cell_indirection 时走 dyn_lut（per-cell 原始值 + 跨 cell 平滑），
+	// 否则旧 dyn_atlas_smooth_atlas（CPU box-blur）。dyn_lut.a 与 dyn_atlas_smooth.a
+	// 同语义（水格=sea_ice_frac，陆格=vegetation_vitality），海冰随 dyn 一并迁移。
+	// mobile 单点 NEAREST（接受轻微阶梯），desktop 4-tap 双线性补平滑。
+	vec4 dyns;
+	if (use_cell_indirection) {
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+		dyns = dyn_lut_nearest(uv);
+#else
+		dyns = sample_dyn_lut_smooth(uv);
+#endif
+	} else {
+		dyns = texture(dyn_atlas_smooth_atlas, uv);
+	}
 	// Mobile 三档全跳 ecology atlas（eco_valid=0 等同 dynamic 路径）
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
 	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
 #else
-	vec4 ecos = texture(ecology_visual_atlas, uv);
+	vec4 ecos = use_cell_indirection ? sample_eco_lut_smooth(uv) : texture(ecology_visual_atlas, uv);
 #endif
 
-	int biome = int(enums.r * 255.0 + 0.5);
-	int veg   = int(enums.g * 255.0 + 0.5);
-	int cover = int(enums.b * 255.0 + 0.5);
-	float moist     = scals.r;
-	float lat_norm  = scals.b;
+	// enum 通道（biome/veg/cover）：use_cell_indirection 时走 cell 索引图 + enum_lut
+	// （NEAREST，与 enum_atlas 同源 bit-identical）；否则旧 per-pixel enum_atlas 解码。
+	// cid<0（map 外哨兵）回退 enum_atlas 零初始化语义（OCEAN/NONE/NONE）。
+	int biome;
+	int veg;
+	int cover;
+	int _cell_id = use_cell_indirection ? decode_cell_index(uv) : -2;
+	if (_cell_id >= 0) {
+		vec3 elut = texture(enum_lut, cell_lut_uv(_cell_id)).rgb;
+		biome = int(elut.r * 255.0 + 0.5);
+		veg   = int(elut.g * 255.0 + 0.5);
+		cover = int(elut.b * 255.0 + 0.5);
+	} else if (_cell_id == -1) {
+		biome = 0;
+		veg = 0;
+		cover = 0;
+	} else {
+		biome = int(enums.r * 255.0 + 0.5);
+		veg   = int(enums.g * 255.0 + 0.5);
+		cover = int(enums.b * 255.0 + 0.5);
+	}
+	// Stage D：use_cell_indirection 时 moisture 取 dyn_lut.g（并入 dyn，退役 scalar.r 消费），
+	// latitude 用 uv.y 解析重建（scalar.b 本是线性纬度 ramp，bilinear 采样在内部逐像素等价）。
+	// flow（scalar.g）是亚六边形河流 SDF，永远保留全分辨率 —— scalar_atlas 仍绑定/采样。
+	float moist;
+	float lat_norm;
+	if (use_cell_indirection) {
+		moist = dyns.g;
+		float _Hf = float(textureSize(cell_index_tex, 0).y);
+		lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
+	} else {
+		moist = scals.r;
+		lat_norm = scals.b;
+	}
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
@@ -139,11 +182,15 @@ void fragment() {
 	float eco_transition = ecos.b;
 	float eco_growth = ecos.a;
 	float eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition);
-	// dyn_valid：仅当 dynamic_cell_atlas 真的写过 cell 真值（temperature 必须 > 哨兵阈值）。
-	// bake_world 阶段 cell.temperature 还未由 refresh_climate_daily 初始化（默认 0.0），
-	// 此时 R 通道接近 0，应当走 derived_temp fallback，避免把全图判为雪线以下。
-	// 同时 G 通道（moisture）默认 ≈0.5 不能作为有效信号；A 通道（vitality）默认 0.7 同理。
-	float dyn_valid = step(0.02, dyn_temp);
+	// [snow-dyn-valid-fix 2026-06-16] 真实格子动态 atlas/LUT 恒为有效。
+	// 历史背景：旧值 step(0.02, dyn_temp) 是为了兜底"bake_world 阶段温度尚未初始化
+	// (默认 0.0)→ atlas R 通道为 0"的时序窗口。但该哨兵把真实极寒格(温度=0)误判为
+	// "未初始化"，导致整格动态状态(含 100% 雪盖)被清零、屏幕不出雪。
+	// 现已在 map_generator.gd 把温度 Bootstrap 前移到 bake_world 之前，atlas 从第 0
+	// 帧即带真实纬度温度，不再存在未初始化窗口，因此恒信 atlas 真值（含温度=0 的极寒）。
+	// 唯一例外：cell-indirection 下地图外哨兵像素（cid<0）采样为 vec4(0)，仍回退
+	// derived_temp，避免地图边缘出现"温度=0 冷边"。on-map 真实格永远有效。
+	float dyn_valid = (use_cell_indirection && _cell_id < 0) ? 0.0 : 1.0;
 	moist = mix(moist, dyn_wet, dyn_valid);
 	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
 	vec2 wind_v          = vects.ba * 2.0 - 1.0;
