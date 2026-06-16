@@ -88,11 +88,21 @@ def absorbed_factor(is_water, temp):
     return (1.0 - a_eff) / ABSORB_REF
 
 
-def run_year_cycle(ny, is_water, model, years=20, steps=365):
+# 冷侧软压缩（2026-06-16 物理化 v2）：模拟极向热输送/海洋热库对冬季过冷的托底。
+# 暖侧(s>=0)不动 → 保留夏季/极昼季节性；冷侧(s<0)按 tanh 软饱和到 -knee：
+#   |s| 小 → 几乎不变（mild 季节降温保留）；|s| 大 → 饱和到 knee（不再无限过冷）。
+def compress_cool(s, knee):
+    if knee is None or s >= 0.0:
+        return s
+    return -knee * math.tanh(abs(s) / knee)
+
+
+def run_year_cycle(ny, is_water, model, years=20, steps=365, knee=None, base_off=0.0):
     """跑多年到稳态，返回最后一年 (min, max, peak_phase)。
-    新模型：吸收因子用【年均温度 t365】（慢 EMA）作冰封代理，避免夏季融化正反馈失控。"""
+    base_off<0 模拟海拔惩罚等额外基线压低。knee 为冷侧软压缩拐点。"""
     alpha = (ALPHA_WATER_OLD if model == "old" else ALPHA_WATER_NEW) if is_water else ALPHA_LAND
-    temp = lat_bell(ny)
+    base = clamp(lat_bell(ny) + base_off, 0.0, 1.0)
+    temp = base
     t365 = temp                      # 年均温度 EMA（冰封代理）
     a365 = 1.0 / steps               # ≈ annual_ema_alpha
     dphase = 4.0 / steps
@@ -108,8 +118,8 @@ def run_year_cycle(ny, is_water, model, years=20, steps=365):
                 season = INSOL_AMP_GAIN * dev
             else:
                 dev = clamp(dev_new(now_i, mean_i), -1.0, 1.0)
-                season = INSOL_AMP_GAIN * absorbed_factor(is_water, t365) * dev
-            target = clamp(lat_bell(ny) + season, 0.0, 1.0)
+                season = compress_cool(INSOL_AMP_GAIN * absorbed_factor(is_water, t365) * dev, knee)
+            target = clamp(base + season, 0.0, 1.0)
             heat_next = temp + (target - temp) * alpha
             d = clamp(heat_next - temp, -DELTA_CAP, DELTA_CAP)
             temp = clamp(temp + d, 0.0, 1.0)
@@ -177,3 +187,31 @@ for aw in (0.040, 0.030, 0.020, 0.016, 0.012, 0.010, 0.008):
     oamp = omax - omin
     r = land_amp / oamp if oamp > 1e-6 else float("inf")
     print(f"  α_water={aw:.3f}  海振幅={oamp:.3f} 海[{omin:.3f},{omax:.3f}]  陆/海={r:.2f}")
+
+print("\n=== 5) 冷侧压缩 knee 扫描：中纬冬季过冷修复 ===")
+print("  目标：温带平原(ny=0.77, elev≈0.45→base_off=-0.18)冬季 min 脱离极寒(>0.06)、最好达严寒(>0.15)；")
+print("        夏季 max 基本不变；高山(base_off=-0.30)允许仍偏冷；极地仍冻结；中纬大陆性保留。\n")
+cases = [
+    ("温带平原 ny=0.77 elev0.45", 0.77, False, -0.18),
+    ("温带丘陵 ny=0.77 elev0.55", 0.77, False, -0.24),
+    ("温带平原 ny=0.72 elev0.30", 0.72, False, -0.12),
+    ("副极地陆 ny=0.85 平原",     0.85, False, -0.10),
+    ("深极地陆 ny=0.95",          0.95, False,  0.00),
+    ("深极地海 ny=0.95",          0.95, True,   0.00),
+]
+for knee in (None, 0.15, 0.13, 0.10):
+    tag = "无压缩" if knee is None else f"knee={knee:.2f}"
+    print(f"  --- {tag} ---")
+    for label, ny, w, bo in cases:
+        mn, mx, _ = run_year_cycle(ny, w, "new", knee=knee, base_off=bo)
+        flag = ""
+        if not w:
+            flag = " 极寒!" if mn < 0.06 else (" 严寒" if mn < 0.20 else " OK")
+        print(f"    {label:24s} 冬min={mn:.3f} 夏max={mx:.3f}{flag}")
+
+print("\n=== 6) 选定 knee=0.13：海陆大陆性是否仍保留（ny=0.72）===")
+lk = report_knee = 0.13
+lc = run_year_cycle(0.72, False, "new", knee=lk)
+sc = run_year_cycle(0.72, True, "new", knee=lk)
+la = lc[1] - lc[0]; sa = sc[1] - sc[0]
+print(f"  陆[{lc[0]:.3f},{lc[1]:.3f}]振幅{la:.3f}  海[{sc[0]:.3f},{sc[1]:.3f}]振幅{sa:.3f}  陆/海={la/sa if sa>1e-6 else 0:.2f}")
