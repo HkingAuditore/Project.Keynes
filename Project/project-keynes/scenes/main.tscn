@@ -74,6 +74,11 @@ custom_minimum_size = Vector2(52, 32)
 layout_mode = 2
 text = "Fit"
 
+[node name="SetupBtn" type="Button" parent="UI/TopBar/HBox" unique_id=1947413787]
+custom_minimum_size = Vector2(64, 32)
+layout_mode = 2
+text = "设置"
+
 [node name="Spacer" type="Control" parent="UI/TopBar/HBox" unique_id=44016093]
 layout_mode = 2
 size_flags_horizontal = 3

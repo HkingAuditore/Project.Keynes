@@ -3941,6 +3941,123 @@ func _write_runtime_enum_axes_dense(map: MapData) -> int:
 	return written
 
 
+func _world_ext_u8_component_id(gd_name: StringName) -> int:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("component_id"):
+		return -1
+	var cid_ext: int = int(_data_core_world_ext.component_id(gd_name))
+	if cid_ext < 0:
+		cid_ext = int(_data_core_world_ext.component_id(StringName(String(gd_name).replace(".", "_"))))
+	return cid_ext
+
+
+func _apply_sea_ice_terrain_flips_indexed(map: MapData, indices: PackedInt32Array,
+		terrain_values: PackedByteArray, sync_cells: bool = true) -> Dictionary:
+	var diag: Dictionary = {
+		"applied": false,
+		"count": 0,
+		"fallback_reason": "",
+		"dc_written": false,
+		"dc_ext_written": false,
+	}
+	if map == null or not map.has_soa():
+		diag["fallback_reason"] = "missing_soa"
+		return diag
+	var n_values: int = mini(indices.size(), terrain_values.size())
+	if n_values <= 0:
+		diag["applied"] = true
+		return diag
+	if map.terrain_arr.size() < map.cell_count() or map.is_water_arr.size() < map.cell_count():
+		diag["fallback_reason"] = "bad_map_array_size"
+		return diag
+	var apply_idx: PackedInt32Array = PackedInt32Array()
+	var apply_terrain: PackedByteArray = PackedByteArray()
+	var apply_water: PackedByteArray = PackedByteArray()
+	apply_idx.resize(n_values)
+	apply_terrain.resize(n_values)
+	apply_water.resize(n_values)
+	var w: int = 0
+	for k in range(n_values):
+		var idx: int = indices[k]
+		if idx < 0 or idx >= map.cell_count():
+			continue
+		var terrain_byte: int = int(terrain_values[k]) & 0xFF
+		var water_byte: int = MapData.terrain_is_water_u8(terrain_byte)
+		if int(map.terrain_arr[idx]) == terrain_byte and int(map.is_water_arr[idx]) == water_byte:
+			continue
+		map.terrain_arr[idx] = terrain_byte
+		map.is_water_arr[idx] = water_byte
+		if sync_cells:
+			var cell: HexCell = map.cell_at(idx)
+			if cell != null:
+				cell.apply_terrain(terrain_byte)
+		if map.has_method("mark_climate_dirty"):
+			map.mark_climate_dirty(idx)
+		apply_idx[w] = idx
+		apply_terrain[w] = terrain_byte
+		apply_water[w] = water_byte
+		w += 1
+	if w <= 0:
+		diag["applied"] = true
+		return diag
+	apply_idx.resize(w)
+	apply_terrain.resize(w)
+	apply_water.resize(w)
+	if _data_core_world != null and _data_core_world.has_method("write_u8_indexed"):
+		var cid_terrain: int = _data_core_world.component_id(DCComponentIds.CELL_TERRAIN)
+		if cid_terrain >= 0:
+			_data_core_world.write_u8_indexed(cid_terrain, apply_idx, apply_terrain)
+			diag["dc_written"] = true
+		var cid_is_water: int = _data_core_world.component_id(DCComponentIds.CELL_IS_WATER)
+		if cid_is_water >= 0:
+			_data_core_world.write_u8_indexed(cid_is_water, apply_idx, apply_water)
+			diag["dc_written"] = true
+	if _data_core_world != null and _data_core_world.has_method("mark_dirty_indexed"):
+		_data_core_world.mark_dirty_indexed(apply_idx)
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("write_u8_indexed"):
+		var cid_terr_ext: int = _world_ext_u8_component_id(DCComponentIds.CELL_TERRAIN)
+		if cid_terr_ext >= 0:
+			_data_core_world_ext.write_u8_indexed(cid_terr_ext, apply_idx, apply_terrain)
+			diag["dc_ext_written"] = true
+		var cid_isw_ext: int = _world_ext_u8_component_id(DCComponentIds.CELL_IS_WATER)
+		if cid_isw_ext >= 0:
+			_data_core_world_ext.write_u8_indexed(cid_isw_ext, apply_idx, apply_water)
+			diag["dc_ext_written"] = true
+	diag["applied"] = true
+	diag["count"] = w
+	return diag
+
+
+func _build_sea_ice_flip_batch(flip_to_ice_list: PackedInt32Array,
+		flip_to_base_list: PackedInt32Array, flip_to_base_terrain: PackedByteArray,
+		start: int = 0, end: int = -1) -> Dictionary:
+	var total: int = flip_to_ice_list.size() + flip_to_base_list.size()
+	var first: int = clampi(start, 0, total)
+	var last: int = total if end < 0 else clampi(end, first, total)
+	var out_idx: PackedInt32Array = PackedInt32Array()
+	var out_terrain: PackedByteArray = PackedByteArray()
+	out_idx.resize(last - first)
+	out_terrain.resize(last - first)
+	var sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
+	var w: int = 0
+	for f in range(first, last):
+		if f < flip_to_ice_list.size():
+			out_idx[w] = int(flip_to_ice_list[f])
+			out_terrain[w] = sea_ice_id
+			w += 1
+		else:
+			var base_i: int = f - flip_to_ice_list.size()
+			if base_i < flip_to_base_list.size() and base_i < flip_to_base_terrain.size():
+				out_idx[w] = int(flip_to_base_list[base_i])
+				out_terrain[w] = int(flip_to_base_terrain[base_i]) & 0xFF
+				w += 1
+	out_idx.resize(w)
+	out_terrain.resize(w)
+	return {
+		"indices": out_idx,
+		"terrain": out_terrain,
+	}
+
+
 # stage 4 用的 donor_table（PackedFloat32Array, size=26, 按 terrain enum 索引）。
 # 复刻 _vegetation_donor_amount 的 10 类型 hot 表 + 其余为 0。
 func _build_vegetation_donor_table_for_gdext() -> PackedFloat32Array:
@@ -7987,22 +8104,33 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 		var flip_start: int = int(_sea_ice_state_machine.get("flip_cursor", 0))
 		var flip_end: int = mini(total_flips, flip_start + budget)
 		var t_flip_us: int = Time.get_ticks_usec()
-		var sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
-		for f in range(flip_start, flip_end):
-			if f < flip_to_ice_list.size():
-				var idx_i: int = flip_to_ice_list[f]
-				if idx_i >= 0 and idx_i < n:
-					var sm_cell_i: HexCell = map.cell_at(idx_i)
-					if sm_cell_i != null:
-						_set_cell_runtime_terrain(map, sm_cell_i, sea_ice_id, true, -1.0, sm_cell_i.snow_cover)
-			else:
-				var base_i: int = f - flip_to_ice_list.size()
-				var idx_b: int = flip_to_base_list[base_i]
-				if idx_b >= 0 and idx_b < n and base_i < flip_to_base_terrain.size():
-					var target_terr: int = int(flip_to_base_terrain[base_i])
-					var sm_cell_b: HexCell = map.cell_at(idx_b)
-					if sm_cell_b != null:
-						_set_cell_runtime_terrain(map, sm_cell_b, target_terr, true, -1.0, sm_cell_b.snow_cover)
+		var flip_batch: Dictionary = _build_sea_ice_flip_batch(flip_to_ice_list, flip_to_base_list, flip_to_base_terrain, flip_start, flip_end)
+		var flip_diag: Dictionary = _apply_sea_ice_terrain_flips_indexed(
+				map,
+				flip_batch.get("indices", PackedInt32Array()),
+				flip_batch.get("terrain", PackedByteArray()),
+				true)
+		if bool(flip_diag.get("applied", false)):
+			_sea_ice_state_machine["terrain_flip_indexed_count"] = int(_sea_ice_state_machine.get("terrain_flip_indexed_count", 0)) + int(flip_diag.get("count", 0))
+		else:
+			_sea_ice_state_machine["terrain_flip_legacy_fallback"] = true
+			_sea_ice_state_machine["terrain_flip_fallback_reason"] = str(flip_diag.get("fallback_reason", "unknown"))
+			var sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
+			for f in range(flip_start, flip_end):
+				if f < flip_to_ice_list.size():
+					var idx_i: int = flip_to_ice_list[f]
+					if idx_i >= 0 and idx_i < n:
+						var sm_cell_i: HexCell = map.cell_at(idx_i)
+						if sm_cell_i != null:
+							_set_cell_runtime_terrain(map, sm_cell_i, sea_ice_id, true, -1.0, sm_cell_i.snow_cover)
+				else:
+					var base_i: int = f - flip_to_ice_list.size()
+					var idx_b: int = flip_to_base_list[base_i]
+					if idx_b >= 0 and idx_b < n and base_i < flip_to_base_terrain.size():
+						var target_terr: int = int(flip_to_base_terrain[base_i])
+						var sm_cell_b: HexCell = map.cell_at(idx_b)
+						if sm_cell_b != null:
+							_set_cell_runtime_terrain(map, sm_cell_b, target_terr, true, -1.0, sm_cell_b.snow_cover)
 		_sea_ice_state_machine["flip_ms"] = float(_sea_ice_state_machine.get("flip_ms", 0.0)) + (Time.get_ticks_usec() - t_flip_us) / 1000.0
 		_sea_ice_state_machine["flip_cursor"] = flip_end
 		if flip_end >= total_flips:
@@ -8012,9 +8140,13 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 		flip_result["cursor_remaining"] = maxi(0, total_flips - flip_end)
 		flip_result["budget_cells"] = budget
 		flip_result["next_stage"] = str(_sea_ice_state_machine.get("stage", _SEA_ICE_STAGE_TERRAIN_FLIP_CHUNK))
+		flip_result["terrain_flip_path"] = "legacy_set_cell_runtime_terrain" if bool(_sea_ice_state_machine.get("terrain_flip_legacy_fallback", false)) else "indexed"
+		flip_result["terrain_flip_count"] = int(_sea_ice_state_machine.get("terrain_flip_indexed_count", 0))
+		flip_result["fallback_reason"] = str(_sea_ice_state_machine.get("terrain_flip_fallback_reason", ""))
 		return flip_result
 	var t_commit_us: int = Time.get_ticks_usec()
-	_write_runtime_enum_axes_dense(map)
+	if bool(_sea_ice_state_machine.get("terrain_flip_legacy_fallback", false)):
+		_write_runtime_enum_axes_dense(map)
 	var water_count: int = int(_sea_ice_state_machine.get("water", 0))
 	var flipped_count: int = int(_sea_ice_state_machine.get("flipped", 0))
 	# [BUG-FIX 2026-05-23 海冰看似不动] 诊断：本 pass 我们显式 mark_dirty 的 cell 数。
@@ -8043,6 +8175,9 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 		"native_wall_ms": float(_sea_ice_state_machine.get("native_wall_ms", 0.0)),
 		"sync_ms": float(_sea_ice_state_machine.get("sync_ms", 0.0)),
 		"flip_ms": float(_sea_ice_state_machine.get("flip_ms", 0.0)),
+		"terrain_flip_path": "legacy_set_cell_runtime_terrain" if bool(_sea_ice_state_machine.get("terrain_flip_legacy_fallback", false)) else "indexed",
+		"terrain_flip_count": int(_sea_ice_state_machine.get("terrain_flip_indexed_count", 0)),
+		"terrain_flip_fallback_reason": str(_sea_ice_state_machine.get("terrain_flip_fallback_reason", "")),
 		"commit_ms": (Time.get_ticks_usec() - t_commit_us) / 1000.0,
 		"total_wall_ms": (Time.get_ticks_usec() - int(_sea_ice_state_machine.get("total_start_us", Time.get_ticks_usec()))) / 1000.0,
 		"water": water_count,
@@ -8377,21 +8512,28 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			var flip_to_ice_list: PackedInt32Array = knobs.get("flip_to_ice_list", PackedInt32Array())
 			var flip_to_base_list: PackedInt32Array = knobs.get("flip_to_base_list", PackedInt32Array())
 			var flip_to_base_terrain: PackedByteArray = knobs.get("flip_to_base_terrain", PackedByteArray())
-			var _sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
-			for i_flip in range(flip_to_ice_list.size()):
-				var idx_i: int = flip_to_ice_list[i_flip]
-				if idx_i >= 0 and idx_i < n_cells_fast:
-					var fast_cell_i: HexCell = map.cell_at(idx_i)
-					if fast_cell_i != null:
-						_set_cell_runtime_terrain(map, fast_cell_i, _sea_ice_id, true, -1.0, fast_cell_i.snow_cover)
-			for i_back in range(flip_to_base_list.size()):
-				var idx_b: int = flip_to_base_list[i_back]
-				if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
-					var target_terr: int = int(flip_to_base_terrain[i_back])
-					var fast_cell_b: HexCell = map.cell_at(idx_b)
-					if fast_cell_b != null:
-						_set_cell_runtime_terrain(map, fast_cell_b, target_terr, true, -1.0, fast_cell_b.snow_cover)
-			_write_runtime_enum_axes_dense(map)
+			var flip_batch: Dictionary = _build_sea_ice_flip_batch(flip_to_ice_list, flip_to_base_list, flip_to_base_terrain)
+			var flip_diag: Dictionary = _apply_sea_ice_terrain_flips_indexed(
+					map,
+					flip_batch.get("indices", PackedInt32Array()),
+					flip_batch.get("terrain", PackedByteArray()),
+					true)
+			if not bool(flip_diag.get("applied", false)):
+				var _sea_ice_id: int = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
+				for i_flip in range(flip_to_ice_list.size()):
+					var idx_i: int = flip_to_ice_list[i_flip]
+					if idx_i >= 0 and idx_i < n_cells_fast:
+						var fast_cell_i: HexCell = map.cell_at(idx_i)
+						if fast_cell_i != null:
+							_set_cell_runtime_terrain(map, fast_cell_i, _sea_ice_id, true, -1.0, fast_cell_i.snow_cover)
+				for i_back in range(flip_to_base_list.size()):
+					var idx_b: int = flip_to_base_list[i_back]
+					if idx_b >= 0 and idx_b < n_cells_fast and i_back < flip_to_base_terrain.size():
+						var target_terr: int = int(flip_to_base_terrain[i_back])
+						var fast_cell_b: HexCell = map.cell_at(idx_b)
+						if fast_cell_b != null:
+							_set_cell_runtime_terrain(map, fast_cell_b, target_terr, true, -1.0, fast_cell_b.snow_cover)
+				_write_runtime_enum_axes_dense(map)
 			var flip_ms: float = (Time.get_ticks_usec() - t_flip_us) / 1000.0
 
 			var water_count_cpp: int = int(knobs.get("stat_water_count", 0))
@@ -8474,6 +8616,9 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				"native_wall_ms": native_wall_ms,
 				"sync_ms": sync_ms,
 				"flip_ms": flip_ms,
+				"terrain_flip_path": "indexed" if bool(flip_diag.get("applied", false)) else "legacy_set_cell_runtime_terrain",
+				"terrain_flip_count": int(flip_diag.get("count", 0)),
+				"terrain_flip_fallback_reason": str(flip_diag.get("fallback_reason", "")),
 				"total_wall_ms": (Time.get_ticks_usec() - t_total_us) / 1000.0,
 				"water": water_count_cpp,
 				"flipped": flipped_count_cpp,
