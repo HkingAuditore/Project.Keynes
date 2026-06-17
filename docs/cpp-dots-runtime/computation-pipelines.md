@@ -527,9 +527,49 @@ Cadence contract:
 - One tick is one game day. `OceanCurrentsJob` keeps the registered SUS policy
   always-on so the job can enter every day.
 - Each day starts with a lightweight C++ wind prepass:
-  `MapBaker.run_daily_wind_field_update()` calls `run_slp_field_pass` and
-  `run_wind_field_pass`, publishing `cell_slp`, `cell_wind_x/y`, and
-  `cell_wind_speed` back to the C++ slots / `MapData` mirror.
+  `MapBaker.run_daily_wind_field_update(map, world, cfg, hex_size, season_phase,
+  sim_day, stage)` calls `run_slp_field_pass` and/or `run_wind_field_pass`,
+  publishing `cell_slp`, `cell_wind_x/y`, and `cell_wind_speed` back to the C++
+  slots / `MapData` mirror.
+- 2-tick SLP/wind split (`plan/daily-wind-stage-split`, profile flag
+  `ClimateProfile.daily_wind_split_passes`, default `true`): the `stage`
+  argument selects which kernels run this tick — `"slp"`, `"wind"`, or `"both"`.
+  `OceanCurrentsJob` alternates by game-day parity (`day_index % 2`): even days
+  run SLP only (~3ms), odd days run wind only (~1ms). The first prepass after a
+  reset (and any cold start where `map.slp_arr` size is stale) runs `"both"` as a
+  safety net so wind never reads an empty/old SLP. This drops the single-tick SUS
+  peak from ~5ms (SLP+wind together) to ~3ms, freeing budget for the starved
+  atlas upload. Each kernel still refreshes daily-but-staggered; at 20–50x the
+  every-other-day cadence is imperceptible. Set the flag `false` to restore the
+  merged every-day path (regression / low-speed precision).
+- The prepass report splits the two kernels for attribution: `slp_ms` /
+  `wind_ms` plus `slp_stage_name=daily_wind_slp` / `wind_stage_name=
+  daily_wind_wind`, `slp_ran` / `wind_ran`, `stage_requested`, and
+  `dominant_stage` / `dominant_stage_ms`. `path` reflects the stage actually run
+  (`gdext_daily_wind`, `gdext_daily_wind_slp`, or `gdext_daily_wind_wind`). The
+  ocean job surfaces these on the slice report (and `substage=dominant_stage` on
+  wind-only days) so the scheduler log attributes the budget to SLP vs wind
+  without changing the kernels. See `scheduling-and-job-graph.md` for the report
+  shape.
+- SLP-internal instrumentation: `run_slp_field_pass` returns `slp_passA_ms`
+  (per-cell baseline build), `slp_passB_ms` (6-neighbor smoothing), `slp_norm_ms`
+  (recenter + p95 sort + scale), and `slp_marshall_ms` (prev-blend + recenter +
+  delta + slot publish). `elapsed_ms` (= `slp_ms`) excludes the trailing
+  diagnostic-stats sort, matching historical behaviour. These flow through the
+  prepass report and the ocean breakdown so the `daily_wind/slp_internal` log
+  line shows where the SLP cost lands.
+- Latitude LUT (`plan/slp-lat-lut`): passA's baseline used to call
+  `dc_insolation_now` (~9 transcendentals) and `dc_insolation_annual_mean`
+  (a 16-sample annual integral, ~144 transcendentals) plus `base_lat`/`s_lat`
+  trig **per cell** — ~155 transcendentals × `n_cells` (~1M for 6400 cells) every
+  pass. All of these are functions of latitude `ny` only (the annual mean is even
+  season-independent), so `run_slp_field_pass` now precomputes `base_lat(ny)` and
+  `solar_heat(ny)` into a `slp_lat_lut_bins`-entry LUT (default 1024, clamp
+  16–8192) once per pass and the cell loop does a single linear interpolation.
+  Only the genuinely per-cell `synoptic` term (uses cell index `i`) keeps its two
+  transcendentals. This drops passA from ~2.9ms to a few tenths of a ms. Set
+  `slp_lat_lut_bins=8192` for a near-exact A/B reference; interp error at 1024
+  bins (~0.18° latitude) is far below the natural day-to-day `slp_delta_p95`.
 - The prepass uses `SusTickContext.day_index` as C++ `sim_day`. `main.gd`
   forwards the `day_changed(day_idx)` signal value rather than re-reading the
   final `WorldClock.day_index()`, so catch-up ticks still advance wind one day
@@ -880,6 +920,34 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   `ocean_current_clamp_ratio`, and `ocean_current_max_magnitude`. The same
   fields are cached by `MapBaker`, forwarded through `OceanCurrentsJob`, and
   exported by `TileDataRecorder` as `phys_ocean_current_*` columns.
+
+### PSI solver SOR warm-start (plan/psi-warm-start, 2026-06-17)
+
+- `run_psi_solver_pass` solves the ocean stream-function ψ with SOR
+  (Gauss-Seidel + over-relaxation, `psi_sor_omega≈1.4`). The cost is roughly
+  `n_water × 6 × psi_total_iters`; with ~2200 water cells the old 40-iteration
+  cold start was the dominant ~1ms inside the recurring `phys_psi_init` peak
+  (SLP prepass + PSI stacking on the same tick).
+- The stream-function changes only slightly day-to-day (the daily delta is just
+  the wind-stress-curl increment), so the previous tick's converged ψ is an
+  excellent initial guess. The kernel now **warm-starts** by default: at pass
+  start it seeds `psi[k]` from the last value published to the `cell_ocean_psi`
+  slot (mapped via `water_to_cell[k]`) instead of zero. SOR then starts from a
+  near-converged state and only needs to absorb the small daily residual.
+- Knob `psi_warm_start` (default `true`) gates this. With warm-start on,
+  `psi_total_iters` was lowered `40 → 16` (`MapBaker._PHYS_PSI_TOTAL_ITERS`),
+  cutting the PSI stage from ~1ms to ~0.3ms while *improving* convergence
+  quality versus a 40-iteration cold start. Set `psi_warm_start=false` (and
+  raise iterations) only for cold-start A/B comparison.
+- Cold-start safety: on the very first solve (or whenever the slot is missing /
+  size-mismatched / warm-start disabled) `PSI_PREV` is null and ψ falls back to
+  the zero initial guess, so behavior degrades gracefully. The initial bake's
+  physical solve already publishes ψ to the slot, so SUS round 1 is normally
+  warm too.
+- Validation: watch `phys_slice`'s `ocean_delta_p95` — it should stay smooth
+  (no large per-tick jumps). A sudden increase after lowering iterations means
+  under-convergence; raise `psi_total_iters` or re-check that warm-start is
+  engaging.
 
 ### Ocean physical / visual split
 

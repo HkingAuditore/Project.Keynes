@@ -50,8 +50,25 @@ signal speed_changed(new_speed: float)
 # 加速档位下会自动调档（见 _apply_phase_step_for_speed）。
 @export_range(0.0, 0.05, 0.0005) var season_phase_emit_step: float = 0.0
 
+# plan/best-effort-sim-stepping（2026-06-17）：best-effort 吞吐模型的每帧闸。
+# 倍速 = "目标天/秒"，而非死锁墙钟的契约。每帧最多推进有限天数（时间盒 +
+# 硬上限），跑不完的整数天直接丢弃（不积债）→ 杜绝 fast-forward 的死亡螺旋
+# （高倍速下单帧串行跑 N 个 SUS tick 把帧时拖到 200ms / 5FPS）。
+# sim_frame_budget_ms：一帧用于"堆叠日级 tick"的墙钟时间盒。一帧 ~16.7ms@60fps，
+#   留出 render/UI 余量，8ms 约可跑 2 个 ~4ms 的 tick。机器跑得动时根本撞不到，
+#   只有过载（目标 > 可持续吞吐）时才生效，此时有效倍速平滑降级、FPS 保持。
+@export_range(1.0, 33.0, 0.5) var sim_frame_budget_ms: float = 8.0
+# max_sim_days_per_frame：单帧推进天数的硬上限（安全阀，兜住时间盒之外的极端）。
+@export_range(1, 64, 1) var max_sim_days_per_frame: int = 8
+# debug_step_log：临时诊断开关。开后每 ~120 帧打一行 [clock/step]，对比 _process
+# 墙钟与 render-profile 的 sus_frame_avg，定位高倍速 FPS 跌的成本落在循环内还是 present。
+@export var debug_step_log: bool = true
+
 # ─── 运行时状态 ──────────────────────────────────────────────────────────
-var current_day: float = 0.0   # 累积浮点天数
+var current_day: float = 0.0   # 累积浮点天数 = _last_day(已模拟整数日) + _day_carry
+# plan/best-effort-sim-stepping：不足 1 天的小数残留。低速（<1 天/帧）时累加到 1
+# 再推进一日，并体现到 current_day 小数部分驱动 day_phase 平滑；过载丢弃整数部分。
+var _day_carry: float = 0.0
 var paused: bool = false
 var speed_multiplier: float = 1.0
 
@@ -96,6 +113,10 @@ func _emit_initial_signals() -> void:
 	_last_day = d
 	_last_season = s
 	_last_year = y
+	# best-effort：current_day 现在派生自 _last_day + _day_carry，初始对齐到整日。
+	_day_carry = current_day - float(_last_day)
+	if _day_carry < 0.0:
+		_day_carry = 0.0
 	day_changed.emit(d)
 	season_changed.emit(s)
 	year_changed.emit(y)
@@ -108,37 +129,66 @@ func _emit_initial_signals() -> void:
 	_last_emit_season_phase = sp
 	season_phase_changed.emit(sp)
 
+# best-effort-sim-stepping（plan/best-effort-sim-stepping）：推进"一个已模拟日"。
+# 等价于旧 _process while 循环体：_last_day += 1、发 day_changed，并按需发
+# season_changed / year rollover。注意 _last_day 始终连续 +1、不跳整数日——过载时
+# 是"少推进几天"（有效倍速降级、日历推进变慢），而非跳过某天，所以 season/year
+# 边界都会被精确命中。（intra-tick 的 sea_ice dt_days>1 来自各 job 自身 stride，与此无关。）
+func _advance_one_sim_day() -> void:
+	_last_day += 1
+	day_changed.emit(_last_day)
+	var day_season: int = season_index_for_day(_last_day)
+	if day_season != _last_season:
+		_last_season = day_season
+		season_changed.emit(day_season)
+	var day_year: int = year_index_for_day(_last_day)
+	if day_year != _last_year:
+		_last_year = day_year
+		_apply_year_rollover(day_year)
+
 func _process(delta: float) -> void:
 	if paused or speed_multiplier <= 0.0:
 		return
-	current_day += delta * speed_multiplier
-	var d := day_index()
-	if d != _last_day:
-		if d > _last_day:
-			var next_day: int = _last_day + 1
-			while next_day <= d:
-				_last_day = next_day
-				day_changed.emit(next_day)
-				var day_season: int = season_index_for_day(next_day)
-				if day_season != _last_season:
-					_last_season = day_season
-					season_changed.emit(day_season)
-				var day_year: int = year_index_for_day(next_day)
-				if day_year != _last_year:
-					_last_year = day_year
-					_apply_year_rollover(day_year)
-				next_day += 1
-		else:
-			_last_day = d
-			day_changed.emit(d)
-	var s := season_index()
-	if s != _last_season:
-		_last_season = s
-		season_changed.emit(s)
-	var y := year_index()
-	if y != _last_year:
-		_last_year = y
-		_apply_year_rollover(y)
+	# 自初始化兜底：_emit_initial_signals（call_deferred）可能晚于首帧 _process。
+	# _last_day 仍是 -1 哨兵时，先对齐到当前整日，避免 current_day 派生出负值。
+	if _last_day < 0:
+		_last_day = int(floor(current_day))
+		_day_carry = current_day - float(_last_day)
+	# best-effort 吞吐模型（plan/best-effort-sim-stepping）：倍速 = 目标天/秒。
+	# 本帧目标推进量先按硬上限封顶——即便上一帧卡顿导致 delta 巨大，也不会把
+	# 成百天一次性灌进来点燃死亡螺旋。
+	var target: float = delta * speed_multiplier
+	if target > float(max_sim_days_per_frame):
+		target = float(max_sim_days_per_frame)
+	_day_carry += target
+
+	# 时间盒 + 硬上限：本帧最多推进 max_sim_days_per_frame 天，且至少跑满 1 天后
+	# 一旦累计耗时超预算就停。每个 _advance_one_sim_day 会同步触发 _on_day_changed
+	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
+	var t0_us: int = Time.get_ticks_usec()
+	var ran: int = 0
+	while _day_carry >= 1.0 and ran < max_sim_days_per_frame:
+		if ran > 0 and float(Time.get_ticks_usec() - t0_us) / 1000.0 >= sim_frame_budget_ms:
+			break
+		_day_carry -= 1.0
+		_advance_one_sim_day()
+		ran += 1
+
+	# best-effort：本帧没追完的整数天直接丢弃，只保留 < 1 天的小数 carry。这是杜绝
+	# spiral 的关键——债务永不累积，过载时有效倍速平滑降级、FPS 保持稳定。
+	if _day_carry >= 1.0:
+		_day_carry -= floor(_day_carry)
+
+	# best-effort 诊断（临时，plan/best-effort-sim-stepping）：本帧推进了几天、
+	# 日循环花了多久。和 render-profile 的 sus_frame_avg(~45ms) 对比即可定位：
+	#   loop_ms ≈ proc_ms ≪ 45ms  → 35ms 在 _process 之外（渲染/present GPU 同步）。
+	#   loop_ms ≈ 45ms            → 日循环本身超预算（budget 失效或单日 >预算）。
+	var _loop_ms: float = float(Time.get_ticks_usec() - t0_us) / 1000.0
+
+	# current_day 派生：已模拟整数日 + 小数 carry。低速（target<1）下 carry 平滑累加，
+	# 驱动 day_phase/season_phase 连续过渡；高速下小数部分无实际意义但无害。
+	# season/year 已在 _advance_one_sim_day 内逐日处理，这里不再重复检测。
+	current_day = float(_last_day) + _day_carry
 	# 任务 2：day_phase 节流发射
 	var dp := day_phase()
 	if _should_emit_day_phase(dp):
@@ -149,6 +199,13 @@ func _process(delta: float) -> void:
 	if _should_emit_season_phase(sp):
 		_last_emit_season_phase = sp
 		season_phase_changed.emit(sp)
+
+	# best-effort 诊断打印（临时）：每 ~120 个 _process 帧打一行，含 delta、目标天、
+	# 实际推进天数 ran、日循环墙钟 _loop_ms、整个 _process 墙钟 proc_ms。
+	if debug_step_log and Engine.get_process_frames() % 120 == 0:
+		var _proc_ms: float = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd ran=%d loop=%.2fms proc=%.2fms carry=%.2f"
+			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier, ran, _loop_ms, _proc_ms, _day_carry])
 
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 

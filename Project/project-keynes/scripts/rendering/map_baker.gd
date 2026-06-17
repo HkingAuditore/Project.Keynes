@@ -466,10 +466,14 @@ const _PHYS_STAGE_UPWELLING: int = 6      # 解沿岸 Ekman + 高纬冷沉 ~3ms
 const _PHYS_STAGE_WIND_RASTER: int = 7    # NaN 守门 + 风场 RG8 光栅化 ~3ms
 const _PHYS_STAGE_DONE: int = 8
 
-# SOR 总迭代数（与 PhysicalCirculationSolver._PSI_DEFAULT_ITERS 对齐）+
-# 每次 step_one 推进的迭代量。8/40 → 5 个 step 完成 ψ；每个 step ~2ms（2400 cells
-# 中典型 ~1300 个水格 × 6 邻居 × 8 iter ≈ 60k 浮点）。
-const _PHYS_PSI_TOTAL_ITERS: int = 40
+# SOR 总迭代数。psi_total_iters 直接传给 C++ run_psi_solver_pass（一次跑完），
+# 也用于 GDScript fallback 的 8/step 分摊。
+# plan/psi-warm-start（2026-06-17）：40→16。C++ run_psi_solver_pass 现默认 warm-start
+# （用上一轮发布在 cell_ocean_psi slot 的 ψ 作 SOR 初值，psi_warm_start=true）。洋流
+# 流函数日间变化极小，warm-start 后残差很小，16 次 Gauss-Seidel 扫描足以重新收敛，
+# PSI kernel 从 ~1ms 降到 ~0.3ms。验证：日志 phys_slice 的 ocean_delta_p95 应保持
+# 平滑（不再每轮大幅跳动）。若需冷启动对照，传 psi_warm_start=false 并回调迭代数。
+const _PHYS_PSI_TOTAL_ITERS: int = 16
 const _PHYS_PSI_ITERS_PER_STEP: int = 8
 
 # Phys Solve Sliced：WIND_RASTER 阶段把"hex → W×H RGB8 风场 buffer"分多步写盘。
@@ -5249,8 +5253,20 @@ func get_physical_circulation_diag() -> Dictionary:
 		"daily_wind_refresh_ms": float(_daily_wind_diag_last.get("refresh_ms", -1.0)),
 		"daily_wind_slp_ms": float(_daily_wind_diag_last.get("slp_ms", -1.0)),
 		"daily_wind_wind_ms": float(_daily_wind_diag_last.get("wind_ms", -1.0)),
+		"daily_wind_stage_requested": str(_daily_wind_diag_last.get("stage_requested", "both")),
+		"daily_wind_slp_ran": bool(_daily_wind_diag_last.get("slp_ran", false)),
+		"daily_wind_wind_ran": bool(_daily_wind_diag_last.get("wind_ran", false)),
+		"daily_wind_slp_passA_ms": float(_daily_wind_diag_last.get("slp_passA_ms", -1.0)),
+		"daily_wind_slp_passB_ms": float(_daily_wind_diag_last.get("slp_passB_ms", -1.0)),
+		"daily_wind_slp_norm_ms": float(_daily_wind_diag_last.get("slp_norm_ms", -1.0)),
+		"daily_wind_slp_marshall_ms": float(_daily_wind_diag_last.get("slp_marshall_ms", -1.0)),
 		"daily_wind_fallback_reason": str(_daily_wind_diag_last.get("fallback_reason", "")),
-		"daily_wind_commit_ok": bool(_daily_wind_diag_last.get("wind_commit_ok", false)),
+		# 本 tick 实跑段是否成功：ran 且无 fallback_reason。直接读 wind_commit_ok 会在
+		# SLP-only 日误报 false（wind 本就没跑），故改用 ran/fallback。
+		"daily_wind_commit_ok": bool(_daily_wind_diag_last.get("ran", false)) \
+				and str(_daily_wind_diag_last.get("fallback_reason", "")) == "",
+		"daily_wind_slp_commit_ok": bool(_daily_wind_diag_last.get("slp_commit_ok", false)),
+		"daily_wind_wind_commit_ok": bool(_daily_wind_diag_last.get("wind_commit_ok", false)),
 		"daily_wind_slp_delta_p95": float(_daily_wind_diag_last.get("slp_delta_p95", 0.0)),
 		"daily_wind_delta_p95": float(_daily_wind_diag_last.get("wind_delta_p95", 0.0)),
 		"psi_path": _psi_path_str_last,
@@ -5266,11 +5282,19 @@ func get_physical_circulation_diag() -> Dictionary:
 
 
 func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
-		hex_size: float, season_phase: float, sim_day_override: int = -1) -> Dictionary:
+		hex_size: float, season_phase: float, sim_day_override: int = -1,
+		stage: String = "both") -> Dictionary:
+	# plan/daily-wind-stage-split（2026-06-17）：每日 wind 权威拆成 SLP / wind 两段。
+	# stage="both" 一次跑两段（首跑/回归/冷启动安全网），"slp"/"wind" 各只跑一段，
+	# 让 OceanCurrentsJob 按游戏日 parity 错峰调用，把单 tick 峰值从 ~5ms 降到
+	# ~3ms(SLP)/~1ms(wind)。wind-only 读 map.slp_arr（上一 SLP tick 的发布值）。
 	var t0_us: int = Time.get_ticks_usec()
 	var out: Dictionary = {
 		"ran": false,
 		"path": "daily_wind_skip",
+		"stage_requested": stage,
+		"slp_ran": false,
+		"wind_ran": false,
 		"elapsed_ms": 0.0,
 		"refresh_ms": 0.0,
 		"slp_ms": -1.0,
@@ -5287,6 +5311,10 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		"slp_delta_p95": 0.0,
 		"slp_thermal_p95": 0.0,
 		"wind_delta_p95": 0.0,
+		"slp_passA_ms": -1.0,
+		"slp_passB_ms": -1.0,
+		"slp_norm_ms": -1.0,
+		"slp_marshall_ms": -1.0,
 	}
 	var fail := func(reason: String) -> Dictionary:
 		out["fallback_reason"] = reason
@@ -5316,6 +5344,14 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 	if nb_idx.size() < n_cells * 6:
 		return fail.call("neighbor_indices_too_small")
 
+	# 决定本 tick 跑哪段。wind-only 但 map.slp_arr 尺寸不齐（冷启动/换图）→ 本 tick
+	# 补跑 SLP，保证 wind 永不读到空/旧尺寸 slp。
+	var do_slp: bool = (stage != "wind")
+	var do_wind: bool = (stage != "slp")
+	if do_wind and not do_slp and map.slp_arr.size() != n_cells:
+		do_slp = true
+		out["stage_note"] = "wind_only_slp_primed"
+
 	var t_refresh_us: int = Time.get_ticks_usec()
 	if _world_ext.has_method("refresh_slots_from_map"):
 		_world_ext.refresh_slots_from_map()
@@ -5336,117 +5372,139 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 	water_ids.append(int(TerrainType.TERRAIN.REEF))
 	water_ids.append(int(TerrainType.TERRAIN.KELP))
 
-	var knobs_slp := {
-		"n_cells": n_cells,
-		"hex_size": hex_size,
-		"season_phase": season_phase,
-		"smooth_passes": 1,
-		"world_bounds_pos_y": bounds.position.y,
-		"world_bounds_size_y": bounds.size.y,
-		"neighbor_indices": nb_idx,
-		"water_terrain_ids": water_ids,
-		"prev_slp_arr": map.slp_arr,
-		"slp_lat_amp": 0.16,
-		"slp_land_amp": 0.55,
-		"slp_water_damp": 0.20,
-		"slp_interior_boost": 1.30,
-		"slp_coast_damp": 0.60,
-		"slp_target_p95": 0.18,
-		"days_per_year": days_per_year_phys,
-		"sim_day": sim_day_phys,
-		"world_seed": world_seed_phys,
-		"axial_tilt_deg": profile.axial_tilt_deg,
-		"insolation_daylen_amp": profile.insolation_daylen_amp,
-		"wind_thermal_slp_weight": profile.wind_thermal_slp_weight,
-		"slp_ice_high_weight": profile.slp_ice_high_weight,
-		"slp_snow_high_weight": profile.slp_snow_high_weight,
-		"slp_response_rate": profile.slp_response_rate,
-		"slp_synoptic_amp": profile.slp_synoptic_amp,
-		"slp_moist_low_weight": profile.slp_moist_low_weight,
-	}
-	var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
-	if ret_slp == null or typeof(ret_slp) != TYPE_DICTIONARY:
-		return fail.call("slp_non_dict")
-	var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
-	var slp_out: PackedFloat32Array = ret_slp.get("slp_out", PackedFloat32Array())
-	var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
-	out["slp_ms"] = rc_slp
-	out["slp_published_to_slot"] = slp_published_to_slot
-	_phys_last_slp_rc_ms = rc_slp
-	_phys_last_slp_out_size = slp_out.size()
-	_phys_last_slp_published_to_slot = slp_published_to_slot
-	_phys_last_slp_commit_ok = rc_slp >= 0.0 and slp_out.size() == n_cells
-	if rc_slp < 0.0 or slp_out.size() != n_cells:
-		return fail.call("slp_failed:%s" % str(ret_slp.get("reason", "")))
-	if not slp_published_to_slot:
-		for i_slp in range(n_cells):
-			map.slp_arr[i_slp] = slp_out[i_slp]
-	_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
-	_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
-	_slp_native_ms_last = rc_slp
-	_slp_path_str_last = "gdext"
-	out["slp_commit_ok"] = true
-	out["slp_delta_p95"] = _slp_delta_p95_last
-	out["slp_thermal_p95"] = _slp_thermal_p95_last
+	var slp_out: PackedFloat32Array = PackedFloat32Array()
+	if do_slp:
+		var knobs_slp := {
+			"n_cells": n_cells,
+			"hex_size": hex_size,
+			"season_phase": season_phase,
+			"smooth_passes": 1,
+			"world_bounds_pos_y": bounds.position.y,
+			"world_bounds_size_y": bounds.size.y,
+			"neighbor_indices": nb_idx,
+			"water_terrain_ids": water_ids,
+			"prev_slp_arr": map.slp_arr,
+			"slp_lat_amp": 0.16,
+			"slp_land_amp": 0.55,
+			"slp_water_damp": 0.20,
+			"slp_interior_boost": 1.30,
+			"slp_coast_damp": 0.60,
+			"slp_target_p95": 0.18,
+			"days_per_year": days_per_year_phys,
+			"sim_day": sim_day_phys,
+			"world_seed": world_seed_phys,
+			"axial_tilt_deg": profile.axial_tilt_deg,
+			"insolation_daylen_amp": profile.insolation_daylen_amp,
+			"wind_thermal_slp_weight": profile.wind_thermal_slp_weight,
+			"slp_ice_high_weight": profile.slp_ice_high_weight,
+			"slp_snow_high_weight": profile.slp_snow_high_weight,
+			"slp_response_rate": profile.slp_response_rate,
+			"slp_synoptic_amp": profile.slp_synoptic_amp,
+			"slp_moist_low_weight": profile.slp_moist_low_weight,
+		}
+		var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
+		if ret_slp == null or typeof(ret_slp) != TYPE_DICTIONARY:
+			return fail.call("slp_non_dict")
+		var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
+		slp_out = ret_slp.get("slp_out", PackedFloat32Array())
+		var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
+		out["slp_ms"] = rc_slp
+		out["slp_published_to_slot"] = slp_published_to_slot
+		# 埋点 surface：C++ run_slp_field_pass 内部分段计时（缺失=-1，旧 DLL 兼容）。
+		out["slp_passA_ms"] = float(ret_slp.get("slp_passA_ms", -1.0))
+		out["slp_passB_ms"] = float(ret_slp.get("slp_passB_ms", -1.0))
+		out["slp_norm_ms"] = float(ret_slp.get("slp_norm_ms", -1.0))
+		out["slp_marshall_ms"] = float(ret_slp.get("slp_marshall_ms", -1.0))
+		_phys_last_slp_rc_ms = rc_slp
+		_phys_last_slp_out_size = slp_out.size()
+		_phys_last_slp_published_to_slot = slp_published_to_slot
+		_phys_last_slp_commit_ok = rc_slp >= 0.0 and slp_out.size() == n_cells
+		if rc_slp < 0.0 or slp_out.size() != n_cells:
+			return fail.call("slp_failed:%s" % str(ret_slp.get("reason", "")))
+		if not slp_published_to_slot:
+			for i_slp in range(n_cells):
+				map.slp_arr[i_slp] = slp_out[i_slp]
+		_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
+		_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
+		_slp_native_ms_last = rc_slp
+		_slp_path_str_last = "gdext"
+		out["slp_commit_ok"] = true
+		out["slp_delta_p95"] = _slp_delta_p95_last
+		out["slp_thermal_p95"] = _slp_thermal_p95_last
+		out["slp_ran"] = true
 
-	var slp_for_wind: PackedFloat32Array = map.slp_arr if map.slp_arr.size() == n_cells else slp_out
-	var terrain_aware: bool = profile.enable_terrain_aware_wind
-	var knobs_wind := {
-		"n_cells": n_cells,
-		"hex_size": hex_size,
-		"season_phase": season_phase,
-		"terrain_aware": (1 if terrain_aware else 0),
-		"world_bounds_pos_y": bounds.position.y,
-		"world_bounds_size_y": bounds.size.y,
-		"neighbor_indices": nb_idx,
-		"slp_arr": slp_for_wind,
-		"water_terrain_ids": water_ids,
-		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
-		"land_lf_peak": int(LandformType.LF.PEAK),
-		"land_lf_hill": int(LandformType.LF.HILL),
-		"days_per_year": days_per_year_phys,
-		"sim_day": sim_day_phys,
-		"world_seed": world_seed_phys,
-		"axial_tilt_deg": profile.axial_tilt_deg,
-		"wind_response_rate": profile.wind_response_rate,
-		"wind_synoptic_amp": profile.wind_synoptic_amp,
-		"wind_belt_only_debug": profile.wind_belt_only_debug,
-	}
-	var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
-	var rc_wind: float = float(rc_wind_raw) if rc_wind_raw != null else -1.0
-	out["wind_ms"] = rc_wind
-	_phys_last_wind_rc_ms = rc_wind
-	if rc_wind < 0.0:
-		_phys_wind_done_by_cpp = false
-		return fail.call("wind_failed")
+	if do_wind:
+		var slp_for_wind: PackedFloat32Array = map.slp_arr if map.slp_arr.size() == n_cells else slp_out
+		var terrain_aware: bool = profile.enable_terrain_aware_wind
+		var knobs_wind := {
+			"n_cells": n_cells,
+			"hex_size": hex_size,
+			"season_phase": season_phase,
+			"terrain_aware": (1 if terrain_aware else 0),
+			"world_bounds_pos_y": bounds.position.y,
+			"world_bounds_size_y": bounds.size.y,
+			"neighbor_indices": nb_idx,
+			"slp_arr": slp_for_wind,
+			"water_terrain_ids": water_ids,
+			"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
+			"land_lf_peak": int(LandformType.LF.PEAK),
+			"land_lf_hill": int(LandformType.LF.HILL),
+			"days_per_year": days_per_year_phys,
+			"sim_day": sim_day_phys,
+			"world_seed": world_seed_phys,
+			"axial_tilt_deg": profile.axial_tilt_deg,
+			"wind_response_rate": profile.wind_response_rate,
+			"wind_synoptic_amp": profile.wind_synoptic_amp,
+			"wind_belt_only_debug": profile.wind_belt_only_debug,
+		}
+		var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
+		var rc_wind: float = float(rc_wind_raw) if rc_wind_raw != null else -1.0
+		out["wind_ms"] = rc_wind
+		_phys_last_wind_rc_ms = rc_wind
+		if rc_wind < 0.0:
+			_phys_wind_done_by_cpp = false
+			return fail.call("wind_failed")
 
-	var wx_arr: PackedFloat32Array = map.wind_x_arr
-	var wy_arr: PackedFloat32Array = map.wind_y_arr
-	var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
-	_phys_last_wind_wx_size = wx_arr.size()
-	_phys_last_wind_wy_size = wy_arr.size()
-	_phys_last_wind_speed_out_size = wspd_arr.size()
-	_phys_last_wind_map_speed_size = map.wind_speed_arr.size()
-	_phys_last_wind_commit_ok = wx_arr.size() == n_cells and wy_arr.size() == n_cells \
-			and wspd_arr.size() == n_cells and map.wind_speed_arr.size() == n_cells
-	if not _phys_last_wind_commit_ok:
-		_phys_wind_done_by_cpp = false
-		return fail.call("wind_size_mismatch")
+		var wx_arr: PackedFloat32Array = map.wind_x_arr
+		var wy_arr: PackedFloat32Array = map.wind_y_arr
+		var wspd_arr: PackedFloat32Array = knobs_wind.get("wind_speed_out", PackedFloat32Array())
+		_phys_last_wind_wx_size = wx_arr.size()
+		_phys_last_wind_wy_size = wy_arr.size()
+		_phys_last_wind_speed_out_size = wspd_arr.size()
+		_phys_last_wind_map_speed_size = map.wind_speed_arr.size()
+		_phys_last_wind_commit_ok = wx_arr.size() == n_cells and wy_arr.size() == n_cells \
+				and wspd_arr.size() == n_cells and map.wind_speed_arr.size() == n_cells
+		if not _phys_last_wind_commit_ok:
+			_phys_wind_done_by_cpp = false
+			return fail.call("wind_size_mismatch")
 
-	_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
-	_phys_wind_done_by_cpp = true
-	out["ran"] = true
-	out["path"] = "gdext_daily_wind"
-	out["wind_cpp_done"] = true
-	out["wind_commit_ok"] = true
-	out["wind_delta_p95"] = _wind_delta_p95_last
+		_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
+		_phys_wind_done_by_cpp = true
+		out["wind_cpp_done"] = true
+		out["wind_commit_ok"] = true
+		out["wind_delta_p95"] = _wind_delta_p95_last
+		out["wind_ran"] = true
+
+	out["ran"] = bool(out["slp_ran"]) or bool(out["wind_ran"])
+	if not bool(out["ran"]):
+		return fail.call("no_stage_ran")
+	# path 反映本 tick 实际跑的段，供调度日志 / 归因区分。
+	if bool(out["slp_ran"]) and bool(out["wind_ran"]):
+		out["path"] = "gdext_daily_wind"
+	elif bool(out["slp_ran"]):
+		out["path"] = "gdext_daily_wind_slp"
+	else:
+		out["path"] = "gdext_daily_wind_wind"
 	out["elapsed_ms"] = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	if float(out["slp_ms"]) >= float(out["wind_ms"]):
+	# dominant_stage：两段都跑时比大小；单段 tick 直接取该段。
+	var slp_ms_v: float = float(out["slp_ms"])
+	var wind_ms_v: float = float(out["wind_ms"])
+	if bool(out["slp_ran"]) and (not bool(out["wind_ran"]) or slp_ms_v >= wind_ms_v):
 		out["dominant_stage"] = str(out["slp_stage_name"])
-		out["dominant_stage_ms"] = float(out["slp_ms"])
+		out["dominant_stage_ms"] = slp_ms_v
 	else:
 		out["dominant_stage"] = str(out["wind_stage_name"])
-		out["dominant_stage_ms"] = float(out["wind_ms"])
+		out["dominant_stage_ms"] = wind_ms_v
 	_daily_wind_diag_last = out.duplicate(true)
 	return out
 
@@ -5902,6 +5960,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"wind_y_arr": wy_arr_psi,
 						"wind_speed_arr": wspd_arr_psi,
 						"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
+						# plan/psi-warm-start：SOR 用上一轮 cell_ocean_psi slot 作初值；
+						# 默认开，profile 可显式关闭做冷启动对照。
+						"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,
 						"psi_sor_omega": 1.4,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,

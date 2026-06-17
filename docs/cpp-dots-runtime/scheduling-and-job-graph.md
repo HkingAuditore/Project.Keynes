@@ -93,6 +93,17 @@ scheduler-wide 总预算。`SusSchedulerExt` 默认会把它 clamp 在安全范�
 - `frame_budget_ms` 约束的是 scheduler 选择是否继续启动下一个 slice。
 - 它不能抢占已经进入的 C++ pass。
 - 某个 C++ pass 单次执行超长时，仍会表现为当前 tick 的 `largest` 或 `total max` spike。
+- 这是 **intra-tick（tick 内）** 预算：管的是单个 SUS tick 里启动多少 slice。它**管不到**一帧里串行调了多少个 `sus_tick_daily`（=多少个 SUS tick）——那是下面的 inter-tick 闸负责。
+
+### `sim_frame_budget_ms` / `max_sim_days_per_frame`（WorldClock per-frame 闸）
+
+plan/best-effort-sim-stepping（2026-06-17）新增的 **inter-tick（tick 间）** 预算，位于 `WorldClock._process`（`scripts/geography/world_clock.gd`）。它约束**一个渲染帧里最多推进几天**（=最多调几次 `sus_tick_daily`）：
+
+- `sim_frame_budget_ms`（默认 8ms）：一帧用于"堆叠日级 tick"的墙钟时间盒；跑满 ≥1 天后超时即停。
+- `max_sim_days_per_frame`（默认 8）：单帧推进天数硬上限（安全阀）。
+- 超出部分的整数天**直接丢弃、不积债**，只保留 <1 天的小数（低速平滑）。
+
+与 `frame_budget_ms` 的分工：`frame_budget_ms` 管 tick **内**的 slice 启动；`sim_frame_budget_ms` 管一帧里 tick 的**个数**。高倍速过载时若只有前者，帧时仍会被 N 个 tick 叠加拖垮（死亡螺旋）；后者是杜绝该螺旋的关键。详见 "Daily Wind Cadence" 节的 per-frame governor 说明。
 
 ### `slice_budget_ms`
 
@@ -200,12 +211,26 @@ legacy `SusJob` 和 C++ `SusSchedulerExt` 都维护 skip 统计。长期 `frame_
 
 ## Daily Wind Cadence
 
-`WorldClock.day_changed(day_idx)` is the authoritative daily tick source. If a
-frame crosses multiple integer days, `WorldClock` emits one `day_changed` per
-crossed day so the SUS tick stream remains `one tick == one game day`.
+`WorldClock.day_changed(day_idx)` is the authoritative daily tick source. Each
+`day_changed` drives exactly one SUS tick (`one day_changed == one SUS tick`).
 `main.gd` forwards that signal day and `WorldClock.season_phase_for_day(day_idx)`
-to `MapGenerator.sus_tick_daily()`, so catch-up ticks do not reuse the final
-frame's day or phase.
+to `MapGenerator.sus_tick_daily()`, so each tick uses its own day/phase.
+
+Per-frame governor (plan/best-effort-sim-stepping, 2026-06-17): `WorldClock._process`
+now uses a best-effort throughput model instead of replaying every crossed day.
+The speed multiplier is a *target* days/sec; each rendered frame advances at most
+`max_sim_days_per_frame` days and stops once the per-frame wall-clock box
+`sim_frame_budget_ms` (default 8ms) is exceeded. The accumulator's leftover whole
+days are **dropped, not carried** (only the sub-day fraction is kept), so debt
+cannot accumulate. This removes the fast-forward spiral-of-death (at high speed a
+single hitch used to stack many `sus_tick_daily` calls into one frame, dragging
+frame time to ~200ms / ~5 FPS). `_last_day` still increments by exactly 1 per
+advance and is never skipped, so season/year boundaries are always hit; "dropping"
+means the engine advances *fewer days this frame*, i.e. when the target exceeds
+sustainable throughput the effective speed degrades smoothly (the in-game date
+advances slower than nominal, Paradox-style) while FPS stays stable. On capable
+hardware the box is never hit and the full target speed runs (e.g. 50x ≈ 0.83
+days/frame is well under the ~120 days/sec ceiling at 8ms/4ms-per-tick).
 
 `season_phase` here is an orbital/calendar coordinate only. Climate forcing is
 derived downstream from subsolar latitude, daily insolation, day length, thermal
@@ -221,12 +246,64 @@ continues to gate PSI/ocean/upwelling/raster work by
 
 Expected daily reports:
 
-- `stage_name=daily_wind_prepass`, `path=gdext_daily_wind` on wind-only days.
+- `stage_name=daily_wind_prepass`, `path=gdext_daily_wind` (both kernels),
+  `gdext_daily_wind_slp` (SLP-only day), or `gdext_daily_wind_wind` (wind-only
+  day) depending on the 2-tick split (below).
 - `wind_period_ticks=1` for the daily wind prepass.
 - `ocean_period_ticks`, `slice_count`, and `ticks_per_slice` describe the slow
   ocean/raster chain, not the daily wind chain.
 - `daily_wind_sim_day` / `sim_day` should advance by one for each SUS daily
   tick, including catch-up ticks emitted from one rendered frame.
+
+### Daily wind SLP / wind attribution
+
+`run_daily_wind_field_update()` runs two C++ authority kernels in one round —
+the SLP field pass (`run_slp_field_pass`, ~3-4ms) and the wind field pass
+(`run_wind_field_pass`, ~1.5ms). To make the scheduler log distinguish the two
+without changing the kernels, the report now carries:
+
+- `slp_ms` / `wind_ms`: per-stage native timing for the SLP and wind passes.
+- `slp_stage_name=daily_wind_slp`, `wind_stage_name=daily_wind_wind`: stable
+  stage labels.
+- `dominant_stage` (`daily_wind_slp` or `daily_wind_wind`) and
+  `dominant_stage_ms`: whichever sub-stage consumed the most time this round.
+
+On a wind-only day the ocean job's slice report sets
+`substage = dominant_stage`, so `sus_window largest=ocean_currents/
+daily_wind_prepass/<daily_wind_slp|daily_wind_wind>` points straight at the
+sub-stage that ate the budget. The slice report also surfaces
+`daily_wind_slp_ms`, `daily_wind_wind_ms`, `daily_wind_dominant_stage`, and
+`daily_wind_dominant_stage_ms` directly (independent of the
+`_record_phys_diag` `daily_wind_*` prefix merge).
+
+`main.gd._print_daily_breakdown()` prints a dedicated `daily_wind stage=… path=…
+slp=… wind=… total=… refresh=… dominant=…/… slp_dp95=… wind_dp95=… commit=…
+reason=…` line for the `ocean_currents` job whenever `daily_wind_due=true` (the
+tick the prepass actually ran), mirroring the existing climate/weather/sea_ice
+breakdown lines. When SLP actually ran this tick it also prints a
+`daily_wind/slp_internal passA=… passB=… norm=… marshall=…` line.
+
+### 2-tick SLP/wind split
+
+`plan/daily-wind-stage-split` (profile flag `ClimateProfile.daily_wind_split_passes`,
+default `true`) staggers the two daily authority kernels across adjacent game
+days instead of running both every day:
+
+- `OceanCurrentsJob._daily_wind_stage_for(ctx)` picks the `stage` argument passed
+  to `run_daily_wind_field_update()`: `"slp"` on even `day_index`, `"wind"` on
+  odd `day_index`, and `"both"` for the first prepass after a reset (cold-start
+  safety net). A wind-only day whose `map.slp_arr` size is stale falls back to
+  running SLP too (`stage_note=wind_only_slp_primed`).
+- The single-tick SUS peak drops from ~5ms (SLP+wind) to ~3ms (SLP day) / ~1ms
+  (wind day). SLP and wind each refresh every other day; at 20–50x this is
+  imperceptible. The prepass `path` becomes `gdext_daily_wind_slp` /
+  `gdext_daily_wind_wind` on split days, and `gdext_daily_wind` when both run.
+- The report adds `stage_requested`, `slp_ran`, and `wind_ran` so logs can tell
+  which kernel actually ran. On an SLP-only day `wind_ms=-1`; on a wind-only day
+  `slp_ms=-1`. `dominant_stage` is the single stage that ran (or the larger when
+  both ran), keeping `sus_window largest` attribution stable.
+- Set the flag `false` to restore the merged every-day path for regression or
+  low-speed precision.
 
 ## Ocean physical / visual scheduling
 

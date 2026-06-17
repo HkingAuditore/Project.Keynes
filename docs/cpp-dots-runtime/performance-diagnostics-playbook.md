@@ -207,6 +207,9 @@ weather path=data_core_cells_only
 - `weather_job total` 是 job wrapper 外层。
 - `weather_commit inner` 是 commit 或 field/object unpack 内部。
 - `path=data_core_cells_only` 表示 DataCore cell path，不代表 C++ field solve 失败。
+- `path=dc_not_ready`（旧标签 `legacy`，2026-06-17 改名）表示该 tick DataCore 尚未
+  就绪、走的是非 DataCore cell path；它反映 DataCore readiness，**不是** C++ 代码被
+  GDScript 绕过。偶发的 `fronts_*` 峰多与该 path + 大量 front churn 同时出现。
 - 如果 `loop` 高，查 commit loop 是否仍在对象层或 GDScript apply。
 - 如果 `summary` 高，查 fronts summary/unpack。
 
@@ -251,6 +254,75 @@ visual wind overlay looks stale, check the raster/atlas upload path separately:
 the simulation authority is `cell_wind_x/y` and `cell_wind_speed`, while the BA
 channels in the vector atlas are a visual copy.
 
+### SLP vs wind attribution
+
+`daily_wind` is two native authority passes (SLP, then wind). The per-stage
+timings are split so the budget owner is unambiguous:
+
+- `phys_daily_wind_slp_ms` / `phys_daily_wind_wind_ms` (tile CSV) and
+  `daily_wind_slp_ms` / `daily_wind_wind_ms` (ocean breakdown): SLP is normally
+  the heavier of the two (~3-4ms vs ~1.5ms).
+- On a wind-only day the ocean slice report sets `substage` to the dominant
+  sub-stage, so `sus_window largest=ocean_currents/daily_wind_prepass/
+  daily_wind_slp` (or `daily_wind_wind`) tells you which pass dominated without
+  reading per-field timings.
+- `main.gd` prints a dedicated breakdown line whenever the prepass runs:
+
+```text
+ocean_currents ran=3.10ms slices=1 progress=1.00
+    daily_wind stage=slp path=gdext_daily_wind_slp slp=3.05 wind=-1.00 total=3.09 refresh=0.04 dominant=daily_wind_slp/3.05 slp_dp95=0.01200 wind_dp95=0.00000 commit=true reason=
+    daily_wind/slp_internal passA=2.41 passB=0.32 norm=0.21 marshall=0.11 (passA=逐cell三角/insolation, passB=邻域平滑, norm=recenter+p95排序+缩放, marshall=prev混合+发布)
+```
+
+If `dominant=daily_wind_slp` and `slp` keeps climbing, the SLP kernel/inputs are
+the next target; if `dominant=daily_wind_wind`, look at the wind kernel. A high
+`refresh` with low `slp`/`wind` means the cost is `refresh_slots_from_map()`, not
+the math kernels.
+
+### 2-tick split + SLP-internal instrumentation
+
+`plan/daily-wind-stage-split` staggers SLP and wind across adjacent game days
+(profile flag `daily_wind_split_passes`, default `true`):
+
+- `stage=slp` ticks show `slp=…`, `wind=-1.00`, `path=gdext_daily_wind_slp`;
+  `stage=wind` ticks show `slp=-1.00`, `wind=…`, `path=gdext_daily_wind_wind`.
+  `stage=both` is the cold-start / first-prepass / regression path. Expect the
+  single-tick peak to be ~3ms (SLP day) rather than ~5ms (SLP+wind).
+- The `daily_wind/slp_internal` line breaks the SLP `elapsed_ms` into
+  `passA` (per-cell trig / `dc_insolation_*` / synoptic — usually the dominant
+  cost), `passB` (6-neighbor smoothing), `norm` (recenter + p95 sort + scale),
+  and `marshall` (prev-blend + recenter + delta + slot publish). It only prints
+  on ticks where SLP actually ran (`slp_passA_ms >= 0`). Fields come from C++
+  `run_slp_field_pass`; an older DLL that predates the instrumentation returns
+  `-1` for all four (rebuild + restart Godot to populate them).
+- If `passA` dominates, the cost is the per-cell math, and the next lever is
+  reducing transcendental calls — not the smoothing or marshalling. If `norm` is
+  unexpectedly high, the `std::sort` over `n_cells` is the suspect.
+- `plan/slp-lat-lut` already moved the latitude-only baseline
+  (`dc_insolation_now`, the 16-sample `dc_insolation_annual_mean`,
+  `base_lat`/`s_lat`) into a per-pass latitude LUT (`slp_lat_lut_bins`, default
+  1024), so passA should now be a few tenths of a ms rather than ~2.9ms. If passA
+  regresses, check that `slp_lat_lut_bins` was not lowered and that the DLL is the
+  rebuilt one. A/B parity can be checked by bumping `slp_lat_lut_bins=8192`
+  (near-exact) and comparing `slp_abs_p95` / `slp_delta_p95`.
+
+### PSI solver warm-start (plan/psi-warm-start)
+
+The recurring `phys_psi_init` peak stacks the SLP prepass and the PSI SOR solve
+on the same tick. `run_psi_solver_pass` now **warm-starts** SOR from the previous
+tick's ψ (`cell_ocean_psi` slot) instead of zero:
+
+- Knob `psi_warm_start` (default `true`); `psi_total_iters` lowered `40 → 16`
+  (`MapBaker._PHYS_PSI_TOTAL_ITERS`). Expected PSI stage cost drops ~1ms → ~0.3ms.
+- Validate with `phys_slice`'s `ocean_delta_p95`: it should stay smooth. A sudden
+  jump after the iteration cut means under-convergence → raise `psi_total_iters`
+  or confirm warm-start is engaging (slot present, sized `n_cells`).
+- For a cold-start A/B baseline, set `psi_warm_start=false` and restore higher
+  iterations; the delta in `ocean_delta_p95` quantifies the warm-start benefit.
+- If ψ ever looks frozen/stale, confirm `cell_ocean_psi` is still being published
+  each solve (warm-start reads what the previous solve wrote); a null/size-
+  mismatched slot falls back to the zero initial guess automatically.
+
 ## Stale DLL / method probe
 
 典型症状：
@@ -284,6 +356,36 @@ skipped[frame_budget_exhausted=25]
 5. 该 `largest` 是当前问题还是旧窗口 spike？
 6. 是否有 single slice 不能被 scheduler 抢占，例如一次 C++ pass 太大？
 
+## 高倍速 FPS 跳水 / 死亡螺旋（fast-forward spiral）
+
+**症状**：低倍速（如 x20）流畅，高倍速（如 x50）FPS 暴跌（实测到 ~5 FPS）。但单个 `[fast tick WARN]` 里 `sus` 仍只有 ~4ms、`sus_window` p95 也健康——看不出哪个 job 慢。
+
+**关键线索**：周期采样的 `fast tick #N` 行出现 **sus 远大于单 tick 成本** 的帧，例如：
+
+```text
+fast tick #1095: 36ms (sus=34.97 render=0.73 ui=0.00 skipped_day=true)
+```
+
+`sus=35ms` 而单 tick 才 ~4ms → 这一帧把 `sus_tick_daily` **串行跑了 ~8 次**。注意 `_fast_tick_count` 是按 `day_changed`（每模拟日）自增的，不是每渲染帧，所以 `fast tick #N` 的采样间隔是"日"不是"帧"。
+
+**根因**：`WorldClock._process` 按 `delta × speed` 反推要推进的天数。某帧变慢 → 下帧 `delta` 变大 → 跨更多天 → 一帧串行更多 SUS tick → 帧更慢，正反馈形成死亡螺旋。SUS 的 `frame_budget_ms` 是 tick **内** 预算，管不住一帧里 tick 的**个数**。
+
+**修复（plan/best-effort-sim-stepping, 2026-06-17）**：`WorldClock` 改为 best-effort 吞吐模型——每帧最多推进 `max_sim_days_per_frame` 天、累计超 `sim_frame_budget_ms`（默认 8ms）即停，累加器里没追完的整数天丢弃不积债（`_last_day` 仍连续 +1、不跳日，故 season/year 边界都精确命中）。倍速变成"目标天/秒"，过载时是"本帧少推进几天"→有效倍速平滑降级（日历推进变慢，Paradox 式）、FPS 保持稳定。详见 `scheduling-and-job-graph.md` 的 per-frame governor 节。
+
+**⚠️ 螺旋只是一半——真正的高倍速 FPS 杀手是 overlay 每日重 bake（2026-06-17）**：best-effort 消灭了"一帧堆叠 N 个 tick"的崩溃，但 x50 实测仍只有 ~22 FPS。`[clock/step]` 埋点（`WorldClock.debug_step_log`）打出真相：`ran=1 loop=37ms proc=37ms`——**单个**模拟日的 `_advance_one_sim_day` 就 ~37ms，而 `fast tick total` 只报 ~5ms。差额 ~32ms 来自 `_on_day_changed` 末尾、`fast_ms` 测量之后才跑的 `_refresh_overlay_data()`（约 592K 像素 fan-out；C++ `DCWorldExt` 未绑定时退 `gdscript_fanout` ~30ms）。x50 下几乎每渲染帧都推进一天 → 每帧 ~30ms overlay bake → 22 FPS。
+
+诊断要点：
+- `render-profile`（F3）的 `sus_frame_avg ≈ 45ms` vs `non_sus_frame_avg ≈ 0.1ms` + `sus_ticks=119/120` → 成本严格挂在"推进了日的帧"上。
+- F9/F10/F11（地形 shader / weather overlay / DVA atlas）**全无效**——它们碰不到 data overlay 层，也碰不到 enum/sea_ice/ocean 贴图上传。别被"按了没反应"误导成 GPU 无关。
+- `vram tex` 在两次 dump 间来回跳几 MB = 贴图在 `create_from_image` 重建（而非原地 `update()`），是上传/重 bake 的旁证。
+
+**修复（overlay 墙钟节流, 2026-06-17）**：`main.gd` 给 `_refresh_overlay_data` 加第 4 道 gate `overlay_min_bake_interval_ms`（默认 100ms / 10Hz）。距上次 bake 不足该间隔就跳过且**不消费 `_overlay_dirty`**，下一个到点的帧再 bake 最新状态。仿真照常逐日推进；overlay 与模拟日解耦。低速（日间隔 ≥ interval）下永不触发、行为不变。深层优化（让 `gdext_fanout` 生效把单次 bake 压到 ~2ms）另行处理；节流是与 bake 成本无关的稳妥兜底。
+
+**排查/调参**：
+- 若高倍速仍掉帧，先确认 `fast tick #N` 是否还有 `sus` 远超单 tick 的帧；没有则瓶颈在别处（如 overlay bake，见下文）。
+- `sim_frame_budget_ms` 调大 → 倍速天花板更高但每帧渲染余量更少；调小 → FPS 更稳但有效倍速更早降级。
+- 这是 inter-tick 闸，与 `frame_budget_ms`（intra-tick）正交。
+
 ## 常见误判
 
 | 现象 | 容易误判 | 正确解释 |
@@ -296,6 +398,7 @@ skipped[frame_budget_exhausted=25]
 | `skipped` 多 | 计算错 | 可能只是 visual upload 被预算延后。 |
 | `upload=1.5ms` | C++ patch 慢 | GPU/ImageTexture upload，不是 C++ kernel。 |
 | 日志 `total=13ms` 但 FPS 仅 18 | 模拟没拖累帧 | `_run_fast_tick` 末尾的 `_refresh_overlay_data` **不计入** `sus/render/ui`；overlay bake 可能独自吃掉 10ms+。详见下节。 |
+| 单 tick `sus=4ms` 但 x50 仅 5 FPS | 某个 job 慢 | 死亡螺旋：一帧串行跑了 N 个 SUS tick。看 `fast tick #N` 是否有 `sus` 远超单 tick 的帧。详见"高倍速 FPS 跳水"节。 |
 
 ## Overlay Bake Cost（debug 模式温度/天气图层卡顿）
 
