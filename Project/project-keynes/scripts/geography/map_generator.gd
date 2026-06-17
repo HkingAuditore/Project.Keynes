@@ -2821,89 +2821,11 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		fronts_changed = bool(native_res.get("fronts_changed", false))
 		fronts = native_res.get("fronts", [] as Array[WeatherFront])
 		fronts_diff = native_res.get("fronts_diff", {})
-	if not weather_ran:
-		_advance_weather_transition_alpha_tick(_sus_map)
+	# 天气类型交叉淡入的"跳过日 GDScript 兜底"已移除（2026-06-17）：该淡入纯属
+	# 视觉平滑，且没有任何 shader 采样 cell.weather_transition_alpha（地图只读离散
+	# weather_type），高倍速下逐 cell fan-out 反而是 ~35ms/次的空耗。淡入开关
+	# weather_transition_enabled 现仅作用于 C++ weather.commit（跑天气日推进）。
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed, "fronts_diff": fronts_diff }
-
-
-# best-effort-sim-stepping（2026-06-17）：高倍速 FPS 跳水根因。本函数是逐 cell
-# （~6400）的 GDScript 循环（含 HexCell 对象逐属性写），仅在"weather 跳日"时跑
-# （sus_tick_daily: if not weather_ran）。x50 下 weather stride 让 ~半数日跳过 →
-# 这个 ~35ms 循环每秒跑 ~25 次 → 22FPS（实测 [day/seg] skipped=true→fast≈40ms）。
-# 它纯属天气类型交叉淡入的视觉平滑，高倍速肉眼不可见。这里按墙钟节流（默认
-# ~150ms / 6Hz），与模拟日解耦：低速（跳日间隔 ≫ 150ms）永不触发、淡入完全保留；
-# 高倍速下少跑几次、FPS 回升。淡入仍逐次 +rate 推进、alpha 满时照常 commit 到 target。
-const _WEATHER_TRANSITION_MIN_INTERVAL_MS: float = 150.0
-var _weather_transition_last_ms: int = -100000
-
-func _advance_weather_transition_alpha_tick(map: MapData) -> void:
-	var cp := _c()
-	if cp == null or cp.get("weather_transition_enabled") == null \
-			or not bool(cp.weather_transition_enabled):
-		return
-	if map == null:
-		return
-	# 墙钟节流：距上次推进不足 interval 直接跳过（不动 alpha/不写 cell，零成本）。
-	var _now_ms: int = Time.get_ticks_msec()
-	if float(_now_ms - _weather_transition_last_ms) < _WEATHER_TRANSITION_MIN_INTERVAL_MS:
-		return
-	_weather_transition_last_ms = _now_ms
-	var alpha_arr: PackedFloat32Array = map.weather_transition_alpha_arr
-	var prev_arr: PackedByteArray = map.weather_prev_type_arr
-	var target_arr: PackedByteArray = map.weather_target_type_arr
-	var type_arr: PackedByteArray = map.weather_type_arr
-	var n: int = mini(alpha_arr.size(), mini(prev_arr.size(), mini(target_arr.size(), type_arr.size())))
-	if n <= 0:
-		return
-	var rate: float = clampf(float(cp.weather_transition_alpha_rate), 0.0, 1.0)
-	if rate <= 0.0:
-		return
-	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for i in range(n):
-		var alpha: float = clampf(alpha_arr[i], 0.0, 1.0)
-		var target_type: int = int(target_arr[i])
-		var prev_type: int = int(prev_arr[i])
-		var current_type: int = int(type_arr[i])
-		if alpha >= 1.0 or prev_type == target_type or current_type == target_type:
-			type_arr[i] = target_type & 0xFF
-			prev_arr[i] = target_type & 0xFF
-			alpha_arr[i] = 0.0
-			if i < cells.size():
-				var c_done: HexCell = cells[i]
-				if c_done != null:
-					c_done.weather_type = target_type
-					c_done.weather_prev_type = target_type
-					c_done.weather_target_type = target_type
-					c_done.weather_transition_alpha = 0.0
-			continue
-		alpha = clampf(alpha + rate, 0.0, 1.0)
-		if alpha >= 1.0:
-			type_arr[i] = target_type & 0xFF
-			prev_arr[i] = target_type & 0xFF
-			alpha_arr[i] = 0.0
-		else:
-			alpha_arr[i] = alpha
-		if i < cells.size():
-			var c: HexCell = cells[i]
-			if c != null:
-				c.weather_transition_alpha = float(alpha_arr[i])
-				c.weather_prev_type = int(prev_arr[i])
-				c.weather_target_type = target_type
-				if alpha >= 1.0:
-					c.weather_type = target_type
-	if _data_core_world != null:
-		var cid_alpha: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TRANSITION_ALPHA)
-		var cid_type: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TYPE)
-		var cid_prev: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_PREV_TYPE)
-		var cid_target: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_TARGET_TYPE)
-		if cid_alpha >= 0:
-			_data_core_world.write_f32_range(cid_alpha, 0, alpha_arr)
-		if cid_type >= 0:
-			_data_core_world.write_u8_range(cid_type, 0, type_arr)
-		if cid_prev >= 0:
-			_data_core_world.write_u8_range(cid_prev, 0, prev_arr)
-		if cid_target >= 0:
-			_data_core_world.write_u8_range(cid_target, 0, target_arr)
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。

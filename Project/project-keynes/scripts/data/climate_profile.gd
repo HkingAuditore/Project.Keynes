@@ -651,7 +651,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.34
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
-@export var weather_transition_enabled: bool = true
+# 纯视觉的天气类型交叉淡入淡出（prev_type→target_type 按 alpha 0→1 过渡）。
+# 当前没有任何 shader/baker 采样 cell.weather_transition_alpha——地图只读离散
+# 的 weather_type（enum_atlas 通道），淡入并不会被渲染出来。因此该系统只是在
+# 高倍速下空耗 CPU（C++ weather.commit + 跳过日的 GDScript fan-out ~35ms/次）。
+# 默认关闭以省 CPU；想恢复淡入再置 true 即可（C++ 与 GDScript 两条路径都受此开关控制）。
+@export var weather_transition_enabled: bool = false
 @export_range(0.0, 1.0, 0.01) var weather_transition_alpha_rate: float = 0.35
 
 # ══════════════════════════════════════════════════════════════════════
