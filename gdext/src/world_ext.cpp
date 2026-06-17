@@ -16889,6 +16889,34 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         thermal_abs.resize(static_cast<size_t>(n_cells), 0.0f);
     }
 
+    // ─── Latitude LUT (plan/slp-lat-lut, 2026-06-17) ──────────────────────
+    // base_lat 与 solar_heat 只依赖纬度 ny（固定 season/axial_tilt 的一次 pass 内）。
+    // 旧实现每 cell 重算 base_lat(cos) + s_lat(sin) + dc_insolation_now(~9 trig) +
+    // dc_insolation_annual_mean(16×9=144 trig) ≈ 155 次超越函数；6400 cell ≈ 100 万次。
+    // 这里改成：pass 内按 ny 预建 B 档 LUT（B×155 次），cell 循环只做一次线性插值。
+    // dc_insolation_annual_mean 是年均、与 season 无关，本就对所有同纬度 cell 恒等，
+    // 预建后冗余完全消除。B 默认 1024（≈0.18° 纬度分辨率，足以分辨极昼/极夜 acos 拐点）。
+    const float PI_F = 3.14159265358979323846f;
+    int slp_lat_lut_bins = int(knobs.has("slp_lat_lut_bins") ? int(knobs["slp_lat_lut_bins"]) : 1024);
+    if (slp_lat_lut_bins < 16) slp_lat_lut_bins = 16;
+    else if (slp_lat_lut_bins > 8192) slp_lat_lut_bins = 8192;
+    const int LUT_BINS = slp_lat_lut_bins;
+    std::vector<float> lut_base_lat(static_cast<size_t>(LUT_BINS), 0.0f);
+    std::vector<float> lut_solar_heat(static_cast<size_t>(LUT_BINS), 0.0f);
+    for (int b = 0; b < LUT_BINS; ++b) {
+        const float ny_b = float(b) / float(LUT_BINS - 1);
+        const float ls_abs_b = std::fabs((ny_b - 0.5f) * 2.0f);
+        lut_base_lat[b] = -A_LAT * std::cos(ls_abs_b * PI_F * 3.0f);
+        const float s_lat_b = std::sin(ls_abs_b * PI_F);
+        const float lat_temp_factor_b = s_lat_b * s_lat_b;
+        const float insol_now_b = dc_insolation_now(ny_b, float(season_phase), axial_tilt_deg, daylen_amp);
+        const float insol_mean_b = dc_insolation_annual_mean(ny_b, axial_tilt_deg, daylen_amp);
+        const float solar_dev_b = dc_insolation_season_dev(ny_b, insol_now_b, insol_mean_b);
+        lut_solar_heat[b] = solar_dev_b * lat_temp_factor_b;
+    }
+    const float * const __restrict LUT_BASE = lut_base_lat.data();
+    const float * const __restrict LUT_HEAT = lut_solar_heat.data();
+
     // ─── Pass A: per-cell baseline ────────────────────────────────────────
     for (int i = 0; i < n_cells; ++i) {
         // ny / lat_signed / lat_abs
@@ -16898,21 +16926,17 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         const float ls     = (ny - 0.5f) * 2.0f;
         const float ls_abs = std::fabs(ls);
 
-        // Three-cell circulation baseline: equatorial low, subtropical high,
-        // subpolar low, polar high. Mirrors GDScript -cos(3*pi*|lat|).
-        const float PI_F = 3.14159265358979323846f;
-        const float base_lat = -A_LAT * std::cos(ls_abs * PI_F * 3.0f);
-
-        // Thermal pressure contrast is driven by current insolation and land
-        // heat capacity, not by an independent season sign.
-        const float s_lat = std::sin(ls_abs * 3.14159265358979323846f);
-        const float lat_temp_factor = s_lat * s_lat;
+        // base_lat（三圈环流基线 -cos(3π|lat|)）与 solar_heat（insol_now-insol_mean
+        // 乘 lat_temp_factor）改自纬度 LUT 线性插值，消掉每 cell ~155 次三角/insolation。
+        float fb = ny * float(LUT_BINS - 1);
+        int b0 = int(fb);
+        if (b0 < 0) b0 = 0;
+        else if (b0 > LUT_BINS - 2) b0 = LUT_BINS - 2;
+        const float bfrac = fb - float(b0);
+        const float base_lat = LUT_BASE[b0] + (LUT_BASE[b0 + 1] - LUT_BASE[b0]) * bfrac;
+        const float solar_heat = LUT_HEAT[b0] + (LUT_HEAT[b0 + 1] - LUT_HEAT[b0]) * bfrac;
 
         const bool is_water = is_water_lut[TR[i]];
-        const float insol_now = dc_insolation_now(ny, float(season_phase), axial_tilt_deg, daylen_amp);
-        const float insol_mean = dc_insolation_annual_mean(ny, axial_tilt_deg, daylen_amp);
-        const float solar_dev = dc_insolation_season_dev(ny, insol_now, insol_mean);
-        const float solar_heat = solar_dev * lat_temp_factor;
         const float thermal_slp = -THERMAL_WEIGHT
             * ((TEMP_AN != nullptr) ? TEMP_AN[i] : solar_heat)
             * (is_water ? 0.55f : 1.0f);
@@ -16948,6 +16972,10 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         }
     }
 
+    // 埋点（plan/daily-wind-stage-split）：Pass A（逐 cell 三角/insolation/synoptic）
+    // 通常是 SLP 的大头；t_slp_pa 标记 Pass A 结束。
+    auto t_slp_pa = std::chrono::high_resolution_clock::now();
+
     // ─── Pass B: 6-neighbor Jacobi smoothing ──────────────────────────────
     if (smooth_passes > 0) {
         std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
@@ -16968,6 +16996,9 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             std::swap(slp_buf, tmp);
         }
     }
+
+    // 埋点：t_slp_pb 标记 Pass B（邻域平滑）结束。
+    auto t_slp_pb = std::chrono::high_resolution_clock::now();
 
     if (SLP_RECENTER && n_cells > 1) {
         double mean = 0.0;
@@ -16992,6 +17023,9 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             }
         }
     }
+
+    // 埋点：t_slp_norm 标记 recenter + p95 排序 + 缩放（norm 段）结束。
+    auto t_slp_norm = std::chrono::high_resolution_clock::now();
 
     // ─── Marshall slp_out ─────────────────────────────────────────────────
     if (PREV_SLP != nullptr) {
@@ -17044,6 +17078,13 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     out["reason"]     = String();
     out["slp_out"]    = slp_out;
     out["published_to_slot"] = published_to_slot;
+    // 埋点 surface（plan/daily-wind-stage-split）：把 SLP 内部 4 段耗时返回给
+    // GDScript，定位每日 ~3ms 花在 Pass A(三角)/Pass B(平滑)/norm(排序)/marshall(发布)。
+    // 注意 elapsed_ms = t1-t0 不含末尾 stats 排序段（与历史一致）。
+    out["slp_passA_ms"]    = std::chrono::duration<double, std::milli>(t_slp_pa - t0).count();
+    out["slp_passB_ms"]    = std::chrono::duration<double, std::milli>(t_slp_pb - t_slp_pa).count();
+    out["slp_norm_ms"]     = std::chrono::duration<double, std::milli>(t_slp_norm - t_slp_pb).count();
+    out["slp_marshall_ms"] = std::chrono::duration<double, std::milli>(t1 - t_slp_norm).count();
     if (!thermal_abs.empty()) {
         std::sort(thermal_abs.begin(), thermal_abs.end());
         const size_t p95_i = thermal_abs.empty() ? 0 : std::min(thermal_abs.size() - 1, size_t(std::floor(double(thermal_abs.size() - 1) * 0.95)));
@@ -17176,6 +17217,11 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float THERMAL_CURRENT_WEIGHT = float(knobs.has("ocean_thermal_current_weight") ? double(knobs["ocean_thermal_current_weight"]) : TH_WEIGHT);
     const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.40);
     const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.25);
+    // warm-start（plan/psi-warm-start 2026-06-17）：SOR 用上一轮发布在 cell_ocean_psi
+    // slot 的 ψ 作初值，而非每轮从 0 冷启动。洋流流函数日间变化极小，warm-start 后
+    // 残差很小，少量迭代即可收敛（配合 psi_total_iters 下调）。默认 true；A/B 对照
+    // 时传 psi_warm_start=false 退回冷启动。
+    const bool PSI_WARM_START = bool(knobs.has("psi_warm_start") ? bool(knobs["psi_warm_start"]) : true);
 
     PackedInt32Array nb_arr     = knobs["neighbor_indices"];
     PackedByteArray  water_ids  = knobs["water_terrain_ids"];
@@ -17238,6 +17284,13 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     if (sid_ocy >= 0 && _slots.write[sid_ocy].arr_f32.size() == n_cells) {
         OLD_OCY = _slots.write[sid_ocy].arr_f32.ptr();
     }
+    // warm-start：上一轮 ψ 已发布到 cell_ocean_psi slot；读它作 SOR 初值。
+    // 冷启动 / slot 不可用 / 显式关闭时为 null → 退回 0 初值。
+    const int sid_psi_prev = component_id(StringName("cell_ocean_psi"));
+    const float *PSI_PREV = nullptr;
+    if (PSI_WARM_START && sid_psi_prev >= 0 && _slots.write[sid_psi_prev].arr_f32.size() == n_cells) {
+        PSI_PREV = _slots.write[sid_psi_prev].arr_f32.ptr();
+    }
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -17268,6 +17321,13 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     std::vector<float> r_factor(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> source(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> psi(static_cast<size_t>(n_water), 0.0f);
+    // warm-start seed：用上一轮收敛的 ψ（cell_ocean_psi slot）初始化，SOR 从近收敛
+    // 状态起步。源项每轮只变一点（风应力旋度的日间增量），故少量迭代即可重新收敛。
+    if (PSI_PREV != nullptr) {
+        for (int k = 0; k < n_water; ++k) {
+            psi[k] = PSI_PREV[water_to_cell[k]];
+        }
+    }
 
     // NEIGHBOR_DIRS (screen-space, +y = south, +x = east).
     // MUST match physical_circulation_solver.gd::NEIGHBOR_DIRS 1:1, in the

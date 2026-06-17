@@ -371,6 +371,16 @@ var _overlay_dirty: bool = true
 # debug-overlay-perf v2（2026-06-12）：最近一次 bake 的 pixel fan-out 路径
 # （gdext_fanout / gdscript_fanout / gdscript_fanout_soa），供诊断 C++ 是否生效。
 var _overlay_bake_path: String = "gdscript_fanout"
+# best-effort-sim-stepping（2026-06-17）：高倍速 FPS 跳水根因 = overlay 每个模拟日
+# 重 bake 一次（~592K 像素 fan-out，gdscript 路径 ~30ms）。50x 下几乎每帧推进一天
+# → 每帧 30ms → 22FPS。修法：把 overlay 重 bake 按墙钟节流（默认 10Hz），与模拟日
+# 解耦。仿真照常逐日推进，overlay 只在到点的帧刷新最新状态——高倍速下肉眼无差。
+# 1x~10x（日间隔 ≥100ms）下此节流从不触发，行为不变。
+@export_range(16.0, 1000.0, 1.0) var overlay_min_bake_interval_ms: float = 100.0
+var _overlay_last_bake_wall_ms: int = 0
+# F5 临时诊断：强制跳过 overlay 每日重 bake（overlay 画面冻结但仍可见），
+# 用来 A/B 测 overlay fan-out 占多少帧时。
+var _overlay_refresh_disabled: bool = false
 
 func _ready() -> void:
 	_apply_world_setup_base_config()
@@ -575,6 +585,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# 多少 ms/帧。如果 FPS 从 40 升到 55+，weather_overlay 是真凶；如果只升
 			# 到 45，瓶颈在别处（SUS / 其他 shader / Canvas）。
 			toggle_weather_layer_visible()
+		KEY_F5:
+			# best-effort-sim-stepping（2026-06-17，临时）：冻结 data overlay 的每日重 bake。
+			# overlay 保持当前画面可见，但 _refresh_overlay_data 被跳过 → 直接测出
+			# overlay fan-out（~30ms gdscript 路径）占多少帧时。高倍速下按一下若 FPS
+			# 从 ~22 飙到 55+，overlay 重 bake 即真凶（已加墙钟节流 overlay_min_bake_interval_ms）。
+			toggle_overlay_refresh_disabled()
 		KEY_L:
 			# Fix #11 second pass (2026-06-16) — 全局诊断日志开关。
 			# mobile bench 显示 print 自身（logcat ~5-10ms/行 + GDScript Variant %
@@ -745,6 +761,12 @@ func dump_render_profile() -> void:
 
 # F11: 临时禁用 / 恢复 dynamic_visual_atlas_upload job。关闭后看 FPS 改善多少。
 var _render_profile_atlas_disabled: bool = false
+
+func toggle_overlay_refresh_disabled() -> void:
+	_overlay_refresh_disabled = not _overlay_refresh_disabled
+	print("[render-profile] overlay daily rebake disabled=%s (overlay frozen; A/B FPS to confirm fan-out cost)"
+		% str(_overlay_refresh_disabled))
+
 
 func toggle_dynamic_visual_atlas_upload() -> void:
 	_render_profile_atlas_disabled = not _render_profile_atlas_disabled
@@ -1118,7 +1140,12 @@ func _sync_clock_running_to_weather_layer() -> void:
 # ─── WorldClock 信号回调 ─────────────────────────────────────────────────
 
 func _on_day_changed(_day_idx: int) -> void:
+	# best-effort 诊断（临时）：整个 _on_day_changed 的墙钟，含 fast_ms 没覆盖的
+	# 头部（time_label / set_season_phase / vegetation layers）与尾部（overlay /
+	# recorders）。t_label0 → 头部分段。
+	var _ocd_t0: int = Time.get_ticks_usec()
 	_refresh_time_label()
+	var _ocd_label_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
 	# debug-overlay-perf v1（2026-06-12）：每个游戏日推进时标记 overlay 数据可能
 	# 已变化。fast tick 末尾的消费逻辑会在"非跳日 + dirty=true"双条件下才真正
 	# 触发一次 bake，确保 x20 倍速下每个游戏日最多 bake 一次。
@@ -1127,9 +1154,11 @@ func _on_day_changed(_day_idx: int) -> void:
 	if _world_clock != null and _world_clock.has_method("season_phase_for_day"):
 		dispatch_season_phase = float(_world_clock.season_phase_for_day(_day_idx))
 	# Phase 1：每"日"刷新一次 shader 季节相位
+	var _ocd_sp0: int = Time.get_ticks_usec()
 	if _renderer != null:
 		_renderer.set_season_phase(dispatch_season_phase)
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
+	var _ocd_seasonphase_ms: float = float(Time.get_ticks_usec() - _ocd_sp0) / 1000.0
 	# ───────────────────────────────────────────────────────────────────
 	# Emergent Climate Coupling — 每日调用顺序契约（fast tick）：
 	#   1. refresh_climate_daily   — 读慢层 + 写快层（内部尾部还会跑 sea_ice_daily、transpiration）
@@ -1303,8 +1332,15 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 3) 即使 dirty=false 也允许由 _apply_overlay_mode / 地图重生成显式调用，
 	#    那些路径独立写 dirty 不依赖 fast tick gate。
 	_overlay_last_fast_tick_ms = fast_ms
-	if _overlay_mode != 0 and not was_skipped_day and _overlay_dirty:
-		_refresh_overlay_data()
+	# best-effort-sim-stepping（2026-06-17）：墙钟节流 overlay 重 bake。高倍速下
+	# 每帧都推进一天会导致每帧 ~30ms overlay fan-out → FPS 跳水。这里加第 4 道
+	# gate：距上次 bake 不足 overlay_min_bake_interval_ms 就跳过（保留 _overlay_dirty
+	# 不消费，下一个到点的帧再 bake 最新状态）。低速（日间隔 ≥ interval）下永不触发。
+	if _overlay_mode != 0 and not was_skipped_day and _overlay_dirty and not _overlay_refresh_disabled:
+		var now_ms: int = Time.get_ticks_msec()
+		if float(now_ms - _overlay_last_bake_wall_ms) >= overlay_min_bake_interval_ms:
+			_overlay_last_bake_wall_ms = now_ms
+			_refresh_overlay_data()
 
 	# DOTS-Final-Push 任务 10：把当前 tick 的 fast_ms 与 trigger_warn 标记
 	# 推入滚动窗口（PERF_VERDICT_WINDOW=200），供 request_dots_final_push_perf_verdict()
@@ -1358,6 +1394,15 @@ func _on_day_changed(_day_idx: int) -> void:
 				str(recorder_diag.get("tile_reason", "")),
 				fast_ms_after_recorders,
 			])
+
+	# best-effort 诊断（临时）：整个 _on_day_changed 的分段墙钟。和 [clock/step] 的
+	# loop(~40ms) 对比定位那 ~35ms 落在哪段：label / season_phase(含 vegetation 层)
+	# / fast(sus+render+ui) / post(overlay+recorders)。每 ~120 帧打一行。
+	if Engine.get_process_frames() % 120 == 0:
+		var _ocd_full_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
+		var _ocd_post_ms: float = _ocd_full_ms - _ocd_label_ms - _ocd_seasonphase_ms - float(fast_ms)
+		print("[day/seg] full=%.2fms label=%.2f season_phase=%.2f fast=%d post=%.2f skipped=%s"
+			% [_ocd_full_ms, _ocd_label_ms, _ocd_seasonphase_ms, fast_ms, _ocd_post_ms, str(was_skipped_day)])
 
 
 # Plan: perf-recording-csv-export
@@ -1736,6 +1781,38 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 				var sb: Dictionary = _generator.sus_season_refresh_breakdown()
 				if not sb.is_empty():
 					print("        season_refresh stages=%s" % [str(sb)])
+			# Daily wind 归因：ocean_currents 每 wind_period_ticks 跑一次 C++ daily
+			# wind prepass（SLP + wind 两段权威）。把 slp/wind 分段耗时 + 主导段直接
+			# 打到调度日志，配合 sus_window largest=ocean_currents/daily_wind_prepass/
+			# <daily_wind_slp|daily_wind_wind> 定位是哪一段吃预算。仅在本 tick 真正跑
+			# 了 daily wind（daily_wind_due=true）时打印，避免每 tick 复读旧值。
+			if job_id == &"ocean_currents" and _generator != null \
+					and _generator.has_method("sus_ocean_currents_breakdown"):
+				var ob: Dictionary = _generator.sus_ocean_currents_breakdown()
+				if not ob.is_empty() and bool(ob.get("daily_wind_due", false)):
+					print("        daily_wind stage=%s path=%s slp=%.2f wind=%.2f total=%.2f refresh=%.2f dominant=%s/%.2f slp_dp95=%.5f wind_dp95=%.5f commit=%s reason=%s" % [
+						str(ob.get("daily_wind_stage_requested", "both")),
+						str(ob.get("daily_wind_path", "")),
+						float(ob.get("daily_wind_slp_ms", -1.0)),
+						float(ob.get("daily_wind_wind_ms", -1.0)),
+						float(ob.get("daily_wind_elapsed_ms", -1.0)),
+						float(ob.get("daily_wind_refresh_ms", -1.0)),
+						str(ob.get("daily_wind_dominant_stage", "")),
+						float(ob.get("daily_wind_dominant_stage_ms", 0.0)),
+						float(ob.get("daily_wind_slp_delta_p95", 0.0)),
+						float(ob.get("daily_wind_delta_p95", 0.0)),
+						str(ob.get("daily_wind_commit_ok", false)),
+						str(ob.get("daily_wind_fallback_reason", "")),
+					])
+					# SLP 内部分段埋点（C++ run_slp_field_pass 返回；旧 DLL 缺失=-1）。
+					# 仅在本 tick 真跑了 SLP（passA 有值）时打印，定位 3ms 花在哪。
+					if float(ob.get("daily_wind_slp_passA_ms", -1.0)) >= 0.0:
+						print("        daily_wind/slp_internal passA=%.3f passB=%.3f norm=%.3f marshall=%.3f (passA=逐cell三角/insolation, passB=邻域平滑, norm=recenter+p95排序+缩放, marshall=prev混合+发布)" % [
+							float(ob.get("daily_wind_slp_passA_ms", -1.0)),
+							float(ob.get("daily_wind_slp_passB_ms", -1.0)),
+							float(ob.get("daily_wind_slp_norm_ms", -1.0)),
+							float(ob.get("daily_wind_slp_marshall_ms", -1.0)),
+						])
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
@@ -3200,6 +3277,28 @@ func _apply_mobile_viewport_scale() -> void:
 	])
 
 
+# 计算移动端屏幕安全区内缩（像素，UI 坐标系）：避开刘海 / 挖孔摄像头 / 圆角 / 手势条。
+# DisplayServer.get_display_safe_area() 返回物理像素，需按 viewport/物理 比例换算到 UI 坐标
+# （项目可能开启 content scaling，比例未必为 1）。无可用安全区时回退到 MOBILE_EDGE_SAFE。
+# 返回 Vector4(left, top, right, bottom)。
+func _mobile_safe_insets() -> Vector4:
+	var fallback := Vector4(MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE)
+	if not OS.has_feature("mobile"):
+		return fallback
+	var safe: Rect2i = DisplayServer.get_display_safe_area()
+	var win: Vector2i = DisplayServer.window_get_size()
+	if safe.size.x <= 0 or safe.size.y <= 0 or win.x <= 0 or win.y <= 0:
+		return fallback
+	var ui: Vector2 = get_viewport().get_visible_rect().size
+	var sx: float = ui.x / float(win.x)
+	var sy: float = ui.y / float(win.y)
+	var left: float = max(float(safe.position.x) * sx, MOBILE_EDGE_SAFE)
+	var top: float = max(float(safe.position.y) * sy, MOBILE_EDGE_SAFE)
+	var right: float = max(float(win.x - safe.end.x) * sx, MOBILE_EDGE_SAFE)
+	var bottom: float = max(float(win.y - safe.end.y) * sy, MOBILE_EDGE_SAFE)
+	return Vector4(left, top, right, bottom)
+
+
 # Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的调试按钮。
 # 默认收起成一个按钮，避免左侧窗口/地图被常驻面板遮挡；需要时点开抽屉。
 func _ensure_mobile_debug_overlay() -> void:
@@ -3211,13 +3310,22 @@ func _ensure_mobile_debug_overlay() -> void:
 		return
 	if ui_layer.get_node_or_null("MobileDebugOverlay") != null:
 		return  # 已建过
-	# Container：左侧中部，向内缩进避开圆角边；默认只占一个按钮高度。
+	# Container：锚定左上、向下展开（修复 2026-06-17）。
+	# 旧版锚 CENTER_LEFT 有两个问题：
+	#   1. 横屏时挖孔摄像头常落在左侧边缘垂直中部，Toggle 按钮正好被摄像头压住按不到；
+	#   2. 展开靠手动改 position.y / size.y 对抗中心锚点，按钮组会窜到左上角飞出屏幕。
+	# 现在统一锚 TOP_LEFT、向下生长，横向用真实安全区左内缩避开挖孔/圆角，纵向落在 TopBar 之下。
+	var insets: Vector4 = _mobile_safe_insets()
 	var box: VBoxContainer = VBoxContainer.new()
 	box.name = "MobileDebugOverlay"
 	box.add_theme_constant_override("separation", 8)
-	box.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	box.position = Vector2(MOBILE_EDGE_SAFE, -32.0)
-	box.size = Vector2(156.0, 64.0)
+	box.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	box.grow_horizontal = Control.GROW_DIRECTION_END
+	box.grow_vertical = Control.GROW_DIRECTION_END
+	box.position = Vector2(
+		max(insets.x, MOBILE_EDGE_SAFE),
+		max(insets.y, MOBILE_TOPBAR_SAFE_TOP) + MOBILE_TOPBAR_HEIGHT + 16.0
+	)
 	var btn_toggle: Button = Button.new()
 	btn_toggle.name = "BtnToggle"
 	btn_toggle.text = "Tools"
@@ -3287,6 +3395,8 @@ func _ensure_mobile_debug_overlay() -> void:
 	btn_log.pressed.connect(_on_mobile_log_btn_pressed)
 	stack.add_child(btn_log)
 	ui_layer.add_child(box)
+	# 让容器收缩到当前（收起）所需的最小高度，避免残留过大 rect 盖住地图。
+	box.reset_size.call_deferred()
 	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（默认收起，Tools 展开）")
 
 
@@ -3302,8 +3412,8 @@ func _on_mobile_debug_overlay_toggle() -> void:
 	var expanded: bool = btn != null and btn.button_pressed
 	if stack != null:
 		stack.visible = expanded
-	box.position.y = -228.0 if expanded else -32.0
-	box.size.y = 456.0 if expanded else 64.0
+	# 容器锚 TOP_LEFT，position 固定不动；只随内容收缩/展开自身高度，永远向下生长。
+	box.reset_size.call_deferred()
 	if btn != null:
 		btn.text = "Hide" if expanded else "Tools"
 

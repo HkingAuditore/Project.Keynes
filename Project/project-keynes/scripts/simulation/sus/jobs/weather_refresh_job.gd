@@ -772,7 +772,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"progress_ratio": 1.0,
 			"stage_name": "weather_merged",
 			"substage": "fronts_%d" % merged_fronts.size(),
-			"path": "data_core_cells_only" if is_data_core_on else "legacy",
+			"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 		}
 		merged_report.merge(_last_fronts_diff_report, true)
 		_weather_rt_log(ctx, "merged_done", "elapsed=%.3f changed_slots=%d" % [
@@ -800,7 +800,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"progress_ratio": 0.10,
 				"stage_name": "weather_begin",
 				"substage": "init_round",
-				"path": "data_core_cells_only" if is_data_core_on else "legacy",
+				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 			}
 		var cell_budget: int = 500
 		if generator.has_method("weather_field_slice_cells"):
@@ -828,7 +828,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 					"progress_ratio": maxf(0.10, float(slice_result.get("progress_ratio", 0.0))),
 					"stage_name": "weather_solve",
 					"substage": "cells_%d" % int(slice_result.get("work_done", 0)),
-					"path": "data_core_cells_only" if is_data_core_on else "legacy",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 					"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
 					"cursor_start": int(slice_result.get("cursor_start", -1)),
 					"cursor_end": int(slice_result.get("cursor_end", -1)),
@@ -847,7 +847,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"progress_ratio": 0.70,
 				"stage_name": "weather_solve",
 				"substage": "cells_done",
-				"path": "data_core_cells_only" if is_data_core_on else "legacy",
+				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 				"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
 				"cursor_start": int(slice_result.get("cursor_start", -1)),
 				"cursor_end": int(slice_result.get("cursor_end", -1)),
@@ -870,7 +870,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"progress_ratio": 0.85,
 				"stage_name": "weather_summary",
 				"substage": "fronts_%d" % committed_fronts.size(),
-				"path": "data_core_cells_only" if is_data_core_on else "legacy",
+				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 			}
 		var t_stage_b_us: int = Time.get_ticks_usec()
 		generator.refresh_daily_stage_b(map, world)
@@ -898,7 +898,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"progress_ratio": 1.0,
 			"stage_name": "weather_commit",
 			"substage": "fronts_%d" % sliced_fronts.size(),
-			"path": "data_core_cells_only" if is_data_core_on else "legacy",
+			"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 		}
 		sliced_report.merge(_last_fronts_diff_report, true)
 		_weather_rt_log(ctx, "commit", "elapsed=%.3f changed_slots=%d" % [
@@ -936,7 +936,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"progress_ratio": 1.0,
 		"stage_name": "weather_direct",
 		"substage": "fronts_%d" % fronts.size(),
-		"path": "data_core_cells_only" if is_data_core_on else "legacy",
+		"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 	}
 	direct_report.merge(_last_fronts_diff_report, true)
 	_weather_rt_log(ctx, "direct", "elapsed=%.3f changed_slots=%d" % [

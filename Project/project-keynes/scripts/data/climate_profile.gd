@@ -669,6 +669,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
 @export_range(1, 60, 1) var wind_circulation_period_ticks: int = 1
+# plan/daily-wind-stage-split（2026-06-17）：把每日 SLP/wind 两段权威错峰到相邻
+# 游戏日（偶数日只跑 SLP ~3ms、奇数日只跑 wind ~1ms），单 tick SUS 峰值从 ~5ms
+# 降到 ~3ms，把 wind 日的预算让给被饿死的 atlas 上传。代价：SLP/wind 各自刷新
+# 周期从每日变每 2 日（错峰），20–50x 高倍速下气压/风场无感。false → 保留每日
+# 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
+@export var daily_wind_split_passes: bool = true
 @export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
 @export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.075
 @export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12

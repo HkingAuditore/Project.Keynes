@@ -2826,6 +2826,16 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed, "fronts_diff": fronts_diff }
 
 
+# best-effort-sim-stepping（2026-06-17）：高倍速 FPS 跳水根因。本函数是逐 cell
+# （~6400）的 GDScript 循环（含 HexCell 对象逐属性写），仅在"weather 跳日"时跑
+# （sus_tick_daily: if not weather_ran）。x50 下 weather stride 让 ~半数日跳过 →
+# 这个 ~35ms 循环每秒跑 ~25 次 → 22FPS（实测 [day/seg] skipped=true→fast≈40ms）。
+# 它纯属天气类型交叉淡入的视觉平滑，高倍速肉眼不可见。这里按墙钟节流（默认
+# ~150ms / 6Hz），与模拟日解耦：低速（跳日间隔 ≫ 150ms）永不触发、淡入完全保留；
+# 高倍速下少跑几次、FPS 回升。淡入仍逐次 +rate 推进、alpha 满时照常 commit 到 target。
+const _WEATHER_TRANSITION_MIN_INTERVAL_MS: float = 150.0
+var _weather_transition_last_ms: int = -100000
+
 func _advance_weather_transition_alpha_tick(map: MapData) -> void:
 	var cp := _c()
 	if cp == null or cp.get("weather_transition_enabled") == null \
@@ -2833,6 +2843,11 @@ func _advance_weather_transition_alpha_tick(map: MapData) -> void:
 		return
 	if map == null:
 		return
+	# 墙钟节流：距上次推进不足 interval 直接跳过（不动 alpha/不写 cell，零成本）。
+	var _now_ms: int = Time.get_ticks_msec()
+	if float(_now_ms - _weather_transition_last_ms) < _WEATHER_TRANSITION_MIN_INTERVAL_MS:
+		return
+	_weather_transition_last_ms = _now_ms
 	var alpha_arr: PackedFloat32Array = map.weather_transition_alpha_arr
 	var prev_arr: PackedByteArray = map.weather_prev_type_arr
 	var target_arr: PackedByteArray = map.weather_target_type_arr

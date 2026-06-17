@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://bkv62smwksj4y"]
+[gd_scene format=3 uid="uid://bkv62smwksj4y"]
 
 [ext_resource type="Script" path="res://scripts/ui/world_setup.gd" id="1_setup"]
 

@@ -466,10 +466,32 @@ func _slow_slice_policy_allows(ctx: SusTickContext) -> bool:
 	return bool(_slow_slice_policy.should_run(self, ctx))
 
 
+func _daily_wind_split_active() -> bool:
+	# plan/daily-wind-stage-split：profile flag daily_wind_split_passes 控制是否把
+	# 每日 SLP/wind 错峰到相邻游戏日。缺失/false → 保留合并路径（每日两段一起跑）。
+	if cfg == null or cfg.climate_profile == null:
+		return false
+	var cp = cfg.climate_profile
+	if "daily_wind_split_passes" in cp:
+		return bool(cp.daily_wind_split_passes)
+	return false
+
+
+func _daily_wind_stage_for(ctx: SusTickContext) -> String:
+	# 首次 prepass（或 reset 后）跑 "both"，保证 SLP+wind 都有一套新场作基线，
+	# 之后按游戏日 parity 错峰：偶数日只跑 SLP、奇数日只跑 wind。
+	if not _daily_wind_split_active():
+		return "both"
+	if _last_daily_wind_tick == _NO_DAILY_WIND_TICK:
+		return "both"
+	return "slp" if (ctx.day_index % 2) == 0 else "wind"
+
+
 func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 	if ctx.tick_index == _last_daily_wind_tick:
 		return _last_daily_wind_report.duplicate(true)
 	var phase_now: float = _current_phase(ctx)
+	var stage: String = _daily_wind_stage_for(ctx)
 	var report: Dictionary = {
 		"ran": false,
 		"path": "daily_wind_skip",
@@ -485,7 +507,7 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 		report["fallback_reason"] = "missing_baker_method"
 	else:
 		report = baker.run_daily_wind_field_update(
-				map, world, cfg, hex_size, phase_now, ctx.day_index)
+				map, world, cfg, hex_size, phase_now, ctx.day_index, stage)
 		if typeof(report) != TYPE_DICTIONARY:
 			report = {
 				"ran": false,
@@ -497,18 +519,24 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 	report["day_index"] = ctx.day_index
 	report["season_phase"] = phase_now
 	report["due"] = true
+	report["stage_requested"] = stage
 	_last_daily_wind_tick = ctx.tick_index
 	_last_daily_wind_report = report.duplicate(true)
 	if PKLog.enabled and _daily_wind_rt_diag_count < _ocean_rt_log_budget():
 		_daily_wind_rt_diag_count += 1
-		print("[ocean_currents][daily_wind] #%d tick=%d ran=%s path=%s elapsed=%.3f slp=%.3f wind=%.3f dominant=%s/%.3f delta=%.6f reason=%s" % [
+		print("[ocean_currents][daily_wind] #%d tick=%d stage=%s ran=%s path=%s elapsed=%.3f slp=%.3f wind=%.3f passA=%.3f passB=%.3f norm=%.3f marshall=%.3f dominant=%s/%.3f delta=%.6f reason=%s" % [
 			_daily_wind_rt_diag_count,
 			ctx.tick_index,
+			stage,
 			str(report.get("ran", false)),
 			str(report.get("path", "")),
 			float(report.get("elapsed_ms", 0.0)),
 			float(report.get("slp_ms", -1.0)),
 			float(report.get("wind_ms", -1.0)),
+			float(report.get("slp_passA_ms", -1.0)),
+			float(report.get("slp_passB_ms", -1.0)),
+			float(report.get("slp_norm_ms", -1.0)),
+			float(report.get("slp_marshall_ms", -1.0)),
 			str(report.get("dominant_stage", "")),
 			float(report.get("dominant_stage_ms", 0.0)),
 			float(report.get("wind_delta_p95", 0.0)),
@@ -903,17 +931,32 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			return _run_visual_slice(ctx, t_start_us)
 		var elapsed_daily_only: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
 		var daily_cells: int = int(map.soa_size()) if map != null and map.has_method("soa_size") else 0
+		var daily_ran: bool = not daily_report.is_empty()
+		# 调度日志归因：daily wind 是 SLP + wind 两段 C++ 权威，substage 直接报
+		# 主导段（daily_wind_slp / daily_wind_wind），让 sus_window largest=ocean_currents/
+		# daily_wind_prepass/<dominant> 一眼看出是哪一段吃预算。slp/wind 分段耗时也
+		# 显式补进 slice report，供 _print_daily_breakdown / 调度日志直接消费（不依赖
+		# _record_phys_diag 的 daily_wind_ 前缀合并）。
+		var daily_dominant: String = str(daily_report.get("dominant_stage", "")) if daily_ran else ""
+		var daily_substage: String = "slow_slice_not_due"
+		if daily_ran:
+			daily_substage = daily_dominant if daily_dominant != "" else "slp_wind"
 		var daily_only_report: Dictionary = {
 			"done": true,
-			"work_done": daily_cells if not daily_report.is_empty() else 0,
-			"processed_cells": daily_cells if not daily_report.is_empty() else 0,
+			"work_done": daily_cells if daily_ran else 0,
+			"processed_cells": daily_cells if daily_ran else 0,
 			"elapsed_ms": elapsed_daily_only,
 			"progress_ratio": 1.0,
-			"stage_name": "daily_wind_prepass" if not daily_report.is_empty() else "ocean_policy_wait",
-			"substage": "slp_wind" if not daily_report.is_empty() else "slow_slice_not_due",
-			"path": str(daily_report.get("path", "daily_wind")) if not daily_report.is_empty() else "policy_wait",
+			"stage_name": "daily_wind_prepass" if daily_ran else "ocean_policy_wait",
+			"substage": daily_substage,
+			"path": str(daily_report.get("path", "daily_wind")) if daily_ran else "policy_wait",
 			"ocean_solve_enabled": false,
 			"pixel_skipped": true,
+			"daily_wind_ran": daily_ran,
+			"daily_wind_slp_ms": float(daily_report.get("slp_ms", -1.0)) if daily_ran else -1.0,
+			"daily_wind_wind_ms": float(daily_report.get("wind_ms", -1.0)) if daily_ran else -1.0,
+			"daily_wind_dominant_stage": daily_dominant,
+			"daily_wind_dominant_stage_ms": float(daily_report.get("dominant_stage_ms", 0.0)) if daily_ran else 0.0,
 		}
 		return _record_phys_diag(ctx, daily_only_report, true)
 
