@@ -1,0 +1,18 @@
+
+> "F:\Developent\platform-tools-latest-windows\platform-tools\adb.exe" -s "84948c86" shell monkey -p "com.projectkeynes.game" -c android.intent.category.LAUNCHER 1
+  bash arg: -p
+  bash arg: com.projectkeynes.game
+  bash arg: -c
+  bash arg: android.intent.category.LAUNCHER
+  bash arg: 1
+args: [-p, com.projectkeynes.game, -c, android.intent.category.LAUNCHER, 1]
+ arg: "-p"
+ arg: "com.projectkeynes.game"
+ arg: "-c"
+ arg: "android.intent.category.LAUNCHER"
+ arg: "1"
+data="com.projectkeynes.game"
+data="android.intent.category.LAUNCHER"
+Events injected: 1
+## Network stats: elapsed time=16ms (0ms mobile, 0ms wifi, 16ms not connected)
+[exit_code] 0

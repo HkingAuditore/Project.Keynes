@@ -5275,6 +5275,10 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		"refresh_ms": 0.0,
 		"slp_ms": -1.0,
 		"wind_ms": -1.0,
+		"slp_stage_name": "daily_wind_slp",
+		"wind_stage_name": "daily_wind_wind",
+		"dominant_stage": "",
+		"dominant_stage_ms": 0.0,
 		"fallback_reason": "",
 		"slp_commit_ok": false,
 		"wind_commit_ok": false,
@@ -5437,6 +5441,12 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 	out["wind_commit_ok"] = true
 	out["wind_delta_p95"] = _wind_delta_p95_last
 	out["elapsed_ms"] = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	if float(out["slp_ms"]) >= float(out["wind_ms"]):
+		out["dominant_stage"] = str(out["slp_stage_name"])
+		out["dominant_stage_ms"] = float(out["slp_ms"])
+	else:
+		out["dominant_stage"] = str(out["wind_stage_name"])
+		out["dominant_stage_ms"] = float(out["wind_ms"])
 	_daily_wind_diag_last = out.duplicate(true)
 	return out
 

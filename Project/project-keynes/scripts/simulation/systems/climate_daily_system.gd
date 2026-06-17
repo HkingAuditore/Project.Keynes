@@ -166,6 +166,7 @@ var _last_finalize_diag: Dictionary = {}
 var _last_slice_pass_overhead_ms: float = 0.0
 var _temp_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
 var _tta_start_of_day_arr: PackedFloat32Array = PackedFloat32Array()
+var _round_start_terrain_sync_bootstrap_done: bool = false
 # Stage 9 / Fix #11 (2026-06-16) STAGE-TOTAL 打印 budget。
 var _fin_stage_log_count: int = 0
 var _last_finalizer_diag: Dictionary = {}
@@ -443,9 +444,12 @@ func _should_sync_runtime_terrain_views(reason: String) -> bool:
 	if reason != "round_start":
 		return true
 	var cp = generator._c() if generator != null else null
+	if not _round_start_terrain_sync_bootstrap_done:
+		_round_start_terrain_sync_bootstrap_done = true
+		return true
 	if cp != null and cp.get("climate_round_start_terrain_sync_enabled") != null:
 		return bool(cp.climate_round_start_terrain_sync_enabled)
-	return not (OS.has_feature("android") or OS.has_feature("mobile"))
+	return _diagnostics_enabled()
 
 
 func _sync_runtime_terrain_views_for_reason(reason: String) -> Dictionary:
@@ -454,7 +458,7 @@ func _sync_runtime_terrain_views_for_reason(reason: String) -> Dictionary:
 	return {
 		"reason": reason,
 		"skipped": true,
-		"skip_reason": "mobile_round_start",
+		"skip_reason": "round_start_terrain_sync_disabled",
 	}
 
 
@@ -628,6 +632,27 @@ func _build_finalizer_diag_from_worker(poll: Dictionary) -> Dictionary:
 		"finalizer_tta_clamped_count":       int(poll.get("fin_tta_clamped_count", 0)),
 		"finalizer_thermal_init_count":      int(poll.get("fin_thermal_init_count", 0)),
 	}
+
+
+func _async_finalizer_fallback_reason(poll: Dictionary) -> String:
+	if poll.is_empty():
+		return "sync_path_no_worker"
+	if not poll.has("fin_applied"):
+		return "missing_fin_applied"
+	if bool(poll.get("fin_applied", false)):
+		return ""
+	var n_cells: int = int(poll.get("n_cells", map.cell_count() if map != null else 0))
+	if n_cells <= 0:
+		return "missing_sizes:n_cells"
+	if _temp_start_of_day_arr.size() != n_cells:
+		return "missing_sizes:temp_start"
+	if _tta_start_of_day_arr.size() != n_cells:
+		return "missing_sizes:tta_start"
+	if map == null or map.temp_arr.size() != n_cells \
+			or map.temperature_transport_anomaly_arr.size() != n_cells \
+			or map.thermal_energy_arr.size() != n_cells:
+		return "missing_sizes:map_arrays"
+	return "fin_applied_false"
 
 
 func _apply_daily_climate_finalizer() -> Dictionary:
@@ -1465,6 +1490,8 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		"flip_ms": flip_ms,
 		"finalize_ms": finalize_ms,
 		"finish_ms": finish_ms,
+		"finalizer_cpp_worker": bool(poll_result.get("fin_applied", false)),
+		"finalizer_fallback_reason": _async_finalizer_fallback_reason(poll_result),
 	}
 
 
@@ -1705,11 +1732,18 @@ func _handle_async_sea_ice_flips(poll_result: Dictionary) -> void:
 	var indices: PackedInt32Array = poll_result["flipped_cell_indices"]
 	if indices.size() <= 0:
 		return
-	for idx in indices:
-		if map.has_method("mark_climate_dirty"):
-			map.mark_climate_dirty(int(idx))
-	if _world != null and _world.has_method("mark_dirty_indexed"):
-		_world.mark_dirty_indexed(indices)
+	var terrain_values: PackedByteArray = poll_result.get("flipped_new_terrain", PackedByteArray())
+	var applied_indexed: bool = false
+	if generator != null and generator.has_method("_apply_sea_ice_terrain_flips_indexed") \
+			and terrain_values.size() >= indices.size():
+		var diag: Dictionary = generator._apply_sea_ice_terrain_flips_indexed(map, indices, terrain_values, true)
+		applied_indexed = bool(diag.get("applied", false))
+	if not applied_indexed:
+		for idx in indices:
+			if map.has_method("mark_climate_dirty"):
+				map.mark_climate_dirty(int(idx))
+		if _world != null and _world.has_method("mark_dirty_indexed"):
+			_world.mark_dirty_indexed(indices)
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:
@@ -2358,6 +2392,7 @@ func _finalize_round(async_poll_result: Dictionary = {}) -> void:
 	# 走原 GDScript 路径，保持行为等价。
 	var finalizer_diag: Dictionary
 	var _async_finalizer_used: bool = false
+	var async_fin_fallback_reason: String = _async_finalizer_fallback_reason(async_poll_result)
 	if bool(async_poll_result.get("fin_applied", false)):
 		# 把 worker 返回的字段平移到 _last_finalizer_diag 兼容 schema（main.gd 解析这堆字段）。
 		finalizer_diag = _build_finalizer_diag_from_worker(async_poll_result)
@@ -2378,6 +2413,8 @@ func _finalize_round(async_poll_result: Dictionary = {}) -> void:
 		"finalize_flush_dirty_ms": 0.0,
 		"finalize_mark_stale_ms": 0.0,
 		"finalize_dump_stats_ms": 0.0,
+		"finalizer_cpp_worker": _async_finalizer_used,
+		"finalizer_fallback_reason": async_fin_fallback_reason,
 	}
 	# A.2.1.A4 — 一 round 完成 → counter +1（30 日 full sweep 触发逻辑在下次 round 入口）
 	_full_sweep_counter += 1
@@ -2438,6 +2475,8 @@ func _finalize_round(async_poll_result: Dictionary = {}) -> void:
 			"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
 			"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),
 			"thermal_finalizer_applied": bool(finalizer_diag.get("thermal_finalizer_applied", false)),
+			"finalizer_cpp_worker": _async_finalizer_used,
+			"finalizer_fallback_reason": async_fin_fallback_reason,
 			"finalizer_total_ms": float(finalizer_diag.get("finalizer_total_ms", 0.0)),
 			"finalizer_cell_ms": float(finalizer_diag.get("finalizer_cell_ms", 0.0)),
 			"finalizer_temp_ms": float(finalizer_diag.get("finalizer_temp_ms", 0.0)),
@@ -2555,8 +2594,8 @@ func _finalize_round(async_poll_result: Dictionary = {}) -> void:
 	var _fin_total_ms: float = float(_last_finalize_diag["finalize_total_ms"])
 	if PKLog.enabled and (_fin_stage_log_count < 5 or _fin_total_ms >= 5.0):
 		_fin_stage_log_count += 1
-		print("[climate_finalizer/STAGE-TOTAL] call#%d wall=%.2fms cpp_worker=%s (target: <3ms cpp / 13-17ms gdscript_fallback)" % [
-			_fin_stage_log_count, _fin_total_ms, str(_async_finalizer_used),
+		print("[climate_finalizer/STAGE-TOTAL] call#%d wall=%.2fms cpp_worker=%s fallback_reason=%s (target: <3ms cpp / 13-17ms gdscript_fallback)" % [
+			_fin_stage_log_count, _fin_total_ms, str(_async_finalizer_used), async_fin_fallback_reason,
 		])
 	if generator != null and "_last_climate_breakdown" in generator:
 		_merge_climate_wrapper_diag(generator._last_climate_breakdown)

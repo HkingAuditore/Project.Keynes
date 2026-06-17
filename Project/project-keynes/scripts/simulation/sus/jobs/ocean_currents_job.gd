@@ -501,7 +501,7 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 	_last_daily_wind_report = report.duplicate(true)
 	if PKLog.enabled and _daily_wind_rt_diag_count < _ocean_rt_log_budget():
 		_daily_wind_rt_diag_count += 1
-		print("[ocean_currents][daily_wind] #%d tick=%d ran=%s path=%s elapsed=%.3f slp=%.3f wind=%.3f delta=%.6f reason=%s" % [
+		print("[ocean_currents][daily_wind] #%d tick=%d ran=%s path=%s elapsed=%.3f slp=%.3f wind=%.3f dominant=%s/%.3f delta=%.6f reason=%s" % [
 			_daily_wind_rt_diag_count,
 			ctx.tick_index,
 			str(report.get("ran", false)),
@@ -509,6 +509,8 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 			float(report.get("elapsed_ms", 0.0)),
 			float(report.get("slp_ms", -1.0)),
 			float(report.get("wind_ms", -1.0)),
+			str(report.get("dominant_stage", "")),
+			float(report.get("dominant_stage_ms", 0.0)),
 			float(report.get("wind_delta_p95", 0.0)),
 			str(report.get("fallback_reason", "")),
 		])

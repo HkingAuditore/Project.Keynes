@@ -846,8 +846,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var climate_pass_diagnostics_enabled: bool = false
 
 # ─── async climate round（plan §async-stage-3，2026-06-14）────────────
-# 默认 false：climate_daily_system 走 sync sliced round（每 tick 1 pass，
-# 8 ticks 完成一轮）。true：worker thread 后台跑完整 8-pass round，主线程
+# 默认 true：climate_daily_system 走 worker thread 后台完整 8-pass round，主线程
 # kick + poll，每帧 climate 工作 < 1.5ms。
 #
 # 移动端 60 FPS 路径的最后一公里：log(3).txt 实测 sync 路径下 climate round
@@ -857,7 +856,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 切换前提：dots_ext arm64 .so 须含 Stage 3 build（包含 `async_climate_round_*`
 # API + 全 8 pass pure kernel）。dev 期建议先用 KEY_B / KEY_V 跑 bench 验证
 # bit-equal，再翻开本 flag。
-@export var use_climate_round_async: bool = false
+@export var use_climate_round_async: bool = true
 
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]

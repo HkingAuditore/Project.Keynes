@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="ProjectKeynes"
-run/main_scene="uid://dhf6euvov4vx"
+run/main_scene="res://scenes/world_setup.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 

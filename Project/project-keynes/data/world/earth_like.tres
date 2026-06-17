@@ -11,4 +11,5 @@ ocean_currents_period_ticks = 30
 ocean_currents_slice_count = 16
 ocean_pixel_subslice_count = 16
 succession_upgrade_days = 91
+use_climate_round_async = true
 demo_thermal_gradient_path = 1

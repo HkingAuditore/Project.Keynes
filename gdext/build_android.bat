@@ -13,9 +13,12 @@ rem   Android Studio SDK with "NDK (Side by side)" installed.
 rem   SCons available on PATH.
 
 set "ANDROID_HOME_DEFAULT=%LOCALAPPDATA%\Android\Sdk"
+set "ANDROID_HOME_PROJECT_DEFAULT=F:\Developent\AndroidSDK"
+if "%ANDROID_HOME%"=="" if exist "%ANDROID_HOME_PROJECT_DEFAULT%" set "ANDROID_HOME=%ANDROID_HOME_PROJECT_DEFAULT%"
 if "%ANDROID_HOME%"=="" set "ANDROID_HOME=%ANDROID_HOME_DEFAULT%"
 if "%ANDROID_SDK_ROOT%"=="" set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 
+if "%ANDROID_NDK_ROOT%"=="" if exist "%ANDROID_HOME%\build\cmake\android.toolchain.cmake" set "ANDROID_NDK_ROOT=%ANDROID_HOME%"
 if "%ANDROID_NDK_ROOT%"=="" call :find_latest_ndk
 if "%ANDROID_NDK_ROOT%"=="" goto ndk_missing
 if not exist "%ANDROID_NDK_ROOT%\build\cmake\android.toolchain.cmake" goto ndk_missing
@@ -30,8 +33,8 @@ echo [build_android] ANDROID_NDK_ROOT = %ANDROID_NDK_ROOT%
 echo [build_android] ndk_version      = %NDK_VER%
 echo.
 
-where scons >nul 2>nul
-if errorlevel 1 goto scons_missing
+call :find_scons
+if "%SCONS_CMD%"=="" goto scons_missing
 
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=both"
@@ -67,8 +70,8 @@ goto finish
 
 :build
 echo.
-echo === scons platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% ===
-scons platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% -j8
+echo === %SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% ===
+%SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% -j8
 exit /b %ERRORLEVEL%
 
 :finish
@@ -88,9 +91,32 @@ endlocal
 exit /b %RC%
 
 :find_latest_ndk
-if not exist "%ANDROID_HOME%\ndk" exit /b 0
-for /f "delims=" %%V in ('dir /b /ad /o-n "%ANDROID_HOME%\ndk" 2^>nul') do (
-    set "ANDROID_NDK_ROOT=%ANDROID_HOME%\ndk\%%V"
+if exist "%ANDROID_HOME%\ndk" (
+    for /f "delims=" %%V in ('dir /b /ad /o-n "%ANDROID_HOME%\ndk" 2^>nul') do (
+        if exist "%ANDROID_HOME%\ndk\%%V\build\cmake\android.toolchain.cmake" (
+            set "ANDROID_NDK_ROOT=%ANDROID_HOME%\ndk\%%V"
+            exit /b 0
+        )
+    )
+)
+if exist "%ANDROID_HOME%\ndk-bundle\build\cmake\android.toolchain.cmake" (
+    set "ANDROID_NDK_ROOT=%ANDROID_HOME%\ndk-bundle"
+    exit /b 0
+)
+exit /b 0
+
+:find_scons
+where scons >nul 2>nul
+if not errorlevel 1 (
+    set "SCONS_CMD=scons"
+    exit /b 0
+)
+if exist "%APPDATA%\Python\Python314\Scripts\scons.exe" (
+    set "SCONS_CMD="%APPDATA%\Python\Python314\Scripts\scons.exe""
+    exit /b 0
+)
+if exist "%USERPROFILE%\AppData\Roaming\Python\Python314\Scripts\scons.exe" (
+    set "SCONS_CMD="%USERPROFILE%\AppData\Roaming\Python\Python314\Scripts\scons.exe""
     exit /b 0
 )
 exit /b 0
@@ -102,6 +128,8 @@ echo   ANDROID_HOME     = %ANDROID_HOME%
 echo   ANDROID_NDK_ROOT = %ANDROID_NDK_ROOT%
 echo.
 echo Install Android Studio SDK Tools: NDK (Side by side).
+echo Expected example:
+echo   %ANDROID_HOME%\ndk\26.3.11579264\build\cmake\android.toolchain.cmake
 echo Or set ANDROID_NDK_ROOT to the installed NDK directory.
 endlocal
 exit /b 1

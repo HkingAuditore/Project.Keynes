@@ -58,6 +58,45 @@ const DCEcsJob := preload("res://scripts/ecs/dc_ecs_job.gd")
 # 5 个 _emergent_*_label 字段、5 个 _vitality_band 等 helper 均已删除。
 const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controller.gd")
 
+const WORLD_SETUP_META := &"world_setup_config"
+const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
+const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
+const WORLD_SETUP_CLIMATE_FIELDS := {
+	"continent_warp_amp": true,
+	"main_radius_min": true,
+	"main_radius_max": true,
+	"main_placement_min": true,
+	"main_placement_max": true,
+	"main_separation_factor": true,
+	"satellite_radius_min": true,
+	"satellite_radius_max": true,
+	"satellites_per_main": true,
+	"satellite_placement_min": true,
+	"satellite_placement_max": true,
+	"satellite_separation_factor": true,
+	"edge_falloff_start": true,
+	"edge_falloff_end": true,
+	"edge_falloff_depth": true,
+	"orographic_boost": true,
+	"rain_shadow_threshold": true,
+	"rain_shadow_factor": true,
+	"rain_shadow_lookback": true,
+	"lake_seed_freq": true,
+	"lake_seed_threshold": true,
+	"lake_seed_depth": true,
+	"lake_seed_min_interior": true,
+	"max_volcanoes": true,
+	"volcano_min_dist": true,
+	"volcano_min_land_h": true,
+	"weather_field_enabled": true,
+	"physical_circulation_enabled": true,
+	"sea_ice_independent_system_enabled": true,
+	"fast_slow_layering_enabled": true,
+	"use_climate_round_async": true,
+	"sea_ice_form_threshold": true,
+	"sea_ice_melt_threshold": true,
+}
+
 @export var map_width: int = 60
 @export var map_height: int = 40
 @export var num_continents: int = 2
@@ -183,6 +222,7 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 @onready var _debug_btn: Button = $UI/TopBar/HBox/DebugBtn
 @onready var _regen_btn: Button = $UI/TopBar/HBox/RegenBtn
 @onready var _fit_btn: Button = $UI/TopBar/HBox/FitBtn
+@onready var _setup_btn: Button = $UI/TopBar/HBox/SetupBtn
 @onready var _time_label: Label = $UI/TopBar/HBox/TimeLabel
 @onready var _climate_label: Label = $UI/TopBar/HBox/ClimateLabel
 @onready var _pause_btn: Button = $UI/TopBar/HBox/PauseBtn
@@ -281,11 +321,17 @@ var _fast_tick_count: int = 0
 # warn 计数同窗口对齐——每次 trigger_warn 命中都 +1，落入旧窗口外时随
 # total_ms 数组同步丢弃。
 const PERF_VERDICT_WINDOW: int = 200
+const SPEED_PRESETS: Array = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+const MOBILE_TOPBAR_SAFE_TOP: float = 64.0
+const MOBILE_TOPBAR_HEIGHT: float = 64.0
+const MOBILE_EDGE_SAFE: float = 20.0
+const MOBILE_BUTTON_HEIGHT: float = 56.0
 var _perf_verdict_total_ms: Array = []
 var _perf_verdict_warn_marks: Array = []  # 与 _perf_verdict_total_ms 平行：bool 数组
 var _last_weather_fronts_diff: Dictionary = {}
 var _fast_tick_warn_last_frame: int = 0
 var _slow_tick_count: int = 0
+var _speed_buttons: Dictionary = {}
 
 # Plan: perf-recording-csv-export
 # DebugConsole 录制按钮注入的 PerfRecorder 实例。null = 当前未挂载或未录制；
@@ -327,6 +373,7 @@ var _overlay_dirty: bool = true
 var _overlay_bake_path: String = "gdscript_fanout"
 
 func _ready() -> void:
+	_apply_world_setup_base_config()
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
 
@@ -885,16 +932,136 @@ func print_validate_weather_snapshot_debug() -> void:
 func print_perf_verdict_debug() -> void:
 	request_dots_final_push_perf_verdict()
 
+
+func _world_setup_config() -> Dictionary:
+	if not Engine.has_meta(WORLD_SETUP_META):
+		return {}
+	var raw = Engine.get_meta(WORLD_SETUP_META)
+	if raw is Dictionary and String((raw as Dictionary).get("source", "")) == "world_setup":
+		return raw as Dictionary
+	return {}
+
+
+func _apply_world_setup_base_config() -> void:
+	var config := _world_setup_config()
+	if config.is_empty():
+		return
+	var base = config.get("base", {})
+	if not (base is Dictionary):
+		return
+	map_width = clampi(int((base as Dictionary).get("map_width", map_width)), 10, 500)
+	map_height = clampi(int((base as Dictionary).get("map_height", map_height)), 8, 400)
+	initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
+	sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
+	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
+	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
+
+
+func _apply_world_setup_climate_overrides(generator: MapGenerator) -> void:
+	if generator == null:
+		return
+	var config := _world_setup_config()
+	if config.is_empty():
+		return
+	var climate = config.get("climate", {})
+	if not (climate is Dictionary):
+		return
+	var profile := ResourceLoader.load(DEFAULT_CLIMATE_PROFILE_PATH, "Resource") as ClimateProfile
+	if profile != null:
+		profile = profile.duplicate(true) as ClimateProfile
+	else:
+		profile = ClimateProfile.new()
+	var profile_props := {}
+	for prop in profile.get_property_list():
+		profile_props[String(prop.get("name", ""))] = true
+	for name in (climate as Dictionary).keys():
+		var key := String(name)
+		if not WORLD_SETUP_CLIMATE_FIELDS.has(key):
+			continue
+		if not profile_props.has(key):
+			push_warning("[WorldSetup] ClimateProfile has no property '%s'; skipped." % key)
+			continue
+		profile.set(key, (climate as Dictionary)[name])
+	generator.climate_profile = profile
+
+
+func _return_to_world_setup() -> void:
+	get_tree().change_scene_to_file(WORLD_SETUP_SCENE_PATH)
+
 # ─── 时间 UI 绑定 ───────────────────────────────────────────────────────
 
 func _wire_time_ui() -> void:
 	_debug_btn.pressed.connect(toggle_debug_console)
 	_regen_btn.pressed.connect(regenerate_debug_map)
 	_fit_btn.pressed.connect(fit_debug_map)
+	_setup_btn.pressed.connect(_return_to_world_setup)
 	_pause_btn.toggled.connect(_on_pause_toggled)
-	_x1_btn.pressed.connect(func() -> void: _set_speed(1.0))
-	_x5_btn.pressed.connect(func() -> void: _set_speed(5.0))
-	_x20_btn.pressed.connect(func() -> void: _set_speed(20.0))
+	_ensure_speed_preset_buttons()
+	_sync_speed_buttons()
+
+
+func _ensure_speed_preset_buttons() -> void:
+	var hbox: HBoxContainer = _topbar_hbox()
+	if hbox == null:
+		return
+	var insert_idx: int = _pause_btn.get_index() + 1
+	for speed_value in SPEED_PRESETS:
+		var speed: float = float(speed_value)
+		var btn: Button = _existing_speed_button(speed)
+		if btn == null:
+			btn = Button.new()
+			btn.name = _speed_button_node_name(speed)
+			btn.layout_mode = 2
+			hbox.add_child(btn)
+		hbox.move_child(btn, insert_idx)
+		insert_idx += 1
+		btn.text = _speed_button_label(speed)
+		btn.toggle_mode = true
+		btn.custom_minimum_size = Vector2(maxf(btn.custom_minimum_size.x, 48.0), maxf(btn.custom_minimum_size.y, 32.0))
+		btn.pressed.connect(_on_speed_preset_pressed.bind(speed))
+		_speed_buttons[int(speed)] = btn
+
+
+func _existing_speed_button(speed: float) -> Button:
+	if is_equal_approx(speed, 1.0):
+		return _x1_btn
+	if is_equal_approx(speed, 5.0):
+		return _x5_btn
+	if is_equal_approx(speed, 20.0):
+		return _x20_btn
+	var hbox: HBoxContainer = _topbar_hbox()
+	if hbox == null:
+		return null
+	return hbox.get_node_or_null(_speed_button_node_name(speed)) as Button
+
+
+func _topbar_hbox() -> HBoxContainer:
+	var hbox: HBoxContainer = get_node_or_null("UI/TopBar/HBox") as HBoxContainer
+	if hbox != null:
+		return hbox
+	return get_node_or_null("UI/TopBar/MobileTopBarScroll/HBox") as HBoxContainer
+
+
+func _speed_button_node_name(speed: float) -> String:
+	return "X%dBtn" % int(speed)
+
+
+func _speed_button_label(speed: float) -> String:
+	return "x%d" % int(speed)
+
+
+func _on_speed_preset_pressed(speed: float) -> void:
+	_set_speed(speed)
+
+
+func _sync_speed_buttons() -> void:
+	if _world_clock == null:
+		return
+	for speed_key in _speed_buttons.keys():
+		var btn: Button = _speed_buttons[speed_key] as Button
+		if btn == null:
+			continue
+		btn.set_pressed_no_signal(is_equal_approx(float(speed_key), _world_clock.speed_multiplier))
 
 func _on_pause_toggled(pressed: bool) -> void:
 	_world_clock.pause(pressed)
@@ -907,12 +1074,14 @@ func _set_speed(s: float) -> void:
 	_world_clock.set_speed(s)
 	_world_clock.pause(false)
 	_sync_pause_btn()
+	_sync_speed_buttons()
 	_sync_clock_running_to_weather_layer()
 
-# Fast-tick perf opt (A)：速度档变更回调——按档位把 weather_refresh_stride
-# 调成 x1→1 / x5→4 / x20→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
+# Fast-tick perf opt (A)：速度档变更回调——按速度区间把 weather_refresh_stride
+# 调成低速→1 / 中速→4 / 高速→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
 # 按 stride 跳日执行，显著降低单帧热路径开销。
 func _on_speed_changed(new_speed: float) -> void:
+	_sync_speed_buttons()
 	if _generator == null:
 		return
 	var cp = _generator._c() if _generator.has_method("_c") else null
@@ -1679,6 +1848,7 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
+	_apply_world_setup_climate_overrides(_generator)
 	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
 	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。
 	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
@@ -1950,6 +2120,8 @@ func _clear_selection() -> void:
 func _map_safe_area() -> Rect2:
 	var vp := get_viewport().get_visible_rect().size
 	var top_h: float = 40.0  # TopBar = PanelContainer offset_bottom=36 + 少量安全边距
+	if OS.has_feature("mobile"):
+		top_h = MOBILE_TOPBAR_SAFE_TOP + MOBILE_TOPBAR_HEIGHT
 	var right_w: float = 0.0
 	if _right_panel != null and _right_panel.visible:
 		# RightPanel.custom_minimum_size.x 若为 0 则用 size.x 回退
@@ -2963,19 +3135,39 @@ func _apply_mobile_topbar_safe_area() -> void:
 	var top_bar: Control = get_node_or_null("UI/TopBar") as Control
 	if top_bar == null:
 		return
-	# 下移 ~48 像素让 TopBar 离开 status bar / 圆角 safe area。
-	# 高度 36 → 48 让 touch target 更易点。
-	top_bar.offset_top = 48.0
-	top_bar.offset_bottom = 96.0
-	# 给所有子按钮加大 minimum_size，touch target 至少 ~64x44（mobile guideline）。
+	# 下移并留出更宽的横向安全边，避开状态栏、刘海和圆角裁切。
+	top_bar.offset_left = MOBILE_EDGE_SAFE
+	top_bar.offset_right = -MOBILE_EDGE_SAFE
+	top_bar.offset_top = MOBILE_TOPBAR_SAFE_TOP
+	top_bar.offset_bottom = MOBILE_TOPBAR_SAFE_TOP + MOBILE_TOPBAR_HEIGHT
 	var hbox: HBoxContainer = get_node_or_null("UI/TopBar/HBox") as HBoxContainer
+	if hbox != null:
+		hbox.add_theme_constant_override("separation", 8)
+		hbox.custom_minimum_size.x = 900.0
+		var scroll: ScrollContainer = get_node_or_null("UI/TopBar/MobileTopBarScroll") as ScrollContainer
+		if scroll == null:
+			scroll = ScrollContainer.new()
+			scroll.name = "MobileTopBarScroll"
+			scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+			scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			top_bar.add_child(scroll)
+		if hbox.get_parent() != scroll:
+			hbox.reparent(scroll)
+	# 给所有子按钮加大 minimum_size，touch target 至少 ~72x56。
 	if hbox != null:
 		for child in hbox.get_children():
 			if child is Button:
 				var btn: Button = child as Button
-				var min_w: float = max(btn.custom_minimum_size.x, 64.0)
-				btn.custom_minimum_size = Vector2(min_w, 44.0)
-	print("[mobile/safe-area] TopBar 下移 48px + 按钮 minimum 64x44 (圆角屏 safe area)")
+				var min_w: float = max(btn.custom_minimum_size.x, 72.0)
+				btn.custom_minimum_size = Vector2(min_w, MOBILE_BUTTON_HEIGHT)
+	if _info_label != null:
+		_info_label.visible = false
+	if _climate_label != null:
+		_climate_label.visible = false
+	if _time_label != null:
+		_time_label.custom_minimum_size.x = max(_time_label.custom_minimum_size.x, 120.0)
+	print("[mobile/safe-area] TopBar safe rect + horizontal scroll + buttons minimum 72x56")
 
 
 # Mobile viewport scale（2026-06-14 路线 C）：把渲染分辨率降到 0.66x。
@@ -3008,8 +3200,8 @@ func _apply_mobile_viewport_scale() -> void:
 	])
 
 
-# Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的 3 个按钮。
-# 屏幕左侧中部竖排 [Profile] [DVA off] [Atlas 1/2]，桌面端不创建。
+# Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的调试按钮。
+# 默认收起成一个按钮，避免左侧窗口/地图被常驻面板遮挡；需要时点开抽屉。
 func _ensure_mobile_debug_overlay() -> void:
 	if not OS.has_feature("mobile"):
 		return
@@ -3019,59 +3211,70 @@ func _ensure_mobile_debug_overlay() -> void:
 		return
 	if ui_layer.get_node_or_null("MobileDebugOverlay") != null:
 		return  # 已建过
-	# Container：左侧中部，固定宽 140
+	# Container：左侧中部，向内缩进避开圆角边；默认只占一个按钮高度。
 	var box: VBoxContainer = VBoxContainer.new()
 	box.name = "MobileDebugOverlay"
 	box.add_theme_constant_override("separation", 8)
 	box.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	# Fix #11 second pass (2026-06-16)：7 个按钮（+ Log），box 高度 392→456
-	box.position = Vector2(8.0, -228.0)
-	box.size = Vector2(140.0, 456.0)
+	box.position = Vector2(MOBILE_EDGE_SAFE, -32.0)
+	box.size = Vector2(156.0, 64.0)
+	var btn_toggle: Button = Button.new()
+	btn_toggle.name = "BtnToggle"
+	btn_toggle.text = "Tools"
+	btn_toggle.toggle_mode = true
+	btn_toggle.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_toggle.pressed.connect(_on_mobile_debug_overlay_toggle)
+	box.add_child(btn_toggle)
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.name = "ButtonStack"
+	stack.visible = false
+	stack.add_theme_constant_override("separation", 8)
+	box.add_child(stack)
 	# Profile 按钮 — 不切状态，只 dump
 	var btn_profile: Button = Button.new()
 	btn_profile.text = "Profile"
-	btn_profile.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_profile.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_profile.pressed.connect(dump_render_profile)
-	box.add_child(btn_profile)
+	stack.add_child(btn_profile)
 	# DVA toggle — 文本随状态变
 	var btn_dva: Button = Button.new()
 	btn_dva.name = "BtnDVA"
 	btn_dva.text = "DVA: ON"
 	btn_dva.toggle_mode = true
-	btn_dva.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_dva.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_dva.pressed.connect(_on_mobile_dva_btn_pressed)
-	box.add_child(btn_dva)
+	stack.add_child(btn_dva)
 	# Atlas size toggle
 	var btn_atlas: Button = Button.new()
 	btn_atlas.name = "BtnAtlas"
 	btn_atlas.text = "Atlas: 512"
 	btn_atlas.toggle_mode = true
-	btn_atlas.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_atlas.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_atlas.pressed.connect(_on_mobile_atlas_btn_pressed)
-	box.add_child(btn_atlas)
+	stack.add_child(btn_atlas)
 	# Weather Layer toggle (60 FPS 瓶颈调查：完全隐藏 weather overlay 看 ΔFPS)
 	var btn_weather: Button = Button.new()
 	btn_weather.name = "BtnWeather"
 	btn_weather.text = "Weather: ON"
 	btn_weather.toggle_mode = true
-	btn_weather.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_weather.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_weather.pressed.connect(_on_mobile_weather_btn_pressed)
-	box.add_child(btn_weather)
+	stack.add_child(btn_weather)
 	# Shader toggle (60 FPS 瓶颈调查：禁用主地形 shader 看 ΔFPS)
 	var btn_shader: Button = Button.new()
 	btn_shader.name = "BtnShader"
 	btn_shader.text = "Shader: ON"
 	btn_shader.toggle_mode = true
-	btn_shader.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_shader.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_shader.pressed.connect(_on_mobile_shader_btn_pressed)
-	box.add_child(btn_shader)
+	stack.add_child(btn_shader)
 	# Quality tier cycle 按钮（2026-06-15）：LOW (≤4 sample) → MID (≤6) → HIGH (≤9) 循环
 	var btn_quality: Button = Button.new()
 	btn_quality.name = "BtnQuality"
 	btn_quality.text = "Quality: MID"
-	btn_quality.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_quality.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_quality.pressed.connect(_on_mobile_quality_btn_pressed)
-	box.add_child(btn_quality)
+	stack.add_child(btn_quality)
 	# Log toggle (Fix #11 second pass, 2026-06-16)：全局诊断日志开关
 	# 关掉所有 GDScript print + 字符串构造 + C++ SUS-cpp periodic log，
 	# 让 mobile 看到真实硬件天花板（去掉 print 自身 ~150-300ms/秒 overhead）。
@@ -3080,59 +3283,72 @@ func _ensure_mobile_debug_overlay() -> void:
 	btn_log.name = "BtnLog"
 	btn_log.text = "Log: ON"
 	btn_log.toggle_mode = true
-	btn_log.custom_minimum_size = Vector2(132.0, 56.0)
+	btn_log.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_log.pressed.connect(_on_mobile_log_btn_pressed)
-	box.add_child(btn_log)
+	stack.add_child(btn_log)
 	ui_layer.add_child(box)
-	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（Profile / DVA / Atlas / Weather / Shader / Quality / Log 七个按钮）")
+	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（默认收起，Tools 展开）")
+
+
+func _on_mobile_debug_overlay_toggle() -> void:
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var box: VBoxContainer = ui_layer.get_node_or_null("MobileDebugOverlay") as VBoxContainer
+	if box == null:
+		return
+	var stack: VBoxContainer = box.get_node_or_null("ButtonStack") as VBoxContainer
+	var btn: Button = box.get_node_or_null("BtnToggle") as Button
+	var expanded: bool = btn != null and btn.button_pressed
+	if stack != null:
+		stack.visible = expanded
+	box.position.y = -228.0 if expanded else -32.0
+	box.size.y = 456.0 if expanded else 64.0
+	if btn != null:
+		btn.text = "Hide" if expanded else "Tools"
+
+
+func _mobile_debug_button(name: String) -> Button:
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return null
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/ButtonStack/%s" % name) as Button
+	if btn != null:
+		return btn
+	return ui_layer.get_node_or_null("MobileDebugOverlay/%s" % name) as Button
 
 
 func _on_mobile_dva_btn_pressed() -> void:
 	toggle_dynamic_visual_atlas_upload()
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnDVA") as Button
+	var btn: Button = _mobile_debug_button("BtnDVA")
 	if btn != null:
 		btn.text = "DVA: OFF" if _render_profile_atlas_disabled else "DVA: ON"
 
 
 func _on_mobile_atlas_btn_pressed() -> void:
 	toggle_atlas_resolution()
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnAtlas") as Button
+	var btn: Button = _mobile_debug_button("BtnAtlas")
 	if btn != null:
 		btn.text = "Atlas: 256" if _render_profile_atlas_quarter_size else "Atlas: 512"
 
 
 func _on_mobile_weather_btn_pressed() -> void:
 	toggle_weather_layer_visible()
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnWeather") as Button
+	var btn: Button = _mobile_debug_button("BtnWeather")
 	if btn != null:
 		btn.text = "Weather: OFF" if _render_profile_weather_hidden else "Weather: ON"
 
 
 func _on_mobile_shader_btn_pressed() -> void:
 	toggle_world_shader_disabled()
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnShader") as Button
+	var btn: Button = _mobile_debug_button("BtnShader")
 	if btn != null:
 		btn.text = "Shader: OFF" if _render_profile_world_shader_disabled else "Shader: ON"
 
 
 func _on_mobile_quality_btn_pressed() -> void:
 	cycle_mobile_quality_tier()
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnQuality") as Button
+	var btn: Button = _mobile_debug_button("BtnQuality")
 	if btn != null:
 		var label: String = "MID"
 		if mobile_quality_tier == 0:
@@ -3157,10 +3373,7 @@ func _on_mobile_log_btn_pressed() -> void:
 				and "_ext" in _generator._sus_scheduler:
 			sus_ext_ref = _generator._sus_scheduler._ext
 	PKLog.set_enabled(new_enabled, world_ext_ref, sus_ext_ref)
-	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
-	if ui_layer == null:
-		return
-	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/BtnLog") as Button
+	var btn: Button = _mobile_debug_button("BtnLog")
 	if btn != null:
 		btn.text = "Log: ON" if PKLog.enabled else "Log: OFF"
 
