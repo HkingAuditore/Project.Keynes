@@ -192,14 +192,25 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 // ─── LAND 2.3：植被轴 tint（vegetation_axis_strength） ─────────────────
 // LAND 2.3: climate / altitude / wind tint; pure ALU, no extra texture fetch.
 SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) {
+	// [需求2 2026-06-19] 温度连续调制：冷→青白、暖→橙黄。amp 0.055~0.125 → 0.08~0.22，
+	// 让温度带在静态地图上更可读(此层不依赖 dyn_valid，生成态即生效；输入为生成气候场温度)。
 	float temp_w = clamp((i.current_temp - 0.5) * 2.0, -1.0, 1.0);
-	vec3 cool_tint = vec3(0.84, 0.93, 1.08);
-	vec3 warm_tint = vec3(1.12, 0.94, 0.78);
-	float temp_amp = mix(0.055, 0.125, abs(temp_w));
+	vec3 cool_tint = vec3(0.80, 0.91, 1.12);
+	vec3 warm_tint = vec3(1.15, 0.95, 0.73);
+	float temp_amp = mix(0.08, 0.22, abs(temp_w));
 	surface.base_color *= mix(
 			vec3(1.0),
 			(temp_w >= 0.0) ? warm_tint : cool_tint,
 			temp_amp);
+
+	// [需求2 2026-06-19] 湿度连续基础调制(总是生效)：干→黄褐、湿→墨绿。直接体现"湿度/含水量"，
+	// 与 apply_moisture_tint(依赖 dyn_valid 的动态强化层)叠加；偏离中性(~0.42)越远调制越强。
+	float moist_w = clamp(i.moist, 0.0, 1.0);
+	vec3 arid_tint  = vec3(1.13, 1.00, 0.72);
+	vec3 humid_tint = vec3(0.78, 1.07, 0.80);
+	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.12, 0.72, moist_w));
+	float moist_amp = clamp(abs(moist_w - 0.42) * 0.95, 0.0, 0.24);
+	surface.base_color *= mix(vec3(1.0), moist_tint, moist_amp);
 
 	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
 	float alpine_w = smoothstep(0.46, 0.96, land_h);

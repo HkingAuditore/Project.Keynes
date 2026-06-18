@@ -13258,18 +13258,29 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             pit_comp.clear();
             pit_comp.push_back(s);
             pit_seen[size_t(s)] = 1;
+            // 同时记录该洼地的"溢出口"高度 = 最低的陆地(E>=sea)边界邻居。
+            double spill_e = std::numeric_limits<double>::infinity();
             for (size_t qi = 0; qi < pit_comp.size(); ++qi) {
                 const int cur = pit_comp[qi];
                 for (int d = 0; d < 6; ++d) {
                     const int ni = index_for_qr(Q[cur] + DQ[d], R[cur] + DR[d]);
-                    if (ni < 0 || pit_seen[size_t(ni)] || ocean_e[size_t(ni)]) continue;
-                    if (double(E[ni]) >= sea) continue;
+                    if (ni < 0) continue;
+                    if (double(E[ni]) >= sea) {            // 陆地边界 = 出口候选
+                        if (double(E[ni]) < spill_e) spill_e = double(E[ni]);
+                        continue;
+                    }
+                    if (pit_seen[size_t(ni)] || ocean_e[size_t(ni)]) continue;
                     pit_seen[size_t(ni)] = 1;
                     pit_comp.push_back(ni);
                 }
             }
             if (int(pit_comp.size()) < lake_min) {
-                for (int v : pit_comp) E[v] = float(sea + 0.012);
+                // [空洞平滑 2026-06-19] 旧版统一压到 sea+0.012 的固定低值 → 内陆遍布比周围明显
+                // 低一截的"小坑斑块"(用户反馈：空洞太小、地面碎)。改为回填到溢出口高度(略低
+                // 0.012)，使原洼地与最近陆地出口齐平、平滑融入周围地形，不再读作突兀低斑。
+                double fill_e = sea + 0.012;
+                if (std::isfinite(spill_e)) fill_e = std::max(sea + 0.012, spill_e - 0.012);
+                for (int v : pit_comp) E[v] = float(fill_e);
                 pit_filled += int(pit_comp.size());
             }
         }
