@@ -38,6 +38,8 @@ var _overlay_error_label: Label
 var _sim_checkboxes: Dictionary = {}
 # 视觉开关：key=ClimateProfile 无关，直接 main.gd.@export 字段名，value=CheckBox
 var _visual_checkboxes: Dictionary = {}
+# 性能 / 渲染实验 toggle 开关：key=get_debug_toggle_state 的 state key，value=CheckBox
+var _toggle_checkboxes: Dictionary = {}
 
 var _telemetry_vbox: VBoxContainer
 var _telemetry_labels: Dictionary = {}
@@ -190,6 +192,10 @@ func _build_ui() -> void:
 	vbox.add_child(HSeparator.new())
 	_build_diagnose_group(vbox)
 	vbox.add_child(HSeparator.new())
+	_build_experiments_group(vbox)
+	vbox.add_child(HSeparator.new())
+	_build_migration_group(vbox)
+	vbox.add_child(HSeparator.new())
 	_build_telemetry_group(vbox)
 
 func _build_overlay_group(parent: VBoxContainer) -> void:
@@ -290,10 +296,7 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	_add_action_button(parent, "启动 Soak Dump 30 tick（F2）", &"start_soak_dump_debug")
 	_add_action_button(parent, "启动 Soak A/B SAME 30（F3）", &"start_soak_ab_same_source_debug")
 	_add_action_button(parent, "启动 Soak A/B Legacy（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
-	_add_action_button(parent, "Soak A/B B+ 矩阵（30+1000 tick）", &"start_soak_ab_season_round_batch_debug")
 	_add_action_button(parent, "Soak A/B Thread 矩阵（30+1000 tick）", &"start_soak_ab_thread_batch_debug")
-	_add_action_button(parent, "Soak C.4 全矩阵验收（约15分钟）", &"start_soak_ab_phase_c4_acceptance_debug")
-	_add_action_button(parent, "Soak SUS Scheduler 矩阵（30+1000 tick）", &"start_soak_ab_sus_scheduler_batch_debug")
 	_add_action_button(parent, "取消 Soak / Dump（Alt+F3）", &"cancel_soak_debug")
 
 	parent.add_child(_make_section_header("选择"))
@@ -302,6 +305,58 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	btn_clear.custom_minimum_size.y = 34.0
 	btn_clear.pressed.connect(_on_btn_clear_selection)
 	parent.add_child(btn_clear)
+
+# 性能 / 渲染实验开关：原 F3/F4/F5/F9/F10/F11/F12/L 热键的 UI 等价入口。
+# toggle 类用带状态回显的 CheckBox（勾选态 = 该开关当前真值，热键/按钮任意路径改动
+# 都会在面板下次同步时回显）；dump_render_profile 是一次性 dump，保留为按钮。
+# 每项 = [展示名, main 上的 toggle 方法名, get_debug_toggle_state 的 state key]
+const EXPERIMENT_TOGGLES: Array = [
+	["Perf Mini HUD 可见（F4）", "toggle_perf_mini_hud", "perf_mini_hud"],
+	["主地形 Shader 关闭（F9）", "toggle_world_shader_disabled", "world_shader_disabled"],
+	["Weather 层隐藏（F10）", "toggle_weather_layer_visible", "weather_hidden"],
+	["冻结 Overlay 每日重 bake（F5）", "toggle_overlay_refresh_disabled", "overlay_refresh_disabled"],
+	["禁用 Atlas 上传 Job（F11）", "toggle_dynamic_visual_atlas_upload", "atlas_upload_disabled"],
+	["Atlas 强制 256（否=512，F12，会重 bake）", "toggle_atlas_resolution", "atlas_quarter_size"],
+	["诊断日志 PKLog 启用（L）", "toggle_diagnostic_logging_debug", "diagnostic_logging"],
+]
+
+func _build_experiments_group(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_header("性能 / 渲染实验（原 60FPS 调查热键）"))
+	_add_action_button(parent, "Dump 渲染性能监视器（F3）", &"dump_render_profile")
+	for entry in EXPERIMENT_TOGGLES:
+		var label_text: String = entry[0]
+		var method: String = entry[1]
+		var key: String = entry[2]
+		var cb := CheckBox.new()
+		cb.text = label_text
+		cb.toggled.connect(_on_experiment_toggle.bind(method, key))
+		parent.add_child(cb)
+		_toggle_checkboxes[key] = cb
+
+# CheckBox 翻转回调：调用 main 的 toggle 方法（翻转内部 flag），随后从权威真值
+# 回读并强制对齐勾选态——即使 toggle 翻转方向与 pressed 不符也能 snap 回真值。
+func _on_experiment_toggle(_pressed: bool, method: String, key: String) -> void:
+	if _suppress_sync_signals:
+		return
+	if _main == null or not _main.has_method(method):
+		push_warning("[DebugConsole] 实验开关方法缺失: %s" % method)
+		return
+	_main.call(method)
+	# 回读真值并对齐（toggle_atlas_resolution 等可能伴随 regenerate，状态以 main 为准）
+	var cb: CheckBox = _toggle_checkboxes.get(key, null)
+	if cb != null and _main.has_method("get_debug_toggle_state"):
+		_suppress_sync_signals = true
+		var truth: bool = bool(_main.call("get_debug_toggle_state", key))
+		if cb.button_pressed != truth:
+			cb.button_pressed = truth
+		_suppress_sync_signals = false
+
+# 生成迁移（C++ DOTS 化）验收：parity 逐字段对比 + 异步气候 bench。
+# 结果打到输出日志（[gen-parity] / [async/bench] 前缀）。
+func _build_migration_group(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_header("生成迁移 / DOTS 验收"))
+	_add_action_button(parent, "异步气候 Bench transp（B）", &"run_async_climate_bench_debug", ["transp"])
+	_add_action_button(parent, "异步气候 Bench pass_a（V）", &"run_async_climate_bench_debug", ["pass_a"])
 
 func _add_action_button(parent: VBoxContainer, text: String, method: StringName, args: Array = []) -> void:
 	var btn := Button.new()
@@ -542,6 +597,15 @@ func _refresh_from_state() -> void:
 		if cb.button_pressed != val:
 			cb.button_pressed = val
 
+	# 性能 / 渲染实验 toggle：从 main.get_debug_toggle_state 读回真值回显
+	if _main != null and _main.has_method("get_debug_toggle_state"):
+		for key in _toggle_checkboxes.keys():
+			var tcb: CheckBox = _toggle_checkboxes.get(key, null)
+			if tcb == null:
+				continue
+			var truth: bool = bool(_main.call("get_debug_toggle_state", key))
+			if tcb.button_pressed != truth:
+				tcb.button_pressed = truth
 
 	# 未生成地图：置灰诊断动作相关（通过比对 get_current_map() 是否为 null）
 	var has_map: bool = _main != null \

@@ -520,25 +520,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_F:
 			fit_debug_map()
 		KEY_B:
-			# Async climate round Stage 1 — A-B 验证热键（plan §async-stage-1）。
-			# 触发后 generator 跑一次 sync run_transpiration_pass_native 拿参考结果，
-			# 然后跑一次 async path（worker thread 跑 transp pure kernel），对比
-			# moisture 输出 bit-equal。完整报告打到 logcat 里 [async/bench] 前缀。
-			# 安全性：bench 自己 snapshot moisture 并 restore，不会污染持久 sim 状态。
-			if _generator != null and _generator.has_method("run_async_climate_round_bench"):
-				_generator.run_async_climate_round_bench("transp")
-			elif _generator != null and _generator.has_method("run_async_climate_round_stage1_bench"):
-				_generator.run_async_climate_round_stage1_bench()
-			else:
-				push_warning("[async/bench] generator missing run_async_climate_round_bench")
+			# Async climate round Stage 1 — A-B 验证（GM 面板等价）。transp pure kernel
+			# bit-equal sync；bench 自己 snapshot/restore moisture，不污染持久 sim 状态。
+			run_async_climate_bench_debug("transp")
 		KEY_V:
-			# Async climate round Stage 2 — pass_a A-B 验证热键。
-			# 验证 worker thread 跑 pass_a pure kernel 输出的 16 字段 bit-equal sync。
-			# 流程同 KEY_B，但 passes_mask=0x01 仅跑 pass_a；snapshot 全部 16 字段 + ema_initialized。
-			if _generator != null and _generator.has_method("run_async_climate_round_bench"):
-				_generator.run_async_climate_round_bench("pass_a")
-			else:
-				push_warning("[async/bench pass_a] generator missing run_async_climate_round_bench")
+			# Async climate round Stage 2 — pass_a A-B 验证（GM 面板等价）。
+			run_async_climate_bench_debug("pass_a")
 		KEY_SPACE:
 			_world_clock.toggle_pause()
 			_sync_pause_btn()
@@ -592,54 +579,68 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# 从 ~22 飙到 55+，overlay 重 bake 即真凶（已加墙钟节流 overlay_min_bake_interval_ms）。
 			toggle_overlay_refresh_disabled()
 		KEY_L:
-			# Fix #11 second pass (2026-06-16) — 全局诊断日志开关。
-			# mobile bench 显示 print 自身（logcat ~5-10ms/行 + GDScript Variant %
-			# 格式化）每秒消耗 ~150-300ms / 30+ 行。关掉之后所有守门的 print 站点
-			# 字符串构造和 print 都 short-circuit，立即看到真实硬件天花板。
-			# 镜像到 C++ 端（DCWorldExt / SusSchedulerExt），让原生 print 也响应。
-			PKLog.set_enabled(not PKLog.enabled,
-				_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
-				_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
-			)
+			# 全局诊断日志（PKLog）开关（GM 面板等价）。关掉后所有守门 print 站点
+			# short-circuit，立即看到真实硬件天花板；镜像到 C++ 端。
+			toggle_diagnostic_logging_debug()
 		KEY_F2:
 			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
 			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
 			# F10 原本绑 use_data_core master toggle，dots-flag-prune-pr1 删除后改用 F2。
 			# 已在跑则忽略（避免互相覆盖）。
 			_soak_dump_hotkey_start()
-		KEY_F3:
-			# DCSoakABRunner 一键 A/B 对比（dots-storage-同源紧急修复 2026-05-14）：
-			#   F3         — SAME_SOURCE mode 30 tick：A/B 都用当前 DataCore 状态（默认推荐）
-			#                验证 storage 在稳态下的可重复性，threshold=1e-4 期望 PASS
-			#   Shift+F3   — VS_LEGACY mode 30 tick：A=current, B=toggle 后状态
-			#                对比 DataCore vs legacy 业务等价性，threshold=0.5
-			#   Ctrl+F3    — SAME_SOURCE mode **1000 tick**（B3b 阶段 3 收工验收 / 长期均值）
-			#                建议在 x20 速度下使用：1000 tick × 2 段 = 2000 sim-tick ≈ 100 s
-			#   Alt+F3     — 立即 cancel 当前 A/B 流程（解卡用）。无 active 流程时 nop。
-			# 总耗时 ≈ N tick × 2 段 × 当前游戏速度（x1 → 60s/30tick；x20 → 3s/30tick）。
-			print("[soak-ab] F3 pressed (shift=%s ctrl=%s alt=%s)" % [
-				str(event.shift_pressed), str(event.ctrl_pressed), str(event.alt_pressed)])
-			if event.alt_pressed:
-				_soak_ab_hotkey_cancel()
-			elif event.ctrl_pressed and not event.shift_pressed:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE, 1000)
-			elif event.shift_pressed:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
-			else:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE)
-		KEY_F11:
-			# Print current DataCore world bind / entity / component snapshot.
-			_print_data_core_flag_snapshot()
-		KEY_F12:
-			# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已随
-			# use_data_core_weather flag 一同废弃。F12 仅打印废弃提示。
-			_validate_weather_print_snapshot()
+		# 注：原 KEY_F3（Soak A/B）/ KEY_F11（DataCore 标志）/ KEY_F12（validate-weather）
+		# 重复分支已删除——它们在 match 里被上方首次出现的 F3/F11/F12 分支永久遮蔽（死代码），
+		# 对应功能现已统一收进 GM 面板（调试控制台）的「DataCore / Soak」「诊断打印」分组。
+		# Soak A/B 的修饰键变体（Shift/Ctrl/Alt+F3）同理失效，改用面板按钮触发。
 
 # ─── 移动端调试按钮入口 ─────────────────────────────────────────────────
 
 func toggle_debug_console() -> void:
 	if _debug_console != null:
 		_debug_console.visible = not _debug_console.visible
+
+
+# 异步气候轮 A/B bench（GM 面板按钮 / B、V 热键）：kind = "transp" | "pass_a"。
+# worker thread 跑 pure kernel，对比 sync 结果 bit-equal，报告打到 [async/bench] 前缀。
+func run_async_climate_bench_debug(kind: String = "transp") -> void:
+	if _generator != null and _generator.has_method("run_async_climate_round_bench"):
+		_generator.run_async_climate_round_bench(kind)
+	elif kind == "transp" and _generator != null and _generator.has_method("run_async_climate_round_stage1_bench"):
+		_generator.run_async_climate_round_stage1_bench()
+	else:
+		push_warning("[async/bench] generator 缺 run_async_climate_round_bench()")
+
+
+# 全局诊断日志（PKLog）开关（GM 面板按钮 / L 热键）。镜像到 C++ 端
+# DCWorldExt / SusSchedulerExt，让原生 print 也响应。返回切换后的状态。
+func toggle_diagnostic_logging_debug() -> void:
+	PKLog.set_enabled(not PKLog.enabled,
+		_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
+		_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
+	)
+
+
+# GM 面板 toggle 类 CheckBox 的状态回显源：给定 key 返回该开关当前的真值。
+# 这些 toggle_* 方法都是"翻转内部 flag"语义，没有独立 getter，统一在此集中读回，
+# 保证面板 CheckBox 的勾选态与运行时真值一致（热键/按钮任意路径改动都能同步）。
+func get_debug_toggle_state(key: String) -> bool:
+	match key:
+		"perf_mini_hud":
+			return _perf_mini_hud != null and _perf_mini_hud.visible
+		"overlay_refresh_disabled":
+			return _overlay_refresh_disabled
+		"atlas_upload_disabled":
+			return _render_profile_atlas_disabled
+		"atlas_quarter_size":
+			return _render_profile_atlas_quarter_size
+		"weather_hidden":
+			return _render_profile_weather_hidden
+		"world_shader_disabled":
+			return _render_profile_world_shader_disabled
+		"diagnostic_logging":
+			return PKLog.enabled
+		_:
+			return false
 
 
 # 2026-05-19：Mini Perf HUD 显隐切换。
