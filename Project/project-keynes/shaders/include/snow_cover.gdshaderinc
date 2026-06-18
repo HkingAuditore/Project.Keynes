@@ -98,8 +98,10 @@ vec3 apply_snow_cover(
 	float thick_low = pixel_noise.g;
 	float thick_hi = pixel_noise.r;
 	float thickness = clamp(smoothstep(0.05, 0.60, snow_factor) + (thick_low - 0.5) * 0.44, 0.0, 1.0);
-	vec3 thin_snow  = vec3(0.82, 0.86, 0.92);
-	vec3 thick_snow = vec3(0.96, 0.97, 0.99);
+	// [需求5 2026-06-19] 雪盖转暖白(原偏冷蓝白 0.82~0.96，与海冰冰蓝白难分)：
+	// thin 暖灰白、thick 暖白 → 陆地雪暖白 vs 海面冰冷蓝，二者拉开。
+	vec3 thin_snow  = vec3(0.90, 0.89, 0.86);
+	vec3 thick_snow = vec3(0.99, 0.985, 0.96);
 	vec3 snow_color = mix(thin_snow, thick_snow, thickness);
 	snow_color *= mix(0.94, 1.06, thick_hi);
 	float edge_noise = pixel_noise.a;

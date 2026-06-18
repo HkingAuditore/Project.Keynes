@@ -66,10 +66,12 @@ SurfaceParams compute_land_base_surface(
 		float pulse = 1.0 + 0.055 * sin(dot(wp, vec2(0.35, 0.42)) - world_time * 0.55);
 		river_t = clamp(river_t * pulse, 0.0, 1.0);
 	}
+	// [需求1 2026-06-19] 增强径流量视觉差：深浅系数 0.42→0.60、深水段更接近深海色 → 宽阔干流呈
+	// 深蓝厚重、细窄支流浅青，配合烘焙端幂律宽度对比，让"大河 vs 小河"在视觉上拉开。
 	float river_depth_w = smoothstep(0.18, 1.0, river_t_raw);
 	vec3 river_surface = mix(river_color * vec3(1.10, 1.08, 1.02), color_mid_ocean, 0.18);
-	vec3 river_deep = mix(river_color * vec3(0.72, 0.84, 0.98), color_deep_ocean, 0.20);
-	vec3 river_body = mix(river_surface, river_deep, river_depth_w * 0.42);
+	vec3 river_deep = mix(river_color * vec3(0.66, 0.80, 0.98), color_deep_ocean, 0.30);
+	vec3 river_body = mix(river_surface, river_deep, river_depth_w * 0.60);
 	vec3 river_edge_col = mix(river_outline_color, river_color * vec3(0.82, 0.95, 1.05), 0.32);
 	col = mix(col, river_edge_col, outline_t * 0.50 * river_strength);
 	col = mix(col, river_body, river_t * river_strength);
