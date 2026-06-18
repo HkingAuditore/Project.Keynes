@@ -12562,9 +12562,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double continent_warp_amp = getd(profile, "continent_warp_amp", 0.15);
     const double dist_field_weight = getd(profile, "dist_field_weight", 0.55);
     const double noise_weight = getd(profile, "noise_weight", 0.45);
-    const double ridge_boost_amp = getd(profile, "ridge_boost_amp", 0.50);
-    const double meso_weight = getd(profile, "meso_weight", 0.40);
-    const double offshore_amp = getd(profile, "offshore_amp", 0.45);
+    const double ridge_boost_amp = getd(profile, "ridge_boost_amp", 0.68);  // macro-relief：0.50→0.68（更高耸连片山系）
+    const double meso_weight = getd(profile, "meso_weight", 0.40);   // 2026-06-19 回退：保留多块大陆+岛屿群（用户认可的形状）
+    const double offshore_amp = getd(profile, "offshore_amp", 0.45);  // 2026-06-19 回退：保留近海点缀岛屿/群岛
+    // [macro-relief 2026-06-19] 低频大尺度起伏权重。meso(400×高频)负责海岸破碎/群岛(用户认可，
+    // 不动)；macro(~4周期/全宽低频)叠加大尺度高地/盆地结构 → 出现"大平原/大高地/大盆地"，并把
+    // 汇水盆地放大 → 长干流+支流。乘 dist_field 只作用于陆地核心、海岸渐隐 → 不改变大陆轮廓。
+    const double macro_relief_weight = getd(profile, "macro_relief_weight", 0.18);
     const double edge_falloff_start = getd(profile, "edge_falloff_start", 0.80);
     const double edge_falloff_end = getd(profile, "edge_falloff_end", 0.95);
     const double edge_falloff_depth = getd(profile, "edge_falloff_depth", 0.55);
@@ -12585,11 +12589,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
 
     // ── 统一气候场 knobs（terrain-overhaul Phase 3：盛行风水汽输送 + 海洋温度调节）──
     const double moisture_wind_evap = getd(profile, "moisture_wind_evap", 0.18);        // 海面每格蒸发增湿
-    const double moisture_rainout_base = getd(profile, "moisture_rainout_base", 0.12);  // 陆地基础降水率
+    const double moisture_rainout_base = getd(profile, "moisture_rainout_base", 0.12);  // 陆地基础降水率（再平衡：0.16→0.12）
     const double moisture_orographic_gain = getd(profile, "moisture_orographic_gain", 6.0); // 迎风坡增雨系数
-    const double moisture_continental_dry = getd(profile, "moisture_continental_dry", 0.04); // 内陆每格湿空气衰减(大陆度)
-    const double moisture_land_base = getd(profile, "moisture_land_base", 0.05);        // 陆地湿度地板
-    const double moisture_precip_gain = getd(profile, "moisture_precip_gain", 3.5);     // 降水→湿度映射增益
+    const double moisture_continental_dry = getd(profile, "moisture_continental_dry", 0.045); // 内陆每格湿空气衰减(大陆度)（再平衡：0.03→0.045）
+    const double moisture_land_base = getd(profile, "moisture_land_base", 0.06);        // 陆地湿度地板（再平衡：0.10→0.06）
+    const double moisture_precip_gain = getd(profile, "moisture_precip_gain", 2.4);     // 降水→湿度映射增益（再平衡：3.5→2.4）
     const double moisture_humidity_cap = getd(profile, "moisture_humidity_cap", 1.2);   // 空气含水上限
     const double moisture_smooth = getd(profile, "moisture_smooth", 0.35);              // 纬向扫描后各向同性平滑权重
     const double moisture_noise_amp = getd(profile, "moisture_noise_amp", 0.08);        // 陆地湿度细节噪声
@@ -12702,7 +12706,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // continental + 漂移向量；会聚边界沿板块缝隙抬升线状山脉带/岛弧，离散边界成洋中脊/
     // 裂谷。基础海拔 = 板块基线(跨边界平滑混合) + 边界抬升，再叠 fBm 细节。tectonic_blend
     // 在板块场与旧放射场之间插值（默认偏板块，可调回 0 降风险）。
-    const double tectonic_blend = pk_clamp01(getd(profile, "tectonic_blend", 0.8));
+    // 回归修复(2026-06-18)：默认回退到放射状大陆(0.0)。板块基线归一化后会把全图抬成超大
+    // 高原大陆，导致过冷/枯干/山地荒漠铺满。代码保留，重新标定前默认关闭。
+    const double tectonic_blend = pk_clamp01(getd(profile, "tectonic_blend", 0.0));
     const int tectonic_plate_count = std::max(3, std::min(40, geti(profile, "tectonic_plate_count", 14)));
     const double tectonic_continental_fraction = pk_clamp01(getd(profile, "tectonic_continental_fraction", 0.45));
     const double tectonic_continental_base = getd(profile, "tectonic_continental_base", 0.62);
@@ -12909,8 +12915,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const double coast = double(height_noise->get_noise_2d(nx * 80.0 + 500.0, ny * 80.0 + 500.0)) * 0.06;
             const double offshore_raw = double(detail_noise->get_noise_2d(nx * 900.0 - 333.0, ny * 900.0 + 217.0));
             const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;
+            // [macro-relief 2026-06-19] 低频大尺度起伏(~4 周期/全宽)：正→大高地/山系，负→大盆地/
+            // 大平原洼地。乘 dist_field 使其在陆地核心最强、海岸渐隐，保留群岛海岸不变。放大汇水盆地。
+            const double macro = double(height_noise->get_noise_2d(nx * 95.0 + 701.0, ny * 95.0 - 419.0));
             // 放射状大陆 raw（保留作 tectonic_blend 回退）。
-            const double radial_raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight) + coast + offshore;
+            const double radial_raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight)
+                + coast + offshore + macro * dist_field * macro_relief_weight;
             double raw;
             if (tectonic_blend > 0.0 && !plates.empty()) {
                 const double tect = tectonic_elev_at(nx, ny, dist_perturb);
@@ -12918,7 +12928,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double tect_raw = tect
                     + (noise_01 - 0.5) * noise_weight * 0.6
                     + (meso - 0.5) * meso_weight * 0.4
-                    + coast + offshore;
+                    + coast + offshore + macro * dist_field * macro_relief_weight;
                 raw = radial_raw * (1.0 - tectonic_blend) + tect_raw * tectonic_blend;
             } else {
                 raw = radial_raw;
@@ -12955,8 +12965,84 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 下降)，置于 normalize 之后、地形决策之前。产出河谷/山脊线/冲积平原，让地貌更连续、河网
     // 更自然；热力坍塌(talus 角)软化过陡坡。迭代上限参数化以控生成耗时(<几百 ms@15000 格)。
     {
-        const double erosion_droplet_factor = std::max(0.0, getd(profile, "erosion_droplet_factor", 0.6));
-        const int erosion_droplets = std::max(0, int(double(n) * erosion_droplet_factor));
+        // ── 2.4 Stream-Power 河流侵蚀 (Cordonnier et al. 2016；隐式、无条件稳定) ──────
+        // 学术界标准做法：构造抬升 + 河流(stream-power)侵蚀达准平衡 → 自然产生连贯山脉脊线、
+        // 流域、树状河网。每轮：priority-flood 求填洼后的下游指针+处理序(全程排水) → 汇水面积 A
+        // 沿下游累积 → 隐式 SPL 下切：
+        //     E[i] = (E[i] + U[i] + C·E[down]) / (1+C),   C = K·(A/Ā)^m
+        // U=抬升回补(维持山体不被侵平)。proc 升序(下游先)⇒更新 E[i] 时 E[down] 本轮已就绪，
+        // 且 E[i]≥E[down] 恒成立(加权平均) ⇒ 不倒灌、不发散。产出：高汇水处下切成树状河谷
+        // (长干流+支流、Strahler↑)、低汇水脊线保留(宏观山脉/高原读得出)、杂散闭流洼地被抬填
+        // (减少内陆碎水，并修复运行时"盆地凭空灌满水")。性能：O(n log n)×iters，15000格几十ms。
+        // 一键回退：spl_iters=0（退回随机液滴侵蚀）。
+        const int spl_iters = std::max(0, geti(profile, "spl_iters", 14));
+        const double spl_k = std::max(0.0, getd(profile, "spl_erodibility", 1.2));
+        const double spl_m = getd(profile, "spl_area_exp", 0.45);
+        const double spl_uplift_rate = std::max(0.0, getd(profile, "spl_uplift_rate", 0.10));
+        if (spl_iters > 0) {
+            std::vector<float> relief0(size_t(n), 0.0f);
+            for (int i = 0; i < n; ++i) relief0[size_t(i)] = std::max(0.0f, float(double(E[i]) - sea_level));
+            std::vector<float> filled(size_t(n), 0.0f);
+            std::vector<int32_t> down(size_t(n), -1);
+            std::vector<int> proc; proc.reserve(size_t(n));
+            std::vector<uint8_t> pf_seen(size_t(n), 0);
+            std::vector<double> area(size_t(n), 0.0);
+            for (int it = 0; it < spl_iters; ++it) {
+                std::fill(pf_seen.begin(), pf_seen.end(), uint8_t(0));
+                for (int i = 0; i < n; ++i) down[size_t(i)] = -1;
+                proc.clear();
+                std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>,
+                                    std::greater<std::pair<float, int>>> pq;
+                for (int row = 0; row < height; ++row) {
+                    for (int col = 0; col < width; ++col) {
+                        if (row != 0 && row != height - 1 && col != 0 && col != width - 1) continue;
+                        const int i = row * width + col;
+                        pf_seen[size_t(i)] = 1; filled[size_t(i)] = E[i];
+                        pq.push(std::make_pair(E[i], i));
+                    }
+                }
+                while (!pq.empty()) {
+                    const std::pair<float, int> top = pq.top(); pq.pop();
+                    const int cur = top.second;
+                    if (top.first > filled[size_t(cur)] + 1e-6f) continue;
+                    proc.push_back(cur);
+                    for (int d = 0; d < 6; ++d) {
+                        const int ni = index_for_qr(Q[cur] + DQ[d], R[cur] + DR[d]);
+                        if (ni < 0 || pf_seen[size_t(ni)]) continue;
+                        pf_seen[size_t(ni)] = 1;
+                        const float sp = std::max(E[ni], top.first);
+                        filled[size_t(ni)] = sp; down[size_t(ni)] = cur;
+                        pq.push(std::make_pair(sp, ni));
+                    }
+                }
+                for (int i = 0; i < n; ++i) area[size_t(i)] = 1.0;
+                for (int k = int(proc.size()) - 1; k >= 0; --k) {
+                    const int i = proc[k]; const int d = down[size_t(i)];
+                    if (d >= 0) area[size_t(d)] += area[size_t(i)];
+                }
+                double area_mean = 0.0;
+                for (int i = 0; i < n; ++i) area_mean += area[size_t(i)];
+                const double inv_area_mean = 1.0 / std::max(1.0, area_mean / double(std::max(1, n)));
+                for (int k = 0; k < int(proc.size()); ++k) {
+                    const int i = proc[k]; const int d = down[size_t(i)];
+                    if (d < 0) continue;
+                    if (double(E[i]) < sea_level) continue; // 海洋不侵蚀
+                    const double C = spl_k * std::pow(area[size_t(i)] * inv_area_mean, spl_m);
+                    const double U = spl_uplift_rate * double(relief0[size_t(i)]);
+                    double z = (double(E[i]) + U + C * double(E[d])) / (1.0 + C);
+                    if (z < double(E[d])) z = double(E[d]);
+                    E[i] = float(z);
+                }
+            }
+            for (int i = 0; i < n; ++i) {
+                double e = double(E[i]);
+                E[i] = float(e < 0.0 ? 0.0 : (e > 1.0 ? 1.0 : e));
+            }
+        }
+
+        const double erosion_droplet_factor = std::max(0.0, getd(profile, "erosion_droplet_factor", 0.6)); // 2026-06-19 回退到 0.6（河谷/沟壑下切，助宏观地貌可读）
+        // SPL 开启时跳过随机液滴侵蚀，避免双重侵蚀互相打架（SPL 的下切更连贯）。
+        const int erosion_droplets = (spl_iters > 0) ? 0 : std::max(0, int(double(n) * erosion_droplet_factor));
         const int erosion_lifetime = std::max(1, geti(profile, "erosion_max_lifetime", 30));
         const double ero_capacity = getd(profile, "erosion_capacity", 4.0);
         const double ero_deposit = pk_clamp01(getd(profile, "erosion_deposit_rate", 0.3));
@@ -13129,6 +13215,66 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         }
     }
 
+    // ── 5b. 小型内陆洼地高程回填（消除"零碎湖"根因）────────────────────────
+    // 实证(CSV 20260619_032716)：内陆遍布 ~96 个 1~5 格、高程恒为 sea-lake_seed_depth
+    // 的 below-sea 洼地(湖泊种子散点)，后续被判成 COAST → 满屏"零碎湖"，且其原始 E<sea
+    // 在运行时被重新判水 → 用户所述"前几 tick 干盆地、之后突然灌满水"(issue#1)。
+    // 根治：在 E 仍可写的 base pass，按【高程连通性】找出未与主海洋相连的 below-sea 连通块——
+    // 面积 < lake_min 的小块直接抬到 sea+eps(永久成陆，下游任何 pass 都不会再把它判成水)；
+    // >= lake_min 的大盆地保留(在 post pass 自然成内陆湖 LAKE)。阈值与 post pass 的
+    // hydro_lake_min_cells 同源，保证 base/post 判定一致、不再有"漏网孤立水"。
+    {
+        const double sea = sea_level;
+        const int lake_min = std::max(1, int(getd(profile, "hydro_lake_min_cells", 8.0)));
+        std::vector<uint8_t> ocean_e(size_t(n), 0);
+        std::vector<int> obfs;
+        obfs.reserve(size_t(n));
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (double(E[idx]) >= sea) continue;
+                if (row == 0 || row == height - 1 || col == 0 || col == width - 1) {
+                    ocean_e[size_t(idx)] = 1;
+                    obfs.push_back(idx);
+                }
+            }
+        }
+        for (size_t bi = 0; bi < obfs.size(); ++bi) {
+            const int cur = obfs[bi];
+            for (int d = 0; d < 6; ++d) {
+                const int ni = index_for_qr(Q[cur] + DQ[d], R[cur] + DR[d]);
+                if (ni < 0 || ocean_e[size_t(ni)]) continue;
+                if (double(E[ni]) >= sea) continue;
+                ocean_e[size_t(ni)] = 1;
+                obfs.push_back(ni);
+            }
+        }
+        std::vector<uint8_t> pit_seen(size_t(n), 0);
+        std::vector<int> pit_comp;
+        pit_comp.reserve(256);
+        int pit_filled = 0;
+        for (int s = 0; s < n; ++s) {
+            if (double(E[s]) >= sea || ocean_e[size_t(s)] || pit_seen[size_t(s)]) continue;
+            pit_comp.clear();
+            pit_comp.push_back(s);
+            pit_seen[size_t(s)] = 1;
+            for (size_t qi = 0; qi < pit_comp.size(); ++qi) {
+                const int cur = pit_comp[qi];
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = index_for_qr(Q[cur] + DQ[d], R[cur] + DR[d]);
+                    if (ni < 0 || pit_seen[size_t(ni)] || ocean_e[size_t(ni)]) continue;
+                    if (double(E[ni]) >= sea) continue;
+                    pit_seen[size_t(ni)] = 1;
+                    pit_comp.push_back(ni);
+                }
+            }
+            if (int(pit_comp.size()) < lake_min) {
+                for (int v : pit_comp) E[v] = float(sea + 0.012);
+                pit_filled += int(pit_comp.size());
+            }
+        }
+    }
+
     // ── 6. 统一气候场（terrain-overhaul Phase 3）：距海距离 + 盛行风水汽输送湿度 + 初判地形 ──
     // 取代旧"噪声基底 + 单向 coastal/orographic 加湿"棘轮（该模型只增不减→陆地普遍过湿、
     // 沙漠/草原消失）。新模型：海面蒸发为水汽源，沿 wind_belt 盛行风纬向平流，过陆地按里程
@@ -13213,6 +13359,23 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             msm[size_t(i)] = float(sum / wsum);
         }
         for (int i = 0; i < n; ++i) M[i] = msm[size_t(i)];
+    }
+
+    // 6c+. 全向沿海湿度地板（回归修复 2026-06-18）：纯纬向平流忽略非纬向最近海，会在大陆上
+    // 产生"假内陆干燥带"（某格距上风向海很远但其实北/南方紧邻海洋仍被判枯干）。用 dist_ocean
+    // (全向 BFS) 给一个随距海指数衰减的湿度下限：近海格(任意方向)保底湿润，深内陆自然干旱，
+    // 纬向雨影结构作为上层叠加保留。max(原值, floor) 不会抹平已湿润区。
+    {
+        const double coastal_moist_floor = pk_clamp01(getd(profile, "moisture_coastal_floor", 0.28));
+        const double coastal_moist_scale = std::max(1.0, getd(profile, "moisture_coastal_scale", 7.0));
+        for (int i = 0; i < n; ++i) {
+            if (double(E[i]) < sea_level) continue;
+            const int dd = dist_ocean[size_t(i)];
+            if (dd <= 0) continue;
+            const double prox = std::exp(-double(dd) / coastal_moist_scale);
+            const double floor_m = moisture_land_base + coastal_moist_floor * prox;
+            if (double(M[i]) < floor_m) M[i] = float(floor_m);
+        }
     }
 
     // 6d. 初判地形（permanent_only=true）：用统一气候场（海洋调节温度 + 风输送湿度）。
@@ -13367,9 +13530,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const int lookback = std::max(0, geti(profile, "rain_shadow_lookback", 3));
     const double rain_threshold = getd(profile, "rain_shadow_threshold", 0.13);
     const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
-    const double river_percentile = getd(profile, "river_flow_percentile", 0.86);
-    const int hydro_river_min_length = std::max(1, geti(profile, "hydro_river_min_length", 8));
-    const int hydro_lake_min_cells = std::max(1, geti(profile, "hydro_lake_min_cells", 18));
+    const double river_percentile = getd(profile, "river_flow_percentile", 0.72);  // 干支流树状河网：0.80→0.72（绘出支流）
+    const int hydro_river_min_length = std::max(1, geti(profile, "hydro_river_min_length", 5));  // 最短河长：8→5
+    const int hydro_lake_min_cells = std::max(1, geti(profile, "hydro_lake_min_cells", 8));  // 成湖最小面积：18→8
     const double hydro_lake_min_depth = std::max(0.0, getd(profile, "hydro_lake_min_depth", 0.018));
     const double hydro_lake_min_volume = std::max(0.0, getd(profile, "hydro_lake_min_volume", 0.22));
     const double orographic_boost = getd(profile, "orographic_boost", 1.2);
@@ -13776,6 +13939,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         // 用统一气候场温度(gen_temp，含海洋调节)重判 biome，与 base pass 同源。
         const uint8_t nt = pk_decide_terrain_ex(double(E[i]), gen_temp(i),
                                                 double(M[i]), sea_level, true);
+        // [破碎湖修复 2026-06-19] 绝不把陆地重新判回水：内陆低于海平面但已被 reclassify_
+        // drained_land 排干成陆(PLAIN)的格，其原始 E 仍 < sea_level，若用原始 E 重判会被重新
+        // 判成 COAST/OCEAN → 内陆遍布"碎水/破碎湖"(实测 ~144 内陆 COAST 格)。陆→水一律跳过；
+        // 真正的内陆湖由上方基于洼地深度的 LAKE 检测专门生成。
+        if (pk_is_water_terrain(nt) && !pk_is_water_terrain(t)) continue;
         if (nt != t) {
             TERR[i] = nt;
             ++redecide_touched;
@@ -13805,43 +13973,53 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (connected[size_t(i)] != 0 && pk_is_water_terrain(TERR[i])) continue;
         flow[size_t(p)] += flow[size_t(i)];
     }
-    std::vector<float> flow_values;
-    flow_values.reserve(land.size());
-    for (int i : land) flow_values.push_back(flow[size_t(i)]);
-    float river_threshold = std::numeric_limits<float>::infinity();
-    std::vector<int> river_sources;
-    if (!flow_values.empty()) {
-        std::sort(flow_values.begin(), flow_values.end());
-        int threshold_idx = int(double(flow_values.size()) * river_percentile);
-        if (threshold_idx < 0) threshold_idx = 0;
-        if (threshold_idx >= int(flow_values.size())) threshold_idx = int(flow_values.size()) - 1;
-        river_threshold = flow_values[size_t(threshold_idx)];
-        for (int i : land) {
-            if (flow[size_t(i)] >= river_threshold) river_sources.push_back(i);
-        }
-        std::sort(river_sources.begin(), river_sources.end(), [&](int a, int b) {
-            return flow[size_t(a)] > flow[size_t(b)];
-        });
+    // ── 河道起始：按"上游汇水面积(汇水格数)"绝对阈值取河道 ───────────────────────
+    // [river-rework 2026-06-19] 旧法按 flow 分位选 top-X% 地块为源头再向下追踪 → 标出 land 的
+    // 固定比例(实测分位 0.72→占全图 ~10% 成"填满大陆的网"；调高分位又退化成贴海岸的短段)。
+    // 改用地貌学经典 channel-initiation：汇水面积≥阈值才成河 → 天然稀疏树状网：上游细流在累积
+    // 足够汇水后出现，向下汇成干流。汇水多→干流(宽)、汇水少→支流(细)，干支流层级分明。
+    std::vector<int> up_count(size_t(n), 0);
+    for (int i : land) up_count[size_t(i)] = 1;
+    for (auto it = hydro_order.rbegin(); it != hydro_order.rend(); ++it) {
+        const int i = *it;
+        if (up_count[size_t(i)] == 0) continue;
+        const int p = hydro_parent[size_t(i)];
+        if (p < 0) continue;
+        up_count[size_t(p)] += up_count[size_t(i)];
     }
-    for (int source : river_sources) {
-        std::vector<int> river_path;
-        int cur = source;
-        bool reached = false;
-        for (int step = 0; step < n && cur >= 0; ++step) {
-            bool seen = false;
-            for (int v : river_path) {
-                if (v == cur) { seen = true; break; }
-            }
-            if (seen) break;
-            if (pk_is_water_terrain(TERR[cur])) { reached = true; break; }
-            river_path.push_back(cur);
-            const int p = hydro_parent[size_t(cur)];
-            if (p < 0) break;
-            if (pk_is_water_terrain(TERR[p])) { reached = true; break; }
-            cur = p;
+    const int channel_init = std::max(2, geti(profile, "river_channel_init_cells", 16));
+    float river_threshold = std::numeric_limits<float>::infinity();
+    for (int i : land) {
+        if (up_count[size_t(i)] >= channel_init) {
+            RIV[i] = 1;
+            river_threshold = std::min(river_threshold, flow[size_t(i)]);
         }
-        if (reached && int(river_path.size()) >= hydro_river_min_length) {
-            for (int v : river_path) RIV[v] = 1;
+    }
+    if (!std::isfinite(river_threshold)) river_threshold = 0.0f;
+    (void)river_percentile;  // 旧分位参数保留读取以兼容，不再用于河道选择。
+    // 清理：移除不接触水体或过短的孤立河段(channel-init 一般已连通到海/湖，此为安全网)。
+    {
+        std::vector<uint8_t> riv_seen(size_t(n), 0);
+        for (int i : land) {
+            if (RIV[i] == 0 || riv_seen[size_t(i)]) continue;
+            std::vector<int> comp;
+            comp.push_back(i);
+            riv_seen[size_t(i)] = 1;
+            bool touches_water = false;
+            for (size_t qi = 0; qi < comp.size(); ++qi) {
+                const int cur = comp[qi];
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[size_t(cur) * 6 + d];
+                    if (ni < 0) continue;
+                    if (pk_is_water_terrain(TERR[ni])) touches_water = true;
+                    if (riv_seen[size_t(ni)] || RIV[ni] == 0) continue;
+                    riv_seen[size_t(ni)] = 1;
+                    comp.push_back(ni);
+                }
+            }
+            if (!touches_water || int(comp.size()) < hydro_river_min_length) {
+                for (int v : comp) RIV[v] = 0;
+            }
         }
     }
     std::vector<int> unmark;
@@ -14048,7 +14226,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     for (int i : land) {
         const uint8_t t = TERR[i];
         if (pk_is_water_terrain(t) || pk_is_permanent_landform(t)) continue;
-        if (t == 6 || t == 9 || t == 8 || t == 17) continue;
+        // 回归修复(2026-06-18)：绿洲仅在真正的暖沙漠(DESERT)中生成，避免对任意干暖陆地
+        // 滥铺(此前 698 格/5.5%)。寒漠/草原/灌丛不结绿洲。
+        if (t != 7) continue;
         if (BM[i] > 0.30f) continue;
         if (gen_temp(i) < 0.40) continue;
         bool has_water = (RIV[i] != 0);
@@ -14108,7 +14288,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
         // 跳过临水格：恶地/方山是干旱侵蚀高差地貌，不应紧贴海/湖/河岸。
         if (water_nb) continue;
-        if ((max_e - min_e) < 0.025f) continue;
+        // 回归修复(2026-06-18)：高差门槛 0.025→0.05，仅真正崎岖的干旱高差带成恶地/方山，
+        // 避免在归一化海拔上对缓坡沙漠滥铺(此前恶地 11%)。
+        if ((max_e - min_e) < 0.05f) continue;
         // 方山(MESA)：高差地貌中本格为局部高点(平顶台地)且海拔够高；
         // 否则为侵蚀沟壑恶地(BADLANDS)。
         const bool flat_top = (double(E[i]) >= double(max_nb) - 0.004) && (land_h(i) > 0.18);

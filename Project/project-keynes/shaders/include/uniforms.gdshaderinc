@@ -30,6 +30,10 @@
 // moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
+// [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
+// 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
+// 的 flow）。未绑定时采样得 0（无河），安全降级。
+uniform sampler2D flow_tex : filter_linear, repeat_disable;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的
 // 三层独立云（cirrus/cumulus/fog）承担——主地图保持"清爽地表"，不画云。

@@ -98,7 +98,10 @@ void fragment() {
 
 	float elev = decode_height_rg8(uv);
 
-	vec4 scals = vec4(0.0);  // scalar_atlas 退役：flow=0，moist/lat 由 LUT/uv 重建。
+	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
+	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
+	// 未绑定纹理时 texture() 返回 0 → 无河，安全。land/water pipeline 读 scals.g 画河网。
+	scals.g = texture(flow_tex, uv).r;
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
