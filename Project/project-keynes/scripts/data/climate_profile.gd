@@ -29,12 +29,25 @@ extends Resource
 @export var noise_weight: float = 0.45
 
 # Ridge boost for mountain-range spines.
-@export var ridge_boost_amp: float = 0.50
+# [macro-relief 2026-06-19] 0.50→0.68：抬高山脉脊线，使大山系更高耸、海拔对比更强 →
+# 配合加强后的 hillshade，宏观山脉/山系在地图上更醒目；同时更多脊线格越过 mountain_line
+# 成为裸岩山地，山系面积更大、更连片。
+@export var ridge_boost_amp: float = 0.68
 
 # Meso-scale noise weight (between continent and micro detail).
+# 注：2026-06-19 早些时候曾把它降到 0.12 想"消除破碎"，但用户反馈上一版（meso=0.40）的大陆
+# 形状（数块大陆 + 点缀岛屿/群岛）才是想要的，降权反而把大陆合并成单块。已回退到 0.40。
+# 真正"看不到河流/宏观地形"的根因是渲染层（河流 SDF 未上传 GPU、hillshade 偏弱），与此无关。
 @export var meso_weight: float = 0.40
 
+# [macro-relief 2026-06-19] 低频大尺度起伏权重（~4 周期/全宽）。meso(高频)负责海岸破碎/群岛
+# 不动；macro 叠加大尺度高地/盆地 → 出现"大平原/大高地/大盆地"，并放大汇水盆地 → 长干流+支流。
+# 实测根因：meso=400×高频把大陆切成 ~80 个微流域(最大汇水仅 66 格)，故河短、无宏观地形。
+# 调大=宏观起伏更强(更多大山/大盆，河更长)；过大会在内陆生成大片新内海。0 = 关闭。
+@export_range(0.0, 0.5, 0.01) var macro_relief_weight: float = 0.18
+
 # Offshore (sub-sea) terrain amplitude.
+# 注：2026-06-19 回退（曾降到 0.20）。近海隆起正是"点缀岛屿/群岛"的来源，用户想保留，恢复 0.45。
 @export var offshore_amp: float = 0.45
 
 # Edge falloff band: between START and END, elevation fades toward the edge
@@ -425,17 +438,27 @@ const NATIVE_MODE_ACTIVE: int = 2
 
 # Top (1 - percentile) flux cells become river sources; native generation then
 # carves each accepted source down its downhill path to water.
-# terrain-overhaul: 0.92→0.86 恢复可见河网（旧值下河流仅占 ~0.4% 地块）。
-@export var river_flow_percentile: float = 0.86
+# [river-rework 2026-06-19] ⚠ 已弃用：分位法只能标出 land 的固定比例(0.72→占全图 10% 成网)，
+# 无论怎么调都在"填满大陆的网"和"贴海岸短段"之间二选一。河道选择已改用下方
+# river_channel_init_cells(汇水面积阈值)。此值保留仅为兼容，不再影响河道。
+@export var river_flow_percentile: float = 0.72
+
+# [river-rework 2026-06-19] 河道起始阈值：上游汇水格数 ≥ 此值才成河（地貌学 channel-initiation）。
+# 天然生成稀疏树状河网，干流(汇水多)宽、支流(汇水少)细。实测(150×100 地图)：
+#   12→~480 格(偏密)  16→~300 格(适中)  20→~200 格(稀疏)  24→~140 格(很稀疏)
+# 调小=河更多更密；调大=河更少更稀。配合 macro_relief 放大流域后，同阈值河会更长更分级。
+@export var river_channel_init_cells: int = 16
 
 # Minimum accepted land cells in a rendered river path. Shorter runoff paths
 # still contribute flow, but are not drawn as standalone streams.
 # terrain-overhaul: 18→8 让更多中短河流成形（配合统一水汽场后流量分布更分散）。
-@export var hydro_river_min_length: int = 8
+# ⚠ 2026-06-19: 8→5。降低最短河长门槛，让中短支流也能绘出，水网更密。
+@export var hydro_river_min_length: int = 5
 
 # Priority-Flood depression lakes: keep only basins with enough area/depth so
 # noise pits become drained land instead of one-cell ponds.
-@export var hydro_lake_min_cells: int = 18
+# ⚠ 2026-06-19: 18→8。降低成湖最小面积，让中小型内陆湖泊得以保留(此前几乎无 LAKE)。
+@export var hydro_lake_min_cells: int = 8
 @export var hydro_lake_min_depth: float = 0.018
 @export var hydro_lake_min_volume: float = 0.22
 
@@ -949,7 +972,21 @@ const NATIVE_MODE_ACTIVE: int = 2
 # [terrain-overhaul Phase 1 — 水力/热力侵蚀]
 # ══════════════════════════════════════════════════════════════════════
 # 液滴水力侵蚀(作用于 cell 海拔) + 热力坍塌；droplet_factor=0 关闭。迭代上限控制生成耗时。
+# 注：2026-06-19 回退到 0.6（曾误判它造成"单格海洋"而关到 0；修正坐标后的实测显示孤立单格
+# 水体仅 ~34 个，并非液滴侵蚀所致，而是我的分析脚本把多 tick 快照按错误宽度合并的假象）。
+# 液滴侵蚀刻出的河谷/沟壑有助于"宏观大峡谷/下切河谷"的可读性，恢复开启。
 @export_group("侵蚀(生成)")
+
+# ── Stream-Power 河流侵蚀 (Cordonnier et al. 2016, EG) ──────────────────────
+# 构造抬升场(=噪声地形陆地相对高度)与河流侵蚀达准平衡：priority-flood 求汇流 → 汇水面积 →
+# 隐式 SPL 下切 E=(E+U+C·E_down)/(1+C), C=K·(A/Ā)^m。产出连贯山脉脊线、树状长河(干流+支流)、
+# 大流域；并把杂散闭流洼地抬填(减少内陆碎水 + 修复运行时盆地灌水)。开启时自动跳过随机液滴侵蚀。
+# spl_iters=0 一键回退到旧的随机液滴侵蚀。
+@export_range(0, 60, 1) var spl_iters: int = 14            # 迭代轮数(0=关闭SPL)；越大越接近平衡、河谷越深
+@export_range(0.0, 6.0, 0.05) var spl_erodibility: float = 1.2   # 侵蚀系数 K：越大河谷下切越强、地形越平缓
+@export_range(0.2, 1.0, 0.05) var spl_area_exp: float = 0.45     # 汇水面积指数 m(地貌学常用 0.4~0.6)
+@export_range(0.0, 0.5, 0.01) var spl_uplift_rate: float = 0.10  # 抬升回补：越大山体越高耸、起伏越强
+
 @export_range(0.0, 2.0, 0.05) var erosion_droplet_factor: float = 0.6
 @export_range(1, 200, 1) var erosion_max_lifetime: int = 30
 @export var erosion_capacity: float = 4.0
@@ -967,16 +1004,25 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # 取代旧"噪声 + 单向 coastal/orographic 加湿"棘轮：海面蒸发为源，沿盛行风纬向平流，过陆地
 # 按里程 rain-out 衰减(大陆度)，迎风增雨、背风自然成雨影；温度按距海做海洋性调节。
+# ⚠ 2026-06-18 回归修复：原 baseline 使大陆偏大时内陆枯干(中位 0.13)→荒漠铺满；遂抬高基线。
+# ⚠ 2026-06-19 再平衡：上轮回退到放射状大陆后变成 65% 水世界(处处近海)→湿度中位 0.986 过湿、
+# 沙漠/草原消失。这里把基线/降水增益重新下调，并依赖"大陆连贯化"自然形成干燥内陆，目标中位
+# ~0.45-0.55。注意：moisture 在无法实机迭代时最难一次调准，须按新 CSV 复核微调。
 @export_group("统一气候场(生成)")
 @export var moisture_wind_evap: float = 0.18
 @export var moisture_rainout_base: float = 0.12
 @export var moisture_orographic_gain: float = 6.0
-@export var moisture_continental_dry: float = 0.04
-@export var moisture_land_base: float = 0.05
-@export var moisture_precip_gain: float = 3.5
+@export var moisture_continental_dry: float = 0.045
+@export var moisture_land_base: float = 0.06
+@export var moisture_precip_gain: float = 2.4
 @export var moisture_humidity_cap: float = 1.2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
+# 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
+# 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
+# ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。
+@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.28
+@export var moisture_coastal_scale: float = 7.0
 @export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
 @export var coastal_temp_scale: float = 6.0
 

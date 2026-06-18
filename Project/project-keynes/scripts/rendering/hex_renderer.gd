@@ -41,9 +41,12 @@ extends Node2D
 @export var color_snow: Color = Color(0.96, 0.96, 0.96)
 
 # ─── 双光源 hillshading ──────────────────────────────────────────────────
+# [macro-relief 2026-06-19] strength 0.45→0.62、slope_gain 8→11：宏观山脉/盆地/丘陵群
+# 此前因 hillshade 偏弱 + 宽 hypsometric 色带而难以辨认。加强双光源明暗与坡度增益，让大尺度
+# 起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D 着色下更立体可读。属纯视觉 knob，可再微调。
 @export_group("Hillshading")
-@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.45
-@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 8.0
+@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.62
+@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 11.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
 # v6：flow_tex 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）。
@@ -1147,6 +1150,8 @@ func _apply_uniforms() -> void:
 	# 主地图只保留 height/enum + cell-index LUT + 共享 noise_tex。
 	sm.set_shader_parameter("height_tex",   _world.height_tex)
 	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
+	sm.set_shader_parameter("flow_tex",     _world.flow_tex)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:

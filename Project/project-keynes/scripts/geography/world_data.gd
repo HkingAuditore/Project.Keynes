@@ -96,6 +96,11 @@ var height_tex: ImageTexture
 var enum_atlas_tex: ImageTexture
 var scalar_atlas_tex: ImageTexture
 var vector_atlas_tex: ImageTexture
+# [river-render-restore 2026-06-19] 河流 SDF 专用 L8 纹理（derived_size）。
+# scalar_atlas 退役后 flow 通道断供，has_river 链生成的 flow_buffer 从未上传 GPU →
+# 河流在主地图完全不可见。这里把 flow_buffer 单独编码成一张轻量 L8 纹理重新接回 shader，
+# 不复活整张 scalar_atlas（moisture/lat 仍走 LUT/uv）。bake_world 烘焙一次，之后不变。
+var flow_tex: ImageTexture
 # 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
 # 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
 var volcano_field_tex: ImageTexture

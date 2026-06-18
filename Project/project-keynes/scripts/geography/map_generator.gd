@@ -4833,6 +4833,7 @@ func _native_generation_profile_dict() -> Dictionary:
 		"noise_weight",
 		"ridge_boost_amp",
 		"meso_weight",
+		"macro_relief_weight",
 		"offshore_amp",
 		"edge_falloff_start",
 		"edge_falloff_end",
@@ -4860,6 +4861,7 @@ func _native_generation_profile_dict() -> Dictionary:
 		"rain_shadow_factor",
 		"rain_shadow_lookback",
 		"river_flow_percentile",
+		"river_channel_init_cells",
 		"hydro_river_min_length",
 		"hydro_lake_min_cells",
 		"hydro_lake_min_depth",
@@ -4888,6 +4890,11 @@ func _native_generation_profile_dict() -> Dictionary:
 		"tectonic_ridge_width",
 		"tectonic_drift_speed",
 		"tectonic_lloyd_iters",
+		# Stream-Power 河流侵蚀 (Cordonnier 2016)
+		"spl_iters",
+		"spl_erodibility",
+		"spl_area_exp",
+		"spl_uplift_rate",
 		# terrain-overhaul Phase 1 侵蚀
 		"erosion_droplet_factor",
 		"erosion_max_lifetime",
@@ -4910,6 +4917,8 @@ func _native_generation_profile_dict() -> Dictionary:
 		"moisture_humidity_cap",
 		"moisture_smooth",
 		"moisture_noise_amp",
+		"moisture_coastal_floor",
+		"moisture_coastal_scale",
 		"coastal_temp_moderation",
 		"coastal_temp_scale",
 		# terrain-overhaul Phase 5 特征点缀

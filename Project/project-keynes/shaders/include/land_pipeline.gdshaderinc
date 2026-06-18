@@ -56,8 +56,8 @@ SurfaceParams compute_land_base_surface(
 	col = biome_hue_modulate(col, biome);
 	col *= procedural_biome_detail(biome, wp);
 
-	// scalar_atlas 已退役；河流 SDF 视觉层关闭。
-	float flow = 0.0;
+	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 flow_tex（scals.g）。
+	float flow = scals.g;
 	float river_t_raw = smoothstep(river_threshold_low, river_threshold_high, flow);
 	float river_t = river_t_raw;
 	float outline_t = smoothstep(river_threshold_low * 0.78, river_threshold_low, flow)

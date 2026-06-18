@@ -786,6 +786,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	)
 	prewarm_dynamic_axis_caches(map, world)
 	world.scalar_atlas_tex = null
+	# [river-render-restore 2026-06-19] 把河流 SDF（flow_buffer, float[0,1]）编码成 L8 纹理
+	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
+	world.flow_tex = _encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex)
 	world.sea_ice_tex = null
 	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
 	world.vector_atlas_tex = null
@@ -4031,7 +4034,9 @@ func _stamp_polyline_variable(
 	for i in range(points.size() - 1):
 		var w0: float = float(widths[i]) if i < widths.size() else 0.5
 		var w1: float = float(widths[i + 1]) if i + 1 < widths.size() else w0
-		var seg_radius_px: float = base_radius_px * (0.70 + maxf(w0, w1) * 2.10)
+		# [river-hierarchy 2026-06-19] 加大干支流宽度对比：0.70+w*2.10 → 0.60+w*2.7。
+		# 支流(低流量)细、干流(高流量)更粗，干支流层级一眼可辨。
+		var seg_radius_px: float = base_radius_px * (0.60 + maxf(w0, w1) * 2.70)
 		var pad := int(ceil(seg_radius_px)) + 1
 		var p0: Vector2 = (points[i] - origin) * inv_world
 		var p1: Vector2 = (points[i + 1] - origin) * inv_world
@@ -4051,7 +4056,7 @@ func _stamp_polyline_variable(
 				var t: float = 0.0
 				if seg_len_sq > 0.0001:
 					t = clampf((p - p0).dot(seg) / seg_len_sq, 0.0, 1.0)
-				var radius := base_radius_px * (0.70 + lerpf(w0, w1, t) * 2.10)
+				var radius := base_radius_px * (0.60 + lerpf(w0, w1, t) * 2.70)
 				var closest := p0 + seg * t
 				if p.distance_to(closest) <= radius:
 					mask[y * W + x] = 0.0
@@ -4306,6 +4311,21 @@ func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
 # 后续 PR 可逐步把 caller 改为 DCAtlasEncoders.encode_r8_tex 直调。
 func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture) -> ImageTexture:
 	return DCAtlasEncoders.encode_r8_tex(buf, size, existing)
+
+# [river-render-restore 2026-06-19] 河流 SDF（float[0,1]，1=河心）→ L8 纹理。
+# 与 height_tex 共用同一 uv（world_origin/world_size 覆盖同一 world_bounds），
+# shader 在 uv 处采样得到 [0,1] 河流强度，喂回 land_pipeline 的 flow 视觉层。
+func _encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTexture) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	if buf.size() < n:
+		return existing
+	var bytes: PackedByteArray = PackedByteArray()
+	bytes.resize(n)
+	for i in range(n):
+		bytes[i] = int(clampf(buf[i], 0.0, 1.0) * 255.0 + 0.5)
+	return DCAtlasEncoders.encode_r8_tex(bytes, size, existing)
 
 # Emergent Climate Coupling：从 HexCell.sea_ice_fraction 把 per-cell 的连续海冰覆盖率
 # 光栅化为 derived-size 的 R8 buffer，并写到独立的 sea_ice_tex（原地 update）。
