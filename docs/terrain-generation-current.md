@@ -1,12 +1,31 @@
 # 当前地形生成算法文档
 
+> **dots-total-cpp 收尾（2026-06-18）**：初始地图生成已 **100% C++ 化**。
+> `ClimateProfile.native_generation_mode` 默认 `ACTIVE(2)`，`MapGenerator.generate()`
+> 走 `_generate_cells_native_base()` → `DCWorldExt.run_native_world_generate_base_pass()`
+> + `run_native_world_generate_post_base_pass()`（实现于 `gdext/src/world_ext.cpp`）。
+> 经逐字段 A/B parity（base + post_base，seed=10086，elevation/moisture/terrain/
+> landform/vegetation/cover/has_river/has_volcano/is_lake_seed 全部 `mismatch=0`）+
+> 运行期同 seed 地形直方图逐项一致验证后，**GDScript 生成实现已删除**：
+> `_generate_cells` / `_run_post_base_generation_passes` / `_make_continent_centers` /
+> `_compute_elevation` / `_normalize_elevation` / `_carve_lake_seeds` /
+> `_smooth_pit_depressions` / `_apply_mountain_ridges` / `_compute_moisture_base` /
+> `_detect_lakes` / 河流(`_generate_rivers_flow_accumulation` 等) / 全部生成 `_apply_*_pass`
+> 均已移除；`generate()` 在 native 失败时**硬中止 push_error，无 GDScript fallback**。
+>
+> **下文的算法描述仍然准确**——C++ 是 GDScript 的 bit-exact 复刻（同款
+> `FastNoiseLite` + `RandomNumberGenerator` 参数与种子），算法顺序/阈值/公式不变，
+> 只是实现语言从 GDScript 迁到了 `world_ext.cpp`。文中提到的 GDScript 函数名现在
+> 主要作为「对应的 C++ 实现逻辑」的可读标签，部分仍以共享 helper 形式保留（见
+> 「权威数据边界」）。
+
 本文整理 Project.Keynes 当前使用的初始世界地形生成算法。范围包括：
 
-- `MapGenerator.generate()` 与 `_generate_cells()` 的完整阶段顺序。
+- 生成总入口与完整阶段顺序（现由 C++ native pass 执行）。
 - 海拔、大陆、山脉、湖泊、河流、湿度、生态、特殊地貌、三轴派生算法。
 - `MapBaker` 如何把逻辑地形烘焙成高度图、enum atlas、scalar atlas 和河流 SDF。
 - `MapData` / DataCore / C++ DOTS 运行期数据边界。
-- 当前算法的已知限制，尤其是水文与 C++/DOTS 化边界。
+- 当前算法的已知限制，尤其是水文边界。
 
 本文描述的是当前代码事实，不是目标方案。
 
@@ -15,7 +34,8 @@
 | 职责 | 文件 | 关键入口 |
 | --- | --- | --- |
 | 世界生成总入口 | `Project/project-keynes/scripts/geography/map_generator.gd` | `generate()` |
-| per-cell 初始生成 | `Project/project-keynes/scripts/geography/map_generator.gd` | `_generate_cells()` |
+| native 生成桥（base+post_base） | `Project/project-keynes/scripts/geography/map_generator.gd` | `_generate_cells_native_base()` / `_assemble_native_generation_map()` |
+| **C++ 生成实现（base+post_base 权威）** | `gdext/src/world_ext.cpp` | `run_native_world_generate_base_pass()` / `run_native_world_generate_post_base_pass()` |
 | 地图数据与 SoA 镜像 | `Project/project-keynes/scripts/geography/map_data.gd` | `init_soa_from_bake()` / `rebuild_soa_from_cells()` |
 | HexCell facade / AoS 字段 | `Project/project-keynes/scripts/geography/hex_cell.gd` | `terrain` / `landform` / `vegetation` / `cover` 等字段 |
 | 地形枚举 | `Project/project-keynes/scripts/geography/terrain_type.gd` | `TerrainType.TERRAIN` |
@@ -29,38 +49,49 @@
 
 ## 权威数据边界
 
-当前初始地形生成不是 C++/DOTS 权威。生成期主要权威仍是 GDScript `MapGenerator` 对 `HexCell` AoS 字段的直接写入：
+**初始地形生成现在是 C++/DOTS 权威。** `DCWorldExt.run_native_world_generate_base_pass()`
++ `run_native_world_generate_post_base_pass()` 在 C++ 内算出全部 per-cell 字段
+（elevation/moisture/base_moisture/terrain/landform/vegetation/cover/has_river/
+has_volcano/is_lake_seed），以 PackedArray 形式返回；GDScript 侧的
+`_assemble_native_generation_map()` 只做校验 + 装配 `HexCell`，不再运行任何生成算法。
 
-- `cell.elevation`
-- `cell.moisture`
-- `cell.terrain`
-- `cell.landform`
-- `cell.vegetation`
-- `cell.cover`
-- `cell.has_river`
-- `cell.is_lake_seed`
-- `cell.has_volcano`
-- `cell.base_*`
+native 生成所需的 `DCWorldExt` 由 `_ensure_generation_world_ext()` 提供——若主
+`_data_core_world_ext` 尚未绑定（boot 期 generate() 早于 DataCore bind），会临时
+实例化一个 `DCWorldExt` 专供生成 pass，因此生成不依赖运行期 ext 时序。
 
-`MapGenerator.generate()` 在 `_generate_cells()`、三轴派生、海冰 bootstrap、`MapBaker.bake_world()`、洋流/风回填之后，才调用 `map.init_soa_from_bake()`。该调用把 `HexCell` AoS 快照复制到 `MapData` SoA 数组，例如 `terrain_arr`、`landform_arr`、`vegetation_arr`、`cover_arr`、`elevation_arr`、`has_river_arr`、`is_water_arr`。
+`MapGenerator.generate()` 在 native 生成、三轴（已在 native 结果内）、海冰 bootstrap、
+`MapBaker.bake_world()`、洋流/风回填之后，才调用 `map.init_soa_from_bake()`，把 `HexCell`
+AoS 快照复制到 `MapData` SoA 数组（`terrain_arr` / `landform_arr` / `vegetation_arr` /
+`cover_arr` / `elevation_arr` / `has_river_arr` / `is_water_arr` 等）。
 
 随后 `_setup_sus()` 创建 `DCWorld` 并 `bind_map_data(map)`，如果 `DCWorldExt` 可用，也绑定同一份 `MapData` PackedArray。运行期气候、天气、海冰、季节刷新等系统才从 SoA / DataCore / C++ pass 继续读写。
 
 因此：
 
-- 初始地形、水文、湖泊、河流生成的当前权威路径是 GDScript + `HexCell`。
-- `cell.has_river` 已进入 schema，owner 是 `map_generation`，但 C++ 当前主要消费该字段，不生成河网本身。
+- 初始地形、水文、湖泊、河流生成的当前权威路径是 **C++（`world_ext.cpp`）**；GDScript 只负责装配与编排。
+- native 生成失败时 `generate()` **硬中止 + push_error**，不再降级到 GDScript（fallback 已删除）。
+- `cell.has_river` 已进入 schema，owner 是 `map_generation`，C++ 生成 + 消费该字段。
 - `MapBaker` 读 `HexCell` / `MapData` 的初始结果烘焙视觉贴图。
 - 后续运行期可继续改写 `terrain` / `cover`，尤其是季节刷新与海冰 daily pass。
+
+### 仍保留的 GDScript 共享 helper（非生成专属）
+
+下列 helper 被运行期热路径 / bootstrap / C++ 桥复用，未随生成删除：
+
+- `_compute_temperature` / `_alt_penalty` / `_derived_snow_cover`：温度/雪盖派生，generate bootstrap + 气候/海冰/风场热路径共用。
+- `_decide_terrain` / `_is_permanent_landform` / `_vegetation_donor_amount`：运行期季节刷新 micro fallback 仍引用。
+- `_set_cell_runtime_terrain` / `_sync_axes_for_map` / `_sync_axes_for_cell` / `_derive_*`：海冰 terrain flip + 三轴派生。
+- `_bootstrap_sea_ice_fraction`：generate 后海冰基线。
+- `_height_warp`（`_init_noise` 瘦身后只剩这一个噪声）+ `_build_rain_shadow_jitter_for_gdext`：季节雨影 jitter 的 C++ 桥消费。
 
 ## 总体调用顺序
 
 `MapGenerator.generate(cfg, hex_size)` 的高层顺序如下：
 
 1. `cfg.validate()`。
-2. 解析 seed，初始化 `_rng` 和噪声场。
-3. 调用 `_generate_cells(cfg)` 生成 `MapData` 和所有 `HexCell`。
-4. `_sync_axes_for_map(map, cfg)`：从 `terrain + elevation + context` 派生 `landform / vegetation / cover`。
+2. 解析 seed，初始化 `_rng` 和 `_height_warp` 噪声（`_init_noise` 已瘦身；雨影 jitter C++ 桥用）。
+3. 调用 `_generate_cells_native_base(cfg, seed)`：C++ `run_native_world_generate_base_pass` + `run_native_world_generate_post_base_pass` 算出全部 per-cell 字段，`_assemble_native_generation_map()` 装配 `MapData` 和所有 `HexCell`。失败则 `generate()` 硬中止。
+4. 三轴（`landform / vegetation / cover`）已在 native post_base 结果内，无需再 `_sync_axes_for_map`。
 5. `_snapshot_base_state(map)`：保存 `base_terrain / base_landform / base_vegetation`。
 6. `_bootstrap_sea_ice_fraction(map, cfg)`：初始化 `sea_ice_fraction`，稳定极地多年冰可把 terrain 翻为 `SEA_ICE`。
 7. 再次 `_sync_axes_for_map(map, cfg)`，因为海冰可能改 terrain。
@@ -75,9 +106,10 @@
 16. `map.bake_lat_temp_year_lut(self)`。
 17. `_setup_sus(map, world, cfg, hex_size)`，进入 DataCore / SUS / C++ 运行期。
 
-## `_generate_cells()` 阶段顺序
+## 生成阶段顺序（C++ native base + post_base）
 
-`_generate_cells(cfg)` 是初始地形生成的核心。当前顺序如下：
+下表是 C++ 生成 pass 的阶段顺序（与原 GDScript `_generate_cells` bit-exact 一致；
+函数名为对应逻辑的可读标签，实现现在在 `world_ext.cpp`）：
 
 | 阶段 | 调用 | 说明 |
 | --- | --- | --- |
@@ -133,28 +165,17 @@
 
 ## 噪声初始化
 
-`_init_noise(seed_val)` 初始化四类噪声：
+生成噪声现在在 C++ 内构造（`world_ext.cpp` 用同款 `FastNoiseLite` 参数 + 种子偏移，
+保证与下述参数 bit-exact）。GDScript 侧 `_init_noise(seed_val)` 已瘦身为**只初始化
+`_height_warp`**——因为运行期季节雨影 jitter 的 C++ 桥 `_build_rain_shadow_jitter_for_gdext`
+仍要读它；`_height_noise` / `_detail_noise` / `_moisture_noise` 已随 GDScript 生成删除。
 
-- `_height_noise`
-  - `TYPE_SIMPLEX_SMOOTH`
-  - `frequency = 0.014`
-  - FBM，4 octaves
-  - 用于大陆主形和海岸细节。
-- `_height_warp`
-  - `TYPE_SIMPLEX_SMOOTH`
-  - `frequency = 0.025`
-  - FBM，3 octaves
-  - 用于大陆距离扰动、坐标扭曲、边缘扰动、雨影纬度 jitter。
-- `_detail_noise`
-  - `TYPE_SIMPLEX`
-  - `frequency = 0.040`
-  - FBM，3 octaves
-  - 用于中频地形、山脉 ridge、离岸岛屿。
-- `_moisture_noise`
-  - `TYPE_SIMPLEX_SMOOTH`
-  - `frequency = 0.022`
-  - FBM，4 octaves
-  - 用于基础湿度。
+C++ 生成（与原 GDScript 一致）使用的四类噪声参数：
+
+- height noise（大陆主形 / 海岸细节）：`TYPE_SIMPLEX_SMOOTH`，`frequency = 0.014`，FBM 4 octaves，seed = `seed_val`。
+- `_height_warp`（大陆距离扰动 / 坐标扭曲 / 边缘扰动 / 雨影纬度 jitter，**GDScript 侧保留**）：`TYPE_SIMPLEX_SMOOTH`，`frequency = 0.025`，FBM 3 octaves，seed = `seed_val + 13`。
+- detail noise（中频地形 / 山脉 ridge / 离岸岛屿）：`TYPE_SIMPLEX`，`frequency = 0.040`，FBM 3 octaves，seed = `seed_val + 257`。
+- moisture noise（基础湿度）：`TYPE_SIMPLEX_SMOOTH`，`frequency = 0.022`，FBM 4 octaves，seed = `seed_val + 9973`。
 
 ## 大陆中心
 
@@ -1051,7 +1072,7 @@ widen = 0.08
 
 主要限制：
 
-- 初始地形/水文生成仍由 GDScript AoS 权威，不符合“生成 hot-loop C++/DOTS 权威”的目标。
+- ~~初始地形/水文生成仍由 GDScript AoS 权威~~ **已解决（dots-total-cpp 2026-06-18）：生成 hot-loop 已 C++/DOTS 权威，GDScript 生成实现删除。**
 - 河流只有 `has_river` 布尔，没有河网图、流量输出、river order、宽度或主支流关系。
 - 河流阈值是全图分位，不是基于真实 drainage area / discharge 的局部门槛。
 - 河流视觉从 `has_river` 严格下坡追踪，容易短段化、断裂或缺少主干连续性。

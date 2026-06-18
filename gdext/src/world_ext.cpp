@@ -11,6 +11,8 @@
 #endif
 
 #include <godot_cpp/classes/global_constants.hpp>
+#include <godot_cpp/classes/fast_noise_lite.hpp>          // native world-gen 复刻：与 GDScript _init_noise 同一引擎噪声
+#include <godot_cpp/classes/random_number_generator.hpp>  // native world-gen 复刻：与 GDScript _rng 同一引擎 PCG
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
@@ -12218,7 +12220,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     out["fallback_reason"] = String();
     out["reason"] = String();
     out["published_to_slot"] = false;
-    out["native_algorithm"] = String("pk_hash_fbm_v1");
+    out["native_algorithm"] = String("gdscript_replica_fnl_v1");
     out["n_cells"] = 0;
     out["elapsed_ms"] = -1.0;
     out["native_ms"] = -1.0;
@@ -12276,44 +12278,86 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double coastal_boost = getd(profile, "coastal_moisture_boost", 0.20);
     const double orographic_boost = getd(profile, "orographic_boost", 1.2);
 
-    struct PkGenRng {
-        uint64_t state;
-        explicit PkGenRng(uint64_t seed_value) {
-            state = seed_value ? seed_value : 0x9e3779b97f4a7c15ull;
-        }
-        uint64_t next_u64() {
-            uint64_t x = state;
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            state = x ? x : 0x9e3779b97f4a7c15ull;
-            return state;
-        }
-        double rand01() {
-            return double(next_u64() >> 11) * (1.0 / 9007199254740992.0);
-        }
-        double range(double lo, double hi) {
-            return lo + (hi - lo) * rand01();
-        }
-    };
+    // ── lake-seed / pit-fill knobs（镜像 ClimateProfile，复刻 _carve_lake_seeds / _smooth_pit_depressions）──
+    const double lake_seed_freq = getd(profile, "lake_seed_freq", 0.18);
+    const double lake_seed_threshold = getd(profile, "lake_seed_threshold", 0.55);
+    const double lake_seed_depth = getd(profile, "lake_seed_depth", 0.04);
+    const double lake_seed_min_interior = getd(profile, "lake_seed_min_interior", 0.12);
+    const int pit_fill_max_iters = std::max(0, geti(profile, "pit_fill_max_iters", 100));
+
+    // ── FastNoiseLite 实例：与 map_generator.gd::_init_noise 逐位同源 ──
+    // 复刻策略：native 生成改用 Godot 同款引擎噪声（同 seed/freq/octaves/lacunarity/gain），
+    // 而非自带 pk_hash_fbm，使 C++ 生成与 GDScript 路径 bit-exact，可走 A/B 验证后删 GDScript。
+    Ref<FastNoiseLite> height_noise;  height_noise.instantiate();
+    height_noise->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    height_noise->set_seed(seed);
+    height_noise->set_frequency(0.014);
+    height_noise->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    height_noise->set_fractal_octaves(4);
+    height_noise->set_fractal_lacunarity(2.0);
+    height_noise->set_fractal_gain(0.5);
+
+    Ref<FastNoiseLite> height_warp;  height_warp.instantiate();
+    height_warp->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    height_warp->set_seed(seed + 13);
+    height_warp->set_frequency(0.025);
+    height_warp->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    height_warp->set_fractal_octaves(3);
+
+    Ref<FastNoiseLite> detail_noise;  detail_noise.instantiate();
+    detail_noise->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    detail_noise->set_seed(seed + 257);
+    detail_noise->set_frequency(0.040);
+    detail_noise->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    detail_noise->set_fractal_octaves(3);
+
+    Ref<FastNoiseLite> moisture_noise;  moisture_noise.instantiate();
+    moisture_noise->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    moisture_noise->set_seed(seed + 9973);
+    moisture_noise->set_frequency(0.022);
+    moisture_noise->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    moisture_noise->set_fractal_octaves(4);
+    moisture_noise->set_fractal_lacunarity(2.0);
+    moisture_noise->set_fractal_gain(0.5);
+
+    // 湖泊种子噪声：镜像 _carve_lake_seeds 内部局部 FastNoiseLite。
+    Ref<FastNoiseLite> lake_noise;  lake_noise.instantiate();
+    lake_noise->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    lake_noise->set_seed(seed + 9173);
+    lake_noise->set_frequency(lake_seed_freq);
+    lake_noise->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    lake_noise->set_fractal_octaves(3);
+
+    if (height_noise.is_null() || height_warp.is_null() || detail_noise.is_null()
+            || moisture_noise.is_null() || lake_noise.is_null()) {
+        return fail("fast_noise_lite_instantiate_failed", "noise");
+    }
+
+    // ── 大陆中心点：与 _make_continent_centers + _try_place 逐位同源 ──
+    // GDScript `_rng.seed = effective_seed`（无 xor 混淆），用 Godot RNG 同款 PCG。
     struct Center {
         double x;
         double y;
         double radius;
     };
-
     std::vector<Center> centers;
-    centers.reserve(size_t(num_continents * (1 + satellites_per_main)));
-    PkGenRng rng(uint64_t(seed) ^ 0x6a09e667f3bcc909ull);
-    const double radius_unit = continent_size * 0.6;
-    auto try_place_center = [&](double radius, double lo, double hi, double sep_factor, int attempts) -> bool {
+    centers.reserve(size_t(std::max(1, num_continents) * (1 + std::max(0, satellites_per_main))));
+    Ref<RandomNumberGenerator> rng;  rng.instantiate();
+    if (rng.is_null()) {
+        return fail("rng_instantiate_failed", "rng");
+    }
+    rng->set_seed(uint64_t(seed));
+    const double base_radius_unit = continent_size * 0.6;
+    const int n_main = std::max(1, num_continents);
+    const int n_satellite = n_main * std::max(0, satellites_per_main);
+    auto try_place = [&](double radius, double lo, double hi, double sep_factor, int attempts) -> void {
         for (int attempt = 0; attempt < attempts; ++attempt) {
-            const double x = rng.range(lo, hi);
-            const double y = rng.range(lo, hi);
+            const double px = double(rng->randf_range(lo, hi));
+            const double py = double(rng->randf_range(lo, hi));
             bool ok = true;
             for (const Center &c : centers) {
-                const double dx = x - c.x;
-                const double dy = y - c.y;
+                const double dx = px - c.x;
+                const double dy = py - c.y;
                 const double d = std::sqrt(dx * dx + dy * dy);
                 if (d < (radius + c.radius) * sep_factor) {
                     ok = false;
@@ -12321,63 +12365,19 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 }
             }
             if (ok) {
-                centers.push_back(Center{x, y, radius});
-                return true;
+                centers.push_back(Center{px, py, radius});
+                return;
             }
         }
-        return false;
     };
-    for (int i = 0; i < num_continents; ++i) {
-        const double radius = rng.range(main_radius_min, main_radius_max) * radius_unit;
-        try_place_center(radius, main_place_min, main_place_max, main_sep, 50);
+    for (int i = 0; i < n_main; ++i) {
+        const double radius = (main_radius_min + (main_radius_max - main_radius_min) * double(rng->randf())) * base_radius_unit;
+        try_place(radius, main_place_min, main_place_max, main_sep, 50);
     }
-    for (int i = 0; i < num_continents * satellites_per_main; ++i) {
-        const double radius = rng.range(sat_radius_min, sat_radius_max) * radius_unit;
-        try_place_center(radius, sat_place_min, sat_place_max, sat_sep, 30);
+    for (int i = 0; i < n_satellite; ++i) {
+        const double radius = (sat_radius_min + (sat_radius_max - sat_radius_min) * double(rng->randf())) * base_radius_unit;
+        try_place(radius, sat_place_min, sat_place_max, sat_sep, 30);
     }
-    if (centers.empty()) {
-        centers.push_back(Center{0.5, 0.5, std::max(0.05, radius_unit * 0.75)});
-    }
-
-    auto hash01 = [](int64_t x, int64_t y, uint64_t salt) -> double {
-        uint64_t h = uint64_t(x) * 0x9e3779b185ebca87ull
-                   ^ uint64_t(y) * 0xc2b2ae3d27d4eb4full
-                   ^ salt;
-        h ^= h >> 33;
-        h *= 0xff51afd7ed558ccdull;
-        h ^= h >> 33;
-        h *= 0xc4ceb9fe1a85ec53ull;
-        h ^= h >> 33;
-        return double(h >> 11) * (1.0 / 9007199254740992.0);
-    };
-    auto value_noise = [&](double x, double y, uint64_t salt) -> double {
-        const int64_t xi = int64_t(std::floor(x));
-        const int64_t yi = int64_t(std::floor(y));
-        const double tx0 = x - double(xi);
-        const double ty0 = y - double(yi);
-        const double tx = tx0 * tx0 * (3.0 - 2.0 * tx0);
-        const double ty = ty0 * ty0 * (3.0 - 2.0 * ty0);
-        const double a = hash01(xi, yi, salt);
-        const double b = hash01(xi + 1, yi, salt);
-        const double c = hash01(xi, yi + 1, salt);
-        const double d = hash01(xi + 1, yi + 1, salt);
-        const double ab = a + (b - a) * tx;
-        const double cd = c + (d - c) * tx;
-        return (ab + (cd - ab) * ty) * 2.0 - 1.0;
-    };
-    auto fbm = [&](double x, double y, uint64_t salt, int octaves) -> double {
-        double amp = 0.5;
-        double freq = 1.0;
-        double sum = 0.0;
-        double norm = 0.0;
-        for (int o = 0; o < octaves; ++o) {
-            sum += value_noise(x * freq, y * freq, salt + uint64_t(o) * 0x9e3779b97f4a7c15ull) * amp;
-            norm += amp;
-            amp *= 0.5;
-            freq *= 2.0;
-        }
-        return norm > 0.0 ? sum / norm : 0.0;
-    };
 
     PackedInt32Array q_arr;
     PackedInt32Array r_arr;
@@ -12455,99 +12455,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     uint8_t *EMA = ema_initialized_arr.ptrw();
 
     const auto t0 = std::chrono::high_resolution_clock::now();
-    double min_e = std::numeric_limits<double>::infinity();
-    double max_e = -std::numeric_limits<double>::infinity();
     const double inv_w = 1.0 / double(std::max(width - 1, 1));
     const double inv_h = 1.0 / double(std::max(height - 1, 1));
-    const uint64_t seed_salt = uint64_t(seed) * 0x9e3779b97f4a7c15ull;
 
-    for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < width; ++col) {
-            const int idx = row * width + col;
-            const int q = col - ((row - (row & 1)) / 2);
-            const int r = row;
-            Q[idx] = q;
-            R[idx] = r;
-            S[idx] = -q - r;
-            LAT[idx] = float(double(row) * inv_h);
-
-            const double nx = double(col) * inv_w;
-            const double ny = double(row) * inv_h;
-            const double dist_perturb = fbm(nx * 16.0 + 11.3, ny * 16.0 - 7.1, seed_salt + 13, 3) * continent_warp_amp;
-            double dist_field = 0.0;
-            for (const Center &c : centers) {
-                const double dx = nx - c.x;
-                const double dy = ny - c.y;
-                const double d = std::sqrt(dx * dx + dy * dy) + dist_perturb;
-                double df = pk_clamp01(1.0 - d / std::max(c.radius, 0.001));
-                df = std::pow(df, 1.5);
-                if (df > dist_field) dist_field = df;
-            }
-            const double u = nx * 200.0;
-            const double v = ny * 200.0;
-            const double u_warp = fbm(u * 0.08 + 11.3, v * 0.08 - 7.1, seed_salt + 29, 3) * 35.0;
-            const double v_warp = fbm(u * 0.08 - 23.7, v * 0.08 + 41.5, seed_salt + 31, 3) * 35.0;
-            const double c1 = fbm((u + u_warp) * 0.014, (v + v_warp) * 0.014, seed_salt + 101, 4);
-            const double c2 = fbm((u * 1.7 + u_warp) * 0.040, (v * 1.7 + v_warp) * 0.040, seed_salt + 257, 3);
-            const double noise_01 = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
-            const double meso = (fbm(nx * 400.0 + 137.0, ny * 400.0 - 91.0, seed_salt + 401, 3) + 1.0) * 0.5;
-            const double coast = fbm(nx * 80.0 + 500.0, ny * 80.0 + 500.0, seed_salt + 503, 3) * 0.06;
-            const double offshore_raw = fbm(nx * 900.0 - 333.0, ny * 900.0 + 217.0, seed_salt + 607, 3);
-            const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;
-            double raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight) + coast + offshore;
-            const double edge_dx = std::fabs(nx - 0.5) * 2.0;
-            const double edge_dy = std::fabs(ny - 0.5) * 2.0;
-            const double edge_base = std::max(edge_dx, edge_dy);
-            const double edge_perturb = fbm(nx * 150.0 + 199.0, ny * 150.0 - 73.0, seed_salt + 701, 3) * 0.38;
-            raw -= pk_smoothstep(edge_falloff_start, edge_falloff_end, edge_base + edge_perturb) * edge_falloff_depth;
-            E[idx] = float(raw);
-            if (raw < min_e) min_e = raw;
-            if (raw > max_e) max_e = raw;
-        }
-    }
-
-    const double range_e = max_e - min_e;
-    if (range_e > 0.001) {
-        const double inv_range = 1.0 / range_e;
-        for (int i = 0; i < n; ++i) {
-            E[i] = float((double(E[i]) - min_e) * inv_range);
-        }
-    }
-
-    if (ridge_boost_amp > 0.0) {
-        for (int row = 0; row < height; ++row) {
-            for (int col = 0; col < width; ++col) {
-                const int idx = row * width + col;
-                if (E[idx] < sea_level) continue;
-                const double nx = double(col) * inv_w;
-                const double ny = double(row) * inv_h;
-                const double land_h = (double(E[idx]) - sea_level) / std::max(1.0 - sea_level, 0.001);
-                const double ridge_a = 1.0 - std::fabs(fbm(nx * 5.5 + 19.0, ny * 5.5 - 31.0, seed_salt + 809, 4));
-                const double ridge_b = 1.0 - std::fabs(fbm(nx * 7.0 - 61.0, ny * 4.5 + 47.0, seed_salt + 907, 4));
-                const double ridge_signal = std::max(ridge_a, ridge_b);
-                const double gate = pk_smoothstep(0.12, 0.85, land_h);
-                E[idx] = float(pk_clamp01(double(E[idx]) + ridge_signal * gate * ridge_boost_amp * 0.18));
-            }
-        }
-    }
-
-    for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < width; ++col) {
-            const int idx = row * width + col;
-            const double nx = double(col) * inv_w;
-            const double ny = double(row) * inv_h;
-            const double large = (fbm(nx * 100.0, ny * 100.0, seed_salt + 9973, 4) + 1.0) * 0.5;
-            const double small = (fbm(nx * 400.0 + 79.0, ny * 400.0 - 31.0, seed_salt + 10007, 4) + 1.0) * 0.5;
-            M[idx] = float(pk_clamp01(large * 0.65 + small * 0.35));
-
-            const float temp = pk_compute_temperature(ny, double(E[idx]));
-            const uint8_t terrain = pk_decide_terrain(double(E[idx]), double(temp), double(M[idx]), sea_level);
-            TERR[idx] = terrain;
-            IW[idx] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
-        }
-    }
-
-    // Coastal and orographic moisture are still pure per-cell data transforms; keep them native.
     constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
     constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
     auto index_for_qr = [&](int q, int r) -> int {
@@ -12555,6 +12465,177 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (col < 0 || col >= width || r < 0 || r >= height) return -1;
         return r * width + col;
     };
+
+    // ── 1. coords + elevation —— 镜像 _compute_elevation（行主序，与 all_cells() 一致）──
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            const int idx = row * width + col;
+            const int q = col - ((row - (row & 1)) / 2);
+            Q[idx] = q;
+            R[idx] = row;
+            S[idx] = -q - row;
+            LAT[idx] = float(double(row) * inv_h);
+
+            const double nx = double(col) * inv_w;
+            const double ny = double(row) * inv_h;
+            const double dist_perturb = double(height_warp->get_noise_2d(nx * 250.0 + 11.3, ny * 250.0 - 7.1)) * continent_warp_amp;
+            double dist_field = 0.0;
+            for (const Center &c : centers) {
+                const double dx = nx - c.x;
+                const double dy = ny - c.y;
+                const double d = std::sqrt(dx * dx + dy * dy) + dist_perturb;
+                double df = pk_clamp01(1.0 - d / c.radius);
+                df = std::pow(df, 1.5);
+                if (df > dist_field) dist_field = df;
+            }
+            const double u = nx * 200.0;
+            const double v = ny * 200.0;
+            const double u_warp = double(height_warp->get_noise_2d(u + 11.3, v - 7.1)) * 35.0;
+            const double v_warp = double(height_warp->get_noise_2d(u - 23.7, v + 41.5)) * 35.0;
+            const double c1 = double(height_noise->get_noise_2d(u + u_warp, v + v_warp));
+            const double c2 = double(detail_noise->get_noise_2d(u * 1.7 + u_warp, v * 1.7 + v_warp));
+            const double noise_01 = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
+            const double meso = (double(detail_noise->get_noise_2d(nx * 400.0 + 137.0, ny * 400.0 - 91.0)) + 1.0) * 0.5;
+            const double coast = double(height_noise->get_noise_2d(nx * 80.0 + 500.0, ny * 80.0 + 500.0)) * 0.06;
+            const double offshore_raw = double(detail_noise->get_noise_2d(nx * 900.0 - 333.0, ny * 900.0 + 217.0));
+            const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;
+            double raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight) + coast + offshore;
+            const double edge_dx = std::fabs(nx - 0.5) * 2.0;
+            const double edge_dy = std::fabs(ny - 0.5) * 2.0;
+            const double edge_d_base = std::max(edge_dx, edge_dy);
+            const double edge_perturb = double(height_warp->get_noise_2d(nx * 150.0 + 199.0, ny * 150.0 - 73.0)) * 0.38;
+            const double edge_d = edge_d_base + edge_perturb;
+            const double edge_t = pk_smoothstep(edge_falloff_start, edge_falloff_end, edge_d);
+            raw -= edge_t * edge_falloff_depth;
+            E[idx] = float(raw);
+        }
+    }
+
+    // ── 2. normalize —— 镜像 _normalize_elevation ──
+    {
+        double min_e = std::numeric_limits<double>::infinity();
+        double max_e = -std::numeric_limits<double>::infinity();
+        for (int i = 0; i < n; ++i) {
+            const double e = double(E[i]);
+            if (e < min_e) min_e = e;
+            if (e > max_e) max_e = e;
+        }
+        const double range_e = max_e - min_e;
+        if (range_e >= 0.001) {
+            const double inv_range = 1.0 / range_e;
+            for (int i = 0; i < n; ++i) E[i] = float((double(E[i]) - min_e) * inv_range);
+        }
+    }
+
+    // ── 3. carve lake seeds —— 镜像 _carve_lake_seeds（就地写，行主序，邻居读当前 E）──
+    PackedByteArray is_lake_seed_arr;
+    is_lake_seed_arr.resize(n);
+    {
+        uint8_t *LS = is_lake_seed_arr.ptrw();
+        for (int i = 0; i < n; ++i) LS[i] = 0;
+        const double sea = sea_level;
+        const double w_min = lake_seed_min_interior;
+        const double w_max = 1.0 - lake_seed_min_interior;
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (double(E[idx]) < sea + 0.04) continue;
+                const double nx = double(col) * inv_w;
+                const double ny = double(row) * inv_h;
+                if (nx < w_min || nx > w_max || ny < w_min || ny > w_max) continue;
+                const double nval = double(lake_noise->get_noise_2d(double(Q[idx]), double(R[idx])));
+                if (nval < lake_seed_threshold) continue;
+                bool has_water_nb = false;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
+                    if (ni >= 0 && double(E[ni]) < sea) { has_water_nb = true; break; }
+                }
+                if (has_water_nb) continue;
+                E[idx] = float(sea - lake_seed_depth);
+                LS[idx] = 1;
+            }
+        }
+    }
+
+    // ── 4. smooth pit depressions —— 镜像 _smooth_pit_depressions（就地，迭代至稳定）──
+    for (int it = 0; it < pit_fill_max_iters; ++it) {
+        bool changed = false;
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (double(E[idx]) < sea_level) continue;
+                double lowest_nb = std::numeric_limits<double>::infinity();
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
+                    if (ni < 0) continue;
+                    const double e = double(E[ni]);
+                    if (e < lowest_nb) lowest_nb = e;
+                }
+                if (lowest_nb < std::numeric_limits<double>::infinity() && double(E[idx]) <= lowest_nb) {
+                    E[idx] = float(lowest_nb + 0.001);
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) break;
+    }
+
+    // ── 5. mountain ridges —— 镜像 _apply_mountain_ridges（就地，slope 读当前 E）──
+    if (ridge_boost_amp > 0.0) {
+        const double denom_lf = std::max(1.0 - sea_level, 0.001);
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (double(E[idx]) < sea_level) continue;
+                const double nx2 = double(col) * inv_w;
+                const double ny2 = double(row) * inv_h;
+                const double ridge_a = 1.0 - std::fabs(double(detail_noise->get_noise_2d(nx2 * 180.0 + 71.3, ny2 * 180.0 - 33.7)));
+                const double ridge_b = 1.0 - std::fabs(double(detail_noise->get_noise_2d(nx2 * 220.0 - 50.7, ny2 * 220.0 + 91.1)));
+                const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
+                double lowest = double(E[idx]);
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
+                    if (ni >= 0 && double(E[ni]) < lowest) lowest = double(E[ni]);
+                }
+                const double slope = double(E[idx]) - lowest;
+                double slope_gate = slope * 8.0;
+                if (slope_gate < 0.30) slope_gate = 0.30;
+                else if (slope_gate > 1.0) slope_gate = 1.0;
+                double land_factor = (double(E[idx]) - sea_level) / denom_lf;
+                land_factor = std::pow(land_factor, 1.5);
+                const double addition = ridge_signal * land_factor * slope_gate * ridge_boost_amp;
+                double raw_post = double(E[idx]) + addition;
+                const double soft_max = 0.78;
+                const double land_elev_cap = 0.93;
+                if (raw_post > soft_max) {
+                    const double excess = raw_post - soft_max;
+                    raw_post = soft_max + (land_elev_cap - soft_max) * (1.0 - std::exp(-excess * 3.0));
+                }
+                if (raw_post < 0.0) raw_post = 0.0;
+                else if (raw_post > land_elev_cap) raw_post = land_elev_cap;
+                E[idx] = float(raw_post);
+            }
+        }
+    }
+
+    // ── 6. moisture base + 初判地形（permanent_only=true）—— 镜像步骤 4 & 5 ──
+    // 注意：初判地形用 moisture_base（coastal/orographic 之前），故必须先决策再补湿。
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            const int idx = row * width + col;
+            const double nx = double(col) * inv_w;
+            const double ny = double(row) * inv_h;
+            const double large = (double(moisture_noise->get_noise_2d(nx * 100.0, ny * 100.0)) + 1.0) * 0.5;
+            const double small = (double(moisture_noise->get_noise_2d(nx * 400.0 + 79.0, ny * 400.0 - 31.0)) + 1.0) * 0.5;
+            M[idx] = float(pk_clamp01(large * 0.65 + small * 0.35));
+            const double temp = double(pk_compute_temperature(ny, double(E[idx])));
+            const uint8_t terrain = pk_decide_terrain_ex(double(E[idx]), temp, double(M[idx]), sea_level, true);
+            TERR[idx] = terrain;
+            IW[idx] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
+        }
+    }
+
+    // ── 7. coastal + orographic moisture —— 镜像步骤 6 & 6.5（在 base，post_base 随后 snapshot base_moisture）──
     for (int i = 0; i < n; ++i) {
         if (IW[i]) continue;
         int water_nbs = 0;
@@ -12568,19 +12649,22 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (total_nbs > 0) {
             M[i] = float(pk_clamp01(double(M[i]) + (double(water_nbs) / double(total_nbs)) * coastal_boost));
         }
-        if (E[i] > 0.30f && orographic_boost != 0.0) {
-            M[i] = float(pk_clamp01(double(M[i]) * (1.0 + (double(E[i]) - 0.30) * orographic_boost)));
+    }
+    if (orographic_boost != 0.0) {
+        for (int i = 0; i < n; ++i) {
+            if (IW[i]) continue;
+            const double land_h = double(E[i]);
+            if (land_h <= 0.30) continue;
+            const double boost = 1.0 + (land_h - 0.30) * orographic_boost;
+            M[i] = float(pk_clamp01(double(M[i]) * boost));
         }
     }
 
+    // ── 8. 初始仿真字段 + base 快照 + 轴派生（中间值，post_base 末尾会重算 landform/veg/cover）──
     for (int i = 0; i < n; ++i) {
-        const float ny = LAT[i];
-        const float temp = pk_compute_temperature(double(ny), double(E[i]));
-        uint8_t terrain = TERR[i];
-        if (!pk_is_water_terrain(terrain) && terrain != 6 && terrain != 9 && terrain != 8) {
-            terrain = pk_decide_terrain(double(E[i]), double(temp), double(M[i]), sea_level);
-        }
-        TERR[i] = terrain;
+        const double ny = double(LAT[i]);
+        const float temp = pk_compute_temperature(ny, double(E[i]));
+        const uint8_t terrain = TERR[i];
         BTERR[i] = terrain;
         IW[i] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
         BM[i] = M[i];
@@ -12590,7 +12674,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         T365[i] = temp;
         TA[i] = 0.0f;
         TH[i] = temp;
-        TY[i] = float(pk_clamp01(pk_lat_temp_bell((double(ny) - 0.5) * 2.0)));
+        TY[i] = float(pk_clamp01(pk_lat_temp_bell((ny - 0.5) * 2.0)));
         SNOW[i] = 0.0f;
         EMA[i] = 1;
         const uint8_t lf = pk_derive_landform(terrain, E[i], float(sea_level));
@@ -12644,6 +12728,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     out["cell_lat_norm_arr"] = cell_lat_norm_arr;
     out["temp_baseline_year_arr"] = temp_baseline_year_arr;
     out["snow_cover_arr"] = snow_cover_arr;
+    out["is_lake_seed_arr"] = is_lake_seed_arr;
     out["terrain_arr"] = terrain_arr;
     out["base_terrain_arr"] = base_terrain_arr;
     out["landform_arr"] = landform_arr;
@@ -12925,19 +13010,27 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // Snapshot base moisture before rain shadow / river ecology.
     for (int i = 0; i < n; ++i) BM[i] = M[i];
 
+    // 复刻 _apply_rain_shadow_per_cell(season_phase=1.0)：
+    //   1) jitter 来自 _height_warp.get_noise_2d(q*8, r*8)*0.04（需重建同款 FastNoiseLite）；
+    //   2) upwind 目标是 cell + best_dir*lookback 的直接 cube 跳转（== get_cell_by_cube），
+    //      而非逐步 NB 走步——后者在地图边缘对角方向会与 GDScript 差 1 格。
+    Ref<FastNoiseLite> rs_warp;  rs_warp.instantiate();
+    if (rs_warp.is_valid()) {
+        rs_warp->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+        rs_warp->set_seed(seed + 13);
+        rs_warp->set_frequency(0.025);
+        rs_warp->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+        rs_warp->set_fractal_octaves(3);
+    }
     int rain_shadow_touched = 0;
-    if (lookback > 0) {
+    if (lookback > 0 && rs_warp.is_valid()) {
         for (int i = 0; i < n; ++i) {
             if (pk_is_water_terrain(TERR[i])) continue;
-            const PkWind2 wind = pk_wind_belt_wind_at(row_norm(i), 1.0, 0.0);
+            const double jitter = double(rs_warp->get_noise_2d(double(Q[i]) * 8.0, double(R[i]) * 8.0)) * 0.04;
+            const PkWind2 wind = pk_wind_belt_wind_at(row_norm(i), 1.0, jitter);
             const int dir = pk_upwind_dir_index_from_wind(wind.x, wind.y);
             if (dir < 0) continue;
-            int probe = i;
-            for (int step = 0; step < lookback; ++step) {
-                const int ni = NB[size_t(probe) * 6 + dir];
-                if (ni < 0) { probe = -1; break; }
-                probe = ni;
-            }
+            const int probe = index_for_qr(Q[i] + DQ[dir] * lookback, R[i] + DR[dir] * lookback);
             if (probe < 0) continue;
             if (double(E[probe]) > double(E[i]) + rain_threshold) {
                 M[i] = float(double(M[i]) * rain_factor);
@@ -13202,34 +13295,26 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
     }
 
-    struct PkGenRng {
-        uint64_t state;
-        explicit PkGenRng(uint64_t seed_value) {
-            state = seed_value ? seed_value : 0x9e3779b97f4a7c15ull;
-        }
-        uint64_t next_u64() {
-            uint64_t x = state;
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            state = x ? x : 0x9e3779b97f4a7c15ull;
-            return state;
-        }
-        int randi_range(int lo, int hi) {
-            if (hi <= lo) return lo;
-            return lo + int(next_u64() % uint64_t(hi - lo + 1));
-        }
-    };
+    // 火山候选：镜像 _apply_volcano_pass —— 行主序（cell 索引升序）遍历 MOUNTAIN 且
+    // land_h>=阈值，再用 Godot RandomNumberGenerator(seed+7717) Fisher-Yates 洗牌
+    // （与 GDScript 逐位同源，不能用 xorshift 替代，否则洗牌序列不一致）。
+    // 注意：必须用 0..n 索引序，不能用 `land`——`land` 已被 flow-accumulation 按高程
+    // 降序排过序（见上方 std::sort），而 GDScript `_apply_volcano_pass` 遍历的
+    // `map.all_cells()` = _cells.values() 是 set_cell 的 row-major 插入序。两者顺序
+    // 不一致会让洗牌前的候选数组次序错位，导致火山落点分歧（parity FAIL）。
     std::vector<int> volcano_candidates;
-    for (int i : land) {
+    for (int i = 0; i < n; ++i) {
         if (TERR[i] != 6) continue;
         if (land_h(i) < volcano_min_land_h) continue;
         volcano_candidates.push_back(i);
     }
-    PkGenRng rng(uint64_t(seed + 7717) ^ 0xa0761d6478bd642full);
-    for (int i = int(volcano_candidates.size()) - 1; i > 0; --i) {
-        const int j = rng.randi_range(0, i);
-        std::swap(volcano_candidates[size_t(i)], volcano_candidates[size_t(j)]);
+    Ref<RandomNumberGenerator> volc_rng;  volc_rng.instantiate();
+    if (volc_rng.is_valid()) {
+        volc_rng->set_seed(uint64_t(seed + 7717));
+        for (int i = int(volcano_candidates.size()) - 1; i > 0; --i) {
+            const int j = volc_rng->randi_range(0, i);
+            std::swap(volcano_candidates[size_t(i)], volcano_candidates[size_t(j)]);
+        }
     }
     std::vector<int> volcano_placed;
     for (int cand : volcano_candidates) {
@@ -13426,6 +13511,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["cell_lat_norm_arr"] = cell_lat_norm_arr;
     out["temp_baseline_year_arr"] = temp_baseline_year_arr;
     out["snow_cover_arr"] = snow_cover_arr;
+    // 透传 base pass 生成的湖泊种子标记（仅 UI 信息面板用，post_base 不改写）。
+    out["is_lake_seed_arr"] = input.get("is_lake_seed_arr", PackedByteArray());
     out["terrain_arr"] = terrain_arr;
     out["base_terrain_arr"] = base_terrain_arr;
     out["landform_arr"] = landform_arr;

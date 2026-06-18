@@ -335,11 +335,10 @@ func _is_annual_log_tick(counter: int) -> bool:
 # const SATELLITE_SEPARATION_FACTOR (migrated to ClimateProfile.satellite_separation_factor)  # 卫星岛允许一定接近 main 边缘
 
 # ─── 噪声实例 ────────────────────────────────────────────────────────────
-var _height_noise:    FastNoiseLite     # 大陆主形态（多频 fbm）
-var _height_warp:     FastNoiseLite     # 域扭曲（让大陆形状非圆形）
-var _detail_noise:    FastNoiseLite     # 中频细节
-var _moisture_noise:  FastNoiseLite     # 湿度
-var _continent_centers: Array            # Array[Dictionary]：每项 {pos: Vector2, radius: float, kind: String}
+# dots-total-cpp（2026-06-18）：_height_noise / _detail_noise / _moisture_noise /
+# _continent_centers 仅 GDScript 生成用，已随生成删除。_height_warp 仍供 C++ 雨影
+# jitter 桥（_build_rain_shadow_jitter_for_gdext）使用，保留。
+var _height_warp:     FastNoiseLite     # 域扭曲；现仅供 rain-shadow jitter C++ 桥
 										  # kind ∈ {"main", "satellite"}，所有坐标和半径都是归一化 [0, 1]
 var _rng:             RandomNumberGenerator
 
@@ -1076,19 +1075,20 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_season_round_slots_refresh_count = 0
 
 	var t_total := Time.get_ticks_msec()
+	# dots-total-cpp（2026-06-18）：地图生成已 100% C++（base + post_base，逐字段 A/B
+	# parity PASS）。GDScript 生成 fallback（_generate_cells / 后处理）已删除——native
+	# 失败即硬中止，绝不静默降级。失败的常见原因：DLL 未 rebuild / DCWorldExt 未注册 /
+	# native_generation_mode != ACTIVE。
 	var map := _generate_cells_native_base(cfg, effective_seed)
-	var native_post_base_used := map != null and _native_generation_post_base_ok()
-	var base_path := "gdext_base"
 	if map == null:
-		base_path = "gdscript"
-		map = _generate_cells(cfg)
-	print("MapGenerator v7: per-cell %dms (%d cells, path=%s)" % [Time.get_ticks_msec() - t_total, map.cell_count(), base_path])
+		push_error("[generate] native C++ 生成失败且 GDScript fallback 已移除（dots-total-cpp）。"
+			+ "请检查：GDExtension DLL 是否已 rebuild、DCWorldExt 是否注册、"
+			+ "ClimateProfile.native_generation_mode 是否为 ACTIVE(2)。中止本次生成。")
+		return {}
+	print("MapGenerator v7: per-cell %dms (%d cells, path=gdext_base)" % [Time.get_ticks_msec() - t_total, map.cell_count()])
 
-	# Milestone 1：generate 完成后从 cell.terrain + 上下文派生 landform / vegetation / cover
-	# 三轴。这一步必须在 _snapshot_base_state 之前，让基线快照能拿到三轴值。
-	if not native_post_base_used:
-		_sync_axes_for_map(map, cfg)
-
+	# Milestone 1：landform / vegetation / cover 三轴在 native post_base 结果里已就绪
+	# （_assemble_native_generation_map 装配时写入），无需再 _sync_axes_for_map。
 	# 在玩法层 baking 之前快照"年均"基线，给 Phase 2 季节刷新做参考
 	_snapshot_base_state(map)
 
@@ -3055,70 +3055,10 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 			method_v = str(_data_core_world_ext.has_method("run_season_refresh_stage"))
 		print("[season_refresh] startup banner: ext=%s has_run_season_refresh_stage=%s"
 				% [ext_v, method_v])
+	# dots-total-cpp（2026-06-18）：stage 0–8 已在上方（season<=8）early-return 走
+	# emergent_noop / B+ C++ round 路径，原本的 GDScript fallback 分支为死代码，已随
+	# 生成 GDScript 删除一并清理。此 match 只剩可达的 9 / 10 / 11。
 	match stage:
-		0:
-			_last_world = world
-			_current_season = season
-			var cfg_local: MapConfig = _last_cfg
-			if cfg_local == null:
-				return
-			_ensure_row_tables(cfg_local, season)
-			# DOTS-Total-CPP（任务 2）：stage 0 优先 gdext SoA pass；未导出/失败 fallback。
-			if not _run_season_refresh_stage0_gdext(map, world, season):
-				var moist_scale: float = 1.0
-				for cell: HexCell in map.all_cells():
-					if _is_water(cell.terrain):
-						cell.moisture = cell.base_moisture
-					else:
-						cell.moisture = clampf(cell.base_moisture * moist_scale, 0.0, 1.0)
-				_season_round_slots_fresh = false  # X2: GDScript fallback 改了 cell.moisture
-		1:
-			# DOTS-Total-CPP（2026-05-21 真·收尾）：先 try gdext stage 1，失败 fallback GDScript。
-			if not _run_season_refresh_stage1_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_rain_shadow_per_cell(map, _last_cfg, float(season) + 0.5)
-					_season_round_slots_fresh = false  # X2
-		2:
-			# DOTS-Total-CPP：先 try gdext stage 2 redecide_terrain，失败 fallback GDScript。
-			if not _run_season_refresh_stage2_gdext(map, world, season):
-				_seasonal_redecide_terrain(map, season)
-				_season_round_slots_fresh = false  # X2
-		3:
-			# DOTS-Total-CPP：先 try gdext stage 3 river_ecology，失败 fallback GDScript。
-			if not _run_season_refresh_stage3_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_river_ecology(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
-		4:
-			# DOTS-Total-CPP：先 try gdext stage 4 vegetation_feedback，失败 fallback GDScript。
-			if not _run_season_refresh_stage4_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_vegetation_feedback(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
-		5:
-			# DOTS-Total-CPP：先 try gdext stage 5 shrubland_pass，失败 fallback GDScript。
-			if not _run_season_refresh_stage5_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_shrubland_pass(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
-		6:
-			# DOTS-Total-CPP：先 try gdext stage 6 mangrove_pass，失败 fallback GDScript。
-			if not _run_season_refresh_stage6_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_mangrove_pass(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
-		7:
-			# DOTS-Total-CPP：先 try gdext stage 7 glacier_pass，失败 fallback GDScript。
-			if not _run_season_refresh_stage7_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_glacier_pass(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
-		8:
-			# DOTS-Total-CPP：先 try gdext swamp（C++ 端 stage_id=9），失败 fallback GDScript。
-			if not _run_season_refresh_swamp_gdext(map, world, season):
-				if _last_cfg != null:
-					_apply_swamp_pass(map, _last_cfg)
-					_season_round_slots_fresh = false  # X2
 		9:
 			if not _run_season_refresh_stage8_gdext(map, world, season):
 				_seasonal_sync_current_state(map, season)
@@ -4898,6 +4838,12 @@ func _native_generation_profile_dict() -> Dictionary:
 		"edge_falloff_start",
 		"edge_falloff_end",
 		"edge_falloff_depth",
+		# 复刻 GDScript 生成：湖泊种子 + 坑洼平滑 knob（native base pass 用）
+		"lake_seed_freq",
+		"lake_seed_threshold",
+		"lake_seed_depth",
+		"lake_seed_min_interior",
+		"pit_fill_max_iters",
 		"main_radius_min",
 		"main_radius_max",
 		"satellite_radius_min",
@@ -4981,7 +4927,7 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	_native_generation_base_report = res.duplicate(true)
 	if int(res.get("rc", -1)) != 0 or bool(res.get("fallback", true)):
 		var reason := String(res.get("fallback_reason", res.get("reason", "unknown")))
-		push_warning("[native_generation/base] fallback (%s); 使用 GDScript _generate_cells" % reason)
+		push_warning("[native_generation/base] 失败 (%s)；GDScript _generate_cells 已移除，中止生成" % reason)
 		return null
 	var n: int = int(res.get("n_cells", 0))
 	var expected_n: int = int(cfg.width) * int(cfg.height)
@@ -5005,34 +4951,26 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			push_warning("[native_generation/base] bad array %s; fallback" % key)
 			return null
 
-	var final_res: Dictionary = res
-	var post_base_ok: bool = false
-	if ext.has_method("run_native_world_generate_post_base_pass"):
-		var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
-		var report := res.duplicate(true)
-		report["post_base"] = post_res.duplicate(true)
-		_native_generation_base_report = report
-		if int(post_res.get("rc", -1)) == 0 and not bool(post_res.get("fallback", true)):
-			final_res = post_res
-			post_base_ok = true
-		else:
-			var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
-			push_warning("[native_generation/post_base] fallback (%s); C++ base 后使用 GDScript 后处理" % reason)
-	else:
-		var report_missing := res.duplicate(true)
-		report_missing["post_base"] = {
-			"rc": -1,
-			"path": "gdscript",
-			"fallback_reason": "missing_run_native_world_generate_post_base_pass",
-		}
-		_native_generation_base_report = report_missing
+	# dots-total-cpp（2026-06-18）：post_base 也已 C++ 化并 parity PASS。GDScript
+	# 后处理 fallback（_run_post_base_generation_passes）已删除——post_base 缺失/失败
+	# 即返回 null，由上层 generate() 硬中止。
+	if not ext.has_method("run_native_world_generate_post_base_pass"):
+		push_warning("[native_generation/post_base] 缺 run_native_world_generate_post_base_pass（DLL 未 rebuild?）；中止")
+		return null
+	var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
+	var report := res.duplicate(true)
+	report["post_base"] = post_res.duplicate(true)
+	_native_generation_base_report = report
+	if int(post_res.get("rc", -1)) != 0 or bool(post_res.get("fallback", true)):
+		var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
+		push_warning("[native_generation/post_base] 失败 (%s)；GDScript 后处理已移除，中止生成" % reason)
+		return null
+	var final_res: Dictionary = post_res
 
 	var map := _assemble_native_generation_map(final_res, cfg)
 	if map == null:
-		push_warning("[native_generation] final result invalid; fallback to GDScript _generate_cells")
+		push_warning("[native_generation] final result invalid（装配失败）；中止生成")
 		return null
-	if not post_base_ok:
-		_run_post_base_generation_passes(map, cfg, true)
 	print("[native_generation/base] path=gdext algorithm=%s n=%d native_ms=%.3f water=%d land=%d"
 		% [
 			String(res.get("native_algorithm", "unknown")),
@@ -5041,16 +4979,15 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			int(res.get("water_count", 0)),
 			int(res.get("land_count", 0)),
 		])
-	if post_base_ok:
-		print("[native_generation/post_base] path=gdext algorithm=%s n=%d native_ms=%.3f lakes=%d rivers=%d volcanoes=%d"
-			% [
-				String(final_res.get("native_algorithm", "unknown")),
-				int(final_res.get("n_cells", 0)),
-				float(final_res.get("native_ms", final_res.get("elapsed_ms", 0.0))),
-				int(final_res.get("lake_count", 0)),
-				int(final_res.get("river_count", 0)),
-				int(final_res.get("volcano_count", 0)),
-			])
+	print("[native_generation/post_base] path=gdext algorithm=%s n=%d native_ms=%.3f lakes=%d rivers=%d volcanoes=%d"
+		% [
+			String(final_res.get("native_algorithm", "unknown")),
+			int(final_res.get("n_cells", 0)),
+			float(final_res.get("native_ms", final_res.get("elapsed_ms", 0.0))),
+			int(final_res.get("lake_count", 0)),
+			int(final_res.get("river_count", 0)),
+			int(final_res.get("volcano_count", 0)),
+		])
 	return map
 
 
@@ -5093,6 +5030,7 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 	var cover_arr: PackedByteArray = res["cover_arr"]
 	var has_river_arr: PackedByteArray = res["has_river_arr"] if res.has("has_river_arr") else PackedByteArray()
 	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
+	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
 	var map := MapData.new(cfg.width, cfg.height)
 	for i in range(n):
 		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
@@ -5108,6 +5046,7 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 		cell.cover = int(cover_arr[i])
 		cell.has_river = has_river_arr.size() == n and int(has_river_arr[i]) != 0
 		cell.has_volcano = has_volcano_arr.size() == n and int(has_volcano_arr[i]) != 0
+		cell.is_lake_seed = is_lake_seed_arr.size() == n and int(is_lake_seed_arr[i]) != 0
 		cell._temperature_backing = float(temp_arr[i])
 		cell._temp_baseline_backing = float(temp_baseline_arr[i])
 		cell._temp_30d_mean_backing = float(temp_30d_arr[i])
@@ -5130,128 +5069,14 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 	return map
 
 
-func _generate_cells(cfg: MapConfig) -> MapData:
-	var map := MapData.new(cfg.width, cfg.height)
-
-	# 0. 大陆中心点（提供"N 个大陆"宏结构骨架）
-	_continent_centers = _make_continent_centers(cfg)
-
-	# 1. 海拔（距离场 + 域扭曲多频 fbm + meso 中频起伏 + 边缘衰减 + 离岸群岛）
-	for row in range(cfg.height):
-		for col in range(cfg.width):
-			var cube := HexUtils.offset_to_cube(col, row)
-			var cell := HexCell.new(cube.x, cube.y)
-			var nx: float = float(col) / float(cfg.width  - 1)
-			var ny: float = float(row) / float(cfg.height - 1)
-			cell.elevation = _compute_elevation(nx, ny, cfg)
-			map.set_cell(cell)
-	_normalize_elevation(map)
-
-	# 1.5. Phase 13：撒湖泊种子（强行下沉到 sea_level - depth），让 pit-fill 不会把它们填平
-	_carve_lake_seeds(map, cfg)
-
-	# 2. 平滑 1-cell 局部洼地（让河流能 downhill 通到海，不被噪声困住）
-	_smooth_pit_depressions(map, cfg)
-
-	# 3. 山脉脊线（v8：双向脊线 + slope_gate）：只往上抬陆地，不改海陆边界
-	_apply_mountain_ridges(map, cfg)
-
-	# 4. 湿度基线（v8：多尺度大+小）
-	for cell: HexCell in map.all_cells():
-		var nx2: float = float(_cube_to_col(cell, cfg)) / float(cfg.width  - 1)
-		var ny2: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
-		cell.moisture = _compute_moisture_base(nx2, ny2)
-
-	# 5. 初步定地形（先有 water/land 分类，下游 pass 才能区分海陆）
-	# permanent_only=true：bake 路径用严苛雪线，让"中纬高山"进 MOUNTAIN 而非
-	# 永久 SNOW，留给 fast tick 季节性翻面（见 _decide_terrain 注释）。
-	for cell: HexCell in map.all_cells():
-		var ny3: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
-		var temp := _compute_temperature(ny3, cell.elevation)
-		var terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg, true)
-		_set_cell_runtime_terrain(map, cell, terrain)
-
-	_run_post_base_generation_passes(map, cfg)
-	return map
-
-
-func _run_post_base_generation_passes(map: MapData, cfg: MapConfig, base_moisture_adjusted: bool = false) -> void:
-	# 5.5. Phase 13：水体连通分量 BFS — 不与地图边界 OCEAN 连通的水体 → LAKE
-	_detect_lakes(map, cfg)
-
-	if not base_moisture_adjusted:
-		# 6. 沿岸湿度补偿（沿海陆地更湿，内陆相对偏干）
-		_apply_coastal_moisture_boost(map)
-
-		# 6.5 v11 新增：山地正雨（迸风上坡加湿）——与 _compute_river_flow 同源公式，
-		# 使迸风山坡在 Humidity / Precipitation overlay 上明显比同纬度低地湿润。
-		# 必须在 base_moisture snapshot 之前调用，因为“迸风加湿”是地形决定的不变量。
-		_apply_orographic_moisture_boost(map)
-
-	# Phase 2 关键时机：snapshot "无季节、无雨影、无河岸生态" 的基线湿度。
-	# refresh_seasonal 每次都从这里出发，保证季节切换不累积。
-	for cell: HexCell in map.all_cells():
-		cell.base_moisture = cell.moisture
-
-	# 7. v8 新增：雨影（上风向高山 → 背风面更干）
-	_apply_rain_shadow(map, cfg)
-
-	# 8. 重新决策非山地非冻原的低地，反映 coastal + rain_shadow 的湿度修正
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		# 山地 / 雪 / 冻原 不被湿度二次改写（它们由海拔/温度主导）
-		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.terrain == TerrainType.TERRAIN.SNOW \
-				or cell.terrain == TerrainType.TERRAIN.TUNDRA:
-			continue
-		var ny5: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
-		var temp2 := _compute_temperature(ny5, cell.elevation)
-		# 同 step 5：bake 期严苛雪线，避免湿度二次改写又把中纬高山打回永久 SNOW。
-		var new_terrain := _decide_terrain(cell.elevation, temp2, cell.moisture, cfg, true)
-		_set_cell_runtime_terrain(map, cell, new_terrain)
-
-	# 9. 河流：Flow Accumulation 算法
-	_generate_rivers_flow_accumulation(map, cfg)
-
-	# 10. v8 新增：河岸生态（DESERT 中的河 → 绿洲；河流提升 moisture）
-	_apply_river_ecology(map, cfg)
-
-	# 11. Phase 7：植被反馈（FOREST/DESERT/SWAMP/GRASSLAND → 邻居 ±moisture + 重决策）
-	_apply_vegetation_feedback(map, cfg)
-
-	# 12. Phase 11：过渡生态 3 pass（地中海灌丛 / 红树林 / 冰川）
-	_apply_shrubland_pass(map, cfg)
-	_apply_mangrove_pass(map, cfg)
-	_apply_glacier_pass(map, cfg)
-
-	# 13. Phase 9：SWAMP 沼泽（低海拔 + 极湿 + 暖温 + 靠水）— 在过渡生态之后跑
-	_apply_swamp_pass(map, cfg)
-
-	# 14. Phase 14：奇观地标（永久性，写完后被 _is_permanent_landform 保护不被后续 pass 覆盖）
-	_apply_volcano_pass(map, cfg)
-	_apply_delta_pass(map, cfg)
-	_apply_oasis_pass(map, cfg)
-	_apply_salt_flat_pass(map, cfg)
-	_apply_badlands_pass(map, cfg)
-
-	# 15. Phase 12：水体变种 REEF / KELP（只在 gen 时一次性判定；SEA_ICE 在 generate 后做）
-	_apply_reef_kelp_pass(map, cfg)
-
 # ─── 噪声初始化 ──────────────────────────────────────────────────────────
 
+# dots-total-cpp（2026-06-18）：GDScript 生成已删除。_height_noise / _detail_noise /
+# _moisture_noise 仅生成用，已随之移除。_height_warp 仍被 C++ 桥
+# _build_rain_shadow_jitter_for_gdext（季节 stage1 / B+ round 雨影 jitter）读取，
+# 故保留并继续按生成期同款参数初始化（seed+13），保证 jitter 与原生成 bit 对齐。
 func _init_noise(seed_val: int) -> void:
-	# 主噪声：octaves 4（v7 是 6 → 太碎，导致到处是小坑，下坡走不通）
-	_height_noise = FastNoiseLite.new()
-	_height_noise.noise_type           = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_height_noise.seed                 = seed_val
-	_height_noise.frequency            = 0.014
-	_height_noise.fractal_type         = FastNoiseLite.FRACTAL_FBM
-	_height_noise.fractal_octaves      = 4
-	_height_noise.fractal_lacunarity   = 2.0
-	_height_noise.fractal_gain         = 0.5
-
-	# 域扭曲：低频，让大陆轮廓非圆形
+	# 域扭曲：低频。原生成大陆轮廓用；现仅供 rain-shadow jitter C++ 桥消费。
 	_height_warp = FastNoiseLite.new()
 	_height_warp.noise_type            = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_height_warp.seed                  = seed_val + 13
@@ -5259,339 +5084,6 @@ func _init_noise(seed_val: int) -> void:
 	_height_warp.fractal_type          = FastNoiseLite.FRACTAL_FBM
 	_height_warp.fractal_octaves       = 3
 
-	# 中频细节：用于山脉脊线 / 海岸碎边
-	_detail_noise = FastNoiseLite.new()
-	_detail_noise.noise_type           = FastNoiseLite.TYPE_SIMPLEX
-	_detail_noise.seed                 = seed_val + 257
-	_detail_noise.frequency            = 0.040
-	_detail_noise.fractal_type         = FastNoiseLite.FRACTAL_FBM
-	_detail_noise.fractal_octaves      = 3
-
-	_moisture_noise = FastNoiseLite.new()
-	_moisture_noise.noise_type         = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_moisture_noise.seed               = seed_val + 9973
-	_moisture_noise.frequency          = 0.022
-	_moisture_noise.fractal_type       = FastNoiseLite.FRACTAL_FBM
-	_moisture_noise.fractal_octaves    = 4
-	_moisture_noise.fractal_lacunarity = 2.0
-	_moisture_noise.fractal_gain       = 0.5
-
-# ─── 大陆中心点（v9：层次化 main + satellites）────────────────────────────
-# 先放 N 个 main（大半径、靠中央、Poisson 不重叠），然后撒 N×SATELLITES_PER_MAIN
-# 个 satellite（小半径、全图随机、允许靠近 main）。每个 center 携带自己的 radius。
-
-func _make_continent_centers(cfg: MapConfig) -> Array:
-	var centers: Array = []
-	var base_radius_unit: float = cfg.continent_size * 0.6
-	var n_main: int = maxi(1, cfg.num_continents)
-	var n_satellite: int = n_main * _c().satellites_per_main
-
-	# 1. 主大陆：随机半径 + Poisson 排除（不允许重叠）
-	for i in range(n_main):
-		var radius: float = lerpf(_c().main_radius_min, _c().main_radius_max, _rng.randf()) * base_radius_unit
-		var pos = _try_place(
-			centers, radius,
-			_c().main_placement_min, _c().main_placement_max,
-			_c().main_separation_factor, 50
-		)
-		if pos != null:
-			centers.append({"pos": pos, "radius": radius, "kind": "main"})
-
-	# 2. 卫星岛：更小半径 + 更宽放置范围 + 更松离散度
-	for i in range(n_satellite):
-		var radius: float = lerpf(_c().satellite_radius_min, _c().satellite_radius_max, _rng.randf()) * base_radius_unit
-		var pos = _try_place(
-			centers, radius,
-			_c().satellite_placement_min, _c().satellite_placement_max,
-			_c().satellite_separation_factor, 30
-		)
-		if pos != null:
-			centers.append({"pos": pos, "radius": radius, "kind": "satellite"})
-		# 找不到位置就跳过这个 satellite（不强求全部放下）
-
-	return centers
-
-# Poisson 拒绝采样：尝试 max_attempts 次找一个不与已有 centers 重叠的位置。
-# 重叠定义：距离 < (my_radius + 已有半径) × sep_factor。
-# 找到返回 Vector2，找不到返回 null。
-func _try_place(
-		existing: Array,
-		radius: float,
-		lo: float,
-		hi: float,
-		sep_factor: float,
-		max_attempts: int) -> Variant:
-	for attempt in range(max_attempts):
-		var pos := Vector2(_rng.randf_range(lo, hi), _rng.randf_range(lo, hi))
-		var ok: bool = true
-		for c in existing:
-			var c_pos: Vector2 = c["pos"]
-			var c_radius: float = float(c["radius"])
-			var d: float = pos.distance_to(c_pos)
-			var min_d: float = (radius + c_radius) * sep_factor
-			if d < min_d:
-				ok = false
-				break
-		if ok:
-			return pos
-	return null
-
-# ─── 海拔计算（域扭曲距离场 + 多频 fbm + 边缘衰减） ──────────────────────
-
-func _compute_elevation(nx: float, ny: float, _cfg: MapConfig) -> float:
-	# 1. 距离值扰动（让大陆边界波浪化但不桥接）
-	# 每个 center 的 dist 都加上同一个 perturbation，所以海岸线沿地图连贯波动。
-	# 远 deep-ocean 的 dist 远大于任何 center 的 radius，加 ±amp 后 dist_field 仍然是 0。
-	var dist_perturb: float = _height_warp.get_noise_2d(nx * 250.0 + 11.3, ny * 250.0 - 7.1) * _c().continent_warp_amp
-
-	# 2. 大陆距离场（v9 max-over-centers）：每个 center 各自算 dist_field 后取最大
-	# 这样不同大小自然处理：靠近大 main 的 cell 会被大半径覆盖，靠近 satellite 的
-	# cell 由小半径决定。center 之间不重叠时，不同的 center 各自定义自己的"陆地圆"。
-	var dist_field: float = 0.0
-	for c in _continent_centers:
-		var c_pos: Vector2 = c["pos"]
-		var c_radius: float = float(c["radius"])
-		var dx: float = nx - c_pos.x
-		var dy: float = ny - c_pos.y
-		var d: float = sqrt(dx * dx + dy * dy) + dist_perturb
-		var df: float = clampf(1.0 - d / c_radius, 0.0, 1.0)
-		df = pow(df, 1.5)  # 让大陆边缘衰减更柔和
-		if df > dist_field:
-			dist_field = df
-
-	# 3. 多频 fbm（用扭曲坐标），给距离场加自然起伏
-	var u: float = nx * 200.0
-	var v: float = ny * 200.0
-	var u_warp: float = _height_warp.get_noise_2d(u + 11.3, v - 7.1) * 35.0
-	var v_warp: float = _height_warp.get_noise_2d(u - 23.7, v + 41.5) * 35.0
-	var c1: float = _height_noise.get_noise_2d(u + u_warp, v + v_warp)              # 大陆主形
-	var c2: float = _detail_noise.get_noise_2d(u * 1.7 + u_warp, v * 1.7 + v_warp)  # 中频
-	var noise_01: float = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5  # → [0, 1]
-
-	# 3.5. v8 新增：meso-scale 中频噪声（给大陆内部加 plateau / valley 起伏）
-	# 频率比 macro 高，比 detail 低 —— 能在 continent 内部产生几个大块的"高地区/低地区"，
-	# 后续 ridge 会优先在 meso 高地形成山脉走向，避免山地全堆在 continent 中心。
-	var meso: float = (_detail_noise.get_noise_2d(nx * 400.0 + 137.0, ny * 400.0 - 91.0) + 1.0) * 0.5
-
-	# 4. 海岸细碎噪声（让海岸线不规则）
-	var coast: float = _height_noise.get_noise_2d(nx * 80.0 + 500.0, ny * 80.0 + 500.0) * 0.06
-
-	# 4.5. v8 新增：离岸群岛 noise（仅当 dist_field=0 时偶发把海面顶到陆地）
-	# pow(max(noise - 0.55, 0), 1.5) 是 sparse 触发：大部分时候 noise < 0.55 → 0；
-	# 偶尔强 spike → 把海面 raw 抬到 sea_level 之上，形成小岛
-	var offshore_raw: float = _detail_noise.get_noise_2d(nx * 900.0 - 333.0, ny * 900.0 + 217.0)
-	var offshore: float = pow(maxf(offshore_raw - 0.55, 0.0), 1.5) * _c().offshore_amp
-
-	# 5. 合成：距离场 + 距离场×(macro_noise + meso) + 海岸细节 + 离岸群岛
-	# 关键：noise 必须 × dist_field，否则 noise 的均值（0.5）会给地图每个 cell
-	# 永久加 0.5*NOISE_WEIGHT = 0.225，远离大陆的中间海域被错误抬到陆地
-	# 把两个 continent_center 的间隙焊死成一整块大陆。
-	# 现在 noise 只在 dist_field > 0 的区域起作用 = 只在大陆内部加变化。
-	# offshore 是 sparse 例外：它能让 dist_field=0 区域偶有岛屿。
-	# 注意：ridge 不在这里加！否则会被卷进 _normalize_elevation 的范围里
-	# 导致归一化分母变大，把所有非山 cell 压低，损失陆地。
-	var raw: float = dist_field * (_c().dist_field_weight + noise_01 * _c().noise_weight + meso * _c().meso_weight) + coast + offshore
-
-	# 6. 边缘衰减：保证地图边界四周是海
-	# v7.3：给"距中心距离"加噪声扰动，否则 maxf 给出的是切比雪夫 L∞ 距离，
-	# 等距线是矩形 → 海洋形成方框相框。加噪声后等距线变波浪。
-	var edge_dx: float = absf(nx - 0.5) * 2.0
-	var edge_dy: float = absf(ny - 0.5) * 2.0
-	var edge_d_base: float = maxf(edge_dx, edge_dy)
-	var edge_perturb: float = _height_warp.get_noise_2d(nx * 150.0 + 199.0, ny * 150.0 - 73.0) * 0.38
-	var edge_d: float = edge_d_base + edge_perturb
-	var edge_t: float = smoothstep(_c().edge_falloff_start, _c().edge_falloff_end, edge_d)
-	raw -= edge_t * _c().edge_falloff_depth
-
-	return raw
-
-# v8 升级：在 normalize 之后单独给陆地 cell 加 ridge 山脉
-# - 只动 elevation > sea_level 的 cell（海洋不变 → 海陆边界不动）
-# - 双向脊线（ridge_a + ridge_b 取强者）→ 山脉链有不同走向，不再单一方向
-# - slope_gate：cell 与最低邻居海拔差越大 → 受 ridge 推力越强 → 平地/高原不全升山
-# - 加成幅度乘以 land_factor^1.5（高地多加，海岸线附近少加）
-# - 结果 clamp 到 [0, 1] 防止溢出，不影响其他 cell
-func _apply_mountain_ridges(map: MapData, cfg: MapConfig) -> void:
-	if _c().ridge_boost_amp <= 0.0:
-		return
-	for cell: HexCell in map.all_cells():
-		if cell.elevation < cfg.sea_level:
-			continue
-		var off := HexUtils.cube_to_offset(cell.q, cell.r)
-		var nx2: float = float(off.x) / float(cfg.width - 1)
-		var ny2: float = float(off.y) / float(cfg.height - 1)
-
-		# v8：双向脊线 —— 两套频率/相位不同的 ridge noise，取强者
-		# ridge_signal = 1 - |fbm|，[0, 1] 的脊形噪声（脊上 ≈ 1，远离脊 ≈ 0）
-		# 两套合并 → 不同走向的山脉链交织出现
-		var ridge_a: float = 1.0 - absf(_detail_noise.get_noise_2d(nx2 * 180.0 + 71.3, ny2 * 180.0 - 33.7))
-		var ridge_b: float = 1.0 - absf(_detail_noise.get_noise_2d(nx2 * 220.0 - 50.7, ny2 * 220.0 + 91.1))
-		var ridge_signal: float = pow(maxf(ridge_a, ridge_b), 1.4)  # 锐化脊线
-
-		# v8：坡度门控 —— cell 比最低邻居高得越多，受 ridge 推力越强
-		# 这避免了"高原全部 cell 都被抬到山地" —— 高原内部坡度为 0，几乎不加 ridge；
-		# 高原边缘坡度大，被推得更高 → 形成自然山脉走向（而非整片高原）
-		var slope: float = _compute_slope(cell, map)
-		var slope_gate: float = clampf(slope * 8.0, 0.30, 1.0)  # 0.30 = 平地最低权重；1.0 = 强坡满
-
-		# land_factor：高地多加（≈1），海岸线附近少加（≈0）
-		var land_factor: float = (cell.elevation - cfg.sea_level) / maxf(1.0 - cfg.sea_level, 0.001)
-		# v7.4：从平方降到 1.5 次方
-		land_factor = pow(land_factor, 1.5)
-
-		var addition: float = ridge_signal * land_factor * slope_gate * _c().ridge_boost_amp
-		var raw_post: float = cell.elevation + addition
-
-		# v10.4：软饱和 + 硬封顶。渐近线从 1.0 降到 LAND_ELEV_CAP=0.93。
-		# 关键洞察：shader 的 hypsometric snow 段是 t > 0.985（≈ elev > 0.992），
-		# peak 段是 t > 0.85（≈ elev > 0.916）。如果 cell elev 能到 0.99，
-		# 经过 hillshade × 1.45 + grain × 1.05 后，peak 色会被推到接近白。
-		# 把 land 上限封到 0.93（max t ≈ 0.875）→ 即便最高的山顶也只在
-		# mountain→peak 段的 18% 位置，色彩偏 mountain 而非 peak，自然不显白。
-		# 例：raw=1.0 → 0.882, raw=1.5 → 0.927, raw=2.0 → 0.929（asymp 0.93）
-		var soft_max: float = 0.78
-		var land_elev_cap: float = 0.93
-		if raw_post > soft_max:
-			var excess: float = raw_post - soft_max
-			raw_post = soft_max + (land_elev_cap - soft_max) * (1.0 - exp(-excess * 3.0))
-		cell.elevation = clampf(raw_post, 0.0, land_elev_cap)
-
-# v8：返回 cell 与其最低邻居的海拔差（仅陆地，>= 0）
-# 用于 ridge boost 的 slope_gate：差值大 = 该 cell 在坡上 → 加 ridge；
-# 差值小 = 平地/高原内部 → 几乎不加 ridge
-func _compute_slope(cell: HexCell, map: MapData) -> float:
-	var lowest: float = cell.elevation
-	for nb: HexCell in map.get_neighbors(cell):
-		if nb.elevation < lowest:
-			lowest = nb.elevation
-	return cell.elevation - lowest
-
-# ─── 局部洼地平滑（让河流的 flow accumulation 能下坡到海） ──────────────
-# 不平滑会导致大量"碗形 1-cell pit"，flow 在那里止步，最后过滤剩不了几条河。
-# 算法：迭代检查每个陆地 cell，如果它比所有 6 个邻居都低 → 抬到最低邻居 + 0.001。
-
-func _smooth_pit_depressions(map: MapData, cfg: MapConfig) -> void:
-	# v10：从 12 提到 PIT_FILL_MAX_ITERS（默认 100）。多 cell 盆地需要 N 次迭代才能
-	# 把"抬高"从中心传播到边缘，旧的 12 次对大于 12 cell 的盆地不够 → 河流卡死。
-	for it in range(_c().pit_fill_max_iters):
-		var changed: bool = false
-		for cell: HexCell in map.all_cells():
-			if cell.elevation < cfg.sea_level:
-				continue  # 水下不需要平滑
-			var nbs := map.get_neighbors(cell)
-			if nbs.is_empty():
-				continue
-			var lowest_nb: float = INF
-			for nb: HexCell in nbs:
-				if nb.elevation < lowest_nb:
-					lowest_nb = nb.elevation
-			# 如果当前 cell 比所有邻居都低（即它是 pit）→ 抬到刚好高于最低邻居
-			if lowest_nb < INF and cell.elevation <= lowest_nb:
-				cell.elevation = lowest_nb + 0.001
-				changed = true
-		if not changed:
-			break
-
-# ─── Phase 13：湖泊种子 + 水体连通分量检测 ─────────────────────────────────
-
-# 用低频噪声选 ~5% 内陆陆地 cell 当湖泊种子，强行下沉到 sea_level - depth。
-# 必须满足：
-#   1) elevation 在 sea_level + 0.04 以上（避免和现有海连通）
-#   2) cell 在地图内部（远离边界至少 LAKE_SEED_MIN_INTERIOR）
-#   3) 噪声值 > LAKE_SEED_THRESHOLD（让湖呈簇分布而不是孤立散点）
-# pit-fill 阶段会跳过 elevation < sea_level 的 cell，所以这些下沉的种子不会被填平。
-# const LAKE_SEED_FREQ (migrated to ClimateProfile.lake_seed_freq)
-# const LAKE_SEED_THRESHOLD (migrated to ClimateProfile.lake_seed_threshold)
-# const LAKE_SEED_DEPTH (migrated to ClimateProfile.lake_seed_depth)
-# const LAKE_SEED_MIN_INTERIOR (migrated to ClimateProfile.lake_seed_min_interior)
-
-func _carve_lake_seeds(map: MapData, cfg: MapConfig) -> void:
-	var noise := FastNoiseLite.new()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.seed = _last_seed + 9173
-	noise.frequency = _c().lake_seed_freq
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.fractal_octaves = 3
-	var w_min: float = _c().lake_seed_min_interior
-	var w_max: float = 1.0 - _c().lake_seed_min_interior
-	var sea: float = cfg.sea_level
-	var seed_count: int = 0
-	for cell: HexCell in map.all_cells():
-		if cell.elevation < sea + 0.04:
-			continue
-		var nx: float = float(_cube_to_col(cell, cfg)) / float(cfg.width  - 1)
-		var ny: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
-		if nx < w_min or nx > w_max or ny < w_min or ny > w_max:
-			continue
-		var n: float = noise.get_noise_2d(float(cell.q), float(cell.r))
-		if n < _c().lake_seed_threshold:
-			continue
-		# 进一步过滤：所有 6 邻居必须是陆地，避免把湖凿在海边（会和海连通失去意义）
-		var has_water_neighbor: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.elevation < sea:
-				has_water_neighbor = true
-				break
-		if has_water_neighbor:
-			continue
-		cell.elevation = sea - _c().lake_seed_depth
-		cell.is_lake_seed = true
-		seed_count += 1
-	print("Phase 13: %d lake seeds" % seed_count)
-
-# 水体连通分量 BFS。从地图边界的 OCEAN/COAST 出发标 connected_to_ocean，
-# 没标到的水体 cell（OCEAN/COAST）→ LAKE。
-# 注意：此时 LAKE 还没生成，所以 _is_water 只匹配 OCEAN/COAST，不会误把已分配的 LAKE 视作 ocean-connected。
-func _detect_lakes(map: MapData, cfg: MapConfig) -> void:
-	var connected: Dictionary = {}
-	var queue: Array[HexCell] = []
-	# 1) 边界水体作种子
-	for cell: HexCell in map.all_cells():
-		if cell.terrain != TerrainType.TERRAIN.OCEAN \
-				and cell.terrain != TerrainType.TERRAIN.COAST:
-			continue
-		var col: int = _cube_to_col(cell, cfg)
-		var row: int = _cube_to_row(cell, cfg)
-		if col == 0 or col == cfg.width - 1 or row == 0 or row == cfg.height - 1:
-			connected[Vector3i(cell.q, cell.r, cell.s)] = true
-			queue.append(cell)
-	# 2) BFS 扩散到所有 ocean-connected 水体
-	while not queue.is_empty():
-		var c: HexCell = queue.pop_front()
-		for nb: HexCell in map.get_neighbors(c):
-			if nb.terrain != TerrainType.TERRAIN.OCEAN \
-					and nb.terrain != TerrainType.TERRAIN.COAST:
-				continue
-			var k := Vector3i(nb.q, nb.r, nb.s)
-			if connected.has(k):
-				continue
-			connected[k] = true
-			queue.append(nb)
-	# 3) 没在 connected 集合的水体 cell → LAKE
-	var lake_count: int = 0
-	for cell: HexCell in map.all_cells():
-		if cell.terrain != TerrainType.TERRAIN.OCEAN \
-				and cell.terrain != TerrainType.TERRAIN.COAST:
-			continue
-		if not connected.has(Vector3i(cell.q, cell.r, cell.s)):
-			_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.LAKE)
-			lake_count += 1
-	print("Phase 13: %d lake cells" % lake_count)
-
-func _normalize_elevation(map: MapData) -> void:
-	var min_e: float = INF
-	var max_e: float = -INF
-	for cell: HexCell in map.all_cells():
-		if cell.elevation < min_e:
-			min_e = cell.elevation
-		if cell.elevation > max_e:
-			max_e = cell.elevation
-	var range_e: float = max_e - min_e
-	if range_e < 0.001:
-		return
-	var inv := 1.0 / range_e
-	for cell: HexCell in map.all_cells():
-		cell.elevation = (cell.elevation - min_e) * inv
 
 # ─── 温度（cos bell 曲线） ───────────────────────────────────────────────
 
@@ -5654,124 +5146,6 @@ func _compute_temperature(ny: float, elevation: float) -> float:
 	var alt_penalty: float = _alt_penalty(elevation)
 	return clampf(lat_temp - alt_penalty, 0.0, 1.0)
 
-# ─── 湿度（多尺度噪声，v8） ─────────────────────────────────────────────
-# 大尺度 + 小尺度混合：
-# - 大尺度（freq 100）创建"潮湿带"和"干旱带"的大区域结构
-# - 小尺度（freq 400）在大区域内加入局部变化（避免全部一片同色）
-# 配比 0.65 大 + 0.35 小：能看到大尺度气候带，但不死板。
-
-func _compute_moisture_base(nx: float, ny: float) -> float:
-	var large: float = (_moisture_noise.get_noise_2d(nx * 100.0, ny * 100.0) + 1.0) * 0.5
-	var small: float = (_moisture_noise.get_noise_2d(nx * 400.0 + 79.0, ny * 400.0 - 31.0) + 1.0) * 0.5
-	return clampf(large * 0.65 + small * 0.35, 0.0, 1.0)
-
-# v8 新增：雨影（rain shadow）
-# 主导风向上风方有更高的山 → 当前 cell 在山的背风面 → 湿度衰减
-# 模拟现实：例如美洲西风带 + 落基山脉 → 山脉以东的内陆是干旱大平原
-#
-# 算法：
-#   1. 把 PREVAILING_WIND（vec2）转到 cube 空间，找最匹配的 hex 邻居方向作为"上风方向"
-#   2. 对每个陆地 cell，向"上风方向"走 RAIN_SHADOW_LOOKBACK 步
-#   3. 如果那个 upwind cell 海拔比当前 cell 高 RAIN_SHADOW_THRESHOLD 以上 → moisture 衰减
-# Phase 6：旧的全局风向 _apply_rain_shadow 包装到 per-cell 版本，
-# 默认用 season_phase=1.0（夏季）当 baseline。
-func _apply_rain_shadow(map: MapData, cfg: MapConfig) -> void:
-	_apply_rain_shadow_per_cell(map, cfg, 1.0)
-
-# v11 新增：山地正雨 (orographic precipitation) 回写到 cell.moisture。
-#
-# 背景：_compute_river_flow 中一直有一个 "orographic_boost" 因子，但该因子
-# 只被用于计算河流流量，完全不影响 cell.moisture / base_moisture，导致迸风山坡
-# 在 Humidity / Precipitation / Vegetation overlay 上看不到任何加湿效果。本 pass 
-# 用与河流流量完全同源的公式 boost = 1 + max(land_h - 0.30, 0) * orographic_boost
-# 对 cell.moisture 乘充，使“地形决定的不变量”进入 base_moisture（调用点在
-# coastal pass 之后、base_moisture snapshot 之前）。
-# 只作用于陆地且 land_h>0.30 的 cell；orographic_boost==0 时整个 pass 等价 no-op。
-func _apply_orographic_moisture_boost(map: MapData) -> void:
-	var k: float = _c().orographic_boost
-	if k == 0.0:
-		return
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		var land_h: float = cell.elevation
-		if land_h <= 0.30:
-			continue
-		var boost: float = 1.0 + (land_h - 0.30) * k
-		cell.moisture = clampf(cell.moisture * boost, 0.0, 1.0)
-
-# Phase 6：每个陆地 cell 根据自己的纬度算盛行风向，做自己的雨影 lookback。
-# 不再全图同向 → 出现纬度风带分布（信风带 / 西风带 / 极地东风带），
-# 配合 _height_warp 给 ny 加一点 jitter，让风带边界呈犬牙交错而不是死板水平条纹。
-func _apply_rain_shadow_per_cell(map: MapData, cfg: MapConfig, season_phase: float) -> void:
-	var lookback: int = _c().rain_shadow_lookback
-	# 性能修复：iter_cells() 零复制。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		var ny: float = _cube_row_norm(cell, cfg)
-		# 用 _height_warp 给 ny 一点 ±0.04 扰动，让风带边界不对齐到整数 ny
-		var jitter: float = _height_warp.get_noise_2d(float(cell.q) * 8.0, float(cell.r) * 8.0) * 0.04
-		var best_dir: Vector3i = _pick_upwind_dir(cell, ny, season_phase, jitter)
-		var target_cube := Vector3i(
-			cell.q + best_dir.x * lookback,
-			cell.r + best_dir.y * lookback,
-			cell.s + best_dir.z * lookback
-		)
-		var upwind_cell: HexCell = map.get_cell_by_cube(target_cube)
-		if upwind_cell == null:
-			continue
-		if upwind_cell.elevation > cell.elevation + _c().rain_shadow_threshold:
-			cell.moisture *= _c().rain_shadow_factor
-
-# v11 新增：雨影/上风向决策的统一入口。
-#   - 优先采用 cell.wind_vector（地形扰动后、六边形尺度的实际盛行风），
-#     这样山脉绕流后形成的真实风向能正确决定背风面位置；
-#   - 若 cell.wind_vector 还未烘焙（race / 旧存档）则回退到 WindBelt.wind_at()
-#     的纬度风基线，保证向后兼容。
-# 同时被 bake 阶段 _apply_rain_shadow 与 daily sim 阶段的 per-cell 调用复用。
-func _pick_upwind_dir(cell: HexCell, ny: float, season_phase: float, jitter: float) -> Vector3i:
-	var wv: Vector2 = cell.wind_vector
-	if wv.length() > 0.01:
-		return WindBeltScript.upwind_hex_dir(wv.normalized())
-	var wind: Vector2 = WindBeltScript.wind_at(ny, season_phase, jitter)
-	return WindBeltScript.upwind_hex_dir(wind)
-
-# v8 新增：河岸生态
-# 现实里河流两岸总是更绿、更肥沃 —— 沙漠中也有"绿洲带"。
-# 算法：has_river 的 cell 强制提升 moisture，并把 DESERT/PLAIN 升级成
-# GRASSLAND（温带）或 FOREST（暖湿）。
-#
-# 注意：这个 pass 必须在 rivers 生成之后、最后一次 terrain 决策之前调用。
-func _apply_river_ecology(map: MapData, cfg: MapConfig) -> void:
-	# 性能修复（2026-05-18）：stage_3_river p95=1.27ms 的主要成本不是算法，而是
-	# map.all_cells() 每次调用都通过 Dictionary.values() 复制 2400 个 HexCell
-	# 引用。这里改走 iter_cells() 直接返回内部 PackedArray 引用，零复制；
-	# 对没有索引的旧 MapData（理论上不应发生在 SUS 阶段）回退到 all_cells()。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if not cell.has_river:
-			continue
-		if _is_water(cell.terrain):
-			continue
-		# Phase 14：永久地标不被翻新（OASIS/DELTA 等已经吸收了河岸生态）
-		if _is_permanent_landform(cell.terrain):
-			cell.moisture = maxf(cell.moisture, 0.65)
-			continue
-		# 河流必然带来湿度（保底 0.65）
-		cell.moisture = maxf(cell.moisture, 0.65)
-		# DESERT 中的河 → 由 _apply_oasis_pass 单独转为 OASIS（不再粗暴翻成 GRASSLAND）
-		if cell.terrain == TerrainType.TERRAIN.DESERT:
-			continue
-		# PLAIN 中的河，按温度分流：暖 → FOREST，温带 → GRASSLAND
-		if cell.terrain == TerrainType.TERRAIN.PLAIN:
-			var ny: float = float(_cube_to_row(cell, cfg)) / float(cfg.height - 1)
-			var temp: float = _compute_temperature(ny, cell.elevation)
-			if temp > 0.55:
-				_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.FOREST)
-			elif temp > 0.30:
-				_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.GRASSLAND)
 
 # ─── Phase 7：植被反馈（biome 给邻居加/减湿度 + 边界 cell 重决策） ──────────
 #
@@ -5823,229 +5197,6 @@ func _vegetation_donor_amount(t: int) -> float:
 		TerrainType.TERRAIN.SALT_FLAT: return c.veg_salt_flat_donor
 		_:                              return 0.0
 
-func _apply_vegetation_feedback(map: MapData, cfg: MapConfig) -> void:
-	# 1) 累加 delta（不立即写回）
-	# v11 海拔衰减：donor cell 海拔越高，对邻居的水汽贡献越小
-	# （高山针叶林不应与低地针叶林贡献同等湿度）。
-	# decay==0 时退化为旧行为；下限 0.1 避免极高海拔完全失声。
-	var elev_decay: float = _c().veg_feedback_elev_decay
-	var deltas: Dictionary = {}
-	# 性能修复：iter_cells() 零复制；本函数虽是 fallback，但 generate 也会调一次。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		var donor: float = _vegetation_donor_amount(int(cell.terrain))
-		if donor == 0.0:
-			continue
-		var elev_factor: float = clampf(1.0 - cell.elevation * elev_decay, 0.1, 1.0)
-		var donor_eff: float = donor * elev_factor
-		for nb: HexCell in map.get_neighbors(cell):
-			if _is_water(nb.terrain):
-				continue  # 水体湿度不参与
-			var k := Vector3i(nb.q, nb.r, nb.s)
-			deltas[k] = float(deltas.get(k, 0.0)) + donor_eff
-
-	# 2) 应用 delta 到 moisture（限幅）
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		var k := Vector3i(cell.q, cell.r, cell.s)
-		if not deltas.has(k):
-			continue
-		var d: float = float(deltas[k])
-		cell.moisture = clampf(cell.moisture + d, 0.0, 1.0)
-
-	# 3) 重决策非永久 biome（边界 cell 翻转）
-	# 任务 6（方案 C）：温度查表化。本函数既被 generate（_current_season=-1→clamp 0）
-	# 调用，也被 refresh_seasonal 调用，统一通过 _ensure_row_tables 兜底。
-	# 注意：原版只用"年均温" _compute_temperature(ny, elev) 决策（不带 season offset），
-	# 这里查表后保持同语义——只用 lat_tab，不叠加 off_tab。
-	var season_local: int = clampi(_current_season, 0, 3)
-	_ensure_row_tables(cfg, season_local)
-	var lat_tab: PackedFloat32Array = _row_lat_temp
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.terrain == TerrainType.TERRAIN.SNOW:
-			continue
-		# Phase 14：永久地标不被气候反馈翻新
-		if _is_permanent_landform(cell.terrain):
-			continue
-		var r_idx: int = _cube_to_row(cell, cfg)
-		var lat_temp: float = lat_tab[r_idx]
-		var temp: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
-		var new_terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg)
-		_set_cell_runtime_terrain(map, cell, new_terrain)
-
-# Phase 9：SWAMP 沼泽决策 pass
-# 触发条件（必须全部满足）：
-#   1) 低海拔：land_h < 0.10（紧贴海平面，避免高地误判）
-#   2) 极湿：moisture > 0.75
-#   3) 暖温：temperature > 0.30（冷区是 TUNDRA / SNOW，不会形成沼泽）
-#   4) 靠水：cell.has_river 或紧邻 OCEAN/COAST cell（避免内陆盆地误判）
-# 永久 biome（MOUNTAIN/SNOW/TUNDRA）跳过；OCEAN/COAST 不参与判定。
-func _apply_swamp_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	# 任务 6（方案 C）：行级 lat_temp 查表，省掉 per-cell 一次 pow+cos。
-	# swamp 用"年均温" _compute_temperature(ny, elev)（不带 season offset），
-	# 与原版语义一致。
-	var season_local: int = clampi(_current_season, 0, 3)
-	_ensure_row_tables(cfg, season_local)
-	var lat_tab: PackedFloat32Array = _row_lat_temp
-	# 性能修复：iter_cells() 零复制。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.terrain == TerrainType.TERRAIN.SNOW \
-				or cell.terrain == TerrainType.TERRAIN.TUNDRA:
-			continue
-		if _is_permanent_landform(cell.terrain):
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h > 0.10:
-			continue
-		if cell.moisture < 0.75:
-			continue
-		var r_idx: int = _cube_to_row(cell, cfg)
-		var lat_temp: float = lat_tab[r_idx]
-		var temp: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
-		if temp < 0.30:
-			continue
-		var has_water: bool = cell.has_river
-		if not has_water:
-			for nb: HexCell in map.get_neighbors(cell):
-				if _is_water(nb.terrain):
-					has_water = true
-					break
-		if not has_water:
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SWAMP)
-
-# ─── Phase 11：过渡生态 3 pass ─────────────────────────────────────────────
-
-# SHRUBLAND（灌丛 / 地中海植被）
-# 触发：暖温 + 中干 + 低海拔 + 至少一个 OCEAN/COAST 邻居（地中海气候要靠海）
-# 不动：永久 biome / 已经是 SWAMP / JUNGLE / TAIGA / FOREST 等成熟林相
-func _apply_shrubland_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	# 性能修复：iter_cells() 零复制，all_cells() 复制 2400 项。stage_5 与 stage_3/11 共因。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		# 仅替换"半干旱草原 / 平原"类，避免吃掉已成形的森林
-		var t := int(cell.terrain)
-		if t != TerrainType.TERRAIN.GRASSLAND \
-				and t != TerrainType.TERRAIN.STEPPE \
-				and t != TerrainType.TERRAIN.SAVANNA \
-				and t != TerrainType.TERRAIN.PLAIN:
-			continue
-		if _is_permanent_landform(cell.terrain):
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h > 0.30:
-			continue
-		var ny: float = _cube_row_norm(cell, cfg)
-		var temp: float = _compute_temperature(ny, cell.elevation)
-		if temp < 0.50:
-			continue
-		if cell.moisture < 0.25 or cell.moisture > 0.40:
-			continue
-		# 必须靠海（OCEAN/COAST 邻居 ≥ 1）— 地中海气候特征
-		var has_sea: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.terrain == TerrainType.TERRAIN.OCEAN \
-					or nb.terrain == TerrainType.TERRAIN.COAST:
-				has_sea = true
-				break
-		if not has_sea:
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SHRUBLAND)
-
-# MANGROVE（红树林）
-# 触发：热带 + 极低海拔 + 紧邻 COAST + (has_river 或 SWAMP 邻接)
-# 类似 SWAMP 但更偏沿海，是热带潮间带
-func _apply_mangrove_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	# 性能修复：iter_cells() 零复制。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		# MANGROVE 优先级低于 SWAMP（SWAMP 已生成的不动），且不动山地 / 雪 / 冻原
-		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.terrain == TerrainType.TERRAIN.SNOW \
-				or cell.terrain == TerrainType.TERRAIN.TUNDRA \
-				or cell.terrain == TerrainType.TERRAIN.SWAMP:
-			continue
-		if _is_permanent_landform(cell.terrain):
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h > 0.05:
-			continue
-		var ny: float = _cube_row_norm(cell, cfg)
-		var temp: float = _compute_temperature(ny, cell.elevation)
-		if temp < 0.65:
-			continue
-		# 必须紧邻 COAST（不接 OCEAN — 红树林只在浅海岸）
-		var coast_neighbor: bool = false
-		var swamp_neighbor: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.terrain == TerrainType.TERRAIN.COAST:
-				coast_neighbor = true
-			elif nb.terrain == TerrainType.TERRAIN.SWAMP:
-				swamp_neighbor = true
-		if not coast_neighbor:
-			continue
-		# 进一步约束：要么有河（淡水汇入），要么 SWAMP 邻接（潮间带连续）
-		if not (cell.has_river or swamp_neighbor):
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.MANGROVE)
-
-# ─── Phase 12：水体变种（REEF / SEA_ICE / KELP） ────────────────────────────
-
-# REEF（珊瑚礁）+ KELP（海藻林）：gen-time 一次性，不随季节变化
-# 优先级：先判 REEF（暖海），再判 KELP（凉温带），互斥
-# 仅替换 OCEAN/COAST，保留它们的 passable_sea；不动其它水体（LAKE 不能长珊瑚）
-func _apply_reef_kelp_pass(map: MapData, cfg: MapConfig) -> void:
-	# Systemic Ocean Currents：upwelling 放宽阈值 + 深海 PELAGIC_BLOOM。
-	# 主开关关闭 / 无 upwelling 数据时，系数归零，回退到纯温度判定（需求 5.4）。
-	var ocean_enabled: bool = cfg.enable_ocean_heat_transport
-	for cell: HexCell in map.all_cells():
-		var t := int(cell.terrain)
-		if t != TerrainType.TERRAIN.COAST and t != TerrainType.TERRAIN.OCEAN:
-			continue
-		var ny: float = _cube_row_norm(cell, cfg)
-		var temp: float = _compute_temperature(ny, cell.elevation)
-		# 必须紧邻陆地（大陆架），避免深海里也长珊瑚 / 海藻
-		var has_land_neighbor: bool = false
-		var has_river_outlet_neighbor: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if not _is_water(nb.terrain):
-				has_land_neighbor = true
-				if nb.has_river:
-					has_river_outlet_neighbor = true
-					break
-		var up: float = cell.upwelling_strength if ocean_enabled else 0.0
-		# 上升流放宽两侧窗口 0.08（需求 5.2），仅大陆架才生效
-		var widen: float = 0.08 if (has_land_neighbor and up > 0.4) else 0.0
-		if has_land_neighbor:
-			# REEF：暖海（temp > 0.60 - widen）+ 远离河口
-			if temp > (0.60 - widen) and not has_river_outlet_neighbor:
-				if t == TerrainType.TERRAIN.COAST:
-					_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.REEF)
-					continue
-			# KELP：凉温带（temp ∈ [0.30 - widen, 0.55 + widen]）
-			if temp >= (0.30 - widen) and temp <= (0.55 + widen):
-				if t == TerrainType.TERRAIN.COAST:
-					_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.KELP)
-					continue
-		# 需求 5.3：深海（OCEAN，无陆地邻居）+ 强上升流 → PELAGIC_BLOOM cover
-		# cover 是独立轴，不改 terrain（仍是 OCEAN），仅视觉叠淡绿 tint。
-		if ocean_enabled and not has_land_neighbor and t == TerrainType.TERRAIN.OCEAN and up > 0.6:
-			cell.cover = CoverType.CV.PELAGIC_BLOOM
 
 # SEA_ICE（海冰）：连续 sea_ice_fraction，由逐日温度 pass 推进；
 # base_terrain 只作为消融后的 revert target。
@@ -6107,209 +5258,6 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 		if stable_polar_pack and frac >= thr_terrain and cell.terrain != TerrainType.TERRAIN.SEA_ICE:
 			_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SEA_ICE)
 
-# ─── Phase 14：奇观地标 5 pass ──────────────────────────────────────────────
-
-# VOLCANO（火山）：在高山上撒 ~3-8 个独立点
-# 输出：cell.has_volcano = true（不替换 terrain，让 MOUNTAIN 渲染保留）
-# const MAX_VOLCANOES (migrated to ClimateProfile.max_volcanoes)
-# const VOLCANO_MIN_DIST (migrated to ClimateProfile.volcano_min_dist)  # 任意两座火山的最小 hex 距离
-# const VOLCANO_MIN_LAND_H (migrated to ClimateProfile.volcano_min_land_h)
-
-func _apply_volcano_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	var candidates: Array[HexCell] = []
-	for cell: HexCell in map.all_cells():
-		if cell.terrain != TerrainType.TERRAIN.MOUNTAIN:
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h < _c().volcano_min_land_h:
-			continue
-		candidates.append(cell)
-	if candidates.is_empty():
-		return
-	# 用 _rng 打乱后 greedy 选 — 保证可复现
-	var rng := RandomNumberGenerator.new()
-	rng.seed = _last_seed + 7717
-	for i in range(candidates.size() - 1, 0, -1):
-		var j: int = rng.randi_range(0, i)
-		var tmp: HexCell = candidates[i]
-		candidates[i] = candidates[j]
-		candidates[j] = tmp
-	var placed: Array[HexCell] = []
-	for cand: HexCell in candidates:
-		if placed.size() >= _c().max_volcanoes:
-			break
-		var ok: bool = true
-		for p: HexCell in placed:
-			# cube 距离
-			var d: int = (absi(cand.q - p.q) + absi(cand.r - p.r) + absi(cand.s - p.s)) / 2
-			if d < _c().volcano_min_dist:
-				ok = false
-				break
-		if not ok:
-			continue
-		cand.has_volcano = true
-		placed.append(cand)
-	print("Phase 14: %d volcanoes" % placed.size())
-
-# DELTA（三角洲）：河流流入海前的最末端 land 格
-# 触发：has_river + land_h < 0.08 + 至少 1 个 OCEAN/COAST 邻居
-func _apply_delta_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		if not cell.has_river:
-			continue
-		if _is_permanent_landform(cell.terrain):
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h > 0.08:
-			continue
-		var has_ocean_nb: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.terrain == TerrainType.TERRAIN.OCEAN \
-					or nb.terrain == TerrainType.TERRAIN.COAST:
-				has_ocean_nb = true
-				break
-		if not has_ocean_nb:
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.DELTA)
-
-# OASIS（绿洲）：原始干旱（base_moisture < 0.30）+ 暖温 + (has_river 或 LAKE 邻居)
-# 用 base_moisture 而不是 cell.terrain == DESERT，因为 river_ecology + vegetation_feedback
-# 已经把"沙漠中的河"翻成 JUNGLE / SAVANNA / FOREST，让 cell.terrain == DESERT 检查失效
-func _apply_oasis_pass(map: MapData, cfg: MapConfig) -> void:
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		if _is_permanent_landform(cell.terrain):
-			continue
-		# 永久 biome（山地 / 雪 / 冻原）不会变绿洲
-		if cell.terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.terrain == TerrainType.TERRAIN.SNOW \
-				or cell.terrain == TerrainType.TERRAIN.TUNDRA \
-				or cell.terrain == TerrainType.TERRAIN.GLACIER:
-			continue
-		# 必须原始干旱（rain shadow 之后）
-		if cell.base_moisture > 0.30:
-			continue
-		var ny: float = _cube_row_norm(cell, cfg)
-		var temp: float = _compute_temperature(ny, cell.elevation)
-		# 暖温带 + 热带（温度 > 0.40），避免冷沙漠误判
-		if temp < 0.40:
-			continue
-		var has_water: bool = cell.has_river
-		if not has_water:
-			for nb: HexCell in map.get_neighbors(cell):
-				if nb.terrain == TerrainType.TERRAIN.LAKE:
-					has_water = true
-					break
-		if not has_water:
-			continue
-		cell.moisture = maxf(cell.moisture, 0.55)
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.OASIS)
-
-# SALT_FLAT（盐沼 / 盐滩）：DESERT + 极低海拔 + 内陆（远离水）
-# 触发：DESERT + land_h < 0.12 + r=2 范围内没有 has_river 或水体邻居
-func _apply_salt_flat_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in map.all_cells():
-		if cell.terrain != TerrainType.TERRAIN.DESERT:
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		if land_h > 0.12:
-			continue
-		# 检查 r=2：no river anywhere, no water cell anywhere
-		var endorheic: bool = true
-		if cell.has_river:
-			endorheic = false
-		else:
-			# 1-ring 检查（r=1）
-			for nb: HexCell in map.get_neighbors(cell):
-				if nb.has_river or _is_water(nb.terrain):
-					endorheic = false
-					break
-		if not endorheic:
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SALT_FLAT)
-
-# BADLANDS（荒原 / 峡谷）：DESERT + 高 elevation variance + 不在低洼盐沼
-# 触发：DESERT + relief（邻居高度标准差） > 阈值
-func _apply_badlands_pass(map: MapData, cfg: MapConfig) -> void:
-	const BADLANDS_RELIEF_THRESHOLD := 0.025
-	for cell: HexCell in map.all_cells():
-		if cell.terrain != TerrainType.TERRAIN.DESERT:
-			continue
-		# relief = max - min of cell + neighbors elevation
-		var max_e: float = cell.elevation
-		var min_e: float = cell.elevation
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.elevation > max_e:
-				max_e = nb.elevation
-			if nb.elevation < min_e:
-				min_e = nb.elevation
-		var relief: float = max_e - min_e
-		if relief < BADLANDS_RELIEF_THRESHOLD:
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.BADLANDS)
-
-# GLACIER（冰川）
-# 触发条件之一：
-#   A) 极冷沿海冰舌：temp < 0.05 + land_h < 0.20 + COAST/OCEAN 邻居
-#   B) 高山冰川：land_h > 0.65 + temp < 0.05（替代 SNOW 在山腰部分）
-# 既能生成两极海岸冰盖，也能延伸到高山冰川舌
-# 2026-05-18 雪线修正 #2：alt_penalty 加深后中纬丘陵也能 temp<0.10，
-# 阈值跟着抬：temp 0.10→0.05，alpine land_h 0.55→0.65。
-func _apply_glacier_pass(map: MapData, cfg: MapConfig) -> void:
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	# 性能修复：iter_cells() 零复制。
-	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
-	for cell: HexCell in _cells:
-		if _is_water(cell.terrain):
-			continue
-		# 只替换 SNOW / TUNDRA（既然它们已经是冷区分类）
-		# 不替换 MOUNTAIN（避免高山秃岩全变冰）
-		var t := int(cell.terrain)
-		if t != TerrainType.TERRAIN.SNOW and t != TerrainType.TERRAIN.TUNDRA:
-			continue
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		var ny: float = _cube_row_norm(cell, cfg)
-		var temp: float = _compute_temperature(ny, cell.elevation)
-		if temp >= 0.05:
-			continue
-		# A) 沿海冰舌（OCEAN/COAST/SEA_ICE 都算海洋邻居）
-		var coastal_glacier: bool = false
-		if land_h < 0.20:
-			for nb: HexCell in map.get_neighbors(cell):
-				if nb.terrain == TerrainType.TERRAIN.OCEAN \
-						or nb.terrain == TerrainType.TERRAIN.COAST \
-						or nb.terrain == TerrainType.TERRAIN.SEA_ICE:
-					coastal_glacier = true
-					break
-		# B) 高山冰川
-		var alpine_glacier: bool = land_h > 0.65
-		if not (coastal_glacier or alpine_glacier):
-			continue
-		_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.GLACIER)
-
-# 沿岸补偿：陆地 cell 紧贴水域 → 湿度提升；远离海岸的内陆相对降低
-func _apply_coastal_moisture_boost(map: MapData) -> void:
-	# 每个陆地 cell 检查 6 个邻居：有几个是水域
-	for cell: HexCell in map.all_cells():
-		if _is_water(cell.terrain):
-			continue
-		var water_nbs: int = 0
-		var total_nbs: int = 0
-		for nb: HexCell in map.get_neighbors(cell):
-			total_nbs += 1
-			if _is_water(nb.terrain):
-				water_nbs += 1
-		if total_nbs == 0:
-			continue
-		var coastal_ratio: float = float(water_nbs) / float(total_nbs)
-		# 1 个相邻水 ≈ 海岸，加 +0.1；3 个相邻水 ≈ 半岛，加 +0.20
-		cell.moisture = clampf(cell.moisture + coastal_ratio * _c().coastal_moisture_boost, 0.0, 1.0)
 
 # ─── 地形决策（v8 阈值定调） ────────────────────────────────────────────
 #
@@ -6624,140 +5572,6 @@ func _sync_axes_for_map(map: MapData, cfg: MapConfig) -> void:
 	for cell: HexCell in map.all_cells():
 		_sync_axes_for_cell(cell, cfg, 0.0)
 
-# ─── 河流：Flow Accumulation（汇流累积） ─────────────────────────────────
-#
-# 算法：
-#   1) 收集所有 land cell 并按海拔从高到低排序
-#   2) 每个 land cell 找它的下坡邻居 (downhill_dir)，没有则 null（局部最低点）
-#   3) 初始流量 = rainfall（湿度调制）
-#   4) 按高→低顺序遍历，把每个 cell 的累积流量加给它的下坡邻居
-#   5) 流量分位 >= percentile 的 cell 标 has_river
-#   6) 过滤孤立的 river cell（无上下游 river 邻居）
-
-func _generate_rivers_flow_accumulation(map: MapData, cfg: MapConfig) -> void:
-	var land_cells: Array = []
-	for cell: HexCell in map.all_cells():
-		if not _is_water(cell.terrain):
-			land_cells.append(cell)
-	if land_cells.is_empty():
-		return
-
-	# 海拔从高到低排序，保证流量传递时 upstream 先于 downstream
-	land_cells.sort_custom(func(a: HexCell, b: HexCell) -> bool: return a.elevation > b.elevation)
-
-	# 1. 每个 land cell 找下坡邻居
-	var downhill: Dictionary = {}
-	for cell: HexCell in land_cells:
-		var lowest_nb: HexCell = null
-		var lowest_elev: float = cell.elevation
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.elevation < lowest_elev:
-				lowest_elev = nb.elevation
-				lowest_nb = nb
-		if lowest_nb != null:
-			downhill[Vector3i(cell.q, cell.r, cell.s)] = lowest_nb
-
-	# 2. 初始 rainfall（湿度调制 + v10 山地正雨）
-	# 基础值 = lerp(0.4, 1.6, cell.moisture)：干 0.4，湿 1.6
-	# 正雨加成：高于 sea_level 0.30 的 land_h 开始按 OROGRAPHIC_BOOST 倍增
-	# 例 land_h=0.50 boost=1.30；land_h=0.80 boost=1.75（OROGRAPHIC_BOOST=1.5 时）
-	# 这给上游山地额外的"头部流量"，长河更容易出现
-	var flow: Dictionary = {}
-	var inv_above_sea := 1.0 / maxf(1.0 - cfg.sea_level, 0.001)
-	for cell: HexCell in land_cells:
-		var key := Vector3i(cell.q, cell.r, cell.s)
-		var base_rain: float = lerpf(0.4, 1.6, cell.moisture)
-		var land_h: float = (cell.elevation - cfg.sea_level) * inv_above_sea
-		var orographic: float = 1.0 + maxf(land_h - 0.30, 0.0) * _c().orographic_boost
-		flow[key] = base_rain * orographic
-
-	# 3. 按高→低累积流量
-	for cell: HexCell in land_cells:
-		var key := Vector3i(cell.q, cell.r, cell.s)
-		var dh: HexCell = downhill.get(key, null)
-		if dh == null:
-			continue  # 局部洼地：流量止于此
-		var dh_key := Vector3i(dh.q, dh.r, dh.s)
-		var src_flow: float = float(flow.get(key, 0.0))
-		# 下坡邻居如果是水域，不再累积（流量入海）
-		if _is_water(dh.terrain):
-			continue
-		flow[dh_key] = float(flow.get(dh_key, 0.0)) + src_flow
-
-	# 4. 计算分位阈值：top (1 - percentile) 的 cell 成为河流
-	var flow_values: Array = []
-	for v in flow.values():
-		flow_values.append(float(v))
-	flow_values.sort()  # 升序
-	if flow_values.is_empty():
-		return
-	var threshold_idx: int = int(float(flow_values.size()) * _c().river_flow_percentile)
-	threshold_idx = clampi(threshold_idx, 0, flow_values.size() - 1)
-	var threshold: float = float(flow_values[threshold_idx])
-
-	# 5. 标 has_river
-	for cell: HexCell in land_cells:
-		var key := Vector3i(cell.q, cell.r, cell.s)
-		if float(flow.get(key, 0.0)) >= threshold:
-			cell.has_river = true
-
-	# 6. 过滤：必须能下坡到达水（否则是断头沟）
-	_filter_dead_end_rivers(map, downhill)
-
-	# 7. 过滤：单点孤立 river（无相邻 river/water）
-	_filter_isolated_rivers(map)
-
-# 检查每条 river chain 能否经下坡链达到水域；不能的 unmark
-func _filter_dead_end_rivers(map: MapData, downhill: Dictionary) -> void:
-	var reach_water_cache: Dictionary = {}  # cube_key -> bool
-
-	# 内联递归不太行，用迭代+缓存
-	var cells_to_check: Array = []
-	for cell: HexCell in map.all_cells():
-		if cell.has_river and not _is_water(cell.terrain):
-			cells_to_check.append(cell)
-
-	for cell: HexCell in cells_to_check:
-		var visited: Dictionary = {}
-		var current: HexCell = cell
-		var max_steps: int = 200
-		var reached: bool = false
-		for _i in range(max_steps):
-			var key := Vector3i(current.q, current.r, current.s)
-			if reach_water_cache.has(key):
-				reached = bool(reach_water_cache[key])
-				break
-			if visited.has(key):
-				break
-			visited[key] = true
-			if _is_water(current.terrain):
-				reached = true
-				break
-			var dh: HexCell = downhill.get(key, null)
-			if dh == null:
-				break
-			current = dh
-		# 沿路径回填 cache
-		for k in visited:
-			reach_water_cache[k] = reached
-		if not reached:
-			cell.has_river = false
-
-func _filter_isolated_rivers(map: MapData) -> void:
-	# 单 cell 的 river 若四周没有任何 river/water 邻居，去掉
-	var to_unmark: Array = []
-	for cell: HexCell in map.all_cells():
-		if not cell.has_river:
-			continue
-		var has_river_or_water_nb: bool = false
-		for nb: HexCell in map.get_neighbors(cell):
-			if nb.has_river or _is_water(nb.terrain):
-				has_river_or_water_nb = true
-				break
-		if not has_river_or_water_nb:
-			to_unmark.append(cell)
-	for cell: HexCell in to_unmark:
-		cell.has_river = false
 
 # ─── 工具 ────────────────────────────────────────────────────────────────
 

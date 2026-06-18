@@ -23,7 +23,7 @@
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload。 |
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
-| Native world generation base + post-base + publish（生成期） | ACTIVE：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish | `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、装配 HexCell/MapData、ext 未就绪 fallback。 |
+| Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish | `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
 
@@ -40,7 +40,9 @@
 - `map_generator.gd::_generate_cells_native_base`（ACTIVE 编排：发 cfg/profile 请求，接收 PackedArray 结果并装配 `MapData`）
 - `map_generator.gd::_publish_native_generation_from_slots`（bind 后 publish：`DCWorldExt.bind_map_data` + `configure_native_world` 后调用）
 
-当前迁移边界：`native_generation_mode=ACTIVE` 时，`MapGenerator.generate()` 先创建未绑定的 `DCWorldExt`，调用 `run_native_world_generate_base_pass(seed, cfg, profile)`，由 C++ 直接生成基础地图 SoA 结果包：cube 坐标、elevation、moisture/base_moisture、初始 temperature、terrain/is_water、lat/temp_year、landform/vegetation/cover 等 PackedArrays。随后 `run_native_world_generate_post_base_pass(seed, cfg, profile, base_res)` 在 C++ 内完成湖泊 BFS、河流 flow accumulation、河岸/植被反馈、过渡生态、地标和水体变种；GDScript 只负责发送 cfg/profile 请求、校验返回数组尺寸，并把最终结果装配成 `MapData`/`HexCell`。如果 ext 缺失、方法缺失或结果非法，则回到旧 `_generate_cells` fallback。
+**迁移状态（dots-total-cpp 2026-06-18 完成）**：`native_generation_mode` 默认 `ACTIVE(2)`。经逐字段 A/B parity（seed=10086，base+post_base 全字段 `mismatch=0`）+ 运行期同 seed 地形直方图一致验证后，**GDScript 生成实现已删除，C++ 是唯一生成路径，无 GDScript fallback**。
+
+`MapGenerator.generate()` 调 `_generate_cells_native_base(cfg, seed)`，后者经 `_ensure_generation_world_ext()` 拿到（必要时临时实例化）未绑定的 `DCWorldExt`，调用 `run_native_world_generate_base_pass(seed, cfg, profile)`，由 C++ 直接生成基础地图 SoA 结果包：cube 坐标、elevation、moisture/base_moisture、初始 temperature、terrain/is_water、lat/temp_year、landform/vegetation/cover 等 PackedArrays。随后 `run_native_world_generate_post_base_pass(seed, cfg, profile, base_res)` 在 C++ 内完成湖泊 BFS、河流 flow accumulation、河岸/植被反馈、过渡生态、地标和水体变种；GDScript（`_assemble_native_generation_map`）只负责校验返回数组尺寸并装配成 `MapData`/`HexCell`。**若 ext 缺失、方法缺失或结果非法，`_generate_cells_native_base` 返回 null，`generate()` 硬中止并 `push_error`（旧 `_generate_cells` fallback 已删除）。**
 
 bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.init_soa_from_bake()` 和 `bake_lat_temp_year_lut()` 后，`DCWorldExt` 读取已绑定的 `cell_lat_norm`、`cell_elevation`、`cell_terrain` 等 slot，以 C++ SAME_SOURCE 公式重算并发布初始 runtime 字段。这一层用于 slot/MapData 同步和窄 fallback，不再代表完整基础生成算法。
 
@@ -54,7 +56,7 @@ bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.in
 
 发布契约：C++ 写 slot 后逐项 `_flush_slot_to_map` 回 `MapData`，返回 `path=gdext`、`published_to_slot=true`、`published_slots`、`n_cells`、`compute_ms`、`flush_ms`、`elapsed_ms`。GDScript wrapper 成功后调用 `flush_pending_mark_dirty_all()`，并重绑 GDScript `DCWorld`，避免 C++ flush 后 `MapData` PackedArray reseat 而 DataCore GDScript world 仍持有旧引用。
 
-Fallback：未 bind、缺 slot、slot dtype/size 不匹配时返回 `path=gdscript_fallback`、`fallback=true`、`fallback_reason`。此时保留 `map.bake_lat_temp_year_lut()` 与原 GDScript 生成期 SoA 值，并继续调用专用 `run_temp_baseline_year_bake` 作为更窄的 C++ baseline fallback。
+Fallback（仅指 bind 后的 republish 层 `run_native_world_generate_pass`，**不是基础生成**）：未 bind、缺 slot、slot dtype/size 不匹配时返回 `path=gdscript_fallback`、`fallback=true`、`fallback_reason`。此时保留 `map.bake_lat_temp_year_lut()` 与既有 SoA 值（来自 C++ 基础生成），并继续调用专用 `run_temp_baseline_year_bake` 作为更窄的 C++ baseline fallback。注意：基础生成（base+post_base）本身已无 GDScript fallback，失败即硬中止。
 
 ## Temp baseline year bake（生成期 cell_temp_baseline_year）
 

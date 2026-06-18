@@ -227,7 +227,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 # path, SHADOW runs native diagnostics beside legacy paths, ACTIVE is allowed
 # to replace the corresponding GDScript orchestration when the native probe
 # reports readiness.
-@export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_OFF
+# dots-total-cpp（2026-06-18）：地图生成 C++ 化已通过逐字段 A/B parity（base +
+# post_base 全字段 mismatch=0），默认切到 ACTIVE，generate() 走 native 生成路径。
+@export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_ACTIVE
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
 @export var native_environment_runtime_enabled: bool = false
