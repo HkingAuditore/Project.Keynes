@@ -169,21 +169,23 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 // ─── biome 色相调制（高度负责亮度，biome 负责色相） ──────────────────────
 
 vec3 biome_hue_modulate(vec3 base, int biome) {
-	if (biome == B_FOREST)    return base * vec3(0.70, 1.05, 0.65);
-	if (biome == B_GRASSLAND) return base * vec3(0.85, 1.05, 0.78);
-	if (biome == B_DESERT)    return base * vec3(1.18, 1.02, 0.72);
-	if (biome == B_TUNDRA)    return base * vec3(0.92, 1.00, 1.00);
+	// [需求3 2026-06-19] 拉大色相对比：森林系压绿加深、草原系提亮偏黄绿、干旱系加艳沙黄、寒带系
+	// 加冷，让 forest/grassland/desert/tundra 等相邻群系在地图上更易区分(原各家族内部太接近)。
+	if (biome == B_FOREST)    return base * vec3(0.58, 1.06, 0.52);
+	if (biome == B_GRASSLAND) return base * vec3(0.82, 1.10, 0.66);
+	if (biome == B_DESERT)    return base * vec3(1.26, 1.00, 0.60);
+	if (biome == B_TUNDRA)    return base * vec3(0.84, 0.96, 1.04);
 	if (biome == B_SNOW)      return base * vec3(0.86, 0.90, 0.95);
 	if (biome == B_MOUNTAIN)  return base * vec3(1.00, 0.95, 0.95);
 	if (biome == B_HILL)      return base * vec3(1.05, 1.00, 0.90);
 	if (biome == B_SWAMP)     return base * vec3(0.55, 0.85, 0.62);
 	// Phase 10：Whittaker 4
 	// JUNGLE：极深饱和绿（雨林郁闭）
-	if (biome == B_JUNGLE)    return base * vec3(0.50, 1.00, 0.55);
-	if (biome == B_SAVANNA)   return base * vec3(1.10, 1.00, 0.62);
-	if (biome == B_TAIGA)     return base * vec3(0.62, 0.92, 0.78);
+	if (biome == B_JUNGLE)    return base * vec3(0.42, 1.00, 0.46);
+	if (biome == B_SAVANNA)   return base * vec3(1.16, 1.02, 0.54);
+	if (biome == B_TAIGA)     return base * vec3(0.52, 0.90, 0.74);
 	// STEPPE：浅黄绿，比 GRASSLAND 减半饱和
-	if (biome == B_STEPPE)    return base * vec3(1.00, 1.04, 0.82);
+	if (biome == B_STEPPE)    return base * vec3(0.96, 1.08, 0.72);
 	// Phase 11
 	// SHRUBLAND：灰绿带土黄（地中海干性灌丛）
 	if (biome == B_SHRUBLAND) return base * vec3(1.05, 0.98, 0.78);

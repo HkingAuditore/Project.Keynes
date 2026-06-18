@@ -33,20 +33,26 @@ extends Node2D
 @export var color_mid_ocean: Color = Color(0.20, 0.30, 0.42)
 @export var color_shallow: Color = Color(0.28, 0.42, 0.52)
 @export var color_coast_water: Color = Color(0.34, 0.50, 0.56)
+# [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
+# 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
+# mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
+# 阴暗、山脊提亮，形成可读的高度层次。
 @export var color_beach: Color = Color(0.85, 0.78, 0.55)
-@export var color_lowland: Color = Color(0.62, 0.68, 0.42)
-@export var color_hill: Color = Color(0.66, 0.55, 0.32)
-@export var color_mountain: Color = Color(0.50, 0.42, 0.38)
-@export var color_peak: Color = Color(0.65, 0.62, 0.60)
+@export var color_lowland: Color = Color(0.54, 0.64, 0.40)
+@export var color_hill: Color = Color(0.60, 0.56, 0.36)
+@export var color_mountain: Color = Color(0.44, 0.39, 0.36)
+@export var color_peak: Color = Color(0.80, 0.79, 0.78)
 @export var color_snow: Color = Color(0.96, 0.96, 0.96)
 
 # ─── 双光源 hillshading ──────────────────────────────────────────────────
 # [macro-relief 2026-06-19] strength 0.45→0.62、slope_gain 8→11：宏观山脉/盆地/丘陵群
 # 此前因 hillshade 偏弱 + 宽 hypsometric 色带而难以辨认。加强双光源明暗与坡度增益，让大尺度
 # 起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D 着色下更立体可读。属纯视觉 knob，可再微调。
+# [需求4 2026-06-19] strength 0.62→0.74、slope_gain 11→13：山体仍显平。配合新山段色阶进一步加强
+# 明暗，让山腰/山脊起伏更立体，弱化"平坦高原"观感。
 @export_group("Hillshading")
-@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.62
-@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 11.0
+@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.74
+@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 13.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
 # v6：flow_tex 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）。

@@ -1021,20 +1021,25 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ⚠ 2026-06-19 再平衡：上轮回退到放射状大陆后变成 65% 水世界(处处近海)→湿度中位 0.986 过湿、
 # 沙漠/草原消失。这里把基线/降水增益重新下调，并依赖"大陆连贯化"自然形成干燥内陆，目标中位
 # ~0.45-0.55。注意：moisture 在无法实机迭代时最难一次调准，须按新 CSV 复核微调。
+# ⚠ 2026-06-19(凌晨) 实测 041728.csv：湿度中位骤降到 0.24，半干旱(0.15-0.3)占陆地 52%、湿润(>0.5)
+# 仅 12% → 地表整体偏黄、veg=NONE 高达 57%(地形/biome 区分不足)。问题是大陆连贯后内陆 rain-out 过
+# 度，远低于上面目标的 0.45-0.55。本轮温和抬湿(基线翻倍/内陆衰减减弱/降水增益与沿海地板上调)，目标
+# 中位 ~0.35-0.40：减少半干旱铺满又不至变回水世界。
 @export_group("统一气候场(生成)")
 @export var moisture_wind_evap: float = 0.18
 @export var moisture_rainout_base: float = 0.12
 @export var moisture_orographic_gain: float = 6.0
-@export var moisture_continental_dry: float = 0.045
-@export var moisture_land_base: float = 0.06
-@export var moisture_precip_gain: float = 2.4
+@export var moisture_continental_dry: float = 0.030
+@export var moisture_land_base: float = 0.12
+@export var moisture_precip_gain: float = 2.9
 @export var moisture_humidity_cap: float = 1.2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
 # 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
 # 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
 # ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。
-@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.28
+# ⚠ 2026-06-19(凌晨)：连贯大陆下海岸带也偏干，0.28→0.36 适度抬高，加宽湿润海岸过渡带。
+@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.36
 @export var moisture_coastal_scale: float = 7.0
 @export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
 @export var coastal_temp_scale: float = 6.0

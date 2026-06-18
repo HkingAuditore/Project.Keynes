@@ -435,8 +435,10 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	return mix(col, vec3(1.0, 0.0, 0.0), clamp(ww.w_ice, 0.0, 1.0));
 #endif
 
+	// [需求5 2026-06-19] 海冰转明显冰蓝青(原 0.88,0.94,0.97 近白，与陆地雪盖几乎同色难分)；
+	// 降低 mix 比例让底层海水蓝透出更多。配合 snow_cover 那侧改暖白 → 海冰冷蓝 vs 雪暖白可区分。
 	vec3 ice_base = mix(water_depth_gradient(ctx.offshore_depth * 0.65, ctx.elev),
-						 vec3(0.88, 0.94, 0.97), 0.90);
+						 vec3(0.66, 0.81, 0.95), 0.84);
 	float crack_factor = 0.55;
 	if (ctx.quality >= 1) {
 		float crack = voronoi_cell(ctx.wpw * 0.34);

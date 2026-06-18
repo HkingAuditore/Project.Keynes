@@ -4034,9 +4034,10 @@ func _stamp_polyline_variable(
 	for i in range(points.size() - 1):
 		var w0: float = float(widths[i]) if i < widths.size() else 0.5
 		var w1: float = float(widths[i + 1]) if i + 1 < widths.size() else w0
-		# [river-hierarchy 2026-06-19] 加大干支流宽度对比：0.70+w*2.10 → 0.60+w*2.7。
-		# 支流(低流量)细、干流(高流量)更粗，干支流层级一眼可辨。
-		var seg_radius_px: float = base_radius_px * (0.60 + maxf(w0, w1) * 2.70)
+		# [river-hierarchy 2026-06-19] 加大干支流宽度对比：0.70+w*2.10 → 0.60+w*2.7 → 0.40+pow(w,1.4)*3.7。
+		# 改线性为幂律：低流量支流更细(~0.6px)、高流量干流更粗(~4px)，干支流层级与径流量视觉差一眼可辨
+		# (discharge max/p50 仅~2.1，线性映射宽度差不明显，幂律放大中高流量段差异)。
+		var seg_radius_px: float = base_radius_px * (0.40 + pow(maxf(w0, w1), 1.4) * 3.7)
 		var pad := int(ceil(seg_radius_px)) + 1
 		var p0: Vector2 = (points[i] - origin) * inv_world
 		var p1: Vector2 = (points[i + 1] - origin) * inv_world
@@ -4056,7 +4057,7 @@ func _stamp_polyline_variable(
 				var t: float = 0.0
 				if seg_len_sq > 0.0001:
 					t = clampf((p - p0).dot(seg) / seg_len_sq, 0.0, 1.0)
-				var radius := base_radius_px * (0.60 + lerpf(w0, w1, t) * 2.70)
+				var radius := base_radius_px * (0.40 + pow(lerpf(w0, w1, t), 1.4) * 3.7)
 				var closest := p0 + seg * t
 				if p.distance_to(closest) <= radius:
 					mask[y * W + x] = 0.0
