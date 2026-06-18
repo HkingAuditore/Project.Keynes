@@ -20,6 +20,9 @@ enum LF {
 	BADLANDS,     # 荒原峡谷
 	SALT_FLAT,    # 盐沼盆地
 	VOLCANO,      # 火山
+	# ── terrain-overhaul 新增地貌（id 13+，尾部追加）──
+	PLATEAU,      # 高原（大面积抬升 + 顶部平坦的高海拔台地）
+	RIFT_VALLEY,  # 裂谷（离散板块边界下陷的线状峡谷洼地）
 }
 
 # 静态属性表
@@ -41,6 +44,8 @@ const _DATA: Dictionary = {
 	LF.BADLANDS:   { "passable_land": true,  "passable_sea": false, "move_cost": 3, "is_water": false },
 	LF.SALT_FLAT:  { "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
 	LF.VOLCANO:    { "passable_land": false, "passable_sea": false, "move_cost": 0, "is_water": false },
+	LF.PLATEAU:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
+	LF.RIFT_VALLEY:{ "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
 }
 
 const _NAME_CN: Dictionary = {
@@ -57,6 +62,8 @@ const _NAME_CN: Dictionary = {
 	LF.BADLANDS:   "荒原峡谷",
 	LF.SALT_FLAT:  "盐沼地形",
 	LF.VOLCANO:    "火山",
+	LF.PLATEAU:    "高原",
+	LF.RIFT_VALLEY:"裂谷",
 }
 
 # --- 静态查询 ---

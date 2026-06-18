@@ -246,6 +246,38 @@ func apply_default_season_lut() -> void:
 				Color(1.00, 1.00, 0.98, 1.0),  # 已合理，保持
 			]
 			anomaly_color_shift = Color(0.04, -0.04, -0.06, 0.0)  # 升温→白化偏粉
+		24:  # CLOUD_FOREST：云雾林，常青高湿，弱季节
+			season_color_lut = [
+				Color(0.78, 1.12, 0.82, 1.0),
+				Color(0.74, 1.14, 0.80, 1.0),
+				Color(0.82, 1.08, 0.78, 1.0),
+				Color(0.86, 1.06, 0.92, 1.0),  # 冬：仅冷化
+			]
+			anomaly_color_shift = Color(0.02, 0.02, -0.04, 0.0)
+		25:  # MONSOON_FOREST：季风林，干湿季半落叶
+			season_color_lut = [
+				Color(0.92, 1.12, 0.74, 1.0),  # 雨季初绿
+				Color(0.82, 1.12, 0.70, 1.0),  # 雨季盛
+				Color(1.20, 0.94, 0.56, 1.0),  # 旱季落叶金黄
+				Color(1.02, 0.96, 0.90, 1.0),  # 旱末冷化
+			]
+			anomaly_color_shift = Color(0.06, -0.02, -0.06, 0.0)
+		26:  # SEAGRASS：海草床，水下几乎不换色
+			season_color_lut = [
+				Color(0.90, 1.04, 0.90, 1.0),
+				Color(0.88, 1.06, 0.88, 1.0),
+				Color(0.92, 1.02, 0.90, 1.0),
+				Color(0.92, 1.00, 0.96, 1.0),
+			]
+			anomaly_color_shift = Color(0.02, -0.02, -0.02, 0.0)
+		27:  # PEAT_BOG：泥炭沼，凉湿，秋枯明显
+			season_color_lut = [
+				Color(0.90, 1.06, 0.76, 1.0),
+				Color(0.82, 1.10, 0.70, 1.0),
+				Color(1.08, 0.94, 0.62, 1.0),  # 秋枯赭黄
+				Color(0.94, 0.96, 0.98, 1.0),  # 冬冷化
+			]
+			anomaly_color_shift = Color(0.04, 0.00, -0.05, 0.0)
 		_:
 			# 未知 veg_type → 保持默认全白（不偏移）
 			pass

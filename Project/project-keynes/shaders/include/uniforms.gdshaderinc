@@ -22,58 +22,19 @@
 // world_map.gdshader v9.atlas：高分辨率地理仿真渲染
 //   height_tex       (RG8 16-bit, hm_size, LINEAR)
 //                     归一化海拔 [0, 1]，解码 (R*256 + G) / 257
-//   enum_atlas       (RGB8, derived_size, NEAREST)
-//                     R = biome (TerrainType.TERRAIN id)
-//                     G = vegetation (VegetationType.VEG id)
-//                     B = cover (CoverType.CV id)
-//   scalar_atlas     (RGBA8, derived_size, LINEAR)
-//                     R = moisture
-//                     G = flow_accum (log-scaled)
-//                     B = latitude_norm ∈ [0, 1]
-//                     A = 0（保留）
-//   vector_atlas     (RGBA8, derived_size, LINEAR)
-//                     RG = ocean_current (-1..1 mapped from 0..1)
-//                     BA = wind_field    (-1..1 mapped from 0..1)
-//   dynamic_cell_atlas (RGBA8, derived_size, LINEAR)
-//                     R=temp, G=wetness/moisture, B=snow_cover, A=water sea_ice / land vitality
-//   sea_ice_tex      (R8, derived_size, LINEAR)
-
-//                     兼容旧调试/数据通道；主视觉海冰由 shader 按水温实时派生。
-//
-// 不再有 hex 逻辑、不再做 domain warp。整张地图就是这 4 张连续纹理的合成。
+//   map_index_atlas  (RGBA8, derived_size, NEAREST)
+//                     R = biome id
+//                     G/B = cell.index low/high byte
+//                     A = reserved
+// scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
+// moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
-uniform sampler2D enum_atlas   : filter_nearest, repeat_disable;
-uniform sampler2D scalar_atlas : filter_linear,  repeat_disable;
-uniform sampler2D vector_atlas : filter_linear,  repeat_disable;
-// vector_atlas 是否已注入真实数据。bake_world / commit_ocean_buffers 完成时由 hex_renderer 置 true。
-// 未绑定时 Godot 默认 fallback 是白纹理（vec4(1)），错误地解码为 (1,1) 强洋流向；
-// 用此 flag 让 shader 在 false 时直接把 vects 当 0.5 中性值，等价于"没有洋流/风"。
-uniform bool vector_atlas_valid = false;
-// A channel note: water pixels carry sea_ice_fraction; land pixels carry vegetation_vitality.
-// dynamic_cell_atlas RGBA8：R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality。
-// map-visual-overhaul-v1：主 shader 已切换到 `dyn_atlas_smooth_tex` 消费（消除 hex 阶梯）；
-// 本 uniform 保留给调试/info 面板（hex_renderer 仍按旧接口绑定），shader 自身不再读它。
-uniform sampler2D dynamic_cell_atlas : hint_default_black, filter_linear, repeat_disable;
-// map-visual-overhaul-v1：dyn_atlas_smooth_tex RGBA8 LINEAR（derived_size）。
-// dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物，跨 cell 平滑——shader 单点采样
-// 即可得到连续场，彻底消除"颜色按 hex 块切"的硬阶梯（病灶 B 解药）。
-// hint_default_black 让纹理未绑定时采样为 (0,0,0,0)，触发 dyn_valid fallback。
-uniform sampler2D dyn_atlas_smooth_atlas : hint_default_black, filter_linear, repeat_disable;
-// map-visual-overhaul-v1：ice_state_atlas R8 LINEAR（derived_size）。
-// 每像素 = 该 cell.sea_ice_frac × 255 量化；仅水域 cell 写非零，陆地恒 0。
-// shader 据此替换原 lat-driven 静态 ice mask（病灶 A 解药）—— 海冰随温度真冻融、
-// 边缘由 fbm 撕碎，不再"极地海冰终年不化"。
-uniform sampler2D ice_state_atlas : hint_default_black, filter_linear, repeat_disable;
-// ecology_visual_atlas RGBA8: R=foliage_density, G=stress/dryness,
-// B=vegetation transition age, A=recent growth/damage.
-uniform sampler2D ecology_visual_atlas : hint_default_black, filter_linear, repeat_disable;
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的
 // 三层独立云（cirrus/cumulus/fog）承担——主地图保持"清爽地表"，不画云。
 // 历史 uniform：weather_field_tex / weather_field_ocean_enabled /
 //               weather_field_ocean_strength （已删除）。
-// 兼容旧调试/数据通道；主地图海冰视觉不采样它。
-uniform sampler2D sea_ice_tex : filter_linear, repeat_disable;
 // v10.noise-pack：共享 noise 贴图（256×256 RGBA8 tileable，由 MapBaker 烘焙）。
 // R=raw value_noise，G/B/A=2/3/4 octave fBM 预积分；fbm(p,N) 全局降为 1 次采样。
 uniform sampler2D noise_tex    : filter_linear_mipmap, repeat_enable;
@@ -82,18 +43,13 @@ const float NOISE_TEX_SCALE = 256.0;
 // =========================================================================
 // 【Cell-index 间接寻址组（province-ID indirection）】
 // =========================================================================
-// plan: cell-index atlas indirection。把"hex 内恒定"的 atlas 改为
-//   静态 cell 索引图 + per-cell LUT，shader 自己做 pixel→cell 解析。
-//   use_cell_indirection=false（默认）时全部分支退回旧 per-pixel atlas，
-//   逐像素 bit-identical。绑定与开关由 hex_renderer 推送。
-// cell_index_tex（RG8 NEAREST）：R=cell.index 低字节、G=高字节；0xFFFF=map 外哨兵。
+// cell-index indirection 是唯一动态视觉路径。
+// map_index_atlas.g/b：cell.index 低/高字节；0xFFFF=map 外哨兵。
 //   **必须 NEAREST**：索引插值会得到垃圾 cell。
-// enum_lut（RGB8 NEAREST）：per-cell R=biome G=veg B=cover（enum_atlas 的 LUT 形态）。
+// enum_lut（RGB8 NEAREST）：per-cell R=biome G=veg B=cover。
 // dyn_lut（RGBA8 NEAREST）：per-cell R=temp G=wet B=snow A=ice|vitality。
 // eco_lut（RGBA8 NEAREST）：per-cell ecology。
 // lut_dims：(lut_w, lut_h) LUT 纹理网格尺寸，shader 据此把 cell.index → texel uv。
-uniform bool use_cell_indirection = false;
-uniform sampler2D cell_index_tex : filter_nearest, repeat_disable;
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut  : filter_nearest, repeat_disable;
@@ -348,8 +304,8 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 // =========================================================================
 // ─── 河流（从 flow accumulation） ───────────────────────────────────────
 uniform float river_strength       : hint_range(0.0, 1.0) = 0.85;
-uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.55;
-uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.85;
+uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.62;
+uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.90;
 uniform vec3  river_color          : source_color = vec3(0.30, 0.50, 0.68);
 uniform vec3  river_outline_color  : source_color = vec3(0.16, 0.30, 0.45);
 
@@ -407,6 +363,12 @@ const int B_DELTA     = 22;
 const int B_OASIS     = 23;
 const int B_SALT_FLAT = 24;
 const int B_BADLANDS  = 25;
+// terrain-overhaul 新增地形（与 terrain_type.gd 尾部追加严格对齐）
+const int B_COLD_DESERT = 26;
+const int B_CHAPARRAL   = 27;
+const int B_MOOR        = 28;
+const int B_FLOODPLAIN  = 29;
+const int B_MESA        = 30;
 
 // ─── Milestone 2：VegetationType.VEG id ──────────────────────────────────
 // 与 scripts/vegetation_type.gd 严格按 enum 顺序对齐，shader 端按 id 直接 if-else 派色。
@@ -434,7 +396,12 @@ const int V_SWAMP               = 20;
 const int V_MARSH               = 21;
 const int V_KELP_FOREST         = 22;
 const int V_CORAL_REEF          = 23;
-const int V_COUNT               = 24;
+// terrain-overhaul 新增植被（与 vegetation_type.gd 尾部追加严格对齐）
+const int V_CLOUD_FOREST        = 24;
+const int V_MONSOON_FOREST      = 25;
+const int V_SEAGRASS            = 26;
+const int V_PEAT_BOG            = 27;
+const int V_COUNT               = 28;
 
 // ─── Milestone 2：CoverType.CV id ────────────────────────
 const int CV_NONE       = 0;

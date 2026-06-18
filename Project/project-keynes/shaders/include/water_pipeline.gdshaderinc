@@ -13,9 +13,8 @@
 //   weather_front / water / hillshade_tod / surface_params / shore_common / brdf。
 //
 // 性能（Cost）
-//   主要 fetch：5×5 邻域 (visual_quality≥1) 用于 offshore，水侧 biome_weights，
-//   dyn_atlas_smooth_atlas.a (sea_ice_frac，sea-ice-render-source-unify 阶段 A
-//   起作为唯一海冰数据源)，scalar_atlas (river plume)。BRDF 已抽到 brdf.gdshaderinc。
+//   主要 fetch：5×5 邻域 (visual_quality≥1) 用于 offshore，水侧 biome_weights；
+//   海冰来自 fragment 入口解码的 dyn_lut.a。BRDF 已抽到 brdf.gdshaderinc。
 //   apply_water_specials 在 day_night_enabled 关时被旁路。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -532,18 +531,17 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 // ═══════════════════════════════════════════════════════════════════════
 // SEA 1.13: apply_estuary_plume —— 河口羽流
 // ═══════════════════════════════════════════════════════════════════════
-//   沿 ocean_current+wind 反向追溯 scalar_atlas.g（river SDF），形成
-//   羽流权重；冰区/湖区抑制。
+//   scalar_atlas 已退役，河口羽流只保留入口并自然退化为无效果。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
-	float river_sdf_water = ctx.scals.g;  // 与原 texture(scalar_atlas, uv).g 等价
+	float river_sdf_water = ctx.scals.g;
 	if (!(estuary_plume_strength > 0.001 && river_sdf_water > river_threshold_low * 0.58)) return col;
 
 	vec2 plume_vec = ctx.ocean_current_v + ctx.wind_v * 0.24;
 	vec2 plume_dir = (length(plume_vec) > 0.05) ? normalize(plume_vec) : vec2(1.0, 0.0);
 	vec2 plume_step = plume_dir * (1.0 / hm_resolution) * mix(3.0, 7.0, water_transition_softness);
-	float tail_a = texture(scalar_atlas, clamp(ctx.uv - plume_step,       vec2(0.0), vec2(1.0))).g;
-	float tail_b = texture(scalar_atlas, clamp(ctx.uv - plume_step * 1.8, vec2(0.0), vec2(1.0))).g;
+	float tail_a = river_sdf_water;
+	float tail_b = river_sdf_water;
 	float plume_src = max(river_sdf_water, max(tail_a * 0.82, tail_b * 0.62));
 	float plume_noise = 0.5;
 	if (ctx.quality >= 1) {

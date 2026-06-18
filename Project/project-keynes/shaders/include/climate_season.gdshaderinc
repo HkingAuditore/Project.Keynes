@@ -98,8 +98,8 @@ float season_offset_unified(float lat_signed, float phase) {
 }
 
 // SAME_SOURCE（Shader 镜像）: DCClimateMath.lat_temp_bell —— 纬度温度钟形的唯一 GLSL 实现。
-// 跨语言同步本指数（2026-06-16: 1.2→1.6 高纬降温）；lat_signed ∈ [-1, 1]，返回 [0, 1]。
-const float LAT_TEMP_CURVE_EXP = 1.6;
+// 跨语言同步本指数（2026-06-16: 1.2→1.6 高纬降温；terrain-overhaul 1.6→1.3 拓宽温带）；lat_signed ∈ [-1, 1]，返回 [0, 1]。
+const float LAT_TEMP_CURVE_EXP = 1.3;
 float lat_temp_bell(float lat_signed) {
 	return pow(max(cos(lat_signed * 1.5707963), 0.0), LAT_TEMP_CURVE_EXP);
 }

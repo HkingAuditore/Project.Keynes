@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 69
+// Schema entries: 75
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -99,6 +99,12 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_vegetation_drought_stress",     "vegetation_drought_stress_arr",     SlotDType::F32 },
     { "cell_vegetation_cold_stress",        "vegetation_cold_stress_arr",        SlotDType::F32 },
     { "cell_vegetation_regen_score",        "vegetation_regen_score_arr",        SlotDType::F32 },
+    { "cell_hydro_parent",                  "hydro_parent_arr",                  SlotDType::I32 },
+    { "cell_river_discharge",               "river_discharge_arr",               SlotDType::F32 },
+    { "cell_river_discharge_30d",           "river_discharge_30d_arr",           SlotDType::F32 },
+    { "cell_river_storage",                 "river_storage_arr",                 SlotDType::F32 },
+    { "cell_groundwater_storage",           "groundwater_storage_arr",           SlotDType::F32 },
+    { "cell_surface_runoff",                "surface_runoff_arr",                SlotDType::F32 },
     { "cell_demo_thermal_gradient",         "demo_thermal_gradient_arr",         SlotDType::F32 },  // demo-only (gated on ClimateProfile.demo_thermal_gradient_enabled)
 };
 

@@ -137,6 +137,13 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.vegetation_drought_stress", cpp_name = "cell_vegetation_drought_stress", dtype = F32, track_prev = false, map_field = "vegetation_drought_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
 	{ name = &"cell.vegetation_cold_stress", cpp_name = "cell_vegetation_cold_stress", dtype = F32, track_prev = false, map_field = "vegetation_cold_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
 	{ name = &"cell.vegetation_regen_score", cpp_name = "cell_vegetation_regen_score", dtype = F32, track_prev = false, map_field = "vegetation_regen_score_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	# ─── Runtime hydrology（生成期拓扑 + 日级动态径流）──────────────────────
+	{ name = &"cell.hydro_parent", cpp_name = "cell_hydro_parent", dtype = I32, track_prev = false, map_field = "hydro_parent_arr", prev_field = "", owner = "map_generation" },
+	{ name = &"cell.river_discharge", cpp_name = "cell_river_discharge", dtype = F32, track_prev = false, map_field = "river_discharge_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.river_discharge_30d", cpp_name = "cell_river_discharge_30d", dtype = F32, track_prev = false, map_field = "river_discharge_30d_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.river_storage", cpp_name = "cell_river_storage", dtype = F32, track_prev = false, map_field = "river_storage_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.groundwater_storage", cpp_name = "cell_groundwater_storage", dtype = F32, track_prev = false, map_field = "groundwater_storage_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.surface_runoff", cpp_name = "cell_surface_runoff", dtype = F32, track_prev = false, map_field = "surface_runoff_arr", prev_field = "", owner = "runtime.hydrology" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

@@ -126,14 +126,12 @@ var noise_tex: ImageTexture
 # 把"hex 内恒定"的视觉 atlas 改为"静态 cell 索引图 + per-cell LUT"间接寻址，
 # 让 shader 自己做 pixel→cell 解析，把 fan-out 目标从 n_pix 压到 n_cells。
 #
-# cell_index_tex：RG8 NEAREST，derived_size。R=cell.index 低字节、G=高字节
-#   （支持 65536 cell）。map 外像素写哨兵 0xFFFF。仅 bake_world / regenerate
-#   重建，每日零上传 —— 这是相对旧 per-pixel atlas 的核心优势。**shader 必须 NEAREST**。
+# map_index_atlas（复用 enum_atlas_tex 字段）：RGBA8 NEAREST，derived_size。
+#   R=biome，G/B=cell.index 低/高字节，A=保留；map 外像素写哨兵 0xFFFF。
 # enum_lut / dyn_lut / eco_lut：per-cell LUT 纹理（lut_dims 网格，NEAREST）。
 #   enum_lut(RGB8)=biome/veg/cover；dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
 #   eco_lut(RGBA8)=foliage/stress/transition/growth。更新=写 n_cells texel + 一次 update。
 # lut_dims：(lut_w, lut_h)，lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
-var cell_index_tex: ImageTexture
 var enum_lut_tex: ImageTexture
 var dyn_lut_tex: ImageTexture
 var eco_lut_tex: ImageTexture

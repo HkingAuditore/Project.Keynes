@@ -12,7 +12,7 @@
 //   - water_biome_weights         : 3×3 neighborhood soft weights for biome blend
 //
 // Dependencies (caller-side MUST declare BEFORE #include):
-//   - sampler2D enum_atlas            (for water_biome_weights biome id lookup)
+//   - sampler2D map_index_atlas       (for water_biome_weights biome id lookup)
 //   - int       B_LAKE / B_REEF / B_KELP / B_SEA_ICE  (biome id constants)
 //   - fbm / value_noise / voronoi_cell / hash21       (from common_noise.gdshaderinc)
 //
@@ -159,7 +159,7 @@ vec4 water_biome_weights(vec2 uv, vec2 tx, float blend_radius) {
 			// cannot fully overwrite a narrow water feature.
 			float sw = 1.0 - 0.18 * clamp(length(o), 0.0, 1.41421356);
 			vec2 suv = clamp(uv + o * step_uv, vec2(0.0), vec2(1.0));
-			int b = int(texture(enum_atlas, suv).r * 255.0 + 0.5);
+			int b = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			if (b == B_LAKE)    cnt_lake += sw;
 			if (b == B_REEF)    cnt_reef += sw;
 			if (b == B_KELP)    cnt_kelp += sw;

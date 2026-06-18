@@ -423,15 +423,29 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_category("地表与生态")
 @export_group("水文")
 
-# Top (1 - percentile) flux cells become rivers.
-@export var river_flow_percentile: float = 0.78
+# Top (1 - percentile) flux cells become river sources; native generation then
+# carves each accepted source down its downhill path to water.
+# terrain-overhaul: 0.92→0.86 恢复可见河网（旧值下河流仅占 ~0.4% 地块）。
+@export var river_flow_percentile: float = 0.86
+
+# Minimum accepted land cells in a rendered river path. Shorter runoff paths
+# still contribute flow, but are not drawn as standalone streams.
+# terrain-overhaul: 18→8 让更多中短河流成形（配合统一水汽场后流量分布更分散）。
+@export var hydro_river_min_length: int = 8
+
+# Priority-Flood depression lakes: keep only basins with enough area/depth so
+# noise pits become drained land instead of one-cell ponds.
+@export var hydro_lake_min_cells: int = 18
+@export var hydro_lake_min_depth: float = 0.018
+@export var hydro_lake_min_volume: float = 0.22
 
 # Max iterations for depression / pit filling.
 @export var pit_fill_max_iters: int = 100
 
-# Noise frequency + threshold for placing lake seeds.
-@export var lake_seed_freq: float = 0.18
-@export var lake_seed_threshold: float = 0.55
+# Low-frequency lake seed noise creates fewer, larger inland basins instead of
+# many one-cell ponds on large maps.
+@export var lake_seed_freq: float = 0.07
+@export var lake_seed_threshold: float = 0.62
 
 # Lake cell elevation depression and min-interior distance from coast.
 @export var lake_seed_depth: float = 0.04
@@ -847,6 +861,28 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.22
 
 # ══════════════════════════════════════════════════════════════════════
+# [Runtime hydrology — river / climate / vegetation feedback loop]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("运行期水文")
+@export var runtime_hydrology_enabled: bool = false
+@export_range(1, 30, 1) var runtime_hydrology_stride: int = 1
+@export_range(0.0, 4.0, 0.01) var hydro_precip_scale: float = 1.0
+@export_range(0.0, 4.0, 0.01) var hydro_snowmelt_scale: float = 0.55
+@export_range(0.05, 2.0, 0.01) var hydro_soil_capacity: float = 0.75
+@export_range(0.0, 1.0, 0.005) var hydro_infiltration_rate: float = 0.52
+@export_range(0.0, 1.0, 0.005) var hydro_curve_number_dry: float = 0.34
+@export_range(0.0, 1.0, 0.005) var hydro_curve_number_wet: float = 0.78
+@export_range(0.0, 1.0, 0.005) var hydro_quickflow_fraction: float = 0.36
+@export_range(0.0, 0.5, 0.001) var hydro_baseflow_recession: float = 0.035
+@export_range(0.01, 1.0, 0.005) var hydro_channel_release_rate: float = 0.62
+@export_range(0.005, 1.0, 0.005) var hydro_lake_release_rate: float = 0.18
+@export_range(0.01, 1.0, 0.005) var hydro_discharge_ema: float = 0.08
+@export_range(0.0, 0.25, 0.001) var hydro_bank_moisture_gain: float = 0.035
+@export_range(0.0, 1.0, 0.005) var hydro_river_evap_gain: float = 0.12
+@export_range(0.1, 8.0, 0.05) var hydro_flood_threshold: float = 2.2
+@export_range(0.0, 1.0, 0.005) var hydro_flood_decay: float = 0.10
+
+# ══════════════════════════════════════════════════════════════════════
 # [Diagnostics — runtime perf opt-in]
 # ══════════════════════════════════════════════════════════════════════
 @export_group("运行时诊断")
@@ -887,6 +923,71 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var max_volcanoes: int = 8
 @export var volcano_min_dist: int = 6           # minimum hex-distance between volcanoes
 @export var volcano_min_land_h: float = 0.65    # minimum elevation to qualify as volcano
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 0 — 板块构造基底]
+# ══════════════════════════════════════════════════════════════════════
+# Voronoi 板块（泊松散点 + Lloyd 松弛）取代放射状大陆中心：会聚边界抬升线状山脉带/岛弧、
+# 离散边界成洋中脊/裂谷。tectonic_blend=0 完全回退旧放射状大陆（降风险）。
+# ⚠ 2026-06-18 回归修复：blend=0.8 时板块基线(大陆 0.62 / 海洋 0.15)经 min-max 归一化后
+# 把整张图抬成"超大高原大陆"——70% 陆地、land 海拔中位 0.67 → 海拔惩罚使全图过冷(温度中位
+# 0.22)、纬向水汽模型内陆枯干(湿度中位 0.13)，山地/荒漠/寒漠铺满、暖湿生物群系几近消失。
+# 板块场的 hypsometric 分布难以在无法实机迭代时调准，故默认回退到经过验证的放射状大陆
+# (blend=0)。板块构造代码保留，后续需重新标定大陆基线与归一化后再开启。
+@export_group("板块构造(生成)")
+@export_range(0.0, 1.0, 0.05) var tectonic_blend: float = 0.0
+@export_range(3, 40, 1) var tectonic_plate_count: int = 14
+@export_range(0.0, 1.0, 0.05) var tectonic_continental_fraction: float = 0.45
+@export var tectonic_continental_base: float = 0.62
+@export var tectonic_oceanic_base: float = 0.15
+@export var tectonic_uplift_amp: float = 0.55
+@export var tectonic_ridge_width: float = 0.06
+@export var tectonic_drift_speed: float = 1.0
+@export_range(0, 6, 1) var tectonic_lloyd_iters: int = 2
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 1 — 水力/热力侵蚀]
+# ══════════════════════════════════════════════════════════════════════
+# 液滴水力侵蚀(作用于 cell 海拔) + 热力坍塌；droplet_factor=0 关闭。迭代上限控制生成耗时。
+@export_group("侵蚀(生成)")
+@export_range(0.0, 2.0, 0.05) var erosion_droplet_factor: float = 0.6
+@export_range(1, 200, 1) var erosion_max_lifetime: int = 30
+@export var erosion_capacity: float = 4.0
+@export_range(0.0, 1.0, 0.01) var erosion_deposit_rate: float = 0.3
+@export_range(0.0, 1.0, 0.01) var erosion_erode_rate: float = 0.3
+@export_range(0.0, 1.0, 0.01) var erosion_evaporation: float = 0.02
+@export var erosion_gravity: float = 4.0
+@export var erosion_min_slope: float = 0.01
+@export_range(0, 12, 1) var erosion_thermal_iters: int = 2
+@export var erosion_thermal_talus: float = 0.04
+@export_range(0.0, 1.0, 0.05) var erosion_thermal_rate: float = 0.5
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 3 — 统一气候场(盛行风水汽输送 + 海洋温度调节)]
+# ══════════════════════════════════════════════════════════════════════
+# 取代旧"噪声 + 单向 coastal/orographic 加湿"棘轮：海面蒸发为源，沿盛行风纬向平流，过陆地
+# 按里程 rain-out 衰减(大陆度)，迎风增雨、背风自然成雨影；温度按距海做海洋性调节。
+@export_group("统一气候场(生成)")
+@export var moisture_wind_evap: float = 0.18
+@export var moisture_rainout_base: float = 0.12
+@export var moisture_orographic_gain: float = 6.0
+@export var moisture_continental_dry: float = 0.04
+@export var moisture_land_base: float = 0.05
+@export var moisture_precip_gain: float = 3.5
+@export var moisture_humidity_cap: float = 1.2
+@export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
+@export var moisture_noise_amp: float = 0.08
+@export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
+@export var coastal_temp_scale: float = 6.0
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 5 — 特征点缀门槛]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("特征点缀(生成)")
+# 盐滩仅在距海 ≥ 该格数的内流盆地底部生成，消除沿海"错位盐滩"。
+@export_range(0, 30, 1) var salt_flat_min_dist_ocean: int = 4
+# 硬叶灌丛(CHAPARRAL)仅在距海 ≤ 该格数的暖温带中等偏旱草/灌带生成（地中海式干夏）。
+@export_range(1, 20, 1) var chaparral_max_dist_ocean: int = 4
 
 # ══════════════════════════════════════════════════════════════════════
 # [Reference-impl demo channels — DO NOT use in real game logic]

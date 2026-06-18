@@ -511,6 +511,9 @@ public:
     //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
     double run_transpiration_pass(godot::Dictionary knobs);
 
+    // Runtime hydrology: daily local water balance + parent-graph routing.
+    godot::Dictionary run_runtime_hydrology_pass(const godot::Dictionary &knobs);
+
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
     //   ClimateProfile flag：use_gdext_albedo
@@ -1027,11 +1030,7 @@ public:
     //   保证 LUT 与全分辨率 atlas bit-equivalent。eco transition_age 由
     //   AtlasPipelineState::lut_* 持久状态自维护（与 pipeline eco 状态独立）。
     //   SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd。
-    // encode_cell_index_tex：一次性把 CSR 像素列表反向 fan-out 成 per-pixel
-    //   cell.index 间接图（RG8，0xFFFF sentinel）。
-    //   SAME_SOURCE: map_baker.gd::bake_cell_index_tex / _gd_cell_index_tex。
     godot::Dictionary encode_cell_luts(godot::Dictionary opts);
-    godot::Dictionary encode_cell_index_tex(godot::Dictionary opts);
 
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。

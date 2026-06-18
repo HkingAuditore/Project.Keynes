@@ -12,13 +12,9 @@ render_mode blend_mix;
 // fragment()（SETUP 解码 → LAND/SEA 分支调度 → GLOBAL 输出）。具体算法均下沉到 include。
 // 通道语义快速参考（详细请见 uniforms.gdshaderinc）：
 //   height_tex (RG8 LINEAR)        归一化海拔 [0,1]，解码 (R*256 + G)/257
-//   enum_atlas (RGB8 NEAREST)      R=biome  G=vegetation  B=cover
-//   scalar_atlas (RGBA8 LINEAR)    R=moisture  G=flow_accum  B=latitude_norm  A=保留
-//   vector_atlas (RGBA8 LINEAR)    RG=ocean_current (-1..1)  BA=wind_field (-1..1)
-//   dynamic_cell_atlas / dyn_atlas_smooth_atlas (RGBA8 LINEAR):
-//                                   R=temp G=wetness B=snow_cover A=water sea_ice / land vitality
-//   sea_ice_tex / ice_state_atlas  R=sea_ice_fraction（动态海冰主视觉）
-//   ecology_visual_atlas           R=foliage_density G=stress B=transition_age A=growth
+//   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
+//   enum/dyn/eco LUT:
+//                                   per-cell enum / dynamic / ecology visual state
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Include 拓扑顺序（不可随意调整） ─────────────────────────────────────
@@ -34,7 +30,7 @@ render_mode blend_mix;
 //   snow_cover     依赖 common_noise.fbm + height.decode_height_rg8 + weather_front.compute_extreme_weather_mask。
 //   biome_detail   依赖 common_noise.fbm + common_noise.voronoi_cell + uniforms.B_*。
 //   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8。
-//   water          依赖 common_noise.* + uniforms.enum_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
+//   water          依赖 common_noise.* + uniforms.map_index_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
 //   shore_common   依赖 uniforms + material_constants：sample_shore_neighborhood / compute_shore_halo。
@@ -73,10 +69,8 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 0：Atlas 采样 / 通道解码
 	// ───────────────────────────────────────────────────────────────────────
-	// 把 6 张 atlas 在 fragment 开头一次性采样并解码到局部变量，后续阶段全部读
-	// 这些局部变量而不再触发额外 texture()，让单像素纹理 fetch 数稳定可预测。
-	// PERF：dyn_atlas_smooth_atlas 已替代 dynamic_cell_atlas 作为主消费路径
-	//       （消除 hex 阶梯）；后者仅供调试/info 面板，shader 自身不再读它。
+	// 动态视觉状态统一走 cell-index + LUT；旧 per-pixel dynamic/smooth/ecology atlas
+	// 以及 scalar/vector atlas 已退役。
 	// ═══════════════════════════════════════════════════════════════════════
 	vec2 wp = v_world;
 	vec2 uv = (wp - world_origin) / world_size;
@@ -92,11 +86,7 @@ void fragment() {
 	// 这 4 个分量在 v10.noise-pack 中是 raw value + fbm-2/3/4-octave 的预积分，
 	// 谱形不同但仍是同坐标采样，对"独立 RV"的要求是软约束。下游若需严格独立
 	// 随机数，应另调 derive_independent_noise4(wp + offset)。
-	// 60 FPS 优化（2026-06-15）：mobile 三档变体砍 SETUP 阶段冗余 sample。
-	// LOW: 只保留 elev/enum/scalar/dyn（4 sample）→ 无 noise/vector/eco
-	// MID: 加 noise_tex（5 sample）→ 让 base_ripple 有数据源
-	// HIGH: 加 noise/vector（6 sample）→ 洋流方向
-	// Desktop: 7 sample 全跑
+	// 60 FPS 优化（2026-06-18）：scalar/vector 和 per-pixel dynamic atlas 已退役。
 #ifdef MOBILE_QUALITY_LOW
 	vec4 pixel_noise = vec4(0.5);  // 中性灰值，不调 fbm 也不影响
 #else
@@ -108,71 +98,43 @@ void fragment() {
 
 	float elev = decode_height_rg8(uv);
 
-	// v9.atlas：把 3 张 atlas 一次采样解码到局部变量，后续逻辑读这些变量
-	vec4 enums = texture(enum_atlas,   uv);
-	vec4 scals = texture(scalar_atlas, uv);
-	// vector_atlas：RG=洋流、BA=风场，均为 [-1,1] 映射到 [0,1]。
-	// Mobile LOW/MID：完全跳过 vector_atlas（洋流可视化在低配机不显示）。
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
-	vec4 vects = vec4(0.5);  // 中性零向量
-#else
-	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
-#endif
-	// Stage C：use_cell_indirection 时走 dyn_lut（per-cell 原始值 + 跨 cell 平滑），
-	// 否则旧 dyn_atlas_smooth_atlas（CPU box-blur）。dyn_lut.a 与 dyn_atlas_smooth.a
-	// 同语义（水格=sea_ice_frac，陆格=vegetation_vitality），海冰随 dyn 一并迁移。
+	vec4 scals = vec4(0.0);  // scalar_atlas 退役：flow=0，moist/lat 由 LUT/uv 重建。
+	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
+
+	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
 	// mobile 单点 NEAREST（接受轻微阶梯），desktop 4-tap 双线性补平滑。
 	vec4 dyns;
-	if (use_cell_indirection) {
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
-		dyns = dyn_lut_nearest(uv);
+	dyns = dyn_lut_nearest(uv);
 #else
-		dyns = sample_dyn_lut_smooth(uv);
+	dyns = sample_dyn_lut_smooth(uv);
 #endif
-	} else {
-		dyns = texture(dyn_atlas_smooth_atlas, uv);
-	}
-	// Mobile 三档全跳 ecology atlas（eco_valid=0 等同 dynamic 路径）
+	// Mobile 三档全跳 ecology（eco_valid=0 等同 dynamic 路径）
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
 	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
 #else
-	vec4 ecos = use_cell_indirection ? sample_eco_lut_smooth(uv) : texture(ecology_visual_atlas, uv);
+	vec4 ecos = sample_eco_lut_smooth(uv);
 #endif
 
-	// enum 通道（biome/veg/cover）：use_cell_indirection 时走 cell 索引图 + enum_lut
-	// （NEAREST，与 enum_atlas 同源 bit-identical）；否则旧 per-pixel enum_atlas 解码。
-	// cid<0（map 外哨兵）回退 enum_atlas 零初始化语义（OCEAN/NONE/NONE）。
+	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
+	// cid<0（map 外哨兵）使用 map_index_atlas 零初始化语义（OCEAN/NONE/NONE）。
 	int biome;
 	int veg;
 	int cover;
-	int _cell_id = use_cell_indirection ? decode_cell_index(uv) : -2;
+	int _cell_id = decode_cell_index(uv);
 	if (_cell_id >= 0) {
 		vec3 elut = texture(enum_lut, cell_lut_uv(_cell_id)).rgb;
 		biome = int(elut.r * 255.0 + 0.5);
 		veg   = int(elut.g * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
-	} else if (_cell_id == -1) {
+	} else {
 		biome = 0;
 		veg = 0;
 		cover = 0;
-	} else {
-		biome = int(enums.r * 255.0 + 0.5);
-		veg   = int(enums.g * 255.0 + 0.5);
-		cover = int(enums.b * 255.0 + 0.5);
 	}
-	// Stage D：use_cell_indirection 时 moisture 取 dyn_lut.g（并入 dyn，退役 scalar.r 消费），
-	// latitude 用 uv.y 解析重建（scalar.b 本是线性纬度 ramp，bilinear 采样在内部逐像素等价）。
-	// flow（scalar.g）是亚六边形河流 SDF，永远保留全分辨率 —— scalar_atlas 仍绑定/采样。
-	float moist;
-	float lat_norm;
-	if (use_cell_indirection) {
-		moist = dyns.g;
-		float _Hf = float(textureSize(cell_index_tex, 0).y);
-		lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
-	} else {
-		moist = scals.r;
-		lat_norm = scals.b;
-	}
+	float moist = dyns.g;
+	float _Hf = float(textureSize(map_index_atlas, 0).y);
+	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
@@ -190,7 +152,7 @@ void fragment() {
 	// 帧即带真实纬度温度，不再存在未初始化窗口，因此恒信 atlas 真值（含温度=0 的极寒）。
 	// 唯一例外：cell-indirection 下地图外哨兵像素（cid<0）采样为 vec4(0)，仍回退
 	// derived_temp，避免地图边缘出现"温度=0 冷边"。on-map 真实格永远有效。
-	float dyn_valid = (use_cell_indirection && _cell_id < 0) ? 0.0 : 1.0;
+	float dyn_valid = (_cell_id < 0) ? 0.0 : 1.0;
 	moist = mix(moist, dyn_wet, dyn_valid);
 	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
 	vec2 wind_v          = vects.ba * 2.0 - 1.0;

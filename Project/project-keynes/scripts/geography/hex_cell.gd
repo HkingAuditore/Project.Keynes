@@ -227,6 +227,9 @@ var cover: int = CoverType.CV.NONE
 
 # --- 地貌附加信息 ---
 var has_river: bool = false        # 是否有河流流经
+var river_flow: float = 0.0        # 归一化径流量/河宽权重 [0, 1]
+var river_downstream: Vector3i = Vector3i.ZERO  # 生成期水文 parent，下游河格或终端水体
+var has_river_downstream: bool = false
 var elevation: float = 0.0        # 归一化高度 [0, 1]，用于生成时的中间量
 # moisture：归一化湿度 [0, 1]。PR-2.3b facade 化（→ cell.moisture SoA）。
 var _moisture_backing: float = 0.5

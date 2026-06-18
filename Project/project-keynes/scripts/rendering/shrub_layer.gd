@@ -16,13 +16,10 @@ const _SHADER_CODE := """
 shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
-uniform sampler2D dyn_atlas_smooth_atlas : hint_default_black, filter_linear, repeat_disable;
-uniform sampler2D ecology_visual_atlas : hint_default_black, filter_linear, repeat_disable;
-uniform sampler2D cell_index_tex : filter_nearest, repeat_disable;
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
 
-uniform bool use_cell_indirection = false;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
@@ -58,9 +55,9 @@ varying float shrub_snow_v;
 varying float shrub_vitality_v;
 
 int decode_cell_index(vec2 uv) {
-	vec2 rg = texture(cell_index_tex, uv).rg;
-	int lo = int(rg.r * 255.0 + 0.5);
-	int hi = int(rg.g * 255.0 + 0.5);
+	vec2 gb = texture(map_index_atlas, uv).gb;
+	int lo = int(gb.r * 255.0 + 0.5);
+	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
 	return (cid >= 65535) ? -1 : cid;
 }
@@ -76,19 +73,13 @@ vec2 cell_lut_uv(int cid) {
 }
 
 vec4 sample_dyn_state(vec2 uv) {
-	if (use_cell_indirection) {
-		int cid = decode_cell_index(uv);
-		return (cid >= 0) ? texture(dyn_lut, cell_lut_uv(cid)) : vec4(0.0);
-	}
-	return texture(dyn_atlas_smooth_atlas, uv);
+	int cid = decode_cell_index(uv);
+	return (cid >= 0) ? texture(dyn_lut, cell_lut_uv(cid)) : vec4(0.0);
 }
 
 vec4 sample_eco_state(vec2 uv) {
-	if (use_cell_indirection) {
-		int cid = decode_cell_index(uv);
-		return (cid >= 0) ? texture(eco_lut, cell_lut_uv(cid)) : vec4(0.0);
-	}
-	return texture(ecology_visual_atlas, uv);
+	int cid = decode_cell_index(uv);
+	return (cid >= 0) ? texture(eco_lut, cell_lut_uv(cid)) : vec4(0.0);
 }
 
 float vitality_norm(float vitality) {
@@ -253,10 +244,10 @@ func set_day_phase(v: float) -> void:
 		_material.set_shader_parameter("day_phase", fposmod(v, 1.0))
 
 
-func set_world_material_inputs(world: WorldData, bounds: Rect2, use_cell_indirection: bool) -> void:
+func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
 	_world = world
 	_bounds = bounds
-	_sync_world_material_inputs(use_cell_indirection)
+	_sync_world_material_inputs(true)
 
 
 func set_visual_quality(q: int) -> void:
@@ -319,19 +310,16 @@ func _apply_profile_uniforms() -> void:
 	_material.set_shader_parameter("vitality_high_color_strength", cfg.vitality_high_color_strength)
 
 
-func _sync_world_material_inputs(use_cell_indirection: bool) -> void:
+func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 	if _material == null:
 		return
 	var bounds := _bounds
 	_material.set_shader_parameter("world_origin", bounds.position)
 	_material.set_shader_parameter("world_size", bounds.size)
-	_material.set_shader_parameter("use_cell_indirection", use_cell_indirection)
 	if _world == null:
 		_material.set_shader_parameter("lut_dims", Vector2.ONE)
 		return
-	_material.set_shader_parameter("dyn_atlas_smooth_atlas", _world.dyn_atlas_smooth_tex)
-	_material.set_shader_parameter("ecology_visual_atlas", _world.ecology_visual_atlas_tex)
-	_material.set_shader_parameter("cell_index_tex", _world.cell_index_tex)
+	_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
 	_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))

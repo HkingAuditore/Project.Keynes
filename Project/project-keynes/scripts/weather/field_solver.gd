@@ -301,6 +301,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var soa_wind_speed: PackedFloat32Array = map.wind_speed_arr
 	var soa_terrain: PackedByteArray = map.terrain_arr
 	var soa_has_river: PackedByteArray = map.has_river_arr
+	var soa_river_q30: PackedFloat32Array = map.river_discharge_30d_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
 	for i in range(start_i, end_i):
 		var cell: HexCell = cells[i]
@@ -327,10 +328,12 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
 		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
 		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
+		var river_flow_feedback: float = clampf(soa_river_q30[i] if soa_river_q30.size() == n_cells and has_river else 0.0, 0.0, 1.0)
+		var river_evap_floor: float = maxf(0.08, river_flow_feedback * 0.22) if has_river else 0.0
 		if is_lake:
 			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
 		elif has_river:
-			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
+			advect_w = clampf(advect_w * (0.88 - river_flow_feedback * 0.10), 0.55, 0.85)
 		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
 		vapor = lerpf(vapor, neighbor_vapor, _weather_system._field_diffusion)
 
@@ -338,7 +341,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if is_lake:
 			effective_ocean_an = 0.20
 		elif has_river:
-			effective_ocean_an = maxf(ocean_an, 0.08)
+			effective_ocean_an = maxf(ocean_an, river_evap_floor)
 		var evap: float = _weather_system._evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _weather_system._evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
 		var saturation_deficit: float = clampf((vapor_capacity - vapor) / maxf(vapor_capacity, 0.001), 0.0, 1.0)
 		vapor = clampf(vapor + evap * saturation_deficit, 0.0, vapor_capacity)

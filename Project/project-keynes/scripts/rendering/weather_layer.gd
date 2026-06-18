@@ -247,16 +247,16 @@ func _update_storm_flash() -> void:
 
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
-# 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 enum_atlas + noise_tex。
+# 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 map_index_atlas + noise_tex。
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
-func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
+func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
 	_world_bounds = bounds
 	_reset_front_blend_state()
 	if _overlay_quad != null:
 		_overlay_quad.mesh = _build_full_quad(bounds)
 	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("enum_atlas", enum_atlas)
+		_overlay_mat.set_shader_parameter("map_index_atlas", map_index_atlas)
 		_overlay_mat.set_shader_parameter("noise_tex", noise_tex)
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
@@ -265,9 +265,6 @@ func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture, hex
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
 		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
-		# Phase 1：vector_atlas 重启地图时也要重写一次，避免上一张地图的残留风场。
-		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
-		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
@@ -301,14 +298,9 @@ func _refresh_visibility() -> void:
 			or (_weather_field_tex != null) \
 			or _ambient_cloud_shadow_enabled
 
-# Phase 1：把 WorldData.vector_atlas_tex（RGBA8，BA = wind_field）注入 overlay shader。
-# 由 HexRenderer 在 setup 之后调用一次；后续 wind_field 由 MapBaker.rebake_*_only 路径
-# 重建 vector_atlas_tex 时也会回流到这里，shader 内的 advection 立即跟上。
+# vector_atlas 已退役；保留 setter 让旧调用点安全退化。
 func set_vector_atlas_texture(tex: Texture2D) -> void:
 	_vector_atlas_tex = tex
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
-		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
 
 # ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
 # 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部

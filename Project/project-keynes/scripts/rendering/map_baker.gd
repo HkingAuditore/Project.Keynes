@@ -325,10 +325,10 @@ const EROSION_RADIUS := 2
 
 # ─── 河流栅格化 ──────────────────────────────────────────────────────────
 const RIVER_CR_STEP := 12
-const RIVER_STROKE_HEX_FACTOR := 0.05
+const RIVER_STROKE_HEX_FACTOR := 0.035
 # SDF 截断距离改小：原 64 让河流过宽（视觉上 1.5 hex 宽），
-# 8 pixels (~ 0.4 hex_size) 让河保持细线但仍有 anti-alias 渐隐边
-const SDF_MAX_DIST_PX := 8.0
+# 5 pixels 让河保持细线但仍有 anti-alias 渐隐边
+const SDF_MAX_DIST_PX := 5.0
 
 # ─── RNG / 噪声 ──────────────────────────────────────────────────────────
 var _rng: RandomNumberGenerator
@@ -343,10 +343,7 @@ var _ridge_noise: FastNoiseLite
 # 半旧半新的撕裂条纹。
 var _pending_currents_buf: PackedByteArray = PackedByteArray()
 var _pending_upwelling_buf: PackedByteArray = PackedByteArray()
-# L: 持久 RGBA8 交错缓冲。pixel slices 在写 _pending_currents_buf / _pending_wind_buf
-# 时一并更新此 buf 的对应通道（RG=ocean, BA=wind），commit 时直接喂给 ImageTexture.update
-# 避免 620k × 4 字节的 GDScript 交错循环（30-50ms 砍到 ~3ms memcpy）。
-# bake_world / discard 时失效。size mismatch 时 commit 会重新整张 _encode_vector_atlas 兜底。
+# 旧 vector_atlas 持久交错缓冲。vector_atlas 已退役，字段仅为历史路径清理前的空缓存。
 var _vector_atlas_data: PackedByteArray = PackedByteArray()
 var _vector_atlas_data_size: Vector2i = Vector2i.ZERO
 # upwelling 切片专用：mask 按行 lazy build，避免首片一次性扫整图（~140ms）。
@@ -545,11 +542,10 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 	var pix_total: int = world.derived_size.x * world.derived_size.y
 	if pix_total <= 0:
 		return
-	# [ocean-visual-skip 2026-06-16] flag 关 → 跳过逐像素风/洋流光栅（纯视觉）。
+	# vector_atlas 已退役 → 跳过逐像素风/洋流光栅（纯视觉）。
 	# per-cell 风/洋流求解已在 _bake_initial_physical_circulation / 物理 solve 写入
 	# HexCell（气候/天气仿真读它，不读这些像素 buffer），故清空像素 buffer 并提前返回。
-	# 随后 _encode_vector_atlas 返回 null，shader 走 vector_atlas_valid / wind_field_enabled
-	# = false 兜底。
+	# shader 端固定使用中性风/洋流向量。
 	if not DCFeatureFlags.ocean_current_visual_active():
 		world.wind_field_buffer = PackedByteArray()
 		world.ocean_current_buffer = PackedByteArray()
@@ -613,10 +609,7 @@ func run_deferred_initial_physical_circulation(map: MapData, world: WorldData, h
 	_initial_physical_deferred = false
 	_physical_solve_for_phase(map, world, hex_size, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
-	world.vector_atlas_tex = _encode_vector_atlas(
-		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size, world.vector_atlas_tex
-	)
+	world.vector_atlas_tex = null
 	world.upwelling_tex = null
 	_pending_currents_buf = PackedByteArray()
 	_pending_upwelling_buf = PackedByteArray()
@@ -650,9 +643,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_rng.seed = seed_val
 	_init_noise(seed_val)
 
-	# Daily Sim SoA Refactor 阶段 1：重新烘焙世界 → 失效海冰独立纹理缓冲与 cell-byte 快照，
-	# 否则下一次 bake_sea_ice_fraction_only 的 cache_valid 判定会基于旧 lookup 命中。
-	# scalar_atlas 自己每次 bake_world 都会通过 _encode_scalar_atlas 重建，无需手动清。
+	# 重新烘焙世界 → 失效旧海冰独立纹理缓冲与 cell-byte 快照。
 	_sea_ice_only_buf = PackedByteArray()
 	_sea_ice_cache_size = Vector2i.ZERO
 	_sea_ice_pixel_to_cell_idx = PackedInt32Array()
@@ -782,59 +773,31 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	if DCFeatureFlags.sea_ice_atlas_active():
 		world.sea_ice_fraction_buffer.resize(world.derived_size.x * world.derived_size.y)
 
-	# 主地图动态状态 atlas：初始化为当前 cell.temperature/moisture/snow/vitality 快照。
+	# 动态视觉状态统一由 map_index_atlas + LUT 提供，不再初始化逐像素 dynamic/smooth/eco/ice atlas。
 	stage_progress.emit("atlas", 0.82)
-	rebake_dynamic_cell_atlas_only(map, world)
-	rebake_ecology_visual_atlas_only(map, world)
-	# map-visual-overhaul-v1：新 atlas 初始化（必须在 dynamic_cell_atlas 之后，因为
-	# dyn_atlas_smooth 依赖它的 buffer 做邻接 blur）。
-	rebake_dyn_atlas_smooth(map, world)
 
-	rebake_ice_state_atlas(map, world)
-
-	# 编码纹理：v9.atlas → 9 张 derived 贴图合并成 3 张 atlas + 独立 height_tex
+	# 编码纹理：保留 height + map_index；动态视觉走 LUT。
 	stage_progress.emit("encode", 0.88)
 	t = Time.get_ticks_msec()
 	world.height_tex = _encode_height_tex(world.height_buffer, world.hm_size)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-		world.derived_size
+		world.derived_size, null, world
 	)
 	prewarm_dynamic_axis_caches(map, world)
-	# Daily Sim SoA Refactor 阶段 1：scalar_atlas 改回 RGB(latitude/flow/moisture)+空 A 通道，
-	# 海冰从此走独立 sea_ice_tex（R8），见下方 `_encode_sea_ice_tex` 与
-	# `bake_sea_ice_fraction_only` 实现。
-	world.scalar_atlas_tex = _encode_scalar_atlas(
-		world.moisture_buffer, world.flow_buffer,
-		world.latitude_buffer,
-		world.derived_size
-	)
-	# 兼容旧调试/数据通道；主视觉不再读此贴图决定海冰。
-	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 置 null，不 encode 那张全零 R8
-	# （省 ~0.6MB 显存 + 编码）。hex_renderer 绑 null 安全（着色器从不采样 sea_ice_tex）。
-	if DCFeatureFlags.sea_ice_atlas_active():
-		world.sea_ice_tex = _encode_r8_tex(world.sea_ice_fraction_buffer, world.derived_size, world.sea_ice_tex)
-	else:
-		world.sea_ice_tex = null
+	world.scalar_atlas_tex = null
+	world.sea_ice_tex = null
 	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
-	# vector_atlas 恢复：RG=洋流，BA=风场。
+	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
 	# F6 切到 debug 模式时由 rebake_upwelling_tex_for_debug() lazy 建一张。
-	world.vector_atlas_tex = _encode_vector_atlas(
-		world.ocean_current_buffer, world.wind_field_buffer,
-		world.derived_size, world.vector_atlas_tex
-	)
 	# 保留 world.upwelling_tex 为 null：shader 在 ocean_current_debug=false 时不采样此 tex，
 	# 不绑定不会渲染异常（hex_renderer 也已改为仅在 debug 开启时 set_shader_parameter）。
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
-	# Cell-index 间接寻址（plan: cell-index atlas indirection）：仅 flag 开启时烘焙
-	# 静态索引图 + per-cell LUT（enum/dyn/eco）。flag 切换需触发 regenerate
-	# 让本段重新执行（与 force_atlas_quarter_size 热键同语义）。flag 关时零开销。
-	if DCFeatureFlags.cell_indirection_active():
-		bake_cell_index_tex(map, world)
-		bake_cell_luts(map, world)
+	_ensure_cell_lut_dims(map, world)
+	bake_cell_luts(map, world)
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
@@ -866,9 +829,8 @@ func _enum_atlas_cpp_pack_disabled_reason() -> String:
 		return "cpp_gate_no_world_ext"
 	if not _world_ext.has_method("patch_enum_atlas_axes"):
 		return "cpp_gate_method_missing"
-	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_enum_atlas_pack flag 已删除，
-	# enum atlas C++ 路径现恒走 ext + has_method 探测（上面两个 gate 已 cover）。
-	return ""
+	# map_index_atlas 的 G/B 通道存 cell index；旧 C++ patch 仍按 RGB=biome/veg/cover 写入。
+	return "cpp_gate_map_index_atlas_gb_reserved"
 
 
 func _enum_atlas_cpp_pack_enabled() -> bool:
@@ -948,7 +910,7 @@ func _try_cpp_enum_axis_patch(map: MapData, world: WorldData, axis: String, repo
 	if pix_count <= 0:
 		_enum_atlas_cpp_skip_reason = "cpp_gate_bad_size"
 		return false
-	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 4:
 		_enum_atlas_cpp_skip_reason = "cpp_gate_enum_data_invalid"
 		return false
 	if not _ensure_world_cell_pixel_csr(map, world):
@@ -1006,7 +968,7 @@ func _try_cpp_enum_axis_patch(map: MapData, world: WorldData, axis: String, repo
 			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 		return true
 	var image_t0_us: int = Time.get_ticks_usec()
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _enum_atlas_data)
 	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
 	var upload_t0_us: int = Time.get_ticks_usec()
 	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
@@ -1035,7 +997,7 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 	if pix_count <= 0:
 		_enum_atlas_cpp_skip_reason = "cpp_gate_bad_size"
 		return false
-	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 4:
 		_enum_atlas_cpp_skip_reason = "cpp_gate_enum_data_invalid"
 		return false
 	if not _ensure_world_cell_pixel_csr(map, world):
@@ -1089,7 +1051,7 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 		return true
 	var image_t0_us: int = Time.get_ticks_usec()
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _enum_atlas_data)
 	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
 	var upload_t0_us: int = Time.get_ticks_usec()
 	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
@@ -2485,7 +2447,7 @@ func prewarm_dynamic_axis_caches(map: MapData, world: WorldData) -> void:
 	if world.cover_buffer.size() != pix_count or world.vegetation_buffer.size() != pix_count \
 			or world.biome_buffer.size() != pix_count:
 		return
-	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 3:
+	if _enum_atlas_data_size != Vector2i(W, H) or _enum_atlas_data.size() != pix_count * 4:
 		return
 
 	var cover_cache: Dictionary = {}
@@ -2573,8 +2535,7 @@ func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 		world.ocean_upwelling_buffer = PackedByteArray()
 	if _ocean_visual:
 		_rebuild_vector_atlas_data_from_buffers(world)
-	# flag 关时 _encode_vector_atlas 直接返回 null（shader 走 vector_atlas_valid 兜底）。
-	world.vector_atlas_tex = _encode_vector_atlas(world.ocean_current_buffer, world.wind_field_buffer, world.derived_size, world.vector_atlas_tex)
+	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 不在 rebake 路径里烘焙；F6 调试模式再 lazy build。
 	world.upwelling_tex = null
 	_pending_currents_buf = PackedByteArray()
@@ -2922,8 +2883,7 @@ func commit_ocean_buffers(world: WorldData, update_textures: bool = true) -> Dic
 		# 典型 round 收尾下 _vector_atlas_data 已被 pixel slices 同步更新；
 		# 缓存未就绪时（首次 commit / regenerate）直接从已 commit 的 buffer 重建
 		# 交错缓冲（一次 620k×4 byte 写入，~3ms），然后立即走 fast path，
-		# 彻底封掉 _encode_vector_atlas 的整张交错循环（~30-50ms）+
-		# _rebuild_vector_atlas_data_from_buffers 又一次 620k 循环（~30-50ms）的双 fallback。
+		# vector_atlas 已退役，正常运行不会进入此防御分支。
 		var W: int = world.derived_size.x
 		var H: int = world.derived_size.y
 		var atlas_size_match: bool = (_vector_atlas_data_size == Vector2i(W, H) \
@@ -3092,31 +3052,20 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 				_vegetation_cache_size = Vector2i(W, H)
 				world.vegetation_buffer = target_buf
 			var patch_ms: float = float(Time.get_ticks_usec() - patch_t0_us) / 1000.0
-			# 首次必须整张上传（buffer 完整重写）
-			var upload_t0_us: int = Time.get_ticks_usec()
-			world.enum_atlas_tex = _encode_enum_atlas(
-				world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-				world.derived_size, world.enum_atlas_tex
-			)
-			var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
-			_record_enum_atlas_upload_report(axis, "fallback_full_rewrite",
+			# vegetation/cover 已由 enum_lut 消费；map-index atlas 不需要上传。
+			_record_enum_atlas_upload_report(axis, "lut_only_no_map_index_upload",
 				float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-				cache_dict.size(), pix_count, patch_ms, 0.0, upload_ms, false)
+				cache_dict.size(), 0, patch_ms, 0.0, 0.0, false)
 			return
 
 		# ───── 增量路径：典型每日 ─────
 		# 遍历所有 cell，逐 cell 比对 byte。命中 byte 不变 → continue（0 像素操作）。
 		# 变了 → 把 cell_pixel_lists[cell] 的所有像素批量写入 target_buf。
-		# 阶段 P2：同时局部写 _enum_atlas_data 对应通道（cover→B/offset=2, veg→G/offset=1），
-		# 最后用 cached data 重组 Image → texture.update()，避免再跑一次 614400 次交错循环。
-		# 仅当 _enum_atlas_data 缓存有效时启用 P2 快路径，否则降级为整张 _encode_enum_atlas。
+		# vegetation/cover 不再写 map-index atlas；只更新 CPU buffer/cache，LUT 刷新消费这些值。
 		var any_dirty: bool = false
 		var dirty_cells: int = 0
 		var dirty_pixels: int = 0
 		var cell_lists: Dictionary = world.cell_pixel_lists
-		var atlas_data_valid: bool = (_enum_atlas_data_size == Vector2i(W, H) \
-				and _enum_atlas_data.size() == pix_count * 3)
-		var channel_offset: int = 2 if axis == "cover" else 1  # B=cover, G=vegetation
 		var patch_t0_us: int = Time.get_ticks_usec()
 		if axis == "cover":
 			for cell_key in cell_lists.keys():
@@ -3130,13 +3079,8 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 				dirty_cells += 1
 				var pixels: PackedInt32Array = cell_lists[cell_key]
 				dirty_pixels += pixels.size()
-				if atlas_data_valid:
-					for px in pixels:
-						target_buf[px] = b
-						_enum_atlas_data[px * 3 + channel_offset] = b
-				else:
-					for px in pixels:
-						target_buf[px] = b
+				for px in pixels:
+					target_buf[px] = b
 			_last_cover_cell_bytes = cache_dict
 			world.cover_buffer = target_buf
 		else:
@@ -3151,13 +3095,8 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 				dirty_cells += 1
 				var pixels: PackedInt32Array = cell_lists[cell_key]
 				dirty_pixels += pixels.size()
-				if atlas_data_valid:
-					for px in pixels:
-						target_buf[px] = b
-						_enum_atlas_data[px * 3 + channel_offset] = b
-				else:
-					for px in pixels:
-						target_buf[px] = b
+				for px in pixels:
+					target_buf[px] = b
 			_last_vegetation_cell_bytes = cache_dict
 			world.vegetation_buffer = target_buf
 		var buffer_patch_ms: float = float(Time.get_ticks_usec() - patch_t0_us) / 1000.0
@@ -3167,30 +3106,9 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 				float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 				0, 0, buffer_patch_ms, 0.0, 0.0, true)
 			return  # 所有 cell byte 都没变 → 连 GPU 上传都跳过
-		# 阶段 P2 快路径：cached data 已被局部更新 → 直接重组 Image + texture.update()
-		# 省掉 _encode_enum_atlas 内部 614400 次的 RGB 交错循环（~50ms → ~3ms）。
-		if atlas_data_valid and world.enum_atlas_tex != null \
-				and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
-			var image_t0_us: int = Time.get_ticks_usec()
-			var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
-			var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
-			var upload_t0_us: int = Time.get_ticks_usec()
-			world.enum_atlas_tex.update(img)
-			var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
-			_record_enum_atlas_upload_report(axis, "cached_full_update",
-				float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-				dirty_cells, dirty_pixels, buffer_patch_ms, image_ms, upload_ms, true)
-		else:
-			# 降级路径：cache 失效或 tex 未建 → 走整张交错（顺便重新填充 cache）
-			var upload_t0_us: int = Time.get_ticks_usec()
-			world.enum_atlas_tex = _encode_enum_atlas(
-				world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-				world.derived_size, world.enum_atlas_tex
-			)
-			var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
-			_record_enum_atlas_upload_report(axis, "fallback_full_rewrite",
-				float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-				dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, upload_ms, false)
+		_record_enum_atlas_upload_report(axis, "lut_only_no_map_index_upload",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 		return
 
 	# Slow fallback：完整重跑 warp + cube_round（保留兼容性，正常不会走到）
@@ -3228,16 +3146,10 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 		world.cover_buffer = target_buf
 	else:
 		world.vegetation_buffer = target_buf
-	var upload_t0_us: int = Time.get_ticks_usec()
-	world.enum_atlas_tex = _encode_enum_atlas(
-		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-		world.derived_size, world.enum_atlas_tex
-	)
-	var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 	prewarm_dynamic_axis_caches(map, world)
-	_record_enum_atlas_upload_report(axis, "fallback_full_rewrite",
+	_record_enum_atlas_upload_report(axis, "lut_only_no_map_index_upload",
 		float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-		world.cell_pixel_lists.size(), pix_count, buffer_patch_ms, 0.0, upload_ms, false)
+		world.cell_pixel_lists.size(), 0, buffer_patch_ms, 0.0, 0.0, false)
 
 # Milestone 2 / J 增量：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
 # height / moisture / flow / latitude / wind / ocean / volcano 全部不动。
@@ -3270,7 +3182,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 			and _vegetation_cache_size == Vector2i(W, H) \
 			and _cover_cache_size == Vector2i(W, H) \
 			and _enum_atlas_data_size == Vector2i(W, H) \
-			and _enum_atlas_data.size() == pix_count * 3 \
+			and _enum_atlas_data.size() == pix_count * 4 \
 			and not _last_biome_cell_bytes.is_empty() \
 			and not _last_vegetation_cell_bytes.is_empty() \
 			and not _last_cover_cell_bytes.is_empty() \
@@ -3286,7 +3198,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		var upload_t0_us: int = Time.get_ticks_usec()
 		world.enum_atlas_tex = _encode_enum_atlas(
 			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-			world.derived_size, world.enum_atlas_tex
+			world.derived_size, world.enum_atlas_tex, world
 		)
 		var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 		prewarm_dynamic_axis_caches(map, world)
@@ -3324,21 +3236,19 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 			dirty_pixels += pixels.size()
 			for px in pixels:
 				biome_buf[px] = b_t
-				_enum_atlas_data[px * 3] = b_t
+				_enum_atlas_data[px * 4] = b_t
 		if b_v != prev_v:
 			_last_vegetation_cell_bytes[cell] = b_v
 			veg_dirty += 1
 			dirty_pixels += pixels.size()
 			for px in pixels:
 				veg_buf[px] = b_v
-				_enum_atlas_data[px * 3 + 1] = b_v
 		if b_c != prev_c:
 			_last_cover_cell_bytes[cell] = b_c
 			cover_dirty += 1
 			dirty_pixels += pixels.size()
 			for px in pixels:
 				cover_buf[px] = b_c
-				_enum_atlas_data[px * 3 + 2] = b_c
 	world.biome_buffer = biome_buf
 	world.vegetation_buffer = veg_buf
 	world.cover_buffer = cover_buf
@@ -3350,12 +3260,16 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			0, 0, buffer_patch_ms, 0.0, 0.0, true)
 		return  # 全 3 轴 byte 都没变 → 连 GPU 上传都跳过
+	if biome_dirty == 0:
+		_record_enum_atlas_upload_report("biome", "lut_only_no_map_index_upload",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
+		return
 
-	# tex.update via cached interleaved data — 省掉 _encode_enum_atlas 内 620k × 3
-	# 的交错循环（30-50ms）。tex 句柄复用 → 避免驱动层重新分配。
+	# tex.update via cached map-index data；只在 biome/R 通道变化时上传。
 	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
 		var image_t0_us: int = Time.get_ticks_usec()
-		var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, _enum_atlas_data)
+		var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _enum_atlas_data)
 		var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
 		var upload_t0_us: int = Time.get_ticks_usec()
 		world.enum_atlas_tex.update(img)
@@ -3367,7 +3281,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		var upload_t0_us: int = Time.get_ticks_usec()
 		world.enum_atlas_tex = _encode_enum_atlas(
 			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-			world.derived_size, world.enum_atlas_tex
+			world.derived_size, world.enum_atlas_tex, world
 		)
 		var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 		_record_enum_atlas_upload_report("biome", "fallback_full_rewrite",
@@ -3887,13 +3801,15 @@ func _bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Vector2i
 		var size := bounds.size
 		var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
 		var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
-		for chain: Array in chains:
-			if chain.size() < 2:
+		for chain: Dictionary in chains:
+			var points: Array = chain.get("points", [])
+			var widths: Array = chain.get("widths", [])
+			if points.size() < 2:
 				continue
 			# CR 平滑 → warp 扰动（跟 hex 边界共享同一份 _warp_noise_lo），让河流自然弯曲
-			var dense := _catmull_rom_dense(chain, RIVER_CR_STEP)
-			var warped := _warp_river_chain(dense, hex_size)
-			_stamp_polyline_binary(mask, warped, origin, inv_world, W, H, stroke_radius_px)
+			var dense := _catmull_rom_dense_with_widths(points, widths, RIVER_CR_STEP)
+			var warped := _warp_river_chain(dense["points"], hex_size)
+			_stamp_polyline_variable(mask, warped, dense["widths"], origin, inv_world, W, H, stroke_radius_px)
 
 	_chamfer_sdt(mask, W, H)
 
@@ -3909,31 +3825,47 @@ func _bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Vector2i
 func _trace_all_rivers(map: MapData, hex_size: float) -> Array:
 	var visited: Dictionary = {}
 	var chains: Array = []
+	var inbound: Dictionary = {}
+	for cell: HexCell in map.all_cells():
+		if not cell.has_river or _is_river_terminal_water(cell.terrain):
+			continue
+		var dn := _declared_river_downstream(map, cell)
+		if dn != null and dn.has_river and not _is_river_terminal_water(dn.terrain):
+			var dn_key := Vector3i(dn.q, dn.r, dn.s)
+			inbound[dn_key] = int(inbound.get(dn_key, 0)) + 1
 	for cell: HexCell in map.all_cells():
 		if not cell.has_river or _is_river_terminal_water(cell.terrain):
 			continue
 		var key := Vector3i(cell.q, cell.r, cell.s)
 		if visited.has(key):
 			continue
+		if int(inbound.get(key, 0)) > 0:
+			continue
 		var chain := _trace_river_chain(map, cell, hex_size, visited)
-		if chain.size() >= 2:
+		if chain.get("points", []).size() >= 2:
 			chains.append(chain)
 	return chains
 
-func _trace_river_chain(map: MapData, start: HexCell, hex_size: float, visited: Dictionary) -> Array:
-	var chain: Array = []
-	chain.append(HexUtils.cube_to_world(start.q, start.r, hex_size))
+func _trace_river_chain(map: MapData, start: HexCell, hex_size: float, visited: Dictionary) -> Dictionary:
+	var points: Array = []
+	var widths: Array = []
+	points.append(HexUtils.cube_to_world(start.q, start.r, hex_size))
+	widths.append(_river_width_weight(map, start))
 	visited[Vector3i(start.q, start.r, start.s)] = true
 
 	var current: HexCell = start
+	var ended_in_water := false
 	while true:
-		var nxt: HexCell = _find_downhill_river_neighbor(map, current)
+		var nxt: HexCell = _find_river_downstream_neighbor(map, current)
 		if nxt == null:
 			break
 
-		# 如果支流流向一段已经烘焙过的主河道，仍然把合流点追加进当前折线。
-		# 旧逻辑会因为 visited 直接跳过该邻居，导致支流在合流前一格视觉断开。
-		chain.append(HexUtils.cube_to_world(nxt.q, nxt.r, hex_size))
+		points.append(HexUtils.cube_to_world(nxt.q, nxt.r, hex_size))
+		widths.append(_river_width_weight(map, current if _is_river_terminal_water(nxt.terrain) else nxt))
+		if _is_river_terminal_water(nxt.terrain):
+			current = nxt
+			ended_in_water = true
+			break
 		var nxt_key := Vector3i(nxt.q, nxt.r, nxt.s)
 		current = nxt
 		if visited.has(nxt_key):
@@ -3942,23 +3874,42 @@ func _trace_river_chain(map: MapData, start: HexCell, hex_size: float, visited: 
 
 	# 尾巴伸入终端水体一半，避免河口在最后陆地 cell 中心硬截断。
 	# 这里使用河流专用水体判断，包含湖泊；不要复用海洋洋流用的 _is_water()。
-	var water_nb := _find_river_terminal_water_neighbor(map, current)
+	var water_nb: HexCell = null if ended_in_water else _find_river_terminal_water_neighbor(map, current)
 	if water_nb != null:
 		var river_end := HexUtils.cube_to_world(current.q, current.r, hex_size)
 		var water_center := HexUtils.cube_to_world(water_nb.q, water_nb.r, hex_size)
-		chain.append(river_end.lerp(water_center, 0.78))
-	return chain
+		points.append(river_end.lerp(water_center, 0.78))
+		widths.append(widths[widths.size() - 1] if not widths.is_empty() else 0.5)
+	return {"points": points, "widths": widths}
 
-func _find_downhill_river_neighbor(map: MapData, cell: HexCell) -> HexCell:
+func _declared_river_downstream(map: MapData, cell: HexCell) -> HexCell:
+	if cell.has_river_downstream:
+		return map.get_cell_by_cube(cell.river_downstream)
+	return null
+
+func _find_river_downstream_neighbor(map: MapData, cell: HexCell) -> HexCell:
+	var declared := _declared_river_downstream(map, cell)
+	if declared != null and (declared.has_river or _is_river_terminal_water(declared.terrain)):
+		return declared
 	var best: HexCell = null
-	var lowest: float = cell.elevation  # 关键：只走严格下坡的 has_river 邻居
+	var best_flow: float = cell.river_flow
 	for nb: HexCell in map.get_neighbors(cell):
 		if not nb.has_river or _is_river_terminal_water(nb.terrain):
 			continue
-		if nb.elevation < lowest:
-			lowest = nb.elevation
+		if nb.river_flow > best_flow or (is_equal_approx(nb.river_flow, best_flow) and nb.elevation < cell.elevation):
+			best_flow = nb.river_flow
 			best = nb
 	return best
+
+func _river_width_weight(map: MapData, cell: HexCell) -> float:
+	if cell == null:
+		return 0.0
+	var idx: int = cell.index
+	if map != null and idx >= 0 and idx < map.river_discharge_30d_arr.size():
+		var dynamic_q: float = float(map.river_discharge_30d_arr[idx])
+		if dynamic_q > 0.0001:
+			return clampf(dynamic_q, 0.0, 1.0)
+	return clampf(cell.river_flow, 0.0, 1.0)
 
 # A：把已经 CR 平滑的河流密集点统一走一遍 warp 噪声场，让河道跟 hex 边界一起弯
 # 振幅 0.30 hex_size 给出明显的曲流感但不会大幅偏离原 cell 中心
@@ -4000,6 +3951,27 @@ func _catmull_rom_dense(chain: Array, segments_per_step: int) -> Array:
 			result.append(_catmull_rom(p0, p1, p2, p3, t))
 	result.append(chain[n - 1])
 	return result
+
+func _catmull_rom_dense_with_widths(points: Array, widths: Array, segments_per_step: int) -> Dictionary:
+	var n := points.size()
+	if n < 2:
+		return {"points": points.duplicate(), "widths": widths.duplicate()}
+	var dense_points: Array = []
+	var dense_widths: Array = []
+	for i in range(n - 1):
+		var p0: Vector2 = points[i - 1] if i > 0 else points[i]
+		var p1: Vector2 = points[i]
+		var p2: Vector2 = points[i + 1]
+		var p3: Vector2 = points[i + 2] if i + 2 < n else points[i + 1]
+		var w1: float = float(widths[i]) if i < widths.size() else 0.5
+		var w2: float = float(widths[i + 1]) if i + 1 < widths.size() else w1
+		for j in range(segments_per_step):
+			var t := float(j) / float(segments_per_step)
+			dense_points.append(_catmull_rom(p0, p1, p2, p3, t))
+			dense_widths.append(lerpf(w1, w2, t))
+	dense_points.append(points[n - 1])
+	dense_widths.append(float(widths[n - 1]) if n - 1 < widths.size() else 0.5)
+	return {"points": dense_points, "widths": dense_widths}
 
 func _catmull_rom(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
 	var t2 := t * t
@@ -4044,6 +4016,44 @@ func _stamp_polyline_binary(
 					t = clampf((p - p0).dot(seg) / seg_len_sq, 0.0, 1.0)
 				var closest := p0 + seg * t
 				if p.distance_to(closest) <= stroke_radius_px:
+					mask[y * W + x] = 0.0
+
+func _stamp_polyline_variable(
+	mask: PackedFloat32Array,
+	points: Array,
+	widths: Array,
+	origin: Vector2,
+	inv_world: Vector2,
+	W: int,
+	H: int,
+	base_radius_px: float
+) -> void:
+	for i in range(points.size() - 1):
+		var w0: float = float(widths[i]) if i < widths.size() else 0.5
+		var w1: float = float(widths[i + 1]) if i + 1 < widths.size() else w0
+		var seg_radius_px: float = base_radius_px * (0.70 + maxf(w0, w1) * 2.10)
+		var pad := int(ceil(seg_radius_px)) + 1
+		var p0: Vector2 = (points[i] - origin) * inv_world
+		var p1: Vector2 = (points[i + 1] - origin) * inv_world
+		var min_x := int(floor(minf(p0.x, p1.x))) - pad
+		var max_x := int(ceil(maxf(p0.x, p1.x))) + pad
+		var min_y := int(floor(minf(p0.y, p1.y))) - pad
+		var max_y := int(ceil(maxf(p0.y, p1.y))) + pad
+		min_x = clampi(min_x, 0, W - 1)
+		max_x = clampi(max_x, 0, W - 1)
+		min_y = clampi(min_y, 0, H - 1)
+		max_y = clampi(max_y, 0, H - 1)
+		var seg := p1 - p0
+		var seg_len_sq := seg.length_squared()
+		for y in range(min_y, max_y + 1):
+			for x in range(min_x, max_x + 1):
+				var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+				var t: float = 0.0
+				if seg_len_sq > 0.0001:
+					t = clampf((p - p0).dot(seg) / seg_len_sq, 0.0, 1.0)
+				var radius := base_radius_px * (0.70 + lerpf(w0, w1, t) * 2.10)
+				var closest := p0 + seg * t
+				if p.distance_to(closest) <= radius:
 					mask[y * W + x] = 0.0
 
 # ─── Chamfer 3-4 距离变换（双通） ───────────────────────────────────────
@@ -4106,30 +4116,34 @@ func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture
 # 按"采样模式 + 数据语义"分到 3 张 atlas，shader 端只需 3 次 texture() 即可
 # 拿到所有 derived 数据。height_tex 因分辨率/精度独立保留。
 
-# enum_atlas: RGB8 NEAREST  (R=biome, G=vegetation, B=cover)
+# map_index_atlas: RGBA8 NEAREST (R=biome, G=cell index low, B=cell index high, A=0)
 # v9.perf：existing 非 null 时走 ImageTexture.update() 复用 GPU RID，
 # 避免每天 rebake 时反复 alloc/free GPU buffer + 重新绑定 shader uniform
-func _encode_enum_atlas(biome_buf: PackedByteArray, veg_buf: PackedByteArray,
-		cover_buf: PackedByteArray, size: Vector2i,
-		existing: ImageTexture = null) -> ImageTexture:
+func _encode_enum_atlas(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
+		_cover_buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null, world: WorldData = null) -> ImageTexture:
 	var W := size.x
 	var H := size.y
 	var n := W * H
 	var data := PackedByteArray()
-	data.resize(n * 3)
-	# veg / cover 可能在某些路径上没烤（兜底空数组当全 0）
-	var has_veg: bool = veg_buf.size() >= n
-	var has_cover: bool = cover_buf.size() >= n
+	data.resize(n * 4)
+	var lookup: Array = world.pixel_to_cell_lookup if world != null else []
+	var has_lookup: bool = lookup.size() >= n
 	for i in range(n):
-		var di := i * 3
+		var di := i * 4
 		data[di] = biome_buf[i] if i < biome_buf.size() else 0
-		data[di + 1] = veg_buf[i] if has_veg else 0
-		data[di + 2] = cover_buf[i] if has_cover else 0
-	# 阶段 P2：把交错完成的 RGB8 data 缓存下来，rebake_cover/vegetation 增量路径
-	# 直接局部 byte 写入这个 cached data，免去再跑一次 614400 的交错循环。
+		var cid: int = 65535
+		if has_lookup:
+			var cell = lookup[i]
+			if cell != null:
+				cid = int(cell.index)
+		data[di + 1] = cid & 0xFF
+		data[di + 2] = (cid >> 8) & 0xFF
+		data[di + 3] = 0
+	# 阶段 P2：缓存 RGBA8 data。后续 biome 变化只局部写 R 通道；G/B cell index 不变。
 	_enum_atlas_data = data
 	_enum_atlas_data_size = Vector2i(W, H)
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGB8, data)
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
 	# ImageTexture.get_size() 返回 Vector2，而 W/H 是 int → 用 Vector2 比较
 	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
 		existing.update(img)
@@ -4140,39 +4154,15 @@ func _encode_enum_atlas(biome_buf: PackedByteArray, veg_buf: PackedByteArray,
 # ═══════════════════════════════════════════════════════════════════════
 # Cell-index 间接寻址（province-ID indirection）烘焙
 # plan: cell-index atlas indirection。bake_world 一次性烘出静态索引图 + per-cell LUT。
-#   - cell_index_tex 永不每日更新（仅地图重生）；
+#   - cell index 已合入 map_index_atlas.g/b；
 #   - LUT 由 daily 路径增量刷新（refresh_cell_luts_daily）。
 # 全程 feature-flag（DCFeatureFlags.cell_indirection_active）：flag 关时本组函数
 # 不被 bake_world 调用，旧 per-pixel atlas 路径逐字节不变。
 # ═══════════════════════════════════════════════════════════════════════
 
-# 静态 cell 索引图：pixel_to_cell_lookup -> RG8（R=index 低字节, G=高字节, 0xFFFF=map 外哨兵）。
-# 同时算 lut_dims（per-cell LUT 网格）。NEAREST 由 shader uniform hint 保证。
-func bake_cell_index_tex(map: MapData, world: WorldData) -> void:
-	var W: int = world.derived_size.x
-	var H: int = world.derived_size.y
-	var n: int = W * H
-	if n <= 0:
+func _ensure_cell_lut_dims(map: MapData, world: WorldData) -> void:
+	if world == null:
 		return
-	# RG8 per-pixel cell.index 间接图：C++ 优先（避免 ~620k GDScript 循环），
-	# 失败回退 GDScript（skill rule 11）。SAME_SOURCE: world_ext.cpp::encode_cell_index_tex。
-	var data: PackedByteArray = PackedByteArray()
-	if _world_ext != null and _world_ext.has_method("encode_cell_index_tex"):
-		var out: Dictionary = _world_ext.encode_cell_index_tex({
-			"world": world, "width": W, "height": H,
-		})
-		if not bool(out.get("fallback", true)):
-			var d = out.get("index_tex", null)
-			if d is PackedByteArray and (d as PackedByteArray).size() == n * 2:
-				data = d
-	if data.size() != n * 2:
-		data = _gd_cell_index_buffer(world, W, H, n)
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RG8, data)
-	if world.cell_index_tex != null and world.cell_index_tex.get_size() == Vector2(float(W), float(H)):
-		world.cell_index_tex.update(img)
-	else:
-		world.cell_index_tex = ImageTexture.create_from_image(img)
-	# LUT 网格尺寸：lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
 	var n_cells: int = map.cell_count() if map != null else 0
 	if n_cells <= 0:
 		n_cells = 1
@@ -4185,29 +4175,6 @@ func bake_cell_index_tex(map: MapData, world: WorldData) -> void:
 	world.lut_dims = Vector2i(lut_w, lut_h)
 
 
-# GDScript fallback：CSR pixel_to_cell_lookup → RG8 per-pixel cell.index buffer。
-# 仅 C++ encode_cell_index_tex 不可用 / 失败时调用（skill rule 11）。
-func _gd_cell_index_buffer(world: WorldData, W: int, H: int, n: int) -> PackedByteArray:
-	var lookup: Array = world.pixel_to_cell_lookup
-	var has_lookup: bool = lookup.size() == n
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	for i in range(n):
-		var di: int = i * 2
-		var cid: int = -1
-		if has_lookup:
-			var cell = lookup[i]
-			if cell != null:
-				cid = int(cell.index)
-		if cid < 0 or cid >= 65535:
-			data[di] = 0xFF
-			data[di + 1] = 0xFF
-		else:
-			data[di] = cid & 0xFF
-			data[di + 1] = (cid >> 8) & 0xFF
-	return data
-
-
 # per-cell LUT 全量烘焙 dispatcher：C++（DCWorldExt.encode_cell_luts）优先，
 # 失败回退 GDScript（skill rule 11，保留至 A/B parity 验证通过）。
 # 字节量化与 fan-out 路径同源（enum=terrain/vegetation/cover、
@@ -4218,6 +4185,8 @@ func _gd_cell_index_buffer(world: WorldData, W: int, H: int, n: int) -> PackedBy
 func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -> void:
 	if map == null or world == null:
 		return
+	if world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
+		_ensure_cell_lut_dims(map, world)
 	var lw: int = world.lut_dims.x
 	var lh: int = world.lut_dims.y
 	if lw <= 0 or lh <= 0:
@@ -4306,60 +4275,6 @@ func refresh_cell_luts_daily(map: MapData, world: WorldData) -> void:
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
 	bake_cell_luts(map, world, true)
 
-
-# scalar_atlas: RGBA8 LINEAR (R=moisture, G=flow, B=latitude, A=0 reserved)
-# moisture/flow/latitude 是 [0,1] 的 float → quantize 到 byte。
-# Daily Sim SoA Refactor 阶段 1：A 通道恒为 0（保留位）；海冰已拆到独立 sea_ice_tex。
-func _encode_scalar_atlas(moist_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
-		lat_buf: PackedFloat32Array,
-		size: Vector2i) -> ImageTexture:
-	var W := size.x
-	var H := size.y
-	var n := W * H
-	var data := PackedByteArray()
-	data.resize(n * 4)
-	var has_moist: bool = moist_buf.size() >= n
-	var has_flow: bool = flow_buf.size() >= n
-	var has_lat: bool = lat_buf.size() >= n
-	for i in range(n):
-		var di := i * 4
-		data[di]     = int(round(clampf(moist_buf[i], 0.0, 1.0) * 255.0)) if has_moist else 0
-		data[di + 1] = int(round(clampf(flow_buf[i], 0.0, 1.0) * 255.0)) if has_flow else 0
-		data[di + 2] = int(round(clampf(lat_buf[i], 0.0, 1.0) * 255.0)) if has_lat else 0
-		data[di + 3] = 0  # 保留位，原 sea_ice 通道已拆出
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
-	return ImageTexture.create_from_image(img)
-
-# vector_atlas: RGBA8 LINEAR (RG=ocean_current, BA=wind_field)
-# 两个源 buffer 都是 RG8 packed byte（每像素 2 字节）
-func _encode_vector_atlas(ocean_buf: PackedByteArray, wind_buf: PackedByteArray,
-		size: Vector2i, existing: ImageTexture = null) -> ImageTexture:
-	# [ocean-visual-skip 2026-06-16] flag 关 → 不产出 vector_atlas（纯视觉）。返回 null
-	# 让 world.vector_atlas_tex 置空，shader 侧已有兜底（vector_atlas_valid /
-	# wind_field_enabled = false）。省整张 620k×4 byte 编码 + GPU 上传。
-	if not DCFeatureFlags.ocean_current_visual_active():
-		return null
-	var W := size.x
-	var H := size.y
-	var n := W * H
-	var data := PackedByteArray()
-	data.resize(n * 4)
-	var has_ocean: bool = ocean_buf.size() >= n * 2
-	var has_wind: bool = wind_buf.size() >= n * 2
-	# 中性值：[-1,1] 的 0 → 字节 128
-	for i in range(n):
-		var di := i * 4
-		var oi := i * 2
-		data[di]     = ocean_buf[oi]     if has_ocean else 128
-		data[di + 1] = ocean_buf[oi + 1] if has_ocean else 128
-		data[di + 2] = wind_buf[oi]      if has_wind else 128
-		data[di + 3] = wind_buf[oi + 1]  if has_wind else 128
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
-	# I: commit_ocean_buffers 频繁触发；尺寸不变时复用 GPU 句柄，减 30-50ms 上传开销。
-	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
-		existing.update(img)
-		return existing
-	return ImageTexture.create_from_image(img)
 
 # Systemic Ocean Currents：独立 R8 upwelling 纹理编码（L8 单通道，LINEAR 过滤）。
 # 源 buffer 编码：0 = 下沉满 / 128 = 中性 / 255 = 上升满。

@@ -32,6 +32,12 @@
 - `map_field` 拼错会导致 bind 静默偏离或 slot size 为 0，后续 C++ pass 可能 fallback。
 - dtype 不一致会让 `arr_f32` / `arr_i32` / `arr_u8` 访问错槽，必须在 bind 阶段报错处理。
 
+Runtime hydrology 新增的契约：
+
+- `cell.hydro_parent` / `cell_hydro_parent`：`I32`，`map_field=hydro_parent_arr`，owner 为 `map_generation`。这是生成期 Priority-Flood parent graph 的静态拓扑，非河流陆地也可有下游 parent。
+- `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
+- `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。
+
 ## PackedArray CoW 公理
 
 Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-Write。当前架构不依赖双向可变零拷贝。
@@ -126,19 +132,18 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 
 plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-index 间接寻址」节）。
 
-- `cell_index_tex` / `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` 是
+- `map_index_atlas`（`WorldData.enum_atlas_tex`）/ `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` 是
   **渲染层产物（`WorldData` 上的 `ImageTexture`）**，不是 DataCore slot：
   **schema / `component_bind_table.gen.h` 无需改动**。
-- **编码权威路径是 C++（DCWorldExt）**，GDScript 仅做薄壳 + fallback（2026-06-16，用户
-  决策"严格按 skill，哪怕只有 2400 个 cell 也在 CPP 做"）：
+- **LUT 编码权威路径是 C++（DCWorldExt）**，GDScript 仅做薄壳 + fallback（2026-06-16，用户
+  决策"严格按 skill，哪怕只有 2400 个 cell 也在 CPP 做"）。map-index atlas 由 GDScript
+  baker 在 `_encode_enum_atlas` 内编码：
   - `encode_cell_luts(opts) → Dictionary{enum_lut/dyn_lut/eco_lut: PackedByteArray,
     path, elapsed_ms, fallback, published_to_slot=false}`：C++ 读 8 个 SoA slot
     （`cell_temp/cell_moisture/cell_snow_cover/cell_vegetation_vitality/cell_sea_ice_frac/
     cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 3 张 LUT 的
     `PackedByteArray`；GDScript 只负责 `Image.create_from_data` + `ImageTexture.update`。
-  - `encode_cell_index_tex(opts) → Dictionary{index_tex: PackedByteArray, path, fallback}`：
-    C++ 反射读 `world.cell_first_px_arr/cell_px_count_arr/flat_px_indices_arr`（CSR）→ RG8 buffer。
-  - LUT/index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
+  - LUT/map-index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
     无 `flush`/`snapshot` 需求；C++ 直接把字节缓冲塞进返回 Dict，GDScript 端零额外 marshalling 拷贝
     （CoW 引用传递）。
   - eco `transition_age` 的 per-cell prev 状态由 C++ 端 `AtlasPipelineState::lut_prev_veg/
@@ -148,7 +153,7 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   GDScript fallback `_dynamic_cell_signature` / `_ecology_visual_signature`），保证 LUT 与旧
   per-pixel atlas **bit-equivalent**。
 - fan-out 方向反转：旧 `n_cells → n_pix` 直写 atlas_buffer（每日数 MB）改为
-  `n_cells → n_cells` LUT（~7KB）；`cell_index_tex` 静态，不进 DataCore、不参与每日 sync。
+  `n_cells → n_cells` LUT（~7KB）；cell index 静态合入 `map_index_atlas.g/b`，不进 DataCore、不参与每日 sync。
 - flag 关时本路径零触达，CoW 公理 / `published_to_slot` / `flush` / `snapshot`
   语义均不受影响。
 
