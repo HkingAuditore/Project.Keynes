@@ -144,11 +144,14 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 - weather field solve / distribute / summary / stage-b 相关 native 子 pass。
 - physical ocean 的 SLP、wind、PSI、upwelling、raster 等路径。
 - enum/dynamic atlas 的部分 patch/cache/raster 加速。
+- 生成期 native world generation base/post-base：`run_native_world_generate_base_pass` 在 `native_generation_mode=ACTIVE` 时直接生成基础地图 SoA 结果包；`run_native_world_generate_post_base_pass` 接收该结果包并在 C++ 内完成湖泊 BFS、河流 flow accumulation、河岸/植被反馈、过渡生态、地标和水体变种。GDScript 只发请求、收 PackedArray 并装配 `MapData`/`HexCell`。
+- 生成期 native world generation publish：`run_native_world_generate_pass` 把生成后的 `MapData` SoA 初始仿真字段发布为 C++ slot 权威并 flush 回 `MapData`。
 
 仍然保留在 GDScript 的职责包括：
 
 - job 注册、feature gate、signature probe、stale DLL fallback。
 - stage 状态机和跨 tick progress 管理。
+- 地图生成的 HexCell/拓扑装配；湖泊/河流/生态/地标后处理在 native generation ACTIVE 路径下已由 C++ 结果包 pass 接管，GDScript 仅保留 fallback ground-truth。
 - low-N 或高业务复杂度对象逻辑，例如部分 weather front 对象层和 UI/debug。
 - C++ fallback ground-truth。
 - atlas GPU upload、Image/ImageTexture/RID 等 Godot 对象侧操作。

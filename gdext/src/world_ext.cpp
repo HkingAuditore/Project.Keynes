@@ -1263,13 +1263,12 @@ Dictionary DCWorldExt::get_native_shadow_diff_report() const {
 Dictionary DCWorldExt::run_native_world_generate_pass(int seed,
                                                       const Dictionary &cfg,
                                                       const Dictionary &profile) {
-    Dictionary out;
-    out["rc"] = -1;
-    out["fail_stage"] = String("generation_kernels_unimplemented");
-    out["seed"] = seed;
-    out["has_config"] = !cfg.is_empty();
-    out["has_profile"] = !profile.is_empty();
-    out["generation_progress"] = 0.0;
+    Dictionary out = _run_native_generation_publish_pass(seed, cfg, profile, Dictionary());
+    _native_generation_active = false;
+    _native_generation_seed = seed;
+    _native_generation_cfg = cfg.duplicate(true);
+    _native_generation_profile = profile.duplicate(true);
+    _native_generation_report = out.duplicate(true);
     return out;
 }
 
@@ -1352,41 +1351,76 @@ Dictionary DCWorldExt::start_native_generation(int seed,
                                                const Dictionary &profile) {
     _native_generation_active = true;
     _native_generation_seed = seed;
+    _native_generation_cfg = cfg.duplicate(true);
+    _native_generation_profile = profile.duplicate(true);
     _native_generation_report.clear();
     _native_generation_report["rc"] = 0;
     _native_generation_report["status"] = String("started");
+    _native_generation_report["path"] = String("gdext");
     _native_generation_report["seed"] = seed;
     _native_generation_report["has_config"] = !cfg.is_empty();
     _native_generation_report["has_profile"] = !profile.is_empty();
     _native_generation_report["generation_progress"] = 0.0;
-    _native_generation_report["implemented"] = false;
+    _native_generation_report["implemented"] = true;
+    _native_generation_report["published_to_slot"] = false;
+    _native_generation_report["fallback"] = false;
+    _native_generation_report["fallback_reason"] = String();
     _native_generation_report["fail_stage"] = String();
     return _native_generation_report.duplicate(true);
 }
 
 Dictionary DCWorldExt::run_native_generation_slice(const Dictionary &budget) {
-    Dictionary out;
-    out["rc"] = -1;
-    out["status"] = _native_generation_active ? String("failed") : String("idle");
-    out["fail_stage"] = String("generation_kernels_unimplemented");
-    out["reason"] = String("NativeWorldGenerator API is present, but generation kernels have not been migrated yet");
-    out["seed"] = _native_generation_seed;
-    out["budget"] = budget.duplicate(true);
-    out["generation_progress"] = 0.0;
+    if (!_native_generation_active) {
+        Dictionary out;
+        out["rc"] = -1;
+        out["status"] = String("idle");
+        out["path"] = String("gdscript_fallback");
+        out["fallback"] = true;
+        out["fallback_reason"] = String("generation_not_started");
+        out["reason"] = String("generation_not_started");
+        out["seed"] = _native_generation_seed;
+        out["budget"] = budget.duplicate(true);
+        out["generation_progress"] = 0.0;
+        out["implemented"] = true;
+        out["published_to_slot"] = false;
+        _native_generation_report = out.duplicate(true);
+        return out;
+    }
+    Dictionary out = _run_native_generation_publish_pass(
+        _native_generation_seed,
+        _native_generation_cfg,
+        _native_generation_profile,
+        budget);
     _native_generation_active = false;
     _native_generation_report = out.duplicate(true);
     return out;
 }
 
 Dictionary DCWorldExt::finish_native_generation() {
+    if (_native_generation_active) {
+        Dictionary out = _run_native_generation_publish_pass(
+            _native_generation_seed,
+            _native_generation_cfg,
+            _native_generation_profile,
+            Dictionary());
+        _native_generation_active = false;
+        _native_generation_report = out.duplicate(true);
+        return out;
+    }
+    if (!_native_generation_report.is_empty()) {
+        return _native_generation_report.duplicate(true);
+    }
     Dictionary out;
     out["rc"] = -1;
-    out["status"] = _native_generation_active ? String("incomplete") : String("failed");
-    out["fail_stage"] = String("generation_kernels_unimplemented");
-    out["reason"] = String("NativeWorldGenerator cannot finish until generation kernels are implemented");
+    out["status"] = String("idle");
+    out["path"] = String("gdscript_fallback");
+    out["fallback"] = true;
+    out["fallback_reason"] = String("generation_not_started");
+    out["reason"] = String("generation_not_started");
     out["seed"] = _native_generation_seed;
     out["generation_progress"] = 0.0;
-    _native_generation_active = false;
+    out["implemented"] = true;
+    out["published_to_slot"] = false;
     _native_generation_report = out.duplicate(true);
     return out;
 }
@@ -11811,6 +11845,10 @@ static inline bool pk_is_water_terrain(uint8_t t) {
     return t == 0 || t == 1 || t == 18 || t == 19 || t == 20 || t == 21;
 }
 
+static inline bool pk_is_ocean_connected_seed_terrain(uint8_t t) {
+    return t == 0 || t == 1;
+}
+
 static inline int pk_upwind_dir_index_from_wind(float wx, float wy) {
     const double len2 = double(wx) * double(wx) + double(wy) * double(wy);
     if (len2 <= 0.0001) {
@@ -11874,6 +11912,12 @@ static inline uint8_t pk_derive_landform(uint8_t terrain, float elev, float sea_
     return 4; // PLAIN
 }
 
+static inline uint8_t pk_derive_landform_with_volcano(uint8_t terrain, float elev,
+                                                      float sea_level, bool has_volcano) {
+    if (has_volcano) return 12; // VOLCANO
+    return pk_derive_landform(terrain, elev, sea_level);
+}
+
 static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture, uint8_t landform) {
     const bool is_alpine = (landform == 7 || landform == 8);
     const bool is_hilly = (landform == 6);
@@ -11906,6 +11950,7 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
         if (landform == 8) return 0; // PEAK
         return 1; // POLAR_DESERT
     }
+    const bool is_alpine = (landform == 7 || landform == 8);
     if (landform == 8) return 0; // PEAK
     if (terrain == 22) return temperature < 0.55f ? 21 : 19; // MARSH / MANGROVE
     if (terrain == 23) return 18; // OASIS_VEG
@@ -11914,16 +11959,16 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
     if (terrain == 10) return 20; // SWAMP
     if (terrain == 16) return 19; // MANGROVE
     if (terrain == 15) return 11; // MEDITERRANEAN_SHRUB
-    if (terrain == 8) return (landform == 7 || landform == 8) ? 3 : 2; // TUNDRA
-    if (terrain == 13) return (landform == 7 || landform == 8) ? 8 : 5; // TAIGA
+    if (terrain == 8) return is_alpine ? 3 : 2; // TUNDRA
+    if (terrain == 13) return is_alpine ? 8 : 5; // TAIGA
     if (terrain == 5 || terrain == 6 || terrain == 2) {
         return pk_whittaker_vegetation(temperature, moisture, landform);
     }
     switch (terrain) {
-        case 4:  return (landform == 7 || landform == 8) ? 8 : (temperature > 0.55f ? 12 : 7); // FOREST
+        case 4:  return is_alpine ? 8 : (temperature > 0.55f ? 12 : 7); // FOREST
         case 11: return moisture > 0.70f ? 14 : 15; // JUNGLE
         case 12: return 13; // SAVANNA
-        case 3:  return (landform == 7 || landform == 8) ? 4 : 9; // GRASSLAND
+        case 3:  return is_alpine ? 4 : 9; // GRASSLAND
         case 14: return 10; // STEPPE
         case 7:  return moisture < 0.10f ? 17 : 16; // DESERT
         default: return pk_whittaker_vegetation(temperature, moisture, landform);
@@ -11983,25 +12028,25 @@ static inline float pk_compute_temperature(double ny, double elevation) {
     return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation)));
 }
 
-// SAME_SOURCE: map_generator.gd::_decide_terrain (line 3758, permanent_only=false).
+// SAME_SOURCE: map_generator.gd::_decide_terrain (permanent_only parameter mirrored).
 // 返回值是 TerrainType.TERRAIN 整数：
 //   OCEAN=0 / COAST=1 / SNOW=9 / MOUNTAIN=6 / TUNDRA=8 / HILL=5 /
 //   JUNGLE=11 / SAVANNA=12 / DESERT=7 / FOREST=4 / GRASSLAND=3 / STEPPE=14 /
 //   TAIGA=13 / PLAIN=2.
-static inline uint8_t pk_decide_terrain(double elevation, double temperature,
-                                        double moisture, double sea_level) {
+static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
+                                           double moisture, double sea_level,
+                                           bool permanent_only) {
     if (elevation < sea_level - 0.06) return 0; // OCEAN
     if (elevation < sea_level) return 1;        // COAST
 
     const double denom = (1.0 - sea_level) > 0.001 ? (1.0 - sea_level) : 0.001;
     const double land_h = (elevation - sea_level) / denom;
 
-    // permanent_only=false 分支阈值（fast-tick / refresh path）
-    constexpr double snow_line = 0.82;
-    constexpr double snow_line_temp = 0.34;
-    constexpr double cold_snow_line = 0.55;
-    constexpr double cold_snow_temp = 0.08;
-    constexpr double polar_temp = 0.03;
+    const double snow_line = permanent_only ? 0.85 : 0.82;
+    const double snow_line_temp = permanent_only ? 0.26 : 0.34;
+    const double cold_snow_line = permanent_only ? 0.70 : 0.55;
+    const double cold_snow_temp = permanent_only ? 0.05 : 0.08;
+    const double polar_temp = permanent_only ? -1.0 : 0.03;
 
     if (land_h > snow_line && temperature < snow_line_temp) return 9;       // SNOW
     if (land_h > cold_snow_line && temperature < cold_snow_temp) return 9;  // SNOW
@@ -12028,6 +12073,11 @@ static inline uint8_t pk_decide_terrain(double elevation, double temperature,
         return 7;                         // DESERT
     }
     return 2;                             // PLAIN (fallback, 实际不会到)
+}
+
+static inline uint8_t pk_decide_terrain(double elevation, double temperature,
+                                        double moisture, double sea_level) {
+    return pk_decide_terrain_ex(elevation, temperature, moisture, sea_level, false);
 }
 
 // SAME_SOURCE: wind_belt.gd::wind_at.
@@ -12147,6 +12197,1449 @@ godot::Dictionary DCWorldExt::run_temp_baseline_year_bake(godot::Dictionary knob
     out["n_cells"] = n;
     out["published_to_slot"] = true;
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
+    int seed,
+    const Dictionary &cfg,
+    const Dictionary &profile) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["rc"] = -1;
+    out["status"] = String("failed");
+    out["path"] = String("gdscript_fallback");
+    out["fallback"] = true;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["published_to_slot"] = false;
+    out["native_algorithm"] = String("pk_hash_fbm_v1");
+    out["n_cells"] = 0;
+    out["elapsed_ms"] = -1.0;
+    out["native_ms"] = -1.0;
+    out["compute_ms"] = 0.0;
+
+    auto fail = [&](const char *why, const char *stage = "native_generation_base") -> Dictionary {
+        out["fallback_reason"] = String(why);
+        out["reason"] = String(why);
+        out["fail_stage"] = String(stage);
+        return out;
+    };
+
+    const int width = int(cfg.get("width", 0));
+    const int height = int(cfg.get("height", 0));
+    if (width <= 0 || height <= 0) {
+        return fail("invalid_dimensions", "config");
+    }
+    const int64_t n64 = int64_t(width) * int64_t(height);
+    if (n64 <= 0 || n64 > 1000000) {
+        return fail("invalid_cell_count", "config");
+    }
+    const int n = int(n64);
+
+    auto getd = [](const Dictionary &d, const char *key, double fallback) -> double {
+        return d.has(key) ? double(d.get(key, fallback)) : fallback;
+    };
+    auto geti = [](const Dictionary &d, const char *key, int fallback) -> int {
+        return d.has(key) ? int(d.get(key, fallback)) : fallback;
+    };
+
+    const double sea_level = getd(cfg, "sea_level", 0.64);
+    const double continent_size = getd(cfg, "continent_size", 0.9);
+    const int num_continents = std::max(1, std::min(8, geti(cfg, "num_continents", 3)));
+
+    const double continent_warp_amp = getd(profile, "continent_warp_amp", 0.15);
+    const double dist_field_weight = getd(profile, "dist_field_weight", 0.55);
+    const double noise_weight = getd(profile, "noise_weight", 0.45);
+    const double ridge_boost_amp = getd(profile, "ridge_boost_amp", 0.50);
+    const double meso_weight = getd(profile, "meso_weight", 0.40);
+    const double offshore_amp = getd(profile, "offshore_amp", 0.45);
+    const double edge_falloff_start = getd(profile, "edge_falloff_start", 0.80);
+    const double edge_falloff_end = getd(profile, "edge_falloff_end", 0.95);
+    const double edge_falloff_depth = getd(profile, "edge_falloff_depth", 0.55);
+    const double main_radius_min = getd(profile, "main_radius_min", 0.70);
+    const double main_radius_max = getd(profile, "main_radius_max", 0.90);
+    const double sat_radius_min = getd(profile, "satellite_radius_min", 0.18);
+    const double sat_radius_max = getd(profile, "satellite_radius_max", 0.40);
+    const int satellites_per_main = std::max(0, std::min(8, geti(profile, "satellites_per_main", 3)));
+    const double main_place_min = getd(profile, "main_placement_min", 0.18);
+    const double main_place_max = getd(profile, "main_placement_max", 0.82);
+    const double sat_place_min = getd(profile, "satellite_placement_min", 0.08);
+    const double sat_place_max = getd(profile, "satellite_placement_max", 0.92);
+    const double main_sep = getd(profile, "main_separation_factor", 0.85);
+    const double sat_sep = getd(profile, "satellite_separation_factor", 0.55);
+    const double coastal_boost = getd(profile, "coastal_moisture_boost", 0.20);
+    const double orographic_boost = getd(profile, "orographic_boost", 1.2);
+
+    struct PkGenRng {
+        uint64_t state;
+        explicit PkGenRng(uint64_t seed_value) {
+            state = seed_value ? seed_value : 0x9e3779b97f4a7c15ull;
+        }
+        uint64_t next_u64() {
+            uint64_t x = state;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            state = x ? x : 0x9e3779b97f4a7c15ull;
+            return state;
+        }
+        double rand01() {
+            return double(next_u64() >> 11) * (1.0 / 9007199254740992.0);
+        }
+        double range(double lo, double hi) {
+            return lo + (hi - lo) * rand01();
+        }
+    };
+    struct Center {
+        double x;
+        double y;
+        double radius;
+    };
+
+    std::vector<Center> centers;
+    centers.reserve(size_t(num_continents * (1 + satellites_per_main)));
+    PkGenRng rng(uint64_t(seed) ^ 0x6a09e667f3bcc909ull);
+    const double radius_unit = continent_size * 0.6;
+    auto try_place_center = [&](double radius, double lo, double hi, double sep_factor, int attempts) -> bool {
+        for (int attempt = 0; attempt < attempts; ++attempt) {
+            const double x = rng.range(lo, hi);
+            const double y = rng.range(lo, hi);
+            bool ok = true;
+            for (const Center &c : centers) {
+                const double dx = x - c.x;
+                const double dy = y - c.y;
+                const double d = std::sqrt(dx * dx + dy * dy);
+                if (d < (radius + c.radius) * sep_factor) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                centers.push_back(Center{x, y, radius});
+                return true;
+            }
+        }
+        return false;
+    };
+    for (int i = 0; i < num_continents; ++i) {
+        const double radius = rng.range(main_radius_min, main_radius_max) * radius_unit;
+        try_place_center(radius, main_place_min, main_place_max, main_sep, 50);
+    }
+    for (int i = 0; i < num_continents * satellites_per_main; ++i) {
+        const double radius = rng.range(sat_radius_min, sat_radius_max) * radius_unit;
+        try_place_center(radius, sat_place_min, sat_place_max, sat_sep, 30);
+    }
+    if (centers.empty()) {
+        centers.push_back(Center{0.5, 0.5, std::max(0.05, radius_unit * 0.75)});
+    }
+
+    auto hash01 = [](int64_t x, int64_t y, uint64_t salt) -> double {
+        uint64_t h = uint64_t(x) * 0x9e3779b185ebca87ull
+                   ^ uint64_t(y) * 0xc2b2ae3d27d4eb4full
+                   ^ salt;
+        h ^= h >> 33;
+        h *= 0xff51afd7ed558ccdull;
+        h ^= h >> 33;
+        h *= 0xc4ceb9fe1a85ec53ull;
+        h ^= h >> 33;
+        return double(h >> 11) * (1.0 / 9007199254740992.0);
+    };
+    auto value_noise = [&](double x, double y, uint64_t salt) -> double {
+        const int64_t xi = int64_t(std::floor(x));
+        const int64_t yi = int64_t(std::floor(y));
+        const double tx0 = x - double(xi);
+        const double ty0 = y - double(yi);
+        const double tx = tx0 * tx0 * (3.0 - 2.0 * tx0);
+        const double ty = ty0 * ty0 * (3.0 - 2.0 * ty0);
+        const double a = hash01(xi, yi, salt);
+        const double b = hash01(xi + 1, yi, salt);
+        const double c = hash01(xi, yi + 1, salt);
+        const double d = hash01(xi + 1, yi + 1, salt);
+        const double ab = a + (b - a) * tx;
+        const double cd = c + (d - c) * tx;
+        return (ab + (cd - ab) * ty) * 2.0 - 1.0;
+    };
+    auto fbm = [&](double x, double y, uint64_t salt, int octaves) -> double {
+        double amp = 0.5;
+        double freq = 1.0;
+        double sum = 0.0;
+        double norm = 0.0;
+        for (int o = 0; o < octaves; ++o) {
+            sum += value_noise(x * freq, y * freq, salt + uint64_t(o) * 0x9e3779b97f4a7c15ull) * amp;
+            norm += amp;
+            amp *= 0.5;
+            freq *= 2.0;
+        }
+        return norm > 0.0 ? sum / norm : 0.0;
+    };
+
+    PackedInt32Array q_arr;
+    PackedInt32Array r_arr;
+    PackedInt32Array s_arr;
+    PackedFloat32Array elevation_arr;
+    PackedFloat32Array moisture_arr;
+    PackedFloat32Array base_moisture_arr;
+    PackedFloat32Array temp_arr;
+    PackedFloat32Array temp_baseline_arr;
+    PackedFloat32Array temp_30d_arr;
+    PackedFloat32Array temp_365d_arr;
+    PackedFloat32Array temp_anomaly_arr;
+    PackedFloat32Array thermal_energy_arr;
+    PackedFloat32Array cell_lat_norm_arr;
+    PackedFloat32Array temp_baseline_year_arr;
+    PackedFloat32Array snow_cover_arr;
+    PackedByteArray terrain_arr;
+    PackedByteArray base_terrain_arr;
+    PackedByteArray landform_arr;
+    PackedByteArray base_landform_arr;
+    PackedByteArray vegetation_arr;
+    PackedByteArray base_vegetation_arr;
+    PackedByteArray cover_arr;
+    PackedByteArray is_water_arr;
+    PackedByteArray ema_initialized_arr;
+
+    q_arr.resize(n);
+    r_arr.resize(n);
+    s_arr.resize(n);
+    elevation_arr.resize(n);
+    moisture_arr.resize(n);
+    base_moisture_arr.resize(n);
+    temp_arr.resize(n);
+    temp_baseline_arr.resize(n);
+    temp_30d_arr.resize(n);
+    temp_365d_arr.resize(n);
+    temp_anomaly_arr.resize(n);
+    thermal_energy_arr.resize(n);
+    cell_lat_norm_arr.resize(n);
+    temp_baseline_year_arr.resize(n);
+    snow_cover_arr.resize(n);
+    terrain_arr.resize(n);
+    base_terrain_arr.resize(n);
+    landform_arr.resize(n);
+    base_landform_arr.resize(n);
+    vegetation_arr.resize(n);
+    base_vegetation_arr.resize(n);
+    cover_arr.resize(n);
+    is_water_arr.resize(n);
+    ema_initialized_arr.resize(n);
+
+    int32_t *Q = q_arr.ptrw();
+    int32_t *R = r_arr.ptrw();
+    int32_t *S = s_arr.ptrw();
+    float *E = elevation_arr.ptrw();
+    float *M = moisture_arr.ptrw();
+    float *BM = base_moisture_arr.ptrw();
+    float *T = temp_arr.ptrw();
+    float *TB = temp_baseline_arr.ptrw();
+    float *T30 = temp_30d_arr.ptrw();
+    float *T365 = temp_365d_arr.ptrw();
+    float *TA = temp_anomaly_arr.ptrw();
+    float *TH = thermal_energy_arr.ptrw();
+    float *LAT = cell_lat_norm_arr.ptrw();
+    float *TY = temp_baseline_year_arr.ptrw();
+    float *SNOW = snow_cover_arr.ptrw();
+    uint8_t *TERR = terrain_arr.ptrw();
+    uint8_t *BTERR = base_terrain_arr.ptrw();
+    uint8_t *LF = landform_arr.ptrw();
+    uint8_t *BLF = base_landform_arr.ptrw();
+    uint8_t *VEG = vegetation_arr.ptrw();
+    uint8_t *BVEG = base_vegetation_arr.ptrw();
+    uint8_t *COV = cover_arr.ptrw();
+    uint8_t *IW = is_water_arr.ptrw();
+    uint8_t *EMA = ema_initialized_arr.ptrw();
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    double min_e = std::numeric_limits<double>::infinity();
+    double max_e = -std::numeric_limits<double>::infinity();
+    const double inv_w = 1.0 / double(std::max(width - 1, 1));
+    const double inv_h = 1.0 / double(std::max(height - 1, 1));
+    const uint64_t seed_salt = uint64_t(seed) * 0x9e3779b97f4a7c15ull;
+
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            const int idx = row * width + col;
+            const int q = col - ((row - (row & 1)) / 2);
+            const int r = row;
+            Q[idx] = q;
+            R[idx] = r;
+            S[idx] = -q - r;
+            LAT[idx] = float(double(row) * inv_h);
+
+            const double nx = double(col) * inv_w;
+            const double ny = double(row) * inv_h;
+            const double dist_perturb = fbm(nx * 16.0 + 11.3, ny * 16.0 - 7.1, seed_salt + 13, 3) * continent_warp_amp;
+            double dist_field = 0.0;
+            for (const Center &c : centers) {
+                const double dx = nx - c.x;
+                const double dy = ny - c.y;
+                const double d = std::sqrt(dx * dx + dy * dy) + dist_perturb;
+                double df = pk_clamp01(1.0 - d / std::max(c.radius, 0.001));
+                df = std::pow(df, 1.5);
+                if (df > dist_field) dist_field = df;
+            }
+            const double u = nx * 200.0;
+            const double v = ny * 200.0;
+            const double u_warp = fbm(u * 0.08 + 11.3, v * 0.08 - 7.1, seed_salt + 29, 3) * 35.0;
+            const double v_warp = fbm(u * 0.08 - 23.7, v * 0.08 + 41.5, seed_salt + 31, 3) * 35.0;
+            const double c1 = fbm((u + u_warp) * 0.014, (v + v_warp) * 0.014, seed_salt + 101, 4);
+            const double c2 = fbm((u * 1.7 + u_warp) * 0.040, (v * 1.7 + v_warp) * 0.040, seed_salt + 257, 3);
+            const double noise_01 = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
+            const double meso = (fbm(nx * 400.0 + 137.0, ny * 400.0 - 91.0, seed_salt + 401, 3) + 1.0) * 0.5;
+            const double coast = fbm(nx * 80.0 + 500.0, ny * 80.0 + 500.0, seed_salt + 503, 3) * 0.06;
+            const double offshore_raw = fbm(nx * 900.0 - 333.0, ny * 900.0 + 217.0, seed_salt + 607, 3);
+            const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;
+            double raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight) + coast + offshore;
+            const double edge_dx = std::fabs(nx - 0.5) * 2.0;
+            const double edge_dy = std::fabs(ny - 0.5) * 2.0;
+            const double edge_base = std::max(edge_dx, edge_dy);
+            const double edge_perturb = fbm(nx * 150.0 + 199.0, ny * 150.0 - 73.0, seed_salt + 701, 3) * 0.38;
+            raw -= pk_smoothstep(edge_falloff_start, edge_falloff_end, edge_base + edge_perturb) * edge_falloff_depth;
+            E[idx] = float(raw);
+            if (raw < min_e) min_e = raw;
+            if (raw > max_e) max_e = raw;
+        }
+    }
+
+    const double range_e = max_e - min_e;
+    if (range_e > 0.001) {
+        const double inv_range = 1.0 / range_e;
+        for (int i = 0; i < n; ++i) {
+            E[i] = float((double(E[i]) - min_e) * inv_range);
+        }
+    }
+
+    if (ridge_boost_amp > 0.0) {
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (E[idx] < sea_level) continue;
+                const double nx = double(col) * inv_w;
+                const double ny = double(row) * inv_h;
+                const double land_h = (double(E[idx]) - sea_level) / std::max(1.0 - sea_level, 0.001);
+                const double ridge_a = 1.0 - std::fabs(fbm(nx * 5.5 + 19.0, ny * 5.5 - 31.0, seed_salt + 809, 4));
+                const double ridge_b = 1.0 - std::fabs(fbm(nx * 7.0 - 61.0, ny * 4.5 + 47.0, seed_salt + 907, 4));
+                const double ridge_signal = std::max(ridge_a, ridge_b);
+                const double gate = pk_smoothstep(0.12, 0.85, land_h);
+                E[idx] = float(pk_clamp01(double(E[idx]) + ridge_signal * gate * ridge_boost_amp * 0.18));
+            }
+        }
+    }
+
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            const int idx = row * width + col;
+            const double nx = double(col) * inv_w;
+            const double ny = double(row) * inv_h;
+            const double large = (fbm(nx * 100.0, ny * 100.0, seed_salt + 9973, 4) + 1.0) * 0.5;
+            const double small = (fbm(nx * 400.0 + 79.0, ny * 400.0 - 31.0, seed_salt + 10007, 4) + 1.0) * 0.5;
+            M[idx] = float(pk_clamp01(large * 0.65 + small * 0.35));
+
+            const float temp = pk_compute_temperature(ny, double(E[idx]));
+            const uint8_t terrain = pk_decide_terrain(double(E[idx]), double(temp), double(M[idx]), sea_level);
+            TERR[idx] = terrain;
+            IW[idx] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
+        }
+    }
+
+    // Coastal and orographic moisture are still pure per-cell data transforms; keep them native.
+    constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
+    constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
+    auto index_for_qr = [&](int q, int r) -> int {
+        const int col = q + ((r - (r & 1)) / 2);
+        if (col < 0 || col >= width || r < 0 || r >= height) return -1;
+        return r * width + col;
+    };
+    for (int i = 0; i < n; ++i) {
+        if (IW[i]) continue;
+        int water_nbs = 0;
+        int total_nbs = 0;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = index_for_qr(Q[i] + DQ[d], R[i] + DR[d]);
+            if (ni < 0) continue;
+            ++total_nbs;
+            if (IW[ni]) ++water_nbs;
+        }
+        if (total_nbs > 0) {
+            M[i] = float(pk_clamp01(double(M[i]) + (double(water_nbs) / double(total_nbs)) * coastal_boost));
+        }
+        if (E[i] > 0.30f && orographic_boost != 0.0) {
+            M[i] = float(pk_clamp01(double(M[i]) * (1.0 + (double(E[i]) - 0.30) * orographic_boost)));
+        }
+    }
+
+    for (int i = 0; i < n; ++i) {
+        const float ny = LAT[i];
+        const float temp = pk_compute_temperature(double(ny), double(E[i]));
+        uint8_t terrain = TERR[i];
+        if (!pk_is_water_terrain(terrain) && terrain != 6 && terrain != 9 && terrain != 8) {
+            terrain = pk_decide_terrain(double(E[i]), double(temp), double(M[i]), sea_level);
+        }
+        TERR[i] = terrain;
+        BTERR[i] = terrain;
+        IW[i] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
+        BM[i] = M[i];
+        T[i] = temp;
+        TB[i] = temp;
+        T30[i] = temp;
+        T365[i] = temp;
+        TA[i] = 0.0f;
+        TH[i] = temp;
+        TY[i] = float(pk_clamp01(pk_lat_temp_bell((double(ny) - 0.5) * 2.0)));
+        SNOW[i] = 0.0f;
+        EMA[i] = 1;
+        const uint8_t lf = pk_derive_landform(terrain, E[i], float(sea_level));
+        const uint8_t veg = pk_derive_vegetation(terrain, lf, temp, M[i]);
+        const uint8_t cov = pk_derive_cover(terrain, 0.0f);
+        LF[i] = lf;
+        BLF[i] = lf;
+        VEG[i] = veg;
+        BVEG[i] = veg;
+        COV[i] = cov;
+    }
+
+    int final_water_count = 0;
+    for (int i = 0; i < n; ++i) {
+        final_water_count += int(IW[i]);
+    }
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    out["rc"] = 0;
+    out["status"] = String("completed");
+    out["path"] = String("gdext");
+    out["fallback"] = false;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["fail_stage"] = String();
+    out["published_to_slot"] = false;
+    out["n_cells"] = n;
+    out["width"] = width;
+    out["height"] = height;
+    out["seed"] = seed;
+    out["water_count"] = final_water_count;
+    out["land_count"] = n - final_water_count;
+    out["elapsed_ms"] = elapsed_ms;
+    out["native_ms"] = elapsed_ms;
+    out["compute_ms"] = elapsed_ms;
+    out["generation_progress"] = 1.0;
+    out["q_arr"] = q_arr;
+    out["r_arr"] = r_arr;
+    out["s_arr"] = s_arr;
+    out["elevation_arr"] = elevation_arr;
+    out["moisture_arr"] = moisture_arr;
+    out["base_moisture_arr"] = base_moisture_arr;
+    out["temp_arr"] = temp_arr;
+    out["temp_baseline_arr"] = temp_baseline_arr;
+    out["temp_30d_arr"] = temp_30d_arr;
+    out["temp_365d_arr"] = temp_365d_arr;
+    out["temp_anomaly_arr"] = temp_anomaly_arr;
+    out["thermal_energy_arr"] = thermal_energy_arr;
+    out["cell_lat_norm_arr"] = cell_lat_norm_arr;
+    out["temp_baseline_year_arr"] = temp_baseline_year_arr;
+    out["snow_cover_arr"] = snow_cover_arr;
+    out["terrain_arr"] = terrain_arr;
+    out["base_terrain_arr"] = base_terrain_arr;
+    out["landform_arr"] = landform_arr;
+    out["base_landform_arr"] = base_landform_arr;
+    out["vegetation_arr"] = vegetation_arr;
+    out["base_vegetation_arr"] = base_vegetation_arr;
+    out["cover_arr"] = cover_arr;
+    out["is_water_arr"] = is_water_arr;
+    out["ema_initialized_arr"] = ema_initialized_arr;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
+    int seed,
+    const Dictionary &cfg,
+    const Dictionary &profile,
+    const Dictionary &input) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["rc"] = -1;
+    out["status"] = String("failed");
+    out["path"] = String("gdscript_fallback");
+    out["fallback"] = true;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["fail_stage"] = String("native_generation_post_base");
+    out["published_to_slot"] = false;
+    out["n_cells"] = 0;
+    out["elapsed_ms"] = -1.0;
+    out["native_ms"] = -1.0;
+    out["compute_ms"] = 0.0;
+    out["native_algorithm"] = String("post_base_soa_v1");
+
+    auto fail = [&](const char *why, const char *stage = "native_generation_post_base") -> Dictionary {
+        out["fallback_reason"] = String(why);
+        out["reason"] = String(why);
+        out["fail_stage"] = String(stage);
+        return out;
+    };
+
+    const int width = int(cfg.get("width", 0));
+    const int height = int(cfg.get("height", 0));
+    if (width <= 0 || height <= 0) return fail("invalid_dimensions", "config");
+    const int64_t n64 = int64_t(width) * int64_t(height);
+    if (n64 <= 0 || n64 > 1000000) return fail("invalid_cell_count", "config");
+    const int n = int(n64);
+
+    auto getd = [](const Dictionary &d, const char *key, double fallback) -> double {
+        return d.has(key) ? double(d.get(key, fallback)) : fallback;
+    };
+    auto geti = [](const Dictionary &d, const char *key, int fallback) -> int {
+        return d.has(key) ? int(d.get(key, fallback)) : fallback;
+    };
+    auto getb = [](const Dictionary &d, const char *key, bool fallback) -> bool {
+        return d.has(key) ? bool(d.get(key, fallback)) : fallback;
+    };
+
+    const double sea_level = getd(cfg, "sea_level", 0.64);
+    const bool ocean_enabled = getb(cfg, "enable_ocean_heat_transport", false);
+    const int lookback = std::max(0, geti(profile, "rain_shadow_lookback", 3));
+    const double rain_threshold = getd(profile, "rain_shadow_threshold", 0.13);
+    const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
+    const double river_percentile = getd(profile, "river_flow_percentile", 0.78);
+    const double orographic_boost = getd(profile, "orographic_boost", 1.2);
+    const double veg_elev_decay = getd(profile, "veg_feedback_elev_decay", 0.5);
+    const int max_volcanoes = std::max(0, geti(profile, "max_volcanoes", 8));
+    const int volcano_min_dist = std::max(0, geti(profile, "volcano_min_dist", 6));
+    const double volcano_min_land_h = getd(profile, "volcano_min_land_h", 0.65);
+
+    PackedInt32Array q_arr = input.get("q_arr", PackedInt32Array());
+    PackedInt32Array r_arr = input.get("r_arr", PackedInt32Array());
+    PackedInt32Array s_arr = input.get("s_arr", PackedInt32Array());
+    PackedFloat32Array elevation_arr = input.get("elevation_arr", PackedFloat32Array());
+    PackedFloat32Array moisture_arr = input.get("moisture_arr", PackedFloat32Array());
+    PackedFloat32Array base_moisture_arr = input.get("base_moisture_arr", PackedFloat32Array());
+    PackedFloat32Array temp_arr = input.get("temp_arr", PackedFloat32Array());
+    PackedFloat32Array temp_baseline_arr = input.get("temp_baseline_arr", PackedFloat32Array());
+    PackedFloat32Array temp_30d_arr = input.get("temp_30d_arr", PackedFloat32Array());
+    PackedFloat32Array temp_365d_arr = input.get("temp_365d_arr", PackedFloat32Array());
+    PackedFloat32Array temp_anomaly_arr = input.get("temp_anomaly_arr", PackedFloat32Array());
+    PackedFloat32Array thermal_energy_arr = input.get("thermal_energy_arr", PackedFloat32Array());
+    PackedFloat32Array cell_lat_norm_arr = input.get("cell_lat_norm_arr", PackedFloat32Array());
+    PackedFloat32Array temp_baseline_year_arr = input.get("temp_baseline_year_arr", PackedFloat32Array());
+    PackedFloat32Array snow_cover_arr = input.get("snow_cover_arr", PackedFloat32Array());
+    PackedFloat32Array upwelling_arr = input.get("upwelling_strength_arr", PackedFloat32Array());
+    PackedByteArray terrain_arr = input.get("terrain_arr", PackedByteArray());
+    PackedByteArray cover_arr = input.get("cover_arr", PackedByteArray());
+    PackedByteArray ema_initialized_arr = input.get("ema_initialized_arr", PackedByteArray());
+
+    if (q_arr.size() != n || r_arr.size() != n || elevation_arr.size() != n ||
+        moisture_arr.size() != n || terrain_arr.size() != n) {
+        return fail("required_input_size_mismatch", "input");
+    }
+    if (s_arr.size() != n) {
+        s_arr.resize(n);
+        int32_t *S = s_arr.ptrw();
+        const int32_t *Q = q_arr.ptr();
+        const int32_t *R = r_arr.ptr();
+        for (int i = 0; i < n; ++i) S[i] = -Q[i] - R[i];
+    }
+    if (base_moisture_arr.size() != n) base_moisture_arr = moisture_arr.duplicate();
+    if (temp_arr.size() != n) {
+        temp_arr.resize(n);
+        float *T = temp_arr.ptrw();
+        const float *E = elevation_arr.ptr();
+        const int32_t *R = r_arr.ptr();
+        const double inv_h = 1.0 / double(std::max(height - 1, 1));
+        for (int i = 0; i < n; ++i) T[i] = pk_compute_temperature(double(R[i]) * inv_h, E[i]);
+    }
+    if (temp_baseline_arr.size() != n) temp_baseline_arr = temp_arr.duplicate();
+    if (temp_30d_arr.size() != n) temp_30d_arr = temp_arr.duplicate();
+    if (temp_365d_arr.size() != n) temp_365d_arr = temp_arr.duplicate();
+    if (temp_anomaly_arr.size() != n) {
+        temp_anomaly_arr.resize(n);
+        float *TA = temp_anomaly_arr.ptrw();
+        for (int i = 0; i < n; ++i) TA[i] = 0.0f;
+    }
+    if (thermal_energy_arr.size() != n) thermal_energy_arr = temp_arr.duplicate();
+    if (cell_lat_norm_arr.size() != n) {
+        cell_lat_norm_arr.resize(n);
+        float *LAT = cell_lat_norm_arr.ptrw();
+        const int32_t *R = r_arr.ptr();
+        const double inv_h = 1.0 / double(std::max(height - 1, 1));
+        for (int i = 0; i < n; ++i) LAT[i] = float(double(R[i]) * inv_h);
+    }
+    if (temp_baseline_year_arr.size() != n) {
+        temp_baseline_year_arr.resize(n);
+        const float *LAT = cell_lat_norm_arr.ptr();
+        float *TY = temp_baseline_year_arr.ptrw();
+        for (int i = 0; i < n; ++i) {
+            TY[i] = float(pk_clamp01(pk_lat_temp_bell((double(LAT[i]) - 0.5) * 2.0)));
+        }
+    }
+    if (snow_cover_arr.size() != n) {
+        snow_cover_arr.resize(n);
+        float *SN = snow_cover_arr.ptrw();
+        for (int i = 0; i < n; ++i) SN[i] = 0.0f;
+    }
+    if (cover_arr.size() != n) {
+        cover_arr.resize(n);
+        uint8_t *C = cover_arr.ptrw();
+        for (int i = 0; i < n; ++i) C[i] = 0;
+    }
+    if (ema_initialized_arr.size() != n) {
+        ema_initialized_arr.resize(n);
+        uint8_t *EMA = ema_initialized_arr.ptrw();
+        for (int i = 0; i < n; ++i) EMA[i] = 1;
+    }
+
+    PackedByteArray base_terrain_arr;
+    base_terrain_arr.resize(n);
+    PackedByteArray landform_arr;
+    landform_arr.resize(n);
+    PackedByteArray base_landform_arr;
+    base_landform_arr.resize(n);
+    PackedByteArray vegetation_arr;
+    vegetation_arr.resize(n);
+    PackedByteArray base_vegetation_arr;
+    base_vegetation_arr.resize(n);
+    PackedByteArray is_water_arr;
+    is_water_arr.resize(n);
+    PackedByteArray has_river_arr;
+    has_river_arr.resize(n);
+    PackedByteArray has_volcano_arr;
+    has_volcano_arr.resize(n);
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
+
+    const int32_t * const Q = q_arr.ptr();
+    const int32_t * const R = r_arr.ptr();
+    const int32_t * const S = s_arr.ptr();
+    const float * const E = elevation_arr.ptr();
+    float * const M = moisture_arr.ptrw();
+    float * const BM = base_moisture_arr.ptrw();
+    const float * const TEMP = temp_arr.ptr();
+    uint8_t * const TERR = terrain_arr.ptrw();
+    uint8_t * const BTERR = base_terrain_arr.ptrw();
+    uint8_t * const LF = landform_arr.ptrw();
+    uint8_t * const BLF = base_landform_arr.ptrw();
+    uint8_t * const VEG = vegetation_arr.ptrw();
+    uint8_t * const BVEG = base_vegetation_arr.ptrw();
+    uint8_t * const COV = cover_arr.ptrw();
+    uint8_t * const IW = is_water_arr.ptrw();
+    uint8_t * const RIV = has_river_arr.ptrw();
+    uint8_t * const VOLC = has_volcano_arr.ptrw();
+    float * const UP = (upwelling_arr.size() == n) ? upwelling_arr.ptrw() : nullptr;
+
+    constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
+    constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
+    auto index_for_qr = [&](int q, int r) -> int {
+        const int col = q + ((r - (r & 1)) / 2);
+        if (col < 0 || col >= width || r < 0 || r >= height) return -1;
+        return r * width + col;
+    };
+    std::vector<int32_t> NB(size_t(n) * 6, -1);
+    for (int i = 0; i < n; ++i) {
+        for (int d = 0; d < 6; ++d) {
+            NB[size_t(i) * 6 + d] = index_for_qr(Q[i] + DQ[d], R[i] + DR[d]);
+        }
+    }
+    auto row_norm = [&](int i) -> double {
+        return double(R[i]) / double(std::max(height - 1, 1));
+    };
+    auto land_h = [&](int i) -> double {
+        return (double(E[i]) - sea_level) / std::max(1.0 - sea_level, 0.001);
+    };
+    auto cube_distance = [&](int a, int b) -> int {
+        return (std::abs(Q[a] - Q[b]) + std::abs(R[a] - R[b]) + std::abs(S[a] - S[b])) / 2;
+    };
+    auto sync_axes = [&](int i) {
+        const uint8_t lf = pk_derive_landform_with_volcano(TERR[i], E[i], float(sea_level), VOLC[i] != 0);
+        const uint8_t veg = pk_derive_vegetation(TERR[i], lf, TEMP[i], M[i]);
+        uint8_t cov = pk_derive_cover(TERR[i], 0.0f);
+        if (ocean_enabled && UP != nullptr && TERR[i] == 0) {
+            bool has_land_neighbor = false;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni >= 0 && !pk_is_water_terrain(TERR[ni])) {
+                    has_land_neighbor = true;
+                    break;
+                }
+            }
+            if (!has_land_neighbor && UP[i] > 0.6f) cov = 6; // PELAGIC_BLOOM
+        }
+        LF[i] = lf;
+        BLF[i] = lf;
+        VEG[i] = veg;
+        BVEG[i] = veg;
+        COV[i] = cov;
+        IW[i] = pk_is_water_terrain(TERR[i]) ? uint8_t(1) : uint8_t(0);
+        BTERR[i] = TERR[i];
+    };
+
+    for (int i = 0; i < n; ++i) {
+        BM[i] = M[i];
+        RIV[i] = 0;
+        VOLC[i] = 0;
+        IW[i] = pk_is_water_terrain(TERR[i]) ? uint8_t(1) : uint8_t(0);
+    }
+
+    // Lake detection: boundary-connected OCEAN/COAST remains marine; enclosed
+    // OCEAN/COAST components become LAKE.
+    std::vector<uint8_t> connected(size_t(n), 0);
+    std::vector<int> queue;
+    queue.reserve(size_t(n));
+    for (int i = 0; i < n; ++i) {
+        if (!pk_is_ocean_connected_seed_terrain(TERR[i])) continue;
+        const int col = Q[i] + ((R[i] - (R[i] & 1)) / 2);
+        const int row = R[i];
+        if (col == 0 || col == width - 1 || row == 0 || row == height - 1) {
+            connected[size_t(i)] = 1;
+            queue.push_back(i);
+        }
+    }
+    for (size_t qi = 0; qi < queue.size(); ++qi) {
+        const int cur = queue[qi];
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(cur) * 6 + d];
+            if (ni < 0 || connected[size_t(ni)]) continue;
+            if (!pk_is_ocean_connected_seed_terrain(TERR[ni])) continue;
+            connected[size_t(ni)] = 1;
+            queue.push_back(ni);
+        }
+    }
+    int lake_count = 0;
+    for (int i = 0; i < n; ++i) {
+        if (pk_is_ocean_connected_seed_terrain(TERR[i]) && !connected[size_t(i)]) {
+            TERR[i] = 18; // LAKE
+            ++lake_count;
+        }
+        IW[i] = pk_is_water_terrain(TERR[i]) ? uint8_t(1) : uint8_t(0);
+    }
+
+    // Snapshot base moisture before rain shadow / river ecology.
+    for (int i = 0; i < n; ++i) BM[i] = M[i];
+
+    int rain_shadow_touched = 0;
+    if (lookback > 0) {
+        for (int i = 0; i < n; ++i) {
+            if (pk_is_water_terrain(TERR[i])) continue;
+            const PkWind2 wind = pk_wind_belt_wind_at(row_norm(i), 1.0, 0.0);
+            const int dir = pk_upwind_dir_index_from_wind(wind.x, wind.y);
+            if (dir < 0) continue;
+            int probe = i;
+            for (int step = 0; step < lookback; ++step) {
+                const int ni = NB[size_t(probe) * 6 + dir];
+                if (ni < 0) { probe = -1; break; }
+                probe = ni;
+            }
+            if (probe < 0) continue;
+            if (double(E[probe]) > double(E[i]) + rain_threshold) {
+                M[i] = float(double(M[i]) * rain_factor);
+                ++rain_shadow_touched;
+            }
+        }
+    }
+
+    int redecide_touched = 0;
+    for (int i = 0; i < n; ++i) {
+        const uint8_t t = TERR[i];
+        if (pk_is_water_terrain(t) || t == 6 || t == 9 || t == 8) continue;
+        const uint8_t nt = pk_decide_terrain_ex(double(E[i]), double(pk_compute_temperature(row_norm(i), E[i])),
+                                                double(M[i]), sea_level, true);
+        if (nt != t) {
+            TERR[i] = nt;
+            ++redecide_touched;
+        }
+    }
+
+    // Flow accumulation rivers.
+    std::vector<int> land;
+    land.reserve(size_t(n));
+    for (int i = 0; i < n; ++i) {
+        if (!pk_is_water_terrain(TERR[i])) land.push_back(i);
+    }
+    std::sort(land.begin(), land.end(), [&](int a, int b) { return E[a] > E[b]; });
+    std::vector<int32_t> downhill(size_t(n), -1);
+    std::vector<float> flow(size_t(n), 0.0f);
+    const double inv_above_sea = 1.0 / std::max(1.0 - sea_level, 0.001);
+    for (int i : land) {
+        int lowest = -1;
+        float lowest_e = E[i];
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && E[ni] < lowest_e) {
+                lowest_e = E[ni];
+                lowest = ni;
+            }
+        }
+        downhill[size_t(i)] = lowest;
+        const double base_rain = 0.4 + (1.6 - 0.4) * double(M[i]);
+        const double lh = (double(E[i]) - sea_level) * inv_above_sea;
+        const double oro = 1.0 + std::max(lh - 0.30, 0.0) * orographic_boost;
+        flow[size_t(i)] = float(base_rain * oro);
+    }
+    for (int i : land) {
+        const int dh = downhill[size_t(i)];
+        if (dh < 0 || pk_is_water_terrain(TERR[dh])) continue;
+        flow[size_t(dh)] += flow[size_t(i)];
+    }
+    std::vector<float> flow_values;
+    flow_values.reserve(land.size());
+    for (int i : land) flow_values.push_back(flow[size_t(i)]);
+    float river_threshold = std::numeric_limits<float>::infinity();
+    if (!flow_values.empty()) {
+        std::sort(flow_values.begin(), flow_values.end());
+        int threshold_idx = int(double(flow_values.size()) * river_percentile);
+        if (threshold_idx < 0) threshold_idx = 0;
+        if (threshold_idx >= int(flow_values.size())) threshold_idx = int(flow_values.size()) - 1;
+        river_threshold = flow_values[size_t(threshold_idx)];
+        for (int i : land) {
+            if (flow[size_t(i)] >= river_threshold) RIV[i] = 1;
+        }
+    }
+    std::vector<int8_t> reach_cache(size_t(n), -1);
+    for (int i : land) {
+        if (RIV[i] == 0) continue;
+        std::vector<int> visited;
+        int cur = i;
+        bool reached = false;
+        for (int step = 0; step < 200 && cur >= 0; ++step) {
+            const int8_t cached = reach_cache[size_t(cur)];
+            if (cached >= 0) { reached = cached != 0; break; }
+            bool seen = false;
+            for (int v : visited) {
+                if (v == cur) { seen = true; break; }
+            }
+            if (seen) break;
+            visited.push_back(cur);
+            if (pk_is_water_terrain(TERR[cur])) { reached = true; break; }
+            cur = downhill[size_t(cur)];
+        }
+        for (int v : visited) reach_cache[size_t(v)] = reached ? 1 : 0;
+        if (!reached) RIV[i] = 0;
+    }
+    std::vector<int> unmark;
+    for (int i : land) {
+        if (RIV[i] == 0) continue;
+        bool has_river_or_water = false;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && (RIV[ni] != 0 || pk_is_water_terrain(TERR[ni]))) {
+                has_river_or_water = true;
+                break;
+            }
+        }
+        if (!has_river_or_water) unmark.push_back(i);
+    }
+    for (int i : unmark) RIV[i] = 0;
+
+    int river_count = 0;
+    for (int i = 0; i < n; ++i) river_count += int(RIV[i] != 0);
+
+    int river_ecology_touched = 0;
+    for (int i : land) {
+        if (RIV[i] == 0 || pk_is_water_terrain(TERR[i])) continue;
+        const uint8_t t = TERR[i];
+        if (pk_is_permanent_landform(t)) {
+            if (M[i] < 0.65f) M[i] = 0.65f;
+            continue;
+        }
+        if (M[i] < 0.65f) M[i] = 0.65f;
+        if (t == 7) continue;
+        if (t == 2) {
+            const float temp = pk_compute_temperature(row_norm(i), E[i]);
+            uint8_t nt = t;
+            if (temp > 0.55f) nt = 4;
+            else if (temp > 0.30f) nt = 3;
+            if (nt != t) {
+                TERR[i] = nt;
+                ++river_ecology_touched;
+            }
+        }
+    }
+
+    PackedFloat32Array donor_table;
+    donor_table.resize(26);
+    float *DT = donor_table.ptrw();
+    for (int i = 0; i < 26; ++i) DT[i] = 0.0f;
+    DT[4] = float(getd(profile, "veg_forest_donor", 0.06));
+    DT[10] = float(getd(profile, "veg_swamp_donor", 0.10));
+    DT[3] = float(getd(profile, "veg_grassland_donor", 0.02));
+    DT[7] = float(getd(profile, "veg_desert_donor", -0.04));
+    DT[11] = float(getd(profile, "veg_jungle_donor", 0.08));
+    DT[13] = float(getd(profile, "veg_taiga_donor", 0.05));
+    DT[12] = float(getd(profile, "veg_savanna_donor", 0.02));
+    DT[23] = float(getd(profile, "veg_oasis_donor", 0.08));
+    DT[22] = float(getd(profile, "veg_delta_donor", 0.06));
+    DT[24] = float(getd(profile, "veg_salt_flat_donor", -0.03));
+
+    std::vector<float> deltas(size_t(n), 0.0f);
+    for (int i = 0; i < n; ++i) {
+        const uint8_t t = TERR[i];
+        const float donor = (t < 26) ? DT[t] : 0.0f;
+        if (donor == 0.0f) continue;
+        double elev_factor = 1.0 - double(E[i]) * veg_elev_decay;
+        if (elev_factor < 0.1) elev_factor = 0.1;
+        else if (elev_factor > 1.0) elev_factor = 1.0;
+        const float donor_eff = float(double(donor) * elev_factor);
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && !pk_is_water_terrain(TERR[ni])) {
+                deltas[size_t(ni)] += donor_eff;
+            }
+        }
+    }
+    int vegetation_feedback_touched = 0;
+    for (int i : land) {
+        if (pk_is_water_terrain(TERR[i])) continue;
+        const float d = deltas[size_t(i)];
+        if (d != 0.0f) {
+            M[i] = float(pk_clamp01(double(M[i]) + double(d)));
+        }
+    }
+    for (int i : land) {
+        const uint8_t cur = TERR[i];
+        if (pk_is_water_terrain(cur) || cur == 6 || cur == 9 || pk_is_permanent_landform(cur)) continue;
+        const double temp = pk_clamp01(pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(E[i]));
+        const uint8_t nt = pk_decide_terrain(double(E[i]), temp, double(M[i]), sea_level);
+        if (nt != cur) {
+            TERR[i] = nt;
+            ++vegetation_feedback_touched;
+        }
+    }
+
+    int shrubland_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (pk_is_water_terrain(t)) continue;
+        if (!(t == 3 || t == 14 || t == 12 || t == 2)) continue;
+        if (pk_is_permanent_landform(t)) continue;
+        const double lh = land_h(i);
+        if (lh > 0.30) continue;
+        const double temp = pk_compute_temperature(row_norm(i), E[i]);
+        if (temp < 0.50) continue;
+        if (M[i] < 0.25f || M[i] > 0.40f) continue;
+        bool has_sea = false;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && (TERR[ni] == 0 || TERR[ni] == 1)) { has_sea = true; break; }
+        }
+        if (has_sea) {
+            TERR[i] = 15;
+            ++shrubland_touched;
+        }
+    }
+
+    int mangrove_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (pk_is_water_terrain(t)) continue;
+        if (t == 6 || t == 9 || t == 8 || t == 10) continue;
+        if (pk_is_permanent_landform(t)) continue;
+        if (land_h(i) > 0.05) continue;
+        const double temp = pk_compute_temperature(row_norm(i), E[i]);
+        if (temp < 0.65) continue;
+        bool coast_nb = false;
+        bool swamp_nb = false;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni < 0) continue;
+            if (TERR[ni] == 1) coast_nb = true;
+            else if (TERR[ni] == 10) swamp_nb = true;
+        }
+        if (coast_nb && (RIV[i] != 0 || swamp_nb)) {
+            TERR[i] = 16;
+            ++mangrove_touched;
+        }
+    }
+
+    int glacier_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (!(t == 9 || t == 8)) continue;
+        const double temp = pk_compute_temperature(row_norm(i), E[i]);
+        if (temp >= 0.05) continue;
+        bool coastal = false;
+        if (land_h(i) < 0.20) {
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni >= 0 && (TERR[ni] == 0 || TERR[ni] == 1 || TERR[ni] == 20)) {
+                    coastal = true;
+                    break;
+                }
+            }
+        }
+        if (coastal || land_h(i) > 0.65) {
+            TERR[i] = 17;
+            ++glacier_touched;
+        }
+    }
+
+    int swamp_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (pk_is_water_terrain(t) || t == 6 || t == 9 || t == 8) continue;
+        if (pk_is_permanent_landform(t)) continue;
+        if (land_h(i) > 0.10 || M[i] < 0.75f) continue;
+        const double temp = pk_clamp01(pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(E[i]));
+        if (temp < 0.30) continue;
+        bool has_water = (RIV[i] != 0);
+        if (!has_water) {
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni >= 0 && pk_is_water_terrain(TERR[ni])) { has_water = true; break; }
+            }
+        }
+        if (has_water) {
+            TERR[i] = 10;
+            ++swamp_touched;
+        }
+    }
+
+    struct PkGenRng {
+        uint64_t state;
+        explicit PkGenRng(uint64_t seed_value) {
+            state = seed_value ? seed_value : 0x9e3779b97f4a7c15ull;
+        }
+        uint64_t next_u64() {
+            uint64_t x = state;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            state = x ? x : 0x9e3779b97f4a7c15ull;
+            return state;
+        }
+        int randi_range(int lo, int hi) {
+            if (hi <= lo) return lo;
+            return lo + int(next_u64() % uint64_t(hi - lo + 1));
+        }
+    };
+    std::vector<int> volcano_candidates;
+    for (int i : land) {
+        if (TERR[i] != 6) continue;
+        if (land_h(i) < volcano_min_land_h) continue;
+        volcano_candidates.push_back(i);
+    }
+    PkGenRng rng(uint64_t(seed + 7717) ^ 0xa0761d6478bd642full);
+    for (int i = int(volcano_candidates.size()) - 1; i > 0; --i) {
+        const int j = rng.randi_range(0, i);
+        std::swap(volcano_candidates[size_t(i)], volcano_candidates[size_t(j)]);
+    }
+    std::vector<int> volcano_placed;
+    for (int cand : volcano_candidates) {
+        if (int(volcano_placed.size()) >= max_volcanoes) break;
+        bool ok = true;
+        for (int p : volcano_placed) {
+            if (cube_distance(cand, p) < volcano_min_dist) { ok = false; break; }
+        }
+        if (!ok) continue;
+        VOLC[cand] = 1;
+        volcano_placed.push_back(cand);
+    }
+
+    int delta_touched = 0;
+    for (int i : land) {
+        if (pk_is_water_terrain(TERR[i]) || RIV[i] == 0 || pk_is_permanent_landform(TERR[i])) continue;
+        if (land_h(i) > 0.08) continue;
+        bool ocean_nb = false;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && (TERR[ni] == 0 || TERR[ni] == 1)) { ocean_nb = true; break; }
+        }
+        if (ocean_nb) {
+            TERR[i] = 22;
+            ++delta_touched;
+        }
+    }
+
+    int oasis_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (pk_is_water_terrain(t) || pk_is_permanent_landform(t)) continue;
+        if (t == 6 || t == 9 || t == 8 || t == 17) continue;
+        if (BM[i] > 0.30f) continue;
+        if (pk_compute_temperature(row_norm(i), E[i]) < 0.40f) continue;
+        bool has_water = (RIV[i] != 0);
+        if (!has_water) {
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni >= 0 && TERR[ni] == 18) { has_water = true; break; }
+            }
+        }
+        if (has_water) {
+            if (M[i] < 0.55f) M[i] = 0.55f;
+            TERR[i] = 23;
+            ++oasis_touched;
+        }
+    }
+
+    int salt_flat_touched = 0;
+    for (int i : land) {
+        if (TERR[i] != 7) continue;
+        if (land_h(i) > 0.12) continue;
+        bool endorheic = (RIV[i] == 0);
+        if (endorheic) {
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni >= 0 && (RIV[ni] != 0 || pk_is_water_terrain(TERR[ni]))) {
+                    endorheic = false;
+                    break;
+                }
+            }
+        }
+        if (endorheic) {
+            TERR[i] = 24;
+            ++salt_flat_touched;
+        }
+    }
+
+    int badlands_touched = 0;
+    for (int i : land) {
+        if (TERR[i] != 7) continue;
+        float min_e = E[i];
+        float max_e = E[i];
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni < 0) continue;
+            min_e = std::min(min_e, E[ni]);
+            max_e = std::max(max_e, E[ni]);
+        }
+        if ((max_e - min_e) >= 0.025f) {
+            TERR[i] = 25;
+            ++badlands_touched;
+        }
+    }
+
+    int reef_touched = 0;
+    int kelp_touched = 0;
+    int pelagic_touched = 0;
+    for (int i = 0; i < n; ++i) {
+        const uint8_t t = TERR[i];
+        if (t != 0 && t != 1) continue;
+        const double temp = pk_compute_temperature(row_norm(i), E[i]);
+        bool has_land_neighbor = false;
+        bool has_river_outlet_neighbor = false;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni < 0) continue;
+            if (!pk_is_water_terrain(TERR[ni])) {
+                has_land_neighbor = true;
+                if (RIV[ni] != 0) {
+                    has_river_outlet_neighbor = true;
+                    break;
+                }
+            }
+        }
+        const float up = (ocean_enabled && UP != nullptr) ? UP[i] : 0.0f;
+        const double widen = (has_land_neighbor && up > 0.4f) ? 0.08 : 0.0;
+        if (has_land_neighbor) {
+            if (temp > (0.60 - widen) && !has_river_outlet_neighbor && t == 1) {
+                TERR[i] = 19;
+                ++reef_touched;
+                continue;
+            }
+            if (temp >= (0.30 - widen) && temp <= (0.55 + widen) && t == 1) {
+                TERR[i] = 21;
+                ++kelp_touched;
+                continue;
+            }
+        }
+        if (ocean_enabled && !has_land_neighbor && t == 0 && up > 0.6f) {
+            COV[i] = 6;
+            ++pelagic_touched;
+        }
+    }
+
+    for (int i = 0; i < n; ++i) {
+        sync_axes(i);
+    }
+
+    int water_count = 0;
+    int volcano_count = 0;
+    for (int i = 0; i < n; ++i) {
+        if (IW[i]) ++water_count;
+        if (VOLC[i]) ++volcano_count;
+    }
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    out["rc"] = 0;
+    out["status"] = String("completed");
+    out["path"] = String("gdext");
+    out["fallback"] = false;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["fail_stage"] = String();
+    out["published_to_slot"] = false;
+    out["n_cells"] = n;
+    out["width"] = width;
+    out["height"] = height;
+    out["seed"] = seed;
+    out["water_count"] = water_count;
+    out["land_count"] = n - water_count;
+    out["lake_count"] = lake_count;
+    out["river_count"] = river_count;
+    out["volcano_count"] = volcano_count;
+    out["elapsed_ms"] = elapsed_ms;
+    out["native_ms"] = elapsed_ms;
+    out["compute_ms"] = elapsed_ms;
+    out["generation_progress"] = 1.0;
+
+    Dictionary stage_counts;
+    stage_counts["rain_shadow"] = rain_shadow_touched;
+    stage_counts["redecide"] = redecide_touched;
+    stage_counts["river_ecology"] = river_ecology_touched;
+    stage_counts["vegetation_feedback"] = vegetation_feedback_touched;
+    stage_counts["shrubland"] = shrubland_touched;
+    stage_counts["mangrove"] = mangrove_touched;
+    stage_counts["glacier"] = glacier_touched;
+    stage_counts["swamp"] = swamp_touched;
+    stage_counts["delta"] = delta_touched;
+    stage_counts["oasis"] = oasis_touched;
+    stage_counts["salt_flat"] = salt_flat_touched;
+    stage_counts["badlands"] = badlands_touched;
+    stage_counts["reef"] = reef_touched;
+    stage_counts["kelp"] = kelp_touched;
+    stage_counts["pelagic_bloom"] = pelagic_touched;
+    out["stage_counts"] = stage_counts;
+    out["river_flow_threshold"] = double(river_threshold);
+
+    out["q_arr"] = q_arr;
+    out["r_arr"] = r_arr;
+    out["s_arr"] = s_arr;
+    out["elevation_arr"] = elevation_arr;
+    out["moisture_arr"] = moisture_arr;
+    out["base_moisture_arr"] = base_moisture_arr;
+    out["temp_arr"] = temp_arr;
+    out["temp_baseline_arr"] = temp_baseline_arr;
+    out["temp_30d_arr"] = temp_30d_arr;
+    out["temp_365d_arr"] = temp_365d_arr;
+    out["temp_anomaly_arr"] = temp_anomaly_arr;
+    out["thermal_energy_arr"] = thermal_energy_arr;
+    out["cell_lat_norm_arr"] = cell_lat_norm_arr;
+    out["temp_baseline_year_arr"] = temp_baseline_year_arr;
+    out["snow_cover_arr"] = snow_cover_arr;
+    out["terrain_arr"] = terrain_arr;
+    out["base_terrain_arr"] = base_terrain_arr;
+    out["landform_arr"] = landform_arr;
+    out["base_landform_arr"] = base_landform_arr;
+    out["vegetation_arr"] = vegetation_arr;
+    out["base_vegetation_arr"] = base_vegetation_arr;
+    out["cover_arr"] = cover_arr;
+    out["is_water_arr"] = is_water_arr;
+    out["has_river_arr"] = has_river_arr;
+    out["has_volcano_arr"] = has_volcano_arr;
+    out["ema_initialized_arr"] = ema_initialized_arr;
+    if (upwelling_arr.size() == n) out["upwelling_strength_arr"] = upwelling_arr;
+    return out;
+}
+
+Dictionary DCWorldExt::_run_native_generation_publish_pass(
+    int seed,
+    const Dictionary &cfg,
+    const Dictionary &profile,
+    const Dictionary &budget) {
+    Dictionary out;
+    out["rc"] = -1;
+    out["status"] = String("failed");
+    out["path"] = String("gdscript_fallback");
+    out["fallback"] = true;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["fail_stage"] = String();
+    out["seed"] = seed;
+    out["has_config"] = !cfg.is_empty();
+    out["has_profile"] = !profile.is_empty();
+    out["implemented"] = true;
+    out["published_to_slot"] = false;
+    out["published_slots"] = Array();
+    out["n_cells"] = 0;
+    out["elapsed_ms"] = -1.0;
+    out["native_ms"] = -1.0;
+    out["compute_ms"] = 0.0;
+    out["flush_ms"] = 0.0;
+    out["generation_progress"] = 0.0;
+    if (!budget.is_empty()) {
+        out["budget"] = budget.duplicate(true);
+    }
+
+    auto fail = [&](const String &why, const String &stage = String("native_generation_publish")) -> Dictionary {
+        out["fallback_reason"] = why;
+        out["reason"] = why;
+        out["fail_stage"] = stage;
+        _native_generation_report = out.duplicate(true);
+        return out;
+    };
+
+    if (!_bound || _map_data == nullptr) {
+        return fail("not_bound", "bind_map_data");
+    }
+
+    int n_cells = int(cfg.get("cell_count", 0));
+    if (n_cells <= 0) {
+        n_cells = _native_world_cell_count;
+    }
+    if (n_cells <= 0) {
+        n_cells = _entity_count;
+    }
+
+    struct RequiredSlot {
+        const char *name;
+        SlotDType dtype;
+        int sid = -1;
+    };
+    RequiredSlot req[] = {
+        {"cell_lat_norm", SlotDType::F32, -1},
+        {"cell_elevation", SlotDType::F32, -1},
+        {"cell_temp_baseline_year", SlotDType::F32, -1},
+        {"cell_temp", SlotDType::F32, -1},
+        {"cell_temp_baseline", SlotDType::F32, -1},
+        {"cell_temp_30d", SlotDType::F32, -1},
+        {"cell_temp_365d", SlotDType::F32, -1},
+        {"cell_temp_anomaly", SlotDType::F32, -1},
+        {"cell_thermal_energy", SlotDType::F32, -1},
+        {"cell_terrain", SlotDType::U8, -1},
+        {"cell_is_water", SlotDType::U8, -1},
+        {"cell_ema_initialized", SlotDType::U8, -1},
+    };
+
+    for (RequiredSlot &r : req) {
+        r.sid = component_id(StringName(r.name));
+        if (r.sid < 0 || r.sid >= _slots.size()) {
+            String msg = String("missing_slot: ") + String(r.name);
+            return fail(msg, "slot_lookup");
+        }
+        const Slot &s = _slots.write[r.sid];
+        if (s.dtype != r.dtype) {
+            String msg = String("slot_dtype_mismatch: ") + String(r.name);
+            return fail(msg, "slot_dtype");
+        }
+        const int sz = (r.dtype == SlotDType::F32) ? s.arr_f32.size() : s.arr_u8.size();
+        if (n_cells <= 0) {
+            n_cells = sz;
+        }
+        if (sz != n_cells) {
+            String msg = String("slot_size_mismatch: ") + String(r.name)
+                + String(" size=") + String::num_int64(sz)
+                + String(" expected=") + String::num_int64(n_cells);
+            return fail(msg, "slot_size");
+        }
+    }
+    if (n_cells <= 0) {
+        return fail("empty_world", "slot_size");
+    }
+
+    auto sid_of = [&](const char *name) -> int {
+        for (const RequiredSlot &r : req) {
+            if (std::strcmp(r.name, name) == 0) {
+                return r.sid;
+            }
+        }
+        return -1;
+    };
+
+    const int sid_lat = sid_of("cell_lat_norm");
+    const int sid_elev = sid_of("cell_elevation");
+    const int sid_temp_year = sid_of("cell_temp_baseline_year");
+    const int sid_temp = sid_of("cell_temp");
+    const int sid_temp_baseline = sid_of("cell_temp_baseline");
+    const int sid_temp_30d = sid_of("cell_temp_30d");
+    const int sid_temp_365d = sid_of("cell_temp_365d");
+    const int sid_temp_anom = sid_of("cell_temp_anomaly");
+    const int sid_thermal = sid_of("cell_thermal_energy");
+    const int sid_terrain = sid_of("cell_terrain");
+    const int sid_is_water = sid_of("cell_is_water");
+    const int sid_ema = sid_of("cell_ema_initialized");
+
+    const float * const __restrict LAT = _slots.write[sid_lat].arr_f32.ptr();
+    const float * const __restrict ELEV = _slots.write[sid_elev].arr_f32.ptr();
+    const uint8_t * const __restrict TERR = _slots.write[sid_terrain].arr_u8.ptr();
+    float * const __restrict TEMP_YEAR = _slots.write[sid_temp_year].arr_f32.ptrw();
+    float * const __restrict TEMP = _slots.write[sid_temp].arr_f32.ptrw();
+    float * const __restrict TEMP_BASE = _slots.write[sid_temp_baseline].arr_f32.ptrw();
+    float * const __restrict TEMP_30D = _slots.write[sid_temp_30d].arr_f32.ptrw();
+    float * const __restrict TEMP_365D = _slots.write[sid_temp_365d].arr_f32.ptrw();
+    float * const __restrict TEMP_ANOM = _slots.write[sid_temp_anom].arr_f32.ptrw();
+    float * const __restrict THERMAL = _slots.write[sid_thermal].arr_f32.ptrw();
+    uint8_t * const __restrict IS_WATER = _slots.write[sid_is_water].arr_u8.ptrw();
+    uint8_t * const __restrict EMA = _slots.write[sid_ema].arr_u8.ptrw();
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    const auto tc0 = std::chrono::high_resolution_clock::now();
+    int water_count = 0;
+    for (int i = 0; i < n_cells; ++i) {
+        const float ny = LAT[i];
+        const float elev = ELEV[i];
+        const float year = float(pk_clamp01(pk_lat_temp_bell((double(ny) - 0.5) * 2.0)));
+        const float boot_temp = pk_compute_temperature(double(ny), double(elev));
+        const uint8_t water = pk_is_water_terrain(TERR[i]) ? uint8_t(1) : uint8_t(0);
+
+        TEMP_YEAR[i] = year;
+        TEMP[i] = boot_temp;
+        TEMP_BASE[i] = boot_temp;
+        TEMP_30D[i] = boot_temp;
+        TEMP_365D[i] = boot_temp;
+        TEMP_ANOM[i] = 0.0f;
+        THERMAL[i] = boot_temp;
+        EMA[i] = 1;
+        IS_WATER[i] = water;
+        water_count += int(water);
+    }
+    const auto tc1 = std::chrono::high_resolution_clock::now();
+
+    Array published_slots;
+    auto flush_publish = [&](int sid, const char *name) {
+        if (sid >= 0) {
+            _flush_slot_to_map(sid);
+            published_slots.append(String(name));
+        }
+    };
+    const auto tf0 = std::chrono::high_resolution_clock::now();
+    flush_publish(sid_temp_year, "cell_temp_baseline_year");
+    flush_publish(sid_temp, "cell_temp");
+    flush_publish(sid_temp_baseline, "cell_temp_baseline");
+    flush_publish(sid_temp_30d, "cell_temp_30d");
+    flush_publish(sid_temp_365d, "cell_temp_365d");
+    flush_publish(sid_temp_anom, "cell_temp_anomaly");
+    flush_publish(sid_thermal, "cell_thermal_energy");
+    flush_publish(sid_ema, "cell_ema_initialized");
+    flush_publish(sid_is_water, "cell_is_water");
+    const auto tf1 = std::chrono::high_resolution_clock::now();
+    const auto t1 = std::chrono::high_resolution_clock::now();
+
+    const double compute_ms = std::chrono::duration<double, std::milli>(tc1 - tc0).count();
+    const double flush_ms = std::chrono::duration<double, std::milli>(tf1 - tf0).count();
+    const double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    out["rc"] = 0;
+    out["status"] = String("completed");
+    out["path"] = String("gdext");
+    out["fallback"] = false;
+    out["fallback_reason"] = String();
+    out["reason"] = String();
+    out["fail_stage"] = String();
+    out["published_to_slot"] = true;
+    out["published_slots"] = published_slots;
+    out["published_temp_baseline_year"] = true;
+    out["n_cells"] = n_cells;
+    out["water_count"] = water_count;
+    out["land_count"] = n_cells - water_count;
+    out["elapsed_ms"] = elapsed_ms;
+    out["native_ms"] = elapsed_ms;
+    out["compute_ms"] = compute_ms;
+    out["flush_ms"] = flush_ms;
+    out["generation_progress"] = 1.0;
+    out["cfg_width"] = int(cfg.get("width", 0));
+    out["cfg_height"] = int(cfg.get("height", 0));
+    out["profile_keys"] = profile.keys();
+    _native_generation_report = out.duplicate(true);
     return out;
 }
 
@@ -21116,6 +22609,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_native_daily_report);
     ClassDB::bind_method(D_METHOD("get_native_shadow_diff_report"),
                          &DCWorldExt::get_native_shadow_diff_report);
+    ClassDB::bind_method(D_METHOD("run_native_world_generate_base_pass", "seed", "cfg", "profile"),
+                         &DCWorldExt::run_native_world_generate_base_pass);
+    ClassDB::bind_method(D_METHOD("run_native_world_generate_post_base_pass", "seed", "cfg", "profile", "input"),
+                         &DCWorldExt::run_native_world_generate_post_base_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),

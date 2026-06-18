@@ -165,6 +165,13 @@ public:
     godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
     godot::Dictionary get_native_daily_report() const;
     godot::Dictionary get_native_shadow_diff_report() const;
+    godot::Dictionary run_native_world_generate_base_pass(int seed,
+                                                          const godot::Dictionary &cfg,
+                                                          const godot::Dictionary &profile);
+    godot::Dictionary run_native_world_generate_post_base_pass(int seed,
+                                                               const godot::Dictionary &cfg,
+                                                               const godot::Dictionary &profile,
+                                                               const godot::Dictionary &input);
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
@@ -1716,6 +1723,8 @@ private:
     godot::Dictionary                        _native_daily_report;
     godot::Dictionary                        _native_shadow_diff_report;
     godot::Dictionary                        _native_generation_report;
+    godot::Dictionary                        _native_generation_cfg;
+    godot::Dictionary                        _native_generation_profile;
     bool                                      _native_generation_active = false;
     int                                       _native_generation_seed = 0;
 
@@ -1804,6 +1813,11 @@ private:
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
     void _flush_slot_to_map(int comp_id);
+    godot::Dictionary _run_native_generation_publish_pass(
+        int seed,
+        const godot::Dictionary &cfg,
+        const godot::Dictionary &profile,
+        const godot::Dictionary &budget);
 };
 
 } // namespace pk

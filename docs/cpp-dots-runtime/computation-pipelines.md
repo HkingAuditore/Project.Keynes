@@ -23,17 +23,45 @@
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload。 |
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
+| Native world generation base + post-base + publish（生成期） | ACTIVE：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish | `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、装配 HexCell/MapData、ext 未就绪 fallback。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
 
 > `cell_temp_baseline_year`（海冰 + 显示温度的运行期年 baseline）权威计算已收回 C++，见下文 "Temp baseline year bake" 节。注意它与 pass_a 每日写的运行期 `cell_temp_baseline`（辐射 + 热惯性积分）是两个不同字段。
+
+## Native world generation base + post-base + publish（生成期）
+
+主要入口：
+
+- `DCWorldExt::run_native_world_generate_base_pass`（无 bind 的 C++ base SoA 生成结果包）
+- `DCWorldExt::run_native_world_generate_post_base_pass`（无 bind 的 C++ post-base SoA 结果包）
+- `DCWorldExt::run_native_world_generate_pass`（单调用生成期 publish）
+- `DCWorldExt::start_native_generation` / `run_native_generation_slice` / `finish_native_generation`（同一 publish pass 的切片 API 外壳）
+- `map_generator.gd::_generate_cells_native_base`（ACTIVE 编排：发 cfg/profile 请求，接收 PackedArray 结果并装配 `MapData`）
+- `map_generator.gd::_publish_native_generation_from_slots`（bind 后 publish：`DCWorldExt.bind_map_data` + `configure_native_world` 后调用）
+
+当前迁移边界：`native_generation_mode=ACTIVE` 时，`MapGenerator.generate()` 先创建未绑定的 `DCWorldExt`，调用 `run_native_world_generate_base_pass(seed, cfg, profile)`，由 C++ 直接生成基础地图 SoA 结果包：cube 坐标、elevation、moisture/base_moisture、初始 temperature、terrain/is_water、lat/temp_year、landform/vegetation/cover 等 PackedArrays。随后 `run_native_world_generate_post_base_pass(seed, cfg, profile, base_res)` 在 C++ 内完成湖泊 BFS、河流 flow accumulation、河岸/植被反馈、过渡生态、地标和水体变种；GDScript 只负责发送 cfg/profile 请求、校验返回数组尺寸，并把最终结果装配成 `MapData`/`HexCell`。如果 ext 缺失、方法缺失或结果非法，则回到旧 `_generate_cells` fallback。
+
+bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.init_soa_from_bake()` 和 `bake_lat_temp_year_lut()` 后，`DCWorldExt` 读取已绑定的 `cell_lat_norm`、`cell_elevation`、`cell_terrain` 等 slot，以 C++ SAME_SOURCE 公式重算并发布初始 runtime 字段。这一层用于 slot/MapData 同步和窄 fallback，不再代表完整基础生成算法。
+
+输出 slot：
+
+- `cell_temp_baseline_year`：`pk_lat_temp_bell((ny - 0.5) * 2)`。
+- `cell_temp` / `cell_temp_baseline` / `cell_temp_30d` / `cell_temp_365d` / `cell_thermal_energy`：`pk_compute_temperature(ny, elevation)` 冷启动值。
+- `cell_temp_anomaly`：0。
+- `cell_ema_initialized`：1。
+- `cell_is_water`：由 `pk_is_water_terrain(cell_terrain)` 派生。
+
+发布契约：C++ 写 slot 后逐项 `_flush_slot_to_map` 回 `MapData`，返回 `path=gdext`、`published_to_slot=true`、`published_slots`、`n_cells`、`compute_ms`、`flush_ms`、`elapsed_ms`。GDScript wrapper 成功后调用 `flush_pending_mark_dirty_all()`，并重绑 GDScript `DCWorld`，避免 C++ flush 后 `MapData` PackedArray reseat 而 DataCore GDScript world 仍持有旧引用。
+
+Fallback：未 bind、缺 slot、slot dtype/size 不匹配时返回 `path=gdscript_fallback`、`fallback=true`、`fallback_reason`。此时保留 `map.bake_lat_temp_year_lut()` 与原 GDScript 生成期 SoA 值，并继续调用专用 `run_temp_baseline_year_bake` 作为更窄的 C++ baseline fallback。
 
 ## Temp baseline year bake（生成期 cell_temp_baseline_year）
 
 主要入口：
 
 - `DCWorldExt::run_temp_baseline_year_bake`（C++ 权威）
-- `map_generator.gd::_bake_temp_baseline_year_native`（编排：DCWorldExt bind 后调一次）
+- `map_generator.gd::_bake_temp_baseline_year_native`（窄兜底：native generation publish 失败后调一次）
 - `map_data.gd::bake_lat_temp_year_lut`（GDScript fallback + 几何量 `cell_lat_norm` 烘焙）
 
 背景：`cell_temp_baseline_year`（每 cell 年均纬度温度钟形）是海冰判定与显示温度的运行期 baseline，被 C++ pass_a（`TEMP_YEAR_BASE`）、GDScript pass-A fallback、`climate_daily_system`、debug overlay 共同消费。它原本由 GDScript `bake_lat_temp_year_lut` 就地 `pow(cos(lat·π/2), exp)` 烤出来再经 `refresh_slots_from_map` 推给 slot——仿真量的权威落在 GDScript，逼着 GDScript / C++ / Shader 三处镜像同一条 `lat_temp_bell`。
@@ -41,9 +69,10 @@
 链路（temp-baseline-authority-2026-06 之后）：
 
 1. 生成期 `bake_lat_temp_year_lut` 烤 `cell_lat_norm`（依赖地图几何 `cube_row_norm`，权威留在 GDScript），并用 `DCClimateMath.lat_temp_bell_from_ny` 填一份 `temp_baseline_year` 作为 **fallback**。
-2. `_data_core_world_ext` bind + `configure_native_world` 完成后，`_bake_temp_baseline_year_native` 把 `cell_lat_norm_arr` 作为 `lat_norm` knob 传入 `run_temp_baseline_year_bake`。
-3. C++ 用唯一实现 `pk_lat_temp_bell` 算 `temp = clamp01(bell((ny-0.5)·2))` 写满 `cell_temp_baseline_year` slot，`_flush_slot_to_map` 回 `MapData.temp_baseline_year_arr`，返回 `path=gdext / published_to_slot=true / n_cells / elapsed_ms`。
-4. ext 未编译 / 未 bind / 缺 slot / 缺 knob → 返回 `fallback=true`，保留步骤 1 的 GDScript 值。
+2. `_data_core_world_ext` bind + `configure_native_world` 完成后，首选 `run_native_world_generate_pass` 发布包含 `cell_temp_baseline_year` 在内的生成期初始仿真 slots。
+3. 若 native generation publish 失败，`_bake_temp_baseline_year_native` 把 `cell_lat_norm_arr` 作为 `lat_norm` knob 传入 `run_temp_baseline_year_bake`，只补 `cell_temp_baseline_year` 这一个字段。
+4. C++ 用唯一实现 `pk_lat_temp_bell` 算 `temp = clamp01(bell((ny-0.5)·2))` 写满 `cell_temp_baseline_year` slot，`_flush_slot_to_map` 回 `MapData.temp_baseline_year_arr`，返回 `path=gdext / published_to_slot=true / n_cells / elapsed_ms`。
+5. ext 未编译 / 未 bind / 缺 slot / 缺 knob → 返回 `fallback=true`，保留步骤 1 的 GDScript 值。
 
 I/O：
 

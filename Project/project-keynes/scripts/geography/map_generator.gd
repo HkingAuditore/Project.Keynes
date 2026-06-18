@@ -989,6 +989,7 @@ var _native_daily_sim_job = null
 var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
 var _native_daily_last_result: Dictionary = {}
+var _native_generation_base_report: Dictionary = {}
 var _native_daily_shadow_probe_logged: bool = false
 # Phase A.2 unified fast tick：once-log + fallback once-warn。
 var _unified_fast_tick_first_log_done: bool = false
@@ -1075,12 +1076,18 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_season_round_slots_refresh_count = 0
 
 	var t_total := Time.get_ticks_msec()
-	var map := _generate_cells(cfg)
-	print("MapGenerator v7: per-cell %dms (%d cells)" % [Time.get_ticks_msec() - t_total, map.cell_count()])
+	var map := _generate_cells_native_base(cfg, effective_seed)
+	var native_post_base_used := map != null and _native_generation_post_base_ok()
+	var base_path := "gdext_base"
+	if map == null:
+		base_path = "gdscript"
+		map = _generate_cells(cfg)
+	print("MapGenerator v7: per-cell %dms (%d cells, path=%s)" % [Time.get_ticks_msec() - t_total, map.cell_count(), base_path])
 
 	# Milestone 1：generate 完成后从 cell.terrain + 上下文派生 landform / vegetation / cover
 	# 三轴。这一步必须在 _snapshot_base_state 之前，让基线快照能拿到三轴值。
-	_sync_axes_for_map(map, cfg)
+	if not native_post_base_used:
+		_sync_axes_for_map(map, cfg)
 
 	# 在玩法层 baking 之前快照"年均"基线，给 Phase 2 季节刷新做参考
 	_snapshot_base_state(map)
@@ -1318,10 +1325,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	#   走 GDScript 路径，不报 error（dev 机器上不一定每次都构建过 gdext）
 	# - 不注入 SUS.bind_world：weather / sus 子系统对此实例零感知，避免 weather
 	#   迁移连锁（接口集差异详见 plan/dots-roadmap-to-gdextension/architecture.md §7）
-	_data_core_world_ext = null
 	if dc_enabled:
 		if ClassDB.class_exists("DCWorldExt"):
-			var ext_obj: Object = ClassDB.instantiate("DCWorldExt")
+			var ext_obj: Object = _data_core_world_ext if _data_core_world_ext != null else ClassDB.instantiate("DCWorldExt")
 			if ext_obj != null and ext_obj is RefCounted:
 				_data_core_world_ext = ext_obj
 				var ext_bound: bool = bool(_data_core_world_ext.bind_map_data(map))
@@ -1341,12 +1347,17 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					if _baker != null and _baker.has_method("set_world_ext"):
 						_baker.set_world_ext(_data_core_world_ext)
 					_configure_native_world_context(map, world, cfg, hex_size)
-					# cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year
-					# （海冰 + 显示温度的运行期 baseline）权威计算归 C++。L1235 的
-					# bake_lat_temp_year_lut 已用 GDScript fallback 填好 cell_lat_norm +
-					# temp_baseline_year；ext 现已 bind，把 temp_baseline_year 交给 C++
-					# pk_lat_temp_bell 权威重算并 flush 回 MapData（ext 未就绪则保留 GDScript 值）。
-					_bake_temp_baseline_year_native(map)
+					# cpp-dots（native-generation-publish-2026-06）：生成期地图对象/拓扑仍由
+					# GDScript 编排，SoA/slot 初始仿真字段由 C++ publish 成权威，再 flush 回
+					# MapData。失败时保留 map.bake_lat_temp_year_lut 的 GDScript fallback。
+					var native_gen_ok: bool = _publish_native_generation_from_slots(map, cfg)
+					if not native_gen_ok:
+						# cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year
+						# （海冰 + 显示温度的运行期 baseline）权威计算归 C++。L1235 的
+						# bake_lat_temp_year_lut 已用 GDScript fallback 填好 cell_lat_norm +
+						# temp_baseline_year；ext 现已 bind，把 temp_baseline_year 交给 C++
+						# pk_lat_temp_bell 权威重算并 flush 回 MapData（ext 未就绪则保留 GDScript 值）。
+						_bake_temp_baseline_year_native(map)
 			else:
 				push_warning("[DataCore] ClassDB.instantiate(\"DCWorldExt\") returned null/non-RefCounted; gdext likely not loaded — climate C++ accel disabled")
 		else:
@@ -4844,6 +4855,281 @@ func _snapshot_base_state(map: MapData) -> void:
 
 # ─── 内部：per-cell 生成主流程 ───────────────────────────────────────────
 
+func _ensure_generation_world_ext() -> RefCounted:
+	if _data_core_world_ext != null:
+		return _data_core_world_ext
+	if not ClassDB.class_exists("DCWorldExt"):
+		return null
+	var ext_obj: Object = ClassDB.instantiate("DCWorldExt")
+	if ext_obj == null or not (ext_obj is RefCounted):
+		return null
+	_data_core_world_ext = ext_obj
+	return _data_core_world_ext
+
+
+func _native_generation_cfg_dict(cfg: MapConfig) -> Dictionary:
+	if cfg == null:
+		return {}
+	return {
+		"width": int(cfg.width),
+		"height": int(cfg.height),
+		"num_continents": int(cfg.num_continents),
+		"sea_level": float(cfg.sea_level),
+		"continent_size": float(cfg.continent_size),
+		"polar_ratio": float(cfg.polar_ratio),
+		"river_count": int(cfg.river_count),
+		"seed": int(cfg.seed),
+		"enable_ocean_heat_transport": bool(cfg.enable_ocean_heat_transport),
+	}
+
+
+func _native_generation_profile_dict() -> Dictionary:
+	var cp := _c()
+	if cp == null:
+		return {"native_generation_mode": 0}
+	var keys := [
+		"native_generation_mode",
+		"continent_warp_amp",
+		"dist_field_weight",
+		"noise_weight",
+		"ridge_boost_amp",
+		"meso_weight",
+		"offshore_amp",
+		"edge_falloff_start",
+		"edge_falloff_end",
+		"edge_falloff_depth",
+		"main_radius_min",
+		"main_radius_max",
+		"satellite_radius_min",
+		"satellite_radius_max",
+		"satellites_per_main",
+		"main_placement_min",
+		"main_placement_max",
+		"satellite_placement_min",
+		"satellite_placement_max",
+		"main_separation_factor",
+		"satellite_separation_factor",
+		"coastal_moisture_boost",
+		"orographic_boost",
+		"rain_shadow_threshold",
+		"rain_shadow_factor",
+		"rain_shadow_lookback",
+		"river_flow_percentile",
+		"veg_forest_donor",
+		"veg_swamp_donor",
+		"veg_grassland_donor",
+		"veg_desert_donor",
+		"veg_jungle_donor",
+		"veg_taiga_donor",
+		"veg_savanna_donor",
+		"veg_oasis_donor",
+		"veg_delta_donor",
+		"veg_salt_flat_donor",
+		"veg_feedback_elev_decay",
+		"max_volcanoes",
+		"volcano_min_dist",
+		"volcano_min_land_h",
+	]
+	var out: Dictionary = {}
+	for k in keys:
+		if cp.get(k) != null:
+			out[k] = cp.get(k)
+	return out
+
+
+func _native_generation_array_ok(res: Dictionary, key: String, n: int, type_id: int) -> bool:
+	var v = res.get(key, null)
+	if typeof(v) != type_id:
+		return false
+	return v.size() == n
+
+
+func get_native_generation_base_report() -> Dictionary:
+	return _native_generation_base_report.duplicate(true)
+
+
+func _native_generation_post_base_ok() -> bool:
+	var post = _native_generation_base_report.get("post_base", null)
+	return typeof(post) == TYPE_DICTIONARY \
+		and int(post.get("rc", -1)) == 0 \
+		and not bool(post.get("fallback", true))
+
+
+# native generation ACTIVE 路径：C++ 负责 base SoA + post-base 湖泊/河流/
+# 生态/地标后处理；GDScript 只发送请求、校验 PackedArray 并装配 HexCell。
+func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
+	var cp := _c()
+	if not _native_mode_is_active(cp, "native_generation_mode"):
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "gdscript",
+			"fallback_reason": "native_generation_mode_not_active",
+		}
+		return null
+	var ext := _ensure_generation_world_ext()
+	if ext == null or not ext.has_method("run_native_world_generate_base_pass"):
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "gdscript",
+			"fallback_reason": "missing_run_native_world_generate_base_pass",
+		}
+		return null
+
+	var cfg_dict := _native_generation_cfg_dict(cfg)
+	var profile_dict := _native_generation_profile_dict()
+	var res: Dictionary = ext.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)
+	_native_generation_base_report = res.duplicate(true)
+	if int(res.get("rc", -1)) != 0 or bool(res.get("fallback", true)):
+		var reason := String(res.get("fallback_reason", res.get("reason", "unknown")))
+		push_warning("[native_generation/base] fallback (%s); 使用 GDScript _generate_cells" % reason)
+		return null
+	var n: int = int(res.get("n_cells", 0))
+	var expected_n: int = int(cfg.width) * int(cfg.height)
+	if n <= 0 or n != expected_n:
+		push_warning("[native_generation/base] bad n_cells=%d expected=%d; fallback" % [n, expected_n])
+		return null
+	var required := {
+		"q_arr": TYPE_PACKED_INT32_ARRAY,
+		"r_arr": TYPE_PACKED_INT32_ARRAY,
+		"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
+		"landform_arr": TYPE_PACKED_BYTE_ARRAY,
+		"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
+		"cover_arr": TYPE_PACKED_BYTE_ARRAY,
+	}
+	for key in required.keys():
+		if not _native_generation_array_ok(res, key, n, int(required[key])):
+			push_warning("[native_generation/base] bad array %s; fallback" % key)
+			return null
+
+	var final_res: Dictionary = res
+	var post_base_ok: bool = false
+	if ext.has_method("run_native_world_generate_post_base_pass"):
+		var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
+		var report := res.duplicate(true)
+		report["post_base"] = post_res.duplicate(true)
+		_native_generation_base_report = report
+		if int(post_res.get("rc", -1)) == 0 and not bool(post_res.get("fallback", true)):
+			final_res = post_res
+			post_base_ok = true
+		else:
+			var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
+			push_warning("[native_generation/post_base] fallback (%s); C++ base 后使用 GDScript 后处理" % reason)
+	else:
+		var report_missing := res.duplicate(true)
+		report_missing["post_base"] = {
+			"rc": -1,
+			"path": "gdscript",
+			"fallback_reason": "missing_run_native_world_generate_post_base_pass",
+		}
+		_native_generation_base_report = report_missing
+
+	var map := _assemble_native_generation_map(final_res, cfg)
+	if map == null:
+		push_warning("[native_generation] final result invalid; fallback to GDScript _generate_cells")
+		return null
+	if not post_base_ok:
+		_run_post_base_generation_passes(map, cfg, true)
+	print("[native_generation/base] path=gdext algorithm=%s n=%d native_ms=%.3f water=%d land=%d"
+		% [
+			String(res.get("native_algorithm", "unknown")),
+			n,
+			float(res.get("native_ms", res.get("elapsed_ms", 0.0))),
+			int(res.get("water_count", 0)),
+			int(res.get("land_count", 0)),
+		])
+	if post_base_ok:
+		print("[native_generation/post_base] path=gdext algorithm=%s n=%d native_ms=%.3f lakes=%d rivers=%d volcanoes=%d"
+			% [
+				String(final_res.get("native_algorithm", "unknown")),
+				int(final_res.get("n_cells", 0)),
+				float(final_res.get("native_ms", final_res.get("elapsed_ms", 0.0))),
+				int(final_res.get("lake_count", 0)),
+				int(final_res.get("river_count", 0)),
+				int(final_res.get("volcano_count", 0)),
+			])
+	return map
+
+
+func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData:
+	var n: int = int(res.get("n_cells", 0))
+	if cfg == null or n <= 0 or n != int(cfg.width) * int(cfg.height):
+		return null
+	var required := {
+		"q_arr": TYPE_PACKED_INT32_ARRAY,
+		"r_arr": TYPE_PACKED_INT32_ARRAY,
+		"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
+		"landform_arr": TYPE_PACKED_BYTE_ARRAY,
+		"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
+		"cover_arr": TYPE_PACKED_BYTE_ARRAY,
+	}
+	for key in required.keys():
+		if not _native_generation_array_ok(res, key, n, int(required[key])):
+			push_warning("[native_generation/assemble] bad array %s" % key)
+			return null
+
+	var q_arr: PackedInt32Array = res["q_arr"]
+	var r_arr: PackedInt32Array = res["r_arr"]
+	var elevation_arr: PackedFloat32Array = res["elevation_arr"]
+	var moisture_arr: PackedFloat32Array = res["moisture_arr"]
+	var base_moisture_arr: PackedFloat32Array = res["base_moisture_arr"]
+	var temp_arr: PackedFloat32Array = res["temp_arr"]
+	var temp_baseline_arr: PackedFloat32Array = res["temp_baseline_arr"] if res.has("temp_baseline_arr") else temp_arr
+	var temp_30d_arr: PackedFloat32Array = res["temp_30d_arr"] if res.has("temp_30d_arr") else temp_arr
+	var temp_365d_arr: PackedFloat32Array = res["temp_365d_arr"] if res.has("temp_365d_arr") else temp_arr
+	var terrain_arr: PackedByteArray = res["terrain_arr"]
+	var base_terrain_arr: PackedByteArray = res["base_terrain_arr"] if res.has("base_terrain_arr") else terrain_arr
+	var landform_arr: PackedByteArray = res["landform_arr"]
+	var base_landform_arr: PackedByteArray = res["base_landform_arr"] if res.has("base_landform_arr") else landform_arr
+	var vegetation_arr: PackedByteArray = res["vegetation_arr"]
+	var base_vegetation_arr: PackedByteArray = res["base_vegetation_arr"] if res.has("base_vegetation_arr") else vegetation_arr
+	var cover_arr: PackedByteArray = res["cover_arr"]
+	var has_river_arr: PackedByteArray = res["has_river_arr"] if res.has("has_river_arr") else PackedByteArray()
+	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
+	var map := MapData.new(cfg.width, cfg.height)
+	for i in range(n):
+		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
+		cell.elevation = float(elevation_arr[i])
+		cell.moisture = float(moisture_arr[i])
+		cell.base_moisture = float(base_moisture_arr[i])
+		cell.apply_terrain(int(terrain_arr[i]))
+		cell.base_terrain = int(base_terrain_arr[i]) if base_terrain_arr.size() == n else int(terrain_arr[i])
+		cell.landform = int(landform_arr[i])
+		cell.base_landform = int(base_landform_arr[i]) if base_landform_arr.size() == n else int(landform_arr[i])
+		cell.vegetation = int(vegetation_arr[i])
+		cell.base_vegetation = int(base_vegetation_arr[i]) if base_vegetation_arr.size() == n else int(vegetation_arr[i])
+		cell.cover = int(cover_arr[i])
+		cell.has_river = has_river_arr.size() == n and int(has_river_arr[i]) != 0
+		cell.has_volcano = has_volcano_arr.size() == n and int(has_volcano_arr[i]) != 0
+		cell._temperature_backing = float(temp_arr[i])
+		cell._temp_baseline_backing = float(temp_baseline_arr[i])
+		cell._temp_30d_mean_backing = float(temp_30d_arr[i])
+		cell._temp_365d_mean_backing = float(temp_365d_arr[i])
+		cell._temp_dev_from_annual_backing = 0.0
+		cell._ema_initialized = true
+		cell.current_state = {
+			"season": 1,
+			"temperature": float(temp_arr[i]),
+			"moisture": cell.base_moisture,
+			"snow_cover": 0.0,
+			"biome": int(cell.terrain),
+			"landform": int(cell.landform),
+			"vegetation": int(cell.vegetation),
+			"cover": int(cell.cover),
+			"weather": int(WeatherType.WT.CLEAR),
+			"weather_intensity": 0.0,
+		}
+		map.set_cell(cell)
+	return map
+
+
 func _generate_cells(cfg: MapConfig) -> MapData:
 	var map := MapData.new(cfg.width, cfg.height)
 
@@ -4885,16 +5171,22 @@ func _generate_cells(cfg: MapConfig) -> MapData:
 		var terrain := _decide_terrain(cell.elevation, temp, cell.moisture, cfg, true)
 		_set_cell_runtime_terrain(map, cell, terrain)
 
+	_run_post_base_generation_passes(map, cfg)
+	return map
+
+
+func _run_post_base_generation_passes(map: MapData, cfg: MapConfig, base_moisture_adjusted: bool = false) -> void:
 	# 5.5. Phase 13：水体连通分量 BFS — 不与地图边界 OCEAN 连通的水体 → LAKE
 	_detect_lakes(map, cfg)
 
-	# 6. 沿岸湿度补偿（沿海陆地更湿，内陆相对偏干）
-	_apply_coastal_moisture_boost(map)
+	if not base_moisture_adjusted:
+		# 6. 沿岸湿度补偿（沿海陆地更湿，内陆相对偏干）
+		_apply_coastal_moisture_boost(map)
 
-	# 6.5 v11 新增：山地正雨（迸风上坡加湿）——与 _compute_river_flow 同源公式，
-	# 使迸风山坡在 Humidity / Precipitation overlay 上明显比同纬度低地湿润。
-	# 必须在 base_moisture snapshot 之前调用，因为“迸风加湿”是地形决定的不变量。
-	_apply_orographic_moisture_boost(map)
+		# 6.5 v11 新增：山地正雨（迸风上坡加湿）——与 _compute_river_flow 同源公式，
+		# 使迸风山坡在 Humidity / Precipitation overlay 上明显比同纬度低地湿润。
+		# 必须在 base_moisture snapshot 之前调用，因为“迸风加湿”是地形决定的不变量。
+		_apply_orographic_moisture_boost(map)
 
 	# Phase 2 关键时机：snapshot "无季节、无雨影、无河岸生态" 的基线湿度。
 	# refresh_seasonal 每次都从这里出发，保证季节切换不累积。
@@ -4945,8 +5237,6 @@ func _generate_cells(cfg: MapConfig) -> MapData:
 
 	# 15. Phase 12：水体变种 REEF / KELP（只在 gen 时一次性判定；SEA_ICE 在 generate 后做）
 	_apply_reef_kelp_pass(map, cfg)
-
-	return map
 
 # ─── 噪声初始化 ──────────────────────────────────────────────────────────
 
@@ -6690,6 +6980,53 @@ func public_cube_row_norm(cell: HexCell) -> float:
 	if _last_cfg == null or cell == null:
 		return 0.5
 	return _cube_row_norm(cell, _last_cfg)
+
+# cpp-dots（native-generation-publish-2026-06）：地图生成 C++ DOTS 收口点。
+# ACTIVE 路径中 base/post-base 地图生成已由 C++ 结果包接管；这里是 bind 后
+# publish 层：DCWorldExt 读取已绑定 SoA slot，重算并发布初始 runtime climate slots
+#（temp/baseline/EMA/water mask 等），再 flush 回 MapData。
+# 返回 true 表示 C++ 已 published_to_slot，后续 temp_baseline_year 专用 bake 可跳过。
+func _publish_native_generation_from_slots(map: MapData, cfg: MapConfig) -> bool:
+	if map == null or cfg == null or _data_core_world_ext == null:
+		return false
+	if not _data_core_world_ext.has_method("run_native_world_generate_pass"):
+		return false
+	var cp := _c()
+	var cfg_dict: Dictionary = {
+		"cell_count": map.cell_count(),
+		"width": int(cfg.width),
+		"height": int(cfg.height),
+		"sea_level": float(cfg.sea_level),
+	}
+	var profile_dict: Dictionary = {
+		"native_generation_mode": int(cp.get("native_generation_mode")) if cp != null and cp.get("native_generation_mode") != null else 0,
+	}
+	var res: Dictionary = _data_core_world_ext.run_native_world_generate_pass(_last_seed, cfg_dict, profile_dict)
+	if int(res.get("rc", -1)) == 0 and bool(res.get("published_to_slot", false)):
+		# C++ flush 使用 MapData.set() reseat PackedArray；重绑 GDScript DCWorld，避免
+		# scheduler/facade 持有生成前的旧数组引用。
+		if _data_core_world != null and _data_core_world.has_method("rebind_map_data"):
+			var demo_tg_on: bool = false
+			if cp != null and "demo_thermal_gradient_enabled" in cp:
+				demo_tg_on = bool(cp.demo_thermal_gradient_enabled)
+			_data_core_world.rebind_map_data(map, demo_tg_on)
+			if _sus != null and _sus.has_method("bind_world"):
+				_sus.bind_world(_data_core_world)
+		if _data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
+			_data_core_world_ext.flush_pending_mark_dirty_all()
+		var published: Array = res.get("published_slots", [])
+		print("[native_generation] path=gdext n=%d published=%d native_ms=%.3f compute_ms=%.3f flush_ms=%.3f"
+			% [
+				int(res.get("n_cells", 0)),
+				published.size(),
+				float(res.get("native_ms", res.get("elapsed_ms", 0.0))),
+				float(res.get("compute_ms", 0.0)),
+				float(res.get("flush_ms", 0.0)),
+			])
+		return true
+	var reason: String = String(res.get("fallback_reason", res.get("reason", "unknown")))
+	push_warning("[native_generation] C++ publish fallback (%s); 保留 GDScript 生成期 SoA" % reason)
+	return false
 
 # cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year 的权威 C++ 烘焙。
 # 海冰 + 显示温度的运行期 baseline 是 lat_temp_bell(lat_norm) 的纯仿真量——计算权威归
