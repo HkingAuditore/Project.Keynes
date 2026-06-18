@@ -25,26 +25,35 @@ extends Resource
 
 # Weighting between distance-field (smooth radial) and multi-octave noise
 # when composing the final elevation. Should roughly sum to 1.0.
-@export var dist_field_weight: float = 0.55
-@export var noise_weight: float = 0.45
+# [宏观地形增强 2026-06-19] dist 0.55→0.58 略增大陆主体连贯度；noise 0.45→0.40 降中高频
+# 碎起伏，给低频 macro 让位（让大尺度结构读得出）。
+@export var dist_field_weight: float = 0.58
+@export var noise_weight: float = 0.40
 
 # Ridge boost for mountain-range spines.
 # [macro-relief 2026-06-19] 0.50→0.68：抬高山脉脊线，使大山系更高耸、海拔对比更强 →
 # 配合加强后的 hillshade，宏观山脉/山系在地图上更醒目；同时更多脊线格越过 mountain_line
 # 成为裸岩山地，山系面积更大、更连片。
-@export var ridge_boost_amp: float = 0.68
+# [宏观地形增强 2026-06-19] 0.68→0.80：山脉脊线更高耸，大山系在加强后的 macro 起伏上更醒目。
+@export var ridge_boost_amp: float = 0.80
 
 # Meso-scale noise weight (between continent and micro detail).
 # 注：2026-06-19 早些时候曾把它降到 0.12 想"消除破碎"，但用户反馈上一版（meso=0.40）的大陆
 # 形状（数块大陆 + 点缀岛屿/群岛）才是想要的，降权反而把大陆合并成单块。已回退到 0.40。
 # 真正"看不到河流/宏观地形"的根因是渲染层（河流 SDF 未上传 GPU、hillshade 偏弱），与此无关。
-@export var meso_weight: float = 0.40
+# [宏观地形增强 2026-06-19] 0.40→0.30：meso(乘 dist_field)是内陆中频"碎起伏"主因(实测大尺度
+# block 内起伏>块间起伏→宏观弱)。温和下调减少内陆破碎、显出大平原；幅度远小于此前失败的 0.12
+# (那会合并大陆)，配合 macro 大增仍保留多块大陆+群岛形状。
+@export var meso_weight: float = 0.30
 
 # [macro-relief 2026-06-19] 低频大尺度起伏权重（~4 周期/全宽）。meso(高频)负责海岸破碎/群岛
 # 不动；macro 叠加大尺度高地/盆地 → 出现"大平原/大高地/大盆地"，并放大汇水盆地 → 长干流+支流。
 # 实测根因：meso=400×高频把大陆切成 ~80 个微流域(最大汇水仅 66 格)，故河短、无宏观地形。
 # 调大=宏观起伏更强(更多大山/大盆，河更长)；过大会在内陆生成大片新内海。0 = 关闭。
-@export_range(0.0, 0.5, 0.01) var macro_relief_weight: float = 0.18
+# [宏观地形增强 2026-06-19] 0.18→0.32：大尺度起伏翻近一倍，成为相对 meso 的主导项(占比
+# 0.45→1.07)，直接制造大高原/大盆地/大平原洼地；负值大盆地若低于海平面且≥lake_min 还会自然
+# 成"少而大的湖"(兼顾需求1)。过大(>0.4)会生成过多内海，0.32 为折中。
+@export_range(0.0, 0.5, 0.01) var macro_relief_weight: float = 0.32
 
 # Offshore (sub-sea) terrain amplitude.
 # 注：2026-06-19 回退（曾降到 0.20）。近海隆起正是"点缀岛屿/群岛"的来源，用户想保留，恢复 0.45。
@@ -467,11 +476,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 
 # Low-frequency lake seed noise creates fewer, larger inland basins instead of
 # many one-cell ponds on large maps.
-@export var lake_seed_freq: float = 0.07
-@export var lake_seed_threshold: float = 0.62
+# [湖泊少而大 2026-06-19] freq 0.07→0.05：更低频→高噪声区更大更连续→单个湖盆更大(≥lake_min
+# 才会被 5b 回填逻辑保留为湖，否则填平)；threshold 0.62→0.60：让每个种子区足够大成块。
+@export var lake_seed_freq: float = 0.05
+@export var lake_seed_threshold: float = 0.60
 
 # Lake cell elevation depression and min-interior distance from coast.
-@export var lake_seed_depth: float = 0.04
+# [湖泊少而大 2026-06-19] 0.04→0.10：种子下沉更深，保留下来的湖盆更明确成"湖"(深蓝、不被
+# 误判为浅滩 COAST)，视觉上是真正的内陆湖而非低洼浅水。
+@export var lake_seed_depth: float = 0.10
 @export var lake_seed_min_interior: float = 0.12
 
 # ══════════════════════════════════════════════════════════════════════
