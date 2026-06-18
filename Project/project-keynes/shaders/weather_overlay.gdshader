@@ -1,16 +1,11 @@
 shader_type canvas_item;
 render_mode blend_mix;
 
-uniform sampler2D enum_atlas : filter_nearest, repeat_disable;
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 uniform sampler2D weather_field_tex : filter_nearest, repeat_disable;
 uniform bool weather_field_enabled = false;
-// Phase 1：vector_atlas（与 world_map.gdshader 共用的 RGBA8 纹理）。
-//   RG = ocean_current（[-1,1] mapped from [0,1]）—— overlay 不消费
-//   BA = wind_field   （[-1,1] mapped from [0,1]）—— 这里读它驱动 per-cell advection
-// 仅当 wind_field_enabled = true 时启用真实风场；fallback 走旧的 axis-only 路径。
-uniform sampler2D vector_atlas : filter_linear, repeat_disable;
-uniform bool wind_field_enabled = false;
+// vector_atlas 已退役；天气云漂移使用 axis-only fallback。
 const float NOISE_TEX_SCALE = 256.0;
 
 uniform vec2 world_origin = vec2(0.0);
@@ -19,7 +14,7 @@ uniform float world_time = 0.0;
 
 // 2026-05-19 hex-grounded-offset：一个 hex 的"直径"（wp 单位 = 2 * hex_size）。
 // 由 weather_layer.gd 在 setup() 时按 hex_size 写入。所有"邻域采样偏移"
-// 都按 hex_world_diameter 物理换算，避免和 enum_atlas / weather_field_tex
+// 都按 hex_world_diameter 物理换算，避免和 map_index_atlas / weather_field_tex
 // 的 hex 像素尺度发生频率共振导致六边形晶格化云团。
 uniform float hex_world_diameter = 38.0;
 
@@ -40,7 +35,7 @@ uniform float heatwave_distortion : hint_range(0.0, 1.0) = 0.6;
 // 0 = off（正常渲染）
 // 1 = 显示 uv（R=u, G=v）  期望：左下黑→右上黄的渐变填满地图
 // 2 = 显示 wp（按 world_size 归一化后） 期望：与模式 1 完全相同
-// 3 = 显示 enum_atlas.r（biome id / 255） 期望：与世界地图 biome 分布对齐
+// 3 = 显示 map_index_atlas.r（biome id / 255） 期望：与世界地图 biome 分布对齐
 // 4 = uv 越界高亮（红=u<0或>1, 绿=v<0或>1, 黄=两者都越界）
 uniform int debug_uv_mode : hint_range(0, 4) = 0;
 
@@ -170,7 +165,7 @@ float sample_high_cloud(vec2 wp, vec2 axis, float intensity) {
 
 // Phase 2：低云/山雾 —— 浮在地面、跟随地形堆叠在山地/丘陵上空，
 // 推进慢（0.3×）、强 domain warp（让雾团边缘极不规则）。
-// biome_weight 在调用方根据 enum_atlas 山地/丘陵 biome 给出（0-1）。
+// biome_weight 在调用方根据 map_index_atlas 山地/丘陵 biome 给出（0-1）。
 // 当 biome_weight 极低（平原/海洋）时返回 0，避免雾覆盖整张地图。
 float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	if (biome_weight <= 0.001 || intensity <= 0.001) {
@@ -218,11 +213,7 @@ float sample_cumulus(vec2 wp, vec2 axis, float intensity) {
 	return clamp(cloud * intensity, 0.0, 1.0);
 }
 
-// Phase 1：采样真实风场（vector_atlas BA 通道）。
-// 返回归一化风向 × 风速强度（[0,1]）。当 wind_field_enabled=false 时返回 ZERO，
-// 调用方应 fallback 到 axis-only 旧路径。
-//   ba ∈ [0,1] 编码了 [-1,1] 风分量；强度 = length，方向 = normalize。
-//   分别返回 dir 与 speed，让调用方根据天气类型自行加权 flow_speed。
+// vector_atlas 已退役；返回 ZERO 让调用方走 axis-only fallback。
 struct WindSample {
 	vec2 dir;
 	float speed;
@@ -232,16 +223,6 @@ WindSample sample_wind(vec2 uv) {
 	WindSample w;
 	w.dir = vec2(0.0);
 	w.speed = 0.0;
-	if (!wind_field_enabled) {
-		return w;
-	}
-	vec2 ba = texture(vector_atlas, uv).ba * 2.0 - 1.0;
-	float len = length(ba);
-	if (len <= 0.001) {
-		return w;
-	}
-	w.dir = ba / len;
-	w.speed = clamp(len, 0.0, 1.0);
 	return w;
 }
 
@@ -377,7 +358,7 @@ FrontField sample_weather_field(vec2 wp, vec2 uv) {
 	// 半径设计：2.8 hex 直径，跨过 ~3 个 hex 让相邻 hex 真正参与平滑；
 	// 角度按黄金角（~137.5°）分布去掉 6 边对称，半径在 0.85~1.15 抖动避免环带感。
 	// 旧实现用 0.0090~0.0125 uv 偏移 ≈ 1 个 hex，导致采样点几乎全落在自身 hex 内、
-	// 6 个对称位置又落在 6 个邻居中央 → enum_atlas/weather_field_tex（filter_nearest）
+	// 6 个对称位置又落在 6 个邻居中央 → map_index_atlas/weather_field_tex（filter_nearest）
 	// 永远只读到 hex-constant，从而 mountain_w / cloud_amount 仍然是 hex-阶跃，
 	// 加上 fbm jitter 后形成"云团轮廓 = 地块六边形"的晶格效果。
 	vec2 ring_uv_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
@@ -809,7 +790,7 @@ void fragment() {
 		vec2 wn = (wp - world_origin) / world_size;
 		COLOR = vec4(wn, 0.0, 1.0);
 	} else if (debug_uv_mode == 3) {
-		float b = texture(enum_atlas, uv).r;
+		float b = texture(map_index_atlas, uv).r;
 		COLOR = vec4(b, b, b, 1.0);
 	} else if (debug_uv_mode == 4) {
 		float ou = (uv.x < 0.0 || uv.x > 1.0) ? 1.0 : 0.0;
@@ -821,7 +802,7 @@ void fragment() {
 
 	// dramatic-fx：低雾不再仅限山地/丘陵——平原也给基础权重 0.35，让所有陆地
 	// 在浓雾天都能看到铺底雾气；山地/丘陵保留更高权重以维持"山雾更厚"的层次。
-	int biome = int(texture(enum_atlas, uv).r * 255.0 + 0.5);
+	int biome = int(texture(map_index_atlas, uv).r * 255.0 + 0.5);
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
 
@@ -831,10 +812,10 @@ void fragment() {
 	//   - 陆地 hex（即使是平原）→ 0.35 系数的 low_fog 厚云堆叠
 	//   - 紧邻的水 hex → 完全无 low_fog
 	//   云在陆海过渡线上一刀切，呈现出明显的 hex 海岸线分界（图1 红框就是这条）。
-	// 修复：邻域多点采样 enum_atlas，对每个采样点用相同的 biome → weight 映射，
+	// 修复：邻域多点采样 map_index_atlas，对每个采样点用相同的 biome → weight 映射，
 	//   加权平均得到**连续的 mountain_w_smoothed**；同时叠 fbm 抖动让等高线破碎。
 	//   并且去掉 `!is_water` 硬切——海上邻近陆地处保留少量 low_fog（雾从岸上飘出来）。
-	// 注：enum_atlas 是 filter_nearest 整数编码，邻域采样仍是离散的 biome id，
+	// 注：map_index_atlas 是 filter_nearest 整数编码，邻域采样仍是离散的 biome id，
 	//   但**加权平均后会产生连续过渡**（一个像素的邻域内陆地像素占比 = 该像素的"陆度"）。
 	vec2 land_offs[6] = vec2[6](
 		vec2(0.0, 0.0),
@@ -859,7 +840,7 @@ void fragment() {
 		// hex-grounded-offset：jitter 振幅 = 1.4 hex 直径，与采样圈尺度对齐。
 		vec2 uv_offset = land_offs[li] * land_ring_step + jj * 1.4 * land_ring_step;
 		vec2 s_uv = clamp(uv + uv_offset, vec2(0.0), vec2(1.0));
-		int bs = int(texture(enum_atlas, s_uv).r * 255.0 + 0.5);
+		int bs = int(texture(map_index_atlas, s_uv).r * 255.0 + 0.5);
 		bool s_water = (bs == B_OCEAN) || (bs == B_COAST) || (bs == B_LAKE)
 				|| (bs == B_REEF) || (bs == B_KELP) || (bs == B_SEA_ICE);
 		float bw = (bs == B_MOUNTAIN) ? 1.0

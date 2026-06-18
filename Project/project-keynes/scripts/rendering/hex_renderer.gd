@@ -47,12 +47,12 @@ extends Node2D
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
 # v6：flow_tex 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）。
-# baker 的 SDF_MAX_DIST_PX = 8 像素 ≈ 0.4 hex_size。
+# baker 的 SDF_MAX_DIST_PX = 5 像素，保持大尺度地图上河流为细线。
 # threshold_low=外圈 outline 起点，threshold_high=内圈主色完全。
 @export_group("Rivers")
 @export_range(0.0, 1.0, 0.01) var river_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var river_threshold_low: float = 0.55
-@export_range(0.0, 1.0, 0.01) var river_threshold_high: float = 0.85
+@export_range(0.0, 1.0, 0.01) var river_threshold_low: float = 0.62
+@export_range(0.0, 1.0, 0.01) var river_threshold_high: float = 0.90
 @export var river_color: Color = Color(0.30, 0.50, 0.68)
 @export var river_outline_color: Color = Color(0.16, 0.30, 0.45)
 
@@ -515,7 +515,7 @@ func begin_season_transition(start_phase: float) -> void:
 	_season_transition_mat = _shader_mat.duplicate() as ShaderMaterial
 	if _season_transition_mat == null:
 		return
-	_season_transition_mat.set_shader_parameter("enum_atlas", enum_snapshot)
+	_season_transition_mat.set_shader_parameter("map_index_atlas", enum_snapshot)
 	_season_transition_mat.set_shader_parameter("season_transition_overlay", true)
 	_season_transition_mat.set_shader_parameter("season_transition_progress", 0.0)
 	_season_transition_mat.set_shader_parameter("season_transition_softness", season_transition_softness)
@@ -562,28 +562,6 @@ func set_season_phase(phase: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(_season_phase)
 	)
-	# === Plan-C/sea-ice-render-source-unify 阶段 A diag (临时) ===
-	# 检查 season/uniform 推送 & 海冰单源数据通道（dyn_atlas_smooth.A）是否就绪。
-	# ice_state_atlas 仍打印作为旧通道在场监控（已不再是 shader 水路径主源）。
-	# Fix #4 (2026-06-15): mobile 上禁用，每行 print + 多次 RID/size 字符串化在
-	# Adreno 端是真实开销，60 FPS 下每秒 1 行累积 ~0.2ms/帧。
-	if not OS.has_feature("mobile") and Engine.get_process_frames() % 120 == 0:
-		var _ice_tex_str: String = "null"
-		if _world != null and _world.ice_state_tex != null:
-			_ice_tex_str = "size=%s rid=%s" % [str(_world.ice_state_tex.get_size()), str(_world.ice_state_tex.get_rid())]
-		var _dyn_smooth_str: String = "null"
-		if _world != null and _world.dyn_atlas_smooth_tex != null:
-			_dyn_smooth_str = "size=%s rid=%s" % [str(_world.dyn_atlas_smooth_tex.get_size()), str(_world.dyn_atlas_smooth_tex.get_rid())]
-		var _mat_ice: Object = null
-		var _mat_dyn_smooth: Object = null
-		if _shader_mat != null:
-			_mat_ice = _shader_mat.get_shader_parameter("ice_state_atlas")
-			_mat_dyn_smooth = _shader_mat.get_shader_parameter("dyn_atlas_smooth_atlas")
-		print("[plan-c/uni] frame=%d season_phase=%.3f season_temp_amp=%.3f world.dyn_atlas_smooth=%s shader.dyn_atlas_smooth=%s world.ice_state_tex=%s shader.ice_state_atlas=%s" % [
-			Engine.get_process_frames(), _season_phase, season_temp_amp,
-			_dyn_smooth_str, str(_mat_dyn_smooth),
-			_ice_tex_str, str(_mat_ice)])
-	# === end diag ===
 
 func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
@@ -1166,33 +1144,13 @@ func _apply_uniforms() -> void:
 	var sm := _shader_mat
 	var bounds := _world.world_bounds
 
-	# v9.atlas：height + enum/scalar/vector atlas + 共享 noise_tex。
+	# 主地图只保留 height/enum + cell-index LUT + 共享 noise_tex。
 	sm.set_shader_parameter("height_tex",   _world.height_tex)
-	sm.set_shader_parameter("enum_atlas",   _world.enum_atlas_tex)
-	sm.set_shader_parameter("scalar_atlas", _world.scalar_atlas_tex)
-	sm.set_shader_parameter("vector_atlas", _world.vector_atlas_tex)
-	sm.set_shader_parameter("vector_atlas_valid", _world.vector_atlas_tex != null)
-	sm.set_shader_parameter("dynamic_cell_atlas", _world.dynamic_cell_atlas_tex)
-	sm.set_shader_parameter("ecology_visual_atlas", _world.ecology_visual_atlas_tex)
-	# map-visual-overhaul-v1：主 shader 消费的是沿 hex 邻接 box-blur 后的 smooth 版本，
-	# 单点采样即可拿到跨 cell 平滑场（消除"颜色按 hex 块切"的硬阶梯）。
-	# 原 dynamic_cell_atlas 仍保留供调试 UI / info panel 消费。
-	sm.set_shader_parameter("dyn_atlas_smooth_atlas", _world.dyn_atlas_smooth_tex)
-	# DEPRECATED(plan-A sea-ice-render-source-unify): water_pipeline 已切换到
-	# dyn_atlas_smooth.A 单源（与 UI/info_panel 同源），ice_state_atlas 不再是
-	# 水路径数据源。本 uniform 仍绑定，原因：
-	#   1. hillshade_tod.gdshaderinc 当前还按 biome==B_SEA_ICE 派生岩面阴影
-	#      （阶段 C 任务 8 会改为读 sea_ice_fraction）；
-	#   2. weather_overlay.gdshader 仍引用 B_SEA_ICE 兼容兜底；
-	#   3. 调试 UI / info panel 兼容路径。
-	# 阶段 C 任务 10 完成后将彻底移除该绑定与 PHASE_ICE。
-	sm.set_shader_parameter("ice_state_atlas", _world.ice_state_tex)
+	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:
-		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
-	# 兼容旧调试/数据通道；主地图海冰视觉由 shader 按水温实时派生，不读它。
-	sm.set_shader_parameter("sea_ice_tex", _world.sea_ice_tex)
+		_weather_layer.set_vector_atlas_texture(null)
 	# Systemic Ocean Currents：仅 F6 高对比调试层采样；主路径不依赖它。
 	# 方案 0：默认不再每次新材质都绑 upwelling_tex（commit 路径已不烘焙它，绑过来就是 null）。
 	# 当 _ocean_current_debug=true 时 set_ocean_current_debug 已 lazy bake 并 set 一次；
@@ -1202,13 +1160,8 @@ func _apply_uniforms() -> void:
 	# v10.noise-pack：把共享 RGBA 噪声包喂给地形 shader，fbm(p,N) 全局单次采样。
 	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
 
-	# Cell-index 间接寻址（plan: cell-index atlas indirection）。静态索引图 + per-cell LUT。
-	# use_cell_indirection 仅在 flag 开启且纹理已烘焙时为 true；否则 shader 走旧 per-pixel atlas
-	# （逐像素 bit-identical）。LUT 为 null 时 set_shader_parameter 安全（未消费）。
-	var _indirect_ready: bool = DCFeatureFlags.cell_indirection_active() \
-			and _world.cell_index_tex != null and _world.enum_lut_tex != null
-	sm.set_shader_parameter("use_cell_indirection", _indirect_ready)
-	sm.set_shader_parameter("cell_index_tex", _world.cell_index_tex)
+	# Cell-index 间接寻址是唯一动态视觉路径。
+	var _indirect_ready: bool = _world.enum_atlas_tex != null and _world.enum_lut_tex != null
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("eco_lut", _world.eco_lut_tex)
@@ -1294,7 +1247,7 @@ func _apply_uniforms() -> void:
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size)
 		_weather_layer.set_weather_field_texture(null)
-		_weather_layer.set_vector_atlas_texture(_world.vector_atlas_tex)
+		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)
 	set_weather_fronts([])
 
@@ -1341,13 +1294,13 @@ func _apply_uniforms() -> void:
 #   season_color_lut[4]（春/夏/秋/冬叠乘色）
 #   anomaly_color_shift  （climate_anomaly 升高时的叠加色）
 # 一次性 push 到 shader 端的两个 uniform 数组：
-#   vegetation_season_lut[24*4] : 按 [veg*4 + season] 索引
-#   vegetation_anomaly_shift[24] : 按 [veg] 索引
+#   vegetation_season_lut[VEG_COUNT*4] : 按 [veg*4 + season] 索引（VEG_COUNT=28）
+#   vegetation_anomaly_shift[VEG_COUNT] : 按 [veg] 索引（VEG_COUNT=28）
 # 仅在 setup / _apply_uniforms 调用一次（植被资源不会运行时变化）。
 func _push_vegetation_season_lut() -> void:
 	if _shader_mat == null:
 		return
-	const VEG_COUNT := 24
+	const VEG_COUNT := 28
 	var lut := PackedVector4Array()
 	lut.resize(VEG_COUNT * 4)
 	var shifts := PackedVector4Array()
@@ -1402,10 +1355,10 @@ func _push_vegetation_season_lut() -> void:
 func set_biome_tex_only(world: WorldData) -> void:
 	if _shader_mat == null or world == null or world.enum_atlas_tex == null:
 		return
-	_shader_mat.set_shader_parameter("enum_atlas", world.enum_atlas_tex)
+	_shader_mat.set_shader_parameter("map_index_atlas", world.enum_atlas_tex)
 	# season 过渡材质若激活，也同步重绑（确保过渡覆盖层的 enum_atlas 不滞后）
 	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("enum_atlas", world.enum_atlas_tex)
+		_season_transition_mat.set_shader_parameter("map_index_atlas", world.enum_atlas_tex)
 
 func set_cover_tex_only(world: WorldData) -> void:
 	# Project.Keynes 把 biome / cover / vegetation / weather 共用一张 enum_atlas，
@@ -1448,6 +1401,11 @@ func debug_sea_ice_probe(cell) -> Dictionary:
 	report.sea_ice_fraction_cpu = float(cell.sea_ice_fraction)
 	if "terrain" in cell:
 		report.biome = int(cell.terrain)
+	report.reason = "sea ice visual source moved to dyn_lut.a; per-pixel probe retired"
+	report.ok = true
+	print("[sea-ice/probe] cell=%s frac_cpu=%.4f biome=%d %s" % [
+		str(cell), report.sea_ice_fraction_cpu, report.biome, report.reason])
+	return report
 	# 取该 cell 第一个 derived 像素的 dyn_atlas_smooth.A 字节
 	var pixels: PackedInt32Array = PackedInt32Array()
 	if not _world.cell_pixel_lists.is_empty() and _world.cell_pixel_lists.has(cell):

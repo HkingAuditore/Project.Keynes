@@ -55,6 +55,11 @@ enum VEG {
 	MARSH,                 # 草本湿地
 	KELP_FOREST,           # 海藻林（COAST + 凉温）
 	CORAL_REEF,            # 珊瑚礁（COAST + 暖海）
+	# ── terrain-overhaul 新增植被（id 24+，尾部追加保证旧下标稳定）──
+	CLOUD_FOREST,          # 云雾林（热带 / 亚热带高山迎风坡 + 常年云雾高湿）
+	MONSOON_FOREST,        # 季风林（热带季风带 + 干湿季分明的半落叶林）
+	SEAGRASS,              # 海草床（COAST 浅海软底 + 暖凉过渡，区别于 KELP/REEF）
+	PEAT_BOG,              # 泥炭沼（凉冷 + 极湿 + 厌氧泥炭积累的酸性沼泽）
 }
 
 # ─── 天气抗性表（Milestone: vegetation-survival-rebalance 方案 C） ────────

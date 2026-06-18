@@ -42,6 +42,10 @@ const _PROFILE_PATHS: Dictionary = {
 	21: "res://data/vegetation/marsh.tres",
 	22: "res://data/vegetation/kelp_forest.tres",
 	23: "res://data/vegetation/coral_reef.tres",
+	24: "res://data/vegetation/cloud_forest.tres",
+	25: "res://data/vegetation/monsoon_forest.tres",
+	26: "res://data/vegetation/seagrass.tres",
+	27: "res://data/vegetation/peat_bog.tres",
 }
 
 static var _cache: Dictionary = {}        # int (VEG) → VegetationProfile

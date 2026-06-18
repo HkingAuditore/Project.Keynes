@@ -178,7 +178,7 @@ const LANDFORM_NAMES: Array = [
 ]
 
 # TERRAIN id → BIOME_GROUP bucket。新增地形需要补一项；漏项 fallback 到 9。
-# 顺序与 TerrainType.TERRAIN 一一对应（OCEAN=0 ... BADLANDS=26）。
+# 顺序与 TerrainType.TERRAIN 一一对应（OCEAN=0 ... BADLANDS=25 ... MESA=30）。
 # 注：这里不用 PackedByteArray——GDScript 静态类型检查在跨脚本访问时无法
 # 解析以构造函数赋值的 const 成员（报 "Could not resolve external
 # class member"），改用普通 Array 字面量。
@@ -209,6 +209,11 @@ const TERRAIN_TO_BIOME_GROUP: Array = [
 	3,  # OASIS
 	7,  # SALT_FLAT
 	7,  # BADLANDS
+	7,  # COLD_DESERT（干旱组）
+	5,  # CHAPARRAL（硬叶灌丛 → 林灌组）
+	5,  # MOOR（泥炭湿原 → 湿生组）
+	4,  # FLOODPLAIN（冲积平原 → 平原组）
+	7,  # MESA（方山 → 干旱组）
 ]
 
 # TERRAIN id → LANDFORM bucket（同上，漏项 fallback 到 2 = 平原）。
@@ -239,6 +244,11 @@ const TERRAIN_TO_LANDFORM: Array = [
 	1,  # OASIS
 	2,  # SALT_FLAT
 	3,  # BADLANDS
+	2,  # COLD_DESERT（平原台地）
+	2,  # CHAPARRAL（平原/丘缓坡）
+	2,  # MOOR（低地湿原）
+	2,  # FLOODPLAIN（冲积平原）
+	3,  # MESA（高差台地 → 丘陵）
 ]
 
 # 工具：返回有序的 mode 列表（供 UI 下拉按此顺序生成）。

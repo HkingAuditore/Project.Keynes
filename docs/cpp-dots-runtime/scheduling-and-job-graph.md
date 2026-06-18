@@ -62,7 +62,7 @@ DCSystemScheduler unavailable / disabled
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
-| `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、stage-b。 | wrapper 委托 legacy job，内部可走 merged native。 |
+| `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job，内部可走 merged native；运行期水文是链内 stage。 |
 | `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。 |
 | `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | dynamic smooth atlas、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助。 |
 | `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | 仍受 gate 控制，未替代 legacy runtime authority。 |
@@ -120,6 +120,17 @@ Weather field 的 cell budget 来自 `weather_field_slice_cells()`，当前按
 `ClimateProfile.weather_field_slice_cells` clamp 到 `100..2400`。在 2400-cell
 地图上，若该值被压得太低，field solve/commit 会跨过多 tick，CSV 中会表现为
 天气生成、变化、消失频率偏慢；这属于切片 cadence 问题，不一定是分类规则问题。
+
+### `hydrology_discharge`
+
+`runtime_hydrology_enabled=true` 时，`weather_refresh` 的 sliced round 顺序为：
+
+```text
+weather_begin -> weather_solve -> weather_summary
+  -> hydrology_discharge -> weather_commit(stage_b)
+```
+
+这个 stage 不单独注册 `HydrologyDischargeSystem`，因为它依赖当天已经提交的 `weather_precip`，并且要在 stage-b 植被动态读取 `soil_moisture/water_balance_30d` 前完成。report 字段包括 `stage_name=hydrology_discharge`、`substage=route_full`、`path`、`published_to_slot`、`native_ms`、`compute_ms`、`flush_ms`、`refresh_ms`、`water_budget_error`、`river_discharge_p95/max`、`flood_count`。
 
 ### `must_run`
 

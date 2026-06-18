@@ -79,9 +79,17 @@ var weather_field_init_arr:   PackedByteArray   = PackedByteArray()
 
 # ─── B-full Step-2：风温耦合 anomaly + 河流标志（write 少 / read 多） ───
 # air_mass_temp_anomaly_arr: 由 map_generator._climate_pass_b 写，weather hot loop 读。
-# has_river_arr: 仅地图生成期写一次，运行期纯读；通过 rebuild_soa_from_cells 同步。
+# has_river_arr / river_*: 仅地图生成期写一次，Baker 读取方向和径流宽度。
 var air_mass_temp_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 var has_river_arr:             PackedByteArray   = PackedByteArray()
+var river_flow_arr:            PackedFloat32Array = PackedFloat32Array()
+var river_downstream_arr:      PackedInt32Array   = PackedInt32Array()
+var hydro_parent_arr:          PackedInt32Array   = PackedInt32Array()
+var river_discharge_arr:       PackedFloat32Array = PackedFloat32Array()
+var river_discharge_30d_arr:   PackedFloat32Array = PackedFloat32Array()
+var river_storage_arr:         PackedFloat32Array = PackedFloat32Array()
+var groundwater_storage_arr:   PackedFloat32Array = PackedFloat32Array()
+var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
 
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
@@ -480,6 +488,14 @@ func _alloc_soa(n: int) -> void:
 	weather_field_init_arr.resize(n)
 	air_mass_temp_anomaly_arr.resize(n)
 	has_river_arr.resize(n)
+	river_flow_arr.resize(n)
+	river_downstream_arr.resize(n)
+	hydro_parent_arr.resize(n)
+	river_discharge_arr.resize(n)
+	river_discharge_30d_arr.resize(n)
+	river_storage_arr.resize(n)
+	groundwater_storage_arr.resize(n)
+	surface_runoff_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -524,6 +540,7 @@ func rebuild_soa_from_cells() -> void:
 	if not _indices_built:
 		_build_indices()
 	var n: int = _cell_array.size()
+	var hydro_parent_seed: PackedInt32Array = hydro_parent_arr.duplicate()
 	_alloc_soa(n)
 	# size=1 单位的 cube_to_world 缓存：内层循环用 dx/dy 相对位移，常量比例对方向判定无影响。
 	for i in range(n):
@@ -577,6 +594,19 @@ func rebuild_soa_from_cells() -> void:
 		weather_field_init_arr[i] = (1 if c.weather_field_initialized else 0)
 		air_mass_temp_anomaly_arr[i] = c.air_mass_temp_anomaly
 		has_river_arr[i] = (1 if c.has_river else 0)
+		river_flow_arr[i] = c.river_flow
+		var downstream_idx: int = -1
+		if c.has_river_downstream:
+			var downstream_cell: HexCell = get_cell_by_cube(c.river_downstream)
+			downstream_idx = int(_cell_index.get(downstream_cell, -1)) if downstream_cell != null else -1
+		river_downstream_arr[i] = downstream_idx
+		var hydro_parent_idx: int = int(hydro_parent_seed[i]) if hydro_parent_seed.size() == n else -1
+		hydro_parent_arr[i] = hydro_parent_idx if hydro_parent_idx >= -1 and hydro_parent_idx < n else -1
+		river_discharge_arr[i] = maxf(0.0, river_flow_arr[i] if has_river_arr[i] != 0 else 0.0)
+		river_discharge_30d_arr[i] = river_discharge_arr[i]
+		river_storage_arr[i] = 0.0
+		groundwater_storage_arr[i] = 0.0
+		surface_runoff_arr[i] = 0.0
 		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
 		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
 		temp_season_offset_arr[i] = c.temp_season_offset

@@ -56,21 +56,8 @@ SurfaceParams compute_land_base_surface(
 	col = biome_hue_modulate(col, biome);
 	col *= procedural_biome_detail(biome, wp);
 
-	// LAND 1.2：河水 basecolor（含河岸边缘 fbm 软边）
-	// 60 FPS 优化（2026-06-15）：mobile 三档全用 scals.g（SETUP 已采样），不再额外 sample。
-	// 河岸 fbm 扰动只在桌面跑。
-	vec2 river_edge_warp = vec2(0.0);
-#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
-	if (visual_quality >= 1) {
-		river_edge_warp = vec2(
-			fbm(wp * 0.075 + vec2(7.0, -3.0), 1),
-			fbm(wp * 0.075 + vec2(-11.0, 5.0), 1)
-		) - 0.5;
-	}
-	float flow = texture(scalar_atlas, uv + river_edge_warp * 0.0024).g;
-#else
-	float flow = scals.g;  // 复用 SETUP 阶段 scalar_atlas sample
-#endif
+	// scalar_atlas 已退役；河流 SDF 视觉层关闭。
+	float flow = 0.0;
 	float river_t_raw = smoothstep(river_threshold_low, river_threshold_high, flow);
 	float river_t = river_t_raw;
 	float outline_t = smoothstep(river_threshold_low * 0.78, river_threshold_low, flow)

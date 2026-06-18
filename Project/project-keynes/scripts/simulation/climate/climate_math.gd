@@ -48,7 +48,8 @@ class_name DCClimateMath
 ##   · C++    gdext/src/world_ext.cpp :: pk_lat_temp_bell / PK_LAT_TEMP_CURVE_EXP
 ##   · Shader shaders/include/climate_season.gdshaderinc :: lat_temp_bell / LAT_TEMP_CURVE_EXP
 ## 2026-06-16：1.2 → 1.6（调低极地温度、拓宽海冰带）。
-const LAT_TEMP_CURVE_EXP: float = 1.6
+## terrain-overhaul（2026-06-18）：1.6 → 1.3（拓宽温带带，恢复温带森林/草原纬度占比）。
+const LAT_TEMP_CURVE_EXP: float = 1.3
 
 ## 纬度温度钟形（不含海拔惩罚）。lat_signed ∈ [-1, 1]；cos 为偶函数，传 |lat_signed| 等价。返回 [0, 1]。
 static func lat_temp_bell(lat_signed: float) -> float:

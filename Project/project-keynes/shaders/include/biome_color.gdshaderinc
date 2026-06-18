@@ -197,5 +197,16 @@ vec3 biome_hue_modulate(vec3 base, int biome) {
 	if (biome == B_SALT_FLAT) return base * vec3(1.18, 1.15, 0.92);
 	// BADLANDS：橙红条纹（沉积层）
 	if (biome == B_BADLANDS)  return base * vec3(1.20, 0.85, 0.60);
+	// terrain-overhaul 新增地形配色
+	// COLD_DESERT：冷灰黄（寒漠，比热沙漠更灰、偏冷）
+	if (biome == B_COLD_DESERT) return base * vec3(1.06, 1.02, 0.86);
+	// CHAPARRAL：橄榄黄绿（硬叶灌丛，介于灌丛与草原间）
+	if (biome == B_CHAPARRAL)   return base * vec3(1.02, 1.00, 0.74);
+	// MOOR：暗棕绿（泥炭湿原，低饱和偏暗）
+	if (biome == B_MOOR)        return base * vec3(0.80, 0.92, 0.66);
+	// FLOODPLAIN：肥沃黄绿（冲积平原，比 PLAIN 更润绿）
+	if (biome == B_FLOODPLAIN)  return base * vec3(0.74, 1.04, 0.62);
+	// MESA：赭橙（方山台地，比 BADLANDS 更暖更亮）
+	if (biome == B_MESA)        return base * vec3(1.24, 0.92, 0.66);
 	return base;
 }

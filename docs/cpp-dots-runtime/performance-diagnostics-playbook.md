@@ -96,6 +96,24 @@ published_to_slot=true
 
 `published=true` 是“C++ slot publish 生效”的强信号；此时不要只因为 `largest` 窗口里还有旧 `path=gdscript` 就判断当前失败。
 
+## Runtime hydrology breakdown
+
+启用 `ClimateProfile.runtime_hydrology_enabled` 后，`weather_refresh` 可能出现：
+
+```text
+stage_name=hydrology_discharge substage=route_full path=gdext
+native_ms=... compute_ms=... flush_ms=... refresh_ms=...
+water_budget_error=... river_discharge_p95=... river_discharge_max=...
+published_to_slot=true
+```
+
+判断：
+
+- `published_to_slot=true` 表示 `river_discharge* / river_storage / groundwater_storage / surface_runoff / soil_moisture / water_balance_30d` 已 flush 回 `MapData`。
+- `compute_ms` 高说明产流或 parent routing 本体重；`flush_ms` 高说明 PackedArray CoW/MapData 回灌成本高；`refresh_ms` 高说明 hydrology 前同步 weather slots 成本高。
+- `water_budget_error` 是轻量诊断值，不是严格闭合的物理守恒误差；它包含土壤库、地下水库和河道 storage 的日级滞后。若长期接近或超过 `1.0`，优先查 `hydro_parent_arr` 是否存在循环/断链或 release rate 是否过低。
+- `river_discharge_p95/max` 用来观察雨季增强、湖泊削峰、主河不断流等趋势；不要把单日 max spike 直接等同于地图河宽，因为视觉使用的是 `river_discharge_30d`。
+
 ## `psi_path=gdscript` 的早期阶段 caveat
 
 `ocean_currents` 的 physical chain 是 stage machine。`psi_path` 在 PSI stage 真正执行前可能显示默认值或上一轮值：

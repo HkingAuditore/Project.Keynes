@@ -142,6 +142,14 @@ const CELL_VEGETATION_DROUGHT_STRESS: StringName = &"cell.vegetation_drought_str
 const CELL_VEGETATION_COLD_STRESS: StringName = &"cell.vegetation_cold_stress" # f32
 const CELL_VEGETATION_REGEN_SCORE: StringName = &"cell.vegetation_regen_score" # f32
 
+# ─── Runtime hydrology：静态水文 parent + 日级动态径流 ───────────────
+const CELL_HYDRO_PARENT: StringName = &"cell.hydro_parent"                         # i32 downstream parent idx
+const CELL_RIVER_DISCHARGE: StringName = &"cell.river_discharge"                   # f32 raw daily discharge
+const CELL_RIVER_DISCHARGE_30D: StringName = &"cell.river_discharge_30d"           # f32 smoothed [0,1] discharge
+const CELL_RIVER_STORAGE: StringName = &"cell.river_storage"                       # f32 channel/lake storage
+const CELL_GROUNDWATER_STORAGE: StringName = &"cell.groundwater_storage"           # f32 slow reservoir
+const CELL_SURFACE_RUNOFF: StringName = &"cell.surface_runoff"                     # f32 local runoff debug
+
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用

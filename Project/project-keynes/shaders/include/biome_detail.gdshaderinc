@@ -207,6 +207,39 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 		float sand = fbm(wp * 0.40, 3);
 		return vec3(mix(0.85, 1.18, bands) * mix(0.92, 1.06, sand));
 	}
+	// ── terrain-overhaul 新增地形 detail ──
+	if (biome == B_COLD_DESERT) {
+		// 寒漠：低对比砾漠斑驳 + 微风成纹理（比热沙漠更冷更碎）
+		float n = fbm(wp * 0.22, 3);
+		float grit = fbm(wp * 0.55, 1);
+		return vec3(mix(0.90, 1.08, n) * mix(0.96, 1.04, grit));
+	}
+	if (biome == B_CHAPARRAL) {
+		// 硬叶灌丛：中频灌木簇（voronoi）+ 干草微粒
+		float vor = voronoi_cell(wp * 0.40);
+		float n = fbm(wp * 0.32, 3);
+		return vec3(mix(0.84, 1.05, smoothstep(0.05, 0.55, vor)) * mix(0.94, 1.05, n));
+	}
+	if (biome == B_MOOR) {
+		// 泥炭湿原：低频水洼斑 + 苔藓微纹（偏暗、低对比）
+		float pools = fbm(wp * 0.45, 3);
+		float pool_factor = smoothstep(0.55, 0.40, pools);
+		float n = fbm(wp * 0.28, 2);
+		return vec3(mix(0.88, 1.04, n) * mix(1.0, 0.80, pool_factor));
+	}
+	if (biome == B_FLOODPLAIN) {
+		// 泛滥平原：曲流/牛轭斑（中频 fbm）+ 肥沃斑驳
+		float n = fbm(wp * 0.30, 3);
+		float ribbons = fbm(wp * 0.50 + vec2(9.0, -5.0), 2);
+		float ribbon_mod = mix(1.0, 0.85, smoothstep(0.55, 0.42, ribbons));
+		return vec3(mix(0.90, 1.08, n) * ribbon_mod);
+	}
+	if (biome == B_MESA) {
+		// 方山：平顶 + 陡壁横向岩层条带（比 BADLANDS 更规整、更暖）
+		float bands = sin(wp.y * 0.36 + fbm(wp * 0.10, 2) * 3.0) * 0.5 + 0.5;
+		float rock = fbm(wp * 0.34, 3);
+		return vec3(mix(0.88, 1.14, bands) * mix(0.94, 1.05, rock));
+	}
 	return vec3(1.0);
 #endif
 }

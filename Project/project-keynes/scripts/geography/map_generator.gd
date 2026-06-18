@@ -229,8 +229,8 @@ func _is_annual_log_tick(counter: int) -> bool:
 # （下面各组调参说明仍保留，方便阅读；实际数值取自 ClimateProfile。）
 
 # ─── 河流参数 ────────────────────────────────────────────────────────────
-# 流量分位阈值：超过 land cell 总流量这个 percentile 的格子标 has_river。
-# v10：从 0.85 降到 0.78（top 22%），让长河上游小溪也能跨过门槛被标河
+# 流量分位阈值：超过 land cell 总流量这个 percentile 的格子作为河流源头，
+# native post-base 再沿 downhill 路径连续刻到水体，避免短碎河段。
 
 # v10 山地正雨（orographic rainfall）：高海拔 cell 降雨多
 # rainfall = base × (1 + max(land_h - 0.30, 0) × OROGRAPHIC_BOOST)
@@ -1113,11 +1113,10 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	if cfg != null:
 		cfg.climate_profile = _c()
 	# [fix cell-indirect 2026-06-16] cell.index 必须在 bake_world 之前赋值。
-	# bake_world 内部 _bake_height_biome_moisture 会按 cell.index 建 CSR
-	# (cell_first_px_arr/flat_px_indices_arr)，bake_cell_index_tex 也按 cell.index
-	# fan-out per-pixel 间接索引图。原 _build_indices() 在 bake 之后(下方 ~L1205)才跑，
-	# 导致 bake 期间 cell.index 全是默认 -1 → CSR 全跳过(flat=0)、cell_index_tex 整张
-	# 写哨兵(0xFFFF) → shader 解码全 -1 → 间接寻址地面全黑/全海。这里提前建一次索引
+	# bake_world 内部 _bake_height_biome_moisture 会按 cell.index 建 CSR，并把
+	# cell.index fan-out 到 map_index_atlas.g/b。原 _build_indices() 在 bake 之后
+	# (下方 ~L1205)才跑，会导致 bake 期间 cell.index 全是默认 -1 → CSR 全跳过、
+	# map_index_atlas 写哨兵(0xFFFF) → shader 解码全 -1。这里提前建一次索引
 	# (幂等：下方 _build_indices / init_soa_from_bake 会按同一 _cells 顺序再建，
 	# cell.index 与 SoA terrain_arr 排布严格一致)。此刻 has_soa() 仍为 false，
 	# 物理环流 defer 分支(MapBaker._bake_initial_physical_circulation)行为不变。
@@ -4861,6 +4860,10 @@ func _native_generation_profile_dict() -> Dictionary:
 		"rain_shadow_factor",
 		"rain_shadow_lookback",
 		"river_flow_percentile",
+		"hydro_river_min_length",
+		"hydro_lake_min_cells",
+		"hydro_lake_min_depth",
+		"hydro_lake_min_volume",
 		"veg_forest_donor",
 		"veg_swamp_donor",
 		"veg_grassland_donor",
@@ -4875,6 +4878,43 @@ func _native_generation_profile_dict() -> Dictionary:
 		"max_volcanoes",
 		"volcano_min_dist",
 		"volcano_min_land_h",
+		# terrain-overhaul Phase 0 板块构造
+		"tectonic_blend",
+		"tectonic_plate_count",
+		"tectonic_continental_fraction",
+		"tectonic_continental_base",
+		"tectonic_oceanic_base",
+		"tectonic_uplift_amp",
+		"tectonic_ridge_width",
+		"tectonic_drift_speed",
+		"tectonic_lloyd_iters",
+		# terrain-overhaul Phase 1 侵蚀
+		"erosion_droplet_factor",
+		"erosion_max_lifetime",
+		"erosion_capacity",
+		"erosion_deposit_rate",
+		"erosion_erode_rate",
+		"erosion_evaporation",
+		"erosion_gravity",
+		"erosion_min_slope",
+		"erosion_thermal_iters",
+		"erosion_thermal_talus",
+		"erosion_thermal_rate",
+		# terrain-overhaul Phase 3 统一气候场
+		"moisture_wind_evap",
+		"moisture_rainout_base",
+		"moisture_orographic_gain",
+		"moisture_continental_dry",
+		"moisture_land_base",
+		"moisture_precip_gain",
+		"moisture_humidity_cap",
+		"moisture_smooth",
+		"moisture_noise_amp",
+		"coastal_temp_moderation",
+		"coastal_temp_scale",
+		# terrain-overhaul Phase 5 特征点缀
+		"salt_flat_min_dist_ocean",
+		"chaparral_max_dist_ocean",
 	]
 	var out: Dictionary = {}
 	for k in keys:
@@ -4988,6 +5028,21 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			int(final_res.get("river_count", 0)),
 			int(final_res.get("volcano_count", 0)),
 		])
+	# 生成 QA 度量（地形改造回归基线）：单格水体应 →0，biome 熵/河流占比应随改造上升。
+	var qa: Dictionary = final_res.get("qa_metrics", {})
+	if not qa.is_empty():
+		print("[native_generation/qa] single_water=%d tiny<=3=%d small<=5=%d bodies=%d largest=%d | land_below_sea=%.1f%% | terr_distinct=%d entropy=%.3fbit | river_ratio=%.3f%%"
+			% [
+				int(qa.get("single_tile_water", 0)),
+				int(qa.get("tiny_water_le3", 0)),
+				int(qa.get("small_water_le5", 0)),
+				int(qa.get("water_bodies", 0)),
+				int(qa.get("largest_water_body", 0)),
+				100.0 * float(qa.get("land_below_sealevel_ratio", 0.0)),
+				int(qa.get("terrain_distinct", 0)),
+				float(qa.get("terrain_entropy_bits", 0.0)),
+				100.0 * float(qa.get("river_ratio", 0.0)),
+			])
 	return map
 
 
@@ -5029,6 +5084,9 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 	var base_vegetation_arr: PackedByteArray = res["base_vegetation_arr"] if res.has("base_vegetation_arr") else vegetation_arr
 	var cover_arr: PackedByteArray = res["cover_arr"]
 	var has_river_arr: PackedByteArray = res["has_river_arr"] if res.has("has_river_arr") else PackedByteArray()
+	var river_flow_arr: PackedFloat32Array = res["river_flow_arr"] if res.has("river_flow_arr") else PackedFloat32Array()
+	var river_downstream_arr: PackedInt32Array = res["river_downstream_arr"] if res.has("river_downstream_arr") else PackedInt32Array()
+	var hydro_parent_arr: PackedInt32Array = res["hydro_parent_arr"] if res.has("hydro_parent_arr") else PackedInt32Array()
 	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
 	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
 	var map := MapData.new(cfg.width, cfg.height)
@@ -5045,6 +5103,12 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 		cell.base_vegetation = int(base_vegetation_arr[i]) if base_vegetation_arr.size() == n else int(vegetation_arr[i])
 		cell.cover = int(cover_arr[i])
 		cell.has_river = has_river_arr.size() == n and int(has_river_arr[i]) != 0
+		cell.river_flow = float(river_flow_arr[i]) if river_flow_arr.size() == n else (1.0 if cell.has_river else 0.0)
+		if river_downstream_arr.size() == n:
+			var downstream_idx: int = int(river_downstream_arr[i])
+			if downstream_idx >= 0 and downstream_idx < n:
+				cell.river_downstream = Vector3i(int(q_arr[downstream_idx]), int(r_arr[downstream_idx]), -int(q_arr[downstream_idx]) - int(r_arr[downstream_idx]))
+				cell.has_river_downstream = true
 		cell.has_volcano = has_volcano_arr.size() == n and int(has_volcano_arr[i]) != 0
 		cell.is_lake_seed = is_lake_seed_arr.size() == n and int(is_lake_seed_arr[i]) != 0
 		cell._temperature_backing = float(temp_arr[i])
@@ -5066,6 +5130,8 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 			"weather_intensity": 0.0,
 		}
 		map.set_cell(cell)
+	if hydro_parent_arr.size() == n:
+		map.hydro_parent_arr = hydro_parent_arr.duplicate()
 	return map
 
 
@@ -5343,7 +5409,8 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 			return TerrainType.TERRAIN.TAIGA      # 针叶林 / 泰加
 		if moisture > 0.20:
 			return TerrainType.TERRAIN.STEPPE     # 凉草原
-		return TerrainType.TERRAIN.DESERT         # 冷沙漠 / 戈壁
+		# terrain-overhaul：冷而极旱 → COLD_DESERT（寒漠/戈壁），区别于热沙漠。
+		return TerrainType.TERRAIN.COLD_DESERT
 
 	# fallback（temperature ≤ 0.20 已被前面 TUNDRA 接住，理论不到这里）
 	return TerrainType.TERRAIN.PLAIN
@@ -5395,6 +5462,8 @@ func _derive_landform(cell: HexCell, cfg: MapConfig) -> int:
 		return LandformType.LF.BADLANDS
 	if t == TerrainType.TERRAIN.SALT_FLAT:
 		return LandformType.LF.SALT_FLAT
+	if t == TerrainType.TERRAIN.MESA:
+		return LandformType.LF.PLATEAU
 	# 陆地：按 land_h 分段（与原 _decide_terrain 阈值一致）
 	var land_h: float = (cell.elevation - cfg.sea_level) / maxf(1.0 - cfg.sea_level, 0.001)
 	if land_h > 0.82:
@@ -5413,8 +5482,13 @@ func _derive_landform(cell: HexCell, cfg: MapConfig) -> int:
 func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int:
 	var t: int = int(cell.terrain)
 	# 海水 / 湖水 / 海冰：水面无陆生植被
-	if t == TerrainType.TERRAIN.OCEAN or t == TerrainType.TERRAIN.COAST \
+	if t == TerrainType.TERRAIN.OCEAN \
 			or t == TerrainType.TERRAIN.LAKE or t == TerrainType.TERRAIN.SEA_ICE:
+		return VegetationType.VEG.NONE
+	# COAST：暖凉浅海软底育海草床(SEAGRASS)，过冷/过热裸沙底为 NONE。
+	if t == TerrainType.TERRAIN.COAST:
+		if temperature > 0.42 and temperature < 0.74:
+			return VegetationType.VEG.SEAGRASS
 		return VegetationType.VEG.NONE
 	# 海洋特殊植被
 	if t == TerrainType.TERRAIN.REEF:
@@ -5446,8 +5520,22 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 		return VegetationType.VEG.NONE
 	if t == TerrainType.TERRAIN.BADLANDS:
 		return VegetationType.VEG.DESERT_SCRUB
+	# ── terrain-overhaul 新增地形 → 植被映射（与 C++ pk_derive_vegetation 同源）──
+	if t == TerrainType.TERRAIN.COLD_DESERT:
+		return VegetationType.VEG.XERIC_DESERT if cell.moisture < 0.08 else VegetationType.VEG.DESERT_SCRUB
+	if t == TerrainType.TERRAIN.CHAPARRAL:
+		return VegetationType.VEG.MEDITERRANEAN_SHRUB
+	if t == TerrainType.TERRAIN.MOOR:
+		return VegetationType.VEG.PEAT_BOG
+	if t == TerrainType.TERRAIN.FLOODPLAIN:
+		if temperature > 0.55:
+			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.60 else VegetationType.VEG.SAVANNA
+		return VegetationType.VEG.MARSH if cell.moisture > 0.70 else VegetationType.VEG.TEMPERATE_GRASSLAND
+	if t == TerrainType.TERRAIN.MESA:
+		return VegetationType.VEG.DESERT_SCRUB
 	if t == TerrainType.TERRAIN.SWAMP:
-		return VegetationType.VEG.SWAMP
+		# 冷区沼泽积累泥炭 → PEAT_BOG，否则常规沼泽。
+		return VegetationType.VEG.PEAT_BOG if temperature < 0.34 else VegetationType.VEG.SWAMP
 	if t == TerrainType.TERRAIN.MANGROVE:
 		return VegetationType.VEG.MANGROVE
 	if t == TerrainType.TERRAIN.SHRUBLAND:
@@ -5466,20 +5554,28 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 			or t == TerrainType.TERRAIN.PLAIN:
 		return _whittaker_vegetation(temperature, cell.moisture, landform)
 	# Phase 10 Whittaker 命中：FOREST/JUNGLE/SAVANNA/GRASSLAND/STEPPE/DESERT
+	var is_hilly: bool = (landform == LandformType.LF.HILL)
 	match t:
 		TerrainType.TERRAIN.FOREST:
 			if is_alpine:
 				return VegetationType.VEG.TEMPERATE_CONIFER
+			# 暖湿丘陵迎风坡 → 云雾林
+			if is_hilly and temperature > 0.50 and cell.moisture > 0.70:
+				return VegetationType.VEG.CLOUD_FOREST
 			if temperature > 0.55:
 				return VegetationType.VEG.SUBTROPICAL_FOREST
 			return VegetationType.VEG.TEMPERATE_DECIDUOUS
 		TerrainType.TERRAIN.JUNGLE:
-			# 极湿 → 雨林；中湿 → 季雨林
-			if cell.moisture > 0.70:
+			# 热带高地云雾林 → 极湿雨林 → 季风半落叶 → 季雨林
+			if (is_alpine or is_hilly) and cell.moisture > 0.62:
+				return VegetationType.VEG.CLOUD_FOREST
+			if cell.moisture > 0.72:
 				return VegetationType.VEG.TROPICAL_RAINFOREST
+			if cell.moisture > 0.55:
+				return VegetationType.VEG.MONSOON_FOREST
 			return VegetationType.VEG.TROPICAL_DRY_FOREST
 		TerrainType.TERRAIN.SAVANNA:
-			return VegetationType.VEG.SAVANNA
+			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.45 else VegetationType.VEG.SAVANNA
 		TerrainType.TERRAIN.GRASSLAND:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
@@ -5771,11 +5867,17 @@ static func _is_water(t: int) -> bool:
 			or t == TerrainType.TERRAIN.SEA_ICE
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。
+# terrain-overhaul：CHAPARRAL/MOOR/FLOODPLAIN/MESA 为特征 pass 专属地形（分类器无法
+# 复现），须永久固定，否则季节重判会退回基础气候地形。与 C++ pk_is_permanent_landform 同源。
 static func _is_permanent_landform(t: int) -> bool:
 	return t == TerrainType.TERRAIN.OASIS \
 			or t == TerrainType.TERRAIN.DELTA \
 			or t == TerrainType.TERRAIN.SALT_FLAT \
-			or t == TerrainType.TERRAIN.BADLANDS
+			or t == TerrainType.TERRAIN.BADLANDS \
+			or t == TerrainType.TERRAIN.CHAPARRAL \
+			or t == TerrainType.TERRAIN.MOOR \
+			or t == TerrainType.TERRAIN.FLOODPLAIN \
+			or t == TerrainType.TERRAIN.MESA
 
 func _cube_to_col(cell: HexCell, cfg: MapConfig) -> int:
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
@@ -10116,6 +10218,94 @@ func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[Wea
 	_last_active_fronts = fronts
 	_weather_round_fronts = fronts
 	return fronts
+
+
+func runtime_hydrology_enabled() -> bool:
+	var cp_now := _c()
+	return cp_now != null and bool(cp_now.runtime_hydrology_enabled)
+
+
+func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dictionary:
+	var t0: int = Time.get_ticks_usec()
+	var cp_now := _c()
+	if cp_now == null or not bool(cp_now.runtime_hydrology_enabled):
+		return {
+			"done": true,
+			"elapsed_ms": 0.0,
+			"work_done": 0,
+			"progress_ratio": 1.0,
+			"stage_name": "hydrology_discharge",
+			"substage": "disabled",
+			"path": "disabled",
+			"published_to_slot": false,
+			"fallback_reason": "runtime_hydrology_disabled",
+		}
+	if map == null or world == null:
+		return {
+			"done": true,
+			"elapsed_ms": 0.0,
+			"work_done": 0,
+			"progress_ratio": 1.0,
+			"stage_name": "hydrology_discharge",
+			"substage": "missing_context",
+			"path": "fallback",
+			"published_to_slot": false,
+			"fallback_reason": "missing_map_or_world",
+		}
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_runtime_hydrology_pass"):
+		return {
+			"done": true,
+			"elapsed_ms": 0.0,
+			"work_done": 0,
+			"progress_ratio": 1.0,
+			"stage_name": "hydrology_discharge",
+			"substage": "missing_native",
+			"path": "fallback",
+			"published_to_slot": false,
+			"fallback_reason": "missing_run_runtime_hydrology_pass",
+		}
+	var t_refresh_us: int = Time.get_ticks_usec()
+	if _data_core_world_ext.has_method("refresh_slots_from_map"):
+		_data_core_world_ext.refresh_slots_from_map()
+	var refresh_ms: float = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
+	var knobs: Dictionary = {
+		"n_cells": map.cell_count(),
+		"hydro_precip_scale": float(cp_now.hydro_precip_scale),
+		"hydro_snowmelt_scale": float(cp_now.hydro_snowmelt_scale),
+		"hydro_soil_capacity": float(cp_now.hydro_soil_capacity),
+		"hydro_infiltration_rate": float(cp_now.hydro_infiltration_rate),
+		"hydro_quickflow_fraction": float(cp_now.hydro_quickflow_fraction),
+		"hydro_baseflow_recession": float(cp_now.hydro_baseflow_recession),
+		"hydro_channel_release_rate": float(cp_now.hydro_channel_release_rate),
+		"hydro_lake_release_rate": float(cp_now.hydro_lake_release_rate),
+		"hydro_discharge_ema": float(cp_now.hydro_discharge_ema),
+		"hydro_bank_moisture_gain": float(cp_now.hydro_bank_moisture_gain),
+		"hydro_river_evap_gain": float(cp_now.hydro_river_evap_gain),
+		"hydro_flood_threshold": float(cp_now.hydro_flood_threshold),
+		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
+		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
+		"snowpack_melt_sun_gain": float(cp_now.snowpack_melt_sun_gain),
+	}
+	var res: Dictionary = _data_core_world_ext.run_runtime_hydrology_pass(knobs)
+	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
+	res["done"] = true
+	res["elapsed_ms"] = elapsed_ms
+	res["work_done"] = int(res.get("processed_cells", res.get("n_cells", 0)))
+	res["progress_ratio"] = 1.0
+	res["stage_name"] = "hydrology_discharge"
+	res["substage"] = "route_full"
+	res["refresh_ms"] = refresh_ms
+	res["path"] = str(res.get("path", "gdext"))
+	_last_weather_breakdown["hydrology_discharge_ms"] = elapsed_ms
+	_last_weather_breakdown["hydrology_native_ms"] = float(res.get("native_ms", 0.0))
+	_last_weather_breakdown["hydrology_compute_ms"] = float(res.get("compute_ms", 0.0))
+	_last_weather_breakdown["hydrology_flush_ms"] = float(res.get("flush_ms", 0.0))
+	_last_weather_breakdown["hydrology_refresh_ms"] = refresh_ms
+	_last_weather_breakdown["hydrology_water_budget_error"] = float(res.get("water_budget_error", 0.0))
+	_last_weather_breakdown["hydrology_river_discharge_p95"] = float(res.get("river_discharge_p95", 0.0))
+	_last_weather_breakdown["hydrology_river_discharge_max"] = float(res.get("river_discharge_max", 0.0))
+	_last_weather_breakdown["hydrology_flood_count"] = int(res.get("flood_count", res.get("flood_candidate_count", 0)))
+	return res
 
 
 # Stage B：tick_one_day 之后的全部"派生 / 反馈"工作。

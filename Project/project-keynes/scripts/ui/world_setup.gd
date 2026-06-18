@@ -62,10 +62,19 @@ const CLIMATE_GROUPS := [
 	{
 		"title": "湖泊",
 		"fields": [
-			{"name": "lake_seed_freq", "label": "湖泊种子噪声频率", "type": "float", "default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "lake_seed_threshold", "label": "湖泊种子阈值", "type": "float", "default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01},
+			{"name": "hydro_lake_min_cells", "label": "真实湖盆最小格数", "type": "int", "default": 18, "min": 1, "max": 200, "step": 1},
+			{"name": "hydro_lake_min_depth", "label": "真实湖盆最小深度", "type": "float", "default": 0.018, "min": 0.0, "max": 0.2, "step": 0.001},
+			{"name": "hydro_lake_min_volume", "label": "真实湖盆最小体积", "type": "float", "default": 0.22, "min": 0.0, "max": 5.0, "step": 0.01},
+			{"name": "lake_seed_freq", "label": "湖泊种子噪声频率", "type": "float", "default": 0.07, "min": 0.0, "max": 1.0, "step": 0.01},
+			{"name": "lake_seed_threshold", "label": "湖泊种子阈值", "type": "float", "default": 0.62, "min": 0.0, "max": 1.0, "step": 0.01},
 			{"name": "lake_seed_depth", "label": "湖泊种子下沉深度", "type": "float", "default": 0.04, "min": 0.0, "max": 0.2, "step": 0.005},
 			{"name": "lake_seed_min_interior", "label": "湖泊最小内陆距离", "type": "float", "default": 0.12, "min": 0.0, "max": 0.45, "step": 0.01},
+		],
+	},
+	{
+		"title": "河流",
+		"fields": [
+			{"name": "hydro_river_min_length", "label": "真实河流最小长度", "type": "int", "default": 18, "min": 1, "max": 200, "step": 1},
 		],
 	},
 	{

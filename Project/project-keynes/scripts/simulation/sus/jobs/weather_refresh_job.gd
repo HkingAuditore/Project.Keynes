@@ -718,6 +718,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"run_stage_a_slice_ms": 0.0,
 		"stage_a_direct_ms": 0.0,
 		"commit_stage_a_ms": 0.0,
+		"hydrology_discharge_ms": 0.0,
 		"stage_b_outer_ms": 0.0,
 		"sync_fronts_ms": 0.0,
 		"soak_dump_ms": 0.0,
@@ -872,6 +873,29 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				"substage": "fronts_%d" % committed_fronts.size(),
 				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 			}
+		if _round_stage == 3:
+			var hydrology_enabled: bool = generator.has_method("runtime_hydrology_enabled") \
+					and bool(generator.runtime_hydrology_enabled())
+			if hydrology_enabled:
+				var t_hydro_us: int = Time.get_ticks_usec()
+				var hydro_report: Dictionary = generator.run_hydrology_discharge_pass_native(map, world)
+				timing["hydrology_discharge_ms"] = (Time.get_ticks_usec() - t_hydro_us) / 1000.0
+				_round_stage = 4
+				var hydro_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+				_publish_job_timing(timing, hydro_elapsed_ms, "hydrology_discharge")
+				hydro_report["done"] = false
+				hydro_report["elapsed_ms"] = hydro_elapsed_ms
+				hydro_report["progress_ratio"] = 0.92
+				hydro_report["stage_name"] = "hydrology_discharge"
+				hydro_report["substage"] = "route_full"
+				_weather_rt_log(ctx, "hydrology", "elapsed=%.3f q95=%.4f qmax=%.4f budget=%.5f" % [
+					hydro_elapsed_ms,
+					float(hydro_report.get("river_discharge_p95", 0.0)),
+					float(hydro_report.get("river_discharge_max", 0.0)),
+					float(hydro_report.get("water_budget_error", 0.0)),
+				])
+				return hydro_report
+			_round_stage = 4
 		var t_stage_b_us: int = Time.get_ticks_usec()
 		generator.refresh_daily_stage_b(map, world)
 		timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_stage_b_us) / 1000.0
@@ -909,6 +933,10 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_direct_a_us: int = Time.get_ticks_usec()
 	var fronts: Array[WeatherFront] = generator.refresh_daily_stage_a(map, world, season_idx, anomaly, season_phase)
 	timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_direct_a_us) / 1000.0
+	if generator.has_method("runtime_hydrology_enabled") and bool(generator.runtime_hydrology_enabled()):
+		var t_direct_hydro_us: int = Time.get_ticks_usec()
+		generator.run_hydrology_discharge_pass_native(map, world)
+		timing["hydrology_discharge_ms"] = (Time.get_ticks_usec() - t_direct_hydro_us) / 1000.0
 	var t_direct_b_us: int = Time.get_ticks_usec()
 	generator.refresh_daily_stage_b(map, world)
 	timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_direct_b_us) / 1000.0
@@ -1013,6 +1041,7 @@ func _publish_job_timing(timing: Dictionary, total_ms: float, stage_name: String
 		"run_stage_a_slice_ms",
 		"stage_a_direct_ms",
 		"commit_stage_a_ms",
+		"hydrology_discharge_ms",
 		"stage_b_outer_ms",
 		"sync_fronts_ms",
 		"soak_dump_ms",

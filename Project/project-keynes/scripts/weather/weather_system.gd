@@ -1992,6 +1992,7 @@ func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_
 	var soa_wind_speed: PackedFloat32Array = map.wind_speed_arr
 	var soa_terrain: PackedByteArray = map.terrain_arr
 	var soa_has_river: PackedByteArray = map.has_river_arr
+	var soa_river_q30: PackedFloat32Array = map.river_discharge_30d_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
 	var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
 	for i in range(n_cells):
@@ -2016,17 +2017,19 @@ func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_
 		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
 		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
 		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
+		var river_flow_feedback: float = clampf(soa_river_q30[i] if soa_river_q30.size() == n_cells and has_river else 0.0, 0.0, 1.0)
+		var river_evap_floor: float = maxf(0.08, river_flow_feedback * 0.22) if has_river else 0.0
 		if is_lake:
 			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
 		elif has_river:
-			advect_w = clampf(advect_w * 0.85, 0.55, 0.85)
+			advect_w = clampf(advect_w * (0.88 - river_flow_feedback * 0.10), 0.55, 0.85)
 		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
 		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
 		var effective_ocean_an: float = ocean_an
 		if is_lake:
 			effective_ocean_an = 0.20
 		elif has_river:
-			effective_ocean_an = maxf(ocean_an, 0.08)
+			effective_ocean_an = maxf(ocean_an, river_evap_floor)
 		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
 		var vapor_capacity: float = clampf(0.25 + 0.75 * temp - 0.20 * soa_elevation[i], 0.18, 1.0)
 		var saturation_deficit: float = clampf((vapor_capacity - vapor) / maxf(vapor_capacity, 0.001), 0.0, 1.0)

@@ -1,7 +1,7 @@
 // shore_common.gdshaderinc
 // ─────────────────────────────────────────────────────────────────────────
 // 职责（What）
-//   抽取 land_pipeline / water_pipeline 中重复了两份的 3×3 邻域 enum_atlas
+//   抽取 land_pipeline / water_pipeline 中重复了两份的 3×3 邻域 map_index_atlas
 //   采样代码 + 海岸 halo 颜色合成 + roughness 端硬编码。
 //   提供：
 //     - struct ShoreSamples         ：邻域计数与归一化频率
@@ -14,13 +14,13 @@
 //   - water_pipeline.gdshaderinc::apply_water_color_overlays
 //
 // 依赖（Why）
-//   uniforms.gdshaderinc（enum_atlas / hm_resolution / sea_level /
+//   uniforms.gdshaderinc（map_index_atlas / hm_resolution / sea_level /
 //     river_threshold_low/high / coast_halo_color / coast_halo_strength /
 //     color_beach / color_coast_water / lake_water_color / river_color /
 //     B_OCEAN / B_COAST / B_LAKE / B_REEF / B_KELP / B_SEA_ICE / visual_quality）
 //
 // 性能（Cost）
-//   3×3 - 1 = 8 次 enum_atlas 采样（visual_quality<=0 跳过 4 个对角，仅 4 次）。
+//   3×3 - 1 = 8 次 map_index_atlas 采样（visual_quality<=0 跳过 4 个对角，仅 4 次）。
 //   原本 land/water 路径各采一次，现在仍然只采一次（互斥分支），但代码只写一份。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 				continue;
 			}
 			vec2 suv = clamp(uv + vec2(float(sx), float(sy)) * texel, vec2(0.0), vec2(1.0));
-			int sb = int(texture(enum_atlas, suv).r * 255.0 + 0.5);
+			int sb = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			bool sw = (sb == B_OCEAN) || (sb == B_COAST) || (sb == B_LAKE)
 					|| (sb == B_REEF)  || (sb == B_KELP)  || (sb == B_SEA_ICE);
 			s.nearby_water_cnt += sw ? 1.0 : 0.0;
