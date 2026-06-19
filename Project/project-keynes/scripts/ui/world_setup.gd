@@ -21,7 +21,7 @@ const BASE_FIELDS := [
 	{"name": "initial_seed", "label": "随机种子", "type": "int", "default": 0, "min": 0, "max": 2147483647, "step": 1},
 	{"name": "sea_level", "label": "海平面", "type": "float", "default": 0.42, "min": 0.1, "max": 0.8, "step": 0.01},
 	{"name": "num_continents", "label": "大陆数", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
-	{"name": "river_count", "label": "河流数", "type": "int", "default": 8, "min": 0, "max": 30, "step": 1},
+	{"name": "continent_size", "label": "大陆大小", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
 ]
 
 const CLIMATE_GROUPS := [
@@ -62,19 +62,20 @@ const CLIMATE_GROUPS := [
 	{
 		"title": "湖泊",
 		"fields": [
-			{"name": "hydro_lake_min_cells", "label": "真实湖盆最小格数", "type": "int", "default": 18, "min": 1, "max": 200, "step": 1},
+			{"name": "hydro_lake_min_cells", "label": "真实湖盆最小格数", "type": "int", "default": 8, "min": 1, "max": 200, "step": 1},
 			{"name": "hydro_lake_min_depth", "label": "真实湖盆最小深度", "type": "float", "default": 0.018, "min": 0.0, "max": 0.2, "step": 0.001},
 			{"name": "hydro_lake_min_volume", "label": "真实湖盆最小体积", "type": "float", "default": 0.22, "min": 0.0, "max": 5.0, "step": 0.01},
-			{"name": "lake_seed_freq", "label": "湖泊种子噪声频率", "type": "float", "default": 0.07, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "lake_seed_threshold", "label": "湖泊种子阈值", "type": "float", "default": 0.62, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "lake_seed_depth", "label": "湖泊种子下沉深度", "type": "float", "default": 0.04, "min": 0.0, "max": 0.2, "step": 0.005},
+			{"name": "lake_seed_freq", "label": "湖泊种子噪声频率", "type": "float", "default": 0.05, "min": 0.0, "max": 1.0, "step": 0.01},
+			{"name": "lake_seed_threshold", "label": "湖泊种子阈值", "type": "float", "default": 0.60, "min": 0.0, "max": 1.0, "step": 0.01},
+			{"name": "lake_seed_depth", "label": "湖泊种子下沉深度", "type": "float", "default": 0.10, "min": 0.0, "max": 0.2, "step": 0.005},
 			{"name": "lake_seed_min_interior", "label": "湖泊最小内陆距离", "type": "float", "default": 0.12, "min": 0.0, "max": 0.45, "step": 0.01},
 		],
 	},
 	{
 		"title": "河流",
 		"fields": [
-			{"name": "hydro_river_min_length", "label": "真实河流最小长度", "type": "int", "default": 18, "min": 1, "max": 200, "step": 1},
+			{"name": "river_flow_percentile", "label": "河流密度(径流百分位,越高河流越少)", "type": "float", "default": 0.72, "min": 0.50, "max": 0.95, "step": 0.01},
+			{"name": "hydro_river_min_length", "label": "真实河流最小长度", "type": "int", "default": 5, "min": 1, "max": 200, "step": 1},
 		],
 	},
 	{
@@ -91,8 +92,8 @@ const CLIMATE_GROUPS := [
 			{"name": "weather_field_enabled", "label": "启用天气场", "type": "bool", "default": true},
 			{"name": "physical_circulation_enabled", "label": "启用物理风洋流", "type": "bool", "default": true},
 			{"name": "sea_ice_independent_system_enabled", "label": "启用独立海冰刷新", "type": "bool", "default": true},
-			{"name": "sea_ice_form_threshold", "label": "海冰形成温度阈值", "type": "float", "default": 0.14, "min": -1.0, "max": 1.0, "step": 0.01},
-			{"name": "sea_ice_melt_threshold", "label": "海冰融化温度阈值", "type": "float", "default": 0.22, "min": -1.0, "max": 1.0, "step": 0.01},
+			{"name": "sea_ice_form_threshold", "label": "海冰形成温度阈值", "type": "float", "default": 0.06, "min": -1.0, "max": 1.0, "step": 0.01},
+			{"name": "sea_ice_melt_threshold", "label": "海冰融化温度阈值", "type": "float", "default": 0.11, "min": -1.0, "max": 1.0, "step": 0.01},
 		],
 	},
 	{
@@ -439,7 +440,7 @@ func _on_field_changed() -> void:
 
 
 func _on_random_seed_pressed() -> void:
-	_set_control_value(_base_controls["initial_seed"], 0)
+	_set_control_value(_base_controls["initial_seed"], randi_range(1, 2147483647))
 
 
 func _on_reset_pressed() -> void:

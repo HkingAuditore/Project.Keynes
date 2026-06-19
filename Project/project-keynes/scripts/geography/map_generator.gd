@@ -1230,8 +1230,14 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 				float(cp_ec.weather_wet_terrain_precip_damping) if cp_ec.get("weather_wet_terrain_precip_damping") != null else 0.28,
 				float(cp_ec.weather_lake_precip_damping) if cp_ec.get("weather_lake_precip_damping") != null else 0.35,
 				float(cp_ec.weather_lake_evap_scale) if cp_ec.get("weather_lake_evap_scale") != null else 0.35,
-				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.20,
-				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.30
+				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.16,
+				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.20,
+				float(cp_ec.weather_land_evapotranspiration_gain) if cp_ec.get("weather_land_evapotranspiration_gain") != null else 0.70,
+				float(cp_ec.weather_precip_rh_threshold) if cp_ec.get("weather_precip_rh_threshold") != null else 0.68,
+				float(cp_ec.weather_ocean_precip_suppression) if cp_ec.get("weather_ocean_precip_suppression") != null else 0.85,
+				float(cp_ec.weather_frontogenesis_gain) if cp_ec.get("weather_frontogenesis_gain") != null else 0.42,
+				float(cp_ec.weather_rain_shadow_drying) if cp_ec.get("weather_rain_shadow_drying") != null else 0.35,
+				float(cp_ec.weather_vapor_transport_gain) if cp_ec.get("weather_vapor_transport_gain") != null else 0.92
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -2142,10 +2148,10 @@ func _build_native_daily_transpiration_knobs(map: MapData, cp_now) -> Dictionary
 
 
 func _temperature_transport_anomaly_knobs(cp_now) -> Dictionary:
-	var source_cap: float = 0.08
-	var blend_rate: float = 0.35
-	var decay_rate: float = 0.12
-	var zero_current_decay: float = 0.20
+	var source_cap: float = 0.22
+	var blend_rate: float = 0.70
+	var decay_rate: float = 0.04
+	var zero_current_decay: float = 0.06
 	if cp_now != null:
 		if cp_now.get("temperature_transport_anomaly_source_cap") != null:
 			source_cap = float(cp_now.temperature_transport_anomaly_source_cap)
@@ -4815,7 +4821,6 @@ func _native_generation_cfg_dict(cfg: MapConfig) -> Dictionary:
 		"num_continents": int(cfg.num_continents),
 		"sea_level": float(cfg.sea_level),
 		"continent_size": float(cfg.continent_size),
-		"polar_ratio": float(cfg.polar_ratio),
 		"river_count": int(cfg.river_count),
 		"seed": int(cfg.seed),
 		"enable_ocean_heat_transport": bool(cfg.enable_ocean_heat_transport),

@@ -302,13 +302,19 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var soa_terrain: PackedByteArray = map.terrain_arr
 	var soa_has_river: PackedByteArray = map.has_river_arr
 	var soa_river_q30: PackedFloat32Array = map.river_discharge_30d_arr
+	var soa_soil_moisture: PackedFloat32Array = map.soil_moisture_arr
+	var soa_veg_vitality: PackedFloat32Array = map.vegetation_vitality_arr
+	var soa_sea_ice: PackedFloat32Array = map.sea_ice_frac_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
+	var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
+	var temp_anom_arr: PackedFloat32Array = _field_slice_temp_anom if _field_slice_temp_anom.size() == n_cells else map.temperature_transport_anomaly_arr
 	for i in range(start_i, end_i):
 		var cell: HexCell = cells[i]
 		var pos: Vector2 = cell_pos[i]
 		var temp: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
 		var base_m: float = clampf(soa_moisture_loop[i], 0.0, 1.0)
-		var vapor_capacity: float = clampf(0.25 + 0.75 * temp - 0.20 * soa_elevation[i], 0.18, 1.0)
+		var elevation: float = soa_elevation[i]
+		var vapor_capacity: float = clampf(0.18 + 0.82 * temp - 0.18 * elevation, 0.14, 1.0)
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
 		var on_water: bool = _weather_system._is_water_terrain(int(soa_terrain[i]))
 
@@ -334,62 +340,144 @@ func run_slice(cell_budget: int) -> Dictionary:
 			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
 		elif has_river:
 			advect_w = clampf(advect_w * (0.88 - river_flow_feedback * 0.10), 0.55, 0.85)
-		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
-		vapor = lerpf(vapor, neighbor_vapor, _weather_system._field_diffusion)
-
 		var effective_ocean_an: float = ocean_an
 		if is_lake:
 			effective_ocean_an = 0.20
 		elif has_river:
 			effective_ocean_an = maxf(ocean_an, river_evap_floor)
-		var evap: float = _weather_system._evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _weather_system._evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
+
+		var temp_evap: float = smoothstep(0.10, 0.78, temp)
+		var wind_evap: float = 0.70 + wind_mag * 0.55
+		var soil_norm: float = clampf(0.5 + (soa_soil_moisture[i] if soa_soil_moisture.size() == n_cells else cell.soil_moisture), 0.0, 1.0)
+		var veg_vitality: float = clampf(soa_veg_vitality[i] if soa_veg_vitality.size() == n_cells else cell.vegetation_vitality, 0.0, 1.0)
+		var veg_flux: float = _weather_system._vegetation_transpiration_factor(cell) * (0.45 + veg_vitality * 0.65)
+		var sea_ice: float = clampf(soa_sea_ice[i] if soa_sea_ice.size() == n_cells else cell.sea_ice_fraction, 0.0, 1.0)
+		var wet_terrain_bonus: float = 0.0
+		match int(soa_terrain[i]):
+			TerrainType.TERRAIN.SWAMP, TerrainType.TERRAIN.JUNGLE, TerrainType.TERRAIN.DELTA:
+				wet_terrain_bonus = 0.010
+			TerrainType.TERRAIN.LAKE:
+				wet_terrain_bonus = 0.016
+			_:
+				wet_terrain_bonus = 0.0
+		var source_local: float = 0.0
+		if on_water:
+			source_local = (0.018 + temp_evap * 0.052) * _weather_system._field_ocean_evap_gain * wind_evap
+			source_local *= clampf(1.0 + effective_ocean_an * 0.55, 0.55, 1.45)
+			source_local *= 1.0 - sea_ice * 0.92
+			if is_lake:
+				source_local *= _weather_system._field_lake_evap_scale
+		else:
+			source_local = (0.005 + base_m * 0.010 + soil_norm * 0.020 + veg_flux * 0.016 + wet_terrain_bonus) \
+				* _weather_system._field_land_evapotranspiration_gain * temp_evap * (0.85 + wind_mag * 0.25)
+			if has_river:
+				source_local += (0.010 + river_flow_feedback * 0.020) * _weather_system._field_land_evapotranspiration_gain * temp_evap
+
+		var source_upwind: float = source_local
+		if upstream_idx >= 0:
+			var up_cell: HexCell = cells[upstream_idx]
+			var up_temp: float = clampf(soa_temp[upstream_idx] + climate_anomaly + soa_air_anomaly[upstream_idx], 0.0, 1.0)
+			var up_base_m: float = clampf(soa_moisture_loop[upstream_idx], 0.0, 1.0)
+			var up_terrain: int = int(soa_terrain[upstream_idx])
+			var up_on_water: bool = _weather_system._is_water_terrain(up_terrain)
+			var up_is_lake: bool = up_terrain == TerrainType.TERRAIN.LAKE
+			var up_has_river: bool = (not up_is_lake) and (soa_has_river[upstream_idx] > 0) and not up_on_water
+			var up_river_q: float = clampf(soa_river_q30[upstream_idx] if soa_river_q30.size() == n_cells and up_has_river else 0.0, 0.0, 1.0)
+			var up_temp_evap: float = smoothstep(0.10, 0.78, up_temp)
+			var up_ocean_an: float = temp_anom_arr[upstream_idx] if temp_anom_arr.size() == n_cells and up_on_water else effective_ocean_an
+			var up_soil: float = clampf(0.5 + (soa_soil_moisture[upstream_idx] if soa_soil_moisture.size() == n_cells else up_cell.soil_moisture), 0.0, 1.0)
+			var up_vitality: float = clampf(soa_veg_vitality[upstream_idx] if soa_veg_vitality.size() == n_cells else up_cell.vegetation_vitality, 0.0, 1.0)
+			var up_veg_flux: float = _weather_system._vegetation_transpiration_factor(up_cell) * (0.45 + up_vitality * 0.65)
+			var up_sea_ice: float = clampf(soa_sea_ice[upstream_idx] if soa_sea_ice.size() == n_cells else up_cell.sea_ice_fraction, 0.0, 1.0)
+			var up_wet_bonus: float = 0.0
+			match up_terrain:
+				TerrainType.TERRAIN.SWAMP, TerrainType.TERRAIN.JUNGLE, TerrainType.TERRAIN.DELTA:
+					up_wet_bonus = 0.010
+				TerrainType.TERRAIN.LAKE:
+					up_wet_bonus = 0.016
+				_:
+					up_wet_bonus = 0.0
+			if up_on_water:
+				source_upwind = (0.018 + up_temp_evap * 0.052) * _weather_system._field_ocean_evap_gain * wind_evap
+				source_upwind *= clampf(1.0 + up_ocean_an * 0.55, 0.55, 1.45)
+				source_upwind *= 1.0 - up_sea_ice * 0.92
+				if up_is_lake:
+					source_upwind *= _weather_system._field_lake_evap_scale
+			else:
+				source_upwind = (0.005 + up_base_m * 0.010 + up_soil * 0.020 + up_veg_flux * 0.016 + up_wet_bonus) \
+					* _weather_system._field_land_evapotranspiration_gain * up_temp_evap * (0.85 + wind_mag * 0.25)
+				if up_has_river:
+					source_upwind += (0.010 + up_river_q * 0.020) * _weather_system._field_land_evapotranspiration_gain * up_temp_evap
+
+		# 半真实大气：vapor 的主导项是 transport_target(上风平流，advect_w*gain≈0.8 权重)，
+		# vapor_memory 仅占 ~20%、其内 base_m 锚定影响更小，因此保持 0.18 不削弱内陆平流，
+		# 同时维持稳态期向气候湿度的轻度回归（避免内陆 vapor 漂移失稳）。
+		var vapor_memory: float = lerpf(prev_vapor[i], base_m, 0.18)
+		var transport_target: float = advected_vapor + source_upwind * (0.60 + wind_mag * 0.65)
+		var vapor: float = lerpf(vapor_memory + source_local * 0.35, transport_target, advect_w * _weather_system._field_vapor_transport_gain)
+		vapor = lerpf(vapor, neighbor_vapor, _weather_system._field_diffusion)
 		var saturation_deficit: float = clampf((vapor_capacity - vapor) / maxf(vapor_capacity, 0.001), 0.0, 1.0)
-		vapor = clampf(vapor + evap * saturation_deficit, 0.0, vapor_capacity)
+		vapor = clampf(vapor + source_local * (0.30 + saturation_deficit * 0.70), 0.0, vapor_capacity)
 
 		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
 		var convergence: float = soa_convergence_in[i]
 		if refresh_convergence:
 			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		if lift < 0.0:
-			vapor = clampf(vapor + lift * 0.30, 0.0, vapor_capacity)
+			vapor = clampf(vapor + lift * _weather_system._field_rain_shadow_drying * 0.42, 0.0, vapor_capacity)
 
-		var saturation: float = clampf(vapor_capacity * 0.68, 0.16, 0.80)
-		var humid_excess: float = maxf(vapor - saturation, 0.0)
-		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
+		var temp_min: float = temp
+		var temp_max: float = temp
+		if fast_indexed:
+			var nb_base: int = i * 6
+			for d in range(6):
+				var nb_idx: int = neighbor_indices[nb_base + d]
+				if nb_idx < 0:
+					continue
+				var nb_temp: float = clampf(soa_temp[nb_idx] + climate_anomaly + soa_air_anomaly[nb_idx], 0.0, 1.0)
+				temp_min = minf(temp_min, nb_temp)
+				temp_max = maxf(temp_max, nb_temp)
+		else:
+			for nb: HexCell in _weather_system._cell_neighbors(cell, map):
+				if nb == null:
+					continue
+				var nb_temp_cell: float = clampf(nb.temperature + climate_anomaly + nb.air_mass_temp_anomaly, 0.0, 1.0)
+				temp_min = minf(temp_min, nb_temp_cell)
+				temp_max = maxf(temp_max, nb_temp_cell)
+		var temp_gradient: float = temp_max - temp_min
+		var frontogenesis: float = clampf(convergence * smoothstep(0.05, 0.24, temp_gradient) * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
+		var relative_humidity: float = clampf(vapor / maxf(vapor_capacity, 0.001), 0.0, 1.0)
+		var condense_gate: float = smoothstep(_weather_system._field_precip_rh_threshold, minf(_weather_system._field_precip_rh_threshold + 0.18, 0.99), relative_humidity)
+		var humid_excess: float = maxf(relative_humidity - _weather_system._field_precip_rh_threshold, 0.0)
+		var lift_supply: float = maxf(lift, 0.0) * clampf((relative_humidity - 0.45) / 0.45, 0.0, 1.0)
 		lift_supply = minf(lift_supply, _weather_system._field_orographic_lift_cap)
-		var cloud: float = clampf(
-			humid_excess * _weather_system._field_condensation_gain * 1.8
-			+ lift_supply * _weather_system._field_orographic_lift_gain
-			+ convergence * _weather_system._field_convergence_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.08,
-			0.0, 1.0
-		)
-		var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
-		var old_cloud_water: float = prev_cloud_water_arr[i] if prev_cloud_water_arr.size() == n_cells else cloud * 0.5
-		var cloud_water: float = clampf(
-			old_cloud_water * 0.70 + cloud * 0.55 + humid_excess * 0.18 + lift_supply * 0.12,
-			0.0, 1.0
-		)
+		var cloud_source: float = condense_gate * _weather_system._field_condensation_gain \
+			+ lift_supply * _weather_system._field_orographic_lift_gain \
+			+ convergence * _weather_system._field_convergence_gain * 0.55 \
+			+ frontogenesis \
+			+ maxf(effective_ocean_an, 0.0) * 0.05
+		var old_cloud_water: float = prev_cloud_water_arr[i] if prev_cloud_water_arr.size() == n_cells else cloud_source * 0.35
+		# 半真实大气：凝结云水储库随风从上风格平流过来 → 云团整体随风"飘动"，
+		# 而非每天在原格生灭。权重随风速增大；advect_steps=0 时 upstream_idx=-1 自动退回原格。
+		if upstream_idx >= 0 and prev_cloud_water_arr.size() == n_cells:
+			old_cloud_water = lerpf(old_cloud_water, prev_cloud_water_arr[upstream_idx], wind_mag * 0.7)
+		var cloud_water: float = clampf(old_cloud_water * 0.62 + cloud_source * 0.48 + humid_excess * 0.22 + lift_supply * 0.14, 0.0, 1.0)
+		var cloud: float = clampf(cloud_source * 0.62 + cloud_water * 0.70, 0.0, 1.0)
 		cloud = clampf(maxf(cloud, cloud_water * 0.75), 0.0, 1.0)
 		var instability: float = clampf(
-			(temp - 0.45) * 1.15
-			+ vapor * 0.55
+			(temp - 0.48) * 1.05
+			+ relative_humidity * 0.38
 			+ cloud * 0.35
-			+ convergence * _weather_system._field_convergence_gain
+			+ convergence * _weather_system._field_convergence_gain * 0.75
 			+ lift_supply * _weather_system._field_orographic_lift_gain
-			+ maxf(effective_ocean_an, 0.0) * 0.25,
+			+ frontogenesis * 0.45
+			+ maxf(effective_ocean_an, 0.0) * 0.18,
 			0.0, 1.0
 		)
-		var cloud_core: float = smoothstep(0.18, 0.42, cloud)
-		var terrain_trigger: float = clampf(lift_supply * 2.8 + maxf(convergence, 0.0) * 1.4, 0.0, 1.0)
-		var vapor_gate: float = clampf((vapor - 0.12) / 0.30, 0.0, 1.0)
-		var trigger_focus: float = maxf(maxf(cloud_core, terrain_trigger), cloud_water * 0.55)
-		var rain_focus: float = clampf(trigger_focus * vapor_gate, 0.0, 1.0)
-		# B 修复（precip-too-wet-fix-2026-06）：1:1 mirror of C++ run_weather_field_solve_pass。
-		# (1) precip_source 系数下调；(2) cloud_water_rain 加严；(3) <0.005 清零；(4) CLEAR 强制干。
-		# 目标：wet_any 99.9%→~60-70%，equatorial land wet_heavy 59%→<25%。
-		var precip_source: float = cloud * (0.22 + instability * 0.55) + lift_supply * 0.30 - maxf(-lift, 0.0) * 0.60
-		var precip_raw: float = maxf(precip_source, 0.0) * 0.95 * rain_focus
+		var rain_focus: float = clampf(maxf(condense_gate, maxf(lift_supply * 1.6, frontogenesis)) * relative_humidity, 0.0, 1.0)
+		var precip_raw: float = (cloud_water * (0.18 + instability * 0.42) + lift_supply * 0.20 + frontogenesis * 0.12) * rain_focus
+		if lift < 0.0:
+			precip_raw *= 1.0 - minf(maxf(-lift, 0.0) * _weather_system._field_rain_shadow_drying, 0.85)
 		var old_precip: float = prev_precip[i]
 		# climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格(-wind 对齐
 		# 邻居 upstream_idx)继承，权重随风速 wind_mag 增大 → 雨带随锋面下风迁移，而非
@@ -397,18 +485,35 @@ func run_slice(cell_budget: int) -> Dictionary:
 		# 时 upstream_idx=-1 自动退回 legacy 同格 carryover（可用于 A/B 回归）。
 		if upstream_idx >= 0:
 			old_precip = lerpf(old_precip, prev_precip[upstream_idx], wind_mag)
-		var vapor_floor_factor: float = clampf((vapor - 0.12) / 0.34, 0.0, 1.0)
+		# 半真实大气：carryover/平流接力门槛与 RH 触发阈解耦并下调，让随风迁移的雨带
+		# 进入略干的下风格后仍能维持一段（雨云"飘"进内陆），而非一格就消失。
+		var vapor_floor_factor: float = clampf((relative_humidity - 0.45) / 0.40, 0.0, 1.0)
 		var dyn_decay: float = _weather_system._field_precip_decay + wind_mag * 0.25
 		var carry_limit: float = _weather_system._field_precip_carryover_max
+		var rh_carry_gate: float = maxf(0.45, _weather_system._field_precip_rh_threshold - 0.12)
 		var precip_floor: float = 0.0
-		if vapor >= 0.42 and old_precip >= 0.04:
-			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.30)
-		var cloud_water_rain: float = (cloud_water * rain_focus * (0.10 + instability * 0.14)) if (rain_focus > 0.10 and instability > 0.10) else 0.0
+		if relative_humidity >= rh_carry_gate and old_precip >= 0.020:
+			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.25)
+		var cloud_water_rain: float = (cloud_water * rain_focus * (0.08 + instability * 0.12)) if (rain_focus > 0.08 and instability > 0.08) else 0.0
 		var precip: float = clampf(maxf(maxf(precip_raw, precip_floor), cloud_water_rain), 0.0, 1.0)
+		# 半真实大气：海面降水抑制 —— 开阔/平静洋面几乎不降水（只留 1-suppression 的层云毛毛雨）。
+		# 降水集中在「空间动力强迫带」：风辐合(convergence，ITCZ・锋前辐合) / 锋生(frontogenesis) /
+		# 暖洋流异常(ocean_an，热带风暴源) → 雨带成「团/带」并随风系迁移，而非铺满整片洋面。
+		# ⚠ instability 不是好的空间判据：它被 cloud 喂大、在近饱和洋面近乎处处偏高(实测 p50≈0.63、
+		#   p95≈0.88)，若按低阈当释放项会把整片洋面放成雨(实测 ~57% 洋面降雨)。故 instability 仅作
+		#   「极端深对流安全阀」(阈 0.90，仅 >p95 的真极端格)，空间结构交给 convergence/frontogenesis。
+		# 海洋作为水汽源(surface_vapor_source)不受影响；is_lake/河流不在此抑制。
+		if on_water and not is_lake:
+			var ocean_drive: float = maxf(maxf(
+					clampf(ocean_an / 0.16, 0.0, 1.0),
+					clampf((instability - 0.90) / 0.10, 0.0, 1.0)), maxf(
+					clampf((convergence - 0.38) / 0.16, 0.0, 1.0),
+					clampf(frontogenesis / 0.16, 0.0, 1.0)))
+			precip *= lerpf(1.0 - _weather_system._field_ocean_precip_suppression, 1.0, ocean_drive)
 		precip = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip)
 		if precip < 0.005:
 			precip = 0.0
-		cloud_water = clampf(cloud_water - precip * 0.32, 0.0, 1.0)
+		cloud_water = clampf(cloud_water - precip * 0.42, 0.0, 1.0)
 		var vapor_after_precip: float = maxf(0.0, vapor - precip * _weather_system._field_vapor_precip_sink)
 		if precip < 0.005 and cloud < 0.12 and _weather_system._field_vapor_relax_rate > 0.0:
 			vapor_after_precip = lerpf(vapor_after_precip, base_m, _weather_system._field_vapor_relax_rate)

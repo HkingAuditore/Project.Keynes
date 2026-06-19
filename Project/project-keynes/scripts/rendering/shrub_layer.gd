@@ -11,6 +11,16 @@ const DEFAULT_PROFILE := preload("res://data/visual/shrub_default.tres")
 const DETAIL_SHRUB := 0
 const DETAIL_TREE := 1
 const DETAIL_GRASS := 2
+# vegetation-visual-pcg 阶段 B：扩充 archetype。3..7 = 植被类（走植被 suitability +
+# archetype 亲和），8..10 = 点缀/地貌类（走独立 _decoration_suitability，不依赖植被权重）。
+const DETAIL_CONIFER := 3
+const DETAIL_PALM := 4
+const DETAIL_CACTUS := 5
+const DETAIL_REED := 6
+const DETAIL_ALPINE_FLOWER := 7
+const DETAIL_ROCK := 8
+const DETAIL_SNOW_MOUND := 9
+const DETAIL_DEAD_SNAG := 10
 
 const _SHADER_CODE := """
 shader_type canvas_item;
@@ -44,6 +54,14 @@ uniform float vitality_size_min = 0.34;
 uniform float vitality_size_max = 1.08;
 uniform float vitality_low_color_strength = 0.72;
 uniform float vitality_high_color_strength = 0.42;
+// 0 = 点缀/地貌类 archetype（岩石/雪堆/枯立木），抑制植被气候改色；1 = 植被类。
+uniform float veg_response = 1.0;
+// 阶段 D 精致化。
+uniform vec2 wind_dir = vec2(1.0, 0.18);     // 全局盛行风方向（归一化前可任意）
+uniform float weather_wind_boost = 0.0;      // 实时天气（风暴/季风）附加风强
+uniform float bloom_strength = 0.0;          // 季节开花强度（花/部分植被 >0）
+uniform float snow_burial = 0.55;            // 积雪埋没：下沉+缩矮强度
+uniform float toon_shading = 0.30;           // 卡通分层：基部 AO + 轻量色阶量化
 
 varying vec4 shrub_custom;
 varying vec4 shrub_dyn;
@@ -130,7 +148,17 @@ void vertex() {
 	float sway_amp = mix(0.045, 0.145, fract(seed * 17.13 + variant * 3.71));
 	float sway = sin(world_time * (0.75 + variant * 1.65) + seed * 6.2831853);
 	sway += 0.45 * sin(world_time * 1.7 + variant * 11.0);
-	VERTEX.x += sway * sway_amp * wind_strength * top_weight * smoothstep(0.10, 0.75, shrub_presence_v);
+	// 实时天气阵风：风暴/季风时附加更高频更大幅的摆动。
+	sway += weather_wind_boost * (0.9 * sin(world_time * 3.4 + seed * 5.13) + 0.5);
+	float amp = sway * sway_amp * (wind_strength + weather_wind_boost)
+		* top_weight * smoothstep(0.10, 0.75, shrub_presence_v);
+	// 方向风：沿全局盛行风方向摆动（而非固定 +x）。
+	vec2 wdir = normalize(wind_dir + vec2(0.0001, 0.0));
+	VERTEX += wdir * amp;
+	// 雪埋：积雪越深，植株下沉（y 正为下）并缩矮，顶部更明显。
+	float bury = clamp(shrub_snow_v * snow_burial, 0.0, 0.85);
+	VERTEX.y += bury * 0.34 * top_weight;
+	VERTEX *= 1.0 - bury * 0.42 * top_weight;
 }
 
 void fragment() {
@@ -145,23 +173,33 @@ void fragment() {
 	float dry_hot = smoothstep(0.78, 0.98, temp) * (1.0 - smoothstep(0.18, 0.44, moisture));
 	float autumn = smoothstep(1.45, 2.08, sp) * (1.0 - smoothstep(2.55, 3.05, sp));
 	float low_vitality = pow(1.0 - vitality_n, 1.35);
-	float yellow_amount = smoothstep(0.18, 0.78, shrub_dry_v) * dry_yellow_strength * (1.0 - dry_hot * 0.42);
-	float heat_red_amount = dry_hot * smoothstep(0.35, 0.90, shrub_dry_v) * heat_red_strength;
-	float autumn_red_amount = autumn * vitality_n * (1.0 - shrub_wet_v * 0.55) * autumn_red_strength;
-	float lush_amount = shrub_wet_v * vitality_n * lush_green_strength;
+	float yellow_amount = smoothstep(0.18, 0.78, shrub_dry_v) * dry_yellow_strength * (1.0 - dry_hot * 0.42) * veg_response;
+	float heat_red_amount = dry_hot * smoothstep(0.35, 0.90, shrub_dry_v) * heat_red_strength * veg_response;
+	float autumn_red_amount = autumn * vitality_n * (1.0 - shrub_wet_v * 0.55) * autumn_red_strength * veg_response;
+	float lush_amount = shrub_wet_v * vitality_n * lush_green_strength * veg_response;
 	float snow_amount = clamp(max(snow, winter * shrub_snow_v) * snow_white_strength, 0.0, 1.0);
 
 	vec3 rgb = COLOR.rgb;
-	rgb = mix(rgb, vec3(0.43, 0.34, 0.20), max(low_vitality * vitality_low_color_strength, shrub_dry_v * low_vitality * 0.55));
-	rgb = mix(rgb, vec3(0.10, 0.48, 0.16), vitality_n * vitality_high_color_strength * (1.0 - shrub_dry_v));
+	rgb = mix(rgb, vec3(0.43, 0.34, 0.20), max(low_vitality * vitality_low_color_strength, shrub_dry_v * low_vitality * 0.55) * veg_response);
+	rgb = mix(rgb, vec3(0.10, 0.48, 0.16), vitality_n * vitality_high_color_strength * (1.0 - shrub_dry_v) * veg_response);
 	rgb = mix(rgb, vec3(0.05, 0.76, 0.22), lush_amount);
 	rgb = mix(rgb, vec3(0.94, 0.76, 0.18), yellow_amount);
 	rgb = mix(rgb, vec3(0.88, 0.34, 0.10), heat_red_amount);
 	rgb = mix(rgb, vec3(0.72, 0.11, 0.08), autumn_red_amount * (1.0 - snow_amount));
-	rgb = mix(rgb, vec3(0.08, 0.52, 0.18), shrub_wet_v * wet_green_strength * vitality_n * (1.0 - yellow_amount));
+	rgb = mix(rgb, vec3(0.08, 0.52, 0.18), shrub_wet_v * wet_green_strength * vitality_n * (1.0 - yellow_amount) * veg_response);
+	// 季节开花：春季给开花类一抹亮色（活力越高越盛，积雪覆盖时收敛）。
+	float spring = clamp(1.0 - abs(sp - 0.4) / 0.9, 0.0, 1.0);
+	float bloom = bloom_strength * spring * vitality_n * (1.0 - snow_amount * 0.85);
+	rgb = mix(rgb, rgb * vec3(1.12, 1.0, 1.08) + vec3(0.10, 0.03, 0.08), bloom);
 	rgb = mix(rgb, vec3(0.69, 0.72, 0.63), winter * 0.16);
 	rgb = mix(rgb, vec3(0.96, 0.98, 1.0), snow_amount);
 	rgb *= mix(1.0, 0.68, night);
+	// 卡通分层：基部 AO（UV.y 低=近根，压暗）+ 轻量 3 阶色调量化。
+	float ao = 1.0 - (1.0 - clamp(UV.y, 0.0, 1.0)) * toon_shading * 0.38;
+	rgb *= ao;
+	float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
+	float ql = floor(luma * 3.0 + 0.5) / 3.0;
+	rgb *= (luma > 0.0015) ? mix(1.0, ql / luma, toon_shading * 0.55) : 1.0;
 	float alpha = COLOR.a * shrub_presence_v;
 	alpha *= 1.0 - snow * 0.32;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
@@ -182,6 +220,11 @@ var _bounds: Rect2 = Rect2()
 var _hex_size: float = 22.0
 var _visual_quality: int = 1
 var _mobile_quality_tier: int = 1
+# C++ DCWorldExt（由 hex_renderer.set_world_ext 注入）。null 或缺 encode_detail_scatter
+# 方法时，散布生成走 GDScript fallback；二者结果是同一确定性 PCG 场的等价实现。
+var _world_ext = null
+# 上一次 _rebuild_instances 实际走的路径（"gdext" / "gdscript"），供调试/性能日志。
+var _last_scatter_path: String = "none"
 
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
@@ -250,6 +293,20 @@ func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indire
 	_sync_world_material_inputs(true)
 
 
+# 阶段 D：全局盛行风方向 + 实时天气附加风强（风暴/季风）。每帧由 hex_renderer 推送。
+func set_wind_field(dir: Vector2, boost: float) -> void:
+	if _material == null:
+		return
+	var d := dir if dir.length() > 0.0001 else Vector2(1.0, 0.18)
+	_material.set_shader_parameter("wind_dir", d.normalized())
+	_material.set_shader_parameter("weather_wind_boost", maxf(boost, 0.0))
+
+
+# 注入 C++ DCWorldExt。可传 null 关闭 native 路径（强制 GDScript fallback）。
+func set_world_ext(ext) -> void:
+	_world_ext = ext
+
+
 func set_visual_quality(q: int) -> void:
 	var next_q := clampi(q, 0, 2)
 	if _visual_quality == next_q:
@@ -308,6 +365,23 @@ func _apply_profile_uniforms() -> void:
 	_material.set_shader_parameter("vitality_size_max", cfg.vitality_size_max)
 	_material.set_shader_parameter("vitality_low_color_strength", cfg.vitality_low_color_strength)
 	_material.set_shader_parameter("vitality_high_color_strength", cfg.vitality_high_color_strength)
+	# 点缀/地貌类 archetype 抑制植被气候改色（岩石不该变绿/变黄）。
+	var arch := _detail_kind()
+	var is_deco := _is_decoration_archetype(arch)
+	_material.set_shader_parameter("veg_response", 0.0 if is_deco else 1.0)
+	# 阶段 D：按 archetype 推送外观 uniform。
+	# 开花：高山花最盛，灌木/树轻微，点缀/草不开花。
+	var bloom := 0.0
+	match arch:
+		DETAIL_ALPINE_FLOWER: bloom = 0.85
+		DETAIL_SHRUB: bloom = 0.16
+		DETAIL_REED: bloom = 0.10
+		_: bloom = 0.0
+	_material.set_shader_parameter("bloom_strength", bloom)
+	# 雪埋：植被会被积雪压伏；雪堆本身就是雪、岩石/枯木不缩。
+	_material.set_shader_parameter("snow_burial", 0.0 if is_deco else 0.55)
+	# 卡通分层：所有 archetype 都受益于基部 AO，点缀类略弱以保持硬朗轮廓。
+	_material.set_shader_parameter("toon_shading", 0.22 if is_deco else 0.32)
 
 
 func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
@@ -364,6 +438,14 @@ func _rebuild_instances() -> void:
 	if total_attempts <= 0:
 		return
 
+	# C++ 优先：把"每实例候选生成 + 噪声门 + 接受 + cap + MultiMesh buffer 组装"
+	# 整段热循环下沉 DCWorldExt.encode_detail_scatter，GDScript 仅做上面这段
+	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
+	if _rebuild_via_native(cells, cell_states, cell_suitabilities, cell_attempts):
+		_last_scatter_path = "gdext"
+		return
+	_last_scatter_path = "gdscript"
+
 	for order in range(cells.size()):
 		var cell = cells[order]
 		if cell == null:
@@ -407,6 +489,144 @@ func _rebuild_instances() -> void:
 	visible = cfg.enabled and _instance_count > 0
 
 
+func _rebuild_via_native(
+		cells: Array,
+		cell_states: Array,
+		cell_suitabilities: PackedFloat32Array,
+		cell_attempts: PackedInt32Array) -> bool:
+	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
+		return false
+	if _map == null:
+		return false
+	var grid_w: int = int(_map.width) if "width" in _map else 0
+	var grid_h: int = int(_map.height) if "height" in _map else 0
+	if grid_w <= 0 or grid_h <= 0:
+		return false
+	var cfg := _profile()
+
+	# offset 网格 is_water 栅格（odd-r），用于 C++ 端精确复刻 _is_water_position：
+	# world_to_cube → cube_to_offset → 越界 / 水域 cell 即拒绝。空位预置 1（拒绝）。
+	var offset_is_water := PackedByteArray()
+	offset_is_water.resize(grid_w * grid_h)
+	offset_is_water.fill(1)
+
+	# 每个"活跃 cell"（suitability>0 且 climate_presence>0.02）的廉价 per-cell 数据。
+	var keys := PackedInt32Array()
+	var cx := PackedFloat32Array()
+	var cy := PackedFloat32Array()
+	var suit := PackedFloat32Array()
+	var att := PackedInt32Array()
+	var vit := PackedFloat32Array()
+	var sized := PackedFloat32Array()
+	var col_r := PackedFloat32Array()
+	var col_g := PackedFloat32Array()
+	var col_b := PackedFloat32Array()
+	var col_a := PackedFloat32Array()
+
+	for order in range(cells.size()):
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx := _cell_index(cell, order)
+		# 填 is_water 栅格（所有 cell，含水域）。
+		var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
+		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
+			offset_is_water[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
+		var suitability := cell_suitabilities[order]
+		if suitability <= 0.0:
+			continue
+		var state: Dictionary = cell_states[order]
+		if not (state is Dictionary):
+			continue
+		if _climate_presence(state) <= 0.02:
+			continue
+		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
+		var lf := int(state.get("landform", LandformType.LF.PLAIN))
+		var cover := int(state.get("cover", CoverType.CV.NONE))
+		var center := _cell_center(cell, idx)
+		var base := _base_color_for_vegetation(veg)
+		keys.append(_cell_hash_key(cell, order))
+		cx.append(center.x)
+		cy.append(center.y)
+		suit.append(suitability)
+		att.append(cell_attempts[order])
+		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
+		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
+		col_r.append(base.r)
+		col_g.append(base.g)
+		col_b.append(base.b)
+		col_a.append(base.a)
+
+	if keys.is_empty():
+		return false
+
+	var knobs := {
+		"hex_size": _hex_size,
+		"origin_x": _bounds.position.x,
+		"origin_y": _bounds.position.y,
+		"size_x": _bounds.size.x,
+		"size_y": _bounds.size.y,
+		"grid_w": grid_w,
+		"grid_h": grid_h,
+		"offset_is_water": offset_is_water,
+		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
+		"flow_w": int(_world.derived_size.x) if _world != null else 0,
+		"flow_h": int(_world.derived_size.y) if _world != null else 0,
+		"river_clear_threshold": cfg.river_clear_threshold,
+		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"world_noise_warp_strength": cfg.world_noise_warp_strength,
+		"patch_frequency": cfg.patch_frequency,
+		"patch_cutoff": cfg.patch_cutoff,
+		"patch_contrast": cfg.patch_contrast,
+		"world_noise_mid_mix": cfg.world_noise_mid_mix,
+		"world_noise_fine_mix": cfg.world_noise_fine_mix,
+		"micro_gap_threshold": cfg.micro_gap_threshold,
+		"world_noise_acceptance": cfg.world_noise_acceptance,
+		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
+		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
+		"size_scale": _quality_size_scale(),
+		"vitality_dead_threshold": cfg.vitality_dead_threshold,
+		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
+		"instance_cap": _instance_cap(),
+		"keys": keys,
+		"center_x": cx,
+		"center_y": cy,
+		"suitability": suit,
+		"attempts": att,
+		"vitality": vit,
+		"size_density": sized,
+		"color_r": col_r,
+		"color_g": col_g,
+		"color_b": col_b,
+		"color_a": col_a,
+	}
+
+	var res = _world_ext.call("encode_detail_scatter", knobs)
+	if not (res is Dictionary):
+		return false
+	if bool(res.get("fallback", true)):
+		return false
+	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
+	var inst: int = int(res.get("instance_count", 0))
+	# 每实例 stride = transform2d(8) + color(4) + custom(4) = 16 float。
+	if inst <= 0 or buffer.size() < inst * 16:
+		clear()
+		return true
+
+	_instance_count = inst
+	_multimesh = MultiMesh.new()
+	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_multimesh.use_colors = true
+	_multimesh.use_custom_data = true
+	_multimesh.mesh = _build_shrub_mesh()
+	_multimesh.instance_count = inst
+	_multimesh.buffer = buffer
+	_multimesh.visible_instance_count = inst
+	_mmi.multimesh = _multimesh
+	visible = cfg.enabled and inst > 0
+	return true
+
+
 func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	if _is_water_cell(cell, idx):
 		return 0.0
@@ -415,6 +635,12 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
 	var cover := int(state.get("cover", CoverType.CV.NONE))
 	var river := _has_river_cell(cell, idx)
+	var arch := _detail_kind()
+
+	# 点缀/地貌类 archetype（岩石/雪堆/枯立木）走独立 suitability：不依赖植被权重，
+	# 由地形/覆盖物/气候直接决定，能出现在植被权重为 0 的裸露/雪原/山巅。
+	if _is_decoration_archetype(arch):
+		return _decoration_suitability(arch, lf, cover, river, state)
 
 	var landform_weight := _landform_weight(lf)
 	if landform_weight <= 0.0:
@@ -437,11 +663,185 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	suitability *= 1.0 - clampf(stress, 0.0, 1.0) * 0.38
 	suitability *= lerpf(0.08, 1.0, _climate_presence(state))
 	suitability *= _cell_ecology_density_bias(state)
+	# archetype 生态位亲和（针叶/棕榈/仙人掌/芦苇/高山花）：把通用植被分布收束到各自气候带。
+	suitability *= _archetype_affinity(arch, veg, lf, cover, river, state)
+	# 阶段 C：海拔林线 + 强风折损。
+	suitability *= _elevation_modifier(arch, float(state.get("elevation", 0.4)))
+	suitability *= _wind_exposure_modifier(arch, float(state.get("wind_speed", 0.0)))
 	var cfg := _profile()
 	if river:
 		suitability *= cfg.river_edge_density
 	suitability *= _quality_density_scale()
 	return clampf(suitability, 0.0, 1.25)
+
+
+# 海拔林线：高海拔抑制乔木/棕榈，偏好高山花/针叶中带；低海拔归一。elevation∈[0,1]。
+func _elevation_modifier(arch: int, elev: float) -> float:
+	match arch:
+		DETAIL_TREE, DETAIL_PALM:
+			return smoothstep(0.92, 0.58, elev)
+		DETAIL_CONIFER:
+			return smoothstep(0.22, 0.55, elev) * smoothstep(0.97, 0.74, elev) + 0.25
+		DETAIL_ALPINE_FLOWER:
+			return clampf(smoothstep(0.46, 0.82, elev) + 0.12, 0.0, 1.2)
+		DETAIL_SHRUB, DETAIL_GRASS, DETAIL_CACTUS, DETAIL_REED:
+			return smoothstep(0.97, 0.62, elev)
+	return 1.0
+
+
+# 强风折损：脆弱高茎（棕榈/芦苇/枯立木/高山花）在大风带略减。wind_speed 物理量（~m/s）。
+func _wind_exposure_modifier(arch: int, wind_speed: float) -> float:
+	var w: float = clampf(wind_speed / 18.0, 0.0, 1.0)
+	match arch:
+		DETAIL_PALM, DETAIL_REED, DETAIL_ALPINE_FLOWER:
+			return lerpf(1.0, 0.7, w)
+		DETAIL_DEAD_SNAG:
+			return lerpf(1.0, 0.6, w)
+	return 1.0
+
+
+# 3..7 植被类 archetype 的生态位亲和乘子（legacy 0/1/2 恒返回 1.0）。
+func _archetype_affinity(arch: int, veg: int, lf: int, _cover: int, river: bool, state: Dictionary) -> float:
+	var temp := float(state.get("temp", 0.5))
+	var moisture := float(state.get("moisture", 0.5))
+	var soil := float(state.get("soil_moisture", moisture))
+	var discharge := float(state.get("river_discharge", 0.0))
+	# 实际地表湿润 = 气候湿度与土壤湿度的较强者（土壤更贴近根系可用水）。
+	var wet := maxf(moisture, soil)
+	var dry := minf(moisture, soil)
+	var big_river: float = clampf(discharge / 80.0, 0.0, 1.0)
+	match arch:
+		DETAIL_CONIFER:
+			# 寒带针叶林应成片：把生态位亲和拉高到能让 suitability 在针叶带饱和到 1.0。
+			var a := 0.10
+			match veg:
+				VegetationType.VEG.TAIGA:
+					a = 2.6
+				VegetationType.VEG.TEMPERATE_CONIFER:
+					a = 2.3
+				VegetationType.VEG.BOREAL_SHRUB:
+					a = 1.3
+				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TEMPERATE_DECIDUOUS:
+					a = 0.8
+			a *= smoothstep(0.82, 0.22, temp)  # 偏冷，冷带更宽
+			return a
+		DETAIL_PALM:
+			var a := 0.0
+			match veg:
+				VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
+					a = 1.7
+				VegetationType.VEG.TROPICAL_DRY_FOREST, VegetationType.VEG.SAVANNA:
+					a = 1.1
+				VegetationType.VEG.MANGROVE, VegetationType.VEG.OASIS_VEG:
+					a = 1.4
+			a *= smoothstep(0.55, 0.85, temp)  # 偏暖
+			if lf == LandformType.LF.DELTA or lf == LandformType.LF.LOWLAND or river:
+				a *= 1.3
+			a *= lerpf(1.0, 1.45, big_river)  # 大河三角洲椰林
+			return a
+		DETAIL_CACTUS:
+			var a := 0.06
+			match veg:
+				VegetationType.VEG.DESERT_SCRUB:
+					a = 1.9
+				VegetationType.VEG.XERIC_DESERT:
+					a = 1.0
+				VegetationType.VEG.MEDITERRANEAN_SHRUB, VegetationType.VEG.SAVANNA:
+					a = 0.55
+				VegetationType.VEG.OASIS_VEG:
+					a = 0.75
+			a *= smoothstep(0.5, 0.85, temp) * smoothstep(0.55, 0.16, dry)  # 热且（气候+土壤）双干
+			return a
+		DETAIL_REED:
+			var a := 0.06
+			match veg:
+				VegetationType.VEG.MARSH:
+					a = 1.9
+				VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
+					a = 1.6
+				VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.SAVANNA:
+					a = 0.45
+			a *= smoothstep(0.45, 0.85, wet)  # 气候/土壤湿润取强
+			if river:
+				a *= 1.8
+			a *= lerpf(1.0, 1.6, big_river)  # 大河岸芦苇荡
+			if lf == LandformType.LF.DELTA:
+				a *= 1.4
+			return a
+		DETAIL_ALPINE_FLOWER:
+			var a := 0.06
+			match veg:
+				VegetationType.VEG.ALPINE_MEADOW:
+					a = 2.0
+				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TUNDRA:
+					a = 1.2
+				VegetationType.VEG.TEMPERATE_GRASSLAND:
+					a = 0.4
+			if lf == LandformType.LF.MOUNTAIN or lf == LandformType.LF.HILL:
+				a *= 1.25
+			a *= smoothstep(0.78, 0.32, temp)  # 偏冷凉
+			return a
+	return 1.0
+
+
+func _is_decoration_archetype(arch: int) -> bool:
+	return arch == DETAIL_ROCK or arch == DETAIL_SNOW_MOUND or arch == DETAIL_DEAD_SNAG
+
+
+# 点缀/地貌类 archetype 的独立 suitability（不经植被权重）。
+func _decoration_suitability(arch: int, lf: int, cover: int, river: bool, state: Dictionary) -> float:
+	if LandformType.is_water(lf):
+		return 0.0
+	var temp := float(state.get("temp", 0.5))
+	var snow := float(state.get("snow", 0.0))
+	var vitality := float(state.get("vitality", 0.7))
+	var drought := float(state.get("drought", 0.0))
+	var cold := float(state.get("cold", 0.0))
+	var elev := float(state.get("elevation", 0.4))
+	var s := 0.0
+	match arch:
+		DETAIL_ROCK:
+			match lf:
+				LandformType.LF.MOUNTAIN, LandformType.LF.PEAK:
+					s = 1.1
+				LandformType.LF.VOLCANO:
+					s = 0.9
+				LandformType.LF.BADLANDS:
+					s = 0.95
+				LandformType.LF.HILL:
+					s = 0.5
+				LandformType.LF.SALT_FLAT:
+					s = 0.35
+				_:
+					s = 0.12
+			# 越裸露（活力低）岩石越显
+			s *= lerpf(1.25, 0.55, _vitality_normalized(vitality))
+			# 高海拔裸岩更多
+			s *= lerpf(0.85, 1.4, smoothstep(0.5, 0.95, elev))
+			if river:
+				s *= 0.6
+		DETAIL_SNOW_MOUND:
+			var snowy: float = maxf(snow, 1.0 if cover == CoverType.CV.SNOW or cover == CoverType.CV.PERMAFROST else 0.0)
+			if cover == CoverType.CV.GLACIER:
+				snowy = maxf(snowy, 0.85)
+			s = smoothstep(0.22, 0.7, snowy) * 1.1
+			s *= smoothstep(0.62, 0.2, temp)
+			# 高海拔雪线以上常年积雪堆增多
+			s *= lerpf(0.9, 1.3, smoothstep(0.55, 0.92, elev))
+		DETAIL_DEAD_SNAG:
+			# 低活力 + 旱/冷胁迫的"曾经有林"区域。枯立木点缀，适度可见即可。
+			var stress: float = maxf(drought, cold)
+			s = (1.0 - _vitality_normalized(vitality)) * lerpf(0.65, 1.5, clampf(stress, 0.0, 1.0))
+			match lf:
+				LandformType.LF.PLAIN, LandformType.LF.LOWLAND, LandformType.LF.HILL:
+					s *= 1.3
+				LandformType.LF.BADLANDS:
+					s *= 0.95
+				_:
+					s *= 0.55
+	s *= lerpf(0.18, 1.0, _climate_presence(state))
+	s *= _quality_density_scale()
+	return clampf(s, 0.0, 1.25)
 
 
 func _try_append_instance(
@@ -591,6 +991,22 @@ func _build_shrub_mesh() -> ArrayMesh:
 			return _build_tree_mesh()
 		DETAIL_GRASS:
 			return _build_grass_mesh()
+		DETAIL_CONIFER:
+			return _build_conifer_mesh()
+		DETAIL_PALM:
+			return _build_palm_mesh()
+		DETAIL_CACTUS:
+			return _build_cactus_mesh()
+		DETAIL_REED:
+			return _build_reed_mesh()
+		DETAIL_ALPINE_FLOWER:
+			return _build_alpine_flower_mesh()
+		DETAIL_ROCK:
+			return _build_rock_mesh()
+		DETAIL_SNOW_MOUND:
+			return _build_snow_mound_mesh()
+		DETAIL_DEAD_SNAG:
+			return _build_dead_snag_mesh()
 	var verts := PackedVector2Array()
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
@@ -677,6 +1093,172 @@ func _build_grass_mesh() -> ArrayMesh:
 	return mesh
 
 
+# ─── 阶段 B 新增 archetype 造型（程序化、风格化平面）───────────────────────
+# 约定：归一化空间，y 负为上（与 _add_lobe 一致）；mesh 顶点色作"明暗分层"，
+# 真正色相由每实例 instance color（_base_color_for_vegetation 派发）相乘决定。
+
+func _finish_mesh(
+		verts: PackedVector2Array,
+		uvs: PackedVector2Array,
+		colors: PackedColorArray,
+		indices: PackedInt32Array) -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _add_tri(
+		verts: PackedVector2Array, uvs: PackedVector2Array,
+		colors: PackedColorArray, indices: PackedInt32Array,
+		a: Vector2, b: Vector2, c: Vector2, tint: Color) -> void:
+	var base := verts.size()
+	for p in [a, b, c]:
+		verts.append(p)
+		uvs.append(Vector2(p.x * 0.5 + 0.5, 1.0 - (p.y * 0.5 + 0.5)))
+		colors.append(tint)
+	indices.append(base); indices.append(base + 1); indices.append(base + 2)
+
+
+func _add_poly(
+		verts: PackedVector2Array, uvs: PackedVector2Array,
+		colors: PackedColorArray, indices: PackedInt32Array,
+		pts: Array, tint: Color) -> void:
+	if pts.size() < 3:
+		return
+	var base := verts.size()
+	var centroid := Vector2.ZERO
+	for p in pts:
+		centroid += p
+	centroid /= float(pts.size())
+	verts.append(centroid)
+	uvs.append(Vector2(0.5, 0.5))
+	colors.append(tint)
+	for p in pts:
+		verts.append(p)
+		uvs.append(Vector2(p.x * 0.5 + 0.5, 1.0 - (p.y * 0.5 + 0.5)))
+		colors.append(tint)
+	var n := pts.size()
+	for i in range(n):
+		indices.append(base)
+		indices.append(base + 1 + i)
+		indices.append(base + 1 + ((i + 1) % n))
+
+
+func _build_conifer_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.46), 0.075, 0.30, Color(0.52, 0.38, 0.24, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.0, -0.08), Vector2(-0.46, 0.36), Vector2(0.46, 0.36), Color(0.80, 0.92, 0.80, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.0, -0.44), Vector2(-0.36, 0.04), Vector2(0.36, 0.04), Color(0.90, 0.98, 0.88, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.0, -0.82), Vector2(-0.24, -0.30), Vector2(0.24, -0.30), Color(1.0, 1.0, 0.94, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_palm_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_lobe(v, u, c, idx, Vector2(0.05, 0.24), 0.065, 0.52, Color(0.56, 0.42, 0.26, 1.0))
+	var top := Vector2(0.0, -0.30)
+	var fronds := [
+		[Vector2(-0.62, -0.36), Color(0.74, 0.90, 0.62, 0.98)],
+		[Vector2(-0.40, -0.62), Color(0.84, 0.96, 0.70, 0.98)],
+		[Vector2(0.04, -0.74), Color(0.92, 1.0, 0.78, 1.0)],
+		[Vector2(0.46, -0.58), Color(0.80, 0.94, 0.66, 0.98)],
+		[Vector2(0.64, -0.30), Color(0.70, 0.88, 0.58, 0.96)],
+	]
+	for f in fronds:
+		var tip: Vector2 = f[0]
+		var perp := Vector2(-(tip.y - top.y), tip.x - top.x).normalized() * 0.07
+		_add_tri(v, u, c, idx, top + perp, top - perp, tip, f[1])
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_cactus_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.02), 0.18, 0.60, Color(0.78, 0.92, 0.72, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(-0.30, 0.12), 0.11, 0.22, Color(0.70, 0.88, 0.64, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(-0.30, -0.06), 0.095, 0.20, Color(0.74, 0.90, 0.66, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.30, 0.04), 0.10, 0.20, Color(0.70, 0.88, 0.64, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.30, -0.14), 0.085, 0.16, Color(0.74, 0.90, 0.66, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_reed_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	var blades := [
+		[Vector2(-0.30, 0.34), 0.045, 0.92, Color(0.74, 0.86, 0.46, 0.92)],
+		[Vector2(-0.12, 0.30), 0.05, 1.08, Color(0.86, 0.94, 0.54, 0.94)],
+		[Vector2(0.06, 0.34), 0.045, 0.98, Color(0.80, 0.90, 0.50, 0.92)],
+		[Vector2(0.24, 0.30), 0.05, 1.04, Color(0.88, 0.96, 0.56, 0.94)],
+		[Vector2(0.38, 0.36), 0.04, 0.84, Color(0.72, 0.84, 0.44, 0.90)],
+	]
+	for b in blades:
+		_add_blade(v, u, c, idx, b[0], b[1], b[2], b[3])
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_alpine_flower_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_blade(v, u, c, idx, Vector2(-0.10, 0.36), 0.05, 0.42, Color(0.46, 0.70, 0.36, 0.9))
+	_add_blade(v, u, c, idx, Vector2(0.12, 0.36), 0.05, 0.38, Color(0.40, 0.64, 0.32, 0.9))
+	var petals := [
+		[Vector2(0.0, -0.34), Color(1.0, 0.62, 0.78, 1.0)],
+		[Vector2(-0.20, -0.12), Color(1.0, 0.80, 0.40, 1.0)],
+		[Vector2(0.20, -0.12), Color(0.78, 0.72, 1.0, 1.0)],
+		[Vector2(0.0, 0.04), Color(1.0, 0.94, 0.70, 1.0)],
+	]
+	for p in petals:
+		_add_lobe(v, u, c, idx, p[0], 0.13, 0.16, p[1])
+	_add_lobe(v, u, c, idx, Vector2(0.0, -0.12), 0.07, 0.08, Color(1.0, 0.90, 0.40, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_rock_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_poly(v, u, c, idx, [
+		Vector2(-0.52, 0.34), Vector2(-0.40, -0.10), Vector2(-0.10, -0.34),
+		Vector2(0.28, -0.26), Vector2(0.52, 0.06), Vector2(0.44, 0.36),
+	], Color(0.72, 0.73, 0.76, 1.0))
+	_add_poly(v, u, c, idx, [
+		Vector2(-0.20, -0.18), Vector2(0.10, -0.30), Vector2(0.30, -0.08), Vector2(0.04, 0.04),
+	], Color(0.92, 0.93, 0.96, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_snow_mound_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	var pts: Array = []
+	var seg := 9
+	for i in range(seg + 1):
+		var a := PI * (1.0 - float(i) / float(seg))
+		pts.append(Vector2(cos(a) * 0.56, 0.22 - sin(a) * 0.40))
+	pts.append(Vector2(0.56, 0.30))
+	pts.append(Vector2(-0.56, 0.30))
+	_add_poly(v, u, c, idx, pts, Color(0.97, 0.98, 1.0, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_dead_snag_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.20), 0.07, 0.56, Color(0.80, 0.74, 0.66, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.0, -0.10), Vector2(-0.04, -0.06), Vector2(-0.40, -0.42), Color(0.86, 0.80, 0.72, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.02, -0.24), Vector2(-0.02, -0.20), Vector2(0.34, -0.40), Color(0.84, 0.78, 0.70, 1.0))
+	_add_tri(v, u, c, idx, Vector2(0.0, -0.36), Vector2(-0.03, -0.32), Vector2(-0.18, -0.66), Color(0.88, 0.82, 0.74, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
 func _add_lobe(
 		verts: PackedVector2Array,
 		uvs: PackedVector2Array,
@@ -746,6 +1328,11 @@ func _sample_cell_state(idx: int, cell = null) -> Dictionary:
 		"vegetation": _u8(_map.vegetation_arr, idx, cell.vegetation if cell != null else VegetationType.VEG.NONE),
 		"cover": _u8(_map.cover_arr, idx, cell.cover if cell != null else CoverType.CV.NONE),
 		"weather_type": _u8(_map.weather_type_arr, idx, cell.weather_type if cell != null else 0),
+		# 阶段 C：放置侧全量参数（归一化 / 物理量），喂入 archetype 亲和 + 林线 + 地貌 suitability。
+		"elevation": _f32(_map.elevation_arr, idx, cell.elevation if cell != null else 0.40),
+		"soil_moisture": _f32(_map.soil_moisture_arr, idx, cell.soil_moisture if cell != null else 0.40),
+		"river_discharge": _f32(_map.river_discharge_arr, idx, 0.0),
+		"wind_speed": _f32(_map.wind_speed_arr, idx, cell.wind_speed if cell != null else 0.0),
 		"snow_visual": 0.0,
 	}
 
@@ -767,6 +1354,22 @@ func _base_color_for_vegetation(veg: int) -> Color:
 			return _tree_base_color_for_vegetation(veg)
 		DETAIL_GRASS:
 			return _grass_base_color_for_vegetation(veg)
+		DETAIL_CONIFER:
+			return Color(0.10, 0.28, 0.18, 0.96)
+		DETAIL_PALM:
+			return Color(0.16, 0.40, 0.20, 0.96)
+		DETAIL_CACTUS:
+			return Color(0.30, 0.48, 0.32, 0.96)
+		DETAIL_REED:
+			return Color(0.42, 0.52, 0.24, 0.92)
+		DETAIL_ALPINE_FLOWER:
+			return Color(0.64, 0.68, 0.52, 0.98)
+		DETAIL_ROCK:
+			return Color(0.54, 0.54, 0.57, 1.0)
+		DETAIL_SNOW_MOUND:
+			return Color(0.95, 0.97, 1.0, 1.0)
+		DETAIL_DEAD_SNAG:
+			return Color(0.42, 0.36, 0.30, 0.98)
 	match veg:
 		VegetationType.VEG.BOREAL_SHRUB:
 			return Color(0.16, 0.33, 0.20, 0.90)
@@ -1216,7 +1819,7 @@ func _active_quality_tier() -> int:
 
 func _detail_kind() -> int:
 	var cfg := _profile()
-	return clampi(int(cfg.detail_kind), DETAIL_SHRUB, DETAIL_GRASS)
+	return clampi(int(cfg.detail_kind), DETAIL_SHRUB, DETAIL_DEAD_SNAG)
 
 
 func _profile() -> Resource:

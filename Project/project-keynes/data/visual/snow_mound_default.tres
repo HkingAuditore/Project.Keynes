@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ShrubVisualProfile" format=3 uid="uid://dsn0w0veg0sm0"]
+
+[ext_resource type="Script" uid="uid://b2v55s0gf3d20" path="res://scripts/data/shrub_visual_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enabled = true
+detail_kind = 9
+render_z_index = 0
+density_scale = 1.00
+wind_strength = 0.0
+desktop_max_instances_quality0 = 1100
+desktop_max_instances_quality1 = 3600
+desktop_max_instances_quality2 = 6000
+desktop_max_per_cell_quality0 = 1
+desktop_max_per_cell_quality1 = 4
+desktop_max_per_cell_quality2 = 6
+mobile_max_instances_quality0 = 180
+mobile_max_instances_quality1 = 420
+mobile_max_instances_quality2 = 700
+mobile_max_per_cell_quality0 = 1
+mobile_max_per_cell_quality1 = 1
+mobile_max_per_cell_quality2 = 2
+spawn_radius_factor = 0.88
+min_size_factor = 0.18
+max_size_factor = 0.40
+patch_frequency = 0.10
+patch_cutoff = 0.17
+patch_contrast = 1.60
+micro_gap_threshold = 0.06
+world_noise_acceptance = 1.45

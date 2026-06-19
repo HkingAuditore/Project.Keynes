@@ -39,8 +39,8 @@ const OCEAN_CURRENT_NORM_MAX: float = 0.35
 
 # 双向连续通道的对称半幅：value = 0.5 + clamp(raw / RANGE, -0.5, 0.5)
 # OCEAN_HEAT_TRANSPORT 与 UPWELLING 都是带符号的异常量，0=中性、负=冷/下沉、正=暖/上升。
-# 经验幅值：transport_anomaly ∈ ~[-0.4, 0.4]；upwelling_strength 设计上 ∈ [-1, 1]。
-const HEAT_TRANSPORT_NORM_RANGE: float = 0.4
+# 运行期 TTA 是每日平滑异常，实测 p95 常在 0.02~0.05；旧 ±0.4 会把有效信号压成中性灰。
+const HEAT_TRANSPORT_NORM_RANGE: float = 0.08
 const UPWELLING_NORM_RANGE: float = 1.0
 
 # 风速归一化：读取物理风场写入的 cell.wind_speed；fallback 纬度风带约 0.15~1.1。

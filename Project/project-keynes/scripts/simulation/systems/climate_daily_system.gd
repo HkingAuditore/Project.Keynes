@@ -1610,14 +1610,14 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	input["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if "sea_ice_albedo_cooling" in cp else 0.0
 	# ocean_water knobs — sync 用 _last_cfg.OCEAN_HEAT_* （map_generator.gd:9679-9680）
 	input["ow_advect_steps"] = max(0, int(generator._last_cfg.OCEAN_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
-	input["ow_heat_mix"]     = clampf(float(generator._last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.25
+	input["ow_heat_mix"]     = clampf(float(generator._last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.40
 	# ocean TTA scalars — sync 用 _temperature_transport_anomaly_knobs (map_generator.gd:2083-2104)
 	# 来源：cp.temperature_transport_anomaly_source_cap / blend_rate / decay_rate / zero_current_decay
-	# 缺省值：source_cap=0.08, blend_rate=0.35, decay_rate=0.12, zero_current_decay=0.20
-	var _tta_source_cap: float = 0.08
-	var _tta_blend_rate: float = 0.35
-	var _tta_decay_rate: float = 0.12
-	var _tta_zero_curr_decay: float = 0.20
+	# 缺省值：source_cap=0.16, blend_rate=0.55, decay_rate=0.08, zero_current_decay=0.12
+	var _tta_source_cap: float = 0.16
+	var _tta_blend_rate: float = 0.55
+	var _tta_decay_rate: float = 0.08
+	var _tta_zero_curr_decay: float = 0.12
 	if cp != null:
 		if "temperature_transport_anomaly_source_cap" in cp:
 			_tta_source_cap = clampf(float(cp.temperature_transport_anomaly_source_cap), 0.0, 0.5)
@@ -1635,7 +1635,7 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	input["ol_tta_blend_rate"]          = _tta_blend_rate
 	input["ol_tta_decay_rate"]          = _tta_decay_rate
 	# ocean_land knobs — sync 用 _last_cfg.COASTAL_HEAT_LEAK * winter_boost(1.0)（map_generator.gd:9916-9917）
-	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.35
+	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.45
 	# wind_air knobs — sync 用 _last_cfg.WIND_HEAT_*（map_generator.gd:12637-12638）
 	input["wa_advect_steps"] = max(0, int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
 	input["wa_heat_mix"]     = clampf(float(generator._last_cfg.WIND_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.25

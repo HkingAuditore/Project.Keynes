@@ -3804,15 +3804,27 @@ func _bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Vector2i
 		var size := bounds.size
 		var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
 		var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
+		# [cylindrical-earth-daylight] 圆柱东西环绕后，近接缝的河流 downstream 可能落在对侧边缘，
+		# 其世界坐标横跨全图 → 直接连线会沿纬度横贯整张图成一条假"河流线"（海陆通吃，实测正是
+		# 用户所见横线）。按世界半宽切断跨接缝段，把链拆成多段分别烘焙：河流在边缘自然断开、不再
+		# 横贯。seam_dx 取半宽，正常相邻 hex 步长（≈size.x/width）远低于它，不会误伤普通河段。
+		var seam_dx := size.x * 0.5
 		for chain: Dictionary in chains:
 			var points: Array = chain.get("points", [])
 			var widths: Array = chain.get("widths", [])
 			if points.size() < 2:
 				continue
-			# CR 平滑 → warp 扰动（跟 hex 边界共享同一份 _warp_noise_lo），让河流自然弯曲
-			var dense := _catmull_rom_dense_with_widths(points, widths, RIVER_CR_STEP)
-			var warped := _warp_river_chain(dense["points"], hex_size)
-			_stamp_polyline_variable(mask, warped, dense["widths"], origin, inv_world, W, H, stroke_radius_px)
+			var run_pts: Array = [points[0]]
+			var run_w: Array = [widths[0]]
+			for k in range(1, points.size()):
+				if absf((points[k] as Vector2).x - (points[k - 1] as Vector2).x) > seam_dx:
+					_stamp_river_run(mask, run_pts, run_w, hex_size, origin, inv_world, W, H, stroke_radius_px)
+					run_pts = [points[k]]
+					run_w = [widths[k]]
+				else:
+					run_pts.append(points[k])
+					run_w.append(widths[k])
+			_stamp_river_run(mask, run_pts, run_w, hex_size, origin, inv_world, W, H, stroke_radius_px)
 
 	_chamfer_sdt(mask, W, H)
 
@@ -3824,6 +3836,16 @@ func _bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Vector2i
 		var t := clampf(mask[i] * inv_max, 0.0, 1.0)
 		out_buf[i] = 1.0 - t
 	return out_buf
+
+# [cylindrical-earth-daylight] 单段河流（已按接缝切分、不含跨图段）的 CR 平滑 → warp → 烘焙。
+# 从 _bake_river_sdf 主循环抽出，供拆段后逐段复用，避免重复代码。
+func _stamp_river_run(mask: PackedFloat32Array, run_pts: Array, run_w: Array, hex_size: float,
+		origin: Vector2, inv_world: Vector2, W: int, H: int, stroke_radius_px: float) -> void:
+	if run_pts.size() < 2:
+		return
+	var dense := _catmull_rom_dense_with_widths(run_pts, run_w, RIVER_CR_STEP)
+	var warped := _warp_river_chain(dense["points"], hex_size)
+	_stamp_polyline_variable(mask, warped, dense["widths"], origin, inv_world, W, H, stroke_radius_px)
 
 func _trace_all_rivers(map: MapData, hex_size: float) -> Array:
 	var visited: Dictionary = {}

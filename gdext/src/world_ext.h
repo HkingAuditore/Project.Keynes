@@ -1032,6 +1032,15 @@ public:
     //   SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd。
     godot::Dictionary encode_cell_luts(godot::Dictionary opts);
 
+    // ─── Detail scatter（vegetation-visual-pcg 阶段 A）────────────────────
+    //   encode_detail_scatter：植被/点缀散布的 per-instance 热循环 + MultiMesh
+    //   buffer 组装下沉 C++。纯 buffer-encoder：只读 knobs 内的 flat PackedArray，
+    //   不读 _slots、不写 slot；结果 MultiMesh buffer（每实例 16 float =
+    //   transform2d 8 + color 4 + custom 4）直接随返回 Dict 回传，GDScript 端
+    //   `multimesh.buffer = buf` 一次赋值，零逐实例 marshalling。
+    //   SAME_SOURCE: shrub_layer.gd::_rebuild_instances（GDScript fallback）。
+    godot::Dictionary encode_detail_scatter(godot::Dictionary knobs);
+
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
     //

@@ -25,6 +25,9 @@ signal season_phase_changed(season_phase: float)
 # 任务 2：昼夜相位信号。由 _process 默认逐帧发射；day_phase_emit_step > 0 时可选节流。
 # 与年历一致：current_day 的小数部分是一日内时刻。
 signal day_phase_changed(day_phase: float)
+# [cylindrical-earth-daylight] 视觉昼夜相位信号：与游戏倍速解耦的"晨昏线"驱动相位。
+# 默认按真实时间缓慢推进（visual_daylen_seconds 一圈），快进不再闪烁。
+signal visual_day_phase_changed(visual_day_phase: float)
 # Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
 # 实现 stride 自动调档、phase 节流自动调档等。
 signal speed_changed(new_speed: float)
@@ -50,6 +53,13 @@ signal speed_changed(new_speed: float)
 # 加速档位下会自动调档（见 _apply_phase_step_for_speed）。
 @export_range(0.0, 0.05, 0.0005) var season_phase_emit_step: float = 0.0
 
+# [cylindrical-earth-daylight] 视觉昼夜（晨昏线）独立时钟参数。
+# visual_daylen_seconds：解耦模式下一整圈昼夜的真实秒数（越大越慢），默认 120≈2 分钟一圈，
+#   快进时晨昏线移动速度不变 → 杜绝快进闪烁。
+# visual_tod_follow_speed：true 回退旧行为（跟随 day_phase()，随倍速变快）；false（默认）按真实时间匀速推进。
+@export_range(8.0, 1200.0, 1.0) var visual_daylen_seconds: float = 120.0
+@export var visual_tod_follow_speed: bool = false
+
 # plan/best-effort-sim-stepping（2026-06-17）：best-effort 吞吐模型的每帧闸。
 # 倍速 = "目标天/秒"，而非死锁墙钟的契约。每帧最多推进有限天数（时间盒 +
 # 硬上限），跑不完的整数天直接丢弃（不积债）→ 杜绝 fast-forward 的死亡螺旋
@@ -71,6 +81,9 @@ var current_day: float = 0.0   # 累积浮点天数 = _last_day(已模拟整数�
 var _day_carry: float = 0.0
 var paused: bool = false
 var speed_multiplier: float = 1.0
+# [cylindrical-earth-daylight] 视觉昼夜相位 ∈ [0,1)：0=日出 0.25=正午 0.5=日落 0.75=午夜。
+# 与 day_phase()(随倍速) 解耦，驱动 shader 的 day_phase uniform、TODProfile 与 UI 小时位。
+var visual_day_phase: float = 0.25
 
 # Phase 4：长期气候异常值（游戏内"全球温度偏移"），shader 直接读
 var climate_anomaly: float = 0.0
@@ -128,6 +141,8 @@ func _emit_initial_signals() -> void:
 	var sp := season_phase()
 	_last_emit_season_phase = sp
 	season_phase_changed.emit(sp)
+	# [cylindrical-earth-daylight] 初始视觉昼夜相位推送一次，让 shader/TOD 立即就位。
+	visual_day_phase_changed.emit(visual_day_phase)
 
 # best-effort-sim-stepping（plan/best-effort-sim-stepping）：推进"一个已模拟日"。
 # 等价于旧 _process while 循环体：_last_day += 1、发 day_changed，并按需发
@@ -200,6 +215,10 @@ func _process(delta: float) -> void:
 		_last_emit_season_phase = sp
 		season_phase_changed.emit(sp)
 
+	# [cylindrical-earth-daylight] 推进视觉昼夜（晨昏线）相位，按真实 delta 匀速绕圈，
+	# 与 speed_multiplier 解耦 → 快进时晨昏线移动速度不变，杜绝全屏明暗闪烁。
+	_advance_visual_day_phase(delta)
+
 	# best-effort 诊断打印（临时）：每 ~120 个 _process 帧打一行，含 delta、目标天、
 	# 实际推进天数 ran、日循环墙钟 _loop_ms、整个 _process 墙钟 proc_ms。
 	if debug_step_log and Engine.get_process_frames() % 120 == 0:
@@ -260,11 +279,23 @@ func _apply_year_rollover(year_idx: int) -> void:
 func day_phase() -> float:
 	return fposmod(current_day, 1.0)
 
+# [cylindrical-earth-daylight] 推进视觉昼夜相位。
+# 解耦模式（默认）：按真实 delta 匀速绕圈，visual_daylen_seconds 一圈，与倍速无关 → 快进不闪。
+# 跟随模式（visual_tod_follow_speed=true）：取 day_phase()，回退旧的随倍速行为。
+func _advance_visual_day_phase(delta: float) -> void:
+	if visual_tod_follow_speed:
+		visual_day_phase = day_phase()
+	else:
+		var period: float = maxf(visual_daylen_seconds, 1.0)
+		visual_day_phase = fposmod(visual_day_phase + delta / period, 1.0)
+	visual_day_phase_changed.emit(visual_day_phase)
+
 # 将 day_phase 映射为 0−24 小时（UI 仅用），精度到整小时。
 # 与 day_phase 约定对齐：0.0=06:00（日出），0.25=12:00（正午），
 # 0.5=18:00（日落），0.75=00:00（午夜）。
 func hour_of_day() -> int:
-	return int(floor(fposmod(day_phase() - 0.75, 1.0) * 24.0)) % 24
+	# [cylindrical-earth-daylight] 改读 visual_day_phase，让 UI 小时位与屏幕可见的太阳位置一致。
+	return int(floor(fposmod(visual_day_phase - 0.75, 1.0) * 24.0)) % 24
 
 # 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
 # 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。

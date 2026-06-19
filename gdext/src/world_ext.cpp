@@ -3566,42 +3566,59 @@ inline uint8_t wf_classify_field_weather_at(float pos_y, int season_idx,
                                             float season_phase,
                                             bool cold_precip_as_blizzard,
                                             float snow_classification_margin) {
-    (void)season_idx;
     (void)season_phase;
-    float lat_abs = 0.5f;
+    // 半真实大气分类（2026-06-19 重排，镜像 weather_system.gd::_classify_field_weather_core）。
+    // lat_signed ∈ [-1,1]：地图顶部(min y)=北半球(<0)，底部=南半球(>0)。
+    float lat_signed = 0.0f;
     if (wb_size_y > 0.001f) {
         float n = (pos_y - wb_pos_y) / wb_size_y;
         if (n < 0.0f) n = 0.0f;
         else if (n > 1.0f) n = 1.0f;
-        lat_abs = n * 2.0f - 1.0f;
-        if (lat_abs < 0.0f) lat_abs = -lat_abs;
+        lat_signed = n * 2.0f - 1.0f;
     }
-    const bool warm      = temp  > 0.58f;
-    const bool cold      = temp  < 0.32f;
-    const bool humid     = vapor > 0.30f;
-    const bool low_lat   = lat_abs < 0.48f;
-    const bool meaningful_precip = precip > 0.080f ||
-        (precip > 0.045f && cloud > 0.20f && vapor > 0.24f);
-    const bool warm_ocean_core = ocean_an > 0.12f &&
-        instability > 0.80f && precip > 0.10f && cloud > 0.26f;
+    const float lat_abs = (lat_signed < 0.0f) ? -lat_signed : lat_signed;
 
+    // season_idx: 0=spring 1=summer 2=autumn 3=winter（北半球历法）；南半球季节相反。
+    float north_summer = 0.5f;
+    if (season_idx == 1) north_summer = 1.0f;
+    else if (season_idx == 3) north_summer = 0.0f;
+    const float local_summer = (lat_signed < 0.0f) ? north_summer : (1.0f - north_summer);
+
+    const bool warm  = temp  > 0.55f;
+    const bool humid = vapor > 0.28f;
+    const bool meaningful_precip = precip > 0.030f ||
+        (precip > 0.022f && cloud > 0.22f && vapor > 0.28f);
+
+    // 1) 冷区降水 → 暴风雪
     const bool cold_precip_snow = cold_precip_as_blizzard && meaningful_precip &&
         (temp <= 0.24f ||
          (temp < 0.31f + snow_classification_margin &&
           cloud > 0.18f && vapor > 0.20f && precip > 0.04f));
     if (cold_precip_snow)
         return 3; // BLIZZARD
-    if (warm && humid && ((instability > 0.56f && precip > 0.16f) || warm_ocean_core))
+    // 2) 强对流风暴：中低纬，夏季降低门槛；暖海异常核心强制成 STORM
+    const float storm_precip_gate = 0.068f + (0.056f - 0.068f) * local_summer;
+    const float storm_inst_gate   = 0.56f  + (0.50f  - 0.56f)  * local_summer;
+    const bool warm_ocean_core = ocean_an > 0.12f &&
+        instability > 0.70f && precip > 0.07f && cloud > 0.28f;
+    if (warm && humid && lat_abs < 0.70f &&
+        ((instability > storm_inst_gate && precip > storm_precip_gate) || warm_ocean_core))
         return 2; // STORM
-    if (warm && humid && low_lat && precip > 0.13f)
+    // 3) 季风：低纬 + 本地夏季 + 可观降水
+    if (warm && humid && lat_abs < 0.42f && local_summer > 0.5f && precip > 0.055f)
         return 7; // MONSOON
+    // 4) 普通降水
     if (meaningful_precip)
         return 1; // RAIN
-    if (vapor > 0.34f && cloud > 0.14f && precip < 0.08f && temp < 0.50f)
+    // 5) 雾：高湿低降水、偏凉
+    if (vapor > 0.34f && cloud > 0.14f && precip < 0.030f && temp < 0.55f)
         return 5; // FOG
-    if (temp > 0.80f && vapor < 0.20f && cloud < 0.10f && precip < 0.04f)
+    // 6) 热浪：高温 + 少云 + 无降水（不再强求低 vapor）
+    if (temp > 0.70f && cloud < 0.30f && precip < 0.025f &&
+        lat_abs < 0.62f && local_summer > 0.35f)
         return 6; // HEATWAVE
-    if (vapor < 0.16f && cloud < 0.08f && precip < 0.03f && (temp > 0.60f || ocean_an < -0.08f))
+    // 7) 旱灾：暖区持续少云少雨（以 cloud 为主门控）
+    if (cloud < 0.22f && precip < 0.020f && temp > 0.48f && vapor < 0.34f)
         return 4; // DROUGHT
     return 0; // CLEAR
 }
@@ -3736,6 +3753,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const int sid_river_q30   = component_id(StringName("cell_river_discharge_30d"));
     const int sid_elev        = component_id(StringName("cell_elevation"));
     const int sid_vegetation  = component_id(StringName("cell_vegetation"));
+    const int sid_soil_moisture = component_id(StringName("cell_soil_moisture"));
+    const int sid_veg_vitality = component_id(StringName("cell_vegetation_vitality"));
+    const int sid_sea_ice     = component_id(StringName("cell_sea_ice_frac"));
     const int sid_w_vapor     = component_id(StringName("cell_weather_vapor"));
     const int sid_w_cloud     = component_id(StringName("cell_weather_cloud"));
     const int sid_w_precip    = component_id(StringName("cell_weather_precip"));
@@ -3799,15 +3819,15 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_diffusion         = knobs.has("field_diffusion")
                                             ? float(knobs["field_diffusion"]) : 0.04f;
     const float field_condensation_gain = knobs.has("field_condensation_gain")
-                                            ? float(knobs["field_condensation_gain"]) : 0.68f;
+                                            ? float(knobs["field_condensation_gain"]) : 0.42f;
     const float field_orographic_lift_gain = knobs.has("field_orographic_lift_gain")
-                                            ? float(knobs["field_orographic_lift_gain"]) : 0.35f;
+                                            ? float(knobs["field_orographic_lift_gain"]) : 0.22f;
     const float field_convergence_gain  = knobs.has("field_convergence_gain")
-                                            ? float(knobs["field_convergence_gain"]) : 0.32f;
+                                            ? float(knobs["field_convergence_gain"]) : 0.18f;
     const float field_ocean_evap_gain   = knobs.has("field_ocean_evap_gain")
-                                            ? float(knobs["field_ocean_evap_gain"]) : 0.34f;
+                                            ? float(knobs["field_ocean_evap_gain"]) : 0.55f;
     const float field_precip_decay      = knobs.has("field_precip_decay")
-                                            ? float(knobs["field_precip_decay"]) : 0.62f;
+                                            ? float(knobs["field_precip_decay"]) : 0.85f;
     const float field_precip_carryover_max = knobs.has("field_precip_carryover_max")
                                             ? float(knobs["field_precip_carryover_max"]) : 0.08f;
     const float field_vapor_precip_sink = knobs.has("field_vapor_precip_sink")
@@ -3825,15 +3845,27 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     if (snow_classification_margin < 0.0f) snow_classification_margin = 0.0f;
     else if (snow_classification_margin > 0.12f) snow_classification_margin = 0.12f;
     float field_wet_terrain_precip_damping = knobs.has("field_wet_terrain_precip_damping")
-                                            ? float(knobs["field_wet_terrain_precip_damping"]) : 0.28f;
+                                            ? float(knobs["field_wet_terrain_precip_damping"]) : 0.60f;
     float field_lake_precip_damping = knobs.has("field_lake_precip_damping")
-                                            ? float(knobs["field_lake_precip_damping"]) : 0.35f;
+                                            ? float(knobs["field_lake_precip_damping"]) : 0.65f;
     float field_lake_evap_scale = knobs.has("field_lake_evap_scale")
                                             ? float(knobs["field_lake_evap_scale"]) : 0.35f;
     float field_extreme_precip_soft_cap = knobs.has("field_extreme_precip_soft_cap")
-                                            ? float(knobs["field_extreme_precip_soft_cap"]) : 0.20f;
+                                            ? float(knobs["field_extreme_precip_soft_cap"]) : 0.16f;
     float field_extreme_precip_softness = knobs.has("field_extreme_precip_softness")
-                                            ? float(knobs["field_extreme_precip_softness"]) : 0.30f;
+                                            ? float(knobs["field_extreme_precip_softness"]) : 0.20f;
+    float field_land_evapotranspiration_gain = knobs.has("field_land_evapotranspiration_gain")
+                                            ? float(knobs["field_land_evapotranspiration_gain"]) : 0.85f;
+    float field_precip_rh_threshold = knobs.has("field_precip_rh_threshold")
+                                            ? float(knobs["field_precip_rh_threshold"]) : 0.60f;
+    float field_ocean_precip_suppression = knobs.has("field_ocean_precip_suppression")
+                                            ? float(knobs["field_ocean_precip_suppression"]) : 0.85f;
+    float field_frontogenesis_gain = knobs.has("field_frontogenesis_gain")
+                                            ? float(knobs["field_frontogenesis_gain"]) : 0.42f;
+    float field_rain_shadow_drying = knobs.has("field_rain_shadow_drying")
+                                            ? float(knobs["field_rain_shadow_drying"]) : 0.35f;
+    float field_vapor_transport_gain = knobs.has("field_vapor_transport_gain")
+                                            ? float(knobs["field_vapor_transport_gain"]) : 0.92f;
     if (field_wet_terrain_precip_damping < 0.0f) field_wet_terrain_precip_damping = 0.0f;
     else if (field_wet_terrain_precip_damping > 1.0f) field_wet_terrain_precip_damping = 1.0f;
     if (field_lake_precip_damping < 0.0f) field_lake_precip_damping = 0.0f;
@@ -3844,6 +3876,16 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     else if (field_extreme_precip_soft_cap > 1.0f) field_extreme_precip_soft_cap = 1.0f;
     if (field_extreme_precip_softness < 0.0f) field_extreme_precip_softness = 0.0f;
     else if (field_extreme_precip_softness > 1.0f) field_extreme_precip_softness = 1.0f;
+    if (field_land_evapotranspiration_gain < 0.0f) field_land_evapotranspiration_gain = 0.0f;
+    if (field_precip_rh_threshold < 0.40f) field_precip_rh_threshold = 0.40f;
+    else if (field_precip_rh_threshold > 0.95f) field_precip_rh_threshold = 0.95f;
+    if (field_ocean_precip_suppression < 0.0f) field_ocean_precip_suppression = 0.0f;
+    else if (field_ocean_precip_suppression > 1.0f) field_ocean_precip_suppression = 1.0f;
+    if (field_frontogenesis_gain < 0.0f) field_frontogenesis_gain = 0.0f;
+    if (field_rain_shadow_drying < 0.0f) field_rain_shadow_drying = 0.0f;
+    else if (field_rain_shadow_drying > 1.0f) field_rain_shadow_drying = 1.0f;
+    if (field_vapor_transport_gain < 0.0f) field_vapor_transport_gain = 0.0f;
+    else if (field_vapor_transport_gain > 1.0f) field_vapor_transport_gain = 1.0f;
 
     // ─── Pull pre-computed PackedArrays from knobs (zero-copy reads) ────
     if (!knobs.has("cell_pos") || !knobs.has("neighbor_indices") ||
@@ -3938,6 +3980,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     Slot *s_river_q30 = (sid_river_q30 >= 0) ? &_slots.write[sid_river_q30] : nullptr;
     Slot &s_elev     = _slots.write[sid_elev];
     Slot &s_veg      = _slots.write[sid_vegetation];
+    Slot *s_soil     = (sid_soil_moisture >= 0) ? &_slots.write[sid_soil_moisture] : nullptr;
+    Slot *s_vitality = (sid_veg_vitality >= 0) ? &_slots.write[sid_veg_vitality] : nullptr;
+    Slot *s_sea_ice  = (sid_sea_ice >= 0) ? &_slots.write[sid_sea_ice] : nullptr;
     Slot &s_wvap     = _slots.write[sid_w_vapor];
     Slot &s_wcld     = _slots.write[sid_w_cloud];
     Slot &s_wpre     = _slots.write[sid_w_precip];
@@ -3973,6 +4018,15 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     if (s_river_q30 != nullptr && s_river_q30->arr_f32.size() != n_cells) {
         s_river_q30 = nullptr;
     }
+    if (s_soil != nullptr && s_soil->arr_f32.size() != n_cells) {
+        s_soil = nullptr;
+    }
+    if (s_vitality != nullptr && s_vitality->arr_f32.size() != n_cells) {
+        s_vitality = nullptr;
+    }
+    if (s_sea_ice != nullptr && s_sea_ice->arr_f32.size() != n_cells) {
+        s_sea_ice = nullptr;
+    }
 
     // ─── Hot pointers ───────────────────────────────────────────────────
     const float   * const __restrict T    = s_temp.arr_f32.ptr();
@@ -3988,6 +4042,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float   * const __restrict RQ30 = (s_river_q30 != nullptr) ? s_river_q30->arr_f32.ptr() : nullptr;
     const float   * const __restrict ELEV = s_elev.arr_f32.ptr();
     const uint8_t * const __restrict VEG  = s_veg.arr_u8.ptr();
+    const float   * const __restrict SOIL = (s_soil != nullptr) ? s_soil->arr_f32.ptr() : nullptr;
+    const float   * const __restrict VITA = (s_vitality != nullptr) ? s_vitality->arr_f32.ptr() : nullptr;
+    const float   * const __restrict SICE = (s_sea_ice != nullptr) ? s_sea_ice->arr_f32.ptr() : nullptr;
 
     const Vector2 * const __restrict POS  = cell_pos_arr.ptr();
     const int32_t * const __restrict NB   = nb_arr.ptr();
@@ -4014,36 +4071,65 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    auto surface_vapor_source = [&](int src_idx, float src_temp, float src_base_m,
+                                    float src_wind_mag, float src_ocean_an,
+                                    bool src_on_water, bool src_is_lake,
+                                    bool src_has_river, float src_river_q) -> float {
+        const float temp_evap = wf_smoothstep(0.10f, 0.78f, src_temp);
+        const float wind_evap = 0.70f + src_wind_mag * 0.55f;
+        float wet_bonus = 0.0f;
+        switch (TERR[src_idx]) {
+            case 10: // SWAMP
+            case 11: // JUNGLE
+            case 22: // DELTA
+                wet_bonus = 0.010f;
+                break;
+            case 18: // LAKE
+                wet_bonus = 0.016f;
+                break;
+            default:
+                wet_bonus = 0.0f;
+                break;
+        }
+        if (src_on_water) {
+            const float sea_ice = (SICE != nullptr) ? dc_clampf(SICE[src_idx], 0.0f, 1.0f) : 0.0f;
+            float src = (0.018f + temp_evap * 0.052f) * field_ocean_evap_gain * wind_evap;
+            src *= dc_clampf(1.0f + src_ocean_an * 0.55f, 0.55f, 1.45f);
+            src *= (1.0f - sea_ice * 0.92f);
+            if (src_is_lake) src *= field_lake_evap_scale;
+            return (src > 0.0f) ? src : 0.0f;
+        }
+        const float soil_norm = (SOIL != nullptr)
+            ? dc_clampf(0.5f + SOIL[src_idx], 0.0f, 1.0f)
+            : dc_clampf(src_base_m, 0.0f, 1.0f);
+        const float vitality = (VITA != nullptr) ? dc_clampf(VITA[src_idx], 0.0f, 1.0f) : 0.7f;
+        const float veg_flux = wf_vegetation_transp_factor(VEG[src_idx]) * (0.45f + vitality * 0.65f);
+        float src = (0.005f + src_base_m * 0.010f + soil_norm * 0.020f + veg_flux * 0.016f + wet_bonus)
+            * field_land_evapotranspiration_gain * temp_evap * (0.85f + src_wind_mag * 0.25f);
+        if (src_has_river) {
+            src += (0.010f + src_river_q * 0.020f) * field_land_evapotranspiration_gain * temp_evap;
+        }
+        return (src > 0.0f) ? src : 0.0f;
+    };
+
     // ─── Tight loop — 1:1 mirror of run_weather_field_solve_slice fast path ──
     // Source: weather_system.gd:678-757. Branch annotations preserved as
     // line-number citations so the next bit-equal failure is one diff away.
     for (int i = start_idx; i < end_idx; ++i) {
-        // (line 681) temp = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0, 1)
         float temp = TR[i] + climate_anomaly + AA[i];
         if (temp < 0.0f) temp = 0.0f;
         else if (temp > 1.0f) temp = 1.0f;
 
-        // (line 682) base_m = clampf(soa_moisture_loop[i], 0, 1)
         float base_m = MR[i];
         if (base_m < 0.0f) base_m = 0.0f;
         else if (base_m > 1.0f) base_m = 1.0f;
-        float vapor_capacity = 0.25f + 0.75f * temp - 0.20f * ELEV[i];
-        if (vapor_capacity < 0.18f) vapor_capacity = 0.18f;
+        float vapor_capacity = 0.18f + 0.82f * temp - 0.18f * ELEV[i];
+        if (vapor_capacity < 0.14f) vapor_capacity = 0.14f;
         else if (vapor_capacity > 1.0f) vapor_capacity = 1.0f;
 
-        // (line 683) ocean_an
         const float ocean_an = wf_avg_ocean_anomaly_at_idx(i, TERR, NB, TA);
-
-        // (line 684) on_water
         const bool on_water = wf_is_water_terrain(TERR[i]);
 
-        // (line 686-692) wind + wind_dir
-        // Caveat: GDScript falls back to _sample_terrain_wind() if wind ≈ 0.
-        // That path involves WorldData.iter_winds() with seasonal blending —
-        // currently NOT mirrored in C++. Bit-equal NOT guaranteed for cells
-        // where soa_wind == (0,0). In production these are extremely rare
-        // (wind solver writes non-zero everywhere except boundary degenerate
-        // cells). Caller can flip flag off if a regression appears.
         float wind_x = WX[i];
         float wind_y = WY[i];
         const float wlen2 = wind_x * wind_x + wind_y * wind_y;
@@ -4061,20 +4147,16 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         }
         const float wind_len = wf_wind_speed_norm(wind_x, wind_y, WSPD[i]);
 
-        // (line 694) upstream_idx
         const int upstream_idx = (field_advect_steps > 0)
             ? wf_neighbor_aligned_idx(i, -wind_dx, -wind_dy, POS, NB, n_cells, hex_size)
             : -1;
 
-        // (line 695) advected_vapor (decay-weighted upstream chain)
         const float advected_vapor = wf_upstream_vapor_idx_from_first(
             i, upstream_idx, POS, NB, PV, wind_dx, wind_dy, n_cells, hex_size,
             field_advect_steps);
 
-        // (line 696) neighbor_vapor (6-neighbour avg)
         const float neighbor_vapor = wf_neighbor_average_vapor_idx(i, NB, PV);
 
-        // (line 697-698) wind_mag + advect_w
         float wind_mag = wind_len / 1.2f;
         if (wind_mag < 0.0f) wind_mag = 0.0f;
         else if (wind_mag > 1.0f) wind_mag = 1.0f;
@@ -4082,8 +4164,6 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (advect_w < 0.65f) advect_w = 0.65f;
         else if (advect_w > 0.95f) advect_w = 0.95f;
 
-        // (line 699-704) is_lake / has_river attenuation
-        // TERRAIN.LAKE = 18 (terrain_type.gd order)
         const bool is_lake = (TERR[i] == 18);
         const bool has_river = (!is_lake) && (RIV[i] != 0) && (!on_water);
         const float river_flow_feedback = has_river
@@ -4100,12 +4180,6 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             else if (advect_w > 0.85f) advect_w = 0.85f;
         }
 
-        // (line 705-706) vapor = lerp(base_m, advected_vapor, advect_w);
-        //                vapor = lerp(vapor, neighbor_vapor, field_diffusion)
-        float vapor = base_m + (advected_vapor - base_m) * advect_w;
-        vapor = vapor + (neighbor_vapor - vapor) * field_diffusion;
-
-        // (line 708-712) effective_ocean_an
         float effective_ocean_an = ocean_an;
         if (is_lake) {
             effective_ocean_an = 0.20f;
@@ -4114,142 +4188,193 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             else                             effective_ocean_an = river_evap_floor;
         }
 
-        // (line 713) evap
-        const float evap = wf_evaporation_for_cell_idx(
-            i, TERR, VEG, RIV, NB, temp, base_m, effective_ocean_an, on_water,
-            field_ocean_evap_gain, field_lake_evap_scale);
+        const float source_local = surface_vapor_source(
+            i, temp, base_m, wind_mag, effective_ocean_an, on_water, is_lake,
+            has_river, river_flow_feedback);
+        float source_upwind = source_local;
+        if (upstream_idx >= 0 && upstream_idx < n_cells) {
+            float up_temp = TR[upstream_idx] + climate_anomaly + AA[upstream_idx];
+            if (up_temp < 0.0f) up_temp = 0.0f;
+            else if (up_temp > 1.0f) up_temp = 1.0f;
+            float up_base_m = MR[upstream_idx];
+            if (up_base_m < 0.0f) up_base_m = 0.0f;
+            else if (up_base_m > 1.0f) up_base_m = 1.0f;
+            const bool up_on_water = wf_is_water_terrain(TERR[upstream_idx]);
+            const bool up_is_lake = (TERR[upstream_idx] == 18);
+            const bool up_has_river = (!up_is_lake) && (RIV[upstream_idx] != 0) && (!up_on_water);
+            const float up_river_q = up_has_river
+                ? dc_clampf((RQ30 != nullptr ? RQ30[upstream_idx] : 0.0f), 0.0f, 1.0f)
+                : 0.0f;
+            const float up_ocean_an = up_on_water ? TA[upstream_idx] : effective_ocean_an;
+            source_upwind = surface_vapor_source(
+                upstream_idx, up_temp, up_base_m, wind_mag, up_ocean_an,
+                up_on_water, up_is_lake, up_has_river, up_river_q);
+        }
 
-        // (line 714) evaporation is limited by saturation deficit.
+        // 半真实大气：vapor 主导项是 transport_target；vapor_memory 仅占 ~20%，
+        // 保持 0.18 不削弱内陆平流（镜像 field_solver.gd）。
+        float vapor_memory = PV[i] + (base_m - PV[i]) * 0.18f;
+        float transport_target = advected_vapor + source_upwind * (0.60f + wind_mag * 0.65f);
+        float vapor = (vapor_memory + source_local * 0.35f)
+                    + (transport_target - (vapor_memory + source_local * 0.35f))
+                    * (advect_w * field_vapor_transport_gain);
+        vapor = vapor + (neighbor_vapor - vapor) * field_diffusion;
         float saturation_deficit = (vapor_capacity - vapor) / ((vapor_capacity > 0.001f) ? vapor_capacity : 0.001f);
         if (saturation_deficit < 0.0f) saturation_deficit = 0.0f;
         else if (saturation_deficit > 1.0f) saturation_deficit = 1.0f;
-        vapor += evap * saturation_deficit;
+        vapor += source_local * (0.30f + saturation_deficit * 0.70f);
         if (vapor < 0.0f) vapor = 0.0f;
         else if (vapor > vapor_capacity) vapor = vapor_capacity;
 
-        // (line 716) lift
         const float lift = wf_orographic_lift_from_upstream_idx(
             i, upstream_idx, ELEV);
 
-        // (line 717-719) convergence (refresh on stride, else inherit SoA)
-        // NOTE: When refresh_convergence=false, we read from OUT_CNV[i] which
-        // *was* the previous-tick value before this pass started. C++ takes
-        // ptrw() once at top — refcount alias to GDScript's SoA. Since this
-        // is a single-shot full pass, we read OUT_CNV[i] (= prev value) BEFORE
-        // any cell j > i overwrites it (cells are processed in order, and
-        // cell i only writes OUT_CNV[i], never OUT_CNV[j]). So the read sees
-        // the stable prev-tick value. Bit-equal to GDScript path.
         float convergence = PREV_CNV[i];
         if (refresh_convergence) {
             convergence = wf_wind_convergence_idx(i, POS, NB, WX, WY, WSPD);
         }
         if (lift < 0.0f) {
-            vapor += lift * 0.30f;
+            vapor += lift * field_rain_shadow_drying * 0.42f;
             if (vapor < 0.0f) vapor = 0.0f;
             else if (vapor > vapor_capacity) vapor = vapor_capacity;
         }
 
-        // (line 723-725) saturation / humid_excess / lift_supply
-        float saturation = vapor_capacity * 0.68f;
-        if (saturation < 0.16f) saturation = 0.16f;
-        else if (saturation > 0.80f) saturation = 0.80f;
-        float humid_excess = vapor - saturation;
+        float temp_min = temp;
+        float temp_max = temp;
+        const int nb_base = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nb_idx = NB[nb_base + d];
+            if (nb_idx < 0) continue;
+            float nb_temp = TR[nb_idx] + climate_anomaly + AA[nb_idx];
+            if (nb_temp < 0.0f) nb_temp = 0.0f;
+            else if (nb_temp > 1.0f) nb_temp = 1.0f;
+            if (nb_temp < temp_min) temp_min = nb_temp;
+            if (nb_temp > temp_max) temp_max = nb_temp;
+        }
+        const float temp_gradient = temp_max - temp_min;
+        float frontogenesis = convergence * wf_smoothstep(0.05f, 0.24f, temp_gradient) * field_frontogenesis_gain;
+        if (frontogenesis < 0.0f) frontogenesis = 0.0f;
+        else if (frontogenesis > 1.0f) frontogenesis = 1.0f;
+        float relative_humidity = vapor / ((vapor_capacity > 0.001f) ? vapor_capacity : 0.001f);
+        if (relative_humidity < 0.0f) relative_humidity = 0.0f;
+        else if (relative_humidity > 1.0f) relative_humidity = 1.0f;
+        const float rh_hi = (field_precip_rh_threshold + 0.18f < 0.99f)
+            ? field_precip_rh_threshold + 0.18f
+            : 0.99f;
+        const float condense_gate = wf_smoothstep(field_precip_rh_threshold, rh_hi, relative_humidity);
+        float humid_excess = relative_humidity - field_precip_rh_threshold;
         if (humid_excess < 0.0f) humid_excess = 0.0f;
         float lift_pos = (lift > 0.0f) ? lift : 0.0f;
-        float lift_gate = (vapor - 0.10f) / 0.40f;
+        float lift_gate = (relative_humidity - 0.45f) / 0.45f;
         if (lift_gate < 0.0f) lift_gate = 0.0f;
         else if (lift_gate > 1.0f) lift_gate = 1.0f;
         float lift_supply = lift_pos * lift_gate;
         if (lift_supply > field_orographic_lift_cap) lift_supply = field_orographic_lift_cap;
 
-        // (line 726-732) cloud
         float effective_oa_pos = (effective_ocean_an > 0.0f) ? effective_ocean_an : 0.0f;
-        float cloud = humid_excess * field_condensation_gain * 1.8f
-                    + lift_supply  * field_orographic_lift_gain
-                    + convergence  * field_convergence_gain
-                    + effective_oa_pos * 0.08f;
-        if (cloud < 0.0f) cloud = 0.0f;
-        else if (cloud > 1.0f) cloud = 1.0f;
-        float cloud_water = PCW != nullptr ? PCW[i] : cloud * 0.5f;
-        cloud_water = cloud_water * 0.70f + cloud * 0.55f + humid_excess * 0.18f + lift_supply * 0.12f;
+        float cloud_source = condense_gate * field_condensation_gain
+                           + lift_supply  * field_orographic_lift_gain
+                           + convergence  * field_convergence_gain * 0.55f
+                           + frontogenesis
+                           + effective_oa_pos * 0.05f;
+        if (cloud_source < 0.0f) cloud_source = 0.0f;
+        else if (cloud_source > 1.0f) cloud_source = 1.0f;
+        float cloud_water = PCW != nullptr ? PCW[i] : cloud_source * 0.35f;
+        // 半真实大气：凝结云水随风从上风格平流过来 → 云团整体随风飘动（镜像 field_solver.gd）。
+        if (PCW != nullptr && upstream_idx >= 0 && upstream_idx < n_cells) {
+            cloud_water = cloud_water + (PCW[upstream_idx] - cloud_water) * (wind_mag * 0.7f);
+        }
+        cloud_water = cloud_water * 0.62f + cloud_source * 0.48f + humid_excess * 0.22f + lift_supply * 0.14f;
         if (cloud_water < 0.0f) cloud_water = 0.0f;
         else if (cloud_water > 1.0f) cloud_water = 1.0f;
+        float cloud = cloud_source * 0.62f + cloud_water * 0.70f;
+        if (cloud < 0.0f) cloud = 0.0f;
+        else if (cloud > 1.0f) cloud = 1.0f;
         const float cloud_from_water = cloud_water * 0.75f;
         if (cloud < cloud_from_water) cloud = cloud_from_water;
         if (cloud > 1.0f) cloud = 1.0f;
 
-        // (line 733-741) instability
-        float instability = (temp - 0.45f) * 1.15f
-                          + vapor * 0.55f
+        float instability = (temp - 0.48f) * 1.05f
+                          + relative_humidity * 0.38f
                           + cloud * 0.35f
-                          + convergence * field_convergence_gain
+                          + convergence * field_convergence_gain * 0.75f
                           + lift_supply * field_orographic_lift_gain
-                          + effective_oa_pos * 0.25f;
+                          + frontogenesis * 0.45f
+                          + effective_oa_pos * 0.18f;
         if (instability < 0.0f) instability = 0.0f;
         else if (instability > 1.0f) instability = 1.0f;
 
-        // (line 742-747) precip
-        float lift_neg = (-lift > 0.0f) ? -lift : 0.0f;
-        const float cloud_core = wf_smoothstep(0.18f, 0.42f, cloud);
-        float terrain_trigger = lift_supply * 2.8f + ((convergence > 0.0f) ? convergence : 0.0f) * 1.4f;
-        if (terrain_trigger < 0.0f) terrain_trigger = 0.0f;
-        else if (terrain_trigger > 1.0f) terrain_trigger = 1.0f;
-        float vapor_gate = (vapor - 0.12f) / 0.30f;
-        if (vapor_gate < 0.0f) vapor_gate = 0.0f;
-        else if (vapor_gate > 1.0f) vapor_gate = 1.0f;
-        float trigger_focus = (cloud_core > terrain_trigger) ? cloud_core : terrain_trigger;
-        const float cloud_water_focus = cloud_water * 0.55f;
-        if (trigger_focus < cloud_water_focus) trigger_focus = cloud_water_focus;
-        float rain_focus = trigger_focus * vapor_gate;
+        float trigger_focus = condense_gate;
+        const float lift_trigger = lift_supply * 1.6f;
+        if (trigger_focus < lift_trigger) trigger_focus = lift_trigger;
+        if (trigger_focus < frontogenesis) trigger_focus = frontogenesis;
+        float rain_focus = trigger_focus * relative_humidity;
         if (rain_focus < 0.0f) rain_focus = 0.0f;
         else if (rain_focus > 1.0f) rain_focus = 1.0f;
-        // B 修复（precip-too-wet-fix-2026-06）：原系数让 99.9% (cell,tick) 永远有微量降水。
-        // (1) precip_source: cloud/instability gain 偏高 → 0.30→0.22, 0.76→0.55, lift_supply 0.36→0.30；
-        //     lift_neg 抑制略加强 0.55→0.60。
-        // (2) precip_raw 总乘数 1.18→0.95。
-        // 目标：把 wet_any 从 99.9% → ~60-70%，equatorial land wet_heavy 59%→<25%。
-        float precip_source = cloud * (0.22f + instability * 0.55f)
-                            + lift_supply * 0.30f
-                            - lift_neg * 0.60f;
-        if (precip_source < 0.0f) precip_source = 0.0f;
-        const float precip_raw = precip_source * 0.95f * rain_focus;
-        // climate-loop-closure Phase 1.2：降水沿风平流。carryover 源从上风格
-        // (upstream_idx) 继承，权重随 wind_mag 增大 → 雨带随锋面下风迁移。
-        // 1:1 mirror of field_solver.gd precip-advection block. advect_steps==0
-        // → upstream_idx<0 → 退回 legacy 同格 carryover。
+        float precip_raw = (cloud_water * (0.18f + instability * 0.42f)
+                         + lift_supply * 0.20f
+                         + frontogenesis * 0.12f) * rain_focus;
+        if (lift < 0.0f) {
+            float shadow = (-lift) * field_rain_shadow_drying;
+            if (shadow > 0.85f) shadow = 0.85f;
+            precip_raw *= (1.0f - shadow);
+        }
         float old_precip = PP[i];
         if (upstream_idx >= 0 && upstream_idx < n_cells) {
             old_precip = old_precip + (PP[upstream_idx] - old_precip) * wind_mag;
         }
-        float vapor_floor_factor = (vapor - 0.12f) / 0.34f;
+        // 半真实大气：carryover/平流接力门槛与 RH 触发阈解耦并下调，让随风迁移的雨带
+        // 进入略干的下风格后仍能维持一段（镜像 field_solver.gd）。
+        float vapor_floor_factor = (relative_humidity - 0.45f) / 0.40f;
         if (vapor_floor_factor < 0.0f) vapor_floor_factor = 0.0f;
         else if (vapor_floor_factor > 1.0f) vapor_floor_factor = 1.0f;
         const float dyn_decay = field_precip_decay + wind_mag * 0.25f;
         float keep_ratio = 1.0f - dyn_decay;
         if (keep_ratio < 0.0f) keep_ratio = 0.0f;
         if (keep_ratio > field_precip_carryover_max) keep_ratio = field_precip_carryover_max;
-        const float rain_floor_focus = (rain_focus > 0.30f) ? rain_focus : 0.30f;
-        const float precip_floor = (vapor >= 0.42f && old_precip >= 0.04f)
+        const float rain_floor_focus = (rain_focus > 0.25f) ? rain_focus : 0.25f;
+        float rh_carry_gate = field_precip_rh_threshold - 0.12f;
+        if (rh_carry_gate < 0.45f) rh_carry_gate = 0.45f;
+        const float precip_floor = (relative_humidity >= rh_carry_gate && old_precip >= 0.020f)
             ? old_precip * keep_ratio * vapor_floor_factor * rain_floor_focus
             : 0.0f;
-        // B 修复 (2)：cloud_water_rain floor 加严：只在 rain_focus>0.10 且 instability>0.10 时
-        // 才贡献 floor，否则 0。原来始终至少 0.18*0.14 = 0.025 的最低 floor，正是 wet_any=99.9% 的根源。
-        const float cloud_water_rain = (rain_focus > 0.10f && instability > 0.10f)
-            ? (cloud_water * rain_focus * (0.10f + instability * 0.14f))
+        const float cloud_water_rain = (rain_focus > 0.08f && instability > 0.08f)
+            ? (cloud_water * rain_focus * (0.08f + instability * 0.12f))
             : 0.0f;
         float precip = (precip_raw > precip_floor) ? precip_raw : precip_floor;
         if (precip < cloud_water_rain) precip = cloud_water_rain;
         if (precip < 0.0f) precip = 0.0f;
         else if (precip > 1.0f) precip = 1.0f;
+        // 半真实大气：海面降水抑制 —— 开阔/平静洋面几乎不降水（只留 1-suppression 的层云毛毛雨），
+        // 降水集中在空间动力强迫带：风辐合(convergence) / 锋生(frontogenesis) / 暖洋流异常(ocean_an)
+        // → 雨带成「团/带」随风系移动，静洋面被压到阈值以下形成雨团间的晴海。
+        // ⚠ instability 被 cloud 喂大、在近饱和洋面近乎处处偏高(实测 p95≈0.88)，不是好空间判据；
+        //   低阈当释放项会把整片洋面放成雨。故仅作「极端深对流安全阀」(阈 0.90)。镜像 field_solver.gd。
+        // 海洋作为水汽源不受影响；is_lake/河流不在此抑制。
+        if (on_water && !is_lake) {
+            float drv_an = ocean_an / 0.16f;
+            if (drv_an < 0.0f) drv_an = 0.0f; else if (drv_an > 1.0f) drv_an = 1.0f;
+            float drv_in = (instability - 0.90f) / 0.10f;
+            if (drv_in < 0.0f) drv_in = 0.0f; else if (drv_in > 1.0f) drv_in = 1.0f;
+            float drv_cv = (convergence - 0.38f) / 0.16f;
+            if (drv_cv < 0.0f) drv_cv = 0.0f; else if (drv_cv > 1.0f) drv_cv = 1.0f;
+            float drv_fr = frontogenesis / 0.16f;
+            if (drv_fr < 0.0f) drv_fr = 0.0f; else if (drv_fr > 1.0f) drv_fr = 1.0f;
+            float ocean_drive = drv_an;
+            if (drv_in > ocean_drive) ocean_drive = drv_in;
+            if (drv_cv > ocean_drive) ocean_drive = drv_cv;
+            if (drv_fr > ocean_drive) ocean_drive = drv_fr;
+            const float ocean_lo = 1.0f - field_ocean_precip_suppression;
+            precip *= ocean_lo + (1.0f - ocean_lo) * ocean_drive;
+        }
         precip = wf_apply_precip_stability(
             TERR[i], precip,
             field_wet_terrain_precip_damping,
             field_lake_precip_damping,
             field_extreme_precip_soft_cap,
             field_extreme_precip_softness);
-        // B 修复 (3)：< 0.005 微量降水清零（消除毛毛雨地毯）。
         if (precip < 0.005f) precip = 0.0f;
-        cloud_water -= precip * 0.32f;
+        cloud_water -= precip * 0.42f;
         if (cloud_water < 0.0f) cloud_water = 0.0f;
         float vapor_after_precip = vapor - precip * field_vapor_precip_sink;
         if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
@@ -4720,9 +4845,9 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.06f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
@@ -4896,9 +5021,9 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.04f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
@@ -6375,9 +6500,9 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.16f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.55f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.12f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
@@ -6487,9 +6612,9 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.20f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.16f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.55f;
+    float tta_zero_current_decay = knobs.has("tta_zero_current_decay") ? float(knobs["tta_zero_current_decay"]) : 0.12f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_zero_current_decay = dc_clampf(tta_zero_current_decay, 0.0f, 1.0f);
@@ -6692,9 +6817,9 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.16f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.55f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.08f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
@@ -6792,9 +6917,9 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.08f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.35f;
-    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.12f;
+    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.16f;
+    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.55f;
+    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.08f;
     tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
     tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
     tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
@@ -12315,6 +12440,11 @@ static inline double pk_alt_penalty(double e) {
 // taiga/tundra，温带森林/草原带被压扁；下调指数让温带/亚热带占据更多纬度。
 static constexpr double PK_LAT_TEMP_CURVE_EXP = 1.3;
 
+// [cylindrical-earth-daylight] 文件作用域 2π：供生成期圆柱噪声采样(cyl_noise)、经度角(θ=2π·col/width)
+// 与雨影 jitter 圆环采样共用。放文件作用域而非函数内，避免无捕获 lambda 隐式捕获 constexpr 报错
+// (MSVC C3493)，且让分属不同函数的 elevation / rain-shadow 两处都能访问同一常量。
+static constexpr double PK_TWO_PI = 6.283185307179586;
+
 // SAME_SOURCE（C++ 镜像）: DCClimateMath.lat_temp_bell —— 全工程纬度温度钟形的唯一 C++ 实现。
 //   lat_temp = pow(cos(lat_signed * π/2), PK_LAT_TEMP_CURVE_EXP) ∈ [0,1]（cos 偶函数，传 |ls| 等价）。
 // 下方 pk_compute_temperature + 洋流上升流/热盐 cold-sink 一律调用本函数，不再就地重写 pow(cos,...)。
@@ -12649,9 +12779,17 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     lake_noise->set_frequency(lake_seed_freq);
     lake_noise->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
     lake_noise->set_fractal_octaves(3);
+    // [湖泊多样化 2026-06-19] 高频小湖噪声：低频 lake_noise 给大/中湖盆，本层给散布的小湖点，
+    // 二者叠加产生"小/中/大"大小层次；同时复用本噪声做 domain-warp 让湖盆边界不规则(形状多样)。
+    Ref<FastNoiseLite> lake_noise_small;  lake_noise_small.instantiate();
+    lake_noise_small->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    lake_noise_small->set_seed(seed + 4421);
+    lake_noise_small->set_frequency(lake_seed_freq * 2.6);
+    lake_noise_small->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    lake_noise_small->set_fractal_octaves(3);
 
     if (height_noise.is_null() || height_warp.is_null() || detail_noise.is_null()
-            || moisture_noise.is_null() || lake_noise.is_null()) {
+            || moisture_noise.is_null() || lake_noise.is_null() || lake_noise_small.is_null()) {
         return fail("fast_noise_lite_instantiate_failed", "noise");
     }
 
@@ -12678,7 +12816,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const double py = double(rng->randf_range(lo, hi));
             bool ok = true;
             for (const Center &c : centers) {
-                const double dx = px - c.x;
+                // [cylindrical-earth-daylight] 经度环绕最短距离 → 中心间距在接缝处也正确，避免左右各放一坨。
+                double dx = std::fabs(px - c.x);
+                if (dx > 0.5) dx = 1.0 - dx;
                 const double dy = py - c.y;
                 const double d = std::sqrt(dx * dx + dy * dy);
                 if (d < (radius + c.radius) * sep_factor) {
@@ -12877,9 +13017,23 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
     constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
     auto index_for_qr = [&](int q, int r) -> int {
-        const int col = q + ((r - (r & 1)) / 2);
-        if (col < 0 || col >= width || r < 0 || r >= height) return -1;
+        // [cylindrical-earth-daylight] 东西经度环绕：r(南北)保持硬边界返回 -1，
+        // col(经度)用 posmod 绕回 [0,width) → 生成期邻居访问与运行时 map_data 一样东西连通；
+        // 雨影 upwind 探针、侵蚀/水文 BFS 等读此函数的 pass 自动获得东西环绕。
+        if (r < 0 || r >= height) return -1;
+        int col = q + ((r - (r & 1)) / 2);
+        col = ((col % width) + width) % width;
         return r * width + col;
+    };
+
+    // [cylindrical-earth-daylight] 圆柱噪声采样 helper：把经度轴(nx∈[0,1))映射到半径
+    // scale/TWO_PI 的圆环 (cosθ,sinθ)，纬度走 z 轴线性。圆周长 = scale → 与原 nx*scale
+    // 特征尺度一致；col=0 与 col=width 处 (cosθ,sinθ) 严格相等 → 海拔/气候/湖等噪声东西无缝。
+    // PK_TWO_PI 为文件作用域常量（见上方定义）→ 无捕获 lambda 可直接用、不触发 MSVC C3493。
+    auto cyl_noise = [](FastNoiseLite *nz, double ct, double st, double ny, double scale,
+                        double ox, double oy, double oz) -> double {
+        const double rc = scale / PK_TWO_PI;
+        return double(nz->get_noise_3d(ct * rc + ox, st * rc + oy, ny * scale + oz));
     };
 
     // ── 1. coords + elevation —— 镜像 _compute_elevation（行主序，与 all_cells() 一致）──
@@ -12892,32 +13046,44 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             S[idx] = -q - row;
             LAT[idx] = float(double(row) * inv_h);
 
-            const double nx = double(col) * inv_w;
+            const double nx = double(col) * inv_w;   // [0,1] 含端点：仅保留给 tectonic_elev_at（默认关闭）
             const double ny = double(row) * inv_h;
-            const double dist_perturb = double(height_warp->get_noise_2d(nx * 250.0 + 11.3, ny * 250.0 - 7.1)) * continent_warp_amp;
+            // [cylindrical-earth-daylight] 经度坐标 period=width（lon=col/width∈[0,1)）：col=0 与
+            // col=width-1 仅差 1 角步、相邻而非重合（若用 col/(width-1) 会让首尾列采到同一角→"双列"接缝）。
+            const double lon = double(col) / double(width);
+            const double theta = PK_TWO_PI * lon;   // 经度角（周期）→ 东西无缝
+            const double ct = std::cos(theta);
+            const double st = std::sin(theta);
+            const double dist_perturb = cyl_noise(height_warp.ptr(), ct, st, ny, 250.0, 11.3, -7.1, 0.0) * continent_warp_amp;
             double dist_field = 0.0;
             for (const Center &c : centers) {
-                const double dx = nx - c.x;
+                // [cylindrical-earth-daylight] 经度环绕最短距离 → 大陆可跨接缝、东西无缝。
+                double dx = std::fabs(lon - c.x);
+                if (dx > 0.5) dx = 1.0 - dx;
                 const double dy = ny - c.y;
                 const double d = std::sqrt(dx * dx + dy * dy) + dist_perturb;
                 double df = pk_clamp01(1.0 - d / c.radius);
                 df = std::pow(df, 1.5);
                 if (df > dist_field) dist_field = df;
             }
-            const double u = nx * 200.0;
-            const double v = ny * 200.0;
-            const double u_warp = double(height_warp->get_noise_2d(u + 11.3, v - 7.1)) * 35.0;
-            const double v_warp = double(height_warp->get_noise_2d(u - 23.7, v + 41.5)) * 35.0;
-            const double c1 = double(height_noise->get_noise_2d(u + u_warp, v + v_warp));
-            const double c2 = double(detail_noise->get_noise_2d(u * 1.7 + u_warp, v * 1.7 + v_warp));
+            // [cylindrical-earth-daylight] 主大陆 fBm：在圆柱坐标上先算 domain-warp，再在
+            // warp 后的圆柱坐标采样；warp 与主噪声都是 (cosθ,sinθ,z) 的连续函数 → col=0/width 严格相等。
+            const double rc200 = 200.0 / PK_TWO_PI;
+            const double cx = ct * rc200;
+            const double cy = st * rc200;
+            const double cz = ny * 200.0;
+            const double u_warp = double(height_warp->get_noise_3d(cx + 11.3, cy - 7.1, cz)) * 35.0;
+            const double v_warp = double(height_warp->get_noise_3d(cx - 23.7, cy + 41.5, cz)) * 35.0;
+            const double c1 = double(height_noise->get_noise_3d(cx + u_warp, cy + v_warp, cz));
+            const double c2 = double(detail_noise->get_noise_3d(cx * 1.7 + u_warp, cy * 1.7 + v_warp, cz * 1.7));
             const double noise_01 = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
-            const double meso = (double(detail_noise->get_noise_2d(nx * 400.0 + 137.0, ny * 400.0 - 91.0)) + 1.0) * 0.5;
-            const double coast = double(height_noise->get_noise_2d(nx * 80.0 + 500.0, ny * 80.0 + 500.0)) * 0.06;
-            const double offshore_raw = double(detail_noise->get_noise_2d(nx * 900.0 - 333.0, ny * 900.0 + 217.0));
+            const double meso = (cyl_noise(detail_noise.ptr(), ct, st, ny, 400.0, 137.0, -91.0, 0.0) + 1.0) * 0.5;
+            const double coast = cyl_noise(height_noise.ptr(), ct, st, ny, 80.0, 500.0, 500.0, 0.0) * 0.06;
+            const double offshore_raw = cyl_noise(detail_noise.ptr(), ct, st, ny, 900.0, -333.0, 217.0, 0.0);
             const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;
             // [macro-relief 2026-06-19] 低频大尺度起伏(~4 周期/全宽)：正→大高地/山系，负→大盆地/
             // 大平原洼地。乘 dist_field 使其在陆地核心最强、海岸渐隐，保留群岛海岸不变。放大汇水盆地。
-            const double macro = double(height_noise->get_noise_2d(nx * 95.0 + 701.0, ny * 95.0 - 419.0));
+            const double macro = cyl_noise(height_noise.ptr(), ct, st, ny, 95.0, 701.0, -419.0, 0.0);
             // 放射状大陆 raw（保留作 tectonic_blend 回退）。
             const double radial_raw = dist_field * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight)
                 + coast + offshore + macro * dist_field * macro_relief_weight;
@@ -12933,11 +13099,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             } else {
                 raw = radial_raw;
             }
-            const double edge_dx = std::fabs(nx - 0.5) * 2.0;
+            // [cylindrical-earth-daylight] 仅保留南北极(纬度)海拔衰减，去掉东西 edge_dx，
+            // 否则左右各一条"边缘海墙"且与对侧不连续(接缝)。东西现为经度环绕、无边界。
             const double edge_dy = std::fabs(ny - 0.5) * 2.0;
-            const double edge_d_base = std::max(edge_dx, edge_dy);
-            const double edge_perturb = double(height_warp->get_noise_2d(nx * 150.0 + 199.0, ny * 150.0 - 73.0)) * 0.38;
-            const double edge_d = edge_d_base + edge_perturb;
+            const double edge_perturb = cyl_noise(height_warp.ptr(), ct, st, ny, 150.0, 199.0, -73.0, 0.0) * 0.38;
+            const double edge_d = edge_dy + edge_perturb;
             const double edge_t = pk_smoothstep(edge_falloff_start, edge_falloff_end, edge_d);
             raw -= edge_t * edge_falloff_depth;
             E[idx] = float(raw);
@@ -12995,7 +13161,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                                     std::greater<std::pair<float, int>>> pq;
                 for (int row = 0; row < height; ++row) {
                     for (int col = 0; col < width; ++col) {
-                        if (row != 0 && row != height - 1 && col != 0 && col != width - 1) continue;
+                        // [cylindrical-earth-daylight] 仅南北极(row)作排水基准；东西经度环绕由 index_for_qr 在 flood 扩散时处理。
+                        if (row != 0 && row != height - 1) continue;
                         const int i = row * width + col;
                         pf_seen[size_t(i)] = 1; filled[size_t(i)] = E[i];
                         pq.push(std::make_pair(E[i], i));
@@ -13131,15 +13298,42 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         const double sea = sea_level;
         const double w_min = lake_seed_min_interior;
         const double w_max = 1.0 - lake_seed_min_interior;
+        // [湖泊多样化 2026-06-19] 每格记录目标下沉深度(0=非种子)，按噪声强度做"中心深/边缘浅"渐变。
+        std::vector<float> seed_depth(size_t(n), 0.0f);
+        const double small_thr = std::min(0.95, lake_seed_threshold + 0.08);  // 小湖阈值(+0.14 过严→几乎无小湖；放宽到 +0.08 让小湖成形，仍靠 pit-fill≥4 格防碎湖)
+        const double warp_amp = 7.0;                                          // domain-warp 振幅(hex 单位)
         for (int row = 0; row < height; ++row) {
             for (int col = 0; col < width; ++col) {
                 const int idx = row * width + col;
                 if (double(E[idx]) < sea + 0.04) continue;
-                const double nx = double(col) * inv_w;
                 const double ny = double(row) * inv_h;
-                if (nx < w_min || nx > w_max || ny < w_min || ny > w_max) continue;
-                const double nval = double(lake_noise->get_noise_2d(double(Q[idx]), double(R[idx])));
-                if (nval < lake_seed_threshold) continue;
+                // [cylindrical-earth-daylight] 仅排除南北极附近(纬度)，东西可环绕成湖、不再排除。
+                if (ny < w_min || ny > w_max) continue;
+                // [cylindrical-earth-daylight] domain warp + 圆柱采样：经度走半径 width/TWO_PI
+                // 的圆环(arc/col≈1 hex，尺度与原 Q 一致)，纬度走 z；经度 period=width（col/width）
+                // 使 col=0 与 col=width-1 相邻不重合 → 湖盆可跨接缝、东西无缝。经度 warp 经 Δθ 施加。
+                const double l_theta = PK_TWO_PI * (double(col) / double(width));
+                const double l_rc = double(width) / PK_TWO_PI;
+                const double lcx = std::cos(l_theta) * l_rc;
+                const double lcy = std::sin(l_theta) * l_rc;
+                const double lz = double(row);
+                const double warp_lon = double(lake_noise_small->get_noise_3d(lcx + 211.0, lcy - 77.0, lz)) * warp_amp;
+                const double warp_lat = double(lake_noise_small->get_noise_3d(lcx - 53.0, lcy + 169.0, lz)) * warp_amp;
+                const double th2 = l_theta + warp_lon / l_rc;   // 经度方向 warp（保持周期）
+                const double wcx = std::cos(th2) * l_rc;
+                const double wcy = std::sin(th2) * l_rc;
+                const double wz = lz + warp_lat;                // 纬度方向 warp
+                const double n_large = double(lake_noise->get_noise_3d(wcx, wcy, wz));
+                const double n_small = double(lake_noise_small->get_noise_3d(wcx, wcy, wz));
+                double strength = -1.0;  // <0 表示非种子
+                if (n_large >= lake_seed_threshold) {
+                    // 大/中湖盆：强度=超阈幅度→噪声峰(湖心)深、近阈值(湖缘)浅
+                    strength = (n_large - lake_seed_threshold) / std::max(1e-3, 1.0 - lake_seed_threshold);
+                } else if (n_small >= small_thr) {
+                    // 小湖点：整体更浅(0.35 缩放)，避免与大湖同深
+                    strength = 0.35 * (n_small - small_thr) / std::max(1e-3, 1.0 - small_thr);
+                }
+                if (strength < 0.0) continue;
                 bool has_water_nb = false;
                 for (int d = 0; d < 6; ++d) {
                     const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
@@ -13147,10 +13341,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 }
                 if (has_water_nb) continue;
                 LS[idx] = 1;
+                const double sc = (strength > 1.0) ? 1.0 : strength;                    // clamp01
+                seed_depth[size_t(idx)] = float(lake_seed_depth * (0.55 + 0.95 * sc));  // 0.55x~1.5x 深度梯度
             }
         }
         for (int i = 0; i < n; ++i) {
-            if (LS[i] != 0) E[i] = float(sea - lake_seed_depth);
+            if (LS[i] != 0) E[i] = float(sea - double(seed_depth[size_t(i)]));
         }
     }
 
@@ -13184,10 +13380,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             for (int col = 0; col < width; ++col) {
                 const int idx = row * width + col;
                 if (double(E[idx]) < sea_level) continue;
-                const double nx2 = double(col) * inv_w;
                 const double ny2 = double(row) * inv_h;
-                const double ridge_a = 1.0 - std::fabs(double(detail_noise->get_noise_2d(nx2 * 180.0 + 71.3, ny2 * 180.0 - 33.7)));
-                const double ridge_b = 1.0 - std::fabs(double(detail_noise->get_noise_2d(nx2 * 220.0 - 50.7, ny2 * 220.0 + 91.1)));
+                // [cylindrical-earth-daylight] 山脊噪声圆柱采样 → 山脉跨接缝东西无缝；
+                // 经度 period=width（col/width），col=0 与 col=width-1 相邻不重合。
+                const double th2 = PK_TWO_PI * (double(col) / double(width));
+                const double ct2 = std::cos(th2);
+                const double st2 = std::sin(th2);
+                const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0, 71.3, -33.7, 0.0));
+                const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0, -50.7, 91.1, 0.0));
                 const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
                 double lowest = double(E[idx]);
                 for (int d = 0; d < 6; ++d) {
@@ -13233,7 +13433,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             for (int col = 0; col < width; ++col) {
                 const int idx = row * width + col;
                 if (double(E[idx]) >= sea) continue;
-                if (row == 0 || row == height - 1 || col == 0 || col == width - 1) {
+                if (row == 0 || row == height - 1) {  // [cylindrical] 仅南北极作海洋种子；东西经度环绕由 index_for_qr 处理
                     ocean_e[size_t(idx)] = 1;
                     obfs.push_back(idx);
                 }
@@ -13253,6 +13453,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         std::vector<int> pit_comp;
         pit_comp.reserve(256);
         int pit_filled = 0;
+        // [湖泊多样化 2026-06-19] 含 lake_seed 的洼地放宽到 ≥4 格即保留为小湖；非种子的噪声碎坑
+        // 仍按 lake_min(8) 填平 → 既出现小湖大小层次，又不让随机碎湖回归(沿用之前碎湖修复)。
+        const uint8_t *LS_ptr = is_lake_seed_arr.ptr();
+        const int seed_keep_min = std::min(lake_min, 4);
         for (int s = 0; s < n; ++s) {
             if (double(E[s]) >= sea || ocean_e[size_t(s)] || pit_seen[size_t(s)]) continue;
             pit_comp.clear();
@@ -13260,6 +13464,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             pit_seen[size_t(s)] = 1;
             // 同时记录该洼地的"溢出口"高度 = 最低的陆地(E>=sea)边界邻居。
             double spill_e = std::numeric_limits<double>::infinity();
+            bool comp_has_seed = (LS_ptr[size_t(s)] != 0);
             for (size_t qi = 0; qi < pit_comp.size(); ++qi) {
                 const int cur = pit_comp[qi];
                 for (int d = 0; d < 6; ++d) {
@@ -13272,9 +13477,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     if (pit_seen[size_t(ni)] || ocean_e[size_t(ni)]) continue;
                     pit_seen[size_t(ni)] = 1;
                     pit_comp.push_back(ni);
+                    if (LS_ptr[size_t(ni)] != 0) comp_has_seed = true;
                 }
             }
-            if (int(pit_comp.size()) < lake_min) {
+            const int keep_min = comp_has_seed ? seed_keep_min : lake_min;
+            if (int(pit_comp.size()) < keep_min) {
                 // [空洞平滑 2026-06-19] 旧版统一压到 sea+0.012 的固定低值 → 内陆遍布比周围明显
                 // 低一截的"小坑斑块"(用户反馈：空洞太小、地面碎)。改为回填到溢出口高度(略低
                 // 0.012)，使原洼地与最近陆地出口齐平、平滑融入周围地形，不再读作突兀低斑。
@@ -13328,25 +13535,31 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     for (int row = 0; row < height; ++row) {
         const double ny = double(row) * inv_h;
         const PkWind2 wind = pk_wind_belt_wind_at(ny, 0.0, 0.0);
-        const bool eastward = wind.x >= 0.0; // +x：风自西吹向东 → 从 col 0(西)开始扫
+        const int dir = (wind.x >= 0.0) ? 1 : -1;   // +1：风自西吹向东 → 从西向东扫
+        // [cylindrical-earth-daylight] 环向(经度环绕)扫描：绕两整圈，第一圈预热让 humidity
+        // 沿盛行风环流平衡，第二圈才写 M。消除旧"每行从边界 humidity=0"导致的西岸假干旱
+        // 与接缝突变 → 湿度在东西方向连续、随盛行风环流闭合。
         double humidity = 0.0;
         int prev_idx = -1;
-        for (int step = 0; step < width; ++step) {
-            const int col = eastward ? step : (width - 1 - step);
+        const int start_col = (dir > 0) ? 0 : (width - 1);
+        for (int step = 0; step < 2 * width; ++step) {
+            const int col = (((start_col + dir * step) % width) + width) % width;
             const int idx = row * width + col;
+            const bool record = (step >= width);    // 第一圈预热不写、第二圈记录
             const bool is_water = double(E[idx]) < sea_level;
             if (is_water) {
                 humidity = std::min(moisture_humidity_cap, humidity + moisture_wind_evap);
-                M[idx] = float(pk_clamp01(0.85 + 0.15 * humidity)); // 开放水域恒湿
+                if (record) M[idx] = float(pk_clamp01(0.85 + 0.15 * humidity)); // 开放水域恒湿
             } else {
                 const double upslope = (prev_idx >= 0) ? std::max(0.0, double(E[idx]) - double(E[prev_idx])) : 0.0;
                 double rainout = moisture_rainout_base + upslope * moisture_orographic_gain;
                 if (rainout > 0.95) rainout = 0.95;
                 const double precip = humidity * rainout;
-                const double nx = double(col) * inv_w;
-                const double jitter = (double(moisture_noise->get_noise_2d(nx * 100.0, ny * 100.0))) * moisture_noise_amp;
+                // [cylindrical-earth-daylight] 湿度抖动噪声圆柱采样 → 东西无缝；经度 period=width（col/width）
+                const double mth = PK_TWO_PI * (double(col) / double(width));
+                const double jitter = cyl_noise(moisture_noise.ptr(), std::cos(mth), std::sin(mth), ny, 100.0, 0.0, 0.0, 0.0) * moisture_noise_amp;
                 double m = moisture_land_base + precip * moisture_precip_gain + jitter;
-                M[idx] = float(pk_clamp01(m));
+                if (record) M[idx] = float(pk_clamp01(m));
                 humidity -= precip;
                 if (humidity < 0.0) humidity = 0.0;
                 humidity *= (1.0 - moisture_continental_dry); // 大陆度：内陆持续干燥化
@@ -13683,8 +13896,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
     constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
     auto index_for_qr = [&](int q, int r) -> int {
-        const int col = q + ((r - (r & 1)) / 2);
-        if (col < 0 || col >= width || r < 0 || r >= height) return -1;
+        // [cylindrical-earth-daylight] 东西经度环绕：r(南北)保持硬边界返回 -1，
+        // col(经度)用 posmod 绕回 [0,width) → 生成期邻居访问与运行时 map_data 一样东西连通；
+        // 雨影 upwind 探针、侵蚀/水文 BFS 等读此函数的 pass 自动获得东西环绕。
+        if (r < 0 || r >= height) return -1;
+        int col = q + ((r - (r & 1)) / 2);
+        col = ((col % width) + width) % width;
         return r * width + col;
     };
     std::vector<int32_t> NB(size_t(n) * 6, -1);
@@ -13739,7 +13956,16 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     };
 
     auto cube_distance = [&](int a, int b) -> int {
-        return (std::abs(Q[a] - Q[b]) + std::abs(R[a] - R[b]) + std::abs(S[a] - S[b])) / 2;
+        // [cylindrical-earth-daylight] 东西环绕的最短 cube 距离：把 b 沿 col 方向 ±width
+        // 平移（offset col±width ⇔ cube q±width, s∓width, r 不变），取三者最小 →
+        // 火山间距等横向度量在接缝处也正确。
+        const int dq = Q[a] - Q[b];
+        const int dr = R[a] - R[b];
+        const int ds = S[a] - S[b];
+        const int d0 = (std::abs(dq) + std::abs(dr) + std::abs(ds)) / 2;
+        const int d1 = (std::abs(dq - width) + std::abs(dr) + std::abs(ds + width)) / 2;
+        const int d2 = (std::abs(dq + width) + std::abs(dr) + std::abs(ds - width)) / 2;
+        return std::min(d0, std::min(d1, d2));
     };
     auto sync_axes = [&](int i) {
         const uint8_t lf = pk_derive_landform_with_volcano(TERR[i], E[i], float(sea_level), VOLC[i] != 0);
@@ -13785,9 +14011,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     queue.reserve(size_t(n));
     for (int i = 0; i < n; ++i) {
         if (!pk_is_ocean_connected_seed_terrain(TERR[i])) continue;
-        const int col = Q[i] + ((R[i] - (R[i] & 1)) / 2);
+        // [cylindrical-earth-daylight] 仅南北极(row)作排水出口种子；东西经度环绕由 NB(已 posmod) 在 BFS 扩散时连通。
         const int row = R[i];
-        if (col == 0 || col == width - 1 || row == 0 || row == height - 1) {
+        if (row == 0 || row == height - 1) {
             connected[size_t(i)] = 1;
             queue.push_back(i);
         }
@@ -13811,9 +14037,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     std::vector<int> hydro_order;
     hydro_order.reserve(size_t(n));
     for (int i = 0; i < n; ++i) {
-        const int col = Q[i] + ((R[i] - (R[i] & 1)) / 2);
+        // [cylindrical-earth-daylight] 仅南北极(row)作水文 flood 出海口；东西经度环绕由 index_for_qr/NB 处理。
         const int row = R[i];
-        if (col != 0 && col != width - 1 && row != 0 && row != height - 1) continue;
+        if (row != 0 && row != height - 1) continue;
         hydro_seen[size_t(i)] = 1;
         hydro_fill[size_t(i)] = E[i];
         hydro_pq.push(HydroNode(E[i], i));
@@ -13930,7 +14156,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     if (lookback > 0 && rs_warp.is_valid()) {
         for (int i = 0; i < n; ++i) {
             if (pk_is_water_terrain(TERR[i])) continue;
-            const double jitter = double(rs_warp->get_noise_2d(double(Q[i]) * 8.0, double(R[i]) * 8.0)) * 0.04;
+            // [cylindrical-earth-daylight] 雨影 jitter 经度环绕：把原 Q*8 的经度轴换成周长 8*width
+            // 的圆环(每 col 弧长≈8，特征尺度不变)，纬度仍 R*8 → 接缝处风扰动连续；配合下方
+            // index_for_qr 的 upwind 探针(已环绕)，雨影在东西方向无缝、不再有边缘断层。
+            const int rs_col = i % width;
+            const double rs_rc = 8.0 * double(width) / PK_TWO_PI;
+            const double rs_theta = PK_TWO_PI * (double(rs_col) / double(width));
+            const double jitter = double(rs_warp->get_noise_3d(std::cos(rs_theta) * rs_rc,
+                                                               std::sin(rs_theta) * rs_rc,
+                                                               double(R[i]) * 8.0)) * 0.04;
             const PkWind2 wind = pk_wind_belt_wind_at(row_norm(i), 1.0, jitter);
             const int dir = pk_upwind_dir_index_from_wind(wind.x, wind.y);
             if (dir < 0) continue;
@@ -14428,9 +14662,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         bfs.reserve(size_t(n));
         for (int i = 0; i < n; ++i) {
             if (!pk_is_water_terrain(TERR[i])) continue;
-            const int col = Q[i] + ((R[i] - (R[i] & 1)) / 2);
+            // [cylindrical-earth-daylight] 仅南北极(row)作海洋种子；东西经度环绕由 NB 处理。
             const int row = R[i];
-            if (col == 0 || col == width - 1 || row == 0 || row == height - 1) {
+            if (row == 0 || row == height - 1) {
                 ocean_conn[size_t(i)] = 1;
                 bfs.push_back(i);
             }
@@ -20993,14 +21227,14 @@ struct ClimateRoundScalars {
 
     // ocean_water / ocean_land knobs（Stage 2）
     int    ow_advect_steps = 3;
-    float  ow_heat_mix     = 0.25f;
-    float  ow_tta_source_cap = 0.08f;
-    float  ow_tta_blend_rate = 0.35f;
-    float  ow_tta_zero_current_decay = 0.20f;
-    float  ol_effective_leak = 0.35f;
-    float  ol_tta_source_cap = 0.08f;
-    float  ol_tta_blend_rate = 0.35f;
-    float  ol_tta_decay_rate = 0.12f;
+    float  ow_heat_mix     = 0.55f;
+    float  ow_tta_source_cap = 0.22f;
+    float  ow_tta_blend_rate = 0.70f;
+    float  ow_tta_zero_current_decay = 0.06f;
+    float  ol_effective_leak = 0.55f;
+    float  ol_tta_source_cap = 0.22f;
+    float  ol_tta_blend_rate = 0.70f;
+    float  ol_tta_decay_rate = 0.04f;
 
     // wind_air / wind_surface knobs（Stage 2）
     int    wa_advect_steps = 3;
@@ -23263,14 +23497,14 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
 
         // ocean_water / ocean_land scalars（Stage 2）
         t->in_buf.scalars.ow_advect_steps  = int(input.get("ow_advect_steps", 3));
-        t->in_buf.scalars.ow_heat_mix      = float(input.get("ow_heat_mix", 0.25));
-        t->in_buf.scalars.ow_tta_source_cap = float(input.get("ow_tta_source_cap", 0.08));
-        t->in_buf.scalars.ow_tta_blend_rate = float(input.get("ow_tta_blend_rate", 0.35));
-        t->in_buf.scalars.ow_tta_zero_current_decay = float(input.get("ow_tta_zero_current_decay", 0.20));
-        t->in_buf.scalars.ol_effective_leak = float(input.get("ol_effective_leak", 0.35));
-        t->in_buf.scalars.ol_tta_source_cap = float(input.get("ol_tta_source_cap", 0.08));
-        t->in_buf.scalars.ol_tta_blend_rate = float(input.get("ol_tta_blend_rate", 0.35));
-        t->in_buf.scalars.ol_tta_decay_rate = float(input.get("ol_tta_decay_rate", 0.12));
+        t->in_buf.scalars.ow_heat_mix      = float(input.get("ow_heat_mix", 0.40));
+        t->in_buf.scalars.ow_tta_source_cap = float(input.get("ow_tta_source_cap", 0.16));
+        t->in_buf.scalars.ow_tta_blend_rate = float(input.get("ow_tta_blend_rate", 0.55));
+        t->in_buf.scalars.ow_tta_zero_current_decay = float(input.get("ow_tta_zero_current_decay", 0.12));
+        t->in_buf.scalars.ol_effective_leak = float(input.get("ol_effective_leak", 0.45));
+        t->in_buf.scalars.ol_tta_source_cap = float(input.get("ol_tta_source_cap", 0.16));
+        t->in_buf.scalars.ol_tta_blend_rate = float(input.get("ol_tta_blend_rate", 0.55));
+        t->in_buf.scalars.ol_tta_decay_rate = float(input.get("ol_tta_decay_rate", 0.08));
 
         // wind_air / wind_surface scalars（Stage 2）
         t->in_buf.scalars.wa_advect_steps = int(input.get("wa_advect_steps", 3));
@@ -23680,6 +23914,373 @@ godot::PackedByteArray DCWorldExt::encode_tile_csv_rows(godot::Dictionary knobs)
     return out;
 }
 
+// ─── Detail scatter（vegetation-visual-pcg 阶段 A）──────────────────────────
+// 植被/点缀散布的 per-instance 热循环 + MultiMesh buffer 组装。纯 buffer-encoder：
+// 只读 knobs 内 flat PackedArray，不触 _slots / _bound。逐位复刻
+// shrub_layer.gd 的 _try_append_instance / _candidate_position /
+// _world_noise_suitability / _world_micro_gap / _hash01 / _value_noise2 /
+// _is_water_position（world_to_cube→offset 栅格）/ _is_river_body_position（flow 双线性）。
+godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["path"] = String("gdscript");
+    out["instance_count"] = 0;
+    out["elapsed_ms"] = -1.0;
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const double hex_size = double(knobs.get("hex_size", 22.0));
+    if (hex_size <= 0.0) return fail("bad hex_size");
+    const float origin_x = float(knobs.get("origin_x", 0.0));
+    const float origin_y = float(knobs.get("origin_y", 0.0));
+    const float bsize_x = float(knobs.get("size_x", 1.0));
+    const float bsize_y = float(knobs.get("size_y", 1.0));
+    const int grid_w = int(knobs.get("grid_w", 0));
+    const int grid_h = int(knobs.get("grid_h", 0));
+    const float river_clear = float(knobs.get("river_clear_threshold", 0.5));
+    const float spawn_radius_factor = float(knobs.get("spawn_radius_factor", 0.78));
+    const float warp_strength = float(knobs.get("world_noise_warp_strength", 0.2));
+    const float patch_freq = float(knobs.get("patch_frequency", 0.095));
+    const float patch_cutoff = float(knobs.get("patch_cutoff", 0.31));
+    const float patch_contrast = float(knobs.get("patch_contrast", 2.15));
+    const float mid_mix = float(knobs.get("world_noise_mid_mix", 0.38));
+    const float fine_mix = float(knobs.get("world_noise_fine_mix", 0.10));
+    const float micro_gap = float(knobs.get("micro_gap_threshold", 0.12));
+    const float wn_acceptance = float(knobs.get("world_noise_acceptance", 1.10));
+    const float min_size = float(knobs.get("min_size_factor", 0.095));
+    const float max_size = float(knobs.get("max_size_factor", 0.19));
+    const float size_scale = float(knobs.get("size_scale", 1.0));
+    const float dead_thr = float(knobs.get("vitality_dead_threshold", 0.12));
+    const float dieback = float(knobs.get("vitality_dieback_noise_strength", 0.45));
+    const int instance_cap = int(knobs.get("instance_cap", 0));
+    const int flow_w = int(knobs.get("flow_w", 0));
+    const int flow_h = int(knobs.get("flow_h", 0));
+
+    PackedInt32Array keys = knobs.get("keys", PackedInt32Array());
+    PackedFloat32Array cx = knobs.get("center_x", PackedFloat32Array());
+    PackedFloat32Array cy = knobs.get("center_y", PackedFloat32Array());
+    PackedFloat32Array suit = knobs.get("suitability", PackedFloat32Array());
+    PackedInt32Array att = knobs.get("attempts", PackedInt32Array());
+    PackedFloat32Array vit = knobs.get("vitality", PackedFloat32Array());
+    PackedFloat32Array sized = knobs.get("size_density", PackedFloat32Array());
+    PackedFloat32Array cr = knobs.get("color_r", PackedFloat32Array());
+    PackedFloat32Array cg = knobs.get("color_g", PackedFloat32Array());
+    PackedFloat32Array cb = knobs.get("color_b", PackedFloat32Array());
+    PackedFloat32Array ca = knobs.get("color_a", PackedFloat32Array());
+    PackedByteArray offw = knobs.get("offset_is_water", PackedByteArray());
+    PackedFloat32Array flow = knobs.get("flow_buffer", PackedFloat32Array());
+
+    const int K = keys.size();
+    if (K <= 0) return fail("no active cells");
+    if (cx.size() < K || cy.size() < K || suit.size() < K || att.size() < K ||
+        vit.size() < K || sized.size() < K || cr.size() < K || cg.size() < K ||
+        cb.size() < K || ca.size() < K) {
+        return fail("per-cell array size mismatch");
+    }
+    if (instance_cap <= 0) return fail("zero instance cap");
+
+    const int32_t *KEY = keys.ptr();
+    const float *CX = cx.ptr();
+    const float *CY = cy.ptr();
+    const float *SU = suit.ptr();
+    const int32_t *AT = att.ptr();
+    const float *VI = vit.ptr();
+    const float *SD = sized.ptr();
+    const float *CR = cr.ptr();
+    const float *CG = cg.ptr();
+    const float *CB = cb.ptr();
+    const float *CA = ca.ptr();
+    const uint8_t *OFFW = offw.ptr();
+    const int offw_n = offw.size();
+    const float *FLOW = flow.ptr();
+    const int flow_n = flow.size();
+
+    const double TAU = 6.283185307179586;
+
+    auto hash01 = [](int64_t idx, int64_t salt) -> double {
+        double x = std::sin(double(idx * 127 + salt * 311) * 12.9898) * 43758.5453123;
+        return x - std::floor(x);
+    };
+    auto hash2i = [](int64_t x, int64_t y, int64_t salt) -> double {
+        int64_t n = x * 374761393 + y * 668265263 + salt * 1442695041;
+        n = (n ^ (n >> 13)) * 1274126177;
+        n = n ^ (n >> 16);
+        return double(n & 0x00ffffff) / double(0x01000000);
+    };
+    auto value_noise2 = [&](double x, double y, int64_t salt) -> double {
+        int64_t ix = (int64_t)std::floor(x);
+        int64_t iy = (int64_t)std::floor(y);
+        double fx = x - double(ix);
+        double fy = y - double(iy);
+        double sx = fx * fx * (3.0 - 2.0 * fx);
+        double sy = fy * fy * (3.0 - 2.0 * fy);
+        double a = hash2i(ix, iy, salt);
+        double b = hash2i(ix + 1, iy, salt);
+        double c = hash2i(ix, iy + 1, salt);
+        double d = hash2i(ix + 1, iy + 1, salt);
+        double ab = a + (b - a) * sx;
+        double cd = c + (d - c) * sx;
+        return ab + (cd - ab) * sy;
+    };
+    auto clampd = [](double v, double lo, double hi) -> double { return v < lo ? lo : (v > hi ? hi : v); };
+    auto lerpd = [](double a, double b, double t) -> double { return a + (b - a) * t; };
+    auto smoothstep = [&](double e0, double e1, double v) -> double {
+        double t = clampd((v - e0) / (e1 - e0), 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    };
+
+    // _is_water_position：world_to_cube → cube_round → cube_to_offset(odd-r) → 栅格。
+    const double SQRT3 = std::sqrt(3.0);
+    auto world_is_water = [&](double px, double py) -> bool {
+        double q_f = (SQRT3 / 3.0 * px - 1.0 / 3.0 * py) / hex_size;
+        double r_f = (2.0 / 3.0 * py) / hex_size;
+        double s_f = -q_f - r_f;
+        int64_t rq = (int64_t)std::llround(q_f);
+        int64_t rr = (int64_t)std::llround(r_f);
+        int64_t rs = (int64_t)std::llround(s_f);
+        double dq = std::fabs(double(rq) - q_f);
+        double dr = std::fabs(double(rr) - r_f);
+        double ds = std::fabs(double(rs) - s_f);
+        if (dq > dr && dq > ds) {
+            rq = -rr - rs;
+        } else if (dr > ds) {
+            rr = -rq - rs;
+        }
+        int64_t col = rq + (rr - (rr & 1)) / 2;
+        int64_t row = rr;
+        if (col < 0 || col >= grid_w || row < 0 || row >= grid_h) {
+            return true;
+        }
+        int64_t gi = row * (int64_t)grid_w + col;
+        if (gi < 0 || gi >= offw_n) {
+            return true;
+        }
+        return OFFW[gi] != 0;
+    };
+
+    // _is_river_body_position：flow_buffer 双线性（derived_size），>= 阈值即拒绝。
+    auto river_body = [&](double px, double py) -> bool {
+        if (flow_n <= 0 || flow_w <= 0 || flow_h <= 0) {
+            return false;
+        }
+        double u = (bsize_x < 0.001) ? 0.5 : (px - origin_x) / bsize_x;
+        double v = (bsize_y < 0.001) ? 0.5 : (py - origin_y) / bsize_y;
+        u = clampd(u, 0.0, 1.0);
+        v = clampd(v, 0.0, 1.0);
+        double fx = u * double(flow_w - 1);
+        double fy = v * double(flow_h - 1);
+        int x0 = (int)std::floor(fx);
+        if (x0 < 0) x0 = 0; else if (x0 > flow_w - 1) x0 = flow_w - 1;
+        int y0 = (int)std::floor(fy);
+        if (y0 < 0) y0 = 0; else if (y0 > flow_h - 1) y0 = flow_h - 1;
+        int x1 = x0 + 1; if (x1 > flow_w - 1) x1 = flow_w - 1;
+        int y1 = y0 + 1; if (y1 > flow_h - 1) y1 = flow_h - 1;
+        double tx = fx - double(x0);
+        double ty = fy - double(y0);
+        int64_t i11 = (int64_t)y1 * flow_w + x1;
+        if (i11 >= flow_n) {
+            return false;
+        }
+        double v00 = FLOW[(int64_t)y0 * flow_w + x0];
+        double v10 = FLOW[(int64_t)y0 * flow_w + x1];
+        double v01 = FLOW[(int64_t)y1 * flow_w + x0];
+        double v11 = FLOW[i11];
+        double a0 = lerpd(v00, v10, tx);
+        double a1 = lerpd(v01, v11, tx);
+        return lerpd(a0, a1, ty) >= river_clear;
+    };
+
+    auto world_noise_suit = [&](double px, double py) -> double {
+        double hs = (hex_size > 1.0) ? hex_size : 1.0;
+        double pxn = px / hs;
+        double pyn = py / hs;
+        double wx = (value_noise2(pxn * patch_freq * 0.55, pyn * patch_freq * 0.55, 313) - 0.5) * 7.0;
+        double wy = (value_noise2(pxn * patch_freq * 0.55, pyn * patch_freq * 0.55, 719) - 0.5) * 7.0;
+        double coarse = value_noise2((pxn + wx) * patch_freq, (pyn + wy) * patch_freq, 17);
+        double mid = value_noise2(pxn * patch_freq * 3.1 + 19.0, pyn * patch_freq * 3.1 - 11.0, 41);
+        double fine = value_noise2(pxn * patch_freq * 8.5 - 37.0, pyn * patch_freq * 8.5 + 23.0, 83);
+        double patch = smoothstep(patch_cutoff, 1.0, coarse);
+        patch = std::pow(patch, (double)patch_contrast);
+        patch *= lerpd(1.0, lerpd(0.55, 1.35, mid), mid_mix);
+        patch *= lerpd(1.0, lerpd(0.82, 1.18, fine), fine_mix);
+        return clampd(patch, 0.0, 1.0);
+    };
+    auto world_micro_gap = [&](double px, double py, int64_t key, int64_t attempt) -> double {
+        double hs = (hex_size > 1.0) ? hex_size : 1.0;
+        double pxn = px / hs;
+        double pyn = py / hs;
+        double cont = value_noise2(pxn * 0.82 + 23.0, pyn * 0.82 - 17.0, 131);
+        double dith = hash01(key, 9900 + attempt * 19);
+        return clampd(cont * 0.72 + dith * 0.28, 0.0, 1.0);
+    };
+
+    // 候选累积（按 score 排序后取 instance_cap）。
+    struct Inst {
+        float px, py, rot, size, seed, variant, score;
+        float r, g, b, a;
+    };
+    std::vector<Inst> insts;
+    insts.reserve((size_t)instance_cap * 2);
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const double min_sz = (double)min_size;
+    const double max_sz = (double)max_size;
+    for (int c = 0; c < K; ++c) {
+        const int64_t key = (int64_t)KEY[c];
+        const double center_x = (double)CX[c];
+        const double center_y = (double)CY[c];
+        const double cell_suit = (double)SU[c];
+        const int attempts = AT[c];
+        const double vitality = (double)VI[c];
+        const double size_density = clampd((double)SD[c], 0.0, 1.0);
+        const double base_r = (double)CR[c];
+        const double base_g = (double)CG[c];
+        const double base_b = (double)CB[c];
+        const double base_a = (double)CA[c];
+        for (int attempt = 0; attempt < attempts; ++attempt) {
+            if (vitality <= dead_thr) {
+                double dn = hash01(key, 931 + attempt);
+                if (dn < 1.0 - (double)dieback) {
+                    continue;
+                }
+            }
+            // _candidate_position
+            double angle = std::fmod(hash01(key, 101) + double(attempt) * 0.61803398875, 1.0);
+            if (angle < 0.0) angle += 1.0;
+            angle *= TAU;
+            double radius = std::sqrt(hash01(key, 200 + attempt * 37)) * hex_size * (double)spawn_radius_factor;
+            double bpx = center_x + std::cos(angle) * radius;
+            double bpy = center_y + std::sin(angle) * radius;
+            double wnx = (value_noise2(bpx * 0.033, bpy * 0.033, 911) - 0.5);
+            double wny = (value_noise2(bpx * 0.033, bpy * 0.033, 977) - 0.5);
+            double px = bpx + wnx * (hex_size * (double)warp_strength);
+            double py = bpy + wny * (hex_size * (double)warp_strength);
+
+            if (world_is_water(px, py)) {
+                continue;
+            }
+            if (river_body(px, py)) {
+                continue;
+            }
+            double wn = world_noise_suit(px, py);
+            if (wn <= 0.001) {
+                continue;
+            }
+            double micro = world_micro_gap(px, py, key, attempt);
+            if (micro < (double)micro_gap) {
+                continue;
+            }
+            double noise_gate = std::pow(clampd(wn, 0.0, 1.0), 1.35);
+            double local_acc = clampd(cell_suit * (double)wn_acceptance * noise_gate, 0.0, 1.0);
+            if (hash01(key, 9300 + attempt) > local_acc) {
+                continue;
+            }
+            double variant = hash01(key, 300 + attempt);
+            double size = hex_size * lerpd(min_sz, max_sz, hash01(key, 400 + attempt));
+            size *= lerpd(0.85, 1.12, size_density);
+            size *= (double)size_scale;
+            double rot = hash01(key, 500 + attempt) * TAU;
+            double seed = hash01(key, 600 + attempt);
+            double score = wn * 0.66 + cell_suit * 0.27 + hash01(key, 7600 + attempt) * 0.07;
+
+            // _base_color_for_state：variant 明暗微调。
+            double shade = (variant - 0.5) * 0.16;
+            double rr2 = base_r, gg2 = base_g, bb2 = base_b;
+            if (shade >= 0.0) {
+                rr2 = base_r + (1.0 - base_r) * shade;
+                gg2 = base_g + (1.0 - base_g) * shade;
+                bb2 = base_b + (1.0 - base_b) * shade;
+            } else {
+                double f = 1.0 + shade;  // = 1 - (-shade)
+                rr2 = base_r * f;
+                gg2 = base_g * f;
+                bb2 = base_b * f;
+            }
+
+            Inst it;
+            it.px = (float)px;
+            it.py = (float)py;
+            it.rot = (float)rot;
+            it.size = (float)size;
+            it.seed = (float)seed;
+            it.variant = (float)variant;
+            it.score = (float)score;
+            it.r = (float)rr2;
+            it.g = (float)gg2;
+            it.b = (float)bb2;
+            it.a = (float)base_a;
+            insts.push_back(it);
+        }
+    }
+
+    int n_total = (int)insts.size();
+    int n_keep = n_total < instance_cap ? n_total : instance_cap;
+    if (n_keep <= 0) {
+        out["fallback"] = false;
+        out["path"] = String("gdext");
+        out["instance_count"] = 0;
+        out["buffer"] = PackedFloat32Array();
+        auto t1e = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1e - t0).count();
+        return out;
+    }
+    if (n_total > instance_cap) {
+        std::nth_element(insts.begin(), insts.begin() + (instance_cap - 1), insts.end(),
+                         [](const Inst &a, const Inst &b) { return a.score > b.score; });
+    }
+
+    // MultiMesh 2D buffer：每实例 16 float（transform 8 + color 4 + custom 4）。
+    PackedFloat32Array buffer;
+    buffer.resize((int64_t)n_keep * 16);
+    float *BUF = buffer.ptrw();
+    const double inv_sx = (bsize_x > 0.001) ? (1.0 / (double)bsize_x) : 0.0;
+    const double inv_sy = (bsize_y > 0.001) ? (1.0 / (double)bsize_y) : 0.0;
+    for (int i = 0; i < n_keep; ++i) {
+        const Inst &it = insts[i];
+        double cs = std::cos((double)it.rot) * (double)it.size;
+        double sn = std::sin((double)it.rot) * (double)it.size;
+        // x_axis = (cs, sn); y_axis = (-sn, cs); origin = (px, py)
+        int64_t b = (int64_t)i * 16;
+        BUF[b + 0] = (float)cs;          // columns[0][0] = x_axis.x
+        BUF[b + 1] = (float)(-sn);       // columns[1][0] = y_axis.x
+        BUF[b + 2] = 0.0f;
+        BUF[b + 3] = it.px;              // columns[2][0] = origin.x
+        BUF[b + 4] = (float)sn;          // columns[0][1] = x_axis.y
+        BUF[b + 5] = (float)cs;          // columns[1][1] = y_axis.y
+        BUF[b + 6] = 0.0f;
+        BUF[b + 7] = it.py;              // columns[2][1] = origin.y
+        BUF[b + 8] = it.r;
+        BUF[b + 9] = it.g;
+        BUF[b + 10] = it.b;
+        BUF[b + 11] = it.a;
+        double uvx = clampd(((double)it.px - origin_x) * inv_sx, 0.0, 1.0);
+        double uvy = clampd(((double)it.py - origin_y) * inv_sy, 0.0, 1.0);
+        BUF[b + 12] = (float)uvx;
+        BUF[b + 13] = (float)uvy;
+        BUF[b + 14] = it.seed;
+        BUF[b + 15] = it.variant;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["fallback"] = false;
+    out["path"] = String("gdext");
+    out["instance_count"] = n_keep;
+    out["candidate_count"] = n_total;
+    out["buffer"] = buffer;
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
+
+
 void DCWorldExt::_bind_methods() {
     using namespace godot;
 
@@ -23995,6 +24596,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("encode_cell_luts", "opts"),
         &DCWorldExt::encode_cell_luts);
+    // vegetation-visual-pcg 阶段 A：植被/点缀散布 per-instance 热循环 + MultiMesh buffer 组装
+    ClassDB::bind_method(
+        D_METHOD("encode_detail_scatter", "knobs"),
+        &DCWorldExt::encode_detail_scatter);
     // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
     ClassDB::bind_method(
         D_METHOD("run_ocean_field_rasterize", "knobs"),

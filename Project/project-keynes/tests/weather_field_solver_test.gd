@@ -37,7 +37,10 @@ func _test_orographic_rain_shadow() -> void:
 	ws.tick_one_day(map, _world(), 1, 0.0, 1.5)
 	var mountain := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
 	var wet_side := ws.query_at(HexUtils.cube_to_world(1, 0, HEX_SIZE))
-	_expect(float(wet_side.get("precip", 0.0)) > float(mountain.get("precip", 0.0)) + 0.05,
+	# 半真实大气模型（2026-06-19）：山体本身会获得真实地形抬升降水（不再像旧模型那样
+	# 把山峰判成 CLEAR 把 precip 清零），因此 wet_side 与山峰的差额自然缩小。仍断言
+	# 下风侧降水高于山峰这一定性关系，margin 由 0.05 重标定为 0.03 以匹配进阶模型。
+	_expect(float(wet_side.get("precip", 0.0)) > float(mountain.get("precip", 0.0)) + 0.03,
 		"orographic wet side should exceed adjacent rain shadow (wet=%.3f shadow=%.3f)" % [float(wet_side.get("precip", 0.0)), float(mountain.get("precip", 0.0))])
 
 func _test_warm_convection_prefers_storm() -> void:

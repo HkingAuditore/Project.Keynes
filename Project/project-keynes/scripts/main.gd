@@ -85,6 +85,11 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 	"lake_seed_threshold": true,
 	"lake_seed_depth": true,
 	"lake_seed_min_interior": true,
+	"hydro_lake_min_cells": true,
+	"hydro_lake_min_depth": true,
+	"hydro_lake_min_volume": true,
+	"hydro_river_min_length": true,
+	"river_flow_percentile": true,
 	"max_volcanoes": true,
 	"volcano_min_dist": true,
 	"volcano_min_land_h": true,
@@ -100,6 +105,7 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 @export var map_width: int = 60
 @export var map_height: int = 40
 @export var num_continents: int = 2
+@export var continent_size: float = 0.9
 @export var sea_level: float = 0.42
 @export var river_count: int = 8
 @export var hex_size: float = 22.0
@@ -383,6 +389,9 @@ func _ready() -> void:
 	_apply_world_setup_base_config()
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
+	# 地块选择改由 MapCamera 的 tile_tapped 信号驱动（仅"点按"触发，拖拽/捏合不误选）。
+	if _camera != null:
+		_camera.tile_tapped.connect(_on_map_tile_tapped)
 
 	# Mobile safe area + 大按钮（plan §mobile-ui-safe-area，2026-06-14）：
 	# 移动端圆角屏顶部最右上区域被裁切，TopBar 默认 offset_bottom=36 紧贴顶部，
@@ -458,8 +467,10 @@ func _ready() -> void:
 	_world_clock.day_changed.connect(_on_day_changed)
 	_world_clock.season_changed.connect(_on_season_changed)
 	_world_clock.year_changed.connect(_on_year_changed)
-	# 任务 2：昼夜相位节流信号，驱动 shader + 刷 UI 小时位
-	_world_clock.day_phase_changed.connect(_on_day_phase_changed)
+	# 任务 2：昼夜相位驱动 shader + 刷 UI 小时位。
+	# [cylindrical-earth-daylight] 改连解耦的视觉相位 visual_day_phase_changed（晨昏线），
+	# 与游戏倍速无关、按真实时间缓慢推进 → 快进不再闪瞎眼。
+	_world_clock.visual_day_phase_changed.connect(_on_day_phase_changed)
 	_world_clock.season_phase_changed.connect(_on_season_phase_changed)
 	# Fast-tick perf opt (A+D)：速度档变更时自动调整 MapGenerator 的
 	# weather_refresh_stride，同时 world_clock 内部会顺带调整 day_phase/season_phase
@@ -470,7 +481,8 @@ func _ready() -> void:
 	# 任务 1：把 @export 的视觉总开关推送给 renderer / weather_layer 一次
 	_push_visual_toggles()
 	# Pass 2：启动时显式推一次 TOD，保证 shader 的 tod_* uniform 不为 0
-	_recompute_and_push_tod(_world_clock.day_phase())
+	# [cylindrical-earth-daylight] 用解耦的视觉相位驱动 TOD。
+	_recompute_and_push_tod(_world_clock.visual_day_phase)
 	# Data Overlay：首次把 overlay 的 world bounds 与 alpha 同步给节点；
 	# 默认 mode=NONE → 节点 visible=false，零额外开销（需求 1.1 / 1.3）。
 	_sync_overlay_to_world()
@@ -491,17 +503,12 @@ func _ready() -> void:
 	_dots_bootstrap = DCDotsBootstrap.new(self)
 	_dots_bootstrap.bootstrap_flag_bus()
 
-# 左键点击选中地块。RightPanel.mouse_filter=STOP 已确保面板内的点击
-# 不会到这里，所以无需手动判断光标是否落在 UI 上。
-func _unhandled_input(event: InputEvent) -> void:
-	if not (event is InputEventMouseButton):
-		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
-		return
+# 地块选择：由 MapCamera 的 tile_tapped 信号驱动。
+# camera 仅在"点按"（非拖拽/捏合）时发出该信号，且基于 UI 已消费过的输入做判定，
+# 因此面板区域内的点按不会到这里，拖动地图也不会误选。
+func _on_map_tile_tapped(world_pos: Vector2) -> void:
 	if _current_map == null:
 		return
-	var world_pos := get_global_mouse_position()
 	var cube := HexUtils.world_to_cube(world_pos, hex_size)
 	var cell := _current_map.get_cell_by_cube(cube)
 	if cell == null:
@@ -974,6 +981,7 @@ func _apply_world_setup_base_config() -> void:
 	initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
 	sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
 	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
+	continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
 	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
 
 
@@ -1102,6 +1110,10 @@ func _set_speed(s: float) -> void:
 # 按 stride 跳日执行，显著降低单帧热路径开销。
 func _on_speed_changed(new_speed: float) -> void:
 	_sync_speed_buttons()
+	if _renderer != null:
+		var wl = _renderer.get_node_or_null("WeatherLayer")
+		if wl != null and wl.has_method("set_clock_speed_multiplier"):
+			wl.set_clock_speed_multiplier(new_speed)
 	if _generator == null:
 		return
 	var cp = _generator._c() if _generator.has_method("_c") else null
@@ -1917,6 +1929,7 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var cfg := MapConfig.make(map_width, map_height)
 	cfg.num_continents = num_continents
+	cfg.continent_size = continent_size
 	cfg.sea_level = sea_level
 	cfg.river_count = river_count
 	cfg.seed = seed_val
@@ -1955,6 +1968,10 @@ func _generate_and_render(seed_val: int) -> void:
 	var elapsed: int = Time.get_ticks_msec() - t0
 
 	_renderer.hex_size = hex_size
+	# 散布层 native 生成：把 C++ DCWorldExt 在 set_map（触发首次 _rebuild）之前注入，
+	# 让首张地图的植被/点缀就能走 encode_detail_scatter（缺方法时层内自动回退 GDScript）。
+	if _renderer.has_method("set_world_ext") and _generator != null and "_data_core_world_ext" in _generator:
+		_renderer.set_world_ext(_generator._data_core_world_ext)
 	_renderer.set_map(_current_map, _world_data)
 	# 方案 0：把 MapBaker 喂给 renderer，让 F6 切到 ocean_current_debug 时
 	# 能 lazy bake upwelling_tex（commit 路径已不再无条件烘焙）。
@@ -1966,7 +1983,8 @@ func _generate_and_render(seed_val: int) -> void:
 		_renderer.set_season_phase(_world_clock.season_phase())
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
 		# 任务 2：新地图生成后立即把 day_phase 还原到 shader
-		_renderer.set_day_phase(_world_clock.day_phase())
+		# [cylindrical-earth-daylight] 用解耦的视觉相位。
+		_renderer.set_day_phase(_world_clock.visual_day_phase)
 		# Seasonal Continuous Climate：新地图生成后 generate() 写的是"夏中段"快照，
 		# 立即用当前 season_phase 同步一次连续基线，让玩家进入第一帧就看到与
 		# 时钟相位一致的温度/湿度/雪盖，而不是固定的夏季常量。
@@ -2163,9 +2181,11 @@ func _select_cell(cell: HexCell) -> void:
 	_refresh_info_panel()
 	# Legend 指针：选中后把当前 cell 的通道值映射到色带位置。
 	_update_overlay_pointer_for_cell()
-	# 面板弹出后地图可见区域变窄，重新 fit 一次让整张地图仍完整显示
-	if _camera != null:
-		_camera.fit_to_viewport(1.05, _map_safe_area())
+	# 保留用户当前缩放/位置（不再 fit 重置视图）；仅当选中地块被右侧面板/顶栏
+	# 遮挡时，平滑平移把它移到可见安全区，避免"点一下就跳回整图"的体验。
+	if _camera != null and cell != null:
+		var cell_world := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+		_camera.ensure_point_visible(cell_world, _map_safe_area())
 	# [TEMP DEBUG] sea-ice-render-source-unify 阶段 A 同源校验：
 	# 选中任意 cell 时打印 (sea_ice_fraction_cpu, dyn_atlas_smooth.A_byte, biome)。
 	# 期望：q01_byte_ice(frac_cpu) == dyn_smooth.A_byte。
@@ -2186,9 +2206,7 @@ func _clear_selection() -> void:
 		_right_panel.visible = false
 	if _overlay_legend != null:
 		_overlay_legend.clear_pointer()
-	# 面板关闭后可见区域恢复全宽，再 fit 一次回到默认视图
-	if _camera != null:
-		_camera.fit_to_viewport(1.05, _map_safe_area())
+	# 关闭面板不再重置视图：保留用户当前缩放/位置。需要回到整图请用顶栏 Fit 按钮。
 
 # 计算地图的"可见安全区"：扣掉顶部 TopBar 和右侧 RightPanel（仅在可见时扣除）。
 # 被 fit_to_viewport 使用，保证整张地图都落在未被 UI 覆盖的矩形内。
