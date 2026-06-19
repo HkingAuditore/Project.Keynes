@@ -2,15 +2,23 @@ class_name ShrubVisualProfile
 extends Resource
 
 enum DetailKind {
-	SHRUB,
-	TREE,
-	GRASS,
+	SHRUB,         # 0 灌木（默认）
+	TREE,          # 1 阔叶/通用乔木
+	GRASS,         # 2 草丛
+	CONIFER,       # 3 针叶树（寒带/亚高山）
+	PALM,          # 4 棕榈（热带海岸/暖湿）
+	CACTUS,        # 5 仙人掌（干旱/荒漠）
+	REED,          # 6 芦苇（湿地/河岸）
+	ALPINE_FLOWER, # 7 高山花（高山草甸/苔原）
+	ROCK,          # 8 岩石点缀（山地/荒地/裸露地）
+	SNOW_MOUND,    # 9 雪堆（积雪/冻土/冰缘）
+	DEAD_SNAG,     # 10 枯立木（低活力/胁迫区）
 }
 
 @export var enabled: bool = true
 
 @export_group("Global Defaults")
-@export_enum("Shrub", "Tree", "Grass") var detail_kind: int = DetailKind.SHRUB
+@export_enum("Shrub", "Tree", "Grass", "Conifer", "Palm", "Cactus", "Reed", "AlpineFlower", "Rock", "SnowMound", "DeadSnag") var detail_kind: int = DetailKind.SHRUB
 @export_range(-16, 16, 1) var render_z_index: int = 1
 @export_range(0.0, 300.0, 0.05) var density_scale: float = 1.55
 @export_range(0.0, 3.0, 0.05) var wind_strength: float = 1.0

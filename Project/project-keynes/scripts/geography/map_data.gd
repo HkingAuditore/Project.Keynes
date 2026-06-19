@@ -223,9 +223,14 @@ func cell_count() -> int:
 func get_neighbors(cell: HexCell) -> Array:
 	var result: Array = []
 	for dir in HexUtils.CUBE_DIRECTIONS:
-		var nc := Vector3i(cell.q + dir.x, cell.r + dir.y, cell.s + dir.z)
-		var neighbor = _cells.get(nc, null)
-		if neighbor != null:
+		# [cylindrical-earth-daylight] 东西经度环绕（与 _build_indices 同规则）：
+		# 南北(row)越界跳过（两极硬边界），东西(col)用 posmod 绕回 → 最左/最右列互为邻居。
+		# 让冷路径（生成、refresh_seasonal、weather、循环 solver fallback）也物理东西连通。
+		var off := HexUtils.cube_to_offset(cell.q + dir.x, cell.r + dir.y)
+		if off.y < 0 or off.y >= height:
+			continue
+		var neighbor = _cells.get(HexUtils.offset_to_cube(posmod(off.x, width), off.y), null)
+		if neighbor != null and neighbor != cell:
 			result.append(neighbor)
 	return result
 
@@ -265,9 +270,19 @@ func _build_indices() -> void:
 		var base: int = j * 6
 		for d in range(6):
 			var dv: Vector3i = dirs[d]
-			var nb_key := Vector3i(c.q + dv.x, c.r + dv.y, c.s + dv.z)
-			var nb = _cells.get(nb_key, null)
-			if nb == null:
+			# [cylindrical-earth-daylight] 东西经度环绕（真·圆柱地球）：邻居先转 offset，
+			# 南北(row)越界仍 -1（两极是硬边界，不环绕），东西(col)用 posmod 绕回
+			# → 最左列与最右列互为邻居。这是运行时唯一邻居权威：洋流/风/温度/湿度/
+			# 海冰等 pass 都读 neighbor_indices，此处一改即让所有 pass 在东西方向物理连通。
+			var off := HexUtils.cube_to_offset(c.q + dv.x, c.r + dv.y)
+			var nrow: int = off.y
+			if nrow < 0 or nrow >= height:
+				_neighbor_indices[base + d] = -1
+				continue
+			var wrapped := HexUtils.offset_to_cube(posmod(off.x, width), nrow)
+			var nb = _cells.get(wrapped, null)
+			if nb == null or nb == c:
+				# nb==c 兜底：width 极小时 posmod 可能绕回自身，避免自环邻居
 				_neighbor_indices[base + d] = -1
 			else:
 				# 邻居一定已在 _cell_index 内（因为 _cells 是同源）

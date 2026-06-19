@@ -27,6 +27,8 @@ const FIXED_COLUMNS: Array = [
 	"climate_temp_delta_gt_020_count",
 	"climate_temp_delta_clamped_count",
 	"climate_max_transport_anomaly",
+	"climate_transport_abs_p95",
+	"climate_transport_nonzero_ratio",
 	"climate_sea_ice_delta_max",
 	"climate_precip_p95",
 	"climate_slp_delta_p95",
@@ -706,6 +708,8 @@ func _base_row(sample: Dictionary, idx: int, cell) -> Dictionary:
 		"climate_temp_delta_gt_020_count": int(climate.get("temp_delta_gt_020_count", 0)),
 		"climate_temp_delta_clamped_count": int(climate.get("temp_delta_clamped_count", 0)),
 		"climate_max_transport_anomaly": float(climate.get("max_transport_anomaly", 0.0)),
+		"climate_transport_abs_p95": float(climate.get("transport_abs_p95", 0.0)),
+		"climate_transport_nonzero_ratio": float(climate.get("transport_nonzero_ratio", 0.0)),
 		"climate_sea_ice_delta_max": float(climate.get("sea_ice_delta_max", 0.0)),
 		"climate_precip_p95": float(climate.get("precip_p95", 0.0)),
 		"climate_slp_delta_p95": float(climate.get("slp_delta_p95", 0.0)),
@@ -914,6 +918,10 @@ static func _physical_field_stats(map_data) -> Dictionary:
 	var wind_speed_arr = map_data.get("wind_speed_arr")
 	if typeof(wind_speed_arr) == TYPE_PACKED_FLOAT32_ARRAY and not wind_speed_arr.is_empty():
 		out["wind_mag_p95"] = _packed_float_abs_p95(wind_speed_arr)
+	var transport_arr = map_data.get("temperature_transport_anomaly_arr")
+	if typeof(transport_arr) == TYPE_PACKED_FLOAT32_ARRAY and not transport_arr.is_empty():
+		out["transport_abs_p95"] = _packed_float_abs_p95(transport_arr)
+		out["transport_nonzero_ratio"] = _packed_float_nonzero_ratio(transport_arr, 0.0001)
 	var ocean_stats: Dictionary = _packed_vector_mag_stats(map_data.get("ocean_current_x_arr"), map_data.get("ocean_current_y_arr"))
 	if not ocean_stats.is_empty():
 		out["ocean_mag_p95"] = ocean_stats["p95"]
@@ -982,6 +990,19 @@ static func _packed_float_abs_p95(arr) -> float:
 		values.append(absf(v))
 	values.sort()
 	return _sorted_p95(values)
+
+
+static func _packed_float_nonzero_ratio(arr, eps: float = 0.0001) -> float:
+	var total: int = 0
+	var nonzero: int = 0
+	for i in range(arr.size()):
+		var v: float = float(arr[i])
+		if is_nan(v) or is_inf(v):
+			continue
+		total += 1
+		if absf(v) > eps:
+			nonzero += 1
+	return float(nonzero) / float(maxi(total, 1))
 
 
 static func _packed_float_p95(arr) -> float:

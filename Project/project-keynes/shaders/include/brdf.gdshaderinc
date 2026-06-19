@@ -54,19 +54,39 @@ struct LightingContext {
 };
 
 // ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
-LightingContext make_lighting_context(float ambient_floor) {
+// [cylindrical-earth-daylight] 改为逐像素经纬度日照（晨昏线）驱动昼夜：
+//   用 compute_solar_elevation(uv, lat_signed) 的太阳高度角取代全局 tod_night_factor，
+//   让不同经度/纬度各有昼夜与晨昏暖色；经度是周期量 → 东西晨昏线无缝环绕（问题3渲染层）。
+//   昼夜结构由 uv+lat_signed 决定（与气候 insolation 同源 → 长昼半球==暖半球），
+//   tod_exposure 保留为全局曝光；昼/晨昏/夜色板用常量保证全图一致、不随全局相位漂移。
+LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
 	LightingContext lc;
 	lc.L = normalize(tod_sun_dir);
 	lc.V = VIEW_DIR_TOP_DOWN;
+
+	// 逐像素太阳高度角 → 昼夜/晨昏。day_night_enabled=false 时退化为永昼。
+	float sinh = compute_solar_elevation(uv, lat_signed);
+	float local_day = day_night_enabled ? solar_day_factor(sinh) : 1.0;   // 1=白昼 0=夜
+	float pixel_night = 1.0 - local_day;
+	// 太阳高度：地平线附近(晨昏)偏暖橙，高悬偏白。
+	float day_high = smoothstep(0.0, 0.32, sinh);
+	const vec3 DAYLIGHT_NOON = vec3(1.0, 0.97, 0.92);   // 正午暖白
+	const vec3 DAYLIGHT_DUSK = vec3(1.0, 0.56, 0.31);   // 晨昏暖橙（暮光带）
+	const vec3 NIGHT_AMBIENT = vec3(0.13, 0.16, 0.25);  // 夜侧冷蓝月光
+	const vec3 DAY_AMBIENT   = vec3(0.60, 0.66, 0.77);  // 白昼天空环境光
+	vec3 sun_col = mix(DAYLIGHT_DUSK, DAYLIGHT_NOON, day_high);
+	vec3 amb_col = mix(NIGHT_AMBIENT, DAY_AMBIENT, local_day);
+
 	if (USE_LINEAR_LIGHTING) {
-		lc.sun_color_linear     = srgb_to_linear(tod_sun_color)     * SUN_INTENSITY_GAIN;
-		lc.ambient_color_linear = srgb_to_linear(tod_ambient_color);
+		// 直射光乘 local_day：夜侧(太阳在地平线下)无方向光 → 杜绝"夜里还有阳面"。
+		lc.sun_color_linear     = srgb_to_linear(sun_col) * (SUN_INTENSITY_GAIN * local_day);
+		lc.ambient_color_linear = srgb_to_linear(amb_col);
 	} else {
-		lc.sun_color_linear     = tod_sun_color * SUN_INTENSITY_GAIN;
-		lc.ambient_color_linear = tod_ambient_color;
+		lc.sun_color_linear     = sun_col * (SUN_INTENSITY_GAIN * local_day);
+		lc.ambient_color_linear = amb_col;
 	}
 	lc.exposure = tod_exposure;
-	lc.night_factor = tod_night_factor;
+	lc.night_factor = pixel_night;
 	lc.hillshade = hillshade_strength;
 	lc.ambient_floor = ambient_floor;
 	return lc;

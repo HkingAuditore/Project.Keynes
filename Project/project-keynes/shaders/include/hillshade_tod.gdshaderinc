@@ -181,6 +181,31 @@ float biome_roughness(int biome) {
 	return 0.55;
 }
 
+// ─── [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线） ─────────────
+// 用球面天文公式算每个像素当前的太阳高度角 sin(h)：
+//   sin(h) = sin(lat)·sin(δ) + cos(lat)·cos(δ)·cos(H)
+//   H(时角) = 经度 − 正午经度(subsolar)；δ = 赤纬(季节)。
+// 关键：lat_rad / decl 与 climate_season.compute_insolation_shader 完全同源，
+//   所以"长昼半球"必然等于"高日照(暖)半球"，日照与气候自洽。
+// 经度 lon=uv.x·TAU 是周期量 → cos(H) 在 uv.x=0 与 1 处相等 → 东西晨昏线无缝衔接
+//   （这就是问题 3 的渲染层经度环绕）。|lat| 高且冬季 → sinh 恒负=极夜，夏季→极昼，自然涌现。
+float compute_solar_elevation(vec2 uv, float lat_signed) {
+	float TAU_ = 6.2831853;
+	float year_progress = mod(season_phase, 4.0) * 0.25;
+	// 与 compute_insolation_shader 的 subsolar 同式：phase=0 → +tilt。
+	float decl = axial_tilt_rad * cos(TAU_ * year_progress);
+	float lat_rad = lat_signed * 1.5707963;            // 与 insolation lat_rad 同源
+	float lon = uv.x * TAU_;                            // 经度（周期）→ 东西无缝
+	float subsolar_lon = day_phase * TAU_;             // 正午经度随视觉昼夜相位绕圈
+	float H = lon - subsolar_lon;
+	return sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(H);
+}
+
+// sinh → local_day ∈ [0,1]：1=白昼 0=夜晚 (0,1)=晨昏过渡带（band 控柔度）。
+float solar_day_factor(float sinh) {
+	return smoothstep(-0.14, 0.14, sinh);
+}
+
 // 主入口：TOD 驱动的 PBR。is_water 时让上层直接跳过。
 vec3 apply_tod_pbr(vec3 albedo, vec2 uv, int biome, int quality) {
 	// 1. 法线
@@ -189,7 +214,10 @@ vec3 apply_tod_pbr(vec3 albedo, vec2 uv, int biome, int quality) {
 
 	vec3 L = normalize(tod_sun_dir);
 	float ndotl = max(dot(N, L), 0.0);
-	float direct_amp = hillshade_strength + 0.55;
+	// [需求4 2026-06-19午] 解耦昼夜直射光强度：原 direct_amp = hillshade_strength+0.55，会随
+	// hillshade_strength(为"山地层次"提到 0.74)线性放大到 1.29 → 昼夜模式向阳/背阴对比过强、着色失衡。
+	// 改为弱耦合(0.60 + hs*0.40 ≈ 0.90)，保留山体立体感但不过曝；hillshade 调强只服务静态 hillshading 路径。
+	float direct_amp = 0.60 + hillshade_strength * 0.40;
 	vec3 diffuse = tod_sun_color * ndotl * direct_amp;
 
 	vec3 V = vec3(0.0, 0.0, 1.0);

@@ -28,11 +28,13 @@ extends Node2D
 # 旧 (v1) / 新 (v2)：
 #   (0.10,0.18,0.30) → (0.14,0.22,0.34)   (0.16,0.28,0.40) → (0.20,0.30,0.42)
 #   (0.27,0.45,0.56) → (0.28,0.42,0.52)   (0.40,0.62,0.66) → (0.34,0.50,0.56)
+# [需求3 2026-06-19午] 缩小浅↔深海色差：原 coast(0.34,0.50,0.56)→deep(0.14,0.22,0.34) 亮度/色相跨度
+# 过大，海岸青绿环与深海深蓝对比太硬。提亮深/中海、略压浅/岸海，让整片海面更协调连续。
 @export_group("Hypsometric Colors")
-@export var color_deep_ocean: Color = Color(0.14, 0.22, 0.34)
-@export var color_mid_ocean: Color = Color(0.20, 0.30, 0.42)
-@export var color_shallow: Color = Color(0.28, 0.42, 0.52)
-@export var color_coast_water: Color = Color(0.34, 0.50, 0.56)
+@export var color_deep_ocean: Color = Color(0.18, 0.27, 0.40)
+@export var color_mid_ocean: Color = Color(0.23, 0.34, 0.46)
+@export var color_shallow: Color = Color(0.26, 0.39, 0.49)
+@export var color_coast_water: Color = Color(0.31, 0.45, 0.53)
 # [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
 # 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
 # mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
@@ -139,18 +141,24 @@ extends Node2D
 @export var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
 	set(value):
 		shrub_visual_profile = value
-		if _shrub_layer != null:
-			_shrub_layer.profile = shrub_visual_profile
+		_rebuild_detail_layers_if_default()
 @export var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
 	set(value):
 		tree_visual_profile = value
-		if _tree_layer != null:
-			_tree_layer.profile = tree_visual_profile
+		_rebuild_detail_layers_if_default()
 @export var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
 	set(value):
 		grass_visual_profile = value
-		if _grass_layer != null:
-			_grass_layer.profile = grass_visual_profile
+		_rebuild_detail_layers_if_default()
+# 数据驱动点缀清单。留空时回退到上面 grass/shrub/tree 三个 profile（行为 1:1）。
+# 配置后，hex_renderer 在 _ready 按 manifest.layers 生成对应数量的散布层。
+@export var decoration_manifest: Resource = null:
+	set(value):
+		decoration_manifest = value
+		if is_inside_tree():
+			_spawn_detail_layers()
+			if _map != null and _world != null:
+				_rebuild()
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
@@ -222,9 +230,11 @@ var _season_transition_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _season_transition_mat: ShaderMaterial = null
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
-var _shrub_layer: ShrubLayer = null
-var _tree_layer: ShrubLayer = null
-var _grass_layer: ShrubLayer = null
+# Decoration / vegetation 散布层（数据驱动）：默认回退到 grass/shrub/tree 三个
+# @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
+var _detail_layers: Array = []
+# C++ DCWorldExt 引用，转发给每个散布层做 native 生成。
+var _world_ext = null
 var _map: MapData = null
 var _world: WorldData = null
 
@@ -236,6 +246,11 @@ var _season_transition_active: bool = false
 var _season_transition_start_phase: float = 1.0
 # 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
 var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
+# 阶段 D（vegetation-visual-pcg）：植被 shader 的全局风场。方向由当前天气锋面
+# 的主轴按强度加权聚合得到，附加风强取各锋面降水/强度的峰值；无锋面时退回
+# 一个轻柔的常量盛行风。每帧在 _process 里推送给各 detail 层。
+var _detail_wind_dir: Vector2 = Vector2(1.0, 0.18)
+var _detail_wind_boost: float = 0.0
 var _shader_hot_reload_accum: float = 0.0
 var _active_material_source_path: String = ""
 var _active_shader_source_path: String = ""
@@ -313,21 +328,7 @@ func _ready() -> void:
 	_season_transition_quad.z_index = 0
 	_season_transition_quad.visible = false
 	add_child(_season_transition_quad)
-	_grass_layer = ShrubLayer.new()
-	_grass_layer.name = "GrassLayer"
-	_grass_layer.profile = grass_visual_profile
-	_grass_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
-	add_child(_grass_layer)
-	_shrub_layer = ShrubLayer.new()
-	_shrub_layer.name = "ShrubLayer"
-	_shrub_layer.profile = shrub_visual_profile
-	_shrub_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
-	add_child(_shrub_layer)
-	_tree_layer = ShrubLayer.new()
-	_tree_layer.name = "TreeLayer"
-	_tree_layer.profile = tree_visual_profile
-	_tree_layer.set_mobile_quality_tier(_mobile_quality_tier_from_define(_mobile_quality_tier_define))
-	add_child(_tree_layer)
+	_spawn_detail_layers()
 	# v9.split：天气表现层
 	_weather_layer = WeatherLayer.new()
 	_weather_layer.name = "WeatherLayer"
@@ -346,8 +347,10 @@ func _process(delta: float) -> void:
 		return
 	_world_time += delta
 	_shader_mat.set_shader_parameter("world_time", _world_time)
+	var wind_boost := _detail_wind_boost * weather_strength
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_time(_world_time)
+		layer.set_wind_field(_detail_wind_dir, wind_boost)
 	)
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("world_time", _world_time)
@@ -431,6 +434,8 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_mobile_quality_tier(veg_tier)
 	)
+	if _weather_layer != null and _weather_layer.has_method("set_mobile_quality_tier"):
+		_weather_layer.set_mobile_quality_tier(tier_define)
 	if _mobile_quality_tier_define == tier_define:
 		return
 	_mobile_quality_tier_define = tier_define
@@ -456,12 +461,80 @@ func _mobile_quality_tier_from_define(tier_define: String) -> int:
 
 
 func _for_each_vegetation_layer(callable: Callable) -> void:
-	if _grass_layer != null:
-		callable.call(_grass_layer)
-	if _shrub_layer != null:
-		callable.call(_shrub_layer)
-	if _tree_layer != null:
-		callable.call(_tree_layer)
+	for layer in _detail_layers:
+		if layer != null:
+			callable.call(layer)
+
+
+# 默认散布层 profile 列表：优先 decoration_manifest.layers；留空时回退 grass/shrub/tree。
+func _detail_profiles() -> Array:
+	var manifest := decoration_manifest
+	if manifest != null and manifest.has_method("valid_layers"):
+		var mls: Array = manifest.valid_layers()
+		if not mls.is_empty():
+			return mls
+	var defaults: Array = []
+	if grass_visual_profile != null:
+		defaults.append(grass_visual_profile)
+	if shrub_visual_profile != null:
+		defaults.append(shrub_visual_profile)
+	if tree_visual_profile != null:
+		defaults.append(tree_visual_profile)
+	return defaults
+
+
+# 是否当前用的是默认三层（未配置 manifest）。
+func _using_default_layers() -> bool:
+	var manifest := decoration_manifest
+	return not (manifest != null and manifest.has_method("valid_layers") and not manifest.valid_layers().is_empty())
+
+
+# 销毁旧散布层并按当前 profile 列表重建。
+func _spawn_detail_layers() -> void:
+	for layer in _detail_layers:
+		if is_instance_valid(layer):
+			layer.queue_free()
+	_detail_layers.clear()
+	var profiles := _detail_profiles()
+	var veg_tier := _mobile_quality_tier_from_define(_mobile_quality_tier_define)
+	for i in range(profiles.size()):
+		var prof: Resource = profiles[i]
+		var layer := ShrubLayer.new()
+		layer.name = _detail_layer_name(prof, i)
+		layer.profile = prof
+		layer.set_mobile_quality_tier(veg_tier)
+		layer.set_world_ext(_world_ext)
+		add_child(layer)
+		_detail_layers.append(layer)
+
+
+func _detail_layer_name(prof: Resource, i: int) -> String:
+	if prof != null and "detail_kind" in prof:
+		match int(prof.detail_kind):
+			0:
+				return "ShrubLayer" if i == 0 else "ShrubLayer%d" % i
+			1:
+				return "TreeLayer" if i == 0 else "TreeLayer%d" % i
+			2:
+				return "GrassLayer" if i == 0 else "GrassLayer%d" % i
+	return "DetailLayer%d" % i
+
+
+# 仅在使用默认三层（无 manifest）时，profile @export 改动后刷新对应层 profile。
+func _rebuild_detail_layers_if_default() -> void:
+	if not is_inside_tree() or not _using_default_layers():
+		return
+	_spawn_detail_layers()
+	if _map != null and _world != null:
+		_rebuild()
+
+
+# 注入 C++ DCWorldExt（main.gd 在 set_map 前调用），转发给每个散布层。
+func set_world_ext(ext) -> void:
+	_world_ext = ext
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("set_world_ext"):
+			layer.set_world_ext(ext)
 
 
 func _poll_shader_hot_reload(delta: float) -> void:
@@ -1052,6 +1125,32 @@ func _push_weather_fronts_to_shader(fronts: Array) -> void:
 	_shader_mat.set_shader_parameter("weather_front_visuals", visuals)
 	_shader_mat.set_shader_parameter("weather_front_types", types)
 	_shader_mat.set_shader_parameter("weather_front_count", n)
+	_update_detail_wind_field(fronts, n)
+
+# 阶段 D：由天气锋面聚合出植被风场。方向 = Σ(主轴·强度) 归一化；附加风强 =
+# 各锋面 max(强度, 降水)·强度 的峰值。无锋面（n==0）时退回轻柔常量盛行风。
+func _update_detail_wind_field(fronts: Array, n: int) -> void:
+	if n <= 0:
+		_detail_wind_dir = Vector2(1.0, 0.18)
+		_detail_wind_boost = 0.0
+		return
+	var dir := Vector2.ZERO
+	var boost := 0.0
+	for i in range(n):
+		var f = fronts[i]
+		var intensity := _front_intensity(f)
+		if intensity <= 0.001:
+			continue
+		var ax := _front_axis(f)
+		if ax.length() <= 0.0001:
+			continue
+		# 主轴是无向的，统一指向 +x 半平面再按强度加权，避免反向相消。
+		if ax.x < 0.0:
+			ax = -ax
+		dir += ax.normalized() * intensity
+		boost = maxf(boost, maxf(intensity, _front_precip_amount(f)) * intensity)
+	_detail_wind_dir = dir.normalized() if dir.length() > 0.0001 else Vector2(1.0, 0.18)
+	_detail_wind_boost = clampf(boost, 0.0, 1.0)
 
 func _front_center(front) -> Vector2:
 	if front is Dictionary:
@@ -1124,7 +1223,11 @@ func _rebuild() -> void:
 		return
 
 	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds)
+	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
+	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
+		set_world_ext(_map_baker._world_ext)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_world_ext(_world_ext)
 		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
 	)
 	if _shader_mat == null:

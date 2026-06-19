@@ -179,15 +179,17 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 	}
 	// P0-B：把调制强度从 0.18 抬到 0.55，让暴雨/干旱期颜色变化成为可一眼看到的视觉反馈。
 	// N2: 让"干湿边界"破碎成斑驳而非整片渐变。
+	// ⚠ [需求2 2026-06-19午] 0.55 太强：本层(动态)+climate_relief(基础)两层湿度 tint 叠加，把
+	// 相同湿度带的不同 biome 统一推成"湿→墨绿/干→黄褐"，压过 biome 本色 → 地形/群系着色差异变小。
+	// 降到 0.30 并收窄系数：保留暴雨/干旱的动态反馈，但不再主导静态着色，让 biome 色相回归主导。
 	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.30;
 	float wet_mix = clamp(smoothstep(0.10, 0.90, i.moist) + moist_jitter, 0.0, 1.0);
 	vec3 dry_tint   = vec3(1.18, 0.92, 0.62);   // 干旱：明显黄褐
 	vec3 wet_tint_v = vec3(0.78, 1.08, 0.82);   // 湿润：明显深墨绿
 	vec3 wet_tint = mix(dry_tint, wet_tint_v, wet_mix);
 	float wet_amp = mix(0.70, 1.20, i.pixel_noise.r);
-	// |moist - 0.5| ∈ [0, 0.5]，× 1.1 后 ∈ [0, 0.55]
 	surface.base_color *= mix(vec3(1.0), wet_tint,
-			clamp(abs(i.moist - 0.5) * 1.1 * wet_amp, 0.0, 0.55));
+			clamp(abs(i.moist - 0.5) * 0.8 * wet_amp, 0.0, 0.30));
 	return surface;
 }
 
@@ -205,13 +207,14 @@ SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) 
 			(temp_w >= 0.0) ? warm_tint : cool_tint,
 			temp_amp);
 
-	// [需求2 2026-06-19] 湿度连续基础调制(总是生效)：干→黄褐、湿→墨绿。直接体现"湿度/含水量"，
-	// 与 apply_moisture_tint(依赖 dyn_valid 的动态强化层)叠加；偏离中性(~0.42)越远调制越强。
+	// [需求2 2026-06-19] 湿度连续基础调制(总是生效)：干→黄褐、湿→墨绿。直接体现"湿度/含水量"。
+	// ⚠ [需求2 2026-06-19午] amp 0.24→0.10：与 apply_moisture_tint 两层叠加过强会统一着色、压过
+	// biome 本色。仅保留轻微"干偏黄/湿偏绿"基底，把色相主导权交还给 biome_hue_modulate。
 	float moist_w = clamp(i.moist, 0.0, 1.0);
 	vec3 arid_tint  = vec3(1.13, 1.00, 0.72);
 	vec3 humid_tint = vec3(0.78, 1.07, 0.80);
 	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.12, 0.72, moist_w));
-	float moist_amp = clamp(abs(moist_w - 0.42) * 0.95, 0.0, 0.24);
+	float moist_amp = clamp(abs(moist_w - 0.42) * 0.55, 0.0, 0.10);
 	surface.base_color *= mix(vec3(1.0), moist_tint, moist_amp);
 
 	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
@@ -397,8 +400,9 @@ SurfaceParams apply_land_material_overlays(
 // ═══════════════════════════════════════════════════════════════════════
 // LAND 4：BRDF Shading —— 走 brdf.gdshaderinc 的统一 evaluate_brdf
 // ═══════════════════════════════════════════════════════════════════════
-vec3 shade_land_surface(SurfaceParams surface) {
-	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND);
+vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
+	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
+	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
 	return evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 }
 
@@ -453,5 +457,5 @@ vec3 render_land_pipeline(
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid);
 
-	return shade_land_surface(surface);
+	return shade_land_surface(surface, uv, lat_signed);
 }

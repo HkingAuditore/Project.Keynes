@@ -99,6 +99,9 @@ var _fallback_particle_texture: ImageTexture
 var _world_bounds: Rect2 = Rect2()
 var _world_time: float = 0.0
 var _strength: float = 1.0
+var _map_index_atlas_tex: ImageTexture = null
+var _noise_tex: ImageTexture = null
+var _hex_size: float = 22.0
 var _weather_field_tex: Texture2D = null
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
 # overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
@@ -162,30 +165,18 @@ func _ready() -> void:
 	set_process(true)
 
 func _process(delta: float) -> void:
-	# ambient-shadow：先无条件推进 ambient_time + 推到 shader——这是装饰时钟，
-	# 与 game pause 解耦，让云影即使在暂停时也持续飘动+变形。
-	if _ambient_cloud_shadow_enabled and _overlay_mat != null:
-		_ambient_time += delta
-		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
-
-	# ambient-shadow：即使没有 weather，只要 ambient cloud shadow 开启，就要保持 overlay 可见。
 	var has_weather: bool = (not _front_target_snapshots.is_empty()) \
 			or (not _front_visual_snapshots.is_empty()) \
 			or (_weather_field_tex != null)
-	if not has_weather and not _ambient_cloud_shadow_enabled:
+	if not has_weather:
 		_active_count = 0
 		visible = false
 		return
 	# 任务 5：粒子/噪声时间推进受 WorldClock.paused 门控
 	# （不依赖 WorldClock 实例，而是看 SceneTree 的 paused 状态——与项目现有暂停机制兑齐）
-	# 注意：ambient_time 已在上面推进过了，这里 pause 仅冻结 weather 相关的 world_time。
 	if not _effective_running():
-		# 暂停时 ambient shadow 仍要保持 overlay 可见且能继续接收 ambient_time 更新，
-		# 仅刷一次可见性后退出（不动 fronts/particles/world_time）。
-		if _ambient_cloud_shadow_enabled:
-			_refresh_visibility()
 		return
-	_world_time += delta
+	_world_time += delta * _clock_speed_multiplier
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
 	if has_weather:
@@ -221,9 +212,13 @@ func _process(delta: float) -> void:
 # 暂停门控：由上层（main.gd 把 WorldClock.paused 同步给 WeatherLayer）写入。
 # 默认 true；外部写入 false 后停止 world_time 推进。
 var _clock_running: bool = true
+var _clock_speed_multiplier: float = 1.0
 
 func set_clock_running(running: bool) -> void:
 	_clock_running = running
+
+func set_clock_speed_multiplier(multiplier: float) -> void:
+	_clock_speed_multiplier = clampf(multiplier, 0.0, 20.0)
 
 func _effective_running() -> bool:
 	return _clock_running
@@ -252,6 +247,9 @@ func _update_storm_flash() -> void:
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
 	_world_bounds = bounds
+	_map_index_atlas_tex = map_index_atlas
+	_noise_tex = noise_tex
+	_hex_size = hex_size
 	_reset_front_blend_state()
 	if _overlay_quad != null:
 		_overlay_quad.mesh = _build_full_quad(bounds)
@@ -269,11 +267,7 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		_push_empty_fronts_to_overlay()
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
 		_push_weather_profile_uniforms_to_overlay()
-		# ambient-shadow：把当前开关与强度推一次到 shader，避免 setup 后第一帧用默认值。
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", _ambient_cloud_shadow_enabled)
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
-		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
-	# ambient-shadow：setup 后立刻刷一次可见性，确保启用时在 reset_front_blend 之后还能看到影。
+		_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
 	_refresh_visibility()
 
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
@@ -289,14 +283,12 @@ func set_weather_field_texture(tex: Texture2D) -> void:
 		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 	_refresh_visibility()
 
-# ambient-shadow：可见性收敛点。任何一个条件成立就保持 overlay 可见：
+# 可见性收敛点。任何一个条件成立就保持 overlay 可见：
 #  1) 有活跃 fronts（_active_count > 0）
 #  2) 有 weather_field_tex（按 cell 渲染天气场）
-#  3) ambient cloud shadow 启用（即使 clear 天气也要画影子）
 func _refresh_visibility() -> void:
 	visible = (_active_count > 0) \
-			or (_weather_field_tex != null) \
-			or _ambient_cloud_shadow_enabled
+			or (_weather_field_tex != null)
 
 # vector_atlas 已退役；保留 setter 让旧调用点安全退化。
 func set_vector_atlas_texture(tex: Texture2D) -> void:
@@ -314,6 +306,17 @@ func set_visual_quality(q: int) -> void:
 	_visual_quality = clampi(q, 0, 2)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+
+var _mobile_quality_tier_define: String = ""
+
+func set_mobile_quality_tier(tier_define: String) -> void:
+	if _mobile_quality_tier_define == tier_define:
+		return
+	_mobile_quality_tier_define = tier_define
+	_load_overlay_shader()
+	if _overlay_quad != null and _world_bounds.size != Vector2.ZERO:
+		_overlay_quad.mesh = _build_full_quad(_world_bounds)
+	_push_overlay_runtime_state()
 
 func set_day_night_enabled(v: bool) -> void:
 	_day_night_enabled = v
@@ -343,15 +346,18 @@ var _tod_sun_color: Color = Color.WHITE
 var _tod_ambient_color: Color = Color(0.65, 0.68, 0.75)
 var _tod_night_factor: float = 0.0
 var _tod_exposure: float = 1.0
+var _tod_sun_dir: Vector3 = Vector3(0.4, -0.7, 0.6)
 
 func apply_tod(profile: TODProfile) -> void:
 	if profile == null:
 		return
+	_tod_sun_dir = profile.sun_dir
 	_tod_sun_color = profile.sun_color
 	_tod_ambient_color = profile.ambient_color
 	_tod_night_factor = profile.night_factor
 	_tod_exposure = profile.exposure
 	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
 		_overlay_mat.set_shader_parameter(
 			"tod_sun_color",
 			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
@@ -382,24 +388,6 @@ func set_cloud_tod_tint_enabled(v: bool) -> void:
 	_cloud_tod_tint_enabled = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
-
-# ambient-shadow：全图飘移云影。enabled=true 时即使无天气 overlay 也会保持可见，
-# 在地面上画一层缓慢漂动的灰影斑块，给地图加"晴天有云"的氛围。strength 控制浓度。
-# _ambient_time 与游戏 pause 解耦——云影是装饰，不跟着游戏停（区别于 _world_time）。
-var _ambient_cloud_shadow_enabled: bool = true
-var _ambient_cloud_shadow_strength: float = 0.75
-var _ambient_time: float = 0.0
-
-func set_ambient_cloud_shadow_enabled(v: bool) -> void:
-	_ambient_cloud_shadow_enabled = v
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", v)
-	_refresh_visibility()
-
-func set_ambient_cloud_shadow_strength(v: float) -> void:
-	_ambient_cloud_shadow_strength = clampf(v, 0.0, 1.0)
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
 
 # 抽动修复（2026-05-18）：速度档切换时由 main.gd 调用，重置 interval/duration
 # 估计，避免下一次 commit 算出"上次 push 到现在"的超长间隔（例如 x20→x1 切换
@@ -1047,12 +1035,53 @@ func _particle_tod_tint_component(sun_component: float, ambient_component: float
 
 # ─── 内部 ─────────────────────────────────────────────────────────────────
 
+func _push_overlay_runtime_state() -> void:
+	if _overlay_mat == null:
+		return
+	if _map_index_atlas_tex != null:
+		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
+	if _noise_tex != null:
+		_overlay_mat.set_shader_parameter("noise_tex", _noise_tex)
+	_overlay_mat.set_shader_parameter("world_origin", _world_bounds.position)
+	_overlay_mat.set_shader_parameter("world_size", _world_bounds.size)
+	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
+	_overlay_mat.set_shader_parameter("world_time", _world_time)
+	_overlay_mat.set_shader_parameter("weather_strength", _strength)
+	_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
+	_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
+	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+	_overlay_mat.set_shader_parameter("extreme_weather_ground_effect_enabled", _extreme_ground_enabled)
+	_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+	_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
+	_overlay_mat.set_shader_parameter(
+		"tod_sun_color",
+		Vector3(_tod_sun_color.r, _tod_sun_color.g, _tod_sun_color.b)
+	)
+	_overlay_mat.set_shader_parameter(
+		"tod_ambient_color",
+		Vector3(_tod_ambient_color.r, _tod_ambient_color.g, _tod_ambient_color.b)
+	)
+	_overlay_mat.set_shader_parameter("tod_night_factor", _tod_night_factor)
+	_overlay_mat.set_shader_parameter("tod_exposure", _tod_exposure)
+	_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
+	_push_weather_profile_uniforms_to_overlay()
+	_push_fronts_to_overlay(_front_visual_snapshots)
+
 func _load_overlay_shader() -> void:
 	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",
 		ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
+	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+		var src: String = shader.code
+		if not src.begins_with("#define"):
+			shader = shader.duplicate() as Shader
+			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			print("[weather-layer/quality] prepended #define %s to %s" % [
+				_mobile_quality_tier_define, OVERLAY_SHADER_PATH
+			])
 	_overlay_mat = ShaderMaterial.new()
 	_overlay_mat.shader = shader
 	_overlay_quad.material = _overlay_mat

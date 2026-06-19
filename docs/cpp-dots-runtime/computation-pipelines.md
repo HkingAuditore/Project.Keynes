@@ -558,6 +558,82 @@ Merged native 路径：
   profile 可在 `100..2400` 间调度 field solve cell budget。若切片过小，
   天气场会长期处于同一 field phase，看起来像生成/消失频率异常。
 
+### 半真实大气模型（2026-06-19）
+
+目标：内陆形成随风移动的雨云带、各类天气按纬度/季节合理分布。改动同时落在
+GDScript hot-loop (`field_solver.gd::run_slice`) 与 C++ 镜像
+(`DCWorldExt::run_weather_field_solve_pass`)，两边公式必须逐行一致。
+
+水汽动态化（让 vapor 成为随风搬运的预报量，而非静态气候湿度场的平滑版）：
+
+- `vapor_memory` 对静态 `base_m`(气候湿度)的锚定由 `0.18 → 0.06`，vapor 主要由
+  跨日 `prev_vapor` + 上风平流决定，parcel 随风迁移深入内陆。
+- `weather_ocean_evap_gain 0.20 → 0.55`：海洋成为强水汽源，喂给上风平流。
+- `weather_land_evapotranspiration_gain 0.70 → 0.85`：内陆植被/土壤水汽再循环。
+- `weather_vapor_precip_sink 0.95 → 0.70`：下雨不再抽干整层水汽，下风格继承水汽 →
+  雨带向内陆推进（与 `weather_field_solver_test` 早已配置/验证的 0.70 对齐）。
+- `weather_precip_carryover_max 0.02 → 0.08`：降水跨日/跨格随风延续。
+- carryover/平流接力门槛与 RH 触发阈解耦：`relative_humidity >= max(0.45, rh_threshold-0.12)`，
+  `vapor_floor_factor=(rh-0.45)/0.40`，让随风迁移的雨带进入略干下风格后仍维持一段。
+- `weather_precip_rh_threshold 0.68 → 0.60`：降水触发门槛适度下调。
+- `weather_field_advect_steps` 上限 `2 → 4`、默认 `3`：同日上风采样更远。
+- 凝结云水 `cloud_water` 随风从上风格平流（`lerp(self, upstream, wind_mag*0.7)`），
+  与既有 `precip` 沿风 carryover 配合 → 云团整体随风飘动，而非原格生灭。
+
+天气类型分类重排（`_classify_field_weather_core` / `wf_classify_field_weather_at`）：
+
+- 引入 `lat_signed ∈ [-1,1]`（地图顶部=北半球<0）与 `season_idx`→`local_summer`
+  的半球感知季节强度（南半球季节相反）。
+- 判定顺序：BLIZZARD → STORM → MONSOON → RAIN → FOG → HEATWAVE → DROUGHT → CLEAR。
+- STORM：中低纬 (`lat_abs<0.70`)，夏季降低门槛 (`inst/precip` 随 `local_summer` 插值)，
+  暖海核心阈值相对旧版只降不升（保证既有 STORM 用例仍成立）。
+- MONSOON：低纬 (`lat_abs<0.42`) + `local_summer>0.5` + `precip>0.06`。
+- FOG 紧接 RAIN 且 precip 阈值衔接（`precip<0.030` vs RAIN 的 `>0.030`），不再被判定顺序饿死。
+- HEATWAVE：副热带 (`lat_abs<0.62`) + 夏季 + 高温干燥；DROUGHT：持续干燥（暖/寒流偏置）。
+
+parity 检查点（改任一侧务必同步另一侧）：`vapor_memory` 锚定系数、`cloud_water`
+上风平流、carryover RH gate / vapor_floor_factor、分类阈值与判定顺序、以及
+`climate_profile.gd` / `weather_system.gd` 默认值与 C++ knob fallback 默认值。
+
+### 海面降水抑制 + 类型阈值标定（2026-06-19b 调参）
+
+首版改完后实测（CSV）发现海面 96% 在降水、且 STORM/MONSOON/HEATWAVE/DROUGHT 全为 0%
+（全图过湿）。据此二次标定：
+
+- **海面降水抑制**：海洋仍是强水汽源（`surface_vapor_source` 不变，内陆雨带不削弱），
+  但海面**降水**按 instability 门控——平静/冷洋面只保留 `1-ocean_precip_suppression`（≈15%）
+  几乎不降水，强对流暖洋面（`instability` 高，热带风暴带/ITCZ）保留全量。公式：
+  `ocean_conv=clamp((instability-0.45)/0.45,0,1); precip *= lerp(1-suppression, 1, ocean_conv)`。
+  作用在 `precip` 最终值上（覆盖 `precip_raw` 与 `cloud_water_rain` 两条来源），
+  替代原先只乘 `precip_raw` 的写法。GDScript 与 C++ 镜像一致。
+- **类型阈值按实测场范围下调**（land inst p95≈0.67 / precip p95≈0.089 / temp p95≈0.69）：
+  STORM gate `inst 0.70→0.62..0.54、precip 0.105→0.090..0.062`（随 local_summer 插值）；
+  warm_ocean_core `inst>0.70 precip>0.07 cloud>0.28`；MONSOON `precip>0.055`；
+  HEATWAVE `temp>0.66 vapor<0.30 cloud<0.18`；DROUGHT `vapor<0.22 cloud<0.12 temp>0.45`。
+  目的是让 STORM/MONSOON/HEATWAVE/DROUGHT 在对应纬度/季节真正可达，不再被 RAIN/CLEAR 垄断。
+
+### 第三次标定（2026-06-19c，依据 CSV 实测分布）
+
+首两版后实测仍偏雨：海面 60% 在降水、STORM/MONSOON/HEATWAVE/DROUGHT 仍 ~0%。逐项归因：
+- 海面 `ocean_an(tta)` 实测几乎全 ≈0，但 `instability` 普遍 ~0.47 → 用 instability 门控海面降水
+  几乎无效。改为 **`ocean_drive = max(clamp(ocean_an/0.16), clamp((instability-0.74)/0.18))`**：
+  仅暖洋流异常或极强对流(ITCZ 级)放开海面降水，其余海面 `precip *= 1-ocean_precip_suppression`。
+- STORM：中纬风暴带候选(inst>0.54 & precip>0.062)确实存在却全被季节门(winter gate 0.62/0.090)挡掉。
+  门改为弱季节依赖：`inst 0.56→0.50、precip 0.068→0.056`（风暴非夏季独有）。
+- HEATWAVE：实测最热陆地恰最湿(hot 格 vapor p50≈0.42)，`vapor<0.30` 永不可达。
+  改为以"高温(temp>0.70)+少云(cloud<0.30)+无降水"为准，去掉强制低 vapor。
+- DROUGHT：即便 vapor<0.22 的格 cloud 仍 p50≈0.27（冷格低 vapor 但高 RH）。改以
+  `cloud<0.22 & precip<0.020 & temp>0.48 & vapor<0.34` 为主（低云暖区）。
+
+离线回代验证（用上一轮 CSV 场值套新逻辑）：RAIN 38%→~24%、CLEAR 49%→~67%、
+STORM 0→2~3%、FOG 0.1%→~4.7%(冷洋面海雾)、BLIZZARD 13%→~1.4%、DROUGHT/HEATWAVE 由 0 转正。
+
+
+
+
+
+
+
 ## Ocean currents physical chain
 
 主要入口：
@@ -864,6 +940,33 @@ C++ fan-out 协议（debug-overlay-perf v2，2026-06-12，已实现）：
 - `main.get_overlay_last_bake_ms()` 暴露最近一次 bake 耗时；> 5ms 应警觉。
 - `main.get_overlay_bake_path()` 暴露 fan-out 路径，确认 C++ 是否生效（应为 `gdext_fanout`）。
 - `_overlay_stats` 内部含 `count / invalid_count / near_zero_count / buckets`，DebugConsole Telemetry 读取。
+
+## Detail scatter（vegetation / 点缀散布，vegetation-visual-pcg 阶段 A）
+
+主要入口：
+
+- GDScript orchestration：`scripts/rendering/hex_renderer.gd`（按 `DecorationManifest` 或默认 grass/shrub/tree 生成 N 个 `ShrubLayer`）→ `scripts/rendering/shrub_layer.gd::_rebuild_instances` → `_rebuild_via_native`
+- C++ per-instance fan-out：`gdext/src/world_ext.cpp::DCWorldExt::encode_detail_scatter`
+- 触发：地图生成 / regenerate / 质量档切换时 `layer.setup()` → `_rebuild_instances()`（非每 tick，冷路径）。
+- 不属于 SUS scheduler job，不计入 `sus/render/ui`。
+
+当前状态：**混合 C++/GDScript**。GDScript 只做 per-cell（N≤2400）廉价预计算（suitability / attempts / climate_presence / 基础色 / size_density）；O(Σattempts) 的逐候选热循环（jitter+warp、world_noise/micro_gap 门、water/river 拒绝、acceptance、score cap）+ MultiMesh buffer 组装下沉 `encode_detail_scatter`。`_world_ext` 缺失 / 旧 DLL 无该方法 / C++ 返回 `fallback=true` 时透明回退到 `shrub_layer.gd` 的 GDScript 逐实例路径（`_last_scatter_path` 暴露实际路径 `gdext` / `gdscript`）。
+
+输入 / 输出：
+
+| 项 | 来源 | 备注 |
+| --- | --- | --- |
+| `keys` / `center_x,y` / `suitability` / `attempts` / `vitality` / `size_density` / `color_r,g,b,a` | `shrub_layer.gd` per-cell 预计算 | 仅"活跃 cell"（suitability>0 且 climate_presence>0.02）；长度 = K。 |
+| `offset_is_water`（PackedByteArray，`grid_w*grid_h`，odd-r） | `shrub_layer.gd` 从 `_map` 栅格化 | C++ 复刻 `world_to_cube → cube_to_offset` 精确 `_is_water_position`；空位 / 越界置 1（拒绝）。 |
+| `flow_buffer` + `flow_w,h` + `river_clear_threshold` | `WorldData.flow_buffer` / `derived_size` | C++ 复刻 `_bilinear_float` 做 river-body 拒绝。 |
+| PCG / size / vitality 标量 | `ShrubVisualProfile`（质量档已解算的 `instance_cap` / `size_scale`） | 逐位对齐 GDScript fallback 同名公式。 |
+| `buffer` + `instance_count` + `path` + `elapsed_ms` | 返回值 Dict | `buffer` = 每实例 16 float（transform2d 8 + color 4 + custom 4）；GDScript `multimesh.buffer = buf` 一次赋值。 |
+
+关键契约：
+
+- 纯 **buffer-encoder**：不读 `_slots`、不写 slot、不要求 `_bound`——散布是 render product，所有输入由 knobs flat PackedArray 喂入，地图刚生成 / climate slot 未绑定也能工作（同 `encode_overlay_atlas`）。
+- `hash01` / `hash2i` / `value_noise2` / `smoothstep` 与 `shrub_layer.gd` 同公式同 64-bit 整型语义（GDScript `float`=double，`>>` 算术移位），native 与 fallback 输出近 bit-一致（仅 libm `sin` 末位差异）；这是确定性 stochastic 场，验收按聚合密度而非 bit-equal。
+- MultiMesh 2D buffer 布局：`[xx, yx, 0, ox, xy, yy, 0, oy, r,g,b,a, u,v,seed,variant]`，与 `set_instance_transform_2d/color/custom_data` 等价。
 
 ## 后续迁移优先级
 

@@ -13,11 +13,10 @@ var num_continents: int   = 3      # 大陆核心数（影响大陆中心点数�
 var sea_level: float      = 0.64   # 高度图阈值；低于此值为海洋，调高→陆地增多
 var continent_size: float = 0.9   # 大陆核心影响半径系数 [0.3, 0.8]
 
-# 气候参数
-var polar_ratio: float = 0.15   # 极地占地图高度的比例（两端各占 polar_ratio）
-
 # 河流参数
-var river_count: int = 5   # 尝试生成的河流数量
+# 注意：当前 native 生成不读取 river_count 作为输入；河流密度由
+# ClimateProfile.river_flow_percentile 控制，此字段仅保留为生成结果统计/兼容。
+var river_count: int = 5
 
 # 随机种子（0 = 每次使用随机种子）
 var seed: int = 0
@@ -40,9 +39,9 @@ var COLD_SINK_TEMP: float = -0.05
 # 沿 -ocean_current 回溯的最大 cell 数（越大传播越远，但耗时线性增长）。
 var OCEAN_HEAT_ADVECT_STEPS: int = 3
 # 每步与上游温度的混合系数。
-var OCEAN_HEAT_MIX: float = 0.25
+var OCEAN_HEAT_MIX: float = 0.55
 # 沿岸水→陆热量泄漏权重（基础）；不再叠加独立冬季倍率。
-var COASTAL_HEAT_LEAK: float = 0.35
+var COASTAL_HEAT_LEAK: float = 0.55
 
 # 海冰修正：暖流输运异常×此系数后加到有效温度上用于与结冰阈值比较。
 var OCEAN_CURRENT_ICE_DELAY: float = 1.0
@@ -83,5 +82,4 @@ func validate() -> void:
 	num_continents = clampi(num_continents, 1,  8)
 	sea_level      = clampf(sea_level,      0.1, 0.8)
 	continent_size = clampf(continent_size, 0.2, 0.9)
-	polar_ratio    = clampf(polar_ratio,    0.0, 0.4)
 	river_count    = clampi(river_count,    0,  30)

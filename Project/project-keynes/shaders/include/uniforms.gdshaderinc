@@ -271,18 +271,19 @@ uniform int weather_front_count = 0;
 // 【地形 Hypsometric 色阶组】
 // =========================================================================
 // ─── Hypsometric 色阶（海陆双向，等高线设色） ────────────────────────────
-// Open Ocean Color Rebalance v2：在 v1 基础上进一步收敛深/浅海亮度差。
-// 旧版 V 区间 0.30~0.66 (Δ=0.36) 在截图上观感是"浅海发亮、深海近黑"，
-// 现把 V 收敛到 0.34~0.56 (Δ=0.22)，对比柔化 ~39%，仍保持单调递增。
-// 旧值 (v1) / 新值 (v2) / 视觉影响：
-//   deep_ocean   (0.10, 0.18, 0.30) → (0.14, 0.22, 0.34)   深海抬亮，少几分黑洞感
-//   mid_ocean    (0.16, 0.28, 0.40) → (0.20, 0.30, 0.42)   中海域过渡更连续
-//   color_shallow(0.27, 0.45, 0.56) → (0.28, 0.42, 0.52)   浅海略压暗
-//   coast_water  (0.40, 0.62, 0.66) → (0.34, 0.50, 0.56)   海岸不再过亮、贴近浅海
-uniform vec3 color_deep_ocean   : source_color = vec3(0.14, 0.22, 0.34);
-uniform vec3 color_mid_ocean    : source_color = vec3(0.20, 0.30, 0.42);
-uniform vec3 color_shallow      : source_color = vec3(0.28, 0.42, 0.52);
-uniform vec3 color_coast_water  : source_color = vec3(0.34, 0.50, 0.56);
+// Open Ocean Color Rebalance v3：水体 BRDF 粗糙度抬高后（顶视镜面退化为柔和高光，
+// 不再过曝），深海少了镜面"提亮"，色板自带的深/浅对比重新暴露 → 用户反馈"浅海深海
+// 差距太大"。v3 进一步压缩：抬亮 deep/mid、轻压 coast，把浅↔深亮度比从 ~1.9x 收到 ~1.4x。
+// 注意：实际渲染值由 world_map_material.tres 覆盖，这里的默认值与 .tres 保持一致。
+// 旧值 (v2) / 新值 (v3) / 视觉影响：
+//   deep_ocean   (0.14, 0.22, 0.34) → (0.22, 0.31, 0.43)   深海明显抬亮，去黑洞感
+//   mid_ocean    (0.20, 0.30, 0.42) → (0.25, 0.35, 0.46)   中海域抬亮、过渡更连续
+//   color_shallow(0.28, 0.42, 0.52) → (0.27, 0.40, 0.49)   浅海略压暗
+//   coast_water  (0.34, 0.50, 0.56) → (0.30, 0.43, 0.51)   海岸再压一档、贴近浅海
+uniform vec3 color_deep_ocean   : source_color = vec3(0.22, 0.31, 0.43);
+uniform vec3 color_mid_ocean    : source_color = vec3(0.25, 0.35, 0.46);
+uniform vec3 color_shallow      : source_color = vec3(0.27, 0.40, 0.49);
+uniform vec3 color_coast_water  : source_color = vec3(0.30, 0.43, 0.51);
 uniform vec3 color_beach        : source_color = vec3(0.85, 0.78, 0.55);
 uniform vec3 color_lowland      : source_color = vec3(0.62, 0.68, 0.42);
 uniform vec3 color_hill         : source_color = vec3(0.66, 0.55, 0.32);

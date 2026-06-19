@@ -75,13 +75,17 @@ SurfaceParams make_water_surface_params(
 	// 不再依赖 biome == B_SEA_ICE 硬切换。w_ice 来自 dyn_atlas_smooth.a 的连续
 	// sea_ice_fraction，与 UI/info_panel 同源；biome 仍按其他类型（lake/reef/kelp）
 	// 决定基础粗糙度，海冰 mix 走 w_ice 路径。
-	float roughness = 0.20;
+	// [cylindrical-earth-daylight] 顶视正交相机下，所有平静水面共享法线 +Z、视线 +Z，
+	// 太阳高悬时整片洋面同时命中 GGX 镜面峰值；roughness 过低 → D_GGX 爆炸 → 向阳侧海面
+	// 整体过曝发白（也是此前"快进闪瞎眼"的同源现象）。这里抬高基础粗糙度，让顶视镜面退化为
+	// 柔和高光、露出深海蓝；细碎波光由独立 sparkle special 负责，不依赖镜面尖峰。
+	float roughness = 0.40;
 	if (biome == B_LAKE) {
-		roughness = 0.12;          // ⟵ 平静湖面：更光滑，BRDF 自动产生紧高光
+		roughness = 0.24;          // ⟵ 平静湖面：仍是最亮水体，但不再是镜面、不过曝
 	} else if (biome == B_REEF) {
-		roughness = 0.30;
+		roughness = 0.40;
 	} else if (biome == B_KELP) {
-		roughness = 0.46;
+		roughness = 0.50;
 	}
 	roughness = mix(roughness, 0.34, clamp(w_ice, 0.0, 1.0));
 	roughness = mix(roughness, 0.50, clamp(w_kelp * 0.35, 0.0, 1.0));
@@ -791,16 +795,16 @@ SurfaceParams apply_water_overlay_surface(
 //
 //   day_night_enabled=false 时整体旁路（hillshade-only 路径不该带这些）。
 // ─────────────────────────────────────────────────────────────────────
-vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, int quality) {
+vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, int quality, float pixel_night) {
 	if (!day_night_enabled) return col;
 	vec3 N = normalize(surface.normal);
 
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
-	if (biome == B_REEF && caustics_enabled && quality >= 1 && tod_night_factor < 0.5) {
+	if (biome == B_REEF && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
 		float caustics = fbm(wp * 0.35 + vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
 		float caustics_mask = smoothstep(0.55, 0.75, caustics);
-		float day_factor = 1.0 - tod_night_factor;
+		float day_factor = 1.0 - pixel_night;
 		vec3 caustic_col = tod_sun_color * 1.15;
 		col = mix(col, col + caustic_col * 0.35, caustics_mask * caustics_strength * day_factor);
 	}
@@ -809,11 +813,13 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	if (water_fresnel_enabled) {
 		float F;
 		if (quality <= 1) {
-			F = 0.30;
+			// 顶视正交：视线近乎垂直水面，菲涅尔反射本应很弱。旧的 0.30 平值在快进/低画质下
+			// 把整片洋面糊上一层天空色 → 偏白。降到 0.16 让深海蓝重新主导。
+			F = 0.16;
 		} else {
 			F = pow(1.0 - clamp(N.z, 0.0, 1.0), 5.0);
 		}
-		vec3 sky_tint = tod_ambient_color * mix(1.15, 0.70, tod_night_factor);
+		vec3 sky_tint = tod_ambient_color * mix(1.0, 0.70, pixel_night);
 		col = mix(col, sky_tint, F * water_reflection_strength);
 	}
 
@@ -826,10 +832,10 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		float spark_mask = smoothstep(0.88, 0.985, sparkle);
 		vec3 day_sparkle_col = vec3(1.03, 1.02, 0.96);
 		vec3 night_sparkle_col = vec3(0.76, 0.86, 1.03);
-		vec3 sparkle_col = mix(day_sparkle_col, night_sparkle_col, tod_night_factor);
+		vec3 sparkle_col = mix(day_sparkle_col, night_sparkle_col, pixel_night);
 		float base_intensity = 0.028;
-		float intensity = mix(base_intensity, base_intensity * 0.45, tod_night_factor);
-		float night_freq_scale = mix(1.0, 0.55, tod_night_factor);
+		float intensity = mix(base_intensity, base_intensity * 0.45, pixel_night);
+		float night_freq_scale = mix(1.0, 0.55, pixel_night);
 		spark_mask *= night_freq_scale;
 		col = mix(col, col * sparkle_col, spark_mask * intensity);
 	}
@@ -843,11 +849,13 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 //   land/water 共用同一份 evaluate_brdf；spec_max/min legacy 仅在
 //   USE_PBR_BRDF=0 时被使用。water 不再自己写 Blinn-Phong/Fresnel/spec 系数。
 // ─────────────────────────────────────────────────────────────────────
-vec3 shade_water_surface(SurfaceParams surface, int biome, vec2 wp, int quality) {
-	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER);
+vec3 shade_water_surface(SurfaceParams surface, int biome, vec2 wp, int quality, vec2 uv, float lat_signed) {
+	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
+	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
+	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_WATER_LEGACY, SPEC_MIN_WATER_LEGACY);
 	// stylized water specials —— 在 BRDF 之后叠加（caustics / fresnel-sky / sparkle）
-	lit = apply_water_specials(lit, surface, biome, wp, quality);
+	lit = apply_water_specials(lit, surface, biome, wp, quality, pixel_night);
 	return lit;
 }
 
@@ -871,5 +879,5 @@ vec3 render_water_pipeline(
 	SurfaceParams surface = compute_water_base_surface(
 		biome, elev, wp, uv, scals, lat_signed, current_temp, ocean_current_v, wind_v, dyn_ice_frac);
 	surface = apply_water_overlay_surface(surface, biome, elev, wp, uv, wind_v);
-	return shade_water_surface(surface, biome, wp, visual_quality);
+	return shade_water_surface(surface, biome, wp, visual_quality, uv, lat_signed);
 }

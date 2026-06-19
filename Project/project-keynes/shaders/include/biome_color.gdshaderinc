@@ -40,8 +40,8 @@ vec3 water_depth_gradient(float offshore_t, float elev) {
 	//   shelf_col  *(0.82,1.16,1.18) → *(0.96,1.06,1.06)  陆架不再被推成纯青蓝
 	//   mid_col    *(0.88,1.05,1.18) → *(0.96,1.02,1.06)  中海域去过饱和
 	//   basin_tint mix(0.76,0.96,1.22)..(0.70,0.92,1.30) → mix(0.92,1.00,1.10)..(0.88,0.98,1.14)
-	//   abyss_warm *(0.86,0.98,1.24) → *(0.94,0.98,1.10)
-	//   abyss_cool mix(0.58,0.72,1.08)..(0.46,0.60,1.18) → mix(0.78,0.86,1.06)..(0.72,0.82,1.10)
+	//   abyss_warm *(0.86,0.98,1.24) → *(0.94,0.98,1.10) → v3 *(0.98,1.00,1.06)
+	//   abyss_cool mix(0.58,0.72,1.08)..(0.46,0.60,1.18) → mix(0.78,0.86,1.06)..(0.72,0.82,1.10) → v3 mix(0.90,0.93,1.04)..(0.86,0.90,1.06)
 	vec3 coast_col = mix(color_shallow, color_coast_water, 0.88) * vec3(1.00, 1.04, 1.04);
 	vec3 shelf_col = mix(color_coast_water, color_mid_ocean, 0.24) * vec3(0.96, 1.06, 1.06);
 	vec3 mid_col = mix(color_mid_ocean, color_deep_ocean, 0.18) * vec3(0.96, 1.02, 1.06);
@@ -52,8 +52,10 @@ vec3 water_depth_gradient(float offshore_t, float elev) {
 	float richness_t = clamp(deep_ocean_color_richness, 0.0, 1.0);
 	vec3 basin_tint = mix(vec3(0.92, 1.00, 1.10), vec3(0.88, 0.98, 1.14), richness_t);
 	vec3 basin_col = mix(color_mid_ocean, color_deep_ocean, 0.50) * basin_tint;
-	vec3 abyss_warm = color_deep_ocean * vec3(0.94, 0.98, 1.10);
-	vec3 abyss_cool = color_deep_ocean * mix(vec3(0.78, 0.86, 1.06), vec3(0.72, 0.82, 1.10), richness_t);
+	// v3：深海色板抬亮后，abyss 不再额外大幅压暗（旧 ~0.72~0.78 把最深处又拉黑 ~25%，
+	// 是"浅深差距过大"的元凶之一）。乘子收敛到接近 1.0，最深处贴住更亮的 color_deep_ocean。
+	vec3 abyss_warm = color_deep_ocean * vec3(0.98, 1.00, 1.06);
+	vec3 abyss_cool = color_deep_ocean * mix(vec3(0.90, 0.93, 1.04), vec3(0.86, 0.90, 1.06), richness_t);
 	vec3 abyss_col = mix(abyss_warm, abyss_cool, contrast_t);
 
 	vec3 ocean_col = coast_col;

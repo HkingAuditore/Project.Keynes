@@ -681,26 +681,42 @@ const NATIVE_MODE_ACTIVE: int = 2
 # visual/compatibility summary.
 @export_group("天气场求解")
 @export var weather_field_enabled: bool = true
-@export_range(0, 2, 1) var weather_field_advect_steps: int = 2
+# 半真实大气调参（2026-06-19）：把"逐格稳态场"调成"随风平流的动态大气"。
+# advect_steps 上限 2→4、默认 3：同日上风采样更远，配合跨日 prev_vapor 形成移动云带。
+@export_range(0, 4, 1) var weather_field_advect_steps: int = 3
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
-@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.68
-@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.62
+@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.42
+@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.85
+# carryover_max 0.02→0.08：让雨带跨日/跨格随风延续（与 weather_field_solver_test 已验证值对齐）。
 @export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.08
+# vapor_precip_sink 0.95→0.70：下雨不再抽干整层水汽，下风格能继承水汽 → 雨带向内陆推进。
 @export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.70
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
-@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.28
-@export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
+@export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.65
 @export_range(0.0, 1.0, 0.01) var weather_lake_evap_scale: float = 0.35
-@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.20
-@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.30
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.16
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.20
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
-@export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
-@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.32
+@export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.22
+@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.18
 @export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 2
 @export var weather_cold_precip_as_blizzard: bool = true
 @export_range(0.0, 0.12, 0.005) var weather_snow_classification_margin: float = 0.03
-@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.34
+# ocean_evap_gain 0.20→0.55：海洋成为强水汽源，喂给上风平流，让水汽能被搬到内陆。
+@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.55
+# land_evapotranspiration_gain 0.70→0.85：内陆植被/土壤的水汽再循环（continental recycling）。
+@export_range(0.0, 2.0, 0.01) var weather_land_evapotranspiration_gain: float = 0.85
+# precip_rh_threshold 0.68→0.60：降水触发门槛适度下调，使移动雨带进入内陆后仍能维持。
+@export_range(0.40, 0.95, 0.01) var weather_precip_rh_threshold: float = 0.60
+# ocean_precip_suppression 0.85→0.95：海面原始降水近乎处处偏高(近饱和)，本系数把无动力强迫的
+# 静洋面压到降水阈值以下→只剩 convergence(辐合)/frontogenesis(锋生)/暖流异常 的「空间强迫带」成雨团，
+# 其余洋面转晴(雨团之间的晴海)。释放门控见 field_solver.gd 的 ocean_drive；越高雨团越紧、晴海越多。
+@export_range(0.0, 1.0, 0.01) var weather_ocean_precip_suppression: float = 0.95
+@export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.42
+@export_range(0.0, 1.0, 0.01) var weather_rain_shadow_drying: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_vapor_transport_gain: float = 0.92
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
 # 纯视觉的天气类型交叉淡入淡出（prev_type→target_type 按 alpha 0→1 过渡）。
@@ -759,9 +775,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
 @export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
-@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.12
-@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.22
-@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.32
+@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
+@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.18
 
 # 4) enable_wind_heat_transport
 #    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流
@@ -836,7 +852,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
 @export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.06
-@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.13
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.18
 @export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.65
 @export var ocean_decoupled_visual_raster: bool = true
 @export var ocean_visual_rebake_drop_stale: bool = true
@@ -871,10 +887,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15
 @export var thermal_final_delta_cap_enabled: bool = true
 @export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_daily_cap: float = 0.12
-@export_range(0.0, 0.5, 0.005) var temperature_transport_anomaly_source_cap: float = 0.08
-@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_blend_rate: float = 0.35
-@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_decay_rate: float = 0.12
-@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_zero_current_decay: float = 0.20
+@export_range(0.0, 0.5, 0.005) var temperature_transport_anomaly_source_cap: float = 0.22
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_blend_rate: float = 0.70
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_decay_rate: float = 0.04
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_zero_current_decay: float = 0.06
 @export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.08
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.22
 @export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.12
@@ -949,10 +965,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_category("特殊功能")
 @export_group("海冰阈值")
 
-# Sea-ice cover thresholds (temperature).
+# Sea-ice cover thresholds (temperature). temp < form → 结冰(frac→1)；temp > melt → 化冰(frac→0)。
 # 2026-05-26：form 保持较低，melt 保持迟滞窗口；海冰范围由温度场持续越阈决定。
-@export var sea_ice_form_threshold: float = 0.14
-@export var sea_ice_melt_threshold: float = 0.22
+# ⚠ 2026-06-19：两极海冰带偏大(SEA_ICE 占水域~18%)。form 0.14→0.10、melt 0.22→0.16 同步下调，
+# 让结冰带更靠极、整体收窄约 30%，同时维持 0.06 迟滞窗口避免冰缘逐日抖动。
+# ⚠ 2026-06-19(午):form 0.10 仍偏大(SEA_ICE ~15.5% 水域)。再降 form 0.10→0.06、melt 0.16→0.11，
+# 结冰带进一步靠极收窄(temp<0.06 才结冰)，维持 0.05 迟滞窗。若仍偏大可叠加 terrain_threshold 上调。
+@export var sea_ice_form_threshold: float = 0.06
+@export var sea_ice_melt_threshold: float = 0.11
 
 # Volcano placement.
 @export_group("火山")
