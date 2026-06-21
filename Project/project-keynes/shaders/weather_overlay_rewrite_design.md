@@ -1,8 +1,16 @@
 # weather_overlay.gdshader 重写设计文档
 
-> 状态：**设计评审中（未动代码）**
+> 状态：**已实施（2026-06-19）** — shader 重写完成，原文件备份为 `weather_overlay.gdshader.bak`
 > 目标读者：维护者本人
-> 关联文件：`shaders/weather_overlay.gdshader`（现 1220 行）、`scripts/rendering/weather_layer.gd`
+> 关联文件：`shaders/weather_overlay.gdshader`（1220 → 656 行）、`scripts/rendering/weather_layer.gd`
+>
+> ## ⚠ 实施时的重大更正（务必先读）
+> 设计阶段 §11 推测“field 是主力、fronts 冗余”，**实际恰好相反**：
+> `main.gd` 已停用 `weather_field_tex`（每次天气更新 `set_weather_field_texture(null)`），
+> shader 里 `weather_field_enabled` 默认 false，`sample_weather_field`（220 行）+ merge 全是**死代码**；
+> 当前所有云 **100% 来自 fronts 通路**。
+> 因此最终实施为：**删 field 死通路、保留并精简 fronts 通路**（决策对象与初稿相反）。
+> 其余按用户确认执行：删纹理噪声 / `noise_tex`、雨雪闪电改 `cloud_fbm`、删 debug、4 层云→3 层、双光照→单光照。
 
 ---
 

@@ -137,6 +137,10 @@ extends Resource
 # This is not an independent season cosine. Tune axial_tilt_deg,
 # insolation_season_gain, day length, and thermal inertia for seasonal shape.
 @export var season_temp_amp: float = 0.32
+# 大陆性季节增幅(2026-06-21)：陆地季节温度强迫的额外倍率(海洋=1.0固定)。>1 放大陆地夏热冬冷，
+# 建立同纬"夏陆>海、冬陆<海"的真实海陆温差(诊断:原温差恒负-0.10、max=0,大陆性看不出)。
+# 1.0=关闭;1.55=中等大陆性。调高→陆地季节更极端(夏更热冬更冷);过高→夏季内陆过热。
+@export_range(1.0, 2.5, 0.05) var temp_land_continentality: float = 1.8
 
 # Fallback orbital year length used by resource-only/native paths before a
 # WorldClock is injected. At runtime WorldClock.days_per_year() is authoritative.
@@ -615,6 +619,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # coupling on a slow timescale.
 @export var weather_to_soil_gain: float = 0.014          # daily ↑ on soil_moisture per unit precip
 @export var weather_to_vegetation_gain: float = 0.008    # daily ↑ on growth_pressure per unit precip
+# weather → base_moisture 直接反馈(降水抬升/干旱压低局地气候湿度)。代码保留(map_generator.gd +
+# world_ext.cpp 三镜像)，默认 0 关闭 —— 2026-06-21 部分回滚：与 A(vapor 去锚定)一同撤下，先单独
+# 验证 C(风场 synoptic)对流动性的贡献，避免反馈耦合干扰分离实验。需要时设 >0 重新启用。
+@export var weather_to_base_moisture_gain: float = 0.0
 @export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
@@ -682,15 +690,23 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_group("天气场求解")
 @export var weather_field_enabled: bool = true
 # 半真实大气调参（2026-06-19）：把"逐格稳态场"调成"随风平流的动态大气"。
-# advect_steps 上限 2→4、默认 3：同日上风采样更远，配合跨日 prev_vapor 形成移动云带。
-@export_range(0, 4, 1) var weather_field_advect_steps: int = 3
+# advect_steps 上限 2→4、默认 3→4(2026-06-21 让天气流动)：同日上风采样更远(每 tick 最多 4 格)，
+# 配合 vapor base_m 回归下调，让远方水汽随风平流更深入内陆 → 移动云带、打破永雨永旱。
+@export_range(0, 4, 1) var weather_field_advect_steps: int = 4
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
+# condensation_gain：cloud_source 主项(condense_gate×本系数)。脚本默认 0.42 经 field_solver 云合成 ~1.5×
+# 放大(cloud_water 自反馈 1.26× + cloud=source*0.62+water*0.70 双重计数)→ cloud 稳态≈0.72(满屏云)。
+# 运行时 earth_like.tres 覆盖为 0.30 降满屏云(与永雨同源，连带压降水)。2026-06-21。
 @export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.42
 @export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.85
 # carryover_max 0.02→0.08：让雨带跨日/跨格随风延续（与 weather_field_solver_test 已验证值对齐）。
 @export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.08
-# vapor_precip_sink 0.95→0.70：下雨不再抽干整层水汽，下风格能继承水汽 → 雨带向内陆推进。
-@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.70
+# vapor_precip_sink 0.70→0.85(2026-06-20 阶段2打破水汽稳态)：下雨更快耗尽本地水汽 → 形成"雨→变干→
+# 再积累"的松弛循环，配合 transport_gain 下调一起消除永雨永旱(precip 普遍 >阈值致 66% 格子持续降水)。
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.85
+# precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
+# 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
+@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.30
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
@@ -705,25 +721,36 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var weather_cold_precip_as_blizzard: bool = true
 @export_range(0.0, 0.12, 0.005) var weather_snow_classification_margin: float = 0.03
 # ocean_evap_gain 0.20→0.55：海洋成为强水汽源，喂给上风平流，让水汽能被搬到内陆。
+# 运行时 earth_like.tres 覆盖为 0.45：暖洋面 vapor 偏高致永雨(36%)，轻降洋面蒸发压永雨；只小降以免削
+# 弱内陆水汽供给加重高纬永旱(13%)。2026-06-21。
 @export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.55
-# land_evapotranspiration_gain 0.70→0.85：内陆植被/土壤的水汽再循环（continental recycling）。
-@export_range(0.0, 2.0, 0.01) var weather_land_evapotranspiration_gain: float = 0.85
-# precip_rh_threshold 0.68→0.60：降水触发门槛适度下调，使移动雨带进入内陆后仍能维持。
-@export_range(0.40, 0.95, 0.01) var weather_precip_rh_threshold: float = 0.60
+# land_evapotranspiration_gain 0.85→1.6（2026-06-22 开源增内陆本地水汽）：修复陆地整体偏干
+# (moisture 中位0.33/河边0.32,几乎无高湿陆地)+降水单一成因。陆地蒸散源~翻倍→vapor↑→锋面/辐合/
+# 对流各成因降水↑→moisture↑→高湿陆地出现。@export 可在编辑器微调(0-2.0),不足可继续上调。
+@export_range(0.0, 2.0, 0.01) var weather_land_evapotranspiration_gain: float = 1.6
+# precip_rh_threshold：0.60→0.70(2026-06-20 物理层根治)。原 0.60 过低——蒸发充足致 RH 普遍越阈、
+# condense_gate 恒高 → cloud/precip 整体偏高(连不下雨的 CLEAR 都凝≈0.6 云)、全图无真正晴空，连带
+# 满屏云/固定降水/热浪旱灾消失。提阈让凝结只在真正高湿(RH>0.70)发生，中湿区转晴、拉开干湿对比。
+@export_range(0.40, 0.95, 0.01) var weather_precip_rh_threshold: float = 0.70
 # ocean_precip_suppression 0.85→0.95：海面原始降水近乎处处偏高(近饱和)，本系数把无动力强迫的
 # 静洋面压到降水阈值以下→只剩 convergence(辐合)/frontogenesis(锋生)/暖流异常 的「空间强迫带」成雨团，
 # 其余洋面转晴(雨团之间的晴海)。释放门控见 field_solver.gd 的 ocean_drive；越高雨团越紧、晴海越多。
 @export_range(0.0, 1.0, 0.01) var weather_ocean_precip_suppression: float = 0.95
 @export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.42
 @export_range(0.0, 1.0, 0.01) var weather_rain_shadow_drying: float = 0.35
-@export_range(0.0, 1.0, 0.01) var weather_vapor_transport_gain: float = 0.92
+# vapor_transport_gain 0.92→0.75(2026-06-20 阶段2打破水汽稳态)：原 0.92 让 vapor 被平流摊平锁成近
+# 稳态(干湿区固定)→永雨永旱。下调让本地蒸发-降水收支更主导，雨区耗水汽后能转干、干区能重新积累。
+@export_range(0.0, 1.0, 0.01) var weather_vapor_transport_gain: float = 0.75
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
 @export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
-# 纯视觉的天气类型交叉淡入淡出（prev_type→target_type 按 alpha 0→1 过渡）。
-# 当前没有任何 shader/baker 采样 cell.weather_transition_alpha——地图只读离散
-# 的 weather_type（enum_atlas 通道），淡入并不会被渲染出来。因此该系统只是在
-# 高倍速下空耗 CPU（C++ weather.commit + 跳过日的 GDScript fan-out ~35ms/次）。
-# 默认关闭以省 CPU；想恢复淡入再置 true 即可（C++ 与 GDScript 两条路径都受此开关控制）。
+# 天气类型过渡状态机（prev_type→target_type 按 alpha 0→1）。两个作用：
+#   1) 视觉淡入：当前无 shader/baker 采样 weather_transition_alpha，淡入不会被渲染出来；
+#   2) ★离散 type 稳定化：连续 ⌈1/rate⌉ tick 维持同一新类型才真正切换 weather_type，吸收
+#      阈值附近的逐 tick 横跳（离线重放预测：RAIN↔STORM 横跳 24%→9%、总转换约 −45%；
+#      但对两极 BLIZZARD↔CLEAR 那类较长周期交替无效——那是场层问题，不靠本开关解）。
+# 脚本默认保持 false（不影响 tests 的瞬时分类断言）；运行时世界 data/world/earth_like.tres
+# 已显式置 true 启用 type 稳定化。成本：enabled=true 时跳过日也要跑 commit fan-out（高倍速
+# 下 ~35ms/次）。C++ 与 GDScript 两条路径都受此开关控制；rate 见下，⌈1/rate⌉=确认所需 tick。
 @export var weather_transition_enabled: bool = false
 @export_range(0.0, 1.0, 0.01) var weather_transition_alpha_rate: float = 0.35
 
@@ -749,10 +776,26 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
 @export var daily_wind_split_passes: bool = true
 @export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
-@export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.075
+@export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.18
 @export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12
 @export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
-@export_range(0.0, 0.20, 0.005) var wind_synoptic_amp: float = 0.075
+# 天气尺度修复(2026-06-19)：synoptic(天气尺度)风/压扰动原先时间项挂在 day_t=sim_day/days_per_year
+# 上 → 平移一个波长约需 1.3 年 → 在日/月尺度上风型实质冻结 → 水汽永远被送到同一批辐合带 →
+# 固定雨带/干区、整图天气高度静止。wind_synoptic_period_days 控制 synoptic 波平移/振荡的真实周期
+# （天），~6 天对应中纬度天气系统过境节奏；越小天气系统移动越快（过小会偏躁动），越大越接近静止。
+# wind/SLP 两个 pass 共用本周期。amp 同步 0.075→0.10 以让移动的辐合带足以打破固定雨/干区。
+@export_range(0.0, 0.30, 0.005) var wind_synoptic_amp: float = 0.24
+@export_range(2.0, 60.0, 0.5) var wind_synoptic_period_days: float = 6.0
+# 让天气流动(2026-06-21 阶段1)：移动低压系统。在 SLP 场上叠加 N 个随引导气流（自西向东、
+# 中纬西风带主导，到达东缘后从西缘环绕）平移的高斯低压中心 −amp·exp(−r²/2σ²)。这制造出
+# "会移动的辐合源"——下游 wind 读含本项的 slp 算压力梯度 → 移动辐合带 → cloud_source/
+# frontogenesis → 雨带整团随系统漂移（field_solver 已有"雨带成团随风系移动"链，无需改 vapor
+# 镜像）。诊断与结构性评估见 canvas weather-flow-structural-eval。仅 C++ 路径实现（SLP fallback
+# 已与 C++ 分叉，生产恒走 gdext）。count=0 或 amp=0 关闭；默认保守开启以打破永雨永旱固定带。
+@export_range(0, 8, 1) var slp_mobile_low_count: int = 5
+@export_range(0.0, 0.30, 0.01) var slp_mobile_low_amp: float = 0.16
+@export_range(0.05, 0.40, 0.01) var slp_mobile_low_sigma: float = 0.16
+@export_range(5.0, 120.0, 1.0) var slp_mobile_low_period_days: float = 16.0
 # Debug isolation: true forces physical wind solve to output WindBelt only,
 # bypassing pressure-gradient/coastal-thermal/synoptic/old-wind inertia.
 @export var wind_belt_only_debug: bool = false

@@ -132,17 +132,21 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 
 plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-index 间接寻址」节）。
 
-- `map_index_atlas`（`WorldData.enum_atlas_tex`）/ `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` 是
+- `map_index_atlas`（`WorldData.enum_atlas_tex`）/ `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` / `weather_lut_tex` 是
   **渲染层产物（`WorldData` 上的 `ImageTexture`）**，不是 DataCore slot：
   **schema / `component_bind_table.gen.h` 无需改动**。
 - **LUT 编码权威路径是 C++（DCWorldExt）**，GDScript 仅做薄壳 + fallback（2026-06-16，用户
   决策"严格按 skill，哪怕只有 2400 个 cell 也在 CPP 做"）。map-index atlas 由 GDScript
   baker 在 `_encode_enum_atlas` 内编码：
-  - `encode_cell_luts(opts) → Dictionary{enum_lut/dyn_lut/eco_lut: PackedByteArray,
+  - `encode_cell_luts(opts) → Dictionary{enum_lut/dyn_lut/eco_lut/weather_lut: PackedByteArray,
     path, elapsed_ms, fallback, published_to_slot=false}`：C++ 读 8 个 SoA slot
     （`cell_temp/cell_moisture/cell_snow_cover/cell_vegetation_vitality/cell_sea_ice_frac/
-    cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 3 张 LUT 的
+    cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 enum/dyn/eco 三张 LUT 的
     `PackedByteArray`；GDScript 只负责 `Image.create_from_data` + `ImageTexture.update`。
+  - `weather_lut`（RGBA8，R=type/G=intensity/B=cloud/A=precip）：另读 4 个 weather slot
+    （`cell_weather_type/cell_weather_intensity/cell_weather_cloud/cell_weather_precip`）逐格量化，
+    供 `weather_overlay.gdshader` 经 cell-index 间接寻址驱动云分布。weather slot 是**软依赖**——
+    天气未初始化（slot size < n_cells）时该段保持全 0（云不显示），enum/dyn/eco 不受影响、不整张回退。
   - LUT/map-index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
     无 `flush`/`snapshot` 需求；C++ 直接把字节缓冲塞进返回 Dict，GDScript 端零额外 marshalling 拷贝
     （CoW 引用传递）。

@@ -29,7 +29,9 @@ render_mode blend_mix;
 
 //   snow_cover     依赖 common_noise.fbm + height.decode_height_rg8 + weather_front.compute_extreme_weather_mask。
 //   biome_detail   依赖 common_noise.fbm + common_noise.voronoi_cell + uniforms.B_*。
-//   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8。
+//   earth_daylight 叶子，仅依赖 uniforms.season_phase/day_phase/axial_tilt_rad：
+//                  地球式昼夜（晨昏线）单一真源，被 hillshade_tod/brdf/water 统一调用。
+//   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8 + earth_daylight。
 //   water          依赖 common_noise.* + uniforms.map_index_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
@@ -39,6 +41,7 @@ render_mode blend_mix;
 
 // ─────────────────────────────────────────────────────────────────────────
 #include "res://shaders/include/uniforms.gdshaderinc"
+#include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
 #include "res://shaders/include/cell_indirect.gdshaderinc"
 #include "res://shaders/include/common_noise.gdshaderinc"

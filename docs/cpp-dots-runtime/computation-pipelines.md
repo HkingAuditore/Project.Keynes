@@ -560,8 +560,13 @@ Merged native 路径：
 
 ### 半真实大气模型（2026-06-19）
 
-目标：内陆形成随风移动的雨云带、各类天气按纬度/季节合理分布。改动同时落在
-GDScript hot-loop (`field_solver.gd::run_slice`) 与 C++ 镜像
+> ⚠ **历史调参演进（19a/b/c）**：本节记录 2026-06-19 三次 CSV 标定的演进过程，其中相当
+> 一部分参数与机制已被 **2026-06-20 根因重构**替换（carryover→EMA、去纬度门/季节分类、
+> vapor_precip_sink / vapor_transport_gain / precip_rh 重新标定）。**当前真实状态以本节末
+> 「根因重构（2026-06-20）」小节为准**；下面 19a/b/c 仅作演进参考、不要据此改代码。
+
+目标：内陆形成随风移动的雨云带、各类天气由温度/风场/洋流/地形自然涌现分布（不再硬编码
+纬度/季节）。改动同时落在 GDScript hot-loop (`field_solver.gd::run_slice`) 与 C++ 镜像
 (`DCWorldExt::run_weather_field_solve_pass`)，两边公式必须逐行一致。
 
 水汽动态化（让 vapor 成为随风搬运的预报量，而非静态气候湿度场的平滑版）：
@@ -628,6 +633,46 @@ parity 检查点（改任一侧务必同步另一侧）：`vapor_memory` 锚定�
 离线回代验证（用上一轮 CSV 场值套新逻辑）：RAIN 38%→~24%、CLEAR 49%→~67%、
 STORM 0→2~3%、FOG 0.1%→~4.7%(冷洋面海雾)、BLIZZARD 13%→~1.4%、DROUGHT/HEATWAVE 由 0 转正。
 
+### 根因重构（2026-06-20）：降水惯性化 + 打破水汽稳态 + 去纬度门（**当前真实状态**）
+
+针对"天气逐 tick 横跳/不连续 + 海量永雨永旱 + 纬向直线条带"的根因重构，三阶段落地。
+GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`) 仍双份镜像。
+
+**阶段1 — 降水惯性化（消除横跳/不连续）**：
+- `precip` 改为带时间状态的 EMA：`precip = lerp(prev_precip, precip_target, weather_precip_inertia)`
+  （`weather_precip_inertia` 默认 `0.30`，新增 ClimateProfile knob）；`precip < 0.003` 归零。
+- **删除**脉冲放大三件套：carryover `precip_floor` 跨日叠加、`precip_cls` 拖尾、
+  `precip_gate`/`fog_cloud_gate` 分类滞回。时间连续性统一由 EMA 提供，分类回归**单阈值**。
+- `precip_target = max(precip_raw, cloud_water_rain)`（不再叠加 carryover floor）；
+  云水降水消耗率 `0.42 → 0.22`，削弱"积累-暴耗"自激振荡。
+
+**阶段2 — 打破水汽稳态（消除永雨永旱）**：
+- `weather_vapor_transport_gain 0.92 → 0.75`：vapor 不再被平流摊平锁成稳态，本地蒸发-降水收支更主导。
+- `weather_vapor_precip_sink 0.70 → 0.85`：下雨更快耗尽本地水汽 → "雨→变干→再积累"松弛循环。
+- `weather_precip_rh_threshold 0.60 → 0.70`：凝结只在真正高湿(RH>0.70)发生，拉开干湿对比、还原晴空。
+- `weather_ocean_precip_suppression 0.85 → 0.95`：静洋面压到阈下，降水集中到 convergence /
+  frontogenesis / 暖流异常 的空间强迫带（`ocean_drive = max(ocean_an/0.16, (inst-0.90)/0.10,
+  (conv-0.38)/0.16, fronto/0.16)`），其余洋面转晴。`vapor_memory` 锚定保持 `0.18`（19a 的 0.06 未采用）。
+
+**阶段3 — 去纬度门 + 做减法**：
+- 分类 `_classify_field_weather_core` / `wf_classify_field_weather_at` **删除 `lat_norm` /
+  `lat_signed` / `season_idx` / `local_summer`**：类型边界由温度/湿度等弯曲物理场涌现，消除沿纬线的
+  直线天气带。签名简化为 `(temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom)`。
+- 判定顺序：BLIZZARD → STORM → MONSOON → RAIN → FOG → HEATWAVE → DROUGHT → CLEAR。关键阈值：
+  `meaningful_precip = precip>0.030 或 (precip>0.022 & cloud>0.22 & vapor>0.28)`；
+  STORM `warm(temp>0.55) & humid(vapor>0.28) & ((inst>0.55 & precip>0.060) | warm_ocean_core)`；
+  MONSOON `warm & vapor>0.40 & precip>0.055 & cloud>0.45`；FOG `vapor>0.34 & cloud>0.14 &
+  precip<0.030 & temp<0.55`；HEATWAVE `hot(temp>0.64) & temp_anom>门 & cloud<0.38 & precip<0.025`；
+  DROUGHT `cloud<0.22 & precip<0.020 & temp>0.48 & vapor<0.34`。
+- 清理 `lat_norm` 僵尸链（`cell_lat_norm` knob、`LATN` 指针、`soa_lat_norm` 等）与死代码
+  （GDScript `_run_weather_field_gdscript_loop_inplace`、cell 版 `_classify_field_weather`）。
+- `field_precip_decay` / `field_precip_carryover_max` 已成**僵尸 knob**（C++/GDScript hot-loop 均
+  不再读），仅 ClimateProfile/knobs 链路尚存传递，待后续删除。
+
+**parity 检查点**（改任一侧务必同步另一侧）：`vapor_memory` 锚定系数、`vapor_transport_gain`、
+precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 阈、分类阈值与判定顺序、
+以及 `climate_profile.gd` / `weather_system.gd` 默认值与 C++ knob fallback 默认值。
+
 
 
 
@@ -692,6 +737,24 @@ Cadence contract:
   transcendentals. This drops passA from ~2.9ms to a few tenths of a ms. Set
   `slp_lat_lut_bins=8192` for a near-exact A/B reference; interp error at 1024
   bins (~0.18° latitude) is far below the natural day-to-day `slp_delta_p95`.
+- 让天气流动 phase 1 (2026-06-21) — mobile low-pressure systems: `run_slp_field_pass`
+  adds an optional `mobile_low` term to each cell's SLP — `N` Gaussian low-pressure
+  centers `−amp·exp(−r²/2σ²)` whose normalized centers drift west→east (mid-latitude
+  westerly steering), wrap in x once per `slp_mobile_low_period_days`, with a slow
+  latitude wobble. Centers are hashed deterministically from `(world_seed, j)` and
+  precomputed **outside** the cell loop; the hot loop only evaluates the Gaussian
+  falloff, reusing the C-feature `cell_pos_x`-normalized coords + bounds. Knobs (from
+  `ClimateProfile` via `map_baker`): `slp_mobile_low_count` (default 3, clamp 0–8),
+  `slp_mobile_low_amp` (default 0.10), `slp_mobile_low_sigma` (default 0.16 of map
+  width), `slp_mobile_low_period_days` (default 38). `count=0` / `amp=0` / missing
+  knob / missing `cell_pos_x` slot all degrade to off (backward compatible with old
+  DLLs). Purpose: inject a **moving convergence source** so the existing downstream
+  chain (wind reads the SLP gradient → convergence → `cloud_source`/frontogenesis →
+  cloud-water advection) carries rain bands across the map and breaks the steady-state
+  permanent-rain / permanent-drought pattern, without touching the bit-equal vapor
+  mirror. C++-only: the SLP GDScript fallback has already diverged (no synoptic/moist
+  terms) and production always runs the gdext path. `mobile_low` flows through Pass B
+  smoothing, p95 normalization, and the `prev_slp` inertia like any other SLP term.
 - The prepass uses `SusTickContext.day_index` as C++ `sim_day`. `main.gd`
   forwards the `day_changed(day_idx)` signal value rather than re-reading the
   final `WorldClock.day_index()`, so catch-up ticks still advance wind one day
@@ -797,11 +860,12 @@ per-pixel GPU 上传。
 | `enum_lut_tex` | RGB8 / NEAREST / lut_dims | per-cell biome/veg/cover | daily 全量重烘（~0.1-0.3ms） |
 | `dyn_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell temp/wet/snow/(ice\|vitality) | daily |
 | `eco_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell foliage/stress/transition/growth | daily |
+| `weather_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell R=weather_type / G=intensity / B=cloud / A=precip | daily（软依赖：天气未就绪时整段 0 → 无云） |
 | `lut_dims` | Vector2i | `(min(n_cells,2048), ceil(n_cells/lut_w))` | bake_world |
 
 入口：
 
-- 烘焙：`map_baker.gd::_encode_enum_atlas` 产出 map-index atlas；`bake_cell_luts` 产出三张 LUT。
+- 烘焙：`map_baker.gd::_encode_enum_atlas` 产出 map-index atlas；`bake_cell_luts` 产出四张 LUT（enum/dyn/eco/weather）。
 - daily 刷新：`map_baker.gd::refresh_cell_luts_daily`，由
   `dynamic_visual_atlas_upload_system.gd::tick` 每 stride 调用一次（flag 开时该 tick
   跑完 LUT 重烘即 **early-return**，整段 4-phase / C++ `run_atlas_pipeline_step` 逐像素
@@ -811,13 +875,19 @@ per-pixel GPU 上传。
   独立 `encode_cell_index_tex` 已退役。LUT 仍优先走 C++：
   - `DCWorldExt::encode_cell_luts(opts)`：读 8 个 SoA slot（temp/moist/snow/vit/sea_ice/
     terrain/vegetation/cover）→ per-cell enum/dyn/eco LUT（scalar tight loop，n_cells≈2400）。
+    另读 4 个 weather slot（`cell_weather_type/intensity/cloud/precip`）→ weather LUT；weather slot
+    **软依赖**：未初始化（size < n_cells）时该段全 0（云不显示），enum/dyn/eco 仍正常、不整张回退 GDScript。
     复用 `pk_atlas_sig_dynamic` / `pk_atlas_sig_ecology`（与 fan-out 编码器同一公式 → bit-equivalent）。
     eco `transition_age` 由 `AtlasPipelineState::lut_prev_veg/lut_prev_vit/lut_transition_age`
     自维护（与 4-phase pipeline 的 eco 状态相互独立；`cache_valid=false` / 首帧 / `invalidate_atlas_csr_cache`
     后冷启归零）。返回 `path`/`elapsed_ms`/`published_to_slot=false`（LUT 是渲染产物，不进 slot）。
 - shader：`shaders/include/cell_indirect.gdshaderinc`（`decode_cell_index` / `cell_lut_uv`
   / `sample_dyn_lut_smooth` / `sample_eco_lut_smooth`），由 `world_map.gdshader` SETUP 消费。
-- 绑定：`hex_renderer.gd::_apply_uniforms`（`map_index_atlas` + 3 个 LUT + `lut_dims`）。
+  `weather_overlay.gdshader` 内联同款 `decode_cell_index`/`cell_lut_uv`（避免引入 dyn/eco 依赖），
+  在 `sample_field_weather` 经 cell-index 间接寻址读 `weather_lut` 逐格驱动云分布（4-tap 双线性
+  柔化 intensity/cloud/precip，type 取中心 cell）；旧 `weather_front_*[]` 椭圆云通路已删除。
+- 绑定：`hex_renderer.gd::_apply_uniforms`（`map_index_atlas` + enum/dyn/eco LUT + `lut_dims`）；
+  `weather_lut` + `lut_dims` 由 `_weather_layer.setup` 绑给 weather_overlay 材质。
 
 shader 路径（`world_map.gdshader` fragment SETUP）：
 
@@ -837,7 +907,7 @@ shader 路径（`world_map.gdshader` fragment SETUP）：
     中心 enum 读已走 `enum_lut`，但 `shore_common` / `water` / `weather_overlay` 在邻居
     偏移 UV **逐像素采样邻居 biome**，仍需整张 per-pixel atlas，故保留。
   - `scalar_atlas` 已退役：shader 中性化 `flow=0`，moisture/latitude 由 LUT/uv 取代。
-  - `vector_atlas` 已退役：`world_map` 使用中性零向量，`weather_overlay` 走 axis-only fallback。
+  - `vector_atlas` 已退役：`world_map` 使用中性零向量，`weather_overlay` 风向走 axis-only 近似（云分布另经 `weather_lut` 逐格驱动）。
   `scalar_atlas` / `vector_atlas` 不再生成、绑定或采样。
 
 **洋流/风场逐像素视觉退役（`ocean_current_visual_enabled`，2026-06-18）**：
@@ -850,7 +920,7 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
   2. `ocean_currents_job.gd` 强制 `_phys_need_visual=false` → 求解完成即 `round_done`，
      跳过 stage 7 `WIND_RASTER` + pixel slices + `commit_ocean_buffers`；per-cell SLP/风/洋流
      solve（上方 stages + `run_daily_wind_field_update` daily_wind prepass）照常跑。
-  3. 着色器侧：`world_map` 固定 `vects=vec4(0.5)`，`weather_overlay` 回退 axis-only 漂移。
+  3. 着色器侧：`world_map` 固定 `vects=vec4(0.5)`，`weather_overlay` 风向回退 axis-only 漂移（云分布走 `weather_lut`）。
 - **动态逐像素 atlas 已退役（不烤、不每日刷新）**：`dynamic_cell_atlas` /
   `dyn_atlas_smooth` / `ecology_visual_atlas` / `ice_state_atlas` 已被 `dyn_lut` / `eco_lut`
   （海冰走 `dyn_lut.a`）完全替代，flag 开时无任何 shader 消费者。收敛在两个 choke point：

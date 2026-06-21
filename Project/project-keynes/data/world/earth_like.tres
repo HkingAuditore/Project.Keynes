@@ -5,6 +5,9 @@
 [resource]
 script = ExtResource("1")
 weather_refresh_auto_stride_by_speed = false
+weather_transition_enabled = true
+weather_condensation_gain = 0.30
+weather_ocean_evap_gain = 0.45
 dynamic_visual_atlas_upload_stride = 2
 native_daily_perf_target_ms = 3.0
 ocean_currents_period_ticks = 30

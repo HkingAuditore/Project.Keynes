@@ -1,29 +1,31 @@
 # weather_system.gd
 # Milestone 3：天气子系统主类（按 day_changed 推进）。
 #
-# ─── Phase E.3 / dots-full-migration §E.3 计划状态（2026-05-13）──────────
+# ─── 模块结构（dots-monolith-split / Phase E.3 真实状态，2026-06-20 校正）──
 #
-# 本文件当前 2142 行，dots-full-migration plan 目标拆完后 ≤ 200 行。
-# 拆分目的地骨架（2026-05-13 已就位，详细迁移规格在各骨架文件顶部）：
+# 历史目标：把本文件拆到 ≤200 行。实际只完成了 hot-loop 抽出，本文件至今仍是
+# 天气子系统的「编排 + 配置中心」（数千行 = 已知上帝类，见下方职责清单）。
 #
-#   weather/field_solver.gd       ← _solve_weather_field + 切片基础设施
-#                                   + ~15 个邻居/物理 helper（搬迁 line 743-1448 + 2348）
-#   weather/front_advect.gd       ← tick_one_day 内 fronts 推进段 + _tick_cyclone_wake
-#   weather/front_spawn.gd        ← _spawn_random_front (line 308) + _build_front_at (line 2366)
-#   weather/feedback.gd           ← _distribute_weather_field_to_cells (line 1541)
-#                                   + cover override 段 + 临时 ±temp/moist 调整段
-#   weather/summary_builder.gd    ← _build_field_summary_fronts (line 1573, ~480 行)
-#                                   + _prev_summary_membership / _prev_summary_seeds 状态
+# ✅ 已落地的拆分：
+#   weather/field_solver.gd (DCWeatherFieldSolver)
+#       已接管天气场 slice hot loop：begin_slice / run_slice / commit /
+#       _solve_weather_field + 邻居/上风/抬升/辐合/海洋异常 helper。
+#       本文件的 begin/run/commit_weather_field_solve 仅是薄转发入口。
+#   weather/front_advect.gd (DCWeatherFrontAdvect)
+#       已接管 front 推进 + cyclone wake。
 #
-# E.3 完成后 weather_system.gd 残留：
-#   - tick_one_day 入口（协调上述 5 个 sub-module 调用顺序）
-#   - 配置字段（_field_advect_steps / _field_diffusion / _field_condensation_gain
-#     等约 12 个 _field_* 业务旋钮）
-#   - shader uniform 上传 helper（pack_to_uniforms / query_at）
-#   - 与外界（main.gd / weather_refresh_job）的 getter / setter
+# ❌ 计划但未落地（仍在本文件，是后续「做减法」的目标）：
+#   - _distribute_weather_field_to_cells（field→cell 反馈）→ 计划 feedback.gd
+#   - _build_field_summary_fronts（field→front 聚类）→ 计划 summary_builder.gd
+#   - _spawn_random_front / _build_front_at（legacy front 对象层）
 #
-# 当前各 sub-module 是 facade（见各文件顶部"当前状态"），实际 hot loop 仍在本文件内。
-# 后续 PR 按各 facade 顶部的"逐函数搬迁清单"逐函数搬，每个独立 PR + bit-equal 验收。
+# 本文件当前实际承担的职责（≥10 个关注点）：配置中心(_field_* + configure_weather_field)、
+# ClimateProfile 同步、C++ knobs 三件套构造、GDExtension 调度 + A/B verify、
+# 天气类型分类、distribute 反馈、summary 聚类、legacy front 路径、查询 API。
+#
+# ⚠ 双份镜像维护铁律：天气物理公式在 field_solver.gd(GDScript fallback) 与
+#   world_ext.cpp::run_weather_field_solve_pass(C++ 权威) 各有一份，改任一侧
+#   必须同步另一侧，并跑 set_field_verify_mode(true) 对账（默认容差 1e-4）。
 #
 # ─── 原始职责说明（保留）────────────────────────────────────────────────
 #
@@ -109,14 +111,16 @@ var _ocean_spawn_bias: float = 0.0
 # each hex owns vapor/cloud/precip/instability/type/intensity, and legacy fronts
 # are rebuilt as a compact visual summary after the field solve.
 var _weather_field_enabled: bool = true
-var _field_advect_steps: int = 3
+var _field_advect_steps: int = 4
 var _field_diffusion: float = 0.04
 var _field_condensation_gain: float = 0.42
-# 衰减系数：每天 precip 至少损失这么多比例（max 公式：保留率 = 1 - decay）
-# v6：从 0.82 降到 0.55（保留 45%），配合自然蒸发机制让降水能够正常消退
+# ⚠ DEPRECATED 僵尸 knob（2026-06-20 根因重构）：precip 已改 EMA 惯性，C++ 与 GDScript
+# hot-loop 均不再读取 precip_decay / carryover_max（world_ext.cpp 仅剩注释、field_solver.gd
+# 无引用）。仍保留成员/configure/knobs 传递仅为存档 + resident 链路兼容，待后续连同
+# NativeKnobs 字段与 positional 签名一并删除（见 computation-pipelines.md 根因重构节）。
 var _field_precip_decay: float = 0.85
 var _field_precip_carryover_max: float = 0.08
-var _field_vapor_precip_sink: float = 0.70
+var _field_vapor_precip_sink: float = 0.85
 var _field_vapor_relax_rate: float = 0.08
 var _weather_temp_anomaly_cap: float = 0.025
 var _field_orographic_lift_gain: float = 0.22
@@ -133,11 +137,14 @@ var _cold_precip_as_blizzard: bool = true
 var _snow_classification_margin: float = 0.03
 var _field_ocean_evap_gain: float = 0.55
 var _field_land_evapotranspiration_gain: float = 0.85
-var _field_precip_rh_threshold: float = 0.60
+var _field_precip_rh_threshold: float = 0.70 # 0.60→0.70：见 climate_profile.weather_precip_rh_threshold（物理层根治：提阈让中湿区转晴）
 var _field_ocean_precip_suppression: float = 0.95
+# 降水惯性 EMA 系数 α(2026-06-20 根因重构)：precip = lerp(prev_precip, target, α)。越小越平滑(惯性强)、
+# 越大越跟手(接近瞬时投影)。初值 0.30 待 CSV 标定。统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
+var _field_precip_inertia: float = 0.30
 var _field_frontogenesis_gain: float = 0.42
 var _field_rain_shadow_drying: float = 0.35
-var _field_vapor_transport_gain: float = 0.92
+var _field_vapor_transport_gain: float = 0.75
 var _snowpack_accum_gain: float = 0.08
 var _snowpack_melt_temp_gain: float = 0.22
 var _snowpack_melt_sun_gain: float = 0.12
@@ -385,9 +392,8 @@ func init(seed_val: int, world_bounds: Rect2, hex_size: float) -> void:
 	# _hex_size / _cyclone_wake_days 等共享状态）。
 	if _advect == null:
 		_advect = DCWeatherFrontAdvect.new(self)
-	# dots-monolith-split §1.2：field_solver facade 实例化。当前仅占位，
-	# _solve_weather_field 主体仍在 weather_system；后续逐函数搬迁后由
-	# _field_solver.solve(...) 接管 hot loop。
+	# dots-monolith-split §1.2：field_solver 实例化。已接管天气场 slice hot loop
+	# （begin_slice/run_slice/commit/_solve_weather_field）；本类对应函数仅薄转发。
 	if _field_solver == null:
 		_field_solver = DCWeatherFieldSolver.new(self)
 
@@ -809,6 +815,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"climate_anomaly": _field_solver._field_slice_climate_anomaly,
 			"refresh_convergence": _field_solver._field_slice_refresh_convergence,
 			"cell_pos": _field_solver._field_slice_cell_pos,
+			"temp_anomaly": map.temp_anomaly_arr,
 			"neighbor_indices": _field_solver._field_slice_neighbor_indices,
 			"prev_vapor": _field_solver._field_slice_prev_vapor,
 			"prev_precip": _field_solver._field_slice_prev_precip,
@@ -827,6 +834,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"out_type": _field_solver._field_slice_next_type,
 			"field_precip_carryover_max": _field_precip_carryover_max,
 			"field_vapor_precip_sink": _field_vapor_precip_sink,
+			"field_precip_inertia": _field_precip_inertia,
 			"field_vapor_relax_rate": _field_vapor_relax_rate,
 			"field_orographic_lift_cap": _field_orographic_lift_cap,
 			"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -867,6 +875,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_ocean_evap_gain": _field_ocean_evap_gain,
 		"field_precip_decay": _field_precip_decay,
 		"cell_pos": _field_solver._field_slice_cell_pos,
+		"temp_anomaly": map.temp_anomaly_arr,
 		"neighbor_indices": _field_solver._field_slice_neighbor_indices,
 		"prev_vapor": _field_solver._field_slice_prev_vapor,
 		"prev_precip": _field_solver._field_slice_prev_precip,
@@ -885,6 +894,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"out_type": _field_solver._field_slice_next_type,
 		"field_precip_carryover_max": _field_precip_carryover_max,
 		"field_vapor_precip_sink": _field_vapor_precip_sink,
+		"field_precip_inertia": _field_precip_inertia,
 		"field_vapor_relax_rate": _field_vapor_relax_rate,
 		"field_orographic_lift_cap": _field_orographic_lift_cap,
 		"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -1430,6 +1440,8 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 		_field_precip_carryover_max = clampf(float(cp.weather_precip_carryover_max), 0.0, 1.0)
 	if cp.get("weather_vapor_precip_sink") != null:
 		_field_vapor_precip_sink = clampf(float(cp.weather_vapor_precip_sink), 0.0, 1.0)
+	if cp.get("weather_precip_inertia") != null:
+		_field_precip_inertia = clampf(float(cp.weather_precip_inertia), 0.05, 1.0)
 	if cp.get("snowpack_accum_gain") != null:
 		_snowpack_accum_gain = clampf(float(cp.snowpack_accum_gain), 0.0, 1.0)
 	if cp.get("snowpack_melt_temp_gain") != null:
@@ -1930,6 +1942,7 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 	# 此时 _field_solver._field_slice_next_* = GDScript 版结果。逐 cell 比较。
 	var max_dvap: float = 0.0
 	var max_dcld: float = 0.0
+	var max_dcw: float = 0.0
 	var max_dpre: float = 0.0
 	var max_dins: float = 0.0
 	var max_dint: float = 0.0
@@ -1942,12 +1955,14 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 	for i in range(n_cells):
 		var dvap: float = absf(cpp_vapor[i] - _field_solver._field_slice_next_vapor[i])
 		var dcld: float = absf(cpp_cloud[i] - _field_solver._field_slice_next_cloud[i])
+		var dcw: float = absf(cpp_cloud_water[i] - _field_solver._field_slice_next_cloud_water[i])
 		var dpre: float = absf(cpp_precip[i] - _field_solver._field_slice_next_precip[i])
 		var dins: float = absf(cpp_inst[i] - _field_solver._field_slice_next_instability[i])
 		var dint: float = absf(cpp_intens[i] - _field_solver._field_slice_next_intensity[i])
 		var dcnv: float = absf(cpp_conv[i] - _field_solver._field_slice_next_convergence[i])
 		max_dvap = maxf(max_dvap, dvap)
 		max_dcld = maxf(max_dcld, dcld)
+		max_dcw = maxf(max_dcw, dcw)
 		max_dpre = maxf(max_dpre, dpre)
 		max_dins = maxf(max_dins, dins)
 		max_dint = maxf(max_dint, dint)
@@ -1959,6 +1974,8 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 				first_div_idx = i; first_div_field = "vapor"; first_div_cpp = cpp_vapor[i]; first_div_gd = _field_solver._field_slice_next_vapor[i]
 			elif dcld > _field_verify_tol_f32:
 				first_div_idx = i; first_div_field = "cloud"; first_div_cpp = cpp_cloud[i]; first_div_gd = _field_solver._field_slice_next_cloud[i]
+			elif dcw > _field_verify_tol_f32:
+				first_div_idx = i; first_div_field = "cloud_water"; first_div_cpp = cpp_cloud_water[i]; first_div_gd = _field_solver._field_slice_next_cloud_water[i]
 			elif dpre > _field_verify_tol_f32:
 				first_div_idx = i; first_div_field = "precip"; first_div_cpp = cpp_precip[i]; first_div_gd = _field_solver._field_slice_next_precip[i]
 			elif dins > _field_verify_tol_f32:
@@ -1980,135 +1997,17 @@ func _verify_gdext_field_against_gdscript(map: MapData, world: WorldData, n_cell
 
 	if first_div_idx >= 0 and not _field_verify_first_divergence_logged:
 		_field_verify_first_divergence_logged = true
-		push_warning("[weather/F.1 verify] FAIL — first divergence cell=%d field=%s cpp=%.6f gdscript=%.6f delta=%.2e (tol=%.1e). max abs deltas: vapor=%.2e cloud=%.2e precip=%.2e inst=%.2e intens=%.2e conv=%.2e type_mismatch=%d/%d" % [
+		push_warning("[weather/F.1 verify] FAIL — first divergence cell=%d field=%s cpp=%.6f gdscript=%.6f delta=%.2e (tol=%.1e). max abs deltas: vapor=%.2e cloud=%.2e cloud_water=%.2e precip=%.2e inst=%.2e intens=%.2e conv=%.2e type_mismatch=%d/%d" % [
 			first_div_idx, first_div_field, first_div_cpp, first_div_gd, absf(first_div_cpp - first_div_gd), _field_verify_tol_f32,
-			max_dvap, max_dcld, max_dpre, max_dins, max_dint, max_dcnv, type_mismatches, n_cells,
+			max_dvap, max_dcld, max_dcw, max_dpre, max_dins, max_dint, max_dcnv, type_mismatches, n_cells,
 		])
 	elif first_div_idx < 0:
 		# 全 cell 通过——只在第一次通过时打一条 INFO，避免每 tick spam。
 		if not _field_verify_first_divergence_logged:
 			_field_verify_first_divergence_logged = true
-			print("[weather/F.1 verify] PASS — all %d cells within tol (max abs deltas: vapor=%.2e cloud=%.2e precip=%.2e inst=%.2e intens=%.2e conv=%.2e type_mismatch=%d)" % [
-				n_cells, max_dvap, max_dcld, max_dpre, max_dins, max_dint, max_dcnv, type_mismatches,
+			print("[weather/F.1 verify] PASS — all %d cells within tol (max abs deltas: vapor=%.2e cloud=%.2e cloud_water=%.2e precip=%.2e inst=%.2e intens=%.2e conv=%.2e type_mismatch=%d)" % [
+				n_cells, max_dvap, max_dcld, max_dcw, max_dpre, max_dins, max_dint, max_dcnv, type_mismatches,
 			])
-
-# 把 GDScript slice 主循环抽成独立函数，verify 时复用。本质上是
-# run_weather_field_solve_slice 的 GDScript-only 部分，但不再带 t_us0 / 返回
-# 字典，专用作 A/B 对照。
-func _run_weather_field_gdscript_loop_inplace(map: MapData, world: WorldData, n_cells: int) -> void:
-	var cells: Array = _field_solver._field_slice_cells
-	var cell_pos: PackedVector2Array = _field_solver._field_slice_cell_pos
-	var neighbor_indices: PackedInt32Array = _field_solver._field_slice_neighbor_indices
-	var fast_indexed: bool = _field_solver._field_slice_fast_indexed
-	var prev_vapor: PackedFloat32Array = _field_solver._field_slice_prev_vapor
-	var prev_precip: PackedFloat32Array = _field_solver._field_slice_prev_precip
-	var next_vapor: PackedFloat32Array = _field_solver._field_slice_next_vapor
-	var next_cloud: PackedFloat32Array = _field_solver._field_slice_next_cloud
-	var next_cloud_water: PackedFloat32Array = _field_solver._field_slice_next_cloud_water
-	var next_precip: PackedFloat32Array = _field_solver._field_slice_next_precip
-	var next_instability: PackedFloat32Array = _field_solver._field_slice_next_instability
-	var next_intensity: PackedFloat32Array = _field_solver._field_slice_next_intensity
-	var next_convergence: PackedFloat32Array = _field_solver._field_slice_next_convergence
-	var next_type: PackedInt32Array = _field_solver._field_slice_next_type
-	var season_idx: int = _field_solver._field_slice_season_idx
-	var climate_anomaly: float = _field_solver._field_slice_climate_anomaly
-	var refresh_convergence: bool = _field_solver._field_slice_refresh_convergence
-	var soa_temp: PackedFloat32Array = map.temp_arr
-	var soa_air_anomaly: PackedFloat32Array = map.air_mass_temp_anomaly_arr
-	var soa_moisture_loop: PackedFloat32Array = map.moisture_arr
-	var soa_elevation: PackedFloat32Array = map.elevation_arr
-	var soa_wind_x: PackedFloat32Array = map.wind_x_arr
-	var soa_wind_y: PackedFloat32Array = map.wind_y_arr
-	var soa_wind_speed: PackedFloat32Array = map.wind_speed_arr
-	var soa_terrain: PackedByteArray = map.terrain_arr
-	var soa_has_river: PackedByteArray = map.has_river_arr
-	var soa_river_q30: PackedFloat32Array = map.river_discharge_30d_arr
-	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
-	var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
-	for i in range(n_cells):
-		var cell: HexCell = cells[i]
-		var pos: Vector2 = cell_pos[i]
-		var temp: float = clampf(soa_temp[i] + climate_anomaly + soa_air_anomaly[i], 0.0, 1.0)
-		var base_m: float = clampf(soa_moisture_loop[i], 0.0, 1.0)
-		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var on_water: bool = _is_water_terrain(int(soa_terrain[i]))
-		var wind: Vector2 = Vector2(soa_wind_x[i], soa_wind_y[i])
-		if wind.length_squared() < 0.0001:
-			var ny: float = 0.5
-			if _world_bounds.size.y > 0.001:
-				ny = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
-			wind = _sample_terrain_wind(map, world, pos, ny, _season_phase)
-		var wind_dir: Vector2 = wind.normalized() if wind.length_squared() > 0.0001 else Vector2.RIGHT
-		var upstream_idx: int = _neighbor_aligned_idx(i, -wind_dir, cell_pos, neighbor_indices) if fast_indexed and _field_advect_steps > 0 else -1
-		var advected_vapor: float = _upstream_vapor_idx_from_first(i, upstream_idx, cell_pos, neighbor_indices, prev_vapor, wind_dir) if fast_indexed else _upstream_vapor_cached(cell, map, prev_vapor, wind_dir)
-		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
-		var raw_wind_speed: float = soa_wind_speed[i] if soa_wind_speed.size() == n_cells else wind.length()
-		var wind_mag: float = clampf(raw_wind_speed / 1.2, 0.0, 1.0)
-		var advect_w: float = clampf(0.65 + wind_mag * 0.30, 0.65, 0.95)
-		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
-		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
-		var river_flow_feedback: float = clampf(soa_river_q30[i] if soa_river_q30.size() == n_cells and has_river else 0.0, 0.0, 1.0)
-		var river_evap_floor: float = maxf(0.08, river_flow_feedback * 0.22) if has_river else 0.0
-		if is_lake:
-			advect_w = clampf(advect_w * 0.5, 0.20, 0.50)
-		elif has_river:
-			advect_w = clampf(advect_w * (0.88 - river_flow_feedback * 0.10), 0.55, 0.85)
-		var vapor: float = lerpf(base_m, advected_vapor, advect_w)
-		vapor = lerpf(vapor, neighbor_vapor, _field_diffusion)
-		var effective_ocean_an: float = ocean_an
-		if is_lake:
-			effective_ocean_an = 0.20
-		elif has_river:
-			effective_ocean_an = maxf(ocean_an, river_evap_floor)
-		var evap: float = _evaporation_for_cell_idx(i, cells, neighbor_indices, temp, base_m, effective_ocean_an, on_water) if fast_indexed else _evaporation_for_cell(cell, map, temp, base_m, effective_ocean_an, on_water)
-		var vapor_capacity: float = clampf(0.25 + 0.75 * temp - 0.20 * soa_elevation[i], 0.18, 1.0)
-		var saturation_deficit: float = clampf((vapor_capacity - vapor) / maxf(vapor_capacity, 0.001), 0.0, 1.0)
-		vapor = clampf(vapor + evap * saturation_deficit, 0.0, vapor_capacity)
-		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = soa_convergence_in[i]
-		if refresh_convergence:
-			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
-		if lift < 0.0:
-			vapor = clampf(vapor + lift * 0.30, 0.0, vapor_capacity)
-		var saturation: float = clampf(vapor_capacity * 0.68, 0.16, 0.80)
-		var humid_excess: float = maxf(vapor - saturation, 0.0)
-		var lift_supply: float = maxf(lift, 0.0) * clampf((vapor - 0.10) / 0.40, 0.0, 1.0)
-		lift_supply = minf(lift_supply, _field_orographic_lift_cap)
-		var cloud: float = clampf(humid_excess * _field_condensation_gain * 1.8 + lift_supply * _field_orographic_lift_gain + convergence * _field_convergence_gain + maxf(effective_ocean_an, 0.0) * 0.08, 0.0, 1.0)
-		var old_cloud_water: float = prev_cloud_water_arr[i] if prev_cloud_water_arr.size() == n_cells else cloud * 0.5
-		var cloud_water: float = clampf(old_cloud_water * 0.70 + cloud * 0.55 + humid_excess * 0.18 + lift_supply * 0.12, 0.0, 1.0)
-		cloud = clampf(maxf(cloud, cloud_water * 0.75), 0.0, 1.0)
-		var instability: float = clampf((temp - 0.45) * 1.15 + vapor * 0.55 + cloud * 0.35 + convergence * _field_convergence_gain + lift_supply * _field_orographic_lift_gain + maxf(effective_ocean_an, 0.0) * 0.25, 0.0, 1.0)
-		var cloud_core: float = smoothstep(0.18, 0.42, cloud)
-		var terrain_trigger: float = clampf(lift_supply * 2.8 + maxf(convergence, 0.0) * 1.4, 0.0, 1.0)
-		var vapor_gate: float = clampf((vapor - 0.12) / 0.30, 0.0, 1.0)
-		var trigger_focus: float = maxf(maxf(cloud_core, terrain_trigger), cloud_water * 0.55)
-		var rain_focus: float = clampf(trigger_focus * vapor_gate, 0.0, 1.0)
-		var precip_source: float = cloud * (0.30 + instability * 0.76) + lift_supply * 0.36 - maxf(-lift, 0.0) * 0.55
-		var precip_raw: float = maxf(precip_source, 0.0) * 1.18 * rain_focus
-		var old_precip: float = prev_precip[i]
-		var vapor_floor_factor: float = clampf((vapor - 0.12) / 0.34, 0.0, 1.0)
-		var dyn_decay: float = _field_precip_decay + wind_mag * 0.25
-		var carry_limit: float = _field_precip_carryover_max
-		var precip_floor: float = 0.0
-		if vapor >= 0.42 and old_precip >= 0.04:
-			precip_floor = old_precip * minf(1.0 - dyn_decay, carry_limit) * vapor_floor_factor * maxf(rain_focus, 0.30)
-		var cloud_water_rain: float = cloud_water * maxf(rain_focus, 0.18) * (0.14 + instability * 0.16)
-		var precip: float = clampf(maxf(maxf(precip_raw, precip_floor), cloud_water_rain), 0.0, 1.0)
-		cloud_water = clampf(cloud_water - precip * 0.32, 0.0, 1.0)
-		var vapor_after_precip: float = maxf(0.0, vapor - precip * _field_vapor_precip_sink)
-		if precip < 0.005 and cloud < 0.12 and _field_vapor_relax_rate > 0.0:
-			vapor_after_precip = lerpf(vapor_after_precip, base_m, _field_vapor_relax_rate)
-		var wt: int = _classify_field_weather_at(pos, season_idx, temp, vapor, cloud, precip, instability, ocean_an) if fast_indexed else _classify_field_weather(cell, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
-		var intensity: float = _field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
-		next_vapor[i] = vapor_after_precip
-		next_cloud[i] = cloud
-		next_cloud_water[i] = cloud_water
-		next_precip[i] = precip
-		next_instability[i] = instability
-		next_type[i] = wt
-		next_intensity[i] = intensity
-		next_convergence[i] = convergence
 
 func _clear_weather_field_slice_state() -> void:
 	_field_solver._field_slice_active = false
@@ -2289,6 +2188,10 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 const SNOW_ACCUM_DAYS_REQ: int = 2      # legacy fallback；运行时由 ClimateProfile.snow_accum_days_req 覆盖。
 const SNOW_FREEZE_T: float = 0.24       # 低于此温度才算"可降雪冷度"
 const SNOW_MELT_T: float = 0.31         # 高于此温度开始消融，保持滞回防抖
+# 涌现式分类门（2026-06-20 去季节化重写）：阈值由 tile_data_record_20260620_004323 实测标定。
+# 不再有任何 season_idx 派生的开关——天气类型完全由瞬时物理场涌现。
+const BLIZZARD_WIND_GATE: float = 1.15  # 过渡带(FREEZE~MELT)冷降水仅当风速>此值才算"暴风雪"，否则归 RAIN(冷雨)。实测 BLIZZARD 风速 p50≈1.04、全局 p90≈1.34
+const HEATWAVE_ANOM_GATE: float = 0.0   # 热浪温度距平门：>此值(比常态偏暖)即触发。实测最热区常年高温→距平≈0，故设 0.0(中性偏暖即可)，避免热浪因"绝对热但非异常热"而永不触发；时间动态来自距平在 0 附近正负波动
 
 # 2026-05-18 雪线修正：海拔放宽 → 高山易积雪、平原难积雪。
 # 以 elev=0.30 为中性（freeze_t = 0.30、melt_t = 0.34），
@@ -2463,67 +2366,73 @@ func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array,
 func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 	return _field_solver._neighbor_aligned(cell, map, dir)
 
-func _classify_field_weather_at(pos: Vector2, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
-	var lat_signed: float = 0.0
-	if _world_bounds.size.y > 0.001:
-		lat_signed = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0) * 2.0 - 1.0
-	return _classify_field_weather_core(lat_signed, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
+# 涌现式半真实大气分类（2026-06-20 去季节化重写）。天气类型完全由瞬时物理场（温度/湿度/云/
+# 降水/不稳定度/风/洋流异常）涌现，不再读 season_idx 或纬度——"季节"作为温度场随轴倾/公转的
+# 结果自然进入。与 C++ wf_classify_field_weather_at 严格镜像。
+func _classify_field_weather_at(temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, is_water: bool = false) -> int:
+	return _classify_field_weather_core(temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom, is_water)
 
-# 半真实大气天气分类（2026-06-19 重排）。
-# 目标：各类天气按纬度/季节合理分布，且不再被 RAIN 一类垄断。
-#   - lat_signed ∈ [-1,1]：地图顶部(min y)=北半球(<0)，底部=南半球(>0)。
-#   - season_idx：0=春 1=夏 2=秋 3=冬（北半球历法）；南半球季节相反，由 local_summer 体现。
-# 判定顺序与各阈值见行内注释。STORM 暖海核心阈值相对旧版只降不升，保证既有 STORM 用例仍成立。
-func _classify_field_weather_core(lat_signed: float, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
-	var lat_abs: float = absf(lat_signed)
-	var north_summer: float = 0.5
-	match season_idx:
-		1:
-			north_summer = 1.0
-		3:
-			north_summer = 0.0
-		_:
-			north_summer = 0.5
-	var local_summer: float = north_summer if lat_signed < 0.0 else (1.0 - north_summer)
-
+# 涌现判据（无 season_idx，阈值由 tile_data_record_20260620_004323 实测标定）：
+#   temp 已含轴倾→季节的温度结构；temp_anom=该格温度距平(异常冷暖)；wind_speed=原始风速(暴风强度)。
+# 判定顺序：冰雪/暴风雪 → 强对流风暴 → 季风 → 普通降水 → 雾 → 热浪 → 旱灾 → 晴。
+func _classify_field_weather_core(temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, is_water: bool = false) -> int:
+	# 去纬度门(2026-06-20)：分类不再使用纬度，类型边界由温度/湿度等弯曲物理场涌现，避免沿纬线的直线条带。
 	var warm: bool = temp > 0.55
-	var humid: bool = vapor > 0.28
-	var meaningful_precip: bool = precip > 0.030 or (precip > 0.022 and cloud > 0.22 and vapor > 0.28)
+	var hot: bool = temp > 0.64
+	# advective 模型下陆地 vapor/cloud 量级仅海洋的 1/5~1/30(海洋是水汽源,陆地天然干)。湿润类阈值海陆
+	# 独立标定:海洋保原值(海洋天气分布已合理);陆地按实测分位下调(陆 vapor p50=.034/p90=.086,cloud
+	# p50=.021/p90=.078),否则陆地 STORM/MONSOON/FOG 被"打死"全归 CLEAR/DROUGHT(用户:内陆永旱)。
+	var humid_gate: float = 0.28 if is_water else 0.07
+	var mp_cloud_gate: float = 0.22 if is_water else 0.05
+	var mp_vapor_gate: float = 0.28 if is_water else 0.05
+	var monsoon_vapor: float = 0.40 if is_water else 0.12
+	var monsoon_precip: float = 0.055 if is_water else 0.035
+	var monsoon_cloud: float = 0.45 if is_water else 0.10
+	var fog_vapor: float = 0.34 if is_water else 0.07
+	var fog_cloud: float = 0.14 if is_water else 0.05
+	var humid: bool = vapor > humid_gate
+	# 降水判据回归单阈值(2026-06-20 根因重构)：precip 已是带时间惯性的 EMA 状态量(见 field_solver/
+	# world_ext)，逐tick平滑由场层惯性提供，分类不再需要滞回/拖尾补丁。precip>0.030 或 中等降水+厚云
+	# 高湿即算"有效降水"。
+	var meaningful_precip: bool = precip > 0.030 or (precip > 0.022 and cloud > mp_cloud_gate and vapor > mp_vapor_gate)
 
-	# 1) 冷区降水 → 暴风雪（最高优先级）
-	if _cold_precip_should_snow(temp, vapor, cloud, precip, meaningful_precip):
-		return WeatherType.WT.BLIZZARD
-	# 2) 强对流风暴：中低纬。门槛只随季节轻微变化（风暴非夏季独有），按实测中纬风暴带
-	#    候选(inst>0.54 & precip>0.062, lat 0.32~0.67)标定 → 让这些格真正成 STORM 而非全归 RAIN。
-	var storm_precip_gate: float = lerpf(0.068, 0.056, local_summer)
-	var storm_inst_gate: float = lerpf(0.56, 0.50, local_summer)
+	# 1) 冰雪 / 暴风雪：极冷(temp≤FREEZE)+可观降水 → 直接暴雪（极地降水本就是冰雪）。
+	#    过渡带(FREEZE~MELT)+降水 → 仅当大风(wind_speed>门)才算"暴风雪"，风弱则视为冷雨落到 RAIN。
+	#    修前：整条过渡带冷降水无差别判暴雪 → 高纬湿润海洋一片白(实测海面 17%)。
+	if _cold_precip_as_blizzard and meaningful_precip:
+		if temp <= SNOW_FREEZE_T:
+			return WeatherType.WT.BLIZZARD
+		if temp < SNOW_MELT_T + _snow_classification_margin \
+				and cloud > 0.18 and vapor > 0.20 and precip > 0.04 \
+				and wind_speed > BLIZZARD_WIND_GATE:
+			return WeatherType.WT.BLIZZARD
+	# 2) 强对流风暴：暖湿 + 高不稳定 + 强降水；暖洋异常核心强制成 STORM。
+	#    去硬纬度门(原 lat_abs<0.70)——warm(temp>0.55) 已把 STORM 限制在暖区，类型边界改由弯曲的
+	#    等温线决定，消除"沿纬线的数学直线天气带"(用户反馈的不科学条带)。实测 STORM inst p50≈0.65。
 	var warm_ocean_core: bool = ocean_an > 0.12 and instability > 0.70 and precip > 0.07 and cloud > 0.28
-	if warm and humid and lat_abs < 0.70 and ((instability > storm_inst_gate and precip > storm_precip_gate) or warm_ocean_core):
+	if warm and humid and ((instability > 0.55 and precip > 0.060) or warm_ocean_core):
 		return WeatherType.WT.STORM
-	# 3) 季风：低纬 + 本地夏季 + 可观降水
-	if warm and humid and lat_abs < 0.42 and local_summer > 0.5 and precip > 0.055:
+	# 3) 季风：暖 + 极高湿 + 强降水 + 厚云（大尺度深对流，区别于局地 STORM）。同样去硬纬度门，
+	#    由"暖+极湿+强降水"自然限定到低纬湿热区，边界随湿度场弯曲而非沿纬线一刀切。
+	if warm and vapor > monsoon_vapor and precip > monsoon_precip and cloud > monsoon_cloud:
 		return WeatherType.WT.MONSOON
-	# 4) 普通降水
+	# 4) 普通降水（含被降级的过渡带冷雨）。
 	if meaningful_precip:
 		return WeatherType.WT.RAIN
-	# 5) 雾：高湿低降水、偏凉（紧接 RAIN，precip 阈值衔接，不再被判定顺序饿死）
-	if vapor > 0.34 and cloud > 0.14 and precip < 0.030 and temp < 0.55:
+	# 5) 雾：高湿低降水、偏凉。单阈 cloud>0.14（FOG 闪烁由 EMA 平滑后的 cloud/precip 场自然消除）。
+	if vapor > fog_vapor and cloud > fog_cloud and precip < 0.030 and temp < 0.55:
 		return WeatherType.WT.FOG
-	# 6) 热浪：高温 + 少云 + 无降水。实测最热陆地恰恰也最湿(vapor p50≈0.42)，
-	#    严格"干"条件永远不可达 → 改为以"高温少云晴"为准（含闷热高温），不再强求低 vapor。
-	if temp > 0.70 and cloud < 0.30 and precip < 0.025 and lat_abs < 0.62 and local_summer > 0.35:
+	# 6) 热浪：高温(temp>0.64) + 晴朗少雨 + 温度距平偏暖(temp_anom>门，比常态暖即触发、变冷即退→自带
+	#    时间动态)。去硬纬度门(原 lat_abs<0.62)：hot 已限定暖区、边界随等温线弯曲。实测最热区常年高温故
+	#    距平≈0(候选 temp_anom p50≈0.003)，旧 0.04 门只放行 16% 候选→热浪几乎为 0；门降至 0.0(见常量)。
+	if hot and temp_anom > HEATWAVE_ANOM_GATE and cloud < 0.38 and precip < 0.025:
 		return WeatherType.WT.HEATWAVE
-	# 7) 旱灾：暖区持续少云少雨。实测即便 vapor<0.22 的格 cloud 仍 ~0.27，故以 cloud 为主门控。
-	if cloud < 0.22 and precip < 0.020 and temp > 0.48 and vapor < 0.34:
+	# 7) 旱灾(2026-06-22 重定义)：旧判据 vapor<0.34/cloud<0.22 在陆地恒真(陆地天然干)→退化成"暖即旱"，
+	#    内陆/河流旁常年误报旱灾。改为"异常偏暖干"事件:温度距平显著为正(temp_anom>0.10,陆地 p88)才算旱灾,
+	#    常态干燥归 CLEAR。cloud<0.22 由海洋(cloud p50=.64)挡住→海上不报旱;陆地恒真不影响。
+	if temp > 0.55 and temp_anom > 0.10 and precip < 0.020 and cloud < 0.22:
 		return WeatherType.WT.DROUGHT
 	return WeatherType.WT.CLEAR
-
-func _classify_field_weather(cell: HexCell, season_idx: int, temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float) -> int:
-	var lat_signed: float = 0.0
-	if _world_bounds.size.y > 0.001:
-		var pos: Vector2 = _cell_world_pos(cell)
-		lat_signed = clampf((pos.y - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0) * 2.0 - 1.0
-	return _classify_field_weather_core(lat_signed, season_idx, temp, vapor, cloud, precip, instability, ocean_an)
 
 
 func _weather_precip_terrain_damping_factor(terrain: int) -> float:
@@ -3607,7 +3516,7 @@ func configure_weather_field(
 		summary_limit: int,
 		convergence_refresh_stride: int = 2,
 		precip_carryover_max: float = 0.08,
-		vapor_precip_sink: float = 0.70,
+		vapor_precip_sink: float = 0.85,
 		snowpack_accum_gain: float = 0.08,
 		snowpack_melt_temp_gain: float = 0.22,
 		snowpack_melt_sun_gain: float = 0.12,
@@ -3625,11 +3534,11 @@ func configure_weather_field(
 		extreme_precip_soft_cap: float = 0.16,
 		extreme_precip_softness: float = 0.20,
 		land_evapotranspiration_gain: float = 0.70,
-		precip_rh_threshold: float = 0.68,
+		precip_rh_threshold: float = 0.70,
 		ocean_precip_suppression: float = 0.95,
 		frontogenesis_gain: float = 0.42,
 		rain_shadow_drying: float = 0.35,
-		vapor_transport_gain: float = 0.92) -> void:
+		vapor_transport_gain: float = 0.75) -> void:
 	_weather_field_enabled = enabled
 	_field_advect_steps = clampi(advect_steps, 0, 4)
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)

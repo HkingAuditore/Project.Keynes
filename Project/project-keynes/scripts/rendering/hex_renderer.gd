@@ -251,6 +251,12 @@ var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天�
 # 一个轻柔的常量盛行风。每帧在 _process 里推送给各 detail 层。
 var _detail_wind_dir: Vector2 = Vector2(1.0, 0.18)
 var _detail_wind_boost: float = 0.0
+# 植被 TOD 光照缓存（apply_tod 写入），新生成的 detail 层在 spawn 时补推一次。
+var _tod_valid: bool = false
+var _tod_sun_color: Color = Color(1.0, 0.97, 0.92)
+var _tod_ambient_color: Color = Color(0.70, 0.75, 0.82)
+var _tod_night_factor: float = 0.0
+var _tod_exposure: float = 1.0
 var _shader_hot_reload_accum: float = 0.0
 var _active_material_source_path: String = ""
 var _active_shader_source_path: String = ""
@@ -505,6 +511,14 @@ func _spawn_detail_layers() -> void:
 		layer.set_mobile_quality_tier(veg_tier)
 		layer.set_world_ext(_world_ext)
 		add_child(layer)
+		# [cylindrical-earth-daylight] 新层补推昼夜光照所需状态（与地形同源）：
+		# 相位/季节驱动晨昏线，axial_tilt 决定季节赤纬，day_night_enabled 为总开关。
+		layer.set_season_phase(_season_phase)
+		layer.set_day_phase(_day_phase)
+		layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		layer.set_day_night_enabled(day_night_enabled)
+		if _tod_valid:
+			layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 		_detail_layers.append(layer)
 
 
@@ -641,6 +655,8 @@ func set_season_phase(phase: float) -> void:
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("season_phase", _season_phase)
 		_update_season_transition()
+	if _weather_layer != null:
+		_weather_layer.set_season_phase(_season_phase)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(_season_phase)
 	)
@@ -758,6 +774,10 @@ func set_day_night_enabled(v: bool) -> void:
 		_shader_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
 	if _weather_layer != null:
 		_weather_layer.set_day_night_enabled(day_night_enabled)
+	# [cylindrical-earth-daylight] 植被/点缀层昼夜总开关随地形同步（关闭=永昼）。
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_day_night_enabled(day_night_enabled)
+	)
 
 func set_water_effect_enabled(v: bool) -> void:
 	water_effect_enabled = v
@@ -852,6 +872,15 @@ func apply_tod(profile: TODProfile) -> void:
 		_season_transition_mat.set_shader_parameter("tod_exposure", profile.exposure)
 	if _weather_layer != null and _weather_layer.has_method("apply_tod"):
 		_weather_layer.apply_tod(profile)
+	# 植被/点缀层随昼夜统一着色（修复"树草常亮"）。缓存供新生成层补推。
+	_tod_sun_color = profile.sun_color
+	_tod_ambient_color = profile.ambient_color
+	_tod_night_factor = profile.night_factor
+	_tod_exposure = profile.exposure
+	_tod_valid = true
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
+	)
 
 func set_water_sparkle_enabled(v: bool) -> void:
 	water_sparkle_enabled = v
@@ -1359,7 +1388,12 @@ func _apply_uniforms() -> void:
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
-		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size)
+		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims)
+		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
+		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
+		_weather_layer.set_season_phase(_season_phase)
+		_weather_layer.set_day_phase(_day_phase)
+		_weather_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)

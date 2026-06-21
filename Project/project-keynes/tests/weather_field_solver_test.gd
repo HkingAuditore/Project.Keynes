@@ -62,7 +62,10 @@ func _test_warm_convection_prefers_storm() -> void:
 
 func _test_cold_precip_prefers_blizzard() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
-	var wt: int = ws._classify_field_weather_at(Vector2(0.0, -36.0), 3, 0.16, 0.55, 0.35, 0.12, 0.20, 0.0)
+	# 天气分类海陆分离重标(2026-06-22)：现为 9 参，末位 is_water(海/陆湿润类阈值分离)。
+	# (temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom, is_water)。
+	# temp=0.16≤FREEZE(0.24) 为极冷，配可观降水→走"暴雪"分支(海陆同标定，与 is_water 无关)。
+	var wt: int = ws._classify_field_weather_at(0.16, 0.55, 0.35, 0.12, 0.20, 0.0, 1.0, 0.0, true)
 	_expect(wt == WeatherType.WT.BLIZZARD,
 		"cold humid precipitating region should classify as BLIZZARD (type=%d)" % wt)
 
@@ -83,8 +86,8 @@ func _test_precip_carryover_and_vapor_relaxation() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
 	_expect(is_equal_approx(ws._field_precip_carryover_max, 0.08),
 		"precip carryover cap should default to 0.08")
-	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.70),
-		"vapor precip sink should default to 0.70")
+	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.85),
+		"vapor precip sink should default to 0.85")
 	var carried: float = _precip_carryover(0.90, 0.95, ws._field_precip_carryover_max)
 	_expect(carried <= ws._field_precip_carryover_max + 0.0001,
 		"precip carryover should be capped")

@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "rows_dedup": 1032000,
+    "cells": 2400,
+    "land_cells": 788,
+    "water_cells": 1612,
+    "days_per_cell_median": 430.0
+  },
+  "ALL": {
+    "n": 2400,
+    "perma_rain_ratio(wet>80%)": 0.3904166666666667,
+    "perma_dry_ratio(wet<5%)": 0.15083333333333335,
+    "never_wet_ratio(0 wet day)": 0.11458333333333333,
+    "never_switch_type_ratio": 0.21625,
+    "single_type_whole_run_ratio": 0.21625,
+    "mean_type_switches": 9.1075,
+    "mean_distinct_types": 2.087083333333333,
+    "mean_wet_ratio": 0.5780881782945736,
+    "mean_precip": 0.03438173317732558
+  },
+  "LAND": {
+    "n": 788,
+    "perma_rain_ratio(wet>80%)": 0.3197969543147208,
+    "perma_dry_ratio(wet<5%)": 0.2715736040609137,
+    "never_wet_ratio(0 wet day)": 0.2017766497461929,
+    "never_switch_type_ratio": 0.26649746192893403,
+    "single_type_whole_run_ratio": 0.26649746192893403,
+    "mean_type_switches": 9.975888324873097,
+    "mean_distinct_types": 2.1294416243654823,
+    "mean_wet_ratio": 0.4789281076614332,
+    "mean_precip": 0.025344737861527567
+  },
+  "WATER": {
+    "n": 1612,
+    "perma_rain_ratio(wet>80%)": 0.4249379652605459,
+    "perma_dry_ratio(wet<5%)": 0.09181141439205956,
+    "never_wet_ratio(0 wet day)": 0.07196029776674938,
+    "never_switch_type_ratio": 0.19168734491315137,
+    "single_type_whole_run_ratio": 0.19168734491315137,
+    "mean_type_switches": 8.683002481389579,
+    "mean_distinct_types": 2.0663771712158807,
+    "mean_wet_ratio": 0.6265609671648681,
+    "mean_precip": 0.03879932145824918
+  },
+  "wet_ratio_hist_bins": [
+    "0.0-0.1",
+    "0.1-0.2",
+    "0.2-0.3",
+    "0.3-0.4",
+    "0.4-0.5",
+    "0.5-0.6",
+    "0.6-0.7",
+    "0.7-0.8",
+    "0.8-0.9",
+    "0.9-1.0"
+  ],
+  "wet_ratio_hist_all": [
+    411,
+    72,
+    111,
+    213,
+    292,
+    145,
+    108,
+    109,
+    143,
+    796
+  ],
+  "wet_ratio_hist_land": [
+    240,
+    44,
+    48,
+    33,
+    48,
+    37,
+    43,
+    42,
+    35,
+    218
+  ],
+  "wet_ratio_hist_water": [
+    171,
+    28,
+    63,
+    180,
+    244,
+    108,
+    65,
+    67,
+    108,
+    578
+  ],
+  "type_dist_all": {
+    "CLEAR": 0.4317,
+    "RAIN": 0.2641,
+    "STORM": 0.0188,
+    "BLIZZARD": 0.2173,
+    "DROUGHT": 0.0052,
+    "FOG": 0.0447,
+    "HEATWAVE": 0.0168,
+    "MONSOON": 0.0014
+  },
+  "hovmoller": {
+    "shape": [
+      430,
+      24
+    ],
+    "time_var_per_lonband": 1.2770500277094287e-05,
+    "lon_var_per_day": 3.989650569283294e-05,
+    "ratio_time_over_lon": 0.32009069604780943
+  },
+  "precip_centroid": {
+    "n": 430,
+    "mean_step_px": 0.4511642293221139,
+    "centroid_std_x": 1.1408101072535695,
+    "centroid_std_y": 5.402028120508887,
+    "map_width_px": 103.057022
+  },
+  "wet_set_jaccard_adjacent_days": {
+    "mean": 0.96293593759365,
+    "median": 0.9645550527903469,
+    "note": "1.0=降水格集合完全不变(永雨永旱/不移动); 低=降水区在演化/移动"
+  }
+}

@@ -1205,7 +1205,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		if _weather_system.has_method("configure_weather_field"):
 			_weather_system.configure_weather_field(
 				bool(cp_ec.weather_field_enabled),
-				clampi(int(cp_ec.weather_field_advect_steps), 0, 2),
+				clampi(int(cp_ec.weather_field_advect_steps), 0, 4),
 				float(cp_ec.weather_field_diffusion),
 				float(cp_ec.weather_condensation_gain),
 				float(cp_ec.weather_precip_decay),
@@ -1233,11 +1233,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 				float(cp_ec.weather_extreme_precip_soft_cap) if cp_ec.get("weather_extreme_precip_soft_cap") != null else 0.16,
 				float(cp_ec.weather_extreme_precip_softness) if cp_ec.get("weather_extreme_precip_softness") != null else 0.20,
 				float(cp_ec.weather_land_evapotranspiration_gain) if cp_ec.get("weather_land_evapotranspiration_gain") != null else 0.70,
-				float(cp_ec.weather_precip_rh_threshold) if cp_ec.get("weather_precip_rh_threshold") != null else 0.68,
-				float(cp_ec.weather_ocean_precip_suppression) if cp_ec.get("weather_ocean_precip_suppression") != null else 0.85,
+				float(cp_ec.weather_precip_rh_threshold) if cp_ec.get("weather_precip_rh_threshold") != null else 0.70,
+				float(cp_ec.weather_ocean_precip_suppression) if cp_ec.get("weather_ocean_precip_suppression") != null else 0.95,
 				float(cp_ec.weather_frontogenesis_gain) if cp_ec.get("weather_frontogenesis_gain") != null else 0.42,
 				float(cp_ec.weather_rain_shadow_drying) if cp_ec.get("weather_rain_shadow_drying") != null else 0.35,
-				float(cp_ec.weather_vapor_transport_gain) if cp_ec.get("weather_vapor_transport_gain") != null else 0.92
+				float(cp_ec.weather_vapor_transport_gain) if cp_ec.get("weather_vapor_transport_gain") != null else 0.75
 			)
 
 	# ─── Daily-Sim SoA Refactor 阶段 2：构建邻居索引 SoA ──────────────────
@@ -2089,6 +2089,7 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"thermal_inertia_snow": float(cp_now.get("thermal_inertia_snow")) if cp_now.get("thermal_inertia_snow") != null else 0.09,
 		"thermal_inertia_high_mountain": float(cp_now.get("thermal_inertia_high_mountain")) if cp_now.get("thermal_inertia_high_mountain") != null else 0.16,
 		"thermal_daily_delta_cap": float(cp_now.get("thermal_daily_delta_cap")) if cp_now.get("thermal_daily_delta_cap") != null else 0.15,
+		"temp_land_continentality": float(cp_now.get("temp_land_continentality")) if cp_now.get("temp_land_continentality") != null else 1.55,
 		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_now.get("snowpack_cover_low")) if cp_now.get("snowpack_cover_low") != null else 0.05,
 		"snowpack_cover_full": float(cp_now.get("snowpack_cover_full")) if cp_now.get("snowpack_cover_full") != null else 0.32,
@@ -6224,6 +6225,7 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
 			"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
 			"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
+			"temp_land_continentality": float(cp.temp_land_continentality) if "temp_land_continentality" in cp else 1.55,
 			"thermal_dt_days": _consume_climate_dt_days(),
 			"snowpack_cover_low": float(cp.snowpack_cover_low) if "snowpack_cover_low" in cp else 0.05,
 			"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
@@ -8342,6 +8344,9 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var thermal_snow: float = float(cp.get("thermal_inertia_snow")) if cp.get("thermal_inertia_snow") != null else 0.09
 	var thermal_high: float = float(cp.get("thermal_inertia_high_mountain")) if cp.get("thermal_inertia_high_mountain") != null else 0.16
 	var thermal_delta_cap: float = float(cp.get("thermal_daily_delta_cap")) if cp.get("thermal_daily_delta_cap") != null else 0.15
+	# 大陆性季节增幅(2026-06-21)：陆地季节强迫×land_continentality 放大其振幅，建立"夏陆>海、
+	# 冬陆<海"的真实海陆温差(修温差恒负/大陆性看不出)。海洋=1.0。SAME_SOURCE: C++ pk_season_offset_continental。
+	var land_continentality: float = float(cp.get("temp_land_continentality")) if cp.get("temp_land_continentality") != null else 1.55
 	# 加速/跳日补偿：把单日 α 换算为多日等效 α_eff=1-(1-α)^dt、delta_cap 乘 dt。
 	# dt<=1 时退化为原值，与 C++ pk_thermal_alpha_eff / sea_ice dt 同源。
 	var thermal_dt: float = clampf(_consume_climate_dt_days(), 1.0, 30.0)
@@ -8477,8 +8482,10 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
 		# 用【年均温度 temp_365d_a[i]】作冰封代理（与 C++ p365[i] 同源），避免夏季融化正反馈失控。
 		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(is_water_a[i] != 0, temp_365d_a[i])
+		# 大陆性增幅：陆地季节强迫放大(海洋=1.0)。SAME_SOURCE: C++ pk_season_offset_continental。
+		var continentality: float = 1.0 if is_water_a[i] != 0 else land_continentality
 		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 legacy/C++ 同源。
-		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
+		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * continentality * dev_today)
 		var radiative_target: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# 3) 热惯性：日照只生成 radiative target，最终 temp 由长期热储量缓慢逼近。
@@ -10789,6 +10796,8 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0, w
 	var scale: float = maxf(day_scale, 1.0)
 	var per_day_clamp: float = float(cp.feedback_per_day_clamp) * scale
 	var ocean_drift_gain: float = float(cp.ocean_moisture_drift_gain)
+	# 让天气流动(2026-06-21)：weather → base_moisture 反馈增益(cp.get 兼容旧 profile 无此字段)。
+	var base_m_gain: float = float(cp.weather_to_base_moisture_gain) if cp.get("weather_to_base_moisture_gain") != null else 0.0
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = cells.size()
 	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
@@ -10848,6 +10857,7 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0, w
 			"scale": scale,
 			"per_day_clamp": per_day_clamp,
 			"ocean_drift_gain": ocean_drift_gain,
+			"weather_to_base_moisture_gain": base_m_gain,
 			"wt_clear_id": int(WeatherType.WT.CLEAR),
 			"wt_rain_id": int(WeatherType.WT.RAIN),
 			"wt_storm_id": int(WeatherType.WT.STORM),
@@ -10941,6 +10951,10 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0, w
 		# 累加到 soil_moisture（小权重）
 		var d_soil: float = clampf(soil_gain * precip_contrib * scale, -per_day_clamp, per_day_clamp)
 		cell.soil_moisture = clampf(cell.soil_moisture + d_soil, -0.5, 0.5)
+		# 让天气流动(2026-06-21)：weather → base_moisture 直接反馈(镜像 C++ run_climate_feedback_pass)。
+		if base_m_gain > 0.0:
+			var d_bm: float = clampf(base_m_gain * precip_contrib * scale, -per_day_clamp, per_day_clamp)
+			cell.base_moisture = clampf(cell.base_moisture + d_bm, 0.0, 1.0)
 		if write_weather_veg_pressure:
 			# 未跑 veg_dyn 的 tick 保留天气压力；跑过 veg_dyn 的 tick 让 VGP 保持 target - vitality。
 			var d_veg: float = clampf(veg_gain * precip_contrib * scale, -per_day_clamp, per_day_clamp)
@@ -12735,6 +12749,7 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		"thermal_inertia_snow": float(cp_f5.thermal_inertia_snow) if "thermal_inertia_snow" in cp_f5 else 0.09,
 		"thermal_inertia_high_mountain": float(cp_f5.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp_f5 else 0.16,
 		"thermal_daily_delta_cap": float(cp_f5.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp_f5 else 0.15,
+		"temp_land_continentality": float(cp_f5.temp_land_continentality) if "temp_land_continentality" in cp_f5 else 1.55,
 		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_f5.snowpack_cover_low) if "snowpack_cover_low" in cp_f5 else 0.05,
 		"snowpack_cover_full": float(cp_f5.snowpack_cover_full) if "snowpack_cover_full" in cp_f5 else 0.32,

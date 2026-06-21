@@ -116,12 +116,6 @@ var _front_blend_elapsed: float = 0.0
 var _front_blend_duration: float = 0.0
 var _last_front_snapshot_time: float = -1.0
 var _front_snapshot_interval_sec: float = _WEATHER_FRONT_INITIAL_BLEND_SEC
-# 任务 5：STORM 闪电节拍——随 world_time 推进， < 1Hz 触发 80~120ms 的亮斑。
-# _storm_next_flash_t：下次开始的 world_time；_storm_flash_end_t：当前亮斑失效时间。
-var _storm_next_flash_t: float = 0.0
-var _storm_flash_end_t: float = 0.0
-var _storm_active: bool = false
-var _rng: RandomNumberGenerator
 
 # Drift-debug（2026-05-10）：set true 后：
 #   1) set_weather_fronts 入口打印 snapshot_interval / blend_duration / forward_bias
@@ -159,9 +153,6 @@ func _ready() -> void:
 	_load_overlay_shader()
 	_init_shadow_pool()
 	_init_particles_pool()
-	# 任务 5：STORM 闪电数值随机
-	_rng = RandomNumberGenerator.new()
-	_rng.randomize()
 	set_process(true)
 
 func _process(delta: float) -> void:
@@ -202,12 +193,9 @@ func _process(delta: float) -> void:
 					raw_t, str(_front_velocity(v0).round()),
 				])
 	else:
-		# 没有天气但有 ambient shadow 时，跳过 fronts/particles/shadow 池同步，
-		# 仅靠推进 world_time 让 shader 自己刷 ambient FBM 飘动。
+		# 没有天气时跳过 fronts/particles/shadow 池同步，仅靠推进 world_time
+		# 让 shader 自己刷云的噪声飘动。
 		_refresh_visibility()
-	# 任务 5：STORM 闪电推进
-	if _storm_active:
-		_update_storm_flash()
 
 # 暂停门控：由上层（main.gd 把 WorldClock.paused 同步给 WeatherLayer）写入。
 # 默认 true；外部写入 false 后停止 world_time 推进。
@@ -223,29 +211,12 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 func _effective_running() -> bool:
 	return _clock_running
 
-# 任务 5：按 world_time 驱动闪电亮斑，频率 < 1Hz，每次持续 80~120ms。
-# 在窗口内把 storm_flash uniform 抬到 1.0，窗口外恢复为 0。
-func _update_storm_flash() -> void:
-	if _overlay_mat == null:
-		return
-	if _world_time >= _storm_next_flash_t and _world_time > _storm_flash_end_t:
-		# 触发新一次亮斑：持续 80~120ms
-		var dur_ms: float = _rng.randf_range(80.0, 120.0)
-		_storm_flash_end_t = _world_time + dur_ms / 1000.0
-		# 下一次：间隔 1.2 ~ 3.0 秒 (< 1Hz)
-		_storm_next_flash_t = _storm_flash_end_t + _rng.randf_range(1.2, 3.0)
-	var flash: float = 0.0
-	if _world_time <= _storm_flash_end_t:
-		# 软过渡：从 1.0 线性掉到 0.4，避免硬断视觉上倍感氣凝重
-		flash = 1.0
-	_overlay_mat.set_shader_parameter("storm_flash", flash)
-
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
 # 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 map_index_atlas + noise_tex。
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
-func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
+func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO) -> void:
 	_world_bounds = bounds
 	_map_index_atlas_tex = map_index_atlas
 	_noise_tex = noise_tex
@@ -255,14 +226,15 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		_overlay_quad.mesh = _build_full_quad(bounds)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", map_index_atlas)
-		_overlay_mat.set_shader_parameter("noise_tex", noise_tex)
+		# cell-index 间接寻址（cloud-from-field 2026-06-20）：weather_lut + lut_dims 让
+		# weather_overlay 逐格采样真实天气场（map_index_atlas.GB 已含 cell.index）。
+		_overlay_mat.set_shader_parameter("weather_lut", weather_lut)
+		_overlay_mat.set_shader_parameter("lut_dims", Vector2(lut_dims.x, lut_dims.y))
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
 		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
 		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
-		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
-		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
@@ -276,11 +248,10 @@ func set_weather_strength(v: float) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 
+# weather_field_tex 通路已退役（main.gd 始终传 null，云改由 fronts 驱动）；
+# 保留此 setter 让 main.gd / hex_renderer 的历史调用点安全退化。
 func set_weather_field_texture(tex: Texture2D) -> void:
 	_weather_field_tex = tex
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
-		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 	_refresh_visibility()
 
 # 可见性收敛点。任何一个条件成立就保持 overlay 可见：
@@ -323,21 +294,35 @@ func set_day_night_enabled(v: bool) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 
+# extreme_weather_ground_effect_enabled uniform 已在重写中移除；保留 setter 供外部安全调用。
 func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
 	_extreme_ground_enabled = v
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter(
-			"extreme_weather_ground_effect_enabled", _extreme_ground_enabled
-		)
 
 # 任务 2：昼夜相位转发。overlay shader 可用它调暗夜间云色 / 在夜晚
 # 把闪电/降水粒子的底色做冷蓝偏移（具体分支在任务 4~5 接入）。
 var _day_phase: float = 0.25
+# [cylindrical-earth-daylight] 云光照接入 earth_daylight 逐像素晨昏线真源（与地形/水面/植被同源），
+# 需要 season_phase / day_phase / axial_tilt_rad 三个 per-material uniform。默认值同 uniforms.gdshaderinc。
+var _season_phase: float = 1.0
+var _axial_tilt_rad: float = 0.4101523
 
+# 昼夜相位：drive earth_daylight 的正午经度（晨昏线东西扫过）。由 HexRenderer.set_day_phase 转发。
 func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+
+# 季节相位：drive earth_daylight 的太阳赤纬（南/北半球长昼↔短昼）。由 HexRenderer.set_season_phase 转发。
+func set_season_phase(v: float) -> void:
+	_season_phase = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("season_phase", _season_phase)
+
+# 地轴倾角(rad)：drive earth_daylight 的季节赤纬幅度。由 HexRenderer 在 setup/spawn 时推入。
+func set_axial_tilt_rad(v: float) -> void:
+	_axial_tilt_rad = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -356,17 +341,11 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_ambient_color = profile.ambient_color
 	_tod_night_factor = profile.night_factor
 	_tod_exposure = profile.exposure
+	# 云光照颜色 / 晨昏改走 earth_daylight 真源（逐像素经纬度），overlay 不再吃单色
+	# tod_sun_color / tod_ambient_color / tod_night_factor（已从 shader 删除）。仅保留迎光屏幕方向
+	# 与全局曝光。_tod_* 字段仍保留——下方雨雪粒子 modulate 染色仍按它取色（见 _sync_particles_pool）。
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
-		_overlay_mat.set_shader_parameter(
-			"tod_sun_color",
-			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
-		)
-		_overlay_mat.set_shader_parameter(
-			"tod_ambient_color",
-			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
-		)
-		_overlay_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
 		_overlay_mat.set_shader_parameter("tod_exposure", profile.exposure)
 	# 任务 5：粒子 modulate 随 TOD 重新染色。
 	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
@@ -485,54 +464,13 @@ func set_weather_fronts(fronts: Array) -> void:
 	# 目标为空时保留当前视觉快照做淡出；如果也没有视觉快照则立即清空。
 	_update_weather_front_blend(0.0)
 
-	# 任务 5：识别是否有 STORM front（触发闪电节拍推进）
-	_storm_active = false
-	for i in range(_front_target_snapshots.size()):
-		if _front_intensity(_front_target_snapshots[i]) > 0.001 \
-				and _front_type(_front_target_snapshots[i]) == _WT_STORM:
-			_storm_active = true
-			break
-	if not _storm_active and _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("storm_flash", 0.0)
-
 # ─── overlay shader uniform 上传 ─────────────────────────────────────────
 
-func _push_fronts_to_overlay(fronts: Array) -> void:
-	if _overlay_mat == null:
-		return
-	var centers := PackedVector4Array()
-	var shapes := PackedVector4Array()
-	var visuals := PackedVector4Array()
-	var types := PackedFloat32Array()
-	centers.resize(MAX_WEATHER_FRONTS)
-	shapes.resize(MAX_WEATHER_FRONTS)
-	visuals.resize(MAX_WEATHER_FRONTS)
-	types.resize(MAX_WEATHER_FRONTS)
-	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
-	for i in range(MAX_WEATHER_FRONTS):
-		if i < n:
-			var f = fronts[i]
-			var c := _front_center(f)
-			centers[i] = Vector4(c.x, c.y, _front_radius(f), _front_intensity(f))
-			var ax := _front_axis(f)
-			shapes[i] = Vector4(ax.x, ax.y, _front_major_scale(f), _front_minor_scale(f))
-			visuals[i] = Vector4(
-				_front_cloud_amount(f),
-				_front_precip_amount(f),
-				_front_dissolve_amount(f),
-				_front_life_progress(f)
-			)
-			types[i] = float(_front_type(f))
-		else:
-			centers[i] = Vector4.ZERO
-			shapes[i] = Vector4(1.0, 0.0, 1.0, 1.0)
-			visuals[i] = Vector4.ZERO
-			types[i] = -1.0
-	_overlay_mat.set_shader_parameter("weather_front_centers", centers)
-	_overlay_mat.set_shader_parameter("weather_front_shapes", shapes)
-	_overlay_mat.set_shader_parameter("weather_front_visuals", visuals)
-	_overlay_mat.set_shader_parameter("weather_front_types", types)
-	_overlay_mat.set_shader_parameter("weather_front_count", n)
+func _push_fronts_to_overlay(_fronts: Array) -> void:
+	# 云分布已改用 weather_lut（per-cell LUT，见 weather_overlay.sample_field_weather）：
+	# fronts 不再驱动 overlay 云 uniform，此函数保留为空避免改动多个调用点。
+	# 注：fronts 仍经 _sync_particles_pool 驱动 GPUParticles 雨雪粒子（粒子需椭圆发射盒）。
+	pass
 
 func _push_empty_fronts_to_overlay() -> void:
 	_push_fronts_to_overlay([])
@@ -1040,31 +978,20 @@ func _push_overlay_runtime_state() -> void:
 		return
 	if _map_index_atlas_tex != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
-	if _noise_tex != null:
-		_overlay_mat.set_shader_parameter("noise_tex", _noise_tex)
 	_overlay_mat.set_shader_parameter("world_origin", _world_bounds.position)
 	_overlay_mat.set_shader_parameter("world_size", _world_bounds.size)
 	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
 	_overlay_mat.set_shader_parameter("weather_strength", _strength)
-	_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
-	_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
 	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
-	_overlay_mat.set_shader_parameter("extreme_weather_ground_effect_enabled", _extreme_ground_enabled)
-	_overlay_mat.set_shader_parameter("day_phase", _day_phase)
 	_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
-	_overlay_mat.set_shader_parameter(
-		"tod_sun_color",
-		Vector3(_tod_sun_color.r, _tod_sun_color.g, _tod_sun_color.b)
-	)
-	_overlay_mat.set_shader_parameter(
-		"tod_ambient_color",
-		Vector3(_tod_ambient_color.r, _tod_ambient_color.g, _tod_ambient_color.b)
-	)
-	_overlay_mat.set_shader_parameter("tod_night_factor", _tod_night_factor)
 	_overlay_mat.set_shader_parameter("tod_exposure", _tod_exposure)
 	_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
+	# [cylindrical-earth-daylight] 云光照真源相位（首帧 / 重建材质时兜底推一次，运行时由 setter 增量刷新）。
+	_overlay_mat.set_shader_parameter("season_phase", _season_phase)
+	_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+	_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 
