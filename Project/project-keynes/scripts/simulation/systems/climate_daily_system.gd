@@ -1372,6 +1372,19 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		t_round_part_us = Time.get_ticks_usec()
 		_begin_round_pass_state()
 		_last_round_start_diag["round_start_state_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		# 静态天气根因修复(2026-06-20)：async round 路径原先漏调 soa_begin_climate_transaction()，
+		#   而 sync 路径在 round-start(line ~1873)调它。结果 temp_arr_prev / moisture_arr_prev /
+		#   snow_cover_arr_prev / sea_ice_frac_arr_prev 四个双缓冲快照永远停在 bake 当天值
+		#   （use_climate_round_async 默认 true → 永远走 async → 永远不 swap）。
+		#   weather field solve(field_solver.gd:120-121)把 *_prev 作为温度/湿度输入读取 →
+		#   热力学强迫(蒸发/水汽容量/不稳定/暖冷门控/地表湿度)全程冻结 → 整图天气类型高度静止、
+		#   永久干区/永久湿区，即便风/辐合/SLP 已随 synoptic 修复而移动也带不动一半格子。
+		#   这里补齐 swap，镜像 sync：在 _begin_round_pass_state 之后、kick 之前执行；只写 *_prev、
+		#   读当前 *_arr（_build_async_kick_input 也只读当前 *_arr），故对 worker 无竞态、无行为改变。
+		t_round_part_us = Time.get_ticks_usec()
+		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
+			map.soa_begin_climate_transaction()
+		_last_round_start_diag["round_start_soa_begin_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		_last_round_start_diag["round_start_total_ms"] = float(Time.get_ticks_usec() - t_round_start_us) / 1000.0
 
 	# Worker pending 时不重复 kick（kick 返回 false → reused++）。

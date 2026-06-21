@@ -140,6 +140,11 @@ var noise_tex: ImageTexture
 var enum_lut_tex: ImageTexture
 var dyn_lut_tex: ImageTexture
 var eco_lut_tex: ImageTexture
+# weather_lut（cloud-from-field 2026-06-20）：per-cell 天气场 LUT，RGBA8 NEAREST，lut_dims。
+#   R=weather_type，G=intensity，B=cloud，A=precip。由 encode_cell_luts 与 enum/dyn/eco 同批
+#   产出（C++ 优先，GDScript fallback），weather_overlay.gdshader 经 cell-index 间接寻址逐格
+#   采样驱动云分布——天气云不再用 fronts 椭圆摘要，而是精确对应 HexCell.weather_*。
+var weather_lut_tex: ImageTexture
 var lut_dims: Vector2i = Vector2i.ZERO
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。

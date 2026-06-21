@@ -4248,6 +4248,10 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+				# weather LUT（软依赖）：C++ 未就绪/天气未初始化时可能缺省，缺则保留旧纹理。
+				var wlut = out.get("weather_lut", null)
+				if wlut is PackedByteArray:
+					world.weather_lut_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
 				return
 	_bake_cell_luts_gd(map, world, lw, lh)
 
@@ -4258,6 +4262,7 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int) -> voi
 	var enum_data := PackedByteArray(); enum_data.resize(slots * 3)
 	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
 	var eco_data := PackedByteArray(); eco_data.resize(slots * 4)
+	var weather_data := PackedByteArray(); weather_data.resize(slots * 4)
 	for cell in map.all_cells():
 		if cell == null:
 			continue
@@ -4281,9 +4286,16 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int) -> voi
 		eco_data[c4 + 1] = (esig >> 8) & 0xFF
 		eco_data[c4 + 2] = (esig >> 16) & 0xFF
 		eco_data[c4 + 3] = (esig >> 24) & 0xFF
+		# weather LUT：R=type, G=intensity, B=cloud, A=precip（与 C++ encode_cell_luts 同布局）
+		var w4: int = ci * 4
+		weather_data[w4]     = int(cell.weather_type) & 0xFF
+		weather_data[w4 + 1] = _q01_byte(float(cell.weather_intensity))
+		weather_data[w4 + 2] = _q01_byte(float(cell.weather_cloud))
+		weather_data[w4 + 3] = _q01_byte(float(cell.weather_precip))
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+	world.weather_lut_tex = _lut_tex_from_data(weather_data, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
 
 
 func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existing: ImageTexture) -> ImageTexture:
@@ -5359,6 +5371,12 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"slp_response_rate": profile.slp_response_rate,
 			"slp_synoptic_amp": profile.slp_synoptic_amp,
 			"slp_moist_low_weight": profile.slp_moist_low_weight,
+			"wind_synoptic_period_days": profile.wind_synoptic_period_days,
+			# 让天气流动(阶段1)：移动低压系统 knobs（C++ 在 SLP 叠加平移高斯低压源，驱动移动辐合带）。
+			"slp_mobile_low_count": profile.slp_mobile_low_count,
+			"slp_mobile_low_amp": profile.slp_mobile_low_amp,
+			"slp_mobile_low_sigma": profile.slp_mobile_low_sigma,
+			"slp_mobile_low_period_days": profile.slp_mobile_low_period_days,
 		}
 		var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
 		if ret_slp == null or typeof(ret_slp) != TYPE_DICTIONARY:
@@ -5413,6 +5431,7 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"axial_tilt_deg": profile.axial_tilt_deg,
 			"wind_response_rate": profile.wind_response_rate,
 			"wind_synoptic_amp": profile.wind_synoptic_amp,
+			"wind_synoptic_period_days": profile.wind_synoptic_period_days,
 			"wind_belt_only_debug": profile.wind_belt_only_debug,
 		}
 		var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
@@ -5617,6 +5636,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						knobs_slp["slp_response_rate"] = profile.slp_response_rate
 						knobs_slp["slp_synoptic_amp"] = profile.slp_synoptic_amp
 						knobs_slp["slp_moist_low_weight"] = profile.slp_moist_low_weight
+						knobs_slp["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
 					var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
 					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
@@ -5768,6 +5788,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					if profile != null:
 						knobs_wind["wind_response_rate"] = profile.wind_response_rate
 						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
+						knobs_wind["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
 						knobs_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
 					_phys_last_wind_rc_ms = float(_rc_wind) if _rc_wind != null else -1.0

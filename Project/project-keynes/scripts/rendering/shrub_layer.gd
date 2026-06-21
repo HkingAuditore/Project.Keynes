@@ -62,6 +62,17 @@ uniform float weather_wind_boost = 0.0;      // 实时天气（风暴/季风）�
 uniform float bloom_strength = 0.0;          // 季节开花强度（花/部分植被 >0）
 uniform float snow_burial = 0.55;            // 积雪埋没：下沉+缩矮强度
 uniform float toon_shading = 0.30;           // 卡通分层：基部 AO + 轻量色阶量化
+// [cylindrical-earth-daylight] 昼夜光照：与地形 brdf.make_lighting_context 完全同源。
+// 不用"全图统一昼夜系数"，而是按本实例所在经纬度算太阳高度角 → 逐像素昼夜/晨昏，
+// 让晨昏线扫过时植被随之明暗（地球式光照），而非全图同步开关常亮。
+uniform float axial_tilt_rad = 0.41;     // 地轴倾角(rad)，与地形 axial_tilt_rad 同源
+uniform bool day_night_enabled = true;   // 关闭时退化为永昼
+uniform float tod_exposure = 1.0;        // 全局曝光（TODProfile.exposure）
+
+// [cylindrical-earth-daylight] 昼夜（晨昏线）核心与地形/水面同源：统一调用此 include。
+// 必须放在 season_phase / day_phase / axial_tilt_rad 三个 uniform 声明之后——其内函数
+// 引用这些全局量，GLSL 要求先声明后引用（名字须与 uniforms.gdshaderinc 一致）。
+#include \"res://shaders/include/earth_daylight.gdshaderinc\"
 
 varying vec4 shrub_custom;
 varying vec4 shrub_dyn;
@@ -165,7 +176,6 @@ void fragment() {
 	float sp = mod(season_phase, 4.0);
 	float winter = smoothstep(2.65, 3.15, sp) * (1.0 - smoothstep(3.65, 3.98, sp));
 	float snow = clamp(shrub_snow_v, 0.0, 1.0);
-	float night = clamp(smoothstep(0.72, 0.94, day_phase) + (1.0 - smoothstep(0.05, 0.24, day_phase)), 0.0, 1.0);
 	float dyn_valid = step(0.02, shrub_dyn.r);
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
@@ -193,13 +203,23 @@ void fragment() {
 	rgb = mix(rgb, rgb * vec3(1.12, 1.0, 1.08) + vec3(0.10, 0.03, 0.08), bloom);
 	rgb = mix(rgb, vec3(0.69, 0.72, 0.63), winter * 0.16);
 	rgb = mix(rgb, vec3(0.96, 0.98, 1.0), snow_amount);
-	rgb *= mix(1.0, 0.68, night);
-	// 卡通分层：基部 AO（UV.y 低=近根，压暗）+ 轻量 3 阶色调量化。
+	// 卡通分层：基部 AO（UV.y 低=近根，压暗）+ 轻量 3 阶色调量化（在 albedo 空间做）。
 	float ao = 1.0 - (1.0 - clamp(UV.y, 0.0, 1.0)) * toon_shading * 0.38;
 	rgb *= ao;
 	float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
 	float ql = floor(luma * 3.0 + 0.5) / 3.0;
 	rgb *= (luma > 0.0015) ? mix(1.0, ql / luma, toon_shading * 0.55) : 1.0;
+	// [cylindrical-earth-daylight] 昼夜光照（最后一步）：与地形/水面统一调用 earth_daylight，
+	// 按本实例经纬度逐像素取昼夜/晨昏 + 同一色板，植被随晨昏线扫过明暗、夜侧偏冷蓝，不再常亮。
+	vec2 solar_uv = clamp(shrub_custom.rg, vec2(0.0), vec2(1.0));
+	float lat_signed = solar_uv.y * 2.0 - 1.0;
+	EarthDaylight ed = eval_earth_daylight(solar_uv, lat_signed, day_night_enabled);
+	// 平面顶视植被：环境光(带 0.18 floor=地形 AMBIENT_FLOOR_LAND) + 仅昼侧方向光；
+	// 再按夜侧整体压暗(0.55=地形 NIGHT_BRIGHTNESS_FLOOR)。日侧光≈1 保留 albedo。
+	vec3 light = max(ed.amb_col, vec3(0.18)) + ed.sun_col * (ed.local_day * 0.35);
+	rgb *= light;
+	rgb *= mix(1.0, 0.55, ed.pixel_night);
+	rgb *= tod_exposure;
 	float alpha = COLOR.a * shrub_presence_v;
 	alpha *= 1.0 - snow * 0.32;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
@@ -293,6 +313,27 @@ func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indire
 	_sync_world_material_inputs(true)
 
 
+# [cylindrical-earth-daylight] 昼夜光照与地形同源（逐像素经纬度晨昏线）。
+# 昼夜色/昼夜系数已在 shader 内按本实例经纬度逐像素求解，这里只需同步全局曝光；
+# sun/ambient/night_factor 形参保留仅为调用方兼容，不再消费。
+func set_tod(_sun_color: Color, _ambient_color: Color, _night_factor: float, exposure: float) -> void:
+	if _material == null:
+		return
+	_material.set_shader_parameter("tod_exposure", exposure)
+
+
+# 地轴倾角(rad)：与地形 axial_tilt_rad 同源，驱动晨昏线的季节赤纬。
+func set_axial_tilt_rad(v: float) -> void:
+	if _material != null:
+		_material.set_shader_parameter("axial_tilt_rad", v)
+
+
+# 昼夜总开关：关闭时植被退化为永昼（与地形 day_night_enabled 一致）。
+func set_day_night_enabled(v: bool) -> void:
+	if _material != null:
+		_material.set_shader_parameter("day_night_enabled", v)
+
+
 # 阶段 D：全局盛行风方向 + 实时天气附加风强（风暴/季风）。每帧由 hex_renderer 推送。
 func set_wind_field(dir: Vector2, boost: float) -> void:
 	if _material == null:
@@ -338,6 +379,8 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("world_time", 0.0)
 		_material.set_shader_parameter("season_phase", 1.0)
 		_material.set_shader_parameter("day_phase", 0.25)
+		_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_material.set_shader_parameter("day_night_enabled", true)
 		_mmi.material = _material
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
