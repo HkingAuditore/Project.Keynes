@@ -327,7 +327,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	const LIFT_PRECIP_GAIN := 0.25
 	const CONV_PRECIP_GAIN := 1.80
 	const ORO_PRECIP_GAIN := 0.10
-	const CLOUD_REEVAP := 0.14   # 2026-06-22 雨云化:0.06→0.14 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)(C++主路径走knobs同值)
+	const CLOUD_REEVAP := 0.18   # 2026-06-22 雨云化:0.06→0.18 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
 	const THERMAL_CONV_COND := 1.9   # 2026-06-22: 1.5→1.9 增内陆对流凝结(抬 cloud_water 上限)
 	const THERMAL_CONV_PRECIP := 1.1 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
@@ -392,12 +392,14 @@ func run_slice(cell_budget: int) -> Dictionary:
 				source_local += (0.010 + river_flow_feedback * 0.020) * _weather_system._field_land_evapotranspiration_gain * temp_evap
 
 		var source_upwind: float = source_local
+		var upstream_on_water: bool = false
 		if upstream_idx >= 0:
 			var up_cell: HexCell = cells[upstream_idx]
 			var up_temp: float = clampf(soa_temp[upstream_idx] + climate_anomaly + soa_air_anomaly[upstream_idx], 0.0, 1.0)
 			var up_base_m: float = clampf(soa_moisture_loop[upstream_idx], 0.0, 1.0)
 			var up_terrain: int = int(soa_terrain[upstream_idx])
 			var up_on_water: bool = _weather_system._is_water_terrain(up_terrain)
+			upstream_on_water = up_on_water
 			var up_is_lake: bool = up_terrain == TerrainType.TERRAIN.LAKE
 			var up_has_river: bool = (not up_is_lake) and (soa_has_river[upstream_idx] > 0) and not up_on_water
 			var up_river_q: float = clampf(soa_river_q30[upstream_idx] if soa_river_q30.size() == n_cells and up_has_river else 0.0, 0.0, 1.0)
@@ -459,10 +461,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 				temp_min = minf(temp_min, nb_temp_cell)
 				temp_max = maxf(temp_max, nb_temp_cell)
 		var temp_gradient: float = temp_max - temp_min
-		var frontal_convergence: float = smoothstep(0.14, 0.46, convergence)
-		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
-		var lift_pos: float = maxf(lift, 0.0)
 		var relative_humidity: float = maxf(vapor / maxf(vapor_capacity, 0.001), 0.0)
+		var frontal_convergence: float = smoothstep(0.14, 0.46, convergence)
+		var humidity_front_gate: float = smoothstep(0.38, 0.78, relative_humidity)
+		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * humidity_front_gate * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
+		var lift_pos: float = maxf(lift, 0.0)
 
 		# 热力对流(大陆夏季雷暴/对流雨)：地表加热+本地水汽 → 浮力凝结+高效降水。修复内陆 rh 永远
 		# <<静力阈、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结(用户洞察:内陆蒸发应能成雨)。
@@ -475,10 +478,25 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var ocean_convective: float = 0.0
 		if on_water:
 			ocean_convective = smoothstep(0.10, 0.22, ocean_an) * smoothstep(0.58, 0.78, temp) * clampf(relative_humidity, 0.0, 1.0)
+		var onshore_moist_flux: float = 0.0
+		var coastal_monsoon_flux: float = 0.0
+		if not on_water and upstream_idx >= 0 and upstream_on_water:
+			onshore_moist_flux = wind_mag * clampf(relative_humidity, 0.0, 1.0) * smoothstep(0.54, 0.75, temp)
+			coastal_monsoon_flux = onshore_moist_flux
+		elif on_water and upstream_idx >= 0:
+			var downwind_idx: int = _neighbor_aligned_idx(i, wind_dir, cell_pos, neighbor_indices) if fast_indexed else -1
+			var near_land: bool = false
+			if downwind_idx >= 0:
+				near_land = not _weather_system._is_water_terrain(int(soa_terrain[downwind_idx]))
+			if near_land:
+				coastal_monsoon_flux = wind_mag * clampf(relative_humidity, 0.0, 1.0) * smoothstep(0.56, 0.76, temp) * 0.75
+		var dynamic_forcing: float = maxf(maxf(frontogenesis, convergence * 0.65), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux))
+		var post_rain_subsidence: float = smoothstep(0.035, 0.11, prev_precip[i]) * (1.0 - smoothstep(0.18, 0.55, dynamic_forcing))
 
 		# 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
 		var sup: float = maxf(relative_humidity - RH_CONDENSE, 0.0)
 		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90, 0.0, 1.0)
+		cond_force *= 1.0 - post_rain_subsidence * 0.45
 		var condensation: float = vapor * cond_force * CONDENSE_RATE
 		if lift < 0.0:
 			condensation *= maxf(1.0 + lift * _weather_system._field_rain_shadow_drying, 0.0)
@@ -530,21 +548,34 @@ func run_slice(cell_budget: int) -> Dictionary:
 		precip_target = minf(precip_target, cloud_water)
 		precip_target = maxf(precip_target, 0.0)
 		cloud_water = maxf(cloud_water - precip_target, 0.0)
+		var precip_cloud_reserve: float = precip_target * (0.42 + dynamic_forcing * 0.28)
+		cloud_water = minf(1.0, cloud_water + precip_cloud_reserve)
 		if on_water and ocean_drive < 0.35:
-			var marine_scour: float = clampf(cloud_water * (0.04 + (0.35 - ocean_drive) * 0.22), 0.0, cloud_water)
+			var marine_scour: float = clampf(cloud_water * (0.04 + (0.35 - ocean_drive) * 0.22) * (1.0 + post_rain_subsidence * 1.5), 0.0, cloud_water)
 			cloud_water -= marine_scour
 			vapor += marine_scour * 0.65
 
 		# 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
-		var reevap: float = clampf(cloud_water * CLOUD_REEVAP * (1.0 - relative_humidity), 0.0, cloud_water)
+		var reevap: float = clampf(cloud_water * _weather_system._field_cloud_reevap * (1.0 - relative_humidity) * (1.0 + post_rain_subsidence * 1.25), 0.0, cloud_water)
 		cloud_water -= reevap
 		vapor += reevap
 
 		# 降水稳定性(地形阻尼 + 极端 soft cap) + EMA 时间惯性(保留)。
 		precip_target = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip_target)
 		var precip: float = lerpf(prev_precip[i], precip_target, _weather_system._field_precip_inertia)
+		if precip_target < prev_precip[i] and dynamic_forcing < 0.20:
+			precip = lerpf(precip, precip_target, post_rain_subsidence * 0.55)
 		if precip < 0.003:
 			precip = 0.0
+		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
+		if precip < 0.003 and quiet_core > 0.0:
+			var clear_cap: float = 0.055 + dynamic_forcing * 0.12
+			if on_water and ocean_drive < 0.20:
+				clear_cap = minf(clear_cap, 0.05 + ocean_drive * 0.12)
+			if cloud_water > clear_cap:
+				var excess_cloud_water: float = (cloud_water - clear_cap) * quiet_core
+				cloud_water -= excess_cloud_water
+				vapor += excess_cloud_water * 0.75
 		vapor = clampf(vapor, 0.0, 1.0)
 		var vapor_after_precip: float = vapor
 		var rain_core: float = smoothstep(0.025, 0.095, precip)
@@ -557,7 +588,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
 
 		var temp_anom_i: float = soa_temp_anom[i] if soa_temp_anom.size() == n_cells else 0.0
-		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, on_water)
+		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water)
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
 		next_vapor[i] = vapor_after_precip
 		next_cloud[i] = cloud
@@ -584,6 +615,104 @@ func run_slice(cell_budget: int) -> Dictionary:
 
 ## 切片入口（搬迁 commit_weather_field_solve + slice 状态机后填充）。
 ## E.1 阶段返回空 fronts；F.1 C++ 化后由 caller 切到 DCWorldExt 路径。
+func _ensure_weather_commit_arrays(map: MapData, n_cells: int) -> void:
+	if map == null or n_cells <= 0:
+		return
+	if map.weather_intensity_arr.size() != n_cells:
+		map.weather_intensity_arr.resize(n_cells)
+	if map.weather_cloud_arr.size() != n_cells:
+		map.weather_cloud_arr.resize(n_cells)
+	if map.weather_cloud_water_arr.size() != n_cells:
+		map.weather_cloud_water_arr.resize(n_cells)
+	if map.weather_precip_arr.size() != n_cells:
+		map.weather_precip_arr.resize(n_cells)
+	if map.weather_type_arr.size() != n_cells:
+		map.weather_type_arr.resize(n_cells)
+	if map.weather_prev_type_arr.size() != n_cells:
+		map.weather_prev_type_arr.resize(n_cells)
+	if map.weather_target_type_arr.size() != n_cells:
+		map.weather_target_type_arr.resize(n_cells)
+	if map.weather_transition_alpha_arr.size() != n_cells:
+		map.weather_transition_alpha_arr.resize(n_cells)
+	if map.weather_vapor_arr.size() != n_cells:
+		map.weather_vapor_arr.resize(n_cells)
+	if map.weather_convergence_arr.size() != n_cells:
+		map.weather_convergence_arr.resize(n_cells)
+	if map.weather_instability_arr.size() != n_cells:
+		map.weather_instability_arr.resize(n_cells)
+	if map.weather_field_init_arr.size() != n_cells:
+		map.weather_field_init_arr.resize(n_cells)
+	if map.weather_dirty_mask.size() != n_cells:
+		map.weather_dirty_mask.resize(n_cells)
+
+
+func _weather_commit_visible(map: MapData, n_cells: int, transition_enabled: bool) -> Dictionary:
+	var result: Dictionary = {
+		"verified": false,
+		"init_count": 0,
+		"reason": "",
+	}
+	if map == null:
+		result["reason"] = "map_null"
+		return result
+	if n_cells <= 0:
+		result["verified"] = true
+		result["reason"] = "empty"
+		return result
+	var init_arr: PackedByteArray = map.weather_field_init_arr
+	if init_arr.size() != n_cells:
+		result["reason"] = "field_init_size_%d_expected_%d" % [init_arr.size(), n_cells]
+		return result
+	var init_count: int = 0
+	for i in range(n_cells):
+		if init_arr[i] != 0:
+			init_count += 1
+	result["init_count"] = init_count
+	if init_count != n_cells:
+		result["reason"] = "field_init_incomplete_%d_of_%d" % [init_count, n_cells]
+		return result
+	if map.weather_vapor_arr.size() != n_cells \
+			or map.weather_cloud_arr.size() != n_cells \
+			or map.weather_cloud_water_arr.size() != n_cells \
+			or map.weather_precip_arr.size() != n_cells \
+			or map.weather_type_arr.size() != n_cells:
+		result["reason"] = "visible_weather_array_size_mismatch"
+		return result
+	if _field_slice_next_vapor.size() != n_cells \
+			or _field_slice_next_cloud.size() != n_cells \
+			or _field_slice_next_precip.size() != n_cells \
+			or _field_slice_next_type.size() != n_cells:
+		result["reason"] = "next_weather_array_size_mismatch"
+		return result
+	var vapor_arr: PackedFloat32Array = map.weather_vapor_arr
+	var cloud_arr: PackedFloat32Array = map.weather_cloud_arr
+	var cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
+	var precip_arr: PackedFloat32Array = map.weather_precip_arr
+	var type_arr: PackedByteArray = map.weather_type_arr
+	var sample_count: int = mini(n_cells, 64)
+	var mismatch_count: int = 0
+	for sample_i in range(sample_count):
+		var idx: int = 0
+		if sample_count > 1:
+			idx = int(floor(float(sample_i * (n_cells - 1)) / float(sample_count - 1)))
+		var mismatch: bool = false
+		mismatch = mismatch or absf(vapor_arr[idx] - _field_slice_next_vapor[idx]) > 0.015
+		mismatch = mismatch or absf(cloud_arr[idx] - _field_slice_next_cloud[idx]) > 0.015
+		if _field_slice_next_cloud_water.size() == n_cells:
+			mismatch = mismatch or absf(cloud_water_arr[idx] - _field_slice_next_cloud_water[idx]) > 0.015
+		mismatch = mismatch or absf(precip_arr[idx] - _field_slice_next_precip[idx]) > 0.015
+		if not transition_enabled:
+			mismatch = mismatch or int(type_arr[idx]) != (int(_field_slice_next_type[idx]) & 0xFF)
+		if mismatch:
+			mismatch_count += 1
+	if mismatch_count > 0:
+		result["reason"] = "field_sample_mismatch_%d_of_%d" % [mismatch_count, sample_count]
+		return result
+	result["verified"] = true
+	result["reason"] = "ok"
+	return result
+
+
 func commit() -> Array[WeatherFront]:
 	# dots-monolith-split §1.2 / PR-5：从 weather_system.commit_weather_field_solve
 	# 整段搬迁。所有 _field_slice_* 状态字段为本类成员（PR-4 搬过来）；
@@ -639,6 +768,10 @@ func commit() -> Array[WeatherFront]:
 	var commit_path: String = "gdscript"
 	var commit_loop_ms: float = 0.0
 	var native_commit_done: bool = false
+	var commit_publish_verified: bool = false
+	var commit_publish_repaired: bool = false
+	var commit_visible_init_count: int = 0
+	var commit_publish_reason: String = ""
 	var convergence_delta_samples: PackedFloat32Array = PackedFloat32Array()
 	var convergence_delta_count: int = 0
 	if _field_slice_refresh_convergence and commit_n > 0:
@@ -667,6 +800,42 @@ func commit() -> Array[WeatherFront]:
 			convergence_delta_count = int(commit_rc.get("weather_convergence_dirty_count", 0))
 			if _field_slice_refresh_convergence:
 				convergence_delta_samples = commit_rc.get("weather_convergence_deltas", PackedFloat32Array())
+			var visible_check: Dictionary = _weather_commit_visible(map, commit_n, transition_enabled)
+			commit_publish_verified = bool(visible_check.get("verified", false))
+			commit_visible_init_count = int(visible_check.get("init_count", 0))
+			commit_publish_reason = str(visible_check.get("reason", ""))
+			if not commit_publish_verified:
+				native_commit_done = false
+				_field_slice_results_in_soa = false
+				commit_publish_repaired = true
+				commit_path = "gdext_commit_repaired_gdscript_publish"
+				weather_dirty_count = 0
+				water_budget_error_acc = 0.0
+				commit_loop_ms = 0.0
+				convergence_delta_count = 0
+				if _field_slice_refresh_convergence:
+					convergence_delta_samples = PackedFloat32Array()
+					convergence_delta_samples.resize(commit_n)
+				_ensure_weather_commit_arrays(map, commit_n)
+				soa_intensity = map.weather_intensity_arr
+				soa_cloud = map.weather_cloud_arr
+				soa_cloud_water = map.weather_cloud_water_arr
+				soa_precip = map.weather_precip_arr
+				soa_type = map.weather_type_arr
+				soa_prev_type = map.weather_prev_type_arr
+				soa_target_type = map.weather_target_type_arr
+				soa_transition_alpha = map.weather_transition_alpha_arr
+				soa_vapor = map.weather_vapor_arr
+				soa_convergence = map.weather_convergence_arr
+				soa_instability = map.weather_instability_arr
+				soa_field_init = map.weather_field_init_arr
+				weather_dirty = map.weather_dirty_mask
+				if weather_dirty.size() == commit_n:
+					for repair_di in range(commit_n):
+						weather_dirty[repair_di] = 0
+				if not _weather_system._gdext_field_commit_warned_fallback:
+					_weather_system._gdext_field_commit_warned_fallback = true
+					push_warning("[weather] gdext field commit did not publish visible MapData (%s); repaired with GDScript publish for this tick" % commit_publish_reason)
 	if not native_commit_done:
 		for i in range(cells.size()):
 			if _field_slice_results_in_soa and hexcell_facade_on and not transition_enabled:
@@ -771,6 +940,17 @@ func commit() -> Array[WeatherFront]:
 			soa_instability[i] = v_instability
 			soa_field_init[i] = 1
 		commit_loop_ms = (Time.get_ticks_usec() - t_commit_loop_us) / 1000.0
+		var final_visible_check: Dictionary = _weather_commit_visible(map, commit_n, transition_enabled)
+		commit_publish_verified = bool(final_visible_check.get("verified", false))
+		commit_visible_init_count = int(final_visible_check.get("init_count", 0))
+		if commit_publish_repaired:
+			if not commit_publish_verified:
+				commit_publish_reason = "%s; repair_%s" % [
+					commit_publish_reason,
+					str(final_visible_check.get("reason", "")),
+				]
+		else:
+			commit_publish_reason = str(final_visible_check.get("reason", ""))
 	# Full-field commit 始终覆盖 [0,n)，用 range 写避免构造 idx/value batch。
 	var t_commit_dc_us: int = Time.get_ticks_usec()
 	var _data_core_world = _weather_system._data_core_world
@@ -779,7 +959,7 @@ func commit() -> Array[WeatherFront]:
 		var world_reads_map_arrays: bool = _cid_wi >= 0 \
 				and _data_core_world.has_method("is_external_component") \
 				and bool(_data_core_world.is_external_component(_cid_wi))
-		if not world_reads_map_arrays:
+		if commit_publish_repaired or not world_reads_map_arrays:
 			if _cid_wi >= 0:
 				_data_core_world.write_f32_range(_cid_wi, 0, soa_intensity)
 			var _cid_wc: int = _data_core_world.component_id(DCComponentIds.CELL_WEATHER_CLOUD)
@@ -922,7 +1102,7 @@ func commit() -> Array[WeatherFront]:
 
 	var solve_ms: float = _field_slice_solve_ms
 	var last_solve_ms: float = _field_slice_last_ms
-	_weather_system._last_breakdown = {
+	var breakdown: Dictionary = {
 		"advance_ms": last_solve_ms,
 		"spawn_ms": summary_ms,
 		"distribute_ms": distribute_ms_field,
@@ -934,6 +1114,10 @@ func commit() -> Array[WeatherFront]:
 		"field_commit_setup_ms": commit_setup_ms,
 		"field_commit_loop_ms": commit_loop_ms,
 		"field_commit_path": commit_path,
+		"field_commit_publish_verified": commit_publish_verified,
+		"field_commit_publish_repaired": commit_publish_repaired,
+		"field_commit_init_count": commit_visible_init_count,
+		"field_commit_publish_reason": commit_publish_reason,
 		"field_commit_dc_ms": commit_dc_ms,
 		"field_commit_convergence_ms": commit_convergence_ms,
 		"field_solve_tick": _weather_system._field_solve_tick,
@@ -949,6 +1133,9 @@ func commit() -> Array[WeatherFront]:
 		"active_weather_ratio": float(weather_dirty_count) / float(maxi(commit_n, 1)),
 		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
 	}
+	breakdown.merge(_weather_system._front_diagnostic_counts(_weather_system._active_fronts), true)
+	breakdown.merge(_weather_system._mark_weather_commit_tick(), true)
+	_weather_system._last_breakdown = breakdown
 	# 任务 9：节流式回归告警（dist/summary 各自门槛 × 2 ring buffer 检测）
 	_weather_system.push_dist_perf_sample(distribute_ms_field)
 	_weather_system.push_summary_perf_sample(summary_ms)

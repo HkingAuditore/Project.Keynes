@@ -1,0 +1,215 @@
+{
+  "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tmp\\tile_data_record_20260622_172113.csv",
+  "rows": 4998400,
+  "ticks": 781,
+  "commit_ticks": 284,
+  "commit_path_counts": {
+    "<NA>": 497,
+    "gdext_commit": 284
+  },
+  "commit_delta": {
+    "all_commit_rows": {
+      "0": 1.0,
+      "0.5": 1.0,
+      "0.9": 1.0,
+      "0.95": 1.0,
+      "1.0": 1.0
+    },
+    "mean": 1.0
+  },
+  "global_commit_interval_ticks": {
+    "0": 1.0,
+    "0.5": 3.0,
+    "0.9": 4.0,
+    "0.95": 5.0,
+    "1.0": 5.0
+  },
+  "front_counts_on_commit": {
+    "cold": {
+      "0": 0.0,
+      "0.5": 3.0,
+      "0.9": 5.0,
+      "0.95": 5.0,
+      "1.0": 7.0
+    },
+    "warm": {
+      "0": 2.0,
+      "0.5": 5.0,
+      "0.9": 7.0,
+      "0.95": 7.0,
+      "1.0": 9.0
+    },
+    "mean_cold": 3.1549295774647885,
+    "mean_warm": 5.161971830985915
+  },
+  "type_counts": {
+    "CLEAR": 4144903,
+    "RAIN": 457727,
+    "STORM": 1484,
+    "BLIZZARD": 5720,
+    "DROUGHT": 2401,
+    "FOG": 338445,
+    "HEATWAVE": 43597,
+    "MONSOON": 4123
+  },
+  "type_ratios": {
+    "CLEAR": 0.8292459587067862,
+    "RAIN": 0.09157470390524967,
+    "STORM": 0.00029689500640204863,
+    "BLIZZARD": 0.0011443661971830986,
+    "DROUGHT": 0.0004803537131882202,
+    "FOG": 0.06771066741357235,
+    "HEATWAVE": 0.008722191101152368,
+    "MONSOON": 0.0008248639564660691
+  },
+  "land_type_ratios": {
+    "CLEAR": 0.6177029695769252,
+    "RAIN": 0.24661934879170497,
+    "STORM": 0.00035544127212783216,
+    "BLIZZARD": 0.000997112479566526,
+    "DROUGHT": 0.0014082747431995463,
+    "FOG": 0.1304985621051508,
+    "HEATWAVE": 0.0,
+    "MONSOON": 0.0024182910313251685
+  },
+  "water_type_ratios": {
+    "CLEAR": 0.9387546960249001,
+    "RAIN": 0.01131327165788618,
+    "STORM": 0.00026658756080579887,
+    "BLIZZARD": 0.0012205945266962545,
+    "DROUGHT": 0.0,
+    "FOG": 0.03520747222464283,
+    "HEATWAVE": 0.013237378005068808,
+    "MONSOON": 0.0
+  },
+  "lifecycle_commit_days": {
+    "CLEAR": {
+      "runs": 11163,
+      "mean": 134.9696318194034,
+      "max": 284
+    },
+    "RAIN": {
+      "runs": 4221,
+      "mean": 39.47547974413646,
+      "max": 284
+    },
+    "STORM": {
+      "runs": 51,
+      "mean": 10.03921568627451,
+      "max": 40
+    },
+    "BLIZZARD": {
+      "runs": 177,
+      "mean": 11.59322033898305,
+      "max": 68
+    },
+    "DROUGHT": {
+      "runs": 74,
+      "mean": 11.77027027027027,
+      "max": 32
+    },
+    "FOG": {
+      "runs": 3597,
+      "mean": 34.36502641089797,
+      "max": 284
+    },
+    "HEATWAVE": {
+      "runs": 584,
+      "mean": 26.977739726027398,
+      "max": 68
+    },
+    "MONSOON": {
+      "runs": 108,
+      "mean": 13.953703703703704,
+      "max": 44
+    }
+  },
+  "eternal_wet_cells_all_ticks_ge90": 141,
+  "eternal_wet_cells_commit_ge90": 139,
+  "wet_fraction_commit": {
+    "0.5": 0.0,
+    "0.75": 0.02112676056338028,
+    "0.9": 0.3873239436619718,
+    "0.95": 0.5633802816901409,
+    "0.99": 0.954225352112676,
+    "1.0": 1.0
+  },
+  "clear_cloud_water": {
+    "0.5": 0.051525,
+    "0.75": 0.075974,
+    "0.9": 0.22459960000000057,
+    "0.95": 0.397604,
+    "0.99": 0.612323
+  },
+  "clear_precip": {
+    "0.5": 0.0,
+    "0.9": 0.012556,
+    "0.95": 0.017706,
+    "0.99": 0.036026
+  },
+  "correlations_all_rows": {
+    "cloud_water_vs_precip": 0.17141015820675476,
+    "cloud_visual_vs_precip": 0.5571917843879889
+  },
+  "correlations_cell_mean": {
+    "cloud_water_vs_precip": 0.2476687037267814,
+    "cloud_visual_vs_precip": 0.5257611769183408,
+    "water_balance_vs_veg_vitality_nonpolar_land": 0.22770472676584644,
+    "precip_vs_drought_stress_nonpolar_land": 0.0789185593367182,
+    "precip_vs_soil_nonpolar_land": 0.9012053587140237,
+    "moisture_vs_veg_vitality_nonpolar_land": 0.05571052505363957
+  },
+  "storm_clusters_commit": {
+    "all_storm": {
+      "0.5": 1.0,
+      "0.9": 1.0,
+      "0.95": 2.0,
+      "0.99": 2.0,
+      "1.0": 2.0
+    },
+    "warm_water_storm": {
+      "0.5": 1.0,
+      "0.9": 1.0,
+      "0.95": 1.0,
+      "0.99": 1.0,
+      "1.0": 1.0
+    },
+    "warm_water_cluster_count_ge5": 0,
+    "warm_water_cluster_count_5_30": 0,
+    "water_storm_count_per_commit": {
+      "0.5": 1.0,
+      "0.9": 3.0,
+      "0.95": 3.0,
+      "0.99": 5.340000000000032,
+      "1.0": 7.0
+    },
+    "cyclone_like_cells_per_commit": {
+      "0.5": 0.0,
+      "0.9": 2.0,
+      "0.95": 2.0,
+      "0.99": 3.170000000000016,
+      "1.0": 6.0
+    }
+  },
+  "monsoon_commit": {
+    "monsoon_count_per_commit": {
+      "0.5": 4.0,
+      "0.9": 15.0,
+      "0.95": 16.0,
+      "0.99": 21.0,
+      "1.0": 21.0
+    },
+    "water_monsoon_count_per_commit": {
+      "0.5": 0.0,
+      "0.9": 0.0,
+      "0.95": 0.0,
+      "0.99": 0.0,
+      "1.0": 0.0
+    }
+  },
+  "static_counts": {
+    "water_cells": 4217,
+    "land_cells": 2183,
+    "nonpolar_land_cells": 2146
+  }
+}

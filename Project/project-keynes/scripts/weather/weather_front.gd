@@ -4,6 +4,10 @@ extends RefCounted
 
 const _MAX_AXIS_TURN_RADIANS: float = 0.383972  # 22 degrees per simulation day
 
+const FRONT_DIAG_NONE: int = 0
+const FRONT_DIAG_COLD: int = 1
+const FRONT_DIAG_WARM: int = 2
+
 # I2.A.5（DataCore ECB pool-aware）：world_idx 是 WeatherFront 在 DCWorld
 # entity 池中的绝对 idx；由 weather_refresh_job 在 sync 阶段通过
 # CommandBuffer.create_in_pool 申请并写回。
@@ -37,6 +41,8 @@ var life_progress: float = 0.0
 var cloud_amount: float = 1.0
 var precip_amount: float = 1.0
 var dissolve_amount: float = 0.0
+var front_temperature_advection: float = 0.0
+var front_diagnostic_kind: int = FRONT_DIAG_NONE
 
 func coverage_at(world_pos: Vector2) -> float:
 	if intensity <= 0.001 or radius <= 0.001:

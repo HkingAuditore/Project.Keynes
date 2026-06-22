@@ -669,10 +669,13 @@ var _merged_native_gate_active: bool = false
 
 func _refresh_merged_native_gate() -> void:
 	_merged_native_gate_probed = true
-	# Extreme performance mode: keep the one-shot native transaction as a
-	# fallback/manual probe only. The hot path must remain staged so no single
-	# SUS slice owns field + distribute + summary + stage_b together.
+	# Keep the one-shot native transaction opt-in only. The staged field path is
+	# the visible weather authority; a method probe for run_weather_refresh_daily_pass
+	# is not enough because the combined facade can bypass field commit diagnostics.
 	_merged_native_gate_active = false
+	if generator == null or not generator.has_method("weather_native_daily_available"):
+		return
+	_merged_native_gate_active = bool(generator.weather_native_daily_available())
 
 
 func _should_use_merged_native_weather(can_slice_field: bool) -> bool:
@@ -782,6 +785,13 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		return merged_report
 
 	if can_slice_field and not use_merged_native_weather:
+		var cell_budget: int = 500
+		if generator.has_method("weather_field_slice_cells"):
+			cell_budget = int(generator.weather_field_slice_cells())
+		var round_cell_count: int = map.cell_count() if map != null and map.has_method("cell_count") else 0
+		var same_slice_full_round: bool = round_cell_count > 0 \
+				and round_cell_count <= 6400 \
+				and cell_budget >= round_cell_count
 		if not _round_active:
 			var t_begin_us: int = Time.get_ticks_usec()
 			generator.begin_weather_refresh_stage_a(map, world, season_idx, anomaly, season_phase)
@@ -794,18 +804,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_weather_rt_log(ctx, "begin", "elapsed=%.3f dc=%s" % [
 				begin_elapsed_ms, str(is_data_core_on),
 			])
-			return {
-				"done": false,
-				"work_done": 0,
-				"elapsed_ms": begin_elapsed_ms,
-				"progress_ratio": 0.10,
-				"stage_name": "weather_begin",
-				"substage": "init_round",
-				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
-			}
-		var cell_budget: int = 500
-		if generator.has_method("weather_field_slice_cells"):
-			cell_budget = int(generator.weather_field_slice_cells())
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": 0,
+					"elapsed_ms": begin_elapsed_ms,
+					"progress_ratio": 0.10,
+					"stage_name": "weather_begin",
+					"substage": "init_round",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+				}
 		var slice_result: Dictionary = {}
 		if _round_stage <= 1:
 			var t_run_us: int = Time.get_ticks_usec()
@@ -841,18 +849,19 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 				int(slice_result.get("cursor_start", -1)),
 				int(slice_result.get("cursor_end", -1)),
 			])
-			return {
-				"done": false,
-				"work_done": int(slice_result.get("work_done", 0)),
-				"elapsed_ms": solve_elapsed_ms,
-				"progress_ratio": 0.70,
-				"stage_name": "weather_solve",
-				"substage": "cells_done",
-				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
-				"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
-				"cursor_start": int(slice_result.get("cursor_start", -1)),
-				"cursor_end": int(slice_result.get("cursor_end", -1)),
-			}
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": int(slice_result.get("work_done", 0)),
+					"elapsed_ms": solve_elapsed_ms,
+					"progress_ratio": 0.70,
+					"stage_name": "weather_solve",
+					"substage": "cells_done",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+					"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
+					"cursor_start": int(slice_result.get("cursor_start", -1)),
+					"cursor_end": int(slice_result.get("cursor_end", -1)),
+				}
 		if _round_stage == 2:
 			var t_commit_us: int = Time.get_ticks_usec()
 			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
@@ -864,15 +873,16 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_weather_rt_log(ctx, "summary", "elapsed=%.3f fronts=%d" % [
 				commit_elapsed_ms, committed_fronts.size(),
 			])
-			return {
-				"done": false,
-				"work_done": committed_fronts.size(),
-				"elapsed_ms": commit_elapsed_ms,
-				"progress_ratio": 0.85,
-				"stage_name": "weather_summary",
-				"substage": "fronts_%d" % committed_fronts.size(),
-				"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
-			}
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": committed_fronts.size(),
+					"elapsed_ms": commit_elapsed_ms,
+					"progress_ratio": 0.85,
+					"stage_name": "weather_summary",
+					"substage": "fronts_%d" % committed_fronts.size(),
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+				}
 		if _round_stage == 3:
 			var hydrology_enabled: bool = generator.has_method("runtime_hydrology_enabled") \
 					and bool(generator.runtime_hydrology_enabled())
@@ -894,7 +904,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 					float(hydro_report.get("river_discharge_max", 0.0)),
 					float(hydro_report.get("water_budget_error", 0.0)),
 				])
-				return hydro_report
+				if not same_slice_full_round:
+					return hydro_report
 			_round_stage = 4
 		var t_stage_b_us: int = Time.get_ticks_usec()
 		generator.refresh_daily_stage_b(map, world)

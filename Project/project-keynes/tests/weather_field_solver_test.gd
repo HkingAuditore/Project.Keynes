@@ -64,10 +64,10 @@ func _test_warm_convection_prefers_storm() -> void:
 
 func _test_cold_precip_prefers_blizzard() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
-	# 天气分类海陆分离重标(2026-06-22)：现为 9 参，末位 is_water(海/陆湿润类阈值分离)。
-	# (temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom, is_water)。
+	# 天气分类海陆分离重标(2026-06-22)：现为 11 参，包含 cloud_water / monsoon_flux / is_water。
+	# (temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water)。
 	# temp=0.16≤FREEZE(0.24) 为极冷，配可观降水→走"暴雪"分支(海陆同标定，与 is_water 无关)。
-	var wt: int = ws._classify_field_weather_at(0.16, 0.55, 0.35, 0.12, 0.20, 0.0, 1.0, 0.0, true)
+	var wt: int = ws._classify_field_weather_at(0.16, 0.55, 0.35, 0.18, 0.12, 0.20, 0.0, 1.0, 0.0, 0.0, true)
 	_expect(wt == WeatherType.WT.BLIZZARD,
 		"cold humid precipitating region should classify as BLIZZARD (type=%d)" % wt)
 

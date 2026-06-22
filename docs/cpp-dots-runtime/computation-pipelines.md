@@ -533,7 +533,18 @@ Stage-B 链路：
 Merged native 路径：
 
 - `weather_refresh_job.gd` 中存在 merged transaction gate。
-- 成功时 field/distribute/summary/stage-b 可在一个 SUS slice 中完成。
+- 当前默认关闭，必须由 `MapGenerator.weather_native_daily_available()` 显式放行。
+  原因是可见天气权威仍是 staged
+  `begin_weather_field_solve -> run_weather_field_solve_slice ->
+  commit_weather_field_solve -> stage_b`。单纯探测到
+  `run_weather_refresh_daily_pass` 存在不能证明它已经把 staged `out_*`
+  buffers 发布到 `MapData.weather_*_arr`。
+- 若未来重新打开 merged/native-daily weather，`DCWorldExt::run_weather_refresh_daily_pass`
+  必须在 `run_weather_field_solve_pass` 后调用
+  `run_weather_field_commit_pass`。因为天气 solve 在 combined path 中使用
+  `out_vapor/out_cloud/out_precip/...` staging buffers；distribute、summary
+  和 stage-b 读取的是 weather slots/MapData，可见发布缺失会表现为
+  cadence 前进但 `weather_field_init_arr` 和全部 weather field 数组为 0。
 - fallback 时回到 begin/solve/commit/stage-b staged path。
 
 输出：
@@ -549,14 +560,42 @@ Merged native 路径：
   或 display 已等于 target）不得继续累加 alpha；否则 CSV 会把没有实际天气
   切换的格子统计为 transitioning。
 
+Weather commit publish guard (2026-06-22):
+
+- `DCWorldExt::run_weather_field_commit_pass` remains the native authority for
+  full-field weather commit when the solver produced `next_*` buffers. After a
+  native commit, `field_solver.gd::commit()` now verifies that the visible
+  `MapData.weather_field_init_arr` has `n_cells` initialized entries and samples
+  visible `vapor/cloud/cloud_water/precip/type` against the just-solved
+  `next_*` buffers.
+- If native slot flush is invisible to `MapData` (for example CSV shows
+  `weather_field_init_arr=0` and `weather_type_arr=CLEAR` for every cell),
+  the same existing GDScript commit loop republishes the already-computed
+  `next_*` buffers into `MapData` and `DCWorld`; this is reported as
+  `field_commit_path=gdext_commit_repaired_gdscript_publish`.
+- CSV/weather breakdown fields
+  `weather_field_commit_publish_verified`,
+  `weather_field_commit_publish_repaired`,
+  `weather_field_commit_init_count`, and
+  `weather_field_commit_publish_reason` diagnose this boundary. No schema or
+  weather enum is added; this is only a publish-contract guard.
+- The combined native weather path is not allowed to skip this commit boundary.
+  It may only be considered visible-weather-authoritative when
+  `weather_field_commit_path` is non-empty, `weather_field_commit_init_count`
+  reaches `n_cells`, and `weather_field_commit_publish_verified=true`.
+
 风险：
 
 - weather fronts 数量低，但对象层复杂；不应盲目 SIMD。
 - field solve 是 hot-loop，适合 C++。
 - GDScript object unpack 仍可能造成 commit/sync 长尾。
-- `weather_field_slice_cells()` 的配置上限与当前 2400-cell 地图规模对齐；
-  profile 可在 `100..2400` 间调度 field solve cell budget。若切片过小，
-  天气场会长期处于同一 field phase，看起来像生成/消失频率异常。
+- `weather_field_slice_cells()` 的配置上限当前为 `6400`，默认 `2400`；
+  profile 在 `100..6400` 间调度 field solve cell budget。GDExtension 可用且
+  `n_cells <= 6400` 时，`map_generator.weather_field_slice_cells()` 优先返回
+  `n_cells`，让 field solve 走 full-map native pass。目标是每 1-2 个模拟日完成
+  一次 `gdext_commit`；CSV 中用 `weather_commit_tick_delta` 和
+  `weather_last_commit_tick` 按 commit tick 分析天气生命周期，而不是按渲染帧或
+  partial slice tick 误判。
 
 ### 半真实大气模型（2026-06-19）
 
@@ -633,7 +672,7 @@ parity 检查点（改任一侧务必同步另一侧）：`vapor_memory` 锚定�
 离线回代验证（用上一轮 CSV 场值套新逻辑）：RAIN 38%→~24%、CLEAR 49%→~67%、
 STORM 0→2~3%、FOG 0.1%→~4.7%(冷洋面海雾)、BLIZZARD 13%→~1.4%、DROUGHT/HEATWAVE 由 0 转正。
 
-### 根因重构（2026-06-20）：降水惯性化 + 打破水汽稳态 + 去纬度门（**当前真实状态**）
+### 根因重构（2026-06-20）：降水惯性化 + 打破水汽稳态 + 去纬度门
 
 针对"天气逐 tick 横跳/不连续 + 海量永雨永旱 + 纬向直线条带"的根因重构，三阶段落地。
 GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`) 仍双份镜像。
@@ -657,7 +696,8 @@ GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`)
 **阶段3 — 去纬度门 + 做减法**：
 - 分类 `_classify_field_weather_core` / `wf_classify_field_weather_at` **删除 `lat_norm` /
   `lat_signed` / `season_idx` / `local_summer`**：类型边界由温度/湿度等弯曲物理场涌现，消除沿纬线的
-  直线天气带。签名简化为 `(temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom)`。
+  直线天气带。2026-06-22 后签名扩展为
+  `(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water)`。
 - 判定顺序：BLIZZARD → STORM → MONSOON → RAIN → FOG → HEATWAVE → DROUGHT → CLEAR。关键阈值：
   `meaningful_precip = precip>0.030 或 (precip>0.022 & cloud>0.22 & vapor>0.28)`；
   STORM `warm(temp>0.55) & humid(vapor>0.28) & ((inst>0.55 & precip>0.060) | warm_ocean_core)`；
@@ -672,6 +712,75 @@ GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`)
 **parity 检查点**（改任一侧务必同步另一侧）：`vapor_memory` 锚定系数、`vapor_transport_gain`、
 precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 阈、分类阈值与判定顺序、
 以及 `climate_profile.gd` / `weather_system.gd` 默认值与 C++ knob fallback 默认值。
+
+### 天气生命周期修复（2026-06-22，当前真实状态）
+
+本轮针对 CSV 暴露的“大陆弱降雨泛滥、雨云拖尾、锋面/季风/台风弱代理、天气对生态反馈弱”
+做增量修复。权威热路径仍是 `DCWorldExt::run_weather_field_solve_pass`，GDScript
+`weather/field_solver.gd` 作为 fallback / verify mirror；不新增 DataCore schema，不新增
+天气 enum。
+
+**Cadence**：
+
+- `ClimateProfile.weather_field_slice_cells` 默认 `2400`、上限 `6400`；
+  `map_generator.weather_field_slice_cells()` clamp 同步为 `100..6400`。
+- full-map native 条件为 GDExtension 可用、`run_weather_field_solve_pass` 存在、
+  weather field 启用且 `n_cells <= 6400`。命中时单次 solve 覆盖全图，降低长时间 partial
+  phase 造成的“天气不生成/不消失”错觉。
+- `WeatherSystem` 在每次 commit 后写 `weather_commit_tick_delta` / `weather_last_commit_tick`；
+  `tile_data_recorder.gd` 直接导出这两个字段。生命周期统计应按 commit tick 计算。
+
+**云雨生命周期与永雨修复**：
+
+- `weather_precip_inertia` 默认由 `0.30` 提到 `0.40`，`weather_field_cloud_reevap`
+  默认由 `0.14` 提到 `0.18`。C++ fallback 默认、`weather_system.gd` 默认值和
+  `climate_profile.gd` 三处必须保持一致。
+- hot loop 增加 `post_rain_subsidence`：上一轮 `prev_precip` 高、当前
+  `frontogenesis/convergence/convective/ocean_convective` 低时，降低凝结、提高再蒸发，并增强
+  低动力海面的 `marine_scour`。效果是雨后下沉清云，避免雨区原地拖尾。
+- `frontogenesis` 改为 `convergence * temp_gradient * humidity` 联合门控。低湿温度梯度不再凭空
+  产雨；真实锋生会直接提高 `cloud_water` 与 `precip_target`。
+- CLEAR/FOG 的静稳格不允许继承强成雨云水：`precip < 0.003` 且 `dynamic_forcing` 低时，
+  `cloud_water` 被压到 `clear_cap`，多余云水按比例回流为 vapor。
+- 分类以 `cloud_water + precip + instability` 为主，视觉 `cloud` 只作为辅助。
+  `meaningful_precip` 要求中等降水同时有有效云水，STORM 要求暖湿、高不稳定且云水足够；
+  MONSOON 要求 `onshore_moist_flux` 或高湿驱动加上 sustained precip。这样避免
+  “薄云强雨”与“厚云晴天”互相污染。
+
+**锋面、季风、台风诊断**：
+
+- 冷锋/暖锋不新增 enum。summary front 通过沿风温度平流诊断：
+  `front_temperature_advection > 0.015` 记为 cold front，`< -0.015` 记为 warm front；
+  字段进入 dict/SoA、`WeatherFront` transient fields、breakdown 和 CSV
+  (`weather_cold_front_count` / `weather_warm_front_count`)。
+- MONSOON 不再只靠局部高湿强雨。分类额外读取 `onshore_moist_flux`，允许近岸陆地与沿岸水域
+  在暖湿上岸风、持续降水和厚云共同满足时形成连续季风雨带。
+- `cyclone_wake_step` 只从暖海 STORM cluster 注入尾迹：中心必须是水体，`temp >= 0.56`、
+  `precip >= 0.05`、`cloud >= 0.22`，且 `instability >= 0.48` 或 `convergence >= 0.30`，
+  再加风速/强度门控。普通陆地雷暴不再生成台风尾迹。
+
+**植被/水文闭环**：
+
+- 天气仍先影响 `soil_moisture` / `water_balance_30d`，植被动态再通过
+  `_plant_available_water(base_moisture, water_balance_30d, soil_moisture)` 读取长期水分。
+  不把单日降水硬写成植被增益。
+- `weather_to_vegetation_gain` 默认 `0.012`，仅作为小权重写入
+  `vegetation_growth_pressure`；stage-b 的 `target - prev_vitality` 仍由兼容度、天气惩罚、
+  stress 和 regen 综合决定。
+- drought stress 与 heat stress 分开：`vegetation_drought_stress` 来自长期
+  `plant_water` 低于植被理想水分的程度，天气类型为 DROUGHT 时只额外抬高；HEATWAVE 只进入
+  heat stress。降水不应正向提高 drought stress。
+
+**验收指标**：
+
+- 开启 `set_field_verify_mode(true)` 时，C++ 与 GDScript field 输出误差应 `<= 1e-4`。
+- `gdext_commit` 间隔 p50 <= 2，p90 <= 3。
+- 湿天气 >=90% 的格子 < 64；RAIN 平均持续 < 40 commit-days，FOG 平均持续 < 50 commit-days。
+- `cloud_water_vs_precip` > 0.45；CLEAR 的 `cloud_water` p50 < 0.08。
+- front wet overlap 应在 35%-60%；MONSOON 占比 0.5%-3%，水域/沿岸不应恒为 0。
+- 暖海 STORM cluster 应能形成 5-30 格规模，并伴随低压、强风和移动路径。
+- 非极区陆地 `water_balance_vs_veg_vitality` > 0.25；`precip_vs_drought_stress`
+  应接近 0 或转负。
 
 
 
@@ -961,6 +1070,11 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 - 当前是 probe/partial 接管能力，不是所有 legacy SUS 的完全替代。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。
+- 当 weather field 启用且 `MapGenerator.weather_native_daily_available()`
+  返回 `false` 时，`native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS job
+  注册，确保独立 `weather_refresh` staged path 仍然运行。`native_daily_bundle`
+  也不得嵌入 `weather_knobs`；否则 `native_daily_sim` 会绕过 visible
+  weather authority，造成全晴朗/全零天气场。
 
 迁移方向：
 

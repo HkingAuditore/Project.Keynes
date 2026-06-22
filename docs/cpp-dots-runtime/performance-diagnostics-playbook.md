@@ -524,9 +524,30 @@ Important weather fields:
 
 - `weather_diag_present`: the sample carried a weather breakdown.
 - `weather_field_commit_path`: native or fallback commit path.
+- `weather_field_commit_publish_verified`: `true` means the commit result was
+  verified against visible `MapData.weather_*_arr` arrays after native/fallback
+  publish.
+- `weather_field_commit_publish_repaired`: `true` means native commit returned
+  success but the visible `MapData` arrays did not match the solved `next_*`
+  buffers, so `field_solver.gd` republished through the existing GDScript
+  commit loop.
+- `weather_field_commit_init_count`: number of cells whose
+  `weather_field_init_arr` was visible after commit. If this is `0` while
+  `weather_field_commit_path` or commit cadence advanced, the failure is a
+  publish/bridge boundary, not naturally clear weather.
+- `weather_field_commit_publish_reason`: reason string from the publish guard,
+  for example `field_init_incomplete_0_of_6400` or `field_sample_mismatch_*`.
 - `weather_refresh_convergence`: whether this tick should publish convergence.
 - `weather_field_solve_tick` and `weather_convergence_refresh_stride`: cadence
   source for convergence refresh.
+- `weather_commit_tick_delta` and `weather_last_commit_tick`: commit cadence
+  diagnostics. Use these as the day axis for weather lifecycle analysis; partial
+  field-solve ticks can otherwise make rain/fog duration look longer than the
+  committed weather state actually lived.
+- `weather_cold_front_count` and `weather_warm_front_count`: transient summary
+  diagnostics derived from front temperature advection. These are CSV/front
+  diagnostics only; they are not DataCore schema fields and do not introduce
+  new weather enum values.
 - `weather_convergence_dirty_count`, `weather_convergence_delta_p95`, and
   `weather_convergence_published`: convergence publication diagnostics.
 - `weather_target_mismatch_count`, `weather_transitioning_count`,
@@ -543,6 +564,19 @@ Important weather fields:
   `moisture_arr` before treating cold rain or warm blizzard rows as a classifier
   bug; a large delta means the CSV is showing post-climate current state against
   a previous-snapshot weather decision.
+
+All-clear diagnosis: if every sampled row has `weather_type_arr=CLEAR`, all
+continuous weather fields are zero, and `weather_field_init_arr=0`, do not tune
+classification thresholds first. That pattern means the weather field was never
+published to the `MapData` arrays consumed by render/CSV. Check the publish
+guard fields above and the native commit path before changing weather math.
+If `weather_last_commit_tick` or `weather_commit_tick_delta` advances while
+`weather_field_solve_tick=-1`, `weather_field_commit_path` is empty, and
+`weather_field_commit_init_count=0`, the staged weather job was bypassed rather
+than merely producing clear weather. Check `weather_native_daily_available()`,
+the merged weather gate in `weather_refresh_job.gd`, and whether
+`native_daily_sim_mode=ACTIVE` prevented independent `weather_refresh`
+registration.
 
 `refresh_convergence=false` means convergence is intentionally held for this
 tick. Treat `weather_convergence_published=false` or zero
@@ -895,5 +929,3 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
 - 不再用 `must_run = true` 绕过 budget（这种"硬性兜底"等于设计错误的事后补救）
 - phase 错峰是 SUS 调度的合理用法，每个 job 在自己的 tick 上跑完整 slice 而不被截断
 - starvation_threshold 仍是兜底，但希望永远不触发
-
-
