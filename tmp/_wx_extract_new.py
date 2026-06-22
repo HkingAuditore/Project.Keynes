@@ -8,8 +8,8 @@ daily_cols=['temp_arr','temp_arr_prev','air_mass_temp_anomaly_arr','temperature_
             'weather_vapor_arr','weather_cloud_arr','weather_cloud_water_arr',
             'weather_precip_arr','weather_convergence_arr','weather_type_arr','temp_anomaly_arr',
             'temp_baseline_arr','temp_season_offset_arr','insolation_dev_arr','temp_365d_arr',
-            'soil_moisture_arr','river_discharge_30d_arr']
-static_cols=['terrain_arr','elevation_arr','moisture_arr','vegetation_arr',
+            'soil_moisture_arr','river_discharge_30d_arr','moisture_arr']
+static_cols=['terrain_arr','elevation_arr','vegetation_arr',
              'vegetation_vitality_arr','has_river_arr','sea_ice_frac_arr',
              'q','r','s','cell_pos_x_arr','cell_pos_y_arr','is_water_arr']
 idcols=['cell_index','phys_sim_day']

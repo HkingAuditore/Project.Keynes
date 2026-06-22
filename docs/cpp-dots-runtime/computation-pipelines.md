@@ -1082,6 +1082,13 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   is applied earlier at the evaporation source so lakes do not behave like open
   ocean vapor pumps before the lake precipitation damping tail step. Keep these
   positions synchronized across native and fallback paths.
+- Rain-cloud consistency is enforced in both field solvers: cloud is recomputed
+  after precipitation, marine cloud-water scour, and re-evaporation, with cloud
+  floors for active rain cores, frontogenesis, land convection, and warm-ocean
+  convection. Ocean cloud-water is also scavenged when no dynamic ocean drive is
+  present. Keep these formulas synchronized with classification thresholds in
+  `weather_system.gd::_classify_field_weather_core` and
+  `wf_classify_field_weather_at` so weak drizzle/fog does not dominate land.
 - `MapData.weather_classification_temp_arr` and
   `MapData.weather_classification_moisture_arr` are recorder-only diagnostic
   mirrors of the field solver read snapshot. They are not DataCore schema

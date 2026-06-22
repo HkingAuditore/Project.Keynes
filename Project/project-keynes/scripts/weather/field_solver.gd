@@ -323,11 +323,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 	const LIFT_COND_GAIN := 0.80
 	const CONV_COND_GAIN := 1.0
 	const AUTOCONVERSION := 0.16
-	const PRECIP_BASE_FRAC := 0.50
+	const PRECIP_BASE_FRAC := 0.12   # 2026-06-22 雨云化:0.50→0.12 砍背景成雨,降水靠动力(辐合/抬升/锋面)触发→集中成雨核随系统移动(C++主路径走knobs同值)
 	const LIFT_PRECIP_GAIN := 0.25
 	const CONV_PRECIP_GAIN := 1.80
 	const ORO_PRECIP_GAIN := 0.10
-	const CLOUD_REEVAP := 0.06
+	const CLOUD_REEVAP := 0.14   # 2026-06-22 雨云化:0.06→0.14 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)(C++主路径走knobs同值)
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
 	const THERMAL_CONV_COND := 1.9   # 2026-06-22: 1.5→1.9 增内陆对流凝结(抬 cloud_water 上限)
 	const THERMAL_CONV_PRECIP := 1.1 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
@@ -459,18 +459,26 @@ func run_slice(cell_budget: int) -> Dictionary:
 				temp_min = minf(temp_min, nb_temp_cell)
 				temp_max = maxf(temp_max, nb_temp_cell)
 		var temp_gradient: float = temp_max - temp_min
-		var frontogenesis: float = clampf(convergence * smoothstep(0.05, 0.24, temp_gradient) * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
+		var frontal_convergence: float = smoothstep(0.14, 0.46, convergence)
+		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
 		var lift_pos: float = maxf(lift, 0.0)
 		var relative_humidity: float = maxf(vapor / maxf(vapor_capacity, 0.001), 0.0)
 
 		# 热力对流(大陆夏季雷暴/对流雨)：地表加热+本地水汽 → 浮力凝结+高效降水。修复内陆 rh 永远
 		# <<静力阈、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结(用户洞察:内陆蒸发应能成雨)。
 		# 仅陆地。季节自限:冬温<0.45 不触发;降水耗 vapor→rh 降→对流减弱,呈"晴-积累-雷暴"间歇,不永雨。
-		var convective: float = 0.0 if on_water else smoothstep(0.45, 0.72, temp) * clampf(relative_humidity * 5.0, 0.0, 1.0) # 2026-06-22: rh门4.2→5.0
+		# 2026-06-22 雨云化根因:陆地rh中位0.18(>0.55仅2.7%→静力凝结死),成云降水76%靠本项热力对流。
+		# rh*5门控致干空气被硬拉成半饱和→温暖陆地处处弱对流→产云水平流扩散→遍地雾+小雨。convective双峰
+		# (p50=0,p75=0.39),谷底0.28硬截断:砍弱对流(损失6.5%降水)转晴/多云、保强对流核突显明显降水。(C++主路径同值)
+		var conv_raw: float = 0.0 if on_water else smoothstep(0.48, 0.74, temp) * clampf(relative_humidity * 3.6, 0.0, 1.0)
+		var convective: float = 0.0 if conv_raw < 0.42 else conv_raw
+		var ocean_convective: float = 0.0
+		if on_water:
+			ocean_convective = smoothstep(0.10, 0.22, ocean_an) * smoothstep(0.58, 0.78, temp) * clampf(relative_humidity, 0.0, 1.0)
 
 		# 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
 		var sup: float = maxf(relative_humidity - RH_CONDENSE, 0.0)
-		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + convective * THERMAL_CONV_COND, 0.0, 1.0)
+		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90, 0.0, 1.0)
 		var condensation: float = vapor * cond_force * CONDENSE_RATE
 		if lift < 0.0:
 			condensation *= maxf(1.0 + lift * _weather_system._field_rain_shadow_drying, 0.0)
@@ -492,23 +500,25 @@ func run_slice(cell_budget: int) -> Dictionary:
 			+ relative_humidity * 0.30
 			+ convergence * 0.55
 			+ lift_pos * 1.20
-			+ frontogenesis * 0.30,
+			+ frontogenesis * 0.55
+			+ ocean_convective * 0.35,
 			0.0, 1.0
 		)
-		var cloud: float = clampf(cloud_water * 1.05 + condensation * 0.40, 0.0, 1.0)
 
 		# 降水：autoconversion 消耗 cloud_water。动力(辐合/抬升/不稳定)触发主导，地形弱增强；
 		# 背景 base_frac 很小 → 无动力区降水压到 wet 阈值以下 → 只有移动天气系统处成雨 → 雨随系统移动。
-		var trig: float = AUTOCONVERSION * (PRECIP_BASE_FRAC + lift_pos * LIFT_PRECIP_GAIN + convergence * CONV_PRECIP_GAIN + instability * 0.30)
+		var trig: float = AUTOCONVERSION * (PRECIP_BASE_FRAC + lift_pos * LIFT_PRECIP_GAIN + convergence * CONV_PRECIP_GAIN + frontogenesis * 0.85 + instability * 0.30)
 		trig *= (1.0 + lift_pos * ORO_PRECIP_GAIN)
 		trig += convective * THERMAL_CONV_PRECIP   # 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
+		trig += ocean_convective * 0.95
 		trig = clampf(trig, 0.0, 0.95)
 		var precip_target: float = cloud_water * trig
 		if lift < 0.0:
 			precip_target *= 1.0 - minf(maxf(-lift, 0.0) * _weather_system._field_rain_shadow_drying, 0.85)
 		# 水面对流抑制(保留动力门控：辐合/锋生/暖流异常 释放降水；instability 仅极端深对流安全阀)。
+		var ocean_drive: float = 0.0
 		if on_water:
-			var ocean_drive: float = maxf(maxf(
+			ocean_drive = maxf(maxf(
 					clampf(ocean_an / 0.16, 0.0, 1.0),
 					clampf((instability - 0.90) / 0.10, 0.0, 1.0)), maxf(
 					clampf((convergence - 0.38) / 0.16, 0.0, 1.0),
@@ -520,6 +530,10 @@ func run_slice(cell_budget: int) -> Dictionary:
 		precip_target = minf(precip_target, cloud_water)
 		precip_target = maxf(precip_target, 0.0)
 		cloud_water = maxf(cloud_water - precip_target, 0.0)
+		if on_water and ocean_drive < 0.35:
+			var marine_scour: float = clampf(cloud_water * (0.04 + (0.35 - ocean_drive) * 0.22), 0.0, cloud_water)
+			cloud_water -= marine_scour
+			vapor += marine_scour * 0.65
 
 		# 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
 		var reevap: float = clampf(cloud_water * CLOUD_REEVAP * (1.0 - relative_humidity), 0.0, cloud_water)
@@ -533,6 +547,14 @@ func run_slice(cell_budget: int) -> Dictionary:
 			precip = 0.0
 		vapor = clampf(vapor, 0.0, 1.0)
 		var vapor_after_precip: float = vapor
+		var rain_core: float = smoothstep(0.025, 0.095, precip)
+		var front_core: float = smoothstep(0.08, 0.55, frontogenesis)
+		var cloud_floor: float = maxf(rain_core * (0.22 + rain_core * 0.30), front_core * 0.46)
+		if convective > 0.0:
+			cloud_floor = maxf(cloud_floor, 0.12 + convective * 0.30)
+		if ocean_convective > 0.0:
+			cloud_floor = maxf(cloud_floor, 0.18 + ocean_convective * 0.22)
+		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
 
 		var temp_anom_i: float = soa_temp_anom[i] if soa_temp_anom.size() == n_cells else 0.0
 		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, on_water)

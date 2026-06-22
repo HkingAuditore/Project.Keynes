@@ -1,0 +1,71 @@
+{
+  "commit_count": 126,
+  "first_commit_tick": 3546,
+  "last_commit_tick": 3980,
+  "commit_cadence": {
+    "mean": 3.472,
+    "p50": 4.0,
+    "p90": 6.0,
+    "max": 7
+  },
+  "last_commit_meta": {
+    "dirty": 6354,
+    "active": 0.992812,
+    "solve_tick": 745,
+    "refresh_conv": "True",
+    "skipped": "False"
+  },
+  "last_commit_counts": {
+    "CLEAR": 5129,
+    "RAIN": 561,
+    "STORM": 7,
+    "BLIZZARD": 16,
+    "FOG": 684,
+    "MONSOON": 3
+  },
+  "last_tick_counts": {
+    "CLEAR": 2531,
+    "RAIN": 393,
+    "STORM": 5,
+    "BLIZZARD": 1,
+    "FOG": 267,
+    "MONSOON": 3
+  },
+  "land_cell_mean_correlations": {
+    "precip_vs_soil": 0.9374211164133004,
+    "precip_vs_water_balance": 0.86626273876336,
+    "precip_vs_veg_vitality": 0.13431732935561208,
+    "precip_vs_drought_stress": 0.10147074997536548,
+    "water_balance_vs_veg_vitality": 0.16905170523560253,
+    "water_balance_vs_drought_stress": 0.15918105371124674,
+    "moisture_vs_veg_vitality": 0.010411700466290447,
+    "temp_vs_heat_stress": -0.11988351233114819,
+    "temp_vs_cold_stress": -0.0013694657318714368
+  },
+  "nonpolar_land_cell_mean_correlations": {
+    "precip_vs_soil": 0.9373982613922148,
+    "precip_vs_water_balance": 0.8647016167772997,
+    "precip_vs_veg_vitality": 0.06651419954700458,
+    "precip_vs_drought_stress": 0.09291842670087018,
+    "water_balance_vs_veg_vitality": 0.07666831390952782,
+    "water_balance_vs_drought_stress": 0.15256597103197145,
+    "moisture_vs_veg_vitality": 0.08692141921841828
+  },
+  "last_commit_weather_stats": {
+    "precip": {
+      "mean": 0.012566748075187206,
+      "p50": 0.005331499967724085,
+      "p90": 0.0366830937564373
+    },
+    "cloud": {
+      "mean": 0.28265291452407837,
+      "p50": 0.23661349713802338,
+      "p90": 0.665156364440918
+    },
+    "cw": {
+      "mean": 0.2138308733701706,
+      "p50": 0.12691999971866608,
+      "p90": 0.5819104909896851
+    }
+  }
+}
