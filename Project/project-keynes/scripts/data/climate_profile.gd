@@ -707,6 +707,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 # precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
 # 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
 @export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.30
+# 雨云化(2026-06-22):把降水从"静力+背景主导"转为"动力触发主导",消除弥漫弱雨/原地永雨,让降水集中成雨核并随
+# 辐合/锋面/对流系统移动(生成-运动-消减)。两参数经 weather_system→knobs 进 C++ run_climate_pass_a(不重编)。
+# precip_base_frac:autoconversion 背景成雨比例。原0.50→零动力区也有8%背景雨→海62.8%弥漫弱雨。降0.12让无动力
+#   区转晴、降水只在移动天气系统处爆发。注:陆地热力对流雨(THERMAL_CONV_PRECIP)旁路本项,内陆对流雨保留。
+@export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.12
+# cloud_reevap:干空气云水再蒸发率。原0.06太弱→云团不消散、陆地连续降水中位32天。提0.14让低湿处云水更快蒸发回
+#   vapor→雨团/云团边缘消散、雨过转晴,形成生命周期。过高则云难积累,须按CSV复核。
+@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.14
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
@@ -1088,13 +1096,17 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 仅 12% → 地表整体偏黄、veg=NONE 高达 57%(地形/biome 区分不足)。问题是大陆连贯后内陆 rain-out 过
 # 度，远低于上面目标的 0.45-0.55。本轮温和抬湿(基线翻倍/内陆衰减减弱/降水增益与沿海地板上调)，目标
 # 中位 ~0.35-0.40：减少半干旱铺满又不至变回水世界。
+# ⚠ 2026-06-22 抬湿(用户:湿度普遍偏低,沿海/沿河/季风区本该大片高湿如中国南方;且"高湿≠天天下雨")：
+#   land_base 0.12→0.18(陆地基线整体上移)、continental_dry 0.030→0.022(内陆 rain-out 衰减减弱,救深
+#   内陆 hop8≈0.22)、coastal_floor 0.36→0.45(沿海地板,加宽湿润海岸带)、precip_gain 2.9→3.4(降水→base
+#   湿度,季风/雨林高湿)。目标中位 ~0.45-0.50(回原始 0.45-0.55 下沿)。⚠须按新 CSV 复核,过头则回调防水世界。
 @export_group("统一气候场(生成)")
 @export var moisture_wind_evap: float = 0.18
 @export var moisture_rainout_base: float = 0.12
 @export var moisture_orographic_gain: float = 6.0
-@export var moisture_continental_dry: float = 0.030
-@export var moisture_land_base: float = 0.12
-@export var moisture_precip_gain: float = 2.9
+@export var moisture_continental_dry: float = 0.022
+@export var moisture_land_base: float = 0.18
+@export var moisture_precip_gain: float = 3.4
 @export var moisture_humidity_cap: float = 1.2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
@@ -1102,7 +1114,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
 # ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。
 # ⚠ 2026-06-19(凌晨)：连贯大陆下海岸带也偏干，0.28→0.36 适度抬高，加宽湿润海岸过渡带。
-@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.36
+@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.45
 @export var moisture_coastal_scale: float = 7.0
 @export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
 @export var coastal_temp_scale: float = 6.0

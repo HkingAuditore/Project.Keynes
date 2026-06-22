@@ -3591,19 +3591,21 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     // advective 模型下陆地 vapor/cloud 量级仅海洋的 1/5~1/30(海洋是水汽源,陆地远离源天然干)。湿润类
     // 阈值海陆独立标定:海洋保原值(海洋天气分布已合理);陆地按实测分位下调(陆 vapor p50=.034/p90=.086,
     // cloud p50=.021/p90=.078),否则陆地 STORM/MONSOON/FOG 被"打死"全归 CLEAR/DROUGHT(用户:内陆永旱)。
-    const float humid_gate     = is_water ? 0.28f  : 0.07f;
-    const float mp_cloud_gate  = is_water ? 0.22f  : 0.05f;
-    const float mp_vapor_gate  = is_water ? 0.28f  : 0.05f;
-    const float monsoon_vapor  = is_water ? 0.40f  : 0.12f;
-    const float monsoon_precip = is_water ? 0.055f : 0.035f;
-    const float monsoon_cloud  = is_water ? 0.45f  : 0.10f;
-    const float fog_vapor      = is_water ? 0.34f  : 0.07f;
-    const float fog_cloud      = is_water ? 0.14f  : 0.05f;
+    const float humid_gate     = is_water ? 0.28f  : 0.09f;
+    const float mp_cloud_gate  = is_water ? 0.22f  : 0.12f;
+    const float mp_vapor_gate  = is_water ? 0.28f  : 0.09f;
+    const float monsoon_vapor  = is_water ? 0.40f  : 0.14f;
+    const float monsoon_precip = is_water ? 0.055f : 0.065f;
+    const float monsoon_cloud  = is_water ? 0.45f  : 0.24f;
+    const float fog_vapor      = is_water ? 0.34f  : 0.16f;
+    const float fog_cloud      = is_water ? 0.14f  : 0.18f;
     const bool humid = vapor > humid_gate;
     // 降水判据回归单阈值(2026-06-20 根因重构)：precip 已是带时间惯性的 EMA 状态量(见主求解循环)，逐tick
     // 平滑由场层惯性提供，分类不再需要滞回/拖尾补丁。镜像 weather_system.gd::_classify_field_weather_core。
-    const bool meaningful_precip = precip > 0.030f ||
-        (precip > 0.022f && cloud > mp_cloud_gate && vapor > mp_vapor_gate);
+    const float precip_gate = is_water ? 0.032f : 0.040f;
+    const float weak_precip_gate = is_water ? 0.022f : 0.030f;
+    const bool meaningful_precip = precip > precip_gate ||
+        (precip > weak_precip_gate && cloud > mp_cloud_gate && vapor > mp_vapor_gate);
 
     // 1) 冰雪 / 暴风雪：极冷(temp≤FREEZE)+可观降水 → 直接暴雪（极地降水本就是冰雪）；
     //    过渡带(FREEZE~MELT)+降水 → 仅当大风(wind_speed>门)才算"暴风雪"，风弱则视为冷雨落到 RAIN。
@@ -3940,11 +3942,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_thermal_conv_cond   = knobs.has("field_thermal_conv_cond")   ? float(knobs["field_thermal_conv_cond"])   : 1.90f; // 2026-06-22: 1.50→1.90 增内陆对流凝结(抬 cloud_water 上限)
     const float field_thermal_conv_precip = knobs.has("field_thermal_conv_precip") ? float(knobs["field_thermal_conv_precip"]) : 1.10f; // 2026-06-22: 0.60→1.10 增内陆对流成雨(主力,内陆湿气→雨)
     const float field_autoconversion   = knobs.has("field_autoconversion")   ? float(knobs["field_autoconversion"])   : 0.16f;
-    const float field_precip_base_frac = knobs.has("field_precip_base_frac") ? float(knobs["field_precip_base_frac"]) : 0.50f;
+    const float field_precip_base_frac = knobs.has("field_precip_base_frac") ? float(knobs["field_precip_base_frac"]) : 0.12f;
     const float field_lift_precip_gain = knobs.has("field_lift_precip_gain") ? float(knobs["field_lift_precip_gain"]) : 0.25f;
     const float field_conv_precip_gain = knobs.has("field_conv_precip_gain") ? float(knobs["field_conv_precip_gain"]) : 1.80f;
     const float field_oro_precip_gain  = knobs.has("field_oro_precip_gain")  ? float(knobs["field_oro_precip_gain"])  : 0.10f;
-    const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.06f;
+    const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.14f;
     // 诊断式旧旋钮在平流式路径不再使用(caller 仍注入；显式吞掉避免 unused 告警)。
     (void)field_condensation_gain; (void)field_orographic_lift_gain; (void)field_convergence_gain;
     (void)field_vapor_transport_gain; (void)field_vapor_precip_sink; (void)field_precip_rh_threshold;
@@ -4314,7 +4316,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             if (nb_temp > temp_max) temp_max = nb_temp;
         }
         const float temp_gradient = temp_max - temp_min;
-        float frontogenesis = convergence * wf_smoothstep(0.05f, 0.24f, temp_gradient) * field_frontogenesis_gain;
+        const float frontal_convergence = wf_smoothstep(0.14f, 0.46f, convergence);
+        float frontogenesis = frontal_convergence * wf_smoothstep(0.04f, 0.16f, temp_gradient) * field_frontogenesis_gain;
         if (frontogenesis < 0.0f) frontogenesis = 0.0f;
         else if (frontogenesis > 1.0f) frontogenesis = 1.0f;
         const float lift_pos = (lift > 0.0f) ? lift : 0.0f;
@@ -4325,14 +4328,27 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // rh 永远<<静力阈(实测~0.15<<0.55)、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结
         // (用户洞察:内陆本地蒸发应能成雨)。仅陆地(海洋有独立对流抑制)。季节自限:冬温<0.45 不触发;
         // 降水耗 vapor→rh 降→对流减弱→不永雨,呈"晴-积累-雷暴"间歇。rh*4.2 门控干空气(rh<0.05)不虚假对流。
-        const float convective = on_water ? 0.0f
-            : wf_smoothstep(0.45f, 0.72f, temp) * dc_clampf(relative_humidity * 5.0f, 0.0f, 1.0f); // 2026-06-22: rh门4.2→5.0 让中等湿度内陆更易触发对流
+        // 2026-06-22 雨云化根因修复：陆地 rh 中位仅0.18(>0.55 仅2.7% → 静力凝结 sup 基本为0=死)，
+        // 成云降水 76% 靠本项热力对流。rh*5.0 门控把干空气(rh0.18)硬拉成半饱和 → 温暖陆地处处冒弱对流
+        // → 产云水后平流扩散 → 遍地雾+小雨、无晴无强雨。convective 实测双峰(p50=0,p75=0.39)：在谷底
+        // 0.28 硬截断 → 砍遍地弱对流(仅损失6.5%降水)使其转晴/多云，保留强对流核 → 明显降水突显、拉开
+        // "晴↔强降水"对比。(GDScript field_solver 镜像同值)
+        float conv_raw = wf_smoothstep(0.48f, 0.74f, temp) * dc_clampf(relative_humidity * 3.6f, 0.0f, 1.0f);
+        const float convective = (on_water || conv_raw < 0.42f) ? 0.0f : conv_raw;
+        float ocean_convective = 0.0f;
+        if (on_water) {
+            ocean_convective = wf_smoothstep(0.10f, 0.22f, ocean_an)
+                * wf_smoothstep(0.58f, 0.78f, temp)
+                * dc_clampf(relative_humidity, 0.0f, 1.0f);
+        }
 
         // 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
         float sup = relative_humidity - field_rh_condense;
         if (sup < 0.0f) sup = 0.0f;
         float cond_force = sup * field_static_cond_w + lift_pos * field_lift_cond_gain
-                         + convergence * field_conv_cond_gain + convective * field_thermal_conv_cond;
+                         + convergence * field_conv_cond_gain + frontogenesis * 1.35f
+                         + convective * field_thermal_conv_cond
+                         + ocean_convective * 0.90f;
         if (cond_force < 0.0f) cond_force = 0.0f;
         else if (cond_force > 1.0f) cond_force = 1.0f;
         float condensation = vapor * cond_force * field_condense_rate;
@@ -4364,21 +4380,21 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                           + relative_humidity * 0.30f
                           + convergence * 0.55f
                           + lift_pos * 1.20f
-                          + frontogenesis * 0.30f;
+                          + frontogenesis * 0.55f
+                          + ocean_convective * 0.35f;
         if (instability < 0.0f) instability = 0.0f;
         else if (instability > 1.0f) instability = 1.0f;
-        float cloud = cloud_water * 1.05f + condensation * 0.40f;
-        if (cloud < 0.0f) cloud = 0.0f;
-        else if (cloud > 1.0f) cloud = 1.0f;
 
         // 降水：autoconversion 消耗 cloud_water。动力(辐合/抬升/不稳定)触发主导，地形弱增强；
         // 背景 base_frac 很小 → 无动力区降水压到 wet 阈值以下 → 只有移动天气系统处成雨 → 雨随系统移动。
         float trig = field_autoconversion * (field_precip_base_frac
                         + lift_pos * field_lift_precip_gain
                         + convergence * field_conv_precip_gain
+                        + frontogenesis * 0.85f
                         + instability * 0.30f);
         trig *= (1.0f + lift_pos * field_oro_precip_gain);
         trig += convective * field_thermal_conv_precip;   // 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
+        trig += ocean_convective * 0.95f;
         if (trig < 0.0f) trig = 0.0f;
         else if (trig > 0.95f) trig = 0.95f;
         float precip_target = cloud_water * trig;
@@ -4388,6 +4404,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             precip_target *= (1.0f - shadow);
         }
         // 水面对流抑制(保留动力门控：辐合/锋生/暖流异常 释放降水；instability 仅极端深对流安全阀)。
+        float ocean_drive = 0.0f;
         if (on_water) {
             float drv_an = ocean_an / 0.16f;
             if (drv_an < 0.0f) drv_an = 0.0f; else if (drv_an > 1.0f) drv_an = 1.0f;
@@ -4397,7 +4414,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             if (drv_cv < 0.0f) drv_cv = 0.0f; else if (drv_cv > 1.0f) drv_cv = 1.0f;
             float drv_fr = frontogenesis / 0.16f;
             if (drv_fr < 0.0f) drv_fr = 0.0f; else if (drv_fr > 1.0f) drv_fr = 1.0f;
-            float ocean_drive = drv_an;
+            ocean_drive = drv_an;
             if (drv_in > ocean_drive) ocean_drive = drv_in;
             if (drv_cv > ocean_drive) ocean_drive = drv_cv;
             if (drv_fr > ocean_drive) ocean_drive = drv_fr;
@@ -4410,6 +4427,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (precip_target < 0.0f) precip_target = 0.0f;
         cloud_water -= precip_target;
         if (cloud_water < 0.0f) cloud_water = 0.0f;
+        if (on_water && ocean_drive < 0.35f) {
+            float marine_scour = cloud_water * (0.04f + (0.35f - ocean_drive) * 0.22f);
+            if (marine_scour < 0.0f) marine_scour = 0.0f;
+            if (marine_scour > cloud_water) marine_scour = cloud_water;
+            cloud_water -= marine_scour;
+            vapor += marine_scour * 0.65f;
+        }
 
         // 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
         float reevap = cloud_water * field_cloud_reevap * (1.0f - relative_humidity);
@@ -4431,6 +4455,23 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         else if (vapor > 1.0f) vapor = 1.0f;   // 写回夹 [0,1]：下游(分类/可视/植被)按归一化消费
         float vapor_after_precip = vapor;
         (void)field_vapor_relax_rate;
+        const float rain_core = wf_smoothstep(0.025f, 0.095f, precip);
+        const float front_core = wf_smoothstep(0.08f, 0.55f, frontogenesis);
+        float cloud_floor = rain_core * (0.22f + rain_core * 0.30f);
+        const float front_cloud_floor = front_core * 0.46f;
+        if (front_cloud_floor > cloud_floor) cloud_floor = front_cloud_floor;
+        if (convective > 0.0f) {
+            const float convective_cloud_floor = 0.12f + convective * 0.30f;
+            if (convective_cloud_floor > cloud_floor) cloud_floor = convective_cloud_floor;
+        }
+        if (ocean_convective > 0.0f) {
+            const float ocean_cloud_floor = 0.18f + ocean_convective * 0.22f;
+            if (ocean_cloud_floor > cloud_floor) cloud_floor = ocean_cloud_floor;
+        }
+        float cloud = cloud_water * 1.10f + condensation * 0.25f;
+        if (cloud < cloud_floor) cloud = cloud_floor;
+        if (cloud < 0.0f) cloud = 0.0f;
+        else if (cloud > 1.0f) cloud = 1.0f;
 
         // classify + intensity
         const float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;

@@ -40,7 +40,9 @@ func _test_orographic_rain_shadow() -> void:
 	# 半真实大气模型（2026-06-19）：山体本身会获得真实地形抬升降水（不再像旧模型那样
 	# 把山峰判成 CLEAR 把 precip 清零），因此 wet_side 与山峰的差额自然缩小。仍断言
 	# 下风侧降水高于山峰这一定性关系，margin 由 0.05 重标定为 0.03 以匹配进阶模型。
-	_expect(float(wet_side.get("precip", 0.0)) > float(mountain.get("precip", 0.0)) + 0.03,
+	# 2026-06-22 雨云化重标定：背景成雨被压低后，单 tick 地形雨差额不再强求 0.03；
+	# 保留湿侧高于相邻雨影这一结构关系，强度分布由 CSV soak 复核。
+	_expect(float(wet_side.get("precip", 0.0)) > float(mountain.get("precip", 0.0)) + 0.005,
 		"orographic wet side should exceed adjacent rain shadow (wet=%.3f shadow=%.3f)" % [float(wet_side.get("precip", 0.0)), float(mountain.get("precip", 0.0))])
 
 func _test_warm_convection_prefers_storm() -> void:
@@ -213,7 +215,7 @@ func _determinism_map() -> MapData:
 func _weather_system(bounds: Rect2) -> WeatherSystem:
 	var ws := WeatherSystem.new()
 	ws.init(12345, bounds, HEX_SIZE)
-	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16, 4, 0.08, 0.70, 0.16, 0.22, 0.12, 0.02, 0.18, 2, 0.025, 0.24, 0.22, 0.08, 0.35, 0.28, 0.35, 0.35, 0.20, 0.30)
+	ws.configure_weather_field(true, 2, 0.08, 0.55, 0.35, 0.35, 0.25, 0.40, 16, 4, 0.08, 0.85, 0.16, 0.22, 0.12, 0.02, 0.18, 2, 0.025, 0.24, 0.22, 0.08, 0.35, 0.28, 0.35, 0.35, 0.20, 0.30)
 	ws.configure_terrain_wind(true)
 	return ws
 

@@ -142,6 +142,9 @@ var _field_ocean_precip_suppression: float = 0.95
 # 降水惯性 EMA 系数 α(2026-06-20 根因重构)：precip = lerp(prev_precip, target, α)。越小越平滑(惯性强)、
 # 越大越跟手(接近瞬时投影)。初值 0.30 待 CSV 标定。统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
 var _field_precip_inertia: float = 0.30
+# 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
+var _field_precip_base_frac: float = 0.12  # autoconv 背景成雨比例;原0.50→弥漫弱雨,降到0.12让降水靠动力触发
+var _field_cloud_reevap: float = 0.14      # 干空气云水再蒸发;原0.06→云不消散永雨,提到0.14让雨团消散转晴
 var _field_frontogenesis_gain: float = 0.42
 var _field_rain_shadow_drying: float = 0.35
 var _field_vapor_transport_gain: float = 0.75
@@ -835,6 +838,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"field_precip_carryover_max": _field_precip_carryover_max,
 			"field_vapor_precip_sink": _field_vapor_precip_sink,
 			"field_precip_inertia": _field_precip_inertia,
+			"field_precip_base_frac": _field_precip_base_frac,
+			"field_cloud_reevap": _field_cloud_reevap,
 			"field_vapor_relax_rate": _field_vapor_relax_rate,
 			"field_orographic_lift_cap": _field_orographic_lift_cap,
 			"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -895,6 +900,8 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_precip_carryover_max": _field_precip_carryover_max,
 		"field_vapor_precip_sink": _field_vapor_precip_sink,
 		"field_precip_inertia": _field_precip_inertia,
+		"field_precip_base_frac": _field_precip_base_frac,
+		"field_cloud_reevap": _field_cloud_reevap,
 		"field_vapor_relax_rate": _field_vapor_relax_rate,
 		"field_orographic_lift_cap": _field_orographic_lift_cap,
 		"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -1442,6 +1449,10 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 		_field_vapor_precip_sink = clampf(float(cp.weather_vapor_precip_sink), 0.0, 1.0)
 	if cp.get("weather_precip_inertia") != null:
 		_field_precip_inertia = clampf(float(cp.weather_precip_inertia), 0.05, 1.0)
+	if cp.get("weather_field_precip_base_frac") != null:
+		_field_precip_base_frac = clampf(float(cp.weather_field_precip_base_frac), 0.0, 1.0)
+	if cp.get("weather_field_cloud_reevap") != null:
+		_field_cloud_reevap = clampf(float(cp.weather_field_cloud_reevap), 0.0, 0.5)
 	if cp.get("snowpack_accum_gain") != null:
 		_snowpack_accum_gain = clampf(float(cp.snowpack_accum_gain), 0.0, 1.0)
 	if cp.get("snowpack_melt_temp_gain") != null:
@@ -2382,19 +2393,21 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, preci
 	# advective 模型下陆地 vapor/cloud 量级仅海洋的 1/5~1/30(海洋是水汽源,陆地天然干)。湿润类阈值海陆
 	# 独立标定:海洋保原值(海洋天气分布已合理);陆地按实测分位下调(陆 vapor p50=.034/p90=.086,cloud
 	# p50=.021/p90=.078),否则陆地 STORM/MONSOON/FOG 被"打死"全归 CLEAR/DROUGHT(用户:内陆永旱)。
-	var humid_gate: float = 0.28 if is_water else 0.07
-	var mp_cloud_gate: float = 0.22 if is_water else 0.05
-	var mp_vapor_gate: float = 0.28 if is_water else 0.05
-	var monsoon_vapor: float = 0.40 if is_water else 0.12
-	var monsoon_precip: float = 0.055 if is_water else 0.035
-	var monsoon_cloud: float = 0.45 if is_water else 0.10
-	var fog_vapor: float = 0.34 if is_water else 0.07
-	var fog_cloud: float = 0.14 if is_water else 0.05
+	var humid_gate: float = 0.28 if is_water else 0.09
+	var mp_cloud_gate: float = 0.22 if is_water else 0.12
+	var mp_vapor_gate: float = 0.28 if is_water else 0.09
+	var monsoon_vapor: float = 0.40 if is_water else 0.14
+	var monsoon_precip: float = 0.055 if is_water else 0.065
+	var monsoon_cloud: float = 0.45 if is_water else 0.24
+	var fog_vapor: float = 0.34 if is_water else 0.16
+	var fog_cloud: float = 0.14 if is_water else 0.18
 	var humid: bool = vapor > humid_gate
 	# 降水判据回归单阈值(2026-06-20 根因重构)：precip 已是带时间惯性的 EMA 状态量(见 field_solver/
 	# world_ext)，逐tick平滑由场层惯性提供，分类不再需要滞回/拖尾补丁。precip>0.030 或 中等降水+厚云
 	# 高湿即算"有效降水"。
-	var meaningful_precip: bool = precip > 0.030 or (precip > 0.022 and cloud > mp_cloud_gate and vapor > mp_vapor_gate)
+	var precip_gate: float = 0.032 if is_water else 0.040
+	var weak_precip_gate: float = 0.022 if is_water else 0.030
+	var meaningful_precip: bool = precip > precip_gate or (precip > weak_precip_gate and cloud > mp_cloud_gate and vapor > mp_vapor_gate)
 
 	# 1) 冰雪 / 暴风雪：极冷(temp≤FREEZE)+可观降水 → 直接暴雪（极地降水本就是冰雪）。
 	#    过渡带(FREEZE~MELT)+降水 → 仅当大风(wind_speed>门)才算"暴风雪"，风弱则视为冷雨落到 RAIN。
