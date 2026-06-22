@@ -133,6 +133,7 @@ var _field_extreme_precip_softness: float = 0.20
 var _field_convergence_gain: float = 0.18
 var _field_convergence_refresh_stride: int = 2
 var _field_solve_tick: int = 0
+var _last_weather_commit_tick: int = -1
 var _cold_precip_as_blizzard: bool = true
 var _snow_classification_margin: float = 0.03
 var _field_ocean_evap_gain: float = 0.55
@@ -140,11 +141,12 @@ var _field_land_evapotranspiration_gain: float = 0.85
 var _field_precip_rh_threshold: float = 0.70 # 0.60→0.70：见 climate_profile.weather_precip_rh_threshold（物理层根治：提阈让中湿区转晴）
 var _field_ocean_precip_suppression: float = 0.95
 # 降水惯性 EMA 系数 α(2026-06-20 根因重构)：precip = lerp(prev_precip, target, α)。越小越平滑(惯性强)、
-# 越大越跟手(接近瞬时投影)。初值 0.30 待 CSV 标定。统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
-var _field_precip_inertia: float = 0.30
+# 越大越跟手(接近瞬时投影)。2026-06-22 标定为 0.40，减少降水拖尾。
+# 统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
+var _field_precip_inertia: float = 0.40
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
 var _field_precip_base_frac: float = 0.12  # autoconv 背景成雨比例;原0.50→弥漫弱雨,降到0.12让降水靠动力触发
-var _field_cloud_reevap: float = 0.14      # 干空气云水再蒸发;原0.06→云不消散永雨,提到0.14让雨团消散转晴
+var _field_cloud_reevap: float = 0.18      # 干空气云水再蒸发;原0.06→云不消散永雨,提到0.18让雨团消散转晴
 var _field_frontogenesis_gain: float = 0.42
 var _field_rain_shadow_drying: float = 0.35
 var _field_vapor_transport_gain: float = 0.75
@@ -365,6 +367,16 @@ func _cell_neighbors(cell: HexCell, map: MapData) -> Array:
 func last_breakdown() -> Dictionary:
 	return _last_breakdown
 
+
+func _mark_weather_commit_tick() -> Dictionary:
+	var prev: int = _last_weather_commit_tick
+	var delta: int = (_field_solve_tick - prev) if prev >= 0 else 0
+	_last_weather_commit_tick = _field_solve_tick
+	return {
+		"weather_commit_tick_delta": delta,
+		"weather_last_commit_tick": _last_weather_commit_tick,
+	}
+
 func _percentile_abs_from_array(values: PackedFloat32Array, q: float) -> float:
 	var n: int = values.size()
 	if n <= 0:
@@ -481,6 +493,8 @@ func tick_one_day(map: MapData, world: WorldData, season_idx: int, climate_anoma
 		"distribute_ms": distribute_ms,
 		"cyclone_ms": cyclone_ms,
 	}
+	_last_breakdown.merge(_front_diagnostic_counts(_active_fronts), true)
+	_last_breakdown.merge(_mark_weather_commit_tick(), true)
 	_current_map_for_tick = null
 	return _active_fronts
 
@@ -1201,6 +1215,14 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 		_summary_cache_n = n_cells
 	# wind_x / wind_y 已是 SoA（map.wind_x_arr / wind_y_arr）；C++ 通过 _slots
 	# 直接读，不必通过 knobs 传。
+	var water_ids: PackedByteArray = PackedByteArray([
+		int(TerrainType.TERRAIN.OCEAN) & 0xFF,
+		int(TerrainType.TERRAIN.COAST) & 0xFF,
+		int(TerrainType.TERRAIN.LAKE) & 0xFF,
+		int(TerrainType.TERRAIN.REEF) & 0xFF,
+		int(TerrainType.TERRAIN.KELP) & 0xFF,
+		int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
+	])
 	# ─── Phase A.3 fast path：从 KnobsHandle 拿 summary 段缓存 Dict ──
 	if _knobs_handle != null and _knobs_handle.has_method("to_summary_knobs_dict"):
 		# day_counter 每帧变化 → 走单字段细粒度入口（无变化时不拉 dirty）
@@ -1212,6 +1234,8 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 			"cell_q_arr": _summary_q_cache,
 			"cell_r_arr": _summary_r_cache,
 			"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+			"cyclone_storm_type_id": int(WeatherType.WT.STORM),
+			"water_terrain_ids": water_ids,
 		}
 		return _merge_resident_knobs_with_dynamic(
 			_knobs_handle.to_summary_knobs_dict(), dynamic_fields_sum)
@@ -1231,6 +1255,8 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 		"radius_scale": 1.05,
 		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
 		"wt_clear": int(WeatherType.WT.CLEAR),
+		"cyclone_storm_type_id": int(WeatherType.WT.STORM),
+		"water_terrain_ids": water_ids,
 		# Q/R 拓扑（C++ 端用于 cube_to_world / world_to_cube 反查）
 		"cell_q_arr": _summary_q_cache,
 		"cell_r_arr": _summary_r_cache,
@@ -1265,6 +1291,8 @@ func _unpack_summary_dict_to_front(d: Dictionary) -> WeatherFront:
 	f.precip_amount = clampf(float(d.get("precip_amount", 0.0)), 0.0, 1.0)
 	f.dissolve_amount = float(d.get("dissolve_amount", 0.0))
 	f.edge_seed = float(d.get("edge_seed", 0.0))
+	f.front_temperature_advection = float(d.get("front_temperature_advection", 0.0))
+	f.front_diagnostic_kind = int(d.get("front_diagnostic_kind", WeatherFront.FRONT_DIAG_NONE))
 	return f
 
 # ─── Phase A.1（dots-total-cpp roadmap）：fronts zero-copy SoA 解包 ─────
@@ -1305,6 +1333,8 @@ func _unpack_summary_soa_to_fronts(soa: Dictionary) -> Variant:
 	var type_arr: PackedInt32Array = soa.get("front_type", PackedInt32Array())
 	var ttl_arr: PackedInt32Array = soa.get("front_ttl_days", PackedInt32Array())
 	var age_arr: PackedInt32Array = soa.get("front_age_days", PackedInt32Array())
+	var temp_adv_arr: PackedFloat32Array = soa.get("front_temperature_advection", PackedFloat32Array())
+	var diag_kind_arr: PackedInt32Array = soa.get("front_diagnostic_kind", PackedInt32Array())
 	# 必需列长度全检查（任一不匹配立即放弃，让 caller 走 dict fallback）
 	if center_x.size() != n or center_y.size() != n: return null
 	if radius_arr.size() != n: return null
@@ -1348,8 +1378,38 @@ func _unpack_summary_soa_to_fronts(soa: Dictionary) -> Variant:
 		f.precip_amount = clampf(precip_arr[i], 0.0, 1.0)
 		f.dissolve_amount = dissolve_arr[i]
 		f.edge_seed = edge_seed_arr[i]
+		if temp_adv_arr.size() == n:
+			f.front_temperature_advection = temp_adv_arr[i]
+		if diag_kind_arr.size() == n:
+			f.front_diagnostic_kind = diag_kind_arr[i]
 		out[i] = f
 	return out
+
+
+func _front_diagnostic_kind(temp_advection: float) -> int:
+	const FRONT_TEMP_ADVECTION_THRESHOLD: float = 0.015
+	if temp_advection > FRONT_TEMP_ADVECTION_THRESHOLD:
+		return WeatherFront.FRONT_DIAG_COLD
+	if temp_advection < -FRONT_TEMP_ADVECTION_THRESHOLD:
+		return WeatherFront.FRONT_DIAG_WARM
+	return WeatherFront.FRONT_DIAG_NONE
+
+
+func _front_diagnostic_counts(fronts: Array) -> Dictionary:
+	var cold_count: int = 0
+	var warm_count: int = 0
+	for front in fronts:
+		if front == null:
+			continue
+		match int(front.front_diagnostic_kind):
+			WeatherFront.FRONT_DIAG_COLD:
+				cold_count += 1
+			WeatherFront.FRONT_DIAG_WARM:
+				warm_count += 1
+	return {
+		"weather_cold_front_count": cold_count,
+		"weather_warm_front_count": warm_count,
+	}
 
 # ─── Phase A.1 helper：把 C++ 返回值优先走 SoA 路径，缺失 / flag off 时
 # fallback 到 Array[Dict] 路径。集中在一个 helper 里供 summary 与 combined
@@ -1776,11 +1836,13 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 		"fronts": fronts_out.size(),
 		"path": "gdext_combined",
 	}
+	br.merge(_front_diagnostic_counts(fronts_out), true)
 	# stage_b succession 写回（与 _build_native_daily_stage_b_knobs 等价）
 	if rc_dict.has("succession_indices"):
 		br["succession_indices"] = rc_dict["succession_indices"]
 		br["succession_to_veg"] = rc_dict["succession_to_veg"]
 		br["stat_succession_count"] = int(rc_dict.get("stat_succession_count", 0))
+	br.merge(_mark_weather_commit_tick(), true)
 	_last_breakdown = br
 
 	# 节流告警（仅首次）：标记 gdext_combined ACTIVE。
@@ -1883,6 +1945,10 @@ func apply_unified_fast_tick_result(weather_rc: Dictionary) -> Array[WeatherFron
 	# Step 8：runs/total_ms 统计（与 combined path 共享计数器）。
 	_gdext_combined_runs += 1
 	_gdext_combined_total_ms += float(weather_rc.get("total_ms", 0.0))
+	var br: Dictionary = weather_rc.duplicate(true)
+	br.merge(_front_diagnostic_counts(fronts_out), true)
+	br.merge(_mark_weather_commit_tick(), true)
+	_last_breakdown = br
 	return fronts_out
 
 
@@ -2380,13 +2446,13 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 # 涌现式半真实大气分类（2026-06-20 去季节化重写）。天气类型完全由瞬时物理场（温度/湿度/云/
 # 降水/不稳定度/风/洋流异常）涌现，不再读 season_idx 或纬度——"季节"作为温度场随轴倾/公转的
 # 结果自然进入。与 C++ wf_classify_field_weather_at 严格镜像。
-func _classify_field_weather_at(temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, is_water: bool = false) -> int:
-	return _classify_field_weather_core(temp, vapor, cloud, precip, instability, ocean_an, wind_speed, temp_anom, is_water)
+func _classify_field_weather_at(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false) -> int:
+	return _classify_field_weather_core(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water)
 
 # 涌现判据（无 season_idx，阈值由 tile_data_record_20260620_004323 实测标定）：
 #   temp 已含轴倾→季节的温度结构；temp_anom=该格温度距平(异常冷暖)；wind_speed=原始风速(暴风强度)。
-# 判定顺序：冰雪/暴风雪 → 强对流风暴 → 季风 → 普通降水 → 雾 → 热浪 → 旱灾 → 晴。
-func _classify_field_weather_core(temp: float, vapor: float, cloud: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, is_water: bool = false) -> int:
+# 判定顺序：冰雪/暴风雪 → 强暖海/强对流风暴 → 季风 → 普通降水 → 雾 → 热浪 → 旱灾 → 晴。
+func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false) -> int:
 	# 去纬度门(2026-06-20)：分类不再使用纬度，类型边界由温度/湿度等弯曲物理场涌现，避免沿纬线的直线条带。
 	var warm: bool = temp > 0.55
 	var hot: bool = temp > 0.64
@@ -2402,12 +2468,14 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, preci
 	var fog_vapor: float = 0.34 if is_water else 0.16
 	var fog_cloud: float = 0.14 if is_water else 0.18
 	var humid: bool = vapor > humid_gate
+	var effective_cloud: float = maxf(cloud, cloud_water * 1.25)
+	var precip_cloud_mass: float = maxf(cloud_water, precip * 0.70)
 	# 降水判据回归单阈值(2026-06-20 根因重构)：precip 已是带时间惯性的 EMA 状态量(见 field_solver/
 	# world_ext)，逐tick平滑由场层惯性提供，分类不再需要滞回/拖尾补丁。precip>0.030 或 中等降水+厚云
 	# 高湿即算"有效降水"。
 	var precip_gate: float = 0.032 if is_water else 0.040
 	var weak_precip_gate: float = 0.022 if is_water else 0.030
-	var meaningful_precip: bool = precip > precip_gate or (precip > weak_precip_gate and cloud > mp_cloud_gate and vapor > mp_vapor_gate)
+	var meaningful_precip: bool = precip > precip_gate or (precip > weak_precip_gate and effective_cloud > mp_cloud_gate and precip_cloud_mass > mp_cloud_gate * 0.35 and vapor > mp_vapor_gate)
 
 	# 1) 冰雪 / 暴风雪：极冷(temp≤FREEZE)+可观降水 → 直接暴雪（极地降水本就是冰雪）。
 	#    过渡带(FREEZE~MELT)+降水 → 仅当大风(wind_speed>门)才算"暴风雪"，风弱则视为冷雨落到 RAIN。
@@ -2416,34 +2484,37 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, preci
 		if temp <= SNOW_FREEZE_T:
 			return WeatherType.WT.BLIZZARD
 		if temp < SNOW_MELT_T + _snow_classification_margin \
-				and cloud > 0.18 and vapor > 0.20 and precip > 0.04 \
+				and effective_cloud > 0.18 and vapor > 0.20 and precip > 0.04 \
 				and wind_speed > BLIZZARD_WIND_GATE:
 			return WeatherType.WT.BLIZZARD
 	# 2) 强对流风暴：暖湿 + 高不稳定 + 强降水；暖洋异常核心强制成 STORM。
 	#    去硬纬度门(原 lat_abs<0.70)——warm(temp>0.55) 已把 STORM 限制在暖区，类型边界改由弯曲的
 	#    等温线决定，消除"沿纬线的数学直线天气带"(用户反馈的不科学条带)。实测 STORM inst p50≈0.65。
-	var warm_ocean_core: bool = ocean_an > 0.12 and instability > 0.70 and precip > 0.07 and cloud > 0.28
-	if warm and humid and ((instability > 0.55 and precip > 0.060) or warm_ocean_core):
+	var warm_ocean_core: bool = ocean_an > 0.08 and instability > 0.58 and precip > 0.050 and effective_cloud > 0.24 and precip_cloud_mass > 0.045
+	if warm and humid and ((instability > 0.50 and precip > 0.050 and precip_cloud_mass > 0.045) or warm_ocean_core):
 		return WeatherType.WT.STORM
-	# 3) 季风：暖 + 极高湿 + 强降水 + 厚云（大尺度深对流，区别于局地 STORM）。同样去硬纬度门，
-	#    由"暖+极湿+强降水"自然限定到低纬湿热区，边界随湿度场弯曲而非沿纬线一刀切。
-	if warm and vapor > monsoon_vapor and precip > monsoon_precip and cloud > monsoon_cloud:
+	# 3) 季风：暖 + 季风湿通量/大尺度高湿 + 持续降水 + 厚云。暖海强对流核心先归 STORM，
+	#    季风保留给沿岸/上岸的持续雨带，避免台风种子被 MONSOON 抢占。
+	var monsoon_driver: float = maxf(monsoon_flux, smoothstep(monsoon_vapor * 0.78, monsoon_vapor + 0.06, vapor) * 0.24)
+	var sustained_precip: bool = precip > monsoon_precip * 0.82 and precip_cloud_mass > monsoon_cloud * 0.38
+	var monsoon_flow_gate: bool = monsoon_driver > 0.12 or (not warm_ocean_core and vapor > monsoon_vapor * 0.86)
+	if warm and sustained_precip and effective_cloud > monsoon_cloud * 0.82 and monsoon_flow_gate:
 		return WeatherType.WT.MONSOON
 	# 4) 普通降水（含被降级的过渡带冷雨）。
 	if meaningful_precip:
 		return WeatherType.WT.RAIN
 	# 5) 雾：高湿低降水、偏凉。单阈 cloud>0.14（FOG 闪烁由 EMA 平滑后的 cloud/precip 场自然消除）。
-	if vapor > fog_vapor and cloud > fog_cloud and precip < 0.030 and temp < 0.55:
+	if vapor > fog_vapor and effective_cloud > fog_cloud and precip < 0.030 and temp < 0.55:
 		return WeatherType.WT.FOG
 	# 6) 热浪：高温(temp>0.64) + 晴朗少雨 + 温度距平偏暖(temp_anom>门，比常态暖即触发、变冷即退→自带
 	#    时间动态)。去硬纬度门(原 lat_abs<0.62)：hot 已限定暖区、边界随等温线弯曲。实测最热区常年高温故
 	#    距平≈0(候选 temp_anom p50≈0.003)，旧 0.04 门只放行 16% 候选→热浪几乎为 0；门降至 0.0(见常量)。
-	if hot and temp_anom > HEATWAVE_ANOM_GATE and cloud < 0.38 and precip < 0.025:
+	if hot and temp_anom > HEATWAVE_ANOM_GATE and effective_cloud < 0.38 and precip < 0.025:
 		return WeatherType.WT.HEATWAVE
 	# 7) 旱灾(2026-06-22 重定义)：旧判据 vapor<0.34/cloud<0.22 在陆地恒真(陆地天然干)→退化成"暖即旱"，
 	#    内陆/河流旁常年误报旱灾。改为"异常偏暖干"事件:温度距平显著为正(temp_anom>0.10,陆地 p88)才算旱灾,
 	#    常态干燥归 CLEAR。cloud<0.22 由海洋(cloud p50=.64)挡住→海上不报旱;陆地恒真不影响。
-	if temp > 0.55 and temp_anom > 0.10 and precip < 0.020 and cloud < 0.22:
+	if temp > 0.55 and temp_anom > 0.10 and precip < 0.020 and effective_cloud < 0.22:
 		return WeatherType.WT.DROUGHT
 	return WeatherType.WT.CLEAR
 
@@ -2870,6 +2941,8 @@ func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[Weathe
 		front.precip_amount = clampf(float(c.get("precip", 0.0)), 0.0, 1.0)
 		front.dissolve_amount = 0.0
 		front.life_progress = clampf(0.15 + float(inherited_age) * 0.08, 0.15, 0.45)
+		front.front_temperature_advection = float(c.get("temp_advection", 0.0))
+		front.front_diagnostic_kind = int(c.get("front_diag_kind", WeatherFront.FRONT_DIAG_NONE))
 		fronts.append(front)
 		next_seeds.append({
 			"type": front.type,
@@ -2926,6 +2999,8 @@ func _flood_fill_field_component(
 	var sum_axis := Vector2.ZERO
 	var sum_cloud: float = 0.0
 	var sum_precip: float = 0.0
+	var sum_temp_adv: float = 0.0
+	var temp_adv_weight: float = 0.0
 	var max_i: float = 0.0
 	while not queue.is_empty():
 		var cell: HexCell = queue.pop_front()
@@ -2940,6 +3015,15 @@ func _flood_fill_field_component(
 		sum_axis += cell.wind_vector
 		sum_cloud += cell.weather_cloud
 		sum_precip += cell.weather_precip
+		var wind: Vector2 = cell.wind_vector
+		if wind.length_squared() > 0.0001:
+			var upstream: HexCell = _neighbor_aligned(cell, map, -wind)
+			var downstream: HexCell = _neighbor_aligned(cell, map, wind)
+			if downstream != null:
+				var upstream_temp: float = upstream.temperature if upstream != null else cell.temperature
+				var local_adv: float = upstream_temp - downstream.temperature
+				sum_temp_adv += local_adv * ci
+				temp_adv_weight += ci
 		max_i = maxf(max_i, ci)
 		for nb: HexCell in _cell_neighbors(cell, map):
 			if nb == null or visited.has(nb):
@@ -2953,12 +3037,15 @@ func _flood_fill_field_component(
 	if cells.is_empty():
 		return {}
 	var count: float = float(cells.size())
+	var temp_advection: float = sum_temp_adv / maxf(temp_adv_weight, 0.001)
 	return {
 		"type": wt,
 		"center": sum_pos / count,
 		"axis": sum_axis / count,
 		"cloud": sum_cloud / count,
 		"precip": sum_precip / count,
+		"temp_advection": temp_advection,
+		"front_diag_kind": _front_diagnostic_kind(temp_advection),
 		"intensity": max_i,
 		"area": cells.size(),
 		"score": max_i * sqrt(count),
@@ -3007,6 +3094,9 @@ func _merge_nearby_components(components: Array) -> Array:
 				ci["axis"] = (Vector2(ci.get("axis", Vector2.ZERO)) * ai + Vector2(cj.get("axis", Vector2.ZERO)) * aj) / total
 				ci["cloud"] = (float(ci.get("cloud", 0.0)) * ai + float(cj.get("cloud", 0.0)) * aj) / total
 				ci["precip"] = (float(ci.get("precip", 0.0)) * ai + float(cj.get("precip", 0.0)) * aj) / total
+				var temp_adv: float = (float(ci.get("temp_advection", 0.0)) * ai + float(cj.get("temp_advection", 0.0)) * aj) / total
+				ci["temp_advection"] = temp_adv
+				ci["front_diag_kind"] = _front_diagnostic_kind(temp_adv)
 				ci["intensity"] = maxf(float(ci.get("intensity", 0.0)), float(cj.get("intensity", 0.0)))
 				ci["area"] = total
 				ci["score"] = float(ci.get("intensity", 0.0)) * sqrt(total)

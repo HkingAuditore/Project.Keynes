@@ -62,10 +62,10 @@ DCSystemScheduler unavailable / disabled
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
-| `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job，内部可走 merged native；运行期水文是链内 stage。 |
+| `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
 | `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。 |
 | `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | dynamic smooth atlas、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助。 |
-| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | 仍受 gate 控制，未替代 legacy runtime authority。 |
+| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | 仍受 gate 控制，未替代 legacy runtime authority；天气场启用而 native weather publish 未验证时必须回落到 legacy SUS jobs。 |
 
 ## Job descriptor 字段
 
@@ -117,9 +117,22 @@ job-local soft budget。它由 job 的 `run_slice(ctx)` 使用，例如：
 `slice_budget_ms` 是协作式预算，不是硬中断。
 
 Weather field 的 cell budget 来自 `weather_field_slice_cells()`，当前按
-`ClimateProfile.weather_field_slice_cells` clamp 到 `100..2400`。在 2400-cell
-地图上，若该值被压得太低，field solve/commit 会跨过多 tick，CSV 中会表现为
-天气生成、变化、消失频率偏慢；这属于切片 cadence 问题，不一定是分类规则问题。
+`ClimateProfile.weather_field_slice_cells` clamp 到 `100..6400`，默认 `2400`。
+当 GDExtension weather field 可用且 `n_cells <= 6400` 时，`map_generator`
+优先返回 `n_cells`，让 native field solve 一次覆盖全图。目标是每 1-2 个模拟日
+完成一次 `gdext_commit`；CSV 中的 `weather_commit_tick_delta` /
+`weather_last_commit_tick` 是判断天气生命周期 cadence 的权威字段。若该值被压得太低
+或 native 不可用，field solve/commit 会跨过多 tick，CSV 中会表现为天气生成、变化、
+消失频率偏慢；这属于切片 cadence 问题，不一定是分类规则问题。
+
+Merged/native daily weather scheduling rule (2026-06-22): method presence is
+not a handoff contract. `weather_refresh_job` only enables the one-shot
+weather transaction when `MapGenerator.weather_native_daily_available()` returns
+true. `native_daily_sim` uses the same gate; if weather field is enabled and the
+gate is false, ACTIVE registration is refused so normal `weather_refresh` still
+registers and publishes the staged field. This prevents the failure pattern
+where cadence diagnostics advance but `weather_field_init_arr` and all weather
+field arrays remain zero.
 
 ### `hydrology_discharge`
 

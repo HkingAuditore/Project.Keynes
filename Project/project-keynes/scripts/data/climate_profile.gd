@@ -618,7 +618,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # and refresh_seasonal). All values intentionally small to keep "weather → map"
 # coupling on a slow timescale.
 @export var weather_to_soil_gain: float = 0.014          # daily ↑ on soil_moisture per unit precip
-@export var weather_to_vegetation_gain: float = 0.008    # daily ↑ on growth_pressure per unit precip
+@export var weather_to_vegetation_gain: float = 0.012    # daily ↑ on growth_pressure per unit precip
 # weather → base_moisture 直接反馈(降水抬升/干旱压低局地气候湿度)。代码保留(map_generator.gd +
 # world_ext.cpp 三镜像)，默认 0 关闭 —— 2026-06-21 部分回滚：与 A(vapor 去锚定)一同撤下，先单独
 # 验证 C(风场 synoptic)对流动性的贡献，避免反馈耦合干扰分离实验。需要时设 >0 重新启用。
@@ -706,15 +706,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.85
 # precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
 # 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
-@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.30
+@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.40
 # 雨云化(2026-06-22):把降水从"静力+背景主导"转为"动力触发主导",消除弥漫弱雨/原地永雨,让降水集中成雨核并随
 # 辐合/锋面/对流系统移动(生成-运动-消减)。两参数经 weather_system→knobs 进 C++ run_climate_pass_a(不重编)。
 # precip_base_frac:autoconversion 背景成雨比例。原0.50→零动力区也有8%背景雨→海62.8%弥漫弱雨。降0.12让无动力
 #   区转晴、降水只在移动天气系统处爆发。注:陆地热力对流雨(THERMAL_CONV_PRECIP)旁路本项,内陆对流雨保留。
 @export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.12
-# cloud_reevap:干空气云水再蒸发率。原0.06太弱→云团不消散、陆地连续降水中位32天。提0.14让低湿处云水更快蒸发回
+# cloud_reevap:干空气云水再蒸发率。原0.06太弱→云团不消散、陆地连续降水中位32天。提0.18让低湿处云水更快蒸发回
 #   vapor→雨团/云团边缘消散、雨过转晴,形成生命周期。过高则云难积累,须按CSV复核。
-@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.14
+@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.18
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
@@ -750,7 +750,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 稳态(干湿区固定)→永雨永旱。下调让本地蒸发-降水收支更主导，雨区耗水汽后能转干、干区能重新积累。
 @export_range(0.0, 1.0, 0.01) var weather_vapor_transport_gain: float = 0.75
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
-@export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
+@export_range(100, 6400, 50) var weather_field_slice_cells: int = 2400
 # 天气类型过渡状态机（prev_type→target_type 按 alpha 0→1）。两个作用：
 #   1) 视觉淡入：当前无 shader/baker 采样 weather_transition_alpha，淡入不会被渲染出来；
 #   2) ★离散 type 稳定化：连续 ⌈1/rate⌉ tick 维持同一新类型才真正切换 weather_type，吸收

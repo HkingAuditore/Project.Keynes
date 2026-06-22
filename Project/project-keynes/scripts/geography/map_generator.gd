@@ -2399,7 +2399,11 @@ func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
 	# stage_b follows albedo / vegetation / feedback strides and is legitimately
 	# absent on most probe ticks. Requiring it here prevents native_daily active
 	# handoff even though the scheduler can simply skip that node for the tick.
-	keys.append("weather_knobs")
+	var weather_field_required: bool = _weather_system != null \
+			and _weather_system.has_method("uses_weather_field") \
+			and bool(_weather_system.uses_weather_field())
+	if weather_field_required:
+		keys.append("weather_knobs")
 	return keys
 
 
@@ -2463,7 +2467,9 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 		maxi(1, _weather_stage_b_call_index)
 	)
 	var stage_b_embedded_in_weather: bool = false
+	var native_weather_daily_allowed: bool = weather_native_daily_available()
 	if _weather_system != null and _world != null \
+			and native_weather_daily_allowed \
 			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		var season_idx_local: int = 0
 		var anomaly_local: float = 0.0
@@ -2492,6 +2498,8 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
 			if commit_side_effects:
 				_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+	elif _weather_system != null and _world != null and not native_weather_daily_allowed:
+		bundle["weather_native_daily_blocked"] = true
 	if not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
 		bundle["stage_b_knobs"] = stage_b_knobs
 	return bundle
@@ -2560,6 +2568,12 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	var cp := _c()
 	if not _native_mode_is_active(cp, "native_daily_sim_mode"):
+		return false
+	var weather_field_required: bool = _weather_system != null \
+			and _weather_system.has_method("uses_weather_field") \
+			and bool(_weather_system.uses_weather_field())
+	if weather_field_required and not weather_native_daily_available():
+		push_warning("[native_daily] ACTIVE requested but staged weather field is the only verified visible weather authority; falling back to legacy SUS jobs")
 		return false
 	if not _native_daily_configured or _data_core_world_ext == null:
 		push_warning("[native_daily] ACTIVE requested but native world is not configured; falling back to legacy SUS jobs")
@@ -10140,6 +10154,15 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	return fronts_out
 
 
+func weather_native_daily_available() -> bool:
+	# The combined native daily pass is not the visible weather authority yet:
+	# recent CSV diagnostics showed it can advance cadence while leaving
+	# MapData.weather_field_init_arr and all weather field arrays at zero. Keep
+	# SUS on the staged begin/solve/commit path until this facade verifies a
+	# real field publication contract.
+	return false
+
+
 # Stage A：tick_one_day（advection / spawn / distribute / cyclone）。
 # WeatherRefreshJob 可把 field solver 拆成多 tick；最后一片才返回当日 fronts。
 # 副作用：写入 cell.current_state（weather/intensity/cloud/precip）+ 更新 _last_world / _last_active_fronts。
@@ -10167,8 +10190,16 @@ func weather_uses_field_solver() -> bool:
 func weather_field_slice_cells() -> int:
 	var cp_now := _c()
 	if cp_now == null:
-		return 500
-	return clampi(int(cp_now.weather_field_slice_cells), 100, 2400)
+		return 2400
+	var n_cells: int = _sus_map.cell_count() if _sus_map != null else 0
+	if n_cells > 0 and n_cells <= 6400 \
+			and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("run_weather_field_solve_pass") \
+			and _weather_system != null \
+			and _weather_system.has_method("uses_weather_field") \
+			and bool(_weather_system.uses_weather_field()):
+		return n_cells
+	return clampi(int(cp_now.weather_field_slice_cells), 100, 6400)
 
 
 func begin_weather_refresh_stage_a(map: MapData, world: WorldData, season_idx: int,
@@ -10212,6 +10243,10 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		"water_budget_error": float(result.get("water_budget_error", 0.0)),
 		"active_weather_ratio": float(result.get("active_weather_ratio", 0.0)),
 		"field_solve_tick": int(sub.get("field_solve_tick", -1)),
+		"weather_commit_tick_delta": int(sub.get("weather_commit_tick_delta", 0)),
+		"weather_last_commit_tick": int(sub.get("weather_last_commit_tick", -1)),
+		"weather_cold_front_count": int(sub.get("weather_cold_front_count", 0)),
+		"weather_warm_front_count": int(sub.get("weather_warm_front_count", 0)),
 		"field_convergence_refresh_stride": int(sub.get("field_convergence_refresh_stride", 0)),
 		"refresh_convergence": bool(sub.get("refresh_convergence", false)),
 		"native_convergence_boost": bool(sub.get("native_convergence_boost", false)),
@@ -10236,6 +10271,21 @@ func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[Wea
 		fronts = _weather_system.commit_weather_field_solve()
 	var sub: Dictionary = _weather_system.last_breakdown() if _weather_system.has_method("last_breakdown") else {}
 	_weather_round_tick_ms = float(sub.get("weather_tick_ms", sub.get("field_solve_ms", 0.0)))
+	if not sub.is_empty():
+		var merged: Dictionary = _last_weather_breakdown.duplicate(true)
+		merged.merge(sub, true)
+		merged["weather_tick_ms"] = _weather_round_tick_ms
+		merged["weather_field_bake_ms"] = float(merged.get("weather_field_bake_ms", 0.0))
+		merged["transp_ms"] = float(merged.get("transp_ms", 0.0))
+		merged["albedo_ms"] = float(merged.get("albedo_ms", 0.0))
+		merged["veg_dyn_ms"] = float(merged.get("veg_dyn_ms", 0.0))
+		merged["cover_rebake_ms"] = float(merged.get("cover_rebake_ms", 0.0))
+		merged["veg_rebake_ms"] = float(merged.get("veg_rebake_ms", 0.0))
+		merged["feedback_ms"] = float(merged.get("feedback_ms", 0.0))
+		merged["total_ms"] = (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0
+		merged["fronts"] = fronts.size()
+		merged["_tick_idx"] = _current_fast_tick_idx
+		_last_weather_breakdown = merged
 	_last_active_fronts = fronts
 	_weather_round_fronts = fronts
 	return fronts
@@ -10706,9 +10756,17 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"field_commit_setup_ms": float(sub.get("field_commit_setup_ms", 0.0)),
 		"field_commit_loop_ms": float(sub.get("field_commit_loop_ms", 0.0)),
 		"field_commit_path": str(sub.get("field_commit_path", "")),
+		"field_commit_publish_verified": bool(sub.get("field_commit_publish_verified", false)),
+		"field_commit_publish_repaired": bool(sub.get("field_commit_publish_repaired", false)),
+		"field_commit_init_count": int(sub.get("field_commit_init_count", 0)),
+		"field_commit_publish_reason": str(sub.get("field_commit_publish_reason", "")),
 		"field_commit_dc_ms": float(sub.get("field_commit_dc_ms", 0.0)),
 		"field_commit_convergence_ms": float(sub.get("field_commit_convergence_ms", 0.0)),
 		"field_solve_tick": int(sub.get("field_solve_tick", -1)),
+		"weather_commit_tick_delta": int(sub.get("weather_commit_tick_delta", 0)),
+		"weather_last_commit_tick": int(sub.get("weather_last_commit_tick", -1)),
+		"weather_cold_front_count": int(sub.get("weather_cold_front_count", 0)),
+		"weather_warm_front_count": int(sub.get("weather_warm_front_count", 0)),
 		"field_convergence_refresh_stride": int(sub.get("field_convergence_refresh_stride", 0)),
 		"refresh_convergence": bool(sub.get("refresh_convergence", false)),
 		"native_convergence_boost": bool(sub.get("native_convergence_boost", false)),
@@ -11503,12 +11561,13 @@ func _update_vegetation_stress(cell: HexCell, map: MapData, idx: int, temp: floa
 	var moist_tol: float = maxf(float(prof.moist_tolerance), 0.05)
 	var heat_input: float = clampf((temp - (float(prof.ideal_temp) + temp_tol)) / temp_tol, 0.0, 1.0)
 	var cold_input: float = clampf(((float(prof.ideal_temp) - temp_tol) - temp) / temp_tol, 0.0, 1.0)
-	var drought_input: float = clampf(((float(prof.ideal_moist) - moist_tol) - plant_water) / moist_tol, 0.0, 1.0)
+	var water_deficit: float = clampf(((float(prof.ideal_moist) - moist_tol) - plant_water) / moist_tol, 0.0, 1.0)
+	var drought_input: float = water_deficit
 	if cell.weather_field_initialized:
 		if int(cell.weather_type) == int(WeatherType.WT.HEATWAVE):
 			heat_input = maxf(heat_input, clampf(cell.weather_intensity, 0.0, 1.0))
 		elif int(cell.weather_type) == int(WeatherType.WT.DROUGHT):
-			drought_input = maxf(drought_input, clampf(cell.weather_intensity, 0.0, 1.0))
+			drought_input = maxf(drought_input, water_deficit * clampf(cell.weather_intensity, 0.0, 1.0))
 		elif int(cell.weather_type) == int(WeatherType.WT.BLIZZARD):
 			cold_input = maxf(cold_input, clampf(cell.weather_intensity, 0.0, 1.0))
 	var old_heat: float = cell.vegetation_heat_stress
@@ -11757,7 +11816,8 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 					cell, map, idx_vd, temp, plant_water, compat, weather_stress, scale)
 			stress_max = float(stress_info.get("stress", 0.0))
 			regen_score = float(stress_info.get("regen", 0.0))
-		var target: float = clampf(compat - weather_stress - stress_max * 0.25 + regen_score * 0.10, 0.0, 1.0)
+		var water_pressure: float = clampf(water_balance_30d * 0.18 + soil_moisture * 0.10, -0.12, 0.12)
+		var target: float = clampf(compat + water_pressure - weather_stress - stress_max * 0.25 + regen_score * 0.10, 0.0, 1.0)
 		var prev_vitality: float = cell.vegetation_vitality
 		var dv: float = (target - prev_vitality) * float(_c().vitality_change_rate)
 		if dv < 0.0:
