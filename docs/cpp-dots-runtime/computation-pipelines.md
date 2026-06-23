@@ -712,6 +712,26 @@ Weather field geometry contract (2026-06-23):
   directly as the cone threshold when `cell_pos` is unit-scale; that recreates
   stationary seam rain bands on ocean wrap cells.
 
+### 气候真实度修复 Stage 7–10 (2026-06-23, 续)
+
+- **Stage 7–8（重编）**：对流抑制（relaxation oscillator，C++ member `_wx_conv_inhib`，
+  旋钮 INHIB_CHARGE/REFRAC/LEAK/STRENGTH/WET）破连下长尾；地形降水阻尼方向修正
+  （`wf_precip_terrain_damping_factor`：LAKE 0.50 / DELTA 0.40 / SWAMP 0.30 / JUNGLE 0 / HILL 0，
+  原先山地/雨林被错误重压）；洪泛非门控退水（moist<0.5 且 precip<0.04 → 退 FLOODING）。
+- **Stage 9（重编，#5 雨热不同期）**：预报性斜压涡旋场 **ψ**（C++ member `_wx_synoptic`/`_prev`，
+  逐 tick 平流+斜压增长+hash 种子+耗散+扩散，**仅 C++，GDScript 无镜像**）。耦合**受斜压门控**
+  `baroclinic_gate=smoothstep(0.04,0.16,temp_gradient)`：ψ>0 在中纬冷季锋区 `dynamic_forcing +=
+  psi*syn_front_force*gate`、`precip *= 1+psi*(syn_enh+syn_front_enh*gate)`；热带 gate≈0 不增雨
+  （避免 7a 热带暴雨回归）→ 地中海/海洋性雨热不同期气候。湖泊 over-water 抑制 0.70→0.35。
+  实测雨热不同期+海洋型占比 5%→18%。
+- **Stage 10（重编，#5b 跳变平滑）**：实测空间 |Δprecip|=181%、时间=100% 的格点噪声。两处镜像
+  改动（`world_ext.cpp` 与 `field_solver.gd`）：① 不应期 `*=(1-INHIB_STRENGTH)` 从 EMA **后**移到
+  `precip_target`（EMA **前**）→降水随惯性平滑衰减，不再瞬间砍断（去时间跳变）；② 最终降水向
+  邻域（上一 tick）均值轻混（旋钮 `field_precip_spatial_smooth` 默认 0.30，复用
+  `wf_neighbor_average_vapor_idx`）→削单格棋盘噪声，连片风暴邻格相近≈不变（保暴雨）。
+  **未解（下一轮）**：#2 暴雨/大雨概率偏低、#3/#4 河湖蒸发源不足+湖区少雨（over-water 抑制非
+  瓶颈，缺辐合/抬升）、#5a 雪区少雨、#6 山地少雨——属同一「冷/高/水区过干」簇。
+
 ### 半真实大气模型（2026-06-19）
 
 > ⚠ **历史调参演进（19a/b/c）**：本节记录 2026-06-19 三次 CSV 标定的演进过程，其中相当
