@@ -16,8 +16,12 @@ func _init() -> void:
 func _run() -> void:
 	print("=== WeatherField solver test ===")
 	_test_orographic_rain_shadow()
+	_test_cylindrical_wrap_uses_shortest_neighbor_vector()
 	_test_warm_convection_prefers_storm()
+	_test_warm_humid_open_ocean_forms_rain_without_warm_current()
+	_test_moderate_warm_humid_open_ocean_releases_latent_rain()
 	_test_cold_precip_prefers_blizzard()
+	_test_snow_cover_cold_precip_prefers_blizzard_on_land()
 	_test_precip_consumes_vapor()
 	_test_precip_carryover_and_vapor_relaxation()
 	_test_orographic_lift_cap_formula()
@@ -28,22 +32,36 @@ func _run() -> void:
 	print("=== done: %d checks, %d failures ===" % [_checks, _failures])
 
 func _test_orographic_rain_shadow() -> void:
-	var map := MapData.new(3, 1)
-	map.set_cell(_cell(-1, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.68, 0.78, Vector2.RIGHT))
-	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.82, 0.62, 0.78, Vector2.RIGHT))
-	map.set_cell(_cell(1, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.20, 0.62, 0.78, Vector2.RIGHT))
+	var map := MapData.new(5, 1)
+	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.68, 0.78, Vector2.RIGHT))
+	map.set_cell(_cell(1, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.82, 0.62, 0.78, Vector2.RIGHT))
+	map.set_cell(_cell(2, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.20, 0.62, 0.78, Vector2.RIGHT))
+	map.set_cell(_cell(3, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.60, 0.70, Vector2.RIGHT))
+	map.set_cell(_cell(4, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.60, 0.70, Vector2.RIGHT))
 	map.rebuild_soa_from_cells()
 	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(180.0, 100.0)))
 	ws.tick_one_day(map, _world(), 1, 0.0, 1.5)
-	var mountain := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
-	var wet_side := ws.query_at(HexUtils.cube_to_world(1, 0, HEX_SIZE))
+	var mountain := ws.query_at(HexUtils.cube_to_world(1, 0, HEX_SIZE))
+	var rain_shadow := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
 	# 半真实大气模型（2026-06-19）：山体本身会获得真实地形抬升降水（不再像旧模型那样
-	# 把山峰判成 CLEAR 把 precip 清零），因此 wet_side 与山峰的差额自然缩小。仍断言
-	# 下风侧降水高于山峰这一定性关系，margin 由 0.05 重标定为 0.03 以匹配进阶模型。
+	# 把山峰判成 CLEAR 把 precip 清零），因此只断言抬升侧高于相邻背风雨影。
 	# 2026-06-22 雨云化重标定：背景成雨被压低后，单 tick 地形雨差额不再强求 0.03；
 	# 保留湿侧高于相邻雨影这一结构关系，强度分布由 CSV soak 复核。
-	_expect(float(wet_side.get("precip", 0.0)) > float(mountain.get("precip", 0.0)) + 0.005,
-		"orographic wet side should exceed adjacent rain shadow (wet=%.3f shadow=%.3f)" % [float(wet_side.get("precip", 0.0)), float(mountain.get("precip", 0.0))])
+	_expect(float(mountain.get("precip", 0.0)) > float(rain_shadow.get("precip", 0.0)) + 0.005,
+		"orographic lift should exceed adjacent rain shadow (lift=%.3f shadow=%.3f)" % [float(mountain.get("precip", 0.0)), float(rain_shadow.get("precip", 0.0))])
+
+func _test_cylindrical_wrap_uses_shortest_neighbor_vector() -> void:
+	var map := MapData.new(5, 1)
+	for q in range(5):
+		map.set_cell(_cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.05, 0.70, 0.80, Vector2.LEFT))
+	map.rebuild_soa_from_cells()
+	var ws := _weather_system(Rect2(Vector2(-20.0, -40.0), Vector2(160.0, 100.0)))
+	ws.begin_weather_field_solve(map, _world(), 1, 0.0, 1.5, false)
+	var idx0: int = map.index_of(map.get_cell(0, 0))
+	var wrapped_idx: int = ws._neighbor_aligned_idx(idx0, Vector2.LEFT, ws._field_solver._field_slice_cell_pos, map.neighbor_indices_packed())
+	var wrapped_cell: HexCell = map.cell_at(wrapped_idx)
+	_expect(wrapped_cell != null and wrapped_cell.q == 4,
+		"westward seam neighbor should use shortest wrapped vector (idx=%d q=%s)" % [wrapped_idx, str(wrapped_cell.q if wrapped_cell != null else null)])
 
 func _test_warm_convection_prefers_storm() -> void:
 	var map := MapData.new(2, 1)
@@ -62,6 +80,48 @@ func _test_warm_convection_prefers_storm() -> void:
 			float(q.get("instability", 0.0)),
 		])
 
+func _test_warm_humid_open_ocean_forms_rain_without_warm_current() -> void:
+	var map := MapData.new(5, 1)
+	for q in range(5):
+		map.set_cell(_cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.04, 0.69, 0.96, Vector2.RIGHT, 0.0))
+	map.rebuild_soa_from_cells()
+	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(220.0, 100.0)))
+	ws.tick_one_day(map, _world(), 1, 0.02, 1.5)
+	var q2 := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
+	_expect(int(q2.get("type", WeatherType.WT.CLEAR)) in [WeatherType.WT.RAIN, WeatherType.WT.STORM],
+		"warm humid open ocean should release mobile marine rain without requiring a warm-current anomaly (type=%d precip=%.3f cloud_water=%.3f cloud=%.3f vapor=%.3f instability=%.3f)" % [
+			int(q2.get("type", WeatherType.WT.CLEAR)),
+			float(q2.get("precip", 0.0)),
+			float(q2.get("cloud_water", 0.0)),
+			float(q2.get("cloud", 0.0)),
+			float(q2.get("vapor", 0.0)),
+			float(q2.get("instability", 0.0)),
+		])
+
+func _test_moderate_warm_humid_open_ocean_releases_latent_rain() -> void:
+	var map := MapData.new(5, 1)
+	for q in range(5):
+		var c := _cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.04, 0.62, 0.88, Vector2.RIGHT, 0.0)
+		c.wind_speed = 1.20
+		c.weather_field_initialized = true
+		c.weather_vapor = 0.86
+		c.weather_cloud = 0.12
+		map.set_cell(c)
+	map.rebuild_soa_from_cells()
+	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(220.0, 100.0)))
+	ws.tick_one_day(map, _world(), 1, 0.02, 1.5)
+	var q2 := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
+	var wt: int = int(q2.get("type", WeatherType.WT.CLEAR))
+	_expect(wt in [WeatherType.WT.RAIN, WeatherType.WT.STORM],
+		"moderate warm humid open ocean should release latent marine rain (type=%d precip=%.3f cloud_water=%.3f cloud=%.3f vapor=%.3f instability=%.3f)" % [
+			wt,
+			float(q2.get("precip", 0.0)),
+			float(q2.get("cloud_water", 0.0)),
+			float(q2.get("cloud", 0.0)),
+			float(q2.get("vapor", 0.0)),
+			float(q2.get("instability", 0.0)),
+		])
+
 func _test_cold_precip_prefers_blizzard() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
 	# 天气分类海陆分离重标(2026-06-22)：现为 11 参，包含 cloud_water / monsoon_flux / is_water。
@@ -70,6 +130,15 @@ func _test_cold_precip_prefers_blizzard() -> void:
 	var wt: int = ws._classify_field_weather_at(0.16, 0.55, 0.35, 0.18, 0.12, 0.20, 0.0, 1.0, 0.0, 0.0, true)
 	_expect(wt == WeatherType.WT.BLIZZARD,
 		"cold humid precipitating region should classify as BLIZZARD (type=%d)" % wt)
+
+func _test_snow_cover_cold_precip_prefers_blizzard_on_land() -> void:
+	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
+	var land_wt: int = ws._classify_field_weather_at(0.30, 0.55, 0.26, 0.14, 0.050, 0.20, 0.0, 0.20, 0.0, 0.0, false, 0.55)
+	var water_wt: int = ws._classify_field_weather_at(0.30, 0.55, 0.26, 0.14, 0.050, 0.20, 0.0, 0.20, 0.0, 0.0, true, 0.55)
+	_expect(land_wt == WeatherType.WT.BLIZZARD,
+		"snow-covered cold land precip should classify as BLIZZARD without high wind (type=%d)" % land_wt)
+	_expect(water_wt != WeatherType.WT.BLIZZARD,
+		"snow-cover diagnostic should not force low-wind water precip into BLIZZARD (type=%d)" % water_wt)
 
 func _test_precip_consumes_vapor() -> void:
 	var map := MapData.new(1, 1)
@@ -206,9 +275,9 @@ func _test_deterministic_same_seed_same_map() -> void:
 
 func _determinism_map() -> MapData:
 	var map := MapData.new(3, 1)
-	map.set_cell(_cell(-1, 0, TerrainType.TERRAIN.COAST, LandformType.LF.COAST, 0.08, 0.72, 0.82, Vector2.RIGHT, 0.15))
-	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.24, 0.66, 0.76, Vector2.RIGHT, 0.08))
-	map.set_cell(_cell(1, 0, TerrainType.TERRAIN.HILL, LandformType.LF.HILL, 0.42, 0.60, 0.72, Vector2.RIGHT, 0.02))
+	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.COAST, LandformType.LF.COAST, 0.08, 0.72, 0.82, Vector2.RIGHT, 0.15))
+	map.set_cell(_cell(1, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.24, 0.66, 0.76, Vector2.RIGHT, 0.08))
+	map.set_cell(_cell(2, 0, TerrainType.TERRAIN.HILL, LandformType.LF.HILL, 0.42, 0.60, 0.72, Vector2.RIGHT, 0.02))
 	map.rebuild_soa_from_cells()
 	return map
 

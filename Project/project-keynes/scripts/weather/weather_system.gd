@@ -761,6 +761,11 @@ func _distribute_to_cells(map: MapData) -> void:
 					cell.cover = CoverType.CV.FLOODING
 					cell.current_state["cover"] = int(cell.cover)
 					_cover_dirty = true
+				elif cell.cover == CoverType.CV.FLOODING and not heavy_flood and not lowland_flood and moist_now < 0.50:
+					# Stage8 修"洪泛不退→与旱灾共存"：积水在干燥(无致洪条件且 moist<0.50)时退去，恢复 NONE。
+					cell.cover = CoverType.CV.NONE
+					cell.current_state["cover"] = int(cell.cover)
+					_cover_dirty = true
 
 	# PR-2.1.6（weather → climate 反馈写路径下移）：循环结束后批量提交 cell.moisture / cell.temperature 到 DCWorld。
 	if _data_core_world != null and _wd_w > 0:
@@ -831,7 +836,11 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"season_idx": _field_solver._field_slice_season_idx,
 			"climate_anomaly": _field_solver._field_slice_climate_anomaly,
 			"refresh_convergence": _field_solver._field_slice_refresh_convergence,
+			"weather_lat_te_norm": _field_solver._field_slice_lat_te_norm,
+			"weather_solve_tick": _field_solve_tick,
 			"cell_pos": _field_solver._field_slice_cell_pos,
+			"weather_wrap_width_x": _field_solver._field_slice_wrap_width_x,
+			"weather_cell_pos_scale": _field_solver._field_slice_cell_pos_scale,
 			"temp_anomaly": map.temp_anomaly_arr,
 			"neighbor_indices": _field_solver._field_slice_neighbor_indices,
 			"prev_vapor": _field_solver._field_slice_prev_vapor,
@@ -883,7 +892,11 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"season_phase": _season_phase,
 		"world_bounds_pos_y": _world_bounds.position.y,
 		"world_bounds_size_y": _world_bounds.size.y,
+		"weather_lat_te_norm": _field_solver._field_slice_lat_te_norm,
+		"weather_solve_tick": _field_solve_tick,
 		"refresh_convergence": _field_solver._field_slice_refresh_convergence,
+		"weather_wrap_width_x": _field_solver._field_slice_wrap_width_x,
+		"weather_cell_pos_scale": _field_solver._field_slice_cell_pos_scale,
 		"apply_convergence_boost": not _field_verify_enabled,
 		"hex_size": _hex_size,
 		"field_advect_steps": _field_advect_steps,
@@ -956,6 +969,8 @@ func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells:
 		knobs["out_intensity"] = _field_solver._field_slice_next_intensity
 		knobs["out_convergence"] = _field_solver._field_slice_next_convergence
 		knobs["out_type"] = _field_solver._field_slice_next_type
+	# Stage6c: 对流抑制记忆改存为 C++ ext 成员(_wx_conv_inhib)，不再走 knob 回传(CoW 失败)。GDScript fallback
+	# 路径仍用 _field_solver._convective_inhib 成员(同进程内无边界问题)。
 	var rc: float = float(_data_core_world_ext.run_weather_field_solve_pass(knobs))
 	if rc >= 0.0 and knobs.has("out_vapor"):
 		_field_solver._field_slice_next_vapor = knobs["out_vapor"]
@@ -2113,6 +2128,8 @@ func _clear_weather_field_slice_state() -> void:
 	_field_solver._field_slice_results_in_soa = false
 	_field_solver._field_slice_native_convergence_boost = false
 	_field_solver._field_slice_temp_anom = PackedFloat32Array()
+	_field_solver._field_slice_wrap_width_x = 0.0
+	_field_solver._field_slice_cell_pos_scale = 1.0
 	_field_solver._field_slice_native_knobs.clear()
 
 func _solve_weather_field(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float) -> void:
@@ -2196,7 +2213,9 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 		var precip0: float = soa_precip[i]
 		var inst0: float = soa_instability[i]
 		var cloud1: float = clampf(maxf(cloud0, 0.25 + frontal_score * 0.20), 0.0, 1.0)
-		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0)
+		var vapor1: float = soa_vapor[i]
+		var frontal_precip_allowed: bool = vapor1 > 0.09
+		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0) if frontal_precip_allowed else precip0
 		var inst1: float = clampf(maxf(inst0, 0.25 + frontal_score * 0.15), 0.0, 1.0)
 		# AoS 镜像写回（兼容 renderer 在 round 内未 flush 时直读 HexCell 字段）
 		cell.weather_cloud = cloud1
@@ -2209,10 +2228,14 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 		var new_wt: int = wt0
 		if temp_diff < WEAK_TEMP_DIFF and (wt0 == WeatherType.WT.STORM or wt0 == WeatherType.WT.MONSOON):
 			new_wt = WeatherType.WT.RAIN
-		cell.weather_type = new_wt
-		# 重算 intensity（沿用同套公式，确保下游可视化一致）。
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		var vapor1: float = soa_vapor[i]
+		if not _is_precip_weather_type(new_wt) and precip1 >= 0.040:
+			new_wt = WeatherType.WT.RAIN
+		if not _is_precip_weather_type(new_wt):
+			precip1 = 0.0
+		cell.weather_type = new_wt
+		cell.weather_precip = precip1
+		# 重算 intensity（沿用同套公式，确保下游可视化一致）。
 		var new_intensity: float = _field_intensity_for_type(new_wt, t_self, vapor1, cloud1, precip1, inst1, ocean_an)
 		cell.weather_intensity = new_intensity
 		# B-full Step-2：SoA 镜像（与 view_f32 同引用）—— 所有被本 pass 修改的字段都写出
@@ -2267,8 +2290,8 @@ const SNOW_FREEZE_T: float = 0.24       # 低于此温度才算"可降雪冷度"
 const SNOW_MELT_T: float = 0.31         # 高于此温度开始消融，保持滞回防抖
 # 涌现式分类门（2026-06-20 去季节化重写）：阈值由 tile_data_record_20260620_004323 实测标定。
 # 不再有任何 season_idx 派生的开关——天气类型完全由瞬时物理场涌现。
-const BLIZZARD_WIND_GATE: float = 1.15  # 过渡带(FREEZE~MELT)冷降水仅当风速>此值才算"暴风雪"，否则归 RAIN(冷雨)。实测 BLIZZARD 风速 p50≈1.04、全局 p90≈1.34
-const HEATWAVE_ANOM_GATE: float = 0.0   # 热浪温度距平门：>此值(比常态偏暖)即触发。实测最热区常年高温→距平≈0，故设 0.0(中性偏暖即可)，避免热浪因"绝对热但非异常热"而永不触发；时间动态来自距平在 0 附近正负波动
+const BLIZZARD_WIND_GATE: float = 1.0  # Stage2: 1.15→1.0(过渡带冷降水阈降，原 1.15>典型风速 1.04 把冷降水误判冷雨)。过渡带(FREEZE~MELT)冷降水仅当风速>此值才算"暴风雪"
+const HEATWAVE_ANOM_GATE: float = 0.06   # Stage3 (2026-06-23): 0.0→0.06。热浪改为气象学定义=显著正温度距平(比常态明显偏暖)的暖事件。temp_anomaly_arr p90≈0.058，0.06 约取最暖 ~9%，配合 temp>0.55+precip<0.015 落在暖季少雨暖距平区
 
 # 2026-05-18 雪线修正：海拔放宽 → 高山易积雪、平原难积雪。
 # 以 elev=0.30 为中性（freeze_t = 0.30、melt_t = 0.34），
@@ -2296,7 +2319,10 @@ func _snowline_floor_for_cell(temp_now: float, heat_input: float, elevation: flo
 	var summer_drop: float = sun * lerpf(0.14, 0.045, high_elev)
 	var elev_bonus: float = clampf((elevation - SNOW_ELEV_NEUTRAL) * 0.10, 0.0, 0.08)
 	var effective_threshold: float = _snowline_temp_threshold + elev_bonus - summer_drop
-	return clampf((effective_threshold - temp_now) / maxf(_snowline_band, 0.001), 0.0, 1.0)
+	var raw_floor: float = clampf((effective_threshold - temp_now) / maxf(_snowline_band, 0.001), 0.0, 1.0)
+	# Stage4(2026-06-23): 雪线 floor 只为「深冻区」自动铺白；雪线边缘(floor 弱)交给 snowpack-from-snowfall，
+	# 让降雪可见地先于积雪(修"雪盖先于降雪")。smoothstep(0.30,0.80) 截掉最弱的暖侧雪线 floor。镜像 world_ext.cpp。
+	return smoothstep(0.30, 0.80, raw_floor)
 
 func _apply_snow_accumulation(cell: HexCell, wt: int, temp_now: float, intensity: float) -> bool:
 	# 返回 true 表示本调用改写了 cell.cover（caller 据此设置 _cover_dirty）。
@@ -2446,16 +2472,16 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 # 涌现式半真实大气分类（2026-06-20 去季节化重写）。天气类型完全由瞬时物理场（温度/湿度/云/
 # 降水/不稳定度/风/洋流异常）涌现，不再读 season_idx 或纬度——"季节"作为温度场随轴倾/公转的
 # 结果自然进入。与 C++ wf_classify_field_weather_at 严格镜像。
-func _classify_field_weather_at(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false) -> int:
-	return _classify_field_weather_core(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water)
+func _classify_field_weather_at(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false, snow_cover: float = 0.0) -> int:
+	return _classify_field_weather_core(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water, snow_cover)
 
 # 涌现判据（无 season_idx，阈值由 tile_data_record_20260620_004323 实测标定）：
 #   temp 已含轴倾→季节的温度结构；temp_anom=该格温度距平(异常冷暖)；wind_speed=原始风速(暴风强度)。
 # 判定顺序：冰雪/暴风雪 → 强暖海/强对流风暴 → 季风 → 普通降水 → 雾 → 热浪 → 旱灾 → 晴。
-func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false) -> int:
+func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud_water: float, precip: float, instability: float, ocean_an: float, wind_speed: float, temp_anom: float, monsoon_flux: float = 0.0, is_water: bool = false, snow_cover: float = 0.0) -> int:
 	# 去纬度门(2026-06-20)：分类不再使用纬度，类型边界由温度/湿度等弯曲物理场涌现，避免沿纬线的直线条带。
 	var warm: bool = temp > 0.55
-	var hot: bool = temp > 0.64
+	# Stage3(2026-06-23): 删除 hot(temp>0.64)——热浪重定义为温度距平事件，不再用绝对高温门。
 	# advective 模型下陆地 vapor/cloud 量级仅海洋的 1/5~1/30(海洋是水汽源,陆地天然干)。湿润类阈值海陆
 	# 独立标定:海洋保原值(海洋天气分布已合理);陆地按实测分位下调(陆 vapor p50=.034/p90=.086,cloud
 	# p50=.021/p90=.078),否则陆地 STORM/MONSOON/FOG 被"打死"全归 CLEAR/DROUGHT(用户:内陆永旱)。
@@ -2483,6 +2509,8 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud
 	if _cold_precip_as_blizzard and meaningful_precip:
 		if temp <= SNOW_FREEZE_T:
 			return WeatherType.WT.BLIZZARD
+		if not is_water and snow_cover >= 0.25 and temp < SNOW_MELT_T + _snow_classification_margin:
+			return WeatherType.WT.BLIZZARD
 		if temp < SNOW_MELT_T + _snow_classification_margin \
 				and effective_cloud > 0.18 and vapor > 0.20 and precip > 0.04 \
 				and wind_speed > BLIZZARD_WIND_GATE:
@@ -2490,14 +2518,18 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud
 	# 2) 强对流风暴：暖湿 + 高不稳定 + 强降水；暖洋异常核心强制成 STORM。
 	#    去硬纬度门(原 lat_abs<0.70)——warm(temp>0.55) 已把 STORM 限制在暖区，类型边界改由弯曲的
 	#    等温线决定，消除"沿纬线的数学直线天气带"(用户反馈的不科学条带)。实测 STORM inst p50≈0.65。
-	var warm_ocean_core: bool = ocean_an > 0.08 and instability > 0.58 and precip > 0.050 and effective_cloud > 0.24 and precip_cloud_mass > 0.045
-	if warm and humid and ((instability > 0.50 and precip > 0.050 and precip_cloud_mass > 0.045) or warm_ocean_core):
+	# Stage6h: STORM 阈大幅提高(雷暴应是少数强对流)。原 instability>0.50 被 47% 的 RAIN 格满足→STORM≈RAIN 数量、
+	# 且与 RAIN 在 0.50 阈两侧逐 tick 横跳。提到 0.70(RAIN p90=0.76→仅最强对流入选)+ precip 0.05→0.065。
+	var warm_ocean_core: bool = is_water and ocean_an > 0.05 and instability > 0.64 and precip > 0.060 and effective_cloud > 0.24 and precip_cloud_mass > 0.045
+	if warm and humid and ((instability > 0.70 and precip > 0.065 and precip_cloud_mass > 0.050) or warm_ocean_core):
 		return WeatherType.WT.STORM
 	# 3) 季风：暖 + 季风湿通量/大尺度高湿 + 持续降水 + 厚云。暖海强对流核心先归 STORM，
 	#    季风保留给沿岸/上岸的持续雨带，避免台风种子被 MONSOON 抢占。
 	var monsoon_driver: float = maxf(monsoon_flux, smoothstep(monsoon_vapor * 0.78, monsoon_vapor + 0.06, vapor) * 0.24)
 	var sustained_precip: bool = precip > monsoon_precip * 0.82 and precip_cloud_mass > monsoon_cloud * 0.38
-	var monsoon_flow_gate: bool = monsoon_driver > 0.12 or (not warm_ocean_core and vapor > monsoon_vapor * 0.86)
+	var monsoon_flux_gate: float = 0.08 if is_water else 0.13
+	var inland_monsoon_plume: bool = (not is_water) and vapor > 0.24 and wind_speed > 0.75 and precip > monsoon_precip and precip_cloud_mass > monsoon_cloud * 0.45
+	var monsoon_flow_gate: bool = monsoon_driver > monsoon_flux_gate or inland_monsoon_plume
 	if warm and sustained_precip and effective_cloud > monsoon_cloud * 0.82 and monsoon_flow_gate:
 		return WeatherType.WT.MONSOON
 	# 4) 普通降水（含被降级的过渡带冷雨）。
@@ -2506,31 +2538,40 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud
 	# 5) 雾：高湿低降水、偏凉。单阈 cloud>0.14（FOG 闪烁由 EMA 平滑后的 cloud/precip 场自然消除）。
 	if vapor > fog_vapor and effective_cloud > fog_cloud and precip < 0.030 and temp < 0.55:
 		return WeatherType.WT.FOG
-	# 6) 热浪：高温(temp>0.64) + 晴朗少雨 + 温度距平偏暖(temp_anom>门，比常态暖即触发、变冷即退→自带
-	#    时间动态)。去硬纬度门(原 lat_abs<0.62)：hot 已限定暖区、边界随等温线弯曲。实测最热区常年高温故
-	#    距平≈0(候选 temp_anom p50≈0.003)，旧 0.04 门只放行 16% 候选→热浪几乎为 0；门降至 0.0(见常量)。
-	if hot and temp_anom > HEATWAVE_ANOM_GATE and effective_cloud < 0.38 and precip < 0.025:
-		return WeatherType.WT.HEATWAVE
-	# 7) 旱灾(2026-06-22 重定义)：旧判据 vapor<0.34/cloud<0.22 在陆地恒真(陆地天然干)→退化成"暖即旱"，
-	#    内陆/河流旁常年误报旱灾。改为"异常偏暖干"事件:温度距平显著为正(temp_anom>0.10,陆地 p88)才算旱灾,
-	#    常态干燥归 CLEAR。cloud<0.22 由海洋(cloud p50=.64)挡住→海上不报旱;陆地恒真不影响。
-	if temp > 0.55 and temp_anom > 0.10 and precip < 0.020 and effective_cloud < 0.22:
+	# 6) 旱灾(2026-06-22 定义，Stage3 提到热浪之前)：暖 + 异常偏暖(temp_anom>0.10) + 几乎无降水 + 少云。
+	#    bone-dry 强暖距平先归旱灾；剩余的暖距平少雨格落到下面的热浪。
+	if (not is_water) and temp > 0.55 and temp_anom > 0.10 and precip < 0.006 and effective_cloud < 0.18:
 		return WeatherType.WT.DROUGHT
+	# 7) 热浪(Stage3→Stage5 重定义 2026-06-23)：实测 target_type=6 在运行期恒为 0——分类器运行期收到的
+	#    temp_anom 与录制 temp_anomaly_arr 不一致(疑似写入时序/climate_anomaly 冷偏)，使"绝对热"或"正距平"
+	#    两条路都打不到暖格。改用 STORM/MONSOON 同款已验证可达的 warm(temp>0.55) + 晴(effective_cloud<0.24)
+	#    + 干(vapor<0.12) + 少雨。语义=暖季晴干热天(副热带下沉/大陆内部)。注意:本判据可达但速率需用新录制标定。
+	if (not is_water) and warm and precip < 0.012 and effective_cloud < 0.24 and vapor < 0.12:
+		return WeatherType.WT.HEATWAVE
 	return WeatherType.WT.CLEAR
 
 
+func _is_precip_weather_type(wt: int) -> bool:
+	return wt == WeatherType.WT.RAIN \
+		or wt == WeatherType.WT.STORM \
+		or wt == WeatherType.WT.BLIZZARD \
+		or wt == WeatherType.WT.MONSOON
+
+
 func _weather_precip_terrain_damping_factor(terrain: int) -> float:
+	# Stage8 (2026-06-23) 用户:雨团绕着湖/山/盆地走、湿润地形不下雨。原设定把恰恰最该多雨的地形(雨林/
+	# 地形抬升坡/湿地)的降水压低——方向反了。JUNGLE/HILL 应多雨故归 0；湿地仅轻微阻尼防过湿。镜像 world_ext.cpp。
 	match terrain:
 		TerrainType.TERRAIN.LAKE:
-			return 1.0
+			return 0.50
 		TerrainType.TERRAIN.DELTA:
-			return 1.0
+			return 0.40
 		TerrainType.TERRAIN.SWAMP:
-			return 0.8
+			return 0.30
 		TerrainType.TERRAIN.JUNGLE:
-			return 0.55
+			return 0.0
 		TerrainType.TERRAIN.HILL:
-			return 0.45
+			return 0.0
 		_:
 			return 0.0
 
@@ -2598,7 +2639,8 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 		var is_water_cell: bool = LandformType.is_water(cell.landform) or _is_water_terrain(int(cell.terrain))
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
-		var precip: float = cell.weather_precip if cell.weather_field_initialized else 0.0
+		var raw_precip: float = cell.weather_precip if cell.weather_field_initialized else 0.0
+		var precip: float = raw_precip if _is_precip_weather_type(wt) else 0.0
 		var moist_now: float = cell.moisture
 		var temp_now: float = cell.temperature
 		if wt == WeatherType.WT.CLEAR or intensity <= 0.001:
@@ -2745,6 +2787,11 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 					cell.cover = CoverType.CV.FLOODING
 					cell.current_state["cover"] = int(cell.cover)
 					_cover_dirty = true
+			# Stage8 退水：不受 can_form_flood 门限制(故 DROUGHT/CLEAR 也能退)→修"洪泛与旱灾共存"。干燥时积水退去。
+			if cell.cover == CoverType.CV.FLOODING and moist_now < 0.50 and precip < 0.04:
+				cell.cover = CoverType.CV.NONE
+				cell.current_state["cover"] = int(cell.cover)
+				_cover_dirty = true
 
 	# [perf] 末尾批量 commit moisture / temperature 到 DCWorld（一次性 mark dirty）
 	if _data_core_world != null and _wfd_w > 0:

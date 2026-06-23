@@ -17,6 +17,10 @@ var id: StringName = &""
 ## Scheduling policy. nil → AlwaysPolicy by default.
 var policy: SusPolicy = null
 
+## Native SUS normally evaluates the registered policy descriptor directly.
+## Enable this only when job-local state in should_run() changes eligibility.
+var use_job_should_run: bool = false
+
 ## Per-slice soft budget (ms). SUS uses this only as advisory; actual cutoff
 ## is enforced by the scheduler-wide frame_budget_ms.
 var slice_budget_ms: float = 0.75

@@ -16,91 +16,57 @@ const PRESETS := [
 ]
 
 const BASE_FIELDS := [
-	{"name": "map_width", "label": "地图宽度", "type": "int", "default": 60, "min": 10, "max": 500, "step": 1},
-	{"name": "map_height", "label": "地图高度", "type": "int", "default": 40, "min": 8, "max": 400, "step": 1},
-	{"name": "initial_seed", "label": "随机种子", "type": "int", "default": 0, "min": 0, "max": 2147483647, "step": 1},
-	{"name": "sea_level", "label": "海平面", "type": "float", "default": 0.42, "min": 0.1, "max": 0.8, "step": 0.01},
-	{"name": "num_continents", "label": "大陆数", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
-	{"name": "continent_size", "label": "大陆大小", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
+	{"name": "map_width", "label": "地图宽度", "hint": "调大：地块更多、生成更慢", "type": "int", "default": 60, "min": 10, "max": 500, "step": 1},
+	{"name": "map_height", "label": "地图高度", "hint": "调大：南北更宽、地块更多", "type": "int", "default": 40, "min": 8, "max": 400, "step": 1},
+	{"name": "initial_seed", "label": "随机种子", "hint": "0=每次随机；同一个数字生成同一张图", "type": "int", "default": 0, "min": 0, "max": 2147483647, "step": 1},
+	{"name": "sea_level", "label": "海洋多少", "hint": "调大：海洋更多、陆地更少", "type": "float", "default": 0.42, "min": 0.1, "max": 0.8, "step": 0.01},
+	{"name": "num_continents", "label": "大陆块数", "hint": "调大：大陆核心更多、更分散", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
+	{"name": "continent_size", "label": "大陆整体大小", "hint": "调大：每块大陆更大、更容易连成片", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
 ]
 
 const CLIMATE_GROUPS := [
 	{
-		"title": "大陆形态",
+		"title": "陆地形状",
 		"fields": [
-			{"name": "continent_warp_amp", "label": "大陆扭曲强度", "type": "float", "default": 0.15, "min": 0.0, "max": 0.6, "step": 0.01},
-			{"name": "main_radius_min", "label": "主大陆最小半径", "type": "float", "default": 0.70, "min": 0.2, "max": 1.2, "step": 0.01},
-			{"name": "main_radius_max", "label": "主大陆最大半径", "type": "float", "default": 0.90, "min": 0.2, "max": 1.2, "step": 0.01},
-			{"name": "main_placement_min", "label": "主大陆放置下限", "type": "float", "default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "main_placement_max", "label": "主大陆放置上限", "type": "float", "default": 0.82, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "main_separation_factor", "label": "主大陆间距系数", "type": "float", "default": 0.85, "min": 0.0, "max": 1.5, "step": 0.01},
+			{"name": "continent_spacing", "label": "大陆分散度", "hint": "调大：大陆之间更分开；调小：更容易连成一片", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "island_amount", "label": "岛屿数量", "hint": "调大：岛屿和群岛更多；调小：海面更干净", "type": "int", "default": 50, "min": 0, "max": 100, "step": 1},
+			{"name": "coast_roughness", "label": "海岸曲折度", "hint": "调大：海岸线更碎、更曲折；调小：大陆边缘更圆滑", "type": "int", "default": 50, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
-		"title": "岛屿 / 边缘",
+		"title": "山脉与地形",
 		"fields": [
-			{"name": "satellite_radius_min", "label": "卫星岛最小半径", "type": "float", "default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "satellite_radius_max", "label": "卫星岛最大半径", "type": "float", "default": 0.40, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "satellites_per_main", "label": "每大陆卫星岛数", "type": "int", "default": 3, "min": 0, "max": 8, "step": 1},
-			{"name": "satellite_placement_min", "label": "卫星岛放置下限", "type": "float", "default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "satellite_placement_max", "label": "卫星岛放置上限", "type": "float", "default": 0.92, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "satellite_separation_factor", "label": "卫星岛间距系数", "type": "float", "default": 0.55, "min": 0.0, "max": 1.5, "step": 0.01},
-			{"name": "edge_falloff_start", "label": "边缘衰减起点", "type": "float", "default": 0.80, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "edge_falloff_end", "label": "边缘衰减终点", "type": "float", "default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "edge_falloff_depth", "label": "边缘衰减深度", "type": "float", "default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01},
+			{"name": "relief_amount", "label": "地形起伏", "hint": "调大：高地/盆地更明显，河流流域更大；调小：更平坦", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "mountain_amount", "label": "山脉强度", "hint": "调大：山更高更连片；调小：山脉更弱", "type": "int", "default": 60, "min": 0, "max": 100, "step": 1},
+			{"name": "valley_amount", "label": "河谷切割", "hint": "调大：河谷更深、河道更清晰；调小：侵蚀更弱", "type": "int", "default": 45, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
-		"title": "降雨 / 雨影",
+		"title": "湿润程度",
 		"fields": [
-			{"name": "orographic_boost", "label": "地形降雨增强", "type": "float", "default": 1.2, "min": 0.0, "max": 3.0, "step": 0.05},
-			{"name": "rain_shadow_threshold", "label": "雨影阈值", "type": "float", "default": 0.13, "min": 0.0, "max": 0.5, "step": 0.01},
-			{"name": "rain_shadow_factor", "label": "雨影削减系数", "type": "float", "default": 0.50, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "rain_shadow_lookback", "label": "雨影回看距离", "type": "int", "default": 3, "min": 0, "max": 8, "step": 1},
+			{"name": "wetness", "label": "整体湿润", "hint": "调大：森林/沼泽/湿润地更多；调小：草原/荒漠更多", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "coastal_wetness", "label": "沿海湿润带", "hint": "调大：海边更湿、湿润带更宽；调小：海岸影响更弱", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "rain_shadow", "label": "山脉挡雨", "hint": "调大：背风侧更容易变干；调小：雨影更弱", "type": "int", "default": 50, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
 		"title": "湖泊",
 		"fields": [
-			{"name": "hydro_lake_min_cells", "label": "真实湖盆最小格数", "type": "int", "default": 8, "min": 1, "max": 200, "step": 1},
-			{"name": "hydro_lake_min_depth", "label": "真实湖盆最小深度", "type": "float", "default": 0.018, "min": 0.0, "max": 0.2, "step": 0.001},
-			{"name": "hydro_lake_min_volume", "label": "真实湖盆最小体积", "type": "float", "default": 0.22, "min": 0.0, "max": 5.0, "step": 0.01},
-			{"name": "lake_seed_freq", "label": "湖泊种子噪声频率", "type": "float", "default": 0.05, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "lake_seed_threshold", "label": "湖泊种子阈值", "type": "float", "default": 0.60, "min": 0.0, "max": 1.0, "step": 0.01},
-			{"name": "lake_seed_depth", "label": "湖泊种子下沉深度", "type": "float", "default": 0.10, "min": 0.0, "max": 0.2, "step": 0.005},
-			{"name": "lake_seed_min_interior", "label": "湖泊最小内陆距离", "type": "float", "default": 0.12, "min": 0.0, "max": 0.45, "step": 0.01},
+			{"name": "lake_density", "label": "湖泊密度", "hint": "调大：湖泊更多；调小：湖泊更少", "type": "int", "default": 45, "min": 0, "max": 100, "step": 1},
+			{"name": "lake_size", "label": "湖泊大小", "hint": "调大：单个湖更大更深；调小：湖更小", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
 		"title": "河流",
 		"fields": [
-			{"name": "river_flow_percentile", "label": "河流密度(径流百分位,越高河流越少)", "type": "float", "default": 0.72, "min": 0.50, "max": 0.95, "step": 0.01},
-			{"name": "hydro_river_min_length", "label": "真实河流最小长度", "type": "int", "default": 5, "min": 1, "max": 200, "step": 1},
+			{"name": "river_density", "label": "河流密度", "hint": "调大：支流更多、水网更密；调小：只保留大河", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "short_rivers", "label": "短河保留", "hint": "调大：中短河也会显示；调小：只显示长河", "type": "int", "default": 50, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
-		"title": "火山",
+		"title": "特殊地貌",
 		"fields": [
-			{"name": "max_volcanoes", "label": "最大火山数", "type": "int", "default": 8, "min": 0, "max": 32, "step": 1},
-			{"name": "volcano_min_dist", "label": "火山最小间距", "type": "int", "default": 6, "min": 0, "max": 20, "step": 1},
-			{"name": "volcano_min_land_h", "label": "火山最低陆地高度", "type": "float", "default": 0.65, "min": 0.0, "max": 1.0, "step": 0.01},
-		],
-	},
-	{
-		"title": "天气 / 洋流 / 海冰",
-		"fields": [
-			{"name": "weather_field_enabled", "label": "启用天气场", "type": "bool", "default": true},
-			{"name": "physical_circulation_enabled", "label": "启用物理风洋流", "type": "bool", "default": true},
-			{"name": "sea_ice_independent_system_enabled", "label": "启用独立海冰刷新", "type": "bool", "default": true},
-			{"name": "sea_ice_form_threshold", "label": "海冰形成温度阈值", "type": "float", "default": 0.06, "min": -1.0, "max": 1.0, "step": 0.01},
-			{"name": "sea_ice_melt_threshold", "label": "海冰融化温度阈值", "type": "float", "default": 0.11, "min": -1.0, "max": 1.0, "step": 0.01},
-		],
-	},
-	{
-		"title": "运行时实验",
-		"fields": [
-			{"name": "fast_slow_layering_enabled", "label": "启用快慢层分离", "type": "bool", "default": true},
-			{"name": "use_climate_round_async", "label": "异步气候轮次", "type": "bool", "default": true},
+			{"name": "volcano_amount", "label": "火山数量", "hint": "调大：火山更多、间距更近；调小：火山更少", "type": "int", "default": 40, "min": 0, "max": 100, "step": 1},
 		],
 	},
 ]
@@ -248,7 +214,7 @@ func _build_base_panel(parent: VBoxContainer) -> void:
 	for field in BASE_FIELDS:
 		var control := _create_field_control(field)
 		_base_controls[String(field["name"])] = control
-		parent.add_child(_row_with_label(String(field["label"]), control))
+		parent.add_child(_row_with_label(String(field["label"]), control, String(field.get("hint", ""))))
 
 	var seed_row := HBoxContainer.new()
 	seed_row.add_theme_constant_override("separation", 8)
@@ -267,7 +233,7 @@ func _build_base_panel(parent: VBoxContainer) -> void:
 
 func _build_climate_panel(parent: VBoxContainer) -> void:
 	var advanced_title := Label.new()
-	advanced_title.text = "高级生成参数"
+	advanced_title.text = "世界风格（简单调节）"
 	advanced_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
 	parent.add_child(advanced_title)
 
@@ -278,7 +244,7 @@ func _build_climate_panel(parent: VBoxContainer) -> void:
 		for field in group["fields"]:
 			var control := _create_field_control(field)
 			_climate_controls[String(field["name"])] = control
-			body.add_child(_row_with_label(String(field["label"]), control))
+			body.add_child(_row_with_label(String(field["label"]), control, String(field.get("hint", ""))))
 
 
 func _create_foldout(title: String) -> Dictionary:
@@ -302,29 +268,43 @@ func _create_foldout(title: String) -> Dictionary:
 	return {"root": root, "body": body}
 
 
-func _row_with_label(label_text: String, control: Control) -> BoxContainer:
+func _row_with_label(label_text: String, control: Control, hint_text: String = "") -> BoxContainer:
 	var row: BoxContainer = VBoxContainer.new()
 	if not _mobile_layout:
 		row = HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var separation: int = 10
-	if _mobile_layout:
-		separation = 6
-	row.add_theme_constant_override("separation", separation)
-	var label := Label.new()
-	label.text = label_text
-	var label_width := 180.0
-	if _mobile_layout:
-		label_width = 0.0
-	label.custom_minimum_size = Vector2(label_width, 0.0)
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 14 if not _mobile_layout else 6)
+
+	var label_box := VBoxContainer.new()
+	label_box.add_theme_constant_override("separation", 2)
+	label_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if not _mobile_layout:
-		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label_box.custom_minimum_size = Vector2(320.0, 0.0)
+		label_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var title_label := Label.new()
+	title_label.text = label_text
+	title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	if _mobile_layout:
-		label.add_theme_font_size_override("font_size", 18)
-	row.add_child(label)
+		title_label.add_theme_font_size_override("font_size", 18)
+	label_box.add_child(title_label)
+
+	if not hint_text.is_empty():
+		var hint_label := Label.new()
+		hint_label.text = hint_text
+		hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
+		if _mobile_layout:
+			hint_label.add_theme_font_size_override("font_size", 14)
+		else:
+			hint_label.add_theme_font_size_override("font_size", 12)
+		label_box.add_child(hint_label)
+		label_box.tooltip_text = hint_text
+		control.tooltip_text = hint_text
+
+	row.add_child(label_box)
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(control)
 	return row
 
@@ -339,9 +319,14 @@ func _create_field_control(field: Dictionary) -> Control:
 		check.toggled.connect(func(_pressed: bool) -> void: _on_field_changed())
 		return check
 
+	var min_value := float(field.get("min", 0.0))
+	var max_value := float(field.get("max", 1.0))
+	if field_type == "int" and is_equal_approx(min_value, 0.0) and is_equal_approx(max_value, 100.0):
+		return _create_slider_spin_control(field)
+
 	var spin := SpinBox.new()
-	spin.min_value = float(field.get("min", 0.0))
-	spin.max_value = float(field.get("max", 1.0))
+	spin.min_value = min_value
+	spin.max_value = max_value
 	spin.step = float(field.get("step", 0.01))
 	spin.value = float(field.get("default", 0.0))
 	spin.rounded = field_type == "int"
@@ -349,8 +334,49 @@ func _create_field_control(field: Dictionary) -> Control:
 	spin.allow_lesser = false
 	spin.select_all_on_focus = true
 	spin.custom_minimum_size = _control_min_size(120.0, 32.0)
+	spin.size_flags_horizontal = Control.SIZE_SHRINK_END
 	spin.value_changed.connect(func(_value: float) -> void: _on_number_field_changed())
 	return spin
+
+
+func _create_slider_spin_control(field: Dictionary) -> Control:
+	var wrap := HBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 8)
+	wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrap.custom_minimum_size = _control_min_size(220.0, 32.0)
+
+	var slider := HSlider.new()
+	slider.min_value = float(field.get("min", 0.0))
+	slider.max_value = float(field.get("max", 100.0))
+	slider.step = float(field.get("step", 1.0))
+	slider.value = float(field.get("default", 0.0))
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrap.add_child(slider)
+
+	var spin := SpinBox.new()
+	spin.min_value = slider.min_value
+	spin.max_value = slider.max_value
+	spin.step = slider.step
+	spin.value = slider.value
+	spin.rounded = true
+	spin.allow_greater = false
+	spin.allow_lesser = false
+	spin.select_all_on_focus = true
+	spin.custom_minimum_size = _control_min_size(72.0, 32.0)
+	spin.size_flags_horizontal = Control.SIZE_SHRINK_END
+	wrap.add_child(spin)
+
+	slider.value_changed.connect(func(value: float) -> void:
+		if not is_equal_approx(spin.value, value):
+			spin.value = value
+		_on_number_field_changed()
+	)
+	spin.value_changed.connect(func(value: float) -> void:
+		if not is_equal_approx(slider.value, value):
+			slider.value = value
+		_on_number_field_changed()
+	)
+	return wrap
 
 
 func _apply_default_values() -> void:
@@ -384,13 +410,15 @@ func _apply_config(config: Dictionary) -> void:
 			var name := String(field["name"])
 			if (base as Dictionary).has(name):
 				_set_control_value(_base_controls[name], (base as Dictionary)[name])
-	var climate = config.get("climate", {})
-	if climate is Dictionary:
+	var controls = config.get("controls", {})
+	if not (controls is Dictionary):
+		controls = {}
+	if controls is Dictionary:
 		for group in CLIMATE_GROUPS:
 			for field in group["fields"]:
 				var name := String(field["name"])
-				if (climate as Dictionary).has(name):
-					_set_control_value(_climate_controls[name], (climate as Dictionary)[name])
+				if (controls as Dictionary).has(name):
+					_set_control_value(_climate_controls[name], (controls as Dictionary)[name])
 	_syncing = false
 	_enforce_range_pairs()
 	_update_preset_from_size()
@@ -402,6 +430,12 @@ func _set_control_value(control: Control, value) -> void:
 		(control as SpinBox).value = float(value)
 	elif control is CheckBox:
 		(control as CheckBox).button_pressed = bool(value)
+	elif control is HBoxContainer:
+		for child in (control as HBoxContainer).get_children():
+			if child is HSlider:
+				(child as HSlider).value = float(value)
+			elif child is SpinBox:
+				(child as SpinBox).value = float(value)
 
 
 func _control_value(control: Control, field_type: String):
@@ -410,7 +444,83 @@ func _control_value(control: Control, field_type: String):
 		return int(round(v)) if field_type == "int" else float(v)
 	if control is CheckBox:
 		return (control as CheckBox).button_pressed
+	if control is HBoxContainer:
+		for child in (control as HBoxContainer).get_children():
+			if child is SpinBox:
+				var sv := (child as SpinBox).value
+				return int(round(sv)) if field_type == "int" else float(sv)
+		for child in (control as HBoxContainer).get_children():
+			if child is HSlider:
+				var hv := (child as HSlider).value
+				return int(round(hv)) if field_type == "int" else float(hv)
 	return null
+
+
+func _pct(controls: Dictionary, name: String, default_value: float) -> float:
+	return clampf(float(controls.get(name, default_value)) / 100.0, 0.0, 1.0)
+
+
+func _mix(a: float, b: float, t: float) -> float:
+	return lerpf(a, b, clampf(t, 0.0, 1.0))
+
+
+func _mixi(a: int, b: int, t: float) -> int:
+	return int(round(_mix(float(a), float(b), t)))
+
+
+func _build_climate_overrides(controls: Dictionary) -> Dictionary:
+	var continent_spacing := _pct(controls, "continent_spacing", 55.0)
+	var island_amount := _pct(controls, "island_amount", 50.0)
+	var coast_roughness := _pct(controls, "coast_roughness", 50.0)
+	var relief_amount := _pct(controls, "relief_amount", 55.0)
+	var mountain_amount := _pct(controls, "mountain_amount", 60.0)
+	var valley_amount := _pct(controls, "valley_amount", 45.0)
+	var wetness := _pct(controls, "wetness", 55.0)
+	var coastal_wetness := _pct(controls, "coastal_wetness", 55.0)
+	var rain_shadow := _pct(controls, "rain_shadow", 50.0)
+	var lake_density := _pct(controls, "lake_density", 45.0)
+	var lake_size := _pct(controls, "lake_size", 55.0)
+	var river_density := _pct(controls, "river_density", 55.0)
+	var short_rivers := _pct(controls, "short_rivers", 50.0)
+	var volcano_amount := _pct(controls, "volcano_amount", 40.0)
+	var offshore_strength: float = clampf((island_amount + coast_roughness) * 0.5, 0.0, 1.0)
+
+	return {
+		"continent_warp_amp": _mix(0.04, 0.30, coast_roughness),
+		"main_separation_factor": _mix(0.62, 1.12, continent_spacing),
+		"satellites_per_main": _mixi(0, 7, island_amount),
+		"satellite_radius_min": _mix(0.26, 0.12, island_amount),
+		"satellite_radius_max": _mix(0.48, 0.28, island_amount),
+		"satellite_separation_factor": _mix(0.30, 0.80, continent_spacing),
+		"offshore_amp": _mix(0.20, 0.70, offshore_strength),
+		"meso_weight": _mix(0.12, 0.48, coast_roughness),
+		"macro_relief_weight": _mix(0.08, 0.45, relief_amount),
+		"ridge_boost_amp": _mix(0.25, 1.15, mountain_amount),
+		"spl_iters": _mixi(0, 30, valley_amount),
+		"spl_erodibility": _mix(0.35, 2.60, valley_amount),
+		"spl_uplift_rate": _mix(0.04, 0.18, mountain_amount),
+		"moisture_land_base": _mix(0.08, 0.30, wetness),
+		"moisture_precip_gain": _mix(2.0, 4.8, wetness),
+		"moisture_continental_dry": _mix(0.045, 0.012, wetness),
+		"moisture_coastal_floor": _mix(0.25, 0.62, coastal_wetness),
+		"coastal_moisture_boost": _mix(0.05, 0.38, coastal_wetness),
+		"orographic_boost": _mix(0.35, 2.2, mountain_amount),
+		"rain_shadow_threshold": _mix(0.22, 0.06, rain_shadow),
+		"rain_shadow_factor": _mix(0.88, 0.28, rain_shadow),
+		"rain_shadow_lookback": _mixi(1, 5, rain_shadow),
+		"hydro_lake_min_cells": _mixi(16, 4, lake_density),
+		"hydro_lake_min_depth": _mix(0.030, 0.010, lake_density),
+		"hydro_lake_min_volume": _mix(0.50, 0.10, lake_density),
+		"lake_seed_freq": _mix(0.090, 0.035, lake_size),
+		"lake_seed_threshold": _mix(0.72, 0.48, lake_density),
+		"lake_seed_depth": _mix(0.05, 0.16, lake_size),
+		"lake_seed_min_interior": 0.12,
+		"river_channel_init_cells": _mixi(30, 7, river_density),
+		"hydro_river_min_length": _mixi(10, 3, short_rivers),
+		"max_volcanoes": _mixi(0, 18, volcano_amount),
+		"volcano_min_dist": _mixi(14, 3, volcano_amount),
+		"volcano_min_land_h": _mix(0.78, 0.52, volcano_amount),
+	}
 
 
 func _on_preset_selected(index: int) -> void:
@@ -462,17 +572,18 @@ func _build_config() -> Dictionary:
 		var name := String(field["name"])
 		base[name] = _control_value(_base_controls[name], String(field["type"]))
 
-	var climate := {}
+	var controls := {}
 	for group in CLIMATE_GROUPS:
 		for field in group["fields"]:
 			var name := String(field["name"])
-			climate[name] = _control_value(_climate_controls[name], String(field["type"]))
+			controls[name] = _control_value(_climate_controls[name], String(field["type"]))
 
 	return {
-		"version": 1,
+		"version": 2,
 		"source": "world_setup",
 		"base": base,
-		"climate": climate,
+		"controls": controls,
+		"climate": _build_climate_overrides(controls),
 	}
 
 
@@ -486,13 +597,8 @@ func _save_settings(config: Dictionary = {}) -> void:
 
 
 func _enforce_range_pairs() -> void:
-	_syncing = true
-	_enforce_pair(_climate_controls, "main_radius_min", "main_radius_max")
-	_enforce_pair(_climate_controls, "main_placement_min", "main_placement_max")
-	_enforce_pair(_climate_controls, "satellite_radius_min", "satellite_radius_max")
-	_enforce_pair(_climate_controls, "satellite_placement_min", "satellite_placement_max")
-	_enforce_pair(_climate_controls, "edge_falloff_start", "edge_falloff_end")
-	_syncing = false
+	# 当前启动页只暴露玩家向单项控制；底层 min/max 配对由 _build_climate_overrides 派生。
+	pass
 
 
 func _enforce_pair(controls: Dictionary, min_name: String, max_name: String) -> void:

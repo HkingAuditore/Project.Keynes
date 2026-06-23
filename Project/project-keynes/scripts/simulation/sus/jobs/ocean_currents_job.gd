@@ -156,9 +156,9 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	period_ticks = ocean_period_ticks
 	slice_count = max(1, p_slice_count)
 	_slow_slice_policy = SusPolicyScript.ContinuousSlicedPolicy.new(ocean_period_ticks, slice_count)
-	# The native SUS scheduler evaluates only the registered policy descriptor.
-	# Keep this job eligible every day; run_slice() gates the slow ocean/pixel
-	# chain internally while always allowing the C++ daily wind prepass.
+	# Keep this job policy-forwarded. Stateful should_run() gates require
+	# use_job_should_run=true, but the slow ocean/pixel chain is intentionally
+	# gated inside run_slice() while the daily wind prepass stays eligible.
 	# Fix #11 (2026-06-15): mobile 上把 ocean 整体进 D 桶 (stride=8 phase=0)，
 	# 落 tick 8, 16, 24...，避免 ocean 单 slice 8-13ms 每 2 仿真日就吃光 budget。
 	# daily_wind prepass 也跟着 8 仿真日才跑一次（climate 读 wind 最多旧 7 仿真日）。

@@ -743,8 +743,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ocean_precip_suppression 0.85→0.95：海面原始降水近乎处处偏高(近饱和)，本系数把无动力强迫的
 # 静洋面压到降水阈值以下→只剩 convergence(辐合)/frontogenesis(锋生)/暖流异常 的「空间强迫带」成雨团，
 # 其余洋面转晴(雨团之间的晴海)。释放门控见 field_solver.gd 的 ocean_drive；越高雨团越紧、晴海越多。
-@export_range(0.0, 1.0, 0.01) var weather_ocean_precip_suppression: float = 0.95
-@export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.42
+# 0.95→0.60 (climate-realism Stage 0, 2026-06-23)：实测全球降水 99% 落陆地、海洋仅 1%(地球≈陆22/海78)。
+# 海洋只当水汽源、几乎不下雨。降低抑制让海上 ITCZ/辐合带恢复降水；空间结构由 Stage 1 omega 环流项提供
+# (ITCZ 上升下雨、副热带下沉转晴)，故可放心降低而不会回到"满屏弱雨"。
+# 0.60→0.45 (Stage 6b, 2026-06-23)：放电(Stage6)已自限海上过湿，可进一步放开让海面有足够降水形成
+# 充放电系统(修"海上不生成雨团"；实测 Stage6 后 ocean/land onset 比掉到 0.04)。
+@export_range(0.0, 1.0, 0.01) var weather_ocean_precip_suppression: float = 0.45
+# frontogenesis_gain 0.42→0.70 (climate-realism Stage 0, 2026-06-23)：增强锋生降水，让中纬斜压带出现
+# 会移动、会消散的温带过境雨团(修"只有单一 ITCZ 雨带摆动")，并把降水送到冷区触发降雪。
+@export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.70
 @export_range(0.0, 1.0, 0.01) var weather_rain_shadow_drying: float = 0.35
 # vapor_transport_gain 0.92→0.75(2026-06-20 阶段2打破水汽稳态)：原 0.92 让 vapor 被平流摊平锁成近
 # 稳态(干湿区固定)→永雨永旱。下调让本地蒸发-降水收支更主导，雨区耗水汽后能转干、干区能重新积累。
@@ -759,7 +766,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 脚本默认保持 false（不影响 tests 的瞬时分类断言）；运行时世界 data/world/earth_like.tres
 # 已显式置 true 启用 type 稳定化。成本：enabled=true 时跳过日也要跑 commit fan-out（高倍速
 # 下 ~35ms/次）。C++ 与 GDScript 两条路径都受此开关控制；rate 见下，⌈1/rate⌉=确认所需 tick。
-@export var weather_transition_enabled: bool = false
+# Stage6h (2026-06-23) false→true：启用离散类型稳定化，吸收阈值附近 RAIN↔STORM 逐 tick 横跳(用户:雷暴/降水反复切换)。
+@export var weather_transition_enabled: bool = true
 @export_range(0.0, 1.0, 0.01) var weather_transition_alpha_rate: float = 0.35
 
 # ══════════════════════════════════════════════════════════════════════

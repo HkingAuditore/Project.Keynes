@@ -1206,7 +1206,7 @@ func dynamic_cell_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, report
 		else:
 			world.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img)
 
-func _dynamic_cell_signature(cell: HexCell) -> int:
+func _dynamic_cell_signature(cell: HexCell, snow_override: float = -1.0) -> int:
 	# A 通道双语义（sea-ice-render-source-unify 阶段 C）：
 	#   - 水格（is_water=true，等价于 not passable_land）：A = q01_byte_ice(sea_ice_fraction)
 	#       让 shader 水路径直接从 dyn_atlas_smooth.A 读取海冰覆盖率；同源于
@@ -1219,7 +1219,8 @@ func _dynamic_cell_signature(cell: HexCell) -> int:
 	#              monolithic atlas pipeline pk_atlas_sig_dynamic（统一用 is_water 语义）。
 	var r: int = _q01_byte(float(cell.temperature))
 	var g: int = _q01_byte(float(cell.moisture))
-	var b: int = _q01_byte(float(cell.snow_cover))
+	var snow_val: float = snow_override if snow_override >= 0.0 else float(cell.snow_cover)
+	var b: int = _q01_byte(snow_val)
 	var a: int
 	if MapData.terrain_is_water(int(cell.terrain)):
 		a = _q01_byte_ice(float(cell.sea_ice_fraction))
@@ -1410,14 +1411,16 @@ func ecology_visual_atlas_chunk_finalize(world: WorldData, ctx: Dictionary, repo
 		else:
 			world.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
 
-func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality_byte: int) -> int:
+func _ecology_visual_signature(cell: HexCell, transition_age: int, prev_vitality_byte: int,
+		snow_override: float = -1.0) -> int:
 	var terrain_id: int = int(cell.terrain)
 	var is_water_cell: bool = MapData.terrain_is_water(terrain_id)
 	var veg_id: int = int(cell.vegetation)
 	var vitality: float = clampf(float(cell.vegetation_vitality), 0.0, 1.0)
 	var moist: float = clampf(float(cell.moisture), 0.0, 1.0)
 	var temp: float = clampf(float(cell.temperature), 0.0, 1.0)
-	var snow: float = clampf(float(cell.snow_cover), 0.0, 1.0)
+	var snow_src: float = snow_override if snow_override >= 0.0 else float(cell.snow_cover)
+	var snow: float = clampf(snow_src, 0.0, 1.0)
 
 	var foliage: float = 0.0
 	if not is_water_cell and veg_id != int(VegetationType.VEG.NONE):
@@ -4210,36 +4213,52 @@ func _ensure_cell_lut_dims(map: MapData, world: WorldData) -> void:
 # eco=_ecology_visual_signature/pk_atlas_sig_ecology），保证间接寻址与旧 atlas
 # bit-equivalent。cache_valid=true 时 C++ 端按 prev 推进 eco transition_age；
 # 初次 bake 传 false（transition 归零）。daily 刷新走 refresh_cell_luts_daily。
-func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -> void:
+func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -> Dictionary:
+	var report: Dictionary = {
+		"path": "gdscript",
+		"fallback": true,
+		"reason": "",
+		"elapsed_ms": 0.0,
+		"lut_encode_path": "none",
+		"lut_snow_source": "none",
+	}
 	if map == null or world == null:
-		return
+		report.reason = "missing_map_or_world"
+		return report
 	if world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		_ensure_cell_lut_dims(map, world)
 	var lw: int = world.lut_dims.x
 	var lh: int = world.lut_dims.y
 	if lw <= 0 or lh <= 0:
-		return
+		report.reason = "invalid_lut_dims"
+		return report
+	var n_cells: int = map.cell_count()
+	var snow_cover_override: PackedFloat32Array = PackedFloat32Array()
+	if map.snow_cover_arr.size() >= n_cells:
+		snow_cover_override = map.snow_cover_arr
+		report.lut_snow_source = "map_snow_cover_arr"
+	else:
+		report.lut_snow_source = "slot_or_facade"
 	# C++ 优先路径：scalar tight loop（即便 n_cells≈2400 也在 CPP 做，含 transition tracking）。
 	if _world_ext != null and _world_ext.has_method("encode_cell_luts"):
-		# [fix cell-indirect 2026-06-16] 不再在此 refresh_slots_from_map()：
-		# encode_cell_luts 与 encode_dynamic_cell_atlas / encode_dyn_smooth_atlas 同读
-		# _slots（cell_temp/moisture/snow/vegetation_vitality/sea_ice_frac），那几个旧
-		# pass 在同一 atlas 阶段直接读 *live* _slots 且不 refresh 也渲染正确——证明此处
-		# _slots 已是当前帧值。之前误加的 refresh_slots_from_map() 反而把 _slots 用
-		# *未回流的* MapData.*_arr 镜像（temp_arr/terrain_arr 等，原生气候 pass 只写
-		# _slots、不每 tick flush 回 MapData）覆盖成陈旧/空值 → enum/dyn/eco LUT 全 0
-		# （间接寻址地面发白、海冰消失、浮雕被糊）。skill §数据契约：两侧无可靠零拷贝，
-		# 不能假设 MapData 镜像与 _slots 同步。
+		# Do not call refresh_slots_from_map() here: several native climate fields can be
+		# newer in C++ slots than in MapData. Snow is different because weather/climate
+		# already flush it for gameplay and diagnostics, so pass that one field explicitly.
 		var out: Dictionary = _world_ext.encode_cell_luts({
 			"map": map,
 			"lut_w": lw,
 			"lut_h": lh,
-			"n_cells": map.cell_count(),
+			"n_cells": n_cells,
 			"terrain_lake": int(TerrainType.TERRAIN.LAKE),
 			"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
 			"veg_none": int(VegetationType.VEG.NONE),
 			"cache_valid": cache_valid,
+			"snow_cover_arr": snow_cover_override,
 		})
+		report = out.duplicate(true)
+		report["lut_encode_path"] = "gdext"
+		if snow_cover_override.size() >= n_cells:
+			report["lut_snow_source"] = "map_snow_cover_arr"
 		if not bool(out.get("fallback", true)):
 			var e = out.get("enum_lut", null)
 			var d = out.get("dyn_lut", null)
@@ -4252,12 +4271,17 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 				var wlut = out.get("weather_lut", null)
 				if wlut is PackedByteArray:
 					world.weather_lut_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
-				return
-	_bake_cell_luts_gd(map, world, lw, lh)
+				return report
+	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override)
+	report["lut_encode_path"] = "gdscript"
+	report["path"] = "gdscript"
+	report["fallback"] = true
+	return report
 
 
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
-func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int) -> void:
+func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
+		snow_cover_override: PackedFloat32Array = PackedFloat32Array()) -> void:
 	var slots: int = lw * lh
 	var enum_data := PackedByteArray(); enum_data.resize(slots * 3)
 	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
@@ -4273,14 +4297,15 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int) -> voi
 		enum_data[e3]     = int(cell.terrain) & 0xFF
 		enum_data[e3 + 1] = int(cell.vegetation) & 0xFF
 		enum_data[e3 + 2] = int(cell.cover) & 0xFF
-		var dsig: int = _dynamic_cell_signature(cell)
+		var snow_override: float = snow_cover_override[ci] if ci < snow_cover_override.size() else -1.0
+		var dsig: int = _dynamic_cell_signature(cell, snow_override)
 		var d4: int = ci * 4
 		dyn_data[d4]     = dsig & 0xFF
 		dyn_data[d4 + 1] = (dsig >> 8) & 0xFF
 		dyn_data[d4 + 2] = (dsig >> 16) & 0xFF
 		dyn_data[d4 + 3] = (dsig >> 24) & 0xFF
 		var cur_vit_byte: int = _q01_byte(float(cell.vegetation_vitality))
-		var esig: int = _ecology_visual_signature(cell, 0, cur_vit_byte)
+		var esig: int = _ecology_visual_signature(cell, 0, cur_vit_byte, snow_override)
 		var c4: int = ci * 4
 		eco_data[c4]     = esig & 0xFF
 		eco_data[c4 + 1] = (esig >> 8) & 0xFF
@@ -4309,11 +4334,11 @@ func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existin
 # daily LUT 全量刷新：cell 视觉状态每日变化（enum 翻面 / temp / snow / vitality 等），
 # per-cell LUT（n_cells ~2400）全量重烘 ~0.1-0.3ms，远小于旧 per-pixel fan-out。
 # 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）。
-func refresh_cell_luts_daily(map: MapData, world: WorldData) -> void:
+func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
-		return
+		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
-	bake_cell_luts(map, world, true)
+	return bake_cell_luts(map, world, true)
 
 
 # Systemic Ocean Currents：独立 R8 upwelling 纹理编码（L8 单通道，LINEAR 过滤）。

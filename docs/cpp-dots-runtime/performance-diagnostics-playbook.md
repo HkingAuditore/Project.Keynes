@@ -863,6 +863,13 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
 注意事项：
 
 - 三层 clamp（GDScript map_generator / GDScript sus_scheduler / C++ sus_scheduler_ext.h）都要同步放开，否则任何一层会把 4.0 压回 2.0
+
+后续修正（2026-06-23）：`must_run=true` 后来已回退，避免 visual upload 绕过
+预算造成帧尖峰。当前做法是让 `dynamic_visual_atlas_upload` 保持 optional，并通过
+`use_job_should_run=true` 使用 job-local LUT catch-up 状态。诊断时看
+`lut_last_due_tick`、`lut_last_refresh_tick`、`lut_refresh_pending_before` 和
+`lut_catchup`：如果 stride 到期 tick 被 `frame_budget_exhausted` 跳过，下一次运行
+应出现 `lut_catchup=true` 并刷新 `dyn_lut`，雪盖/海冰视觉不应一直停在旧状态。
 - C++ 改动需要 rebuild arm64 .so（已完成）
 - 副作用：Android NDK 严格编译时 `world_ext.cpp` 暴露了 `smoothstep_fn` 跨函数引用 bug（Windows 编译时 dead-code 优化吃掉了），顺手在原地用 `smoothstep_local` lambda 修复（不影响功能）。
 

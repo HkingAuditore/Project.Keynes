@@ -205,5 +205,5 @@ void fragment() {
 			ocean_current_v, wind_v, dyns.a);
 	}
 
-	COLOR = apply_global_adjustments(col, wp, pixel_noise);
+	COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);
 }

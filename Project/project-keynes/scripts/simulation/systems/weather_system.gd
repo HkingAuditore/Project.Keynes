@@ -40,7 +40,8 @@ class_name WeatherDCSystem
 ##   - reads:  weather hot loop 读 25+ component（climate / 慢层 / weather 自身）
 ##   - writes: cell.weather_intensity / .weather_cloud / .weather_precip /
 ##             .weather_vapor / .weather_convergence / .weather_instability /
-##             .weather_field_init / .weather_type / .weather_dirty_mask
+##             .weather_field_init / .weather_type / .weather_dirty_mask /
+##             .snow_cover（weather distribute 是运行时视觉雪盖权威）
 ##
 ## feature_flag：留空（weather 是世界推进必跑流程；DataCore 镜像由
 ## `use_data_core_weather` 控制，但本 system 在 legacy 路径也跑）。
@@ -105,6 +106,7 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_WEATHER_INSTABILITY,
 		DCComponentIds.CELL_WEATHER_FIELD_INIT,
 		DCComponentIds.CELL_WEATHER_DIRTY,
+		DCComponentIds.CELL_SNOW_COVER,
 	]
 
 

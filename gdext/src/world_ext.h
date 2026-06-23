@@ -1029,6 +1029,8 @@ public:
     //   fan-out pipeline 共用 pk_atlas_sig_dynamic / pk_atlas_sig_ecology 公式，
     //   保证 LUT 与全分辨率 atlas bit-equivalent。eco transition_age 由
     //   AtlasPipelineState::lut_* 持久状态自维护（与 pipeline eco 状态独立）。
+    //   可选 opts["snow_cover_arr"] 只覆盖雪盖视觉通道，避免为修复雪盖 stale
+    //   而全量 refresh_slots_from_map() 覆盖 native-only 槽。
     //   SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd。
     godot::Dictionary encode_cell_luts(godot::Dictionary opts);
 
@@ -1800,6 +1802,16 @@ private:
         int          init_days;
     };
     std::vector<CycloneWakeEntry>  _cyclone_perturbations;
+
+    // Stage6c (2026-06-23): 对流抑制记忆，per-cell，跨 tick/slice 存活的 C++ 端权威状态。
+    // 上一版走 knob in/out 数组经 const Dictionary CoW 回传失败(实测抑制 no-op)，改存为 ext 成员→
+    // 无边界穿越、保证持久。run_weather_field_solve_pass 读写；尺寸变化(换地图)时清零。
+    std::vector<float>             _wx_conv_inhib;
+    // Synoptic eddy field ψ (emergent weather variability). Prognostic, per-cell, cross-tick.
+    // Double-buffered as ext members (proven round-trip, like _wx_conv_inhib): _prev is the
+    // round-start snapshot read for advection; _cur is written this round. Sized on map change.
+    std::vector<float>             _wx_synoptic;
+    std::vector<float>             _wx_synoptic_prev;
 
     // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
     // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]

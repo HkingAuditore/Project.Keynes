@@ -10,7 +10,7 @@ class_name SeasonRefreshSystem
 ##             component；这里仅声明对调度器有意义的 high-level 输入
 ##   - writes: cell.terrain / cell.landform / cell.vegetation / cell.cover /
 ##             cell.moisture / cell.base_moisture / cell.weather_dirty_mask /
-##             cell.snow_cover（季节 redecide 阶段会动这些字段）
+##             不发布视觉 cell.snow_cover；运行时雪盖由 weather distribute 统一写入。
 ##
 ## feature_flag：留空（季节切换是世界推进必跑流程，无 toggle）。
 
@@ -78,7 +78,6 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_MOISTURE,
 		DCComponentIds.CELL_BASE_MOISTURE,
 		DCComponentIds.CELL_WEATHER_DIRTY,
-		DCComponentIds.CELL_SNOW_COVER,
 	]
 
 

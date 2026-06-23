@@ -260,12 +260,14 @@ days/frame is well under the ~120 days/sec ceiling at 8ms/4ms-per-tick).
 derived downstream from subsolar latitude, daily insolation, day length, thermal
 inertia, pressure, wind, and moisture fields.
 
-`ocean_currents` is registered with `AlwaysPolicy` even though the heavy ocean
-chain is not meant to run every day. This is intentional: `SusSchedulerExt`
-only evaluates the registered policy descriptor, not the job's GDScript
-`should_run()` override. The job must therefore be eligible every day so it can
-run the C++ daily wind prepass, while its internal `_slow_slice_policy`
-continues to gate PSI/ocean/upwelling/raster work by
+`SusSchedulerExt` evaluates the registered policy descriptor directly for the
+normal hot path. A job can opt into its GDScript `should_run(ctx)` by setting
+`use_job_should_run=true`; reserve that for stateful eligibility that cannot be
+encoded as a policy descriptor. `ocean_currents` deliberately stays on the
+descriptor path and is registered with `AlwaysPolicy` even though the heavy
+ocean chain is not meant to run every day. The job remains eligible for the C++
+daily wind prepass, while its internal `_slow_slice_policy` gates
+PSI/ocean/upwelling/raster work by
 `ocean_currents_period_ticks / ocean_currents_slice_count`.
 
 Expected daily reports:
@@ -352,3 +354,14 @@ inside the existing job.
 - Legacy report aliases such as `round_active`, `pending_commit`, and
   `next_pixel_idx` are compatibility fields. Prefer the `phys_*` and
   `visual_*` fields for new diagnostics.
+
+## Cell LUT Catch-Up
+
+With cell-indirection enabled, the world-map snow/ice visual path is the
+per-cell dynamic LUT (`dyn_lut.B/A`). `dynamic_visual_atlas_upload` remains a
+budgeted optional job, but it sets `use_job_should_run=true` and tracks
+`lut_last_due_tick` / `lut_last_refresh_tick`. If the stride due tick is skipped
+by `frame_budget_exhausted`, the next eligible tick reports `lut_catchup=true`
+and refreshes the LUT instead of waiting for the next stride. This fixes
+intermittent stale snow cover without returning the whole upload job to
+`must_run=true`.
