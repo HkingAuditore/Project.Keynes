@@ -554,6 +554,14 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var humidity_front_gate: float = smoothstep(0.25, 0.78, relative_humidity)  # Stage2: 0.38→0.25 让冷湿锋面也成雨(温带过境雨团/冷区降雪)
 		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * humidity_front_gate * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
 		var lift_pos: float = maxf(lift, 0.0)
+		# Stage11 层状降水(stratiform)：补对流暖门(temp>0.48)挡死的冷/高/水区降水——湿度+弱抬升(地形/辐合/
+		# 锋面/海面层云·lake-effect),冷区权重高(与对流互补)。修 #4湖/#5a雪/#6山。镜像 world_ext.cpp。
+		var strat_cool: float = 1.0 - smoothstep(0.40, 0.62, temp)
+		var strat_humid: float = smoothstep(0.42, 0.70, relative_humidity)
+		var strat_drive: float = lift_pos * 0.90 + convergence * 0.60 + frontogenesis * 0.80
+		if on_water:
+			strat_drive += (0.22 + wind_mag * 0.30) * (1.0 - sea_ice * 0.92)
+		var stratiform: float = clampf(strat_humid * strat_cool * minf(strat_drive, 1.0), 0.0, 1.0)
 
 		# 热力对流(大陆夏季雷暴/对流雨)：地表加热+本地水汽 → 浮力凝结+高效降水。修复内陆 rh 永远
 		# <<静力阈、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结(用户洞察:内陆蒸发应能成雨)。
@@ -584,7 +592,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 				near_land = not _weather_system._is_water_terrain(int(soa_terrain[downwind_idx]))
 			if near_land:
 				coastal_monsoon_flux = wind_mag * clampf(relative_humidity, 0.0, 1.0) * smoothstep(0.56, 0.76, temp) * 0.75
-		var dynamic_forcing: float = maxf(maxf(frontogenesis, convergence * 0.65), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux))
+		var dynamic_forcing: float = maxf(maxf(maxf(frontogenesis, convergence * 0.65), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux)), stratiform)  # Stage11 含层状
 		# Stage6: post-rain 抑制不再被强强迫完全豁免(原 ×(1-smoothstep) 在辐合带=0→雨带不自抑)。
 		# 改留 45% 残余(×(1-0.55·smoothstep))，让辐合带雨团下完也进入不应期→配合放电自发消散。
 		var post_rain_subsidence: float = smoothstep(0.035, 0.11, prev_precip[i]) * (1.0 - 0.55 * smoothstep(0.18, 0.55, dynamic_forcing))
@@ -601,7 +609,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 
 		# 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
 		var sup: float = maxf(relative_humidity - RH_CONDENSE, 0.0)
-		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90, 0.0, 1.0)
+		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90 + stratiform * 0.75, 0.0, 1.0)  # Stage11 层状凝结
 		cond_force *= 1.0 - post_rain_subsidence * 0.45
 		cond_force *= 1.0 - omega_descent * OMEGA_DESCENT_COND   # 副热带下沉抑制凝结
 		var condensation: float = vapor * cond_force * CONDENSE_RATE
@@ -636,6 +644,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		trig *= (1.0 + lift_pos * ORO_PRECIP_GAIN)
 		trig += convective * THERMAL_CONV_PRECIP   # 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
 		trig += ocean_convective * 0.95
+		trig += stratiform * 0.80   # Stage11 层状降水高效成雨(冷/高/水区,旁路 autoconv)→修 #4湖/#5a雪/#6山
 		trig = clampf(trig, 0.0, 0.95)
 		var precip_target: float = cloud_water * trig
 		precip_target *= omega_precip_mult   # Stage1 omega: ITCZ/风暴轴增雨 + 副热带下沉抑雨(纬向廓线)
@@ -693,12 +702,15 @@ func run_slice(cell_budget: int) -> Dictionary:
 
 		# 降水稳定性(地形阻尼 + 极端 soft cap) + EMA 时间惯性(保留)。
 		precip_target = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip_target)
-		var precip: float = lerpf(prev_precip[i], precip_target, _weather_system._field_precip_inertia)
-		# Stage6g 不应期(inhib≥1)：把最终降水砍到近 0(转干转晴)。分类前作用→不应期格判为 CLEAR。
+		# Stage10 不应期(inhib≥1)作用于 target(EMA 前)→降水随惯性平滑衰减到近零，不再瞬间砍断(去时间跳变)。镜像 world_ext.cpp。
 		if inhib_old >= 1.0:
-			precip *= 1.0 - INHIB_STRENGTH
+			precip_target *= 1.0 - INHIB_STRENGTH
+		var precip: float = lerpf(prev_precip[i], precip_target, _weather_system._field_precip_inertia)
 		if precip_target < prev_precip[i] and dynamic_forcing < 0.20:
 			precip = lerpf(precip, precip_target, post_rain_subsidence * 0.55)
+		# Stage10b 空间平滑(非对称)：强填洞(0.30)、弱削峰(×0.30→保超级单体暴雨)。镜像 world_ext.cpp。
+		var nbr_precip: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_precip) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_precip)
+		precip = lerpf(precip, nbr_precip, 0.30 if nbr_precip > precip else 0.09)
 		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
 		var effective_precip_floor: float = 0.014 if on_water else 0.018
 		if precip < 0.003:

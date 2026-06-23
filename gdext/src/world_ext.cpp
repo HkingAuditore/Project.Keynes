@@ -3874,17 +3874,28 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // ψ 由"上风平流 + 斜压增长(温度梯度) + 随机种子 + 耗散"演化→自发生成、移动、消亡的过境系统；
     // 耦合进 dynamic_forcing/precip→干季偶有降水、湿季有间断，与季节解耦。可由 knob 关。
     const bool  syn_enabled   = knobs.has("weather_synoptic_enabled") ? bool(knobs["weather_synoptic_enabled"]) : true;
-    const float syn_adv       = knobs.has("weather_synoptic_adv")       ? float(knobs["weather_synoptic_adv"])       : 0.55f;
+    const float syn_adv       = knobs.has("weather_synoptic_adv")       ? float(knobs["weather_synoptic_adv"])       : 0.62f;  // Stage12 0.55→0.62 平移更快(天气移动)
+    // Stage12b ψ 平流改"多格半拉格朗日真平移"：取上风第 N 格的 ψ 值(而非 blend toward upstream)。
+    // 根因：天气求解切片化→ψ_prev 每"轮"才快照一次→ψ 有效时间步=每轮(多 tick),加 blend 平流强数值扩散
+    // →实测 12commit 仅移动 0.2 格(肉眼不动)。真平移 N 格/演化 → 涡旋清晰扫过地图。
+    const int   syn_adv_cells = knobs.has("weather_synoptic_adv_cells") ? int(knobs["weather_synoptic_adv_cells"])   : 1;  // Stage12b 多格平移会打散ψ空间结构(去相关+变干),回退=1(单格≈blend平流,气候健康)
     const float syn_baroclinic= knobs.has("weather_synoptic_baroclinic")? float(knobs["weather_synoptic_baroclinic"]): 0.40f; // Stage7b 0.55→0.40
-    const float syn_seed      = knobs.has("weather_synoptic_seed")      ? float(knobs["weather_synoptic_seed"])      : 0.018f;// Stage7c 0.025→0.018(再降时间抖动)
-    const float syn_damp      = knobs.has("weather_synoptic_damp")      ? float(knobs["weather_synoptic_damp"])      : 0.92f; // Stage7c 0.90→0.92(ψ 时间更平滑)
-    const float syn_diffuse   = knobs.has("weather_synoptic_diffuse")   ? float(knobs["weather_synoptic_diffuse"])   : 0.32f; // Stage7b 新增:邻域扩散→平滑空间不连续
+    const float syn_seed      = knobs.has("weather_synoptic_seed")      ? float(knobs["weather_synoptic_seed"])      : 0.030f;// (旧白噪声种子,Stage12 改稀疏气旋生成后弃用)
+    const float syn_damp      = knobs.has("weather_synoptic_damp")      ? float(knobs["weather_synoptic_damp"])      : 0.94f; // Stage12 0.92→0.94 系统寿命更长→移动更远
+    const float syn_diffuse   = knobs.has("weather_synoptic_diffuse")   ? float(knobs["weather_synoptic_diffuse"])   : 0.12f; // Stage12 0.32→0.12 减扩散→涡旋保持连贯可平移
+    // Stage12 稀疏气旋生成(取代处处白噪声):每 tick 仅少数格(优先斜压带/风暴轴)偶发强种子→局地涡旋,
+    // 随后被平流带走→形成"会移动的天气系统";白噪声无空间结构故不平移,且半数 ψ>0 致处处抬升→过湿。
+    const float syn_seed_rate = knobs.has("weather_synoptic_seed_rate") ? float(knobs["weather_synoptic_seed_rate"]) : 0.05f; // 每 tick 约 5% 格点生成
+    const float syn_seed_amp  = knobs.has("weather_synoptic_seed_amp")  ? float(knobs["weather_synoptic_seed_amp"])  : 0.42f; // 局地涡旋强度
     const float syn_supp      = knobs.has("weather_synoptic_supp")      ? float(knobs["weather_synoptic_supp"])      : 0.50f; // ψ<0(高压)抑雨→湿季间断
     const float syn_enh       = knobs.has("weather_synoptic_enh")       ? float(knobs["weather_synoptic_enh"])       : 0.20f; // ψ>0(低压)弱增雨(不堆热带暴雨)
     // Stage9 #5: ψ>0(气旋)在斜压带(锋面/中纬冷季)创造抬升+增雨→冷季锋面雨(地中海/海洋性"雨热不同期")。
     // 用 baroclinic_gate 限定→热带(低温度梯度)不触发→不重蹈 7a 的热带暴雨。
     const float syn_front_force=knobs.has("weather_synoptic_front_force")?float(knobs["weather_synoptic_front_force"]): 0.55f; // ψ>0 在锋面加 dynamic_forcing(造雨)
     const float syn_front_enh = knobs.has("weather_synoptic_front_enh") ? float(knobs["weather_synoptic_front_enh"]) : 0.70f; // ψ>0 在锋面额外增雨倍率
+    // Stage12「让天气移动」：ψ>0(低压/气旋)在所有纬度都加抬升(不再只限斜压带)→移动的天气系统(ψ随流场平流)
+    // 把雨带也带着走;ψ<0(高压)随之带来移动的晴空。这是把"地理锁死的静止强迫"换成"会移动的天气系统"的核心。
+    const float syn_base_lift = knobs.has("weather_synoptic_base_lift") ? float(knobs["weather_synoptic_base_lift"]) : 0.38f;
     const int   syn_tick      = knobs.has("weather_solve_tick")         ? int(knobs["weather_solve_tick"])           : 0;
     // ψ 双缓冲：尺寸变化清零；每"轮"起点(start_idx==0)把上轮结果快照进 _prev 供平流读。
     if (syn_enabled) {
@@ -3927,6 +3938,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                                             ? float(knobs["field_precip_inertia"]) : 0.40f;
     if (field_precip_inertia < 0.05f) field_precip_inertia = 0.05f;
     else if (field_precip_inertia > 1.0f) field_precip_inertia = 1.0f;
+    // Stage10 空间平滑强度：最终降水向邻域(上一 tick)均值轻混 → 削单格噪声/棋盘格，保连片风暴。
+    float field_precip_spatial_smooth = knobs.has("field_precip_spatial_smooth")
+                                            ? float(knobs["field_precip_spatial_smooth"]) : 0.30f;
+    if (field_precip_spatial_smooth < 0.0f) field_precip_spatial_smooth = 0.0f;
+    else if (field_precip_spatial_smooth > 0.8f) field_precip_spatial_smooth = 0.8f;
     const float field_vapor_relax_rate = knobs.has("field_vapor_relax_rate")
                                             ? float(knobs["field_vapor_relax_rate"]) : 0.08f;
     const float field_orographic_lift_cap = knobs.has("field_orographic_lift_cap")
@@ -4014,6 +4030,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_lift_precip_gain = knobs.has("field_lift_precip_gain") ? float(knobs["field_lift_precip_gain"]) : 0.25f;
     const float field_conv_precip_gain = knobs.has("field_conv_precip_gain") ? float(knobs["field_conv_precip_gain"]) : 1.80f;
     const float field_oro_precip_gain  = knobs.has("field_oro_precip_gain")  ? float(knobs["field_oro_precip_gain"])  : 0.10f;
+    // Stage11 层状降水增益：补对流暖门挡死的冷/高/水区降水(地形/锋面/海面层云),0 关闭。
+    const float field_stratiform_gain  = knobs.has("field_stratiform_gain")  ? float(knobs["field_stratiform_gain"])  : 1.0f;
     const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.18f;
     // 诊断式旧旋钮在平流式路径不再使用(caller 仍注入；显式吞掉避免 unused 告警)。
     (void)field_condensation_gain; (void)field_orographic_lift_gain; (void)field_convergence_gain;
@@ -4432,11 +4450,26 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         float psi = 0.0f;
         if (PSI != nullptr) {
             psi = PSI_PREV[i];
-            if (upstream_idx >= 0 && upstream_idx < n_cells)
-                psi += (PSI_PREV[upstream_idx] - psi) * syn_adv;           // 平流(随流场移动)
+            // Stage12b 真平移：沿上风方向走 syn_adv_cells 格找 departure point，取其 ψ 值(半拉格朗日)，
+            // 仅保留少量本地值数值稳定 → 涡旋每次演化整体平移 ~syn_adv×N 格 → 天气可见地随风移动。
+            if (syn_adv_cells >= 1) {
+                int dep = i;
+                for (int s = 0; s < syn_adv_cells; ++s) {
+                    const int up = wf_neighbor_aligned_idx(dep, -wind_dx, -wind_dy, POS, NB,
+                                                           n_cells, weather_cell_pos_scale, weather_wrap_width_x);
+                    if (up < 0 || up >= n_cells) break;
+                    dep = up;
+                }
+                psi = PSI_PREV[dep] * syn_adv + PSI_PREV[i] * (1.0f - syn_adv);
+            }
             psi += (wf_neighbor_average_vapor_idx(i, NB, PSI_PREV) - psi) * syn_diffuse; // 扩散→平滑空间不连续
             psi *= (1.0f + syn_baroclinic * baroclinic_gate); // 斜压增长
-            psi += syn_seed * (wf_hash01(i, syn_tick) - 0.5f);            // 随机种子(播种不稳定)
+            // Stage12 稀疏气旋生成：仅少数格(优先斜压带)偶发强种子→局地涡旋,随后平流带走→移动天气系统。
+            // (void)syn_seed 旧白噪声弃用。两个 hash:roll 决定是否生成、amp 决定强度/符号。
+            (void)syn_seed;
+            const float seed_rate = syn_seed_rate * (0.30f + 0.70f * baroclinic_gate);
+            if (wf_hash01(i, syn_tick) < seed_rate)
+                psi += syn_seed_amp * (wf_hash01(i + 50021, syn_tick) - 0.5f) * 2.0f;
             psi *= syn_damp;                                              // 耗散→有限寿命
             if (psi > 1.0f) psi = 1.0f; else if (psi < -1.0f) psi = -1.0f;
             PSI[i] = psi;
@@ -4450,6 +4483,18 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (frontogenesis < 0.0f) frontogenesis = 0.0f;
         else if (frontogenesis > 1.0f) frontogenesis = 1.0f;
         const float lift_pos = (lift > 0.0f) ? lift : 0.0f;
+
+        // Stage11 层状降水(stratiform)：对流(temp>0.48 暖门)挡死的冷/高/水区水汽充足却无触发——补一支不需浮力
+        // 的层状成雨：湿度 + 弱动力抬升(地形/辐合/锋面/海面层云·lake-effect),温度越低权重越高(与对流互补,
+        // 不在暖区重复加雨)。海面项=海洋层云/冷湖效应(修#4湖/冷海·实测水汽0.204最足却几乎不降)。
+        const float strat_cool = 1.0f - wf_smoothstep(0.40f, 0.62f, temp);       // 暖→0(交给对流) 冷→1
+        const float strat_humid = wf_smoothstep(0.42f, 0.70f, relative_humidity);
+        float strat_drive = lift_pos * 0.90f + convergence * 0.60f + frontogenesis * 0.80f;
+        if (on_water) strat_drive += (0.22f + wind_mag * 0.30f) * (1.0f - local_sea_ice * 0.92f);
+        if (strat_drive > 1.0f) strat_drive = 1.0f;
+        float stratiform = strat_humid * strat_cool * strat_drive * field_stratiform_gain;
+        if (stratiform < 0.0f) stratiform = 0.0f;
+        else if (stratiform > 1.0f) stratiform = 1.0f;
 
         // 热力对流(大陆夏季雷暴/对流雨)：地表加热(高温)+本地水汽 → 浮力抬升凝结+高效降水。修复内陆
         // rh 永远<<静力阈(实测~0.15<<0.55)、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结
@@ -4500,9 +4545,10 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (convective > dynamic_forcing) dynamic_forcing = convective;
         if (ocean_convective > dynamic_forcing) dynamic_forcing = ocean_convective;
         if (coastal_monsoon_flux > dynamic_forcing) dynamic_forcing = coastal_monsoon_flux;
-        // Stage9 #5: ψ>0(气旋)只在斜压带(baroclinic_gate=锋面/中纬冷季)加抬升→造冷季锋面雨(地中海/海洋性)；
-        // 热带(低温度梯度→gate≈0)不加→不重蹈 7a 热带暴雨。
-        if (psi > 0.0f) dynamic_forcing += psi * syn_front_force * baroclinic_gate;
+        if (stratiform > dynamic_forcing) dynamic_forcing = stratiform;  // Stage11 冷区层状降水
+        // Stage12「让天气移动」: ψ>0(气旋/低压)在所有纬度加抬升(base)+斜压带额外强化(锋面)→移动的雨系统;
+        // ψ 随流场平流→雨带跟着移动。Stage9 的纯斜压门控改为 base + 斜压 bonus(热带也吃 base,接受适度热带变率)。
+        if (psi > 0.0f) dynamic_forcing += psi * (syn_base_lift + syn_front_force * baroclinic_gate);
         // Stage6: post-rain 抑制留 45% 残余(辐合带雨团下完也进入不应期)。镜像 field_solver.gd。
         float post_rain_subsidence = wf_smoothstep(0.035f, 0.11f, PP[i])
             * (1.0f - 0.55f * wf_smoothstep(0.18f, 0.55f, dynamic_forcing));
@@ -4528,7 +4574,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         float cond_force = sup * field_static_cond_w + lift_pos * field_lift_cond_gain
                          + convergence * field_conv_cond_gain + frontogenesis * 1.35f
                          + convective * field_thermal_conv_cond
-                         + ocean_convective * 0.90f;
+                         + ocean_convective * 0.90f
+                         + stratiform * 0.75f;   // Stage11 层状凝结(冷/高/水区)
         if (cond_force < 0.0f) cond_force = 0.0f;
         else if (cond_force > 1.0f) cond_force = 1.0f;
         cond_force *= (1.0f - post_rain_subsidence * 0.45f);
@@ -4578,6 +4625,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         trig *= (1.0f + lift_pos * field_oro_precip_gain);
         trig += convective * field_thermal_conv_precip;   // 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
         trig += ocean_convective * 0.95f;
+        trig += stratiform * 0.80f;   // Stage11 层状降水高效成雨(冷/高/水区,旁路 autoconv)→修 #4湖/#5a雪/#6山
         if (trig < 0.0f) trig = 0.0f;
         else if (trig > 0.95f) trig = 0.95f;
         float precip_target = cloud_water * trig;
@@ -4676,13 +4724,20 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             field_lake_precip_damping,
             field_extreme_precip_soft_cap,
             field_extreme_precip_softness);
-        float precip = PP[i] + (precip_target - PP[i]) * field_precip_inertia;
-        // Stage6g 不应期(inhib≥1)：最终降水砍到近 0(转干转晴)，分类前作用。镜像 field_solver.gd。
+        // Stage10 不应期(inhib≥1)作用于 target(EMA 前)→降水随惯性平滑衰减到近零，不再瞬间砍断(去时间跳变)。镜像 field_solver.gd。
         if (inhib_old >= 1.0f) {
-            precip *= (1.0f - INHIB_STRENGTH);
+            precip_target *= (1.0f - INHIB_STRENGTH);
         }
+        float precip = PP[i] + (precip_target - PP[i]) * field_precip_inertia;
         if (precip_target < PP[i] && dynamic_forcing < 0.20f) {
             precip = precip + (precip_target - precip) * (post_rain_subsidence * 0.55f);
+        }
+        // Stage10b 空间平滑(非对称)：强填洞(precip<邻域→去棋盘洞+扩雨到干邻格，降永晴)、弱削峰(×0.30→保超级单体暴雨)。镜像 field_solver.gd。
+        if (field_precip_spatial_smooth > 0.0f) {
+            const float nbr_precip = wf_neighbor_average_vapor_idx(i, NB, PP);
+            const float k = (nbr_precip > precip) ? field_precip_spatial_smooth
+                                                  : field_precip_spatial_smooth * 0.30f;
+            precip += (nbr_precip - precip) * k;
         }
         const float quiet_core = 1.0f - wf_smoothstep(0.12f, 0.50f, dynamic_forcing);
         const float effective_precip_floor = on_water ? 0.014f : 0.018f;
