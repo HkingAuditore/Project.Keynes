@@ -117,6 +117,10 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_refresh_convergence = ((_weather_system._field_solve_tick - 1) % _weather_system._field_convergence_refresh_stride) == 0
 	_field_slice_cells = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells: int = _field_slice_cells.size()
+	# Stage6c: 对流抑制记忆数组——仅在尺寸变化(换地图)时重置，否则跨 tick 持久(承载充放电记忆)。
+	if _convective_inhib.size() != n_cells:
+		_convective_inhib = PackedFloat32Array()
+		_convective_inhib.resize(n_cells)
 	_field_slice_temp_read = map.temp_arr_prev if map.temp_arr_prev.size() == n_cells else map.temp_arr
 	_field_slice_moisture_read = map.moisture_arr_prev if map.moisture_arr_prev.size() == n_cells else map.moisture_arr
 	if map.weather_classification_temp_arr.size() == n_cells:
@@ -127,25 +131,27 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
 	var map_id: int = map.get_instance_id()
+	var has_soa_pos_for_scale: bool = map.cell_pos_x_arr.size() >= n_cells and map.cell_pos_y_arr.size() >= n_cells
+	_field_slice_cell_pos_scale = 1.0 if has_soa_pos_for_scale else _weather_system._hex_size
+	_field_slice_wrap_width_x = float(map.width) * sqrt(3.0) * _field_slice_cell_pos_scale if map.width > 0 else 0.0
 	var can_reuse_cell_pos: bool = _cached_cell_pos_n == n_cells \
 		and _cached_cell_pos_map_id == map_id \
-		and absf(_cached_cell_pos_hex_size - _weather_system._hex_size) < 0.0001 \
+		and absf(_cached_cell_pos_hex_size - _field_slice_cell_pos_scale) < 0.0001 \
 		and _cached_cell_pos.size() == n_cells
 	if not can_reuse_cell_pos:
 		_cached_cell_pos = PackedVector2Array()
 		_cached_cell_pos.resize(n_cells)
 		var pos_x_arr: PackedFloat32Array = map.cell_pos_x_arr
 		var pos_y_arr: PackedFloat32Array = map.cell_pos_y_arr
-		var has_soa_pos: bool = pos_x_arr.size() >= n_cells and pos_y_arr.size() >= n_cells
 		for i in range(n_cells):
-			if has_soa_pos:
+			if has_soa_pos_for_scale:
 				_cached_cell_pos[i] = Vector2(pos_x_arr[i], pos_y_arr[i])
 			else:
 				var cell: HexCell = _field_slice_cells[i]
 				_cached_cell_pos[i] = HexUtils.cube_to_world(cell.q, cell.r, _weather_system._hex_size)
 		_cached_cell_pos_n = n_cells
 		_cached_cell_pos_map_id = map_id
-		_cached_cell_pos_hex_size = _weather_system._hex_size
+		_cached_cell_pos_hex_size = _field_slice_cell_pos_scale
 	_field_slice_cell_pos = _cached_cell_pos
 	_weather_system._tick_cell_pos.clear()
 	_weather_system._tick_cell_neighbors.clear()
@@ -183,7 +189,10 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 			_field_slice_prev_vapor[i] = soa_vapor_in[i]
 			_field_slice_prev_precip[i] = soa_precip_in[i]
 		else:
-			_field_slice_prev_vapor[i] = soa_moisture[i]
+			# Stage6d (2026-06-23) 修首帧暴雨/暴雪：原 prev_vapor=moisture(满饱和，洋=1.0)→首 tick 处处过饱和
+			# →全图凝结成雨(实测首 tick 86% 格降水、21% 暴雪)，再经 ~15 tick 弛豫。改为按稳态量级(≈0.15×moisture)
+			# 起步，让水汽由蒸发温和积累、降水渐次涌现，消除 spin-up 暴雨暴雪瞬变。
+			_field_slice_prev_vapor[i] = soa_moisture[i] * 0.15
 			_field_slice_prev_precip[i] = 0.0
 	var tta_soa: PackedFloat32Array = map.temperature_transport_anomaly_arr
 	if tta_soa.size() == n_cells:
@@ -194,6 +203,39 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 		for ti in range(n_cells):
 			var tc: HexCell = _field_slice_cells[ti]
 			_field_slice_temp_anom[ti] = float(tc.temperature_transport_anomaly)
+	# ─── climate-realism Stage1 (2026-06-23): 计算「热赤道」纬度 (norm) ──────
+	# = zonal-mean 温度最高的纬度带。供 Hadley/Ferrel omega 项以「相对热赤道距离」定位
+	# ITCZ/副热带/风暴轴，随季迁移、不产生沿绝对纬线的直线条带。用基准气候温度(非含
+	# air anomaly 的分类温度)。每 tick 一次 O(n) 累加 + 24 桶 argmax + 抛物线细化。
+	var lat_te_norm: float = 0.5
+	var te_bpos_y: float = _weather_system._world_bounds.position.y
+	var te_bsize_y: float = _weather_system._world_bounds.size.y
+	if te_bsize_y > 0.001 and _field_slice_temp_read.size() == n_cells and _field_slice_cell_pos.size() == n_cells:
+		const TE_NB := 24
+		var te_sum: PackedFloat32Array = PackedFloat32Array(); te_sum.resize(TE_NB)
+		var te_cnt: PackedInt32Array = PackedInt32Array(); te_cnt.resize(TE_NB)
+		for ci in range(n_cells):
+			var nyv: float = clampf((_field_slice_cell_pos[ci].y - te_bpos_y) / te_bsize_y, 0.0, 0.999999)
+			var bkt: int = int(nyv * TE_NB)
+			te_sum[bkt] += _field_slice_temp_read[ci]
+			te_cnt[bkt] += 1
+		var best_m: float = -1.0
+		var best_b: int = TE_NB / 2
+		for bk in range(TE_NB):
+			if te_cnt[bk] > 0:
+				var m: float = te_sum[bk] / float(te_cnt[bk])
+				if m > best_m:
+					best_m = m
+					best_b = bk
+		var bf: float = float(best_b)
+		if best_b > 0 and best_b < TE_NB - 1 and te_cnt[best_b - 1] > 0 and te_cnt[best_b + 1] > 0:
+			var ml: float = te_sum[best_b - 1] / float(te_cnt[best_b - 1])
+			var mr: float = te_sum[best_b + 1] / float(te_cnt[best_b + 1])
+			var denom: float = ml - 2.0 * best_m + mr
+			if absf(denom) > 1.0e-6:
+				bf += clampf(0.5 * (ml - mr) / denom, -0.5, 0.5)
+		lat_te_norm = clampf((bf + 0.5) / float(TE_NB), 0.0, 1.0)
+	_field_slice_lat_te_norm = lat_te_norm
 	if _weather_system._use_gdext_weather_field and _field_slice_fast_indexed \
 			and _weather_system._data_core_world_ext != null:
 		_field_slice_native_knobs = _weather_system._build_weather_field_knobs(map, world, n_cells, 0, n_cells)
@@ -331,6 +373,36 @@ func run_slice(cell_budget: int) -> Dictionary:
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
 	const THERMAL_CONV_COND := 1.9   # 2026-06-22: 1.5→1.9 增内陆对流凝结(抬 cloud_water 上限)
 	const THERMAL_CONV_PRECIP := 1.1 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
+	# ─── climate-realism Stage1 (2026-06-23): Hadley/Ferrel 垂直运动项 omega ──
+	# 键在「热赤道」相对纬度(随季迁移、无直线条带): ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水。
+	# lat_te_norm 由 begin_slice 按 zonal-max 温度逐 tick 计算。镜像 world_ext.cpp。
+	const OMEGA_ASCENT_GAIN := 0.65    # ITCZ(|dlat|<~12°)/风暴轴(|dlat|~48-62°)上升带成雨增益
+	const OMEGA_DESCENT_GAIN := 0.70   # 副热带(|dlat|~22-34°)下沉带降水抑制
+	const OMEGA_DESCENT_COND := 0.45   # 副热带下沉抑制凝结→晴空(利于热浪/旱灾)
+	# ─── climate-realism Stage6 (2026-06-23): 湿度充放电 recharge-discharge ─────
+	# Stage6/6b 用 vapor 放电把雨段中位 37天→3天、单带 0.91→0.16、海上开始自生成；但 ≥7天长尾(34%)未消、且偏干。
+	# 根因：长尾格是【强迫主导】(常驻辐合/地形抬升)而非水汽主导——抽干水汽只会饿死弱短系统(全局变干)，
+	# 强迫格仍靠平流来的少量水汽持续成雨。Stage6c 改用【对流抑制记忆】(下方 INHIB_*)定点封顶强迫格，
+	# 同时把 vapor 放电调回温和(不再过度抽干)。
+	const VAPOR_DISCHARGE := 0.45   # 放电(温和)：仍提供湿团放电→上风传播，但不再过度抽干(Stage6b 0.65→0.45)
+	const DISCHARGE_SUSTAIN := 0.0  # Stage6c: 持续放电改由对流抑制记忆承担，关闭此项(1.3→0)
+	# ── Stage6e (2026-06-23): 对流抑制记忆=双稳弛豫振子(真·充放电极限环) ──
+	# 实测线性版(precip×(1-inhib·k))只把降水压到稳态弱雨(~0.05>湿阈)→雨永不停、中位反而升到 16 天。
+	# 改双稳硬阈：inhib 累积过 TRIGGER → 降水砍到近 0(气柱放电、转干转晴) → inhib 衰减落回 → 释放再积累。
+	# 无中间稳态→真正的 开/关 循环→封顶雨段；只作用于刚下过雨的格(干区 inhib=0)。
+	# ── Stage6g (2026-06-23): 对流抑制=按【时长】充放电(强度无关)，双稳两段编码于单个 float ──
+	# 实测 magnitude 版只能封重雨(>~0.065)，中等雨(p50 0.065)稳态 inhib<阈→永不触发→中等长尾(≥7天 18%)。
+	# 改按"连续降水 tick 数"充能：任意强度连下 ~6 tick → 满 → 跳到不应期(转干转晴) → 衰减落回 → 重启。
+	# 与强度无关→中等雨也被封顶；充能期满强度照下→不伤雨量/多样性。物理上=对流耗尽本地不稳定度需特征"时长"。
+	#   inhib∈[0,1) 充能期；inhib≥1 不应期(压制降水)。
+	const INHIB_CHARGE := 0.26    # Stage7c: 0.18→0.26 雨段缩到≈4tick(~2天)→雨不再"久久下不完"
+	const INHIB_REFRAC := 0.18    # Stage7c: 0.55→0.18 不应期拉长到≈5-6tick(~3天)→晴天是真间断而非极短闪烁
+	const INHIB_LEAK := 0.88      # 充能期遇干 tick 的泄放(断续雨慢充、久干遗忘)
+	const INHIB_STRENGTH := 0.92  # 不应期内 precip ×(1-此值)
+	const INHIB_WET := 0.02       # 计为"降水 tick"的阈
+	var lat_te_norm: float = _field_slice_lat_te_norm
+	var omega_bpos_y: float = _weather_system._world_bounds.position.y
+	var omega_bsize_y: float = _weather_system._world_bounds.size.y
 	for i in range(start_i, end_i):
 		var cell: HexCell = cells[i]
 		var pos: Vector2 = cell_pos[i]
@@ -354,10 +426,21 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var neighbor_vapor: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_vapor) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_vapor)
 		var raw_wind_speed: float = soa_wind_speed[i] if soa_wind_speed.size() == n_cells else wind.length()
 		var wind_mag: float = clampf(raw_wind_speed / 1.2, 0.0, 1.0)
+		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
+		var convergence: float = soa_convergence_in[i]
+		if refresh_convergence:
+			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		var is_lake: bool = int(soa_terrain[i]) == TerrainType.TERRAIN.LAKE
 		var has_river: bool = (not is_lake) and (soa_has_river[i] > 0) and not on_water
 		var river_flow_feedback: float = clampf(soa_river_q30[i] if soa_river_q30.size() == n_cells and has_river else 0.0, 0.0, 1.0)
-		var river_evap_floor: float = maxf(0.08, river_flow_feedback * 0.22) if has_river else 0.0
+		var river_recycle_lock: float = 0.0
+		if has_river:
+			var river_forcing_proxy: float = maxf(convergence * 0.65, maxf(lift, 0.0) * 0.80)
+			river_recycle_lock = clampf(smoothstep(0.035, 0.12, prev_precip[i]) \
+				* (1.0 - smoothstep(0.16, 0.44, river_forcing_proxy)) \
+				* (0.35 + river_flow_feedback * 0.65), 0.0, 1.0)
+		var river_source_scale: float = 1.0 - river_recycle_lock * 0.72
+		var river_evap_floor: float = maxf(0.08, river_flow_feedback * 0.22) * (1.0 - river_recycle_lock * 0.65) if has_river else 0.0
 		var effective_ocean_an: float = ocean_an
 		if is_lake:
 			effective_ocean_an = 0.20
@@ -389,7 +472,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 			source_local = (0.005 + base_m * 0.010 + soil_norm * 0.020 + veg_flux * 0.016 + wet_terrain_bonus) \
 				* _weather_system._field_land_evapotranspiration_gain * temp_evap * (0.85 + wind_mag * 0.25)
 			if has_river:
-				source_local += (0.010 + river_flow_feedback * 0.020) * _weather_system._field_land_evapotranspiration_gain * temp_evap
+				var river_extra: float = (0.010 + river_flow_feedback * 0.020) * _weather_system._field_land_evapotranspiration_gain * temp_evap
+				source_local += river_extra * river_source_scale
 
 		var source_upwind: float = source_local
 		var upstream_on_water: bool = false
@@ -403,6 +487,13 @@ func run_slice(cell_budget: int) -> Dictionary:
 			var up_is_lake: bool = up_terrain == TerrainType.TERRAIN.LAKE
 			var up_has_river: bool = (not up_is_lake) and (soa_has_river[upstream_idx] > 0) and not up_on_water
 			var up_river_q: float = clampf(soa_river_q30[upstream_idx] if soa_river_q30.size() == n_cells and up_has_river else 0.0, 0.0, 1.0)
+			var up_river_recycle_lock: float = 0.0
+			if up_has_river:
+				var up_forcing_proxy: float = clampf(soa_convergence_in[upstream_idx] * 0.65, 0.0, 1.0)
+				up_river_recycle_lock = clampf(smoothstep(0.035, 0.12, prev_precip[upstream_idx]) \
+					* (1.0 - smoothstep(0.16, 0.44, up_forcing_proxy)) \
+					* (0.35 + up_river_q * 0.65), 0.0, 1.0)
+			var up_river_source_scale: float = 1.0 - up_river_recycle_lock * 0.72
 			var up_temp_evap: float = smoothstep(0.10, 0.78, up_temp)
 			var up_ocean_an: float = temp_anom_arr[upstream_idx] if temp_anom_arr.size() == n_cells and up_on_water else effective_ocean_an
 			var up_soil: float = clampf(0.5 + (soa_soil_moisture[upstream_idx] if soa_soil_moisture.size() == n_cells else up_cell.soil_moisture), 0.0, 1.0)
@@ -427,7 +518,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 				source_upwind = (0.005 + up_base_m * 0.010 + up_soil * 0.020 + up_veg_flux * 0.016 + up_wet_bonus) \
 					* _weather_system._field_land_evapotranspiration_gain * up_temp_evap * (0.85 + wind_mag * 0.25)
 				if up_has_river:
-					source_upwind += (0.010 + up_river_q * 0.020) * _weather_system._field_land_evapotranspiration_gain * up_temp_evap
+					var up_river_extra: float = (0.010 + up_river_q * 0.020) * _weather_system._field_land_evapotranspiration_gain * up_temp_evap
+					source_upwind += up_river_extra * up_river_source_scale
 
 		# 平流式湿团：vapor 去 base_m 锚定 → 本地与上风加权平流(强度随风速) + 邻域扩散 + 蒸发源。
 		# 允许短暂过饱和(不夹 cap 上限)，由后续凝结消耗 → 随风移动的湿团。镜像 world_ext.cpp。
@@ -436,10 +528,6 @@ func run_slice(cell_budget: int) -> Dictionary:
 		vapor = lerpf(vapor, neighbor_vapor, _weather_system._field_diffusion)
 		vapor = maxf(0.0, vapor + source_local + source_upwind * wind_mag * 0.25)
 
-		var lift: float = _orographic_lift_from_upstream_idx(i, upstream_idx, cells) if fast_indexed else _orographic_lift_for_cell(cell, map, wind_dir)
-		var convergence: float = soa_convergence_in[i]
-		if refresh_convergence:
-			convergence = _wind_convergence_idx(i, cells, cell_pos, neighbor_indices) if fast_indexed else _wind_convergence_for_cell(cell, map)
 		# (背风焚风干燥已移入下方凝结/降水的 lift<0 抑制，避免对 vapor 重复扣减)
 
 		var temp_min: float = temp
@@ -463,7 +551,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var temp_gradient: float = temp_max - temp_min
 		var relative_humidity: float = maxf(vapor / maxf(vapor_capacity, 0.001), 0.0)
 		var frontal_convergence: float = smoothstep(0.14, 0.46, convergence)
-		var humidity_front_gate: float = smoothstep(0.38, 0.78, relative_humidity)
+		var humidity_front_gate: float = smoothstep(0.25, 0.78, relative_humidity)  # Stage2: 0.38→0.25 让冷湿锋面也成雨(温带过境雨团/冷区降雪)
 		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * humidity_front_gate * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
 		var lift_pos: float = maxf(lift, 0.0)
 
@@ -478,6 +566,12 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var ocean_convective: float = 0.0
 		if on_water:
 			ocean_convective = smoothstep(0.10, 0.22, ocean_an) * smoothstep(0.58, 0.78, temp) * clampf(relative_humidity, 0.0, 1.0)
+			var open_water: float = 1.0 - sea_ice * 0.92
+			var warm_humid_marine: float = smoothstep(0.54, 0.74, temp) \
+				* smoothstep(0.47, 0.69, relative_humidity) \
+				* clampf(open_water, 0.0, 1.0)
+			var marine_convective_seed: float = warm_humid_marine * (0.20 + wind_mag * 0.36)
+			ocean_convective = minf(1.0, maxf(ocean_convective, marine_convective_seed))
 		var onshore_moist_flux: float = 0.0
 		var coastal_monsoon_flux: float = 0.0
 		if not on_water and upstream_idx >= 0 and upstream_on_water:
@@ -491,12 +585,25 @@ func run_slice(cell_budget: int) -> Dictionary:
 			if near_land:
 				coastal_monsoon_flux = wind_mag * clampf(relative_humidity, 0.0, 1.0) * smoothstep(0.56, 0.76, temp) * 0.75
 		var dynamic_forcing: float = maxf(maxf(frontogenesis, convergence * 0.65), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux))
-		var post_rain_subsidence: float = smoothstep(0.035, 0.11, prev_precip[i]) * (1.0 - smoothstep(0.18, 0.55, dynamic_forcing))
+		# Stage6: post-rain 抑制不再被强强迫完全豁免(原 ×(1-smoothstep) 在辐合带=0→雨带不自抑)。
+		# 改留 45% 残余(×(1-0.55·smoothstep))，让辐合带雨团下完也进入不应期→配合放电自发消散。
+		var post_rain_subsidence: float = smoothstep(0.035, 0.11, prev_precip[i]) * (1.0 - 0.55 * smoothstep(0.18, 0.55, dynamic_forcing))
+
+		# ─── climate-realism Stage1: Hadley/Ferrel omega (镜像 world_ext.cpp) ──
+		# dlat = 本格纬度距「热赤道」的度数; ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水→晴干。
+		var omega_ny: float = clampf((cell_pos[i].y - omega_bpos_y) / omega_bsize_y, 0.0, 1.0) if omega_bsize_y > 0.001 else 0.5
+		var omega_adlat: float = absf((omega_ny - lat_te_norm) * 180.0)
+		var omega_itcz: float = 1.0 - smoothstep(8.0, 16.0, omega_adlat)
+		var omega_storm: float = smoothstep(40.0, 48.0, omega_adlat) * (1.0 - smoothstep(62.0, 70.0, omega_adlat))
+		var omega_ascent: float = maxf(omega_itcz, omega_storm)
+		var omega_descent: float = smoothstep(14.0, 22.0, omega_adlat) * (1.0 - smoothstep(34.0, 42.0, omega_adlat))
+		var omega_precip_mult: float = (1.0 + omega_ascent * OMEGA_ASCENT_GAIN) * (1.0 - omega_descent * OMEGA_DESCENT_GAIN)
 
 		# 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
 		var sup: float = maxf(relative_humidity - RH_CONDENSE, 0.0)
 		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90, 0.0, 1.0)
 		cond_force *= 1.0 - post_rain_subsidence * 0.45
+		cond_force *= 1.0 - omega_descent * OMEGA_DESCENT_COND   # 副热带下沉抑制凝结
 		var condensation: float = vapor * cond_force * CONDENSE_RATE
 		if lift < 0.0:
 			condensation *= maxf(1.0 + lift * _weather_system._field_rain_shadow_drying, 0.0)
@@ -531,51 +638,87 @@ func run_slice(cell_budget: int) -> Dictionary:
 		trig += ocean_convective * 0.95
 		trig = clampf(trig, 0.0, 0.95)
 		var precip_target: float = cloud_water * trig
+		precip_target *= omega_precip_mult   # Stage1 omega: ITCZ/风暴轴增雨 + 副热带下沉抑雨(纬向廓线)
+		# Stage6e 对流抑制记忆(双稳)：读取累积抑制(本 tick 起始值)，硬阈压制移到最终降水处(EMA 之后)。
+		var inhib_old: float = _convective_inhib[i] if _convective_inhib.size() == n_cells else 0.0
 		if lift < 0.0:
 			precip_target *= 1.0 - minf(maxf(-lift, 0.0) * _weather_system._field_rain_shadow_drying, 0.85)
+		if has_river and river_recycle_lock > 0.0:
+			var river_relief: float = river_recycle_lock * (1.0 - smoothstep(0.22, 0.50, dynamic_forcing))
+			if river_relief > 0.0:
+				var cloud_relief: float = cloud_water * 0.22 * river_relief
+				cloud_water -= cloud_relief
+				vapor += cloud_relief * 0.60
+				precip_target *= 1.0 - 0.48 * river_relief
 		# 水面对流抑制(保留动力门控：辐合/锋生/暖流异常 释放降水；instability 仅极端深对流安全阀)。
 		var ocean_drive: float = 0.0
 		if on_water:
-			ocean_drive = maxf(maxf(
-					clampf(ocean_an / 0.16, 0.0, 1.0),
-					clampf((instability - 0.90) / 0.10, 0.0, 1.0)), maxf(
-					clampf((convergence - 0.38) / 0.16, 0.0, 1.0),
-					clampf(frontogenesis / 0.16, 0.0, 1.0)))
+			var drv_an: float = clampf(ocean_an / 0.16, 0.0, 1.0)
+			var drv_in: float = clampf((instability - 0.52) / 0.30, 0.0, 1.0)
+			var drv_cv: float = clampf((convergence - 0.38) / 0.16, 0.0, 1.0)
+			var drv_fr: float = clampf(frontogenesis / 0.16, 0.0, 1.0)
+			var drv_mn: float = clampf(coastal_monsoon_flux / 0.18, 0.0, 1.0)
+			var drv_hc: float = smoothstep(0.47, 0.69, relative_humidity) \
+				* smoothstep(0.040, 0.105, cloud_water) \
+				* smoothstep(0.54, 0.74, temp)
+			if is_lake:
+				drv_hc *= 0.60
+			drv_hc *= 0.68
+			ocean_drive = maxf(maxf(drv_an, drv_in), maxf(maxf(drv_cv, drv_fr), maxf(drv_mn, drv_hc)))
+			ocean_drive = maxf(ocean_drive, omega_ascent)   # ITCZ/风暴轴上升带释放海面降水抑制
 			var precip_suppression: float = _weather_system._field_ocean_precip_suppression
 			if is_lake:
+				precip_suppression = minf(precip_suppression, 0.35)  # Stage9: 湖泊≈陆地降水(0.70→0.35)→湖区不再始终晴
+			else:
 				precip_suppression = minf(precip_suppression, 0.78)
 			precip_target *= lerpf(1.0 - precip_suppression, 1.0, ocean_drive)
+			var marine_relief: float = post_rain_subsidence * (1.0 - smoothstep(0.30, 0.58, ocean_drive))
+			precip_target *= 1.0 - marine_relief * 0.72
 		precip_target = minf(precip_target, cloud_water)
 		precip_target = maxf(precip_target, 0.0)
 		cloud_water = maxf(cloud_water - precip_target, 0.0)
 		var precip_cloud_reserve: float = precip_target * (0.42 + dynamic_forcing * 0.28)
 		cloud_water = minf(1.0, cloud_water + precip_cloud_reserve)
-		if on_water and ocean_drive < 0.35:
-			var marine_scour: float = clampf(cloud_water * (0.04 + (0.35 - ocean_drive) * 0.22) * (1.0 + post_rain_subsidence * 1.5), 0.0, cloud_water)
+		if on_water and ocean_drive < 0.34:
+			var marine_scour: float = clampf(cloud_water * (0.026 + (0.34 - ocean_drive) * 0.14) * (1.0 + post_rain_subsidence * 1.35), 0.0, cloud_water)
 			cloud_water -= marine_scour
-			vapor += marine_scour * 0.65
+			vapor += marine_scour * 0.55
 
 		# 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
 		var reevap: float = clampf(cloud_water * _weather_system._field_cloud_reevap * (1.0 - relative_humidity) * (1.0 + post_rain_subsidence * 1.25), 0.0, cloud_water)
 		cloud_water -= reevap
 		vapor += reevap
+		if on_water:
+			vapor *= 1.0 - post_rain_subsidence * (1.0 - smoothstep(0.28, 0.58, ocean_drive)) * 0.045
 
 		# 降水稳定性(地形阻尼 + 极端 soft cap) + EMA 时间惯性(保留)。
 		precip_target = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip_target)
 		var precip: float = lerpf(prev_precip[i], precip_target, _weather_system._field_precip_inertia)
+		# Stage6g 不应期(inhib≥1)：把最终降水砍到近 0(转干转晴)。分类前作用→不应期格判为 CLEAR。
+		if inhib_old >= 1.0:
+			precip *= 1.0 - INHIB_STRENGTH
 		if precip_target < prev_precip[i] and dynamic_forcing < 0.20:
 			precip = lerpf(precip, precip_target, post_rain_subsidence * 0.55)
+		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
+		var effective_precip_floor: float = 0.014 if on_water else 0.018
 		if precip < 0.003:
 			precip = 0.0
-		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
-		if precip < 0.003 and quiet_core > 0.0:
+		var provisional_cloud: float = clampf(cloud_water * 1.10 + condensation * 0.25, 0.0, 1.0)
+		var temp_anom_i: float = soa_temp_anom[i] if soa_temp_anom.size() == n_cells else 0.0
+		var snow_cover_cls: float = _field_slice_snow_cover_read[i] if _field_slice_snow_cover_read.size() == n_cells else 0.0
+		var pre_wt: int = _weather_system._classify_field_weather_at(temp, vapor, provisional_cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
+		var quiet_non_precip: bool = not _weather_system._is_precip_weather_type(pre_wt) and quiet_core > 0.0
+		if (precip < 0.003 or quiet_non_precip) and quiet_core > 0.0:
 			var clear_cap: float = 0.055 + dynamic_forcing * 0.12
 			if on_water and ocean_drive < 0.20:
-				clear_cap = minf(clear_cap, 0.05 + ocean_drive * 0.12)
+				clear_cap = minf(clear_cap, 0.060 + ocean_drive * 0.24)
 			if cloud_water > clear_cap:
 				var excess_cloud_water: float = (cloud_water - clear_cap) * quiet_core
 				cloud_water -= excess_cloud_water
 				vapor += excess_cloud_water * 0.75
+		if quiet_non_precip and precip < effective_precip_floor:
+			vapor += precip * 0.65
+			precip = 0.0
 		vapor = clampf(vapor, 0.0, 1.0)
 		var vapor_after_precip: float = vapor
 		var rain_core: float = smoothstep(0.025, 0.095, precip)
@@ -587,9 +730,31 @@ func run_slice(cell_budget: int) -> Dictionary:
 			cloud_floor = maxf(cloud_floor, 0.18 + ocean_convective * 0.22)
 		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
 
-		var temp_anom_i: float = soa_temp_anom[i] if soa_temp_anom.size() == n_cells else 0.0
-		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water)
+		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
+		if not _weather_system._is_precip_weather_type(wt) and precip > 0.0:
+			vapor = clampf(vapor + precip * 0.65, 0.0, 1.0)
+			vapor_after_precip = vapor
+			precip = 0.0
+		elif precip > 0.0:
+			# Stage6 放电：实际降水抽干本格水汽→气柱失水→RH降→自发停雨→需充电恢复(雨团生命周期+随上风新鲜水汽移动+海面自生成)。
+			# Stage6b：持续降水(prev_precip 高)放电翻倍→定点清除"连下一周"长尾，不动新生短雨段。
+			var discharge_amp: float = 1.0 + DISCHARGE_SUSTAIN * smoothstep(0.04, 0.10, prev_precip[i])
+			vapor_after_precip = maxf(0.0, vapor_after_precip - precip * VAPOR_DISCHARGE * discharge_amp)
 		var intensity: float = _weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
+		# Stage6g 更新对流抑制(按时长两段)：充能期连续降水累加→满进不应期；不应期衰减→落回清零重启。
+		if _convective_inhib.size() == n_cells:
+			var ni: float
+			if inhib_old >= 1.0:
+				ni = inhib_old - INHIB_REFRAC
+				if ni < 1.0:
+					ni = 0.0
+			elif precip > INHIB_WET:
+				ni = inhib_old + INHIB_CHARGE
+				if ni >= 1.0:
+					ni = 2.0
+			else:
+				ni = inhib_old * INHIB_LEAK
+			_convective_inhib[i] = ni
 		next_vapor[i] = vapor_after_precip
 		next_cloud[i] = cloud
 		next_cloud_water[i] = cloud_water
@@ -1240,6 +1405,21 @@ func _neighbor_average_vapor_cached(cell: HexCell, map: MapData, prev_vapor: Pac
 		n += 1
 	return sum_v / float(maxi(n, 1))
 
+func _wrapped_delta(a: Vector2, b: Vector2, wrap_width_x: float) -> Vector2:
+	var dx: float = b.x - a.x
+	if wrap_width_x > 0.001:
+		var half: float = wrap_width_x * 0.5
+		if dx > half:
+			dx -= wrap_width_x
+		elif dx < -half:
+			dx += wrap_width_x
+	return Vector2(dx, b.y - a.y)
+
+func _world_wrap_width_x(map: MapData) -> float:
+	if map == null or map.width <= 0 or _weather_system == null:
+		return 0.0
+	return float(map.width) * sqrt(3.0) * _weather_system._hex_size
+
 func _neighbor_aligned_idx(idx: int, dir: Vector2, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> int:
 	if idx < 0 or idx >= cell_pos.size() or dir.length_squared() <= 0.0001:
 		return -1
@@ -1247,14 +1427,14 @@ func _neighbor_aligned_idx(idx: int, dir: Vector2, cell_pos: PackedVector2Array,
 		return -1
 	var self_wp: Vector2 = cell_pos[idx]
 	var best_idx: int = -1
-	var best_dot: float = _weather_system._hex_size * 0.31176915 # sqrt(3) * 0.18
+	var best_dot: float = maxf(_field_slice_cell_pos_scale, 0.001) * 0.31176915 # sqrt(3) * 0.18
 	var ndir: Vector2 = dir.normalized()
 	var base: int = idx * 6
 	for d in range(6):
 		var nb_idx: int = neighbor_indices[base + d]
 		if nb_idx < 0:
 			continue
-		var to_nb: Vector2 = cell_pos[nb_idx] - self_wp
+		var to_nb: Vector2 = _wrapped_delta(self_wp, cell_pos[nb_idx], _field_slice_wrap_width_x)
 		var dot: float = to_nb.dot(ndir)
 		if dot > best_dot:
 			best_dot = dot
@@ -1327,7 +1507,7 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 		if nb == null:
 			continue
 		var nb_wp: Vector2 = _weather_system._cell_world_pos(nb)
-		var to_nb: Vector2 = nb_wp - self_wp
+		var to_nb: Vector2 = _wrapped_delta(self_wp, nb_wp, _world_wrap_width_x(map))
 		if to_nb.length_squared() <= 0.0001:
 			continue
 		var d: float = to_nb.normalized().dot(ndir)
@@ -1389,13 +1569,14 @@ func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
 	if _weather_system == null or cell == null:
 		return 0.0
 	var self_wp: Vector2 = _weather_system._cell_world_pos(cell)
+	var wrap_width_x: float = _world_wrap_width_x(map)
 	var incoming: float = 0.0
 	var checked: int = 0
 	for nb: HexCell in _weather_system._cell_neighbors(cell, map):
 		if nb == null:
 			continue
 		var nb_wp: Vector2 = _weather_system._cell_world_pos(nb)
-		var dir_to_self: Vector2 = self_wp - nb_wp
+		var dir_to_self: Vector2 = _wrapped_delta(nb_wp, self_wp, wrap_width_x)
 		if dir_to_self.length_squared() <= 0.0001:
 			continue
 		var wind: Vector2 = nb.wind_vector
@@ -1416,7 +1597,7 @@ func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array,
 		var nb_idx: int = neighbor_indices[base + d]
 		if nb_idx < 0:
 			continue
-		var dir_to_self: Vector2 = self_wp - cell_pos[nb_idx]
+		var dir_to_self: Vector2 = _wrapped_delta(cell_pos[nb_idx], self_wp, _field_slice_wrap_width_x)
 		if dir_to_self.length_squared() <= 0.0001:
 			continue
 		var nb: HexCell = cells[nb_idx]
@@ -1499,6 +1680,8 @@ var _field_slice_world: WorldData = null
 var _field_slice_season_idx: int = 0
 var _field_slice_climate_anomaly: float = 0.0
 var _field_slice_cursor: int = 0
+# climate-realism Stage1: 「热赤道」纬度(norm)，begin_slice 按 zonal-max 温度逐 tick 算，omega 项消费。
+var _field_slice_lat_te_norm: float = 0.5
 var _field_slice_refresh_convergence: bool = false
 var _field_slice_cells: Array = []
 var _field_slice_cell_pos: PackedVector2Array = PackedVector2Array()
@@ -1523,8 +1706,13 @@ var _field_slice_results_in_soa: bool = false
 var _field_slice_native_convergence_boost: bool = false
 var _field_slice_temp_anom: PackedFloat32Array = PackedFloat32Array()
 var _field_slice_native_knobs: Dictionary = {}
+var _field_slice_wrap_width_x: float = 0.0
+var _field_slice_cell_pos_scale: float = 1.0
 var _cached_cell_pos: PackedVector2Array = PackedVector2Array()
 var _cached_cell_pos_map_id: int = 0
 var _cached_cell_pos_n: int = 0
 var _cached_cell_pos_hex_size: float = -1.0
+# Stage6c: 对流抑制记忆(per-cell)，跨 slice/tick 持久(不在 begin_slice 重置)。本地状态，非 SoA 组件、不入 CSV。
+# 经 knobs "convective_inhib" 以 in/out 传给 C++(ptrw 原地更新，调用后读回)。GDScript fallback 直接读写本数组。
+var _convective_inhib: PackedFloat32Array = PackedFloat32Array()
 # endregion PR-4

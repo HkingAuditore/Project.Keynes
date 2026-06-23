@@ -88,7 +88,7 @@ void fragment() {
     } else {
         col = render_water_pipeline(...);  // 水面：base→specials→shade
     }
-    COLOR = apply_global_adjustments(col, wp, pixel_noise); // 羊皮纸 + tonemap + sRGB
+    COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow); // 羊皮纸 + tonemap + sRGB
 }
 ```
 
@@ -422,7 +422,7 @@ return apply_water_specials(lit, surface, biome, wp, visual_quality);
 **位置**：`global_adjustments.gdshaderinc`
 
 ```glsl
-vec3 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
+vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow) {
     col = apply_paper_grain(col, wp, pixel_noise);          // 羊皮纸纸纹
     col = apply_equator_band(col, ...);                     // 赤道带柔光
     col = apply_season_transition_overlay(col, pixel_noise);// 季节过渡 dissolve

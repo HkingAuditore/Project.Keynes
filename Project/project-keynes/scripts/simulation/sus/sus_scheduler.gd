@@ -214,6 +214,7 @@ func _descriptor_from_job(job: SusJob) -> Dictionary:
 		"id": job.id,
 		"priority": int(job.priority),
 		"must_run": bool(job.must_run),
+		"use_job_should_run": bool(job.use_job_should_run),
 		"starvation_threshold": int(job.starvation_threshold),
 		"max_slices_per_tick": int(job.max_slices_per_tick),
 		"slice_budget_ms": float(job.slice_budget_ms),

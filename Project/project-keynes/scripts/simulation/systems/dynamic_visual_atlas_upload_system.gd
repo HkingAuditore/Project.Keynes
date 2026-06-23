@@ -205,12 +205,21 @@ var _cpp_commit_queue: Array = []
 var _cpp_commit_context: Dictionary = {}
 var _cpp_commit_skip_count: int = 0
 
+var _lut_refresh_pending: bool = false
+var _lut_last_refresh_tick: int = -1
+var _lut_last_due_tick: int = -1
+var _lut_stride: int = 1
+var _lut_phase: int = 0
+var _lut_pending_before_tick: bool = false
+var _lut_catchup_tick: bool = false
+
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_stride: int = 1, p_climate_profile = null, p_dirty_world = null,
 		p_world_ext = null) -> void:
 	id = &"dynamic_visual_atlas_upload"
 	priority = 250
+	use_job_should_run = true
 	# 2026-05-19 方案 B：默认 budget 从 0.45 → 1.5ms，配合 MAX_CELLS_PER_TICK=4096
 	# 让一个 phase 在单 tick 内扫完。仍可被 climate_profile.sim_upload_slice_budget_ms 覆盖。
 	slice_budget_ms = 1.5
@@ -235,10 +244,9 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# D ocean (s8 p0)。每 8 仿真日 atlas commit 一次。
 	# 单 tick 1-3ms，不再被 ocean (D 桶 8ms) 或 climate (1-12ms) 撞 budget。
 	if OS.has_feature("mobile"):
-		stride = 8
-		policy = SusPolicyScript.StridePolicy.new(8, 2)
+		_configure_lut_policy(8, 2)
 	else:
-		policy = SusPolicyScript.StridePolicy.new(stride, 0)
+		_configure_lut_policy(stride, 0)
 	_rebuild_baker_callables()
 
 
@@ -264,7 +272,59 @@ func _rebuild_baker_callables() -> void:
 		}
 
 
-func tick(_ctx) -> Dictionary:
+func _configure_lut_policy(p_stride: int, p_phase: int) -> void:
+	stride = max(1, p_stride)
+	_lut_stride = stride
+	_lut_phase = p_phase
+	policy = SusPolicyScript.StridePolicy.new(_lut_stride, _lut_phase)
+
+
+func declare_reads() -> Array[StringName]:
+	return [
+		DCComponentIds.CELL_TEMP,
+		DCComponentIds.CELL_MOISTURE,
+		DCComponentIds.CELL_SNOW_COVER,
+		DCComponentIds.CELL_SEA_ICE_FRAC,
+		DCComponentIds.CELL_TERRAIN,
+		DCComponentIds.CELL_VEGETATION,
+		DCComponentIds.CELL_COVER,
+		DCComponentIds.CELL_VEGETATION_VITALITY,
+	]
+
+
+func declare_writes() -> Array[StringName]:
+	return []
+
+
+func _lut_due_for_tick(tick_index: int) -> bool:
+	return posmod(tick_index + _lut_phase, _lut_stride) == 0
+
+
+func _latest_lut_due_tick_at_or_before(tick_index: int) -> int:
+	return tick_index - posmod(tick_index + _lut_phase, _lut_stride)
+
+
+func _ctx_tick_index(ctx) -> int:
+	if ctx is Dictionary:
+		return int(ctx.get("tick_index", 0))
+	if ctx != null:
+		return int(ctx.get("tick_index"))
+	return 0
+
+
+func _mark_lut_due_from_ctx(ctx) -> void:
+	if not FeatureFlagsScript.cell_indirection_active():
+		return
+	var tick_index: int = _ctx_tick_index(ctx)
+	var latest_due_tick: int = _latest_lut_due_tick_at_or_before(tick_index)
+	if latest_due_tick < 0:
+		return
+	if _lut_last_refresh_tick < latest_due_tick:
+		_lut_refresh_pending = true
+		_lut_last_due_tick = max(_lut_last_due_tick, latest_due_tick)
+
+
+func tick(ctx) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
@@ -280,15 +340,39 @@ func tick(_ctx) -> Dictionary:
 	# flag 关时本分支零触达，旧 per-pixel 路径（_tick_cpp_pipeline / 4-phase / _tick_oneshot）
 	# 行为完全不变，即 flag 充当 A/B fallback 开关（skill rule 11）。
 	if FeatureFlagsScript.cell_indirection_active():
-		baker.refresh_cell_luts_daily(map, world_data)
+		_mark_lut_due_from_ctx(ctx)
+		var pending_before: bool = _lut_refresh_pending
+		var tick_index: int = _ctx_tick_index(ctx)
+		var due_this_tick: bool = _lut_due_for_tick(tick_index)
+		var due_tick: int = _lut_last_due_tick
+		var catchup: bool = pending_before and not due_this_tick
+		var lut_report: Dictionary = baker.refresh_cell_luts_daily(map, world_data)
 		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
-		return {
+		_lut_last_refresh_tick = tick_index
+		_lut_refresh_pending = false
+		_lut_pending_before_tick = pending_before
+		_lut_catchup_tick = catchup
+		var report: Dictionary = {
 			"done": true,
 			"work_done": map.cell_count() if map != null else 0,
 			"elapsed_ms": _lut_ms,
 			"progress_ratio": 1.0,
 			"path": "cell_indirection_lut",
 		}
+		report["lut_path"] = str(lut_report.get("path", ""))
+		report.merge(lut_report, true)
+		report["path"] = "cell_indirection_lut"
+		report["lut_refresh_ms"] = _lut_ms
+		report["lut_refresh_pending_before"] = pending_before
+		report["lut_refresh_pending_after"] = _lut_refresh_pending
+		report["lut_last_refresh_tick"] = _lut_last_refresh_tick
+		report["lut_last_due_tick"] = due_tick
+		report["lut_stride"] = _lut_stride
+		report["lut_phase"] = _lut_phase
+		report["lut_catchup"] = catchup
+		_last_breakdown = report.duplicate(true)
+		_last_breakdown["_tick_idx"] = current_fast_tick_idx
+		return report
 
 	# 紧急回退：走旧 one-shot 路径。
 	if not enable_time_slicing:
@@ -364,6 +448,9 @@ func should_run(ctx: SusTickContext) -> bool:
 		return false
 	if not _cpp_commit_queue.is_empty() or _cpp_stride_in_progress:
 		return true
+	if FeatureFlagsScript.cell_indirection_active():
+		_mark_lut_due_from_ctx(ctx)
+		return _lut_refresh_pending
 	if policy == null:
 		return true
 	return policy.should_run(self, ctx)
@@ -1670,10 +1757,11 @@ func reconfigure(p_stride: int) -> void:
 	stride = max(1, p_stride)
 	# Fix #11: mobile C 桶 s8 p2 与 _init 一致
 	if OS.has_feature("mobile"):
-		stride = 8
-		policy = SusPolicyScript.StridePolicy.new(8, 2)
+		_configure_lut_policy(8, 2)
 	else:
-		policy = SusPolicyScript.StridePolicy.new(stride, 0)
+		_configure_lut_policy(stride, 0)
+	_lut_refresh_pending = true
+	_lut_last_due_tick = -1
 
 
 func reset_progress() -> void:
@@ -1682,6 +1770,11 @@ func reset_progress() -> void:
 	_reset_state_machine()
 	_clear_cpp_commit_queue()
 	_cpp_stride_in_progress = false
+	_lut_refresh_pending = false
+	_lut_last_refresh_tick = -1
+	_lut_last_due_tick = -1
+	_lut_pending_before_tick = false
+	_lut_catchup_tick = false
 
 
 func last_breakdown() -> Dictionary:

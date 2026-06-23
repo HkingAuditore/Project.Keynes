@@ -635,7 +635,6 @@ func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 		"temp_365d": w.view_f32(w.component_id(DCComponentIds.CELL_TEMP_365D)),
 		"temp_anomaly": w.view_f32(w.component_id(DCComponentIds.CELL_TEMP_ANOMALY)),
 		"moisture": w.view_f32(w.component_id(DCComponentIds.CELL_MOISTURE)),
-		"snow_cover": w.view_f32(w.component_id(DCComponentIds.CELL_SNOW_COVER)),
 		"sea_ice_frac": w.view_f32(w.component_id(DCComponentIds.CELL_SEA_ICE_FRAC)),
 		"elevation": w.view_f32(w.component_id(DCComponentIds.CELL_ELEVATION)),
 		"base_moisture": w.view_f32(w.component_id(DCComponentIds.CELL_BASE_MOISTURE)),
@@ -3255,7 +3254,9 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 		var cell: HexCell = cells[cur]
 		if cell != null:
 			if _is_water(cell.terrain):
-				pass
+				# 修复旧运行态：若当前被灌成水，但 base 是生成期确认的陆地，回退到 base。
+				if not _is_water(cell.base_terrain):
+					_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			else:
 				# 2026-05-18 季节性高山雪：lock-in 仅锁 base_terrain==SNOW（极地/最高峰），
 				# MOUNTAIN 解放给 _decide_terrain 决策，让中纬高山冬天 temp_now<0.08 翻
@@ -3270,6 +3271,10 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 					var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 					var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+					# 生成期排干/回填的内陆低洼地原始 elevation 仍可能低于 sea_level；
+					# 季节重判不得把这类陆地重新灌回 COAST/OCEAN。
+					if _is_water(new_terrain) and not _is_water(cell.terrain):
+						new_terrain = cell.base_terrain if not _is_water(cell.base_terrain) else cell.terrain
 					_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
 		cur += 1
 		touched += 1
@@ -3446,6 +3451,8 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 					var lat_temp: float = _row_lat_temp[r_idx]
 					var temp: float = clampf(lat_temp - _alt_penalty(cell_re.elevation), 0.0, 1.0)
 					var new_terrain := _decide_terrain(cell_re.elevation, temp, cell_re.moisture, _last_cfg)
+					if _is_water(new_terrain) and not _is_water(cell_re.terrain):
+						new_terrain = cell_re.base_terrain if not _is_water(cell_re.base_terrain) else cell_re.terrain
 					_set_cell_runtime_terrain(map, cell_re, new_terrain, true, temp, cell_re.snow_cover)
 
 		cur += 1
@@ -4721,6 +4728,8 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 	var _cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for cell: HexCell in _cells:
 		if _is_water(cell.terrain):
+			if not _is_water(cell.base_terrain):
+				_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			continue
 		# 2026-05-18：解除 MOUNTAIN lock-in，仅 SNOW 永久。详见 _run_season_stage2_micro 注释。
 		var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
@@ -4735,6 +4744,8 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
 		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+		if _is_water(new_terrain) and not _is_water(cell.terrain):
+			new_terrain = cell.base_terrain if not _is_water(cell.base_terrain) else cell.terrain
 		_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
 
 
@@ -6332,7 +6343,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	var _pa_indices: PackedInt32Array = PackedInt32Array()
 	var _pa_temp: PackedFloat32Array = PackedFloat32Array()
 	var _pa_moist: PackedFloat32Array = PackedFloat32Array()
-	var _pa_snow: PackedFloat32Array = PackedFloat32Array()
 	var _pa_temp_baseline: PackedFloat32Array = PackedFloat32Array()
 	var _pa_temp_season_off: PackedFloat32Array = PackedFloat32Array()
 	var _pa_temp_30d: PackedFloat32Array = PackedFloat32Array()
@@ -6346,7 +6356,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 	_pa_indices.resize(_pa_n)
 	_pa_temp.resize(_pa_n)
 	_pa_moist.resize(_pa_n)
-	_pa_snow.resize(_pa_n)
 	_pa_temp_baseline.resize(_pa_n)
 	_pa_temp_season_off.resize(_pa_n)
 	_pa_temp_30d.resize(_pa_n)
@@ -6380,7 +6389,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# 首次（ema_was_init=false）强制收集 → push 一次完整 baseline，避免长尾。
 		var _prev_t_legacy: float = cell.temperature
 		var _prev_m_legacy: float = cell.moisture
-		var _prev_s_legacy: float = cell.snow_cover
 
 		# —— 1) 太阳几何：直射点/日照/昼长 → 日照异常 ——
 		var ny: float = _cube_row_norm(cell, _last_cfg)
@@ -6416,12 +6424,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
 		var temp_now: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
-		# —— 4) 当日雪盖（双段公式与 refresh_seasonal 严格一致；永久态特例处理） ——
-		var snow_cover: float = 0.0
-		if not _is_water(cell.terrain):
-			var land_h: float = (cell.elevation - _last_cfg.sea_level) / maxf(1.0 - _last_cfg.sea_level, 0.001)
-			snow_cover = _derived_snow_cover(temp_now, land_h, int(cell.terrain), int(cell.cover))
-
 		# —— 4) 写回 current_state（只更新连续字段，biome/landform/vegetation/cover 由 refresh_seasonal 维护） ——
 		# Fast-tick perf opt (C)：temperature / moisture / snow_cover / temp_baseline /
 		# temp_season_offset / temp_30d_mean / temp_365d_mean / temp_dev_from_annual 已
@@ -6431,7 +6433,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		# PR-2.1.1：双写保留（cell.* 仍写，PR-2.3 facade 化时由 setter 路由到 world）。
 		cell.temperature = temp_now
 		cell.moisture = moisture_now
-		cell.snow_cover = snow_cover
 		cell.temp_baseline = temp_year
 		cell.temp_season_offset = season_offset
 
@@ -6469,11 +6470,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			if _dm_abs < 0.0: _dm_abs = -_dm_abs
 			if _dm_abs > _PUSH_EPS_MOIST:
 				_need_push_legacy = true
-		if not _need_push_legacy:
-			var _ds_abs: float = snow_cover - _prev_s_legacy
-			if _ds_abs < 0.0: _ds_abs = -_ds_abs
-			if _ds_abs > _PUSH_EPS_SNOW:
-				_need_push_legacy = true
 
 		# PR-2.1.1：收集 dirty entry（每 cell 一行，9 字段一次性下移到 SoA）。
 		var _pa_idx: int = cell_idx
@@ -6481,7 +6477,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 			_pa_indices[_pa_write_i] = _pa_idx
 			_pa_temp[_pa_write_i] = temp_now
 			_pa_moist[_pa_write_i] = moisture_now
-			_pa_snow[_pa_write_i] = snow_cover
 			_pa_temp_baseline[_pa_write_i] = temp_year
 			_pa_temp_season_off[_pa_write_i] = season_offset
 			_pa_temp_30d[_pa_write_i] = m30
@@ -6500,7 +6495,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		_pa_indices.resize(_pa_write_i)
 		_pa_temp.resize(_pa_write_i)
 		_pa_moist.resize(_pa_write_i)
-		_pa_snow.resize(_pa_write_i)
 		_pa_temp_baseline.resize(_pa_write_i)
 		_pa_temp_season_off.resize(_pa_write_i)
 		_pa_temp_30d.resize(_pa_write_i)
@@ -6513,7 +6507,6 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 		_pa_ema_init.resize(_pa_write_i)
 		_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_indices, _pa_temp)
 		_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_indices, _pa_moist)
-		_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_indices, _pa_snow)
 		# 长期均值字段：mean_diff ≤ 0.005 红线（master 手册 §3.4.3）
 		_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_indices, _pa_temp_baseline)
 		_push_f32_to_world(DCComponentIds.CELL_TEMP_SEASON_OFFSET, _pa_indices, _pa_temp_season_off)
@@ -6578,6 +6571,9 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 	var n_cells: int = cells.size()
 	var nb_idx_arr: PackedInt32Array = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	var has_idx: bool = nb_idx_arr.size() >= n_cells * 6
+	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
+	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
+	var has_snowpack_arr: bool = map.snowpack_arr.size() == n_cells
 	var temp_snapshot := PackedFloat32Array()
 	temp_snapshot.resize(n_cells)
 	var cell_pos := PackedVector2Array()
@@ -6603,9 +6599,13 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 	for i in range(n_cells):
 		var cell: HexCell = cells[i]
 		var temp_now: float = temp_snapshot[i]
-		# Fast-tick perf opt (C)：moisture / snow_cover 已升级为强类型成员。
+		# Fast-tick perf opt (C)：moisture 已升级为强类型成员。
 		var moisture_now: float = cell.moisture
-		var snow_cover: float = cell.snow_cover
+		var snow_cover: float = 0.0
+		if has_snowpack_arr and not _is_water(cell.terrain):
+			snow_cover = smoothstep(snowpack_cover_low, snowpack_cover_full, map.snowpack_arr[i])
+			if cell.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
+				snow_cover = 0.80
 
 		var d_albedo: float = 0.0
 		var d_coastal: float = 0.0
@@ -8385,7 +8385,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# 直接拿底层数组引用避免每次 indexer 调用
 	var temp_a: PackedFloat32Array = _dc_views["temp"] if _use_dc else map.temp_arr
 	var moist_a: PackedFloat32Array = _dc_views["moisture"] if _use_dc else map.moisture_arr
-	var snow_a: PackedFloat32Array = _dc_views["snow_cover"] if _use_dc else map.snow_cover_arr
 	# A.2.1.A2 — Dirty Mask：Pass A 写温度时按 epsilon 标记。
 	# 进入 round 时调用方（RefreshClimateDailyJob）已根据"季节切换 / 每 30 日 / 加载首日"
 	# 决定本 round 的 dirty 起点（mark_all 或 clear），这里只在内层做 epsilon 比对附加标记。
@@ -8394,18 +8393,15 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var dirty_mask: PackedByteArray = _dc_views["climate_dirty_mask"] if _use_dc else map.climate_dirty_mask
 	const _DIRTY_EPS_TEMP: float = 1.0 / 512.0
 	const _DIRTY_EPS_MOIST: float = 1.0 / 512.0
-	const _DIRTY_EPS_SNOW: float = 1.0 / 256.0
 	# A.2.1.A2-fix — 取昨日 global drift（季节驱动的全图同向漂移量），
 	# 让本日 dt 减去 drift 再与 epsilon 比，过滤"伪 dirty"。第 1 日 drift=0
 	# 时所有 cell 仍会因 dt 自身 > eps 而 mark dirty，由 reset_progress 强制
 	# 全图扫已涵盖（_full_sweep_counter=30），无副作用。
 	var dt_drift: float = _dt_global_yesterday
 	var dm_drift: float = _dm_global_yesterday
-	var ds_drift: float = _ds_global_yesterday
 	# 本日 drift 累加器：Pass A 末尾一次性除以 n 写回 generator 成员
 	var dt_sum_local: float = 0.0
 	var dm_sum_local: float = 0.0
-	var ds_sum_local: float = 0.0
 	var drift_count_local: int = 0
 	var base_moist_a: PackedFloat32Array = _dc_views["base_moisture"] if _use_dc else map.base_moisture_arr
 	var elev_a: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
@@ -8522,17 +8518,10 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if thermal_a.size() == n:
 			thermal_a[i] = heat_next
 
-		# 4) 当日雪盖由 snowpack 派生，不再按温度/地形当天硬跳。
-		var snow_cover: float = 0.0
+		# 4) Pass A 只维护物理 snowpack；视觉 snow_cover 由 weather distribute 统一发布。
 		if is_water_a[i] == 0:
-			var snowpack_now: float = snowpack_a[i] if snowpack_a.size() == n else clampf(snow_a[i] * 0.35, 0.0, 1.0)
-			if c.cover == CoverType.CV.GLACIER and snowpack_now < 0.80:
-				snowpack_now = 0.80
-				if snowpack_a.size() == n:
-					snowpack_a[i] = snowpack_now
-			snow_cover = smoothstep(snowpack_cover_low, snowpack_cover_full, snowpack_now)
-			if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
-				snow_cover = 0.80
+			if c.cover == CoverType.CV.GLACIER and snowpack_a.size() == n and snowpack_a[i] < 0.80:
+				snowpack_a[i] = 0.80
 		elif snowpack_a.size() == n:
 			snowpack_a[i] = 0.0
 
@@ -8544,27 +8533,21 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if use_sparse:
 			var prev_t: float = temp_a[i]
 			var prev_m: float = moist_a[i]
-			var prev_s: float = snow_a[i]
 			var dt_signed: float = temp_now - prev_t
 			var dm_signed: float = moisture_now - prev_m
-			var ds_signed: float = snow_cover - prev_s
 			# 累积带符号差值，Pass A 末尾算 dt_global = sum / n（全图同向漂移）
 			dt_sum_local += dt_signed
 			dm_sum_local += dm_signed
-			ds_sum_local += ds_signed
 			drift_count_local += 1
 			# 残差：扣除昨日全图漂移后的"局部异常"
 			var dt_res: float = dt_signed - dt_drift
 			var dm_res: float = dm_signed - dm_drift
-			var ds_res: float = ds_signed - ds_drift
 			if dt_res < 0.0: dt_res = -dt_res
 			if dm_res < 0.0: dm_res = -dm_res
-			if ds_res < 0.0: ds_res = -ds_res
-			if dt_res > _DIRTY_EPS_TEMP or dm_res > _DIRTY_EPS_MOIST or ds_res > _DIRTY_EPS_SNOW:
+			if dt_res > _DIRTY_EPS_TEMP or dm_res > _DIRTY_EPS_MOIST:
 				dirty_mask[i] = 1
 		temp_a[i] = temp_now
 		moist_a[i] = moisture_now
-		snow_a[i] = snow_cover
 		temp_baseline_a[i] = temp_year
 		season_off_a[i] = season_offset
 
@@ -8623,7 +8606,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 					_pa_all[_ki] = _ki
 				_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_all, temp_a)
 				_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_all, moist_a)
-				_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_all, snow_a)
 				_push_f32_to_world(DCComponentIds.CELL_THERMAL_ENERGY, _pa_all, thermal_a)
 				_push_f32_to_world(DCComponentIds.CELL_SNOWPACK, _pa_all, snowpack_a)
 				_push_f32_to_world(DCComponentIds.CELL_TEMP_BASELINE, _pa_all, temp_baseline_a)
@@ -8642,7 +8624,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 				_pa_idx.resize(_k)
 				var _v_temp: PackedFloat32Array = PackedFloat32Array(); _v_temp.resize(_k)
 				var _v_moist: PackedFloat32Array = PackedFloat32Array(); _v_moist.resize(_k)
-				var _v_snow: PackedFloat32Array = PackedFloat32Array(); _v_snow.resize(_k)
 				var _v_thermal: PackedFloat32Array = PackedFloat32Array(); _v_thermal.resize(_k)
 				var _v_snowpack: PackedFloat32Array = PackedFloat32Array(); _v_snowpack.resize(_k)
 				var _v_temp_baseline: PackedFloat32Array = PackedFloat32Array(); _v_temp_baseline.resize(_k)
@@ -8658,7 +8639,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 					_pa_idx[_w] = _ki
 					_v_temp[_w] = temp_a[_ki]
 					_v_moist[_w] = moist_a[_ki]
-					_v_snow[_w] = snow_a[_ki]
 					_v_thermal[_w] = thermal_a[_ki]
 					_v_snowpack[_w] = snowpack_a[_ki]
 					_v_temp_baseline[_w] = temp_baseline_a[_ki]
@@ -8670,7 +8650,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 					_w += 1
 				_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_idx, _v_temp)
 				_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_idx, _v_moist)
-				_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_idx, _v_snow)
 				_push_f32_to_world(DCComponentIds.CELL_THERMAL_ENERGY, _pa_idx, _v_thermal)
 				_push_f32_to_world(DCComponentIds.CELL_SNOWPACK, _pa_idx, _v_snowpack)
 				# 长期均值字段：mean_diff ≤ 0.005 红线（master 手册 §3.4.3）
@@ -8700,7 +8679,6 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 				_pa_soa_indices[_ki] = _ki
 			_push_f32_to_world(DCComponentIds.CELL_TEMP, _pa_soa_indices, temp_a)
 			_push_f32_to_world(DCComponentIds.CELL_MOISTURE, _pa_soa_indices, moist_a)
-			_push_f32_to_world(DCComponentIds.CELL_SNOW_COVER, _pa_soa_indices, snow_a)
 			_push_f32_to_world(DCComponentIds.CELL_THERMAL_ENERGY, _pa_soa_indices, thermal_a)
 			_push_f32_to_world(DCComponentIds.CELL_SNOWPACK, _pa_soa_indices, snowpack_a)
 			# 长期均值字段（master 手册 §3.4.3 要求 mean_diff ≤ 0.005 的严格红线）
@@ -8732,11 +8710,9 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		var inv_n: float = 1.0 / float(drift_count_local)
 		var dt_today: float = dt_sum_local * inv_n
 		var dm_today: float = dm_sum_local * inv_n
-		var ds_today: float = ds_sum_local * inv_n
 		const _DRIFT_EMA_ALPHA: float = 0.3
 		_dt_global_yesterday = lerpf(_dt_global_yesterday, dt_today, _DRIFT_EMA_ALPHA)
 		_dm_global_yesterday = lerpf(_dm_global_yesterday, dm_today, _DRIFT_EMA_ALPHA)
-		_ds_global_yesterday = lerpf(_ds_global_yesterday, ds_today, _DRIFT_EMA_ALPHA)
 
 # F.3 helper：按 VegetationType.VEG enum 顺序构建 foliage density table。
 # 与 _vegetation_foliage_density() 等价（clamp(transp/0.06, 0, 1)）。第一次调用
@@ -8902,7 +8878,9 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
 	var temp_a: PackedFloat32Array = _dc_views["temp"] if _use_dc else map.temp_arr
 	var moist_a: PackedFloat32Array = _dc_views["moisture"] if _use_dc else map.moisture_arr
-	var snow_a: PackedFloat32Array = _dc_views["snow_cover"] if _use_dc else map.snow_cover_arr
+	var snowpack_a: PackedFloat32Array = _dc_views["snowpack"] if _use_dc and _dc_views["snowpack"].size() == n else map.snowpack_arr
+	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
+	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	var is_water_a: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
 	var pos_x_a: PackedFloat32Array = _dc_views["pos_x"] if _use_dc else map.cell_pos_x_arr
 	var pos_y_a: PackedFloat32Array = _dc_views["pos_y"] if _use_dc else map.cell_pos_y_arr
@@ -8972,8 +8950,12 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		var c: HexCell = cells[i]
 		var temp_now: float = temp_snapshot[i]
 		var moisture_now: float = moist_a[i]
-		var snow_cover: float = snow_a[i]
 		var is_water: bool = is_water_a[i] != 0
+		var snow_cover: float = 0.0
+		if not is_water and snowpack_a.size() == n:
+			snow_cover = smoothstep(snowpack_cover_low, snowpack_cover_full, snowpack_a[i])
+			if c.cover == CoverType.CV.GLACIER and snow_cover < 0.80:
+				snow_cover = 0.80
 
 		var d_albedo: float = 0.0
 		var d_coastal: float = 0.0

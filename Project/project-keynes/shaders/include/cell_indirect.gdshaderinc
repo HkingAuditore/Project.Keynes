@@ -63,7 +63,10 @@ vec4 sample_dyn_lut_smooth(vec2 uv) {
 	vec4 c10 = (i10 >= 0) ? texture(dyn_lut, cell_lut_uv(i10)) : center;
 	vec4 c01 = (i01 >= 0) ? texture(dyn_lut, cell_lut_uv(i01)) : center;
 	vec4 c11 = (i11 >= 0) ? texture(dyn_lut, cell_lut_uv(i11)) : center;
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+	vec4 blended = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+	// snow 是阈值型 per-cell 状态；B 通道保留中心格，避免雪线被邻格平均拖相位。
+	blended.b = center.b;
+	return blended;
 }
 
 vec4 eco_lut_nearest(vec2 uv) {

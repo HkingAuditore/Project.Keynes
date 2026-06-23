@@ -15,8 +15,8 @@
 //      starvation_threshold / max_slices_per_tick / slice_budget_ms /
 //      _starvation_count / _in_flight) is owned by C++. The actual SusJob
 //      RefCounted object lives on the GDScript side; C++ holds its Object*
-//      and dispatches `run_slice(ctx)` / `should_run(ctx)` (only when the
-//      policy gate is *bypass-via-job-override*) / `policy.on_job_completed`
+//      and dispatches `run_slice(ctx)` / `should_run(ctx)` (only when
+//      `use_job_should_run=true`) / `policy.on_job_completed`
 //      via Object::call() — exactly mirroring the GDScript scheduler's
 //      virtual dispatch.
 //   ④ Telemetry buffers (last_report / last_tick_summary /
@@ -95,6 +95,7 @@ public:
     //   { "id"                   : StringName,
     //     "priority"             : int,
     //     "must_run"             : bool,
+    //     "use_job_should_run"   : bool,   // opt-in GDScript should_run gate
     //     "starvation_threshold" : int,
     //     "max_slices_per_tick"  : int,
     //     "slice_budget_ms"      : float,
@@ -177,6 +178,7 @@ private:
         godot::StringName id;
         int               priority             = 100;
         bool              must_run             = false;
+        bool              use_job_should_run   = false;
         int               starvation_threshold = 0;
         int               max_slices_per_tick  = 0;
         float             slice_budget_ms      = 4.0f;

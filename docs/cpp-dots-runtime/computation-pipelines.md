@@ -45,6 +45,8 @@
 
 `MapGenerator.generate()` 调 `_generate_cells_native_base(cfg, seed)`，后者经 `_ensure_generation_world_ext()` 拿到（必要时临时实例化）未绑定的 `DCWorldExt`，调用 `run_native_world_generate_base_pass(seed, cfg, profile)`，由 C++ 直接生成基础地图 SoA 结果包：cube 坐标、elevation、moisture/base_moisture、初始 temperature、terrain/is_water、lat/temp_year、landform/vegetation/cover 等 PackedArrays。随后 `run_native_world_generate_post_base_pass(seed, cfg, profile, base_res)` 在 C++ 内完成 Priority-Flood 水文修正、湖盆筛选、parent graph flow accumulation 河流，并输出 `has_river_arr / river_downstream_arr / river_flow_arr` 供 Baker 追踪主流/支流和可变河宽；之后继续完成河岸/植被反馈、过渡生态、地标和水体变种。GDScript（`_assemble_native_generation_map`）只负责校验返回数组尺寸并装配成 `MapData`/`HexCell`。**若 ext 缺失、方法缺失或结果非法，`_generate_cells_native_base` 返回 null，`generate()` 硬中止并 `push_error`（旧 `_generate_cells` fallback 已删除）。**
 
+
+
 bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.init_soa_from_bake()` 和 `bake_lat_temp_year_lut()` 后，`DCWorldExt` 读取已绑定的 `cell_lat_norm`、`cell_elevation`、`cell_terrain` 等 slot，以 C++ SAME_SOURCE 公式重算并发布初始 runtime 字段。这一层用于 slot/MapData 同步和窄 fallback，不再代表完整基础生成算法。
 
 输出 slot：
@@ -124,7 +126,9 @@ I/O：
 风险：
 
 - 如果 season phase 与 climate round 锁相位不一致，会导致验证日志里的 phase 差异。
+- `seasonal_redecide_terrain` 只能在陆地生物群系/雪线之间重判，不能把当前非水地块判回 `OCEAN/COAST`。生成期排干/回填的内陆低洼地可能仍保留低于 `sea_level` 的原始 elevation，运行期必须用 base/current land terrain 兜底。
 - 不应为了极低耗时再做复杂线程化。
+
 
 ## Climate daily round
 
@@ -508,6 +512,99 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
 - `DCWorldExt::run_weather_field_solve_pass`
 - weather distribute / summary / stage-b native helpers
 
+### 气候真实度修复 (climate-realism Stage 0–4, 2026-06-23)
+
+针对离线 tile_data 复盘暴露的六个问题（海洋几乎不下雨、纬向只有单一赤道峰、HEATWAVE
+死类型、单一 ITCZ 雨带季节摆动无温带过境系统、雪盖先于降雪）做的一组镜像改动。**天气物理双份
+镜像铁律照旧**：`field_solver.gd` 与 `world_ext.cpp::run_weather_field_solve_pass` 改动必须逐项同步，
+改后跑 `set_field_verify_mode(true)` 对账。
+
+- **Stage 0（纯旋钮，无需重编）**：`ClimateProfile.weather_ocean_precip_suppression` 0.95→0.60、
+  `weather_frontogenesis_gain` 0.42→0.70。两者经 knobs dict 流向 C++、经 `configure_weather_field`
+  流向 GDScript member，单点修改两侧自动同步。
+- **Stage 1（keystone，重编）**：新增 Hadley/Ferrel 垂直运动项 `omega`。`field_solver.begin_slice`
+  每 tick 按 zonal-max 基准温度算出「热赤道」纬度 `lat_te_norm`（24 桶 argmax + 抛物线细化），
+  存 `_field_slice_lat_te_norm`，经**新 knob `weather_lat_te_norm`** 传给 C++（缺省 0.5）。hot loop
+  里按本格纬度距热赤道度数 `dlat` 构造：ITCZ(|dlat|<~12°)/风暴轴(|dlat|~48-62°)上升带增雨，
+  副热带(|dlat|~22-34°)下沉带抑制凝结+降水；`omega_ascent` 并入 `ocean_drive` 让海上 ITCZ 释放
+  降水抑制。键在「热赤道」相对纬度→随季迁移、不产生沿绝对纬线的直线条带。
+- **Stage 2（重编）**：`humidity_front_gate` 下限 0.38→0.25（冷湿锋面也能成雨→温带过境雨团/
+  冷区降雪）；`BLIZZARD_WIND_GATE` 1.15→1.0（过渡带冷降水不再被误判冷雨）。
+- **Stage 3（重编）**：HEATWAVE 重定义。旧判据 `hot(temp>0.64) + effective_cloud<0.30` 在本模型
+  永不满足（最热区=赤道湿区恒有云），实测 HEATWAVE 恒为 0。改气象学定义：暖季陆地 + 显著正
+  温度距平(`temp_anom>0.06`，旋钮 `HEATWAVE_ANOM_GATE`) + 少雨；并把 DROUGHT 判据提到 HEATWAVE
+  之前，bone-dry 强距平先归旱灾、其余暖距平少雨格归热浪。删除已无用的 `hot` 局部。
+- **Stage 4（重编）**：`_snowline_floor_for_cell` / C++ 同名 lambda 的返回值用 `smoothstep(0.30,0.80)`
+  门控——雪线 floor 只为深冻区自动铺白，雪线边缘交给 snowpack-from-snowfall，使降雪可见地先于
+  积雪。climate-daily pass（`world_ext` ~2490 / `map_generator.gd:8533`）本就是纯 snowpack 派生、
+  无 floor，自动继承。
+- **Stage 5（已撤销）**：曾加"两支东传经向行波"硬调制 `precip_target` 来破带。**已删除**——它是 prescribed 确定性
+  波，非涌现（用户明确要求自发涌现），且实测使 largest-blob 0.47→0.91 更糟。相关 knob `weather_solve_tick` 一并移除。
+- **Stage 6（重编，第三轮 2026-06-23，替代 Stage 5）**：湿度充放电 recharge-discharge——**真涌现**。深查
+  （tile_data_record_20260623_133100，633 ticks）确认雨团不消散/只往复、海上不生成的根因是 **湿度系统没有放电**：
+  `corr(precip, Δvapor)≈+0.04`（下雨完全不消耗水汽）、`precip` 时间自相关 lag20=0.74（雨团极持久），且现有
+  `post_rain_subsidence` 被 `×(1-smoothstep(dynamic_forcing))` 在辐合带豁免（雨带处自抑=0）。**另诊断**：环流是
+  纯诊断的（`solve_slp_field`=纬度模板+温度+海陆+冰雪，wind=风带模板+地转 `-∇slp`，无预报量），故无自带行波。
+  修法两点（双侧镜像）：(a) 降水"放电"——精确降水格 `vapor_after_precip -= precip × VAPOR_DISCHARGE`(0.65)，气柱
+  下雨失水→RH 降→自发停雨→需蒸发/平流充电恢复；(b) `post_rain_subsidence` 强强迫豁免改留 45% 残余
+  （`×(1-0.55·smoothstep)`），辐合带雨团下完也进不应期。**涌现结果**：雨团有 生成-盛-消 生命周期、活动中心沿
+  上风新鲜水汽自发移动、海面快充电自生成系统。`VAPOR_DISCHARGE` 为关键旋钮（过大全局抽干、过小不消散），需用
+  新录制 + `tmp/wx_emerge.py`（corr(precip,Δvapor) 应转负、precip 自相关该降、海上 onset 该升）标定。
+- **Stage 6b（重编，2026-06-23）**：实测 Stage 6 把雨段中位 37 天→2 天、largest-blob 0.91→0.28，但 34% 雨段仍≥7 天
+  （强辐合/地形区平流补给 > 均匀放电），且海上 onset 比掉到 0.04。两点定点修正：(a) **持续降水放电翻倍**
+  `discharge *= 1 + DISCHARGE_SUSTAIN(1.3)·smoothstep(0.04,0.10,prev_precip)`——`prev_precip` 高(连下多久)才放大，
+  专砍长尾、不动新生短雨段；(b) `weather_ocean_precip_suppression` 0.60→0.45（放电已自限海上过湿，放开让海面
+  有足够降水形成充放电系统，修海上不生成）。`tmp/wx_persist.py` 量化雨段长度分布(ticks→天气日，按 commit 节律 ÷2)。
+- **Stage 6c（重编，2026-06-23）**：实测 Stage 6b 海上 onset 0.04→0.06、share 5.2%→9.8%、largest-blob 0.28→0.16，
+  但 ≥7 天长尾仍 34%、且偏干(precip 0.0111→0.0080)。诊断定论：**长尾格是强迫主导(常驻辐合/地形抬升)而非水汽
+  主导**——抽干水汽只饿死弱短系统(全局变干)，强迫格仍持续成雨。改用**对流抑制记忆**(真·充放电极限环)：
+  solver-resident `_convective_inhib[i]`(per-cell，跨 tick 持久，经 knob `convective_inhib` 以 in/out 传 C++，CoW 回传
+  仿 `out_*`)随降水累积(`+precip·INHIB_GAIN 1.6`)、缓慢衰减(`×INHIB_DECAY 0.82`，恢复≈5-6步)，按 `INHIB_STRENGTH 0.9`
+  压低 precip——**与强迫/水汽无关，定点封顶长尾，且只作用于刚下过雨的格(干区 inhib=0，不会全局压垮)**。同时把
+  `VAPOR_DISCHARGE` 0.65→0.45、`DISCHARGE_SUSTAIN`→0（持久控制改由 inhib 承担，缓解过干）。
+  **注意**：inhib 经 const Dictionary knob 的 CoW 回传未离线验证；最坏情形=回传失败→inhib 恒 0→无效(但无回退，
+  放电调小仍修过干)。需新录制 + `tmp/wx_persist.py` 验证 ≥7 天比例下降、precip 回升、海上 onset 比维持。
+- **Stage 6c-fix + 6d（重编，2026-06-23）**：fresh 录制(161718)证实上面的最坏情形成真——**inhib 的 knob CoW 回传
+  失败、抑制 no-op**（STORM 雨段中位 8→10 天、雨段 ≥7 天 58%、比放电调小前更持久）。改法：**对流抑制记忆改存为
+  `DCWorldExt::_wx_conv_inhib`(std::vector<float> ext 成员)**——C++ 端权威路径直接读写、跨 tick/slice 持久、
+  无边界穿越，保证生效；尺寸变化(换地图)清零。GDScript fallback 仍用 `_convective_inhib` 成员(同进程无边界)。
+  knob `convective_inhib` 及其回传已删。**Stage 6d**：修首帧暴雨暴雪——`begin_slice` 未初始化格 `prev_vapor`
+  由 `moisture`(满饱和)改 `0.15×moisture`(稳态量级)，消除 spin-up(实测首 tick 86%降水/21%暴雪→8.7%/0%)；纯
+  GDScript、不重编。待 fresh 录制验证 STORM/雨段中位是否回落到 1-3 天。
+- **Stage 6e（重编，2026-06-23）**：fresh 录制(163635)证实 C++ 成员 round-trip **成功**（海上降水占比 12%→28%、
+  onset 比 0.16→0.70），**但持久性反而更糟**（雨段中位 9→16.5 天、≥7 天 58%→78%）。根因=抑制记忆的**设计**错：
+  线性反馈 `precip×(1-inhib·k)` 只把降水压到**稳态弱雨**(~0.05>湿阈 0.02)→雨永不停、只是变弱→雨段更长。
+  改为**双稳弛豫振子**(真·充放电极限环)：累积抑制过 `INHIB_TRIGGER(0.5)` → 最终降水(EMA 后、分类前)砍到
+  ×0.05 → 转干转晴(CLEAR) → inhib 由被压制的降水衰减落回 → 释放再积累。无中间稳态→真正 开/关 循环→封顶雨段。
+  旋钮 `INHIB_TRIGGER/STRENGTH(0.95)/GAIN(2.5)/DECAY(0.85)`：GAIN 定积累到触发的步数(≈雨段长)、DECAY 定不应期长度。
+  需 fresh 录制验证雨段中位是否回落、是否过碎/过干。
+- **Stage 6f（重编，2026-06-23，6e 调参）**：6e(GAIN2.5/DECAY0.85/STR0.95)实测**矫枉过正**——持久性修好(雨段中位
+  1天/≥7天0.8%)但降水崩塌(meanP 0.0103→0.0029、CLEAR 97%、内陆/MONSOON 几乎消失)。根因：GAIN 太高→inhib 3 tick
+  就过阈、DECAY 太慢→不应期没清空就重触发→降水永远被砍在 ~0、来不及涨到 target。调为 GAIN 1.2/DECAY 0.78/
+  STR 0.90：① 仅"持续较重降水"(稳态 inhib=precip·gain/(1-decay)>0.5，约 precip≳0.065)才触发→封长尾；
+  ② 弱雨/内陆(precip≲0.06)稳态 inhib<0.5 **永不触发**→照常下雨；③ 不应期更快清空→降水更快回归。
+  目标 meanP 回到 ~0.012-0.018、CLEAR 回到 ~88-90%、内陆/类型多样恢复，同时雨段中位保持 ~2-3 天。
+- **Stage 6g（重编，2026-06-23）**：6f(GAIN1.2)恢复了雨量/多样/内陆(meanP 0.0094、CLEAR 85%)，**但长尾回来了**
+  (≥7 天 18%)。诊断定论：长尾格 precip p50=**0.065（中等雨）**，magnitude 版稳态 inhib≈0.35<阈→**永不触发**→
+  中等雨永续。**magnitude 路线本质两难**：调高 GAIN 封中等雨就掐死全部降水(6e)、调低就留中等长尾(6f)。
+  改为**按【时长】充放电(强度无关)**：`inhib∈[0,1)` 充能期，每个降水 tick `+0.18`(干 tick `×0.88` 泄放)，连下 ~6 tick
+  充满 → 跳 `2.0` 进不应期；不应期 `inhib≥1` 把 precip ×0.08(转干判 CLEAR)、每 tick `-0.55`，落回 <1 清零重启。
+  **任意强度连下 ~6 tick 都封顶**(中等雨长尾也治)、**充能期满强度照下**(不伤雨量/多样)。物理=对流耗尽本地不稳定度
+  需特征"时长"。旋钮 `INHIB_CHARGE`(雨段长)、`INHIB_REFRAC`(不应期长)、`INHIB_STRENGTH`。需 fresh 录制验证
+  ≥7 天 → ~0、meanP/CLEAR/内陆/多样 保持、雨段中位 ~3 天且不过碎。
+- **Stage 6h（重编+旋钮，2026-06-23）**：6g 后实测 **STORM/RAIN=1.32**(雷暴比普通雨还多)、且单格在 RAIN↔STORM
+  逐 tick 横跳(1838 次/7% 的切换)。双根因：① STORM 门 `instability>0.50` 被 **47% 的 RAIN 格**满足→STORM≈RAIN
+  数量且二者在 0.50 阈两侧密集重叠→横跳；② **`weather_transition_enabled` 竟是 false**——离散类型稳定化(注释称
+  可把 RAIN↔STORM 横跳 24%→9%)一直没开。修：① STORM 门提到 `instability>0.70`(RAIN p90=0.76→仅最强对流)、
+  `precip>0.065`(暖洋核心 0.64/0.060)→雷暴变少数强对流、边界移出密集区；② `weather_transition_enabled`→true
+  (⌈1/0.35⌉≈3 步确认才切换类型，吸收 1-tick 横跳)。需 fresh 录制验证 STORM/RAIN<<1、RAIN↔STORM 横跳骤降。
+- **HEATWAVE 仍未解决（实测 0）**：诊断证实**运行期 `target_type=6` 恒为 0**——分类器运行期收到的 `temp_anom`
+  （knobs `temp_anomaly`）与录制 `temp_anomaly_arr` 不一致（疑似 `cell_temp_anomaly` 由 climate-daily 在 weather
+  之后/异步更新，或 `climate_anomaly` 标量冷偏压低 `temp`）。已改判为 STORM/MONSOON 同款可达的
+  `warm(temp>0.55)+晴(eff_cloud<0.24)+干(vapor<0.12)+少雨`，去掉不可达的 `temp_anom`。**根因需运行期插桩确认**。
+- **未做**：问题④（次要）未改；阈值常量均为离线估值。**可选更深一步**：若充放电仍不够"会移动"，给环流加预报性
+  （简化涡度/斜压扰动），让风场自身涌现行波——但属大改，建议先验证 Stage 6。
+
 Stage-A 链路：
 
 1. begin：准备 field snapshot、fronts、cell budget。
@@ -529,6 +626,13 @@ Stage-B 链路：
   路径中滞后；此时 `SEA_ICE`/`LAKE` 仍必须按水体处理，不得获得陆地
   snowpack、snow_cover 或 FLOODING cover。C++ `run_weather_distribute_pass`
   必须 mirror 这个组合谓词。
+- `cell_weather_precip` 是天气场诊断/可视化量，不等同于水文有效降水。
+  `run_weather_field_solve_pass` 在最终分类后会把非降水天气
+  (`CLEAR/FOG/HEATWAVE/DROUGHT`) 的残余灰区 `precip` 回流到 vapor 并写 0；
+  `run_weather_distribute_pass` 与 `run_runtime_hydrology_pass` 仍必须再按天气类型
+  gate 一次，只允许 `RAIN/STORM/BLIZZARD/MONSOON` 的 precip 进入 snowpack、
+  water_balance、soil_moisture、runoff/river discharge。这个双保险用于防止旧提交、
+  fallback 或旧 DLL 中的隐藏小雨继续污染水文和植被反馈。
 
 Merged native 路径：
 
@@ -596,6 +700,17 @@ Weather commit publish guard (2026-06-22):
   一次 `gdext_commit`；CSV 中用 `weather_commit_tick_delta` 和
   `weather_last_commit_tick` 按 commit tick 分析天气生命周期，而不是按渲染帧或
   partial slice tick 误判。
+
+Weather field geometry contract (2026-06-23):
+
+- Weather field advection and convergence use cylindrical east-west shortest
+  vectors. `MapData.cell_pos_x_arr/y_arr` are cached in size=1 hex units, so
+  `WeatherSystem._build_weather_field_knobs()` passes `weather_wrap_width_x`
+  and `weather_cell_pos_scale` into `DCWorldExt::run_weather_field_solve_pass`.
+  Both the C++ pass and `weather/field_solver.gd` use those values for
+  upstream/downwind selection and wind convergence. Do not use `hex_size`
+  directly as the cone threshold when `cell_pos` is unit-scale; that recreates
+  stationary seam rain bands on ocean wrap cells.
 
 ### 半真实大气模型（2026-06-19）
 
@@ -678,8 +793,9 @@ STORM 0→2~3%、FOG 0.1%→~4.7%(冷洋面海雾)、BLIZZARD 13%→~1.4%、DROU
 GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`) 仍双份镜像。
 
 **阶段1 — 降水惯性化（消除横跳/不连续）**：
-- `precip` 改为带时间状态的 EMA：`precip = lerp(prev_precip, precip_target, weather_precip_inertia)`
-  （`weather_precip_inertia` 默认 `0.30`，新增 ClimateProfile knob）；`precip < 0.003` 归零。
+- `precip` 改为带时间状态的 EMA：`precip = lerp(prev_precip, precip_target, weather_precip_inertia)`。
+  初版默认 `0.30`，2026-06-22 生命周期修复后当前默认为 `0.40`；
+  `precip < 0.003` 归零。
 - **删除**脉冲放大三件套：carryover `precip_floor` 跨日叠加、`precip_cls` 拖尾、
   `precip_gate`/`fog_cloud_gate` 分类滞回。时间连续性统一由 EMA 提供，分类回归**单阈值**。
 - `precip_target = max(precip_raw, cloud_water_rain)`（不再叠加 carryover floor）；
@@ -698,12 +814,13 @@ GDScript (`field_solver.gd::run_slice`) 与 C++ (`run_weather_field_solve_pass`)
   `lat_signed` / `season_idx` / `local_summer`**：类型边界由温度/湿度等弯曲物理场涌现，消除沿纬线的
   直线天气带。2026-06-22 后签名扩展为
   `(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, wind_speed, temp_anom, monsoon_flux, is_water)`。
-- 判定顺序：BLIZZARD → STORM → MONSOON → RAIN → FOG → HEATWAVE → DROUGHT → CLEAR。关键阈值：
-  `meaningful_precip = precip>0.030 或 (precip>0.022 & cloud>0.22 & vapor>0.28)`；
-  STORM `warm(temp>0.55) & humid(vapor>0.28) & ((inst>0.55 & precip>0.060) | warm_ocean_core)`；
-  MONSOON `warm & vapor>0.40 & precip>0.055 & cloud>0.45`；FOG `vapor>0.34 & cloud>0.14 &
-  precip<0.030 & temp<0.55`；HEATWAVE `hot(temp>0.64) & temp_anom>门 & cloud<0.38 & precip<0.025`；
-  DROUGHT `cloud<0.22 & precip<0.020 & temp>0.48 & vapor<0.34`。
+- 判定顺序：BLIZZARD → STORM → MONSOON → RAIN → FOG → HEATWAVE → DROUGHT → CLEAR。
+  阈值按海陆分别标定：`meaningful_precip` 在水域为
+  `precip>0.032` 或 `precip>0.022 & effective_cloud>0.22 & precip_cloud_mass>0.077 & vapor>0.28`，
+  在陆地为 `precip>0.040` 或
+  `precip>0.030 & effective_cloud>0.12 & precip_cloud_mass>0.042 & vapor>0.09`。
+  STORM 要求暖湿、高不稳定和有效云水，暖海核心要求 `is_water & ocean_an>0.05`；
+  MONSOON 额外读取 `monsoon_flux`/上岸湿通量；HEATWAVE/DROUGHT 仅陆地可触发。
 - 清理 `lat_norm` 僵尸链（`cell_lat_norm` knob、`LATN` 指针、`soa_lat_norm` 等）与死代码
   （GDScript `_run_weather_field_gdscript_loop_inplace`、cell 版 `_classify_field_weather`）。
 - `field_precip_decay` / `field_precip_carryover_max` 已成**僵尸 knob**（C++/GDScript hot-loop 均
@@ -738,10 +855,30 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 - hot loop 增加 `post_rain_subsidence`：上一轮 `prev_precip` 高、当前
   `frontogenesis/convergence/convective/ocean_convective` 低时，降低凝结、提高再蒸发，并增强
   低动力海面的 `marine_scour`。效果是雨后下沉清云，避免雨区原地拖尾。
+- 河流陆地新增 `river_recycle_lock`：仅在 `has_river`、上一轮降水较高、而辐合/抬升等动力
+  forcing 低时触发。它会同时压低河流额外蒸发源、降低河流蒸发 floor，把一部分
+  `cloud_water` 回流为 vapor，并降低 `precip_target`。这针对 CSV 中“河流格自身水汽循环
+  锁住永雨”的根因，不影响有真实锋面/地形抬升穿过河谷时的降水。
 - `frontogenesis` 改为 `convergence * temp_gradient * humidity` 联合门控。低湿温度梯度不再凭空
   产雨；真实锋生会直接提高 `cloud_water` 与 `precip_target`。
+- 海洋不再只保留极端深对流：`ocean_drive` 现在由暖流异常、较高 instability、辐合、锋生、
+  沿岸季风湿通量，以及暖湿海面中等云水驱动共同取最大值。2026-06-23 的
+  `tile_data_record_20260623_021536.csv` 显示海面 `RH > 0.46` 已达约 96%，但
+  `precip > 0.014` 只有约 0.2%，说明海上水汽存在而释放门控过紧；因此暖湿海面触发项改为
+  `smoothstep(0.42,0.64,RH) * smoothstep(0.025,0.075,cloud_water) *
+  smoothstep(0.50,0.72,temp) * 0.80`，开阔海面的有效 suppression clamp 从 `0.80` 放宽到
+  `0.72`，低动力 `marine_scour` 阈值收窄到 `0.22`，quiet ocean 云水上限改为
+  `0.060 + ocean_drive * 0.24`。目标是恢复暖湿海面上的零散风暴/季风雨带，同时保留
+  post-rain subsidence 和低动力清扫，避免回到全海弱雨。
 - CLEAR/FOG 的静稳格不允许继承强成雨云水：`precip < 0.003` 且 `dynamic_forcing` 低时，
   `cloud_water` 被压到 `clear_cap`，多余云水按比例回流为 vapor。
+- 最终分类后再次执行 hydrological precip gate：如果分类结果不是
+  `RAIN/STORM/BLIZZARD/MONSOON`，残余 `precip` 回流为 vapor 并清零。这样
+  CSV 不再出现大量 CLEAR/FOG/HEATWAVE/DROUGHT 携带可被水文消费的小雨量；即便
+  诊断或视觉层读取旧 `weather_precip`，distribute/hydrology pass 也不会把它当成降雨。
+- `frontal_convergence_boost` 也服从同一语义：它只能在水汽足够时抬升 precip；
+  若抬升后达到有效降水阈值，必须同步把类型改为 `RAIN`，否则保持非降水类型并清掉
+  precip。禁止后处理在分类之后制造“CLEAR/FOG 带雨”的灰区状态。
 - 分类以 `cloud_water + precip + instability` 为主，视觉 `cloud` 只作为辅助。
   `meaningful_precip` 要求中等降水同时有有效云水，STORM 要求暖湿、高不稳定且云水足够；
   MONSOON 要求 `onshore_moist_flux` 或高湿驱动加上 sustained precip。这样避免
@@ -775,6 +912,10 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 
 - 开启 `set_field_verify_mode(true)` 时，C++ 与 GDScript field 输出误差应 `<= 1e-4`。
 - `gdext_commit` 间隔 p50 <= 2，p90 <= 3。
+- 河流陆地 wet>=90% 的格子应显著低于当前诊断的 `63/94`，并且最大 streak 不应继续贴着整段
+  录制长度；若仍锁住，优先看 `river_recycle_lock` 是否被真实动力 forcing 持续解除。
+- 水域 wet ratio 应明显高于 `0.0017`，但不能回到海面大范围弱雨；暖湿海域应出现局部
+  STORM/MONSOON cluster，而冷静洋面保持 CLEAR/FOG 为主。
 - 湿天气 >=90% 的格子 < 64；RAIN 平均持续 < 40 commit-days，FOG 平均持续 < 50 commit-days。
 - `cloud_water_vs_precip` > 0.45；CLEAR 的 `cloud_water` p50 < 0.08。
 - front wet overlap 应在 35%-60%；MONSOON 占比 0.5%-3%，水域/沿岸不应恒为 0。
@@ -1003,7 +1144,11 @@ shader 路径（`world_map.gdshader` fragment SETUP）：
 - **enum**（Stage B）：`enum_lut[decode_cell_index(uv)]`；邻域 biome 直接采 `map_index_atlas.r`。
 - **dyn/eco/ice**（Stage C）：desktop 4-tap 双线性（在索引图 bilinear footprint 上取
   4 个 cell 的 LUT 值按子像素权重混合，补回跨 cell 边界平滑，替代旧 CPU box-blur 的 LINEAR
-  消边）；mobile 三档退单点 NEAREST（接受轻微 hex 阶梯，省 fetch）。海冰随 `dyn_lut.a` 一并迁移。
+  消边）；mobile 三档退单点 NEAREST（接受轻微 hex 阶梯，省 fetch）。`dyn_lut.B`
+  是雪盖阈值型通道，desktop 平滑采样时也必须保留中心 cell 值，不能跟 R/G/A 一起邻格平均，
+  否则雪线会在季节/上传 cadence 边界出现半雪插值、闪烁和滞后。海冰随 `dyn_lut.a` 一并迁移。
+- **season transition overlay** 只负责旧地表颜色 dissolve。主层已经用当前 `dyn_lut.B`
+  绘制雪盖，过渡层在 `dyn_snow` 较高的像素应降低 alpha，避免旧地表噪声 alpha 覆盖当前雪线。
 - **scalar 退役**（Stage D）：moisture 取 `dyn_lut.g`、latitude 用 `uv.y` 解析重建；
   `scalar_atlas` 不再生成、绑定或采样。旧 `flow` 河流 SDF 视觉层退化为 0。
 
@@ -1173,10 +1318,14 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   `active_weather_ratio`, `field_commit_path`, and convergence diagnostics are
   authored by the weather breakdown, not by the climate daily breakdown.
 - `WeatherSystem` passes cold-precipitation knobs into the field solve path:
-  `cold_precip_as_blizzard` and `snow_classification_margin`. Both GDScript
-  classification and `DCWorldExt::run_weather_field_solve_pass` use the same
-  guard so meaningful precipitation below the snow band becomes `BLIZZARD`
-  instead of cold `RAIN`.
+  `cold_precip_as_blizzard`, `snow_classification_margin`, and the diagnostic
+  `snow_cover_read_arr`. Both GDScript classification and
+  `DCWorldExt::run_weather_field_solve_pass` use the same guard so meaningful
+  precipitation below the snow band becomes `BLIZZARD` instead of cold `RAIN`.
+  On land, existing snow cover >= 0.25 also lets cold precipitation below the
+  melt band classify as `BLIZZARD` without the high-wind gate; water cells keep
+  the wind-gated transition rule so snowy sea/lake diagnostics do not force
+  low-wind ocean rain into blizzard.
 - Warm ocean cores use the same exception in GDScript and
   `DCWorldExt::run_weather_field_solve_pass`: a warm/humid cell with
   `ocean_an > 0.12`, `instability > 0.80`, `precip > 0.10`, and `cloud > 0.26`
@@ -1203,6 +1352,24 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   present. Keep these formulas synchronized with classification thresholds in
   `weather_system.gd::_classify_field_weather_core` and
   `wf_classify_field_weather_at` so weak drizzle/fog does not dominate land.
+- Marine warm-humid rain release is deliberately gated by stronger humidity,
+  cloud-water mass, and temperature support than the land convective path, but
+  the warm/humid seed must remain broad enough to admit ordinary open-ocean
+  rain. Current balanced thresholds are mirrored in C++ and GDScript:
+  `warm_humid_marine=smoothstep(0.54,0.74,temp) *
+  smoothstep(0.47,0.69,rh) * open_water`, seed weight
+  `0.20 + wind_mag * 0.36`; the ocean release term `drv_hc` uses
+  `rh 0.47..0.69`, `cloud_water 0.040..0.105`, `temp 0.54..0.74`, and final
+  weight `0.68` (`0.60` multiplier on lakes). `run_weather_field_solve_pass`
+  and `weather/field_solver.gd` still apply a post-rain marine relief/drying
+  step when prior rain is high but `ocean_drive` is low. This is the root guard
+  against stationary equatorial ocean rain locks: warm open water may seed
+  mobile rain, but rain cells without sustained
+  convergence/frontogenesis/monsoon/warm-current support should lose cloud water
+  and vapor instead of oscillating indefinitely. CSV acceptance should show
+  materially more ocean wet cells than the over-dry regression
+  (`ocean wet014 p50=10` on `20260623_031330`) while keeping
+  `locked_ocean_90pct` near zero.
 - `MapData.weather_classification_temp_arr` and
   `MapData.weather_classification_moisture_arr` are recorder-only diagnostic
   mirrors of the field solver read snapshot. They are not DataCore schema

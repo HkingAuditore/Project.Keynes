@@ -2,7 +2,7 @@
 # 独立的天气表现层（v9.split：从 world_map.gdshader 中拆出来）。
 #
 # 节点结构：
-#   WeatherLayer (Node2D, z_index=1，挂在 HexRenderer 之下）
+#   WeatherLayer (Node2D, z_index=4，挂在 HexRenderer 之下；高于植被/点缀，低于数据 overlay）
 #   ├── _overlay_quad   MeshInstance2D + weather_overlay.gdshader  (z_index=0 in layer)
 #   ├── _shadow_root    Node2D（云阴影 Sprite2D 池，每 front 一个）  (z_index=1)
 #   └── _particles_root Node2D（GPUParticles2D 池，每 front 一个）   (z_index=2)
@@ -103,7 +103,10 @@ var _map_index_atlas_tex: ImageTexture = null
 var _noise_tex: ImageTexture = null
 var _hex_size: float = 22.0
 var _weather_field_tex: Texture2D = null
+var _weather_lut_tex: Texture2D = null
+var _weather_lut_dims: Vector2i = Vector2i.ZERO
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
+
 # overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
 var _vector_atlas_tex: Texture2D = null
 # v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
@@ -127,7 +130,8 @@ var _drift_debug_last_log_time: float = -1.0
 
 func _ready() -> void:
 	z_as_relative = false
-	z_index = 1
+	z_index = 4
+
 	# v9.perf：默认整层隐藏，set_weather_fronts() 来了再 visible=true，
 	# 在没有任何天气时省掉 overlay quad 的全屏 fragment + framebuffer blend
 	visible = false
@@ -158,7 +162,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	var has_weather: bool = (not _front_target_snapshots.is_empty()) \
 			or (not _front_visual_snapshots.is_empty()) \
-			or (_weather_field_tex != null)
+			or (_weather_field_tex != null) \
+			or _has_weather_lut_source()
+
 	if not has_weather:
 		_active_count = 0
 		visible = false
@@ -221,6 +227,9 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 	_map_index_atlas_tex = map_index_atlas
 	_noise_tex = noise_tex
 	_hex_size = hex_size
+	_weather_lut_tex = weather_lut
+	_weather_lut_dims = lut_dims
+
 	_reset_front_blend_state()
 	if _overlay_quad != null:
 		_overlay_quad.mesh = _build_full_quad(bounds)
@@ -248,18 +257,25 @@ func set_weather_strength(v: float) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 
-# weather_field_tex 通路已退役（main.gd 始终传 null，云改由 fronts 驱动）；
+# weather_field_tex 通路已退役（main.gd 始终传 null，云改由 weather_lut 驱动）；
 # 保留此 setter 让 main.gd / hex_renderer 的历史调用点安全退化。
+
 func set_weather_field_texture(tex: Texture2D) -> void:
 	_weather_field_tex = tex
 	_refresh_visibility()
 
 # 可见性收敛点。任何一个条件成立就保持 overlay 可见：
-#  1) 有活跃 fronts（_active_count > 0）
-#  2) 有 weather_field_tex（按 cell 渲染天气场）
+#  1) 有活跃 fronts（粒子/旧摘要）
+#  2) 有 weather_field_tex（旧按 cell 渲染天气场）
+#  3) 有 weather_lut（当前逐格云场真源）
 func _refresh_visibility() -> void:
 	visible = (_active_count > 0) \
-			or (_weather_field_tex != null)
+			or (_weather_field_tex != null) \
+			or _has_weather_lut_source()
+
+func _has_weather_lut_source() -> bool:
+	return _weather_lut_tex != null and _weather_lut_dims.x > 0 and _weather_lut_dims.y > 0
+
 
 # vector_atlas 已退役；保留 setter 让旧调用点安全退化。
 func set_vector_atlas_texture(tex: Texture2D) -> void:
@@ -978,8 +994,12 @@ func _push_overlay_runtime_state() -> void:
 		return
 	if _map_index_atlas_tex != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
+	if _weather_lut_tex != null:
+		_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+	_overlay_mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
 	_overlay_mat.set_shader_parameter("world_origin", _world_bounds.position)
 	_overlay_mat.set_shader_parameter("world_size", _world_bounds.size)
+
 	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
 	_overlay_mat.set_shader_parameter("weather_strength", _strength)

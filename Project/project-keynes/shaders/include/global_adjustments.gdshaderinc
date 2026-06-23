@@ -9,7 +9,7 @@
 //
 // 调用方（Who）
 //   - world_map.gdshader fragment() 的最后一步：
-//       COLOR = apply_global_adjustments(col, wp, pixel_noise, day_night_enabled);
+//       COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);
 //
 // 依赖（Why）
 //   - uniforms.gdshaderinc：parchment_* / paper_grain_strength / season_*
@@ -23,7 +23,7 @@
 //   - tonemap 仅在 USE_LINEAR_LIGHTING=true 时启用（约 6 ALU）
 // ─────────────────────────────────────────────────────────────────────────
 
-vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
+vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow) {
 	// ═══════════════════════════════════════════════════════════════════════
 	// GLOBAL 1：半 PBR 后期 —— Tonemap + linear→sRGB
 	// ───────────────────────────────────────────────────────────────────────
@@ -64,6 +64,8 @@ vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
 		float threshold = 1.0 - edge;
 		alpha = 1.0 - smoothstep(threshold - soft, threshold + soft, dissolve_noise);
 		alpha *= 1.0 - smoothstep(0.88, 1.0, edge);
+		// 过渡层只负责旧地表颜色；当前雪盖由主层 dyn_lut.B 绘制，雪区不叠旧层。
+		alpha *= 1.0 - smoothstep(0.08, 0.22, dyn_snow);
 	}
 
 	return vec4(clamp(col, vec3(0.0), vec3(1.0)), alpha);

@@ -23,7 +23,7 @@ class_name ClimateDailySystem
 ## reads: 25 个 cell-level component（climate Pass-A/B、ocean、sea_ice、
 ##        transp 计算的全部输入）；与原 RefreshClimateDailyJob._on_world_bound
 ##        手写的 25 个 _comp_cell_* 一一对应（基类 setup() 自动 cache 到 _cid）
-## writes: 主要写 cell.temp / cell.moisture / cell.snow_cover / cell.sea_ice_frac /
+## writes: 主要写 cell.temp / cell.moisture / cell.snowpack / cell.sea_ice_frac /
 ##         cell.temp_30d / cell.temp_365d / cell.temp_anomaly / cell.temp_baseline /
 ##         cell.temp_season_offset / cell.air_mass_temp_anomaly / cell.climate_dirty /
 ##         cell.ema_initialized
@@ -37,7 +37,7 @@ class_name ClimateDailySystem
 ##             round 内部由 _pass_cursor 推进 sub-pass，每 tick 仅 1 段。
 ##
 ## Sub-pass 顺序（严格按下方编号；上一段产物必须已写入 HexCell 字段）：
-##   0) climate_pass_a           — 裸基线 temp/moisture/snow_cover + EMA   (~15ms)
+##   0) climate_pass_a           — 裸基线 temp/moisture/snowpack + EMA   (~15ms)
 ##   1) climate_pass_b           — 局部气候耦合 (可选，受开关)              (~21ms)
 ##   2) ocean_water              — 洋流热输运·水段 (可选，受开关)           (~16ms)
 ##   3) ocean_land               — 洋流热输运·陆段 (同上开关，必须紧跟水段) (~15ms)
@@ -246,7 +246,6 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_TEMP_365D,
 		DCComponentIds.CELL_TEMP_ANOMALY,
 		DCComponentIds.CELL_MOISTURE,
-		DCComponentIds.CELL_SNOW_COVER,
 		DCComponentIds.CELL_SEA_ICE_FRAC,
 		DCComponentIds.CELL_ELEVATION,
 		DCComponentIds.CELL_BASE_MOISTURE,
@@ -284,7 +283,6 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_TEMP_BASELINE,
 		DCComponentIds.CELL_TEMP_SEASON_OFFSET,
 		DCComponentIds.CELL_MOISTURE,
-		DCComponentIds.CELL_SNOW_COVER,
 		DCComponentIds.CELL_SEA_ICE_FRAC,
 		DCComponentIds.CELL_AIR_MASS_TEMP_ANOMALY,
 		DCComponentIds.CELL_CLIMATE_DIRTY,
@@ -1548,7 +1546,6 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		"landform": map.landform_arr,
 		"vegetation": map.vegetation_arr,
 		"moisture": map.moisture_arr,
-		"snow_cover": map.snow_cover_arr,
 		"pos_x": map.cell_pos_x_arr,
 		"pos_y": map.cell_pos_y_arr,
 		"insolation_dev": map.insolation_dev_arr,
