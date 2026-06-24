@@ -340,6 +340,11 @@ func _ready() -> void:
 	_weather_layer.name = "WeatherLayer"
 	_weather_layer.visual_fronts_changed.connect(_on_weather_layer_visual_fronts_changed)
 	add_child(_weather_layer)
+	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
+	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
+	_weather_layer.process_priority = 1000
+	if _world != null and _weather_layer.has_method("set_world_ref"):
+		_weather_layer.set_world_ref(_world)  # 帧间插值:供 weather_layer 取 weather_lut_prev_tex
 	_load_shader()
 	if _map != null and _world != null:
 		_rebuild()
@@ -594,6 +599,8 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 	var replacing_world := _world != null and world != null and _world != world
 	_map = map
 	_world = world
+	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
+		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
 	if replacing_world:
 		_clear_season_transition()
 	if is_inside_tree():
@@ -1251,7 +1258,7 @@ func _rebuild() -> void:
 		)
 		return
 
-	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds)
+	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds, _wrap_period_x())
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)
@@ -1263,16 +1270,30 @@ func _rebuild() -> void:
 		return
 	_apply_uniforms()
 
-func _build_world_quad_mesh(bounds: Rect2) -> Mesh:
+func _wrap_period_x() -> float:
+	if _map == null:
+		return 0.0
+	return HexUtils.wrap_period_x(_map.width, hex_size)
+
+func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	var p := bounds.position
 	var s := bounds.size
-	var verts := PackedVector2Array([
-		p,
-		p + Vector2(s.x, 0.0),
-		p + s,
-		p + Vector2(0.0, s.y),
-	])
-	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	if wrap_period_x > 0.0001:
+		p.x = 0.0
+		s.x = wrap_period_x
+	var verts := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var tile_offsets := PackedFloat32Array([0.0])
+	if wrap_period_x > 0.0001:
+		tile_offsets = PackedFloat32Array([-wrap_period_x, 0.0, wrap_period_x])
+	for ox in tile_offsets:
+		var base := verts.size()
+		var tp := p + Vector2(float(ox), 0.0)
+		verts.append(tp)
+		verts.append(tp + Vector2(s.x, 0.0))
+		verts.append(tp + s)
+		verts.append(tp + Vector2(0.0, s.y))
+		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1315,6 +1336,8 @@ func _apply_uniforms() -> void:
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)
+	sm.set_shader_parameter("wrap_origin_x", 0.0)
+	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
 	sm.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
 	sm.set_shader_parameter("derived_resolution", Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("sea_level", _world.sea_level)
@@ -1388,7 +1411,7 @@ func _apply_uniforms() -> void:
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
-		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims)
+		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x())
 		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
 		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
 		_weather_layer.set_season_phase(_season_phase)

@@ -75,6 +75,40 @@ static func world_to_cube(pos: Vector2, size: float) -> Vector3i:
 	var r_f: float = (2.0 / 3.0 * pos.y) / size
 	return _cube_round(q_f, r_f, -q_f - r_f)
 
+## 圆柱地图一圈的水平世界距离。注意这不是 world_bounds.size.x：
+## world_bounds 含烘焙 padding，真正经度周期只由 offset 列宽决定。
+static func wrap_period_x(map_width: int, size: float) -> float:
+	return maxf(0.0, float(map_width) * sqrt(3.0) * size)
+
+## 将任意世界坐标折回圆柱地图的 offset 列域；南北越界仍保持硬边界。
+static func world_to_wrapped_cube(pos: Vector2, size: float, map_width: int, map_height: int) -> Vector3i:
+	if map_width <= 0 or map_height <= 0:
+		return Vector3i(2147483647, 0, -2147483647)
+	var cube := world_to_cube(pos, size)
+	var off := cube_to_offset(cube.x, cube.y)
+	if off.y < 0 or off.y >= map_height:
+		return Vector3i(2147483647, 0, -2147483647)
+	return offset_to_cube(posmod(off.x, map_width), off.y)
+
+## 直接按世界坐标取圆柱地图 cell。调用方不必重复 cube→offset→posmod 规则。
+static func world_to_wrapped_cell(map, pos: Vector2, size: float):
+	if map == null:
+		return null
+	var cube := world_to_wrapped_cube(pos, size, int(map.width), int(map.height))
+	if cube.x == 2147483647:
+		return null
+	var off := cube_to_offset(cube.x, cube.y)
+	if off.y < 0 or off.y >= int(map.height):
+		return null
+	return map.get_cell_by_cube(cube)
+
+## 把 canonical 世界点移动到离参考 x 最近的水平副本上。
+static func nearest_display_world(canonical_pos: Vector2, reference_x: float, period_x: float) -> Vector2:
+	if period_x <= 0.0001:
+		return canonical_pos
+	var k := roundi((reference_x - canonical_pos.x) / period_x)
+	return canonical_pos + Vector2(float(k) * period_x, 0.0)
+
 ## 浮点 cube 坐标四舍五入为整数（保持 q+r+s=0）
 static func _cube_round(q_f: float, r_f: float, s_f: float) -> Vector3i:
 	var rq: int = roundi(q_f)

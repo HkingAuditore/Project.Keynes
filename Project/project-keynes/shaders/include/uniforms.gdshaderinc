@@ -65,10 +65,32 @@ uniform vec2 lut_dims = vec2(1.0, 1.0);
 // =========================================================================
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform vec2 derived_resolution = vec2(1024.0, 768.0);
 
 uniform float sea_level : hint_range(0.0, 1.0) = 0.42;
+
+float wrap_world_x(float x) {
+	if (wrap_period_x <= 0.0001) {
+		return x;
+	}
+	return wrap_origin_x + mod(x - wrap_origin_x, wrap_period_x);
+}
+
+vec2 wrap_world_pos(vec2 wp) {
+	return vec2(wrap_world_x(wp.x), wp.y);
+}
+
+vec2 wrap_map_uv(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return clamp(uv, vec2(0.0), vec2(1.0));
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	float wrapped_x = wrap_world_x(world_x);
+	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
+}
 
 
 // =========================================================================

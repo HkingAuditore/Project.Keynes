@@ -17,10 +17,14 @@ uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // R = biome
 //   R=weather_type, G=intensity, B=cloud, A=precip（与 encode_cell_luts 同布局）。
 //   decode_cell_index(uv) 用 map_index_atlas.GB 取 cell.index，再 cell_lut_uv 采样本格天气。
 uniform sampler2D weather_lut : filter_nearest, repeat_disable;
+uniform sampler2D weather_lut_prev : filter_nearest, repeat_disable;  // 上一仿真帧 LUT(帧间插值减两次更新间横跳)
+uniform float weather_lerp : hint_range(0.0, 1.0) = 1.0;              // 0=prev 1=curr,两次仿真更新之间随时间推进
 uniform vec2 lut_dims = vec2(0.0);
 
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
 uniform float world_time = 0.0;
 // 一个 hex 的“直径”（wp 单位）。邻域采样偏移按它物理换算，避免与 map_index_atlas
 // 的 hex 像素尺度发生频率共振导致六边形晶格。
@@ -77,6 +81,26 @@ const int B_SEA_ICE = 20;
 const int B_KELP = 21;
 
 varying vec2 v_world;
+
+float wx_wrap_world_x(float x) {
+	if (wrap_period_x <= 0.0001) {
+		return x;
+	}
+	return wrap_origin_x + mod(x - wrap_origin_x, wrap_period_x);
+}
+
+vec2 wx_wrap_world_pos(vec2 wp) {
+	return vec2(wx_wrap_world_x(wp.x), wp.y);
+}
+
+vec2 wx_wrap_uv(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return clamp(uv, vec2(0.0), vec2(1.0));
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	float wrapped_x = wx_wrap_world_x(world_x);
+	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
+}
 
 int effective_weather_quality() {
 #if defined(MOBILE_QUALITY_LOW)
@@ -164,27 +188,34 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 		return 0.0;
 	}
 	int q = effective_weather_quality();
-	int lo_oct = (q >= 1) ? 4 : 3;
-	int hi_oct = (q >= 2) ? 3 : ((q >= 1) ? 2 : 1);
+	// 性能分档：q0=轮廓云(2 octave)；q1=主云+粗细节(3+1)；q2=轻量 warp + 细节(3+2+1)。
+	int lo_oct = (q >= 1) ? 3 : 2;
+	int hi_oct = (q >= 2) ? 2 : ((q >= 1) ? 1 : 0);
 	float t = world_time;
 
 	vec2 warp = vec2(0.0);
-	if (q >= 1) {
+	if (q >= 2) {
 		vec2 warp_p = p * 0.0038 + vec2(seed * 0.23, -seed * 0.17);
-		int warp_oct = 2;
 		warp = vec2(
-			cloud_fbm_evolve(warp_p + vec2(13.7, 2.9), warp_oct, t * 0.18),
-			cloud_fbm_evolve(warp_p + vec2(-5.4, 19.1), warp_oct, -t * 0.15)
+			cloud_fbm_evolve(warp_p + vec2(13.7, 2.9), 1, t * 0.18),
+			cloud_fbm_evolve(warp_p + vec2(-5.4, 19.1), 1, -t * 0.15)
 		) - vec2(0.5);
 	}
 
 	// 噪声相位必须只由世界坐标/时间/seed 决定，不能由 coverage 决定；否则每次 weather_lut 刷新云量变化时，噪声坐标也会跳。
-	vec2 base_p = p * 0.0105 + warp * 0.56 + vec2(seed * 0.37, seed * 0.61);
+	vec2 base_p = p * 0.0105 + warp * ((q >= 2) ? 0.42 : 0.0) + vec2(seed * 0.37, seed * 0.61);
 	float low = cloud_fbm_evolve(base_p, lo_oct, t * 0.34);
-	float mid = cloud_fbm_evolve(base_p * 3.15 + vec2(11.7, 4.2), hi_oct, t * 0.72);
-	float fine = (q >= 2) ? cloud_fbm_evolve(base_p * 7.4 + vec2(-21.3, 15.8), 2, t * 1.12) : mid;
+	float mid = low;
+	if (hi_oct > 0) {
+		mid = cloud_fbm_evolve(base_p * 3.15 + vec2(11.7, 4.2), hi_oct, t * 0.72);
+	}
+	float fine = mid;
+	if (q >= 2) {
+		fine = cloud_grad_noise(base_p * 7.4 + vec2(-21.3, 15.8) + vec2(t * 0.47, -t * 0.31));
+	}
 
 	float cover_gate = smoothstep(0.03, 0.22, coverage);
+
 	float coverage_solid = smoothstep(0.16, 0.86, coverage);
 	float core_gate = smoothstep(0.42, 0.78, low) * cover_gate;
 	float edge_gate = smoothstep(0.24, 0.58, low) * (1.0 - smoothstep(0.82, 0.98, low));
@@ -292,12 +323,16 @@ float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
 	float u = dot(wp, dir);
 	float v = dot(wp, side);
 	vec2 sp = vec2(u * 0.010 + t * 0.9, v * 0.030);
-	float band = cloud_fbm(sp, 3);
+	int q = effective_weather_quality();
+	float band = cloud_fbm(sp, (q >= 2) ? 3 : 2);
 	float streak = smoothstep(mix(0.62, 0.42, coverage), 0.82, band);
-	float fiber = cloud_fbm(sp * 2.3 + vec2(11.0, -5.0), 2);
-	streak *= 0.7 + 0.3 * smoothstep(0.40, 0.80, fiber);
+	if (q >= 2) {
+		float fiber = cloud_fbm(sp * 2.3 + vec2(11.0, -5.0), 1);
+		streak *= 0.76 + 0.24 * smoothstep(0.40, 0.80, fiber);
+	}
 	return clamp(streak * coverage, 0.0, 1.0);
 }
+
 
 // 低云 / 山雾：贴地、慢漂，biome_weight（山地权重）调制可见度。
 float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
@@ -354,26 +389,23 @@ FrontField empty_field() {
 	return f;
 }
 
-float type_cloud_bias(int wt) {
-	// 云量是基础；天气层级只做递增增强：雾 < 降雨 < 雷暴/热带暴雨/暴风雪。
-	if (wt == WT_FOG) return 1.06;
-	if (wt == WT_RAIN) return 1.12;
-	if (wt == WT_STORM || wt == WT_MONSOON || wt == WT_BLIZZARD) return 1.24;
-	return 1.0;
+float precip_cloud_bias(float precip) {
+	// 用连续降水量替代离散 weather_type 增强云量，避免类型跳变造成云层频闪。
+	float p = smoothstep(0.04, 0.72, precip);
+	return mix(1.0, 1.22, p);
 }
 
-float type_cloud_opacity_bias(int wt) {
-	if (wt == WT_FOG) return 1.04;
-	if (wt == WT_RAIN) return 1.10;
-	if (wt == WT_STORM || wt == WT_MONSOON || wt == WT_BLIZZARD) return 1.18;
-	return 1.0;
+float precip_cloud_opacity_bias(float precip) {
+	float p = smoothstep(0.04, 0.72, precip);
+	return mix(1.0, 1.16, p);
 }
+
 
 // front_axis / front_ellipse_distance / visual_weather_intensity 已随 sample_fronts 一并删除。
 
 // ── cell-index 间接寻址（与 cell_indirect.gdshaderinc 同公式；此处内联，避免引入 dyn/eco LUT 依赖）──
 int wx_decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, uv).gb;
+	vec2 gb = texture(map_index_atlas, wx_wrap_uv(uv)).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -387,59 +419,43 @@ vec2 wx_cell_lut_uv(int cid) {
 	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
 }
 
+// 逐格 LUT 采样(只采当前帧)。帧间插值不在这里做(否则每 tap 翻倍采样)，改在 sample_field_weather
+// 算出最终标量后、只对中心 cell 采一次 prev 做 mix → 全程只多 1 次采样。
+vec4 wx_sample_lut(int cid) {
+	return texture(weather_lut, wx_cell_lut_uv(cid));
+}
+
 // 逐格天气场采样（cloud-from-field 2026-06-20）：经 cell-index 间接寻址读 weather_lut。
 // type 取中心 cell（枚举不可插值）；intensity/cloud/precip 4-tap 双线性平滑跨格柔化。
 // 替代旧 sample_fronts 椭圆摘要 → 云精确对应 HexCell.weather_*。
 FrontField sample_field_weather(vec2 wp) {
 	FrontField best = empty_field();
 	if (lut_dims.x < 1.0) return best; // weather_lut 未就绪 → 无云
-	vec2 uv = (wp - world_origin) / world_size;
+	vec2 uv = wx_wrap_uv((wp - world_origin) / world_size);
 	int cid_c = wx_decode_cell_index(uv);
 	if (cid_c < 0) return best;
-	vec4 center = texture(weather_lut, wx_cell_lut_uv(cid_c));
+	vec4 center = wx_sample_lut((cid_c));
 	int wt = int(center.r * 255.0 + 0.5);
 
-	// 4-tap 双线性：在 map_index_atlas 的 bilinear footprint 上取 4 个 cell，按子像素权重
-	// 混合 intensity/cloud/precip，补回跨 cell 边界平滑（type 保持中心 cell，枚举不可插值）。
-	vec2 res = vec2(textureSize(map_index_atlas, 0));
-	vec2 tc = uv * res - 0.5;
-	vec2 base = floor(tc);
-	vec2 f = tc - base;
-	vec2 inv = 1.0 / res;
-	int i00 = wx_decode_cell_index((base + vec2(0.5, 0.5)) * inv);
-	int i10 = wx_decode_cell_index((base + vec2(1.5, 0.5)) * inv);
-	int i01 = wx_decode_cell_index((base + vec2(0.5, 1.5)) * inv);
-	int i11 = wx_decode_cell_index((base + vec2(1.5, 1.5)) * inv);
-	vec4 c00 = (i00 >= 0) ? texture(weather_lut, wx_cell_lut_uv(i00)) : center;
-	vec4 c10 = (i10 >= 0) ? texture(weather_lut, wx_cell_lut_uv(i10)) : center;
-	vec4 c01 = (i01 >= 0) ? texture(weather_lut, wx_cell_lut_uv(i01)) : center;
-	vec4 c11 = (i11 >= 0) ? texture(weather_lut, wx_cell_lut_uv(i11)) : center;
-	vec4 sm = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-
-	float intensity_amount = sm.g;
-	float cloud_amount = sm.b;
-	float precip_amount = sm.a;
-	// 对 weather_cloud 做轻量 cell 邻域柔化，减少逐格 LUT 值差异形成的六边形/格子边界。
-	if (effective_weather_quality() >= 1) {
-		vec2 blur_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
-		vec2 ox = vec2(blur_step.x * 0.75, 0.0);
-		vec2 oy = vec2(0.0, blur_step.y * 0.75);
-		int cid_xp = wx_decode_cell_index(clamp(uv + ox, vec2(0.0), vec2(1.0)));
-		int cid_xm = wx_decode_cell_index(clamp(uv - ox, vec2(0.0), vec2(1.0)));
-		int cid_yp = wx_decode_cell_index(clamp(uv + oy, vec2(0.0), vec2(1.0)));
-		int cid_ym = wx_decode_cell_index(clamp(uv - oy, vec2(0.0), vec2(1.0)));
-		float cloud_blur = cloud_amount * 2.0;
-		cloud_blur += (cid_xp >= 0) ? texture(weather_lut, wx_cell_lut_uv(cid_xp)).b : cloud_amount;
-		cloud_blur += (cid_xm >= 0) ? texture(weather_lut, wx_cell_lut_uv(cid_xm)).b : cloud_amount;
-		cloud_blur += (cid_yp >= 0) ? texture(weather_lut, wx_cell_lut_uv(cid_yp)).b : cloud_amount;
-		cloud_blur += (cid_ym >= 0) ? texture(weather_lut, wx_cell_lut_uv(cid_ym)).b : cloud_amount;
-		cloud_amount = mix(cloud_amount, cloud_blur / 6.0, 0.52);
+	// 性能分区/连续性正解：空间柔化(4-tap+blur)已删——用户要的是时间连续,不是空间边界,且删后采样
+	// 大降(weather_lut 仅 center+prev 2 次)。云形的程序化噪声仍在。逐格值在 baker 端如需柔化另议。
+	float intensity_amount = center.g;
+	float cloud_amount = center.b;
+	float precip_amount = center.a;
+	// 帧间插值(时间平滑)：两次仿真更新(commit)之间渲染每帧都画,直接显示会在更新瞬间横跳。把上一帧标量
+	// 按 weather_lerp(weather_layer 按 LUT 实际更新节奏推进 0→1)平滑过渡到当前帧 → 消时间横跳。type 离散不插。
+	if (weather_lerp < 0.999) {
+		vec4 prev_c = texture(weather_lut_prev, wx_cell_lut_uv(cid_c));
+		intensity_amount = mix(prev_c.g, intensity_amount, weather_lerp);
+		cloud_amount = mix(prev_c.b, cloud_amount, weather_lerp);
+		precip_amount = mix(prev_c.a, precip_amount, weather_lerp);
 	}
-	// 云层以连续 weather_cloud 为基础，再按天气层级递增增强密度：雾 < 降雨 < 雷暴/热带暴雨/暴风雪。
+	// 云层以连续 weather_cloud 为基础，再按本格降水量连续增强密度，避免 weather_type 离散跳变影响云显示。
 	float cloud_linear = clamp(cloud_amount / 0.72, 0.0, 1.0);
 	float cloud_shaped = smoothstep(0.14, 0.72, cloud_amount);
-	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.52) * type_cloud_bias(wt), 0.0, 1.0);
+	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.52) * precip_cloud_bias(precip_amount), 0.0, 1.0);
 	float precip_gate = clamp(precip_amount * 1.4, 0.0, 1.0);
+
 
 	best.color = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].rgb : vec3(0.0);
 	best.alpha = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].a : 0.0;
@@ -465,16 +481,21 @@ float rain_field(vec2 wp, vec2 axis, float precip) {
 	vec2 side = vec2(-dir.y, dir.x);
 	float along = dot(wp, dir);
 	float across = dot(wp, side);
-	float sheet = cloud_fbm(vec2(across * 0.052, along * 0.018 + world_time * 2.8), 2);
-	float near_lines = cloud_fbm(vec2(across * 0.19, along * 0.060 + world_time * 12.0), 2);
+	int q = effective_weather_quality();
+	float sheet = cloud_fbm(vec2(across * 0.052, along * 0.018 + world_time * 2.8), (q >= 2) ? 2 : 1);
 	float curtain = smoothstep(0.30, 0.62, sheet);
-	float lines = smoothstep(0.46, 0.70, near_lines);
-	float rain = (curtain * 0.85 + lines * 0.72) * precip;
-	if (precip > 0.10) {
-		float shaft_band = cloud_fbm(vec2(across * 0.014, along * 0.006 - world_time * 0.55), 2);
-		float shaft = smoothstep(0.46, 0.72, shaft_band) * smoothstep(0.10, 0.42, precip);
-		rain += shaft * 0.65;
+	float rain = curtain * 0.85 * precip;
+	if (q >= 1) {
+		float near_lines = cloud_fbm(vec2(across * 0.19, along * 0.060 + world_time * 12.0), 1);
+		float lines = smoothstep(0.46, 0.70, near_lines);
+		rain += lines * 0.62 * precip;
 	}
+	if (q >= 2 && precip > 0.10) {
+		float shaft_band = cloud_fbm(vec2(across * 0.014, along * 0.006 - world_time * 0.55), 1);
+		float shaft = smoothstep(0.46, 0.72, shaft_band) * smoothstep(0.10, 0.42, precip);
+		rain += shaft * 0.55;
+	}
+
 	return clamp(rain, 0.0, 1.0);
 }
 
@@ -483,9 +504,15 @@ float snow_field(vec2 wp, vec2 axis, float precip) {
 	vec2 side = vec2(-wind.y, wind.x);
 	float along = dot(wp, wind);
 	float across = dot(wp, side);
-	float band = cloud_fbm(vec2(along * 0.036 + world_time * 1.4, across * 0.078), 2);
-	float veil = cloud_fbm(vec2(along * 0.012 + world_time * 0.45, across * 0.026), 2);
+	int q = effective_weather_quality();
+	float band = cloud_fbm(vec2(along * 0.036 + world_time * 1.4, across * 0.078), (q >= 2) ? 2 : 1);
+	float veil = band;
+	if (q >= 1) {
+		veil = cloud_fbm(vec2(along * 0.012 + world_time * 0.45, across * 0.026), 1);
+	}
 	float flurry = smoothstep(0.40, 0.70, band) * 0.62 + smoothstep(0.26, 0.58, veil) * 0.42;
+
+
 	return clamp(flurry * precip, 0.0, 1.0);
 }
 
@@ -494,8 +521,8 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 wp = v_world;
-	vec2 uv = (wp - world_origin) / world_size;
+	vec2 wp = wx_wrap_world_pos(v_world);
+	vec2 uv = wx_wrap_uv((v_world - world_origin) / world_size);
 
 	// [cylindrical-earth-daylight] 逐像素晨昏线唯一真源：纬度近似 uv.y*2-1（与地形 lat_signed 同定义/同向）。
 	// 同一时刻东西经度晨昏不同 → 云的明暗随晨昏线扫过，与地面/水面/植被完全一致（不再全图统一明暗）。
@@ -504,40 +531,45 @@ void fragment() {
 
 	FrontField w = sample_field_weather(wp);
 
-	int biome = int(texture(map_index_atlas, uv).r * 255.0 + 0.5);
+	int q_weather = effective_weather_quality();
+	int biome = int(texture(map_index_atlas, wx_wrap_uv(uv)).r * 255.0 + 0.5);
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
 
-	// 山地权重（仅低雾用）：4 点 golden-angle 邻域 + hash 抖动，平滑陆海/海拔过渡，
-	// 偏移按 hex_world_diameter 物理换算，避免六边形直边。
-	vec2 ring_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
-	const float GA = 2.39996323;
-	vec2 m_offs[4] = vec2[4](
-		vec2(0.0, 0.0),
-		vec2(cos(GA * 1.0 + 0.7), sin(GA * 1.0 + 0.7)) * 2.6,
-		vec2(cos(GA * 2.0 + 0.7), sin(GA * 2.0 + 0.7)) * 3.3,
-		vec2(cos(GA * 3.0 + 0.7), sin(GA * 3.0 + 0.7)) * 2.9
-	);
-	float mw_sum = 0.0;
-	float mw_tot = 0.0;
-	for (int li = 0; li < 4; li++) {
-		vec2 jj = vec2(
-			hash_signed(floor(wp * 0.18 + vec2(31.0 + float(li) * 11.0, -47.0))),
-			hash_signed(floor(wp * 0.18 + vec2(-19.0, 23.0 + float(li) * 9.0)))
+	// 低雾是 q1+ 才启用的昂贵层；无雾时跳过 4 点山地邻域采样与 hash。
+	float fog_intensity = (q_weather >= 1 && w.cloud > 0.05) ? w.cloud * 0.65 : 0.0;
+	float mountain_w = 0.0;
+	if (fog_intensity > 0.001) {
+		// 山地权重（仅低雾用）：4 点 golden-angle 邻域 + hash 抖动，平滑陆海/海拔过渡，
+		// 偏移按 hex_world_diameter 物理换算，避免六边形直边。
+		vec2 ring_step = vec2(hex_world_diameter) / max(world_size, vec2(0.001));
+		const float GA = 2.39996323;
+		vec2 m_offs[4] = vec2[4](
+			vec2(0.0, 0.0),
+			vec2(cos(GA * 1.0 + 0.7), sin(GA * 1.0 + 0.7)) * 2.6,
+			vec2(cos(GA * 2.0 + 0.7), sin(GA * 2.0 + 0.7)) * 3.3,
+			vec2(cos(GA * 3.0 + 0.7), sin(GA * 3.0 + 0.7)) * 2.9
 		);
-		vec2 s_uv = clamp(uv + m_offs[li] * ring_step + jj * 1.4 * ring_step, vec2(0.0), vec2(1.0));
-		int bs = int(texture(map_index_atlas, s_uv).r * 255.0 + 0.5);
-		bool s_water = (bs == B_OCEAN) || (bs == B_COAST) || (bs == B_LAKE)
-				|| (bs == B_REEF) || (bs == B_KELP) || (bs == B_SEA_ICE);
-		float bw = (bs == B_MOUNTAIN) ? 1.0 : ((bs == B_HILL) ? 0.65 : (s_water ? 0.0 : 0.35));
-		float kw = (li == 0) ? 1.4 : 1.0;
-		mw_sum += bw * kw;
-		mw_tot += kw;
+		float mw_sum = 0.0;
+		float mw_tot = 0.0;
+		for (int li = 0; li < 4; li++) {
+			vec2 jj = vec2(
+				hash_signed(floor(wp * 0.18 + vec2(31.0 + float(li) * 11.0, -47.0))),
+				hash_signed(floor(wp * 0.18 + vec2(-19.0, 23.0 + float(li) * 9.0)))
+			);
+			vec2 s_uv = wx_wrap_uv(uv + m_offs[li] * ring_step + jj * 1.4 * ring_step);
+			int bs = int(texture(map_index_atlas, s_uv).r * 255.0 + 0.5);
+			bool s_water = (bs == B_OCEAN) || (bs == B_COAST) || (bs == B_LAKE)
+					|| (bs == B_REEF) || (bs == B_KELP) || (bs == B_SEA_ICE);
+			float bw = (bs == B_MOUNTAIN) ? 1.0 : ((bs == B_HILL) ? 0.65 : (s_water ? 0.0 : 0.35));
+			float kw = (li == 0) ? 1.4 : 1.0;
+			mw_sum += bw * kw;
+			mw_tot += kw;
+		}
+		mountain_w = clamp(mw_sum / max(mw_tot, 0.001)
+				+ hash_signed(floor(wp * 0.085 + vec2(67.0, -31.0))) * 0.18, 0.0, 1.0);
 	}
-	float mountain_w = clamp(mw_sum / max(mw_tot, 0.001)
-			+ hash_signed(floor(wp * 0.085 + vec2(67.0, -31.0))) * 0.18, 0.0, 1.0);
 
-	int q_weather = effective_weather_quality();
 	vec2 cumulus_axis = w.axis;
 	vec2 cirrus_axis = vec2(1.0, 0.15); // 卷云固定纬向（地球大气环流近似）
 
@@ -556,10 +588,10 @@ void fragment() {
 	CloudLayerSample cumulus_layer = sample_cumulus_layer(wp, cumulus_axis, cumulus_intensity);
 	float cumulus = cumulus_layer.density;
 
-	// 低雾强度也只随云量和山地权重，不按天气类型改变。
-	float fog_intensity = (w.cloud > 0.05) ? w.cloud * 0.65 : 0.0;
+	// 低雾强度也只随云量和山地权重，不按天气类型改变；q0 完全跳过。
 	float local_fog_w = mountain_w;
-	float low_fog = (q_weather >= 1) ? sample_low_fog(wp, w.axis, fog_intensity, local_fog_w) : 0.0;
+	float low_fog = (fog_intensity > 0.001) ? sample_low_fog(wp, w.axis, fog_intensity, local_fog_w) : 0.0;
+
 	CloudLayerSample fog_layer = make_cloud_layer(
 		remap_cloud_density(low_fog, max(fog_intensity, local_fog_w), 0.24),
 		smoothstep(0.04, 0.42, low_fog) * (1.0 - smoothstep(0.54, 0.96, low_fog)),
@@ -567,14 +599,9 @@ void fragment() {
 		0.18
 	);
 
-	// 太阳方向密度梯度（迎光/背光）：仅 q2 额外探测一次，低/中档把预算留给主云噪声。
-	float cumulus_light_grad = 0.0;
-	if (q_weather >= 2 && cumulus_layer.density > 0.001) {
-		vec2 sun_axis = cloud_sun_axis();
-		float light_step = hex_world_diameter * 0.62;
-		CloudLayerSample light_probe = sample_cumulus_layer(wp + sun_axis * light_step, cumulus_axis, cumulus_intensity);
-		cumulus_light_grad = clamp(cumulus_layer.density - light_probe.density, -1.0, 1.0);
-	}
+	// 太阳方向密度梯度：不再二次采样主云（q2 原本几乎翻倍 ALU），改用边缘/核心的廉价近似。
+	float cumulus_light_grad = (q_weather >= 2) ? clamp(cumulus_layer.edge * 0.55 + cumulus_layer.density * 0.22 - 0.32, -1.0, 1.0) : 0.0;
+
 	float layer_occlusion = (q_weather >= 2)
 		? clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0)
 		: 0.0;
@@ -591,11 +618,12 @@ void fragment() {
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
 		col *= mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
-		float profile_alpha_factor = type_cloud_opacity_bias(w.type);
-		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * profile_alpha_factor * weather_strength * 0.66, 0.0, min(0.78, 0.70 * profile_alpha_factor));
+		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
+		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.78, 0.70 * precip_alpha_factor));
 
-		// 地面投影阴影随云量/云核变化，并按天气层级轻微增强。
-		float shadow_alpha = clamp(w.shadow * weather_strength * (0.17 + cloud_core * 0.07) * type_cloud_opacity_bias(w.type) * (1.0 - ed.pixel_night * 0.35), 0.0, min(0.36, 0.32 * type_cloud_opacity_bias(w.type)));
+		// 地面投影阴影随云量/云核变化，并按本格降水量连续轻微增强。
+		float shadow_alpha = clamp(w.shadow * weather_strength * (0.17 + cloud_core * 0.07) * precip_alpha_factor * (1.0 - ed.pixel_night * 0.35), 0.0, min(0.36, 0.32 * precip_alpha_factor));
+
 		col = mix(vec3(0.06, 0.08, 0.10), col, alpha / max(alpha + shadow_alpha, 0.001));
 		alpha = clamp(alpha + shadow_alpha, 0.0, 0.94);
 

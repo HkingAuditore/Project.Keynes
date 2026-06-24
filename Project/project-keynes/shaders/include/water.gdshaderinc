@@ -158,7 +158,7 @@ vec4 water_biome_weights(vec2 uv, vec2 tx, float blend_radius) {
 			// Center sample anchors the current tile; diagonals still contribute but
 			// cannot fully overwrite a narrow water feature.
 			float sw = 1.0 - 0.18 * clamp(length(o), 0.0, 1.41421356);
-			vec2 suv = clamp(uv + o * step_uv, vec2(0.0), vec2(1.0));
+			vec2 suv = wrap_map_uv(uv + o * step_uv);
 			int b = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			if (b == B_LAKE)    cnt_lake += sw;
 			if (b == B_REEF)    cnt_reef += sw;

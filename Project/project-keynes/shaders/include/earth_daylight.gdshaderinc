@@ -30,13 +30,21 @@ const vec3 EARTH_DAYLIGHT_DUSK = vec3(1.0, 0.56, 0.31);   // 晨昏暖橙（暮�
 const vec3 EARTH_NIGHT_AMBIENT = vec3(0.13, 0.16, 0.25);  // 夜侧冷蓝月光
 const vec3 EARTH_DAY_AMBIENT   = vec3(0.60, 0.66, 0.77);  // 白昼天空环境光
 
-// sin(太阳高度角)：见文件头公式。经度周期量 → uv.x=0 与 1 处 cos(H) 相等，晨昏线无缝。
+float earth_daylight_longitude_u(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return fract(uv.x);
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	return fract((world_x - wrap_origin_x) / wrap_period_x);
+}
+
+// sin(太阳高度角)：见文件头公式。经度周期量 → 东西 tile 边界处 cos(H) 相等，晨昏线无缝。
 float compute_solar_elevation(vec2 uv, float lat_signed) {
 	float year_progress = mod(season_phase, 4.0) * 0.25;
 	// 与 compute_insolation_shader 的 subsolar 同式：phase=0 → +tilt。
 	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
 	float lat_rad = lat_signed * 1.5707963;            // 与 insolation lat_rad 同源
-	float lon = uv.x * EARTH_DAYLIGHT_TAU;             // 经度（周期）→ 东西无缝
+	float lon = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU; // 经度（周期）→ 东西无缝
 	float subsolar_lon = day_phase * EARTH_DAYLIGHT_TAU; // 正午经度随视觉昼夜相位绕圈
 	float H = lon - subsolar_lon;
 	return sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(H);

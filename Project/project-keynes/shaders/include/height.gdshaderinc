@@ -14,6 +14,6 @@
 // ─── 高度解码（RG8 16-bit） ──────────────────────────────────────────────
 
 float decode_height_rg8(vec2 uv) {
-	vec4 s = texture(height_tex, uv);
+	vec4 s = texture(height_tex, wrap_map_uv(uv));
 	return (s.r * 256.0 + s.g) / 257.0;
 }

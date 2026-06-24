@@ -732,6 +732,30 @@ Weather field geometry contract (2026-06-23):
   **未解（下一轮）**：#2 暴雨/大雨概率偏低、#3/#4 河湖蒸发源不足+湖区少雨（over-water 抑制非
   瓶颈，缺辐合/抬升）、#5a 雪区少雨、#6 山地少雨——属同一「冷/高/水区过干」簇。
 
+### 让天气真实+移动 Stage 11–15 + 渲染帧间插值 (2026-06-24)
+
+接 Stage 7–10。**天气物理改动均在 C++ 权威路径 `run_weather_field_solve_pass`；ψ/stratiform/水汽抽吸等无 GDScript 镜像**（见末尾「GDScript fallback 现状」）。
+
+- **Stage 11 stratiform 层状降水**：对流被暖门(temp>0.48)挡死的冷/高/水区水汽足却无触发。补不需浮力的层状成雨 `strat = smoothstep(0.32,0.62,rh) × cool_weight × strat_drive`：cool_weight 暖→0/冷→1（与对流互补）；strat_drive = 高地形抬升 `smoothstep(0.45,0.82,ELEV)` + 辐合 + 锋面 + 海面(lake-effect)。进 cond_force(×0.75)+trig(×0.80) 旁路 autoconv。修湖/雪/山区少雨。
+
+- **Stage 12–13 ψ 架构重构（让天气移动）**：ψ 从切片内逐格演化 → **内联进 solve pass、每轮 `start_idx==0` 全场推进一次**（脱离切片稀释 + 不依赖 GDScript 调度挂钩，因合并 native 路径会绕过 stage 钩子，见 scheduling 文档）。平流改半拉格朗日（沿平滑引导流=风邻域平均取上风格 ψ_prev）。修复：① cell_temp(实际量纲)误用致 `smoothstep` 恒 1 → ψ 指数爆炸 → 改用归一化温度 `TR` + 斜压增长随振幅饱和 `×(1+baroclinic·g·(1-|ψ|))`；② 稀疏化（seed_rate 0.015 / damp 0.90 / diffuse 0.05 / 阈值清零 0.05）防铺满全场。
+
+- **Stage 14 ψ 主导降水 + 水汽抽吸**：根因——ψ 的 base_lift 之前误加进 `dynamic_forcing`（**不驱动 cond_force/trig**，所以怎么调都无效）。改为 ψ 直接进凝结/降水 `psi_lift = psi×(base_lift+front×gate)`，ψ<0 压制 `psi_supp`。再加**气旋水汽辐合抽吸**（ψ>0 向邻域较湿处靠拢），突破「降水=抬升×水汽、水汽被固定蒸发源锚定」的瓶颈。结果雨热不同期 5%→18%；移动仍是弱平移（水汽锚定=架构极限）。
+
+- **Stage 14e 湖山冷区**：湖泊 over-water 抑制 cap 0.35→0.10 + 删湖泊额外对流压制(`drv_hc×0.60`) + 湖泊不刮 marine_scour；山地 `field_oro_precip_gain` 0.10→0.30、`field_lift_precip_gain` 0.25→0.45；湖泊蒸发 `weather_lake_evap_scale` 0.35→0.85（ClimateProfile + weather_system 双侧）。
+
+- **Stage 15 云量时间 EMA**：`cloud = cloud_water×1.1 + condensation×0.25 + max(cloud_floor)` 混入瞬时项(condensation/cloud_floor 无时间惯性)→渲染阈值附近抖闪。用上帧云量 EMA(`field_cloud_inertia` 0.42，读 slot `s_wcld` 上帧值)平滑。闪烁翻转格 55%→3%。
+
+- **precip 时空平滑**：不应期(inhib≥1)抑制从 EMA 后移到 `precip_target`(EMA 前)→随惯性平滑收敛；最终 precip 非对称邻域填洞(`field_precip_spatial_smooth` 0.30，强填洞、削峰×0.30 保暴雨)。
+
+**渲染帧间插值（时间连续性；GDScript + shader，不动 C++ 物理）**：
+- 问题：仿真每 commit(~2-3 tick)更新 weather LUT，渲染每帧画 → 两次更新间云/雨范围/浓度横跳。
+- 方案：`world.weather_lut_prev_tex` 双缓冲(map_baker，~32KB)+ shader `weather_lut_prev` uniform + `weather_lerp`；shader 标量层 `mix(prev,curr,weather_lerp)`（type 离散不插）。`weather_lerp` 由 `weather_layer._process` 按 `world.weather_lut_update_usec`(map_baker 每次烘焙打戳) + 自适应 commit 间隔(IIR)独立推进 0→1，与 prev/curr 严格对齐。
+- 性能分区：删 shader 4-tap 双线性 + cloud_blur（空间柔化），weather_lut 采样 19/11 → **2~3 次**（桌面移动统一）。
+- 频闪修复：`weather_layer.process_priority=1000` 让其 _process 最晚执行 → 同帧检测到 LUT 换帧并归零 lerp，消除「curr 已换、lerp 未重置」的一帧错位频闪。
+
+**GDScript fallback 现状（重要）**：ψ、stratiform、水汽抽吸、Stage 14 耦合均为 **C++-only**（`run_weather_field_solve_pass` 内）。`field_solver.gd` fallback 仅含 Stage 11 前物理 + precip 平滑镜像，**不含 ψ 相关**。C++ DLL 不可用时天气退化为「无移动系统、无层状降水」的旧版——C++ 权威路径罕见失效，可接受；严格双镜像（IRON RULE）此处**有意未做**，因 ψ 架构复杂度高、收益(fallback 罕用)低。`run_synoptic_advance_pass`（C++ 方法 + weather_system/map_generator 转发）是 ψ 内联化前的独立 pass 实现，现为**死代码保留**（备用，未接调度）。
+
 ### 半真实大气模型（2026-06-19）
 
 > ⚠ **历史调参演进（19a/b/c）**：本节记录 2026-06-19 三次 CSV 标定的演进过程，其中相当
