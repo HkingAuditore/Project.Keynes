@@ -4308,7 +4308,8 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 WeatherLutUploadSystem 才更新时间戳。
+				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 weather_refresh commit 才更新时间戳。
+
 				var wlut = out.get("weather_lut", null)
 				if publish_weather_lut and wlut is PackedByteArray:
 					var wx_report: Dictionary = _publish_weather_lut_bytes(wlut, world, lw, lh)
@@ -4522,8 +4523,9 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 
 # daily LUT 全量刷新：cell 视觉状态每日变化（enum 翻面 / temp / snow / vitality 等），
 # per-cell LUT（n_cells ~2400）全量重烘 ~0.1-0.3ms，远小于旧 per-pixel fan-out。
-# 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）；weather_lut 已由
-# WeatherLutUploadSystem 跟随 weather_refresh 独立发布，避免不同 cadence 重置 weather_lerp。
+# 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）；weather_lut 已并入
+# weather_refresh commit path 同步生成并发布，避免不同 cadence 重置 weather_lerp。
+
 func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}

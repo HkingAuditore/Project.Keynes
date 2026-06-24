@@ -4,7 +4,7 @@ class_name DynamicVisualAtlasUploadSystem
 ## Updates low-frequency visual atlases used by the main map shader.
 ##
 ## Stride=1 default：每个仿真日跑一次（StridePolicy 控制），保持温度/雪/海冰视觉同步。
-## Weather LUT 已拆到 WeatherLutUploadSystem，跟随 weather_refresh 提交单独发布。
+## Weather LUT 已并入 weather_refresh commit path，提交天气字段时同步生成并发布。
 ##
 ## v3：湿迹/龟裂短期痕迹视觉已删除；本系统只更新 dynamic/ecology/smooth/ice 四类视觉 atlas。
 ## 回退：`enable_time_slicing = false` 走 one-shot 路径。
@@ -337,7 +337,7 @@ func tick(ctx) -> Dictionary:
 	# stride 只全量重烘 enum/dyn/eco per-cell LUT（weather_lut 不在此发布），
 	# 随后直接结束本 tick：彻底跳过下方 C++ run_atlas_pipeline_step 与 4-phase 逐像素
 	# 上传，省每日 GPU 上传 + 4 张 derived RGBA8 显存。stride 节奏不变（StridePolicy
-	# 控制 tick 频率）。weather_lut 由 WeatherLutUploadSystem 跟随天气提交发布。
+	# 控制 tick 频率）。weather_lut 由 weather_refresh commit path 同步生成并发布。
 	# flag 关时本分支零触达，旧 per-pixel 路径（_tick_cpp_pipeline / 4-phase / _tick_oneshot）
 	# 行为完全不变，即 flag 充当 A/B fallback 开关（skill rule 11）。
 	if FeatureFlagsScript.cell_indirection_active():
