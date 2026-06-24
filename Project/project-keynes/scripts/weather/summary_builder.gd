@@ -51,9 +51,16 @@ func _init(weather_system) -> void:
 	_prev_summary_seeds.clear()
 
 ## 主入口：从 _weather_field 聚类构造 summary fronts。
-## 当前为 stub；E.2 后由 weather_system 切换为调用本方法。
-func build(_map: MapData, _world: WorldData) -> Array[WeatherFront]:
-	return [] as Array[WeatherFront]
+##
+## 本阶段先把调用权从 WeatherSystem facade 切到子模块；为保持视觉云团
+## 像素级一致，聚类主体暂时复用 owner 中改名后的 legacy 实现。后续迁移
+## `_pick_inheritance_seed` / `_flood_fill_field_component` / `_merge_nearby_components`
+## 时，本类已具备独立保存跨 tick summary 状态的字段。
+func build(map: MapData, world: WorldData) -> Array[WeatherFront]:
+	if _weather_system == null or map == null or world == null:
+		return [] as Array[WeatherFront]
+	return _weather_system._build_field_summary_fronts_legacy(map, world)
+
 
 ## 重置跨 tick 身份继承（regenerate 路径调用）。
 func reset() -> void:

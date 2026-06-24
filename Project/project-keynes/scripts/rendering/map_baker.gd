@@ -784,7 +784,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 编码纹理：保留 height + map_index；动态视觉走 LUT。
 	stage_progress.emit("encode", 0.88)
 	t = Time.get_ticks_msec()
-	world.height_tex = _encode_height_tex(world.height_buffer, world.hm_size)
+	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world
@@ -793,9 +793,10 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.scalar_atlas_tex = null
 	# [river-render-restore 2026-06-19] 把河流 SDF（flow_buffer, float[0,1]）编码成 L8 纹理
 	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
-	world.flow_tex = _encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex)
+	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex)
 	world.sea_ice_tex = null
-	world.volcano_field_tex = _encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
+	world.volcano_field_tex = DCAtlasEncoders.encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
+
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
 	# F6 切到 debug 模式时由 rebake_upwelling_tex_for_debug() lazy 建一张。
@@ -4167,18 +4168,8 @@ func _chamfer_sdt(mask: PackedFloat32Array, W: int, H: int) -> void:
 # ─── 纹理编码 ────────────────────────────────────────────────────────────
 
 func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture:
-	# RG8 16-bit：v16 = round(v*65535)；R = v16>>8, G = v16 & 0xFF
-	var W := size.x
-	var H := size.y
-	var data := PackedByteArray()
-	data.resize(W * H * 2)
-	for i in range(W * H):
-		var v := clampf(buf[i], 0.0, 1.0)
-		var v16 := clampi(int(round(v * 65535.0)), 0, 65535)
-		data[i * 2] = (v16 >> 8) & 0xFF
-		data[i * 2 + 1] = v16 & 0xFF
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RG8, data)
-	return ImageTexture.create_from_image(img)
+	return DCAtlasEncoders.encode_height_tex(buf, size)
+
 
 # ─── v9.atlas：合并通道编码 ─────────────────────────────────────────────
 # 把原先 9 张 derived 贴图（biome/veg/cover/moist/flow/lat/volcano/ocean/wind）
@@ -4191,33 +4182,14 @@ func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture
 func _encode_enum_atlas(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
 		_cover_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null, world: WorldData = null) -> ImageTexture:
-	var W := size.x
-	var H := size.y
-	var n := W * H
-	var data := PackedByteArray()
-	data.resize(n * 4)
-	var lookup: Array = world.pixel_to_cell_lookup if world != null else []
-	var has_lookup: bool = lookup.size() >= n
-	for i in range(n):
-		var di := i * 4
-		data[di] = biome_buf[i] if i < biome_buf.size() else 0
-		var cid: int = 65535
-		if has_lookup:
-			var cell = lookup[i]
-			if cell != null:
-				cid = int(cell.index)
-		data[di + 1] = cid & 0xFF
-		data[di + 2] = (cid >> 8) & 0xFF
-		data[di + 3] = 0
+	var payload: Dictionary = DCAtlasEncoders.encode_enum_atlas_payload(
+		biome_buf, _veg_buf, _cover_buf, size, existing, world
+	)
 	# 阶段 P2：缓存 RGBA8 data。后续 biome 变化只局部写 R 通道；G/B cell index 不变。
-	_enum_atlas_data = data
-	_enum_atlas_data_size = Vector2i(W, H)
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
-	# ImageTexture.get_size() 返回 Vector2，而 W/H 是 int → 用 Vector2 比较
-	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
-		existing.update(img)
-		return existing
-	return ImageTexture.create_from_image(img)
+	_enum_atlas_data = payload.get("data", PackedByteArray())
+	_enum_atlas_data_size = payload.get("size", Vector2i.ZERO)
+	return payload.get("texture", existing)
+
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -4539,25 +4511,7 @@ func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
 # shader 端只在 ocean_current_debug 开启时采样，主路径不读。
 func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null) -> ImageTexture:
-	var W := size.x
-	var H := size.y
-	var n := W * H
-	# I + L: size 匹配时直接把 upwelling_buf 喂给 Image.create_from_data，省掉 620k
-	# byte 的 GDScript 拷贝循环（~10-15ms）。size 不匹配（异常）才回退到补 128 的兜底。
-	var img: Image
-	if upwelling_buf.size() == n:
-		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, upwelling_buf)
-	else:
-		var data := PackedByteArray()
-		data.resize(n)
-		var has_up: bool = upwelling_buf.size() >= n
-		for i in range(n):
-			data[i] = upwelling_buf[i] if has_up else 128
-		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
-	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
-		existing.update(img)
-		return existing
-	return ImageTexture.create_from_image(img)
+	return DCAtlasEncoders.encode_upwelling_tex(upwelling_buf, size, existing)
 
 # PR-3.1.1（master 手册 §6.2）：_encode_r8_tex 已搬到 DCAtlasEncoders.encode_r8_tex。
 # 本 facade 保留作为 in-class shim，避免 caller 全部一次性改动。
@@ -4569,16 +4523,8 @@ func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture
 # 与 height_tex 共用同一 uv（world_origin/world_size 覆盖同一 world_bounds），
 # shader 在 uv 处采样得到 [0,1] 河流强度，喂回 land_pipeline 的 flow 视觉层。
 func _encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTexture) -> ImageTexture:
-	var W: int = size.x
-	var H: int = size.y
-	var n: int = W * H
-	if buf.size() < n:
-		return existing
-	var bytes: PackedByteArray = PackedByteArray()
-	bytes.resize(n)
-	for i in range(n):
-		bytes[i] = int(clampf(buf[i], 0.0, 1.0) * 255.0 + 0.5)
-	return DCAtlasEncoders.encode_r8_tex(bytes, size, existing)
+	return DCAtlasEncoders.encode_flow_tex(buf, size, existing)
+
 
 # Emergent Climate Coupling：从 HexCell.sea_ice_fraction 把 per-cell 的连续海冰覆盖率
 # 光栅化为 derived-size 的 R8 buffer，并写到独立的 sea_ice_tex（原地 update）。

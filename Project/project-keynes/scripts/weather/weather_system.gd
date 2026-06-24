@@ -323,8 +323,12 @@ var _advect: DCWeatherFrontAdvect = null
 # 当前 _solve_weather_field 主体仍在本文件，sub-module 提供稳定 facade 入口
 # 让后续逐函数搬迁可零摩擦切换调用点。
 var _field_solver: DCWeatherFieldSolver = null
+# dots-monolith-split §E.2：feedback / summary facade 实例。
+var _feedback: DCWeatherFeedback = null
+var _summary_builder: DCWeatherSummaryBuilder = null
 
 # Tick-scoped 预计算缓存：每次 _solve_weather_field 进入时一次性把全图 cell
+
 # 的世界坐标和 1 环邻居数组算好；helper 函数（_neighbor_aligned / _upstream_vapor /
 # _wind_convergence_for_cell / _orographic_lift_for_cell / _neighbor_average_vapor /
 # _avg_ocean_anomaly_at）通过下面两个 accessor 读取，避免在 ~2400 cell × 多次内层
@@ -411,6 +415,13 @@ func init(seed_val: int, world_bounds: Rect2, hex_size: float) -> void:
 	# （begin_slice/run_slice/commit/_solve_weather_field）；本类对应函数仅薄转发。
 	if _field_solver == null:
 		_field_solver = DCWeatherFieldSolver.new(self)
+	if _feedback == null:
+		_feedback = DCWeatherFeedback.new(self)
+	if _summary_builder == null:
+		_summary_builder = DCWeatherSummaryBuilder.new(self)
+	else:
+		_summary_builder.reset()
+
 
 # --- 每日 tick（由 MapGenerator.refresh_daily 调用） ---
 
@@ -2632,7 +2643,14 @@ func _field_intensity_for_type(wt: int, temp: float, vapor: float, cloud: float,
 	return 0.0
 
 func _distribute_weather_field_to_cells(map: MapData) -> void:
+	if _feedback == null:
+		_feedback = DCWeatherFeedback.new(self)
+	_feedback.distribute(map)
+
+
+func _distribute_weather_field_to_cells_legacy(map: MapData) -> void:
 	_cover_dirty = false
+
 	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	# [perf 2026-05-20] 同 _distribute_to_cells：累积到批量数组，末尾 write_f32_indexed。
 	# 原循环里 cell.moisture / cell.temperature 单点 setter 会导致 _dirty_mark_one 风暴
@@ -2851,7 +2869,14 @@ func _distribute_weather_field_to_cells(map: MapData) -> void:
 			_data_core_world.write_f32_indexed(_cid_sm_f, _wfd_env_idx, _wfd_soil)
 
 func _build_field_summary_fronts(map: MapData, world: WorldData) -> Array[WeatherFront]:
+	if _summary_builder == null:
+		_summary_builder = DCWeatherSummaryBuilder.new(self)
+	return _summary_builder.build(map, world)
+
+
+func _build_field_summary_fronts_legacy(map: MapData, world: WorldData) -> Array[WeatherFront]:
 	# Continuity-fix（2026-05-10）：完全重写聚类阶段，根治"天气特效跳变"。
+
 	#
 	# 旧实现的问题：
 	#   1. 每 tick 都用 flood-fill 从零聚类，没有跨 tick 身份；视觉层只能靠

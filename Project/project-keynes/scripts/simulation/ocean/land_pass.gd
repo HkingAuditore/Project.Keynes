@@ -33,9 +33,11 @@ func _init(generator) -> void:
 	_generator = generator
 
 func run(map: MapData, season_phase: float) -> void:
-	if _generator == null:
+	if _generator == null or map == null:
 		return
-	pass
+	# 本阶段先接管调用入口，保持原 MapGenerator legacy 实现作为行为权威。
+	_generator._ocean_land_pass_legacy(map, season_phase)
+
 
 func describe() -> String:
 	return "DCOceanLandPass(generator=%s)" % ("present" if _generator != null else "(null)")

@@ -14,5 +14,15 @@ class_name DCVisualBootstrap
 ## 拆完后本文件 ~200 行；main.gd 仅保留"@export 字段定义 + 调用
 ## VisualBootstrap.push(self, renderer)"。
 
-func _init(_main_node) -> void:
-	push_warning("[DCVisualBootstrap] not yet implemented")
+var _main_ref: WeakRef = null
+
+func _init(main_node) -> void:
+	if main_node != null:
+		_main_ref = weakref(main_node)
+
+func push_visual_toggles() -> void:
+	var main_node = _main_ref.get_ref() if _main_ref != null else null
+	if main_node == null:
+		return
+	main_node._push_visual_toggles_legacy()
+

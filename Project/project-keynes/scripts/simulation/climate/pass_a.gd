@@ -42,11 +42,11 @@ func _init(generator) -> void:
 ## 主入口：跑 Pass-A（自动按 use_soa_pipeline 路径切换）。
 ## 当前为 stub；E.4 后由 ClimateDailySystem 切换为调用本方法。
 func run(map: MapData, season_phase: float) -> void:
-	if _generator == null:
+	if _generator == null or map == null:
 		return
-	# Future: switch by cp.use_soa_pipeline (use_data_core_climate has been removed in dots-flag-prune-pr1)
-	# Currently: still goes through generator._climate_pass_a / _soa
-	pass
+	# 本阶段先接管调用入口，保持原 MapGenerator legacy 实现作为行为权威。
+	_generator._climate_pass_a_legacy(map, season_phase)
+
 
 func describe() -> String:
 	return "DCClimatePassA(generator=%s)" % ("present" if _generator != null else "(null)")
