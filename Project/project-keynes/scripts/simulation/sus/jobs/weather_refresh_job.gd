@@ -171,11 +171,15 @@ func _publish_weather_lut_inline(ctx: SusTickContext, report: Dictionary, source
 	report["weather_lut_published"] = bool(lut_report.get("weather_lut_published", false))
 	report["weather_lut_changed"] = bool(lut_report.get("weather_lut_changed", false))
 	report["weather_lut_reason"] = str(lut_report.get("weather_lut_reason", lut_report.get("reason", "")))
-	print("[weather-lut][inline] tick=%d source=%s published=%s changed=%s reason=%s ms=%.3f" % [
+	report["weather_lut_dirty_count"] = int(lut_report.get("weather_lut_dirty_count", 0))
+	report["weather_lut_full_rebuild"] = bool(lut_report.get("weather_lut_full_rebuild", false))
+	print("[weather-lut][inline] tick=%d source=%s published=%s changed=%s dirty=%d full=%s reason=%s ms=%.3f" % [
 		ctx.tick_index if ctx != null else -1,
 		source,
 		str(report["weather_lut_published"]),
 		str(report["weather_lut_changed"]),
+		int(report["weather_lut_dirty_count"]),
+		str(report["weather_lut_full_rebuild"]),
 		str(report["weather_lut_reason"]),
 		lut_ms,
 	])
