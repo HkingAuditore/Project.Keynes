@@ -164,8 +164,14 @@ func _publish_weather_lut_inline(ctx: SusTickContext, report: Dictionary, source
 	if generator == null or not generator.has_method("publish_weather_lut_after_weather_commit"):
 		report["weather_lut_reason"] = "missing_publish_facade"
 		return
+	var native_lut: PackedByteArray = report.get("weather_lut", PackedByteArray())
+	var native_changed: bool = bool(report.get("weather_lut_changed", false))
+	if native_lut.is_empty() and generator.get("_last_weather_breakdown") != null:
+		var last_weather_breakdown: Dictionary = generator._last_weather_breakdown
+		native_lut = last_weather_breakdown.get("weather_lut", PackedByteArray())
+		native_changed = bool(last_weather_breakdown.get("weather_lut_changed", native_changed))
 	var t_lut_us: int = Time.get_ticks_usec()
-	var lut_report: Dictionary = generator.publish_weather_lut_after_weather_commit(map, world)
+	var lut_report: Dictionary = generator.publish_weather_lut_after_weather_commit(map, world, native_lut, native_changed)
 	var lut_ms: float = float(Time.get_ticks_usec() - t_lut_us) / 1000.0
 	report["weather_lut_ms"] = lut_ms
 	report["weather_lut_published"] = bool(lut_report.get("weather_lut_published", false))
@@ -892,8 +898,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var t_commit_us: int = Time.get_ticks_usec()
 			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
 			timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
-			var summary_lut_report: Dictionary = {}
-			_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
+		var summary_lut_report: Dictionary = generator._last_weather_breakdown if generator != null and generator.get("_last_weather_breakdown") != null else {}
+		_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
+
 			_round_fronts = committed_fronts
 			# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
 			_round_stage = 3

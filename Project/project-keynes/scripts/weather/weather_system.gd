@@ -1031,7 +1031,12 @@ func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictiona
 	knobs["refresh_convergence"] = _field_solver._field_slice_refresh_convergence
 	knobs["weather_transition_enabled"] = bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false
 	knobs["weather_transition_alpha_rate"] = float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0
+	var world_ref: WorldData = _field_solver._field_slice_world
+	if world_ref != null and world_ref.lut_dims.x > 0 and world_ref.lut_dims.y > 0:
+		knobs["weather_lut_w"] = int(world_ref.lut_dims.x)
+		knobs["weather_lut_h"] = int(world_ref.lut_dims.y)
 	var rc_dict: Dictionary = _data_core_world_ext.run_weather_field_commit_pass(knobs)
+
 	var rc: float = float(rc_dict.get("elapsed_ms", -1.0))
 	if rc < 0.0 and not _gdext_field_commit_warned_fallback:
 		_gdext_field_commit_warned_fallback = true

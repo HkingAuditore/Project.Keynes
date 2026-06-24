@@ -5083,8 +5083,13 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     out["weather_convergence_dirty_count"] = 0;
     out["weather_convergence_deltas"] = PackedFloat32Array();
     out["convergence_published"] = false;
+    out["weather_lut"] = PackedByteArray();
+    out["weather_lut_changed"] = false;
+    out["weather_lut_dirty_count"] = 0;
+    out["weather_lut_full_rebuild"] = false;
     out["path"] = String("gdext_commit");
     out["reason"] = String();
+
 
     auto fail = [&](const char *why) -> Dictionary {
         out["reason"] = String(why);
@@ -5113,8 +5118,12 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     float transition_rate = float(knobs.get("weather_transition_alpha_rate", 1.0));
     if (transition_rate < 0.0f) transition_rate = 0.0f;
     else if (transition_rate > 1.0f) transition_rate = 1.0f;
+    const int lut_w = int(knobs.get("weather_lut_w", 0));
+    const int lut_h = int(knobs.get("weather_lut_h", 0));
+    const int lut_slots = (lut_w > 0 && lut_h > 0 && lut_w * lut_h >= n_cells) ? (lut_w * lut_h) : n_cells;
 
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
+
     PackedFloat32Array prev_vapor_arr = knobs["prev_vapor"];
     PackedFloat32Array out_vapor_arr = knobs["out_vapor"];
     PackedFloat32Array out_cloud_arr = knobs["out_cloud"];
@@ -5213,7 +5222,17 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     const float * const __restrict NEXT_CNV = out_convergence_arr.ptr();
     const int32_t * const __restrict NEXT_TYP = out_type_arr.ptr();
 
+    PackedByteArray weather_lut;
+    weather_lut.resize(lut_slots * 4);
+    uint8_t * const __restrict WX = weather_lut.ptrw();
+    auto q01_byte_commit = [](float v) -> uint8_t {
+        if (v <= 0.0f) return uint8_t(0);
+        if (v >= 1.0f) return uint8_t(255);
+        return uint8_t(std::clamp(int(std::round(double(v) * 255.0)), 0, 255));
+    };
+
     float * const __restrict W_INT = s_wint.arr_f32.ptrw();
+
     float * const __restrict W_CLD = s_wcld.arr_f32.ptrw();
     float * const __restrict W_CW = (s_wcw != nullptr) ? s_wcw->arr_f32.ptrw() : nullptr;
     float * const __restrict W_PRE = s_wpre.arr_f32.ptrw();
@@ -5326,7 +5345,13 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
         }
         W_PRE[i] = v_precip;
         W_TYP[i] = display_type;
+        const int w4 = i * 4;
+        WX[w4] = display_type;
+        WX[w4 + 1] = q01_byte_commit(v_intensity);
+        WX[w4 + 2] = q01_byte_commit(v_cloud);
+        WX[w4 + 3] = q01_byte_commit(v_precip);
         if (W_PREV != nullptr) {
+
             W_PREV[i] = prev_type;
         }
         if (W_TARGET != nullptr) {
@@ -5360,7 +5385,12 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     out["elapsed_ms"] = elapsed_ms;
     out["commit_loop_ms"] = elapsed_ms;
     out["weather_dirty_count"] = dirty_count;
+    out["weather_lut"] = weather_lut;
+    out["weather_lut_changed"] = dirty_count > 0;
+    out["weather_lut_dirty_count"] = dirty_count;
+    out["weather_lut_full_rebuild"] = true;
     if (refresh_convergence && convergence_deltas.size() > convergence_dirty_count) {
+
         convergence_deltas.resize(convergence_dirty_count);
     }
     out["weather_convergence_dirty_count"] = convergence_dirty_count;
@@ -12318,6 +12348,11 @@ Dictionary DCWorldExt::run_weather_refresh_daily_pass(const Dictionary &knobs) {
         br["weather_convergence_dirty_count"] = int(commit.get("weather_convergence_dirty_count", 0));
         br["weather_convergence_deltas"] = commit.get("weather_convergence_deltas", PackedFloat32Array());
         br["convergence_published"] = bool(commit.get("convergence_published", false));
+        br["weather_lut"] = commit.get("weather_lut", PackedByteArray());
+        br["weather_lut_changed"] = bool(commit.get("weather_lut_changed", false));
+        br["weather_lut_dirty_count"] = int(commit.get("weather_lut_dirty_count", 0));
+        br["weather_lut_full_rebuild"] = bool(commit.get("weather_lut_full_rebuild", false));
+
     } else {
         br["field_commit_path"] = String("direct_solve_publish");
         br["field_commit_publish_verified"] = true;

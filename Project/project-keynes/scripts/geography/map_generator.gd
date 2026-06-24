@@ -10034,10 +10034,14 @@ func refresh_daily(map: MapData, world: WorldData, season_idx: int, climate_anom
 	return fronts
 
 
-func publish_weather_lut_after_weather_commit(map: MapData, world: WorldData) -> Dictionary:
+func publish_weather_lut_after_weather_commit(map: MapData, world: WorldData, native_lut: PackedByteArray = PackedByteArray(), force_changed: bool = false) -> Dictionary:
 	if _baker == null or map == null or world == null:
 		return {"path": "weather_lut_inline", "fallback": true, "reason": "missing_inputs"}
-	var report: Dictionary = _baker.refresh_weather_lut_from_weather(map, world)
+	var report: Dictionary
+	if not native_lut.is_empty() and _baker.has_method("publish_weather_lut_bytes_from_native"):
+		report = _baker.publish_weather_lut_bytes_from_native(native_lut, world, force_changed)
+	else:
+		report = _baker.refresh_weather_lut_from_weather(map, world)
 	report["path"] = "weather_lut_inline"
 	return report
 
