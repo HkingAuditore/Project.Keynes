@@ -898,8 +898,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var t_commit_us: int = Time.get_ticks_usec()
 			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
 			timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
-		var summary_lut_report: Dictionary = generator._last_weather_breakdown if generator != null and generator.get("_last_weather_breakdown") != null else {}
-		_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
+			var summary_lut_report: Dictionary = generator._last_weather_breakdown if generator != null and generator.get("_last_weather_breakdown") != null else {}
+			_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
 
 			_round_fronts = committed_fronts
 			# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。

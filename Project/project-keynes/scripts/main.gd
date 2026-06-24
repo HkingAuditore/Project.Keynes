@@ -1749,11 +1749,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					var _dc_path: String = "legacy"
 					var _dc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
 					if _dc_w != null and _dc_w.is_bound():
-						var _wjob = _generator._weather_refresh_job if "_weather_refresh_job" in _generator else null
-						if _wjob != null and _wjob.has_method("data_core_ready") and _wjob.data_core_ready():
-							_dc_path = "data_core"
-						else:
-							_dc_path = "data_core_cells_only"
+						_dc_path = "data_core_cells_only"
 					print("        weather path=%s" % _dc_path)
 					# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已废弃。
 			if job_id == &"enum_atlas_upload" and _generator != null \

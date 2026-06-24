@@ -180,7 +180,6 @@ const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/seas
 const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
 const SeaIceAtlasUploadSystemScript = preload("res://scripts/simulation/systems/sea_ice_atlas_upload_system.gd")
 const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
-const WeatherLutUploadSystemScript = preload("res://scripts/simulation/systems/weather_lut_upload_system.gd")
 const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
@@ -979,7 +978,6 @@ var _weather_refresh_job: WeatherRefreshJob = null
 # 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
 var _sea_ice_atlas_upload_job = null
 var _dynamic_visual_atlas_upload_job = null
-var _weather_lut_upload_job = null
 # 2026-05-19：dynamic/ecology/smooth/ice 四张 atlas 的上传 stride（默认 2 仿真日）。
 # HexRenderer 通过 set_dyn_atlas_upload_stride() 在运行时调整；构造期前若 hex_renderer
 # 已先 setter 过来，这里会持久化为非 2 的值。
@@ -1601,7 +1599,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 
 	# WeatherLUT 发布直接内联在 WeatherRefreshJob 的 commit/merged/direct 完成点，避免独立 job
 	# 的 should_run 相位早于 weather_refresh 时读到 ran_this_tick=false，也避免额外每 tick 扫描。
-	_weather_lut_upload_job = null
 
 	# 海冰主视觉数据通道：水路径 shader 从 dyn_atlas_smooth_atlas.A 通道读取
 	# sea_ice_fraction（与 UI/info_panel 同源；sea-ice-render-source-unify 阶段 A）。
