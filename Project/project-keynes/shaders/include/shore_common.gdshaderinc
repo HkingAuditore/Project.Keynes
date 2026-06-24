@@ -52,7 +52,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 			if (visual_quality <= 0 && is_diag) {
 				continue;
 			}
-			vec2 suv = clamp(uv + vec2(float(sx), float(sy)) * texel, vec2(0.0), vec2(1.0));
+			vec2 suv = wrap_map_uv(uv + vec2(float(sx), float(sy)) * texel);
 			int sb = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			bool sw = (sb == B_OCEAN) || (sb == B_COAST) || (sb == B_LAKE)
 					|| (sb == B_REEF)  || (sb == B_KELP)  || (sb == B_SEA_ICE);

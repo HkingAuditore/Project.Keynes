@@ -127,7 +127,7 @@ var _field_orographic_lift_gain: float = 0.22
 var _field_orographic_lift_cap: float = 0.35
 var _field_wet_terrain_precip_damping: float = 0.60
 var _field_lake_precip_damping: float = 0.65
-var _field_lake_evap_scale: float = 0.35
+var _field_lake_evap_scale: float = 0.85  # Stage14d 0.35→0.85 湖面蒸发接近海面(与 ClimateProfile.weather_lake_evap_scale 一致)
 var _field_extreme_precip_soft_cap: float = 0.16
 var _field_extreme_precip_softness: float = 0.20
 var _field_convergence_gain: float = 0.18
@@ -986,6 +986,28 @@ func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells:
 	if rc < 0.0 and not _gdext_field_warned_fallback:
 		_gdext_field_warned_fallback = true
 		push_warning("[weather] gdext run_weather_field_solve_pass returned %.2f; falling back to GDScript for this tick (will retry next tick)" % rc)
+	return rc
+
+
+# Stage13「让天气移动」：调用 C++ 独立全场 ψ 推进 pass（每 weather 轮一次，在 commit 后）。
+# ψ 演化已从 solve 热循环抽出 → 本 pass 用平滑引导流做半拉格朗日真平移，让 ψ 涡旋成片随风移动；
+# solve 循环只读 _wx_synoptic 做耦合 → 云/雨随 ψ 移动。复用本轮 begin 已构建的 native knobs
+# (含 cell_pos/neighbor_indices/wind/temp/wrap/tick/syn_*)。未就绪/失败返回 -1.0（ψ 保持上轮值，不崩）。
+func run_synoptic_advance_pass(map: MapData, world: WorldData) -> float:
+	if _data_core_world_ext == null or not _use_gdext_weather_field:
+		return -1.0
+	if not _data_core_world_ext.has_method("run_synoptic_advance_pass"):
+		return -1.0
+	var knobs: Dictionary = _field_solver._field_slice_native_knobs
+	if knobs.is_empty():
+		# native_knobs 未就绪 → 自建一份(合并/切片路径 begin 已设 _field_slice_* 状态)。
+		var n_cells: int = map.cell_count() if map != null and map.has_method("cell_count") else 0
+		if n_cells <= 0:
+			return -1.0
+		knobs = _build_weather_field_knobs(map, world, n_cells, 0, n_cells)
+	if knobs.is_empty():
+		return -1.0
+	var rc: float = float(_data_core_world_ext.run_synoptic_advance_pass(knobs))
 	return rc
 
 

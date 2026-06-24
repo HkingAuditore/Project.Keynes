@@ -33,6 +33,8 @@ uniform sampler2D eco_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
 
 uniform float world_time = 0.0;
 uniform float season_phase = 1.0;
@@ -433,6 +435,8 @@ func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 	var bounds := _bounds
 	_material.set_shader_parameter("world_origin", bounds.position)
 	_material.set_shader_parameter("world_size", bounds.size)
+	_material.set_shader_parameter("wrap_origin_x", 0.0)
+	_material.set_shader_parameter("wrap_period_x", HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0)
 	if _world == null:
 		_material.set_shader_parameter("lut_dims", Vector2.ONE)
 		return
@@ -503,6 +507,7 @@ func _rebuild_instances() -> void:
 			_try_append_instance(cell, idx, key, attempt, suitability, state)
 
 	_apply_instance_cap()
+	_append_wrap_edge_instances()
 	_instance_count = _instance_cell_indices.size()
 	if _instance_count <= 0:
 		return
@@ -609,6 +614,8 @@ func _rebuild_via_native(
 		"origin_y": _bounds.position.y,
 		"size_x": _bounds.size.x,
 		"size_y": _bounds.size.y,
+		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
+		"wrap_edge_margin": _hex_size * 4.0,
 		"grid_w": grid_w,
 		"grid_h": grid_h,
 		"offset_is_water": offset_is_water,
@@ -934,6 +941,32 @@ func _try_append_instance(
 	_instance_seeds.append(_hash01(key, 600 + attempt))
 	_instance_variants.append(variant)
 	_instance_scores.append(world_noise * 0.66 + cell_suitability * 0.27 + _hash01(key, 7600 + attempt) * 0.07)
+
+
+func _append_wrap_edge_instances() -> void:
+	if _map == null:
+		return
+	var period_x := HexUtils.wrap_period_x(_map.width, _hex_size)
+	if period_x <= 0.0001:
+		return
+	var margin := _hex_size * 4.0
+	var original_count := _instance_positions.size()
+	for i in range(original_count):
+		var pos := _instance_positions[i]
+		var offsets := PackedFloat32Array()
+		if pos.x <= margin:
+			offsets.append(period_x)
+		if pos.x >= period_x - margin:
+			offsets.append(-period_x)
+		for ox in offsets:
+			_instance_cell_indices.append(_instance_cell_indices[i])
+			_instance_cells.append(_instance_cells[i])
+			_instance_positions.append(pos + Vector2(float(ox), 0.0))
+			_instance_rotations.append(_instance_rotations[i])
+			_instance_sizes.append(_instance_sizes[i])
+			_instance_seeds.append(_instance_seeds[i])
+			_instance_variants.append(_instance_variants[i])
+			_instance_scores.append(_instance_scores[i])
 
 
 func _apply_instance_cap() -> void:
@@ -1727,8 +1760,7 @@ func _has_river_cell(cell, idx: int) -> bool:
 func _is_water_position(world_pos: Vector2, _fallback_cell, fallback_idx: int) -> bool:
 	if _map == null:
 		return false
-	var cube := HexUtils.world_to_cube(world_pos, _hex_size)
-	var cell = _map.get_cell_by_cube(cube)
+	var cell = HexUtils.world_to_wrapped_cell(_map, world_pos, _hex_size)
 	if cell == null:
 		return true
 	var idx := _cell_index(cell, fallback_idx)
@@ -1873,8 +1905,12 @@ func _world_uv(world_pos: Vector2) -> Vector2:
 	var size := _bounds.size
 	if size.x <= 0.001 or size.y <= 0.001:
 		return Vector2.ZERO
+	var period_x := HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0
+	var sample_x := world_pos.x
+	if period_x > 0.0001:
+		sample_x = fposmod(sample_x, period_x)
 	return Vector2(
-		clampf((world_pos.x - _bounds.position.x) / size.x, 0.0, 1.0),
+		clampf((sample_x - _bounds.position.x) / size.x, 0.0, 1.0),
 		clampf((world_pos.y - _bounds.position.y) / size.y, 0.0, 1.0)
 	)
 

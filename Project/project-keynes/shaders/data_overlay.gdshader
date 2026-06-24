@@ -19,6 +19,8 @@ render_mode blend_mix, unshaded;
 uniform sampler2D overlay_tex : filter_nearest, repeat_disable;
 uniform vec2 world_origin = vec2(0.0, 0.0);
 uniform vec2 world_size   = vec2(1.0, 1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
 
 uniform int overlay_mode = 0;
 uniform float base_alpha = 0.7;
@@ -48,6 +50,15 @@ const vec3 WEATHER_COLORS[8] = vec3[8](
 );
 
 const vec3 NEUTRAL_GRAY = vec3(0.45, 0.45, 0.45);
+
+vec2 overlay_wrap_uv(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return clamp(uv, vec2(0.0), vec2(1.0));
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	float wrapped_x = wrap_origin_x + mod(world_x - wrap_origin_x, wrap_period_x);
+	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
+}
 
 // 蓝→青→黄→红 冷到暖色带（TEMPERATURE）
 vec3 ramp_cold_to_hot(float v) {
@@ -184,7 +195,7 @@ void fragment() {
 	vec4 out_color = vec4(0.0);
 
 	if (overlay_mode != 0) {
-		vec2 uv = clamp(v_uv, vec2(0.0), vec2(1.0));
+		vec2 uv = overlay_wrap_uv(v_uv);
 		vec4 sampled = texture(overlay_tex, uv);
 		// A < 0.5 → 无效像素，保持 out_color = vec4(0.0)（完全透明）。
 		if (sampled.a >= 0.5) {

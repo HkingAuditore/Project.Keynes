@@ -75,8 +75,8 @@ void fragment() {
 	// 动态视觉状态统一走 cell-index + LUT；旧 per-pixel dynamic/smooth/ecology atlas
 	// 以及 scalar/vector atlas 已退役。
 	// ═══════════════════════════════════════════════════════════════════════
-	vec2 wp = v_world;
-	vec2 uv = (wp - world_origin) / world_size;
+	vec2 wp = wrap_world_pos(v_world);
+	vec2 uv = wrap_map_uv((v_world - world_origin) / world_size);
 	// v10.noise-cache：本像素只采样一次全局噪声包，供后续"随机抖动/强度扰动"
 	// 类视觉细节复用。真正需要独立频率/方向/时间推进的结构噪声（水纹、河口等）
 	// 仍走专用 fbm，避免所有效果同形同相。

@@ -10278,6 +10278,14 @@ func runtime_hydrology_enabled() -> bool:
 	return cp_now != null and bool(cp_now.runtime_hydrology_enabled)
 
 
+# Stage13「让天气移动」：每个 weather 轮(commit 后)推进一次独立全场 ψ pass。转发到 weather_system。
+# 返回 elapsed_ms (≥0) 或 -1.0(未就绪/关闭/失败,ψ 保持上轮值)。
+func run_synoptic_advance_pass_native(map: MapData, world: WorldData) -> float:
+	if _weather_system == null or not _weather_system.has_method("run_synoptic_advance_pass"):
+		return -1.0
+	return _weather_system.run_synoptic_advance_pass(map, world)
+
+
 func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dictionary:
 	var t0: int = Time.get_ticks_usec()
 	var cp_now := _c()

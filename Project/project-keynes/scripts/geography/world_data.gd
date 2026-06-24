@@ -71,6 +71,7 @@ var ice_state_buffer: PackedByteArray = PackedByteArray()         # R8
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
 var derived_size: Vector2i = Vector2i.ZERO  # 派生 buffer 分辨率（低，省内存）
 var world_bounds: Rect2 = Rect2()
+var wrap_period_x: float = 0.0
 var sea_level: float = 0.42                  # 与 cfg.sea_level 一致，[0,1] 范围
 var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复用同一 seed
 
@@ -145,6 +146,8 @@ var eco_lut_tex: ImageTexture
 #   产出（C++ 优先，GDScript fallback），weather_overlay.gdshader 经 cell-index 间接寻址逐格
 #   采样驱动云分布——天气云不再用 fronts 椭圆摘要，而是精确对应 HexCell.weather_*。
 var weather_lut_tex: ImageTexture
+var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值减两次更新间横跳)
+var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
 var lut_dims: Vector2i = Vector2i.ZERO
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
@@ -292,7 +295,10 @@ func _sample_byte(buf: PackedByteArray, world_pos: Vector2) -> int:
 func _world_to_uv(world_pos: Vector2) -> Vector2:
 	if world_bounds.size.x < 0.001 or world_bounds.size.y < 0.001:
 		return Vector2(0.5, 0.5)
-	var u := (world_pos.x - world_bounds.position.x) / world_bounds.size.x
+	var sample_x := world_pos.x
+	if wrap_period_x > 0.0001:
+		sample_x = fposmod(sample_x, wrap_period_x)
+	var u := (sample_x - world_bounds.position.x) / world_bounds.size.x
 	var v := (world_pos.y - world_bounds.position.y) / world_bounds.size.y
 	return Vector2(clampf(u, 0.0, 1.0), clampf(v, 0.0, 1.0))
 

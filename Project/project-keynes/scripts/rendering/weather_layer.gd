@@ -97,6 +97,7 @@ var _process_material_cache: Dictionary = {}
 var _fallback_particle_texture: ImageTexture
 
 var _world_bounds: Rect2 = Rect2()
+var _wrap_period_x: float = 0.0
 var _world_time: float = 0.0
 var _strength: float = 1.0
 var _map_index_atlas_tex: ImageTexture = null
@@ -104,6 +105,10 @@ var _noise_tex: ImageTexture = null
 var _hex_size: float = 22.0
 var _weather_field_tex: Texture2D = null
 var _weather_lut_tex: Texture2D = null
+var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
+var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
+var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
+var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认 0.5s)
 var _weather_lut_dims: Vector2i = Vector2i.ZERO
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
 
@@ -178,6 +183,23 @@ func _process(delta: float) -> void:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
 	if has_weather:
 		_update_weather_front_blend(delta)
+		if _overlay_mat != null and _world_ref != null:
+			if _world_ref.weather_lut_prev_tex != null:
+				_overlay_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
+			var _now_us: int = Time.get_ticks_usec()
+			var _upd: int = int(_world_ref.weather_lut_update_usec)
+			if _upd != _wx_lut_last_usec:
+				if _wx_lut_last_usec > 0:
+					var _gap: float = float(_upd - _wx_lut_last_usec)
+					if _gap > 1000.0 and _gap < 5000000.0:
+						_wx_commit_interval_usec = lerpf(_wx_commit_interval_usec, _gap, 0.3)  # IIR 自适应
+				_wx_lut_last_usec = _upd
+				_wx_lut_t0_usec = _now_us
+			var _wlerp: float = 1.0
+			if _wx_commit_interval_usec > 1.0:
+				_wlerp = clampf(float(_now_us - _wx_lut_t0_usec) / _wx_commit_interval_usec, 0.0, 1.0)
+			_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
 		# Drift-debug：每秒采样 visual_snapshots[0] 的 center，看 lerp 是否真的在推进。
 		if DRIFT_DEBUG_LOG and _world_time - _drift_debug_last_log_time >= 1.0:
 			_drift_debug_last_log_time = _world_time
@@ -222,8 +244,12 @@ func _effective_running() -> bool:
 # 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 map_index_atlas + noise_tex。
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
-func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO) -> void:
+func set_world_ref(w) -> void:
+	_world_ref = w
+
+func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0) -> void:
 	_world_bounds = bounds
+	_wrap_period_x = maxf(0.0, wrap_period_x)
 	_map_index_atlas_tex = map_index_atlas
 	_noise_tex = noise_tex
 	_hex_size = hex_size
@@ -232,7 +258,7 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 
 	_reset_front_blend_state()
 	if _overlay_quad != null:
-		_overlay_quad.mesh = _build_full_quad(bounds)
+		_overlay_quad.mesh = _build_full_quad(bounds, _wrap_period_x)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", map_index_atlas)
 		# cell-index 间接寻址（cloud-from-field 2026-06-20）：weather_lut + lut_dims 让
@@ -241,6 +267,8 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		_overlay_mat.set_shader_parameter("lut_dims", Vector2(lut_dims.x, lut_dims.y))
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
+		_overlay_mat.set_shader_parameter("wrap_origin_x", 0.0)
+		_overlay_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
 		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
@@ -302,7 +330,7 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_mobile_quality_tier_define = tier_define
 	_load_overlay_shader()
 	if _overlay_quad != null and _world_bounds.size != Vector2.ZERO:
-		_overlay_quad.mesh = _build_full_quad(_world_bounds)
+		_overlay_quad.mesh = _build_full_quad(_world_bounds, _wrap_period_x)
 	_push_overlay_runtime_state()
 
 func set_day_night_enabled(v: bool) -> void:
@@ -999,6 +1027,8 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
 	_overlay_mat.set_shader_parameter("world_origin", _world_bounds.position)
 	_overlay_mat.set_shader_parameter("world_size", _world_bounds.size)
+	_overlay_mat.set_shader_parameter("wrap_origin_x", 0.0)
+	_overlay_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 
 	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
@@ -1231,16 +1261,25 @@ func _build_fallback_particle_texture() -> ImageTexture:
 	var img := Image.create_from_data(1, 1, false, Image.FORMAT_RGBA8, data)
 	return ImageTexture.create_from_image(img)
 
-func _build_full_quad(bounds: Rect2) -> Mesh:
+func _build_full_quad(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	var p := bounds.position
 	var s := bounds.size
-	var verts := PackedVector2Array([
-		p,
-		p + Vector2(s.x, 0.0),
-		p + s,
-		p + Vector2(0.0, s.y),
-	])
-	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	if wrap_period_x > 0.0001:
+		p.x = 0.0
+		s.x = wrap_period_x
+	var verts := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var tile_offsets := PackedFloat32Array([0.0])
+	if wrap_period_x > 0.0001:
+		tile_offsets = PackedFloat32Array([-wrap_period_x, 0.0, wrap_period_x])
+	for ox in tile_offsets:
+		var base := verts.size()
+		var tp := p + Vector2(float(ox), 0.0)
+		verts.append(tp)
+		verts.append(tp + Vector2(s.x, 0.0))
+		verts.append(tp + s)
+		verts.append(tp + Vector2(0.0, s.y))
+		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

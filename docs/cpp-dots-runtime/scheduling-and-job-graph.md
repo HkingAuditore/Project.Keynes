@@ -233,6 +233,26 @@ legacy `SusJob` 和 C++ `SusSchedulerExt` 都维护 skip 统计。长期 `frame_
 - 上传类 job 可以被 budget skip，但要有 starvation 保护或 dirty queue 机制。
 - job 内部调用 C++ pass 后，必须把 native breakdown 合并进 report，供 `main.gd` 输出。
 
+### 陷阱：weather 有两条调度路径，合并 native 路径绕过 stage 钩子
+
+`weather_refresh_job` 有两条互斥路径（`_should_use_merged_native_weather` 选择）：
+
+1. **切片状态机**（fallback）：`begin_weather_refresh_stage_a` → 多次 `run_weather_refresh_stage_a_slice` →
+   `commit_weather_refresh_stage_a`(stage 2) → `hydrology_discharge`(stage 3) → stage_b。每个 stage 是 GDScript 钩子。
+2. **合并 native facade**（默认快路径）：单 slice 调 `map_generator.refresh_weather_daily` → `try_run_refresh_daily_combined_gdext`
+   → 一体化 C++ `run_weather_refresh_daily_pass`。**它完全绕过切片状态机的所有 stage GDScript 钩子**
+   （见 map_generator.gd 注释"合并 path 完全绕过了 stage_b GDScript 入口"）。合并 facade 必须自己显式补做
+   stage_b 才需要的副作用（如 enum atlas dirty mark）。
+
+**规范**：任何"每轮一次"的 weather 子步骤，**不能只挂在切片状态机的 stage 钩子上**——默认的合并路径会绕过它，导致该步骤静默不执行（典型症状：pass 从不运行、其输出 SoA 恒为初值）。正确做法二选一：
+- **挂在两条路径共同必经的 C++ 入口**：合并路径内部也调 `run_weather_field_solve_pass`，所以把每轮子步骤
+  内联进它、用 `start_idx==0` 触发（一轮第一个切片）即可两条路径都执行。**ψ(synoptic eddy)推进就是这样挂的**
+  （world_ext.cpp `run_weather_field_solve_pass` 内，`start_idx==0` 时对全场推进一次 ψ，主循环只读）。
+- 或在合并 facade(`refresh_weather_daily`)里也显式调用一次，与切片路径对称。
+
+诊断"pass 没运行 vs 数据没写入"：先确认调度路径（合并 vs 切片），再看 pass 是否在该路径上被调用。`weather_refresh_job`
+没运行的子步骤，其 C++ 端不会有任何 log/计时字段——这是"没运行"（调度没挂上），区别于"运行了但 publish/flush 没把结果写回消费层"（数据没写入）。
+
 ## Daily Wind Cadence
 
 `WorldClock.day_changed(day_idx)` is the authoritative daily tick source. Each

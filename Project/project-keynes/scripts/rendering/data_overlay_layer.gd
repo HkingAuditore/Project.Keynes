@@ -18,6 +18,7 @@ const SHADER_PATH: String = "res://shaders/data_overlay.gdshader"
 var _mesh_inst: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _bounds: Rect2 = Rect2()
+var _wrap_period_x: float = 0.0
 var _mode: int = 0
 var _alpha: float = 0.7
 var _has_valid_shader: bool = false
@@ -54,6 +55,8 @@ func _ensure_nodes() -> void:
 	_shader_mat.shader = sh
 	_shader_mat.set_shader_parameter("overlay_mode", _mode)
 	_shader_mat.set_shader_parameter("base_alpha", _alpha)
+	_shader_mat.set_shader_parameter("wrap_origin_x", 0.0)
+	_shader_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 	# 即使还没有纹理，提供一张 1×1 占位避免 null uniform 警告
 	_shader_mat.set_shader_parameter("overlay_tex", DataOverlayBaker.get_empty_texture())
 	_mesh_inst.material = _shader_mat
@@ -68,11 +71,21 @@ func set_bounds(bounds: Rect2) -> void:
 	_ensure_nodes()
 	if _mesh_inst == null:
 		return
-	_mesh_inst.mesh = _build_quad_mesh(bounds)
+	_mesh_inst.mesh = _build_quad_mesh(bounds, _wrap_period_x)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("world_origin", bounds.position)
 		_shader_mat.set_shader_parameter("world_size", bounds.size)
+		_shader_mat.set_shader_parameter("wrap_origin_x", 0.0)
+		_shader_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 	_update_visibility()
+
+func set_horizontal_wrap(period_x: float) -> void:
+	_wrap_period_x = maxf(0.0, period_x)
+	if _bounds.size.x > 0.0 and _mesh_inst != null:
+		_mesh_inst.mesh = _build_quad_mesh(_bounds, _wrap_period_x)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("wrap_origin_x", 0.0)
+		_shader_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 
 func set_mode(mode: int) -> void:
 	_mode = mode
@@ -119,25 +132,35 @@ func _update_visibility() -> void:
 		and _bounds.size.y > 0.0
 	visible = should_show
 
-func _build_quad_mesh(bounds: Rect2) -> Mesh:
+func _build_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	# 与 HexRenderer._build_world_quad_mesh 尺寸一致，但额外带 UV，
 	# 方便 data_overlay.gdshader 直接通过 UV 采样数据纹理，避免每像素
 	# 再算一次 (world_pos - origin) / size。
 	var p := bounds.position
 	var s := bounds.size
-	var verts := PackedVector2Array([
-		p,
-		p + Vector2(s.x, 0.0),
-		p + s,
-		p + Vector2(0.0, s.y),
-	])
-	var uvs := PackedVector2Array([
-		Vector2(0.0, 0.0),
-		Vector2(1.0, 0.0),
-		Vector2(1.0, 1.0),
-		Vector2(0.0, 1.0),
-	])
-	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	if wrap_period_x > 0.0001:
+		p.x = 0.0
+		s.x = wrap_period_x
+	var verts := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var tile_offsets := PackedFloat32Array([0.0])
+	if wrap_period_x > 0.0001:
+		tile_offsets = PackedFloat32Array([-wrap_period_x, 0.0, wrap_period_x])
+	for ox in tile_offsets:
+		var base := verts.size()
+		var tp := p + Vector2(float(ox), 0.0)
+		verts.append(tp)
+		verts.append(tp + Vector2(s.x, 0.0))
+		verts.append(tp + s)
+		verts.append(tp + Vector2(0.0, s.y))
+		uvs.append_array(PackedVector2Array([
+			Vector2(0.0, 0.0),
+			Vector2(1.0, 0.0),
+			Vector2(1.0, 1.0),
+			Vector2(0.0, 1.0),
+		]))
+		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

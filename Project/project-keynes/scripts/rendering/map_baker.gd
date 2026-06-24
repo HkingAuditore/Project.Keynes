@@ -488,6 +488,8 @@ var _initial_physical_deferred: bool = false
 const _INITIAL_PHYSICAL_SEASON_PHASE: float = 1.5
 
 
+var _prev_weather_lut_bytes: PackedByteArray = PackedByteArray()  # 帧间插值:上一次 weather LUT 字节
+
 func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> void:
 	_initial_physical_deferred = false
 	if not _use_physical_circulation(cfg):
@@ -699,6 +701,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	var world := WorldData.new()
 	world.world_bounds = compute_world_bounds(map.width, map.height, hex_size)
+	world.wrap_period_x = HexUtils.wrap_period_x(map.width, hex_size)
 	world.hm_size = _resolve_hm_size(world.world_bounds)
 	world.derived_size = world.hm_size  # 统一分辨率
 	world.sea_level = cfg.sea_level
@@ -3125,6 +3128,7 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 	var step_x := size.x / float(W)
 	var step_y := size.y / float(H)
 	var warp_scale := hex_size * WARP_AMP
+	var wrap_period_x := HexUtils.wrap_period_x(map.width, hex_size)
 
 	var patch_t0_us: int = Time.get_ticks_usec()
 	for y in range(H):
@@ -3132,15 +3136,15 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 		var row := y * W
 		for x in range(W):
 			var wx_base := origin.x + (float(x) + 0.5) * step_x
-			var warp_x := _warp_noise_lo.get_noise_2d(wx_base, wy_base)
-			var warp_y := _warp_noise_lo.get_noise_2d(wx_base + 31.7, wy_base - 17.3)
-			var hi_x := _warp_noise_hi.get_noise_2d(wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO
-			var hi_y := _warp_noise_hi.get_noise_2d(wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO
+			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
 			var rounded := _cube_round(cube_f)
-			var self_cell: HexCell = map.get_cell_by_cube(rounded)
+			var self_cell: HexCell = _get_wrapped_cell_by_cube(map, rounded)
 			var v: int
 			if axis == "cover":
 				v = int(self_cell.cover) if self_cell != null else int(CoverType.CV.NONE)
@@ -3333,21 +3337,22 @@ func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> v
 	var step_x := size.x / float(W)
 	var step_y := size.y / float(H)
 	var warp_scale := hex_size * WARP_AMP
+	var wrap_period_x := HexUtils.wrap_period_x(map.width, hex_size)
 
 	for y in range(H):
 		var wy_base := origin.y + (float(y) + 0.5) * step_y
 		var row := y * W
 		for x in range(W):
 			var wx_base := origin.x + (float(x) + 0.5) * step_x
-			var warp_x := _warp_noise_lo.get_noise_2d(wx_base, wy_base)
-			var warp_y := _warp_noise_lo.get_noise_2d(wx_base + 31.7, wy_base - 17.3)
-			var hi_x := _warp_noise_hi.get_noise_2d(wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO
-			var hi_y := _warp_noise_hi.get_noise_2d(wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO
+			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
 			var rounded := _cube_round(cube_f)
-			var self_cell: HexCell = map.get_cell_by_cube(rounded)
+			var self_cell: HexCell = _get_wrapped_cell_by_cube(map, rounded)
 			var terrain_self: int = int(self_cell.terrain) if self_cell != null else int(TerrainType.TERRAIN.OCEAN)
 			var veg_self: int = int(self_cell.vegetation) if self_cell != null else int(VegetationType.VEG.NONE)
 			var cover_self: int = int(self_cell.cover) if self_cell != null else int(CoverType.CV.NONE)
@@ -3427,6 +3432,7 @@ func _bake_height_biome_moisture(
 	var step_x := size.x / float(W)
 	var step_y := size.y / float(H)
 	var warp_scale := hex_size * WARP_AMP
+	var wrap_period_x := HexUtils.wrap_period_x(map.width, hex_size)
 
 	# v9.perf：建立 pixel→HexCell lookup，让后续 rebake_*_only / rebake_biome_axes_only
 	# 不再需要重跑 noise + cube_round。这里只是 W*H 次引用赋值，开销 ~0
@@ -3447,17 +3453,17 @@ func _bake_height_biome_moisture(
 			var wx_base := origin.x + (float(x) + 0.5) * step_x
 
 			# 1. Warp（双频，让 hex 边界变弯曲 + 犬牙交错）
-			var warp_x := _warp_noise_lo.get_noise_2d(wx_base, wy_base)
-			var warp_y := _warp_noise_lo.get_noise_2d(wx_base + 31.7, wy_base - 17.3)
-			var hi_x := _warp_noise_hi.get_noise_2d(wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO
-			var hi_y := _warp_noise_hi.get_noise_2d(wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO
+			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 
 			# 2. Cube 归属
 			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
 			var rounded := _cube_round(cube_f)
-			var self_cell: HexCell = map.get_cell_by_cube(rounded)
+			var self_cell: HexCell = _get_wrapped_cell_by_cube(map, rounded)
 
 			# 3. 找最近的 sextant 邻居（barycentric 用）
 			var self_center := HexUtils.cube_to_world(rounded.x, rounded.y, hex_size)
@@ -3468,8 +3474,8 @@ func _bake_height_biome_moisture(
 			var nb2_dir := _neighbor_dir((sextant + 1) % 6)
 			var nb1_cube := Vector3i(rounded.x + nb1_dir.x, rounded.y + nb1_dir.y, rounded.z + nb1_dir.z)
 			var nb2_cube := Vector3i(rounded.x + nb2_dir.x, rounded.y + nb2_dir.y, rounded.z + nb2_dir.z)
-			var nb1_cell: HexCell = map.get_cell_by_cube(nb1_cube)
-			var nb2_cell: HexCell = map.get_cell_by_cube(nb2_cube)
+			var nb1_cell: HexCell = _get_wrapped_cell_by_cube(map, nb1_cube)
+			var nb2_cell: HexCell = _get_wrapped_cell_by_cube(map, nb2_cube)
 
 			# 4. Barycentric 权重（self + 2 邻居）
 			var nb1_center: Vector2 = HexUtils.cube_to_world(nb1_cube.x, nb1_cube.y, hex_size)
@@ -3502,12 +3508,12 @@ func _bake_height_biome_moisture(
 			# 7. 在陆地上叠 per-biome detail noise
 			var elev_final := elev_blend
 			if terrain_self != int(TerrainType.TERRAIN.OCEAN) and terrain_self != int(TerrainType.TERRAIN.COAST):
-				var d := _detail_noise.get_noise_2d(wx_base, wy_base) * 0.5  # [-0.25, 0.25] (rough)
+				var d := _cyl_noise(_detail_noise, wx_base, wy_base, wrap_period_x, hex_size) * 0.5  # [-0.25, 0.25] (rough)
 				if terrain_self == int(TerrainType.TERRAIN.MOUNTAIN):
-					var ridge := (_ridge_noise.get_noise_2d(wx_base, wy_base) + 1.0) * 0.5
+					var ridge := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
 					elev_final = elev_blend + ridge * MOUNTAIN_RIDGE_AMP + d * 0.4 * HILL_AMP
 				elif terrain_self == int(TerrainType.TERRAIN.HILL):
-					elev_final = elev_blend + d * HILL_AMP * 0.8 + (_ridge_noise.get_noise_2d(wx_base, wy_base) + 1.0) * 0.5 * HILL_AMP * 0.5
+					elev_final = elev_blend + d * HILL_AMP * 0.8 + (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5 * HILL_AMP * 0.5
 				else:
 					elev_final = elev_blend + d * PLAIN_AMP
 
@@ -3581,6 +3587,36 @@ func _bake_height_biome_moisture(
 	world.flat_px_indices_arr = flat_arr
 
 # ─── Hex 工具 ─────────────────────────────────────────────────────────────
+
+func _get_wrapped_cell_by_cube(map: MapData, cube: Vector3i) -> HexCell:
+	if map == null:
+		return null
+	var off := HexUtils.cube_to_offset(cube.x, cube.y)
+	if off.y < 0 or off.y >= map.height:
+		return null
+	var wrapped := HexUtils.offset_to_cube(posmod(off.x, map.width), off.y)
+	return map.get_cell_by_cube(wrapped)
+
+func _cyl_noise(noise: FastNoiseLite, x: float, y: float, period_x: float, hex_size: float) -> float:
+	if noise == null:
+		return 0.0
+	if period_x <= 0.0001:
+		return noise.get_noise_2d(x, y)
+	var xw := fposmod(x, period_x)
+	var base := noise.get_noise_2d(xw, y)
+	var band := minf(maxf(hex_size * 8.0, 1.0), period_x * 0.12)
+	if band <= 0.0001:
+		return base
+	var left := noise.get_noise_2d(0.0, y)
+	var right := noise.get_noise_2d(period_x, y)
+	var seam_avg := (left + right) * 0.5
+	if xw < band:
+		var t_left := smoothstep(0.0, band, xw)
+		return lerpf(seam_avg, base, t_left)
+	if xw > period_x - band:
+		var t_right := smoothstep(0.0, band, period_x - xw)
+		return lerpf(seam_avg, base, t_right)
+	return base
 
 func _world_to_cube_f(pos: Vector2, size: float) -> Vector3:
 	var q_f := (sqrt(3.0) / 3.0 * pos.x - (1.0 / 3.0) * pos.y) / size
@@ -4270,7 +4306,14 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 				# weather LUT（软依赖）：C++ 未就绪/天气未初始化时可能缺省，缺则保留旧纹理。
 				var wlut = out.get("weather_lut", null)
 				if wlut is PackedByteArray:
+					# 帧间插值双缓冲：上次字节→prev tex，本次→curr，本次存为下次 prev(首帧无 prev→prev=curr)。
+					if _prev_weather_lut_bytes.size() == (wlut as PackedByteArray).size() and _prev_weather_lut_bytes.size() > 0:
+						world.weather_lut_prev_tex = _lut_tex_from_data(_prev_weather_lut_bytes, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
+					else:
+						world.weather_lut_prev_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
 					world.weather_lut_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
+					_prev_weather_lut_bytes = wlut
+					world.weather_lut_update_usec = Time.get_ticks_usec()  # 帧间插值:标记 LUT 换帧时刻
 				return report
 	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override)
 	report["lut_encode_path"] = "gdscript"

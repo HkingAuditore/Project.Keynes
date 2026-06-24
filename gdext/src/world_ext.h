@@ -266,6 +266,8 @@ public:
     //   切片：支持 start_idx / end_idx。读侧使用 begin 时的 prev_vapor /
     //         prev_precip 快照，写侧只覆盖目标 SoA range；commit 仍统一发布。
     double run_weather_field_solve_pass(const godot::Dictionary &knobs);
+    // 独立全场 ψ 推进 pass（每 weather 轮一次、不切片、半拉格朗日平流）。让天气随风成片移动。
+    double run_synoptic_advance_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_weather_field_commit_pass(godot::Dictionary knobs);
 
     // F.2 (P1): ocean water + land 两个独立 pass

@@ -516,8 +516,7 @@ func _ready() -> void:
 func _on_map_tile_tapped(world_pos: Vector2) -> void:
 	if _current_map == null:
 		return
-	var cube := HexUtils.world_to_cube(world_pos, hex_size)
-	var cell := _current_map.get_cell_by_cube(cube)
+	var cell = HexUtils.world_to_wrapped_cell(_current_map, world_pos, hex_size)
 	if cell == null:
 		return
 	_select_cell(cell)
@@ -2001,6 +2000,8 @@ func _generate_and_render(seed_val: int) -> void:
 				_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())
 
 	_camera.set_world_bounds(_renderer.get_world_bounds())
+	if _camera.has_method("set_horizontal_wrap"):
+		_camera.set_horizontal_wrap(_map_wrap_period_x(), true)
 	_camera.fit_to_viewport(1.05, _map_safe_area())
 
 	if _info_label != null:
@@ -2177,9 +2178,22 @@ func _recompute_and_push_tod(day_phase: float) -> void:
 
 # ─── 地块选择 / 信息面板 ─────────────────────────────────────────────────
 
+func _map_wrap_period_x() -> float:
+	if _current_map == null:
+		return 0.0
+	return HexUtils.wrap_period_x(_current_map.width, hex_size)
+
+func _cell_display_world(cell: HexCell) -> Vector2:
+	if cell == null:
+		return Vector2.ZERO
+	var canonical := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+	var ref_x := _camera.position.x if _camera != null else canonical.x
+	return HexUtils.nearest_display_world(canonical, ref_x, _map_wrap_period_x())
+
 func _select_cell(cell: HexCell) -> void:
 	_selected_cell = cell
-	_highlight.set_cell(cell, hex_size)
+	var display_world := _cell_display_world(cell)
+	_highlight.set_cell_display(cell, hex_size, display_world, _map_wrap_period_x())
 	_right_panel.visible = true
 	# 0.4.2 — controller 持有自己的 _selected_cell 副本；这里同步推一次。
 	if _info_panel_controller != null:
@@ -2191,8 +2205,7 @@ func _select_cell(cell: HexCell) -> void:
 	# 保留用户当前缩放/位置（不再 fit 重置视图）；仅当选中地块被右侧面板/顶栏
 	# 遮挡时，平滑平移把它移到可见安全区，避免"点一下就跳回整图"的体验。
 	if _camera != null and cell != null:
-		var cell_world := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
-		_camera.ensure_point_visible(cell_world, _map_safe_area())
+		_camera.ensure_point_visible(display_world, _map_safe_area())
 	# [TEMP DEBUG] sea-ice-render-source-unify 阶段 A 同源校验：
 	# 选中任意 cell 时打印 (sea_ice_fraction_cpu, dyn_atlas_smooth.A_byte, biome)。
 	# 期望：q01_byte_ice(frac_cpu) == dyn_smooth.A_byte。
@@ -2291,6 +2304,8 @@ func _sync_overlay_to_world() -> void:
 		return
 	if _renderer != null:
 		_overlay_layer.set_bounds(_renderer.get_world_bounds())
+	if _overlay_layer.has_method("set_horizontal_wrap"):
+		_overlay_layer.set_horizontal_wrap(_map_wrap_period_x())
 	_overlay_layer.set_alpha(_overlay_alpha)
 	_overlay_layer.set_mode(_overlay_mode)
 

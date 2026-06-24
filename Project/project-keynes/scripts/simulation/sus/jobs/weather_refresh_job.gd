@@ -752,7 +752,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		# 完成全部，与 fallback 走 stage_a/stage_b 共用同一字段语义；perf overlay
 		# 通过 _last_weather_breakdown.path == "gdext_combined" 区分两者）。
 		timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_merged_us) / 1000.0
-
+		# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
 		_round_fronts = merged_fronts
 		_round_active = false
 		_round_stage = 0
@@ -867,6 +867,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
 			timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
 			_round_fronts = committed_fronts
+			# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
 			_round_stage = 3
 			var commit_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 			_publish_job_timing(timing, commit_elapsed_ms, "weather_summary")

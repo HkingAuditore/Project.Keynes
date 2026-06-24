@@ -44,6 +44,8 @@ signal tile_tapped(world_pos: Vector2)
 @export var key_zoom_step: float = 1.25
 
 var _world_bounds: Rect2 = Rect2()
+var _horizontal_wrap_enabled: bool = false
+var _horizontal_wrap_period_x: float = 0.0
 
 # ── 平滑缩放状态 ──
 var _target_zoom: Vector2 = Vector2.ONE
@@ -85,6 +87,11 @@ func _ready() -> void:
 
 func set_world_bounds(bounds: Rect2) -> void:
 	_world_bounds = bounds
+	_clamp_position()
+
+func set_horizontal_wrap(period_x: float, enabled: bool = true) -> void:
+	_horizontal_wrap_period_x = maxf(0.0, period_x)
+	_horizontal_wrap_enabled = enabled and _horizontal_wrap_period_x > 0.0001
 	_clamp_position()
 
 func center_on_bounds() -> void:
@@ -180,7 +187,8 @@ func _update_inertia(delta: float) -> void:
 	_clamp_position()
 	# 撞到边界时清除对应方向速度，避免在边界处"粘滞"
 	if not is_equal_approx(position.x, before.x + _pan_velocity.x * delta):
-		_pan_velocity.x = 0.0
+		if not _horizontal_wrap_enabled:
+			_pan_velocity.x = 0.0
 	if not is_equal_approx(position.y, before.y + _pan_velocity.y * delta):
 		_pan_velocity.y = 0.0
 	# 指数衰减
@@ -404,7 +412,9 @@ func _clamped_position(p: Vector2) -> Vector2:
 	var min_p := _world_bounds.position + half_view
 	var max_p := _world_bounds.position + _world_bounds.size - half_view
 	var out := p
-	if min_p.x > max_p.x:
+	if _horizontal_wrap_enabled:
+		out.x = _wrap_camera_x(p.x)
+	elif min_p.x > max_p.x:
 		out.x = _world_bounds.position.x + _world_bounds.size.x * 0.5
 	else:
 		out.x = clampf(p.x, min_p.x, max_p.x)
@@ -418,3 +428,9 @@ func _clamp_position() -> void:
 	if _world_bounds.size == Vector2.ZERO:
 		return
 	position = _clamped_position(position)
+
+func _wrap_camera_x(x: float) -> float:
+	if not _horizontal_wrap_enabled:
+		return x
+	var center_x := _world_bounds.position.x + _world_bounds.size.x * 0.5
+	return center_x + fposmod(x - center_x + _horizontal_wrap_period_x * 0.5, _horizontal_wrap_period_x) - _horizontal_wrap_period_x * 0.5
