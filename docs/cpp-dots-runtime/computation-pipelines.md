@@ -22,7 +22,10 @@
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + GDScript stage machine | `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | `_phys_stage` 状态机、pixel commit、fallback。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
-| Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload。 |
+| Weather LUT upload | GDScript upload + C++/GDScript byte source | `encode_cell_luts`（初始/完整 LUT 字节来源） | `weather_refresh` 提交点从 weather SoA 直接编码 RGBA8 并维护 prev/current 双缓冲。 |
+
+| Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload；不再负责 weather_lut 发布。 |
+
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
 | Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish | `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
@@ -755,6 +758,12 @@ Weather field geometry contract (2026-06-23):
 - 频闪修复：`weather_layer.process_priority=1000` 让其 _process 最晚执行 → 同帧检测到 LUT 换帧并归零 lerp，消除「curr 已换、lerp 未重置」的一帧错位频闪。
 
 **GDScript fallback 现状（重要）**：ψ、stratiform、水汽抽吸、Stage 14 耦合均为 **C++-only**（`run_weather_field_solve_pass` 内）。`field_solver.gd` fallback 仅含 Stage 11 前物理 + precip 平滑镜像，**不含 ψ 相关**。C++ DLL 不可用时天气退化为「无移动系统、无层状降水」的旧版——C++ 权威路径罕见失效，可接受；严格双镜像（IRON RULE）此处**有意未做**，因 ψ 架构复杂度高、收益(fallback 罕用)低。`run_synoptic_advance_pass`（C++ 方法 + weather_system/map_generator 转发）是 ψ 内联化前的独立 pass 实现，现为**死代码保留**（备用，未接调度）。
+
+- **Stage 16 方案③ vapor 平流主导（atmospheric river，2026-06-24，⚠ water budget 重标定起点）**：突破「降水 = 抬升 × 水汽、水汽锚定固定蒸发源」的架构极限。把 vapor 从半诊断场改为**平流主导的预报量**（水汽连续方程 ∂q/∂t = −∇·(q·v) + E − P 的一阶迎风工程实现）：`field_advect_vapor` 0.82→0.95、平流权重 `adv_w_v` floor 0.55→0.75、`field_advect_steps` 4→6（clamp 全链 4→8：climate_profile / map_generator / weather_system 三处）。效果：水汽主要由上风输送决定、蒸发源退化为「注入点」、降水/凝结为汇 → 水汽随风成河（atmospheric river），移动的 ψ 涡旋在水汽河上沿途有水可榨成雨 → **降水随系统移动**（物理涌现，最真实）。**代价**：这是 water budget 的重标定起点——内陆湿度、雨热相位、季节、湖山冷区可能随之变化，需录 CSV 迭代标定（vapor 随风成河?移动 lag 位移增大?内陆是否失控?）。
+
+- **Stage 16b 压静止 lift + ψ 主导（移动落地，2026-06-24）**：方案③ 打通水汽锚定后(vapor 成河→处处有水)，移动的最后一公里:压低**静止** lift 让**移动的 ψ** 主导降水空间分布。压静止:`OMEGA_ASCENT_GAIN` 0.65→0.40(ITCZ 雨带弱化但保留)、`field_thermal_conv_precip` 1.10→0.75(按温度锚定的对流雨弱化);提 ψ:`syn_base_lift` 1.15→1.55、psi_lift 进 cond 0.90→1.20 / trig 1.10→1.50。**结果:云距平位移首次明显非零(lag8 ≈2.36 格、lag12 27% 帧非零)——天气真正随系统移动**(多系统生消+平流混合,非单向平移,接近真实大气)。气候保持健康:赤道带/全球降水比 **1.68**(ITCZ 保留)、雨热 71/14/15、陆wet ~25%、mean ≈0.011。收尾标定:`weather_extreme_precip_softness` 0.32→0.45(恢复方案③ 后偏低的暴雨,只放大峰值不增频率)、`syn_base_lift` 1.70→1.55(缓过湿)。
+
+**「让天气真实+移动」收官状态(Stage 9–16b)**:雨热多样(同期 71%/不同期 14%/海洋型 15%)、湖山冷区有雨、暴雨恢复、空间/时间平滑(云量 EMA + 渲染帧间插值)、**天气随移动系统平移**(ψ 内联全场推进 + vapor 平流主导/atmospheric river + 压静止 lift)。全部为 **C++ 权威路径 + GDScript/shader 渲染**;ψ/stratiform/水汽抽吸/平流主导均 **C++-only**(fallback 退化为旧天气)。
 
 ### 半真实大气模型（2026-06-19）
 

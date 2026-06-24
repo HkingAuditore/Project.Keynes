@@ -147,6 +147,11 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
     （`cell_weather_type/cell_weather_intensity/cell_weather_cloud/cell_weather_precip`）逐格量化，
     供 `weather_overlay.gdshader` 经 cell-index 间接寻址驱动云分布。weather slot 是**软依赖**——
     天气未初始化（slot size < n_cells）时该段保持全 0（云不显示），enum/dyn/eco 不受影响、不整张回退。
+    运行期发布由 `weather_refresh` 在 commit/merged/direct 完成点内联执行；
+    `dynamic_visual_atlas_upload` 刷新 enum/dyn/eco 时不再更新时间戳，避免 visual LUT stride/phase 与
+    weather commit cadence 不一致时重置 `weather_lerp`。
+
+
   - LUT/map-index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
     无 `flush`/`snapshot` 需求；C++ 直接把字节缓冲塞进返回 Dict，GDScript 端零额外 marshalling 拷贝
     （CoW 引用传递）。

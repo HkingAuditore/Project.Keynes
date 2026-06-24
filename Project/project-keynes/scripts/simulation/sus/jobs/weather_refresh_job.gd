@@ -160,6 +160,27 @@ func _weather_rt_log(ctx: SusTickContext, stage_name: String, detail: String = "
 	])
 
 
+func _publish_weather_lut_inline(ctx: SusTickContext, report: Dictionary, source: String) -> void:
+	if generator == null or not generator.has_method("publish_weather_lut_after_weather_commit"):
+		report["weather_lut_reason"] = "missing_publish_facade"
+		return
+	var t_lut_us: int = Time.get_ticks_usec()
+	var lut_report: Dictionary = generator.publish_weather_lut_after_weather_commit(map, world)
+	var lut_ms: float = float(Time.get_ticks_usec() - t_lut_us) / 1000.0
+	report["weather_lut_ms"] = lut_ms
+	report["weather_lut_published"] = bool(lut_report.get("weather_lut_published", false))
+	report["weather_lut_changed"] = bool(lut_report.get("weather_lut_changed", false))
+	report["weather_lut_reason"] = str(lut_report.get("weather_lut_reason", lut_report.get("reason", "")))
+	print("[weather-lut][inline] tick=%d source=%s published=%s changed=%s reason=%s ms=%.3f" % [
+		ctx.tick_index if ctx != null else -1,
+		source,
+		str(report["weather_lut_published"]),
+		str(report["weather_lut_changed"]),
+		str(report["weather_lut_reason"]),
+		lut_ms,
+	])
+
+
 # ─── DataCore: weather component 注册与缓存（Task 8） ───────────────────
 # 由 SusScheduler.bind_world → SusJob.bind_world → _on_world_bound 链路触发。
 # 注册以下：
@@ -779,6 +800,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 		}
 		merged_report.merge(_last_fronts_diff_report, true)
+		_publish_weather_lut_inline(ctx, merged_report, "merged")
 		_weather_rt_log(ctx, "merged_done", "elapsed=%.3f changed_slots=%d" % [
 			merged_elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
 		])
@@ -866,6 +888,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			var t_commit_us: int = Time.get_ticks_usec()
 			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
 			timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
+			var summary_lut_report: Dictionary = {}
+			_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
 			_round_fronts = committed_fronts
 			# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
 			_round_stage = 3
@@ -979,6 +1003,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 	}
 	direct_report.merge(_last_fronts_diff_report, true)
+	_publish_weather_lut_inline(ctx, direct_report, "direct")
 	_weather_rt_log(ctx, "direct", "elapsed=%.3f changed_slots=%d" % [
 		elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
 	])

@@ -110,6 +110,9 @@ var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
 var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
 var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认 0.5s)
 var _weather_lut_dims: Vector2i = Vector2i.ZERO
+var _wx_lut_diag_count: int = 0
+var _wx_lut_diag_last_msec: int = -1000000
+
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
 
 # overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
@@ -200,6 +203,15 @@ func _process(delta: float) -> void:
 			if _wx_commit_interval_usec > 1.0:
 				_wlerp = clampf(float(_now_us - _wx_lut_t0_usec) / _wx_commit_interval_usec, 0.0, 1.0)
 			_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
+			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
+				_wx_lut_diag_count += 1
+				_wx_lut_diag_last_msec = _now_us / 1000
+				print("[weather-layer][lut] #%d update_usec=%d last_usec=%d lerp=%.3f prev_tex=%s curr_tex=%s dims=%s visible=%s" % [
+					_wx_lut_diag_count, _upd, _wx_lut_last_usec, _wlerp,
+					str(_world_ref.weather_lut_prev_tex != null), str(_world_ref.weather_lut_tex != null),
+					str(_weather_lut_dims), str(visible),
+				])
+
 		# Drift-debug：每秒采样 visual_snapshots[0] 的 center，看 lerp 是否真的在推进。
 		if DRIFT_DEBUG_LOG and _world_time - _drift_debug_last_log_time >= 1.0:
 			_drift_debug_last_log_time = _world_time

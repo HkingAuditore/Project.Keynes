@@ -692,7 +692,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 半真实大气调参（2026-06-19）：把"逐格稳态场"调成"随风平流的动态大气"。
 # advect_steps 上限 2→4、默认 3→4(2026-06-21 让天气流动)：同日上风采样更远(每 tick 最多 4 格)，
 # 配合 vapor base_m 回归下调，让远方水汽随风平流更深入内陆 → 移动云带、打破永雨永旱。
-@export_range(0, 4, 1) var weather_field_advect_steps: int = 4
+@export_range(0, 8, 1) var weather_field_advect_steps: int = 6  # 方案③ 4→6 水汽长距离随风输送(atmospheric river)
 @export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
 # condensation_gain：cloud_source 主项(condense_gate×本系数)。脚本默认 0.42 经 field_solver 云合成 ~1.5×
 # 放大(cloud_water 自反馈 1.26× + cloud=source*0.62+water*0.70 双重计数)→ cloud 稳态≈0.72(满屏云)。
@@ -721,7 +721,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.65
 @export_range(0.0, 1.0, 0.01) var weather_lake_evap_scale: float = 0.85  # Stage14d 0.35→0.85 湖面蒸发接近海面→湖区+下风有水汽可成雨(原0.35过低致湖泊降水不明显)
 @export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.16
-@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.32  # Stage10b: 0.20→0.32 少压缩暴雨峰→恢复大雨/暴雨概率(#2)
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.45  # 收尾标定: 0.32→0.45 进一步少压缩暴雨峰→恢复方案③后偏低的暴雨(只放大已下大雨的格,不增降雨频率)
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.22
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.18

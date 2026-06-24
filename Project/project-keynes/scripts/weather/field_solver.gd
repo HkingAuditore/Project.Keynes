@@ -350,6 +350,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	var soa_sea_ice: PackedFloat32Array = map.sea_ice_frac_arr
 	var soa_convergence_in: PackedFloat32Array = map.weather_convergence_arr
 	var prev_cloud_water_arr: PackedFloat32Array = map.weather_cloud_water_arr
+	var prev_cloud_arr: PackedFloat32Array = map.weather_cloud_arr  # Stage15 云量 EMA 用上帧云量
 	var temp_anom_arr: PackedFloat32Array = _field_slice_temp_anom if _field_slice_temp_anom.size() == n_cells else map.temperature_transport_anomaly_arr
 	# ─── 平流式湿团模型常量 (2026-06-21, 镜像 world_ext.cpp 默认值; 实机校准定稿后再旋钮化) ──
 	# 2026-06-21 实机迭代(镜像 world_ext.cpp)：第一轮(降 RH_CONDENSE 0.55→0.32 + 提 base/auto)经
@@ -357,7 +358,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 	# 降低【全局】凝结门槛→水汽场被过度凝结+降水抽干，内陆(输送末端)枯竭最重；增雨靠多凝结是零和陷阱。
 	# 第二轮：RH_CONDENSE 回滚 0.55 止抽干，仅保留 BASE_FRAC 0.50 + AUTOCONVERSION 0.16 提 trig
 	# (离线验证不抽干 vapor)，隔离验证 trig 提升单独效果。下一轮若不足走开源(提 land_evap)而非加速循环。
-	const ADV_VAPOR := 0.82
+	const ADV_VAPOR := 0.95  # 同步C++ 方案③ vapor 平流主导
 	const ADV_CLOUD := 0.94
 	const RH_CONDENSE := 0.55
 	const STATIC_COND_W := 1.0
@@ -372,11 +373,11 @@ func run_slice(cell_budget: int) -> Dictionary:
 	const CLOUD_REEVAP := 0.18   # 2026-06-22 雨云化:0.06→0.18 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
 	const THERMAL_CONV_COND := 1.9   # 2026-06-22: 1.5→1.9 增内陆对流凝结(抬 cloud_water 上限)
-	const THERMAL_CONV_PRECIP := 1.1 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
+	const THERMAL_CONV_PRECIP := 0.75  # 同步C++ 压对流雨 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
 	# ─── climate-realism Stage1 (2026-06-23): Hadley/Ferrel 垂直运动项 omega ──
 	# 键在「热赤道」相对纬度(随季迁移、无直线条带): ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水。
 	# lat_te_norm 由 begin_slice 按 zonal-max 温度逐 tick 计算。镜像 world_ext.cpp。
-	const OMEGA_ASCENT_GAIN := 0.65    # ITCZ(|dlat|<~12°)/风暴轴(|dlat|~48-62°)上升带成雨增益
+	const OMEGA_ASCENT_GAIN := 0.40  # 同步C++ 压静止lift(弱化ITCZ)    # ITCZ(|dlat|<~12°)/风暴轴(|dlat|~48-62°)上升带成雨增益
 	const OMEGA_DESCENT_GAIN := 0.70   # 副热带(|dlat|~22-34°)下沉带降水抑制
 	const OMEGA_DESCENT_COND := 0.45   # 副热带下沉抑制凝结→晴空(利于热浪/旱灾)
 	# ─── climate-realism Stage6 (2026-06-23): 湿度充放电 recharge-discharge ─────
@@ -523,7 +524,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 
 		# 平流式湿团：vapor 去 base_m 锚定 → 本地与上风加权平流(强度随风速) + 邻域扩散 + 蒸发源。
 		# 允许短暂过饱和(不夹 cap 上限)，由后续凝结消耗 → 随风移动的湿团。镜像 world_ext.cpp。
-		var adv_w_v: float = minf(ADV_VAPOR * (0.55 + 0.45 * wind_mag), 0.97)
+		var adv_w_v: float = minf(ADV_VAPOR * (0.75 + 0.25 * wind_mag), 0.99)  # 同步C++ vapor 平流主导
 		var vapor: float = lerpf(prev_vapor[i], advected_vapor, adv_w_v)
 		vapor = lerpf(vapor, neighbor_vapor, _weather_system._field_diffusion)
 		vapor = maxf(0.0, vapor + source_local + source_upwind * wind_mag * 0.25)
@@ -609,8 +610,12 @@ func run_slice(cell_budget: int) -> Dictionary:
 
 		# 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
 		var sup: float = maxf(relative_humidity - RH_CONDENSE, 0.0)
+		# 注:ψ(synoptic eddy)/base_lift/水汽辐合抽吸/ψ 主导降水 = C++-only(run_weather_field_solve_pass 内联全场推进),
+		# 本 GDScript fallback 【不含 ψ】→ 退化为"无移动天气系统"的旧版(整数 hash 难 bit-perfect 双镜像,故有意未镜像)。
+		# 其余确定性物理(omega/平流主导/对流/stratiform/云EMA/precip平滑/湖山冷区)已与 C++ 同步。
 		var cond_force: float = clampf(sup * STATIC_COND_W + lift_pos * LIFT_COND_GAIN + convergence * CONV_COND_GAIN + frontogenesis * 1.35 + convective * THERMAL_CONV_COND + ocean_convective * 0.90 + stratiform * 0.75, 0.0, 1.0)  # Stage11 层状凝结
 		cond_force *= 1.0 - post_rain_subsidence * 0.45
+
 		cond_force *= 1.0 - omega_descent * OMEGA_DESCENT_COND   # 副热带下沉抑制凝结
 		var condensation: float = vapor * cond_force * CONDENSE_RATE
 		if lift < 0.0:
@@ -741,6 +746,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if ocean_convective > 0.0:
 			cloud_floor = maxf(cloud_floor, 0.18 + ocean_convective * 0.22)
 		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
+		if prev_cloud_arr.size() == n_cells:
+			cloud = lerpf(prev_cloud_arr[i], cloud, 0.42)  # Stage15 云量时间 EMA(减闪烁) 镜像 C++ field_cloud_inertia
 
 		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
 		if not _weather_system._is_precip_weather_type(wt) and precip > 0.0:
