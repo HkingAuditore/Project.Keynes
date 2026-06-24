@@ -952,7 +952,12 @@ func commit() -> Array[WeatherFront]:
 	var commit_path: String = "gdscript"
 	var commit_loop_ms: float = 0.0
 	var native_commit_done: bool = false
+	var native_weather_lut: PackedByteArray = PackedByteArray()
+	var native_weather_lut_changed: bool = false
+	var native_weather_lut_dirty_count: int = 0
+	var native_weather_lut_full_rebuild: bool = false
 	var commit_publish_verified: bool = false
+
 	var commit_publish_repaired: bool = false
 	var commit_visible_init_count: int = 0
 	var commit_publish_reason: String = ""
@@ -978,7 +983,12 @@ func commit() -> Array[WeatherFront]:
 			native_commit_done = true
 			_field_slice_results_in_soa = true
 			commit_path = str(commit_rc.get("path", "gdext_commit"))
+			native_weather_lut = commit_rc.get("weather_lut", PackedByteArray())
+			native_weather_lut_changed = bool(commit_rc.get("weather_lut_changed", false))
+			native_weather_lut_dirty_count = int(commit_rc.get("weather_lut_dirty_count", 0))
+			native_weather_lut_full_rebuild = bool(commit_rc.get("weather_lut_full_rebuild", false))
 			weather_dirty_count = int(commit_rc.get("weather_dirty_count", 0))
+
 			water_budget_error_acc = float(commit_rc.get("water_budget_error", 0.0)) * float(maxi(commit_n, 1))
 			commit_loop_ms = float(commit_rc.get("commit_loop_ms", commit_rc.get("elapsed_ms", 0.0)))
 			convergence_delta_count = int(commit_rc.get("weather_convergence_dirty_count", 0))
@@ -990,8 +1000,13 @@ func commit() -> Array[WeatherFront]:
 			commit_publish_reason = str(visible_check.get("reason", ""))
 			if not commit_publish_verified:
 				native_commit_done = false
+				native_weather_lut = PackedByteArray()
+				native_weather_lut_changed = false
+				native_weather_lut_dirty_count = 0
+				native_weather_lut_full_rebuild = false
 				_field_slice_results_in_soa = false
 				commit_publish_repaired = true
+
 				commit_path = "gdext_commit_repaired_gdscript_publish"
 				weather_dirty_count = 0
 				water_budget_error_acc = 0.0
@@ -1313,7 +1328,12 @@ func commit() -> Array[WeatherFront]:
 		"convergence_published": _field_slice_refresh_convergence \
 				and (_field_slice_native_convergence_boost or commit_convergence_ms > 0.0 or convergence_delta_count > 0),
 		"weather_dirty_count": weather_dirty_count,
+		"weather_lut": native_weather_lut,
+		"weather_lut_changed": native_weather_lut_changed,
+		"weather_lut_dirty_count": native_weather_lut_dirty_count,
+		"weather_lut_full_rebuild": native_weather_lut_full_rebuild,
 		"water_budget_error": water_budget_error_acc / float(maxi(commit_n, 1)),
+
 		"active_weather_ratio": float(weather_dirty_count) / float(maxi(commit_n, 1)),
 		"weather_tick_ms": last_solve_ms + distribute_ms_field + summary_ms + cyclone_ms_field,
 	}

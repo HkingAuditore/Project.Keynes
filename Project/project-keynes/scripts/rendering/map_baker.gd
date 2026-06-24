@@ -4403,7 +4403,34 @@ func _publish_weather_lut_bytes(data: PackedByteArray, world: WorldData, lw: int
 	return report
 
 
+func publish_weather_lut_bytes_from_native(data: PackedByteArray, world: WorldData, force_changed: bool = false) -> Dictionary:
+	var report: Dictionary = {
+		"path": "weather_lut_native_upload",
+		"fallback": false,
+		"reason": "",
+		"elapsed_ms": 0.0,
+		"weather_lut_published": false,
+		"weather_lut_changed": false,
+	}
+	var t0: int = Time.get_ticks_usec()
+	if world == null or data.is_empty():
+		report.fallback = true
+		report.reason = "missing_world_or_data"
+		return report
+	var lw: int = world.lut_dims.x
+	var lh: int = world.lut_dims.y
+	if lw <= 0 or lh <= 0 or data.size() != lw * lh * 4:
+		report.fallback = true
+		report.reason = "invalid_lut_dims_or_size"
+		return report
+	_weather_lut_bytes_cache = data.duplicate()
+	report.merge(_publish_weather_lut_bytes(data, world, lw, lh, force_changed), true)
+	report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
+	return report
+
+
 func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Dictionary:
+
 	var report: Dictionary = {
 		"path": "weather_lut_upload",
 		"fallback": false,
