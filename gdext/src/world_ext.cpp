@@ -3967,7 +3967,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // 温度逐 tick 计算并经 knobs 传入；Hadley/Ferrel omega 项消费。镜像 field_solver.gd。
     const float weather_lat_te_norm = knobs.has("weather_lat_te_norm")
                                         ? float(knobs["weather_lat_te_norm"]) : 0.5f;
-    constexpr float OMEGA_ASCENT_GAIN  = 0.65f; // ITCZ/风暴轴上升带成雨增益
+    constexpr float OMEGA_ASCENT_GAIN  = 0.40f; // 方案③+ 0.65→0.40 弱化 ITCZ 静止雨带→降水去地理锚定、让移动 ψ 主导
     constexpr float OMEGA_DESCENT_GAIN = 0.70f; // 副热带下沉带降水抑制
     constexpr float OMEGA_DESCENT_COND = 0.45f; // 副热带下沉抑制凝结→晴空
     // Stage6/6c (2026-06-23): 湿度充放电 + 对流抑制记忆。镜像 field_solver.gd。
@@ -3994,7 +3994,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float syn_front_enh = knobs.has("weather_synoptic_front_enh") ? float(knobs["weather_synoptic_front_enh"]) : 0.70f; // ψ>0 在锋面额外增雨倍率
     // Stage14「激进推 ψ 主导」：ψ>0(低压)强抬升成为降水主驱动→云雨成片随 ψ 平移。base 大幅提高让移动的
     // ψ 涡旋盖过静止地理强迫(omega/对流/辐合)。代价:过湿+扰动雨热(用户已接受)。
-    const float syn_base_lift = knobs.has("weather_synoptic_base_lift") ? float(knobs["weather_synoptic_base_lift"]) : 1.15f;
+    const float syn_base_lift = knobs.has("weather_synoptic_base_lift") ? float(knobs["weather_synoptic_base_lift"]) : 1.55f;
     // Stage13b ψ 演化 knob（内联全场推进用：见 slot 指针后、主循环前的全场 ψ pass）。
     const int   syn_adv_cells = knobs.has("weather_synoptic_adv_cells") ? int(knobs["weather_synoptic_adv_cells"]) : 3;
     const float syn_baroclinic= knobs.has("weather_synoptic_baroclinic")? float(knobs["weather_synoptic_baroclinic"]): 0.40f;
@@ -4123,7 +4123,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // 第二轮：rh_condense 回滚 0.55(止抽干)，仅保留 base_frac 0.50 + autoconv 0.16 提背景 trig
     // (离线验证提 trig 不抽干 vapor)，隔离验证"trig 提升单独是否安全改善内陆"。下一轮若仍不足，
     // 走开源(提 land_evapotranspiration_gain 增内陆本地水汽)而非继续加速循环。
-    const float field_advect_vapor     = knobs.has("field_advect_vapor")     ? float(knobs["field_advect_vapor"])     : 0.82f;
+    const float field_advect_vapor     = knobs.has("field_advect_vapor")     ? float(knobs["field_advect_vapor"])     : 0.95f;  // 方案③ 0.82→0.95 vapor 平流主导(水汽随风成河,蒸发源退化为注入点)
     const float field_advect_cloud     = knobs.has("field_advect_cloud")     ? float(knobs["field_advect_cloud"])     : 0.94f;
     const float field_rh_condense      = knobs.has("field_rh_condense")      ? float(knobs["field_rh_condense"])      : 0.55f;
     const float field_static_cond_w    = knobs.has("field_static_cond_w")    ? float(knobs["field_static_cond_w"])    : 1.00f;
@@ -4132,7 +4132,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_conv_cond_gain   = knobs.has("field_conv_cond_gain")   ? float(knobs["field_conv_cond_gain"])   : 1.00f;
     // 热力对流(大陆夏季雷暴)：地表加热+本地水汽驱动凝结/降水，修复内陆 rh<<静力阈的"水汽到了却凝不成雨"死结。
     const float field_thermal_conv_cond   = knobs.has("field_thermal_conv_cond")   ? float(knobs["field_thermal_conv_cond"])   : 1.90f; // 2026-06-22: 1.50→1.90 增内陆对流凝结(抬 cloud_water 上限)
-    const float field_thermal_conv_precip = knobs.has("field_thermal_conv_precip") ? float(knobs["field_thermal_conv_precip"]) : 1.10f; // 2026-06-22: 0.60→1.10 增内陆对流成雨(主力,内陆湿气→雨)
+    const float field_thermal_conv_precip = knobs.has("field_thermal_conv_precip") ? float(knobs["field_thermal_conv_precip"]) : 0.75f; // 方案③+ 1.10→0.75 弱化按温度锚定的对流雨→让移动 ψ 主导
     const float field_autoconversion   = knobs.has("field_autoconversion")   ? float(knobs["field_autoconversion"])   : 0.16f;
     const float field_precip_base_frac = knobs.has("field_precip_base_frac") ? float(knobs["field_precip_base_frac"]) : 0.12f;
     const float field_lift_precip_gain = knobs.has("field_lift_precip_gain") ? float(knobs["field_lift_precip_gain"]) : 0.45f; // Stage14e 0.25→0.45 迎风坡(山地)致雨增强→不再绕山
@@ -4568,8 +4568,10 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
 
         // 平流式湿团：vapor 去 base_m 锚定 → 本地与上风加权平流(强度随风速) + 邻域扩散 + 蒸发源。
         // 允许短暂过饱和(不夹 cap 上限)，由后续凝结消耗 → 随风移动的湿团。镜像 field_solver.gd。
-        float adv_w_v = field_advect_vapor * (0.55f + 0.45f * wind_mag);
-        if (adv_w_v > 0.97f) adv_w_v = 0.97f;
+        // 方案③ vapor 全预报化:平流主导(floor 0.55→0.75,低风也强输送)→水汽主要由上风决定=连续方程平流项,
+        // 蒸发只是注入、降水/凝结是汇,水汽随风成河(atmospheric river)→ψ 在水汽河上移动沿途有水可榨成雨。
+        float adv_w_v = field_advect_vapor * (0.75f + 0.25f * wind_mag);
+        if (adv_w_v > 0.99f) adv_w_v = 0.99f;
         float vapor = PV[i] + (advected_vapor - PV[i]) * adv_w_v;
         vapor = vapor + (neighbor_vapor - vapor) * field_diffusion;
         vapor += source_local + source_upwind * wind_mag * 0.25f;
@@ -4717,7 +4719,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                          + convective * field_thermal_conv_cond
                          + ocean_convective * 0.90f
                          + stratiform * 0.75f
-                         + psi_lift * 0.90f;     // Stage14 ψ 致凝结(移动涡旋成云)
+                         + psi_lift * 1.20f;     // 方案③+ 0.90→1.20 ψ 致凝结(移动涡旋成云,主导)
         if (cond_force < 0.0f) cond_force = 0.0f;
         else if (cond_force > 1.0f) cond_force = 1.0f;
         cond_force *= psi_supp;                  // Stage14 ψ<0 压低凝结
@@ -4769,7 +4771,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         trig += convective * field_thermal_conv_precip;   // 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
         trig += ocean_convective * 0.95f;
         trig += stratiform * 0.80f;   // Stage11 层状降水高效成雨(冷/高/水区,旁路 autoconv)→修 #4湖/#5a雪/#6山
-        trig += psi_lift * 1.10f;     // Stage14 ψ 致雨主驱动(高效旁路 autoconv)→降水成片随 ψ 平移
+        trig += psi_lift * 1.50f;     // 方案③+ 1.10→1.50 ψ 致雨主驱动(降水成片随 ψ 平移,盖过静止 lift)
         trig += oro_elev * 0.45f * wf_smoothstep(0.02f, 0.10f, cloud_water);  // Stage14g 高地形转化山地已有云水→山地多雨(瓶颈是转化率非水汽)
         trig *= psi_supp;             // Stage14 ψ<0 压低降水→移动晴空
         if (trig < 0.0f) trig = 0.0f;

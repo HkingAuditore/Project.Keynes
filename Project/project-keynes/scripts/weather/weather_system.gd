@@ -111,7 +111,7 @@ var _ocean_spawn_bias: float = 0.0
 # each hex owns vapor/cloud/precip/instability/type/intensity, and legacy fronts
 # are rebuilt as a compact visual summary after the field solve.
 var _weather_field_enabled: bool = true
-var _field_advect_steps: int = 4
+var _field_advect_steps: int = 6  # 方案③ 默认 4→6(atmospheric river)
 var _field_diffusion: float = 0.04
 var _field_condensation_gain: float = 0.42
 # ⚠ DEPRECATED 僵尸 knob（2026-06-20 根因重构）：precip 已改 EMA 惯性，C++ 与 GDScript
@@ -1511,7 +1511,7 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 	if cp.get("weather_field_enabled") != null:
 		_weather_field_enabled = bool(cp.weather_field_enabled)
 	if cp.get("weather_field_advect_steps") != null:
-		_field_advect_steps = clampi(int(cp.weather_field_advect_steps), 0, 4)
+		_field_advect_steps = clampi(int(cp.weather_field_advect_steps), 0, 8)  # 方案③ 上限 4→8
 	if cp.get("weather_field_diffusion") != null:
 		_field_diffusion = clampf(float(cp.weather_field_diffusion), 0.0, 0.5)
 	if cp.get("weather_condensation_gain") != null:
@@ -3712,7 +3712,7 @@ func configure_weather_field(
 		rain_shadow_drying: float = 0.35,
 		vapor_transport_gain: float = 0.75) -> void:
 	_weather_field_enabled = enabled
-	_field_advect_steps = clampi(advect_steps, 0, 4)
+	_field_advect_steps = clampi(advect_steps, 0, 8)  # 方案③ 上限 4→8
 	_field_diffusion = clampf(diffusion, 0.0, 0.5)
 	_field_condensation_gain = maxf(0.0, condensation_gain)
 	_field_precip_decay = clampf(precip_decay, 0.0, 1.0)

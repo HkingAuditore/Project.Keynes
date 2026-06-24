@@ -489,6 +489,8 @@ const _INITIAL_PHYSICAL_SEASON_PHASE: float = 1.5
 
 
 var _prev_weather_lut_bytes: PackedByteArray = PackedByteArray()  # 帧间插值:上一次 weather LUT 字节
+var _weather_lut_bytes_cache: PackedByteArray = PackedByteArray()  # weather-only 增量发布缓存
+
 
 func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> void:
 	_initial_physical_deferred = false
@@ -4249,7 +4251,7 @@ func _ensure_cell_lut_dims(map: MapData, world: WorldData) -> void:
 # eco=_ecology_visual_signature/pk_atlas_sig_ecology），保证间接寻址与旧 atlas
 # bit-equivalent。cache_valid=true 时 C++ 端按 prev 推进 eco transition_age；
 # 初次 bake 传 false（transition 归零）。daily 刷新走 refresh_cell_luts_daily。
-func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -> Dictionary:
+func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, publish_weather_lut: bool = true) -> Dictionary:
 	var report: Dictionary = {
 		"path": "gdscript",
 		"fallback": true,
@@ -4257,7 +4259,10 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 		"elapsed_ms": 0.0,
 		"lut_encode_path": "none",
 		"lut_snow_source": "none",
+		"weather_lut_published": false,
+		"weather_lut_changed": false,
 	}
+
 	if map == null or world == null:
 		report.reason = "missing_map_or_world"
 		return report
@@ -4303,19 +4308,14 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-				# weather LUT（软依赖）：C++ 未就绪/天气未初始化时可能缺省，缺则保留旧纹理。
+				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 WeatherLutUploadSystem 才更新时间戳。
 				var wlut = out.get("weather_lut", null)
-				if wlut is PackedByteArray:
-					# 帧间插值双缓冲：上次字节→prev tex，本次→curr，本次存为下次 prev(首帧无 prev→prev=curr)。
-					if _prev_weather_lut_bytes.size() == (wlut as PackedByteArray).size() and _prev_weather_lut_bytes.size() > 0:
-						world.weather_lut_prev_tex = _lut_tex_from_data(_prev_weather_lut_bytes, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
-					else:
-						world.weather_lut_prev_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
-					world.weather_lut_tex = _lut_tex_from_data(wlut, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
-					_prev_weather_lut_bytes = wlut
-					world.weather_lut_update_usec = Time.get_ticks_usec()  # 帧间插值:标记 LUT 换帧时刻
+				if publish_weather_lut and wlut is PackedByteArray:
+					var wx_report: Dictionary = _publish_weather_lut_bytes(wlut, world, lw, lh)
+					report.merge(wx_report, true)
 				return report
-	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override)
+	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut)
+
 	report["lut_encode_path"] = "gdscript"
 	report["path"] = "gdscript"
 	report["fallback"] = true
@@ -4324,12 +4324,14 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false) -
 
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
 func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
-		snow_cover_override: PackedFloat32Array = PackedFloat32Array()) -> void:
+		snow_cover_override: PackedFloat32Array = PackedFloat32Array(),
+		publish_weather_lut: bool = true) -> void:
 	var slots: int = lw * lh
 	var enum_data := PackedByteArray(); enum_data.resize(slots * 3)
 	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
 	var eco_data := PackedByteArray(); eco_data.resize(slots * 4)
 	var weather_data := PackedByteArray(); weather_data.resize(slots * 4)
+
 	for cell in map.all_cells():
 		if cell == null:
 			continue
@@ -4363,7 +4365,8 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-	world.weather_lut_tex = _lut_tex_from_data(weather_data, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
+	if publish_weather_lut:
+		_publish_weather_lut_bytes(weather_data, world, lw, lh)
 
 
 func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existing: ImageTexture) -> ImageTexture:
@@ -4374,14 +4377,132 @@ func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existin
 	return ImageTexture.create_from_image(img)
 
 
+func _publish_weather_lut_bytes(data: PackedByteArray, world: WorldData, lw: int, lh: int, force_changed: bool = false) -> Dictionary:
+
+	var report: Dictionary = {
+		"weather_lut_published": false,
+		"weather_lut_changed": false,
+		"weather_lut_reason": "",
+	}
+	if world == null or data.is_empty() or lw <= 0 or lh <= 0:
+		report.weather_lut_reason = "invalid_weather_lut_args"
+		return report
+	var has_current_tex: bool = world.weather_lut_tex != null and world.weather_lut_tex.get_size() == Vector2(float(lw), float(lh))
+	var changed: bool = (not has_current_tex) or _prev_weather_lut_bytes.size() != data.size() or _prev_weather_lut_bytes != data
+	if not changed:
+		report.weather_lut_reason = "unchanged"
+		return report
+	var prev_bytes: PackedByteArray = _prev_weather_lut_bytes if _prev_weather_lut_bytes.size() == data.size() and _prev_weather_lut_bytes.size() > 0 else data
+	world.weather_lut_prev_tex = _lut_tex_from_data(prev_bytes, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
+	world.weather_lut_tex = _lut_tex_from_data(data, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
+	_prev_weather_lut_bytes = data.duplicate()
+	world.weather_lut_update_usec = Time.get_ticks_usec()
+	report.weather_lut_published = true
+	report.weather_lut_changed = true
+	report.weather_lut_reason = "changed"
+	return report
+
+
+func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Dictionary:
+	var report: Dictionary = {
+		"path": "weather_lut_upload",
+		"fallback": false,
+		"reason": "",
+		"elapsed_ms": 0.0,
+		"weather_lut_published": false,
+		"weather_lut_changed": false,
+		"weather_lut_dirty_count": 0,
+		"weather_lut_full_rebuild": false,
+	}
+	var t0: int = Time.get_ticks_usec()
+	if map == null or world == null:
+		report.fallback = true
+		report.reason = "missing_map_or_world"
+		return report
+	if world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
+		_ensure_cell_lut_dims(map, world)
+	var lw: int = world.lut_dims.x
+	var lh: int = world.lut_dims.y
+	if lw <= 0 or lh <= 0:
+		report.fallback = true
+		report.reason = "invalid_lut_dims"
+		return report
+	var n_cells: int = map.cell_count()
+	var slots: int = lw * lh
+	if n_cells <= 0 or slots < n_cells:
+		report.fallback = true
+		report.reason = "invalid_cell_count_or_slots"
+		return report
+	var total_bytes: int = slots * 4
+	var full_rebuild: bool = _weather_lut_bytes_cache.size() != total_bytes
+	if full_rebuild:
+		_weather_lut_bytes_cache = PackedByteArray()
+		_weather_lut_bytes_cache.resize(total_bytes)
+	report.weather_lut_full_rebuild = full_rebuild
+	var type_arr: PackedByteArray = map.weather_type_arr
+	var intensity_arr: PackedFloat32Array = map.weather_intensity_arr
+	var cloud_arr: PackedFloat32Array = map.weather_cloud_arr
+	var precip_arr: PackedFloat32Array = map.weather_precip_arr
+	var dirty_mask: PackedByteArray = map.weather_dirty_mask
+	var has_soa: bool = type_arr.size() >= n_cells and intensity_arr.size() >= n_cells \
+			and cloud_arr.size() >= n_cells and precip_arr.size() >= n_cells
+	if not has_soa:
+		full_rebuild = true
+		report.weather_lut_full_rebuild = true
+	var changed: bool = full_rebuild
+	var dirty_count: int = 0
+	if has_soa:
+		for ci in range(n_cells):
+			if not full_rebuild and (dirty_mask.size() < n_cells or int(dirty_mask[ci]) == 0):
+				continue
+			dirty_count += 1
+			var w4: int = ci * 4
+			var b0: int = int(type_arr[ci]) & 0xFF
+			var b1: int = _q01_byte(float(intensity_arr[ci]))
+			var b2: int = _q01_byte(float(cloud_arr[ci]))
+			var b3: int = _q01_byte(float(precip_arr[ci]))
+			if _weather_lut_bytes_cache[w4] != b0 or _weather_lut_bytes_cache[w4 + 1] != b1 \
+					or _weather_lut_bytes_cache[w4 + 2] != b2 or _weather_lut_bytes_cache[w4 + 3] != b3:
+				changed = true
+				_weather_lut_bytes_cache[w4] = b0
+				_weather_lut_bytes_cache[w4 + 1] = b1
+				_weather_lut_bytes_cache[w4 + 2] = b2
+				_weather_lut_bytes_cache[w4 + 3] = b3
+	else:
+		for cell in map.all_cells():
+			if cell == null:
+				continue
+			var ci: int = int(cell.index)
+			if ci < 0 or ci >= slots:
+				continue
+			dirty_count += 1
+			var w4: int = ci * 4
+			_weather_lut_bytes_cache[w4] = int(cell.weather_type) & 0xFF
+			_weather_lut_bytes_cache[w4 + 1] = _q01_byte(float(cell.weather_intensity))
+			_weather_lut_bytes_cache[w4 + 2] = _q01_byte(float(cell.weather_cloud))
+			_weather_lut_bytes_cache[w4 + 3] = _q01_byte(float(cell.weather_precip))
+	report.weather_lut_dirty_count = dirty_count
+	if not changed:
+		report.weather_lut_reason = "unchanged_dirty_subset"
+		report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
+		return report
+	report.merge(_publish_weather_lut_bytes(_weather_lut_bytes_cache, world, lw, lh, true), true)
+
+	report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
+	return report
+
+
+
 # daily LUT 全量刷新：cell 视觉状态每日变化（enum 翻面 / temp / snow / vitality 等），
 # per-cell LUT（n_cells ~2400）全量重烘 ~0.1-0.3ms，远小于旧 per-pixel fan-out。
-# 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）。
+# 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）；weather_lut 已由
+# WeatherLutUploadSystem 跟随 weather_refresh 独立发布，避免不同 cadence 重置 weather_lerp。
 func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
-	return bake_cell_luts(map, world, true)
+	return bake_cell_luts(map, world, true, false)
+
 
 
 # Systemic Ocean Currents：独立 R8 upwelling 纹理编码（L8 单通道，LINEAR 过滤）。
