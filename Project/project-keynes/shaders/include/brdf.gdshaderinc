@@ -7,7 +7,7 @@
 //                                + 能量守恒 (kD = (1-F)·(1-metallic))
 //                                + 线性空间运算 + ACES filmic tonemap
 //     - Legacy 路径 (USE_PBR_BRDF=0) ：v9 Blinn-Phong + Reinhard，单点回退用
-//     - hillshading 二光源旁路：day_night_enabled=false 时走 evaluate_hillshade_only
+//     - hillshading 二光源旁路：保留为 legacy/debug fallback；昼夜关闭时仍走永昼 PBR
 //
 // 调用方（Who）
 //   - land_pipeline.gdshaderinc::shade_land_surface
@@ -109,11 +109,11 @@ vec3 F_Schlick(vec3 F0, float VdotH) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 三、Hillshade-Only 旁路（day_night_enabled=false 时使用）
+// 三、Hillshade-Only 旁路（legacy/debug fallback）
 // ═══════════════════════════════════════════════════════════════════════
-//   保留 v9 的 key+fill 双光源 hillshading 行为；不参与 BRDF / tonemap，避免
-//   debug 时的视觉跳变。仅 land 路径调用；water 路径在 day_night_enabled=false
-//   时走 evaluate_brdf_legacy_water 的简化分支（与 v9 一致）。
+//   保留 v9 的 key+fill 双光源 hillshading 行为，供将来 debug fallback 使用。
+//   注意：day_night_enabled=false 只表示"永昼 / 不跑晨昏线"，不再切到这条
+//   未 tonemap 的 sRGB 旁路，否则高 hillshade_strength 会把雪地/浅色地表打爆。
 // ─────────────────────────────────────────────────────────────────────
 vec3 evaluate_hillshade_only(SurfaceParams s) {
 	vec3 N = normalize(s.normal);
@@ -221,9 +221,6 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 vec3 evaluate_brdf(
 		SurfaceParams s, LightingContext lc,
 		float spec_max_legacy, float spec_min_legacy) {
-	if (!day_night_enabled) {
-		return evaluate_hillshade_only(s);
-	}
 	if (USE_PBR_BRDF) {
 		return evaluate_brdf_pbr(s, lc);
 	}

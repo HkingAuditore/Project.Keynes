@@ -461,6 +461,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   12→~480 格(偏密)  16→~300 格(适中)  20→~200 格(稀疏)  24→~140 格(很稀疏)
 # 调小=河更多更密；调大=河更少更稀。配合 macro_relief 放大流域后，同阈值河会更长更分级。
 @export var river_channel_init_cells: int = 16
+@export_range(1, 64, 1) var river_headwater_init_cells: int = 6
+@export_range(0.0, 1.0, 0.01) var river_headwater_min_land_h: float = 0.30
 
 # Minimum accepted land cells in a rendered river path. Shorter runoff paths
 # still contribute flow, but are not drawn as standalone streams.
@@ -1037,7 +1039,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_group("火山")
 @export var max_volcanoes: int = 8
 @export var volcano_min_dist: int = 6           # minimum hex-distance between volcanoes
-@export var volcano_min_land_h: float = 0.65    # minimum elevation to qualify as volcano
+@export var volcano_min_land_h: float = 0.55    # minimum elevation to qualify as volcano
 
 # ══════════════════════════════════════════════════════════════════════
 # [terrain-overhaul Phase 0 — 板块构造基底]
@@ -1105,24 +1107,27 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 度，远低于上面目标的 0.45-0.55。本轮温和抬湿(基线翻倍/内陆衰减减弱/降水增益与沿海地板上调)，目标
 # 中位 ~0.35-0.40：减少半干旱铺满又不至变回水世界。
 # ⚠ 2026-06-22 抬湿(用户:湿度普遍偏低,沿海/沿河/季风区本该大片高湿如中国南方;且"高湿≠天天下雨")：
-#   land_base 0.12→0.18(陆地基线整体上移)、continental_dry 0.030→0.022(内陆 rain-out 衰减减弱,救深
-#   内陆 hop8≈0.22)、coastal_floor 0.36→0.45(沿海地板,加宽湿润海岸带)、precip_gain 2.9→3.4(降水→base
+#   land_base 0.12→0.18→0.17(陆地基线适度回落，给副热带/内陆旱带留空间)、continental_dry 0.030→0.022(内陆 rain-out 衰减减弱,救深
+#   内陆 hop8≈0.22)、coastal_floor 0.36→0.45→0.42(沿海地板,保留海岸过渡但不过度抬湿)、precip_gain 2.9→3.4(降水→base
 #   湿度,季风/雨林高湿)。目标中位 ~0.45-0.50(回原始 0.45-0.55 下沿)。⚠须按新 CSV 复核,过头则回调防水世界。
 @export_group("统一气候场(生成)")
 @export var moisture_wind_evap: float = 0.18
 @export var moisture_rainout_base: float = 0.12
 @export var moisture_orographic_gain: float = 6.0
 @export var moisture_continental_dry: float = 0.022
-@export var moisture_land_base: float = 0.18
+@export var moisture_land_base: float = 0.17
 @export var moisture_precip_gain: float = 3.4
 @export var moisture_humidity_cap: float = 1.2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
+@export var moisture_subtropical_dry_strength: float = 0.22
+@export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.33
+@export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.16
 # 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
 # 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
 # ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。
 # ⚠ 2026-06-19(凌晨)：连贯大陆下海岸带也偏干，0.28→0.36 适度抬高，加宽湿润海岸过渡带。
-@export_range(0.0, 1.0, 0.05) var moisture_coastal_floor: float = 0.45
+@export_range(0.0, 1.0, 0.01) var moisture_coastal_floor: float = 0.42
 @export var moisture_coastal_scale: float = 7.0
 @export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
 @export var coastal_temp_scale: float = 6.0
@@ -1135,6 +1140,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 30, 1) var salt_flat_min_dist_ocean: int = 4
 # 硬叶灌丛(CHAPARRAL)仅在距海 ≤ 该格数的暖温带中等偏旱草/灌带生成（地中海式干夏）。
 @export_range(1, 20, 1) var chaparral_max_dist_ocean: int = 4
+@export_range(0.0, 1.0, 0.01) var plateau_min_land_h: float = 0.25
+@export_range(0.0, 0.2, 0.005) var plateau_max_relief: float = 0.14
+@export_range(1, 80, 1) var plateau_min_cells: int = 3
+@export_range(0.0, 1.0, 0.01) var mountain_min_land_h: float = 0.70
+@export_range(0.0, 0.2, 0.005) var mountain_min_relief: float = 0.115
+@export_range(0.0, 1.0, 0.01) var peak_min_land_h: float = 0.74
+@export_range(0.0, 0.2, 0.005) var peak_min_prominence: float = 0.035
+@export_range(1, 400, 1) var peak_land_cells_per_peak: int = 120
 
 # ══════════════════════════════════════════════════════════════════════
 # [Reference-impl demo channels — DO NOT use in real game logic]

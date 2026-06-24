@@ -323,6 +323,7 @@ const EXPERIMENT_TOGGLES: Array = [
 func _build_experiments_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("性能 / 渲染实验（原 60FPS 调查热键）"))
 	_add_action_button(parent, "Dump 渲染性能监视器（F3）", &"dump_render_profile")
+	_add_action_button(parent, "循环 Weather Debug View", &"cycle_weather_debug_view")
 	for entry in EXPERIMENT_TOGGLES:
 		var label_text: String = entry[0]
 		var method: String = entry[1]

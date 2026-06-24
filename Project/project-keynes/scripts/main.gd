@@ -208,7 +208,7 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 @export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
 @export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
 @export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.20, 0.48, 0.56)
+@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
 @export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
 # ShaderToy 启发：软边过渡 + 柔和噪声层
 # 注：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
@@ -630,6 +630,24 @@ func toggle_diagnostic_logging_debug() -> void:
 		_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
 		_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
 	)
+
+func cycle_weather_debug_view() -> void:
+	if _renderer == null:
+		print("[weather-debug] renderer null, cannot cycle weather debug view")
+		return
+	var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+	if weather_layer_node == null:
+		print("[weather-debug] WeatherLayer node not found")
+		return
+	if not weather_layer_node.has_method("set_weather_debug_view"):
+		print("[weather-debug] WeatherLayer missing set_weather_debug_view")
+		return
+	var cur: int = int(weather_layer_node.call("get_weather_debug_view")) if weather_layer_node.has_method("get_weather_debug_view") else 0
+	var count: int = int(weather_layer_node.call("get_weather_debug_view_count")) if weather_layer_node.has_method("get_weather_debug_view_count") else 8
+	var next_view: int = (cur + 1) % maxi(count, 1)
+	weather_layer_node.call("set_weather_debug_view", next_view)
+	var name: String = str(weather_layer_node.call("get_weather_debug_view_name")) if weather_layer_node.has_method("get_weather_debug_view_name") else str(next_view)
+	print("[weather-debug] view=%d (%s)" % [next_view, name])
 
 
 # GM 面板 toggle 类 CheckBox 的状态回显源：给定 key 返回该开关当前的真值。

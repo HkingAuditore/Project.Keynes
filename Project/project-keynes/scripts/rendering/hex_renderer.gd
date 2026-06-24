@@ -31,10 +31,10 @@ extends Node2D
 # [需求3 2026-06-19午] 缩小浅↔深海色差：原 coast(0.34,0.50,0.56)→deep(0.14,0.22,0.34) 亮度/色相跨度
 # 过大，海岸青绿环与深海深蓝对比太硬。提亮深/中海、略压浅/岸海，让整片海面更协调连续。
 @export_group("Hypsometric Colors")
-@export var color_deep_ocean: Color = Color(0.18, 0.27, 0.40)
-@export var color_mid_ocean: Color = Color(0.23, 0.34, 0.46)
-@export var color_shallow: Color = Color(0.26, 0.39, 0.49)
-@export var color_coast_water: Color = Color(0.31, 0.45, 0.53)
+@export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43)
+@export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46)
+@export var color_shallow: Color = Color(0.27, 0.40, 0.49)
+@export var color_coast_water: Color = Color(0.30, 0.43, 0.51)
 # [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
 # 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
 # mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
@@ -50,11 +50,11 @@ extends Node2D
 # [macro-relief 2026-06-19] strength 0.45→0.62、slope_gain 8→11：宏观山脉/盆地/丘陵群
 # 此前因 hillshade 偏弱 + 宽 hypsometric 色带而难以辨认。加强双光源明暗与坡度增益，让大尺度
 # 起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D 着色下更立体可读。属纯视觉 knob，可再微调。
-# [需求4 2026-06-19] strength 0.62→0.74、slope_gain 11→13：山体仍显平。配合新山段色阶进一步加强
-# 明暗，让山腰/山脊起伏更立体，弱化"平坦高原"观感。
+# [需求5 2026-06-25] strength 0.74→0.80、slope_gain 13→15：山地仍偏台地。配合更强的
+# height bake / biome detail 之后，再把坡面对比抬一点，让山脊和山谷更容易读出来。
 @export_group("Hillshading")
-@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.74
-@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 13.0
+@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.80
+@export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 15.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
 # v6：flow_tex 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）。
@@ -185,7 +185,7 @@ extends Node2D
 @export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
 @export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
 @export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.20, 0.48, 0.56)
+@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
 @export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
 # ShaderToy 启发的视觉增强（软边过渡 + 柔和噪声层）
 # 说明：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为

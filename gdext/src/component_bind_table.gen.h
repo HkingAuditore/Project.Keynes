@@ -80,6 +80,7 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_ocean_thermal_anomaly",         "ocean_thermal_anomaly_arr",         SlotDType::F32 },
     { "cell_local_thermal_anomaly",         "local_thermal_anomaly_arr",         SlotDType::F32 },
     { "cell_has_river",                     "has_river_arr",                     SlotDType::U8 },
+    { "cell_river_flow",                    "river_flow_arr",                    SlotDType::F32 },
     { "cell_ema_initialized",               "ema_initialized_arr",               SlotDType::U8 },
     { "cell_temp_season_offset",            "temp_season_offset_arr",            SlotDType::F32 },
     { "cell_insolation_now",                "insolation_now_arr",                SlotDType::F32 },

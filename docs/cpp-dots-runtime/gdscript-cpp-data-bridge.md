@@ -35,6 +35,7 @@
 Runtime hydrology 新增的契约：
 
 - `cell.hydro_parent` / `cell_hydro_parent`：`I32`，`map_field=hydro_parent_arr`，owner 为 `map_generation`。这是生成期 Priority-Flood parent graph 的静态拓扑，非河流陆地也可有下游 parent。
+- `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。
 
@@ -215,7 +216,7 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 - pass 输出要被渲染、debug、GDScript fallback 或后续 GDScript stage 读取。
 - SLP/PSI 等 C++ pass 返回 `published_to_slot=true` 并在 C++ 内 flush 对应 slot 时，GDScript caller 可以跳过重复拷贝。
 - 生成期 `run_native_world_generate_base_pass` 是无 bind 的结果包 API：GDScript 传入 cfg/profile，C++ 直接返回 q/r/s、elevation、moisture/base_moisture、terrain/is_water、temp/temp_baseline/temp_30d/temp_365d、lat/temp_year、landform/vegetation/cover 等 PackedArrays。它不写 slot，返回 `published_to_slot=false`；调用方只做数组尺寸校验。
-- 生成期 `run_native_world_generate_post_base_pass` 同样是无 bind 的结果包 API：GDScript 把 base 结果包原样传入，C++ 在 SoA 内完成 lake BFS、rain shadow、river flow、river ecology、vegetation feedback、shrubland/mangrove/glacier/swamp、volcano、delta/oasis/salt flat/badlands、reef/kelp/pelagic bloom，并返回最终 terrain/base terrain、landform/base landform、vegetation/base vegetation、cover、is_water、has_river、has_volcano 等 PackedArrays。它也不写 slot，返回 `published_to_slot=false`；调用方只装配 `MapData`/`HexCell`，失败时才在 C++ base 结果上跑 GDScript post-base fallback。
+- 生成期 `run_native_world_generate_post_base_pass` 同样是无 bind 的结果包 API：GDScript 把 base 结果包原样传入，C++ 在 SoA 内完成 lake BFS、rain shadow、river flow、river ecology、vegetation feedback、shrubland/mangrove/glacier/swamp、volcano、delta/oasis/salt flat/badlands、reef/kelp/pelagic bloom，并返回最终 terrain/base terrain、landform/base landform、vegetation/base vegetation、cover、is_water、has_river、river_flow、river_downstream、hydro_parent、has_volcano 等 PackedArrays。它也不写 slot，返回 `published_to_slot=false`；调用方只装配 `MapData`/`HexCell`，失败时才在 C++ base 结果上跑 GDScript post-base fallback。
 - 生成期 `run_native_world_generate_pass` / `run_native_generation_slice` 仍采用 bind 后 publish 路径：C++ 读取 bind 后的 `cell_lat_norm` / `cell_elevation` / `cell_terrain` 等 slot，发布 `cell_temp*`、`cell_temp_baseline_year`、`cell_thermal_energy`、`cell_ema_initialized`、`cell_is_water` 等初始仿真 slot，并 `_flush_slot_to_map` 回 `MapData`。GDScript wrapper 成功后必须重绑 `DCWorld.rebind_map_data(map, demo_flag)`，因为 C++ flush 可能 reseat `MapData.xxx_arr`，旧的 GDScript `DCWorld` slot 引用不会自动跟随。
 - 生成期 `run_temp_baseline_year_bake`（cell_temp_baseline_year 权威烘焙）即采用此路径：以 `lat_norm` knob 入参，C++ 写 `cell_temp_baseline_year` slot 后 `_flush_slot_to_map` 回 `MapData.temp_baseline_year_arr`，返回 `published_to_slot=true`；ext 不可用时 GDScript `bake_lat_temp_year_lut` 兜底（详见 computation-pipelines.md "Temp baseline year bake"）。
 

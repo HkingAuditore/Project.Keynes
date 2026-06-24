@@ -75,6 +75,17 @@ const _WT_FOG      := 5
 const _WT_HEATWAVE := 6
 const _WT_MONSOON  := 7
 
+const WEATHER_DEBUG_VIEW_NAMES := [
+	"off",
+	"w.cloud",
+	"cumulus_density",
+	"fog_density",
+	"final_alpha",
+	"cell_id",
+	"weather_type",
+	"precip_intensity_cloud",
+]
+
 var _overlay_quad: MeshInstance2D
 var _overlay_mat: ShaderMaterial
 var _shadow_root: Node2D
@@ -284,9 +295,10 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
 		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+		_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
-		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
+		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色推入 shader。
 		_push_weather_profile_uniforms_to_overlay()
 		_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
 	_refresh_visibility()
@@ -326,6 +338,7 @@ func set_vector_atlas_texture(tex: Texture2D) -> void:
 # 的分支会根据这些 uniform 决定是否执行对应特性。为使任务 1 本身"无视觉变化"，
 # shader 侧的实际分支会在任务 4~6 中接入。
 var _visual_quality: int = 2
+var _weather_debug_view: int = 0
 var _day_night_enabled: bool = true
 var _extreme_ground_enabled: bool = true
 
@@ -333,6 +346,20 @@ func set_visual_quality(q: int) -> void:
 	_visual_quality = clampi(q, 0, 2)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+
+func set_weather_debug_view(view: int) -> void:
+	_weather_debug_view = clampi(view, 0, WEATHER_DEBUG_VIEW_NAMES.size() - 1)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
+
+func get_weather_debug_view() -> int:
+	return _weather_debug_view
+
+func get_weather_debug_view_count() -> int:
+	return WEATHER_DEBUG_VIEW_NAMES.size()
+
+func get_weather_debug_view_name() -> String:
+	return WEATHER_DEBUG_VIEW_NAMES[_weather_debug_view]
 
 var _mobile_quality_tier_define: String = ""
 
@@ -531,48 +558,26 @@ func _push_fronts_to_overlay(_fronts: Array) -> void:
 func _push_empty_fronts_to_overlay() -> void:
 	_push_fronts_to_overlay([])
 
-# v-data-driven：把 WeatherProfileRegistry 里 8 个 profile 的 overlay 颜色与 flags 位掩码
+# v-data-driven：把 WeatherProfileRegistry 里 8 个 profile 的 overlay 颜色
 # 推入 shader 的 uniform 数组。每局游戏只需调用一次（在 setup() 里）。
-# flags 位编码需与 weather_overlay.gdshader 中的 FLAG_* 常量严格一致：
-#   bit0 = has_overlay
-#   bit1 = enables_lightning
-#   bit2 = enables_snow_grain
-#   bit3 = enables_rain_streak
-#   bit4 = enables_fog_breathe
-const _FLAG_HAS_OVERLAY    := 1
-const _FLAG_LIGHTNING      := 2
-const _FLAG_SNOW_GRAIN     := 4
-const _FLAG_RAIN_STREAK    := 8
-const _FLAG_FOG_BREATHE    := 16
 const _MAX_WEATHER_TYPES   := 8
 
 func _push_weather_profile_uniforms_to_overlay() -> void:
 	if _overlay_mat == null:
 		return
 	var colors := PackedColorArray()
-	var flags := PackedInt32Array()
 	colors.resize(_MAX_WEATHER_TYPES)
-	flags.resize(_MAX_WEATHER_TYPES)
 	for wt in range(_MAX_WEATHER_TYPES):
 		var p := WeatherProfileRegistry.get_profile(wt)
 		if p == null:
 			colors[wt] = Color(0.0, 0.0, 0.0, 0.0)
-			flags[wt] = 0
 			continue
 		# rgb = overlay_color, a = overlay_base_alpha（shader 端直接当作 vec4 读）
 		colors[wt] = Color(
 			p.overlay_color.r, p.overlay_color.g, p.overlay_color.b,
 			p.overlay_base_alpha
 		)
-		var bits: int = 0
-		if p.has_overlay: bits |= _FLAG_HAS_OVERLAY
-		if p.enables_lightning: bits |= _FLAG_LIGHTNING
-		if p.enables_snow_grain: bits |= _FLAG_SNOW_GRAIN
-		if p.enables_rain_streak: bits |= _FLAG_RAIN_STREAK
-		if p.enables_fog_breathe: bits |= _FLAG_FOG_BREATHE
-		flags[wt] = bits
 	_overlay_mat.set_shader_parameter("weather_profile_colors", colors)
-	_overlay_mat.set_shader_parameter("weather_profile_flags", flags)
 
 # ─── 池子同步（B5 / B6 实装） ────────────────────────────────────────────
 
@@ -1046,6 +1051,7 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
 	_overlay_mat.set_shader_parameter("weather_strength", _strength)
 	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+	_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 	_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
 	_overlay_mat.set_shader_parameter("tod_exposure", _tod_exposure)

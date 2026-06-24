@@ -171,13 +171,15 @@ vec3 compute_terrain_normal(vec2 uv, int quality) {
 #endif
 }
 
-// 按 biome 查表粗糙度（需求 3.3）：雪/冰光滑、沙中等、森林/草原粗糙
+// 按 biome 查表粗糙度（需求 3.3）：雪/冰保持高反差、山地/丘陵/荒地更粗，避免像涂层
 float biome_roughness(int biome) {
 	if (biome == B_SNOW || biome == B_GLACIER || biome == B_SEA_ICE) return 0.22;
 	if (biome == B_DESERT || biome == B_SALT_FLAT) return 0.58;
 	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) return 0.88;
 	if (biome == B_GRASSLAND || biome == B_SAVANNA || biome == B_STEPPE) return 0.78;
-	if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS) return 0.65;
+	if (biome == B_MOUNTAIN) return 0.86;
+	if (biome == B_HILL) return 0.82;
+	if (biome == B_BADLANDS) return 0.78;
 	return 0.55;
 }
 

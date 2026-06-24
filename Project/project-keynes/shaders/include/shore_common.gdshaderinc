@@ -14,7 +14,7 @@
 //   - water_pipeline.gdshaderinc::apply_water_color_overlays
 //
 // 依赖（Why）
-//   uniforms.gdshaderinc（map_index_atlas / hm_resolution / sea_level /
+//   uniforms.gdshaderinc（map_index_atlas / derived_resolution / sea_level /
 //     river_threshold_low/high / coast_halo_color / coast_halo_strength /
 //     color_beach / color_coast_water / lake_water_color / river_color /
 //     B_OCEAN / B_COAST / B_LAKE / B_REEF / B_KELP / B_SEA_ICE / visual_quality）
@@ -42,7 +42,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 	s.nearby_ocean_cnt = 0.0;
 	s.total_cnt        = 0.0;
 
-	vec2 texel = 1.0 / hm_resolution;
+	vec2 texel = 1.0 / derived_resolution;
 	for (int sy = -1; sy <= 1; sy++) {
 		for (int sx = -1; sx <= 1; sx++) {
 			if (sx == 0 && sy == 0) {

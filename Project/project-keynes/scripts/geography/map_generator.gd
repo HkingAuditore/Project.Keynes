@@ -3316,8 +3316,8 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_usec: int) -> Dictionary:
 	# stage_3_river_ecology 切片版（2026-05-18）。原 _apply_river_ecology 单 pass
 	# 整跑 ~1ms / round，是 fast tick budget 最大固定开销之一（每 30 ticks 一次）。
-	# 算法上每个 cell 独立处理（仅 has_river / terrain / moisture / apply_terrain），
-	# 无跨 cell 依赖，可安全切片到 cursor。语义与 _apply_river_ecology 完全一致。
+	# 算法上每个 cell 独立处理（has_river / river_flow / terrain / moisture / apply_terrain），
+	# 无跨 cell 依赖，可安全切片到 cursor。语义与 C++ stage_3_river_ecology 同源。
 	var out: Dictionary = {
 		"handled": true,
 		"done": false,
@@ -3359,18 +3359,44 @@ func _run_season_stage3_micro(map: MapData, season_idx: int, cursor: int, max_us
 	while cur < n:
 		var cell: HexCell = cells[cur]
 		if cell != null and cell.has_river and not _is_water(cell.terrain):
-			if _is_permanent_landform(cell.terrain):
-				cell.moisture = maxf(cell.moisture, 0.65)
-			else:
-				cell.moisture = maxf(cell.moisture, 0.65)
-				if cell.terrain != TerrainType.TERRAIN.DESERT:
-					if cell.terrain == TerrainType.TERRAIN.PLAIN:
-						var ny: float = float(_cube_to_row(cell, cfg_local)) / float(cfg_local.height - 1)
-						var temp: float = _compute_temperature(ny, cell.elevation)
+			var t: int = int(cell.terrain)
+			var strong_river: bool = cell.river_flow >= 0.55
+			var target_m: float = 0.72 if strong_river else 0.66
+			cell.moisture = maxf(cell.moisture, target_m)
+			if t != TerrainType.TERRAIN.DELTA \
+					and t != TerrainType.TERRAIN.OASIS \
+					and t != TerrainType.TERRAIN.FLOODPLAIN:
+				var land_h: float = (cell.elevation - cfg_local.sea_level) / maxf(1.0 - cfg_local.sea_level, 0.001)
+				var lowland_river: bool = land_h <= 0.18 or (strong_river and land_h <= 0.28)
+				var ny: float = float(_cube_to_row(cell, cfg_local)) / float(maxi(cfg_local.height - 1, 1))
+				var temp: float = _compute_temperature(ny, cell.elevation)
+				var new_t: int = t
+				var desert_like: bool = t == TerrainType.TERRAIN.DESERT \
+						or t == TerrainType.TERRAIN.SALT_FLAT \
+						or t == TerrainType.TERRAIN.BADLANDS \
+						or t == TerrainType.TERRAIN.COLD_DESERT \
+						or t == TerrainType.TERRAIN.MESA
+				if desert_like:
+					if lowland_river:
+						new_t = TerrainType.TERRAIN.FLOODPLAIN
+					elif strong_river and temp > 0.35:
+						new_t = TerrainType.TERRAIN.OASIS
+					elif temp > 0.30:
+						new_t = TerrainType.TERRAIN.STEPPE
+				elif not _is_permanent_landform(t):
+					if lowland_river and (t == TerrainType.TERRAIN.PLAIN \
+							or t == TerrainType.TERRAIN.GRASSLAND \
+							or t == TerrainType.TERRAIN.SAVANNA \
+							or t == TerrainType.TERRAIN.STEPPE \
+							or t == TerrainType.TERRAIN.SHRUBLAND):
+						new_t = TerrainType.TERRAIN.FLOODPLAIN
+					elif t == TerrainType.TERRAIN.PLAIN:
 						if temp > 0.55:
-							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.FOREST, true, temp, cell.snow_cover)
+							new_t = TerrainType.TERRAIN.JUNGLE if strong_river else TerrainType.TERRAIN.FOREST
 						elif temp > 0.30:
-							_set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.GRASSLAND, true, temp, cell.snow_cover)
+							new_t = TerrainType.TERRAIN.FLOODPLAIN if strong_river else TerrainType.TERRAIN.GRASSLAND
+				if new_t != t:
+					_set_cell_runtime_terrain(map, cell, new_t, true, temp, cell.snow_cover)
 		cur += 1
 		work_done += 1
 		if (work_done & 31) == 0 and Time.get_ticks_usec() - t0 >= max_usec:
@@ -4125,7 +4151,7 @@ func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: i
 	return true
 
 
-# stage 3: river_ecology。DESERT 不翻；PLAIN→FOREST/GRASSLAND；has_river+land 强湿。
+# stage 3: river_ecology。河岸保湿；荒漠河道修成 FLOODPLAIN/OASIS/STEPPE；低地河道优先 FLOODPLAIN。
 # 多轴写入需 facade sync。
 func _run_season_refresh_stage3_gdext(map: MapData, _world: WorldData, _season: int) -> bool:
 	var cp := _c()
@@ -4704,6 +4730,23 @@ func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
 	var cover_a: PackedByteArray = map.cover_arr
 	if map.has_method("sync_runtime_terrain_facade_from_soa"):
 		map.sync_runtime_terrain_facade_from_soa()
+	var volcano_repaired: int = 0
+	var volcano_a: PackedByteArray = map.has_volcano_arr
+	if volcano_a.size() == n and landform_a.size() == n:
+		var volcano_lf: int = int(LandformType.LF.VOLCANO)
+		for vi in range(n):
+			if int(volcano_a[vi]) == 0:
+				continue
+			if int(landform_a[vi]) == volcano_lf:
+				continue
+			landform_a[vi] = volcano_lf
+			if vi < map.base_landform_arr.size():
+				map.base_landform_arr[vi] = volcano_lf
+			volcano_repaired += 1
+		if volcano_repaired > 0:
+			map.landform_arr = landform_a
+			_last_season_refresh_breakdown["volcano_landform_repaired"] = volcano_repaired
+			_write_runtime_enum_axes_dense(map)
 	for i in range(n):
 		var cell: HexCell = map.cell_at(i)
 		if cell == null:
@@ -4914,6 +4957,8 @@ func _native_generation_profile_dict() -> Dictionary:
 		"rain_shadow_lookback",
 		"river_flow_percentile",
 		"river_channel_init_cells",
+		"river_headwater_init_cells",
+		"river_headwater_min_land_h",
 		"hydro_river_min_length",
 		"hydro_lake_min_cells",
 		"hydro_lake_min_depth",
@@ -4969,6 +5014,9 @@ func _native_generation_profile_dict() -> Dictionary:
 		"moisture_humidity_cap",
 		"moisture_smooth",
 		"moisture_noise_amp",
+		"moisture_subtropical_dry_strength",
+		"moisture_subtropical_dry_center",
+		"moisture_subtropical_dry_width",
 		"moisture_coastal_floor",
 		"moisture_coastal_scale",
 		"coastal_temp_moderation",
@@ -4976,6 +5024,14 @@ func _native_generation_profile_dict() -> Dictionary:
 		# terrain-overhaul Phase 5 特征点缀
 		"salt_flat_min_dist_ocean",
 		"chaparral_max_dist_ocean",
+		"plateau_min_land_h",
+		"plateau_max_relief",
+		"plateau_min_cells",
+		"mountain_min_land_h",
+		"mountain_min_relief",
+		"peak_min_land_h",
+		"peak_min_prominence",
+		"peak_land_cells_per_peak",
 	]
 	var out: Dictionary = {}
 	for k in keys:
@@ -5388,12 +5444,11 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 
 # ─── 地形决策（v8 阈值定调） ────────────────────────────────────────────
 #
-# 决策树先按 elevation 分类（OCEAN/COAST/MOUNTAIN/HILL），剩下的低地按
-# (temperature, moisture) 在 Whittaker 风格的二维空间里选择 biome。
+# 决策树先按 elevation 分类（OCEAN/COAST/MOUNTAIN/SNOW/TUNDRA），剩下陆地按
+# (temperature, moisture) 在 Whittaker 风格的二维空间里选择 biome；HILL 属于 landform 轴。
 #
 # v8 的 ridge boost + slope_gate 让中海拔 cell 也能升级 MOUNTAIN，所以
-# MOUNTAIN 阈值保持 0.52，配合双向脊线就能产生山脉链。HILL 阈值 0.30
-# 让山脚有充足过渡区。
+# 生成期 permanent_only=true 时 MOUNTAIN 阈值更保守，丘陵/低地/平原则由 landform 派生。
 
 func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg: MapConfig, permanent_only: bool = false) -> TerrainType.TERRAIN:
 	if elevation < cfg.sea_level - 0.06:
@@ -5434,47 +5489,35 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 		return TerrainType.TERRAIN.SNOW
 	if temperature < polar_temp:
 		return TerrainType.TERRAIN.SNOW
-	# 山地（0.62 < land_h ≤ 0.82）
-	if land_height > 0.62:
+	var mountain_line: float = 0.72 if permanent_only else 0.70
+	if land_height > mountain_line:
 		return TerrainType.TERRAIN.MOUNTAIN
-	# 寒带（任何海拔）→ TUNDRA（含 land_h > 0.22 的冷区，避免冷高地误判 HILL）
 	if temperature < 0.20:
 		return TerrainType.TERRAIN.TUNDRA
-	# 丘陵：HILL 优先于 biome 分类（除非已经是冷区）
-	if land_height > 0.22:
-		return TerrainType.TERRAIN.HILL
 
-	# ─── Phase 10：Whittaker 双层决策（温度 → 湿度）─────────────────────
-	# 温度区间分流；每区间内按湿度三段切。阈值刻意有 overlap 缓冲
-	# 让边界 biome 不死板。
-
-	# 热带（temperature > 0.55）
 	if temperature > 0.55:
 		if moisture > 0.65:
 			return TerrainType.TERRAIN.JUNGLE     # 热带雨林
-		if moisture > 0.30:
+		if moisture > 0.36:
 			return TerrainType.TERRAIN.SAVANNA    # 稀树草原
+		if moisture > 0.20:
+			return TerrainType.TERRAIN.STEPPE
 		return TerrainType.TERRAIN.DESERT         # 热带沙漠
 
-	# 暖温带（0.40 < temperature ≤ 0.55）
-	if temperature > 0.40:
+	if temperature > 0.38:
 		if moisture > 0.55:
 			return TerrainType.TERRAIN.FOREST     # 温带阔叶林
-		if moisture > 0.30:
+		if moisture > 0.32:
 			return TerrainType.TERRAIN.GRASSLAND  # 温带草地
-		return TerrainType.TERRAIN.STEPPE         # 温带草原（更干）
-
-	# 凉温带（0.20 < temperature ≤ 0.40）
-	if temperature > 0.20:
-		if moisture > 0.40:
-			return TerrainType.TERRAIN.TAIGA      # 针叶林 / 泰加
 		if moisture > 0.20:
-			return TerrainType.TERRAIN.STEPPE     # 凉草原
-		# terrain-overhaul：冷而极旱 → COLD_DESERT（寒漠/戈壁），区别于热沙漠。
-		return TerrainType.TERRAIN.COLD_DESERT
+			return TerrainType.TERRAIN.STEPPE
+		return TerrainType.TERRAIN.DESERT
 
-	# fallback（temperature ≤ 0.20 已被前面 TUNDRA 接住，理论不到这里）
-	return TerrainType.TERRAIN.PLAIN
+	if moisture > 0.45:
+		return TerrainType.TERRAIN.TAIGA
+	if moisture > 0.22:
+		return TerrainType.TERRAIN.STEPPE
+	return TerrainType.TERRAIN.COLD_DESERT
 
 # ─── Milestone 1：三轴派生（landform / vegetation / cover） ──────────────────
 #
@@ -5523,13 +5566,15 @@ func _derive_landform(cell: HexCell, cfg: MapConfig) -> int:
 		return LandformType.LF.BADLANDS
 	if t == TerrainType.TERRAIN.SALT_FLAT:
 		return LandformType.LF.SALT_FLAT
+	if t == TerrainType.TERRAIN.FLOODPLAIN:
+		return LandformType.LF.PLAIN
 	if t == TerrainType.TERRAIN.MESA:
 		return LandformType.LF.PLATEAU
 	# 陆地：按 land_h 分段（与原 _decide_terrain 阈值一致）
 	var land_h: float = (cell.elevation - cfg.sea_level) / maxf(1.0 - cfg.sea_level, 0.001)
-	if land_h > 0.82:
+	if land_h > 0.92:
 		return LandformType.LF.PEAK
-	if land_h > 0.62:
+	if land_h > 0.70:
 		return LandformType.LF.MOUNTAIN
 	if land_h > 0.22:
 		return LandformType.LF.HILL
@@ -5636,12 +5681,18 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 				return VegetationType.VEG.MONSOON_FOREST
 			return VegetationType.VEG.TROPICAL_DRY_FOREST
 		TerrainType.TERRAIN.SAVANNA:
+			if is_alpine:
+				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.45 else VegetationType.VEG.BOREAL_SHRUB
 			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.45 else VegetationType.VEG.SAVANNA
 		TerrainType.TERRAIN.GRASSLAND:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
 			return VegetationType.VEG.TEMPERATE_GRASSLAND
 		TerrainType.TERRAIN.STEPPE:
+			if is_alpine:
+				if temperature < 0.28:
+					return VegetationType.VEG.ALPINE_TUNDRA
+				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.32 else VegetationType.VEG.BOREAL_SHRUB
 			return VegetationType.VEG.TEMPERATE_STEPPE
 		TerrainType.TERRAIN.DESERT:
 			# 极旱 → XERIC_DESERT；普通 → DESERT_SCRUB
@@ -5672,7 +5723,7 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 			return VegetationType.VEG.TAIGA
 		if moisture > 0.20:
 			return VegetationType.VEG.BOREAL_SHRUB
-		return VegetationType.VEG.TEMPERATE_STEPPE
+		return VegetationType.VEG.ALPINE_TUNDRA if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
 	# 暖温带
 	if temperature < 0.55:
 		if moisture > 0.55:
@@ -5685,7 +5736,7 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
 			return VegetationType.VEG.TEMPERATE_GRASSLAND
-		return VegetationType.VEG.TEMPERATE_STEPPE
+		return VegetationType.VEG.BOREAL_SHRUB if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
 	# 热带
 	if moisture > 0.65:
 		return VegetationType.VEG.TROPICAL_RAINFOREST
@@ -5718,6 +5769,13 @@ func _derive_cover(cell: HexCell, snow_cover: float) -> int:
 # 单 cell 同步三轴。生成期间用 snow_cover=0（默认夏季）；refresh_seasonal 内传当季 snow_cover。
 func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> void:
 	var landform := _derive_landform(cell, cfg)
+	var prev_landform: int = int(cell.landform)
+	if not _is_water(cell.terrain) and (
+			prev_landform == LandformType.LF.PEAK
+			or prev_landform == LandformType.LF.VOLCANO
+			or prev_landform == LandformType.LF.PLATEAU
+			or prev_landform == LandformType.LF.RIFT_VALLEY):
+		landform = prev_landform
 	var ny: float = _cube_row_norm(cell, cfg)
 	var temp: float = _compute_temperature(ny, cell.elevation)
 	cell.landform = landform

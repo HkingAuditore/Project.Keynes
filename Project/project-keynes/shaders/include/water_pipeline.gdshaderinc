@@ -42,6 +42,8 @@ struct WaterStageCtx {
 	float offshore;      // 邻域离岸度 [0,1]
 	float offshore_depth;// 综合离岸 + depth_t
 	float deep_layer_w;
+	float lake_shore_w;  // shader 端湖岸近似 SDF：1=靠岸，0=湖心
+	float lake_depth_proxy; // 湖泊没有海平面深度，使用湖岸距离近似深浅
 	float ice_frac;      // 海冰浓度（dyn_atlas_smooth.a；fragment 入口已采样，避免冗余 sample）
 };
 
@@ -70,6 +72,7 @@ SurfaceParams make_water_surface_params(
 		int biome,
 		float w_ice,
 		float w_lake,
+		float w_reef,
 		float w_kelp) {
 	// [sea-ice-render-source-unify 阶段 A] 海冰 roughness 完全由 w_ice 连续驱动，
 	// 不再依赖 biome == B_SEA_ICE 硬切换。w_ice 来自 dyn_atlas_smooth.a 的连续
@@ -79,14 +82,16 @@ SurfaceParams make_water_surface_params(
 	// 太阳高悬时整片洋面同时命中 GGX 镜面峰值；roughness 过低 → D_GGX 爆炸 → 向阳侧海面
 	// 整体过曝发白（也是此前"快进闪瞎眼"的同源现象）。这里抬高基础粗糙度，让顶视镜面退化为
 	// 柔和高光、露出深海蓝；细碎波光由独立 sparkle special 负责，不依赖镜面尖峰。
-	float roughness = 0.40;
+	float roughness = 0.38;
 	if (biome == B_LAKE) {
-		roughness = 0.24;          // ⟵ 平静湖面：仍是最亮水体，但不再是镜面、不过曝
+		roughness = 0.20;          // 平静湖面：清亮，但靠波光层而不是整片镜面发白
 	} else if (biome == B_REEF) {
-		roughness = 0.40;
+		roughness = 0.46;          // 礁盘浅水更碎、更漫，避免像荧光贴片
 	} else if (biome == B_KELP) {
-		roughness = 0.50;
+		roughness = 0.56;
 	}
+	roughness = mix(roughness, 0.22, clamp(w_lake * 0.45, 0.0, 1.0));
+	roughness = mix(roughness, 0.48, clamp(w_reef * 0.42, 0.0, 1.0));
 	roughness = mix(roughness, 0.34, clamp(w_ice, 0.0, 1.0));
 	roughness = mix(roughness, 0.50, clamp(w_kelp * 0.35, 0.0, 1.0));
 	float ao = mix(0.98, 1.0, clamp(normal.z, 0.0, 1.0));
@@ -95,6 +100,80 @@ SurfaceParams make_water_surface_params(
 	// metallic：水默认非金属；冰盖区给一点金属感（菲涅尔更明显）。
 	float metallic = mix(DEFAULT_METALLIC_WATER, DEFAULT_METALLIC_ICE, clamp(w_ice, 0.0, 1.0));
 	return make_surface_params(base_color, normal, roughness, metallic, ao);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// SEA 1.0b: compute_lake_shore_proxy —— 基于 biome 邻域的湖岸近似 SDF
+// ═══════════════════════════════════════════════════════════════════════
+// 真正的 lake SDF 目前没有由 baker 输出。这里用 map_index_atlas 多半径采样估算：
+// 当前湖像素附近若出现非湖 biome，则认为靠岸；越靠近岸边权重越高。
+// 它只服务 LAKE 的颜色/透底/halo，避免继续把 sea_level 当湖泊水位线。
+// ─────────────────────────────────────────────────────────────────────
+float compute_lake_shore_proxy(vec2 uv, int quality) {
+	vec2 tx = 1.0 / derived_resolution;
+	float near_cnt = 0.0;
+	float near_total = 0.0;
+	float mid_cnt = 0.0;
+	float mid_total = 0.0;
+	float far_cnt = 0.0;
+	float far_total = 0.0;
+
+	for (int oy = -1; oy <= 1; oy++) {
+		for (int ox = -1; ox <= 1; ox++) {
+			if (ox == 0 && oy == 0) {
+				continue;
+			}
+			bool is_diag = (ox != 0) && (oy != 0);
+			if (quality <= 0 && is_diag) {
+				continue;
+			}
+			vec2 o = vec2(float(ox), float(oy));
+			int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+			float edge = (b == B_LAKE) ? 0.0 : 1.0;
+			float sw = 1.0 - 0.18 * clamp(length(o), 0.0, 1.41421356);
+			near_cnt += edge * sw;
+			near_total += sw;
+		}
+	}
+
+	for (int i = 0; i < 4; i++) {
+		vec2 o = vec2(0.0, -2.0);
+		if (i == 0) {
+			o = vec2(2.0, 0.0);
+		} else if (i == 1) {
+			o = vec2(-2.0, 0.0);
+		} else if (i == 2) {
+			o = vec2(0.0, 2.0);
+		}
+		int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+		mid_cnt += (b == B_LAKE) ? 0.0 : 1.0;
+		mid_total += 1.0;
+	}
+
+	if (quality >= 2) {
+		for (int i = 0; i < 4; i++) {
+			vec2 o = vec2(0.0, -3.0);
+			if (i == 0) {
+				o = vec2(3.0, 0.0);
+			} else if (i == 1) {
+				o = vec2(-3.0, 0.0);
+			} else if (i == 2) {
+				o = vec2(0.0, 3.0);
+			}
+			int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+			far_cnt += (b == B_LAKE) ? 0.0 : 1.0;
+			far_total += 1.0;
+		}
+	}
+
+	float near_t = near_cnt / max(near_total, 1.0);
+	float mid_t = mid_cnt / max(mid_total, 1.0);
+	float far_t = far_cnt / max(far_total, 1.0);
+	float shore = smoothstep(0.05, 0.34, near_t) * 0.78
+			+ smoothstep(0.10, 0.42, mid_t) * 0.34
+			+ smoothstep(0.12, 0.50, far_t) * 0.18;
+	return clamp(shore, 0.0, 1.0);
 }
 
 
@@ -154,6 +233,14 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	ctx.depth_t = 1.0 - clamp(ctx.elev / max(sea_level, 0.001), 0.0, 1.0);
 	ctx.offshore_depth = clamp(ctx.offshore * 0.68 + smoothstep(0.00, 0.68, ctx.depth_t) * 0.32, 0.0, 1.0);
 	ctx.deep_layer_w = smoothstep(0.36, 1.0, ctx.offshore_depth);
+	ctx.lake_shore_w = (ctx.biome == B_LAKE) ? compute_lake_shore_proxy(ctx.uv, ctx.quality) : 0.0;
+	ctx.lake_depth_proxy = (ctx.biome == B_LAKE)
+			? (1.0 - ctx.lake_shore_w)
+			: ctx.offshore_depth;
+	if (ctx.biome == B_LAKE) {
+		ctx.offshore_depth = mix(0.10, 0.78, smoothstep(0.0, 1.0, ctx.lake_depth_proxy));
+		ctx.deep_layer_w = smoothstep(0.36, 1.0, ctx.offshore_depth);
+	}
 }
 
 
@@ -165,10 +252,10 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_depth_gradient(vec3 col, WaterStageCtx ctx) {
 	vec3 tier_color = water_depth_gradient(ctx.offshore_depth, ctx.elev);
-	float water_fill_w = smoothstep(0.02, 0.82, 0.58 + ctx.offshore_depth * 0.34);
+	float water_fill_w = smoothstep(0.02, 0.86, 0.52 + ctx.offshore_depth * 0.40);
 	col = mix(col, tier_color, water_fill_w);
-	float lagoon_lift = 1.0 - smoothstep(0.10, 0.56, ctx.offshore_depth);
-	col = mix(col, col * vec3(0.90, 1.07, 1.10), lagoon_lift * 0.14);
+	float lagoon_lift = 1.0 - smoothstep(0.08, 0.56, ctx.offshore_depth);
+	col = mix(col, col * vec3(0.89, 1.08, 1.12), lagoon_lift * 0.16);
 	return col;
 }
 
@@ -229,7 +316,7 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	// Desktop：保留 radius-aware 3×3 邻域采样
 	if (water_biome_blend_radius > 0.001) {
 		float blend_radius_eff = water_biome_blend_radius * mix(1.0, 1.45, water_transition_softness);
-		bw = water_biome_weights(ctx.uv, 1.0 / hm_resolution, blend_radius_eff);
+		bw = water_biome_weights(ctx.uv, 1.0 / derived_resolution, blend_radius_eff);
 	} else {
 		bw = vec4(
 			ctx.biome == B_LAKE    ? 1.0 : 0.0,
@@ -347,38 +434,57 @@ vec3 apply_deep_ocean_layered_tint(vec3 col, WaterStageCtx ctx, WaterWeights ww)
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// SEA 1.7: apply_lake_features —— 平静低对比偏青绿湖水
+// SEA 1.7: apply_lake_features —— 湖岸浅透、湖心深色、低对比水纹
 // ═══════════════════════════════════════════════════════════════════════
 vec3 apply_lake_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(ww.w_lake > 0.001)) return col;
 
-	vec3 lake_cartoon = mix(lake_water_color, vec3(0.13, 0.66, 0.72), water_cartoon_color_strength * 0.55);
-	vec3 lake_surface = mix(water_depth_gradient(ctx.offshore_depth * 0.72, ctx.elev), lake_cartoon, 0.66);
-	float lake_depth_t = smoothstep(0.04, 0.46, ctx.depth_t);
-	vec3 lake_deep = lake_cartoon * vec3(0.72, 0.90, 0.96);
-	vec3 lake_col = mix(lake_surface, lake_deep, lake_depth_t * 0.42);
-	float lake_ripple = fbm(ctx.wpw * 0.018 + vec2(7.0, -19.0), ctx.detail_oct);
+	float lake_shallow_t = smoothstep(0.00, 0.30, ctx.lake_depth_proxy);
+	float lake_mid_t = smoothstep(0.18, 0.60, ctx.lake_depth_proxy);
+	float lake_deep_t = smoothstep(0.44, 0.84, ctx.lake_depth_proxy);
+	float lake_abyss_t = smoothstep(0.70, 1.00, ctx.lake_depth_proxy);
+	float lake_edge_t = ctx.lake_shore_w;
+	vec3 lake_edge = mix(color_coast_water, lake_water_color, 0.52) * vec3(1.02, 1.05, 1.02);
+	vec3 lake_shallow = mix(color_shallow, lake_water_color, 0.66) * vec3(1.03, 1.08, 1.02);
+	vec3 lake_mid = mix(lake_water_color, color_mid_ocean, 0.38) * vec3(0.98, 1.02, 1.06);
+	vec3 lake_deep = mix(color_mid_ocean, color_deep_ocean, 0.48) * vec3(0.96, 1.00, 1.08);
+	vec3 lake_abyss = mix(color_deep_ocean, color_deep_ocean * vec3(0.88, 0.95, 1.10), 0.62);
+	vec3 lake_col = lake_edge;
+	lake_col = mix(lake_col, lake_shallow, lake_shallow_t);
+	lake_col = mix(lake_col, lake_mid, lake_mid_t * 0.76);
+	lake_col = mix(lake_col, lake_deep, lake_deep_t * 0.70);
+	lake_col = mix(lake_col, lake_abyss, lake_abyss_t * 0.56);
+	lake_col = mix(lake_col, lake_edge * vec3(1.05, 1.08, 1.03), lake_edge_t * 0.30);
+
+	float lake_ripple = 0.5;
+	float lake_mottle = 0.5;
 	float lake_glass = 0.5;
+	float lake_lines = 0.0;
 	if (ctx.quality >= 1) {
-		lake_glass = fbm(ctx.wpw * 0.006 + vec2(-23.0, 11.0), ctx.detail_oct);
+		lake_ripple = fbm(ctx.wpw * 0.020 + vec2(world_time * 0.012, -19.0), ctx.detail_oct);
+		lake_mottle = fbm(ctx.wpw * 0.008 + vec2(-23.0, 11.0), ctx.detail_oct);
+		lake_lines = water_shade_lines(ctx.wpw + vec2(7.0, -5.0), world_time * 0.55, 0.58, 1);
+		lake_glass = fbm(ctx.wpw * 0.0042 + vec2(-world_time * 0.006, world_time * 0.004), ctx.detail_oct);
 	}
-	lake_col *= 1.0 + (lake_ripple - 0.5) * 0.026 + (lake_glass - 0.5) * 0.016;
-	lake_col = mix(lake_col, lake_surface, 0.18);
-	col = mix(col, lake_col, ww.w_lake * 0.92);
+	lake_col *= 1.0 + (lake_ripple - 0.5) * 0.050 + (lake_mottle - 0.5) * 0.032 + lake_lines * 0.055;
+	vec3 cool_lift = mix(vec3(0.96, 1.02, 1.04), vec3(1.03, 1.02, 0.96), lake_glass);
+	lake_col *= mix(vec3(1.0), cool_lift, 0.045);
+	col = mix(col, lake_col, ww.w_lake * 0.94);
 	return col;
 }
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// SEA 1.8: apply_reef_features —— 浅青绿 + 大尺度珊瑚斑
+// SEA 1.8: apply_reef_features —— 降饱和浅水礁盘 + 柔和珊瑚斑
 // ═══════════════════════════════════════════════════════════════════════
 vec3 apply_reef_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(ww.w_reef > 0.001)) return col;
 
-	float reef_depth = clamp(ctx.offshore_depth * 0.36 + ctx.depth_t * 0.16, 0.0, 1.0);
-	vec3 reef_lagoon = mix(vec3(0.38, 0.82, 0.78), vec3(0.32, 0.94, 0.84), water_cartoon_color_strength * 0.55);
-	vec3 reef_outer = mix(water_depth_gradient(clamp(ctx.offshore_depth * 0.82, 0.0, 1.0), ctx.elev),
-							vec3(0.14, 0.58, 0.68), 0.34);
+	float reef_depth = clamp(ctx.offshore_depth * 0.48 + ctx.depth_t * 0.22, 0.0, 1.0);
+	vec3 shallow_ref = mix(color_shallow, color_coast_water, 0.54);
+	vec3 reef_lagoon = mix(shallow_ref, vec3(0.36, 0.64, 0.62), water_cartoon_color_strength * 0.34);
+	vec3 reef_outer = mix(water_depth_gradient(clamp(ctx.offshore_depth * 0.92, 0.0, 1.0), ctx.elev),
+							color_coast_water * vec3(0.90, 1.04, 1.05), 0.30);
 	vec3 reef_base = mix(reef_lagoon, reef_outer, smoothstep(0.12, 0.88, reef_depth));
 	float coral_soft = 0.5;
 	float reef_sheen = 0.5;
@@ -389,12 +495,13 @@ vec3 apply_reef_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (ctx.quality >= 2) {
 		reef_sheen = fbm(ctx.wpw * 0.018 + vec2(17.0, 29.0), 2);
 	}
-	vec3 coral_tint = mix(vec3(0.32, 0.74, 0.67), vec3(0.22, 0.58, 0.60),
+	vec3 coral_tint = mix(vec3(0.34, 0.56, 0.54), vec3(0.24, 0.46, 0.50),
 						   smoothstep(0.30, 0.88, ctx.offshore_depth));
-	vec3 reef_col = mix(reef_base * 1.035, coral_tint, coral_soft * 0.16);
-	reef_col *= 1.0 + (reef_sheen - 0.5) * 0.022;
-	float reef_edge_feather = mix(0.66, 0.88, 1.0 - smoothstep(0.22, 0.92, ctx.offshore_depth));
-	float reef_mix_w = ww.w_reef * reef_edge_feather;
+	vec3 reef_col = mix(reef_base, coral_tint, coral_soft * 0.12);
+	reef_col = mix(reef_col, color_shallow, (1.0 - smoothstep(0.14, 0.72, ctx.offshore_depth)) * 0.13);
+	reef_col *= 1.0 + (reef_sheen - 0.5) * 0.018;
+	float reef_edge_feather = mix(0.50, 0.78, 1.0 - smoothstep(0.18, 0.94, ctx.offshore_depth));
+	float reef_mix_w = ww.w_reef * reef_edge_feather * 0.86;
 	col = mix(col, reef_col, reef_mix_w);
 	return col;
 }
@@ -468,7 +575,7 @@ vec3 apply_shallow_transparency(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 
 	float depth_clarity = 1.0 - smoothstep(0.28, 0.86, ctx.offshore_depth);
 	float coastal_clarity = (ctx.biome == B_COAST) ? 1.0 : 0.0;
-	float lake_clarity = ww.w_lake * (1.0 - smoothstep(0.16, 0.62, ctx.depth_t));
+	float lake_clarity = ww.w_lake * ctx.lake_shore_w;
 	float reef_clarity = ww.w_reef * 0.42;
 	float kelp_guard = 1.0 - ww.w_kelp * 0.70;
 	float ice_guard = 1.0 - ww.w_ice;
@@ -577,13 +684,13 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, float w_ice, inout
 	float wave_freq_scale = 1.0;
 	float current_align_w = 0.0;
 	if (ctx.biome == B_LAKE) {
-		wave_amp_scale = 0.22; wave_freq_scale = 0.82; current_align_w = 0.0;
+		wave_amp_scale = 0.34; wave_freq_scale = 0.92; current_align_w = 0.0;
 	} else if (ctx.biome == B_REEF) {
-		wave_amp_scale = 0.42; wave_freq_scale = 0.78; current_align_w = 0.36;
+		wave_amp_scale = 0.50; wave_freq_scale = 0.84; current_align_w = 0.32;
 	} else if (ctx.biome == B_KELP) {
 		wave_amp_scale = 0.36; wave_freq_scale = 0.70; current_align_w = 0.40;
 	} else if (ctx.biome == B_OCEAN || ctx.biome == B_COAST) {
-		wave_amp_scale = 0.72; wave_freq_scale = 0.76; current_align_w = 0.46;
+		wave_amp_scale = 0.78; wave_freq_scale = 0.78; current_align_w = 0.46;
 	} else {
 		wave_amp_scale = 0.0;
 	}
@@ -704,7 +811,7 @@ SurfaceParams compute_water_base_surface(
 	col = build_water_normal_and_calm(col, ctx, ww.w_ice, N_water);
 
 	// ── SEA 1.15: 装配 SurfaceParams ──────────────────────────────────
-	return make_water_surface_params(col, N_water, biome, ww.w_ice, ww.w_lake, ww.w_kelp);
+	return make_water_surface_params(col, N_water, biome, ww.w_ice, ww.w_lake, ww.w_reef, ww.w_kelp);
 }
 
 
@@ -793,20 +900,20 @@ SurfaceParams apply_water_overlay_surface(
 //                     （BRDF 给的是 albedo×F，这里给的是天空环境光反射）。
 //     - sparkle     : 高频颗粒高光，纯 stylized 风味。
 //
-//   day_night_enabled=false 时整体旁路（hillshade-only 路径不该带这些）。
+//   day_night_enabled=false 时整体旁路（用户关闭 TOD 后不再叠太阳相关水面特效）。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, int quality, float pixel_night) {
 	if (!day_night_enabled) return col;
 	vec3 N = normalize(surface.normal);
+	float day_factor = 1.0 - pixel_night;
 
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
 	if (biome == B_REEF && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
 		float caustics = fbm(wp * 0.35 + vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
 		float caustics_mask = smoothstep(0.55, 0.75, caustics);
-		float day_factor = 1.0 - pixel_night;
-		vec3 caustic_col = tod_sun_color * 1.15;
-		col = mix(col, col + caustic_col * 0.35, caustics_mask * caustics_strength * day_factor);
+		vec3 caustic_col = mix(tod_sun_color, color_shallow, 0.32) * 1.05;
+		col = mix(col, col + caustic_col * 0.24, caustics_mask * caustics_strength * day_factor);
 	}
 
 	// SEA 3.2：菲涅尔天空反射（与 BRDF 的 F_Schlick 互补） ──────────────
@@ -825,9 +932,21 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 
 	// SEA 3.3：sparkle 高频颗粒高光 ────────────────────────────────────
 	if (quality >= 1 && water_sparkle_enabled) {
+		int sparkle_oct = (quality >= 2) ? 2 : 1;
+		vec3 L = normalize(tod_sun_dir);
+		vec3 H = normalize(L + VIEW_DIR_TOP_DOWN);
+		float NdotH = max(dot(N, H), 0.0);
+		float rough = clamp(surface.roughness, 0.04, 1.0);
+		float gloss_power = mix(18.0, 86.0, 1.0 - rough);
+		float sun_glint = pow(NdotH, gloss_power);
+		float glint_noise = fbm(wp * 0.055 + vec2(world_time * 0.18, -world_time * 0.11), sparkle_oct);
+		float glint_mask = smoothstep(0.58, 0.94, glint_noise);
+		float rough_window = 1.0 - smoothstep(0.18, 0.68, rough);
+		vec3 glint_col = mix(tod_sun_color, vec3(1.0, 1.0, 0.92), 0.22);
+		col += glint_col * sun_glint * glint_mask * rough_window * water_reflection_strength * day_factor * 0.42;
+
 		float sparkle_freq = 0.085;
 		float sparkle_speed_day = 0.32;
-		int sparkle_oct = (quality >= 2) ? 2 : 1;
 		float sparkle = fbm(wp * sparkle_freq + vec2(world_time * sparkle_speed_day, -world_time * 0.20), sparkle_oct);
 		float spark_mask = smoothstep(0.88, 0.985, sparkle);
 		vec3 day_sparkle_col = vec3(1.03, 1.02, 0.96);
