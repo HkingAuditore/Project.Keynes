@@ -302,6 +302,7 @@ var _world_data: WorldData = null
 var _view_adapter: DCViewAdapter = null
 # PR-3.4.1（M4 拆分）：dots / DCFlagBus / DataCore wiring 委派给 bootstrap 类。
 var _dots_bootstrap: DCDotsBootstrap = null
+var _visual_bootstrap: DCVisualBootstrap = null
 # 0.4.2 — info panel controller（_ready 时实例化；持有所有右侧面板 Label refs
 # + 5 个 emergent_* 懒创建 Label + refresh_* 方法）。
 var _info_panel_controller: InfoPanelControllerScript = null
@@ -509,6 +510,7 @@ func _ready() -> void:
 	# 释放后 signal 断开。
 	_dots_bootstrap = DCDotsBootstrap.new(self)
 	_dots_bootstrap.bootstrap_flag_bus()
+	_visual_bootstrap = DCVisualBootstrap.new(self)
 
 # 地块选择：由 MapCamera 的 tile_tapped 信号驱动。
 # camera 仅在"点按"（非拖拽/捏合）时发出该信号，且基于 UI 已消费过的输入做判定，
@@ -2062,6 +2064,12 @@ func cycle_mobile_quality_tier() -> void:
 # 把六个 @export 开关一次性推到 HexRenderer / WeatherLayer。
 # 开关 → 具体 shader 分支的绑定由后续任务消费这些 setter 完成。
 func _push_visual_toggles() -> void:
+	if _visual_bootstrap == null:
+		_visual_bootstrap = DCVisualBootstrap.new(self)
+	_visual_bootstrap.push_visual_toggles()
+
+
+func _push_visual_toggles_legacy() -> void:
 	# 实测证据（log_next.txt 2026-06-15 11:32）：
 	#   shader=ON  非 SUS 帧 avg=27.90ms（直方图主峰 [24-28)=59 帧）
 	#   shader=OFF 非 SUS 帧 avg= 8.42ms（直方图主峰 [8-12)=92 帧）

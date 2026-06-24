@@ -29,12 +29,79 @@ class_name DCAtlasEncoders
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 通用 R8 → ImageTexture 编码（L8 LINEAR）
+# 纹理/atlas 编码 helpers
 # ═══════════════════════════════════════════════════════════════════════
-#
-# PR-3.1.1（master 手册 §6.2）：从 map_baker.gd:_encode_r8_tex 整体搬迁。
-# caller 改一行：DCAtlasEncoders.encode_r8_tex(...)。
-#
+
+static func encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture:
+	# RG8 16-bit：v16 = round(v*65535)；R = v16>>8, G = v16 & 0xFF
+	var W: int = size.x
+	var H: int = size.y
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(W * H * 2)
+	for i in range(W * H):
+		var v: float = clampf(buf[i], 0.0, 1.0)
+		var v16: int = clampi(int(round(v * 65535.0)), 0, 65535)
+		data[i * 2] = (v16 >> 8) & 0xFF
+		data[i * 2 + 1] = v16 & 0xFF
+	var img: Image = Image.create_from_data(W, H, false, Image.FORMAT_RG8, data)
+	return ImageTexture.create_from_image(img)
+
+
+static func encode_enum_atlas_payload(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
+		_cover_buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null, world: Object = null) -> Dictionary:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(n * 4)
+	var lookup: Array = world.pixel_to_cell_lookup if world != null else []
+	var has_lookup: bool = lookup.size() >= n
+	for i in range(n):
+		var di: int = i * 4
+		data[di] = biome_buf[i] if i < biome_buf.size() else 0
+		var cid: int = 65535
+		if has_lookup:
+			var cell = lookup[i]
+			if cell != null:
+				cid = int(cell.index)
+		data[di + 1] = cid & 0xFF
+		data[di + 2] = (cid >> 8) & 0xFF
+		data[di + 3] = 0
+	var img: Image = Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
+	var tex: ImageTexture = existing
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+	else:
+		tex = ImageTexture.create_from_image(img)
+	return {
+		"texture": tex,
+		"data": data,
+		"size": Vector2i(W, H),
+	}
+
+
+static func encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	var img: Image
+	if upwelling_buf.size() == n:
+		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, upwelling_buf)
+	else:
+		var data: PackedByteArray = PackedByteArray()
+		data.resize(n)
+		var has_up: bool = upwelling_buf.size() >= n
+		for i in range(n):
+			data[i] = upwelling_buf[i] if has_up else 128
+		img = Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
+	if existing != null and existing.get_size() == Vector2(float(W), float(H)):
+		existing.update(img)
+		return existing
+	return ImageTexture.create_from_image(img)
+
+
 # 传入 existing（非 null + 同尺寸）会尝试原地 update 以复用 GPU 句柄，
 # 避免 refresh_climate_daily 每日创建新纹理带来的驱动层分配开销。
 static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture) -> ImageTexture:
@@ -51,3 +118,16 @@ static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageT
 		existing.update(img)
 		return existing
 	return ImageTexture.create_from_image(img)
+
+
+static func encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTexture) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	if buf.size() < n:
+		return existing
+	var bytes: PackedByteArray = PackedByteArray()
+	bytes.resize(n)
+	for i in range(n):
+		bytes[i] = int(clampf(buf[i], 0.0, 1.0) * 255.0 + 0.5)
+	return encode_r8_tex(bytes, size, existing)

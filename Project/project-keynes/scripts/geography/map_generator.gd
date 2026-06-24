@@ -348,6 +348,12 @@ var _baker: MapBaker = null
 # 保留 cfg 给 refresh_seasonal 用（不需要每次外部传）
 var _last_cfg: MapConfig = null
 
+# dots-monolith-split §E.4/E.5：daily climate/ocean pass facade 实例。
+var _climate_pass_a_module: DCClimatePassA = null
+var _climate_pass_b_module: DCClimatePassB = null
+var _ocean_water_pass_module: DCOceanWaterPass = null
+var _ocean_land_pass_module: DCOceanLandPass = null
+
 # Seasonal Continuous Climate：refresh_climate_daily 调用计数器（耗时打点节流用）。
 # 首次调用必打，之后每个 WorldClock 年长打一次，避免日志被高频日级刷新淹没。
 var _daily_climate_call_count: int = 0
@@ -1046,6 +1052,17 @@ func _ensure_row_tables(cfg: MapConfig, season: int) -> void:
 
 # ─── 公开接口 ────────────────────────────────────────────────────────────
 
+func _ensure_daily_pass_modules() -> void:
+	if _climate_pass_a_module == null:
+		_climate_pass_a_module = DCClimatePassA.new(self)
+	if _climate_pass_b_module == null:
+		_climate_pass_b_module = DCClimatePassB.new(self)
+	if _ocean_water_pass_module == null:
+		_ocean_water_pass_module = DCOceanWaterPass.new(self)
+	if _ocean_land_pass_module == null:
+		_ocean_land_pass_module = DCOceanLandPass.new(self)
+
+
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	cfg.validate()
 	_abort_all_climate_passes("generate_restart")
@@ -1054,6 +1071,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = effective_seed
 	_init_noise(effective_seed)
+	_ensure_daily_pass_modules()
 
 	_last_cfg = cfg
 	_last_hex_size = hex_size
@@ -6190,6 +6208,11 @@ func _push_u8_to_world(name: StringName, indices: PackedInt32Array, values: Pack
 # 写 cell.temperature / moisture / snow_cover / temp_baseline / temp_season_offset
 # / temp_30d_mean / temp_365d_mean / temp_dev_from_annual。
 func _climate_pass_a(map: MapData, season_phase: float) -> void:
+	_ensure_daily_pass_modules()
+	_climate_pass_a_module.run(map, season_phase)
+
+
+func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	var cp := _c()
 	if cp == null or _last_cfg == null:
 		return
@@ -6538,6 +6561,11 @@ func _climate_pass_a(map: MapData, season_phase: float) -> void:
 # 调用方负责守卫 enable_local_climate_coupling 开关。season_phase 只作为轨道
 # 相位传入，地貌热响应读取 Pass-A 写出的 cell_insolation_dev。
 func _climate_pass_b(map: MapData, season_phase: float) -> void:
+	_ensure_daily_pass_modules()
+	_climate_pass_b_module.run(map, season_phase)
+
+
+func _climate_pass_b_legacy(map: MapData, season_phase: float) -> void:
 	var cp := _c()
 	if cp == null or _last_cfg == null:
 		return
@@ -8056,6 +8084,11 @@ func _apply_ocean_heat_transport_pass(map: MapData, season_phase: float) -> void
 # 的 temperature_transport_anomaly。两段之间允许跨 tick 切片，因为水段写完
 # 后 cell 字段就稳定了。
 func _ocean_water_pass(map: MapData, season_phase: float) -> void:
+	_ensure_daily_pass_modules()
+	_ocean_water_pass_module.run(map, season_phase)
+
+
+func _ocean_water_pass_legacy(map: MapData, season_phase: float) -> void:
 	if _last_cfg == null:
 		return
 	# DOTS-Total-CPP（任务 6）：同 tick 复用 short-circuit。
@@ -8191,6 +8224,11 @@ func _ocean_water_pass(map: MapData, season_phase: float) -> void:
 # ocean_current 是否流向本陆地 cell"加权注入；不再使用独立冬季倍率。
 # 必须在 _ocean_water_pass 之后调用——读取的是水段写完的 anomaly。
 func _ocean_land_pass(map: MapData, season_phase: float) -> void:
+	_ensure_daily_pass_modules()
+	_ocean_land_pass_module.run(map, season_phase)
+
+
+func _ocean_land_pass_legacy(map: MapData, season_phase: float) -> void:
 	if _last_cfg == null:
 		return
 	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 分发。
