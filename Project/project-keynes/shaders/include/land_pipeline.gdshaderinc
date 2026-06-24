@@ -182,14 +182,14 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 	// ⚠ [需求2 2026-06-19午] 0.55 太强：本层(动态)+climate_relief(基础)两层湿度 tint 叠加，把
 	// 相同湿度带的不同 biome 统一推成"湿→墨绿/干→黄褐"，压过 biome 本色 → 地形/群系着色差异变小。
 	// 降到 0.30 并收窄系数：保留暴雨/干旱的动态反馈，但不再主导静态着色，让 biome 色相回归主导。
-	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.30;
+	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.24;
 	float wet_mix = clamp(smoothstep(0.10, 0.90, i.moist) + moist_jitter, 0.0, 1.0);
-	vec3 dry_tint   = vec3(1.18, 0.92, 0.62);   // 干旱：明显黄褐
-	vec3 wet_tint_v = vec3(0.78, 1.08, 0.82);   // 湿润：明显深墨绿
+	vec3 dry_tint   = vec3(1.14, 0.97, 0.78);   // 干旱：偏砂土，不再一味压成黄褐
+	vec3 wet_tint_v = vec3(0.86, 1.04, 0.90);   // 湿润：偏冷湿润，不把所有地表推成绿油
 	vec3 wet_tint = mix(dry_tint, wet_tint_v, wet_mix);
-	float wet_amp = mix(0.70, 1.20, i.pixel_noise.r);
+	float wet_amp = mix(0.68, 1.14, i.pixel_noise.r);
 	surface.base_color *= mix(vec3(1.0), wet_tint,
-			clamp(abs(i.moist - 0.5) * 0.8 * wet_amp, 0.0, 0.30));
+			clamp(abs(i.moist - 0.5) * 0.72 * wet_amp, 0.0, 0.24));
 	return surface;
 }
 
@@ -211,15 +211,25 @@ SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) 
 	// ⚠ [需求2 2026-06-19午] amp 0.24→0.10：与 apply_moisture_tint 两层叠加过强会统一着色、压过
 	// biome 本色。仅保留轻微"干偏黄/湿偏绿"基底，把色相主导权交还给 biome_hue_modulate。
 	float moist_w = clamp(i.moist, 0.0, 1.0);
-	vec3 arid_tint  = vec3(1.13, 1.00, 0.72);
-	vec3 humid_tint = vec3(0.78, 1.07, 0.80);
+	vec3 arid_tint  = vec3(1.10, 1.01, 0.82);
+	vec3 humid_tint = vec3(0.86, 1.02, 0.94);
 	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.12, 0.72, moist_w));
-	float moist_amp = clamp(abs(moist_w - 0.42) * 0.55, 0.0, 0.10);
+	float moist_amp = clamp(abs(moist_w - 0.42) * 0.48, 0.0, 0.08);
 	surface.base_color *= mix(vec3(1.0), moist_tint, moist_amp);
 
 	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
-	float alpine_w = smoothstep(0.46, 0.96, land_h);
-	surface.base_color *= mix(vec3(1.0), vec3(0.88, 0.92, 0.96), alpine_w * 0.18);
+	float slope_mag = clamp(length(surface.normal.xy), 0.0, 1.0);
+	float foothill_w = smoothstep(0.10, 0.38, land_h);
+	float highland_w = smoothstep(0.34, 0.78, land_h);
+	float alpine_w = smoothstep(0.66, 0.96, land_h);
+	float ridge_w = smoothstep(0.10, 0.48, slope_mag);
+	float basin_w = 1.0 - ridge_w;
+
+	// 海拔不只改色相，也顺着坡度把山肩 / 山脊分出来，避免整片高地像一块硬贴上去。
+	surface.base_color *= mix(vec3(1.0), vec3(1.04, 1.01, 0.94), foothill_w * 0.08);
+	surface.base_color *= mix(vec3(1.0), vec3(0.93, 0.97, 1.02), highland_w * (0.10 + ridge_w * 0.12));
+	surface.base_color *= mix(vec3(1.0), vec3(1.06, 1.03, 0.99), alpine_w * basin_w * 0.09);
+	surface.base_color *= mix(vec3(1.0), vec3(0.88, 0.91, 0.95), alpine_w * ridge_w * 0.18);
 
 	float wind_mag = clamp(length(i.wind_v), 0.0, 1.4);
 	float wind_dry = wind_mag * (1.0 - smoothstep(0.36, 0.84, i.moist));
@@ -381,7 +391,8 @@ SurfaceParams apply_land_material_overlays(
 	float snow_w = estimate_land_snow_material_weight(biome, current_temp, elev, moist, dyn_snow, dyn_valid);
 	if (snow_w > 0.001) {
 		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_w * 0.35));
-		surface.roughness = mix(surface.roughness, 0.34, snow_w);
+		float snow_rough_target = (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS) ? 0.52 : 0.34;
+		surface.roughness = mix(surface.roughness, snow_rough_target, snow_w);
 		surface.ao        = mix(surface.ao, 0.96, snow_w);
 		surface.metallic  = mix(surface.metallic, DEFAULT_METALLIC_SNOW, snow_w);
 	}

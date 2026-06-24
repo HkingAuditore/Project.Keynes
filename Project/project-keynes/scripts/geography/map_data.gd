@@ -84,6 +84,8 @@ var air_mass_temp_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 var has_river_arr:             PackedByteArray   = PackedByteArray()
 var river_flow_arr:            PackedFloat32Array = PackedFloat32Array()
 var river_downstream_arr:      PackedInt32Array   = PackedInt32Array()
+var has_volcano_arr:           PackedByteArray   = PackedByteArray()
+var is_lake_seed_arr:          PackedByteArray   = PackedByteArray()
 var hydro_parent_arr:          PackedInt32Array   = PackedInt32Array()
 var river_discharge_arr:       PackedFloat32Array = PackedFloat32Array()
 var river_discharge_30d_arr:   PackedFloat32Array = PackedFloat32Array()
@@ -505,6 +507,8 @@ func _alloc_soa(n: int) -> void:
 	has_river_arr.resize(n)
 	river_flow_arr.resize(n)
 	river_downstream_arr.resize(n)
+	has_volcano_arr.resize(n)
+	is_lake_seed_arr.resize(n)
 	hydro_parent_arr.resize(n)
 	river_discharge_arr.resize(n)
 	river_discharge_30d_arr.resize(n)
@@ -610,6 +614,8 @@ func rebuild_soa_from_cells() -> void:
 		air_mass_temp_anomaly_arr[i] = c.air_mass_temp_anomaly
 		has_river_arr[i] = (1 if c.has_river else 0)
 		river_flow_arr[i] = c.river_flow
+		has_volcano_arr[i] = (1 if c.has_volcano else 0)
+		is_lake_seed_arr[i] = (1 if c.is_lake_seed else 0)
 		var downstream_idx: int = -1
 		if c.has_river_downstream:
 			var downstream_cell: HexCell = get_cell_by_cube(c.river_downstream)

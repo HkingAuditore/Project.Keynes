@@ -307,9 +307,9 @@ const WARP_HIGH_AMP_RATIO := 0.55
 
 # ─── per-biome 详节 noise 强度 ────────────────────────────────────────────
 const DETAIL_FREQ_BASE := 0.8
-const MOUNTAIN_RIDGE_AMP := 0.2
-const HILL_AMP := 0.04
-const PLAIN_AMP := 0.015
+const MOUNTAIN_RIDGE_AMP := 0.26  # 山脉主脊振幅：更强的峰谷起伏，避免平顶台地
+const HILL_AMP := 0.06            # 丘陵微起伏：让中海拔更有“坡面”感
+const PLAIN_AMP := 0.024          # 平原微起伏：轻抬全图的地形呼吸感
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
 const EROSION_DROPS := 6000
@@ -3511,14 +3511,19 @@ func _bake_height_biome_moisture(
 			# 7. 在陆地上叠 per-biome detail noise
 			var elev_final := elev_blend
 			if terrain_self != int(TerrainType.TERRAIN.OCEAN) and terrain_self != int(TerrainType.TERRAIN.COAST):
-				var d := _cyl_noise(_detail_noise, wx_base, wy_base, wrap_period_x, hex_size) * 0.5  # [-0.25, 0.25] (rough)
+				var d := _cyl_noise(_detail_noise, wx_base, wy_base, wrap_period_x, hex_size) * 0.5  # [-0.5, 0.5] (rough)
 				if terrain_self == int(TerrainType.TERRAIN.MOUNTAIN):
 					var ridge := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
-					elev_final = elev_blend + ridge * MOUNTAIN_RIDGE_AMP + d * 0.4 * HILL_AMP
+					var ridge_relief := ridge * 1.25 - 0.50
+					var crag := _cyl_noise(_detail_noise, wx_base * 1.55 + 17.9, wy_base * 1.55 - 11.3, wrap_period_x, hex_size) * 0.5
+					elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.25 + d * 0.55 * HILL_AMP
 				elif terrain_self == int(TerrainType.TERRAIN.HILL):
-					elev_final = elev_blend + d * HILL_AMP * 0.8 + (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5 * HILL_AMP * 0.5
+					var hill := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
+					var hill_relief := hill * 1.15 - 0.42
+					elev_final = elev_blend + d * HILL_AMP * 0.9 + hill_relief * HILL_AMP * 0.8
 				else:
-					elev_final = elev_blend + d * PLAIN_AMP
+					var plain_macro := _cyl_noise(_detail_noise, wx_base * 0.45, wy_base * 0.45, wrap_period_x, hex_size) * 0.5
+					elev_final = elev_blend + d * PLAIN_AMP + plain_macro * PLAIN_AMP * 0.70
 
 			var idx := row + x
 			height_buf[idx] = clampf(elev_final, 0.0, 1.0)

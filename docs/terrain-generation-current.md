@@ -65,10 +65,10 @@
 | 大陆形状 | `continent_warp_amp`、`dist_field_weight`、`noise_weight`、`meso_weight`、`offshore_amp` |
 | 边界海洋化 | `edge_falloff_start`、`edge_falloff_end`、`edge_falloff_depth` |
 | 大陆中心 | `main_radius_min/max`、`satellite_radius_min/max`、`satellites_per_main`、`main_placement_min/max`、`satellite_placement_min/max`、`*_separation_factor` |
-| 水文 | `river_flow_percentile`、`hydro_river_min_length`、`hydro_lake_min_cells`、`hydro_lake_min_depth`、`hydro_lake_min_volume`、`pit_fill_max_iters`、`lake_seed_freq`、`lake_seed_threshold`、`lake_seed_depth`、`lake_seed_min_interior` |
+| 水文 | `river_channel_init_cells`、`river_headwater_init_cells`、`river_headwater_min_land_h`、`river_flow_percentile`、`hydro_river_min_length`、`hydro_lake_min_cells`、`hydro_lake_min_depth`、`hydro_lake_min_volume`、`pit_fill_max_iters`、`lake_seed_freq`、`lake_seed_threshold`、`lake_seed_depth`、`lake_seed_min_interior` |
 | 湿度耦合 | `coastal_moisture_boost`、`orographic_boost`、`rain_shadow_threshold`、`rain_shadow_factor`、`rain_shadow_lookback` |
 | 植被反馈 | `veg_forest_donor`、`veg_swamp_donor`、`veg_grassland_donor`、`veg_desert_donor`、`veg_jungle_donor`、`veg_taiga_donor`、`veg_savanna_donor`、`veg_oasis_donor`、`veg_delta_donor`、`veg_salt_flat_donor`、`veg_feedback_elev_decay` |
-| 特殊地貌 | `max_volcanoes`、`volcano_min_dist`、`volcano_min_land_h` |
+| 特殊地貌 | `max_volcanoes`、`volcano_min_dist`、`volcano_min_land_h`、`plateau_min_land_h`、`plateau_max_relief`、`plateau_min_cells`、`mountain_min_land_h`、`mountain_min_relief`、`peak_min_land_h`、`peak_min_prominence`、`peak_land_cells_per_peak` |
 | 海冰 | `sea_ice_form_threshold`、`sea_ice_melt_threshold`、`sea_ice_terrain_threshold`、`sea_ice_terrain_hysteresis`、`sea_ice_freeze_insol_*` |
 
 C++ base pass 使用的 `FastNoiseLite`：
@@ -215,24 +215,23 @@ moisture = clamp(large*0.65 + small*0.35, 0, 1)
 2. `elevation < sea_level` -> `COAST`
 3. `land_h = (elevation - sea_level)/(1-sea_level)`
 4. 永久雪线：`land_h > 0.85 && temp < 0.26` 或 `land_h > 0.70 && temp < 0.05` -> `SNOW`
-5. `land_h > 0.62` -> `MOUNTAIN`
+5. `land_h > 0.70`（生成期永久地形为 `>0.72`）-> `MOUNTAIN`
 6. `temperature < 0.20` -> `TUNDRA`
-7. `land_h > 0.22` -> `HILL`
+7. 中低海拔不再直接落成 `HILL` terrain；丘陵由 `LandformType.LF.HILL` 表达。
 8. 低地按 Whittaker 风格分类：
-   - `temp > 0.55`：湿度 `>0.65 JUNGLE`，`>0.30 SAVANNA`，否则 `DESERT`
-   - `temp > 0.40`：湿度 `>0.55 FOREST`，`>0.30 GRASSLAND`，否则 `STEPPE`
-   - `temp > 0.20`：湿度 `>0.40 TAIGA`，`>0.20 STEPPE`，否则 `DESERT`
-   - fallback -> `PLAIN`
+   - `temp > 0.55`：湿度 `>0.65 JUNGLE`，`>0.36 SAVANNA`，`>0.20 STEPPE`，否则 `DESERT`
+   - `temp > 0.38`：湿度 `>0.55 FOREST`，`>0.32 GRASSLAND`，`>0.20 STEPPE`，否则 `DESERT`
+   - 凉温带：湿度 `>0.45 TAIGA`，`>0.22 STEPPE`，否则 `COLD_DESERT`
 
-### 8. 沿岸湿度与迎风坡增湿
+### 8. 沿岸湿度、副热带干带与迎风坡增湿
 
 实现位置：base pass 的 `coastal + orographic moisture` block。
 
-沿岸湿度：对非水格统计 6 邻水格比例，`moisture += water_neighbors / total_neighbors * coastal_moisture_boost`。
+沿岸湿度：当前权威路径使用 `dist_ocean` 全向距离地板，`moisture_coastal_floor` 按 `moisture_coastal_scale` 随距海指数衰减，近海陆格保底湿润，深内陆保留干燥梯度。
 
-迎风/高地正雨：对非水且 `E[i] > 0.30` 的格子，`boost = 1 + (E[i] - 0.30) * orographic_boost`，然后 `moisture *= boost`。
+副热带干带：`moisture_subtropical_dry_strength / center / width` 在南北副热带纬度扣湿，并乘以距海大陆度，恢复稳定的热带/暖温带荒漠带；近海格受沿海地板保护，不会被整片抽干。
 
-两步都会 clamp 到 `[0,1]`。
+迎风/高地正雨已合入纬向水汽扫描的 rain-out 与 orographic gain，不再额外跑旧的 6 邻加湿棘轮。
 
 ### 9. 初始数组和三轴派生
 
@@ -324,7 +323,7 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 
 实现位置：post-base 的 `Flow accumulation on the hydrologically corrected parent graph` block。
 
-当前初始河流只用这个算法，`MapConfig.river_count` 不参与；河流源头密度由 `ClimateProfile.river_flow_percentile` 控制。
+当前初始河流只用这个算法，`MapConfig.river_count` 不参与。主河由 `ClimateProfile.river_channel_init_cells` 控制，高地窄源流由 `river_headwater_init_cells` 和 `river_headwater_min_land_h` 控制；`river_flow_percentile` 只保留为兼容字段。
 
 步骤：
 
@@ -336,14 +335,14 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
    - `oro = 1 + max(land_h - 0.30, 0) * orographic_boost`
    - 海洋连通水体不产流，湖泊可承接并向 outlet 传递上游流量
 4. 按 `hydro_order` 反向遍历，把每格流量累加给 `hydro_parent`。
-5. 对所有陆地 `flow` 排序，按 `river_flow_percentile` 取阈值。
-6. `flow >= threshold` 的格子只作为河流源头候选，不直接全量标河。
-7. 候选源头按流量从高到低处理，沿 `hydro_parent` 追踪到湖泊、海洋或边界水体。
-8. 只有路径长度 `>= hydro_river_min_length` 时，才把整条陆地路径标成 `has_river=1`。
-9. 孤立格修剪：没有河流邻居、也没有水邻居的单独 river 格会被取消。
+5. 对所有陆地统计 `up_count` 汇水格数，`up_count >= river_channel_init_cells` 的格成为主河道。
+6. 对 `land_h >= river_headwater_min_land_h` 的高地，如果 `up_count >= river_headwater_init_cells`，沿 `hydro_parent` 追踪到既有河道或水体，形成窄小源流。
+7. 之后按连通分量清理：不接触水体或长度 `< hydro_river_min_length` 的河段会被取消。
+8. 孤立格修剪：没有河流邻居、也没有水邻居的单独 river 格会被取消。
+9. 河流格如果邻接 `LAKE` 但当前下游没有进入任何水体，会把最低的相邻湖格写入 `river_downstream_arr`，避免视觉上到湖边、数据上不入湖。
 10. 对每个河流格输出：
    - `river_downstream_arr[i]`：下游河格或终端水体的 cell index。
-   - `river_flow_arr[i]`：按 `log1p(flow)` 归一化的径流/宽度权重，合流后的主流更宽，支流更细。
+   - `river_flow_arr[i]`：按 `log1p(flow)` 归一化的径流/宽度权重，合流后的主流更宽，源流和支流更细。
    - `hydro_parent_arr[i]`：全图静态下游 parent，非河流陆地也有排水方向，供运行期水文路由使用。
 
 `terrain` 不会改成 river；河流由 `has_river_arr + river_downstream_arr + river_flow_arr` 表达。
@@ -380,20 +379,24 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 
 | 阶段 | 触发函数/循环 | 条件摘要 | 输出 |
 | --- | --- | --- | --- |
-| Shrubland | `shrubland_touched` | `GRASSLAND/STEPPE/SAVANNA/PLAIN`，暖、低地、中干、邻海 | `terrain=SHRUBLAND` |
-| Mangrove | `mangrove_touched` | 热带、极低海拔、邻 `COAST`，且有河流或邻 `SWAMP` | `terrain=MANGROVE` |
+| Shrubland | `shrubland_touched` | `GRASSLAND/STEPPE/SAVANNA/PLAIN`，暖、低中海拔、中干、近海或邻海 | `terrain=SHRUBLAND` |
+| Mangrove | `mangrove_touched` | 热带、极低海拔、邻 `COAST`，且有河流、邻 `SWAMP` 或局部高湿 | `terrain=MANGROVE` |
 | Glacier | `glacier_touched` | `SNOW/TUNDRA`，极冷；低海拔沿海或高海拔 | `terrain=GLACIER` |
 | Swamp | `swamp_touched` | 暖、低地、高湿，且有河流或水邻居 | `terrain=SWAMP` |
-| Volcano | `volcano_candidates` / `volcano_placed` | `MOUNTAIN` 且 `land_h >= volcano_min_land_h`，用 `seed+7717` 洗牌，满足最小间距 | `has_volcano=1` |
+| Volcano | `volcano_candidates` / `volcano_placed` | `MOUNTAIN` 且 `land_h >= volcano_min_land_h`，用 `seed+7717` 洗牌，满足最小间距 | `has_volcano=1`，`landform=VOLCANO` |
 | Delta | `delta_touched` | 有河流、低海拔、邻 `OCEAN/COAST` | `terrain=DELTA` |
-| Oasis | `oasis_touched` | 干旱基线、暖、非冰雪高山，且有河流或邻湖 | `terrain=OASIS`，`moisture>=0.55` |
-| Salt Flat | `salt_flat_touched` | `DESERT`、低地、无河流、邻居无河流/水体 | `terrain=SALT_FLAT` |
-| Badlands | `badlands_touched` | `DESERT`，当前格与邻居海拔差 `>=0.025` | `terrain=BADLANDS` |
+| Oasis | `oasis_touched` | `DESERT`、暖、基线或当前湿度仍偏干，且有河流或邻湖 | `terrain=OASIS`，`moisture>=0.55` |
+| Salt Flat | `salt_flat_touched` | `DESERT/COLD_DESERT`、低地、距海足够远、无河流/水邻且接近盆底 | `terrain=SALT_FLAT` |
+| Badlands/Mesa | `badlands_touched` / `mesa_touched` | `DESERT/COLD_DESERT`，局部高差明显；局部高点且海拔足够高转 `MESA` | `terrain=BADLANDS/MESA` |
+| Plateau | `plateau_touched` | 高海拔、低到中等局部起伏、连通面积达到 `plateau_min_cells`；默认 `plateau_max_relief=0.12` | `landform=PLATEAU` |
+| Mountain Slim | `mountain_demoted` / `mountain_to_plateau` | `MOUNTAIN` 必须满足 `mountain_min_land_h` 和 `mountain_min_relief`；平缓高地转 `PLATEAU`，较低缓坡转 `HILL` | `landform=PLATEAU/HILL` |
+| Peak Summit | `peak_summit` | 先把单格海拔派生出的大片 `PEAK` 退回 `MOUNTAIN`，再按局部高点、邻域落差、最小间距和数量上限筛出少量峰顶 | `landform=PEAK` |
+| Rift Valley | `rift_valley` | 两侧抬升夹住的线状洼地候选，按地形分数排序并限量，避免普通山谷大面积误判 | `landform=RIFT_VALLEY` |
 | Reef | `reef_touched` | `COAST`、暖、邻陆、无河流入海邻居 | `terrain=REEF` |
 | Kelp | `kelp_touched` | `COAST`、凉温、邻陆 | `terrain=KELP` |
 | Pelagic Bloom | `pelagic_touched` | 深海、无陆邻、upwelling 强 | `cover=PELAGIC_BLOOM` |
 
-火山不是 terrain，而是 `has_volcano` flag；最终 landform 派生时会优先转成 `LandformType.LF.VOLCANO`。
+火山不是 terrain，而是 `has_volcano` flag；post-base 放置火山时会立即写 `LandformType.LF.VOLCANO`，运行期同步也会按 `has_volcano_arr` 兜底恢复。高原不是 terrain，而是 post-base 末尾的 landform override。
 
 ### 10. 最终三轴同步和返回
 
@@ -415,7 +418,7 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 - 纬度：`cell_lat_norm_arr`、`temp_baseline_year_arr`
 - 枚举：`terrain_arr / base_terrain_arr`、`landform_arr / base_landform_arr`、`vegetation_arr / base_vegetation_arr`、`cover_arr`
 - 标志/水文：`is_water_arr`、`has_river_arr`、`river_flow_arr`、`river_downstream_arr`、`hydro_parent_arr`、`river_discharge_arr`、`river_discharge_30d_arr`、`river_storage_arr`、`groundwater_storage_arr`、`surface_runoff_arr`、`has_volcano_arr`、`is_lake_seed_arr`、`ema_initialized_arr`
-- 诊断：`stage_counts`、`river_flow_threshold`、`lake_count`、`river_count`、`volcano_count`
+- 诊断：`stage_counts`、`river_flow_threshold`、`river_lake_snap_count`、`lake_count`、`river_count`、`volcano_count`、`desert_class_count`、`plateau_count`、`peak_count`、`rift_valley_count`、`highland_river_count`、`mountain_peak_river_count`
 
 ## 三轴派生规则
 
@@ -431,7 +434,9 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 2. `LAKE` -> `LAKE`
 3. `OCEAN / COAST / REEF / KELP / SEA_ICE` 按海拔分 `DEEP_OCEAN / OCEAN / COAST`
 4. `DELTA / BADLANDS / SALT_FLAT` 映射为对应 landform
-5. 陆地按 `land_h`：`>0.82 PEAK`，`>0.62 MOUNTAIN`，`>0.22 HILL`，`>0.05 LOWLAND`，否则 `PLAIN`
+5. 陆地基础分段按 `land_h`：`>0.92 PEAK`，`>0.70 MOUNTAIN`，`>0.22 HILL`，`>0.05 LOWLAND`，否则 `PLAIN`；生成期 post-base 会先把平缓高地覆写为 `PLATEAU`，再用局部起伏筛掉过宽的 `MOUNTAIN`，最后稀疏化 `PEAK`。
+
+运行期 `sync_current_state` 和 GDScript `_sync_axes_for_cell()` 会保留生成期写入的结构性 landform：`PEAK / VOLCANO / PLATEAU / RIFT_VALLEY`，避免季节刷新或海冰 bootstrap 后的全图同步把这些地貌重判抹掉。
 
 ### Vegetation
 
@@ -446,7 +451,7 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 5. `SNOW` 根据 landform 派生极地荒漠/高山苔原/无植被
 6. `DELTA / OASIS / SALT_FLAT / BADLANDS / SWAMP / MANGROVE / SHRUBLAND` 映射为专用植被
 7. `HILL / MOUNTAIN / PLAIN` 走 Whittaker vegetation，而不是直接等于 terrain
-8. 森林、草地、沙漠等按 temperature/moisture 和 alpine 状态映射
+8. 森林、草地、沙漠等按 temperature/moisture 和 alpine 状态映射；`STEPPE/SAVANNA` 如果落在 `MOUNTAIN/PEAK` 上，会转为 `ALPINE_TUNDRA / ALPINE_MEADOW / BOREAL_SHRUB`，避免高山格显示成普通温带草原。
 
 ### Cover
 
@@ -587,7 +592,7 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 
 1. 初始生成没有 GDScript fallback。修改 `world_ext.cpp` 后必须 rebuild GDExtension。
 2. C++ helper 与 GDScript helper、shader helper 有 SAME_SOURCE 关系，尤其是纬度温度曲线、海拔降温、雪盖和海冰公式。
-3. `MapConfig.river_count` 当前不控制河流数量；河流源头密度由 `river_flow_percentile` 控制，之后会沿下坡路径连续刻到水体。
+3. `MapConfig.river_count` 当前不控制河流数量；主河由 `river_channel_init_cells` 控制，高地源流由 `river_headwater_init_cells / river_headwater_min_land_h` 控制，之后会沿 `hydro_parent` 下坡连通到水体。
 4. `has_river` 是逻辑 flag，terrain 不会变成 river；视觉河流由 `MapBaker._bake_river_sdf()` 生成。
 5. `MapBaker._hydraulic_erosion()` 只改视觉高度图，不回写逻辑海拔，因此不影响玩法水文。
 6. post-base 的 `base_moisture` 快照在雨影之前；运行期季节刷新从该基线出发。

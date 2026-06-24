@@ -48,6 +48,8 @@
 
 `MapGenerator.generate()` 调 `_generate_cells_native_base(cfg, seed)`，后者经 `_ensure_generation_world_ext()` 拿到（必要时临时实例化）未绑定的 `DCWorldExt`，调用 `run_native_world_generate_base_pass(seed, cfg, profile)`，由 C++ 直接生成基础地图 SoA 结果包：cube 坐标、elevation、moisture/base_moisture、初始 temperature、terrain/is_water、lat/temp_year、landform/vegetation/cover 等 PackedArrays。随后 `run_native_world_generate_post_base_pass(seed, cfg, profile, base_res)` 在 C++ 内完成 Priority-Flood 水文修正、湖盆筛选、parent graph flow accumulation 河流，并输出 `has_river_arr / river_downstream_arr / river_flow_arr` 供 Baker 追踪主流/支流和可变河宽；之后继续完成河岸/植被反馈、过渡生态、地标和水体变种。GDScript（`_assemble_native_generation_map`）只负责校验返回数组尺寸并装配成 `MapData`/`HexCell`。**若 ext 缺失、方法缺失或结果非法，`_generate_cells_native_base` 返回 null，`generate()` 硬中止并 `push_error`（旧 `_generate_cells` fallback 已删除）。**
 
+Post-base 地形/生态契约：`river_flow_arr` 参与河岸生态修复，低地或强径流河道不再保持 `DESERT/SALT_FLAT/BADLANDS/COLD_DESERT/MESA`，而会转为 `FLOODPLAIN`、暖干高地强河转 `OASIS`、较小暖干河道转 `STEPPE`；`FLOODPLAIN` 的 landform 统一派生为 `PLAIN`。三角洲、泛滥平原、高原和裂谷的触发门槛由 post-base 统一控制，`stage_counts` 暴露 `river_desert_repaired`、`river_floodplain_channel`、`delta`、`plateau`、`rift_valley` 等计数用于 CSV/日志诊断。
+
 
 
 bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.init_soa_from_bake()` 和 `bake_lat_temp_year_lut()` 后，`DCWorldExt` 读取已绑定的 `cell_lat_norm`、`cell_elevation`、`cell_terrain` 等 slot，以 C++ SAME_SOURCE 公式重算并发布初始 runtime 字段。这一层用于 slot/MapData 同步和窄 fallback，不再代表完整基础生成算法。

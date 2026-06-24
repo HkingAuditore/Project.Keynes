@@ -87,6 +87,7 @@ const CELL_WEATHER_INSTABILITY: StringName = &"cell.weather_instability"
 const CELL_WEATHER_FIELD_INIT: StringName = &"cell.weather_field_init"   # u8 0/1
 const CELL_AIR_MASS_TEMP_ANOMALY: StringName = &"cell.air_mass_temp_anomaly"
 const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/1
+const CELL_RIVER_FLOW: StringName = &"cell.river_flow"                   # f32 normalized generation flow/river width [0,1]
 
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— 显式 anomaly 合成新增 2 个 ──
 # 历史：在 2026-06-12 的 tile_data 分析中，pass_a / pass_b / ocean_water / ocean_land

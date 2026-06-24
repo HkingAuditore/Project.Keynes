@@ -113,6 +113,7 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.ocean_thermal_anomaly", cpp_name = "cell_ocean_thermal_anomaly", dtype = F32, track_prev = false, map_field = "ocean_thermal_anomaly_arr", prev_field = "", owner = "ocean.composition" },
 	{ name = &"cell.local_thermal_anomaly", cpp_name = "cell_local_thermal_anomaly", dtype = F32, track_prev = false, map_field = "local_thermal_anomaly_arr", prev_field = "", owner = "climate.pass_b" },
 	{ name = &"cell.has_river",             cpp_name = "cell_has_river",             dtype = U8,  track_prev = false, map_field = "has_river_arr",             prev_field = "", owner = "map_generation" },
+	{ name = &"cell.river_flow",            cpp_name = "cell_river_flow",            dtype = F32, track_prev = false, map_field = "river_flow_arr",            prev_field = "", owner = "map_generation" },
 	# ─── Phase 3a Step 2.1.a（2 条，对应 world.gd 711-712）─────────────────
 	{ name = &"cell.ema_initialized",       cpp_name = "cell_ema_initialized",       dtype = U8,  track_prev = false, map_field = "ema_initialized_arr",       prev_field = "", owner = "climate.pass_a" },
 	{ name = &"cell.temp_season_offset",    cpp_name = "cell_temp_season_offset",    dtype = F32, track_prev = false, map_field = "temp_season_offset_arr",    prev_field = "", owner = "climate.pass_a" },

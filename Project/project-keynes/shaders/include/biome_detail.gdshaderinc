@@ -86,15 +86,15 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 	if (biome == B_HILL) {
 		float n = fbm(wp * 0.20, 3);
 		float micro = fbm(wp * 0.45, 1);  // v9.fbm-opt
-		// v10.3：上限 1.06×1.04=1.10，配合 hillshade 最多 ×1.6
-		return vec3(mix(0.85, 1.06, n) * mix(0.95, 1.04, micro));
+		// 放大丘陵明暗纹理，让中海拔读起来更像连续坡面而不是一块均匀台面。
+		return vec3(mix(0.82, 1.12, n) * mix(0.93, 1.06, micro));
 	}
 	if (biome == B_MOUNTAIN) {
-		float n = fbm(wp * 0.30, 4);
-		float vor = voronoi_cell(wp * 0.16);
-		// v10.3：上限从 1.20×1.10=1.32 降到 1.05×1.03=1.08
-		// 配合 hillshade max 1.45 后总放大 ≤ 1.57，peak 色 (0.55) × 1.57 = 0.86 → 灰褐
-		return vec3(mix(0.72, 1.05, n) * mix(0.92, 1.03, smoothstep(0.05, 0.5, vor)));
+		float n = fbm(wp * 0.32, 4);
+		float vor = voronoi_cell(wp * 0.14);
+		float crag = fbm(wp * 0.62 + vec2(13.0, -7.0), 2);
+		// 山地保留大块面，但把岩脊 / 裂谷纹理拉开一点，让山体更“碎立”。
+		return vec3(mix(0.68, 1.16, n) * mix(0.88, 1.08, smoothstep(0.04, 0.52, vor)) * mix(0.94, 1.06, crag));
 	}
 	if (biome == B_PLAIN) {
 		float n = fbm(wp * 0.12, 3);
