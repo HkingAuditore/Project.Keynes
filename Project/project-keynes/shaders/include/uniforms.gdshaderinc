@@ -127,6 +127,21 @@ uniform float tod_night_factor  : hint_range(0.0, 1.0) = 0.0;
 // tod_exposure：最终 tonemap 前的曝光倍率（艺术化调节用）
 uniform float tod_exposure      : hint_range(0.2, 2.5) = 1.0;
 
+// [tod-latitude-sun 2026-06-25] 逐像素太阳方向（近似点光源）总开关。
+// true（默认）：主光方向按球面天文逐像素求解，不同纬度/时角得到不同的阴影方向与长度
+//   （太阳高悬→短影弱方向；低垂→长影强方向）。配合昼夜晨昏线工作；夜侧无方向光。
+// false：回退到全局 tod_sun_dir 单一方向（旧行为，全图同向）。
+// 注：day_night_enabled=false（永昼）时本开关自动失效、同样回退全局方向，保持稳定。
+uniform bool tod_latitude_sun_enabled = true;
+
+// [tod 地形方向性 2026-06-25] 逐像素太阳移动在地形凹凸上的可读性增强。
+// tod_sun_relief_max_up：太阳方向 up 分量截顶上限（原硬编码 0.92）。越低 → 太阳越偏水平 →
+//   坡面方向性明暗越强、影子方向随时角旋转越明显。默认 0.88。
+// tod_terrain_relief_strength：陆地专属的方向性明暗叠加强度（仅作用于陆地 BRDF 之后，
+//   不影响水面反射）。朝阳坡变亮、背阳坡变暗，随太阳方位旋转 → 光源移动清晰可见。默认 0.35。
+uniform float tod_sun_relief_max_up        : hint_range(0.5, 1.0) = 0.88;
+uniform float tod_terrain_relief_strength  : hint_range(0.0, 1.0) = 0.35;
+
 // ─── Pass 2 新增开关（任务 4/6） ─────────────────────────────────────────
 // cloud_tod_tint_enabled：只给云阴影用；云本体渲染在 weather_overlay.gdshader。
 uniform bool water_sparkle_enabled = true;
@@ -439,6 +454,24 @@ const int CV_PERMAFROST = 4;
 const int CV_FLOODING   = 5;
 // Systemic Ocean Currents：远洋华（浮游生物繁殖）
 const int CV_PELAGIC_BLOOM = 6;
+// ─── landform 轴可视化（LandformType.LF id，与 scripts/geography/landform_type.gd 严格对齐）──
+// 由 map_index_atlas.A 通道（per-pixel）承载。仅用于给 terrain 无法表达的地貌补充视觉特征。
+const int LF_DEEP_OCEAN  = 0;
+const int LF_OCEAN       = 1;
+const int LF_COAST       = 2;
+const int LF_LAKE        = 3;
+const int LF_PLAIN       = 4;
+const int LF_LOWLAND     = 5;
+const int LF_HILL        = 6;
+const int LF_MOUNTAIN    = 7;
+const int LF_PEAK        = 8;
+const int LF_DELTA       = 9;
+const int LF_BADLANDS    = 10;
+const int LF_SALT_FLAT   = 11;
+const int LF_VOLCANO     = 12;
+const int LF_PLATEAU     = 13;
+const int LF_RIFT_VALLEY = 14;
+const int LF_CANYON      = 15;
 // ─── Milestone 3：WeatherType.WT id ──────────────────────────────────────
 const int WT_CLEAR    = 0;
 // 与 scripts/weather_type.gd 严格按 enum 数值对齐；4(DROUGHT)/6(HEATWAVE) 的地表调色已删除。

@@ -50,6 +50,42 @@ float compute_solar_elevation(vec2 uv, float lat_signed) {
 	return sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(H);
 }
 
+// [tod-latitude-sun 2026-06-25] 逐像素太阳方向（近似点光源）。
+// 用与 compute_solar_elevation 完全同源的 decl / lat_rad / 时角 H，把太阳在该像素「本地
+// ENU 切平面」里的方向解析出来，再转成 shader 空间单位向量 (x=东, y=北[屏幕+y], z=上)。
+// [N-S 符号修正 2026-06-25] y 取 +north：屏幕 +y = 北（由纬度映射决定，详见函数体内注释）。
+//   sun_enu = (东=-cosδ·sinH, 北=cosφ·sinδ−sinφ·cosδ·cosH, 上=sinφ·sinδ+cosφ·cosδ·cosH)
+// 关键性质：返回向量为单位向量，水平分量长度 = cos(h)、垂直分量 = sin(h)：
+//   - 太阳高悬(subsolar 附近) → 近竖直 → 坡面受光均匀 → 短影 / 弱方向感
+//   - 太阳低垂(高纬 / 近晨昏)  → 近水平 → 坡面明暗强烈 → 长影 / 强方向感
+// 不同纬度 φ 与时角 H 各异 → 各像素阴影方向与长度天然不同（这正是"点光源式太阳"诉求）。
+// up 分量与 compute_solar_elevation 完全相等（= sinh），昼夜/晨昏判定可直接复用 .z。
+vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
+	float year_progress = mod(season_phase, 4.0) * 0.25;
+	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
+	float lat_rad = lat_signed * 1.5707963;
+	float lon = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU;
+	float subsolar_lon = day_phase * EARTH_DAYLIGHT_TAU;
+	float H = lon - subsolar_lon;
+	float sphi = sin(lat_rad);
+	float cphi = cos(lat_rad);
+	float sdec = sin(decl);
+	float cdec = cos(decl);
+	float cH = cos(H);
+	float sH = sin(H);
+	float up    = sphi * sdec + cphi * cdec * cH;   // = sin(h)
+	float east  = -cdec * sH;                        // 本地东向分量
+	float north = cphi * sdec - sphi * cdec * cH;    // 本地北向分量
+	// [N-S 符号修正 2026-06-25] 屏幕 y 约定以纬度映射为准：world_map 里
+	//   lat_norm 随 uv.y 增大而增大、lat_signed=+1(北极) 落在 uv.y 最大处=屏幕底部(+y)，
+	//   即【屏幕 +y = 北】（与地形法线 N.y 同空间：N.y>0 也指向 +y=北）。
+	// 旧代码误以为 +y=南而把 north 取负塞进 .y → 太阳南北方向整体反向（太阳在北时北坡反而变暗）。
+	// 正确做法：north 直接进 .y（北 = +y），与地形法线、纬度日照保持同一约定。
+	vec3 d = vec3(east, north, up);
+	float len = length(d);
+	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
+}
+
 // sinh → local_day ∈ [0,1]：1=白昼 0=夜晚 (0,1)=晨昏过渡带（band 控柔度）。
 float solar_day_factor(float sinh) {
 	return smoothstep(-0.14, 0.14, sinh);
@@ -62,14 +98,17 @@ struct EarthDaylight {
 	float sun_high;     // 太阳高悬程度（晨昏 0 → 正午 1），驱动暖橙↔暖白
 	vec3 sun_col;       // 方向光颜色（晨昏暖橙 ↔ 正午暖白）
 	vec3 amb_col;       // 环境光颜色（夜冷蓝 ↔ 昼天空）
+	vec3 sun_dir;       // [tod-latitude-sun] 逐像素太阳方向（shader 空间单位向量，含纬度/时角）
 };
 
 // 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 退化为永昼。
 // 各管线（PBR 地形 / 平面植被 / 水面）据此自行组装最终着色（线性 or sRGB、是否 tonemap）。
 // 注：参数名刻意避开 uniform day_night_enabled，否则在已声明该 uniform 的 shader 里会重定义。
 EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_night) {
-	float sinh = compute_solar_elevation(uv, lat_signed);
+	vec3 sdir = compute_sun_dir_enu(uv, lat_signed);
+	float sinh = sdir.z;  // = sin(太阳高度角)，与 compute_solar_elevation 等价（同源公式）
 	EarthDaylight ed;
+	ed.sun_dir = sdir;
 	ed.local_day = enable_day_night ? solar_day_factor(sinh) : 1.0;
 	ed.pixel_night = 1.0 - ed.local_day;
 	ed.sun_high = smoothstep(0.0, 0.32, sinh);

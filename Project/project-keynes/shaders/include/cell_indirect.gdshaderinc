@@ -35,11 +35,9 @@ vec2 cell_lut_uv(int cid) {
 }
 
 // ── Stage C：per-cell LUT 平滑采样 ───────────────────────────────────────
-// dyn_lut / eco_lut 存的是 per-cell 原始值（NEAREST 取出会出现 hex 硬边）。
-// 桌面端用 4-tap 双线性：在 map_index_atlas 的 bilinear footprint 上取 4 个 cell，
-// 按子像素权重混合它们的 LUT 值，补回跨 cell 边界平滑（替代旧 CPU box-blur 的 LINEAR 消边）。
-// 邻居落在 map 外（cid<0）时退回中心 cell 值，避免边缘被拉向 0。
-// mobile 用单点 NEAREST（dyn_lut_nearest / eco_lut_nearest），省 fetch、接受轻微阶梯。
+// dyn_lut / eco_lut 存的是 per-cell 原始值。
+// [dither-index 2026-06-25] 跨 cell 边界软化已由烘焙期 Bayer dither（索引边缘融合）接管，
+// 这里只保留单点 NEAREST 取值；旧的 4-tap 双线性 sample_*_lut_smooth 已删除。
 
 // dyn_lut 单点 NEAREST。cid<0 → vec4(0)（下游 dyn_valid 会 gate 到 derived fallback）。
 vec4 dyn_lut_nearest(vec2 uv) {
@@ -47,50 +45,8 @@ vec4 dyn_lut_nearest(vec2 uv) {
 	return (cid >= 0) ? texture(dyn_lut, cell_lut_uv(cid)) : vec4(0.0);
 }
 
-vec4 sample_dyn_lut_smooth(vec2 uv) {
-	uv = wrap_map_uv(uv);
-	int cid_c = decode_cell_index(uv);
-	vec4 center = (cid_c >= 0) ? texture(dyn_lut, cell_lut_uv(cid_c)) : vec4(0.0);
-	vec2 res = vec2(textureSize(map_index_atlas, 0));
-	vec2 tc = uv * res - 0.5;
-	vec2 base = floor(tc);
-	vec2 f = tc - base;
-	vec2 inv = 1.0 / res;
-	int i00 = decode_cell_index((base + vec2(0.5, 0.5)) * inv);
-	int i10 = decode_cell_index((base + vec2(1.5, 0.5)) * inv);
-	int i01 = decode_cell_index((base + vec2(0.5, 1.5)) * inv);
-	int i11 = decode_cell_index((base + vec2(1.5, 1.5)) * inv);
-	vec4 c00 = (i00 >= 0) ? texture(dyn_lut, cell_lut_uv(i00)) : center;
-	vec4 c10 = (i10 >= 0) ? texture(dyn_lut, cell_lut_uv(i10)) : center;
-	vec4 c01 = (i01 >= 0) ? texture(dyn_lut, cell_lut_uv(i01)) : center;
-	vec4 c11 = (i11 >= 0) ? texture(dyn_lut, cell_lut_uv(i11)) : center;
-	vec4 blended = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-	// snow 是阈值型 per-cell 状态；B 通道保留中心格，避免雪线被邻格平均拖相位。
-	blended.b = center.b;
-	return blended;
-}
-
 vec4 eco_lut_nearest(vec2 uv) {
 	int cid = decode_cell_index(uv);
 	return (cid >= 0) ? texture(eco_lut, cell_lut_uv(cid)) : vec4(0.0);
 }
 
-vec4 sample_eco_lut_smooth(vec2 uv) {
-	uv = wrap_map_uv(uv);
-	int cid_c = decode_cell_index(uv);
-	vec4 center = (cid_c >= 0) ? texture(eco_lut, cell_lut_uv(cid_c)) : vec4(0.0);
-	vec2 res = vec2(textureSize(map_index_atlas, 0));
-	vec2 tc = uv * res - 0.5;
-	vec2 base = floor(tc);
-	vec2 f = tc - base;
-	vec2 inv = 1.0 / res;
-	int i00 = decode_cell_index((base + vec2(0.5, 0.5)) * inv);
-	int i10 = decode_cell_index((base + vec2(1.5, 0.5)) * inv);
-	int i01 = decode_cell_index((base + vec2(0.5, 1.5)) * inv);
-	int i11 = decode_cell_index((base + vec2(1.5, 1.5)) * inv);
-	vec4 c00 = (i00 >= 0) ? texture(eco_lut, cell_lut_uv(i00)) : center;
-	vec4 c10 = (i10 >= 0) ? texture(eco_lut, cell_lut_uv(i10)) : center;
-	vec4 c01 = (i01 >= 0) ? texture(eco_lut, cell_lut_uv(i01)) : center;
-	vec4 c11 = (i11 >= 0) ? texture(eco_lut, cell_lut_uv(i11)) : center;
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-}

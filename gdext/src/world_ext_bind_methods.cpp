@@ -77,6 +77,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_world_generate_base_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_post_base_pass", "seed", "cfg", "profile", "input"),
                          &DCWorldExt::run_native_world_generate_post_base_pass);
+    ClassDB::bind_method(D_METHOD("run_native_world_generate_full_pass", "seed", "cfg", "profile"),
+                         &DCWorldExt::run_native_world_generate_full_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),
@@ -253,6 +255,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_psi_solver_pass", "knobs"),
         &DCWorldExt::run_psi_solver_pass);
+    // dots-total-cpp step3: 物理环流编排（生成期一次性路径）
+    ClassDB::bind_method(
+        D_METHOD("run_physical_solve_pass", "knobs"),
+        &DCWorldExt::run_physical_solve_pass);
     ClassDB::bind_method(
         D_METHOD("run_temp_baseline_year_bake", "knobs"),
         &DCWorldExt::run_temp_baseline_year_bake);
@@ -281,6 +287,41 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("patch_enum_atlas_axes", "knobs"),
         &DCWorldExt::patch_enum_atlas_axes);
+    // Bake-time static texture encoders: C++ byte payload, GD texture upload.
+    ClassDB::bind_method(
+        D_METHOD("encode_bake_height_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_height_tex_data);
+    ClassDB::bind_method(
+        D_METHOD("encode_bake_r8_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_r8_tex_data);
+    ClassDB::bind_method(
+        D_METHOD("encode_bake_flow_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_flow_tex_data);
+    ClassDB::bind_method(
+        D_METHOD("encode_bake_enum_atlas_payload", "knobs"),
+        &DCWorldExt::encode_bake_enum_atlas_payload);
+    ClassDB::bind_method(
+        D_METHOD("encode_bake_upwelling_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_upwelling_tex_data);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_terrain_index_pass", "knobs"),
+        &DCWorldExt::run_bake_terrain_index_pass);
+    // 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
+    ClassDB::bind_method(
+        D_METHOD("run_bake_volcano_field_pass", "knobs"),
+        &DCWorldExt::run_bake_volcano_field_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_latitude_field_pass", "knobs"),
+        &DCWorldExt::run_bake_latitude_field_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_river_sdf_pass", "knobs"),
+        &DCWorldExt::run_bake_river_sdf_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_erosion_pass", "knobs"),
+        &DCWorldExt::run_bake_erosion_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_geometry_fields_pass", "knobs"),
+        &DCWorldExt::run_bake_geometry_fields_pass);
     // Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F)：
     // 4 张运行期 atlas baker 的 byte-fill C++/SIMD pass。CSR 协议详见 world_ext.h。
     ClassDB::bind_method(

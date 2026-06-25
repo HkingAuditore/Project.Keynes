@@ -378,6 +378,7 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 # 末尾通过 set_world_ext() 注入。null 时所有 C++ hook 走 GDScript fallback。
 # 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
 var _world_ext = null
+var _last_bake_map: MapData = null
 # DOTS-Final-Push 修复：sea_ice prepare / 其他需要 ClimateProfile 的路径不能再依赖
 # `world.get("config")`（WorldData 上根本没有 config 字段，永远返回 null，导致
 # `use_native` 一直 false 走 48ms GDScript 回扫）。改由 MapGenerator 在 bake_world
@@ -643,6 +644,7 @@ static func compute_world_bounds(width: int, height: int, hex_size: float) -> Re
 	)
 
 func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) -> WorldData:
+	_last_bake_map = map
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = seed_val
 	_init_noise(seed_val)
@@ -716,46 +718,47 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 进度（不是精确百分比）。
 	stage_progress.emit("terrain", 0.0)
 
-	# 一次循环同时算 heightmap + biome + moisture + vegetation + cover（共享 warp 计算）
-	# Milestone 2：vegetation_buf / cover_buf 与 biome_buf 完全同 warp、同 cube_round，
-	# shader 端用同一 uv 采样三张 R8 即可对齐。
+	# dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++——一次
+	# run_bake_geometry_fields_pass 在 C++ 进程内串起 terrain-index → erosion → river →
+	# latitude → volcano（中间 height buffer 不跨语言往返），GDScript 只解包。融合不可用 /
+	# 返回 fallback 时回退到下方旧 per-pass 编排（terrain-index native / GDScript ground-truth）。
 	var t := Time.get_ticks_msec()
 	var pix_count := world.hm_size.x * world.hm_size.y
-	var height_buf := PackedFloat32Array()
-	var biome_buf := PackedByteArray()
-	var moist_buf := PackedFloat32Array()
-	var veg_buf := PackedByteArray()
-	var cover_buf := PackedByteArray()
-	height_buf.resize(pix_count)
-	biome_buf.resize(pix_count)
-	moist_buf.resize(pix_count)
-	veg_buf.resize(pix_count)
-	cover_buf.resize(pix_count)
-	_bake_height_biome_moisture(map, hex_size, world, height_buf, biome_buf, moist_buf, veg_buf, cover_buf)
-	world.height_buffer = height_buf
-	world.biome_buffer = biome_buf
-	world.moisture_buffer = moist_buf
-	world.vegetation_buffer = veg_buf
-	world.cover_buffer = cover_buf
-	print("  height+biome+moisture+veg+cover: %dms" % (Time.get_ticks_msec() - t))
+	var fused := _bake_geometry_fields_native(map, hex_size, world, seed_val)
+	if fused:
+		print("  geometry fields (fused C++): %dms" % (Time.get_ticks_msec() - t))
+	else:
+		# ── 旧 per-pass 编排（fused 不可用/失败时回退；行为同迁移前）──
+		# 一次循环同时算 heightmap + biome + moisture + vegetation + cover（共享 warp 计算）。
+		# C++ 不可用 / 方法缺失 / 返回 fallback 时回退 GDScript ground-truth（无 dither）。
+		if not _bake_terrain_index_native(map, hex_size, world):
+			var height_buf := PackedFloat32Array(); height_buf.resize(pix_count)
+			var biome_buf := PackedByteArray(); biome_buf.resize(pix_count)
+			var moist_buf := PackedFloat32Array(); moist_buf.resize(pix_count)
+			var veg_buf := PackedByteArray(); veg_buf.resize(pix_count)
+			var cover_buf := PackedByteArray(); cover_buf.resize(pix_count)
+			_bake_height_biome_moisture(map, hex_size, world, height_buf, biome_buf, moist_buf, veg_buf, cover_buf)
+			world.height_buffer = height_buf
+			world.biome_buffer = biome_buf
+			world.moisture_buffer = moist_buf
+			world.vegetation_buffer = veg_buf
+			world.cover_buffer = cover_buf
+		print("  height+biome+moisture+veg+cover: %dms" % (Time.get_ticks_msec() - t))
 
-	# 轻度侵蚀，让 hex 边界进一步自然
-	t = Time.get_ticks_msec()
-	var hm_flow_dummy := PackedFloat32Array()
-	hm_flow_dummy.resize(world.hm_size.x * world.hm_size.y)
-	_hydraulic_erosion(world.height_buffer, hm_flow_dummy, world.hm_size)
-	_clamp_buffer(world.height_buffer, 0.0, 1.0)
-	print("  light erosion: %dms" % (Time.get_ticks_msec() - t))
+		# 轻度侵蚀，让 hex 边界进一步自然（C++ 权威 run_bake_erosion_pass）。
+		t = Time.get_ticks_msec()
+		world.height_buffer = _hydraulic_erosion_native(world.height_buffer, world.hm_size, seed_val)
+		print("  light erosion: %dms" % (Time.get_ticks_msec() - t))
 
-	# 河流：从 cell.has_river 链 → Catmull-Rom → SDF
-	t = Time.get_ticks_msec()
-	world.flow_buffer = _bake_river_sdf(map, hex_size, world.world_bounds, world.derived_size)
-	print("  river SDF: %dms" % (Time.get_ticks_msec() - t))
+		# 河流：cell.has_river 链 → trace → Catmull-Rom → SDF（全 C++）。
+		t = Time.get_ticks_msec()
+		world.flow_buffer = _bake_river_sdf(map, hex_size, world.world_bounds, world.derived_size)
+		print("  river SDF: %dms" % (Time.get_ticks_msec() - t))
 
-	# Phase 1：纬度纹理（每像素 ny），给 shader 算半球 + 季节温度偏移
-	t = Time.get_ticks_msec()
-	world.latitude_buffer = _bake_latitude_buffer(world.world_bounds, world.derived_size)
-	print("  latitude: %dms" % (Time.get_ticks_msec() - t))
+		# Phase 1：纬度纹理（每像素 ny），给 shader 算半球 + 季节温度偏移
+		t = Time.get_ticks_msec()
+		world.latitude_buffer = _bake_latitude_buffer(world.world_bounds, world.derived_size)
+		print("  latitude: %dms" % (Time.get_ticks_msec() - t))
 
 	# 风/洋流/上升流像素 buffer：先在 hex 域求解物理场，再把 per-cell 真值
 	# 光栅化回 vector_atlas，供主地图海洋 tint / 水面风驱细节和 WeatherLayer advection 消费。
@@ -764,11 +767,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
-	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减
+	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减。
+	# fused 路径已在 C++ 内算好 world.volcano_field_buffer；仅回退路径需单独烘。
 	stage_progress.emit("volcano", 0.70)
-	t = Time.get_ticks_msec()
-	world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
-	print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
+	if not fused:
+		t = Time.get_ticks_msec()
+		world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
+		print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
 
 	# Emergent Climate Coupling：sea_ice_fraction buffer 保持兼容数据通道。
 	# 主地图海冰视觉已改为 shader 直接按水温派生，不依赖此贴图光栅化。
@@ -784,18 +789,18 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 编码纹理：保留 height + map_index；动态视觉走 LUT。
 	stage_progress.emit("encode", 0.88)
 	t = Time.get_ticks_msec()
-	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size)
+	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size, _world_ext)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-		world.derived_size, null, world
+		world.derived_size, null, world, map
 	)
 	prewarm_dynamic_axis_caches(map, world)
 	world.scalar_atlas_tex = null
 	# [river-render-restore 2026-06-19] 把河流 SDF（flow_buffer, float[0,1]）编码成 L8 纹理
 	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
-	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex)
+	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex, _world_ext)
 	world.sea_ice_tex = null
-	world.volcano_field_tex = DCAtlasEncoders.encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex)
+	world.volcano_field_tex = DCAtlasEncoders.encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex, _world_ext)
 
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -838,8 +843,7 @@ func _enum_atlas_cpp_pack_disabled_reason() -> String:
 		return "cpp_gate_no_world_ext"
 	if not _world_ext.has_method("patch_enum_atlas_axes"):
 		return "cpp_gate_method_missing"
-	# map_index_atlas 的 G/B 通道存 cell index；旧 C++ patch 仍按 RGB=biome/veg/cover 写入。
-	return "cpp_gate_map_index_atlas_gb_reserved"
+	return ""
 
 
 func _enum_atlas_cpp_pack_enabled() -> bool:
@@ -968,26 +972,9 @@ func _try_cpp_enum_axis_patch(map: MapData, world: WorldData, axis: String, repo
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			0, 0, buffer_patch_ms, 0.0, 0.0, true)
 		return true
-	# plan/sim-2ms-simd-dirty-budget：节流判定。flag=false 时直通走原路径；
-	# flag=true 时按累积阈值（≥16 dirty cells / ≥4 skip / ≥64 tick 自愈）决策。
-	# 跳过路径：cpu 端 _enum_atlas_data 已经被 cpp 写入最新值，仅 GPU upload 推迟。
-	if not _enum_atlas_throttle_should_flush(axis, dirty_cells):
-		_record_enum_atlas_upload_report(axis, "cpp_throttle_skipped",
-			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
-		return true
-	var image_t0_us: int = Time.get_ticks_usec()
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _enum_atlas_data)
-	var image_ms: float = float(Time.get_ticks_usec() - image_t0_us) / 1000.0
-	var upload_t0_us: int = Time.get_ticks_usec()
-	if world.enum_atlas_tex != null and world.enum_atlas_tex.get_size() == Vector2(float(W), float(H)):
-		world.enum_atlas_tex.update(img)
-	else:
-		world.enum_atlas_tex = ImageTexture.create_from_image(img)
-	var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
-	_record_enum_atlas_upload_report(axis, "cpp_cached_patch",
+	_record_enum_atlas_upload_report(axis, "cpp_lut_only_no_map_index_upload",
 		float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
-		dirty_cells, dirty_pixels, buffer_patch_ms, image_ms, upload_ms, true)
+		dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 	return true
 
 
@@ -1046,10 +1033,16 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 	_cover_cache_size = Vector2i(W, H)
 	var dirty_cells: int = int(out.get("dirty_cells", 0))
 	var dirty_pixels: int = int(out.get("dirty_pixels", 0))
+	var biome_dirty: int = int(out.get("biome_dirty", 0))
 	if dirty_cells <= 0:
 		_record_enum_atlas_upload_report("biome", "cpp_skipped_no_dirty",
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			0, 0, buffer_patch_ms, 0.0, 0.0, true)
+		return true
+	if biome_dirty <= 0:
+		_record_enum_atlas_upload_report("biome", "cpp_lut_only_no_map_index_upload",
+			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
+			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, 0.0, true)
 		return true
 	# plan/sim-2ms-simd-dirty-budget：节流判定（合并 axes 路径用 "biome" 当 key
 	# —— 一次合并 patch 等同 biome+veg+cover 三 axis 的整体翻转，所以共用一个
@@ -2951,11 +2944,28 @@ func rebake_upwelling_tex_for_debug(world: WorldData) -> bool:
 	var n: int = W * H
 	if n <= 0:
 		return false
-	# 本地分配，不污染 _pending_upwelling_buf（commit 路径不再使用此 buffer）。
+	if _world_ext != null and _world_ext.has_method("encode_bake_upwelling_tex_data") and _last_bake_map != null:
+		_ensure_ocean_pixel_to_cell_index(_last_bake_map, world)
+		if _world_ext.has_method("refresh_slots_from_map"):
+			_world_ext.refresh_slots_from_map()
+		var ret: Dictionary = _world_ext.encode_bake_upwelling_tex_data({
+			"n_cells": _last_bake_map.cell_count(),
+			"width": W,
+			"height": H,
+			"pixel_to_cell_idx": _ocean_pixel_to_cell_idx,
+		})
+		if not bool(ret.get("fallback", true)):
+			var img_native := Image.create_from_data(W, H, false, Image.FORMAT_L8,
+				ret.get("data", PackedByteArray()))
+			if world.upwelling_tex != null and world.upwelling_tex.get_size() == Vector2(float(W), float(H)):
+				world.upwelling_tex.update(img_native)
+			else:
+				world.upwelling_tex = ImageTexture.create_from_image(img_native)
+			return true
+
+	# Debug fallback: gdext missing/unbound only.
 	var debug_buf: PackedByteArray = PackedByteArray()
 	debug_buf.resize(n)
-	# 初始填中性 128（陆地默认值），_rasterize_upwelling_slice_from_hex 会按 cell.terrain
-	# 判定水陆，水域 cell 写真实 strength，陆地保持 128。
 	for i in range(n):
 		debug_buf[i] = 128
 	_rasterize_upwelling_slice_from_hex(world, debug_buf, 0, n)
@@ -3211,7 +3221,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		var upload_t0_us: int = Time.get_ticks_usec()
 		world.enum_atlas_tex = _encode_enum_atlas(
 			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-			world.derived_size, world.enum_atlas_tex, world
+			world.derived_size, world.enum_atlas_tex, world, map
 		)
 		var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 		prewarm_dynamic_axis_caches(map, world)
@@ -3294,7 +3304,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		var upload_t0_us: int = Time.get_ticks_usec()
 		world.enum_atlas_tex = _encode_enum_atlas(
 			world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-			world.derived_size, world.enum_atlas_tex, world
+			world.derived_size, world.enum_atlas_tex, world, map
 		)
 		var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 		_record_enum_atlas_upload_report("biome", "fallback_full_rewrite",
@@ -3412,9 +3422,309 @@ func _init_noise(seed_val: int) -> void:
 	_ridge_noise = FastNoiseLite.new()
 	_ridge_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	_ridge_noise.seed = seed_val + 977
-	_ridge_noise.frequency = DETAIL_FREQ_BASE * 2.0
+	# [山体去点阵 2026-06-25] 频率 ×2.0→×1.15、octave 4→3：让山脊更宽、峰谷起伏更连绵，
+	# 减少写进 height_tex 的高频细脊（避免被 hillshade slope_gain 放大成逐像素"点阵"）。
+	_ridge_noise.frequency = DETAIL_FREQ_BASE * 1.15
 	_ridge_noise.fractal_type = FastNoiseLite.FRACTAL_RIDGED
-	_ridge_noise.fractal_octaves = 4
+	_ridge_noise.fractal_octaves = 3
+
+# ─── C++ terrain-index bake pass wrapper（含内嵌 Bayer dither #3）─────────────
+# 复刻 _bake_height_biome_moisture 逐像素循环并下移到 C++（run_bake_terrain_index_pass）。
+# 成功时设 world 的 5 个 buffer + CSR 三件套 + pixel_to_cell_lookup + cell_pixel_lists，
+# 返回 true；ext/方法缺失或返回 fallback / 尺寸不符时返回 false → caller 回退 GDScript。
+const _NATIVE_TERRAIN_INDEX_METHOD := &"run_bake_terrain_index_pass"
+
+func _terrain_index_native_active() -> bool:
+	return _world_ext != null and _world_ext.has_method(_NATIVE_TERRAIN_INDEX_METHOD)
+
+# dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++。
+# 一次请求 run_bake_geometry_fields_pass → C++ 进程内串起 terrain-index → erosion →
+# river → latitude → volcano 五个 sub-pass（中间 height buffer 不跨语言往返），一次返回
+# 完整几何 bundle，GDScript 只解包到 world.* + 重建对象侧 lookup。
+# 返回 true=融合成功（world 所有几何场已填）；false=ext/方法缺失或返回 fallback → caller
+# 回退旧 per-pass 编排（_bake_terrain_index_native + 各单 pass / GDScript ground-truth）。
+func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldData, seed_val: int) -> bool:
+	if map == null or world == null:
+		return false
+	if _world_ext == null or not _world_ext.has_method("run_bake_geometry_fields_pass"):
+		return false
+	if not _terrain_index_native_active():
+		return false
+	if _warp_noise_lo == null:
+		_init_noise(world.bake_seed)
+	var W: int = world.hm_size.x
+	var H: int = world.hm_size.y
+	var pix_count: int = W * H
+	if pix_count <= 0:
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return false
+
+	# ── cell SoA（by cell.index）+ offset→index + index→HexCell + 火山中心 ──
+	var elev_arr := PackedFloat32Array(); elev_arr.resize(n_cells)
+	var moist_arr := PackedFloat32Array(); moist_arr.resize(n_cells)
+	var terr_arr := PackedByteArray(); terr_arr.resize(n_cells)
+	var veg_arr := PackedByteArray(); veg_arr.resize(n_cells)
+	var cov_arr := PackedByteArray(); cov_arr.resize(n_cells)
+	var o2i := PackedInt32Array(); o2i.resize(map.width * map.height); o2i.fill(-1)
+	var cells_by_index: Array = []; cells_by_index.resize(n_cells)
+	var volc_x := PackedFloat32Array()
+	var volc_y := PackedFloat32Array()
+	for cell in map.all_cells():
+		if cell == null:
+			continue
+		var ci: int = int(cell.index)
+		if ci < 0 or ci >= n_cells:
+			continue
+		elev_arr[ci] = cell.elevation
+		moist_arr[ci] = cell.moisture
+		terr_arr[ci] = int(cell.terrain) & 0xFF
+		veg_arr[ci] = int(cell.vegetation) & 0xFF
+		cov_arr[ci] = int(cell.cover) & 0xFF
+		cells_by_index[ci] = cell
+		var off: Vector2i = HexUtils.cube_to_offset(cell.q, cell.r)
+		if off.y >= 0 and off.y < map.height:
+			o2i[off.y * map.width + posmod(off.x, map.width)] = ci
+		if cell.has_volcano:
+			var vc := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+			volc_x.append(vc.x)
+			volc_y.append(vc.y)
+
+	# ── 几何参数（合并 5 个 sub-pass 所需 knob，origin/hex_size/seed/W/H 共用）──
+	var origin := world.world_bounds.position
+	var size := world.world_bounds.size
+	var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
+	var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
+	var seam_dx := size.x * 0.5
+	var step_x := size.x / float(W)
+	var step_y := size.y / float(H)
+	var inv_glow := 1.0 / (hex_size * 3.0)
+
+	var knobs := {
+		# 共用
+		"width": W, "height": H,
+		"origin_x": origin.x, "origin_y": origin.y,
+		"hex_size": hex_size, "seed": seed_val,
+		# terrain-index
+		"map_width": map.width, "map_height": map.height,
+		"n_cells": n_cells,
+		"size_x": size.x, "size_y": size.y,
+		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
+		"dither_enabled": true,
+		"cell_elevation": elev_arr,
+		"cell_moisture": moist_arr,
+		"cell_terrain": terr_arr,
+		"cell_vegetation": veg_arr,
+		"cell_cover": cov_arr,
+		"offset_to_index": o2i,
+		# erosion
+		"num_drops": EROSION_DROPS,
+		"max_steps": EROSION_MAX_STEPS,
+		"inertia": EROSION_INERTIA,
+		"capacity_factor": EROSION_CAPACITY_FACTOR,
+		"min_capacity": EROSION_MIN_CAPACITY,
+		"deposit_speed": EROSION_DEPOSIT_SPEED,
+		"erode_speed": EROSION_ERODE_SPEED,
+		"evaporation": EROSION_EVAPORATION,
+		"gravity": EROSION_GRAVITY,
+		"brush_radius": EROSION_RADIUS,
+		# river SDF
+		"inv_world_x": inv_world.x, "inv_world_y": inv_world.y,
+		"base_radius_px": stroke_radius_px,
+		"sdf_max_dist_px": SDF_MAX_DIST_PX,
+		"seam_dx": seam_dx,
+		"cr_step": RIVER_CR_STEP,
+		# volcano
+		"step_x": step_x, "step_y": step_y,
+		"inv_glow": inv_glow,
+		"volcano_centers_x": volc_x,
+		"volcano_centers_y": volc_y,
+	}
+	var rep: Dictionary = _world_ext.run_bake_geometry_fields_pass(knobs)
+	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
+		push_warning("[bake_geometry_fields] 融合 pass 返回 fallback（reason=%s）；回退旧 per-pass 编排。"
+			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		return false
+
+	# ── 解包 terrain 字段 ──
+	var hbuf: PackedFloat32Array = rep.get("height_buffer", PackedFloat32Array())
+	var bbuf: PackedByteArray = rep.get("biome_buffer", PackedByteArray())
+	var mbuf: PackedFloat32Array = rep.get("moisture_buffer", PackedFloat32Array())
+	var vbuf: PackedByteArray = rep.get("vegetation_buffer", PackedByteArray())
+	var cbuf: PackedByteArray = rep.get("cover_buffer", PackedByteArray())
+	if hbuf.size() != pix_count or bbuf.size() != pix_count or mbuf.size() != pix_count \
+			or vbuf.size() != pix_count or cbuf.size() != pix_count:
+		push_warning("[bake_geometry_fields] terrain buffer 尺寸非法；回退旧 per-pass 编排。")
+		return false
+	world.height_buffer = hbuf
+	world.biome_buffer = bbuf
+	world.moisture_buffer = mbuf
+	world.vegetation_buffer = vbuf
+	world.cover_buffer = cbuf
+
+	# ── 解包其余几何场 ──
+	var flow: PackedFloat32Array = rep.get("flow_buffer", PackedFloat32Array())
+	world.flow_buffer = flow if flow.size() == pix_count else PackedFloat32Array()
+	if world.flow_buffer.is_empty():
+		world.flow_buffer.resize(pix_count)
+	var lat: PackedFloat32Array = rep.get("latitude_buffer", PackedFloat32Array())
+	world.latitude_buffer = lat if lat.size() == pix_count else PackedFloat32Array()
+	if world.latitude_buffer.is_empty():
+		world.latitude_buffer.resize(pix_count)
+	var volc: PackedByteArray = rep.get("volcano_buffer", PackedByteArray())
+	world.volcano_field_buffer = volc if volc.size() == pix_count else PackedByteArray()
+	if world.volcano_field_buffer.is_empty():
+		world.volcano_field_buffer.resize(pix_count)
+
+	# ── CSR + 对象侧反向索引（同 _bake_terrain_index_native）──
+	var first_px: PackedInt32Array = rep.get("cell_first_px", PackedInt32Array())
+	var pcount: PackedInt32Array = rep.get("cell_px_count", PackedInt32Array())
+	var flat: PackedInt32Array = rep.get("flat_px_indices", PackedInt32Array())
+	world.cell_first_px_arr = first_px
+	world.cell_px_count_arr = pcount
+	world.flat_px_indices_arr = flat
+	var p2c: PackedInt32Array = rep.get("pixel_to_cell_index", PackedInt32Array())
+	var lookup: Array = []; lookup.resize(pix_count)
+	if p2c.size() == pix_count:
+		for i in range(pix_count):
+			var ci2: int = p2c[i]
+			lookup[i] = cells_by_index[ci2] if ci2 >= 0 and ci2 < n_cells else null
+	world.pixel_to_cell_lookup = lookup
+	var lists: Dictionary = {}
+	if first_px.size() >= n_cells and pcount.size() >= n_cells:
+		var flat_n: int = flat.size()
+		for ci3 in range(n_cells):
+			var cnt: int = pcount[ci3]
+			if cnt <= 0:
+				continue
+			var st: int = first_px[ci3]
+			if st < 0 or st + cnt > flat_n:
+				continue
+			var cell2: HexCell = cells_by_index[ci3]
+			if cell2 == null:
+				continue
+			lists[cell2] = flat.slice(st, st + cnt)
+	world.cell_pixel_lists = lists
+
+	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms volcano=%.1fms" % [
+		float(rep.get("terrain_ms", -1.0)), float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
+		float(rep.get("river_ms", -1.0)), str(bool(rep.get("river_ok", false))),
+		float(rep.get("latitude_ms", -1.0)), float(rep.get("volcano_ms", -1.0))])
+	if not bool(rep.get("river_ok", false)):
+		push_warning("[bake_geometry_fields] river sub-pass fallback（reason=%s）→ flow 置空（无河流或拓扑缺失）。"
+			% String(rep.get("river_reason", "?")))
+	return true
+
+func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData) -> bool:
+	if map == null or world == null:
+		return false
+	if not _terrain_index_native_active():
+		return false
+	if _warp_noise_lo == null:
+		_init_noise(world.bake_seed)
+	var W: int = world.hm_size.x
+	var H: int = world.hm_size.y
+	var pix_count: int = W * H
+	if pix_count <= 0:
+		return false
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return false
+	# 现场从 cell 属性构建 cell SoA（by cell.index）+ offset→index + index→HexCell。
+	# 不依赖 has_soa()：bake 期 SoA 可能尚未构建。~n_cells 次（≈2400），零成本。
+	var elev_arr := PackedFloat32Array(); elev_arr.resize(n_cells)
+	var moist_arr := PackedFloat32Array(); moist_arr.resize(n_cells)
+	var terr_arr := PackedByteArray(); terr_arr.resize(n_cells)
+	var veg_arr := PackedByteArray(); veg_arr.resize(n_cells)
+	var cov_arr := PackedByteArray(); cov_arr.resize(n_cells)
+	var o2i := PackedInt32Array(); o2i.resize(map.width * map.height); o2i.fill(-1)
+	var cells_by_index: Array = []; cells_by_index.resize(n_cells)
+	for cell in map.all_cells():
+		if cell == null:
+			continue
+		var ci: int = int(cell.index)
+		if ci < 0 or ci >= n_cells:
+			continue
+		elev_arr[ci] = cell.elevation
+		moist_arr[ci] = cell.moisture
+		terr_arr[ci] = int(cell.terrain) & 0xFF
+		veg_arr[ci] = int(cell.vegetation) & 0xFF
+		cov_arr[ci] = int(cell.cover) & 0xFF
+		cells_by_index[ci] = cell
+		var off: Vector2i = HexUtils.cube_to_offset(cell.q, cell.r)
+		if off.y >= 0 and off.y < map.height:
+			o2i[off.y * map.width + posmod(off.x, map.width)] = ci
+	var knobs := {
+		"width": W, "height": H,
+		"map_width": map.width, "map_height": map.height,
+		"n_cells": n_cells,
+		"origin_x": world.world_bounds.position.x,
+		"origin_y": world.world_bounds.position.y,
+		"size_x": world.world_bounds.size.x,
+		"size_y": world.world_bounds.size.y,
+		"hex_size": hex_size,
+		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
+		"seed": world.bake_seed,
+		"dither_enabled": true,
+		"cell_elevation": elev_arr,
+		"cell_moisture": moist_arr,
+		"cell_terrain": terr_arr,
+		"cell_vegetation": veg_arr,
+		"cell_cover": cov_arr,
+		"offset_to_index": o2i,
+	}
+	var rep: Dictionary = _world_ext.run_bake_terrain_index_pass(knobs)
+	if rep == null or bool(rep.get("fallback", true)):
+		return false
+	var hbuf: PackedFloat32Array = rep.get("height_buffer", PackedFloat32Array())
+	var bbuf: PackedByteArray = rep.get("biome_buffer", PackedByteArray())
+	var mbuf: PackedFloat32Array = rep.get("moisture_buffer", PackedFloat32Array())
+	var vbuf: PackedByteArray = rep.get("vegetation_buffer", PackedByteArray())
+	var cbuf: PackedByteArray = rep.get("cover_buffer", PackedByteArray())
+	if hbuf.size() != pix_count or bbuf.size() != pix_count or mbuf.size() != pix_count \
+			or vbuf.size() != pix_count or cbuf.size() != pix_count:
+		return false
+	world.height_buffer = hbuf
+	world.biome_buffer = bbuf
+	world.moisture_buffer = mbuf
+	world.vegetation_buffer = vbuf
+	world.cover_buffer = cbuf
+	# CSR（by cell.index）直接接 encode_bake_enum_atlas_payload；G/B/A 由桶成员驱动，
+	# dither 改派已体现在桶里 → 索引/landform 自动一致跟随。
+	var first_px: PackedInt32Array = rep.get("cell_first_px", PackedInt32Array())
+	var pcount: PackedInt32Array = rep.get("cell_px_count", PackedInt32Array())
+	var flat: PackedInt32Array = rep.get("flat_px_indices", PackedInt32Array())
+	world.cell_first_px_arr = first_px
+	world.cell_px_count_arr = pcount
+	world.flat_px_indices_arr = flat
+	# 重建 GDScript 对象侧反向索引（rebake_*_only / dynamic / eco atlas 路径消费）：
+	#   pixel_to_cell_lookup（Array[HexCell]）+ cell_pixel_lists（Dict HexCell→PackedInt32Array）。
+	# 两者均按 dither 后的 vis_cell 归属，保证增量重烘不会还原 dither。
+	var p2c: PackedInt32Array = rep.get("pixel_to_cell_index", PackedInt32Array())
+	var lookup: Array = []; lookup.resize(pix_count)
+	if p2c.size() == pix_count:
+		for i in range(pix_count):
+			var ci2: int = p2c[i]
+			lookup[i] = cells_by_index[ci2] if ci2 >= 0 and ci2 < n_cells else null
+	world.pixel_to_cell_lookup = lookup
+	var lists: Dictionary = {}
+	if first_px.size() >= n_cells and pcount.size() >= n_cells:
+		var flat_n: int = flat.size()
+		for ci3 in range(n_cells):
+			var cnt: int = pcount[ci3]
+			if cnt <= 0:
+				continue
+			var st: int = first_px[ci3]
+			if st < 0 or st + cnt > flat_n:
+				continue
+			var cell2: HexCell = cells_by_index[ci3]
+			if cell2 == null:
+				continue
+			lists[cell2] = flat.slice(st, st + cnt)
+	world.cell_pixel_lists = lists
+	return true
+
 
 # ─── 核心：一次循环同时产出 height / biome / moisture ────────────────────
 
@@ -3515,8 +3825,10 @@ func _bake_height_biome_moisture(
 				if terrain_self == int(TerrainType.TERRAIN.MOUNTAIN):
 					var ridge := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
 					var ridge_relief := ridge * 1.25 - 0.50
-					var crag := _cyl_noise(_detail_noise, wx_base * 1.55 + 17.9, wy_base * 1.55 - 11.3, wrap_period_x, hex_size) * 0.5
-					elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.25 + d * 0.55 * HILL_AMP
+					# [山体去点阵 2026-06-25] crag 降频 1.55→1.05、权重 0.25→0.10：
+					# 弱化高频岩屑起伏，主起伏交给更宽的 ridge_relief，hillshade 不再点阵。
+					var crag := _cyl_noise(_detail_noise, wx_base * 1.05 + 17.9, wy_base * 1.05 - 11.3, wrap_period_x, hex_size) * 0.5
+					elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.10 + d * 0.40 * HILL_AMP
 				elif terrain_self == int(TerrainType.TERRAIN.HILL):
 					var hill := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
 					var hill_relief := hill * 1.15 - 0.42
@@ -3684,215 +3996,83 @@ func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 
 # ─── 轻度侵蚀（仅做边界自然平滑） ────────────────────────────────────────
 
-func _hydraulic_erosion(height: PackedFloat32Array, flow_acc: PackedFloat32Array, size: Vector2i) -> void:
+func _hydraulic_erosion_native(height: PackedFloat32Array, size: Vector2i, seed_val: int) -> PackedFloat32Array:
+	# dots-total-cpp（2026-06-25）：droplet 水力侵蚀 + clamp 下沉 C++ 权威
+	# run_bake_erosion_pass（用 Ref<RandomNumberGenerator> 同 seed 复刻 baker _rng）。
+	# 无 GDScript 计算 fallback；ext/方法缺失或返回非法时 push_error 并原样返回输入 height。
 	var W := size.x
 	var H := size.y
-	var num_drops := EROSION_DROPS
-	var max_steps := EROSION_MAX_STEPS
-	var inertia := EROSION_INERTIA
-	var capacity_factor := EROSION_CAPACITY_FACTOR
-	var min_capacity := EROSION_MIN_CAPACITY
-	var deposit_speed := EROSION_DEPOSIT_SPEED
-	var erode_speed := EROSION_ERODE_SPEED
-	var evaporation := EROSION_EVAPORATION
-	var gravity := EROSION_GRAVITY
-	var brush_radius := EROSION_RADIUS
-
-	if num_drops <= 0:
-		return
-
-	# Brush kernel
-	var brush_dx := PackedInt32Array()
-	var brush_dy := PackedInt32Array()
-	var brush_w := PackedFloat32Array()
-	var brush_count := 0
-	var sum_w := 0.0
-	var br_sq := brush_radius * brush_radius
-	for dy in range(-brush_radius, brush_radius + 1):
-		for dx in range(-brush_radius, brush_radius + 1):
-			var d_sq := dx * dx + dy * dy
-			if d_sq > br_sq:
-				continue
-			var w := 1.0 - sqrt(float(d_sq)) / float(brush_radius)
-			brush_dx.append(dx)
-			brush_dy.append(dy)
-			brush_w.append(w)
-			sum_w += w
-			brush_count += 1
-	if sum_w > 0.0:
-		var inv_sum := 1.0 / sum_w
-		for i in range(brush_count):
-			brush_w[i] = brush_w[i] * inv_sum
-
-	var W_f := float(W)
-	var H_f := float(H)
-
-	for drop_idx in range(num_drops):
-		var pos_x := _rng.randf_range(1.0, W_f - 2.0)
-		var pos_y := _rng.randf_range(1.0, H_f - 2.0)
-		var dir_x := 0.0
-		var dir_y := 0.0
-		var speed := 1.0
-		var water := 1.0
-		var sediment := 0.0
-
-		for step in range(max_steps):
-			var node_x := int(floor(pos_x))
-			var node_y := int(floor(pos_y))
-			if node_x < 0 or node_x >= W - 1 or node_y < 0 or node_y >= H - 1:
-				break
-			var cell_offset_x := pos_x - float(node_x)
-			var cell_offset_y := pos_y - float(node_y)
-			var one_minus_x := 1.0 - cell_offset_x
-			var one_minus_y := 1.0 - cell_offset_y
-
-			var idx_00 := node_y * W + node_x
-			var idx_10 := idx_00 + 1
-			var idx_01 := idx_00 + W
-			var idx_11 := idx_01 + 1
-
-			var h00 := height[idx_00]
-			var h10 := height[idx_10]
-			var h01 := height[idx_01]
-			var h11 := height[idx_11]
-
-			var h_old := h00 * one_minus_x * one_minus_y \
-					+ h10 * cell_offset_x * one_minus_y \
-					+ h01 * one_minus_x * cell_offset_y \
-					+ h11 * cell_offset_x * cell_offset_y
-			var grad_x := (h10 - h00) * one_minus_y + (h11 - h01) * cell_offset_y
-			var grad_y := (h01 - h00) * one_minus_x + (h11 - h10) * cell_offset_x
-
-			dir_x = dir_x * inertia - grad_x * (1.0 - inertia)
-			dir_y = dir_y * inertia - grad_y * (1.0 - inertia)
-			var dir_len_sq := dir_x * dir_x + dir_y * dir_y
-			if dir_len_sq < 0.000001:
-				var ang := _rng.randf_range(0.0, TAU)
-				dir_x = cos(ang)
-				dir_y = sin(ang)
-			else:
-				var inv_len := 1.0 / sqrt(dir_len_sq)
-				dir_x *= inv_len
-				dir_y *= inv_len
-
-			var new_pos_x := pos_x + dir_x
-			var new_pos_y := pos_y + dir_y
-			if new_pos_x < 1.0 or new_pos_x >= W_f - 1.0 or new_pos_y < 1.0 or new_pos_y >= H_f - 1.0:
-				if sediment > 0.0:
-					height[idx_00] += sediment * one_minus_x * one_minus_y
-					height[idx_10] += sediment * cell_offset_x * one_minus_y
-					height[idx_01] += sediment * one_minus_x * cell_offset_y
-					height[idx_11] += sediment * cell_offset_x * cell_offset_y
-				break
-
-			var nnx := int(floor(new_pos_x))
-			var nny := int(floor(new_pos_y))
-			var ncx := new_pos_x - float(nnx)
-			var ncy := new_pos_y - float(nny)
-			var nidx00 := nny * W + nnx
-			var h_new := height[nidx00] * (1.0 - ncx) * (1.0 - ncy) \
-					+ height[nidx00 + 1] * ncx * (1.0 - ncy) \
-					+ height[nidx00 + W] * (1.0 - ncx) * ncy \
-					+ height[nidx00 + W + 1] * ncx * ncy
-			var delta_h := h_new - h_old
-			var capacity := maxf(-delta_h, min_capacity) * speed * water * capacity_factor
-
-			if sediment > capacity or delta_h > 0.0:
-				var deposit_amt: float
-				if delta_h > 0.0:
-					deposit_amt = minf(delta_h, sediment)
-				else:
-					deposit_amt = (sediment - capacity) * deposit_speed
-				sediment -= deposit_amt
-				height[idx_00] += deposit_amt * one_minus_x * one_minus_y
-				height[idx_10] += deposit_amt * cell_offset_x * one_minus_y
-				height[idx_01] += deposit_amt * one_minus_x * cell_offset_y
-				height[idx_11] += deposit_amt * cell_offset_x * cell_offset_y
-			else:
-				var erode_amt := minf((capacity - sediment) * erode_speed, -delta_h)
-				for i in range(brush_count):
-					var bx := node_x + brush_dx[i]
-					var by := node_y + brush_dy[i]
-					if bx < 0 or bx >= W or by < 0 or by >= H:
-						continue
-					var bidx := by * W + bx
-					var weighted := erode_amt * brush_w[i]
-					var actual := minf(height[bidx], weighted)
-					height[bidx] -= actual
-					sediment += actual
-
-			flow_acc[idx_00] += water
-			var spd_sq := speed * speed + delta_h * gravity
-			speed = sqrt(maxf(spd_sq, 0.0))
-			water *= (1.0 - evaporation)
-			pos_x = new_pos_x
-			pos_y = new_pos_y
-			if water < 0.001:
-				break
-
-func _clamp_buffer(buf: PackedFloat32Array, lo: float, hi: float) -> void:
-	for i in range(buf.size()):
-		buf[i] = clampf(buf[i], lo, hi)
+	if W <= 0 or H <= 0:
+		return height
+	if _world_ext == null or not _world_ext.has_method("run_bake_erosion_pass"):
+		push_error("[hydraulic_erosion] DCWorldExt.run_bake_erosion_pass 缺失（DLL 未 rebuild?）；"
+			+ "dots-total-cpp 已移除 GDScript 计算 fallback。返回未侵蚀 height。")
+		return height
+	var rep: Dictionary = _world_ext.run_bake_erosion_pass({
+		"width": W, "height": H,
+		"height_buffer": height,
+		"seed": seed_val,
+		"num_drops": EROSION_DROPS,
+		"max_steps": EROSION_MAX_STEPS,
+		"inertia": EROSION_INERTIA,
+		"capacity_factor": EROSION_CAPACITY_FACTOR,
+		"min_capacity": EROSION_MIN_CAPACITY,
+		"deposit_speed": EROSION_DEPOSIT_SPEED,
+		"erode_speed": EROSION_ERODE_SPEED,
+		"evaporation": EROSION_EVAPORATION,
+		"gravity": EROSION_GRAVITY,
+		"brush_radius": EROSION_RADIUS,
+	})
+	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
+	var out: PackedFloat32Array = rep.get("height_out", PackedFloat32Array()) if ok else PackedFloat32Array()
+	if not ok or out.size() != W * H:
+		push_error("[hydraulic_erosion] run_bake_erosion_pass 返回 fallback/非法（reason=%s）；返回未侵蚀 height。"
+			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		return height
+	return out
 
 # ─── 河流：从 cell.has_river 链 → Catmull-Rom → SDF ──────────────────────
 
-func _bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Vector2i) -> PackedFloat32Array:
+func _bake_river_sdf(_map: MapData, hex_size: float, bounds: Rect2, res: Vector2i) -> PackedFloat32Array:
 	var W := res.x
 	var H := res.y
-	var INF := 1.0e9
-	var mask := PackedFloat32Array()
-	mask.resize(W * H)
-	for i in range(W * H):
-		mask[i] = INF
+	var origin := bounds.position
+	var size := bounds.size
+	var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
+	var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
+	var seam_dx := size.x * 0.5
 
-	var chains := _trace_all_rivers(map, hex_size)
-	if not chains.is_empty():
-		var origin := bounds.position
-		var size := bounds.size
-		var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
-		var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
-		# [cylindrical-earth-daylight] 圆柱东西环绕后，近接缝的河流 downstream 可能落在对侧边缘，
-		# 其世界坐标横跨全图 → 直接连线会沿纬度横贯整张图成一条假"河流线"（海陆通吃，实测正是
-		# 用户所见横线）。按世界半宽切断跨接缝段，把链拆成多段分别烘焙：河流在边缘自然断开、不再
-		# 横贯。seam_dx 取半宽，正常相邻 hex 步长（≈size.x/width）远低于它，不会误伤普通河段。
-		var seam_dx := size.x * 0.5
-		for chain: Dictionary in chains:
-			var points: Array = chain.get("points", [])
-			var widths: Array = chain.get("widths", [])
-			if points.size() < 2:
-				continue
-			var run_pts: Array = [points[0]]
-			var run_w: Array = [widths[0]]
-			for k in range(1, points.size()):
-				if absf((points[k] as Vector2).x - (points[k - 1] as Vector2).x) > seam_dx:
-					_stamp_river_run(mask, run_pts, run_w, hex_size, origin, inv_world, W, H, stroke_radius_px)
-					run_pts = [points[k]]
-					run_w = [widths[k]]
-				else:
-					run_pts.append(points[k])
-					run_w.append(widths[k])
-			_stamp_river_run(mask, run_pts, run_w, hex_size, origin, inv_world, W, H, stroke_radius_px)
-
-	_chamfer_sdt(mask, W, H)
-
-	# 转成 [0, 1] 范围，1 = 河上，0 = 距离 ≥ SDF_MAX_DIST_PX
-	var out_buf := PackedFloat32Array()
-	out_buf.resize(W * H)
-	var inv_max := 1.0 / SDF_MAX_DIST_PX
-	for i in range(W * H):
-		var t := clampf(mask[i] * inv_max, 0.0, 1.0)
-		out_buf[i] = 1.0 - t
-	return out_buf
-
-# [cylindrical-earth-daylight] 单段河流（已按接缝切分、不含跨图段）的 CR 平滑 → warp → 烘焙。
-# 从 _bake_river_sdf 主循环抽出，供拆段后逐段复用，避免重复代码。
-func _stamp_river_run(mask: PackedFloat32Array, run_pts: Array, run_w: Array, hex_size: float,
-		origin: Vector2, inv_world: Vector2, W: int, H: int, stroke_radius_px: float) -> void:
-	if run_pts.size() < 2:
-		return
-	var dense := _catmull_rom_dense_with_widths(run_pts, run_w, RIVER_CR_STEP)
-	var warped := _warp_river_chain(dense["points"], hex_size)
-	_stamp_polyline_variable(mask, warped, dense["widths"], origin, inv_world, W, H, stroke_radius_px)
+	# dots-total-cpp step1（2026-06-25）：河流图遍历(trace) + seam-split + Catmull-Rom 致密化 +
+	# warp 噪声 + stamp + chamfer + normalize **全部在 C++ run_bake_river_sdf_pass 内完成**。
+	# 河流拓扑由 run_native_world_generate_post_base_pass 暂存到 ext 成员（_gen_river_*），本 pass
+	# 不再传任何河流链/拓扑——GDScript 只发 bake 几何参数（零河流数据跨语言传输）。
+	# 无 GDScript 计算 fallback；ext/方法/拓扑缺失或返回非法时 push_error 返回空 flow buffer。
+	if _world_ext == null or not _world_ext.has_method("run_bake_river_sdf_pass"):
+		push_error("[bake_river_sdf] DCWorldExt.run_bake_river_sdf_pass 缺失（DLL 未 rebuild?）；"
+			+ "dots-total-cpp 已移除 GDScript 计算 fallback。返回空 flow buffer。")
+		var empty := PackedFloat32Array()
+		empty.resize(W * H)
+		return empty
+	var rep: Dictionary = _world_ext.run_bake_river_sdf_pass({
+		"width": W, "height": H,
+		"origin_x": origin.x, "origin_y": origin.y,
+		"inv_world_x": inv_world.x, "inv_world_y": inv_world.y,
+		"hex_size": hex_size,
+		"seed": int(_rng.seed) if _rng != null else 0,
+		"base_radius_px": stroke_radius_px,
+		"sdf_max_dist_px": SDF_MAX_DIST_PX,
+		"seam_dx": seam_dx,
+		"cr_step": RIVER_CR_STEP,
+	})
+	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
+	var out: PackedFloat32Array = rep.get("out_buf", PackedFloat32Array()) if ok else PackedFloat32Array()
+	if not ok or out.size() != W * H:
+		push_error("[bake_river_sdf] run_bake_river_sdf_pass 返回 fallback/非法（reason=%s）；返回空 flow buffer。"
+			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		var empty2 := PackedFloat32Array()
+		empty2.resize(W * H)
+		return empty2
+	return out
 
 func _trace_all_rivers(map: MapData, hex_size: float) -> Array:
 	var visited: Dictionary = {}
@@ -4173,7 +4353,7 @@ func _chamfer_sdt(mask: PackedFloat32Array, W: int, H: int) -> void:
 # ─── 纹理编码 ────────────────────────────────────────────────────────────
 
 func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture:
-	return DCAtlasEncoders.encode_height_tex(buf, size)
+	return DCAtlasEncoders.encode_height_tex(buf, size, _world_ext)
 
 
 # ─── v9.atlas：合并通道编码 ─────────────────────────────────────────────
@@ -4181,14 +4361,32 @@ func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture
 # 按"采样模式 + 数据语义"分到 3 张 atlas，shader 端只需 3 次 texture() 即可
 # 拿到所有 derived 数据。height_tex 因分辨率/精度独立保留。
 
-# map_index_atlas: RGBA8 NEAREST (R=biome, G=cell index low, B=cell index high, A=0)
+func _landform_bytes_for_map(map: MapData) -> PackedByteArray:
+	if map == null:
+		return PackedByteArray()
+	var n: int = map.cell_count()
+	if map.landform_arr.size() >= n:
+		return map.landform_arr
+	var out: PackedByteArray = PackedByteArray()
+	out.resize(n)
+	for cell: HexCell in map.all_cells():
+		if cell == null:
+			continue
+		var ci: int = int(cell.index)
+		if ci >= 0 and ci < n:
+			out[ci] = int(cell.landform) & 0xFF
+	return out
+
+
+# map_index_atlas: RGBA8 NEAREST (R=biome, G=cell index low, B=cell index high, A=landform)
 # v9.perf：existing 非 null 时走 ImageTexture.update() 复用 GPU RID，
 # 避免每天 rebake 时反复 alloc/free GPU buffer + 重新绑定 shader uniform
 func _encode_enum_atlas(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
 		_cover_buf: PackedByteArray, size: Vector2i,
-		existing: ImageTexture = null, world: WorldData = null) -> ImageTexture:
+		existing: ImageTexture = null, world: WorldData = null, map: MapData = null) -> ImageTexture:
 	var payload: Dictionary = DCAtlasEncoders.encode_enum_atlas_payload(
-		biome_buf, _veg_buf, _cover_buf, size, existing, world
+		biome_buf, _veg_buf, _cover_buf, size, existing, world, _world_ext,
+		_landform_bytes_for_map(map)
 	)
 	# 阶段 P2：缓存 RGBA8 data。后续 biome 变化只局部写 R 通道；G/B cell index 不变。
 	_enum_atlas_data = payload.get("data", PackedByteArray())
@@ -4516,19 +4714,19 @@ func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
 # shader 端只在 ocean_current_debug 开启时采样，主路径不读。
 func _encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null) -> ImageTexture:
-	return DCAtlasEncoders.encode_upwelling_tex(upwelling_buf, size, existing)
+	return DCAtlasEncoders.encode_upwelling_tex(upwelling_buf, size, existing, _world_ext)
 
 # PR-3.1.1（master 手册 §6.2）：_encode_r8_tex 已搬到 DCAtlasEncoders.encode_r8_tex。
 # 本 facade 保留作为 in-class shim，避免 caller 全部一次性改动。
 # 后续 PR 可逐步把 caller 改为 DCAtlasEncoders.encode_r8_tex 直调。
 func _encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageTexture) -> ImageTexture:
-	return DCAtlasEncoders.encode_r8_tex(buf, size, existing)
+	return DCAtlasEncoders.encode_r8_tex(buf, size, existing, _world_ext)
 
 # [river-render-restore 2026-06-19] 河流 SDF（float[0,1]，1=河心）→ L8 纹理。
 # 与 height_tex 共用同一 uv（world_origin/world_size 覆盖同一 world_bounds），
 # shader 在 uv 处采样得到 [0,1] 河流强度，喂回 land_pipeline 的 flow 视觉层。
 func _encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTexture) -> ImageTexture:
-	return DCAtlasEncoders.encode_flow_tex(buf, size, existing)
+	return DCAtlasEncoders.encode_flow_tex(buf, size, existing, _world_ext)
 
 
 # Emergent Climate Coupling：从 HexCell.sea_ice_fraction 把 per-cell 的连续海冰覆盖率
@@ -4882,33 +5080,39 @@ func _bake_volcano_field(map: MapData, hex_size: float, world: WorldData) -> Pac
 	var glow_radius := hex_size * 3.0
 	var inv_glow := 1.0 / glow_radius
 
-	# 收集火山中心
-	var volcano_centers: Array[Vector2] = []
+	# 收集火山中心（极少数 cell → 极小传输；O(n_pixels) 热循环全部在 C++）
+	var centers_x := PackedFloat32Array()
+	var centers_y := PackedFloat32Array()
 	for cell: HexCell in map.all_cells():
 		if cell.has_volcano:
-			volcano_centers.append(HexUtils.cube_to_world(cell.q, cell.r, hex_size))
+			var c := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+			centers_x.append(c.x)
+			centers_y.append(c.y)
 
-	var buf := PackedByteArray()
-	buf.resize(W * H)
-	if volcano_centers.is_empty():
-		return buf  # 全 0
-
-	for y in range(H):
-		var wy := origin.y + (float(y) + 0.5) * step_y
-		var row := y * W
-		for x in range(W):
-			var wx := origin.x + (float(x) + 0.5) * step_x
-			var intensity: float = 0.0
-			for c: Vector2 in volcano_centers:
-				var dx: float = wx - c.x
-				var dy: float = wy - c.y
-				var dist: float = sqrt(dx * dx + dy * dy)
-				var contrib: float = 1.0 - dist * inv_glow
-				if contrib > 0.0:
-					# 平方衰减让中心更亮、远端更柔
-					intensity += contrib * contrib
-			buf[row + x] = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
-	return buf
+	# C++ 权威路径（dots-total-cpp：无 GDScript 计算 fallback）。
+	if _world_ext == null or not _world_ext.has_method("run_bake_volcano_field_pass"):
+		push_error("[bake_volcano_field] DCWorldExt.run_bake_volcano_field_pass 缺失（DLL 未 rebuild?）；"
+			+ "dots-total-cpp 已移除 GDScript 计算 fallback。返回空 volcano buffer。")
+		var empty := PackedByteArray()
+		empty.resize(W * H)
+		return empty
+	var rep: Dictionary = _world_ext.run_bake_volcano_field_pass({
+		"width": W, "height": H,
+		"origin_x": origin.x, "origin_y": origin.y,
+		"step_x": step_x, "step_y": step_y,
+		"inv_glow": inv_glow,
+		"volcano_centers_x": centers_x,
+		"volcano_centers_y": centers_y,
+	})
+	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
+	var data: PackedByteArray = rep.get("data", PackedByteArray()) if ok else PackedByteArray()
+	if not ok or data.size() != W * H:
+		push_error("[bake_volcano_field] run_bake_volcano_field_pass 返回 fallback/非法（reason=%s）；返回空 buffer。"
+			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		var empty2 := PackedByteArray()
+		empty2.resize(W * H)
+		return empty2
+	return data
 
 # ─── Phase 1：纬度 buffer（每像素 ny ∈ [0, 1]） ──────────────────────────
 # shader 用来算半球（lat_signed = ny * 2 - 1）以及纬度温度钟形曲线。
@@ -4916,13 +5120,24 @@ func _bake_volcano_field(map: MapData, hex_size: float, world: WorldData) -> Pac
 func _bake_latitude_buffer(bounds: Rect2, size: Vector2i) -> PackedFloat32Array:
 	var W := size.x
 	var H := size.y
-	var buf := PackedFloat32Array()
-	buf.resize(W * H)
-	for y in range(H):
-		var ny := float(y) / float(maxi(H - 1, 1))
-		for x in range(W):
-			buf[y * W + x] = ny
-	return buf
+
+	# C++ 权威路径（dots-total-cpp：无 GDScript 计算 fallback）。
+	if _world_ext == null or not _world_ext.has_method("run_bake_latitude_field_pass"):
+		push_error("[bake_latitude_buffer] DCWorldExt.run_bake_latitude_field_pass 缺失（DLL 未 rebuild?）；"
+			+ "dots-total-cpp 已移除 GDScript 计算 fallback。返回空 latitude buffer。")
+		var empty := PackedFloat32Array()
+		empty.resize(W * H)
+		return empty
+	var rep: Dictionary = _world_ext.run_bake_latitude_field_pass({"width": W, "height": H})
+	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
+	var lb: PackedFloat32Array = rep.get("latitude_buffer", PackedFloat32Array()) if ok else PackedFloat32Array()
+	if not ok or lb.size() != W * H:
+		push_error("[bake_latitude_buffer] run_bake_latitude_field_pass 返回 fallback/非法（reason=%s）；返回空 buffer。"
+			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		var empty2 := PackedFloat32Array()
+		empty2.resize(W * H)
+		return empty2
+	return lb
 
 # ─── Phase 6：风带 buffer（每像素盛行风向，RG8） ──────────────────────────
 # 用 WindBelt.wind_at(ny, season_phase, lat_jitter) 算每像素风向。
@@ -6473,6 +6688,19 @@ func _physical_solve_for_phase(map: MapData, world: WorldData, hex_size: float,
 	if not is_nan(_pending_phys_solved_phase) and absf(_pending_phys_solved_phase - season_phase) < 0.001:
 		return
 	var t0_total := Time.get_ticks_msec()
+	# dots-total-cpp step3（2026-06-25）：一次性路径优先走 C++ orchestrator
+	# run_physical_solve_pass（SLP→wind→PSI→upwelling 全在 C++ 进程内串完，中间量不跨语言）。
+	# 仅本"原子完成"入口走它；运行期逐帧分摊路径（_physical_solve_step_one 被 job 驱动）不受影响。
+	# 失败（ext/方法缺失、未 bind、任一 sub-pass fallback、!heat_transport、NaN）→ 回退原 loop。
+	if _physical_solve_native_oneshot(map, world, hex_size, cfg, season_phase):
+		_pending_phys_solved_phase = season_phase
+		_phys_stage = _PHYS_STAGE_DONE
+		var total_ms_oneshot := Time.get_ticks_msec() - t0_total
+		if total_ms_oneshot > 25:
+			push_warning("PhysicalCirculation solve@phase=%.2f total=%dms (C++ one-shot) — exceeds 25ms soft budget" % [season_phase, total_ms_oneshot])
+		else:
+			print("PhysicalCirculation solve@phase=%.2f total=%dms (C++ one-shot run_physical_solve_pass)" % [season_phase, total_ms_oneshot])
+		return
 	# 一次性路径必须从干净状态起步，避免和切片路径残留的 _phys_stage 冲突。
 	reset_physical_solve_state()
 	var stage_ms: Dictionary = {}  # stage_idx -> ms（diagnostic）
@@ -6500,6 +6728,143 @@ func _physical_solve_for_phase(map: MapData, world: WorldData, hex_size: float,
 		push_warning("%s — exceeds 25ms soft budget" % msg)
 	else:
 		print(msg)
+
+# dots-total-cpp step3（2026-06-25）：生成期物理环流一次性 C++ orchestrator wrapper。
+# 构造 combined knobs（SLP+wind+PSI+upwelling 四 stage 输入并集，chained 键 slp_arr/
+# wind_*_arr/stage 由 C++ 内部注入），一次调 run_physical_solve_pass 跑完全部 kernel，
+# 再用 phys_field_nan_guard 复刻 WIND_RASTER 的 NaN 守门。风场 RG8 光栅化仍由后续
+# _bake_initial_vector_buffers 完成（本 wrapper 不碰 _pending_wind_buf）。
+# 返回 true=全程 C++ 成功；false=ext/方法缺失、未 bind、任一 sub-pass fallback、
+# !heat_transport（需 GDScript ocean fallback）、NaN → caller 回退原 step_one loop。
+func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: float,
+		cfg: MapConfig, season_phase: float) -> bool:
+	if _world_ext == null or not _world_ext.has_method("run_physical_solve_pass"):
+		return false
+	if map == null or not map.has_indices():
+		return false
+	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
+	# !heat_transport 配置走 GDScript ocean fallback（C++ 无等价）→ 不用一次性路径。
+	var heat_transport: bool = profile.enable_ocean_heat_transport if profile != null else true
+	if not heat_transport:
+		return false
+	var cells: Array = map.iter_cells()
+	var n: int = cells.size()
+	if n <= 0:
+		return false
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+	if nb_idx.size() < n * 6:
+		return false
+
+	var bounds: Rect2 = world.world_bounds
+	if bounds.size.y <= 0.001:
+		return false
+	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
+	var days_per_year_phys: int = _calendar_days_per_year(profile)
+	var sim_day_phys: int = _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var world_seed_phys: int = int(world.bake_seed)
+	var cold_sink_temp: float = -0.05
+	if cfg != null and "COLD_SINK_TEMP" in cfg:
+		cold_sink_temp = float(cfg.COLD_SINK_TEMP)
+
+	# water_terrain_ids（与 PhysicalCirculationSolver._is_water_terrain 1:1，4 stage 共用）
+	var water_ids := PackedByteArray()
+	water_ids.append(int(TerrainType.TERRAIN.OCEAN))
+	water_ids.append(int(TerrainType.TERRAIN.COAST))
+	water_ids.append(int(TerrainType.TERRAIN.REEF))
+	water_ids.append(int(TerrainType.TERRAIN.KELP))
+
+	# prev_slp_arr（SLP response_rate 混合用）；缺失时 C++ 自有兜底。
+	var prev_slp: PackedFloat32Array = map.slp_arr if map.slp_arr.size() == n else PackedFloat32Array()
+
+	# combined knobs = 四 stage 输入并集（chained 键 slp_arr / wind_*_arr / stage 不传，C++ 注入）。
+	var knobs := {
+		# 共用
+		"n_cells": n,
+		"hex_size": hex_size,
+		"season_phase": season_phase,
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb_idx,
+		"water_terrain_ids": water_ids,
+		"days_per_year": days_per_year_phys,
+		"sim_day": sim_day_phys,
+		"world_seed": world_seed_phys,
+		"axial_tilt_deg": profile.axial_tilt_deg if profile != null else 23.5,
+		# orchestrator 控制标志
+		"heat_transport": heat_transport,
+		"solve_ocean": true,
+		"terrain_aware": (1 if terrain_aware else 0),
+		# SLP
+		"smooth_passes": 1,
+		"prev_slp_arr": prev_slp,
+		"slp_lat_amp": 0.16,
+		"slp_land_amp": 0.55,
+		"slp_water_damp": 0.20,
+		"slp_interior_boost": 1.30,
+		"slp_coast_damp": 0.60,
+		"slp_target_p95": 0.18,
+		"insolation_daylen_amp": profile.insolation_daylen_amp if profile != null else 0.35,
+		# wind
+		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
+		"land_lf_peak": int(LandformType.LF.PEAK),
+		"land_lf_hill": int(LandformType.LF.HILL),
+		# PSI
+		"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
+		"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,
+		"psi_sor_omega": 1.4,
+		"psi_r_base": 0.18,
+		"psi_beta_floor": 0.05,
+		"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.08,
+		"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.30,
+		"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50,
+		"thermohaline_weight": 0.25,
+		"upwelling_highlat_abs": 0.75,
+		"cold_sink_temp": cold_sink_temp,
+		# upwelling
+		"stage": "upwelling",
+	}
+	if profile != null:
+		# SLP profile knobs
+		knobs["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
+		knobs["slp_ice_high_weight"] = profile.slp_ice_high_weight
+		knobs["slp_snow_high_weight"] = profile.slp_snow_high_weight
+		knobs["slp_response_rate"] = profile.slp_response_rate
+		knobs["slp_synoptic_amp"] = profile.slp_synoptic_amp
+		knobs["slp_moist_low_weight"] = profile.slp_moist_low_weight
+		knobs["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
+		# wind profile knobs
+		knobs["wind_response_rate"] = profile.wind_response_rate
+		knobs["wind_synoptic_amp"] = profile.wind_synoptic_amp
+		knobs["wind_belt_only_debug"] = profile.wind_belt_only_debug
+		# PSI profile knobs
+		knobs["ocean_current_response_rate"] = profile.ocean_current_response_rate
+		knobs["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
+		knobs["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
+		knobs["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
+
+	# refresh slot 缓存，确保 kernel 读到最新 map 状态（镜像 upwelling stage 的 refresh_slots_from_map）。
+	if _world_ext.has_method("refresh_slots_from_map"):
+		_world_ext.refresh_slots_from_map()
+	var rep: Dictionary = _world_ext.run_physical_solve_pass(knobs)
+	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
+		if _phys_solve_rt_diag_count < 24:
+			_phys_solve_rt_diag_count += 1
+			print("[phys_solve][oneshot] fallback reason=%s → 回退 step_one loop" % (
+				String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		return false
+
+	# NaN/Inf 守门（复刻 WIND_RASTER stage）：异常时回退 loop（其内含 ny-only 覆写）。
+	if _world_ext.has_method("phys_field_nan_guard"):
+		var n_bad: int = int(_world_ext.phys_field_nan_guard())
+		if n_bad > 0:
+			push_warning("[phys_solve][oneshot] phys_field_nan_guard=%d → 回退 step_one loop（含 NaN 覆写）" % n_bad)
+			return false
+
+	print("[phys_solve][oneshot] OK slp=%.2fms wind=%.2fms psi=%.2fms(ran=%s) upwelling=%.2fms total=%.2fms" % [
+		float(rep.get("slp_ms", -1.0)), float(rep.get("wind_ms", -1.0)),
+		float(rep.get("psi_ms", -1.0)), str(bool(rep.get("psi_ran", false))),
+		float(rep.get("upwelling_ms", -1.0)), float(rep.get("elapsed_ms", -1.0))])
+	return true
 
 # 确保 _pending_wind_buf 已按 W×H×2 字节就位（PackedByteArray 不在 size 一致时
 # 强制重分配，避免 GC 压力）。WIND_RASTER 阶段的第一次 step 调一次。

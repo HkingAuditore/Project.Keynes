@@ -1123,6 +1123,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		_baker.stage_progress.connect(_on_baker_stage_progress)
 	if _world_clock_ref != null and _baker.has_method("set_world_clock_ref"):
 		_baker.set_world_clock_ref(_world_clock_ref)
+	var bake_ext := _ensure_generation_world_ext()
+	if bake_ext != null and _baker.has_method("set_world_ext"):
+		_baker.set_world_ext(bake_ext)
 	# Physical Wind & Ocean Circulation：把 ClimateProfile 注入 cfg，让 MapBaker
 	# 在 bake_world 内部检测 physical_circulation_enabled 等开关。生成阶段先注入一次；
 	# OceanCurrentsJob 注册时还会重复注入一次，保持 cfg.climate_profile 始终为
@@ -3803,6 +3806,20 @@ func _sync_runtime_axes_after_terrain(map: MapData, cell: HexCell, idx: int,
 		return
 	var cfg: MapConfig = _last_cfg
 	var landform: int = _derive_landform(cell, cfg)
+	# 结构性地貌保留（与 C++ stage 2 / stage 8 sync_current_state 同口径）：生成期通过
+	# 多格邻域起伏分析写入的 PEAK/VOLCANO/PLATEAU/RIFT_VALLEY/CANYON 无法由单格 _derive_landform
+	# 复现，季节重判/运行期同步必须保留，否则首个 season-refresh round 就会把高原/高峰/裂谷/峡谷
+	# 整片塌缩成朴素 MOUNTAIN/HILL。
+	if not _is_water(cell.terrain):
+		var prev_lf: int = int(cell.landform)
+		if (
+			prev_lf == LandformType.LF.PEAK
+			or prev_lf == LandformType.LF.VOLCANO
+			or prev_lf == LandformType.LF.PLATEAU
+			or prev_lf == LandformType.LF.RIFT_VALLEY
+			or prev_lf == LandformType.LF.CANYON
+		):
+			landform = prev_lf
 	var temp_for_veg: float = temperature_for_vegetation
 	if temp_for_veg < 0.0:
 		temp_for_veg = _compute_temperature(_cube_row_norm(cell, cfg), cell.elevation)
@@ -5032,6 +5049,8 @@ func _native_generation_profile_dict() -> Dictionary:
 		"peak_min_land_h",
 		"peak_min_prominence",
 		"peak_land_cells_per_peak",
+		"canyon_min_wall",
+		"canyon_min_axis",
 	]
 	var out: Dictionary = {}
 	for k in keys:
@@ -5080,49 +5099,77 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 
 	var cfg_dict := _native_generation_cfg_dict(cfg)
 	var profile_dict := _native_generation_profile_dict()
-	var res: Dictionary = ext.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)
-	_native_generation_base_report = res.duplicate(true)
-	if int(res.get("rc", -1)) != 0 or bool(res.get("fallback", true)):
-		var reason := String(res.get("fallback_reason", res.get("reason", "unknown")))
-		push_warning("[native_generation/base] 失败 (%s)；GDScript _generate_cells 已移除，中止生成" % reason)
-		return null
-	var n: int = int(res.get("n_cells", 0))
 	var expected_n: int = int(cfg.width) * int(cfg.height)
-	if n <= 0 or n != expected_n:
-		push_warning("[native_generation/base] bad n_cells=%d expected=%d; fallback" % [n, expected_n])
-		return null
-	var required := {
-		"q_arr": TYPE_PACKED_INT32_ARRAY,
-		"r_arr": TYPE_PACKED_INT32_ARRAY,
-		"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
-		"landform_arr": TYPE_PACKED_BYTE_ARRAY,
-		"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
-		"cover_arr": TYPE_PACKED_BYTE_ARRAY,
-	}
-	for key in required.keys():
-		if not _native_generation_array_ok(res, key, n, int(required[key])):
-			push_warning("[native_generation/base] bad array %s; fallback" % key)
-			return null
 
-	# dots-total-cpp（2026-06-18）：post_base 也已 C++ 化并 parity PASS。GDScript
-	# 后处理 fallback（_run_post_base_generation_passes）已删除——post_base 缺失/失败
-	# 即返回 null，由上层 generate() 硬中止。
-	if not ext.has_method("run_native_world_generate_post_base_pass"):
-		push_warning("[native_generation/post_base] 缺 run_native_world_generate_post_base_pass（DLL 未 rebuild?）；中止")
-		return null
-	var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
-	var report := res.duplicate(true)
-	report["post_base"] = post_res.duplicate(true)
-	_native_generation_base_report = report
-	if int(post_res.get("rc", -1)) != 0 or bool(post_res.get("fallback", true)):
-		var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
-		push_warning("[native_generation/post_base] 失败 (%s)；GDScript 后处理已移除，中止生成" % reason)
-		return null
-	var final_res: Dictionary = post_res
+	# dots-total-cpp step4（2026-06-25）：base + post_base 融合单次调用——base 的 10×n_cells
+	# SoA bundle 留在 C++ 内直接喂 post_base，消除原先 base 结果 C++→GDScript 校验→再回
+	# post_base 的 round-trip。full_pass 缺失（DLL 未 rebuild）时回退旧两次调用路径。
+	var res: Dictionary
+	var final_res: Dictionary
+	var n: int
+	if ext.has_method("run_native_world_generate_full_pass"):
+		final_res = ext.run_native_world_generate_full_pass(seed, cfg_dict, profile_dict)
+		_native_generation_base_report = final_res.duplicate(true)
+		if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
+			var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
+			var stage_f := "post_base" if bool(final_res.get("fused_base_post", false)) else "base"
+			push_warning("[native_generation/full] %s 失败 (%s)；GDScript 生成已移除，中止生成" % [stage_f, reason_f])
+			return null
+		n = int(final_res.get("n_cells", 0))
+		if n <= 0 or n != expected_n:
+			push_warning("[native_generation/full] bad n_cells=%d expected=%d; 中止" % [n, expected_n])
+			return null
+		# 合成 base 诊断 dict，供下方 base-path 打印零改动复用（值来自 full_pass 合并键）。
+		res = {
+			"native_algorithm": final_res.get("native_algorithm", "unknown"),
+			"native_ms": final_res.get("base_native_ms", final_res.get("native_ms", 0.0)),
+			"water_count": final_res.get("base_water_count", 0),
+			"land_count": final_res.get("base_land_count", 0),
+			"n_cells": n,
+		}
+	else:
+		res = ext.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)
+		_native_generation_base_report = res.duplicate(true)
+		if int(res.get("rc", -1)) != 0 or bool(res.get("fallback", true)):
+			var reason := String(res.get("fallback_reason", res.get("reason", "unknown")))
+			push_warning("[native_generation/base] 失败 (%s)；GDScript _generate_cells 已移除，中止生成" % reason)
+			return null
+		n = int(res.get("n_cells", 0))
+		if n <= 0 or n != expected_n:
+			push_warning("[native_generation/base] bad n_cells=%d expected=%d; fallback" % [n, expected_n])
+			return null
+		var required := {
+			"q_arr": TYPE_PACKED_INT32_ARRAY,
+			"r_arr": TYPE_PACKED_INT32_ARRAY,
+			"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
+			"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+			"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+			"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
+			"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
+			"landform_arr": TYPE_PACKED_BYTE_ARRAY,
+			"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
+			"cover_arr": TYPE_PACKED_BYTE_ARRAY,
+		}
+		for key in required.keys():
+			if not _native_generation_array_ok(res, key, n, int(required[key])):
+				push_warning("[native_generation/base] bad array %s; fallback" % key)
+				return null
+
+		# dots-total-cpp（2026-06-18）：post_base 也已 C++ 化并 parity PASS。GDScript
+		# 后处理 fallback（_run_post_base_generation_passes）已删除——post_base 缺失/失败
+		# 即返回 null，由上层 generate() 硬中止。
+		if not ext.has_method("run_native_world_generate_post_base_pass"):
+			push_warning("[native_generation/post_base] 缺 run_native_world_generate_post_base_pass（DLL 未 rebuild?）；中止")
+			return null
+		var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
+		var report := res.duplicate(true)
+		report["post_base"] = post_res.duplicate(true)
+		_native_generation_base_report = report
+		if int(post_res.get("rc", -1)) != 0 or bool(post_res.get("fallback", true)):
+			var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
+			push_warning("[native_generation/post_base] 失败 (%s)；GDScript 后处理已移除，中止生成" % reason)
+			return null
+		final_res = post_res
 
 	var map := _assemble_native_generation_map(final_res, cfg)
 	if map == null:
@@ -5774,7 +5821,8 @@ func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> vo
 			prev_landform == LandformType.LF.PEAK
 			or prev_landform == LandformType.LF.VOLCANO
 			or prev_landform == LandformType.LF.PLATEAU
-			or prev_landform == LandformType.LF.RIFT_VALLEY):
+			or prev_landform == LandformType.LF.RIFT_VALLEY
+			or prev_landform == LandformType.LF.CANYON):
 		landform = prev_landform
 	var ny: float = _cube_row_norm(cell, cfg)
 	var temp: float = _compute_temperature(ny, cell.elevation)

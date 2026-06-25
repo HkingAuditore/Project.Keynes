@@ -1277,6 +1277,32 @@ Dictionary DCWorldExt::run_native_world_generate_pass(int seed,
     return out;
 }
 
+// dots-total-cpp step4（2026-06-25）：base + post_base 融合单次驱动。
+// base 的 10×n_cells SoA bundle 在 C++ 进程内直接喂给 post_base，不出语言边界。
+Dictionary DCWorldExt::run_native_world_generate_full_pass(int seed,
+                                                           const Dictionary &cfg,
+                                                           const Dictionary &profile) {
+    using godot::String;
+    Dictionary base_res = run_native_world_generate_base_pass(seed, cfg, profile);
+    if (int(base_res.get("rc", -1)) != 0 || bool(base_res.get("fallback", true))) {
+        // base 失败：透传 base 结果（含 rc/fallback_reason），由 GDScript 中止。
+        return base_res;
+    }
+    Dictionary post_res = run_native_world_generate_post_base_pass(seed, cfg, profile, base_res);
+    // 合并 base 诊断键（GDScript 打印 base path 用），不覆盖 post_base 已有键。
+    if (!post_res.has("native_algorithm") && base_res.has("native_algorithm")) {
+        post_res["native_algorithm"] = base_res.get("native_algorithm", String("unknown"));
+    }
+    post_res["base_water_count"] = base_res.get("water_count", 0);
+    post_res["base_land_count"] = base_res.get("land_count", 0);
+    post_res["base_native_ms"] = base_res.get("native_ms", base_res.get("elapsed_ms", 0.0));
+    post_res["base_n_cells"] = base_res.get("n_cells", 0);
+    post_res["fused_base_post"] = true;
+    return post_res;
+}
+
+
+
 Array DCWorldExt::get_native_fronts_snapshot() const {
     return _native_fronts_snapshot.duplicate();
 }
@@ -13246,6 +13272,20 @@ static inline uint8_t pk_derive_landform_with_volcano(uint8_t terrain, float ele
     return pk_derive_landform(terrain, elev, sea_level);
 }
 
+// 季节/生态 biome 转换时复用：单格派生 landform，但保留生成期通过多格邻域起伏分析写入的
+// 结构性地貌 PEAK(8)/VOLCANO(12)/PLATEAU(13)/RIFT_VALLEY(14)/CANYON(15)。这些地貌无法由
+// 单格 pk_derive_landform 复现，若每个 refresh round 的 biome 转换 pass(shrubland/mangrove/
+// glacier/redecide 等)都裸调 pk_derive_landform，会把高原/高峰/裂谷/峡谷逐轮侵蚀掉(实测高寒
+// 高原转冰川即丢失 PLATEAU)。地质上冰盖覆于高原、冰川覆于高峰，landform 仍应是高原/高峰。
+static inline uint8_t pk_derive_landform_preserve(uint8_t terrain, float elev,
+                                                  float sea_level, uint8_t prev_lf) {
+    if (!pk_is_water_terrain(terrain) &&
+        (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14 || prev_lf == 15)) {
+        return prev_lf;
+    }
+    return pk_derive_landform(terrain, elev, sea_level);
+}
+
 static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture, uint8_t landform) {
     const bool is_alpine = (landform == 7 || landform == 8);
     const bool is_hilly = (landform == 6);
@@ -14717,6 +14757,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const int max_volcanoes = std::max(0, geti(profile, "max_volcanoes", 8));
     const int volcano_min_dist = std::max(0, geti(profile, "volcano_min_dist", 6));
     const double volcano_min_land_h = getd(profile, "volcano_min_land_h", 0.55);
+    // [volcano-crater 2026-06-25] 火山环形山高度场塑形幅度（归一化高程 0..1 空间，量级参考
+    // 其他 relief pass 的 0.035~0.115）：中心 cell 下凹成 caldera，第一环邻居抬升成环山脊。
+    const double volcano_crater_depth = std::max(0.0, getd(profile, "volcano_crater_depth", 0.05));
+    const double volcano_rim_height   = std::max(0.0, getd(profile, "volcano_rim_height", 0.07));
     const double plateau_min_land_h = getd(profile, "plateau_min_land_h", 0.25);
     const double plateau_max_relief = std::max(0.0, getd(profile, "plateau_max_relief", 0.14));
     const int plateau_min_cells = std::max(1, geti(profile, "plateau_min_cells", 3));
@@ -14835,7 +14879,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const int32_t * const Q = q_arr.ptr();
     const int32_t * const R = r_arr.ptr();
     const int32_t * const S = s_arr.ptr();
-    const float * const E = elevation_arr.ptr();
+    // [volcano-crater 2026-06-25] E 改为可写(.ptrw 前置 CoW，确保唯一缓冲)：火山 pass 需对火山
+    // 及第一环邻居写高程塑成环形山，写回经 out["elevation_arr"] 传播到 HexCell.elevation。所有既有
+    // 只读用法不受影响；后续结构地貌 pass 读到的是塑形后的高程（自洽：环脊更易判为 PEAK/MOUNTAIN）。
+    float * const E = elevation_arr.ptrw();
     float * const M = moisture_arr.ptrw();
     float * const BM = base_moisture_arr.ptrw();
     const float * const TEMP = temp_arr.ptr();
@@ -15496,6 +15543,22 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         LF[cand] = 12;   // VOLCANO
         BLF[cand] = 12;
         volcano_placed.push_back(cand);
+
+        // [volcano-crater 2026-06-25] 生成期把火山塑成环形山高度场：中心 cell 下凹成火山口(caldera)，
+        // 第一环 6 邻居抬升成环形山脊(rim)。map_baker 的 barycentric 高度插值(self+2 邻居)会把这组
+        // per-cell 高差平滑烘进 height_tex，靠 hillshade 自然成形——取代旧 shader 的密集橙点。
+        // 幅度以归一化高程(0..1)计；volcano_min_dist 默认 6 → 不同火山的环脊邻域不会重叠。
+        E[cand] = float(pk_clamp01(double(E[cand]) - volcano_crater_depth));
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(cand) * 6 + d];
+            if (ni < 0) continue;
+            if (pk_is_water_terrain(TERR[ni])) continue;   // 不抬海/湖/海岸，避免环山探进水里
+            if (VOLC[ni]) continue;                         // 邻居自身是火山则不二次抬升
+            // 方位抖动破除完美圆环 artifact（确定性 hash，无 RNG → 不影响落点 parity）。
+            const double hv = std::sin(double(cand) * 12.9898 + double(d) * 78.233) * 43758.5453;
+            const double jitter = 0.80 + 0.40 * (hv - std::floor(hv));
+            E[ni] = float(pk_clamp01(double(E[ni]) + volcano_rim_height * jitter));
+        }
     }
 
     int delta_touched = 0;
@@ -15979,6 +16042,48 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         ++rift_touched;
     }
 
+    // ── 峡谷(CANYON) override：河流深切、两壁陡立的线状侵蚀峡谷 ──
+    // 与 BADLANDS(干旱软岩片状恶地)、RIFT_VALLEY(构造离散边界裂谷) 三者区分：
+    //   * CANYON 必须有河道穿过(RIV != 0)，且对置两侧都有明显陡壁(河流下切成 gorge)；
+    //   * 不限定干旱，湿润山区的深切河谷(如长江三峡型)也成峡谷；
+    //   * 跑在 rift 之后并跳过已写入的结构性地貌，避免与裂谷/高原/高峰重复占用。
+    const double canyon_min_wall = getd(profile, "canyon_min_wall", 0.05);
+    const double canyon_min_axis = getd(profile, "canyon_min_axis", 0.06);
+    int canyon_touched = 0;
+    for (int i : land) {
+        if (pk_is_water_terrain(TERR[i])) continue;
+        if (RIV[i] == 0) continue;                                   // 必须有河道穿过
+        if (LF[i] == 8 || LF[i] == 12 || LF[i] == 13 || LF[i] == 14) continue; // 峰/火山/高原/裂谷保留
+        const double lh = land_h(i);
+        if (lh < 0.05 || lh > 0.85) continue;
+        int land_nb = 0, higher = 0;
+        double max_raise = 0.0;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni < 0 || pk_is_water_terrain(TERR[ni])) continue;
+            ++land_nb;
+            const double raise = double(E[ni]) - double(E[i]);
+            if (raise > canyon_min_wall) ++higher;
+            if (raise > max_raise) max_raise = raise;
+        }
+        if (land_nb < 3 || higher < 2 || max_raise < canyon_min_wall) continue;
+        // 对置轴：河谷两壁都明显抬升 → gorge（区别于单侧山坡上的河道）。
+        double best_axis = 0.0;
+        for (int d = 0; d < 3; ++d) {
+            const int a = NB[size_t(i) * 6 + d];
+            const int b = NB[size_t(i) * 6 + ((d + 3) % 6)];
+            if (a < 0 || b < 0 || pk_is_water_terrain(TERR[a]) || pk_is_water_terrain(TERR[b])) continue;
+            const double ra = double(E[a]) - double(E[i]);
+            const double rb = double(E[b]) - double(E[i]);
+            if (ra <= canyon_min_wall * 0.5 || rb <= canyon_min_wall * 0.5) continue;
+            best_axis = std::max(best_axis, std::min(ra, rb) + 0.35 * std::max(ra, rb));
+        }
+        if (best_axis < canyon_min_axis) continue;
+        LF[i] = 15;  // CANYON
+        BLF[i] = 15;
+        ++canyon_touched;
+    }
+
     for (int i = 0; i < n; ++i) {
         VEG[i] = pk_derive_vegetation(TERR[i], LF[i], TEMP[i], M[i]);
     }
@@ -16130,6 +16235,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     stage_counts["peak_summit"] = peak_touched;
     stage_counts["peak_demoted"] = peak_demoted;
     stage_counts["rift_valley"] = rift_touched;
+    stage_counts["canyon"] = canyon_touched;
     stage_counts["reef"] = reef_touched;
     stage_counts["kelp"] = kelp_touched;
     stage_counts["pelagic_bloom"] = pelagic_touched;
@@ -16184,6 +16290,32 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["has_volcano_arr"] = has_volcano_arr;
     out["ema_initialized_arr"] = ema_initialized_arr;
     if (upwelling_arr.size() == n) out["upwelling_strength_arr"] = upwelling_arr;
+
+    // ─── 暂存河流拓扑到 ext 成员（dots-total-cpp step1）──────────────────
+    // 供同一 generation ext 实例的 run_bake_river_sdf_pass 直接 trace（零跨语言再传输）。
+    // terrain/elevation/river_flow 此处均为 post_base 最终值；NB 是已建好的 n*6 邻居索引。
+    {
+        _gen_river_n = n;
+        _gen_river_q.assign(size_t(n), 0);
+        _gen_river_r.assign(size_t(n), 0);
+        _gen_river_terrain.assign(size_t(n), 0);
+        _gen_river_elev.assign(size_t(n), 0.0f);
+        _gen_river_has.assign(size_t(n), 0);
+        _gen_river_flow.assign(size_t(n), 0.0f);
+        _gen_river_downstream.assign(size_t(n), -1);
+        _gen_river_neighbors.assign(size_t(n) * 6, -1);
+        for (int i = 0; i < n; ++i) {
+            _gen_river_q[size_t(i)] = Q[i];
+            _gen_river_r[size_t(i)] = R[i];
+            _gen_river_terrain[size_t(i)] = TERR[i];
+            _gen_river_elev[size_t(i)] = E[i];
+            _gen_river_has[size_t(i)] = RIV[i];
+            _gen_river_flow[size_t(i)] = RFLOW_OUT[i];
+            _gen_river_downstream[size_t(i)] = RDOWN[i];
+        }
+        for (size_t k = 0; k < size_t(n) * 6; ++k) _gen_river_neighbors[k] = NB[k];
+    }
+
     return out;
 }
 
@@ -16763,7 +16895,15 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             // apply_terrain multi-axis sync（与 hex_cell.gd::apply_terrain 一致：
 
             // terrain 写后，三轴派生由 _sync_axes 完成。这里用 stage 8 同款 derive 路径。）
-            const uint8_t lf_new = pk_derive_landform(new_t, ELEV[i], sea_level);
+            uint8_t lf_new = pk_derive_landform(new_t, ELEV[i], sea_level);
+            // 结构性地貌保留（与 stage 8 sync_current_state 同口径）：生成期通过多格邻域
+            // 起伏分析写入的 PEAK(8)/VOLCANO(12)/PLATEAU(13)/RIFT_VALLEY(14)/CANYON(15)
+            // 无法由单格 pk_derive_landform 复现，季节重判必须保留，否则首个 refresh round
+            // 就会把高原/高峰/裂谷/峡谷整片塌缩成朴素 MOUNTAIN/HILL（见 tile_data 实测）。
+            const uint8_t prev_lf = LF[i];
+            if (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14 || prev_lf == 15) {
+                lf_new = prev_lf;
+            }
             LF[i] = lf_new;
             // vegetation 用当前 moisture + 季节温度（temp 由 stage 8 写，这里
             // 用 lat_tab 行温度 + off 近似；与 GDScript _seasonal_redecide_terrain
@@ -16869,7 +17009,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             }
             if (new_t != t) {
                 TERR[i] = new_t;
-                LF[i] = pk_derive_landform(new_t, ELEV[i], sea_level);
+                LF[i] = pk_derive_landform_preserve(new_t, ELEV[i], sea_level, LF[i]);
                 ++touched;
             }
         }
@@ -16989,7 +17129,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (new_t != cur) {
                 TERR[i] = new_t;
 
-                LF[i] = pk_derive_landform(new_t, ELEV[i], sea_level);
+                LF[i] = pk_derive_landform_preserve(new_t, ELEV[i], sea_level, LF[i]);
                 ++touched;
             }
         }
@@ -17078,7 +17218,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             }
             if (!has_sea) continue;
             TERR[i] = 15; // SHRUBLAND
-            LF[i] = pk_derive_landform(15, ELEV[i], sea_level);
+            LF[i] = pk_derive_landform_preserve(15, ELEV[i], sea_level, LF[i]);
             ++touched;
         }
         _flush_slot_to_map(sid_terrain);
@@ -17169,7 +17309,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (!coast_nb) continue;
             if (!(RIV[i] || swamp_nb || M[i] >= 0.70f)) continue;
             TERR[i] = 16; // MANGROVE
-            LF[i] = pk_derive_landform(16, ELEV[i], sea_level);
+            LF[i] = pk_derive_landform_preserve(16, ELEV[i], sea_level, LF[i]);
             ++touched;
         }
         _flush_slot_to_map(sid_terrain);
@@ -17254,7 +17394,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             const bool alpine_glacier = land_h > 0.65;
             if (!(coastal_glacier || alpine_glacier)) continue;
             TERR[i] = 17; // GLACIER
-            LF[i] = pk_derive_landform(17, ELEV[i], sea_level);
+            LF[i] = pk_derive_landform_preserve(17, ELEV[i], sea_level, LF[i]);
             ++touched;
         }
         _flush_slot_to_map(sid_terrain);
@@ -17456,7 +17596,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         }
         uint8_t lf = pk_derive_landform(TERR[i], ELEV[i], sea_level);
         const uint8_t prev_lf = LAND[i];
-        if (!pk_is_water_terrain(TERR[i]) && (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14)) {
+        if (!pk_is_water_terrain(TERR[i]) && (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14 || prev_lf == 15)) {
             lf = prev_lf;
         }
         TEMP[i] = temp_now;
@@ -18333,6 +18473,1464 @@ godot::Dictionary DCWorldExt::run_sea_ice_atlas_prepare(godot::Dictionary knobs)
     return out;
 }
 
+godot::Dictionary DCWorldExt::encode_bake_height_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+    PackedFloat32Array src = knobs.get("buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("height buffer too small");
+
+    PackedByteArray data;
+    data.resize(n * 2);
+    const float * const __restrict SRC = src.ptr();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < n; ++i) {
+        double v = double(SRC[i]);
+        if (v < 0.0) v = 0.0;
+        else if (v > 1.0) v = 1.0;
+        int v16 = int(std::round(v * 65535.0));
+        if (v16 < 0) v16 = 0;
+        else if (v16 > 65535) v16 = 65535;
+        DST[i * 2]     = uint8_t((v16 >> 8) & 0xFF);
+        DST[i * 2 + 1] = uint8_t(v16 & 0xFF);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("RG8");
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_bake_r8_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+    const int def = std::clamp(int(knobs.get("default_byte", 0)), 0, 255);
+    PackedByteArray src = knobs.get("buffer", PackedByteArray());
+
+    PackedByteArray data;
+    data.resize(n);
+    uint8_t * const __restrict DST = data.ptrw();
+    const bool has_src = src.size() >= n;
+    const uint8_t * const __restrict SRC = has_src ? src.ptr() : nullptr;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    if (has_src) {
+        for (int i = 0; i < n; ++i) DST[i] = SRC[i];
+    } else {
+        for (int i = 0; i < n; ++i) DST[i] = uint8_t(def);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("L8");
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_bake_flow_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+    PackedFloat32Array src = knobs.get("buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("flow buffer too small");
+
+    PackedByteArray data;
+    data.resize(n);
+    const float * const __restrict SRC = src.ptr();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < n; ++i) {
+        float v = SRC[i];
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        int q = int(v * 255.0f + 0.5f);
+        if (q < 0) q = 0;
+        else if (q > 255) q = 255;
+        DST[i] = uint8_t(q);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("L8");
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_bake_enum_atlas_payload(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n_pix = w * h;
+    const int n_cells = int(knobs.get("n_cells", 0));
+    if (w <= 0 || h <= 0 || n_pix <= 0) return fail("invalid size");
+    if (n_cells <= 0) return fail("invalid n_cells");
+
+    PackedByteArray biome = knobs.get("biome_buffer", PackedByteArray());
+    PackedByteArray landform = knobs.get("landform_by_cell", PackedByteArray());
+    PackedInt32Array first_px = knobs.get("cell_first_px", PackedInt32Array());
+    PackedInt32Array px_count = knobs.get("cell_px_count", PackedInt32Array());
+    PackedInt32Array flat_px = knobs.get("flat_px_indices", PackedInt32Array());
+    if (biome.size() < n_pix) return fail("biome buffer too small");
+    if (first_px.size() < n_cells || px_count.size() < n_cells) return fail("cell CSR size < n_cells");
+
+    PackedByteArray data;
+    data.resize(n_pix * 4);
+    const uint8_t * const __restrict BIOME = biome.ptr();
+    const uint8_t * const __restrict LF = landform.size() >= n_cells ? landform.ptr() : nullptr;
+    const int32_t * const __restrict FIRST = first_px.ptr();
+    const int32_t * const __restrict CNT = px_count.ptr();
+    const int32_t * const __restrict FLAT = flat_px.ptr();
+    const int flat_n = flat_px.size();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < n_pix; ++i) {
+        const int di = i * 4;
+        DST[di] = BIOME[i];
+        DST[di + 1] = 0xFF;
+        DST[di + 2] = 0xFF;
+        DST[di + 3] = 0;
+    }
+    for (int ci = 0; ci < n_cells; ++ci) {
+        const int first = FIRST[ci];
+        const int count = CNT[ci];
+        if (count <= 0 || first < 0 || first + count > flat_n) continue;
+        const uint8_t lf = LF != nullptr ? LF[ci] : uint8_t(0);
+        const uint8_t lo = uint8_t(ci & 0xFF);
+        const uint8_t hi = uint8_t((ci >> 8) & 0xFF);
+        for (int p = 0; p < count; ++p) {
+            const int px = FLAT[first + p];
+            if (px < 0 || px >= n_pix) continue;
+            const int di = px * 4;
+            DST[di + 1] = lo;
+            DST[di + 2] = hi;
+            DST[di + 3] = lf;
+        }
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("RGBA8");
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
+// 纯 buffer-encoder：不读 _slots / 不要求 _bound。GDScript 只发请求 + 收结果。
+// ─────────────────────────────────────────────────────────────────────────
+
+// run_bake_volcano_field_pass — 复刻 map_baker.gd::_bake_volcano_field
+// 逐像素累加到最近火山中心的二次径向衰减 contrib^2（contrib = 1 - dist*inv_glow > 0）→ L8。
+godot::Dictionary DCWorldExt::run_bake_volcano_field_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+
+    const double origin_x = double(knobs.get("origin_x", 0.0));
+    const double origin_y = double(knobs.get("origin_y", 0.0));
+    const double step_x = double(knobs.get("step_x", 0.0));
+    const double step_y = double(knobs.get("step_y", 0.0));
+    const double inv_glow = double(knobs.get("inv_glow", 0.0));
+    PackedFloat32Array cx = knobs.get("volcano_centers_x", PackedFloat32Array());
+    PackedFloat32Array cy = knobs.get("volcano_centers_y", PackedFloat32Array());
+    const int nc = cx.size();
+    if (cy.size() != nc) return fail("center x/y size mismatch");
+
+    PackedByteArray data;
+    data.resize(n);
+    uint8_t * const __restrict DST = data.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    if (nc <= 0) {
+        for (int i = 0; i < n; ++i) DST[i] = 0;  // 全 0（无火山）
+    } else {
+        const float * const __restrict CX = cx.ptr();
+        const float * const __restrict CY = cy.ptr();
+        for (int y = 0; y < h; ++y) {
+            const double wy = origin_y + (double(y) + 0.5) * step_y;
+            const int row = y * w;
+            for (int x = 0; x < w; ++x) {
+                const double wx = origin_x + (double(x) + 0.5) * step_x;
+                double intensity = 0.0;
+                for (int c = 0; c < nc; ++c) {
+                    const double dx = wx - double(CX[c]);
+                    const double dy = wy - double(CY[c]);
+                    const double dist = std::sqrt(dx * dx + dy * dy);
+                    const double contrib = 1.0 - dist * inv_glow;
+                    if (contrib > 0.0) intensity += contrib * contrib;
+                }
+                double iv = intensity;
+                if (iv < 0.0) iv = 0.0; else if (iv > 1.0) iv = 1.0;
+                int q = int(iv * 255.0 + 0.5);  // GDScript round()（正值等价）
+                if (q < 0) q = 0; else if (q > 255) q = 255;
+                DST[row + x] = uint8_t(q);
+            }
+        }
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("L8");
+    return out;
+}
+
+// run_bake_latitude_field_pass — 复刻 map_baker.gd::_bake_latitude_buffer
+// 逐像素 ny = y / max(H-1,1)（行常量）→ F32 buffer。
+godot::Dictionary DCWorldExt::run_bake_latitude_field_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+
+    PackedFloat32Array buf;
+    buf.resize(n);
+    float * const __restrict DST = buf.ptrw();
+    const double denom = double(h - 1 > 1 ? h - 1 : 1);
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int y = 0; y < h; ++y) {
+        const float ny = float(double(y) / denom);
+        const int row = y * w;
+        for (int x = 0; x < w; ++x) DST[row + x] = ny;
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["latitude_buffer"] = buf;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("F32");
+    return out;
+}
+
+// run_bake_river_sdf_pass — 复刻 map_baker.gd::_bake_river_sdf 的全部计算。
+// GDScript 只 trace 原始河流链（HexCell 对象图，输出极小）；本 pass 在 C++ 内完成
+// seam-split + Catmull-Rom 致密化 + warp 噪声（FastNoiseLite 复刻 _warp_noise_lo/hi）+
+// 变宽 polyline stamp + chamfer 3-4 双通 SDT + 归一化。dense polyline / mask 中间数据
+// 全部留在 C++（最小化跨语言传输）。几何用 float 复刻 Godot Vector2 real_t；scalar 用 double。
+godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::FastNoiseLite;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::Ref;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+
+    const float origin_x = float(double(knobs.get("origin_x", 0.0)));
+    const float origin_y = float(double(knobs.get("origin_y", 0.0)));
+    const float inv_world_x = float(double(knobs.get("inv_world_x", 0.0)));
+    const float inv_world_y = float(double(knobs.get("inv_world_y", 0.0)));
+    const float hex_size = float(double(knobs.get("hex_size", 1.0)));
+    const int seed = int(knobs.get("seed", 0));
+    const double base_radius_px = double(knobs.get("base_radius_px", 0.0));
+    const double sdf_max_dist_px = double(knobs.get("sdf_max_dist_px", 5.0));
+    const double seam_dx = double(knobs.get("seam_dx", 0.0));
+    const int cr_step = std::max(1, int(knobs.get("cr_step", 12)));
+
+    // 河流拓扑来自 ext 成员（post_base 末尾暂存），在 C++ 内 trace（零跨语言再传输）。
+    const int rn = _gen_river_n;
+    if (rn <= 0
+            || int(_gen_river_q.size()) != rn || int(_gen_river_r.size()) != rn
+            || int(_gen_river_terrain.size()) != rn || int(_gen_river_elev.size()) != rn
+            || int(_gen_river_has.size()) != rn || int(_gen_river_flow.size()) != rn
+            || int(_gen_river_downstream.size()) != rn
+            || int(_gen_river_neighbors.size()) != size_t(rn) * 6) {
+        return fail("river topology cache missing (run post_base first)");
+    }
+
+    PackedFloat32Array out_buf;
+    out_buf.resize(n);
+    float * const __restrict OUT = out_buf.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // warp 噪声：复刻 map_baker.gd::_init_noise 的 _warp_noise_lo / _warp_noise_hi。
+    Ref<FastNoiseLite> warp_lo;  warp_lo.instantiate();
+    Ref<FastNoiseLite> warp_hi;  warp_hi.instantiate();
+    if (warp_lo.is_null() || warp_hi.is_null()) return fail("fast_noise_lite_instantiate_failed");
+    warp_lo->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    warp_lo->set_seed(seed + 71);
+    warp_lo->set_frequency(0.024);  // WARP_FREQ
+    warp_lo->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    warp_lo->set_fractal_octaves(3);
+    warp_hi->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    warp_hi->set_seed(seed + 233);
+    warp_hi->set_frequency(0.024 * 3.4);  // WARP_FREQ * WARP_HIGH_FREQ_MUL
+    warp_hi->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    warp_hi->set_fractal_octaves(3);
+
+    // mask 初值 INF（1e9 在 float 中可精确表示），mask<=0 表示河上。
+    static const float MASK_INF = 1.0e9f;
+    std::vector<float> mask(size_t(n), MASK_INF);
+
+    const float warp_amp = hex_size * 0.30f;
+
+    // catmull_rom（Vector2 real_t=float），镜像 map_baker.gd::_catmull_rom。
+    auto catmull = [](float p0x, float p0y, float p1x, float p1y,
+                      float p2x, float p2y, float p3x, float p3y,
+                      float t, float &ox, float &oy) {
+        const float t2 = t * t;
+        const float t3 = t2 * t;
+        ox = 0.5f * (p1x * 2.0f + (p2x - p0x) * t
+                + (p0x * 2.0f - p1x * 5.0f + p2x * 4.0f - p3x) * t2
+                + (-p0x + p1x * 3.0f - p2x * 3.0f + p3x) * t3);
+        oy = 0.5f * (p1y * 2.0f + (p2y - p0y) * t
+                + (p0y * 2.0f - p1y * 5.0f + p2y * 4.0f - p3y) * t2
+                + (-p0y + p1y * 3.0f - p2y * 3.0f + p3y) * t3);
+    };
+
+    // 单段 run（≥2 原始点）：CR 致密化 + warp + 变宽 stamp。中间 buffer 全留 C++。
+    std::vector<float> dpx, dpy, dwd;  // dense warped points + widths（run-local，复用）
+    auto stamp_run = [&](const std::vector<float> &rx, const std::vector<float> &ry,
+                         const std::vector<float> &rw) {
+        const int m = int(rx.size());
+        if (m < 2) return;
+        // ── Catmull-Rom 致密化 with widths（镜像 _catmull_rom_dense_with_widths）──
+        dpx.clear(); dpy.clear(); dwd.clear();
+        for (int i = 0; i < m - 1; ++i) {
+            const float p0x = (i > 0) ? rx[i - 1] : rx[i];
+            const float p0y = (i > 0) ? ry[i - 1] : ry[i];
+            const float p1x = rx[i],     p1y = ry[i];
+            const float p2x = rx[i + 1], p2y = ry[i + 1];
+            const float p3x = (i + 2 < m) ? rx[i + 2] : rx[i + 1];
+            const float p3y = (i + 2 < m) ? ry[i + 2] : ry[i + 1];
+            const float w1 = rw[i];
+            const float w2 = rw[i + 1];
+            for (int j = 0; j < cr_step; ++j) {
+                const float t = float(j) / float(cr_step);
+                float cxp, cyp;
+                catmull(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t, cxp, cyp);
+                // warp（镜像 _warp_river_chain）：noise 在 dense 点上采样
+                float wx_off = warp_lo->get_noise_2d(cxp, cyp) * warp_amp;
+                float wy_off = warp_lo->get_noise_2d(cxp + 31.7f, cyp - 17.3f) * warp_amp;
+                wx_off += warp_hi->get_noise_2d(cxp + 91.1f, cyp + 53.7f) * warp_amp * 0.30f;
+                wy_off += warp_hi->get_noise_2d(cxp - 41.5f, cyp + 23.9f) * warp_amp * 0.30f;
+                dpx.push_back(cxp + wx_off);
+                dpy.push_back(cyp + wy_off);
+                dwd.push_back(w1 + (w2 - w1) * t);
+            }
+        }
+        dpx.push_back(rx[m - 1]);
+        dpy.push_back(ry[m - 1]);
+        dwd.push_back(rw[m - 1]);
+        // ── 变宽 polyline stamp（镜像 _stamp_polyline_variable）──
+        const int dn = int(dpx.size());
+        for (int i = 0; i < dn - 1; ++i) {
+            const double w0 = double(dwd[i]);
+            const double w1 = double(dwd[i + 1]);
+            const double wmax = w0 > w1 ? w0 : w1;
+            const double seg_radius_px = base_radius_px * (0.40 + std::pow(wmax, 1.4) * 3.7);
+            const int pad = int(std::ceil(seg_radius_px)) + 1;
+            const float p0x = (dpx[i] - origin_x) * inv_world_x;
+            const float p0y = (dpy[i] - origin_y) * inv_world_y;
+            const float p1x = (dpx[i + 1] - origin_x) * inv_world_x;
+            const float p1y = (dpy[i + 1] - origin_y) * inv_world_y;
+            int min_x = int(std::floor(double(p0x < p1x ? p0x : p1x))) - pad;
+            int max_x = int(std::ceil(double(p0x > p1x ? p0x : p1x))) + pad;
+            int min_y = int(std::floor(double(p0y < p1y ? p0y : p1y))) - pad;
+            int max_y = int(std::ceil(double(p0y > p1y ? p0y : p1y))) + pad;
+            if (min_x < 0) min_x = 0; if (max_x > w - 1) max_x = w - 1;
+            if (min_y < 0) min_y = 0; if (max_y > h - 1) max_y = h - 1;
+            const float segx = p1x - p0x;
+            const float segy = p1y - p0y;
+            const float seg_len_sq = segx * segx + segy * segy;
+            for (int y = min_y; y <= max_y; ++y) {
+                for (int x = min_x; x <= max_x; ++x) {
+                    const float px = float(x) + 0.5f;
+                    const float py = float(y) + 0.5f;
+                    double t = 0.0;
+                    if (seg_len_sq > 0.0001f) {
+                        const float dot = (px - p0x) * segx + (py - p0y) * segy;
+                        t = double(dot) / double(seg_len_sq);
+                        if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
+                    }
+                    const double wl = w0 + (w1 - w0) * t;
+                    const double radius = base_radius_px * (0.40 + std::pow(wl, 1.4) * 3.7);
+                    const float closx = p0x + segx * float(t);
+                    const float closy = p0y + segy * float(t);
+                    const float ddx = px - closx;
+                    const float ddy = py - closy;
+                    const float dpix = std::sqrt(ddx * ddx + ddy * ddy);
+                    if (double(dpix) <= radius) mask[size_t(y) * w + x] = 0.0f;
+                }
+            }
+        }
+    };
+
+    // ── 河流图遍历（镜像 _trace_all_rivers / _trace_river_chain / _find_river_*）──
+    // 读 ext 暂存拓扑（by cell.index，与 _assemble_native_generation_map 装配顺序一致）。
+    const int32_t * const RQ = _gen_river_q.data();
+    const int32_t * const RR = _gen_river_r.data();
+    const uint8_t * const RT = _gen_river_terrain.data();
+    const float   * const RE = _gen_river_elev.data();
+    const uint8_t * const RH = _gen_river_has.data();
+    const float   * const RF = _gen_river_flow.data();
+    const int32_t * const RD = _gen_river_downstream.data();
+    const int32_t * const RNB = _gen_river_neighbors.data();
+    const float root3 = std::sqrt(3.0f);
+    // cube_to_world（pointy-top，镜像 HexUtils.cube_to_world）+ 生成期 width=clamp(river_flow)
+    auto cube_wx = [&](int i) -> float { return hex_size * root3 * (float(RQ[i]) + float(RR[i]) * 0.5f); };
+    auto cube_wy = [&](int i) -> float { return hex_size * 1.5f * float(RR[i]); };
+    auto width_w = [&](int i) -> float { const float f = RF[i]; return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f); };
+    // _is_river_terminal_water ≡ pk_is_water_terrain（OCEAN/COAST/LAKE/REEF/KELP/SEA_ICE 同集合）
+    auto find_downstream = [&](int i) -> int {  // 镜像 _find_river_downstream_neighbor
+        const int dec = RD[i];
+        if (dec >= 0 && dec < rn && (RH[dec] || pk_is_water_terrain(RT[dec]))) return dec;
+        int best = -1; float best_flow = RF[i];
+        for (int d = 0; d < 6; ++d) {
+            const int nb = RNB[size_t(i) * 6 + d];
+            if (nb < 0) continue;
+            if (!RH[nb] || pk_is_water_terrain(RT[nb])) continue;
+            if (RF[nb] > best_flow || (std::fabs(RF[nb] - best_flow) <= 1e-5f && RE[nb] < RE[i])) {
+                best_flow = RF[nb]; best = nb;
+            }
+        }
+        return best;
+    };
+    auto find_terminal_water = [&](int i) -> int {  // 镜像 _find_river_terminal_water_neighbor
+        int best = -1;
+        for (int d = 0; d < 6; ++d) {
+            const int nb = RNB[size_t(i) * 6 + d];
+            if (nb < 0 || !pk_is_water_terrain(RT[nb])) continue;
+            if (best < 0 || RE[nb] < RE[best]) best = nb;
+        }
+        return best;
+    };
+
+    // chains：每条链 = world 点序列 + 宽度（镜像 _trace_all_rivers 输出）
+    std::vector<std::vector<float>> chain_x, chain_y, chain_w;
+    {
+        std::vector<uint8_t> visited(size_t(rn), 0);
+        std::vector<int> inbound(size_t(rn), 0);
+        // pass1：inbound 计数（确定源头）
+        for (int i = 0; i < rn; ++i) {
+            if (!RH[i] || pk_is_water_terrain(RT[i])) continue;
+            const int dec = RD[i];
+            if (dec >= 0 && dec < rn && RH[dec] && !pk_is_water_terrain(RT[dec])) inbound[dec] += 1;
+        }
+        // pass2：从源头（inbound==0、未访问）trace 整条链
+        for (int i = 0; i < rn; ++i) {
+            if (!RH[i] || pk_is_water_terrain(RT[i])) continue;
+            if (visited[i] || inbound[i] > 0) continue;
+            std::vector<float> px, py, pw;
+            px.push_back(cube_wx(i)); py.push_back(cube_wy(i)); pw.push_back(width_w(i));
+            visited[i] = 1;
+            int current = i;
+            bool ended_in_water = false;
+            while (true) {
+                const int nxt = find_downstream(current);
+                if (nxt < 0) break;
+                const bool nxt_water = pk_is_water_terrain(RT[nxt]);
+                px.push_back(cube_wx(nxt)); py.push_back(cube_wy(nxt));
+                pw.push_back(width_w(nxt_water ? current : nxt));
+                if (nxt_water) { current = nxt; ended_in_water = true; break; }
+                current = nxt;
+                if (visited[nxt]) break;
+                visited[nxt] = 1;
+            }
+            // 尾巴伸入终端水体一半（lerp 0.78），避免河口在最后陆地 cell 中心硬截断。
+            if (!ended_in_water) {
+                const int wnb = find_terminal_water(current);
+                if (wnb >= 0) {
+                    const float rex = cube_wx(current), rey = cube_wy(current);
+                    const float wcx = cube_wx(wnb), wcy = cube_wy(wnb);
+                    px.push_back(rex + (wcx - rex) * 0.78f);
+                    py.push_back(rey + (wcy - rey) * 0.78f);
+                    pw.push_back(pw.empty() ? 0.5f : pw.back());
+                }
+            }
+            if (px.size() >= 2) { chain_x.push_back(px); chain_y.push_back(py); chain_w.push_back(pw); }
+        }
+    }
+
+    // ── 遍历 chains：seam-split → run → stamp（镜像 _bake_river_sdf 主循环）──
+    {
+        std::vector<float> rx, ry, rw;
+        for (size_t c = 0; c < chain_x.size(); ++c) {
+            const std::vector<float> &px = chain_x[c];
+            const std::vector<float> &py = chain_y[c];
+            const std::vector<float> &pw = chain_w[c];
+            const int clen = int(px.size());
+            if (clen < 2) continue;
+            rx.clear(); ry.clear(); rw.clear();
+            rx.push_back(px[0]); ry.push_back(py[0]); rw.push_back(pw[0]);
+            for (int k = 1; k < clen; ++k) {
+                // seam 切断：跨接缝段（|dx| > seam_dx）→ 收尾当前 run，另起一段。
+                if (std::fabs(double(px[k]) - double(px[k - 1])) > seam_dx) {
+                    stamp_run(rx, ry, rw);
+                    rx.clear(); ry.clear(); rw.clear();
+                    rx.push_back(px[k]); ry.push_back(py[k]); rw.push_back(pw[k]);
+                } else {
+                    rx.push_back(px[k]); ry.push_back(py[k]); rw.push_back(pw[k]);
+                }
+            }
+            stamp_run(rx, ry, rw);
+        }
+    }
+
+    // ── chamfer 3-4 双通 SDT（镜像 _chamfer_sdt）──
+    const double d3 = 3.0, d4 = 4.0;
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const int idx = y * w + x;
+            double v = double(mask[idx]);
+            if (v <= 0.0) continue;
+            if (x > 0) { double c = double(mask[idx - 1]) + d3; if (c < v) v = c; }
+            if (y > 0) {
+                double c = double(mask[idx - w]) + d3; if (c < v) v = c;
+                if (x > 0) { double c2 = double(mask[idx - w - 1]) + d4; if (c2 < v) v = c2; }
+                if (x < w - 1) { double c2 = double(mask[idx - w + 1]) + d4; if (c2 < v) v = c2; }
+            }
+            mask[idx] = float(v);
+        }
+    }
+    for (int y = h - 1; y >= 0; --y) {
+        for (int x = w - 1; x >= 0; --x) {
+            const int idx = y * w + x;
+            double v = double(mask[idx]);
+            if (v <= 0.0) continue;
+            if (x < w - 1) { double c = double(mask[idx + 1]) + d3; if (c < v) v = c; }
+            if (y < h - 1) {
+                double c = double(mask[idx + w]) + d3; if (c < v) v = c;
+                if (x > 0) { double c2 = double(mask[idx + w - 1]) + d4; if (c2 < v) v = c2; }
+                if (x < w - 1) { double c2 = double(mask[idx + w + 1]) + d4; if (c2 < v) v = c2; }
+            }
+            mask[idx] = float(v);
+        }
+    }
+    const double inv3 = 1.0 / 3.0;
+    // 归一化为 [0,1]：1 = 河上，0 = 距离 >= SDF_MAX_DIST_PX
+    const double inv_max = 1.0 / sdf_max_dist_px;
+    for (int i = 0; i < n; ++i) {
+        const double m = double(mask[i]) * inv3;
+        double tt = m * inv_max;
+        if (tt < 0.0) tt = 0.0; else if (tt > 1.0) tt = 1.0;
+        OUT[i] = float(1.0 - tt);
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["out_buf"] = out_buf;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("F32");
+    return out;
+}
+
+// run_bake_erosion_pass — 复刻 map_baker.gd::_hydraulic_erosion（droplet 水力侵蚀）。
+// 用 Ref<RandomNumberGenerator>（同 seed 复刻 baker _rng PCG）。in/out height，内部 clamp。
+godot::Dictionary DCWorldExt::run_bake_erosion_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::RandomNumberGenerator;
+    using godot::Ref;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+    PackedFloat32Array src = knobs.get("height_buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("height buffer too small");
+
+    const int seed = int(knobs.get("seed", 0));
+    const int num_drops = int(knobs.get("num_drops", 0));
+    const int max_steps = int(knobs.get("max_steps", 0));
+    const double inertia = double(knobs.get("inertia", 0.10));
+    const double capacity_factor = double(knobs.get("capacity_factor", 1.5));
+    const double min_capacity = double(knobs.get("min_capacity", 0.01));
+    const double deposit_speed = double(knobs.get("deposit_speed", 0.30));
+    const double erode_speed = double(knobs.get("erode_speed", 0.10));
+    const double evaporation = double(knobs.get("evaporation", 0.025));
+    const double gravity = double(knobs.get("gravity", 4.0));
+    const int brush_radius = int(knobs.get("brush_radius", 2));
+
+    PackedFloat32Array height_out;
+    height_out.resize(n);
+    {
+        const float * const __restrict S = src.ptr();
+        float * const __restrict D = height_out.ptrw();
+        for (int i = 0; i < n; ++i) D[i] = S[i];
+    }
+    float * const __restrict HT = height_out.ptrw();
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    if (num_drops > 0) {
+        // ── brush kernel（镜像 GDScript 预计算）──
+        std::vector<int> brush_dx, brush_dy;
+        std::vector<double> brush_w;
+        double sum_w = 0.0;
+        const int br_sq = brush_radius * brush_radius;
+        for (int dy = -brush_radius; dy <= brush_radius; ++dy) {
+            for (int dx = -brush_radius; dx <= brush_radius; ++dx) {
+                const int d_sq = dx * dx + dy * dy;
+                if (d_sq > br_sq) continue;
+                const double wv = 1.0 - std::sqrt(double(d_sq)) / double(brush_radius);
+                brush_dx.push_back(dx);
+                brush_dy.push_back(dy);
+                brush_w.push_back(wv);
+                sum_w += wv;
+            }
+        }
+        const int brush_count = int(brush_w.size());
+        if (sum_w > 0.0) {
+            const double inv_sum = 1.0 / sum_w;
+            for (int i = 0; i < brush_count; ++i) brush_w[i] *= inv_sum;
+        }
+
+        Ref<RandomNumberGenerator> rng;  rng.instantiate();
+        if (rng.is_null()) return fail("rng_instantiate_failed");
+        rng->set_seed(uint64_t(seed));
+
+        const double W_f = double(w);
+        const double H_f = double(h);
+        static const double PK_TAU = 6.283185307179586232;
+
+        for (int drop_idx = 0; drop_idx < num_drops; ++drop_idx) {
+            double pos_x = rng->randf_range(1.0, W_f - 2.0);
+            double pos_y = rng->randf_range(1.0, H_f - 2.0);
+            double dir_x = 0.0, dir_y = 0.0;
+            double speed = 1.0, water = 1.0, sediment = 0.0;
+
+            for (int step = 0; step < max_steps; ++step) {
+                const int node_x = int(std::floor(pos_x));
+                const int node_y = int(std::floor(pos_y));
+                if (node_x < 0 || node_x >= w - 1 || node_y < 0 || node_y >= h - 1) break;
+                const double cell_offset_x = pos_x - double(node_x);
+                const double cell_offset_y = pos_y - double(node_y);
+                const double one_minus_x = 1.0 - cell_offset_x;
+                const double one_minus_y = 1.0 - cell_offset_y;
+
+                const int idx_00 = node_y * w + node_x;
+                const int idx_10 = idx_00 + 1;
+                const int idx_01 = idx_00 + w;
+                const int idx_11 = idx_01 + 1;
+
+                const double h00 = double(HT[idx_00]);
+                const double h10 = double(HT[idx_10]);
+                const double h01 = double(HT[idx_01]);
+                const double h11 = double(HT[idx_11]);
+
+                const double h_old = h00 * one_minus_x * one_minus_y
+                        + h10 * cell_offset_x * one_minus_y
+                        + h01 * one_minus_x * cell_offset_y
+                        + h11 * cell_offset_x * cell_offset_y;
+                const double grad_x = (h10 - h00) * one_minus_y + (h11 - h01) * cell_offset_y;
+                const double grad_y = (h01 - h00) * one_minus_x + (h11 - h10) * cell_offset_x;
+
+                dir_x = dir_x * inertia - grad_x * (1.0 - inertia);
+                dir_y = dir_y * inertia - grad_y * (1.0 - inertia);
+                const double dir_len_sq = dir_x * dir_x + dir_y * dir_y;
+                if (dir_len_sq < 0.000001) {
+                    const double ang = rng->randf_range(0.0, PK_TAU);
+                    dir_x = std::cos(ang);
+                    dir_y = std::sin(ang);
+                } else {
+                    const double inv_len = 1.0 / std::sqrt(dir_len_sq);
+                    dir_x *= inv_len;
+                    dir_y *= inv_len;
+                }
+
+                const double new_pos_x = pos_x + dir_x;
+                const double new_pos_y = pos_y + dir_y;
+                if (new_pos_x < 1.0 || new_pos_x >= W_f - 1.0 || new_pos_y < 1.0 || new_pos_y >= H_f - 1.0) {
+                    if (sediment > 0.0) {
+                        HT[idx_00] += float(sediment * one_minus_x * one_minus_y);
+                        HT[idx_10] += float(sediment * cell_offset_x * one_minus_y);
+                        HT[idx_01] += float(sediment * one_minus_x * cell_offset_y);
+                        HT[idx_11] += float(sediment * cell_offset_x * cell_offset_y);
+                    }
+                    break;
+                }
+
+                const int nnx = int(std::floor(new_pos_x));
+                const int nny = int(std::floor(new_pos_y));
+                const double ncx = new_pos_x - double(nnx);
+                const double ncy = new_pos_y - double(nny);
+                const int nidx00 = nny * w + nnx;
+                const double h_new = double(HT[nidx00]) * (1.0 - ncx) * (1.0 - ncy)
+                        + double(HT[nidx00 + 1]) * ncx * (1.0 - ncy)
+                        + double(HT[nidx00 + w]) * (1.0 - ncx) * ncy
+                        + double(HT[nidx00 + w + 1]) * ncx * ncy;
+                const double delta_h = h_new - h_old;
+                const double capacity = std::max(-delta_h, min_capacity) * speed * water * capacity_factor;
+
+                if (sediment > capacity || delta_h > 0.0) {
+                    double deposit_amt;
+                    if (delta_h > 0.0) deposit_amt = std::min(delta_h, sediment);
+                    else deposit_amt = (sediment - capacity) * deposit_speed;
+                    sediment -= deposit_amt;
+                    HT[idx_00] += float(deposit_amt * one_minus_x * one_minus_y);
+                    HT[idx_10] += float(deposit_amt * cell_offset_x * one_minus_y);
+                    HT[idx_01] += float(deposit_amt * one_minus_x * cell_offset_y);
+                    HT[idx_11] += float(deposit_amt * cell_offset_x * cell_offset_y);
+                } else {
+                    const double erode_amt = std::min((capacity - sediment) * erode_speed, -delta_h);
+                    for (int i = 0; i < brush_count; ++i) {
+                        const int bx = node_x + brush_dx[i];
+                        const int by = node_y + brush_dy[i];
+                        if (bx < 0 || bx >= w || by < 0 || by >= h) continue;
+                        const int bidx = by * w + bx;
+                        const double weighted = erode_amt * brush_w[i];
+                        const double actual = std::min(double(HT[bidx]), weighted);
+                        HT[bidx] -= float(actual);
+                        sediment += actual;
+                    }
+                }
+
+                const double spd_sq = speed * speed + delta_h * gravity;
+                speed = std::sqrt(std::max(spd_sq, 0.0));
+                water *= (1.0 - evaporation);
+                pos_x = new_pos_x;
+                pos_y = new_pos_y;
+                if (water < 0.001) break;
+            }
+        }
+    }
+
+    // clamp [0,1]（折叠原 _clamp_buffer，省一次 GDScript W*H loop）
+    for (int i = 0; i < n; ++i) {
+        float v = HT[i];
+        if (v < 0.0f) v = 0.0f; else if (v > 1.0f) v = 1.0f;
+        HT[i] = v;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["height_out"] = height_out;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("F32");
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// run_bake_geometry_fields_pass — bake 期几何场编排下沉 C++（dots-total-cpp step2）
+// GDScript 一次请求 → C++ 进程内串起 terrain-index → erosion → river → latitude →
+// volcano 五个 sub-pass，中间 buffer（尤其 height_buffer）不跨语言往返，一次返回完整 bundle。
+// ─────────────────────────────────────────────────────────────────────────
+godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    if (w <= 0 || h <= 0) {
+        out["reason"] = String("invalid size");
+        return out;
+    }
+
+    auto t_all0 = std::chrono::high_resolution_clock::now();
+
+    // ① terrain-index：height/biome/moisture/veg/cover + CSR + pixel_to_cell_index。
+    Dictionary terr = run_bake_terrain_index_pass(knobs);
+    const bool terr_fallback = bool(terr.get("fallback", true));
+    if (terr_fallback) {
+        // terrain 是 bundle 的数据枢纽（CSR / pixel_to_cell 后续解包必需）；失败则整体 fallback，
+        // 由 GDScript 回退旧 per-pass / _bake_height_biome_moisture 路径。
+        out["reason"] = String("terrain_index_fallback:") + String(terr.get("reason", String()));
+        return out;
+    }
+    PackedFloat32Array height_buf = terr.get("height_buffer", PackedFloat32Array());
+
+    // ② erosion：in/out height（C++ 内注入 height_buffer，不跨语言）。失败用未侵蚀 height 续算。
+    knobs["height_buffer"] = height_buf;
+    Dictionary ero = run_bake_erosion_pass(knobs);
+    const bool ero_ok = !bool(ero.get("fallback", true));
+    PackedFloat32Array height_final = height_buf;
+    if (ero_ok) {
+        PackedFloat32Array he = ero.get("height_out", PackedFloat32Array());
+        if (he.size() == height_buf.size()) height_final = he;
+    }
+
+    // ③ river SDF：读 ext 暂存拓扑（_gen_river_*），trace+CR+warp+stamp+chamfer+normalize。
+    Dictionary riv = run_bake_river_sdf_pass(knobs);
+    const bool riv_ok = !bool(riv.get("fallback", true));
+
+    // ④ latitude。
+    Dictionary lat = run_bake_latitude_field_pass(knobs);
+    const bool lat_ok = !bool(lat.get("fallback", true));
+
+    // ⑤ volcano。
+    Dictionary vol = run_bake_volcano_field_pass(knobs);
+    const bool vol_ok = !bool(vol.get("fallback", true));
+
+    auto t_all1 = std::chrono::high_resolution_clock::now();
+
+    // ── 合并 bundle ──
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["width"] = w;
+    out["height"] = h;
+
+    // terrain 字段（数据枢纽，原样透传）
+    out["height_buffer"] = height_final;  // 已含侵蚀
+    out["biome_buffer"] = terr.get("biome_buffer", PackedByteArray());
+    out["moisture_buffer"] = terr.get("moisture_buffer", PackedFloat32Array());
+    out["vegetation_buffer"] = terr.get("vegetation_buffer", PackedByteArray());
+    out["cover_buffer"] = terr.get("cover_buffer", PackedByteArray());
+    out["pixel_to_cell_index"] = terr.get("pixel_to_cell_index", PackedInt32Array());
+    out["cell_first_px"] = terr.get("cell_first_px", PackedInt32Array());
+    out["cell_px_count"] = terr.get("cell_px_count", PackedInt32Array());
+    out["flat_px_indices"] = terr.get("flat_px_indices", PackedInt32Array());
+    out["total_px"] = terr.get("total_px", 0);
+
+    // 其余几何场（失败置空，由 GDScript 决定是否硬报错）
+    out["flow_buffer"] = riv_ok ? PackedFloat32Array(riv.get("out_buf", PackedFloat32Array())) : PackedFloat32Array();
+    out["latitude_buffer"] = lat_ok ? PackedFloat32Array(lat.get("latitude_buffer", PackedFloat32Array())) : PackedFloat32Array();
+    out["volcano_buffer"] = vol_ok ? PackedByteArray(vol.get("data", PackedByteArray())) : PackedByteArray();
+
+    // stage 诊断（GDScript 打印 / 校验用）
+    out["terrain_ok"] = true;
+    out["erosion_ok"] = ero_ok;
+    out["river_ok"] = riv_ok;
+    out["latitude_ok"] = lat_ok;
+    out["volcano_ok"] = vol_ok;
+    out["terrain_ms"] = terr.get("elapsed_ms", -1.0);
+    out["erosion_ms"] = ero.get("elapsed_ms", -1.0);
+    out["river_ms"] = riv.get("elapsed_ms", -1.0);
+    out["latitude_ms"] = lat.get("elapsed_ms", -1.0);
+    out["volcano_ms"] = vol.get("elapsed_ms", -1.0);
+    out["river_reason"] = riv.get("reason", String());
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t_all1 - t_all0).count();
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// run_bake_terrain_index_pass — 生成期 height/biome/moisture/veg/cover 逐像素烘焙
+// 复刻 map_baker.gd::_bake_height_biome_moisture（warp + cube_round + sextant
+// barycentric + per-biome detail noise），并在 index 生成阶段内嵌 Bayer 8x8
+// 有序 dither：仅同域"陆-陆"异 biome 边界把像素的"视觉归属 cell"改派给邻居
+// （跳过 land-water；保护海岸硬边）。dither 只改离散色/索引归属（biome / CSR 桶 /
+// veg / cover / pixel_to_cell_index 同跟 vis_cell），height/moisture 仍走几何
+// self barycentric + terrain_self detail noise（防高程点阵）。
+//
+// 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机
+// 不确定，与 encode_bake_* 同范式）。输出 CSR 三件套（按 cell.index）直接喂
+// encode_bake_enum_atlas_payload；G/B/A 由桶成员驱动 → dither 自动一致跟随。
+// ─────────────────────────────────────────────────────────────────────────
+godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int W = int(knobs.get("width", 0));
+    const int H = int(knobs.get("height", 0));
+    const int n_pix = W * H;
+    if (W <= 0 || H <= 0 || n_pix <= 0) return fail("invalid size");
+
+    const int map_w = int(knobs.get("map_width", 0));
+    const int map_h = int(knobs.get("map_height", 0));
+    const int n_cells = int(knobs.get("n_cells", 0));
+    if (map_w <= 0 || map_h <= 0 || n_cells <= 0) return fail("invalid map dims / n_cells");
+
+    const double origin_x = double(knobs.get("origin_x", 0.0));
+    const double origin_y = double(knobs.get("origin_y", 0.0));
+    const double size_x = double(knobs.get("size_x", 0.0));
+    const double size_y = double(knobs.get("size_y", 0.0));
+    const double hex_size = double(knobs.get("hex_size", 1.0));
+    const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
+    const int seed = int(knobs.get("seed", 0));
+    const bool dither_enabled = bool(knobs.get("dither_enabled", true));
+
+    // ── cell SoA（by cell.index）+ offset→index 映射 ──
+    PackedFloat32Array elev_in = knobs.get("cell_elevation", PackedFloat32Array());
+    PackedFloat32Array moist_in = knobs.get("cell_moisture", PackedFloat32Array());
+    PackedByteArray terr_in = knobs.get("cell_terrain", PackedByteArray());
+    PackedByteArray veg_in = knobs.get("cell_vegetation", PackedByteArray());
+    PackedByteArray cov_in = knobs.get("cell_cover", PackedByteArray());
+    PackedInt32Array o2i_in = knobs.get("offset_to_index", PackedInt32Array());
+    if (elev_in.size() < n_cells || moist_in.size() < n_cells ||
+        terr_in.size() < n_cells || veg_in.size() < n_cells || cov_in.size() < n_cells) {
+        return fail("cell SoA size < n_cells");
+    }
+    if (o2i_in.size() < map_w * map_h) return fail("offset_to_index too small");
+
+    const float * const __restrict E = elev_in.ptr();
+    const float * const __restrict M = moist_in.ptr();
+    const uint8_t * const __restrict T = terr_in.ptr();
+    const uint8_t * const __restrict VG = veg_in.ptr();
+    const uint8_t * const __restrict CV = cov_in.ptr();
+    const int32_t * const __restrict O2I = o2i_in.ptr();
+
+    // ── 与 map_baker.gd 常量逐一对齐 ──
+    constexpr double WARP_AMP = 0.4;
+    constexpr double WARP_FREQ = 0.024;
+    constexpr double WARP_HIGH_FREQ_MUL = 3.4;
+    constexpr double WARP_HIGH_AMP_RATIO = 0.55;
+    constexpr double DETAIL_FREQ_BASE = 0.8;
+    constexpr double MOUNTAIN_RIDGE_AMP = 0.26;
+    constexpr double HILL_AMP = 0.06;
+    constexpr double PLAIN_AMP = 0.024;
+    // TerrainType.TERRAIN 枚举（与 terrain_type.gd 顺序严格一致）
+    constexpr int TT_OCEAN = 0, TT_COAST = 1, TT_HILL = 5, TT_MOUNTAIN = 6;
+    // is_water 集合（与 weather_overlay 一致）：OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP。
+    // 仅用于 dither 的 land↔water 门槛：跨水/陆域的相邻 cell 不互相改派（保护海岸硬边）。
+    auto is_water = [](int t) -> bool {
+        return t == 0 || t == 1 || t == 18 || t == 19 || t == 20 || t == 21;
+    };
+
+    // ── FastNoiseLite：与 map_baker.gd::_init_noise 逐位同源 ──
+    Ref<FastNoiseLite> warp_lo;  warp_lo.instantiate();
+    warp_lo->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    warp_lo->set_seed(seed + 71);
+    warp_lo->set_frequency(WARP_FREQ);
+    warp_lo->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    warp_lo->set_fractal_octaves(3);
+
+    Ref<FastNoiseLite> warp_hi;  warp_hi.instantiate();
+    warp_hi->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    warp_hi->set_seed(seed + 233);
+    warp_hi->set_frequency(WARP_FREQ * WARP_HIGH_FREQ_MUL);
+    warp_hi->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    warp_hi->set_fractal_octaves(3);
+
+    Ref<FastNoiseLite> detail;  detail.instantiate();
+    detail->set_noise_type(FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    detail->set_seed(seed + 503);
+    detail->set_frequency(DETAIL_FREQ_BASE);
+    detail->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
+    detail->set_fractal_octaves(4);
+
+    Ref<FastNoiseLite> ridge;  ridge.instantiate();
+    ridge->set_noise_type(FastNoiseLite::TYPE_SIMPLEX);
+    ridge->set_seed(seed + 977);
+    ridge->set_frequency(DETAIL_FREQ_BASE * 1.15);
+    ridge->set_fractal_type(FastNoiseLite::FRACTAL_RIDGED);
+    ridge->set_fractal_octaves(3);
+
+    FastNoiseLite *NW_LO = warp_lo.ptr();
+    FastNoiseLite *NW_HI = warp_hi.ptr();
+    FastNoiseLite *ND = detail.ptr();
+    FastNoiseLite *NR = ridge.ptr();
+
+    // ── 数学原语（逐一对齐 map_baker.gd / hex_utils.gd）──
+    auto fposmodd = [](double a, double b) -> double {
+        double m = std::fmod(a, b);
+        if (m < 0.0) m += b;
+        return m;
+    };
+    auto smooth01 = [](double e0, double e1, double x) -> double {
+        if (e1 <= e0) return x < e0 ? 0.0 : 1.0;
+        double t = (x - e0) / (e1 - e0);
+        t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+        return t * t * (3.0 - 2.0 * t);
+    };
+    // _cyl_noise：2D 接缝包裹（fposmod + band smoothstep lerp 到 seam 均值）
+    auto cyl = [&](FastNoiseLite *nz, double x, double y) -> double {
+        if (wrap_period_x <= 0.0001) return double(nz->get_noise_2d(x, y));
+        double xw = fposmodd(x, wrap_period_x);
+        double base = double(nz->get_noise_2d(xw, y));
+        double band = std::min(std::max(hex_size * 8.0, 1.0), wrap_period_x * 0.12);
+        if (band <= 0.0001) return base;
+        double left = double(nz->get_noise_2d(0.0, y));
+        double right = double(nz->get_noise_2d(wrap_period_x, y));
+        double seam_avg = (left + right) * 0.5;
+        if (xw < band) {
+            double tl = smooth01(0.0, band, xw);
+            return seam_avg + (base - seam_avg) * tl;
+        }
+        if (xw > wrap_period_x - band) {
+            double tr = smooth01(0.0, band, wrap_period_x - xw);
+            return seam_avg + (base - seam_avg) * tr;
+        }
+        return base;
+    };
+    const double SQRT3 = std::sqrt(3.0);
+    // cube_to_world(q, r, size)
+    auto cube_to_world_x = [&](int q, int r) -> double { return hex_size * SQRT3 * (double(q) + double(r) / 2.0); };
+    auto cube_to_world_y = [&](int r) -> double { return hex_size * 1.5 * double(r); };
+    // cube → cell.index（含东西经度环绕；南北硬边界返回 -1）
+    auto cell_at_cube = [&](int q, int r) -> int {
+        if (r < 0 || r >= map_h) return -1;
+        int col = q + ((r - (r & 1)) / 2);          // cube_to_offset.col
+        col = ((col % map_w) + map_w) % map_w;       // posmod wrap
+        return O2I[r * map_w + col];
+    };
+    // _neighbor_dir：atan2 sextant 编号 → cube 方向（0=E,1=SE,2=SW,3=W,4=NW,5=NE）
+    static const int NDQ[6] = { 1, 0, -1, -1, 0, 1 };
+    static const int NDR[6] = { 0, 1, 1, 0, -1, -1 };
+
+    // Bayer 8x8 有序抖动矩阵（值 0..63）
+    static const int BAYER8[64] = {
+        0, 32, 8, 40, 2, 34, 10, 42,
+        48, 16, 56, 24, 50, 18, 58, 26,
+        12, 44, 4, 36, 14, 46, 6, 38,
+        60, 28, 52, 20, 62, 30, 54, 22,
+        3, 35, 11, 43, 1, 33, 9, 41,
+        51, 19, 59, 27, 49, 17, 57, 25,
+        15, 47, 7, 39, 13, 45, 5, 37,
+        63, 31, 55, 23, 61, 29, 53, 21
+    };
+
+    // ── 输出 buffer ──
+    PackedFloat32Array height_buf;  height_buf.resize(n_pix);
+    PackedByteArray biome_buf;      biome_buf.resize(n_pix);
+    PackedFloat32Array moist_buf;   moist_buf.resize(n_pix);
+    PackedByteArray veg_buf;        veg_buf.resize(n_pix);
+    PackedByteArray cover_buf;      cover_buf.resize(n_pix);
+    PackedInt32Array p2c;           p2c.resize(n_pix);
+    float * const __restrict HBUF = height_buf.ptrw();
+    uint8_t * const __restrict BBUF = biome_buf.ptrw();
+    float * const __restrict MBUF = moist_buf.ptrw();
+    uint8_t * const __restrict VBUF = veg_buf.ptrw();
+    uint8_t * const __restrict CBUF = cover_buf.ptrw();
+    int32_t * const __restrict P2C = p2c.ptrw();
+
+    // CSR 计数（by cell.index）
+    PackedInt32Array first_px;  first_px.resize(n_cells);
+    PackedInt32Array px_count;  px_count.resize(n_cells);
+    int32_t * const __restrict FIRST = first_px.ptrw();
+    int32_t * const __restrict CNT = px_count.ptrw();
+    for (int c = 0; c < n_cells; ++c) { FIRST[c] = -1; CNT[c] = 0; }
+
+    const double step_x = size_x / double(W);
+    const double step_y = size_y / double(H);
+    const double warp_scale = hex_size * WARP_AMP;
+    const double PI = 3.14159265358979323846;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    for (int y = 0; y < H; ++y) {
+        const double wy_base = origin_y + (double(y) + 0.5) * step_y;
+        const int row = y * W;
+        const int by = (y & 7) * 8;
+        for (int x = 0; x < W; ++x) {
+            const double wx_base = origin_x + (double(x) + 0.5) * step_x;
+
+            // 1. warp（双频）
+            const double warp_x = cyl(NW_LO, wx_base, wy_base);
+            const double warp_y = cyl(NW_LO, wx_base + 31.7, wy_base - 17.3);
+            const double hi_x = cyl(NW_HI, wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO;
+            const double hi_y = cyl(NW_HI, wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO;
+            const double wx = wx_base + (warp_x + hi_x) * warp_scale;
+            const double wy = wy_base + (warp_y + hi_y) * warp_scale;
+
+            // 2. cube 归属（world_to_cube_f + cube_round）
+            const double qf = (SQRT3 / 3.0 * wx - (1.0 / 3.0) * wy) / hex_size;
+            const double rf = (2.0 / 3.0 * wy) / hex_size;
+            const double sf = -qf - rf;
+            double rq = std::round(qf), rr = std::round(rf), rs = std::round(sf);
+            const double dq = std::fabs(rq - qf), dr = std::fabs(rr - rf), ds = std::fabs(rs - sf);
+            if (dq > dr && dq > ds) rq = -rr - rs;
+            else if (dr > ds) rr = -rq - rs;
+            else rs = -rq - rr;
+            const int cq = int(rq), cr = int(rr);
+            const int self_idx = cell_at_cube(cq, cr);
+
+            // 3. sextant 邻居
+            const double scx = cube_to_world_x(cq, cr);
+            const double scy = cube_to_world_y(cr);
+            const double lx = (wx - scx) / hex_size;
+            const double ly = (wy - scy) / hex_size;
+            const double angle = std::atan2(ly, lx);
+            const int sextant = int(std::floor(fposmodd((angle + PI / 6.0) / (PI / 3.0), 6.0)));
+            const int s0 = sextant % 6;
+            const int s1 = (sextant + 1) % 6;
+            const int nb1_q = cq + NDQ[s0], nb1_r = cr + NDR[s0];
+            const int nb2_q = cq + NDQ[s1], nb2_r = cr + NDR[s1];
+            const int nb1_idx = cell_at_cube(nb1_q, nb1_r);
+            const int nb2_idx = cell_at_cube(nb2_q, nb2_r);
+
+            // 4. barycentric（self + 2 邻居中心）
+            const double ax = scx, ay = scy;
+            const double bx = cube_to_world_x(nb1_q, nb1_r), b_y = cube_to_world_y(nb1_r);
+            const double ccx = cube_to_world_x(nb2_q, nb2_r), ccy = cube_to_world_y(nb2_r);
+            double w_self = 1.0, w_nb1 = 0.0, w_nb2 = 0.0;
+            {
+                const double v0x = bx - ax, v0y = b_y - ay;
+                const double v1x = ccx - ax, v1y = ccy - ay;
+                const double v2x = wx - ax, v2y = wy - ay;
+                const double d00 = v0x * v0x + v0y * v0y;
+                const double d01 = v0x * v1x + v0y * v1y;
+                const double d11 = v1x * v1x + v1y * v1y;
+                const double d20 = v2x * v0x + v2y * v0y;
+                const double d21 = v2x * v1x + v2y * v1y;
+                const double denom = d00 * d11 - d01 * d01;
+                if (std::fabs(denom) >= 0.000001) {
+                    const double inv = 1.0 / denom;
+                    double vb = (d11 * d20 - d01 * d21) * inv;
+                    double vc = (d00 * d21 - d01 * d20) * inv;
+                    double va = 1.0 - vb - vc;
+                    va = va < 0.0 ? 0.0 : va;
+                    vb = vb < 0.0 ? 0.0 : vb;
+                    vc = vc < 0.0 ? 0.0 : vc;
+                    const double sum = va + vb + vc;
+                    if (sum >= 0.0001) { w_self = va / sum; w_nb1 = vb / sum; w_nb2 = vc / sum; }
+                }
+            }
+
+            // 5. 取值
+            const double elev_self = self_idx >= 0 ? double(E[self_idx]) : 0.0;
+            const double elev_nb1 = nb1_idx >= 0 ? double(E[nb1_idx]) : elev_self;
+            const double elev_nb2 = nb2_idx >= 0 ? double(E[nb2_idx]) : elev_self;
+            const double moist_self = self_idx >= 0 ? double(M[self_idx]) : 0.5;
+            const double moist_nb1 = nb1_idx >= 0 ? double(M[nb1_idx]) : moist_self;
+            const double moist_nb2 = nb2_idx >= 0 ? double(M[nb2_idx]) : moist_self;
+            const int terrain_self = self_idx >= 0 ? int(T[self_idx]) : TT_OCEAN;
+            const int veg_self = self_idx >= 0 ? int(VG[self_idx]) : 0;
+            const int cover_self = self_idx >= 0 ? int(CV[self_idx]) : 0;
+
+            // 6. barycentric 插值
+            const double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
+            const double moist_blend = moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2;
+
+            // 7. per-biome detail noise（geometric self；防点阵）
+            double elev_final = elev_blend;
+            if (terrain_self != TT_OCEAN && terrain_self != TT_COAST) {
+                const double d = cyl(ND, wx_base, wy_base) * 0.5;
+                if (terrain_self == TT_MOUNTAIN) {
+                    const double rdg = (cyl(NR, wx_base, wy_base) + 1.0) * 0.5;
+                    const double ridge_relief = rdg * 1.25 - 0.50;
+                    const double crag = cyl(ND, wx_base * 1.05 + 17.9, wy_base * 1.05 - 11.3) * 0.5;
+                    elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.10 + d * 0.40 * HILL_AMP;
+                } else if (terrain_self == TT_HILL) {
+                    const double hill = (cyl(NR, wx_base, wy_base) + 1.0) * 0.5;
+                    const double hill_relief = hill * 1.15 - 0.42;
+                    elev_final = elev_blend + d * HILL_AMP * 0.9 + hill_relief * HILL_AMP * 0.8;
+                } else {
+                    const double plain_macro = cyl(ND, wx_base * 0.45, wy_base * 0.45) * 0.5;
+                    elev_final = elev_blend + d * PLAIN_AMP + plain_macro * PLAIN_AMP * 0.70;
+                }
+            }
+
+            // 8. Bayer dither：决定"视觉归属 cell"。陆-陆 / 水-水的相邻 cell 边界全部做有序抖动
+            //    改派（软化 biome / 云 weather_lut / dyn_lut / eco_lut 等一切离散 cell 边界）；
+            //    仅 land↔water（跨水/陆域）边界回收门槛、不互相改派，保护海岸硬边与 per-pixel
+            //    is_water。height/moisture 仍走几何 self barycentric（防高程点阵）。
+            int vis_idx = self_idx;
+            if (dither_enabled && self_idx >= 0) {
+                const bool self_water = is_water(terrain_self);
+                const double w1 = (nb1_idx >= 0 && is_water(int(T[nb1_idx])) == self_water) ? w_nb1 : 0.0;
+                const double w2 = (nb2_idx >= 0 && is_water(int(T[nb2_idx])) == self_water) ? w_nb2 : 0.0;
+                if (w1 > 0.0 || w2 > 0.0) {
+                    const double t = double(BAYER8[by + (x & 7)]) / 64.0;
+                    if (t < w1) vis_idx = nb1_idx;
+                    else if (t < w1 + w2) vis_idx = nb2_idx;
+                }
+            }
+            const int vis_terrain = vis_idx >= 0 ? int(T[vis_idx]) : terrain_self;
+            const int vis_veg = vis_idx >= 0 ? int(VG[vis_idx]) : veg_self;
+            const int vis_cov = vis_idx >= 0 ? int(CV[vis_idx]) : cover_self;
+
+            const int idx = row + x;
+            double hf = elev_final; hf = hf < 0.0 ? 0.0 : (hf > 1.0 ? 1.0 : hf);
+            double mf = moist_blend; mf = mf < 0.0 ? 0.0 : (mf > 1.0 ? 1.0 : mf);
+            HBUF[idx] = float(hf);
+            BBUF[idx] = uint8_t(vis_terrain & 0xFF);
+            MBUF[idx] = float(mf);
+            VBUF[idx] = uint8_t(vis_veg & 0xFF);
+            CBUF[idx] = uint8_t(vis_cov & 0xFF);
+            P2C[idx] = vis_idx;
+            if (vis_idx >= 0 && vis_idx < n_cells) CNT[vis_idx] += 1;
+        }
+    }
+
+    // ── CSR build：prefix-sum first_px + scatter flat（counting sort，by cell.index）──
+    int total_px = 0;
+    for (int c = 0; c < n_cells; ++c) {
+        if (CNT[c] > 0) { FIRST[c] = total_px; total_px += CNT[c]; }
+        else { FIRST[c] = -1; }
+    }
+    PackedInt32Array flat_px;  flat_px.resize(total_px);
+    int32_t * const __restrict FLAT = flat_px.ptrw();
+    // 写游标：复用临时数组（各 cell 段起点）
+    std::vector<int> cursor(n_cells);
+    for (int c = 0; c < n_cells; ++c) cursor[c] = FIRST[c];
+    for (int i = 0; i < n_pix; ++i) {
+        const int c = P2C[i];
+        if (c >= 0 && c < n_cells && cursor[c] >= 0) {
+            FLAT[cursor[c]] = i;
+            cursor[c] += 1;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["width"] = W;
+    out["height"] = H;
+    out["height_buffer"] = height_buf;
+    out["biome_buffer"] = biome_buf;
+    out["moisture_buffer"] = moist_buf;
+    out["vegetation_buffer"] = veg_buf;
+    out["cover_buffer"] = cover_buf;
+    out["pixel_to_cell_index"] = p2c;
+    out["cell_first_px"] = first_px;
+    out["cell_px_count"] = px_count;
+    out["flat_px_indices"] = flat_px;
+    out["total_px"] = total_px;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::encode_bake_upwelling_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not bound");
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n_pix = w * h;
+    const int n_cells = int(knobs.get("n_cells", _entity_count));
+    if (w <= 0 || h <= 0 || n_pix <= 0) return fail("invalid size");
+    if (n_cells <= 0 || n_cells > _entity_count) return fail("invalid n_cells");
+    PackedInt32Array p2c = knobs.get("pixel_to_cell_idx", PackedInt32Array());
+    if (p2c.size() < n_pix) return fail("pixel_to_cell_idx too small");
+
+    const int sid_terrain = component_id(StringName("cell_terrain"));
+    const int sid_up = component_id(StringName("cell_upwelling_strength"));
+    if (sid_terrain < 0 || sid_up < 0) return fail("missing slot id");
+    Slot &s_terr = _slots.write[sid_terrain];
+    Slot &s_up = _slots.write[sid_up];
+    if (s_terr.arr_u8.size() < n_cells || s_up.arr_f32.size() < n_cells) {
+        return fail("slot array size < n_cells");
+    }
+
+    PackedByteArray data;
+    data.resize(n_pix);
+    const int32_t * const __restrict P2C = p2c.ptr();
+    const uint8_t * const __restrict TERR = s_terr.arr_u8.ptr();
+    const float * const __restrict UP = s_up.arr_f32.ptr();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    auto quantize_upwelling = [](float v) -> uint8_t {
+        if (v < -1.0f) v = -1.0f;
+        else if (v > 1.0f) v = 1.0f;
+        int q = int(std::round(128.0f + 127.0f * v));
+        if (q < 0) q = 0;
+        else if (q > 255) q = 255;
+        return uint8_t(q);
+    };
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < n_pix; ++i) {
+        const int ci = P2C[i];
+        if (ci < 0 || ci >= n_cells || !pk_is_water_terrain(TERR[ci])) {
+            DST[i] = 128;
+            continue;
+        }
+        DST[i] = quantize_upwelling(UP[ci]);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("L8");
+    return out;
+}
+
 godot::Dictionary DCWorldExt::patch_enum_atlas_axes(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -18374,7 +19972,7 @@ godot::Dictionary DCWorldExt::patch_enum_atlas_axes(godot::Dictionary knobs) {
     PackedInt32Array flat_px = knobs["flat_px_indices"];
     PackedByteArray enum_data = knobs["enum_atlas_data"];
     if (first_px.size() < n_cells || px_count.size() < n_cells) return fail("cell CSR size < n_cells");
-    if (enum_data.size() != n_pix * 3) return fail("enum_atlas_data size mismatch");
+    if (enum_data.size() != n_pix * 4) return fail("enum_atlas_data size mismatch");
 
     PackedByteArray biome_buf = knobs.get("biome_buffer", PackedByteArray());
     PackedByteArray vegetation_buf = knobs.get("vegetation_buffer", PackedByteArray());
@@ -18457,10 +20055,10 @@ godot::Dictionary DCWorldExt::patch_enum_atlas_axes(godot::Dictionary knobs) {
         for (int p = 0; p < c; ++p) {
             const int px = FLAT[f + p];
             if (px < 0 || px >= n_pix) continue;
-            const int di = px * 3;
+            const int di = px * 4;
             if (dirty_b) { BB[px] = b_t; ED[di] = b_t; }
-            if (dirty_v) { VB[px] = b_v; ED[di + 1] = b_v; }
-            if (dirty_c) { CB[px] = b_c; ED[di + 2] = b_c; }
+            if (dirty_v) { VB[px] = b_v; }
+            if (dirty_c) { CB[px] = b_c; }
         }
     }
 
@@ -20841,6 +22439,117 @@ godot::Dictionary DCWorldExt::run_atlas_pipeline_step(godot::Dictionary opts) {
         out["ms_breakdown"] = ms;
     }
 
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// run_physical_solve_pass — 物理环流编排下沉 C++（dots-total-cpp step3，生成期一次性路径）
+// 在进程内按序串起 SLP → wind → PSI → upwelling 四个已验证 kernel（均读 bound slot +
+// publish_to_slot），中间量经 slp_out / 读 wind slot 串联，不跨语言往返。
+// ─────────────────────────────────────────────────────────────────────────
+godot::Dictionary DCWorldExt::run_physical_solve_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::String;
+    using godot::StringName;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["psi_ran"] = false;
+    out["slp_ms"] = -1.0;
+    out["wind_ms"] = -1.0;
+    out["psi_ms"] = -1.0;
+    out["upwelling_ms"] = -1.0;
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    if (!_bound) return fail("not _bound");
+    const int n_cells = int(knobs.get("n_cells", 0));
+    if (n_cells <= 0) return fail("n_cells <= 0");
+
+    const bool heat_transport = bool(knobs.get("heat_transport", true));
+    const bool solve_ocean = bool(knobs.get("solve_ocean", true));
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // ── ① SLP（publish cell_slp slot；返回 slp_out 供 wind 串联）──
+    Dictionary slp_ret = run_slp_field_pass(knobs);
+    if (bool(slp_ret.get("fallback", true))) return fail("slp_fallback");
+    PackedFloat32Array slp_out = slp_ret.get("slp_out", PackedFloat32Array());
+    if (slp_out.size() != n_cells) return fail("slp_out size mismatch");
+    out["slp_ms"] = slp_ret.get("elapsed_ms", -1.0);
+
+    // ── ② wind（注入 slp_arr=slp_out；读 slp/terrain/landform/pos slot，写 wind slot）──
+    knobs["slp_arr"] = slp_out;
+    const double wind_ms = run_wind_field_pass(knobs);
+    if (wind_ms < 0.0) return fail("wind_fallback");
+    out["wind_ms"] = wind_ms;
+
+    if (!solve_ocean) {
+        // 与 GDScript step_one 一致：!solve_ocean 时风场算完即结束（无 PSI / upwelling）。
+        out["fallback"] = false;
+        out["reason"] = String();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+        return out;
+    }
+
+    // ── ③ PSI（仅 heat_transport；从 wind slot 提取 wind_*_arr 注入 knobs）──
+    if (heat_transport) {
+        const int sid_wx  = component_id(StringName("cell_wind_x"));
+        const int sid_wy  = component_id(StringName("cell_wind_y"));
+        const int sid_wsp = component_id(StringName("cell_wind_speed"));
+        if (sid_wx < 0 || sid_wy < 0 || sid_wsp < 0) return fail("wind slot id missing");
+        Slot &s_wx  = _slots.write[sid_wx];
+        Slot &s_wy  = _slots.write[sid_wy];
+        Slot &s_wsp = _slots.write[sid_wsp];
+        if (s_wx.arr_f32.size() != n_cells || s_wy.arr_f32.size() != n_cells
+                || s_wsp.arr_f32.size() != n_cells) {
+            return fail("wind slot size mismatch");
+        }
+        PackedFloat32Array wx;  wx.resize(n_cells);
+        PackedFloat32Array wy;  wy.resize(n_cells);
+        PackedFloat32Array wsp; wsp.resize(n_cells);
+        {
+            const float * const __restrict SWX = s_wx.arr_f32.ptr();
+            const float * const __restrict SWY = s_wy.arr_f32.ptr();
+            const float * const __restrict SWS = s_wsp.arr_f32.ptr();
+            float * const __restrict DWX = wx.ptrw();
+            float * const __restrict DWY = wy.ptrw();
+            float * const __restrict DWS = wsp.ptrw();
+            for (int i = 0; i < n_cells; ++i) { DWX[i] = SWX[i]; DWY[i] = SWY[i]; DWS[i] = SWS[i]; }
+        }
+        knobs["wind_x_arr"] = wx;
+        knobs["wind_y_arr"] = wy;
+        knobs["wind_speed_arr"] = wsp;
+        Dictionary psi_ret = run_psi_solver_pass(knobs);
+        if (bool(psi_ret.get("fallback", true))) return fail("psi_fallback");
+        out["psi_ms"] = psi_ret.get("elapsed_ms", -1.0);
+        out["psi_ran"] = true;
+    } else {
+        // !heat_transport：GDScript 走 solve_ocean_current_fallback（纯 GDScript，无 C++ 等价），
+        // 故一次性路径无法完成 → 整体 fallback，交回 GDScript step_one loop 处理。
+        return fail("no_heat_transport_needs_gdscript_ocean_fallback");
+    }
+
+    // ── ④ upwelling（读 wind slot；注入 stage=upwelling）──
+    {
+        Dictionary up_knobs = knobs;
+        up_knobs["stage"] = String("upwelling");
+        Dictionary up_ret = run_physical_circulation_pass(up_knobs);
+        if (bool(up_ret.get("fallback", true))) return fail("upwelling_fallback");
+        out["upwelling_ms"] = up_ret.get("elapsed_ms", -1.0);
+    }
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(
+        std::chrono::high_resolution_clock::now() - t0).count();
     return out;
 }
 

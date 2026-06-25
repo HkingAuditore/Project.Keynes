@@ -35,7 +35,10 @@ extends Resource
 # 配合加强后的 hillshade，宏观山脉/山系在地图上更醒目；同时更多脊线格越过 mountain_line
 # 成为裸岩山地，山系面积更大、更连片。
 # [宏观地形增强 2026-06-19] 0.68→0.80：山脉脊线更高耸，大山系在加强后的 macro 起伏上更醒目。
-@export var ridge_boost_amp: float = 0.80
+# [地貌真实性 2026-06-25] 0.80→0.60：实测(tile_data 0625)陆地约 22% 落在 land_h>0.70 的山地带，
+# 远高于真实地球(几个百分点)，0.80 把过多陆地抬成极高地。回调到 0.60(介于历史 0.50/0.68)收窄
+# 极高地占比，让"高原+丘陵+少量高峰"的山区过渡更自然。⚠ 单值可逆，须按新 CSV 复核高山占比。
+@export var ridge_boost_amp: float = 0.60
 
 # Meso-scale noise weight (between continent and micro detail).
 # 注：2026-06-19 早些时候曾把它降到 0.12 想"消除破碎"，但用户反馈上一版（meso=0.40）的大陆
@@ -1120,7 +1123,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var moisture_humidity_cap: float = 1.2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
-@export var moisture_subtropical_dry_strength: float = 0.22
+# 副热带干带：在南北副热带纬度按距海大陆度扣湿，恢复稳定的热带/暖温带荒漠带。
+# [地貌真实性 2026-06-25] strength 0.22→0.32：实测(tile_data 0625)真沙漠 DESERT 仅占陆地 0.39%，
+# 而萨王纳(SAVANNA) 高达 ~16%——副热带内陆本该出现的真荒漠(撒哈拉/阿拉伯型)被中湿萨王纳吃掉。
+# 适度加强副热带干带强度，只抽干副热带大陆内部(地理正确位置)，不影响其它纬度湿度平衡。
+# ⚠ 单值可逆，须按新 CSV 复核 DESERT/SAVANNA 占比，过头(沙漠铺满副热带)则回调。
+@export var moisture_subtropical_dry_strength: float = 0.32
 @export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.33
 @export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.16
 # 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
@@ -1148,6 +1156,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var peak_min_land_h: float = 0.74
 @export_range(0.0, 0.2, 0.005) var peak_min_prominence: float = 0.035
 @export_range(1, 400, 1) var peak_land_cells_per_peak: int = 120
+
+# 峡谷(CANYON)：河流深切、两壁陡立的线状侵蚀峡谷（须有河道穿过），与干旱片状荒原(BADLANDS)、
+# 构造裂谷(RIFT_VALLEY)区分。canyon_min_wall=单侧陡壁最小相对高差(越大越陡才算)；canyon_min_axis=
+# 对置两壁的综合下切门槛(越大峡谷越深越稀有)。仅 C++ 生成路径消费(world_ext.cpp CANYON pass)。
+@export_range(0.0, 0.3, 0.005) var canyon_min_wall: float = 0.05
+@export_range(0.0, 0.3, 0.005) var canyon_min_axis: float = 0.06
 
 # ══════════════════════════════════════════════════════════════════════
 # [Reference-impl demo channels — DO NOT use in real game logic]

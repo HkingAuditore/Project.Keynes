@@ -29,6 +29,8 @@ uniform float world_time = 0.0;
 // 一个 hex 的“直径”（wp 单位）。邻域采样偏移按它物理换算，避免与 map_index_atlas
 // 的 hex 像素尺度发生频率共振导致六边形晶格。
 uniform float hex_world_diameter = 38.0;
+// 云下假阴影沿背光方向的投影偏移（hex 直径倍数）。太阳越低偏移越长 → 悬浮感越强。
+uniform float cloud_shadow_offset : hint_range(0.0, 3.0) = 1.15;
 
 // 昼夜（TOD）：方向光色 / 环境光色 / 晨昏全部走 earth_daylight 唯一真源（见下方 include），
 // 不再由 GDScript 推单一 tod_sun_color/tod_ambient_color/tod_night_factor（那会让全图云统一明暗、
@@ -265,12 +267,13 @@ float remap_cloud_density(float shape, float coverage, float core_boost) {
 	return clamp(mix(d * 0.74, contrast, 0.42) + core * core_boost * 0.58, 0.0, 1.0);
 }
 
-vec2 cloud_sun_axis() {
-	vec2 axis = tod_sun_dir.xy;
-	if (dot(axis, axis) <= 0.0001) {
-		return normalize(vec2(0.62, -0.38));
-	}
-	return normalize(axis);
+// 中云 advection 世界坐标（风向漂移 + 侧向翻卷）。抽出以便云影/光照梯度复用同一坐标系，
+// 避免与 sample_cumulus_layer 内联公式漂移。
+vec2 cumulus_advect(vec2 wp, vec2 axis) {
+	vec2 dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
+	vec2 side = vec2(-dir.y, dir.x);
+	float t = world_time;
+	return wp - dir * t * 1.45 + side * sin(t * 0.19 + dot(wp, dir) * 0.0022) * hex_world_diameter * 0.22;
 }
 
 float cloud_density_alpha(float density) {
@@ -351,10 +354,7 @@ CloudLayerSample sample_cumulus_layer(vec2 wp, vec2 axis, float coverage) {
 	if (coverage <= 0.001) {
 		return empty_cloud_layer();
 	}
-	vec2 dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
-	vec2 side = vec2(-dir.y, dir.x);
-	float t = world_time;
-	vec2 cp = wp - dir * t * 1.45 + side * sin(t * 0.19 + dot(wp, dir) * 0.0022) * hex_world_diameter * 0.22;
+	vec2 cp = cumulus_advect(wp, axis);
 	float density = cloud_density_soft(cp, coverage, 13.0);
 	float feather = smoothstep(0.025, 0.30, density) * (1.0 - smoothstep(0.50, 0.86, density));
 	float rim = smoothstep(0.10, 0.46, density) * (1.0 - smoothstep(0.58, 0.98, density));
@@ -426,7 +426,8 @@ vec4 wx_sample_lut(int cid) {
 }
 
 // 逐格天气场采样（cloud-from-field 2026-06-20）：经 cell-index 间接寻址读 weather_lut。
-// type 取中心 cell（枚举不可插值）；intensity/cloud/precip 4-tap 双线性平滑跨格柔化。
+// type/intensity/cloud/precip 取中心 cell（枚举不可插值）；只做帧间(prev)时间平滑。
+// [dither-index 2026-06-25] 跨格空间柔化已由烘焙期 cell 索引 dither 接管，云端不再做双线性。
 // 替代旧 sample_fronts 椭圆摘要 → 云精确对应 HexCell.weather_*。
 FrontField sample_field_weather(vec2 wp) {
 	FrontField best = empty_field();
@@ -599,14 +600,39 @@ void fragment() {
 		0.18
 	);
 
-	// 太阳方向密度梯度：不再二次采样主云（q2 原本几乎翻倍 ALU），改用边缘/核心的廉价近似。
-	float cumulus_light_grad = (q_weather >= 2) ? clamp(cumulus_layer.edge * 0.55 + cumulus_layer.density * 0.22 - 0.32, -1.0, 1.0) : 0.0;
+	// [tod-point-light 2026-06-25] 云响应逐像素点光源 TOD 光照：用 earth_daylight 的 ed.sun_dir
+	// （含纬度/时角的"类点光源太阳方向"，与地形/水面/植被同源）取代旧全局 tod_sun_dir。
+	// 水平分量 sun_axis = 太阳方位；其长度 sun_horiz = cos(太阳高度角) → 太阳越低方向感越强。
+	vec2 sun_h = ed.sun_dir.xy;
+	float sun_horiz = clamp(length(sun_h), 0.0, 1.0);
+	vec2 sun_axis = (sun_horiz > 1e-4) ? sun_h / sun_horiz : normalize(vec2(0.62, -0.38));
+	float sun_up = max(ed.sun_dir.z, 0.0); // = sin(太阳高度角)
+
+	// 太阳方向密度梯度：q2 沿太阳水平方向取一次云密度（迎光侧朝太阳更薄→透光更亮，背光侧更厚→暗）。
+	// q<2 退化为廉价 edge/核心近似（沿用旧式）。梯度强度随 sun_horiz 加权 → 低日方向对比强、高日均匀。
+	float cumulus_light_grad = 0.0;
+	if (q_weather >= 2 && cumulus > 0.001) {
+		float step_l = hex_world_diameter * 0.5;
+		float d_toward = cloud_density_soft(cumulus_advect(wp + sun_axis * step_l, cumulus_axis), cumulus_intensity, 13.0);
+		cumulus_light_grad = clamp((cumulus - d_toward) * 1.7, -1.0, 1.0) * (0.45 + 0.55 * sun_horiz);
+	} else if (q_weather >= 1) {
+		cumulus_light_grad = clamp(cumulus_layer.edge * 0.55 + cumulus_layer.density * 0.22 - 0.32, -1.0, 1.0);
+	}
+
+	// [cloud-float] 偏移投影假阴影：把云沿背光方向投影到地面（offset = sun_axis*距离；距离 ∝ 云高·tan(天顶角)
+	// = cloud_shadow_offset · sun_horiz/sin(h)）。太阳越低影越长偏移越大 → 云悬浮观感。q0 跳过、夜侧无影。
+	float offset_shadow = 0.0;
+	if (q_weather >= 1 && ed.local_day > 0.01 && cumulus_intensity > 0.02) {
+		float sd = hex_world_diameter * cloud_shadow_offset * clamp(sun_horiz / max(sun_up, 0.20), 0.0, 3.2);
+		float dsh = cloud_density_soft(cumulus_advect(wp + sun_axis * sd, cumulus_axis), cumulus_intensity, 13.0);
+		offset_shadow = cloud_density_alpha(dsh) * ed.local_day;
+	}
 
 	float layer_occlusion = (q_weather >= 2)
 		? clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0)
 		: 0.0;
 
-	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001);
+	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001) || (offset_shadow > 0.003);
 	if (!has_layer) {
 		COLOR = vec4(0.0);
 	} else {
@@ -621,11 +647,14 @@ void fragment() {
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.78, 0.70 * precip_alpha_factor));
 
-		// 地面投影阴影随云量/云核变化，并按本格降水量连续轻微增强。
-		float shadow_alpha = clamp(w.shadow * weather_strength * (0.17 + cloud_core * 0.07) * precip_alpha_factor * (1.0 - ed.pixel_night * 0.35), 0.0, min(0.36, 0.32 * precip_alpha_factor));
+		// 云下假阴影 = 直接(云正下方,薄) + 偏移投影(沿背光方向偏移的云密度)。整体调弱：薄薄一层暗淡，
+		// 不再挡住下方地表。偏移投影即使本像素头顶无云也能落影 → 阴影与云分离、营造悬浮感；夜侧消隐。
+		float direct_shadow = w.shadow * (0.06 + cloud_core * 0.03);
+		float ground_shadow = clamp((direct_shadow + offset_shadow * 0.20) * weather_strength * precip_alpha_factor * ed.local_day, 0.0, 0.18);
 
-		col = mix(vec3(0.06, 0.08, 0.10), col, alpha / max(alpha + shadow_alpha, 0.001));
-		alpha = clamp(alpha + shadow_alpha, 0.0, 0.94);
+		// 阴影色用偏中性的暗调（非接近纯黑），即便叠满也只是压暗而不遮挡地表。
+		col = mix(vec3(0.20, 0.22, 0.26), col, alpha / max(alpha + ground_shadow, 0.001));
+		alpha = clamp(alpha + ground_shadow, 0.0, 0.94);
 
 		// 低雾（底层，介于地面与中云之间）。
 		if (fog_layer.density > 0.001) {
