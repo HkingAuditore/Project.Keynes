@@ -85,6 +85,62 @@ static func encode_height_tex(buf: PackedFloat32Array, size: Vector2i,
 	return _upload_rg8(data, W, H)
 
 
+# [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（宽半径梯度 → RG8: nx,ny）。
+# 地形静态 → 运行期 shader 只需 1 次采样拿宏观山脉走向；细节法线另由运行期按 biome/性能档叠。
+# 与 world_ext.cpp::encode_bake_terrain_normal_tex_data 逐位对齐。
+static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
+		coarse_radius: int = 4, slope_gain: float = 8.0, wrap_x: bool = true,
+		native_ext: Object = null) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var ret: Dictionary = _native_data(native_ext, &"encode_bake_terrain_normal_tex_data", {
+		"buffer": buf,
+		"width": W,
+		"height": H,
+		"coarse_radius": coarse_radius,
+		"slope_gain": slope_gain,
+		"wrap_x": wrap_x,
+	})
+	if not bool(ret.get("fallback", true)):
+		return _upload_rg8(ret.get("data", PackedByteArray()), W, H)
+
+	# Debug fallback: mirrors the native contract (宽半径中心差分 → RG8 法线)。
+	var r: int = maxi(coarse_radius, 1)
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(W * H * 2)
+	if buf.size() < W * H:
+		return _upload_rg8(data, W, H)
+	var inv2r_gain: float = slope_gain / (2.0 * float(r))
+	for y in range(H):
+		var yu: int = maxi(y - r, 0)
+		var yd: int = mini(y + r, H - 1)
+		var row: int = y * W
+		var row_u: int = yu * W
+		var row_d: int = yd * W
+		for x in range(W):
+			var xl: int = x - r
+			var xr: int = x + r
+			if wrap_x:
+				xl = ((xl % W) + W) % W
+				xr = xr % W
+			else:
+				xl = maxi(xl, 0)
+				xr = mini(xr, W - 1)
+			var h_l: float = buf[row + xl]
+			var h_r: float = buf[row + xr]
+			var h_u: float = buf[row_u + x]
+			var h_d: float = buf[row_d + x]
+			var sx: float = (h_r - h_l) * inv2r_gain
+			var sy: float = (h_d - h_u) * inv2r_gain
+			var inv_len: float = 1.0 / sqrt(sx * sx + sy * sy + 1.0)
+			var nx: float = -sx * inv_len
+			var ny: float = -sy * inv_len
+			var di: int = (row + x) * 2
+			data[di] = clampi(int(round((nx * 0.5 + 0.5) * 255.0)), 0, 255)
+			data[di + 1] = clampi(int(round((ny * 0.5 + 0.5) * 255.0)), 0, 255)
+	return _upload_rg8(data, W, H)
+
+
 static func encode_enum_atlas_payload(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
 		_cover_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null, world: Object = null, native_ext: Object = null,

@@ -18526,6 +18526,101 @@ godot::Dictionary DCWorldExt::encode_bake_height_tex_data(godot::Dictionary knob
     return out;
 }
 
+// [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"：地形是静态的，把宏观山脉走向的
+//   粗法线一次性算好编码成 RG8（nx,ny ∈ [0,1] 由 [-1,1] 映射，nz 在 shader 重建）。运行期 shader
+//   只需 1 次采样拿走向，替代每帧的宽半径 4-tap，细节法线另由运行期按 biome/性能档叠加。
+//   宽半径中心差分（半径 coarse_radius texel）→ 平滑掉 per-pixel ridge/crag 高频，只留走势。
+//   X 方向按圆柱环绕（wrap_x），Y 方向 clamp；按行 parallel_for_range 并行。
+godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+    PackedFloat32Array src = knobs.get("buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("height buffer too small");
+
+    int radius = int(knobs.get("coarse_radius", 4));
+    if (radius < 1) radius = 1;
+    else if (radius > 64) radius = 64;
+    const double gain = double(knobs.get("slope_gain", 8.0));
+    const bool wrap_x = bool(knobs.get("wrap_x", true));
+
+    PackedByteArray data;
+    data.resize(n * 2);
+    const float * const __restrict SRC = src.ptr();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    const double inv2r_gain = gain / (2.0 * double(radius));
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    auto run_range = [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            const int yu = (y - radius < 0) ? 0 : (y - radius);
+            const int yd = (y + radius >= h) ? (h - 1) : (y + radius);
+            const int rowU = yu * w;
+            const int rowD = yd * w;
+            const int row  = y * w;
+            for (int x = 0; x < w; ++x) {
+                int xl = x - radius;
+                int xr = x + radius;
+                if (wrap_x) {
+                    xl = ((xl % w) + w) % w;
+                    xr = xr % w;
+                } else {
+                    if (xl < 0) xl = 0;
+                    if (xr >= w) xr = w - 1;
+                }
+                const double hL = double(SRC[row + xl]);
+                const double hR = double(SRC[row + xr]);
+                const double hU = double(SRC[rowU + x]);
+                const double hD = double(SRC[rowD + x]);
+                const double sx = (hR - hL) * inv2r_gain;
+                const double sy = (hD - hU) * inv2r_gain;
+                // N = normalize(-sx, -sy, 1)
+                const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
+                const double nx = -sx * inv_len;
+                const double ny = -sy * inv_len;
+                int bx = int(std::round((nx * 0.5 + 0.5) * 255.0));
+                int by = int(std::round((ny * 0.5 + 0.5) * 255.0));
+                if (bx < 0) bx = 0; else if (bx > 255) bx = 255;
+                if (by < 0) by = 0; else if (by > 255) by = 255;
+                DST[(row + x) * 2]     = uint8_t(bx);
+                DST[(row + x) * 2 + 1] = uint8_t(by);
+            }
+        }
+    };
+    pk::parallel_for_range("pk_bake_terrain_normal", h, /*n_tasks=*/0, /*seq_threshold=*/64, run_range);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("RG8");
+    return out;
+}
+
 godot::Dictionary DCWorldExt::encode_bake_r8_tex_data(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -19549,11 +19644,18 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     constexpr double WARP_HIGH_FREQ_MUL = 3.4;
     constexpr double WARP_HIGH_AMP_RATIO = 0.55;
     constexpr double DETAIL_FREQ_BASE = 0.8;
-    constexpr double MOUNTAIN_RIDGE_AMP = 0.26;
-    constexpr double HILL_AMP = 0.06;
-    constexpr double PLAIN_AMP = 0.024;
+    // [P0 地形 relief 重做 2026-06-25] 各向异性脊线 + 连续振幅(relief 门控) + 山脊/谷不对称 +
+    //   气候耦合，取代旧的"按 terrain 硬分档各向同性 ridged 噪声"（MOUNTAIN/HILL/PLAIN_AMP 已废弃）。
+    constexpr double RELIEF_AMP      = 0.26;   // 主起伏振幅（量级对齐旧 MOUNTAIN_RIDGE_AMP，与下游 erosion 同档）
+    constexpr double RELIEF_LO       = 0.020;  // relief 门控下限：below→趋平（平原视觉真平）
+    constexpr double RELIEF_HI       = 0.150;  // relief 门控上限：above→满振幅
+    constexpr double RIDGE_SMEAR_HEX = 0.65;   // 沿脊线 3-tap smear 步长（hex 单位）
+    constexpr double K_CREST         = 1.7;    // 山脊尖化指数（>1：尖脊 + 缓谷）
+    constexpr double VALLEY_BIAS     = 0.35;   // 谷底负偏置（河道落低处，与河流 SDF 自洽）
+    constexpr double CRAG_AMP        = 0.05;   // 高频岩屑振幅
+    constexpr double CRAG_FREQ_MUL   = 1.05;   // 岩屑频率乘子
     // TerrainType.TERRAIN 枚举（与 terrain_type.gd 顺序严格一致）
-    constexpr int TT_OCEAN = 0, TT_COAST = 1, TT_HILL = 5, TT_MOUNTAIN = 6;
+    constexpr int TT_OCEAN = 0, TT_COAST = 1;
     // is_water 集合（与 weather_overlay 一致）：OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP。
     // 仅用于 dither 的 land↔water 门槛：跨水/陆域的相邻 cell 不互相改派（保护海岸硬边）。
     auto is_water = [](int t) -> bool {
@@ -19681,6 +19783,44 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    // ── [P0] per-cell 高程梯度 + 局地起伏预计算（六邻居有限差分；O(n_cells)）──
+    //    grad 方向供各向异性脊线（沿等高线方向拉长山脊）；relief（邻格最大高差）供连续
+    //    振幅门控（平原→趋零、山地→满振幅），均不依赖 hex_size 量纲、不绑 terrain 类别。
+    std::vector<float> CGX(size_t(n_cells), 0.0f), CGY(size_t(n_cells), 0.0f), CREL(size_t(n_cells), 0.0f);
+    for (int r = 0; r < map_h; ++r) {
+        const int qbase = -((r - (r & 1)) / 2);          // offset.col → cube.q（cell_at_cube 互逆）
+        for (int col = 0; col < map_w; ++col) {
+            const int self_c = O2I[r * map_w + col];
+            if (self_c < 0 || self_c >= n_cells) continue;
+            const int q = col + qbase;
+            const double e0 = double(E[self_c]);
+            const double sx0 = cube_to_world_x(q, r);
+            const double sy0 = cube_to_world_y(r);
+            double Sxx = 0.0, Sxy = 0.0, Syy = 0.0, Sxz = 0.0, Syz = 0.0;
+            double relief = 0.0;
+            for (int d = 0; d < 6; ++d) {
+                const int nq = q + NDQ[d], nr = r + NDR[d];
+                const int nb = cell_at_cube(nq, nr);     // 含经度环绕；南北极返回 -1
+                if (nb < 0) continue;
+                const double dz = double(E[nb]) - e0;
+                // 用 unwrapped cube 世界坐标算局部偏移（接缝处仍连续，梯度方向正确）
+                const double dx = cube_to_world_x(nq, nr) - sx0;
+                const double dy = cube_to_world_y(nr) - sy0;
+                Sxx += dx * dx; Sxy += dx * dy; Syy += dy * dy;
+                Sxz += dx * dz; Syz += dy * dz;
+                const double adz = dz < 0.0 ? -dz : dz;
+                if (adz > relief) relief = adz;
+            }
+            const double det = Sxx * Syy - Sxy * Sxy;    // 2×2 最小二乘解世界空间梯度
+            if (det > 1e-12 || det < -1e-12) {
+                const double inv = 1.0 / det;
+                CGX[size_t(self_c)] = float((Syy * Sxz - Sxy * Syz) * inv);
+                CGY[size_t(self_c)] = float((Sxx * Syz - Sxy * Sxz) * inv);
+            }
+            CREL[size_t(self_c)] = float(relief);
+        }
+    }
+
     for (int y = 0; y < H; ++y) {
         const double wy_base = origin_y + (double(y) + 0.5) * step_y;
         const int row = y * W;
@@ -19765,23 +19905,40 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
             const double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
             const double moist_blend = moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2;
 
-            // 7. per-biome detail noise（geometric self；防点阵）
+            // 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
+            //    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。
             double elev_final = elev_blend;
             if (terrain_self != TT_OCEAN && terrain_self != TT_COAST) {
-                const double d = cyl(ND, wx_base, wy_base) * 0.5;
-                if (terrain_self == TT_MOUNTAIN) {
-                    const double rdg = (cyl(NR, wx_base, wy_base) + 1.0) * 0.5;
-                    const double ridge_relief = rdg * 1.25 - 0.50;
-                    const double crag = cyl(ND, wx_base * 1.05 + 17.9, wy_base * 1.05 - 11.3) * 0.5;
-                    elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.10 + d * 0.40 * HILL_AMP;
-                } else if (terrain_self == TT_HILL) {
-                    const double hill = (cyl(NR, wx_base, wy_base) + 1.0) * 0.5;
-                    const double hill_relief = hill * 1.15 - 0.42;
-                    elev_final = elev_blend + d * HILL_AMP * 0.9 + hill_relief * HILL_AMP * 0.8;
-                } else {
-                    const double plain_macro = cyl(ND, wx_base * 0.45, wy_base * 0.45) * 0.5;
-                    elev_final = elev_blend + d * PLAIN_AMP + plain_macro * PLAIN_AMP * 0.70;
-                }
+                // 插值 per-cell 梯度方向 + 局地起伏（复用 self/nb1/nb2 barycentric 权重）
+                double gx = CGX[size_t(self_idx)] * w_self;
+                double gy = CGY[size_t(self_idx)] * w_self;
+                double relief_p = CREL[size_t(self_idx)] * w_self;
+                if (nb1_idx >= 0) { gx += CGX[size_t(nb1_idx)] * w_nb1; gy += CGY[size_t(nb1_idx)] * w_nb1; relief_p += CREL[size_t(nb1_idx)] * w_nb1; }
+                if (nb2_idx >= 0) { gx += CGX[size_t(nb2_idx)] * w_nb2; gy += CGY[size_t(nb2_idx)] * w_nb2; relief_p += CREL[size_t(nb2_idx)] * w_nb2; }
+
+                // 连续振幅门控：relief 低→趋平（真平原），高→满振幅（无 terrain 硬分档）
+                const double gate = smooth01(RELIEF_LO, RELIEF_HI, relief_p);
+                // 脊线方向 = 梯度的垂直方向（沿等高线）
+                const double glen = std::sqrt(gx * gx + gy * gy);
+                double tx = 1.0, ty = 0.0;
+                if (glen > 1e-9) { tx = -gy / glen; ty = gx / glen; }
+                // 沿脊线 3-tap smear（每 tap 经 cyl()，圆柱接缝安全）→ 沿等高线方向拉长山脊
+                const double L = hex_size * RIDGE_SMEAR_HEX;
+                const double r0 = cyl(NR, wx_base, wy_base);
+                const double rA = cyl(NR, wx_base + tx * L, wy_base + ty * L);
+                const double rB = cyl(NR, wx_base - tx * L, wy_base - ty * L);
+                const double smeared = (r0 * 2.0 + rA + rB) * 0.25;
+                const double R = r0 + (smeared - r0) * gate;   // 低起伏→各向同性，高起伏→沿脊
+                double ridge01 = (R + 1.0) * 0.5;
+                ridge01 = ridge01 < 0.0 ? 0.0 : (ridge01 > 1.0 ? 1.0 : ridge01);
+                const double shaped = std::pow(ridge01, K_CREST);   // 尖脊 + 缓谷
+                const double amp = RELIEF_AMP * gate;
+                // 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
+                const double dryness = 1.0 - moist_blend;
+                const double crag = cyl(ND, wx_base * CRAG_FREQ_MUL + 17.9, wy_base * CRAG_FREQ_MUL - 11.3) * 0.5;
+                elev_final = elev_blend
+                        + (shaped - VALLEY_BIAS) * amp
+                        + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate;
             }
 
             // 8. Bayer dither：决定"视觉归属 cell"。陆-陆 / 水-水的相邻 cell 边界全部做有序抖动

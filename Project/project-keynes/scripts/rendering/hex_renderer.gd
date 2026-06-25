@@ -1308,6 +1308,10 @@ func _apply_uniforms() -> void:
 
 	# 主地图只保留 height/enum + cell-index LUT + 共享 noise_tex。
 	sm.set_shader_parameter("height_tex",   _world.height_tex)
+	# [terrain-normal-bake 2026-06-25] 总体地形法线贴图（粗法线）。绑定后 shader 用它做宏观山脉
+	# 走向；未绑定时 terrain_normal_tex_bound=false，shader 回退到运行期宽半径 4-tap。
+	sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+	sm.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
 	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
 	sm.set_shader_parameter("flow_tex",     _world.flow_tex)

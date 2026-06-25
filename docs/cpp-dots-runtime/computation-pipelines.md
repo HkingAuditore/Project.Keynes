@@ -28,7 +28,7 @@
 
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
 | Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish。**base+post_base 已融合为单次 `run_native_world_generate_full_pass`（step4，2026-06-25）** | `run_native_world_generate_full_pass`（融合优先）, `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
-| Bake-time static texture encoders（生成期） | C++ byte payload + GDScript GPU upload | `encode_bake_height_tex_data`, `encode_bake_enum_atlas_payload`, `encode_bake_flow_tex_data`, `encode_bake_r8_tex_data`, `encode_bake_upwelling_tex_data` | `Image.create_from_data`、`ImageTexture.update/create_from_image`、ext 缺失时 debug fallback。 |
+| Bake-time static texture encoders（生成期） | C++ byte payload + GDScript GPU upload | `encode_bake_height_tex_data`, `encode_bake_terrain_normal_tex_data`, `encode_bake_enum_atlas_payload`, `encode_bake_flow_tex_data`, `encode_bake_r8_tex_data`, `encode_bake_upwelling_tex_data` | `Image.create_from_data`、`ImageTexture.update/create_from_image`、ext 缺失时 debug fallback。 |
 | Bake-time 几何场编排（生成期 terrain-index/erosion/river SDF/latitude/volcano） | **C++ 单次融合驱动 `run_bake_geometry_fields_pass`（融合优先 + 旧 per-pass 回退）** | 内部串 `run_bake_terrain_index_pass`/`run_bake_erosion_pass`/`run_bake_river_sdf_pass`/`run_bake_latitude_field_pass`/`run_bake_volcano_field_pass` | GDScript 一次请求→解包到 `world.*`+重建 lookup；河流图遍历读 ext 暂存拓扑（零再传输）；GPU 上传。中间 height buffer 不跨语言往返。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
@@ -82,6 +82,7 @@ Fallback（仅指 bind 后的 republish 层 `run_native_world_generate_pass`，*
 C++ 入口：
 
 - `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。
+- `encode_bake_terrain_normal_tex_data`：**生成期烘焙"总体地形法线"**（2026-06-25）。`height_buffer` → 宽半径（`coarse_radius` texel）中心差分得平滑梯度，按参考增益 `slope_gain` 构 `N=normalize(-sx,-sy,1)`，存 `nx,ny`→RG8（`nz` shader 重建）；X 圆柱环绕、Y clamp；按行 `pk::parallel_for_range` 并行。地形是静态的，这张图烘一次、之后不变；运行期 shader 1 次采样即得宏观山脉走向，替代每帧宽半径 4-tap。GDScript 侧 `DCAtlasEncoders.encode_terrain_normal_tex` 提供等价 debug fallback。
 - `encode_bake_enum_atlas_payload`：map-index atlas RGBA8，`R=biome`、`G/B=cell.index low/high`、`A=landform`；输入使用 `WorldData` 的 CSR 像素反向索引与按 `cell.index` 排列的 landform byte。
 - `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。
 - `encode_bake_r8_tex_data`：通用 U8 → L8，支持缺失输入时按 `default_byte` 填充（火山场默认 0、upwelling buffer 默认 128）。
@@ -99,11 +100,23 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 链路：`bake_world()` 的核心逐像素循环（warp 双频 + `cube_round` 几何归属 + sextant 两邻居 barycentric + per-biome detail/ridge noise）已下移 C++。pass 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机不定，与 `encode_bake_*` 同范式）：输入 W/H、world_bounds、hex_size、wrap_period_x、seed，以及 cell SoA（`cell_elevation/moisture/terrain/vegetation/cover` by cell.index）与 `offset_to_index` 映射；GDScript wrapper 现场从 `HexCell` 属性构建这些数组（~n_cells 次）。C++ 内用 `Ref<FastNoiseLite>` 复刻 `map_baker._init_noise`（seed+71/+233/+503/+977），并复刻 `_cyl_noise` 2D 接缝包裹。
 
-**index 边缘融合（dither #3）内嵌在本 pass**：在写 buffer 前用 Bayer 8x8 有序抖动 + barycentric 权重，对**陆-陆 / 水-水的相邻 cell 边界**把像素的"视觉归属 cell"改派给 sextant 两邻居，软化离散 cell 边界——`biome(R)`、经 `map_index_atlas.gb` 解码 per-cell 量的消费方（云 `weather_overlay` weather_lut、`dyn_lut`、`eco_lut`）。**仅 land↔water（跨水/陆域）边界回收门槛、不互相改派**，保护海岸硬边与 per-pixel `is_water`。dither 改派后：`biome(R)` / CSR 桶（驱动编码器 `G/B`=cell.index、`A`=landform）/ `vegetation` / `cover` / `pixel_to_cell_index` 全跟 `vis_cell`（单一不变量，全量 + daily 增量重烘均不还原）；`height`/`moisture` 仍走几何 self barycentric + `terrain_self` detail noise（防高程点阵）。
+**index 边缘融合（dither #3）内嵌在本 pass**：在写 buffer 前用 Bayer 8x8 有序抖动 + barycentric 权重，对**陆-陆 / 水-水的相邻 cell 边界**把像素的"视觉归属 cell"改派给 sextant 两邻居，软化离散 cell 边界——`biome(R)`、经 `map_index_atlas.gb` 解码 per-cell 量的消费方（云 `weather_overlay` weather_lut、`dyn_lut`、`eco_lut`）。**仅 land↔water（跨水/陆域）边界回收门槛、不互相改派**，保护海岸硬边与 per-pixel `is_water`。dither 改派后：`biome(R)` / CSR 桶（驱动编码器 `G/B`=cell.index、`A`=landform）/ `vegetation` / `cover` / `pixel_to_cell_index` 全跟 `vis_cell`（单一不变量，全量 + daily 增量重烘均不还原）；`height`/`moisture` 仍走几何 self barycentric，`height` 再叠 per-pixel relief（见下"P0 relief"，防高程点阵）。
 
 输出：`height_buffer`(F32) / `biome_buffer` / `vegetation_buffer` / `cover_buffer`(U8) / `moisture_buffer`(F32) + CSR 三件套（`cell_first_px`/`cell_px_count`/`flat_px_indices`，counting-sort by cell.index，直接喂 `encode_bake_enum_atlas_payload`）+ `pixel_to_cell_index`（wrapper 据此重建 `world.pixel_to_cell_lookup` 与 `cell_pixel_lists`）。
 
+**P0 per-pixel relief 重做（2026-06-25）**：旧实现按 `terrain==MOUNTAIN/HILL/其他`**硬分档**叠**各向同性** ridged FBM（`MOUNTAIN_RIDGE_AMP/HILL_AMP/PLAIN_AMP`），山地呈无走向"脑沟"鼓包、边界突兀、平原不平。现替换为地形模拟式 relief（C++ `run_bake_terrain_index_pass` step7 + GDScript `_bake_height_biome_moisture` 镜像，逐位对齐）：
+
+1. **per-cell 梯度/relief 预计算**（像素循环前，O(n_cells×6)）：六邻居有限差分（2×2 最小二乘）得世界空间高程梯度 `CGX/CGY`，及邻格最大高差 `CREL`。C++ 走 offset 网格 + `cell_at_cube`，GDScript 走 `map.all_cells()` + `_get_wrapped_cell_by_cube`；用 unwrapped cube 世界坐标算偏移（接缝处连续，梯度为求和故顺序无关）→ 两侧结果一致。
+2. **各向异性脊线**：脊线方向 = 梯度的垂直方向（沿等高线）；沿该方向 3-tap `cyl()`/`_cyl_noise` smear（步长 `RIDGE_SMEAR_HEX`）→ 山脊沿走势拉长，治"无走向"。每 tap 单独经接缝包裹，圆柱无缝。
+3. **连续振幅门控**：`amp = RELIEF_AMP * smooth01(RELIEF_LO, RELIEF_HI, relief)`，由局地起伏连续驱动、**不再绑 terrain 类别**；平原 relief→0 ⇒ amp→0（视觉真平），丘陵→山地平滑过渡无硬边。
+4. **山脊/山谷不对称**：`shaped = pow(ridge01, K_CREST)`（尖脊 + 缓谷）；`(shaped - VALLEY_BIAS) * amp` 使谷底负偏置 → 河道天然落低处，与下游 `run_bake_erosion_pass`（droplet）/ `run_bake_river_sdf_pass` 自洽。
+5. **气候耦合**：`crag * CRAG_AMP * (0.4 + 0.6*dryness) * gate`，干燥（低 moisture）→更多高频岩屑、湿润→圆滑；仅在有起伏处出现。
+
+总振幅量级（谷 ≈ −0.09 ~ 峰 ≈ +0.17）与旧 `MOUNTAIN_RIDGE_AMP=0.26` 同档，下游 erosion/SDF 行为不被打乱。常量先以文件内 `constexpr`/`const` 落地（C++↔GDScript 同名同值），稳定后可按需提升到 `ClimateProfile`。
+
 下游收益：因索引层已软化，`world_map.gdshader` 的 `dyn_lut`/`eco_lut` 全档位改回 NEAREST（删 `sample_dyn_lut_smooth`/`sample_eco_lut_smooth`），`weather_overlay.gdshader` 删除 `cloud-soft-edge` 跨格双线性。旧的 `cell_blend_atlas`（运行时 shader 软混方案）已整套回滚。`dither_enabled=false` 时 C++ 输出与 GDScript ground-truth 应逐像素 bit-equal，用于 A/B parity。
+
+**分层地形法线（2026-06-25）**：渲染端 `hillshade_tod.gdshaderinc::compute_terrain_normal(uv, quality, biome)` 改为三层结构，解决"细节法线过强 → 山密密麻麻、走向不清晰"：① **粗法线**优先采样生成期烘焙的 `terrain_normal_tex`（1 fetch 拿宏观山脉走向；未绑定时回退运行期宽半径 `hillshade_coarse_radius` 4-tap）；② **细节法线**为运行期 1-texel 中心差分（4 fetch），作切向扰动叠到粗法线上，强度 = `hillshade_detail_strength × terrain_detail_factor(biome) × qf`，`terrain_detail_factor` 按 biome 分档（山地/方山满量、丘陵/荒地次之、平原/湿地系趋零）；③ **性能分档**：`MOBILE_QUALITY_LOW/MID` 与 desktop `visual_quality==0` 只算粗法线、跳过细节 4-tap。控制 uniform：`terrain_normal_tex_bound`（hex_renderer 据 `world.terrain_normal_tex` 是否存在设置）、`hillshade_coarse_strength`、`hillshade_detail_enabled`、`hillshade_detail_strength`。调用方 `land_pipeline`/`apply_tod_pbr` 已同步传 `biome`。
 
 ## 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
 
