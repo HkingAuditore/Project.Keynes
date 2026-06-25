@@ -43,6 +43,9 @@ const float WATER_WAVE_SPEED_C = 0.52;
 
 // quality=0：只叠 1 个主方向（低端机）；quality>=1：叠 3 个方向。
 // amp_scale/freq_scale：caller 按水体类型传入（需求 1.5/1.6）。
+// [水面去条纹 2026-06-25] 三组固定方向正弦相干叠加会在整片洋面形成规则平行"条纹"，
+// 在低粗糙度高光下尤其刺眼。这里在 quality>=1 时叠一层各向同性 fbm 细碎起伏（非方向性），
+// 把规则波峰打散成自然的碎波；同时正弦相位被 sample_water_normal 端的域扭曲弯曲走向。
 float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, int quality) {
 	vec2 dA = normalize(WATER_WAVE_DIR_A);
 	float kA = WATER_WAVE_FREQ_A * freq_scale;
@@ -56,6 +59,9 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 		float pB = dot(wp, dB) * kB - t * WATER_WAVE_SPEED_B;
 		float pC = dot(wp, dC) * kC - t * WATER_WAVE_SPEED_C;
 		h += sin(pB) * WATER_WAVE_AMP_B + sin(pC) * WATER_WAVE_AMP_C;
+		// 各向同性 fbm 碎波：频率比正弦高、无固定方向 → 打散平行条纹观感。
+		float detail = fbm(wp * 0.105 + vec2(-t * 0.07, t * 0.05), 2) - 0.5;
+		h += detail * WATER_WAVE_AMP_A * 0.95;
 	}
 	return h * amp_scale;
 }
@@ -66,14 +72,23 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	if (!enabled) {
 		return vec3(0.0, 0.0, 1.0);
 	}
+	// [水面去条纹 2026-06-25] 先对基准坐标做一次低频域扭曲（仅算一次，不在每个差分 tap 重复，
+	// 控制额外采样），让规则正弦条纹的走向随空间缓慢弯曲，不再是贯穿整屏的平行直线。
+	vec2 wpw = wp;
+	if (quality >= 1) {
+		float wnx = fbm(wp * 0.017 + vec2(t * 0.040, 0.0), 1) - 0.5;
+		float wny = fbm(wp * 0.017 + vec2(0.0, t * 0.034) + vec2(23.0, -11.0), 1) - 0.5;
+		wpw = wp + vec2(wnx, wny) * 7.5;
+	}
 	float eps = 0.5;
-	float hx0 = water_surface_height(wp - vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hx1 = water_surface_height(wp + vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hy0 = water_surface_height(wp - vec2(0.0, eps), t, amp_scale, freq_scale, quality);
-	float hy1 = water_surface_height(wp + vec2(0.0, eps), t, amp_scale, freq_scale, quality);
+	float hx0 = water_surface_height(wpw - vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
+	float hx1 = water_surface_height(wpw + vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
+	float hy0 = water_surface_height(wpw - vec2(0.0, eps), t, amp_scale, freq_scale, quality);
+	float hy1 = water_surface_height(wpw + vec2(0.0, eps), t, amp_scale, freq_scale, quality);
 	// 差分斜率：dhx = ∂h/∂x，dhy = ∂h/∂y；法线 = normalize((-dhx, -dhy, 1))
-	// 乘一个 "normal_gain" 让浅水/法线更夸张（需求 1.2 决定 z 固定 1.0）
-	float normal_gain = 7.0;
+	// [水面去条纹 2026-06-25] normal_gain 7.0→5.5：条纹打散后单条波峰不需要这么夸张的斜率，
+	// 略降可减少规则条纹高光的尖锐感；细节起伏由 fbm 碎波补足。
+	float normal_gain = 5.5;
 	float dhx = (hx1 - hx0) / (2.0 * eps) * normal_gain;
 	float dhy = (hy1 - hy0) / (2.0 * eps) * normal_gain;
 	return normalize(vec3(-dhx, -dhy, 1.0));

@@ -59,10 +59,20 @@ struct LightingContext {
 //   tod_exposure 保留为全局曝光。直射光乘 local_day → 夜侧(太阳在地平线下)无方向光。
 LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
 	LightingContext lc;
-	lc.L = normalize(tod_sun_dir);
-	lc.V = VIEW_DIR_TOP_DOWN;
-
 	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
+
+	// [tod-latitude-sun 2026-06-25] 主光方向：默认使用逐像素物理太阳方向（近似点光源）。
+	// ed.sun_dir 的水平/垂直分量比 = cos(h)/sin(h)，因此纬度与时角不同 → 阴影方向与长度不同。
+	// 为保留正午高悬太阳下的地形立体起伏（避免太阳完全竖直把坡面打平、抹掉地形层次），
+	// 给一个温和的"最高仰角"下限 tod_sun_relief_max_up：把 up 分量截顶后重新归一化，
+	// 让水平分量保持足量，保证坡面仍有方向性明暗（默认 0.88，比旧 0.92 更偏水平、方向感更强）。
+	// day_night 关闭（永昼）或开关关闭 → lat_sun_w=0 → 回退全局 tod_sun_dir（旧的稳定光照）。
+	vec3 phys_sun = ed.sun_dir;
+	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
+	phys_sun = normalize(phys_sun);
+	float lat_sun_w = (tod_latitude_sun_enabled && day_night_enabled) ? 1.0 : 0.0;
+	lc.L = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
+	lc.V = VIEW_DIR_TOP_DOWN;
 
 	if (USE_LINEAR_LIGHTING) {
 		// 直射光乘 local_day：夜侧(太阳在地平线下)无方向光 → 杜绝"夜里还有阳面"。

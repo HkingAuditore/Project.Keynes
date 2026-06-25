@@ -45,6 +45,7 @@ struct LandModInputs {
 // ═══════════════════════════════════════════════════════════════════════
 SurfaceParams compute_land_base_surface(
 		int biome,
+		int landform,
 		float elev,
 		vec2 wp,
 		vec2 uv,
@@ -52,9 +53,8 @@ SurfaceParams compute_land_base_surface(
 	vec3 col;
 
 	// LAND 1.1：底色 = hypsometric × biome hue × procedural detail
-	col = hypsometric_tint(elev, false);
-	col = biome_hue_modulate(col, biome);
-	col *= procedural_biome_detail(biome, wp);
+	vec3 hyps = hypsometric_tint(elev, false);
+	col = biome_hue_modulate(hyps, biome) * procedural_biome_detail(biome, wp);
 
 	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 flow_tex（scals.g）。
 	float flow = scals.g;
@@ -117,7 +117,33 @@ SurfaceParams compute_land_base_surface(
 	vec3 normal = compute_terrain_normal(uv, visual_quality);
 	float roughness = biome_roughness(biome);
 	float ao = mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
-	return make_surface_params(col, normal, roughness, DEFAULT_METALLIC_LAND, ao);
+	float metallic = DEFAULT_METALLIC_LAND;
+
+	// LAND 1.5b：[河流高光 2026-06-25] 把河道当作水面而非平面蓝覆盖：降低 roughness、混入轻微
+	// 水波法线、给一点非金属菲涅尔，让河流经统一 BRDF 得到顺光高光与反射。高光强度绑定 river_t
+	// （细河道权重小但仍可读），不会让所有 flow 边缘发白。桌面走水波法线，低画质退化为平滑水面。
+	if (river_t > 0.001) {
+		float river_w = clamp(river_t * river_strength, 0.0, 1.0);
+		if (visual_quality >= 1 && water_waves_enabled) {
+			vec3 river_wn = sample_water_normal(wp, world_time, 0.40, 1.15, 1, true);
+			normal = normalize(mix(normal, river_wn, river_w * 0.70));
+		} else {
+			normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
+		}
+		roughness = mix(roughness, 0.16, river_w);
+		metallic = mix(metallic, DEFAULT_METALLIC_WATER, river_w);
+		ao = mix(ao, 0.98, river_w * 0.5);
+	}
+
+	// LAND 1.6：[landform 轴可视化] 给 terrain 表达不了的地貌（火山/高原/峡谷/裂谷/高峰）
+	// 叠加专属着色。火山已改为生成期高度场环形山 + hillshade 表现，不再发光（lf_vis.a 恒 0）；
+	// emission 通道保留作为未来地貌发光的通用接口。
+	float slope_mag = clamp(length(normal.xy), 0.0, 1.0);
+	vec4 lf_vis = landform_visual(landform, wp, col, slope_mag);
+	col = lf_vis.rgb;
+	SurfaceParams sp = make_surface_params(col, normal, roughness, metallic, ao);
+	sp.emission = vec3(1.30, 0.42, 0.10) * lf_vis.a;
+	return sp;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -225,11 +251,16 @@ SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) 
 	float ridge_w = smoothstep(0.10, 0.48, slope_mag);
 	float basin_w = 1.0 - ridge_w;
 
-	// 海拔不只改色相，也顺着坡度把山肩 / 山脊分出来，避免整片高地像一块硬贴上去。
-	surface.base_color *= mix(vec3(1.0), vec3(1.04, 1.01, 0.94), foothill_w * 0.08);
-	surface.base_color *= mix(vec3(1.0), vec3(0.93, 0.97, 1.02), highland_w * (0.10 + ridge_w * 0.12));
-	surface.base_color *= mix(vec3(1.0), vec3(1.06, 1.03, 0.99), alpine_w * basin_w * 0.09);
-	surface.base_color *= mix(vec3(1.0), vec3(0.88, 0.91, 0.95), alpine_w * ridge_w * 0.18);
+	// [需求3 2026-06-25] 海拔不只改色相，也顺着坡度把山肩 / 山脊 / 谷地分出来，避免整片
+	// 高地像一块硬贴上去。本轮把幅度整体提高（让连续高程起伏在地图上"读得出"，山脚丘陵
+	// 不再像平原；山体周围有渐变的明暗过渡而非硬边界）。
+	surface.base_color *= mix(vec3(1.0), vec3(1.05, 1.01, 0.93), foothill_w * 0.14);
+	surface.base_color *= mix(vec3(1.0), vec3(0.92, 0.96, 1.03), highland_w * (0.14 + ridge_w * 0.18));
+	surface.base_color *= mix(vec3(1.0), vec3(1.08, 1.04, 0.99), alpine_w * basin_w * 0.13);
+	surface.base_color *= mix(vec3(1.0), vec3(0.84, 0.88, 0.94), alpine_w * ridge_w * 0.26);
+	// 广域起伏：低/中海拔也按坡度做轻微明暗，让平原—丘陵—山脚的地形呼吸感连续过渡。
+	float relief_shade = (ridge_w - basin_w) * smoothstep(0.04, 0.50, land_h) * 0.10;
+	surface.base_color *= clamp(1.0 - relief_shade, 0.85, 1.12);
 
 	float wind_mag = clamp(length(i.wind_v), 0.0, 1.4);
 	float wind_dry = wind_mag * (1.0 - smoothstep(0.36, 0.84, i.moist));
@@ -390,14 +421,24 @@ SurfaceParams apply_land_material_overlays(
 		float dyn_valid) {
 	float snow_w = estimate_land_snow_material_weight(biome, current_temp, elev, moist, dyn_snow, dyn_valid);
 	if (snow_w > 0.001) {
-		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_w * 0.35));
-		float snow_rough_target = (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS) ? 0.52 : 0.34;
+		// [岩石去高光 2026-06-25] 岩石型山地（MOUNTAIN/HILL/BADLANDS）即便覆雪也应保留岩面
+		// 粗糙与起伏：法线压平减半（0.35→0.18），雪面粗糙目标从 0.52 抬到 0.74，避免覆雪山脊
+		// 在低角度太阳下变成湿滑反光面。平坦地表的雪仍走原来的较光滑值。
+		// [海冰反射 2026-06-25] 冰川 biome 是结晶冰，覆雪权重不应把它磨成哑光雪：单独走 0.14 冰目标。
+		bool rocky = (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS);
+		bool icy = (biome == B_GLACIER);
+		float snow_normal_flatten = rocky ? 0.18 : 0.35;
+		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_w * snow_normal_flatten));
+		float snow_rough_target = rocky ? 0.74 : (icy ? 0.14 : 0.34);
 		surface.roughness = mix(surface.roughness, snow_rough_target, snow_w);
 		surface.ao        = mix(surface.ao, 0.96, snow_w);
-		surface.metallic  = mix(surface.metallic, DEFAULT_METALLIC_SNOW, snow_w);
+		// 岩石覆雪不给金属感；冰川覆雪保留冰的微金属菲涅尔；平坦雪面给微镜面。
+		float snow_metal_target = rocky ? 0.0 : (icy ? DEFAULT_METALLIC_ICE : DEFAULT_METALLIC_SNOW);
+		surface.metallic  = mix(surface.metallic, snow_metal_target, snow_w);
 	}
 	if (cover == CV_GLACIER) {
-		surface.roughness = min(surface.roughness, 0.26);
+		// [海冰反射 2026-06-25] 冰川覆盖压到更低粗糙（0.26→0.14）+ 抬金属感，体现冰面镜面/菲涅尔反射。
+		surface.roughness = min(surface.roughness, 0.14);
 		surface.ao        = min(surface.ao, 0.98);
 		surface.metallic  = max(surface.metallic, DEFAULT_METALLIC_ICE * cover_axis_strength);
 	} else if (cover == CV_FLOODING) {
@@ -414,7 +455,36 @@ SurfaceParams apply_land_material_overlays(
 vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
-	return evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
+	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
+
+	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
+	// 明暗，让"太阳南北移动"在地形起伏上清晰可读。仅陆地调用，不污染水面反射；夜侧按昼夜系数淡出。
+	//
+	// ⚠ 旧实现 bug：直接用原始 N.xy 的【量级】(slope_dir = dot(N.xy, Ln))。RG8 高度图跨单 texel
+	//   的梯度极小，典型缓坡 N.xy≈0.05 → relief≈0.05*0.35≈0.017（仅 1.7% 亮度差）→ 肉眼几乎
+	//   看不出太阳移动的影响，正是用户反馈的现象。
+	// ✅ 新实现（经典 hillshade aspect）：把水平法线【归一化成坡向】aspect = dot(slope_face, Ln)
+	//   ∈[-1,1]，与坡陡无关——朝阳坡满量程提亮、背阳坡满量程压暗；坡度量级只作"有没有起伏"的
+	//   软遮罩(slope_mask)，缓坡也响应、平地不响应（不引入噪声）。太阳水平方向 Ln 随时角/纬度/
+	//   季节旋转（含南北分量）→ aspect 符号随之翻转 → 光源移动一眼可见。
+	if (day_night_enabled && tod_terrain_relief_strength > 0.001) {
+		vec3 N = normalize(surface.normal);
+		vec2 Nh = N.xy;
+		float slope = length(Nh);
+		vec2 Lh = lc.L.xy;
+		float Lh_len = length(Lh);
+		if (Lh_len > 1e-3 && slope > 1e-4) {
+			vec2 Ln = Lh / Lh_len;
+			vec2 slope_face = Nh / slope;               // 归一化坡向（与坡陡解耦）
+			float aspect = dot(slope_face, Ln);          // +1 正朝阳, -1 正背阳
+			// 只要有可辨识的起伏就给足方向性；平地(slope→0)平滑淡出，避免高度图量化噪声闪烁。
+			float slope_mask = smoothstep(0.006, 0.05, slope);
+			float day_w = 1.0 - lc.night_factor;        // 夜侧淡出方向性
+			float relief = aspect * slope_mask * tod_terrain_relief_strength * day_w;
+			lit *= clamp(1.0 + relief, 0.58, 1.50);
+		}
+	}
+	return lit;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -424,6 +494,7 @@ vec3 render_land_pipeline(
 		int biome,
 		int veg,
 		int cover,
+		int landform,
 		float elev,
 		float moist,
 		vec2 wp,
@@ -441,7 +512,7 @@ vec3 render_land_pipeline(
 		float eco_growth,
 		float eco_valid,
 		vec4 pixel_noise) {
-	SurfaceParams surface = compute_land_base_surface(biome, elev, wp, uv, scals);
+	SurfaceParams surface = compute_land_base_surface(biome, landform, elev, wp, uv, scals);
 
 	LandModInputs mi;
 	mi.biome = biome;

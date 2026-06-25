@@ -79,10 +79,11 @@ var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复
 # v9.atlas：把 9 张 derived 贴图合并成 3 张 atlas，降低 sampler 绑定数与 uniform 上传量。
 # height_tex 因为分辨率与精度需求独立保留（hm_size + RG8 16-bit）。
 #
-# enum_atlas_tex   (RGB8 NEAREST, derived_size)
+# enum_atlas_tex   (RGBA8 NEAREST, derived_size；map_index_atlas)
 #   R = biome (TerrainType.TERRAIN id)
-#   G = vegetation (VegetationType.VEG id)
-#   B = cover (CoverType.CV id)
+#   G/B = cell.index low/high byte
+#   A = landform id
+
 #
 # scalar_atlas_tex (RGBA8 LINEAR, derived_size)
 #   R = moisture              (原 moisture_tex)
@@ -133,7 +134,8 @@ var noise_tex: ImageTexture
 # 让 shader 自己做 pixel→cell 解析，把 fan-out 目标从 n_pix 压到 n_cells。
 #
 # map_index_atlas（复用 enum_atlas_tex 字段）：RGBA8 NEAREST，derived_size。
-#   R=biome，G/B=cell.index 低/高字节，A=保留；map 外像素写哨兵 0xFFFF。
+#   R=biome，G/B=cell.index 低/高字节，A=landform；map 外像素写哨兵 0xFFFF。
+
 # enum_lut / dyn_lut / eco_lut：per-cell LUT 纹理（lut_dims 网格，NEAREST）。
 #   enum_lut(RGB8)=biome/veg/cover；dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
 #   eco_lut(RGBA8)=foliage/stress/transition/growth。更新=写 n_cells texel + 一次 update。

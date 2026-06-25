@@ -172,14 +172,34 @@ vec3 compute_terrain_normal(vec2 uv, int quality) {
 }
 
 // 按 biome 查表粗糙度（需求 3.3）：雪/冰保持高反差、山地/丘陵/荒地更粗，避免像涂层
+// [biome 材质全覆盖 2026-06-25] 补齐此前落到默认 0.55 的 11 种地形：湿地系略带含水反光、
+// 岩石系接近全粗、灌丛/苔原干硬中粗、寒漠砾石中粗。纯 ALU 查表，零额外纹理采样。
 float biome_roughness(int biome) {
-	if (biome == B_SNOW || biome == B_GLACIER || biome == B_SEA_ICE) return 0.22;
+	// 雪 / 冰川 / 海冰：高反差光滑面
+	// [海冰反射 2026-06-25] 冰川/海冰是结晶冰，比积雪更镜面：从 0.22 降到 0.13；
+	// 积雪是多重散射的哑光面，单独保留 0.30（略粗，避免与冰同质）。
+	if (biome == B_GLACIER || biome == B_SEA_ICE) return 0.13;
+	if (biome == B_SNOW) return 0.30;
+	// 干燥沙 / 盐滩 / 寒漠：中粗砂砾
 	if (biome == B_DESERT || biome == B_SALT_FLAT) return 0.58;
+	if (biome == B_COLD_DESERT) return 0.62;
+	// 密林：很粗（叶面多重漫反射）
 	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) return 0.88;
+	// 草本：偏粗
 	if (biome == B_GRASSLAND || biome == B_SAVANNA || biome == B_STEPPE) return 0.78;
-	if (biome == B_MOUNTAIN) return 0.86;
-	if (biome == B_HILL) return 0.82;
-	if (biome == B_BADLANDS) return 0.78;
+	// 灌丛（含地中海硬叶）/ 苔原：干硬中粗
+	if (biome == B_SHRUBLAND || biome == B_CHAPARRAL) return 0.76;
+	if (biome == B_TUNDRA) return 0.72;
+	// 裸岩碎石（山地/丘陵/荒地/方山）：接近全粗，消除低角度太阳下的"湿亮"高光
+	if (biome == B_MOUNTAIN) return 0.96;
+	if (biome == B_HILL) return 0.92;
+	if (biome == B_BADLANDS || biome == B_MESA) return 0.92;
+	// 湿地 / 水成地表：粗糙度压低 → 含水反光，与干燥地表区分（沼泽/泥炭最湿，冲积带次之）
+	if (biome == B_SWAMP || biome == B_MOOR) return 0.52;
+	if (biome == B_DELTA || biome == B_FLOODPLAIN) return 0.56;
+	if (biome == B_OASIS) return 0.54;
+	// 平原：中性偏粗
+	if (biome == B_PLAIN) return 0.66;
 	return 0.55;
 }
 

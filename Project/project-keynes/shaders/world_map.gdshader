@@ -108,18 +108,14 @@ void fragment() {
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
-	// mobile 单点 NEAREST（接受轻微阶梯），desktop 4-tap 双线性补平滑。
-	vec4 dyns;
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
-	dyns = dyn_lut_nearest(uv);
-#else
-	dyns = sample_dyn_lut_smooth(uv);
-#endif
+	// [dither-index 2026-06-25] 全档位 NEAREST：cell 索引边缘融合（烘焙期 Bayer dither）已在
+	// 索引层软化离散硬边，无需再对 dyn/eco LUT 做跨格 4-tap 双线性。
+	vec4 dyns = dyn_lut_nearest(uv);
 	// Mobile 三档全跳 ecology（eco_valid=0 等同 dynamic 路径）
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
 	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
 #else
-	vec4 ecos = sample_eco_lut_smooth(uv);
+	vec4 ecos = eco_lut_nearest(uv);
 #endif
 
 	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
@@ -138,6 +134,9 @@ void fragment() {
 		veg = 0;
 		cover = 0;
 	}
+	// [landform 轴可视化 2026-06-25] landform id 走 map_index_atlas.A（per-pixel, NEAREST），
+	// 供陆地管线给火山/高原/峡谷/裂谷/高峰补充专属着色。地图外哨兵采样得 0（=DEEP_OCEAN，陆地分支不消费）。
+	int landform = int(texture(map_index_atlas, wrap_map_uv(uv)).a * 255.0 + 0.5);
 	float moist = dyns.g;
 	float _Hf = float(textureSize(map_index_atlas, 0).y);
 	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
@@ -196,12 +195,12 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	if (!is_water) {
 		col = render_land_pipeline(
-			biome, veg, cover, elev, moist, wp, uv, scals, lat_signed, current_temp,
+			biome, veg, cover, landform, elev, moist, wp, uv, scals, lat_signed, current_temp,
 			wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 			eco_transition, eco_growth, eco_valid, pixel_noise);
 	} else {
 		col = render_water_pipeline(
-			biome, elev, wp, uv, scals, lat_signed, current_temp,
+			biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
 			ocean_current_v, wind_v, dyns.a);
 	}
 

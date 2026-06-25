@@ -172,6 +172,15 @@ public:
                                                                const godot::Dictionary &cfg,
                                                                const godot::Dictionary &profile,
                                                                const godot::Dictionary &input);
+    // dots-total-cpp step4（2026-06-25）：base + post_base 融合单次驱动。
+    // 在 C++ 进程内先跑 base、再用其结果跑 post_base，base 的 10×n_cells SoA bundle
+    // 留在 C++、不出语言边界（原先 base 结果要 C++→GDScript 校验→再回 post_base）。
+    // 返回 post_base 最终 bundle（合并 base 诊断键 base_water_count/base_land_count/
+    // base_native_ms/native_algorithm 供 GDScript 打印）。base 失败 → 直接回传 base 结果
+    // （rc/fallback 透传，caller 据此中止）。
+    godot::Dictionary run_native_world_generate_full_pass(int seed,
+                                                          const godot::Dictionary &cfg,
+                                                          const godot::Dictionary &profile);
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
@@ -879,6 +888,60 @@ public:
     godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
     godot::Dictionary patch_enum_atlas_axes(godot::Dictionary knobs);
 
+    // ─── Bake-time static texture encoders（map encoder C++ 迁移）──────────
+    // GDScript 仍负责 Image/ImageTexture 创建与 update；C++ 只做逐像素 byte payload。
+    // 返回统一 Dictionary：{ fallback, reason, path, elapsed_ms, data, width, height, format }。
+    godot::Dictionary encode_bake_height_tex_data(godot::Dictionary knobs);      // F32 [0,1] → RG8
+    godot::Dictionary encode_bake_r8_tex_data(godot::Dictionary knobs);          // U8 → L8，default_byte 可选
+    godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
+    godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
+    godot::Dictionary encode_bake_upwelling_tex_data(godot::Dictionary knobs);   // SoA upwelling → L8
+    // 生成期 height/biome/moisture/veg/cover 逐像素烘焙 + 内嵌 Bayer dither（索引边缘融合）。
+    // 复刻 map_baker.gd::_bake_height_biome_moisture；产出 5 buffer + CSR + pixel_to_cell_index。
+    godot::Dictionary run_bake_terrain_index_pass(godot::Dictionary knobs);
+
+    // ─── 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）────
+    // 纯 buffer-encoder：不读 _slots / 不要求 _bound，全部输入由 knobs PackedArray 喂入
+    // （同 encode_bake_* / run_bake_terrain_index_pass 范式，bake 期 bind 时机不定）。
+    // GDScript 只发请求 + 收结果，O(n_pixels) 热循环全部在 C++。
+    //
+    // run_bake_volcano_field_pass：复刻 map_baker.gd::_bake_volcano_field。逐像素累加到
+    //   最近火山中心的二次径向衰减 → L8。输入 w/h/origin_x/origin_y/step_x/step_y/inv_glow
+    //   + volcano_centers_x/y（world 坐标，PackedFloat32Array）。输出 data(L8 PackedByteArray)。
+    godot::Dictionary run_bake_volcano_field_pass(godot::Dictionary knobs);
+    // run_bake_latitude_field_pass：复刻 map_baker.gd::_bake_latitude_buffer。逐像素
+    //   ny = y / max(H-1,1)。输入 w/h。输出 latitude_buffer(F32 PackedFloat32Array)。
+    godot::Dictionary run_bake_latitude_field_pass(godot::Dictionary knobs);
+    // run_bake_river_sdf_pass：复刻 map_baker.gd::_bake_river_sdf 的**全部计算**——
+    //   河流图遍历（trace，读 post_base 暂存的 `_gen_river_*` ext 拓扑）+ seam-split +
+    //   Catmull-Rom 致密化 + warp 噪声（FastNoiseLite 复刻 _warp_noise_lo/hi）+ 变宽 polyline
+    //   stamp + chamfer 3-4 双通 SDT + 归一化 [0,1] flow。**无任何河流链/拓扑跨语言传入**：
+    //   GDScript 只传 bake 几何参数，C++ 直接读自己暂存的拓扑 trace（零再传输）。
+    //   前置：必须先调用 run_native_world_generate_post_base_pass（填 `_gen_river_*`）。
+    //   输入 w/h/origin_x/origin_y/inv_world_x/inv_world_y/hex_size/seed/base_radius_px/
+    //   sdf_max_dist_px/seam_dx/cr_step。输出 out_buf(F32 PackedFloat32Array，= world.flow_buffer)。
+    godot::Dictionary run_bake_river_sdf_pass(godot::Dictionary knobs);
+    // run_bake_erosion_pass：复刻 map_baker.gd::_hydraulic_erosion。droplet 水力侵蚀，
+    //   用 Ref<RandomNumberGenerator>（同 seed 复刻 baker _rng PCG）逐滴随机起点/方向。
+    //   in/out height buffer，内部 clamp [0,1]。输入 w/h/height_buffer（PackedFloat32Array）/seed +
+    //   num_drops/max_steps/inertia/capacity_factor/min_capacity/deposit_speed/erode_speed/
+    //   evaporation/gravity/brush_radius。输出 height_out(F32 PackedFloat32Array)。
+    godot::Dictionary run_bake_erosion_pass(godot::Dictionary knobs);
+
+    // run_bake_geometry_fields_pass（dots-total-cpp step2，2026-06-25）：bake 期几何场编排
+    //   下沉 C++ 的单次驱动。GDScript 只发一次请求（一个 knobs Dictionary 含 terrain-index
+    //   所需 cell SoA + 几何参数 + erosion 常量 + volcano 中心），C++ 在进程内依次串起已验证的
+    //   terrain-index → erosion → river SDF → latitude → volcano 五个 sub-pass，中间 buffer
+    //   （尤其 height_buffer）全部留在 C++、不跨语言往返；一次返回完整几何 bundle。river 读
+    //   post_base 暂存的 `_gen_river_*` 拓扑（零再传输），故前置仍需先跑 post_base。
+    //   输出合并 bundle：height_buffer/biome_buffer/moisture_buffer/vegetation_buffer/
+    //   cover_buffer（terrain）+ flow_buffer（river out_buf）+ latitude_buffer + volcano_buffer
+    //   （volcano data，L8）+ CSR（cell_first_px/cell_px_count/flat_px_indices）+
+    //   pixel_to_cell_index + total_px + width/height + 各 stage 的 *_elapsed_ms 诊断。
+    //   terrain sub-pass 失败 → 整体 fallback=true（caller 回退旧 per-pass / GDScript 路径）；
+    //   erosion sub-pass 失败 → 用未侵蚀 height 续算（非致命），不令整体 fallback。
+    godot::Dictionary run_bake_geometry_fields_pass(godot::Dictionary knobs);
+
     // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ────
     // 4 张运行期 atlas baker 的 byte-fill 阶段下沉 C++/SIMD：
     //   encode_dynamic_cell_atlas：RGBA8。R=q01(temp), G=q01(moist),
@@ -1376,6 +1439,22 @@ public:
     // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
     godot::Dictionary run_psi_solver_pass(godot::Dictionary knobs);
 
+    // ─── dots-total-cpp step3（2026-06-25）：物理环流编排下沉（仅生成期一次性路径）──
+    // run_physical_solve_pass：单次驱动，在 C++ 进程内按序串起 SLP → wind → PSI →
+    //   upwelling 四个已验证 kernel（均读 bound slot + publish_to_slot），中间量
+    //   （slp→wind 经 slp_arr、wind→psi 经 wind_*_arr）在 C++ 内从返回值/slot 串联，
+    //   不跨语言往返。GDScript 一次请求（combined knobs = 4 stage 输入并集，含
+    //   neighbor_indices/water_terrain_ids/prev_slp_arr + 全部标量/profile 参数 +
+    //   heat_transport/solve_ocean/terrain_aware 标志），C++ 自动注入 chained 键
+    //   （slp_arr/wind_x_arr/wind_y_arr/wind_speed_arr/stage）。仅 `_bake_initial_*` /
+    //   `rebake_ocean_currents` 等**已经是原子完成**的路径用它（运行期逐帧分摊路径
+    //   `_physical_solve_step_one` 不受影响）。任一 sub-pass fallback → 整体 fallback，
+    //   GDScript 回退到原 step_one loop。NaN 守门 + 风场 RG8 光栅化仍在 GDScript
+    //   （wrapper 调 phys_field_nan_guard + _bake_initial_vector_buffers）。
+    //   输出 { fallback, reason, slp_ms, wind_ms, psi_ms, upwelling_ms, psi_ran,
+    //   elapsed_ms }。前置：ext 必须 bind_map_data。
+    godot::Dictionary run_physical_solve_pass(godot::Dictionary knobs);
+
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++
     // communication contract end-to-end. Adds `drift_amount` to every
@@ -1814,6 +1893,20 @@ private:
     // round-start snapshot read for advection; _cur is written this round. Sized on map change.
     std::vector<float>             _wx_synoptic;
     std::vector<float>             _wx_synoptic_prev;
+
+    // ─── 生成期河流拓扑缓存（dots-total-cpp step1，2026-06-25）────────────
+    // run_native_world_generate_post_base_pass 末尾把 river 拓扑（by cell.index）暂存为 ext 成员，
+    // 供同一 generation ext 实例的 run_bake_river_sdf_pass 直接 trace（零跨语言再传输）。
+    // 换图（n_cells 变化）或新生成时由 post-base 重填覆盖。tracing 复刻 map_baker.gd::_trace_all_rivers。
+    int                            _gen_river_n = 0;          // n_cells（0=未填）
+    std::vector<int32_t>           _gen_river_q;              // cube q
+    std::vector<int32_t>           _gen_river_r;              // cube r
+    std::vector<uint8_t>           _gen_river_terrain;        // 最终 terrain（含所有翻转）
+    std::vector<float>             _gen_river_elev;           // 最终 elevation
+    std::vector<uint8_t>           _gen_river_has;            // has_river 0/1
+    std::vector<float>             _gen_river_flow;           // river_flow（生成期宽度源）
+    std::vector<int32_t>           _gen_river_downstream;     // declared downstream cell index（-1=无）
+    std::vector<int32_t>           _gen_river_neighbors;      // n*6 邻居 cell index（-1=越界），DQ/DR 序
 
     // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
     // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]

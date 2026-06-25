@@ -20,14 +20,16 @@
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
-| Ocean currents physical | C++ kernels + GDScript stage machine | `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | `_phys_stage` 状态机、pixel commit、fallback。 |
+| Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
 | Weather LUT upload | GDScript upload + C++/GDScript byte source | `encode_cell_luts`（初始/完整 LUT 字节来源） | `weather_refresh` 提交点从 weather SoA 直接编码 RGBA8 并维护 prev/current 双缓冲。 |
 
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload；不再负责 weather_lut 发布。 |
 
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
-| Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish | `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
+| Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish。**base+post_base 已融合为单次 `run_native_world_generate_full_pass`（step4，2026-06-25）** | `run_native_world_generate_full_pass`（融合优先）, `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
+| Bake-time static texture encoders（生成期） | C++ byte payload + GDScript GPU upload | `encode_bake_height_tex_data`, `encode_bake_enum_atlas_payload`, `encode_bake_flow_tex_data`, `encode_bake_r8_tex_data`, `encode_bake_upwelling_tex_data` | `Image.create_from_data`、`ImageTexture.update/create_from_image`、ext 缺失时 debug fallback。 |
+| Bake-time 几何场编排（生成期 terrain-index/erosion/river SDF/latitude/volcano） | **C++ 单次融合驱动 `run_bake_geometry_fields_pass`（融合优先 + 旧 per-pass 回退）** | 内部串 `run_bake_terrain_index_pass`/`run_bake_erosion_pass`/`run_bake_river_sdf_pass`/`run_bake_latitude_field_pass`/`run_bake_volcano_field_pass` | GDScript 一次请求→解包到 `world.*`+重建 lookup；河流图遍历读 ext 暂存拓扑（零再传输）；GPU 上传。中间 height buffer 不跨语言往返。 |
 | Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
 
@@ -39,6 +41,7 @@
 
 - `DCWorldExt::run_native_world_generate_base_pass`（无 bind 的 C++ base SoA 生成结果包）
 - `DCWorldExt::run_native_world_generate_post_base_pass`（无 bind 的 C++ post-base SoA 结果包）
+- `DCWorldExt::run_native_world_generate_full_pass`（**step4 融合**：进程内串 base→post_base，base bundle 不出语言边界）
 - `DCWorldExt::run_native_world_generate_pass`（单调用生成期 publish）
 - `DCWorldExt::start_native_generation` / `run_native_generation_slice` / `finish_native_generation`（同一 publish pass 的切片 API 外壳）
 - `map_generator.gd::_generate_cells_native_base`（ACTIVE 编排：发 cfg/profile 请求，接收 PackedArray 结果并装配 `MapData`）
@@ -66,7 +69,75 @@ bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.in
 
 Fallback（仅指 bind 后的 republish 层 `run_native_world_generate_pass`，**不是基础生成**）：未 bind、缺 slot、slot dtype/size 不匹配时返回 `path=gdscript_fallback`、`fallback=true`、`fallback_reason`。此时保留 `map.bake_lat_temp_year_lut()` 与既有 SoA 值（来自 C++ 基础生成），并继续调用专用 `run_temp_baseline_year_bake` 作为更窄的 C++ baseline fallback。注意：基础生成（base+post_base）本身已无 GDScript fallback，失败即硬中止。
 
+**base+post_base 融合（dots-total-cpp step4，2026-06-25）**：原先 `_generate_cells_native_base` 先调 `run_native_world_generate_base_pass` 拿到 base bundle（10×n_cells SoA：q/r/elevation/moisture/base_moisture/temp/terrain/landform/vegetation/cover），在 GDScript 侧校验后再 `run_native_world_generate_post_base_pass(…, base_res)` 传回——base bundle 经历一次 `C++→GDScript→C++` round-trip。新增 `run_native_world_generate_full_pass(seed,cfg,profile)` 在 C++ 进程内先跑 base、再用其结果跑 post_base，**base bundle 全程留在 C++ 不出语言边界**，一次返回 post_base 最终 bundle（合并 `base_water_count/base_land_count/base_native_ms/native_algorithm` 诊断键供 GDScript 打印）。`_generate_cells_native_base` 为**融合优先 + 旧两次调用回退**（`has_method("run_native_world_generate_full_pass")` 探测；DLL 未 rebuild 时退回旧路径）。base 失败 → full_pass 透传 base 结果（rc/fallback），GDScript 据此中止。
+
+**bind 后 republish 保留（step4 刻意未删）**：`run_native_world_generate_pass`（bind 后读 bound slot 重算初始温度仿真场 `cell_temp/temp_baseline/temp_30d/temp_baseline_year`）**本身已是 C++**——它不是 GDScript 计算，删它不会减少跨语言计算，只会重构 `bind_map_data` → C++ flush（`set()` reseat）→ `rebind_map_data` 的脆弱时序（该 rebind 专门防 flush reseat 后 scheduler/facade 持悬垂 PackedArray 引用）。收益边际、风险高，故 step4 **仅做 base+post_base 融合，保留 republish 不动**。
+
+
+
+## Bake-time static texture encoders（生成期）
+
+生成期 `MapBaker.bake_world()` 的静态纹理编码现在采用 C++ byte payload + GDScript GPU upload 分层：`DCAtlasEncoders` 只负责 dispatcher 和 `ImageTexture` 创建/更新，逐像素量化与字节打包由 `DCWorldExt` 执行。
+
+C++ 入口：
+
+- `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。
+- `encode_bake_enum_atlas_payload`：map-index atlas RGBA8，`R=biome`、`G/B=cell.index low/high`、`A=landform`；输入使用 `WorldData` 的 CSR 像素反向索引与按 `cell.index` 排列的 landform byte。
+- `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。
+- `encode_bake_r8_tex_data`：通用 U8 → L8，支持缺失输入时按 `default_byte` 填充（火山场默认 0、upwelling buffer 默认 128）。
+- `encode_bake_upwelling_tex_data`：F6 debug upwelling 纹理，读取已绑定 SoA 的 `cell_terrain` 和 `cell_upwelling_strength`，通过 pixel→cell index 表编码 L8；未 bind 时保留 GDScript debug fallback。
+
+GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.update`、新尺寸 `ImageTexture.create_from_image`。因此 C++ 迁移目标是消除 CPU 字节循环，不把 Godot 渲染对象生命周期迁入 native。`patch_enum_atlas_axes` 已统一为当前 map-index RGBA8 契约：只 patch `R=biome`，不再把 vegetation/cover 写入 G/B；vegetation/cover 变化只更新 per-cell LUT/buffer，不触发 map-index atlas upload。
+
+## Terrain-index bake pass（生成期逐像素归属 + dither）
+
+主要入口：
+
+- `DCWorldExt::run_bake_terrain_index_pass`（C++ 权威）
+- `map_baker.gd::_bake_terrain_index_native`（wrapper：构 knobs / 调用 / 解包 / 重建对象侧反向索引）
+- `map_baker.gd::_bake_height_biome_moisture`（GDScript ground-truth，A/B + ext 缺失 fallback；无 dither）
+
+链路：`bake_world()` 的核心逐像素循环（warp 双频 + `cube_round` 几何归属 + sextant 两邻居 barycentric + per-biome detail/ridge noise）已下移 C++。pass 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机不定，与 `encode_bake_*` 同范式）：输入 W/H、world_bounds、hex_size、wrap_period_x、seed，以及 cell SoA（`cell_elevation/moisture/terrain/vegetation/cover` by cell.index）与 `offset_to_index` 映射；GDScript wrapper 现场从 `HexCell` 属性构建这些数组（~n_cells 次）。C++ 内用 `Ref<FastNoiseLite>` 复刻 `map_baker._init_noise`（seed+71/+233/+503/+977），并复刻 `_cyl_noise` 2D 接缝包裹。
+
+**index 边缘融合（dither #3）内嵌在本 pass**：在写 buffer 前用 Bayer 8x8 有序抖动 + barycentric 权重，对**陆-陆 / 水-水的相邻 cell 边界**把像素的"视觉归属 cell"改派给 sextant 两邻居，软化离散 cell 边界——`biome(R)`、经 `map_index_atlas.gb` 解码 per-cell 量的消费方（云 `weather_overlay` weather_lut、`dyn_lut`、`eco_lut`）。**仅 land↔water（跨水/陆域）边界回收门槛、不互相改派**，保护海岸硬边与 per-pixel `is_water`。dither 改派后：`biome(R)` / CSR 桶（驱动编码器 `G/B`=cell.index、`A`=landform）/ `vegetation` / `cover` / `pixel_to_cell_index` 全跟 `vis_cell`（单一不变量，全量 + daily 增量重烘均不还原）；`height`/`moisture` 仍走几何 self barycentric + `terrain_self` detail noise（防高程点阵）。
+
+输出：`height_buffer`(F32) / `biome_buffer` / `vegetation_buffer` / `cover_buffer`(U8) / `moisture_buffer`(F32) + CSR 三件套（`cell_first_px`/`cell_px_count`/`flat_px_indices`，counting-sort by cell.index，直接喂 `encode_bake_enum_atlas_payload`）+ `pixel_to_cell_index`（wrapper 据此重建 `world.pixel_to_cell_lookup` 与 `cell_pixel_lists`）。
+
+下游收益：因索引层已软化，`world_map.gdshader` 的 `dyn_lut`/`eco_lut` 全档位改回 NEAREST（删 `sample_dyn_lut_smooth`/`sample_eco_lut_smooth`），`weather_overlay.gdshader` 删除 `cloud-soft-edge` 跨格双线性。旧的 `cell_blend_atlas`（运行时 shader 软混方案）已整套回滚。`dither_enabled=false` 时 C++ 输出与 GDScript ground-truth 应逐像素 bit-equal，用于 A/B parity。
+
+## 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
+
+`MapBaker.bake_world` 内四个生成期烘焙的全部计算已下沉 C++，与 `encode_bake_*` / `run_bake_terrain_index_pass` 同范式：纯 buffer-encoder，不读 `_slots` / 不要求 `_bound`，所有输入经 knobs PackedArray 喂入。**dots-total-cpp 原则：C++ 是唯一计算路径，已删除 GDScript 计算 fallback**——ext / 方法缺失或返回非法时 `push_error` 并返回空 buffer（不静默降级，与生成期 native world-gen 一致）。设计目标：跨语言只传极少量"请求参数 / 低维输入"，所有 O(n_pixels) 热循环与中间 buffer（dense polyline / mask / 侵蚀工作缓冲）全部在 C++ 内自算、不跨语言往返。
+
+主要入口：
+
+- `DCWorldExt::run_bake_geometry_fields_pass` / `map_baker.gd::_bake_geometry_fields_native`（**step2 融合编排**）
+- `DCWorldExt::run_bake_volcano_field_pass` / `map_baker.gd::_bake_volcano_field`
+- `DCWorldExt::run_bake_latitude_field_pass` / `map_baker.gd::_bake_latitude_buffer`
+- `DCWorldExt::run_bake_river_sdf_pass` / `map_baker.gd::_bake_river_sdf`
+- `DCWorldExt::run_bake_erosion_pass` / `map_baker.gd::_hydraulic_erosion_native`
+
+**bake 期几何场编排下沉 C++（dots-total-cpp step2，2026-06-25）**：`run_bake_geometry_fields_pass` 是单次驱动——GDScript 在 `bake_world` 里只发**一次请求**（一个 knobs 含 terrain-index 所需 cell SoA + 几何参数 + erosion 常量 + volcano 中心），C++ 在进程内依次串起 terrain-index → erosion → river SDF → latitude → volcano 五个已验证 sub-pass，**中间 buffer（尤其 height_buffer）全部留在 C++、不跨语言往返**（原 height 在 terrain→erosion→encode 间往返 4 次，现仅最终一次随 bundle 返回），一次返回完整几何 bundle（`height_buffer/biome_buffer/moisture_buffer/vegetation_buffer/cover_buffer` + `flow_buffer` + `latitude_buffer` + `volcano_buffer` + CSR `cell_first_px/cell_px_count/flat_px_indices` + `pixel_to_cell_index` + 各 stage `*_ms`/`*_ok` 诊断）。GDScript `_bake_geometry_fields_native` 只解包到 `world.*` + 重建对象侧 `pixel_to_cell_lookup`/`cell_pixel_lists`（与 `_bake_terrain_index_native` 同逻辑）。`bake_world` 为**融合优先 + 旧 per-pass 回退**：融合 pass 缺失（DLL 未 rebuild）或 terrain sub-pass fallback 时，退回旧逐 pass 编排（`_bake_terrain_index_native` / GDScript ground-truth + 各单 pass），行为同迁移前。volcano 在融合路径里被提前到物理环流之前算（与物理独立，结果一致），回退路径仍在物理之后单独烘。
+
+各 sub-pass 链路与 I/O（被 `run_bake_geometry_fields_pass` 内部调用，也可单独调用）：
+
+
+
+- **volcano field**：复刻 `_bake_volcano_field`。逐像素累加到最近火山中心的二次径向衰减 `contrib^2`（`contrib = 1 - dist*inv_glow > 0`）→ L8。火山中心（`has_volcano` cell，极少数）由 GDScript 收集 `cube_to_world` 作为 `volcano_centers_x/y` 喂入（极小传输）；C++ 跑 `W×H×n_volcano`。输入 `width/height/origin_x/origin_y/step_x/step_y/inv_glow + volcano_centers_x/y`，输出 `data`（L8）。
+- **latitude field**：复刻 `_bake_latitude_buffer`。逐像素 `ny = y / max(H-1,1)` → F32。输入 `width/height`，输出 `latitude_buffer`（F32）。
+- **river SDF**：复刻 `_bake_river_sdf` 的**全部计算**——河流图遍历（trace）+ seam-split + Catmull-Rom 致密化 + warp 噪声（C++ 内构造 `FastNoiseLite` 复刻 `_warp_noise_lo/hi`：SIMPLEX_SMOOTH seed+71 freq 0.024 / SIMPLEX seed+233 freq 0.024×3.4，均 FBM oct3）+ 变宽 polyline stamp + chamfer 3-4 双通 SDT + 归一化。**河流图遍历也已迁入 C++（dots-total-cpp step1，2026-06-25）**：`run_native_world_generate_post_base_pass` 末尾把 river 拓扑（`q/r/terrain/elevation/has_river/river_flow/river_downstream(index)/neighbors[n*6]`，by cell.index）暂存到 `DCWorldExt::_gen_river_*` ext 成员；`run_bake_river_sdf_pass` 直接读这份拓扑在 C++ 内 trace（复刻 `_trace_all_rivers`/`_trace_river_chain`/`_find_river_downstream_neighbor`/`_find_river_terminal_water_neighbor`，`_is_river_terminal_water` ≡ `pk_is_water_terrain`，宽度=clamp(river_flow)）。**GDScript 不再传任何河流链/拓扑**，只发 bake 几何参数 `origin/inv_world/hex_size/seed/base_radius_px/sdf_max_dist_px/seam_dx/cr_step` → **河流数据零跨语言传输**。前置：必须先跑 post_base 填 `_gen_river_*`（换图覆盖）。输出 `out_buf`（F32，= `world.flow_buffer`）。无河流时 mask 全 INF → 归一化全 0。
+- **erosion（droplet 水力侵蚀）**：复刻 `_hydraulic_erosion`。用 `Ref<RandomNumberGenerator>`（`set_seed(bake_seed)` 复刻 baker `_rng` PCG32）逐滴随机起点/方向，brush kernel + 沉积/侵蚀 + 蒸发。in/out height buffer，**内部 clamp [0,1]**（折叠原 GDScript `_clamp_buffer`，省一次 W×H 循环）。输入 `width/height/height(buffer)/seed + num_drops/max_steps/inertia/capacity_factor/min_capacity/deposit_speed/erode_speed/evaporation/gravity/brush_radius`，输出 `height_out`（F32）。
+
+返回 report 统一为 `{ fallback, reason, path, elapsed_ms, data|latitude_buffer|out_buf|height_out, width, height, format }`。GPU 上传（height/flow ImageTexture）仍在 GDScript/Godot 对象层，C++ 只产 CPU buffer。
+
+parity 说明：用户不要求 bit-equal（迁移后人工验证）。volcano / latitude 为确定性写、应 bit-equal；river SDF 与 erosion 的几何用 float 复刻 Godot `Vector2` real_t、scalar 用 double，warp/RNG 用 Godot 同引擎实例（`FastNoiseLite` / `RandomNumberGenerator` 同 seed），整体接近一致，按聚合视觉验收。
+
+**遗留 GDScript 死代码**：river SDF 全链迁 C++ 后，`map_baker.gd` 的 `_trace_all_rivers` / `_trace_river_chain` / `_declared_river_downstream` / `_find_river_downstream_neighbor` / `_find_river_terminal_water_neighbor` / `_river_width_weight` / `_is_river_terminal_water` 及旧几何辅助 `_warp_river_chain` / `_catmull_rom_dense(_with_widths)` / `_catmull_rom` / `_stamp_polyline_variable` / `_stamp_polyline_binary` / `_chamfer_sdt` 均已无调用者（计算全在 C++），保留为可随时删除的死代码，不构成运行期 fallback 路径。`_clamp_buffer` 已随 erosion 迁移删除。`_is_water`（海洋洋流用）仍在用，保留。
+
+
+
 ## Runtime hydrology
+
 
 主要入口：
 
@@ -1085,6 +1156,8 @@ Stage 概览：
 | 7 | Wind/ocean raster | `gdext_raster` / pixel slices。 |
 | 8 | Pixel commit | GDScript/Godot image/atlas commit。 |
 
+**生成期一次性 C++ orchestrator（dots-total-cpp step3，2026-06-25）**：`_physical_solve_for_phase`（原子完成入口：`bake_world` 初始物理、deferred refresh、`rebake_ocean_currents` 都走它）现**优先调用 `DCWorldExt::run_physical_solve_pass`**——单次 C++ 调用在进程内按序串起 SLP → wind → PSI → upwelling 四个已验证 kernel（均读 bound slot + `published_to_slot`），中间量在 C++ 内串联（SLP `slp_out` → wind 的 `slp_arr`；wind 写 `cell_wind_x/y/speed` slot → orchestrator 读出注入 PSI 的 `wind_x_arr/y/speed`；upwelling 直接读 wind slot），**stage 间零跨语言往返**。GDScript wrapper `_physical_solve_native_oneshot` 只构造一次 combined knobs（四 stage 输入并集 + `heat_transport/solve_ocean/terrain_aware` 标志；chained 键 `slp_arr/wind_*_arr/stage` 由 C++ 注入），调用后用 `phys_field_nan_guard` 复刻 WIND_RASTER 的 NaN 守门；风场 RG8 光栅化仍由后续 `_bake_initial_vector_buffers` 完成。任一 sub-pass fallback / `!heat_transport`（需 GDScript ocean fallback）/ 未 bind / NaN → 整体 fallback，回退到原 `_physical_solve_step_one` 逐 stage loop。**仅迁生成期（A1）**：运行期季节切换的逐帧分摊路径（`ocean_currents_job.gd` 驱动 `_physical_solve_step_one`）**完全不动**，零运行期回归。
+
 `ocean_currents_job.gd` 维护 `_phys_stage`，每次 `run_slice()` 推进一个 stage 或 pixel range。日志可能出现：
 
 ```text
@@ -1161,7 +1234,7 @@ per-pixel GPU 上传。
 
 | 字段 | 格式 / 滤波 | 内容 | 更新频率 |
 | --- | --- | --- | --- |
-| `map_index_atlas`（`WorldData.enum_atlas_tex`） | RGBA8 / **NEAREST** / derived_size | R=biome；G/B=cell.index 低/高字节；`0xFFFF`=map 外哨兵；A=保留 | `bake_world` + biome dirty |
+| `map_index_atlas`（`WorldData.enum_atlas_tex`） | RGBA8 / **NEAREST** / derived_size | R=biome；G/B=cell.index 低/高字节；`0xFFFF`=map 外哨兵；A=landform | `bake_world` + biome dirty |
 | `enum_lut_tex` | RGB8 / NEAREST / lut_dims | per-cell biome/veg/cover | daily 全量重烘（~0.1-0.3ms） |
 | `dyn_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell temp/wet/snow/(ice\|vitality) | daily |
 | `eco_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell foliage/stress/transition/growth | daily |
