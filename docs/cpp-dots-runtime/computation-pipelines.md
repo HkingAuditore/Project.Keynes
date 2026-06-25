@@ -118,6 +118,17 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 **分层地形法线（2026-06-25）**：渲染端 `hillshade_tod.gdshaderinc::compute_terrain_normal(uv, quality, biome)` 改为三层结构，解决"细节法线过强 → 山密密麻麻、走向不清晰"：① **粗法线**优先采样生成期烘焙的 `terrain_normal_tex`（1 fetch 拿宏观山脉走向；未绑定时回退运行期宽半径 `hillshade_coarse_radius` 4-tap）；② **细节法线**为运行期 1-texel 中心差分（4 fetch），作切向扰动叠到粗法线上，强度 = `hillshade_detail_strength × terrain_detail_factor(biome) × qf`，`terrain_detail_factor` 按 biome 分档（山地/方山满量、丘陵/荒地次之、平原/湿地系趋零）；③ **性能分档**：`MOBILE_QUALITY_LOW/MID` 与 desktop `visual_quality==0` 只算粗法线、跳过细节 4-tap。控制 uniform：`terrain_normal_tex_bound`（hex_renderer 据 `world.terrain_normal_tex` 是否存在设置）、`hillshade_coarse_strength`、`hillshade_detail_enabled`、`hillshade_detail_strength`。调用方 `land_pipeline`/`apply_tod_pbr` 已同步传 `biome`。
 
+**P1 高程 hypsometric 重映射（2026-06-25，治平原/阶梯）**：在 normalize 之后对 `land_h=(E-sea)/(1-sea)` 施一条**单调三段曲线**——低地压平（出真平原）、中段柔和台地（可辨非硬 staircase）、高段陡升（拉开起伏、山更挺拔），治 P0 遗留 #3（平原不平 / 整体起伏弱）与半个 #2（连续高程驱动、取消按类别硬分档）。曲线为 PCHIP（Fritsch–Carlson 单调限幅）C1 + 单调（不倒置高程序），控制点 `PK_HYPSO_XS/YS` 以 `constexpr`/`const` 落地（C++↔GDScript 同名同值），共享 helper `PkHypsoCurve`/`pk_hypso_remap_elev`（C++）与 `_hypso_make_tangents`/`_hypso_eval`/`_hypso_remap_elev`（GDScript）。**两层施加（方案 C）**：
+- **Layer B（仿真高程 E，定结构，C++ 唯一路径）**：`run_native_world_generate_base_pass` 在 normalize + 侵蚀(SPL/droplet/thermal) 之后、湖判/分类之前，对陆地段（`E>sea_level`）以 `mix=1.0` 施全曲线；锚定 sea_level → below-sea(海洋/湖种) 不变、海陆边界与 ocean/coast 分类不破坏；置于侵蚀之后 → 保留河谷网络与台地保形。**因生成已 100% C++（dots-total-cpp，GDScript 生成 fallback 已删），Layer B 无 GDScript 镜像**。下游湖判/气候/分类/landform 全部看到重塑后的 E（biome 分布随之变化，符合"三级阶梯成真实结构"预期）。
+- **Layer A（bake 期 per-pixel 视觉高程，精修）**：`run_bake_terrain_index_pass` step7 在 `elev_blend`（已被 Layer B 重塑的 cell E 的 barycentric 插值）上以小 `mix=PK_HYPSO_LAYER_A_MIX(0.25)` 残差再施同曲线，重锐化被插值抹软的台地边缘；GDScript `_bake_height_biome_moisture` 逐位镜像。`sea_level` 经 knobs 由 `_bake_geometry_fields_native` / `_bake_terrain_index_native` 传入（`world.sea_level`，C++ 默认 0.64）。relief 随后叠在重塑基底上。
+- **可调旋钮**：控制点 `PK_HYPSO_XS/YS`（分段点/各段斜率，改后需重新生成；C++ 改动需 rebuild DLL）、`PK_HYPSO_LAYER_A_MIX`（bake 残差强度，0=关）。曲线纯逐格/逐像素 ALU、无空间采样 → 天然 seam-safe、热循环开销可忽略。
+
+**岸线法线 + 海洋深度（2026-06-25，治"海岸/河岸/护岸无法线 + 海洋全是近海"）**：起因——预烘焙 `terrain_normal_tex` 纯从 `height_buffer` 宽差分梯度算，全图一视同仁；河流是独立 SDF overlay（`flow_buffer`，从不进高度场）→ 河岸无几何落差、法线为 0；海岸落差被"平原去噪"(细节门控 + 宽差分摊平 + P1 近岸压平)抹掉；海洋 raw 起伏项全乘 `dist_field`、离岸趋 0，唯一向下力量是极地 `edge_falloff` → 只有极地有深海。三项修复：
+- **#1 海岸滩坡法线（shader + bake 双管）**：① shader `compute_terrain_normal` 近岸窄带 boost（`shore_detail_strength`/`shore_band_height` uniform）补运行期细节法线；② **因 P1 后内陆平原也贴 sea_level、`elev-sea` 无法区分海岸/内陆**，海岸的真实法线改由 **bake 海滩 carve** 提供（`run_bake_terrain_index_pass` step6.6 + GDScript `_bake_height_biome_moisture` 镜像）：用 **barycentric 水邻居权重**（`pk_is_water_terrain` 的 nb 权重和）作亚格距水近度，对近岸陆地按 `smoothstep(water_w)` 下压成海滩坡（`PK_COAST_BEACH/COAST_BEACH=0.05`，止于水线不越过）→ 写进 `height_buffer` → `terrain_normal_tex` 拿到 crisp 海岸法线，与河岸 #2a 同法。`B_COAST` 是水体不入陆地法线，故用水邻居权重而非 biome。
+- **#2 河流切进高度场（方案 C 两层）**：① **#2b 仿真高程 E（cell 级，C++ 唯一路径）**：`run_native_world_generate_post_base_pass` 在河网最终化 + lake-snap 之后、河岸生态/floodplain 分类之前，沿河道按 `RFLOW` 下切 E（`PK_RIVER_INCISE=0.018`，河道保持 `>= sea_level+0.004` 不反转成海）+ 两侧非河陆地邻居抬升成堤（`PK_RIVER_BANK=0.008`）；下切后 `land_h` 降低 → 下游 floodplain/canyon/delta 分类自洽在河谷成形。② **#2a bake height_buffer（per-pixel，crisp 河岸）**：`run_bake_geometry_fields_pass` 在 river SDF(`flow_buffer`)算完后、bundle 前，按 `flow`（河心=1→远=0）以 `notch=smoothstep(flow)` 对 `height_final` 逐像素刻 V 形河谷（`PK_BAKE_RIVER_INCISE=0.045`），SDF 衰减天然形成河岸坡 → `terrain_normal_tex`/`height_tex`/relief 都读得到 crisp 河岸；仅陆地段（`height>sea_level`）。GDScript legacy(fused 失败)路径镜像 `_carve_river_into_height`（`BAKE_RIVER_INCISE` 同值；height=hm_size、flow=derived_size 不同分辨率时按归一化坐标取 flow）。fused 成功即 C++ 内 carve 并跳过 legacy → 无双重施加。
+- **#3 海洋深度自然化（仿真高程 E，C++ 唯一路径）**：`run_native_world_generate_base_pass` 在 normalize 之后、侵蚀/分类之前，对 below-sea 段（`E<sea_level`）按"距岸 hex 距离"重塑海底——多源 BFS（陆地为源，`index_for_qr` 东西环绕邻接）求每个海洋格距岸距离 → 大陆架（`PK_OCEAN_SHELF_CELLS=2` 内浅）经 smoothstep ramp 到深渊（`PK_OCEAN_DEEP_CELLS=11`、最深 `sea*PK_OCEAN_ABYSS_FRAC(0.96)`），叠低频盆地噪声（`PK_OCEAN_BASIN_AMP=0.30`，仅深水生效，造海沟/海岭）。`DEEP_CELLS` 越小 → 离岸更快到深渊 → **深海面积越大**（2026-06-25b 迭代：20→11、ABYSS 0.92→0.96 扩大并加深深海）。锚定 sea_level：陆地完全不动。下游 `DEEP_OCEAN/OCEAN/COAST` 分类（`pk_decide_terrain_ex`：`sea-0.06`/`sea*0.55`/`sea*0.92` 门槛）、距海气候、水面深浅色全部看到自然海底（远海变深蓝、近岸大陆架）。原极地 `edge_falloff` 保留（仍产极地低地→冰盖/海），但其"唯一深海来源"的角色被本重塑取代。**base pass 已 100% C++（生成 fallback 已删）→ #2b/#3 无 GDScript 镜像**。
+- **可调旋钮**：`shore_detail_strength`/`shore_band_height`（运行期 uniform，可在 .tres / 调试面板实时调，无需 rebuild）；`PK_COAST_BEACH`+`COAST_BEACH`（海岸海滩坡下压，两份同步）、`PK_RIVER_INCISE`/`PK_RIVER_BANK`（河谷/堤强度）、`PK_BAKE_RIVER_INCISE`+`BAKE_RIVER_INCISE`（bake 河道下切，两份同步）、`PK_OCEAN_SHELF_CELLS/DEEP_CELLS/ABYSS_FRAC/BASIN_AMP`（海底形态/深海面积）—— 后几项 C++ constexpr，改后需 rebuild DLL + 重新生成地图。#2b/#3 改仿真 E → **必须重新生成**；#1 海滩 carve/#2a 改 bake → 重烘即可；#1 shader boost → 重载 shader 即可。
+
 ## 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
 
 `MapBaker.bake_world` 内四个生成期烘焙的全部计算已下沉 C++，与 `encode_bake_*` / `run_bake_terrain_index_pass` 同范式：纯 buffer-encoder，不读 `_slots` / 不要求 `_bound`，所有输入经 knobs PackedArray 喂入。**dots-total-cpp 原则：C++ 是唯一计算路径，已删除 GDScript 计算 fallback**——ext / 方法缺失或返回非法时 `push_error` 并返回空 buffer（不静默降级，与生成期 native world-gen 一致）。设计目标：跨语言只传极少量"请求参数 / 低维输入"，所有 O(n_pixels) 热循环与中间 buffer（dense polyline / mask / 侵蚀工作缓冲）全部在 C++ 内自算、不跨语言往返。
@@ -158,11 +169,11 @@ parity 说明：用户不要求 bit-equal（迁移后人工验证）。volcano /
 - `map_generator.gd::run_hydrology_discharge_pass_native`
 - `WeatherRefreshJob.run_slice()` 的 `hydrology_discharge` stage
 
-链路：天气场 commit 后，`weather_refresh` 在 stage-b 前可选运行 `hydrology_discharge`。C++ pass 读取 `cell_hydro_parent` 静态排水拓扑，以及 `cell_weather_precip`、`cell_snowpack`、`cell_soil_moisture`、`cell_water_balance_30d`、`cell_vegetation_vitality` 等运行期状态；先计算本地产流、入渗、地下水基流，再用 parent graph 做上游到下游路由。输出 `cell_river_discharge`、`cell_river_discharge_30d`、`cell_river_storage`、`cell_groundwater_storage`、`cell_surface_runoff`，并回写 `cell_soil_moisture` 和 `cell_water_balance_30d`。
+链路：天气场 commit 后，`weather_refresh` 在 stage-b 前可选运行 `hydrology_discharge`。C++ pass 读取 `cell_hydro_parent` 静态排水拓扑、`neighbor_indices` 邻接表，以及 `cell_weather_precip`、`cell_snowpack`、`cell_soil_moisture`、`cell_water_balance_30d`、`cell_vegetation_vitality` 等运行期状态；先计算本地产流、入渗、地下水基流，再用 parent graph 做上游到下游路由。输出 `cell_river_discharge`、`cell_river_discharge_30d`、`cell_river_storage`、`cell_groundwater_storage`、`cell_surface_runoff`，并回写 `cell_soil_moisture` 和 `cell_water_balance_30d`。河道格会按 30 日流量给自身河岸湿润加成，并以较小比例扩散到一圈相邻陆地格，让“毗邻河流”的地块进入土壤水/水分平衡闭环。
 
 调度原因：它读取当天已提交的 `weather_precip`，所以不放在 `refresh_climate_daily`；它又会影响 stage-b 的植被动态与反馈，所以放在 `weather_summary` 之后、`refresh_daily_stage_b` 之前。默认 `ClimateProfile.runtime_hydrology_enabled=false`，关闭时保留静态生成期河流行为。
 
-返回 report：`path=gdext`、`published_to_slot=true`、`native_ms`、`compute_ms`、`flush_ms`、`refresh_ms`、`n_cells`、`water_budget_error`、`river_discharge_p95`、`river_discharge_max`、`flood_candidate_count`。若 slot 缺失或 size 不匹配，返回 `published_to_slot=false` 和 `fallback_reason`，旧静态河流仍可继续显示。
+返回 report：`path=gdext`、`published_to_slot=true`、`native_ms`、`compute_ms`、`flush_ms`、`refresh_ms`、`n_cells`、`water_budget_error`、`river_discharge_p95`、`river_discharge_max`、`riparian_neighbor_touches`、`flood_candidate_count`。若 slot 缺失或 size 不匹配，返回 `published_to_slot=false` 和 `fallback_reason`，旧静态河流仍可继续显示。
 
 ## Temp baseline year bake（生成期 cell_temp_baseline_year）
 
@@ -1043,6 +1054,10 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 - `weather_to_vegetation_gain` 默认 `0.012`，仅作为小权重写入
   `vegetation_growth_pressure`；stage-b 的 `target - prev_vitality` 仍由兼容度、天气惩罚、
   stress 和 regen 综合决定。
+- `vitality_high_streak` 不再表示“当前植被很健康”本身，而表示 `next_richer` 在当前
+  `temp_30d + plant_available_water` 下比当前植被至少高出
+  `succession_min_compat_gain`，且下一阶兼容度达到 `vitality_high_threshold`。这样 UI
+  的升级倒计时只对应真实可触发的演替候选，湿润后的荒漠/灌丛可在中期向下一阶迁移。
 - drought stress 与 heat stress 分开：`vegetation_drought_stress` 来自长期
   `plant_water` 低于植被理想水分的程度，天气类型为 DROUGHT 时只额外抬高；HEATWAVE 只进入
   heat stress。降水不应正向提高 drought stress。

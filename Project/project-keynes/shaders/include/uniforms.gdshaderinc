@@ -351,6 +351,11 @@ uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未�
 uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.6;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
 uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
 uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.5;  // 细节法线全局强度（再乘 biome 因子）
+// [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
+//   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。
+//   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。
+uniform float shore_detail_strength : hint_range(0.0, 1.0) = 0.45;       // 近岸滩坡细节强度(0=关)
+uniform float shore_band_height     : hint_range(0.001, 0.2) = 0.06;     // 近岸带高度(land_h 厚度，越小越贴岸)
 
 
 // =========================================================================

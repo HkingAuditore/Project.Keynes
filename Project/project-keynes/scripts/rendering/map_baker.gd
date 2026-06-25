@@ -318,6 +318,15 @@ const VALLEY_BIAS := 0.35      # 谷底负偏置（河道落低处，与河流 S
 const CRAG_AMP := 0.05         # 高频岩屑振幅
 const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
 
+# [P1 hypsometric remap 2026-06-25] Layer A（bake 期 per-pixel 残差塑形）。与 world_ext.cpp 的
+#   PkHypsoCurve / pk_hypso_remap_elev 逐位对齐。cell E 已被 C++ Layer B(仿真高程)重塑，此处仅以
+#   小 mix 在像素分辨率下重锐化台地边缘（barycentric 插值会把台地/陡坡抹软）。
+#   单调三段(可见柔和台地)曲线控制点(land_h 空间)：平原(压平)→缓坡上台→台地shelf(最平)→高山陡升。
+#   端点固定 0→0/1→1，PCHIP(Fritsch–Carlson 单调限幅) 保 C1 + 单调（不倒置高程序）。
+const HYPSO_XS: Array[float] = [0.0, 0.32, 0.52, 0.70, 1.0]
+const HYPSO_YS: Array[float] = [0.0, 0.34, 0.54, 0.70, 1.0]
+const HYPSO_LAYER_A_MIX := 0.25   # Layer A 残差强度：0=不叠、1=与 Layer B 同曲线
+
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
 const TERRAIN_NORMAL_COARSE_RADIUS := 4   # 宽半径（texel）：越大越平滑掉高频、山脉走向越干净
 const TERRAIN_NORMAL_SLOPE_GAIN := 8.0    # 烘焙参考垂直增益（与 shader hillshade_slope_gain 默认对齐）
@@ -340,6 +349,12 @@ const RIVER_STROKE_HEX_FACTOR := 0.035
 # SDF 截断距离改小：原 64 让河流过宽（视觉上 1.5 hex 宽），
 # 5 pixels 让河保持细线但仍有 anti-alias 渐隐边
 const SDF_MAX_DIST_PX := 5.0
+# [river-carve-bake 2026-06-25] #2a 河道下切(height 单位，× notch)。与 world_ext.cpp
+#   run_bake_geometry_fields_pass 内 PK_BAKE_RIVER_INCISE 同值。仅 legacy(fused 失败)路径用此镜像。
+const BAKE_RIVER_INCISE := 0.045
+# [coast-beach 2026-06-25] 近岸海滩坡最大下压(height 单位，× smoothstep)。与 world_ext.cpp
+#   run_bake_terrain_index_pass 内 PK_COAST_BEACH 同值。
+const COAST_BEACH := 0.05
 
 # ─── RNG / 噪声 ──────────────────────────────────────────────────────────
 var _rng: RandomNumberGenerator
@@ -765,6 +780,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		t = Time.get_ticks_msec()
 		world.flow_buffer = _bake_river_sdf(map, hex_size, world.world_bounds, world.derived_size)
 		print("  river SDF: %dms" % (Time.get_ticks_msec() - t))
+
+		# [river-carve-bake 2026-06-25] #2a：legacy 路径把河流刻进 height_buffer（fused 路径已在 C++ 内 carve）。
+		_carve_river_into_height(world)
 
 		# Phase 1：纬度纹理（每像素 ny），给 shader 算半球 + 季节温度偏移
 		t = Time.get_ticks_msec()
@@ -3528,6 +3546,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"size_x": size.x, "size_y": size.y,
 		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
 		"dither_enabled": true,
+		"sea_level": world.sea_level,
 		"cell_elevation": elev_arr,
 		"cell_moisture": moist_arr,
 		"cell_terrain": terr_arr,
@@ -3683,6 +3702,7 @@ func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData)
 		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
 		"seed": world.bake_seed,
 		"dither_enabled": true,
+		"sea_level": world.sea_level,
 		"cell_elevation": elev_arr,
 		"cell_moisture": moist_arr,
 		"cell_terrain": terr_arr,
@@ -3740,6 +3760,64 @@ func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData)
 			lists[cell2] = flat.slice(st, st + cnt)
 	world.cell_pixel_lists = lists
 	return true
+
+
+# ─── [P1 hypsometric remap] 单调曲线 helper（与 world_ext.cpp PkHypsoCurve 逐位对齐）────────
+# 构造切线（Fritsch–Carlson 单调限幅），每 bake 调一次（非热循环）。
+static func _hypso_make_tangents() -> Array:
+	var np := HYPSO_XS.size()
+	var d: Array = []
+	d.resize(np - 1)
+	for i in range(np - 1):
+		d[i] = (HYPSO_YS[i + 1] - HYPSO_YS[i]) / (HYPSO_XS[i + 1] - HYPSO_XS[i])
+	var m: Array = []
+	m.resize(np)
+	m[0] = d[0]
+	m[np - 1] = d[np - 2]
+	for i in range(1, np - 1):
+		m[i] = 0.0 if d[i - 1] * d[i] <= 0.0 else (d[i - 1] + d[i]) * 0.5
+	for i in range(np - 1):
+		if d[i] == 0.0:
+			m[i] = 0.0
+			m[i + 1] = 0.0
+			continue
+		var a: float = m[i] / d[i]
+		var b: float = m[i + 1] / d[i]
+		var s := a * a + b * b
+		if s > 9.0:
+			var tau := 3.0 / sqrt(s)
+			m[i] = tau * a * d[i]
+			m[i + 1] = tau * b * d[i]
+	return m
+
+# land_h ∈ [0,1] 单调 cubic Hermite 求值（端点外 clamp 到端点值）。
+static func _hypso_eval(x: float, m: Array) -> float:
+	var np := HYPSO_XS.size()
+	if x <= HYPSO_XS[0]:
+		return HYPSO_YS[0]
+	if x >= HYPSO_XS[np - 1]:
+		return HYPSO_YS[np - 1]
+	var k := 0
+	while k < np - 2 and x >= HYPSO_XS[k + 1]:
+		k += 1
+	var h: float = HYPSO_XS[k + 1] - HYPSO_XS[k]
+	var t: float = (x - HYPSO_XS[k]) / h
+	var t2 := t * t
+	var t3 := t2 * t
+	var h00 := 2.0 * t3 - 3.0 * t2 + 1.0
+	var h10 := t3 - 2.0 * t2 + t
+	var h01 := -2.0 * t3 + 3.0 * t2
+	var h11 := t3 - t2
+	return h00 * HYPSO_YS[k] + h10 * h * m[k] + h01 * HYPSO_YS[k + 1] + h11 * h * m[k + 1]
+
+# 锚定 sea_level 的封装：仅陆地段(e>sea)，below-sea 透传；mix<1 与原值线性混合。
+static func _hypso_remap_elev(e: float, sea: float, inv_above: float, above: float, mix: float, m: Array) -> float:
+	if e <= sea or inv_above <= 0.0:
+		return e
+	var lh := (e - sea) * inv_above
+	var lhr := _hypso_eval(lh, m)
+	var mixed: float = lhr if mix >= 1.0 else (lh + (lhr - lh) * mix)
+	return sea + mixed * above
 
 
 # ─── 核心：一次循环同时产出 height / biome / moisture ────────────────────
@@ -3820,6 +3898,12 @@ func _bake_height_biome_moisture(
 			cgy[gci] = float((g_sxx * g_syz - g_sxy * g_sxz) * g_inv)
 		crel[gci] = float(g_relief)
 
+	# [P1 hypsometric Layer A] 构造曲线切线 + 锚定量，循环前一次（与 world_ext.cpp 同源）。
+	var hypso_m := _hypso_make_tangents()
+	var hy_sea: float = world.sea_level
+	var hy_above: float = 1.0 - hy_sea
+	var hy_inv_above: float = (1.0 / hy_above) if hy_above > 1e-6 else 0.0
+
 	for y in range(H):
 		var wy_base := origin.y + (float(y) + 0.5) * step_y
 		var row := y * W
@@ -3878,6 +3962,28 @@ func _bake_height_biome_moisture(
 			# 6. Barycentric 插值 → 平滑 elevation/moisture
 			var elev_blend := elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2
 			var moist_blend := moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2
+
+			# 6.5 [P1 hypsometric Layer A] 锚定 sea_level 小 mix 残差重映射（重锐化台地边缘，
+			#     不重复整条 Layer B 曲线）；relief 随后叠在重塑基底上。
+			if hy_inv_above > 0.0 and elev_blend > hy_sea:
+				elev_blend = _hypso_remap_elev(elev_blend, hy_sea, hy_inv_above, hy_above, HYPSO_LAYER_A_MIX, hypso_m)
+
+			# 6.6 [coast-beach 2026-06-25] 近岸海滩坡：barycentric 水邻居权重作亚格距水近度，对近岸陆地
+			#     下压成海滩坡（写进 height → terrain_normal_tex 拿到 crisp 海岸法线）。与 world_ext.cpp 同公式。
+			#     water = {OCEAN0,COAST1,LAKE18,REEF19,SEA_ICE20,KELP21}（对齐 pk_is_water_terrain）。
+			if terrain_self != int(TerrainType.TERRAIN.OCEAN) and terrain_self != int(TerrainType.TERRAIN.COAST) and elev_blend > hy_sea:
+				var water_w := 0.0
+				if nb1_cell != null:
+					var t1 := int(nb1_cell.terrain)
+					if t1 == 0 or t1 == 1 or t1 == 18 or t1 == 19 or t1 == 20 or t1 == 21:
+						water_w += w_nb1
+				if nb2_cell != null:
+					var t2 := int(nb2_cell.terrain)
+					if t2 == 0 or t2 == 1 or t2 == 18 or t2 == 19 or t2 == 20 or t2 == 21:
+						water_w += w_nb2
+				if water_w > 0.0:
+					var beach := water_w * water_w * (3.0 - 2.0 * water_w)
+					elev_blend = maxf(elev_blend - COAST_BEACH * beach, hy_sea)
 
 			# 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
 			#    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。
@@ -4118,6 +4224,46 @@ func _hydraulic_erosion_native(height: PackedFloat32Array, size: Vector2i, seed_
 	return out
 
 # ─── 河流：从 cell.has_river 链 → Catmull-Rom → SDF ──────────────────────
+
+# [river-carve-bake 2026-06-25] #2a GDScript 镜像：按 flow SDF 逐像素刻 V 形河谷（crisp 河岸法线）。
+#   与 world_ext.cpp run_bake_geometry_fields_pass 内 carve 同公式；仅 legacy(fused 失败)路径调用
+#   （fused 成功时 C++ 已 carve 并跳过本路径）。height_buffer=hm_size、flow_buffer=derived_size，
+#   分辨率不同则按归一化坐标最近邻取 flow。
+func _carve_river_into_height(world: WorldData) -> void:
+	var hb := world.height_buffer
+	var fb := world.flow_buffer
+	var hw: int = world.hm_size.x
+	var hh: int = world.hm_size.y
+	var fw: int = world.derived_size.x
+	var fh: int = world.derived_size.y
+	if hb.size() != hw * hh or fb.size() != fw * fh or hw <= 0 or hh <= 0 or fw <= 0 or fh <= 0:
+		return
+	var sea: float = world.sea_level
+	var same_res: bool = (hw == fw and hh == fh)
+	for y in range(hh):
+		var row := y * hw
+		var fy: int = clampi(int(float(y) / float(hh) * float(fh)), 0, fh - 1)
+		var frow := fy * fw
+		for x in range(hw):
+			var hi := row + x
+			var f: float
+			if same_res:
+				f = fb[hi]
+			else:
+				var fx: int = clampi(int(float(x) / float(hw) * float(fw)), 0, fw - 1)
+				f = fb[frow + fx]
+			if f <= 0.02:
+				continue
+			var e: float = hb[hi]
+			if e <= sea:
+				continue
+			var notch := f * f * (3.0 - 2.0 * f)
+			e -= BAKE_RIVER_INCISE * notch
+			if e < 0.0:
+				e = 0.0
+			hb[hi] = e
+	world.height_buffer = hb
+
 
 func _bake_river_sdf(_map: MapData, hex_size: float, bounds: Rect2, res: Vector2i) -> PackedFloat32Array:
 	var W := res.x

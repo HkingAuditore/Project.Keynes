@@ -269,10 +269,10 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_depth_gradient(vec3 col, WaterStageCtx ctx) {
 	vec3 tier_color = water_depth_gradient(ctx.offshore_depth, ctx.elev);
-	float water_fill_w = smoothstep(0.02, 0.86, 0.52 + ctx.offshore_depth * 0.40);
+	float water_fill_w = smoothstep(0.02, 0.92, 0.42 + ctx.offshore_depth * 0.48);
 	col = mix(col, tier_color, water_fill_w);
 	float lagoon_lift = 1.0 - smoothstep(0.08, 0.56, ctx.offshore_depth);
-	col = mix(col, col * vec3(0.89, 1.08, 1.12), lagoon_lift * 0.16);
+	col = mix(col, col * vec3(0.91, 1.05, 1.08), lagoon_lift * 0.11);
 	return col;
 }
 
@@ -848,6 +848,24 @@ SurfaceParams apply_water_overlay_surface(
 	vec3 col = surface.base_color;
 	float coast_sdf = abs(elev - sea_level);
 
+	// 用现有 coast_sdf + 水体地形类型做近岸浅水过渡：B_COAST/KELP/REEF 本身就是近岸语义，
+	// 不能只依赖 elev≈sea_level，否则部分岸边水格会完全没有过渡。
+	if (biome == B_COAST || biome == B_REEF || biome == B_KELP) {
+		float shore_dist_w = 1.0 - smoothstep(0.010, 0.075, coast_sdf);
+		float coast_kind_w = 0.0;
+		if (biome == B_COAST) {
+			coast_kind_w = 0.46;
+		} else if (biome == B_REEF) {
+			coast_kind_w = 0.30;
+		} else if (biome == B_KELP) {
+			coast_kind_w = 0.22;
+		}
+		float shoal_w = clamp(max(shore_dist_w * 0.48, coast_kind_w), 0.0, 1.0);
+		vec3 shoal_col = mix(color_coast_water, color_beach * vec3(0.78, 0.93, 1.02), 0.34);
+		col = mix(col, shoal_col, shoal_w * 0.22);
+		surface.roughness = mix(surface.roughness, 0.58, shoal_w * 0.18);
+	}
+
 	// SEA 2.1：海岸 / 湖岸 halo ───────────────────────────────────────
 	// 60 FPS 优化（2026-06-15）：mobile LOW/MID 跳过 shore_neighborhood 邻域 sample。
 	// LOW (4 sample 上限) 完全无 halo；MID 跳过；HIGH 仅 q=0 4-tap = 4 sample。
@@ -865,8 +883,8 @@ SurfaceParams apply_water_overlay_surface(
 	// [reef 浪花修复 2026-06-25] 把 B_REEF 纳入近岸浪花判断：珊瑚礁多贴岸，原来只覆盖
 	// COAST/OCEAN 会在 reef 水格处出现浪花断裂空隙（用户截图红圈）。reef 浪花用稍弱权重
 	// （礁盘消浪、白沫较碎），与 coast 自然衔接、消除空隙。
-	if (biome == B_COAST || biome == B_OCEAN || biome == B_REEF) {
-		float reef_foam_scale = (biome == B_REEF) ? 0.72 : 1.0;
+	if (biome == B_COAST || biome == B_OCEAN || biome == B_REEF || biome == B_KELP) {
+		float reef_foam_scale = (biome == B_REEF) ? 0.72 : ((biome == B_KELP) ? 0.50 : 1.0);
 		float foam_mask_raw = 1.0 - smoothstep(0.0, 0.045, coast_sdf);
 		if (foam_mask_raw > 0.001) {
 			float local_noise = 0.5;
@@ -885,9 +903,9 @@ SurfaceParams apply_water_overlay_surface(
 			float wind_mag = clamp(length(wind_v), 0.0, 1.4);
 			float wind_widen = 1.0 + wind_mag * 0.18;
 			float foam_mask = 1.0 - smoothstep(0.0, 0.045 * wind_widen, coast_sdf);
-			float foam = smoothstep(0.70, 0.97, wave_stack) * foam_mask * 0.28 * reef_foam_scale;
-			float crest = smoothstep(0.93, 1.0, main_wave) * foam_mask * 0.16 * reef_foam_scale;
-			float foam_w = clamp(foam + crest, 0.0, 0.42);
+			float foam = smoothstep(0.74, 0.98, wave_stack) * foam_mask * 0.16 * reef_foam_scale;
+			float crest = smoothstep(0.95, 1.0, main_wave) * foam_mask * 0.07 * reef_foam_scale;
+			float foam_w = clamp(foam + crest, 0.0, 0.24);
 			col = mix(col, vec3(0.90, 0.95, 0.98), foam_w);
 			surface.roughness = mix(surface.roughness, 0.82, foam_w);
 			surface.ao = mix(surface.ao, 1.0, foam_w);

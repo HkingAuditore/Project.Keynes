@@ -8470,6 +8470,12 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     const float flood_threshold = knobs.has("hydro_flood_threshold") ? std::max(0.01f, float(knobs["hydro_flood_threshold"])) : 2.2f;
     const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
     const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
+    PackedInt32Array neighbor_indices;
+    if (knobs.has("neighbor_indices")) {
+        neighbor_indices = knobs["neighbor_indices"];
+    }
+    const bool has_neighbor_indices = neighbor_indices.size() >= n_cells * 6;
+    const int32_t * const NB = has_neighbor_indices ? neighbor_indices.ptr() : nullptr;
 
     const int32_t * const __restrict HP = _slots.write[sid_hparent].arr_i32.ptr();
     const uint8_t * const __restrict HAS_RIV = _slots.write[sid_has_riv].arr_u8.ptr();
@@ -8504,6 +8510,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     double outlet_total = 0.0;
     int runoff_source_cells = 0;
     int river_cells_processed = 0;
+    int riparian_neighbor_touches = 0;
     int flood_candidate_count = 0;
 
     for (int i = 0; i < n_cells; ++i) {
@@ -8602,6 +8609,19 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
             const float bank_gain = Q30[i] * bank_moisture_gain;
             SOIL[i] = dc_clampf(SOIL[i] + bank_gain, -0.5f, 0.5f);
             WB30[i] = dc_clampf(WB30[i] + bank_gain * 0.5f, -1.0f, 1.0f);
+            if (NB != nullptr && bank_gain > 0.0f) {
+                const float neighbor_gain = bank_gain * 0.45f;
+                const int nb_base = i * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[nb_base + d];
+                    if (ni < 0 || ni >= n_cells || ni == i) continue;
+                    const bool nb_is_water = wf_is_water_terrain(TERR[ni]) || LF[ni] <= 3;
+                    if (nb_is_water || HAS_RIV[ni] != 0) continue;
+                    SOIL[ni] = dc_clampf(SOIL[ni] + neighbor_gain, -0.5f, 0.5f);
+                    WB30[ni] = dc_clampf(WB30[ni] + neighbor_gain * 0.5f, -1.0f, 1.0f);
+                    ++riparian_neighbor_touches;
+                }
+            }
         }
     }
     std::sort(river_q.begin(), river_q.end());
@@ -8634,6 +8654,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     out["processed_cells"] = n_cells;
     out["runoff_source_cells"] = runoff_source_cells;
     out["river_cells_processed"] = river_cells_processed;
+    out["riparian_neighbor_touches"] = riparian_neighbor_touches;
     out["water_budget_error"] = water_in_total > 0.000001 ? std::abs(water_in_total - outlet_total) / water_in_total : 0.0;
     out["river_discharge_p95"] = q_p95;
     out["river_discharge_max"] = q_max;
@@ -9134,10 +9155,18 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
             HSK[i] = hs;
             continue;
         }
+        const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
+        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+            ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM)
+            : -1.0f;
+        const bool upgrade_candidate =
+            nxt_up_for_streak != v_id &&
+            nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
+            nxt_up_score_for_streak >= high_thresh;
         if (vit < low_thresh && target < low_thresh) {
             ls += streak_days;
             hs = 0;
-        } else if (vit > high_thresh && target > high_thresh) {
+        } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
             hs += streak_days;
             ls = 0;
         } else {
@@ -9447,10 +9476,18 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
                 HSK[i] = hs;
                 continue;
             }
+        const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
+        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+            ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM)
+            : -1.0f;
+        const bool upgrade_candidate =
+            nxt_up_for_streak != v_id &&
+            nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
+            nxt_up_score_for_streak >= high_thresh;
             if (vit < low_thresh && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
-            } else if (vit > high_thresh && target > high_thresh) {
+        } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
                 hs += streak_days;
                 ls = 0;
             } else {
@@ -10382,6 +10419,14 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 HSK[i] = hs;
                 continue;
             }
+            const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
+            const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+                ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM)
+                : -1.0f;
+            const bool upgrade_candidate =
+                nxt_up_for_streak != v_id &&
+                nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
+                nxt_up_score_for_streak >= high_thresh;
             if (vegetation_stress_enabled && stress_max > 0.65f && target < high_thresh) {
                 const int stress_days = std::max(streak_days, int(std::round(float(streak_days) * stress_max)));
                 ls += stress_days;
@@ -10389,8 +10434,7 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             } else if (vit < low_thresh && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
-            } else if (vit > high_thresh && target > high_thresh &&
-                       (!vegetation_stress_enabled || regen_score > 0.55f)) {
+            } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
                 hs += streak_days;
                 ls = 0;
             } else {
@@ -13432,6 +13476,73 @@ static inline float pk_compute_temperature(double ny, double elevation) {
     return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation)));
 }
 
+// ─── [P1 hypsometric remap 2026-06-25] 高程分段重映射（治平原/阶梯）─────────────────
+// 在 normalize 之后对 land_h ∈ [0,1]（陆地相对海拔）应用一条单调三段曲线：低地段压平
+// （出真平原）、中段做柔和台地（可辨但非硬 staircase）、高段陡升（拉开起伏、山更挺拔）。
+// 端点固定 0→0、1→1；用 PCHIP（Fritsch–Carlson 单调限幅）保证 C1 连续 + 单调（不倒置高程序
+// → 山仍最高、biome 序不乱）。控制点以 constexpr 落地，可一行调参。
+//   Layer B（仿真高程 E，base pass）以 mix=1.0 施全曲线定结构；
+//   Layer A（bake 期 per-pixel elev_blend）以小 mix 残差重锐化台地边缘（见 run_bake_terrain_index_pass）。
+// 与 map_baker.gd 的 _make_hypso_curve / _hypso_remap_landh 逐位对齐。
+constexpr int    PK_HYPSO_NP = 5;
+// 形态：平原(低斜率压平) → 缓坡上台 → 台地 shelf(最平,可辨) → 高山陡升(拉开起伏)。
+constexpr double PK_HYPSO_XS[PK_HYPSO_NP] = { 0.0, 0.32, 0.52, 0.70, 1.0 };
+constexpr double PK_HYPSO_YS[PK_HYPSO_NP] = { 0.0, 0.34, 0.54, 0.70, 1.0 };
+constexpr double PK_HYPSO_LAYER_A_MIX     = 0.25;  // Layer A(bake)残差强度：0=不叠、1=与B同曲线
+
+struct PkHypsoCurve {
+    double xs[PK_HYPSO_NP], ys[PK_HYPSO_NP], m[PK_HYPSO_NP];
+    // 单调 cubic Hermite 求值（x 在 [0,1]，端点外 clamp 到端点值）。
+    double eval(double x) const {
+        if (x <= xs[0]) return ys[0];
+        if (x >= xs[PK_HYPSO_NP - 1]) return ys[PK_HYPSO_NP - 1];
+        int k = 0;
+        while (k < PK_HYPSO_NP - 2 && x >= xs[k + 1]) ++k;
+        const double h = xs[k + 1] - xs[k];
+        const double t = (x - xs[k]) / h;
+        const double t2 = t * t, t3 = t2 * t;
+        const double h00 =  2.0 * t3 - 3.0 * t2 + 1.0;
+        const double h10 =        t3 - 2.0 * t2 + t;
+        const double h01 = -2.0 * t3 + 3.0 * t2;
+        const double h11 =        t3 -       t2;
+        return h00 * ys[k] + h10 * h * m[k] + h01 * ys[k + 1] + h11 * h * m[k + 1];
+    }
+};
+
+// 由 constexpr 控制点构造曲线切线（Fritsch–Carlson 单调限幅），每 pass 调一次（非热循环）。
+static PkHypsoCurve pk_make_hypso_curve() {
+    PkHypsoCurve c;
+    for (int i = 0; i < PK_HYPSO_NP; ++i) { c.xs[i] = PK_HYPSO_XS[i]; c.ys[i] = PK_HYPSO_YS[i]; }
+    double d[PK_HYPSO_NP - 1];
+    for (int i = 0; i < PK_HYPSO_NP - 1; ++i) d[i] = (c.ys[i + 1] - c.ys[i]) / (c.xs[i + 1] - c.xs[i]);
+    c.m[0] = d[0];
+    c.m[PK_HYPSO_NP - 1] = d[PK_HYPSO_NP - 2];
+    for (int i = 1; i < PK_HYPSO_NP - 1; ++i) {
+        c.m[i] = (d[i - 1] * d[i] <= 0.0) ? 0.0 : (d[i - 1] + d[i]) * 0.5;
+    }
+    for (int i = 0; i < PK_HYPSO_NP - 1; ++i) {
+        if (d[i] == 0.0) { c.m[i] = 0.0; c.m[i + 1] = 0.0; continue; }
+        const double a = c.m[i] / d[i], b = c.m[i + 1] / d[i];
+        const double s = a * a + b * b;
+        if (s > 9.0) {
+            const double tau = 3.0 / std::sqrt(s);
+            c.m[i]     = tau * a * d[i];
+            c.m[i + 1] = tau * b * d[i];
+        }
+    }
+    return c;
+}
+
+// 锚定 sea_level 的便捷封装：仅重塑陆地段（e>sea），below-sea 原样返回；mix<1 时与原值线性混合。
+static inline double pk_hypso_remap_elev(const PkHypsoCurve &c, double e,
+                                         double sea, double inv_above, double above, double mix) {
+    if (e <= sea || inv_above <= 0.0) return e;
+    const double lh  = (e - sea) * inv_above;
+    const double lhr = c.eval(lh);
+    const double mixed = (mix >= 1.0) ? lhr : (lh + (lhr - lh) * mix);
+    return sea + mixed * above;
+}
+
 // SAME_SOURCE: map_generator.gd::_decide_terrain (permanent_only parameter mirrored).
 // 返回值是 TerrainType.TERRAIN 整数：
 //   OCEAN=0 / COAST=1 / SNOW=9 / MOUNTAIN=6 / TUNDRA=8 / HILL=5 /
@@ -14102,6 +14213,64 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         }
     }
 
+    // ── 2.55 [ocean-bathymetry 2026-06-25] 海洋深度自然化（离岸越远越深）─────────────
+    // 现状根因：海洋 raw 的起伏项全乘 dist_field，离岸即趋 0，海底没有任何"拉深"机制；唯一向下的
+    // 力量是极地 edge_falloff → min/max 归一化后只有极地深海、其余全挤在 sea_level 下方(浅海)。此处
+    // 在 normalize 之后、侵蚀/分类之前，对 below-sea 段按"距岸 hex 距离"重塑海底：近岸大陆架(浅)→
+    // 远海深渊(深)，叠低频盆地噪声造海沟/海岭。锚定 sea_level：陆地(E>=sea)完全不动 → 海陆边界/normalize
+    // 的 land 段不破坏。下游 DEEP_OCEAN/OCEAN 分类、距海气候、水面深浅色全部看到自然海底（远海变深蓝、
+    // 浅海大陆架，符合预期）。base pass 已 100% C++（生成 fallback 已删）→ 无 GDScript 镜像。
+    {
+        constexpr double PK_OCEAN_SHELF_CELLS = 1.0;    // 大陆架宽度(hex)：只留 1 圈薄岸，其余迅速跌深
+        constexpr double PK_OCEAN_DEEP_CELLS  = 5.0;    // 到此距离(hex)即达深渊（小→海整体被压下去、深海大）
+        constexpr double PK_OCEAN_SHELF_D01   = 0.12;   // 近岸薄岸基础归一深度（仍勉强保住一圈 COAST 带）
+        constexpr double PK_OCEAN_ABYSS_FRAC  = 0.96;   // 深渊最大深度占 sea_level 的比例
+        constexpr double PK_OCEAN_BASIN_AMP   = 0.30;   // 低频盆地噪声幅度(海沟/海岭，仅深水区生效)
+        const double sea = sea_level;
+        if (sea > 1e-4) {
+            // 多源 BFS：所有陆地格(E>=sea)为源(dist=0)，向海洋格逐 hex 扩散 → 每个海洋格得到距岸距离。
+            std::vector<int32_t> cdist(size_t(n), -1);
+            std::vector<int32_t> bfsq;
+            bfsq.reserve(size_t(n));
+            for (int i = 0; i < n; ++i) {
+                if (double(E[i]) >= sea) { cdist[i] = 0; bfsq.push_back(i); }
+            }
+            size_t head = 0;
+            while (head < bfsq.size()) {
+                const int ci = bfsq[head++];
+                const int cd = cdist[ci];
+                const int cq = Q[ci], cr = R[ci];
+                for (int k = 0; k < 6; ++k) {
+                    const int ni = index_for_qr(cq + DQ[k], cr + DR[k]);
+                    if (ni < 0 || cdist[ni] >= 0) continue;
+                    cdist[ni] = cd + 1;
+                    bfsq.push_back(ni);
+                }
+            }
+            const double max_depth = sea * PK_OCEAN_ABYSS_FRAC;
+            const double inv_ramp = 1.0 / std::max(1.0, PK_OCEAN_DEEP_CELLS - PK_OCEAN_SHELF_CELLS);
+            for (int i = 0; i < n; ++i) {
+                if (double(E[i]) >= sea) continue;       // 陆地不动（锚定 sea_level）
+                const int d = cdist[i];
+                const double dist = (d < 0) ? PK_OCEAN_DEEP_CELLS : double(d);  // 全封闭内海(理论上不会)按最深兜底
+                double ramp = (dist - PK_OCEAN_SHELF_CELLS) * inv_ramp;
+                if (ramp < 0.0) ramp = 0.0; else if (ramp > 1.0) ramp = 1.0;
+                double depth01 = PK_OCEAN_SHELF_D01 + (1.0 - PK_OCEAN_SHELF_D01) * pk_smoothstep(0.0, 1.0, ramp);
+                // 低频盆地噪声(海沟/海岭)：仅在深水(× ramp)出现，避免扰动大陆架与海岸线判定。
+                const int row = i / width;
+                const int col = i % width;
+                const double ny = double(row) * inv_h;
+                const double th = PK_TWO_PI * (double(col) / double(width));
+                const double basin = cyl_noise(height_noise.ptr(), std::cos(th), std::sin(th), ny, 120.0, -571.0, 311.0, 0.0);
+                depth01 += basin * PK_OCEAN_BASIN_AMP * ramp;
+                if (depth01 < 0.0) depth01 = 0.0; else if (depth01 > 1.0) depth01 = 1.0;
+                double e_new = sea - depth01 * max_depth;
+                if (e_new < 0.0) e_new = 0.0; else if (e_new >= sea) e_new = sea - 1e-4;
+                E[i] = float(e_new);
+            }
+        }
+    }
+
     // ── 2.5 水力液滴侵蚀 + 热力坍塌（terrain-overhaul Phase 1）────────────────
     // 移植 map_baker.gd::_hydraulic_erosion 液滴模型，改为作用于 cell 海拔(hex 6 邻域最陡
     // 下降)，置于 normalize 之后、地形决策之前。产出河谷/山脊线/冲积平原，让地貌更连续、河网
@@ -14261,6 +14430,26 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             double e = double(E[i]);
             if (e < 0.0) e = 0.0; else if (e > 1.0) e = 1.0;
             E[i] = float(e);
+        }
+    }
+
+    // ── 2.6 [P1 hypsometric Layer B 2026-06-25] 高程分段重映射（粗，定结构）──────────────
+    // 置于 normalize + 侵蚀(SPL/droplet/thermal)之后、湖判/分类之前：对陆地段(E>sea_level)按
+    // land_h 应用单调三段曲线——低地压平(真平原)、中段台地、高段陡升(拉开起伏)。锚定 sea_level：
+    // below-sea(海洋/湖种)保持不变，海陆边界与 ocean/coast 分类不被破坏；下游湖判/气候/分类全部
+    // 看到重塑后的 E。单调 → 不倒置高程序；置于侵蚀之后 → 保留河谷网络与台地保形。Layer A(bake)
+    // 在此基础上做 per-pixel 小 mix 残差精修。曲线与 map_baker.gd / Layer A 同源。
+    {
+        const PkHypsoCurve hypso = pk_make_hypso_curve();
+        const double sea = sea_level;
+        const double above = 1.0 - sea;
+        const double inv_above = (above > 1e-6) ? (1.0 / above) : 0.0;
+        if (inv_above > 0.0) {
+            for (int i = 0; i < n; ++i) {
+                const double e = double(E[i]);
+                if (e <= sea) continue;  // 水下不动（锚定 sea_level）
+                E[i] = float(pk_hypso_remap_elev(hypso, e, sea, inv_above, above, 1.0));
+            }
         }
     }
 
@@ -15352,6 +15541,40 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (best_lake >= 0) {
             RDOWN[i] = best_lake;
             ++river_lake_snap_touched;
+        }
+    }
+
+    // [river-incision 2026-06-25] #2b 河流切进仿真高程 E（cell 粒度）──────────────────
+    // 现状：河流是独立 SDF overlay，从不进高度场 → 河岸/护岸在地形法线里完全无落差(平地上画线)。
+    // 此处在河网最终化 + lake-snap 之后、河岸生态/floodplain 分类之前，沿河道下切 E + 两侧陆地邻居
+    // 抬升成堤岸：① 给出河岸的宏观高程落差(coarse 法线/relief/height_tex 都看得到)；② 下切后 land_h
+    // 降低 → 下游 floodplain/canyon/delta 分类自洽地在河谷成形(C 选项要的"影响分类")。下切按 RFLOW
+    // 缩放(大河更深)；河道始终保持 land(>= sea_level+余量)不反转成海；堤岸抬 clamp≤1。crisp 像素级
+    // 河岸由 bake 层(#2a，按 flow SDF 逐像素 V 形)叠加。base pass 已 100% C++ → 无 GDScript 镜像。
+    {
+        constexpr double PK_RIVER_INCISE   = 0.018;  // 河道最大下切(E 单位，× RFLOW)
+        constexpr double PK_RIVER_BANK     = 0.008;  // 河岸最大抬升(堤)(E 单位，× RFLOW)
+        constexpr double PK_RIVER_MIN_LAND = 0.004;  // 河道保留在 sea_level 之上的最小余量
+        std::vector<float> e_bank(size_t(n), 0.0f);  // 堤岸抬升累积(读原始 RFLOW 计算，避免顺序依赖)
+        const double floor_e = sea_level + PK_RIVER_MIN_LAND;
+        for (int i : land) {
+            if (RIV[i] == 0 || pk_is_water_terrain(TERR[i])) continue;
+            const double rw = double(RFLOW_OUT[i]);
+            double e = double(E[i]) - PK_RIVER_INCISE * rw;
+            if (e < floor_e) e = floor_e;
+            E[i] = float(e);
+            const float bank = float(PK_RIVER_BANK * rw);
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(i) * 6 + d];
+                if (ni < 0 || RIV[ni] != 0 || pk_is_water_terrain(TERR[ni])) continue;
+                if (bank > e_bank[size_t(ni)]) e_bank[size_t(ni)] = bank;  // 多河相邻取最强
+            }
+        }
+        for (int i = 0; i < n; ++i) {
+            if (e_bank[size_t(i)] <= 0.0f) continue;
+            double e = double(E[i]) + double(e_bank[size_t(i)]);
+            if (e > 1.0) e = 1.0;
+            E[i] = float(e);
         }
     }
 
@@ -17602,7 +17825,11 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         TEMP[i] = temp_now;
         SNOW[i] = snow;
         LAND[i] = lf;
-        VEG[i] = pk_derive_vegetation(TERR[i], lf, temp_now, MOIST[i]);
+        // Land vegetation is advanced by vegetation_dynamics/succession; season
+        // sync only derives water vegetation or initializes bare cells.
+        if (pk_is_water_terrain(TERR[i]) || VEG[i] == 0) {
+            VEG[i] = pk_derive_vegetation(TERR[i], lf, temp_now, MOIST[i]);
+        }
         COV[i] = pk_derive_cover(TERR[i], snow);
         if (snow > 0.5f) ++snow_cells;
     }
@@ -19526,6 +19753,32 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     Dictionary vol = run_bake_volcano_field_pass(knobs);
     const bool vol_ok = !bool(vol.get("fallback", true));
 
+    // [river-carve-bake 2026-06-25] #2a 河流切进 bake height_buffer（per-pixel，crisp 河岸法线）──
+    // river SDF(flow_buffer：河心=1→远岸=0)算完后、bundle 前，按 flow 对 height_final 逐像素刻 V 形河谷。
+    // flow 的 SDF 衰减天然形成河岸坡 → terrain_normal_tex/height_tex/relief 都读得到 crisp 河岸；与 #2b
+    // (仿真 E 的 cell 级河谷+堤岸)叠加成多尺度河岸。仅陆地段(height>sea_level，不刻入海口/水下)；
+    // fused 内 height_final 与 flow 均为 hm_size、索引对齐。GDScript legacy 路径镜像见 _carve_river_into_height。
+    if (riv_ok) {
+        PackedFloat32Array flow = riv.get("out_buf", PackedFloat32Array());
+        const int nf = w * h;
+        if (flow.size() == nf && height_final.size() == nf) {
+            constexpr double PK_BAKE_RIVER_INCISE = 0.045;  // bake 河道最大下切(height 单位，× notch)
+            const double bake_sea = double(knobs.get("sea_level", 0.64));
+            float * const HF = height_final.ptrw();
+            const float * const FL = flow.ptr();
+            for (int i = 0; i < nf; ++i) {
+                const double f = double(FL[i]);
+                if (f <= 0.02) continue;
+                double e = double(HF[i]);
+                if (e <= bake_sea) continue;                    // 不刻入海口/水下
+                const double notch = f * f * (3.0 - 2.0 * f);   // smoothstep 锐化河岸坡
+                e -= PK_BAKE_RIVER_INCISE * notch;
+                if (e < 0.0) e = 0.0;
+                HF[i] = float(e);
+            }
+        }
+    }
+
     auto t_all1 = std::chrono::high_resolution_clock::now();
 
     // ── 合并 bundle ──
@@ -19617,6 +19870,8 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
     const int seed = int(knobs.get("seed", 0));
     const bool dither_enabled = bool(knobs.get("dither_enabled", true));
+    // [P1 hypsometric Layer A 2026-06-25] sea_level 供锚定陆地段残差重映射（caller 传 world.sea_level）。
+    const double sea_level = double(knobs.get("sea_level", 0.64));
 
     // ── cell SoA（by cell.index）+ offset→index 映射 ──
     PackedFloat32Array elev_in = knobs.get("cell_elevation", PackedFloat32Array());
@@ -19821,6 +20076,13 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
         }
     }
 
+    // [P1 hypsometric Layer A 2026-06-25] bake 期 per-pixel 残差塑形：cell E 已被 Layer B(仿真高程)
+    // 重塑，经 barycentric 插值后台地边缘被线性抹软；此处对 elev_blend 以小 mix(PK_HYPSO_LAYER_A_MIX)
+    // 重新施加同曲线，在像素分辨率下重锐化台地/陡坡。仅陆地段、锚定 sea_level，避免与 B 双重压缩过度。
+    const PkHypsoCurve hypso = pk_make_hypso_curve();
+    const double hy_above = 1.0 - sea_level;
+    const double hy_inv_above = (hy_above > 1e-6) ? (1.0 / hy_above) : 0.0;
+
     for (int y = 0; y < H; ++y) {
         const double wy_base = origin_y + (double(y) + 0.5) * step_y;
         const int row = y * W;
@@ -19902,8 +20164,33 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
             const int cover_self = self_idx >= 0 ? int(CV[self_idx]) : 0;
 
             // 6. barycentric 插值
-            const double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
+            double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
             const double moist_blend = moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2;
+
+            // 6.5 [P1 hypsometric Layer A] 锚定 sea_level 的小 mix 残差重映射（重锐化台地边缘，
+            //     不重复整条 Layer B 曲线）；水下/无陆地段时透传。relief 随后叠在重塑基底上。
+            if (hy_inv_above > 0.0 && elev_blend > sea_level) {
+                elev_blend = pk_hypso_remap_elev(hypso, elev_blend, sea_level,
+                                                 hy_inv_above, hy_above, PK_HYPSO_LAYER_A_MIX);
+            }
+
+            // 6.6 [coast-beach 2026-06-25] 近岸海滩坡（治"海岸无法线"）：P1 后内陆平原也贴 sea_level，
+            //     elev 无法区分海岸/内陆，故改用 barycentric 水邻居权重(亚格距水近度)——只有真正与水
+            //     cell 相邻的陆地像素才下压成海滩坡（写进 height → terrain_normal_tex 拿到 crisp 海岸
+            //     法线，与河岸 #2a 同法）。仅陆地 self、止于水线不越过；与 GDScript 镜像同公式。
+            if (terrain_self != TT_OCEAN && terrain_self != TT_COAST && elev_blend > sea_level) {
+                constexpr double PK_COAST_BEACH = 0.05;  // 海滩坡最大下压(height 单位，× smoothstep)
+                double water_w = 0.0;
+                if (nb1_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb1_idx]))) water_w += w_nb1;
+                if (nb2_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb2_idx]))) water_w += w_nb2;
+                if (water_w > 0.0) {
+                    const double beach = water_w * water_w * (3.0 - 2.0 * water_w);  // smoothstep 锐化
+                    double e = elev_blend - PK_COAST_BEACH * beach;
+                    if (e < sea_level) e = sea_level;   // 海滩止于水线
+                    elev_blend = e;
+                }
+            }
+
 
             // 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
             //    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。

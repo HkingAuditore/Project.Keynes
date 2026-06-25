@@ -5827,7 +5827,9 @@ func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> vo
 	var ny: float = _cube_row_norm(cell, cfg)
 	var temp: float = _compute_temperature(ny, cell.elevation)
 	cell.landform = landform
-	cell.vegetation = _derive_vegetation(cell, landform, temp)
+	# 陆地植被类型由 vegetation_dynamics/succession 推进；季节同步只兜底水域或裸地。
+	if _is_water(cell.terrain) or int(cell.vegetation) == int(VegetationType.VEG.NONE):
+		cell.vegetation = _derive_vegetation(cell, landform, temp)
 	cell.cover = _derive_cover(cell, snow_cover)
 
 # 全图同步（生成结束后调用一次，snow_cover=0）
@@ -10490,6 +10492,7 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 	var refresh_ms: float = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
 	var knobs: Dictionary = {
 		"n_cells": map.cell_count(),
+		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
 		"hydro_precip_scale": float(cp_now.hydro_precip_scale),
 		"hydro_snowmelt_scale": float(cp_now.hydro_snowmelt_scale),
 		"hydro_soil_capacity": float(cp_now.hydro_soil_capacity),
@@ -10524,6 +10527,7 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 	_last_weather_breakdown["hydrology_water_budget_error"] = float(res.get("water_budget_error", 0.0))
 	_last_weather_breakdown["hydrology_river_discharge_p95"] = float(res.get("river_discharge_p95", 0.0))
 	_last_weather_breakdown["hydrology_river_discharge_max"] = float(res.get("river_discharge_max", 0.0))
+	_last_weather_breakdown["hydrology_riparian_neighbor_touches"] = int(res.get("riparian_neighbor_touches", 0))
 	_last_weather_breakdown["hydrology_flood_count"] = int(res.get("flood_count", res.get("flood_candidate_count", 0)))
 	return res
 
@@ -11986,15 +11990,25 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			cell._vitality_high_streak = mini(cell._vitality_high_streak + streak_days, 0)
 			continue
 
-		# Streak 计数同时要求历史活力和当前目标都在触发区，过滤短期天气残留。
+		var next_r_for_streak: int = VegetationType.next_in_succession(cell.vegetation, 1)
+		var next_r_score_for_streak: float = -1.0
+		if next_r_for_streak >= 0 and next_r_for_streak != int(cell.vegetation):
+			next_r_score_for_streak = VegetationType.climate_compat_score(next_r_for_streak, temp, plant_water)
+		var upgrade_candidate: bool = next_r_for_streak >= 0 \
+				and next_r_for_streak != int(cell.vegetation) \
+				and next_r_score_for_streak >= compat + float(cp_vd.succession_min_compat_gain) \
+				and next_r_score_for_streak >= float(cp_vd.vitality_high_threshold)
+
+		# Streak 计数必须对应真实演替候选，避免“当前植被很健康”却倒计时升级失败。
 		if stress_max > 0.65 and target < _c().vitality_high_threshold:
 			cell._vitality_low_streak += maxi(streak_days, int(round(float(streak_days) * stress_max)))
 			cell._vitality_high_streak = 0
 		elif cell.vegetation_vitality < _c().vitality_low_threshold and target < _c().vitality_low_threshold:
 			cell._vitality_low_streak += streak_days
 			cell._vitality_high_streak = 0
-		elif cell.vegetation_vitality > _c().vitality_high_threshold \
-				and target > _c().vitality_high_threshold and regen_score > 0.55:
+		elif upgrade_candidate \
+				and cell.vegetation_vitality > _c().vitality_low_threshold \
+				and target > _c().vitality_low_threshold:
 			cell._vitality_high_streak += streak_days
 			cell._vitality_low_streak = 0
 		else:

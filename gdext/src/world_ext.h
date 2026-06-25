@@ -523,6 +523,8 @@ public:
     double run_transpiration_pass(godot::Dictionary knobs);
 
     // Runtime hydrology: daily local water balance + parent-graph routing.
+    // Optional knob: neighbor_indices (n_cells * 6) lets river discharge add a
+    // small riparian soil/water-balance boost to adjacent land cells.
     godot::Dictionary run_runtime_hydrology_pass(const godot::Dictionary &knobs);
 
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
