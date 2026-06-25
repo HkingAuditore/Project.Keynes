@@ -307,9 +307,20 @@ const WARP_HIGH_AMP_RATIO := 0.55
 
 # ─── per-biome 详节 noise 强度 ────────────────────────────────────────────
 const DETAIL_FREQ_BASE := 0.8
-const MOUNTAIN_RIDGE_AMP := 0.26  # 山脉主脊振幅：更强的峰谷起伏，避免平顶台地
-const HILL_AMP := 0.06            # 丘陵微起伏：让中海拔更有“坡面”感
-const PLAIN_AMP := 0.024          # 平原微起伏：轻抬全图的地形呼吸感
+# [P0 地形 relief 重做 2026-06-25] 各向异性脊线 + 连续振幅(relief 门控) + 山脊/谷不对称 +
+#   气候耦合；取代旧的"按 terrain 硬分档各向同性 ridged 噪声"。与 world_ext.cpp 逐位对齐。
+const RELIEF_AMP := 0.26       # 主起伏振幅（量级对齐旧 MOUNTAIN_RIDGE_AMP，与下游 erosion 同档）
+const RELIEF_LO := 0.020       # relief 门控下限：below→趋平（平原视觉真平）
+const RELIEF_HI := 0.150       # relief 门控上限：above→满振幅
+const RIDGE_SMEAR_HEX := 0.65  # 沿脊线 3-tap smear 步长（hex 单位）
+const K_CREST := 1.7           # 山脊尖化指数（>1：尖脊 + 缓谷）
+const VALLEY_BIAS := 0.35      # 谷底负偏置（河道落低处，与河流 SDF 自洽）
+const CRAG_AMP := 0.05         # 高频岩屑振幅
+const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
+
+# [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
+const TERRAIN_NORMAL_COARSE_RADIUS := 4   # 宽半径（texel）：越大越平滑掉高频、山脉走向越干净
+const TERRAIN_NORMAL_SLOPE_GAIN := 8.0    # 烘焙参考垂直增益（与 shader hillshade_slope_gain 默认对齐）
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
 const EROSION_DROPS := 6000
@@ -790,6 +801,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	stage_progress.emit("encode", 0.88)
 	t = Time.get_ticks_msec()
 	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size, _world_ext)
+	# [terrain-normal-bake 2026-06-25] 烘焙总体地形法线（宽半径梯度 → RG8）。地形静态，运行期
+	# shader 直接 1 次采样拿宏观山脉走向，细节法线运行期按 biome/性能档叠（见 hillshade_tod）。
+	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
+		world.height_buffer, world.hm_size,
+		TERRAIN_NORMAL_COARSE_RADIUS, TERRAIN_NORMAL_SLOPE_GAIN, true, _world_ext)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map
@@ -3759,6 +3775,51 @@ func _bake_height_biome_moisture(
 	# 用 Array 收集再 append_array 一次性 memcpy（比逐个 push_back 快一个数量级）。
 	var cell_pixel_buckets: Dictionary = {}  # HexCell → Array[int]
 
+	# ── [P0] per-cell 高程梯度 + 局地起伏预计算（六邻居有限差分；与 C++ run_bake_terrain_index_pass 对齐）──
+	#    grad 方向供各向异性脊线（沿等高线方向拉长山脊），relief（邻格最大高差）供连续振幅门控。
+	var n_cells_g := map.cell_count()
+	var cgx := PackedFloat32Array(); cgx.resize(n_cells_g)
+	var cgy := PackedFloat32Array(); cgy.resize(n_cells_g)
+	var crel := PackedFloat32Array(); crel.resize(n_cells_g)
+	# 邻居方向顺序与 C++ NDQ/NDR 一致：E, SE, SW, W, NW, NE（梯度为求和，顺序无关）
+	var _grad_dirs: Array = [
+		Vector3i(1, 0, -1), Vector3i(0, 1, -1), Vector3i(-1, 1, 0),
+		Vector3i(-1, 0, 1), Vector3i(0, -1, 1), Vector3i(1, -1, 0)]
+	for gcell in map.all_cells():
+		if gcell == null:
+			continue
+		var gci: int = int(gcell.index)
+		if gci < 0 or gci >= n_cells_g:
+			continue
+		var g_e0: float = gcell.elevation
+		var g_s0: Vector2 = HexUtils.cube_to_world(gcell.q, gcell.r, hex_size)
+		var g_sxx := 0.0; var g_sxy := 0.0; var g_syy := 0.0; var g_sxz := 0.0; var g_syz := 0.0
+		var g_relief := 0.0
+		for gi in range(6):
+			var gdir: Vector3i = _grad_dirs[gi]
+			var g_nqx: int = gcell.q + gdir.x
+			var g_nqy: int = gcell.r + gdir.y
+			var g_ncube := Vector3i(g_nqx, g_nqy, -g_nqx - g_nqy)
+			var gnb: HexCell = _get_wrapped_cell_by_cube(map, g_ncube)
+			if gnb == null:
+				continue
+			var g_dz: float = gnb.elevation - g_e0
+			# 用 unwrapped cube 世界坐标算局部偏移（接缝处仍连续，梯度方向正确）
+			var g_nw: Vector2 = HexUtils.cube_to_world(g_nqx, g_nqy, hex_size)
+			var g_dx := g_nw.x - g_s0.x
+			var g_dy := g_nw.y - g_s0.y
+			g_sxx += g_dx * g_dx; g_sxy += g_dx * g_dy; g_syy += g_dy * g_dy
+			g_sxz += g_dx * g_dz; g_syz += g_dy * g_dz
+			var g_adz := absf(g_dz)
+			if g_adz > g_relief:
+				g_relief = g_adz
+		var g_det := g_sxx * g_syy - g_sxy * g_sxy   # 2×2 最小二乘解世界空间梯度
+		if g_det > 1e-12 or g_det < -1e-12:
+			var g_inv := 1.0 / g_det
+			cgx[gci] = float((g_syy * g_sxz - g_sxy * g_syz) * g_inv)
+			cgy[gci] = float((g_sxx * g_syz - g_sxy * g_sxz) * g_inv)
+		crel[gci] = float(g_relief)
+
 	for y in range(H):
 		var wy_base := origin.y + (float(y) + 0.5) * step_y
 		var row := y * W
@@ -3818,24 +3879,49 @@ func _bake_height_biome_moisture(
 			var elev_blend := elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2
 			var moist_blend := moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2
 
-			# 7. 在陆地上叠 per-biome detail noise
+			# 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
+			#    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。
 			var elev_final := elev_blend
 			if terrain_self != int(TerrainType.TERRAIN.OCEAN) and terrain_self != int(TerrainType.TERRAIN.COAST):
-				var d := _cyl_noise(_detail_noise, wx_base, wy_base, wrap_period_x, hex_size) * 0.5  # [-0.5, 0.5] (rough)
-				if terrain_self == int(TerrainType.TERRAIN.MOUNTAIN):
-					var ridge := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
-					var ridge_relief := ridge * 1.25 - 0.50
-					# [山体去点阵 2026-06-25] crag 降频 1.55→1.05、权重 0.25→0.10：
-					# 弱化高频岩屑起伏，主起伏交给更宽的 ridge_relief，hillshade 不再点阵。
-					var crag := _cyl_noise(_detail_noise, wx_base * 1.05 + 17.9, wy_base * 1.05 - 11.3, wrap_period_x, hex_size) * 0.5
-					elev_final = elev_blend + ridge_relief * MOUNTAIN_RIDGE_AMP + crag * MOUNTAIN_RIDGE_AMP * 0.10 + d * 0.40 * HILL_AMP
-				elif terrain_self == int(TerrainType.TERRAIN.HILL):
-					var hill := (_cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size) + 1.0) * 0.5
-					var hill_relief := hill * 1.15 - 0.42
-					elev_final = elev_blend + d * HILL_AMP * 0.9 + hill_relief * HILL_AMP * 0.8
-				else:
-					var plain_macro := _cyl_noise(_detail_noise, wx_base * 0.45, wy_base * 0.45, wrap_period_x, hex_size) * 0.5
-					elev_final = elev_blend + d * PLAIN_AMP + plain_macro * PLAIN_AMP * 0.70
+				# 插值 per-cell 梯度方向 + 局地起伏（复用 self/nb1/nb2 barycentric 权重）
+				var gx := 0.0
+				var gy := 0.0
+				var relief_p := 0.0
+				if self_cell != null:
+					gx += cgx[self_cell.index] * w_self
+					gy += cgy[self_cell.index] * w_self
+					relief_p += crel[self_cell.index] * w_self
+				if nb1_cell != null:
+					gx += cgx[nb1_cell.index] * w_nb1
+					gy += cgy[nb1_cell.index] * w_nb1
+					relief_p += crel[nb1_cell.index] * w_nb1
+				if nb2_cell != null:
+					gx += cgx[nb2_cell.index] * w_nb2
+					gy += cgy[nb2_cell.index] * w_nb2
+					relief_p += crel[nb2_cell.index] * w_nb2
+				# 连续振幅门控：relief 低→趋平（真平原），高→满振幅（无 terrain 硬分档）
+				var gate := smoothstep(RELIEF_LO, RELIEF_HI, relief_p)
+				# 脊线方向 = 梯度的垂直方向（沿等高线）
+				var glen := sqrt(gx * gx + gy * gy)
+				var tx := 1.0
+				var ty := 0.0
+				if glen > 1e-9:
+					tx = -gy / glen
+					ty = gx / glen
+				# 沿脊线 3-tap smear（每 tap 经 _cyl_noise，圆柱接缝安全）→ 沿等高线方向拉长山脊
+				var smear_l := hex_size * RIDGE_SMEAR_HEX
+				var r0 := _cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size)
+				var rA := _cyl_noise(_ridge_noise, wx_base + tx * smear_l, wy_base + ty * smear_l, wrap_period_x, hex_size)
+				var rB := _cyl_noise(_ridge_noise, wx_base - tx * smear_l, wy_base - ty * smear_l, wrap_period_x, hex_size)
+				var smeared := (r0 * 2.0 + rA + rB) * 0.25
+				var rr := r0 + (smeared - r0) * gate  # 低起伏→各向同性，高起伏→沿脊
+				var ridge01 := clampf((rr + 1.0) * 0.5, 0.0, 1.0)
+				var shaped := pow(ridge01, K_CREST)   # 尖脊 + 缓谷
+				var amp := RELIEF_AMP * gate
+				# 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
+				var dryness := 1.0 - moist_blend
+				var crag := _cyl_noise(_detail_noise, wx_base * CRAG_FREQ_MUL + 17.9, wy_base * CRAG_FREQ_MUL - 11.3, wrap_period_x, hex_size) * 0.5
+				elev_final = elev_blend + (shaped - VALLEY_BIAS) * amp + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate
 
 			var idx := row + x
 			height_buf[idx] = clampf(elev_final, 0.0, 1.0)

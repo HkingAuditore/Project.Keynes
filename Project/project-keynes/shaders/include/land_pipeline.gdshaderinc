@@ -114,7 +114,7 @@ SurfaceParams compute_land_base_surface(
 	}
 
 	// LAND 1.5：Normal / roughness / AO / metallic
-	vec3 normal = compute_terrain_normal(uv, visual_quality);
+	vec3 normal = compute_terrain_normal(uv, visual_quality, biome);
 	float roughness = biome_roughness(biome);
 	float ao = mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
 	float metallic = DEFAULT_METALLIC_LAND;

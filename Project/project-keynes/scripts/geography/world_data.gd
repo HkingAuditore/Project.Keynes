@@ -106,6 +106,10 @@ var flow_tex: ImageTexture
 # 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
 # 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
 var volcano_field_tex: ImageTexture
+# [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny，hm_size）。
+# 地形静态 → 运行期 shader 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap；细节法线运行期按
+# biome/性能档叠。bake_world 烘焙一次，之后不变；与 height_tex 共用 uv。
+var terrain_normal_tex: ImageTexture
 # 兼容旧调试/数据通道的海冰 R8 纹理。主地图海冰视觉不采样它；
 # sea_ice_atlas_upload 默认不再注册。
 var sea_ice_tex: ImageTexture

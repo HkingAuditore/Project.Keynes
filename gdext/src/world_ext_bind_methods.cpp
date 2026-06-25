@@ -292,6 +292,9 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("encode_bake_height_tex_data", "knobs"),
         &DCWorldExt::encode_bake_height_tex_data);
     ClassDB::bind_method(
+        D_METHOD("encode_bake_terrain_normal_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_terrain_normal_tex_data);
+    ClassDB::bind_method(
         D_METHOD("encode_bake_r8_tex_data", "knobs"),
         &DCWorldExt::encode_bake_r8_tex_data);
     ClassDB::bind_method(

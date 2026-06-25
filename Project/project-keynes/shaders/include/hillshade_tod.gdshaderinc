@@ -9,7 +9,8 @@
 //     - get_sun_dir / get_sky_tint / get_day_brightness / apply_day_night：
 //       用 day_phase ∈ [0,1] 直接派生太阳位置 + 天色 tint + 整体亮度。
 //   【路径 C — 任务 3 TOD 驱动的 PBR（主路径，day_night_enabled=true）】
-//     - compute_terrain_normal(uv, quality)：从 height_tex Sobel/4-tap 算 N。
+//     - compute_terrain_normal(uv, quality, biome)：粗法线(烘焙 terrain_normal_tex / 宽半径回退)
+//       + 运行期细节法线(按 biome/性能档)，治"细节过强密密麻麻、山脉走向不清晰"。
 //     - biome_roughness(biome)：粗糙度查表。
 //     - apply_tod_pbr(albedo, uv, biome, quality)：NdotL + Blinn-Phong + 夜间
 //       压暗 + 曝光 + Reinhard tonemap。
@@ -129,46 +130,76 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 //
 // 返回：PBR 染色后的 RGB（caller 负责 clamp）。
 // 从 height_tex 采样得到 tangent-space 法线（Sobel 3x3 或 4-tap 中心差分）
-vec3 compute_terrain_normal(vec2 uv, int quality) {
+// [terrain-normal 分层 2026-06-25] per-biome 细节法线因子：山地/方山满量，丘陵/荒地次之，
+//   森林/草本/沙漠中低，平原/湿地系趋零（"平原真平、不密密麻麻"）。纯 ALU 查表，零额外采样。
+float terrain_detail_factor(int biome) {
+	// 裸岩碎石：最需要细节凹凸（强调山脊/岩屑）
+	if (biome == B_MOUNTAIN || biome == B_MESA) return 1.0;
+	if (biome == B_HILL || biome == B_BADLANDS) return 0.80;
+	// 苔原/寒漠/沙（沙丘有些起伏）：中低
+	if (biome == B_TUNDRA) return 0.45;
+	if (biome == B_DESERT || biome == B_SALT_FLAT || biome == B_COLD_DESERT) return 0.38;
+	// 雪/冰：少量（雪被掩盖微地形）
+	if (biome == B_SNOW || biome == B_GLACIER || biome == B_SEA_ICE) return 0.35;
+	// 林地：冠层掩盖微地形，给少量
+	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) return 0.45;
+	// 草本/灌丛：低
+	if (biome == B_GRASSLAND || biome == B_SAVANNA || biome == B_STEPPE
+			|| biome == B_SHRUBLAND || biome == B_CHAPARRAL) return 0.30;
+	// 平原 / 湿地 / 冲积 / 绿洲：趋零（真平）
+	if (biome == B_PLAIN || biome == B_SWAMP || biome == B_MOOR
+			|| biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_OASIS) return 0.12;
+	return 0.30;
+}
+
+// 三层法线合成（需求：① 粗法线给走向、② 细节按地形叠、③ 低端机不上细节）：
+//   1. 粗法线 N_coarse：优先用生成期烘焙的 terrain_normal_tex（1 fetch）拿宏观山脉走向；
+//      未绑定（旧存档/未 rebake）时回退到运行期宽半径(hillshade_coarse_radius) 4-tap。
+//   2. 细节法线：运行期 1-texel 中心差分（4 fetch），按 quality + biome 门控，叠到粗法线上。
+//   3. 性能分档：MOBILE_QUALITY_LOW/MID、desktop visual_quality==0 → 仅粗法线，跳过细节。
+vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 	vec2 texel = 1.0 / hm_resolution;
-	// 60 FPS 优化（2026-06-15）：mobile 三档变体
-	// LOW: 完全平面法线（0 sample）→ 无 hillshade 立体感
-	// MID: 2-tap 水平 + 0 垂直简化法线（2 sample）→ 仅 X 方向阴影
-	// HIGH: 4-tap 完整中心差分（4 sample）= 桌面 q=0 同
-#ifdef MOBILE_QUALITY_LOW
-	return vec3(0.0, 0.0, 1.0);
-#elif defined(MOBILE_QUALITY_MID)
-	float l0 = decode_height_rg8(uv - vec2(texel.x, 0.0));
-	float r0 = decode_height_rg8(uv + vec2(texel.x, 0.0));
-	float dx0 = (r0 - l0) * hillshade_slope_gain;
-	return normalize(vec3(-dx0, 0.0, 1.0));
-#else
-	if (quality <= 2) {
-		// 默认桌面质量也走 4-tap。Sobel 8-tap 保留给未来更高质量档。
-		float l0 = decode_height_rg8(uv - vec2(texel.x, 0.0));
-		float r0 = decode_height_rg8(uv + vec2(texel.x, 0.0));
-		float u0 = decode_height_rg8(uv - vec2(0.0, texel.y));
-		float d0 = decode_height_rg8(uv + vec2(0.0, texel.y));
-		float dx0 = (r0 - l0) * hillshade_slope_gain;
-		float dy0 = (d0 - u0) * hillshade_slope_gain;
-		return normalize(vec3(-dx0, -dy0, 1.0));
+
+	// ── 1. 粗法线（宏观走向）──────────────────────────────────────────
+	vec3 N_coarse;
+	if (terrain_normal_tex_bound) {
+		vec2 nxy = texture(terrain_normal_tex, wrap_map_uv(uv)).rg * 2.0 - 1.0;
+		nxy *= hillshade_coarse_strength;                       // 运行期再缩放走向强度
+		float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
+		N_coarse = vec3(nxy, nz);
+	} else {
+		float cr = hillshade_coarse_radius;
+		float lc = decode_height_rg8(uv - vec2(texel.x * cr, 0.0));
+		float rc = decode_height_rg8(uv + vec2(texel.x * cr, 0.0));
+		float uc = decode_height_rg8(uv - vec2(0.0, texel.y * cr));
+		float dc = decode_height_rg8(uv + vec2(0.0, texel.y * cr));
+		float g = hillshade_slope_gain / max(1.0, cr);           // 宽差分 → 单位坡度
+		N_coarse = vec3(-(rc - lc) * g, -(dc - uc) * g, 1.0);
 	}
-	// 高质：Sobel 3x3（8 采样，方向性更稳）
-	float hLU = decode_height_rg8(uv + vec2(-texel.x, -texel.y));
-	float hU2 = decode_height_rg8(uv + vec2( 0.0,     -texel.y));
-	float hRU = decode_height_rg8(uv + vec2( texel.x, -texel.y));
-	float hL2 = decode_height_rg8(uv + vec2(-texel.x,  0.0));
-	float hR2 = decode_height_rg8(uv + vec2( texel.x,  0.0));
-	float hLD = decode_height_rg8(uv + vec2(-texel.x,  texel.y));
-	float hD2 = decode_height_rg8(uv + vec2( 0.0,      texel.y));
-	float hRD = decode_height_rg8(uv + vec2( texel.x,  texel.y));
-	// Sobel X：[[-1,0,1],[-2,0,2],[-1,0,1]] / 8；Y 
-	float gx = ((hRU + 2.0 * hR2 + hRD) - (hLU + 2.0 * hL2 + hLD)) * 0.125;
-	float gy = ((hLD + 2.0 * hD2 + hRD) - (hLU + 2.0 * hU2 + hRU)) * 0.125;
-	gx *= hillshade_slope_gain;
-	gy *= hillshade_slope_gain;
-	return normalize(vec3(-gx, -gy, 1.0));
+
+	// ── 2. 细节量：性能分档 + biome 门控 ────────────────────────────────
+	float detail_amt = 0.0;
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	detail_amt = 0.0;                                            // 低/中端机：仅粗法线
+#else
+	if (hillshade_detail_enabled && quality >= 1) {
+		float qf = (quality >= 2) ? 1.0 : 0.5;                  // q==1 半量、q>=2 全量
+		detail_amt = hillshade_detail_strength * terrain_detail_factor(biome) * qf;
+	}
 #endif
+	if (detail_amt <= 0.0) {
+		return normalize(N_coarse);
+	}
+
+	// ── 3. 细节法线（局部凹凸）：1-texel 中心差分，作切向扰动叠到粗法线上 ──
+	float l1 = decode_height_rg8(uv - vec2(texel.x, 0.0));
+	float r1 = decode_height_rg8(uv + vec2(texel.x, 0.0));
+	float u1 = decode_height_rg8(uv - vec2(0.0, texel.y));
+	float d1 = decode_height_rg8(uv + vec2(0.0, texel.y));
+	float dx = (r1 - l1) * hillshade_slope_gain;
+	float dy = (d1 - u1) * hillshade_slope_gain;
+	vec3 N = N_coarse + vec3(-dx, -dy, 0.0) * detail_amt;
+	return normalize(N);
 }
 
 // 按 biome 查表粗糙度（需求 3.3）：雪/冰保持高反差、山地/丘陵/荒地更粗，避免像涂层
@@ -212,7 +243,7 @@ float biome_roughness(int biome) {
 // 主入口：TOD 驱动的 PBR。is_water 时让上层直接跳过。
 vec3 apply_tod_pbr(vec3 albedo, vec2 uv, int biome, int quality) {
 	// 1. 法线
-	vec3 N = compute_terrain_normal(uv, quality);
+	vec3 N = compute_terrain_normal(uv, quality, biome);
 	float slope_mag = length(vec2(N.x, N.y));
 
 	vec3 L = normalize(tod_sun_dir);

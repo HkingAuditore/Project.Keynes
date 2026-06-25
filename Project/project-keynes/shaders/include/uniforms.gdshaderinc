@@ -29,6 +29,11 @@
 // scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
 // moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
+// [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny ∈ [0,1] 映射 [-1,1]，
+// nz 在 shader 重建）。地形静态 → 运行期 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap。
+// terrain_normal_tex_bound=false（未烘焙/旧存档）时 compute_terrain_normal 回退到运行期宽半径差分。
+uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
+uniform bool terrain_normal_tex_bound = false;
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 // [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
 // 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
@@ -339,6 +344,13 @@ uniform float hillshade_strength : hint_range(0.0, 1.0) = 0.45;
 uniform float hillshade_slope_gain : hint_range(0.5, 24.0) = 8.0;
 uniform vec2  hillshade_dir      = vec2(-0.55, -0.55);
 uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
+// [terrain-normal 分层 2026-06-25] 粗法线（烘焙/宽半径）+ 细节法线（运行期，按 biome/性能档）分层控制。
+//   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
+//   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
+uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
+uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.6;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
+uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
+uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.5;  // 细节法线全局强度（再乘 biome 因子）
 
 
 // =========================================================================

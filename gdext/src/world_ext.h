@@ -892,6 +892,7 @@ public:
     // GDScript 仍负责 Image/ImageTexture 创建与 update；C++ 只做逐像素 byte payload。
     // 返回统一 Dictionary：{ fallback, reason, path, elapsed_ms, data, width, height, format }。
     godot::Dictionary encode_bake_height_tex_data(godot::Dictionary knobs);      // F32 [0,1] → RG8
+    godot::Dictionary encode_bake_terrain_normal_tex_data(godot::Dictionary knobs); // F32 height → RG8 粗法线(nx,ny)
     godot::Dictionary encode_bake_r8_tex_data(godot::Dictionary knobs);          // U8 → L8，default_byte 可选
     godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
     godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
