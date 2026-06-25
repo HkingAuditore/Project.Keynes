@@ -277,10 +277,10 @@ vec2 cumulus_advect(vec2 wp, vec2 axis) {
 }
 
 float cloud_density_alpha(float density) {
-	// 拉宽 alpha 曲线，避免中高密度过早饱和；内部密度差会保留到最终透明度。
-	float soft = smoothstep(0.012, 0.96, density);
-	float core = smoothstep(0.52, 1.00, density);
-	return clamp(pow(soft, 1.16) * 0.84 + core * 0.12, 0.0, 1.0);
+	// 可见度与遮挡度解耦：薄云更早显形，厚云不再把 alpha 顶满挡住地块。
+	float soft = smoothstep(0.010, 0.62, density);
+	float core = smoothstep(0.45, 1.00, density);
+	return clamp(pow(soft, 0.88) * 0.58 + core * 0.20, 0.0, 0.78);
 }
 
 // billboard 白云着色：以亮白为主，迎太阳侧更亮、背光侧 / 厚核略压暗形成体积感，薄边银边。
@@ -306,7 +306,7 @@ vec4 apply_cloud_layer(vec3 base_col, float base_alpha, CloudLayerSample layer, 
 	float density = layer.density;
 	float shaded_density = density * (1.0 - clamp(occlusion, 0.0, 1.0) * 0.28);
 	float layer_alpha = clamp(cloud_density_alpha(shaded_density) * alpha_scale * weather_strength, 0.0, 0.96);
-	vec3 density_col = layer_col * mix(1.06, 0.80, density);
+	vec3 density_col = layer_col * mix(1.08, 0.90, density);
 	float blend_w = clamp(layer_alpha * (0.60 + layer.edge * 0.20 + density * 0.30), 0.0, 1.0);
 	vec3 col = mix(base_col, density_col, blend_w);
 	float alpha = clamp(base_alpha + layer_alpha * (1.0 - base_alpha * 0.22), 0.0, 0.97);
@@ -392,12 +392,12 @@ FrontField empty_field() {
 float precip_cloud_bias(float precip) {
 	// 用连续降水量替代离散 weather_type 增强云量，避免类型跳变造成云层频闪。
 	float p = smoothstep(0.04, 0.72, precip);
-	return mix(1.0, 1.22, p);
+	return mix(1.0, 1.12, p);
 }
 
 float precip_cloud_opacity_bias(float precip) {
 	float p = smoothstep(0.04, 0.72, precip);
-	return mix(1.0, 1.16, p);
+	return mix(1.0, 1.04, p);
 }
 
 
@@ -645,12 +645,12 @@ void fragment() {
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
 		col *= mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
-		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.78, 0.70 * precip_alpha_factor));
+		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.62, 0.58 * precip_alpha_factor));
 
 		// 云下假阴影 = 直接(云正下方,薄) + 偏移投影(沿背光方向偏移的云密度)。整体调弱：薄薄一层暗淡，
 		// 不再挡住下方地表。偏移投影即使本像素头顶无云也能落影 → 阴影与云分离、营造悬浮感；夜侧消隐。
-		float direct_shadow = w.shadow * (0.06 + cloud_core * 0.03);
-		float ground_shadow = clamp((direct_shadow + offset_shadow * 0.20) * weather_strength * precip_alpha_factor * ed.local_day, 0.0, 0.18);
+		float direct_shadow = w.shadow * (0.04 + cloud_core * 0.02);
+		float ground_shadow = clamp((direct_shadow + offset_shadow * 0.14) * weather_strength * precip_alpha_factor * ed.local_day, 0.0, 0.10);
 
 		// 阴影色用偏中性的暗调（非接近纯黑），即便叠满也只是压暗而不遮挡地表。
 		col = mix(vec3(0.20, 0.22, 0.26), col, alpha / max(alpha + ground_shadow, 0.001));
@@ -669,16 +669,16 @@ void fragment() {
 		if ((flags & FLAG_RAIN_STREAK) != 0 && w.precip > 0.001) {
 			float rain = rain_field(wp, w.axis, w.precip);
 			vec3 rain_col = vec3(0.52, 0.62, 0.74);
-			col = mix(col, rain_col, clamp(rain * 0.50, 0.0, 0.70));
-			alpha = clamp(alpha + rain * 0.18 * weather_strength, 0.0, 0.82);
-			col *= mix(1.0, 0.72, rain * 0.68);
+			col = mix(col, rain_col, clamp(rain * 0.34, 0.0, 0.52));
+			alpha = clamp(alpha + rain * 0.10 * weather_strength, 0.0, 0.70);
+			col *= mix(1.0, 0.86, rain * 0.55);
 		}
 
 		// 降雪。
 		if ((flags & FLAG_SNOW_GRAIN) != 0 && w.precip > 0.001) {
 			float snow = snow_field(wp, w.axis, w.precip);
 			col = mix(col, vec3(0.88, 0.94, 1.0), snow * 0.66);
-			alpha = clamp(alpha + snow * 0.38 * weather_strength, 0.0, 0.94);
+			alpha = clamp(alpha + snow * 0.30 * weather_strength, 0.0, 0.84);
 		}
 
 		// 高云（卷云，最上层薄纱）。
@@ -691,6 +691,7 @@ void fragment() {
 			alpha = min(cirrus_comp.a, 0.94);
 		}
 
-		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), alpha);
+		// 多层天气叠加时保留地块可读性，云的存在感交给形状/亮暗对比承担。
+		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), min(alpha, 0.82));
 	}
 }

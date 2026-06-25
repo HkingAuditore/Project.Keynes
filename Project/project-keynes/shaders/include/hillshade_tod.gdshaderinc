@@ -185,6 +185,16 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 	if (hillshade_detail_enabled && quality >= 1) {
 		float qf = (quality >= 2) ? 1.0 : 0.5;                  // q==1 半量、q>=2 全量
 		detail_amt = hillshade_detail_strength * terrain_detail_factor(biome) * qf;
+		// [shore-normal 2026-06-25] 近岸滩坡：近海陆地(coast_sdf 窄带)单独解门控，让海岸读出滩坡起伏。
+		//   biome 是 TerrainType id（B_COAST=1 是水体走 water_pipeline，不入此函数）；近岸陆地多为 B_PLAIN，
+		//   其 terrain_detail_factor≈0.12 被压平 → 这里用高程贴海平面的程度补一份 detail，仅薄薄一带、不碰内陆平原。
+		if (shore_detail_strength > 0.0) {
+			float eh = decode_height_rg8(uv);                   // 1 fetch：本像素高程
+			if (eh > sea_level) {
+				float band = 1.0 - smoothstep(0.0, shore_band_height, eh - sea_level);  // 贴岸→1，内陆→0
+				detail_amt = max(detail_amt, band * shore_detail_strength * qf);
+			}
+		}
 	}
 #endif
 	if (detail_amt <= 0.0) {
