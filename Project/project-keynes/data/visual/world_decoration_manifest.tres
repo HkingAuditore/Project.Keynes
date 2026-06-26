@@ -12,7 +12,17 @@
 [ext_resource type="Resource" uid="uid://dr0ck0veg0rk0" path="res://data/visual/rock_default.tres" id="10"]
 [ext_resource type="Resource" uid="uid://dsn0w0veg0sm0" path="res://data/visual/snow_mound_default.tres" id="11"]
 [ext_resource type="Resource" uid="uid://dde4d0veg0ds0" path="res://data/visual/dead_snag_default.tres" id="12"]
+[ext_resource type="Resource" uid="uid://dc10udf0rtr0" path="res://data/visual/cloud_forest_tree_default.tres" id="13"]
+[ext_resource type="Resource" uid="uid://dm0ns00ntr0" path="res://data/visual/monsoon_tree_default.tres" id="14"]
+[ext_resource type="Resource" uid="uid://dp34tb0gtf0" path="res://data/visual/peat_bog_tuft_default.tres" id="15"]
+[ext_resource type="Resource" uid="uid://dm4ngr00tr0" path="res://data/visual/mangrove_root_default.tres" id="16"]
+[ext_resource type="Resource" uid="uid://dtundl1chn0" path="res://data/visual/tundra_lichen_default.tres" id="17"]
+[ext_resource type="Resource" uid="uid://dscr33r0ck0" path="res://data/visual/scree_rock_default.tres" id="18"]
+[ext_resource type="Resource" uid="uid://dfa113n10g0" path="res://data/visual/fallen_log_default.tres" id="19"]
+[ext_resource type="Resource" uid="uid://ds34gr45500" path="res://data/visual/seagrass_default.tres" id="20"]
+[ext_resource type="Resource" uid="uid://dk31pfr0nd0" path="res://data/visual/kelp_frond_default.tres" id="21"]
+[ext_resource type="Resource" uid="uid://dc0ra1dtl00" path="res://data/visual/coral_detail_default.tres" id="22"]
 
 [resource]
 script = ExtResource("1")
-layers = Array[ShrubVisualProfile]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9"), ExtResource("10"), ExtResource("11"), ExtResource("12")])
+layers = Array[ShrubVisualProfile]([ExtResource("2"), ExtResource("17"), ExtResource("3"), ExtResource("15"), ExtResource("8"), ExtResource("9"), ExtResource("7"), ExtResource("4"), ExtResource("5"), ExtResource("13"), ExtResource("14"), ExtResource("6"), ExtResource("16"), ExtResource("19"), ExtResource("10"), ExtResource("18"), ExtResource("11"), ExtResource("12"), ExtResource("20"), ExtResource("21"), ExtResource("22")])

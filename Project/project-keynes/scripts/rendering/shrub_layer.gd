@@ -21,6 +21,14 @@ const DETAIL_ALPINE_FLOWER := 7
 const DETAIL_ROCK := 8
 const DETAIL_SNOW_MOUND := 9
 const DETAIL_DEAD_SNAG := 10
+const ROT_RANDOM_FULL := 0
+const ROT_UPRIGHT := 1
+const ROT_UPRIGHT_JITTER := 2
+const SPAWN_LAND := 0
+const SPAWN_WATER := 1
+const SPAWN_ANY := 2
+
+static var _mesh_cache: Dictionary = {}
 
 const _SHADER_CODE := """
 shader_type canvas_item;
@@ -56,6 +64,7 @@ uniform float vitality_size_min = 0.34;
 uniform float vitality_size_max = 1.08;
 uniform float vitality_low_color_strength = 0.72;
 uniform float vitality_high_color_strength = 0.42;
+uniform float aquatic_response = 0.0;
 // 0 = 点缀/地貌类 archetype（岩石/雪堆/枯立木），抑制植被气候改色；1 = 植被类。
 uniform float veg_response = 1.0;
 // 阶段 D 精致化。
@@ -125,6 +134,7 @@ float compute_presence(vec4 dyn, vec4 eco) {
 	float moisture = mix(0.5, dyn.g, dyn_valid);
 	float snow = dyn.b * dyn_valid;
 	float vitality = mix(0.70, dyn.a, dyn_valid);
+	vitality = mix(vitality, 0.86, aquatic_response);
 	float eco_stress = eco.g;
 	float heat = smoothstep(0.74, 0.96, temp);
 	float dry = clamp(max(max((0.34 - moisture) * 1.9, heat * 0.78), eco_stress), 0.0, 1.0);
@@ -145,6 +155,7 @@ void vertex() {
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
 	shrub_vitality_v = mix(0.70, shrub_dyn.a, dyn_valid);
+	shrub_vitality_v = mix(shrub_vitality_v, 0.86, aquatic_response);
 	float eco_stress = shrub_eco.g;
 	float heat = smoothstep(0.74, 0.96, temp);
 	shrub_dry_v = clamp(max(max((0.34 - moisture) * 1.9, heat * 0.78), eco_stress), 0.0, 1.0);
@@ -247,6 +258,16 @@ var _mobile_quality_tier: int = 1
 var _world_ext = null
 # 上一次 _rebuild_instances 实际走的路径（"gdext" / "gdscript"），供调试/性能日志。
 var _last_scatter_path: String = "none"
+var _last_rebuild_ms: float = 0.0
+var _last_candidate_count: int = 0
+var _last_wrap_edge_copy_count: int = 0
+var _last_rebuild_reason: String = ""
+var _last_incremental_cells: int = 0
+var _last_incremental_missing_slots: int = 0
+var _last_incremental_dropped_instances: int = 0
+var _cell_instance_lookup: Dictionary = {}
+var _native_offset_is_water_cache: PackedByteArray = PackedByteArray()
+var _native_offset_cache_dims: Vector2i = Vector2i.ZERO
 
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
@@ -274,6 +295,8 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	_bounds = bounds
 	_hex_size = maxf(hex_size, 4.0)
 	_visual_quality = clampi(visual_quality, 0, 2)
+	_native_offset_is_water_cache = PackedByteArray()
+	_native_offset_cache_dims = Vector2i.ZERO
 	_sync_world_material_inputs(false)
 	_rebuild_instances()
 
@@ -288,6 +311,7 @@ func clear() -> void:
 	_instance_scores = PackedFloat32Array()
 	_instance_cells.clear()
 	_instance_count = 0
+	_cell_instance_lookup.clear()
 	if _multimesh != null:
 		_multimesh.instance_count = 0
 		_multimesh.visible_instance_count = 0
@@ -359,6 +383,388 @@ func set_visual_quality(q: int) -> void:
 		_rebuild_instances()
 
 
+func refresh_for_succession(_indices: PackedInt32Array) -> void:
+	if _map == null or _indices.is_empty():
+		return
+	_ensure_incremental_multimesh()
+	if _multimesh == null:
+		return
+	if _refresh_for_succession_native(_indices):
+		return
+	var t0_us := Time.get_ticks_usec()
+	var cells_done := 0
+	var missing_slots := 0
+	var dropped := 0
+	var generated := 0
+	for ci in _indices:
+		var idx := int(ci)
+		var cell := _map.cell_at(idx)
+		if cell == null:
+			missing_slots += 1
+			continue
+		var payload := _generate_cell_instance_payload(cell, idx)
+		var transforms: Array = payload.get("transforms", [])
+		var colors: Array = payload.get("colors", [])
+		var customs: Array = payload.get("customs", [])
+		var next_count := transforms.size()
+		generated += next_count
+		var slots: Array = _cell_instance_lookup.get(idx, [])
+		if slots.size() < next_count:
+			var new_slots := _append_instance_slots(idx, next_count - slots.size())
+			for slot in new_slots:
+				slots.append(slot)
+			_cell_instance_lookup[idx] = slots
+		var write_count := mini(slots.size(), next_count)
+		for j in range(write_count):
+			var slot := int(slots[j])
+			_multimesh.set_instance_transform_2d(slot, transforms[j])
+			_multimesh.set_instance_color(slot, colors[j])
+			_multimesh.set_instance_custom_data(slot, customs[j])
+		for j in range(write_count, slots.size()):
+			var slot := int(slots[j])
+			_multimesh.set_instance_color(slot, Color(0, 0, 0, 0))
+		if next_count > slots.size():
+			dropped += next_count - slots.size()
+		cells_done += 1
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = generated
+	_last_rebuild_reason = "incremental_cell_update"
+	_last_incremental_cells = cells_done
+	_last_incremental_missing_slots = missing_slots
+	_last_incremental_dropped_instances = dropped
+	visible = _profile().enabled and _instance_count > 0
+
+
+func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
+	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter_delta"):
+		return false
+	if _map == null or _multimesh == null:
+		return false
+	var t0_us := Time.get_ticks_usec()
+	var grid_w: int = int(_map.width) if "width" in _map else 0
+	var grid_h: int = int(_map.height) if "height" in _map else 0
+	if grid_w <= 0 or grid_h <= 0:
+		return false
+
+	var valid_indices := PackedInt32Array()
+	var keys := PackedInt32Array()
+	var native_cell_indices := PackedInt32Array()
+	var cx := PackedFloat32Array()
+	var cy := PackedFloat32Array()
+	var suit := PackedFloat32Array()
+	var att := PackedInt32Array()
+	var vit := PackedFloat32Array()
+	var sized := PackedFloat32Array()
+	var col_r := PackedFloat32Array()
+	var col_g := PackedFloat32Array()
+	var col_b := PackedFloat32Array()
+	var col_a := PackedFloat32Array()
+
+	for raw_idx in indices:
+		var idx := int(raw_idx)
+		var cell := _map.cell_at(idx)
+		if cell == null:
+			continue
+		valid_indices.append(idx)
+		var state := _sample_cell_state(idx, cell)
+		var key := _cell_hash_key(cell, idx)
+		var suitability := _cell_suitability(cell, idx, key, state)
+		if suitability <= 0.0:
+			continue
+		if _scatter_presence(state) <= 0.02:
+			continue
+		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
+		var lf := int(state.get("landform", LandformType.LF.PLAIN))
+		var cover := int(state.get("cover", CoverType.CV.NONE))
+		var center := _cell_center(cell, idx)
+		var base := _base_color_for_vegetation(veg)
+		keys.append(key)
+		native_cell_indices.append(idx)
+		cx.append(center.x)
+		cy.append(center.y)
+		suit.append(suitability)
+		att.append(maxi(1, int(ceil(float(_max_per_cell()) * clampf(suitability, 0.0, 1.0)))))
+		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
+		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
+		col_r.append(base.r)
+		col_g.append(base.g)
+		col_b.append(base.b)
+		col_a.append(base.a)
+
+	if valid_indices.is_empty():
+		return false
+	if keys.is_empty():
+		_apply_native_delta_payload(valid_indices, PackedFloat32Array(), PackedInt32Array(), 0, 0, 0, t0_us)
+		return true
+
+	var cfg := _profile()
+	var knobs := {
+		"hex_size": _hex_size,
+		"origin_x": _bounds.position.x,
+		"origin_y": _bounds.position.y,
+		"size_x": _bounds.size.x,
+		"size_y": _bounds.size.y,
+		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
+		"wrap_edge_margin": _hex_size * 4.0,
+		"grid_w": grid_w,
+		"grid_h": grid_h,
+		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
+		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
+		"flow_w": int(_world.derived_size.x) if _world != null else 0,
+		"flow_h": int(_world.derived_size.y) if _world != null else 0,
+		"river_clear_threshold": cfg.river_clear_threshold,
+		"spawn_domain": _spawn_domain(),
+		"rotation_mode": _rotation_mode(),
+		"random_rotation_strength": _random_rotation_strength(),
+		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
+		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"world_noise_warp_strength": cfg.world_noise_warp_strength,
+		"patch_frequency": cfg.patch_frequency,
+		"patch_cutoff": cfg.patch_cutoff,
+		"patch_contrast": cfg.patch_contrast,
+		"world_noise_mid_mix": cfg.world_noise_mid_mix,
+		"world_noise_fine_mix": cfg.world_noise_fine_mix,
+		"micro_gap_threshold": cfg.micro_gap_threshold,
+		"world_noise_acceptance": cfg.world_noise_acceptance,
+		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
+		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
+		"size_scale": _quality_size_scale(),
+		"vitality_dead_threshold": cfg.vitality_dead_threshold,
+		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
+		"instance_cap": maxi(_instance_cap(), keys.size() * maxi(_max_per_cell(), 1) * 3),
+		"keys": keys,
+		"cell_indices": native_cell_indices,
+		"center_x": cx,
+		"center_y": cy,
+		"suitability": suit,
+		"attempts": att,
+		"vitality": vit,
+		"size_density": sized,
+		"color_r": col_r,
+		"color_g": col_g,
+		"color_b": col_b,
+		"color_a": col_a,
+	}
+
+	var res = _world_ext.call("encode_detail_scatter_delta", knobs)
+	if not (res is Dictionary):
+		return false
+	if bool(res.get("fallback", true)):
+		_last_rebuild_reason = str(res.get("reason", "native_delta_fallback"))
+		return false
+	var inst := int(res.get("instance_count", 0))
+	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
+	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
+	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
+		_last_rebuild_reason = "native_delta_bad_payload"
+		return false
+	_apply_native_delta_payload(
+		valid_indices,
+		buffer,
+		cell_indices,
+		inst,
+		int(res.get("candidate_count", 0)),
+		int(res.get("wrap_edge_copy_count", 0)),
+		t0_us
+	)
+	return true
+
+
+func _apply_native_delta_payload(
+		valid_indices: PackedInt32Array,
+		buffer: PackedFloat32Array,
+		cell_indices: PackedInt32Array,
+		inst: int,
+		candidate_count: int,
+		wrap_count: int,
+		t0_us: int) -> void:
+	var by_cell := {}
+	for i in range(inst):
+		var ci := int(cell_indices[i])
+		var srcs: Array = by_cell.get(ci, [])
+		srcs.append(i)
+		by_cell[ci] = srcs
+
+	var cells_done := 0
+	var missing_slots := 0
+	var dropped := 0
+	var generated := 0
+	for raw_idx in valid_indices:
+		var idx := int(raw_idx)
+		var src_indices: Array = by_cell.get(idx, [])
+		var slots: Array = _cell_instance_lookup.get(idx, [])
+		generated += src_indices.size()
+		if slots.size() < src_indices.size():
+			var new_slots := _append_instance_slots(idx, src_indices.size() - slots.size())
+			for slot in new_slots:
+				slots.append(slot)
+			_cell_instance_lookup[idx] = slots
+		var write_count := mini(slots.size(), src_indices.size())
+		for j in range(write_count):
+			_set_slot_from_native_buffer(int(slots[j]), buffer, int(src_indices[j]))
+		for j in range(write_count, slots.size()):
+			_multimesh.set_instance_color(int(slots[j]), Color(0, 0, 0, 0))
+		if src_indices.size() > slots.size():
+			dropped += src_indices.size() - slots.size()
+		if slots.is_empty() and src_indices.is_empty():
+			missing_slots += 1
+		cells_done += 1
+
+	_last_scatter_path = "gdext_delta"
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = maxi(candidate_count, generated)
+	_last_wrap_edge_copy_count = wrap_count
+	_last_rebuild_reason = "incremental_cell_update"
+	_last_incremental_cells = cells_done
+	_last_incremental_missing_slots = missing_slots
+	_last_incremental_dropped_instances = dropped
+	visible = _profile().enabled and _instance_count > 0
+
+
+func _set_slot_from_native_buffer(slot: int, buffer: PackedFloat32Array, src: int) -> void:
+	var b := src * 16
+	var xf := Transform2D(
+		Vector2(buffer[b + 0], buffer[b + 4]),
+		Vector2(buffer[b + 1], buffer[b + 5]),
+		Vector2(buffer[b + 3], buffer[b + 7])
+	)
+	_multimesh.set_instance_transform_2d(slot, xf)
+	_multimesh.set_instance_color(slot, Color(buffer[b + 8], buffer[b + 9], buffer[b + 10], buffer[b + 11]))
+	_multimesh.set_instance_custom_data(slot, Color(buffer[b + 12], buffer[b + 13], buffer[b + 14], buffer[b + 15]))
+
+
+func _native_offset_is_water(grid_w: int, grid_h: int) -> PackedByteArray:
+	if _native_offset_cache_dims == Vector2i(grid_w, grid_h) and _native_offset_is_water_cache.size() == grid_w * grid_h:
+		return _native_offset_is_water_cache
+	_native_offset_is_water_cache = PackedByteArray()
+	_native_offset_is_water_cache.resize(grid_w * grid_h)
+	_native_offset_is_water_cache.fill(1)
+	if _map == null:
+		return _native_offset_is_water_cache
+	var cells: Array = _map.iter_cells()
+	for order in range(cells.size()):
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx := _cell_index(cell, order)
+		var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
+		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
+			_native_offset_is_water_cache[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
+	_native_offset_cache_dims = Vector2i(grid_w, grid_h)
+	return _native_offset_is_water_cache
+
+
+func _ensure_incremental_multimesh() -> void:
+	_ensure_resources()
+	if _multimesh != null:
+		return
+	_multimesh = MultiMesh.new()
+	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_multimesh.use_colors = true
+	_multimesh.use_custom_data = true
+	_multimesh.mesh = _cached_detail_mesh()
+	_multimesh.instance_count = 0
+	_multimesh.visible_instance_count = 0
+	_mmi.multimesh = _multimesh
+
+
+func _rebuild_cell_instance_lookup() -> void:
+	_cell_instance_lookup.clear()
+	for i in range(_instance_cell_indices.size()):
+		var ci := int(_instance_cell_indices[i])
+		if ci < 0:
+			continue
+		var slots: Array = _cell_instance_lookup.get(ci, [])
+		slots.append(i)
+		_cell_instance_lookup[ci] = slots
+
+
+func _append_instance_slots(cell_idx: int, count: int) -> Array:
+	var slots: Array = []
+	if count <= 0 or _multimesh == null:
+		return slots
+	var old_count := _instance_count
+	var next_count := old_count + count
+	var buffer := _multimesh.buffer
+	buffer.resize(next_count * 16)
+	_multimesh.instance_count = next_count
+	_multimesh.buffer = buffer
+	_multimesh.visible_instance_count = next_count
+	_instance_count = next_count
+	for i in range(old_count, next_count):
+		slots.append(i)
+		_instance_cell_indices.append(cell_idx)
+	return slots
+
+
+func _generate_cell_instance_payload(cell, idx: int) -> Dictionary:
+	var state := _sample_cell_state(idx, cell)
+	var key := _cell_hash_key(cell, idx)
+	var suitability := _cell_suitability(cell, idx, key, state)
+	var transforms: Array = []
+	var colors: Array = []
+	var customs: Array = []
+	if suitability <= 0.0:
+		return {"transforms": transforms, "colors": colors, "customs": customs}
+	var attempts := maxi(1, int(ceil(float(_max_per_cell()) * clampf(suitability, 0.0, 1.0))))
+
+	var saved_cell_indices := _instance_cell_indices
+	var saved_positions := _instance_positions
+	var saved_rotations := _instance_rotations
+	var saved_sizes := _instance_sizes
+	var saved_seeds := _instance_seeds
+	var saved_variants := _instance_variants
+	var saved_scores := _instance_scores
+	var saved_cells := _instance_cells.duplicate()
+
+	_instance_cell_indices = PackedInt32Array()
+	_instance_positions = PackedVector2Array()
+	_instance_rotations = PackedFloat32Array()
+	_instance_sizes = PackedFloat32Array()
+	_instance_seeds = PackedFloat32Array()
+	_instance_variants = PackedFloat32Array()
+	_instance_scores = PackedFloat32Array()
+	_instance_cells = []
+
+	for attempt in range(attempts):
+		_try_append_instance(cell, idx, key, attempt, suitability, state)
+	_append_wrap_edge_instances()
+
+	for i in range(_instance_cell_indices.size()):
+		var inst_idx := int(_instance_cell_indices[i])
+		var inst_cell = _instance_cells[i]
+		var inst_state := _sample_cell_state(inst_idx, inst_cell)
+		transforms.append(_instance_transform(i))
+		colors.append(_base_color_for_state(inst_state, _instance_variants[i]))
+		var uv := _world_uv(_instance_positions[i])
+		customs.append(Color(uv.x, uv.y, _instance_seeds[i], _instance_variants[i]))
+
+	_instance_cell_indices = saved_cell_indices
+	_instance_positions = saved_positions
+	_instance_rotations = saved_rotations
+	_instance_sizes = saved_sizes
+	_instance_seeds = saved_seeds
+	_instance_variants = saved_variants
+	_instance_scores = saved_scores
+	_instance_cells = saved_cells
+
+	return {"transforms": transforms, "colors": colors, "customs": customs}
+
+
+func instance_count() -> int:
+	return _instance_count
+
+
+func apply_visible_instance_fraction(fraction: float) -> void:
+	var f := clampf(fraction, 0.0, 1.0)
+	if _multimesh == null:
+		visible = false
+		return
+	var next_visible := clampi(int(floor(float(_instance_count) * f)), 0, _instance_count)
+	_multimesh.visible_instance_count = next_visible
+	visible = _profile().enabled and next_visible > 0
+
+
 func set_mobile_quality_tier(q: int) -> void:
 	var next_q := clampi(q, 0, 2)
 	if _mobile_quality_tier == next_q:
@@ -414,6 +820,7 @@ func _apply_profile_uniforms() -> void:
 	var arch := _detail_kind()
 	var is_deco := _is_decoration_archetype(arch)
 	_material.set_shader_parameter("veg_response", 0.0 if is_deco else 1.0)
+	_material.set_shader_parameter("aquatic_response", 1.0 if _spawn_domain() == SPAWN_WATER else 0.0)
 	# 阶段 D：按 archetype 推送外观 uniform。
 	# 开花：高山花最盛，灌木/树轻微，点缀/草不开花。
 	var bloom := 0.0
@@ -448,15 +855,25 @@ func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 
 func _rebuild_instances() -> void:
 	_ensure_resources()
+	var t0_us := Time.get_ticks_usec()
+	_last_candidate_count = 0
+	_last_wrap_edge_copy_count = 0
+	_last_rebuild_reason = ""
+	_last_incremental_cells = 0
+	_last_incremental_missing_slots = 0
+	_last_incremental_dropped_instances = 0
 	clear()
 	var cfg := _profile()
 	if not cfg.enabled or _map == null or _map.cell_count() <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 		return
 
 	var cells: Array = _map.iter_cells()
 	if cells.is_empty():
 		cells = _map.all_cells()
 	if cells.is_empty():
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_cells"
 		return
 
 	var cell_attempts := PackedInt32Array()
@@ -483,6 +900,8 @@ func _rebuild_instances() -> void:
 		total_attempts += attempts
 
 	if total_attempts <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_attempts"
 		return
 
 	# C++ 优先：把"每实例候选生成 + 噪声门 + 接受 + cap + MultiMesh buffer 组装"
@@ -490,6 +909,8 @@ func _rebuild_instances() -> void:
 	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
 	if _rebuild_via_native(cells, cell_states, cell_suitabilities, cell_attempts):
 		_last_scatter_path = "gdext"
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_rebuild_cell_instance_lookup()
 		return
 	_last_scatter_path = "gdscript"
 
@@ -509,14 +930,17 @@ func _rebuild_instances() -> void:
 	_apply_instance_cap()
 	_append_wrap_edge_instances()
 	_instance_count = _instance_cell_indices.size()
+	_rebuild_cell_instance_lookup()
 	if _instance_count <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_instances"
 		return
 
 	_multimesh = MultiMesh.new()
 	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
 	_multimesh.use_colors = true
 	_multimesh.use_custom_data = true
-	_multimesh.mesh = _build_shrub_mesh()
+	_multimesh.mesh = _cached_detail_mesh()
 	_multimesh.instance_count = _instance_count
 	_multimesh.visible_instance_count = _instance_count
 	_mmi.multimesh = _multimesh
@@ -535,6 +959,8 @@ func _rebuild_instances() -> void:
 			_instance_variants[i]
 		))
 	visible = cfg.enabled and _instance_count > 0
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = _instance_scores.size()
 
 
 func _rebuild_via_native(
@@ -560,6 +986,7 @@ func _rebuild_via_native(
 
 	# 每个"活跃 cell"（suitability>0 且 climate_presence>0.02）的廉价 per-cell 数据。
 	var keys := PackedInt32Array()
+	var native_cell_indices := PackedInt32Array()
 	var cx := PackedFloat32Array()
 	var cy := PackedFloat32Array()
 	var suit := PackedFloat32Array()
@@ -586,7 +1013,7 @@ func _rebuild_via_native(
 		var state: Dictionary = cell_states[order]
 		if not (state is Dictionary):
 			continue
-		if _climate_presence(state) <= 0.02:
+		if _scatter_presence(state) <= 0.02:
 			continue
 		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
 		var lf := int(state.get("landform", LandformType.LF.PLAIN))
@@ -594,6 +1021,7 @@ func _rebuild_via_native(
 		var center := _cell_center(cell, idx)
 		var base := _base_color_for_vegetation(veg)
 		keys.append(_cell_hash_key(cell, order))
+		native_cell_indices.append(idx)
 		cx.append(center.x)
 		cy.append(center.y)
 		suit.append(suitability)
@@ -623,6 +1051,10 @@ func _rebuild_via_native(
 		"flow_w": int(_world.derived_size.x) if _world != null else 0,
 		"flow_h": int(_world.derived_size.y) if _world != null else 0,
 		"river_clear_threshold": cfg.river_clear_threshold,
+		"spawn_domain": _spawn_domain(),
+		"rotation_mode": _rotation_mode(),
+		"random_rotation_strength": _random_rotation_strength(),
+		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
 		"spawn_radius_factor": cfg.spawn_radius_factor,
 		"world_noise_warp_strength": cfg.world_noise_warp_strength,
 		"patch_frequency": cfg.patch_frequency,
@@ -639,6 +1071,7 @@ func _rebuild_via_native(
 		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
 		"instance_cap": _instance_cap(),
 		"keys": keys,
+		"cell_indices": native_cell_indices,
 		"center_x": cx,
 		"center_y": cy,
 		"suitability": suit,
@@ -655,20 +1088,29 @@ func _rebuild_via_native(
 	if not (res is Dictionary):
 		return false
 	if bool(res.get("fallback", true)):
+		_last_rebuild_reason = str(res.get("reason", "native_fallback"))
 		return false
+	_last_candidate_count = int(res.get("candidate_count", 0))
+	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
 	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
 	var inst: int = int(res.get("instance_count", 0))
+	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
 	# 每实例 stride = transform2d(8) + color(4) + custom(4) = 16 float。
 	if inst <= 0 or buffer.size() < inst * 16:
 		clear()
+		_last_rebuild_reason = "native_empty"
 		return true
+	if cell_indices.size() < inst:
+		_last_rebuild_reason = "native_missing_cell_indices"
+		return false
 
 	_instance_count = inst
+	_instance_cell_indices = cell_indices
 	_multimesh = MultiMesh.new()
 	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
 	_multimesh.use_colors = true
 	_multimesh.use_custom_data = true
-	_multimesh.mesh = _build_shrub_mesh()
+	_multimesh.mesh = _cached_detail_mesh()
 	_multimesh.instance_count = inst
 	_multimesh.buffer = buffer
 	_multimesh.visible_instance_count = inst
@@ -678,7 +1120,11 @@ func _rebuild_via_native(
 
 
 func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
-	if _is_water_cell(cell, idx):
+	var cell_is_water := _is_water_cell(cell, idx)
+	var domain := _spawn_domain()
+	if domain == SPAWN_LAND and cell_is_water:
+		return 0.0
+	if domain == SPAWN_WATER and not cell_is_water:
 		return 0.0
 
 	var lf := int(state.get("landform", LandformType.LF.PLAIN))
@@ -686,6 +1132,9 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	var cover := int(state.get("cover", CoverType.CV.NONE))
 	var river := _has_river_cell(cell, idx)
 	var arch := _detail_kind()
+
+	if cell_is_water:
+		return _aquatic_suitability(arch, lf, veg, cover, state)
 
 	# 点缀/地貌类 archetype（岩石/雪堆/枯立木）走独立 suitability：不依赖植被权重，
 	# 由地形/覆盖物/气候直接决定，能出现在植被权重为 0 的裸露/雪原/山巅。
@@ -711,7 +1160,7 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	suitability *= vitality_factor
 	suitability *= lerpf(0.58, 1.0, clampf(compat, 0.0, 1.0))
 	suitability *= 1.0 - clampf(stress, 0.0, 1.0) * 0.38
-	suitability *= lerpf(0.08, 1.0, _climate_presence(state))
+	suitability *= lerpf(0.08, 1.0, _scatter_presence(state))
 	suitability *= _cell_ecology_density_bias(state)
 	# archetype 生态位亲和（针叶/棕榈/仙人掌/芦苇/高山花）：把通用植被分布收束到各自气候带。
 	suitability *= _archetype_affinity(arch, veg, lf, cover, river, state)
@@ -838,6 +1287,26 @@ func _is_decoration_archetype(arch: int) -> bool:
 	return arch == DETAIL_ROCK or arch == DETAIL_SNOW_MOUND or arch == DETAIL_DEAD_SNAG
 
 
+func _aquatic_suitability(_arch: int, lf: int, veg: int, cover: int, state: Dictionary) -> float:
+	if _spawn_domain() != SPAWN_WATER:
+		return 0.0
+	if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
+		return 0.0
+	var landform_weight := _landform_weight(lf)
+	var vegetation_weight := _vegetation_weight(veg)
+	var cover_weight := _cover_weight(cover)
+	if landform_weight <= 0.0 or vegetation_weight <= 0.0 or cover_weight <= 0.0:
+		return 0.0
+	var temp := float(state.get("temp", 0.5))
+	var moisture := float(state.get("moisture", 0.5))
+	var suitability := vegetation_weight * landform_weight * cover_weight
+	# 水域生态不使用陆地 vegetation_vitality 做密度闸门；由温度/水体类型和 profile 权重决定。
+	suitability *= lerpf(0.74, 1.15, clampf(moisture, 0.0, 1.0))
+	suitability *= lerpf(0.70, 1.05, VegetationType.climate_compat_score(veg, temp, moisture))
+	suitability *= _quality_density_scale()
+	return clampf(suitability, 0.0, 1.25)
+
+
 # 点缀/地貌类 archetype 的独立 suitability（不经植被权重）。
 func _decoration_suitability(arch: int, lf: int, cover: int, river: bool, state: Dictionary) -> float:
 	if LandformType.is_water(lf):
@@ -902,7 +1371,7 @@ func _try_append_instance(
 		cell_suitability: float,
 		state: Dictionary) -> void:
 	var cfg := _profile()
-	var climate_presence := _climate_presence(state)
+	var climate_presence := _scatter_presence(state)
 	if climate_presence <= 0.02:
 		return
 	var vitality := clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
@@ -912,9 +1381,13 @@ func _try_append_instance(
 			return
 	var center := _cell_center(cell, idx)
 	var pos := _candidate_position(center, key, attempt)
-	if _is_water_position(pos, cell, idx):
+	var domain := _spawn_domain()
+	var candidate_is_water := _is_water_position(pos, cell, idx)
+	if domain == SPAWN_LAND and candidate_is_water:
 		return
-	if _is_river_body_position(pos):
+	if domain == SPAWN_WATER and not candidate_is_water:
+		return
+	if domain != SPAWN_WATER and _is_river_body_position(pos):
 		return
 	var world_noise := _world_noise_suitability(pos)
 	if world_noise <= 0.001:
@@ -936,7 +1409,7 @@ func _try_append_instance(
 	_instance_cell_indices.append(idx)
 	_instance_cells.append(cell)
 	_instance_positions.append(pos)
-	_instance_rotations.append(_hash01(key, 500 + attempt) * TAU)
+	_instance_rotations.append(_instance_rotation(key, attempt))
 	_instance_sizes.append(size)
 	_instance_seeds.append(_hash01(key, 600 + attempt))
 	_instance_variants.append(variant)
@@ -1059,6 +1532,28 @@ func _instance_transform(i: int) -> Transform2D:
 	var x_axis := Vector2(cos(rot), sin(rot)) * size
 	var y_axis := Vector2(-sin(rot), cos(rot)) * size
 	return Transform2D(x_axis, y_axis, _instance_positions[i])
+
+
+func _instance_rotation(key: int, attempt: int) -> float:
+	var full := _hash01(key, 500 + attempt) * TAU
+	match _rotation_mode():
+		ROT_UPRIGHT:
+			return 0.0
+		ROT_UPRIGHT_JITTER:
+			return (_hash01(key, 501 + attempt) * 2.0 - 1.0) * deg_to_rad(_upright_jitter_degrees())
+	var strength := _random_rotation_strength()
+	if strength >= 0.999:
+		return full
+	return (_hash01(key, 501 + attempt) * 2.0 - 1.0) * PI * strength
+
+
+func _cached_detail_mesh() -> ArrayMesh:
+	var key := "%d:%d" % [_detail_kind(), _quality_lobe_count()]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var mesh := _build_shrub_mesh()
+	_mesh_cache[key] = mesh
+	return mesh
 
 
 func _build_shrub_mesh() -> ArrayMesh:
@@ -1425,6 +1920,9 @@ func _base_color_for_state(state: Dictionary, variant: float) -> Color:
 
 
 func _base_color_for_vegetation(veg: int) -> Color:
+	var cfg := _profile()
+	if bool(cfg.get("base_color_override_enabled")):
+		return cfg.get("base_color_override")
 	match _detail_kind():
 		DETAIL_TREE:
 			return _tree_base_color_for_vegetation(veg)
@@ -1497,43 +1995,61 @@ func _grass_base_color_for_vegetation(veg: int) -> Color:
 			return Color(0.30, 0.52, 0.22, 0.68)
 
 
+func _profile_weight_override(prop: StringName, key: int, fallback: float) -> float:
+	var cfg := _profile()
+	var raw = cfg.get(prop)
+	if not (raw is Dictionary):
+		return fallback
+	var dict: Dictionary = raw
+	if dict.has(key):
+		return float(dict[key])
+	var key_str := str(key)
+	if dict.has(key_str):
+		return float(dict[key_str])
+	return fallback
+
+
 func _vegetation_weight(veg: int) -> float:
+	var base := 0.0
 	match _detail_kind():
 		DETAIL_TREE:
-			return _tree_vegetation_weight(veg)
+			base = _tree_vegetation_weight(veg)
+			return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
 		DETAIL_GRASS:
-			return _grass_vegetation_weight(veg)
+			base = _grass_vegetation_weight(veg)
+			return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
 	match veg:
 		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return 1.15
+			base = 1.15
 		VegetationType.VEG.DESERT_SCRUB:
-			return 0.78
+			base = 0.78
 		VegetationType.VEG.TAIGA, VegetationType.VEG.TROPICAL_DRY_FOREST:
-			return 0.92
+			base = 0.92
 		VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			return 0.84
+			base = 0.84
 		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return 0.70
+			base = 0.70
 		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			return 0.42
+			base = 0.42
 		VegetationType.VEG.SAVANNA:
-			return 0.62
+			base = 0.62
 		VegetationType.VEG.TEMPERATE_STEPPE:
-			return 0.46
+			base = 0.46
 		VegetationType.VEG.SWAMP:
-			return 0.56
+			base = 0.56
 		VegetationType.VEG.MARSH:
-			return 0.34
+			base = 0.34
 		VegetationType.VEG.TEMPERATE_GRASSLAND:
-			return 0.36
+			base = 0.36
 		VegetationType.VEG.OASIS_VEG:
-			return 0.58
+			base = 0.58
 		VegetationType.VEG.XERIC_DESERT, VegetationType.VEG.POLAR_DESERT:
-			return 0.02
+			base = 0.02
 		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			return 0.0
+			base = 0.0
 		_:
-			return 0.10
+			base = 0.10
+	return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
 
 
 func _tree_vegetation_weight(veg: int) -> float:
@@ -1591,28 +2107,32 @@ func _grass_vegetation_weight(veg: int) -> float:
 
 
 func _landform_weight(lf: int) -> float:
+	var base := 0.0
 	match _detail_kind():
 		DETAIL_TREE:
-			return _tree_landform_weight(lf)
+			base = _tree_landform_weight(lf)
+			return _profile_weight_override(&"landform_weight_overrides", lf, base)
 		DETAIL_GRASS:
-			return _grass_landform_weight(lf)
+			base = _grass_landform_weight(lf)
+			return _profile_weight_override(&"landform_weight_overrides", lf, base)
 	match lf:
 		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			return 1.0
+			base = 1.0
 		LandformType.LF.HILL:
-			return 0.84
+			base = 0.84
 		LandformType.LF.DELTA:
-			return 0.64
+			base = 0.64
 		LandformType.LF.BADLANDS:
-			return 0.42
+			base = 0.42
 		LandformType.LF.SALT_FLAT:
-			return 0.06
+			base = 0.06
 		LandformType.LF.MOUNTAIN:
-			return 0.14
+			base = 0.14
 		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			return 0.0
+			base = 0.0
 		_:
-			return 0.0 if LandformType.is_water(lf) else 0.55
+			base = 0.0 if LandformType.is_water(lf) else 0.55
+	return _profile_weight_override(&"landform_weight_overrides", lf, base)
 
 
 func _tree_landform_weight(lf: int) -> float:
@@ -1654,17 +2174,19 @@ func _grass_landform_weight(lf: int) -> float:
 
 
 func _cover_weight(cover: int) -> float:
+	var base := 1.0
 	match cover:
 		CoverType.CV.GLACIER, CoverType.CV.SEA_ICE, CoverType.CV.PELAGIC_BLOOM:
-			return 0.0
+			base = 0.0
 		CoverType.CV.FLOODING:
-			return 0.18
+			base = 0.18
 		CoverType.CV.SNOW:
-			return 0.48
+			base = 0.48
 		CoverType.CV.PERMAFROST:
-			return 0.62
+			base = 0.62
 		_:
-			return 1.0
+			base = 1.0
+	return _profile_weight_override(&"cover_weight_overrides", cover, base)
 
 
 func _sample_density_for_size(idx: int, cell = null) -> float:
@@ -1709,6 +2231,15 @@ func _climate_presence(state: Dictionary) -> float:
 	presence *= 1.0 - dry * cfg.stress_hide_strength
 	presence *= 1.0 - snow_hide * cfg.snow_hide_strength
 	return clampf(presence, 0.0, 1.0)
+
+
+func _scatter_presence(state: Dictionary) -> float:
+	if _spawn_domain() == SPAWN_WATER:
+		var cover := int(state.get("cover", CoverType.CV.NONE))
+		if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
+			return 0.0
+		return 1.0
+	return _climate_presence(state)
 
 
 func _vitality_normalized(vitality: float) -> float:
@@ -1899,6 +2430,49 @@ func _detail_kind() -> int:
 
 func _profile() -> Resource:
 	return profile if profile != null else DEFAULT_PROFILE
+
+
+func _profile_int(prop: StringName, fallback: int) -> int:
+	var v = _profile().get(prop)
+	return fallback if v == null else int(v)
+
+
+func _profile_float(prop: StringName, fallback: float) -> float:
+	var v = _profile().get(prop)
+	return fallback if v == null else float(v)
+
+
+func _spawn_domain() -> int:
+	return clampi(_profile_int(&"spawn_domain", SPAWN_LAND), SPAWN_LAND, SPAWN_ANY)
+
+
+func _rotation_mode() -> int:
+	return clampi(_profile_int(&"rotation_mode", ROT_RANDOM_FULL), ROT_RANDOM_FULL, ROT_UPRIGHT_JITTER)
+
+
+func _random_rotation_strength() -> float:
+	return clampf(_profile_float(&"random_rotation_strength", 1.0), 0.0, 1.0)
+
+
+func _upright_jitter_degrees() -> float:
+	return clampf(_profile_float(&"upright_jitter_degrees", 6.0), 0.0, 35.0)
+
+
+func get_scatter_diagnostics() -> Dictionary:
+	return {
+		"name": name,
+		"path": _last_scatter_path,
+		"instances": _instance_count,
+		"candidates": _last_candidate_count,
+		"wrap_edge_copies": _last_wrap_edge_copy_count,
+		"rebuild_ms": _last_rebuild_ms,
+		"reason": _last_rebuild_reason,
+		"incremental_cells": _last_incremental_cells,
+		"missing_slots": _last_incremental_missing_slots,
+		"dropped_instances": _last_incremental_dropped_instances,
+		"spawn_domain": _spawn_domain(),
+		"detail_kind": _detail_kind(),
+	}
 
 
 func _world_uv(world_pos: Vector2) -> Vector2:

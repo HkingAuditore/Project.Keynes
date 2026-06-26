@@ -44,6 +44,10 @@ var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8
 # Phase 14：每像素火山强度（r 通道）。靠近火山中心 = 1.0，向外径向衰减。
 # shader 用来叠加红光晕 / 烟柱效果。
 var volcano_field_buffer: PackedByteArray = PackedByteArray()  # R8
+# [water-depth-tex 2026-06-26] 每像素海/湖统一归一水深（R8，0=岸/陆，255=最深）。
+# C++ 在 post_base 算好 per-cell water_depth01（海洋 1-E/sea + 湖泊湖岸→湖心碗形），
+# bake 经 pixel_to_cell_index 扇出到此 buffer → water_depth_tex；shader 每水像素 1 次采样。
+var water_depth_buffer: PackedByteArray = PackedByteArray()  # R8
 # 兼容旧调试/数据通道的海冰覆盖率 buffer。主地图海冰视觉已经改为 shader
 # 按逐像素水温/纬度/水深派生，不再依赖此 buffer 上传。
 var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
@@ -106,6 +110,10 @@ var flow_tex: ImageTexture
 # 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
 # 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
 var volcano_field_tex: ImageTexture
+# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 纹理（derived_size，与 height/biome 同 uv）。
+# 主水体 shader 按它做深浅着色（深海蓝 / 浅滩青 / 湖心暗），单次采样取代旧海洋邻域 + 湖泊多半径。
+# bake_world 烘焙一次，之后不变；null 时 shader 回退旧逐邻域估算。
+var water_depth_tex: ImageTexture
 # [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny，hm_size）。
 # 地形静态 → 运行期 shader 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap；细节法线运行期按
 # biome/性能档叠。bake_world 烘焙一次，之后不变；与 height_tex 共用 uv。

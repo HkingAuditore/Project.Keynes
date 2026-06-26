@@ -384,12 +384,21 @@ SurfaceParams apply_land_color_overlays(
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, scals.g, 0);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
+	// [coast-smooth 2026-06-26] 等高线 AA（陆侧）：近岸陆地像素若其平滑高程(height_tex 线性插值的
+	// 亚像素高程)低于水线，渐隐为浅海色 → 海岸线沿亚像素等高线走，消除 per-cell 六边形阶梯，使海岸
+	// 像河流一样平滑。submerge 由连续高度场驱动(平滑边缘)，coast_gate(有水邻居)仅把效果限制在近岸、
+	// 防止内陆洼地/排干湖被误染。coast_smooth_strength=0 时整体旁路、回退旧硬边。
+	if (coast_smooth_strength > 0.001) {
+		float submerge = 1.0 - smoothstep(sea_level - coast_smooth_band, sea_level + coast_smooth_band * 0.30, elev);
+		float coast_gate = clamp(shore_halo_r.shore_w * 1.4, 0.0, 1.0);
+		col = mix(col, color_coast_water, submerge * coast_gate * coast_smooth_strength);
+	}
 #endif
 
 	// LAND 3.1.b：统一雪盖色（季节性雪线 / 真实积雪 / BLIZZARD 新雪）
 	col = apply_snow_cover(
 		col, biome, veg, current_temp, elev, false, moist, wp, uv,
-		dyn_snow, dyn_valid, eco_valid, eco_stress, eco_foliage, pixel_noise);
+		dyn_snow, dyn_valid, eco_valid, eco_stress, eco_foliage, scals.g, pixel_noise);
 
 	// LAND 3.1.c：覆盖物轴（FLOODING / PERMAFROST / GLACIER）
 	// SNOW / SEA_ICE 已由雪盖 / 海面主路径处理，cover_overlay 内部返回 0 跳过。
@@ -418,8 +427,11 @@ SurfaceParams apply_land_material_overlays(
 		float elev,
 		float moist,
 		float dyn_snow,
-		float dyn_valid) {
+		float dyn_valid,
+		float river_flow) {
 	float snow_w = estimate_land_snow_material_weight(biome, current_temp, elev, moist, dyn_snow, dyn_valid);
+	float river_mask = smoothstep(river_threshold_low * 0.84, river_threshold_high, river_flow);
+	float river_freeze_w = river_mask * clamp(max(snow_w, (1.0 - smoothstep(0.24, 0.46, current_temp)) * dyn_valid * 0.55), 0.0, 1.0);
 	if (snow_w > 0.001) {
 		// [岩石去高光 2026-06-25] 岩石型山地（MOUNTAIN/HILL/BADLANDS）即便覆雪也应保留岩面
 		// 粗糙与起伏：法线压平减半（0.35→0.18），雪面粗糙目标从 0.52 抬到 0.74，避免覆雪山脊
@@ -428,13 +440,20 @@ SurfaceParams apply_land_material_overlays(
 		bool rocky = (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS);
 		bool icy = (biome == B_GLACIER);
 		float snow_normal_flatten = rocky ? 0.18 : 0.35;
-		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_w * snow_normal_flatten));
+		float snow_material_w = snow_w * (1.0 - river_freeze_w * 0.82);
+		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_material_w * snow_normal_flatten));
 		float snow_rough_target = rocky ? 0.74 : (icy ? 0.14 : 0.34);
-		surface.roughness = mix(surface.roughness, snow_rough_target, snow_w);
-		surface.ao        = mix(surface.ao, 0.96, snow_w);
+		surface.roughness = mix(surface.roughness, snow_rough_target, snow_material_w);
+		surface.ao        = mix(surface.ao, 0.96, snow_material_w);
 		// 岩石覆雪不给金属感；冰川覆雪保留冰的微金属菲涅尔；平坦雪面给微镜面。
 		float snow_metal_target = rocky ? 0.0 : (icy ? DEFAULT_METALLIC_ICE : DEFAULT_METALLIC_SNOW);
-		surface.metallic  = mix(surface.metallic, snow_metal_target, snow_w);
+		surface.metallic  = mix(surface.metallic, snow_metal_target, snow_material_w);
+	}
+	if (river_freeze_w > 0.001) {
+		surface.normal = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), river_freeze_w * 0.55));
+		surface.roughness = mix(surface.roughness, 0.18, river_freeze_w);
+		surface.metallic = mix(surface.metallic, DEFAULT_METALLIC_ICE, river_freeze_w * 0.65);
+		surface.ao = mix(surface.ao, 0.99, river_freeze_w * 0.55);
 	}
 	if (cover == CV_GLACIER) {
 		// [海冰反射 2026-06-25] 冰川覆盖压到更低粗糙（0.26→0.14）+ 抬金属感，体现冰面镜面/菲涅尔反射。
@@ -537,7 +556,7 @@ vec3 render_land_pipeline(
 		surface, biome, veg, cover, elev, moist, wp, uv, scals, current_temp,
 		dyn_snow, dyn_valid, eco_foliage, eco_stress, eco_valid, pixel_noise);
 	surface = apply_land_material_overlays(
-		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid);
+		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
 
 	return shade_land_surface(surface, uv, lat_signed);
 }

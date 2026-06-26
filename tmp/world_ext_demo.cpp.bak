@@ -1,0 +1,1738 @@
+#include "world_ext.h"
+
+#include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
+#include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
+#include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
+
+// MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
+// 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
+#include <godot_cpp/classes/global_constants.hpp>
+#include <godot_cpp/classes/fast_noise_lite.hpp>          // native world-gen 复刻：与 GDScript _init_noise 同一引擎噪声
+#include <godot_cpp/classes/random_number_generator.hpp>  // native world-gen 复刻：与 GDScript _rng 同一引擎 PCG
+#include <godot_cpp/classes/worker_thread_pool.hpp>
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/core/error_macros.hpp>
+#include <godot_cpp/core/math.hpp>
+#include <godot_cpp/variant/char_string.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/variant.hpp>
+
+#include <algorithm>
+#include <atomic>
+#include <charconv>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+#include <condition_variable>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <functional>
+#include <queue>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
+#  include <immintrin.h>
+#endif
+
+
+#include "world_ext_internal.h"
+
+namespace pk {
+
+using namespace godot;
+
+
+// ─── Hot-loop implementations ──────────────────────────────────────────────
+
+// Phase 3b Step 3b-1: real implementation of Pass-A (climate daily tick),
+// MINUS the dirty-mask + global-drift accounting — that's Step 3b-1.5, kept
+// out of this commit so we can A/B-validate the core math first without
+// fighting two new behaviours at once.
+//
+// Truth source: `_climate_pass_a()` in
+//   Project/project-keynes/scripts/geography/map_generator.gd
+// (the SoA-aware branch, i.e. when `_use_dc=true`). Algorithm spec is in
+//   .codebuddy/plan/dots-roadmap-to-gdextension/architecture.md  §"Step 3b-0"
+//
+// Performance contract: charter §0 M2 baseline = 0.30 ms / pass @ N=2400.
+// Current GDScript implementation = ~4.1 ms / pass. Expected ~13× speedup.
+//
+// Return value:
+//   ≥ 0.0 → C++ took ownership; GDScript should NOT run its legacy loop.
+//   < 0.0 → fall-back signal (binding broken, missing slot, size mismatch,
+//           etc.) — the GDScript caller already does `if rc >= 0: return`.
+//
+// IMPORTANT: this function ONLY writes to `_slots[id].arr_*.ptrw()`, never
+// calls `map_data->set(prop, arr)` to flush. The Step-5 probe proved that
+// the bind_map_data CoW alias survives ptrw() writes, so the GDScript
+// renderer already sees C++-side mutations on `map.temp_arr[i]` etc. with
+// zero per-pass flush cost. This is the M2 hot-path pattern from charter §11.
+// ─── Mode-B reference implementation: temp_drift_pass ─────────────────────
+//
+// The minimal canonical example for the "Owned-by-C++ + GDScript snapshot"
+// communication contract documented in `docs/performance-charter.md` §12.
+// Behaviour: for every element in _slots[CELL_TEMP].arr_f32, add
+// `drift_amount`. Pure scalar, no SIMD, no threading — the goal is to
+// ship a template that is impossible to get wrong, not to be fast.
+//
+// Hot-loop discipline (copy this verbatim into new passes):
+//   * Resolve slot ids ONCE before the loop.
+//   * Take ONE ptrw() pointer per output buffer.
+//   * Loop body contains ZERO Variant / set() / get() / push_back calls.
+//   * NO obj.set() flush — Mode B says GDScript pulls via snapshot_f32,
+//     it does NOT rely on push-back aliasing.
+//
+// Safety: if `cell_temp` was never registered (e.g. unit-test run before
+// MapData binding), the call is a no-op. No crash, no error log spam.
+void DCWorldExt::run_temp_drift_pass(float drift_amount) {
+    const int sid = component_id(StringName("cell_temp"));
+    if (sid < 0) {
+        return; // slot not registered yet → safe no-op
+    }
+    Slot &s = _slots.write[sid];
+    if (s.dtype != SlotDType::F32) {
+        return; // type mismatch → safe no-op
+    }
+    const int n = s.arr_f32.size();
+    if (n <= 0) {
+        return;
+    }
+    float * const __restrict p = s.arr_f32.ptrw();
+    for (int i = 0; i < n; ++i) {
+        p[i] += drift_amount;
+    }
+}
+
+// ─── Pass #2: thermal_gradient_pass (reference impl with neighbour access) ──
+// Implements `out = clamp(|∇T| * (1 + gain*elev) * k, 0, 1)` over a 2-D grid
+// laid out row-major in the cell SoA arrays. Every step that could trip up
+// a copy-paste author is annotated inline so the doc in performance-charter
+// §12.6 can quote this code verbatim.
+void DCWorldExt::run_thermal_gradient_pass(int grid_w,
+                                           int grid_h,
+                                           float elevation_gain,
+                                           float normalize_k) {
+    // ─── 1. Resolve slot ids ONCE (zero string ops in the hot loop) ────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: missing slot (",
+            "cell_temp=", sid_temp,
+            ", cell_elevation=", sid_elev,
+            ", cell_demo_thermal_gradient=", sid_out,
+            ") — pass skipped (likely demo_thermal_gradient_enabled=false)");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: slot dtype mismatch — pass skipped");
+        return;
+    }
+
+    // ─── 2. Validate grid dimensions vs. SoA size (paranoia, not optimisation) ─
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_thermal_gradient_pass: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // ─── 3. Take ONE pointer per buffer (read + write) ──────────────────
+    const float * const __restrict T    = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+    float       * const __restrict OUT  = s_out.arr_f32.ptrw();
+
+    // ─── 4. Tight loop — neighbour access by integer index, clamp-to-edge ─
+    // Border discipline: substitute self-value for out-of-range neighbours
+    // (Neumann BC). NEVER use modulo-wrap and NEVER branch inside the
+    // arithmetic — branches at the boundary are fine, the compiler handles
+    // them just like a peeled prologue/epilogue.
+    for (int y = 0; y < grid_h; ++y) {
+        const int row    = y * grid_w;
+        const int row_n  = (y > 0)            ? (row - grid_w) : row;
+        const int row_s  = (y < grid_h - 1)   ? (row + grid_w) : row;
+        for (int x = 0; x < grid_w; ++x) {
+            const int i  = row + x;
+            const int iw = (x > 0)            ? (i - 1) : i;
+            const int ie = (x < grid_w - 1)   ? (i + 1) : i;
+            const int in_ = row_n + x;
+            const int is = row_s + x;
+
+            // ── BIT-EQUAL DISCIPLINE ─────────────────────────────────────
+            // GDScript reads from PackedFloat32Array as `float`, which is a
+            // 64-bit double in GDScript. All intermediate arithmetic on the
+            // GDScript side therefore happens in double; the narrow back to
+            // float only occurs at the store. Mirror that here: promote to
+            // double on every load and narrow exactly once at the store.
+            // Without this, the float-domain (gx*gx + gy*gy) addition and
+            // the float gmag*amp*k product each round-off at a different
+            // bit than the GDScript path, yielding ~40% of cells diverging
+            // by 1 ULP. This is the canonical fix for Pass-#2 bit-equal.
+            const double t_ie = static_cast<double>(T[ie]);
+            const double t_iw = static_cast<double>(T[iw]);
+            const double t_is = static_cast<double>(T[is]);
+            const double t_in = static_cast<double>(T[in_]);
+            const double e_i  = static_cast<double>(E[i]);
+
+            const double gx = (t_ie - t_iw) * 0.5;
+            const double gy = (t_is - t_in) * 0.5;
+            const double gmag = Math::sqrt(gx * gx + gy * gy);
+            const double amp  = 1.0 + static_cast<double>(elevation_gain) * e_i;
+            double v = gmag * amp * static_cast<double>(normalize_k);
+            // clamp to [0, 1] so the result is overlay-ready (R8/R16F).
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            // Single narrow at the store — matches `out[i] = v` in GDScript.
+            OUT[i] = static_cast<float>(v);
+        }
+    }
+}
+
+// ─── Pass #3: demo_complex_pass (iterated diffusion + wind approx) ──────────
+// Algorithm spec lives next to the declaration in world_ext.h. This impl
+// keeps every line easily reviewable so performance-charter §12.6.6 can
+// quote it verbatim. The inner stencil is intentionally scalar — Pass #3
+// stresses *algorithmic* complexity, not SIMD/threading (per §0 铁律 2).
+void DCWorldExt::run_demo_complex_pass(int grid_w,
+                                       int grid_h,
+                                       int iterations,
+                                       int kernel_radius,
+                                       float coriolis_strength,
+                                       float terrain_drag,
+                                       float elevation_gain,
+                                       float normalize_k) {
+    // ─── 0. Knob clamps (single push_warning per process for each knob) ─
+    static bool _warned_iter = false;
+    static bool _warned_kr   = false;
+    static bool _warned_cor  = false;
+    static bool _warned_drag = false;
+    if (iterations < 1 || iterations > 64) {
+        if (!_warned_iter) {
+            _warned_iter = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: iterations out of [1,64], clamped (was ",
+                iterations, ")");
+        }
+        if (iterations < 1) iterations = 1;
+        if (iterations > 64) iterations = 64;
+    }
+    if (kernel_radius < 1 || kernel_radius > 5) {
+        if (!_warned_kr) {
+            _warned_kr = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: kernel_radius out of [1,5], clamped (was ",
+                kernel_radius, ")");
+        }
+        if (kernel_radius < 1) kernel_radius = 1;
+        if (kernel_radius > 5) kernel_radius = 5;
+    }
+    if (coriolis_strength < -1.0f || coriolis_strength > 1.0f) {
+        if (!_warned_cor) {
+            _warned_cor = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: coriolis_strength out of [-1,1], clamped");
+        }
+        if (coriolis_strength < -1.0f) coriolis_strength = -1.0f;
+        if (coriolis_strength > 1.0f)  coriolis_strength = 1.0f;
+    }
+    if (terrain_drag < 0.0f || terrain_drag > 1.0f) {
+        if (!_warned_drag) {
+            _warned_drag = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_demo_complex_pass: terrain_drag out of [0,1], clamped");
+        }
+        if (terrain_drag < 0.0f) terrain_drag = 0.0f;
+        if (terrain_drag > 1.0f) terrain_drag = 1.0f;
+    }
+
+    // ─── 1. Resolve slot ids ONCE (zero string ops in the hot loop) ────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: missing slot (",
+            "cell_temp=", sid_temp,
+            ", cell_elevation=", sid_elev,
+            ", cell_demo_thermal_gradient=", sid_out,
+            ") — pass skipped");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: slot dtype mismatch — pass skipped");
+        return;
+    }
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // ─── 2. Take ONE pointer per buffer (read-only inputs) ──────────────
+    const float * const __restrict T_in = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+
+    // ─── 3. Pre-compute Gaussian kernel weights (one C-stack lookup) ────
+    //   Max radius = 5 → max kernel size = 11×11 = 121 entries.
+    //   Stored row-major over (dy = -kr..+kr) × (dx = -kr..+kr).
+    const int kr   = kernel_radius;
+    const int ksz  = 2 * kr + 1;
+    const int klen = ksz * ksz;
+    double kernel[121]; // 11*11 hard cap — enforced by knob clamp
+    double kernel_sum = 0.0;
+    for (int dy = -kr; dy <= kr; ++dy) {
+        for (int dx = -kr; dx <= kr; ++dx) {
+            // exp(-(dx²+dy²)/2) — fixed sigma=1 keeps the kernel compact
+            // and the GDScript port byte-for-byte easy to replicate.
+            const double w = std::exp(-(double)(dx * dx + dy * dy) * 0.5);
+            kernel[(dy + kr) * ksz + (dx + kr)] = w;
+            kernel_sum += w;
+        }
+    }
+    const double kernel_inv_sum = (kernel_sum > 0.0) ? (1.0 / kernel_sum) : 0.0;
+
+    // ─── 4. Allocate ping-pong buffers ONCE (outside iter loop) ─────────
+    // Stored as double to keep bit-equal discipline with GDScript port.
+    std::vector<double> buf_a(n);
+    std::vector<double> buf_b(n);
+    for (int i = 0; i < n; ++i) {
+        buf_a[i] = static_cast<double>(T_in[i]);
+    }
+
+    const double step_size = 0.05;       // fixed stability constant (see §12.6.6)
+    const double cor       = static_cast<double>(coriolis_strength);
+    const double drag      = static_cast<double>(terrain_drag);
+
+    // ─── 5. Iterate `iterations` steps (ping-pong) ──────────────────────
+    for (int it = 0; it < iterations; ++it) {
+        const std::vector<double> &src = (it & 1) ? buf_b : buf_a;
+        std::vector<double>       &dst = (it & 1) ? buf_a : buf_b;
+        const double *__restrict S = src.data();
+        double       *__restrict D = dst.data();
+
+        for (int y = 0; y < grid_h; ++y) {
+            // Latitude-dependent coriolis sign: north hemisphere → +1, south → -1
+            const double cor_sign = (y < grid_h / 2) ? -1.0 : 1.0;
+            const double rot_rad  = cor * cor_sign * 1.5707963267948966; // π/2
+
+            for (int x = 0; x < grid_w; ++x) {
+                const int i = y * grid_w + x;
+
+                // ─── 5.1 Gaussian-weighted smooth (2kr+1)² stencil ────
+                double accum = 0.0;
+                for (int dy = -kr; dy <= kr; ++dy) {
+                    int ny = y + dy;
+                    if (ny < 0)         ny = 0;
+                    else if (ny >= grid_h) ny = grid_h - 1;
+                    const int row = ny * grid_w;
+                    const double *kw_row = &kernel[(dy + kr) * ksz];
+                    for (int dx = -kr; dx <= kr; ++dx) {
+                        int nx = x + dx;
+                        if (nx < 0)         nx = 0;
+                        else if (nx >= grid_w) nx = grid_w - 1;
+                        accum += S[row + nx] * kw_row[dx + kr];
+                    }
+                }
+                const double smooth = accum * kernel_inv_sum;
+
+                // ─── 5.2 Sobel 3×3 gradient (clamp-to-edge) ───────────
+                const int xw = (x > 0)            ? (x - 1) : x;
+                const int xe = (x < grid_w - 1)   ? (x + 1) : x;
+                const int yn = (y > 0)            ? (y - 1) : y;
+                const int ys = (y < grid_h - 1)   ? (y + 1) : y;
+                const int row_n = yn * grid_w;
+                const int row_c = y  * grid_w;
+                const int row_s = ys * grid_w;
+                const double gx = (S[row_n + xe] + 2.0 * S[row_c + xe] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_c + xw] - S[row_s + xw]) * 0.125;
+                const double gy = (S[row_s + xw] + 2.0 * S[row_s + x ] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_n + x ] - S[row_n + xe]) * 0.125;
+
+                // ─── 5.3 Coriolis rotation (90° × cor_sign × strength) ─
+                const double cs = std::cos(rot_rad);
+                const double sn = std::sin(rot_rad);
+                const double gx_p = gx * cs - gy * sn;
+                const double gy_p = gx * sn + gy * cs;
+
+                // ─── 5.4 Terrain damping ─────────────────────────────
+                const double damp = 1.0 - drag * static_cast<double>(E[i]);
+
+                // ─── 5.5 Flux-driven evolution ───────────────────────
+                const double flux = gx_p + gy_p;
+                D[i] = smooth + flux * damp * step_size;
+            }
+        }
+    }
+
+    // ─── 6. Pick the final buffer ───────────────────────────────────────
+    const std::vector<double> &last = (iterations & 1) ? buf_b : buf_a;
+
+    // ─── 7. Normalize to [0,1] over the whole field ─────────────────────
+    double out_min =  std::numeric_limits<double>::infinity();
+    double out_max = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < n; ++i) {
+        const double v = last[i];
+        if (v < out_min) out_min = v;
+        if (v > out_max) out_max = v;
+    }
+    const double denom = (out_max - out_min) > 1.0e-6
+                       ? (out_max - out_min) : 1.0e-6;
+    const double inv_denom = 1.0 / denom;
+
+    // ─── 8. Apply (1 + gain·elev) · k + clamp to [0,1], narrow to float ─
+    float * const __restrict OUT = s_out.arr_f32.ptrw();
+    const double gain = static_cast<double>(elevation_gain);
+    const double k    = static_cast<double>(normalize_k);
+    for (int i = 0; i < n; ++i) {
+        const double norm = (last[i] - out_min) * inv_denom;
+        const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+        double v = norm * amp * k;
+        if (v < 0.0) v = 0.0;
+        else if (v > 1.0) v = 1.0;
+        OUT[i] = static_cast<float>(v);
+    }
+}
+
+// ─── DOTS-A1 EXPERIMENT: run_demo_complex_pass_archetyped ────────────────────
+// See world_ext.h for the contract. Implementation strategy:
+//
+//   * The iteration kernel itself runs on EVERY cell (so neighbour stencils
+//     stay valid — a LAND cell at the border of an OCEAN region must still
+//     read its OCEAN neighbours' temp values during the smoothing/sobel
+//     stage). This is the algorithmically faithful interpretation of
+//     "archetype filter": filter the *write*, not the neighbour-read.
+//
+//   * The post-iter normalize+output stage (steps 7+8 in vanilla) honours
+//     the archetype filter:
+//       - cells with arch != target → OUT[i] = 0.0f, skipped from min/max.
+//       - cells with arch == target → standard normalize + amp + clamp.
+//
+//   * `target_archetype < 0` is the "no filter" control row. It is
+//     algorithmically identical to vanilla `run_demo_complex_pass` — the
+//     bench uses this to confirm bit-equal with the vanilla pass and
+//     measure the "extra branch overhead" on its own.
+//
+// NOTE: We deliberately keep this implementation as a near-verbatim copy
+// of `run_demo_complex_pass`. Sharing code via a template/helper would
+// make the bench less useful (we'd be measuring the helper's call cost
+// rather than the archetype branch's cost on its own).
+void DCWorldExt::run_demo_complex_pass_archetyped(int grid_w,
+                                                  int grid_h,
+                                                  int iterations,
+                                                  int kernel_radius,
+                                                  float coriolis_strength,
+                                                  float terrain_drag,
+                                                  float elevation_gain,
+                                                  float normalize_k,
+                                                  int target_archetype) {
+    // ─── 0. Knob clamps (silent — vanilla version owns the warning prints) ─
+    if (iterations < 1)        iterations = 1;
+    if (iterations > 64)       iterations = 64;
+    if (kernel_radius < 1)     kernel_radius = 1;
+    if (kernel_radius > 5)     kernel_radius = 5;
+    if (coriolis_strength < -1.0f) coriolis_strength = -1.0f;
+    if (coriolis_strength >  1.0f) coriolis_strength =  1.0f;
+    if (terrain_drag < 0.0f)   terrain_drag = 0.0f;
+    if (terrain_drag > 1.0f)   terrain_drag = 1.0f;
+
+    // ─── 1. Resolve slot ids ONCE ──────────────────────────────────────
+    const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_elev = component_id(StringName("cell_elevation"));
+    const int sid_out  = component_id(StringName("cell_demo_thermal_gradient"));
+    if (sid_temp < 0 || sid_elev < 0 || sid_out < 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: missing slot");
+        return;
+    }
+    Slot &s_temp = _slots.write[sid_temp];
+    Slot &s_elev = _slots.write[sid_elev];
+    Slot &s_out  = _slots.write[sid_out];
+    if (s_temp.dtype != SlotDType::F32 || s_elev.dtype != SlotDType::F32 ||
+            s_out.dtype != SlotDType::F32) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: slot dtype mismatch — pass skipped");
+        return;
+    }
+    if (grid_w <= 0 || grid_h <= 0) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: invalid grid ", grid_w, "x", grid_h);
+        return;
+    }
+    const int n = grid_w * grid_h;
+    if (s_temp.arr_f32.size() != n || s_elev.arr_f32.size() != n ||
+            s_out.arr_f32.size() != n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: size mismatch (expected ", n,
+            ", got temp=", s_temp.arr_f32.size(),
+            ", elev=", s_elev.arr_f32.size(),
+            ", out=", s_out.arr_f32.size(), ") — pass skipped");
+        return;
+    }
+
+    // Archetype array bound check (only meaningful if filter is active).
+    const bool   filter_active = (target_archetype >= 0);
+    const int32_t * const __restrict ARCH = filter_active
+        ? _entity_archetype.ptr() : nullptr;
+    if (filter_active && _entity_archetype.size() < n) {
+        UtilityFunctions::push_warning(
+            "[DCWorldExt] run_demo_complex_pass_archetyped: _entity_archetype size ",
+            _entity_archetype.size(), " < n ", n,
+            " — assign_archetype not called for all cells; pass skipped");
+        return;
+    }
+
+    // ─── 2. Take ONE pointer per buffer (read-only inputs) ──────────────
+    const float * const __restrict T_in = s_temp.arr_f32.ptr();
+    const float * const __restrict E    = s_elev.arr_f32.ptr();
+
+    // ─── 3. Pre-compute Gaussian kernel weights ──────────────────────────
+    const int kr   = kernel_radius;
+    const int ksz  = 2 * kr + 1;
+    double kernel[121]; // 11*11 hard cap
+    double kernel_sum = 0.0;
+    for (int dy = -kr; dy <= kr; ++dy) {
+        for (int dx = -kr; dx <= kr; ++dx) {
+            const double w = std::exp(-(double)(dx * dx + dy * dy) * 0.5);
+            kernel[(dy + kr) * ksz + (dx + kr)] = w;
+            kernel_sum += w;
+        }
+    }
+    const double kernel_inv_sum = (kernel_sum > 0.0) ? (1.0 / kernel_sum) : 0.0;
+
+    // ─── 4. Allocate ping-pong buffers ONCE ──────────────────────────────
+    std::vector<double> buf_a(n);
+    std::vector<double> buf_b(n);
+    for (int i = 0; i < n; ++i) {
+        buf_a[i] = static_cast<double>(T_in[i]);
+    }
+
+    const double step_size = 0.05;
+    const double cor       = static_cast<double>(coriolis_strength);
+    const double drag      = static_cast<double>(terrain_drag);
+
+    // ─── 5. Iterate (every cell participates in the stencil — see banner) ─
+    for (int it = 0; it < iterations; ++it) {
+        const std::vector<double> &src = (it & 1) ? buf_b : buf_a;
+        std::vector<double>       &dst = (it & 1) ? buf_a : buf_b;
+        const double *__restrict S = src.data();
+        double       *__restrict D = dst.data();
+
+        for (int y = 0; y < grid_h; ++y) {
+            const double cor_sign = (y < grid_h / 2) ? -1.0 : 1.0;
+            const double rot_rad  = cor * cor_sign * 1.5707963267948966;
+
+            for (int x = 0; x < grid_w; ++x) {
+                const int i = y * grid_w + x;
+
+                double accum = 0.0;
+                for (int dy = -kr; dy <= kr; ++dy) {
+                    int ny = y + dy;
+                    if (ny < 0)            ny = 0;
+                    else if (ny >= grid_h) ny = grid_h - 1;
+                    const int row = ny * grid_w;
+                    const double *kw_row = &kernel[(dy + kr) * ksz];
+                    for (int dx = -kr; dx <= kr; ++dx) {
+                        int nx = x + dx;
+                        if (nx < 0)            nx = 0;
+                        else if (nx >= grid_w) nx = grid_w - 1;
+                        accum += S[row + nx] * kw_row[dx + kr];
+                    }
+                }
+                const double smooth = accum * kernel_inv_sum;
+
+                const int xw = (x > 0)            ? (x - 1) : x;
+                const int xe = (x < grid_w - 1)   ? (x + 1) : x;
+                const int yn = (y > 0)            ? (y - 1) : y;
+                const int ys = (y < grid_h - 1)   ? (y + 1) : y;
+                const int row_n = yn * grid_w;
+                const int row_c = y  * grid_w;
+                const int row_s = ys * grid_w;
+                const double gx = (S[row_n + xe] + 2.0 * S[row_c + xe] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_c + xw] - S[row_s + xw]) * 0.125;
+                const double gy = (S[row_s + xw] + 2.0 * S[row_s + x ] + S[row_s + xe]
+                                  - S[row_n + xw] - 2.0 * S[row_n + x ] - S[row_n + xe]) * 0.125;
+
+                const double cs = std::cos(rot_rad);
+                const double sn = std::sin(rot_rad);
+                const double gx_p = gx * cs - gy * sn;
+                const double gy_p = gx * sn + gy * cs;
+
+                const double damp = 1.0 - drag * static_cast<double>(E[i]);
+                const double flux = gx_p + gy_p;
+                D[i] = smooth + flux * damp * step_size;
+            }
+        }
+    }
+
+    const std::vector<double> &last = (iterations & 1) ? buf_b : buf_a;
+
+    // ─── 6+7. Archetype-aware normalization (only filtered-in cells count) ─
+    double out_min =  std::numeric_limits<double>::infinity();
+    double out_max = -std::numeric_limits<double>::infinity();
+    if (filter_active) {
+        for (int i = 0; i < n; ++i) {
+            if (ARCH[i] != target_archetype) continue;
+            const double v = last[i];
+            if (v < out_min) out_min = v;
+            if (v > out_max) out_max = v;
+        }
+        // Edge case: no cell matched the filter at all → leave OUT untouched
+        // for non-matching cells, write 0.0f. min/max never updated → guard.
+        if (!std::isfinite(out_min) || !std::isfinite(out_max)) {
+            float * const __restrict OUT = s_out.arr_f32.ptrw();
+            for (int i = 0; i < n; ++i) OUT[i] = 0.0f;
+            return;
+        }
+    } else {
+        for (int i = 0; i < n; ++i) {
+            const double v = last[i];
+            if (v < out_min) out_min = v;
+            if (v > out_max) out_max = v;
+        }
+    }
+    const double denom = (out_max - out_min) > 1.0e-6
+                       ? (out_max - out_min) : 1.0e-6;
+    const double inv_denom = 1.0 / denom;
+
+    // ─── 8. Write OUT (filtered-in: full formula; filtered-out: 0.0f) ─────
+    float * const __restrict OUT = s_out.arr_f32.ptrw();
+    const double gain = static_cast<double>(elevation_gain);
+    const double k    = static_cast<double>(normalize_k);
+    if (filter_active) {
+        for (int i = 0; i < n; ++i) {
+            if (ARCH[i] != target_archetype) {
+                OUT[i] = 0.0f;
+                continue;
+            }
+            const double norm = (last[i] - out_min) * inv_denom;
+            const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+            double v = norm * amp * k;
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            OUT[i] = static_cast<float>(v);
+        }
+    } else {
+        for (int i = 0; i < n; ++i) {
+            const double norm = (last[i] - out_min) * inv_denom;
+            const double amp  = 1.0 + gain * static_cast<double>(E[i]);
+            double v = norm * amp * k;
+            if (v < 0.0) v = 0.0;
+            else if (v > 1.0) v = 1.0;
+            OUT[i] = static_cast<float>(v);
+        }
+    }
+}
+
+// ─── Phase 3a Step 0: alias spike (TEMPORARY) ─────────────────────────────
+// What we are testing: does godot-cpp's PackedFloat32Array share its
+// underlying CowData with the GDScript-side property after we `set()` it
+// back? If yes, ptrw() does not detach and the GDScript side sees C++ writes.
+// If no, we need a different strategy for bind_map_data (likely write-then-
+// set per hot-loop invocation, or reverse-anchor the buffer ownership).
+//
+// Reads `obj.<prop>` after the in-C++ mutation and returns it so the GDScript
+// caller can verify directly (we don't trust C++-side reads to prove anything
+// about cross-boundary visibility).
+
+float DCWorldExt::_spike_alias_v1_naive(Object *obj, const StringName &prop, int idx, float sentinel) {
+    if (obj == nullptr) {
+        UtilityFunctions::push_error("[spike v1] null obj");
+        return -9999.0f;
+    }
+    Variant v = obj->get(prop);
+    if (v.get_type() != Variant::PACKED_FLOAT32_ARRAY) {
+        UtilityFunctions::push_error("[spike v1] prop is not PackedFloat32Array");
+        return -9999.0f;
+    }
+    PackedFloat32Array arr = v;        // refcount: GDScript side + this local
+    obj->set(prop, arr);                // explicit reseat (idempotent in theory)
+    if (idx < 0 || idx >= arr.size()) {
+        UtilityFunctions::push_error("[spike v1] idx out of range");
+        return -9999.0f;
+    }
+    float *w = arr.ptrw();              // <-- may detach (CoW) here
+    w[idx] = sentinel;
+    // Read what GDScript side actually has now.
+    Variant v_after = obj->get(prop);
+    PackedFloat32Array arr_after = v_after;
+    return arr_after[idx];
+}
+
+float DCWorldExt::_spike_alias_v2_release(Object *obj, const StringName &prop, int idx, float sentinel) {
+    if (obj == nullptr) {
+        UtilityFunctions::push_error("[spike v2] null obj");
+        return -9999.0f;
+    }
+    {
+        Variant v = obj->get(prop);
+        PackedFloat32Array arr = v;
+        obj->set(prop, arr);
+        // arr / v go out of scope here, dropping the C++ ref.
+    }
+    // Re-acquire after we (hopefully) have GDScript as sole owner.
+    Variant v2 = obj->get(prop);
+    PackedFloat32Array arr2 = v2;
+    if (idx < 0 || idx >= arr2.size()) {
+        UtilityFunctions::push_error("[spike v2] idx out of range");
+        return -9999.0f;
+    }
+    // Now refcount on Godot side: GDScript-prop + arr2 + Variant v2 = at least 2.
+    // Still >1 because we are holding it. ptrw will likely still detach.
+    float *w = arr2.ptrw();
+    w[idx] = sentinel;
+    Variant v_after = obj->get(prop);
+    PackedFloat32Array arr_after = v_after;
+    return arr_after[idx];
+}
+
+float DCWorldExt::_spike_alias_v3_write_then_set(Object *obj, const StringName &prop, int idx, float sentinel) {
+    if (obj == nullptr) {
+        UtilityFunctions::push_error("[spike v3] null obj");
+        return -9999.0f;
+    }
+    Variant v = obj->get(prop);
+    PackedFloat32Array arr = v;
+    if (idx < 0 || idx >= arr.size()) {
+        UtilityFunctions::push_error("[spike v3] idx out of range");
+        return -9999.0f;
+    }
+    // Mutate first (will detach into a new buffer owned by `arr`),
+    // then push the new buffer back to GDScript via set.
+    float *w = arr.ptrw();
+    w[idx] = sentinel;
+    obj->set(prop, arr);
+    Variant v_after = obj->get(prop);
+    PackedFloat32Array arr_after = v_after;
+    return arr_after[idx];
+}
+
+// ─── Phase 3a Step 1: alias verification helper (TEMPORARY) ───────────────
+// Pure C++-side write into _slots[comp_id].arr_f32[idx], no obj.set.
+// If bind_map_data's push-back contract works, the GDScript side sees this
+// write immediately on the next read of the bound property.
+float DCWorldExt::_debug_poke_f32(int comp_id, int idx, float sentinel) {
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        UtilityFunctions::push_error("[_debug_poke_f32] comp_id out of range: ", comp_id);
+        return -9999.0f;
+    }
+    Slot &s = _slots.write[comp_id];
+    if (s.dtype != SlotDType::F32) {
+        UtilityFunctions::push_error("[_debug_poke_f32] slot is not F32: ", comp_id);
+        return -9999.0f;
+    }
+    if (idx < 0 || idx >= s.arr_f32.size()) {
+        UtilityFunctions::push_error("[_debug_poke_f32] idx out of range: ", idx, " / ", s.arr_f32.size());
+        return -9999.0f;
+    }
+    // Same access pattern as a real hot loop: ptrw() on the C++-held buffer.
+    // No obj.set() afterwards — the entire point is to prove the alias.
+    float *w = s.arr_f32.ptrw();
+    w[idx] = sentinel;
+    return sentinel;
+}
+
+// ─── Phase 3a Step 1 (T1b): write-then-set per call ────────────────────────
+// Same write as _debug_poke_f32, but immediately push s.arr_f32 back to the
+// GDScript-side property via map_data->set(prop_name, s.arr_f32). If this
+// PASSes the GDScript-visibility check while plain _debug_poke_f32 FAILs,
+// then ptrw() on the C++-held buffer triggered a CoW detach (refcount 2 →
+// private copy) and the only viable alias contract is "C++ end-of-pass set
+// flush". Looks up prop_name from the file-local BIND_TABLE.
+float DCWorldExt::_debug_poke_f32_with_flush(int comp_id, int idx, float sentinel) {
+    if (_map_data == nullptr) {
+        UtilityFunctions::push_error("[_debug_poke_f32_with_flush] not bound (call bind_map_data first)");
+        return -9999.0f;
+    }
+    if (comp_id < 0 || comp_id >= _slots.size()) {
+        UtilityFunctions::push_error("[_debug_poke_f32_with_flush] comp_id out of range: ", comp_id);
+        return -9999.0f;
+    }
+    Slot &s = _slots.write[comp_id];
+    if (s.dtype != SlotDType::F32) {
+        UtilityFunctions::push_error("[_debug_poke_f32_with_flush] slot is not F32: ", comp_id);
+        return -9999.0f;
+    }
+    if (idx < 0 || idx >= s.arr_f32.size()) {
+        UtilityFunctions::push_error("[_debug_poke_f32_with_flush] idx out of range: ", idx, " / ", s.arr_f32.size());
+        return -9999.0f;
+    }
+    // Reverse-lookup prop_name via slot.name in BIND_TABLE.
+    const char *prop_cstr = nullptr;
+    for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
+        if (s.name == StringName(BIND_TABLE[i].slot_name)) {
+            prop_cstr = BIND_TABLE[i].property_name;
+            break;
+        }
+    }
+    if (prop_cstr == nullptr) {
+        UtilityFunctions::push_error("[_debug_poke_f32_with_flush] slot ", s.name, " not in BIND_TABLE");
+        return -9999.0f;
+    }
+    // Write via ptrw() (may CoW-detach into a private buffer)…
+    float *w = s.arr_f32.ptrw();
+    w[idx] = sentinel;
+    // …then push the (possibly-new) buffer back so GDScript side sees it.
+    _map_data->set(StringName(prop_cstr), s.arr_f32);
+    return sentinel;
+}
+
+// ─── Phase-3 micro-bench API ────────────────────────────────────────────────
+//
+// All bench paths share the same per-cell math:
+//   nb_sum = prev[nb[6*i+0]] + prev[nb[6*i+1]] + ... + prev[nb[6*i+5]]
+//   new[i] = base + lat[i]*k1 + nb_sum*k2 + season
+// and write into _slots[comp_id].arr_f32 via raw ptrw().
+//
+// Three implementations exist for fairness — same workload, different code:
+//   - *_scalar : straight C++ for-loop, lets compiler decide on vectorisation.
+//   - *_simd   : explicit AVX2 8-wide gather for the 6 neighbours.
+//                Falls back to scalar when PK_HAVE_AVX2=0.
+//   - *_thread : *_simd kernel split across n_tasks WorkerThreadPool workers.
+//
+// "_full" variants iterate every cell in the slot.
+// "_indexed" variants iterate only `dirty` indices (sparse Pass-B style).
+// All variants assume neighbours.size() == 6 * cell_count.
+// ────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// ── shared scalar kernel ─────────────────────────────────────────────────
+inline void pass_a_kernel_scalar(float *out_ptr,
+                                 const float   *lat_ptr,
+                                 const float   *prev_ptr,
+                                 const int32_t *nb_ptr,
+                                 int            i,
+                                 float k1, float k2, float base, float season) {
+    const int32_t *nb6 = nb_ptr + i * 6;
+    const float nb_sum = prev_ptr[nb6[0]] + prev_ptr[nb6[1]] + prev_ptr[nb6[2]]
+                       + prev_ptr[nb6[3]] + prev_ptr[nb6[4]] + prev_ptr[nb6[5]];
+    out_ptr[i] = base + lat_ptr[i] * k1 + nb_sum * k2 + season;
+}
+
+#if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
+// ── AVX2 SIMD kernel (8 cells / iter) ────────────────────────────────────
+// Strategy: 6 separate 8-wide gathers from prev[] using nb[6*i+k] indices,
+// hsum into nb_sum, then fma chain for the result.
+// Note: gather throughput on Skylake = 1 per cell on average; this is ~
+// 4x faster than scalar despite gather not being free, because the loop
+// body otherwise spends most of its time on memory dependency chains.
+inline void pass_a_simd_block_full(float *out_ptr,
+                                   const float   *lat_ptr,
+                                   const float   *prev_ptr,
+                                   const int32_t *nb_ptr,
+                                   int   i_begin,    // must be in [0, count - 8]
+                                   float k1, float k2, float base, float season) {
+    // Load lat[i..i+7]
+    __m256 lat = _mm256_loadu_ps(lat_ptr + i_begin);
+
+    // For each of 6 neighbour slots, gather prev[nb[6*(i+k) + slot]] for k=0..7.
+    // nb is laid out as flat [6*count] int32 — for a contiguous stride-1
+    // group of 8 cells, the indices for slot s are at offsets
+    //   nb_ptr[6*i + s], nb_ptr[6*(i+1) + s], ..., nb_ptr[6*(i+7) + s]
+    // i.e. stride 6 in nb_ptr. Build that index vector once, then gather prev.
+    __m256i stride6 = _mm256_setr_epi32(0, 6, 12, 18, 24, 30, 36, 42);
+    __m256 nb_sum = _mm256_setzero_ps();
+    const int32_t *nb_base = nb_ptr + 6 * i_begin;
+    for (int s = 0; s < 6; ++s) {
+        // Load 8 indices: nb_base[s + 6k] for k=0..7
+        __m256i idx = _mm256_add_epi32(stride6, _mm256_set1_epi32(s));
+        idx = _mm256_i32gather_epi32(nb_base, idx, 4);
+        __m256 vals = _mm256_i32gather_ps(prev_ptr, idx, 4);
+        nb_sum = _mm256_add_ps(nb_sum, vals);
+    }
+
+    __m256 vk1     = _mm256_set1_ps(k1);
+    __m256 vk2     = _mm256_set1_ps(k2);
+    __m256 vbase_s = _mm256_set1_ps(base + season);
+
+    // result = (base+season) + lat*k1 + nb_sum*k2
+    __m256 result = _mm256_fmadd_ps(lat,    vk1, vbase_s);
+    result        = _mm256_fmadd_ps(nb_sum, vk2, result);
+
+    _mm256_storeu_ps(out_ptr + i_begin, result);
+}
+#endif
+
+// ── thread task payload ──────────────────────────────────────────────────
+struct PassAFullTask {
+    float         *out_ptr;
+    const float   *lat_ptr;
+    const float   *prev_ptr;
+    const int32_t *nb_ptr;
+    int            count;
+    float          k1, k2, base, season;
+    int            n_tasks;
+};
+
+// Each worker handles `chunk = ceil(count / n_tasks)` cells starting at
+// `task_idx * chunk`. Tail handling is done with scalar.
+static void pass_a_full_worker(void *userdata, uint32_t task_idx) {
+    auto *t = static_cast<PassAFullTask *>(userdata);
+    const int chunk = (t->count + t->n_tasks - 1) / t->n_tasks;
+    const int begin = static_cast<int>(task_idx) * chunk;
+    const int end   = std::min(begin + chunk, t->count);
+
+    int i = begin;
+#if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
+    // SIMD body — leaves the last <8 cells to scalar tail.
+    const int simd_end = end - ((end - begin) % 8);
+    for (; i + 8 <= simd_end; i += 8) {
+        pass_a_simd_block_full(t->out_ptr, t->lat_ptr, t->prev_ptr, t->nb_ptr,
+                               i, t->k1, t->k2, t->base, t->season);
+    }
+#endif
+    for (; i < end; ++i) {
+        pass_a_kernel_scalar(t->out_ptr, t->lat_ptr, t->prev_ptr, t->nb_ptr,
+                             i, t->k1, t->k2, t->base, t->season);
+    }
+}
+
+struct PassAIndexedTask {
+    float         *out_ptr;
+    const int32_t *dirty_ptr;
+    const float   *lat_ptr;
+    const float   *prev_ptr;
+    const int32_t *nb_ptr;
+    int            cap;          // bounds for dirty[k]
+    int            n_dirty;
+    float          k1, k2, base, season;
+    int            n_tasks;
+};
+
+static void pass_a_indexed_worker(void *userdata, uint32_t task_idx) {
+    auto *t = static_cast<PassAIndexedTask *>(userdata);
+    const int chunk = (t->n_dirty + t->n_tasks - 1) / t->n_tasks;
+    const int begin = static_cast<int>(task_idx) * chunk;
+    const int end   = std::min(begin + chunk, t->n_dirty);
+    // Indexed paths can't use a contiguous SIMD block (gather indices are not
+    // stride-1 across dirty[]). Stick with scalar; the win comes from
+    // multi-threaded throughput.
+    for (int k = begin; k < end; ++k) {
+        const int i = t->dirty_ptr[k];
+        if (i < 0 || i >= t->cap) continue;
+        pass_a_kernel_scalar(t->out_ptr, t->lat_ptr, t->prev_ptr, t->nb_ptr,
+                             i, t->k1, t->k2, t->base, t->season);
+    }
+}
+
+} // namespace
+
+// ─── full / scalar ───────────────────────────────────────────────────────
+void DCWorldExt::bench_pass_a_full_scalar(int comp_id,
+                                          const PackedFloat32Array &lat,
+                                          const PackedFloat32Array &prev,
+                                          const PackedInt32Array   &neighbors,
+                                          float k1, float k2, float base, float season) {
+    ERR_FAIL_INDEX(comp_id, _slots.size());
+    Slot &s = _slots.write[comp_id];
+    const int count = s.arr_f32.size();
+    ERR_FAIL_COND(lat.size()       < count);
+    ERR_FAIL_COND(prev.size()      < count);
+    ERR_FAIL_COND(neighbors.size() < count * 6);
+
+    float         *out_ptr  = s.arr_f32.ptrw();
+    const float   *lat_ptr  = lat.ptr();
+    const float   *prev_ptr = prev.ptr();
+    const int32_t *nb_ptr   = neighbors.ptr();
+    for (int i = 0; i < count; ++i) {
+        pass_a_kernel_scalar(out_ptr, lat_ptr, prev_ptr, nb_ptr, i, k1, k2, base, season);
+    }
+}
+
+// ─── full / SIMD ────────────────────────────────────────────────────────
+void DCWorldExt::bench_pass_a_full_simd(int comp_id,
+                                        const PackedFloat32Array &lat,
+                                        const PackedFloat32Array &prev,
+                                        const PackedInt32Array   &neighbors,
+                                        float k1, float k2, float base, float season) {
+    ERR_FAIL_INDEX(comp_id, _slots.size());
+    Slot &s = _slots.write[comp_id];
+    const int count = s.arr_f32.size();
+    ERR_FAIL_COND(lat.size()       < count);
+    ERR_FAIL_COND(prev.size()      < count);
+    ERR_FAIL_COND(neighbors.size() < count * 6);
+
+    float         *out_ptr  = s.arr_f32.ptrw();
+    const float   *lat_ptr  = lat.ptr();
+    const float   *prev_ptr = prev.ptr();
+    const int32_t *nb_ptr   = neighbors.ptr();
+
+    int i = 0;
+#if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
+    const int simd_end = count - (count % 8);
+    for (; i + 8 <= simd_end; i += 8) {
+        pass_a_simd_block_full(out_ptr, lat_ptr, prev_ptr, nb_ptr, i,
+                               k1, k2, base, season);
+    }
+#endif
+    for (; i < count; ++i) {
+        pass_a_kernel_scalar(out_ptr, lat_ptr, prev_ptr, nb_ptr, i,
+                             k1, k2, base, season);
+    }
+}
+
+// ─── full / threaded ────────────────────────────────────────────────────
+void DCWorldExt::bench_pass_a_full_thread(int comp_id,
+                                          const PackedFloat32Array &lat,
+                                          const PackedFloat32Array &prev,
+                                          const PackedInt32Array   &neighbors,
+                                          float k1, float k2, float base, float season,
+                                          int n_tasks) {
+    ERR_FAIL_INDEX(comp_id, _slots.size());
+    Slot &s = _slots.write[comp_id];
+    const int count = s.arr_f32.size();
+    ERR_FAIL_COND(lat.size()       < count);
+    ERR_FAIL_COND(prev.size()      < count);
+    ERR_FAIL_COND(neighbors.size() < count * 6);
+    if (n_tasks < 1) n_tasks = 1;
+
+    PassAFullTask task = {
+        s.arr_f32.ptrw(),
+        lat.ptr(),
+        prev.ptr(),
+        neighbors.ptr(),
+        count,
+        k1, k2, base, season,
+        n_tasks,
+    };
+    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
+    if (wtp == nullptr) {
+        // Fallback: run in-thread.
+        for (int t = 0; t < n_tasks; ++t) {
+            pass_a_full_worker(&task, static_cast<uint32_t>(t));
+        }
+        return;
+    }
+    int64_t group_id = wtp->add_native_group_task(
+        &pass_a_full_worker, &task, n_tasks, -1, true, String("pk_pass_a_full"));
+    wtp->wait_for_group_task_completion(group_id);
+}
+
+// ─── indexed / scalar ───────────────────────────────────────────────────
+void DCWorldExt::bench_pass_a_indexed_scalar(int comp_id,
+                                             const PackedInt32Array   &dirty,
+                                             const PackedFloat32Array &lat,
+                                             const PackedFloat32Array &prev,
+                                             const PackedInt32Array   &neighbors,
+                                             float k1, float k2, float base, float season) {
+    ERR_FAIL_INDEX(comp_id, _slots.size());
+    Slot &s = _slots.write[comp_id];
+    const int cap = s.arr_f32.size();
+    float         *out_ptr   = s.arr_f32.ptrw();
+    const int32_t *dirty_ptr = dirty.ptr();
+    const float   *lat_ptr   = lat.ptr();
+    const float   *prev_ptr  = prev.ptr();
+    const int32_t *nb_ptr    = neighbors.ptr();
+    const int      n_dirty   = dirty.size();
+    for (int k = 0; k < n_dirty; ++k) {
+        const int i = dirty_ptr[k];
+        if (i < 0 || i >= cap) continue;
+        pass_a_kernel_scalar(out_ptr, lat_ptr, prev_ptr, nb_ptr, i,
+                             k1, k2, base, season);
+    }
+}
+
+// ─── indexed / "SIMD" — same as scalar; no contiguous gather possible ───
+// We still expose this as a separate API to keep bench tables symmetrical.
+void DCWorldExt::bench_pass_a_indexed_simd(int comp_id,
+                                           const PackedInt32Array   &dirty,
+                                           const PackedFloat32Array &lat,
+                                           const PackedFloat32Array &prev,
+                                           const PackedInt32Array   &neighbors,
+                                           float k1, float k2, float base, float season) {
+    // Sparse access pattern — SIMD gather offers no advantage and complicates
+    // tail handling. Punt to scalar (which compiler may still vectorise).
+    bench_pass_a_indexed_scalar(comp_id, dirty, lat, prev, neighbors,
+                                k1, k2, base, season);
+}
+
+// ─── indexed / threaded ─────────────────────────────────────────────────
+void DCWorldExt::bench_pass_a_indexed_thread(int comp_id,
+                                             const PackedInt32Array   &dirty,
+                                             const PackedFloat32Array &lat,
+                                             const PackedFloat32Array &prev,
+                                             const PackedInt32Array   &neighbors,
+                                             float k1, float k2, float base, float season,
+                                             int n_tasks) {
+    ERR_FAIL_INDEX(comp_id, _slots.size());
+    Slot &s = _slots.write[comp_id];
+    const int cap     = s.arr_f32.size();
+    const int n_dirty = dirty.size();
+    if (n_tasks < 1) n_tasks = 1;
+
+    PassAIndexedTask task = {
+        s.arr_f32.ptrw(),
+        dirty.ptr(),
+        lat.ptr(),
+        prev.ptr(),
+        neighbors.ptr(),
+        cap,
+        n_dirty,
+        k1, k2, base, season,
+        n_tasks,
+    };
+    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
+    if (wtp == nullptr) {
+        for (int t = 0; t < n_tasks; ++t) {
+            pass_a_indexed_worker(&task, static_cast<uint32_t>(t));
+        }
+        return;
+    }
+    int64_t group_id = wtp->add_native_group_task(
+        &pass_a_indexed_worker, &task, n_tasks, -1, true, String("pk_pass_a_idx"));
+    wtp->wait_for_group_task_completion(group_id);
+}
+
+// ─── Class binding ─────────────────────────────────────────────────────────
+
+namespace {
+
+inline void pk_csv_append_int(std::string &out, int64_t v) {
+    char buf[32];
+    auto res = std::to_chars(buf, buf + sizeof(buf), v);
+    if (res.ec == std::errc()) {
+        out.append(buf, res.ptr);
+    }
+}
+
+inline void pk_csv_append_float(std::string &out, float v) {
+    if (!std::isfinite(v)) {
+        return;
+    }
+    char buf[64];
+    const int n = std::snprintf(buf, sizeof(buf), "%.6f", double(v));
+    if (n <= 0) {
+        return;
+    }
+    int end = n;
+    while (end > 0 && buf[end - 1] == '0') {
+        --end;
+    }
+    if (end > 0 && buf[end - 1] == '.') {
+        --end;
+    }
+    if (end <= 0 || (end == 1 && buf[0] == '-')) {
+        out.push_back('0');
+        return;
+    }
+    out.append(buf, buf + end);
+}
+
+struct TileCsvFieldRef {
+    enum Kind : int {
+        F32 = 0,
+        I32 = 1,
+        U8 = 2,
+    };
+
+    Kind kind = F32;
+    PackedFloat32Array f32;
+    PackedInt32Array i32;
+    PackedByteArray u8;
+    const float *f32_ptr = nullptr;
+    const int32_t *i32_ptr = nullptr;
+    const uint8_t *u8_ptr = nullptr;
+};
+
+} // anonymous namespace
+
+godot::PackedByteArray DCWorldExt::encode_tile_csv_rows(godot::Dictionary knobs) {
+    using godot::Array;
+    using godot::CharString;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+    using godot::Variant;
+
+    auto fail = []() -> PackedByteArray {
+        return PackedByteArray();
+    };
+
+    if (!knobs.has("row_start") || !knobs.has("fixed_suffix") ||
+        !knobs.has("cell_count") || !knobs.has("q_arr") ||
+        !knobs.has("r_arr") || !knobs.has("s_arr") || !knobs.has("arrays")) {
+        return fail();
+    }
+
+    const int row_start = int(knobs["row_start"]);
+    const int cell_start = std::max(0, int(knobs.get("cell_start", 0)));
+    const int cell_count = int(knobs["cell_count"]);
+    const int cell_stride = std::max(1, int(knobs.get("cell_stride", 1)));
+    if (row_start < 0 || cell_count <= 0 || cell_start >= cell_count) {
+        return fail();
+    }
+
+    const String fixed_suffix = knobs.get("fixed_suffix", String());
+    const CharString fixed_utf8 = fixed_suffix.utf8();
+    const char *fixed_data = fixed_utf8.get_data();
+    const int fixed_len = fixed_utf8.length();
+
+    PackedInt32Array q_arr = knobs["q_arr"];
+    PackedInt32Array r_arr = knobs["r_arr"];
+    PackedInt32Array s_arr = knobs["s_arr"];
+    if (q_arr.size() < cell_count || r_arr.size() < cell_count || s_arr.size() < cell_count) {
+        return fail();
+    }
+    const int32_t * const q_ptr = q_arr.ptr();
+    const int32_t * const r_ptr = r_arr.ptr();
+    const int32_t * const s_ptr = s_arr.ptr();
+
+    Array arrays = knobs["arrays"];
+    std::vector<TileCsvFieldRef> fields;
+    fields.reserve(size_t(arrays.size()));
+    for (int i = 0; i < arrays.size(); ++i) {
+        const Variant v = arrays[i];
+        TileCsvFieldRef ref;
+        switch (v.get_type()) {
+            case Variant::PACKED_FLOAT32_ARRAY:
+                ref.kind = TileCsvFieldRef::F32;
+                ref.f32 = v;
+                if (ref.f32.size() < cell_count) return fail();
+                ref.f32_ptr = ref.f32.ptr();
+                break;
+            case Variant::PACKED_INT32_ARRAY:
+                ref.kind = TileCsvFieldRef::I32;
+                ref.i32 = v;
+                if (ref.i32.size() < cell_count) return fail();
+                ref.i32_ptr = ref.i32.ptr();
+                break;
+            case Variant::PACKED_BYTE_ARRAY:
+                ref.kind = TileCsvFieldRef::U8;
+                ref.u8 = v;
+                if (ref.u8.size() < cell_count) return fail();
+                ref.u8_ptr = ref.u8.ptr();
+                break;
+            default:
+                return fail();
+        }
+        fields.push_back(ref);
+    }
+
+    const int rows = ((cell_count - cell_start - 1) / cell_stride) + 1;
+    const size_t estimated = size_t(rows) *
+        (size_t(std::max(0, fixed_len)) + 32u + size_t(fields.size()) * 12u);
+    std::string text;
+    text.reserve(estimated);
+
+    int row_idx = row_start;
+    for (int cell_idx = cell_start; cell_idx < cell_count; cell_idx += cell_stride, ++row_idx) {
+        pk_csv_append_int(text, row_idx);
+        if (fixed_len > 0) {
+            text.append(fixed_data, fixed_data + fixed_len);
+        }
+        text.push_back(',');
+        pk_csv_append_int(text, cell_idx);
+        text.push_back(',');
+        pk_csv_append_int(text, q_ptr[cell_idx]);
+        text.push_back(',');
+        pk_csv_append_int(text, r_ptr[cell_idx]);
+        text.push_back(',');
+        pk_csv_append_int(text, s_ptr[cell_idx]);
+        for (const TileCsvFieldRef &field : fields) {
+            text.push_back(',');
+            switch (field.kind) {
+                case TileCsvFieldRef::F32:
+                    pk_csv_append_float(text, field.f32_ptr[cell_idx]);
+                    break;
+                case TileCsvFieldRef::I32:
+                    pk_csv_append_int(text, field.i32_ptr[cell_idx]);
+                    break;
+                case TileCsvFieldRef::U8:
+                    pk_csv_append_int(text, int(field.u8_ptr[cell_idx]));
+                    break;
+            }
+        }
+        text.push_back('\n');
+    }
+
+    if (text.empty()) {
+        return fail();
+    }
+
+    PackedByteArray out;
+    out.resize(int(text.size()));
+    std::memcpy(out.ptrw(), text.data(), text.size());
+    return out;
+}
+
+// ─── Detail scatter（vegetation-visual-pcg 阶段 A）──────────────────────────
+// 植被/点缀散布的 per-instance 热循环 + MultiMesh buffer 组装。纯 buffer-encoder：
+// 只读 knobs 内 flat PackedArray，不触 _slots / _bound。逐位复刻
+// shrub_layer.gd 的 _try_append_instance / _candidate_position /
+// _world_noise_suitability / _world_micro_gap / _hash01 / _value_noise2 /
+// _is_water_position（world_to_cube→offset 栅格）/ _is_river_body_position（flow 双线性）。
+godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::PackedByteArray;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["path"] = String("gdscript");
+    out["instance_count"] = 0;
+    out["elapsed_ms"] = -1.0;
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const double hex_size = double(knobs.get("hex_size", 22.0));
+    if (hex_size <= 0.0) return fail("bad hex_size");
+    const float origin_x = float(knobs.get("origin_x", 0.0));
+    const float origin_y = float(knobs.get("origin_y", 0.0));
+    const float bsize_x = float(knobs.get("size_x", 1.0));
+    const float bsize_y = float(knobs.get("size_y", 1.0));
+    const float wrap_period_x = float(knobs.get("wrap_period_x", 0.0));
+    const float wrap_edge_margin = float(knobs.get("wrap_edge_margin", 0.0));
+    const int grid_w = int(knobs.get("grid_w", 0));
+    const int grid_h = int(knobs.get("grid_h", 0));
+    const float river_clear = float(knobs.get("river_clear_threshold", 0.5));
+    const float spawn_radius_factor = float(knobs.get("spawn_radius_factor", 0.78));
+    const float warp_strength = float(knobs.get("world_noise_warp_strength", 0.2));
+    const float patch_freq = float(knobs.get("patch_frequency", 0.095));
+    const float patch_cutoff = float(knobs.get("patch_cutoff", 0.31));
+    const float patch_contrast = float(knobs.get("patch_contrast", 2.15));
+    const float mid_mix = float(knobs.get("world_noise_mid_mix", 0.38));
+    const float fine_mix = float(knobs.get("world_noise_fine_mix", 0.10));
+    const float micro_gap = float(knobs.get("micro_gap_threshold", 0.12));
+    const float wn_acceptance = float(knobs.get("world_noise_acceptance", 1.10));
+    const float min_size = float(knobs.get("min_size_factor", 0.095));
+    const float max_size = float(knobs.get("max_size_factor", 0.19));
+    const float size_scale = float(knobs.get("size_scale", 1.0));
+    const float dead_thr = float(knobs.get("vitality_dead_threshold", 0.12));
+    const float dieback = float(knobs.get("vitality_dieback_noise_strength", 0.45));
+    const int instance_cap = int(knobs.get("instance_cap", 0));
+    const int flow_w = int(knobs.get("flow_w", 0));
+    const int flow_h = int(knobs.get("flow_h", 0));
+    const int spawn_domain = int(knobs.get("spawn_domain", 0)); // 0 land, 1 water, 2 any
+    const int rotation_mode = int(knobs.get("rotation_mode", 0)); // 0 random, 1 upright, 2 upright jitter
+    const double rotation_strength = std::max(0.0, std::min(1.0, double(knobs.get("random_rotation_strength", 1.0))));
+    const double upright_jitter_rad = std::max(0.0, std::min(0.610865238, double(knobs.get("upright_jitter_radians", 0.104719755))));
+
+    PackedInt32Array keys = knobs.get("keys", PackedInt32Array());
+    PackedInt32Array cell_indices_in = knobs.get("cell_indices", PackedInt32Array());
+    PackedFloat32Array cx = knobs.get("center_x", PackedFloat32Array());
+    PackedFloat32Array cy = knobs.get("center_y", PackedFloat32Array());
+    PackedFloat32Array suit = knobs.get("suitability", PackedFloat32Array());
+    PackedInt32Array att = knobs.get("attempts", PackedInt32Array());
+    PackedFloat32Array vit = knobs.get("vitality", PackedFloat32Array());
+    PackedFloat32Array sized = knobs.get("size_density", PackedFloat32Array());
+    PackedFloat32Array cr = knobs.get("color_r", PackedFloat32Array());
+    PackedFloat32Array cg = knobs.get("color_g", PackedFloat32Array());
+    PackedFloat32Array cb = knobs.get("color_b", PackedFloat32Array());
+    PackedFloat32Array ca = knobs.get("color_a", PackedFloat32Array());
+    PackedByteArray offw = knobs.get("offset_is_water", PackedByteArray());
+    PackedFloat32Array flow = knobs.get("flow_buffer", PackedFloat32Array());
+
+    const int K = keys.size();
+    if (K <= 0) return fail("no active cells");
+    if (cell_indices_in.size() < K || cx.size() < K || cy.size() < K || suit.size() < K || att.size() < K ||
+        vit.size() < K || sized.size() < K || cr.size() < K || cg.size() < K ||
+        cb.size() < K || ca.size() < K) {
+        return fail("per-cell array size mismatch");
+    }
+    if (instance_cap <= 0) return fail("zero instance cap");
+
+    const int32_t *KEY = keys.ptr();
+    const int32_t *CELL_IN = cell_indices_in.ptr();
+    const float *CX = cx.ptr();
+    const float *CY = cy.ptr();
+    const float *SU = suit.ptr();
+    const int32_t *AT = att.ptr();
+    const float *VI = vit.ptr();
+    const float *SD = sized.ptr();
+    const float *CR = cr.ptr();
+    const float *CG = cg.ptr();
+    const float *CB = cb.ptr();
+    const float *CA = ca.ptr();
+    const uint8_t *OFFW = offw.ptr();
+    const int offw_n = offw.size();
+    const float *FLOW = flow.ptr();
+    const int flow_n = flow.size();
+
+    const double TAU = 6.283185307179586;
+
+    auto hash01 = [](int64_t idx, int64_t salt) -> double {
+        double x = std::sin(double(idx * 127 + salt * 311) * 12.9898) * 43758.5453123;
+        return x - std::floor(x);
+    };
+    auto hash2i = [](int64_t x, int64_t y, int64_t salt) -> double {
+        int64_t n = x * 374761393 + y * 668265263 + salt * 1442695041;
+        n = (n ^ (n >> 13)) * 1274126177;
+        n = n ^ (n >> 16);
+        return double(n & 0x00ffffff) / double(0x01000000);
+    };
+    auto value_noise2 = [&](double x, double y, int64_t salt) -> double {
+        int64_t ix = (int64_t)std::floor(x);
+        int64_t iy = (int64_t)std::floor(y);
+        double fx = x - double(ix);
+        double fy = y - double(iy);
+        double sx = fx * fx * (3.0 - 2.0 * fx);
+        double sy = fy * fy * (3.0 - 2.0 * fy);
+        double a = hash2i(ix, iy, salt);
+        double b = hash2i(ix + 1, iy, salt);
+        double c = hash2i(ix, iy + 1, salt);
+        double d = hash2i(ix + 1, iy + 1, salt);
+        double ab = a + (b - a) * sx;
+        double cd = c + (d - c) * sx;
+        return ab + (cd - ab) * sy;
+    };
+    auto clampd = [](double v, double lo, double hi) -> double { return v < lo ? lo : (v > hi ? hi : v); };
+    auto lerpd = [](double a, double b, double t) -> double { return a + (b - a) * t; };
+    auto posmodd = [](double v, double m) -> double {
+        if (m <= 0.0) {
+            return v;
+        }
+        double r = std::fmod(v, m);
+        return r < 0.0 ? r + m : r;
+    };
+    auto smoothstep = [&](double e0, double e1, double v) -> double {
+        double t = clampd((v - e0) / (e1 - e0), 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    };
+
+    // _is_water_position：world_to_cube → cube_round → cube_to_offset(odd-r) → 栅格。
+    const double SQRT3 = std::sqrt(3.0);
+    auto world_is_water = [&](double px, double py) -> bool {
+        double q_f = (SQRT3 / 3.0 * px - 1.0 / 3.0 * py) / hex_size;
+        double r_f = (2.0 / 3.0 * py) / hex_size;
+        double s_f = -q_f - r_f;
+        int64_t rq = (int64_t)std::llround(q_f);
+        int64_t rr = (int64_t)std::llround(r_f);
+        int64_t rs = (int64_t)std::llround(s_f);
+        double dq = std::fabs(double(rq) - q_f);
+        double dr = std::fabs(double(rr) - r_f);
+        double ds = std::fabs(double(rs) - s_f);
+        if (dq > dr && dq > ds) {
+            rq = -rr - rs;
+        } else if (dr > ds) {
+            rr = -rq - rs;
+        }
+        int64_t col = rq + (rr - (rr & 1)) / 2;
+        int64_t row = rr;
+        if (row < 0 || row >= grid_h) {
+            return true;
+        }
+        col = (col % grid_w + grid_w) % grid_w;
+        int64_t gi = row * (int64_t)grid_w + col;
+        if (gi < 0 || gi >= offw_n) {
+            return true;
+        }
+        return OFFW[gi] != 0;
+    };
+
+    // _is_river_body_position：flow_buffer 双线性（derived_size），>= 阈值即拒绝。
+    auto river_body = [&](double px, double py) -> bool {
+        if (flow_n <= 0 || flow_w <= 0 || flow_h <= 0) {
+            return false;
+        }
+        double sample_x = (wrap_period_x > 0.0001f) ? posmodd(px, (double)wrap_period_x) : px;
+        double u = (bsize_x < 0.001) ? 0.5 : (sample_x - origin_x) / bsize_x;
+        double v = (bsize_y < 0.001) ? 0.5 : (py - origin_y) / bsize_y;
+        u = clampd(u, 0.0, 1.0);
+        v = clampd(v, 0.0, 1.0);
+        double fx = u * double(flow_w - 1);
+        double fy = v * double(flow_h - 1);
+        int x0 = (int)std::floor(fx);
+        if (x0 < 0) x0 = 0; else if (x0 > flow_w - 1) x0 = flow_w - 1;
+        int y0 = (int)std::floor(fy);
+        if (y0 < 0) y0 = 0; else if (y0 > flow_h - 1) y0 = flow_h - 1;
+        int x1 = x0 + 1; if (x1 > flow_w - 1) x1 = flow_w - 1;
+        int y1 = y0 + 1; if (y1 > flow_h - 1) y1 = flow_h - 1;
+        double tx = fx - double(x0);
+        double ty = fy - double(y0);
+        int64_t i11 = (int64_t)y1 * flow_w + x1;
+        if (i11 >= flow_n) {
+            return false;
+        }
+        double v00 = FLOW[(int64_t)y0 * flow_w + x0];
+        double v10 = FLOW[(int64_t)y0 * flow_w + x1];
+        double v01 = FLOW[(int64_t)y1 * flow_w + x0];
+        double v11 = FLOW[i11];
+        double a0 = lerpd(v00, v10, tx);
+        double a1 = lerpd(v01, v11, tx);
+        return lerpd(a0, a1, ty) >= river_clear;
+    };
+
+    auto world_noise_suit = [&](double px, double py) -> double {
+        double hs = (hex_size > 1.0) ? hex_size : 1.0;
+        double pxn = px / hs;
+        double pyn = py / hs;
+        double wx = (value_noise2(pxn * patch_freq * 0.55, pyn * patch_freq * 0.55, 313) - 0.5) * 7.0;
+        double wy = (value_noise2(pxn * patch_freq * 0.55, pyn * patch_freq * 0.55, 719) - 0.5) * 7.0;
+        double coarse = value_noise2((pxn + wx) * patch_freq, (pyn + wy) * patch_freq, 17);
+        double mid = value_noise2(pxn * patch_freq * 3.1 + 19.0, pyn * patch_freq * 3.1 - 11.0, 41);
+        double fine = value_noise2(pxn * patch_freq * 8.5 - 37.0, pyn * patch_freq * 8.5 + 23.0, 83);
+        double patch = smoothstep(patch_cutoff, 1.0, coarse);
+        patch = std::pow(patch, (double)patch_contrast);
+        patch *= lerpd(1.0, lerpd(0.55, 1.35, mid), mid_mix);
+        patch *= lerpd(1.0, lerpd(0.82, 1.18, fine), fine_mix);
+        return clampd(patch, 0.0, 1.0);
+    };
+    auto world_micro_gap = [&](double px, double py, int64_t key, int64_t attempt) -> double {
+        double hs = (hex_size > 1.0) ? hex_size : 1.0;
+        double pxn = px / hs;
+        double pyn = py / hs;
+        double cont = value_noise2(pxn * 0.82 + 23.0, pyn * 0.82 - 17.0, 131);
+        double dith = hash01(key, 9900 + attempt * 19);
+        return clampd(cont * 0.72 + dith * 0.28, 0.0, 1.0);
+    };
+
+    // 候选累积（按 score 排序后取 instance_cap）。
+    struct Inst {
+        int32_t cell_idx;
+        float px, py, rot, size, seed, variant, score;
+        float r, g, b, a;
+    };
+    std::vector<Inst> insts;
+    insts.reserve((size_t)instance_cap * 2);
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    const double min_sz = (double)min_size;
+    const double max_sz = (double)max_size;
+    for (int c = 0; c < K; ++c) {
+        const int64_t key = (int64_t)KEY[c];
+        const int32_t cell_idx = CELL_IN[c];
+        const double center_x = (double)CX[c];
+        const double center_y = (double)CY[c];
+        const double cell_suit = (double)SU[c];
+        const int attempts = AT[c];
+        const double vitality = (double)VI[c];
+        const double size_density = clampd((double)SD[c], 0.0, 1.0);
+        const double base_r = (double)CR[c];
+        const double base_g = (double)CG[c];
+        const double base_b = (double)CB[c];
+        const double base_a = (double)CA[c];
+        for (int attempt = 0; attempt < attempts; ++attempt) {
+            if (vitality <= dead_thr) {
+                double dn = hash01(key, 931 + attempt);
+                if (dn < 1.0 - (double)dieback) {
+                    continue;
+                }
+            }
+            // _candidate_position
+            double angle = std::fmod(hash01(key, 101) + double(attempt) * 0.61803398875, 1.0);
+            if (angle < 0.0) angle += 1.0;
+            angle *= TAU;
+            double radius = std::sqrt(hash01(key, 200 + attempt * 37)) * hex_size * (double)spawn_radius_factor;
+            double bpx = center_x + std::cos(angle) * radius;
+            double bpy = center_y + std::sin(angle) * radius;
+            double wnx = (value_noise2(bpx * 0.033, bpy * 0.033, 911) - 0.5);
+            double wny = (value_noise2(bpx * 0.033, bpy * 0.033, 977) - 0.5);
+            double px = bpx + wnx * (hex_size * (double)warp_strength);
+            double py = bpy + wny * (hex_size * (double)warp_strength);
+
+            const bool pos_is_water = world_is_water(px, py);
+            if (spawn_domain == 0 && pos_is_water) {
+                continue;
+            }
+            if (spawn_domain == 1 && !pos_is_water) {
+                continue;
+            }
+            if (spawn_domain != 1 && river_body(px, py)) {
+                continue;
+            }
+            double wn = world_noise_suit(px, py);
+            if (wn <= 0.001) {
+                continue;
+            }
+            double micro = world_micro_gap(px, py, key, attempt);
+            if (micro < (double)micro_gap) {
+                continue;
+            }
+            double noise_gate = std::pow(clampd(wn, 0.0, 1.0), 1.35);
+            double local_acc = clampd(cell_suit * (double)wn_acceptance * noise_gate, 0.0, 1.0);
+            if (hash01(key, 9300 + attempt) > local_acc) {
+                continue;
+            }
+            double variant = hash01(key, 300 + attempt);
+            double size = hex_size * lerpd(min_sz, max_sz, hash01(key, 400 + attempt));
+            size *= lerpd(0.85, 1.12, size_density);
+            size *= (double)size_scale;
+            double rot = hash01(key, 500 + attempt) * TAU;
+            if (rotation_mode == 1) {
+                rot = 0.0;
+            } else if (rotation_mode == 2) {
+                rot = (hash01(key, 501 + attempt) * 2.0 - 1.0) * upright_jitter_rad;
+            } else if (rotation_strength < 0.999) {
+                rot = (hash01(key, 501 + attempt) * 2.0 - 1.0) * 3.14159265358979323846 * rotation_strength;
+            }
+            double seed = hash01(key, 600 + attempt);
+            double score = wn * 0.66 + cell_suit * 0.27 + hash01(key, 7600 + attempt) * 0.07;
+
+            // _base_color_for_state：variant 明暗微调。
+            double shade = (variant - 0.5) * 0.16;
+            double rr2 = base_r, gg2 = base_g, bb2 = base_b;
+            if (shade >= 0.0) {
+                rr2 = base_r + (1.0 - base_r) * shade;
+                gg2 = base_g + (1.0 - base_g) * shade;
+                bb2 = base_b + (1.0 - base_b) * shade;
+            } else {
+                double f = 1.0 + shade;  // = 1 - (-shade)
+                rr2 = base_r * f;
+                gg2 = base_g * f;
+                bb2 = base_b * f;
+            }
+
+            Inst it;
+            it.cell_idx = cell_idx;
+            it.px = (float)px;
+            it.py = (float)py;
+            it.rot = (float)rot;
+            it.size = (float)size;
+            it.seed = (float)seed;
+            it.variant = (float)variant;
+            it.score = (float)score;
+            it.r = (float)rr2;
+            it.g = (float)gg2;
+            it.b = (float)bb2;
+            it.a = (float)base_a;
+            insts.push_back(it);
+        }
+    }
+
+    int n_total = (int)insts.size();
+    int n_keep = n_total < instance_cap ? n_total : instance_cap;
+    if (n_keep <= 0) {
+        out["fallback"] = false;
+        out["path"] = String("gdext");
+        out["instance_count"] = 0;
+        out["buffer"] = PackedFloat32Array();
+        auto t1e = std::chrono::high_resolution_clock::now();
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1e - t0).count();
+        return out;
+    }
+    if (n_total > instance_cap) {
+        std::nth_element(insts.begin(), insts.begin() + (instance_cap - 1), insts.end(),
+                         [](const Inst &a, const Inst &b) { return a.score > b.score; });
+    }
+
+    std::vector<Inst> draw_insts;
+    draw_insts.reserve((size_t)n_keep + 32);
+    const bool wrap_edges = wrap_period_x > 0.0001f && wrap_edge_margin > 0.0f;
+    for (int i = 0; i < n_keep; ++i) {
+        const Inst &it = insts[i];
+        draw_insts.push_back(it);
+        if (!wrap_edges) {
+            continue;
+        }
+        if (it.px <= wrap_edge_margin) {
+            Inst copy = it;
+            copy.px += wrap_period_x;
+            draw_insts.push_back(copy);
+        }
+        if (it.px >= wrap_period_x - wrap_edge_margin) {
+            Inst copy = it;
+            copy.px -= wrap_period_x;
+            draw_insts.push_back(copy);
+        }
+    }
+
+    const int n_draw = (int)draw_insts.size();
+
+    // MultiMesh 2D buffer：每实例 16 float（transform 8 + color 4 + custom 4）。
+    PackedFloat32Array buffer;
+    PackedInt32Array cell_indices;
+    buffer.resize((int64_t)n_draw * 16);
+    cell_indices.resize(n_draw);
+    float *BUF = buffer.ptrw();
+    int32_t *CELL_IDX = cell_indices.ptrw();
+    const double inv_sx = (bsize_x > 0.001) ? (1.0 / (double)bsize_x) : 0.0;
+    const double inv_sy = (bsize_y > 0.001) ? (1.0 / (double)bsize_y) : 0.0;
+    for (int i = 0; i < n_draw; ++i) {
+        const Inst &it = draw_insts[i];
+        CELL_IDX[i] = it.cell_idx;
+        double cs = std::cos((double)it.rot) * (double)it.size;
+        double sn = std::sin((double)it.rot) * (double)it.size;
+        // x_axis = (cs, sn); y_axis = (-sn, cs); origin = (px, py)
+        int64_t b = (int64_t)i * 16;
+        BUF[b + 0] = (float)cs;          // columns[0][0] = x_axis.x
+        BUF[b + 1] = (float)(-sn);       // columns[1][0] = y_axis.x
+        BUF[b + 2] = 0.0f;
+        BUF[b + 3] = it.px;              // columns[2][0] = origin.x
+        BUF[b + 4] = (float)sn;          // columns[0][1] = x_axis.y
+        BUF[b + 5] = (float)cs;          // columns[1][1] = y_axis.y
+        BUF[b + 6] = 0.0f;
+        BUF[b + 7] = it.py;              // columns[2][1] = origin.y
+        BUF[b + 8] = it.r;
+        BUF[b + 9] = it.g;
+        BUF[b + 10] = it.b;
+        BUF[b + 11] = it.a;
+        double sample_x = (wrap_period_x > 0.0001f) ? posmodd((double)it.px, (double)wrap_period_x) : (double)it.px;
+        double uvx = clampd((sample_x - origin_x) * inv_sx, 0.0, 1.0);
+        double uvy = clampd(((double)it.py - origin_y) * inv_sy, 0.0, 1.0);
+        BUF[b + 12] = (float)uvx;
+        BUF[b + 13] = (float)uvy;
+        BUF[b + 14] = it.seed;
+        BUF[b + 15] = it.variant;
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["fallback"] = false;
+    out["path"] = String("gdext");
+    out["instance_count"] = n_draw;
+    out["candidate_count"] = n_total;
+    out["wrap_edge_copy_count"] = n_draw - n_keep;
+    out["buffer"] = buffer;
+    out["cell_indices"] = cell_indices;
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
+
+
+godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knobs) {
+    godot::Dictionary out = encode_detail_scatter(knobs);
+    if (!bool(out.get("fallback", true))) {
+        out["path"] = godot::String("gdext_delta");
+    }
+    return out;
+}
+
+} // namespace pk

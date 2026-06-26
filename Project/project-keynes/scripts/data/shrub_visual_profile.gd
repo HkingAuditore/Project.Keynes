@@ -15,6 +15,18 @@ enum DetailKind {
 	DEAD_SNAG,     # 10 枯立木（低活力/胁迫区）
 }
 
+enum RotationMode {
+	RANDOM_FULL,    # 岩石/草丛等无明确上下方向的点缀
+	UPRIGHT,        # 树木/棕榈等保持竖向
+	UPRIGHT_JITTER, # 竖向基础上给少量自然歪斜
+}
+
+enum SpawnDomain {
+	LAND,  # 默认陆地点缀
+	WATER, # 海草/海藻/珊瑚等水域点缀
+	ANY,
+}
+
 @export var enabled: bool = true
 
 @export_group("Global Defaults")
@@ -22,6 +34,21 @@ enum DetailKind {
 @export_range(-16, 16, 1) var render_z_index: int = 1
 @export_range(0.0, 300.0, 0.05) var density_scale: float = 1.55
 @export_range(0.0, 3.0, 0.05) var wind_strength: float = 1.0
+
+@export_group("Placement Semantics")
+@export_enum("Land", "Water", "Any") var spawn_domain: int = SpawnDomain.LAND
+@export_enum("RandomFull", "Upright", "UprightJitter") var rotation_mode: int = RotationMode.RANDOM_FULL
+@export_range(0.0, 1.0, 0.01) var random_rotation_strength: float = 1.0
+@export_range(0.0, 35.0, 0.5) var upright_jitter_degrees: float = 6.0
+
+@export_group("Ecology Affinity Overrides")
+@export var vegetation_weight_overrides: Dictionary = {}
+@export var landform_weight_overrides: Dictionary = {}
+@export var cover_weight_overrides: Dictionary = {}
+
+@export_group("Color Override")
+@export var base_color_override_enabled: bool = false
+@export var base_color_override: Color = Color(0.18, 0.39, 0.19, 0.88)
 
 @export_group("Desktop Quality")
 @export_range(0.0, 2.0, 0.05) var desktop_density_multiplier_quality0: float = 0.55

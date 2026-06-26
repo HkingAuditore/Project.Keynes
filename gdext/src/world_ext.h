@@ -924,6 +924,13 @@ public:
     //   输入 w/h/origin_x/origin_y/inv_world_x/inv_world_y/hex_size/seed/base_radius_px/
     //   sdf_max_dist_px/seam_dx/cr_step。输出 out_buf(F32 PackedFloat32Array，= world.flow_buffer)。
     godot::Dictionary run_bake_river_sdf_pass(godot::Dictionary knobs);
+    // run_bake_coast_sdf_pass（water-bodies systemic）：海/湖统一"离岸像素距离场"。
+    //   从 per-pixel terrain(biome_buffer) 的 land-water 边界做 chamfer 3-4 双通距离变换，
+    //   产出每像素到最近水体的像素距离（水体=0，向内陆递增，clamp 于 coast_sdf_max_dist_px）。
+    //   水集合 = {0,1,18,19,20,21}（与 terrain_index is_water / pk_is_water_terrain 对齐）。
+    //   输入 width/height/biome_buffer/coast_sdf_max_dist_px/coast_sdf_wrap_x。
+    //   输出 out_buf(F32 PackedFloat32Array)。供 geometry_fields 在 river carve 后刻连续岸坡。
+    godot::Dictionary run_bake_coast_sdf_pass(godot::Dictionary knobs);
     // run_bake_erosion_pass：复刻 map_baker.gd::_hydraulic_erosion。droplet 水力侵蚀，
     //   用 Ref<RandomNumberGenerator>（同 seed 复刻 baker _rng PCG）逐滴随机起点/方向。
     //   in/out height buffer，内部 clamp [0,1]。输入 w/h/height_buffer（PackedFloat32Array）/seed +
@@ -1110,6 +1117,9 @@ public:
     //   `multimesh.buffer = buf` 一次赋值，零逐实例 marshalling。
     //   SAME_SOURCE: shrub_layer.gd::_rebuild_instances（GDScript fallback）。
     godot::Dictionary encode_detail_scatter(godot::Dictionary knobs);
+    // Dirty-cell variant for succession events. It consumes the same flat per-cell
+    // arrays as encode_detail_scatter, but callers pass only the current event batch.
+    godot::Dictionary encode_detail_scatter_delta(godot::Dictionary knobs);
 
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。

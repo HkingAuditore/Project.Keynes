@@ -159,6 +159,14 @@ extends Node2D
 			_spawn_detail_layers()
 			if _map != null and _world != null:
 				_rebuild()
+@export_group("Detail Refresh")
+@export var detail_scatter_refresh_layers_per_frame: int = 1
+@export var detail_scatter_refresh_cells_per_batch: int = 32
+@export var detail_scatter_refresh_log_enabled: bool = true
+@export var detail_scatter_rebuild_log_enabled: bool = true
+@export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
+@export var detail_scatter_desktop_total_instance_budget: int = 120000
+@export var detail_scatter_mobile_total_instance_budget: int = 9000
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
@@ -233,6 +241,11 @@ var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
 # Decoration / vegetation 散布层（数据驱动）：默认回退到 grass/shrub/tree 三个
 # @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
 var _detail_layers: Array = []
+var _detail_refresh_queue: Array = []
+var _detail_refresh_indices: PackedInt32Array = PackedInt32Array()
+var _detail_refresh_batches: Array = []
+var _last_detail_refresh_report: Dictionary = {}
+var _last_detail_budget_report: Dictionary = {}
 # C++ DCWorldExt 引用，转发给每个散布层做 native 生成。
 var _world_ext = null
 var _map: MapData = null
@@ -363,6 +376,7 @@ func _process(delta: float) -> void:
 		layer.set_world_time(_world_time)
 		layer.set_wind_field(_detail_wind_dir, wind_boost)
 	)
+	_drain_detail_refresh_queue()
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("world_time", _world_time)
 		_update_season_transition()
@@ -445,6 +459,7 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_mobile_quality_tier(veg_tier)
 	)
+	_apply_detail_global_budget()
 	if _weather_layer != null and _weather_layer.has_method("set_mobile_quality_tier"):
 		_weather_layer.set_mobile_quality_tier(tier_define)
 	if _mobile_quality_tier_define == tier_define:
@@ -475,6 +490,219 @@ func _for_each_vegetation_layer(callable: Callable) -> void:
 	for layer in _detail_layers:
 		if layer != null:
 			callable.call(layer)
+
+
+func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
+	if indices.is_empty() or _detail_layers.is_empty():
+		return
+	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(indices))
+	if _detail_refresh_queue.is_empty():
+		_start_next_detail_refresh_batch()
+	_last_detail_refresh_report = {
+		"queued_layers": _detail_refresh_queue.size(),
+		"dirty_cells": _detail_refresh_indices.size(),
+		"pending_batches": _detail_refresh_batches.size(),
+		"layers_done": 0,
+		"elapsed_ms": 0.0,
+	}
+	if detail_scatter_refresh_log_enabled:
+		print("[detail_scatter/QUEUE] succession active_cells=%d pending_batches=%d queued_layers=%d layers_per_frame=%d cells_per_batch=%d" % [
+			_detail_refresh_indices.size(),
+			_detail_refresh_batches.size(),
+			_detail_refresh_queue.size(),
+			maxi(1, detail_scatter_refresh_layers_per_frame),
+			maxi(1, detail_scatter_refresh_cells_per_batch),
+		])
+
+
+func _dedup_detail_refresh_indices(indices: PackedInt32Array) -> PackedInt32Array:
+	var seen := {}
+	var out := PackedInt32Array()
+	for v in indices:
+		var idx := int(v)
+		if seen.has(idx):
+			continue
+		seen[idx] = true
+		out.append(idx)
+	return out
+
+
+func _enqueue_detail_refresh_batches(indices: PackedInt32Array) -> void:
+	if indices.is_empty():
+		return
+	var batch_size := maxi(1, detail_scatter_refresh_cells_per_batch)
+	var current := PackedInt32Array()
+	for idx in indices:
+		current.append(int(idx))
+		if current.size() >= batch_size:
+			_detail_refresh_batches.append(current)
+			current = PackedInt32Array()
+	if not current.is_empty():
+		_detail_refresh_batches.append(current)
+
+
+func _start_next_detail_refresh_batch() -> bool:
+	if not _detail_refresh_queue.is_empty():
+		return true
+	if _detail_refresh_batches.is_empty():
+		_detail_refresh_indices = PackedInt32Array()
+		return false
+	_detail_refresh_indices = _detail_refresh_batches.pop_front()
+	_detail_refresh_queue.clear()
+	for layer in _detail_layers:
+		if layer != null:
+			_detail_refresh_queue.append(layer)
+	_last_detail_refresh_report = {
+		"queued_layers": _detail_refresh_queue.size(),
+		"dirty_cells": _detail_refresh_indices.size(),
+		"pending_batches": _detail_refresh_batches.size(),
+		"layers_done": 0,
+		"elapsed_ms": 0.0,
+	}
+	return not _detail_refresh_queue.is_empty()
+
+
+func _drain_detail_refresh_queue() -> void:
+	if _detail_refresh_queue.is_empty() and not _start_next_detail_refresh_batch():
+		return
+	var budget := maxi(1, detail_scatter_refresh_layers_per_frame)
+	var done := 0
+	var t0 := Time.get_ticks_usec()
+	while done < budget and not _detail_refresh_queue.is_empty():
+		var layer = _detail_refresh_queue.pop_front()
+		if layer != null and is_instance_valid(layer) and layer.has_method("refresh_for_succession"):
+			var layer_t0 := Time.get_ticks_usec()
+			layer.refresh_for_succession(_detail_refresh_indices)
+			var layer_elapsed := float(Time.get_ticks_usec() - layer_t0) / 1000.0
+			if detail_scatter_refresh_log_enabled and layer.has_method("get_scatter_diagnostics"):
+				var d: Dictionary = layer.get_scatter_diagnostics()
+				if layer_elapsed >= detail_scatter_slow_layer_ms or float(d.get("rebuild_ms", 0.0)) >= detail_scatter_slow_layer_ms:
+					print("[detail_scatter/SLOW_LAYER] name=%s wall=%.2fms update=%.2fms path=%s inst=%d cand=%d wrap=%d cells=%d missing=%d dropped=%d reason=%s" % [
+						str(d.get("name", layer.name)),
+						layer_elapsed,
+						float(d.get("rebuild_ms", 0.0)),
+						str(d.get("path", "")),
+						int(d.get("instances", 0)),
+						int(d.get("candidates", 0)),
+						int(d.get("wrap_edge_copies", 0)),
+						int(d.get("incremental_cells", 0)),
+						int(d.get("missing_slots", 0)),
+						int(d.get("dropped_instances", 0)),
+						str(d.get("reason", "")),
+					])
+			done += 1
+	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
+	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("layers_done", 0)) + done
+	_last_detail_refresh_report["elapsed_ms"] = float(_last_detail_refresh_report.get("elapsed_ms", 0.0)) + elapsed
+	_last_detail_refresh_report["remaining_layers"] = _detail_refresh_queue.size()
+	_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
+	_apply_detail_global_budget()
+	if _detail_refresh_queue.is_empty():
+		if detail_scatter_refresh_log_enabled:
+			print("[detail_scatter/DONE] batch_cells=%d layers=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
+				int(_last_detail_refresh_report.get("dirty_cells", 0)),
+				int(_last_detail_refresh_report.get("layers_done", 0)),
+				float(_last_detail_refresh_report.get("elapsed_ms", 0.0)),
+				_detail_refresh_batches.size(),
+				str(_last_detail_budget_report),
+			])
+		_detail_refresh_indices = PackedInt32Array()
+
+
+func detail_scatter_refresh_report() -> Dictionary:
+	return _last_detail_refresh_report.duplicate(true)
+
+
+func detail_scatter_layer_reports() -> Array:
+	var out: Array = []
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("get_scatter_diagnostics"):
+			out.append(layer.get_scatter_diagnostics())
+	return out
+
+
+func _detail_total_instance_budget() -> int:
+	if OS.has_feature("mobile"):
+		return maxi(0, detail_scatter_mobile_total_instance_budget)
+	return maxi(0, detail_scatter_desktop_total_instance_budget)
+
+
+func _apply_detail_global_budget() -> void:
+	if _detail_layers.is_empty():
+		_last_detail_budget_report = {"total_instances": 0, "budget": _detail_total_instance_budget(), "visible_fraction": 1.0}
+		return
+	var total := 0
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("instance_count"):
+			total += int(layer.instance_count())
+	var budget := _detail_total_instance_budget()
+	var fraction := 1.0
+	if budget > 0 and total > budget:
+		fraction = float(budget) / float(total)
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("apply_visible_instance_fraction"):
+			layer.apply_visible_instance_fraction(fraction)
+	_last_detail_budget_report = {
+		"total_instances": total,
+		"budget": budget,
+		"visible_fraction": fraction,
+		"layer_count": _detail_layers.size(),
+	}
+	if detail_scatter_rebuild_log_enabled and budget > 0 and total > budget:
+		print("[detail_scatter/BUDGET_CLAMP] total_inst=%d budget=%d visible_fraction=%.3f layers=%d" % [
+			total,
+			budget,
+			fraction,
+			_detail_layers.size(),
+		])
+
+
+func detail_scatter_budget_report() -> Dictionary:
+	return _last_detail_budget_report.duplicate(true)
+
+
+func _log_detail_scatter_rebuild_summary(reason: String) -> void:
+	if not detail_scatter_rebuild_log_enabled:
+		return
+	var reports := detail_scatter_layer_reports()
+	if reports.is_empty():
+		print("[detail_scatter/REBUILD] reason=%s no_layers" % reason)
+		return
+	var total_ms := 0.0
+	var total_inst := 0
+	var total_cand := 0
+	var slow: Array = []
+	for d in reports:
+		var ms := float(d.get("rebuild_ms", 0.0))
+		total_ms += ms
+		total_inst += int(d.get("instances", 0))
+		total_cand += int(d.get("candidates", 0))
+		if ms >= detail_scatter_slow_layer_ms:
+			slow.append(d)
+	slow.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("rebuild_ms", 0.0)) > float(b.get("rebuild_ms", 0.0))
+	)
+	print("[detail_scatter/REBUILD] reason=%s layers=%d total_rebuild_ms=%.2f total_inst=%d total_cand=%d budget=%s" % [
+		reason,
+		reports.size(),
+		total_ms,
+		total_inst,
+		total_cand,
+		str(_last_detail_budget_report),
+	])
+	var limit := mini(5, slow.size())
+	for i in range(limit):
+		var d: Dictionary = slow[i]
+		print("  [detail_scatter/TOP%d] name=%s rebuild=%.2fms path=%s inst=%d cand=%d wrap=%d reason=%s" % [
+			i + 1,
+			str(d.get("name", "")),
+			float(d.get("rebuild_ms", 0.0)),
+			str(d.get("path", "")),
+			int(d.get("instances", 0)),
+			int(d.get("candidates", 0)),
+			int(d.get("wrap_edge_copies", 0)),
+			str(d.get("reason", "")),
+		])
 
 
 # 默认散布层 profile 列表：优先 decoration_manifest.layers；留空时回退 grass/shrub/tree。
@@ -710,6 +938,7 @@ func set_visual_quality(q: int) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_visual_quality(visual_quality)
 	)
+	_apply_detail_global_budget()
 
 
 # 60 FPS 调查（2026-06-14）：完全禁用主地形 shader。
@@ -1266,6 +1495,8 @@ func _rebuild() -> void:
 		layer.set_world_ext(_world_ext)
 		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
 	)
+	_apply_detail_global_budget()
+	_log_detail_scatter_rebuild_summary("renderer_rebuild")
 	if _shader_mat == null:
 		return
 	_apply_uniforms()
@@ -1315,6 +1546,11 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
 	sm.set_shader_parameter("flow_tex",     _world.flow_tex)
+	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
+	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
+	# water_pipeline 回退旧逐邻域算法。
+	sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:
@@ -1415,7 +1651,7 @@ func _apply_uniforms() -> void:
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
-		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x())
+		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x(), _map)
 		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
 		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
 		_weather_layer.set_season_phase(_season_phase)

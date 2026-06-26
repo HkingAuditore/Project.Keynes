@@ -252,6 +252,10 @@ var moisture: float = 0.5:
 var is_lake_seed: bool = false
 # Phase 14：火山地标 flag（不参与 terrain 枚举，但 shader 端额外加红光烟柱）
 var has_volcano: bool = false
+# [water-depth-tex 2026-06-26] 归一水深 ∈ [0,1]（海/湖统一：海洋 1-E/sea，湖泊湖岸→湖心碗形）。
+# 生成期（_assemble_native_generation_map）写一次、bake_world 经 pixel_to_cell_index 扇出成 R8
+# water_depth_tex；仅渲染消费，非 tick 字段 → 用简单 var（不走 SoA facade）。
+var water_depth: float = 0.0
 
 # --- 大气候系统（Phase 2 + 5 + 8） ---
 # base_moisture：生成阶段最终敲定的"年均湿度基线"（包含 coastal boost）。
