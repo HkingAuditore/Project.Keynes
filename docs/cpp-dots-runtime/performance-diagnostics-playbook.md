@@ -357,6 +357,39 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
 3. 确认 editor/debug/release DLL 都是最新 build。
 4. 重启 Godot，避免旧 DLL 仍被加载。
 
+## Gameplay event bus / chunked detail 验证
+
+新增 API 探针：
+
+- `DCWorldExt.has_method("get_gameplay_event_schema")`
+- `DCWorldExt.has_method("publish_gameplay_events")`
+- `DCWorldExt.has_method("poll_gameplay_events")`
+- `DCWorldExt.has_method("snapshot_gameplay_event_journal")`
+- `DCWorldExt.has_method("get_gameplay_event_bus_report")`
+
+事件总线 smoke：
+
+1. C++ vegetation pass 产生 `VEGETATION_SUCCESSION` 后，`GameplayEventBus.poll_succession_cells(&"detail_renderer")` 应返回与旧 `succession_indices` 对齐的 cell set。
+2. GDScript `publish_event()` 发布 debug 事件后，用另一个 consumer id poll，确认事件 id 单调递增且不会抢走 renderer cursor。
+3. `snapshot_gameplay_event_journal()` 后 `clear_gameplay_events()`，再 `restore_gameplay_event_journal(snapshot)`，`replay_gameplay_events()` 应能按 tick/type 读回同一批事件。
+4. `get_gameplay_event_bus_report()` 中 `dropped_event_count=0` 是正常目标；若非 0，检查 `event_count`、`oldest_event_id/newest_event_id` 和 `consumer_lag`。
+
+detail scatter 日志：
+
+- 全量路径应显示 `path=gdext_chunked`（chunked 开启）或 `path=gdext`（chunked 关闭）。
+- event-driven 局部刷新应显示 `path=gdext_event_chunk`，并在 `[detail_scatter/SLOW_CHUNK]` 中同时报告 `cells`、`chunks`、`sampled`、`active`、`water`、`ctx`、`knobs`、`native`、`apply`、`remaining`。
+- `chunks` 应远小于 dirty `cells` 覆盖全图时的等效层数；单次小规模演替通常只重建少量 chunk。
+- `sampled > 0` 表示 delta 路径把 chunk 内 MapData/Profile 采样交给 C++；`active` 是 native suitability 过滤后真正喂给 scatter 的 cell 数。若 `active=0` 但 wall time 仍高，优先看 MultiMesh apply / Godot object 成本，而不是 GDScript per-cell sampling。
+- `water` 是 offset water mask 获取/构建成本；正常只有首个 layer 可能非零，其它 layer 应命中共享缓存。`ctx` 是 layer-level native common knobs 构建成本；`knobs` 是单 chunk 补 `sample_cell_indices` 的成本；`native` 是 GDExtension call；`apply` 是 `MultiMesh.buffer` 提交。
+- `remaining` 长时间大于 0 表示 chunk task 被预算拆帧，这是正常降峰；若视觉滞后可提高 `detail_scatter_refresh_chunks_per_frame` 或 `detail_scatter_refresh_apply_budget_ms`。
+- 若回到 `path=gdscript`，先看 `reason`：常见是旧 DLL、缺 `encode_detail_scatter_delta`、bad native payload 或 `_world_ext` 未注入。
+
+本次实现的本机验证记录（2026-06-26）：
+
+- 静态 `rg` 已确认 native declarations、ClassDB bindings、GDScript wrapper 和 renderer 调用点一致。
+- `scons platform=windows target=template_debug` 在 `gdext` 下构建通过，并产出 `dots_ext.windows.template_debug.x86_64.dll`。
+- 当前机器 PATH 和项目脚本记录路径均未找到 Godot executable，因此 headless `--check-only` / 30 tick runtime 验证需在 Godot 可执行路径恢复后执行。运行前必须重启 Godot，避免加载旧 DLL。
+
 ## Budget 问题排查
 
 如果看到：

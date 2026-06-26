@@ -73,6 +73,24 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_native_daily_report);
     ClassDB::bind_method(D_METHOD("get_native_shadow_diff_report"),
                          &DCWorldExt::get_native_shadow_diff_report);
+    ClassDB::bind_method(D_METHOD("get_gameplay_event_schema"),
+                         &DCWorldExt::get_gameplay_event_schema);
+    ClassDB::bind_method(D_METHOD("publish_gameplay_events", "batch"),
+                         &DCWorldExt::publish_gameplay_events);
+    ClassDB::bind_method(D_METHOD("poll_gameplay_events", "opts"),
+                         &DCWorldExt::poll_gameplay_events);
+    ClassDB::bind_method(D_METHOD("ack_gameplay_events", "consumer_id", "up_to_event_id"),
+                         &DCWorldExt::ack_gameplay_events);
+    ClassDB::bind_method(D_METHOD("replay_gameplay_events", "opts"),
+                         &DCWorldExt::replay_gameplay_events);
+    ClassDB::bind_method(D_METHOD("snapshot_gameplay_event_journal", "opts"),
+                         &DCWorldExt::snapshot_gameplay_event_journal);
+    ClassDB::bind_method(D_METHOD("restore_gameplay_event_journal", "snapshot"),
+                         &DCWorldExt::restore_gameplay_event_journal);
+    ClassDB::bind_method(D_METHOD("clear_gameplay_events", "opts"),
+                         &DCWorldExt::clear_gameplay_events);
+    ClassDB::bind_method(D_METHOD("get_gameplay_event_bus_report"),
+                         &DCWorldExt::get_gameplay_event_bus_report);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_base_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_base_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_post_base_pass", "seed", "cfg", "profile", "input"),

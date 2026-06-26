@@ -4172,6 +4172,11 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     knobs["succession_indices"] = out_indices;
     knobs["succession_to_veg"]  = out_to_veg;
     knobs["stat_succession_count"] = n_succ;
+    if (n_succ > 0) {
+        const int64_t tick = int64_t(knobs.get("tick", int64_t(knobs.get("day_idx", 0))));
+        const int32_t phase = int32_t(knobs.get("event_phase", 0));
+        _emit_succession_events(out_indices, out_to_veg, VG, s_veg.arr_u8.size(), tick, phase, 1);
+    }
 
     // 写回 in/out arrays（CoW：caller 保留同一份引用，ptrw 已经写过了）
     knobs["vitality_arr"]   = vitality_arr;
@@ -4491,6 +4496,11 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
     knobs["succession_indices"] = out_indices;
     knobs["succession_to_veg"]  = out_to_veg;
     knobs["stat_succession_count"] = n_succ;
+    if (n_succ > 0) {
+        const int64_t tick = int64_t(knobs.get("tick", int64_t(knobs.get("day_idx", 0))));
+        const int32_t phase = int32_t(knobs.get("event_phase", 0));
+        _emit_succession_events(out_indices, out_to_veg, VG, s_veg.arr_u8.size(), tick, phase, 1);
+    }
 
     knobs["vitality_arr"]   = vitality_arr;
     knobs["low_streak_arr"] = low_streak;
@@ -5449,6 +5459,11 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
     knobs["succession_indices"]    = out_indices_vd;
     knobs["succession_to_veg"]     = out_to_veg_vd;
     knobs["stat_succession_count"] = n_succ_vd;
+    if (n_succ_vd > 0) {
+        const int64_t tick = int64_t(knobs.get("tick", int64_t(knobs.get("day_idx", 0))));
+        const int32_t phase = int32_t(knobs.get("event_phase", 0));
+        _emit_succession_events(out_indices_vd, out_to_veg_vd, VG, s_veg.arr_u8.size(), tick, phase, 1);
+    }
 
     // ════════════════════════════════════════════════════════════════════
     // ③ FEEDBACK 段（1:1 复制 run_climate_feedback_pass 主循环）

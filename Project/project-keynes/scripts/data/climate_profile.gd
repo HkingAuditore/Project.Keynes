@@ -1095,6 +1095,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 12, 1) var erosion_thermal_iters: int = 2
 @export var erosion_thermal_talus: float = 0.04
 @export_range(0.0, 1.0, 0.05) var erosion_thermal_rate: float = 0.5
+# [coast-erosion 2026-06-26] 水域波蚀强度：邻接水体(海/湖)按波浪能量下蚀近岸陆地，向海蚀台地收敛
+# (河流沿河道切，水域沿岸线切)。0=关；越大海岸退得越多/海崖越明显。post_base #2c 消费。
+@export_range(0.0, 1.0, 0.01) var coast_wave_erosion: float = 0.30
 
 # ══════════════════════════════════════════════════════════════════════
 # [terrain-overhaul Phase 3 — 统一气候场(盛行风水汽输送 + 海洋温度调节)]

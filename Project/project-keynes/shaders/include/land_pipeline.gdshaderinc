@@ -384,14 +384,13 @@ SurfaceParams apply_land_color_overlays(
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, scals.g, 0);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
-	// [coast-smooth 2026-06-26] 等高线 AA（陆侧）：近岸陆地像素若其平滑高程(height_tex 线性插值的
-	// 亚像素高程)低于水线，渐隐为浅海色 → 海岸线沿亚像素等高线走，消除 per-cell 六边形阶梯，使海岸
-	// 像河流一样平滑。submerge 由连续高度场驱动(平滑边缘)，coast_gate(有水邻居)仅把效果限制在近岸、
-	// 防止内陆洼地/排干湖被误染。coast_smooth_strength=0 时整体旁路、回退旧硬边。
+	// [coast-smooth 2026-06-26] 海岸过渡带（陆侧）：在贴水的一圈把陆色混向"水色与陆色的中间色"，柔化
+	// 六边形硬边。粗细 = shore_w(贴水接触度,已 smoothstep)×coast_smooth_width；内陆/远岸 shore_w=0 不染。
+	// 颜色 = mix(color_coast_water, color_lowland, coast_shore_land_bias) → 水色+陆色混合(非灰褐)。
 	if (coast_smooth_strength > 0.001) {
-		float submerge = 1.0 - smoothstep(sea_level - coast_smooth_band, sea_level + coast_smooth_band * 0.30, elev);
-		float coast_gate = clamp(shore_halo_r.shore_w * 1.4, 0.0, 1.0);
-		col = mix(col, color_coast_water, submerge * coast_gate * coast_smooth_strength);
+		float band = smoothstep(0.0, 1.0, clamp(shore_halo_r.shore_w * coast_smooth_width, 0.0, 1.0));
+		vec3 shore_mix = mix(color_coast_water, color_lowland, coast_shore_land_bias);
+		col = mix(col, shore_mix, band * coast_smooth_strength);
 	}
 #endif
 

@@ -27,6 +27,7 @@ const MAX_WEATHER_FRONTS := 16
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
 const CURTAIN_SHADER_PATH := "res://shaders/weather_cell_curtain.gdshader"
 const _CELL_CURTAIN_ENABLED := true
+const _FRONT_PARTICLES_ENABLED := false
 const _CURTAIN_LAYER_COUNT_DESKTOP := 3
 const _CURTAIN_LAYER_COUNT_MOBILE := 1
 const _CURTAIN_PATCH_SCALE := 1.45
@@ -166,6 +167,7 @@ var _drift_debug_last_log_time: float = -1.0
 func _ready() -> void:
 	z_as_relative = false
 	z_index = 4
+	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	# v9.perf：默认整层隐藏，set_weather_fronts() 来了再 visible=true，
 	# 在没有任何天气时省掉 overlay quad 的全屏 fragment + framebuffer blend
@@ -186,7 +188,8 @@ func _ready() -> void:
 	_curtain_root = Node2D.new()
 	_curtain_root.name = "CellWeatherCurtains"
 	_curtain_root.z_as_relative = true
-	_curtain_root.z_index = -1
+	# 先画在云 overlay 之上保证雨雪可读；后续若拆分云/降水 pass，再把它放回云下。
+	_curtain_root.z_index = 1
 	add_child(_curtain_root)
 
 	_particles_root = Node2D.new()
@@ -211,11 +214,8 @@ func _process(delta: float) -> void:
 		_active_count = 0
 		visible = false
 		return
-	# 任务 5：粒子/噪声时间推进受 WorldClock.paused 门控
-	# （不依赖 WorldClock 实例，而是看 SceneTree 的 paused 状态——与项目现有暂停机制兑齐）
-	if not _effective_running():
-		return
-	_world_time += delta * _clock_speed_multiplier
+	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
+	_world_time += delta * visual_time_scale
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
 	if _curtain_mat != null:
@@ -282,8 +282,7 @@ func _process(delta: float) -> void:
 		# 让 shader 自己刷云的噪声飘动。
 		_refresh_visibility()
 
-# 暂停门控：由上层（main.gd 把 WorldClock.paused 同步给 WeatherLayer）写入。
-# 默认 true；外部写入 false 后停止 world_time 推进。
+# 兼容旧接口：上层仍会同步 WorldClock.paused，但天气表现层现在暂停时也持续播放。
 var _clock_running: bool = true
 var _clock_speed_multiplier: float = 1.0
 
@@ -691,6 +690,10 @@ func _sync_shadow_pool(fronts: Array) -> void:
 
 func _sync_particles_pool(fronts: Array) -> void:
 	if _particles_pool.is_empty():
+		return
+	if not _FRONT_PARTICLES_ENABLED:
+		for i in range(MAX_WEATHER_FRONTS):
+			_disable_particle_slot(_particles_pool[i], i)
 		return
 	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
 	for i in range(MAX_WEATHER_FRONTS):
@@ -1331,10 +1334,10 @@ func _desired_curtain_layer_count() -> int:
 	if _strength <= 0.001:
 		return 0
 	if OS.has_feature("mobile"):
-		return 0 if _mobile_quality_tier_define == "MOBILE_QUALITY_LOW" else 1
+		return 1
 	match _visual_quality:
 		0:
-			return 0
+			return 1
 		1:
 			return 1
 		_:

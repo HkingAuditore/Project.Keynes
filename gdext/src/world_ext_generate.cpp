@@ -2212,6 +2212,50 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
     }
 
+    // [coast-erosion 2026-06-26] #2c 水域波蚀：让水体(海/湖)像河流一样介入地形侵蚀——近岸陆地被
+    // 邻接水体的波浪能量侵蚀，向"海蚀台地"下蚀(高处海崖蚀得快、渐近水线平台)。与河流下切 #2b 并列：
+    // 河流沿河道切，水域沿岸线切。波能 ∝ 邻接水体的开阔/深度(深海邻居=大风区=强浪，浅滩/小湖弱) ×
+    // 岸线包围度。只下蚀、clamp 在 sea_level 之上(不把陆地翻成海、不引发海岸级联);仅读邻居水体 E
+    // (本 pass 不改水格)→ 顺序无关。下蚀后 land_h 降低 → 下游 floodplain/beach 分类自洽。base pass
+    // 已 100% C++ → 无 GDScript 镜像。一键回退：profile coast_wave_erosion=0。
+    int coast_erosion_touched = 0;
+    {
+        const double coast_wave_erosion = std::max(0.0, getd(profile, "coast_wave_erosion", 0.30));
+        if (coast_wave_erosion > 0.0) {
+            constexpr double PK_WAVE_MIN_LAND = 0.004;  // 蚀后保留在 sea_level 之上的最小余量
+            constexpr double PK_LAKE_WAVE_MUL = 0.35;   // 湖泊波能(风区小)相对海洋折减
+            const double floor_e = sea_level + PK_WAVE_MIN_LAND;
+            const double inv_sea = 1.0 / std::max(sea_level, 0.001);
+            for (int i : land) {
+                if (pk_is_water_terrain(TERR[i])) continue;
+                if (double(E[i]) <= floor_e) continue;  // 已贴水线的低地无可蚀
+                double energy = 0.0;
+                int wn = 0;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[size_t(i) * 6 + d];
+                    if (ni < 0 || !pk_is_water_terrain(TERR[ni])) continue;
+                    ++wn;
+                    // 深度代理：水体越深(离水线越远)风区越大、浪能越强；浅滩/海岸弱。
+                    double depth_proxy = (sea_level - double(E[ni])) * inv_sea;
+                    if (depth_proxy < 0.0) depth_proxy = 0.0; else if (depth_proxy > 1.0) depth_proxy = 1.0;
+                    const double type_mul = (TERR[ni] == 18) ? PK_LAKE_WAVE_MUL : 1.0;  // 18=LAKE
+                    energy += type_mul * (0.30 + 0.70 * depth_proxy);
+                }
+                if (wn == 0) continue;
+                const double e_avg = energy / double(wn);
+                const double coverage = double(wn) / 6.0;  // 被水包围越多蚀得越强
+                double wave = e_avg * (0.45 + 0.55 * coverage);
+                if (wave < 0.0) wave = 0.0; else if (wave > 1.0) wave = 1.0;
+                // 海蚀台地：下蚀量 ∝ 高于水线的高度 → 高处海崖蚀得快、渐近水线成平台。
+                double e = double(E[i]);
+                e -= coast_wave_erosion * wave * (e - sea_level);
+                if (e < floor_e) e = floor_e;
+                E[i] = float(e);
+                ++coast_erosion_touched;
+            }
+        }
+    }
+
     int river_count = 0;
     for (int i = 0; i < n; ++i) river_count += int(RIV[i] != 0);
 
@@ -3289,6 +3333,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     stage_counts["headwater_river"] = headwater_touched;
     stage_counts["river_lake_snap"] = river_lake_snap_touched;
     stage_counts["river_confluence_snap"] = river_confluence_snap_touched;
+    stage_counts["coast_wave_erosion"] = coast_erosion_touched;
     stage_counts["river_ecology"] = river_ecology_touched;
     stage_counts["river_desert_repaired"] = river_desert_repaired;
     stage_counts["river_floodplain_channel"] = river_floodplain_channel_touched;

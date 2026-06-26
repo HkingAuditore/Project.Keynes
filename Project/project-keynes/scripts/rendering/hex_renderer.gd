@@ -162,6 +162,10 @@ extends Node2D
 @export_group("Detail Refresh")
 @export var detail_scatter_refresh_layers_per_frame: int = 1
 @export var detail_scatter_refresh_cells_per_batch: int = 32
+@export var detail_scatter_chunked_multimesh_enabled: bool = true
+@export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 8
+@export var detail_scatter_refresh_chunks_per_frame: int = 4
+@export_range(0.0, 20.0, 0.25) var detail_scatter_refresh_apply_budget_ms: float = 4.0
 @export var detail_scatter_refresh_log_enabled: bool = true
 @export var detail_scatter_rebuild_log_enabled: bool = true
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
@@ -499,18 +503,22 @@ func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 	if _detail_refresh_queue.is_empty():
 		_start_next_detail_refresh_batch()
 	_last_detail_refresh_report = {
-		"queued_layers": _detail_refresh_queue.size(),
+		"queued_chunks": _detail_refresh_queue.size(),
+		"queued_layers": _detail_layers.size(),
 		"dirty_cells": _detail_refresh_indices.size(),
 		"pending_batches": _detail_refresh_batches.size(),
+		"chunks_done": 0,
 		"layers_done": 0,
+		"batch_chunks": int(_last_detail_refresh_report.get("batch_chunks", 0)),
 		"elapsed_ms": 0.0,
 	}
 	if detail_scatter_refresh_log_enabled:
-		print("[detail_scatter/QUEUE] succession active_cells=%d pending_batches=%d queued_layers=%d layers_per_frame=%d cells_per_batch=%d" % [
+		print("[detail_scatter/QUEUE] succession active_cells=%d pending_batches=%d queued_chunks=%d chunks_per_frame=%d chunk_ms_budget=%.2f cells_per_batch=%d" % [
 			_detail_refresh_indices.size(),
 			_detail_refresh_batches.size(),
 			_detail_refresh_queue.size(),
-			maxi(1, detail_scatter_refresh_layers_per_frame),
+			maxi(1, detail_scatter_refresh_chunks_per_frame),
+			maxf(0.0, detail_scatter_refresh_apply_budget_ms),
 			maxi(1, detail_scatter_refresh_cells_per_batch),
 		])
 
@@ -549,14 +557,35 @@ func _start_next_detail_refresh_batch() -> bool:
 		return false
 	_detail_refresh_indices = _detail_refresh_batches.pop_front()
 	_detail_refresh_queue.clear()
+	var chunk_plan: Array = []
+	if detail_scatter_chunked_multimesh_enabled:
+		for layer in _detail_layers:
+			if layer != null and is_instance_valid(layer) and layer.has_method("detail_chunk_plan_for_indices"):
+				chunk_plan = layer.detail_chunk_plan_for_indices(_detail_refresh_indices)
+				break
 	for layer in _detail_layers:
-		if layer != null:
-			_detail_refresh_queue.append(layer)
+		if layer == null or not is_instance_valid(layer):
+			continue
+		if layer.has_method("begin_detail_chunk_refresh"):
+			layer.begin_detail_chunk_refresh()
+		if not chunk_plan.is_empty() and layer.has_method("refresh_chunk_for_succession"):
+			for chunk in chunk_plan:
+				_detail_refresh_queue.append({
+					"layer": layer,
+					"chunk_id": int(chunk.get("chunk_id", -1)),
+					"cell_indices": chunk.get("cell_indices", PackedInt32Array()),
+					"dirty_cells": int(chunk.get("dirty_cells", 0)),
+				})
+		else:
+			_detail_refresh_queue.append({"layer": layer, "cell_indices": _detail_refresh_indices})
 	_last_detail_refresh_report = {
-		"queued_layers": _detail_refresh_queue.size(),
+		"queued_chunks": _detail_refresh_queue.size(),
+		"queued_layers": _detail_layers.size(),
 		"dirty_cells": _detail_refresh_indices.size(),
 		"pending_batches": _detail_refresh_batches.size(),
+		"chunks_done": 0,
 		"layers_done": 0,
+		"batch_chunks": chunk_plan.size(),
 		"elapsed_ms": 0.0,
 	}
 	return not _detail_refresh_queue.is_empty()
@@ -565,19 +594,30 @@ func _start_next_detail_refresh_batch() -> bool:
 func _drain_detail_refresh_queue() -> void:
 	if _detail_refresh_queue.is_empty() and not _start_next_detail_refresh_batch():
 		return
-	var budget := maxi(1, detail_scatter_refresh_layers_per_frame)
+	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
+	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
 	var done := 0
 	var t0 := Time.get_ticks_usec()
-	while done < budget and not _detail_refresh_queue.is_empty():
-		var layer = _detail_refresh_queue.pop_front()
-		if layer != null and is_instance_valid(layer) and layer.has_method("refresh_for_succession"):
+	while done < chunk_budget and not _detail_refresh_queue.is_empty():
+		if ms_budget > 0.0 and done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
+			break
+		var task: Dictionary = _detail_refresh_queue.pop_front()
+		var layer = task.get("layer", null)
+		if layer != null and is_instance_valid(layer):
 			var layer_t0 := Time.get_ticks_usec()
-			layer.refresh_for_succession(_detail_refresh_indices)
+			if task.has("chunk_id") and layer.has_method("refresh_chunk_for_succession"):
+				layer.refresh_chunk_for_succession(
+					int(task.get("chunk_id", -1)),
+					task.get("cell_indices", PackedInt32Array()),
+					int(task.get("dirty_cells", 0))
+				)
+			elif layer.has_method("refresh_for_succession"):
+				layer.refresh_for_succession(task.get("cell_indices", _detail_refresh_indices))
 			var layer_elapsed := float(Time.get_ticks_usec() - layer_t0) / 1000.0
 			if detail_scatter_refresh_log_enabled and layer.has_method("get_scatter_diagnostics"):
 				var d: Dictionary = layer.get_scatter_diagnostics()
 				if layer_elapsed >= detail_scatter_slow_layer_ms or float(d.get("rebuild_ms", 0.0)) >= detail_scatter_slow_layer_ms:
-					print("[detail_scatter/SLOW_LAYER] name=%s wall=%.2fms update=%.2fms path=%s inst=%d cand=%d wrap=%d cells=%d missing=%d dropped=%d reason=%s" % [
+					print("[detail_scatter/SLOW_CHUNK] name=%s wall=%.2fms update=%.2fms path=%s inst=%d cand=%d wrap=%d cells=%d chunks=%d sampled=%d active=%d water=%.2fms ctx=%.2fms knobs=%.2fms native=%.2fms apply=%.2fms remaining=%d missing=%d dropped=%d reason=%s" % [
 						str(d.get("name", layer.name)),
 						layer_elapsed,
 						float(d.get("rebuild_ms", 0.0)),
@@ -586,22 +626,33 @@ func _drain_detail_refresh_queue() -> void:
 						int(d.get("candidates", 0)),
 						int(d.get("wrap_edge_copies", 0)),
 						int(d.get("incremental_cells", 0)),
+						int(d.get("dirty_chunks", 0)),
+						int(d.get("native_sampled_cells", 0)),
+						int(d.get("native_active_cells", 0)),
+						float(d.get("native_water_cache_ms", 0.0)),
+						float(d.get("native_context_ms", 0.0)),
+						float(d.get("native_knobs_ms", 0.0)),
+						float(d.get("native_call_ms", 0.0)),
+						float(d.get("native_apply_ms", 0.0)),
+						_detail_refresh_queue.size(),
 						int(d.get("missing_slots", 0)),
 						int(d.get("dropped_instances", 0)),
 						str(d.get("reason", "")),
 					])
 			done += 1
 	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
-	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("layers_done", 0)) + done
+	_last_detail_refresh_report["chunks_done"] = int(_last_detail_refresh_report.get("chunks_done", 0)) + done
+	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("chunks_done", 0))
 	_last_detail_refresh_report["elapsed_ms"] = float(_last_detail_refresh_report.get("elapsed_ms", 0.0)) + elapsed
-	_last_detail_refresh_report["remaining_layers"] = _detail_refresh_queue.size()
+	_last_detail_refresh_report["remaining_chunks"] = _detail_refresh_queue.size()
 	_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
 	_apply_detail_global_budget()
 	if _detail_refresh_queue.is_empty():
 		if detail_scatter_refresh_log_enabled:
-			print("[detail_scatter/DONE] batch_cells=%d layers=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
+			print("[detail_scatter/DONE] batch_cells=%d chunks=%d batch_chunks=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
 				int(_last_detail_refresh_report.get("dirty_cells", 0)),
-				int(_last_detail_refresh_report.get("layers_done", 0)),
+				int(_last_detail_refresh_report.get("chunks_done", 0)),
+				int(_last_detail_refresh_report.get("batch_chunks", 0)),
 				float(_last_detail_refresh_report.get("elapsed_ms", 0.0)),
 				_detail_refresh_batches.size(),
 				str(_last_detail_budget_report),
@@ -742,6 +793,8 @@ func _spawn_detail_layers() -> void:
 		layer.name = _detail_layer_name(prof, i)
 		layer.profile = prof
 		layer.set_mobile_quality_tier(veg_tier)
+		if layer.has_method("set_chunked_multimesh_enabled"):
+			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
 		layer.set_world_ext(_world_ext)
 		add_child(layer)
 		# [cylindrical-earth-daylight] 新层补推昼夜光照所需状态（与地形同源）：
@@ -1493,6 +1546,8 @@ func _rebuild() -> void:
 		set_world_ext(_map_baker._world_ext)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_ext(_world_ext)
+		if layer.has_method("set_chunked_multimesh_enabled"):
+			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
 		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
 	)
 	_apply_detail_global_budget()

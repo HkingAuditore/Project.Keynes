@@ -897,14 +897,13 @@ SurfaceParams apply_water_overlay_surface(
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	surface.roughness = mix(surface.roughness, shore_halo_r.roughness_target,
 							clamp(shore_halo_r.halo_weight, 0.0, 1.0));
-	// [coast-smooth 2026-06-26] 等高线 AA（水侧）：近岸水像素若其平滑高程高于水线，渐隐为沙滩色，
-	// 与陆侧(land_pipeline)沿同一条 height 等高线收敛 → 双侧拼出平滑海岸线、消除六边形硬边。emerge
-	// 由连续高度场驱动；land_gate(有陆邻居)把效果限制在近岸，开阔深水(shore_w≈0)完全不受影响。
+	// [coast-smooth 2026-06-26] 海岸过渡带（水侧）：在贴陆的一圈把水色混向"水色与陆色的中间色"，与陆侧
+	// 对称收敛成一条柔和过渡带。粗细 = shore_w(贴陆接触度)×coast_smooth_width；开阔水/浅湖内部 shore_w=0
+	// 不染(不发灰)。颜色 = mix(color_coast_water, color_lowland, coast_shore_land_bias) → 水色+陆色混合。
 	if (coast_smooth_strength > 0.001) {
-		float emerge = smoothstep(sea_level - coast_smooth_band * 0.30, sea_level + coast_smooth_band, elev);
-		float land_gate = clamp(shore_halo_r.shore_w * 1.4, 0.0, 1.0);
-		vec3 beach_col = mix(color_coast_water, color_beach, 0.60);
-		col = mix(col, beach_col, emerge * land_gate * coast_smooth_strength * 0.85);
+		float band = smoothstep(0.0, 1.0, clamp(shore_halo_r.shore_w * coast_smooth_width, 0.0, 1.0));
+		vec3 shore_mix = mix(color_coast_water, color_lowland, coast_shore_land_bias);
+		col = mix(col, shore_mix, band * coast_smooth_strength);
 	}
 #endif
 
