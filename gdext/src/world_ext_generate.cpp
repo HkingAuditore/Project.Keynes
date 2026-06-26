@@ -2889,9 +2889,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                     double floor_e = surface - depth01 * depth_amp;
                     if (floor_e < 0.0) floor_e = 0.0;
                     if (floor_e < double(E[c])) { E[c] = float(floor_e); ++lake_bathy_cells; }
-                    // 统一水深信号：直接用绝对距离 ramp（全 [0,1] 展开），与海洋 1-E/sea 同量纲 →
-                    // 大湖内部 ≈1（深色）、近岸浅滩 ≈0（浅色），渲染端可见明显深浅梯度。
-                    WDEPTH[c] = float(depth01);
+                    // [water-depth-tex] per-cell 只存"水面高度"（湖=该湖 hydro_fill 水位）；真实逐像素
+                    // 水深由 bake 用 surface - height_tex(像素) 算（见 world_ext_bake），直接吃生成的高程图。
+                    WDEPTH[c] = float(surface);
                     sdist[size_t(c)] = -1; // 复位供下一连通域复用
                 }
             }
@@ -2900,15 +2900,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
     }
 
-    // water_depth01 的海洋/海岸/礁/海草/海冰分量：1 - E/sea_level（湖泊已在上面按碗形填好；非水格 0）。
+    // water_depth01 现承载 per-cell "水面高度"：湖泊已在上面存其 hydro_fill 水位；这里补海洋/海岸/
+    // 礁/海草/海冰 = sea_level；陆地 = 0。真实逐像素水深由 bake 用 surface - height_tex 算。
     {
-        const double inv_sea = 1.0 / std::max(sea_level, 1e-4);
         for (int i = 0; i < n; ++i) {
-            if (TERR[i] == 18) continue;                 // 湖：上面已填
-            if (!pk_is_water_terrain(TERR[i])) { WDEPTH[i] = 0.0f; continue; }
-            double d = 1.0 - double(E[i]) * inv_sea;
-            if (d < 0.0) d = 0.0; else if (d > 1.0) d = 1.0;
-            WDEPTH[i] = float(d);
+            if (TERR[i] == 18) continue;                 // 湖：上面已存其水面
+            if (!pk_is_water_terrain(TERR[i])) { WDEPTH[i] = 0.0f; continue; }  // 陆地 = 0
+            WDEPTH[i] = float(sea_level);                // 海洋/海岸/礁/海草/海冰水面 = sea_level
         }
     }
 

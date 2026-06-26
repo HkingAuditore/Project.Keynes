@@ -1333,26 +1333,46 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
         }
     }
 
-    // ── [water-depth-tex 2026-06-26] 海/湖统一水深 R8：per-cell water_depth01 经 pixel_to_cell_index
-    // 扇出成每像素 byte（depth01×255）。shader 每水像素仅 1 次采样，取代旧"海洋 5×5 height 邻域 +
-    // 湖泊 16× biome-atlas 多半径"两套深浅估算。cell_water_depth 由 GDScript 从 cell.water_depth
-    // （post_base 算好）收集；缺失/尺寸不符 → 输出空 buffer（shader 端按缺纹理回退旧路径）。
+    // ── [water-depth-tex 2026-06-26] 海/湖统一水深 R8（per-pixel，使用真实高程图）──────────────
+    // 关键：per-cell cell_water_depth 现承载"水面高度 level"（湖=hydro_fill、海=sea_level、陆=0），
+    // 逐像素用 surface - height_final（含 carve 的湖盆/洋底 + 侵蚀细节）得真实水深，再按水体类型归一化
+    // （湖用湖深尺度、海用 sea_level → 湖也能吃满 [0,1] 对比）。shader 每水像素仅 1 次采样。
+    // 缺失/尺寸不符 → 输出空 buffer（shader 端按缺纹理回退旧路径）。
     PackedByteArray water_depth_buf;
     {
-        PackedFloat32Array cell_wd = knobs.get("cell_water_depth", PackedFloat32Array());
+        PackedFloat32Array cell_surf = knobs.get("cell_water_depth", PackedFloat32Array());
+        PackedByteArray    cell_terr = knobs.get("cell_terrain", PackedByteArray());
         PackedInt32Array p2c = terr.get("pixel_to_cell_index", PackedInt32Array());
         const int n_cells_wd = int(knobs.get("n_cells", 0));
+        const double sea = double(knobs.get("sea_level", 0.64));
         const int np = w * h;
-        if (n_cells_wd > 0 && cell_wd.size() == n_cells_wd && p2c.size() == np) {
+        // 湖泊水深归一尺度（height 单位）：与 world_ext_generate 的 PK_LAKE_MAX_DEPTH(0.24) 同量级、
+        // 略小以放大对比 → 湖心吃满深色、近岸浅色。
+        const double LAKE_DEPTH_NORM = 0.16;
+        if (n_cells_wd > 0 && cell_surf.size() == n_cells_wd && p2c.size() == np
+                && height_final.size() == np && sea > 1e-4) {
             water_depth_buf.resize(np);
             uint8_t * const __restrict WB = water_depth_buf.ptrw();
-            const float * const __restrict CW = cell_wd.ptr();
+            const float * const __restrict SF = cell_surf.ptr();
+            const uint8_t * const __restrict CT = (cell_terr.size() == n_cells_wd) ? cell_terr.ptr() : nullptr;
             const int32_t * const __restrict P2C = p2c.ptr();
+            const float * const __restrict HF = height_final.ptr();
+            const double inv_sea = 1.0 / sea;
+            const double inv_lake = 1.0 / LAKE_DEPTH_NORM;
             for (int i = 0; i < np; ++i) {
                 const int ci = P2C[i];
-                double d = (ci >= 0 && ci < n_cells_wd) ? double(CW[ci]) : 0.0;
-                if (d < 0.0) d = 0.0; else if (d > 1.0) d = 1.0;
-                int b = int(d * 255.0 + 0.5);
+                double depth01 = 0.0;
+                if (ci >= 0 && ci < n_cells_wd) {
+                    const double surface = double(SF[ci]);   // per-cell 水面高度（陆地=0）
+                    if (surface > 1e-4) {
+                        double draw = surface - double(HF[i]);  // 逐像素真实水深（height 单位）
+                        if (draw < 0.0) draw = 0.0;
+                        const bool is_lake = (CT != nullptr) && (CT[ci] == 18);
+                        depth01 = draw * (is_lake ? inv_lake : inv_sea);
+                        if (depth01 > 1.0) depth01 = 1.0;
+                    }
+                }
+                int b = int(depth01 * 255.0 + 0.5);
                 if (b < 0) b = 0; else if (b > 255) b = 255;
                 WB[i] = uint8_t(b);
             }

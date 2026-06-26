@@ -1,10 +1,6 @@
 shader_type canvas_item;
 render_mode blend_mix;
 
-// [debug-water-depth 2026-06-26 临时] 打开后水面渲染成 water_depth_tex 灰度（亮=深/暗=岸/纯黑=无数据）。
-// 诊断湖泊深度不显示用，定位后删除此行。
-#define DEBUG_WATER_DEPTH_TEX
-
 // world_map.gdshader v9.atlas — 高分辨率地理仿真渲染（结构重构版 2026-05-19）
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
