@@ -55,14 +55,9 @@ uniform float weather_strength : hint_range(0.0, 1.0) = 1.0;
 
 // 天气数据源：weather_lut（per-cell LUT，见 sample_field_weather）。旧 weather_front_* uniform 已删。
 
-// 天气类型表（颜色 + 功能 flag）
+// 天气类型表。
 const int MAX_WEATHER_TYPES = 8;
 uniform vec4 weather_profile_colors[MAX_WEATHER_TYPES];
-uniform int weather_profile_flags[MAX_WEATHER_TYPES];
-
-const int FLAG_SNOW_GRAIN = 4;
-const int FLAG_RAIN_STREAK = 8;
-const int FLAG_FOG_BREATHE = 16;
 
 const int WT_CLEAR = 0;
 const int WT_RAIN = 1;
@@ -472,51 +467,6 @@ FrontField sample_field_weather(vec2 wp) {
 
 // sample_fronts（旧 fronts 椭圆通路）已删除——云分布改由 sample_field_weather 逐格 LUT 驱动。
 
-// ── 降水（解析噪声）──
-// 注：cloud_fbm(p,N) 取值约 [0, 1-2^-N]，故下方 smoothstep 上阈值按此范围设定
-// （比旧纹理 fbm 的 [0,1] 略低），保证条纹能正常起跳。
-float rain_field(vec2 wp, vec2 axis, float precip) {
-	if (precip < 0.008) return 0.0;
-	vec2 wind_dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
-	vec2 dir = normalize(wind_dir * 0.55 + vec2(0.0, 1.0) * 0.45);
-	vec2 side = vec2(-dir.y, dir.x);
-	float along = dot(wp, dir);
-	float across = dot(wp, side);
-	int q = effective_weather_quality();
-	float sheet = cloud_fbm(vec2(across * 0.052, along * 0.018 + world_time * 2.8), (q >= 2) ? 2 : 1);
-	float curtain = smoothstep(0.30, 0.62, sheet);
-	float rain = curtain * 0.85 * precip;
-	if (q >= 1) {
-		float near_lines = cloud_fbm(vec2(across * 0.19, along * 0.060 + world_time * 12.0), 1);
-		float lines = smoothstep(0.46, 0.70, near_lines);
-		rain += lines * 0.62 * precip;
-	}
-	if (q >= 2 && precip > 0.10) {
-		float shaft_band = cloud_fbm(vec2(across * 0.014, along * 0.006 - world_time * 0.55), 1);
-		float shaft = smoothstep(0.46, 0.72, shaft_band) * smoothstep(0.10, 0.42, precip);
-		rain += shaft * 0.55;
-	}
-
-	return clamp(rain, 0.0, 1.0);
-}
-
-float snow_field(vec2 wp, vec2 axis, float precip) {
-	vec2 wind = normalize(axis + vec2(0.12, 0.36));
-	vec2 side = vec2(-wind.y, wind.x);
-	float along = dot(wp, wind);
-	float across = dot(wp, side);
-	int q = effective_weather_quality();
-	float band = cloud_fbm(vec2(along * 0.036 + world_time * 1.4, across * 0.078), (q >= 2) ? 2 : 1);
-	float veil = band;
-	if (q >= 1) {
-		veil = cloud_fbm(vec2(along * 0.012 + world_time * 0.45, across * 0.026), 1);
-	}
-	float flurry = smoothstep(0.40, 0.70, band) * 0.62 + smoothstep(0.26, 0.58, veil) * 0.42;
-
-
-	return clamp(flurry * precip, 0.0, 1.0);
-}
-
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
@@ -636,8 +586,6 @@ void fragment() {
 	if (!has_layer) {
 		COLOR = vec4(0.0);
 	} else {
-		int flags = (w.type >= 0 && w.type < MAX_WEATHER_TYPES) ? weather_profile_flags[w.type] : 0;
-
 		// 主云（积云）：云显示只由 w.cloud 驱动；颜色不再按天气类型/降水/强度变化。
 		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
 		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, (q_weather >= 2) ? 1.08 : 0.72, ed.sun_col, ed.amb_col, ed.local_day);
@@ -663,22 +611,6 @@ void fragment() {
 			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.54, 0.0);
 			col = fog_comp.rgb;
 			alpha = fog_comp.a;
-		}
-
-		// 降雨：保留降水视觉本身，但不再影响云层显示标准。
-		if ((flags & FLAG_RAIN_STREAK) != 0 && w.precip > 0.001) {
-			float rain = rain_field(wp, w.axis, w.precip);
-			vec3 rain_col = vec3(0.52, 0.62, 0.74);
-			col = mix(col, rain_col, clamp(rain * 0.34, 0.0, 0.52));
-			alpha = clamp(alpha + rain * 0.10 * weather_strength, 0.0, 0.70);
-			col *= mix(1.0, 0.86, rain * 0.55);
-		}
-
-		// 降雪。
-		if ((flags & FLAG_SNOW_GRAIN) != 0 && w.precip > 0.001) {
-			float snow = snow_field(wp, w.axis, w.precip);
-			col = mix(col, vec3(0.88, 0.94, 1.0), snow * 0.66);
-			alpha = clamp(alpha + snow * 0.30 * weather_strength, 0.0, 0.84);
 		}
 
 		// 高云（卷云，最上层薄纱）。

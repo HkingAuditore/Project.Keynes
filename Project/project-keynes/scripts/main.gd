@@ -1230,6 +1230,12 @@ func _on_day_changed(_day_idx: int) -> void:
 	var sus_result: Dictionary = {}
 	if _generator != null and _world_clock != null:
 		sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
+	if _renderer != null and _generator != null \
+			and _generator.has_method("has_pending_detail_scatter_refresh") \
+			and bool(_generator.has_pending_detail_scatter_refresh()) \
+			and _renderer.has_method("queue_detail_scatter_refresh"):
+		var detail_dirty: PackedInt32Array = _generator.consume_pending_detail_scatter_refresh_indices()
+		_renderer.queue_detail_scatter_refresh(detail_dirty)
 	# ───────────────────────────────────────────────────────────────────
 	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时启用：

@@ -192,6 +192,20 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 //   并合并 depth_t = 1 - elev/sea_level，得到 offshore_depth。
 // ─────────────────────────────────────────────────────────────────────
 void compute_offshore_depth(inout WaterStageCtx ctx) {
+	// [water-depth-tex 2026-06-26] 快速路径：优先用 C++ 烘焙好的统一水深图（海/湖一张 R8）。
+	// 每水像素仅 1 次采样，取代下方"海洋 5×5/plus height 邻域 + compute_lake_shore_proxy 的
+	// 16× biome 多半径"两套估算。湖泊深浅、海洋大陆架→深渊全部来自 C++ 真实 per-cell 深度。
+	if (has_water_depth_tex) {
+		float wd = texture(water_depth_tex, ctx.uv).r;
+		ctx.depth_t = wd;
+		ctx.offshore = wd;
+		ctx.offshore_depth = wd;
+		ctx.deep_layer_w = smoothstep(0.36, 1.0, wd);
+		// 湖岸近似（1=靠岸→0=湖心）由水深反推，免去多半径 biome 采样；非湖为 0。
+		ctx.lake_shore_w = (ctx.biome == B_LAKE) ? clamp(1.0 - smoothstep(0.0, 0.45, wd), 0.0, 1.0) : 0.0;
+		ctx.lake_depth_proxy = wd;
+		return;
+	}
 	vec2 tx = 1.0 / hm_resolution;
 	float deep_cnt = 0.0;
 	// 60 FPS 优化（2026-06-15 三档变体）：mobile 三档分别走不同 sample 路径。
@@ -368,7 +382,13 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	float ridge_n = fbm(ctx.wpw * 0.045 + vec2(-71.0, 23.0), 2);
 	ridge_offset = (ridge_n - 0.5) * 0.06;
 #endif
-	ww.w_ice = clamp(smoothstep(0.22, 0.72, ice_frac + ridge_offset), 0.0, 1.0);
+	float lake_freeze = ww.w_lake * (1.0 - smoothstep(0.24, 0.44, ctx.current_temp));
+	ww.w_ice = clamp(max(
+		smoothstep(0.22, 0.72, ice_frac + ridge_offset),
+		lake_freeze
+	), 0.0, 1.0);
+	// 湖泊低温结冰是 shader 视觉兜底：保留少量湖底色，但让冰面材质/颜色成为主导。
+	ww.w_lake *= 1.0 - ww.w_ice * 0.72;
 	// 归一以避免叠加过曝
 	float special_sum = max(ww.w_lake + ww.w_reef + ww.w_kelp + ww.w_ice, 1.0);
 	ww.w_lake /= special_sum;
@@ -796,6 +816,16 @@ SurfaceParams compute_water_base_surface(
 	// ── SEA 1.1: 离岸度 + 深度梯度 ─────────────────────────────────────
 	compute_offshore_depth(ctx);
 
+	// [debug-water-depth 2026-06-26] 诊断：在 world_map.gdshader 顶部加 `#define DEBUG_WATER_DEPTH_TEX`
+	// 并重载 shader（无需 rebuild DLL），水面会渲染成 water_depth_tex 灰度（亮=深、暗=岸）：
+	//   • 整片纯黑 → 纹理未绑定/未烘焙（多半是 DLL 未 rebuild 或 bake 走了旧路径）；
+	//   • 海洋有梯度但湖泊纯黑/均一 → 这片水其实是 LAKE 但 water_depth_arr 没填（查 lake_bathymetry 计数）；
+	//   • 全部有梯度 → 数据正常，问题在 apply_lake_features 的色阶对比太弱（调色阶即可）。
+#ifdef DEBUG_WATER_DEPTH_TEX
+	float wd_dbg = has_water_depth_tex ? texture(water_depth_tex, ctx.uv).r : 0.0;
+	return make_water_surface_params(vec3(wd_dbg), vec3(0.0, 0.0, 1.0), ctx.biome, 0.0, 0.0, 0.0, 0.0);
+#endif
+
 	// ── SEA 1.2: basecolor —— hypsometric 起步 + 深浅梯度 ─────────────
 	vec3 col = hypsometric_tint(elev, true);
 	col = apply_water_depth_gradient(col, ctx);
@@ -877,6 +907,15 @@ SurfaceParams apply_water_overlay_surface(
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	surface.roughness = mix(surface.roughness, shore_halo_r.roughness_target,
 							clamp(shore_halo_r.halo_weight, 0.0, 1.0));
+	// [coast-smooth 2026-06-26] 等高线 AA（水侧）：近岸水像素若其平滑高程高于水线，渐隐为沙滩色，
+	// 与陆侧(land_pipeline)沿同一条 height 等高线收敛 → 双侧拼出平滑海岸线、消除六边形硬边。emerge
+	// 由连续高度场驱动；land_gate(有陆邻居)把效果限制在近岸，开阔深水(shore_w≈0)完全不受影响。
+	if (coast_smooth_strength > 0.001) {
+		float emerge = smoothstep(sea_level - coast_smooth_band * 0.30, sea_level + coast_smooth_band, elev);
+		float land_gate = clamp(shore_halo_r.shore_w * 1.4, 0.0, 1.0);
+		vec3 beach_col = mix(color_coast_water, color_beach, 0.60);
+		col = mix(col, beach_col, emerge * land_gate * coast_smooth_strength * 0.85);
+	}
 #endif
 
 	// SEA 2.2：海岸滚动浪花 ───────────────────────────────────────────

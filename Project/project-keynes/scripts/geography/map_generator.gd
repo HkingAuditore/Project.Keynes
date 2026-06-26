@@ -413,6 +413,7 @@ var _enum_atlas_biome_dirty: bool = false
 var _enum_atlas_cover_dirty: bool = false
 var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
+var _pending_detail_scatter_refresh_indices: PackedInt32Array = PackedInt32Array()
 var _season_stage4_deltas: Dictionary = {}
 # DOTS-Final-Push 任务 6.2 / 方案 A：sea_ice_atlas_upload Job 把 prepare/upload
 # 的拆分耗时（path/prepare_ms/upload_ms/image_ms/dirty_cells/dirty_ratio）回填
@@ -2746,6 +2747,8 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 					var veg_dirty: bool = succ_indices != null \
 							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
 							and (succ_indices as PackedInt32Array).size() > 0
+					if veg_dirty:
+						queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
 					if not veg_dirty:
 						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
 					if veg_dirty:
@@ -2800,6 +2803,8 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 					var veg_dirty: bool = succ_indices != null \
 							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
 							and (succ_indices as PackedInt32Array).size() > 0
+					if veg_dirty:
+						queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
 					if not veg_dirty:
 						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
 					if veg_dirty:
@@ -2968,6 +2973,30 @@ func consume_pending_enum_atlas_axis() -> String:
 		_enum_atlas_vegetation_dirty = false
 		return "vegetation"
 	return ""
+
+
+func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
+	if indices.is_empty():
+		return
+	var seen := {}
+	for idx in _pending_detail_scatter_refresh_indices:
+		seen[int(idx)] = true
+	for idx in indices:
+		var ci := int(idx)
+		if ci < 0 or seen.has(ci):
+			continue
+		seen[ci] = true
+		_pending_detail_scatter_refresh_indices.append(ci)
+
+
+func has_pending_detail_scatter_refresh() -> bool:
+	return not _pending_detail_scatter_refresh_indices.is_empty()
+
+
+func consume_pending_detail_scatter_refresh_indices() -> PackedInt32Array:
+	var out := _pending_detail_scatter_refresh_indices
+	_pending_detail_scatter_refresh_indices = PackedInt32Array()
+	return out
 
 
 func record_enum_atlas_upload(axis: String, elapsed_ms: float) -> void:
@@ -4931,6 +4960,15 @@ func _native_generation_cfg_dict(cfg: MapConfig) -> Dictionary:
 		"river_count": int(cfg.river_count),
 		"seed": int(cfg.seed),
 		"enable_ocean_heat_transport": bool(cfg.enable_ocean_heat_transport),
+		# water-bodies systemic（post_base 统一距水场 + 气候回灌 + 生态强化）：
+		#   默认值与 world_ext.cpp 内 getd/geti 默认对齐；保守、可一键回退（置 0/负即关闭对应项）。
+		"water_dist_max": 8,                  # 距水场 BFS 半径截断（格）
+		"water_big_river_flow_min": 0.55,     # "大河" source 的 RFLOW 阈值
+		"lake_moist_floor": 0.55,             # 湖滨增湿带湿度地板（× exp 衰减）
+		"lake_moist_scale": 2.5,              # 湖滨增湿衰减尺度（格）
+		"river_riparian_gain": 0.12,          # 河谷 riparian 增湿增量（× exp 衰减）
+		"river_riparian_scale": 2.0,          # 河谷增湿衰减尺度（格）
+		"swamp_water_band": 2,                # 湿地沿湖/大河成带的距水格宽（0=仅 1 格邻接）
 	}
 
 
@@ -5253,6 +5291,7 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 	var hydro_parent_arr: PackedInt32Array = res["hydro_parent_arr"] if res.has("hydro_parent_arr") else PackedInt32Array()
 	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
 	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
+	var water_depth_arr: PackedFloat32Array = res["water_depth_arr"] if res.has("water_depth_arr") else PackedFloat32Array()
 	var map := MapData.new(cfg.width, cfg.height)
 	for i in range(n):
 		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
@@ -5275,6 +5314,7 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 				cell.has_river_downstream = true
 		cell.has_volcano = has_volcano_arr.size() == n and int(has_volcano_arr[i]) != 0
 		cell.is_lake_seed = is_lake_seed_arr.size() == n and int(is_lake_seed_arr[i]) != 0
+		cell.water_depth = float(water_depth_arr[i]) if water_depth_arr.size() == n else 0.0
 		cell._temperature_backing = float(temp_arr[i])
 		cell._temp_baseline_backing = float(temp_baseline_arr[i])
 		cell._temp_30d_mean_backing = float(temp_30d_arr[i])
@@ -10289,6 +10329,8 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 		var succ_indices = br.get("succession_indices", null)
 		var veg_dirty: bool = succ_indices != null and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
 				and (succ_indices as PackedInt32Array).size() > 0
+		if veg_dirty:
+			queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
 		if not veg_dirty:
 			veg_dirty = int(br.get("stat_succession_count", 0)) > 0
 		if veg_dirty:
@@ -10754,6 +10796,8 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 				var succ_indices_c: PackedInt32Array = knobs_c.get("succession_indices", PackedInt32Array())
 				var succ_to_veg_c: PackedByteArray = knobs_c.get("succession_to_veg", PackedByteArray())
 				var n_succ_c: int = succ_indices_c.size()
+				if n_succ_c > 0:
+					queue_detail_scatter_refresh(succ_indices_c)
 				for k in range(n_succ_c):
 					var ci_c: int = succ_indices_c[k]
 					if ci_c < 0 or ci_c >= n_cells_c:
@@ -11892,6 +11936,8 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			var succ_indices: PackedInt32Array = knobs.get("succession_indices", PackedInt32Array())
 			var succ_to_veg: PackedByteArray = knobs.get("succession_to_veg", PackedByteArray())
 			var n_succ: int = succ_indices.size()
+			if n_succ > 0:
+				queue_detail_scatter_refresh(succ_indices)
 			for k in range(n_succ):
 				var ci: int = succ_indices[k]
 				if ci < 0 or ci >= n_cells:

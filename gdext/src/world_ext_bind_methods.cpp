@@ -320,6 +320,9 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_bake_river_sdf_pass", "knobs"),
         &DCWorldExt::run_bake_river_sdf_pass);
     ClassDB::bind_method(
+        D_METHOD("run_bake_coast_sdf_pass", "knobs"),
+        &DCWorldExt::run_bake_coast_sdf_pass);
+    ClassDB::bind_method(
         D_METHOD("run_bake_erosion_pass", "knobs"),
         &DCWorldExt::run_bake_erosion_pass);
     ClassDB::bind_method(
@@ -372,6 +375,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("encode_detail_scatter", "knobs"),
         &DCWorldExt::encode_detail_scatter);
+    ClassDB::bind_method(
+        D_METHOD("encode_detail_scatter_delta", "knobs"),
+        &DCWorldExt::encode_detail_scatter_delta);
     // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
     ClassDB::bind_method(
         D_METHOD("run_ocean_field_rasterize", "knobs"),

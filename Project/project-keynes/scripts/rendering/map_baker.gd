@@ -325,7 +325,7 @@ const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
 #   端点固定 0→0/1→1，PCHIP(Fritsch–Carlson 单调限幅) 保 C1 + 单调（不倒置高程序）。
 const HYPSO_XS: Array[float] = [0.0, 0.32, 0.52, 0.70, 1.0]
 const HYPSO_YS: Array[float] = [0.0, 0.34, 0.54, 0.70, 1.0]
-const HYPSO_LAYER_A_MIX := 0.25   # Layer A 残差强度：0=不叠、1=与 Layer B 同曲线
+const HYPSO_LAYER_A_MIX := 0.0    # [bimodal 2026-06-26] 置 0：双峰地台模型已产出平台，Layer A 关闭
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
 const TERRAIN_NORMAL_COARSE_RADIUS := 4   # 宽半径（texel）：越大越平滑掉高频、山脉走向越干净
@@ -355,6 +355,12 @@ const BAKE_RIVER_INCISE := 0.045
 # [coast-beach 2026-06-25] 近岸海滩坡最大下压(height 单位，× smoothstep)。与 world_ext.cpp
 #   run_bake_terrain_index_pass 内 PK_COAST_BEACH 同值。
 const COAST_BEACH := 0.05
+# [coast-carve-bake water-bodies] 海/湖统一离岸像素 SDF 岸坡 carve。与 world_ext.cpp
+#   run_bake_geometry_fields_pass 内 coast carve 默认值对齐。SHORE_CARVE_AMP<=0 → 关闭(回退旧 beach)。
+#   与 #2a 河流 carve 同法：用 run_bake_coast_sdf_pass(chamfer DT)的离岸像素距离逐像素刻连续岸坡。
+const SHORE_CARVE_AMP := 0.06         # 岸坡最大下压(height 单位，× smoothstep)
+const SHORE_CARVE_BAND := 6           # 岸坡像素带宽（近岸=满 carve → 带缘=0）
+const COAST_SDF_MAX_DIST_PX := 8.0    # chamfer 离岸距离截断（控开销）
 
 # ─── RNG / 噪声 ──────────────────────────────────────────────────────────
 var _rng: RandomNumberGenerator
@@ -835,6 +841,10 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex, _world_ext)
 	world.sea_ice_tex = null
 	world.volcano_field_tex = DCAtlasEncoders.encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex, _world_ext)
+	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 → shader 每水像素单次采样，取代旧"海洋 5×5 height
+	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
+	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
+	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
 
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -3501,6 +3511,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	var terr_arr := PackedByteArray(); terr_arr.resize(n_cells)
 	var veg_arr := PackedByteArray(); veg_arr.resize(n_cells)
 	var cov_arr := PackedByteArray(); cov_arr.resize(n_cells)
+	var wd_arr := PackedFloat32Array(); wd_arr.resize(n_cells)  # [water-depth-tex] 海/湖统一归一水深
 	var o2i := PackedInt32Array(); o2i.resize(map.width * map.height); o2i.fill(-1)
 	var cells_by_index: Array = []; cells_by_index.resize(n_cells)
 	var volc_x := PackedFloat32Array()
@@ -3516,6 +3527,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		terr_arr[ci] = int(cell.terrain) & 0xFF
 		veg_arr[ci] = int(cell.vegetation) & 0xFF
 		cov_arr[ci] = int(cell.cover) & 0xFF
+		wd_arr[ci] = float(cell.water_depth)
 		cells_by_index[ci] = cell
 		var off: Vector2i = HexUtils.cube_to_offset(cell.q, cell.r)
 		if off.y >= 0 and off.y < map.height:
@@ -3552,6 +3564,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"cell_terrain": terr_arr,
 		"cell_vegetation": veg_arr,
 		"cell_cover": cov_arr,
+		"cell_water_depth": wd_arr,
 		"offset_to_index": o2i,
 		# erosion
 		"num_drops": EROSION_DROPS,
@@ -3575,6 +3588,10 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"inv_glow": inv_glow,
 		"volcano_centers_x": volc_x,
 		"volcano_centers_y": volc_y,
+		# coast SDF carve（water-bodies systemic：海/湖统一岸坡，river carve 之后作用于 height_final）
+		"shore_carve_amp": SHORE_CARVE_AMP,
+		"shore_carve_band": SHORE_CARVE_BAND,
+		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 	}
 	var rep: Dictionary = _world_ext.run_bake_geometry_fields_pass(knobs)
 	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
@@ -3611,6 +3628,9 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	world.volcano_field_buffer = volc if volc.size() == pix_count else PackedByteArray()
 	if world.volcano_field_buffer.is_empty():
 		world.volcano_field_buffer.resize(pix_count)
+	# [water-depth-tex] 海/湖统一水深 R8（空 = C++ 未产出 → encode 时退化为空 tex，shader 回退旧路径）。
+	var wd_buf: PackedByteArray = rep.get("water_depth_buffer", PackedByteArray())
+	world.water_depth_buffer = wd_buf if wd_buf.size() == pix_count else PackedByteArray()
 
 	# ── CSR + 对象侧反向索引（同 _bake_terrain_index_native）──
 	var first_px: PackedInt32Array = rep.get("cell_first_px", PackedInt32Array())
@@ -3642,10 +3662,11 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 			lists[cell2] = flat.slice(st, st + cnt)
 	world.cell_pixel_lists = lists
 
-	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms volcano=%.1fms" % [
+	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms volcano=%.1fms coast_sdf=%.1fms(ok=%s)" % [
 		float(rep.get("terrain_ms", -1.0)), float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
 		float(rep.get("river_ms", -1.0)), str(bool(rep.get("river_ok", false))),
-		float(rep.get("latitude_ms", -1.0)), float(rep.get("volcano_ms", -1.0))])
+		float(rep.get("latitude_ms", -1.0)), float(rep.get("volcano_ms", -1.0)),
+		float(rep.get("coast_ms", -1.0)), str(bool(rep.get("coast_ok", false)))])
 	if not bool(rep.get("river_ok", false)):
 		push_warning("[bake_geometry_fields] river sub-pass fallback（reason=%s）→ flow 置空（无河流或拓扑缺失）。"
 			% String(rep.get("river_reason", "?")))

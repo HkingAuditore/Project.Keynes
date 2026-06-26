@@ -110,7 +110,7 @@ ShoreHaloResult compute_shore_halo(
 	}
 
 	r.coast_t = clamp(
-		max(sea_band * 0.55, r.shore_w * SHORE_HALO_WEIGHT_MAX) + r.estuary_flow * 0.30,
+		max(sea_band, r.shore_w * SHORE_HALO_WEIGHT_MAX * 0.5) + r.estuary_flow * 0.30,
 		0.0, 1.0);
 
 	// ── halo 颜色合成（land/water 共用） ─────────────────────────────────
@@ -123,9 +123,13 @@ ShoreHaloResult compute_shore_halo(
 	halo      = mix(halo, estuary_halo, r.estuary_flow * 0.55);
 	r.halo_color = halo;
 
-	// ── halo 强度：land=1.00 倍，water=0.86 倍（保持 v9 视觉） ─────────
+	// ── halo 强度：边缘锐度改由平滑高度项(sea_band)主导，块状邻居计数(shore_w)仅兜底 ──
+	//    [coast-smooth 2026-06-26] 原 mix(0.34,0.62,shore_w) 用 per-cell 邻居计数 → halo 强度
+	//    跟着六边形格阶梯变化(块感)。改用 sea_band(线性 height_tex 的亚像素高度带)主导 → halo
+	//    沿等高线平滑收放，海岸 fringe 不再呈格状。
+	float halo_edge = max(sea_band, r.shore_w * 0.5);
 	float strength_mul = (role == 0) ? 1.00 : 0.86;
-	float halo_strength = coast_halo_strength * mix(0.34, 0.62, r.shore_w) * strength_mul;
+	float halo_strength = coast_halo_strength * mix(0.34, 0.62, halo_edge) * strength_mul;
 	r.halo_weight = clamp(r.coast_t * halo_strength, 0.0, 1.0);
 
 	// ── roughness target：仅 water 路径在原代码中显式覆盖；land 留中性值 ─
