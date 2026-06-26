@@ -362,12 +362,13 @@ uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.5;  // 细�
 //   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。
 uniform float shore_detail_strength : hint_range(0.0, 1.0) = 0.45;       // 近岸滩坡细节强度(0=关)
 uniform float shore_band_height     : hint_range(0.001, 0.2) = 0.06;     // 近岸带高度(land_h 厚度，越小越贴岸)
-// [coast-smooth 2026-06-26] 平滑海岸线：海岸的"丑"在于水陆边界是 per-cell 六边形枚举硬边(阶梯/锯齿)，
-// 而河流是连续 SDF(平滑)。这里用线性滤波的 height_tex(亚像素连续高程)在 sea_level 附近做"等高线 AA"：
-// 近岸陆地像素若平滑高程低于水线→渐隐为浅海色；近岸水像素若平滑高程高于水线→渐隐为沙滩色。两侧沿
-// 同一条 height 等高线收敛 → 海岸线跟着亚像素等高线走而非六边形格边，像河流一样平滑。0=关(回退旧硬边)。
-uniform float coast_smooth_strength : hint_range(0.0, 1.0) = 0.65;        // 海岸等高线平滑强度(0=关)
-uniform float coast_smooth_band     : hint_range(0.005, 0.15) = 0.055;    // 等高线 AA 带半宽(归一化高程)
+// [coast-smooth 2026-06-26] 平滑海岸线：水陆边界是 per-cell 六边形枚举硬边(阶梯)，河流是连续 SDF。
+// 这里在海岸一圈把陆/水颜色统一混向"水色与陆色的中间色"(mix(color_coast_water,color_lowland))做柔和
+// 过渡带，掩盖六边形硬边。定位/粗细由 shore_w(邻域水/陆接触度,已 smoothstep)×width 控制——对称、内陆
+// 与开阔水/浅湖 shore_w=0 → 不染(不发灰)。0=关(回退旧硬边)。
+uniform float coast_smooth_strength  : hint_range(0.0, 1.0) = 0.65;   // 过渡混合强度(0=关)
+uniform float coast_smooth_width     : hint_range(0.2, 4.0) = 1.8;    // 过渡带粗细(越大越粗)
+uniform float coast_shore_land_bias  : hint_range(0.0, 1.0) = 0.5;    // 过渡色偏向:0=全水色 1=全陆色(lowland)
 
 
 // =========================================================================

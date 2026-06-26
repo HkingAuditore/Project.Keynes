@@ -54,6 +54,20 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 
 因此，“C++ 算过”与“GDScript/渲染读到新值”是两个事件，中间必须有 publish/flush/snapshot。
 
+## Gameplay event bus 契约
+
+`DCWorldExt` 现在提供通用 gameplay event bus，定位是“可持久化/可回放的技术基建”，不是某个视觉系统的临时队列。它与 DataCore slot 并列：
+
+- slot 保存当前状态；event bus 保存发生过的事实。不要把 event journal 镜像进 `component_schema.gd`。
+- C++ 和 GDScript 都可发布事件，入口分别是 native `_emit_gameplay_event()` / `_emit_succession_events()` 和 GDScript `GameplayEventBus.publish_event()` / `publish_events_batch()`。
+- 所有事件进入统一单调 `event_id`、统一 ring/log 和统一 packed-array schema。基础字段包括 `event_id`、`tick`、`phase`、`type`、`source`、`flags`、`entity_id`、`cell_idx`、`payload_schema`、`payload_i0..i3`。
+- 第一批类型包括 `VEGETATION_SUCCESSION`、`TERRAIN_FLIP`、`WEATHER_FRONT_CHANGED`、`VISUAL_DIRTY_INTENT`。`VEGETATION_SUCCESSION` 的 payload 约定为 `cell_idx` + `old_veg/new_veg`。
+- 消费端必须使用 consumer cursor：`poll_gameplay_events({"consumer_id": ...})` 读取，`ack_gameplay_events(consumer_id, up_to_event_id)` 确认。renderer、UI、debug 不应共用一个 consumer id。
+- 持久化使用 `snapshot_gameplay_event_journal()`，恢复使用 `restore_gameplay_event_journal()`，回放使用 `replay_gameplay_events()`。快照只含 POD/packed payload，不含 Godot Object 引用。
+- ring buffer 溢出不静默：report 必须显示 `dropped_event_count` / `first_dropped_event_id`，consumer 落后看 `consumer_lag`。
+
+GDScript 侧统一通过 `scripts/data_core/gameplay_event_bus.gd` 包装 native API。渲染或 UI 不直接解析 C++ raw arrays，除非是在 debug 工具里显式 inspect schema。
+
 ## GDScript 写入 C++ 可见数据
 
 ### 单点写

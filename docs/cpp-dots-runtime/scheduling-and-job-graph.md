@@ -67,6 +67,15 @@ DCSystemScheduler unavailable / disabled
 | `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
 | `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | 仍受 gate 控制，未替代 legacy runtime authority；天气场启用而 native weather publish 未验证时必须回落到 legacy SUS jobs。 |
 
+### Gameplay event bus 与视觉消费
+
+`DCWorldExt` 的 gameplay event bus 是跨 C++/GDScript 的事件日志，不是 scheduler job：
+
+- native jobs/stages（例如 vegetation dynamics / Stage-B）在执行中发布事件；发布本身计入对应 native pass 的耗时。
+- renderer/UI/debug 用独立 consumer cursor poll，不参与 simulation authority，也不影响 C++ scheduler 的依赖图。
+- chunked detail apply 由 `HexRenderer._drain_detail_refresh_queue()` 在渲染帧中按 `detail_scatter_refresh_layers_per_frame` 推进；这是 Godot object/MultiMesh 提交，不应放进 C++ SUS job。
+- 诊断时把 `event_bus_ms` / native pass ms / `gd_chunk_apply_ms` 分开看：事件产生慢看 native stage，consumer lag 看 event bus report，chunk apply 慢看 `[detail_scatter/SLOW_LAYER] chunks=...`。
+
 ## Job descriptor 字段
 
 | 字段 | 含义 |

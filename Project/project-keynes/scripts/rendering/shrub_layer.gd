@@ -8,6 +8,7 @@ const _WT_DROUGHT := 4
 const _WT_HEATWAVE := 6
 const _WT_MONSOON := 7
 const DEFAULT_PROFILE := preload("res://data/visual/shrub_default.tres")
+const VegetationProfileRegistryScript := preload("res://scripts/data/vegetation_profile_registry.gd")
 const DETAIL_SHRUB := 0
 const DETAIL_TREE := 1
 const DETAIL_GRASS := 2
@@ -29,6 +30,7 @@ const SPAWN_WATER := 1
 const SPAWN_ANY := 2
 
 static var _mesh_cache: Dictionary = {}
+static var _shared_offset_is_water_cache: Dictionary = {}
 
 const _SHADER_CODE := """
 shader_type canvas_item;
@@ -265,9 +267,23 @@ var _last_rebuild_reason: String = ""
 var _last_incremental_cells: int = 0
 var _last_incremental_missing_slots: int = 0
 var _last_incremental_dropped_instances: int = 0
+var _last_dirty_chunks: int = 0
+var _last_native_sampled_cells: int = 0
+var _last_native_active_cells: int = 0
+var _last_native_water_cache_ms: float = 0.0
+var _last_native_context_ms: float = 0.0
+var _last_native_knobs_ms: float = 0.0
+var _last_native_call_ms: float = 0.0
+var _last_native_apply_ms: float = 0.0
 var _cell_instance_lookup: Dictionary = {}
 var _native_offset_is_water_cache: PackedByteArray = PackedByteArray()
 var _native_offset_cache_dims: Vector2i = Vector2i.ZERO
+var _native_veg_climate_tables: Dictionary = {}
+var _native_delta_common_knobs: Dictionary = {}
+var _chunked_multimesh_enabled: bool = true
+var _chunk_size_cells: int = 8
+var _chunk_nodes: Dictionary = {}
+var _chunk_instance_counts: Dictionary = {}
 
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
@@ -297,6 +313,7 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	_visual_quality = clampi(visual_quality, 0, 2)
 	_native_offset_is_water_cache = PackedByteArray()
 	_native_offset_cache_dims = Vector2i.ZERO
+	_native_delta_common_knobs = {}
 	_sync_world_material_inputs(false)
 	_rebuild_instances()
 
@@ -312,6 +329,7 @@ func clear() -> void:
 	_instance_cells.clear()
 	_instance_count = 0
 	_cell_instance_lookup.clear()
+	_clear_chunk_nodes()
 	if _multimesh != null:
 		_multimesh.instance_count = 0
 		_multimesh.visible_instance_count = 0
@@ -336,6 +354,7 @@ func set_day_phase(v: float) -> void:
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
 	_world = world
 	_bounds = bounds
+	_native_delta_common_knobs = {}
 	_sync_world_material_inputs(true)
 
 
@@ -374,17 +393,30 @@ func set_world_ext(ext) -> void:
 	_world_ext = ext
 
 
+func set_chunked_multimesh_enabled(enabled: bool, chunk_size_cells: int = 8) -> void:
+	var next_size := maxi(2, chunk_size_cells)
+	if _chunked_multimesh_enabled == enabled and _chunk_size_cells == next_size:
+		return
+	_chunked_multimesh_enabled = enabled
+	_chunk_size_cells = next_size
+	if _map != null:
+		_rebuild_instances()
+
+
 func set_visual_quality(q: int) -> void:
 	var next_q := clampi(q, 0, 2)
 	if _visual_quality == next_q:
 		return
 	_visual_quality = next_q
+	_native_delta_common_knobs = {}
 	if _map != null:
 		_rebuild_instances()
 
 
 func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	if _map == null or _indices.is_empty():
+		return
+	if _chunked_multimesh_enabled and _refresh_chunked_for_succession(_indices):
 		return
 	_ensure_incremental_multimesh()
 	if _multimesh == null:
@@ -635,11 +667,22 @@ func _set_slot_from_native_buffer(slot: int, buffer: PackedFloat32Array, src: in
 
 func _native_offset_is_water(grid_w: int, grid_h: int) -> PackedByteArray:
 	if _native_offset_cache_dims == Vector2i(grid_w, grid_h) and _native_offset_is_water_cache.size() == grid_w * grid_h:
+		_last_native_water_cache_ms = 0.0
+		return _native_offset_is_water_cache
+	var t0_us := Time.get_ticks_usec()
+	var map_id := _map.get_instance_id() if _map != null else 0
+	var cache_key := "%d:%d:%d" % [map_id, grid_w, grid_h]
+	var shared: PackedByteArray = _shared_offset_is_water_cache.get(cache_key, PackedByteArray())
+	if shared.size() == grid_w * grid_h:
+		_native_offset_is_water_cache = shared
+		_native_offset_cache_dims = Vector2i(grid_w, grid_h)
+		_last_native_water_cache_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 		return _native_offset_is_water_cache
 	_native_offset_is_water_cache = PackedByteArray()
 	_native_offset_is_water_cache.resize(grid_w * grid_h)
 	_native_offset_is_water_cache.fill(1)
 	if _map == null:
+		_last_native_water_cache_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 		return _native_offset_is_water_cache
 	var cells: Array = _map.iter_cells()
 	for order in range(cells.size()):
@@ -651,7 +694,140 @@ func _native_offset_is_water(grid_w: int, grid_h: int) -> PackedByteArray:
 		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
 			_native_offset_is_water_cache[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
 	_native_offset_cache_dims = Vector2i(grid_w, grid_h)
+	_shared_offset_is_water_cache[cache_key] = _native_offset_is_water_cache
+	_last_native_water_cache_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	return _native_offset_is_water_cache
+
+
+func _vegetation_climate_tables() -> Dictionary:
+	if not _native_veg_climate_tables.is_empty():
+		return _native_veg_climate_tables
+	var n_veg: int = VegetationType.VEG.size()
+	var ideal_temp := PackedFloat32Array()
+	var ideal_moist := PackedFloat32Array()
+	var temp_tol := PackedFloat32Array()
+	var moist_tol := PackedFloat32Array()
+	ideal_temp.resize(n_veg)
+	ideal_moist.resize(n_veg)
+	temp_tol.resize(n_veg)
+	moist_tol.resize(n_veg)
+	for v in range(n_veg):
+		var p = VegetationProfileRegistryScript.get_profile(v)
+		ideal_temp[v] = float(p.ideal_temp) if p != null else 0.5
+		ideal_moist[v] = float(p.ideal_moist) if p != null else 0.5
+		temp_tol[v] = maxf(float(p.temp_tolerance), 0.01) if p != null else 0.28
+		moist_tol[v] = maxf(float(p.moist_tolerance), 0.01) if p != null else 0.28
+	_native_veg_climate_tables = {
+		"ideal_temp": ideal_temp,
+		"ideal_moist": ideal_moist,
+		"temp_tol": temp_tol,
+		"moist_tol": moist_tol,
+	}
+	return _native_veg_climate_tables
+
+
+func begin_detail_chunk_refresh() -> void:
+	_last_native_water_cache_ms = 0.0
+	_last_native_context_ms = 0.0
+	_last_native_knobs_ms = 0.0
+	_last_native_call_ms = 0.0
+	_last_native_apply_ms = 0.0
+	_native_delta_common_knobs = {}
+
+
+func _build_native_delta_common_knobs() -> Dictionary:
+	var t0_us := Time.get_ticks_usec()
+	if _map == null:
+		_last_native_context_ms = 0.0
+		return {}
+	var grid_w: int = int(_map.width) if "width" in _map else 0
+	var grid_h: int = int(_map.height) if "height" in _map else 0
+	if grid_w <= 0 or grid_h <= 0:
+		_last_native_context_ms = 0.0
+		return {}
+	var cfg := _profile()
+	var veg_tables := _vegetation_climate_tables()
+	var override_color: Color = cfg.base_color_override
+	var common := {
+		"cell_pos_x": _map.cell_pos_x_arr,
+		"cell_pos_y": _map.cell_pos_y_arr,
+		"temp_arr": _map.temp_arr,
+		"moisture_arr": _map.moisture_arr,
+		"snow_cover_arr": _map.snow_cover_arr,
+		"weather_intensity_arr": _map.weather_intensity_arr,
+		"vegetation_vitality_arr": _map.vegetation_vitality_arr,
+		"vegetation_heat_stress_arr": _map.vegetation_heat_stress_arr,
+		"vegetation_drought_stress_arr": _map.vegetation_drought_stress_arr,
+		"vegetation_cold_stress_arr": _map.vegetation_cold_stress_arr,
+		"landform_arr": _map.landform_arr,
+		"vegetation_arr": _map.vegetation_arr,
+		"cover_arr": _map.cover_arr,
+		"weather_type_arr": _map.weather_type_arr,
+		"elevation_arr": _map.elevation_arr,
+		"soil_moisture_arr": _map.soil_moisture_arr,
+		"river_discharge_arr": _map.river_discharge_arr,
+		"wind_speed_arr": _map.wind_speed_arr,
+		"is_water_arr": _map.is_water_arr,
+		"has_river_arr": _map.has_river_arr,
+		"veg_ideal_temp": veg_tables.get("ideal_temp", PackedFloat32Array()),
+		"veg_ideal_moist": veg_tables.get("ideal_moist", PackedFloat32Array()),
+		"veg_temp_tol": veg_tables.get("temp_tol", PackedFloat32Array()),
+		"veg_moist_tol": veg_tables.get("moist_tol", PackedFloat32Array()),
+		"hex_size": _hex_size,
+		"origin_x": _bounds.position.x,
+		"origin_y": _bounds.position.y,
+		"size_x": _bounds.size.x,
+		"size_y": _bounds.size.y,
+		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
+		"wrap_edge_margin": _hex_size * 4.0,
+		"grid_w": grid_w,
+		"grid_h": grid_h,
+		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
+		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
+		"flow_w": int(_world.derived_size.x) if _world != null else 0,
+		"flow_h": int(_world.derived_size.y) if _world != null else 0,
+		"detail_kind": _detail_kind(),
+		"max_per_cell": _max_per_cell(),
+		"quality_density_scale": _quality_density_scale(),
+		"river_clear_threshold": cfg.river_clear_threshold,
+		"river_edge_density": cfg.river_edge_density,
+		"spawn_domain": _spawn_domain(),
+		"rotation_mode": _rotation_mode(),
+		"random_rotation_strength": _random_rotation_strength(),
+		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
+		"base_color_override_enabled": bool(cfg.base_color_override_enabled),
+		"base_color_r": override_color.r,
+		"base_color_g": override_color.g,
+		"base_color_b": override_color.b,
+		"base_color_a": override_color.a,
+		"vegetation_weight_overrides": cfg.vegetation_weight_overrides,
+		"landform_weight_overrides": cfg.landform_weight_overrides,
+		"cover_weight_overrides": cfg.cover_weight_overrides,
+		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"world_noise_warp_strength": cfg.world_noise_warp_strength,
+		"patch_frequency": cfg.patch_frequency,
+		"patch_cutoff": cfg.patch_cutoff,
+		"patch_contrast": cfg.patch_contrast,
+		"world_noise_mid_mix": cfg.world_noise_mid_mix,
+		"world_noise_fine_mix": cfg.world_noise_fine_mix,
+		"micro_gap_threshold": cfg.micro_gap_threshold,
+		"world_noise_acceptance": cfg.world_noise_acceptance,
+		"moisture_corridor_boost": cfg.moisture_corridor_boost,
+		"vitality_patch_boost": cfg.vitality_patch_boost,
+		"stress_hide_strength": cfg.stress_hide_strength,
+		"snow_hide_strength": cfg.snow_hide_strength,
+		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
+		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
+		"size_scale": _quality_size_scale(),
+		"vitality_dead_threshold": cfg.vitality_dead_threshold,
+		"vitality_sparse_threshold": cfg.vitality_sparse_threshold,
+		"vitality_healthy_threshold": cfg.vitality_healthy_threshold,
+		"vitality_density_power": cfg.vitality_density_power,
+		"vitality_alpha_power": cfg.vitality_alpha_power,
+		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
+	}
+	_last_native_context_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	return common
 
 
 func _ensure_incremental_multimesh() -> void:
@@ -757,6 +933,19 @@ func instance_count() -> int:
 
 func apply_visible_instance_fraction(fraction: float) -> void:
 	var f := clampf(fraction, 0.0, 1.0)
+	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
+		var any_visible := false
+		for chunk_id in _chunk_nodes.keys():
+			var node: MultiMeshInstance2D = _chunk_nodes[chunk_id]
+			if node == null or not is_instance_valid(node) or node.multimesh == null:
+				continue
+			var count := int(_chunk_instance_counts.get(chunk_id, 0))
+			var next_visible := clampi(int(floor(float(count) * f)), 0, count)
+			node.multimesh.visible_instance_count = next_visible
+			node.visible = _profile().enabled and next_visible > 0
+			any_visible = any_visible or next_visible > 0
+		visible = _profile().enabled and any_visible
+		return
 	if _multimesh == null:
 		visible = false
 		return
@@ -770,6 +959,7 @@ func set_mobile_quality_tier(q: int) -> void:
 	if _mobile_quality_tier == next_q:
 		return
 	_mobile_quality_tier = next_q
+	_native_delta_common_knobs = {}
 	if OS.has_feature("mobile") and _map != null:
 		_rebuild_instances()
 
@@ -792,6 +982,260 @@ func _ensure_resources() -> void:
 		_mmi.material = _material
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
+
+
+func _clear_chunk_nodes() -> void:
+	for node in _chunk_nodes.values():
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_chunk_nodes.clear()
+	_chunk_instance_counts.clear()
+
+
+func _chunk_id_for_cell_idx(cell_idx: int) -> int:
+	if _map == null or cell_idx < 0:
+		return -1
+	var cell = _map.cell_at(cell_idx)
+	if cell == null:
+		return -1
+	var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
+	var cx := int(floor(float(off.x) / float(maxi(1, _chunk_size_cells))))
+	var cy := int(floor(float(off.y) / float(maxi(1, _chunk_size_cells))))
+	return cy * 100000 + cx
+
+
+func _cell_indices_for_chunk(chunk_id: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if _map == null or chunk_id < 0:
+		return out
+	var chunk_x := chunk_id % 100000
+	var chunk_y := int(floor(float(chunk_id) / 100000.0))
+	var x0 := chunk_x * _chunk_size_cells
+	var y0 := chunk_y * _chunk_size_cells
+	var x1 := mini(int(_map.width), x0 + _chunk_size_cells)
+	var y1 := mini(int(_map.height), y0 + _chunk_size_cells)
+	for row in range(y0, y1):
+		for col in range(x0, x1):
+			var cube := HexUtils.offset_to_cube(col, row)
+			var cell = _map.get_cell(cube.x, cube.y)
+			if cell != null:
+				out.append(int(cell.index))
+	return out
+
+
+func _ensure_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
+	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
+	if node != null and is_instance_valid(node):
+		return node
+	node = MultiMeshInstance2D.new()
+	node.name = "DetailChunk_%d" % chunk_id
+	node.material = _material
+	add_child(node)
+	_chunk_nodes[chunk_id] = node
+	return node
+
+
+func _prepare_chunk_multimesh(chunk_id: int, inst: int) -> MultiMesh:
+	var node := _ensure_chunk_node(chunk_id)
+	var mm := node.multimesh
+	if mm == null:
+		mm = MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_2D
+		mm.use_colors = true
+		mm.use_custom_data = true
+		node.multimesh = mm
+	mm.mesh = _cached_detail_mesh()
+	mm.instance_count = inst
+	mm.visible_instance_count = inst
+	node.visible = _profile().enabled and inst > 0
+	_chunk_instance_counts[chunk_id] = inst
+	return mm
+
+
+func _apply_chunk_payload(chunk_id: int, buffer: PackedFloat32Array, src_indices: Array, inst: int) -> void:
+	var mm := _prepare_chunk_multimesh(chunk_id, inst)
+	if inst > 0:
+		var chunk_buffer := PackedFloat32Array()
+		chunk_buffer.resize(inst * 16)
+		for dst in range(inst):
+			var src := int(src_indices[dst])
+			var src_b := src * 16
+			var dst_b := dst * 16
+			for k in range(16):
+				chunk_buffer[dst_b + k] = buffer[src_b + k]
+		mm.buffer = chunk_buffer
+	else:
+		mm.buffer = PackedFloat32Array()
+
+
+func _apply_chunk_payload_direct(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
+	var mm := _prepare_chunk_multimesh(chunk_id, inst)
+	if inst > 0:
+		mm.buffer = buffer
+	else:
+		mm.buffer = PackedFloat32Array()
+
+
+func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int) -> void:
+	_clear_chunk_nodes()
+	_mmi.multimesh = null
+	_multimesh = null
+	var by_chunk := {}
+	for i in range(inst):
+		var chunk_id := _chunk_id_for_cell_idx(int(cell_indices[i]))
+		if chunk_id < 0:
+			continue
+		var srcs: Array = by_chunk.get(chunk_id, [])
+		srcs.append(i)
+		by_chunk[chunk_id] = srcs
+	for chunk_id in by_chunk.keys():
+		var src_indices: Array = by_chunk[chunk_id]
+		_apply_chunk_payload(int(chunk_id), buffer, src_indices, src_indices.size())
+	_last_dirty_chunks = by_chunk.size()
+
+
+func detail_chunk_plan_for_indices(indices: PackedInt32Array) -> Array:
+	var dirty_chunks := {}
+	for raw_idx in indices:
+		var chunk_id := _chunk_id_for_cell_idx(int(raw_idx))
+		if chunk_id < 0:
+			continue
+		dirty_chunks[chunk_id] = int(dirty_chunks.get(chunk_id, 0)) + 1
+	var keys: Array = dirty_chunks.keys()
+	keys.sort()
+	var out: Array = []
+	for chunk_id in keys:
+		out.append({
+			"chunk_id": int(chunk_id),
+			"cell_indices": _cell_indices_for_chunk(int(chunk_id)),
+			"dirty_cells": int(dirty_chunks[chunk_id]),
+		})
+	return out
+
+
+func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, dirty_cell_count: int = 0) -> bool:
+	if _map == null or chunk_id < 0:
+		return false
+	if chunk_cells.is_empty():
+		chunk_cells = _cell_indices_for_chunk(chunk_id)
+	var t0_us := Time.get_ticks_usec()
+	var payload := _encode_native_payload_for_indices(chunk_cells, 0)
+	if not bool(payload.get("ok", false)):
+		_last_rebuild_reason = str(payload.get("reason", "chunk_native_failed"))
+		return false
+	var res: Dictionary = payload.get("res", {})
+	var inst := int(res.get("instance_count", 0))
+	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
+	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
+	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
+		_last_rebuild_reason = "chunk_native_bad_payload"
+		return false
+	var old_count := int(_chunk_instance_counts.get(chunk_id, 0))
+	var apply_t0_us := Time.get_ticks_usec()
+	_apply_chunk_payload_direct(chunk_id, buffer, inst)
+	_last_native_apply_ms = float(Time.get_ticks_usec() - apply_t0_us) / 1000.0
+	_instance_count = maxi(0, _instance_count - old_count + inst)
+	_last_scatter_path = "gdext_event_chunk"
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = int(res.get("candidate_count", 0))
+	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
+	_last_native_sampled_cells = int(res.get("sampled_cell_count", chunk_cells.size()))
+	_last_native_active_cells = int(res.get("active_cell_count", 0))
+	_last_rebuild_reason = "chunked_event_update"
+	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else chunk_cells.size()
+	_last_dirty_chunks = 1
+	visible = _profile().enabled and _instance_count > 0
+	return true
+
+
+func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap: int = 0) -> Dictionary:
+	var t0_us := Time.get_ticks_usec()
+	var out := {"ok": false, "valid_indices": PackedInt32Array(), "res": {}}
+	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter_delta"):
+		out["reason"] = "missing_encode_detail_scatter_delta"
+		return out
+	if _map == null:
+		out["reason"] = "map_null"
+		return out
+	if _native_delta_common_knobs.is_empty():
+		_native_delta_common_knobs = _build_native_delta_common_knobs()
+	if _native_delta_common_knobs.is_empty():
+		out["reason"] = "bad_native_common_knobs"
+		return out
+	var knobs := _native_delta_common_knobs.duplicate(false)
+	knobs["sample_cell_indices"] = indices
+	knobs["instance_cap"] = instance_cap
+	_last_native_knobs_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	var native_t0_us := Time.get_ticks_usec()
+	var res = _world_ext.call("encode_detail_scatter_delta", knobs)
+	_last_native_call_ms = float(Time.get_ticks_usec() - native_t0_us) / 1000.0
+	if not (res is Dictionary):
+		out["reason"] = "bad_native_result"
+		return out
+	if bool(res.get("fallback", true)):
+		out["reason"] = str(res.get("reason", "native_delta_fallback"))
+		out["res"] = res
+		return out
+	out["ok"] = true
+	out["valid_indices"] = res.get("valid_indices", indices)
+	out["res"] = res
+	return out
+
+
+func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
+	if _map == null or indices.is_empty():
+		return false
+	var dirty_chunks := {}
+	for raw_idx in indices:
+		var chunk_id := _chunk_id_for_cell_idx(int(raw_idx))
+		if chunk_id >= 0:
+			dirty_chunks[chunk_id] = true
+	if dirty_chunks.is_empty():
+		return false
+	var t0_us := Time.get_ticks_usec()
+	var chunk_count := 0
+	var total_inst := 0
+	var total_candidates := 0
+	var total_wrap := 0
+	var total_sampled := 0
+	var total_active := 0
+	for chunk_id in dirty_chunks.keys():
+		var chunk_cells := _cell_indices_for_chunk(int(chunk_id))
+		var payload := _encode_native_payload_for_indices(chunk_cells, 0)
+		if not bool(payload.get("ok", false)):
+			_last_rebuild_reason = str(payload.get("reason", "chunk_native_failed"))
+			return false
+		var res: Dictionary = payload.get("res", {})
+		var inst := int(res.get("instance_count", 0))
+		var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
+		var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
+		if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
+			_last_rebuild_reason = "chunk_native_bad_payload"
+			return false
+		var srcs: Array = []
+		for i in range(inst):
+			srcs.append(i)
+		_apply_chunk_payload(int(chunk_id), buffer, srcs, inst)
+		total_inst += inst
+		total_candidates += int(res.get("candidate_count", 0))
+		total_wrap += int(res.get("wrap_edge_copy_count", 0))
+		total_sampled += int(res.get("sampled_cell_count", chunk_cells.size()))
+		total_active += int(res.get("active_cell_count", 0))
+		chunk_count += 1
+	_instance_count = 0
+	for v in _chunk_instance_counts.values():
+		_instance_count += int(v)
+	_last_scatter_path = "gdext_event_chunk"
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = total_candidates
+	_last_wrap_edge_copy_count = total_wrap
+	_last_native_sampled_cells = total_sampled
+	_last_native_active_cells = total_active
+	_last_rebuild_reason = "chunked_event_update"
+	_last_incremental_cells = indices.size()
+	_last_dirty_chunks = chunk_count
+	visible = _profile().enabled and _instance_count > 0
+	return true
 
 
 func _apply_profile_uniforms() -> void:
@@ -862,6 +1306,9 @@ func _rebuild_instances() -> void:
 	_last_incremental_cells = 0
 	_last_incremental_missing_slots = 0
 	_last_incremental_dropped_instances = 0
+	_last_dirty_chunks = 0
+	_last_native_sampled_cells = 0
+	_last_native_active_cells = 0
 	clear()
 	var cfg := _profile()
 	if not cfg.enabled or _map == null or _map.cell_count() <= 0:
@@ -908,7 +1355,8 @@ func _rebuild_instances() -> void:
 	# 整段热循环下沉 DCWorldExt.encode_detail_scatter，GDScript 仅做上面这段
 	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
 	if _rebuild_via_native(cells, cell_states, cell_suitabilities, cell_attempts):
-		_last_scatter_path = "gdext"
+		if _last_scatter_path.is_empty():
+			_last_scatter_path = "gdext"
 		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 		_rebuild_cell_instance_lookup()
 		return
@@ -1103,6 +1551,14 @@ func _rebuild_via_native(
 	if cell_indices.size() < inst:
 		_last_rebuild_reason = "native_missing_cell_indices"
 		return false
+
+	if _chunked_multimesh_enabled:
+		_instance_count = inst
+		_instance_cell_indices = cell_indices
+		_apply_chunked_native_full(buffer, cell_indices, inst)
+		visible = cfg.enabled and inst > 0
+		_last_scatter_path = "gdext_chunked"
+		return true
 
 	_instance_count = inst
 	_instance_cell_indices = cell_indices
@@ -1614,27 +2070,22 @@ func _build_tree_mesh() -> ArrayMesh:
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
-	_add_lobe(verts, uvs, colors, indices, Vector2(0.0, 0.18), 0.18, 0.34, Color(0.42, 0.27, 0.13, 1.0))
+	_add_lobe(verts, uvs, colors, indices, Vector2(0.0, 0.22), 0.62, 0.18, Color(0.18, 0.30, 0.16, 0.62))
 	var lobes := [
-		[Vector2(0.0, -0.34), 0.58, 0.72, Color(0.56, 0.78, 0.42, 1.0)],
-		[Vector2(-0.30, -0.10), 0.48, 0.58, Color(0.40, 0.66, 0.34, 0.98)],
-		[Vector2(0.32, -0.12), 0.46, 0.56, Color(0.32, 0.57, 0.30, 0.98)],
-		[Vector2(0.02, -0.66), 0.38, 0.48, Color(0.66, 0.84, 0.48, 0.96)],
-		[Vector2(-0.02, 0.14), 0.34, 0.36, Color(0.24, 0.47, 0.24, 0.94)],
+		[Vector2(-0.36, -0.04), 0.34, 0.30, Color(0.38, 0.62, 0.34, 0.96)],
+		[Vector2(0.00, -0.18), 0.40, 0.34, Color(0.52, 0.76, 0.42, 1.0)],
+		[Vector2(0.38, -0.04), 0.34, 0.30, Color(0.32, 0.55, 0.30, 0.96)],
+		[Vector2(-0.10, 0.12), 0.38, 0.24, Color(0.24, 0.44, 0.24, 0.92)],
+		[Vector2(-0.52, -0.22), 0.24, 0.22, Color(0.56, 0.78, 0.44, 0.94)],
+		[Vector2(0.52, -0.22), 0.24, 0.22, Color(0.46, 0.70, 0.38, 0.94)],
+		[Vector2(0.18, 0.14), 0.28, 0.20, Color(0.20, 0.38, 0.22, 0.88)],
+		[Vector2(0.00, -0.42), 0.26, 0.20, Color(0.66, 0.84, 0.50, 0.92)],
 	]
 	var lobe_count := mini(_quality_lobe_count(), lobes.size())
 	for i in range(lobe_count):
 		var lobe: Array = lobes[i]
 		_add_lobe(verts, uvs, colors, indices, lobe[0], lobe[1], lobe[2], lobe[3])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return _finish_mesh(verts, uvs, colors, indices)
 
 
 func _build_grass_mesh() -> ArrayMesh:
@@ -1642,26 +2093,26 @@ func _build_grass_mesh() -> ArrayMesh:
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
+	var mats := [
+		[Vector2(-0.24, 0.18), 0.38, 0.16, Color(0.44, 0.70, 0.30, 0.78)],
+		[Vector2(0.18, 0.12), 0.42, 0.18, Color(0.58, 0.82, 0.36, 0.78)],
+		[Vector2(0.02, -0.04), 0.34, 0.15, Color(0.36, 0.64, 0.28, 0.72)],
+	]
+	for mat in mats:
+		var mat_data: Array = mat
+		_add_lobe(verts, uvs, colors, indices, mat_data[0], mat_data[1], mat_data[2], mat_data[3])
 	var blades := [
-		[Vector2(-0.38, 0.24), 0.10, 0.72, Color(0.58, 0.80, 0.34, 0.82)],
-		[Vector2(-0.18, 0.18), 0.09, 0.62, Color(0.38, 0.72, 0.28, 0.78)],
-		[Vector2(0.00, 0.22), 0.11, 0.78, Color(0.66, 0.86, 0.38, 0.78)],
-		[Vector2(0.20, 0.16), 0.08, 0.58, Color(0.34, 0.66, 0.25, 0.76)],
-		[Vector2(0.38, 0.25), 0.10, 0.70, Color(0.52, 0.76, 0.32, 0.76)],
+		[Vector2(-0.44, 0.26), 0.06, 0.38, Color(0.62, 0.84, 0.38, 0.80)],
+		[Vector2(-0.22, 0.20), 0.055, 0.34, Color(0.42, 0.72, 0.30, 0.76)],
+		[Vector2(0.00, 0.24), 0.065, 0.42, Color(0.70, 0.88, 0.42, 0.78)],
+		[Vector2(0.22, 0.18), 0.052, 0.32, Color(0.36, 0.66, 0.26, 0.74)],
+		[Vector2(0.44, 0.25), 0.06, 0.36, Color(0.56, 0.78, 0.34, 0.74)],
 	]
 	var blade_count := mini(_quality_lobe_count(), blades.size())
 	for i in range(blade_count):
 		var blade: Array = blades[i]
 		_add_blade(verts, uvs, colors, indices, blade[0], blade[1], blade[2], blade[3])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return _finish_mesh(verts, uvs, colors, indices)
 
 
 # ─── 阶段 B 新增 archetype 造型（程序化、风格化平面）───────────────────────
@@ -1724,29 +2175,53 @@ func _add_poly(
 func _build_conifer_mesh() -> ArrayMesh:
 	var v := PackedVector2Array(); var u := PackedVector2Array()
 	var c := PackedColorArray(); var idx := PackedInt32Array()
-	_add_lobe(v, u, c, idx, Vector2(0.0, 0.46), 0.075, 0.30, Color(0.52, 0.38, 0.24, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.0, -0.08), Vector2(-0.46, 0.36), Vector2(0.46, 0.36), Color(0.80, 0.92, 0.80, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.0, -0.44), Vector2(-0.36, 0.04), Vector2(0.36, 0.04), Color(0.90, 0.98, 0.88, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.0, -0.82), Vector2(-0.24, -0.30), Vector2(0.24, -0.30), Color(1.0, 1.0, 0.94, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.28), 0.56, 0.14, Color(0.12, 0.24, 0.18, 0.60))
+	var trees := [
+		[Vector2(-0.34, 0.24), 0.34, 0.44, Color(0.56, 0.78, 0.58, 0.96)],
+		[Vector2(0.00, 0.18), 0.42, 0.58, Color(0.72, 0.90, 0.70, 1.0)],
+		[Vector2(0.34, 0.26), 0.32, 0.42, Color(0.44, 0.66, 0.48, 0.94)],
+		[Vector2(-0.16, -0.06), 0.28, 0.40, Color(0.82, 0.96, 0.78, 0.96)],
+		[Vector2(0.22, -0.08), 0.26, 0.36, Color(0.64, 0.84, 0.62, 0.94)],
+	]
+	var tree_count := mini(_quality_lobe_count(), trees.size())
+	for i in range(tree_count):
+		var tree: Array = trees[i]
+		var base: Vector2 = tree[0]
+		var half_w := float(tree[1])
+		var height := float(tree[2])
+		var tint: Color = tree[3]
+		_add_tri(v, u, c, idx, base + Vector2(0.0, -height), base + Vector2(-half_w, 0.0), base + Vector2(half_w, 0.0), tint)
+		_add_tri(v, u, c, idx, base + Vector2(0.0, -height * 0.70), base + Vector2(-half_w * 0.72, height * 0.18), base + Vector2(half_w * 0.72, height * 0.18), tint.lightened(0.08))
 	return _finish_mesh(v, u, c, idx)
 
 
 func _build_palm_mesh() -> ArrayMesh:
 	var v := PackedVector2Array(); var u := PackedVector2Array()
 	var c := PackedColorArray(); var idx := PackedInt32Array()
-	_add_lobe(v, u, c, idx, Vector2(0.05, 0.24), 0.065, 0.52, Color(0.56, 0.42, 0.26, 1.0))
-	var top := Vector2(0.0, -0.30)
-	var fronds := [
-		[Vector2(-0.62, -0.36), Color(0.74, 0.90, 0.62, 0.98)],
-		[Vector2(-0.40, -0.62), Color(0.84, 0.96, 0.70, 0.98)],
-		[Vector2(0.04, -0.74), Color(0.92, 1.0, 0.78, 1.0)],
-		[Vector2(0.46, -0.58), Color(0.80, 0.94, 0.66, 0.98)],
-		[Vector2(0.64, -0.30), Color(0.70, 0.88, 0.58, 0.96)],
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.24), 0.58, 0.14, Color(0.18, 0.30, 0.14, 0.54))
+	var palms := [
+		[Vector2(-0.32, 0.20), 0.44, Color(0.74, 0.90, 0.56, 0.96)],
+		[Vector2(0.04, 0.12), 0.52, Color(0.88, 0.98, 0.66, 1.0)],
+		[Vector2(0.34, 0.24), 0.40, Color(0.64, 0.82, 0.50, 0.94)],
 	]
-	for f in fronds:
-		var tip: Vector2 = f[0]
-		var perp := Vector2(-(tip.y - top.y), tip.x - top.x).normalized() * 0.07
-		_add_tri(v, u, c, idx, top + perp, top - perp, tip, f[1])
+	for palm in palms:
+		var palm_data: Array = palm
+		var base: Vector2 = palm_data[0]
+		var height := float(palm_data[1])
+		var tint: Color = palm_data[2]
+		var top := base + Vector2(0.0, -height)
+		_add_lobe(v, u, c, idx, base + Vector2(0.02, -height * 0.35), 0.045, height * 0.42, Color(0.46, 0.34, 0.22, 0.92))
+		var fronds := [
+			Vector2(-0.24, -0.02),
+			Vector2(-0.12, -0.20),
+			Vector2(0.10, -0.22),
+			Vector2(0.26, -0.04),
+		]
+		for tip_offset in fronds:
+			var tip_offset_vec: Vector2 = tip_offset
+			var tip := top + tip_offset_vec
+			var perp := Vector2(-(tip.y - top.y), tip.x - top.x).normalized() * 0.045
+			_add_tri(v, u, c, idx, top + perp, top - perp, tip, tint)
 	return _finish_mesh(v, u, c, idx)
 
 
@@ -2468,6 +2943,16 @@ func get_scatter_diagnostics() -> Dictionary:
 		"rebuild_ms": _last_rebuild_ms,
 		"reason": _last_rebuild_reason,
 		"incremental_cells": _last_incremental_cells,
+		"dirty_chunks": _last_dirty_chunks,
+		"native_sampled_cells": _last_native_sampled_cells,
+		"native_active_cells": _last_native_active_cells,
+		"native_water_cache_ms": _last_native_water_cache_ms,
+		"native_context_ms": _last_native_context_ms,
+		"native_knobs_ms": _last_native_knobs_ms,
+		"native_call_ms": _last_native_call_ms,
+		"native_apply_ms": _last_native_apply_ms,
+		"chunked": _chunked_multimesh_enabled,
+		"chunk_size_cells": _chunk_size_cells,
 		"missing_slots": _last_incremental_missing_slots,
 		"dropped_instances": _last_incremental_dropped_instances,
 		"spawn_domain": _spawn_domain(),

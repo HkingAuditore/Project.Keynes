@@ -172,6 +172,7 @@ const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season
 # 另 3 个 SeasonRefreshSystem / EnumAtlasUploadSystem / SeaIceAtlasUploadSystem
 # 是原生 DCSystem 实现）。flag=false 时维持既有 SusJob 直注册路径，零行为差异。
 const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
+const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
 const SeaIceDailySystemScript = preload("res://scripts/simulation/systems/sea_ice_daily_system.gd")
 const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocean_currents_system.gd")
@@ -537,6 +538,10 @@ func get_data_core_world():
 func get_data_core_world_ext():
 	return _data_core_world_ext
 
+
+func get_gameplay_event_bus() -> Object:
+	return _gameplay_event_bus
+
 ## DataCore（climate-datacore-migration A-3）：把 4 个 climate SoA sub-pass 的
 ## "数据访问入口"统一收口。返回与 map.xxx_arr 字段访问等价的 PackedArray
 ## 引用字典；调用方约定每个 sub-pass 入口调一次，循环外取本地引用，hot loop
@@ -718,6 +723,7 @@ var _data_core_world: DCWorld = null
 #   决定是否走 C++ 加速；任何失败一律 fallback 到 DataCore-GDScript 路径
 # - ClassDB.instantiate("DCWorldExt") 由 gdext/src/register_types.cpp 注册
 var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+var _gameplay_event_bus: GameplayEventBus = GameplayEventBusScript.new()
 const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
 var _dc_terrain_mirror_sync_log_count: int = 0
 # DOTS-Total-CPP（任务 6）：ocean_water_pass 同 tick 复用 short-circuit。
@@ -1362,6 +1368,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					push_warning("[DataCore] DCWorldExt.bind_map_data returned false; climate Pass-A C++ acceleration disabled (will fall back to DataCore/GDScript path)")
 					_data_core_world_ext = null
 				else:
+					if _gameplay_event_bus != null:
+						_gameplay_event_bus.bind_world_ext(_data_core_world_ext)
 					# sea-ice-snow-visual-fix-2026-06：bind 后注入 DCWorld 句柄。C++ pass
 					# `_flush_slot_to_map` 末尾会 call("mark_dirty_all")，让 atlas pipeline
 					# 在下个 stride 通过 `read_and_clear_dirty_mask` 拿到信号。修复 wind_surface
@@ -1390,6 +1398,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			# GDExtension 没加载（开发机没编译 gdext / 平台不支持等），完全降级。
 			# 不打 error 避免噪声，main.gd 的 [DataCore] flags 那行已能体现整体路径。
 			print("[DataCore] DCWorldExt class not registered (gdext unavailable); climate Pass-A will use DataCore/GDScript path only")
+	if _data_core_world_ext == null and _gameplay_event_bus != null:
+		_gameplay_event_bus.bind_world_ext(null)
 
 	# PR-2.3a HexCell facade infra：bake_world / 加载存档末尾给每个 cell 注入 world
 	# 引用 + facade flag。
@@ -2990,11 +3000,36 @@ func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 
 
 func has_pending_detail_scatter_refresh() -> bool:
-	return not _pending_detail_scatter_refresh_indices.is_empty()
+	if not _pending_detail_scatter_refresh_indices.is_empty():
+		return true
+	if _gameplay_event_bus != null and _gameplay_event_bus.is_available():
+		var probe: Dictionary = _gameplay_event_bus.poll_events(
+			&"detail_renderer",
+			1,
+			GameplayEventBus.EVENT_VEGETATION_SUCCESSION,
+			false
+		)
+		return int(probe.get("count", 0)) > 0
+	return false
 
 
 func consume_pending_detail_scatter_refresh_indices() -> PackedInt32Array:
-	var out := _pending_detail_scatter_refresh_indices
+	var out := PackedInt32Array()
+	var seen := {}
+	if _gameplay_event_bus != null and _gameplay_event_bus.is_available():
+		var event_cells: PackedInt32Array = _gameplay_event_bus.poll_succession_cells(&"detail_renderer", 512, true)
+		for idx in event_cells:
+			var ci_event := int(idx)
+			if ci_event < 0 or seen.has(ci_event):
+				continue
+			seen[ci_event] = true
+			out.append(ci_event)
+	for idx in _pending_detail_scatter_refresh_indices:
+		var ci := int(idx)
+		if ci < 0 or seen.has(ci):
+			continue
+		seen[ci] = true
+		out.append(ci)
 	_pending_detail_scatter_refresh_indices = PackedInt32Array()
 	return out
 

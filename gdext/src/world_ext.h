@@ -165,6 +165,22 @@ public:
     godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
     godot::Dictionary get_native_daily_report() const;
     godot::Dictionary get_native_shadow_diff_report() const;
+
+    // ─── Gameplay event bus（2026-06-26）────────────────────────────────
+    // 通用、可持久化/可回放的 gameplay event log。C++ pass 和 GDScript 都通过
+    // 同一 columnar schema 发布事件；消费者用独立 cursor poll/ack，避免视觉、
+    // UI、debug 互相抢事件。事件日志只保存 POD/packed payload，不持有 Godot
+    // Object 引用，方便 save/replay。
+    godot::Dictionary get_gameplay_event_schema() const;
+    godot::Dictionary publish_gameplay_events(godot::Dictionary batch);
+    godot::Dictionary poll_gameplay_events(godot::Dictionary opts);
+    godot::Dictionary ack_gameplay_events(godot::StringName consumer_id, int64_t up_to_event_id);
+    godot::Dictionary replay_gameplay_events(godot::Dictionary opts) const;
+    godot::Dictionary snapshot_gameplay_event_journal(godot::Dictionary opts) const;
+    godot::Dictionary restore_gameplay_event_journal(godot::Dictionary snapshot);
+    godot::Dictionary clear_gameplay_events(godot::Dictionary opts);
+    godot::Dictionary get_gameplay_event_bus_report() const;
+
     godot::Dictionary run_native_world_generate_base_pass(int seed,
                                                           const godot::Dictionary &cfg,
                                                           const godot::Dictionary &profile);
@@ -1921,6 +1937,30 @@ private:
     std::vector<int32_t>           _gen_river_downstream;     // declared downstream cell index（-1=无）
     std::vector<int32_t>           _gen_river_neighbors;      // n*6 邻居 cell index（-1=越界），DQ/DR 序
 
+    struct GameplayEventRecord {
+        int64_t event_id = 0;
+        int64_t tick = 0;
+        int32_t phase = 0;
+        int32_t type = 0;
+        int32_t source = 0;
+        int32_t flags = 0;
+        int32_t entity_id = -1;
+        int32_t cell_idx = -1;
+        int32_t payload_schema = 0;
+        int32_t payload_i0 = 0;
+        int32_t payload_i1 = 0;
+        int32_t payload_i2 = 0;
+        int32_t payload_i3 = 0;
+    };
+    std::vector<GameplayEventRecord>        _gameplay_events;
+    godot::HashMap<godot::StringName, int64_t> _gameplay_consumer_ack;
+    int64_t                                 _gameplay_next_event_id = 1;
+    int64_t                                 _gameplay_dropped_event_count = 0;
+    int64_t                                 _gameplay_first_dropped_event_id = 0;
+    int                                     _gameplay_max_events = 8192;
+    double                                  _gameplay_last_native_ms = 0.0;
+    godot::String                           _gameplay_last_fallback_reason;
+
     // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
     // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]
     // （含 type/center/intensity/velocity 字段，与 GDScript WeatherFront 1:1）。
@@ -1941,6 +1981,39 @@ private:
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
     void _flush_slot_to_map(int comp_id);
+    int64_t _emit_gameplay_event(int64_t tick,
+                                 int32_t phase,
+                                 int32_t type,
+                                 int32_t source,
+                                 int32_t flags,
+                                 int32_t entity_id,
+                                 int32_t cell_idx,
+                                 int32_t payload_schema,
+                                 int32_t payload_i0,
+                                 int32_t payload_i1,
+                                 int32_t payload_i2,
+                                 int32_t payload_i3);
+    void _emit_succession_events(const godot::PackedInt32Array &indices,
+                                 const godot::PackedByteArray &to_veg,
+                                 const uint8_t *old_veg,
+                                 int old_veg_size,
+                                 int64_t tick,
+                                 int32_t phase,
+                                 int32_t source);
+    void _append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
+                                          godot::PackedInt64Array &ids,
+                                          godot::PackedInt64Array &ticks,
+                                          godot::PackedInt32Array &phase,
+                                          godot::PackedInt32Array &type,
+                                          godot::PackedInt32Array &source,
+                                          godot::PackedInt32Array &flags,
+                                          godot::PackedInt32Array &entity,
+                                          godot::PackedInt32Array &cell,
+                                          godot::PackedInt32Array &schema,
+                                          godot::PackedInt32Array &p0,
+                                          godot::PackedInt32Array &p1,
+                                          godot::PackedInt32Array &p2,
+                                          godot::PackedInt32Array &p3) const;
     godot::Dictionary _run_native_generation_publish_pass(
         int seed,
         const godot::Dictionary &cfg,

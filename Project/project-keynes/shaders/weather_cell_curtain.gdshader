@@ -35,6 +35,17 @@ float hash21(vec2 p) {
 	return fract(p.x * p.y);
 }
 
+float value_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	float a = hash21(i);
+	float b = hash21(i + vec2(1.0, 0.0));
+	float c = hash21(i + vec2(0.0, 1.0));
+	float d = hash21(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
 int decode_cell_id(vec4 custom_data) {
 	int lo = int(custom_data.r * 255.0 + 0.5);
 	int hi = int(custom_data.g * 255.0 + 0.5);
@@ -58,44 +69,53 @@ vec4 sample_weather(int cid) {
 }
 
 float edge_fade(vec2 uv) {
-	float x = smoothstep(0.00, 0.18, uv.x) * (1.0 - smoothstep(0.82, 1.00, uv.x));
-	float y = smoothstep(0.00, 0.12, uv.y) * (1.0 - smoothstep(0.88, 1.00, uv.y));
-	return clamp(x * y, 0.0, 1.0);
+	vec2 p = uv * 2.0 - 1.0;
+	float hexish = max(abs(p.y), abs(p.x) * 0.86 + abs(p.y) * 0.28);
+	float feather = 1.0 - smoothstep(0.48, 1.10, hexish);
+	return clamp(feather, 0.0, 1.0);
 }
 
-float rain_curtain(vec2 uv, float seed, float depth, float precip) {
-	float speed = mix(1.5, 3.4, depth) * (0.65 + precip * 0.70);
-	float slant = mix(0.10, 0.26, depth);
-	float cols = mix(10.0, 18.0, depth) + float(cell_curtain_quality) * 3.0;
-	float rows = mix(4.0, 8.0, depth);
-	vec2 p = uv;
-	p.x += p.y * slant;
-	p.y += world_time * speed + seed * 7.31;
-	float col = floor(p.x * cols);
-	float row = floor(p.y * rows);
-	float rnd = hash21(vec2(col, row) + seed * 19.0);
-	float x = fract(p.x * cols);
-	float y = fract(p.y * rows);
-	float width = mix(0.035, 0.018, depth);
-	float line = 1.0 - smoothstep(width, width * 2.7, abs(x - 0.5));
-	float drop = smoothstep(0.04, 0.18, y) * (1.0 - smoothstep(0.50, 0.96, y));
-	float gate = step(mix(0.62, 0.34, precip), rnd);
-	float fine = 0.0;
-	if (cell_curtain_quality >= 2) {
-		float x2 = fract(p.x * (cols * 2.2) + seed);
-		float y2 = fract(p.y * (rows * 1.7) + rnd);
-		fine = (1.0 - smoothstep(0.015, 0.05, abs(x2 - 0.5))) * smoothstep(0.08, 0.34, y2);
-	}
-	return clamp((line * drop * gate + fine * 0.35) * precip, 0.0, 1.0);
+float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, float strength) {
+	float scale = max(hex_world_diameter, 1.0);
+	vec2 fall_dir = normalize(vec2(-0.22, 1.0));
+	vec2 side_dir = vec2(-fall_dir.y, fall_dir.x);
+	float across = dot(wp, side_dir) / scale + seed * 11.7;
+	float along_static = dot(wp, fall_dir) / scale + seed * 5.3;
+	float along = along_static - world_time * 3.2;
+
+	float drop_cols = mix(7.0, 12.0, depth) + float(cell_curtain_quality) * 2.5;
+	float drop_rows = mix(2.0, 3.6, depth) + float(cell_curtain_quality) * 0.45;
+	vec2 q = vec2(across * drop_cols, along * drop_rows);
+	vec2 cell = floor(q);
+	vec2 f = fract(q);
+	float rnd0 = hash21(cell + seed * 19.0);
+	float rnd1 = hash21(cell + vec2(17.0, 3.0) + seed * 31.0);
+	float rnd2 = hash21(cell + vec2(5.0, 23.0) + seed * 11.0);
+
+	vec2 noise_domain = vec2(across, along_static);
+	float broad_noise = value_noise(noise_domain * 0.72 + seed * 3.1);
+	float fine_noise = value_noise(noise_domain * 3.4 + seed * 9.7);
+	vec2 center = vec2(0.18 + rnd0 * 0.64, 0.16 + rnd1 * 0.68);
+	float width = mix(0.030, 0.016, depth) * mix(0.75, 1.45, rnd2);
+	float len = mix(0.28, 0.66, rnd1) * mix(0.82, 1.18, depth);
+	float dx = abs(f.x + (fine_noise - 0.5) * 0.10 - center.x);
+	float dy = abs(f.y - center.y);
+	float line = 1.0 - smoothstep(width * 0.30, width * 3.7, dx);
+	float drop = 1.0 - smoothstep(len * 0.32, len, dy);
+	float noise_mask = smoothstep(0.22, 0.78, broad_noise) * mix(0.55, 1.18, fine_noise);
+	float gate = step(mix(0.72, 0.13, strength), rnd0);
+	float depth_shade = mix(0.78, 1.18, depth) * mix(0.90, 1.08, uv.y);
+	return clamp(line * drop * gate * noise_mask * mix(0.18, 1.55, strength) * depth_shade, 0.0, 1.0);
 }
 
-float snow_curtain(vec2 uv, float seed, float depth, float precip) {
-	float scale = mix(8.0, 14.0, depth) + float(cell_curtain_quality) * 2.0;
+float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, float strength) {
+	float world_scale = max(hex_world_diameter, 1.0);
+	float scale = (mix(1.15, 1.95, depth) + float(cell_curtain_quality) * 0.22) * mix(0.90, 1.55, strength);
 	vec2 drift = vec2(
-		sin(world_time * 0.72 + seed * 6.28) * 0.08,
-		world_time * mix(0.18, 0.38, depth)
+		sin(world_time * 0.72 + seed * 6.28) * 0.52,
+		-world_time * mix(1.25, 2.05, depth)
 	);
-	vec2 p = uv * scale + drift + vec2(seed * 11.3, seed * 5.7);
+	vec2 p = wp * scale / world_scale + drift + vec2(seed * 11.3, seed * 5.7);
 	vec2 cell = floor(p);
 	vec2 f = fract(p);
 	float rnd = hash21(cell);
@@ -103,11 +123,14 @@ float snow_curtain(vec2 uv, float seed, float depth, float precip) {
 		0.5 + sin(world_time * 0.9 + rnd * 6.28) * 0.22,
 		0.5 + cos(world_time * 0.7 + rnd * 4.13) * 0.18
 	);
-	float d = length(f - center);
-	float radius = mix(0.12, 0.20, depth) * mix(0.7, 1.25, rnd);
-	float flake = 1.0 - smoothstep(radius, radius * 1.8, d);
-	float gate = step(mix(0.72, 0.28, precip), rnd);
-	return clamp(flake * gate * precip, 0.0, 1.0);
+	vec2 fp = (f - center) * vec2(1.0, 1.65);
+	float d = length(fp);
+	float radius = mix(0.030, 0.052, depth) * mix(0.65, 1.25, rnd);
+	float core = 1.0 - smoothstep(radius * 0.45, radius, d);
+	float halo = 1.0 - smoothstep(radius, radius * 3.0, d);
+	float flake = core * 0.70 + halo * 0.24;
+	float gate = step(mix(0.48, 0.05, strength), rnd);
+	return clamp(flake * gate * mix(0.30, 1.36, strength), 0.0, 1.0);
 }
 
 float fog_veil(vec2 uv, float seed, float intensity) {
@@ -131,37 +154,38 @@ float lightning_flash(float seed, float intensity) {
 }
 
 void fragment() {
-	if (lut_dims.x < 1.0 || weather_strength <= 0.001 || cell_curtain_quality <= 0) {
+	if (lut_dims.x < 1.0 || weather_strength <= 0.001) {
 		COLOR = vec4(0.0);
 	} else {
 		int cid = decode_cell_id(v_custom);
 		vec4 wx = sample_weather(cid);
 		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
-		float precip = clamp(wx.a * 1.35, 0.0, 1.0);
+		float precip = clamp(smoothstep(0.015, 0.55, wx.a) * 1.25, 0.0, 1.0);
+		float wx_strength = clamp(max(precip, intensity * 0.72) * mix(0.55, 1.35, intensity), 0.0, 1.0);
 		int flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
 		float seed = v_custom.b;
 		float depth = v_custom.a;
 		float edge = edge_fade(UV);
 
-		float rain = ((flags & FLAG_RAIN_STREAK) != 0) ? rain_curtain(UV, seed, depth, precip) : 0.0;
-		float snow = ((flags & FLAG_SNOW_GRAIN) != 0) ? snow_curtain(UV, seed, depth, precip) : 0.0;
+		float rain = ((flags & FLAG_RAIN_STREAK) != 0) ? rain_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
+		float snow = ((flags & FLAG_SNOW_GRAIN) != 0) ? snow_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
 		float fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
 		float flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
 
-		float alpha = (rain * 0.32 + snow * 0.54 + fog * 0.22 + flash * 0.42) * edge * weather_strength;
+		float alpha = (rain * 0.92 + snow * 0.86 + fog * 0.34 + flash * 0.70) * edge * weather_strength * mix(0.25, 1.25, wx_strength);
 		if (alpha <= 0.001) {
 			COLOR = vec4(0.0);
 		} else {
-			vec3 rain_col = vec3(0.48, 0.58, 0.70);
-			vec3 snow_col = vec3(0.88, 0.94, 1.0);
+			vec3 rain_col = vec3(0.62, 0.72, 0.86);
+			vec3 snow_col = vec3(0.94, 0.98, 1.0);
 			vec3 fog_col = vec3(0.62, 0.68, 0.72);
 			vec3 flash_col = vec3(0.72, 0.84, 1.0);
 			vec3 col = rain_col * rain + snow_col * snow + fog_col * fog + flash_col * flash;
 			float weight = max(rain + snow + fog + flash, 0.001);
 			col = col / weight;
 			col *= mix(0.82, 1.16, depth) * tod_exposure;
-			COLOR = vec4(col, clamp(alpha, 0.0, 0.86));
+			COLOR = vec4(col, clamp(alpha, 0.0, 0.95));
 		}
 	}
 }
