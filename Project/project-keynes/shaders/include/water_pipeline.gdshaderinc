@@ -816,16 +816,6 @@ SurfaceParams compute_water_base_surface(
 	// ── SEA 1.1: 离岸度 + 深度梯度 ─────────────────────────────────────
 	compute_offshore_depth(ctx);
 
-	// [debug-water-depth 2026-06-26] 诊断：在 world_map.gdshader 顶部加 `#define DEBUG_WATER_DEPTH_TEX`
-	// 并重载 shader（无需 rebuild DLL），水面会渲染成 water_depth_tex 灰度（亮=深、暗=岸）：
-	//   • 整片纯黑 → 纹理未绑定/未烘焙（多半是 DLL 未 rebuild 或 bake 走了旧路径）；
-	//   • 海洋有梯度但湖泊纯黑/均一 → 这片水其实是 LAKE 但 water_depth_arr 没填（查 lake_bathymetry 计数）；
-	//   • 全部有梯度 → 数据正常，问题在 apply_lake_features 的色阶对比太弱（调色阶即可）。
-#ifdef DEBUG_WATER_DEPTH_TEX
-	float wd_dbg = has_water_depth_tex ? texture(water_depth_tex, ctx.uv).r : 0.0;
-	return make_water_surface_params(vec3(wd_dbg), vec3(0.0, 0.0, 1.0), ctx.biome, 0.0, 0.0, 0.0, 0.0);
-#endif
-
 	// ── SEA 1.2: basecolor —— hypsometric 起步 + 深浅梯度 ─────────────
 	vec3 col = hypsometric_tint(elev, true);
 	col = apply_water_depth_gradient(col, ctx);
