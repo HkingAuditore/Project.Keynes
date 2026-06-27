@@ -13,16 +13,16 @@ class_name DCSystemScheduler
 ##     内部 SUS（用 priority 编码拓扑深度，priority lower 先跑）；
 ##     (c) tick 入口包裹 _debug_*_pass 校验；(d) 自动 swap_double_buffer。
 ##
-## 与现有 SusScheduler / DCEcsScheduler 并存：
-##   本类不替换任何现有调度器 — 是一个**额外**入口。dots-flag-prune-pr1
-##   (2026-05-22)： use_dc_system_scheduler flag 已从 ClimateProfile 删除，
-##   bootstrap 路径现恒走单路径。##
+## Production 入口恒走本 facade。SusScheduler 只是内部 backend（有
+## SusSchedulerExt 时转发到 C++，否则 GDScript fallback）；旧
+## use_dc_system_scheduler 分支已退役。
 ## 与 dots-experiment-report §3.6 一致：
 ##   实验已证明拓扑排序在 J=8 真实算子下 +5.08% overhead，远低于 25% 红线。
 ##   本类把那个沙盒结论搬进 production；reads/writes 拓扑由 DCEcsScheduler
 ##   原算法搬过来（Kahn O(J²) + 环检测）。
 
 const _SusSchedulerScript = preload("res://scripts/simulation/sus/sus_scheduler.gd")
+const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 const _DCEcsSchedulerScript = preload("res://scripts/ecs/dc_ecs_scheduler.gd")
 const _DCEcsJobScript = preload("res://scripts/ecs/dc_ecs_job.gd")
 
@@ -56,6 +56,208 @@ var log_interval_ticks: int = 30
 # dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler 已随
 # SusScheduler 一起删除——SusScheduler 现恒走 ext 探测单边分支，
 # 本类不再需要透传字段。
+
+
+# ─── Runtime schedule profile ────────────────────────────────────────
+
+func configure_from_profile(cp) -> void:
+	if cp == null:
+		return
+	if cp.get("sim_frame_budget_ms") != null:
+		if _sus.has_method("set_frame_budget_ms"):
+			_sus.set_frame_budget_ms(float(cp.sim_frame_budget_ms))
+			frame_budget_ms = float(_sus.frame_budget_ms)
+		else:
+			frame_budget_ms = float(cp.sim_frame_budget_ms)
+	if cp.get("sim_strict_budget_enabled") != null:
+		strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
+		if _sus.has_method("set_strict_budget_enabled"):
+			_sus.set_strict_budget_enabled(strict_budget_enabled)
+	if cp.get("sim_budget_warn_ms") != null:
+		if _sus.has_method("set_sim_budget_warn_ms"):
+			_sus.set_sim_budget_warn_ms(float(cp.sim_budget_warn_ms))
+			sim_budget_warn_ms = float(_sus.sim_budget_warn_ms)
+		else:
+			sim_budget_warn_ms = float(cp.sim_budget_warn_ms)
+	elif cp.get("sim_frame_budget_ms") != null:
+		if _sus.has_method("set_sim_budget_warn_ms"):
+			_sus.set_sim_budget_warn_ms(frame_budget_ms)
+			sim_budget_warn_ms = float(_sus.sim_budget_warn_ms)
+		else:
+			sim_budget_warn_ms = frame_budget_ms
+	sim_budget_window_size = 300
+	_sus.sim_budget_window_size = sim_budget_window_size
+	if OS.is_debug_build():
+		var log_slice_ms: float = 0.0
+		if cp.get("sim_slice_budget_ms") != null:
+			log_slice_ms = clampf(float(cp.sim_slice_budget_ms), 0.10, 1.0)
+		var log_upload_slice_ms: float = 0.0
+		if cp.get("sim_upload_slice_budget_ms") != null:
+			log_upload_slice_ms = clampf(float(cp.sim_upload_slice_budget_ms), 0.10, 1.5)
+		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
+			% [str(strict_budget_enabled),
+				frame_budget_ms,
+				sim_budget_warn_ms,
+				log_slice_ms,
+				log_upload_slice_ms,
+				"DCSystemScheduler"])
+
+
+func configure_job_from_profile(job, cp, upload_job: bool = false,
+		schedule_group: StringName = &"", base_stride: int = 1) -> void:
+	if job == null or cp == null:
+		return
+	_apply_budget_profile_to_job(job, cp, upload_job)
+	if schedule_group != &"":
+		apply_job_schedule(job, cp, schedule_group, base_stride)
+
+
+func apply_job_schedule(job, cp, schedule_group: StringName, base_stride: int = 1) -> void:
+	if job == null:
+		return
+	var policy = _schedule_policy(schedule_group, cp, base_stride)
+	if schedule_group != &"ocean_currents" and job.has_method("reconfigure"):
+		var stride: int = max(1, base_stride)
+		var phase: int = 0
+		if policy != null and policy.get("stride") != null:
+			stride = int(policy.stride)
+		if policy != null and policy.get("phase") != null:
+			phase = int(policy.phase)
+		job.reconfigure(stride, phase)
+	elif job.get("policy") != null:
+		job.policy = policy
+	_refresh_descriptor_for_job(job)
+
+
+func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
+	var strict_on: bool = bool(cp.sim_strict_budget_enabled) if cp.get("sim_strict_budget_enabled") != null else false
+	var slice_ms: float = 0.55
+	if upload_job and cp.get("sim_upload_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_upload_slice_budget_ms)
+	elif cp.get("sim_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_slice_budget_ms)
+	if upload_job:
+		slice_ms = clampf(slice_ms, 0.10, 1.5)
+	else:
+		slice_ms = clampf(slice_ms, 0.10, 1.0)
+	if job.get("slice_budget_ms") != null:
+		job.slice_budget_ms = slice_ms
+	if job.get("max_slices_per_tick") != null:
+		var job_id: StringName = _job_id(job)
+		if upload_job or job_id == &"season_refresh" \
+				or job_id == &"refresh_climate_daily" \
+				or job_id == &"sea_ice_daily" \
+				or job_id == &"ocean_currents":
+			job.max_slices_per_tick = 1
+		else:
+			job.max_slices_per_tick = 1 if strict_on else 0
+	if job.get("must_run") != null:
+		var must_job_id: StringName = _job_id(job)
+		job.must_run = strict_on and _job_should_must_run(must_job_id, upload_job)
+	if job.get("starvation_threshold") != null:
+		var starvation_job_id: StringName = _job_id(job)
+		if starvation_job_id == &"dynamic_visual_atlas_upload":
+			job.starvation_threshold = 8
+		elif upload_job:
+			job.starvation_threshold = 0
+		elif starvation_job_id == &"refresh_climate_daily" \
+				or starvation_job_id == &"weather_refresh" \
+				or starvation_job_id == &"sea_ice_daily":
+			job.starvation_threshold = 3
+		elif starvation_job_id == &"ocean_currents":
+			job.starvation_threshold = 6
+		else:
+			job.starvation_threshold = 0
+	_refresh_descriptor_for_job(job)
+
+
+func _job_should_must_run(job_id: StringName, upload_job: bool) -> bool:
+	if upload_job:
+		return false
+	return job_id == &"ocean_currents" \
+			or job_id == &"refresh_climate_daily" \
+			or job_id == &"weather_refresh" \
+			or job_id == &"sea_ice_daily"
+
+
+func _job_id(job) -> StringName:
+	if job == null:
+		return &""
+	var raw_id = job.get("id")
+	if raw_id == null:
+		return &""
+	return StringName(str(raw_id))
+
+
+func _stagger_enabled(cp) -> bool:
+	return cp != null and cp.get("sim_stagger_enabled") != null and bool(cp.sim_stagger_enabled)
+
+
+func _stagger_bucket_stride(cp) -> int:
+	if cp != null and cp.get("sim_stagger_bucket_stride") != null:
+		return clampi(int(cp.sim_stagger_bucket_stride), 1, 16)
+	return 8
+
+
+func _stagger_phase(cp, field_name: String, fallback: int, stride: int) -> int:
+	var raw_phase: int = fallback
+	if cp != null and cp.get(field_name) != null:
+		raw_phase = int(cp.get(field_name))
+	return posmod(raw_phase, max(1, stride))
+
+
+func _schedule_policy(schedule_group: StringName, cp, base_stride: int):
+	var stride: int = max(1, base_stride)
+	var phase: int = 0
+	if _stagger_enabled(cp):
+		var bucket_stride: int = _stagger_bucket_stride(cp)
+		match schedule_group:
+			&"refresh_climate_daily":
+				stride = clampi(
+						int(cp.sim_stagger_climate_stride) if cp.get("sim_stagger_climate_stride") != null else 2,
+						1,
+						bucket_stride)
+				phase = _stagger_phase(cp, "sim_stagger_climate_phase", 1, stride)
+			&"ocean_currents":
+				# OceanCurrentsJob has a two-layer cadence: daily wind/SLP prepass
+				# must enter every day, while slow PSI/ocean slices are gated by
+				# the job-local ContinuousSlicedPolicy. Do not bucket-gate the
+				# outer job or wind/ocean vectors appear frozen in native daily.
+				return _SusPolicyScript.AlwaysPolicy.new()
+			&"native_environment_runtime":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_native_environment_phase", 0, stride)
+			&"native_daily_sim":
+				stride = clampi(
+						int(cp.sim_stagger_climate_stride) if cp.get("sim_stagger_climate_stride") != null else 2,
+						1,
+						bucket_stride)
+				phase = _stagger_phase(cp, "sim_stagger_climate_phase", 1, stride)
+			&"dynamic_visual_atlas_upload":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_dynamic_visual_phase", 2, stride)
+			&"weather_refresh":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_weather_phase", 4, stride)
+			&"enum_atlas_upload":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_enum_atlas_phase", 4, stride)
+			&"sea_ice_daily":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_sea_ice_phase", 6, stride)
+			_:
+				phase = 0
+	else:
+		if schedule_group == &"ocean_currents":
+			return _SusPolicyScript.AlwaysPolicy.new()
+	return _SusPolicyScript.StridePolicy.new(stride, phase)
+
+
+func _refresh_descriptor_for_job(job) -> void:
+	var job_id: StringName = _job_id(job)
+	if job_id == &"":
+		return
+	refresh_system_descriptor(job_id)
 
 
 # ─── 注入 World ─────────────────────────────────────
@@ -105,6 +307,12 @@ func register_system(system: DCSystem, cp = null) -> void:
 	_sus.register_job(system)
 	# 拓扑标记 dirty
 	_topology_built = false
+
+
+func refresh_system_descriptor(system_id: StringName) -> void:
+	if _sus == null or not _sus.has_method("refresh_job_descriptor"):
+		return
+	_sus.refresh_job_descriptor(system_id)
 
 
 ## 构造 reads/writes 派生 DAG + 拓扑排序。注册结束后必须调一次。

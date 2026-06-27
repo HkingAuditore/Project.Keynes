@@ -667,7 +667,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 const _PSI_SOR_OMEGA := 1.4            # SOR 松弛因子（1.0 = Gauss-Seidel）
 const _PSI_R_BASE := 0.18              # Stommel 西边界强化系数基准
 const _PSI_BETA_FLOOR := 0.05          # |β| 下限（赤道附近避免除零放大）
-const _PSI_SOURCE_SCALE := 0.08        # 源项整体缩放
+const _PSI_SOURCE_SCALE := 0.06        # 源项整体缩放
 const _PSI_DEFAULT_ITERS := 40         # 默认 step 次数（一次性求解时）
 # 调优记录：60 次 SOR 残差 ≈1%，40 次 ≈3%，30 次 ≈7%。
 # 抑制到 40 次让一次性求解从 ~30ms 降到 ~20ms，玩家不可见。
@@ -852,8 +852,8 @@ static func commit_psi_to_cells(state: PsiSolverState) -> void:
 # 这里用 _OCEAN_CURRENT_SCALE 经验缩放，再 clamp。
 
 const _UPWELLING_HIGHLAT_ABS_SOLVER := 0.75 	# 冷沉仅限极圈内(|lat|>67.5°)
-const _OCEAN_CURRENT_SCALE := 0.30      # ψ 梯度 → ocean_current 量级缩放，目标把全球 ocean_mag 拉回 0.18~0.35。
-const _THERMOHALINE_WEIGHT := 0.25      # 高纬热盐 y 修正权重，补足弱风应力下的高纬密度流。
+const _OCEAN_CURRENT_SCALE := 0.13      # ψ 梯度 → ocean_current 量级缩放，避免默认场主要由 clamp 塑形。
+const _THERMOHALINE_WEIGHT := 0.12      # 高纬热盐 y 修正权重，补足弱风应力下的高纬密度流。
 
 static func _limit_ocean_current(cur: Vector2, max_mag: float) -> Vector2:
 	var limit: float = clampf(max_mag, 0.01, 1.4142136)
@@ -884,10 +884,10 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 	var cold_sink_temp: float = cfg.COLD_SINK_TEMP if cfg != null else -0.05
 	var response_rate: float = clampf(profile.ocean_current_response_rate if profile != null else 1.0, 0.0, 1.0)
 	var thermal_weight: float = profile.ocean_thermal_current_weight if profile != null else _THERMOHALINE_WEIGHT
-	var density_cold_weight: float = profile.ocean_density_cold_weight if profile != null else 0.35
-	var density_ice_weight: float = profile.ocean_density_ice_weight if profile != null else 0.20
+	var density_cold_weight: float = profile.ocean_density_cold_weight if profile != null else 0.22
+	var density_ice_weight: float = profile.ocean_density_ice_weight if profile != null else 0.12
 	var current_scale: float = clampf(profile.ocean_current_scale if profile != null and profile.get("ocean_current_scale") != null else _OCEAN_CURRENT_SCALE, 0.0, 2.0)
-	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50, 0.01, 1.4142136)
+	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65, 0.01, 1.4142136)
 
 	var ocx_arr: PackedFloat32Array = map.ocean_current_x_arr
 	var ocy_arr: PackedFloat32Array = map.ocean_current_y_arr
@@ -974,7 +974,7 @@ static func solve_ocean_current_fallback(map: MapData, hex_size: float, \
 	if map == null:
 		return
 	var cold_sink_temp: float = cfg.COLD_SINK_TEMP if cfg != null else -0.05
-	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50, 0.01, 1.4142136)
+	var current_max_mag: float = clampf(profile.ocean_current_max_magnitude if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65, 0.01, 1.4142136)
 	for cell: HexCell in map.all_cells():
 		if cell == null:
 			continue

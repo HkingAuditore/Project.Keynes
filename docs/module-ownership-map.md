@@ -36,9 +36,8 @@
 │       │  DCModuleManifest (B1)         — Resource 类        │                │
 │       └──────────────────────────────────────────────────────┘                │
 │                                                                              │
-│       ┌──────────── 6 个生产 system (simulation/systems/) ──┐                │
+│       ┌──────────── runtime system (simulation/systems/) ───┐                │
 │       │  EnumAtlasUploadSystem            (原生 DCSystem)    │                │
-│       │  SeaIceAtlasUploadSystem          (原生 DCSystem)    │                │
 │       │  SeasonRefreshSystem              (原生 DCSystem)    │                │
 │       │  OceanCurrentsSystem              (wrapper)          │                │
 │       │  ClimateDailySystem               (wrapper)          │                │
@@ -111,12 +110,11 @@
 | Overlay Baker | `scripts/rendering/bakers/overlay_baker.gd` (skeleton) | overlay / debug 通道 | rendering.overlay |
 | Atlas Encoders | `scripts/rendering/bakers/atlas_encoders.gd` (skeleton) | 6 个 _encode_*_tex helper | rendering.atlas |
 
-### 2.6 6 生产 system（C.3 改写产物）
+### 2.6 生产 system（C.3 改写产物 + native daily）
 
 | System | 入口文件 | feature_flag | reads | writes |
 |---|---|---|---|---|
 | EnumAtlasUploadSystem | [`enum_atlas_upload_system.gd`](../Project/project-keynes/scripts/simulation/systems/enum_atlas_upload_system.gd) | (none) | cell.cover / vegetation | (GPU only) |
-| SeaIceAtlasUploadSystem | [`sea_ice_atlas_upload_system.gd`](../Project/project-keynes/scripts/simulation/systems/sea_ice_atlas_upload_system.gd) | (none) | cell.sea_ice_frac | (GPU only) |
 | SeasonRefreshSystem | [`season_refresh_system.gd`](../Project/project-keynes/scripts/simulation/systems/season_refresh_system.gd) | (none) | cell.base_moisture / lat_norm / elevation / landform / vegetation | cell.terrain / landform / vegetation / cover / moisture / base_moisture / weather_dirty_mask / snow_cover |
 | OceanCurrentsSystem | [`ocean_currents_system.gd`](../Project/project-keynes/scripts/simulation/systems/ocean_currents_system.gd) | (none) | cell.elevation / is_water / terrain / lat_norm | cell.ocean_current_x / .ocean_current_y |
 | ClimateDailySystem | [`climate_daily_system.gd`](../Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd) | (none) | 25 climate components | 12 climate components |

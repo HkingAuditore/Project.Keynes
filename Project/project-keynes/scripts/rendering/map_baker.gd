@@ -107,7 +107,8 @@ static var _shared_noise_tex: ImageTexture = null
 # 拆分前每日要传整张 RGBA8（2400×?，~7MB），其中 RGB 三通道是地形烘焙后的恒定值，
 # 仅 A 通道每日变化，纯属冗余带宽。拆分后：
 #   - scalar_atlas 的 RGB 三通道在 bake_world 编码一次后永不再传；A 通道写 0 占位。
-#   - sea_ice_tex 为独立 R8（FORMAT_L8），每日 ~1.7MB（带宽 -75%），由 SeaIceAtlasUploadJob 驱动。
+#   - sea_ice_tex 曾作为独立 R8（FORMAT_L8）由 sea_ice_atlas_upload 驱动；
+#     该路径现已退役，主海冰视觉改走 dyn_atlas_smooth.A / shader 派生。
 # 既有的"只遍历水格 + 按 cell byte dirty skip"机制完整保留，只是写入目标变成
 # `_sea_ice_only_buf` 而非 `_scalar_atlas_data_buf`。
 #
@@ -154,7 +155,7 @@ var _biome_cache_size: Vector2i = Vector2i.ZERO
 var _enum_atlas_data: PackedByteArray = PackedByteArray()
 var _enum_atlas_data_size: Vector2i = Vector2i.ZERO
 # Enum atlas upload telemetry：最近一次动态轴刷新/上传的细分耗时。
-# 由 EnumAtlasUploadJob/System 在 slice 结束后读取并转存到 MapGenerator。
+# 由 EnumAtlasUploadSystem 在 slice 结束后读取并转存到 MapGenerator。
 var _last_enum_atlas_upload_report: Dictionary = {}
 
 # ─── plan/sim-2ms-simd-dirty-budget（2026-05-21）：enum atlas upload 节流 ───
@@ -463,6 +464,8 @@ var _psi_path_str_last: String = "gdscript"
 var _slp_thermal_p95_last: float = 0.0
 var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
+var _wind_dir_delta_p95_last: float = 0.0
+var _wind_dir_flip_count_last: int = 0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
 var _ocean_current_preclamp_p95_last: float = 0.0
@@ -1116,7 +1119,7 @@ func _try_cpp_enum_axes_patch(map: MapData, world: WorldData, report_t0_us: int)
 # (dynamic_cell_atlas / ecology_visual_atlas / dyn_atlas_smooth / ice_state_atlas)
 # 主 shader 已改读 per-cell LUT（dyn_lut/eco_lut，海冰走 dyn_lut.a），不再被采样，
 # 故所有 rebake 入口统一返回此 no-op 报告。字段与正常 rebake 报告同构，调用方
-# （bake_world / DVA oneshot / SeaIceAtlasUploadSystem|Job）的 dirty/ms 累加安全。
+# （bake_world / DVA oneshot）的 dirty/ms 累加安全。
 func _indirection_skip_atlas_report() -> Dictionary:
 	return {
 		"prepared": false,
@@ -4996,7 +4999,7 @@ func _encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTe
 #   - 陆地 cell 的 sea_ice_fraction 恒为 0，天然得到全 0；
 #   - sea_ice_tex 走 ImageTexture.update() 原地刷新，不重建句柄。
 #
-# 调用约定：SeaIceAtlasUploadJob 每 stride 日调用一次（之前是 refresh_climate_daily 末尾）。
+# 调用约定：旧 sea_ice_atlas_upload 曾每 stride 日调用一次；当前生产路径不再调用。
 func bake_sea_ice_fraction_only(map: MapData, world: WorldData) -> void:
 	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 整条 prepare/upload no-op
 	# （sea_ice_tex 已退役，无 shader 采样者，运行时 upload job 也不注册）。
@@ -5135,8 +5138,7 @@ func _prepare_sea_ice_fraction_atlas_gd(map: MapData, world: WorldData, W: int, 
 	# 一样。32-day 的 sea_ice_atlas_upload p95=49ms（极端 232ms）的 prepare 部分
 	# 大概率卡在这里。优化：先做 cell 字节比对，dirty_cells==0 且 sea_ice_tex
 	# 已存在时直接 dirty=false 返回——不重新填 _sea_ice_only_buf（保持上一帧的
-	# buffer），upload 阶段也会被 SeaIceAtlasUploadJob 跳过（prep["dirty"]==false
-	# → 不进入 _pending_upload）。
+	# buffer）。旧 upload job 已删除，当前生产路径不会进入 prepare/upload。
 	var cell_bytes := PackedByteArray()
 	cell_bytes.resize(map.cell_count())
 	var dirty_cells: int = 0
@@ -5768,6 +5770,8 @@ func reset_physical_solve_state() -> void:
 	_slp_thermal_p95_last = 0.0
 	_slp_delta_p95_last = 0.0
 	_wind_delta_p95_last = 0.0
+	_wind_dir_delta_p95_last = 0.0
+	_wind_dir_flip_count_last = 0
 	_ocean_delta_p95_last = 0.0
 	_thermal_current_p95_last = 0.0
 	_ocean_current_preclamp_p95_last = 0.0
@@ -5806,6 +5810,10 @@ func get_slp_delta_p95() -> float:
 	return _slp_delta_p95_last
 func get_wind_delta_p95() -> float:
 	return _wind_delta_p95_last
+func get_wind_dir_delta_p95() -> float:
+	return _wind_dir_delta_p95_last
+func get_wind_dir_flip_count() -> int:
+	return _wind_dir_flip_count_last
 func get_ocean_delta_p95() -> float:
 	return _ocean_delta_p95_last
 func get_thermal_current_p95() -> float:
@@ -5854,6 +5862,8 @@ func get_physical_circulation_diag() -> Dictionary:
 		"wind_map_speed_size": _phys_last_wind_map_speed_size,
 		"wind_commit_ok": _phys_last_wind_commit_ok,
 		"wind_delta_p95": _wind_delta_p95_last,
+		"wind_dir_delta_p95": _wind_dir_delta_p95_last,
+		"wind_dir_flip_count": _wind_dir_flip_count_last,
 		"daily_wind_ran": bool(_daily_wind_diag_last.get("ran", false)),
 		"daily_wind_path": str(_daily_wind_diag_last.get("path", "")),
 		"daily_wind_elapsed_ms": float(_daily_wind_diag_last.get("elapsed_ms", -1.0)),
@@ -5876,6 +5886,8 @@ func get_physical_circulation_diag() -> Dictionary:
 		"daily_wind_wind_commit_ok": bool(_daily_wind_diag_last.get("wind_commit_ok", false)),
 		"daily_wind_slp_delta_p95": float(_daily_wind_diag_last.get("slp_delta_p95", 0.0)),
 		"daily_wind_delta_p95": float(_daily_wind_diag_last.get("wind_delta_p95", 0.0)),
+		"daily_wind_dir_delta_p95": float(_daily_wind_diag_last.get("wind_dir_delta_p95", 0.0)),
+		"daily_wind_dir_flip_count": int(_daily_wind_diag_last.get("wind_dir_flip_count", 0)),
 		"psi_path": _psi_path_str_last,
 		"psi_native_ms": _psi_native_ms_last,
 		"ocean_delta_p95": _ocean_delta_p95_last,
@@ -5918,6 +5930,8 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		"slp_delta_p95": 0.0,
 		"slp_thermal_p95": 0.0,
 		"wind_delta_p95": 0.0,
+		"wind_dir_delta_p95": 0.0,
+		"wind_dir_flip_count": 0,
 		"slp_passA_ms": -1.0,
 		"slp_passB_ms": -1.0,
 		"slp_norm_ms": -1.0,
@@ -6067,6 +6081,8 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"world_seed": world_seed_phys,
 			"axial_tilt_deg": profile.axial_tilt_deg,
 			"wind_response_rate": profile.wind_response_rate,
+			"wind_max_turn_deg_per_day": profile.wind_max_turn_deg_per_day,
+			"wind_min_flux_for_dir_update": profile.wind_min_flux_for_dir_update,
 			"wind_synoptic_amp": profile.wind_synoptic_amp,
 			"wind_synoptic_period_days": profile.wind_synoptic_period_days,
 			"wind_belt_only_debug": profile.wind_belt_only_debug,
@@ -6093,10 +6109,14 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			return fail.call("wind_size_mismatch")
 
 		_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
+		_wind_dir_delta_p95_last = float(knobs_wind.get("wind_dir_delta_p95", 0.0))
+		_wind_dir_flip_count_last = int(knobs_wind.get("wind_dir_flip_count", 0))
 		_phys_wind_done_by_cpp = true
 		out["wind_cpp_done"] = true
 		out["wind_commit_ok"] = true
 		out["wind_delta_p95"] = _wind_delta_p95_last
+		out["wind_dir_delta_p95"] = _wind_dir_delta_p95_last
+		out["wind_dir_flip_count"] = _wind_dir_flip_count_last
 		out["wind_ran"] = true
 
 	out["ran"] = bool(out["slp_ran"]) or bool(out["wind_ran"])
@@ -6424,6 +6444,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					}
 					if profile != null:
 						knobs_wind["wind_response_rate"] = profile.wind_response_rate
+						knobs_wind["wind_max_turn_deg_per_day"] = profile.wind_max_turn_deg_per_day
+						knobs_wind["wind_min_flux_for_dir_update"] = profile.wind_min_flux_for_dir_update
 						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
 						knobs_wind["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
 						knobs_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
@@ -6459,6 +6481,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 										_c_w.wind_vector = Vector2(wx_arr[_i_w], wy_arr[_i_w])
 										_c_w.wind_speed = wspd_arr[_i_w]
 							_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
+							_wind_dir_delta_p95_last = float(knobs_wind.get("wind_dir_delta_p95", 0.0))
+							_wind_dir_flip_count_last = int(knobs_wind.get("wind_dir_flip_count", 0))
 							_wind_done_by_cpp = true
 							_phys_wind_done_by_cpp = true
 							if not _wind_b_first_run_logged:
@@ -6582,10 +6606,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						"psi_sor_omega": 1.4,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
-						"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.08,
-						"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.30,
-						"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50,
-						"thermohaline_weight": 0.25,
+						"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.06,
+						"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.13,
+						"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65,
+						"thermohaline_weight": 0.12,
 						"upwelling_highlat_abs": 0.75,
 						"cold_sink_temp": cold_sink_temp,
 					}
@@ -7067,10 +7091,10 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		"psi_sor_omega": 1.4,
 		"psi_r_base": 0.18,
 		"psi_beta_floor": 0.05,
-		"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.08,
-		"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.30,
-		"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.50,
-		"thermohaline_weight": 0.25,
+		"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.06,
+		"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.13,
+		"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65,
+		"thermohaline_weight": 0.12,
 		"upwelling_highlat_abs": 0.75,
 		"cold_sink_temp": cold_sink_temp,
 		# upwelling
@@ -7087,6 +7111,8 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		knobs["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
 		# wind profile knobs
 		knobs["wind_response_rate"] = profile.wind_response_rate
+		knobs["wind_max_turn_deg_per_day"] = profile.wind_max_turn_deg_per_day
+		knobs["wind_min_flux_for_dir_update"] = profile.wind_min_flux_for_dir_update
 		knobs["wind_synoptic_amp"] = profile.wind_synoptic_amp
 		knobs["wind_belt_only_debug"] = profile.wind_belt_only_debug
 		# PSI profile knobs

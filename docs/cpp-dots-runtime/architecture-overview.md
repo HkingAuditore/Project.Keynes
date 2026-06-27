@@ -11,11 +11,11 @@ Godot scene / main.gd
   v
 MapGenerator / MapBaker / WeatherSystem wrappers
   |
-  | register systems, build knobs, choose native/fallback path
+  | create systems, build knobs, choose native/fallback path
   v
 DCSystemScheduler / SusScheduler / SusSchedulerExt
   |
-  | frame budget, policy, depends_on, slicing, reports
+  | profile budget, policy, depends_on, slicing, reports
   v
 DCWorld (GDScript) <---- schema ----> DCWorldExt (C++ GDExtension)
   |                                   |
@@ -100,7 +100,8 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 职责：
 
 - `DCSystemScheduler` 是 DataCore 版系统调度 facade。
-- `SusSchedulerExt` 是 C++ 实现的运行期 SUS scheduler，负责 priority、depends、frame budget、skip、统计窗口。
+- `DCSystemScheduler` 解释 `ClimateProfile` 中的 runtime schedule profile：frame/strict budget、job-local slice budget、must_run/starvation、以及全平台 bucket phase。
+- `SusSchedulerExt` 是 C++ 实现的运行期 SUS scheduler，负责 priority、depends、frame budget、policy gate、skip、统计窗口。
 - legacy `SusScheduler` 保留同形语义，作为 C++ scheduler 不可用时的 fallback。
 - `system_schedule.cpp` 是 C++ 侧更进一步的 schedule graph 尝试，用于把多段 native daily chain 收进 C++ dispatch。
 
@@ -124,7 +125,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 1. `MapGenerator` 构建 `MapData`，生成地形、邻接、初始 climate/weather/ocean SoA。
 2. `DCWorld.bind_map_data(map)` 绑定 GDScript DataCore slots。
 3. `DCWorldExt.bind_map_data(map)` 绑定 C++ slots。
-4. `_setup_sus()` 根据 profile 选择 `DCSystemScheduler` 或 legacy SUS，并注册 systems/jobs。
+4. `_setup_sus()` 创建 systems/jobs；`DCSystemScheduler` 根据 profile 统一配置 budget、policy 和 job descriptor。
 5. 注册完成后调用 topology/build step，使 depends graph 可运行。
 6. 每个 fast tick 调用 scheduler `tick(ctx)`。
 7. scheduler 按 frame budget 和 depends 运行一个或多个 `run_slice()`。

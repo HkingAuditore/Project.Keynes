@@ -354,7 +354,7 @@ static inline float pk_surface_absorbed_factor(bool is_water, float temp_annual)
 // 辐射平衡暖。暖侧(s≥0)原样返回（保留夏季/极昼季节性与吸收因子效果）；冷侧(s<0)
 // 按 tanh 软饱和到约 −KNEE：小幅降温几乎不变，深冬大幅降温不再无限过冷。
 // KNEE=0.13：温带平原冬季 min 0.087→0.21（叠加 pass_b≈0.13 严寒、脱离极寒），
-// 夏峰不变，深极地仍冻结（海冰核/冰带不塌），中纬陆/海大陆性≈1.8。
+// 夏峰不变，深极地仍冻结（海冰核/冰带不塌）。
 static constexpr float PK_WINTER_COOL_KNEE = 0.13f;
 
 static inline float pk_compress_season_cooling(float season_offset) {
@@ -373,17 +373,18 @@ static inline float pk_thermal_alpha_eff(float alpha, float dt_days) {
     return 1.0f - std::pow(1.0f - alpha, dt_days);
 }
 
-// ─── 大陆性季节增幅（2026-06-21 修陆海温差恒负 / 大陆性看不出）──────────────
-// 诊断(robust p95-p5)实证：海洋热惯性正常(季节振幅=陆地0.5×)，但同纬陆海温差恒负
-// (陆地永远比海洋冷~0.10、夏季都追不上海洋)，缺"夏陆>海、冬陆<海"的季节反转。
-// 根因：陆地年均被海拔拉低+陆地季节绝对振幅不足以让夏峰超海洋。
-// 修复：陆地季节强迫乘 land_continentality(>1)放大其季节振幅(海洋=1.0不变，热容大)。
-// 海洋季节摆幅仍由小 α 强压制，故只抬高陆地夏峰/压低陆地冬谷 → 建立真实海陆温差对比。
+// ─── 季节项组合（legacy parity）──────────────────────────────────────────
+// 2026-06-27 regression: native/SoA once multiplied land season forcing by
+// land_continentality, while the original AoS fallback did not. At subpolar
+// summer/daylight extremes that extra factor pushed season_offset to ~0.45 and
+// made runtime baselines far warmer than pre-migration behavior. Keep the
+// parameter in the signature for cp_struct/resource compatibility, but do not
+// let pass-A amplify land temperatures outside the legacy formula.
 static inline float pk_season_offset_continental(float insol_amp_gain, bool is_water,
                                                  float temp_annual, float dev_today,
                                                  float land_continentality) {
-    const float cont = is_water ? 1.0f : land_continentality;
-    return pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, temp_annual) * cont * dev_today);
+    (void)land_continentality;
+    return pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, temp_annual) * dev_today);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -12,15 +12,23 @@
    - 解释 `DCWorld`、`DCWorldExt`、`MapData`、component schema、C++ slot/SoA 的通信契约。
    - 新增 C++ pass 或排查 `path=gdscript` / `published_to_slot=false` 前必须读。
 
-3. [Scheduling and Job Graph](./scheduling-and-job-graph.md)
-   - 解释 `MapGenerator._setup_sus()` 如何注册 runtime jobs，`DCSystemScheduler` 如何转接到 `SusSchedulerExt`，以及 legacy `SusScheduler` 如何作为 fallback。
-   - 重点看 `frame_budget_ms`、`slice_budget_ms`、`must_run`、`depends_on`、`progress_ratio` 和 `skipped[frame_budget_exhausted]`。
+3. [Runtime Authority Matrix](./runtime-authority-matrix.md)
+   - 按系统列出 stage/cursor owner、slot writer、publish path、fallback owner、ACTIVE eligibility 和 blocker。
+   - 用于判断一个路径到底是 C++ acceleration、partial ACTIVE 还是 DOTS authority。
 
-4. [Computation Pipelines](./computation-pipelines.md)
+4. [Runtime Deletion Inventory](./runtime-deletion-inventory.md)
+   - 记录本轮删除、后续可删除对象、需要隔离的 probe/A-B helper，以及暂不可删的 Godot boundary。
+   - 删除 runtime 旧路径前先更新这里。
+
+5. [Scheduling and Job Graph](./scheduling-and-job-graph.md)
+   - 解释 `MapGenerator._setup_sus()` 如何创建 runtime jobs，`DCSystemScheduler` 如何统一解释 profile budget/policy 并转接到 `SusSchedulerExt`，以及 legacy `SusScheduler` 如何作为 fallback。
+   - 重点看 `frame_budget_ms`、`slice_budget_ms`、`must_run`、`depends_on`、`policy_gated`、`strict_budget_one_job` 和 `skipped[frame_budget_exhausted]`。
+
+6. [Computation Pipelines](./computation-pipelines.md)
    - 按机制列出 climate、ocean、weather、sea ice、transpiration、atlas upload 等计算链路。
    - 每个机制都记录 GDScript wrapper、C++ kernel、输入输出、publish/flush、fallback 和性能风险。
 
-5. [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)
+7. [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)
    - 解释 `[SUS-cpp]`、`[fast tick WARN]`、`largest=... path=...`、`published=true`、`psi_path=gdscript`、`transp/native breakdown ...` 等日志。
    - 用于根据用户贴回的 runtime log 判断当前输出是否符合预期。
 

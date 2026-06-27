@@ -140,10 +140,10 @@ extends Resource
 # This is not an independent season cosine. Tune axial_tilt_deg,
 # insolation_season_gain, day length, and thermal inertia for seasonal shape.
 @export var season_temp_amp: float = 0.32
-# 大陆性季节增幅(2026-06-21)：陆地季节温度强迫的额外倍率(海洋=1.0固定)。>1 放大陆地夏热冬冷，
-# 建立同纬"夏陆>海、冬陆<海"的真实海陆温差(诊断:原温差恒负-0.10、max=0,大陆性看不出)。
-# 1.0=关闭;1.55=中等大陆性。调高→陆地季节更极端(夏更热冬更冷);过高→夏季内陆过热。
-@export_range(1.0, 2.5, 0.05) var temp_land_continentality: float = 1.8
+# Compatibility residue from the 2026-06-21 pass-A experiment. Runtime pass-A
+# no longer consumes this multiplier; keeping the field avoids breaking older
+# resources that still serialize it.
+@export_range(1.0, 2.5, 0.05) var temp_land_continentality: float = 1.0
 
 # Fallback orbital year length used by resource-only/native paths before a
 # WorldClock is injected. At runtime WorldClock.days_per_year() is authoritative.
@@ -166,7 +166,7 @@ extends Resource
 # 不存在"明确的季节切换瞬间"——但慢变量的批量重算本质上仍需要"周期性"地
 # 进行，否则单纯每帧增量会出现 biome 边界抖动 + 反馈缓冲永远满。
 #
-# 新设计（默认）：SeasonRefreshJob 自驱周期，每 season_refresh_period_ticks
+# 新设计（默认）：SeasonRefreshSystem 自驱周期，每 season_refresh_period_ticks
 # 个真实 SUS tick 启动一次 round（无视游戏速度档）。30 tick @ x1 速度 = 约
 # 30 秒一次 round；@ x20 速度 = 约 1.5 秒一次 round。慢变量演化速率与玩家
 # 在场时间挂钩，而非与游戏世界日数挂钩，避免高速档下慢变量被反复批量推进。
@@ -178,8 +178,8 @@ extends Resource
 #
 # 切换说明：
 #   - legacy_signal=false 时 main.gd 仍然会调用 queue_season_refresh，但
-#     SeasonRefreshJob 不再消费它；新路径靠 period_ticks 自驱。
-#   - legacy_signal=true 时 SeasonRefreshJob 走 has_pending_season_refresh
+#     SeasonRefreshSystem 不再消费它；新路径靠 period_ticks 自驱。
+#   - legacy_signal=true 时 SeasonRefreshSystem 走 has_pending_season_refresh
 #     检查（与旧行为完全一致），period_ticks 字段被忽略。
 @export_range(1, 360, 1) var season_refresh_period_ticks: int = 30
 @export var season_refresh_legacy_signal: bool = false
@@ -188,7 +188,7 @@ extends Resource
 # Stride (in days) for daily-continuous refresh: 1 = every day, N>1 = every
 # N days (cheap downgrade if profiling shows the per-day pass too costly).
 # Has no effect when daily_climate_interpolation == false.
-# Used by SUS RefreshClimateDailyJob via StridePolicy.
+# Used by ClimateDailySystem via StridePolicy.
 #
 # 2026-05-18：默认曾从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
 # 玩家"理论上"无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
@@ -203,11 +203,9 @@ extends Resource
 @export var sea_ice_independent_system_enabled: bool = true
 @export_range(1, 8, 1) var sea_ice_daily_stride: int = 1
 
-# Stride (in days) for the sea-ice atlas GPU upload (SeaIceAtlasUploadJob).
-# Daily Sim SoA Refactor 阶段 1：把原先内嵌在 refresh_climate_daily 末尾、每日 ~105ms
-# 的 GPU 上传摘出，单独走这个 stride。海冰每日变化 < 5%，stride=2 玩家不可察觉延迟。
-# 1 = 每日上传（debug / regression）；2 = 每 2 日（推荐默认，吞吐 -50%）；
-# 4+ = 极慢 GPU / 远程显卡 fallback。
+# DEPRECATED：旧 sea_ice_atlas_upload job/system 已退役，主海冰视觉由
+# dyn_atlas_smooth.A / shader 派生。本字段仅为旧 .tres 资源兼容保留，
+# 不再驱动任何生产调度。
 @export_range(1, 8, 1) var sea_ice_atlas_upload_stride: int = 2
 
 # Fast-tick perf opt (A): stride for the weather / feedback chain in
@@ -266,6 +264,24 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(1, 8, 1) var native_environment_runtime_stride: int = 1
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
 @export var native_shadow_diff_enabled: bool = true
+# Controlled handoff gate for the climate round state owner. When false, reports
+# stop at native_ready; when true, the native daily snapshot may report
+# native_active while Godot/MapData boundary intents still remain explicit.
+@export var native_climate_round_active_owner_enabled: bool = false
+# Controlled handoff gate for weather transaction authority. When false,
+# weather reports stop at native_ready after visible publish has been proven;
+# when true, native daily may report native_active while Godot texture/front
+# presentation remains an explicit visual boundary.
+@export var native_weather_transaction_active_owner_enabled: bool = false
+# Controlled handoff gate for ocean physical lifecycle authority. Native owns
+# round/stage lifecycle first; Godot visual raster/upload remains boundary.
+@export var native_ocean_physical_active_owner_enabled: bool = false
+# Controlled handoff gate for season refresh simulation authority. Native/B+
+# owns cadence and dirty simulation intents; atlas/detail upload remains boundary.
+@export var native_season_refresh_active_owner_enabled: bool = false
+# Final retirement gate for legacy daily production/fallback paths. Keep false
+# until SHADOW/A-B/ACTIVE soak proves graph coverage complete.
+@export var native_daily_legacy_daily_production_retired: bool = false
 
 # ─── ViewAdapter / DCSystemScheduler（已删除字段）─────────────────────
 # use_world_view_adapter / use_dc_system_scheduler 已在 dots-flag-prune-pr1
@@ -288,6 +304,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 ## 缩短到约 8 仿真日（stride=2 × 4 phase）。tick 内峰值多花约 1ms，但 stride 之间不付代价。
 @export_range(0.10, 800.0, 0.05) var sim_upload_slice_budget_ms: float = 1.5
 @export_range(0.25, 1600.0, 0.05) var sim_budget_warn_ms: float = 2.0
+
+@export_group("调度错峰")
+@export var sim_stagger_enabled: bool = true
+@export_range(1, 16, 1) var sim_stagger_bucket_stride: int = 8
+@export_range(1, 8, 1) var sim_stagger_climate_stride: int = 2
+@export_range(0, 15, 1) var sim_stagger_climate_phase: int = 1
+@export_range(0, 15, 1) var sim_stagger_ocean_phase: int = 0
+@export_range(0, 15, 1) var sim_stagger_native_environment_phase: int = 0
+@export_range(0, 15, 1) var sim_stagger_dynamic_visual_phase: int = 2
+@export_range(0, 15, 1) var sim_stagger_weather_phase: int = 4
+@export_range(0, 15, 1) var sim_stagger_enum_atlas_phase: int = 4
+@export_range(0, 15, 1) var sim_stagger_sea_ice_phase: int = 6
 
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags（已删除）─
 # 以下 10 个 flag 在 dots-flag-prune-pr1（2026-05-22）一并删除，调用点折叠为
@@ -631,6 +659,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
+# Runtime moisture remains anchored by the slow generated background, but
+# Pass-A should not overwrite weather/hydrology signals back to base every day.
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_base_relax_rate: float = 0.24
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_weather_vapor_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_precip_weight: float = 0.20
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_soil_weight: float = 0.15
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_water_balance_weight: float = 0.08
+
 # Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
 @export_group("海冰")
 # 2026-05-19 Plan-C 三次调参（用户报告"南北极同时白 + 不化"）：
@@ -642,15 +678,19 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
 @export var sea_ice_freeze_rate: float = 0.40            # k_freeze per "degree" below T_form
 @export var sea_ice_melt_rate: float = 1.45              # k_melt per "degree" above T_melt
-@export var sea_ice_terrain_threshold: float = 0.68      # frac at which terrain flips to SEA_ICE
-@export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
+@export var sea_ice_terrain_threshold: float = 0.72      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.18     # flip back when frac < threshold - hyst
 @export var sea_ice_neighbor_contagion: float = 0.035    # extra k_freeze if any neighbor frac >= 0.6
 @export var sea_ice_solar_gate_enabled: bool = true      # high current insolation blocks tropical ice growth
-@export var sea_ice_freeze_insol_low: float = 0.30       # freeze gate is fully open below this insolation
-@export var sea_ice_freeze_insol_high: float = 0.55      # freeze gate is fully closed above this insolation
-@export var sea_ice_solar_melt_start: float = 0.40       # current insolation above this adds melt pressure
-@export var sea_ice_solar_melt_gain: float = 0.80        # extra melt per insolation unit above start
-@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.05
+@export var sea_ice_freeze_insol_low: float = 0.22       # freeze gate is fully open below this insolation
+@export var sea_ice_freeze_insol_high: float = 0.45      # freeze gate is fully closed above this insolation
+@export var sea_ice_solar_melt_start: float = 0.28       # current insolation above this adds melt pressure
+@export var sea_ice_solar_melt_gain: float = 1.35        # extra melt per insolation unit above start
+@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.070
+@export_range(0.0, 0.20, 0.005) var sea_ice_edge_mix_rate: float = 0.035
+# 2026-06-27 CSV 复核显示厚冰在本半球夏季仍被日照 melt shielding 保护过强。
+# 这里提高厚冰最小日照暴露，让极昼可稳定消融边缘/季节性厚冰，但仍保留永久极地核心。
+@export_range(0.0, 0.50, 0.005) var sea_ice_min_thick_ice_solar_exposure: float = 0.32
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
@@ -660,9 +700,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # climate-loop-closure Phase 4.1：海冰反照率→温度反馈。Pass B 对水域 cell 按
 # sea_ice_fraction 施加降温 d_temp = -sea_ice_albedo_cooling * sea_ice_frac，闭合
 # "更多海冰→更冷→更多海冰"的温和正反馈(此前海冰是单向温度→冰，缺反照率回写)。
-# Pass B 在海冰 pass 之前跑，读到的是前一日 sea_ice_frac(1 日滞后，稳定)。系数取
-# 小值并配阻尼(每日重算非累积)避免失控；设 0 关闭(回归 legacy 无反馈，A/B 对照)。
-@export_range(0.0, 0.3, 0.005) var sea_ice_albedo_cooling: float = 0.06
+# Pass B 在海冰 pass 之前跑，读到的是前一日 sea_ice_frac(1 日滞后，稳定)。2026-06-27
+# CSV 显示 0.03 仍让厚冰水域春季锁冷，海冰峰值相对日照低谷滞后 2-3 个月；
+# 默认降到 0.01，仅保留弱反馈，避免把季节性边缘冰拖到春末/夏初。设 0 关闭(A/B 对照)。
+@export_range(0.0, 0.3, 0.005) var sea_ice_albedo_cooling: float = 0.01
 @export var evaporation_gain: float = 0.06               # moisture gain per warm water-neighbor
 @export var landform_diurnal_amp: float = 0.015          # valley/basin diurnal amplification
 
@@ -697,8 +738,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 半真实大气调参（2026-06-19）：把"逐格稳态场"调成"随风平流的动态大气"。
 # advect_steps 上限 2→4、默认 3→4(2026-06-21 让天气流动)：同日上风采样更远(每 tick 最多 4 格)，
 # 配合 vapor base_m 回归下调，让远方水汽随风平流更深入内陆 → 移动云带、打破永雨永旱。
-@export_range(0, 8, 1) var weather_field_advect_steps: int = 6  # 方案③ 4→6 水汽长距离随风输送(atmospheric river)
-@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.04
+@export_range(0, 8, 1) var weather_field_advect_steps: int = 8  # 2026-06-27: 6→8，强化湿团/云水随风过境，压固定雨核
+@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.025
 # condensation_gain：cloud_source 主项(condense_gate×本系数)。脚本默认 0.42 经 field_solver 云合成 ~1.5×
 # 放大(cloud_water 自反馈 1.26× + cloud=source*0.62+water*0.70 双重计数)→ cloud 稳态≈0.72(满屏云)。
 # 运行时 earth_like.tres 覆盖为 0.30 降满屏云(与永雨同源，连带压降水)。2026-06-21。
@@ -711,15 +752,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.85
 # precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
 # 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
-@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.40
+@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.58
 # 雨云化(2026-06-22):把降水从"静力+背景主导"转为"动力触发主导",消除弥漫弱雨/原地永雨,让降水集中成雨核并随
 # 辐合/锋面/对流系统移动(生成-运动-消减)。两参数经 weather_system→knobs 进 C++ run_climate_pass_a(不重编)。
 # precip_base_frac:autoconversion 背景成雨比例。原0.50→零动力区也有8%背景雨→海62.8%弥漫弱雨。降0.12让无动力
 #   区转晴、降水只在移动天气系统处爆发。注:陆地热力对流雨(THERMAL_CONV_PRECIP)旁路本项,内陆对流雨保留。
-@export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.12
-# cloud_reevap:干空气云水再蒸发率。原0.06太弱→云团不消散、陆地连续降水中位32天。提0.18让低湿处云水更快蒸发回
-#   vapor→雨团/云团边缘消散、雨过转晴,形成生命周期。过高则云难积累,须按CSV复核。
-@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.18
+@export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.08
+# cloud_reevap:干空气云水再蒸发率。2026-06-27 CSV 显示 cloud_water 几乎全图 >0.02；
+#   提到 0.38 并配合更低 clear_cap/marine_scour，让静稳非降水格清云更快。
+@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.38
+# cloud_inertia 是 cloud 视觉量 EMA 的跟手系数。0.74 比旧 0.42 更快贴近消退后的 cloud_water，
+# 避免 p95 run length 贴满整段记录，同时仍保留时间连续性。
+@export_range(0.05, 1.0, 0.01) var weather_field_cloud_inertia: float = 0.74
 @export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
 @export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
 @export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
@@ -800,6 +844,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.18
 @export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12
 @export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
+@export_range(0.0, 180.0, 1.0) var wind_max_turn_deg_per_day: float = 32.0
+@export_range(0.0, 0.25, 0.005) var wind_min_flux_for_dir_update: float = 0.035
 # 天气尺度修复(2026-06-19)：synoptic(天气尺度)风/压扰动原先时间项挂在 day_t=sim_day/days_per_year
 # 上 → 平移一个波长约需 1.3 年 → 在日/月尺度上风型实质冻结 → 水汽永远被送到同一批辐合带 →
 # 固定雨带/干区、整图天气高度静止。wind_synoptic_period_days 控制 synoptic 波平移/振荡的真实周期
@@ -839,9 +885,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
 @export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
-@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.32
-@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.35
-@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.18
+@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.22
+@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.12
 
 # 4) enable_wind_heat_transport
 #    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流
@@ -916,7 +962,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
 @export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.06
-@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.18
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.13
 @export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.65
 @export var ocean_decoupled_visual_raster: bool = true
 @export var ocean_visual_rebake_drop_stale: bool = true
@@ -939,13 +985,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(-1.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
 @export_range(0.0, 1.0, 0.05) var insolation_dev_clamp_max: float = 1.0
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.35
-# 2026-06-16 物理化（大陆性对比，"中等"档）：海洋热容远大于陆地。把 α_water 0.07→0.008
+# 2026-06-16 物理化（大陆性对比，"中等"档）：海洋热容远大于陆地。曾把 α_water 0.07→0.008
 # （时间常数 τ≈14d→125d）。注意：pass_a 的吸收短波因子给海洋 1.15×季节强迫（低反照率
 # 多吸收），单靠 τ≈25d(α=0.04) 对"全年"周期几乎不衰减，反而让海洋摆幅>陆地；数值实验
 # （tmp/verify_physical_temp_20260616.py）显示需 α≈0.008 才能把同纬陆/海振幅拉到≈1.9:1、
 # 海洋振幅≈0.20 仍清晰可见且滞后~1.5 月——大陆性对比明显。配合吸收短波因子共同体现
-# 海陆/极地真实温差。调高→海洋更跟随季节（大陆性减弱）；调低→更接近真实 SST 小摆幅。
-@export_range(0.0, 1.0, 0.001) var thermal_inertia_water: float = 0.008
+# 海陆/极地真实温差。2026-06-27 CSV 显示极地海水对本半球夏季响应过慢，配合海冰反照率
+# 形成锁冷；最新复核显示海冰峰值仍相对日照低谷滞后 2-3 个月，默认调到 0.045，
+# 让海水温度更及时跟随轨道强迫，但仍显著低于陆地 0.35。
+@export_range(0.0, 1.0, 0.001) var thermal_inertia_water: float = 0.045
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_snow: float = 0.09
 @export_range(0.0, 1.0, 0.005) var thermal_inertia_high_mountain: float = 0.16
 @export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15

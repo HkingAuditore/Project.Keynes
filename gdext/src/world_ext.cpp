@@ -592,6 +592,7 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     _native_daily_tick_count = 0;
     _native_fronts_snapshot.clear();
     _native_dirty_report.clear();
+    _native_runtime_config.clear();
 
     if (!_bound || _map_data == nullptr) {
         out["rc"] = -1;
@@ -605,6 +606,15 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     }
     _native_daily_perf_target_ms = double(knobs.get("native_daily_perf_target_ms", 1.0));
     _native_world_configured = true;
+    _native_runtime_config = knobs.duplicate(true);
+    Array resident_keys;
+    Array knob_keys = knobs.keys();
+    for (int i = 0; i < knob_keys.size(); ++i) {
+        resident_keys.append(knob_keys[i]);
+    }
+    _native_runtime_config["resident_config_keys"] = resident_keys;
+    _native_runtime_config["resident_config_key_count"] = resident_keys.size();
+    _native_runtime_config["configured_at_tick"] = _native_daily_tick_count;
 
     _native_dirty_report["atlas_dirty"] = false;
     _native_dirty_report["enum_atlas_dirty"] = false;
@@ -618,6 +628,8 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     out["component_count"] = component_count();
     out["entity_count"] = entity_count();
     out["native_daily_perf_target_ms"] = _native_daily_perf_target_ms;
+    out["resident_config_keys"] = resident_keys;
+    out["resident_config_key_count"] = resident_keys.size();
     return out;
 }
 

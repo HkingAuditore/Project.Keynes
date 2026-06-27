@@ -271,6 +271,13 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     double synoptic_period_days = double(knobs.has("wind_synoptic_period_days") ? double(knobs["wind_synoptic_period_days"]) : 6.0);
     if (synoptic_period_days < 0.5) synoptic_period_days = 0.5;
     const double axial_tilt_deg = double(knobs.has("axial_tilt_deg") ? double(knobs["axial_tilt_deg"]) : 23.5);
+    double max_turn_rad = double(knobs.has("wind_max_turn_deg_per_day") ? double(knobs["wind_max_turn_deg_per_day"]) : 32.0)
+        * (3.14159265358979323846 / 180.0);
+    if (max_turn_rad < 0.0) max_turn_rad = 0.0;
+    else if (max_turn_rad > 3.14159265358979323846) max_turn_rad = 3.14159265358979323846;
+    double min_flux_for_dir_update = double(knobs.has("wind_min_flux_for_dir_update") ? double(knobs["wind_min_flux_for_dir_update"]) : 0.035);
+    if (min_flux_for_dir_update < 0.0) min_flux_for_dir_update = 0.0;
+    const double min_flux_len2 = min_flux_for_dir_update * min_flux_for_dir_update;
     int days_per_year = int(knobs.has("days_per_year") ? int(knobs["days_per_year"]) : 365);
     if (days_per_year < 1) days_per_year = 1;
     else if (days_per_year > 3660) days_per_year = 3660;
@@ -444,6 +451,8 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     wind_speed_out.resize(n_cells);
     float * const __restrict WSPD = wind_speed_out.ptrw();
     std::vector<float> wind_delta(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<float> wind_dir_delta(static_cast<size_t>(n_cells), 0.0f);
+    int wind_flip_count = 0;
 
     const double inv_bounds_h = 1.0 / bounds_size_y;
     const bool   ta = terrain_aware;
@@ -620,6 +629,9 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             const double dx = v_base_x - old_dir_x;
             const double dy = v_base_y - old_dir_y;
             const double ds = spd - old_spd;
+            const double dir_delta = std::sqrt(dx * dx + dy * dy);
+            wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
+            if (dir_delta > 1.7320508075688772) ++wind_flip_count;
             wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
             continue;
         }
@@ -702,15 +714,22 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         const double old_spd = double(WSP_SLOT[i]);
         double effective_rate = double(response_rate);
         const double old_len2 = old_dir_x * old_dir_x + old_dir_y * old_dir_y;
-        if (old_len2 < 0.0001 || old_spd <= 0.0001) {
+        const bool old_dir_valid = old_len2 >= 0.0001 && old_spd > 0.0001;
+        double old_unit_x = 1.0;
+        double old_unit_y = 0.0;
+        if (old_len2 > 0.0001) {
+            const double inv_old_dir = 1.0 / std::sqrt(old_len2);
+            old_unit_x = old_dir_x * inv_old_dir;
+            old_unit_y = old_dir_y * inv_old_dir;
+        }
+        if (!old_dir_valid) {
             effective_rate = 1.0;
         }
         double old_flux_x = 0.0;
         double old_flux_y = 0.0;
-        if (old_len2 > 0.0001) {
-            const double inv_old = 1.0 / std::sqrt(old_len2);
-            old_flux_x = old_dir_x * inv_old * old_spd;
-            old_flux_y = old_dir_y * inv_old * old_spd;
+        if (old_dir_valid) {
+            old_flux_x = old_unit_x * old_spd;
+            old_flux_y = old_unit_y * old_spd;
         }
         const double target_flux_x = dir_x * spd;
         const double target_flux_y = dir_y * spd;
@@ -725,6 +744,25 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             final_dir_x = final_flux_x * inv_final;
             final_dir_y = final_flux_y * inv_final;
         }
+        if (old_dir_valid) {
+            if (final_len2 <= min_flux_len2) {
+                final_dir_x = old_unit_x;
+                final_dir_y = old_unit_y;
+            } else if (max_turn_rad > 0.0) {
+                double dot = old_unit_x * final_dir_x + old_unit_y * final_dir_y;
+                if (dot < -1.0) dot = -1.0;
+                else if (dot > 1.0) dot = 1.0;
+                const double angle = std::acos(dot);
+                if (angle > max_turn_rad) {
+                    const double cross = old_unit_x * final_dir_y - old_unit_y * final_dir_x;
+                    const double sign = (cross < 0.0) ? -1.0 : 1.0;
+                    const double cos_t = std::cos(max_turn_rad);
+                    const double sin_t = std::sin(max_turn_rad) * sign;
+                    final_dir_x = old_unit_x * cos_t - old_unit_y * sin_t;
+                    final_dir_y = old_unit_x * sin_t + old_unit_y * cos_t;
+                }
+            }
+        }
         WX[i] = float(final_dir_x);
         WY[i] = float(final_dir_y);
         WSP_SLOT[i] = float(final_spd);
@@ -732,6 +770,9 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         const double dx = final_dir_x - old_dir_x;
         const double dy = final_dir_y - old_dir_y;
         const double ds = final_spd - old_spd;
+        const double dir_delta = std::sqrt(dx * dx + dy * dy);
+        wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
+        if (dir_delta > 1.7320508075688772) ++wind_flip_count;
         wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
     }
 
@@ -746,6 +787,12 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         std::sort(wind_delta.begin(), wind_delta.end());
         const size_t p95_i = std::min(wind_delta.size() - 1, size_t(std::floor(double(wind_delta.size() - 1) * 0.95)));
         knobs["wind_delta_p95"] = double(wind_delta[p95_i]);
+    }
+    if (!wind_dir_delta.empty()) {
+        std::sort(wind_dir_delta.begin(), wind_dir_delta.end());
+        const size_t p95_i = std::min(wind_dir_delta.size() - 1, size_t(std::floor(double(wind_dir_delta.size() - 1) * 0.95)));
+        knobs["wind_dir_delta_p95"] = double(wind_dir_delta[p95_i]);
+        knobs["wind_dir_flip_count"] = wind_flip_count;
     }
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -1973,20 +2020,20 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float PSI_OMEGA       = float(knobs.has("psi_sor_omega")     ? double(knobs["psi_sor_omega"])    : 1.40);
     const float PSI_R_BASE      = float(knobs.has("psi_r_base")        ? double(knobs["psi_r_base"])       : 0.18);
     const float PSI_BETA_FLOOR  = float(knobs.has("psi_beta_floor")    ? double(knobs["psi_beta_floor"])   : 0.05);
-    const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 0.08);
-    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.30);
-    float OC_MAX_MAG            = float(knobs.has("ocean_current_max_magnitude") ? double(knobs["ocean_current_max_magnitude"]) : 0.50);
+    const float PSI_SRC_SCALE   = float(knobs.has("psi_source_scale")  ? double(knobs["psi_source_scale"]) : 0.06);
+    const float OC_SCALE        = float(knobs.has("ocean_current_scale")    ? double(knobs["ocean_current_scale"])    : 0.13);
+    float OC_MAX_MAG            = float(knobs.has("ocean_current_max_magnitude") ? double(knobs["ocean_current_max_magnitude"]) : 0.65);
     if (OC_MAX_MAG < 0.01f) OC_MAX_MAG = 0.01f;
     else if (OC_MAX_MAG > 1.4142136f) OC_MAX_MAG = 1.4142136f;
-    const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.25);
+    const float TH_WEIGHT       = float(knobs.has("thermohaline_weight")    ? double(knobs["thermohaline_weight"])    : 0.12);
     const float UPW_HIGHLAT_ABS = float(knobs.has("upwelling_highlat_abs")  ? double(knobs["upwelling_highlat_abs"])  : 0.75);
     const float COLD_SINK_TEMP  = float(knobs.has("cold_sink_temp")         ? double(knobs["cold_sink_temp"])         : -0.05);
     float response_rate = float(knobs.has("ocean_current_response_rate") ? double(knobs["ocean_current_response_rate"]) : 1.0);
     if (response_rate < 0.0f) response_rate = 0.0f;
     else if (response_rate > 1.0f) response_rate = 1.0f;
     const float THERMAL_CURRENT_WEIGHT = float(knobs.has("ocean_thermal_current_weight") ? double(knobs["ocean_thermal_current_weight"]) : TH_WEIGHT);
-    const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.40);
-    const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.25);
+    const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.22);
+    const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.12);
     // warm-start（plan/psi-warm-start 2026-06-17）：SOR 用上一轮发布在 cell_ocean_psi
     // slot 的 ψ 作初值，而非每轮从 0 冷启动。洋流流函数日间变化极小，warm-start 后
     // 残差很小，少量迭代即可收敛（配合 psi_total_iters 下调）。默认 true；A/B 对照

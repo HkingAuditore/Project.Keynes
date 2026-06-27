@@ -26,6 +26,24 @@
 - 有一份 runtime authority map：每个系统当前权威是 `C++ slot`、`GDScript state machine` 还是 `Godot object`。
 - 所有后续迁移都以这份 map 为准，不再按“哪个函数慢就搬哪个”推进。
 
+### Runtime Authority Map（当前基线）
+
+这张表是后续迁移的边界。`C++ 加速`只表示 hot-loop 已下沉，不表示 DOTS 权威已经接管 tick、状态机和可见发布。
+
+| 系统/边界 | 当前生产权威 | C++ / slot 现状 | GDScript / Godot 仍负责 | 迁移门槛 |
+| --- | --- | --- | --- | --- |
+| 地图生成 base/post-base | `DCWorldExt` 生成结果包 | `run_native_world_generate_full_pass` 是默认 ACTIVE 路径，生成后发布初始 runtime slots。 | `MapGenerator` 校验结果、装配 `MapData`/`HexCell`、触发 bake。 | 已可视为生成期 C++ 权威；运行期不以它代表 daily DOTS 权威。 |
+| Climate daily round | `ClimateDailySystem` 状态机 | pass A/B、ocean water/land、wind air/surface、sea ice、transpiration 多数 hot-loop 已在 C++/SoA；async climate round 可由 worker 跑完整 round。 | `_round_active`、`_pass_cursor`、`_phase_locked`、finalizer、dirty/full sweep、fallback/A-B。 | 迁移 native round state；验证 `cell_temp` 最终只由 wind_surface/finalizer publish。 |
+| Stage-B / 生态反馈 | GDScript weather/climate wrapper | `run_stage_b_pass`、albedo、vegetation dynamics、feedback 可由 C++ 节点执行。 | stage_b cadence、cover/vegetation dirty mark、detail scatter refresh、fallback。 | native report 输出 succession/dirty intent，GDScript 只做 visual upload/object apply。 |
+| Weather field / daily refresh | `WeatherRefreshJob` staged begin/solve/commit | solve/distribute/summary/commit/combined daily pass 已有 C++ 入口；commit 有 visible publish guard。 | `_round_active`、`_round_stage`、field slice cursor、`WeatherFront` 对象重建、weather LUT upload。 | `weather_native_daily_available()` 必须基于真实 publish 验证返回；`weather_field_init_arr` 和 `weather_*_arr` 对 `MapData`/CSV/render 可见。 |
+| Runtime hydrology | `weather_refresh` 链内 stage | `run_runtime_hydrology_pass` 写 discharge/storage/runoff/soil moisture slots。 | hydrology stage 排在 weather commit 与 stage_b 之间，knobs/profile/gate 在 GDScript。 | 如果纳入 native daily graph，必须保持“读当天已提交 precip，写 stage_b 前 soil moisture”的顺序。 |
+| Ocean currents physical | `OceanCurrentsJob` / `MapBaker` physical state | SLP、wind、PSI、upwelling、raster 等 C++ kernels；生成期有一次性 physical solve。 | `_phys_stage`、physical/visual round state、visual raster/pixel commit、wind buffer/atlas upload。 | 先迁移 physical round state；visual raster 只作为 report intent 或 GDScript job。 |
+| Season refresh | `SeasonRefreshSystem` / legacy job | 部分 stage/micro pass 有 C++ helper。 | 日历/轨道相位、慢变量刷新、pending queue、atlas queue。 | 只把影响仿真 slots 的 stage 纳入 native graph；视觉队列留 GDScript。 |
+| Visual atlas / LUT upload | GDScript/Godot | C++ 生成 LUT/patch/raster bytes。 | `Image.create_from_data`、`ImageTexture.update`、RID/GPU upload、WeatherLayer/MultiMesh。 | 不迁入 C++；native graph 只发布 `visual_dirty_intents`。 |
+| `HexCell` / `MapData` / `WeatherFront` facade | `MapData`/对象层仍是可见镜像 | C++ slot 是 pass 内与 native graph 内的计算权威。 | UI、debug、CSV、renderer、fallback 仍读取镜像或对象。 | 对象层降级为 snapshot consumer；不能让对象层继续决定 simulation 结果。 |
+
+`SHADOW/PROBE` 下 native graph 可以运行和报告，但默认不发布生产权威；`ACTIVE` 只允许在对应系统的 publish、fallback 和 A/B 验收通过后逐段启用。
+
 ## Phase 1: 让 Native Daily Tick 成为可运行主干
 
 当前最大缺口是 `native_daily_sim_mode` 默认不是生产权威，`weather_native_daily_available()` 还阻断统一 daily 路径。

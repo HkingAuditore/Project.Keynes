@@ -41,7 +41,7 @@ const LABELS := {
 	"daily_climate_refresh_stride": "日气候刷新间隔",
 	"sea_ice_independent_system_enabled": "启用独立海冰刷新",
 	"sea_ice_daily_stride": "海冰刷新间隔",
-	"sea_ice_atlas_upload_stride": "海冰贴图上传间隔",
+	"sea_ice_atlas_upload_stride": "海冰贴图上传间隔（已退役兼容字段）",
 	"weather_refresh_stride": "天气刷新间隔",
 	"weather_refresh_auto_stride_by_speed": "随速度自动调整天气间隔",
 	"weather_albedo_stride": "反照率反馈间隔",

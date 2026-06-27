@@ -3,26 +3,18 @@ class_name ClimateDailySystem
 
 ## Phase W.1 — DCSystem 原生重写（dots-migration-roadmap §I.2）。
 ##
-## 把 [`RefreshClimateDailyJob`](../sus/jobs/refresh_climate_daily_job.gd) 的
-## 419 行 6-stage round 切片逻辑 + 25 个手写 _comp_cell_* cache 全部上提到
-## 本类，删除 _inner delegate wrapper。25 个 _comp_cell_* 替换为基类
-## DCSystem.setup() 自动填充的 _cid 字典。
+## 原 `RefreshClimateDailyJob` 的 round 切片逻辑和手写 _comp_cell_* cache 已全部
+## 上提到本类；旧兼容壳已删除。component cache 由基类 DCSystem.setup() 自动填充。
 ##
 ## ─── 类层级与兼容性 ─────────────────────────────────────────────────
 ##
-## ClimateDailySystem extends DCSystem extends SusJob —— 本类 IS-A SusJob，
-## 可被 SlicedUpdateScheduler.register_job 和 DCSystemScheduler.register_system
-## 两条路径同时接受。
-##
-## RefreshClimateDailyJob 现在退化为 `extends ClimateDailySystem` 的薄壳，
-## 仅保留 class_name 以兼容旧 preload 路径（map_generator 的 RefreshClimateDailyJobScript
-## const、weather_refresh_job 的注释引用等）。所有业务逻辑在本类。
+## ClimateDailySystem extends DCSystem extends SusJob，是 production
+## `refresh_climate_daily` 的唯一入口。
 ##
 ## ─── reads / writes / pools 声明 ───────────────────────────────────
 ##
 ## reads: 25 个 cell-level component（climate Pass-A/B、ocean、sea_ice、
-##        transp 计算的全部输入）；与原 RefreshClimateDailyJob._on_world_bound
-##        手写的 25 个 _comp_cell_* 一一对应（基类 setup() 自动 cache 到 _cid）
+##        transp 计算的全部输入）；基类 setup() 自动 cache 到 _cid。
 ## writes: 主要写 cell.temp / cell.moisture / cell.snowpack / cell.sea_ice_frac /
 ##         cell.temp_30d / cell.temp_365d / cell.temp_anomaly / cell.temp_baseline /
 ##         cell.temp_season_offset / cell.air_mass_temp_anomaly / cell.climate_dirty /
@@ -30,7 +22,7 @@ class_name ClimateDailySystem
 ##
 ## feature_flag：留空（climate daily 是世界推进必跑流程）。
 ##
-## ─── Driver / strategy（搬迁自 RefreshClimateDailyJob 类注释） ──────
+## ─── Driver / strategy ────────────────────────────────────────────
 ##
 ## Driven by:  SUS daily tick (sourced from main.gd._on_day_changed).
 ## Strategy:   StridePolicy(stride) — 决定哪些 day 触发 round 启动；
@@ -223,22 +215,13 @@ func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int)
 	map = p_map
 	season_phase_getter = p_phase_getter
 	stride = max(1, p_stride)
-	# Fix #10 (2026-06-15): mobile 上 climate 落奇 tick 错峰调度。
-	# 用户提议："1, 3, 5, 7, 9 跑 climate，2 跑 A，4 跑 B，6 跑 C"。
-	# Mobile climate stride=2 phase=1 → 仿真每 2 仿真日推进一次（玩家肉眼可察觉
-	# +1 仿真日延迟，但收益是单 tick load 大幅下降）。Desktop 不变（profile 默认 1）。
-	if OS.has_feature("mobile"):
-		stride = 2
-		policy = SusPolicyScript.StridePolicy.new(2, 1)
-	else:
-		policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 # ─── DCSystem 声明 ──────────────────────────────────────────────────
 
 func declare_reads() -> Array[StringName]:
-	# 与原 RefreshClimateDailyJob._on_world_bound 内手写 25 个 _comp_cell_*
-	# cache 1:1 对齐（基类 DCSystem.setup() 自动 cache 到 _cid）
+	# 与旧 climate daily job 的读集对齐；基类 DCSystem.setup() 自动 cache 到 _cid。
 	var reads: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
 		DCComponentIds.CELL_TEMP_BASELINE,
@@ -313,7 +296,7 @@ func feature_flag() -> StringName:
 #
 # 基类 DCSystem.setup(w) 已自动把 declare_reads/writes 中的 component 解析为
 # comp_id 并 cache 到 _cid 字典；本类只额外做"view_f32 size 一致性" assert
-# （原 RefreshClimateDailyJob._on_world_bound 第 177-187 行的轻量校验）。
+# （旧 job _on_world_bound 的轻量校验）。
 
 func _on_world_bound() -> void:
 	# 基类 setup() 已填好 _cid；此处仅做引用一致性 assert。
@@ -354,40 +337,85 @@ func should_run(ctx: SusTickContext) -> bool:
 	return super.should_run(ctx)
 
 
+func _default_reset_boundary_intents() -> Array:
+	return [
+		"abort_active_pass",
+		"abort_all_climate_passes",
+		"reset_round_local_state",
+		"reset_async_lifecycle_local_state",
+		"reset_round_timings",
+		"reset_start_snapshots",
+		"reset_last_diagnostics",
+		"reset_transpiration_state",
+		"reset_dirty_season_state",
+		"seed_full_sweep_counter",
+	]
+
+
+func _execute_reset_boundary_intents(intents: Array, native_reset_report: Dictionary = {}) -> void:
+	_last_finalize_diag = {
+		"reset_boundary_intents": intents.duplicate(true),
+		"reset_boundary_intent_owner": native_reset_report.get("reset_boundary_intent_owner", "gdscript_default"),
+		"reset_boundary_unknown_intents": [],
+	}
+	for raw_intent in intents:
+		var intent: String = str(raw_intent.get("kind", "")) if typeof(raw_intent) == TYPE_DICTIONARY else str(raw_intent)
+		match intent:
+			"abort_active_pass":
+				_abort_active_pass(_ABORT_REASON_RESET)
+			"abort_all_climate_passes":
+				if generator != null and generator.has_method("_abort_all_climate_passes"):
+					generator._abort_all_climate_passes("daily_reset")
+			"reset_round_local_state":
+				_pass_cursor = 0
+				_round_active = false
+				_phase_locked = 0.0
+				_finalize_pending = false
+			"reset_async_lifecycle_local_state":
+				_async_round_kicked = false
+				_async_round_poll_attempts = 0
+				_async_round_kick_tick = -1
+				_async_first_round_logged = false
+			"reset_round_timings":
+				_round_t_pass_a_ms = 0.0
+				_round_t_pass_b_ms = 0.0
+				_round_t_ocean_ms = 0.0
+				_round_t_wind_ms = 0.0
+				_round_t_sea_ice_ms = 0.0
+				_round_t_transp_ms = 0.0
+				_round_t_round_start_ms = 0
+			"reset_start_snapshots":
+				_temp_start_of_day_arr = PackedFloat32Array()
+				_tta_start_of_day_arr = PackedFloat32Array()
+			"reset_last_diagnostics":
+				_last_finalizer_diag = {}
+				_last_round_start_diag = {}
+				_last_slice_pass_overhead_ms = 0.0
+				ran_this_tick = false
+				_last_slice_elapsed_ms = 0.0
+				_reset_last_pass_diag()
+			"reset_transpiration_state":
+				_reset_transpiration_slice_state()
+			"reset_dirty_season_state":
+				_last_phase_int_seen = -9999
+			"seed_full_sweep_counter":
+				_full_sweep_counter = _FULL_SWEEP_PERIOD
+			_:
+				var unknown: Array = _last_finalize_diag.get("reset_boundary_unknown_intents", [])
+				unknown.append(intent)
+				_last_finalize_diag["reset_boundary_unknown_intents"] = unknown
+
+
 func reset_progress() -> void:
 	super.reset_progress()
-	_abort_active_pass(_ABORT_REASON_RESET)
-	# Fix R4 (climate-pipeline-spike-reduction)：在 budget=2ms / 每帧 1 pass 节奏下，
-	# ocean_water/land 的 cursor 跨 round 持续累加。如果不在 reset 时同步清掉
-	# generator._climate_ocean_slice_state，下一 round 进来会发现 slice_state 非空 +
-	# map_id 一致 → 跳过 _begin_ocean_heat_transport_sliced → 继续从旧 cursor 推进 →
-	# 永远不会从 0 开始一个新 round 的洋流计算，洋流热输运彻底"消失"。
-	if generator != null and generator.has_method("_abort_all_climate_passes"):
-		generator._abort_all_climate_passes("daily_reset")
-	_pass_cursor = 0
-	_round_active = false
-	_phase_locked = 0.0
-	_finalize_pending = false
-	_round_t_pass_a_ms = 0.0
-	_round_t_pass_b_ms = 0.0
-	_round_t_ocean_ms = 0.0
-	_round_t_wind_ms = 0.0
-	_round_t_sea_ice_ms = 0.0
-	_round_t_transp_ms = 0.0
-	_round_t_round_start_ms = 0
-	_temp_start_of_day_arr = PackedFloat32Array()
-	_tta_start_of_day_arr = PackedFloat32Array()
-	_last_finalizer_diag = {}
-	_last_round_start_diag = {}
-	_last_finalize_diag = {}
-	_last_slice_pass_overhead_ms = 0.0
-	_reset_transpiration_slice_state()
-	ran_this_tick = false
-	_last_slice_elapsed_ms = 0.0
-	_reset_last_pass_diag()
-	# A.2.1.A4 — 重置 Dirty Mask 季节钩子状态，保证加载存档后首日 mark_all
-	_last_phase_int_seen = -9999
-	_full_sweep_counter = _FULL_SWEEP_PERIOD
+	var native_reset_report: Dictionary = {}
+	if generator != null and generator.get("_data_core_world_ext") != null \
+			and generator._data_core_world_ext.has_method("reset_native_climate_round_state"):
+		native_reset_report = generator._data_core_world_ext.reset_native_climate_round_state("ClimateDailySystem.reset_progress")
+	var reset_intents: Array = native_reset_report.get("reset_boundary_intents", [])
+	if reset_intents.is_empty():
+		reset_intents = _default_reset_boundary_intents()
+	_execute_reset_boundary_intents(reset_intents, native_reset_report)
 
 
 func _reset_last_pass_diag() -> void:
@@ -1315,6 +1343,341 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 # Stage 3 不再用 _PASS_CURSOR / _pass_cursor 状态机推进（async path 一次性
 # 跑完整 round）。breakdown 字段仍照 sync 路径填好以便 main.gd fast tick WARN
 # 解析无差异。
+func _native_climate_lifecycle_state(ext: Object) -> Dictionary:
+	if ext != null and ext.has_method("get_native_climate_round_state_report"):
+		var state: Dictionary = ext.get_native_climate_round_state_report()
+		if str(state.get("lifecycle_owner", "")) == "native_probe_lifecycle":
+			return state
+	return {}
+
+
+func _sync_async_lifecycle_from_native(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	if state.has("lifecycle_round_active"):
+		_round_active = bool(state.get("lifecycle_round_active", _round_active))
+	if state.has("lifecycle_async_kicked"):
+		_async_round_kicked = bool(state.get("lifecycle_async_kicked", _async_round_kicked))
+	if state.has("lifecycle_pass_cursor"):
+		_pass_cursor = int(state.get("lifecycle_pass_cursor", _pass_cursor))
+	if state.has("lifecycle_poll_attempts"):
+		_async_round_poll_attempts = int(state.get("lifecycle_poll_attempts", _async_round_poll_attempts))
+	if state.has("lifecycle_tick_index"):
+		_async_round_kick_tick = int(state.get("lifecycle_tick_index", _async_round_kick_tick))
+	if state.has("phase_locked"):
+		_phase_locked = float(state.get("phase_locked", _phase_locked))
+
+
+func _default_async_round_start_boundary_intents() -> Array:
+	return [
+		"sync_runtime_terrain_views",
+		"begin_round_pass_state",
+		"soa_begin_climate_transaction",
+	]
+
+
+func _execute_async_round_start_boundary_intents(intents: Array) -> Dictionary:
+	var diag: Dictionary = {
+		"round_start_terrain_sync_ms": 0.0,
+		"round_start_terrain_sync_skipped": false,
+		"round_start_state_ms": 0.0,
+		"round_start_soa_begin_ms": 0.0,
+		"round_start_boundary_intents": intents.duplicate(true),
+		"round_start_boundary_intent_owner": "native_probe_lifecycle",
+		"round_start_boundary_unknown_intents": [],
+	}
+	for raw_intent in intents:
+		var intent: String = ""
+		if typeof(raw_intent) == TYPE_DICTIONARY:
+			intent = str(raw_intent.get("kind", ""))
+		else:
+			intent = str(raw_intent)
+		var t_intent_us: int = Time.get_ticks_usec()
+		match intent:
+			"sync_runtime_terrain_views":
+				var async_terrain_diag: Dictionary = _sync_runtime_terrain_views_for_reason("round_start")
+				diag["round_start_terrain_sync_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+				diag["round_start_terrain_sync_skipped"] = bool(async_terrain_diag.get("skipped", false))
+				if not async_terrain_diag.is_empty():
+					diag["round_start_terrain_sync_diag"] = async_terrain_diag.duplicate(true)
+			"begin_round_pass_state":
+				_begin_round_pass_state()
+				diag["round_start_state_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"soa_begin_climate_transaction":
+				# Native declares this boundary, but MapData's PackedArray transaction is still a GDScript/Godot operation.
+				if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
+					map.soa_begin_climate_transaction()
+				diag["round_start_soa_begin_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			_:
+				var unknown: Array = diag.get("round_start_boundary_unknown_intents", [])
+				unknown.append(intent)
+				diag["round_start_boundary_unknown_intents"] = unknown
+	return diag
+
+
+func _default_async_round_finish_boundary_intents() -> Array:
+	return [
+		"apply_sea_ice_flips",
+		"finalize_round",
+		"finish_native_lifecycle",
+	]
+
+
+func _default_finalize_tail_boundary_intents(async_poll_result: Dictionary = {}) -> Array:
+	return [
+		"use_worker_finalizer_diag" if bool(async_poll_result.get("fin_applied", false)) else "apply_gdscript_finalizer_fallback",
+		"advance_full_sweep_counter",
+		"publish_climate_breakdown",
+		"annual_log",
+		"soa_noop",
+		"soak_dump",
+		"integrity_check",
+		"finish_active_pass",
+		"reset_transpiration_state",
+		"reset_round_local_state",
+		"flush_pending_mark_dirty_all",
+		"mark_round_slots_stale",
+		"dump_round_slot_stats",
+	]
+
+
+func _execute_finalize_tail_boundary_intents(
+		intents: Array,
+		async_poll_result: Dictionary
+) -> Dictionary:
+	var normalized_intents: Array = intents.duplicate(true)
+	var has_finalizer_source_intent: bool = false
+	var has_full_sweep_intent: bool = false
+	for raw_probe_intent in normalized_intents:
+		var probe_intent: String = str(raw_probe_intent.get("kind", "")) if typeof(raw_probe_intent) == TYPE_DICTIONARY else str(raw_probe_intent)
+		if probe_intent == "use_worker_finalizer_diag" or probe_intent == "apply_gdscript_finalizer_fallback":
+			has_finalizer_source_intent = true
+		elif probe_intent == "advance_full_sweep_counter":
+			has_full_sweep_intent = true
+	if not has_finalizer_source_intent:
+		normalized_intents.insert(0, "use_worker_finalizer_diag" if bool(async_poll_result.get("fin_applied", false)) else "apply_gdscript_finalizer_fallback")
+		_last_finalize_diag["finalize_tail_missing_finalizer_source_intent"] = true
+	if not has_full_sweep_intent:
+		normalized_intents.insert(1 if normalized_intents.size() > 0 else 0, "advance_full_sweep_counter")
+		_last_finalize_diag["finalize_tail_missing_full_sweep_intent"] = true
+	var finalizer_diag: Dictionary = {}
+	var async_finalizer_used: bool = false
+	var async_fin_fallback_reason: String = _async_finalizer_fallback_reason(async_poll_result)
+	_last_finalize_diag["finalize_tail_boundary_intents"] = normalized_intents.duplicate(true)
+	_last_finalize_diag["finalize_tail_boundary_intent_owner"] = "native_probe_lifecycle"
+	_last_finalize_diag["finalize_tail_unknown_intents"] = []
+	for raw_intent in normalized_intents:
+		var intent: String = str(raw_intent.get("kind", "")) if typeof(raw_intent) == TYPE_DICTIONARY else str(raw_intent)
+		var t_intent_us: int = Time.get_ticks_usec()
+		match intent:
+			"use_worker_finalizer_diag":
+				finalizer_diag = _build_finalizer_diag_from_worker(async_poll_result)
+				_last_finalizer_diag = finalizer_diag
+				async_finalizer_used = true
+				_last_finalize_diag["finalize_finalizer_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+				_last_finalize_diag["finalizer_cpp_worker"] = async_finalizer_used
+				_last_finalize_diag["finalizer_fallback_reason"] = async_fin_fallback_reason
+			"apply_gdscript_finalizer_fallback":
+				finalizer_diag = _apply_daily_climate_finalizer()
+				async_finalizer_used = false
+				_last_finalize_diag["finalize_finalizer_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+				_last_finalize_diag["finalizer_cpp_worker"] = async_finalizer_used
+				_last_finalize_diag["finalizer_fallback_reason"] = async_fin_fallback_reason
+			"advance_full_sweep_counter":
+				_full_sweep_counter += 1
+				_last_finalize_diag["finalize_counter_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"publish_climate_breakdown":
+				if generator != null:
+					var dirty_ratio_out: float = float(generator._last_climate_dirty_ratio) if "_last_climate_dirty_ratio" in generator else 1.0
+					var visited_ratio_out: float = float(generator._last_climate_visited_ratio) if "_last_climate_visited_ratio" in generator else 1.0
+					var pass_b_path_out: String = String(generator._last_climate_pass_b_path) if "_last_climate_pass_b_path" in generator else "full"
+					generator._daily_climate_call_count += 1
+					var _pa_pushed_out: int = int(generator._pa_last_pushed_cells) if "_pa_last_pushed_cells" in generator else 0
+					var _pa_total_out: int = int(generator._pa_last_total_cells) if "_pa_last_total_cells" in generator else 0
+					var _pa_push_ratio_out: float = (float(_pa_pushed_out) / float(_pa_total_out)) if _pa_total_out > 0 else 1.0
+					generator._last_climate_breakdown = {
+						"pass_a_ms": _round_t_pass_a_ms,
+						"pass_b_ms": _round_t_pass_b_ms,
+						"ocean_ms": _round_t_ocean_ms,
+						"wind_ms": _round_t_wind_ms,
+						"sea_ice_ms": _round_t_sea_ice_ms,
+						"ice_bake_ms": 0.0,
+						"transp_ms": _round_t_transp_ms,
+						"total_ms": float(Time.get_ticks_msec() - _round_t_round_start_ms),
+						"cells": map.cell_count(),
+						"partial": false,
+						"current_pass": "done",
+						"processed_cells": 0,
+						"cursor_start": -1,
+						"cursor_end": -1,
+						"progress_ratio": 1.0,
+						"budget_interrupted": false,
+						"pass_status": _PASS_RESULT_DONE,
+						"pass_token": _active_pass_token,
+						"pass_diag": _last_pass_diag.duplicate(true),
+						"transp_native_diag": _last_transp_native_diag.duplicate(true),
+						"dirty_ratio": dirty_ratio_out,
+						"visited_ratio": visited_ratio_out,
+						"pass_b_path": pass_b_path_out,
+						"pa_pushed_cells": _pa_pushed_out,
+						"pa_total_cells": _pa_total_out,
+						"pa_push_ratio": _pa_push_ratio_out,
+						"max_temp_delta": float(finalizer_diag.get("max_temp_delta", 0.0)),
+						"p95_temp_delta": float(finalizer_diag.get("p95_temp_delta", 0.0)),
+						"p99_temp_delta": float(finalizer_diag.get("p99_temp_delta", 0.0)),
+						"preclamp_max_temp_delta": float(finalizer_diag.get("preclamp_max_temp_delta", 0.0)),
+						"preclamp_p99_temp_delta": float(finalizer_diag.get("preclamp_p99_temp_delta", 0.0)),
+						"temp_delta_gt_005_count": int(finalizer_diag.get("temp_delta_gt_005_count", 0)),
+						"temp_delta_gt_010_count": int(finalizer_diag.get("temp_delta_gt_010_count", 0)),
+						"temp_delta_gt_020_count": int(finalizer_diag.get("temp_delta_gt_020_count", 0)),
+						"temp_delta_clamped_count": int(finalizer_diag.get("temp_delta_clamped_count", 0)),
+						"max_transport_anomaly": float(finalizer_diag.get("max_transport_anomaly", 0.0)),
+						"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
+						"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),
+						"thermal_finalizer_applied": bool(finalizer_diag.get("thermal_finalizer_applied", false)),
+						"finalizer_cpp_worker": async_finalizer_used,
+						"finalizer_fallback_reason": async_fin_fallback_reason,
+						"finalizer_total_ms": float(finalizer_diag.get("finalizer_total_ms", 0.0)),
+						"finalizer_cell_ms": float(finalizer_diag.get("finalizer_cell_ms", 0.0)),
+						"finalizer_temp_ms": float(finalizer_diag.get("finalizer_temp_ms", 0.0)),
+						"finalizer_tta_ms": float(finalizer_diag.get("finalizer_tta_ms", 0.0)),
+						"finalizer_thermal_ms": float(finalizer_diag.get("finalizer_thermal_ms", 0.0)),
+						"finalizer_sort_ms": float(finalizer_diag.get("finalizer_sort_ms", 0.0)),
+						"finalizer_sea_ice_ms": float(finalizer_diag.get("finalizer_sea_ice_ms", 0.0)),
+						"finalizer_precip_ms": float(finalizer_diag.get("finalizer_precip_ms", 0.0)),
+						"finalizer_write_dense_ms": float(finalizer_diag.get("finalizer_write_dense_ms", 0.0)),
+						"finalizer_cells_seen": int(finalizer_diag.get("finalizer_cells_seen", 0)),
+						"finalizer_temperature_cell_mirror": bool(finalizer_diag.get("finalizer_temperature_cell_mirror", false)),
+						"finalizer_tta_cell_mirror": bool(finalizer_diag.get("finalizer_tta_cell_mirror", false)),
+						"finalizer_tta_cell_mirror_count": int(finalizer_diag.get("finalizer_tta_cell_mirror_count", 0)),
+						"finalizer_tta_clamped_count": int(finalizer_diag.get("finalizer_tta_clamped_count", 0)),
+						"finalizer_thermal_init_count": int(finalizer_diag.get("finalizer_thermal_init_count", 0)),
+						"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
+					}
+					_merge_climate_wrapper_diag(generator._last_climate_breakdown)
+				_last_finalize_diag["finalize_breakdown_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"annual_log":
+				if generator != null and "_daily_climate_call_count" in generator:
+					var n: int = generator._daily_climate_call_count
+					if _is_annual_log_tick(n):
+						var _path_str: String = "legacy"
+						var _w = generator.get_data_core_world() if generator.has_method("get_data_core_world") else null
+						if _w != null and _w.is_bound():
+							_path_str = "data_core" if data_core_ready() else "data_core_cells_only"
+						if generator.has_method("get_data_core_world_ext"):
+							var _w_ext = generator.get_data_core_world_ext()
+							if _w_ext != null:
+								_path_str += "+cpp_ext"
+						print("refresh_climate_daily(sliced) #%d: %dms across sub-ticks (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f wind=%.1f sea_ice=%.1f transp=%.1f path=%s" % [
+							n,
+							int(Time.get_ticks_msec() - _round_t_round_start_ms),
+							map.cell_count(),
+							_phase_locked,
+							_round_t_pass_a_ms, _round_t_pass_b_ms, _round_t_ocean_ms, _round_t_wind_ms, _round_t_sea_ice_ms, _round_t_transp_ms,
+							_path_str,
+						])
+				_last_finalize_diag["finalize_annual_log_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"soa_noop":
+				if generator != null:
+					var cp_for_flush = generator._c()
+					if cp_for_flush != null and bool(cp_for_flush.use_soa_pipeline) and map != null and map.has_soa():
+						pass
+				_last_finalize_diag["finalize_soa_noop_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"soak_dump":
+				if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
+					var sim_day: int = 0
+					if generator != null and "_daily_climate_call_count" in generator:
+						sim_day = int(generator._daily_climate_call_count)
+					DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
+				_last_finalize_diag["finalize_soak_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"integrity_check":
+				_debug_climate_integrity("round_done")
+				_last_finalize_diag["finalize_integrity_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"finish_active_pass":
+				_finish_active_pass()
+				_last_finalize_diag["finalize_finish_pass_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"reset_transpiration_state":
+				_reset_transpiration_slice_state()
+				_last_finalize_diag["finalize_reset_transp_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"reset_round_local_state":
+				_round_active = false
+				_pass_cursor = 0
+			"flush_pending_mark_dirty_all":
+				if generator != null and generator._data_core_world_ext != null \
+						and generator._data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
+					generator._data_core_world_ext.flush_pending_mark_dirty_all()
+				_last_finalize_diag["finalize_flush_dirty_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"mark_round_slots_stale":
+				if generator != null and generator.has_method("_mark_climate_daily_round_slots_stale"):
+					generator._mark_climate_daily_round_slots_stale()
+				_last_finalize_diag["finalize_mark_stale_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"dump_round_slot_stats":
+				if generator != null and generator.has_method("dump_climate_daily_round_slots_stats"):
+					var stats: Dictionary = generator.dump_climate_daily_round_slots_stats()
+					# 每 20 round 打一次，避免刷屏
+					if int(stats.get("refresh_count", 0)) > 0 \
+							and generator.get("_daily_climate_call_count") != null \
+							and int(generator._daily_climate_call_count) % 20 == 1:
+						print("[climate/round] refresh_count=%d skip_count=%d (per round)" % [
+							int(stats.get("refresh_count", 0)),
+							int(stats.get("skip_count", 0)),
+						])
+				_last_finalize_diag["finalize_dump_stats_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			_:
+				var unknown: Array = _last_finalize_diag.get("finalize_tail_unknown_intents", [])
+				unknown.append(intent)
+				_last_finalize_diag["finalize_tail_unknown_intents"] = unknown
+	return {
+		"finalizer_diag": finalizer_diag,
+		"finalizer_cpp_worker": async_finalizer_used,
+		"finalizer_fallback_reason": async_fin_fallback_reason,
+		"finalize_tail_boundary_intents": normalized_intents,
+	}
+
+
+func _execute_async_round_finish_boundary_intents(intents: Array, poll_result: Dictionary, ext: Object, finish_t0_us: int, native_poll_report: Dictionary = {}) -> Dictionary:
+	var diag: Dictionary = {
+		"flip_ms": 0.0,
+		"finalize_ms": 0.0,
+		"finish_ms": 0.0,
+		"native_finish_report": {},
+		"round_finish_boundary_intents": intents.duplicate(true),
+		"round_finish_boundary_intent_owner": "native_probe_lifecycle",
+		"round_finish_boundary_unknown_intents": [],
+	}
+	for raw_intent in intents:
+		var intent: String = ""
+		if typeof(raw_intent) == TYPE_DICTIONARY:
+			intent = str(raw_intent.get("kind", ""))
+		else:
+			intent = str(raw_intent)
+		var t_intent_us: int = Time.get_ticks_usec()
+		match intent:
+			"apply_sea_ice_flips":
+				_handle_async_sea_ice_flips(poll_result)
+				diag["flip_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"finalize_round":
+				_pass_cursor = _PASS_COUNT
+				_finalize_round(poll_result, native_poll_report.get("finalize_tail_boundary_intents", []))
+				diag["finalize_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
+			"finish_native_lifecycle":
+				if ext != null and ext.has_method("native_climate_round_finish_round"):
+					var native_finish_report: Dictionary = ext.native_climate_round_finish_round({
+						"pass_cursor": _PASS_COUNT,
+						"stage": "round_done",
+						"finalize_ms": float(diag.get("finalize_ms", 0.0)),
+						"finish_ms": float(Time.get_ticks_usec() - finish_t0_us) / 1000.0,
+					})
+					diag["native_finish_report"] = native_finish_report
+					_sync_async_lifecycle_from_native(native_finish_report.get("state", {}))
+			_:
+				var unknown: Array = diag.get("round_finish_boundary_unknown_intents", [])
+				unknown.append(intent)
+				diag["round_finish_boundary_unknown_intents"] = unknown
+	diag["finish_ms"] = float(Time.get_ticks_usec() - finish_t0_us) / 1000.0
+	return diag
+
+
 func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	var ext = generator._data_core_world_ext
 	if ext == null:
@@ -1322,11 +1685,17 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	# Worker 没注册 → first time enter → register（幂等）。
 	if not _async_first_round_logged:
 		_async_first_round_logged = true
-		ext.async_climate_round_register()
 		# 静态 knobs 推一次（neighbor_indices + donor_table + foliage_table）
 		var static_knobs: Dictionary = _build_async_static_knobs()
-		ext.async_climate_round_set_static_knobs(static_knobs)
+		if ext.has_method("native_climate_round_begin"):
+			ext.native_climate_round_begin(static_knobs)
+		else:
+			ext.async_climate_round_register()
+			ext.async_climate_round_set_static_knobs(static_knobs)
 		print("[climate/async] worker registered + static knobs set (n_cells=%d)" % map.cell_count())
+
+	var native_lifecycle_state: Dictionary = _native_climate_lifecycle_state(ext)
+	_sync_async_lifecycle_from_native(native_lifecycle_state)
 
 	# Round 启动：kick
 	if not _round_active:
@@ -1343,12 +1712,11 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 			"round_start_mark_stale_ms": 0.0,
 			"round_start_soa_begin_ms": 0.0,
 			"round_start_dirty_ms": 0.0,
+			"round_start_state_source": "gdscript_fallback",
 		}
-		_pass_cursor = 0
+		var phase_candidate: float = ctx.season_phase
 		if season_phase_getter.is_valid():
-			_phase_locked = float(season_phase_getter.call())
-		else:
-			_phase_locked = ctx.season_phase
+			phase_candidate = float(season_phase_getter.call())
 		_last_round_start_diag["round_start_phase_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
 		_round_t_pass_a_ms = 0.0
 		_round_t_pass_b_ms = 0.0
@@ -1357,43 +1725,55 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		_round_t_sea_ice_ms = 0.0
 		_round_t_transp_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
-		_round_active = true
-		_async_round_kicked = false
-		_async_round_poll_attempts = 0
-		_async_round_kick_tick = ctx.tick_index
-		t_round_part_us = Time.get_ticks_usec()
-		var async_terrain_diag: Dictionary = _sync_runtime_terrain_views_for_reason("round_start")
-		_last_round_start_diag["round_start_terrain_sync_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
-		_last_round_start_diag["round_start_terrain_sync_skipped"] = bool(async_terrain_diag.get("skipped", false))
-		if not async_terrain_diag.is_empty():
-			_last_round_start_diag["round_start_terrain_sync_diag"] = async_terrain_diag.duplicate(true)
-		t_round_part_us = Time.get_ticks_usec()
-		_begin_round_pass_state()
-		_last_round_start_diag["round_start_state_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
-		# 静态天气根因修复(2026-06-20)：async round 路径原先漏调 soa_begin_climate_transaction()，
-		#   而 sync 路径在 round-start(line ~1873)调它。结果 temp_arr_prev / moisture_arr_prev /
-		#   snow_cover_arr_prev / sea_ice_frac_arr_prev 四个双缓冲快照永远停在 bake 当天值
-		#   （use_climate_round_async 默认 true → 永远走 async → 永远不 swap）。
-		#   weather field solve(field_solver.gd:120-121)把 *_prev 作为温度/湿度输入读取 →
-		#   热力学强迫(蒸发/水汽容量/不稳定/暖冷门控/地表湿度)全程冻结 → 整图天气类型高度静止、
-		#   永久干区/永久湿区，即便风/辐合/SLP 已随 synoptic 修复而移动也带不动一半格子。
-		#   这里补齐 swap，镜像 sync：在 _begin_round_pass_state 之后、kick 之前执行；只写 *_prev、
-		#   读当前 *_arr（_build_async_kick_input 也只读当前 *_arr），故对 worker 无竞态、无行为改变。
-		t_round_part_us = Time.get_ticks_usec()
-		if map != null and map.has_soa() and map.has_method("soa_begin_climate_transaction"):
-			map.soa_begin_climate_transaction()
-		_last_round_start_diag["round_start_soa_begin_ms"] = float(Time.get_ticks_usec() - t_round_part_us) / 1000.0
+		if ext.has_method("native_climate_round_begin_round"):
+			var native_begin_round: Dictionary = ext.native_climate_round_begin_round({
+				"phase_locked": phase_candidate,
+				"tick_index": ctx.tick_index,
+				"pass_cursor": 0,
+				"mode": "async",
+			})
+			var native_begin_state: Dictionary = native_begin_round.get("state", {})
+			_sync_async_lifecycle_from_native(native_begin_state)
+			native_lifecycle_state = native_begin_state
+			_last_round_start_diag["native_lifecycle_begin"] = native_begin_round
+			_last_round_start_diag["round_start_state_source"] = "native_probe_lifecycle"
+			_last_round_start_diag["round_start_state_intents"] = native_begin_round.get("start_state_intents", [])
+		else:
+			_pass_cursor = 0
+			_phase_locked = phase_candidate
+			_round_active = true
+			_async_round_kicked = false
+			_async_round_poll_attempts = 0
+			_async_round_kick_tick = ctx.tick_index
+		var boundary_intents: Array = []
+		if not native_lifecycle_state.is_empty():
+			boundary_intents = native_lifecycle_state.get("boundary_intents", [])
+		if boundary_intents.is_empty():
+			boundary_intents = _default_async_round_start_boundary_intents()
+		var boundary_diag: Dictionary = _execute_async_round_start_boundary_intents(boundary_intents)
+		for key in boundary_diag.keys():
+			_last_round_start_diag[key] = boundary_diag[key]
 		_last_round_start_diag["round_start_total_ms"] = float(Time.get_ticks_usec() - t_round_start_us) / 1000.0
+
+	native_lifecycle_state = _native_climate_lifecycle_state(ext)
+	_sync_async_lifecycle_from_native(native_lifecycle_state)
 
 	# Worker pending 时不重复 kick（kick 返回 false → reused++）。
 	if not _async_round_kicked:
 		var kick_t0: int = Time.get_ticks_usec()
 		var input: Dictionary = _build_async_kick_input(_phase_locked)
-		var kicked: bool = bool(ext.async_climate_round_kick(input))
-		var kick_ms: float = (Time.get_ticks_usec() - kick_t0) / 1000.0
-		if kicked:
-			_async_round_kicked = true
+		var kicked: bool = false
+		var kick_report: Dictionary = {}
+		if ext.has_method("native_climate_round_kick"):
+			kick_report = ext.native_climate_round_kick(input)
+			kicked = bool(kick_report.get("kicked", false))
+			_sync_async_lifecycle_from_native(kick_report.get("state", {}))
 		else:
+			kicked = bool(ext.async_climate_round_kick(input))
+			if kicked:
+				_async_round_kicked = true
+		var kick_ms: float = (Time.get_ticks_usec() - kick_t0) / 1000.0
+		if not kicked:
 			# Worker busy 处理上一 round → 本 tick 继续等。下个 tick 还可以 poll。
 			pass
 		# 真异步关键：kick 完立刻让 SUS 把 budget 让给后续 jobs（atlas / weather / ocean）。
@@ -1410,12 +1790,21 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 			"stage_name": "async_round_kicked",
 			"substage": "kicked" if kicked else "worker_busy",
 			"path": "data_core_async",
+			"native_lifecycle_state": kick_report.get("state", {}) if not kick_report.is_empty() else native_lifecycle_state,
 		}
 
 	# 已 kick → poll
-	_async_round_poll_attempts += 1
 	var poll_t0: int = Time.get_ticks_usec()
-	var poll_result: Dictionary = ext.async_climate_round_poll()
+	var poll_result: Dictionary = {}
+	var native_poll_report: Dictionary = {}
+	if ext.has_method("native_climate_round_poll"):
+		native_poll_report = ext.native_climate_round_poll()
+		_sync_async_lifecycle_from_native(native_poll_report.get("state", {}))
+		if bool(native_poll_report.get("done", false)):
+			poll_result = native_poll_report.get("result", {})
+	else:
+		_async_round_poll_attempts += 1
+		poll_result = ext.async_climate_round_poll()
 	var poll_ms: float = (Time.get_ticks_usec() - poll_t0) / 1000.0
 	if poll_result.is_empty():
 		# Worker 还没完成 → 报 done=true 让出 budget。下一 tick 再 poll。
@@ -1428,22 +1817,29 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 			"stage_name": "async_round_poll_pending",
 			"substage": "attempts=%d" % _async_round_poll_attempts,
 			"path": "data_core_async",
+			"native_poll_report": native_poll_report,
 		}
 
 	# Worker 完成：poll 已经把 19 个 slot 写回 _slots + flush 到 MapData。
-	# 主线程要处理 sea_ice flip events（map.terrain_arr 镜像 + atlas dirty）。
 	var finish_t0: int = Time.get_ticks_usec()
-	var flip_t0: int = Time.get_ticks_usec()
-	_handle_async_sea_ice_flips(poll_result)
-	var flip_ms: float = float(Time.get_ticks_usec() - flip_t0) / 1000.0
 
-	# 填充 per-pass breakdown 让 main.gd 日志解析无差异
-	_round_t_pass_a_ms     = float(poll_result.get("pass_a_us", 0)) / 1000.0
-	_round_t_pass_b_ms     = float(poll_result.get("pass_b_us", 0)) / 1000.0
-	_round_t_ocean_ms      = (float(poll_result.get("ocean_water_us", 0)) + float(poll_result.get("ocean_land_us", 0))) / 1000.0
-	_round_t_wind_ms       = (float(poll_result.get("wind_air_us", 0)) + float(poll_result.get("wind_surface_us", 0))) / 1000.0
-	_round_t_sea_ice_ms    = float(poll_result.get("sea_ice_us", 0)) / 1000.0
-	_round_t_transp_ms     = float(poll_result.get("transp_us", 0)) / 1000.0
+	# 填充 per-pass breakdown 让 main.gd 日志解析无差异。新 native facade 直接
+	# 返回 ms 级 breakdown；旧 DLL 继续从 *_us 字段换算。
+	var native_breakdown: Dictionary = poll_result.get("breakdown", {})
+	if not native_breakdown.is_empty():
+		_round_t_pass_a_ms     = float(native_breakdown.get("pass_a_ms", 0.0))
+		_round_t_pass_b_ms     = float(native_breakdown.get("pass_b_ms", 0.0))
+		_round_t_ocean_ms      = float(native_breakdown.get("ocean_ms", 0.0))
+		_round_t_wind_ms       = float(native_breakdown.get("wind_ms", 0.0))
+		_round_t_sea_ice_ms    = float(native_breakdown.get("sea_ice_ms", 0.0))
+		_round_t_transp_ms     = float(native_breakdown.get("transp_ms", 0.0))
+	else:
+		_round_t_pass_a_ms     = float(poll_result.get("pass_a_us", 0)) / 1000.0
+		_round_t_pass_b_ms     = float(poll_result.get("pass_b_us", 0)) / 1000.0
+		_round_t_ocean_ms      = (float(poll_result.get("ocean_water_us", 0)) + float(poll_result.get("ocean_land_us", 0))) / 1000.0
+		_round_t_wind_ms       = (float(poll_result.get("wind_air_us", 0)) + float(poll_result.get("wind_surface_us", 0))) / 1000.0
+		_round_t_sea_ice_ms    = float(poll_result.get("sea_ice_us", 0)) / 1000.0
+		_round_t_transp_ms     = float(poll_result.get("transp_us", 0)) / 1000.0
 
 	# Stage 4 真机诊断（前 5 round 打一次）：判断每个 pass 是否真的跑了。
 	# 每个 pass kernel 守卫失败时 us=0，证明该 pass 因 input size mismatch 跳过。
@@ -1469,19 +1865,24 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	# scheduler 边界开销 + 让更多帧承担 SUS 工作。finalize 5-8ms 是确定性 cost
 	# 不是随机 spike，拆 slice 反而恶化整体。保留代码作为 reference。
 	# 直接走原行为：同 tick 跑完 finalize，return done=true。
-	# Round 结束：原 _finalize_round 处理 dirty mask / climate breakdown / annual log。
-	_pass_cursor = _PASS_COUNT
-	var finalize_t0: int = Time.get_ticks_usec()
-	# Stage 9 / Fix #11 (2026-06-16)：传 poll_result 进 _finalize_round，
-	# 让它优先用 worker 已算好的 finalizer diag，跳过同名 GDScript 2400-loop。
-	_finalize_round(poll_result)
-	var finalize_ms: float = float(Time.get_ticks_usec() - finalize_t0) / 1000.0
-	var finish_ms: float = float(Time.get_ticks_usec() - finish_t0) / 1000.0
+	# Round 结束：native poll 声明 finish boundary intents；GDScript 执行仍必须留在脚本侧的动作。
+	var finish_boundary_intents: Array = native_poll_report.get("finish_boundary_intents", [])
+	if finish_boundary_intents.is_empty():
+		finish_boundary_intents = _default_async_round_finish_boundary_intents()
+	var finish_diag: Dictionary = _execute_async_round_finish_boundary_intents(finish_boundary_intents, poll_result, ext, finish_t0, native_poll_report)
+	var flip_ms: float = float(finish_diag.get("flip_ms", 0.0))
+	var finalize_ms: float = float(finish_diag.get("finalize_ms", 0.0))
+	var finish_ms: float = float(finish_diag.get("finish_ms", 0.0))
+	var native_finish_report: Dictionary = finish_diag.get("native_finish_report", {})
 	if generator != null and "_last_climate_breakdown" in generator:
 		generator._last_climate_breakdown["async_poll_ms"] = poll_ms
 		generator._last_climate_breakdown["async_flip_ms"] = flip_ms
 		generator._last_climate_breakdown["async_finalize_ms"] = finalize_ms
 		generator._last_climate_breakdown["async_finish_ms"] = finish_ms
+		generator._last_climate_breakdown["native_finish_boundary_intents"] = finish_boundary_intents
+		generator._last_climate_breakdown["native_finish_boundary_diag"] = finish_diag
+		if not native_finish_report.is_empty():
+			generator._last_climate_breakdown["native_lifecycle_finish"] = native_finish_report
 
 	if int(poll_result.get("worker_total_us", 0)) > 50_000:
 		# Worker 跑超 50ms 偶尔可见，但不严重。可以提示。
@@ -1503,6 +1904,12 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		"finish_ms": finish_ms,
 		"finalizer_cpp_worker": bool(poll_result.get("fin_applied", false)),
 		"finalizer_fallback_reason": _async_finalizer_fallback_reason(poll_result),
+		"published_slots": poll_result.get("published_slots", []),
+		"visual_dirty_intents": poll_result.get("visual_dirty_intents", []),
+		"native_breakdown": native_breakdown,
+		"native_poll_report": native_poll_report,
+		"native_finish_report": native_finish_report,
+		"native_finish_boundary_intents": finish_boundary_intents,
 	}
 
 
@@ -1588,11 +1995,16 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		"insol_amp": float(cp.season_temp_amp) if "season_temp_amp" in cp else 0.20,
 		"insol_gain": float(cp.insolation_season_gain) if "insolation_season_gain" in cp else 1.0,
 		"moist_scale_now": 1.0,
+		"runtime_moisture_base_relax_rate": float(cp.runtime_moisture_base_relax_rate) if "runtime_moisture_base_relax_rate" in cp else 0.24,
+		"runtime_moisture_weather_vapor_weight": float(cp.runtime_moisture_weather_vapor_weight) if "runtime_moisture_weather_vapor_weight" in cp else 0.12,
+		"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.20,
+		"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 0.15,
+		"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 0.08,
 		"days_per_year": generator._calendar_days_per_year(),
 		"sea_level": float(generator._last_cfg.sea_level) if generator._last_cfg != null else 0.5,
 		# pass_a 扩展 scalars — mirror sync `_climate_pass_a` cp_struct。
 		"thermal_inertia_land": float(cp.thermal_inertia_land) if "thermal_inertia_land" in cp else 0.35,
-		"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.07,
+		"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.045,
 		"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
 		"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
 		"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
@@ -1617,17 +2029,17 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	input["pb_coupling_gain"] = float(cp.ocean_moisture_coupling_gain) if "ocean_moisture_coupling_gain" in cp else 0.0
 	# coast_leak 来自 _last_cfg.COASTAL_HEAT_LEAK，不是 cp 字段
 	input["pb_coast_leak"]    = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.0
-	input["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if "sea_ice_albedo_cooling" in cp else 0.0
+	input["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if "sea_ice_albedo_cooling" in cp else 0.01
 	# ocean_water knobs — sync 用 _last_cfg.OCEAN_HEAT_* （map_generator.gd:9679-9680）
 	input["ow_advect_steps"] = max(0, int(generator._last_cfg.OCEAN_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
-	input["ow_heat_mix"]     = clampf(float(generator._last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.40
+	input["ow_heat_mix"]     = clampf(float(generator._last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.55
 	# ocean TTA scalars — sync 用 _temperature_transport_anomaly_knobs (map_generator.gd:2083-2104)
 	# 来源：cp.temperature_transport_anomaly_source_cap / blend_rate / decay_rate / zero_current_decay
-	# 缺省值：source_cap=0.16, blend_rate=0.55, decay_rate=0.08, zero_current_decay=0.12
-	var _tta_source_cap: float = 0.16
-	var _tta_blend_rate: float = 0.55
-	var _tta_decay_rate: float = 0.08
-	var _tta_zero_curr_decay: float = 0.12
+	# 缺省值 mirror ClimateProfile / sync _temperature_transport_anomaly_knobs。
+	var _tta_source_cap: float = 0.22
+	var _tta_blend_rate: float = 0.70
+	var _tta_decay_rate: float = 0.04
+	var _tta_zero_curr_decay: float = 0.06
 	if cp != null:
 		if "temperature_transport_anomaly_source_cap" in cp:
 			_tta_source_cap = clampf(float(cp.temperature_transport_anomaly_source_cap), 0.0, 0.5)
@@ -1645,31 +2057,35 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	input["ol_tta_blend_rate"]          = _tta_blend_rate
 	input["ol_tta_decay_rate"]          = _tta_decay_rate
 	# ocean_land knobs — sync 用 _last_cfg.COASTAL_HEAT_LEAK * winter_boost(1.0)（map_generator.gd:9916-9917）
-	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.45
+	input["ol_effective_leak"] = float(generator._last_cfg.COASTAL_HEAT_LEAK) if generator._last_cfg != null else 0.55
 	# wind_air knobs — sync 用 _last_cfg.WIND_HEAT_*（map_generator.gd:12637-12638）
 	input["wa_advect_steps"] = max(0, int(generator._last_cfg.WIND_HEAT_ADVECT_STEPS)) if generator._last_cfg != null else 3
 	input["wa_heat_mix"]     = clampf(float(generator._last_cfg.WIND_HEAT_MIX), 0.0, 1.0) if generator._last_cfg != null else 0.25
 	# wind_surface knobs — sync 用 _last_cfg.AIR_MASS_HEAT_LEAK（map_generator.gd:12672）
 	input["ws_air_leak"]     = float(generator._last_cfg.AIR_MASS_HEAT_LEAK) if generator._last_cfg != null else 0.35
+	input["ws_cold_transport_form"] = float(cp.sea_ice_form_threshold) if "sea_ice_form_threshold" in cp else 0.06
+	input["ws_cold_transport_melt"] = float(cp.sea_ice_melt_threshold) if "sea_ice_melt_threshold" in cp else 0.11
 	# sea_ice knobs — sync 用 cp.sea_ice_freeze_rate / sea_ice_melt_rate / sea_ice_form_threshold /
 	#   sea_ice_melt_threshold / sea_ice_neighbor_contagion / sea_ice_terrain_threshold /
 	#   sea_ice_terrain_hysteresis（_apply_sea_ice_daily_pass map_generator.gd:8020-8026）
 	# 还有 sea_ice_freeze_insol_low/high / sea_ice_solar_melt_start/gain / sea_ice_daily_delta_cap /
 	#   sea_ice_solar_gate_enabled / OCEAN_CURRENT_ICE_DELAY / enable_ocean_heat_transport
-	input["si_k_freeze"]     = float(cp.sea_ice_freeze_rate) if "sea_ice_freeze_rate" in cp else 0.55
+	input["si_k_freeze"]     = float(cp.sea_ice_freeze_rate) if "sea_ice_freeze_rate" in cp else 0.40
 	input["si_k_melt"]       = float(cp.sea_ice_melt_rate)   if "sea_ice_melt_rate"   in cp else 1.45
-	input["si_t_form"]       = float(cp.sea_ice_form_threshold) if "sea_ice_form_threshold" in cp else 0.12
-	input["si_t_melt"]       = float(cp.sea_ice_melt_threshold) if "sea_ice_melt_threshold" in cp else 0.22
-	input["si_contagion"]    = float(cp.sea_ice_neighbor_contagion) if "sea_ice_neighbor_contagion" in cp else 0.06
+	input["si_t_form"]       = float(cp.sea_ice_form_threshold) if "sea_ice_form_threshold" in cp else 0.06
+	input["si_t_melt"]       = float(cp.sea_ice_melt_threshold) if "sea_ice_melt_threshold" in cp else 0.11
+	input["si_contagion"]    = float(cp.sea_ice_neighbor_contagion) if "sea_ice_neighbor_contagion" in cp else 0.035
 	input["si_threshold"]    = float(cp.sea_ice_terrain_threshold) if "sea_ice_terrain_threshold" in cp else 0.68
 	input["si_hysteresis"]   = float(cp.sea_ice_terrain_hysteresis) if "sea_ice_terrain_hysteresis" in cp else 0.12
-	input["si_ice_delay"]    = float(generator._last_cfg.OCEAN_CURRENT_ICE_DELAY) if generator._last_cfg != null else 0.0
+	input["si_ice_delay"]    = float(generator._last_cfg.OCEAN_CURRENT_ICE_DELAY) if generator._last_cfg != null else 1.0
 	input["si_solar_gate_enabled"] = bool(cp.sea_ice_solar_gate_enabled) if "sea_ice_solar_gate_enabled" in cp else true
-	input["si_freeze_insol_low"]  = float(cp.sea_ice_freeze_insol_low) if "sea_ice_freeze_insol_low" in cp else 0.30
-	input["si_freeze_insol_high"] = float(cp.sea_ice_freeze_insol_high) if "sea_ice_freeze_insol_high" in cp else 0.55
-	input["si_solar_melt_start"]  = float(cp.sea_ice_solar_melt_start) if "sea_ice_solar_melt_start" in cp else 0.45
-	input["si_solar_melt_gain"]   = float(cp.sea_ice_solar_melt_gain) if "sea_ice_solar_melt_gain" in cp else 0.65
-	input["si_daily_delta_cap"]   = float(cp.sea_ice_daily_delta_cap) if "sea_ice_daily_delta_cap" in cp else 0.08
+	input["si_freeze_insol_low"]  = float(cp.sea_ice_freeze_insol_low) if "sea_ice_freeze_insol_low" in cp else 0.22
+	input["si_freeze_insol_high"] = float(cp.sea_ice_freeze_insol_high) if "sea_ice_freeze_insol_high" in cp else 0.45
+	input["si_solar_melt_start"]  = float(cp.sea_ice_solar_melt_start) if "sea_ice_solar_melt_start" in cp else 0.28
+	input["si_solar_melt_gain"]   = float(cp.sea_ice_solar_melt_gain) if "sea_ice_solar_melt_gain" in cp else 1.35
+	input["si_min_thick_ice_solar_exposure"] = float(cp.sea_ice_min_thick_ice_solar_exposure) if "sea_ice_min_thick_ice_solar_exposure" in cp else 0.32
+	input["si_daily_delta_cap"]   = float(cp.sea_ice_daily_delta_cap) if "sea_ice_daily_delta_cap" in cp else 0.070
+	input["si_edge_mix_rate"]     = float(cp.sea_ice_edge_mix_rate) if "sea_ice_edge_mix_rate" in cp else 0.035
 	input["si_enable_oht"]        = bool(generator._last_cfg.enable_ocean_heat_transport) if generator._last_cfg != null else true
 	# climate_anomaly 阈值偏移（与 _apply_sea_ice_daily_pass map_generator.gd:8044-8046 同源）
 	# sync 路径在调 C++ run_sea_ice_daily_pass 前已把 t_form/t_melt 减去 climate_anomaly_now * 0.10。
@@ -1713,8 +2129,14 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 	input["fin_tta_cap"]           = float(cp.temperature_transport_anomaly_daily_cap) if cp != null and "temperature_transport_anomaly_daily_cap" in cp else 0.12
 	input["fin_has_temp_start"]    = _temp_start_of_day_arr.size() == n_cells
 	input["fin_has_tta_start"]     = _tta_start_of_day_arr.size() == n_cells
-	# passes_mask: 0x1FF 全开（默认含 finalizer bit 8）；旧 DLL 看不到 bit 8 还是 fallback。
-	input["passes_mask"] = 0x1FF
+	# passes_mask: 默认含 finalizer bit 8；风热输运关闭时 mirror sync/native daily gate。
+	var passes_mask: int = 0x1FF
+	var wind_heat_enabled: bool = true
+	if cp != null and "enable_wind_heat_transport" in cp:
+		wind_heat_enabled = bool(cp.enable_wind_heat_transport)
+	if not wind_heat_enabled:
+		passes_mask = passes_mask & ~0x30 # bit 4=wind_air, bit 5=wind_surface
+	input["passes_mask"] = passes_mask
 	return input
 
 
@@ -2392,27 +2814,12 @@ func _publish_partial_round(pass_id: int, slice_elapsed_ms: float, progress: flo
 
 
 # ─── 内部：round 结束时把累积埋点写回 generator + 重置游标 ────────────────
-func _finalize_round(async_poll_result: Dictionary = {}) -> void:
+func _finalize_round(async_poll_result: Dictionary = {}, finalize_tail_boundary_intents: Array = []) -> void:
 	var t_finalize_us: int = Time.get_ticks_usec()
-	var t_finalize_part_us: int = t_finalize_us
-	# Stage 9 / Fix #11 (2026-06-16)：worker 跑了 finalizer kernel 时（fin_applied=true）
-	# 直接复用 worker 算好的 13 个 diag 字段；跳过同名 _apply_daily_climate_finalizer 的
-	# 4 个 2400-loop + 2 个 sort + 3 个 write_f32_dense（实测 main thread 13-17ms）。
-	# poll_result 里 fin_applied=false 时（旧 DLL / mask bit 8 关闭 / 维度不齐 fallback）
-	# 走原 GDScript 路径，保持行为等价。
-	var finalizer_diag: Dictionary
-	var _async_finalizer_used: bool = false
-	var async_fin_fallback_reason: String = _async_finalizer_fallback_reason(async_poll_result)
-	if bool(async_poll_result.get("fin_applied", false)):
-		# 把 worker 返回的字段平移到 _last_finalizer_diag 兼容 schema（main.gd 解析这堆字段）。
-		finalizer_diag = _build_finalizer_diag_from_worker(async_poll_result)
-		_last_finalizer_diag = finalizer_diag
-		_async_finalizer_used = true
-	else:
-		finalizer_diag = _apply_daily_climate_finalizer()
 	_last_finalize_diag = {
 		"finalize_total_ms": 0.0,
-		"finalize_finalizer_ms": float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0,
+		"finalize_finalizer_ms": 0.0,
+		"finalize_counter_ms": 0.0,
 		"finalize_breakdown_ms": 0.0,
 		"finalize_annual_log_ms": 0.0,
 		"finalize_soa_noop_ms": 0.0,
@@ -2423,181 +2830,18 @@ func _finalize_round(async_poll_result: Dictionary = {}) -> void:
 		"finalize_flush_dirty_ms": 0.0,
 		"finalize_mark_stale_ms": 0.0,
 		"finalize_dump_stats_ms": 0.0,
-		"finalizer_cpp_worker": _async_finalizer_used,
-		"finalizer_fallback_reason": async_fin_fallback_reason,
+		"finalizer_cpp_worker": false,
+		"finalizer_fallback_reason": "",
 	}
-	# A.2.1.A4 — 一 round 完成 → counter +1（30 日 full sweep 触发逻辑在下次 round 入口）
-	_full_sweep_counter += 1
-	# A.2.1.A5 — 把 Pass B 写到 generator 的稀疏指标合并进 breakdown，方便 main.gd 输出
-	var dirty_ratio_out: float = 1.0
-	var visited_ratio_out: float = 1.0
-	var pass_b_path_out: String = "full"
-	if generator != null:
-		dirty_ratio_out = float(generator._last_climate_dirty_ratio) if "_last_climate_dirty_ratio" in generator else 1.0
-		visited_ratio_out = float(generator._last_climate_visited_ratio) if "_last_climate_visited_ratio" in generator else 1.0
-		pass_b_path_out = String(generator._last_climate_pass_b_path) if "_last_climate_pass_b_path" in generator else "full"
-	# 与 wrapper 路径保持完全一致的 _last_climate_breakdown 字段集合，让 main.gd 直接复用
-	if generator != null:
-		generator._daily_climate_call_count += 1
-		# A.2.1.B — Pass-A push 稀疏度（dynamic_visual_atlas M1 AB 验证字段）
-		t_finalize_part_us = Time.get_ticks_usec()
-		var _pa_pushed_out: int = int(generator._pa_last_pushed_cells) if "_pa_last_pushed_cells" in generator else 0
-		var _pa_total_out: int = int(generator._pa_last_total_cells) if "_pa_last_total_cells" in generator else 0
-		var _pa_push_ratio_out: float = (float(_pa_pushed_out) / float(_pa_total_out)) if _pa_total_out > 0 else 1.0
-		generator._last_climate_breakdown = {
-			"pass_a_ms": _round_t_pass_a_ms,
-			"pass_b_ms": _round_t_pass_b_ms,
-			"ocean_ms": _round_t_ocean_ms,
-			"wind_ms": _round_t_wind_ms,
-			"sea_ice_ms": _round_t_sea_ice_ms,
-			"ice_bake_ms": 0.0,  # GPU 海冰上传已迁到 SeaIceAtlasUploadJob
-			"transp_ms": _round_t_transp_ms,
-			"total_ms": float(Time.get_ticks_msec() - _round_t_round_start_ms),
-			"cells": map.cell_count(),
-			"partial": false,
-			"current_pass": "done",
-			"processed_cells": 0,
-			"cursor_start": -1,
-			"cursor_end": -1,
-			"progress_ratio": 1.0,
-			"budget_interrupted": false,
-			"pass_status": _PASS_RESULT_DONE,
-			"pass_token": _active_pass_token,
-			"pass_diag": _last_pass_diag.duplicate(true),
-			"transp_native_diag": _last_transp_native_diag.duplicate(true),
-			"dirty_ratio": dirty_ratio_out,
-			"visited_ratio": visited_ratio_out,
-			"pass_b_path": pass_b_path_out,
-			# A.2.1.B — Pass-A 写路径下移 push 集大小（≤ cells，反映 ε sparse 有效性）
-			"pa_pushed_cells": _pa_pushed_out,
-			"pa_total_cells": _pa_total_out,
-			"pa_push_ratio": _pa_push_ratio_out,
-			"max_temp_delta": float(finalizer_diag.get("max_temp_delta", 0.0)),
-			"p95_temp_delta": float(finalizer_diag.get("p95_temp_delta", 0.0)),
-			"p99_temp_delta": float(finalizer_diag.get("p99_temp_delta", 0.0)),
-			"preclamp_max_temp_delta": float(finalizer_diag.get("preclamp_max_temp_delta", 0.0)),
-			"preclamp_p99_temp_delta": float(finalizer_diag.get("preclamp_p99_temp_delta", 0.0)),
-			"temp_delta_gt_005_count": int(finalizer_diag.get("temp_delta_gt_005_count", 0)),
-			"temp_delta_gt_010_count": int(finalizer_diag.get("temp_delta_gt_010_count", 0)),
-			"temp_delta_gt_020_count": int(finalizer_diag.get("temp_delta_gt_020_count", 0)),
-			"temp_delta_clamped_count": int(finalizer_diag.get("temp_delta_clamped_count", 0)),
-			"max_transport_anomaly": float(finalizer_diag.get("max_transport_anomaly", 0.0)),
-			"sea_ice_delta_max": float(finalizer_diag.get("sea_ice_delta_max", 0.0)),
-			"precip_p95": float(finalizer_diag.get("precip_p95", 0.0)),
-			"thermal_finalizer_applied": bool(finalizer_diag.get("thermal_finalizer_applied", false)),
-			"finalizer_cpp_worker": _async_finalizer_used,
-			"finalizer_fallback_reason": async_fin_fallback_reason,
-			"finalizer_total_ms": float(finalizer_diag.get("finalizer_total_ms", 0.0)),
-			"finalizer_cell_ms": float(finalizer_diag.get("finalizer_cell_ms", 0.0)),
-			"finalizer_temp_ms": float(finalizer_diag.get("finalizer_temp_ms", 0.0)),
-			"finalizer_tta_ms": float(finalizer_diag.get("finalizer_tta_ms", 0.0)),
-			"finalizer_thermal_ms": float(finalizer_diag.get("finalizer_thermal_ms", 0.0)),
-			"finalizer_sort_ms": float(finalizer_diag.get("finalizer_sort_ms", 0.0)),
-			"finalizer_sea_ice_ms": float(finalizer_diag.get("finalizer_sea_ice_ms", 0.0)),
-			"finalizer_precip_ms": float(finalizer_diag.get("finalizer_precip_ms", 0.0)),
-			"finalizer_write_dense_ms": float(finalizer_diag.get("finalizer_write_dense_ms", 0.0)),
-			"finalizer_cells_seen": int(finalizer_diag.get("finalizer_cells_seen", 0)),
-			"finalizer_temperature_cell_mirror": bool(finalizer_diag.get("finalizer_temperature_cell_mirror", false)),
-			"finalizer_tta_cell_mirror": bool(finalizer_diag.get("finalizer_tta_cell_mirror", false)),
-			"finalizer_tta_cell_mirror_count": int(finalizer_diag.get("finalizer_tta_cell_mirror_count", 0)),
-			"finalizer_tta_clamped_count": int(finalizer_diag.get("finalizer_tta_clamped_count", 0)),
-			"finalizer_thermal_init_count": int(finalizer_diag.get("finalizer_thermal_init_count", 0)),
-			# 方案 ④ Step 1：写入时打 fast tick 戳，perf_recorder 据此判定 stale 回放
-			"_tick_idx": int(generator._current_fast_tick_idx) if "_current_fast_tick_idx" in generator else 0,
-		}
-		_merge_climate_wrapper_diag(generator._last_climate_breakdown)
-		_last_finalize_diag["finalize_breakdown_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-		var n: int = generator._daily_climate_call_count
-		t_finalize_part_us = Time.get_ticks_usec()
-		if _is_annual_log_tick(n):
-			# I1.A-1: 在 round summary 末尾追加 path=... 标识，与 weather 日志对齐，
-			# 便于 grep / A-B 桶聚合。dots-flag-prune-pr1 (2026-05-22)：
-			# use_data_core_climate flag 已删除——climate 现恒走 DataCore 单路径：
-			#   legacy                — World 还没绑定（启动早期 fallback）
-			#   data_core_cells_only  — World 已绑定，但 25 个 comp_id 还未缓存好
-			#   data_core             — World 已绑定 + 全部 comp_id 缓存就绪
-			var _path_str: String = "legacy"
-			var _w = generator.get_data_core_world() if generator.has_method("get_data_core_world") else null
-			if _w != null and _w.is_bound():
-				_path_str = "data_core" if data_core_ready() else "data_core_cells_only"
-			# dots-roadmap-to-gdextension 务实 A：若 C++ co-processor 也已绑定，
-			# 在 path 后追加 +cpp 标记（实际本轮 run_climate_pass_a 仍 stub，
-			# 但能从日志看到 "co-processor 在席" 的事实，便于 probe 验收）。
-			if generator.has_method("get_data_core_world_ext"):
-				var _w_ext = generator.get_data_core_world_ext()
-				if _w_ext != null:
-					_path_str += "+cpp_ext"
-			print("refresh_climate_daily(sliced) #%d: %dms across sub-ticks (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f wind=%.1f sea_ice=%.1f transp=%.1f path=%s" % [
-				n,
-				int(Time.get_ticks_msec() - _round_t_round_start_ms),
-				map.cell_count(),
-				_phase_locked,
-				_round_t_pass_a_ms, _round_t_pass_b_ms, _round_t_ocean_ms, _round_t_wind_ms, _round_t_sea_ice_ms, _round_t_transp_ms,
-				_path_str,
-			])
-		_last_finalize_diag["finalize_annual_log_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	# Climate-Weather 2ms Budget — Phase A.3：SoA pipeline 启用时，整 round 完成
-	# 后一次性把 SoA 数组 flush 回 HexCell 强类型成员，让 UI / Baker / Overlay 等
-	# 只读消费者继续工作。开关关闭时 has_soa() 仍为 true，但所有 sub-pass 走的都是
-	# legacy 路径直写 cell.*，flush 是幂等的（只是把当前 cell 值往 SoA 镜像里同步
-	# 一遍，再读出来——开销与 cell 数量成正比，只在 round 末跑一次，可接受）。
-	t_finalize_part_us = Time.get_ticks_usec()
-	if generator != null:
-		var cp_for_flush = generator._c()
-		if cp_for_flush != null and bool(cp_for_flush.use_soa_pipeline) and map != null and map.has_soa():
-			# PR-2.4（2026-05-14）：flush_soa_to_cells 已删除。
-			# HexCell facade 让 cell.<field> getter 直接走 SoA，不再需要反向同步。
-			pass
-	_last_finalize_diag["finalize_soa_noop_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	# DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：climate pipeline 末尾，
-	# 写一段 climate-phase 记录。is_active() 失败时本调用是 nop，不引入额外开销；
-	# 启动后会在 N tick 后自动 stop。
-	t_finalize_part_us = Time.get_ticks_usec()
-	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
-		var sim_day: int = 0
-		if generator != null and "_daily_climate_call_count" in generator:
-			sim_day = int(generator._daily_climate_call_count)
-		DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
-	_last_finalize_diag["finalize_soak_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	t_finalize_part_us = Time.get_ticks_usec()
-	_debug_climate_integrity("round_done")
-	_last_finalize_diag["finalize_integrity_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	t_finalize_part_us = Time.get_ticks_usec()
-	_finish_active_pass()
-	_last_finalize_diag["finalize_finish_pass_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	t_finalize_part_us = Time.get_ticks_usec()
-	_reset_transpiration_slice_state()
-	_last_finalize_diag["finalize_reset_transp_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	_round_active = false
-	_pass_cursor = 0
-	# dirty-mark-batch-2026-06：round 末尾合并发布 mark_dirty_all。pass_a 16 slot
-	# flush 原本触发 16 次跨 GDExtension 边界 call，现合并为 1 次。atlas pipeline
-	# 在下个 stride 看到的 dirty 信号语义不变（全图脏 → 增量消费）。
-	t_finalize_part_us = Time.get_ticks_usec()
-	if generator != null and generator._data_core_world_ext != null \
-			and generator._data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
-		generator._data_core_world_ext.flush_pending_mark_dirty_all()
-	_last_finalize_diag["finalize_flush_dirty_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-	# refresh-consolidation-2026-06：round 末尾 mark stale，下一 round 必 refresh。
-	# 同时 dump 计数到 logcat，便于验收"原本 N 次 refresh → 现在 M 次"的效果。
-	if generator != null:
-		t_finalize_part_us = Time.get_ticks_usec()
-		if generator.has_method("_mark_climate_daily_round_slots_stale"):
-			generator._mark_climate_daily_round_slots_stale()
-		_last_finalize_diag["finalize_mark_stale_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
-		t_finalize_part_us = Time.get_ticks_usec()
-		if generator.has_method("dump_climate_daily_round_slots_stats"):
-			var stats: Dictionary = generator.dump_climate_daily_round_slots_stats()
-			# 每 20 round 打一次，避免刷屏
-			if int(stats.get("refresh_count", 0)) > 0 \
-					and generator.get("_daily_climate_call_count") != null \
-					and int(generator._daily_climate_call_count) % 20 == 1:
-				print("[climate/round] refresh_count=%d skip_count=%d (per round)" % [
-					int(stats.get("refresh_count", 0)),
-					int(stats.get("skip_count", 0)),
-				])
-		_last_finalize_diag["finalize_dump_stats_ms"] = float(Time.get_ticks_usec() - t_finalize_part_us) / 1000.0
+	if finalize_tail_boundary_intents.is_empty():
+		finalize_tail_boundary_intents = _default_finalize_tail_boundary_intents(async_poll_result)
+	var finalize_exec_diag: Dictionary = _execute_finalize_tail_boundary_intents(
+		finalize_tail_boundary_intents,
+		async_poll_result
+	)
 	_last_finalize_diag["finalize_total_ms"] = float(Time.get_ticks_usec() - t_finalize_us) / 1000.0
+	var _async_finalizer_used: bool = bool(finalize_exec_diag.get("finalizer_cpp_worker", false))
+	var async_fin_fallback_reason: String = String(finalize_exec_diag.get("finalizer_fallback_reason", ""))
 	# Stage 9 / Fix #11 (2026-06-16) STAGE-TOTAL 埋点：观察 C++ worker finalizer 是否启用。
 	# 启用时 finalize_total_ms 应 < 3ms（之前 main thread 跑 _apply_*_finalizer 是 13-17ms）。
 	# 前 5 round 必打，后续仅 >= 5ms 异常打。
@@ -2615,10 +2859,75 @@ func get_last_pass_diag() -> Dictionary:
 	return _last_pass_diag.duplicate(true)
 
 
-## Allow MapGenerator to retune the stride on the fly (speed_changed callback).
-func reconfigure(p_stride: int) -> void:
+func climate_round_state_snapshot() -> Dictionary:
+	var current_pass: String = "idle"
+	if _round_active and _pass_cursor >= 0 and _pass_cursor < _PASS_NAMES.size():
+		current_pass = _PASS_NAMES[_pass_cursor]
+	elif _finalize_pending:
+		current_pass = "round_finalize"
+	elif _pass_cursor >= _PASS_COUNT:
+		current_pass = "round_done"
+	var native_state: Dictionary = {}
+	if generator != null and generator.get("_data_core_world_ext") != null \
+			and generator._data_core_world_ext.has_method("get_native_climate_round_state_report"):
+		native_state = generator._data_core_world_ext.get_native_climate_round_state_report()
+	var active_owner_requested: bool = false
+	var cp_owner = generator._c() if generator != null else null
+	if cp_owner != null and cp_owner.get("native_climate_round_active_owner_enabled") != null:
+		active_owner_requested = bool(cp_owner.native_climate_round_active_owner_enabled)
+	var native_state_for_snapshot: Dictionary = native_state.duplicate(true)
+	var snapshot_owner: String = "native_ready" if bool(native_state.get("climate_round_authority_ready", false)) else "gdscript_retained"
+	if snapshot_owner == "native_ready" and active_owner_requested:
+		snapshot_owner = "native_active"
+		native_state_for_snapshot["authority"] = "native_active_owner"
+		native_state_for_snapshot["simulation_authority"] = true
+		native_state_for_snapshot["active_owner_requested"] = true
+		native_state_for_snapshot["climate_round_authority_phase"] = "native_active_owner"
+		var godot_boundaries: Array = native_state.get("remaining_godot_boundary_authority", [])
+		if godot_boundaries.is_empty():
+			godot_boundaries = ["godot_mapdata_boundary_execution", "reset_abort_boundary_execution"]
+		native_state_for_snapshot["remaining_gdscript_simulation_authority"] = []
+		native_state_for_snapshot["remaining_godot_boundary_authority"] = godot_boundaries
+		native_state_for_snapshot["remaining_gdscript_authority"] = godot_boundaries
+		native_state_for_snapshot["fallback_mode"] = "explicit_failure_only"
+		native_state_for_snapshot["single_authority_claim"] = "climate_round_state_machine"
+	elif not native_state_for_snapshot.is_empty():
+		native_state_for_snapshot["active_owner_requested"] = active_owner_requested
+	var native_state_status: String = "native_ready_probe_mirror" if snapshot_owner == "native_ready" else "probe_mirror_only"
+	if snapshot_owner == "native_active":
+		native_state_status = "native_active_owner_mirror"
+	var out: Dictionary = {
+		"owner": snapshot_owner,
+		"native_state_status": native_state_status,
+		"round_active": _round_active,
+		"pass_cursor": _pass_cursor,
+		"pass_count": _PASS_COUNT,
+		"current_pass": current_pass,
+		"phase_locked": _phase_locked,
+		"finalize_pending": _finalize_pending,
+		"async_round_kicked": _async_round_kicked,
+		"async_round_poll_attempts": _async_round_poll_attempts,
+		"async_round_kick_tick": _async_round_kick_tick,
+		"pass_generation": _pass_generation,
+		"active_pass_token": _active_pass_token,
+		"active_pass_state": _active_pass_state.duplicate(true),
+		"last_pass_diag": _last_pass_diag.duplicate(true),
+		"transp_stage": _transp_stage_label(_transp_stage),
+		"transp_cursor": _transp_cursor,
+		"transp_n_cells": _transp_n_cells,
+		"full_sweep_counter": _full_sweep_counter,
+		"last_phase_int_seen": _last_phase_int_seen,
+		"reset_owner": "ClimateDailySystem.reset_progress",
+	}
+	if not native_state_for_snapshot.is_empty():
+		out["native_probe_state"] = native_state_for_snapshot
+	return out
+
+
+## Allow MapGenerator to retune the stride/phase on the fly.
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = SusPolicyScript.StridePolicy.new(stride, posmod(p_phase, stride))
 
 
 func reset_run_flag() -> void:
@@ -2634,8 +2943,7 @@ func last_slice_elapsed_ms() -> float:
 	return _last_slice_elapsed_ms
 
 
-## 兼容性：旧 0.4.1 路径里 map_generator 用 climate_sys.get_inner() 取强类型
-## RefreshClimateDailyJob 引用。W.1 之后本类本身就是 SusJob，get_inner()
-## 直接返回 self。
+## 兼容性：map_generator 仍用 get_inner() 取得 SusJob 面引用；本类本身就是
+## SusJob，直接返回 self。
 func get_inner():
 	return self

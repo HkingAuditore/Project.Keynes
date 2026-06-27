@@ -1,9 +1,10 @@
 extends DCSystem
 class_name EnumAtlasUploadSystem
 
-## Phase C.3 — DCSystem 改写自 [`EnumAtlasUploadJob`](../sus/jobs/enum_atlas_upload_job.gd)。
+## Production enum atlas upload system.
 ##
-## 行为完全等价（迁移到 DCSystem 框架仅为统一调度入口 + reads/writes 自动校验）；
+## 旧 EnumAtlasUploadJob 已退役；当前实现直接作为 DCSystem 注册，保留同形
+## report 字段以兼容 scheduler 诊断。
 ## DCSystemScheduler 接管时直接 register_system(EnumAtlasUploadSystem.new(...))。
 ##
 ## reads / writes 声明：
@@ -40,13 +41,7 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 	hex_size = p_hex_size
 	stride = max(1, p_stride)
 	world_ext = p_world_ext
-	# Fix #11 (2026-06-15): mobile B 桶错峰 stride=8 phase=4 → tick 4, 12, 20, 28
-	# 跟 weather_refresh 同桶 (因为它们都是 climate 完成后才有意义的下游 job)。
-	if OS.has_feature("mobile"):
-		stride = 8
-		policy = _SusPolicyScript.StridePolicy.new(8, 4)
-	else:
-		policy = _SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = _SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 # ─── DCSystem 声明 ─────────────────────────────────────────────────
@@ -116,11 +111,6 @@ func tick(_ctx) -> Dictionary:
 	}
 
 
-func reconfigure(p_stride: int) -> void:
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
 	stride = max(1, p_stride)
-	# Fix #11: mobile B 桶 s8 p4 与 _init 一致
-	if OS.has_feature("mobile"):
-		stride = 8
-		policy = _SusPolicyScript.StridePolicy.new(8, 4)
-	else:
-		policy = _SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = _SusPolicyScript.StridePolicy.new(stride, posmod(p_phase, stride))

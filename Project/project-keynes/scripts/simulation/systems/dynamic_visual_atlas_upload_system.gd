@@ -240,14 +240,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	world_ext = p_world_ext
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
-	# Fix #11 (2026-06-15): mobile C 桶错峰 stride=8 phase=2 → tick 6, 14, 22, 30
-	# 完整分桶: A sea_ice (s8 p6), B weather+enum (s8 p4), C dyn_visual (s8 p2),
-	# D ocean (s8 p0)。每 8 仿真日 atlas commit 一次。
-	# 单 tick 1-3ms，不再被 ocean (D 桶 8ms) 或 climate (1-12ms) 撞 budget。
-	if OS.has_feature("mobile"):
-		_configure_lut_policy(8, 2)
-	else:
-		_configure_lut_policy(stride, 0)
+	_configure_lut_policy(stride, 0)
 	_rebuild_baker_callables()
 
 
@@ -1750,17 +1743,13 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 	return report
 
 
-func reconfigure(p_stride: int) -> void:
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
 	_abort_smooth_prep("reconfigure")
 	_reset_state_machine()
 	_clear_cpp_commit_queue()
 	_cpp_stride_in_progress = false
 	stride = max(1, p_stride)
-	# Fix #11: mobile C 桶 s8 p2 与 _init 一致
-	if OS.has_feature("mobile"):
-		_configure_lut_policy(8, 2)
-	else:
-		_configure_lut_policy(stride, 0)
+	_configure_lut_policy(stride, posmod(p_phase, stride))
 	_lut_refresh_pending = true
 	_lut_last_due_tick = -1
 

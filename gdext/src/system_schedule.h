@@ -3,7 +3,7 @@
 // Phase C.1（dots-total-cpp roadmap）：System schedule graph（静态 DAG）
 //
 // 目标 ─────────────────────────────────────────────────────────────────────
-// 把 DCWorldExt::run_native_daily_tick 内部 line 960-1063 的 11 段手写
+// 把 DCWorldExt::run_native_daily_tick 内部的 native daily pass 链
 // `if (bundle.has("<X>_knobs")) { ms = run_<X>_pass(...); breakdown[...]=...; }`
 // 模板代码抽象为：
 //   1. 一份静态 SystemNode[] 数组（"调度图"），编译期决定节点集合与执行顺序
@@ -15,9 +15,10 @@
 //
 // 双轨控制 ──────────────────────────────────────────────────────────────────
 // GDScript 在 native_daily_bundle 中注入 "use_system_schedule": bool（默认
-// false）。run_native_daily_tick 入口处取这个 flag：
+// false）。run_native_daily_tick 入口处取这个 flag；ACTIVE continuation
+// 通过 run_native_daily_slice() 逐节点消费同一 SCHEDULE_GRAPH：
 //   - true  → 走 dispatch_system_schedule(this, bundle, tick_knobs, breakdown)
-//   - false → 走 line 960-1063 原 11 段手写块（保留作为 Phase C.1 fallback）
+//   - false → 走原手写块（保留作为 debug/full-run fallback）
 // 任何 pass 内部 ms<0（fallback 触发）→ caller 调 finish_with_failure。
 //
 // 设计取舍 ──────────────────────────────────────────────────────────────────
@@ -31,8 +32,14 @@
 // 2. SCHEDULE_GRAPH 是 static const POD 数组（编译期初始化）：
 //    - 零运行期分配；C.3 job_graph 可直接基于这个数组做拓扑序 + 并行分组
 //    - 顺序 = 当前线性 if-chain 顺序（climate_pass_a → ocean_water →
-//      ocean_land → climate_pass_b → sea_ice → transpiration → albedo →
-//      vegetation_dynamics → climate_feedback → stage_b → weather）
+//      ocean_land → climate_pass_b → wind_air → wind_surface → sea_ice →
+//      transpiration → albedo → vegetation_dynamics → climate_feedback →
+//      stage_b → weather；当 bundle 含 runtime_hydrology_knobs 时，天气之后
+//      追加 runtime_hydrology → stage_b_after_hydrology。
+//    - runtime_hydrology 已接入本表，但只在 GDScript bundle 明确提供 knobs 时
+//      运行。hydrology 开启时 MapGenerator 会把 stage_b 从 weather combined pass
+//      拆出到 stage_b_after_hydrology，以对齐 legacy 的 weather summary →
+//      hydrology → stage_b 顺序。
 //    - in_mask / out_mask 暂用粗粒度"breakdown 分类"标签（climate / ocean /
 //      stage_b / weather）；C.3 才用得上，C.1 不做并行所以暂不写
 // 3. 不引入 World 字段级别的 mask 表：那是 C.3 真正并行化时的事；C.1 只是
@@ -60,7 +67,7 @@ struct SystemNode {
     // 节点执行函数（DCWorldExt 成员指针）。返回 true=成功；false=触发 fallback。
     // 节点 *自己负责*：读 bundle[bundle_key]、调 run_<X>_pass、累加 breakdown、
     // 写 side-effect（如 _native_fronts_snapshot）。
-    bool (DCWorldExt::*exec_fn)(const godot::Dictionary& bundle,
+    bool (DCWorldExt::*exec_fn)(godot::Dictionary& bundle,
                                 const godot::Dictionary& tick_knobs,
                                 godot::Dictionary& breakdown);
 };
@@ -72,6 +79,7 @@ enum SystemMask : uint64_t {
     SYS_MASK_STAGE_B = 1ull << 3,
     SYS_MASK_WEATHER = 1ull << 4,
     SYS_MASK_TERRAIN = 1ull << 5,
+    SYS_MASK_HYDROLOGY = 1ull << 6,
 };
 
 // 静态调度图。定义在 system_schedule.cpp。节点顺序与 run_native_daily_tick
@@ -87,7 +95,7 @@ extern const int SCHEDULE_GRAPH_SIZE;
 //               是否有节点成功跑过（caller 决定后续逻辑）
 // 与原 line 960-1063 行为对齐：任意 pass 失败立即短路返回 -1。
 int dispatch_system_schedule(DCWorldExt* self,
-                             const godot::Dictionary& bundle,
+                             godot::Dictionary& bundle,
                              const godot::Dictionary& tick_knobs,
                              godot::Dictionary& breakdown,
                              bool& out_any_pass_ran,

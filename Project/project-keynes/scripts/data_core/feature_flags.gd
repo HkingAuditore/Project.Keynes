@@ -373,8 +373,7 @@ static func set_ocean_current_visual(enabled: bool) -> void:
 # ─── 旧 sea_ice_tex（R8）逐像素海冰贴图开关 ───────────────────────────────────
 # [sea-ice-atlas-skip 2026-06-16] sea_ice_tex 是**已退役的死贴图**：
 #   · 任何着色器都不声明/采样它；
-#   · 运行时 `SeaIceAtlasUploadSystem|Job` 早已不注册（map_generator 两条路径都
-#     `_sea_ice_atlas_upload_job = null`），prepare/upload 没有 live 调用者；
+#   · 运行时 sea_ice_atlas_upload job/system 已删除，prepare/upload 没有 live 调用者；
 #   · 主地图海冰视觉由水路径 shader 按 水温/纬度/水深派生（indirection 开时走 dyn_lut.a）。
 # 唯一残留成本是 `bake_world` 每次重生成时 encode 一张全零 R8（~0.6MB 显存 + 编码）。
 #

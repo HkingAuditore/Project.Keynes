@@ -37,7 +37,7 @@ Runtime hydrology 新增的契约：
 - `cell.hydro_parent` / `cell_hydro_parent`：`I32`，`map_field=hydro_parent_arr`，owner 为 `map_generation`。这是生成期 Priority-Flood parent graph 的静态拓扑，非河流陆地也可有下游 parent。
 - `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
-- `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。
+- Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
 
 ## PackedArray CoW 公理
 
@@ -201,6 +201,16 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
 
 - `MapGenerator` 内有“round 启动时 refresh 一次”的缓存语义，用来避免每个 stage helper 都做一次 `refresh_slots_from_map()`。
 - 日志里 `sync=...` 或 `refresh=...` 变大时，先检查是否重复 refresh。
+- Native daily bundle 现在包含 `native_daily_boundary_contract`，把
+  `bootstrap_config_keys`、`tick_delta_keys`、`refresh_policy` 和 `flush_policy`
+  拆开报告。它是减少 Dictionary marshal 与 refresh/flush 边界的验收入口：
+  bootstrap/state snapshot 应逐步迁入 native runtime config；每 tick 只保留真正的
+  tick-delta knobs；`refresh_slots_from_map` / `flush_slots_to_map` 应只出现在 tick
+  边界或可见/debug 边界。
+- `configure_native_world()` 现在把 profile/static knobs 作为 `runtime_config_report`
+  常驻在 `DCWorldExt`，daily report 提升 `resident_config_keys`、`bundle_key_count`
+  和 `tick_delta_key_count`。评估 marshal 收敛时先看这些 counters，而不是只看
+  单个 pass 的 native compute time。
 
 ## C++ 写入 GDScript 可见数据
 
@@ -261,6 +271,24 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 - GDScript caller 不应再做昂贵的 array unpack/copy，除非 fallback reason 说明未发布。
 
 当前 SLP 和 PSI 链路已经使用该字段避免重复 copy。排查 ocean currents 时，应把 `published=true` 视为 C++ slot publish 生效的强信号。
+
+### Native daily graph-level publish
+
+`DCWorldExt::run_native_daily_slice()` 是 graph-level report，不替代每个 pass 的
+`published_to_slot`。它额外返回：
+
+- `published_slots`：native daily bundle/graph 层声明本 round 涉及并可追踪的 slot 家族。
+- scheduler-level `published_to_slot`：`NativeDailySimJob` 根据 `published_slots` 提升的布尔诊断字段，表示 graph report 至少声明了一组 slot 发布证据。
+- `visual_dirty_intents`：C++ graph 对 GDScript/Godot visual boundary 的上传意图，不代表 GPU upload 已完成。
+- `authority_report` / `authority_blockers` / `retained_boundaries` / `graph_coverage_state`：`authority_blockers` 只说明哪些 simulation authority 或 production fallback 仍阻止 graph complete；`retained_boundaries` 说明仍计划留在 GDScript/Godot 的 visual/object/debug 上传边界。
+
+诊断顺序：
+
+1. 看 pass-level `published_to_slot`，确认具体 C++ pass 是否写 slot / flush。
+2. 看 graph-level `published_slots`，确认 native daily round 是否把该 slot 家族纳入 report。
+3. 看 MapData/renderer/CSV 是否需要 visible flush 或 Godot upload。
+
+不要因为 graph-level `published_to_slot=true` 就删除某个 pass 的 visible publish、CSV/debug flush 或 GDScript repair path；删除前必须有对应 pass-level 证据和可见层验证。
 
 ### Atlas buffer 直写发布（CSR fan-out 家族）
 
@@ -431,6 +459,12 @@ bridge surfaces and component slots.
   `DCWorldExt`. The climate finalizer writes this value through
   `DCWorld.write_f32_dense()` / `MapData` and only marks the C++ mirror stale for
   the next round, so an ext read can observe a previous native snapshot.
+- `native_daily_sim` ACTIVE uses the same finalizer boundary after the last
+  native graph node: `MapGenerator` clamps final `cell_temp` and
+  `cell_temperature_transport_anomaly` against round-start snapshots, writes the
+  results to `MapData` and GDScript `DCWorld`, and lets the next native round's
+  `refresh_slots_from_map()` pull that finalized state back into `DCWorldExt`.
+  Do not bypass this with direct C++ slot reads in GDScript-visible diagnostics.
 - Ocean water and land native passes receive the previous TTA state through the
   existing anomaly array knobs and publish the stabilized value back through the
   same slot/mirror boundary. Callers must keep honoring `published_to_slot` and

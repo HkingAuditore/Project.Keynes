@@ -197,7 +197,7 @@ static func surface_absorbed_factor(is_water: bool, temp_annual: float) -> float
 ##     |s| 大（中高纬深冬）软饱和到约 −KNEE，不再无限变冷。
 ## KNEE=0.13：数值实验（tmp/verify_physical_temp_20260616.py §5）取得
 ##   温带平原冬季 min 0.087→0.21（叠加 pass_b 后≈0.13 严寒、脱离极寒），
-##   夏季峰值不变，深极地海陆冬季仍冻结（海冰核与冰带不塌），中纬陆/海大陆性≈1.8。
+##   夏季峰值不变，深极地海陆冬季仍冻结（海冰核与冰带不塌）。
 ## 跨语言镜像（改这些常量须人工同步并重编/重载）：
 ##   · C++    gdext/src/world_ext.cpp :: pk_compress_season_cooling / PK_WINTER_COOL_KNEE
 ##   · Shader shaders/include/climate_season.gdshaderinc :: insolation_season_offset_shader

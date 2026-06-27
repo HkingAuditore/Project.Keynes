@@ -26,7 +26,6 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -54,6 +53,1034 @@ namespace pk {
 
 using namespace godot;
 
+struct NativeDailySliceNode {
+    const char *name;
+    const char *bundle_key;
+    const char *fail_stage;
+    uint64_t read_mask;
+    uint64_t write_mask;
+};
+
+static const NativeDailySliceNode NATIVE_DAILY_SLICE_GRAPH[] = {
+    {"climate_pass_a", "climate_pass_a_struct", "climate_pass_a",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE},
+    {"climate_pass_b", "climate_pass_b_knobs", "climate_pass_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE},
+    {"ocean_water", "ocean_water_knobs", "ocean_water",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN, SYS_MASK_OCEAN},
+    {"ocean_land", "ocean_land_knobs", "ocean_land",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_OCEAN},
+    {"wind_air", "wind_air_knobs", "wind_air",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE},
+    {"wind_surface", "wind_surface_knobs", "wind_surface",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE},
+    {"sea_ice", "sea_ice_knobs", "sea_ice",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_SEA_ICE | SYS_MASK_TERRAIN},
+    {"transpiration", "transpiration_knobs", "transpiration",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE},
+    {"albedo", "albedo_knobs", "albedo",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B},
+    {"vegetation_dynamics", "vegetation_dynamics_knobs", "vegetation_dynamics",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B},
+    {"climate_feedback", "climate_feedback_knobs", "climate_feedback",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B},
+    {"stage_b", "stage_b_knobs", "stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B},
+    {"weather", "weather_knobs", "weather",
+     SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER | SYS_MASK_STAGE_B},
+    {"runtime_hydrology", "runtime_hydrology_knobs", "runtime_hydrology",
+     SYS_MASK_WEATHER | SYS_MASK_TERRAIN | SYS_MASK_HYDROLOGY, SYS_MASK_HYDROLOGY | SYS_MASK_STAGE_B},
+    {"stage_b_after_hydrology", "stage_b_after_hydrology_knobs", "stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B | SYS_MASK_HYDROLOGY, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B},
+};
+
+static const int NATIVE_DAILY_SLICE_GRAPH_SIZE =
+    sizeof(NATIVE_DAILY_SLICE_GRAPH) / sizeof(NativeDailySliceNode);
+
+static void native_daily_append_unique(Array &arr, const String &value) {
+    for (int i = 0; i < arr.size(); ++i) {
+        if (String(arr[i]) == value) {
+            return;
+        }
+    }
+    arr.append(value);
+}
+
+static Array native_daily_collect_bundle_pass_keys(const Dictionary &bundle_dict) {
+    Array keys;
+    auto record_key = [&](const char *key) {
+        if (bundle_dict.has(key)) {
+            keys.append(String(key));
+        }
+    };
+    record_key("climate_pass_a_struct");
+    record_key("ocean_water_knobs");
+    record_key("ocean_land_knobs");
+    record_key("climate_pass_b_knobs");
+    record_key("wind_air_knobs");
+    record_key("wind_surface_knobs");
+    record_key("sea_ice_knobs");
+    record_key("transpiration_knobs");
+    record_key("albedo_knobs");
+    record_key("vegetation_dynamics_knobs");
+    record_key("climate_feedback_knobs");
+    record_key("stage_b_knobs");
+    record_key("weather_knobs");
+    record_key("runtime_hydrology_knobs");
+    record_key("stage_b_after_hydrology_knobs");
+    return keys;
+}
+
+static Array native_daily_collect_published_slots(const Dictionary &bundle_dict) {
+    Array slots;
+    if (bundle_dict.has("climate_pass_a_struct") || bundle_dict.has("climate_pass_b_knobs") ||
+        bundle_dict.has("ocean_water_knobs") || bundle_dict.has("ocean_land_knobs") ||
+        bundle_dict.has("wind_air_knobs") || bundle_dict.has("wind_surface_knobs") ||
+        bundle_dict.has("sea_ice_knobs") || bundle_dict.has("transpiration_knobs")) {
+        native_daily_append_unique(slots, String("cell_temp"));
+        native_daily_append_unique(slots, String("cell_moisture"));
+        native_daily_append_unique(slots, String("cell_snow_cover"));
+        native_daily_append_unique(slots, String("cell_sea_ice_frac"));
+        native_daily_append_unique(slots, String("cell_air_mass_temp_anomaly"));
+        native_daily_append_unique(slots, String("cell_ocean_thermal_anomaly"));
+        native_daily_append_unique(slots, String("cell_local_thermal_anomaly"));
+    }
+    if (bundle_dict.has("stage_b_knobs") || bundle_dict.has("stage_b_after_hydrology_knobs") ||
+        bundle_dict.has("albedo_knobs") ||
+        bundle_dict.has("vegetation_dynamics_knobs") || bundle_dict.has("climate_feedback_knobs")) {
+        native_daily_append_unique(slots, String("cell_cover"));
+        native_daily_append_unique(slots, String("cell_vegetation"));
+        native_daily_append_unique(slots, String("cell_vegetation_vitality"));
+    }
+    if (bundle_dict.has("weather_knobs")) {
+        native_daily_append_unique(slots, String("cell_weather_type"));
+        native_daily_append_unique(slots, String("cell_weather_intensity"));
+        native_daily_append_unique(slots, String("cell_weather_cloud"));
+        native_daily_append_unique(slots, String("cell_weather_precip"));
+        native_daily_append_unique(slots, String("cell_weather_field_init"));
+        native_daily_append_unique(slots, String("cell_weather_transition_alpha"));
+    }
+    if (bundle_dict.has("runtime_hydrology_knobs")) {
+        native_daily_append_unique(slots, String("cell_soil_moisture"));
+        native_daily_append_unique(slots, String("cell_water_balance_30d"));
+        native_daily_append_unique(slots, String("cell_river_discharge"));
+        native_daily_append_unique(slots, String("cell_river_discharge_30d"));
+        native_daily_append_unique(slots, String("cell_river_storage"));
+        native_daily_append_unique(slots, String("cell_groundwater_storage"));
+        native_daily_append_unique(slots, String("cell_surface_runoff"));
+    }
+    return slots;
+}
+
+static Array native_daily_collect_retained_gdscript_authority(const Dictionary &bundle_dict) {
+    Array retained;
+    if (!bundle_dict.has("wind_air_knobs")) {
+        retained.append(String("wind_air"));
+    }
+    if (!bundle_dict.has("wind_surface_knobs")) {
+        retained.append(String("wind_surface"));
+    }
+    if (bool(bundle_dict.get("runtime_hydrology_requested", false)) &&
+        !bundle_dict.has("runtime_hydrology_knobs")) {
+        retained.append(String("runtime_hydrology"));
+    }
+    if (!bundle_dict.has("sea_ice_knobs")) {
+        retained.append(String("sea_ice"));
+    }
+    return retained;
+}
+
+static Array native_daily_collect_retained_boundaries(const Dictionary &bundle_dict) {
+    Array retained;
+    native_daily_append_unique(retained, String("visual_uploads"));
+    native_daily_append_unique(retained, String("csv_debug_sampling"));
+    if (bundle_dict.has("weather_knobs")) {
+        native_daily_append_unique(retained, String("weather_front_objects_gdscript"));
+        native_daily_append_unique(retained, String("weather_lut_upload_godot"));
+    }
+    if (bundle_dict.has("sea_ice_knobs")) {
+        native_daily_append_unique(retained, String("sea_ice_terrain_flip_visibility_gdscript"));
+        native_daily_append_unique(retained, String("sea_ice_visual_upload_godot"));
+    }
+    if (bundle_dict.has("ocean_physical_state_snapshot")) {
+        native_daily_append_unique(retained, String("ocean_visual_raster_godot"));
+        native_daily_append_unique(retained, String("ocean_texture_commit_godot"));
+    }
+    if (bundle_dict.has("season_refresh_state_snapshot")) {
+        native_daily_append_unique(retained, String("season_atlas_queue_godot"));
+        native_daily_append_unique(retained, String("detail_scatter_godot"));
+    }
+    return retained;
+}
+
+static Array native_daily_collect_visual_dirty_intents(const Dictionary &bundle_dict,
+                                                       const Dictionary &breakdown_dict,
+                                                       const Dictionary &dirty_report) {
+    Array intents;
+    if (bool(dirty_report.get("atlas_dirty", false))) {
+        native_daily_append_unique(intents, String("atlas"));
+    }
+    if (bool(dirty_report.get("enum_atlas_dirty", false))) {
+        native_daily_append_unique(intents, String("enum_atlas"));
+    }
+    if (bool(dirty_report.get("sea_ice_atlas_dirty", false))) {
+        native_daily_append_unique(intents, String("sea_ice_atlas"));
+    }
+    if (bundle_dict.has("weather_knobs") &&
+        (bool(breakdown_dict.get("weather_lut_changed", false)) ||
+         breakdown_dict.has("weather_lut"))) {
+        native_daily_append_unique(intents, String("weather_lut"));
+    }
+    if (breakdown_dict.has("succession_indices") ||
+        int(breakdown_dict.get("stat_succession_count", 0)) > 0) {
+        native_daily_append_unique(intents, String("detail_scatter"));
+    }
+    return intents;
+}
+
+static Dictionary native_daily_collect_state_snapshot(const Dictionary &bundle_dict,
+                                                      const Array &retained_authority) {
+    Dictionary state;
+    state["tick_owner"] = String("DCWorldExt.native_daily_graph");
+    state["round_state_owner"] = String("native_active");
+    state["continuation_owner"] = String("DCWorldExt.native_daily_slice");
+    state["visual_upload_state_owner"] = String("godot_retained");
+    state["fallback_owner"] =
+        bool(bundle_dict.get("legacy_sus_fallback_enabled", true))
+            ? String("gdscript_legacy_sus")
+            : String("explicit_failure_only");
+
+    Dictionary climate_round_state;
+    if (bundle_dict.get("climate_round_state_snapshot", Dictionary()).get_type() == Variant::DICTIONARY) {
+        climate_round_state = Dictionary(bundle_dict.get("climate_round_state_snapshot", Dictionary()));
+        state["climate_round_state"] = climate_round_state;
+    }
+    state["climate_round_state_owner"] =
+        climate_round_state.has("owner")
+            ? String(climate_round_state.get("owner", "gdscript_retained"))
+            : String("gdscript_retained");
+
+    Dictionary ocean_physical_state;
+    if (bundle_dict.get("ocean_physical_state_snapshot", Dictionary()).get_type() == Variant::DICTIONARY) {
+        ocean_physical_state = Dictionary(bundle_dict.get("ocean_physical_state_snapshot", Dictionary()));
+        state["ocean_physical_state"] = ocean_physical_state;
+    }
+    state["ocean_physical_state_owner"] =
+        ocean_physical_state.has("owner")
+            ? String(ocean_physical_state.get("owner", "gdscript_retained"))
+            : String("gdscript_retained");
+
+    Dictionary season_refresh_state;
+    if (bundle_dict.get("season_refresh_state_snapshot", Dictionary()).get_type() == Variant::DICTIONARY) {
+        season_refresh_state = Dictionary(bundle_dict.get("season_refresh_state_snapshot", Dictionary()));
+        state["season_refresh_state"] = season_refresh_state;
+    }
+    state["season_refresh_state_owner"] =
+        season_refresh_state.has("owner")
+            ? String(season_refresh_state.get("owner", "gdscript_retained"))
+            : String("gdscript_retained");
+
+    Dictionary season_cadence_policy;
+    if (bundle_dict.get("season_cadence_policy", Dictionary()).get_type() == Variant::DICTIONARY) {
+        season_cadence_policy = Dictionary(bundle_dict.get("season_cadence_policy", Dictionary()));
+        state["season_cadence_policy"] = season_cadence_policy;
+    }
+
+    Dictionary weather_readiness;
+    if (bundle_dict.get("weather_native_daily_readiness", Dictionary()).get_type() == Variant::DICTIONARY) {
+        weather_readiness = Dictionary(bundle_dict.get("weather_native_daily_readiness", Dictionary()));
+    }
+    const bool weather_native_ready = bool(weather_readiness.get("ready", false));
+    const bool weather_active_requested = bool(bundle_dict.get("weather_transaction_active_owner_requested", false));
+    state["weather_transaction_state_owner"] =
+        (weather_native_ready && weather_active_requested)
+            ? String("native_active")
+            : (weather_native_ready
+                   ? String("native_ready")
+                   : (bundle_dict.has("weather_knobs")
+                          ? String("native_transaction_with_gdscript_apply")
+                          : String("gdscript_retained")));
+
+    Dictionary authority_report;
+    Dictionary graph_authority;
+    graph_authority["owner"] = String("native_active");
+    graph_authority["phase"] = String("native_continuation");
+    graph_authority["simulation_authority"] = true;
+    graph_authority["state_owner"] = String("DCWorldExt");
+    authority_report["native_daily_graph"] = graph_authority;
+
+    Dictionary climate_authority;
+    climate_authority["owner"] = state["climate_round_state_owner"];
+    climate_authority["phase"] =
+        String(state["climate_round_state_owner"]) == String("native_active")
+            ? String("active_owner_gate")
+            : (String(state["climate_round_state_owner"]) == String("native_ready")
+                   ? String("native_ready_probe")
+                   : String("gdscript_state_machine"));
+    climate_authority["simulation_authority"] =
+        String(state["climate_round_state_owner"]) == String("native_active");
+    climate_authority["state"] = climate_round_state;
+    climate_authority["remaining_gdscript_authority"] =
+        climate_round_state.get("remaining_gdscript_authority", Array());
+    authority_report["climate_round"] = climate_authority;
+
+    Dictionary weather_authority;
+    weather_authority["owner"] = state["weather_transaction_state_owner"];
+    weather_authority["phase"] =
+        (weather_native_ready && weather_active_requested)
+            ? String("native_active_visible_publish")
+            : (weather_native_ready
+                   ? String("native_ready_visible_publish")
+                   : (bundle_dict.has("weather_knobs")
+                          ? String("native_transaction_with_gdscript_apply")
+                          : String("gdscript_retained")));
+    weather_authority["readiness"] = weather_readiness;
+    weather_authority["visible_publish_ready"] = weather_native_ready;
+    weather_authority["active_owner_requested"] = weather_active_requested;
+    weather_authority["simulation_authority"] = weather_native_ready && weather_active_requested;
+    weather_authority["front_snapshot_ready"] = bool(weather_readiness.get("has_result_apply", false));
+    weather_authority["weather_lut_intent_ready"] = bool(weather_readiness.get("has_weather_lut_publish", false));
+    weather_authority["retained_boundaries"] =
+        Array::make(String("front_objects_gdscript"),
+                    String("weather_lut_upload_godot_boundary"));
+    weather_authority["blockers"] =
+        weather_native_ready
+            ? Array()
+            : Array::make(String("weather_transaction_state_gdscript"),
+                          String(weather_readiness.get("reason", "not_ready")));
+    authority_report["weather_transaction"] = weather_authority;
+
+    Dictionary hydrology_authority;
+    hydrology_authority["owner"] =
+        bundle_dict.has("runtime_hydrology_knobs") ? String("native_active") : String("gdscript_retained");
+    hydrology_authority["phase"] =
+        bundle_dict.has("runtime_hydrology_knobs") ? String("native_graph_node") : String("legacy_weather_chain");
+    hydrology_authority["simulation_authority"] = bundle_dict.has("runtime_hydrology_knobs");
+    hydrology_authority["published_slots_expected"] =
+        bundle_dict.has("runtime_hydrology_knobs")
+            ? Array::make(String("cell_soil_moisture"),
+                          String("cell_water_balance_30d"),
+                          String("cell_river_discharge"),
+                          String("cell_river_discharge_30d"),
+                          String("cell_river_storage"),
+                          String("cell_groundwater_storage"),
+                          String("cell_surface_runoff"))
+            : Array();
+    hydrology_authority["blockers"] =
+        bundle_dict.has("runtime_hydrology_knobs")
+            ? Array()
+            : Array::make(String("runtime_hydrology_knobs_missing"));
+    authority_report["runtime_hydrology"] = hydrology_authority;
+
+    Dictionary sea_ice_authority;
+    sea_ice_authority["owner"] =
+        bundle_dict.has("sea_ice_knobs") ? String("native_active") : String("gdscript_retained");
+    sea_ice_authority["phase"] =
+        bundle_dict.has("sea_ice_knobs") ? String("native_graph_node") : String("legacy_climate_or_sea_ice_job");
+    sea_ice_authority["simulation_authority"] = bundle_dict.has("sea_ice_knobs");
+    sea_ice_authority["published_slots_expected"] =
+        bundle_dict.has("sea_ice_knobs")
+            ? Array::make(String("cell_sea_ice_frac"),
+                          String("cell_temp"),
+                          String("cell_moisture"))
+            : Array();
+    sea_ice_authority["blockers"] =
+        bundle_dict.has("sea_ice_knobs")
+            ? Array()
+            : Array::make(String("sea_ice_knobs_missing"));
+    sea_ice_authority["retained_boundaries"] =
+        bundle_dict.has("sea_ice_knobs")
+            ? Array::make(String("terrain_flip_visibility_gdscript"),
+                          String("sea_ice_visual_upload_godot"))
+            : Array();
+    authority_report["sea_ice"] = sea_ice_authority;
+
+    Dictionary ocean_authority;
+    ocean_authority["owner"] = state["ocean_physical_state_owner"];
+    ocean_authority["phase"] =
+        String(state["ocean_physical_state_owner"]) == String("native_active")
+            ? String("native_active_lifecycle")
+            : (String(state["ocean_physical_state_owner"]) == String("native_ready") ||
+               String(state["ocean_physical_state_owner"]) == String("native_ready_probe")
+                   ? String("native_ready_probe")
+                   : String("gdscript_stage_machine"));
+    ocean_authority["state"] = ocean_physical_state;
+    ocean_authority["simulation_authority"] =
+        String(state["ocean_physical_state_owner"]) == String("native_active");
+    ocean_authority["native_owned_output_slots"] =
+        ocean_physical_state.get("native_owned_output_slots", Array());
+    ocean_authority["blockers"] =
+        String(state["ocean_physical_state_owner"]) == String("native_active")
+            ? Array()
+            : Array::make(String("ocean_physical_owner_not_active"));
+    ocean_authority["retained_boundaries"] =
+        ocean_physical_state.get("remaining_gdscript_authority",
+            Array::make(String("visual_raster_boundary_godot"),
+                        String("texture_commit_boundary_godot")));
+    authority_report["ocean_physical"] = ocean_authority;
+
+    Dictionary season_authority;
+    season_authority["owner"] = state["season_refresh_state_owner"];
+    season_authority["phase"] =
+        String(state["season_refresh_state_owner"]) == String("native_active")
+            ? String("native_active_cadence")
+            : (String(state["season_refresh_state_owner"]) == String("native_ready") ||
+               String(state["season_refresh_state_owner"]) == String("native_ready_probe")
+                   ? String("native_ready_cadence_probe")
+                   : String("gdscript_cadence"));
+    season_authority["state"] = season_refresh_state;
+    season_authority["simulation_authority"] =
+        String(state["season_refresh_state_owner"]) == String("native_active");
+    season_authority["simulation_slot_dirty_intents"] =
+        season_refresh_state.get("simulation_slot_dirty_intents", Array());
+    season_authority["visual_dirty_intents"] =
+        season_refresh_state.get("visual_dirty_intents", Array());
+    season_authority["cadence_policy"] = season_cadence_policy;
+    season_authority["blockers"] =
+        String(state["season_refresh_state_owner"]) == String("native_active")
+            ? Array()
+            : Array::make(String("season_refresh_owner_not_active"));
+    season_authority["retained_boundaries"] =
+        season_refresh_state.get("visual_dirty_intents",
+            Array::make(String("atlas_queue_godot"),
+                        String("detail_scatter_godot")));
+    authority_report["season_refresh"] = season_authority;
+
+    Dictionary visual_authority;
+    visual_authority["owner"] = String("godot_retained");
+    visual_authority["phase"] = String("godot_upload_boundary");
+    visual_authority["blockers"] = Array();
+    visual_authority["retained_boundaries"] = Array::make(String("image_texture_upload_godot"));
+    authority_report["visual_upload"] = visual_authority;
+
+    Dictionary fallback_authority;
+    const bool legacy_fallback_enabled = bool(bundle_dict.get("legacy_sus_fallback_enabled", true));
+    fallback_authority["owner"] =
+        legacy_fallback_enabled ? String("gdscript_legacy_sus") : String("explicit_failure_only");
+    fallback_authority["phase"] =
+        legacy_fallback_enabled ? String("fallback_retained") : String("fallback_test_only");
+    fallback_authority["blockers"] =
+        legacy_fallback_enabled ? Array::make(String("legacy_sus_fallback_enabled")) : Array();
+    authority_report["fallback"] = fallback_authority;
+
+    Array authority_blockers = retained_authority.duplicate();
+    if (String(state.get("climate_round_state_owner", "gdscript_retained")) != String("native_active")) {
+        native_daily_append_unique(authority_blockers, String("climate_round"));
+    }
+    if (bundle_dict.has("weather_knobs") &&
+        String(state.get("weather_transaction_state_owner", "gdscript_retained")) != String("native_active")) {
+        native_daily_append_unique(authority_blockers, String("weather_transaction"));
+    }
+    if (String(state.get("ocean_physical_state_owner", "gdscript_retained")) != String("native_active")) {
+        native_daily_append_unique(authority_blockers, String("ocean_currents_physical_state"));
+    }
+    if (String(state.get("season_refresh_state_owner", "gdscript_retained")) != String("native_active")) {
+        native_daily_append_unique(authority_blockers, String("season_refresh"));
+    }
+    if (bool(bundle_dict.get("legacy_sus_fallback_enabled", true))) {
+        native_daily_append_unique(authority_blockers, String("legacy_sus_fallback_enabled"));
+    }
+    Array retained_boundaries = native_daily_collect_retained_boundaries(bundle_dict);
+    state["authority_report"] = authority_report;
+    state["authority_blockers"] = authority_blockers;
+    state["retained_boundaries"] = retained_boundaries;
+    state["retained_godot_boundaries"] = retained_boundaries;
+    state["retained_boundary_policy"] = String("explicit_godot_presentation_boundary");
+    state["graph_coverage_state"] = authority_blockers.is_empty() ? String("complete") : String("partial");
+    return state;
+}
+
+static int native_daily_next_present_node(const Dictionary &bundle, int start_index) {
+    for (int i = start_index; i < NATIVE_DAILY_SLICE_GRAPH_SIZE; ++i) {
+        const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[i];
+        if (bundle.has(node.bundle_key)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
+    Dictionary out;
+    const auto t0 = std::chrono::high_resolution_clock::now();
+
+    auto finish_unconfigured = [&]() -> Dictionary {
+        out["rc"] = -1;
+        out["path"] = String("gdext_native_daily_slice");
+        out["fail_stage"] = String("native_world_not_configured");
+        out["fallback_reason"] = String("native world is not configured");
+        out["reason"] = out["fallback_reason"];
+        out["done"] = true;
+        out["progress_ratio"] = 0.0;
+        out["stage_name"] = String("native_world_not_configured");
+        out["substage"] = String("failure");
+        out["total_ms"] = 0.0;
+        out["native_ms"] = 0.0;
+        out["compute_ms"] = 0.0;
+        out["refresh_ms"] = 0.0;
+        out["flush_ms"] = 0.0;
+        out["published_slots"] = Array();
+        out["visual_dirty_intents"] = Array();
+        out["dirty_cells"] = 0;
+        out["breakdown"] = Dictionary();
+        out["dirty_flags"] = Dictionary();
+        out["fronts_changed"] = false;
+        out["fronts"] = _native_fronts_snapshot;
+        out["tick_count"] = _native_daily_tick_count;
+        return out;
+    };
+
+    if (!_native_world_configured) {
+        return finish_unconfigured();
+    }
+
+    auto as_dict = [](const Variant &v) -> Dictionary {
+        if (v.get_type() == Variant::DICTIONARY) {
+            return v;
+        }
+        return Dictionary();
+    };
+
+    auto compute_ms_from_breakdown = [](const Dictionary &breakdown) -> double {
+        return double(breakdown.get("climate_ms", 0.0)) +
+               double(breakdown.get("ocean_ms", 0.0)) +
+               double(breakdown.get("weather_ms", 0.0)) +
+               double(breakdown.get("hydrology_ms", 0.0)) +
+               double(breakdown.get("stage_b_ms", 0.0));
+    };
+
+    auto finish_with_failure = [&](const String &stage, const String &reason) -> Dictionary {
+        const auto t_fail = std::chrono::high_resolution_clock::now();
+        const double slice_ms = std::chrono::duration<double, std::milli>(t_fail - t0).count();
+        _native_daily_slice_elapsed_accum_ms += slice_ms;
+        Dictionary breakdown = _native_daily_slice_breakdown;
+        breakdown["fallback_reason"] = reason;
+        breakdown["native_ms"] = slice_ms;
+        breakdown["round_native_ms"] = _native_daily_slice_elapsed_accum_ms;
+        breakdown["compute_ms"] = compute_ms_from_breakdown(breakdown);
+        breakdown["stage_name"] = stage;
+        breakdown["substage"] = String("failure");
+        breakdown["progress_ratio"] =
+            NATIVE_DAILY_SLICE_GRAPH_SIZE > 0
+                ? double(_native_daily_slice_node_index) / double(NATIVE_DAILY_SLICE_GRAPH_SIZE)
+                : 0.0;
+
+        out["rc"] = -1;
+        out["path"] = String("gdext_native_daily_slice");
+        out["fail_stage"] = stage;
+        out["reason"] = reason;
+        out["fallback_reason"] = reason;
+        out["done"] = true;
+        out["progress_ratio"] = breakdown["progress_ratio"];
+        out["stage_name"] = stage;
+        out["substage"] = String("failure");
+        out["cursor_start"] = _native_daily_slice_node_index;
+        out["cursor_end"] = _native_daily_slice_node_index;
+        out["total_ms"] = slice_ms;
+        out["native_ms"] = slice_ms;
+        out["round_native_ms"] = _native_daily_slice_elapsed_accum_ms;
+        out["compute_ms"] = breakdown["compute_ms"];
+        out["refresh_ms"] = double(breakdown.get("native_context_ms", 0.0));
+        out["flush_ms"] = double(breakdown.get("render_prepare_ms", 0.0));
+        out["published_slots"] = Array();
+        out["visual_dirty_intents"] = Array();
+        out["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+        out["breakdown"] = breakdown;
+        out["dirty_flags"] = _native_dirty_report.duplicate();
+        out["fronts_changed"] = false;
+        out["fronts"] = _native_fronts_snapshot;
+        out["tick_count"] = _native_daily_tick_count;
+        _native_daily_report = out.duplicate(true);
+        _native_daily_slice_active = false;
+        return out;
+    };
+
+    if (!_native_daily_slice_active) {
+        if (!tick_knobs.has("native_daily_bundle")) {
+            return finish_with_failure(String("native_daily_bundle"), String("missing native_daily_bundle"));
+        }
+        Dictionary bundle = as_dict(tick_knobs.get("native_daily_bundle", Dictionary()));
+        if (bundle.is_empty()) {
+            return finish_with_failure(String("native_daily_bundle"), String("empty native_daily_bundle"));
+        }
+        if (native_daily_next_present_node(bundle, 0) < 0) {
+            return finish_with_failure(String("native_daily_bundle"), String("no pass knobs in native_daily_bundle"));
+        }
+
+        ++_native_daily_tick_count;
+        ++_native_daily_slice_round_id;
+        _native_daily_slice_active = true;
+        _native_daily_slice_node_index = 0;
+        _native_daily_slice_elapsed_accum_ms = 0.0;
+        _native_daily_slice_any_pass_ran = false;
+        _native_daily_slice_tick_knobs = tick_knobs.duplicate(true);
+        _native_daily_slice_bundle = bundle.duplicate(true);
+        _native_daily_slice_bundle_pass_keys = native_daily_collect_bundle_pass_keys(_native_daily_slice_bundle);
+        _native_daily_slice_retained_authority =
+            native_daily_collect_retained_gdscript_authority(_native_daily_slice_bundle);
+        _native_daily_slice_state_snapshot =
+            native_daily_collect_state_snapshot(_native_daily_slice_bundle, _native_daily_slice_retained_authority);
+
+        _native_dirty_report = Dictionary();
+        _native_dirty_report["last_day_index"] = int(_native_daily_slice_tick_knobs.get("day_index", 0));
+        _native_dirty_report["last_season_phase"] =
+            double(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
+        _native_dirty_report["atlas_dirty"] = false;
+        _native_dirty_report["enum_atlas_dirty"] = false;
+        _native_dirty_report["sea_ice_atlas_dirty"] = false;
+        _native_dirty_report["sea_ice_terrain_flip_count"] = 0;
+        _native_dirty_report["dirty_cell_count"] = 0;
+
+        _native_daily_slice_breakdown = Dictionary();
+        _native_daily_slice_breakdown["native_context_ms"] = 0.0;
+        _native_daily_slice_breakdown["season_ms"] = 0.0;
+        _native_daily_slice_breakdown["climate_ms"] = 0.0;
+        _native_daily_slice_breakdown["weather_ms"] = 0.0;
+        _native_daily_slice_breakdown["hydrology_ms"] = 0.0;
+        _native_daily_slice_breakdown["ocean_ms"] = 0.0;
+        _native_daily_slice_breakdown["stage_b_ms"] = 0.0;
+        _native_daily_slice_breakdown["render_prepare_ms"] = 0.0;
+        _native_daily_slice_breakdown["path"] = String("gdext_native_daily_slice");
+        _native_daily_slice_breakdown["fallback_reason"] = String();
+        _native_daily_slice_breakdown["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys;
+        _native_daily_slice_breakdown["retained_gdscript_authority"] = _native_daily_slice_retained_authority;
+        _native_daily_slice_breakdown["native_state_snapshot"] = _native_daily_slice_state_snapshot;
+        _native_daily_slice_breakdown["round_id"] = _native_daily_slice_round_id;
+
+        const auto t_context0 = std::chrono::high_resolution_clock::now();
+        if (bool(_native_daily_slice_bundle.get("refresh_slots_from_map", true))) {
+            refresh_slots_from_map();
+        }
+        const auto t_context1 = std::chrono::high_resolution_clock::now();
+        _native_daily_slice_breakdown["native_context_ms"] =
+            std::chrono::duration<double, std::milli>(t_context1 - t_context0).count();
+    }
+
+    if (tick_knobs.has("native_daily_bundle_patch")) {
+        Dictionary patch = as_dict(tick_knobs.get("native_daily_bundle_patch", Dictionary()));
+        if (!patch.is_empty()) {
+            Array keys = patch.keys();
+            for (int i = 0; i < keys.size(); ++i) {
+                Variant k = keys[i];
+                _native_daily_slice_bundle[k] = patch[k];
+            }
+            _native_daily_slice_bundle_pass_keys =
+                native_daily_collect_bundle_pass_keys(_native_daily_slice_bundle);
+            _native_daily_slice_breakdown["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys;
+            _native_daily_slice_breakdown["jit_patch_key_count"] =
+                int(_native_daily_slice_breakdown.get("jit_patch_key_count", 0)) + keys.size();
+        }
+    }
+
+    Dictionary breakdown = _native_daily_slice_breakdown;
+    auto node_name_string = [](const char *name) -> String {
+        if (std::strcmp(name, "climate_pass_a") == 0) return String("climate_pass_a");
+        if (std::strcmp(name, "ocean_water") == 0) return String("ocean_water");
+        if (std::strcmp(name, "ocean_land") == 0) return String("ocean_land");
+        if (std::strcmp(name, "climate_pass_b") == 0) return String("climate_pass_b");
+        if (std::strcmp(name, "wind_air") == 0) return String("wind_air");
+        if (std::strcmp(name, "wind_surface") == 0) return String("wind_surface");
+        if (std::strcmp(name, "sea_ice") == 0) return String("sea_ice");
+        if (std::strcmp(name, "transpiration") == 0) return String("transpiration");
+        if (std::strcmp(name, "albedo") == 0) return String("albedo");
+        if (std::strcmp(name, "vegetation_dynamics") == 0) return String("vegetation_dynamics");
+        if (std::strcmp(name, "climate_feedback") == 0) return String("climate_feedback");
+        if (std::strcmp(name, "stage_b") == 0) return String("stage_b");
+        if (std::strcmp(name, "weather") == 0) return String("weather");
+        if (std::strcmp(name, "runtime_hydrology") == 0) return String("runtime_hydrology");
+        if (std::strcmp(name, "stage_b_after_hydrology") == 0) return String("stage_b_after_hydrology");
+        return String("unknown");
+    };
+    auto node_key_string = [](const char *key) -> String {
+        if (std::strcmp(key, "climate_pass_a_struct") == 0) return String("climate_pass_a_struct");
+        if (std::strcmp(key, "ocean_water_knobs") == 0) return String("ocean_water_knobs");
+        if (std::strcmp(key, "ocean_land_knobs") == 0) return String("ocean_land_knobs");
+        if (std::strcmp(key, "climate_pass_b_knobs") == 0) return String("climate_pass_b_knobs");
+        if (std::strcmp(key, "wind_air_knobs") == 0) return String("wind_air_knobs");
+        if (std::strcmp(key, "wind_surface_knobs") == 0) return String("wind_surface_knobs");
+        if (std::strcmp(key, "sea_ice_knobs") == 0) return String("sea_ice_knobs");
+        if (std::strcmp(key, "transpiration_knobs") == 0) return String("transpiration_knobs");
+        if (std::strcmp(key, "albedo_knobs") == 0) return String("albedo_knobs");
+        if (std::strcmp(key, "vegetation_dynamics_knobs") == 0) return String("vegetation_dynamics_knobs");
+        if (std::strcmp(key, "climate_feedback_knobs") == 0) return String("climate_feedback_knobs");
+        if (std::strcmp(key, "stage_b_knobs") == 0) return String("stage_b_knobs");
+        if (std::strcmp(key, "weather_knobs") == 0) return String("weather_knobs");
+        if (std::strcmp(key, "runtime_hydrology_knobs") == 0) return String("runtime_hydrology_knobs");
+        if (std::strcmp(key, "stage_b_after_hydrology_knobs") == 0) return String("stage_b_after_hydrology_knobs");
+        return String("unknown");
+    };
+    auto exec_slice_node = [&](const NativeDailySliceNode &node) -> bool {
+        if (std::strcmp(node.name, "climate_pass_a") == 0) {
+            Dictionary cp_struct = as_dict(_native_daily_slice_bundle["climate_pass_a_struct"]);
+            const double phase = double(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
+            const double season_phase = double(_native_daily_slice_tick_knobs.get("season_phase", phase));
+            const double ms = run_climate_pass_a(cp_struct, phase, season_phase);
+            if (ms < 0.0) return false;
+            breakdown["pass_a_ms"] = ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "ocean_water") == 0) {
+            Dictionary water_knobs = as_dict(_native_daily_slice_bundle["ocean_water_knobs"]);
+            const double ms = run_ocean_water_pass(water_knobs);
+            if (ms < 0.0) return false;
+            _native_daily_slice_bundle["ocean_water_knobs"] = water_knobs;
+            if (water_knobs.has("anomaly_out") && _native_daily_slice_bundle.has("ocean_land_knobs")) {
+                Dictionary land_knobs = as_dict(_native_daily_slice_bundle["ocean_land_knobs"]);
+                land_knobs["anomaly_inout"] = water_knobs["anomaly_out"];
+                _native_daily_slice_bundle["ocean_land_knobs"] = land_knobs;
+            }
+            breakdown["ocean_water_ms"] = ms;
+            breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "ocean_land") == 0) {
+            Dictionary land_knobs = as_dict(_native_daily_slice_bundle["ocean_land_knobs"]);
+            const double ms = run_ocean_land_pass(land_knobs);
+            if (ms < 0.0) return false;
+            _native_daily_slice_bundle["ocean_land_knobs"] = land_knobs;
+            breakdown["ocean_land_ms"] = ms;
+            breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "climate_pass_b") == 0) {
+            const double ms = run_climate_pass_b(as_dict(_native_daily_slice_bundle["climate_pass_b_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["pass_b_ms"] = ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "wind_air") == 0) {
+            const double ms = run_wind_air_mass_pass(as_dict(_native_daily_slice_bundle["wind_air_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["wind_air_ms"] = ms;
+            breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "wind_surface") == 0) {
+            const double ms = run_wind_surface_pass(as_dict(_native_daily_slice_bundle["wind_surface_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["wind_surface_ms"] = ms;
+            breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "sea_ice") == 0) {
+            const float phase = float(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
+            const double ms = run_sea_ice_daily_pass(as_dict(_native_daily_slice_bundle["sea_ice_knobs"]), phase);
+            if (ms < 0.0) return false;
+            breakdown["sea_ice_ms"] = ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "transpiration") == 0) {
+            const double ms = run_transpiration_pass(as_dict(_native_daily_slice_bundle["transpiration_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["transp_ms"] = ms;
+            breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "stage_b") == 0 ||
+            std::strcmp(node.name, "stage_b_after_hydrology") == 0) {
+            const char *key = std::strcmp(node.name, "stage_b_after_hydrology") == 0
+                ? "stage_b_after_hydrology_knobs"
+                : "stage_b_knobs";
+            Dictionary stage_b_knobs = as_dict(_native_daily_slice_bundle[key]);
+            const double ms = run_stage_b_pass(stage_b_knobs);
+            if (ms < 0.0) return false;
+            breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+            breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
+            breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
+            breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+            if (stage_b_knobs.has("succession_indices")) {
+                breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
+                breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
+                breakdown["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+            }
+            return true;
+        }
+        if (std::strcmp(node.name, "albedo") == 0) {
+            const double ms = run_albedo_pass(as_dict(_native_daily_slice_bundle["albedo_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["albedo_ms"] = ms;
+            breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "vegetation_dynamics") == 0) {
+            const double ms = run_vegetation_dynamics_pass(as_dict(_native_daily_slice_bundle["vegetation_dynamics_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["veg_dyn_ms"] = ms;
+            breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "climate_feedback") == 0) {
+            const double ms = run_climate_feedback_pass(as_dict(_native_daily_slice_bundle["climate_feedback_knobs"]));
+            if (ms < 0.0) return false;
+            breakdown["feedback_ms"] = ms;
+            breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+            return true;
+        }
+        if (std::strcmp(node.name, "weather") == 0) {
+            Dictionary weather = run_weather_refresh_daily_pass(as_dict(_native_daily_slice_bundle["weather_knobs"]));
+            if (int(weather.get("rc", -1)) != 0) {
+                breakdown["__weather_fail_stage_dyn"] = weather.get("fail_stage", "unknown");
+                return false;
+            }
+            breakdown["weather_ms"] = double(weather.get("total_ms", 0.0));
+            Array keys = weather.keys();
+            for (int i = 0; i < keys.size(); ++i) {
+                Variant k = keys[i];
+                breakdown[k] = weather[k];
+            }
+            if (weather.has("fronts")) {
+                _native_fronts_snapshot = weather["fronts"];
+            }
+            return true;
+        }
+        if (std::strcmp(node.name, "runtime_hydrology") == 0) {
+            Dictionary hydro = run_runtime_hydrology_pass(as_dict(_native_daily_slice_bundle["runtime_hydrology_knobs"]));
+            const String fallback_reason = String(hydro.get("fallback_reason", ""));
+            if (!fallback_reason.is_empty() || !bool(hydro.get("published_to_slot", false))) {
+                breakdown["__hydrology_fail_reason"] =
+                    fallback_reason.is_empty() ? String("hydrology did not publish slots") : fallback_reason;
+                return false;
+            }
+            const double native_ms = double(hydro.get("native_ms", 0.0));
+            breakdown["hydrology_ms"] = native_ms;
+            breakdown["runtime_hydrology_ms"] = native_ms;
+            breakdown["hydrology_native_ms"] = native_ms;
+            breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
+            breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+            breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
+            breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
+            breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
+            breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+            breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
+            breakdown["hydrology_published_to_slot"] = true;
+            return true;
+        }
+        return false;
+    };
+    const int node_index = native_daily_next_present_node(_native_daily_slice_bundle,
+                                                          _native_daily_slice_node_index);
+    if (node_index < 0) {
+        if (!_native_daily_slice_any_pass_ran) {
+            return finish_with_failure(String("native_daily_bundle"), String("no pass knobs in native_daily_bundle"));
+        }
+    } else {
+        const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[node_index];
+        const bool ok = exec_slice_node(node);
+        if (!ok) {
+            _native_daily_slice_breakdown = breakdown;
+            String reason;
+            const String fail_stage = node_name_string(node.fail_stage);
+            if (fail_stage == String("weather")) {
+                reason = String(breakdown.get("__weather_fail_stage_dyn", "unknown"));
+                breakdown.erase("__weather_fail_stage_dyn");
+            } else if (fail_stage == String("runtime_hydrology")) {
+                reason = String(breakdown.get("__hydrology_fail_reason", "pass returned fallback"));
+                breakdown.erase("__hydrology_fail_reason");
+            } else {
+                reason = String("pass returned fallback");
+            }
+            _native_daily_slice_node_index = node_index;
+            return finish_with_failure(fail_stage, reason);
+        }
+        _native_daily_slice_any_pass_ran = true;
+        _native_daily_slice_node_index = node_index + 1;
+        const String node_name = node_name_string(node.name);
+        const String node_key = node_key_string(node.bundle_key);
+        breakdown["last_completed_node"] = node_name;
+        breakdown["stage_name"] = node_name;
+        breakdown["substage"] = node_key;
+        breakdown["cursor_start"] = node_index;
+        breakdown["cursor_end"] = node_index + 1;
+        breakdown["processed_nodes"] = int(breakdown.get("processed_nodes", 0)) + 1;
+        Dictionary node_report;
+        node_report["name"] = node_name;
+        node_report["bundle_key"] = node_key;
+        node_report["read_mask"] = int64_t(node.read_mask);
+        node_report["write_mask"] = int64_t(node.write_mask);
+        breakdown["node_report"] = node_report;
+        _native_daily_slice_breakdown = breakdown;
+    }
+
+    const int next_index = native_daily_next_present_node(_native_daily_slice_bundle,
+                                                          _native_daily_slice_node_index);
+    const bool done = next_index < 0;
+    if (done && bool(_native_daily_slice_bundle.get("flush_slots_to_map", true))) {
+        const auto t_flush0 = std::chrono::high_resolution_clock::now();
+        flush_slots_to_map();
+        const auto t_flush1 = std::chrono::high_resolution_clock::now();
+        breakdown["render_prepare_ms"] =
+            std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
+        _native_daily_slice_breakdown = breakdown;
+    }
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const double slice_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    _native_daily_slice_elapsed_accum_ms += slice_ms;
+
+    const double compute_ms = compute_ms_from_breakdown(breakdown);
+    const Array published_slots = done
+        ? native_daily_collect_published_slots(_native_daily_slice_bundle)
+        : Array();
+    const Array visual_dirty_intents = done
+        ? native_daily_collect_visual_dirty_intents(_native_daily_slice_bundle, breakdown, _native_dirty_report)
+        : Array();
+    const double progress_ratio = done
+        ? 1.0
+        : (NATIVE_DAILY_SLICE_GRAPH_SIZE > 0
+               ? double(_native_daily_slice_node_index) / double(NATIVE_DAILY_SLICE_GRAPH_SIZE)
+               : 1.0);
+
+    breakdown["total_ms"] = slice_ms;
+    breakdown["native_ms"] = slice_ms;
+    breakdown["round_native_ms"] = _native_daily_slice_elapsed_accum_ms;
+    breakdown["compute_ms"] = compute_ms;
+    breakdown["refresh_ms"] = double(breakdown.get("native_context_ms", 0.0));
+    breakdown["flush_ms"] = double(breakdown.get("render_prepare_ms", 0.0));
+    breakdown["published_slots"] = published_slots;
+    breakdown["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+    breakdown["visual_dirty_intents"] = visual_dirty_intents;
+    breakdown["native_state_snapshot"] = _native_daily_slice_state_snapshot;
+    Dictionary authority_report = _native_daily_slice_state_snapshot.get("authority_report", Dictionary());
+    if (done && bool(breakdown.get("hydrology_published_to_slot", false)) &&
+        authority_report.has("runtime_hydrology")) {
+        Dictionary hydrology_authority = authority_report["runtime_hydrology"];
+        hydrology_authority["phase"] = String("native_active_verified");
+        hydrology_authority["verified_publish"] = true;
+        hydrology_authority["simulation_authority"] = true;
+        hydrology_authority["blockers"] = Array();
+        authority_report["runtime_hydrology"] = hydrology_authority;
+    }
+    if (done && _native_daily_slice_bundle.has("sea_ice_knobs") &&
+        authority_report.has("sea_ice")) {
+        Dictionary sea_ice_authority = authority_report["sea_ice"];
+        sea_ice_authority["phase"] = String("native_active_verified");
+        sea_ice_authority["verified_publish"] = true;
+        sea_ice_authority["simulation_authority"] = true;
+        sea_ice_authority["blockers"] = Array();
+        authority_report["sea_ice"] = sea_ice_authority;
+    }
+    if (done && _native_daily_slice_bundle.has("weather_knobs") &&
+        authority_report.has("weather_transaction")) {
+        Dictionary weather_authority = authority_report["weather_transaction"];
+        const bool weather_publish_verified = bool(breakdown.get("field_commit_publish_verified", false));
+        const bool weather_fronts_changed =
+            bool(breakdown.get("weather_lut_changed", false)) ||
+            int(breakdown.get("fronts_count", 0)) > 0;
+        weather_authority["visible_publish_verified"] = weather_publish_verified;
+        weather_authority["fronts_changed"] = weather_fronts_changed;
+        if (weather_publish_verified &&
+            String(weather_authority.get("owner", "")) == String("native_active")) {
+            weather_authority["phase"] = String("native_active_verified");
+            weather_authority["simulation_authority"] = true;
+            weather_authority["blockers"] = Array();
+        }
+        authority_report["weather_transaction"] = weather_authority;
+    }
+    breakdown["authority_report"] = authority_report;
+    breakdown["authority_blockers"] = _native_daily_slice_state_snapshot.get("authority_blockers", Array());
+    breakdown["retained_boundaries"] = _native_daily_slice_state_snapshot.get("retained_boundaries", Array());
+    breakdown["retained_godot_boundaries"] = _native_daily_slice_state_snapshot.get("retained_godot_boundaries", Array());
+    breakdown["retained_boundary_policy"] =
+        _native_daily_slice_state_snapshot.get("retained_boundary_policy", String());
+    breakdown["graph_coverage_complete"] = Array(breakdown["authority_blockers"]).is_empty();
+    breakdown["graph_coverage_state"] =
+        _native_daily_slice_state_snapshot.get("graph_coverage_state", String("partial"));
+    breakdown["boundary_contract"] =
+        _native_daily_slice_bundle.get("native_daily_boundary_contract", Dictionary());
+    Dictionary boundary_contract = breakdown["boundary_contract"];
+    breakdown["bundle_key_count"] =
+        int(boundary_contract.get("bundle_key_count", _native_daily_slice_bundle.size()));
+    breakdown["tick_delta_key_count"] =
+        Array(boundary_contract.get("tick_delta_keys", Array())).size();
+    breakdown["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    const bool active_default_ready =
+        done &&
+        String(breakdown["graph_coverage_state"]) == String("complete") &&
+        Array(breakdown["authority_blockers"]).is_empty() &&
+        bool(_native_daily_slice_bundle.get("native_daily_legacy_daily_production_retired", false));
+    breakdown["native_daily_active_default_ready"] = active_default_ready;
+    breakdown["active_default_blockers"] = breakdown["authority_blockers"];
+    breakdown["fallback_mode"] =
+        active_default_ready ? String("explicit_failure_only") : String("legacy_sus_retained_until_active_default_validation");
+    PackedFloat32Array temperature_transport_anomaly_out;
+    if (_native_daily_slice_bundle.has("ocean_land_knobs")) {
+        Dictionary land_knobs = as_dict(_native_daily_slice_bundle["ocean_land_knobs"]);
+        if (land_knobs.has("anomaly_inout")) {
+            temperature_transport_anomaly_out = land_knobs["anomaly_inout"];
+        }
+    }
+    breakdown["done"] = done;
+    breakdown["progress_ratio"] = progress_ratio;
+    if (done) {
+        breakdown["stage_name"] = String("native_daily_complete");
+        breakdown["substage"] = String("round_complete");
+    }
+    _native_daily_slice_breakdown = breakdown;
+
+    out["rc"] = 0;
+    out["path"] = String("gdext_native_daily_slice");
+    out["fail_stage"] = String();
+    out["fallback_reason"] = String();
+    out["done"] = done;
+    out["progress_ratio"] = progress_ratio;
+    out["stage_name"] = breakdown.get("stage_name", String("native_daily_slice"));
+    out["substage"] = breakdown.get("substage", String());
+    out["cursor_start"] = breakdown.get("cursor_start", _native_daily_slice_node_index);
+    out["cursor_end"] = breakdown.get("cursor_end", _native_daily_slice_node_index);
+    out["node_index"] = _native_daily_slice_node_index;
+    out["next_node_index"] = done ? -1 : next_index;
+    out["round_id"] = _native_daily_slice_round_id;
+    out["total_ms"] = slice_ms;
+    out["native_ms"] = slice_ms;
+    out["round_native_ms"] = _native_daily_slice_elapsed_accum_ms;
+    out["compute_ms"] = compute_ms;
+    out["refresh_ms"] = double(breakdown.get("native_context_ms", 0.0));
+    out["flush_ms"] = double(breakdown.get("render_prepare_ms", 0.0));
+    out["published_slots"] = published_slots;
+    out["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+    out["visual_dirty_intents"] = visual_dirty_intents;
+    out["retained_gdscript_authority"] = _native_daily_slice_retained_authority;
+    out["native_state_snapshot"] = _native_daily_slice_state_snapshot;
+    out["authority_report"] = authority_report;
+    out["authority_blockers"] = _native_daily_slice_state_snapshot.get("authority_blockers", Array());
+    out["retained_boundaries"] = _native_daily_slice_state_snapshot.get("retained_boundaries", Array());
+    out["retained_godot_boundaries"] = _native_daily_slice_state_snapshot.get("retained_godot_boundaries", Array());
+    out["retained_boundary_policy"] =
+        _native_daily_slice_state_snapshot.get("retained_boundary_policy", String());
+    out["graph_coverage_complete"] = Array(out["authority_blockers"]).is_empty();
+    out["graph_coverage_state"] =
+        _native_daily_slice_state_snapshot.get("graph_coverage_state", String("partial"));
+    out["boundary_contract"] = _native_daily_slice_bundle.get("native_daily_boundary_contract", Dictionary());
+    out["bundle_key_count"] = breakdown["bundle_key_count"];
+    out["tick_delta_key_count"] = breakdown["tick_delta_key_count"];
+    out["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    out["native_daily_active_default_ready"] = active_default_ready;
+    out["active_default_blockers"] = out["authority_blockers"];
+    out["fallback_mode"] = breakdown["fallback_mode"];
+    if (temperature_transport_anomaly_out.size() > 0) {
+        out["temperature_transport_anomaly_out"] = temperature_transport_anomaly_out;
+    }
+    out["breakdown"] = breakdown;
+    out["dirty_flags"] = _native_dirty_report.duplicate();
+    out["fronts_changed"] = done &&
+        (bool(breakdown.get("weather_lut_changed", false)) ||
+         int(breakdown.get("fronts_count", 0)) > 0);
+    out["fronts"] = _native_fronts_snapshot;
+    out["tick_count"] = _native_daily_tick_count;
+    _native_daily_report = out.duplicate(true);
+
+    if (done) {
+        _native_daily_slice_active = false;
+    }
+
+    return out;
+}
+
 
 Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     Dictionary out;
@@ -61,8 +1088,17 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
 
     if (!_native_world_configured) {
         out["rc"] = -1;
+        out["path"] = String("gdext_native_daily");
         out["fail_stage"] = String("native_world_not_configured");
+        out["fallback_reason"] = String("native world is not configured");
         out["total_ms"] = 0.0;
+        out["native_ms"] = 0.0;
+        out["compute_ms"] = 0.0;
+        out["refresh_ms"] = 0.0;
+        out["flush_ms"] = 0.0;
+        out["published_slots"] = Array();
+        out["visual_dirty_intents"] = Array();
+        out["dirty_cells"] = 0;
         return out;
     }
 
@@ -72,13 +1108,14 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         Array pass_keys;
         Array required_keys;
         Array missing_pass_keys;
+        Dictionary bundle;
         Variant required_v = tick_knobs.get("required_pass_keys", Array());
         if (required_v.get_type() == Variant::ARRAY) {
             required_keys = required_v;
         }
         if (tick_knobs.has("native_daily_bundle") &&
             Variant(tick_knobs["native_daily_bundle"]).get_type() == Variant::DICTIONARY) {
-            Dictionary bundle = tick_knobs["native_daily_bundle"];
+            bundle = tick_knobs["native_daily_bundle"];
             has_bundle = !bundle.is_empty();
             auto record_pass = [&](const char *key) {
                 if (bundle.has(key)) {
@@ -90,6 +1127,8 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             record_pass("ocean_water_knobs");
             record_pass("ocean_land_knobs");
             record_pass("climate_pass_b_knobs");
+            record_pass("wind_air_knobs");
+            record_pass("wind_surface_knobs");
             record_pass("sea_ice_knobs");
             record_pass("transpiration_knobs");
             record_pass("albedo_knobs");
@@ -97,6 +1136,8 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             record_pass("climate_feedback_knobs");
             record_pass("stage_b_knobs");
             record_pass("weather_knobs");
+            record_pass("runtime_hydrology_knobs");
+            record_pass("stage_b_after_hydrology_knobs");
             for (int i = 0; i < required_keys.size(); ++i) {
                 const String key = String(required_keys[i]);
                 if (!bundle.has(key)) {
@@ -107,11 +1148,13 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         const bool has_required_passes = missing_pass_keys.is_empty();
         const bool authoritative_ready = has_bundle && has_pass && has_required_passes;
         out["rc"] = authoritative_ready ? 0 : -1;
+        out["path"] = String("gdext_native_daily_probe");
         out["fail_stage"] = authoritative_ready
             ? String()
             : (!has_bundle ? String("native_daily_bundle_missing")
                            : (!has_pass ? String("native_daily_bundle_no_passes")
                                         : String("native_daily_bundle_missing_required_passes")));
+        out["fallback_reason"] = authoritative_ready ? String() : out["fail_stage"];
         out["configured"] = true;
         out["cell_count"] = _native_world_cell_count;
         out["pass_keys"] = pass_keys;
@@ -119,6 +1162,222 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         out["missing_pass_keys"] = missing_pass_keys;
         out["authoritative_ready"] = authoritative_ready;
         out["total_ms"] = 0.0;
+        out["native_ms"] = 0.0;
+        out["compute_ms"] = 0.0;
+        out["refresh_ms"] = 0.0;
+        out["flush_ms"] = 0.0;
+        out["published_slots"] = Array();
+        out["visual_dirty_intents"] = Array();
+        out["dirty_cells"] = 0;
+        Dictionary state;
+        state["tick_owner"] = String("DCWorldExt.native_daily_graph");
+        String climate_round_state_owner = String("gdscript_retained");
+        if (bundle.has("climate_round_state_snapshot")) {
+            Dictionary climate_round_state = bundle["climate_round_state_snapshot"];
+            state["climate_round_state"] = climate_round_state;
+            if (climate_round_state.has("native_probe_state")) {
+                Dictionary native_probe_state = climate_round_state["native_probe_state"];
+                const bool climate_round_ready = bool(native_probe_state.get("climate_round_authority_ready", false));
+                if (climate_round_ready &&
+                    (bool(native_probe_state.get("simulation_authority", false)) ||
+                     bool(bundle.get("climate_round_active_owner_requested", false)))) {
+                    climate_round_state_owner = String("native_active");
+                } else if (climate_round_ready) {
+                    climate_round_state_owner = String("native_ready");
+                }
+            }
+        }
+        state["climate_round_state_owner"] = climate_round_state_owner;
+        Dictionary weather_readiness = bundle.has("weather_native_daily_readiness")
+            ? Dictionary(bundle["weather_native_daily_readiness"])
+            : Dictionary();
+        const bool weather_native_ready = bool(weather_readiness.get("ready", false));
+        const bool weather_active_requested = bool(bundle.get("weather_transaction_active_owner_requested", false));
+        state["weather_transaction_state_owner"] =
+            (weather_native_ready && weather_active_requested)
+                ? String("native_active")
+                : (weather_native_ready ? String("native_ready") : String("gdscript_retained"));
+        Dictionary ocean_physical_state;
+        if (bundle.has("ocean_physical_state_snapshot")) {
+            ocean_physical_state = Dictionary(bundle["ocean_physical_state_snapshot"]);
+            state["ocean_physical_state"] = ocean_physical_state;
+        }
+        state["ocean_physical_state_owner"] =
+            ocean_physical_state.has("owner")
+                ? String(ocean_physical_state.get("owner", "gdscript_retained"))
+                : String("gdscript_retained");
+        Dictionary season_refresh_state;
+        if (bundle.has("season_refresh_state_snapshot")) {
+            season_refresh_state = Dictionary(bundle["season_refresh_state_snapshot"]);
+            state["season_refresh_state"] = season_refresh_state;
+        }
+        state["season_refresh_state_owner"] =
+            season_refresh_state.has("owner")
+                ? String(season_refresh_state.get("owner", "gdscript_retained"))
+                : String("gdscript_retained");
+        state["visual_upload_state_owner"] = String("godot_retained");
+        state["fallback_owner"] =
+            bool(bundle.get("legacy_sus_fallback_enabled", true))
+                ? String("gdscript_legacy_sus")
+                : String("explicit_failure_only");
+        Array authority_blockers;
+        authority_blockers.append(String("weather_transaction_state_gdscript"));
+        authority_blockers.append(String("ocean_physical_state_gdscript"));
+        authority_blockers.append(String("season_refresh_state_gdscript"));
+        if (!bundle.has("runtime_hydrology_knobs")) {
+            authority_blockers.append(String("runtime_hydrology"));
+        }
+        if (!bundle.has("sea_ice_knobs")) {
+            authority_blockers.append(String("sea_ice"));
+        }
+        if (bool(bundle.get("legacy_sus_fallback_enabled", true))) {
+            authority_blockers.append(String("legacy_sus_fallback_enabled"));
+        }
+        Array retained_boundaries = native_daily_collect_retained_boundaries(bundle);
+        Dictionary authority_report;
+        Dictionary weather_authority;
+        weather_authority["owner"] = state["weather_transaction_state_owner"];
+        weather_authority["phase"] =
+            (weather_native_ready && weather_active_requested)
+                ? String("native_active_visible_publish")
+                : (weather_native_ready ? String("native_ready_visible_publish") : String("probe_bundle_only"));
+        weather_authority["readiness"] = weather_readiness;
+        weather_authority["visible_publish_ready"] = weather_native_ready;
+        weather_authority["active_owner_requested"] = weather_active_requested;
+        weather_authority["simulation_authority"] = weather_native_ready && weather_active_requested;
+        weather_authority["front_snapshot_ready"] = bool(weather_readiness.get("has_result_apply", false));
+        weather_authority["weather_lut_intent_ready"] = bool(weather_readiness.get("has_weather_lut_publish", false));
+        weather_authority["publish_slots_expected"] =
+            weather_native_ready
+                ? Array::make(String("cell_weather_type"),
+                              String("cell_weather_intensity"),
+                              String("cell_weather_cloud"),
+                              String("cell_weather_precip"),
+                              String("cell_weather_field_init"),
+                              String("cell_weather_transition_alpha"))
+                : Array();
+        weather_authority["retained_boundaries"] =
+            Array::make(String("front_objects_gdscript"),
+                        String("weather_lut_upload_godot_boundary"));
+        weather_authority["blockers"] =
+            weather_native_ready
+                ? Array::make(String("probe_does_not_execute_pass"))
+                : Array::make(String("weather_publish_not_executed_in_probe"),
+                              String(weather_readiness.get("reason", "not_ready")));
+        authority_report["weather_transaction"] = weather_authority;
+        Dictionary hydrology_authority;
+        hydrology_authority["owner"] =
+            bundle.has("runtime_hydrology_knobs") ? String("native_probe") : String("gdscript_retained");
+        hydrology_authority["phase"] =
+            bundle.has("runtime_hydrology_knobs") ? String("probe_bundle_node_present") : String("legacy_weather_chain");
+        hydrology_authority["simulation_authority"] = false;
+        hydrology_authority["published_slots_expected"] =
+            bundle.has("runtime_hydrology_knobs")
+                ? Array::make(String("cell_soil_moisture"),
+                              String("cell_water_balance_30d"),
+                              String("cell_river_discharge"),
+                              String("cell_river_discharge_30d"),
+                              String("cell_river_storage"),
+                              String("cell_groundwater_storage"),
+                              String("cell_surface_runoff"))
+                : Array();
+        hydrology_authority["blockers"] =
+            bundle.has("runtime_hydrology_knobs")
+                ? Array::make(String("probe_does_not_execute_pass"))
+                : Array::make(String("runtime_hydrology_knobs_missing"));
+        authority_report["runtime_hydrology"] = hydrology_authority;
+        Dictionary sea_ice_authority;
+        sea_ice_authority["owner"] =
+            bundle.has("sea_ice_knobs") ? String("native_probe") : String("gdscript_retained");
+        sea_ice_authority["phase"] =
+            bundle.has("sea_ice_knobs") ? String("probe_bundle_node_present") : String("legacy_climate_or_sea_ice_job");
+        sea_ice_authority["simulation_authority"] = false;
+        sea_ice_authority["published_slots_expected"] =
+            bundle.has("sea_ice_knobs")
+                ? Array::make(String("cell_sea_ice_frac"),
+                              String("cell_temp"),
+                              String("cell_moisture"))
+                : Array();
+        sea_ice_authority["blockers"] =
+            bundle.has("sea_ice_knobs")
+                ? Array::make(String("probe_does_not_execute_pass"))
+                : Array::make(String("sea_ice_knobs_missing"));
+        sea_ice_authority["retained_boundaries"] =
+            bundle.has("sea_ice_knobs")
+                ? Array::make(String("terrain_flip_visibility_gdscript"),
+                              String("sea_ice_visual_upload_godot"))
+                : Array();
+        authority_report["sea_ice"] = sea_ice_authority;
+        Dictionary ocean_authority;
+        ocean_authority["owner"] = state["ocean_physical_state_owner"];
+        ocean_authority["phase"] =
+            String(state["ocean_physical_state_owner"]) == String("native_ready_probe")
+                ? String("native_ready_probe")
+                : String("gdscript_stage_machine");
+        ocean_authority["state"] = ocean_physical_state;
+        ocean_authority["native_owned_output_slots"] =
+            ocean_physical_state.get("native_owned_output_slots", Array());
+        ocean_authority["blockers"] =
+            Array::make(String("probe_does_not_execute_pass"),
+                        String("ocean_physical_owner_not_active"));
+        ocean_authority["retained_boundaries"] =
+            ocean_physical_state.get("remaining_gdscript_authority",
+                Array::make(String("visual_raster_boundary_godot"),
+                            String("texture_commit_boundary_godot")));
+        authority_report["ocean_physical"] = ocean_authority;
+        Dictionary season_authority;
+        season_authority["owner"] = state["season_refresh_state_owner"];
+        season_authority["phase"] =
+            String(state["season_refresh_state_owner"]) == String("native_ready_probe")
+                ? String("native_ready_cadence_probe")
+                : String("gdscript_cadence");
+        season_authority["state"] = season_refresh_state;
+        season_authority["simulation_slot_dirty_intents"] =
+            season_refresh_state.get("simulation_slot_dirty_intents", Array());
+        season_authority["visual_dirty_intents"] =
+            season_refresh_state.get("visual_dirty_intents", Array());
+        season_authority["blockers"] =
+            Array::make(String("probe_does_not_execute_pass"),
+                        String("season_refresh_owner_not_active"));
+        season_authority["retained_boundaries"] =
+            season_refresh_state.get("visual_dirty_intents",
+                Array::make(String("atlas_queue_godot"),
+                            String("detail_scatter_godot")));
+        authority_report["season_refresh"] = season_authority;
+        Dictionary visual_authority;
+        visual_authority["owner"] = state["visual_upload_state_owner"];
+        visual_authority["phase"] = String("godot_upload_boundary");
+        visual_authority["blockers"] = Array();
+        visual_authority["retained_boundaries"] = Array::make(String("image_texture_upload_godot"));
+        authority_report["visual_upload"] = visual_authority;
+        Dictionary fallback_authority;
+        const bool legacy_fallback_enabled = bool(bundle.get("legacy_sus_fallback_enabled", true));
+        fallback_authority["owner"] = state["fallback_owner"];
+        fallback_authority["phase"] =
+            legacy_fallback_enabled ? String("probe_fallback_retained") : String("fallback_test_only");
+        fallback_authority["blockers"] =
+            legacy_fallback_enabled ? Array::make(String("legacy_sus_fallback_enabled")) : Array();
+        authority_report["fallback"] = fallback_authority;
+        state["authority_report"] = authority_report;
+        state["authority_blockers"] = authority_blockers;
+        state["retained_boundaries"] = retained_boundaries;
+        state["retained_godot_boundaries"] = retained_boundaries;
+        state["retained_boundary_policy"] = String("explicit_godot_presentation_boundary");
+        state["graph_coverage_state"] = String("probe_partial");
+        out["native_state_snapshot"] = state;
+        out["authority_blockers"] = authority_blockers;
+        out["retained_boundaries"] = retained_boundaries;
+        out["retained_godot_boundaries"] = retained_boundaries;
+        out["retained_boundary_policy"] = state["retained_boundary_policy"];
+        out["graph_coverage_state"] = String("probe_partial");
+        out["boundary_contract"] = bundle.get("native_daily_boundary_contract", Dictionary());
+        Dictionary boundary_contract = out["boundary_contract"];
+        out["bundle_key_count"] = int(boundary_contract.get("bundle_key_count", bundle.size()));
+        out["tick_delta_key_count"] = Array(boundary_contract.get("tick_delta_keys", Array())).size();
+        out["runtime_config_report"] = _native_runtime_config.duplicate(true);
+        out["native_daily_active_default_ready"] = false;
+        out["active_default_blockers"] = out["authority_blockers"];
+        out["fallback_mode"] = String("legacy_sus_retained_until_active_default_validation");
         return out;
     }
 
@@ -136,17 +1395,39 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     breakdown["season_ms"] = 0.0;
     breakdown["climate_ms"] = 0.0;
     breakdown["weather_ms"] = 0.0;
+    breakdown["hydrology_ms"] = 0.0;
     breakdown["ocean_ms"] = 0.0;
     breakdown["stage_b_ms"] = 0.0;
     breakdown["render_prepare_ms"] = 0.0;
+    breakdown["path"] = String("gdext_native_daily");
+    breakdown["fallback_reason"] = String();
 
     auto finish_with_failure = [&](const char *stage, const String &reason) -> Dictionary {
         const auto t_fail = std::chrono::high_resolution_clock::now();
         const double total_ms = std::chrono::duration<double, std::milli>(t_fail - t0).count();
         out["rc"] = -1;
+        out["path"] = String("gdext_native_daily");
         out["fail_stage"] = String(stage);
         out["reason"] = reason;
+        out["fallback_reason"] = reason;
         out["total_ms"] = total_ms;
+        out["native_ms"] = total_ms;
+        out["compute_ms"] = double(breakdown.get("climate_ms", 0.0)) +
+                            double(breakdown.get("ocean_ms", 0.0)) +
+                            double(breakdown.get("weather_ms", 0.0)) +
+                            double(breakdown.get("hydrology_ms", 0.0)) +
+                            double(breakdown.get("stage_b_ms", 0.0));
+        out["refresh_ms"] = double(breakdown.get("native_context_ms", 0.0));
+        out["flush_ms"] = double(breakdown.get("render_prepare_ms", 0.0));
+        out["published_slots"] = Array();
+        out["visual_dirty_intents"] = Array();
+        out["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+        out["native_state_snapshot"] = breakdown.get("native_state_snapshot", Dictionary());
+        breakdown["fallback_reason"] = reason;
+        breakdown["native_ms"] = total_ms;
+        breakdown["compute_ms"] = out["compute_ms"];
+        breakdown["refresh_ms"] = out["refresh_ms"];
+        breakdown["flush_ms"] = out["flush_ms"];
         out["breakdown"] = breakdown;
         out["dirty_flags"] = _native_dirty_report.duplicate();
         out["fronts_changed"] = false;
@@ -170,6 +1451,370 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         }
     };
 
+    auto append_unique = [](Array &arr, const String &value) {
+        for (int i = 0; i < arr.size(); ++i) {
+            if (String(arr[i]) == value) {
+                return;
+            }
+        }
+        arr.append(value);
+    };
+
+    auto collect_bundle_pass_keys = [&](const Dictionary &bundle_dict) -> Array {
+        Array keys;
+        auto record_key = [&](const char *key) {
+            if (bundle_dict.has(key)) {
+                keys.append(String(key));
+            }
+        };
+        record_key("climate_pass_a_struct");
+        record_key("ocean_water_knobs");
+        record_key("ocean_land_knobs");
+        record_key("climate_pass_b_knobs");
+        record_key("wind_air_knobs");
+        record_key("wind_surface_knobs");
+        record_key("sea_ice_knobs");
+        record_key("transpiration_knobs");
+        record_key("albedo_knobs");
+        record_key("vegetation_dynamics_knobs");
+        record_key("climate_feedback_knobs");
+        record_key("stage_b_knobs");
+        record_key("weather_knobs");
+        record_key("runtime_hydrology_knobs");
+        record_key("stage_b_after_hydrology_knobs");
+        return keys;
+    };
+
+    auto collect_published_slots = [&](const Dictionary &bundle_dict) -> Array {
+        Array slots;
+        if (bundle_dict.has("climate_pass_a_struct") || bundle_dict.has("climate_pass_b_knobs") ||
+            bundle_dict.has("ocean_water_knobs") || bundle_dict.has("ocean_land_knobs") ||
+            bundle_dict.has("wind_air_knobs") || bundle_dict.has("wind_surface_knobs") ||
+            bundle_dict.has("sea_ice_knobs") || bundle_dict.has("transpiration_knobs")) {
+            append_unique(slots, String("cell_temp"));
+            append_unique(slots, String("cell_moisture"));
+            append_unique(slots, String("cell_snow_cover"));
+            append_unique(slots, String("cell_sea_ice_frac"));
+            append_unique(slots, String("cell_air_mass_temp_anomaly"));
+            append_unique(slots, String("cell_ocean_thermal_anomaly"));
+            append_unique(slots, String("cell_local_thermal_anomaly"));
+        }
+        if (bundle_dict.has("stage_b_knobs") || bundle_dict.has("stage_b_after_hydrology_knobs") ||
+            bundle_dict.has("albedo_knobs") ||
+            bundle_dict.has("vegetation_dynamics_knobs") || bundle_dict.has("climate_feedback_knobs")) {
+            append_unique(slots, String("cell_cover"));
+            append_unique(slots, String("cell_vegetation"));
+            append_unique(slots, String("cell_vegetation_vitality"));
+        }
+        if (bundle_dict.has("weather_knobs")) {
+            append_unique(slots, String("cell_weather_type"));
+            append_unique(slots, String("cell_weather_intensity"));
+            append_unique(slots, String("cell_weather_cloud"));
+            append_unique(slots, String("cell_weather_precip"));
+            append_unique(slots, String("cell_weather_field_init"));
+            append_unique(slots, String("cell_weather_transition_alpha"));
+        }
+        if (bundle_dict.has("runtime_hydrology_knobs")) {
+            append_unique(slots, String("cell_soil_moisture"));
+            append_unique(slots, String("cell_water_balance_30d"));
+            append_unique(slots, String("cell_river_discharge"));
+            append_unique(slots, String("cell_river_discharge_30d"));
+            append_unique(slots, String("cell_river_storage"));
+            append_unique(slots, String("cell_groundwater_storage"));
+            append_unique(slots, String("cell_surface_runoff"));
+        }
+        return slots;
+    };
+
+    auto collect_retained_gdscript_authority = [&](const Dictionary &bundle_dict) -> Array {
+        Array retained;
+        if (!bundle_dict.has("wind_air_knobs")) {
+            retained.append(String("wind_air"));
+        }
+        if (!bundle_dict.has("wind_surface_knobs")) {
+            retained.append(String("wind_surface"));
+        }
+        if (bool(bundle_dict.get("runtime_hydrology_requested", false)) &&
+            !bundle_dict.has("runtime_hydrology_knobs")) {
+            retained.append(String("runtime_hydrology"));
+        }
+        if (!bundle_dict.has("sea_ice_knobs")) {
+            retained.append(String("sea_ice"));
+        }
+        return retained;
+    };
+
+    auto collect_visual_dirty_intents = [&](const Dictionary &bundle_dict,
+                                            const Dictionary &breakdown_dict) -> Array {
+        Array intents;
+        if (bool(_native_dirty_report.get("atlas_dirty", false))) {
+            append_unique(intents, String("atlas"));
+        }
+        if (bool(_native_dirty_report.get("enum_atlas_dirty", false))) {
+            append_unique(intents, String("enum_atlas"));
+        }
+        if (bool(_native_dirty_report.get("sea_ice_atlas_dirty", false))) {
+            append_unique(intents, String("sea_ice_atlas"));
+        }
+        if (bundle_dict.has("weather_knobs") &&
+            (bool(breakdown_dict.get("weather_lut_changed", false)) ||
+             breakdown_dict.has("weather_lut"))) {
+            append_unique(intents, String("weather_lut"));
+        }
+        if (breakdown_dict.has("succession_indices") ||
+            int(breakdown_dict.get("stat_succession_count", 0)) > 0) {
+            append_unique(intents, String("detail_scatter"));
+        }
+        return intents;
+    };
+
+    auto collect_native_state_snapshot = [&](const Dictionary &bundle_dict) -> Dictionary {
+        Dictionary state;
+        state["tick_owner"] = String("DCWorldExt.native_daily_graph");
+        String climate_round_state_owner = String("gdscript_retained");
+        Dictionary climate_native_probe_state;
+        if (bundle_dict.has("climate_round_state_snapshot")) {
+            Dictionary climate_round_state = as_dict(bundle_dict["climate_round_state_snapshot"]);
+            state["climate_round_state"] = climate_round_state;
+            if (climate_round_state.has("native_probe_state")) {
+                Dictionary native_probe_state = as_dict(climate_round_state["native_probe_state"]);
+                climate_native_probe_state = native_probe_state;
+                const bool climate_round_ready = bool(native_probe_state.get("climate_round_authority_ready", false));
+                if (climate_round_ready &&
+                    (bool(native_probe_state.get("simulation_authority", false)) ||
+                     bool(bundle_dict.get("climate_round_active_owner_requested", false)))) {
+                    climate_round_state_owner = String("native_active");
+                } else if (climate_round_ready) {
+                    climate_round_state_owner = String("native_ready");
+                }
+            }
+        }
+        state["climate_round_state_owner"] = climate_round_state_owner;
+        Dictionary weather_readiness = as_dict(bundle_dict.get("weather_native_daily_readiness", Dictionary()));
+        const bool weather_native_ready = bool(weather_readiness.get("ready", false));
+        const bool weather_active_requested = bool(bundle_dict.get("weather_transaction_active_owner_requested", false));
+        state["weather_transaction_state_owner"] =
+            (weather_native_ready && weather_active_requested)
+                ? String("native_active")
+                : (weather_native_ready
+                ? String("native_ready")
+                : (bundle_dict.has("weather_knobs")
+                       ? String("native_transaction_with_gdscript_apply")
+                       : String("gdscript_retained")));
+        Dictionary ocean_physical_state = as_dict(bundle_dict.get("ocean_physical_state_snapshot", Dictionary()));
+        if (!ocean_physical_state.is_empty()) {
+            state["ocean_physical_state"] = ocean_physical_state;
+        }
+        state["ocean_physical_state_owner"] =
+            ocean_physical_state.has("owner")
+                ? String(ocean_physical_state.get("owner", "gdscript_retained"))
+                : String("gdscript_retained");
+        Dictionary season_refresh_state = as_dict(bundle_dict.get("season_refresh_state_snapshot", Dictionary()));
+        if (!season_refresh_state.is_empty()) {
+            state["season_refresh_state"] = season_refresh_state;
+        }
+        Dictionary season_cadence_policy = as_dict(bundle_dict.get("season_cadence_policy", Dictionary()));
+        if (!season_cadence_policy.is_empty()) {
+            state["season_cadence_policy"] = season_cadence_policy;
+        }
+        state["season_refresh_state_owner"] =
+            season_refresh_state.has("owner")
+                ? String(season_refresh_state.get("owner", "gdscript_retained"))
+                : String("gdscript_retained");
+        state["visual_upload_state_owner"] = String("godot_retained");
+        state["fallback_owner"] =
+            bool(bundle_dict.get("legacy_sus_fallback_enabled", true))
+                ? String("gdscript_legacy_sus")
+                : String("explicit_failure_only");
+        Array authority_blockers = collect_retained_gdscript_authority(bundle_dict);
+        if (climate_round_state_owner != String("native_active")) {
+            append_unique(authority_blockers, String("climate_round"));
+        }
+        if (bundle_dict.has("weather_knobs") &&
+            String(state["weather_transaction_state_owner"]) != String("native_active")) {
+            append_unique(authority_blockers, String("weather_transaction"));
+        }
+        if (String(state["ocean_physical_state_owner"]) != String("native_active")) {
+            append_unique(authority_blockers, String("ocean_currents_physical_state"));
+        }
+        if (String(state["season_refresh_state_owner"]) != String("native_active")) {
+            append_unique(authority_blockers, String("season_refresh"));
+        }
+        if (bool(bundle_dict.get("legacy_sus_fallback_enabled", true))) {
+            append_unique(authority_blockers, String("legacy_sus_fallback_enabled"));
+        }
+        Array retained_boundaries = native_daily_collect_retained_boundaries(bundle_dict);
+        Dictionary authority_report;
+        Dictionary climate_authority;
+        climate_authority["owner"] = climate_round_state_owner;
+        climate_authority["phase"] =
+            climate_round_state_owner == String("native_active")
+                ? String("active_owner_gate")
+                : (climate_round_state_owner == String("native_ready")
+                       ? String("native_ready_probe")
+                       : String("gdscript_state_machine"));
+        climate_authority["simulation_authority"] = climate_round_state_owner == String("native_active");
+        climate_authority["remaining_gdscript_authority"] =
+            climate_native_probe_state.get("remaining_gdscript_authority", Array());
+        authority_report["climate_round"] = climate_authority;
+        Dictionary weather_authority;
+        weather_authority["owner"] = state["weather_transaction_state_owner"];
+        weather_authority["phase"] =
+            (weather_native_ready && weather_active_requested)
+                ? String("native_active_visible_publish")
+                : (weather_native_ready
+                ? String("native_ready_visible_publish")
+                : (bundle_dict.has("weather_knobs")
+                       ? String("native_transaction_with_gdscript_apply")
+                       : String("gdscript_retained")));
+        weather_authority["readiness"] = weather_readiness;
+        weather_authority["visible_publish_ready"] = weather_native_ready;
+        weather_authority["active_owner_requested"] = weather_active_requested;
+        weather_authority["simulation_authority"] = weather_native_ready && weather_active_requested;
+        weather_authority["front_snapshot_ready"] = bool(weather_readiness.get("has_result_apply", false));
+        weather_authority["weather_lut_intent_ready"] = bool(weather_readiness.get("has_weather_lut_publish", false));
+        weather_authority["publish_slots_expected"] =
+            weather_native_ready || bundle_dict.has("weather_knobs")
+                ? Array::make(String("cell_weather_type"),
+                              String("cell_weather_intensity"),
+                              String("cell_weather_cloud"),
+                              String("cell_weather_precip"),
+                              String("cell_weather_field_init"),
+                              String("cell_weather_transition_alpha"))
+                : Array();
+        weather_authority["retained_boundaries"] =
+            Array::make(String("front_objects_gdscript"),
+                        String("weather_lut_upload_godot_boundary"));
+        weather_authority["blockers"] =
+            weather_native_ready
+                ? Array()
+                : Array::make(String("weather_transaction_state_gdscript"),
+                              String(weather_readiness.get("reason", "not_ready")));
+        authority_report["weather_transaction"] = weather_authority;
+        Dictionary hydrology_authority;
+        hydrology_authority["owner"] =
+            bundle_dict.has("runtime_hydrology_knobs") ? String("native_active") : String("gdscript_retained");
+        hydrology_authority["phase"] =
+            bundle_dict.has("runtime_hydrology_knobs") ? String("native_graph_node") : String("legacy_weather_chain");
+        hydrology_authority["simulation_authority"] = bundle_dict.has("runtime_hydrology_knobs");
+        hydrology_authority["published_slots_expected"] =
+            bundle_dict.has("runtime_hydrology_knobs")
+                ? Array::make(String("cell_soil_moisture"),
+                              String("cell_water_balance_30d"),
+                              String("cell_river_discharge"),
+                              String("cell_river_discharge_30d"),
+                              String("cell_river_storage"),
+                              String("cell_groundwater_storage"),
+                              String("cell_surface_runoff"))
+                : Array();
+        hydrology_authority["blockers"] =
+            bundle_dict.has("runtime_hydrology_knobs")
+                ? Array()
+                : Array::make(String("runtime_hydrology_knobs_missing"));
+        authority_report["runtime_hydrology"] = hydrology_authority;
+        Dictionary sea_ice_authority;
+        sea_ice_authority["owner"] =
+            bundle_dict.has("sea_ice_knobs") ? String("native_active") : String("gdscript_retained");
+        sea_ice_authority["phase"] =
+            bundle_dict.has("sea_ice_knobs") ? String("native_graph_node") : String("legacy_climate_or_sea_ice_job");
+        sea_ice_authority["simulation_authority"] = bundle_dict.has("sea_ice_knobs");
+        sea_ice_authority["published_slots_expected"] =
+            bundle_dict.has("sea_ice_knobs")
+                ? Array::make(String("cell_sea_ice_frac"),
+                              String("cell_temp"),
+                              String("cell_moisture"))
+                : Array();
+        sea_ice_authority["blockers"] =
+            bundle_dict.has("sea_ice_knobs")
+                ? Array()
+                : Array::make(String("sea_ice_knobs_missing"));
+        sea_ice_authority["retained_boundaries"] =
+            bundle_dict.has("sea_ice_knobs")
+                ? Array::make(String("terrain_flip_visibility_gdscript"),
+                              String("sea_ice_visual_upload_godot"))
+                : Array();
+        authority_report["sea_ice"] = sea_ice_authority;
+        Dictionary ocean_authority;
+        ocean_authority["owner"] = state["ocean_physical_state_owner"];
+        ocean_authority["phase"] =
+            String(state["ocean_physical_state_owner"]) == String("native_active")
+                ? String("native_active_lifecycle")
+                : (String(state["ocean_physical_state_owner"]) == String("native_ready") ||
+                   String(state["ocean_physical_state_owner"]) == String("native_ready_probe")
+                       ? String("native_ready_probe")
+                       : String("gdscript_stage_machine"));
+        ocean_authority["state"] = ocean_physical_state;
+        ocean_authority["simulation_authority"] =
+            String(state["ocean_physical_state_owner"]) == String("native_active");
+        ocean_authority["native_owned_output_slots"] =
+            ocean_physical_state.get("native_owned_output_slots", Array());
+        ocean_authority["blockers"] =
+            String(state["ocean_physical_state_owner"]) == String("native_active")
+                ? Array()
+                : Array::make(String("ocean_physical_owner_not_active"));
+        ocean_authority["retained_boundaries"] =
+            ocean_physical_state.get("remaining_gdscript_authority",
+                Array::make(String("visual_raster_boundary_godot"),
+                            String("texture_commit_boundary_godot")));
+        authority_report["ocean_physical"] = ocean_authority;
+        Dictionary season_authority;
+        season_authority["owner"] = state["season_refresh_state_owner"];
+        season_authority["phase"] =
+            String(state["season_refresh_state_owner"]) == String("native_active")
+                ? String("native_active_cadence")
+                : (String(state["season_refresh_state_owner"]) == String("native_ready") ||
+                   String(state["season_refresh_state_owner"]) == String("native_ready_probe")
+                       ? String("native_ready_cadence_probe")
+                       : String("gdscript_cadence"));
+        season_authority["state"] = season_refresh_state;
+        season_authority["simulation_authority"] =
+            String(state["season_refresh_state_owner"]) == String("native_active");
+        season_authority["simulation_slot_dirty_intents"] =
+            season_refresh_state.get("simulation_slot_dirty_intents", Array());
+        season_authority["visual_dirty_intents"] =
+            season_refresh_state.get("visual_dirty_intents", Array());
+        season_authority["cadence_policy"] = season_cadence_policy;
+        season_authority["cadence_policy_owner"] =
+            season_cadence_policy.has("owner")
+                ? season_cadence_policy.get("owner", String("gdscript_retained"))
+                : String("gdscript_retained");
+        season_authority["cadence_policy_state"] =
+            season_cadence_policy.has("policy_state")
+                ? season_cadence_policy.get("policy_state", String("gdscript_retained"))
+                : String("gdscript_retained");
+        season_authority["blockers"] =
+            String(state["season_refresh_state_owner"]) == String("native_active")
+                ? Array()
+                : Array::make(String("season_refresh_owner_not_active"));
+        season_authority["retained_boundaries"] =
+            season_refresh_state.get("visual_dirty_intents",
+                Array::make(String("atlas_queue_godot"),
+                            String("detail_scatter_godot")));
+        authority_report["season_refresh"] = season_authority;
+        Dictionary visual_authority;
+        visual_authority["owner"] = state["visual_upload_state_owner"];
+        visual_authority["phase"] = String("godot_upload_boundary");
+        visual_authority["blockers"] = Array::make(String("image_texture_upload_godot"));
+        authority_report["visual_upload"] = visual_authority;
+        Dictionary fallback_authority;
+        const bool legacy_fallback_enabled = bool(bundle_dict.get("legacy_sus_fallback_enabled", true));
+        fallback_authority["owner"] =
+            legacy_fallback_enabled ? String(state["fallback_owner"]) : String("explicit_failure_only");
+        fallback_authority["phase"] =
+            legacy_fallback_enabled ? String("fallback_retained") : String("fallback_test_only");
+        fallback_authority["blockers"] =
+            legacy_fallback_enabled ? Array::make(String("legacy_sus_fallback_enabled")) : Array();
+        authority_report["fallback"] = fallback_authority;
+        state["authority_report"] = authority_report;
+        state["authority_blockers"] = authority_blockers;
+        state["retained_boundaries"] = retained_boundaries;
+        state["retained_godot_boundaries"] = retained_boundaries;
+        state["retained_boundary_policy"] = String("explicit_godot_presentation_boundary");
+        state["graph_coverage_state"] =
+            authority_blockers.is_empty() ? String("complete") : String("partial");
+        return state;
+    };
+
     if (!tick_knobs.has("native_daily_bundle")) {
         return finish_with_failure("native_daily_bundle", "missing native_daily_bundle");
     }
@@ -177,6 +1822,12 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     if (bundle.is_empty()) {
         return finish_with_failure("native_daily_bundle", "empty native_daily_bundle");
     }
+    const Array bundle_pass_keys = collect_bundle_pass_keys(bundle);
+    const Array retained_gdscript_authority = collect_retained_gdscript_authority(bundle);
+    const Dictionary native_state_snapshot = collect_native_state_snapshot(bundle);
+    breakdown["bundle_pass_keys"] = bundle_pass_keys;
+    breakdown["retained_gdscript_authority"] = retained_gdscript_authority;
+    breakdown["native_state_snapshot"] = native_state_snapshot;
 
     const auto t_context0 = std::chrono::high_resolution_clock::now();
     if (bool(bundle.get("refresh_slots_from_map", true))) {
@@ -216,6 +1867,9 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             if (fail_stage != nullptr && String(fail_stage) == String("weather")) {
                 reason = String(breakdown.get("__weather_fail_stage_dyn", "unknown"));
                 breakdown.erase("__weather_fail_stage_dyn");
+            } else if (fail_stage != nullptr && String(fail_stage) == String("runtime_hydrology")) {
+                reason = String(breakdown.get("__hydrology_fail_reason", "pass returned fallback"));
+                breakdown.erase("__hydrology_fail_reason");
             } else {
                 reason = String("pass returned fallback");
             }
@@ -234,26 +1888,53 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
         any_pass_ran = true;
 
+    if (bundle.has("climate_pass_b_knobs")) {
+        const double ms = run_climate_pass_b(as_dict(bundle["climate_pass_b_knobs"]));
+        if (ms < 0.0) return finish_with_failure("climate_pass_b", "pass returned fallback");
+        breakdown["pass_b_ms"] = ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
     if (bundle.has("ocean_water_knobs")) {
-        const double ms = run_ocean_water_pass(as_dict(bundle["ocean_water_knobs"]));
+        Dictionary water_knobs = as_dict(bundle["ocean_water_knobs"]);
+        const double ms = run_ocean_water_pass(water_knobs);
         if (ms < 0.0) return finish_with_failure("ocean_water", "pass returned fallback");
+        bundle["ocean_water_knobs"] = water_knobs;
+        if (water_knobs.has("anomaly_out") && bundle.has("ocean_land_knobs")) {
+            Dictionary land_knobs = as_dict(bundle["ocean_land_knobs"]);
+            land_knobs["anomaly_inout"] = water_knobs["anomaly_out"];
+            bundle["ocean_land_knobs"] = land_knobs;
+        }
         breakdown["ocean_water_ms"] = ms;
         breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
 
     if (bundle.has("ocean_land_knobs")) {
-        const double ms = run_ocean_land_pass(as_dict(bundle["ocean_land_knobs"]));
+        Dictionary land_knobs = as_dict(bundle["ocean_land_knobs"]);
+        const double ms = run_ocean_land_pass(land_knobs);
         if (ms < 0.0) return finish_with_failure("ocean_land", "pass returned fallback");
+        bundle["ocean_land_knobs"] = land_knobs;
         breakdown["ocean_land_ms"] = ms;
         breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
 
-    if (bundle.has("climate_pass_b_knobs")) {
-        const double ms = run_climate_pass_b(as_dict(bundle["climate_pass_b_knobs"]));
-        if (ms < 0.0) return finish_with_failure("climate_pass_b", "pass returned fallback");
-        breakdown["pass_b_ms"] = ms;
+    if (bundle.has("wind_air_knobs")) {
+        const double ms = run_wind_air_mass_pass(as_dict(bundle["wind_air_knobs"]));
+        if (ms < 0.0) return finish_with_failure("wind_air", "pass returned fallback");
+        breakdown["wind_air_ms"] = ms;
+        breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
+        breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("wind_surface_knobs")) {
+        const double ms = run_wind_surface_pass(as_dict(bundle["wind_surface_knobs"]));
+        if (ms < 0.0) return finish_with_failure("wind_surface", "pass returned fallback");
+        breakdown["wind_surface_ms"] = ms;
+        breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
         breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
@@ -327,6 +2008,45 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         }
         any_pass_ran = true;
     }
+
+    if (bundle.has("runtime_hydrology_knobs")) {
+        Dictionary hydro = run_runtime_hydrology_pass(as_dict(bundle["runtime_hydrology_knobs"]));
+        const String fallback_reason = String(hydro.get("fallback_reason", ""));
+        if (!fallback_reason.is_empty() || !bool(hydro.get("published_to_slot", false))) {
+            return finish_with_failure(
+                "runtime_hydrology",
+                fallback_reason.is_empty() ? String("hydrology did not publish slots") : fallback_reason);
+        }
+        const double native_ms = double(hydro.get("native_ms", 0.0));
+        breakdown["hydrology_ms"] = native_ms;
+        breakdown["runtime_hydrology_ms"] = native_ms;
+        breakdown["hydrology_native_ms"] = native_ms;
+        breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
+        breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+        breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
+        breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
+        breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
+        breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+        breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
+        breakdown["hydrology_published_to_slot"] = true;
+        any_pass_ran = true;
+    }
+
+    if (bundle.has("stage_b_after_hydrology_knobs")) {
+        Dictionary stage_b_knobs = as_dict(bundle["stage_b_after_hydrology_knobs"]);
+        const double ms = run_stage_b_pass(stage_b_knobs);
+        if (ms < 0.0) return finish_with_failure("stage_b", "pass returned fallback");
+        breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+        breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
+        breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
+        breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+        if (stage_b_knobs.has("succession_indices")) {
+            breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
+            breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
+            breakdown["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+        }
+        any_pass_ran = true;
+    }
     } // ─── Phase C.1：use_system_schedule=false 的 else 分支结束 ──────────
 
     if (!any_pass_ran) {
@@ -343,13 +2063,120 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
 
     const auto t1 = std::chrono::high_resolution_clock::now();
     const double total_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double refresh_ms = double(breakdown.get("native_context_ms", 0.0));
+    const double flush_ms = double(breakdown.get("render_prepare_ms", 0.0));
+    const double compute_ms = double(breakdown.get("climate_ms", 0.0)) +
+                              double(breakdown.get("ocean_ms", 0.0)) +
+                              double(breakdown.get("weather_ms", 0.0)) +
+                              double(breakdown.get("hydrology_ms", 0.0)) +
+                              double(breakdown.get("stage_b_ms", 0.0));
+    const Array published_slots = collect_published_slots(bundle);
+    const Array visual_dirty_intents = collect_visual_dirty_intents(bundle, breakdown);
+    Dictionary authority_report = native_state_snapshot.get("authority_report", Dictionary());
+    if (bool(breakdown.get("hydrology_published_to_slot", false)) &&
+        authority_report.has("runtime_hydrology")) {
+        Dictionary hydrology_authority = authority_report["runtime_hydrology"];
+        hydrology_authority["phase"] = String("native_active_verified");
+        hydrology_authority["verified_publish"] = true;
+        hydrology_authority["simulation_authority"] = true;
+        hydrology_authority["blockers"] = Array();
+        authority_report["runtime_hydrology"] = hydrology_authority;
+    }
+    if (bundle.has("sea_ice_knobs") && authority_report.has("sea_ice")) {
+        Dictionary sea_ice_authority = authority_report["sea_ice"];
+        sea_ice_authority["phase"] = String("native_active_verified");
+        sea_ice_authority["verified_publish"] = true;
+        sea_ice_authority["simulation_authority"] = true;
+        sea_ice_authority["blockers"] = Array();
+        authority_report["sea_ice"] = sea_ice_authority;
+    }
+    if (bundle.has("weather_knobs") && authority_report.has("weather_transaction")) {
+        Dictionary weather_authority = authority_report["weather_transaction"];
+        const bool weather_publish_verified = bool(breakdown.get("field_commit_publish_verified", false));
+        const bool weather_fronts_changed =
+            bool(breakdown.get("weather_lut_changed", false)) ||
+            int(breakdown.get("fronts_count", 0)) > 0;
+        weather_authority["visible_publish_verified"] = weather_publish_verified;
+        weather_authority["fronts_changed"] = weather_fronts_changed;
+        if (weather_publish_verified &&
+            String(weather_authority.get("owner", "")) == String("native_active")) {
+            weather_authority["phase"] = String("native_active_verified");
+            weather_authority["simulation_authority"] = true;
+            weather_authority["blockers"] = Array();
+        }
+        authority_report["weather_transaction"] = weather_authority;
+    }
     out["rc"] = 0;
+    out["path"] = String("gdext_native_daily");
     out["fail_stage"] = String();
+    out["fallback_reason"] = String();
     out["total_ms"] = total_ms;
+    out["native_ms"] = total_ms;
+    out["compute_ms"] = compute_ms;
+    out["refresh_ms"] = refresh_ms;
+    out["flush_ms"] = flush_ms;
+    out["published_slots"] = published_slots;
+    out["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+    out["visual_dirty_intents"] = visual_dirty_intents;
+    out["retained_gdscript_authority"] = retained_gdscript_authority;
+    out["native_state_snapshot"] = native_state_snapshot;
+    out["authority_report"] = authority_report;
+    out["authority_blockers"] = native_state_snapshot.get("authority_blockers", Array());
+    out["retained_boundaries"] = native_state_snapshot.get("retained_boundaries", Array());
+    out["retained_godot_boundaries"] = native_state_snapshot.get("retained_godot_boundaries", Array());
+    out["retained_boundary_policy"] = native_state_snapshot.get("retained_boundary_policy", String());
+    out["graph_coverage_complete"] = Array(out["authority_blockers"]).is_empty();
+    out["graph_coverage_state"] = native_state_snapshot.get("graph_coverage_state", String("partial"));
+    out["boundary_contract"] = bundle.get("native_daily_boundary_contract", Dictionary());
+    Dictionary boundary_contract = out["boundary_contract"];
+    out["bundle_key_count"] = int(boundary_contract.get("bundle_key_count", bundle.size()));
+    out["tick_delta_key_count"] = Array(boundary_contract.get("tick_delta_keys", Array())).size();
+    out["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    const bool active_default_ready =
+        String(out["graph_coverage_state"]) == String("complete") &&
+        Array(out["authority_blockers"]).is_empty();
+    out["native_daily_active_default_ready"] = active_default_ready;
+    out["active_default_blockers"] = out["authority_blockers"];
+    out["fallback_mode"] =
+        active_default_ready ? String("explicit_failure_only") : String("legacy_sus_retained_until_active_default_validation");
+    PackedFloat32Array temperature_transport_anomaly_out;
+    if (bundle.has("ocean_land_knobs")) {
+        Dictionary land_knobs = as_dict(bundle["ocean_land_knobs"]);
+        if (land_knobs.has("anomaly_inout")) {
+            temperature_transport_anomaly_out = land_knobs["anomaly_inout"];
+        }
+    }
     breakdown["total_ms"] = total_ms;
+    breakdown["native_ms"] = total_ms;
+    breakdown["compute_ms"] = compute_ms;
+    breakdown["refresh_ms"] = refresh_ms;
+    breakdown["flush_ms"] = flush_ms;
+    breakdown["published_slots"] = published_slots;
+    breakdown["dirty_cells"] = int(_native_dirty_report.get("dirty_cell_count", 0));
+    breakdown["visual_dirty_intents"] = visual_dirty_intents;
+    breakdown["native_state_snapshot"] = native_state_snapshot;
+    breakdown["authority_report"] = authority_report;
+    breakdown["authority_blockers"] = native_state_snapshot.get("authority_blockers", Array());
+    breakdown["retained_boundaries"] = native_state_snapshot.get("retained_boundaries", Array());
+    breakdown["retained_godot_boundaries"] = native_state_snapshot.get("retained_godot_boundaries", Array());
+    breakdown["retained_boundary_policy"] = native_state_snapshot.get("retained_boundary_policy", String());
+    breakdown["graph_coverage_complete"] = Array(breakdown["authority_blockers"]).is_empty();
+    breakdown["graph_coverage_state"] = native_state_snapshot.get("graph_coverage_state", String("partial"));
+    breakdown["boundary_contract"] = bundle.get("native_daily_boundary_contract", Dictionary());
+    breakdown["bundle_key_count"] = out["bundle_key_count"];
+    breakdown["tick_delta_key_count"] = out["tick_delta_key_count"];
+    breakdown["runtime_config_report"] = out["runtime_config_report"];
+    breakdown["native_daily_active_default_ready"] = out["native_daily_active_default_ready"];
+    breakdown["active_default_blockers"] = out["active_default_blockers"];
+    breakdown["fallback_mode"] = out["fallback_mode"];
+    if (temperature_transport_anomaly_out.size() > 0) {
+        out["temperature_transport_anomaly_out"] = temperature_transport_anomaly_out;
+    }
     out["breakdown"] = breakdown;
     out["dirty_flags"] = _native_dirty_report.duplicate();
-    out["fronts_changed"] = bundle.has("weather_knobs");
+    out["fronts_changed"] =
+        bool(breakdown.get("weather_lut_changed", false)) ||
+        int(breakdown.get("fronts_count", 0)) > 0;
     out["fronts"] = _native_fronts_snapshot;
     out["tick_count"] = _native_daily_tick_count;
     return out;
@@ -440,6 +2267,111 @@ Dictionary DCWorldExt::get_native_daily_report() const {
 
 Dictionary DCWorldExt::get_native_shadow_diff_report() const {
     return _native_shadow_diff_report.duplicate(true);
+}
+
+Dictionary DCWorldExt::native_ocean_physical_begin(const Dictionary &ctx) {
+    Dictionary state = _native_ocean_physical_state.duplicate(true);
+    state["owner"] = String("DCWorldExt.NativeOceanPhysicalLifecycle");
+    state["authority"] = String("native_ready_lifecycle");
+    state["simulation_authority"] = bool(ctx.get("simulation_authority", false));
+    state["lifecycle_owner"] = String("native_ocean_physical_lifecycle");
+    state["lifecycle_state"] = String("round_active");
+    state["physical_round_active"] = true;
+    state["physical_round_id"] = int(ctx.get("physical_round_id", int(state.get("physical_round_id", 0)) + 1));
+    state["physical_phase_locked"] = double(ctx.get("phase_locked", ctx.get("physical_phase_locked", 0.0)));
+    state["physical_need_visual"] = bool(ctx.get("physical_need_visual", false));
+    state["physical_run_ocean"] = bool(ctx.get("physical_run_ocean", true));
+    state["stage"] = int(ctx.get("stage", 0));
+    state["stage_name"] = String(ctx.get("stage_name", "begin"));
+    state["tick_index"] = int(ctx.get("tick_index", 0));
+    state["day_index"] = int(ctx.get("day_index", 0));
+    state["start_state_intents"] = Array::make(String("set_physical_round_active"),
+                                                String("set_phase_locked"),
+                                                String("set_stage_cursor"),
+                                                String("record_round_id"));
+    state["remaining_gdscript_authority"] = Array::make(String("visual_raster_boundary_execution"),
+                                                         String("texture_commit_boundary_execution"));
+    state["native_owned_lifecycle_authority"] = Array::make(String("physical_round_active"),
+                                                             String("physical_round_id"),
+                                                             String("phase_locked"),
+                                                             String("physical_stage"),
+                                                             String("physical_stage_cursor"));
+    _native_ocean_physical_state = state.duplicate(true);
+    return get_native_ocean_physical_state_report();
+}
+
+Dictionary DCWorldExt::native_ocean_physical_step(const Dictionary &ctx) {
+    Dictionary state = _native_ocean_physical_state.duplicate(true);
+    state["owner"] = String("DCWorldExt.NativeOceanPhysicalLifecycle");
+    state["authority"] = String("native_ready_lifecycle");
+    state["lifecycle_owner"] = String("native_ocean_physical_lifecycle");
+    state["lifecycle_state"] = String(ctx.get("lifecycle_state", "step"));
+    state["physical_round_active"] = bool(ctx.get("physical_round_active", state.get("physical_round_active", false)));
+    state["phys_solve_done"] = bool(ctx.get("phys_solve_done", state.get("phys_solve_done", false)));
+    state["stage"] = int(ctx.get("stage", state.get("stage", 0)));
+    state["stage_name"] = String(ctx.get("stage_name", state.get("stage_name", "step")));
+    state["next_stage"] = ctx.get("next_stage", state.get("next_stage", Variant()));
+    state["next_stage_name"] = ctx.get("next_stage_name", state.get("next_stage_name", Variant()));
+    state["path"] = String(ctx.get("path", state.get("path", "")));
+    state["tick_index"] = int(ctx.get("tick_index", state.get("tick_index", 0)));
+    state["day_index"] = int(ctx.get("day_index", state.get("day_index", 0)));
+    state["last_step_report"] = ctx.duplicate(true);
+    state["step_boundary_intents"] = Array::make(String("advance_physical_stage"),
+                                                  String("publish_native_stage_report"));
+    _native_ocean_physical_state = state.duplicate(true);
+    return get_native_ocean_physical_state_report();
+}
+
+Dictionary DCWorldExt::native_ocean_physical_finish(const Dictionary &ctx) {
+    Dictionary state = _native_ocean_physical_state.duplicate(true);
+    state["owner"] = String("DCWorldExt.NativeOceanPhysicalLifecycle");
+    state["authority"] = String("native_ready_lifecycle");
+    state["lifecycle_owner"] = String("native_ocean_physical_lifecycle");
+    state["lifecycle_state"] = String("round_finished");
+    state["physical_round_active"] = false;
+    state["phys_solve_done"] = false;
+    state["last_physical_complete_tick"] = int(ctx.get("tick_index", state.get("tick_index", 0)));
+    state["finish_report"] = ctx.duplicate(true);
+    state["finish_boundary_intents"] = Array::make(String("publish_physical_completion"),
+                                                    String("enqueue_visual_boundary_if_needed"));
+    _native_ocean_physical_state = state.duplicate(true);
+    return get_native_ocean_physical_state_report();
+}
+
+Dictionary DCWorldExt::reset_native_ocean_physical_state(String reason) {
+    Dictionary state;
+    state["owner"] = String("DCWorldExt.NativeOceanPhysicalLifecycle");
+    state["authority"] = String("native_ready_lifecycle");
+    state["simulation_authority"] = false;
+    state["lifecycle_owner"] = String("native_ocean_physical_lifecycle");
+    state["lifecycle_state"] = String("reset");
+    state["reset_reason"] = reason;
+    state["physical_round_active"] = false;
+    state["physical_round_id"] = 0;
+    state["stage"] = 0;
+    state["stage_name"] = String("reset");
+    state["reset_boundary_intents"] = Array::make(String("reset_physical_round"),
+                                                   String("reset_visual_round_boundary"),
+                                                   String("discard_ocean_buffers"));
+    state["remaining_gdscript_authority"] = Array::make(String("visual_raster_boundary_execution"),
+                                                         String("texture_commit_boundary_execution"));
+    _native_ocean_physical_state = state.duplicate(true);
+    return get_native_ocean_physical_state_report();
+}
+
+Dictionary DCWorldExt::get_native_ocean_physical_state_report() const {
+    Dictionary out = _native_ocean_physical_state.duplicate(true);
+    if (out.is_empty()) {
+        out["owner"] = String("DCWorldExt.NativeOceanPhysicalLifecycle");
+        out["authority"] = String("native_ready_lifecycle");
+        out["simulation_authority"] = false;
+        out["lifecycle_owner"] = String("native_ocean_physical_lifecycle");
+        out["lifecycle_state"] = String("uninitialized");
+        out["physical_round_active"] = false;
+        out["remaining_gdscript_authority"] = Array::make(String("visual_raster_boundary_execution"),
+                                                           String("texture_commit_boundary_execution"));
+    }
+    return out;
 }
 
 Dictionary DCWorldExt::get_native_dirty_report() const {
