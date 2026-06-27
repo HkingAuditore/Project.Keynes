@@ -161,8 +161,8 @@ void fragment() {
 		vec4 wx = sample_weather(cid);
 		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
-		float precip = clamp(smoothstep(0.015, 0.55, wx.a) * 1.25, 0.0, 1.0);
-		float wx_strength = clamp(max(precip, intensity * 0.72) * mix(0.55, 1.35, intensity), 0.0, 1.0);
+		float precip = clamp(smoothstep(0.010, 0.48, wx.a) * 1.38, 0.0, 1.0);
+		float wx_strength = clamp(max(precip, intensity * 0.82) * mix(0.68, 1.48, intensity), 0.0, 1.0);
 		int flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
 		float seed = v_custom.b;
 		float depth = v_custom.a;
@@ -173,19 +173,19 @@ void fragment() {
 		float fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
 		float flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
 
-		float alpha = (rain * 0.92 + snow * 0.86 + fog * 0.34 + flash * 0.70) * edge * weather_strength * mix(0.25, 1.25, wx_strength);
+		float alpha = (rain * 1.28 + snow * 1.22 + fog * 0.34 + flash * 0.70) * edge * weather_strength * mix(0.42, 1.58, wx_strength);
 		if (alpha <= 0.001) {
 			COLOR = vec4(0.0);
 		} else {
-			vec3 rain_col = vec3(0.62, 0.72, 0.86);
-			vec3 snow_col = vec3(0.94, 0.98, 1.0);
+			vec3 rain_col = vec3(0.72, 0.82, 0.96);
+			vec3 snow_col = vec3(0.98, 1.00, 1.00);
 			vec3 fog_col = vec3(0.62, 0.68, 0.72);
 			vec3 flash_col = vec3(0.72, 0.84, 1.0);
 			vec3 col = rain_col * rain + snow_col * snow + fog_col * fog + flash_col * flash;
 			float weight = max(rain + snow + fog + flash, 0.001);
 			col = col / weight;
-			col *= mix(0.82, 1.16, depth) * tod_exposure;
-			COLOR = vec4(col, clamp(alpha, 0.0, 0.95));
+			col *= mix(0.95, 1.34, depth) * mix(1.05, 1.22, wx_strength) * tod_exposure;
+			COLOR = vec4(col, clamp(alpha, 0.0, 0.98));
 		}
 	}
 }

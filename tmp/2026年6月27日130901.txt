@@ -1,0 +1,774 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.651 water=952 land=1448
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.005 lakes=36 rivers=19 volcanoes=5
+[native_generation/qa] single_water=0 tiny<=3=1 small<=5=1 bodies=8 largest=700 | land_below_sea=0.0% | terr_distinct=22 entropy=3.758bit | river_ratio=0.792%
+MapGenerator v7: per-cell 51ms (2400 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 606) seed=1641482338
+[splash] bake stage=terrain fraction=0.00
+    [fused] terrain=640.2ms erosion=1.8ms(ok=true) river=9.3ms(ok=true) latitude=0.1ms volcano=3.7ms coast_sdf=4.6ms(ok=true)
+  geometry fields (fused C++): 722ms
+[splash] bake stage=physical fraction=0.62
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[splash] bake stage=volcano fraction=0.70
+[splash] bake stage=atlas fraction=0.82
+[splash] bake stage=encode fraction=0.88
+  encode: 385ms
+MapBaker v6: total 1107ms
+[splash] bake stage=done fraction=1.00
+MapGenerator v7: bake 1129ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=2.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 76 components bound (auto-registered=76; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400
+[native_generation] path=gdext n=2400 published=9 native_ms=0.100 compute_ms=0.090 flush_ms=0.010
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.81ms wind=0.45ms psi=0.14ms(ran=true) upwelling=0.02ms total=1.70ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=2400, components=75, src=map_data)
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=21 total_rebuild_ms=1343.61 total_inst=7346 total_cand=6952 budget={ "total_instances": 7346, "budget": 120000, "visible_fraction": 1.0, "layer_count": 21 }
+  [detail_scatter/TOP1] name=ShrubLayer2 rebuild=87.41ms path=gdext_chunked inst=3494 cand=3272 wrap=222 reason=
+  [detail_scatter/TOP2] name=GrassLayer rebuild=79.87ms path=gdext_chunked inst=1703 cand=1675 wrap=28 reason=
+  [detail_scatter/TOP3] name=GrassLayer1 rebuild=77.21ms path=gdext_chunked inst=825 cand=802 wrap=23 reason=
+  [detail_scatter/TOP4] name=TreeLayer7 rebuild=76.28ms path=gdext_chunked inst=106 cand=96 wrap=10 reason=
+  [detail_scatter/TOP5] name=DetailLayer8 rebuild=74.78ms path=gdext_chunked inst=181 cand=167 wrap=14 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[DIAG pass_a_entry] day=0 phase=0.001 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+  rs_lookback = 3, t_freeze = 0.0600, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15038
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.1411 n_cells=2400 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.14ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15030
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0562 n=2400 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.06ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15031
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0224 n=2400 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.02ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.117, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15041
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0316 n_cells=2400 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.03ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.03ms (water=916, flipped=9, phase=0.001)
+[sea_ice/DIAG] thr_eff t_form=0.060 t_melt=0.110 flip_thr=0.680 | temp all min=0.000 max=0.965 avg=0.380 | water n=916 t_min_w=0.000 below_form=363 (39.6%) | SIF pos=401 max=0.874 avg_w=0.3081 near_thr=61 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15043
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0252 donor_table.size()=28 n_cells=2400 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 100ms (cells=2400, phase=0.001) | A=1.7 B=1.3 ocean=2.9 wind=90.4 sea_ice=2.2 ice_bake=0.0 transp=1.2 path=data_core_cells_only
+=== World baked in 1317ms ===
+  SEA_ICE: 300
+  GLACIER: 66
+  TUNDRA: 297
+  OCEAN: 154
+  COAST: 278
+  TAIGA: 247
+  KELP: 27
+  STEPPE: 105
+  BADLANDS: 24
+  SWAMP: 44
+  FOREST: 59
+  GRASSLAND: 67
+  MOUNTAIN: 59
+  CHAPARRAL: 160
+  REEF: 157
+  SAVANNA: 144
+  JUNGLE: 30
+  SHRUBLAND: 108
+  SALT_FLAT: 1
+  MANGROVE: 3
+  LAKE: 36
+  FLOODPLAIN: 33
+  DELTA: 1
+[DOTS-Final-Push] (no profile bound)
+[weather-layer][lut] #1 update_usec=40855691 last_usec=40855691 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #2 update_usec=40855691 last_usec=40855691 lerp=0.062 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #3 update_usec=40855691 last_usec=40855691 lerp=0.099 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #4 update_usec=40855691 last_usec=40855691 lerp=0.121 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #5 update_usec=40855691 last_usec=40855691 lerp=0.142 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #6 update_usec=40855691 last_usec=40855691 lerp=0.203 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #7 update_usec=40855691 last_usec=40855691 lerp=0.265 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #8 update_usec=40855691 last_usec=40855691 lerp=0.327 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #9 update_usec=40855691 last_usec=40855691 lerp=0.390 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #10 update_usec=40855691 last_usec=40855691 lerp=0.452 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #11 update_usec=40855691 last_usec=40855691 lerp=0.516 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #12 update_usec=40855691 last_usec=40855691 lerp=0.577 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=frame_budget_exhausted slices=0 elapsed=0.000 progress=0.000 source=day_changed
+fast tick #1: 4ms (sus=4.43 render=0.01 ui=0.00 skipped_day=true)
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.33
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=587 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][daily_wind] #1 tick=2 stage=both ran=true path=gdext_daily_wind elapsed=1.844 slp=1.022 wind=0.451 passA=0.924 passB=0.004 norm=0.087 marshall=0.007 dominant=daily_wind_slp/1.022 delta=1.975577 reason=
+[ocean_currents][RT] phys_round_start#1 tick=2 phase=0.0219 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver/BREAKDOWN] call#1 STAGE=0.21ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.20ms (kernel=0.13ms gdext_overhead=0.07ms) T4_writeback=0.00ms (n_psi=2400 published=true has_debug=true)
+[psi_solver] gdext path ACTIVE — first run elapsed=0.13ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.128 n_water=616 n_cells=2400 published=true
+[ocean_currents/STAGE-DIAG] init tick=2 round=1 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=2.27 slp_native=1.02 psi_native=0.13 wind_dp95=1.975577 ocean_dp95=0.140859 slp_dp95=0.118466 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#1 tick=2 round=1 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=2.273 ocean_delta_p95=0.140859 wind_delta_p95=1.975577 slp_delta_p95=0.118466 psi_path=gdext
+[weather-layer][lut] #13 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #2 tick=3 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.563 slp=-1.000 wind=0.464 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.464 delta=0.458219 reason=
+[sea_ice/dt] call#2 dt_days=2.871 (last_pass_day=2.988, k x2.87)
+[fast tick WARN] #3 sus=8.19 render=0.01 ui=0.00 total=8ms skip_day=false
+    sus_window p95=7.68ms max=7.68ms over1ms=3 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 6.82ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.81ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.46 total=0.56 refresh=0.06 dominant=daily_wind_wind/0.46 slp_dp95=0.00000 wind_dp95=0.45822 commit=true reason=
+    native_daily_sim ran=6.84ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[ocean_currents][daily_wind] #3 tick=4 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.212 slp=0.851 wind=-1.000 passA=0.747 passB=0.004 norm=0.088 marshall=0.011 dominant=daily_wind_slp/0.851 delta=0.000000 reason=
+[upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+[upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.026
+[upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.00ms T3_refresh_slots=0.02ms T4_cpp_call=0.04ms (n=2400)
+[upwelling/DIAG#1] CPP-PATH-OK (no GDScript fallback)
+[upwelling/DIAG#1] STAGE-TOTAL=0.12ms (matches slow_slice if > 25ms)
+[ocean_currents/STAGE-DIAG] init tick=4 round=1 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=1.45 slp_native=0.85 psi_native=0.13 wind_dp95=0.458219 ocean_dp95=0.140859 slp_dp95=0.113358 phys_done=true need_visual=false
+[ocean_currents][RT] phys_slice#2 tick=4 round=1 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=1.451 ocean_delta_p95=0.140859 wind_delta_p95=0.458219 slp_delta_p95=0.113358 psi_path=gdext
+[weather-layer][lut] #14 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #4 tick=5 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.538 slp=-1.000 wind=0.437 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.437 delta=1.872754 reason=
+[clock/step] delta=31.4ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.13ms carry=0.18
+[ocean_currents][daily_wind] #5 tick=6 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.164 slp=0.853 wind=-1.000 passA=0.735 passB=0.004 norm=0.102 marshall=0.011 dominant=daily_wind_slp/0.853 delta=0.000000 reason=
+[ocean_currents][RT] phys_round_start#2 tick=6 phase=0.0656 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver/BREAKDOWN] call#2 STAGE=0.22ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.20ms (kernel=0.14ms gdext_overhead=0.06ms) T4_writeback=0.00ms (n_psi=2400 published=true has_debug=true)
+[psi_solver] commit-diag call#2: rc=0.135 n_water=616 n_cells=2400 published=true
+[ocean_currents/STAGE-DIAG] init tick=6 round=2 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=1.64 slp_native=0.85 psi_native=0.14 wind_dp95=1.872754 ocean_dp95=0.208246 slp_dp95=0.119101 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#3 tick=6 round=2 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.641 ocean_delta_p95=0.208246 wind_delta_p95=1.872754 slp_delta_p95=0.119101 psi_path=gdext
+[weather-layer][lut] #15 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #6 tick=7 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.614 slp=-1.000 wind=0.508 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.508 delta=1.934180 reason=
+[ocean_currents][daily_wind] #7 tick=8 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.314 slp=0.948 wind=-1.000 passA=0.837 passB=0.005 norm=0.098 marshall=0.008 dominant=daily_wind_slp/0.948 delta=0.000000 reason=
+[ocean_currents/STAGE-DIAG] init tick=8 round=2 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=1.50 slp_native=0.95 psi_native=0.14 wind_dp95=1.934180 ocean_dp95=0.208246 slp_dp95=0.124852 phys_done=true need_visual=false
+[ocean_currents][RT] phys_slice#4 tick=8 round=2 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.500 ocean_delta_p95=0.208246 wind_delta_p95=1.934180 slp_delta_p95=0.124852 psi_path=gdext
+[weather-layer][lut] #16 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.43ms carry=0.92
+[ocean_currents][daily_wind] #8 tick=9 stage=wind ran=true path=gdext_daily_wind_wind elapsed=1.232 slp=-1.000 wind=1.058 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/1.058 delta=1.894063 reason=
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=9 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][daily_wind] #9 tick=10 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.283 slp=0.952 wind=-1.000 passA=0.836 passB=0.005 norm=0.101 marshall=0.010 dominant=daily_wind_slp/0.952 delta=0.000000 reason=
+[ocean_currents][RT] phys_round_start#3 tick=10 phase=0.1094 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver/BREAKDOWN] call#3 STAGE=0.23ms T1_prepack=0.00ms T2_knobs=0.01ms T3_call=0.21ms (kernel=0.14ms gdext_overhead=0.07ms) T4_writeback=0.00ms (n_psi=2400 published=true has_debug=true)
+[psi_solver] commit-diag call#3: rc=0.140 n_water=607 n_cells=2400 published=true
+[ocean_currents/STAGE-DIAG] init tick=10 round=3 stage=3/phys_psi_init path=gdext next=phys_upwelling elapsed_ms=1.81 slp_native=0.95 psi_native=0.14 wind_dp95=1.894063 ocean_dp95=0.165592 slp_dp95=0.110768 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#5 tick=10 round=3 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.810 ocean_delta_p95=0.165592 wind_delta_p95=1.894063 slp_delta_p95=0.110768 psi_path=gdext
+[weather-layer][lut] #17 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #10 tick=11 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.763 slp=-1.000 wind=0.636 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.636 delta=1.953079 reason=
+[ocean_currents][daily_wind] #11 tick=12 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.188 slp=0.869 wind=-1.000 passA=0.765 passB=0.004 norm=0.089 marshall=0.011 dominant=daily_wind_slp/0.869 delta=0.000000 reason=
+[ocean_currents/STAGE-DIAG] init tick=12 round=3 stage=6/phys_upwelling path=physical_circulation next=phys_done elapsed_ms=1.36 slp_native=0.87 psi_native=0.14 wind_dp95=1.953079 ocean_dp95=0.165592 slp_dp95=0.115175 phys_done=true need_visual=false
+[ocean_currents][RT] phys_slice#6 tick=12 round=3 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.361 ocean_delta_p95=0.165592 wind_delta_p95=1.953079 slp_delta_p95=0.115175 psi_path=gdext
+[weather-layer][lut] #18 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.11ms carry=0.70
+[ocean_currents][daily_wind] #12 tick=13 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.572 slp=-1.000 wind=0.461 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.461 delta=1.692019 reason=
+[native_daily/unified] native slice ACTIVE — weather_knobs embedded; slice_ms=0.15 round_ms=3.77 weather_ms=1.10
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[ocean_currents][daily_wind] #13 tick=14 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.185 slp=0.844 wind=-1.000 passA=0.745 passB=0.005 norm=0.087 marshall=0.008 dominant=daily_wind_slp/0.844 delta=0.000000 reason=
+[ocean_currents][RT] phys_round_start#4 tick=14 phase=0.1533 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#7 tick=14 round=4 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.620 ocean_delta_p95=0.194821 wind_delta_p95=1.692019 slp_delta_p95=0.110906 psi_path=gdext
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[weather-layer][lut] #19 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #14 tick=15 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.547 slp=-1.000 wind=0.447 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.447 delta=1.905548 reason=
+[sea_ice/dt] call#2 dt_days=11.994 (last_pass_day=14.981, k x11.99)
+[ocean_currents][daily_wind] #15 tick=16 stage=slp ran=true path=gdext_daily_wind_slp elapsed=2.868 slp=2.422 wind=-1.000 passA=2.285 passB=0.007 norm=0.103 marshall=0.027 dominant=daily_wind_slp/2.422 delta=0.000000 reason=
+[ocean_currents][RT] phys_slice#8 tick=16 round=4 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=3.143 ocean_delta_p95=0.194821 wind_delta_p95=1.905548 slp_delta_p95=0.114933 psi_path=gdext
+[weather-layer][lut] #20 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=30.9ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.11ms carry=0.71
+[ocean_currents][daily_wind] #16 tick=17 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.536 slp=-1.000 wind=0.433 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.433 delta=1.865485 reason=
+[ocean_currents][daily_wind] #17 tick=18 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.165 slp=0.841 wind=-1.000 passA=0.739 passB=0.005 norm=0.087 marshall=0.010 dominant=daily_wind_slp/0.841 delta=0.000000 reason=
+[ocean_currents][RT] phys_round_start#5 tick=18 phase=0.1971 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#9 tick=18 round=5 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.609 ocean_delta_p95=0.214124 wind_delta_p95=1.865485 slp_delta_p95=0.104812 psi_path=gdext
+[weather-layer][lut] #21 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #18 tick=19 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.552 slp=-1.000 wind=0.444 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.444 delta=1.890433 reason=
+[ocean_currents][daily_wind] #19 tick=20 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.399 slp=1.053 wind=-1.000 passA=0.956 passB=0.004 norm=0.086 marshall=0.007 dominant=daily_wind_slp/1.053 delta=0.000000 reason=
+[ocean_currents][RT] phys_slice#10 tick=20 round=5 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.576 ocean_delta_p95=0.214124 wind_delta_p95=1.890433 slp_delta_p95=0.110832 psi_path=gdext
+[clock/step] delta=52.3ms speed=1x target=0.05d ran=0 loop=0.00ms proc=0.10ms carry=0.54
+[weather-layer][lut] #22 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #20 tick=21 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.561 slp=-1.000 wind=0.458 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.458 delta=1.975621 reason=
+[ocean_currents][daily_wind] #21 tick=22 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.193 slp=0.865 wind=-1.000 passA=0.764 passB=0.005 norm=0.089 marshall=0.007 dominant=daily_wind_slp/0.865 delta=0.000000 reason=
+[ocean_currents][RT] phys_round_start#6 tick=22 phase=0.2410 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#11 tick=22 round=6 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.632 ocean_delta_p95=0.158806 wind_delta_p95=1.975621 slp_delta_p95=0.109150 psi_path=gdext
+[weather-layer][lut] #23 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #22 tick=23 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.591 slp=-1.000 wind=0.485 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.485 delta=1.874871 reason=
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=100 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][daily_wind] #23 tick=24 stage=slp ran=true path=gdext_daily_wind_slp elapsed=1.194 slp=0.868 wind=-1.000 passA=0.765 passB=0.005 norm=0.090 marshall=0.008 dominant=daily_wind_slp/0.868 delta=0.000000 reason=
+[ocean_currents][RT] phys_slice#12 tick=24 round=6 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.342 ocean_delta_p95=0.158806 wind_delta_p95=1.874871 slp_delta_p95=0.107108 psi_path=gdext
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.37
+[weather-layer][lut] #24 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][daily_wind] #24 tick=25 stage=wind ran=true path=gdext_daily_wind_wind elapsed=1.486 slp=-1.000 wind=1.310 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/1.310 delta=1.965611 reason=
+[ocean_currents][RT] phys_round_start#7 tick=26 phase=0.2849 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#13 tick=26 round=7 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.624 ocean_delta_p95=0.163298 wind_delta_p95=1.965611 slp_delta_p95=0.116182 psi_path=gdext
+[weather-layer][lut] #25 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][RT] phys_slice#14 tick=28 round=7 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=2.056 ocean_delta_p95=0.163298 wind_delta_p95=1.943318 slp_delta_p95=0.107246 psi_path=gdext
+[clock/step] delta=33.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.17ms carry=0.20
+[weather-layer][lut] #26 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=14.004 (last_pass_day=28.985, k x14.00)
+[ocean_currents][RT] phys_round_start#8 tick=30 phase=0.3286 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#15 tick=30 round=8 stage=phys_psi_init->phys_upwelling done=false run_ocean=true need_visual=false elapsed=2.769 ocean_delta_p95=0.196956 wind_delta_p95=1.894744 slp_delta_p95=0.109890 psi_path=gdext
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.17ms p95=0.07ms max=3.86ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.56ms p95=1.17ms max=1.17ms slices=4 skipped[frame_budget_exhausted=1,policy_gated=25]
+[SUS-cpp] last 30 ticks: ocean_currents ran=29 avg=1.57ms p95=3.06ms max=3.52ms slices=29 skipped[frame_budget_exhausted=1]
+[SUS-cpp] last 30 ticks: native_daily_sim ran=21 avg=2.49ms p95=7.39ms max=7.57ms slices=21 skipped[frame_budget_exhausted=8,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.4ms p95=0.58ms max=0.58ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 30 ticks: total_p95=8.24ms max=8.43ms over_1ms=28 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.56ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[weather-layer][lut] #27 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][RT] phys_slice#16 tick=32 round=8 stage=phys_upwelling->phys_done done=true run_ocean=true need_visual=false elapsed=1.314 ocean_delta_p95=0.196956 wind_delta_p95=1.935057 slp_delta_p95=0.099186 psi_path=gdext
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.08
+[weather-layer][lut] #28 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[fast tick WARN] #33 sus=2.91 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.24ms max=8.43ms over1ms=31 largest=native_daily_sim/climate_pass_b/climate_pass_b_knobs path=gdext_native_daily_slice 1.62ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.74ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.44 total=0.54 refresh=0.06 dominant=daily_wind_wind/0.44 slp_dp95=0.00000 wind_dp95=1.76793 commit=true reason=
+    native_daily_sim ran=1.63ms slices=1 progress=0.27
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[ocean_currents][RT] phys_round_start#9 tick=34 phase=0.3725 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#17 tick=34 round=9 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=2.112 ocean_delta_p95=0.139995 wind_delta_p95=1.767932 slp_delta_p95=0.113207 psi_path=gdext
+[weather-layer][lut] #29 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.95
+[ocean_currents][RT] phys_slice#18 tick=36 round=9 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.282 ocean_delta_p95=0.139995 wind_delta_p95=1.962978 slp_delta_p95=0.102686 psi_path=gdext
+[weather-layer][lut] #30 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=23 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][RT] phys_round_start#10 tick=38 phase=0.4163 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#19 tick=38 round=10 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.624 ocean_delta_p95=0.138158 wind_delta_p95=1.962569 slp_delta_p95=0.111453 psi_path=gdext
+[weather-layer][lut] #31 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=34.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.25ms carry=0.87
+[ocean_currents][RT] phys_slice#20 tick=40 round=10 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.969 ocean_delta_p95=0.138158 wind_delta_p95=1.940080 slp_delta_p95=0.103066 psi_path=gdext
+[weather-layer][lut] #32 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][RT] phys_round_start#11 tick=42 phase=0.4601 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#21 tick=42 round=11 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=3.092 ocean_delta_p95=0.157959 wind_delta_p95=1.886021 slp_delta_p95=0.099116 psi_path=gdext
+[weather-layer][lut] #33 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=14.002 (last_pass_day=42.988, k x14.00)
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.70
+[ocean_currents][RT] phys_slice#22 tick=44 round=11 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=3.220 ocean_delta_p95=0.157959 wind_delta_p95=1.911024 slp_delta_p95=0.112540 psi_path=gdext
+[weather-layer][lut] #34 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[ocean_currents][RT] phys_round_start#12 tick=46 phase=0.5040 physical=true wind_period=1 ocean_period=30 slice_count=16 tps=2 max_slices=1 run_ocean=false need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[ocean_currents][RT] phys_slice#23 tick=46 round=12 stage=phys_psi_init->phys_upwelling done=false run_ocean=false need_visual=false elapsed=1.631 ocean_delta_p95=0.173415 wind_delta_p95=1.958886 slp_delta_p95=0.100941 psi_path=gdext
+[weather-layer][lut] #35 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=31.0ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.10ms carry=0.55
+[ocean_currents][RT] phys_slice#24 tick=48 round=12 stage=phys_upwelling->phys_done done=true run_ocean=false need_visual=false elapsed=1.346 ocean_delta_p95=0.173415 wind_delta_p95=1.744540 slp_delta_p95=0.109570 psi_path=gdext
+[weather-layer][lut] #36 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #37 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=18 isw_mis=0 terrain_written=true isw_written=false
+[clock/step] delta=31.3ms speed=1x target=0.03d ran=0 loop=0.00ms proc=0.13ms carry=0.37
+[weather-layer][lut] #38 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex-renderer] set_weather_fronts(n=10) layer=WeatherLayer
+[weather-layer][lut] #39 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=12.005 (last_pass_day=54.993, k x12.01)
+[clock/step] delta=46.5ms speed=1x target=0.05d ran=0 loop=0.00ms proc=0.22ms carry=0.20
+[weather-layer][lut] #40 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #41 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[day/seg] full=3.32ms label=0.05 season_phase=0.03 fast=3 post=0.24 skipped=false
+[clock/step] delta=31.0ms speed=1x target=0.03d ran=1 loop=3.38ms proc=3.48ms carry=0.02
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.04ms p95=0.06ms max=0.08ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.6ms p95=1.67ms max=1.67ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.51ms p95=3.44ms max=3.96ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=22 avg=2.27ms p95=7.07ms max=7.72ms slices=22 skipped[frame_budget_exhausted=8]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.32ms p95=0.33ms max=0.33ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 60 ticks: total_p95=7.87ms max=8.58ms over_1ms=57 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.71ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[weather-layer][lut] #42 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[fast tick WARN] #63 sus=3.02 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=7.87ms max=8.58ms over1ms=60 largest=native_daily_sim/wind_surface/wind_surface_knobs path=gdext_native_daily_slice 1.68ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.79ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.48 total=0.59 refresh=0.06 dominant=daily_wind_wind/0.48 slp_dp95=0.00000 wind_dp95=1.85242 commit=true reason=
+    native_daily_sim ran=1.70ms slices=1 progress=0.40
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=5 isw_mis=0 terrain_written=true isw_written=false
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[sea_ice/dt] call#2 dt_days=12.476 (last_pass_day=67.469, k x12.48)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=3 isw_mis=0 terrain_written=true isw_written=false
+[sea_ice/dt] call#2 dt_days=10.845 (last_pass_day=78.314, k x10.84)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=3 isw_mis=0 terrain_written=true isw_written=false
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.44ms p95=0.66ms max=0.66ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.2ms p95=1.76ms max=1.85ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=28 avg=2.32ms p95=7.43ms max=10.56ms slices=28 skipped[frame_budget_exhausted=2]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.32ms p95=0.33ms max=0.33ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 90 ticks: total_p95=8.18ms max=11.38ms over_1ms=85 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=12.381 (last_pass_day=90.695, k x12.38)
+[fast tick WARN] #93 sus=2.84 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.24ms max=11.38ms over1ms=87 largest=native_daily_sim/ocean_water/ocean_water_knobs path=gdext_native_daily_slice 1.53ms
+    season_refresh ran=0.05ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.76ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.90181 commit=true reason=
+    native_daily_sim ran=1.54ms slices=1 progress=0.13
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=11.402 (last_pass_day=102.096, k x11.40)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1 isw_mis=0 terrain_written=true isw_written=false
+[sea_ice/dt] call#2 dt_days=12.381 (last_pass_day=114.477, k x12.38)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.73ms p95=0.83ms max=0.83ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.26ms p95=1.89ms max=1.94ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.52ms p95=7.46ms max=7.48ms slices=25 skipped[frame_budget_exhausted=4,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.34ms p95=0.36ms max=0.36ms slices=3 skipped[frame_budget_exhausted=26,policy_gated=1]
+[SUS-cpp] budget last 120 ticks: total_p95=8.24ms max=11.38ms over_1ms=110 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=29 isw_mis=0 terrain_written=true isw_written=false
+[fast tick WARN] #123 sus=3.43 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.24ms max=11.38ms over1ms=113 largest=native_daily_sim/transpiration/transpiration_knobs path=gdext_native_daily_slice 1.59ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.81ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.48 total=0.59 refresh=0.07 dominant=daily_wind_wind/0.48 slp_dp95=0.00000 wind_dp95=1.89323 commit=true reason=
+    native_daily_sim ran=1.61ms slices=1 progress=0.53
+    dynamic_visual_atlas_upload ran=0.34ms slices=1 progress=1.00
+[sea_ice/dt] call#2 dt_days=11.461 (last_pass_day=125.938, k x11.46)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=141 isw_mis=0 terrain_written=true isw_written=false
+[weather-layer][lut] #43 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=14.063 (last_pass_day=140.000, k x14.06)
+[day/seg] full=9.07ms label=0.04 season_phase=0.03 fast=9 post=0.00 skipped=false
+[clock/step] delta=31.3ms speed=50x target=1.56d ran=1 loop=9.11ms proc=9.22ms carry=0.56
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=2 isw_mis=0 terrain_written=true isw_written=false
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.04ms p95=0.06ms max=0.06ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.34ms p95=0.66ms max=0.66ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.37ms p95=2.58ms max=2.61ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=24 avg=2.38ms p95=6.99ms max=7.25ms slices=24 skipped[frame_budget_exhausted=6]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.34ms max=0.34ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 150 ticks: total_p95=8.18ms max=11.38ms over_1ms=137 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=12.500 (last_pass_day=152.500, k x12.50)
+[fast tick WARN] #153 sus=8.55 render=0.01 ui=0.00 total=9ms skip_day=false
+    sus_window p95=8.18ms max=11.38ms over1ms=140 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.24ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.77ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.46 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.46 slp_dp95=0.00000 wind_dp95=1.51102 commit=true reason=
+    native_daily_sim ran=7.26ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=13.063 (last_pass_day=165.563, k x13.06)
+[sea_ice/dt] call#2 dt_days=11.867 (last_pass_day=177.430, k x11.87)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.05ms max=0.06ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.68ms p95=0.76ms max=0.76ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.26ms p95=1.94ms max=2.11ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=23 avg=2.57ms p95=7.26ms max=7.4ms slices=23 skipped[frame_budget_exhausted=6,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.33ms p95=0.33ms max=0.33ms slices=3 skipped[frame_budget_exhausted=26,policy_gated=1]
+[SUS-cpp] budget last 180 ticks: total_p95=8.11ms max=11.38ms over_1ms=161 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #183 sus=3.14 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.11ms max=11.38ms over1ms=164 largest=native_daily_sim/climate_pass_b/climate_pass_b_knobs path=gdext_native_daily_slice 1.71ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.84ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.51 total=0.63 refresh=0.06 dominant=daily_wind_wind/0.51 slp_dp95=0.00000 wind_dp95=1.86403 commit=true reason=
+    native_daily_sim ran=1.72ms slices=1 progress=0.27
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.150 (last_pass_day=189.579, k x12.15)
+[sea_ice/dt] call#2 dt_days=12.549 (last_pass_day=202.128, k x12.55)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.49ms p95=0.74ms max=0.74ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.23ms p95=1.8ms max=1.82ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.19ms p95=7.1ms max=7.21ms slices=26 skipped[policy_gated=2,frame_budget_exhausted=2]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.34ms max=0.34ms slices=4 skipped[frame_budget_exhausted=25,policy_gated=1]
+[SUS-cpp] budget last 210 ticks: total_p95=8.07ms max=11.38ms over_1ms=187 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #213 sus=3.07 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.07ms max=11.38ms over1ms=190 largest=native_daily_sim/runtime_hydrology/runtime_hydrology_knobs path=gdext_native_daily_slice 1.76ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.77ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.46 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.46 slp_dp95=0.00000 wind_dp95=1.90775 commit=true reason=
+    native_daily_sim ran=1.77ms slices=1 progress=0.93
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.409 (last_pass_day=214.537, k x12.41)
+[sea_ice/dt] call#2 dt_days=11.381 (last_pass_day=225.918, k x11.38)
+[weather-layer][lut] #44 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=12.381 (last_pass_day=238.299, k x12.38)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.52ms p95=0.69ms max=0.69ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.21ms p95=1.83ms max=1.86ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.46ms p95=7.09ms max=7.25ms slices=26 skipped[frame_budget_exhausted=3,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.32ms p95=0.34ms max=0.34ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 240 ticks: total_p95=8.03ms max=11.38ms over_1ms=213 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #243 sus=2.94 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.03ms max=11.38ms over1ms=216 largest=native_daily_sim/wind_air/wind_air_knobs path=gdext_native_daily_slice 1.64ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.77ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.90706 commit=true reason=
+    native_daily_sim ran=1.65ms slices=1 progress=0.33
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.389 (last_pass_day=250.687, k x12.39)
+[sea_ice/dt] call#2 dt_days=11.458 (last_pass_day=262.146, k x11.46)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.5ms p95=0.75ms max=0.75ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.23ms p95=1.85ms max=1.9ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.21ms p95=7.31ms max=7.35ms slices=25 skipped[frame_budget_exhausted=3,policy_gated=2]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.32ms p95=0.32ms max=0.32ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 270 ticks: total_p95=8.07ms max=11.38ms over_1ms=238 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #273 sus=3.18 render=0.01 ui=0.00 total=4ms skip_day=false
+    sus_window p95=8.07ms max=11.38ms over1ms=241 largest=native_daily_sim/runtime_hydrology/runtime_hydrology_knobs path=gdext_native_daily_slice 1.85ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.79ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.58 refresh=0.07 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.88231 commit=true reason=
+    native_daily_sim ran=1.86ms slices=1 progress=0.93
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=11.930 (last_pass_day=274.076, k x11.93)
+[sea_ice/dt] call#2 dt_days=12.525 (last_pass_day=286.601, k x12.53)
+[sea_ice/dt] call#2 dt_days=12.162 (last_pass_day=298.763, k x12.16)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.69ms p95=0.72ms max=0.72ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.23ms p95=1.82ms max=1.9ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.58ms p95=7.55ms max=7.61ms slices=25 skipped[frame_budget_exhausted=4,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.35ms max=0.35ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.07ms max=11.38ms over_1ms=263 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #303 sus=3.02 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.07ms max=11.38ms over1ms=263 largest=native_daily_sim/climate_pass_b/climate_pass_b_knobs path=gdext_native_daily_slice 1.66ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.80ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.48 total=0.58 refresh=0.06 dominant=daily_wind_wind/0.48 slp_dp95=0.00000 wind_dp95=1.72989 commit=true reason=
+    native_daily_sim ran=1.67ms slices=1 progress=0.27
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=10.913 (last_pass_day=309.676, k x10.91)
+[day/seg] full=3.35ms label=0.05 season_phase=0.03 fast=3 post=0.28 skipped=false
+[day/seg] full=3.53ms label=0.02 season_phase=0.04 fast=3 post=0.46 skipped=false
+[clock/step] delta=31.0ms speed=50x target=1.55d ran=2 loop=6.99ms proc=7.08ms carry=0.07
+[sea_ice/dt] call#2 dt_days=11.944 (last_pass_day=321.620, k x11.94)
+[weather-layer][lut] #45 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.45ms p95=0.69ms max=0.69ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.27ms p95=2.01ms max=2.18ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.26ms p95=7.02ms max=7.81ms slices=25 skipped[policy_gated=1,frame_budget_exhausted=4]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.35ms p95=0.37ms max=0.37ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.03ms max=11.38ms over_1ms=262 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #333 sus=4.20 render=0.01 ui=0.00 total=4ms skip_day=false
+    sus_window p95=8.03ms max=11.38ms over1ms=262 largest=native_daily_sim/weather/weather_knobs path=gdext_native_daily_slice 3.00ms
+    season_refresh ran=0.02ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.72ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.45 total=0.53 refresh=0.05 dominant=daily_wind_wind/0.45 slp_dp95=0.00000 wind_dp95=1.92404 commit=true reason=
+    native_daily_sim ran=3.02ms slices=1 progress=0.87
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=14.476 (last_pass_day=336.096, k x14.48)
+[sea_ice/dt] call#2 dt_days=13.973 (last_pass_day=350.070, k x13.97)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.48ms p95=0.65ms max=0.65ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.24ms p95=1.88ms max=2.2ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=24 avg=2.36ms p95=7.19ms max=8.14ms slices=24 skipped[policy_gated=2,frame_budget_exhausted=4]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.34ms max=0.34ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.03ms max=11.38ms over_1ms=258 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 10.55ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=12.048 (last_pass_day=362.118, k x12.05)
+[fast tick WARN] #363 sus=8.51 render=0.01 ui=0.00 total=9ms skip_day=false
+    sus_window p95=8.03ms max=11.38ms over1ms=257 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.20ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.76ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.45 total=0.55 refresh=0.06 dominant=daily_wind_wind/0.45 slp_dp95=0.00000 wind_dp95=1.81933 commit=true reason=
+    native_daily_sim ran=7.21ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+fast tick #365: 2ms (sus=2.59 render=0.01 ui=0.00 skipped_day=false)
+Yearly refresh 3ms
+[sea_ice/dt] call#2 dt_days=12.480 (last_pass_day=374.598, k x12.48)
+[sea_ice/dt] call#2 dt_days=12.050 (last_pass_day=386.649, k x12.05)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.53ms p95=0.8ms max=0.8ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.2ms p95=1.81ms max=1.83ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=24 avg=2.46ms p95=7.32ms max=7.34ms slices=24 skipped[policy_gated=3,frame_budget_exhausted=3]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.33ms p95=0.34ms max=0.34ms slices=3 skipped[frame_budget_exhausted=25,policy_gated=2]
+[SUS-cpp] budget last 300 ticks: total_p95=8.03ms max=8.92ms over_1ms=254 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #393 sus=3.56 render=0.01 ui=0.00 total=4ms skip_day=false
+    sus_window p95=8.01ms max=8.92ms over1ms=255 largest=native_daily_sim/wind_surface/wind_surface_knobs path=gdext_native_daily_slice 1.86ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.72ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.44 total=0.54 refresh=0.06 dominant=daily_wind_wind/0.44 slp_dp95=0.00000 wind_dp95=1.88771 commit=true reason=
+    native_daily_sim ran=1.88ms slices=1 progress=0.40
+    dynamic_visual_atlas_upload ran=0.43ms slices=1 progress=1.00
+[sea_ice/dt] call#2 dt_days=12.061 (last_pass_day=398.710, k x12.06)
+[sea_ice/dt] call#2 dt_days=12.063 (last_pass_day=410.772, k x12.06)
+[weather-layer][lut] #46 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.51ms p95=0.7ms max=0.7ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.24ms p95=1.87ms max=1.88ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.23ms p95=7.12ms max=7.5ms slices=26 skipped[frame_budget_exhausted=3,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.36ms p95=0.43ms max=0.43ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.0ms max=8.92ms over_1ms=255 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=11.500 (last_pass_day=422.272, k x11.50)
+[fast tick WARN] #423 sus=8.47 render=0.01 ui=0.00 total=9ms skip_day=false
+    sus_window p95=8.00ms max=8.92ms over1ms=255 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.06ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.86ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.54 total=0.65 refresh=0.06 dominant=daily_wind_wind/0.54 slp_dp95=0.00000 wind_dp95=1.91544 commit=true reason=
+    native_daily_sim ran=7.07ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=11.500 (last_pass_day=433.772, k x11.50)
+[sea_ice/dt] call#2 dt_days=12.063 (last_pass_day=445.835, k x12.06)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.52ms p95=0.77ms max=0.77ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.32ms p95=1.93ms max=2.3ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.59ms p95=7.16ms max=7.21ms slices=25 skipped[frame_budget_exhausted=3,policy_gated=2]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.33ms p95=0.34ms max=0.34ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 300 ticks: total_p95=8.0ms max=8.92ms over_1ms=254 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #453 sus=3.08 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=7.98ms max=8.92ms over1ms=253 largest=native_daily_sim/wind_air/wind_air_knobs path=gdext_native_daily_slice 1.65ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.80ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.48 total=0.60 refresh=0.07 dominant=daily_wind_wind/0.48 slp_dp95=0.00000 wind_dp95=1.75408 commit=true reason=
+    native_daily_sim ran=1.66ms slices=1 progress=0.33
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.684 (last_pass_day=458.518, k x12.68)
+[sea_ice/dt] call#2 dt_days=13.109 (last_pass_day=471.627, k x13.11)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.71ms p95=0.76ms max=0.76ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.24ms p95=1.85ms max=1.98ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.25ms p95=7.16ms max=7.71ms slices=25 skipped[frame_budget_exhausted=5]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.34ms p95=0.35ms max=0.35ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=7.97ms max=8.92ms over_1ms=256 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #483 sus=3.68 render=0.53 ui=0.00 total=4ms skip_day=false
+    sus_window p95=7.97ms max=8.92ms over1ms=256 largest=native_daily_sim/native_daily_complete/round_complete path=gdext_native_daily_slice 2.34ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.78ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.58 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.86814 commit=true reason=
+    native_daily_sim ran=2.36ms slices=1 progress=1.00
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=11.978 (last_pass_day=483.605, k x11.98)
+[day/seg] full=5.21ms label=0.04 season_phase=0.02 fast=5 post=0.15 skipped=false
+[sea_ice/dt] call#2 dt_days=9.587 (last_pass_day=493.193, k x9.59)
+[day/seg] full=23.03ms label=0.02 season_phase=0.04 fast=8 post=14.97 skipped=false
+[clock/step] delta=38.1ms speed=50x target=1.90d ran=2 loop=28.38ms proc=28.49ms carry=0.10
+[weather-layer][lut] #47 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=13.356 (last_pass_day=506.549, k x13.36)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.51ms p95=0.74ms max=0.74ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.23ms p95=1.9ms max=1.94ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.47ms p95=7.36ms max=7.63ms slices=26 skipped[frame_budget_exhausted=4]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.33ms p95=0.33ms max=0.33ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 300 ticks: total_p95=7.98ms max=8.92ms over_1ms=256 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #513 sus=3.15 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=7.98ms max=8.92ms over1ms=256 largest=native_daily_sim/wind_surface/wind_surface_knobs path=gdext_native_daily_slice 1.81ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.78ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.58 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.91278 commit=true reason=
+    native_daily_sim ran=1.82ms slices=1 progress=0.40
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.391 (last_pass_day=518.940, k x12.39)
+[sea_ice/dt] call#2 dt_days=11.597 (last_pass_day=530.537, k x11.60)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.49ms p95=0.66ms max=0.66ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.25ms p95=1.91ms max=1.92ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.23ms p95=7.32ms max=7.45ms slices=26 skipped[frame_budget_exhausted=3,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.34ms max=0.34ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.0ms max=8.92ms over_1ms=256 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=11.517 (last_pass_day=542.055, k x11.52)
+[fast tick WARN] #543 sus=8.82 render=0.01 ui=0.00 total=9ms skip_day=false
+    sus_window p95=8.00ms max=8.92ms over1ms=256 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.40ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.87ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.49 total=0.62 refresh=0.07 dominant=daily_wind_wind/0.49 slp_dp95=0.00000 wind_dp95=1.91412 commit=true reason=
+    native_daily_sim ran=7.41ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.063 (last_pass_day=554.117, k x12.06)
+[sea_ice/dt] call#2 dt_days=11.500 (last_pass_day=565.617, k x11.50)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.04ms p95=0.04ms max=0.13ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.44ms p95=0.65ms max=0.65ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.26ms p95=1.87ms max=1.88ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=26 avg=2.55ms p95=7.25ms max=7.41ms slices=26 skipped[frame_budget_exhausted=2,policy_gated=2]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.37ms max=0.37ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=8.0ms max=8.92ms over_1ms=257 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #573 sus=2.77 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=8.00ms max=8.92ms over1ms=256 largest=native_daily_sim/wind_surface/wind_surface_knobs path=gdext_native_daily_slice 1.48ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.76ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.56 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.74973 commit=true reason=
+    native_daily_sim ran=1.49ms slices=1 progress=0.40
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=12.063 (last_pass_day=577.680, k x12.06)
+[weather-layer][lut] #48 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=12.933 (last_pass_day=590.613, k x12.93)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.04ms p95=0.06ms max=0.08ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.69ms p95=0.76ms max=0.76ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.38ms p95=2.13ms max=3.38ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=24 avg=2.39ms p95=6.97ms max=7.05ms slices=24 skipped[frame_budget_exhausted=6]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.34ms p95=0.34ms max=0.34ms slices=3 skipped[frame_budget_exhausted=27]
+[SUS-cpp] budget last 300 ticks: total_p95=7.97ms max=8.92ms over_1ms=258 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #603 sus=4.02 render=0.53 ui=0.00 total=4ms skip_day=false
+    sus_window p95=7.97ms max=8.92ms over1ms=258 largest=native_daily_sim/native_daily_complete/round_complete path=gdext_native_daily_slice 2.38ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.98ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.62 total=0.74 refresh=0.07 dominant=daily_wind_wind/0.62 slp_dp95=0.00000 wind_dp95=1.80848 commit=true reason=
+    native_daily_sim ran=2.39ms slices=1 progress=1.00
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=13.070 (last_pass_day=603.683, k x13.07)
+[sea_ice/dt] call#2 dt_days=11.858 (last_pass_day=615.541, k x11.86)
+[sea_ice/dt] call#2 dt_days=12.747 (last_pass_day=628.289, k x12.75)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.05ms max=0.05ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.35ms p95=0.68ms max=0.68ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.36ms p95=2.7ms max=3.05ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.57ms p95=7.17ms max=7.31ms slices=25 skipped[frame_budget_exhausted=5]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.33ms p95=0.33ms max=0.33ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=7.97ms max=8.92ms over_1ms=259 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 8.13ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[fast tick WARN] #633 sus=2.96 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=7.97ms max=8.92ms over1ms=259 largest=native_daily_sim/wind_air/wind_air_knobs path=gdext_native_daily_slice 1.63ms
+    season_refresh ran=0.04ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.78ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.84632 commit=true reason=
+    native_daily_sim ran=1.64ms slices=1 progress=0.33
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=14.570 (last_pass_day=642.859, k x14.57)
+[sea_ice/dt] call#2 dt_days=12.041 (last_pass_day=654.900, k x12.04)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.04ms max=0.04ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.66ms p95=0.73ms max=0.73ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.25ms p95=1.97ms max=2.93ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=23 avg=2.24ms p95=7.02ms max=7.09ms slices=23 skipped[frame_budget_exhausted=6,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.33ms p95=0.34ms max=0.34ms slices=3 skipped[frame_budget_exhausted=26,policy_gated=1]
+[SUS-cpp] budget last 300 ticks: total_p95=7.96ms max=8.5ms over_1ms=259 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.7ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[day/seg] full=11.89ms label=0.04 season_phase=0.03 fast=3 post=8.82 skipped=false
+[clock/step] delta=31.3ms speed=50x target=1.56d ran=1 loop=11.95ms proc=12.06ms carry=0.72
+[fast tick WARN] #663 sus=2.62 render=0.01 ui=0.00 total=3ms skip_day=false
+    sus_window p95=7.95ms max=8.50ms over1ms=260 largest=native_daily_sim/sea_ice/sea_ice_knobs path=gdext_native_daily_slice 1.45ms
+    season_refresh ran=0.02ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.73ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.46 total=0.54 refresh=0.05 dominant=daily_wind_wind/0.46 slp_dp95=0.00000 wind_dp95=1.76704 commit=true reason=
+    native_daily_sim ran=1.46ms slices=1 progress=0.47
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[sea_ice/dt] call#2 dt_days=11.509 (last_pass_day=666.409, k x11.51)
+[sea_ice/dt] call#2 dt_days=12.063 (last_pass_day=678.471, k x12.06)
+[weather-layer][lut] #49 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.03ms p95=0.06ms max=0.06ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=3 avg=0.44ms p95=0.65ms max=0.65ms slices=3 skipped[policy_gated=27]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.29ms p95=1.94ms max=2.64ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=25 avg=2.31ms p95=7.1ms max=7.13ms slices=25 skipped[frame_budget_exhausted=4,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=4 avg=0.35ms p95=0.37ms max=0.37ms slices=4 skipped[frame_budget_exhausted=26]
+[SUS-cpp] budget last 300 ticks: total_p95=7.93ms max=8.5ms over_1ms=261 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.7ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[sea_ice/dt] call#2 dt_days=14.232 (last_pass_day=692.704, k x14.23)
+[fast tick WARN] #693 sus=8.88 render=0.01 ui=0.00 total=9ms skip_day=false
+    sus_window p95=7.95ms max=8.50ms over1ms=260 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.53ms
+    season_refresh ran=0.03ms slices=1 progress=0.00
+        season_refresh stages={ "b_plus_path": "gdext", "b_plus_handle": 1 }
+    enum_atlas_upload skipped(policy_gated)
+    ocean_currents ran=0.78ms slices=1 progress=1.00
+        daily_wind stage=wind path=gdext_daily_wind_wind slp=-1.00 wind=0.47 total=0.57 refresh=0.06 dominant=daily_wind_wind/0.47 slp_dp95=0.00000 wind_dp95=1.89789 commit=true reason=
+    native_daily_sim ran=7.54ms slices=1 progress=0.07
+    dynamic_visual_atlas_upload skipped(frame_budget_exhausted)
+[weather-layer][lut] #50 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[sea_ice/dt] call#2 dt_days=14.053 (last_pass_day=706.757, k x14.05)
+[clock/step] delta=31.3ms speed=10x target=0.31d ran=0 loop=0.00ms proc=0.10ms carry=0.63
+[sea_ice/dt] call#2 dt_days=12.188 (last_pass_day=718.944, k x12.19)
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.04ms p95=0.05ms max=0.06ms slices=30
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.53ms p95=0.7ms max=0.7ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=30 avg=1.34ms p95=1.92ms max=3.14ms slices=30
+[SUS-cpp] last 30 ticks: native_daily_sim ran=24 avg=2.65ms p95=7.39ms max=7.54ms slices=24 skipped[frame_budget_exhausted=5,policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=3 avg=0.34ms p95=0.35ms max=0.35ms slices=3 skipped[frame_budget_exhausted=26,policy_gated=1]
+[SUS-cpp] budget last 300 ticks: total_p95=7.93ms max=8.5ms over_1ms=260 largest=native_daily_sim/climate_pass_a/climate_pass_a_struct path=gdext_native_daily_slice 7.7ms
+[SUS-cpp] world: bound=true entities=2400 components=75 pools=1
+[weather-layer][lut] #51 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #52 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #53 update_usec=40855691 last_usec=40855691 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+--- Debugging process stopped ---

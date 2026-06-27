@@ -74,8 +74,8 @@ var _debug: bool = OS.is_debug_build()
 # 范围：mask 只覆盖 cells pool（[0, n_cells)）。其他 pool（weather front 池等）
 # 写 idx >= n_cells 时本层直接跳过 mark（mask 大小固定 = n_cells）。
 #
-# 同步：SUS scheduler 单线程串行 tick，sea_ice_atlas_upload_job (priority=250)
-# 必然跑在所有 sim 写字段 Job (priority 100-200) 之后；baker 入口
+# 同步：SUS scheduler 单线程串行 tick，visual upload jobs
+# 必然跑在所有 sim 写字段 Job 之后；baker 入口
 # read_and_clear_dirty_mask() 一次性快照 + 清零，原子语义靠"消费在写之后"保证。
 #
 # 性能：mark_dirty 单点开销 = 1 次比较 + 1 次 byte 写，N=1e5 全脏 ≈ 0.5ms（cold
@@ -724,8 +724,8 @@ func mark_dirty_all() -> void:
 ## 公开 API：原子地"读出当前所有 dirty cell 的 index 列表 + 把 mask 清零"。
 ##
 ## 返回 PackedInt32Array（升序，因遍历顺序保证）。
-## SUS scheduler 是单线程串行，priority 序天然把 sim 写 Job (100-200) 排在
-## sea_ice_atlas_upload_job (250) 之前 → baker 入口调本方法即获得 tick 内
+## SUS scheduler 是单线程串行，priority 序天然把 sim 写 Job 排在
+## visual upload job 之前 → baker 入口调本方法即获得 tick 内
 ## "全部待消费 dirty"快照；之后 sim 再写下个 tick 的脏会重新累积。
 ##
 ## dirty_mask_enabled = false 或 mask_size = 0 时返回空数组（baker 应当退化到

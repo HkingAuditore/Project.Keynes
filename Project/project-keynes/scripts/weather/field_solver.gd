@@ -372,8 +372,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 	const ORO_PRECIP_GAIN := 0.10
 	const CLOUD_REEVAP := 0.18   # 2026-06-22 雨云化:0.06→0.18 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
-	const THERMAL_CONV_COND := 1.9   # 2026-06-22: 1.5→1.9 增内陆对流凝结(抬 cloud_water 上限)
-	const THERMAL_CONV_PRECIP := 0.75  # 同步C++ 压对流雨 # 2026-06-22: 0.6→1.1 增内陆对流成雨(主力)
+	const THERMAL_CONV_COND := 1.15   # 降低静态热力云源，让移动/平流项主导雨云
+	const THERMAL_CONV_PRECIP := 0.45 # 降低按温度锚定的原地对流雨
 	# ─── climate-realism Stage1 (2026-06-23): Hadley/Ferrel 垂直运动项 omega ──
 	# 键在「热赤道」相对纬度(随季迁移、无直线条带): ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水。
 	# lat_te_norm 由 begin_slice 按 zonal-max 温度逐 tick 计算。镜像 world_ext.cpp。
@@ -385,8 +385,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 	# 根因：长尾格是【强迫主导】(常驻辐合/地形抬升)而非水汽主导——抽干水汽只会饿死弱短系统(全局变干)，
 	# 强迫格仍靠平流来的少量水汽持续成雨。Stage6c 改用【对流抑制记忆】(下方 INHIB_*)定点封顶强迫格，
 	# 同时把 vapor 放电调回温和(不再过度抽干)。
-	const VAPOR_DISCHARGE := 0.45   # 放电(温和)：仍提供湿团放电→上风传播，但不再过度抽干(Stage6b 0.65→0.45)
-	const DISCHARGE_SUSTAIN := 0.0  # Stage6c: 持续放电改由对流抑制记忆承担，关闭此项(1.3→0)
+	const VAPOR_DISCHARGE := 0.70   # 持续降水更快抽干本格水汽，避免固定雨核永雨
+	const DISCHARGE_SUSTAIN := 0.65 # prev_precip 高时加强放电，让雨团下完后进入恢复期
 	# ── Stage6e (2026-06-23): 对流抑制记忆=双稳弛豫振子(真·充放电极限环) ──
 	# 实测线性版(precip×(1-inhib·k))只把降水压到稳态弱雨(~0.05>湿阈)→雨永不停、中位反而升到 16 天。
 	# 改双稳硬阈：inhib 累积过 TRIGGER → 降水砍到近 0(气柱放电、转干转晴) → inhib 衰减落回 → 释放再积累。
@@ -691,15 +691,16 @@ func run_slice(cell_budget: int) -> Dictionary:
 		precip_target = minf(precip_target, cloud_water)
 		precip_target = maxf(precip_target, 0.0)
 		cloud_water = maxf(cloud_water - precip_target, 0.0)
-		var precip_cloud_reserve: float = precip_target * (0.42 + dynamic_forcing * 0.28)
+		var precip_cloud_reserve: float = precip_target * (0.18 + dynamic_forcing * 0.18)
 		cloud_water = minf(1.0, cloud_water + precip_cloud_reserve)
+		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
 		if on_water and ocean_drive < 0.34:
-			var marine_scour: float = clampf(cloud_water * (0.026 + (0.34 - ocean_drive) * 0.14) * (1.0 + post_rain_subsidence * 1.35), 0.0, cloud_water)
+			var marine_scour: float = clampf(cloud_water * (0.036 + (0.34 - ocean_drive) * 0.18) * (1.0 + post_rain_subsidence * 1.60), 0.0, cloud_water)
 			cloud_water -= marine_scour
 			vapor += marine_scour * 0.55
 
 		# 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
-		var reevap: float = clampf(cloud_water * _weather_system._field_cloud_reevap * (1.0 - relative_humidity) * (1.0 + post_rain_subsidence * 1.25), 0.0, cloud_water)
+		var reevap: float = clampf(cloud_water * _weather_system._field_cloud_reevap * (1.0 - relative_humidity) * (1.0 + post_rain_subsidence * 1.75 + quiet_core * 0.75), 0.0, cloud_water)
 		cloud_water -= reevap
 		vapor += reevap
 		if on_water:
@@ -716,7 +717,6 @@ func run_slice(cell_budget: int) -> Dictionary:
 		# Stage10b 空间平滑(非对称)：强填洞(0.30)、弱削峰(×0.30→保超级单体暴雨)。镜像 world_ext.cpp。
 		var nbr_precip: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_precip) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_precip)
 		precip = lerpf(precip, nbr_precip, 0.30 if nbr_precip > precip else 0.09)
-		var quiet_core: float = 1.0 - smoothstep(0.12, 0.50, dynamic_forcing)
 		var effective_precip_floor: float = 0.014 if on_water else 0.018
 		if precip < 0.003:
 			precip = 0.0
@@ -726,9 +726,9 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var pre_wt: int = _weather_system._classify_field_weather_at(temp, vapor, provisional_cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
 		var quiet_non_precip: bool = not _weather_system._is_precip_weather_type(pre_wt) and quiet_core > 0.0
 		if (precip < 0.003 or quiet_non_precip) and quiet_core > 0.0:
-			var clear_cap: float = 0.055 + dynamic_forcing * 0.12
+			var clear_cap: float = 0.040 + dynamic_forcing * 0.10
 			if on_water and ocean_drive < 0.20:
-				clear_cap = minf(clear_cap, 0.060 + ocean_drive * 0.24)
+				clear_cap = minf(clear_cap, 0.045 + ocean_drive * 0.20)
 			if cloud_water > clear_cap:
 				var excess_cloud_water: float = (cloud_water - clear_cap) * quiet_core
 				cloud_water -= excess_cloud_water
@@ -740,14 +740,14 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var vapor_after_precip: float = vapor
 		var rain_core: float = smoothstep(0.025, 0.095, precip)
 		var front_core: float = smoothstep(0.08, 0.55, frontogenesis)
-		var cloud_floor: float = maxf(rain_core * (0.22 + rain_core * 0.30), front_core * 0.46)
+		var cloud_floor: float = maxf(rain_core * (0.14 + rain_core * 0.22), front_core * 0.30)
 		if convective > 0.0:
-			cloud_floor = maxf(cloud_floor, 0.12 + convective * 0.30)
+			cloud_floor = maxf(cloud_floor, 0.06 + convective * 0.18)
 		if ocean_convective > 0.0:
-			cloud_floor = maxf(cloud_floor, 0.18 + ocean_convective * 0.22)
+			cloud_floor = maxf(cloud_floor, 0.10 + ocean_convective * 0.16)
 		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
 		if prev_cloud_arr.size() == n_cells:
-			cloud = lerpf(prev_cloud_arr[i], cloud, 0.42)  # Stage15 云量时间 EMA(减闪烁) 镜像 C++ field_cloud_inertia
+			cloud = lerpf(prev_cloud_arr[i], cloud, _weather_system._field_cloud_inertia)  # Stage15 云量时间 EMA，镜像 C++ field_cloud_inertia
 
 		var wt: int = _weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
 		if not _weather_system._is_precip_weather_type(wt) and precip > 0.0:

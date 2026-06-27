@@ -57,11 +57,23 @@ refresh_climate_daily ran=0.59ms slices=1 progress=0.25
 - `budget last 270 ticks` 是按整个 SUS tick 聚合。
 - `largest` 可能保留旧 spike，不能单独证明当前仍走 GDScript。
 
+## Skip reason 快速判断
+
+| reason | 典型含义 | 下一步 |
+| --- | --- | --- |
+| `policy_gated` | job 当前 tick 未落在 `ClimateProfile.sim_stagger_*` 配置的 bucket phase 上。默认这是全平台错峰的正常结果。 | 看 stride/phase 是否符合预期，以及一个完整 bucket 周期内是否至少运行一次。 |
+| `strict_budget_one_job` | `sim_strict_budget_enabled=true` 时，scheduler tick 内轮转只放行一个 optional job。 | 这是 strict round-robin 预算模式，不是 profile bucket；确认是否真的需要打开 strict。 |
+| `frame_budget_exhausted` | tick 内 frame budget 被前面的 slice 吃完，后续 optional job 没启动。 | 看 `largest`、`must_run`、slice budget 和是否长期饿死 simulation authority job。 |
+| `dep_pending` | depends_on 上游 round 仍未完成。 | 检查依赖是否是硬数据依赖；跨多 tick 的上游会拖慢下游。 |
+
+当前默认错峰由 `DCSystemScheduler.configure_job_from_profile()` / `apply_job_schedule()` 解释 `ClimateProfile.sim_stagger_enabled`、`sim_stagger_bucket_stride` 和各 job phase。正常日志会看到不同 job 在不同 tick `ran`，其他 tick 记为 `policy_gated`；这不等同于性能故障。真正需要处理的是某个 job 经过完整 bucket 周期仍长期只有 `frame_budget_exhausted` 或 `dep_pending`。
+
 ## `path=` 字段解释
 
 | path | 含义 | 是否异常 |
 | --- | --- | --- |
 | `gdext` | C++ GDExtension pass 成功。 | 正常。 |
+| `gdext_native_daily_slice` | `native_daily_sim` ACTIVE 的 C++ continuation slice。 | 正常；看 `done=false`、`stage_name`、cursor 和 `round_native_ms`。 |
 | `gdext_raster` | C++ raster/pixel slice。 | 正常，常见于 ocean/atlas。 |
 | `data_core` | DataCore 路径，可能包含 C++ pass 和 GDScript orchestration。 | 不等于 fallback。 |
 | `full` | 当前 wrapper 走 full map path。 | 需结合 native breakdown。 |
@@ -96,9 +108,29 @@ published_to_slot=true
 
 `published=true` 是“C++ slot publish 生效”的强信号；此时不要只因为 `largest` 窗口里还有旧 `path=gdscript` 就判断当前失败。
 
+## Native daily slice 排查
+
+`native_daily_sim` ACTIVE 的正常形态是一轮 native daily graph 被拆成多个 SUS slice：
+
+```text
+native_daily_sim ran=... progress=0.46
+    path=gdext_native_daily_slice stage=wind_surface substage=wind_surface_knobs done=false cursor=5..6 round=...
+```
+
+判断：
+
+- `total_ms` / `native_ms` 是当前 slice 的墙钟，应接近单个 native node 的耗时；不要把它当整轮耗时。
+- `round_native_ms` 是本轮累计 native 墙钟，用来观察整轮总成本。
+- `done=false` 表示 C++ continuation 仍在推进，下个 SUS tick 会绕过 stride 继续执行；这不是失败。
+- `stage_name` 应稳定对应 `SCHEDULE_GRAPH` node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。
+- 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。
+- `published_slots`、scheduler-level `published_to_slot` 和 `visual_dirty_intents` 只应在 round 完成 slice 上出现；中间 slice 为空是正常的。graph-level `published_to_slot=true` 不替代具体 pass 的 visible flush 证据。
+- `authority_blockers` 只看 simulation authority 和 production fallback；`retained_boundaries` 才看 `visual_uploads`、front objects、ImageTexture/LUT upload、sea-ice atlas、ocean texture commit、season detail scatter、CSV/debug。`graph_coverage_state=complete` 不要求这些 Godot presentation boundaries 消失。
+- `fronts_changed` 现在来自真实 `weather_lut_changed || fronts_count > 0`，不是 `weather_knobs` 存在即 true。weather owner 已 active 但 `visible_publish_verified=false` 时，继续查 field commit readiness。
+
 ## Runtime hydrology breakdown
 
-启用 `ClimateProfile.runtime_hydrology_enabled` 后，`weather_refresh` 可能出现：
+启用 `ClimateProfile.runtime_hydrology_enabled` 后，legacy `weather_refresh` 可能出现：
 
 ```text
 stage_name=hydrology_discharge substage=route_full path=gdext
@@ -113,6 +145,8 @@ published_to_slot=true
 - `compute_ms` 高说明产流或 parent routing 本体重；`flush_ms` 高说明 PackedArray CoW/MapData 回灌成本高；`refresh_ms` 高说明 hydrology 前同步 weather slots 成本高。
 - `water_budget_error` 是轻量诊断值，不是严格闭合的物理守恒误差；它包含土壤库、地下水库和河道 storage 的日级滞后。若长期接近或超过 `1.0`，优先查 `hydro_parent_arr` 是否存在循环/断链或 release rate 是否过低。
 - `river_discharge_p95/max` 用来观察雨季增强、湖泊削峰、主河不断流等趋势；不要把单日 max spike 直接等同于地图河宽，因为视觉使用的是 `river_discharge_30d`。
+
+native daily ACTIVE 中同一工作表现为 `SCHEDULE_GRAPH` 的 `runtime_hydrology` 节点。此时重点看 `hydrology_ms`、`hydrology_compute_ms`、`hydrology_flush_ms`、`hydrology_published_to_slot`、`hydrology_water_budget_error`、`hydrology_river_discharge_p95/max`。publish 成功后 `authority_report.runtime_hydrology.phase` 会升为 `native_active_verified`。如果 `fail_stage=runtime_hydrology`，优先查 `runtime_hydrology_knobs` 是否进入 bundle、hydrology slots 是否在 schema/bind table 中存在、以及 weather node 是否已经通过 readiness gate 发布 precip。
 
 ## `psi_path=gdscript` 的早期阶段 caveat
 
@@ -262,6 +296,12 @@ samples, the expected daily C++ path is:
 - `phys_daily_wind_path=gdext_daily_wind`
 - `phys_sim_day` advances by one per recorded SUS daily tick
 - `phys_daily_wind_delta_p95` is normally non-zero but should remain smooth
+- `phys_daily_wind_dir_delta_p95` isolates direction-only movement. Use it for
+  "wind vector flipped" investigations because `phys_daily_wind_delta_p95`
+  also includes speed/flux movement.
+- `phys_daily_wind_dir_flip_count` counts cells whose daily direction turn
+  exceeded the hard flip threshold. After the 2026-06-27 direction limiter this
+  should be rare and tied to real fronts/terrain, not broad near-zero flux noise.
 - `phys_ticks_per_slice` may be greater than 1; that describes the slow
   ocean/raster chain and should not prevent daily wind updates
 
@@ -548,6 +588,23 @@ fast tick #1095: 36ms (sus=34.97 render=0.73 ui=0.00 skipped_day=true)
 
 ## Climate stability diagnostics
 
+For climate-realism CSV rechecks, run `tools/analyze_tile_climate_csv.py` on a
+30+ tick recording and compare these fixed metrics before changing formulas
+again:
+
+- `wind_dir_delta_p95` / `wind_flip_gt_120deg_ratio`: direction continuity of
+  `cell_wind_x/y`. These should improve without changing the unit-vector
+  contract.
+- `ocean_clamp_ratio`: whether `ocean_current_max_magnitude` is acting as a rare
+  safety guard or as the main current shaper. Sustained p95 above a few percent
+  means source/scale weights are still too hot.
+- `moisture_base_corr`: how hard runtime `moisture_arr` remains anchored to
+  `base_moisture_arr`. It should fall from the old near-0.98 value while
+  retaining coast/inland/rain-shadow structure.
+- `sea_ice_binary_ratio` and sea-ice neighbor p99: ice-edge continuity. These
+  should drop without introducing low-latitude or land sea ice; use the corrected
+  absolute latitude formula `abs(2 * cell_lat_norm_arr - 1)`.
+
 Weather CSV fields should be read from `sample["weather"]`, not from
 `sample["climate"]`. If `weather_dirty_mask` changes but `weather_dirty_count`
 is permanently zero, first check the recorder input path before changing
@@ -610,6 +667,28 @@ than merely producing clear weather. Check `weather_native_daily_available()`,
 the merged weather gate in `weather_refresh_job.gd`, and whether
 `native_daily_sim_mode=ACTIVE` prevented independent `weather_refresh`
 registration.
+
+`weather_native_daily_available()` 的当前判断应从
+`MapGenerator.weather_native_daily_readiness_report()` 读原因，而不是只看
+`has_method("run_weather_refresh_daily_pass")`。常见 block reason：
+
+- `no_verified_staged_commit_yet`：还没有 staged weather commit 证明 visible publish。
+- `field_commit_not_publish_verified`：commit 跑了，但 `MapData.weather_*` 可见数组未通过验证。
+- `field_commit_required_gdscript_repair`：native commit 后靠 GDScript repair 才发布；不能作为 native daily weather authority。
+- `field_init_incomplete_X_of_N`：`weather_field_init_arr` 未覆盖全图。
+
+Native daily 自身的 slice report 还会暴露 `published_slots`、scheduler-level
+`published_to_slot`、`visual_dirty_intents`、`retained_gdscript_authority`、
+`retained_boundaries`、`authority_report`、`authority_blockers` 和
+`graph_coverage_state`。如果 `graph_coverage_state=partial` 或
+`graph_coverage_complete=false`，先看 simulation blockers；例如缺少
+`runtime_hydrology_knobs` 时的 `runtime_hydrology`、owner gate 未 active 的
+`season_refresh` / `ocean_currents_physical_state`、或
+`legacy_sus_fallback_enabled` 仍在列表中时，只能称为 partial native daily。
+`visual_uploads`、WeatherFront、LUT/ImageTexture、atlas/detail scatter 等只应出现在
+`retained_boundaries`，不应阻塞 simulation graph complete。`wind_air` / `wind_surface` 已接入 graph 时，重点改看
+`wind_air_ms` / `wind_surface_ms`、`published_slots` 中的 `cell_temp` /
+`cell_air_mass_temp_anomaly`，以及 SHADOW hash/A-B 是否对齐。
 
 `refresh_convergence=false` means convergence is intentionally held for this
 tick. Treat `weather_convergence_published=false` or zero
@@ -883,7 +962,7 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
 
 | Fix | 位置 | 行为 |
 |---|---|---|
-| **#8A** | `map_generator.gd::_apply_sim_budget_profile_to_scheduler` + `sus_scheduler.gd::set_frame_budget_ms` + `gdext/sus_scheduler_ext.h::set_frame_budget_ms` | 三层 clamp 上限从 2.0ms 改 4.0ms（C++ 端无条件放开上界）。Mobile 启动时强制 `frame_ms = max(profile, 4.0)`，desktop 仍 clamp 到 2.0ms。SUS 总预算 +2ms 给所有 job 上车机会。|
+| **#8A** | `dc_system_scheduler.gd::configure_from_profile` + `sus_scheduler.gd::set_frame_budget_ms` + `gdext/sus_scheduler_ext.h::set_frame_budget_ms` | Scheduler 层统一解释 profile budget；SUS clamp 上限从 2.0ms 改 4.0ms（C++ 端无条件放开上界）。Mobile 启动时强制 `frame_ms = max(profile, 4.0)`，desktop 仍 clamp 到 2.0ms。SUS 总预算 +2ms 给所有 job 上车机会。|
 | **#8B** | `dynamic_visual_atlas_upload_system.gd::_init` | `must_run = false` → `must_run = true`。绕过 frame_budget gate，每 SUS tick 都跑 1 个 phase。slice_budget_ms=1.5 单 phase 完成单层 atlas，4 phase（dyn/eco/smo/ice）共 ~6ms 跨 4 tick 完成完整 commit。|
 
 预期收益：
@@ -920,7 +999,6 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
   dynamic_visual_atlas_upload_system.gd: phase=0
   enum_atlas_upload_system.gd: phase=0
   weather_refresh_job.gd: phase=0
-  sea_ice_atlas_upload_system.gd: phase=0
   ... 全部 phase=0
 ```
 

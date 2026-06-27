@@ -7,8 +7,8 @@
 #
 #   bootstrap/dots_bootstrap.gd          ← DCWorld + ViewAdapter + Scheduler 注册 +
 #                                          DataCore CLI / hot-toggle / view_adapter rebuild
-#   bootstrap/sus_systems_bootstrap.gd   ← 6 system 注册 + use_dc_system_scheduler
-#                                          flag 切换路径（C.4 留给本 phase 完成的接入）
+#   bootstrap/sus_systems_bootstrap.gd   ← runtime system diagnostics / future
+#                                          bootstrap extraction（生产入口现恒走 DCSystemScheduler）
 #   bootstrap/demo_bootstrap.gd          ← demo_thermal_gradient + DCEcsScheduler
 #                                          + F-key 调试热键（demo 相关部分）
 #   bootstrap/visual_bootstrap.gd        ← TOD / water shader uniform 推送 +
@@ -28,7 +28,7 @@
 #   1. info_panel_controller.gd（最独立，B.1 已 adapter 化）
 #   2. visual_bootstrap.gd（@export 字段 push，纯数据传递）
 #   3. dots_bootstrap.gd（DataCore CLI + view_adapter rebuild）
-#   4. sus_systems_bootstrap.gd（含 use_dc_system_scheduler 接入）
+#   4. sus_systems_bootstrap.gd（runtime system diagnostics / future extraction）
 #   5. demo_bootstrap.gd（最后，demo + DCEcsScheduler 整合）
 #
 # ─── 原始入口说明（保留）────────────────────────────────────────────────
@@ -1795,25 +1795,6 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						str(eb.get("cover_pending", false)),
 						str(eb.get("vegetation_pending", false)),
 					])
-			# DOTS-Final-Push 任务 6.2：sea_ice_atlas_upload 拆 prepare/upload 子段。
-			# 之前日志只看到 ran=232ms slices=1 progress=0.5 但完全不知道这 232ms
-			# 是卡在 prepare（C++ run_sea_ice_atlas_prepare / GD 全图 28800 像素回扫）
-			# 还是 upload（28KB R8 纹理 update）。本钩子把两段拆出来 + path（gdext/
-			# gdscript/zero_fallback）+ dirty_cells/dirty_ratio 一并打印，让下次跑日志
-			# 直接看到瓶颈源。
-			if job_id == &"sea_ice_atlas_upload" and _generator != null \
-					and _generator.has_method("sus_sea_ice_atlas_breakdown"):
-				var sib: Dictionary = _generator.sus_sea_ice_atlas_breakdown()
-				if not sib.is_empty():
-					print("        sea_ice_atlas phase=%s path=%s prep=%.2f img=%.2f upload=%.2f dirty=%d/%.2f" % [
-						str(sib.get("phase", "")),
-						str(sib.get("path", "unknown")),
-						float(sib.get("prepare_ms", 0.0)),
-						float(sib.get("image_ms", 0.0)),
-						float(sib.get("upload_ms", 0.0)),
-						int(sib.get("dirty_cells", 0)),
-						float(sib.get("dirty_ratio", 0.0)),
-					])
 			if job_id == &"season_refresh" and _generator != null \
 					and _generator.has_method("sus_season_refresh_breakdown"):
 				var sb: Dictionary = _generator.sus_season_refresh_breakdown()
@@ -1851,10 +1832,27 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(ob.get("daily_wind_slp_norm_ms", -1.0)),
 							float(ob.get("daily_wind_slp_marshall_ms", -1.0)),
 						])
+			if job_id == &"native_daily_sim":
+				var nd: Dictionary = r.get("native_daily_report", {})
+				if not nd.is_empty():
+					var nd_breakdown: Dictionary = nd.get("breakdown", {})
+					var nd_pass_keys = nd.get("bundle_pass_keys", [])
+					print("        native_daily wall=%.2f bundle=%.2f native_call=%.2f cpp_total=%.2f apply=%.2f compute=%.2f refresh=%.2f flush=%.2f weather=%.2f passes=%d" % [
+						float(nd.get("wrapper_wall_ms", elapsed_ms)),
+						float(nd.get("bundle_ms", 0.0)),
+						float(nd.get("native_call_ms", nd.get("native_ms", 0.0))),
+						float(nd.get("native_ms", nd.get("total_ms", 0.0))),
+						float(nd.get("apply_ms", 0.0)),
+						float(nd.get("compute_ms", 0.0)),
+						float(nd.get("refresh_ms", 0.0)),
+						float(nd.get("flush_ms", 0.0)),
+						float(nd_breakdown.get("weather_ms", 0.0)),
+						int(nd_pass_keys.size()),
+					])
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
-	# 2026-05-18：season_refresh 改为 SeasonRefreshJob 自驱周期重算（默认每 30
+	# 2026-05-18：season_refresh 改为 SeasonRefreshSystem 自驱周期重算（默认每 30
 	# tick 一次），不再绑定到 WorldClock.season_changed 信号脉冲。游戏世界里
 	# 温度 / 降水 / 风 / 海冰已由 refresh_climate_daily 每天连续推进，"季节切换"
 	# 退化为 UI 概念。仅在 ClimateProfile.season_refresh_legacy_signal=true（回归
@@ -2956,7 +2954,7 @@ func get_tile_data_recorder() -> RefCounted:
 # 验收门槛（与 plan/dots-final-push/requirements.md §6 一致）：
 #   - 2400 cells 200 tick 中 fast tick WARN 占比 ≤ 0.5%
 #   - total_ms p95 ≤ 12ms / p99 ≤ 20ms
-#   - 任一 SUS job p95 ≤ 8ms（豁免 sea_ice_atlas_upload / enum_atlas_upload）
+#   - 任一 SUS job p95 ≤ 8ms（豁免 enum_atlas_upload）
 #   - 6400 cells 大地图 200 tick 中 WARN 占比 ≤ 5%
 #
 # 不达标时 verdict.fail_reasons 给出具体哪条门槛未达成 + next_bottleneck

@@ -36,8 +36,7 @@ const WARN_RATIO_THRESHOLD_6400: float = 0.05    # 6.4
 ## 这种运行时构造（会报 "Assigned value for constant"）。直接用 Array 字面量即可，
 ## 后续 `job_id_str in _SUS_JOB_EXEMPT` 的语义与 PackedStringArray 等价。
 const _SUS_JOB_EXEMPT: Array = [
-	"sea_ice_atlas_upload",   # GPU upload 主线程同步，~50ms 不可压（需求边界外）
-	"enum_atlas_upload",      # 同上但已 ≤ 3ms，仍出于稳健给 spike 留余量
+	"enum_atlas_upload",      # GPU upload 主线程同步，仍出于稳健给 spike 留余量
 ]
 
 

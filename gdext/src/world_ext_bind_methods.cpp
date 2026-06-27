@@ -67,12 +67,24 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::configure_native_world);
     ClassDB::bind_method(D_METHOD("run_native_daily_tick", "tick_knobs"),
                          &DCWorldExt::run_native_daily_tick);
+    ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
+                         &DCWorldExt::run_native_daily_slice);
     ClassDB::bind_method(D_METHOD("run_native_sim_tick", "ctx"),
                          &DCWorldExt::run_native_sim_tick);
     ClassDB::bind_method(D_METHOD("get_native_daily_report"),
                          &DCWorldExt::get_native_daily_report);
     ClassDB::bind_method(D_METHOD("get_native_shadow_diff_report"),
                          &DCWorldExt::get_native_shadow_diff_report);
+    ClassDB::bind_method(D_METHOD("native_ocean_physical_begin", "ctx"),
+                         &DCWorldExt::native_ocean_physical_begin);
+    ClassDB::bind_method(D_METHOD("native_ocean_physical_step", "ctx"),
+                         &DCWorldExt::native_ocean_physical_step);
+    ClassDB::bind_method(D_METHOD("native_ocean_physical_finish", "ctx"),
+                         &DCWorldExt::native_ocean_physical_finish);
+    ClassDB::bind_method(D_METHOD("reset_native_ocean_physical_state", "reason"),
+                         &DCWorldExt::reset_native_ocean_physical_state);
+    ClassDB::bind_method(D_METHOD("get_native_ocean_physical_state_report"),
+                         &DCWorldExt::get_native_ocean_physical_state_report);
     ClassDB::bind_method(D_METHOD("get_gameplay_event_schema"),
                          &DCWorldExt::get_gameplay_event_schema);
     ClassDB::bind_method(D_METHOD("publish_gameplay_events", "batch"),
@@ -492,6 +504,20 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::async_climate_round_poll);
     ClassDB::bind_method(D_METHOD("async_climate_round_stats"),
                          &DCWorldExt::async_climate_round_stats);
+    ClassDB::bind_method(D_METHOD("native_climate_round_begin", "static_knobs"),
+                         &DCWorldExt::native_climate_round_begin);
+    ClassDB::bind_method(D_METHOD("native_climate_round_begin_round", "ctx"),
+                         &DCWorldExt::native_climate_round_begin_round);
+    ClassDB::bind_method(D_METHOD("native_climate_round_kick", "input"),
+                         &DCWorldExt::native_climate_round_kick);
+    ClassDB::bind_method(D_METHOD("native_climate_round_poll"),
+                         &DCWorldExt::native_climate_round_poll);
+    ClassDB::bind_method(D_METHOD("native_climate_round_finish_round", "ctx"),
+                         &DCWorldExt::native_climate_round_finish_round);
+    ClassDB::bind_method(D_METHOD("get_native_climate_round_state_report"),
+                         &DCWorldExt::get_native_climate_round_state_report);
+    ClassDB::bind_method(D_METHOD("reset_native_climate_round_state", "reason"),
+                         &DCWorldExt::reset_native_climate_round_state, DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("async_climate_round_shutdown"),
                          &DCWorldExt::async_climate_round_shutdown);
 }

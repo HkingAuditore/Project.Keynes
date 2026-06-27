@@ -52,6 +52,8 @@ var season_phase_getter: Callable = Callable()
 # ocean heat paths do not stack into one fast tick.
 var climate_ran_this_tick_getter: Callable = Callable()
 var climate_slice_ms_getter: Callable = Callable()
+var data_core_world_ext = null
+var _native_ocean_state: Dictionary = {}
 
 # Internal slice cursor and locked phase for the in-flight bake round.
 var _next_pixel_idx: int = 0
@@ -145,6 +147,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# moving each eligible tick so physical circulation cannot freeze behind
 	# frame-budget pressure.
 	must_run = true
+	use_job_should_run = true
 	starvation_threshold = 4
 	baker = p_baker
 	map = p_map
@@ -159,15 +162,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# Keep this job policy-forwarded. Stateful should_run() gates require
 	# use_job_should_run=true, but the slow ocean/pixel chain is intentionally
 	# gated inside run_slice() while the daily wind prepass stays eligible.
-	# Fix #11 (2026-06-15): mobile 上把 ocean 整体进 D 桶 (stride=8 phase=0)，
-	# 落 tick 8, 16, 24...，避免 ocean 单 slice 8-13ms 每 2 仿真日就吃光 budget。
-	# daily_wind prepass 也跟着 8 仿真日才跑一次（climate 读 wind 最多旧 7 仿真日）。
-	# 仿真精度让步换 atlas 视觉可见性。
-	# Desktop 不动（AlwaysPolicy + 内部 ContinuousSliced + climate-defer 自适应）。
-	if OS.has_feature("mobile"):
-		policy = SusPolicyScript.StridePolicy.new(8, 0)
-	else:
-		policy = SusPolicyScript.AlwaysPolicy.new()
+	policy = SusPolicyScript.AlwaysPolicy.new()
 
 
 ## Total pixels for the current world. Cached at round start.
@@ -252,6 +247,7 @@ func _finish_physical_round(ctx: SusTickContext) -> void:
 	_phys_need_visual = false
 	_phys_run_ocean_this_round = true
 	_sync_legacy_round_state()
+	_native_ocean_physical_finish(ctx, {"stage_name": "phys_done", "path": "native_lifecycle"})
 
 
 func _visual_lag_ticks(ctx: SusTickContext) -> int:
@@ -300,8 +296,59 @@ func reset_progress() -> void:
 	_last_daily_wind_report = {}
 	_daily_wind_rt_diag_count = 0
 	_sync_legacy_round_state()
+	if _native_ocean_facade_available("reset_native_ocean_physical_state"):
+		_native_ocean_state = data_core_world_ext.reset_native_ocean_physical_state("ocean_job_reset")
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
+
+
+func _native_ocean_facade_available(method_name: String) -> bool:
+	return data_core_world_ext != null and data_core_world_ext.has_method(method_name)
+
+
+func _native_ocean_base_ctx(ctx: SusTickContext) -> Dictionary:
+	return {
+		"tick_index": ctx.tick_index,
+		"day_index": ctx.day_index,
+		"phase_locked": _phys_phase_locked,
+		"physical_phase_locked": _phys_phase_locked,
+		"physical_round_id": _physical_round_id,
+		"physical_round_active": _phys_round_active,
+		"physical_need_visual": _phys_need_visual,
+		"physical_run_ocean": _phys_run_ocean_this_round,
+		"phys_solve_done": _phys_solve_done,
+		"visual_round_active": _visual_round_active,
+		"visual_round_id": _visual_round_id,
+		"visual_next_pixel_idx": _visual_next_pixel_idx,
+		"visual_total_pixels": _visual_total_pixels,
+	}
+
+
+func _native_ocean_physical_begin(ctx: SusTickContext) -> void:
+	if not _native_ocean_facade_available("native_ocean_physical_begin"):
+		return
+	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
+	native_ctx["stage"] = _baker_phys_stage_id()
+	native_ctx["stage_name"] = _phys_stage_name(int(native_ctx.get("stage", 0)))
+	_native_ocean_state = data_core_world_ext.native_ocean_physical_begin(native_ctx)
+
+
+func _native_ocean_physical_step(ctx: SusTickContext, report: Dictionary) -> void:
+	if not _native_ocean_facade_available("native_ocean_physical_step"):
+		return
+	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
+	for key in report.keys():
+		native_ctx[key] = report[key]
+	_native_ocean_state = data_core_world_ext.native_ocean_physical_step(native_ctx)
+
+
+func _native_ocean_physical_finish(ctx: SusTickContext, report: Dictionary) -> void:
+	if not _native_ocean_facade_available("native_ocean_physical_finish"):
+		return
+	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
+	for key in report.keys():
+		native_ctx[key] = report[key]
+	_native_ocean_state = data_core_world_ext.native_ocean_physical_finish(native_ctx)
 
 
 func _ticks_per_slice_diag() -> int:
@@ -347,12 +394,81 @@ func _record_phys_diag(ctx: SusTickContext, report: Dictionary, done: bool) -> D
 	for daily_key in _last_daily_wind_report.keys():
 		out["daily_wind_" + str(daily_key)] = _last_daily_wind_report[daily_key]
 	out["done"] = done
+	_native_ocean_physical_step(ctx, out)
+	if not _native_ocean_state.is_empty():
+		out["native_ocean_state"] = _native_ocean_state.duplicate(true)
 	_last_phys_diag = out.duplicate(true)
 	return out
 
 
 func last_physical_diag() -> Dictionary:
 	return _last_phys_diag.duplicate(true)
+
+
+func ocean_physical_state_snapshot() -> Dictionary:
+	_sync_legacy_round_state()
+	if _native_ocean_facade_available("get_native_ocean_physical_state_report"):
+		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_state_report()
+	var native_path_ready: bool = str(_last_phys_diag.get("path", "")).begins_with("gdext") \
+			or str(_last_daily_wind_report.get("path", "")).begins_with("gdext")
+	var active_owner_requested: bool = false
+	var cp = cfg.climate_profile if cfg != null else null
+	if cp != null and cp.get("native_ocean_physical_active_owner_enabled") != null:
+		active_owner_requested = bool(cp.native_ocean_physical_active_owner_enabled)
+	var native_lifecycle_ready: bool = not _native_ocean_state.is_empty()
+	var owner: String = "gdscript_retained"
+	if native_lifecycle_ready and active_owner_requested:
+		owner = "native_active"
+	elif native_lifecycle_ready:
+		owner = "native_ready"
+	elif native_path_ready:
+		owner = "native_ready_probe"
+	var snapshot: Dictionary = {
+		"owner": owner,
+		"native_state_status": "native_lifecycle_facade" if native_lifecycle_ready else "probe_mirror_only",
+		"active_owner_requested": active_owner_requested,
+		"simulation_authority": native_lifecycle_ready and active_owner_requested,
+		"physical_round_active": _phys_round_active,
+		"physical_round_id": _physical_round_id,
+		"physical_phase_locked": _phys_phase_locked,
+		"physical_need_visual": _phys_need_visual,
+		"physical_run_ocean": _phys_run_ocean_this_round,
+		"phys_solve_done": _phys_solve_done,
+		"last_physical_complete_tick": _last_physical_complete_tick,
+		"visual_round_active": _visual_round_active,
+		"visual_round_id": _visual_round_id,
+		"visual_phase_locked": _visual_phase_locked,
+		"visual_next_pixel_idx": _visual_next_pixel_idx,
+		"visual_total_pixels": _visual_total_pixels,
+		"visual_pending_commit": _visual_pending_commit,
+		"phase_int_seen": _phase_int_seen,
+		"wind_period_ticks": wind_period_ticks,
+		"ocean_period_ticks": ocean_period_ticks,
+		"slice_count": slice_count,
+		"last_phys_diag": _last_phys_diag.duplicate(true),
+		"last_daily_wind_report": _last_daily_wind_report.duplicate(true),
+		"remaining_gdscript_authority": [
+			"visual_raster_boundary_execution",
+			"texture_commit_boundary_execution",
+		],
+		"native_owned_output_slots": [
+			"cell_wind_x",
+			"cell_wind_y",
+			"cell_ocean_current_x",
+			"cell_ocean_current_y",
+			"cell_upwelling",
+		],
+	}
+	if not _native_ocean_state.is_empty():
+		snapshot["native_lifecycle_state"] = _native_ocean_state.duplicate(true)
+		snapshot["native_owned_lifecycle_authority"] = _native_ocean_state.get("native_owned_lifecycle_authority", [
+			"physical_round_active",
+			"physical_round_id",
+			"phase_locked",
+			"physical_stage",
+			"physical_stage_cursor",
+		])
+	return snapshot
 
 
 func _log_should_skip(ctx: SusTickContext, reason: String, detail: String = "") -> void:
@@ -618,6 +734,7 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 			str(_phys_need_visual), phase_int, _phase_int_seen, _visual_total_pixels,
 			str(_visual_round_active),
 		])
+	_native_ocean_physical_begin(ctx)
 	return {"ok": true}
 
 

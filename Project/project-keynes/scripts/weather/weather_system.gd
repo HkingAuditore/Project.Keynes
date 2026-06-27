@@ -143,10 +143,11 @@ var _field_ocean_precip_suppression: float = 0.95
 # 降水惯性 EMA 系数 α(2026-06-20 根因重构)：precip = lerp(prev_precip, target, α)。越小越平滑(惯性强)、
 # 越大越跟手(接近瞬时投影)。2026-06-22 标定为 0.40，减少降水拖尾。
 # 统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
-var _field_precip_inertia: float = 0.40
+var _field_precip_inertia: float = 0.58
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
-var _field_precip_base_frac: float = 0.12  # autoconv 背景成雨比例;原0.50→弥漫弱雨,降到0.12让降水靠动力触发
-var _field_cloud_reevap: float = 0.18      # 干空气云水再蒸发;原0.06→云不消散永雨,提到0.18让雨团消散转晴
+var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定弱雨，让降水更依赖移动动力触发
+var _field_cloud_reevap: float = 0.38      # 干空气云水再蒸发；加快雨云下完后的清空
+var _field_cloud_inertia: float = 0.74     # cloud EMA 跟手系数；让云层随云水和平流更快移动/消退
 var _field_frontogenesis_gain: float = 0.42
 var _field_rain_shadow_drying: float = 0.35
 var _field_vapor_transport_gain: float = 0.75
@@ -874,6 +875,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"field_precip_inertia": _field_precip_inertia,
 			"field_precip_base_frac": _field_precip_base_frac,
 			"field_cloud_reevap": _field_cloud_reevap,
+			"field_cloud_inertia": _field_cloud_inertia,
 			"field_vapor_relax_rate": _field_vapor_relax_rate,
 			"field_orographic_lift_cap": _field_orographic_lift_cap,
 			"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -940,6 +942,7 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_precip_inertia": _field_precip_inertia,
 		"field_precip_base_frac": _field_precip_base_frac,
 		"field_cloud_reevap": _field_cloud_reevap,
+		"field_cloud_inertia": _field_cloud_inertia,
 		"field_vapor_relax_rate": _field_vapor_relax_rate,
 		"field_orographic_lift_cap": _field_orographic_lift_cap,
 		"field_wet_terrain_precip_damping": _field_wet_terrain_precip_damping,
@@ -1287,6 +1290,7 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 			"cell_q_arr": _summary_q_cache,
 			"cell_r_arr": _summary_r_cache,
 			"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+			"cyclone_wake_days": _cyclone_wake_days,
 			"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 			"water_terrain_ids": water_ids,
 		}
@@ -1308,6 +1312,7 @@ func _build_weather_summary_knobs(map: MapData, world: WorldData) -> Dictionary:
 		"radius_scale": 1.05,
 		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
 		"wt_clear": int(WeatherType.WT.CLEAR),
+		"cyclone_wake_days": _cyclone_wake_days,
 		"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 		"water_terrain_ids": water_ids,
 		# Q/R 拓扑（C++ 端用于 cube_to_world / world_to_cube 反查）
@@ -1566,6 +1571,8 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 		_field_precip_base_frac = clampf(float(cp.weather_field_precip_base_frac), 0.0, 1.0)
 	if cp.get("weather_field_cloud_reevap") != null:
 		_field_cloud_reevap = clampf(float(cp.weather_field_cloud_reevap), 0.0, 0.5)
+	if cp.get("weather_field_cloud_inertia") != null:
+		_field_cloud_inertia = clampf(float(cp.weather_field_cloud_inertia), 0.05, 1.0)
 	if cp.get("snowpack_accum_gain") != null:
 		_snowpack_accum_gain = clampf(float(cp.snowpack_accum_gain), 0.0, 1.0)
 	if cp.get("snowpack_melt_temp_gain") != null:

@@ -30,7 +30,7 @@
 | Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish。**base+post_base 已融合为单次 `run_native_world_generate_full_pass`（step4，2026-06-25）** | `run_native_world_generate_full_pass`（融合优先）, `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
 | Bake-time static texture encoders（生成期） | C++ byte payload + GDScript GPU upload | `encode_bake_height_tex_data`, `encode_bake_terrain_normal_tex_data`, `encode_bake_enum_atlas_payload`, `encode_bake_flow_tex_data`, `encode_bake_r8_tex_data`, `encode_bake_upwelling_tex_data` | `Image.create_from_data`、`ImageTexture.update/create_from_image`、ext 缺失时 debug fallback。 |
 | Bake-time 几何场编排（生成期 terrain-index/erosion/river SDF/latitude/volcano/coast SDF） | **C++ 单次融合驱动 `run_bake_geometry_fields_pass`（融合优先 + 旧 per-pass 回退）** | 内部串 `run_bake_terrain_index_pass`/`run_bake_erosion_pass`/`run_bake_river_sdf_pass`/`run_bake_latitude_field_pass`/`run_bake_volcano_field_pass`/`run_bake_coast_sdf_pass` | GDScript 一次请求→解包到 `world.*`+重建 lookup；河流图遍历读 ext 暂存拓扑（零再传输）；river/coast carve 就地作用 height_final；GPU 上传。中间 height buffer 不跨语言往返。 |
-| Native daily sim | Probe/partial | `run_native_daily_tick`, `run_native_sim_tick` | active gate、legacy authority fallback。 |
+| Native daily sim | Partial ACTIVE continuation | `run_native_daily_slice`, debug `run_native_daily_tick`, shadow `run_native_sim_tick` | SUS shell、round-start bundle、fallback/debug、front objects、weather LUT/Godot visual intents。 |
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
 
 > `cell_temp_baseline_year`（海冰 + 显示温度的运行期年 baseline）权威计算已收回 C++，见下文 "Temp baseline year bake" 节。注意它与 pass_a 每日写的运行期 `cell_temp_baseline`（辐射 + 热惯性积分）是两个不同字段。
@@ -240,7 +240,6 @@ I/O：
 主要入口：
 
 - `simulation/systems/season_refresh_system.gd`
-- `simulation/sus/jobs/season_refresh_job.gd`
 - `map_generator.gd` season helper
 - `DCWorldExt` 中日历/路径相关 helper
 
@@ -305,6 +304,12 @@ C++ 入口：
 
 - temperature/elevation/latitude/neighbors/terrain/water/solar geometry and thermal-inertia knobs。
 - 部分 scalar 来自 `ClimateProfile`。
+- 气候自然性修复（2026-06-27）：`cell_moisture` 不再每日硬回填到 `base_moisture`。pass-A 以 `runtime_moisture_base_relax_rate` 做慢层 relax，并可用既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 信号参与 target；不新增持久 slot，native、threaded native 与 GDScript fallback 需要保持同一套 knob。
+
+公式约束（2026-06-27 legacy parity）：
+
+- `season_offset` 必须贴合迁移前 AoS 行为：`season_temp_amp * insolation_season_gain * surface_absorbed_factor * insolation_dev`，然后只对冷侧做 `compress_season_cooling`。
+- `temp_land_continentality` 仅作为旧资源兼容字段保留，不再参与 pass-A 温度公式；native/SoA 不得额外放大陆地夏季强迫，否则副极地极昼陆格会被推到迁移前不存在的高温。
 
 输出：
 
@@ -354,11 +359,23 @@ A-B 验证 hot key：游戏运行时按 `V` 键触发
 - 基于 Pass-A 结果进行后续气候平滑、湿度、异常修正。
 - 通过 `write_f32_indexed` / dense 写回 DataCore，减少单点 setter。
 - **A 修复（2026-06）**：原来直接覆盖 `cell_temp = clamp(snapshot + d_albedo + d_coastal + d_landform)`；现在累加到 `cell_local_thermal_anomaly` slot，由 `wind_surface` 末端合成。海冰反照率反馈 (`sea_ice_albedo_cooling`) 也对应累加为水域 cell 的负 local anomaly，不再就地改 cell_temp。`cell_moisture` 写权不变。
+- **2026-06-27 海冰相位修复**：CSV 显示厚冰水域 `cell_local_thermal_anomaly≈-0.05`
+  会让春季日照已经回升时仍继续锁冷，海冰峰值相对日照低谷滞后 2-3 个月。
+  `sea_ice_albedo_cooling` 默认从 0.06 降到 0.01；sync/native daily/async 输入、
+  GDScript fallback 与 C++ 默认必须一致。
+- 迁移等价性约束（2026-06-27）：native daily bundle 与 async kick 必须显式传
+  `sea_ice_albedo_cooling`、`sea_ice_frac`、`snowpack_cover_low/full`，缺省值 mirror
+  `ClimateProfile`。不要依赖 C++ optional knobs 的 0 值兜底，否则水域海冰反照率反馈会在
+  native/async 路径被静默关闭。
 
 风险：
 
 - sparse runtime 如果触发，但 C++ 仍跑全图，结果应保持等价。
 - Pass-B 仍是未来 total C++ 化的重点候选之一，特别是 GDScript sparse apply 或 dirty sync 变成窗口 spike 时。
+- retained `ClimateDailySystem`、native daily ACTIVE slice graph 与 debug/full-run
+  helper 必须保持同一日气候顺序：`pass_a -> pass_b -> ocean_* -> wind_*`。`pass_b`
+  的 `cell_moisture` 蒸发/雨影项读取 `temperature_transport_anomaly`，因此不能把
+  `ocean_*` 提前到 `pass_b` 之前，否则会把当天新 TTA 反馈进当天湿度，造成沿海/邻水格湿度跳变。
 
 ## Ocean water / land
 
@@ -374,7 +391,10 @@ Ocean water 算法概要：
 
 - 读取 water cells、ocean current、baseline temperature、transport anomaly。
 - 沿 ocean current / 邻接方向做 advect/mix。
-- 生成或更新 temperature transport anomaly。
+- 生成或更新 temperature transport anomaly。对水格的正向暖流 source，`ocean_water`
+  会先按 `sea_ice_frac` 和 `sea_ice_form_threshold → sea_ice_melt_threshold` 做潜热门控，
+  并且在 baseline 低于 melt 阈值时限制 source 不能把水面推过 `sea_ice_melt_threshold`；
+  这样冰点附近无冰水面不会积累成长期 `TTA≈0.2` 的暖流记忆。
 
 Ocean land 算法概要：
 
@@ -386,6 +406,9 @@ Ocean land 算法概要：
 
 - C++ 读取 C++ slot 或 knobs PackedArray。
 - **A 修复（2026-06）**：ocean_water / ocean_land **不再写 `cell_temp`**——它们的洋流 advect & 邻接渗透结果累加到 `cell_ocean_thermal_anomaly` slot，由 `wind_surface` 末端的合成阶段统一发布回 `cell_temp`。`cell_temperature_transport_anomaly` 这条独立的低通 anomaly（由 `dc_stabilize_tta` 维护）保持不变，供 weather field reader / pass_b coastal-leak 消费。
+- `cold_transport_form_threshold` / `cold_transport_melt_threshold` 必须来自
+  `ClimateProfile.sea_ice_form_threshold/melt_threshold` 并传入所有 sync/native/async
+  ocean-water 入口；不要让某个路径落到 C++ 的硬编码兜底。
 - 如果 GDScript fallback 后下一个 C++ stage 依赖结果，需要 `refresh_slots_from_map()`。
 
 风险：
@@ -393,6 +416,9 @@ Ocean land 算法概要：
 - ocean current slot stale 会导致 advect 方向退化。
 - baseline fallback 错误会造成 temp clamp 后永久卡 0。
 - 如果 slice path 与 full path 混用，要保证未处理区间不会读到半新半旧异常。
+- GDScript fallback 仍是旧语义风险面：若 C++ ocean pass 失败，fallback 可能直接写
+  `cell_temp` 而不是 `cell_ocean_thermal_anomaly`。生产目标是 fallback 命中率趋近 0；
+  真要保留 fallback parity，需要单独 A/B 后改写 fallback。
 
 ## Wind / air mass
 
@@ -411,6 +437,7 @@ Ocean land 算法概要：
 - ocean currents physical chain 中的 wind vector / wind speed field。
 - terrain-aware wind、纬度背景风带、SLP 压力梯度/科氏偏转、天气尺度波动、山脉绕流、沿海热力压差响应等计算。
 - SLP 压力梯度在方向合成前先归一化：`-∇slp` 决定高压到低压/地转偏转方向，梯度幅度只控制压力项权重和风速增强，避免弱梯度数值被纬向背景风带完全压制。
+- 气候自然性修复（2026-06-27）：`run_wind_field_pass` 在 flux blend 后加入方向稳定层。`wind_min_flux_for_dir_update` 以下保留旧方向，正常强度下用 `wind_max_turn_deg_per_day` 限制单日最大转角；`cell_wind_x/y` 仍保持单位方向语义，速度仍只写 `cell_wind_speed`。report/CSV 通过 `wind_dir_delta_p95` 与 `wind_dir_flip_count` 单独观察方向跳变，不再只用混合了速度变化的 `wind_delta_p95`。
 
 输出：
 
@@ -419,7 +446,10 @@ Ocean land 算法概要：
 - `cell_wind_speed`
 - `cell_air_mass_temp_anomaly`（air-mass pass 唯一输出；surface pass 在累加邻接 anomaly 后也把 air anomaly 写回这个 slot）
 - `cell_temp` — **A 修复（2026-06）：climate-daily 链条中 `wind_surface` 是唯一写者**。末端公式：
-  `cell_temp[i] = clamp(cell_temp_baseline[i] + cell_ocean_thermal_anomaly[i] + cell_local_thermal_anomaly[i] + air_anom_after_advect[i], 0, 1)`。
+  `transport = clamp(cell_ocean_thermal_anomaly[i] + air_anom_after_advect[i], -0.08, 0.08)`，
+  `cell_temp[i] = clamp(cell_temp_baseline[i] + transport + cell_local_thermal_anomaly[i], 0, 1)`。
+  对水格且 `transport > 0` 时，`wind_surface` 还会按 `sea_ice_form_threshold → sea_ice_melt_threshold`
+  对冰点附近的正向横向输运做潜热门控，避免无冰边缘水面被固定抬高到融冰阈值以上而无法重新结冰。
   baseline / ocean_anom / local_anom 分别由 pass_a / ocean_water+ocean_land / pass_b 写入；air_anom 由 wind_air_mass 注入、wind_surface 在邻接平流后更新。
 
 数据契约：
@@ -430,13 +460,19 @@ Ocean land 算法概要：
 - `run_wind_air_mass_pass` / `_wind_air_mass_pass` 只发布
   `cell_air_mass_temp_anomaly`。它们不再直接覆盖 `cell_temp`；后续
   `run_wind_surface_pass` / `_wind_surface_pass` 是 **climate-daily 链条中 `cell_temp` 唯一的写者**
-  （A 修复 2026-06），通过 baseline + ocean_anom + local_anom + air_anom 的合成把全部贡献汇总成单点写。
+  （A 修复 2026-06），通过 baseline + shared lateral transport(ocean+air) + local_anom 的合成把全部贡献汇总成单点写。
   排查局部温度 ping-pong 时先确认 pass_a / pass_b / ocean_* 都没再获得 `cell_temp` 写权。
+- `enable_wind_heat_transport=false` 时，sync/native daily/async 都必须跳过 wind_air 与
+  wind_surface。async `passes_mask` 需要清掉 bit 4/5，避免 worker 继续写
+  `cell_air_mass_temp_anomaly` 或最终 `cell_temp`。
 
 风险：
 
 - wind field 既被 climate/weather 使用，也被 ocean physical chain 使用。不要把单位方向 `cell_wind_x/y` 当作风速；否则天气平流、降水 carryover、风向 overlay 和 shader 都会表现为全图恒定强风。
 - `path=gdscript` 需要看是 wind stage fallback，还是只是 early report 默认值。
+- GDScript wind fallback 仍是旧合成模型（直接在当前温度上加 anomaly，缺少 C++ 的
+  `cell_wind_speed` 权重、shared transport budget 与冷水潜热门控）。当前修复策略是监控并降低
+  fallback 命中，而不是在无 A/B 的情况下重写 fallback。
 
 ## Transpiration
 
@@ -545,24 +581,25 @@ inline 构造的 knobs dict **逐字对照**——不能凭直觉命名。Stage 
 | 缺少 | `cp.sea_ice_solar_gate_enabled` | sea_ice |
 | 缺少 | `cp.sea_ice_freeze_insol_low/high` | sea_ice |
 | 缺少 | `cp.sea_ice_solar_melt_start/gain` | sea_ice |
-| 缺少 | `cp.sea_ice_daily_delta_cap` | sea_ice |
+| 缺少 | `cp.sea_ice_daily_delta_cap` / `cp.sea_ice_edge_mix_rate` | sea_ice |
 | 缺少 | `_last_cfg.OCEAN_CURRENT_ICE_DELAY` | sea_ice |
 | 缺少 | `_last_cfg.enable_ocean_heat_transport` | sea_ice |
 | 缺少 | `generator._consume_sea_ice_dt_days()` | sea_ice（必须 mirror sync 的 stride 补偿） |
 | 缺少 | TTA 4 个 scalar（source_cap/blend_rate/decay_rate/zero_current_decay） | ocean_water/ocean_land |
 | 缺少 | climate_anomaly 阈值 shift（sea_ice t_form/t_melt） | sea_ice |
+| 缺少 | `cp.sea_ice_albedo_cooling` + `sea_ice_frac` | pass_b |
+| 缺少 | `cp.snowpack_cover_low/full` | pass_b |
+| 缺少 | `cp.enable_wind_heat_transport` → `passes_mask` bit 4/5 gate | wind_air/wind_surface |
 
-**还有：** `thermal_inertia_*` 和 `thermal_daily_delta_cap` / `snowpack_cover_*` /
-`insol_dev_*` 这些 scalar **不能**读 `cp.xxx`！sync 路径在 `_climate_pass_a::cp_struct`
-里**故意没传**这些字段（map_generator.gd:6818-6830 只传 11 个 scalar），C++ 端走
-内部默认值（0.24/0.07/0.09/0.16/0.085/0.03/0.25/-1/1.5）。`climate_profile.gd` 里
-的 @export 0.35/0.15 等是给 **GDScript fallback** 用，C++ 路径不读。**async daily
-round 要跟 sync 生产路径 bit-equal，绝不能读 cp.thermal_inertia_***。
+**当前约束（2026-06-27）**：`thermal_inertia_*`、`thermal_daily_delta_cap`、
+`snowpack_cover_*`、`insol_dev_*` 已经是 Pass-A sync/native daily/async 的显式
+knob，必须从 `ClimateProfile` 通过 `_build_native_daily_climate_pass_a_struct` 与
+`_build_async_kick_input` 一致打包。不要再回到早期“C++ 内部默认值”为权威的旧契约。
 
 bench helper（`run_async_climate_round_bench` in `map_generator.gd`）跟实际
-`_build_async_kick_input` 共享同一份契约：bench 用 hardcoded scalar mirror sync 的
-默认值；`_build_async_kick_input` 用同样的 hardcoded（避免 climate_profile.gd 的
-@export 默认值跟 C++ 内部默认值不一致导致 diff）。
+`_build_async_kick_input` 共享同一份契约：bench 与生产 async 都应使用同一批
+`ClimateProfile`/`MapConfig` scalar；任何字段新增或改名都要同时更新 sync knobs、
+async kick input、native daily bundle/patch 和文档表。
 
 bench 互斥保护：`run_async_climate_round_bench` 入口临时关 `use_climate_round_async`
 flag，bench 完成后恢复——避免 daily round async 路径跟 bench 都用同一个 global
@@ -625,6 +662,39 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
 - Earth-like 默认值降低 `sea_ice_freeze_rate` / `sea_ice_neighbor_contagion`，
   同时提高太阳融化响应并收紧 `sea_ice_daily_delta_cap`，用来减弱暖季残冰和
   海冰边界的突变扩散；这些都是 `ClimateProfile` profile knob。
+- 气候自然性修复（2026-06-27）：默认 `sea_ice_terrain_threshold=0.72`、
+  `sea_ice_terrain_hysteresis=0.18`、`sea_ice_daily_delta_cap=0.070`，并新增
+  `sea_ice_edge_mix_rate`。daily pass 会先复制上一日 `sea_ice_frac` 快照，冷邻居判定和
+  边缘混合都读这份快照；混合只在水域非湖泊邻域、且本格或邻居已有少量海冰时把
+  `new_frac` 轻微拉向邻域平均，避免向赤道或湖泊扩散误冰。
+- 坐标契约：`ny=0` 是视觉北极、`ny=1` 是视觉南极；`lat_signed=(ny-0.5)*2`
+  正值表示南半球。`dc_insolation_now` / `DCClimateMath.compute_daily_insolation`
+  按这个契约计算，因此北半球 6-7 月日照高、南半球 1 月日照高。若 CSV 中看似南北反相，
+  先确认分析脚本是否把 `cell_lat_norm_arr > 0.5` 误当北半球。
+- `dt_days` 是 pass 调用间隔补偿。legacy `sea_ice_daily` 和 debug/full-run helper
+  默认允许最多 30 天补偿；native daily sliced ACTIVE 把 sea-ice `dt_days` 上限压到 1 天，
+  并要求 `native_daily_sim` 默认在同一个 `day_changed` 内完成 graph round。若 CSV 中看到
+  `sea_ice_frac` 只在十几天一次的 `sea_ice` 节点成批台阶变化，优先检查 native daily
+  transaction budget / `max_slices_per_tick`，不要先调冻结或融化公式。
+- 太阳融化项会按当前 `sea_ice_frac` 做厚冰/高反照率保护：低浓度薄冰仍可被夏季日照快速清退，
+  厚冰仍受保护但最小太阳曝光由 `sea_ice_min_thick_ice_solar_exposure` 控制，默认 32%。
+  2026-06-27 `tile_data_record_20260627_201214.csv` 显示 25% shielding、0.03 反照率冷却和
+  `thermal_inertia_water=0.025` 仍让 66-80° 边缘冰峰值拖到春季。新默认配合
+  `sea_ice_freeze_insol_low/high=0.22/0.45`、`sea_ice_solar_melt_start=0.28`、
+  `sea_ice_solar_melt_gain=1.35`、`sea_ice_daily_delta_cap=0.070` 与
+  `thermal_inertia_water=0.045`，目标是让季节性边缘冰更贴近日照低谷后不久达峰、
+  夏季高日照期更快退缩，同时保留极点附近多年冰核心。
+- sea-ice 的有效温度读 wind-surface 发布后的 `cell_temp`。由于该温度已经包含
+  `cell_ocean_thermal_anomaly`，`temperature_transport_anomaly` 的正向暖流延迟只使用
+  `max(0, TTA - max(0, ocean_thermal_anomaly))` 的剩余部分，避免把同一份 ocean heat
+  在温度合成和海冰判定中重复计算。
+- native daily ACTIVE 的 sea-ice 节点仍位于 wind-surface 之后、climate finalizer
+  之前，保持旧 sliced round 顺序。round 完成时 `MapGenerator` 会执行 finalizer，
+  用 round-start `temp` / `temperature_transport_anomaly` snapshot 应用
+  `thermal_daily_delta_cap` 与 `temperature_transport_anomaly_daily_cap`，并把
+  `thermal_finalizer_applied=true` 写入 climate/native breakdown。CSV 中若极地海水
+  长期停在 `temp_baseline + 0.15` 左右且 `climate_thermal_finalizer_applied=false`，
+  优先检查 native daily ACTIVE 是否漏接 finalizer，而不是先调海冰冻结阈值或热输运系数。
 
 输出：
 
@@ -635,6 +705,9 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
 
 - C++ 写了 `sea_ice_frac` 但 terrain flip 没同步，会让后续 pass 对 water/ice 判断不一致。
 - atlas upload 是另一条 GPU 路径，海冰计算快不代表海冰可视化立即完成。
+- CSV 中若看到 `sea_ice_frac` 在少数 tick 里成片从 `1.0` 跳到约 `0.4/0.2`，
+  且 `temp` / `temperature_transport_anomaly` 同 tick 未突变，优先检查 native daily
+  slice cadence 和 `dt_days` 是否被 graph round 间隔放大，而不是先调低融化率。
 
 ## Weather field / fronts
 
@@ -879,7 +952,7 @@ Weather field geometry contract (2026-06-23):
 
 - **Stage 14e 湖山冷区**：湖泊 over-water 抑制 cap 0.35→0.10 + 删湖泊额外对流压制(`drv_hc×0.60`) + 湖泊不刮 marine_scour；山地 `field_oro_precip_gain` 0.10→0.30、`field_lift_precip_gain` 0.25→0.45；湖泊蒸发 `weather_lake_evap_scale` 0.35→0.85（ClimateProfile + weather_system 双侧）。
 
-- **Stage 15 云量时间 EMA**：`cloud = cloud_water×1.1 + condensation×0.25 + max(cloud_floor)` 混入瞬时项(condensation/cloud_floor 无时间惯性)→渲染阈值附近抖闪。用上帧云量 EMA(`field_cloud_inertia` 0.42，读 slot `s_wcld` 上帧值)平滑。闪烁翻转格 55%→3%。
+- **Stage 15 云量时间 EMA**：`cloud = cloud_water×1.1 + condensation×0.25 + max(cloud_floor)` 混入瞬时项(condensation/cloud_floor 无时间惯性)→渲染阈值附近抖闪。用上帧云量 EMA(`field_cloud_inertia`，默认 0.74，读 slot `s_wcld` 上帧值)平滑。2026-06-27 后提高跟手系数，避免云层在 cloud_water 已清退后仍长期挂背景云。
 
 - **precip 时空平滑**：不应期(inhib≥1)抑制从 EMA 后移到 `precip_target`(EMA 前)→随惯性平滑收敛；最终 precip 非对称邻域填洞(`field_precip_spatial_smooth` 0.30，强填洞、削峰×0.30 保暴雨)。
 
@@ -1034,9 +1107,16 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 
 **云雨生命周期与永雨修复**：
 
-- `weather_precip_inertia` 默认由 `0.30` 提到 `0.40`，`weather_field_cloud_reevap`
-  默认由 `0.14` 提到 `0.18`。C++ fallback 默认、`weather_system.gd` 默认值和
-  `climate_profile.gd` 三处必须保持一致。
+- `weather_precip_inertia` 默认由 `0.30` 提到 `0.58`；2026-06-27 复核
+  `tile_data_record_20260627_192522.csv` 后，`weather_field_cloud_reevap` 默认提到
+  `0.38`，`weather_field_cloud_inertia` 显式 profile 化且默认 `0.74`。C++ fallback 默认、
+  `weather_system.gd` 默认值和 `climate_profile.gd` 三处必须保持一致。
+- 2026-06-27 `tile_data_record_20260627_201214.csv` 显示 49% 格几乎永晴、20% 格几乎全年多云，
+  cloud lag-8 自相关仍约 0.97。为恢复“雨云会下完并随风过境”的设计，默认把
+  `weather_field_advect_steps=8`、`weather_field_diffusion=0.025`、`weather_field_precip_base_frac=0.08`；
+  C++/GDScript hot loop 同步降低静态热力对流和山地云底，减少 `precip_cloud_reserve`，
+  并恢复持续降水的 vapor discharge（`VAPOR_DISCHARGE=0.70`、`DISCHARGE_SUSTAIN=0.65`）。
+  这使固定地形/温度源不再单独锁成永雨，移动 ψ 和上风水汽成为云雨主要时变来源。
 - hot loop 增加 `post_rain_subsidence`：上一轮 `prev_precip` 高、当前
   `frontogenesis/convergence/convective/ocean_convective` 低时，降低凝结、提高再蒸发，并增强
   低动力海面的 `marine_scour`。效果是雨后下沉清云，避免雨区原地拖尾。
@@ -1052,11 +1132,12 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
   `precip > 0.014` 只有约 0.2%，说明海上水汽存在而释放门控过紧；因此暖湿海面触发项改为
   `smoothstep(0.42,0.64,RH) * smoothstep(0.025,0.075,cloud_water) *
   smoothstep(0.50,0.72,temp) * 0.80`，开阔海面的有效 suppression clamp 从 `0.80` 放宽到
-  `0.72`，低动力 `marine_scour` 阈值收窄到 `0.22`，quiet ocean 云水上限改为
-  `0.060 + ocean_drive * 0.24`。目标是恢复暖湿海面上的零散风暴/季风雨带，同时保留
+  `0.72`。2026-06-27 后低动力 `marine_scour` 进一步增强，quiet ocean 云水上限收紧为
+  `0.045 + ocean_drive * 0.20`。目标是恢复暖湿海面上的零散风暴/季风雨带，同时保留
   post-rain subsidence 和低动力清扫，避免回到全海弱雨。
 - CLEAR/FOG 的静稳格不允许继承强成雨云水：`precip < 0.003` 且 `dynamic_forcing` 低时，
-  `cloud_water` 被压到 `clear_cap`，多余云水按比例回流为 vapor。
+  `cloud_water` 被压到 `clear_cap`（默认 `0.040 + dynamic_forcing * 0.10`，海面 quiet cap
+  更低），多余云水按比例回流为 vapor。
 - 最终分类后再次执行 hydrological precip gate：如果分类结果不是
   `RAIN/STORM/BLIZZARD/MONSOON`，残余 `precip` 回流为 vapor 并清零。这样
   CSV 不再出现大量 CLEAR/FOG/HEATWAVE/DROUGHT 携带可被水文消费的小雨量；即便
@@ -1246,7 +1327,6 @@ psi_path=gdscript
 入口：
 
 - `simulation/systems/enum_atlas_upload_system.gd`
-- `simulation/sus/jobs/enum_atlas_upload_job.gd`
 - atlas encoder / map baker helper
 
 职责：
@@ -1372,7 +1452,8 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
   1. `map_baker.gd` 的 4 个 `rebake_*`（`rebake_dynamic_cell_atlas_only` /
      `rebake_ecology_visual_atlas_only` / `rebake_dyn_atlas_smooth` / `rebake_ice_state_atlas`）
      在 `cell_indirection_active()` 时返回 `_indirection_skip_atlas_report()`（no-op）。
-     覆盖 `bake_world` 初始烘 + `SeaIceAtlasUploadSystem|Job` 顺带重烘 + DVA `_tick_oneshot`。
+     覆盖 `bake_world` 初始烘 + DVA `_tick_oneshot`。旧 `SeaIceAtlasUploadSystem|Job`
+     已删除。
   2. `dynamic_visual_atlas_upload_system.gd::tick` flag 开时跑完 `refresh_cell_luts_daily`
      立即 early-return，跳过 C++ `run_atlas_pipeline_step` 与 4-phase 逐像素上传。
   这 4 张贴图的 `*_tex` 保持 null，`hex_renderer` 不再绑定对应 shader parameter；
@@ -1383,7 +1464,7 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 **`sea_ice_tex`（R8）退役开关（`sea_ice_atlas_enabled`，2026-06-16）**：与 cell-indirection 正交。
 `sea_ice_tex` 是**已死贴图**——任何着色器都不 `texture()` 它（主海冰视觉由水路径 shader 按
 水温/纬度/水深派生，indirection 开时走 `dyn_lut.a`），运行时 `SeaIceAtlasUploadSystem|Job`
-早已不注册（`map_generator` 两条路径都 `_sea_ice_atlas_upload_job = null`），`bake_sea_ice_fraction_only`
+已删除（`map_generator` 只保留 disabled report），`bake_sea_ice_fraction_only`
 也无 live 调用者。`DCFeatureFlags.sea_ice_atlas_active()`（Engine meta，默认缺失=**false 退役**），
 由 `main.gd` 的 `@export var sea_ice_atlas_enabled`（默认 `false`）推送，**改勾选后需重新生成地图**。
 当前行为：`bake_world` 不再 encode 那张全零 R8（省 ~0.6MB 显存 + 编码）、不分配
@@ -1396,21 +1477,198 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 主要入口：
 
-- `DCWorldExt::run_native_daily_tick`
-- `DCWorldExt::run_native_sim_tick`
+- `DCWorldExt::run_native_daily_slice`
+- `DCWorldExt::run_native_daily_tick`（debug/full-run helper）
+- `DCWorldExt::run_native_sim_tick`（SHADOW/A-B/hash diff）
 - `EnvironmentRuntime`
 - `native_daily_sim_job.gd`
 - `native_environment_runtime_system.gd`
 
 状态：
 
-- 当前是 probe/partial 接管能力，不是所有 legacy SUS 的完全替代。
+- 当前是 partial ACTIVE continuation，不是所有 legacy/Godot 边界的完全替代。
+- ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 `SCHEDULE_GRAPH` node cursor、progress 和累计 breakdown；每个 SUS tick 只执行一个存在的 native node，返回 `done=false` 让下个 tick 继续。
+- GDScript 只在 round 起点构建 `native_daily_bundle`，后续 continuation tick 发轻量 knobs。`total_ms/native_ms` 表示当前 slice 墙钟，`round_native_ms` 表示 round 累计墙钟。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。
+- `runtime_hydrology_enabled=true` 不再是 ACTIVE 硬阻断条件。`MapGenerator` 必须在 native daily bundle 中提供 `weather_knobs` 与 `runtime_hydrology_knobs`；`SCHEDULE_GRAPH` 会按 `weather -> runtime_hydrology -> stage_b_after_hydrology` 执行（stage-b 仍按 cadence 可选）。如果 probe 缺少必需 key、hydrology slots 不可发布、或 weather readiness 未通过，则 `native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS 注册。
 - 当 weather field 启用且 `MapGenerator.weather_native_daily_available()`
   返回 `false` 时，`native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS job
   注册，确保独立 `weather_refresh` staged path 仍然运行。`native_daily_bundle`
   也不得嵌入 `weather_knobs`；否则 `native_daily_sim` 会绕过 visible
   weather authority，造成全晴朗/全零天气场。
+- `weather_native_daily_available()` 不再是硬编码 false，而是读取
+  `weather_native_daily_readiness_report()`：要求 ext 暴露
+  `run_weather_refresh_daily_pass` / `run_weather_field_commit_pass`，
+  `WeatherSystem` 暴露 unified knobs/apply 入口，GDScript 有 weather LUT
+  发布 facade，并且最近一次 staged weather commit 已证明
+  `field_commit_publish_verified=true`、`field_commit_init_count == n_cells`、
+  且没有走 `field_commit_publish_repaired`。这只是放行条件；native daily
+  执行失败仍必须通过 `fail_stage` / `fallback_reason` 回落。
+- `NativeDailyReport` 暴露 `published_slots`、scheduler-level `published_to_slot`、
+  `visual_dirty_intents`、`retained_gdscript_authority`、`retained_boundaries`、
+  `native_state_snapshot` 和 `graph_coverage_complete`。`retained_boundaries`
+  单独列出计划保留的 Godot/presentation 边界，不再阻塞 simulation graph complete。
+- `NativeDailyReport` 还会暴露 `authority_report`、`authority_blockers` 和
+  `graph_coverage_state`。这是权威迁移的机器可读仪表：`authority_report`
+  按 climate/sea_ice/weather/runtime_hydrology/ocean/season/visual/fallback 分组记录 owner、phase、
+  simulation blockers、retained boundaries 与 publish 预期；顶层
+  `authority_blockers` 只放阻止 daily simulation graph complete 的项。
+  `graph_coverage_state=partial` 表示 native graph
+  可运行但仍未达到完整 DOTS authority 或 production fallback 尚未退休。后续不能只凭 C++ pass 成功或
+  `authoritative_ready=true` 判断 fallback 可退休。
+- Weather 的 native-ready gate 由 `weather_native_daily_readiness_report()`
+  注入 `native_daily_bundle.weather_native_daily_readiness`。只有该 report
+  `ready=true`（staged commit 已验证 visible publish、result apply 与 weather
+  LUT publish 入口存在）时，`authority_report.weather_transaction.owner` 才会从
+  `gdscript_retained` 提升为 `native_ready`。`ClimateProfile.native_weather_transaction_active_owner_enabled=true`
+  时，ready tick 可进一步报告 `native_active` / `simulation_authority=true`；
+  native execution 会用 `field_commit_publish_verified` 把 phase 升为
+  `native_active_verified`。ACTIVE `fronts_changed` 来自真实
+  `weather_lut_changed || fronts_count > 0`。`MapGenerator` 会在统一 helper 中消费
+  `visual_dirty_intents`，执行 weather LUT publish、front signature diff、
+  enum/detail dirty intent。`front_objects_gdscript` 与
+  `weather_lut_upload_godot_boundary` 作为 `retained_boundaries` 保留。
+- Ocean physical 现在通过 `OceanCurrentsJob.ocean_physical_state_snapshot()` 注入
+  `native_daily_bundle.ocean_physical_state_snapshot`。`NativeDailyReport` 会输出
+  `native_state_snapshot.ocean_physical_state` 与
+  `authority_report.ocean_physical.state`，包括 physical round id、phase lock、
+  visual round/cursor、last native diag、native lifecycle facade state、以及
+  `native_owned_output_slots`。新 DLL 暴露 `native_ocean_physical_begin/step/finish/reset/get`
+  facade；GDScript job 调用它们同步 round/stage/cursor 权威，owner 可从
+  `native_ready_probe` 提升为 `native_ready`，并在 `native_ocean_physical_active_owner_enabled`
+  gate 打开后报告 `native_active`，并从顶层 simulation blockers 移除。
+  visual raster 与 texture commit 仍作为 `retained_boundaries` 保留。
+- Season refresh / stage-b cadence 通过 `season_refresh_state_snapshot()` 注入
+  `native_daily_bundle.season_refresh_state_snapshot`。report 暴露 period counter、
+  stage/cursor、B+ native round 状态、`simulation_slot_dirty_intents` 和
+  `visual_dirty_intents`。`native_daily_bundle.season_cadence_policy` 进一步报告
+  stage-b `call_index`、albedo/vegetation/feedback stride、should-run 决策和
+  season period policy；C++ authority report 会把它作为 `cadence_policy` 透出。
+  `native_season_refresh_active_owner_enabled=true` 且 B+ state 可证明时，owner
+  可升为 `native_active`。atlas queue/detail scatter 仍是 `retained_boundaries`。
+- `MapGenerator._native_daily_required_pass_keys()` 在风温传输开启时要求
+  `wind_air_knobs` / `wind_surface_knobs`。native daily bundle 现在构造这两个
+  key，`system_schedule.cpp` 也有对应 `wind_air` / `wind_surface` 节点；
+  `wind_surface` 是 climate daily 链中 `cell_temp` 的最终合成发布点，因此这两
+  个节点必须通过 SHADOW/A-B soak 后，climate partial ACTIVE 才能被视为有效。
+- `runtime_hydrology` 已是 `SCHEDULE_GRAPH` 节点，但只在 bundle 含
+  `runtime_hydrology_knobs` 时运行。`runtime_hydrology_enabled=true` 时，
+  `MapGenerator._native_daily_required_pass_keys()` 要求 `weather_knobs` 与
+  `runtime_hydrology_knobs`，并把 stage-b 改挂到可选的
+  `stage_b_after_hydrology_knobs`，确保水文更新先于 stage-b 植被/反馈读取。
+  publish 成功后 `authority_report.runtime_hydrology.phase` 升为
+  `native_active_verified`；只有 bundle 缺少 hydrology knobs 时，
+  `authority_blockers` 才会列出 `runtime_hydrology`。
+- `tests/native_daily_shadow_runtime_test.gd` 是真实小地图 SHADOW smoke：
+  生成 10x8 map，跑一个 legacy-authoritative SUS day，确认 shadow probe
+  `bundle_pass_keys` 包含 `wind_air_knobs` / `wind_surface_knobs` 且
+  `missing_pass_keys` 为空。它不替代长窗 A/B，只锁定 graph 覆盖不会回退。
+- `tests/native_daily_hydrology_graph_test.gd` 是 hydrology graph smoke：
+  以 `runtime_hydrology_enabled=true` 跑小地图 SHADOW/probe，确认
+  `runtime_hydrology_knobs` 进入 bundle、`authority_report.runtime_hydrology`
+  出现、hydrology 不再作为 blocker，并执行一次 explicit native daily tick
+  检查 `hydrology_published_to_slot`、`native_active_verified` phase、
+  stage-b-after-hydrology 关系、river/water-balance published slots，以及
+  hydrology SoA 数组没有 NaN/Inf。
+- `tests/native_daily_shadow_soak_test.gd` 是 32-day 小地图 SHADOW soak：
+  每天仍走 legacy-authoritative SUS + `probe=true` readiness check；最后额外跑
+  一个显式 `run_native_daily_tick_from_job()` execution sample，检查
+  `published_slots` 含 `cell_temp` / 三条 anomaly slot，且 `breakdown` 含
+  `wind_air_ms` / `wind_surface_ms`。注意：SHADOW probe 本身不执行 graph，不应从
+  probe report 读取 timing 或 publish 证据。
+- Legacy production path 删除前的 soak 矩阵必须覆盖：
+  - SHADOW：hydrology 关/开各跑小图与大图，要求 `missing_pass_keys=[]`、
+    `authority_report` 覆盖 `climate_round/sea_ice/weather_transaction/runtime_hydrology/ocean_physical/season_refresh`。
+  - A/B：对比 `soil_moisture`、`water_balance_30d`、`river_discharge*`、
+    weather slots、sea-ice fraction/terrain flip intents、ocean physical slots 和 visual dirty intents。
+  - ACTIVE smoke：小图至少 16 daily ticks，大图至少 30 daily ticks，长窗至少 300 daily ticks；
+    hydrology 关/开都要观察 `frame_budget_exhausted`、`policy_gated`、`dep_pending`、
+    `published_to_slot`、`fallback_reason`、`native_ms`、`round_native_ms`。
+  - 可见性：weather fronts、weather LUT、sea-ice terrain flip、ocean wind/current、
+    vegetation/stage-b、dynamic visual atlas 都必须有 renderer/MapData 可见验证。
+- `native_state_snapshot` 是状态机迁移的 guard rail：只要
+  `weather_transaction_state_owner`、
+  `ocean_physical_state_owner` 或 `season_refresh_state_owner` 仍显示
+  `gdscript_retained`，对应系统就仍是 GDScript 状态机权威，不能因为 C++ pass
+  成功而收敛 fallback。`climate_round_state_owner=native_ready` 表示 native lifecycle/facade/intents
+  contract 已齐、可进入 ACTIVE 评估；它不等于 `simulation_authority=true`，也不表示 Godot 边界动作
+  或 fallback 已退休。`ClimateProfile.native_climate_round_active_owner_enabled=true` 时，
+  snapshot 会在 native-ready 基础上报告 `climate_round_state_owner=native_active`，并把
+  `native_probe_state.simulation_authority=true` / `authority=native_active_owner` 写入 report；
+  `remaining_gdscript_simulation_authority` 在 active mirror 下清空，表示 climate round
+  状态机生产权威已归 native；`remaining_gdscript_authority` 只保留
+  `godot_mapdata_boundary_execution` / `reset_abort_boundary_execution` 这类 Godot 边界，
+  `fallback_mode=explicit_failure_only` 表示 sync sliced path 只作为失败兜底。
+- Climate round state 目前以 PROBE mirror 进入 `native_state_snapshot`：
+  `MapGenerator` 把 `ClimateDailySystem.climate_round_state_snapshot()` 注入
+  `native_daily_bundle`，native report 透出 `_round_active`、`_pass_cursor`、
+  `_phase_locked`、async kick/poll、finalizer pending、pass token 等字段。`ClimateDailySystem`
+  的 snapshot owner 会在 `native_probe_state.climate_round_authority_ready=true` 时标为
+  `native_ready`，active owner gate 打开时标为 `native_active`，并继续携带 GDScript mirror fields
+  供 debug/compat 读取。
+- `DCWorldExt` 现在暴露 `get_native_climate_round_state_report()` 与
+  `reset_native_climate_round_state(reason)`。它们复用现有
+  `AsyncClimateRoundState` worker 生命周期，报告 `request_pending`、
+  `result_ready`、per-pass us、`total_rounds`、`total_reused` 等 native 侧状态；
+  `simulation_authority=false` 表示这不是 ACTIVE simulation authority。state report 现在显式给出
+  `climate_round_authority_ready=true`、空的 `climate_round_authority_blockers` 与
+  `remaining_gdscript_authority`，并细分为 `remaining_gdscript_simulation_authority`
+  与 `remaining_godot_boundary_authority`。默认 native-ready probe 仍列出
+  `should_run_stride_policy` / `sync_sliced_fallback`；active owner gate 打开后，GDScript mirror
+  会把 simulation authority 列表清空，只保留 Godot/MapData 与 reset/abort 边界。
+  `reset_native_climate_round_state(reason)` 还会返回 `reset_boundary_intents`，当前包括
+  `abort_active_pass`、`abort_all_climate_passes`、`reset_round_local_state`、
+  `reset_async_lifecycle_local_state`、`reset_round_timings`、`reset_start_snapshots`、
+  `reset_last_diagnostics`、`reset_transpiration_state`、`reset_dirty_season_state`、
+  `seed_full_sweep_counter`。`ClimateDailySystem.reset_progress()` 按这些 intents 执行脚本侧
+  reset/abort 边界动作，并在下次 async round 重新 register。
+- `ClimateDailySystem` 的 async path 现在优先调用
+  `native_climate_round_begin(static_knobs)`、`native_climate_round_kick(input)`、
+  `native_climate_round_poll()`，旧 DLL 才 fallback 到
+  `async_climate_round_register/set_static/kick/poll`。这些 facade 只集中 native
+  worker lifecycle/report，不改变 GDScript 的 `_round_active` / `_phase_locked`
+  owner。
+- `native_climate_round_poll()` 的 facade 顶层会透出 `published_slots`、
+  `published_slot_count`、`visual_dirty_intents`、`breakdown` 和 worker timing；同名字段也保留在
+  `result` 内。`breakdown` 使用 ms 单位，字段对齐 daily/scheduler 日志
+  (`pass_a_ms`、`wind_ms`、`worker_total_ms` 等)，因此 `ClimateDailySystem`
+  不再需要从 `*_us` 原始字段重复拼装 pass 汇总。`published_slots` 来自 native poll 端实际
+  `_flush_slot_to_map()` 成功的 slot，`visual_dirty_intents` 目前用于 sea-ice terrain flip
+  的 render/upload 意图。这只是 publish/visibility report 下沉，GDScript 仍负责 atlas/Godot
+  object 操作。
+- Native climate lifecycle 现在增加 `native_climate_round_begin_round(ctx)` 与
+  `native_climate_round_finish_round(ctx)`。它们在 `DCWorldExt.AsyncClimateRoundState`
+  中记录 `lifecycle_round_active`、`phase_locked`、`lifecycle_async_kicked`、
+  `lifecycle_poll_attempts` 和 `lifecycle_stage`。这是 climate round state-machine
+  migration 的 PROBE/partial-authority 步骤：phase lock/lifecycle report 已由 native 记录。
+  async wrapper 在 round start 时只计算 phase candidate 和诊断计时，随后调用 native begin-round，
+  再从 native state 同步 `_round_active`、`_pass_cursor`、`_async_round_kicked`、
+  `_async_round_poll_attempts` 和 `_async_round_kick_tick`；旧 DLL 没有 begin-round facade 时才回落到
+  GDScript 本地预写。kick/poll 边界也继续优先同步这份 native lifecycle state；但 GDScript
+  仍执行 round-start terrain sync、SoA transaction、finalize、dirty mark 和 Godot
+  object/render upload。
+- `native_climate_round_begin_round(ctx)` 会声明 `start_state_intents`，当前包括
+  `set_round_active`、`set_phase_locked`、`set_pass_cursor`、`reset_async_kicked`、
+  `reset_poll_attempts`、`record_tick_index`。这些 intent 描述 native 在 begin-round 时已经写入的
+  lifecycle state；GDScript 只 mirror 这些状态。
+- `native_climate_round_begin_round(ctx)` 同时声明 `boundary_intents`，当前包括
+  `sync_runtime_terrain_views`、`begin_round_pass_state`、
+  `soa_begin_climate_transaction`。这把 round-start boundary scheduling 的决策下沉到
+  native lifecycle report；GDScript 只按 intents 执行仍必须留在脚本/MapData/Godot 侧的
+  操作，并把耗时写回 `round_start_*` diagnostics。
+- `native_climate_round_poll()` 在 `done=true` 时声明 `finish_boundary_intents`，当前包括
+  `apply_sea_ice_flips`、`finalize_round`、`finish_native_lifecycle`。`ClimateDailySystem`
+  通过 `_execute_async_round_finish_boundary_intents()` 执行这些动作，并继续把 flip/finalize/
+  finish timing 写回 scheduler report。这样 round-finish boundary scheduling 已进入 native
+  report，实际 Godot/MapData 操作仍由 GDScript 执行。
+- `finalize_round` 内部动作也开始拆分为 native-declared
+  `finalize_tail_boundary_intents`：`use_worker_finalizer_diag` 或
+  `apply_gdscript_finalizer_fallback`、`advance_full_sweep_counter`、
+  `publish_climate_breakdown`、`annual_log`、`soa_noop`、`soak_dump`、`integrity_check`、`finish_active_pass`、
+  `reset_transpiration_state`、`reset_round_local_state`、`flush_pending_mark_dirty_all`、
+  `mark_round_slots_stale`、`dump_round_slot_stats`。同步 fallback 不传该字段时仍走同一默认列表，
+  因此行为保持一致。GDScript 仍执行这些 Godot/MapData/debug 侧动作，但顺序与存在性已由
+  native lifecycle report 声明。
 
 迁移方向：
 

@@ -1,11 +1,11 @@
 extends RefCounted
 class_name DCSusSystemsBootstrap
 
-## Phase D.3 / D.4 — 6 个 system 注册逻辑的目的地。
+## Phase D.3 / D.4 — runtime system 注册逻辑的目的地。
 ##
 ## 现状（Phase 1.4 接口骨架阶段，2026-05）：
 ##   注册逻辑实际仍在 `[map_generator.gd::_setup_sus`](../geography/map_generator.gd) line ~839 内
-##   （那里有 6 个 register_system / register_job 调用 + policy + depends_on 配置）。
+##   （那里有 DCSystemScheduler register_system 调用 + policy + retained boundary 配置）。
 ##   本类目前作为**诊断 / 查询接口骨架**，主要职责：
 ##     1. 在 `_setup_sus` 末尾被调用 `attach_post_setup(generator, scheduler)`，
 ##        持有 scheduler 引用作为运行期可读句柄；
@@ -15,19 +15,18 @@ class_name DCSusSystemsBootstrap
 ##        引用（去掉 generator 这层间接的入口准备）。
 ##
 ## 拆分目标（Phase 3.4 执行）：
-##   把 `_setup_sus` 内的 6 个 register_system 段（含 EnumAtlasUploadSystem /
-##   SeaIceAtlasUploadSystem / SeasonRefreshSystem / OceanCurrentsSystem /
-##   ClimateDailySystem / WeatherDCSystem）搬到本类的 `bootstrap(generator, scheduler)`
+##   把 `_setup_sus` 内的 production register_system 段（SeasonRefreshSystem /
+##   OceanCurrentsSystem / NativeDailySimJob 或 legacy daily boundary systems /
+##   visual upload systems）搬到本类的 `bootstrap(generator, scheduler)`
 ##   方法里，让 main.gd 直接 `DCSusSystemsBootstrap.bootstrap(generator, scheduler)`
 ##   而不必走 generator._setup_sus 这条间接路径。
 ##
-## 注册顺序（与 [`dots-system-design.md`](../../../docs/dots-system-design.md) §4 case study 表一致）：
-##   1. EnumAtlasUploadSystem — priority 140
-##   2. SeaIceAtlasUploadSystem — priority 250
-##   3. SeasonRefreshSystem — priority 50
-##   4. OceanCurrentsSystem — priority 200
-##   5. ClimateDailySystem — priority 100
-##   6. WeatherDCSystem — priority ~150（depends_on climate_daily）
+## 典型 ACTIVE 注册顺序：
+##   1. SeasonRefreshSystem
+##   2. OceanCurrentsSystem
+##   3. NativeDailySimJob
+##   4. EnumAtlasUploadSystem / DynamicVisualAtlasUploadSystem retained visual boundary
+## legacy daily fallback 路径才会注册 ClimateDailySystem / WeatherDCSystem / SeaIceDailySystem。
 ##
 ## DCSystemScheduler 路径会按拓扑序重写 priority；上面的 priority 仅 SUS 兼容路径用。
 

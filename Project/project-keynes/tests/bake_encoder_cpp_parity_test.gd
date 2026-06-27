@@ -87,7 +87,7 @@ func _test_enum_rgba(ext: Object) -> void:
 		PackedByteArray([4, 0, 0, 9, 5, 1, 0, 10, 6, 0, 0, 9]))
 
 
-func _expect(cond: bool, name: String) -> void:
+func _expect(name: String, cond: bool) -> void:
 	_checks += 1
 	if cond:
 		print("  [PASS] %s" % name)
@@ -104,7 +104,7 @@ func _expect_bytes(name: String, got: PackedByteArray, expected: PackedByteArray
 				ok = false
 				break
 
-	_expect(ok, name)
+	_expect(name, ok)
 	if not ok:
 		print("    got=%s expected=%s" % [str(got), str(expected)])
 

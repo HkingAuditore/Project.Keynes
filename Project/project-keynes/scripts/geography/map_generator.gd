@@ -149,28 +149,13 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 
-# Sliced Update Scheduler (SUS) — 全局切片更新调度器。MapGenerator 持有
-# SUS 实例并把所有"周期性模拟工作"作为 Job 注册进来。任务 4：注册
-# OceanCurrentsJob，把年首 ~1605ms 的洋流烘焙切成多日 ≤4ms 的小切片。
-const SlicedUpdateSchedulerScript = preload("res://scripts/simulation/sus/sus_scheduler.gd")
+# Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
+# DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 const SusTickContextScript = preload("res://scripts/simulation/sus/sus_tick_context.gd")
-const OceanCurrentsJobScript = preload("res://scripts/simulation/sus/jobs/ocean_currents_job.gd")
-# 任务 8：把 refresh_climate_daily / refresh_daily 收编为 SUS Job。
-const RefreshClimateDailyJobScript = preload("res://scripts/simulation/sus/jobs/refresh_climate_daily_job.gd")
-const WeatherRefreshJobScript = preload("res://scripts/simulation/sus/jobs/weather_refresh_job.gd")
 const NativeDailySimJobScript = preload("res://scripts/simulation/sus/jobs/native_daily_sim_job.gd")
-# Legacy sea_ice_atlas_upload 代码保留但不再注册；海冰主视觉由 shader 按水温派生。
-const SeaIceAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/sea_ice_atlas_upload_job.gd")
-const EnumAtlasUploadJobScript = preload("res://scripts/simulation/sus/jobs/enum_atlas_upload_job.gd")
-const SeasonRefreshJobScript = preload("res://scripts/simulation/sus/jobs/season_refresh_job.gd")
 
-# 0.4.1 — DCSystemScheduler 与 6 个 DCSystem wrapper 的 preload。
-# 当 ClimateProfile.use_dc_system_scheduler=true 时 `_setup_sus` 会创建
-# DCSystemScheduler 并 register_system 这 6 个 wrapper（其中 3 个是 delegate
-# wrapper：ClimateDailySystem / OceanCurrentsSystem / WeatherDCSystem；
-# 另 3 个 SeasonRefreshSystem / EnumAtlasUploadSystem / SeaIceAtlasUploadSystem
-# 是原生 DCSystem 实现）。flag=false 时维持既有 SusJob 直注册路径，零行为差异。
+# DCSystemScheduler 与运行期 DCSystem wrapper 的 preload。
 const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
@@ -179,7 +164,6 @@ const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocea
 const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_system.gd")
 const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
 const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
-const SeaIceAtlasUploadSystemScript = preload("res://scripts/simulation/systems/sea_ice_atlas_upload_system.gd")
 const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
 const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
 
@@ -416,9 +400,7 @@ var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
 var _pending_detail_scatter_refresh_indices: PackedInt32Array = PackedInt32Array()
 var _season_stage4_deltas: Dictionary = {}
-# DOTS-Final-Push 任务 6.2 / 方案 A：sea_ice_atlas_upload Job 把 prepare/upload
-# 的拆分耗时（path/prepare_ms/upload_ms/image_ms/dirty_cells/dirty_ratio）回填
-# 到这里，供 main.gd fast tick WARN 详细日志展开。schema 与 enum_atlas 同构。
+# 旧 sea_ice_atlas_upload 已退役；该 report 固定返回 disabled，用于旧 UI/日志字段兼容。
 var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
 
 # Perf instrumentation freshness（方案 ④ Step 1）：
@@ -695,21 +677,14 @@ var _weather_stage_b_call_index: int = -1
 # 首次 refresh_climate_daily 时做兜底迁移并打 [fastpath] HexCell typed fields active。
 var _typed_fields_migrated: bool = false
 
-# ─── Sliced Update Scheduler（任务 4：接入点 ① + ③）──────────────────────
-# SUS 实例由 generate() 末尾创建，把 baker 的 ocean currents bake 拆成每日切片。
-# 0.4.1：_sus 改为 untyped 多态引用，可能是 SlicedUpdateScheduler（legacy）
-# 或 DCSystemScheduler（use_dc_system_scheduler=true）。两者 API 兼容：
-# bind_world / tick / reset_all_progress / report_last_tick / report_last_tick_summary
-# 同形；frame_budget_ms / log_interval_ticks 同名公共字段。
+# ─── Runtime scheduler（DCSystemScheduler facade + SusSchedulerExt）────────
+# SUS 实例由 generate() 末尾创建。生产路径恒走 DCSystemScheduler；旧
+# SlicedUpdateScheduler 只作为独立 legacy/test 类保留，不再从本入口注册。
 var _sus = null
 # Phase 1.4 — sus_systems_bootstrap 引用（接口骨架；attach_post_setup 在
 # _setup_sus 末尾被调用。main.gd 通过 get_sus_bootstrap() 拿引用做诊断）。
 var _sus_bootstrap: RefCounted = null
 
-# 0.4.1：是否走 DCSystemScheduler 新路径。在 _setup_sus 入口由
-# ClimateProfile.use_dc_system_scheduler 决定；用于 build_topology / register_system
-# 分支判定。
-var _use_dc_system_scheduler: bool = false
 # DataCore World（dots-foundation-and-weather-migration）：
 # 与 _sus 同生命周期，在 _setup_sus 内创建并按 ClimateProfile.use_data_core 决定
 # 是否 bind_map_data。job 通过 SUS.bind_world 自动注入。
@@ -975,21 +950,14 @@ func _validate_gdext_method_signature(method_name: String, expected_arg_count: i
 	push_warning("[gdext sig] %s: NONE of %d matches has expected_arg_count=%d. gdext .dll likely STALE; REBUILD: 'cd gdext && scons platform=windows target=template_release dev_build=no -j8'." % [method_name, matches.size(), expected_arg_count])
 	return false
 var _ocean_currents_job: OceanCurrentsJob = null
-# 任务 8：refresh_climate_daily / refresh_daily 也作为 SUS Job 注册，
-# stride 由 ClimateProfile 字段驱动；speed_changed 时重建对应 Job 的 policy。
-# W.1：RefreshClimateDailyJob 现已退化为 ClimateDailySystem 的薄壳。当
-# use_dc_system_scheduler=true 时 get_inner() 返回 ClimateDailySystem 自身；
-# 当 use_dc_system_scheduler=false 时直接 new RefreshClimateDailyJob（仍是
-# ClimateDailySystem 子类）。改 untyped 容纳两种返回类型。
+var _ocean_currents_system = null
+# `refresh_climate_daily` 由 ClimateDailySystem 注册；保留 untyped 引用是为了
+# 继续复用 SusJob 面的 reset/run-flag/diagnostic API。
 var _refresh_climate_daily_job = null
 var _sea_ice_daily_job = null
+var _weather_refresh_system = null
 var _weather_refresh_job: WeatherRefreshJob = null
-# Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传 Job。
-# 0.4.1：以下 3 个引用类型放宽为 untyped。原因：当 use_dc_system_scheduler=true
-# 时，这些字段会指向 SeaIceAtlasUploadSystem / EnumAtlasUploadSystem /
-# SeasonRefreshSystem 实例（DCSystem 子类，IS-A SusJob 但 NOT-A 原始 Job 类）。
-# 既有调用面（depends_on.append / 不再被读）兼容 SusJob 抽象，故放宽类型安全。
-var _sea_ice_atlas_upload_job = null
+# 其余 upload/job 引用保持 untyped，因为 production 入口是 DCSystem 子类。
 var _dynamic_visual_atlas_upload_job = null
 # 2026-05-19：dynamic/ecology/smooth/ice 四张 atlas 的上传 stride（默认 2 仿真日）。
 # HexRenderer 通过 set_dyn_atlas_upload_stride() 在运行时调整；构造期前若 hex_renderer
@@ -1000,11 +968,21 @@ var _native_daily_sim_job = null
 var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
 var _native_daily_last_result: Dictionary = {}
+var _native_daily_slice_round_active: bool = false
+var _native_daily_slice_unified_weather_embedded: bool = false
+var _native_daily_slice_bundle_pass_keys: Array[String] = []
+var _native_daily_slice_active_bundle: Dictionary = {}
+var _native_daily_slice_next_node_index: int = -1
+var _native_daily_slice_phase_locked: float = 0.0
+var _native_daily_slice_temp_start_arr: PackedFloat32Array = PackedFloat32Array()
+var _native_daily_slice_tta_start_arr: PackedFloat32Array = PackedFloat32Array()
 var _native_generation_base_report: Dictionary = {}
 var _native_daily_shadow_probe_logged: bool = false
 # Phase A.2 unified fast tick：once-log + fallback once-warn。
 var _unified_fast_tick_first_log_done: bool = false
 var _unified_fast_tick_warned_fallback: bool = false
+var _native_daily_front_signature: String = ""
+var _native_daily_front_slot_sigs: PackedStringArray = PackedStringArray()
 var _sus_map: MapData = null
 var _sus_world: WorldData = null
 var _environment_runtime: RefCounted = null
@@ -1307,27 +1285,62 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 
 # ─── SUS 接入点（任务 4） ────────────────────────────────────────────────
 
+func _runtime_register_system(system) -> void:
+	if _sus == null or system == null:
+		return
+	_sus.register_system(system)
+
+
+func _runtime_build_topology(context: String) -> bool:
+	if _sus == null:
+		push_error("[map_generator] DCSystemScheduler unavailable while building topology (%s)" % context)
+		return false
+	var ok: bool = bool(_sus.build_topology())
+	if not ok:
+		push_error("[map_generator] DCSystemScheduler.build_topology() failed (%s)" % context)
+	return ok
+
+
+func _native_daily_slice_available() -> bool:
+	return _data_core_world_ext != null and _data_core_world_ext.has_method("run_native_daily_slice")
+
+
+func _native_daily_missing_slice_report() -> Dictionary:
+	return {
+		"rc": -1,
+		"done": true,
+		"path": "gdext_native_daily_slice",
+		"fail_stage": "missing_run_native_daily_slice",
+		"fallback_reason": "missing_run_native_daily_slice",
+		"progress_ratio": 0.0,
+		"stage_name": "native_daily",
+		"substage": "missing_slice_method",
+	}
+
+
+func _disabled_sea_ice_atlas_report(reason: String) -> Dictionary:
+	return {
+		"done": true,
+		"phase": "disabled",
+		"stage_name": "sea_ice_atlas_upload",
+		"elapsed_ms": 0.0,
+		"reason": reason,
+	}
+
+
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_sus_map = map
 	_sus_world = world
-	# 创建一个全新 SUS 实例（regenerate 路径会让旧实例随 MapGenerator 一起被替换，
-	# 不需要手动 reset_all_progress）。
-	#
-	# 0.4.1：根据 ClimateProfile.use_dc_system_scheduler 选择调度器实现。
-	#   - false（默认）→ SlicedUpdateScheduler，6 个原始 SusJob 通过 register_job 注册
-	#   - true → DCSystemScheduler（内部仍用 SlicedUpdateScheduler 做 tick）；
-	#     6 个 DCSystem wrapper 通过 register_system 注册；最后 build_topology
-	#     用 reads/writes 重写 priority 实现拓扑序运行
-	# 调度器 API 同形：bind_world / tick / reset_all_progress / report_last_tick /
-	# report_last_tick_summary 同名同签名。
-	# dots-flag-prune-pr1 (2026-05-22)： use_dc_system_scheduler flag 已删除——
-	# DCSystemScheduler 现恒走单路径（6 个 DCSystem wrapper + 拓扑排序）。
-	# _use_dc_system_scheduler 变量保留作为内部常量 true，避免下游 if 分支改动。
+	# 创建一个全新 DCSystemScheduler 实例（regenerate 路径会让旧实例随
+	# MapGenerator 一起被替换，不需要手动 reset_all_progress）。
 	var cp_sched := _c()
-	_use_dc_system_scheduler = true
 	_sus = DCSystemSchedulerScript.new()
 	_sea_ice_daily_job = null
-	_apply_sim_budget_profile_to_scheduler(cp_sched)
+	_weather_refresh_system = null
+	_weather_refresh_job = null
+	_ocean_currents_system = null
+	_ocean_currents_job = null
+	_sus.configure_from_profile(cp_sched)
 	# DataCore World 接入（dots-foundation-and-weather-migration）：
 	# 在 SUS 注册任何 job 前先把 World 实例创建出来并 bind 到 MapData，
 	# 这样所有 register_job 会自动被注入 world 引用。
@@ -1447,29 +1460,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _weather_system != null and _weather_system.has_method("configure_gdext_acceleration"):
 		var cp_f1 := _c()
 		_weather_system.configure_gdext_acceleration(_data_core_world_ext, true, cp_f1, _data_core_world)
-	if _try_register_native_daily_sim_job(map, world):
-		if OS.is_debug_build():
-			print("[native_daily] ACTIVE: registered native_daily_sim + visual upload jobs only")
-		_register_visual_upload_jobs(map, world, hex_size, cp_sched)
-		if _use_dc_system_scheduler:
-			var topo_native_ok: bool = _sus.build_topology()
-			if not topo_native_ok:
-				push_error("[map_generator] DCSystemScheduler.build_topology() failed for native_daily path")
-		if _sus_bootstrap == null:
-			_sus_bootstrap = DCSusSystemsBootstrapScript.new(self)
-		_sus_bootstrap.attach_post_setup(self, _sus)
-		return
-	# 0.4.1：use_dc_system_scheduler 决定用 System（native DCSystem，IS-A SusJob）
-	# 还是原 Job。两者业务逻辑等价（SeasonRefreshSystem.tick 与 SeasonRefreshJob.run_slice
-	# 同结构 11-stage）。
-	if _use_dc_system_scheduler:
-		_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
-		_apply_sim_budget_profile_to_job(_season_refresh_job, cp_sched)
-		_sus.register_system(_season_refresh_job)
-	else:
-		_season_refresh_job = SeasonRefreshJobScript.new(self, map, world)
-		_apply_sim_budget_profile_to_job(_season_refresh_job, cp_sched)
-		_sus.register_job(_season_refresh_job)
+	_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
+	_sus.configure_job_from_profile(_season_refresh_job, cp_sched)
+	_runtime_register_system(_season_refresh_job)
 	# dots-flag-prune-pr1 (2026-05-22)：ocean_current_refresh_seasons E 类废字段已
 	# 从 ClimateProfile 删除——原有的 deprecated warning 不再需要。SUS 路径仅
 	# 读 ocean_currents_period_ticks / ocean_currents_slice_count。
@@ -1495,42 +1488,36 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 走 ny-only 旧路径。
 	if cfg != null:
 		cfg.climate_profile = cp
-	# 0.4.1：use_dc_system_scheduler 时构造 wrapper（delegate 内嵌 OceanCurrentsJob）
-	# 并注册到 DCSystemScheduler；_ocean_currents_job 保持指向 wrapper._inner，让
-	# on_commit / season_phase_getter / depends_on 等 SusJob-面字段的既有写入路径
-	# 1:1 沿用。
-	if _use_dc_system_scheduler:
-		var ocean_sys = OceanCurrentsSystemScript.new(
-				_baker, map, world, cfg, hex_size, wind_period_ticks, slice_count, ocean_period_ticks)
-		_ocean_currents_job = ocean_sys.get_inner()
-		_apply_sim_budget_profile_to_job(ocean_sys, cp)
-		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
-		_ocean_currents_job.on_commit = func():
-			_compute_ocean_currents(map, world, hex_size)
-		if _world_clock_ref != null:
-			_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
-		_sus.register_system(ocean_sys)
-	else:
-		_ocean_currents_job = OceanCurrentsJob.new(
-				_baker, map, world, cfg, hex_size, wind_period_ticks, slice_count, ocean_period_ticks)
-		_apply_sim_budget_profile_to_job(_ocean_currents_job, cp)
-		# commit 完成后回填 per-cell（此前 rebake_ocean_currents 路径里的 _compute_ocean_currents）。
-		_ocean_currents_job.on_commit = func():
-			_compute_ocean_currents(map, world, hex_size)
-		# 若 main.gd 已经早一步注入 world_clock，更新 phase getter。
-		if _world_clock_ref != null:
-			_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
-		_sus.register_job(_ocean_currents_job)
+	# OceanCurrentsSystem 仍是 delegate wrapper；_ocean_currents_job 指向内部
+	# job，保持 on_commit / season_phase_getter / 诊断访问路径不变。
+	var ocean_sys = OceanCurrentsSystemScript.new(
+			_baker, map, world, cfg, hex_size, wind_period_ticks, slice_count, ocean_period_ticks)
+	_ocean_currents_system = ocean_sys
+	_ocean_currents_job = ocean_sys.get_inner()
+	_sus.configure_job_from_profile(ocean_sys, cp, false, &"ocean_currents", 1)
+	_sus.configure_job_from_profile(_ocean_currents_job, cp, false, &"ocean_currents", 1)
+	_ocean_currents_job.on_commit = func():
+		_compute_ocean_currents(map, world, hex_size)
+	if _world_clock_ref != null:
+		_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
+	_runtime_register_system(ocean_sys)
+	if _ocean_currents_job != null:
+		_ocean_currents_job.data_core_world_ext = _data_core_world_ext
+		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
+		_ocean_currents_job.climate_slice_ms_getter = Callable(self, "last_refresh_climate_slice_ms")
+	if _try_register_native_daily_sim_job(map, world):
+		if OS.is_debug_build():
+			print("[native_daily] ACTIVE: registered native_daily_sim; retained season_refresh + ocean_currents boundary jobs")
+		_register_visual_upload_jobs(map, world, hex_size, cp_sched)
+		_runtime_build_topology("native_daily path")
+		if _sus_bootstrap == null:
+			_sus_bootstrap = DCSusSystemsBootstrapScript.new(self)
+		_sus_bootstrap.attach_post_setup(self, _sus)
+		return
 
-	# 任务 8：注册 RefreshClimateDailyJob + WeatherRefreshJob。
-	# 两者的 stride 直接读 ClimateProfile，speed_changed 时由 main.gd 通过
-	# set_weather_refresh_stride / set_daily_climate_refresh_stride 改写并
-	# 调 reconfigure。stride 跳日的语义完全由 SusPolicy 承担。
-	# Fix #9 (2026-06-15): 不动 stride（保持仿真权威性），只用 phase 错峰。
-	# climate/sea_ice/ocean phase=0 落偶 tick；weather/atlas/dynamic_visual phase=1
-	# 落奇 tick。stride=1 时无视 phase（每 tick 都跑），所以仿真层不受影响。
-	# 当 atlas 配 stride=2 时（earth_like.tres dynamic_visual_atlas_upload_stride=2），
-	# phase=1 让它落在奇 tick，跟 climate spike tick 错开 → 不再被饿死。
+	# 注册 ClimateDailySystem + WeatherDCSystem。
+	# stride 仍读取 ClimateProfile 的 cadence 字段；实际 phase/bucket 由
+	# DCSystemScheduler.configure_job_from_profile() 统一解释。
 	var climate_stride: int = 1
 	var sea_ice_stride: int = 1
 	var weather_stride: int = 1
@@ -1539,46 +1526,28 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		if cp.get("sea_ice_daily_stride") != null:
 			sea_ice_stride = clampi(int(cp.sea_ice_daily_stride), 1, 8)
 		weather_stride = max(1, int(cp.weather_refresh_stride))
-	# RefreshClimateDailyJob：写连续气候基线（priority 100）
+	# ClimateDailySystem：写连续气候基线（priority 100）
 	var climate_phase_getter := Callable()
 	if _world_clock_ref != null:
 		climate_phase_getter = Callable(_world_clock_ref, "season_phase")
-	# 0.4.1：use_dc_system_scheduler 时构造 ClimateDailySystem wrapper（delegate 到
-	# RefreshClimateDailyJob）；_refresh_climate_daily_job 保持指向 wrapper._inner
-	# 让现有 SusJob-面访问（reset_run_flag / did_run_last_tick / data_core_ready /
-	# season_phase_getter 写入 / reconfigure 等）零改动。
-	if _use_dc_system_scheduler:
-		var climate_sys = ClimateDailySystemScript.new(self, map, climate_phase_getter, climate_stride)
-		_refresh_climate_daily_job = climate_sys.get_inner()
-		_apply_sim_budget_profile_to_job(climate_sys, cp)
-		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
-		_sus.register_system(climate_sys)
-	else:
-		_refresh_climate_daily_job = RefreshClimateDailyJobScript.new(self, map, climate_phase_getter, climate_stride)
-		_apply_sim_budget_profile_to_job(_refresh_climate_daily_job, cp)
-		_sus.register_job(_refresh_climate_daily_job)
+	var climate_sys = ClimateDailySystemScript.new(self, map, climate_phase_getter, climate_stride)
+	_refresh_climate_daily_job = climate_sys.get_inner()
+	_sus.configure_job_from_profile(climate_sys, cp, false, &"refresh_climate_daily", climate_stride)
+	_sus.configure_job_from_profile(_refresh_climate_daily_job, cp, false, &"refresh_climate_daily", climate_stride)
+	_runtime_register_system(climate_sys)
 	_sea_ice_daily_job = null
 	if cp != null and cp.get("sea_ice_independent_system_enabled") != null \
 			and bool(cp.sea_ice_independent_system_enabled):
 		_sea_ice_daily_job = SeaIceDailySystemScript.new(self, map, climate_phase_getter, sea_ice_stride)
-		_apply_sim_budget_profile_to_job(_sea_ice_daily_job, cp)
-		if _use_dc_system_scheduler:
-			_sus.register_system(_sea_ice_daily_job)
-		else:
-			_sus.register_job(_sea_ice_daily_job)
+		_sus.configure_job_from_profile(_sea_ice_daily_job, cp, false, &"sea_ice_daily", sea_ice_stride)
+		_runtime_register_system(_sea_ice_daily_job)
 	if _ocean_currents_job != null:
+		_ocean_currents_job.data_core_world_ext = _data_core_world_ext
 		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
 		_ocean_currents_job.climate_slice_ms_getter = Callable(self, "last_refresh_climate_slice_ms")
-	# 0.4.1：use_dc_system_scheduler 时用 EnumAtlasUploadSystem（native DCSystem，
-	# IS-A SusJob，业务逻辑与 EnumAtlasUploadJob 等价）。
-	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
-		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_sus.register_system(_enum_atlas_upload_job)
-	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
-		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_sus.register_job(_enum_atlas_upload_job)
+	_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
+	_sus.configure_job_from_profile(_enum_atlas_upload_job, cp, true, &"enum_atlas_upload", enum_atlas_stride)
+	_runtime_register_system(_enum_atlas_upload_job)
 	# WeatherRefreshJob：天气推进 + 反馈链（priority 150，依赖 refresh_climate_daily）
 	var season_idx_getter := Callable()
 	var season_phase_getter := Callable()
@@ -1591,26 +1560,15 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var wc_ref = _world_clock_ref
 		climate_anomaly_getter = func() -> float:
 			return float(wc_ref.climate_anomaly)
-	# 0.4.1：use_dc_system_scheduler 时构造 WeatherDCSystem wrapper（delegate 到
-	# WeatherRefreshJob）；_weather_refresh_job 仍指向 wrapper.get_inner() 保持
-	# 既有 last_fronts / did_change_fronts_last_tick 等访问路径不变。
-	var weather_dc_system = null
-	if _use_dc_system_scheduler:
-		weather_dc_system = WeatherDCSystemScript.new(
-			self, map, world,
-			season_idx_getter, season_phase_getter, climate_anomaly_getter,
-			weather_stride
-		)
-		_weather_refresh_job = weather_dc_system.get_inner()
-		_apply_sim_budget_profile_to_job(weather_dc_system, cp)
-		_apply_sim_budget_profile_to_job(_weather_refresh_job, cp)
-	else:
-		_weather_refresh_job = WeatherRefreshJobScript.new(
-			self, map, world,
-			season_idx_getter, season_phase_getter, climate_anomaly_getter,
-			weather_stride
-		)
-		_apply_sim_budget_profile_to_job(_weather_refresh_job, cp)
+	var weather_dc_system = WeatherDCSystemScript.new(
+		self, map, world,
+		season_idx_getter, season_phase_getter, climate_anomaly_getter,
+		weather_stride
+	)
+	_weather_refresh_system = weather_dc_system
+	_weather_refresh_job = weather_dc_system.get_inner()
+	_sus.configure_job_from_profile(weather_dc_system, cp, false, &"weather_refresh", weather_stride)
+	_sus.configure_job_from_profile(_weather_refresh_job, cp, false, &"weather_refresh", weather_stride)
 	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
 	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
@@ -1624,10 +1582,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# field 求解（与 weather_refresh_job.gd 注释里描述的 climate dep 解除是同
 	# 一类问题）。所以 weather 不应阻塞在 season 上。
 	# _weather_refresh_job.depends_on.append(&"season_refresh")  # ← 移除（保留作历史记录）
-	if _use_dc_system_scheduler:
-		_sus.register_system(weather_dc_system)
-	else:
-		_sus.register_job(_weather_refresh_job)
+	_runtime_register_system(weather_dc_system)
 
 	# WeatherLUT 发布直接内联在 WeatherRefreshJob 的 commit/merged/direct 完成点，避免独立 job
 	# 的 should_run 相位早于 weather_refresh 时读到 ran_this_tick=false，也避免额外每 tick 扫描。
@@ -1636,36 +1591,19 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# sea_ice_fraction（与 UI/info_panel 同源；sea-ice-render-source-unify 阶段 A）。
 	# 不再需要 sea_ice_atlas_upload 周期性光栅化 / GPU 上传作为 shader 主源；
 	# 保留 sea_ice_tex 作为兼容空纹理，但不注册 SUS job。
-	_sea_ice_atlas_upload_job = null
-	_last_sea_ice_atlas_upload_breakdown = {
-		"done": true,
-		"phase": "disabled",
-		"stage_name": "sea_ice_atlas_upload",
-		"elapsed_ms": 0.0,
-		"reason": "dyn_atlas_smooth_a_unified_source",
-	}
+	_last_sea_ice_atlas_upload_breakdown = _disabled_sea_ice_atlas_report("dyn_atlas_smooth_a_unified_source")
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
 	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
-	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
-	if _use_dc_system_scheduler:
-		_sus.register_system(_dynamic_visual_atlas_upload_job)
-	else:
-		_sus.register_job(_dynamic_visual_atlas_upload_job)
+	_sus.configure_job_from_profile(_dynamic_visual_atlas_upload_job, cp, true, &"dynamic_visual_atlas_upload", _dyn_atlas_upload_stride)
+	_runtime_register_system(_dynamic_visual_atlas_upload_job)
 	_try_register_native_environment_runtime_system(map, cp)
 
-	# 0.4.1：DCSystemScheduler 路径必须在所有 register_system 之后调一次
-	# build_topology()。它按 declare_reads/writes 构造 DAG + Kahn 拓扑排序，
-	# 再把 system.priority 改写为 (100 + topo_index*10) 以让内部 SUS 按拓扑序
-	# 跑。有环时 push_error 并拒绝构建；调试构建会 print 拓扑序 system id 列表。
-	if _use_dc_system_scheduler:
-		var topo_ok: bool = _sus.build_topology()
-		if not topo_ok:
-			push_error("[map_generator] DCSystemScheduler.build_topology() failed (cycle detected); fast tick will not run")
-		elif OS.is_debug_build():
-			print("[map_generator] DCSystemScheduler topology built: %s" % str(_sus.topology_order_names()))
+	var topo_ok: bool = _runtime_build_topology("cycle detected; fast tick will not run")
+	if topo_ok and OS.is_debug_build():
+		print("[map_generator] DCSystemScheduler topology built: %s" % str(_sus.topology_order_names()))
 
 	# Phase 1.4 — sus_systems_bootstrap attach。让 main.gd / debug overlay 能通过
 	# generator.get_sus_bootstrap() 拿到 scheduler 引用做诊断 / 未来直接 tick。
@@ -1675,141 +1613,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_sus_bootstrap.attach_post_setup(self, _sus)
 	if OS.is_debug_build():
 		print("[map_generator] %s" % _sus_bootstrap.status_one_liner())
-
-
-func _apply_sim_budget_profile_to_scheduler(cp) -> void:
-	if _sus == null or cp == null:
-		return
-	var frame_ms: float = float(cp.sim_frame_budget_ms) if cp.get("sim_frame_budget_ms") != null else float(_sus.frame_budget_ms)
-	# Runtime safety clamp：resource 里允许保留极大预算做实验输入，但实际
-	# fast tick 不能放开到几十 ms，否则 SUS 会在同一帧连续吃完整轮重型 job。
-	# Fix #8A (2026-06-15): mobile 上限改为 4.0ms（log_next.txt 实测 SUS p95=9-15ms，
-	# budget=2ms 让 dynamic_visual_atlas_upload 80% 被饿死，雪线/海冰视觉延迟 2-3s）。
-	# 4ms 仍远 < 16.6ms 60FPS frame budget，给低优先级 atlas upload 有上车机会。
-	# Mobile 默认 4.0，desktop 继续 2.0（profile 里默认 sim_frame_budget_ms=2.0）。
-	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
-	# Mobile 上无视 profile 设置，强制至少 4.0（如果 profile 写得更低就用 profile，
-	# 比如调试时强制 2.0 复现旧行为）。
-	if OS.has_feature("mobile") and frame_ms < max_budget:
-		frame_ms = max_budget
-	frame_ms = clampf(frame_ms, 0.25, max_budget)
-	if cp.get("sim_frame_budget_ms") != null:
-		if _sus.has_method("set_frame_budget_ms"):
-			_sus.set_frame_budget_ms(frame_ms)
-		else:
-			_sus.frame_budget_ms = frame_ms
-	if cp.get("sim_strict_budget_enabled") != null:
-		if _sus.has_method("set_strict_budget_enabled"):
-			_sus.set_strict_budget_enabled(bool(cp.sim_strict_budget_enabled))
-		else:
-			_sus.strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
-	if _sus.get("sim_budget_window_size") != null:
-		_sus.sim_budget_window_size = 300
-	if _sus.get("sim_budget_warn_ms") != null:
-		if cp.get("sim_budget_warn_ms") != null:
-			# Fix #8A: warn_ms 上限也跟 frame_ms 走，mobile 4.0/desktop 2.0
-			var warn_ms: float = clampf(float(cp.sim_budget_warn_ms), 0.25, max_budget)
-			if _sus.has_method("set_sim_budget_warn_ms"):
-				_sus.set_sim_budget_warn_ms(warn_ms)
-			else:
-				_sus.sim_budget_warn_ms = warn_ms
-		elif cp.get("sim_frame_budget_ms") != null:
-			if _sus.has_method("set_sim_budget_warn_ms"):
-				_sus.set_sim_budget_warn_ms(frame_ms)
-			else:
-				_sus.sim_budget_warn_ms = frame_ms
-		else:
-			_sus.sim_budget_warn_ms = 1.0
-	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler flag 已删除——SUS
-	# scheduler native 路径现恒走 ext != null 单边分支，scheduler 内部自动
-	# 探测 _ext，无需 caller 在这里透传 flag。
-	if OS.is_debug_build():
-		var log_slice_ms: float = 0.0
-		if cp.get("sim_slice_budget_ms") != null:
-			log_slice_ms = clampf(float(cp.sim_slice_budget_ms), 0.10, 1.0)
-		var log_upload_slice_ms: float = 0.0
-		if cp.get("sim_upload_slice_budget_ms") != null:
-			log_upload_slice_ms = clampf(float(cp.sim_upload_slice_budget_ms), 0.10, 1.5)
-		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
-			% [str(bool(cp.sim_strict_budget_enabled)) if cp.get("sim_strict_budget_enabled") != null else "false",
-				frame_ms,
-				float(_sus.sim_budget_warn_ms) if _sus.get("sim_budget_warn_ms") != null else 1.0,
-				log_slice_ms,
-				log_upload_slice_ms,
-				"DCSystemScheduler" if _use_dc_system_scheduler else "SlicedUpdateScheduler"])
-
-
-func _sim_job_should_must_run(_job, _upload_job: bool) -> bool:
-	if _upload_job or _job == null:
-		return false
-	var raw_id = _job.get("id")
-	if raw_id == null:
-		return false
-	var job_id: StringName = StringName(str(raw_id))
-	return job_id == &"ocean_currents" \
-			or job_id == &"refresh_climate_daily" \
-			or job_id == &"weather_refresh" \
-			or job_id == &"sea_ice_daily"
-
-
-func _apply_sim_budget_profile_to_job(job, cp, upload_job: bool = false) -> void:
-	if job == null or cp == null:
-		return
-	var strict_on: bool = bool(cp.sim_strict_budget_enabled) if cp.get("sim_strict_budget_enabled") != null else false
-	var slice_ms: float = 0.55
-	if upload_job and cp.get("sim_upload_slice_budget_ms") != null:
-		slice_ms = float(cp.sim_upload_slice_budget_ms)
-	elif cp.get("sim_slice_budget_ms") != null:
-		slice_ms = float(cp.sim_slice_budget_ms)
-	if upload_job:
-		slice_ms = clampf(slice_ms, 0.10, 1.5)
-	else:
-		slice_ms = clampf(slice_ms, 0.10, 1.0)
-	if job.get("slice_budget_ms") != null:
-		job.slice_budget_ms = slice_ms
-	if job.get("max_slices_per_tick") != null:
-		var job_id: StringName = &""
-		var raw_id = job.get("id")
-		if raw_id != null:
-			job_id = StringName(str(raw_id))
-		# Heavy/latency-sensitive jobs must yield after one slice. This keeps
-		# climate rounds and ocean raster/commit work spread across fast ticks.
-		if upload_job or job_id == &"season_refresh" \
-				or job_id == &"refresh_climate_daily" \
-				or job_id == &"sea_ice_daily" \
-				or job_id == &"ocean_currents":
-			job.max_slices_per_tick = 1
-		else:
-			job.max_slices_per_tick = 1 if strict_on else 0
-	if job.get("must_run") != null:
-		var must_job_id: StringName = &""
-		var must_raw_id = job.get("id")
-		if must_raw_id != null:
-			must_job_id = StringName(str(must_raw_id))
-		var force_must_run: bool = (must_job_id == &"sea_ice_atlas_upload")
-		job.must_run = force_must_run \
-				or (strict_on and _sim_job_should_must_run(job, upload_job))
-	if job.get("starvation_threshold") != null:
-		var starvation_job_id: StringName = &""
-		var starvation_raw_id = job.get("id")
-		if starvation_raw_id != null:
-			starvation_job_id = StringName(str(starvation_raw_id))
-		# sea-ice-snow-visual-fix-v3：原 `if upload_job: starvation_threshold = 0`
-		# 把 _init 里设的 8 擦掉，导致 atlas pipeline 在 frame_budget_exhausted 时
-		# 完全饿死。视觉 upload job 强制保留 starvation 防护。
-		if starvation_job_id == &"dynamic_visual_atlas_upload" \
-				or starvation_job_id == &"sea_ice_atlas_upload":
-			job.starvation_threshold = 8
-		elif upload_job:
-			job.starvation_threshold = 0
-		elif starvation_job_id == &"refresh_climate_daily" \
-				or starvation_job_id == &"weather_refresh" \
-				or starvation_job_id == &"sea_ice_daily":
-			job.starvation_threshold = 3
-		elif starvation_job_id == &"ocean_currents":
-			job.starvation_threshold = 6
-		else:
-			job.starvation_threshold = 0
 
 
 ## Phase 1.4 — 让 main.gd / debug overlay 拿到 sus_systems_bootstrap 引用。
@@ -1898,8 +1701,8 @@ func set_dyn_atlas_upload_stride(p_stride: int) -> void:
 	var cp := _c()
 	if cp != null and cp.get("dynamic_visual_atlas_upload_stride") != null:
 		cp.dynamic_visual_atlas_upload_stride = _dyn_atlas_upload_stride
-	if _dynamic_visual_atlas_upload_job != null and _dynamic_visual_atlas_upload_job.has_method("reconfigure"):
-		_dynamic_visual_atlas_upload_job.reconfigure(_dyn_atlas_upload_stride)
+	if _sus != null:
+		_sus.apply_job_schedule(_dynamic_visual_atlas_upload_job, cp, &"dynamic_visual_atlas_upload", _dyn_atlas_upload_stride)
 
 
 func set_enum_atlas_upload_stride(p_stride: int) -> void:
@@ -1907,8 +1710,8 @@ func set_enum_atlas_upload_stride(p_stride: int) -> void:
 	var cp := _c()
 	if cp != null and cp.get("enum_atlas_upload_stride") != null:
 		cp.enum_atlas_upload_stride = stride
-	if _enum_atlas_upload_job != null and _enum_atlas_upload_job.has_method("reconfigure"):
-		_enum_atlas_upload_job.reconfigure(stride)
+	if _sus != null:
+		_sus.apply_job_schedule(_enum_atlas_upload_job, cp, &"enum_atlas_upload", stride)
 
 
 ## Applies the cadence knobs currently stored in ClimateProfile to already
@@ -1916,13 +1719,14 @@ func set_enum_atlas_upload_stride(p_stride: int) -> void:
 ## during _setup_sus; this entry point is for debug UI / inspector tooling.
 func apply_simulation_cadence_from_profile() -> void:
 	var cp := _c()
-	if cp == null:
+	if cp == null or _sus == null:
 		return
 	if cp.get("daily_climate_refresh_stride") != null:
 		set_daily_climate_refresh_stride(int(cp.daily_climate_refresh_stride))
 	if _sea_ice_daily_job != null and _sea_ice_daily_job.has_method("reconfigure") \
 			and cp.get("sea_ice_daily_stride") != null:
-		_sea_ice_daily_job.reconfigure(clampi(int(cp.sea_ice_daily_stride), 1, 8))
+		_sus.apply_job_schedule(_sea_ice_daily_job, cp, &"sea_ice_daily",
+				clampi(int(cp.sea_ice_daily_stride), 1, 8))
 	if cp.get("weather_refresh_stride") != null:
 		set_weather_refresh_stride(int(cp.weather_refresh_stride))
 	if _season_refresh_job != null and _season_refresh_job.get("period_ticks") != null \
@@ -1936,16 +1740,18 @@ func apply_simulation_cadence_from_profile() -> void:
 				1,
 				max(1, int(cp.ocean_currents_slice_count)),
 				ocean_period_ticks)
+		_sus.apply_job_schedule(_ocean_currents_system, cp, &"ocean_currents", 1)
+		_sus.apply_job_schedule(_ocean_currents_job, cp, &"ocean_currents", 1)
 	if cp.get("enum_atlas_upload_stride") != null:
 		set_enum_atlas_upload_stride(int(cp.enum_atlas_upload_stride))
 	if cp.get("dynamic_visual_atlas_upload_stride") != null:
 		set_dyn_atlas_upload_stride(int(cp.dynamic_visual_atlas_upload_stride))
 	if _native_daily_sim_job != null and cp.get("native_daily_sim_stride") != null:
-		_native_daily_sim_job.policy = SusPolicyScript.StridePolicy.new(
-				clampi(int(cp.native_daily_sim_stride), 1, 8), 0)
+		_sus.apply_job_schedule(_native_daily_sim_job, cp, &"native_daily_sim",
+				clampi(int(cp.native_daily_sim_stride), 1, 8))
 	if _native_environment_runtime_job != null and cp.get("native_environment_runtime_stride") != null:
-		_native_environment_runtime_job.policy = SusPolicyScript.StridePolicy.new(
-				clampi(int(cp.native_environment_runtime_stride), 1, 8), 0)
+		_sus.apply_job_schedule(_native_environment_runtime_job, cp, &"native_environment_runtime",
+				clampi(int(cp.native_environment_runtime_stride), 1, 8))
 
 
 ## main.gd 在 _ready 末尾调用，让 OceanCurrentsJob 拿到 season_phase 连续浮点。
@@ -2007,7 +1813,7 @@ func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 		"season_phase": ctx.season_phase,
 		"season_index": season_idx,
 		"climate_anomaly": anomaly,
-		"speed_multiplier": ctx.speed_multiplier,
+		"speed_multiplier": float(ctx.speed_scale) if ctx != null else 1.0,
 	}
 
 
@@ -2101,6 +1907,59 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 	return knobs
 
 
+func _native_daily_season_cadence_policy(cp_now, call_index: int) -> Dictionary:
+	var albedo_stride: int = maxi(1, int(cp_now.weather_albedo_stride)) if cp_now != null else 10
+	var veg_dyn_stride: int = maxi(1, int(cp_now.weather_vegetation_dynamics_stride)) if cp_now != null else 10
+	var feedback_stride: int = maxi(1, int(cp_now.weather_feedback_stride)) if cp_now != null else 10
+	var season_period_ticks: int = 1
+	var season_period_counter: int = 0
+	if _season_refresh_job != null:
+		if _season_refresh_job.get("period_ticks") != null:
+			season_period_ticks = maxi(1, int(_season_refresh_job.period_ticks))
+		if _season_refresh_job.get("_period_counter") != null:
+			season_period_counter = int(_season_refresh_job._period_counter)
+	var run_albedo: bool = (call_index % albedo_stride) == 0
+	var run_veg_dyn: bool = (call_index % veg_dyn_stride) == 0
+	var run_feedback: bool = (call_index % feedback_stride) == 0 \
+			and cp_now != null and bool(cp_now.fast_slow_layering_enabled)
+	return {
+		"owner": "native_graph_policy",
+		"policy_state": "native_ready",
+		"stage_b_call_index": call_index,
+		"stage_b_strides": {
+			"albedo": albedo_stride,
+			"vegetation_dynamics": veg_dyn_stride,
+			"feedback": feedback_stride,
+		},
+		"stage_b_should_run": {
+			"albedo": run_albedo,
+			"vegetation_dynamics": run_veg_dyn,
+			"feedback": run_feedback,
+		},
+		"stage_b_any": run_albedo or run_veg_dyn or run_feedback,
+		"season_period_ticks": season_period_ticks,
+		"season_period_counter": season_period_counter,
+		"season_should_advance": season_period_counter <= 0,
+		"simulation_slot_dirty_intents": [
+			"cell_terrain",
+			"cell_landform",
+			"cell_vegetation",
+			"cell_cover",
+			"cell_moisture",
+			"cell_base_moisture",
+			"cell_weather_dirty",
+		],
+		"visual_dirty_intents": [
+			"enum_atlas",
+			"detail_scatter",
+		],
+		"remaining_godot_boundary_authority": [
+			"atlas_queue_execution",
+			"detail_scatter_execution",
+		],
+	}
+
+
 func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null:
 		return {}
@@ -2111,6 +1970,11 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"insol_amp": float(cp_now.get("season_temp_amp")) if cp_now.get("season_temp_amp") != null else 0.20,
 		"insol_gain": float(cp_now.get("insolation_season_gain")) if cp_now.get("insolation_season_gain") != null else 1.0,
 		"moist_scale_now": 1.0,
+		"runtime_moisture_base_relax_rate": float(cp_now.get("runtime_moisture_base_relax_rate")) if cp_now.get("runtime_moisture_base_relax_rate") != null else 0.24,
+		"runtime_moisture_weather_vapor_weight": float(cp_now.get("runtime_moisture_weather_vapor_weight")) if cp_now.get("runtime_moisture_weather_vapor_weight") != null else 0.12,
+		"runtime_moisture_precip_weight": float(cp_now.get("runtime_moisture_precip_weight")) if cp_now.get("runtime_moisture_precip_weight") != null else 0.20,
+		"runtime_moisture_soil_weight": float(cp_now.get("runtime_moisture_soil_weight")) if cp_now.get("runtime_moisture_soil_weight") != null else 0.15,
+		"runtime_moisture_water_balance_weight": float(cp_now.get("runtime_moisture_water_balance_weight")) if cp_now.get("runtime_moisture_water_balance_weight") != null else 0.08,
 		"season_phase": float(season_phase),
 		"days_per_year": days_per_year,
 		"axial_tilt_deg": float(cp_now.get("axial_tilt_deg")) if cp_now.get("axial_tilt_deg") != null else 23.5,
@@ -2119,11 +1983,11 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"insol_dev_min": float(cp_now.get("insolation_dev_clamp_min")) if cp_now.get("insolation_dev_clamp_min") != null else -1.0,
 		"insol_dev_max": float(cp_now.get("insolation_dev_clamp_max")) if cp_now.get("insolation_dev_clamp_max") != null else 1.0,
 		"thermal_inertia_land": float(cp_now.get("thermal_inertia_land")) if cp_now.get("thermal_inertia_land") != null else 0.35,
-		"thermal_inertia_water": float(cp_now.get("thermal_inertia_water")) if cp_now.get("thermal_inertia_water") != null else 0.07,
+		"thermal_inertia_water": float(cp_now.get("thermal_inertia_water")) if cp_now.get("thermal_inertia_water") != null else 0.045,
 		"thermal_inertia_snow": float(cp_now.get("thermal_inertia_snow")) if cp_now.get("thermal_inertia_snow") != null else 0.09,
 		"thermal_inertia_high_mountain": float(cp_now.get("thermal_inertia_high_mountain")) if cp_now.get("thermal_inertia_high_mountain") != null else 0.16,
 		"thermal_daily_delta_cap": float(cp_now.get("thermal_daily_delta_cap")) if cp_now.get("thermal_daily_delta_cap") != null else 0.15,
-		"temp_land_continentality": float(cp_now.get("temp_land_continentality")) if cp_now.get("temp_land_continentality") != null else 1.55,
+		"temp_land_continentality": float(cp_now.get("temp_land_continentality")) if cp_now.get("temp_land_continentality") != null else 1.0,
 		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_now.get("snowpack_cover_low")) if cp_now.get("snowpack_cover_low") != null else 0.05,
 		"snowpack_cover_full": float(cp_now.get("snowpack_cover_full")) if cp_now.get("snowpack_cover_full") != null else 0.32,
@@ -2158,6 +2022,10 @@ func _build_native_daily_climate_pass_b_knobs(map: MapData, cp_now, season_phase
 		"t_freeze": float(cp_now.sea_ice_form_threshold),
 		"coupling_gain": float(cp_now.ocean_moisture_coupling_gain),
 		"coast_leak": float(_last_cfg.COASTAL_HEAT_LEAK),
+		"sea_ice_albedo_cooling": float(cp_now.sea_ice_albedo_cooling) if cp_now.get("sea_ice_albedo_cooling") != null else 0.01,
+		"sea_ice_frac": map.sea_ice_frac_arr,
+		"snowpack_cover_low": float(cp_now.snowpack_cover_low) if cp_now.get("snowpack_cover_low") != null else 0.05,
+		"snowpack_cover_full": float(cp_now.snowpack_cover_full) if cp_now.get("snowpack_cover_full") != null else 0.32,
 		"season_phase": season_phase,
 		"go_sparse": false,
 		"neighbor_indices": nb_idx,
@@ -2179,6 +2047,47 @@ func _build_native_daily_transpiration_knobs(map: MapData, cp_now) -> Dictionary
 		"self_rate": float(cp_now.transpiration_self_rate),
 		"neighbor_indices": neighbor_indices,
 		"donor_table": _build_transpiration_donor_table(),
+	}
+
+
+func _build_native_daily_wind_knobs(map: MapData, cp_now) -> Dictionary:
+	if map == null or cp_now == null or _last_cfg == null:
+		return {}
+	var wind_heat_enabled: bool = true
+	if cp_now.get("enable_wind_heat_transport") != null:
+		wind_heat_enabled = bool(cp_now.enable_wind_heat_transport)
+	if not wind_heat_enabled:
+		return {}
+	var n: int = map.soa_size()
+	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
+	if n <= 0 or nb_idx.size() < n * 6 or map.temp_arr.size() < n:
+		return {}
+	var baseline: PackedFloat32Array = _build_native_wind_baseline(map)
+	if baseline.size() != n:
+		return {}
+	if _gdext_wind_temp_before_work_buf.size() != n:
+		_gdext_wind_temp_before_work_buf.resize(n)
+	var temp_before: PackedFloat32Array = _gdext_wind_temp_before_work_buf
+	var temp_a: PackedFloat32Array = map.temp_arr
+	for i in range(n):
+		temp_before[i] = _valid_runtime_temp_or_baseline(temp_a[i], baseline[i])
+	return {
+		"air": {
+			"n_cells": n,
+			"advect_steps": max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS),
+			"heat_mix": clampf(_last_cfg.WIND_HEAT_MIX, 0.0, 1.0),
+			"neighbor_indices": nb_idx,
+			"baseline_arr": baseline,
+			"temp_before_arr": temp_before,
+		},
+		"surface": {
+			"n_cells": n,
+			"air_leak": float(_last_cfg.AIR_MASS_HEAT_LEAK),
+			"neighbor_indices": nb_idx,
+			"fallback_baseline_arr": baseline,
+			"cold_transport_form_threshold": float(cp_now.sea_ice_form_threshold),
+			"cold_transport_melt_threshold": float(cp_now.sea_ice_melt_threshold),
+		},
 	}
 
 
@@ -2303,6 +2212,8 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 		"anomaly_out": anomaly,
 		"ocean_current_x_arr": ocx_a,
 		"ocean_current_y_arr": ocy_a,
+		"cold_transport_form_threshold": float(cp_now.sea_ice_form_threshold),
+		"cold_transport_melt_threshold": float(cp_now.sea_ice_melt_threshold),
 	}
 	var land_knobs: Dictionary = {
 		"n_cells": n,
@@ -2321,7 +2232,41 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 	}
 
 
-func _build_native_daily_sea_ice_knobs(map: MapData, cp_now, season_phase: float, commit_side_effects: bool) -> Dictionary:
+func _publish_native_daily_temperature_transport_anomaly(
+		map: MapData, bundle: Dictionary, breakdown: Dictionary = {}, result: Dictionary = {}) -> void:
+	if map == null:
+		return
+	var anomaly: PackedFloat32Array = result.get("temperature_transport_anomaly_out", PackedFloat32Array())
+	if anomaly.is_empty() and not bundle.is_empty() and bundle.has("ocean_land_knobs"):
+		var land_knobs: Dictionary = bundle.get("ocean_land_knobs", {})
+		if land_knobs.has("anomaly_inout"):
+			anomaly = land_knobs.get("anomaly_inout", PackedFloat32Array())
+	var n: int = map.soa_size()
+	if n <= 0 or anomaly.size() != n:
+		return
+	map.temperature_transport_anomaly_arr = anomaly
+	if _data_core_world != null:
+		var cid_tta: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if cid_tta >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(cid_tta, anomaly)
+	var cells: Array = map.iter_cells()
+	var facade_on: bool = n > 0 and cells.size() > 0 and cells[0] != null \
+			and (cells[0] as HexCell).is_facade_enabled()
+	if not facade_on:
+		for i in range(mini(n, cells.size())):
+			if cells[i] != null:
+				(cells[i] as HexCell).temperature_transport_anomaly = anomaly[i]
+	_gdext_ocean_anomaly_buf_cached = anomaly
+	if breakdown != null:
+		breakdown["native_daily_tta_published"] = true
+
+
+func _build_native_daily_sea_ice_knobs(
+		map: MapData,
+		cp_now,
+		season_phase: float,
+		commit_side_effects: bool,
+		dt_cap_days: float = 30.0) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null:
 		return {}
 	var cells_fast: Array = map.iter_cells() if map.has_indices() else map.all_cells()
@@ -2342,7 +2287,7 @@ func _build_native_daily_sea_ice_knobs(map: MapData, cp_now, season_phase: float
 		var ice_thr_shift: float = 0.10 * climate_anomaly_now
 		t_form = clampf(t_form - ice_thr_shift, 0.0, 1.0)
 		t_melt = clampf(t_melt - ice_thr_shift, 0.0, 1.0)
-	var dt_days: float = _consume_sea_ice_dt_days() if commit_side_effects else 1.0
+	var dt_days: float = _consume_sea_ice_dt_days(dt_cap_days) if commit_side_effects else 1.0
 	var base_terrain_input: PackedByteArray
 	if map.base_terrain_arr.size() == n_cells_fast:
 		base_terrain_input = map.base_terrain_arr
@@ -2415,9 +2360,40 @@ func _build_native_daily_sea_ice_knobs(map: MapData, cp_now, season_phase: float
 		"freeze_insol_high": float(cp_now.sea_ice_freeze_insol_high),
 		"solar_melt_start": float(cp_now.sea_ice_solar_melt_start),
 		"solar_melt_gain": float(cp_now.sea_ice_solar_melt_gain),
-		"daily_delta_cap": float(cp_now.sea_ice_daily_delta_cap) if cp_now.get("sea_ice_daily_delta_cap") != null else 0.08,
+		"min_thick_ice_solar_exposure": float(cp_now.sea_ice_min_thick_ice_solar_exposure) if cp_now.get("sea_ice_min_thick_ice_solar_exposure") != null else 0.32,
+		"daily_delta_cap": float(cp_now.sea_ice_daily_delta_cap) if cp_now.get("sea_ice_daily_delta_cap") != null else 0.070,
+		"edge_mix_rate": float(cp_now.sea_ice_edge_mix_rate) if cp_now.get("sea_ice_edge_mix_rate") != null else 0.035,
 		"cell_temperature_arr": temp_input,
 		"apply_terrain_flips": commit_side_effects,
+	}
+
+
+func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now) -> Dictionary:
+	if map == null or cp_now == null:
+		return {}
+	if cp_now.get("runtime_hydrology_enabled") == null \
+			or not bool(cp_now.runtime_hydrology_enabled):
+		return {}
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_runtime_hydrology_pass"):
+		return {}
+	return {
+		"n_cells": map.cell_count(),
+		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+		"hydro_precip_scale": float(cp_now.hydro_precip_scale),
+		"hydro_snowmelt_scale": float(cp_now.hydro_snowmelt_scale),
+		"hydro_soil_capacity": float(cp_now.hydro_soil_capacity),
+		"hydro_infiltration_rate": float(cp_now.hydro_infiltration_rate),
+		"hydro_quickflow_fraction": float(cp_now.hydro_quickflow_fraction),
+		"hydro_baseflow_recession": float(cp_now.hydro_baseflow_recession),
+		"hydro_channel_release_rate": float(cp_now.hydro_channel_release_rate),
+		"hydro_lake_release_rate": float(cp_now.hydro_lake_release_rate),
+		"hydro_discharge_ema": float(cp_now.hydro_discharge_ema),
+		"hydro_bank_moisture_gain": float(cp_now.hydro_bank_moisture_gain),
+		"hydro_river_evap_gain": float(cp_now.hydro_river_evap_gain),
+		"hydro_flood_threshold": float(cp_now.hydro_flood_threshold),
+		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
+		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
+		"snowpack_melt_sun_gain": float(cp_now.snowpack_melt_sun_gain),
 	}
 
 
@@ -2429,6 +2405,12 @@ func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
 	if _last_cfg != null and bool(_last_cfg.enable_ocean_heat_transport):
 		keys.append("ocean_water_knobs")
 		keys.append("ocean_land_knobs")
+	var wind_heat_required: bool = true
+	if cp_now != null and cp_now.get("enable_wind_heat_transport") != null:
+		wind_heat_required = bool(cp_now.enable_wind_heat_transport)
+	if wind_heat_required:
+		keys.append("wind_air_knobs")
+		keys.append("wind_surface_knobs")
 	keys.append("sea_ice_knobs")
 	# stage_b follows albedo / vegetation / feedback strides and is legitimately
 	# absent on most probe ticks. Requiring it here prevents native_daily active
@@ -2438,6 +2420,11 @@ func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
 			and bool(_weather_system.uses_weather_field())
 	if weather_field_required:
 		keys.append("weather_knobs")
+	if cp_now != null and cp_now.get("runtime_hydrology_enabled") != null \
+			and bool(cp_now.runtime_hydrology_enabled):
+		if keys.find("weather_knobs") < 0:
+			keys.append("weather_knobs")
+		keys.append("runtime_hydrology_knobs")
 	return keys
 
 
@@ -2456,22 +2443,115 @@ func _native_daily_missing_required_pass_keys(bundle: Dictionary, required: Pack
 	return missing
 
 
-func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: WorldData,
-		commit_side_effects: bool = false) -> Dictionary:
+func _native_daily_climate_round_state_snapshot() -> Dictionary:
+	if _refresh_climate_daily_job != null \
+			and _refresh_climate_daily_job.has_method("climate_round_state_snapshot"):
+		return _refresh_climate_daily_job.climate_round_state_snapshot()
+	return {
+		"owner": "gdscript_retained",
+		"native_state_status": "missing_refresh_climate_daily_job",
+	}
+
+
+func _native_daily_ocean_physical_state_snapshot() -> Dictionary:
+	if _ocean_currents_job != null \
+			and _ocean_currents_job.has_method("ocean_physical_state_snapshot"):
+		return _ocean_currents_job.ocean_physical_state_snapshot()
+	return {
+		"owner": "gdscript_retained",
+		"native_state_status": "missing_ocean_currents_job",
+	}
+
+
+func _native_daily_season_refresh_state_snapshot() -> Dictionary:
+	if _season_refresh_job != null \
+			and _season_refresh_job.has_method("season_refresh_state_snapshot"):
+		return _season_refresh_job.season_refresh_state_snapshot()
+	return {
+		"owner": "gdscript_retained",
+		"native_state_status": "missing_season_refresh_job",
+	}
+
+
+func _native_daily_weather_active_bootstrap_allowed(readiness: Dictionary) -> bool:
+	var cp_now := _c()
+	if cp_now == null:
+		return false
+	if not _native_mode_is_active(cp_now, "native_daily_sim_mode"):
+		return false
+	if cp_now.get("native_weather_transaction_active_owner_enabled") == null \
+			or not bool(cp_now.native_weather_transaction_active_owner_enabled):
+		return false
+	return bool(readiness.get("has_knobs_builder", false)) \
+			and bool(readiness.get("has_result_apply", false)) \
+			and bool(readiness.get("has_weather_lut_publish", false)) \
+			and _weather_system != null \
+			and _sus_world != null \
+			and _weather_system.has_method("build_unified_fast_tick_weather_knobs")
+
+
+func _native_daily_boundary_contract(bundle: Dictionary, commit_side_effects: bool) -> Dictionary:
+	var bootstrap_keys: Array[String] = []
+	var tick_delta_keys: Array[String] = []
+	for key in bundle.keys():
+		var key_name: String = str(key)
+		if key_name.ends_with("_state_snapshot") \
+				or key_name == "weather_native_daily_readiness" \
+				or key_name == "climate_round_active_owner_requested" \
+				or key_name == "weather_transaction_active_owner_requested" \
+				or key_name == "season_cadence_policy":
+			bootstrap_keys.append(key_name)
+		elif key_name.ends_with("_knobs") or key_name.ends_with("_struct"):
+			tick_delta_keys.append(key_name)
+	return {
+		"schema_version": 1,
+		"bootstrap_config_keys": bootstrap_keys,
+		"tick_delta_keys": tick_delta_keys,
+		"bundle_key_count": bundle.size(),
+		"refresh_slots_from_map": bool(bundle.get("refresh_slots_from_map", true)),
+		"flush_slots_to_map": bool(bundle.get("flush_slots_to_map", true)),
+		"commit_side_effects": commit_side_effects,
+		"refresh_policy": "tick_boundary",
+		"flush_policy": "tick_boundary_or_visible_debug",
+		"remaining_high_frequency_boundary": tick_delta_keys.size() > 0,
+	}
+
+
+func _build_native_daily_bundle(
+		ctx: SusTickContext,
+		map: MapData,
+		_world: WorldData,
+		commit_side_effects: bool = false,
+		sea_ice_dt_cap_days: float = 30.0,
+		commit_sea_ice_side_effects: bool = true) -> Dictionary:
 	var cp_now := _c()
 	if map == null or cp_now == null:
 		return {}
+	var legacy_daily_retired: bool = cp_now.get("native_daily_legacy_daily_production_retired") != null \
+			and bool(cp_now.native_daily_legacy_daily_production_retired)
 	var bundle: Dictionary = {
 		"refresh_slots_from_map": true,
-		"flush_slots_to_map": true,
+		# Native pass wrappers already flush their published slots. A final bulk
+		# flush walks every bound slot and was making ACTIVE native_daily cost ~8ms.
+		"flush_slots_to_map": false,
+		"climate_round_state_snapshot": _native_daily_climate_round_state_snapshot(),
+		"ocean_physical_state_snapshot": _native_daily_ocean_physical_state_snapshot(),
+		"season_refresh_state_snapshot": _native_daily_season_refresh_state_snapshot(),
+		"climate_round_active_owner_requested": bool(cp_now.get("native_climate_round_active_owner_enabled")) if cp_now.get("native_climate_round_active_owner_enabled") != null else false,
+		"weather_transaction_active_owner_requested": bool(cp_now.get("native_weather_transaction_active_owner_enabled")) if cp_now.get("native_weather_transaction_active_owner_enabled") != null else false,
+		"season_refresh_active_owner_requested": bool(cp_now.get("native_season_refresh_active_owner_enabled")) if cp_now.get("native_season_refresh_active_owner_enabled") != null else false,
+		"runtime_hydrology_requested": bool(cp_now.runtime_hydrology_enabled) if cp_now.get("runtime_hydrology_enabled") != null else false,
+		"legacy_sus_fallback_enabled": not legacy_daily_retired,
+		"native_daily_legacy_daily_production_retired": legacy_daily_retired,
 	}
 	# Phase C.1（dots-total-cpp roadmap）：System schedule graph 双轨入口。
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_system_schedule flag 已删除，
 	# C++ 端 run_native_daily_tick 现恒走 system_schedule.cpp 的
 	# dispatch_system_schedule loop。输出 dict（breakdown / fronts / succession_*）
 	# 必须 bit-equal（dots_soak_ab_runner SAME_SOURCE 1000-tick A/B 验收）。
-	# 任意节点失败 → C++ 端 finish_with_failure 短路返回 rc=-1，与原 if-chain
-	# 同语义（caller 在 run_native_daily_tick_from_job 已有 fallback 处理）。
+	# 任意节点失败 → C++ 端 finish_with_failure 短路返回 rc=-1。ACTIVE
+	# hot path 由 run_native_daily_slice_from_job 处理；full-run helper 仅供
+	# debug/probe 使用。
 	bundle["use_system_schedule"] = true
 	var pass_a_struct: Dictionary = _build_native_daily_climate_pass_a_struct(map, cp_now, ctx.season_phase)
 	if not pass_a_struct.is_empty():
@@ -2486,7 +2566,16 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 	if not ocean_knobs.is_empty():
 		bundle["ocean_water_knobs"] = ocean_knobs.get("water", {})
 		bundle["ocean_land_knobs"] = ocean_knobs.get("land", {})
-	var sea_ice_knobs: Dictionary = _build_native_daily_sea_ice_knobs(map, cp_now, ctx.season_phase, commit_side_effects)
+	var wind_knobs: Dictionary = _build_native_daily_wind_knobs(map, cp_now)
+	if not wind_knobs.is_empty():
+		bundle["wind_air_knobs"] = wind_knobs.get("air", {})
+		bundle["wind_surface_knobs"] = wind_knobs.get("surface", {})
+	var sea_ice_knobs: Dictionary = _build_native_daily_sea_ice_knobs(
+		map,
+		cp_now,
+		ctx.season_phase,
+		commit_side_effects and commit_sea_ice_side_effects,
+		sea_ice_dt_cap_days)
 	if not sea_ice_knobs.is_empty():
 		bundle["sea_ice_knobs"] = sea_ice_knobs
 	# Phase A.2 unified fast tick: dots-flag-prune-pr1 round 2 (2026-05-22):
@@ -2500,43 +2589,113 @@ func _build_native_daily_bundle(ctx: SusTickContext, map: MapData, _world: World
 		cp_now,
 		maxi(1, _weather_stage_b_call_index)
 	)
+	bundle["season_cadence_policy"] = _native_daily_season_cadence_policy(
+		cp_now,
+		maxi(1, _weather_stage_b_call_index)
+	)
 	var stage_b_embedded_in_weather: bool = false
-	var native_weather_daily_allowed: bool = weather_native_daily_available()
+	var native_weather_readiness: Dictionary = weather_native_daily_readiness_report()
+	var native_weather_active_bootstrap: bool = _native_daily_weather_active_bootstrap_allowed(native_weather_readiness)
+	if native_weather_active_bootstrap and not bool(native_weather_readiness.get("ready", false)):
+		native_weather_readiness["ready"] = true
+		native_weather_readiness["reason"] = "active_bootstrap_unified_publish"
+		native_weather_readiness["active_bootstrap_requested"] = true
+	bundle["weather_native_daily_readiness"] = native_weather_readiness.duplicate(true)
+	var native_weather_daily_allowed: bool = bool(native_weather_readiness.get("ready", false)) \
+			or native_weather_active_bootstrap
+	var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
+			and bool(cp_now.runtime_hydrology_enabled)
+	var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(map, cp_now)
 	if _weather_system != null and _world != null \
 			and native_weather_daily_allowed \
 			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		var season_idx_local: int = 0
 		var anomaly_local: float = 0.0
-		var season_phase_local: float = -1.0
+		var season_phase_local: float = ctx.season_phase
 		if _world_clock_ref != null:
 			if _world_clock_ref.has_method("season_index"):
 				season_idx_local = int(_world_clock_ref.season_index())
 			var v_anom = _world_clock_ref.get("climate_anomaly")
 			if v_anom != null:
 				anomaly_local = float(v_anom)
-			var v_phase = _world_clock_ref.get("season_phase") if _world_clock_ref.get("season_phase") != null else null
-			if v_phase != null:
-				season_phase_local = float(v_phase)
+			if _world_clock_ref.has_method("season_phase"):
+				season_phase_local = float(_world_clock_ref.season_phase())
 		# 同步推进 stage_b call_index：unified 路径完全绕过 weather_refresh_job /
 		# refresh_weather_daily facade，stride 计数必须自己 ++（与 facade line 8448 等价）。
-		# fallback（caller 端 res.rc!=0）情形会回滚（见 run_native_daily_tick_from_job）。
+		# failure（caller 端 res.rc!=0）情形会回滚。
 		if commit_side_effects:
 			_weather_stage_b_call_index += 1
+		var weather_stage_b_knobs: Dictionary = {} if runtime_hydrology_active else stage_b_knobs
 		var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
-			map, _world, season_idx_local, anomaly_local, season_phase_local, stage_b_knobs
+			map, _world, season_idx_local, anomaly_local, season_phase_local, weather_stage_b_knobs
 		)
 		if not weather_super.is_empty():
 			bundle["weather_knobs"] = weather_super
-			stage_b_embedded_in_weather = true
+			stage_b_embedded_in_weather = not runtime_hydrology_active
 		else:
 			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
 			if commit_side_effects:
 				_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 	elif _weather_system != null and _world != null and not native_weather_daily_allowed:
 		bundle["weather_native_daily_blocked"] = true
-	if not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
+		bundle["weather_native_daily_block_reason"] = str(native_weather_readiness.get("reason", "not_ready"))
+	if runtime_hydrology_active and not runtime_hydrology_knobs.is_empty():
+		bundle["runtime_hydrology_knobs"] = runtime_hydrology_knobs
+	if runtime_hydrology_active and not stage_b_knobs.is_empty():
+		bundle["stage_b_after_hydrology_knobs"] = stage_b_knobs
+	elif not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
 		bundle["stage_b_knobs"] = stage_b_knobs
+	bundle["native_daily_boundary_contract"] = _native_daily_boundary_contract(bundle, commit_side_effects)
 	return bundle
+
+
+func _merge_native_daily_slice_patch_local(patch: Dictionary) -> void:
+	if patch.is_empty():
+		return
+	for key in patch.keys():
+		_native_daily_slice_active_bundle[key] = patch[key]
+	_native_daily_slice_bundle_pass_keys = _native_daily_bundle_pass_keys(_native_daily_slice_active_bundle)
+
+
+func _build_native_daily_slice_bundle_patch(
+		next_node_index: int,
+		ctx: SusTickContext,
+		map: MapData,
+		world: WorldData) -> Dictionary:
+	var cp_now := _c()
+	if map == null or cp_now == null:
+		return {}
+	var patch: Dictionary = {}
+	var phase_locked: float = _native_daily_slice_phase_locked
+	match next_node_index:
+		1:
+			var pass_b_knobs: Dictionary = _build_native_daily_climate_pass_b_knobs(map, cp_now, phase_locked)
+			if not pass_b_knobs.is_empty():
+				patch["climate_pass_b_knobs"] = pass_b_knobs
+		2:
+			var ocean_knobs: Dictionary = _build_native_daily_ocean_knobs(map, cp_now, phase_locked)
+			if not ocean_knobs.is_empty():
+				patch["ocean_water_knobs"] = ocean_knobs.get("water", {})
+				patch["ocean_land_knobs"] = ocean_knobs.get("land", {})
+		4:
+			var wind_knobs: Dictionary = _build_native_daily_wind_knobs(map, cp_now)
+			if not wind_knobs.is_empty():
+				patch["wind_air_knobs"] = wind_knobs.get("air", {})
+				patch["wind_surface_knobs"] = wind_knobs.get("surface", {})
+		6:
+			var sea_ice_knobs: Dictionary = _build_native_daily_sea_ice_knobs(
+				map,
+				cp_now,
+				phase_locked,
+				true,
+				1.0)
+			if not sea_ice_knobs.is_empty():
+				patch["sea_ice_knobs"] = sea_ice_knobs
+		7:
+			var transp_knobs: Dictionary = _build_native_daily_transpiration_knobs(map, cp_now)
+			if not transp_knobs.is_empty():
+				patch["transpiration_knobs"] = transp_knobs
+	return patch
 
 
 func _native_daily_bundle_pass_keys(bundle: Dictionary) -> Array[String]:
@@ -2547,6 +2706,216 @@ func _native_daily_bundle_pass_keys(bundle: Dictionary) -> Array[String]:
 			keys.append(s)
 	keys.sort()
 	return keys
+
+
+func _native_daily_capture_finalizer_start_state(map: MapData) -> void:
+	_native_daily_slice_temp_start_arr = PackedFloat32Array()
+	_native_daily_slice_tta_start_arr = PackedFloat32Array()
+	if map == null:
+		return
+	var n: int = map.soa_size()
+	if n <= 0:
+		return
+	if map.temp_arr.size() == n:
+		_native_daily_slice_temp_start_arr = map.temp_arr.duplicate()
+	if map.temperature_transport_anomaly_arr.size() == n:
+		_native_daily_slice_tta_start_arr = map.temperature_transport_anomaly_arr.duplicate()
+
+
+func _native_daily_percentile_from_sorted(values: PackedFloat32Array, p: float) -> float:
+	if values.is_empty():
+		return 0.0
+	var q: float = clampf(p, 0.0, 1.0)
+	var idx: int = clampi(int(floor(q * float(values.size() - 1))), 0, values.size() - 1)
+	return float(values[idx])
+
+
+func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
+	var t_total_us: int = Time.get_ticks_usec()
+	var diag: Dictionary = {
+		"max_temp_delta": 0.0,
+		"p95_temp_delta": 0.0,
+		"p99_temp_delta": 0.0,
+		"preclamp_max_temp_delta": 0.0,
+		"preclamp_p99_temp_delta": 0.0,
+		"temp_delta_gt_005_count": 0,
+		"temp_delta_gt_010_count": 0,
+		"temp_delta_gt_020_count": 0,
+		"temp_delta_clamped_count": 0,
+		"max_transport_anomaly": 0.0,
+		"sea_ice_delta_max": 0.0,
+		"precip_p95": 0.0,
+		"thermal_finalizer_applied": false,
+		"finalizer_total_ms": 0.0,
+		"finalizer_cell_ms": 0.0,
+		"finalizer_temp_ms": 0.0,
+		"finalizer_tta_ms": 0.0,
+		"finalizer_thermal_ms": 0.0,
+		"finalizer_sort_ms": 0.0,
+		"finalizer_sea_ice_ms": 0.0,
+		"finalizer_precip_ms": 0.0,
+		"finalizer_write_dense_ms": 0.0,
+		"finalizer_cells_seen": 0,
+		"finalizer_temperature_cell_mirror": false,
+		"finalizer_tta_cell_mirror": false,
+		"finalizer_tta_cell_mirror_count": 0,
+		"finalizer_tta_clamped_count": 0,
+		"finalizer_thermal_init_count": 0,
+	}
+	if map == null:
+		return diag
+	var cp_now := _c()
+	var n: int = map.soa_size()
+	if cp_now == null or n <= 0:
+		return diag
+	var temp_a: PackedFloat32Array = map.temp_arr
+	var tta_a: PackedFloat32Array = map.temperature_transport_anomaly_arr
+	if temp_a.size() != n or tta_a.size() != n:
+		return diag
+	var temp_cap_enabled: bool = true
+	if cp_now.get("thermal_final_delta_cap_enabled") != null:
+		temp_cap_enabled = bool(cp_now.thermal_final_delta_cap_enabled)
+	var temp_cap: float = float(cp_now.thermal_daily_delta_cap) if cp_now.get("thermal_daily_delta_cap") != null else 0.15
+	var tta_cap: float = float(cp_now.temperature_transport_anomaly_daily_cap) if cp_now.get("temperature_transport_anomaly_daily_cap") != null else 0.12
+	var mirror_temperature_cells: bool = true
+	if map.has_indices() and n > 0:
+		var probe_cell: HexCell = map.cell_at(0)
+		mirror_temperature_cells = probe_cell == null or not probe_cell.is_facade_enabled()
+	diag["finalizer_temperature_cell_mirror"] = mirror_temperature_cells
+	var mirror_tta_cells: bool = mirror_temperature_cells
+	diag["finalizer_tta_cell_mirror"] = mirror_tta_cells
+	var cells: Array = []
+	if mirror_temperature_cells or mirror_tta_cells:
+		cells = map.iter_cells() if map.has_indices() else map.all_cells()
+	var has_temp_start: bool = _native_daily_slice_temp_start_arr.size() == n
+	var has_tta_start: bool = _native_daily_slice_tta_start_arr.size() == n
+	var t_cells_us: int = Time.get_ticks_usec()
+	var t_part_us: int = t_cells_us
+	var temp_deltas: PackedFloat32Array = PackedFloat32Array()
+	var preclamp_temp_deltas: PackedFloat32Array = PackedFloat32Array()
+	temp_deltas.resize(n)
+	preclamp_temp_deltas.resize(n)
+	var max_temp_delta: float = 0.0
+	var preclamp_max_temp_delta: float = 0.0
+	var temp_delta_gt_005_count: int = 0
+	var temp_delta_gt_010_count: int = 0
+	var temp_delta_gt_020_count: int = 0
+	var temp_delta_clamped_count: int = 0
+	for i in range(n):
+		var start_t: float = _native_daily_slice_temp_start_arr[i] if has_temp_start else temp_a[i]
+		var raw_final_t: float = temp_a[i]
+		var final_t: float = raw_final_t
+		var pre_abs_dt: float = absf(raw_final_t - start_t)
+		preclamp_temp_deltas[i] = pre_abs_dt
+		if pre_abs_dt > preclamp_max_temp_delta:
+			preclamp_max_temp_delta = pre_abs_dt
+		if temp_cap_enabled and has_temp_start:
+			final_t = clampf(final_t, start_t - temp_cap, start_t + temp_cap)
+			final_t = clampf(final_t, 0.0, 1.0)
+			if absf(final_t - raw_final_t) > 0.000001:
+				temp_delta_clamped_count += 1
+			temp_a[i] = final_t
+		var abs_dt: float = absf(final_t - start_t)
+		temp_deltas[i] = abs_dt
+		if abs_dt > 0.005:
+			temp_delta_gt_005_count += 1
+		if abs_dt > 0.010:
+			temp_delta_gt_010_count += 1
+		if abs_dt > 0.020:
+			temp_delta_gt_020_count += 1
+		if abs_dt > max_temp_delta:
+			max_temp_delta = abs_dt
+		if mirror_temperature_cells and i < cells.size() and cells[i] != null:
+			(cells[i] as HexCell).temperature = final_t
+	diag["max_temp_delta"] = max_temp_delta
+	diag["preclamp_max_temp_delta"] = preclamp_max_temp_delta
+	diag["temp_delta_gt_005_count"] = temp_delta_gt_005_count
+	diag["temp_delta_gt_010_count"] = temp_delta_gt_010_count
+	diag["temp_delta_gt_020_count"] = temp_delta_gt_020_count
+	diag["temp_delta_clamped_count"] = temp_delta_clamped_count
+	diag["finalizer_temp_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	t_part_us = Time.get_ticks_usec()
+	var max_transport_anomaly: float = 0.0
+	var finalizer_tta_clamped_count: int = 0
+	var finalizer_tta_cell_mirror_count: int = 0
+	for i in range(n):
+		var start_tta: float = _native_daily_slice_tta_start_arr[i] if has_tta_start else 0.0
+		var raw_final_tta: float = tta_a[i]
+		var final_tta: float = raw_final_tta
+		var tta_clamped: bool = false
+		if tta_cap > 0.0 and has_tta_start:
+			final_tta = clampf(final_tta, start_tta - tta_cap, start_tta + tta_cap)
+			if absf(final_tta - raw_final_tta) > 0.000001:
+				tta_a[i] = final_tta
+				tta_clamped = true
+				finalizer_tta_clamped_count += 1
+		var abs_tta: float = absf(final_tta)
+		if abs_tta > max_transport_anomaly:
+			max_transport_anomaly = abs_tta
+		if mirror_tta_cells and tta_clamped and i < cells.size() and cells[i] != null:
+			(cells[i] as HexCell).temperature_transport_anomaly = final_tta
+			finalizer_tta_cell_mirror_count += 1
+	diag["max_transport_anomaly"] = max_transport_anomaly
+	diag["finalizer_tta_clamped_count"] = finalizer_tta_clamped_count
+	diag["finalizer_tta_cell_mirror_count"] = finalizer_tta_cell_mirror_count
+	diag["finalizer_tta_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	t_part_us = Time.get_ticks_usec()
+	var thermal_a: PackedFloat32Array = map.thermal_energy_arr
+	var ema_a: PackedByteArray = map.ema_initialized_arr
+	var finalizer_thermal_init_count: int = 0
+	if thermal_a.size() == n:
+		for i in range(n):
+			var needs_init: bool = is_nan(thermal_a[i]) or is_inf(thermal_a[i])
+			if i < ema_a.size() and ema_a[i] == 0:
+				needs_init = true
+			if needs_init and i < temp_a.size():
+				thermal_a[i] = temp_a[i]
+				finalizer_thermal_init_count += 1
+	diag["finalizer_thermal_init_count"] = finalizer_thermal_init_count
+	diag["finalizer_thermal_ms"] = float(Time.get_ticks_usec() - t_part_us) / 1000.0
+	diag["finalizer_cell_ms"] = float(Time.get_ticks_usec() - t_cells_us) / 1000.0
+	diag["finalizer_cells_seen"] = n
+	var t_sort_us: int = Time.get_ticks_usec()
+	temp_deltas.sort()
+	preclamp_temp_deltas.sort()
+	diag["p95_temp_delta"] = _native_daily_percentile_from_sorted(temp_deltas, 0.95)
+	diag["p99_temp_delta"] = _native_daily_percentile_from_sorted(temp_deltas, 0.99)
+	diag["preclamp_p99_temp_delta"] = _native_daily_percentile_from_sorted(preclamp_temp_deltas, 0.99)
+	diag["finalizer_sort_ms"] = float(Time.get_ticks_usec() - t_sort_us) / 1000.0
+	var t_sea_ice_us: int = Time.get_ticks_usec()
+	if map.sea_ice_frac_arr.size() == n and map.sea_ice_frac_arr_prev.size() == n:
+		for i in range(n):
+			var ds: float = absf(map.sea_ice_frac_arr[i] - map.sea_ice_frac_arr_prev[i])
+			if ds > float(diag["sea_ice_delta_max"]):
+				diag["sea_ice_delta_max"] = ds
+	diag["finalizer_sea_ice_ms"] = float(Time.get_ticks_usec() - t_sea_ice_us) / 1000.0
+	var t_precip_us: int = Time.get_ticks_usec()
+	if map.weather_precip_arr.size() == n:
+		var precip_vals: PackedFloat32Array = map.weather_precip_arr.duplicate()
+		precip_vals.sort()
+		diag["precip_p95"] = _native_daily_percentile_from_sorted(precip_vals, 0.95)
+	diag["finalizer_precip_ms"] = float(Time.get_ticks_usec() - t_precip_us) / 1000.0
+	if _data_core_world != null:
+		var t_write_us: int = Time.get_ticks_usec()
+		var cid_temp: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
+		if cid_temp >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(cid_temp, temp_a)
+		var cid_tta: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
+		if cid_tta >= 0 and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(cid_tta, tta_a)
+		var cid_heat: int = _data_core_world.component_id(DCComponentIds.CELL_THERMAL_ENERGY)
+		if cid_heat >= 0 and thermal_a.size() == n and _data_core_world.has_method("write_f32_dense"):
+			_data_core_world.write_f32_dense(cid_heat, thermal_a)
+		diag["finalizer_write_dense_ms"] = float(Time.get_ticks_usec() - t_write_us) / 1000.0
+	_gdext_ocean_anomaly_buf_cached = tta_a
+	diag["thermal_finalizer_applied"] = true
+	diag["finalizer_total_ms"] = float(Time.get_ticks_usec() - t_total_us) / 1000.0
+	return diag
+
+
+func _merge_native_daily_finalizer_diag(target: Dictionary, diag: Dictionary) -> void:
+	for key in diag.keys():
+		target[key] = diag[key]
 
 
 func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: WorldData) -> void:
@@ -2589,6 +2958,16 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 		"native_render_prepare_mode": int(cp.get("native_render_prepare_mode")) if cp != null and cp.get("native_render_prepare_mode") != null else 0,
 		"native_daily_perf_target_ms": float(cp.get("native_daily_perf_target_ms")) if cp != null and cp.get("native_daily_perf_target_ms") != null else 1.0,
 		"shadow_diff_enabled": bool(cp.get("native_shadow_diff_enabled")) if cp != null and cp.get("native_shadow_diff_enabled") != null else true,
+		"weather_albedo_stride": int(cp.weather_albedo_stride) if cp != null else 10,
+		"weather_vegetation_dynamics_stride": int(cp.weather_vegetation_dynamics_stride) if cp != null else 10,
+		"weather_feedback_stride": int(cp.weather_feedback_stride) if cp != null else 10,
+		"season_refresh_period_ticks": int(cp.season_refresh_period_ticks) if cp != null and cp.get("season_refresh_period_ticks") != null else 1,
+		"ocean_currents_period_ticks": int(cp.ocean_currents_period_ticks) if cp != null else 30,
+		"ocean_currents_slice_count": int(cp.ocean_currents_slice_count) if cp != null else 10,
+		"native_climate_round_active_owner_enabled": bool(cp.native_climate_round_active_owner_enabled) if cp != null and cp.get("native_climate_round_active_owner_enabled") != null else false,
+		"native_weather_transaction_active_owner_enabled": bool(cp.native_weather_transaction_active_owner_enabled) if cp != null and cp.get("native_weather_transaction_active_owner_enabled") != null else false,
+		"native_ocean_physical_active_owner_enabled": bool(cp.native_ocean_physical_active_owner_enabled) if cp != null and cp.get("native_ocean_physical_active_owner_enabled") != null else false,
+		"native_season_refresh_active_owner_enabled": bool(cp.native_season_refresh_active_owner_enabled) if cp != null and cp.get("native_season_refresh_active_owner_enabled") != null else false,
 		"has_world_data": world != null,
 		"has_config": cfg != null,
 	}
@@ -2606,11 +2985,18 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	var weather_field_required: bool = _weather_system != null \
 			and _weather_system.has_method("uses_weather_field") \
 			and bool(_weather_system.uses_weather_field())
-	if weather_field_required and not weather_native_daily_available():
-		push_warning("[native_daily] ACTIVE requested but staged weather field is the only verified visible weather authority; falling back to legacy SUS jobs")
+	var weather_readiness: Dictionary = weather_native_daily_readiness_report()
+	if weather_field_required \
+			and not bool(weather_readiness.get("ready", false)) \
+			and not _native_daily_weather_active_bootstrap_allowed(weather_readiness):
+		push_warning("[native_daily] ACTIVE requested but native weather is not visible-publish ready (%s); falling back to legacy SUS jobs"
+			% str(weather_readiness.get("reason", "not_ready")))
 		return false
 	if not _native_daily_configured or _data_core_world_ext == null:
 		push_warning("[native_daily] ACTIVE requested but native world is not configured; falling back to legacy SUS jobs")
+		return false
+	if not _native_daily_slice_available():
+		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_slice; falling back to legacy SUS jobs")
 		return false
 	if not _data_core_world_ext.has_method("run_native_daily_tick"):
 		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_tick; falling back to legacy SUS jobs")
@@ -2646,12 +3032,26 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	if cp != null and cp.get("native_daily_sim_stride") != null:
 		native_stride = clampi(int(cp.native_daily_sim_stride), 1, 8)
 	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world, native_stride)
-	_apply_sim_budget_profile_to_job(_native_daily_sim_job, cp, false)
-	if _use_dc_system_scheduler:
-		_sus.register_system(_native_daily_sim_job)
-	else:
-		_sus.register_job(_native_daily_sim_job)
+	_sus.configure_job_from_profile(_native_daily_sim_job, cp, false, &"native_daily_sim", native_stride)
+	_configure_native_daily_transaction_budget(_native_daily_sim_job, cp)
+	_runtime_register_system(_native_daily_sim_job)
 	return true
+
+
+func _configure_native_daily_transaction_budget(job, cp) -> void:
+	if job == null:
+		return
+	# Native daily is a logical daily transaction. It may internally slice by graph
+	# node, but the default ACTIVE path must finish the round inside the same
+	# day_changed tick so slow state such as sea ice keeps daily climate cadence.
+	job.must_run = true
+	job.max_slices_per_tick = 32
+	var target_ms: float = 8.0
+	if cp != null and cp.get("native_daily_perf_target_ms") != null:
+		target_ms = maxf(8.0, float(cp.native_daily_perf_target_ms))
+	job.slice_budget_ms = maxf(float(job.slice_budget_ms), clampf(target_ms, 0.75, 8.0))
+	if job.get("starvation_threshold") != null:
+		job.starvation_threshold = 0
 
 
 func _try_register_native_environment_runtime_system(map: MapData, cp) -> bool:
@@ -2665,13 +3065,10 @@ func _try_register_native_environment_runtime_system(map: MapData, cp) -> bool:
 	if cp.get("native_environment_runtime_stride") != null:
 		runtime_stride = clampi(int(cp.native_environment_runtime_stride), 1, 8)
 	_native_environment_runtime_job = NativeEnvironmentRuntimeSystemScript.new(self, map, runtime_stride)
-	_apply_sim_budget_profile_to_job(_native_environment_runtime_job, cp, false)
+	_sus.configure_job_from_profile(_native_environment_runtime_job, cp, false, &"native_environment_runtime", runtime_stride)
 	_native_environment_runtime_job.slice_budget_ms = min(float(_native_environment_runtime_job.slice_budget_ms), 0.5)
 	_native_environment_runtime_job.must_run = false
-	if _use_dc_system_scheduler:
-		_sus.register_system(_native_environment_runtime_job)
-	else:
-		_sus.register_job(_native_environment_runtime_job)
+	_runtime_register_system(_native_environment_runtime_job)
 	if OS.is_debug_build():
 		print("[native_env_runtime] SHADOW: registered thin EnvironmentRuntime step job")
 	return true
@@ -2686,45 +3083,279 @@ func _register_visual_upload_jobs(map: MapData, world: WorldData, hex_size: floa
 		if cp.get("dynamic_visual_atlas_upload_stride") != null:
 			dynamic_visual_atlas_stride = clampi(int(cp.dynamic_visual_atlas_upload_stride), 1, 8)
 	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
-	if _use_dc_system_scheduler:
-		_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
-		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_sus.register_system(_enum_atlas_upload_job)
-	else:
-		_enum_atlas_upload_job = EnumAtlasUploadJobScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
-		_apply_sim_budget_profile_to_job(_enum_atlas_upload_job, cp, true)
-		_sus.register_job(_enum_atlas_upload_job)
+	_enum_atlas_upload_job = EnumAtlasUploadSystemScript.new(self, _baker, map, world, hex_size, enum_atlas_stride, _data_core_world_ext)
+	_sus.configure_job_from_profile(_enum_atlas_upload_job, cp, true, &"enum_atlas_upload", enum_atlas_stride)
+	_runtime_register_system(_enum_atlas_upload_job)
 	# 海冰主视觉由 shader 按 current_temp/latitude/depth 直接派生；停用旧 atlas upload。
-	_sea_ice_atlas_upload_job = null
-	_last_sea_ice_atlas_upload_breakdown = {
-		"done": true,
-		"phase": "disabled",
-		"stage_name": "sea_ice_atlas_upload",
-		"elapsed_ms": 0.0,
-		"reason": "shader_temperature_derived",
-	}
+	_last_sea_ice_atlas_upload_breakdown = _disabled_sea_ice_atlas_report("shader_temperature_derived")
 	# plan/dirty-push-atlas-encode 阶段 D：把 cp 传给 system，让其入口可调
 	# DCFeatureFlags.is_on(&"dirty_push_enabled", cp) 决定是否走 mask 路径。
 	_dynamic_visual_atlas_upload_job = DynamicVisualAtlasUploadSystemScript.new(
 			_baker, map, world, _dyn_atlas_upload_stride, cp, _data_core_world,
 			_data_core_world_ext)
-	_apply_sim_budget_profile_to_job(_dynamic_visual_atlas_upload_job, cp, true)
-	if _use_dc_system_scheduler:
-		_sus.register_system(_dynamic_visual_atlas_upload_job)
+	_sus.configure_job_from_profile(_dynamic_visual_atlas_upload_job, cp, true, &"dynamic_visual_atlas_upload", _dyn_atlas_upload_stride)
+	_runtime_register_system(_dynamic_visual_atlas_upload_job)
+
+
+func _native_daily_make_front_signature(front: WeatherFront) -> String:
+	if front == null:
+		return "null"
+	var axis_v: Vector2 = front.normalized_axis()
+	return "%d:%d:%d:%d:%d:%d:%d:%d" % [
+		int(front.type),
+		roundi(front.center.x / 8.0),
+		roundi(front.center.y / 8.0),
+		roundi(axis_v.angle() / 0.0872665),
+		roundi(front.radius / 8.0),
+		roundi(clampf(front.intensity, 0.0, 1.0) * 100.0),
+		roundi(clampf(front.precip_amount, 0.0, 1.0) * 100.0),
+		roundi(clampf(front.cloud_amount, 0.0, 1.0) * 100.0),
+	]
+
+
+func _native_daily_front_slot_signatures(fronts: Array) -> PackedStringArray:
+	var parts := PackedStringArray()
+	parts.resize(fronts.size())
+	for front_index in range(fronts.size()):
+		parts[front_index] = _native_daily_make_front_signature(fronts[front_index])
+	return parts
+
+
+func _native_daily_fronts_signature_diff(prev: PackedStringArray, next: PackedStringArray) -> Dictionary:
+	var changed_slots := PackedInt32Array()
+	var unchanged: int = 0
+	var changed: int = 0
+	var added: int = 0
+	var removed: int = 0
+	var max_n: int = maxi(prev.size(), next.size())
+	for i in range(max_n):
+		var old_sig: String = prev[i] if i < prev.size() else ""
+		var new_sig: String = next[i] if i < next.size() else ""
+		if old_sig == new_sig:
+			unchanged += 1
+		else:
+			changed_slots.append(i)
+			if i >= prev.size():
+				added += 1
+			elif i >= next.size():
+				removed += 1
+			else:
+				changed += 1
+	return {
+		"changed_slots": changed_slots,
+		"changed_slots_count": changed_slots.size(),
+		"unchanged_slots": unchanged,
+		"changed_slots_existing": changed,
+		"added_slots": added,
+		"removed_slots": removed,
+	}
+
+
+func _apply_native_daily_visual_intents(res: Dictionary, breakdown: Dictionary,
+		fronts_out: Array, map: MapData, world: WorldData) -> void:
+	var slot_sigs: PackedStringArray = _native_daily_front_slot_signatures(fronts_out)
+	var signature: String = "n=%d|%s" % [fronts_out.size(), "|".join(slot_sigs)]
+	var fronts_diff: Dictionary = _native_daily_fronts_signature_diff(_native_daily_front_slot_sigs, slot_sigs)
+	var fronts_changed: bool = signature != _native_daily_front_signature
+	fronts_diff["changed"] = fronts_changed
+	fronts_diff["signature"] = signature
+	fronts_diff["fronts"] = fronts_out.size()
+	_native_daily_front_signature = signature
+	_native_daily_front_slot_sigs = slot_sigs
+	_last_active_fronts = fronts_out
+	_weather_round_fronts = fronts_out
+	res["fronts"] = fronts_out
+	res["fronts_changed"] = fronts_changed
+	res["fronts_diff"] = fronts_diff
+	res["fronts_signature"] = signature
+	res["fronts_changed_reason"] = "signature_changed" if fronts_changed else "signature_unchanged"
+
+	var intents: Array = res.get("visual_dirty_intents", breakdown.get("visual_dirty_intents", []))
+	var native_lut: PackedByteArray = breakdown.get("weather_lut", PackedByteArray())
+	if (intents.has("weather_lut") or not native_lut.is_empty()) \
+			and has_method("publish_weather_lut_after_weather_commit"):
+		var lut_report: Dictionary = publish_weather_lut_after_weather_commit(
+			map,
+			world,
+			native_lut,
+			bool(breakdown.get("weather_lut_changed", false))
+		)
+		res["weather_lut_publish_report"] = lut_report
+		res["weather_lut_published"] = bool(lut_report.get("weather_lut_published", false))
+		res["weather_lut_publish_path"] = str(lut_report.get("path", "weather_lut_inline"))
+		res["weather_lut_changed"] = bool(lut_report.get("weather_lut_changed", false))
 	else:
-		_sus.register_job(_dynamic_visual_atlas_upload_job)
+		res["weather_lut_published"] = false
+		res["weather_lut_publish_path"] = "not_requested"
+
+	if _baker != null:
+		var cover_dirty: bool = _weather_system != null \
+				and _weather_system.has_method("has_cover_dirty") \
+				and bool(_weather_system.has_cover_dirty())
+		if cover_dirty:
+			_mark_enum_atlas_dirty(true, false)
+		var succ_indices = breakdown.get("succession_indices", null)
+		var veg_dirty: bool = succ_indices != null \
+				and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
+				and (succ_indices as PackedInt32Array).size() > 0
+		if veg_dirty:
+			queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
+		if not veg_dirty:
+			veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
+		if veg_dirty or intents.has("detail_scatter"):
+			_mark_enum_atlas_dirty(false, true)
+		if intents.has("enum_atlas") and not (cover_dirty or veg_dirty):
+			_mark_enum_atlas_dirty(true, true)
+
+
+func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Dictionary, map: MapData, done: bool, rc_int: int) -> void:
+	var diag: Dictionary = breakdown.duplicate(true)
+	diag["_tick_idx"] = _current_fast_tick_idx
+	diag["cells"] = map.soa_size() if map != null else 0
+	diag["partial"] = rc_int == 0 and not done
+	diag["current_pass"] = "done" if rc_int == 0 and done else str(res.get("stage_name", res.get("fail_stage", "native_daily_slice")))
+	diag["progress_ratio"] = float(res.get("progress_ratio", breakdown.get("progress_ratio", 0.0)))
+	diag["processed_cells"] = int(res.get("processed_cells", breakdown.get("processed_cells", 0)))
+	diag["cursor_start"] = int(res.get("cursor_start", breakdown.get("cursor_start", -1)))
+	diag["cursor_end"] = int(res.get("cursor_end", breakdown.get("cursor_end", -1)))
+	diag["round_id"] = int(res.get("round_id", breakdown.get("round_id", 0)))
+	diag["node_index"] = int(res.get("node_index", breakdown.get("node_index", -1)))
+	diag["next_node_index"] = int(res.get("next_node_index", breakdown.get("next_node_index", -1)))
+	diag["pass_status"] = "done" if rc_int == 0 and done else ("partial" if rc_int == 0 else "failed")
+	diag["path"] = str(res.get("path", breakdown.get("path", "gdext_native_daily_slice")))
+	if not done:
+		diag["thermal_finalizer_applied"] = false
+	var pass_diag: Dictionary = {}
+	var node_report_var = res.get("node_report", {})
+	if typeof(node_report_var) == TYPE_DICTIONARY:
+		pass_diag = (node_report_var as Dictionary).duplicate(true)
+	if pass_diag.is_empty():
+		pass_diag = {
+			"stage": diag["current_pass"],
+			"substage": str(res.get("substage", "")),
+			"path": diag["path"],
+		}
+	else:
+		if not pass_diag.has("stage"):
+			pass_diag["stage"] = diag["current_pass"]
+		if not pass_diag.has("substage"):
+			pass_diag["substage"] = str(res.get("substage", ""))
+		if not pass_diag.has("path"):
+			pass_diag["path"] = diag["path"]
+	diag["pass_diag"] = pass_diag
+	_last_climate_breakdown = diag
+
+
+func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
+	if not _native_daily_slice_available():
+		return _native_daily_missing_slice_report()
+	var wall_t0: int = Time.get_ticks_usec()
+	var bundle_ms: float = 0.0
+	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
+	var starting_round: bool = not _native_daily_slice_round_active
+	if starting_round:
+		var bundle_t0: int = wall_t0
+		# ACTIVE slice graph may take many simulation days to complete a round.
+		# Build the bootstrap bundle once, but defer sea-ice dt consumption and
+		# refresh dynamic pass knobs just-in-time before their native node runs.
+		_native_daily_capture_finalizer_start_state(_map)
+		var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true, 1.0, false)
+		bundle_ms = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
+		_native_daily_slice_active_bundle = bundle
+		_native_daily_slice_unified_weather_embedded = bundle.has("weather_knobs")
+		_native_daily_slice_bundle_pass_keys = _native_daily_bundle_pass_keys(bundle)
+		_native_daily_slice_next_node_index = 0
+		_native_daily_slice_phase_locked = ctx.season_phase
+		tick_knobs["native_daily_bundle"] = bundle
+	else:
+		tick_knobs["native_daily_continue"] = true
+		var patch_t0: int = Time.get_ticks_usec()
+		var patch: Dictionary = _build_native_daily_slice_bundle_patch(
+			_native_daily_slice_next_node_index,
+			ctx,
+			_map,
+			_world)
+		if not patch.is_empty():
+			_merge_native_daily_slice_patch_local(patch)
+			tick_knobs["native_daily_bundle_patch"] = patch
+			bundle_ms += float(Time.get_ticks_usec() - patch_t0) / 1000.0
+	var native_t0: int = Time.get_ticks_usec()
+	var res: Dictionary = _data_core_world_ext.run_native_daily_slice(tick_knobs)
+	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
+	res["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys
+	var breakdown: Dictionary = res.get("breakdown", {})
+	breakdown["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys
+	_last_weather_breakdown = breakdown.duplicate(true)
+	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	_dump_weather_breakdown_if_slow()
+	var rc_int: int = int(res.get("rc", -1))
+	var done: bool = bool(res.get("done", true))
+	if rc_int == 0 and res.has("temperature_transport_anomaly_out"):
+		_publish_native_daily_temperature_transport_anomaly(_map, _native_daily_slice_active_bundle, breakdown, res)
+	if _native_daily_slice_unified_weather_embedded and _weather_system != null:
+		if rc_int == 0 and done:
+			if not _unified_fast_tick_first_log_done:
+				_unified_fast_tick_first_log_done = true
+				print("[native_daily/unified] native slice ACTIVE — weather_knobs embedded; slice_ms=%.2f round_ms=%.2f weather_ms=%.2f"
+						% [float(breakdown.get("total_ms", 0.0)), float(breakdown.get("round_native_ms", res.get("round_native_ms", 0.0))), float(breakdown.get("weather_ms", 0.0))])
+			if _weather_system.has_method("apply_unified_fast_tick_result"):
+				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
+				_apply_native_daily_visual_intents(res, breakdown, fronts_out, _map, _world)
+		elif rc_int != 0:
+			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+			if _weather_system.has_method("_clear_weather_field_slice_state"):
+				_weather_system._clear_weather_field_slice_state()
+			if not _unified_fast_tick_warned_fallback:
+				_unified_fast_tick_warned_fallback = true
+				push_warning("[native_daily/unified] native slice rc=%d fail_stage=%s; weather state cleared"
+						% [rc_int, String(res.get("fail_stage", "unknown"))])
+	_native_daily_slice_round_active = rc_int == 0 and not done
+	_native_daily_slice_next_node_index = int(res.get("next_node_index", -1)) if _native_daily_slice_round_active else -1
+	if rc_int == 0 and done:
+		_publish_native_daily_temperature_transport_anomaly(_map, _native_daily_slice_active_bundle, breakdown, res)
+		var finalizer_diag: Dictionary = _native_daily_apply_finalizer(_map)
+		_merge_native_daily_finalizer_diag(breakdown, finalizer_diag)
+		_merge_native_daily_finalizer_diag(res, finalizer_diag)
+		if _map != null and _map.temperature_transport_anomaly_arr.size() == _map.soa_size():
+			res["temperature_transport_anomaly_out"] = _map.temperature_transport_anomaly_arr
+	if not _native_daily_slice_round_active:
+		_native_daily_slice_unified_weather_embedded = false
+		_native_daily_slice_bundle_pass_keys = []
+		_native_daily_slice_active_bundle = {}
+		_native_daily_slice_next_node_index = -1
+		_native_daily_slice_phase_locked = 0.0
+		_native_daily_slice_temp_start_arr = PackedFloat32Array()
+		_native_daily_slice_tta_start_arr = PackedFloat32Array()
+	var wrapper_wall_ms: float = float(Time.get_ticks_usec() - wall_t0) / 1000.0
+	var apply_ms: float = maxf(0.0, wrapper_wall_ms - bundle_ms - native_call_ms)
+	res["bundle_ms"] = bundle_ms
+	res["native_call_ms"] = native_call_ms
+	res["apply_ms"] = apply_ms
+	res["wrapper_wall_ms"] = wrapper_wall_ms
+	breakdown["bundle_ms"] = bundle_ms
+	breakdown["native_call_ms"] = native_call_ms
+	breakdown["apply_ms"] = apply_ms
+	breakdown["wrapper_wall_ms"] = wrapper_wall_ms
+	res["breakdown"] = breakdown
+	_record_native_daily_slice_climate_breakdown(res, breakdown, _map, done, rc_int)
+	_native_daily_last_result = res.duplicate(true)
+	return res
 
 
 func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
+	var wall_t0: int = Time.get_ticks_usec()
+	var bundle_t0: int = wall_t0
 	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
+	var bundle_ms: float = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 	var unified_weather_embedded: bool = bundle.has("weather_knobs")
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	tick_knobs["native_daily_bundle"] = bundle
+	var native_t0: int = Time.get_ticks_usec()
 	var res: Dictionary = _data_core_world_ext.run_native_daily_tick(tick_knobs)
+	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
 	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
-	_native_daily_last_result = res.duplicate(true)
 	var breakdown: Dictionary = res.get("breakdown", {})
 	_last_weather_breakdown = breakdown.duplicate(true)
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
@@ -2745,24 +3376,7 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 				# breakdown 顶层就是 weather 段产出（C++ 端 copy_dict_into 把
 				# run_weather_refresh_daily_pass 返回值合进 native_daily breakdown）。
 				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
-				_last_active_fronts = fronts_out
-				_weather_round_fronts = fronts_out
-				res["fronts"] = fronts_out
-				res["fronts_changed"] = true
-				# enum_atlas dirty mark：与 refresh_weather_daily facade line 8497-8506 等价。
-				if _baker != null:
-					if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
-						_mark_enum_atlas_dirty(true, false)
-					var succ_indices = breakdown.get("succession_indices", null)
-					var veg_dirty: bool = succ_indices != null \
-							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
-							and (succ_indices as PackedInt32Array).size() > 0
-					if veg_dirty:
-						queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
-					if not veg_dirty:
-						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
-					if veg_dirty:
-						_mark_enum_atlas_dirty(false, true)
+				_apply_native_daily_visual_intents(res, breakdown, fronts_out, _map, _world)
 		else:
 			# 失败回滚：stage_b call_index 还原 + 清理 slice state（weather_system 内部
 			# 已自我守护，但 caller 端也防御性清一次，避免泄漏到下个 tick）。
@@ -2773,6 +3387,20 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 				_unified_fast_tick_warned_fallback = true
 				push_warning("[native_daily/unified] embedded weather_knobs path rc=%d fail_stage=%s; weather_refresh state cleared; will fallback to independent jobs next tick"
 						% [rc_int, String(res.get("fail_stage", "unknown"))])
+	if int(res.get("rc", -1)) == 0:
+		_publish_native_daily_temperature_transport_anomaly(_map, bundle, breakdown, res)
+	var wrapper_wall_ms: float = float(Time.get_ticks_usec() - wall_t0) / 1000.0
+	var apply_ms: float = maxf(0.0, wrapper_wall_ms - bundle_ms - native_call_ms)
+	res["bundle_ms"] = bundle_ms
+	res["native_call_ms"] = native_call_ms
+	res["apply_ms"] = apply_ms
+	res["wrapper_wall_ms"] = wrapper_wall_ms
+	breakdown["bundle_ms"] = bundle_ms
+	breakdown["native_call_ms"] = native_call_ms
+	breakdown["apply_ms"] = apply_ms
+	breakdown["wrapper_wall_ms"] = wrapper_wall_ms
+	res["breakdown"] = breakdown
+	_native_daily_last_result = res.duplicate(true)
 	return res
 
 
@@ -2781,14 +3409,18 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
 	if not _data_core_world_ext.has_method("run_native_sim_tick"):
 		return run_native_daily_tick_from_job(ctx, _map, _world)
+	var wall_t0: int = Time.get_ticks_usec()
+	var bundle_t0: int = wall_t0
 	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
+	var bundle_ms: float = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 	var unified_weather_embedded: bool = bundle.has("weather_knobs")
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	tick_knobs["native_daily_bundle"] = bundle
 	tick_knobs["shadow_diff_enabled"] = bool(_c().native_shadow_diff_enabled) if _c() != null and _c().get("native_shadow_diff_enabled") != null else false
+	var native_t0: int = Time.get_ticks_usec()
 	var res: Dictionary = _data_core_world_ext.run_native_sim_tick(tick_knobs)
+	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
 	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
-	_native_daily_last_result = res.duplicate(true)
 	var breakdown: Dictionary = res.get("breakdown", {})
 	_last_weather_breakdown = breakdown.duplicate(true)
 	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
@@ -2802,23 +3434,7 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 						% [float(breakdown.get("total_ms", 0.0)), float(breakdown.get("weather_ms", 0.0))])
 			if _weather_system.has_method("apply_unified_fast_tick_result"):
 				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
-				_last_active_fronts = fronts_out
-				_weather_round_fronts = fronts_out
-				res["fronts"] = fronts_out
-				res["fronts_changed"] = true
-				if _baker != null:
-					if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
-						_mark_enum_atlas_dirty(true, false)
-					var succ_indices = breakdown.get("succession_indices", null)
-					var veg_dirty: bool = succ_indices != null \
-							and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
-							and (succ_indices as PackedInt32Array).size() > 0
-					if veg_dirty:
-						queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
-					if not veg_dirty:
-						veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
-					if veg_dirty:
-						_mark_enum_atlas_dirty(false, true)
+				_apply_native_daily_visual_intents(res, breakdown, fronts_out, _map, _world)
 		else:
 			_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 			if _weather_system.has_method("_clear_weather_field_slice_state"):
@@ -2827,6 +3443,20 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 				_unified_fast_tick_warned_fallback = true
 				push_warning("[native_daily/unified] native sim tick rc=%d fail_stage=%s; weather state cleared"
 						% [rc_int, String(res.get("fail_stage", "unknown"))])
+	if int(res.get("rc", -1)) == 0:
+		_publish_native_daily_temperature_transport_anomaly(_map, bundle, breakdown, res)
+	var wrapper_wall_ms: float = float(Time.get_ticks_usec() - wall_t0) / 1000.0
+	var apply_ms: float = maxf(0.0, wrapper_wall_ms - bundle_ms - native_call_ms)
+	res["bundle_ms"] = bundle_ms
+	res["native_call_ms"] = native_call_ms
+	res["apply_ms"] = apply_ms
+	res["wrapper_wall_ms"] = wrapper_wall_ms
+	breakdown["bundle_ms"] = bundle_ms
+	breakdown["native_call_ms"] = native_call_ms
+	breakdown["apply_ms"] = apply_ms
+	breakdown["wrapper_wall_ms"] = wrapper_wall_ms
+	res["breakdown"] = breakdown
+	_native_daily_last_result = res.duplicate(true)
 	return res
 
 
@@ -2888,7 +3518,9 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		var native_res: Dictionary = _native_daily_last_result
 		weather_ran = int(native_res.get("rc", -1)) == 0
 		fronts_changed = bool(native_res.get("fronts_changed", false))
-		fronts = native_res.get("fronts", [] as Array[WeatherFront])
+		for f in native_res.get("fronts", []):
+			if f is WeatherFront:
+				fronts.append(f)
 		fronts_diff = native_res.get("fronts_diff", {})
 	# 天气类型交叉淡入的"跳过日 GDScript 兜底"已移除（2026-06-17）：该淡入纯属
 	# 视觉平滑，且没有任何 shader 采样 cell.weather_transition_alpha（地图只读离散
@@ -2958,12 +3590,45 @@ func last_refresh_climate_slice_ms() -> float:
 # Daily-sim perf instrumentation（weather）：返回上一次 refresh_daily 的子段拆解，
 # 供 main.gd fast tick WARN 路径定位 weather_refresh 的生成/分发/反馈 8+ 段子耗时。
 func sus_weather_breakdown() -> Dictionary:
-	return _last_weather_breakdown.duplicate()
+	return _normalized_weather_breakdown(_last_weather_breakdown)
 
 
 func merge_weather_job_breakdown(extra: Dictionary) -> void:
 	for k in extra.keys():
 		_last_weather_breakdown[k] = extra[k]
+
+
+func _weather_front_count_from_value(v) -> int:
+	match typeof(v):
+		TYPE_INT:
+			return int(v)
+		TYPE_FLOAT:
+			return int(v)
+		TYPE_ARRAY:
+			return (v as Array).size()
+		TYPE_PACKED_FLOAT32_ARRAY:
+			return (v as PackedFloat32Array).size()
+		TYPE_PACKED_INT32_ARRAY:
+			return (v as PackedInt32Array).size()
+		TYPE_PACKED_STRING_ARRAY:
+			return (v as PackedStringArray).size()
+		TYPE_DICTIONARY:
+			var d: Dictionary = v
+			return _weather_front_count_from_value(d.get("fronts_count", d.get("n_fronts", 0)))
+		_:
+			return 0
+
+
+func _normalized_weather_breakdown(src: Dictionary) -> Dictionary:
+	var out: Dictionary = src.duplicate(true)
+	var front_count: int = _weather_front_count_from_value(
+		out.get("fronts_count", out.get("fronts", 0))
+	)
+	if out.has("fronts") and typeof(out.get("fronts")) != TYPE_INT:
+		out["fronts_raw"] = out.get("fronts")
+	out["fronts"] = front_count
+	out["fronts_count"] = front_count
+	return out
 
 
 func has_pending_enum_atlas_upload() -> bool:
@@ -3059,10 +3724,7 @@ func sus_enum_atlas_breakdown() -> Dictionary:
 	return _last_enum_atlas_upload_breakdown.duplicate()
 
 
-# DOTS-Final-Push 任务 6.2：sea_ice_atlas_upload Job 在每次 slice 末尾调用本方法，
-# 把 prepare_ms / upload_ms / image_ms / dirty_cells / dirty_ratio / path 缓存到
-# _last_sea_ice_atlas_upload_breakdown。main.gd fast tick WARN 详细日志通过
-# sus_sea_ice_atlas_breakdown() 取来打印，定位 232ms 异常 slice 的真实瓶颈。
+# 旧 sea_ice_atlas_upload job 已退役；保留该写入口只服务显式兼容/调试调用。
 func record_sea_ice_atlas_upload(report: Dictionary) -> void:
 	_last_sea_ice_atlas_upload_breakdown = report.duplicate()
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
@@ -3107,7 +3769,7 @@ func begin_pending_season_refresh() -> int:
 	return _pending_season_idx
 
 
-# Periodic-driver entry（慢变量周期重算）。SeasonRefreshJob 在新路径下不再依赖
+# Periodic-driver entry（慢变量周期重算）。SeasonRefreshSystem 不再依赖
 # queue_season_refresh / has_pending_season_refresh 信号；按真实 tick 周期自驱
 # 调用本入口启动一个 round。返回当前 WorldClock 的 season_index（仅供 stage 算
 # 法 API 兼容；新设计下 stage 1/4/5/6/7/8 等慢变量本身不再绑定到具体季节）。
@@ -3128,7 +3790,7 @@ func begin_periodic_season_refresh() -> int:
 func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, stage: int) -> void:
 	# 12-stage 切片（原 7-stage），把 stage 4 的 4 个生态 pass 与 stage 6 的
 	# rebake_biome + consume_feedback 各自独立成 stage。每个 stage 的单帧上界
-	# 从原来 ~140ms 降到 ~30ms 量级。SeasonRefreshJob 的 done 判定按 12 同步。
+	# 从原来 ~140ms 降到 ~30ms 量级。SeasonRefreshSystem 的 done 判定按 12 同步。
 	#   0: moisture set
 	#   1: rain_shadow
 	#   2: redecide_terrain
@@ -6260,7 +6922,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		return  # 兼容回退路径：开关 false 时维持旧"季首硬切"行为
 
 	# Daily Sim SoA Refactor 方向 X：refresh_climate_daily 现在只是 wrapper，
-	# 串联调用 6 个独立 sub-pass。SUS RefreshClimateDailyJob 切片化路径会绕过
+	# 串联调用 6 个独立 sub-pass。ClimateDailySystem 切片化路径会绕过
 	# 本 wrapper，改为按 _pass_cursor 逐 tick 调用对应 sub-pass，把单 tick 的
 	# ~80ms 切到 5-6 个 tick 上。其他历史/非切片调用方继续走 wrapper。
 	var t0: int = Time.get_ticks_msec()
@@ -6304,8 +6966,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 	_apply_sea_ice_daily_pass(map, season_phase)
 	var t_sea_ice_ms: float = (Time.get_ticks_usec() - t_sea_ice_us0) / 1000.0
 
-	# Daily Sim SoA Refactor 阶段 1：GPU 海冰上传已迁移到 SeaIceAtlasUploadJob；
-	# 这里只保留指标字段为 0 占位，main.gd 读取不报错。
+	# 旧 sea_ice R8 atlas upload 已退役；这里只保留指标字段为 0 占位。
 	var t_ice_bake_ms: float = 0.0
 
 	# Transpiration：植被→湿度反馈（受开关控）。
@@ -6331,7 +6992,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 	}
 	if _is_annual_log_tick(_daily_climate_call_count):
 		# I1.A-1: wrapper 路径也补上 path=... 标识，与 sliced 路径输出格式对齐。
-		# 实际该路径在 SUS 接管后基本不触发（已走 RefreshClimateDailyJob.sliced），
+		# 实际该路径在 SUS 接管后基本不触发（已走 ClimateDailySystem.sliced），
 		# 但保留对齐避免日志解析脚本分歧。
 		var _wrap_path: String = "legacy"
 		if _data_core_world != null and _data_core_world.is_bound():
@@ -6349,8 +7010,8 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		])
 
 # ─── Daily Sim SoA Refactor 方向 X：sub-pass API ──────────────────────────
-# 把 refresh_climate_daily 内部拆成可独立调用的 6 个 sub-pass，供 SUS
-# RefreshClimateDailyJob 按 _pass_cursor 切片调用。每段都是"读字段 → 写字段"
+# 把 refresh_climate_daily 内部拆成可独立调用的 sub-pass，供 ClimateDailySystem
+# 按 _pass_cursor 切片调用。每段都是"读字段 → 写字段"
 # 的纯函数：跨 sub-tick 之间靠 HexCell 已稳定的字段做数据交接，不依赖局部
 # Dictionary 缓存，因此天然支持跨 tick 切片。
 #
@@ -6447,6 +7108,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			"insol_amp":        float(cp.season_temp_amp) if "season_temp_amp" in cp else 0.20,
 			"insol_gain":       float(cp.insolation_season_gain) if "insolation_season_gain" in cp else 1.0,
 			"moist_scale_now":  1.0,
+			"runtime_moisture_base_relax_rate": float(cp.runtime_moisture_base_relax_rate) if "runtime_moisture_base_relax_rate" in cp else 0.24,
+			"runtime_moisture_weather_vapor_weight": float(cp.runtime_moisture_weather_vapor_weight) if "runtime_moisture_weather_vapor_weight" in cp else 0.12,
+			"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.20,
+			"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 0.15,
+			"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 0.08,
 			"season_phase":     float(season_phase),
 			"days_per_year":    _calendar_days_per_year(),
 			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
@@ -6455,11 +7121,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			"insol_dev_min":    float(cp.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp else -1.0,
 			"insol_dev_max":    float(cp.insolation_dev_clamp_max) if "insolation_dev_clamp_max" in cp else 1.0,
 			"thermal_inertia_land": float(cp.thermal_inertia_land) if "thermal_inertia_land" in cp else 0.35,
-			"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.07,
+			"thermal_inertia_water": float(cp.thermal_inertia_water) if "thermal_inertia_water" in cp else 0.045,
 			"thermal_inertia_snow": float(cp.thermal_inertia_snow) if "thermal_inertia_snow" in cp else 0.09,
 			"thermal_inertia_high_mountain": float(cp.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp else 0.16,
 			"thermal_daily_delta_cap": float(cp.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp else 0.15,
-			"temp_land_continentality": float(cp.temp_land_continentality) if "temp_land_continentality" in cp else 1.55,
+			"temp_land_continentality": float(cp.temp_land_continentality) if "temp_land_continentality" in cp else 1.0,
 			"thermal_dt_days": _consume_climate_dt_days(),
 			"snowpack_cover_low": float(cp.snowpack_cover_low) if "snowpack_cover_low" in cp else 0.05,
 			"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
@@ -6530,6 +7196,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 
 	# 湿度由 native weather/climate 字段演化；旧四季湿度表不再作为输入。
 	var moist_scale_now: float = 1.0
+	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
+	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.20, 0.0, 1.0)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 0.15, 0.0, 1.0)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.08, 0.0, 1.0)
 	var axial_tilt_deg: float = float(cp.get("axial_tilt_deg")) if cp.get("axial_tilt_deg") != null else 23.5
 	var daylen_amp: float = float(cp.get("insolation_daylen_amp")) if cp.get("insolation_daylen_amp") != null else _INSOLATION_DAYLEN_AMP
 	var solar_gain: float = float(cp.get("solar_gain")) if cp.get("solar_gain") != null else 1.0
@@ -6622,7 +7293,17 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			moisture_now = cell.base_moisture
 		else:
 			var scale_eff: float = moist_scale_now * (1.0 + 0.2 * dev_today)
-			moisture_now = clampf(cell.base_moisture * scale_eff, 0.0, 1.0)
+			var moisture_target: float = clampf(cell.base_moisture * scale_eff, 0.0, 1.0)
+			if cell_idx >= 0 and cell_idx < map.weather_vapor_arr.size():
+				var vapor: float = clampf(map.weather_vapor_arr[cell_idx], 0.0, 1.0)
+				moisture_target = lerpf(moisture_target, vapor, runtime_moisture_vapor_w)
+			if cell_idx >= 0 and cell_idx < map.weather_precip_arr.size():
+				moisture_target += clampf(map.weather_precip_arr[cell_idx], 0.0, 1.0) * runtime_moisture_precip_w
+			if cell_idx >= 0 and cell_idx < map.soil_moisture_arr.size():
+				moisture_target = lerpf(moisture_target, clampf(map.soil_moisture_arr[cell_idx], 0.0, 1.0), runtime_moisture_soil_w)
+			if cell_idx >= 0 and cell_idx < map.water_balance_30d_arr.size():
+				moisture_target += clampf(map.water_balance_30d_arr[cell_idx], -1.0, 1.0) * runtime_moisture_wb_w
+			moisture_now = lerpf(clampf(cell.moisture, 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax)
 
 		# —— 3) 当日温度：日照异常生成辐射目标，后续路径再施加热惯性 ——
 		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收），与 SoA/C++ 同源。
@@ -7091,7 +7772,7 @@ func _dump_weather_breakdown_if_slow() -> void:
 	if _current_fast_tick_idx - _weather_slow_dump_last_tick < _WEATHER_SLOW_DUMP_MIN_INTERVAL:
 		return
 	_weather_slow_dump_last_tick = _current_fast_tick_idx
-	var b: Dictionary = _last_weather_breakdown
+	var b: Dictionary = _normalized_weather_breakdown(_last_weather_breakdown)
 	print("[weather/slow-dump] tick=%d path=%s tick_ms=%.2f (adv=%.2f spawn=%.2f dist=%.2f cyc=%.2f stage_b=%.2f albedo=%.2f veg_dyn=%.2f feedback=%.2f cover_rb=%.2f veg_rb=%.2f) fronts=%d" % [
 		_current_fast_tick_idx,
 		str(b.get("path", "?")),
@@ -7106,7 +7787,7 @@ func _dump_weather_breakdown_if_slow() -> void:
 		float(b.get("feedback_ms", 0.0)),
 		float(b.get("cover_rebake_ms", 0.0)),
 		float(b.get("veg_rebake_ms", 0.0)),
-		int(b.get("fronts", 0)),
+		int(b.get("fronts_count", 0)),
 	])
 	# Phase B.2 cyclone 细粒度遥测：仅在 cyclone 段实际有耗时（≥0.5ms）且 C++
 	# combined path 提供了 phase1/phase2 拆分时打印第二行。常态 cyclone≈0.15ms
@@ -7147,6 +7828,12 @@ func _sea_ice_freeze_gate(insolation_now: float, freeze_low: float, freeze_high:
 
 func _sea_ice_solar_melt(insolation_now: float, melt_start: float, melt_gain: float) -> float:
 	return maxf(0.0, melt_gain) * maxf(0.0, insolation_now - melt_start)
+
+
+func _sea_ice_solar_exposure(sea_ice_frac: float, min_thick_ice_exposure: float = 0.32) -> float:
+	min_thick_ice_exposure = clampf(min_thick_ice_exposure, 0.0, 0.5)
+	var shield: float = smoothstep(0.05, 0.55, clampf(sea_ice_frac, 0.0, 1.0))
+	return maxf(min_thick_ice_exposure, 1.0 - (1.0 - min_thick_ice_exposure) * shield)
 
 
 func _sea_ice_insolation_input(map: MapData, cells: Array, season_phase: float) -> PackedFloat32Array:
@@ -7291,7 +7978,9 @@ func _begin_sea_ice_state_machine(map: MapData, season_phase: float, token: int)
 		"freeze_insol_high": float(cp.sea_ice_freeze_insol_high),
 		"solar_melt_start": float(cp.sea_ice_solar_melt_start),
 		"solar_melt_gain": float(cp.sea_ice_solar_melt_gain),
-		"daily_delta_cap": float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.08,
+		"min_thick_ice_solar_exposure": float(cp.sea_ice_min_thick_ice_solar_exposure) if cp.get("sea_ice_min_thick_ice_solar_exposure") != null else 0.32,
+		"daily_delta_cap": float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.070,
+		"edge_mix_rate": float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035,
 		"cell_temperature_arr": temp_input,
 	}
 	var refresh_ms: float = 0.0
@@ -7631,18 +8320,19 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 #   - 非 sliced 整轮 / fallback 路径：_apply_sea_ice_daily_pass
 # 同 tick 只命中其中一条，所以游标 _last_sea_ice_pass_day 不会双更新。
 #
-# 返回 dt_days ∈ (0, 30]。C++ 路径传原始 k + dt_days；GDScript fallback
+# 返回 dt_days ∈ (0, max_dt_days]（默认 30）。C++ 路径传原始 k + dt_days；GDScript fallback
 # 在本地公式里乘 dt_days。不要在传给 C++ 前预乘 k，避免 d_frac 变成 dt^2。
-# clamp 上限 30：防 pause 复位 / 开局过冲；下限 ≥ 0 后再 floor 到 1.0：阻断
-# 同 tick 重入。第一次调用（_last_sea_ice_pass_day < 0）保持默认 1.0。
-func _consume_sea_ice_dt_days() -> float:
+# 默认 clamp 上限 30：防 pause 复位 / 开局过冲；native daily sliced ACTIVE
+# 可传 1.0，避免把整个 graph round 间隔折叠成一次批量融化。下限 ≥ 0 后
+# 再 floor 到 1.0：阻断同 tick 重入。第一次调用保持默认 1.0。
+func _consume_sea_ice_dt_days(max_dt_days: float = 30.0) -> float:
 	var dt_days: float = 1.0
 	if _world_clock_ref != null:
 		var now_day_v = _world_clock_ref.get("current_day")
 		if now_day_v != null:
 			var now_day: float = float(now_day_v)
 			if _last_sea_ice_pass_day >= 0.0:
-				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, 30.0)
+				dt_days = clampf(now_day - _last_sea_ice_pass_day, 0.0, maxf(0.0, max_dt_days))
 				if dt_days <= 0.0:
 					dt_days = 1.0  # 同 tick 重入兜底
 			# else: 第一次调用，保持 dt_days = 1.0 默认
@@ -7875,7 +8565,9 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			"freeze_insol_high": float(cp.sea_ice_freeze_insol_high),
 			"solar_melt_start": float(cp.sea_ice_solar_melt_start),
 			"solar_melt_gain": float(cp.sea_ice_solar_melt_gain),
-			"daily_delta_cap": float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.08,
+			"min_thick_ice_solar_exposure": float(cp.sea_ice_min_thick_ice_solar_exposure) if cp.get("sea_ice_min_thick_ice_solar_exposure") != null else 0.32,
+			"daily_delta_cap": float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.070,
+			"edge_mix_rate": float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035,
 			"cell_temperature_arr": temp_input,
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/dots-f4-validation.md §2.2.b）：
@@ -8079,8 +8771,15 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	var freeze_insol_high: float = float(cp.sea_ice_freeze_insol_high)
 	var solar_melt_start: float = float(cp.sea_ice_solar_melt_start)
 	var solar_melt_gain: float = float(cp.sea_ice_solar_melt_gain)
-	var daily_delta_cap: float = float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.08
+	var min_thick_ice_solar_exposure: float = clampf(float(cp.sea_ice_min_thick_ice_solar_exposure) if cp.get("sea_ice_min_thick_ice_solar_exposure") != null else 0.32, 0.0, 0.50)
+	var daily_delta_cap: float = float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.070
+	var edge_mix_rate: float = clampf(float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035, 0.0, 0.20)
 	var insolation_input: PackedFloat32Array = _sea_ice_insolation_input(map, cells, season_phase)
+	var prev_sif_snapshot: PackedFloat32Array = PackedFloat32Array()
+	prev_sif_snapshot.resize(n_cells)
+	for i_prev in range(n_cells):
+		var c_prev: HexCell = cells[i_prev]
+		prev_sif_snapshot[i_prev] = c_prev.sea_ice_fraction if c_prev != null else 0.0
 
 	# PR-2.1.4（sea_ice daily fallback 写路径下移）：预分配 batch buffer。
 	# C++ 路径在 line 4140+ 已 return；本 batch 仅在 GDScript fallback 时使用。
@@ -8101,12 +8800,14 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				if ni < 0:
 					continue
 				var nb: HexCell = cells[ni]
-				if _is_water(nb.terrain) and nb.sea_ice_fraction >= 0.6:
+				if _is_water(nb.terrain) and prev_sif_snapshot[ni] >= 0.6:
 					any_cold = true
 					break
 		else:
 			for nb: HexCell in map.get_neighbors(cell):
-				if nb != null and _is_water(nb.terrain) and nb.sea_ice_fraction >= 0.6:
+				var nb_idx_prev: int = int(nb.index) if nb != null else -1
+				var nb_prev_frac: float = prev_sif_snapshot[nb_idx_prev] if nb_idx_prev >= 0 and nb_idx_prev < prev_sif_snapshot.size() else (nb.sea_ice_fraction if nb != null else 0.0)
+				if nb != null and _is_water(nb.terrain) and nb_prev_frac >= 0.6:
 					any_cold = true
 					break
 		has_cold_neighbor[i] = 1 if any_cold else 0
@@ -8154,6 +8855,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		#   - 避免"日历月份直接决定冻融速率"的相位作弊（#bugfix 同温不同冻）。
 		# 强日照作为冻结门控/额外融化，避免热带高日照低温预热期误结冰。
 		var k_melt_eff: float = k_melt
+		var prev_frac: float = prev_sif_snapshot[i]
 
 		# 增量更新：温度低于结冰阈值 → 增长；高于融化阈值 → 衰减
 		# [S2 fix 2026-05-23] 乘 dt_days：见函数入口 dt_days 计算注释。
@@ -8162,7 +8864,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		if solar_gate_enabled:
 			var insolation_now: float = insolation_input[i] if i < insolation_input.size() else 0.0
 			freeze_gate = _sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high)
-			solar_melt = _sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain)
+			solar_melt = _sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain) \
+					* _sea_ice_solar_exposure(prev_frac, min_thick_ice_solar_exposure)
 		var delta_freeze: float = k_freeze_eff * maxf(0.0, t_form - t_eff) * freeze_gate
 		var delta_melt: float = k_melt_eff * maxf(0.0, t_eff - t_melt) + solar_melt
 		# [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：先裁剪日速率再乘
@@ -8171,8 +8874,35 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		if daily_delta_cap > 0.0:
 			rate = clampf(rate, -daily_delta_cap, daily_delta_cap)
 		var d_frac: float = rate * dt_days
-		var prev_frac: float = cell.sea_ice_fraction
 		var new_frac: float = clampf(prev_frac + d_frac, 0.0, 1.0)
+		if edge_mix_rate > 0.0:
+			var sum_nb_frac: float = 0.0
+			var nb_water_count: int = 0
+			if has_idx:
+				var base_mix: int = i * 6
+				for d_mix in range(6):
+					var ni_mix: int = nb_idx_arr[base_mix + d_mix]
+					if ni_mix < 0:
+						continue
+					var nb_mix: HexCell = cells[ni_mix]
+					if nb_mix == null or not _is_water(nb_mix.terrain) or nb_mix.terrain == TerrainType.TERRAIN.LAKE:
+						continue
+					sum_nb_frac += prev_sif_snapshot[ni_mix]
+					nb_water_count += 1
+			else:
+				for nb_mix: HexCell in map.get_neighbors(cell):
+					if nb_mix == null or not _is_water(nb_mix.terrain) or nb_mix.terrain == TerrainType.TERRAIN.LAKE:
+						continue
+					var ni_mix2: int = int(nb_mix.index)
+					if ni_mix2 >= 0 and ni_mix2 < prev_sif_snapshot.size():
+						sum_nb_frac += prev_sif_snapshot[ni_mix2]
+						nb_water_count += 1
+			if nb_water_count > 0:
+				var avg_nb_frac: float = sum_nb_frac / float(nb_water_count)
+				var contrast: float = absf(avg_nb_frac - new_frac)
+				if contrast > 0.05 and (prev_frac > 0.001 or avg_nb_frac > 0.001):
+					var mix: float = minf(0.12, edge_mix_rate * maxf(1.0, dt_days))
+					new_frac = clampf(lerpf(new_frac, avg_nb_frac, mix), 0.0, 1.0)
 		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
 		_si_indices[i] = i
 		_si_frac[i] = new_frac
@@ -8241,7 +8971,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 # 所有几何温度基线使用 _compute_temperature(ny, elevation) 保证与 refresh_climate_daily 一致。
 func _apply_ocean_heat_transport_pass(map: MapData, season_phase: float) -> void:
 	# Daily Sim SoA Refactor 方向 X：本函数现在只是 wrapper，串联调用拆分后的
-	# 水段 + 陆段两个独立 pass。SUS RefreshClimateDailyJob 切片化路径会绕过本
+	# 水段 + 陆段两个独立 pass。ClimateDailySystem 切片化路径会绕过本
 	# wrapper、直接分别调用 _ocean_water_pass / _ocean_land_pass，从而把单 tick
 	# 的 ocean ~31ms 切成两半。其他历史/非切片调用方（如手动重算）继续走 wrapper。
 	if _last_cfg == null:
@@ -8525,7 +9255,7 @@ func _ocean_land_pass_legacy(map: MapData, season_phase: float) -> void:
 #   • 数值与 legacy 路径 1:1 对齐——直接复用 _compute_temperature /
 #     _insolation_season_offset / _vegetation_foliage_density / 等已稳定
 #     的函数；仅把 cell.* 字段访问替换为 SoA 数组索引。
-#   • round 末由 RefreshClimateDailyJob.flush_soa_to_cells() 把 SoA 一次性
+#   • round 末由 ClimateDailySystem 把 SoA 一次性
 #     写回 HexCell 强类型成员，UI / Baker / Overlay 等只读消费者继续工作。
 #   • 涉及"非 SoA 字段"（cell.terrain / landform / vegetation / cover /
 #     temperature_breakdown / current_state / temperature_transport_anomaly /
@@ -8578,13 +9308,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var daylen_amp: float = float(cp.get("insolation_daylen_amp")) if cp.get("insolation_daylen_amp") != null else _INSOLATION_DAYLEN_AMP
 	var solar_gain: float = float(cp.get("solar_gain")) if cp.get("solar_gain") != null else 1.0
 	var thermal_land: float = float(cp.get("thermal_inertia_land")) if cp.get("thermal_inertia_land") != null else 0.35
-	var thermal_water: float = float(cp.get("thermal_inertia_water")) if cp.get("thermal_inertia_water") != null else 0.07
+	var thermal_water: float = float(cp.get("thermal_inertia_water")) if cp.get("thermal_inertia_water") != null else 0.045
 	var thermal_snow: float = float(cp.get("thermal_inertia_snow")) if cp.get("thermal_inertia_snow") != null else 0.09
 	var thermal_high: float = float(cp.get("thermal_inertia_high_mountain")) if cp.get("thermal_inertia_high_mountain") != null else 0.16
 	var thermal_delta_cap: float = float(cp.get("thermal_daily_delta_cap")) if cp.get("thermal_daily_delta_cap") != null else 0.15
-	# 大陆性季节增幅(2026-06-21)：陆地季节强迫×land_continentality 放大其振幅，建立"夏陆>海、
-	# 冬陆<海"的真实海陆温差(修温差恒负/大陆性看不出)。海洋=1.0。SAME_SOURCE: C++ pk_season_offset_continental。
-	var land_continentality: float = float(cp.get("temp_land_continentality")) if cp.get("temp_land_continentality") != null else 1.55
+	# Legacy parity (2026-06-27)：temp_land_continentality 仍可存在于旧资源里，
+	# 但 pass-A 不再把它乘进陆地季节项；native/SoA 必须贴合旧 AoS 公式，避免副极地夏季过热。
 	# 加速/跳日补偿：把单日 α 换算为多日等效 α_eff=1-(1-α)^dt、delta_cap 乘 dt。
 	# dt<=1 时退化为原值，与 C++ pk_thermal_alpha_eff / sea_ice dt 同源。
 	var thermal_dt: float = clampf(_consume_climate_dt_days(), 1.0, 30.0)
@@ -8593,6 +9322,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var thermal_snow_eff: float = thermal_snow if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_snow, 0.0, 1.0), thermal_dt)
 	var thermal_high_eff: float = thermal_high if thermal_dt <= 1.0 else 1.0 - pow(1.0 - clampf(thermal_high, 0.0, 1.0), thermal_dt)
 	var thermal_delta_cap_eff: float = thermal_delta_cap * thermal_dt
+	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
+	var runtime_moisture_relax_eff: float = runtime_moisture_relax if thermal_dt <= 1.0 else 1.0 - pow(1.0 - runtime_moisture_relax, thermal_dt)
+	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.20, 0.0, 1.0)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 0.15, 0.0, 1.0)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.08, 0.0, 1.0)
 	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
 	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化。
@@ -8610,7 +9345,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var temp_a: PackedFloat32Array = _dc_views["temp"] if _use_dc else map.temp_arr
 	var moist_a: PackedFloat32Array = _dc_views["moisture"] if _use_dc else map.moisture_arr
 	# A.2.1.A2 — Dirty Mask：Pass A 写温度时按 epsilon 标记。
-	# 进入 round 时调用方（RefreshClimateDailyJob）已根据"季节切换 / 每 30 日 / 加载首日"
+	# 进入 round 时调用方（ClimateDailySystem）已根据"季节切换 / 每 30 日 / 加载首日"
 	# 决定本 round 的 dirty 起点（mark_all 或 clear），这里只在内层做 epsilon 比对附加标记。
 	# 当 use_sparse_climate=false 时跳过 dirty 写，避免无谓 PackedByteArray 写。
 	var use_sparse: bool = bool(cp.use_sparse_climate)
@@ -8647,6 +9382,10 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var heat_input_a: PackedFloat32Array = _dc_views["heat_input"] if _use_dc and _dc_views["heat_input"].size() == n else map.heat_input_arr
 	var thermal_a: PackedFloat32Array = _dc_views["thermal_energy"] if _use_dc and _dc_views["thermal_energy"].size() == n else map.thermal_energy_arr
 	var snowpack_a: PackedFloat32Array = _dc_views["snowpack"] if _use_dc and _dc_views["snowpack"].size() == n else map.snowpack_arr
+	var weather_vapor_a: PackedFloat32Array = map.weather_vapor_arr
+	var weather_precip_a: PackedFloat32Array = map.weather_precip_arr
+	var soil_moisture_a: PackedFloat32Array = map.soil_moisture_arr
+	var water_balance_a: PackedFloat32Array = map.water_balance_30d_arr
 	var has_lat_lut: bool = map.has_lat_lut() and lat_arr.size() == n and temp_year_arr.size() == n
 	# B1-B：内层查表条件（lut 大小已确认且 size = LUT_SIZE+1）。
 	for i in range(n):
@@ -8698,9 +9437,16 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		else:
 			var scale_eff: float = moist_scale_now * (1.0 + 0.2 * dev_today)
 			var bm: float = base_moist_a[i] * scale_eff
-			moisture_now = bm if bm < 1.0 else 1.0
-			if moisture_now < 0.0:
-				moisture_now = 0.0
+			var moisture_target: float = clampf(bm, 0.0, 1.0)
+			if weather_vapor_a.size() == n:
+				moisture_target = lerpf(moisture_target, clampf(weather_vapor_a[i], 0.0, 1.0), runtime_moisture_vapor_w)
+			if weather_precip_a.size() == n:
+				moisture_target += clampf(weather_precip_a[i], 0.0, 1.0) * runtime_moisture_precip_w
+			if soil_moisture_a.size() == n:
+				moisture_target = lerpf(moisture_target, clampf(soil_moisture_a[i], 0.0, 1.0), runtime_moisture_soil_w)
+			if water_balance_a.size() == n:
+				moisture_target += clampf(water_balance_a[i], -1.0, 1.0) * runtime_moisture_wb_w
+			moisture_now = lerpf(clampf(moist_a[i], 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax_eff)
 
 		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - alt_penalty(elev)，clamp）
 		# alt_penalty 内联双段式，常量走 ALT_PEN_*（同 _alt_penalty / pk_alt_penalty）：
@@ -8716,10 +9462,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
 		# 用【年均温度 temp_365d_a[i]】作冰封代理（与 C++ p365[i] 同源），避免夏季融化正反馈失控。
 		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(is_water_a[i] != 0, temp_365d_a[i])
-		# 大陆性增幅：陆地季节强迫放大(海洋=1.0)。SAME_SOURCE: C++ pk_season_offset_continental。
-		var continentality: float = 1.0 if is_water_a[i] != 0 else land_continentality
 		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 legacy/C++ 同源。
-		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * continentality * dev_today)
+		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
 		var radiative_target: float = clampf(temp_year + season_offset, 0.0, 1.0)
 
 		# 3) 热惯性：日照只生成 radiative target，最终 temp 由长期热储量缓慢逼近。
@@ -8973,8 +9717,8 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var rs_lookback: int = max(0, int(cp.rain_shadow_lookback))
 	var t_freeze: float = float(cp.sea_ice_form_threshold)
 	var coupling_gain: float = float(cp.ocean_moisture_coupling_gain)
-	# climate-loop-closure Phase 4.1：海冰反照率→温度反馈系数（profile 缺字段默认 0.06）。
-	var sea_ice_cool: float = float(cp.sea_ice_albedo_cooling) if cp.get("sea_ice_albedo_cooling") != null else 0.06
+	# climate-loop-closure Phase 4.1：海冰反照率→温度反馈系数（profile 缺字段默认 0.01）。
+	var sea_ice_cool: float = float(cp.sea_ice_albedo_cooling) if cp.get("sea_ice_albedo_cooling") != null else 0.01
 
 	# ─── Phase F.3：DCWorldExt C++ 快路径（charter §7 P1，5.2ms → < 0.5ms）──
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_climate_pass_b flag 已删，现走
@@ -9476,6 +10220,8 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 			"anomaly_out": anomaly_buf,
 			"ocean_current_x_arr": ocx_a,
 			"ocean_current_y_arr": ocy_a,
+			"cold_transport_form_threshold": float(cp.sea_ice_form_threshold) if cp.get("sea_ice_form_threshold") != null else 0.06,
+			"cold_transport_melt_threshold": float(cp.sea_ice_melt_threshold) if cp.get("sea_ice_melt_threshold") != null else 0.11,
 		}
 		_apply_temperature_transport_anomaly_knobs(knobs_w, tta)
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
@@ -9917,6 +10663,8 @@ func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: C
 		"anomaly_out": anomaly,
 		"ocean_current_x_arr": ocx_a,
 		"ocean_current_y_arr": ocy_a,
+		"cold_transport_form_threshold": float(cp.sea_ice_form_threshold),
+		"cold_transport_melt_threshold": float(cp.sea_ice_melt_threshold),
 	}
 	var land_knobs: Dictionary = {
 		"n_cells": n,
@@ -10374,13 +11122,81 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	return fronts_out
 
 
+func weather_native_daily_readiness_report() -> Dictionary:
+	var n_cells: int = _sus_map.cell_count() if _sus_map != null else 0
+	var report: Dictionary = {
+		"ready": false,
+		"reason": "",
+		"n_cells": n_cells,
+		"has_ext": _data_core_world_ext != null,
+		"has_weather_system": _weather_system != null,
+		"has_combined_method": false,
+		"has_commit_method": false,
+		"has_knobs_builder": false,
+		"has_result_apply": false,
+		"has_weather_lut_publish": has_method("publish_weather_lut_after_weather_commit"),
+		"field_commit_path": str(_last_weather_breakdown.get("field_commit_path", "")),
+		"field_commit_publish_verified": bool(_last_weather_breakdown.get("field_commit_publish_verified", false)),
+		"field_commit_publish_repaired": bool(_last_weather_breakdown.get("field_commit_publish_repaired", false)),
+		"field_commit_init_count": int(_last_weather_breakdown.get("field_commit_init_count", 0)),
+		"field_commit_publish_reason": str(_last_weather_breakdown.get("field_commit_publish_reason", "")),
+	}
+	if _data_core_world_ext != null:
+		report["has_combined_method"] = _data_core_world_ext.has_method("run_weather_refresh_daily_pass")
+		report["has_commit_method"] = _data_core_world_ext.has_method("run_weather_field_commit_pass")
+	if _weather_system != null:
+		report["has_knobs_builder"] = _weather_system.has_method("build_unified_fast_tick_weather_knobs")
+		report["has_result_apply"] = _weather_system.has_method("apply_unified_fast_tick_result")
+	if n_cells <= 0:
+		report["reason"] = "no_cells"
+		return report
+	if not bool(report["has_ext"]):
+		report["reason"] = "missing_world_ext"
+		return report
+	if not bool(report["has_weather_system"]):
+		report["reason"] = "missing_weather_system"
+		return report
+	if not bool(report["has_combined_method"]):
+		report["reason"] = "missing_run_weather_refresh_daily_pass"
+		return report
+	if not bool(report["has_commit_method"]):
+		report["reason"] = "missing_run_weather_field_commit_pass"
+		return report
+	if not bool(report["has_knobs_builder"]):
+		report["reason"] = "missing_unified_knobs_builder"
+		return report
+	if not bool(report["has_result_apply"]):
+		report["reason"] = "missing_unified_result_apply"
+		return report
+	if not bool(report["has_weather_lut_publish"]):
+		report["reason"] = "missing_weather_lut_publish"
+		return report
+	var commit_path: String = str(report["field_commit_path"])
+	if commit_path == "":
+		report["reason"] = "no_verified_staged_commit_yet"
+		return report
+	if not bool(report["field_commit_publish_verified"]):
+		report["reason"] = "field_commit_not_publish_verified"
+		return report
+	if bool(report["field_commit_publish_repaired"]):
+		report["reason"] = "field_commit_required_gdscript_repair"
+		return report
+	if int(report["field_commit_init_count"]) < n_cells:
+		report["reason"] = "field_init_incomplete_%d_of_%d" % [
+			int(report["field_commit_init_count"]),
+			n_cells,
+		]
+		return report
+	report["ready"] = true
+	report["reason"] = "verified_visible_publish"
+	return report
+
+
 func weather_native_daily_available() -> bool:
-	# The combined native daily pass is not the visible weather authority yet:
-	# recent CSV diagnostics showed it can advance cadence while leaving
-	# MapData.weather_field_init_arr and all weather field arrays at zero. Keep
-	# SUS on the staged begin/solve/commit path until this facade verifies a
-	# real field publication contract.
-	return false
+	# Native daily weather can only become authority after a visible publish has
+	# already been proven by the staged path. Method presence alone previously let
+	# cadence advance while MapData.weather_* arrays stayed all clear/zero.
+	return bool(weather_native_daily_readiness_report().get("ready", false))
 
 
 # Stage A：tick_one_day（advection / spawn / distribute / cyclone）。
@@ -11045,8 +11861,9 @@ func set_weather_refresh_stride(s: int) -> void:
 		# 外部 main.gd 会在后续 speed_changed 回调里再调一次，直接忽略即可。
 		return
 	cp.weather_refresh_stride = stride
-	if _weather_refresh_job != null:
-		_weather_refresh_job.reconfigure(stride)
+	if _sus != null:
+		_sus.apply_job_schedule(_weather_refresh_system, cp, &"weather_refresh", stride)
+		_sus.apply_job_schedule(_weather_refresh_job, cp, &"weather_refresh", stride)
 	if stride != _weather_stride_logged:
 		_weather_stride_logged = stride
 		print("[fastpath] weather_refresh_stride = %d" % stride)
@@ -11061,8 +11878,8 @@ func set_daily_climate_refresh_stride(s: int) -> void:
 	if cp == null:
 		return
 	cp.daily_climate_refresh_stride = stride
-	if _refresh_climate_daily_job != null:
-		_refresh_climate_daily_job.reconfigure(stride)
+	if _sus != null:
+		_sus.apply_job_schedule(_refresh_climate_daily_job, cp, &"refresh_climate_daily", stride)
 
 # ─── Emergent Climate Coupling：天气 → 慢层反馈 pass ─────────────────────
 # 每日末尾一次性把当日天气累积效应以**极小权重**（≤ 慢层基线 0.5%/日）
@@ -12556,6 +13373,8 @@ func run_wind_surface_pass_native(map: MapData, season_phase: float) -> Dictiona
 		"air_leak": float(_last_cfg.AIR_MASS_HEAT_LEAK),
 		"neighbor_indices": nb_idx,
 		"fallback_baseline_arr": baseline,
+		"cold_transport_form_threshold": float(_c().sea_ice_form_threshold) if _c() != null else 0.06,
+		"cold_transport_melt_threshold": float(_c().sea_ice_melt_threshold) if _c() != null else 0.11,
 	}
 	# refresh-consolidation-2026-06：climate_daily round 守门员。wind_surface 通常
 	# 跟在 wind_air 之后，仅读 wind_air 写入的 C++ slot（不绕 MapData），故可 skip。
@@ -13049,11 +13868,11 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		"sea_level": float(_last_cfg.sea_level) if _last_cfg != null else 0.5,
 		# pass_a 扩展 scalars — mirror sync `_climate_pass_a` 的 cp_struct。
 		"thermal_inertia_land": float(cp_f5.thermal_inertia_land) if "thermal_inertia_land" in cp_f5 else 0.35,
-		"thermal_inertia_water": float(cp_f5.thermal_inertia_water) if "thermal_inertia_water" in cp_f5 else 0.07,
+		"thermal_inertia_water": float(cp_f5.thermal_inertia_water) if "thermal_inertia_water" in cp_f5 else 0.045,
 		"thermal_inertia_snow": float(cp_f5.thermal_inertia_snow) if "thermal_inertia_snow" in cp_f5 else 0.09,
 		"thermal_inertia_high_mountain": float(cp_f5.thermal_inertia_high_mountain) if "thermal_inertia_high_mountain" in cp_f5 else 0.16,
 		"thermal_daily_delta_cap": float(cp_f5.thermal_daily_delta_cap) if "thermal_daily_delta_cap" in cp_f5 else 0.15,
-		"temp_land_continentality": float(cp_f5.temp_land_continentality) if "temp_land_continentality" in cp_f5 else 1.55,
+		"temp_land_continentality": float(cp_f5.temp_land_continentality) if "temp_land_continentality" in cp_f5 else 1.0,
 		"thermal_dt_days": _consume_climate_dt_days(),
 		"snowpack_cover_low": float(cp_f5.snowpack_cover_low) if "snowpack_cover_low" in cp_f5 else 0.05,
 		"snowpack_cover_full": float(cp_f5.snowpack_cover_full) if "snowpack_cover_full" in cp_f5 else 0.32,

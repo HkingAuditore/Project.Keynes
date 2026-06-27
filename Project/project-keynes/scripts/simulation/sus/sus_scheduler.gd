@@ -108,6 +108,8 @@ func set_frame_budget_ms(v: float) -> void:
 	# Fix #8A (2026-06-15): mobile 上限 4.0ms（log_next.txt 实测 SUS p95=9-15ms 远超
 	# 老上限 2.0ms，导致 dynamic_visual_atlas_upload 80% 被饿死）。Desktop 仍 2.0。
 	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
+	if OS.has_feature("mobile") and v < max_budget:
+		v = max_budget
 	frame_budget_ms = clampf(v, 0.25, max_budget)
 	if _ext != null:
 		_ext.set_frame_budget_ms(frame_budget_ms)
@@ -120,7 +122,10 @@ func set_strict_budget_enabled(v: bool) -> void:
 
 
 func set_sim_budget_warn_ms(v: float) -> void:
-	sim_budget_warn_ms = clampf(v, 0.25, 2.0)
+	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
+	if OS.has_feature("mobile") and v < max_budget:
+		v = max_budget
+	sim_budget_warn_ms = clampf(v, 0.25, max_budget)
 	if _ext != null:
 		_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
 
@@ -270,6 +275,14 @@ func unregister_job(job_id: StringName) -> void:
 		_ext.unregister_job(job_id)
 
 
+func refresh_job_descriptor(job_id: StringName) -> void:
+	var job := get_job(job_id)
+	if job == null or _ext == null:
+		return
+	_ext.unregister_job(job_id)
+	_ext.register_job(job, _descriptor_from_job(job))
+
+
 func get_job(job_id: StringName) -> SusJob:
 	for j in _jobs:
 		if j.id == job_id:
@@ -348,7 +361,7 @@ func tick(ctx: SusTickContext) -> void:
 		# frame_budget_exhausted 掉 → 天气/洋流冻结的硬故障。
 		# Starvation 防护（2026-05-11）：连续被 frame_budget_exhausted 跳过
 		# starvation_threshold 次的 Job，本 tick 强制绕过 budget 跑一次，避免
-		# sea_ice_atlas_upload / ocean_currents 这类低优先级 Job 长期饿死。
+		# ocean_currents / visual upload 这类低优先级 Job 长期饿死。
 		var elapsed_us_now: int = Time.get_ticks_usec() - tick_start_us
 		var starving: bool = not strict_budget_enabled \
 				and job.starvation_threshold > 0 \
@@ -800,7 +813,6 @@ func _slice_substage_name(slice_result: Dictionary) -> String:
 
 func _is_upload_job(job_id: StringName) -> bool:
 	return job_id == &"enum_atlas_upload" \
-		or job_id == &"sea_ice_atlas_upload" \
 		or job_id == &"dynamic_visual_atlas_upload"
 
 

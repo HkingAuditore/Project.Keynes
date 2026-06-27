@@ -31,17 +31,7 @@ func _init(p_generator, p_map: MapData, p_phase_getter: Callable, p_stride: int)
 	map = p_map
 	season_phase_getter = p_phase_getter
 	stride = max(1, p_stride)
-	# Fix #11 (2026-06-15): mobile 错峰桶分配，所有非 climate job 都 stride=8 错开
-	# A 桶 sea_ice: stride=8 phase=6 → tick 2, 10, 18, 26 (climate 落奇 tick 错开)
-	# B 桶 weather+enum: stride=8 phase=4 → tick 4, 12, 20, 28
-	# C 桶 dyn_visual: stride=8 phase=2 → tick 6, 14, 22, 30
-	# D 桶 ocean: stride=8 phase=0 → tick 0, 8, 16, 24, 32
-	# 4 个桶完美错峰，每 8 仿真日各跑 1 次，单 tick 最多 1 个重型 job + season。
-	if OS.has_feature("mobile"):
-		stride = 8
-		policy = SusPolicyScript.StridePolicy.new(8, 6)
-	else:
-		policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = SusPolicyScript.StridePolicy.new(stride, 0)
 
 
 func declare_reads() -> Array[StringName]:
@@ -161,9 +151,9 @@ func reset_progress() -> void:
 	_last_slice_elapsed_ms = 0.0
 
 
-func reconfigure(p_stride: int) -> void:
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = SusPolicyScript.StridePolicy.new(stride, posmod(p_phase, stride))
 
 
 func _enabled_from_profile() -> bool:

@@ -162,9 +162,15 @@ public:
     // this surface without changing GDScript orchestration again.
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
+    godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
     godot::Dictionary get_native_daily_report() const;
     godot::Dictionary get_native_shadow_diff_report() const;
+    godot::Dictionary native_ocean_physical_begin(const godot::Dictionary &ctx);
+    godot::Dictionary native_ocean_physical_step(const godot::Dictionary &ctx);
+    godot::Dictionary native_ocean_physical_finish(const godot::Dictionary &ctx);
+    godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
+    godot::Dictionary get_native_ocean_physical_state_report() const;
 
     // ─── Gameplay event bus（2026-06-26）────────────────────────────────
     // 通用、可持久化/可回放的 gameplay event log。C++ pass 和 GDScript 都通过
@@ -333,7 +339,7 @@ public:
     //     PackedArray（read-only 输入）：
     //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
     //            fallback_baseline_arr  : PackedFloat32Array  (n_cells)
-    //                ↑ 必填！T[i] <= 0 时 t_prev 的兜底值。
+    //                ↑ 必填！runtime baseline 非有限值时的兜底值。
     //            ocean_current_x_arr    : PackedFloat32Array  (n_cells)
     //            ocean_current_y_arr    : PackedFloat32Array  (n_cells)
     //                ↑ 必填！同 water pass 一样从 cells 提取（SoA stale 问题）
@@ -1324,37 +1330,49 @@ public:
     // / ocean_ms / stage_b_ms 跨 pass 累加）→ 写节点级 side-effect（stage_b 的
     // 4 个 breakdown 回填、weather 的 _native_fronts_snapshot 写入）。
     // 返回 true=成功；false=fallback 触发，dispatch loop 走 finish_with_failure。
-    bool _exec_node_climate_pass_a     (const godot::Dictionary& bundle,
+    bool _exec_node_climate_pass_a     (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_ocean_water        (const godot::Dictionary& bundle,
+    bool _exec_node_ocean_water        (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_ocean_land         (const godot::Dictionary& bundle,
+    bool _exec_node_ocean_land         (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_climate_pass_b     (const godot::Dictionary& bundle,
+    bool _exec_node_climate_pass_b     (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_sea_ice            (const godot::Dictionary& bundle,
+    bool _exec_node_wind_air           (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_transpiration      (const godot::Dictionary& bundle,
+    bool _exec_node_wind_surface       (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_albedo             (const godot::Dictionary& bundle,
+    bool _exec_node_sea_ice            (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_vegetation_dynamics(const godot::Dictionary& bundle,
+    bool _exec_node_transpiration      (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_climate_feedback   (const godot::Dictionary& bundle,
+    bool _exec_node_albedo             (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_stage_b            (const godot::Dictionary& bundle,
+    bool _exec_node_vegetation_dynamics(godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
-    bool _exec_node_weather            (const godot::Dictionary& bundle,
+    bool _exec_node_climate_feedback   (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_stage_b            (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_stage_b_after_hydrology(godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_weather            (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_runtime_hydrology  (godot::Dictionary& bundle,
                                         const godot::Dictionary& tick_knobs,
                                         godot::Dictionary& breakdown);
 
@@ -1792,6 +1810,21 @@ public:
     // 调试 / 验收用：返回 worker 计数 + 上次耗时。
     godot::Dictionary async_climate_round_stats();
 
+    // Thin native facade over register/static/kick/poll. GDScript still owns
+    // production scheduling state; these methods centralize native worker
+    // lifecycle and return a structured state report.
+    godot::Dictionary native_climate_round_begin(const godot::Dictionary &static_knobs);
+    godot::Dictionary native_climate_round_begin_round(const godot::Dictionary &ctx);
+    godot::Dictionary native_climate_round_kick(const godot::Dictionary &input);
+    godot::Dictionary native_climate_round_poll();
+    godot::Dictionary native_climate_round_finish_round(const godot::Dictionary &ctx);
+
+    // Native climate round state report/reset scaffold. This is not production
+    // authority yet; it exposes the native worker lifecycle so GDScript can
+    // compare against its retained _round_active/_pass_cursor state.
+    godot::Dictionary get_native_climate_round_state_report();
+    godot::Dictionary reset_native_climate_round_state(const godot::String &reason = godot::String());
+
     // 析构 hook + GDScript 主动调用入口。安全 join worker。
     void async_climate_round_shutdown();
 
@@ -1842,6 +1875,19 @@ private:
     godot::Dictionary                        _native_dirty_report;
     godot::Dictionary                        _native_daily_report;
     godot::Dictionary                        _native_shadow_diff_report;
+    bool                                      _native_daily_slice_active = false;
+    int                                       _native_daily_slice_node_index = 0;
+    int                                       _native_daily_slice_round_id = 0;
+    double                                    _native_daily_slice_elapsed_accum_ms = 0.0;
+    bool                                      _native_daily_slice_any_pass_ran = false;
+    godot::Dictionary                        _native_daily_slice_tick_knobs;
+    godot::Dictionary                        _native_daily_slice_bundle;
+    godot::Dictionary                        _native_daily_slice_breakdown;
+    godot::Array                             _native_daily_slice_bundle_pass_keys;
+    godot::Array                             _native_daily_slice_retained_authority;
+    godot::Dictionary                        _native_daily_slice_state_snapshot;
+    godot::Dictionary                        _native_ocean_physical_state;
+    godot::Dictionary                        _native_runtime_config;
     godot::Dictionary                        _native_generation_report;
     godot::Dictionary                        _native_generation_cfg;
     godot::Dictionary                        _native_generation_profile;

@@ -172,7 +172,7 @@ WorldClock.day_changed(day_idx)
 
 ## 气候、海洋、天气
 
-`ClimateDailySystem` 是日气候核心系统，`RefreshClimateDailyJob` 已退化为兼容壳。当前 round 顺序包含：
+`ClimateDailySystem` 是日气候核心系统；旧 `RefreshClimateDailyJob` 兼容壳已删除。当前 round 顺序包含：
 
 1. `pass_a`
 2. `pass_b`

@@ -58,6 +58,7 @@ func _init(p_baker: _MapBakerScript, p_map: MapData, p_world: WorldData,
 	slice_budget_ms = _inner.slice_budget_ms
 	max_slices_per_tick = _inner.max_slices_per_tick
 	must_run = _inner.must_run
+	use_job_should_run = _inner.use_job_should_run
 	starvation_threshold = _inner.starvation_threshold
 	policy = _inner.policy
 	depends_on = _inner.depends_on
@@ -118,7 +119,7 @@ func set_season_phase_getter(cb: Callable) -> void:
 	_inner.season_phase_getter = cb
 
 
-# 暴露内部 SusJob 给 map_generator 等需要直接调用 OceanCurrentsJob 强类型
-# API 的 caller。0.4.1 use_dc_system_scheduler=true 路径用。
+# 暴露内部 SusJob 给 map_generator 等仍需 OceanCurrentsJob 强类型 API 的 caller。
+# Production 注册已恒走 DCSystemScheduler；这是 wrapper inline 前的临时桥。
 func get_inner() -> _OceanCurrentsJobScript:
 	return _inner
