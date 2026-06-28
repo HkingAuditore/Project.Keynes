@@ -231,8 +231,15 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	# 跟 sea_ice_daily / weather_refresh 等同落在 climate 不跑的 phase=1 tick，
 	# 这样 SUS budget 2-4ms 在两 tick 之间均摊，单 tick 不再撞车。
 	must_run = false
-	# Keep visual upload budgeted; starvation protection catches long stalls.
-	starvation_threshold = 8
+	# Keep visual upload budgeted (no must_run, per the drift principle above), but the
+	# active path is the cheap cell-indirection per-cell LUT rebake — the SOLE dynamic
+	# visual path (temp/moisture/snow/vegetation/sea-ice all ride dyn_lut). On large maps
+	# the must_run climate round eats the whole 2ms frame budget every tick, so this job is
+	# perpetually frame_budget_exhausted and only the starvation net keeps it alive. A high
+	# threshold (old 8) makes all dynamic visuals lag ~8 days on heavy maps (looks frozen,
+	# most visibly sea ice). 2 bounds the lag to ~3 ticks at negligible cost. NOTE: the
+	# effective value is re-applied by DcSystemScheduler._apply_budget_profile_to_job.
+	starvation_threshold = 2
 	baker = p_baker
 	map = p_map
 	world_data = p_world
@@ -290,12 +297,35 @@ func declare_writes() -> Array[StringName]:
 	return []
 
 
+# [large-map sea-ice visual freeze fix 2026-06-29]
+# The cell-indirection per-cell LUT rebake is the SOLE dynamic-visual path (temp / moisture
+# / snow / vegetation-vitality / sea-ice all ride dyn_lut) and is cheap (~0.57ms @ 6400
+# cells). reconfigure() is fed the STAGGER bucket stride (default 8), which made the LUT
+# only "due" every 8 ticks regardless of map size — so every dynamic visual refreshed once
+# per ~8 game-days. On fast small/medium maps 8 days elapse in a blink (looks live); on slow
+# large maps 8 days take seconds, so sea ice looked visually frozen even though the numbers
+# moved. The stagger only ever existed to spread the now-retired EXPENSIVE per-pixel atlas
+# upload; the cheap LUT must instead track the sim at its base stride (knob default 1 = every
+# tick). Keep the staggered _lut_stride/_lut_phase for the dead per-pixel fallback only.
+func _lut_cadence_stride() -> int:
+	if not FeatureFlagsScript.cell_indirection_active():
+		return _lut_stride
+	if climate_profile != null and climate_profile.get("dynamic_visual_atlas_upload_stride") != null:
+		return clampi(int(climate_profile.dynamic_visual_atlas_upload_stride), 1, 8)
+	return 1
+
+
+func _lut_cadence_phase() -> int:
+	# Cheap LUT does not need a stagger phase offset; refresh in step with the sim day.
+	return 0 if FeatureFlagsScript.cell_indirection_active() else _lut_phase
+
+
 func _lut_due_for_tick(tick_index: int) -> bool:
-	return posmod(tick_index + _lut_phase, _lut_stride) == 0
+	return posmod(tick_index + _lut_cadence_phase(), _lut_cadence_stride()) == 0
 
 
 func _latest_lut_due_tick_at_or_before(tick_index: int) -> int:
-	return tick_index - posmod(tick_index + _lut_phase, _lut_stride)
+	return tick_index - posmod(tick_index + _lut_cadence_phase(), _lut_cadence_stride())
 
 
 func _ctx_tick_index(ctx) -> int:

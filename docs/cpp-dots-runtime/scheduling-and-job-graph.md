@@ -64,7 +64,7 @@ DCSystemScheduler
 | `ocean_currents` | `AlwaysPolicy` | n/a | 每日进入 job-local `should_run()`，daily SLP/wind 不 bucket-gate；慢层 PSI/ocean 由内部 `ContinuousSlicedPolicy` 控制。 |
 | `native_environment_runtime` | `sim_stagger_bucket_stride=8` | `0` | native environment 桶。 |
 | `refresh_climate_daily` / `native_daily_sim` | `sim_stagger_climate_stride=2` | `1` | climate 桶；native daily ACTIVE 用同一 climate cadence。 |
-| `dynamic_visual_atlas_upload` | `8` | `2` | dynamic visual 桶。 |
+| `dynamic_visual_atlas_upload` | `8` | `2` | dynamic visual 桶（**仅退役的逐像素 fallback 路径用此 stride**）。cell-indirection LUT 主路径的刷新 cadence 已与此错峰桶解耦：见下文 §Cell LUT Catch-Up（按 base stride，默认每 tick due）。 |
 | `weather_refresh` / `enum_atlas_upload` | `8` | `4` | weather 下游与 enum atlas 桶。 |
 | `sea_ice_daily` | `8` | `6` | sea ice 桶。 |
 
@@ -551,3 +551,37 @@ by `frame_budget_exhausted`, the next eligible tick reports `lut_catchup=true`
 and refreshes the LUT instead of waiting for the next stride. This fixes
 intermittent stale snow cover without returning the whole upload job to
 `must_run=true`.
+
+### Large-map sea-ice visual freeze fix (2026-06-29)
+
+The cell-indirection LUT carries **every** dynamic visual (temp / moisture / snow
+/ vegetation-vitality / **sea-ice**, all in `dyn_lut`) and is cheap
+(`~0.57ms @ 6400 cells`). Two coupled defaults made it refresh only once per
+~8 game-days, which looked **visually frozen on slow large maps** (the sim
+numbers moved but the screen didn't) while small/medium maps — where 8 days pass
+in a blink — looked live:
+
+1. **Stagger inflated the LUT cadence.** `apply_job_schedule` fed the job the
+   stagger *bucket* stride (8) via `reconfigure()`, so `_lut_due_for_tick` only
+   marked the LUT "due" every 8 ticks regardless of map size. The stagger only
+   ever existed to spread the **retired expensive per-pixel atlas upload**, not
+   the cheap LUT. Fix: `_lut_cadence_stride()` / `_lut_cadence_phase()` decouple
+   the cell-indirection LUT cadence from the stagger bucket — it is now due every
+   `dynamic_visual_atlas_upload_stride` tick (knob default `1` = every tick). The
+   staggered `_lut_stride` / `_lut_phase` survive only for the dead per-pixel
+   fallback (cell-indirection off).
+2. **Starvation rescue was too lax.** On large maps the `must_run` climate round
+   eats the whole `sim_frame_budget_ms` every tick, so the (non-`must_run`, by
+   the no-drift design rule) visual job is perpetually `frame_budget_exhausted`
+   and only the starvation net runs it. The old `starvation_threshold=8` (a
+   holdover from the expensive per-pixel era) meant ~8-day visual lag. Lowered to
+   `2` in `DcSystemScheduler._apply_budget_profile_to_job` so the cheap LUT
+   catches up within ~3 ticks under sustained budget pressure.
+
+Headless A/B (`tests/tmp_seaice_visual_eval.gd`, 380-day sample, full-year warmup,
+slot/encode confirmed fresh on all sizes — root cause was **never** a stale
+`cell_sea_ice_frac` slot): large-map (100×64) `dynamic_visual_atlas_upload`
+refreshes went **42 → 127 / 380 ticks** (≈ every 8 → every 3), and the chronic
+"always pending, 0 caught-up" pattern (0 `policy_gated`, 338 `frame_budget_exhausted`)
+resolved. Small/medium refresh ≈ every 2 ticks. `must_run` stays `false`
+throughout (no budget bypass / logical drift).
