@@ -41,7 +41,7 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 50 条（截至 2026-05-17，B3b 新增 6 条植被动力学字段；
+# ─── CELL_SCHEMA — 65 条（截至 2026-06-09，含云水/热惯性/雪包/水分平衡字段；
 #     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
@@ -52,18 +52,20 @@ const U8: int  = DCComponentIds.U8
 # 字段 owner：业务模块归属，仅作 lint / dot-graph 用，**无运行期影响**。
 # 后续 dots_lint 工具会校验"声明 owner=X 但实际有 Y 在写"的违约。
 const CELL_SCHEMA: Array = [
-	# ─── Climate F32（21 条，对应 world.gd 668-688 + component_ids.gd CELL_TEMP..CELL_TEMP_BASELINE_YEAR）──
-	{ name = &"cell.temp",               cpp_name = "cell_temp",                  dtype = F32, track_prev = true,  map_field = "temp_arr",                  prev_field = "temp_arr_prev",            owner = "climate.pass_a" },
-	{ name = &"cell.temp_baseline",      cpp_name = "cell_temp_baseline",         dtype = F32, track_prev = false, map_field = "temp_baseline_arr",         prev_field = "",                         owner = "map_generation" },
+	# ─── Climate / Weather F32（含日照、热惯性、雪包、水分平衡）────────
+	{ name = &"cell.temp",               cpp_name = "cell_temp",                  dtype = F32, track_prev = true,  map_field = "temp_arr",                  prev_field = "temp_arr_prev",            owner = "climate.wind_surface" },
+	{ name = &"cell.temp_baseline",      cpp_name = "cell_temp_baseline",         dtype = F32, track_prev = false, map_field = "temp_baseline_arr",         prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_30d",           cpp_name = "cell_temp_30d",              dtype = F32, track_prev = false, map_field = "temp_30d_arr",              prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_365d",          cpp_name = "cell_temp_365d",             dtype = F32, track_prev = false, map_field = "temp_365d_arr",             prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.temp_anomaly",       cpp_name = "cell_temp_anomaly",          dtype = F32, track_prev = false, map_field = "temp_anomaly_arr",          prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.moisture",           cpp_name = "cell_moisture",              dtype = F32, track_prev = true,  map_field = "moisture_arr",              prev_field = "moisture_arr_prev",        owner = "climate.pass_b" },
-	{ name = &"cell.snow_cover",         cpp_name = "cell_snow_cover",            dtype = F32, track_prev = true,  map_field = "snow_cover_arr",            prev_field = "snow_cover_arr_prev",      owner = "climate.sea_ice" },
+	{ name = &"cell.snow_cover",         cpp_name = "cell_snow_cover",            dtype = F32, track_prev = true,  map_field = "snow_cover_arr",            prev_field = "snow_cover_arr_prev",      owner = "weather.snow_visual" },
 	{ name = &"cell.sea_ice_frac",       cpp_name = "cell_sea_ice_frac",          dtype = F32, track_prev = true,  map_field = "sea_ice_frac_arr",          prev_field = "sea_ice_frac_arr_prev",    owner = "climate.sea_ice" },
 	{ name = &"cell.weather_intensity",  cpp_name = "cell_weather_intensity",     dtype = F32, track_prev = false, map_field = "weather_intensity_arr",     prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_cloud",      cpp_name = "cell_weather_cloud",         dtype = F32, track_prev = false, map_field = "weather_cloud_arr",         prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_cloud_water", cpp_name = "cell_weather_cloud_water",  dtype = F32, track_prev = false, map_field = "weather_cloud_water_arr",   prev_field = "",                         owner = "weather.field_solver" },
 	{ name = &"cell.weather_precip",     cpp_name = "cell_weather_precip",        dtype = F32, track_prev = false, map_field = "weather_precip_arr",        prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_transition_alpha", cpp_name = "cell_weather_transition_alpha", dtype = F32, track_prev = false, map_field = "weather_transition_alpha_arr", prev_field = "",                  owner = "weather.commit" },
 	{ name = &"cell.elevation",          cpp_name = "cell_elevation",             dtype = F32, track_prev = false, map_field = "elevation_arr",             prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.base_moisture",      cpp_name = "cell_base_moisture",         dtype = F32, track_prev = false, map_field = "base_moisture_arr",         prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.ocean_current_x",    cpp_name = "cell_ocean_current_x",       dtype = F32, track_prev = false, map_field = "ocean_current_x_arr",       prev_field = "",                         owner = "ocean.currents" },
@@ -73,6 +75,12 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.slp",                cpp_name = "cell_slp",                   dtype = F32, track_prev = false, map_field = "slp_arr",                   prev_field = "",                         owner = "ocean.physical" },
 	{ name = &"cell.wind_speed",         cpp_name = "cell_wind_speed",            dtype = F32, track_prev = false, map_field = "wind_speed_arr",            prev_field = "",                         owner = "ocean.physical" },
 	{ name = &"cell.upwelling_strength", cpp_name = "cell_upwelling_strength",    dtype = F32, track_prev = false, map_field = "upwelling_strength_arr",    prev_field = "",                         owner = "ocean.currents" },
+	# Fix #11 (2026-06-15): wind_stress_curl + ocean_psi 加进 schema，让 C++ run_psi_solver_pass
+	# 直接 published_to_slot 后 GDScript caller 跳过 2400-loop 写回 (map_baker.gd PSI_INIT
+	# stage)。这两个数组之前只在 MapData PackedArray 存在，仅 tile_data_recorder 读取。
+	# Schema 化后 view_adapter / DataCore consumer 也能直读 slot。
+	{ name = &"cell.wind_stress_curl",   cpp_name = "cell_wind_stress_curl",      dtype = F32, track_prev = false, map_field = "wind_stress_curl_arr",      prev_field = "",                         owner = "ocean.currents" },
+	{ name = &"cell.ocean_psi",          cpp_name = "cell_ocean_psi",             dtype = F32, track_prev = false, map_field = "ocean_psi_arr",             prev_field = "",                         owner = "ocean.currents" },
 	{ name = &"cell.pos_x",              cpp_name = "cell_pos_x",                 dtype = F32, track_prev = false, map_field = "cell_pos_x_arr",            prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.pos_y",              cpp_name = "cell_pos_y",                 dtype = F32, track_prev = false, map_field = "cell_pos_y_arr",            prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.lat_norm",           cpp_name = "cell_lat_norm",              dtype = F32, track_prev = false, map_field = "cell_lat_norm_arr",         prev_field = "",                         owner = "map_generation" },
@@ -86,6 +94,8 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.base_vegetation",    cpp_name = "cell_base_vegetation",       dtype = U8,  track_prev = false, map_field = "base_vegetation_arr",       prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.cover",              cpp_name = "cell_cover",                 dtype = U8,  track_prev = false, map_field = "cover_arr",                 prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.weather_type",       cpp_name = "cell_weather_type",          dtype = U8,  track_prev = false, map_field = "weather_type_arr",          prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_prev_type",  cpp_name = "cell_weather_prev_type",     dtype = U8,  track_prev = false, map_field = "weather_prev_type_arr",     prev_field = "",                         owner = "weather.commit" },
+	{ name = &"cell.weather_target_type", cpp_name = "cell_weather_target_type",  dtype = U8,  track_prev = false, map_field = "weather_target_type_arr",   prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.is_water",           cpp_name = "cell_is_water",              dtype = U8,  track_prev = false, map_field = "is_water_arr",              prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.climate_dirty_mask", cpp_name = "cell_climate_dirty",         dtype = U8,  track_prev = false, map_field = "climate_dirty_mask",        prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.weather_dirty_mask", cpp_name = "cell_weather_dirty",         dtype = U8,  track_prev = false, map_field = "weather_dirty_mask",        prev_field = "",                         owner = "weather.commit" },
@@ -95,10 +105,25 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.weather_instability",   cpp_name = "cell_weather_instability",   dtype = F32, track_prev = false, map_field = "weather_instability_arr",   prev_field = "", owner = "weather.field_solver" },
 	{ name = &"cell.weather_field_init",    cpp_name = "cell_weather_field_init",    dtype = U8,  track_prev = false, map_field = "weather_field_init_arr",    prev_field = "", owner = "weather.field_solver" },
 	{ name = &"cell.air_mass_temp_anomaly", cpp_name = "cell_air_mass_temp_anomaly", dtype = F32, track_prev = false, map_field = "air_mass_temp_anomaly_arr", prev_field = "", owner = "climate.pass_b" },
+	# ─── A 修复（climate-temp-pingpong-fix-2026-06）— 显式 anomaly 合成新增 2 条 ─
+	# 与 cell.air_mass_temp_anomaly 并列：
+	#   ocean_thermal_anomaly  由 ocean_water/ocean_land pass 写（ocean.composition）
+	#   local_thermal_anomaly  由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）
+	# wind_surface 末端把这三条 anomaly 与 cell.temp_baseline 合成回 cell.temp。
+	{ name = &"cell.ocean_thermal_anomaly", cpp_name = "cell_ocean_thermal_anomaly", dtype = F32, track_prev = false, map_field = "ocean_thermal_anomaly_arr", prev_field = "", owner = "ocean.composition" },
+	{ name = &"cell.local_thermal_anomaly", cpp_name = "cell_local_thermal_anomaly", dtype = F32, track_prev = false, map_field = "local_thermal_anomaly_arr", prev_field = "", owner = "climate.pass_b" },
 	{ name = &"cell.has_river",             cpp_name = "cell_has_river",             dtype = U8,  track_prev = false, map_field = "has_river_arr",             prev_field = "", owner = "map_generation" },
+	{ name = &"cell.river_flow",            cpp_name = "cell_river_flow",            dtype = F32, track_prev = false, map_field = "river_flow_arr",            prev_field = "", owner = "map_generation" },
 	# ─── Phase 3a Step 2.1.a（2 条，对应 world.gd 711-712）─────────────────
 	{ name = &"cell.ema_initialized",       cpp_name = "cell_ema_initialized",       dtype = U8,  track_prev = false, map_field = "ema_initialized_arr",       prev_field = "", owner = "climate.pass_a" },
 	{ name = &"cell.temp_season_offset",    cpp_name = "cell_temp_season_offset",    dtype = F32, track_prev = false, map_field = "temp_season_offset_arr",    prev_field = "", owner = "climate.pass_a" },
+	{ name = &"cell.insolation_now",        cpp_name = "cell_insolation_now",        dtype = F32, track_prev = false, map_field = "insolation_now_arr",        prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.insolation_dev",        cpp_name = "cell_insolation_dev",        dtype = F32, track_prev = false, map_field = "insolation_dev_arr",        prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.day_length",            cpp_name = "cell_day_length",            dtype = F32, track_prev = false, map_field = "day_length_arr",            prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.heat_input",            cpp_name = "cell_heat_input",            dtype = F32, track_prev = false, map_field = "heat_input_arr",            prev_field = "", owner = "climate.astronomy" },
+	{ name = &"cell.thermal_energy",        cpp_name = "cell_thermal_energy",        dtype = F32, track_prev = false, map_field = "thermal_energy_arr",        prev_field = "", owner = "climate.pass_a" },
+	{ name = &"cell.snowpack",              cpp_name = "cell_snowpack",              dtype = F32, track_prev = false, map_field = "snowpack_arr",              prev_field = "", owner = "climate.snowpack" },
+	{ name = &"cell.water_balance_30d",     cpp_name = "cell_water_balance_30d",     dtype = F32, track_prev = false, map_field = "water_balance_30d_arr",     prev_field = "", owner = "climate.feedback" },
 	# ─── B3b：植被动力学字段全量下沉 SoA（6 条，4 f32 + 2 i32）─────────────
 	# 消除 stage_b combined pass 的 pack/unpack hot loop（原 ~7ms wall 的 95%）。
 	# 命名严格 1:1 对齐 HexCell 字段名，方便阶段 3 把 _trigger_succession /
@@ -109,6 +134,17 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.soil_moisture",              cpp_name = "cell_soil_moisture",              dtype = F32, track_prev = false, map_field = "soil_moisture_arr",              prev_field = "", owner = "climate.feedback" },
 	{ name = &"cell.vegetation_growth_pressure", cpp_name = "cell_vegetation_growth_pressure", dtype = F32, track_prev = false, map_field = "vegetation_growth_pressure_arr", prev_field = "", owner = "climate.feedback" },
 	{ name = &"cell.temperature_transport_anomaly", cpp_name = "cell_temperature_transport_anomaly", dtype = F32, track_prev = false, map_field = "temperature_transport_anomaly_arr", prev_field = "", owner = "climate.feedback" },
+	{ name = &"cell.vegetation_heat_stress", cpp_name = "cell_vegetation_heat_stress", dtype = F32, track_prev = false, map_field = "vegetation_heat_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_drought_stress", cpp_name = "cell_vegetation_drought_stress", dtype = F32, track_prev = false, map_field = "vegetation_drought_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_cold_stress", cpp_name = "cell_vegetation_cold_stress", dtype = F32, track_prev = false, map_field = "vegetation_cold_stress_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	{ name = &"cell.vegetation_regen_score", cpp_name = "cell_vegetation_regen_score", dtype = F32, track_prev = false, map_field = "vegetation_regen_score_arr", prev_field = "", owner = "climate.vegetation_dynamics" },
+	# ─── Runtime hydrology（生成期拓扑 + 日级动态径流）──────────────────────
+	{ name = &"cell.hydro_parent", cpp_name = "cell_hydro_parent", dtype = I32, track_prev = false, map_field = "hydro_parent_arr", prev_field = "", owner = "map_generation" },
+	{ name = &"cell.river_discharge", cpp_name = "cell_river_discharge", dtype = F32, track_prev = false, map_field = "river_discharge_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.river_discharge_30d", cpp_name = "cell_river_discharge_30d", dtype = F32, track_prev = false, map_field = "river_discharge_30d_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.river_storage", cpp_name = "cell_river_storage", dtype = F32, track_prev = false, map_field = "river_storage_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.groundwater_storage", cpp_name = "cell_groundwater_storage", dtype = F32, track_prev = false, map_field = "groundwater_storage_arr", prev_field = "", owner = "runtime.hydrology" },
+	{ name = &"cell.surface_runoff", cpp_name = "cell_surface_runoff", dtype = F32, track_prev = false, map_field = "surface_runoff_arr", prev_field = "", owner = "runtime.hydrology" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

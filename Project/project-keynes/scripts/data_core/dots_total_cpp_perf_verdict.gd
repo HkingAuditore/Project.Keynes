@@ -30,7 +30,6 @@ const WARN_RATIO_THRESHOLD_6400: float = 0.03    # 9.1
 
 ## 豁免清单：与 final_push 一致——初始化期可能拖长尾的 Job 不计入 SUS_JOB_P95。
 const _SUS_JOB_EXEMPT: Array = [
-	"sea_ice_atlas_upload",   # GPU upload 主线程同步
 	"enum_atlas_upload",      # ≤ 3ms 但仍给 spike 留余量
 ]
 

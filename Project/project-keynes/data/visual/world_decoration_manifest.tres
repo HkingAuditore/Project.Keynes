@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DecorationManifest" format=3 uid="uid://ddec0man0wld0"]
+
+[ext_resource type="Script" path="res://scripts/data/decoration_manifest.gd" id="1"]
+[ext_resource type="Resource" uid="uid://bm32qgpp3q4sx" path="res://data/visual/grass_default.tres" id="2"]
+[ext_resource type="Resource" uid="uid://bbhd4qby8ehg" path="res://data/visual/shrub_default.tres" id="3"]
+[ext_resource type="Resource" uid="uid://cbql5rj71wdq2" path="res://data/visual/tree_default.tres" id="4"]
+[ext_resource type="Resource" uid="uid://dk0cnfr01veg0" path="res://data/visual/conifer_default.tres" id="5"]
+[ext_resource type="Resource" uid="uid://dp4lm0veg0pa0" path="res://data/visual/palm_default.tres" id="6"]
+[ext_resource type="Resource" uid="uid://dc4ct0veg0sa0" path="res://data/visual/cactus_default.tres" id="7"]
+[ext_resource type="Resource" uid="uid://dr3ed0veg0re0" path="res://data/visual/reed_default.tres" id="8"]
+[ext_resource type="Resource" uid="uid://da1pn0veg0fl0" path="res://data/visual/alpine_flower_default.tres" id="9"]
+[ext_resource type="Resource" uid="uid://dr0ck0veg0rk0" path="res://data/visual/rock_default.tres" id="10"]
+[ext_resource type="Resource" uid="uid://dsn0w0veg0sm0" path="res://data/visual/snow_mound_default.tres" id="11"]
+[ext_resource type="Resource" uid="uid://dde4d0veg0ds0" path="res://data/visual/dead_snag_default.tres" id="12"]
+[ext_resource type="Resource" uid="uid://dc10udf0rtr0" path="res://data/visual/cloud_forest_tree_default.tres" id="13"]
+[ext_resource type="Resource" uid="uid://dm0ns00ntr0" path="res://data/visual/monsoon_tree_default.tres" id="14"]
+[ext_resource type="Resource" uid="uid://dp34tb0gtf0" path="res://data/visual/peat_bog_tuft_default.tres" id="15"]
+[ext_resource type="Resource" uid="uid://dm4ngr00tr0" path="res://data/visual/mangrove_root_default.tres" id="16"]
+[ext_resource type="Resource" uid="uid://dtundl1chn0" path="res://data/visual/tundra_lichen_default.tres" id="17"]
+[ext_resource type="Resource" uid="uid://dscr33r0ck0" path="res://data/visual/scree_rock_default.tres" id="18"]
+[ext_resource type="Resource" uid="uid://dfa113n10g0" path="res://data/visual/fallen_log_default.tres" id="19"]
+[ext_resource type="Resource" uid="uid://ds34gr45500" path="res://data/visual/seagrass_default.tres" id="20"]
+[ext_resource type="Resource" uid="uid://dk31pfr0nd0" path="res://data/visual/kelp_frond_default.tres" id="21"]
+[ext_resource type="Resource" uid="uid://dc0ra1dtl00" path="res://data/visual/coral_detail_default.tres" id="22"]
+
+[resource]
+script = ExtResource("1")
+layers = Array[ShrubVisualProfile]([ExtResource("2"), ExtResource("17"), ExtResource("3"), ExtResource("15"), ExtResource("8"), ExtResource("9"), ExtResource("7"), ExtResource("4"), ExtResource("5"), ExtResource("13"), ExtResource("14"), ExtResource("6"), ExtResource("16"), ExtResource("19"), ExtResource("10"), ExtResource("18"), ExtResource("11"), ExtResource("12"), ExtResource("20"), ExtResource("21"), ExtResource("22")])

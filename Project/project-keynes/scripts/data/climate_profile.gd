@@ -17,22 +17,49 @@ extends Resource
 # ══════════════════════════════════════════════════════════════════════
 # [Continent shaping]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("世界生成")
+@export_group("大陆形态")
 
 # Low-frequency noise warp applied to the distance-to-coast field.
 @export var continent_warp_amp: float = 0.15
 
 # Weighting between distance-field (smooth radial) and multi-octave noise
 # when composing the final elevation. Should roughly sum to 1.0.
-@export var dist_field_weight: float = 0.55
-@export var noise_weight: float = 0.45
+# [宏观地形增强 2026-06-19] dist 0.55→0.58 略增大陆主体连贯度；noise 0.45→0.40 降中高频
+# 碎起伏，给低频 macro 让位（让大尺度结构读得出）。
+@export var dist_field_weight: float = 0.58
+@export var noise_weight: float = 0.40
 
 # Ridge boost for mountain-range spines.
-@export var ridge_boost_amp: float = 0.50
+# [macro-relief 2026-06-19] 0.50→0.68：抬高山脉脊线，使大山系更高耸、海拔对比更强 →
+# 配合加强后的 hillshade，宏观山脉/山系在地图上更醒目；同时更多脊线格越过 mountain_line
+# 成为裸岩山地，山系面积更大、更连片。
+# [宏观地形增强 2026-06-19] 0.68→0.80：山脉脊线更高耸，大山系在加强后的 macro 起伏上更醒目。
+# [地貌真实性 2026-06-25] 0.80→0.60：实测(tile_data 0625)陆地约 22% 落在 land_h>0.70 的山地带，
+# 远高于真实地球(几个百分点)，0.80 把过多陆地抬成极高地。回调到 0.60(介于历史 0.50/0.68)收窄
+# 极高地占比，让"高原+丘陵+少量高峰"的山区过渡更自然。⚠ 单值可逆，须按新 CSV 复核高山占比。
+@export var ridge_boost_amp: float = 0.60
 
 # Meso-scale noise weight (between continent and micro detail).
-@export var meso_weight: float = 0.40
+# 注：2026-06-19 早些时候曾把它降到 0.12 想"消除破碎"，但用户反馈上一版（meso=0.40）的大陆
+# 形状（数块大陆 + 点缀岛屿/群岛）才是想要的，降权反而把大陆合并成单块。已回退到 0.40。
+# 真正"看不到河流/宏观地形"的根因是渲染层（河流 SDF 未上传 GPU、hillshade 偏弱），与此无关。
+# [宏观地形增强 2026-06-19] 0.40→0.30：meso(乘 dist_field)是内陆中频"碎起伏"主因(实测大尺度
+# block 内起伏>块间起伏→宏观弱)。温和下调减少内陆破碎、显出大平原；幅度远小于此前失败的 0.12
+# (那会合并大陆)，配合 macro 大增仍保留多块大陆+群岛形状。
+@export var meso_weight: float = 0.30
+
+# [macro-relief 2026-06-19] 低频大尺度起伏权重（~4 周期/全宽）。meso(高频)负责海岸破碎/群岛
+# 不动；macro 叠加大尺度高地/盆地 → 出现"大平原/大高地/大盆地"，并放大汇水盆地 → 长干流+支流。
+# 实测根因：meso=400×高频把大陆切成 ~80 个微流域(最大汇水仅 66 格)，故河短、无宏观地形。
+# 调大=宏观起伏更强(更多大山/大盆，河更长)；过大会在内陆生成大片新内海。0 = 关闭。
+# [宏观地形增强 2026-06-19] 0.18→0.32：大尺度起伏翻近一倍，成为相对 meso 的主导项(占比
+# 0.45→1.07)，直接制造大高原/大盆地/大平原洼地；负值大盆地若低于海平面且≥lake_min 还会自然
+# 成"少而大的湖"(兼顾需求1)。过大(>0.4)会生成过多内海，0.32 为折中。
+@export_range(0.0, 0.5, 0.01) var macro_relief_weight: float = 0.32
 
 # Offshore (sub-sea) terrain amplitude.
+# 注：2026-06-19 回退（曾降到 0.20）。近海隆起正是"点缀岛屿/群岛"的来源，用户想保留，恢复 0.45。
 @export var offshore_amp: float = 0.45
 
 # Edge falloff band: between START and END, elevation fades toward the edge
@@ -69,20 +96,21 @@ extends Resource
 # ══════════════════════════════════════════════════════════════════════
 # [Moisture & precipitation]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("水汽与降水")
 
 # Ocean-adjacent cells receive this additional moisture bonus.
 @export var coastal_moisture_boost: float = 0.20
 
 # Windward upslope boost (orographic rainfall).
-@export var orographic_boost: float = 1.5
+@export var orographic_boost: float = 1.2
 
 # Leeward rain-shadow: if upstream elevation delta ≥ threshold, the cell's
 # moisture is multiplied by factor (0 = completely dry; 1 = no shadow).
-@export var rain_shadow_threshold: float = 0.12
-@export var rain_shadow_factor: float = 0.55
+@export var rain_shadow_threshold: float = 0.13
+@export var rain_shadow_factor: float = 0.50
 
 # How many cells upwind to look back when detecting rain shadow.
-@export var rain_shadow_lookback: int = 2
+@export var rain_shadow_lookback: int = 3
 
 # Legacy global wind vector. DEPRECATED since Phase 6 — MapGenerator now
 # queries WindBelt.wind_at(ny, phase) per cell. Retained for backwards
@@ -93,25 +121,33 @@ extends Resource
 ## wind (HexCell.wind_vector) instead of the latitude-only baseline
 ## wind_field_buffer. This makes weather fronts feel mountains (deflection,
 ## piling, slow-down) without changing the baker. Set false to fall back to
-## the legacy world.sample_wind() + monsoon_offset path for regression. Default true.
+## the legacy world.sample_wind() baseline for regression. Default true.
 @export var weather_advect_use_wind_vector: bool = true
 
 # ══════════════════════════════════════════════════════════════════════
-# [Seasons]
+# [Orbital Daily Climate]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("模拟频率与预算")
+@export_group("轨道相位与日气候")
+@export_subgroup("兼容字段")
 
-# Per-season moisture scaler. Length must be 4 (Spring/Summer/Autumn/Winter).
-@export var seasonal_moisture_scale: Array[float] = [1.05, 1.20, 0.92, 0.78]
+## Legacy compatibility only. Runtime climate no longer reads a four-season
+## moisture table; precipitation/moisture must emerge from native fields.
+@export var seasonal_moisture_scale: Array[float] = [1.0, 1.0, 1.0, 1.0]
 
-# Seasonal temperature amplitude: peak |Δtemp| between summer-mid and
-# winter-mid (mid-latitudes, ny ≈ 0.5 → 0). Mirrors the shader-side
-# `season_temp_amp` uniform (uniforms.gdshaderinc) and hex_renderer.gd
-# export; keep all three in sync.
-# 2026-05-19 Plan-C 调参：0.20 → 0.32。理由：原振幅 0.20 < 雪线带宽 0.26
-# 导致大多数纬度全年困在雪线一侧（要么常年有雪要么常年无雪）。抬到 0.32
-# 之后 temp_year ∈ [0.10, 0.62] 的纬度带能在一年中真正穿过雪线，雪线随
-# 季节南北推移；高纬海域冬季也能进入海冰窗口 [0, 0.10]。
+# Temperature response amplitude used by the insolation chain:
+# temp_delta = insolation_season_gain * insolation_dev * season_temp_amp.
+# This is not an independent season cosine. Tune axial_tilt_deg,
+# insolation_season_gain, day length, and thermal inertia for seasonal shape.
 @export var season_temp_amp: float = 0.32
+# Compatibility residue from the 2026-06-21 pass-A experiment. Runtime pass-A
+# no longer consumes this multiplier; keeping the field avoids breaking older
+# resources that still serialize it.
+@export_range(1.0, 2.5, 0.05) var temp_land_continentality: float = 1.0
+
+# Fallback orbital year length used by resource-only/native paths before a
+# WorldClock is injected. At runtime WorldClock.days_per_year() is authoritative.
+@export_range(1, 3660, 1) var orbital_days_per_year: int = 365
 
 # Master switch for daily-continuous climate refresh. When true, MapGenerator
 # updates each cell's current_state.temperature / moisture / snow_cover every
@@ -121,6 +157,7 @@ extends Resource
 @export var daily_climate_interpolation: bool = true
 
 # ── Season-Refresh periodic driver (2026-05-18) ──────────────────────────
+@export_subgroup("慢变量刷新")
 # 慢变量批量重算的驱动方式。
 #
 # 设计背景：refresh_climate_daily 已经在每天连续更新温度 / 湿度 / 海冰，
@@ -129,7 +166,7 @@ extends Resource
 # 不存在"明确的季节切换瞬间"——但慢变量的批量重算本质上仍需要"周期性"地
 # 进行，否则单纯每帧增量会出现 biome 边界抖动 + 反馈缓冲永远满。
 #
-# 新设计（默认）：SeasonRefreshJob 自驱周期，每 season_refresh_period_ticks
+# 新设计（默认）：SeasonRefreshSystem 自驱周期，每 season_refresh_period_ticks
 # 个真实 SUS tick 启动一次 round（无视游戏速度档）。30 tick @ x1 速度 = 约
 # 30 秒一次 round；@ x20 速度 = 约 1.5 秒一次 round。慢变量演化速率与玩家
 # 在场时间挂钩，而非与游戏世界日数挂钩，避免高速档下慢变量被反复批量推进。
@@ -141,28 +178,34 @@ extends Resource
 #
 # 切换说明：
 #   - legacy_signal=false 时 main.gd 仍然会调用 queue_season_refresh，但
-#     SeasonRefreshJob 不再消费它；新路径靠 period_ticks 自驱。
-#   - legacy_signal=true 时 SeasonRefreshJob 走 has_pending_season_refresh
+#     SeasonRefreshSystem 不再消费它；新路径靠 period_ticks 自驱。
+#   - legacy_signal=true 时 SeasonRefreshSystem 走 has_pending_season_refresh
 #     检查（与旧行为完全一致），period_ticks 字段被忽略。
 @export_range(1, 360, 1) var season_refresh_period_ticks: int = 30
 @export var season_refresh_legacy_signal: bool = false
 
+@export_subgroup("气候与天气频率")
 # Stride (in days) for daily-continuous refresh: 1 = every day, N>1 = every
 # N days (cheap downgrade if profiling shows the per-day pass too costly).
 # Has no effect when daily_climate_interpolation == false.
-# Used by SUS RefreshClimateDailyJob via StridePolicy.
+# Used by ClimateDailySystem via StridePolicy.
 #
-# 2026-05-18：默认从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
-# 玩家完全无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
-# 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。如需严格回归测试可在 Inspector
-# 中改回 1。
-@export_range(1, 8, 1) var daily_climate_refresh_stride: int = 2
+# 2026-05-18：默认曾从 1 调到 2。理由：温度/湿度/海冰每天变化 < 1%，2 天间隔
+# 玩家"理论上"无感；refresh_climate_daily 在 hot path 占用从 ran=24/30 → ran=12/30，
+# 平均 0.74 → 0.37ms/tick。整体 p95 −0.5ms。
+# 2026-05-25：默认改回 1。原因：玩家肉眼能明显感觉到海冰/雪线/水温视觉相位
+# 滞后（shader 派生海冰直接采样 cell.temperature，stride=2 导致 +1 仿真日延迟，
+# 叠加 dynamic_visual_atlas_upload_stride=2 后总延迟达 ~3 仿真日）。性能成本：
+# refresh_climate_daily ran 12/30 → 24/30，p95 +0.5ms，可接受。如需严格性能
+# 回归对照可在 Inspector / 具体 profile (.tres) 中改回 2。
+@export_range(1, 8, 1) var daily_climate_refresh_stride: int = 1
 
-# Stride (in days) for the sea-ice atlas GPU upload (SeaIceAtlasUploadJob).
-# Daily Sim SoA Refactor 阶段 1：把原先内嵌在 refresh_climate_daily 末尾、每日 ~105ms
-# 的 GPU 上传摘出，单独走这个 stride。海冰每日变化 < 5%，stride=2 玩家不可察觉延迟。
-# 1 = 每日上传（debug / regression）；2 = 每 2 日（推荐默认，吞吐 -50%）；
-# 4+ = 极慢 GPU / 远程显卡 fallback。
+@export var sea_ice_independent_system_enabled: bool = true
+@export_range(1, 8, 1) var sea_ice_daily_stride: int = 1
+
+# DEPRECATED：旧 sea_ice_atlas_upload job/system 已退役，主海冰视觉由
+# dyn_atlas_smooth.A / shader 派生。本字段仅为旧 .tres 资源兼容保留，
+# 不再驱动任何生产调度。
 @export_range(1, 8, 1) var sea_ice_atlas_upload_stride: int = 2
 
 # Fast-tick perf opt (A): stride for the weather / feedback chain in
@@ -173,11 +216,26 @@ extends Resource
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
 @export_range(1, 8, 1) var weather_refresh_stride: int = 1
+# When true, main.gd may retune weather_refresh_stride on speed changes
+# (x1=1, x5=4, x20=8). Disable this when the profile should be the single
+# source of truth for weather cadence.
+@export var weather_refresh_auto_stride_by_speed: bool = true
 @export_range(1, 30, 1) var weather_albedo_stride: int = 10
 # 2026-05-19 vegetation-survival-rebalance v2：植被 pass 频率从 10 → 5，
 # 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
 @export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
+
+@export_subgroup("视觉上传频率")
+# Enum atlas upload updates terrain/biome/cover/vegetation lookup textures after
+# simulation changes. It still only runs when dirty; this stride controls how
+# often a pending dirty upload is allowed to consume one axis.
+@export_range(1, 8, 1) var enum_atlas_upload_stride: int = 2
+
+# Dynamic visual atlas upload updates dynamic_cell/ecology/smooth/ice atlases.
+# Default 1 keeps temperature/snow/ice visuals aligned with the daily climate
+# pass. Raise to 2+ only for profiling-driven GPU/main-thread savings.
+@export_range(1, 8, 1) var dynamic_visual_atlas_upload_stride: int = 1
 
 # ─── DataCore（已删除字段）─────────────────────────────────────────
 # use_data_core / use_data_core_weather / use_data_core_climate 已在
@@ -190,16 +248,58 @@ const NATIVE_MODE_OFF: int = 0
 const NATIVE_MODE_SHADOW: int = 1
 const NATIVE_MODE_ACTIVE: int = 2
 
+@export_group("原生管线")
+
 # Native top-level migration modes. OFF preserves the current pass-by-pass
 # path, SHADOW runs native diagnostics beside legacy paths, ACTIVE is allowed
 # to replace the corresponding GDScript orchestration when the native probe
 # reports readiness.
-@export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_OFF
+# dots-total-cpp（2026-06-18）：地图生成 C++ 化已通过逐字段 A/B parity（base +
+# post_base 全字段 mismatch=0），默认切到 ACTIVE，generate() 走 native 生成路径。
+@export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_ACTIVE
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
 @export var native_environment_runtime_enabled: bool = false
+@export_range(1, 8, 1) var native_daily_sim_stride: int = 1
+@export_range(1, 8, 1) var native_environment_runtime_stride: int = 1
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
+# Native daily round 跨 tick 错峰执行（2026-06）。默认 false：整轮在同一个
+# day_changed tick 内原子跑完（per-tick 峰值 ~8ms，下游永远读到完整数据）。
+# 设 true：让一轮的 slice batch 摊到多个 tick，每 tick 只跑
+# native_daily_max_slices_per_tick 个 batch（默认 1，即"A→B→C→A…"轮转），
+# 把 per-tick 峰值压到 ~2-3ms，给其它系统让出帧预算。代价：一个仿真日要跨
+# 几个 tick 才落地（仿真推进按比例变慢），且渲染/retained 下游在 round 跑一半
+# 时会短暂读到中间态 temp（anomaly 尚未合成回，偏差 ≤±0.16，约 1-2 tick）。
+# 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
+@export var native_daily_spread_across_ticks: bool = false
+@export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
+# 错峰执行的"让预算"门禁（2026-06）。spread 模式下 native_daily_sim 不再 must_run，
+# 而是遵守 frame_budget：当同 tick 更早跑的慢变量重算器（如 season_refresh 的
+# 11-stage round，priority 50 先跑且单 stage ~3ms 就吃满 2ms 预算）已耗尽预算时，
+# native 本 tick 让出（不再无视预算硬叠加 → 消除 season+native 的 ~5.8ms 撞峰）。
+# starve_ticks 是防饿死保险：连续被预算挤掉这么多 tick 后强制跑一个 batch，确保
+# 在极端持续抢占下 native 仍能推进。默认 16（> season round 的 ~11 stage，所以一个
+# season round 期间 native 完整让位、不撞峰；round 结束后立即恢复每 tick 推进）。
+@export_range(0, 64, 1) var native_daily_spread_starve_ticks: int = 16
 @export var native_shadow_diff_enabled: bool = true
+# Controlled handoff gate for the climate round state owner. When false, reports
+# stop at native_ready; when true, the native daily snapshot may report
+# native_active while Godot/MapData boundary intents still remain explicit.
+@export var native_climate_round_active_owner_enabled: bool = false
+# Controlled handoff gate for weather transaction authority. When false,
+# weather reports stop at native_ready after visible publish has been proven;
+# when true, native daily may report native_active while Godot texture/front
+# presentation remains an explicit visual boundary.
+@export var native_weather_transaction_active_owner_enabled: bool = false
+# Controlled handoff gate for ocean physical lifecycle authority. Native owns
+# round/stage lifecycle first; Godot visual raster/upload remains boundary.
+@export var native_ocean_physical_active_owner_enabled: bool = false
+# Controlled handoff gate for season refresh simulation authority. Native/B+
+# owns cadence and dirty simulation intents; atlas/detail upload remains boundary.
+@export var native_season_refresh_active_owner_enabled: bool = false
+# Final retirement gate for legacy daily production/fallback paths. Keep false
+# until SHADOW/A-B/ACTIVE soak proves graph coverage complete.
+@export var native_daily_legacy_daily_production_retired: bool = false
 
 # ─── ViewAdapter / DCSystemScheduler（已删除字段）─────────────────────
 # use_world_view_adapter / use_dc_system_scheduler 已在 dots-flag-prune-pr1
@@ -212,6 +312,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Native-normal simulation budget profile. Strict 1ms can still be restored per
 # resource, but the default favors completing lightweight DOTS/native transactions
 # in the same fast tick under a 2ms envelope.
+@export_group("每帧预算")
 @export var sim_strict_budget_enabled: bool = false
 @export_range(0.25, 1600.0, 0.05) var sim_frame_budget_ms: float = 2.0
 @export_range(0.10, 800.0, 0.05) var sim_slice_budget_ms: float = 0.75
@@ -221,6 +322,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 ## 缩短到约 8 仿真日（stride=2 × 4 phase）。tick 内峰值多花约 1ms，但 stride 之间不付代价。
 @export_range(0.10, 800.0, 0.05) var sim_upload_slice_budget_ms: float = 1.5
 @export_range(0.25, 1600.0, 0.05) var sim_budget_warn_ms: float = 2.0
+
+@export_group("调度错峰")
+@export var sim_stagger_enabled: bool = true
+@export_range(1, 16, 1) var sim_stagger_bucket_stride: int = 8
+@export_range(1, 8, 1) var sim_stagger_climate_stride: int = 2
+@export_range(0, 15, 1) var sim_stagger_climate_phase: int = 1
+@export_range(0, 15, 1) var sim_stagger_ocean_phase: int = 0
+@export_range(0, 15, 1) var sim_stagger_native_environment_phase: int = 0
+@export_range(0, 15, 1) var sim_stagger_dynamic_visual_phase: int = 2
+@export_range(0, 15, 1) var sim_stagger_weather_phase: int = 4
+@export_range(0, 15, 1) var sim_stagger_enum_atlas_phase: int = 4
+@export_range(0, 15, 1) var sim_stagger_sea_ice_phase: int = 6
 
 # ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ flags（已删除）─
 # 以下 10 个 flag 在 dots-flag-prune-pr1（2026-05-22）一并删除，调用点折叠为
@@ -348,10 +461,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # warning sentinel 状态，本轮统一清理。请使用下方 ocean_currents_period_ticks /
 # ocean_currents_slice_count 配置 ocean current 切片节奏。
 
-# SUS OceanCurrentsJob — period (in days) of one full ocean current rebake.
-# Default 240 days keeps currents on a seasonal/slow layer. Lower → fresher
-# currents at the cost of more frequent slices.
-@export_range(7, 360, 1) var ocean_currents_period_ticks: int = 240
+# SUS OceanCurrentsJob — period (in days) of one full ocean current solve.
+# Default 1 keeps ocean stream-function coupled to the now-daily wind/SLP field;
+# pixel atlas rebake is still season-gated, so this affects simulation state, not GPU upload cadence.
+@export_group("洋流频率")
+@export_range(1, 360, 1) var ocean_currents_period_ticks: int = 1
 
 # SUS OceanCurrentsJob — number of slices each round is split into. Each
 # slice processes ⌈total_pixels / slice_count⌉ pixels. Default 120 slices
@@ -381,24 +495,57 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("地表与生态")
+@export_group("水文")
 
-# Top (1 - percentile) flux cells become rivers.
-@export var river_flow_percentile: float = 0.78
+# Top (1 - percentile) flux cells become river sources; native generation then
+# carves each accepted source down its downhill path to water.
+# [river-rework 2026-06-19] ⚠ 已弃用：分位法只能标出 land 的固定比例(0.72→占全图 10% 成网)，
+# 无论怎么调都在"填满大陆的网"和"贴海岸短段"之间二选一。河道选择已改用下方
+# river_channel_init_cells(汇水面积阈值)。此值保留仅为兼容，不再影响河道。
+@export var river_flow_percentile: float = 0.72
+
+# [river-rework 2026-06-19] 河道起始阈值：上游汇水格数 ≥ 此值才成河（地貌学 channel-initiation）。
+# 天然生成稀疏树状河网，干流(汇水多)宽、支流(汇水少)细。实测(150×100 地图)：
+#   12→~480 格(偏密)  16→~300 格(适中)  20→~200 格(稀疏)  24→~140 格(很稀疏)
+# 调小=河更多更密；调大=河更少更稀。配合 macro_relief 放大流域后，同阈值河会更长更分级。
+@export var river_channel_init_cells: int = 16
+@export_range(1, 64, 1) var river_headwater_init_cells: int = 6
+@export_range(0.0, 1.0, 0.01) var river_headwater_min_land_h: float = 0.30
+
+# Minimum accepted land cells in a rendered river path. Shorter runoff paths
+# still contribute flow, but are not drawn as standalone streams.
+# terrain-overhaul: 18→8 让更多中短河流成形（配合统一水汽场后流量分布更分散）。
+# ⚠ 2026-06-19: 8→5。降低最短河长门槛，让中短支流也能绘出，水网更密。
+@export var hydro_river_min_length: int = 5
+
+# Priority-Flood depression lakes: keep only basins with enough area/depth so
+# noise pits become drained land instead of one-cell ponds.
+# ⚠ 2026-06-19: 18→8。降低成湖最小面积，让中小型内陆湖泊得以保留(此前几乎无 LAKE)。
+@export var hydro_lake_min_cells: int = 8
+@export var hydro_lake_min_depth: float = 0.018
+@export var hydro_lake_min_volume: float = 0.22
 
 # Max iterations for depression / pit filling.
 @export var pit_fill_max_iters: int = 100
 
-# Noise frequency + threshold for placing lake seeds.
-@export var lake_seed_freq: float = 0.18
-@export var lake_seed_threshold: float = 0.55
+# Low-frequency lake seed noise creates fewer, larger inland basins instead of
+# many one-cell ponds on large maps.
+# [湖泊少而大 2026-06-19] freq 0.07→0.05：更低频→高噪声区更大更连续→单个湖盆更大(≥lake_min
+# 才会被 5b 回填逻辑保留为湖，否则填平)；threshold 0.62→0.60：让每个种子区足够大成块。
+@export var lake_seed_freq: float = 0.05
+@export var lake_seed_threshold: float = 0.60
 
 # Lake cell elevation depression and min-interior distance from coast.
-@export var lake_seed_depth: float = 0.04
+# [湖泊少而大 2026-06-19] 0.04→0.10：种子下沉更深，保留下来的湖盆更明确成"湖"(深蓝、不被
+# 误判为浅滩 COAST)，视觉上是真正的内陆湖而非低洼浅水。
+@export var lake_seed_depth: float = 0.10
 @export var lake_seed_min_interior: float = 0.12
 
 # ══════════════════════════════════════════════════════════════════════
 # [Vegetation → climate feedback (moisture donor)]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("植被水汽反馈")
 # Per-terrain moisture donation (positive = humid, negative = dessicating).
 # STEPPE is deliberately absent from _vegetation_donor_amount's match
 # (treated as neutral 0.0).
@@ -433,6 +580,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Ecosystem vitality & succession]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("生态活力与演替")
 # Per-day vitality change rate; low/high thresholds; and number of
 # consecutive days required to trigger succession up/down. Values mirror
 # the original Phase 8 / Milestone 4 constants in map_generator.gd.
@@ -440,7 +588,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 2026-05-19 vegetation-survival-rebalance v2：rate 从 0.004 → 0.015
 # （≈ 67 天可从 0 到 1），让暴雨/极旱在数周内即可看到 vitality 漂移。
 # 死区同步从 (0.4, 0.6) 收窄到 (0.48, 0.52)，避免大量 cell 永远卡在 dv=0。
-@export var vitality_change_rate: float = 0.015         # per day, at most ±0.015 (~67 days from 0 to 1)
+@export var vitality_change_rate: float = 0.010         # per day, at most ±0.010 (~100 days from 0 to 1)
 # 2026-05-18：演替门槛大幅放宽，让暴雨/极旱/连续不利气候有机会在 1.5 个月内触发
 # 可见的植被退化/升级。原 (0.15 / 0.90 / 180 / 360) 几乎需要 9 个月不间断的恶劣
 # 气候才能触发一次演替，玩家完全感受不到天气对地块的中长期影响。
@@ -450,9 +598,19 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var vitality_high_threshold: float = 0.75       # above → upgrade streak
 @export var succession_degrade_days: int = 45           # ~1.5 个月的低 vitality
 @export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
+@export_range(0.0, 1.0, 0.01) var vegetation_degrade_reset_target: float = 0.75
+@export_range(0.0, 1.0, 0.01) var vegetation_low_vitality_damping_threshold: float = 0.40
+@export_range(0, 365, 1) var vegetation_succession_cooldown_days: int = 30
 # Asymmetric drift: negative drift (compat ≤ 0.4) is multiplied by this harshness.
 # Positive drift (compat ≥ 0.6) stays at 1.0. Compat ∈ (0.4, 0.6) → dead zone (dv = 0).
-@export var compat_harshness: float = 0.8
+@export var compat_harshness: float = 0.35
+@export_range(0.0, 1.0, 0.05) var vegetation_weather_penalty_scale: float = 0.25
+@export var plant_water_balance_weight: float = 0.35
+@export var plant_soil_buffer_weight: float = 0.30
+@export var plant_drought_penalty: float = 0.25
+@export var succession_min_compat_gain: float = 0.06
+@export var vegetation_stress_enabled: bool = true
+@export_range(1, 365, 1) var vegetation_stress_memory_days: int = 30
 
 # Long-term base_moisture drift from eco_score (Phase 8).
 @export var eco_drift_amp: float = 0.012                # max ±0.012 / year
@@ -461,6 +619,8 @@ const NATIVE_MODE_ACTIVE: int = 2
 # ══════════════════════════════════════════════════════════════════════
 # [Emergent climate coupling — Phase E]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("气候与天气模型")
+@export_group("涌现气候耦合")
 # Master switches for the "Emergent Climate Coupling" rework. All four
 # default to true (new behavior). Flipping any one to false routes the
 # corresponding pass back to the legacy hard-coded path, so old saves and
@@ -508,30 +668,78 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Sub-knobs for the feedback pass (consumed by _apply_weather_to_map_feedback_pass
 # and refresh_seasonal). All values intentionally small to keep "weather → map"
 # coupling on a slow timescale.
-@export var weather_to_soil_gain: float = 0.008          # daily ↑ on soil_moisture per unit precip
-@export var weather_to_vegetation_gain: float = 0.005    # daily ↑ on growth_pressure per unit precip
+@export var weather_to_soil_gain: float = 0.014          # daily ↑ on soil_moisture per unit precip
+@export var weather_to_vegetation_gain: float = 0.012    # daily ↑ on growth_pressure per unit precip
+# weather → base_moisture 直接反馈(降水抬升/干旱压低局地气候湿度)。代码保留(map_generator.gd +
+# world_ext.cpp 三镜像)，默认 0 关闭 —— 2026-06-21 部分回滚：与 A(vapor 去锚定)一同撤下，先单独
+# 验证 C(风场 synoptic)对流动性的贡献，避免反馈耦合干扰分离实验。需要时设 >0 重新启用。
+@export var weather_to_base_moisture_gain: float = 0.0
 @export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
+# Runtime moisture remains anchored by the slow generated background, but
+# Pass-A should not overwrite weather/hydrology signals back to base every day.
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_base_relax_rate: float = 0.24
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_weather_vapor_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_precip_weight: float = 0.20
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_soil_weight: float = 0.15
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_water_balance_weight: float = 0.08
+
 # Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
+@export_group("海冰")
 # 2026-05-19 Plan-C 三次调参（用户报告"南北极同时白 + 不化"）：
 # 现象：截图里两极同时大量永久冰盖，夏季不消退。
 # 进一步诊断：bootstrap 给两极满冰；运行时 _insol_dev 在两极 mean ≈ 0.05~0.10
 # 不会触发 1e-4 兜底，理论上夏至 temp ≈ 0.48 应该化冰，但用户单次 sea_ice pass
 # 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
 # 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
-# 修复：freeze 与 melt **对称**（1.50:1.50），让夏季的高温 cell 有足够融化速率。
-# 物理上海冰生消速率确实接近（极地冬季冻 0.5 米/月，夏季融 0.5 米/月）。
-@export var sea_ice_freeze_rate: float = 1.50            # k_freeze per "degree" below T_form
-@export var sea_ice_melt_rate: float = 1.50              # k_melt per "degree" above T_melt — 与 freeze 对称
-@export var sea_ice_terrain_threshold: float = 0.25      # frac at which terrain flips to SEA_ICE
-@export var sea_ice_terrain_hysteresis: float = 0.12     # flip back when frac < threshold - hyst
-@export var sea_ice_neighbor_contagion: float = 0.35     # extra k_freeze if any neighbor frac ≥ 0.6
+# 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
+# [海冰冻融重标定 2026-06-28] 实测(CSV)冷水最暗桶 mean_ice 仅 0.49、全盆地在 0↔0.98 双稳跳变：
+# 旧 freeze_rate(0.40) << melt_rate(1.45) 且滞回带太窄(form0.06~melt0.11)→冻结太慢、夏冬不对称致抖动、
+# 极地不饱和。抬高 freeze、降低 melt 不对称，并下方拉宽滞回带(form 0.14 / melt 0.22)，
+# 目标"极地核心常年饱和(>0.9)+海冰边缘季节进退"，而非整盆地全冻全融。起步值，待 dt>1 探针迭代。
+@export var sea_ice_freeze_rate: float = 1.0             # k_freeze per "degree" below T_form（0.40→1.0：堆冰至阈值 ~60d→~10d）
+@export var sea_ice_melt_rate: float = 0.95              # k_melt per "degree" above T_melt（1.45→0.95：削弱融化不对称）
+@export var sea_ice_terrain_threshold: float = 0.72      # frac at which terrain flips to SEA_ICE
+@export var sea_ice_terrain_hysteresis: float = 0.18     # flip back when frac < threshold - hyst
+@export var sea_ice_neighbor_contagion: float = 0.035    # extra k_freeze if any neighbor frac >= 0.6
+@export var sea_ice_solar_gate_enabled: bool = true      # high current insolation blocks tropical ice growth
+@export var sea_ice_freeze_insol_low: float = 0.22       # freeze gate is fully open below this insolation
+@export var sea_ice_freeze_insol_high: float = 0.45      # freeze gate is fully closed above this insolation
+@export var sea_ice_solar_melt_start: float = 0.28       # current insolation above this adds melt pressure
+@export var sea_ice_solar_melt_gain: float = 0.90        # [2026-06-28] extra melt per insol unit above start（1.35→0.90：极昼太阳融化更温和，保极地核心）
+@export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.070
+@export_range(0.0, 0.20, 0.005) var sea_ice_edge_mix_rate: float = 0.035
+# 2026-06-27 CSV 复核显示厚冰在本半球夏季仍被日照 melt shielding 保护过强。
+# 这里提高厚冰最小日照暴露，让极昼可稳定消融边缘/季节性厚冰，但仍保留永久极地核心。
+@export_range(0.0, 0.50, 0.005) var sea_ice_min_thick_ice_solar_exposure: float = 0.32
 
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
+@export_group("局地气候耦合")
 @export var coastal_heat_leak_winter_boost: float = 1.5
+# [climate-zone-fix P2] 沿海海洋性调温（让温带海洋性 Cfb 涌现）。
+# pass_a 对陆地 cell 按"距海指数衰减"的 maritime 因子缩放 season_offset，缩小沿海年较差
+# (冬暖夏凉)：season_offset *= (1 - maritime_season_damp * maritime_factor[i])，其中
+#   maritime_factor[i] = exp(-dist_ocean_cells[i] / maritime_decay_cells) ∈ (0,1]，海岸≈1、内陆→0。
+# maritime_season_damp = 0 → 关闭(退回纯纬度大陆性，与历史逐位一致)。
+# 该机制独立于 legacy 标量 temp_land_continentality（后者仍被 pass_a 忽略，故
+# native_pass_a_legacy_season_offset_test 不变）。同源接线：sync run_climate_pass_a /
+# run_climate_pass_a_thread / async _async_pass_a_kernel_pure 三路共用同一 maritime_factor 数组。
+# [2026-06-28夜] 维持 0.45：headless A/B(tmp_maritime_eval) 证实温度侧已饱和——damp 0.45 已使
+#   ~48 个中纬沿海格达「凉夏(Twarm<0.60)+低年较差(<0.26)」，再加到 0.55 仅 +1 格、沿海年较差
+#   只再降 5.8%。Cfb 计数的真正瓶颈是「降水型」：这 ~48 格里只有 9 格同时是全年均匀降水
+#   (0.40<swet<0.62)，其余为夏旱(地中海)或夏雨(季风)。扩 Cfb 应走 P3 降水均匀化(冬雨)标定，非加大阻尼。
+@export_range(0.0, 0.9, 0.01) var maritime_season_damp: float = 0.45
+@export_range(1.0, 12.0, 0.5) var maritime_decay_cells: float = 4.0
 @export var snow_albedo_cooling: float = 0.04            # extra cooling per unit snow_cover
 @export var vegetation_cooling: float = 0.025            # extra cooling per unit foliage cover
+# climate-loop-closure Phase 4.1：海冰反照率→温度反馈。Pass B 对水域 cell 按
+# sea_ice_fraction 施加降温 d_temp = -sea_ice_albedo_cooling * sea_ice_frac，闭合
+# "更多海冰→更冷→更多海冰"的温和正反馈(此前海冰是单向温度→冰，缺反照率回写)。
+# Pass B 在海冰 pass 之前跑，读到的是前一日 sea_ice_frac(1 日滞后，稳定)。2026-06-27
+# CSV 显示 0.03 仍让厚冰水域春季锁冷，海冰峰值相对日照低谷滞后 2-3 个月；
+# 默认降到 0.01，仅保留弱反馈，避免把季节性边缘冰拖到春末/夏初。设 0 关闭(A/B 对照)。
+@export_range(0.0, 0.3, 0.005) var sea_ice_albedo_cooling: float = 0.01
 @export var evaporation_gain: float = 0.06               # moisture gain per warm water-neighbor
 @export var landform_diurnal_amp: float = 0.015          # valley/basin diurnal amplification
 
@@ -561,37 +769,161 @@ const NATIVE_MODE_ACTIVE: int = 2
 # vapor/cloud/precip/instability fields and derives weather type directly from
 # local climate, terrain, wind and ocean signals. Legacy fronts remain only as a
 # visual/compatibility summary.
+@export_group("天气场求解")
 @export var weather_field_enabled: bool = true
-@export_range(0, 1, 1) var weather_field_advect_steps: int = 1
-@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.08
-@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.55
-@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.35
-@export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.35
-@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.25
-@export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 4
-@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.40
+# 半真实大气调参（2026-06-19）：把"逐格稳态场"调成"随风平流的动态大气"。
+# advect_steps 上限 2→4、默认 3→4(2026-06-21 让天气流动)：同日上风采样更远(每 tick 最多 4 格)，
+# 配合 vapor base_m 回归下调，让远方水汽随风平流更深入内陆 → 移动云带、打破永雨永旱。
+@export_range(0, 8, 1) var weather_field_advect_steps: int = 8  # 2026-06-27: 6→8，强化湿团/云水随风过境，压固定雨核
+@export_range(0.0, 0.5, 0.01) var weather_field_diffusion: float = 0.025
+# condensation_gain：cloud_source 主项(condense_gate×本系数)。脚本默认 0.42 经 field_solver 云合成 ~1.5×
+# 放大(cloud_water 自反馈 1.26× + cloud=source*0.62+water*0.70 双重计数)→ cloud 稳态≈0.72(满屏云)。
+# 运行时 earth_like.tres 覆盖为 0.30 降满屏云(与永雨同源，连带压降水)。2026-06-21。
+@export_range(0.0, 2.0, 0.01) var weather_condensation_gain: float = 0.42
+@export_range(0.0, 1.0, 0.01) var weather_precip_decay: float = 0.85
+# carryover_max 0.02→0.08：让雨带跨日/跨格随风延续（与 weather_field_solver_test 已验证值对齐）。
+@export_range(0.0, 1.0, 0.01) var weather_precip_carryover_max: float = 0.08
+# vapor_precip_sink 0.70→0.85(2026-06-20 阶段2打破水汽稳态)：下雨更快耗尽本地水汽 → 形成"雨→变干→
+# 再积累"的松弛循环，配合 transport_gain 下调一起消除永雨永旱(precip 普遍 >阈值致 66% 格子持续降水)。
+@export_range(0.0, 1.0, 0.01) var weather_vapor_precip_sink: float = 0.85
+# precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
+# 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
+@export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.58
+# 雨云化(2026-06-22):把降水从"静力+背景主导"转为"动力触发主导",消除弥漫弱雨/原地永雨,让降水集中成雨核并随
+# 辐合/锋面/对流系统移动(生成-运动-消减)。两参数经 weather_system→knobs 进 C++ run_climate_pass_a(不重编)。
+# precip_base_frac:autoconversion 背景成雨比例。原0.50→零动力区也有8%背景雨→海62.8%弥漫弱雨。降0.12让无动力
+#   区转晴、降水只在移动天气系统处爆发。注:陆地热力对流雨(THERMAL_CONV_PRECIP)旁路本项,内陆对流雨保留。
+@export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.08
+# cloud_reevap:干空气云水再蒸发率。2026-06-27 CSV 显示 cloud_water 几乎全图 >0.02；
+#   提到 0.38 并配合更低 clear_cap/marine_scour，让静稳非降水格清云更快。
+@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.38
+# cloud_inertia 是 cloud 视觉量 EMA 的跟手系数。0.74 比旧 0.42 更快贴近消退后的 cloud_water，
+# 避免 p95 run length 贴满整段记录，同时仍保留时间连续性。
+@export_range(0.05, 1.0, 0.01) var weather_field_cloud_inertia: float = 0.74
+@export_range(0.0, 1.0, 0.01) var weather_vapor_relax_rate: float = 0.08
+@export_range(0.0, 1.0, 0.01) var weather_orographic_lift_cap: float = 0.35
+@export_range(0.0, 1.0, 0.01) var weather_wet_terrain_precip_damping: float = 0.60
+@export_range(0.0, 1.0, 0.01) var weather_lake_precip_damping: float = 0.65
+@export_range(0.0, 1.0, 0.01) var weather_lake_evap_scale: float = 0.85  # Stage14d 0.35→0.85 湖面蒸发接近海面→湖区+下风有水汽可成雨(原0.35过低致湖泊降水不明显)
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.16
+@export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.45  # 收尾标定: 0.32→0.45 进一步少压缩暴雨峰→恢复方案③后偏低的暴雨(只放大已下大雨的格,不增降雨频率)
+@export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
+@export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.22
+@export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.18
+@export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 2
+@export var weather_cold_precip_as_blizzard: bool = true
+@export_range(0.0, 0.12, 0.005) var weather_snow_classification_margin: float = 0.03
+# ocean_evap_gain 0.20→0.55：海洋成为强水汽源，喂给上风平流，让水汽能被搬到内陆。
+# 运行时 earth_like.tres 覆盖为 0.45：暖洋面 vapor 偏高致永雨(36%)，轻降洋面蒸发压永雨；只小降以免削
+# 弱内陆水汽供给加重高纬永旱(13%)。2026-06-21。
+@export_range(0.0, 2.0, 0.01) var weather_ocean_evap_gain: float = 0.55
+# land_evapotranspiration_gain 0.85→1.6（2026-06-22 开源增内陆本地水汽）：修复陆地整体偏干
+# (moisture 中位0.33/河边0.32,几乎无高湿陆地)+降水单一成因。陆地蒸散源~翻倍→vapor↑→锋面/辐合/
+# 对流各成因降水↑→moisture↑→高湿陆地出现。@export 可在编辑器微调(0-2.0),不足可继续上调。
+@export_range(0.0, 2.0, 0.01) var weather_land_evapotranspiration_gain: float = 1.6
+# precip_rh_threshold：0.60→0.70(2026-06-20 物理层根治)。原 0.60 过低——蒸发充足致 RH 普遍越阈、
+# condense_gate 恒高 → cloud/precip 整体偏高(连不下雨的 CLEAR 都凝≈0.6 云)、全图无真正晴空，连带
+# 满屏云/固定降水/热浪旱灾消失。提阈让凝结只在真正高湿(RH>0.70)发生，中湿区转晴、拉开干湿对比。
+@export_range(0.40, 0.95, 0.01) var weather_precip_rh_threshold: float = 0.70
+# ocean_precip_suppression 0.85→0.95：海面原始降水近乎处处偏高(近饱和)，本系数把无动力强迫的
+# 静洋面压到降水阈值以下→只剩 convergence(辐合)/frontogenesis(锋生)/暖流异常 的「空间强迫带」成雨团，
+# 其余洋面转晴(雨团之间的晴海)。释放门控见 field_solver.gd 的 ocean_drive；越高雨团越紧、晴海越多。
+# 0.95→0.60 (climate-realism Stage 0, 2026-06-23)：实测全球降水 99% 落陆地、海洋仅 1%(地球≈陆22/海78)。
+# 海洋只当水汽源、几乎不下雨。降低抑制让海上 ITCZ/辐合带恢复降水；空间结构由 Stage 1 omega 环流项提供
+# (ITCZ 上升下雨、副热带下沉转晴)，故可放心降低而不会回到"满屏弱雨"。
+# 0.60→0.45 (Stage 6b, 2026-06-23)：放电(Stage6)已自限海上过湿，可进一步放开让海面有足够降水形成
+# 充放电系统(修"海上不生成雨团"；实测 Stage6 后 ocean/land onset 比掉到 0.04)。
+@export_range(0.0, 1.0, 0.01) var weather_ocean_precip_suppression: float = 0.45
+# frontogenesis_gain 0.42→0.70 (climate-realism Stage 0, 2026-06-23)：增强锋生降水，让中纬斜压带出现
+# 会移动、会消散的温带过境雨团(修"只有单一 ITCZ 雨带摆动")，并把降水送到冷区触发降雪。
+@export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.70
+# ── [climate-zone-fix P3] 降水季节性多样化旋钮 ──────────────────────────────
+# 导出原 C++-only/constexpr 降水权衡项，让"雨热不同期/全年均匀"气候态可成形(配合 P2 的 Cfb
+# 拿到全年均匀降水)。经 weather_system→knobs 同时喂 C++ 主路径与 field_solver 镜像(SAME_SOURCE)。
+# 这些是首轮保守标定起步值(C++ 缺 key 默认仍为历史值→裸 dict 测试不变)；需用户加速录 CSV 多轮微调。
+# thermal_conv_precip：陆地热力对流(大陆夏季雷暴)成雨权重。历史 0.30；0.24 削弱暖季温度锚定对流主导。
+@export_range(0.0, 1.0, 0.01) var weather_field_thermal_conv_precip: float = 0.24
+# stratiform_gain：层状降水增益(补对流暖门挡死的冷/高/水区降水：地形/锋面/海面层云)。历史 1.0；1.15 抬冷季层状。
+@export_range(0.0, 3.0, 0.01) var weather_field_stratiform_gain: float = 1.15
+# omega_ascent_gain：ITCZ/风暴轴上升带成雨增益(原 C++ constexpr 0.40)。0.34 弱化静止 ITCZ 雨带锚定→冷季锋面相对增强。
+@export_range(0.0, 1.5, 0.01) var weather_field_omega_ascent_gain: float = 0.34
+# cool_season_vapor_floor：冷季蒸发地板 temp_evap=max(floor,smoothstep(0.10,0.78,T))。0=关闭(原行为)。
+#   冷季低温下 temp_evap≈0 致无水汽供给→冷季锋面/层状无雨；给地板让冷季有基础水汽供冷季降水/降雪(补冬雨)。
+@export_range(0.0, 0.6, 0.01) var weather_cool_season_vapor_floor: float = 0.10
+@export_range(0.0, 1.0, 0.01) var weather_rain_shadow_drying: float = 0.35
+# vapor_transport_gain 0.92→0.75(2026-06-20 阶段2打破水汽稳态)：原 0.92 让 vapor 被平流摊平锁成近
+# 稳态(干湿区固定)→永雨永旱。下调让本地蒸发-降水收支更主导，雨区耗水汽后能转干、干区能重新积累。
+@export_range(0.0, 1.0, 0.01) var weather_vapor_transport_gain: float = 0.75
 @export_range(1, 12, 1) var weather_component_summary_limit: int = 12
-@export_range(100, 2400, 50) var weather_field_slice_cells: int = 500
+@export_range(100, 6400, 50) var weather_field_slice_cells: int = 2400
+# 天气类型过渡状态机（prev_type→target_type 按 alpha 0→1）。两个作用：
+#   1) 视觉淡入：当前无 shader/baker 采样 weather_transition_alpha，淡入不会被渲染出来；
+#   2) ★离散 type 稳定化：连续 ⌈1/rate⌉ tick 维持同一新类型才真正切换 weather_type，吸收
+#      阈值附近的逐 tick 横跳（离线重放预测：RAIN↔STORM 横跳 24%→9%、总转换约 −45%；
+#      但对两极 BLIZZARD↔CLEAR 那类较长周期交替无效——那是场层问题，不靠本开关解）。
+# 脚本默认保持 false（不影响 tests 的瞬时分类断言）；运行时世界 data/world/earth_like.tres
+# 已显式置 true 启用 type 稳定化。成本：enabled=true 时跳过日也要跑 commit fan-out（高倍速
+# 下 ~35ms/次）。C++ 与 GDScript 两条路径都受此开关控制；rate 见下，⌈1/rate⌉=确认所需 tick。
+# Stage6h (2026-06-23) false→true：启用离散类型稳定化，吸收阈值附近 RAIN↔STORM 逐 tick 横跳(用户:雷暴/降水反复切换)。
+@export var weather_transition_enabled: bool = true
+@export_range(0.0, 1.0, 0.01) var weather_transition_alpha_rate: float = 0.35
 
 # ══════════════════════════════════════════════════════════════════════
 # [Physical Wind & Ocean Circulation — hex-domain solver]
 # ══════════════════════════════════════════════════════════════════════
+@export_group("物理风场与洋流")
 # 把风场/洋流从纯 ny-only 像素函数升级为"二维海陆耦合 + 海盆环流"的
 # 物理化简化模型。求解粒度落在 hex 中心；像素 buffer 由 hex 场光栅化得到，
 # 与现有 shader (wind_field_buffer / ocean_current_buffer / sea_ice_tex / etc) 完全兼容。
 #
 # 1) physical_circulation_enabled
 #    总开关。true → MapBaker 在风场/洋流烘焙路径里启用 hex 物理求解器
-#    （SLP → 地转风 + 海陆季风 → ψ 求解 → 西边界强化 → 沿岸 Ekman 上升流 → 光栅化）。
+#    （日照/热惯性 → SLP → 压力梯度/地转风 + 沿海热力环流 → ψ 求解 → 西边界强化 → 沿岸 Ekman 上升流 → 光栅化）。
 #    false → 走旧的 WindBelt.wind_at + Ekman ±45° + 海岸高度梯度 + 噪声路径，
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
+@export_range(1, 60, 1) var wind_circulation_period_ticks: int = 1
+# plan/daily-wind-stage-split（2026-06-17）：把每日 SLP/wind 两段权威错峰到相邻
+# 游戏日（偶数日只跑 SLP ~3ms、奇数日只跑 wind ~1ms），单 tick SUS 峰值从 ~5ms
+# 降到 ~3ms，把 wind 日的预算让给被饿死的 atlas 上传。代价：SLP/wind 各自刷新
+# 周期从每日变每 2 日（错峰），20–50x 高倍速下气压/风场无感。false → 保留每日
+# 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
+@export var daily_wind_split_passes: bool = true
+@export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
+@export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.18
+@export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
+@export_range(0.0, 180.0, 1.0) var wind_max_turn_deg_per_day: float = 32.0
+@export_range(0.0, 0.25, 0.005) var wind_min_flux_for_dir_update: float = 0.035
+# 天气尺度修复(2026-06-19)：synoptic(天气尺度)风/压扰动原先时间项挂在 day_t=sim_day/days_per_year
+# 上 → 平移一个波长约需 1.3 年 → 在日/月尺度上风型实质冻结 → 水汽永远被送到同一批辐合带 →
+# 固定雨带/干区、整图天气高度静止。wind_synoptic_period_days 控制 synoptic 波平移/振荡的真实周期
+# （天），~6 天对应中纬度天气系统过境节奏；越小天气系统移动越快（过小会偏躁动），越大越接近静止。
+# wind/SLP 两个 pass 共用本周期。amp 同步 0.075→0.10 以让移动的辐合带足以打破固定雨/干区。
+@export_range(0.0, 0.30, 0.005) var wind_synoptic_amp: float = 0.24
+@export_range(2.0, 60.0, 0.5) var wind_synoptic_period_days: float = 6.0
+# 让天气流动(2026-06-21 阶段1)：移动低压系统。在 SLP 场上叠加 N 个随引导气流（自西向东、
+# 中纬西风带主导，到达东缘后从西缘环绕）平移的高斯低压中心 −amp·exp(−r²/2σ²)。这制造出
+# "会移动的辐合源"——下游 wind 读含本项的 slp 算压力梯度 → 移动辐合带 → cloud_source/
+# frontogenesis → 雨带整团随系统漂移（field_solver 已有"雨带成团随风系移动"链，无需改 vapor
+# 镜像）。诊断与结构性评估见 canvas weather-flow-structural-eval。仅 C++ 路径实现（SLP fallback
+# 已与 C++ 分叉，生产恒走 gdext）。count=0 或 amp=0 关闭；默认保守开启以打破永雨永旱固定带。
+@export_range(0, 8, 1) var slp_mobile_low_count: int = 5
+@export_range(0.0, 0.30, 0.01) var slp_mobile_low_amp: float = 0.16
+@export_range(0.05, 0.40, 0.01) var slp_mobile_low_sigma: float = 0.16
+@export_range(5.0, 120.0, 1.0) var slp_mobile_low_period_days: float = 16.0
+# Debug isolation: true forces physical wind solve to output WindBelt only,
+# bypassing pressure-gradient/coastal-thermal/synoptic/old-wind inertia.
+@export var wind_belt_only_debug: bool = false
+@export_range(0.0, 1.0, 0.01) var wind_thermal_slp_weight: float = 0.28
+@export_range(0.0, 1.0, 0.01) var slp_ice_high_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var slp_snow_high_weight: float = 0.06
 
 # 2) enable_terrain_aware_wind
 #    当 physical_circulation_enabled = true 时附加生效。true → 物理化风场求解器
 #    在山地 cell 处对结果向量做地形偏转修正（背风侧降压、山脊阻挡 + 转向），
 #    直接调制 cell.wind_vector，不新增独立 buffer。false → 跳过地形修正，
-#    只保留地转风 + 海陆季风。默认 true。
+#    只保留纬度背景风 + SLP 压力梯度响应。默认 true。
 @export var enable_terrain_aware_wind: bool = true
 
 # 3) enable_ocean_heat_transport
@@ -601,42 +933,53 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    false → 跳过 ψ 求解，直接用纬度风场 + Ekman ±45° 写出 hex ocean_current
 #    （仍保留 hex 域，只是不解全局环流），作为零成本 fallback。默认 true。
 @export var enable_ocean_heat_transport: bool = true
+@export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
+@export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.12
+@export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.22
+@export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.12
+
+# 4) enable_wind_heat_transport
+#    climate-loop-closure Phase 1.1：把风致热平流（气团段 + 地表段，对称复刻洋流
+#    热输运）接入 ClimateDailySystem 的逐日 sliced round。true → 每日在 ocean_land
+#    之后、sea_ice 之前跑 _wind_air_mass_pass + _wind_surface_pass，让上风方向温度
+#    被混合（空间梯度平滑 + 内陆海洋性调节）。false → 跳过（回归到无横向热输运的
+#    legacy 行为）。默认 true。
+#    注：legacy 非切片 wrapper refresh_climate_daily 仍按 enable_ocean_heat_transport
+#    统一控制风温段；本开关只管 sliced 生产路径。
+@export var enable_wind_heat_transport: bool = true
 
 # ══════════════════════════════════════════════════════════════════════
 # [True insolation-driven climate — Phase F]
 # ══════════════════════════════════════════════════════════════════════
-# Switches the "season signal" upstream source from independent cosine
-# curves (one per subsystem) to a single physical quantity: insolation,
-# derived from a real sub-solar latitude that moves sinusoidally between
-# the tropics as year_progress sweeps [0, 1).
+@export_group("真实日照")
+# Deprecated compatibility field. Runtime climate no longer has a switchable
+# independent season signal: C++/DOTS Pass-A always derives climate forcing
+# from sub-solar latitude, daily insolation, day length, thermal inertia,
+# pressure/wind, and moisture. This bool is kept only for old UI/shader wiring
+# that still expects the property to exist.
 #
-# When true_insolation_enabled == true:
-#   • Temperature seasonal offset in refresh_climate_daily uses
-#     insolation_season_gain × (insol_now − insol_annual_mean) × season_temp_amp
-#     instead of _season_temp_offset_phase's standalone cosine.
-#   • Sea-ice daily pass reads insol_dev = (insol_now − insol_mean)/insol_mean
-#     for its "winter strength" factor (replaces dist_to_winter cosine).
-#   • Moisture seasonal scale at _moisture_scale_at_phase is further modulated
-#     by (1 + 0.2 × insol_dev) so equator ≈ invariant, high-lat amplified.
-#   • Shader-side season_temp_offset() in world_map.gdshader is kept in sync
-#     via the same closed formula (CPU/GPU single source of truth).
-#
-# When false: all paths fall back to the legacy independent-cosine path
-# (seasonal-continuous-climate + emergent-climate-coupling baselines).
+# Setting this false must not re-enable legacy independent-cosine climate
+# forcing. Use axial_tilt_deg / insolation_season_gain / thermal inertia
+# parameters to tune seasonal amplitude.
 @export var true_insolation_enabled: bool = true
 
 # Axial tilt (obliquity). 23.5° ≈ Earth. Lower values → milder seasons even
 # at high latitudes; higher → more extreme. Used to compute subsolar_lat.
 @export_range(0.0, 45.0, 0.5) var axial_tilt_deg: float = 23.5
 
-# Gain applied to (insol_now - insol_annual_mean) when deriving the temperature
-# seasonal offset. Default 1.0 keeps amplitude roughly aligned with legacy
-# season_temp_amp at mid-latitudes.
-@export_range(0.0, 2.0, 0.05) var insolation_season_gain: float = 1.0
+# Gain applied to (insol_now - insol_mean) absolute deviation when deriving
+# the temperature seasonal offset: season_offset = gain × dev × season_temp_amp.
+# C++ native + GDScript SoA 双路径同步生效。
+# dev 已改为绝对日射差(insol_now−insol_mean ∈ [−1,+1])，不再分数化。
+# 配合 thermal_inertia_land=0.35 + delta_cap=0.15，中纬度实际温差 ≈ 增益×0.12。
+# gain=2.0 → 40°N 冬夏温差 ~0.27（基线 63%），肉眼明确可见。
+@export_range(0.5, 4.0, 0.05) var insolation_season_gain: float = 1.8
 
 # ══════════════════════════════════════════════════════════════════════
 # [Climate-Weather 2ms Budget — governance switches]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("DOTS 优化开关")
+@export_group("气候天气预算治理")
 # 5 个独立总开关，分别控制 climate-weather-2ms-budget plan 的优化路径上线。
 # 全部默认 false → 走 legacy 路径，行为 0 漂移；任意一个翻 true → 在下一次
 # round 入口安全切换到 SoA / 稀疏 / 低频 / 部分上传新路径。
@@ -665,8 +1008,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 4) use_low_freq_ocean_psi
 #    OceanCurrentsJob 默认 stride 升到 30 个 game-day（约一月一次）；季节切换日
 #    强触发；下游 ocean_water/ocean_land 读双缓冲快照。false → 走原来的
-#    ocean_currents_period_ticks 设置（默认 240 + 120 切片）。
+#    ocean_currents_period_ticks 设置（默认 16 + 120 切片）。
 @export var use_low_freq_ocean_psi: bool = false
+@export_range(0.01, 1.0, 0.01) var ocean_psi_source_scale: float = 0.06
+@export_range(0.0, 2.0, 0.01) var ocean_current_scale: float = 0.13
+@export_range(0.05, 1.414, 0.005) var ocean_current_max_magnitude: float = 0.65
+@export var ocean_decoupled_visual_raster: bool = true
+@export var ocean_visual_rebake_drop_stale: bool = true
 
 # 5) use_partial_atlas_upload
 #    enum_atlas_upload / sea_ice_atlas_upload 改 tile dirty 部分上传：
@@ -680,26 +1028,251 @@ const NATIVE_MODE_ACTIVE: int = 2
 # const, exposed here for per-profile tuning.
 @export_range(0.0, 1.0, 0.01) var insolation_daylen_amp: float = 0.35
 
+## Native astronomy heat gain applied to per-cell insolation before it is
+## exposed as cell.heat_input. Keep at 1.0 for Earth-like balance.
+@export_range(0.0, 2.0, 0.05) var solar_gain: float = 1.0
+@export_range(-1.0, 0.0, 0.05) var insolation_dev_clamp_min: float = -1.0
+@export_range(0.0, 1.0, 0.05) var insolation_dev_clamp_max: float = 1.0
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_land: float = 0.35
+# 2026-06-16 物理化（大陆性对比，"中等"档）：海洋热容远大于陆地。曾把 α_water 0.07→0.008
+# （时间常数 τ≈14d→125d）。注意：pass_a 的吸收短波因子给海洋 1.15×季节强迫（低反照率
+# 多吸收），单靠 τ≈25d(α=0.04) 对"全年"周期几乎不衰减，反而让海洋摆幅>陆地；数值实验
+# （tmp/verify_physical_temp_20260616.py）显示需 α≈0.008 才能把同纬陆/海振幅拉到≈1.9:1、
+# 海洋振幅≈0.20 仍清晰可见且滞后~1.5 月——大陆性对比明显。配合吸收短波因子共同体现
+# 海陆/极地真实温差。2026-06-27 CSV 显示极地海水对本半球夏季响应过慢，配合海冰反照率
+# 形成锁冷；最新复核显示海冰峰值仍相对日照低谷滞后 2-3 个月，默认调到 0.045，
+# 让海水温度更及时跟随轨道强迫，但仍显著低于陆地 0.35。
+@export_range(0.0, 1.0, 0.001) var thermal_inertia_water: float = 0.045
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_snow: float = 0.09
+@export_range(0.0, 1.0, 0.005) var thermal_inertia_high_mountain: float = 0.16
+@export_range(0.0, 0.30, 0.005) var thermal_daily_delta_cap: float = 0.15
+@export var thermal_final_delta_cap_enabled: bool = true
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_daily_cap: float = 0.12
+@export_range(0.0, 0.5, 0.005) var temperature_transport_anomaly_source_cap: float = 0.22
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_blend_rate: float = 0.70
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_decay_rate: float = 0.04
+@export_range(0.0, 1.0, 0.005) var temperature_transport_anomaly_zero_current_decay: float = 0.06
+@export_range(0.0, 1.0, 0.005) var snowpack_accum_gain: float = 0.08
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_temp_gain: float = 0.22
+@export_range(0.0, 1.0, 0.005) var snowpack_melt_sun_gain: float = 0.12
+@export_range(0.0, 0.5, 0.005) var snowpack_cover_low: float = 0.05
+@export_range(0.0, 1.0, 0.005) var snowpack_cover_full: float = 0.32
+@export_range(1, 8, 1) var snow_accum_days_req: int = 2
+
+# climate-loop-closure Phase 2.1：气候态物理雪线（snowline）。
+# 现状问题：snow_cover 完全由天气 snowpack 派生，而冷区往往无降水 → 雪几乎从不
+# 累积（recorder 实测全程 snowpack 峰值仅 0.0136，山顶 snow=0）。物理雪线给每个
+# 陆地 cell 一个"按当前温度决定的基线雪盖"：当 temp_now 低于 snowline_temp_threshold
+# 时，按越阈深度 (threshold - temp_now)/snowline_band 线性升到 1。temp_now 已含
+# 海拔 lapse + 日照/热惯性派生温度项，因此雪线自然随海拔升高、随太阳直射点南北推移；天气降雪在此基线
+# 之上叠加波动。在 weather distribute（snow_cover/snowpack 的最终写入处）应用：
+#   climatic_floor = clamp((snowline_temp_threshold - temp_now) / snowline_band, 0, 1)
+#   snowpack   = max(snowpack, climatic_floor)
+#   snow_cover = max(snow_cover, climatic_floor)
+# 设 snowline_temp_threshold=0 可完全关闭（回归到纯天气驱动，用于 A/B 对照）。
+@export_range(0.0, 1.0, 0.005) var snowline_temp_threshold: float = 0.24
+@export_range(0.02, 0.6, 0.005) var snowline_band: float = 0.22
+
+# ══════════════════════════════════════════════════════════════════════
+# [Runtime hydrology — river / climate / vegetation feedback loop]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("运行期水文")
+@export var runtime_hydrology_enabled: bool = false
+@export_range(1, 30, 1) var runtime_hydrology_stride: int = 1
+@export_range(0.0, 4.0, 0.01) var hydro_precip_scale: float = 1.0
+@export_range(0.0, 4.0, 0.01) var hydro_snowmelt_scale: float = 0.55
+@export_range(0.05, 2.0, 0.01) var hydro_soil_capacity: float = 0.75
+@export_range(0.0, 1.0, 0.005) var hydro_infiltration_rate: float = 0.52
+@export_range(0.0, 1.0, 0.005) var hydro_curve_number_dry: float = 0.34
+@export_range(0.0, 1.0, 0.005) var hydro_curve_number_wet: float = 0.78
+@export_range(0.0, 1.0, 0.005) var hydro_quickflow_fraction: float = 0.36
+@export_range(0.0, 0.5, 0.001) var hydro_baseflow_recession: float = 0.035
+@export_range(0.01, 1.0, 0.005) var hydro_channel_release_rate: float = 0.62
+@export_range(0.005, 1.0, 0.005) var hydro_lake_release_rate: float = 0.18
+@export_range(0.01, 1.0, 0.005) var hydro_discharge_ema: float = 0.08
+@export_range(0.0, 0.25, 0.001) var hydro_bank_moisture_gain: float = 0.035
+@export_range(0.0, 1.0, 0.005) var hydro_river_evap_gain: float = 0.12
+@export_range(0.1, 8.0, 0.05) var hydro_flood_threshold: float = 2.2
+@export_range(0.0, 1.0, 0.005) var hydro_flood_decay: float = 0.10
+
+# ══════════════════════════════════════════════════════════════════════
+# [Diagnostics — runtime perf opt-in]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("运行时诊断")
+# climate_daily_system._debug_climate_integrity 会在每个 climate pass 末尾跑一遍
+# 2400 cell 比对循环（17 PackedArray reads + cell facade compare + samples 构造），
+# 8 个 pass × 每 tick ≈ 6ms 纯 GDScript 开销。移动端实测占 refresh_climate_daily
+# avg 28ms 中的 ~80%。default false 让生产环境关闭诊断；开发期手动改 true 重启
+# 即可在编辑器/PC build 上恢复完整 integrity check。代码里也对 OS.has_feature("mobile")
+# 做了硬短路兜底——即使误把 cp 改 true，移动端仍不跑。
+@export var climate_pass_diagnostics_enabled: bool = false
+
+# ─── async climate round（plan §async-stage-3，2026-06-14）────────────
+# 默认 true：climate_daily_system 走 worker thread 后台完整 8-pass round，主线程
+# kick + poll，每帧 climate 工作 < 1.5ms。
+#
+# 移动端 60 FPS 路径的最后一公里：log(3).txt 实测 sync 路径下 climate round
+# 跨 21 game days 才完成，温度天气更新慢。async 模式下 worker 在后台 30-50ms
+# 完成一轮，1 game day = 1 round（x1 速度）。
+#
+# 切换前提：dots_ext arm64 .so 须含 Stage 3 build（包含 `async_climate_round_*`
+# API + 全 8 pass pure kernel）。dev 期建议先用 KEY_B / KEY_V 跑 bench 验证
+# bit-equal，再翻开本 flag。
+@export var use_climate_round_async: bool = true
+
 # ══════════════════════════════════════════════════════════════════════
 # [Special features]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("特殊功能")
+@export_group("海冰阈值")
 
-# Sea-ice cover thresholds (temperature).
-# 2026-05-19 Plan-C 调参：form 0.07→0.10 / melt 0.12→0.16。理由：t_eff 受
-# ice_delay×ocean_anomaly 项常上抬 0.05~0.15，原 0.07 窗口在赤道-极地洋流
-# 影响下几乎闭合。放宽到 0.10 把可结冰纬度带向赤道方向扩展约 5°；form-melt
-# 间距保持 0.06 避免边界来回闪烁。
-@export var sea_ice_form_threshold: float = 0.15
-@export var sea_ice_melt_threshold: float = 0.25
+# Sea-ice cover thresholds (temperature). temp < form → 结冰(frac→1)；temp > melt → 化冰(frac→0)。
+# 2026-05-26：form 保持较低，melt 保持迟滞窗口；海冰范围由温度场持续越阈决定。
+# ⚠ 2026-06-19：两极海冰带偏大(SEA_ICE 占水域~18%)。form 0.14→0.10、melt 0.22→0.16 同步下调，
+# 让结冰带更靠极、整体收窄约 30%，同时维持 0.06 迟滞窗口避免冰缘逐日抖动。
+# ⚠ 2026-06-19(午):form 0.10 仍偏大(SEA_ICE ~15.5% 水域)。再降 form 0.10→0.06、melt 0.16→0.11，
+# 结冰带进一步靠极收窄(temp<0.06 才结冰)，维持 0.05 迟滞窗。若仍偏大可叠加 terrain_threshold 上调。
+# ⚠ 2026-06-28(夜)：相位分析发现极地夏季气温天花板仅 0.14(北)/0.17(南)，远低于 t_melt=0.22，
+#   热融化项 k_melt·(temp−t_melt) 全年恒为 0，夏季融化只剩缓慢太阳消融→融化偏晚、不彻底
+#   (南极只融到 0.34，现实近乎融光)。把 melt 0.22→0.13、form 0.14→0.08 下移到极地夏季气温区间，
+#   使热融化在夏季生效(冰更早更多融化)；冬季 temp≈0 仍强结冰(freeze drive 触 0.07/天 cap，核心照常饱和)；
+#   保留 0.05 迟滞窗 [form,melt]=[0.08,0.13] 防双稳抖动。
+@export var sea_ice_form_threshold: float = 0.08         # [2026-06-28夜] 0.14→0.08：结冰带略往极地收，让冰缘夏季可退
+@export var sea_ice_melt_threshold: float = 0.13         # [2026-06-28夜] 0.22→0.13：降到极地夏季气温区间，热融化夏季生效；迟滞窗 0.05
 
 # Volcano placement.
+@export_group("火山")
 @export var max_volcanoes: int = 8
 @export var volcano_min_dist: int = 6           # minimum hex-distance between volcanoes
-@export var volcano_min_land_h: float = 0.65    # minimum elevation to qualify as volcano
+@export var volcano_min_land_h: float = 0.55    # minimum elevation to qualify as volcano
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 0 — 板块构造基底]
+# ══════════════════════════════════════════════════════════════════════
+# Voronoi 板块（泊松散点 + Lloyd 松弛）取代放射状大陆中心：会聚边界抬升线状山脉带/岛弧、
+# 离散边界成洋中脊/裂谷。tectonic_blend=0 完全回退旧放射状大陆（降风险）。
+# ⚠ 2026-06-18 回归修复：blend=0.8 时板块基线(大陆 0.62 / 海洋 0.15)经 min-max 归一化后
+# 把整张图抬成"超大高原大陆"——70% 陆地、land 海拔中位 0.67 → 海拔惩罚使全图过冷(温度中位
+# 0.22)、纬向水汽模型内陆枯干(湿度中位 0.13)，山地/荒漠/寒漠铺满、暖湿生物群系几近消失。
+# 板块场的 hypsometric 分布难以在无法实机迭代时调准，故默认回退到经过验证的放射状大陆
+# (blend=0)。板块构造代码保留，后续需重新标定大陆基线与归一化后再开启。
+@export_group("板块构造(生成)")
+@export_range(0.0, 1.0, 0.05) var tectonic_blend: float = 0.0
+@export_range(3, 40, 1) var tectonic_plate_count: int = 14
+@export_range(0.0, 1.0, 0.05) var tectonic_continental_fraction: float = 0.45
+@export var tectonic_continental_base: float = 0.62
+@export var tectonic_oceanic_base: float = 0.15
+@export var tectonic_uplift_amp: float = 0.55
+@export var tectonic_ridge_width: float = 0.06
+@export var tectonic_drift_speed: float = 1.0
+@export_range(0, 6, 1) var tectonic_lloyd_iters: int = 2
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 1 — 水力/热力侵蚀]
+# ══════════════════════════════════════════════════════════════════════
+# 液滴水力侵蚀(作用于 cell 海拔) + 热力坍塌；droplet_factor=0 关闭。迭代上限控制生成耗时。
+# 注：2026-06-19 回退到 0.6（曾误判它造成"单格海洋"而关到 0；修正坐标后的实测显示孤立单格
+# 水体仅 ~34 个，并非液滴侵蚀所致，而是我的分析脚本把多 tick 快照按错误宽度合并的假象）。
+# 液滴侵蚀刻出的河谷/沟壑有助于"宏观大峡谷/下切河谷"的可读性，恢复开启。
+@export_group("侵蚀(生成)")
+
+# ── Stream-Power 河流侵蚀 (Cordonnier et al. 2016, EG) ──────────────────────
+# 构造抬升场(=噪声地形陆地相对高度)与河流侵蚀达准平衡：priority-flood 求汇流 → 汇水面积 →
+# 隐式 SPL 下切 E=(E+U+C·E_down)/(1+C), C=K·(A/Ā)^m。产出连贯山脉脊线、树状长河(干流+支流)、
+# 大流域；并把杂散闭流洼地抬填(减少内陆碎水 + 修复运行时盆地灌水)。开启时自动跳过随机液滴侵蚀。
+# spl_iters=0 一键回退到旧的随机液滴侵蚀。
+@export_range(0, 60, 1) var spl_iters: int = 14            # 迭代轮数(0=关闭SPL)；越大越接近平衡、河谷越深
+@export_range(0.0, 6.0, 0.05) var spl_erodibility: float = 1.2   # 侵蚀系数 K：越大河谷下切越强、地形越平缓
+@export_range(0.2, 1.0, 0.05) var spl_area_exp: float = 0.45     # 汇水面积指数 m(地貌学常用 0.4~0.6)
+@export_range(0.0, 0.5, 0.01) var spl_uplift_rate: float = 0.10  # 抬升回补：越大山体越高耸、起伏越强
+
+@export_range(0.0, 2.0, 0.05) var erosion_droplet_factor: float = 0.6
+@export_range(1, 200, 1) var erosion_max_lifetime: int = 30
+@export var erosion_capacity: float = 4.0
+@export_range(0.0, 1.0, 0.01) var erosion_deposit_rate: float = 0.3
+@export_range(0.0, 1.0, 0.01) var erosion_erode_rate: float = 0.3
+@export_range(0.0, 1.0, 0.01) var erosion_evaporation: float = 0.02
+@export var erosion_gravity: float = 4.0
+@export var erosion_min_slope: float = 0.01
+@export_range(0, 12, 1) var erosion_thermal_iters: int = 2
+@export var erosion_thermal_talus: float = 0.04
+@export_range(0.0, 1.0, 0.05) var erosion_thermal_rate: float = 0.5
+# [coast-erosion 2026-06-26] 水域波蚀强度：邻接水体(海/湖)按波浪能量下蚀近岸陆地，向海蚀台地收敛
+# (河流沿河道切，水域沿岸线切)。0=关；越大海岸退得越多/海崖越明显。post_base #2c 消费。
+@export_range(0.0, 1.0, 0.01) var coast_wave_erosion: float = 0.30
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 3 — 统一气候场(盛行风水汽输送 + 海洋温度调节)]
+# ══════════════════════════════════════════════════════════════════════
+# 取代旧"噪声 + 单向 coastal/orographic 加湿"棘轮：海面蒸发为源，沿盛行风纬向平流，过陆地
+# 按里程 rain-out 衰减(大陆度)，迎风增雨、背风自然成雨影；温度按距海做海洋性调节。
+# ⚠ 2026-06-18 回归修复：原 baseline 使大陆偏大时内陆枯干(中位 0.13)→荒漠铺满；遂抬高基线。
+# ⚠ 2026-06-19 再平衡：上轮回退到放射状大陆后变成 65% 水世界(处处近海)→湿度中位 0.986 过湿、
+# 沙漠/草原消失。这里把基线/降水增益重新下调，并依赖"大陆连贯化"自然形成干燥内陆，目标中位
+# ~0.45-0.55。注意：moisture 在无法实机迭代时最难一次调准，须按新 CSV 复核微调。
+# ⚠ 2026-06-19(凌晨) 实测 041728.csv：湿度中位骤降到 0.24，半干旱(0.15-0.3)占陆地 52%、湿润(>0.5)
+# 仅 12% → 地表整体偏黄、veg=NONE 高达 57%(地形/biome 区分不足)。问题是大陆连贯后内陆 rain-out 过
+# 度，远低于上面目标的 0.45-0.55。本轮温和抬湿(基线翻倍/内陆衰减减弱/降水增益与沿海地板上调)，目标
+# 中位 ~0.35-0.40：减少半干旱铺满又不至变回水世界。
+# ⚠ 2026-06-22 抬湿(用户:湿度普遍偏低,沿海/沿河/季风区本该大片高湿如中国南方;且"高湿≠天天下雨")：
+#   land_base 0.12→0.18→0.17(陆地基线适度回落，给副热带/内陆旱带留空间)、continental_dry 0.030→0.022(内陆 rain-out 衰减减弱,救深
+#   内陆 hop8≈0.22)、coastal_floor 0.36→0.45→0.42(沿海地板,保留海岸过渡但不过度抬湿)、precip_gain 2.9→3.4(降水→base
+#   湿度,季风/雨林高湿)。目标中位 ~0.45-0.50(回原始 0.45-0.55 下沿)。⚠须按新 CSV 复核,过头则回调防水世界。
+@export_group("统一气候场(生成)")
+@export var moisture_wind_evap: float = 0.18
+@export var moisture_rainout_base: float = 0.12
+@export var moisture_orographic_gain: float = 6.0
+@export var moisture_continental_dry: float = 0.022
+@export var moisture_land_base: float = 0.17
+@export var moisture_precip_gain: float = 3.4
+@export var moisture_humidity_cap: float = 1.2
+@export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
+@export var moisture_noise_amp: float = 0.08
+# 副热带干带：在南北副热带纬度按距海大陆度扣湿，恢复稳定的热带/暖温带荒漠带。
+# [地貌真实性 2026-06-25] strength 0.22→0.32：实测(tile_data 0625)真沙漠 DESERT 仅占陆地 0.39%，
+# 而萨王纳(SAVANNA) 高达 ~16%——副热带内陆本该出现的真荒漠(撒哈拉/阿拉伯型)被中湿萨王纳吃掉。
+# 适度加强副热带干带强度，只抽干副热带大陆内部(地理正确位置)，不影响其它纬度湿度平衡。
+# ⚠ 单值可逆，须按新 CSV 复核 DESERT/SAVANNA 占比，过头(沙漠铺满副热带)则回调。
+@export var moisture_subtropical_dry_strength: float = 0.32
+@export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.33
+@export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.16
+# 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
+# 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
+# ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。
+# ⚠ 2026-06-19(凌晨)：连贯大陆下海岸带也偏干，0.28→0.36 适度抬高，加宽湿润海岸过渡带。
+@export_range(0.0, 1.0, 0.01) var moisture_coastal_floor: float = 0.42
+@export var moisture_coastal_scale: float = 7.0
+@export_range(0.0, 1.0, 0.01) var coastal_temp_moderation: float = 0.18
+@export var coastal_temp_scale: float = 6.0
+
+# ══════════════════════════════════════════════════════════════════════
+# [terrain-overhaul Phase 5 — 特征点缀门槛]
+# ══════════════════════════════════════════════════════════════════════
+@export_group("特征点缀(生成)")
+# 盐滩仅在距海 ≥ 该格数的内流盆地底部生成，消除沿海"错位盐滩"。
+@export_range(0, 30, 1) var salt_flat_min_dist_ocean: int = 4
+# 硬叶灌丛(CHAPARRAL)仅在距海 ≤ 该格数的暖温带中等偏旱草/灌带生成（地中海式干夏）。
+@export_range(1, 20, 1) var chaparral_max_dist_ocean: int = 4
+@export_range(0.0, 1.0, 0.01) var plateau_min_land_h: float = 0.25
+@export_range(0.0, 0.2, 0.005) var plateau_max_relief: float = 0.14
+@export_range(1, 80, 1) var plateau_min_cells: int = 3
+@export_range(0.0, 1.0, 0.01) var mountain_min_land_h: float = 0.70
+@export_range(0.0, 0.2, 0.005) var mountain_min_relief: float = 0.115
+@export_range(0.0, 1.0, 0.01) var peak_min_land_h: float = 0.74
+@export_range(0.0, 0.2, 0.005) var peak_min_prominence: float = 0.035
+@export_range(1, 400, 1) var peak_land_cells_per_peak: int = 120
+
+# 峡谷(CANYON)：河流深切、两壁陡立的线状侵蚀峡谷（须有河道穿过），与干旱片状荒原(BADLANDS)、
+# 构造裂谷(RIFT_VALLEY)区分。canyon_min_wall=单侧陡壁最小相对高差(越大越陡才算)；canyon_min_axis=
+# 对置两壁的综合下切门槛(越大峡谷越深越稀有)。仅 C++ 生成路径消费(world_ext.cpp CANYON pass)。
+@export_range(0.0, 0.3, 0.005) var canyon_min_wall: float = 0.05
+@export_range(0.0, 0.3, 0.005) var canyon_min_axis: float = 0.06
 
 # ══════════════════════════════════════════════════════════════════════
 # [Reference-impl demo channels — DO NOT use in real game logic]
 # ══════════════════════════════════════════════════════════════════════
+@export_category("调试与演示")
+@export_group("热力梯度演示")
 # These switches drive the C++/GDScript communication-contract reference
 # passes documented in `docs/performance-charter.md` §12.5 (Pass #1) and
 # §12.6 (Pass #2). They are **demo-only** — real climate / weather / biome
@@ -751,6 +1324,7 @@ enum DemoTGPath { LEGACY = 0, ECS = 1, ECS_ARCHETYPE = 2 }
 @export_range(0.0, 5.0, 0.05) var demo_thermal_gradient_normalize_k: float = 0.5
 
 # ── Pass #3 knobs (`run_demo_complex_pass`, charter §12.6.6) ─────────
+@export_subgroup("复杂扩散演示")
 # These four knobs upgrade the Pass #2 kernel from a one-shot 4-neighbour
 # gradient to an iterated anisotropic-diffusion + multi-scale wind
 # approximation. They share `demo_thermal_gradient_enabled` as the master

@@ -28,7 +28,7 @@ enum MODE {
 	OCEAN_CURRENT = 7,           # 洋流强度（连续，仅水域有效）
 	OCEAN_HEAT_TRANSPORT = 8,    # 洋流热输运异常（连续，双向，0 = 中性）
 	UPWELLING = 9,               # 上升流强度（连续，双向，0 = 中性）
-	WIND_SPEED = 10,             # 盛行风+季风合成模长（连续，全图）
+	WIND_SPEED = 10,             # 当前物理风速（连续，全图）
 	BIOME_GROUP = 11,            # 植被/Biome 分组（离散 10 档）
 	LANDFORM = 12,               # 地形大类（离散 6 档）
 	WIND_DIR = 13,               # 风向（地形扰动后；色相=方向，亮度=强度）
@@ -62,7 +62,7 @@ enum CATEGORY_KIND {
 const DISPLAY_NAME: Dictionary = {
 	MODE.NONE: "关闭",
 	MODE.TEMPERATURE: "温度",
-	MODE.PRECIPITATION: "当季降水",
+	MODE.PRECIPITATION: "实时降水",
 	MODE.CLIMATE_ZONE: "气候带",
 	MODE.HUMIDITY: "湿度",
 	MODE.WEATHER: "天气",
@@ -84,7 +84,7 @@ const DISPLAY_NAME: Dictionary = {
 # 连续通道的数值两端标签（Legend 显示用）。离散通道留空。
 const RANGE_LABEL: Dictionary = {
 	MODE.TEMPERATURE: ["0.00", "1.00"],
-	MODE.PRECIPITATION: ["0.00", "1.50"], # 季节系数 × base，上限放宽
+	MODE.PRECIPITATION: ["0.00", "1.00"],
 	MODE.HUMIDITY: ["0.00", "1.00"],
 	MODE.VEGETATION_VITALITY: ["0.00", "1.00"],
 	MODE.OCEAN_CURRENT: ["0", "强"],         # 归一化模长：0 = 静水 / 陆地无效
@@ -147,7 +147,7 @@ const CLIMATE_ZONE_NAMES: Array = [
 
 # WeatherType.WT 的展示名（CLEAR 透明处理，不在图例列出）。
 const WEATHER_NAMES: Array = [
-	"晴朗", "雨", "雷暴", "暴风雪", "干旱", "雾", "热浪", "季风暴雨",
+	"晴朗", "雨", "雷暴", "暴风雪", "干旱", "雾", "热浪", "热带暴雨",
 ]
 
 # BIOME_GROUP 通道：把 TerrainType.TERRAIN 的 27 种细粒度地形聚合成 10 类
@@ -178,7 +178,7 @@ const LANDFORM_NAMES: Array = [
 ]
 
 # TERRAIN id → BIOME_GROUP bucket。新增地形需要补一项；漏项 fallback 到 9。
-# 顺序与 TerrainType.TERRAIN 一一对应（OCEAN=0 ... BADLANDS=26）。
+# 顺序与 TerrainType.TERRAIN 一一对应（OCEAN=0 ... BADLANDS=25 ... MESA=30）。
 # 注：这里不用 PackedByteArray——GDScript 静态类型检查在跨脚本访问时无法
 # 解析以构造函数赋值的 const 成员（报 "Could not resolve external
 # class member"），改用普通 Array 字面量。
@@ -209,6 +209,11 @@ const TERRAIN_TO_BIOME_GROUP: Array = [
 	3,  # OASIS
 	7,  # SALT_FLAT
 	7,  # BADLANDS
+	7,  # COLD_DESERT（干旱组）
+	5,  # CHAPARRAL（硬叶灌丛 → 林灌组）
+	5,  # MOOR（泥炭湿原 → 湿生组）
+	4,  # FLOODPLAIN（冲积平原 → 平原组）
+	7,  # MESA（方山 → 干旱组）
 ]
 
 # TERRAIN id → LANDFORM bucket（同上，漏项 fallback 到 2 = 平原）。
@@ -239,6 +244,11 @@ const TERRAIN_TO_LANDFORM: Array = [
 	1,  # OASIS
 	2,  # SALT_FLAT
 	3,  # BADLANDS
+	2,  # COLD_DESERT（平原台地）
+	2,  # CHAPARRAL（平原/丘缓坡）
+	2,  # MOOR（低地湿原）
+	2,  # FLOODPLAIN（冲积平原）
+	3,  # MESA（高差台地 → 丘陵）
 ]
 
 # 工具：返回有序的 mode 列表（供 UI 下拉按此顺序生成）。

@@ -22,11 +22,13 @@
 #include "world_ext.h"
 
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
 namespace pk {
 
 using godot::Dictionary;
+using godot::String;
 using godot::Variant;
 
 // ─── 小工具：与 world_ext.cpp 内 lambda 同语义 ─────────────────────────────
@@ -45,10 +47,10 @@ static inline void copy_dict_into_local(Dictionary &dst, const Dictionary &src) 
     }
 }
 
-// ─── 11 个节点 exec_fn ────────────────────────────────────────────────────
+// ─── 节点 exec_fn ───────────────────────────────────────────────────────────
 // 顺序与 world_ext.cpp line 960-1063 严格一致。
 
-bool DCWorldExt::_exec_node_climate_pass_a(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_climate_pass_a(Dictionary& bundle,
                                             const Dictionary& tick_knobs,
                                             Dictionary& breakdown) {
     Dictionary cp_struct = as_dict_local(bundle["climate_pass_a_struct"]);
@@ -61,27 +63,36 @@ bool DCWorldExt::_exec_node_climate_pass_a(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_ocean_water(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_ocean_water(Dictionary& bundle,
                                          const Dictionary& /*tick_knobs*/,
                                          Dictionary& breakdown) {
-    const double ms = run_ocean_water_pass(as_dict_local(bundle["ocean_water_knobs"]));
+    Dictionary water_knobs = as_dict_local(bundle["ocean_water_knobs"]);
+    const double ms = run_ocean_water_pass(water_knobs);
     if (ms < 0.0) return false;
+    bundle["ocean_water_knobs"] = water_knobs;
+    if (water_knobs.has("anomaly_out") && bundle.has("ocean_land_knobs")) {
+        Dictionary land_knobs = as_dict_local(bundle["ocean_land_knobs"]);
+        land_knobs["anomaly_inout"] = water_knobs["anomaly_out"];
+        bundle["ocean_land_knobs"] = land_knobs;
+    }
     breakdown["ocean_water_ms"] = ms;
     breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
     return true;
 }
 
-bool DCWorldExt::_exec_node_ocean_land(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_ocean_land(Dictionary& bundle,
                                         const Dictionary& /*tick_knobs*/,
                                         Dictionary& breakdown) {
-    const double ms = run_ocean_land_pass(as_dict_local(bundle["ocean_land_knobs"]));
+    Dictionary land_knobs = as_dict_local(bundle["ocean_land_knobs"]);
+    const double ms = run_ocean_land_pass(land_knobs);
     if (ms < 0.0) return false;
+    bundle["ocean_land_knobs"] = land_knobs;
     breakdown["ocean_land_ms"] = ms;
     breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
     return true;
 }
 
-bool DCWorldExt::_exec_node_climate_pass_b(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_climate_pass_b(Dictionary& bundle,
                                             const Dictionary& /*tick_knobs*/,
                                             Dictionary& breakdown) {
     const double ms = run_climate_pass_b(as_dict_local(bundle["climate_pass_b_knobs"]));
@@ -91,7 +102,29 @@ bool DCWorldExt::_exec_node_climate_pass_b(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_sea_ice(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_wind_air(Dictionary& bundle,
+                                      const Dictionary& /*tick_knobs*/,
+                                      Dictionary& breakdown) {
+    const double ms = run_wind_air_mass_pass(as_dict_local(bundle["wind_air_knobs"]));
+    if (ms < 0.0) return false;
+    breakdown["wind_air_ms"] = ms;
+    breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
+    breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+    return true;
+}
+
+bool DCWorldExt::_exec_node_wind_surface(Dictionary& bundle,
+                                          const Dictionary& /*tick_knobs*/,
+                                          Dictionary& breakdown) {
+    const double ms = run_wind_surface_pass(as_dict_local(bundle["wind_surface_knobs"]));
+    if (ms < 0.0) return false;
+    breakdown["wind_surface_ms"] = ms;
+    breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
+    breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
+    return true;
+}
+
+bool DCWorldExt::_exec_node_sea_ice(Dictionary& bundle,
                                      const Dictionary& tick_knobs,
                                      Dictionary& breakdown) {
     const float phase = float(tick_knobs.get("season_phase", 0.0));
@@ -102,7 +135,7 @@ bool DCWorldExt::_exec_node_sea_ice(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_transpiration(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_transpiration(Dictionary& bundle,
                                            const Dictionary& /*tick_knobs*/,
                                            Dictionary& breakdown) {
     const double ms = run_transpiration_pass(as_dict_local(bundle["transpiration_knobs"]));
@@ -112,7 +145,7 @@ bool DCWorldExt::_exec_node_transpiration(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_albedo(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_albedo(Dictionary& bundle,
                                     const Dictionary& /*tick_knobs*/,
                                     Dictionary& breakdown) {
     const double ms = run_albedo_pass(as_dict_local(bundle["albedo_knobs"]));
@@ -122,7 +155,7 @@ bool DCWorldExt::_exec_node_albedo(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_vegetation_dynamics(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_vegetation_dynamics(Dictionary& bundle,
                                                  const Dictionary& /*tick_knobs*/,
                                                  Dictionary& breakdown) {
     const double ms = run_vegetation_dynamics_pass(as_dict_local(bundle["vegetation_dynamics_knobs"]));
@@ -132,7 +165,7 @@ bool DCWorldExt::_exec_node_vegetation_dynamics(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_climate_feedback(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_climate_feedback(Dictionary& bundle,
                                               const Dictionary& /*tick_knobs*/,
                                               Dictionary& breakdown) {
     const double ms = run_climate_feedback_pass(as_dict_local(bundle["climate_feedback_knobs"]));
@@ -142,7 +175,7 @@ bool DCWorldExt::_exec_node_climate_feedback(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_stage_b(const Dictionary& bundle,
+bool DCWorldExt::_exec_node_stage_b(Dictionary& bundle,
                                      const Dictionary& /*tick_knobs*/,
                                      Dictionary& breakdown) {
     Dictionary stage_b_knobs = as_dict_local(bundle["stage_b_knobs"]);
@@ -162,7 +195,26 @@ bool DCWorldExt::_exec_node_stage_b(const Dictionary& bundle,
     return true;
 }
 
-bool DCWorldExt::_exec_node_weather(const Dictionary& bundle,
+
+bool DCWorldExt::_exec_node_stage_b_after_hydrology(Dictionary& bundle,
+                                                     const Dictionary& /*tick_knobs*/,
+                                                     Dictionary& breakdown) {
+    Dictionary stage_b_knobs = as_dict_local(bundle["stage_b_after_hydrology_knobs"]);
+    const double ms = run_stage_b_pass(stage_b_knobs);
+    if (ms < 0.0) return false;
+    breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
+    breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
+    breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
+    breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+    if (stage_b_knobs.has("succession_indices")) {
+        breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
+        breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
+        breakdown["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+    }
+    return true;
+}
+
+bool DCWorldExt::_exec_node_weather(Dictionary& bundle,
                                      const Dictionary& /*tick_knobs*/,
                                      Dictionary& breakdown) {
     Dictionary weather = run_weather_refresh_daily_pass(as_dict_local(bundle["weather_knobs"]));
@@ -181,36 +233,95 @@ bool DCWorldExt::_exec_node_weather(const Dictionary& bundle,
     return true;
 }
 
+
+bool DCWorldExt::_exec_node_runtime_hydrology(Dictionary& bundle,
+                                               const Dictionary& /*tick_knobs*/,
+                                               Dictionary& breakdown) {
+    Dictionary hydro = run_runtime_hydrology_pass(as_dict_local(bundle["runtime_hydrology_knobs"]));
+    const String fallback_reason = String(hydro.get("fallback_reason", ""));
+    if (!fallback_reason.is_empty() || !bool(hydro.get("published_to_slot", false))) {
+        breakdown["__hydrology_fail_reason"] =
+            fallback_reason.is_empty() ? String("hydrology did not publish slots") : fallback_reason;
+        return false;
+    }
+    const double native_ms = double(hydro.get("native_ms", 0.0));
+    breakdown["hydrology_ms"] = native_ms;
+    breakdown["runtime_hydrology_ms"] = native_ms;
+    breakdown["hydrology_native_ms"] = native_ms;
+    breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
+    breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+    breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
+    breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
+    breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
+    breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+    breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
+    breakdown["hydrology_published_to_slot"] = true;
+    return true;
+}
+
+
 // ─── SCHEDULE_GRAPH 静态表 ─────────────────────────────────────────────────
+//
+// Contract notes:
+// - Nodes here are native compute/publish nodes, not proof of full DOTS authority.
+// - runtime_hydrology runs only when MapGenerator adds runtime_hydrology_knobs.
+//   In that mode stage_b_after_hydrology is used and the old stage_b key is
+//   intentionally omitted from the bundle so hydrology can see weather output
+//   before stage-b reads water-balance / soil slots.
+// - visual uploads are not graph nodes; C++ may emit visual_dirty_intents, but
+//   Godot/GDScript still owns ImageTexture and renderer object boundaries.
 const SystemNode SCHEDULE_GRAPH[] = {
     {"climate_pass_a",       "climate_pass_a_struct",       "climate_pass_a",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
      &DCWorldExt::_exec_node_climate_pass_a},
+    {"climate_pass_b",       "climate_pass_b_knobs",        "climate_pass_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
+     &DCWorldExt::_exec_node_climate_pass_b},
     {"ocean_water",          "ocean_water_knobs",           "ocean_water",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN, SYS_MASK_OCEAN,
      &DCWorldExt::_exec_node_ocean_water},
     {"ocean_land",           "ocean_land_knobs",            "ocean_land",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_OCEAN,
      &DCWorldExt::_exec_node_ocean_land},
-    {"climate_pass_b",       "climate_pass_b_knobs",        "climate_pass_b",
-     &DCWorldExt::_exec_node_climate_pass_b},
+    {"wind_air",             "wind_air_knobs",              "wind_air",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
+     &DCWorldExt::_exec_node_wind_air},
+    {"wind_surface",         "wind_surface_knobs",          "wind_surface",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
+     &DCWorldExt::_exec_node_wind_surface},
     {"sea_ice",              "sea_ice_knobs",               "sea_ice",
+     SYS_MASK_CLIMATE | SYS_MASK_OCEAN | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE | SYS_MASK_SEA_ICE | SYS_MASK_TERRAIN,
      &DCWorldExt::_exec_node_sea_ice},
     {"transpiration",        "transpiration_knobs",         "transpiration",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_CLIMATE,
      &DCWorldExt::_exec_node_transpiration},
     {"albedo",               "albedo_knobs",                "albedo",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_albedo},
     {"vegetation_dynamics",  "vegetation_dynamics_knobs",   "vegetation_dynamics",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_vegetation_dynamics},
     {"climate_feedback",     "climate_feedback_knobs",      "climate_feedback",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN, SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_climate_feedback},
     {"stage_b",              "stage_b_knobs",               "stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_stage_b},
     {"weather",              "weather_knobs",               "weather",
+     SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER | SYS_MASK_STAGE_B,
      &DCWorldExt::_exec_node_weather},
+    {"runtime_hydrology",    "runtime_hydrology_knobs",     "runtime_hydrology",
+     SYS_MASK_WEATHER | SYS_MASK_TERRAIN | SYS_MASK_HYDROLOGY, SYS_MASK_HYDROLOGY | SYS_MASK_STAGE_B,
+     &DCWorldExt::_exec_node_runtime_hydrology},
+    {"stage_b_after_hydrology", "stage_b_after_hydrology_knobs", "stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B | SYS_MASK_HYDROLOGY, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B,
+     &DCWorldExt::_exec_node_stage_b_after_hydrology},
 };
 const int SCHEDULE_GRAPH_SIZE = sizeof(SCHEDULE_GRAPH) / sizeof(SystemNode);
 
 // ─── dispatch loop ────────────────────────────────────────────────────────
 int dispatch_system_schedule(DCWorldExt* self,
-                             const Dictionary& bundle,
+                             Dictionary& bundle,
                              const Dictionary& tick_knobs,
                              Dictionary& breakdown,
                              bool& out_any_pass_ran,

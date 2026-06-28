@@ -10,7 +10,7 @@ class_name DCWeatherFrontSpawn
 ##
 ## - `_spawn_random_front(world, season_idx, climate_anomaly) -> WeatherFront`
 ##     — line 308 (~80 行)
-##     spawn 概率评分主函数：从 SPAWN_PROB_BY_SEASON 读季节概率 + ocean_spawn_bias
+##     spawn 概率评分主函数：由本地气象场和 ocean_spawn_bias 决定，不再读取季节概率表
 ##     调整 + 选 cell 候选评分。
 ##
 ## - `_build_front_at(spawn_pos, wt, world) -> WeatherFront`
@@ -20,7 +20,7 @@ class_name DCWeatherFrontSpawn
 ## - tick_one_day 中 "spawn fronts" 段（约 line 280-340，循环 SPAWN_TRIES_PER_DAY）
 ##
 ## - 配置常量：
-##     `SPAWN_PROB_BY_SEASON`（春夏秋冬概率数组）
+##     legacy 四季概率表已移除
 ##     `SPAWN_TRIES_PER_DAY = 2`
 ##     `MAX_FRONTS = 16`
 ##

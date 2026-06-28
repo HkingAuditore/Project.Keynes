@@ -1,7 +1,7 @@
 // shore_common.gdshaderinc
 // ─────────────────────────────────────────────────────────────────────────
 // 职责（What）
-//   抽取 land_pipeline / water_pipeline 中重复了两份的 3×3 邻域 enum_atlas
+//   抽取 land_pipeline / water_pipeline 中重复了两份的 3×3 邻域 map_index_atlas
 //   采样代码 + 海岸 halo 颜色合成 + roughness 端硬编码。
 //   提供：
 //     - struct ShoreSamples         ：邻域计数与归一化频率
@@ -14,13 +14,13 @@
 //   - water_pipeline.gdshaderinc::apply_water_color_overlays
 //
 // 依赖（Why）
-//   uniforms.gdshaderinc（enum_atlas / hm_resolution / sea_level /
+//   uniforms.gdshaderinc（map_index_atlas / derived_resolution / sea_level /
 //     river_threshold_low/high / coast_halo_color / coast_halo_strength /
 //     color_beach / color_coast_water / lake_water_color / river_color /
 //     B_OCEAN / B_COAST / B_LAKE / B_REEF / B_KELP / B_SEA_ICE / visual_quality）
 //
 // 性能（Cost）
-//   3×3 - 1 = 8 次 enum_atlas 采样（visual_quality<=0 跳过 4 个对角，仅 4 次）。
+//   3×3 - 1 = 8 次 map_index_atlas 采样（visual_quality<=0 跳过 4 个对角，仅 4 次）。
 //   原本 land/water 路径各采一次，现在仍然只采一次（互斥分支），但代码只写一份。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 	s.nearby_ocean_cnt = 0.0;
 	s.total_cnt        = 0.0;
 
-	vec2 texel = 1.0 / hm_resolution;
+	vec2 texel = 1.0 / derived_resolution;
 	for (int sy = -1; sy <= 1; sy++) {
 		for (int sx = -1; sx <= 1; sx++) {
 			if (sx == 0 && sy == 0) {
@@ -52,8 +52,8 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 			if (visual_quality <= 0 && is_diag) {
 				continue;
 			}
-			vec2 suv = clamp(uv + vec2(float(sx), float(sy)) * texel, vec2(0.0), vec2(1.0));
-			int sb = int(texture(enum_atlas, suv).r * 255.0 + 0.5);
+			vec2 suv = wrap_map_uv(uv + vec2(float(sx), float(sy)) * texel);
+			int sb = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			bool sw = (sb == B_OCEAN) || (sb == B_COAST) || (sb == B_LAKE)
 					|| (sb == B_REEF)  || (sb == B_KELP)  || (sb == B_SEA_ICE);
 			s.nearby_water_cnt += sw ? 1.0 : 0.0;
@@ -131,4 +131,18 @@ ShoreHaloResult compute_shore_halo(
 	// ── roughness target：仅 water 路径在原代码中显式覆盖；land 留中性值 ─
 	r.roughness_target = (role == 0) ? 0.55 : 0.42;
 	return r;
+}
+
+// ─── [coast-smooth 2026-06-26] 平滑海岸覆盖场 ─────────────────────────────
+// 海岸"丑"的根因：水陆边界是 per-cell 六边形枚举硬边（is_water 取自 enum_lut，烘焙期 Bayer dither
+// 刻意跳过水陆边界以护硬边），而河流是连续 SDF → 海岸呈六边形阶梯，远丑于河流。
+// 用 linear 滤波的 water_depth_tex（0=内陆/岸、1=最深；GPU 双线性 → 跨水陆边界平滑过渡，且内陆恒 0
+// 能正确区分"海岸"与 P1 后同样贴 sea_level 的"内陆平原"，elev 做不到）取 0→1 连续覆盖场，其阈值
+// 等高线比硬六边形边平滑。返回 <0 表示纹理未绑定 → 调用方旁路回退旧硬边。
+// 注（2026-06-26）：原 5-tap 空间平均已按需求取消，仅依赖硬件双线性滤波（单次采样）。
+float coast_water_coverage(vec2 uv) {
+	if (!has_water_depth_tex) {
+		return -1.0;
+	}
+	return texture(water_depth_tex, uv).r;
 }

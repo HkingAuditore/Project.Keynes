@@ -337,3 +337,55 @@ static func by_owner(owner_name: String) -> Array:
 		if String(f.get("owner", "")) == owner_name:
 			out.append(f.name)
 	return out
+
+
+# ─── Cell-index indirection（province-ID 间接寻址，plan: cell-index atlas indirection）──
+# 渲染路径 meta-backed toggle，语义与 map_baker 的 `force_atlas_quarter_size`
+# （main.gd:694 `Engine.set_meta`）一致：不进 FLAGS / ClimateProfile sanity 表，
+# 由 Engine meta 充当进程级单一数据源，render / bake / upload 三处统一用本 accessor 读。
+#
+# cell-index 现在是唯一渲染路径。旧 per-pixel 动态 atlas 路径不再作为 A/B fallback。
+const CELL_INDIRECTION_META: StringName = &"cell_indirection_enabled"
+
+## 当前是否启用 cell-index 间接寻址（render / bake / upload 统一读这里）。
+static func cell_indirection_active() -> bool:
+	return true
+
+## 设置 cell-index 间接寻址开关（debug console / 热键 / 启动配置调用）。
+static func set_cell_indirection(enabled: bool) -> void:
+	Engine.set_meta(CELL_INDIRECTION_META, true)
+
+
+# ─── 洋流/风场"逐像素视觉"开关（vector_atlas pipeline） ──────────────────────
+# vector_atlas（RG=洋流、BA=风场）已退役。仿真读 per-cell HexCell.wind_vector /
+# 洋流场，不依赖该贴图；shader 固定使用中性向量 / axis-only 漂移。
+const OCEAN_CURRENT_VISUAL_META: StringName = &"ocean_current_visual_enabled"
+
+## 当前是否启用洋流/风场逐像素视觉（bake / commit / job / render 统一读这里）。
+static func ocean_current_visual_active() -> bool:
+	return false
+
+## 设置洋流/风场逐像素视觉开关（main.gd @export → _generate_and_render 推送）。
+static func set_ocean_current_visual(enabled: bool) -> void:
+	Engine.set_meta(OCEAN_CURRENT_VISUAL_META, false)
+
+
+# ─── 旧 sea_ice_tex（R8）逐像素海冰贴图开关 ───────────────────────────────────
+# [sea-ice-atlas-skip 2026-06-16] sea_ice_tex 是**已退役的死贴图**：
+#   · 任何着色器都不声明/采样它；
+#   · 运行时 sea_ice_atlas_upload job/system 已删除，prepare/upload 没有 live 调用者；
+#   · 主地图海冰视觉由水路径 shader 按 水温/纬度/水深派生（indirection 开时走 dyn_lut.a）。
+# 唯一残留成本是 `bake_world` 每次重生成时 encode 一张全零 R8（~0.6MB 显存 + 编码）。
+#
+# 与 cell_indirection 同语义：默认缺失 = **false（退役/关闭）**——直接省掉那张死贴图。
+# 开为 true 仅为兼容旧调试/数据通道（`dots_soak_dump` 的 sea_ice_fraction_buffer 哈希）。
+# 改勾选后需重新生成地图才生效。
+const SEA_ICE_ATLAS_META: StringName = &"sea_ice_atlas_enabled"
+
+## 当前是否启用旧 sea_ice_tex 逐像素海冰贴图 + prepare/upload（bake / render 统一读）。
+static func sea_ice_atlas_active() -> bool:
+	return false
+
+## 设置旧 sea_ice_tex 海冰贴图开关（main.gd @export → _generate_and_render 推送）。
+static func set_sea_ice_atlas(enabled: bool) -> void:
+	Engine.set_meta(SEA_ICE_ATLAS_META, false)

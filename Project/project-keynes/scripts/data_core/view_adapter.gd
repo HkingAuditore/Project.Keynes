@@ -72,10 +72,16 @@ func get_air_mass_temp_anomaly(_idx: int) -> float: return 0.0
 # ─── Weather scalar (F32) ────────────────────────────────────────────────
 func get_weather_intensity(_idx: int) -> float: return 0.0
 func get_weather_cloud(_idx: int) -> float: return 0.0
+func get_weather_cloud_water(_idx: int) -> float: return 0.0
 func get_weather_precip(_idx: int) -> float: return 0.0
 func get_weather_vapor(_idx: int) -> float: return 0.0
 func get_weather_convergence(_idx: int) -> float: return 0.0
 func get_weather_instability(_idx: int) -> float: return 0.0
+func get_weather_transition_alpha(_idx: int) -> float: return 0.0
+func get_vegetation_heat_stress(_idx: int) -> float: return 0.0
+func get_vegetation_drought_stress(_idx: int) -> float: return 0.0
+func get_vegetation_cold_stress(_idx: int) -> float: return 0.0
+func get_vegetation_regen_score(_idx: int) -> float: return 0.0
 
 # ─── Static / topology (F32) ─────────────────────────────────────────────
 func get_elevation(_idx: int) -> float: return 0.0
@@ -99,6 +105,8 @@ func get_landform(_idx: int) -> int: return 0
 func get_vegetation(_idx: int) -> int: return 0
 func get_cover(_idx: int) -> int: return 0
 func get_weather_type(_idx: int) -> int: return 0
+func get_weather_prev_type(_idx: int) -> int: return 0
+func get_weather_target_type(_idx: int) -> int: return 0
 
 # ─── Boolean (U8) ────────────────────────────────────────────────────────
 func get_is_water(_idx: int) -> bool: return false
@@ -164,10 +172,16 @@ class Cell extends DCViewAdapter:
 	# Weather scalar
 	func get_weather_intensity(idx: int) -> float: return float(_cells[idx].weather_intensity)
 	func get_weather_cloud(idx: int) -> float: return float(_cells[idx].weather_cloud)
+	func get_weather_cloud_water(_idx: int) -> float: return 0.0
 	func get_weather_precip(idx: int) -> float: return float(_cells[idx].weather_precip)
 	func get_weather_vapor(idx: int) -> float: return float(_cells[idx].weather_vapor)
 	func get_weather_convergence(idx: int) -> float: return float(_cells[idx].weather_convergence)
 	func get_weather_instability(idx: int) -> float: return float(_cells[idx].weather_instability)
+	func get_weather_transition_alpha(idx: int) -> float: return float(_cells[idx].weather_transition_alpha)
+	func get_vegetation_heat_stress(idx: int) -> float: return float(_cells[idx].vegetation_heat_stress)
+	func get_vegetation_drought_stress(idx: int) -> float: return float(_cells[idx].vegetation_drought_stress)
+	func get_vegetation_cold_stress(idx: int) -> float: return float(_cells[idx].vegetation_cold_stress)
+	func get_vegetation_regen_score(idx: int) -> float: return float(_cells[idx].vegetation_regen_score)
 
 	# Static
 	func get_elevation(idx: int) -> float: return float(_cells[idx].elevation)
@@ -195,11 +209,11 @@ class Cell extends DCViewAdapter:
 	func get_vegetation(idx: int) -> int: return int(_cells[idx].vegetation)
 	func get_cover(idx: int) -> int: return int(_cells[idx].cover)
 	func get_weather_type(idx: int) -> int: return int(_cells[idx].weather_type)
+	func get_weather_prev_type(idx: int) -> int: return int(_cells[idx].weather_prev_type)
+	func get_weather_target_type(idx: int) -> int: return int(_cells[idx].weather_target_type)
 
 	# Booleans
-	# is_water 在 HexCell 上没有独立字段；用"非 passable_land"等价（与 MapData.is_water_arr
-	# 的填充逻辑 1:1 对齐：rebuild_soa_from_cells 里 is_water_arr[i] = (1 if not passable_land else 0)）
-	func get_is_water(idx: int) -> bool: return not _cells[idx].passable_land
+	func get_is_water(idx: int) -> bool: return MapData.terrain_is_water(int(_cells[idx].terrain))
 	func get_has_river(idx: int) -> bool: return bool(_cells[idx].has_river)
 	func get_weather_field_init(idx: int) -> bool: return bool(_cells[idx].weather_field_initialized)
 	func get_ema_initialized(idx: int) -> bool: return bool(_cells[idx]._ema_initialized)
@@ -297,10 +311,16 @@ class World extends DCViewAdapter:
 	# Weather scalar
 	func get_weather_intensity(idx: int) -> float:   return _f(_arr_f32(&"weather_intensity_arr"), idx)
 	func get_weather_cloud(idx: int) -> float:       return _f(_arr_f32(&"weather_cloud_arr"), idx)
+	func get_weather_cloud_water(idx: int) -> float: return _f(_arr_f32(&"weather_cloud_water_arr"), idx)
 	func get_weather_precip(idx: int) -> float:      return _f(_arr_f32(&"weather_precip_arr"), idx)
 	func get_weather_vapor(idx: int) -> float:       return _f(_arr_f32(&"weather_vapor_arr"), idx)
 	func get_weather_convergence(idx: int) -> float: return _f(_arr_f32(&"weather_convergence_arr"), idx)
 	func get_weather_instability(idx: int) -> float: return _f(_arr_f32(&"weather_instability_arr"), idx)
+	func get_weather_transition_alpha(idx: int) -> float: return _f(_arr_f32(&"weather_transition_alpha_arr"), idx)
+	func get_vegetation_heat_stress(idx: int) -> float: return _f(_arr_f32(&"vegetation_heat_stress_arr"), idx)
+	func get_vegetation_drought_stress(idx: int) -> float: return _f(_arr_f32(&"vegetation_drought_stress_arr"), idx)
+	func get_vegetation_cold_stress(idx: int) -> float: return _f(_arr_f32(&"vegetation_cold_stress_arr"), idx)
+	func get_vegetation_regen_score(idx: int) -> float: return _f(_arr_f32(&"vegetation_regen_score_arr"), idx)
 
 	# Static
 	func get_elevation(idx: int) -> float:        return _f(_arr_f32(&"elevation_arr"), idx)
@@ -324,6 +344,8 @@ class World extends DCViewAdapter:
 	func get_vegetation(idx: int) -> int:    return _u(_arr_u8(&"vegetation_arr"), idx)
 	func get_cover(idx: int) -> int:         return _u(_arr_u8(&"cover_arr"), idx)
 	func get_weather_type(idx: int) -> int:  return _u(_arr_u8(&"weather_type_arr"), idx)
+	func get_weather_prev_type(idx: int) -> int: return _u(_arr_u8(&"weather_prev_type_arr"), idx)
+	func get_weather_target_type(idx: int) -> int: return _u(_arr_u8(&"weather_target_type_arr"), idx)
 
 	# Booleans
 	func get_is_water(idx: int) -> bool:           return _u(_arr_u8(&"is_water_arr"), idx) > 0

@@ -88,7 +88,7 @@ void fragment() {
     } else {
         col = render_water_pipeline(...);  // 水面：base→specials→shade
     }
-    COLOR = apply_global_adjustments(col, wp, pixel_noise); // 羊皮纸 + tonemap + sRGB
+    COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow); // 羊皮纸 + tonemap + sRGB
 }
 ```
 
@@ -126,23 +126,22 @@ void fragment() {
 
 ## 4. 数据流（Atlas 通道）
 
-CPU 端（Godot GDScript）每帧把世界状态打包成 6 张 atlas 上传，shader 在 fragment 开头**一次性采样并解码**到局部变量：
+CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index + per-cell LUT。shader 在 fragment 开头解析 cell id，并从 LUT 采样动态/生态状态：
 
 | Atlas | 格式 | 通道含义 |
 |---|---|---|
 | `height_tex` | RG8 LINEAR | `(R*256 + G)/257` ⇒ 海拔 [0,1] |
-| `enum_atlas` | RGB8 NEAREST | R=biome, G=vegetation, B=cover |
-| `scalar_atlas` | RGBA8 LINEAR | R=moisture, G=flow_accum, B=latitude_norm, A=保留 |
-| `vector_atlas` | RGBA8 LINEAR | RG=ocean_current(-1..1), BA=wind(-1..1) |
-| `dyn_atlas_smooth_atlas` | RGBA8 LINEAR | R=temp, G=wetness, B=snow_cover, A=vitality（hex 邻接 box blur 后版本，主消费路径） |
-| `ecology_visual_atlas` | RGBA8 LINEAR | R=foliage_density, G=stress, B=transition_age, A=growth |
-| `ice_state_atlas` | R LINEAR | R=sea_ice_fraction（动态海冰） |
+| `map_index_atlas` | RGBA8 NEAREST | R=biome, G/B=`cell.index` low/high, A=landform |
+| `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
+| `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |
+| `eco_lut` | RGBA8 NEAREST | R=foliage_density, G=stress, B=transition_age, A=growth |
 
 **关键约定**：
 
-- `dyn_valid = step(0.02, dyn_temp)`：CPU 还没初始化时 R≈0，shader 走 `derived_temp` fallback；
+- `dyn_valid = (_cell_id < 0) ? 0.0 : 1.0`：地图外哨兵像素走 fallback；
 - `eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition)`：生态层是否已 bake；
-- `vector_atlas_valid` 是 uniform bool，false 时 shader 当作中性 0.5 处理。
+- `scalar_atlas` / `vector_atlas` / `dynamic_cell_atlas` / `dyn_atlas_smooth_atlas` /
+  `ecology_visual_atlas` / `ice_state_atlas` / `sea_ice_tex` 已退役，不再绑定或采样。
 
 ---
 
@@ -394,7 +393,7 @@ vec3 render_water_pipeline(
 | 1.7 | `apply_lake_features` | 湖泊视觉 |
 | 1.8 | `apply_reef_features` | 礁石 |
 | 1.9 | `apply_kelp_features` | 海带森林 |
-| 1.10 | `apply_sea_ice_features` | 海冰盖（消费 ice_state_atlas） |
+| 1.10 | `apply_sea_ice_features` | 海冰盖（消费 `dyn_lut.a`） |
 | 1.11 | `apply_shallow_transparency` | 浅水透明 |
 | 1.12 | `apply_ocean_currents` | 表层洋流可视化 |
 | 1.13 | `apply_estuary_plume` | 河口羽流 |
@@ -423,7 +422,7 @@ return apply_water_specials(lit, surface, biome, wp, visual_quality);
 **位置**：`global_adjustments.gdshaderinc`
 
 ```glsl
-vec3 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
+vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow) {
     col = apply_paper_grain(col, wp, pixel_noise);          // 羊皮纸纸纹
     col = apply_equator_band(col, ...);                     // 赤道带柔光
     col = apply_season_transition_overlay(col, pixel_noise);// 季节过渡 dissolve
@@ -532,7 +531,7 @@ const float SNOW_OVERLAY_MAX       = 1.00;
 
 ### 13.1 加一个新 biome（例如 MARSH）
 
-1. **CPU**：`scripts/data_core/component_ids.gd` 加 `BIOME_MARSH = 16`；`map_generator` 写入 `enum_atlas.r`
+1. **CPU**：`scripts/data_core/component_ids.gd` 加 `BIOME_MARSH = 16`；`map_generator` 写入 `map_index_atlas.r`
 2. **uniforms.gdshaderinc**：加 `const int B_MARSH = 16`、`uniform vec3 color_marsh : source_color`
 3. **biome_color.gdshaderinc**：在 `compute_biome_color` switch 里加 case
 4. **biome_detail.gdshaderinc**：可选，加 marsh 特有 detail 噪声

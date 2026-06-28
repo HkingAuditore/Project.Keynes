@@ -2,9 +2,10 @@
 # 独立的天气表现层（v9.split：从 world_map.gdshader 中拆出来）。
 #
 # 节点结构：
-#   WeatherLayer (Node2D, z_index=1，挂在 HexRenderer 之下）
+#   WeatherLayer (Node2D, z_index=4，挂在 HexRenderer 之下；高于植被/点缀，低于数据 overlay）
 #   ├── _overlay_quad   MeshInstance2D + weather_overlay.gdshader  (z_index=0 in layer)
-#   ├── _shadow_root    Node2D（云阴影 Sprite2D 池，每 front 一个）  (z_index=1)
+#   ├── _shadow_root    Node2D（云阴影 Sprite2D 池，每 front 一个）  (z_index=-2)
+#   ├── _curtain_root   Node2D（cell 级 MultiMesh 雨幕/雪幕）         (z_index=-1)
 #   └── _particles_root Node2D（GPUParticles2D 池，每 front 一个）   (z_index=2)
 #
 # 数据流：
@@ -24,6 +25,12 @@ signal visual_fronts_changed(fronts: Array)
 
 const MAX_WEATHER_FRONTS := 16
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
+const CURTAIN_SHADER_PATH := "res://shaders/weather_cell_curtain.gdshader"
+const _CELL_CURTAIN_ENABLED := true
+const _FRONT_PARTICLES_ENABLED := false
+const _CURTAIN_LAYER_COUNT_DESKTOP := 3
+const _CURTAIN_LAYER_COUNT_MOBILE := 1
+const _CURTAIN_PATCH_SCALE := 1.45
 # Weather simulation still advances by game day. The presentation layer follows
 # snapshots with a small lag so fronts keep moving between day ticks instead of
 # snapping once and then freezing until the next tick.
@@ -75,12 +82,33 @@ const _WT_FOG      := 5
 const _WT_HEATWAVE := 6
 const _WT_MONSOON  := 7
 
+const WEATHER_DEBUG_VIEW_NAMES := [
+	"off",
+	"w.cloud",
+	"cumulus_density",
+	"fog_density",
+	"final_alpha",
+	"cell_id",
+	"weather_type",
+	"precip_intensity_cloud",
+]
+
 var _overlay_quad: MeshInstance2D
 var _overlay_mat: ShaderMaterial
 var _shadow_root: Node2D
 var _shadow_pool: Array[Sprite2D] = []   # 16 个 Sprite2D，按 front index 复用
 var _shadow_texture: ImageTexture        # 共享的 radial-fade alpha 圆盘
 var _shadow_material: CanvasItemMaterial # 共享的 BLEND_MUL 材质
+var _curtain_root: Node2D
+var _curtain_mesh: ArrayMesh
+var _curtain_mat: ShaderMaterial
+var _curtain_layers: Array[MultiMeshInstance2D] = []
+var _curtain_multimeshes: Array[MultiMesh] = []
+var _curtain_map: MapData = null
+var _curtain_built_for_map: MapData = null
+var _curtain_built_hex_size: float = -1.0
+var _curtain_built_wrap_period: float = -1.0
+var _curtain_instance_count: int = 0
 var _particles_root: Node2D
 var _particles_pool: Array[GPUParticles2D] = []  # 16 个，按 front index 复用
 # 缓存每个 slot 当前配置类型，避免每次 set_weather_fronts 都重建 process_material
@@ -97,10 +125,24 @@ var _process_material_cache: Dictionary = {}
 var _fallback_particle_texture: ImageTexture
 
 var _world_bounds: Rect2 = Rect2()
+var _wrap_period_x: float = 0.0
 var _world_time: float = 0.0
 var _strength: float = 1.0
+var _map_index_atlas_tex: ImageTexture = null
+var _noise_tex: ImageTexture = null
+var _hex_size: float = 22.0
 var _weather_field_tex: Texture2D = null
+var _weather_lut_tex: Texture2D = null
+var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
+var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
+var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
+var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认 0.5s)
+var _weather_lut_dims: Vector2i = Vector2i.ZERO
+var _wx_lut_diag_count: int = 0
+var _wx_lut_diag_last_msec: int = -1000000
+
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
+
 # overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
 var _vector_atlas_tex: Texture2D = null
 # v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
@@ -113,12 +155,6 @@ var _front_blend_elapsed: float = 0.0
 var _front_blend_duration: float = 0.0
 var _last_front_snapshot_time: float = -1.0
 var _front_snapshot_interval_sec: float = _WEATHER_FRONT_INITIAL_BLEND_SEC
-# 任务 5：STORM 闪电节拍——随 world_time 推进， < 1Hz 触发 80~120ms 的亮斑。
-# _storm_next_flash_t：下次开始的 world_time；_storm_flash_end_t：当前亮斑失效时间。
-var _storm_next_flash_t: float = 0.0
-var _storm_flash_end_t: float = 0.0
-var _storm_active: bool = false
-var _rng: RandomNumberGenerator
 
 # Drift-debug（2026-05-10）：set true 后：
 #   1) set_weather_fronts 入口打印 snapshot_interval / blend_duration / forward_bias
@@ -130,7 +166,9 @@ var _drift_debug_last_log_time: float = -1.0
 
 func _ready() -> void:
 	z_as_relative = false
-	z_index = 1
+	z_index = 4
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	# v9.perf：默认整层隐藏，set_weather_fronts() 来了再 visible=true，
 	# 在没有任何天气时省掉 overlay quad 的全屏 fragment + framebuffer blend
 	visible = false
@@ -144,8 +182,15 @@ func _ready() -> void:
 	_shadow_root = Node2D.new()
 	_shadow_root.name = "CloudShadows"
 	_shadow_root.z_as_relative = true
-	_shadow_root.z_index = -1
+	_shadow_root.z_index = -2
 	add_child(_shadow_root)
+
+	_curtain_root = Node2D.new()
+	_curtain_root.name = "CellWeatherCurtains"
+	_curtain_root.z_as_relative = true
+	# 先画在云 overlay 之上保证雨雪可读；后续若拆分云/降水 pass，再把它放回云下。
+	_curtain_root.z_index = 1
+	add_child(_curtain_root)
 
 	_particles_root = Node2D.new()
 	_particles_root.name = "WeatherParticles"
@@ -154,42 +199,64 @@ func _ready() -> void:
 	add_child(_particles_root)
 
 	_load_overlay_shader()
+	_load_curtain_shader()
 	_init_shadow_pool()
 	_init_particles_pool()
-	# 任务 5：STORM 闪电数值随机
-	_rng = RandomNumberGenerator.new()
-	_rng.randomize()
 	set_process(true)
 
 func _process(delta: float) -> void:
-	# ambient-shadow：先无条件推进 ambient_time + 推到 shader——这是装饰时钟，
-	# 与 game pause 解耦，让云影即使在暂停时也持续飘动+变形。
-	if _ambient_cloud_shadow_enabled and _overlay_mat != null:
-		_ambient_time += delta
-		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
-
-	# ambient-shadow：即使没有 weather，只要 ambient cloud shadow 开启，就要保持 overlay 可见。
 	var has_weather: bool = (not _front_target_snapshots.is_empty()) \
 			or (not _front_visual_snapshots.is_empty()) \
-			or (_weather_field_tex != null)
-	if not has_weather and not _ambient_cloud_shadow_enabled:
+			or (_weather_field_tex != null) \
+			or _has_weather_lut_source()
+
+	if not has_weather:
 		_active_count = 0
 		visible = false
 		return
-	# 任务 5：粒子/噪声时间推进受 WorldClock.paused 门控
-	# （不依赖 WorldClock 实例，而是看 SceneTree 的 paused 状态——与项目现有暂停机制兑齐）
-	# 注意：ambient_time 已在上面推进过了，这里 pause 仅冻结 weather 相关的 world_time。
-	if not _effective_running():
-		# 暂停时 ambient shadow 仍要保持 overlay 可见且能继续接收 ambient_time 更新，
-		# 仅刷一次可见性后退出（不动 fronts/particles/world_time）。
-		if _ambient_cloud_shadow_enabled:
-			_refresh_visibility()
-		return
-	_world_time += delta
+	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
+	_world_time += delta * visual_time_scale
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("world_time", _world_time)
 	if has_weather:
 		_update_weather_front_blend(delta)
+		if _overlay_mat != null and _world_ref != null:
+			if _world_ref.weather_lut_tex != null:
+				_weather_lut_tex = _world_ref.weather_lut_tex
+				_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+				if _curtain_mat != null:
+					_curtain_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+			if _world_ref.weather_lut_prev_tex != null:
+				_overlay_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+				if _curtain_mat != null:
+					_curtain_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
+			var _now_us: int = Time.get_ticks_usec()
+			var _upd: int = int(_world_ref.weather_lut_update_usec)
+			if _upd != _wx_lut_last_usec:
+				if _wx_lut_last_usec > 0:
+					var _gap: float = float(_upd - _wx_lut_last_usec)
+					if _gap > 1000.0 and _gap < 5000000.0:
+						_wx_commit_interval_usec = lerpf(_wx_commit_interval_usec, _gap, 0.3)  # IIR 自适应
+				_wx_lut_last_usec = _upd
+				_wx_lut_t0_usec = _now_us
+			var _wlerp: float = 1.0
+			if _wx_commit_interval_usec > 1.0:
+				_wlerp = clampf(float(_now_us - _wx_lut_t0_usec) / _wx_commit_interval_usec, 0.0, 1.0)
+			_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
+			if _curtain_mat != null:
+				_curtain_mat.set_shader_parameter("weather_lerp", _wlerp)
+			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
+				_wx_lut_diag_count += 1
+				_wx_lut_diag_last_msec = _now_us / 1000
+				print("[weather-layer][lut] #%d update_usec=%d last_usec=%d lerp=%.3f prev_tex=%s curr_tex=%s dims=%s visible=%s" % [
+					_wx_lut_diag_count, _upd, _wx_lut_last_usec, _wlerp,
+					str(_world_ref.weather_lut_prev_tex != null), str(_world_ref.weather_lut_tex != null),
+					str(_weather_lut_dims), str(visible),
+				])
+
 		# Drift-debug：每秒采样 visual_snapshots[0] 的 center，看 lerp 是否真的在推进。
 		if DRIFT_DEBUG_LOG and _world_time - _drift_debug_last_log_time >= 1.0:
 			_drift_debug_last_log_time = _world_time
@@ -211,72 +278,66 @@ func _process(delta: float) -> void:
 					raw_t, str(_front_velocity(v0).round()),
 				])
 	else:
-		# 没有天气但有 ambient shadow 时，跳过 fronts/particles/shadow 池同步，
-		# 仅靠推进 world_time 让 shader 自己刷 ambient FBM 飘动。
+		# 没有天气时跳过 fronts/particles/shadow 池同步，仅靠推进 world_time
+		# 让 shader 自己刷云的噪声飘动。
 		_refresh_visibility()
-	# 任务 5：STORM 闪电推进
-	if _storm_active:
-		_update_storm_flash()
 
-# 暂停门控：由上层（main.gd 把 WorldClock.paused 同步给 WeatherLayer）写入。
-# 默认 true；外部写入 false 后停止 world_time 推进。
+# 兼容旧接口：上层仍会同步 WorldClock.paused，但天气表现层现在暂停时也持续播放。
 var _clock_running: bool = true
+var _clock_speed_multiplier: float = 1.0
 
 func set_clock_running(running: bool) -> void:
 	_clock_running = running
 
+func set_clock_speed_multiplier(multiplier: float) -> void:
+	_clock_speed_multiplier = clampf(multiplier, 0.0, 20.0)
+
 func _effective_running() -> bool:
 	return _clock_running
 
-# 任务 5：按 world_time 驱动闪电亮斑，频率 < 1Hz，每次持续 80~120ms。
-# 在窗口内把 storm_flash uniform 抬到 1.0，窗口外恢复为 0。
-func _update_storm_flash() -> void:
-	if _overlay_mat == null:
-		return
-	if _world_time >= _storm_next_flash_t and _world_time > _storm_flash_end_t:
-		# 触发新一次亮斑：持续 80~120ms
-		var dur_ms: float = _rng.randf_range(80.0, 120.0)
-		_storm_flash_end_t = _world_time + dur_ms / 1000.0
-		# 下一次：间隔 1.2 ~ 3.0 秒 (< 1Hz)
-		_storm_next_flash_t = _storm_flash_end_t + _rng.randf_range(1.2, 3.0)
-	var flash: float = 0.0
-	if _world_time <= _storm_flash_end_t:
-		# 软过渡：从 1.0 线性掉到 0.4，避免硬断视觉上倍感氣凝重
-		flash = 1.0
-	_overlay_mat.set_shader_parameter("storm_flash", flash)
-
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
-# 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 enum_atlas + noise_tex。
+# 由 HexRenderer 在拿到 WorldData 之后调用一次；提供地图 bounds + 共用的 map_index_atlas + noise_tex。
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
-func setup(bounds: Rect2, enum_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0) -> void:
+func set_world_ref(w) -> void:
+	_world_ref = w
+
+func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
 	_world_bounds = bounds
+	_wrap_period_x = maxf(0.0, wrap_period_x)
+	_map_index_atlas_tex = map_index_atlas
+	_noise_tex = noise_tex
+	_hex_size = hex_size
+	_weather_lut_tex = weather_lut
+	_weather_lut_dims = lut_dims
+	_curtain_map = map
+
 	_reset_front_blend_state()
 	if _overlay_quad != null:
-		_overlay_quad.mesh = _build_full_quad(bounds)
+		_overlay_quad.mesh = _build_full_quad(bounds, _wrap_period_x)
 	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("enum_atlas", enum_atlas)
-		_overlay_mat.set_shader_parameter("noise_tex", noise_tex)
+		_overlay_mat.set_shader_parameter("map_index_atlas", map_index_atlas)
+		# cell-index 间接寻址（cloud-from-field 2026-06-20）：weather_lut + lut_dims 让
+		# weather_overlay 逐格采样真实天气场（map_index_atlas.GB 已含 cell.index）。
+		_overlay_mat.set_shader_parameter("weather_lut", weather_lut)
+		_overlay_mat.set_shader_parameter("lut_dims", Vector2(lut_dims.x, lut_dims.y))
 		_overlay_mat.set_shader_parameter("world_origin", bounds.position)
 		_overlay_mat.set_shader_parameter("world_size", bounds.size)
+		_overlay_mat.set_shader_parameter("wrap_origin_x", 0.0)
+		_overlay_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
 		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
-		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
-		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
-		# Phase 1：vector_atlas 重启地图时也要重写一次，避免上一张地图的残留风场。
-		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
-		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
+		_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
-		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色与 flags 推入 shader。
+		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色推入 shader。
 		_push_weather_profile_uniforms_to_overlay()
-		# ambient-shadow：把当前开关与强度推一次到 shader，避免 setup 后第一帧用默认值。
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", _ambient_cloud_shadow_enabled)
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
-		_overlay_mat.set_shader_parameter("ambient_shadow_time", _ambient_time)
-	# ambient-shadow：setup 后立刻刷一次可见性，确保启用时在 reset_front_blend 之后还能看到影。
+		_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
+	_rebuild_curtain_layers()
+	_push_curtain_runtime_state()
+	_update_curtain_visibility()
 	_refresh_visibility()
 
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
@@ -284,37 +345,39 @@ func set_weather_strength(v: float) -> void:
 	_strength = clampf(v, 0.0, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("weather_strength", _strength)
+
+# weather_field_tex 通路已退役（main.gd 始终传 null，云改由 weather_lut 驱动）；
+# 保留此 setter 让 main.gd / hex_renderer 的历史调用点安全退化。
 
 func set_weather_field_texture(tex: Texture2D) -> void:
 	_weather_field_tex = tex
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("weather_field_tex", _weather_field_tex)
-		_overlay_mat.set_shader_parameter("weather_field_enabled", _weather_field_tex != null)
 	_refresh_visibility()
 
-# ambient-shadow：可见性收敛点。任何一个条件成立就保持 overlay 可见：
-#  1) 有活跃 fronts（_active_count > 0）
-#  2) 有 weather_field_tex（按 cell 渲染天气场）
-#  3) ambient cloud shadow 启用（即使 clear 天气也要画影子）
+# 可见性收敛点。任何一个条件成立就保持 overlay 可见：
+#  1) 有活跃 fronts（粒子/旧摘要）
+#  2) 有 weather_field_tex（旧按 cell 渲染天气场）
+#  3) 有 weather_lut（当前逐格云场真源）
 func _refresh_visibility() -> void:
 	visible = (_active_count > 0) \
 			or (_weather_field_tex != null) \
-			or _ambient_cloud_shadow_enabled
+			or _has_weather_lut_source()
 
-# Phase 1：把 WorldData.vector_atlas_tex（RGBA8，BA = wind_field）注入 overlay shader。
-# 由 HexRenderer 在 setup 之后调用一次；后续 wind_field 由 MapBaker.rebake_*_only 路径
-# 重建 vector_atlas_tex 时也会回流到这里，shader 内的 advection 立即跟上。
+func _has_weather_lut_source() -> bool:
+	return _weather_lut_tex != null and _weather_lut_dims.x > 0 and _weather_lut_dims.y > 0
+
+
+# vector_atlas 已退役；保留 setter 让旧调用点安全退化。
 func set_vector_atlas_texture(tex: Texture2D) -> void:
 	_vector_atlas_tex = tex
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("vector_atlas", _vector_atlas_tex)
-		_overlay_mat.set_shader_parameter("wind_field_enabled", _vector_atlas_tex != null)
 
 # ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
 # 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部
 # 的分支会根据这些 uniform 决定是否执行对应特性。为使任务 1 本身"无视觉变化"，
 # shader 侧的实际分支会在任务 4~6 中接入。
 var _visual_quality: int = 2
+var _weather_debug_view: int = 0
 var _day_night_enabled: bool = true
 var _extreme_ground_enabled: bool = true
 
@@ -322,27 +385,91 @@ func set_visual_quality(q: int) -> void:
 	_visual_quality = clampi(q, 0, 2)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+	_update_curtain_visibility()
+
+func set_weather_debug_view(view: int) -> void:
+	_weather_debug_view = clampi(view, 0, WEATHER_DEBUG_VIEW_NAMES.size() - 1)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
+
+func get_weather_debug_view() -> int:
+	return _weather_debug_view
+
+func get_weather_debug_view_count() -> int:
+	return WEATHER_DEBUG_VIEW_NAMES.size()
+
+func get_weather_debug_view_name() -> String:
+	return WEATHER_DEBUG_VIEW_NAMES[_weather_debug_view]
+
+func get_cell_curtain_diag() -> Dictionary:
+	return {
+		"instances": _curtain_instance_count,
+		"layers": _curtain_layers.size(),
+		"active_layers": _desired_curtain_layer_count(),
+		"has_lut": _has_weather_lut_source(),
+		"quality": _visual_quality,
+		"mobile_tier": _mobile_quality_tier_define,
+	}
+
+var _mobile_quality_tier_define: String = ""
+
+func set_mobile_quality_tier(tier_define: String) -> void:
+	if _mobile_quality_tier_define == tier_define:
+		return
+	_mobile_quality_tier_define = tier_define
+	_load_overlay_shader()
+	_load_curtain_shader()
+	if _overlay_quad != null and _world_bounds.size != Vector2.ZERO:
+		_overlay_quad.mesh = _build_full_quad(_world_bounds, _wrap_period_x)
+	_rebuild_curtain_layers(true)
+	_push_overlay_runtime_state()
+	_push_curtain_runtime_state()
+	_update_curtain_visibility()
 
 func set_day_night_enabled(v: bool) -> void:
 	_day_night_enabled = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 
+# extreme_weather_ground_effect_enabled uniform 已在重写中移除；保留 setter 供外部安全调用。
 func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
 	_extreme_ground_enabled = v
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter(
-			"extreme_weather_ground_effect_enabled", _extreme_ground_enabled
-		)
 
 # 任务 2：昼夜相位转发。overlay shader 可用它调暗夜间云色 / 在夜晚
 # 把闪电/降水粒子的底色做冷蓝偏移（具体分支在任务 4~5 接入）。
 var _day_phase: float = 0.25
+# [cylindrical-earth-daylight] 云光照接入 earth_daylight 逐像素晨昏线真源（与地形/水面/植被同源），
+# 需要 season_phase / day_phase / axial_tilt_rad 三个 per-material uniform。默认值同 uniforms.gdshaderinc。
+var _season_phase: float = 1.0
+var _axial_tilt_rad: float = 0.4101523
 
+# 昼夜相位：drive earth_daylight 的正午经度（晨昏线东西扫过）。由 HexRenderer.set_day_phase 转发。
 func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("day_phase", _day_phase)
+
+# 季节相位：drive earth_daylight 的太阳赤纬（南/北半球长昼↔短昼）。由 HexRenderer.set_season_phase 转发。
+func set_season_phase(v: float) -> void:
+	_season_phase = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("season_phase", _season_phase)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("season_phase", _season_phase)
+
+# 地轴倾角(rad)：drive earth_daylight 的季节赤纬幅度。由 HexRenderer 在 setup/spawn 时推入。
+func set_axial_tilt_rad(v: float) -> void:
+	_axial_tilt_rad = v
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -351,25 +478,24 @@ var _tod_sun_color: Color = Color.WHITE
 var _tod_ambient_color: Color = Color(0.65, 0.68, 0.75)
 var _tod_night_factor: float = 0.0
 var _tod_exposure: float = 1.0
+var _tod_sun_dir: Vector3 = Vector3(0.4, -0.7, 0.6)
 
 func apply_tod(profile: TODProfile) -> void:
 	if profile == null:
 		return
+	_tod_sun_dir = profile.sun_dir
 	_tod_sun_color = profile.sun_color
 	_tod_ambient_color = profile.ambient_color
 	_tod_night_factor = profile.night_factor
 	_tod_exposure = profile.exposure
+	# 云光照颜色 / 晨昏改走 earth_daylight 真源（逐像素经纬度），overlay 不再吃单色
+	# tod_sun_color / tod_ambient_color / tod_night_factor（已从 shader 删除）。仅保留迎光屏幕方向
+	# 与全局曝光。_tod_* 字段仍保留——下方雨雪粒子 modulate 染色仍按它取色（见 _sync_particles_pool）。
 	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter(
-			"tod_sun_color",
-			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
-		)
-		_overlay_mat.set_shader_parameter(
-			"tod_ambient_color",
-			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
-		)
-		_overlay_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
+		_overlay_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
 		_overlay_mat.set_shader_parameter("tod_exposure", profile.exposure)
+	if _curtain_mat != null:
+		_curtain_mat.set_shader_parameter("tod_exposure", profile.exposure)
 	# 任务 5：粒子 modulate 随 TOD 重新染色。
 	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
 	# 具体到每个 slot 仍用 intensity 控制 alpha，这里只保存“当前色因子”
@@ -390,24 +516,6 @@ func set_cloud_tod_tint_enabled(v: bool) -> void:
 	_cloud_tod_tint_enabled = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
-
-# ambient-shadow：全图飘移云影。enabled=true 时即使无天气 overlay 也会保持可见，
-# 在地面上画一层缓慢漂动的灰影斑块，给地图加"晴天有云"的氛围。strength 控制浓度。
-# _ambient_time 与游戏 pause 解耦——云影是装饰，不跟着游戏停（区别于 _world_time）。
-var _ambient_cloud_shadow_enabled: bool = true
-var _ambient_cloud_shadow_strength: float = 0.75
-var _ambient_time: float = 0.0
-
-func set_ambient_cloud_shadow_enabled(v: bool) -> void:
-	_ambient_cloud_shadow_enabled = v
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_enabled", v)
-	_refresh_visibility()
-
-func set_ambient_cloud_shadow_strength(v: float) -> void:
-	_ambient_cloud_shadow_strength = clampf(v, 0.0, 1.0)
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("ambient_cloud_shadow_strength", _ambient_cloud_shadow_strength)
 
 # 抽动修复（2026-05-18）：速度档切换时由 main.gd 调用，重置 interval/duration
 # 估计，避免下一次 commit 算出"上次 push 到现在"的超长间隔（例如 x20→x1 切换
@@ -505,100 +613,37 @@ func set_weather_fronts(fronts: Array) -> void:
 	# 目标为空时保留当前视觉快照做淡出；如果也没有视觉快照则立即清空。
 	_update_weather_front_blend(0.0)
 
-	# 任务 5：识别是否有 STORM front（触发闪电节拍推进）
-	_storm_active = false
-	for i in range(_front_target_snapshots.size()):
-		if _front_intensity(_front_target_snapshots[i]) > 0.001 \
-				and _front_type(_front_target_snapshots[i]) == _WT_STORM:
-			_storm_active = true
-			break
-	if not _storm_active and _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("storm_flash", 0.0)
-
 # ─── overlay shader uniform 上传 ─────────────────────────────────────────
 
-func _push_fronts_to_overlay(fronts: Array) -> void:
-	if _overlay_mat == null:
-		return
-	var centers := PackedVector4Array()
-	var shapes := PackedVector4Array()
-	var visuals := PackedVector4Array()
-	var types := PackedFloat32Array()
-	centers.resize(MAX_WEATHER_FRONTS)
-	shapes.resize(MAX_WEATHER_FRONTS)
-	visuals.resize(MAX_WEATHER_FRONTS)
-	types.resize(MAX_WEATHER_FRONTS)
-	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
-	for i in range(MAX_WEATHER_FRONTS):
-		if i < n:
-			var f = fronts[i]
-			var c := _front_center(f)
-			centers[i] = Vector4(c.x, c.y, _front_radius(f), _front_intensity(f))
-			var ax := _front_axis(f)
-			shapes[i] = Vector4(ax.x, ax.y, _front_major_scale(f), _front_minor_scale(f))
-			visuals[i] = Vector4(
-				_front_cloud_amount(f),
-				_front_precip_amount(f),
-				_front_dissolve_amount(f),
-				_front_life_progress(f)
-			)
-			types[i] = float(_front_type(f))
-		else:
-			centers[i] = Vector4.ZERO
-			shapes[i] = Vector4(1.0, 0.0, 1.0, 1.0)
-			visuals[i] = Vector4.ZERO
-			types[i] = -1.0
-	_overlay_mat.set_shader_parameter("weather_front_centers", centers)
-	_overlay_mat.set_shader_parameter("weather_front_shapes", shapes)
-	_overlay_mat.set_shader_parameter("weather_front_visuals", visuals)
-	_overlay_mat.set_shader_parameter("weather_front_types", types)
-	_overlay_mat.set_shader_parameter("weather_front_count", n)
+func _push_fronts_to_overlay(_fronts: Array) -> void:
+	# 云分布已改用 weather_lut（per-cell LUT，见 weather_overlay.sample_field_weather）：
+	# fronts 不再驱动 overlay 云 uniform，此函数保留为空避免改动多个调用点。
+	# 注：fronts 仍经 _sync_particles_pool 驱动 GPUParticles 雨雪粒子（粒子需椭圆发射盒）。
+	pass
 
 func _push_empty_fronts_to_overlay() -> void:
 	_push_fronts_to_overlay([])
 
-# v-data-driven：把 WeatherProfileRegistry 里 8 个 profile 的 overlay 颜色与 flags 位掩码
+# v-data-driven：把 WeatherProfileRegistry 里 8 个 profile 的 overlay 颜色
 # 推入 shader 的 uniform 数组。每局游戏只需调用一次（在 setup() 里）。
-# flags 位编码需与 weather_overlay.gdshader 中的 FLAG_* 常量严格一致：
-#   bit0 = has_overlay
-#   bit1 = enables_lightning
-#   bit2 = enables_snow_grain
-#   bit3 = enables_rain_streak
-#   bit4 = enables_fog_breathe
-const _FLAG_HAS_OVERLAY    := 1
-const _FLAG_LIGHTNING      := 2
-const _FLAG_SNOW_GRAIN     := 4
-const _FLAG_RAIN_STREAK    := 8
-const _FLAG_FOG_BREATHE    := 16
 const _MAX_WEATHER_TYPES   := 8
 
 func _push_weather_profile_uniforms_to_overlay() -> void:
 	if _overlay_mat == null:
 		return
 	var colors := PackedColorArray()
-	var flags := PackedInt32Array()
 	colors.resize(_MAX_WEATHER_TYPES)
-	flags.resize(_MAX_WEATHER_TYPES)
 	for wt in range(_MAX_WEATHER_TYPES):
 		var p := WeatherProfileRegistry.get_profile(wt)
 		if p == null:
 			colors[wt] = Color(0.0, 0.0, 0.0, 0.0)
-			flags[wt] = 0
 			continue
 		# rgb = overlay_color, a = overlay_base_alpha（shader 端直接当作 vec4 读）
 		colors[wt] = Color(
 			p.overlay_color.r, p.overlay_color.g, p.overlay_color.b,
 			p.overlay_base_alpha
 		)
-		var bits: int = 0
-		if p.has_overlay: bits |= _FLAG_HAS_OVERLAY
-		if p.enables_lightning: bits |= _FLAG_LIGHTNING
-		if p.enables_snow_grain: bits |= _FLAG_SNOW_GRAIN
-		if p.enables_rain_streak: bits |= _FLAG_RAIN_STREAK
-		if p.enables_fog_breathe: bits |= _FLAG_FOG_BREATHE
-		flags[wt] = bits
 	_overlay_mat.set_shader_parameter("weather_profile_colors", colors)
-	_overlay_mat.set_shader_parameter("weather_profile_flags", flags)
 
 # ─── 池子同步（B5 / B6 实装） ────────────────────────────────────────────
 
@@ -645,6 +690,10 @@ func _sync_shadow_pool(fronts: Array) -> void:
 
 func _sync_particles_pool(fronts: Array) -> void:
 	if _particles_pool.is_empty():
+		return
+	if not _FRONT_PARTICLES_ENABLED:
+		for i in range(MAX_WEATHER_FRONTS):
+			_disable_particle_slot(_particles_pool[i], i)
 		return
 	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
 	for i in range(MAX_WEATHER_FRONTS):
@@ -1055,15 +1104,275 @@ func _particle_tod_tint_component(sun_component: float, ambient_component: float
 
 # ─── 内部 ─────────────────────────────────────────────────────────────────
 
+func _push_overlay_runtime_state() -> void:
+	if _overlay_mat == null:
+		return
+	if _map_index_atlas_tex != null:
+		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
+	if _weather_lut_tex != null:
+		_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+	_overlay_mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
+	_overlay_mat.set_shader_parameter("world_origin", _world_bounds.position)
+	_overlay_mat.set_shader_parameter("world_size", _world_bounds.size)
+	_overlay_mat.set_shader_parameter("wrap_origin_x", 0.0)
+	_overlay_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
+
+	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
+	_overlay_mat.set_shader_parameter("world_time", _world_time)
+	_overlay_mat.set_shader_parameter("weather_strength", _strength)
+	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+	_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
+	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+	_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
+	_overlay_mat.set_shader_parameter("tod_exposure", _tod_exposure)
+	_overlay_mat.set_shader_parameter("cloud_tod_tint_enabled", _cloud_tod_tint_enabled)
+	# [cylindrical-earth-daylight] 云光照真源相位（首帧 / 重建材质时兜底推一次，运行时由 setter 增量刷新）。
+	_overlay_mat.set_shader_parameter("season_phase", _season_phase)
+	_overlay_mat.set_shader_parameter("day_phase", _day_phase)
+	_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+	_push_weather_profile_uniforms_to_overlay()
+	_push_fronts_to_overlay(_front_visual_snapshots)
+
+func _push_curtain_runtime_state() -> void:
+	if _curtain_mat == null:
+		return
+	if _weather_lut_tex != null:
+		_curtain_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+	if _world_ref != null and _world_ref.weather_lut_prev_tex != null:
+		_curtain_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+	_curtain_mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
+	_curtain_mat.set_shader_parameter("world_time", _world_time)
+	_curtain_mat.set_shader_parameter("weather_strength", _strength)
+	_curtain_mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+	_curtain_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
+	_curtain_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+	_curtain_mat.set_shader_parameter("season_phase", _season_phase)
+	_curtain_mat.set_shader_parameter("day_phase", _day_phase)
+	_curtain_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+	_curtain_mat.set_shader_parameter("tod_exposure", _tod_exposure)
+	_curtain_mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
+
 func _load_overlay_shader() -> void:
 	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",
 		ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
+	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+		var src: String = shader.code
+		if not src.begins_with("#define"):
+			shader = shader.duplicate() as Shader
+			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			print("[weather-layer/quality] prepended #define %s to %s" % [
+				_mobile_quality_tier_define, OVERLAY_SHADER_PATH
+			])
 	_overlay_mat = ShaderMaterial.new()
 	_overlay_mat.shader = shader
 	_overlay_quad.material = _overlay_mat
+
+func _load_curtain_shader() -> void:
+	var shader := ResourceLoader.load(CURTAIN_SHADER_PATH, "Shader",
+		ResourceLoader.CACHE_MODE_IGNORE) as Shader
+	if shader == null:
+		push_warning("WeatherLayer: shader not found at %s" % CURTAIN_SHADER_PATH)
+		return
+	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+		var src: String = shader.code
+		if not src.begins_with("#define"):
+			shader = shader.duplicate() as Shader
+			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+	_curtain_mat = ShaderMaterial.new()
+	_curtain_mat.shader = shader
+	for layer in _curtain_layers:
+		if layer != null:
+			layer.material = _curtain_mat
+	_push_curtain_runtime_state()
+
+func _weather_profile_flags() -> PackedInt32Array:
+	var flags := PackedInt32Array()
+	flags.resize(_MAX_WEATHER_TYPES)
+	for wt in range(_MAX_WEATHER_TYPES):
+		var p := WeatherProfileRegistry.get_profile(wt)
+		if p == null:
+			flags[wt] = 0
+			continue
+		var f: int = 0
+		if p.enables_lightning:
+			f |= 2
+		if p.enables_snow_grain:
+			f |= 4
+		if p.enables_rain_streak:
+			f |= 8
+		if p.enables_fog_breathe:
+			f |= 16
+		flags[wt] = f
+	return flags
+
+func _build_curtain_patch_mesh() -> ArrayMesh:
+	var verts := PackedVector2Array([
+		Vector2(-1.0, -1.0),
+		Vector2(1.0, -1.0),
+		Vector2(1.0, 1.0),
+		Vector2(-1.0, 1.0),
+	])
+	var uvs := PackedVector2Array([
+		Vector2(0.0, 0.0),
+		Vector2(1.0, 0.0),
+		Vector2(1.0, 1.0),
+		Vector2(0.0, 1.0),
+	])
+	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+func _rebuild_curtain_layers(force: bool = false) -> void:
+	var max_layers := _curtain_layer_capacity()
+	if not _CELL_CURTAIN_ENABLED or _curtain_map == null or _curtain_map.cell_count() <= 0 or max_layers <= 0:
+		_clear_curtain_layers()
+		return
+	if not force \
+			and _curtain_built_for_map == _curtain_map \
+			and is_equal_approx(_curtain_built_hex_size, _hex_size) \
+			and is_equal_approx(_curtain_built_wrap_period, _wrap_period_x) \
+			and _curtain_layers.size() == max_layers:
+		return
+	_clear_curtain_layers()
+	if _curtain_mesh == null:
+		_curtain_mesh = _build_curtain_patch_mesh()
+	var cells: Array = _curtain_map.iter_cells()
+	if cells.is_empty():
+		cells = _curtain_map.all_cells()
+	if cells.is_empty():
+		return
+	var tile_offsets := PackedFloat32Array([0.0])
+	if _wrap_period_x > 0.0001:
+		tile_offsets = PackedFloat32Array([-_wrap_period_x, 0.0, _wrap_period_x])
+	var valid_cells: Array = []
+	for order in range(cells.size()):
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx: int = int(cell.index)
+		if idx < 0:
+			idx = order
+		if idx < 0 or idx >= 65536:
+			continue
+		valid_cells.append([cell, idx, order])
+	var instance_total: int = valid_cells.size() * tile_offsets.size()
+	if instance_total <= 0:
+		return
+	for layer_idx in range(max_layers):
+		var mmi := MultiMeshInstance2D.new()
+		mmi.name = "CellCurtainLayer_%d" % layer_idx
+		mmi.z_as_relative = true
+		mmi.z_index = layer_idx
+		mmi.material = _curtain_mat
+		_curtain_root.add_child(mmi)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_2D
+		mm.use_colors = false
+		mm.use_custom_data = true
+		mm.mesh = _curtain_mesh
+		mm.instance_count = instance_total
+		mm.visible_instance_count = instance_total
+		mmi.multimesh = mm
+		var depth: float = 0.5
+		if max_layers > 1:
+			depth = float(layer_idx) / float(max_layers - 1)
+		var half_w: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(0.96, 1.18, depth)
+		var half_h: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(1.10, 1.36, depth)
+		var write_idx: int = 0
+		for item in valid_cells:
+			var item_cell = item[0]
+			var cell_idx: int = int(item[1])
+			var cell_order: int = int(item[2])
+			var center := _curtain_cell_center(item_cell, cell_idx)
+			var seed := _curtain_seed(cell_idx, cell_order)
+			for ox in tile_offsets:
+				var pos := center + Vector2(float(ox), 0.0)
+				mm.set_instance_transform_2d(write_idx, Transform2D(
+					Vector2(half_w, 0.0),
+					Vector2(0.0, half_h),
+					pos
+				))
+				mm.set_instance_custom_data(write_idx, _curtain_custom_data(cell_idx, seed, depth))
+				write_idx += 1
+		_curtain_layers.append(mmi)
+		_curtain_multimeshes.append(mm)
+	_curtain_built_for_map = _curtain_map
+	_curtain_built_hex_size = _hex_size
+	_curtain_built_wrap_period = _wrap_period_x
+	_curtain_instance_count = instance_total * max_layers
+
+func _clear_curtain_layers() -> void:
+	for layer in _curtain_layers:
+		if layer != null:
+			if layer.get_parent() != null:
+				layer.get_parent().remove_child(layer)
+			layer.queue_free()
+	_curtain_layers.clear()
+	_curtain_multimeshes.clear()
+	_curtain_instance_count = 0
+	_curtain_built_for_map = null
+
+func _curtain_layer_capacity() -> int:
+	if OS.has_feature("mobile"):
+		return _CURTAIN_LAYER_COUNT_MOBILE
+	return _CURTAIN_LAYER_COUNT_DESKTOP
+
+func _desired_curtain_layer_count() -> int:
+	if not _CELL_CURTAIN_ENABLED:
+		return 0
+	if _weather_lut_dims.x <= 0 or _weather_lut_dims.y <= 0:
+		return 0
+	if _strength <= 0.001:
+		return 0
+	if OS.has_feature("mobile"):
+		return 1
+	match _visual_quality:
+		0:
+			return 1
+		1:
+			return 1
+		_:
+			return _curtain_layer_capacity()
+
+func _curtain_effect_active() -> bool:
+	return _desired_curtain_layer_count() > 0 and _curtain_instance_count > 0
+
+func _update_curtain_visibility() -> void:
+	var active_layers := _desired_curtain_layer_count()
+	for i in range(_curtain_layers.size()):
+		var layer := _curtain_layers[i]
+		if layer != null:
+			layer.visible = i < active_layers
+	if _curtain_root != null:
+		_curtain_root.visible = active_layers > 0 and _curtain_instance_count > 0
+
+func _curtain_cell_center(cell, idx: int) -> Vector2:
+	if _curtain_map != null \
+			and idx >= 0 \
+			and idx < _curtain_map.cell_pos_x_arr.size() \
+			and idx < _curtain_map.cell_pos_y_arr.size():
+		return Vector2(_curtain_map.cell_pos_x_arr[idx], _curtain_map.cell_pos_y_arr[idx]) * _hex_size
+	return HexUtils.cube_to_world(int(cell.q), int(cell.r), _hex_size)
+
+func _curtain_custom_data(cell_id: int, seed: float, depth: float) -> Color:
+	return Color(
+		float(cell_id & 0xFF) / 255.0,
+		float((cell_id >> 8) & 0xFF) / 255.0,
+		clampf(seed, 0.0, 1.0),
+		clampf(depth, 0.0, 1.0)
+	)
+
+func _curtain_seed(idx: int, order: int) -> float:
+	return _hash_noise_2d(idx * 17 + 11, order * 31 + 7)
 
 # ─── 云阴影池初始化 ──────────────────────────────────────────────────────
 # 生成一张共享的 radial-fade alpha 圆盘贴图（白色 RGB + 渐变 alpha），
@@ -1076,6 +1385,16 @@ func _load_overlay_shader() -> void:
 # 改为 MIX 后，四角 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
 
 func _init_shadow_pool() -> void:
+	# Fix #7C (2026-06-15): mobile 完全跳过云阴影 Sprite 池。
+	# 注意：_sync_shadow_pool (line 605-612) 已是 dead code（云阴影现在在
+	# weather_overlay shader 内画），所有 sprite 永远 invisible。但
+	# _init_shadow_pool 仍构造 16 个 Sprite2D + 1 张 256x256 alpha 圆盘贴图
+	# （~262KB VRAM）+ 添加到 SceneTree。mobile 跳过这些 setup 省启动 hitch
+	# + 16 个永久不可见节点的 culling 评估开销。
+	# _sync_shadow_pool 入口 `if _shadow_pool.is_empty(): return` 保证空池安全。
+	if OS.has_feature("mobile"):
+		_shadow_pool.clear()
+		return
 	_shadow_texture = _build_radial_fade_texture(SHADOW_BASE_RADIUS_PX)
 	_shadow_material = CanvasItemMaterial.new()
 	_shadow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_MIX
@@ -1158,6 +1477,22 @@ func _hash_noise_2d(ix: int, iy: int) -> float:
 # _particles_pool 中每个节点保持未赋材质状态，由 _configure_particles_for_type 首次切换时赋值。
 
 func _init_particles_pool() -> void:
+	# Fix #7B (2026-06-15): mobile 完全跳过 GPU 粒子池构造。
+	# log_next.txt 实测 fronts=12 时 primitives 1644→5418，~3700 增量主要来自
+	# 12 个 GPUParticles2D 实例（每个 amount=80-900 粒子，按 area 缩放）。
+	# Adreno 830 上 GPUParticles 内部 visibility_rect / process_material 切换
+	# 累积明显帧消耗。雨/雪视觉降级为 weather_overlay shader 内的 streak/grain
+	# effect（line 405-460 那段），mobile 玩家仍能看到天气表现。
+	# _sync_particles_pool 入口的 `if _particles_pool.is_empty(): return` 守卫
+	# 保证空池不会触发 NPE。
+	if OS.has_feature("mobile"):
+		_fallback_particle_texture = _build_fallback_particle_texture()
+		_process_material_cache.clear()
+		_particles_pool.clear()
+		_particles_type_cache.clear()
+		_particles_amount_cache.clear()
+		_particles_vis_radius_cache.clear()
+		return
 	_fallback_particle_texture = _build_fallback_particle_texture()
 	_process_material_cache.clear()
 	_particles_pool.clear()
@@ -1237,16 +1572,25 @@ func _build_fallback_particle_texture() -> ImageTexture:
 	var img := Image.create_from_data(1, 1, false, Image.FORMAT_RGBA8, data)
 	return ImageTexture.create_from_image(img)
 
-func _build_full_quad(bounds: Rect2) -> Mesh:
+func _build_full_quad(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	var p := bounds.position
 	var s := bounds.size
-	var verts := PackedVector2Array([
-		p,
-		p + Vector2(s.x, 0.0),
-		p + s,
-		p + Vector2(0.0, s.y),
-	])
-	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	if wrap_period_x > 0.0001:
+		p.x = 0.0
+		s.x = wrap_period_x
+	var verts := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var tile_offsets := PackedFloat32Array([0.0])
+	if wrap_period_x > 0.0001:
+		tile_offsets = PackedFloat32Array([-wrap_period_x, 0.0, wrap_period_x])
+	for ox in tile_offsets:
+		var base := verts.size()
+		var tp := p + Vector2(float(ox), 0.0)
+		verts.append(tp)
+		verts.append(tp + Vector2(s.x, 0.0))
+		verts.append(tp + s)
+		verts.append(tp + Vector2(0.0, s.y))
+		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

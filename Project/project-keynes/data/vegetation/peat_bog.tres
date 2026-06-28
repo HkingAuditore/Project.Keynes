@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 27
+display_name_cn = "泥炭沼"
+transpiration = 0.75
+albedo = 0.16
+eco_score = 0.7
+ideal_temp = 0.34
+ideal_moist = 0.92
+temp_tolerance = 0.18
+moist_tolerance = 0.18
+next_richer = 20
+next_harsher = 2

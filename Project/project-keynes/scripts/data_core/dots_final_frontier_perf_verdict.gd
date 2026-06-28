@@ -45,7 +45,6 @@ const B_PLUS_NATIVE_MS_RATIO_MIN: float = 0.90        # native 占比 ≥ 90%
 
 ## 豁免清单：与 total_cpp 一致 + GPU upload 类。
 const _SUS_JOB_EXEMPT: Array = [
-	"sea_ice_atlas_upload",   # GPU upload 主线程同步
 	"enum_atlas_upload",      # ≤ 3ms 但仍给 spike 留余量
 ]
 

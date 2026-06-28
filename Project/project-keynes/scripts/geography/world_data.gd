@@ -37,13 +37,17 @@ var ocean_current_buffer: PackedByteArray = PackedByteArray()  # RG8
 # 陆地像素维持 128（0）。由 MapGenerator._compute_ocean_currents 回填到
 # HexCell.upwelling_strength，下游海冰 / 海洋生物 / 调试可视化共用。
 var ocean_upwelling_buffer: PackedByteArray = PackedByteArray()  # R8
-# Phase 6：每像素盛行风向（按纬度风带模型 + 大陆扰动 + 季风偏置）。RG8。
+# Phase 6：每像素当前物理风向（C++/DOTS 风场快照光栅化；fallback 为纬度背景风）。RG8。
 # 海洋洋流通过 Ekman 偏转读它当主驱动力；主地图水面和 WeatherLayer 仍消费它。
 
 var wind_field_buffer: PackedByteArray = PackedByteArray()  # RG8
 # Phase 14：每像素火山强度（r 通道）。靠近火山中心 = 1.0，向外径向衰减。
 # shader 用来叠加红光晕 / 烟柱效果。
 var volcano_field_buffer: PackedByteArray = PackedByteArray()  # R8
+# [water-depth-tex 2026-06-26] 每像素海/湖统一归一水深（R8，0=岸/陆，255=最深）。
+# C++ 在 post_base 算好 per-cell water_depth01（海洋 1-E/sea + 湖泊湖岸→湖心碗形），
+# bake 经 pixel_to_cell_index 扇出到此 buffer → water_depth_tex；shader 每水像素 1 次采样。
+var water_depth_buffer: PackedByteArray = PackedByteArray()  # R8
 # 兼容旧调试/数据通道的海冰覆盖率 buffer。主地图海冰视觉已经改为 shader
 # 按逐像素水温/纬度/水深派生，不再依赖此 buffer 上传。
 var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
@@ -71,6 +75,7 @@ var ice_state_buffer: PackedByteArray = PackedByteArray()         # R8
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
 var derived_size: Vector2i = Vector2i.ZERO  # 派生 buffer 分辨率（低，省内存）
 var world_bounds: Rect2 = Rect2()
+var wrap_period_x: float = 0.0
 var sea_level: float = 0.42                  # 与 cfg.sea_level 一致，[0,1] 范围
 var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复用同一 seed
 
@@ -78,10 +83,11 @@ var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复
 # v9.atlas：把 9 张 derived 贴图合并成 3 张 atlas，降低 sampler 绑定数与 uniform 上传量。
 # height_tex 因为分辨率与精度需求独立保留（hm_size + RG8 16-bit）。
 #
-# enum_atlas_tex   (RGB8 NEAREST, derived_size)
+# enum_atlas_tex   (RGBA8 NEAREST, derived_size；map_index_atlas)
 #   R = biome (TerrainType.TERRAIN id)
-#   G = vegetation (VegetationType.VEG id)
-#   B = cover (CoverType.CV id)
+#   G/B = cell.index low/high byte
+#   A = landform id
+
 #
 # scalar_atlas_tex (RGBA8 LINEAR, derived_size)
 #   R = moisture              (原 moisture_tex)
@@ -96,9 +102,22 @@ var height_tex: ImageTexture
 var enum_atlas_tex: ImageTexture
 var scalar_atlas_tex: ImageTexture
 var vector_atlas_tex: ImageTexture
+# [river-render-restore 2026-06-19] 河流 SDF 专用 L8 纹理（derived_size）。
+# scalar_atlas 退役后 flow 通道断供，has_river 链生成的 flow_buffer 从未上传 GPU →
+# 河流在主地图完全不可见。这里把 flow_buffer 单独编码成一张轻量 L8 纹理重新接回 shader，
+# 不复活整张 scalar_atlas（moisture/lat 仍走 LUT/uv）。bake_world 烘焙一次，之后不变。
+var flow_tex: ImageTexture
 # 火山强度场独立 R8 纹理（原先挤在 scalar_atlas.a，已让位给 sea_ice_fraction）。
 # 主视觉路径读它做火山红光晕 / 烟柱；bake_world 烘焙一次，之后不变。
 var volcano_field_tex: ImageTexture
+# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 纹理（derived_size，与 height/biome 同 uv）。
+# 主水体 shader 按它做深浅着色（深海蓝 / 浅滩青 / 湖心暗），单次采样取代旧海洋邻域 + 湖泊多半径。
+# bake_world 烘焙一次，之后不变；null 时 shader 回退旧逐邻域估算。
+var water_depth_tex: ImageTexture
+# [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny，hm_size）。
+# 地形静态 → 运行期 shader 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap；细节法线运行期按
+# biome/性能档叠。bake_world 烘焙一次，之后不变；与 height_tex 共用 uv。
+var terrain_normal_tex: ImageTexture
 # 兼容旧调试/数据通道的海冰 R8 纹理。主地图海冰视觉不采样它；
 # sea_ice_atlas_upload 默认不再注册。
 var sea_ice_tex: ImageTexture
@@ -121,6 +140,29 @@ var upwelling_tex: ImageTexture
 # R=raw value noise；G/B/A=2/3/4 octave fBM 预积分。world_map 的 fbm(p,N)
 # 全局降为 1 次 texture fetch，由 MapBaker lazy 生成，跨 world 实例共享同一张 ImageTexture。
 var noise_tex: ImageTexture
+
+# ─── Cell-index indirection（province-ID 间接寻址，feature-flag 可回退）───────
+# 把"hex 内恒定"的视觉 atlas 改为"静态 cell 索引图 + per-cell LUT"间接寻址，
+# 让 shader 自己做 pixel→cell 解析，把 fan-out 目标从 n_pix 压到 n_cells。
+#
+# map_index_atlas（复用 enum_atlas_tex 字段）：RGBA8 NEAREST，derived_size。
+#   R=biome，G/B=cell.index 低/高字节，A=landform；map 外像素写哨兵 0xFFFF。
+
+# enum_lut / dyn_lut / eco_lut：per-cell LUT 纹理（lut_dims 网格，NEAREST）。
+#   enum_lut(RGB8)=biome/veg/cover；dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
+#   eco_lut(RGBA8)=foliage/stress/transition/growth。更新=写 n_cells texel + 一次 update。
+# lut_dims：(lut_w, lut_h)，lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
+var enum_lut_tex: ImageTexture
+var dyn_lut_tex: ImageTexture
+var eco_lut_tex: ImageTexture
+# weather_lut（cloud-from-field 2026-06-20）：per-cell 天气场 LUT，RGBA8 NEAREST，lut_dims。
+#   R=weather_type，G=intensity，B=cloud，A=precip。由 encode_cell_luts 与 enum/dyn/eco 同批
+#   产出（C++ 优先，GDScript fallback），weather_overlay.gdshader 经 cell-index 间接寻址逐格
+#   采样驱动云分布——天气云不再用 fronts 椭圆摘要，而是精确对应 HexCell.weather_*。
+var weather_lut_tex: ImageTexture
+var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值减两次更新间横跳)
+var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
+var lut_dims: Vector2i = Vector2i.ZERO
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
 # 在 _bake_height_biome_moisture 里第一遍 warp + cube_round 时顺手填好；之后
@@ -267,7 +309,10 @@ func _sample_byte(buf: PackedByteArray, world_pos: Vector2) -> int:
 func _world_to_uv(world_pos: Vector2) -> Vector2:
 	if world_bounds.size.x < 0.001 or world_bounds.size.y < 0.001:
 		return Vector2(0.5, 0.5)
-	var u := (world_pos.x - world_bounds.position.x) / world_bounds.size.x
+	var sample_x := world_pos.x
+	if wrap_period_x > 0.0001:
+		sample_x = fposmod(sample_x, wrap_period_x)
+	var u := (sample_x - world_bounds.position.x) / world_bounds.size.x
 	var v := (world_pos.y - world_bounds.position.y) / world_bounds.size.y
 	return Vector2(clampf(u, 0.0, 1.0), clampf(v, 0.0, 1.0))
 

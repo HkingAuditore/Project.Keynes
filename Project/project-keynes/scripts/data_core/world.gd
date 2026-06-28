@@ -74,8 +74,8 @@ var _debug: bool = OS.is_debug_build()
 # 范围：mask 只覆盖 cells pool（[0, n_cells)）。其他 pool（weather front 池等）
 # 写 idx >= n_cells 时本层直接跳过 mark（mask 大小固定 = n_cells）。
 #
-# 同步：SUS scheduler 单线程串行 tick，sea_ice_atlas_upload_job (priority=250)
-# 必然跑在所有 sim 写字段 Job (priority 100-200) 之后；baker 入口
+# 同步：SUS scheduler 单线程串行 tick，visual upload jobs
+# 必然跑在所有 sim 写字段 Job 之后；baker 入口
 # read_and_clear_dirty_mask() 一次性快照 + 清零，原子语义靠"消费在写之后"保证。
 #
 # 性能：mark_dirty 单点开销 = 1 次比较 + 1 次 byte 写，N=1e5 全脏 ≈ 0.5ms（cold
@@ -724,8 +724,8 @@ func mark_dirty_all() -> void:
 ## 公开 API：原子地"读出当前所有 dirty cell 的 index 列表 + 把 mask 清零"。
 ##
 ## 返回 PackedInt32Array（升序，因遍历顺序保证）。
-## SUS scheduler 是单线程串行，priority 序天然把 sim 写 Job (100-200) 排在
-## sea_ice_atlas_upload_job (250) 之前 → baker 入口调本方法即获得 tick 内
+## SUS scheduler 是单线程串行，priority 序天然把 sim 写 Job 排在
+## visual upload job 之前 → baker 入口调本方法即获得 tick 内
 ## "全部待消费 dirty"快照；之后 sim 再写下个 tick 的脏会重新累积。
 ##
 ## dirty_mask_enabled = false 或 mask_size = 0 时返回空数组（baker 应当退化到
@@ -1595,11 +1595,11 @@ func pool_count() -> int:
 # ─── Phase 4.1：序列化 / 反序列化 API（dots-phase4-followup.md §4.1）─────
 #
 # 当前实现：**骨架阶段**——按 component_schema.gd CELL_SCHEMA 自动遍历
-# 38 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。
+# 生产 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。
 # fronts 序列化在 Phase 1.2 SoA 化升权威之后扩展（当前 _serialize_fronts 返回空 dict）。
 #
 # 调用语义：
-#   - serialize() 在游戏暂停期 / 季节末调用，开销 ~10ms（38 字段 × n_cells × COW copy）
+#   - serialize() 在游戏暂停期 / 季节末调用，开销随生产字段数 × n_cells 线性增长
 #   - deserialize(d) 在 load 时调用，要求当前已 bind_map_data 到 *相同 size* 的 MapData
 #     （否则 size 不匹配直接 push_error）
 #   - version 字段触发 schema migration 钩子（Phase 4.2）。
@@ -1614,7 +1614,7 @@ const SAVE_VERSION: int = 1
 ##     "version": int (= SAVE_VERSION),
 ##     "n_cells": int,
 ##     "n_fronts": int,
-##     "cells": Dictionary { cpp_name: PackedArray },  # 38 字段（demo 跳过）
+##     "cells": Dictionary { cpp_name: PackedArray },  # 生产字段（demo 跳过）
 ##     "fronts": Dictionary,                            # Phase 4.1 PR-4.1.2 后扩展
 ##   }
 ##

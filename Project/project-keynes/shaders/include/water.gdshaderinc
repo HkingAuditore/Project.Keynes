@@ -4,7 +4,7 @@
 // Contents:
 //   - Gerstner-Lite wave constants
 //   - water_surface_height        : height field for differential normals
-//   - sample_water_normal         : central-diff normal from height field
+//   - sample_water_normal         : central-diff normal from height field + smooth strength envelope
 //   - water_domain_warp           : ShaderToy 3tyBRh-style coord warp
 //   - water_shade_lines           : legacy sin-band stripes (kept for API compat)
 //   - water_calm_brightness       : low-contrast fbm brightness noise (±8%)
@@ -12,7 +12,7 @@
 //   - water_biome_weights         : 3×3 neighborhood soft weights for biome blend
 //
 // Dependencies (caller-side MUST declare BEFORE #include):
-//   - sampler2D enum_atlas            (for water_biome_weights biome id lookup)
+//   - sampler2D map_index_atlas       (for water_biome_weights biome id lookup)
 //   - int       B_LAKE / B_REEF / B_KELP / B_SEA_ICE  (biome id constants)
 //   - fbm / value_noise / voronoi_cell / hash21       (from common_noise.gdshaderinc)
 //
@@ -31,18 +31,21 @@
 const vec2 WATER_WAVE_DIR_A = vec2( 0.8,  0.3);
 const vec2 WATER_WAVE_DIR_B = vec2(-0.4,  0.7);
 const vec2 WATER_WAVE_DIR_C = vec2( 0.1, -0.9);
-const float WATER_WAVE_FREQ_A = 0.42;
-const float WATER_WAVE_FREQ_B = 0.78;
-const float WATER_WAVE_FREQ_C = 1.18;
-const float WATER_WAVE_AMP_A  = 0.028;
-const float WATER_WAVE_AMP_B  = 0.016;
-const float WATER_WAVE_AMP_C  = 0.009;
-const float WATER_WAVE_SPEED_A = 0.26;
-const float WATER_WAVE_SPEED_B = 0.38;
-const float WATER_WAVE_SPEED_C = 0.52;
+const float WATER_WAVE_FREQ_A = 0.118;
+const float WATER_WAVE_FREQ_B = 0.202;
+const float WATER_WAVE_FREQ_C = 0.336;
+const float WATER_WAVE_AMP_A  = 0.052;
+const float WATER_WAVE_AMP_B  = 0.024;
+const float WATER_WAVE_AMP_C  = 0.010;
+const float WATER_WAVE_SPEED_A = 0.18;
+const float WATER_WAVE_SPEED_B = 0.27;
+const float WATER_WAVE_SPEED_C = 0.39;
 
 // quality=0：只叠 1 个主方向（低端机）；quality>=1：叠 3 个方向。
 // amp_scale/freq_scale：caller 按水体类型传入（需求 1.5/1.6）。
+// [水面去条纹 2026-06-25] 三组固定方向正弦相干叠加会在整片洋面形成规则平行"条纹"，
+// 在低粗糙度高光下尤其刺眼。主频控制在中尺度涌浪；quality>=1 叠中低频碎波，
+// 避免回到短促梳齿，同时保留可读的波浪细节。
 float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, int quality) {
 	vec2 dA = normalize(WATER_WAVE_DIR_A);
 	float kA = WATER_WAVE_FREQ_A * freq_scale;
@@ -56,8 +59,22 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 		float pB = dot(wp, dB) * kB - t * WATER_WAVE_SPEED_B;
 		float pC = dot(wp, dC) * kC - t * WATER_WAVE_SPEED_C;
 		h += sin(pB) * WATER_WAVE_AMP_B + sin(pC) * WATER_WAVE_AMP_C;
+		// 中低频碎波：补回波面细节，但频率仍明显低于旧版密集梳齿纹。
+		float detail = fbm(wp * 0.060 + vec2(-t * 0.055, t * 0.036), 2) - 0.5;
+		h += detail * WATER_WAVE_AMP_A * 0.58;
 	}
 	return h * amp_scale;
+}
+
+// 低频、慢速的法线强度包络：只改斜率强弱，不改水面高度相位，用来打散整片水面一致的高光条纹。
+float water_normal_strength_envelope(vec2 wp, float t, int quality) {
+	if (quality <= 0) {
+		return 1.0;
+	}
+	float slow = fbm(wp * 0.0055 + vec2(t * 0.009, -t * 0.006), 2);
+	float mid = fbm(wp * 0.0140 + vec2(-t * 0.016, t * 0.011) + vec2(19.0, -37.0), 1);
+	float env = smoothstep(0.18, 0.86, slow * 0.70 + mid * 0.30);
+	return mix(0.72, 1.32, env);
 }
 
 // 中心差分法线：eps 世界坐标单位下估 ∂h/∂x, ∂h/∂y，返回 z-up 归一化法线。
@@ -66,14 +83,22 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	if (!enabled) {
 		return vec3(0.0, 0.0, 1.0);
 	}
+	// [水面去条纹 2026-06-25] 先对基准坐标做一次低频域扭曲（仅算一次，不在每个差分 tap 重复，
+	// 控制额外采样），让规则正弦条纹的走向随空间缓慢弯曲，不再是贯穿整屏的平行直线。
+	vec2 wpw = wp;
+	if (quality >= 1) {
+		float wnx = fbm(wp * 0.0135 + vec2(t * 0.034, 0.0), 1) - 0.5;
+		float wny = fbm(wp * 0.0135 + vec2(0.0, t * 0.030) + vec2(23.0, -11.0), 1) - 0.5;
+		wpw = wp + vec2(wnx, wny) * 12.0;
+	}
 	float eps = 0.5;
-	float hx0 = water_surface_height(wp - vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hx1 = water_surface_height(wp + vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hy0 = water_surface_height(wp - vec2(0.0, eps), t, amp_scale, freq_scale, quality);
-	float hy1 = water_surface_height(wp + vec2(0.0, eps), t, amp_scale, freq_scale, quality);
+	float hx0 = water_surface_height(wpw - vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
+	float hx1 = water_surface_height(wpw + vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
+	float hy0 = water_surface_height(wpw - vec2(0.0, eps), t, amp_scale, freq_scale, quality);
+	float hy1 = water_surface_height(wpw + vec2(0.0, eps), t, amp_scale, freq_scale, quality);
 	// 差分斜率：dhx = ∂h/∂x，dhy = ∂h/∂y；法线 = normalize((-dhx, -dhy, 1))
-	// 乘一个 "normal_gain" 让浅水/法线更夸张（需求 1.2 决定 z 固定 1.0）
-	float normal_gain = 7.0;
+	// 中尺度波频率已回升，斜率增益略收，避免高光重新变成密集白线。
+	float normal_gain = 8.5 * water_normal_strength_envelope(wpw, t, quality);
 	float dhx = (hx1 - hx0) / (2.0 * eps) * normal_gain;
 	float dhy = (hy1 - hy0) / (2.0 * eps) * normal_gain;
 	return normalize(vec3(-dhx, -dhy, 1.0));
@@ -158,8 +183,8 @@ vec4 water_biome_weights(vec2 uv, vec2 tx, float blend_radius) {
 			// Center sample anchors the current tile; diagonals still contribute but
 			// cannot fully overwrite a narrow water feature.
 			float sw = 1.0 - 0.18 * clamp(length(o), 0.0, 1.41421356);
-			vec2 suv = clamp(uv + o * step_uv, vec2(0.0), vec2(1.0));
-			int b = int(texture(enum_atlas, suv).r * 255.0 + 0.5);
+			vec2 suv = wrap_map_uv(uv + o * step_uv);
+			int b = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
 			if (b == B_LAKE)    cnt_lake += sw;
 			if (b == B_REEF)    cnt_reef += sw;
 			if (b == B_KELP)    cnt_kelp += sw;

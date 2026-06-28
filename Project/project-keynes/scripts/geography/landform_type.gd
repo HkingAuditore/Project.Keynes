@@ -17,9 +17,13 @@ enum LF {
 	MOUNTAIN,     # 山地（0.62 < land_h ≤ 0.82）
 	PEAK,         # 高峰（land_h > 0.82）
 	DELTA,        # 三角洲
-	BADLANDS,     # 荒原峡谷
-	SALT_FLAT,    # 盐沼盆地
+	BADLANDS,     # 荒原 / 恶地（干旱软岩片状侵蚀的破碎台地，与峡谷/裂谷区分）
+	SALT_FLAT,    # 盐滩 / 干盐湖（内流盆地底部蒸发结盐的干燥盐碱滩）
 	VOLCANO,      # 火山
+	# ── terrain-overhaul 新增地貌（id 13+，尾部追加）──
+	PLATEAU,      # 高原（大面积抬升 + 顶部平坦的高海拔台地）
+	RIFT_VALLEY,  # 裂谷（构造成因：板块离散边界下陷的线状洼地）
+	CANYON,       # 峡谷（侵蚀成因：河流深切、两壁陡立的线状峡谷，须有河道穿过）
 }
 
 # 静态属性表
@@ -41,6 +45,9 @@ const _DATA: Dictionary = {
 	LF.BADLANDS:   { "passable_land": true,  "passable_sea": false, "move_cost": 3, "is_water": false },
 	LF.SALT_FLAT:  { "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
 	LF.VOLCANO:    { "passable_land": false, "passable_sea": false, "move_cost": 0, "is_water": false },
+	LF.PLATEAU:    { "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
+	LF.RIFT_VALLEY:{ "passable_land": true,  "passable_sea": false, "move_cost": 2, "is_water": false },
+	LF.CANYON:     { "passable_land": true,  "passable_sea": false, "move_cost": 3, "is_water": false },
 }
 
 const _NAME_CN: Dictionary = {
@@ -54,9 +61,12 @@ const _NAME_CN: Dictionary = {
 	LF.MOUNTAIN:   "山地",
 	LF.PEAK:       "高峰",
 	LF.DELTA:      "三角洲",
-	LF.BADLANDS:   "荒原峡谷",
-	LF.SALT_FLAT:  "盐沼地形",
+	LF.BADLANDS:   "荒原",
+	LF.SALT_FLAT:  "盐滩",
 	LF.VOLCANO:    "火山",
+	LF.PLATEAU:    "高原",
+	LF.RIFT_VALLEY:"裂谷",
+	LF.CANYON:     "峡谷",
 }
 
 # --- 静态查询 ---

@@ -39,10 +39,11 @@ func _init(generator) -> void:
 	_generator = generator
 
 func run(map: MapData, season_phase: float) -> void:
-	if _generator == null:
+	if _generator == null or map == null:
 		return
-# Future: ext.has_method("run_ocean_water") 切 dots_cpp / cp.use_soa_pipeline 切 soa (use_gdext_ocean_water removed in dots-flag-prune-pr1)
-	pass
+	# 本阶段先接管调用入口，保持原 MapGenerator legacy 实现作为行为权威。
+	_generator._ocean_water_pass_legacy(map, season_phase)
+
 
 func describe() -> String:
 	return "DCOceanWaterPass(generator=%s)" % ("present" if _generator != null else "(null)")

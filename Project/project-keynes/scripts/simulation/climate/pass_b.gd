@@ -45,10 +45,11 @@ func _init(generator) -> void:
 
 ## 主入口：跑 Pass-B。
 func run(map: MapData, season_phase: float) -> void:
-	if _generator == null:
+	if _generator == null or map == null:
 		return
-	# Future: switch by ext.has_method("run_climate_pass_b") / cp.use_soa_pipeline (use_gdext_climate_pass_b removed in dots-flag-prune-pr1)
-	pass
+	# 本阶段先接管调用入口，保持原 MapGenerator legacy 实现作为行为权威。
+	_generator._climate_pass_b_legacy(map, season_phase)
+
 
 func describe() -> String:
 	return "DCClimatePassB(generator=%s)" % ("present" if _generator != null else "(null)")

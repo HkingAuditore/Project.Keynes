@@ -44,6 +44,11 @@ const _PROFILE_PATHS: Dictionary = {
 	23: "res://data/terrain/oasis.tres",
 	24: "res://data/terrain/salt_flat.tres",
 	25: "res://data/terrain/badlands.tres",
+	26: "res://data/terrain/cold_desert.tres",
+	27: "res://data/terrain/chaparral.tres",
+	28: "res://data/terrain/moor.tres",
+	29: "res://data/terrain/floodplain.tres",
+	30: "res://data/terrain/mesa.tres",
 }
 
 static var _cache: Dictionary = {}        # int (TERRAIN) → TerrainProfile

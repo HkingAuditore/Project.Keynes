@@ -12,13 +12,9 @@ render_mode blend_mix;
 // fragment()（SETUP 解码 → LAND/SEA 分支调度 → GLOBAL 输出）。具体算法均下沉到 include。
 // 通道语义快速参考（详细请见 uniforms.gdshaderinc）：
 //   height_tex (RG8 LINEAR)        归一化海拔 [0,1]，解码 (R*256 + G)/257
-//   enum_atlas (RGB8 NEAREST)      R=biome  G=vegetation  B=cover
-//   scalar_atlas (RGBA8 LINEAR)    R=moisture  G=flow_accum  B=latitude_norm  A=保留
-//   vector_atlas (RGBA8 LINEAR)    RG=ocean_current (-1..1)  BA=wind_field (-1..1)
-//   dynamic_cell_atlas / dyn_atlas_smooth_atlas (RGBA8 LINEAR):
-//                                   R=temp G=wetness B=snow_cover A=vegetation_vitality
-//   sea_ice_tex / ice_state_atlas  R=sea_ice_fraction（动态海冰主视觉）
-//   ecology_visual_atlas           R=foliage_density G=stress B=transition_age A=growth
+//   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
+//   enum/dyn/eco LUT:
+//                                   per-cell enum / dynamic / ecology visual state
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Include 拓扑顺序（不可随意调整） ─────────────────────────────────────
@@ -33,8 +29,10 @@ render_mode blend_mix;
 
 //   snow_cover     依赖 common_noise.fbm + height.decode_height_rg8 + weather_front.compute_extreme_weather_mask。
 //   biome_detail   依赖 common_noise.fbm + common_noise.voronoi_cell + uniforms.B_*。
-//   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8。
-//   water          依赖 common_noise.* + uniforms.enum_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
+//   earth_daylight 叶子，仅依赖 uniforms.season_phase/day_phase/axial_tilt_rad：
+//                  地球式昼夜（晨昏线）单一真源，被 hillshade_tod/brdf/water 统一调用。
+//   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8 + earth_daylight。
+//   water          依赖 common_noise.* + uniforms.map_index_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
 //   shore_common   依赖 uniforms + material_constants：sample_shore_neighborhood / compute_shore_halo。
@@ -43,7 +41,9 @@ render_mode blend_mix;
 
 // ─────────────────────────────────────────────────────────────────────────
 #include "res://shaders/include/uniforms.gdshaderinc"
+#include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
+#include "res://shaders/include/cell_indirect.gdshaderinc"
 #include "res://shaders/include/common_noise.gdshaderinc"
 #include "res://shaders/include/height.gdshaderinc"
 #include "res://shaders/include/climate_season.gdshaderinc"
@@ -72,13 +72,11 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 0：Atlas 采样 / 通道解码
 	// ───────────────────────────────────────────────────────────────────────
-	// 把 6 张 atlas 在 fragment 开头一次性采样并解码到局部变量，后续阶段全部读
-	// 这些局部变量而不再触发额外 texture()，让单像素纹理 fetch 数稳定可预测。
-	// PERF：dyn_atlas_smooth_atlas 已替代 dynamic_cell_atlas 作为主消费路径
-	//       （消除 hex 阶梯）；后者仅供调试/info 面板，shader 自身不再读它。
+	// 动态视觉状态统一走 cell-index + LUT；旧 per-pixel dynamic/smooth/ecology atlas
+	// 以及 scalar/vector atlas 已退役。
 	// ═══════════════════════════════════════════════════════════════════════
-	vec2 wp = v_world;
-	vec2 uv = (wp - world_origin) / world_size;
+	vec2 wp = wrap_world_pos(v_world);
+	vec2 uv = wrap_map_uv((v_world - world_origin) / world_size);
 	// v10.noise-cache：本像素只采样一次全局噪声包，供后续"随机抖动/强度扰动"
 	// 类视觉细节复用。真正需要独立频率/方向/时间推进的结构噪声（水纹、河口等）
 	// 仍走专用 fbm，避免所有效果同形同相。
@@ -91,32 +89,57 @@ void fragment() {
 	// 这 4 个分量在 v10.noise-pack 中是 raw value + fbm-2/3/4-octave 的预积分，
 	// 谱形不同但仍是同坐标采样，对"独立 RV"的要求是软约束。下游若需严格独立
 	// 随机数，应另调 derive_independent_noise4(wp + offset)。
+	// 60 FPS 优化（2026-06-18）：scalar/vector 和 per-pixel dynamic atlas 已退役。
+#ifdef MOBILE_QUALITY_LOW
+	vec4 pixel_noise = vec4(0.5);  // 中性灰值，不调 fbm 也不影响
+#else
 	vec4 pixel_noise = texture(noise_tex, (wp * 0.071 + vec2(19.0, -23.0)) / NOISE_TEX_SCALE);
-	// 旧 R8 noise_tex 热重载兜底：G/B≈0 且 A≈1 时，用纯 ALU hash 派生 4 个相互
-	// 独立的随机数（取代旧 fract(R + offset) 的单一序列派生）。
 	if ((pixel_noise.g + pixel_noise.b) <= 0.0001 && pixel_noise.a >= 0.98) {
 		pixel_noise = derive_independent_noise4(wp * 0.071 + vec2(19.0, -23.0));
 	}
+#endif
 
 	float elev = decode_height_rg8(uv);
 
-	// v9.atlas：把 3 张 atlas 一次采样解码到局部变量，后续逻辑读这些变量
-	vec4 enums = texture(enum_atlas,   uv);
-	vec4 scals = texture(scalar_atlas, uv);
-	// vector_atlas：RG=洋流、BA=风场，均为 [-1,1] 映射到 [0,1]。
-	// 仅在 vector_atlas_valid=true（CPU 已写入真值）时使用；否则当作零向量中性 0.5。
-	vec4 vects = vector_atlas_valid ? texture(vector_atlas, uv) : vec4(0.5);
-	// map-visual-overhaul-v1：主消费路径切到 dyn_atlas_smooth_atlas（沿 hex 邻接 box blur 后的版本）。
-	// 通道语义与 dynamic_cell_atlas 完全一致（R=temp, G=moist, B=snow, A=vitality），
-	// 但跨 cell 平滑，单点采样得到的就是连续场——hex 边阶梯彻底消除（病灶 B 解药）。
-	vec4 dyns = texture(dyn_atlas_smooth_atlas, uv);
-	vec4 ecos = texture(ecology_visual_atlas, uv);
+	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
+	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
+	// 未绑定纹理时 texture() 返回 0 → 无河，安全。land/water pipeline 读 scals.g 画河网。
+	scals.g = texture(flow_tex, uv).r;
+	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
-	int biome = int(enums.r * 255.0 + 0.5);
-	int veg   = int(enums.g * 255.0 + 0.5);
-	int cover = int(enums.b * 255.0 + 0.5);
-	float moist     = scals.r;
-	float lat_norm  = scals.b;
+	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
+	// [dither-index 2026-06-25] 全档位 NEAREST：cell 索引边缘融合（烘焙期 Bayer dither）已在
+	// 索引层软化离散硬边，无需再对 dyn/eco LUT 做跨格 4-tap 双线性。
+	vec4 dyns = dyn_lut_nearest(uv);
+	// Mobile 三档全跳 ecology（eco_valid=0 等同 dynamic 路径）
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
+#else
+	vec4 ecos = eco_lut_nearest(uv);
+#endif
+
+	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
+	// cid<0（map 外哨兵）使用 map_index_atlas 零初始化语义（OCEAN/NONE/NONE）。
+	int biome;
+	int veg;
+	int cover;
+	int _cell_id = decode_cell_index(uv);
+	if (_cell_id >= 0) {
+		vec3 elut = texture(enum_lut, cell_lut_uv(_cell_id)).rgb;
+		biome = int(elut.r * 255.0 + 0.5);
+		veg   = int(elut.g * 255.0 + 0.5);
+		cover = int(elut.b * 255.0 + 0.5);
+	} else {
+		biome = 0;
+		veg = 0;
+		cover = 0;
+	}
+	// [landform 轴可视化 2026-06-25] landform id 走 map_index_atlas.A（per-pixel, NEAREST），
+	// 供陆地管线给火山/高原/峡谷/裂谷/高峰补充专属着色。地图外哨兵采样得 0（=DEEP_OCEAN，陆地分支不消费）。
+	int landform = int(texture(map_index_atlas, wrap_map_uv(uv)).a * 255.0 + 0.5);
+	float moist = dyns.g;
+	float _Hf = float(textureSize(map_index_atlas, 0).y);
+	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
@@ -126,11 +149,15 @@ void fragment() {
 	float eco_transition = ecos.b;
 	float eco_growth = ecos.a;
 	float eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition);
-	// dyn_valid：仅当 dynamic_cell_atlas 真的写过 cell 真值（temperature 必须 > 哨兵阈值）。
-	// bake_world 阶段 cell.temperature 还未由 refresh_climate_daily 初始化（默认 0.0），
-	// 此时 R 通道接近 0，应当走 derived_temp fallback，避免把全图判为雪线以下。
-	// 同时 G 通道（moisture）默认 ≈0.5 不能作为有效信号；A 通道（vitality）默认 0.7 同理。
-	float dyn_valid = step(0.02, dyn_temp);
+	// [snow-dyn-valid-fix 2026-06-16] 真实格子动态 atlas/LUT 恒为有效。
+	// 历史背景：旧值 step(0.02, dyn_temp) 是为了兜底"bake_world 阶段温度尚未初始化
+	// (默认 0.0)→ atlas R 通道为 0"的时序窗口。但该哨兵把真实极寒格(温度=0)误判为
+	// "未初始化"，导致整格动态状态(含 100% 雪盖)被清零、屏幕不出雪。
+	// 现已在 map_generator.gd 把温度 Bootstrap 前移到 bake_world 之前，atlas 从第 0
+	// 帧即带真实纬度温度，不再存在未初始化窗口，因此恒信 atlas 真值（含温度=0 的极寒）。
+	// 唯一例外：cell-indirection 下地图外哨兵像素（cid<0）采样为 vec4(0)，仍回退
+	// derived_temp，避免地图边缘出现"温度=0 冷边"。on-map 真实格永远有效。
+	float dyn_valid = (_cell_id < 0) ? 0.0 : 1.0;
 	moist = mix(moist, dyn_wet, dyn_valid);
 	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
 	vec2 wind_v          = vects.ba * 2.0 - 1.0;
@@ -151,7 +178,7 @@ void fragment() {
 	// 注：赤道带的软混合在下方 vegetation tint 块单独处理；这里保留 eff_phase 给可能
 	// 的其它消费者，但实际 vegetation 走南/北两次 tint 颜色 mix（见 N7 注释）。
 	float eff_phase = hemi_phase(season_phase, lat_signed);
-	// True Insolation-Driven：CPU / GPU 同源季节偏移（true_insolation_enabled == true 时走 insolation 派生）
+	// True Insolation-Driven：CPU / GPU 同源日照偏移；兼容 bool 不再切换 legacy 分支。
 	float season_offset = season_offset_unified(lat_signed, season_phase);
 	float derived_temp = compute_current_temp(elev, lat_signed, season_offset);
 	float current_temp = mix(derived_temp, dyn_temp, dyn_valid);
@@ -168,14 +195,14 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	if (!is_water) {
 		col = render_land_pipeline(
-			biome, veg, cover, elev, moist, wp, uv, scals, lat_signed, current_temp,
-			dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
+			biome, veg, cover, landform, elev, moist, wp, uv, scals, lat_signed, current_temp,
+			wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 			eco_transition, eco_growth, eco_valid, pixel_noise);
 	} else {
 		col = render_water_pipeline(
-			biome, elev, wp, uv, scals, lat_signed, current_temp,
-			ocean_current_v, wind_v);
+			biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
+			ocean_current_v, wind_v, dyns.a);
 	}
 
-	COLOR = apply_global_adjustments(col, wp, pixel_noise);
+	COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);
 }

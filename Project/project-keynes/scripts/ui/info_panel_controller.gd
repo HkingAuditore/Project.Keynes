@@ -155,6 +155,8 @@ func refresh_info_panel() -> void:
 	var cs: Dictionary = cell.current_state
 	var idx: int = int(cell.index)
 	var ad: DCViewAdapter = _view_adapter
+	var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
+	var season: int = int(cs.get("season", fallback_season))
 	var temp: float = ad.get_temp(idx) if ad != null else float(cell.temperature)
 	_temp_label.text = "当前温度：%.2f（%s）" % [temp, _temperature_band(temp)]
 
@@ -164,18 +166,9 @@ func refresh_info_panel() -> void:
 		moist, _moisture_band(moist), base_moist
 	]
 
-	# Seasonal Continuous Climate：用 _moisture_scale_at_phase 取连续倍率，
-	# 与逐日刷新写入 current_state.moisture 的倍率严格一致，避免显示与实际脱节。
-	var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
-	var season: int = int(cs.get("season", fallback_season))
-	var season_phase_now: float = _world_clock.season_phase() if _world_clock != null else (float(season) + 0.5)
-	var scale: float = 1.0
-	if _generator != null:
-		var cp = _generator._c()
-		scale = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase_now)
-	var precip: float = scale * base_moist
-	_precip_label.text = "当季降水：%.2f（估算 = %s ×%.2f × 年均湿度 %.2f）" % [
-		precip, _world_clock.season_name_cn(season), scale, base_moist
+	var wf := _weather_field_snapshot(cell, idx, ad)
+	_precip_label.text = "当前降水：%.2f（水汽 %.2f / 云 %.2f）" % [
+		float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 	]
 
 	# ── Milestone 1：三轴分栏（地形 / 植被 / 覆盖）
@@ -212,10 +205,10 @@ func refresh_info_panel() -> void:
 	_feature_label.text = "地理特征：%s" % ("无" if feats.is_empty() else ", ".join(feats))
 
 	# ── 通行（基础通行 + 当季通行）
-	# B.1：is_water 通过 adapter（== !passable_land 的 SoA 镜像）；passable_sea
-	# 与 is_passable_in_season 无 SoA 对位仍直读 cell。
-	var passable_land_v: bool = (not ad.get_is_water(idx)) if ad != null else cell.passable_land
+	# B.1：陆行能力来自 terrain profile；is_water 是物理水体语义，不能反推陆行。
+	# passable_sea 与 is_passable_in_season 无 SoA 对位仍直读 cell。
 	var terrain_v: int = ad.get_terrain(idx) if ad != null else int(cell.terrain)
+	var passable_land_v: bool = TerrainType.is_passable_land(terrain_v)
 	_mobility_label.text = "通行：陆 %s / 海 %s   move_cost=%d   当季可通行：%s" % [
 		"是" if passable_land_v else "否",
 		"是" if cell.passable_sea else "否",
@@ -261,15 +254,13 @@ func refresh_weather_line() -> void:
 		_weather_label.text = "天气：%s（强度 %.0f%%）" % [WeatherType.name_cn(wt), wi * 100.0]
 
 
-# Seasonal Continuous Climate：单独刷新"当前温度 / 当前湿度 / 当季降水"三行，
-# 让玩家在选中地块时能逐日看到换季的渐进变化，而不必等到换季触发整面板重绘。
-# 与 refresh_info_panel 中的同名计算保持一致（连续 moisture_scale + 余弦温度曲线）。
+# Daily climate/weather line：单独刷新"当前温度 / 当前湿度 / 当前降水"三行，
+# 让玩家在选中地块时能逐日看到太阳-热力-天气场链条的渐进变化。
+# 与 refresh_info_panel 中的同名读取保持一致。
 func refresh_climate_line() -> void:
 	if _selected_cell == null:
 		return
 	var cell := _selected_cell
-	var cs: Dictionary = cell.current_state
-
 	# B.1：通过 ViewAdapter 读 schema-mirrored 字段
 	var idx: int = int(cell.index)
 	var ad: DCViewAdapter = _view_adapter
@@ -287,21 +278,29 @@ func refresh_climate_line() -> void:
 			moist, _moisture_band(moist), base_moist_2
 		]
 
-	# ── 当季降水（连续 moisture_scale × base_moisture，与逐日刷新同源）
+	# ── 当前降水：读取 weather pass 写出的实时场值，不再用季节表估算。
 	if _precip_label != null:
-		var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
-		var season: int = int(cs.get("season", fallback_season))
-		var season_phase_now: float = _world_clock.season_phase() if _world_clock != null else (float(season) + 0.5)
-		var scale: float = 1.0
-		if _generator != null:
-			var cp = _generator._c()
-			scale = DataOverlayBaker._moisture_scale_at_phase(cp, season_phase_now)
-		var base_moist_3: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-		var precip: float = scale * base_moist_3
-		_precip_label.text = "当季降水：%.2f（估算 = %s ×%.2f × 年均湿度 %.2f）" % [
-			precip, _world_clock.season_name_cn(season), scale, base_moist_3
+		var wf := _weather_field_snapshot(cell, idx, ad)
+		_precip_label.text = "当前降水：%.2f（水汽 %.2f / 云 %.2f）" % [
+			float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 		]
 	refresh_physical_lines()
+
+
+func _weather_field_snapshot(cell: HexCell, idx: int, ad: DCViewAdapter) -> Dictionary:
+	var has_wf: bool = ad.get_weather_field_init(idx) if ad != null else bool(cell.weather_field_initialized)
+	var precip: float = ad.get_weather_precip(idx) if ad != null else float(cell.weather_precip)
+	var vapor: float = ad.get_weather_vapor(idx) if ad != null else float(cell.weather_vapor)
+	var cloud: float = ad.get_weather_cloud(idx) if ad != null else float(cell.weather_cloud)
+	if not has_wf:
+		precip = float(cell.current_state.get("weather_precip", precip))
+		vapor = float(cell.current_state.get("weather_vapor", vapor))
+		cloud = float(cell.current_state.get("weather_cloud", cloud))
+	return {
+		"precip": clampf(precip, 0.0, 1.0),
+		"vapor": clampf(vapor, 0.0, 1.0),
+		"cloud": clampf(cloud, 0.0, 1.0),
+	}
 
 
 # Milestone 4：单独刷新植被生命值行（与 weather 一样按"日"高频刷新）
@@ -444,12 +443,20 @@ func refresh_emergent_lines() -> void:
 		var vp: float = float(cell.get("vegetation_growth_pressure"))
 		_emergent_feedback_label.text = "反馈缓冲：土壤湿度 %+.3f  植被压力 %+.3f（本季累计）" % [sm, vp]
 
-	# 行 3：日历月份（显示给玩家看的是月份、而非春夏秋冬——因南北半球相反）
+	# 行 3：日历日期。优先读 WorldClock，确保与顶部 HUD 同源。
 	if _emergent_ice_label != null:
-		if _world_clock != null and _generator != null:
-			var phase: float = _world_clock.season_phase()
-			var cal: Dictionary = _generator.month_of_year(phase)
-			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/120 天）" % [int(cal.month), int(cal.day_of_month), int(cal.day_of_year)]
+		if _world_clock != null and _world_clock.has_method("calendar_date"):
+			var cal: Dictionary = _world_clock.calendar_date()
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+				int(cal.month), int(cal.day_of_month), int(cal.day_of_year), int(cal.days_per_year)
+			]
+		elif _generator != null:
+			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
+			var cal_fallback: Dictionary = _generator.month_of_year(phase)
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+				int(cal_fallback.month), int(cal_fallback.day_of_month),
+				int(cal_fallback.day_of_year), int(cal_fallback.get("days_per_year", 365))
+			]
 		else:
 			_emergent_ice_label.text = "日历：—"
 

@@ -237,6 +237,7 @@ void SusSchedulerExt::register_job(Object *job, Dictionary descriptor) {
     je.id                   = id;
     je.priority             = (int)  descriptor.get("priority",             100);
     je.must_run             = (bool) descriptor.get("must_run",             false);
+    je.use_job_should_run   = (bool) descriptor.get("use_job_should_run",   false);
     je.starvation_threshold = (int)  descriptor.get("starvation_threshold", 0);
     je.max_slices_per_tick  = (int)  descriptor.get("max_slices_per_tick",  0);
     je.slice_budget_ms      = (float)(double)descriptor.get("slice_budget_ms", 4.0);
@@ -488,13 +489,16 @@ void SusSchedulerExt::tick(Object *ctx) {
         }
 
         // ─── Policy gate (GD line 199-204) ───────────────────────────────
-        // SusJob.should_run() default forwards to policy.should_run. Our
-        // C++ policy eval covers all 6 PolicyKind cases without crossing
-        // into GDScript (Accumulator getter still calls back for value).
-        // If a Job overrides should_run, GD-side behaviour is still
-        // policy-forwarding (per sus_job.gd line 87-90 default), so C++
-        // policy eval is bit-equal.
-        if (!_policy_should_run(job.policy, job.job_obj, ctx, ctx_view.tick_index)) {
+        // Default path evaluates the registered policy descriptor in C++.
+        // Jobs with stateful eligibility can opt into their GDScript
+        // should_run(ctx); keep that rare so the hot path stays native.
+        bool should_run = false;
+        if (job.use_job_should_run && job.job_obj != nullptr) {
+            should_run = (bool)job.job_obj->call("should_run", Variant(ctx));
+        } else {
+            should_run = _policy_should_run(job.policy, job.job_obj, ctx, ctx_view.tick_index);
+        }
+        if (!should_run) {
             report["skipped_reason"] = String("policy_gated");
             _last_report[Variant(job.id)] = report;
             _record_skipped(job.id, String("policy_gated"));
@@ -727,7 +731,9 @@ void SusSchedulerExt::tick(Object *ctx) {
     _last_tick_summary["sus_sim_max_300"]       = (double)(float)budget_window.get("sus_sim_max_300", 0.0);
     _last_tick_summary["over_1ms_count_300"]    = (int)budget_window.get("over_1ms_count_300", 0);
 
-    if (_log_interval_ticks > 0 && (_tick_counter % _log_interval_ticks) == 0) {
+    // Fix #11 second pass (2026-06-16) — _diag_logs_enabled=false 时整段跳过 print。
+    // 8-9 行 print 单次 logcat ~50-90ms 是 mobile budget 杀手。
+    if (_diag_logs_enabled && _log_interval_ticks > 0 && (_tick_counter % _log_interval_ticks) == 0) {
         _emit_periodic_log();
     }
 }
@@ -978,6 +984,9 @@ void SusSchedulerExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_strict_budget_enabled"),        &SusSchedulerExt::get_strict_budget_enabled);
     ClassDB::bind_method(D_METHOD("set_log_interval_ticks",    "v"),  &SusSchedulerExt::set_log_interval_ticks);
     ClassDB::bind_method(D_METHOD("get_log_interval_ticks"),           &SusSchedulerExt::get_log_interval_ticks);
+    // Fix #11 second pass (2026-06-16) — PKLog.enabled C++ mirror。
+    ClassDB::bind_method(D_METHOD("set_diag_logs_enabled",     "v"),  &SusSchedulerExt::set_diag_logs_enabled);
+    ClassDB::bind_method(D_METHOD("get_diag_logs_enabled"),            &SusSchedulerExt::get_diag_logs_enabled);
     ClassDB::bind_method(D_METHOD("set_sim_budget_window_size","v"),  &SusSchedulerExt::set_sim_budget_window_size);
     ClassDB::bind_method(D_METHOD("get_sim_budget_window_size"),       &SusSchedulerExt::get_sim_budget_window_size);
     ClassDB::bind_method(D_METHOD("set_sim_budget_warn_ms",    "v"),  &SusSchedulerExt::set_sim_budget_warn_ms);

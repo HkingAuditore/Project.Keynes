@@ -7,8 +7,8 @@
 #
 #   bootstrap/dots_bootstrap.gd          ← DCWorld + ViewAdapter + Scheduler 注册 +
 #                                          DataCore CLI / hot-toggle / view_adapter rebuild
-#   bootstrap/sus_systems_bootstrap.gd   ← 6 system 注册 + use_dc_system_scheduler
-#                                          flag 切换路径（C.4 留给本 phase 完成的接入）
+#   bootstrap/sus_systems_bootstrap.gd   ← runtime system diagnostics / future
+#                                          bootstrap extraction（生产入口现恒走 DCSystemScheduler）
 #   bootstrap/demo_bootstrap.gd          ← demo_thermal_gradient + DCEcsScheduler
 #                                          + F-key 调试热键（demo 相关部分）
 #   bootstrap/visual_bootstrap.gd        ← TOD / water shader uniform 推送 +
@@ -28,7 +28,7 @@
 #   1. info_panel_controller.gd（最独立，B.1 已 adapter 化）
 #   2. visual_bootstrap.gd（@export 字段 push，纯数据传递）
 #   3. dots_bootstrap.gd（DataCore CLI + view_adapter rebuild）
-#   4. sus_systems_bootstrap.gd（含 use_dc_system_scheduler 接入）
+#   4. sus_systems_bootstrap.gd（runtime system diagnostics / future extraction）
 #   5. demo_bootstrap.gd（最后，demo + DCEcsScheduler 整合）
 #
 # ─── 原始入口说明（保留）────────────────────────────────────────────────
@@ -58,9 +58,61 @@ const DCEcsJob := preload("res://scripts/ecs/dc_ecs_job.gd")
 # 5 个 _emergent_*_label 字段、5 个 _vitality_band 等 helper 均已删除。
 const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controller.gd")
 
+const WORLD_SETUP_META := &"world_setup_config"
+const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
+const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
+const WORLD_SETUP_CLIMATE_FIELDS := {
+	"continent_warp_amp": true,
+	"main_radius_min": true,
+	"main_radius_max": true,
+	"main_placement_min": true,
+	"main_placement_max": true,
+	"main_separation_factor": true,
+	"satellite_radius_min": true,
+	"satellite_radius_max": true,
+	"satellites_per_main": true,
+	"satellite_placement_min": true,
+	"satellite_placement_max": true,
+	"satellite_separation_factor": true,
+	"offshore_amp": true,
+	"edge_falloff_start": true,
+	"edge_falloff_end": true,
+	"edge_falloff_depth": true,
+	"dist_field_weight": true,
+	"noise_weight": true,
+	"meso_weight": true,
+	"macro_relief_weight": true,
+	"ridge_boost_amp": true,
+	"spl_iters": true,
+	"spl_erodibility": true,
+	"spl_uplift_rate": true,
+	"moisture_land_base": true,
+	"moisture_precip_gain": true,
+	"moisture_continental_dry": true,
+	"moisture_coastal_floor": true,
+	"coastal_moisture_boost": true,
+	"orographic_boost": true,
+	"rain_shadow_threshold": true,
+	"rain_shadow_factor": true,
+	"rain_shadow_lookback": true,
+	"lake_seed_freq": true,
+	"lake_seed_threshold": true,
+	"lake_seed_depth": true,
+	"lake_seed_min_interior": true,
+	"hydro_lake_min_cells": true,
+	"hydro_lake_min_depth": true,
+	"hydro_lake_min_volume": true,
+	"river_channel_init_cells": true,
+	"hydro_river_min_length": true,
+	"max_volcanoes": true,
+	"volcano_min_dist": true,
+	"volcano_min_land_h": true,
+}
+
 @export var map_width: int = 60
 @export var map_height: int = 40
 @export var num_continents: int = 2
+@export var continent_size: float = 0.9
 @export var sea_level: float = 0.42
 @export var river_count: int = 8
 @export var hex_size: float = 22.0
@@ -71,7 +123,16 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # 这里只存储值 + 在生成/信号触发时推给 renderer / weather_layer；具体 shader
 # 分支由后续任务 3~9 接入。
 @export_group("Visual Overhaul")
-@export_range(0, 2, 1) var visual_quality: int = 2
+@export_range(0, 2, 1) var visual_quality: int = 1
+# Mobile shader quality tier（2026-06-15）：三档编译时变体，控制 fragment shader
+# 每像素 texture sample 预算。在 hex_renderer._load_shader 里 prepend
+# `#define MOBILE_QUALITY_HIGH/MID/LOW` 到 shader code，让 GPU 实际编译三种
+# 二进制变体。runtime `if` 无效（GPU warp 编译所有分支）。
+#   0 = LOW   ≤4 sample/像素，纯 atlas 颜色 + 海陆判断
+#   1 = MID   ≤6 sample/像素，加 base_ripple + 单方向 hillshade
+#   2 = HIGH  ≤9 sample/像素，加 vector_atlas（洋流）+ plus-pattern offshore
+# 桌面端不受此控制，走原 shader 代码（无 MOBILE_QUALITY_* define）。
+@export_range(0, 2, 1) var mobile_quality_tier: int = 1
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
 @export var ocean_current_enabled: bool = true
@@ -79,6 +140,27 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # 性能采样日志开关：true 时 HexRenderer 内的 PerfSampler 会每 30 秒打印一次
 # 平均帧时间 + P95，方便基线 / 优化前 / 优化后三次对齐。
 @export var perf_sampler_enabled: bool = false
+
+# ─── Cell-index 间接寻址（province-ID indirection，当前唯一动态视觉路径）────
+# 地图生成会烘焙 map-index atlas（R=biome, GB=cell.index）+ per-cell LUT，让
+# world_map shader 走"pixel→cell 间接寻址"渲染，把每日 atlas GPU 上传从
+# n_pix(~62 万) 压到 n_cells(~2400)。当前 DCFeatureFlags.cell_indirection_active()
+# 恒为 true，此导出值仅保留 Inspector 兼容。
+@export var cell_indirection_enabled: bool = true
+
+# 洋流/风场"逐像素视觉"开关（vector_atlas）。默认 true=保持现状。
+# 关掉 → 跳过 vector_atlas 的逐像素光栅 + encode + GPU 上传，只丢"海面洋流流动感 +
+# 云随风漂"两个纯视觉效果；per-cell 风/洋流求解与气候/天气仿真完全不受影响
+# （仿真读 HexCell.wind_vector，不读本贴图）。省 ~2.4MB 显存 + 偶发光栅 + 主 shader
+# 每帧 1 次 fetch。值在 _generate_and_render 入口推给 DCFeatureFlags，bake / commit /
+# ocean_currents_job / render 统一读 ocean_current_visual_active()。**改勾选后需重新生成地图**。
+@export var ocean_current_visual_enabled: bool = false
+
+# 旧 sea_ice_tex（R8）逐像素海冰贴图开关。默认 false=退役（已无任何 shader 采样者，
+# 运行时 upload job 早已不注册，主海冰视觉由 shader 按水温派生）。关时 bake_world 不再
+# encode 那张全零 R8（省 ~0.6MB），prepare/upload 全部 no-op。开为 true 仅为兼容旧调试 /
+# 数据通道（dots_soak_dump 的 sea_ice_fraction_buffer 哈希）。**改勾选后需重新生成地图**。
+@export var sea_ice_atlas_enabled: bool = false
 
 # Daily-sim perf instrumentation：每日模拟性能埋点。
 #  ① perf_log_daily_breakdown=true 时，每隔 perf_log_daily_stride 个 fast tick
@@ -126,7 +208,7 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 @export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
 @export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
 @export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.20, 0.48, 0.56)
+@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
 @export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
 # ShaderToy 启发：软边过渡 + 柔和噪声层
 # 注：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
@@ -150,6 +232,7 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 @onready var _debug_btn: Button = $UI/TopBar/HBox/DebugBtn
 @onready var _regen_btn: Button = $UI/TopBar/HBox/RegenBtn
 @onready var _fit_btn: Button = $UI/TopBar/HBox/FitBtn
+@onready var _setup_btn: Button = $UI/TopBar/HBox/SetupBtn
 @onready var _time_label: Label = $UI/TopBar/HBox/TimeLabel
 @onready var _climate_label: Label = $UI/TopBar/HBox/ClimateLabel
 @onready var _pause_btn: Button = $UI/TopBar/HBox/PauseBtn
@@ -161,6 +244,12 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 # Pass 2：TOD 中枢（纯脚本对象，非场景节点）。启动时实例化一次，
 # 之后随 WorldClock.day_phase_changed 推动 recompute。
 var _tod_profile: TODProfile = null
+
+# Splash overlay：bake_world 期间显示加载提示，避免移动端开场 ~13s 黑屏体感。
+# 节点在 _ensure_splash_overlay() 里 lazy 创建，在 _generate_and_render 入口
+# show + await 一帧让它能绘制，bake 结束后 hide。
+var _splash_layer: CanvasLayer = null
+var _splash_label: Label = null
 
 # 地块信息面板（右侧）— 由 _select_cell / _refresh_info_panel 维护
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
@@ -213,6 +302,7 @@ var _world_data: WorldData = null
 var _view_adapter: DCViewAdapter = null
 # PR-3.4.1（M4 拆分）：dots / DCFlagBus / DataCore wiring 委派给 bootstrap 类。
 var _dots_bootstrap: DCDotsBootstrap = null
+var _visual_bootstrap: DCVisualBootstrap = null
 # 0.4.2 — info panel controller（_ready 时实例化；持有所有右侧面板 Label refs
 # + 5 个 emergent_* 懒创建 Label + refresh_* 方法）。
 var _info_panel_controller: InfoPanelControllerScript = null
@@ -242,16 +332,27 @@ var _fast_tick_count: int = 0
 # warn 计数同窗口对齐——每次 trigger_warn 命中都 +1，落入旧窗口外时随
 # total_ms 数组同步丢弃。
 const PERF_VERDICT_WINDOW: int = 200
+const SPEED_PRESETS: Array = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+const MOBILE_TOPBAR_SAFE_TOP: float = 64.0
+const MOBILE_TOPBAR_HEIGHT: float = 64.0
+const MOBILE_EDGE_SAFE: float = 20.0
+const MOBILE_BUTTON_HEIGHT: float = 56.0
 var _perf_verdict_total_ms: Array = []
 var _perf_verdict_warn_marks: Array = []  # 与 _perf_verdict_total_ms 平行：bool 数组
 var _fast_tick_warn_last_frame: int = 0
 var _slow_tick_count: int = 0
+var _speed_buttons: Dictionary = {}
 
 # Plan: perf-recording-csv-export
 # DebugConsole 录制按钮注入的 PerfRecorder 实例。null = 当前未挂载或未录制；
 # 主循环只做"非空时调 on_fast_tick"的快路径，避免污染主类。具体录制逻辑、
 # CSV 拼装、状态机全部在 scripts/ui/perf_recorder.gd 内。
 var _perf_recorder: RefCounted = null
+# DebugConsole 地块数据录制按钮注入的 TileDataRecorder 实例。与 PerfRecorder
+# 共用 fast_tick sample 时机，但 recorder 自己从 MapData 读取 cell-level SoA。
+var _tile_data_recorder: RefCounted = null
+var _last_recorder_perf_summary: Dictionary = {}
+var _recorder_warn_last_frame: int = 0
 
 # ─── Data Overlay 状态 ─────────────────────────────────────────────
 # _overlay_mode   : OverlayMode.MODE 的整数值，NONE=0
@@ -260,16 +361,69 @@ var _perf_recorder: RefCounted = null
 # _overlay_last_bake_ms : 最近一次 bake 的耗时（ms），用于性能验证
 # _overlay_last_fast_tick_ms : 最近一次 fast tick 总耗时（ms），给 Telemetry
 # _overlay_error_msg : shader 加载 / bake 失败时写入的错误原因，DebugConsole 读
+#
+# debug-overlay-perf v1（2026-06-12）：
+# _overlay_tex / _overlay_buf : 持久化 GPU 资源 + CPU PackedByteArray，
+#   让 DataOverlayBaker.bake 走 .update(img) 而不是每帧 create_from_image。
+#   实测：1080×574 derived size 下，单次 bake 从 ~12-20ms 降至 ~1.5-3ms。
+# _overlay_dirty : 数据层标记。_on_day_changed 末尾置 true（且本帧不跳日），
+#   下一次任意 _refresh_overlay_data 入口消费后清零；x20 倍速下避免在
+#   同一个游戏日内重复 bake。
 var _overlay_mode: int = 0
 var _overlay_alpha: float = 0.7
 var _overlay_stats: Dictionary = {}
 var _overlay_last_bake_ms: float = 0.0
 var _overlay_last_fast_tick_ms: int = 0
 var _overlay_error_msg: String = ""
+var _overlay_tex: ImageTexture = null
+var _overlay_buf: PackedByteArray = PackedByteArray()
+var _overlay_dirty: bool = true
+# debug-overlay-perf v2（2026-06-12）：最近一次 bake 的 pixel fan-out 路径
+# （gdext_fanout / gdscript_fanout / gdscript_fanout_soa），供诊断 C++ 是否生效。
+var _overlay_bake_path: String = "gdscript_fanout"
+# best-effort-sim-stepping（2026-06-17）：高倍速 FPS 跳水根因 = overlay 每个模拟日
+# 重 bake 一次（~592K 像素 fan-out，gdscript 路径 ~30ms）。50x 下几乎每帧推进一天
+# → 每帧 30ms → 22FPS。修法：把 overlay 重 bake 按墙钟节流（默认 10Hz），与模拟日
+# 解耦。仿真照常逐日推进，overlay 只在到点的帧刷新最新状态——高倍速下肉眼无差。
+# 1x~10x（日间隔 ≥100ms）下此节流从不触发，行为不变。
+@export_range(16.0, 1000.0, 1.0) var overlay_min_bake_interval_ms: float = 100.0
+var _overlay_last_bake_wall_ms: int = 0
+# F5 临时诊断：强制跳过 overlay 每日重 bake（overlay 画面冻结但仍可见），
+# 用来 A/B 测 overlay fan-out 占多少帧时。
+var _overlay_refresh_disabled: bool = false
 
 func _ready() -> void:
+	_apply_world_setup_base_config()
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
+	# 地块选择改由 MapCamera 的 tile_tapped 信号驱动（仅"点按"触发，拖拽/捏合不误选）。
+	if _camera != null:
+		_camera.tile_tapped.connect(_on_map_tile_tapped)
+
+	# Mobile safe area + 大按钮（plan §mobile-ui-safe-area，2026-06-14）：
+	# 移动端圆角屏顶部最右上区域被裁切，TopBar 默认 offset_bottom=36 紧贴顶部，
+	# 用户点不到右上角的 x5/x20 按钮。运行时给移动端：
+	#   1. TopBar 整体下移 ~50px 留出 status bar / 圆角 safe area
+	#   2. 按钮 custom_minimum_size 加大让 touch target 更稳
+	_apply_mobile_topbar_safe_area()
+	# Mobile viewport scale（plan §60fps 路线 C，2026-06-14）：渲染分辨率降到 0.66。
+	# 实测 fragment shader 主导 70% 帧时间 → 像素总数 × 0.44（0.66² = 0.4356）→
+	# 单帧 GPU 时间从 ~13ms 降到 ~6ms，留出余量给其他工作。视觉变模糊但 60 FPS 可达。
+	# viewport scale 路线 C 已撤回（2026-06-15）：实测 content_scale_mode=VIEWPORT
+	# + factor=0.66 让屏幕显示区域变得极小，无法使用。改为只走 shader 编译时变体
+	# （MOBILE_QUALITY_LOW/MID/HIGH）减少 fragment 计算量，不动 viewport 物理大小。
+	# _apply_mobile_viewport_scale()
+
+	# Mobile debug overlay（plan §60fps，2026-06-14）：APK 没键盘点不到 F3/F11/F12，
+	# 给移动端贴 3 个浮动按钮做 60 FPS 调查。桌面隐藏。
+	_ensure_mobile_debug_overlay()
+
+	# 安卓黑屏体感修复：bake_world 同步耗时 ~13s（移动端 GDScript 双重循环）。
+	# 在 generate 调用前显示一个简单 splash overlay 让用户看到"在生成"，
+	# bake 结束后 hide。期间主线程被 baker 占用 → UI 不会刷新阶段进度，
+	# 所以这里只显示一行静态提示；阶段细分通过 baker.stage_progress 信号
+	# print 到日志，未来 main 把 bake_world 改 deferred 后可让 UI 实时变化。
+	_ensure_splash_overlay()
 
 	# 0.4.2 — info panel controller 实例化（在 _generate_and_render 之前，
 	# 否则首次重生成结束时如果 _select_cell 触发 refresh_info_panel 会 NRE）。
@@ -306,15 +460,24 @@ func _ready() -> void:
 	# 注：generator 此时尚未 new，先把 CLI 结果缓存，等 _generate_and_render
 	# 创建 generator 后立即应用。
 	_parse_data_core_cli()
+	# 移动端黑屏体感修复：show splash → await 让它真正绘制 → 同步 bake →
+	# hide splash。await 必须在 _ready（async）里做，不能塞进 _generate_and_render
+	# 否则会让该 func 变 async，破坏 regenerate_debug_map 等同步调用方。
+	_splash_show()
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_generate_and_render(initial_seed)
+	_splash_hide()
 	# DataCore CLI：generator 已创建，把 CLI 缓存覆盖到 ClimateProfile。
 	_apply_data_core_cli_to_profile()
 	# 把时钟信号接到 renderer + UI（在第一次生成完成后）
 	_world_clock.day_changed.connect(_on_day_changed)
 	_world_clock.season_changed.connect(_on_season_changed)
 	_world_clock.year_changed.connect(_on_year_changed)
-	# 任务 2：昼夜相位节流信号，驱动 shader + 刷 UI 小时位
-	_world_clock.day_phase_changed.connect(_on_day_phase_changed)
+	# 任务 2：昼夜相位驱动 shader + 刷 UI 小时位。
+	# [cylindrical-earth-daylight] 改连解耦的视觉相位 visual_day_phase_changed（晨昏线），
+	# 与游戏倍速无关、按真实时间缓慢推进 → 快进不再闪瞎眼。
+	_world_clock.visual_day_phase_changed.connect(_on_day_phase_changed)
 	_world_clock.season_phase_changed.connect(_on_season_phase_changed)
 	# Fast-tick perf opt (A+D)：速度档变更时自动调整 MapGenerator 的
 	# weather_refresh_stride，同时 world_clock 内部会顺带调整 day_phase/season_phase
@@ -325,7 +488,8 @@ func _ready() -> void:
 	# 任务 1：把 @export 的视觉总开关推送给 renderer / weather_layer 一次
 	_push_visual_toggles()
 	# Pass 2：启动时显式推一次 TOD，保证 shader 的 tod_* uniform 不为 0
-	_recompute_and_push_tod(_world_clock.day_phase())
+	# [cylindrical-earth-daylight] 用解耦的视觉相位驱动 TOD。
+	_recompute_and_push_tod(_world_clock.visual_day_phase)
 	# Data Overlay：首次把 overlay 的 world bounds 与 alpha 同步给节点；
 	# 默认 mode=NONE → 节点 visible=false，零额外开销（需求 1.1 / 1.3）。
 	_sync_overlay_to_world()
@@ -345,20 +509,15 @@ func _ready() -> void:
 	# 释放后 signal 断开。
 	_dots_bootstrap = DCDotsBootstrap.new(self)
 	_dots_bootstrap.bootstrap_flag_bus()
+	_visual_bootstrap = DCVisualBootstrap.new(self)
 
-# 左键点击选中地块。RightPanel.mouse_filter=STOP 已确保面板内的点击
-# 不会到这里，所以无需手动判断光标是否落在 UI 上。
-func _unhandled_input(event: InputEvent) -> void:
-	if not (event is InputEventMouseButton):
-		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
-		return
+# 地块选择：由 MapCamera 的 tile_tapped 信号驱动。
+# camera 仅在"点按"（非拖拽/捏合）时发出该信号，且基于 UI 已消费过的输入做判定，
+# 因此面板区域内的点按不会到这里，拖动地图也不会误选。
+func _on_map_tile_tapped(world_pos: Vector2) -> void:
 	if _current_map == null:
 		return
-	var world_pos := get_global_mouse_position()
-	var cube := HexUtils.world_to_cube(world_pos, hex_size)
-	var cell := _current_map.get_cell_by_cube(cube)
+	var cell = HexUtils.world_to_wrapped_cell(_current_map, world_pos, hex_size)
 	if cell == null:
 		return
 	_select_cell(cell)
@@ -371,6 +530,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			regenerate_debug_map()
 		KEY_F:
 			fit_debug_map()
+		KEY_B:
+			# Async climate round Stage 1 — A-B 验证（GM 面板等价）。transp pure kernel
+			# bit-equal sync；bench 自己 snapshot/restore moisture，不污染持久 sim 状态。
+			run_async_climate_bench_debug("transp")
+		KEY_V:
+			# Async climate round Stage 2 — pass_a A-B 验证（GM 面板等价）。
+			run_async_climate_bench_debug("pass_a")
 		KEY_SPACE:
 			_world_clock.toggle_pause()
 			_sync_pause_btn()
@@ -383,8 +549,22 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_F4:
 			# 2026-05-19：Mini Perf HUD 显隐切换（右上角常驻浮窗）。
 			toggle_perf_mini_hud()
+		KEY_F3:
+			# 2026-06-14：GPU/Render frame profile dump（mobile 60 FPS 调查）。
+			# 一键 dump Performance monitor 数据：FPS / 主循环 / 物理 / 渲染 / GPU /
+			# 内存 / draw calls / vertex count，定位非 SUS 时间花在哪儿。
+			dump_render_profile()
+		KEY_F11:
+			# 2026-06-14：toggle dynamic_visual_atlas_upload job（atlas 旁路实验）。
+			# 关掉此 job 看 FPS 是否改善 → 判断 atlas commit 是否是 GPU 瓶颈来源。
+			toggle_dynamic_visual_atlas_upload()
+		KEY_F12:
+			# 2026-06-14：toggle atlas resolution（256 vs 512）→ 看 GPU 负载减半否。
+			# 注意：会触发 regenerate（重 bake atlas），等待 ~5 秒。
+			toggle_atlas_resolution()
 		KEY_F8:
-			# Emergent Climate Coupling + True Insolation-Driven：一键切换"纯回退模式"。
+			# Emergent Climate Coupling：一键切换耦合调试项。
+			# 真日射链条保持运行时强制启用，不再随 F8 切回 legacy 余弦季节项。
 			toggle_emergent_debug_switches()
 		KEY_F6:
 			# 任务 9：切换 ocean_current_debug uniform（高/低对比流线）
@@ -393,46 +573,36 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# Systemic Ocean Currents：ocean_heat_debug 轻量控制台打印
 			diagnose_ocean_heat()
 		KEY_F9:
-			# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除——
-			# DataCore weather mirror 现恒走单路径，F9 hot-toggle 不再生效。
-			print("[DataCore] F9 deprecated: use_data_core_weather flag removed (single-path).")
+			# 2026-06-14：toggle 主地形 shader（_world_quad.material = null）。
+			# 60 FPS 瓶颈调查：fragment shader 不跑 → 直接测出 hex_terrain/world_map
+			# shader 占多少 GPU 时间。FPS 飙升 → shader 是真凶；不变 → Vulkan/驱动瓶颈。
+			toggle_world_shader_disabled()
 		KEY_F10:
-			# dots-flag-prune-pr1 (2026-05-22)： use_data_core master flag 已删除——
-			# DataCore 现恒挂载，F10 master toggle 不再生效。
-			print("[DataCore] F10 deprecated: use_data_core flag removed (single-path).")
+			# 2026-06-14：toggle WeatherLayer visible（60 FPS 瓶颈调查）。
+			# 完全隐藏 weather overlay → shader 不跑 → 直接测出 weather_overlay 占
+			# 多少 ms/帧。如果 FPS 从 40 升到 55+，weather_overlay 是真凶；如果只升
+			# 到 45，瓶颈在别处（SUS / 其他 shader / Canvas）。
+			toggle_weather_layer_visible()
+		KEY_F5:
+			# best-effort-sim-stepping（2026-06-17，临时）：冻结 data overlay 的每日重 bake。
+			# overlay 保持当前画面可见，但 _refresh_overlay_data 被跳过 → 直接测出
+			# overlay fan-out（~30ms gdscript 路径）占多少帧时。高倍速下按一下若 FPS
+			# 从 ~22 飙到 55+，overlay 重 bake 即真凶（已加墙钟节流 overlay_min_bake_interval_ms）。
+			toggle_overlay_refresh_disabled()
+		KEY_L:
+			# 全局诊断日志（PKLog）开关（GM 面板等价）。关掉后所有守门 print 站点
+			# short-circuit，立即看到真实硬件天花板；镜像到 C++ 端。
+			toggle_diagnostic_logging_debug()
 		KEY_F2:
 			# DCSoakDump 一键启动（dots-storage-同源紧急修复 2026-05-14）：
 			# 30 tick SUMMARY mode 写到 user://soak/manual_<timestamp>.tsv。
 			# F10 原本绑 use_data_core master toggle，dots-flag-prune-pr1 删除后改用 F2。
 			# 已在跑则忽略（避免互相覆盖）。
 			_soak_dump_hotkey_start()
-		KEY_F3:
-			# DCSoakABRunner 一键 A/B 对比（dots-storage-同源紧急修复 2026-05-14）：
-			#   F3         — SAME_SOURCE mode 30 tick：A/B 都用当前 DataCore 状态（默认推荐）
-			#                验证 storage 在稳态下的可重复性，threshold=1e-4 期望 PASS
-			#   Shift+F3   — VS_LEGACY mode 30 tick：A=current, B=toggle 后状态
-			#                对比 DataCore vs legacy 业务等价性，threshold=0.5
-			#   Ctrl+F3    — SAME_SOURCE mode **1000 tick**（B3b 阶段 3 收工验收 / 长期均值）
-			#                建议在 x20 速度下使用：1000 tick × 2 段 = 2000 sim-tick ≈ 100 s
-			#   Alt+F3     — 立即 cancel 当前 A/B 流程（解卡用）。无 active 流程时 nop。
-			# 总耗时 ≈ N tick × 2 段 × 当前游戏速度（x1 → 60s/30tick；x20 → 3s/30tick）。
-			print("[soak-ab] F3 pressed (shift=%s ctrl=%s alt=%s)" % [
-				str(event.shift_pressed), str(event.ctrl_pressed), str(event.alt_pressed)])
-			if event.alt_pressed:
-				_soak_ab_hotkey_cancel()
-			elif event.ctrl_pressed and not event.shift_pressed:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE, 1000)
-			elif event.shift_pressed:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
-			else:
-				_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE)
-		KEY_F11:
-			# Print current DataCore world bind / entity / component snapshot.
-			_print_data_core_flag_snapshot()
-		KEY_F12:
-			# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已随
-			# use_data_core_weather flag 一同废弃。F12 仅打印废弃提示。
-			_validate_weather_print_snapshot()
+		# 注：原 KEY_F3（Soak A/B）/ KEY_F11（DataCore 标志）/ KEY_F12（validate-weather）
+		# 重复分支已删除——它们在 match 里被上方首次出现的 F3/F11/F12 分支永久遮蔽（死代码），
+		# 对应功能现已统一收进 GM 面板（调试控制台）的「DataCore / Soak」「诊断打印」分组。
+		# Soak A/B 的修饰键变体（Shift/Ctrl/Alt+F3）同理失效，改用面板按钮触发。
 
 # ─── 移动端调试按钮入口 ─────────────────────────────────────────────────
 
@@ -441,18 +611,280 @@ func toggle_debug_console() -> void:
 		_debug_console.visible = not _debug_console.visible
 
 
+# 异步气候轮 A/B bench（GM 面板按钮 / B、V 热键）：kind = "transp" | "pass_a"。
+# worker thread 跑 pure kernel，对比 sync 结果 bit-equal，报告打到 [async/bench] 前缀。
+func run_async_climate_bench_debug(kind: String = "transp") -> void:
+	if _generator != null and _generator.has_method("run_async_climate_round_bench"):
+		_generator.run_async_climate_round_bench(kind)
+	elif kind == "transp" and _generator != null and _generator.has_method("run_async_climate_round_stage1_bench"):
+		_generator.run_async_climate_round_stage1_bench()
+	else:
+		push_warning("[async/bench] generator 缺 run_async_climate_round_bench()")
+
+
+# 全局诊断日志（PKLog）开关（GM 面板按钮 / L 热键）。镜像到 C++ 端
+# DCWorldExt / SusSchedulerExt，让原生 print 也响应。返回切换后的状态。
+func toggle_diagnostic_logging_debug() -> void:
+	PKLog.set_enabled(not PKLog.enabled,
+		_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
+		_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
+	)
+
+func cycle_weather_debug_view() -> void:
+	if _renderer == null:
+		print("[weather-debug] renderer null, cannot cycle weather debug view")
+		return
+	var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+	if weather_layer_node == null:
+		print("[weather-debug] WeatherLayer node not found")
+		return
+	if not weather_layer_node.has_method("set_weather_debug_view"):
+		print("[weather-debug] WeatherLayer missing set_weather_debug_view")
+		return
+	var cur: int = int(weather_layer_node.call("get_weather_debug_view")) if weather_layer_node.has_method("get_weather_debug_view") else 0
+	var count: int = int(weather_layer_node.call("get_weather_debug_view_count")) if weather_layer_node.has_method("get_weather_debug_view_count") else 8
+	var next_view: int = (cur + 1) % maxi(count, 1)
+	weather_layer_node.call("set_weather_debug_view", next_view)
+	var name: String = str(weather_layer_node.call("get_weather_debug_view_name")) if weather_layer_node.has_method("get_weather_debug_view_name") else str(next_view)
+	print("[weather-debug] view=%d (%s)" % [next_view, name])
+
+
+# GM 面板 toggle 类 CheckBox 的状态回显源：给定 key 返回该开关当前的真值。
+# 这些 toggle_* 方法都是"翻转内部 flag"语义，没有独立 getter，统一在此集中读回，
+# 保证面板 CheckBox 的勾选态与运行时真值一致（热键/按钮任意路径改动都能同步）。
+func get_debug_toggle_state(key: String) -> bool:
+	match key:
+		"perf_mini_hud":
+			return _perf_mini_hud != null and _perf_mini_hud.visible
+		"overlay_refresh_disabled":
+			return _overlay_refresh_disabled
+		"atlas_upload_disabled":
+			return _render_profile_atlas_disabled
+		"atlas_quarter_size":
+			return _render_profile_atlas_quarter_size
+		"weather_hidden":
+			return _render_profile_weather_hidden
+		"world_shader_disabled":
+			return _render_profile_world_shader_disabled
+		"diagnostic_logging":
+			return PKLog.enabled
+		_:
+			return false
+
+
 # 2026-05-19：Mini Perf HUD 显隐切换。
 # 默认 visible=true（一启动就能看到性能数据），F4 隐藏后内部 timer 也会停。
 func toggle_perf_mini_hud() -> void:
 	if _perf_mini_hud != null and _perf_mini_hud.has_method("toggle_visible"):
 		_perf_mini_hud.toggle_visible()
 
+
+# ─── 60 FPS 调查热键（2026-06-14） ─────────────────────────────────────
+# F3: dump Performance monitor 全量数据（GPU / draw calls / 内存 / 渲染时间）。
+# 在移动端定位"主线程仿真已优化但仍 26 FPS"的真凶——是 GPU 端、Canvas 重建、
+# 还是 atlas commit 拖慢了。
+func dump_render_profile() -> void:
+	# Godot 4 Performance.get_monitor 提供以下精确 ms 计数：
+	# - TIME_FPS / TIME_PROCESS / TIME_PHYSICS_PROCESS / TIME_NAVIGATION_PROCESS
+	# - RENDER_TOTAL_OBJECTS_IN_FRAME / TOTAL_PRIMITIVES / TOTAL_DRAW_CALLS
+	# - RENDER_VIDEO_MEM_USED / RENDER_TEXTURE_MEM_USED / RENDER_BUFFER_MEM_USED
+	# - OBJECT_NODE_COUNT / OBJECT_RESOURCE_COUNT
+	var fps: float = Engine.get_frames_per_second()
+	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	var nav_ms: float = Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0
+	# 取 120 帧采样 + 直方图 + SUS 关联（plan §60fps，2026-06-14）
+	# 之前用 30 帧 sample 只给 min/avg/p95/max，无法区分"60 FPS 帧 + 30 FPS 帧混合"
+	# 跟"全部稳定 25ms"。现在加直方图：哪 N 帧在哪个 ms 区间，能看出真分布。
+	const _SAMPLE_FRAMES: int = 120
+	var frame_samples: PackedFloat32Array = PackedFloat32Array()
+	frame_samples.resize(_SAMPLE_FRAMES)
+	# 记录每帧前 _on_day_changed 是否被触发（fast tick 帧 vs 非 fast tick 帧）
+	var sus_tick_marks: PackedByteArray = PackedByteArray()
+	sus_tick_marks.resize(_SAMPLE_FRAMES)
+	var sus_tick_count_t0: int = _fast_tick_count
+	var sample_t0: int = Time.get_ticks_usec()
+	for i in range(_SAMPLE_FRAMES):
+		var t0: int = Time.get_ticks_usec()
+		var sus_before: int = _fast_tick_count
+		await get_tree().process_frame
+		frame_samples[i] = float(Time.get_ticks_usec() - t0) / 1000.0
+		sus_tick_marks[i] = 1 if _fast_tick_count > sus_before else 0
+	var sample_total_ms: float = float(Time.get_ticks_usec() - sample_t0) / 1000.0
+	var sus_ticks_in_window: int = _fast_tick_count - sus_tick_count_t0
+	# 算 min / avg / max / p95
+	var arr: Array = []
+	for i in range(_SAMPLE_FRAMES):
+		arr.append(frame_samples[i])
+	arr.sort()
+	var f_min: float = arr[0]
+	var f_max: float = arr[_SAMPLE_FRAMES - 1]
+	var f_p50: float = arr[_SAMPLE_FRAMES / 2]
+	var f_p95: float = arr[int(_SAMPLE_FRAMES * 0.95)]
+	var f_avg: float = sample_total_ms / float(_SAMPLE_FRAMES)
+	# 直方图：每 4ms 一个 bin，0-40ms 共 10 个 bin，> 40ms 算 overflow
+	var bins: PackedInt32Array = PackedInt32Array()
+	bins.resize(11)  # [0-4) [4-8) [8-12) [12-16) [16-20) [20-24) [24-28) [28-32) [32-36) [36-40) [40+)
+	for v in arr:
+		var idx: int = int(v / 4.0)
+		if idx >= 10:
+			idx = 10
+		bins[idx] += 1
+	# SUS 帧 vs 非 SUS 帧的 avg
+	var sus_frame_total_ms: float = 0.0
+	var non_sus_frame_total_ms: float = 0.0
+	var sus_count: int = 0
+	var non_sus_count: int = 0
+	for i in range(_SAMPLE_FRAMES):
+		if sus_tick_marks[i] == 1:
+			sus_frame_total_ms += frame_samples[i]
+			sus_count += 1
+		else:
+			non_sus_frame_total_ms += frame_samples[i]
+			non_sus_count += 1
+	var sus_frame_avg: float = sus_frame_total_ms / float(maxi(1, sus_count))
+	var non_sus_frame_avg: float = non_sus_frame_total_ms / float(maxi(1, non_sus_count))
+	var draw_calls: float = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var primitives: float = Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+	var objects: float = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+	var vram_total: float = Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0
+	var vram_tex: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576.0
+	var vram_buf: float = Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED) / 1048576.0
+	var nodes: float = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var resources: float = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var orphan_nodes: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	# 注意：Godot 4 没有"GPU 时间"单独 monitor；TIME_PROCESS 包含 GDScript + render submit。
+	# 真正 GPU 用时要靠 RenderingServer.get_rendering_info(VIEWPORT_DRAW_CALLS_IN_FRAME) 等。
+	var rs_view_calls: int = -1
+	var rs_view_prims: int = -1
+	if Engine.has_singleton("RenderingServer"):
+		rs_view_calls = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+		rs_view_prims = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
+	var msaa_setting: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
+	var fxaa_setting: bool = bool(ProjectSettings.get_setting("rendering/anti_aliasing/quality/use_fxaa", false))
+	var vsync_setting: int = int(DisplayServer.window_get_vsync_mode())  # 0=Disabled, 1=Enabled, 2=Adaptive, 3=Mailbox
+	var max_fps_setting: int = int(Engine.max_fps)
+	var hm_size: Vector2i = Vector2i.ZERO
+	if _world_data != null and _world_data.get("hm_size") != null:
+		hm_size = _world_data.hm_size
+	print("[render-profile] === GPU / Frame metrics @ frame %d ===" % Engine.get_frames_drawn())
+	print("  FPS=%.1f  process(sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	print("  frame wall ms over %d samples: min=%.2f avg=%.2f p50=%.2f p95=%.2f max=%.2f" % [_SAMPLE_FRAMES, f_min, f_avg, f_p50, f_p95, f_max])
+	# SUS frame vs non-SUS frame avg
+	print("  sus_ticks=%d/%d sus_frame_avg=%.2fms non_sus_frame_avg=%.2fms" % [sus_count, _SAMPLE_FRAMES, sus_frame_avg, non_sus_frame_avg])
+	# 直方图（4ms bins）
+	print("  histogram (4ms bins): [0-4)=%d [4-8)=%d [8-12)=%d [12-16)=%d [16-20)=%d [20-24)=%d [24-28)=%d [28-32)=%d [32-36)=%d [36-40)=%d [40+)=%d" % [
+		bins[0], bins[1], bins[2], bins[3], bins[4], bins[5], bins[6], bins[7], bins[8], bins[9], bins[10]
+	])
+	print("  vsync_mode=%d  max_fps=%d  (0=Off 1=On 2=Adaptive 3=Mailbox)" % [vsync_setting, max_fps_setting])
+	print("  draw_calls=%d  primitives=%d  objects=%d (Performance monitor)" % [int(draw_calls), int(primitives), int(objects)])
+	print("  RenderingServer view_calls=%d view_prims=%d" % [rs_view_calls, rs_view_prims])
+	print("  vram total=%.1f MB  tex=%.1f MB  buf=%.1f MB" % [vram_total, vram_tex, vram_buf])
+	print("  nodes=%d resources=%d orphan_nodes=%d" % [int(nodes), int(resources), int(orphan_nodes)])
+	print("  atlas hm_size=%dx%d  msaa=%d  fxaa=%s  mobile=%s" % [
+		hm_size.x, hm_size.y, msaa_setting, str(fxaa_setting), str(OS.has_feature("mobile"))
+	])
+	print("  dynamic_visual_atlas_upload_disabled=%s  atlas_force_quarter_size=%s" % [
+		str(_render_profile_atlas_disabled), str(_render_profile_atlas_quarter_size)
+	])
+
+
+# F11: 临时禁用 / 恢复 dynamic_visual_atlas_upload job。关闭后看 FPS 改善多少。
+var _render_profile_atlas_disabled: bool = false
+
+func toggle_overlay_refresh_disabled() -> void:
+	_overlay_refresh_disabled = not _overlay_refresh_disabled
+	print("[render-profile] overlay daily rebake disabled=%s (overlay frozen; A/B FPS to confirm fan-out cost)"
+		% str(_overlay_refresh_disabled))
+
+
+func toggle_dynamic_visual_atlas_upload() -> void:
+	_render_profile_atlas_disabled = not _render_profile_atlas_disabled
+	# 通过 Engine.set_meta 全局通信，DVA 的 should_run 会读这个 flag。
+	# 不调 unregister_job，保持 SUS topology 不变；下次 should_run 直接 return false。
+	Engine.set_meta(&"force_disable_dva_upload", _render_profile_atlas_disabled)
+	print("[render-profile] dynamic_visual_atlas_upload disabled=%s (toggle to compare FPS)" % str(_render_profile_atlas_disabled))
+
+
+# F12: toggle atlas 强制 256 size（vs 默认 mobile 512）→ 重 bake 后 GPU 负载理论减半。
+var _render_profile_atlas_quarter_size: bool = false
+
+func toggle_atlas_resolution() -> void:
+	_render_profile_atlas_quarter_size = not _render_profile_atlas_quarter_size
+	# MapBaker._hm_max_dim 是 static 函数，不能直接 monkey-patch。最简单：
+	# 用一个全局 flag，bake 时检测；或直接修 ProjectSettings 的某个值传递。
+	# 这里用 Engine.set_meta 全局通信，MapBaker 入口检测：
+	Engine.set_meta(&"force_atlas_quarter_size", _render_profile_atlas_quarter_size)
+	print("[render-profile] atlas_quarter_size=%s — triggering regenerate to rebake at %dpx" % [
+		str(_render_profile_atlas_quarter_size),
+		256 if _render_profile_atlas_quarter_size else 512,
+	])
+	regenerate_debug_map()
+
+
+# F10 / mobile 按钮：toggle WeatherLayer visible（60 FPS 瓶颈调查，2026-06-14）。
+# 完全隐藏 weather overlay → 整个 1046 行 fragment shader 不再为屏幕每个像素跑一次。
+# 用 ΔFPS 反推 weather_overlay 占主线程多少 ms：
+#   - FPS 40→55+：weather 是真凶（visual_quality 降级方向正确）
+#   - FPS 40→45：weather 占 ~5ms，瓶颈分散
+#   - FPS 40→40：weather 不是瓶颈，找其他 shader / SUS
+var _render_profile_weather_hidden: bool = false
+
+func toggle_weather_layer_visible() -> void:
+	if _renderer == null:
+		print("[render-profile] renderer null, cannot toggle WeatherLayer")
+		return
+	var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+	if weather_layer_node == null:
+		print("[render-profile] WeatherLayer node not found")
+		return
+	_render_profile_weather_hidden = not _render_profile_weather_hidden
+	weather_layer_node.visible = not _render_profile_weather_hidden
+	print("[render-profile] WeatherLayer hidden=%s — 用 ΔFPS 判断 weather_overlay shader 占多少" % str(_render_profile_weather_hidden))
+
+
+# 60 FPS 调查（2026-06-14）：toggle 主地形 shader（hex_terrain + world_map）。
+# 把 _world_quad.material = null → fragment shader 不跑。如果 FPS 飙升说明
+# 主地形 shader 是 GPU 瓶颈；如果不变则瓶颈在 Vulkan 驱动 / 其他全屏 quad。
+var _render_profile_world_shader_disabled: bool = false
+
+func toggle_world_shader_disabled() -> void:
+	if _renderer == null:
+		print("[render-profile] renderer null, cannot toggle world shader")
+		return
+	if not _renderer.has_method("toggle_world_shader_disabled"):
+		print("[render-profile] renderer missing toggle_world_shader_disabled method")
+		return
+	_render_profile_world_shader_disabled = bool(_renderer.toggle_world_shader_disabled())
+
+
+# 60 FPS 调查（2026-06-14）：cycle visual_quality 0/1/2。
+# 实测移动端 shader=OFF 时 frame=8ms，shader=ON 时 frame=28ms → 主地形 shader 占 20ms。
+# visual_quality=0 跳过：河岸 fbm 扰动 / river flow / shore 4 对角 sample / fbm octave。
+# 用户手机 toggle 看 q=2/1/0 各自 FPS 实际差异，再决定是否把 mobile default 锁 0。
+func cycle_visual_quality() -> void:
+	visual_quality = (visual_quality + 2) % 3  # 2→1→0→2 循环（按下次序符合"渐降"直觉）
+	if _renderer != null and _renderer.has_method("set_visual_quality"):
+		_renderer.set_visual_quality(visual_quality)
+	# weather_layer 同步（之前漏了）
+	if _renderer != null:
+		var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+		if weather_layer_node != null and weather_layer_node.has_method("set_visual_quality"):
+			weather_layer_node.set_visual_quality(visual_quality)
+	print("[render-profile] visual_quality 切换为 %d" % visual_quality)
+
+
 func _mark_debug_console_state_dirty() -> void:
 	if _debug_console != null and _debug_console.has_method("request_state_sync"):
 		_debug_console.call("request_state_sync")
 
 func regenerate_debug_map() -> void:
+	# 重新生成同样会触发 ~13s bake_world，给一次 splash 体感。
+	_splash_show()
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_generate_and_render(0)
+	_splash_hide()
 
 func fit_debug_map() -> void:
 	if _camera != null:
@@ -472,10 +904,10 @@ func toggle_emergent_debug_switches() -> void:
 	cp.enable_local_climate_coupling = new_state
 	cp.emergent_weather_coupling = new_state
 	cp.fast_slow_layering_enabled = new_state
-	cp.true_insolation_enabled = new_state
-	print("[Emergent+Insolation] 5 switches → %s" % str(new_state))
+	cp.true_insolation_enabled = true
+	print("[Emergent+Insolation] coupling switches → %s; true insolation remains authoritative" % str(new_state))
 	if _renderer != null and _renderer.has_method("set_true_insolation_enabled"):
-		_renderer.set_true_insolation_enabled(new_state)
+		_renderer.set_true_insolation_enabled(true)
 	var ws: Object = _generator.call("get_weather_system") if _generator.has_method("get_weather_system") else null
 	if ws != null and ws.has_method("configure_emergent_coupling"):
 		ws.call("configure_emergent_coupling",
@@ -552,16 +984,137 @@ func print_validate_weather_snapshot_debug() -> void:
 func print_perf_verdict_debug() -> void:
 	request_dots_final_push_perf_verdict()
 
+
+func _world_setup_config() -> Dictionary:
+	if not Engine.has_meta(WORLD_SETUP_META):
+		return {}
+	var raw = Engine.get_meta(WORLD_SETUP_META)
+	if raw is Dictionary and String((raw as Dictionary).get("source", "")) == "world_setup":
+		return raw as Dictionary
+	return {}
+
+
+func _apply_world_setup_base_config() -> void:
+	var config := _world_setup_config()
+	if config.is_empty():
+		return
+	var base = config.get("base", {})
+	if not (base is Dictionary):
+		return
+	map_width = clampi(int((base as Dictionary).get("map_width", map_width)), 10, 500)
+	map_height = clampi(int((base as Dictionary).get("map_height", map_height)), 8, 400)
+	initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
+	sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
+	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
+	continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
+	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
+
+
+func _apply_world_setup_climate_overrides(generator: MapGenerator) -> void:
+	if generator == null:
+		return
+	var config := _world_setup_config()
+	if config.is_empty():
+		return
+	var climate = config.get("climate", {})
+	if not (climate is Dictionary):
+		return
+	var profile := ResourceLoader.load(DEFAULT_CLIMATE_PROFILE_PATH, "Resource") as ClimateProfile
+	if profile != null:
+		profile = profile.duplicate(true) as ClimateProfile
+	else:
+		profile = ClimateProfile.new()
+	var profile_props := {}
+	for prop in profile.get_property_list():
+		profile_props[String(prop.get("name", ""))] = true
+	for name in (climate as Dictionary).keys():
+		var key := String(name)
+		if not WORLD_SETUP_CLIMATE_FIELDS.has(key):
+			continue
+		if not profile_props.has(key):
+			push_warning("[WorldSetup] ClimateProfile has no property '%s'; skipped." % key)
+			continue
+		profile.set(key, (climate as Dictionary)[name])
+	generator.climate_profile = profile
+
+
+func _return_to_world_setup() -> void:
+	get_tree().change_scene_to_file(WORLD_SETUP_SCENE_PATH)
+
 # ─── 时间 UI 绑定 ───────────────────────────────────────────────────────
 
 func _wire_time_ui() -> void:
 	_debug_btn.pressed.connect(toggle_debug_console)
 	_regen_btn.pressed.connect(regenerate_debug_map)
 	_fit_btn.pressed.connect(fit_debug_map)
+	_setup_btn.pressed.connect(_return_to_world_setup)
 	_pause_btn.toggled.connect(_on_pause_toggled)
-	_x1_btn.pressed.connect(func() -> void: _set_speed(1.0))
-	_x5_btn.pressed.connect(func() -> void: _set_speed(5.0))
-	_x20_btn.pressed.connect(func() -> void: _set_speed(20.0))
+	_ensure_speed_preset_buttons()
+	_sync_speed_buttons()
+
+
+func _ensure_speed_preset_buttons() -> void:
+	var hbox: HBoxContainer = _topbar_hbox()
+	if hbox == null:
+		return
+	var insert_idx: int = _pause_btn.get_index() + 1
+	for speed_value in SPEED_PRESETS:
+		var speed: float = float(speed_value)
+		var btn: Button = _existing_speed_button(speed)
+		if btn == null:
+			btn = Button.new()
+			btn.name = _speed_button_node_name(speed)
+			btn.layout_mode = 2
+			hbox.add_child(btn)
+		hbox.move_child(btn, insert_idx)
+		insert_idx += 1
+		btn.text = _speed_button_label(speed)
+		btn.toggle_mode = true
+		btn.custom_minimum_size = Vector2(maxf(btn.custom_minimum_size.x, 48.0), maxf(btn.custom_minimum_size.y, 32.0))
+		btn.pressed.connect(_on_speed_preset_pressed.bind(speed))
+		_speed_buttons[int(speed)] = btn
+
+
+func _existing_speed_button(speed: float) -> Button:
+	if is_equal_approx(speed, 1.0):
+		return _x1_btn
+	if is_equal_approx(speed, 5.0):
+		return _x5_btn
+	if is_equal_approx(speed, 20.0):
+		return _x20_btn
+	var hbox: HBoxContainer = _topbar_hbox()
+	if hbox == null:
+		return null
+	return hbox.get_node_or_null(_speed_button_node_name(speed)) as Button
+
+
+func _topbar_hbox() -> HBoxContainer:
+	var hbox: HBoxContainer = get_node_or_null("UI/TopBar/HBox") as HBoxContainer
+	if hbox != null:
+		return hbox
+	return get_node_or_null("UI/TopBar/MobileTopBarScroll/HBox") as HBoxContainer
+
+
+func _speed_button_node_name(speed: float) -> String:
+	return "X%dBtn" % int(speed)
+
+
+func _speed_button_label(speed: float) -> String:
+	return "x%d" % int(speed)
+
+
+func _on_speed_preset_pressed(speed: float) -> void:
+	_set_speed(speed)
+
+
+func _sync_speed_buttons() -> void:
+	if _world_clock == null:
+		return
+	for speed_key in _speed_buttons.keys():
+		var btn: Button = _speed_buttons[speed_key] as Button
+		if btn == null:
+			continue
+		btn.set_pressed_no_signal(is_equal_approx(float(speed_key), _world_clock.speed_multiplier))
 
 func _on_pause_toggled(pressed: bool) -> void:
 	_world_clock.pause(pressed)
@@ -574,22 +1127,33 @@ func _set_speed(s: float) -> void:
 	_world_clock.set_speed(s)
 	_world_clock.pause(false)
 	_sync_pause_btn()
+	_sync_speed_buttons()
 	_sync_clock_running_to_weather_layer()
 
-# Fast-tick perf opt (A)：速度档变更回调——按档位把 weather_refresh_stride
-# 调成 x1→1 / x5→4 / x20→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
+# Fast-tick perf opt (A)：速度档变更回调——按速度区间把 weather_refresh_stride
+# 调成低速→1 / 中速→4 / 高速→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
 # 按 stride 跳日执行，显著降低单帧热路径开销。
 func _on_speed_changed(new_speed: float) -> void:
+	_sync_speed_buttons()
+	if _renderer != null:
+		var wl = _renderer.get_node_or_null("WeatherLayer")
+		if wl != null and wl.has_method("set_clock_speed_multiplier"):
+			wl.set_clock_speed_multiplier(new_speed)
 	if _generator == null:
 		return
-	var stride: int = 1
-	if new_speed >= 15.0:
-		stride = 8
-	elif new_speed >= 3.0:
-		stride = 4
-	else:
-		stride = 1
-	_generator.set_weather_refresh_stride(stride)
+	var cp = _generator._c() if _generator.has_method("_c") else null
+	var auto_weather_stride: bool = true
+	if cp != null and cp.get("weather_refresh_auto_stride_by_speed") != null:
+		auto_weather_stride = bool(cp.weather_refresh_auto_stride_by_speed)
+	if auto_weather_stride:
+		var stride: int = 1
+		if new_speed >= 15.0:
+			stride = 8
+		elif new_speed >= 3.0:
+			stride = 4
+		else:
+			stride = 1
+		_generator.set_weather_refresh_stride(stride)
 	# 抽动修复（2026-05-18）：切档瞬间 weather_layer 内的 snapshot_interval 估计
 	# 会因为"上次 push 到现在"的墙钟差变得不真实（x20→x1 时尤其严重），导致下
 	# 一次 set_weather_fronts 算出超长 blend_duration → 云第一段几乎不动。重置
@@ -611,11 +1175,25 @@ func _sync_clock_running_to_weather_layer() -> void:
 # ─── WorldClock 信号回调 ─────────────────────────────────────────────────
 
 func _on_day_changed(_day_idx: int) -> void:
+	# best-effort 诊断（临时）：整个 _on_day_changed 的墙钟，含 fast_ms 没覆盖的
+	# 头部（time_label / set_season_phase / vegetation layers）与尾部（overlay /
+	# recorders）。t_label0 → 头部分段。
+	var _ocd_t0: int = Time.get_ticks_usec()
 	_refresh_time_label()
+	var _ocd_label_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
+	# debug-overlay-perf v1（2026-06-12）：每个游戏日推进时标记 overlay 数据可能
+	# 已变化。fast tick 末尾的消费逻辑会在"非跳日 + dirty=true"双条件下才真正
+	# 触发一次 bake，确保 x20 倍速下每个游戏日最多 bake 一次。
+	_overlay_dirty = true
+	var dispatch_season_phase: float = _world_clock.season_phase()
+	if _world_clock != null and _world_clock.has_method("season_phase_for_day"):
+		dispatch_season_phase = float(_world_clock.season_phase_for_day(_day_idx))
 	# Phase 1：每"日"刷新一次 shader 季节相位
+	var _ocd_sp0: int = Time.get_ticks_usec()
 	if _renderer != null:
-		_renderer.set_season_phase(_world_clock.season_phase())
+		_renderer.set_season_phase(dispatch_season_phase)
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
+	var _ocd_seasonphase_ms: float = float(Time.get_ticks_usec() - _ocd_sp0) / 1000.0
 	# ───────────────────────────────────────────────────────────────────
 	# Emergent Climate Coupling — 每日调用顺序契约（fast tick）：
 	#   1. refresh_climate_daily   — 读慢层 + 写快层（内部尾部还会跑 sea_ice_daily、transpiration）
@@ -650,7 +1228,13 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 等价于此前的 was_skipped_day 行为。
 	var sus_result: Dictionary = {}
 	if _generator != null and _world_clock != null:
-		sus_result = _generator.sus_tick_daily(_world_clock)
+		sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
+	if _renderer != null and _generator != null \
+			and _generator.has_method("has_pending_detail_scatter_refresh") \
+			and bool(_generator.has_pending_detail_scatter_refresh()) \
+			and _renderer.has_method("queue_detail_scatter_refresh"):
+		var detail_dirty: PackedInt32Array = _generator.consume_pending_detail_scatter_refresh_indices()
+		_renderer.queue_detail_scatter_refresh(detail_dirty)
 	# ───────────────────────────────────────────────────────────────────
 	# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled = true 时启用：
@@ -714,7 +1298,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	var t_ui_ms: float = (Time.get_ticks_usec() - t_ui_us0) / 1000.0
 
 	# Emergent Climate Coupling：fast tick 总耗时打点
-	# 首次必打；随后按 365 日节流。合计 > 12ms 触发 WARN（不阻塞主循环）。
+	# 首次必打；随后按 WorldClock 年长节流。合计 > 12ms 触发 WARN（不阻塞主循环）。
 	var fast_ms: int = Time.get_ticks_msec() - t_fast0
 	_fast_tick_count += 1
 
@@ -724,16 +1308,32 @@ func _on_day_changed(_day_idx: int) -> void:
 		and perf_log_daily_stride > 0 \
 		and (_fast_tick_count == 1 or (_fast_tick_count % perf_log_daily_stride) == 0)
 	# 老牌 fast tick 日志（保留兼容 perf-report.md 已有数据格式）
-	if _fast_tick_count == 1 or (_fast_tick_count % 365) == 0:
+	var annual_log_stride: int = _world_clock.days_per_year() if _world_clock != null and _world_clock.has_method("days_per_year") else 365
+	annual_log_stride = maxi(1, annual_log_stride)
+	if _fast_tick_count == 1 or (_fast_tick_count % annual_log_stride) == 0:
 		print("fast tick #%d: %dms (sus=%.2f render=%.2f ui=%.2f skipped_day=%s)"
 			% [_fast_tick_count, fast_ms, t_sus_ms, t_render_ms, t_ui_ms, str(was_skipped_day)])
 	# Fast-tick perf opt (A)：跳日路径本就是低成本，跳过 > 12ms 警告误报判定。
-	# Daily-sim perf instrumentation：原 365 帧节流过松（卡顿期 400ms 一年才提醒一次），
+	# Daily-sim perf instrumentation：原年度节流过松（卡顿期 400ms 一年才提醒一次），
 	# 改为指数退让——首次必报，之后按 30 帧节流，避免刷屏又能持续看到趋势。
-	var sus_budget_warn: bool = t_sus_ms > 1.0
-	var trigger_warn: bool = (not was_skipped_day) and (fast_ms > 12 or sus_budget_warn) \
-		and (_fast_tick_warn_last_frame == 0 or (_fast_tick_count - _fast_tick_warn_last_frame) >= 30)
-	if trigger_warn:
+	# Fix #11 (2026-06-16) mobile：阈值 sus>1ms/total>12ms 在 mobile 上误报严重。
+	# 每次 WARN 触发 25 行 print + push_warning stack trace = ~30 行日志，每行
+	# logcat 5-10ms → 单次 WARN 自身 >150ms，反而把 frame_wall 拉爆。mobile 把
+	# 节流间隔放到 120 帧（~2s）且阈值放到 sus>8ms / fast>16ms（60FPS budget），
+	# 让诊断只在真实问题时触发。desktop 保留原行为方便开发期排查。
+	var sus_budget_warn: bool = false
+	var fast_budget_warn: bool = false
+	var warn_throttle: int = 30
+	if OS.has_feature("mobile"):
+		sus_budget_warn = t_sus_ms > 8.0
+		fast_budget_warn = fast_ms > 16
+		warn_throttle = 120
+	else:
+		sus_budget_warn = t_sus_ms > 1.0
+		fast_budget_warn = fast_ms > 12
+	var trigger_warn: bool = (not was_skipped_day) and (fast_budget_warn or sus_budget_warn) \
+		and (_fast_tick_warn_last_frame == 0 or (_fast_tick_count - _fast_tick_warn_last_frame) >= warn_throttle)
+	if trigger_warn and PKLog.enabled:
 		push_warning("[fast tick] frame=%d total=%dms sus=%.2fms render=%.2fms ui=%.2fms cells=%d budgets(total>12ms or sus>1ms)" % [
 			_fast_tick_count, fast_ms, t_sus_ms, t_render_ms, t_ui_ms,
 			_current_map.cell_count() if _current_map != null else 0
@@ -745,17 +1345,39 @@ func _on_day_changed(_day_idx: int) -> void:
 	#   [fast tick #N] sus=A render=B ui=C total=D skip=<bool>
 	#       <job_id> ran=<ms> slices=<n>
 	#       <job_id> skipped(<reason>)
-	if should_log_breakdown or trigger_warn:
+	if (should_log_breakdown or trigger_warn) and PKLog.enabled:
 		_print_daily_breakdown(_fast_tick_count, t_sus_ms, t_render_ms, t_ui_ms,
 			float(fast_ms), was_skipped_day, trigger_warn)
 
 	# Data Overlay：每日随模拟推进刷新一次数据纹理（需求 2.7）。
 	# overlay_mode == NONE 时 _refresh_overlay_data 内部会早返 0 开销。
-	# 跳日（was_skipped_day）时仍刷新——因为慢层（base_moisture / 气候带）
-	# 在跳日内可能也变；成本仅 1 次 O(cells) 采样 + 纹理 upload，<1ms。
+	#
+	# debug-overlay-perf v1（2026-06-12）：
+	# 旧实现"跳日时仍刷新"的理由是慢层（base_moisture / 气候带）在跳日内
+	# 可能变；但在 x20 倍速实测中，每 fast tick 都重 bake 1080×574 RGBA8
+	# 纹理 → ImageTexture.create_from_image 5-15ms 同步阻塞，是温度/天气
+	# overlay 卡顿的主因（详见 docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+	# §Overlay Bake Cost）。
+	#
+	# 现在改成两层 gate：
+	# 1) 跳日（was_skipped_day=true，本帧没跑 weather/climate/ocean）→ overlay
+	#    数据不可能变，直接跳过。这一条消灭了 x20 倍速下 ~50% 的重复 bake。
+	# 2) _overlay_dirty 标记由 day_changed 信号在 _on_day_changed 顶部一次
+	#    性置 true（不分跳日与否，确保慢层场景也能刷一次）；本函数消费后
+	#    立即清零。如果 _on_day_changed 在同一帧内被多次调用（不应该发生，
+	#    但保险），_overlay_dirty 仅触发一次 bake。
+	# 3) 即使 dirty=false 也允许由 _apply_overlay_mode / 地图重生成显式调用，
+	#    那些路径独立写 dirty 不依赖 fast tick gate。
 	_overlay_last_fast_tick_ms = fast_ms
-	if _overlay_mode != 0:
-		_refresh_overlay_data()
+	# best-effort-sim-stepping（2026-06-17）：墙钟节流 overlay 重 bake。高倍速下
+	# 每帧都推进一天会导致每帧 ~30ms overlay fan-out → FPS 跳水。这里加第 4 道
+	# gate：距上次 bake 不足 overlay_min_bake_interval_ms 就跳过（保留 _overlay_dirty
+	# 不消费，下一个到点的帧再 bake 最新状态）。低速（日间隔 ≥ interval）下永不触发。
+	if _overlay_mode != 0 and not was_skipped_day and _overlay_dirty and not _overlay_refresh_disabled:
+		var now_ms: int = Time.get_ticks_msec()
+		if float(now_ms - _overlay_last_bake_wall_ms) >= overlay_min_bake_interval_ms:
+			_overlay_last_bake_wall_ms = now_ms
+			_refresh_overlay_data()
 
 	# DOTS-Final-Push 任务 10：把当前 tick 的 fast_ms 与 trigger_warn 标记
 	# 推入滚动窗口（PERF_VERDICT_WINDOW=200），供 request_dots_final_push_perf_verdict()
@@ -768,26 +1390,78 @@ func _on_day_changed(_day_idx: int) -> void:
 			_perf_verdict_total_ms.pop_front()
 			_perf_verdict_warn_marks.pop_front()
 
-	# Plan: perf-recording-csv-export
+	# Plan: perf-recording-csv-export + tile-data debug recording
 	# 把本帧 main 局部才知道的指标（三段 ms / 跳日标志 / fps / 时间戳）发布给
-	# PerfRecorder。recorder 自己再去拉 SUS report / summary / breakdowns。
-	# 未挂载录制器时 _publish_fast_tick_perf_sample 内部走 null 早返路径，
-	# 零开销；跳日帧也录入（CSV 里用 was_skipped_day 列区分），保证录制连贯。
-	_publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
+	# 已挂接的录制器。PerfRecorder 自己拉 SUS breakdown；TileDataRecorder
+	# 自己拉 MapData SoA。未挂载或未录制时内部早返，跳日帧也录入。
+	var recorder_diag: Dictionary = _publish_fast_tick_perf_sample(t_sus_ms, t_render_ms, t_ui_ms,
 		float(fast_ms), was_skipped_day)
+	var fast_ms_after_recorders: int = Time.get_ticks_msec() - t_fast0
+	if recorder_diag.is_empty():
+		_last_recorder_perf_summary = {}
+	else:
+		recorder_diag["fast_ms_before_recorders"] = fast_ms
+		recorder_diag["fast_ms_after_recorders"] = fast_ms_after_recorders
+		_last_recorder_perf_summary = recorder_diag
+		_overlay_last_fast_tick_ms = fast_ms_after_recorders
+		var recorder_total_ms: float = float(recorder_diag.get("total_ms", 0.0))
+		var recorder_warn: bool = recorder_total_ms >= 2.0 \
+			or ((not was_skipped_day) and fast_ms_after_recorders > 12 and not trigger_warn)
+		if recorder_warn and (_recorder_warn_last_frame == 0 \
+				or (_fast_tick_count - _recorder_warn_last_frame) >= 30):
+			_recorder_warn_last_frame = _fast_tick_count
+			push_warning("[fast tick recorder] frame=%d recorder=%.2fms tile=%.2fms rows=%d total_after=%dms" % [
+				_fast_tick_count,
+				recorder_total_ms,
+				float(recorder_diag.get("tile_ms", 0.0)),
+				int(recorder_diag.get("tile_rows", 0)),
+				fast_ms_after_recorders,
+			])
+			print("        recorder total=%.2f perf=%.2f tile=%.2f collect=%.2f stats=%.2f format=%.2f flush=%.2f encoder=%s tile_rows=%d tile_recorded=%s tile_reason=%s total_after=%dms" % [
+				recorder_total_ms,
+				float(recorder_diag.get("perf_ms", 0.0)),
+				float(recorder_diag.get("tile_ms", 0.0)),
+				float(recorder_diag.get("tile_collect_ms", 0.0)),
+				float(recorder_diag.get("tile_stats_ms", 0.0)),
+				float(recorder_diag.get("tile_format_ms", 0.0)),
+				float(recorder_diag.get("tile_flush_ms", 0.0)),
+				str(recorder_diag.get("tile_encoder_path", "")),
+				int(recorder_diag.get("tile_rows", 0)),
+				str(recorder_diag.get("tile_recorded", false)),
+				str(recorder_diag.get("tile_reason", "")),
+				fast_ms_after_recorders,
+			])
+
+	# best-effort 诊断（临时）：整个 _on_day_changed 的分段墙钟。和 [clock/step] 的
+	# loop(~40ms) 对比定位那 ~35ms 落在哪段：label / season_phase(含 vegetation 层)
+	# / fast(sus+render+ui) / post(overlay+recorders)。每 ~120 帧打一行。
+	if Engine.get_process_frames() % 120 == 0:
+		var _ocd_full_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
+		var _ocd_post_ms: float = _ocd_full_ms - _ocd_label_ms - _ocd_seasonphase_ms - float(fast_ms)
+		print("[day/seg] full=%.2fms label=%.2f season_phase=%.2f fast=%d post=%.2f skipped=%s"
+			% [_ocd_full_ms, _ocd_label_ms, _ocd_seasonphase_ms, fast_ms, _ocd_post_ms, str(was_skipped_day)])
 
 
 # Plan: perf-recording-csv-export
-# 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给 _perf_recorder。
-# 不持有 recorder 引用时直接 return，零开销快路径。
+# 把"只有 fast_tick 局部知道"的指标打包成 sample 字典，转发给已挂接的录制器。
+# 不持有 recorder 引用或未录制时直接 return，零开销快路径。
 func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
-		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> void:
-	if _perf_recorder == null:
-		return
-	if not _perf_recorder.has_method("on_fast_tick"):
-		return
-	if _perf_recorder.has_method("is_recording") and not bool(_perf_recorder.call("is_recording")):
-		return
+		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> Dictionary:
+	var perf_ready: bool = _recorder_ready(_perf_recorder)
+	var tile_ready: bool = _recorder_ready(_tile_data_recorder)
+	if not perf_ready and not tile_ready:
+		return {}
+	var t_recorders_us0: int = Time.get_ticks_usec()
+	var out: Dictionary = {
+		"total_ms": 0.0,
+		"perf_ms": 0.0,
+		"tile_ms": 0.0,
+		"perf_recording": perf_ready,
+		"tile_recording": tile_ready,
+		"tile_recorded": false,
+		"tile_rows": 0,
+		"tile_reason": "",
+	}
 	var sample: Dictionary = {
 		"tick_idx": _fast_tick_count,
 		"timestamp_ms": Time.get_ticks_msec(),
@@ -798,7 +1472,66 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		"t_render_ms": t_render_ms,
 		"t_ui_ms": t_ui_ms,
 	}
-	_perf_recorder.call("on_fast_tick", sample)
+	if _generator != null and _generator.has_method("sus_climate_breakdown"):
+		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
+		if not climate_diag.is_empty():
+			sample["climate"] = climate_diag
+	if _generator != null and _generator.has_method("sus_weather_breakdown"):
+		var weather_diag: Dictionary = _generator.sus_weather_breakdown()
+		if not weather_diag.is_empty():
+			sample["weather"] = weather_diag
+	if _generator != null and _generator.has_method("sus_ocean_currents_breakdown"):
+		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
+		if not ocean_diag.is_empty():
+			sample["ocean_currents"] = ocean_diag
+	if perf_ready:
+		var t_perf_us0: int = Time.get_ticks_usec()
+		_perf_recorder.call("on_fast_tick", sample)
+		out["perf_ms"] = (Time.get_ticks_usec() - t_perf_us0) / 1000.0
+	if tile_ready:
+		var rows_before: int = 0
+		if _tile_data_recorder.has_method("row_count"):
+			rows_before = int(_tile_data_recorder.call("row_count"))
+		var t_tile_us0: int = Time.get_ticks_usec()
+		var tile_result = _tile_data_recorder.call("on_fast_tick", sample)
+		out["tile_ms"] = (Time.get_ticks_usec() - t_tile_us0) / 1000.0
+		var rows_after: int = rows_before
+		if _tile_data_recorder.has_method("row_count"):
+			rows_after = int(_tile_data_recorder.call("row_count"))
+		if tile_result is Dictionary:
+			var tile_dict: Dictionary = tile_result
+			out["tile_recorded"] = bool(tile_dict.get("recorded", false))
+			out["tile_rows"] = int(tile_dict.get("rows", rows_after - rows_before))
+			out["tile_reason"] = str(tile_dict.get("reason", ""))
+			if tile_dict.has("tick_stride"):
+				out["tile_tick_stride"] = int(tile_dict.get("tick_stride", 1))
+			if tile_dict.has("cell_stride"):
+				out["tile_cell_stride"] = int(tile_dict.get("cell_stride", 1))
+			if tile_dict.has("collect_ms"):
+				out["tile_collect_ms"] = float(tile_dict.get("collect_ms", 0.0))
+			if tile_dict.has("stats_ms"):
+				out["tile_stats_ms"] = float(tile_dict.get("stats_ms", 0.0))
+			if tile_dict.has("format_ms"):
+				out["tile_format_ms"] = float(tile_dict.get("format_ms", 0.0))
+			if tile_dict.has("flush_ms"):
+				out["tile_flush_ms"] = float(tile_dict.get("flush_ms", 0.0))
+			if tile_dict.has("encoder_path"):
+				out["tile_encoder_path"] = str(tile_dict.get("encoder_path", ""))
+		else:
+			out["tile_rows"] = rows_after - rows_before
+			out["tile_recorded"] = int(out["tile_rows"]) > 0
+	out["total_ms"] = (Time.get_ticks_usec() - t_recorders_us0) / 1000.0
+	return out
+
+
+func _recorder_ready(rec: RefCounted) -> bool:
+	if rec == null:
+		return false
+	if not rec.has_method("on_fast_tick"):
+		return false
+	if rec.has_method("is_recording") and not bool(rec.call("is_recording")):
+		return false
+	return true
 
 
 # Daily-sim perf instrumentation：把 SUS.report_last_tick() 翻译成可读日志。
@@ -875,6 +1608,68 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					# I1.A-1: 与 weather "path=..." 对齐，便于 grep / A-B 桶聚合（保留旧 dc=
 					# 字段一并打印以兼容历史 ab_test*.log 解析脚本）
 					print("        climate path=%s dc=%s" % [_dcc_path, _dcc_path])
+					if is_warn:
+						print("        climate wrapper breakdown round_start_total_ms=%.3f round_start_terrain_sync_ms=%.3f capture_start_state_ms=%.3f round_start_mark_stale_ms=%.3f round_start_soa_begin_ms=%.3f round_start_dirty_ms=%.3f pass_overhead_ms=%.3f finalize_total_ms=%.3f finalize_finalizer_ms=%.3f finalize_breakdown_ms=%.3f finalize_soak_ms=%.3f finalize_finish_pass_ms=%.3f finalize_reset_transp_ms=%.3f finalize_flush_dirty_ms=%.3f finalize_mark_stale_ms=%.3f finalize_dump_stats_ms=%.3f finalizer_total_ms=%.3f finalizer_cell_ms=%.3f finalizer_temp_ms=%.3f finalizer_tta_ms=%.3f finalizer_thermal_ms=%.3f finalizer_sort_ms=%.3f finalizer_write_dense_ms=%.3f tta_mirror=%s/%d tta_clamped=%d thermal_init=%d temp_mirror=%s" % [
+							float(b.get("round_start_total_ms", 0.0)),
+							float(b.get("round_start_terrain_sync_ms", 0.0)),
+							float(b.get("capture_start_state_ms", 0.0)),
+							float(b.get("round_start_mark_stale_ms", 0.0)),
+							float(b.get("round_start_soa_begin_ms", 0.0)),
+							float(b.get("round_start_dirty_ms", 0.0)),
+							float(b.get("pass_overhead_ms", 0.0)),
+							float(b.get("finalize_total_ms", 0.0)),
+							float(b.get("finalize_finalizer_ms", 0.0)),
+							float(b.get("finalize_breakdown_ms", 0.0)),
+							float(b.get("finalize_soak_ms", 0.0)),
+							float(b.get("finalize_finish_pass_ms", 0.0)),
+							float(b.get("finalize_reset_transp_ms", 0.0)),
+							float(b.get("finalize_flush_dirty_ms", 0.0)),
+							float(b.get("finalize_mark_stale_ms", 0.0)),
+							float(b.get("finalize_dump_stats_ms", 0.0)),
+							float(b.get("finalizer_total_ms", 0.0)),
+							float(b.get("finalizer_cell_ms", 0.0)),
+							float(b.get("finalizer_temp_ms", 0.0)),
+							float(b.get("finalizer_tta_ms", 0.0)),
+							float(b.get("finalizer_thermal_ms", 0.0)),
+							float(b.get("finalizer_sort_ms", 0.0)),
+							float(b.get("finalizer_write_dense_ms", 0.0)),
+							str(b.get("finalizer_tta_cell_mirror", false)),
+							int(b.get("finalizer_tta_cell_mirror_count", 0)),
+							int(b.get("finalizer_tta_clamped_count", 0)),
+							int(b.get("finalizer_thermal_init_count", 0)),
+							str(b.get("finalizer_temperature_cell_mirror", false)),
+						])
+					var _pass_diag: Dictionary = b.get("pass_diag", {})
+					var _transp_diag: Dictionary = {}
+					var _transp_diag_source: String = ""
+					var _pass_stage: String = str(_pass_diag.get("stage_name", _pass_diag.get("stage", "")))
+					if _pass_stage == "transp" and str(_pass_diag.get("path", "")) == "gdext":
+						_transp_diag = _pass_diag
+						_transp_diag_source = "current"
+					else:
+						var _cached_transp_diag: Dictionary = b.get("transp_native_diag", {})
+						var _cached_tick: int = int(_cached_transp_diag.get("_tick_idx", -1))
+						var _breakdown_tick: int = int(b.get("_tick_idx", -2))
+						if str(_cached_transp_diag.get("path", "")) == "gdext" \
+								and (_cached_tick == _breakdown_tick or _breakdown_tick < 0):
+							_transp_diag = _cached_transp_diag
+							_transp_diag_source = "cached"
+					if is_warn and not _transp_diag.is_empty():
+						print("        transp/native breakdown source=%s diagnostic_wall_ms=%.2f refresh_ms=%.3f native_call_ms=%.3f native_ms=%.3f native_compute_ms=%.3f native_apply_ms=%.3f native_flush_ms=%.3f sync_total_ms=%.3f sync_write_ms=%.3f sync_mark_ms=%.3f dirty_count=%d sync_path=%s" % [
+							_transp_diag_source,
+							float(_transp_diag.get("diagnostic_wall_ms", _transp_diag.get("elapsed_ms", 0.0))),
+							float(_transp_diag.get("refresh_ms", 0.0)),
+							float(_transp_diag.get("native_call_ms", 0.0)),
+							float(_transp_diag.get("native_ms", 0.0)),
+							float(_transp_diag.get("native_compute_ms", 0.0)),
+							float(_transp_diag.get("native_apply_ms", 0.0)),
+							float(_transp_diag.get("native_flush_ms", 0.0)),
+							float(_transp_diag.get("sync_total_ms", _transp_diag.get("sync_ms", 0.0))),
+							float(_transp_diag.get("sync_write_ms", 0.0)),
+							float(_transp_diag.get("sync_mark_ms", 0.0)),
+							int(_transp_diag.get("dirty_count", 0)),
+							str(_transp_diag.get("sync_path", "")),
+						])
 					# Ocean pass C++ vs fallback diag：当本片是 ocean_water / ocean_land
 					# 时附带 gdext runs / fallbacks / last rc，定位"为何 fallback"
 					var _cur_pass: String = str(b.get("current_pass", ""))
@@ -958,7 +1753,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("job_unattributed_ms", 0.0)),
 						])
 					if wb.has("field_commit_total_ms"):
-						print("        weather_commit inner=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f dist=%.1f summary=%.1f" % [
+						print("        weather_commit inner=%.1f setup=%.1f loop=%.1f dc=%.1f conv=%.1f dist=%.1f summary=%.1f path=%s" % [
 							float(wb.get("field_commit_total_ms", 0.0)),
 							float(wb.get("field_commit_setup_ms", 0.0)),
 							float(wb.get("field_commit_loop_ms", 0.0)),
@@ -966,6 +1761,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(wb.get("field_commit_convergence_ms", 0.0)),
 							float(wb.get("distribute_ms", 0.0)),
 							float(wb.get("field_summary_ms", 0.0)),
+							str(wb.get("field_commit_path", "")),
 						])
 					# DataCore: 末尾 path 标记，方便 A/B 对照（plan 任务 10）
 					# dots-flag-prune-pr1 (2026-05-22)： use_data_core_weather flag 已删除。
@@ -974,11 +1770,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					var _dc_path: String = "legacy"
 					var _dc_w = _generator.get_data_core_world() if _generator.has_method("get_data_core_world") else null
 					if _dc_w != null and _dc_w.is_bound():
-						var _wjob = _generator._weather_refresh_job if "_weather_refresh_job" in _generator else null
-						if _wjob != null and _wjob.has_method("data_core_ready") and _wjob.data_core_ready():
-							_dc_path = "data_core"
-						else:
-							_dc_path = "data_core_cells_only"
+						_dc_path = "data_core_cells_only"
 					print("        weather path=%s" % _dc_path)
 					# dots-flag-prune-pr1 (2026-05-22)：--validate-weather 机制已废弃。
 			if job_id == &"enum_atlas_upload" and _generator != null \
@@ -998,34 +1790,64 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						str(eb.get("cover_pending", false)),
 						str(eb.get("vegetation_pending", false)),
 					])
-			# DOTS-Final-Push 任务 6.2：sea_ice_atlas_upload 拆 prepare/upload 子段。
-			# 之前日志只看到 ran=232ms slices=1 progress=0.5 但完全不知道这 232ms
-			# 是卡在 prepare（C++ run_sea_ice_atlas_prepare / GD 全图 28800 像素回扫）
-			# 还是 upload（28KB R8 纹理 update）。本钩子把两段拆出来 + path（gdext/
-			# gdscript/zero_fallback）+ dirty_cells/dirty_ratio 一并打印，让下次跑日志
-			# 直接看到瓶颈源。
-			if job_id == &"sea_ice_atlas_upload" and _generator != null \
-					and _generator.has_method("sus_sea_ice_atlas_breakdown"):
-				var sib: Dictionary = _generator.sus_sea_ice_atlas_breakdown()
-				if not sib.is_empty():
-					print("        sea_ice_atlas phase=%s path=%s prep=%.2f img=%.2f upload=%.2f dirty=%d/%.2f" % [
-						str(sib.get("phase", "")),
-						str(sib.get("path", "unknown")),
-						float(sib.get("prepare_ms", 0.0)),
-						float(sib.get("image_ms", 0.0)),
-						float(sib.get("upload_ms", 0.0)),
-						int(sib.get("dirty_cells", 0)),
-						float(sib.get("dirty_ratio", 0.0)),
-					])
 			if job_id == &"season_refresh" and _generator != null \
 					and _generator.has_method("sus_season_refresh_breakdown"):
 				var sb: Dictionary = _generator.sus_season_refresh_breakdown()
 				if not sb.is_empty():
 					print("        season_refresh stages=%s" % [str(sb)])
+			# Daily wind 归因：ocean_currents 每 wind_period_ticks 跑一次 C++ daily
+			# wind prepass（SLP + wind 两段权威）。把 slp/wind 分段耗时 + 主导段直接
+			# 打到调度日志，配合 sus_window largest=ocean_currents/daily_wind_prepass/
+			# <daily_wind_slp|daily_wind_wind> 定位是哪一段吃预算。仅在本 tick 真正跑
+			# 了 daily wind（daily_wind_due=true）时打印，避免每 tick 复读旧值。
+			if job_id == &"ocean_currents" and _generator != null \
+					and _generator.has_method("sus_ocean_currents_breakdown"):
+				var ob: Dictionary = _generator.sus_ocean_currents_breakdown()
+				if not ob.is_empty() and bool(ob.get("daily_wind_due", false)):
+					print("        daily_wind stage=%s path=%s slp=%.2f wind=%.2f total=%.2f refresh=%.2f dominant=%s/%.2f slp_dp95=%.5f wind_dp95=%.5f commit=%s reason=%s" % [
+						str(ob.get("daily_wind_stage_requested", "both")),
+						str(ob.get("daily_wind_path", "")),
+						float(ob.get("daily_wind_slp_ms", -1.0)),
+						float(ob.get("daily_wind_wind_ms", -1.0)),
+						float(ob.get("daily_wind_elapsed_ms", -1.0)),
+						float(ob.get("daily_wind_refresh_ms", -1.0)),
+						str(ob.get("daily_wind_dominant_stage", "")),
+						float(ob.get("daily_wind_dominant_stage_ms", 0.0)),
+						float(ob.get("daily_wind_slp_delta_p95", 0.0)),
+						float(ob.get("daily_wind_delta_p95", 0.0)),
+						str(ob.get("daily_wind_commit_ok", false)),
+						str(ob.get("daily_wind_fallback_reason", "")),
+					])
+					# SLP 内部分段埋点（C++ run_slp_field_pass 返回；旧 DLL 缺失=-1）。
+					# 仅在本 tick 真跑了 SLP（passA 有值）时打印，定位 3ms 花在哪。
+					if float(ob.get("daily_wind_slp_passA_ms", -1.0)) >= 0.0:
+						print("        daily_wind/slp_internal passA=%.3f passB=%.3f norm=%.3f marshall=%.3f (passA=逐cell三角/insolation, passB=邻域平滑, norm=recenter+p95排序+缩放, marshall=prev混合+发布)" % [
+							float(ob.get("daily_wind_slp_passA_ms", -1.0)),
+							float(ob.get("daily_wind_slp_passB_ms", -1.0)),
+							float(ob.get("daily_wind_slp_norm_ms", -1.0)),
+							float(ob.get("daily_wind_slp_marshall_ms", -1.0)),
+						])
+			if job_id == &"native_daily_sim":
+				var nd: Dictionary = r.get("native_daily_report", {})
+				if not nd.is_empty():
+					var nd_breakdown: Dictionary = nd.get("breakdown", {})
+					var nd_pass_keys = nd.get("bundle_pass_keys", [])
+					print("        native_daily wall=%.2f bundle=%.2f native_call=%.2f cpp_total=%.2f apply=%.2f compute=%.2f refresh=%.2f flush=%.2f weather=%.2f passes=%d" % [
+						float(nd.get("wrapper_wall_ms", elapsed_ms)),
+						float(nd.get("bundle_ms", 0.0)),
+						float(nd.get("native_call_ms", nd.get("native_ms", 0.0))),
+						float(nd.get("native_ms", nd.get("total_ms", 0.0))),
+						float(nd.get("apply_ms", 0.0)),
+						float(nd.get("compute_ms", 0.0)),
+						float(nd.get("refresh_ms", 0.0)),
+						float(nd.get("flush_ms", 0.0)),
+						float(nd_breakdown.get("weather_ms", 0.0)),
+						int(nd_pass_keys.size()),
+					])
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
-	# 2026-05-18：season_refresh 改为 SeasonRefreshJob 自驱周期重算（默认每 30
+	# 2026-05-18：season_refresh 改为 SeasonRefreshSystem 自驱周期重算（默认每 30
 	# tick 一次），不再绑定到 WorldClock.season_changed 信号脉冲。游戏世界里
 	# 温度 / 降水 / 风 / 海冰已由 refresh_climate_daily 每天连续推进，"季节切换"
 	# 退化为 UI 概念。仅在 ClimateProfile.season_refresh_legacy_signal=true（回归
@@ -1080,12 +1902,20 @@ func _refresh_time_label() -> void:
 	if _world_clock == null or _time_label == null:
 		return
 	var y := _world_clock.year_index()
-	var d := _world_clock.day_in_year()
+	var cal: Dictionary = _world_clock.calendar_date() if _world_clock.has_method("calendar_date") else {}
+	var d: int = int(cal.get("day_of_year", _world_clock.day_in_year() + 1))
 	var s := _world_clock.season_index()
 	# 任务 2：扩展为 "Y%d D%d %s %02d:00" 包含当前小时位
 	var h := _world_clock.hour_of_day()
 	_last_time_label_hour = h
-	_time_label.text = "Y%d D%d %s %02d:00" % [y, d, _world_clock.season_name(s), h]
+	var month_name: String = str(cal.get("month_name", ""))
+	var month_day: int = int(cal.get("day_of_month", 0))
+	if month_name != "" and month_day > 0:
+		_time_label.text = "Y%d D%03d %s %d %s %02d:00" % [
+			y, d, month_name, month_day, _world_clock.season_name(s), h
+		]
+	else:
+		_time_label.text = "Y%d D%03d %s %02d:00" % [y, d, _world_clock.season_name(s), h]
 
 func _refresh_climate_label() -> void:
 	if _world_clock == null or _climate_label == null:
@@ -1107,14 +1937,31 @@ func _generate_and_render(seed_val: int) -> void:
 	if _generator != null and _generator.has_method("sus_reset_all"):
 		_generator.sus_reset_all()
 
+	# Cell-index 间接寻址开关：把 @export 勾选值推给进程级 meta（DCFeatureFlags），
+	# 必须在 _generator.generate(...)（内部调 bake_world）之前设置，bake /
+	# dynamic_visual_atlas_upload / hex_renderer 三处统一读。一键勾选 → 重新生成即生效。
+	DCFeatureFlags.set_cell_indirection(cell_indirection_enabled)
+	# 洋流/风场逐像素视觉开关（同样必须在 bake_world 前推送）。关时 bake / job 跳过
+	# vector_atlas 像素光栅 + 上传，纯视觉退化，仿真不受影响。
+	DCFeatureFlags.set_ocean_current_visual(ocean_current_visual_enabled)
+	# 旧 sea_ice_tex 逐像素海冰贴图开关（同样必须在 bake_world 前推送）。默认关 → bake
+	# 不再产出那张死贴图，prepare/upload no-op；主海冰视觉走 shader 派生不受影响。
+	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
+
 	var cfg := MapConfig.make(map_width, map_height)
 	cfg.num_continents = num_continents
+	cfg.continent_size = continent_size
 	cfg.sea_level = sea_level
 	cfg.river_count = river_count
 	cfg.seed = seed_val
 
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
+	_apply_world_setup_climate_overrides(_generator)
+	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
+	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。
+	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
+		_generator.bake_progress.connect(_on_baker_stage_progress)
 	var result := _generator.generate(cfg, hex_size)
 	_current_map = result["map"]
 	_world_data = result["world_data"]
@@ -1142,6 +1989,10 @@ func _generate_and_render(seed_val: int) -> void:
 	var elapsed: int = Time.get_ticks_msec() - t0
 
 	_renderer.hex_size = hex_size
+	# 散布层 native 生成：把 C++ DCWorldExt 在 set_map（触发首次 _rebuild）之前注入，
+	# 让首张地图的植被/点缀就能走 encode_detail_scatter（缺方法时层内自动回退 GDScript）。
+	if _renderer.has_method("set_world_ext") and _generator != null and "_data_core_world_ext" in _generator:
+		_renderer.set_world_ext(_generator._data_core_world_ext)
 	_renderer.set_map(_current_map, _world_data)
 	# 方案 0：把 MapBaker 喂给 renderer，让 F6 切到 ocean_current_debug 时
 	# 能 lazy bake upwelling_tex（commit 路径已不再无条件烘焙）。
@@ -1153,7 +2004,8 @@ func _generate_and_render(seed_val: int) -> void:
 		_renderer.set_season_phase(_world_clock.season_phase())
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
 		# 任务 2：新地图生成后立即把 day_phase 还原到 shader
-		_renderer.set_day_phase(_world_clock.day_phase())
+		# [cylindrical-earth-daylight] 用解耦的视觉相位。
+		_renderer.set_day_phase(_world_clock.visual_day_phase)
 		# Seasonal Continuous Climate：新地图生成后 generate() 写的是"夏中段"快照，
 		# 立即用当前 season_phase 同步一次连续基线，让玩家进入第一帧就看到与
 		# 时钟相位一致的温度/湿度/雪盖，而不是固定的夏季常量。
@@ -1163,6 +2015,8 @@ func _generate_and_render(seed_val: int) -> void:
 				_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())
 
 	_camera.set_world_bounds(_renderer.get_world_bounds())
+	if _camera.has_method("set_horizontal_wrap"):
+		_camera.set_horizontal_wrap(_map_wrap_period_x(), true)
 	_camera.fit_to_viewport(1.05, _map_safe_area())
 
 	if _info_label != null:
@@ -1180,6 +2034,12 @@ func _generate_and_render(seed_val: int) -> void:
 	# Data Overlay（需求 1.5）：R 键重生成地图时**保留当前 overlay mode**，
 	# 只是重绑 world bounds 并立即重烘焙一次数据纹理，让玩家可以继续在同
 	# 一个数据通道上对比不同种子的分布。
+	# debug-overlay-perf v1（2026-06-12）：regenerate 后 derived_size 可能变，
+	# 把持久化的 _overlay_tex/_buf 置空让 baker 安全新建；同时立刻 bake 一次
+	# 让玩家看到新地图的 overlay 数据。dirty 标记保持 false——下个 day_changed
+	# 会自然置 true。
+	_overlay_tex = null
+	_overlay_buf = PackedByteArray()
 	_sync_overlay_to_world()
 	if _overlay_mode != 0:
 		_refresh_overlay_data()
@@ -1198,12 +2058,58 @@ func _generate_and_render(seed_val: int) -> void:
 			for _f in _failures:
 				push_warning(String(_f))
 
+# ─── Mobile shader quality tier helper（2026-06-15）──────────────────
+# tier 整数 → shader #define 字符串。tier 越低 sample 预算越紧。
+func _mobile_quality_tier_to_define(tier: int) -> String:
+	match tier:
+		0: return "MOBILE_QUALITY_LOW"   # ≤4 sample
+		1: return "MOBILE_QUALITY_MID"   # ≤6 sample
+		2: return "MOBILE_QUALITY_HIGH"  # ≤9 sample
+		_: return "MOBILE_QUALITY_MID"
+
+
+# Mobile debug overlay cycle handler：手指点 Quality 按钮 0→1→2→0 循环 + 重 push shader。
+func cycle_mobile_quality_tier() -> void:
+	mobile_quality_tier = (mobile_quality_tier + 1) % 3
+	print("[mobile/quality-tier] 切到 tier=%d (%s)" % [
+		mobile_quality_tier, _mobile_quality_tier_to_define(mobile_quality_tier)
+	])
+	_push_visual_toggles()
+
+
 # ─── 任务 1：视觉总开关推送 ─────────────────────────────────────────────
 # 把六个 @export 开关一次性推到 HexRenderer / WeatherLayer。
 # 开关 → 具体 shader 分支的绑定由后续任务消费这些 setter 完成。
 func _push_visual_toggles() -> void:
+	if _visual_bootstrap == null:
+		_visual_bootstrap = DCVisualBootstrap.new(self)
+	_visual_bootstrap.push_visual_toggles()
+
+
+func _push_visual_toggles_legacy() -> void:
+	# 实测证据（log_next.txt 2026-06-15 11:32）：
+	#   shader=ON  非 SUS 帧 avg=27.90ms（直方图主峰 [24-28)=59 帧）
+	#   shader=OFF 非 SUS 帧 avg= 8.42ms（直方图主峰 [8-12)=92 帧）
+	#   主地形 fragment shader 占 19.5ms / 帧 = ~70% 帧时间
+	# visual_quality=0 跳过：河岸 fbm 扰动 / river flow / shore 4 对角 sample /
+	#   fbm octave / 多层云 / day_night / 部分 hillshade。预期 frame ms 12-16ms
+	#   → 60 FPS 可达（vsync_mode=1 锁 60Hz/120Hz）。
+	# 桌面端继续走 @export default visual_quality=1。
+	if OS.has_feature("mobile") and visual_quality > 0:
+		visual_quality = 0
+		print("[mobile/visual-quality] 强制 visual_quality=0 (60 FPS 优化；shader 主导 70%% 帧时间)")
 	if _renderer != null:
+		# Mobile quality tier 推送（2026-06-15）：必须在 set_visual_quality 之前，
+		# 这样 set_mobile_quality_tier 触发的 _load_shader() 就能拿到正确 tier。
+		if OS.has_feature("mobile") and _renderer.has_method("set_mobile_quality_tier"):
+			var tier_define: String = _mobile_quality_tier_to_define(mobile_quality_tier)
+			_renderer.set_mobile_quality_tier(tier_define)
 		_renderer.set_visual_quality(visual_quality)
+		# 60 FPS 优化（2026-06-14 路线 B）：ecology_visual_quality 也锁 0。
+		# 之前 main.gd 从来没 push 过这个值，renderer @export default=2 一直生效。
+		# eco_q≥2 跑 snowline_visual_strength（额外 fbm + bloom）+ 跨 cell 平滑等。
+		if OS.has_feature("mobile") and _renderer.has_method("set_ecology_visual_quality"):
+			_renderer.set_ecology_visual_quality(0)
 		_renderer.set_day_night_enabled(day_night_enabled)
 		_renderer.set_water_effect_enabled(water_effect_enabled)
 		_renderer.set_ocean_current_enabled(ocean_current_enabled)
@@ -1218,6 +2124,11 @@ func _push_visual_toggles() -> void:
 			_renderer.set_rain_density_boost_enabled(rain_density_boost_enabled)
 		if _renderer.has_method("set_cloud_tod_tint_enabled"):
 			_renderer.set_cloud_tod_tint_enabled(cloud_tod_tint_enabled)
+		# weather_layer 之前没被 push visual_quality，1046 行 shader 一直跑 quality=2。
+		# 这次先推下去，后续按需调。
+		var weather_layer_node = _renderer.get_node_or_null("WeatherLayer")
+		if weather_layer_node != null and weather_layer_node.has_method("set_visual_quality"):
+			weather_layer_node.set_visual_quality(visual_quality)
 
 		# Water Visual Overhaul：把本轮的 13 个参数 + 5 个子开关一起推下去。
 		# visual_quality==0 时，各子特性由 renderer/shader 内部做降级，不在这里改值。
@@ -1288,9 +2199,22 @@ func _recompute_and_push_tod(day_phase: float) -> void:
 
 # ─── 地块选择 / 信息面板 ─────────────────────────────────────────────────
 
+func _map_wrap_period_x() -> float:
+	if _current_map == null:
+		return 0.0
+	return HexUtils.wrap_period_x(_current_map.width, hex_size)
+
+func _cell_display_world(cell: HexCell) -> Vector2:
+	if cell == null:
+		return Vector2.ZERO
+	var canonical := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+	var ref_x := _camera.position.x if _camera != null else canonical.x
+	return HexUtils.nearest_display_world(canonical, ref_x, _map_wrap_period_x())
+
 func _select_cell(cell: HexCell) -> void:
 	_selected_cell = cell
-	_highlight.set_cell(cell, hex_size)
+	var display_world := _cell_display_world(cell)
+	_highlight.set_cell_display(cell, hex_size, display_world, _map_wrap_period_x())
 	_right_panel.visible = true
 	# 0.4.2 — controller 持有自己的 _selected_cell 副本；这里同步推一次。
 	if _info_panel_controller != null:
@@ -1299,9 +2223,18 @@ func _select_cell(cell: HexCell) -> void:
 	_refresh_info_panel()
 	# Legend 指针：选中后把当前 cell 的通道值映射到色带位置。
 	_update_overlay_pointer_for_cell()
-	# 面板弹出后地图可见区域变窄，重新 fit 一次让整张地图仍完整显示
-	if _camera != null:
-		_camera.fit_to_viewport(1.05, _map_safe_area())
+	# 保留用户当前缩放/位置（不再 fit 重置视图）；仅当选中地块被右侧面板/顶栏
+	# 遮挡时，平滑平移把它移到可见安全区，避免"点一下就跳回整图"的体验。
+	if _camera != null and cell != null:
+		_camera.ensure_point_visible(display_world, _map_safe_area())
+	# [TEMP DEBUG] sea-ice-render-source-unify 阶段 A 同源校验：
+	# 选中任意 cell 时打印 (sea_ice_fraction_cpu, dyn_atlas_smooth.A_byte, biome)。
+	# 期望：q01_byte_ice(frac_cpu) == dyn_smooth.A_byte。
+	# 若 MISMATCH → GD↔C++ 编码漂移或 buffer 滞后；
+	# 若 MATCH 但 shader 端依然不冰 → shader uniform/纹理上传链有问题。
+	# 验证完成后请删除这段调试调用。
+	if cell != null and _renderer != null and _renderer.has_method("debug_sea_ice_probe"):
+		_renderer.debug_sea_ice_probe(cell)
 
 func _clear_selection() -> void:
 	_selected_cell = null
@@ -1314,15 +2247,15 @@ func _clear_selection() -> void:
 		_right_panel.visible = false
 	if _overlay_legend != null:
 		_overlay_legend.clear_pointer()
-	# 面板关闭后可见区域恢复全宽，再 fit 一次回到默认视图
-	if _camera != null:
-		_camera.fit_to_viewport(1.05, _map_safe_area())
+	# 关闭面板不再重置视图：保留用户当前缩放/位置。需要回到整图请用顶栏 Fit 按钮。
 
 # 计算地图的"可见安全区"：扣掉顶部 TopBar 和右侧 RightPanel（仅在可见时扣除）。
 # 被 fit_to_viewport 使用，保证整张地图都落在未被 UI 覆盖的矩形内。
 func _map_safe_area() -> Rect2:
 	var vp := get_viewport().get_visible_rect().size
 	var top_h: float = 40.0  # TopBar = PanelContainer offset_bottom=36 + 少量安全边距
+	if OS.has_feature("mobile"):
+		top_h = MOBILE_TOPBAR_SAFE_TOP + MOBILE_TOPBAR_HEIGHT
 	var right_w: float = 0.0
 	if _right_panel != null and _right_panel.visible:
 		# RightPanel.custom_minimum_size.x 若为 0 则用 size.x 回退
@@ -1392,6 +2325,8 @@ func _sync_overlay_to_world() -> void:
 		return
 	if _renderer != null:
 		_overlay_layer.set_bounds(_renderer.get_world_bounds())
+	if _overlay_layer.has_method("set_horizontal_wrap"):
+		_overlay_layer.set_horizontal_wrap(_map_wrap_period_x())
 	_overlay_layer.set_alpha(_overlay_alpha)
 	_overlay_layer.set_mode(_overlay_mode)
 
@@ -1753,12 +2688,24 @@ func _set_overlay_alpha(v: float) -> void:
 
 # 每日（或 regenerate 后）重烘焙一次数据纹理；NONE 模式直接早返。
 # 任一环节抛错都把 overlay 强制回退到 NONE（需求 6.5）。
+#
+# debug-overlay-perf v1（2026-06-12）：
+# 1) 持久化 _overlay_tex + _overlay_buf 传给 baker，复用 GPU 资源 + CPU buf。
+#    避免每帧 ImageTexture.create_from_image 触发 1080×574 RGBA8 重分配
+#    （单次同步阻塞 5-15ms，是温度/天气 overlay 卡顿主因）。
+# 2) 调用方有责任在 derived_size 真的变化或 mode 切换时把 _overlay_tex 置 null；
+#    本函数会安全检测并重建。
+# 3) bake 返回的 buf 写回 _overlay_buf 做下次复用（PackedByteArray 是 CoW，
+#    赋值是引用，几乎零成本）。
 func _refresh_overlay_data() -> void:
 	if _overlay_layer == null or _overlay_mode == 0:
 		return
 	if _current_map == null or _world_data == null:
 		# 地图尚未生成（理论上 _ready 里不会走到这里，保险兜底）
 		return
+	# 消费 dirty 标记。即便没 dirty 也允许执行（例如 _apply_overlay_mode 切换
+	# mode 时强制重 bake），仅作为统计参考。
+	_overlay_dirty = false
 	var cp = null
 	if _generator != null:
 		cp = _generator._c()
@@ -1776,16 +2723,32 @@ func _refresh_overlay_data() -> void:
 		var dc_world = _generator.get_data_core_world()
 		if dc_world != null and dc_world.has_method("is_bound") and dc_world.is_bound():
 			overlay_adapter = DCViewAdapter.World.new(dc_world, _current_map)
+	# DOTS（debug-overlay-perf v2，2026-06-12）：取 DCWorldExt C++ co-processor 传给
+	# baker，让它把 O(n_pixels) 的内层像素 fan-out 下沉 C++（encode_overlay_atlas）。
+	# null / 旧 DLL / SoA 未建时 baker 内部透明回退 GDScript fan-out。
+	var overlay_ext = null
+	if _generator != null and _generator.has_method("get_data_core_world_ext"):
+		overlay_ext = _generator.get_data_core_world_ext()
 	result = DataOverlayBaker.bake(
-		_current_map, _world_data, _overlay_mode, cp, phase, overlay_adapter
+		_current_map, _world_data, _overlay_mode, cp, phase, overlay_adapter,
+		_overlay_tex, _overlay_buf, overlay_ext
 	)
 	_overlay_last_bake_ms = (Time.get_ticks_usec() - t0) / 1000.0
 	var tex = result.get("texture", null)
 	if tex == null:
 		_disable_overlay_due_to_error("bake returned null texture")
 		return
+	# 持久化复用资源。bake 在 derived_size 变化时会自己 fallback 到新建，
+	# 这里直接吸收返回值即可（同一个 ImageTexture 实例时是 no-op 赋值）。
+	_overlay_tex = tex
+	var ret_buf = result.get("buf", null)
+	if ret_buf is PackedByteArray:
+		_overlay_buf = ret_buf
 	_overlay_layer.set_data_texture(tex)
 	_overlay_stats = result.get("stats", {})
+	# 记录 fan-out 路径（gdext_fanout / gdscript_fanout / gdscript_fanout_soa），
+	# 供 Telemetry / DebugConsole 诊断 overlay 是否走到 C++。
+	_overlay_bake_path = String(result.get("path", "gdscript_fanout"))
 
 func _disable_overlay_due_to_error(msg: String) -> void:
 	push_warning("[Overlay] disabled: %s" % msg)
@@ -1807,6 +2770,9 @@ func get_overlay_stats() -> Dictionary:
 
 func get_overlay_last_bake_ms() -> float:
 	return _overlay_last_bake_ms
+
+func get_overlay_bake_path() -> String:
+	return _overlay_bake_path
 
 func get_overlay_error_msg() -> String:
 	return _overlay_error_msg
@@ -1933,6 +2899,8 @@ func get_environment_perf_summary() -> Dictionary:
 		out["window"] = _generator.sus_report_sim_budget_window()
 	if _generator != null and _generator.has_method("environment_runtime_status"):
 		out["environment_runtime"] = _generator.environment_runtime_status()
+	if not _last_recorder_perf_summary.is_empty():
+		out["recorders"] = _last_recorder_perf_summary.duplicate(false)
 	out["budget"] = {
 		"sim_frame_budget_ms": float(summary.get("sim_frame_budget_ms", 0.0)),
 		"sim_slice_budget_ms": float(summary.get("sim_slice_budget_ms", 0.0)),
@@ -1942,6 +2910,10 @@ func get_environment_perf_summary() -> Dictionary:
 		"economy_reserved_budget_ms": float(summary.get("economy_reserved_budget_ms", 0.0)),
 	}
 	return out
+
+
+func get_recorder_perf_summary() -> Dictionary:
+	return _last_recorder_perf_summary.duplicate(false)
 
 
 # Plan: perf-recording-csv-export
@@ -1954,6 +2926,14 @@ func set_perf_recorder(rec: RefCounted) -> void:
 
 func get_perf_recorder() -> RefCounted:
 	return _perf_recorder
+
+
+func set_tile_data_recorder(rec: RefCounted) -> void:
+	_tile_data_recorder = rec
+
+
+func get_tile_data_recorder() -> RefCounted:
+	return _tile_data_recorder
 
 
 # DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。
@@ -1969,7 +2949,7 @@ func get_perf_recorder() -> RefCounted:
 # 验收门槛（与 plan/dots-final-push/requirements.md §6 一致）：
 #   - 2400 cells 200 tick 中 fast tick WARN 占比 ≤ 0.5%
 #   - total_ms p95 ≤ 12ms / p99 ≤ 20ms
-#   - 任一 SUS job p95 ≤ 8ms（豁免 sea_ice_atlas_upload / enum_atlas_upload）
+#   - 任一 SUS job p95 ≤ 8ms（豁免 enum_atlas_upload）
 #   - 6400 cells 大地图 200 tick 中 WARN 占比 ≤ 5%
 #
 # 不达标时 verdict.fail_reasons 给出具体哪条门槛未达成 + next_bottleneck
@@ -2039,15 +3019,9 @@ func _update_overlay_pointer_for_cell() -> void:
 			var t_v: float = ovs_ad.get_temp(ovs_idx) if ovs_ad != null else float(_selected_cell.temperature)
 			v = clampf(t_v, 0.0, 1.0)
 		OverlayMode.MODE.PRECIPITATION:
-			# 与 baker 同源的 1.5 上限（PRECIPITATION_NORM_MAX）
-			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
-			var scale: float = 1.0
-			if _generator != null:
-				var cp = _generator._c()
-				scale = DataOverlayBaker._moisture_scale_at_phase(cp, phase)
-			var bm_v: float = ovs_ad.get_base_moisture(ovs_idx) if ovs_ad != null else float(_selected_cell.base_moisture)
-			var precip: float = scale * bm_v
-			v = clampf(precip / 1.5, 0.0, 1.0)
+			# 与 baker 同源：降水 overlay 直接读取 weather pass 输出。
+			var precip: float = ovs_ad.get_weather_precip(ovs_idx) if ovs_ad != null else float(_selected_cell.weather_precip)
+			v = clampf(precip / DataOverlayBaker.PRECIPITATION_NORM_MAX, 0.0, 1.0)
 		OverlayMode.MODE.HUMIDITY:
 			var m_v: float = ovs_ad.get_moisture(ovs_idx) if ovs_ad != null else float(_selected_cell.moisture)
 			v = clampf(m_v, 0.0, 1.0)
@@ -2267,3 +3241,350 @@ func _rebuild_view_adapter() -> void:
 
 # PR-3.4.1（M4 拆分）：_on_dcflag_changed 已迁至 DCDotsBootstrap；
 # main 通过 _dots_bootstrap 委派持有 signal connection 生命周期。
+
+
+# ─── Splash overlay（移动端开场加载体感修复）─────────────────────────────────
+#
+# 问题：bake_world 同步耗时 ~13s（620k 像素 × GDScript 双重循环 × FastNoiseLite
+# 4 频段），期间主线程被占用，UI 完全黑屏。移动端用户体感"应用挂了"。
+#
+# 当前修复（最小侵入）：
+#   1. _ready() 入口建一个 CanvasLayer + Label 显示"正在生成世界…"
+#   2. _generate_and_render() 入口 show + `await get_tree().process_frame` × 2
+#      让 splash 真正被绘制一帧，再调用 _generator.generate(...)
+#   3. generate 返回后 hide
+#
+# 期间 baker.stage_progress 信号也会被订阅并 print，便于诊断；UI 不实时变化是
+# 因为主线程被同步 bake 占满，未来 main 把 bake_world 改成 deferred / 协程
+# 切片后才能让 UI 跟着 stage 切换。
+#
+# 后续可优化方向（不在本次 PR 内）：
+#   - 把 _bake_height_biome_moisture 写 C++ kernel（预期 7.2s → ~250ms）
+#   - 按 seed 缓存 bake 产物到 user://，重启秒进
+#   - Use Engine.process_frame await 让 baker 内部按 chunk yield，UI 真正更新
+
+# Mobile UI safe area helper：圆角屏幕 / 高刘海机型 TopBar 被切问题（2026-06-14）。
+# 桌面环境完全不动；只在 OS.has_feature("mobile") 时下移 TopBar 并加大按钮。
+func _apply_mobile_topbar_safe_area() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	var top_bar: Control = get_node_or_null("UI/TopBar") as Control
+	if top_bar == null:
+		return
+	# 下移并留出更宽的横向安全边，避开状态栏、刘海和圆角裁切。
+	top_bar.offset_left = MOBILE_EDGE_SAFE
+	top_bar.offset_right = -MOBILE_EDGE_SAFE
+	top_bar.offset_top = MOBILE_TOPBAR_SAFE_TOP
+	top_bar.offset_bottom = MOBILE_TOPBAR_SAFE_TOP + MOBILE_TOPBAR_HEIGHT
+	var hbox: HBoxContainer = get_node_or_null("UI/TopBar/HBox") as HBoxContainer
+	if hbox != null:
+		hbox.add_theme_constant_override("separation", 8)
+		hbox.custom_minimum_size.x = 900.0
+		var scroll: ScrollContainer = get_node_or_null("UI/TopBar/MobileTopBarScroll") as ScrollContainer
+		if scroll == null:
+			scroll = ScrollContainer.new()
+			scroll.name = "MobileTopBarScroll"
+			scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+			scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			top_bar.add_child(scroll)
+		if hbox.get_parent() != scroll:
+			hbox.reparent(scroll)
+	# 给所有子按钮加大 minimum_size，touch target 至少 ~72x56。
+	if hbox != null:
+		for child in hbox.get_children():
+			if child is Button:
+				var btn: Button = child as Button
+				var min_w: float = max(btn.custom_minimum_size.x, 72.0)
+				btn.custom_minimum_size = Vector2(min_w, MOBILE_BUTTON_HEIGHT)
+	if _info_label != null:
+		_info_label.visible = false
+	if _climate_label != null:
+		_climate_label.visible = false
+	if _time_label != null:
+		_time_label.custom_minimum_size.x = max(_time_label.custom_minimum_size.x, 120.0)
+	print("[mobile/safe-area] TopBar safe rect + horizontal scroll + buttons minimum 72x56")
+
+
+# Mobile viewport scale（2026-06-14 路线 C）：把渲染分辨率降到 0.66x。
+# 实测 fragment shader 主导 70% 帧时间；像素总数减到 0.66² ≈ 0.44 → fragment
+# 时间从 ~13ms 降到 ~6ms。视觉变模糊但 60 FPS 可达。
+#
+# Godot 4.6 API：上轮试 Viewport.size_2d_override 失败（Window 类没该属性，运行时报错）。
+# 正确路径 (https://docs.godotengine.org/en/stable/classes/class_window.html)：
+#   1. get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+#      （让 canvas_item 在 base buffer 栅格化 → fragment 跑在 base 大小上）
+#   2. get_window().content_scale_factor = 0.66
+#      （base size = window_size * factor）
+# 必须**同时**切 mode + factor，否则 factor 只影响 UI 元素缩放但 fragment 仍跑全分辨率。
+func _apply_mobile_viewport_scale() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	var w: Window = get_window()
+	if w == null:
+		print("[mobile/viewport-scale] get_window() null, 跳过")
+		return
+	var win_size: Vector2i = w.size
+	var target_factor: float = 0.66
+	# 先记录原 mode 以便 toggle 回；切到 VIEWPORT mode 让 fragment 真的在小 buffer 跑
+	var orig_mode: int = w.content_scale_mode
+	w.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	w.content_scale_factor = target_factor
+	# 保持 aspect 不变（一般 KEEP / IGNORE 都行）
+	print("[mobile/viewport-scale] window=%dx%d  factor=%.2f  mode: %d → %d (VIEWPORT)" % [
+		win_size.x, win_size.y, target_factor, orig_mode, w.content_scale_mode
+	])
+
+
+# 计算移动端屏幕安全区内缩（像素，UI 坐标系）：避开刘海 / 挖孔摄像头 / 圆角 / 手势条。
+# DisplayServer.get_display_safe_area() 返回物理像素，需按 viewport/物理 比例换算到 UI 坐标
+# （项目可能开启 content scaling，比例未必为 1）。无可用安全区时回退到 MOBILE_EDGE_SAFE。
+# 返回 Vector4(left, top, right, bottom)。
+func _mobile_safe_insets() -> Vector4:
+	var fallback := Vector4(MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE, MOBILE_EDGE_SAFE)
+	if not OS.has_feature("mobile"):
+		return fallback
+	var safe: Rect2i = DisplayServer.get_display_safe_area()
+	var win: Vector2i = DisplayServer.window_get_size()
+	if safe.size.x <= 0 or safe.size.y <= 0 or win.x <= 0 or win.y <= 0:
+		return fallback
+	var ui: Vector2 = get_viewport().get_visible_rect().size
+	var sx: float = ui.x / float(win.x)
+	var sy: float = ui.y / float(win.y)
+	var left: float = max(float(safe.position.x) * sx, MOBILE_EDGE_SAFE)
+	var top: float = max(float(safe.position.y) * sy, MOBILE_EDGE_SAFE)
+	var right: float = max(float(win.x - safe.end.x) * sx, MOBILE_EDGE_SAFE)
+	var bottom: float = max(float(win.y - safe.end.y) * sy, MOBILE_EDGE_SAFE)
+	return Vector4(left, top, right, bottom)
+
+
+# Mobile-only 60 FPS 调查浮动面板（2026-06-14）：APK 没键盘，给手指可点的调试按钮。
+# 默认收起成一个按钮，避免左侧窗口/地图被常驻面板遮挡；需要时点开抽屉。
+func _ensure_mobile_debug_overlay() -> void:
+	if not OS.has_feature("mobile"):
+		return
+	# 复用 UI CanvasLayer，避免新建 layer 跟 splash 等冲突
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	if ui_layer.get_node_or_null("MobileDebugOverlay") != null:
+		return  # 已建过
+	# Container：锚定左上、向下展开（修复 2026-06-17）。
+	# 旧版锚 CENTER_LEFT 有两个问题：
+	#   1. 横屏时挖孔摄像头常落在左侧边缘垂直中部，Toggle 按钮正好被摄像头压住按不到；
+	#   2. 展开靠手动改 position.y / size.y 对抗中心锚点，按钮组会窜到左上角飞出屏幕。
+	# 现在统一锚 TOP_LEFT、向下生长，横向用真实安全区左内缩避开挖孔/圆角，纵向落在 TopBar 之下。
+	var insets: Vector4 = _mobile_safe_insets()
+	var box: VBoxContainer = VBoxContainer.new()
+	box.name = "MobileDebugOverlay"
+	box.add_theme_constant_override("separation", 8)
+	box.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	box.grow_horizontal = Control.GROW_DIRECTION_END
+	box.grow_vertical = Control.GROW_DIRECTION_END
+	box.position = Vector2(
+		max(insets.x, MOBILE_EDGE_SAFE),
+		max(insets.y, MOBILE_TOPBAR_SAFE_TOP) + MOBILE_TOPBAR_HEIGHT + 16.0
+	)
+	var btn_toggle: Button = Button.new()
+	btn_toggle.name = "BtnToggle"
+	btn_toggle.text = "Tools"
+	btn_toggle.toggle_mode = true
+	btn_toggle.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_toggle.pressed.connect(_on_mobile_debug_overlay_toggle)
+	box.add_child(btn_toggle)
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.name = "ButtonStack"
+	stack.visible = false
+	stack.add_theme_constant_override("separation", 8)
+	box.add_child(stack)
+	# Profile 按钮 — 不切状态，只 dump
+	var btn_profile: Button = Button.new()
+	btn_profile.text = "Profile"
+	btn_profile.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_profile.pressed.connect(dump_render_profile)
+	stack.add_child(btn_profile)
+	# DVA toggle — 文本随状态变
+	var btn_dva: Button = Button.new()
+	btn_dva.name = "BtnDVA"
+	btn_dva.text = "DVA: ON"
+	btn_dva.toggle_mode = true
+	btn_dva.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_dva.pressed.connect(_on_mobile_dva_btn_pressed)
+	stack.add_child(btn_dva)
+	# Atlas size toggle
+	var btn_atlas: Button = Button.new()
+	btn_atlas.name = "BtnAtlas"
+	btn_atlas.text = "Atlas: 512"
+	btn_atlas.toggle_mode = true
+	btn_atlas.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_atlas.pressed.connect(_on_mobile_atlas_btn_pressed)
+	stack.add_child(btn_atlas)
+	# Weather Layer toggle (60 FPS 瓶颈调查：完全隐藏 weather overlay 看 ΔFPS)
+	var btn_weather: Button = Button.new()
+	btn_weather.name = "BtnWeather"
+	btn_weather.text = "Weather: ON"
+	btn_weather.toggle_mode = true
+	btn_weather.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_weather.pressed.connect(_on_mobile_weather_btn_pressed)
+	stack.add_child(btn_weather)
+	# Shader toggle (60 FPS 瓶颈调查：禁用主地形 shader 看 ΔFPS)
+	var btn_shader: Button = Button.new()
+	btn_shader.name = "BtnShader"
+	btn_shader.text = "Shader: ON"
+	btn_shader.toggle_mode = true
+	btn_shader.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_shader.pressed.connect(_on_mobile_shader_btn_pressed)
+	stack.add_child(btn_shader)
+	# Quality tier cycle 按钮（2026-06-15）：LOW (≤4 sample) → MID (≤6) → HIGH (≤9) 循环
+	var btn_quality: Button = Button.new()
+	btn_quality.name = "BtnQuality"
+	btn_quality.text = "Quality: MID"
+	btn_quality.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_quality.pressed.connect(_on_mobile_quality_btn_pressed)
+	stack.add_child(btn_quality)
+	# Log toggle (Fix #11 second pass, 2026-06-16)：全局诊断日志开关
+	# 关掉所有 GDScript print + 字符串构造 + C++ SUS-cpp periodic log，
+	# 让 mobile 看到真实硬件天花板（去掉 print 自身 ~150-300ms/秒 overhead）。
+	# 镜像到 DCWorldExt + SusSchedulerExt 的 set_diag_logs_enabled。
+	var btn_log: Button = Button.new()
+	btn_log.name = "BtnLog"
+	btn_log.text = "Log: ON"
+	btn_log.toggle_mode = true
+	btn_log.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
+	btn_log.pressed.connect(_on_mobile_log_btn_pressed)
+	stack.add_child(btn_log)
+	ui_layer.add_child(box)
+	# 让容器收缩到当前（收起）所需的最小高度，避免残留过大 rect 盖住地图。
+	box.reset_size.call_deferred()
+	print("[mobile/debug-overlay] 60 FPS 调查面板挂载完成（默认收起，Tools 展开）")
+
+
+func _on_mobile_debug_overlay_toggle() -> void:
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	var box: VBoxContainer = ui_layer.get_node_or_null("MobileDebugOverlay") as VBoxContainer
+	if box == null:
+		return
+	var stack: VBoxContainer = box.get_node_or_null("ButtonStack") as VBoxContainer
+	var btn: Button = box.get_node_or_null("BtnToggle") as Button
+	var expanded: bool = btn != null and btn.button_pressed
+	if stack != null:
+		stack.visible = expanded
+	# 容器锚 TOP_LEFT，position 固定不动；只随内容收缩/展开自身高度，永远向下生长。
+	box.reset_size.call_deferred()
+	if btn != null:
+		btn.text = "Hide" if expanded else "Tools"
+
+
+func _mobile_debug_button(name: String) -> Button:
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return null
+	var btn: Button = ui_layer.get_node_or_null("MobileDebugOverlay/ButtonStack/%s" % name) as Button
+	if btn != null:
+		return btn
+	return ui_layer.get_node_or_null("MobileDebugOverlay/%s" % name) as Button
+
+
+func _on_mobile_dva_btn_pressed() -> void:
+	toggle_dynamic_visual_atlas_upload()
+	var btn: Button = _mobile_debug_button("BtnDVA")
+	if btn != null:
+		btn.text = "DVA: OFF" if _render_profile_atlas_disabled else "DVA: ON"
+
+
+func _on_mobile_atlas_btn_pressed() -> void:
+	toggle_atlas_resolution()
+	var btn: Button = _mobile_debug_button("BtnAtlas")
+	if btn != null:
+		btn.text = "Atlas: 256" if _render_profile_atlas_quarter_size else "Atlas: 512"
+
+
+func _on_mobile_weather_btn_pressed() -> void:
+	toggle_weather_layer_visible()
+	var btn: Button = _mobile_debug_button("BtnWeather")
+	if btn != null:
+		btn.text = "Weather: OFF" if _render_profile_weather_hidden else "Weather: ON"
+
+
+func _on_mobile_shader_btn_pressed() -> void:
+	toggle_world_shader_disabled()
+	var btn: Button = _mobile_debug_button("BtnShader")
+	if btn != null:
+		btn.text = "Shader: OFF" if _render_profile_world_shader_disabled else "Shader: ON"
+
+
+func _on_mobile_quality_btn_pressed() -> void:
+	cycle_mobile_quality_tier()
+	var btn: Button = _mobile_debug_button("BtnQuality")
+	if btn != null:
+		var label: String = "MID"
+		if mobile_quality_tier == 0:
+			label = "LOW"
+		elif mobile_quality_tier == 2:
+			label = "HIGH"
+		btn.text = "Quality: %s" % label
+
+
+# Fix #11 second pass (2026-06-16) — Log toggle (KEY_L 等价)。
+# 关掉 PKLog.enabled 后所有加守门的 GDScript print 站点跳过（含 % 字符串构造），
+# 镜像到 C++ 端的 DCWorldExt / SusSchedulerExt::set_diag_logs_enabled 让 native
+# print 站点也响应。mobile 上 print 自身 ~150-300ms/秒 是 frame budget 杀手。
+func _on_mobile_log_btn_pressed() -> void:
+	var new_enabled: bool = not PKLog.enabled
+	var world_ext_ref = null
+	var sus_ext_ref = null
+	if _generator != null:
+		if "_data_core_world_ext" in _generator:
+			world_ext_ref = _generator._data_core_world_ext
+		if "_sus_scheduler" in _generator and _generator._sus_scheduler != null \
+				and "_ext" in _generator._sus_scheduler:
+			sus_ext_ref = _generator._sus_scheduler._ext
+	PKLog.set_enabled(new_enabled, world_ext_ref, sus_ext_ref)
+	var btn: Button = _mobile_debug_button("BtnLog")
+	if btn != null:
+		btn.text = "Log: ON" if PKLog.enabled else "Log: OFF"
+
+
+func _ensure_splash_overlay() -> void:
+	if _splash_layer != null:
+		return
+	_splash_layer = CanvasLayer.new()
+	_splash_layer.layer = 100  # 盖在 UI 之上
+	_splash_layer.name = "SplashOverlay"
+	# 全屏黑底
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.05, 0.08, 1.0)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_splash_layer.add_child(bg)
+	# 居中文字
+	_splash_label = Label.new()
+	_splash_label.text = "正在生成世界…"
+	_splash_label.add_theme_font_size_override("font_size", 28)
+	_splash_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95, 1.0))
+	_splash_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_splash_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_splash_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_splash_layer.add_child(_splash_label)
+	add_child(_splash_layer)
+	_splash_layer.visible = false
+
+
+func _splash_show(text: String = "正在生成世界…") -> void:
+	if _splash_label != null:
+		_splash_label.text = text
+	if _splash_layer != null:
+		_splash_layer.visible = true
+
+
+func _splash_hide() -> void:
+	if _splash_layer != null:
+		_splash_layer.visible = false
+
+
+# 由 baker.stage_progress signal 触发。bake_world 同步执行期间 UI 不会重绘，
+# 这里只 print 进度便于 logcat 诊断。
+func _on_baker_stage_progress(stage: String, fraction: float) -> void:
+	if OS.is_debug_build():
+		print("[splash] bake stage=%s fraction=%.2f" % [stage, fraction])
