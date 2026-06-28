@@ -211,6 +211,33 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   常驻在 `DCWorldExt`，daily report 提升 `resident_config_keys`、`bundle_key_count`
   和 `tick_delta_key_count`。评估 marshal 收敛时先看这些 counters，而不是只看
   单个 pass 的 native compute time。
+- **tick-delta knob `weather_transition_dt_days`（2026-06-28）**：与 climate `thermal_dt_days`、
+  sea_ice `dt_days` 同类的"上次到本次 pass 真实游戏天数差"补偿 knob，缺省 1.0。来源
+  `MapGenerator._consume_weather_dt_days()`（独立游标 `_last_weather_pass_day`、同-tick 缓存、
+  clamp[0,30]、缺源回退 1.0），在 unified native daily 路径经 `WeatherSystem.set_weather_transition_dt_days()`
+  注入 `_build_weather_field_knobs`（fast/fallback 两处）与 commit knobs；C++
+  `run_weather_field_solve_pass` / `run_weather_field_commit_pass` 与 GDScript `field_solver.gd`
+  用它把过渡 alpha 累加从"每次求解"改为"每游戏天数"。probe（commit_side_effects=false）传 1.0 不推进游标。
+- **沿海海洋性调温 knob `maritime_factor` / `maritime_season_damp`（climate-zone-fix P2）**：
+  `climate_pass_a_struct`（`_build_native_daily_climate_pass_a_struct`）与 async kick input
+  （`climate_daily_system.gd::_build_async_kick_input`）现都携带一个**静态 per-cell** 数组
+  `maritime_factor`（PackedFloat32Array，∈(0,1]，海岸≈1/内陆→0）和标量 `maritime_season_damp`
+  （来自 `ClimateProfile.maritime_season_damp`，0=关闭）。数组由 `MapGenerator._ensure_maritime_factor()`
+  按 `is_water_arr` 多源 BFS 距海 + 指数衰减（e 折距 `maritime_decay_cells`）算一次并缓存（按 `(n,decay)`
+  失效）。C++ `run_climate_pass_a` / `run_climate_pass_a_thread` / `_async_pass_a_kernel_pure` 三路在
+  `pk_season_offset_continental` 之后统一 `season_offset *= (1 - maritime_season_damp * maritime_factor[i])`
+  （仅陆地），缩小沿海年较差→温带海洋性(Cfb)。sync 与 async 读同一缓存数组 + 同一 decay → A/B 逐位一致；
+  damp=0 或数组缺省时三路均跳过缩放（与历史逐位一致）。该机制独立于 legacy 标量 `temp_land_continentality`
+  （后者仍被 pass_a 忽略，`native_pass_a_legacy_season_offset_test` 不变）。
+- **降水季节性 knob `field_thermal_conv_precip` / `field_stratiform_gain` / `field_omega_ascent_gain` /
+  `field_cool_season_vapor_floor`（climate-zone-fix P3）**：原 C++-only/constexpr 项导出为 `ClimateProfile`
+  `weather_field_*`，经 `weather_system.gd::_sync_profile_weather_knobs` 装进 `_field_*` 成员，再由
+  `_build_field_knobs`（resident dynamic_fields + fallback 两处）注入 weather field knobs。C++
+  `world_ext_weather.cpp` 与 GDScript `field_solver.gd` 同读这些 knob/成员（SAME_SOURCE）：
+  thermal_conv_precip↓减暖季对流主导、stratiform_gain↑补冷季层状、omega_ascent_gain↓弱化静止 ITCZ、
+  cool_season_vapor_floor 给冷季蒸发地板（`temp_evap=max(floor,smoothstep(0.10,0.78,T))`，0=原行为）。
+  附带修正 `field_solver.gd` 的 `PRECIP_BASE_FRAC` 常量漂移（0.12→读 `_field_precip_base_frac`=0.08，与
+  C++ knob 主路径同源）。缺 key 时 C++ 回退历史默认（0.30/1.0/0.40/0.0）→裸 cp_struct 测试逐位不变。
 
 ## C++ 写入 GDScript 可见数据
 

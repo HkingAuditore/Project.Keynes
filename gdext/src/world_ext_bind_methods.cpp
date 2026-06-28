@@ -69,6 +69,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_daily_tick);
     ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
                          &DCWorldExt::run_native_daily_slice);
+    ClassDB::bind_method(D_METHOD("run_native_daily_finalizer", "knobs"),
+                         &DCWorldExt::run_native_daily_finalizer);
     ClassDB::bind_method(D_METHOD("run_native_sim_tick", "ctx"),
                          &DCWorldExt::run_native_sim_tick);
     ClassDB::bind_method(D_METHOD("get_native_daily_report"),

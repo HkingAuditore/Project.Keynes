@@ -366,18 +366,22 @@ func run_slice(cell_budget: int) -> Dictionary:
 	const LIFT_COND_GAIN := 0.80
 	const CONV_COND_GAIN := 1.0
 	const AUTOCONVERSION := 0.16
-	const PRECIP_BASE_FRAC := 0.12   # 2026-06-22 雨云化:0.50→0.12 砍背景成雨,降水靠动力(辐合/抬升/锋面)触发→集中成雨核随系统移动(C++主路径走knobs同值)
+	# [climate-zone-fix P3] 修漂移：原 const 0.12 与 C++ 主路径(读 field_precip_base_frac knob=cp.weather_field_precip_base_frac=0.08)
+	# 不一致。改读同一 weather_system 成员，两路逐位同源(生产默认 0.08)。
+	var PRECIP_BASE_FRAC: float = _weather_system._field_precip_base_frac
 	const LIFT_PRECIP_GAIN := 0.25
-	const CONV_PRECIP_GAIN := 1.80
+	const CONV_PRECIP_GAIN := 1.95   # B1(2026-06-28) 1.80→1.95 提辐合致雨权重,补温度对流减弱→r(precip,conv)↑。镜像 world_ext.cpp
 	const ORO_PRECIP_GAIN := 0.10
 	const CLOUD_REEVAP := 0.18   # 2026-06-22 雨云化:0.06→0.18 云水更快再蒸发→雨团边缘消散、雨过转晴(生命周期)
 	# 热力对流(大陆夏季雷暴)：地表加热+本地水汽 → 凝结/降水，修复内陆"水汽到了却凝不成雨"。镜像 world_ext field_thermal_conv_*。
 	const THERMAL_CONV_COND := 1.15   # 降低静态热力云源，让移动/平流项主导雨云
-	const THERMAL_CONV_PRECIP := 0.45 # 降低按温度锚定的原地对流雨
+	# [climate-zone-fix P3] 导出为旋钮(cp.weather_field_thermal_conv_precip)；两路读同一 weather_system 成员保 SAME_SOURCE。
+	var THERMAL_CONV_PRECIP: float = _weather_system._field_thermal_conv_precip
 	# ─── climate-realism Stage1 (2026-06-23): Hadley/Ferrel 垂直运动项 omega ──
 	# 键在「热赤道」相对纬度(随季迁移、无直线条带): ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水。
 	# lat_te_norm 由 begin_slice 按 zonal-max 温度逐 tick 计算。镜像 world_ext.cpp。
-	const OMEGA_ASCENT_GAIN := 0.40  # 同步C++ 压静止lift(弱化ITCZ)    # ITCZ(|dlat|<~12°)/风暴轴(|dlat|~48-62°)上升带成雨增益
+	# [climate-zone-fix P3] 导出为旋钮(cp.weather_field_omega_ascent_gain)；两路读同一 weather_system 成员保 SAME_SOURCE。
+	var OMEGA_ASCENT_GAIN: float = _weather_system._field_omega_ascent_gain  # ITCZ(|dlat|<~12°)/风暴轴上升带成雨增益(下调弱化静止ITCZ)
 	const OMEGA_DESCENT_GAIN := 0.70   # 副热带(|dlat|~22-34°)下沉带降水抑制
 	const OMEGA_DESCENT_COND := 0.45   # 副热带下沉抑制凝结→晴空(利于热浪/旱灾)
 	# ─── climate-realism Stage6 (2026-06-23): 湿度充放电 recharge-discharge ─────
@@ -448,7 +452,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		elif has_river:
 			effective_ocean_an = maxf(ocean_an, river_evap_floor)
 
-		var temp_evap: float = smoothstep(0.10, 0.78, temp)
+		var temp_evap: float = maxf(_weather_system._field_cool_season_vapor_floor, smoothstep(0.10, 0.78, temp))  # [P3] 冷季蒸发地板(0=原行为)
 		var wind_evap: float = 0.70 + wind_mag * 0.55
 		var soil_norm: float = clampf(0.5 + (soa_soil_moisture[i] if soa_soil_moisture.size() == n_cells else cell.soil_moisture), 0.0, 1.0)
 		var veg_vitality: float = clampf(soa_veg_vitality[i] if soa_veg_vitality.size() == n_cells else cell.vegetation_vitality, 0.0, 1.0)
@@ -495,7 +499,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 					* (1.0 - smoothstep(0.16, 0.44, up_forcing_proxy)) \
 					* (0.35 + up_river_q * 0.65), 0.0, 1.0)
 			var up_river_source_scale: float = 1.0 - up_river_recycle_lock * 0.72
-			var up_temp_evap: float = smoothstep(0.10, 0.78, up_temp)
+			var up_temp_evap: float = maxf(_weather_system._field_cool_season_vapor_floor, smoothstep(0.10, 0.78, up_temp))  # [P3] 冷季蒸发地板(0=原行为)
 			var up_ocean_an: float = temp_anom_arr[upstream_idx] if temp_anom_arr.size() == n_cells and up_on_water else effective_ocean_an
 			var up_soil: float = clampf(0.5 + (soa_soil_moisture[upstream_idx] if soa_soil_moisture.size() == n_cells else up_cell.soil_moisture), 0.0, 1.0)
 			var up_vitality: float = clampf(soa_veg_vitality[upstream_idx] if soa_veg_vitality.size() == n_cells else up_cell.vegetation_vitality, 0.0, 1.0)
@@ -562,7 +566,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var strat_drive: float = lift_pos * 0.90 + convergence * 0.60 + frontogenesis * 0.80
 		if on_water:
 			strat_drive += (0.22 + wind_mag * 0.30) * (1.0 - sea_ice * 0.92)
-		var stratiform: float = clampf(strat_humid * strat_cool * minf(strat_drive, 1.0), 0.0, 1.0)
+		var stratiform: float = clampf(strat_humid * strat_cool * minf(strat_drive, 1.0) * _weather_system._field_stratiform_gain, 0.0, 1.0)  # [P3] 层状增益镜像 C++ field_stratiform_gain
 
 		# 热力对流(大陆夏季雷暴/对流雨)：地表加热+本地水汽 → 浮力凝结+高效降水。修复内陆 rh 永远
 		# <<静力阈、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结(用户洞察:内陆蒸发应能成雨)。
@@ -570,7 +574,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		# 2026-06-22 雨云化根因:陆地rh中位0.18(>0.55仅2.7%→静力凝结死),成云降水76%靠本项热力对流。
 		# rh*5门控致干空气被硬拉成半饱和→温暖陆地处处弱对流→产云水平流扩散→遍地雾+小雨。convective双峰
 		# (p50=0,p75=0.39),谷底0.28硬截断:砍弱对流(损失6.5%降水)转晴/多云、保强对流核突显明显降水。(C++主路径同值)
-		var conv_raw: float = 0.0 if on_water else smoothstep(0.48, 0.74, temp) * clampf(relative_humidity * 3.6, 0.0, 1.0)
+		var conv_raw: float = 0.0 if on_water else smoothstep(0.48, 0.74, temp) * clampf(relative_humidity * 2.6, 0.0, 1.0)  # B1(2026-06-28) 3.6→2.6 去 rh 虚高:对流改由"湿暖"(沿海)触发而非"干暖"(内陆)→降水脱离纯温度。镜像 world_ext.cpp
 		var convective: float = 0.0 if conv_raw < 0.42 else conv_raw
 		var ocean_convective: float = 0.0
 		if on_water:
@@ -634,7 +638,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		cloud_water = clampf(cloud_water + condensation, 0.0, 1.0)
 
 		var instability: float = clampf(
-			(temp - 0.48) * 1.05
+			(temp - 0.48) * 0.80
 			+ relative_humidity * 0.30
 			+ convergence * 0.55
 			+ lift_pos * 1.20
@@ -948,6 +952,9 @@ func commit() -> Array[WeatherFront]:
 	var transition_rate: float = 1.0
 	if transition_enabled and cp_transition.get("weather_transition_alpha_rate") != null:
 		transition_rate = clampf(float(cp_transition.weather_transition_alpha_rate), 0.0, 1.0)
+	# [dt-aware transition 2026-06-28] 镜像 world_ext_weather.cpp：过渡按游戏天数推进而非求解次数。
+	# dt_days 取自与 C++ 同一份 native knobs（weather_system 用 _consume_weather_dt_days() 填入），缺省 1.0。
+	var transition_dt_days: float = clampf(float(_field_slice_native_knobs.get("weather_transition_dt_days", 1.0)), 0.0, 30.0)
 	var water_budget_error_acc: float = 0.0
 	var commit_path: String = "gdscript"
 	var commit_loop_ms: float = 0.0
@@ -1073,12 +1080,12 @@ func commit() -> Array[WeatherFront]:
 				if target_type != v_type:
 					prev_type = current_display
 					target_type = v_type
-					alpha = 0.0
+					alpha = clampf(transition_rate * transition_dt_days, 0.0, 1.0) # [dt-aware] 当前求解即计入
 				elif prev_type == target_type or current_display == target_type:
 					prev_type = target_type
 					alpha = 0.0
 				else:
-					alpha = clampf(alpha + transition_rate, 0.0, 1.0)
+					alpha = clampf(alpha + transition_rate * transition_dt_days, 0.0, 1.0)
 				display_type = target_type if alpha >= 1.0 else prev_type
 				if alpha >= 1.0:
 					prev_type = target_type

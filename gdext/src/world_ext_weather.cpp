@@ -289,6 +289,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     float weather_transition_alpha_rate = float(knobs.get("weather_transition_alpha_rate", 1.0));
     if (weather_transition_alpha_rate < 0.0f) weather_transition_alpha_rate = 0.0f;
     else if (weather_transition_alpha_rate > 1.0f) weather_transition_alpha_rate = 1.0f;
+    // [dt-aware transition 2026-06-28] 过渡进度按"游戏天数"推进而非"求解次数"。旧实现 alpha 每次求解
+    // 固定 +rate，与 dt 无关→加速档(dt≫1)每次求解推进 ~dt 天却仍只 +rate，需 ~4 次求解≈4·dt 天才完成过渡，
+    // 致短暂强天气(STORM/FOG/MONSOON)永远累不满 alpha 被显示为 prev(CLEAR)。改为 alpha += rate·dt_days，
+    // 并在目标切换时即把当前求解计入(alpha=rate·dt_days)，使 dt≥~1/rate 时即时切换；dt=1 时退化为原 ~3 次求解平滑。
+    float weather_transition_dt_days = float(knobs.get("weather_transition_dt_days", 1.0));
+    if (weather_transition_dt_days < 0.0f) weather_transition_dt_days = 0.0f;
+    else if (weather_transition_dt_days > 30.0f) weather_transition_dt_days = 30.0f;
     if (sid_temp       < 0 || sid_moisture   < 0 || sid_air_anom    < 0 ||
         sid_wind_x     < 0 || sid_wind_y     < 0 || sid_wind_spd   < 0 ||
         sid_terrain    < 0 ||
@@ -330,7 +337,10 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // 温度逐 tick 计算并经 knobs 传入；Hadley/Ferrel omega 项消费。镜像 field_solver.gd。
     const float weather_lat_te_norm = knobs.has("weather_lat_te_norm")
                                         ? float(knobs["weather_lat_te_norm"]) : 0.5f;
-    constexpr float OMEGA_ASCENT_GAIN  = 0.40f; // 方案③+ 0.65→0.40 弱化 ITCZ 静止雨带→降水去地理锚定、让移动 ψ 主导
+    // [climate-zone-fix P3] 原 constexpr 0.40 → 导出为 knob（field_omega_ascent_gain），缺 key 仍回退 0.40。
+    // 下调弱化静止 ITCZ 雨带锚定，让冷季锋面/层状相对增强（镜像 field_solver.gd OMEGA_ASCENT_GAIN）。
+    const float OMEGA_ASCENT_GAIN  = knobs.has("field_omega_ascent_gain")
+                                        ? float(knobs["field_omega_ascent_gain"]) : 0.40f;
     constexpr float OMEGA_DESCENT_GAIN = 0.70f; // 副热带下沉带降水抑制
     constexpr float OMEGA_DESCENT_COND = 0.45f; // 副热带下沉抑制凝结→晴空
     // Stage6/6c (2026-06-23): 湿度充放电 + 对流抑制记忆。镜像 field_solver.gd。
@@ -495,14 +505,18 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float field_conv_cond_gain   = knobs.has("field_conv_cond_gain")   ? float(knobs["field_conv_cond_gain"])   : 1.00f;
     // 热力对流(大陆夏季雷暴)：地表加热+本地水汽驱动凝结/降水，修复内陆 rh<<静力阈的"水汽到了却凝不成雨"死结。
     const float field_thermal_conv_cond   = knobs.has("field_thermal_conv_cond")   ? float(knobs["field_thermal_conv_cond"])   : 1.15f; // 降低静态热力云源，让移动 ψ/平流主导雨云
-    const float field_thermal_conv_precip = knobs.has("field_thermal_conv_precip") ? float(knobs["field_thermal_conv_precip"]) : 0.45f; // 降低按温度锚定的原地对流雨
+    const float field_thermal_conv_precip = knobs.has("field_thermal_conv_precip") ? float(knobs["field_thermal_conv_precip"]) : 0.30f; // B1(2026-06-28) 0.45→0.30 进一步削弱温度锚定原地对流雨,降水改由辐合/抬升/地形主导
     const float field_autoconversion   = knobs.has("field_autoconversion")   ? float(knobs["field_autoconversion"])   : 0.16f;
     const float field_precip_base_frac = knobs.has("field_precip_base_frac") ? float(knobs["field_precip_base_frac"]) : 0.08f;
     const float field_lift_precip_gain = knobs.has("field_lift_precip_gain") ? float(knobs["field_lift_precip_gain"]) : 0.45f; // Stage14e 0.25→0.45 迎风坡(山地)致雨增强→不再绕山
-    const float field_conv_precip_gain = knobs.has("field_conv_precip_gain") ? float(knobs["field_conv_precip_gain"]) : 1.80f;
+    const float field_conv_precip_gain = knobs.has("field_conv_precip_gain") ? float(knobs["field_conv_precip_gain"]) : 1.95f; // B1(2026-06-28) 1.80→1.95 提辐合致雨权重,补温度对流减弱并使 r(precip,conv)↑
     const float field_oro_precip_gain  = knobs.has("field_oro_precip_gain")  ? float(knobs["field_oro_precip_gain"])  : 0.30f;  // Stage14e 0.10→0.30 地形抬升增雨(山地迎风坡)
     // Stage11 层状降水增益：补对流暖门挡死的冷/高/水区降水(地形/锋面/海面层云),0 关闭。
     const float field_stratiform_gain  = knobs.has("field_stratiform_gain")  ? float(knobs["field_stratiform_gain"])  : 1.0f;
+    // [climate-zone-fix P3] 冷季蒸发地板：temp_evap=max(floor, smoothstep(0.10,0.78,T))。0=关闭=原行为。
+    // 冷季低温下 smoothstep≈0 致无水汽源→冷季锋面/层状无雨；地板给冷季基础水汽(补冬雨/降雪)。镜像 field_solver.gd。
+    const float field_cool_season_vapor_floor = knobs.has("field_cool_season_vapor_floor")
+                                        ? float(knobs["field_cool_season_vapor_floor"]) : 0.0f;
     const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.38f;
     // 诊断式旧旋钮在平流式路径不再使用(caller 仍注入；显式吞掉避免 unused 告警)。
     (void)field_condensation_gain; (void)field_orographic_lift_gain; (void)field_convergence_gain;
@@ -753,7 +767,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                                      bool src_on_water, bool src_is_lake,
                                      bool src_has_river, float src_river_q,
                                      float src_river_source_scale) -> float {
-        const float temp_evap = wf_smoothstep(0.10f, 0.78f, src_temp);
+        // [climate-zone-fix P3] 冷季地板抬高低温端蒸发；floor=0 时与原 smoothstep 逐位一致。
+        float temp_evap = wf_smoothstep(0.10f, 0.78f, src_temp);
+        if (temp_evap < field_cool_season_vapor_floor) temp_evap = field_cool_season_vapor_floor;
         const float wind_evap = 0.70f + src_wind_mag * 0.55f;
         float wet_bonus = 0.0f;
         switch (TERR[src_idx]) {
@@ -1000,7 +1016,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // → 产云水后平流扩散 → 遍地雾+小雨、无晴无强雨。convective 实测双峰(p50=0,p75=0.39)：在谷底
         // 0.28 硬截断 → 砍遍地弱对流(仅损失6.5%降水)使其转晴/多云，保留强对流核 → 明显降水突显、拉开
         // "晴↔强降水"对比。(GDScript field_solver 镜像同值)
-        float conv_raw = wf_smoothstep(0.48f, 0.74f, temp) * dc_clampf(relative_humidity * 3.6f, 0.0f, 1.0f);
+        float conv_raw = wf_smoothstep(0.48f, 0.74f, temp) * dc_clampf(relative_humidity * 2.6f, 0.0f, 1.0f);
         const float convective = (on_water || conv_raw < 0.42f) ? 0.0f : conv_raw;
         float ocean_convective = 0.0f;
         if (on_water) {
@@ -1114,7 +1130,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (cloud_water < 0.0f) cloud_water = 0.0f;
         else if (cloud_water > 1.0f) cloud_water = 1.0f;
 
-        float instability = (temp - 0.48f) * 1.05f
+        float instability = (temp - 0.48f) * 0.80f
                           + relative_humidity * 0.30f
                           + convergence * 0.55f
                           + lift_pos * 1.20f
@@ -1356,12 +1372,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             if (target_type != wt) {
                 prev_type = current_display;
                 target_type = wt;
-                alpha = 0.0f;
+                alpha = weather_transition_alpha_rate * weather_transition_dt_days; // [dt-aware] 当前求解即计入
+                if (alpha > 1.0f) alpha = 1.0f;
             } else if (prev_type == target_type || current_display == target_type) {
                 prev_type = target_type;
                 alpha = 0.0f;
             } else {
-                alpha += weather_transition_alpha_rate;
+                alpha += weather_transition_alpha_rate * weather_transition_dt_days;
                 if (alpha > 1.0f) alpha = 1.0f;
             }
             display_wt = (alpha >= 1.0f) ? target_type : prev_type;
@@ -1481,6 +1498,10 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
     float transition_rate = float(knobs.get("weather_transition_alpha_rate", 1.0));
     if (transition_rate < 0.0f) transition_rate = 0.0f;
     else if (transition_rate > 1.0f) transition_rate = 1.0f;
+    // [dt-aware transition 2026-06-28] 见 run_weather_field_solve_pass 同名注释：过渡按游戏天数推进，避免加速档吞短暂天气。
+    float transition_dt_days = float(knobs.get("weather_transition_dt_days", 1.0));
+    if (transition_dt_days < 0.0f) transition_dt_days = 0.0f;
+    else if (transition_dt_days > 30.0f) transition_dt_days = 30.0f;
     const int lut_w = int(knobs.get("weather_lut_w", 0));
     const int lut_h = int(knobs.get("weather_lut_h", 0));
     const int lut_slots = (lut_w > 0 && lut_h > 0 && lut_w * lut_h >= n_cells) ? (lut_w * lut_h) : n_cells;
@@ -1662,12 +1683,13 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
             if (target_type != v_type) {
                 prev_type = current_display;
                 target_type = v_type;
-                alpha = 0.0f;
+                alpha = transition_rate * transition_dt_days; // [dt-aware] 当前求解即计入
+                if (alpha > 1.0f) alpha = 1.0f;
             } else if (prev_type == target_type || current_display == target_type) {
                 prev_type = target_type;
                 alpha = 0.0f;
             } else {
-                alpha += transition_rate;
+                alpha += transition_rate * transition_dt_days;
                 if (alpha > 1.0f) alpha = 1.0f;
             }
             display_type = (alpha >= 1.0f) ? target_type : prev_type;
