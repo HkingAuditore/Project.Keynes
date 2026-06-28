@@ -70,6 +70,14 @@ signal speed_changed(new_speed: float)
 @export_range(1.0, 33.0, 0.5) var sim_frame_budget_ms: float = 8.0
 # max_sim_days_per_frame：单帧推进天数的硬上限（安全阀，兜住时间盒之外的极端）。
 @export_range(1, 64, 1) var max_sim_days_per_frame: int = 8
+# [TEST 2026-06-29] disable_sim_frame_budget：解除每帧仿真预算的实验开关。
+# true  = 跳过 sim_frame_budget_ms 时间盒 break，并把单帧天数上限放宽到
+#         max(max_sim_days_per_frame, 64)（仅保留防 delta 爆炸的安全阀），让慢机也
+#         按 target 天/帧推进——验证"跨机视觉更新变慢"是否来自 best-effort 限流。
+#         代价：高倍速 / 慢机下单帧可能跑很多天 → FPS 下降甚至卡顿。
+# false = 恢复原 best-effort 时间盒（FPS 保护、过载时有效倍速平滑降级）。
+# 验证完成后应改回 false。
+@export var disable_sim_frame_budget: bool = true
 # debug_step_log：临时诊断开关。开后每 ~120 帧打一行 [clock/step]，对比 _process
 # 墙钟与 render-profile 的 sus_frame_avg，定位高倍速 FPS 跌的成本落在循环内还是 present。
 @export var debug_step_log: bool = true
@@ -172,18 +180,24 @@ func _process(delta: float) -> void:
 	# best-effort 吞吐模型（plan/best-effort-sim-stepping）：倍速 = 目标天/秒。
 	# 本帧目标推进量先按硬上限封顶——即便上一帧卡顿导致 delta 巨大，也不会把
 	# 成百天一次性灌进来点燃死亡螺旋。
+	# [TEST 2026-06-29] disable_sim_frame_budget=true 时放宽单帧天数上限，仅保留防 delta
+	# 爆炸的安全阀（max(原上限, 64)）；时间盒 break 在下方 while 内一并跳过。
+	var day_cap: int = max_sim_days_per_frame
+	if disable_sim_frame_budget:
+		day_cap = maxi(max_sim_days_per_frame, 64)
 	var target: float = delta * speed_multiplier
-	if target > float(max_sim_days_per_frame):
-		target = float(max_sim_days_per_frame)
+	if target > float(day_cap):
+		target = float(day_cap)
 	_day_carry += target
 
-	# 时间盒 + 硬上限：本帧最多推进 max_sim_days_per_frame 天，且至少跑满 1 天后
-	# 一旦累计耗时超预算就停。每个 _advance_one_sim_day 会同步触发 _on_day_changed
-	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
+	# 时间盒 + 硬上限：本帧最多推进 day_cap 天，且至少跑满 1 天后一旦累计耗时超预算就停。
+	# 每个 _advance_one_sim_day 会同步触发 _on_day_changed → 一个完整 SUS tick，所以这里的
+	# 墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
+	# [TEST 2026-06-29] disable_sim_frame_budget=true 时跳过 sim_frame_budget_ms 时间盒 break。
 	var t0_us: int = Time.get_ticks_usec()
 	var ran: int = 0
-	while _day_carry >= 1.0 and ran < max_sim_days_per_frame:
-		if ran > 0 and float(Time.get_ticks_usec() - t0_us) / 1000.0 >= sim_frame_budget_ms:
+	while _day_carry >= 1.0 and ran < day_cap:
+		if not disable_sim_frame_budget and ran > 0 and float(Time.get_ticks_usec() - t0_us) / 1000.0 >= sim_frame_budget_ms:
 			break
 		_day_carry -= 1.0
 		_advance_one_sim_day()
