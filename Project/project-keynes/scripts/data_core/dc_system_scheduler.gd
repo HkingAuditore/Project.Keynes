@@ -157,7 +157,15 @@ func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
 	if job.get("starvation_threshold") != null:
 		var starvation_job_id: StringName = _job_id(job)
 		if starvation_job_id == &"dynamic_visual_atlas_upload":
-			job.starvation_threshold = 8
+			# [large-map sea-ice visual freeze fix 2026-06-29] 8 是旧逐像素 atlas 上传
+			# 时代的遗留值。现唯一动态视觉路径是 cell-indirection 的 per-cell LUT 全量重烘
+			# （温度/湿度/雪/植被活力/海冰 全部走 dyn_lut），代价极低（6400 格 ≈0.57ms）。
+			# 大地图上 must_run 的 climate round 每 tick 吃满 2ms frame budget，导致本 job 长期
+			# frame_budget_exhausted、只能靠 starvation 每 8 tick 救活一次 → 海冰等动态视觉滞后
+			# 8 天才刷一次，慢地图上看起来"完全不变"。中小地图 climate 不撑爆预算、本 job 每 tick
+			# 跑得上故正常。把阈值降到 2：廉价 LUT 最多滞后 ~3 tick 追平数值，按设计原则仍不绕过
+			# 预算（保留 must_run=false 不漂移），单 tick 代价可忽略。
+			job.starvation_threshold = 2
 		elif upload_job:
 			job.starvation_threshold = 0
 		elif starvation_job_id == &"refresh_climate_daily" \
