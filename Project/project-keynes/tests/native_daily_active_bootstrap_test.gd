@@ -43,6 +43,10 @@ func _run() -> void:
 	var tick_res: Dictionary = {}
 	var native_res: Dictionary = {}
 	var completed_native_res: Dictionary = {}
+	# Stagger 对齐后 weather 只在 sim_stagger weather bucket 到期 tick 嵌入（默认
+	# stride=8 / phase=4 → tick 4 起），不再每轮都跑。weather 专属断言改用首个
+	# 含 weather_knobs 的完成轮次。
+	var weather_round_res: Dictionary = {}
 	var ocean_report: Dictionary = {}
 	var first_ocean_day: int = -1
 	var completed_native_day: int = -1
@@ -56,6 +60,9 @@ func _run() -> void:
 				and bool(native_res.get("done", false)):
 			if completed_native_res.is_empty():
 				completed_native_res = native_res
+			if weather_round_res.is_empty() \
+					and (native_res.get("bundle_pass_keys", []) as Array).has("weather_knobs"):
+				weather_round_res = native_res
 			native_completed_days += 1
 			if completed_native_day < 0:
 				completed_native_day = day
@@ -68,10 +75,13 @@ func _run() -> void:
 			ocean_report = ocean_report_now
 			if first_ocean_day < 0:
 				first_ocean_day = day
-		if not completed_native_res.is_empty() and not ocean_report.is_empty() and native_completed_days >= 3:
+		if not completed_native_res.is_empty() and not ocean_report.is_empty() \
+				and native_completed_days >= 3 and not weather_round_res.is_empty():
 			break
 	if completed_native_res.is_empty():
 		completed_native_res = native_res
+	if weather_round_res.is_empty():
+		weather_round_res = completed_native_res
 	var state: Dictionary = completed_native_res.get("native_state_snapshot", native_res.get("native_state_snapshot", {}))
 	var pass_keys: Array = completed_native_res.get("bundle_pass_keys", native_res.get("bundle_pass_keys", native_res.get("pass_keys", [])))
 	var authority: Dictionary = completed_native_res.get("authority_report", state.get("authority_report", {}))
@@ -97,11 +107,11 @@ func _run() -> void:
 	_expect("active native daily applies climate finalizer", bool(native_breakdown.get("thermal_finalizer_applied", false)))
 	_expect("active native daily publishes ocean heat transport state", bool(native_breakdown.get("native_daily_tta_published", false)))
 	_expect("ocean heat transport anomaly has signal", tta_arr.size() == map.soa_size() and tta_has_signal)
-	_expect("active bundle embeds weather knobs", pass_keys.has("weather_knobs"))
+	_expect("active bundle embeds weather knobs on weather-due tick", (weather_round_res.get("bundle_pass_keys", []) as Array).has("weather_knobs"))
 	_expect("weather owner becomes native-active on bootstrap", str(state.get("weather_transaction_state_owner", "")) == "native_active")
 	_expect("weather active bootstrap reason is reported", str(weather_authority.get("readiness", {}).get("reason", "")) == "active_bootstrap_unified_publish")
-	_expect("weather LUT is published in active bootstrap", bool(completed_native_res.get("weather_lut_published", false)))
-	_expect("front signature is reported in active bootstrap", str(completed_native_res.get("fronts_signature", "")) != "")
+	_expect("weather LUT is published in active bootstrap", bool(weather_round_res.get("weather_lut_published", false)))
+	_expect("front signature is reported in active bootstrap", str(weather_round_res.get("fronts_signature", "")) != "")
 	_expect("weather breakdown fronts is numeric", typeof(weather_breakdown.get("fronts", null)) == TYPE_INT)
 	_finish()
 
@@ -120,6 +130,9 @@ func _make_profile() -> ClimateProfile:
 	profile.native_environment_runtime_enabled = false
 	profile.dynamic_visual_atlas_upload_stride = 8
 	profile.enum_atlas_upload_stride = 8
+	# This test asserts the atomic one-tick round (>1 slice in a single tick), so
+	# force spread off regardless of earth_like.tres (which enables spread at runtime).
+	profile.native_daily_spread_across_ticks = false
 	return profile
 
 

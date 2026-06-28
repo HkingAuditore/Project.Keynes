@@ -134,6 +134,10 @@ var _field_convergence_gain: float = 0.18
 var _field_convergence_refresh_stride: int = 2
 var _field_solve_tick: int = 0
 var _last_weather_commit_tick: int = -1
+# [dt-aware transition 2026-06-28] 由 orchestrator（map_generator）每次天气求解前用
+# _consume_weather_dt_days() 注入"上次到本次天气求解的真实游戏天数差"。喂给 weather_transition_dt_days
+# knob，让过渡 alpha 按游戏天数推进而非求解次数（加速档下避免吞掉短暂天气）。缺省 1.0=与历史 1:1。
+var _weather_transition_dt_days: float = 1.0
 var _cold_precip_as_blizzard: bool = true
 var _snow_classification_margin: float = 0.03
 var _field_ocean_evap_gain: float = 0.55
@@ -149,6 +153,12 @@ var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定�
 var _field_cloud_reevap: float = 0.38      # 干空气云水再蒸发；加快雨云下完后的清空
 var _field_cloud_inertia: float = 0.74     # cloud EMA 跟手系数；让云层随云水和平流更快移动/消退
 var _field_frontogenesis_gain: float = 0.42
+# [climate-zone-fix P3] 降水季节性旋钮镜像（默认与 C++ knob 默认 / field_solver const 一致；
+# 经 knobs 同时喂 C++ 主路径与 field_solver fallback，保 SAME_SOURCE）。
+var _field_thermal_conv_precip: float = 0.30   # 陆地热力对流成雨权重（暖季对流，下调减夏雨主导）
+var _field_stratiform_gain: float = 1.0        # 层状降水增益（冷/高/水区，上调补冷季降水）
+var _field_omega_ascent_gain: float = 0.40     # ITCZ/风暴轴上升带成雨增益（下调弱化静止 ITCZ 锚定）
+var _field_cool_season_vapor_floor: float = 0.0 # 冷季蒸发地板（0=关闭=原行为；>0 给冷季基础水汽）
 var _field_rain_shadow_drying: float = 0.35
 var _field_vapor_transport_gain: float = 0.75
 var _snowpack_accum_gain: float = 0.08
@@ -371,6 +381,10 @@ func _cell_neighbors(cell: HexCell, map: MapData) -> Array:
 
 func last_breakdown() -> Dictionary:
 	return _last_breakdown
+
+
+func set_weather_transition_dt_days(d: float) -> void:
+	_weather_transition_dt_days = clampf(d, 0.0, 30.0)
 
 
 func _mark_weather_commit_tick() -> Dictionary:
@@ -887,12 +901,17 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 			"field_precip_rh_threshold": _field_precip_rh_threshold,
 			"field_ocean_precip_suppression": _field_ocean_precip_suppression,
 			"field_frontogenesis_gain": _field_frontogenesis_gain,
+			"field_thermal_conv_precip": _field_thermal_conv_precip,
+			"field_stratiform_gain": _field_stratiform_gain,
+			"field_omega_ascent_gain": _field_omega_ascent_gain,
+			"field_cool_season_vapor_floor": _field_cool_season_vapor_floor,
 			"field_rain_shadow_drying": _field_rain_shadow_drying,
 			"field_vapor_transport_gain": _field_vapor_transport_gain,
 			"cold_precip_as_blizzard": _cold_precip_as_blizzard,
 			"snow_classification_margin": _snow_classification_margin,
 			"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
 			"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
+			"weather_transition_dt_days": _weather_transition_dt_days,
 		}
 		return _merge_resident_knobs_with_dynamic(_knobs_handle.to_field_knobs_dict(), dynamic_fields)
 	# ─── Fallback：原 builder 路径（与 Phase A.3 之前 100% bit-equal）──
@@ -954,12 +973,17 @@ func _build_weather_field_knobs(map: MapData, world: WorldData, n_cells: int, st
 		"field_precip_rh_threshold": _field_precip_rh_threshold,
 		"field_ocean_precip_suppression": _field_ocean_precip_suppression,
 		"field_frontogenesis_gain": _field_frontogenesis_gain,
+		"field_thermal_conv_precip": _field_thermal_conv_precip,
+		"field_stratiform_gain": _field_stratiform_gain,
+		"field_omega_ascent_gain": _field_omega_ascent_gain,
+		"field_cool_season_vapor_floor": _field_cool_season_vapor_floor,
 		"field_rain_shadow_drying": _field_rain_shadow_drying,
 		"field_vapor_transport_gain": _field_vapor_transport_gain,
 		"cold_precip_as_blizzard": _cold_precip_as_blizzard,
 		"snow_classification_margin": _snow_classification_margin,
 		"weather_transition_enabled": bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false,
 		"weather_transition_alpha_rate": float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0,
+		"weather_transition_dt_days": _weather_transition_dt_days,
 	}
 
 # 调用 C++ 端 run_weather_field_solve_pass。返回 elapsed_ms (≥0) 或 -1.0。
@@ -1045,6 +1069,7 @@ func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictiona
 	knobs["refresh_convergence"] = _field_solver._field_slice_refresh_convergence
 	knobs["weather_transition_enabled"] = bool(_cp_for_front_flag.weather_transition_enabled) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_enabled") != null else false
 	knobs["weather_transition_alpha_rate"] = float(_cp_for_front_flag.weather_transition_alpha_rate) if _cp_for_front_flag != null and _cp_for_front_flag.get("weather_transition_alpha_rate") != null else 1.0
+	knobs["weather_transition_dt_days"] = _weather_transition_dt_days
 	var world_ref: WorldData = _field_solver._field_slice_world
 	if world_ref != null and world_ref.lut_dims.x > 0 and world_ref.lut_dims.y > 0:
 		knobs["weather_lut_w"] = int(world_ref.lut_dims.x)
@@ -1553,6 +1578,14 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 		_field_ocean_precip_suppression = clampf(float(cp.weather_ocean_precip_suppression), 0.0, 1.0)
 	if cp.get("weather_frontogenesis_gain") != null:
 		_field_frontogenesis_gain = maxf(0.0, float(cp.weather_frontogenesis_gain))
+	if cp.get("weather_field_thermal_conv_precip") != null:
+		_field_thermal_conv_precip = clampf(float(cp.weather_field_thermal_conv_precip), 0.0, 1.0)
+	if cp.get("weather_field_stratiform_gain") != null:
+		_field_stratiform_gain = clampf(float(cp.weather_field_stratiform_gain), 0.0, 3.0)
+	if cp.get("weather_field_omega_ascent_gain") != null:
+		_field_omega_ascent_gain = clampf(float(cp.weather_field_omega_ascent_gain), 0.0, 1.5)
+	if cp.get("weather_cool_season_vapor_floor") != null:
+		_field_cool_season_vapor_floor = clampf(float(cp.weather_cool_season_vapor_floor), 0.0, 0.6)
 	if cp.get("weather_rain_shadow_drying") != null:
 		_field_rain_shadow_drying = clampf(float(cp.weather_rain_shadow_drying), 0.0, 1.0)
 	if cp.get("weather_vapor_transport_gain") != null:
@@ -2536,8 +2569,11 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud
 	var monsoon_vapor: float = 0.40 if is_water else 0.14
 	var monsoon_precip: float = 0.055 if is_water else 0.065
 	var monsoon_cloud: float = 0.45 if is_water else 0.24
-	var fog_vapor: float = 0.34 if is_water else 0.16
-	var fog_cloud: float = 0.14 if is_water else 0.18
+	# B4(2026-06-28) FOG 门重标到实测云分位：原 cloud 门(陆 0.18≈p86 / 海 0.14≈p96)高于云场常态→冷湿
+	# 阴天恒落 CLEAR(实测 FOG≈0%，68.5% 格全程不换类型)。改 cloud 门到 陆 0.10(≈p77)/海 0.085(≈p83)+
+	# 海 vapor 门 0.34→0.22，让海洋性/温带阴雾天按地理涌现(冷湿多云非降水格→FOG)。镜像 world_ext_internal.h。
+	var fog_vapor: float = 0.22 if is_water else 0.16
+	var fog_cloud: float = 0.085 if is_water else 0.10
 	var humid: bool = vapor > humid_gate
 	var effective_cloud: float = maxf(cloud, cloud_water * 1.25)
 	var precip_cloud_mass: float = maxf(cloud_water, precip * 0.70)
@@ -2583,15 +2619,15 @@ func _classify_field_weather_core(temp: float, vapor: float, cloud: float, cloud
 	# 5) 雾：高湿低降水、偏凉。单阈 cloud>0.14（FOG 闪烁由 EMA 平滑后的 cloud/precip 场自然消除）。
 	if vapor > fog_vapor and effective_cloud > fog_cloud and precip < 0.030 and temp < 0.55:
 		return WeatherType.WT.FOG
-	# 6) 旱灾(2026-06-22 定义，Stage3 提到热浪之前)：暖 + 异常偏暖(temp_anom>0.10) + 几乎无降水 + 少云。
-	#    bone-dry 强暖距平先归旱灾；剩余的暖距平少雨格落到下面的热浪。
-	if (not is_water) and temp > 0.55 and temp_anom > 0.10 and precip < 0.006 and effective_cloud < 0.18:
+	# 6) 旱灾(2026-06-28 重标定)：暖 + 显著正温度距平 + 几乎无降水 + 少云。原门 temp_anom>0.10 高于陆地
+	#    距平【最大值】(实测 tile_data_record_20260628 陆地 temp_anomaly max=0.0998 / p90=0.050)→恒不可达
+	#    (实测占比 0%)。改 0.05(≈陆地 p90)：bone-dry 候选约 22% 达标→旱灾恢复(~2.3%)。镜像 world_ext_internal.h。
+	if (not is_water) and temp > 0.55 and temp_anom > 0.05 and precip < 0.006 and effective_cloud < 0.18:
 		return WeatherType.WT.DROUGHT
-	# 7) 热浪(Stage3→Stage5 重定义 2026-06-23)：实测 target_type=6 在运行期恒为 0——分类器运行期收到的
-	#    temp_anom 与录制 temp_anomaly_arr 不一致(疑似写入时序/climate_anomaly 冷偏)，使"绝对热"或"正距平"
-	#    两条路都打不到暖格。改用 STORM/MONSOON 同款已验证可达的 warm(temp>0.55) + 晴(effective_cloud<0.24)
-	#    + 干(vapor<0.12) + 少雨。语义=暖季晴干热天(副热带下沉/大陆内部)。注意:本判据可达但速率需用新录制标定。
-	if (not is_water) and warm and precip < 0.012 and effective_cloud < 0.24 and vapor < 0.12:
+	# 7) 热浪(2026-06-28 重标定)：恢复气象学定义=显著正温度距平的暖事件。原"暖+干"无距平门 → 普通暖干陆地
+	#    恒成立(实测当前热浪格 temp_anomaly 均值仅 0.0045≈0,即把常态暖干地误判热浪→实测热浪 6.7%过多)。
+	#    加 temp_anom>0.04 门(≈陆地 p87)：仅保留约 6% 真·暖距平干热格(热浪 6.7%→~0.4%)。镜像 world_ext_internal.h。
+	if (not is_water) and warm and temp_anom > 0.04 and precip < 0.012 and effective_cloud < 0.24 and vapor < 0.12:
 		return WeatherType.WT.HEATWAVE
 	return WeatherType.WT.CLEAR
 

@@ -163,6 +163,8 @@ public:
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
+    // ② Native finalizer kernel for the round-complete delta-cap + thermal-init loops.
+    godot::Dictionary run_native_daily_finalizer(godot::Dictionary knobs);
     godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
     godot::Dictionary get_native_daily_report() const;
     godot::Dictionary get_native_shadow_diff_report() const;
@@ -239,6 +241,13 @@ public:
     // Returning -1.0 indicates "not implemented yet, fall back to GDScript".
     // GDScript-side caller checks `< 0` and routes to the legacy path.
     double run_climate_pass_a(const godot::Dictionary &cp_struct, double phase, double season_phase);
+
+    // Returns a pointer to the per-cell annual-mean insolation cache (size n),
+    // rebuilding it iff the (n, lat-array, axial_tilt, daylen) fingerprint changed.
+    // Shared by run_climate_pass_a and run_climate_pass_a_thread. Bit-equal to the
+    // inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...) it replaces.
+    const float *ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
+                                                float axial_tilt_deg, float daylen_amp);
 
     // [Phase C.3c] climate_pass_a 的 WorkerThreadPool 并行变体。
     // 主循环纯 cell-local map（无 race），按 cell range 拆 n_tasks 段并行；
@@ -1839,6 +1848,17 @@ private:
     godot::Vector<Slot>                       _slots;
     godot::HashMap<godot::StringName, int>    _slot_by_name;
 
+    // ---- climate pass-A annual-mean insolation cache (perf 2026-06) ----
+    // dc_insolation_annual_mean(lat, axial_tilt, daylen) integrates 16 trig-heavy
+    // insolation samples; it depends ONLY on cell latitude + two planet constants,
+    // so it is IDENTICAL every day. run_climate_pass_a previously recomputed it per
+    // cell per day (2464*16 trig/day ≈ 1.38ms of the round-start slice). We memoize
+    // it per cell and rebuild only when a cheap fingerprint of (n, lat bits,
+    // axial_tilt, daylen) changes (≈ once, at map bind / planet-param change).
+    std::vector<float>                        _insol_annual_mean_cache;
+    uint64_t                                  _insol_cache_fingerprint = 0;
+    bool                                      _insol_cache_valid = false;
+
     // ---- entity / pool ----
     int                                       _entity_count = 0;
 
@@ -1877,6 +1897,10 @@ private:
     godot::Dictionary                        _native_shadow_diff_report;
     bool                                      _native_daily_slice_active = false;
     int                                       _native_daily_slice_node_index = 0;
+    // Bitmask of slice-graph node indices GDScript must JIT-patch before they run
+    // (temp-dependent passes). C++ batches consecutive non-yield nodes in one call.
+    // Default 0xFFFFFFFF = yield before every node (legacy one-node-per-call).
+    uint32_t                                  _native_daily_slice_yield_bits = 0xFFFFFFFFu;
     int                                       _native_daily_slice_round_id = 0;
     double                                    _native_daily_slice_elapsed_accum_ms = 0.0;
     bool                                      _native_daily_slice_any_pass_ran = false;

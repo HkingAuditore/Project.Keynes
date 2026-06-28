@@ -263,6 +263,24 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(1, 8, 1) var native_daily_sim_stride: int = 1
 @export_range(1, 8, 1) var native_environment_runtime_stride: int = 1
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
+# Native daily round 跨 tick 错峰执行（2026-06）。默认 false：整轮在同一个
+# day_changed tick 内原子跑完（per-tick 峰值 ~8ms，下游永远读到完整数据）。
+# 设 true：让一轮的 slice batch 摊到多个 tick，每 tick 只跑
+# native_daily_max_slices_per_tick 个 batch（默认 1，即"A→B→C→A…"轮转），
+# 把 per-tick 峰值压到 ~2-3ms，给其它系统让出帧预算。代价：一个仿真日要跨
+# 几个 tick 才落地（仿真推进按比例变慢），且渲染/retained 下游在 round 跑一半
+# 时会短暂读到中间态 temp（anomaly 尚未合成回，偏差 ≤±0.16，约 1-2 tick）。
+# 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
+@export var native_daily_spread_across_ticks: bool = false
+@export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
+# 错峰执行的"让预算"门禁（2026-06）。spread 模式下 native_daily_sim 不再 must_run，
+# 而是遵守 frame_budget：当同 tick 更早跑的慢变量重算器（如 season_refresh 的
+# 11-stage round，priority 50 先跑且单 stage ~3ms 就吃满 2ms 预算）已耗尽预算时，
+# native 本 tick 让出（不再无视预算硬叠加 → 消除 season+native 的 ~5.8ms 撞峰）。
+# starve_ticks 是防饿死保险：连续被预算挤掉这么多 tick 后强制跑一个 batch，确保
+# 在极端持续抢占下 native 仍能推进。默认 16（> season round 的 ~11 stage，所以一个
+# season round 期间 native 完整让位、不撞峰；round 结束后立即恢复每 tick 推进）。
+@export_range(0, 64, 1) var native_daily_spread_starve_ticks: int = 16
 @export var native_shadow_diff_enabled: bool = true
 # Controlled handoff gate for the climate round state owner. When false, reports
 # stop at native_ready; when true, the native daily snapshot may report
@@ -676,8 +694,12 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 的 d_frac per-call 没乘 dt，且 melt_rate=0.30 << freeze_rate=1.50 (5:1)，
 # 夏季融化能力比冬季冻结能力慢得多 → 一年净累积，开局后越冻越厚。
 # 2026-05-26：在保持温度驱动的前提下收窄面积；冻结慢于融化，低浓度冰不再快速翻地形。
-@export var sea_ice_freeze_rate: float = 0.40            # k_freeze per "degree" below T_form
-@export var sea_ice_melt_rate: float = 1.45              # k_melt per "degree" above T_melt
+# [海冰冻融重标定 2026-06-28] 实测(CSV)冷水最暗桶 mean_ice 仅 0.49、全盆地在 0↔0.98 双稳跳变：
+# 旧 freeze_rate(0.40) << melt_rate(1.45) 且滞回带太窄(form0.06~melt0.11)→冻结太慢、夏冬不对称致抖动、
+# 极地不饱和。抬高 freeze、降低 melt 不对称，并下方拉宽滞回带(form 0.14 / melt 0.22)，
+# 目标"极地核心常年饱和(>0.9)+海冰边缘季节进退"，而非整盆地全冻全融。起步值，待 dt>1 探针迭代。
+@export var sea_ice_freeze_rate: float = 1.0             # k_freeze per "degree" below T_form（0.40→1.0：堆冰至阈值 ~60d→~10d）
+@export var sea_ice_melt_rate: float = 0.95              # k_melt per "degree" above T_melt（1.45→0.95：削弱融化不对称）
 @export var sea_ice_terrain_threshold: float = 0.72      # frac at which terrain flips to SEA_ICE
 @export var sea_ice_terrain_hysteresis: float = 0.18     # flip back when frac < threshold - hyst
 @export var sea_ice_neighbor_contagion: float = 0.035    # extra k_freeze if any neighbor frac >= 0.6
@@ -685,7 +707,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var sea_ice_freeze_insol_low: float = 0.22       # freeze gate is fully open below this insolation
 @export var sea_ice_freeze_insol_high: float = 0.45      # freeze gate is fully closed above this insolation
 @export var sea_ice_solar_melt_start: float = 0.28       # current insolation above this adds melt pressure
-@export var sea_ice_solar_melt_gain: float = 1.35        # extra melt per insolation unit above start
+@export var sea_ice_solar_melt_gain: float = 0.90        # [2026-06-28] extra melt per insol unit above start（1.35→0.90：极昼太阳融化更温和，保极地核心）
 @export_range(0.0, 0.50, 0.005) var sea_ice_daily_delta_cap: float = 0.070
 @export_range(0.0, 0.20, 0.005) var sea_ice_edge_mix_rate: float = 0.035
 # 2026-06-27 CSV 复核显示厚冰在本半球夏季仍被日照 melt shielding 保护过强。
@@ -695,6 +717,20 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Local-coupling tunables (consumed when enable_local_climate_coupling = true).
 @export_group("局地气候耦合")
 @export var coastal_heat_leak_winter_boost: float = 1.5
+# [climate-zone-fix P2] 沿海海洋性调温（让温带海洋性 Cfb 涌现）。
+# pass_a 对陆地 cell 按"距海指数衰减"的 maritime 因子缩放 season_offset，缩小沿海年较差
+# (冬暖夏凉)：season_offset *= (1 - maritime_season_damp * maritime_factor[i])，其中
+#   maritime_factor[i] = exp(-dist_ocean_cells[i] / maritime_decay_cells) ∈ (0,1]，海岸≈1、内陆→0。
+# maritime_season_damp = 0 → 关闭(退回纯纬度大陆性，与历史逐位一致)。
+# 该机制独立于 legacy 标量 temp_land_continentality（后者仍被 pass_a 忽略，故
+# native_pass_a_legacy_season_offset_test 不变）。同源接线：sync run_climate_pass_a /
+# run_climate_pass_a_thread / async _async_pass_a_kernel_pure 三路共用同一 maritime_factor 数组。
+# [2026-06-28夜] 维持 0.45：headless A/B(tmp_maritime_eval) 证实温度侧已饱和——damp 0.45 已使
+#   ~48 个中纬沿海格达「凉夏(Twarm<0.60)+低年较差(<0.26)」，再加到 0.55 仅 +1 格、沿海年较差
+#   只再降 5.8%。Cfb 计数的真正瓶颈是「降水型」：这 ~48 格里只有 9 格同时是全年均匀降水
+#   (0.40<swet<0.62)，其余为夏旱(地中海)或夏雨(季风)。扩 Cfb 应走 P3 降水均匀化(冬雨)标定，非加大阻尼。
+@export_range(0.0, 0.9, 0.01) var maritime_season_damp: float = 0.45
+@export_range(1.0, 12.0, 0.5) var maritime_decay_cells: float = 4.0
 @export var snow_albedo_cooling: float = 0.04            # extra cooling per unit snow_cover
 @export var vegetation_cooling: float = 0.025            # extra cooling per unit foliage cover
 # climate-loop-closure Phase 4.1：海冰反照率→温度反馈。Pass B 对水域 cell 按
@@ -801,6 +837,19 @@ const NATIVE_MODE_ACTIVE: int = 2
 # frontogenesis_gain 0.42→0.70 (climate-realism Stage 0, 2026-06-23)：增强锋生降水，让中纬斜压带出现
 # 会移动、会消散的温带过境雨团(修"只有单一 ITCZ 雨带摆动")，并把降水送到冷区触发降雪。
 @export_range(0.0, 2.0, 0.01) var weather_frontogenesis_gain: float = 0.70
+# ── [climate-zone-fix P3] 降水季节性多样化旋钮 ──────────────────────────────
+# 导出原 C++-only/constexpr 降水权衡项，让"雨热不同期/全年均匀"气候态可成形(配合 P2 的 Cfb
+# 拿到全年均匀降水)。经 weather_system→knobs 同时喂 C++ 主路径与 field_solver 镜像(SAME_SOURCE)。
+# 这些是首轮保守标定起步值(C++ 缺 key 默认仍为历史值→裸 dict 测试不变)；需用户加速录 CSV 多轮微调。
+# thermal_conv_precip：陆地热力对流(大陆夏季雷暴)成雨权重。历史 0.30；0.24 削弱暖季温度锚定对流主导。
+@export_range(0.0, 1.0, 0.01) var weather_field_thermal_conv_precip: float = 0.24
+# stratiform_gain：层状降水增益(补对流暖门挡死的冷/高/水区降水：地形/锋面/海面层云)。历史 1.0；1.15 抬冷季层状。
+@export_range(0.0, 3.0, 0.01) var weather_field_stratiform_gain: float = 1.15
+# omega_ascent_gain：ITCZ/风暴轴上升带成雨增益(原 C++ constexpr 0.40)。0.34 弱化静止 ITCZ 雨带锚定→冷季锋面相对增强。
+@export_range(0.0, 1.5, 0.01) var weather_field_omega_ascent_gain: float = 0.34
+# cool_season_vapor_floor：冷季蒸发地板 temp_evap=max(floor,smoothstep(0.10,0.78,T))。0=关闭(原行为)。
+#   冷季低温下 temp_evap≈0 致无水汽供给→冷季锋面/层状无雨；给地板让冷季有基础水汽供冷季降水/降雪(补冬雨)。
+@export_range(0.0, 0.6, 0.01) var weather_cool_season_vapor_floor: float = 0.10
 @export_range(0.0, 1.0, 0.01) var weather_rain_shadow_drying: float = 0.35
 # vapor_transport_gain 0.92→0.75(2026-06-20 阶段2打破水汽稳态)：原 0.92 让 vapor 被平流摊平锁成近
 # 稳态(干湿区固定)→永雨永旱。下调让本地蒸发-降水收支更主导，雨区耗水汽后能转干、干区能重新积累。
@@ -1083,8 +1132,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 让结冰带更靠极、整体收窄约 30%，同时维持 0.06 迟滞窗口避免冰缘逐日抖动。
 # ⚠ 2026-06-19(午):form 0.10 仍偏大(SEA_ICE ~15.5% 水域)。再降 form 0.10→0.06、melt 0.16→0.11，
 # 结冰带进一步靠极收窄(temp<0.06 才结冰)，维持 0.05 迟滞窗。若仍偏大可叠加 terrain_threshold 上调。
-@export var sea_ice_form_threshold: float = 0.06
-@export var sea_ice_melt_threshold: float = 0.11
+# ⚠ 2026-06-28(夜)：相位分析发现极地夏季气温天花板仅 0.14(北)/0.17(南)，远低于 t_melt=0.22，
+#   热融化项 k_melt·(temp−t_melt) 全年恒为 0，夏季融化只剩缓慢太阳消融→融化偏晚、不彻底
+#   (南极只融到 0.34，现实近乎融光)。把 melt 0.22→0.13、form 0.14→0.08 下移到极地夏季气温区间，
+#   使热融化在夏季生效(冰更早更多融化)；冬季 temp≈0 仍强结冰(freeze drive 触 0.07/天 cap，核心照常饱和)；
+#   保留 0.05 迟滞窗 [form,melt]=[0.08,0.13] 防双稳抖动。
+@export var sea_ice_form_threshold: float = 0.08         # [2026-06-28夜] 0.14→0.08：结冰带略往极地收，让冰缘夏季可退
+@export var sea_ice_melt_threshold: float = 0.13         # [2026-06-28夜] 0.22→0.13：降到极地夏季气温区间，热融化夏季生效；迟滞窗 0.05
 
 # Volcano placement.
 @export_group("火山")

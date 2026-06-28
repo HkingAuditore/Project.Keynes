@@ -121,6 +121,12 @@ native_daily_sim ran=... progress=0.46
 
 - `total_ms` / `native_ms` 是当前 slice 的墙钟，应接近单个 native node 的耗时；不要把它当整轮耗时。
 - `round_native_ms` 是本轮累计 native 墙钟，用来观察整轮总成本。
+- **⚠ per-group 字段（`climate_ms`/`ocean_ms`/…）≠ slice wall**：这些字段是各 `run_*_pass` **返回值**累加，而有的
+  pass（如 `run_climate_pass_a`）末尾直接 `return 0.0`（无内部计时），其真实成本只体现在该 slice 的 `native_ms`
+  里、却在 `climate_ms` 中显示≈0。**所以"per-node breakdown 某组≈0"不代表该节点便宜**——定位重节点要按 `stage_name`
+  聚合 slice 级 `native_ms`（见 `tmp_native_spread_validate.gd` 的 per-stage 归因），必要时在该 pass 内部加临时
+  in/loop/flush 三段计时。2026-06 的 `climate_pass_a` ~1.7ms 隐藏热点（逐日重算 `dc_insolation_annual_mean`
+  年均日照积分）就是这样被找出来的。
 - `done=false` 表示 C++ continuation 仍在推进，下个 SUS tick 会绕过 stride 继续执行；这不是失败。
 - `stage_name` 应稳定对应 `SCHEDULE_GRAPH` node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。
 - 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。

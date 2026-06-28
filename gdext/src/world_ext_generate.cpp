@@ -2408,8 +2408,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const double lh = land_h(i);
         if (lh > 0.45) continue;
         const double temp = gen_temp(i);
-        if (temp < 0.42) continue;
-        if (M[i] < 0.18f || M[i] > 0.50f) continue;
+        // [climate-zone-fix P1] 限制为真·暖温带地中海生态位：加温度上限(0.58)排除热带/亚热带
+        // 沿海格（原仅 temp>=0.42 无上限→把任意暖区沿海中湿格刷成 MEDIT，占陆地 21%、远超
+        // 真地中海气候 ~6%），并收窄湿度上沿（地中海半干 moist≈0.35）。
+        if (temp < 0.42 || temp > 0.58) continue;
+        if (M[i] < 0.20f || M[i] > 0.44f) continue;
         bool has_sea = false;
         const int dd = dist_ocean[size_t(i)];
         if (dd >= 0 && dd <= 4) has_sea = true;
@@ -2705,8 +2708,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const int dd = dist_ocean[size_t(i)];
         if (dd < 0 || dd > chaparral_max_dist) continue; // 仅近海
         const double gt = gen_temp(i);
-        if (gt < 0.42 || gt > 0.62) continue;  // 暖温带
-        if (M[i] < 0.20f || M[i] > 0.50f) continue; // 中等偏旱
+        // [climate-zone-fix P1] 温度上限 0.62→0.58 排除亚热带，与 shrubland 对齐地中海生态位；
+        // 湿度上沿 0.50→0.46 收窄到地中海半干区间。
+        if (gt < 0.42 || gt > 0.58) continue;  // 暖温带
+        if (M[i] < 0.20f || M[i] > 0.46f) continue; // 中等偏旱
         if (land_h(i) > 0.55) continue;
         TERR[i] = 27; // CHAPARRAL
         ++chaparral_touched;
@@ -4329,9 +4334,11 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             else if (row > max_row) row = max_row;
             const double ny = double(row) * inv_max_row;
             const double temp = double(pk_compute_temperature(ny, e));
-            if (temp < 0.42) continue;
+            // [climate-zone-fix P1] 与生成期 shrubland pass 同步：限真·暖温带地中海生态位
+            // （temp 上限 0.58 排除热带/亚热带；湿度上沿收窄至 0.44）。
+            if (temp < 0.42 || temp > 0.58) continue;
             const float mv = M[i];
-            if (mv < 0.18f || mv > 0.50f) continue;
+            if (mv < 0.20f || mv > 0.44f) continue;
             bool has_sea = false;
             for (int d = 0; d < 6; ++d) {
                 const int ni = NB[i * 6 + d];

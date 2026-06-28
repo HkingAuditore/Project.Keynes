@@ -1,0 +1,50 @@
+LAND cells=1517
+Tmean   p10=0.059 p50=0.442 p90=0.707
+Ptot    p10=0.0000 p50=0.0541 p90=0.3228
+moist   p10=0.179 p50=0.377 p90=0.512
+swing   p10=0.096 p50=0.240 p90=0.398
+
+=== KÖPPEN-LITE CLIMATE DISTRIBUTION (land cells) ===
+ type                          cells   %%land  Tmean swing Ptot   sum_wet moist  lat_range   topbiome
+  热带雨林(Af)                     319   21.0%  0.690 0.136 0.2952 0.45   0.396  0.36-0.67  MONSOON_FOREST(109),TROP_RAINFOREST(103)
+  高地/高山气候(H)                   273   18.0%  0.267 0.259 0.0591 0.54   0.249  0.13-0.95  TEMP_STEPPE(73),TUNDRA(53)
+  苔原气候(ET)                     179   11.8%  0.073 0.212 0.0098 0.51   0.466  0.05-0.97  TUNDRA(133),TAIGA(32)
+  亚热带季风/湿润(Cwa/Cfa)            124    8.2%  0.540 0.261 0.0948 0.89   0.323  0.26-0.74  SUBTROP_FOREST(34),TEMP_GRASSLAND(25)
+  热带季风/草原(Aw/Am)               112    7.4%  0.666 0.158 0.2059 0.75   0.328  0.33-0.67  MONSOON_FOREST(33),TEMP_STEPPE(20)
+  亚寒带大陆性/泰加(Dfc)               104    6.9%  0.240 0.405 0.0281 0.41   0.439  0.15-0.85  TAIGA(99),TEMP_STEPPE(4)
+  亚热带湿润(Cfa)                    65    4.3%  0.541 0.292 0.1018 0.52   0.377  0.26-0.72  TEMP_GRASSLAND(18),SUBTROP_FOREST(17)
+  地中海气候(Csa)                    61    4.0%  0.497 0.232 0.0787 0.14   0.269  0.28-0.74  TEMP_STEPPE(16),TEMP_GRASSLAND(15)
+  温带季风(Dwa/Cwa)                 52    3.4%  0.407 0.371 0.0680 0.88   0.414  0.23-0.79  TEMP_DECIDUOUS(17),TEMP_GRASSLAND(17)
+  温带大陆性湿润(Dfb)                  45    3.0%  0.398 0.367 0.0271 0.50   0.447  0.21-0.77  TEMP_DECIDUOUS(29),TEMP_GRASSLAND(9)
+  温带草原性半干旱(BSk)                 42    2.8%  0.285 0.379 0.0000 0.50   0.272  0.13-0.85  TAIGA(13),TEMP_STEPPE(11)
+  亚寒带季风(Dwc/Dwb)                39    2.6%  0.258 0.420 0.0785 0.92   0.422  0.13-0.85  TAIGA(29),TEMP_STEPPE(5)
+  冰原气候(EF)                      33    2.2%  0.022 0.097 0.0000 0.50   0.536  0.05-1.00  TUNDRA(20),NONE(13)
+  地中海气候(Csb)                    30    2.0%  0.403 0.370 0.1027 0.13   0.407  0.23-0.79  TEMP_GRASSLAND(10),TEMP_DECIDUOUS(10)
+  热带草原性半干旱(BSh)                 30    2.0%  0.511 0.296 0.0000 0.50   0.226  0.26-0.72  MEDIT_SHRUB(14),TEMP_STEPPE(6)
+  温带海洋性(Cfb)                     9    0.6%  0.490 0.126 0.0718 0.51   0.292  0.38-0.59  TEMP_GRASSLAND(6),DESERT_SCRUB(2)
+
+=== GLOBAL LAND BIOME HISTOGRAM (game vegetation_arr) ===
+  TUNDRA               211   13.9%
+  TAIGA                201   13.2%
+  TEMP_STEPPE          188   12.4%
+  MONSOON_FOREST       157   10.3%
+  TEMP_GRASSLAND       142    9.4%
+  TROP_RAINFOREST      123    8.1%
+  SUBTROP_FOREST        99    6.5%
+  MEDIT_SHRUB           85    5.6%
+  TEMP_DECIDUOUS        78    5.1%
+  DESERT_SCRUB          55    3.6%
+  NONE                  45    3.0%
+  SWAMP                 31    2.0%
+  BOREAL_SHRUB          27    1.8%
+  SAVANNA               26    1.7%
+  ALPINE_TUNDRA         11    0.7%
+  CLOUD_FOREST          10    0.7%
+  MARSH                  9    0.6%
+  MANGROVE               8    0.5%
+  ALPINE_MEADOW          5    0.3%
+  PEAT_BOG               2    0.1%
+  POLAR_DESERT           2    0.1%
+  OASIS                  2    0.1%
+
+exported summary -> tmp/wx_koppen_summary.json (types=16 biomes=12 latbands=10)

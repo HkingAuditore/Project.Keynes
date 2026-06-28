@@ -2012,6 +2012,10 @@ func _build_async_kick_input(season_phase: float) -> Dictionary:
 		"snowpack_cover_full": float(cp.snowpack_cover_full) if "snowpack_cover_full" in cp else 0.32,
 		"insol_dev_min": float(cp.insolation_dev_clamp_min) if "insolation_dev_clamp_min" in cp else -1.0,
 		"insol_dev_max": float(cp.insolation_dev_clamp_max) if "insolation_dev_clamp_max" in cp else 1.0,
+		# [climate-zone-fix P2] 沿海海洋性调温（与 sync _build_native_daily_climate_pass_a_struct mirror，
+		# 同一 _ensure_maritime_factor 缓存→async/sync 逐位一致）
+		"maritime_season_damp": float(cp.maritime_season_damp) if "maritime_season_damp" in cp else 0.0,
+		"maritime_factor": generator._ensure_maritime_factor(map, float(cp.maritime_decay_cells) if "maritime_decay_cells" in cp else 4.0),
 		# transp scalars
 		"transp_outflow_rate": float(cp.transpiration_outflow_rate) if "transpiration_outflow_rate" in cp else 0.025,
 		"transp_self_rate":    float(cp.transpiration_self_rate)    if "transpiration_self_rate"    in cp else 0.015,

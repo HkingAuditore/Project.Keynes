@@ -97,6 +97,46 @@ static const NativeDailySliceNode NATIVE_DAILY_SLICE_GRAPH[] = {
 static const int NATIVE_DAILY_SLICE_GRAPH_SIZE =
     sizeof(NATIVE_DAILY_SLICE_GRAPH) / sizeof(NativeDailySliceNode);
 
+// Perf (2026-06): the spread round-start slice (climate_pass_a) was dominated by a
+// full `bundle.duplicate(true)` deep copy (~1.5ms): ~10 knob dicts each holding several
+// 2464-cell PackedFloat32Arrays, copied byte-for-byte every round. The deep copy exists
+// only so C++ can own a stable bundle across ticks and mutate it (JIT patch key
+// replacement + ocean anomaly hand-off) without disturbing the GDScript-passed dict.
+// But C++ never writes the per-cell array *buffers* in place (passes read knobs → write
+// SoA slots); the only mutations are dict-level (add/replace keys). So we duplicate the
+// Dictionary/Array *structure* (cheap — small node maps) while SHARING the Packed* leaf
+// buffers via copy-on-write. Because C++ never forks those buffers, this is bit-equal to
+// duplicate(true) but skips the per-round array byte-copy. (CoW also makes it safe if
+// GDScript later mutates its bundle: the write forks on its side, leaving C++'s snapshot
+// intact — identical to the deep-copy semantics.)
+static Variant native_daily_cow_structural_copy(const Variant &v) {
+    switch (v.get_type()) {
+        case Variant::DICTIONARY: {
+            Dictionary src = v;
+            Dictionary out;
+            Array keys = src.keys();
+            for (int i = 0; i < keys.size(); ++i) {
+                const Variant &k = keys[i];
+                out[k] = native_daily_cow_structural_copy(src[k]);
+            }
+            return out;
+        }
+        case Variant::ARRAY: {
+            Array src = v;
+            Array out;
+            out.resize(src.size());
+            for (int i = 0; i < src.size(); ++i) {
+                out[i] = native_daily_cow_structural_copy(src[i]);
+            }
+            return out;
+        }
+        default:
+            // Scalars + Packed*Array leaves: share (PackedArray is CoW; C++ never writes
+            // these buffers in place, so no fork happens on the hot path).
+            return v;
+    }
+}
+
 static void native_daily_append_unique(Array &arr, const String &value) {
     for (int i = 0; i < arr.size(); ++i) {
         if (String(arr[i]) == value) {
@@ -611,10 +651,33 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         ++_native_daily_slice_round_id;
         _native_daily_slice_active = true;
         _native_daily_slice_node_index = 0;
+        // Node batching (bit-equal perf): GDScript injects a fresh JIT knob patch only
+        // before the nodes listed in `native_daily_slice_yield_nodes` (the temp-dependent
+        // passes). C++ may therefore run consecutive non-yield nodes within a single call,
+        // cutting GDScript<->C++ round-trips. Absent the key, fall back to yielding before
+        // every node (legacy one-node-per-call behavior).
+        _native_daily_slice_yield_bits = 0xFFFFFFFFu;
+        if (tick_knobs.has("native_daily_slice_yield_nodes")) {
+            PackedInt32Array yield_nodes = tick_knobs["native_daily_slice_yield_nodes"];
+            _native_daily_slice_yield_bits = 0u;
+            for (int i = 0; i < yield_nodes.size(); ++i) {
+                const int idx = yield_nodes[i];
+                if (idx >= 0 && idx < 32) {
+                    _native_daily_slice_yield_bits |= (1u << idx);
+                }
+            }
+        }
         _native_daily_slice_elapsed_accum_ms = 0.0;
         _native_daily_slice_any_pass_ran = false;
-        _native_daily_slice_tick_knobs = tick_knobs.duplicate(true);
-        _native_daily_slice_bundle = bundle.duplicate(true);
+        // Shallow-copy tick_knobs (we only read scalars: day_index / season_phase) and
+        // drop the embedded bundle ref — the bundle is owned separately below. This avoids
+        // tick_knobs.duplicate(true) deep-copying the bundle a SECOND time (it is also
+        // reachable as tick_knobs["native_daily_bundle"]).
+        _native_daily_slice_tick_knobs = tick_knobs.duplicate(false);
+        _native_daily_slice_tick_knobs.erase("native_daily_bundle");
+        // Structure-deep, leaf-shared copy (see native_daily_cow_structural_copy): owns the
+        // dict tree for safe key mutation, shares the per-cell Packed arrays via CoW.
+        _native_daily_slice_bundle = native_daily_cow_structural_copy(bundle);
         _native_daily_slice_bundle_pass_keys = native_daily_collect_bundle_pass_keys(_native_daily_slice_bundle);
         _native_daily_slice_retained_authority =
             native_daily_collect_retained_gdscript_authority(_native_daily_slice_bundle);
@@ -862,48 +925,65 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         }
         return false;
     };
-    const int node_index = native_daily_next_present_node(_native_daily_slice_bundle,
-                                                          _native_daily_slice_node_index);
+    int node_index = native_daily_next_present_node(_native_daily_slice_bundle,
+                                                    _native_daily_slice_node_index);
     if (node_index < 0) {
         if (!_native_daily_slice_any_pass_ran) {
             return finish_with_failure(String("native_daily_bundle"), String("no pass knobs in native_daily_bundle"));
         }
     } else {
-        const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[node_index];
-        const bool ok = exec_slice_node(node);
-        if (!ok) {
-            _native_daily_slice_breakdown = breakdown;
-            String reason;
-            const String fail_stage = node_name_string(node.fail_stage);
-            if (fail_stage == String("weather")) {
-                reason = String(breakdown.get("__weather_fail_stage_dyn", "unknown"));
-                breakdown.erase("__weather_fail_stage_dyn");
-            } else if (fail_stage == String("runtime_hydrology")) {
-                reason = String(breakdown.get("__hydrology_fail_reason", "pass returned fallback"));
-                breakdown.erase("__hydrology_fail_reason");
-            } else {
-                reason = String("pass returned fallback");
+        // Batch consecutive present nodes in this single call, stopping right before any
+        // node GDScript must JIT-patch (a yield node) or when the round is complete.
+        // Bit-equal with one-node-per-call: non-yield nodes receive an empty patch in
+        // either scheme, so the bundle state they read is identical.
+        const int batch_start_index = node_index;
+        while (node_index >= 0) {
+            const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[node_index];
+            const bool ok = exec_slice_node(node);
+            if (!ok) {
+                _native_daily_slice_breakdown = breakdown;
+                String reason;
+                const String fail_stage = node_name_string(node.fail_stage);
+                if (fail_stage == String("weather")) {
+                    reason = String(breakdown.get("__weather_fail_stage_dyn", "unknown"));
+                    breakdown.erase("__weather_fail_stage_dyn");
+                } else if (fail_stage == String("runtime_hydrology")) {
+                    reason = String(breakdown.get("__hydrology_fail_reason", "pass returned fallback"));
+                    breakdown.erase("__hydrology_fail_reason");
+                } else {
+                    reason = String("pass returned fallback");
+                }
+                _native_daily_slice_node_index = node_index;
+                return finish_with_failure(fail_stage, reason);
             }
-            _native_daily_slice_node_index = node_index;
-            return finish_with_failure(fail_stage, reason);
+            _native_daily_slice_any_pass_ran = true;
+            _native_daily_slice_node_index = node_index + 1;
+            const String node_name = node_name_string(node.name);
+            const String node_key = node_key_string(node.bundle_key);
+            breakdown["last_completed_node"] = node_name;
+            breakdown["stage_name"] = node_name;
+            breakdown["substage"] = node_key;
+            breakdown["cursor_start"] = batch_start_index;
+            breakdown["cursor_end"] = node_index + 1;
+            breakdown["processed_nodes"] = int(breakdown.get("processed_nodes", 0)) + 1;
+            Dictionary node_report;
+            node_report["name"] = node_name;
+            node_report["bundle_key"] = node_key;
+            node_report["read_mask"] = int64_t(node.read_mask);
+            node_report["write_mask"] = int64_t(node.write_mask);
+            breakdown["node_report"] = node_report;
+            _native_daily_slice_breakdown = breakdown;
+
+            const int next = native_daily_next_present_node(_native_daily_slice_bundle,
+                                                            _native_daily_slice_node_index);
+            if (next < 0) {
+                break;  // round complete
+            }
+            if (next < 32 && ((_native_daily_slice_yield_bits >> next) & 1u)) {
+                break;  // GDScript must inject a JIT patch before this node
+            }
+            node_index = next;  // safe to keep running within this call
         }
-        _native_daily_slice_any_pass_ran = true;
-        _native_daily_slice_node_index = node_index + 1;
-        const String node_name = node_name_string(node.name);
-        const String node_key = node_key_string(node.bundle_key);
-        breakdown["last_completed_node"] = node_name;
-        breakdown["stage_name"] = node_name;
-        breakdown["substage"] = node_key;
-        breakdown["cursor_start"] = node_index;
-        breakdown["cursor_end"] = node_index + 1;
-        breakdown["processed_nodes"] = int(breakdown.get("processed_nodes", 0)) + 1;
-        Dictionary node_report;
-        node_report["name"] = node_name;
-        node_report["bundle_key"] = node_key;
-        node_report["read_mask"] = int64_t(node.read_mask);
-        node_report["write_mask"] = int64_t(node.write_mask);
-        breakdown["node_report"] = node_report;
-        _native_daily_slice_breakdown = breakdown;
     }
 
     const int next_index = native_daily_next_present_node(_native_daily_slice_bundle,
@@ -2376,6 +2456,122 @@ Dictionary DCWorldExt::get_native_ocean_physical_state_report() const {
 
 Dictionary DCWorldExt::get_native_dirty_report() const {
     return _native_dirty_report.duplicate();
+}
+
+// ② finalizer kernel — replicates the per-cell delta-cap + thermal-init loops of
+// MapGenerator._native_daily_apply_finalizer in C++ for the production hot path
+// (facade ON → no HexCell mirror, heavy_diag OFF → no percentile arrays). It operates
+// ONLY on the buffers passed in (the same map.temp_arr / tta / thermal / ema / round-start
+// snapshots the GDScript loops read) and returns fresh clamped arrays + the diag scalars.
+// No C++ slot reads → bit-equal by construction and immune to the mid-round slot/map
+// divergence that reverted the earlier slot-read optimization. GDScript keeps ownership of
+// write_dense / buffer cache / map handling and falls back to its own loops on rc!=0 or for
+// the heavy_diag / cell-mirror edge cases.
+Dictionary DCWorldExt::run_native_daily_finalizer(Dictionary knobs) {
+    Dictionary out;
+    const int n = (int)(int64_t)knobs.get("cell_count", 0);
+    if (n <= 0) { out["rc"] = -1; return out; }
+    PackedFloat32Array temp_in = knobs.get("temp", PackedFloat32Array());
+    PackedFloat32Array tta_in  = knobs.get("tta", PackedFloat32Array());
+    if (temp_in.size() != n || tta_in.size() != n) { out["rc"] = -1; return out; }
+    PackedFloat32Array thermal_in = knobs.get("thermal", PackedFloat32Array());
+    PackedByteArray    ema_in     = knobs.get("ema", PackedByteArray());
+    PackedFloat32Array temp_start = knobs.get("temp_start", PackedFloat32Array());
+    PackedFloat32Array tta_start  = knobs.get("tta_start", PackedFloat32Array());
+    const bool   temp_cap_enabled = (bool)knobs.get("temp_cap_enabled", true);
+    const double temp_cap = (double)knobs.get("temp_cap", 0.15);
+    const double tta_cap  = (double)knobs.get("tta_cap", 0.12);
+    const bool has_temp_start = temp_start.size() == n;
+    const bool has_tta_start  = tta_start.size() == n;
+
+    // NOTE: GDScript floats are 64-bit and clampf()/absf() operate in double; PackedFloat32
+    // reads promote to double and only the store narrows back to float32. To stay bit-equal
+    // with MapGenerator._native_daily_apply_finalizer we MUST do every intermediate in double
+    // and narrow to float ONLY on write-back (a float32 kernel diverges by ~1e-5 on the TTA
+    // clamp, which then propagates into ocean/weather/hydrology the next round).
+
+    // --- temp delta-cap (mirrors GDScript temp loop) ---
+    PackedFloat32Array temp_out = temp_in;       // CoW: ptrw() below forks a private buffer
+    float *tp = temp_out.ptrw();
+    const float *ts = has_temp_start ? temp_start.ptr() : nullptr;
+    double max_temp_delta = 0.0, preclamp_max = 0.0;
+    int gt005 = 0, gt010 = 0, gt020 = 0, clamped = 0;
+    for (int i = 0; i < n; ++i) {
+        const double start_t = has_temp_start ? (double)ts[i] : (double)tp[i];
+        const double raw = (double)tp[i];
+        double final_t = raw;
+        const double pre = std::fabs(raw - start_t);
+        if (pre > preclamp_max) preclamp_max = pre;
+        if (temp_cap_enabled && has_temp_start) {
+            const double lo = start_t - temp_cap, hi = start_t + temp_cap;
+            final_t = final_t < lo ? lo : (final_t > hi ? hi : final_t);
+            final_t = final_t < 0.0 ? 0.0 : (final_t > 1.0 ? 1.0 : final_t);
+            if (std::fabs(final_t - raw) > 0.000001) ++clamped;
+            tp[i] = (float)final_t;
+        }
+        const double dt = std::fabs(final_t - start_t);
+        if (dt > 0.005) ++gt005;
+        if (dt > 0.010) ++gt010;
+        if (dt > 0.020) ++gt020;
+        if (dt > max_temp_delta) max_temp_delta = dt;
+    }
+
+    // --- tta delta-cap (mirrors GDScript tta loop) ---
+    PackedFloat32Array tta_out = tta_in;
+    float *qp = tta_out.ptrw();
+    const float *qs = has_tta_start ? tta_start.ptr() : nullptr;
+    double max_transport = 0.0;
+    int tta_clamped = 0;
+    for (int i = 0; i < n; ++i) {
+        const double start_q = has_tta_start ? (double)qs[i] : 0.0;
+        const double raw = (double)qp[i];
+        double final_q = raw;
+        if (tta_cap > 0.0 && has_tta_start) {
+            const double lo = start_q - tta_cap, hi = start_q + tta_cap;
+            final_q = final_q < lo ? lo : (final_q > hi ? hi : final_q);
+            if (std::fabs(final_q - raw) > 0.000001) { qp[i] = (float)final_q; ++tta_clamped; }
+        }
+        const double aq = std::fabs(final_q);
+        if (aq > max_transport) max_transport = aq;
+    }
+
+    // --- thermal init (mirrors GDScript thermal loop; uses the CLAMPED temp) ---
+    const bool has_thermal = thermal_in.size() == n;
+    PackedFloat32Array thermal_out = thermal_in;
+    int thermal_init = 0;
+    if (has_thermal) {
+        float *hp = thermal_out.ptrw();
+        const uint8_t *ep = ema_in.ptr();
+        const int ema_n = ema_in.size();
+        for (int i = 0; i < n; ++i) {
+            bool needs = std::isnan(hp[i]) || std::isinf(hp[i]);
+            if (i < ema_n && ep[i] == 0) needs = true;
+            if (needs) { hp[i] = tp[i]; ++thermal_init; }
+        }
+    }
+
+    out["rc"] = 0;
+    out["temp_out"] = temp_out;
+    out["tta_out"] = tta_out;
+    if (has_thermal) out["thermal_out"] = thermal_out;
+    // *_written mirror GDScript's CoW fork-on-write: temp_a is forked whenever the cap loop
+    // runs (writes every cell), but tta_a / thermal_a fork ONLY when a cell is actually
+    // written (clamped / re-inited). GDScript must adopt the C++ buffer ONLY when its flag is
+    // set, otherwise keep the array aliased to map.* — the alias feeds the next round through
+    // _gdext_ocean_anomaly_buf_cached, so forking it unconditionally diverges by ~1e-5.
+    out["temp_written"] = (temp_cap_enabled && has_temp_start && n > 0);
+    out["tta_written"] = (tta_clamped > 0);
+    out["thermal_written"] = (thermal_init > 0);
+    out["max_temp_delta"] = (double)max_temp_delta;
+    out["preclamp_max_temp_delta"] = (double)preclamp_max;
+    out["temp_delta_gt_005_count"] = gt005;
+    out["temp_delta_gt_010_count"] = gt010;
+    out["temp_delta_gt_020_count"] = gt020;
+    out["temp_delta_clamped_count"] = clamped;
+    out["max_transport_anomaly"] = (double)max_transport;
+    out["finalizer_tta_clamped_count"] = tta_clamped;
+    out["finalizer_thermal_init_count"] = thermal_init;
+    return out;
 }
 
 } // namespace pk

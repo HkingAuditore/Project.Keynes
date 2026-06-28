@@ -723,8 +723,11 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     const float monsoon_vapor  = is_water ? 0.40f  : 0.14f;
     const float monsoon_precip = is_water ? 0.055f : 0.065f;
     const float monsoon_cloud  = is_water ? 0.45f  : 0.24f;
-    const float fog_vapor      = is_water ? 0.34f  : 0.16f;
-    const float fog_cloud      = is_water ? 0.14f  : 0.18f;
+    // B4(2026-06-28) FOG 门重标到实测云分位：原 cloud 门(陆 0.18≈p86 / 海 0.14≈p96)高于云场常态→冷湿
+    // 阴天恒落 CLEAR(实测 FOG≈0%，68.5% 格全程不换类型)。改 cloud 门到 陆 0.10(≈p77)/海 0.085(≈p83)+
+    // 海 vapor 门 0.34→0.22，让海洋性/温带阴雾天按地理涌现。镜像 weather_system.gd::_classify_field_weather_core。
+    const float fog_vapor      = is_water ? 0.22f  : 0.16f;
+    const float fog_cloud      = is_water ? 0.085f : 0.10f;
     const bool humid = vapor > humid_gate;
     const float effective_cloud = (cloud > cloud_water * 1.25f) ? cloud : (cloud_water * 1.25f);
     const float precip_cloud_mass = (cloud_water > precip * 0.70f) ? cloud_water : (precip * 0.70f);
@@ -774,14 +777,16 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     // 5) 雾：高湿低降水、偏凉。单阈 cloud>0.14（FOG 闪烁由 EMA 平滑后的 cloud/precip 场自然消除）。
     if (vapor > fog_vapor && effective_cloud > fog_cloud && precip < 0.030f && temp < 0.55f)
         return 5; // FOG
-    // 6) 旱灾(2026-06-22 定义，Stage3 提到热浪之前)：暖 + 异常偏暖(temp_anom>0.10) + 几乎无降水 + 少云。
+    // 6) 旱灾(2026-06-28 重标定)：暖 + 显著正温度距平 + 几乎无降水 + 少云。原门 temp_anom>0.10 高于陆地
+    //    距平【最大值】(实测 tile_data_record_20260628 陆地 temp_anomaly max=0.0998 / p90=0.050 / p95=0.065)
+    //    →旱灾恒不可达(实测占比 0%)。改用 0.05(≈陆地 p90)：bone-dry 候选中约 22% 达标→旱灾恢复存在(~2.3%)。
     //    bone-dry 强暖距平先归旱灾；剩余暖距平少雨格落到下面的热浪。镜像 weather_system.gd。
-    if (!is_water && temp > 0.55f && temp_anom > 0.10f && precip < 0.006f && effective_cloud < 0.18f)
+    if (!is_water && temp > 0.55f && temp_anom > 0.05f && precip < 0.006f && effective_cloud < 0.18f)
         return 4; // DROUGHT
-    // 7) 热浪(Stage3→Stage5 重定义 2026-06-23)：实测 target_type=6 运行期恒为 0(分类器收到的 temp_anom
-    //    与录制不一致)。改用 STORM/MONSOON 同款已验证可达的 warm(temp>0.55)+晴(effective_cloud<0.24)
-    //    +干(vapor<0.12)+少雨。语义=暖季晴干热天。可达但速率需用新录制标定。镜像 weather_system.gd。
-    if (!is_water && warm && precip < 0.012f && effective_cloud < 0.24f && vapor < 0.12f)
+    // 7) 热浪(2026-06-28 重标定)：恢复气象学定义=显著正温度距平的暖事件。原"暖+干"无距平门 → 在普通暖干
+    //    陆地恒成立(实测当前热浪格 temp_anomaly 均值仅 0.0045≈0,即把常态暖干地误判热浪→实测热浪 6.7%过多)。
+    //    加 temp_anom>0.04 门(≈陆地 p87)：仅保留约 6% 真·暖距平干热格(热浪 6.7%→~0.4%)。镜像 weather_system.gd。
+    if (!is_water && warm && temp_anom > 0.04f && precip < 0.012f && effective_cloud < 0.24f && vapor < 0.12f)
         return 6; // HEATWAVE
     return 0; // CLEAR
 }
@@ -1062,9 +1067,15 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
         if (moisture > 0.30f) return is_alpine ? 4 : 9; // ALPINE_MEADOW / TEMPERATE_GRASSLAND
         return is_alpine ? 6 : 10; // BOREAL_SHRUB / TEMPERATE_STEPPE
     }
-    if (moisture > 0.65f) return 14; // TROPICAL_RAINFOREST
-    if (moisture > 0.40f) return 15; // TROPICAL_DRY_FOREST
-    if (moisture > 0.20f) return 13; // SAVANNA
+    // [climate-zone-fix P1] 亚热带(0.55–0.66)拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
+    if (temperature < 0.66f) {       // 亚热带
+        if (moisture > 0.36f) return 12; // SUBTROPICAL_FOREST
+        if (moisture > 0.22f) return 9;  // TEMPERATE_GRASSLAND
+        return 10;                       // TEMPERATE_STEPPE
+    }
+    if (moisture > 0.50f) return 14; // TROPICAL_RAINFOREST
+    if (moisture > 0.34f) return 15; // TROPICAL_DRY_FOREST
+    if (moisture > 0.18f) return 13; // SAVANNA
     if (moisture < 0.10f) return 17; // XERIC_DESERT
     return 16; // DESERT_SCRUB
 }
@@ -1108,17 +1119,19 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
     switch (terrain) {
         case 4: // FOREST
             if (is_alpine) return 8;
-            // 暖湿丘陵迎风坡 → 云雾林
-            if (is_hilly && temperature > 0.50f && moisture > 0.70f) return 24; // CLOUD_FOREST
-            return temperature > 0.55f ? 12 : 7;
+            // 暖湿丘陵迎风坡 → 云雾林（[climate-zone-fix P1] 湿门 0.70→0.52 适配湿度天花板）
+            if (is_hilly && temperature > 0.50f && moisture > 0.52f) return 24; // CLOUD_FOREST
+            return temperature > 0.55f ? 12 : 7; // SUBTROPICAL_FOREST / TEMPERATE_DECIDUOUS
         case 11: // JUNGLE
-            if ((is_alpine || is_hilly) && moisture > 0.62f) return 24; // CLOUD_FOREST（热带高地云雾林）
-            if (moisture > 0.72f) return 14; // TROPICAL_RAINFOREST
-            if (moisture > 0.55f) return 25; // MONSOON_FOREST（季风半落叶）
+            // [climate-zone-fix P1] 阈值随湿度天花板(p90≈0.56)下移，雨林/季风林重新可达。
+            if ((is_alpine || is_hilly) && moisture > 0.52f) return 24; // CLOUD_FOREST（热带高地云雾林）
+            if (moisture > 0.50f) return 14; // TROPICAL_RAINFOREST
+            if (moisture > 0.42f) return 25; // MONSOON_FOREST（季风半落叶）
             return 15; // TROPICAL_DRY_FOREST
         case 12: // SAVANNA
             if (is_alpine) return moisture > 0.45f ? 4 : 6; // 高地稀树草原 → 高山草甸/山地灌丛
-            return moisture > 0.45f ? 25 : 13; // 湿端季风林 / 否则稀树草原
+            // [climate-zone-fix P1] MONSOON 门 0.45→0.42 与 JUNGLE case 对齐
+            return moisture > 0.42f ? 25 : 13; // 湿端季风林 / 否则稀树草原
         case 3:  return is_alpine ? 4 : 9; // GRASSLAND
         case 14: // STEPPE
             if (is_alpine) return temperature < 0.28f ? 3 : (moisture > 0.32f ? 4 : 6);
@@ -1321,11 +1334,22 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     if (temperature < 0.20) return 8;      // TUNDRA（寒冷无林）
 
     // Whittaker：温度×湿度联立气候 biome，覆盖全部中/低海拔（起伏交给 landform）。
-    if (temperature > 0.55) {              // 热带
-        if (moisture > 0.65) return 11;    // JUNGLE
-        if (moisture > 0.36) return 12;    // SAVANNA
-        if (moisture > 0.20) return 14;    // STEPPE（干热草）
+    // [climate-zone-fix P1] 旧热带门 JUNGLE>0.65 高于世界湿度天花板(land moist p90≈0.56)，
+    // 赤道带几乎拿不到 JUNGLE→雨林，被压成 SAVANNA→MONSOON。湿端阈值整体下移贴合实际分布；
+    // 并把旧单一"热带(>0.55)"拆成真热带(>0.66 赤道暖湿)与亚热带/暖温带(0.55–0.66)，
+    // 让 FOREST 地形在亚热带可达，修复 pk_derive_vegetation case FOREST 的 temp>0.55
+    // 亚热带林死分支(原 FOREST 仅 0.38–0.55 存在→SUBTROPICAL_FOREST 永不可达)。
+    if (temperature > 0.66) {              // 真热带（赤道暖湿）
+        if (moisture > 0.45) return 11;    // JUNGLE → 雨林/季风林
+        if (moisture > 0.30) return 12;    // SAVANNA
+        if (moisture > 0.18) return 14;    // STEPPE（干热草）
         return 7;                          // DESERT
+    }
+    if (temperature > 0.55) {              // 亚热带 / 暖温带（湿端→亚热带常绿林）
+        if (moisture > 0.36) return 4;     // FOREST → pk_derive_vegetation 派生 SUBTROPICAL_FOREST
+        if (moisture > 0.24) return 3;     // GRASSLAND
+        if (moisture > 0.16) return 14;    // STEPPE
+        return 7;                          // DESERT（副热带荒漠）
     }
     if (temperature > 0.38) {              // 暖温带
         if (moisture > 0.55) return 4;     // FOREST

@@ -1,0 +1,411 @@
+{
+ "types": [
+  {
+   "name": "热带雨林(Af)",
+   "fam": "tropical",
+   "earth": "亚马逊/刚果/东南亚",
+   "count": 319,
+   "pct": 21.0,
+   "tmean": 0.69,
+   "swing": 0.136,
+   "ptot": 0.2952,
+   "swet": 0.45,
+   "moist": 0.396,
+   "latlo": 0.36,
+   "lathi": 0.67
+  },
+  {
+   "name": "高地/高山气候(H)",
+   "fam": "highland",
+   "earth": "青藏高原/安第斯",
+   "count": 273,
+   "pct": 18.0,
+   "tmean": 0.267,
+   "swing": 0.259,
+   "ptot": 0.0591,
+   "swet": 0.54,
+   "moist": 0.249,
+   "latlo": 0.13,
+   "lathi": 0.95
+  },
+  {
+   "name": "苔原气候(ET)",
+   "fam": "polar",
+   "earth": "北极沿岸/冰岛",
+   "count": 179,
+   "pct": 11.8,
+   "tmean": 0.073,
+   "swing": 0.212,
+   "ptot": 0.0098,
+   "swet": 0.51,
+   "moist": 0.466,
+   "latlo": 0.05,
+   "lathi": 0.97
+  },
+  {
+   "name": "亚热带季风/湿润(Cwa/Cfa)",
+   "fam": "subtropical",
+   "earth": "华南/美国东南/巴西南",
+   "count": 124,
+   "pct": 8.2,
+   "tmean": 0.54,
+   "swing": 0.261,
+   "ptot": 0.0948,
+   "swet": 0.89,
+   "moist": 0.323,
+   "latlo": 0.26,
+   "lathi": 0.74
+  },
+  {
+   "name": "热带季风/草原(Aw/Am)",
+   "fam": "tropical",
+   "earth": "印度/非洲萨王纳/巴西高原",
+   "count": 112,
+   "pct": 7.4,
+   "tmean": 0.666,
+   "swing": 0.158,
+   "ptot": 0.2059,
+   "swet": 0.75,
+   "moist": 0.328,
+   "latlo": 0.33,
+   "lathi": 0.67
+  },
+  {
+   "name": "亚寒带大陆性/泰加(Dfc)",
+   "fam": "boreal",
+   "earth": "西伯利亚/加拿大",
+   "count": 104,
+   "pct": 6.9,
+   "tmean": 0.24,
+   "swing": 0.405,
+   "ptot": 0.0281,
+   "swet": 0.41,
+   "moist": 0.439,
+   "latlo": 0.15,
+   "lathi": 0.85
+  },
+  {
+   "name": "亚热带湿润(Cfa)",
+   "fam": "subtropical",
+   "earth": "长江流域/美东南",
+   "count": 65,
+   "pct": 4.3,
+   "tmean": 0.541,
+   "swing": 0.292,
+   "ptot": 0.1018,
+   "swet": 0.52,
+   "moist": 0.377,
+   "latlo": 0.26,
+   "lathi": 0.72
+  },
+  {
+   "name": "地中海气候(Csa)",
+   "fam": "subtropical",
+   "earth": "地中海沿岸/加州",
+   "count": 61,
+   "pct": 4.0,
+   "tmean": 0.497,
+   "swing": 0.232,
+   "ptot": 0.0787,
+   "swet": 0.14,
+   "moist": 0.269,
+   "latlo": 0.28,
+   "lathi": 0.74
+  },
+  {
+   "name": "温带季风(Dwa/Cwa)",
+   "fam": "temperate",
+   "earth": "华北/东北/朝鲜",
+   "count": 52,
+   "pct": 3.4,
+   "tmean": 0.407,
+   "swing": 0.371,
+   "ptot": 0.068,
+   "swet": 0.88,
+   "moist": 0.414,
+   "latlo": 0.23,
+   "lathi": 0.79
+  },
+  {
+   "name": "温带大陆性湿润(Dfb)",
+   "fam": "temperate",
+   "earth": "东欧/美国中西部",
+   "count": 45,
+   "pct": 3.0,
+   "tmean": 0.398,
+   "swing": 0.367,
+   "ptot": 0.0271,
+   "swet": 0.5,
+   "moist": 0.447,
+   "latlo": 0.21,
+   "lathi": 0.77
+  },
+  {
+   "name": "温带草原性半干旱(BSk)",
+   "fam": "arid",
+   "earth": "中亚/北美大平原",
+   "count": 42,
+   "pct": 2.8,
+   "tmean": 0.285,
+   "swing": 0.379,
+   "ptot": 0.0,
+   "swet": 0.5,
+   "moist": 0.272,
+   "latlo": 0.13,
+   "lathi": 0.85
+  },
+  {
+   "name": "亚寒带季风(Dwc/Dwb)",
+   "fam": "boreal",
+   "earth": "东西伯利亚",
+   "count": 39,
+   "pct": 2.6,
+   "tmean": 0.258,
+   "swing": 0.42,
+   "ptot": 0.0785,
+   "swet": 0.92,
+   "moist": 0.422,
+   "latlo": 0.13,
+   "lathi": 0.85
+  },
+  {
+   "name": "冰原气候(EF)",
+   "fam": "polar",
+   "earth": "格陵兰/南极内陆",
+   "count": 33,
+   "pct": 2.2,
+   "tmean": 0.022,
+   "swing": 0.097,
+   "ptot": 0.0,
+   "swet": 0.5,
+   "moist": 0.536,
+   "latlo": 0.05,
+   "lathi": 1.0
+  },
+  {
+   "name": "地中海气候(Csb)",
+   "fam": "temperate",
+   "earth": "葡萄牙/智利中部",
+   "count": 30,
+   "pct": 2.0,
+   "tmean": 0.403,
+   "swing": 0.37,
+   "ptot": 0.1027,
+   "swet": 0.13,
+   "moist": 0.407,
+   "latlo": 0.23,
+   "lathi": 0.79
+  },
+  {
+   "name": "热带草原性半干旱(BSh)",
+   "fam": "arid",
+   "earth": "萨赫勒/印度西北",
+   "count": 30,
+   "pct": 2.0,
+   "tmean": 0.511,
+   "swing": 0.296,
+   "ptot": 0.0,
+   "swet": 0.5,
+   "moist": 0.226,
+   "latlo": 0.26,
+   "lathi": 0.72
+  },
+  {
+   "name": "温带海洋性(Cfb)",
+   "fam": "temperate",
+   "earth": "西欧/新西兰(本世界缺失)",
+   "count": 9,
+   "pct": 0.6,
+   "tmean": 0.49,
+   "swing": 0.126,
+   "ptot": 0.0718,
+   "swet": 0.51,
+   "moist": 0.292,
+   "latlo": 0.38,
+   "lathi": 0.59
+  }
+ ],
+ "biomes": [
+  {
+   "name": "TUNDRA",
+   "count": 211,
+   "pct": 13.9
+  },
+  {
+   "name": "TAIGA",
+   "count": 201,
+   "pct": 13.2
+  },
+  {
+   "name": "TEMP_STEPPE",
+   "count": 188,
+   "pct": 12.4
+  },
+  {
+   "name": "MONSOON_FOREST",
+   "count": 157,
+   "pct": 10.3
+  },
+  {
+   "name": "TEMP_GRASSLAND",
+   "count": 142,
+   "pct": 9.4
+  },
+  {
+   "name": "TROP_RAINFOREST",
+   "count": 123,
+   "pct": 8.1
+  },
+  {
+   "name": "SUBTROP_FOREST",
+   "count": 99,
+   "pct": 6.5
+  },
+  {
+   "name": "MEDIT_SHRUB",
+   "count": 85,
+   "pct": 5.6
+  },
+  {
+   "name": "TEMP_DECIDUOUS",
+   "count": 78,
+   "pct": 5.1
+  },
+  {
+   "name": "DESERT_SCRUB",
+   "count": 55,
+   "pct": 3.6
+  },
+  {
+   "name": "NONE",
+   "count": 45,
+   "pct": 3.0
+  },
+  {
+   "name": "SWAMP",
+   "count": 31,
+   "pct": 2.0
+  }
+ ],
+ "latbands": [
+  {
+   "lo": 0.0,
+   "hi": 0.1,
+   "total": 30,
+   "fam": {
+    "polar": 30
+   }
+  },
+  {
+   "lo": 0.1,
+   "hi": 0.2,
+   "total": 173,
+   "fam": {
+    "polar": 89,
+    "boreal": 34,
+    "arid": 13,
+    "highland": 37
+   }
+  },
+  {
+   "lo": 0.2,
+   "hi": 0.3,
+   "total": 182,
+   "fam": {
+    "boreal": 40,
+    "temperate": 55,
+    "highland": 36,
+    "arid": 26,
+    "subtropical": 25
+   }
+  },
+  {
+   "lo": 0.3,
+   "hi": 0.4,
+   "total": 207,
+   "fam": {
+    "highland": 73,
+    "arid": 18,
+    "subtropical": 68,
+    "tropical": 47,
+    "temperate": 1
+   }
+  },
+  {
+   "lo": 0.4,
+   "hi": 0.5,
+   "total": 207,
+   "fam": {
+    "subtropical": 34,
+    "tropical": 150,
+    "temperate": 4,
+    "highland": 14,
+    "arid": 5
+   }
+  },
+  {
+   "lo": 0.5,
+   "hi": 0.6,
+   "total": 218,
+   "fam": {
+    "tropical": 165,
+    "subtropical": 21,
+    "temperate": 4,
+    "highland": 27,
+    "arid": 1
+   }
+  },
+  {
+   "lo": 0.6,
+   "hi": 0.7,
+   "total": 184,
+   "fam": {
+    "tropical": 69,
+    "subtropical": 64,
+    "highland": 49,
+    "arid": 1,
+    "temperate": 1
+   }
+  },
+  {
+   "lo": 0.7,
+   "hi": 0.8,
+   "total": 185,
+   "fam": {
+    "subtropical": 38,
+    "temperate": 71,
+    "highland": 31,
+    "arid": 5,
+    "boreal": 40
+   }
+  },
+  {
+   "lo": 0.8,
+   "hi": 0.9,
+   "total": 106,
+   "fam": {
+    "boreal": 29,
+    "polar": 69,
+    "arid": 3,
+    "highland": 5
+   }
+  },
+  {
+   "lo": 0.9,
+   "hi": 1.0,
+   "total": 25,
+   "fam": {
+    "polar": 24,
+    "highland": 1
+   }
+  }
+ ],
+ "summary": {
+  "nland": 1517,
+  "n_types": 16,
+  "cfb": 9,
+  "medit_biome_pct": 5.6,
+  "rainforest_biome_pct": 8.1,
+  "summer_wet_median": 0.5
+ }
+}

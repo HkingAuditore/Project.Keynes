@@ -55,6 +55,48 @@ namespace pk {
 using namespace godot;
 
 
+// Per-cell annual-mean insolation memo. dc_insolation_annual_mean integrates 16
+// trig-heavy samples and depends ONLY on (cell latitude, axial_tilt, daylen) — all
+// day-invariant — so recomputing it per cell per day was ~1.38ms/round of pure waste
+// (the dominant cost of the climate_pass_a round-start slice). We rebuild only when a
+// cheap FNV-1a fingerprint over (n, lat bits, axial_tilt, daylen) changes (≈ once, at
+// map bind / planet-param change). Returns the cached value for cell i, which is
+// bit-identical to the inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...).
+const float *DCWorldExt::ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
+                                                        float axial_tilt_deg, float daylen_amp) {
+    uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
+    auto mix = [&fp](uint32_t bits) {
+        fp ^= uint64_t(bits);
+        fp *= 1099511628211ull; // FNV-1a prime
+    };
+    mix(uint32_t(n));
+    {
+        uint32_t b;
+        std::memcpy(&b, &axial_tilt_deg, sizeof(b));
+        mix(b);
+        std::memcpy(&b, &daylen_amp, sizeof(b));
+        mix(b);
+    }
+    for (int i = 0; i < n; ++i) {
+        uint32_t b;
+        std::memcpy(&b, &lat_ptr[i], sizeof(b));
+        mix(b);
+    }
+    if (_insol_cache_valid && _insol_cache_fingerprint == fp &&
+        int(_insol_annual_mean_cache.size()) == n) {
+        return _insol_annual_mean_cache.data();
+    }
+    _insol_annual_mean_cache.resize(n);
+    for (int i = 0; i < n; ++i) {
+        _insol_annual_mean_cache[i] =
+            dc_insolation_annual_mean(dc_clamp01f(lat_ptr[i]), axial_tilt_deg, daylen_amp);
+    }
+    _insol_cache_fingerprint = fp;
+    _insol_cache_valid = true;
+    return _insol_annual_mean_cache.data();
+}
+
+
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
@@ -192,12 +234,26 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     else if (moisture_wb_w > 1.0f) moisture_wb_w = 1.0f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
+    // [climate-zone-fix P2] 沿海陆地海洋性调温：season_offset *= (1 - damp*maritime_factor)。
+    // maritime_factor 为静态 per-cell 数组（cp_struct 传入，CoW 零拷贝）；damp=0→关闭=原行为。
+    const float  maritime_damp  = cp_struct.has("maritime_season_damp")
+                                    ? float(cp_struct["maritime_season_damp"]) : 0.0f;
+    PackedFloat32Array maritime_arr;
+    if (cp_struct.has("maritime_factor")) maritime_arr = cp_struct["maritime_factor"];
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
     int days_per_year = cp_struct.has("days_per_year") ? int(cp_struct["days_per_year"]) : 365;
     if (days_per_year < 1) days_per_year = 1;
     else if (days_per_year > 3660) days_per_year = 3660;
     const float annual_ema_alpha = 1.0f / float(days_per_year);
+    // [dt-aware EMA 2026-06-28] temp_30d/365d 的 EMA alpha 按 thermal_dt(=本次经过游戏天数)等效缩放。
+    // 旧实现固定用 1/30、1/365 的"每日"alpha，但 pass_a 在加速档下每次只调一次却推进 ~dt 天→两个 EMA
+    // 窗口实际膨胀到 30·dt / 365·dt 天，m30 跟不上季节循环、与 m365 一起趋近年均→temp_anomaly 坍缩到≈0
+    // →DROUGHT/HEATWAVE 结构性不可达。等效多日 alpha=1-(1-base)^dt；dt<=1 时恰为 base（逐位无回归）。
+    const float ema_alpha_30  = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
+                                    : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
+    const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
+                                    : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
     (void)sea_level;
@@ -297,6 +353,13 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const float * const pprecip = weather_precip_a != nullptr ? weather_precip_a->ptr() : nullptr;
     const float * const psoil = soil_moisture_a != nullptr ? soil_moisture_a->ptr() : nullptr;
     const float * const pwb = water_balance_a != nullptr ? water_balance_a->ptr() : nullptr;
+    // [climate-zone-fix P2] 海洋性因子指针（缺省/关闭→nullptr，热循环跳过缩放）。
+    const float * const pmar = (maritime_arr.size() == n && maritime_damp > 0.0f) ? maritime_arr.ptr() : nullptr;
+
+    // Per-cell annual-mean insolation: memoized (day-invariant). See
+    // ensure_insol_annual_mean_cache — bit-equal to recomputing it inline per cell.
+    const float * const __restrict pinsol_mean =
+        ensure_insol_annual_mean_cache(pln, n, axial_tilt_deg, daylen_amp);
 
     // GDScript constants (architecture.md §G.6 / TERRAIN/CV enums)
     (void)pterr;
@@ -317,7 +380,7 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             // pure fractional deviation explodes near polar-night mean values.
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
-            const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+            const float insol_mean = pinsol_mean[i];
             float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
@@ -383,7 +446,11 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
             // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            const float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
+            float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
+            // [climate-zone-fix P2] 沿海陆地缩小季节振幅（冬暖夏凉）→ 温带海洋性(Cfb)。
+            if (!is_water && pmar != nullptr) {
+                season_offset *= (1.0f - maritime_damp * pmar[i]);
+            }
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -441,8 +508,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                 pei[i] = 1;
             } else {
                 // lerp(a, b, t) = a + (b - a) * t
-                m30  = p30[i]  + (temp_now - p30[i])  * (1.0f / 30.0f);
-                m365 = p365[i] + (temp_now - p365[i]) * annual_ema_alpha;
+                m30  = p30[i]  + (temp_now - p30[i])  * ema_alpha_30;
+                m365 = p365[i] + (temp_now - p365[i]) * ema_alpha_365;
             }
             p30[i]  = m30;
             p365[i] = m365;
@@ -613,12 +680,26 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     else if (moisture_wb_w > 1.0f) moisture_wb_w = 1.0f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
+    // [climate-zone-fix P2] 沿海陆地海洋性调温：season_offset *= (1 - damp*maritime_factor)。
+    // maritime_factor 为静态 per-cell 数组（cp_struct 传入，CoW 零拷贝）；damp=0→关闭=原行为。
+    const float  maritime_damp  = cp_struct.has("maritime_season_damp")
+                                    ? float(cp_struct["maritime_season_damp"]) : 0.0f;
+    PackedFloat32Array maritime_arr;
+    if (cp_struct.has("maritime_factor")) maritime_arr = cp_struct["maritime_factor"];
     const float  sea_level      = cp_struct.has("sea_level")
                                     ? float(cp_struct["sea_level"]) : 0.0f;
     int days_per_year = cp_struct.has("days_per_year") ? int(cp_struct["days_per_year"]) : 365;
     if (days_per_year < 1) days_per_year = 1;
     else if (days_per_year > 3660) days_per_year = 3660;
     const float annual_ema_alpha = 1.0f / float(days_per_year);
+    // [dt-aware EMA 2026-06-28] temp_30d/365d 的 EMA alpha 按 thermal_dt(=本次经过游戏天数)等效缩放。
+    // 旧实现固定用 1/30、1/365 的"每日"alpha，但 pass_a 在加速档下每次只调一次却推进 ~dt 天→两个 EMA
+    // 窗口实际膨胀到 30·dt / 365·dt 天，m30 跟不上季节循环、与 m365 一起趋近年均→temp_anomaly 坍缩到≈0
+    // →DROUGHT/HEATWAVE 结构性不可达。等效多日 alpha=1-(1-base)^dt；dt<=1 时恰为 base（逐位无回归）。
+    const float ema_alpha_30  = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
+                                    : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
+    const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
+                                    : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
     const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
                                     ? (1.0f / (1.0f - sea_level)) : 0.0f;
     (void)sea_level;
@@ -713,9 +794,16 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const float * const pprecip = weather_precip_a != nullptr ? weather_precip_a->ptr() : nullptr;
     const float * const psoil = soil_moisture_a != nullptr ? soil_moisture_a->ptr() : nullptr;
     const float * const pwb = water_balance_a != nullptr ? water_balance_a->ptr() : nullptr;
+    // [climate-zone-fix P2] 海洋性因子指针（缺省/关闭→nullptr，热循环跳过缩放）。
+    const float * const pmar = (maritime_arr.size() == n && maritime_damp > 0.0f) ? maritime_arr.ptr() : nullptr;
 
     (void)pterr;
     constexpr uint8_t COVER_GLACIER = 2;
+
+    // Per-cell annual-mean insolation: memoized (day-invariant); rebuilt single-
+    // threaded here before the parallel dispatch, then read const in the lambda.
+    const float * const __restrict pinsol_mean =
+        ensure_insol_annual_mean_cache(pln, n, axial_tilt_deg, daylen_amp);
 
     // ─── 7. Main loop（与 run_climate_pass_a 主循环 1:1）──────────────────
     auto run_range = [&](int begin, int end) {
@@ -727,7 +815,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
 
             const float ny_clamped = dc_clamp01f(ny);
             const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
-            const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+            const float insol_mean = pinsol_mean[i];
             float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
             if (dev_today < insol_dev_min) dev_today = insol_dev_min;
             else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
@@ -787,7 +875,11 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
             // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            const float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
+            float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
+            // [climate-zone-fix P2] 沿海陆地缩小季节振幅（冬暖夏凉）→ 温带海洋性(Cfb)。
+            if (!is_water && pmar != nullptr) {
+                season_offset *= (1.0f - maritime_damp * pmar[i]);
+            }
             float radiative_target = temp_year + season_offset;
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -840,8 +932,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 m365 = temp_now;
                 pei[i] = 1;
             } else {
-                m30  = p30[i]  + (temp_now - p30[i])  * (1.0f / 30.0f);
-                m365 = p365[i] + (temp_now - p365[i]) * annual_ema_alpha;
+                m30  = p30[i]  + (temp_now - p30[i])  * ema_alpha_30;
+                m365 = p365[i] + (temp_now - p365[i]) * ema_alpha_365;
             }
             p30[i]  = m30;
             p365[i] = m365;
@@ -3064,31 +3156,40 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
         const float prev_frac = SIF[i];
 
         // 增量更新
-        // [S2 fix 2026-05-23] 乘 dt_days：见 prelude dt_days 注释。
         const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
         const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
         float freeze_gate = 1.0f;
-        float solar_melt = 0.0f;
+        const float insolation_now = solar_gate_enabled ? INS[i] : 0.0f;
         if (solar_gate_enabled) {
-            const float insolation_now = INS[i];
             freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
-            solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain)
-                * sea_ice_solar_exposure(prev_frac, min_thick_ice_solar_exposure);
         }
-        // [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：必须先裁剪
-        // 日速率、再乘 dt_days。否则加速档（dt_days≫1）下每轮 d_frac 被砍到
-        // ≤cap，海冰每轮最多只长 cap，亚极地短暂冷却窗口里永远涨不到翻转阈值
-        // → "已很冷却无冰"。melt 侧对称。
-        float rate = k_freeze_eff * diff_freeze * freeze_gate
-                   - (k_melt * diff_melt + solar_melt);
-        if (daily_delta_cap > 0.0f) {
-            if (rate > daily_delta_cap) rate = daily_delta_cap;
-            else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
+        const float solar_melt_base = solar_gate_enabled
+            ? sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain) : 0.0f;
+        const float freeze_term = k_freeze_eff * diff_freeze * freeze_gate;
+        // [B2 2026-06-28 子步积分] daily_delta_cap 是"每日"上限。旧实现 d_frac=clamp(rate)*dt_days 单步推进，
+        // 加速档(dt_days≫1)下大步长把 melt 过冲 clamp 到 0 → 浪费已累积的冰(0.3 格遇 0.63 融化步丢 0.33
+        // "记忆")→极地饱和度随速度档退化(实测 dt=1 最冷桶 0.861,加速档掉到 ~0.42)且单 tick 突变(视觉双稳)。
+        // 改为按"每日"子步(各步速率独立 clamp≤cap、各自 clamp[0,1]),使结果与逐日仿真一致、与速度档无关。
+        // dt_days=1 时 n_sub=1 → 与旧实现逐位等价(无回归)。solar_exposure 随 frac 逐步重算(厚冰遮蔽随消融变)。
+        int n_sub = int(dt_days);
+        if (float(n_sub) < dt_days) ++n_sub;   // ceil
+        if (n_sub < 1) n_sub = 1;
+        else if (n_sub > 30) n_sub = 30;
+        const float sub_dt = dt_days / float(n_sub);
+        float new_frac = prev_frac;
+        for (int sub = 0; sub < n_sub; ++sub) {
+            const float solar_melt_s = solar_gate_enabled
+                ? solar_melt_base * sea_ice_solar_exposure(new_frac, min_thick_ice_solar_exposure)
+                : 0.0f;
+            float rate = freeze_term - (k_melt * diff_melt + solar_melt_s);
+            if (daily_delta_cap > 0.0f) {
+                if (rate > daily_delta_cap) rate = daily_delta_cap;
+                else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
+            }
+            new_frac += rate * sub_dt;
+            if (new_frac <= 0.0f) { new_frac = 0.0f; if (rate < 0.0f) break; }
+            else if (new_frac >= 1.0f) { new_frac = 1.0f; if (rate > 0.0f) break; }
         }
-        float d_frac = rate * dt_days;
-        float new_frac = prev_frac + d_frac;
-        if (new_frac < 0.0f) new_frac = 0.0f;
-        else if (new_frac > 1.0f) new_frac = 1.0f;
         if (edge_mix_rate > 0.0f) {
             float sum_nb_frac = 0.0f;
             int nb_water_count = 0;
@@ -6504,6 +6605,9 @@ struct ClimateRoundScalars {
     double thermal_dt_days = 1.0;
     double snowpack_cover_low = 0.05;
     double snowpack_cover_full = 0.32;
+    // [climate-zone-fix P2] 沿海陆地季节振幅最大衰减比（0=关闭=原行为；0.55=海岸格季节
+    // 振幅仅余 45%）。与 per-cell maritime 因子相乘后缩放 season_offset。
+    double maritime_season_damp = 0.0;
 
     // transp pass 用（Stage 1 实装）
     float  transp_outflow_rate = 0.025f;
@@ -6621,6 +6725,9 @@ struct ClimateInputBuf {
     std::vector<float>   elevation;        // pass_a / pass_b 读
     std::vector<float>   base_moisture;    // pass_a 读
     std::vector<float>   lat_norm;         // pass_a / pass_b 读
+    // [climate-zone-fix P2] 海洋性因子 ∈[0,1]，1=紧贴海岸/0=深内陆（由 dist_ocean 指数衰减得到）。
+    // pass_a 用它对陆地缩小季节振幅，形成沿海小年较差（温带海洋性 Cfb）。缺省空→不调温。
+    std::vector<float>   maritime;         // pass_a 读（静态）
     std::vector<float>   temp_baseline_year; // pass_a 读（静态 LUT）
     std::vector<float>   temp;             // pass_a 读 prev_temp；pass_b 读 temp_snapshot
     std::vector<float>   temp_30d;         // pass_a 读：EMA prev
@@ -6939,6 +7046,9 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float *P365_IN = in.temp_365d.data();
     const float *PTH_IN = in.thermal_energy.data();
     const float *PSP_IN = in.snowpack.data();
+    // [climate-zone-fix P2] 海洋性调温：per-cell maritime 因子 + 全局衰减比。缺省空/0→关闭。
+    const float maritime_damp = (float)in.scalars.maritime_season_damp;
+    const float *PMAR = ((int)in.maritime.size() == n) ? in.maritime.data() : nullptr;
 
     // ── 输出指针 ──
     float *PMOIST = out.moisture.data();
@@ -6997,7 +7107,12 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         else if (temp_year > 1.0f) temp_year = 1.0f;
         // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
         // 用【年均温度 P365_IN[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-        const float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, P365_IN[i], dev_today, land_continentality);
+        float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, P365_IN[i], dev_today, land_continentality);
+        // [climate-zone-fix P2] 沿海陆地海洋性调温：按距海衰减缩小季节振幅（冬暖夏凉），
+        // 让温带海洋性(Cfb)在中纬沿海涌现。water/内陆(maritime≈0)不受影响。
+        if (!is_water && PMAR != nullptr && maritime_damp > 0.0f) {
+            season_offset *= (1.0f - maritime_damp * PMAR[i]);
+        }
         float radiative_target = temp_year + season_offset;
         if (radiative_target < 0.0f) radiative_target = 0.0f;
         else if (radiative_target > 1.0f) radiative_target = 1.0f;
@@ -8778,6 +8893,8 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         _read_pf32_to_vec(input, "elevation",           t->in_buf.elevation,           n_cells);
         _read_pf32_to_vec(input, "base_moisture",       t->in_buf.base_moisture,       n_cells);
         _read_pf32_to_vec(input, "lat_norm",            t->in_buf.lat_norm,            n_cells);
+        // [climate-zone-fix P2] 海洋性调温因子（静态 per-cell；缺省空→不调温）
+        _read_pf32_to_vec(input, "maritime_factor",     t->in_buf.maritime,            n_cells);
         _read_pf32_to_vec(input, "temp_baseline_year",  t->in_buf.temp_baseline_year,  n_cells);
         _read_pf32_to_vec(input, "temp",                t->in_buf.temp,                n_cells);
         _read_pf32_to_vec(input, "temp_30d",            t->in_buf.temp_30d,            n_cells);
@@ -8834,6 +8951,7 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.thermal_dt_days             = double(input.get("thermal_dt_days", 1.0));
         t->in_buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.05));
         t->in_buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.32));
+        t->in_buf.scalars.maritime_season_damp        = double(input.get("maritime_season_damp", 0.0));
         // transp scalars
         t->in_buf.scalars.transp_outflow_rate = float(input.get("transp_outflow_rate", 0.025));
         t->in_buf.scalars.transp_self_rate    = float(input.get("transp_self_rate", 0.015));

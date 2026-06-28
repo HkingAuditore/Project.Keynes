@@ -150,6 +150,12 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 - **`PK_CONT_THRESH` 0.16→0.22→0.19**：海陆阈值。0.22 减陆地但副作用是内陆抬升 `lt=(C-0.5)*2` 整体变缓 → 造山带 `orogeny` 被 lt 乘后高差变小、达 MOUNTAIN 阈值的格变少 → **山脉变矮变不显眼**。深海已由上面距岸 BFS 兜底、不再依赖高阈值开放洋面，故回调 0.19（仍比原 0.16 略减陆地）恢复山脉。
 - **`PK_OROGENY_AMP` 0.42→0.48**：与陆地占比(`CONT_THRESH`)**解耦**地增强山脉显眼度。`platform_max=PLATFORM_H+UNDULATE+AMP=0.58`，`e_out_max=sea_level(0.42)+lt(≤1)·0.58=1.0` 恰好不触发 clamp 削峰。
 - **STEPPE 温度门限（C++/GDScript 双同步）**：`pk_decide_terrain_ex` 凉温带(temp 0.20-0.38)原 `moist>0.22→STEPPE`，32.8% 落 temp<0.30 → 高纬温带草原。改为仅 `temp>0.30` 保留 STEPPE，更冷按湿度回落 `TAIGA(13)/TUNDRA(8)/COLD_DESERT(26)`；`map_generator.gd::_decide_terrain` 同步。
+
+**生物群系决策树重标定（climate-zone-fix P1，2026-06-28，C++ 权威 + GDScript 1:1 镜像）**：解决"MEDIT 泛滥 21%、热带雨林 1%、亚热带林死支、savanna 缺失"——气候场有足够暖湿格但硬决策树阈值挡住（land moist 运行期 p50≈0.38/p90≈0.56，远低于旧阈）。改动点（`pk_decide_terrain_ex` / `pk_derive_vegetation` / `pk_whittaker_vegetation` in `world_ext_internal.h` + `map_generator.gd` 三函数逐位镜像 + `world_ext_generate.cpp` shrubland/chaparral pass）：
+- **热带/亚热带温度带拆分**：原单一 `temp>0.55` 热带带拆为真热带 `temp>0.66` 与亚热带/暖温带 `0.55–0.66`，让后者的 FOREST terrain 正确路由到 `SUBTROPICAL_FOREST(12)`（修死分支）。
+- **下移热带湿端阈值**：JUNGLE 门 `moist>0.65→0.45`（贴近 Af≈0.42）；`pk_derive_vegetation` 雨林 `0.72→0.50`/季风 `0.55→0.42`/云雾林 `0.70→0.52`；`pk_whittaker_vegetation` 雨林 `0.65→0.50`/热带干林 `0.40→0.34`/savanna `0.36→0.18`。
+- **收窄 shrubland/chaparral 特征 pass**（MEDIT 21% 主因）：shrubland(生成 pass + stage5 季节刷新)加温度上限 `temp<0.58` + 湿度收窄到 `[0.20,0.44]`；chaparral 上限 `0.62→0.58`、`[0.20,0.46]`，止住"任意暖区沿海中湿格→MEDIT"的 catch-all。
+- **headless 验证（`tests/tmp_biome_eval.gd`，60×40/sea_level0.42/2 陆块 + 60d warmup + 120d sample，镜像 CSV 聚合法）**：MEDIT_SHRUB 21.0→7.3%、TROP_RAINFOREST 1.0→4.0%、SUBTROPICAL_FOREST 0.1→7.7%、SAVANNA 0.6→3.6%、MONSOON_FOREST 16.0→7.3%（更接近地球分布）。完整 Köppen 生物群系直方图复核需用新 DLL 录加速 CSV 跑 `tmp/wx_koppen.py`。
 - **新增/调整 constexpr 旋钮**：`PK_SHORE_DEEP_DIST(7，调小→深海更普遍)`、`PK_SHELF_DEPTH(0.03)`、`PK_CONT_THRESH(0.19，调大→大陆更小/海洋更宽)`、`PK_OROGENY_AMP(0.48，调大→山脉更高，上限 0.48 防削峰)`。**验证硬指标**：重生成后洋底 min elev 应从 0.286 骤降到 ~0.04，深度分档出现近海/深海；OCEAN(0) terrain 占比上升、COAST(1) 下降；STEPPE 的 temp<0.30 占比≈0；山脉高差恢复。
 
 **大陆-海洋双峰测高(地台)模型（2026-06-26，权威高程模型）**：取代旧"径向穹顶"（`radial_raw = dist_field*(...)`，elev∝离大陆中心距离 → 大陆是穹顶、平原鼓、海岸只是缓坡无坡折）。新模型复现地球**双峰 hypsographic 曲线**：平坦大陆地台 + 平坦深海平原 + 又窄又陡的大陆坡折。位于 `run_native_world_generate_base_pass` 的 `// 1. coords + elevation` 循环内（C++ 唯一路径，无 GDScript 镜像）：
@@ -310,18 +316,41 @@ C++ 入口：
 
 - `season_offset` 必须贴合迁移前 AoS 行为：`season_temp_amp * insolation_season_gain * surface_absorbed_factor * insolation_dev`，然后只对冷侧做 `compress_season_cooling`。
 - `temp_land_continentality` 仅作为旧资源兼容字段保留，不再参与 pass-A 温度公式；native/SoA 不得额外放大陆地夏季强迫，否则副极地极昼陆格会被推到迁移前不存在的高温。
+- **沿海海洋性调温（climate-zone-fix P2，2026-06-28）**：在 `pk_season_offset_continental` 之后、`radiative_target` 之前，对陆地 cell 施 `season_offset *= (1 - maritime_season_damp * maritime_factor[i])`，用"距海指数衰减"的 `maritime_factor`（per-cell 静态数组，海岸≈1/内陆→0，由 `MapGenerator._ensure_maritime_factor` BFS 缓存）缩小沿海年较差（冬暖夏凉）→ 温带海洋性(Cfb)在中纬沿海涌现。这是独立于上面 legacy `temp_land_continentality` 的新机制（后者仍被忽略）。`run_climate_pass_a` / `run_climate_pass_a_thread` / `_async_pass_a_kernel_pure` 三路在同一调用点同改、读同一缓存数组 + 同一 `maritime_decay_cells`，A/B 逐位一致；`maritime_season_damp=0`（或数组缺省）时三路均跳过缩放，与历史逐位一致。旋钮 `ClimateProfile.maritime_season_damp`(默认 0.45) / `maritime_decay_cells`(默认 4.0)。
+  - **Köppen 复核（2026-06-28夜，CSV `tile_data_record_20260628_222157`）**：温带海洋性 Cfb 已涌现 **9 格(0.6%)**——年较差仅 0.126、全年均匀降水(swet 0.51)、中纬沿海(lat 0.38–0.59)，即西欧/新西兰式海洋性。注意 `tmp/wx_koppen.py` 旧分类器只按冬温把它们误并进 Cfa，已改为按 Köppen 正解「凉夏(Twarm<0.58)+低年较差+全年湿润=Cfb」（夏凉而非冬温才是 Cfb≠Cfa 的判据）。**`maritime_season_damp` 维持 0.45**：headless A/B(`tmp_maritime_eval.gd`)证实温度侧已饱和——0.45 已使 ~48 个沿海格达「凉夏+低年较差」，加到 0.55 仅 +1 格、沿海年较差只再降 5.8%。扩 Cfb 占比的真正杠杆是**降水型**（那 ~48 格里仅 9 格同时全年均匀降水，其余夏旱/夏雨），应走 P3 冬雨均匀化 CSV 标定，而非加大阻尼。
 
 输出：
 
 - `cell_temp_baseline`（runtime baseline = radiative + 热惯性积分；A 修复 2026-06，原来写 `cell_temp` 已下放给 `wind_surface` 合成阶段）
 - `cell_ocean_thermal_anomaly` / `cell_local_thermal_anomaly`（在 pass_a 末尾清零，开启新一日的累加；wind_surface 末端用这两个 + `cell_air_mass_temp_anomaly` 与 baseline 合成回 `cell_temp`）
+- `cell_temp_30d` / `cell_temp_365d` / `cell_temp_anomaly`（30 日 / 年长温度 EMA 及其差 = `temp_anomaly`）
 - thermal/insolation/moisture base 相关 slots
 - dirty mask / DataCore writes 视具体路径而定
+
+`temp_anomaly` 的 EMA dt-aware（2026-06-28，`tile_data_record_20260628_145729.csv`）：`temp_30d`/`temp_365d`
+原本固定用 `1/30`、`1/365` 的"每日"alpha，但 pass_a 在加速/跳日档下每次只调一次却推进 ~`thermal_dt`(dt_days) 天
+→两个 EMA 窗口实际膨胀到 `30·dt`/`365·dt` 天，`temp_30d` 跟不上季节循环、与 `temp_365d` 一起趋年均
+→`temp_anomaly` 坍缩到≈0（实测陆地 max 仅 0.037 < DROUGHT 0.05 / HEATWAVE 0.04 门 → 两类结构性不可达）。
+修复与 pass_a 热惯性 `α_eff=1-(1-α)^dt` 同源：EMA alpha 也换算为等效多日 alpha（`a30=1-(1-1/30)^dt`、
+`a365=1-(1-annual_ema_alpha)^dt`），`dt≤1` 时逐位等价（无回归）。C++（`run_climate_pass_a` 单/多线程）与
+GDScript 镜像（`map_generator._climate_pass_a` legacy 与 `_climate_pass_a_soa`）锁步同改。dt>1 直测探针
+`native_dt_compensation_probe_test.gd` 验证 dt=9 距平幅度保持 ~0.123（旧固定 alpha 坍缩到 ~0.031）。
 
 性能：
 
 - 设计目标是 C++ scalar tight-loop。
 - 日志中 `climate path=data_core dc=data_core` 表示 DataCore 路径，而不是纯 GDScript。
+- **年均日照缓存（2026-06，与 `run_slp_field_pass` 的纬度 LUT 同类优化）**：主循环里
+  `dc_insolation_annual_mean(ny, axial_tilt, daylen)` 是 16 样本年均积分（~144 trig/cell），但只取决于
+  cell 纬度 + 行星 `axial_tilt`/`daylen`，**跨日不变**——历史上却每日每 cell 重算（2464×16 trig/日 ≈ 1.38ms）。
+  又因 `run_climate_pass_a` 末尾 `return 0.0`（无内部计时），这笔成本被藏在 `climate_ms≈0` 之外，breakdown
+  长期看不到（排查时务必区分"pass 返回的 ms"与"pass 实际 wall"）。现按 cell 记忆该年均值
+  （`DCWorldExt::ensure_insol_annual_mean_cache`，用 (n, 纬度位, tilt, daylen) 的 FNV-1a 指纹失效，几乎只在
+  建图/改行星参数时重建一次），`run_climate_pass_a` 与 `run_climate_pass_a_thread` 主循环改查缓存（与内联
+  `dc_insolation_annual_mean(dc_clamp01f(lat[i]), …)` 同函数同入参，**bit-equal**）。实测稳态 pass_a
+  ~1.7→0.38ms，原子 `round_native_call_ms` 3.69→2.37ms。worker 版纯核 `_async_pass_a_kernel_pure` 仍内联
+  原算法（不碰成员缓存，线程安全；值相同不破坏 A/B）。剩余每日不变项（`dc_insolation_now`/`dc_day_length_norm`，
+  ~13 trig/cell）随 season_phase 变，仍需逐日算。
 
 排查：
 
@@ -681,9 +710,26 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
   2026-06-27 `tile_data_record_20260627_201214.csv` 显示 25% shielding、0.03 反照率冷却和
   `thermal_inertia_water=0.025` 仍让 66-80° 边缘冰峰值拖到春季。新默认配合
   `sea_ice_freeze_insol_low/high=0.22/0.45`、`sea_ice_solar_melt_start=0.28`、
-  `sea_ice_solar_melt_gain=1.35`、`sea_ice_daily_delta_cap=0.070` 与
-  `thermal_inertia_water=0.045`，目标是让季节性边缘冰更贴近日照低谷后不久达峰、
-  夏季高日照期更快退缩，同时保留极点附近多年冰核心。
+  `sea_ice_daily_delta_cap=0.070` 与 `thermal_inertia_water=0.045`，目标是让季节性
+  边缘冰更贴近日照低谷后不久达峰、夏季高日照期更快退缩，同时保留极点附近多年冰核心。
+- **海冰冻融重标定（2026-06-28，`tile_data_record_20260628_145729.csv`）**：实测冷水最暗桶
+  `mean_ice` 仅 0.49 且全盆地在 0↔0.98 双稳跳变。诊断为冻融严重不对称 + 滞回带过窄：旧
+  `sea_ice_freeze_rate=0.40` ≪ `sea_ice_melt_rate=1.45`，且 `form=0.06`/`melt=0.11` 仅留 0.05 中性带。
+  新默认 `sea_ice_freeze_rate=1.0`、`sea_ice_melt_rate=0.95`、`sea_ice_form_threshold=0.14`、
+  `sea_ice_melt_threshold=0.22`（中性带拉到 [0.14,0.22]）、`sea_ice_solar_melt_gain=0.90`，
+  目标"极地核心常年饱和(>0.9)+海冰边缘季节进退"。dt>1 直测探针
+  [`native_dt_compensation_probe_test.gd`](../../Project/project-keynes/tests/native_dt_compensation_probe_test.gd)
+  验证 dt=9 下冷暗极地数次 pass 内饱和到 1.0、单 pass `|Δ|≤daily_delta_cap·dt_days`、暖水(temp=0.5)
+  携冰 0.80→0.17 不结冰。子步积分(B2)保留不动。
+- **海冰阈值相位再标定（2026-06-28 夜，`tile_data_record_20260628_164054.csv`）**：上轮重标定
+  把范围/双稳修好后，按季节相位折叠极地水格实测：相位滞后本身≈现实（最冷→冰峰 ~3 个月、
+  最暖→冰谷 ~2.5 个月，同真实北极 3 月冰峰 / 9 月冰谷），但**极地夏季气温天花板仅 0.135(北)/0.170(南)
+  远低于 `t_melt=0.22`** → 热融化项 `k_melt·(temp−t_melt)` 全年恒为 0，夏季融化只剩缓慢太阳消融
+  → 融化偏晚、不彻底（南极只融到 0.34，现实近乎融光）。修法是把阈值下移到极地夏季气温区间：
+  `sea_ice_form_threshold 0.14→0.08`、`sea_ice_melt_threshold 0.22→0.13`（保留 0.05 迟滞窗
+  [0.08,0.13] 防双稳）。冬季 `temp≈0` 仍触 `freeze drive≈0.07/天 cap`，极核照常饱和（探针冷极地
+  仍 6×dt=9 内到 1.0）；夏季 `temp` 可跨过 melt 阈使热融化生效（探针暖水 0.80→0.17 melt 更彻底）。
+  纯 profile knob、不重编 DLL；待 fresh 录制验证南极夏季退冰是否到位、冰缘是否稳定。
 - sea-ice 的有效温度读 wind-surface 发布后的 `cell_temp`。由于该温度已经包含
   `cell_ocean_thermal_anomaly`，`temperature_transport_anomaly` 的正向暖流延迟只使用
   `max(0, TTA - max(0, ocean_thermal_anomaly))` 的剩余部分，避免把同一份 ocean heat
@@ -812,6 +858,7 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
   `warm(temp>0.55)+晴(eff_cloud<0.24)+干(vapor<0.12)+少雨`，去掉不可达的 `temp_anom`。**根因需运行期插桩确认**。
 - **未做**：问题④（次要）未改；阈值常量均为离线估值。**可选更深一步**：若充放电仍不够"会移动"，给环流加预报性
   （简化涡度/斜压扰动），让风场自身涌现行波——但属大改，建议先验证 Stage 6。
+- **降水季节性多样化（climate-zone-fix P3，2026-06-28，导出旋钮 + 保守 rebalance）**：目标降低暖季对流主导（~76% 降水来自 `temp>0.48` 大陆对流）、增强冷季锋面/层状，使"雨热不同期/全年均匀"气候态（配合 P2 的 Cfb）可形成。把四个原 C++-only/`constexpr` 降水参数导出为 `ClimateProfile` 旋钮并双侧接线（C++ `world_ext_weather.cpp` 读 `knobs` ↔ GDScript `field_solver.gd` 读 `weather_system` 成员，`weather_system._sync_profile_weather_knobs` 从 profile 同步、`_build_field_knobs` 经 dynamic+fallback 两路注入）：① `weather_field_thermal_conv_precip`(暖季对流降水权重，0.30→默认 0.24)；② `weather_field_stratiform_gain`(冷季层状降水增益，1.0→1.15)；③ `weather_field_omega_ascent_gain`(`OMEGA_ASCENT_GAIN` 由 `constexpr 0.40`→knob，默认 0.34)；④ `weather_cool_season_vapor_floor`(冷季蒸发/水汽地板，`surface_vapor_source` 的 `temp_evap=max(floor, smoothstep(...))`，0→0.10，给冷季 stratiform 基础水汽)。同步修 `field_solver.gd` 的 `PRECIP_BASE_FRAC` 0.12↔C++ 0.08 漂移。A/B 验证（`tests/tmp_wx_eval.gd` 加 `p3off=1` 还原历史默认对照）：暖地 r(precip,temp) 0.286→0.258（对流偏置降）、never-change 59.1→57.8%、frozen 36.3→35.1% 均改善。**夏雨中位回落到≈0.5 + 出现 winter-wet 尾部需用户多轮 CSV 标定**（water budget 易级联）跑 `tmp/wx_koppen.py`+`tmp/wx_phase.py` 复核。
 
 Stage-A 链路：
 
@@ -871,6 +918,16 @@ Merged native 路径：
   `prev_type` 滞后造成的假 transition。稳定格（`prev_type == target_type`
   或 display 已等于 target）不得继续累加 alpha；否则 CSV 会把没有实际天气
   切换的格子统计为 transitioning。
+- **过渡机 dt-aware（2026-06-28，`tile_data_record_20260628_145729.csv`）**：旧实现 alpha 每次
+  求解固定 `+weather_transition_alpha_rate`（0.35），与 `dt_days` 无关。加速档下每次求解推进 ~9 天，
+  过渡需 ~4 次求解≈36 天才完成，致短暂强天气（实测分类器产出 STORM 602/FOG 13/MONSOON 94 例）
+  永远累不满 alpha、display 全被压成 prev(CLEAR)，且 72.6% 格永不换型。修复：新增 knob
+  `weather_transition_dt_days`（缺省 1.0），native（`run_weather_field_solve_pass` /
+  `run_weather_field_commit_pass`）与 GDScript 镜像（`field_solver.gd`）都把 alpha 累加与目标切换的
+  起步值改为 `rate·dt_days`，使 `dt≥~1/rate`（≈3）时当次求解即切换、`dt=1` 仍保留 ~3 次求解平滑。
+  dt 来源 `map_generator._consume_weather_dt_days()`（独立游标、同-tick 缓存、clamp[0,30]），
+  在 unified native daily 路径经 `WeatherSystem.set_weather_transition_dt_days()` 注入三处 weather knobs。
+  probe 见 `native_dt_compensation_probe_test.gd`（dt=3/9 单次切换、dt=1≥3 次）。
 
 Weather commit publish guard (2026-06-22):
 

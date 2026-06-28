@@ -108,16 +108,82 @@ DCSystemScheduler
   `native_daily_perf_target_ms`，当前 clamp 上限同为 8ms）的本地 transaction budget；默认 ACTIVE
   路径应在同一 SUS tick 内连续推进 native slice 直到 round `done=true`。只有异常超时、失败或
   显式低预算 profile 才应把 round 留到后续 tick。
+- **错峰执行（`native_daily_spread_across_ticks`，2026-06，默认 false）**：打开后
+  `_configure_native_daily_transaction_budget` 改走 spread 分支——`max_slices_per_tick` 压到
+  `native_daily_max_slices_per_tick`（默认 1，即"每 tick 跑一个 slice batch、A→B→C→A 轮转"），
+  并把 `must_run` 设为 **false**（2026-06 错峰修复，见下「保留作业错峰」）让 native 遵守 frame budget。
+  C++ 跨 tick 持久化 slice 游标 + slot，
+  所以一轮的**完成态**与一-tick 原子模式逐 slice bit-equal（`tmp_native_batch_bitequal_test.gd` 锁定）。
+  代价：①一个仿真日要跨多个 tick 才落地（仿真推进按 batch 数变慢）；②native round 不再相对 retained
+  物理/视觉 job（`ocean_currents`/风场/上传）原子完成，导致与一-tick 模式**有界、确定性的轨迹漂移**
+  （24 天真调度复测：多数格 <0.5%，混沌热点 `temp`≤0.15 / `wind`≤1.88，无 NaN、范围健康；soak 复测 temp
+  漂移随天数收敛——120 天降到 ≤0.003，cap 差异会被洗掉）。
+  - **yield 粒度随模式自适应（2026-06）**：spread 模式与原子模式的最优 yield 集相反，由
+    `_native_daily_effective_yield_nodes(cp)` 选择。原子要**粗批**（少 round-trip、低整轮成本）→ `{2,6}`；
+    spread 要**细切**（每 tick 跑最小批、低 per-tick 峰值）→ `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD`
+    = 全部 15 个节点 `[0..14]`。多设 yield 点是**纯 bit-equal**的（只加 C++↔GDScript 断点；非 patch 节点
+    的 round-start knob 已满足，`{2,6}` 的 patch 仍在那两个索引照常触发）。C++ 当天缺 knob 的索引会跳过，
+    所以典型一轮落在 ~5 个 tick（而非 15）。实测 spread `maxslices=1` per-tick：均值 **3.14→1.9ms（−40%）**、
+    p95 **5.0→4.3ms**；代价是一仿真日跨 ~5 tick（推进 ~2.5× 慢，spread 设计本就接受）。
+  - **保留作业错峰（`must_run=false` + budget-yield，2026-06）**：spread 早期 per-tick max ≈ 5.8ms 的真凶
+    经逐 job 归因（修正 `tmp_native_spread_validate.gd` 的 worst-tick 字段 bug 后）证明是
+    **`season_refresh` 与 `native_daily_sim` 撞车**：scheduler 按 priority 升序跑（`season_refresh`=50 先于
+    `native_daily_sim`=210），`season_refresh` 的 11-stage 慢变量 round（每 ~30 tick 起一轮）单 stage ~3ms
+    就吃满 2ms frame budget；而 native 当时 `must_run=true` → **无视已耗尽的预算硬叠加** ~2.5ms batch →
+    `2.98 + 2.48 ≈ 5.8ms`。修复：spread 下 native 改 `must_run=false`，从而在同 tick 更早跑的
+    `season_refresh` 已耗尽预算时**让出本 tick**（season round 是有界的 ~11 tick，让完即恢复）。防饿死保险
+    `native_daily_spread_starve_ticks`（`ClimateProfile`，默认 16 > season round 长度）：连续被预算挤掉这么多
+    tick 后强制跑一个 batch，确保极端持续抢占下 native 仍能推进。非 season 窗口预算未在 native 前耗尽，所以
+    它照常每 tick 推进一个 batch。实测 24 天真调度：**max 5.82→4.97ms（−15%）**、p95 4.57→4.51、均值 1.93
+    不变、ticks/round 5.13→4.79（略好）；spread-vs-onetick 漂移仍在既有有界区间（wind ~1.88 不变）。
+    bit-equal A/B（per-round 全 38 数组一致）+ bootstrap（原子分支未动）+ graph-order 全绿。
+  - **C++ 单节点地板已细查并消除（2026-06）**：错峰后 worst-tick = native 最重单节点（~3.3ms）。逐节点切片
+    归因（`tmp_native_spread_validate.gd` 按 stage 聚合 `native_ms`，再在 `run_climate_pass_a` 内 in/loop/flush
+    三段计时）证明那 ~1.7ms **不是"重数学核"**，而是 `climate_pass_a` 的逐 cell **每日重算 `dc_insolation_annual_mean`**：
+    该年均日照积分每 cell 跑 16 个三角样本（~144 trig/cell），但只取决于 cell 纬度 + 行星 `axial_tilt`/`daylen`
+    （全部跨日不变），却被每日每 cell 重算（2464×16 trig/日 ≈ 1.38ms）。又因 `run_climate_pass_a` 末尾 `return 0.0`
+    （无内部计时），这笔账被藏在 `climate_ms≈0` 之外，历史 breakdown 一直看不到。修复：按 cell 记忆该年均值
+    （`DCWorldExt::ensure_insol_annual_mean_cache`，用 (n, 纬度位, tilt, daylen) 的 FNV-1a 指纹失效——几乎只在
+    建图/改行星参数时重建一次），主循环改查缓存（与内联同函数同入参，**bit-equal**）。实测：spread 稳态
+    `climate_pass_a` **1.7→0.38ms（−78%）**、per-tick p95 **4.33→3.19ms（−26%）**、均值 1.86→1.78；原子
+    `round_native_call_ms` **3.69→2.37ms（−36%）**、原子 tick max 10.1→8.85ms。首轮付一次性 ~1.6ms 建缓存，
+    之后常驻命中。bitequal + bootstrap(20/0) + graph-order(11) 全绿。
+  - **附带：去掉 spread round-start 的 bundle 深拷（2026-06）**：`run_native_daily_slice` 轮首原 `bundle.duplicate(true)`
+    + `tick_knobs.duplicate(true)`（后者把内嵌 bundle 又深拷一遍）改为：tick_knobs 浅拷并 `erase("native_daily_bundle")`，
+    bundle 走 `native_daily_cow_structural_copy`（深拷字典/数组结构、CoW 共享 Packed 叶子缓冲）。C++ 只改字典层
+    （patch 换键、ocean anomaly 交接），从不就地写 Packed 缓冲，故与 `duplicate(true)` **bit-equal**，但省掉每轮
+    ~10 个 knob 字典的逐数组字节拷贝（实测此处非瓶颈，~0.15ms，属顺带清理）。
+  `earth_like.tres` 现默认开启（`maxslices=1`，spread → yield 全切）；`native_daily_active_bootstrap_test.gd`
+  显式置回 false 以继续验证原子路径。复测工具：`tests/tmp_native_spread_validate.gd`（含 `yield=` 覆盖参数
+  与 worst-tick 归因）。
 - round 起点由 GDScript 构建一次 `native_daily_bundle` 并传给 C++；round 未完成时后续
   slice 发轻量 continue knobs，并可携带 `native_daily_bundle_patch`。patch 只刷新当前即将执行
   节点所需的动态 knobs（如 pass-b / ocean / wind / sea-ice / transpiration），避免 graph round
   继续读取 round-start 的旧温度、TTA 或气团状态。
+- **GDScript 端热路径开销削减（2026-06，bit-equal）**：① 诊断快照
+  `_native_daily_last_result` / `_last_weather_breakdown` / `_last_climate_breakdown` 以及
+  `native_daily_last_result()` 取值改用**浅拷贝**（`Dictionary.duplicate()`）——只新建顶层
+  dict（顶层加 key 仍隔离），嵌套 PackedArray 走 CoW 共享而非每 slice 逐字节深拷上千浮点。
+  ② `_build_native_daily_ocean_knobs` / `_build_native_daily_wind_knobs` 内 per-cell 循环
+  内联 NaN/inf 守卫（消除每 cell 一次函数调用）、ocean anomaly 直接就地填 work buf（去掉
+  `_prepare_*` 的额外分配 + 第二遍 copy）。实测：`round_apply_ms` −32%、`round_bundle_ms`
+  −47%（ocean_knobs −60% / wind_knobs −68%）；spread `maxslices=1` per-tick 均值 3.89→3.13ms、
+  max 7.15→5.99ms。三项 bit-equal A/B（40-round）+ bootstrap 全绿。
+  ③ **finalizer 重诊断门禁（2026-06，bit-equal）**：`_native_daily_apply_finalizer` 里的百分位机器
+  （per-cell `temp_deltas`/`preclamp_temp_deltas` 数组填充 + 两次 `sort` 求 p95/p99、`sea_ice_delta_max`
+  全格扫描、`precip_p95` 排序）由 `_native_daily_finalizer_heavy_diag`（默认 **false**）门禁——**clamp
+  本身（`thermal_daily_delta_cap` / `tta_cap`）永不门禁**，所以仿真逐 bit 不变；只有 CSV/report-only 的
+  p95/p99/sea_ice_delta_max/precip_p95 在关时变陈旧（廉价的 running max / gt-count 仍准）。需要这些百分位的
+  CSV/tile recorder 或 perf probe 可置 `generator._native_daily_finalizer_heavy_diag = true`。实测
+  `finalizer_total_ms` **1.54→1.02ms（−34%）**、`round_apply_ms` 1.98→1.42ms；spread per-tick 均值
+  3.13→1.86ms、p95 4.43→4.25ms（此阶段 max 仍 ~5.8ms，后由「保留作业错峰」降到 ~5.0ms）。bit-equal A/B
+  （全 38 数组一致）+ bootstrap 全绿。
 - Native daily climate 前缀必须与 retained `ClimateDailySystem` 一致：
   `climate_pass_a -> climate_pass_b -> ocean_water -> ocean_land -> wind_air -> wind_surface`。
   `climate_pass_b` 会写 `cell_moisture` 并读取上一日/round-start 的
   `temperature_transport_anomaly`，不能放到 `ocean_*` 之后。
 - C++ 在 `DCWorldExt` 内保存 `round_active`、`current_node`、`round_id`、累计 breakdown、bundle pass keys 和 state snapshot。
-- 每个 `run_native_daily_slice()` 只推进一个 native daily node，返回 `done=false`、`progress_ratio`、`stage_name`、`substage`、`cursor_start/cursor_end` 和 `node_report`。SUS 会在同一个 job tick 内继续调用下一 slice，直到 native round 完成或 transaction budget 用尽。ACTIVE slice 使用 `world_ext_daily_sim.cpp` 内的 lightweight slice graph（顺序与 `system_schedule.cpp::SCHEDULE_GRAPH` 保持一致），避免 hot path 依赖跨编译单元的 `SystemNode` 成员函数指针表；`run_native_daily_tick()` debug/full-run helper 仍使用 `SCHEDULE_GRAPH` dispatcher。
+- `run_native_daily_slice()` 采用**节点批处理**（2026-06，bit-equal perf）：C++ 在一次调用里连跑**连续的非 yield 节点**，直到下一个节点属于 yield 集才返回 `done=false`，把控制权交回 GDScript。yield 集**随 cadence 模式自适应**（`_native_daily_effective_yield_nodes(cp)`，2026-06）：原子模式经**实测最小化** = `_NATIVE_DAILY_SLICE_YIELD_NODES` = `{2,6}`（仅 `ocean_water`、`sea_ice` 两个节点真正需要在运行前重打 temp patch，少 round-trip）；spread 模式改用 `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD` = 全部 `[0..14]`（最细切、最低 per-tick 峰值，详见上文「yield 粒度随模式自适应」）。两者都由 round-start 通过 `native_daily_slice_yield_nodes` 传给 C++（`native_daily_slice_yield_nodes_override` 非空时优先，供 A/B 测试用；缺省覆盖 = yield 全部 = 旧的每次一个节点）。patch 的 `match next_node_index` 分支只需是**当前生效 yield 集的子集**（spread 全切时 `{2,6}` patch 照常在那两个索引触发，其余索引收空 patch）——由 `native_daily_graph_order_test.gd` 锁定（同时校验 `{2,6}` 常量、spread 常量与 selector 函数都在）。曾经的 `climate_pass_b`(1)/`wind_air`(4)/`transpiration`(7) 已从 yield 集移除：双进程 bit-equal A/B（40-round soak）证明它们的 round-start knob 与"上游 pass 跑完后重打"逐 bit 相同——`pass_b`/`transp` 的动态输入直接从 C++ slot 读、`wind` 用缓存的静态 baseline，所以重打是纯冗余 round-trip。其余非 yield 节点（`ocean_land`/`wind_surface`/`weather`/`runtime_hydrology`/`stage_b`）同理收到空 patch、读相同 bundle 状态，故批处理与"每次一个节点"逐 bit 相等——已用 `native_daily_active_bootstrap_test.gd` + 双进程 A/B（同 seed 跑 40 round，全部 38 个 SoA 数组逐元素一致）验证。效果：每 round 的 GDScript↔C++ round-trip 从 ~9.1 次降到 **~3 次（−67%）**，`apply` −43%、`native_call` −40%、`bundle` 也随 slice 数下降，且 native round 现在能在单 tick 内跑完整轮（不再跨 tick spill）。返回值仍含 `progress_ratio`、`stage_name`、`substage`、`cursor_start/cursor_end`（批处理下 `cursor_start` 为该批首节点）和 `node_report`。SUS 会在同一个 job tick 内继续调用下一 slice，直到 native round 完成或 transaction budget 用尽。ACTIVE slice 使用 `world_ext_daily_sim.cpp` 内的 lightweight slice graph（顺序与 `system_schedule.cpp::SCHEDULE_GRAPH` 保持一致），避免 hot path 依赖跨编译单元的 `SystemNode` 成员函数指针表；`run_native_daily_tick()` debug/full-run helper 仍使用 `SCHEDULE_GRAPH` dispatcher。
 - Sea ice 在 native sliced ACTIVE 中仍按每日松弛语义推进：`sea_ice_knobs.dt_days` 会消费并推进 `_last_sea_ice_pass_day`，但上限压到 1 天。这个上限现在用于防止异常跨 tick continuation 折叠成批量融化/冻结；正常 ACTIVE 不应让一个 climate/sea-ice round 跨过多日。
 - 最后一个 native node 完成后，`MapGenerator` 会先发布 native 返回的 TTA，再执行 climate finalizer（复用旧 `thermal_daily_delta_cap` / `temperature_transport_anomaly_daily_cap` 语义，写回 `MapData` 和 GDScript `DCWorld`），然后才把 `published_slots` / `visual_dirty_intents` / finalizer diagnostics 暴露给 scheduler、CSV 和 debug。
 - `total_ms` / `native_ms` 是**最后一个 slice** 墙钟，供 SUS largest 归因；`round_native_ms` 是当前 native round 累计墙钟，也是判断 daily transaction 实际成本的主指标。
