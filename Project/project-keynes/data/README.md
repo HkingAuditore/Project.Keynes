@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `terrain/` | `TerrainProfile` | 26 | 每种地形的通行性、移动消耗、调试色、中文名 |
 | `vegetation/` | `VegetationProfile` | 24 | 每种植被的气候适应性、生态反馈、演替链 |
-| `world/` | `ClimateProfile` | 1+ | 世界生成参数（大陆形态、湿度、季节、水文、生态反馈） |
+| `world/` | `ClimateProfile` | 1+ | 世界生成参数（大陆形态、湿度、轨道日照、水文、生态反馈） |
 
 ---
 
@@ -91,9 +91,11 @@
 
    | 字段 | earth_like | ice_age 建议 | 说明 |
    |---|---|---|---|
-   | `sea_ice_form_threshold` | `0.07` | `0.15` | 更容易结冰 |
-   | `sea_ice_melt_threshold` | `0.12` | `0.22` | 更难融化 |
-   | `seasonal_moisture_scale` | `[1.05, 1.20, 0.92, 0.78]` | `[0.85, 0.95, 0.75, 0.60]` | 全年偏干 |
+   | `sea_ice_form_threshold` | `0.10` | `0.15` | 更容易结冰 |
+   | `sea_ice_melt_threshold` | `0.22` | `0.30` | 更难融化 |
+   | `weather_ocean_evap_gain` | `0.40` | `0.25` | 海面蒸发偏弱，降水源减少 |
+   | `ocean_moisture_coupling_gain` | `1.5` | `0.9` | 洋流对水汽输送影响更弱 |
+   | `insolation_season_gain` | `2.5` | `2.0` | 日照季节响应更温和 |
    | `orographic_boost` | `1.5` | `2.0` | 山地降雪更多 |
    | `veg_forest_donor` | `0.06` | `0.02` | 冻土森林蒸腾弱 |
    | `veg_desert_donor` | `-0.04` | `-0.08` | 冰原更干燥 |
@@ -139,6 +141,6 @@ load("res://scripts/data/_registry_self_check.gd").new().run()
 ─── Registry self-check ─────────────────────────────
   [Terrain]    26 / 26 loaded
   [Vegetation] 24 / 24 loaded
-  [Climate]    res://data/world/earth_like.tres OK (seasonal=[1.05, 1.2, 0.92, 0.78], volcanoes=8)
+  [Climate]    res://data/world/earth_like.tres OK (legacy_moisture_scale=[1, 1, 1, 1], volcanoes=8)
 ─── Registry self-check done ────────────────────────
 ```

@@ -53,7 +53,13 @@ enum TERRAIN {
 	DELTA,      # 三角洲（河流入海前的最末几格）
 	OASIS,      # 绿洲（DESERT 中的水源点）
 	SALT_FLAT,  # 盐沼 / 盐滩（干旱内陆盆地）
-	BADLANDS,   # 荒原 / 峡谷（干旱 + 高 elevation variance）
+	BADLANDS,   # 荒原 / 恶地（干旱软岩片状侵蚀的破碎台地；峡谷由 LandformType.CANYON 表达）
+	# ── terrain-overhaul 新增地形（id 26+，尾部追加保证旧下标稳定）──
+	COLD_DESERT,  # 寒漠（冷 + 极旱，区别于热沙漠：中高纬大陆内部 / 雨影背风）
+	CHAPARRAL,    # 硬叶灌丛（暖 + 夏旱冬湿，比 SHRUBLAND 更偏地中海硬叶）
+	MOOR,         # 泥炭湿原（凉冷 + 极湿 + 排水不畅的酸性高地 / 低地）
+	FLOODPLAIN,   # 泛滥平原（大河沿岸低海拔 + 周期性泛滥的肥沃冲积带）
+	MESA,         # 方山（干旱 + 高差台地 + 顶部平坦的侵蚀残丘）
 }
 
 # --- 静态查询方法（Facade：全部转发到 TerrainProfileRegistry） ---

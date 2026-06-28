@@ -23,14 +23,10 @@ class_name WeatherRefreshJob
 ## fronts from the last unsuppressed run. Behavior equivalent.
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
-# Weather=0 fix Step B（2026-05-13）：原 _DEFER_AFTER_CLIMATE_SLICE_MS = 4.0
-# 在 climate 还是 80ms 单体怪兽时合理（climate 一跑 weather 必须让），但
-# 当前 climate 已切片到 6 个 sub-stage，每 stage 5-10ms，每次都触发 defer
-# → weather 30 tick 只跑 4 次（每 7.5 天 1 次）。
-# 当前 ocean_water sub-stage 实测约 10-12ms；这类片再叠 weather 的 8ms commit
-# 会稳定打出 30ms+ fast tick。阈值设为 9ms，只让 A/B 这类轻片同帧跑 weather。
-const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 9.0
-const _MAX_CLIMATE_DEFER_STREAK: int = 2
+# Extreme performance mode：weather 避免叠在任何已明显超 1ms 的 climate
+# slice 后面。允许最多连续 defer 4 次，防止天气完全饿死。
+const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
+const _MAX_CLIMATE_DEFER_STREAK: int = 4
 
 # External references — wired up by MapGenerator at registration time.
 var generator = null  # MapGenerator (untyped to avoid circular preload)
@@ -45,6 +41,9 @@ var climate_anomaly_getter: Callable = Callable()
 var stride: int = 1
 # Cached output from the most recent successful run; renderer polls it.
 var _last_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
+var _last_published_front_signature: String = ""
+var _last_published_front_slot_sigs: PackedStringArray = PackedStringArray()
+var _last_fronts_diff_report: Dictionary = {}
 # Set true on every tick where run_slice actually fired (i.e. policy gate
 # passed). Used by main.gd to decide whether to refresh per-cell UI lines.
 var ran_this_tick: bool = false
@@ -66,6 +65,130 @@ var _round_stage: int = 0
 var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _climate_defer_streak: int = 0
 var _merged_native_first_log_done: bool = false
+var _weather_rt_diag_count: int = 0
+
+
+func _publish_fronts_if_changed(fronts: Array[WeatherFront]) -> bool:
+	var slot_sigs: PackedStringArray = _fronts_publish_slot_signatures(fronts)
+	var signature: String = "n=%d|%s" % [fronts.size(), "|".join(slot_sigs)]
+	var diff: Dictionary = _fronts_signature_diff(_last_published_front_slot_sigs, slot_sigs)
+	var changed: bool = signature != _last_published_front_signature
+	diff["changed"] = changed
+	diff["signature"] = signature
+	diff["fronts"] = fronts.size()
+	_last_fronts = fronts
+	_last_published_front_signature = signature
+	_last_published_front_slot_sigs = slot_sigs
+	_last_fronts_diff_report = diff
+	return changed
+
+
+func _front_signature(front: WeatherFront) -> String:
+	if front == null:
+		return "null"
+	var axis_v: Vector2 = front.normalized_axis()
+	var center_x_bucket: int = roundi(front.center.x / 8.0)
+	var center_y_bucket: int = roundi(front.center.y / 8.0)
+	var axis_bucket: int = roundi(axis_v.angle() / 0.0872665)
+	var radius_bucket: int = roundi(front.radius / 8.0)
+	var strength_bucket: int = roundi(clampf(front.intensity, 0.0, 1.0) * 100.0)
+	var precip_bucket: int = roundi(clampf(front.precip_amount, 0.0, 1.0) * 100.0)
+	var cloud_bucket: int = roundi(clampf(front.cloud_amount, 0.0, 1.0) * 100.0)
+	return "%d:%d:%d:%d:%d:%d:%d:%d" % [
+		int(front.type),
+		center_x_bucket,
+		center_y_bucket,
+		axis_bucket,
+		radius_bucket,
+		strength_bucket,
+		precip_bucket,
+		cloud_bucket,
+	]
+
+
+func _fronts_publish_slot_signatures(fronts: Array[WeatherFront]) -> PackedStringArray:
+	var parts: PackedStringArray = PackedStringArray()
+	parts.resize(fronts.size())
+	for front_index in range(fronts.size()):
+		parts[front_index] = _front_signature(fronts[front_index])
+	return parts
+
+
+func _fronts_signature_diff(prev: PackedStringArray, next: PackedStringArray) -> Dictionary:
+	var changed_slots: PackedInt32Array = PackedInt32Array()
+	var unchanged: int = 0
+	var changed: int = 0
+	var added: int = 0
+	var removed: int = 0
+	var max_n: int = maxi(prev.size(), next.size())
+	for i in range(max_n):
+		var old_sig: String = prev[i] if i < prev.size() else ""
+		var new_sig: String = next[i] if i < next.size() else ""
+		if old_sig == new_sig:
+			unchanged += 1
+		else:
+			changed_slots.append(i)
+			if i >= prev.size():
+				added += 1
+			elif i >= next.size():
+				removed += 1
+			else:
+				changed += 1
+	return {
+		"changed_slots": changed_slots,
+		"changed_slots_count": changed_slots.size(),
+		"unchanged_slots": unchanged,
+		"changed_slots_existing": changed,
+		"added_slots": added,
+		"removed_slots": removed,
+	}
+
+
+func _weather_rt_log(ctx: SusTickContext, stage_name: String, detail: String = "") -> void:
+	if _weather_rt_diag_count >= 32:
+		return
+	if not PKLog.enabled:
+		return
+	_weather_rt_diag_count += 1
+	var suffix: String = ""
+	if detail != "":
+		suffix = " " + detail
+	print("[weather_refresh][RT] #%d tick=%d stage=%s stride=%d round=%s rstage=%d fronts=%d changed=%s%s" % [
+		_weather_rt_diag_count, ctx.tick_index, stage_name, stride,
+		str(_round_active), _round_stage, _last_fronts.size(),
+		str(_fronts_changed_this_tick), suffix,
+	])
+
+
+func _publish_weather_lut_inline(ctx: SusTickContext, report: Dictionary, source: String) -> void:
+	if generator == null or not generator.has_method("publish_weather_lut_after_weather_commit"):
+		report["weather_lut_reason"] = "missing_publish_facade"
+		return
+	var native_lut: PackedByteArray = report.get("weather_lut", PackedByteArray())
+	var native_changed: bool = bool(report.get("weather_lut_changed", false))
+	if native_lut.is_empty() and generator.get("_last_weather_breakdown") != null:
+		var last_weather_breakdown: Dictionary = generator._last_weather_breakdown
+		native_lut = last_weather_breakdown.get("weather_lut", PackedByteArray())
+		native_changed = bool(last_weather_breakdown.get("weather_lut_changed", native_changed))
+	var t_lut_us: int = Time.get_ticks_usec()
+	var lut_report: Dictionary = generator.publish_weather_lut_after_weather_commit(map, world, native_lut, native_changed)
+	var lut_ms: float = float(Time.get_ticks_usec() - t_lut_us) / 1000.0
+	report["weather_lut_ms"] = lut_ms
+	report["weather_lut_published"] = bool(lut_report.get("weather_lut_published", false))
+	report["weather_lut_changed"] = bool(lut_report.get("weather_lut_changed", false))
+	report["weather_lut_reason"] = str(lut_report.get("weather_lut_reason", lut_report.get("reason", "")))
+	report["weather_lut_dirty_count"] = int(lut_report.get("weather_lut_dirty_count", 0))
+	report["weather_lut_full_rebuild"] = bool(lut_report.get("weather_lut_full_rebuild", false))
+	print("[weather-lut][inline] tick=%d source=%s published=%s changed=%s dirty=%d full=%s reason=%s ms=%.3f" % [
+		ctx.tick_index if ctx != null else -1,
+		source,
+		str(report["weather_lut_published"]),
+		str(report["weather_lut_changed"]),
+		int(report["weather_lut_dirty_count"]),
+		str(report["weather_lut_full_rebuild"]),
+		str(report["weather_lut_reason"]),
+		lut_ms,
+	])
 
 
 # ─── DataCore: weather component 注册与缓存（Task 8） ───────────────────
@@ -570,29 +693,13 @@ var _merged_native_gate_active: bool = false
 
 func _refresh_merged_native_gate() -> void:
 	_merged_native_gate_probed = true
+	# Keep the one-shot native transaction opt-in only. The staged field path is
+	# the visible weather authority; a method probe for run_weather_refresh_daily_pass
+	# is not enough because the combined facade can bypass field commit diagnostics.
 	_merged_native_gate_active = false
-	if generator == null or not generator.has_method("get_data_core_world_ext"):
+	if generator == null or not generator.has_method("weather_native_daily_available"):
 		return
-	var cp = generator._c() if generator.has_method("_c") else null
-	# dots-flag-prune-pr1 round 2: use_gdext_weather_refresh_daily flag 已删除——恒走
-	# ext + has_method(run_weather_refresh_daily_pass) 探测分支。cp 仅作为 hot-reload
-	# 接入点保留，不再控制 gate 开关。
-	if cp == null:
-		return
-	var ext = generator.get_data_core_world_ext()
-	if ext == null:
-		return
-	# 走顶层一体化 pass（唯一 bind 的入口）。
-	# 注：当前 generator 还没有 GDScript facade 把入参打包到 run_weather_refresh_daily_pass，
-	# 所以即便 has_method=true 我们也不主动 invoke——保持 fallback 到现有 direct path。
-	# 待 facade 落地后，gate 立即返回 true 即可启用合并模式，无需改 schedule 代码。
-	if not ext.has_method("run_weather_refresh_daily_pass"):
-		return
-	if not generator.has_method("refresh_weather_daily"):
-		# 等 generator 暴露 facade（refresh_weather_daily）后再激活。
-		_merged_native_gate_active = false
-		return
-	_merged_native_gate_active = true
+	_merged_native_gate_active = bool(generator.weather_native_daily_available())
 
 
 func _should_use_merged_native_weather(can_slice_field: bool) -> bool:
@@ -638,12 +745,17 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"run_stage_a_slice_ms": 0.0,
 		"stage_a_direct_ms": 0.0,
 		"commit_stage_a_ms": 0.0,
+		"hydrology_discharge_ms": 0.0,
 		"stage_b_outer_ms": 0.0,
 		"sync_fronts_ms": 0.0,
 		"soak_dump_ms": 0.0,
 		"prelude_ms": prelude_ms,
 	}
 	var use_merged_native_weather: bool = _should_use_merged_native_weather(can_slice_field)
+	_weather_rt_log(ctx, "entry", "can_slice=%s merged=%s dc=%s prelude=%.3f phase=%.3f" % [
+		str(can_slice_field), str(use_merged_native_weather), str(is_data_core_on),
+		prelude_ms, season_phase,
+	])
 	if use_merged_native_weather and not _merged_native_first_log_done:
 		_merged_native_first_log_done = true
 		print("[weather/native-daily] merged transaction ACTIVE — field/distribute/summary/stage_b run in one SUS slice; legacy sliced path remains fallback")
@@ -664,15 +776,14 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		# 完成全部，与 fallback 走 stage_a/stage_b 共用同一字段语义；perf overlay
 		# 通过 _last_weather_breakdown.path == "gdext_combined" 区分两者）。
 		timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_merged_us) / 1000.0
-
-		_last_fronts = merged_fronts
+		# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
 		_round_fronts = merged_fronts
 		_round_active = false
 		_round_stage = 0
 		ran_this_tick = true
-		_fronts_changed_this_tick = true
+		_fronts_changed_this_tick = _publish_fronts_if_changed(merged_fronts)
 
-		if is_data_core_on:
+		if is_data_core_on and _fronts_changed_this_tick:
 			var t_merged_sync_us: int = Time.get_ticks_usec()
 			sync_fronts_to_world(merged_fronts)
 			timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_merged_sync_us) / 1000.0
@@ -681,18 +792,31 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_merged_soak_us) / 1000.0
 
 		var merged_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		_publish_job_timing(timing, merged_elapsed_ms)
-		return {
+		_publish_job_timing(timing, merged_elapsed_ms, "weather_merged")
+		var merged_report: Dictionary = {
 			"done": true,
 			"work_done": merged_fronts.size(),
 			"elapsed_ms": merged_elapsed_ms,
 			"progress_ratio": 1.0,
 			"stage_name": "weather_merged",
 			"substage": "fronts_%d" % merged_fronts.size(),
-			"path": "data_core_cells_only" if is_data_core_on else "legacy",
+			"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 		}
+		merged_report.merge(_last_fronts_diff_report, true)
+		_publish_weather_lut_inline(ctx, merged_report, "merged")
+		_weather_rt_log(ctx, "merged_done", "elapsed=%.3f changed_slots=%d" % [
+			merged_elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+		])
+		return merged_report
 
 	if can_slice_field and not use_merged_native_weather:
+		var cell_budget: int = 500
+		if generator.has_method("weather_field_slice_cells"):
+			cell_budget = int(generator.weather_field_slice_cells())
+		var round_cell_count: int = map.cell_count() if map != null and map.has_method("cell_count") else 0
+		var same_slice_full_round: bool = round_cell_count > 0 \
+				and round_cell_count <= 6400 \
+				and cell_budget >= round_cell_count
 		if not _round_active:
 			var t_begin_us: int = Time.get_ticks_usec()
 			generator.begin_weather_refresh_stage_a(map, world, season_idx, anomaly, season_phase)
@@ -701,19 +825,20 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			_round_stage = 1
 			_round_fronts = _last_fronts
 			var begin_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-			_publish_job_timing(timing, begin_elapsed_ms)
-			return {
-				"done": false,
-				"work_done": 0,
-				"elapsed_ms": begin_elapsed_ms,
-				"progress_ratio": 0.10,
-				"stage_name": "weather_begin",
-				"substage": "init_round",
-				"path": "data_core_cells_only" if is_data_core_on else "legacy",
-			}
-		var cell_budget: int = 500
-		if generator.has_method("weather_field_slice_cells"):
-			cell_budget = int(generator.weather_field_slice_cells())
+			_publish_job_timing(timing, begin_elapsed_ms, "weather_begin")
+			_weather_rt_log(ctx, "begin", "elapsed=%.3f dc=%s" % [
+				begin_elapsed_ms, str(is_data_core_on),
+			])
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": 0,
+					"elapsed_ms": begin_elapsed_ms,
+					"progress_ratio": 0.10,
+					"stage_name": "weather_begin",
+					"substage": "init_round",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+				}
 		var slice_result: Dictionary = {}
 		if _round_stage <= 1:
 			var t_run_us: int = Time.get_ticks_usec()
@@ -721,8 +846,15 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			timing["run_stage_a_slice_ms"] = (Time.get_ticks_usec() - t_run_us) / 1000.0
 			var slice_done: bool = bool(slice_result.get("done", true))
 			var solve_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-			_publish_job_timing(timing, solve_elapsed_ms)
+			_publish_job_timing(timing, solve_elapsed_ms, "weather_solve")
 			if not slice_done:
+				_weather_rt_log(ctx, "solve", "elapsed=%.3f work=%d cursor=%d..%d progress=%.3f" % [
+					solve_elapsed_ms,
+					int(slice_result.get("work_done", 0)),
+					int(slice_result.get("cursor_start", -1)),
+					int(slice_result.get("cursor_end", -1)),
+					float(slice_result.get("progress_ratio", 0.0)),
+				])
 				return {
 					"done": false,
 					"work_done": int(slice_result.get("work_done", 0)),
@@ -730,33 +862,91 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 					"progress_ratio": maxf(0.10, float(slice_result.get("progress_ratio", 0.0))),
 					"stage_name": "weather_solve",
 					"substage": "cells_%d" % int(slice_result.get("work_done", 0)),
-					"path": "data_core_cells_only" if is_data_core_on else "legacy",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+					"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
+					"cursor_start": int(slice_result.get("cursor_start", -1)),
+					"cursor_end": int(slice_result.get("cursor_end", -1)),
 				}
 			_round_stage = 2
-			return {
-				"done": false,
-				"work_done": int(slice_result.get("work_done", 0)),
-				"elapsed_ms": solve_elapsed_ms,
-				"progress_ratio": 0.70,
-				"stage_name": "weather_solve",
-				"substage": "cells_done",
-				"path": "data_core_cells_only" if is_data_core_on else "legacy",
-			}
-		var t_commit_us: int = Time.get_ticks_usec()
-		var sliced_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
-		timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
+			_weather_rt_log(ctx, "solve_done", "elapsed=%.3f work=%d cursor=%d..%d" % [
+				solve_elapsed_ms,
+				int(slice_result.get("work_done", 0)),
+				int(slice_result.get("cursor_start", -1)),
+				int(slice_result.get("cursor_end", -1)),
+			])
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": int(slice_result.get("work_done", 0)),
+					"elapsed_ms": solve_elapsed_ms,
+					"progress_ratio": 0.70,
+					"stage_name": "weather_solve",
+					"substage": "cells_done",
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+					"processed_cells": int(slice_result.get("processed_cells", slice_result.get("work_done", 0))),
+					"cursor_start": int(slice_result.get("cursor_start", -1)),
+					"cursor_end": int(slice_result.get("cursor_end", -1)),
+				}
+		if _round_stage == 2:
+			var t_commit_us: int = Time.get_ticks_usec()
+			var committed_fronts: Array[WeatherFront] = generator.commit_weather_refresh_stage_a(map, world)
+			timing["commit_stage_a_ms"] = (Time.get_ticks_usec() - t_commit_us) / 1000.0
+			var summary_lut_report: Dictionary = generator._last_weather_breakdown if generator != null and generator.get("_last_weather_breakdown") != null else {}
+			_publish_weather_lut_inline(ctx, summary_lut_report, "summary")
+
+			_round_fronts = committed_fronts
+			# Stage13b: ψ 推进已内联进 C++ solve pass(每轮 start_idx==0 全场一次)，不再走 GDScript 挂钩。
+			_round_stage = 3
+			var commit_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+			_publish_job_timing(timing, commit_elapsed_ms, "weather_summary")
+			_weather_rt_log(ctx, "summary", "elapsed=%.3f fronts=%d" % [
+				commit_elapsed_ms, committed_fronts.size(),
+			])
+			if not same_slice_full_round:
+				return {
+					"done": false,
+					"work_done": committed_fronts.size(),
+					"elapsed_ms": commit_elapsed_ms,
+					"progress_ratio": 0.85,
+					"stage_name": "weather_summary",
+					"substage": "fronts_%d" % committed_fronts.size(),
+					"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
+				}
+		if _round_stage == 3:
+			var hydrology_enabled: bool = generator.has_method("runtime_hydrology_enabled") \
+					and bool(generator.runtime_hydrology_enabled())
+			if hydrology_enabled:
+				var t_hydro_us: int = Time.get_ticks_usec()
+				var hydro_report: Dictionary = generator.run_hydrology_discharge_pass_native(map, world)
+				timing["hydrology_discharge_ms"] = (Time.get_ticks_usec() - t_hydro_us) / 1000.0
+				_round_stage = 4
+				var hydro_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+				_publish_job_timing(timing, hydro_elapsed_ms, "hydrology_discharge")
+				hydro_report["done"] = false
+				hydro_report["elapsed_ms"] = hydro_elapsed_ms
+				hydro_report["progress_ratio"] = 0.92
+				hydro_report["stage_name"] = "hydrology_discharge"
+				hydro_report["substage"] = "route_full"
+				_weather_rt_log(ctx, "hydrology", "elapsed=%.3f q95=%.4f qmax=%.4f budget=%.5f" % [
+					hydro_elapsed_ms,
+					float(hydro_report.get("river_discharge_p95", 0.0)),
+					float(hydro_report.get("river_discharge_max", 0.0)),
+					float(hydro_report.get("water_budget_error", 0.0)),
+				])
+				if not same_slice_full_round:
+					return hydro_report
+			_round_stage = 4
 		var t_stage_b_us: int = Time.get_ticks_usec()
 		generator.refresh_daily_stage_b(map, world)
 		timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_stage_b_us) / 1000.0
-		_last_fronts = sliced_fronts
-		_round_fronts = sliced_fronts
+		var sliced_fronts: Array[WeatherFront] = _round_fronts
 		_round_active = false
 		_round_stage = 0
 		ran_this_tick = true
-		_fronts_changed_this_tick = true
+		_fronts_changed_this_tick = _publish_fronts_if_changed(sliced_fronts)
 		# DataCore step 2：正路径 commit 完成，镜像 front 到 World（开关 ON 才生效）。
 		# C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
-		if is_data_core_on:
+		if is_data_core_on and _fronts_changed_this_tick:
 			var t_sync_us: int = Time.get_ticks_usec()
 			sync_fronts_to_world(sliced_fronts)
 			timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_sync_us) / 1000.0
@@ -764,34 +954,41 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		_soak_dump_weather_phase(ctx, sliced_fronts.size())
 		timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_soak_us) / 1000.0
 		var sliced_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		_publish_job_timing(timing, sliced_elapsed_ms)
-		return {
+		_publish_job_timing(timing, sliced_elapsed_ms, "weather_commit")
+		var sliced_report: Dictionary = {
 			"done": true,
 			"work_done": sliced_fronts.size(),
 			"elapsed_ms": sliced_elapsed_ms,
 			"progress_ratio": 1.0,
 			"stage_name": "weather_commit",
 			"substage": "fronts_%d" % sliced_fronts.size(),
-			"path": "data_core_cells_only" if is_data_core_on else "legacy",
+			"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 		}
+		sliced_report.merge(_last_fronts_diff_report, true)
+		_weather_rt_log(ctx, "commit", "elapsed=%.3f changed_slots=%d" % [
+			sliced_elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+		])
+		return sliced_report
 
 	var t_direct_a_us: int = Time.get_ticks_usec()
 	var fronts: Array[WeatherFront] = generator.refresh_daily_stage_a(map, world, season_idx, anomaly, season_phase)
 	timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_direct_a_us) / 1000.0
+	if generator.has_method("runtime_hydrology_enabled") and bool(generator.runtime_hydrology_enabled()):
+		var t_direct_hydro_us: int = Time.get_ticks_usec()
+		generator.run_hydrology_discharge_pass_native(map, world)
+		timing["hydrology_discharge_ms"] = (Time.get_ticks_usec() - t_direct_hydro_us) / 1000.0
 	var t_direct_b_us: int = Time.get_ticks_usec()
 	generator.refresh_daily_stage_b(map, world)
 	timing["stage_b_outer_ms"] = (Time.get_ticks_usec() - t_direct_b_us) / 1000.0
 
-	_last_fronts = fronts
 	_round_fronts = fronts
 	# 合并模式不再有"半成品 round"——_round_active 始终为 false。
 	_round_active = false
 	_round_stage = 0
 	ran_this_tick = true
-	# 每次 run_slice 都把 _last_fronts 翻新，所以 fronts_changed 与 ran_this_tick 同步置位。
-	_fronts_changed_this_tick = true
+	_fronts_changed_this_tick = _publish_fronts_if_changed(fronts)
 	# DataCore step 2：同步镜像。C-02.3：复用 run_slice 入口缓存的 is_data_core_on。
-	if is_data_core_on:
+	if is_data_core_on and _fronts_changed_this_tick:
 		var t_direct_sync_us: int = Time.get_ticks_usec()
 		sync_fronts_to_world(fronts)
 		timing["sync_fronts_ms"] = (Time.get_ticks_usec() - t_direct_sync_us) / 1000.0
@@ -799,16 +996,22 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	_soak_dump_weather_phase(ctx, fronts.size())
 	timing["soak_dump_ms"] = (Time.get_ticks_usec() - t_direct_soak_us) / 1000.0
 	var elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-	_publish_job_timing(timing, elapsed_ms)
-	return {
+	_publish_job_timing(timing, elapsed_ms, "weather_direct")
+	var direct_report: Dictionary = {
 		"done": true,
 		"work_done": fronts.size(),
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": 1.0,
 		"stage_name": "weather_direct",
 		"substage": "fronts_%d" % fronts.size(),
-		"path": "data_core_cells_only" if is_data_core_on else "legacy",
+		"path": "data_core_cells_only" if is_data_core_on else "dc_not_ready",
 	}
+	direct_report.merge(_last_fronts_diff_report, true)
+	_publish_weather_lut_inline(ctx, direct_report, "direct")
+	_weather_rt_log(ctx, "direct", "elapsed=%.3f changed_slots=%d" % [
+		elapsed_ms, int(_last_fronts_diff_report.get("changed_slots_count", 0)),
+	])
+	return direct_report
 
 
 # DCSoakDump（dots-storage-同源紧急修复 2026-05-14）：weather pipeline 末尾把
@@ -830,6 +1033,10 @@ func _soak_dump_weather_phase(ctx: SusTickContext, fronts_count: int) -> void:
 ## Read-only accessor for main.gd; cheap, no SUS state mutation.
 func last_fronts() -> Array[WeatherFront]:
 	return _last_fronts
+
+
+func last_fronts_diff_report() -> Dictionary:
+	return _last_fronts_diff_report.duplicate(true)
 
 
 ## DataCore step 2：构建一个用于遍历 active front entity 的 query。
@@ -864,8 +1071,10 @@ func _is_data_core_weather_enabled() -> bool:
 	return true
 
 
-func _publish_job_timing(timing: Dictionary, total_ms: float) -> void:
+func _publish_job_timing(timing: Dictionary, total_ms: float, stage_name: String = "") -> void:
 	timing["job_total_ms"] = total_ms
+	if stage_name != "":
+		timing["stage_name"] = stage_name
 	var accounted_ms: float = 0.0
 	for k in [
 		"prelude_ms",
@@ -873,6 +1082,7 @@ func _publish_job_timing(timing: Dictionary, total_ms: float) -> void:
 		"run_stage_a_slice_ms",
 		"stage_a_direct_ms",
 		"commit_stage_a_ms",
+		"hydrology_discharge_ms",
 		"stage_b_outer_ms",
 		"sync_fronts_ms",
 		"soak_dump_ms",
@@ -906,10 +1116,10 @@ func reset_run_flag() -> void:
 	_fronts_changed_this_tick = false
 
 
-## Allow MapGenerator to retune the stride on the fly (speed_changed callback).
-func reconfigure(p_stride: int) -> void:
+## Allow MapGenerator to retune the stride/phase on the fly.
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	policy = SusPolicyScript.StridePolicy.new(stride, posmod(p_phase, stride))
 
 
 ## Map regenerate / SUS-wide reset：清状态字段。
@@ -919,9 +1129,14 @@ func reset_progress() -> void:
 	_round_active = false
 	_round_stage = 0
 	_round_fronts = [] as Array[WeatherFront]
+	_last_fronts = [] as Array[WeatherFront]
+	_last_published_front_signature = ""
+	_last_published_front_slot_sigs = PackedStringArray()
+	_last_fronts_diff_report = {}
 	_fronts_changed_this_tick = false
 	_climate_defer_streak = 0
 	_merged_native_first_log_done = false
+	_weather_rt_diag_count = 0
 	# 强制下一次 run_slice 重新探测 merged-native gate（generator/ext 可能在
 	# scene reload 期间被替换或新 facade 被注入；缓存失效后下一 slice 自检即可）。
 	_merged_native_gate_probed = false

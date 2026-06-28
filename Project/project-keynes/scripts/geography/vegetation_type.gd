@@ -55,6 +55,11 @@ enum VEG {
 	MARSH,                 # 草本湿地
 	KELP_FOREST,           # 海藻林（COAST + 凉温）
 	CORAL_REEF,            # 珊瑚礁（COAST + 暖海）
+	# ── terrain-overhaul 新增植被（id 24+，尾部追加保证旧下标稳定）──
+	CLOUD_FOREST,          # 云雾林（热带 / 亚热带高山迎风坡 + 常年云雾高湿）
+	MONSOON_FOREST,        # 季风林（热带季风带 + 干湿季分明的半落叶林）
+	SEAGRASS,              # 海草床（COAST 浅海软底 + 暖凉过渡，区别于 KELP/REEF）
+	PEAT_BOG,              # 泥炭沼（凉冷 + 极湿 + 厌氧泥炭积累的酸性沼泽）
 }
 
 # ─── 天气抗性表（Milestone: vegetation-survival-rebalance 方案 C） ────────
@@ -130,6 +135,27 @@ static func next_in_succession(v: VEG, direction: int) -> VEG:
 	if next < 0 or next == int(v):
 		return v
 	return next as VEG
+
+# climate-loop-closure Phase 3.2：气候导向退化目标。
+# 退化触发时(vitality 长期偏低)，不再无脑走 next_harsher(更干/更荒)，而是在
+# {next_harsher, next_richer} 两个图邻居里挑选与当前 (temp, moist) 兼容度更高者。
+# 这样长期过湿压垮的喜旱植被会向 next_richer(湿生：雨林/沼泽方向)迁移，而非一路
+# 退化到 NONE 后永久死亡；长期过旱则仍向 next_harsher(荒漠方向)迁移。
+# 实现植被"随气候迁移"而非"单向死亡"。
+static func best_degrade_target(v: VEG, temp: float, moist: float) -> VEG:
+	var harsher: VEG = next_in_succession(v, -1)
+	var richer: VEG = next_in_succession(v, 1)
+	var best: VEG = v
+	var best_score: float = -1.0
+	if harsher != v:
+		best = harsher
+		best_score = climate_compat_score(harsher, temp, moist)
+	if richer != v:
+		var rs: float = climate_compat_score(richer, temp, moist)
+		if rs > best_score:
+			best = richer
+			best_score = rs
+	return best
 
 # Milestone: vegetation-survival-rebalance（方案 C）
 # 查询指定植被对某种天气的抗性系数 ∈ [0, 1]。

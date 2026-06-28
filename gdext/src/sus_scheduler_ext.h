@@ -15,8 +15,8 @@
 //      starvation_threshold / max_slices_per_tick / slice_budget_ms /
 //      _starvation_count / _in_flight) is owned by C++. The actual SusJob
 //      RefCounted object lives on the GDScript side; C++ holds its Object*
-//      and dispatches `run_slice(ctx)` / `should_run(ctx)` (only when the
-//      policy gate is *bypass-via-job-override*) / `policy.on_job_completed`
+//      and dispatches `run_slice(ctx)` / `should_run(ctx)` (only when
+//      `use_job_should_run=true`) / `policy.on_job_completed`
 //      via Object::call() — exactly mirroring the GDScript scheduler's
 //      virtual dispatch.
 //   ④ Telemetry buffers (last_report / last_tick_summary /
@@ -57,14 +57,24 @@ public:
     ~SusSchedulerExt() override;
 
     // ─── Configuration mirrors of SlicedUpdateScheduler exports ──────────
+    // Fix #8A (2026-06-15): clamp 上限从 2.0 改 4.0。GDScript 上层根据 mobile
+    // feature 决定 mobile 给 4.0 / desktop 给 2.0，C++ 这里只放开上界让上层
+    // 的判定生效。Mobile 上 SUS p95=9-15ms 远超 2ms，旧上限让 atlas upload 等
+    // 低优先级 job 80% 被饿死，雪线/海冰视觉延迟 2-3 秒。
     void   set_frame_budget_ms      (float v) {
-        _frame_budget_ms = v < 0.25f ? 0.25f : (v > 2.0f ? 2.0f : v);
+        _frame_budget_ms = v < 0.25f ? 0.25f : (v > 4.0f ? 4.0f : v);
     }
     float  get_frame_budget_ms      () const  { return _frame_budget_ms; }
     void   set_strict_budget_enabled(bool v)  { _strict_budget_enabled = v; }
     bool   get_strict_budget_enabled() const  { return _strict_budget_enabled; }
     void   set_log_interval_ticks   (int v)   { _log_interval_ticks = v; }
     int    get_log_interval_ticks   () const  { return _log_interval_ticks; }
+    // Fix #11 second pass (2026-06-16) — 镜像 GDScript 端 PKLog.enabled 全局开关。
+    // false 时跳过 _emit_periodic_log 里所有 print 站点（每 log_interval_ticks
+    // 一次的 7 job × 1 budget summary = 8 行 print，每行 logcat ~5-10ms = mobile
+    // 60FPS budget 杀手）。GDScript 通过 set_diag_logs_enabled 推到 C++ 端。
+    void   set_diag_logs_enabled    (bool v)  { _diag_logs_enabled = v; }
+    bool   get_diag_logs_enabled    () const  { return _diag_logs_enabled; }
     void   set_sim_budget_window_size(int v);
     int    get_sim_budget_window_size() const { return _sim_budget_window_size; }
     void   set_sim_budget_warn_ms   (float v) { _sim_budget_warn_ms = v; }
@@ -85,6 +95,7 @@ public:
     //   { "id"                   : StringName,
     //     "priority"             : int,
     //     "must_run"             : bool,
+    //     "use_job_should_run"   : bool,   // opt-in GDScript should_run gate
     //     "starvation_threshold" : int,
     //     "max_slices_per_tick"  : int,
     //     "slice_budget_ms"      : float,
@@ -167,6 +178,7 @@ private:
         godot::StringName id;
         int               priority             = 100;
         bool              must_run             = false;
+        bool              use_job_should_run   = false;
         int               starvation_threshold = 0;
         int               max_slices_per_tick  = 0;
         float             slice_budget_ms      = 4.0f;
@@ -256,6 +268,7 @@ private:
     int   _sim_budget_window_size = 300;
     float _sim_budget_warn_ms     = 1.0f;
     int   _log_interval_ticks     = 30;
+    bool  _diag_logs_enabled      = true;  // Fix #11 second pass (2026-06-16)，GDScript PKLog.enabled 镜像
 
     std::vector<JobEntry>                                       _jobs;
     godot::Dictionary                                           _last_report;

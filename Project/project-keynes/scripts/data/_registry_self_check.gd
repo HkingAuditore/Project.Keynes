@@ -102,7 +102,7 @@ func _check_climate() -> void:
 		ok = false
 		reasons.append("max_volcanoes <= 0")
 	if ok:
-		print("  [Climate]    %s OK (seasonal=%s, volcanoes=%d)" % [
+		print("  [Climate]    %s OK (legacy_moisture_scale=%s, volcanoes=%d)" % [
 			_CLIMATE_DEFAULT_PATH,
 			str(cp.seasonal_moisture_scale),
 			cp.max_volcanoes,

@@ -1,7 +1,7 @@
 extends DCSystem
 class_name SeasonRefreshSystem
 
-## Phase C.3 — DCSystem 改写自 [`SeasonRefreshJob`](../sus/jobs/season_refresh_job.gd)。
+## Phase C.3 — `season_refresh` 的 production DCSystem 实现。
 ##
 ## 行为完全等价（11-stage round 切片在 generator 内部，本 system 仅协调 stage 推进）。
 ##
@@ -10,7 +10,7 @@ class_name SeasonRefreshSystem
 ##             component；这里仅声明对调度器有意义的 high-level 输入
 ##   - writes: cell.terrain / cell.landform / cell.vegetation / cell.cover /
 ##             cell.moisture / cell.base_moisture / cell.weather_dirty_mask /
-##             cell.snow_cover（季节 redecide 阶段会动这些字段）
+##             不发布视觉 cell.snow_cover；运行时雪盖由 weather distribute 统一写入。
 ##
 ## feature_flag：留空（季节切换是世界推进必跑流程，无 toggle）。
 
@@ -24,11 +24,11 @@ var _stage_cursor: int = 0
 var _season_idx: int = 0
 var _round_active: bool = false
 # DOTS-Final-Frontier Phase B+：本 round 是否走"全 round 单 C++ 调用"路径。
-# 与 SeasonRefreshJob 完全等价：round 启动尝试 start_season_round_b_plus，成功
-# 则整 round 走 run_season_round_slice_b_plus；失败/中途 fallback 退回 12-stage。
+# round 启动尝试 start_season_round_b_plus，成功则整 round 走
+# run_season_round_slice_b_plus；失败/中途 fallback 退回 12-stage。
 var _b_plus_active: bool = false
 
-# ─── Periodic-driver（与 SeasonRefreshJob 完全等价）──────────────────────────
+# ─── Periodic-driver ─────────────────────────────────────────────────────
 # 旧设计：season_refresh 由 WorldClock.season_changed → queue_season_refresh
 #   信号触发，速度档 x20 时每 ~15 ticks 排一次 round，几乎 100% 占满主循环。
 # 新设计："季节"在游戏世界里只是温度/降水/风的连续涌现表象（refresh_climate_daily
@@ -50,7 +50,7 @@ func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
 	map = p_map
 	world_data = p_world
 	policy = _SusPolicyScript.AlwaysPolicy.new()
-	# 从 ClimateProfile 读 period_ticks（如配置）— 与 SeasonRefreshJob 同步。
+	# 从 ClimateProfile 读 period_ticks（如配置）。
 	if p_generator != null and p_generator.has_method("_c"):
 		var cp = p_generator._c()
 		if cp != null and "season_refresh_period_ticks" in cp:
@@ -78,7 +78,6 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_MOISTURE,
 		DCComponentIds.CELL_BASE_MOISTURE,
 		DCComponentIds.CELL_WEATHER_DIRTY,
-		DCComponentIds.CELL_SNOW_COVER,
 	]
 
 
@@ -86,12 +85,56 @@ func feature_flag() -> StringName:
 	return &""
 
 
+func season_refresh_state_snapshot() -> Dictionary:
+	var active_owner_requested: bool = false
+	if generator != null and generator.has_method("_c"):
+		var cp = generator._c()
+		if cp != null and cp.get("native_season_refresh_active_owner_enabled") != null:
+			active_owner_requested = bool(cp.native_season_refresh_active_owner_enabled)
+	var owner: String = "gdscript_retained"
+	if _b_plus_active and active_owner_requested:
+		owner = "native_active"
+	elif _b_plus_active:
+		owner = "native_ready_probe"
+	return {
+		"owner": owner,
+		"native_state_status": "b_plus_active_owner" if owner == "native_active" else ("b_plus_probe" if _b_plus_active else "cadence_probe"),
+		"active_owner_requested": active_owner_requested,
+		"simulation_authority": owner == "native_active",
+		"round_active": _round_active,
+		"stage": _stage,
+		"stage_cursor": _stage_cursor,
+		"stage_name": _season_stage_name(_stage),
+		"season_idx": _season_idx,
+		"period_ticks": period_ticks,
+		"ticks_since_last_round": _ticks_since_last_round,
+		"b_plus_active": _b_plus_active,
+		"simulation_slot_dirty_intents": [
+			"cell_terrain",
+			"cell_landform",
+			"cell_vegetation",
+			"cell_cover",
+			"cell_moisture",
+			"cell_base_moisture",
+			"cell_weather_dirty",
+		],
+		"visual_dirty_intents": [
+			"enum_atlas",
+			"detail_scatter",
+		],
+		"remaining_gdscript_authority": [
+			"period_policy_counter",
+			"atlas_queue_execution",
+		],
+	}
+
+
 func should_run(_ctx: SusTickContext) -> bool:
 	if generator == null or map == null or world_data == null:
 		return false
 	if _round_active:
 		return true
-	# 兼容开关：保留旧"信号脉冲驱动"路径供回归对照（与 SeasonRefreshJob 同步）。
+	# 兼容开关：保留旧"信号脉冲驱动"路径供回归对照。
 	var legacy_signal: bool = false
 	if generator.has_method("_c"):
 		var cp = generator._c()
@@ -116,8 +159,7 @@ func tick(_ctx) -> Dictionary:
 
 	if not _round_active:
 		# 新路径优先：周期自驱调用 begin_periodic_season_refresh；legacy_signal
-		# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为完
-		# 全一致）。与 SeasonRefreshJob 同模式。
+		# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为一致）。
 		var legacy_signal: bool = false
 		if generator.has_method("_c"):
 			var cp = generator._c()
@@ -135,7 +177,6 @@ func tick(_ctx) -> Dictionary:
 		_round_active = true
 		_ticks_since_last_round = 0
 		# DOTS-Final-Frontier Phase B+：尝试启用 round-level 单 C++ 调用路径。
-		# 与 SeasonRefreshJob 行为完全等价。
 		_b_plus_active = false
 		if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
 			if generator.has_method("start_season_round_b_plus"):
@@ -201,7 +242,7 @@ func tick(_ctx) -> Dictionary:
 	if micro_stage_name == "":
 		micro_stage_name = _season_stage_name(stage_started)
 
-	# 与 SeasonRefreshJob 一致：12 stages
+	# 12-stage slow-variable round。
 	var done: bool = _stage >= 12
 	if done:
 		_round_active = false

@@ -91,7 +91,15 @@ const _CID_VITALITY_LOW_STREAK  := 27  # I32  cell.vitality_low_streak
 const _CID_VITALITY_HIGH_STREAK := 28  # I32  cell.vitality_high_streak
 const _CID_SOIL_MOISTURE        := 29  # F32  cell.soil_moisture
 const _CID_VEG_GROWTH_PRESSURE  := 30  # F32  cell.vegetation_growth_pressure
-const _CID_COUNT                := 31
+const _CID_WEATHER_PREV_TYPE    := 31  # U8   cell.weather_prev_type
+const _CID_WEATHER_TARGET_TYPE  := 32  # U8   cell.weather_target_type
+const _CID_WEATHER_TRANS_ALPHA  := 33  # F32  cell.weather_transition_alpha
+const _CID_VEG_HEAT_STRESS      := 34  # F32  cell.vegetation_heat_stress
+const _CID_VEG_DROUGHT_STRESS   := 35  # F32  cell.vegetation_drought_stress
+const _CID_VEG_COLD_STRESS      := 36  # F32  cell.vegetation_cold_stress
+const _CID_VEG_REGEN_SCORE      := 37  # F32  cell.vegetation_regen_score
+const _CID_TEMP_TRANSPORT_ANOM  := 38  # F32  cell.temperature_transport_anomaly
+const _CID_COUNT                := 39
 
 # StringName 列表（与 _CID_* 同序）。GDScript 4 const + Array 内 StringName
 # 字面量是合法 const expression，可以直接用。
@@ -128,6 +136,14 @@ const _COMP_NAMES: Array[StringName] = [
 	&"cell.vitality_high_streak",
 	&"cell.soil_moisture",
 	&"cell.vegetation_growth_pressure",
+	&"cell.weather_prev_type",
+	&"cell.weather_target_type",
+	&"cell.weather_transition_alpha",
+	&"cell.vegetation_heat_stress",
+	&"cell.vegetation_drought_stress",
+	&"cell.vegetation_cold_stress",
+	&"cell.vegetation_regen_score",
+	&"cell.temperature_transport_anomaly",
 ]
 
 # 每个 cell 持有一份 cid 缓存，size = _CID_COUNT，未注册条目存 -1。
@@ -211,6 +227,9 @@ var cover: int = CoverType.CV.NONE
 
 # --- 地貌附加信息 ---
 var has_river: bool = false        # 是否有河流流经
+var river_flow: float = 0.0        # 归一化径流量/河宽权重 [0, 1]
+var river_downstream: Vector3i = Vector3i.ZERO  # 生成期水文 parent，下游河格或终端水体
+var has_river_downstream: bool = false
 var elevation: float = 0.0        # 归一化高度 [0, 1]，用于生成时的中间量
 # moisture：归一化湿度 [0, 1]。PR-2.3b facade 化（→ cell.moisture SoA）。
 var _moisture_backing: float = 0.5
@@ -233,18 +252,23 @@ var moisture: float = 0.5:
 var is_lake_seed: bool = false
 # Phase 14：火山地标 flag（不参与 terrain 枚举，但 shader 端额外加红光烟柱）
 var has_volcano: bool = false
+# [water-depth-tex 2026-06-26] 归一水深 ∈ [0,1]（海/湖统一：海洋 1-E/sea，湖泊湖岸→湖心碗形）。
+# 生成期（_assemble_native_generation_map）写一次、bake_world 经 pixel_to_cell_index 扇出成 R8
+# water_depth_tex；仅渲染消费，非 tick 字段 → 用简单 var（不走 SoA facade）。
+var water_depth: float = 0.0
 
 # --- 大气候系统（Phase 2 + 5 + 8） ---
 # base_moisture：生成阶段最终敲定的"年均湿度基线"（包含 coastal boost）。
-# 季节湿度刷新会从这里出发，叠加当季雨影/季风，避免 moisture 跨季累积漂移。
+# 运行时湿度/降水不再从四季倍率表刷新；由 weather field、水汽、风、地形抬升
+# 和反馈缓冲逐日演化。
 # Phase 8：每年由 refresh_yearly 微调，让长期 FOREST → +base_moisture，长期 DESERT → -。
 var base_moisture: float = 0.5
 # base_terrain：第一次定型的"年均"地形，给季节重决策做参考（譬如雪地的真正持久性）。
 var base_terrain: TerrainType.TERRAIN = TerrainType.TERRAIN.OCEAN
-# Milestone 1：年均基线的三轴快照，季节波动从这里出发
+# Milestone 1：年均基线的三轴快照，日照/天气演化围绕这些慢层基线展开
 var base_landform: int = LandformType.LF.OCEAN
 var base_vegetation: int = VegetationType.VEG.NONE
-# current_state：当季实时气候数据，由 MapGenerator.refresh_seasonal 写入。
+# current_state：实时气候/天气数据，由每日 C++/DOTS 气候与 weather pass 写入。
 # 其他系统（农业 / 移动 / AI）通过它读取"现在能不能种地"。
 # 字段（Fast-tick perf opt C 之后）：{ "season": int, "biome": int,
 #         "landform": int, "vegetation": int, "cover": int,
@@ -290,6 +314,54 @@ var weather_type: int = 0:
 			var cid: int = _cid_array[_CID_WEATHER_TYPE]
 			if cid >= 0:
 				_world.write_u8(cid, index, v)
+var _weather_prev_type_backing: int = 0
+var weather_prev_type: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_PREV_TYPE] >= 0:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_PREV_TYPE], index)
+				return _world.read_u8(cid, index)
+		return _weather_prev_type_backing
+	set(v):
+		_weather_prev_type_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
+			if cid >= 0:
+				_world.write_u8(cid, index, v)
+var _weather_target_type_backing: int = 0
+var weather_target_type: int = 0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TARGET_TYPE] >= 0:
+					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_TARGET_TYPE], index)
+				return _world.read_u8(cid, index)
+		return _weather_target_type_backing
+	set(v):
+		_weather_target_type_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
+			if cid >= 0:
+				_world.write_u8(cid, index, v)
+var _weather_transition_alpha_backing: float = 1.0
+var weather_transition_alpha: float = 1.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TRANS_ALPHA] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_TRANS_ALPHA], index)
+				return _world.read_f32(cid, index)
+		return _weather_transition_alpha_backing
+	set(v):
+		_weather_transition_alpha_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 var _weather_intensity_backing: float = 0.0
 var weather_intensity: float = 0.0:
 	get:
@@ -428,7 +500,7 @@ var snow_cover: float = 0.0:
 # accumulated_snow_days：BLIZZARD 命中天数计数器（>=0）。每个有效降雪日 +1，
 #   温度高于 0.30（约 -2°C）时反向衰减（实际 -1）。
 # pre_snow_cover：被 SNOW 替换前的原 cover（CoverType.CV）；融化后恢复。-1 表示未触发过。
-# 阈值：accumulated_snow_days >= SNOW_ACCUM_DAYS_REQ（3）时正式把 cover 升为 SNOW；
+# 阈值：accumulated_snow_days >= ClimateProfile.snow_accum_days_req 时正式把 cover 升为 SNOW；
 # accumulated_snow_days <= 0 且 cover==SNOW 时融化恢复 pre_snow_cover。
 var accumulated_snow_days: int = 0
 var pre_snow_cover: int = -1
@@ -773,7 +845,20 @@ var ocean_psi: float = 0.0
 #   水 cell：自身沿 -ocean_current 方向回溯上游温度混合后的偏差；
 #   陆地 cell：沿岸水 cell 异常按 dot(邻接方向, current) 加权平均后的注入值。
 #   供海冰 pass / F7 调试可视化 / 未来玩法读取。
-var temperature_transport_anomaly: float = 0.0
+var _temperature_transport_anomaly_backing: float = 0.0
+var temperature_transport_anomaly: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_TRANSPORT_ANOM]
+			if cid >= 0:
+				return _world.read_f32(cid, index)
+		return _temperature_transport_anomaly_backing
+	set(v):
+		_temperature_transport_anomaly_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_TEMP_TRANSPORT_ANOM]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
 
 # air_mass_temp_anomaly：
 #   由风温耦合系统写入的"气团输运带来的温度偏差"，
@@ -858,6 +943,70 @@ var vegetation_growth_pressure: float = 0.0:
 		_vegetation_growth_pressure_backing = v
 		if _facade_enabled:
 			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_heat_stress_backing: float = 0.0
+var vegetation_heat_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_HEAT_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_HEAT_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_heat_stress_backing
+	set(v):
+		_vegetation_heat_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_drought_stress_backing: float = 0.0
+var vegetation_drought_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_DROUGHT_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_DROUGHT_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_drought_stress_backing
+	set(v):
+		_vegetation_drought_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_cold_stress_backing: float = 0.0
+var vegetation_cold_stress: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_COLD_STRESS] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_COLD_STRESS], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_cold_stress_backing
+	set(v):
+		_vegetation_cold_stress_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
+			if cid >= 0:
+				_world.write_f32(cid, index, v)
+var _vegetation_regen_score_backing: float = 0.0
+var vegetation_regen_score: float = 0.0:
+	get:
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
+			if cid >= 0:
+				if _world_ext != null and _cid_array_ext[_CID_VEG_REGEN_SCORE] >= 0:
+					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_REGEN_SCORE], index)
+				return _world.read_f32(cid, index)
+		return _vegetation_regen_score_backing
+	set(v):
+		_vegetation_regen_score_backing = v
+		if _facade_enabled:
+			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
 			if cid >= 0:
 				_world.write_f32(cid, index, v)
 

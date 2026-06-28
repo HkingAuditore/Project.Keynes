@@ -3,7 +3,8 @@ class_name DynamicVisualAtlasUploadSystem
 
 ## Updates low-frequency visual atlases used by the main map shader.
 ##
-## Stride=2 default：每 2 个仿真日跑一次（StridePolicy 控制）。
+## Stride=1 default：每个仿真日跑一次（StridePolicy 控制），保持温度/雪/海冰视觉同步。
+## Weather LUT 已并入 weather_refresh commit path，提交天气字段时同步生成并发布。
 ##
 ## v3：湿迹/龟裂短期痕迹视觉已删除；本系统只更新 dynamic/ecology/smooth/ice 四类视觉 atlas。
 ## 回退：`enable_time_slicing = false` 走 one-shot 路径。
@@ -50,6 +51,9 @@ const PHASE_IDLE: int = 0
 const PHASE_DYNAMIC: int = 1
 const PHASE_ECOLOGY: int = 2
 const PHASE_SMOOTH: int = 3
+# DEPRECATED(plan-A sea-ice-render-source-unify): kept for non-water shaders（hillshade_tod /
+# weather_overlay 仍引用 ice_state_atlas 兼容通道），will be removed in plan-C 任务 10
+# 之后（届时所有消费方迁移到 dyn_atlas_smooth.A 或退出 ice_state_atlas）。
 const PHASE_ICE: int = 4
 const PHASE_DONE: int = 5
 const PHASE_COUNT: int = 4  # 实际工作 phase 数（1..4）
@@ -72,11 +76,37 @@ const CPP_TIME_CHECK_CELLS_PER_STEP: int = 4096
 const SOFT_BUDGET_MULTIPLIER: float = 2.0
 
 # ─── plan/atlas-phase-slicing（2026-05-21）：CPP pipeline phase 切片预算 ───
-# 默认 1 = 每 tick 推 1 phase，4 个 phase 拆到 4 个 tick。
-# 调高到 4 = 单 tick 一气呵成（旧行为，回归）。
+# 默认 4 = 单 tick 一气呵成，dyn/eco/smooth/ice 同一轮产出并提交。
+# 调低到 1 = 每 tick 推 1 phase，4 个 phase 拆到 4 个 tick（严格预算/诊断用）。
 # 配合 C++ AtlasPipelineState 跨 call 持有 stride snapshot（dirty/cache/nb_arr/prep_*），
 # 仅在 stride 起点传 dirty_indices；mid-stride tick 跳过 commit GPU。
-const CPP_PIPELINE_PHASE_BUDGET: int = 1
+const CPP_PIPELINE_PHASE_BUDGET: int = 4
+# C++ smooth phase 内部再按 cell cursor 切片，避免 dirty/full sweep 时单次 2ms+。
+const CPP_SMOOTH_CELLS_PER_CALL: int = 512
+# C++ 计算完成后，GPU texture commit 仍必须走主线程。一次 stride 可能同时
+# 产出 dyn/eco/smo/ice 多张 atlas；这里把它们排成队列。
+# 修复（2026-05-26）：原值=1 会导致 4 张 atlas 跨 4 个 tick 才上传完成，
+# 叠加 stride 本身的 4-phase 推进 + 频繁的 frame_budget_exhausted，
+# 实测一次完整渲染更新需要 100+ 帧。提到 4 后 stride_done 那帧立即把 4 张
+# 全部 drain 上传；单张 ImageTexture.update ~0.3-0.5ms，4 张 ≤ 2ms，仍在
+# upload budget(1.5ms 软阈值) 边界范围内，超出由 SUS 自然在下一帧回归。
+#
+# 修复（2026-06-13，android 性能）：实测 Adreno 830 上 4 张 1024×606 atlas
+# 单 tick drain spike 12-55ms，吃掉两帧 vsync。改成移动端 1 张/tick，4 张分到
+# 4 tick；配合 stride=2，整体视觉延迟从 1-2 day → ~4 day，肉眼可接受。配合
+# HM_MAX_DIM_MOBILE=512 后单张 atlas 0.6MB（vs 桌面 2.4MB），单 tick commit
+# 实测 < 5ms，回到单帧预算内。
+const CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP: int = 4
+const CPP_COMMIT_TEXTURES_PER_TICK_MOBILE: int = 1
+
+static func _cpp_commit_textures_per_tick() -> int:
+	return CPP_COMMIT_TEXTURES_PER_TICK_MOBILE if OS.has_feature("mobile") else CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP
+
+# 兼容：保留旧名，值=桌面默认。真正分流由 _cpp_commit_textures_per_tick()。
+const CPP_COMMIT_TEXTURES_PER_TICK: int = CPP_COMMIT_TEXTURES_PER_TICK_DESKTOP
+# fallback GDScript smooth dirty/prep 子阶段预算：把 merge / one-hop dilation
+# 拆出 baker prepare，避免极端 dirty/full sweep 在单 tick 内完成全部预处理。
+const SMOOTH_PREP_CELLS_PER_TICK: int = 512
 
 var baker: MapBakerScript = null
 var map: MapData = null
@@ -118,11 +148,22 @@ var _stride_dirty_path_used: bool = false     # 诊断：本 stride 是否走了
 var _stride_dirty_noop: bool = false
 var _stride_dirty_reason: String = ""
 
+# dyn_atlas_smooth fallback dirty/prep 状态机。
+# 阶段：merge_seed → dilate_mark → collect_sorted，完成后 _phase_cells 才交给 baker chunk_step。
+var _smooth_prep_state: Dictionary = {}
+var _smooth_prep_generation: int = 0
+var _smooth_prep_abort_count: int = 0
+var _smooth_prep_equiv_checks: int = 0
+var _smooth_prep_equiv_failures: int = 0
+
 # 诊断采样（沿用 _wf_diag_* 风格）。
 var _dvas_diag_stride_count: int = 0
 var _dvas_diag_ticks_accum: int = 0
 var _dvas_diag_max_tick_ms: float = 0.0
 var _dvas_diag_avg_window: int = 30
+# [DIAG 2026-05-23 四轮] 海冰看似不动排障：跟踪 ice 通道实际 commit / skip 次数。
+var _dvas_ice_commit_runs: int = 0
+var _dvas_ice_skip_runs: int = 0
 var _last_breakdown: Dictionary = {}
 
 # Perf instrumentation freshness（方案 ④ Step 1）：generator 在每个 fast tick 顶部
@@ -161,19 +202,37 @@ var _pending_fallback_reason: String = ""
 # 本 tick 应跳过 dirty 重读 + burn-in，直接 call 让 C++ 推下一个 phase。
 # done=true 时翻回 false，下一 tick 重新启动一个 stride。
 var _cpp_stride_in_progress: bool = false
+var _cpp_commit_queue: Array = []
+var _cpp_commit_context: Dictionary = {}
+var _cpp_commit_skip_count: int = 0
+
+var _lut_refresh_pending: bool = false
+var _lut_last_refresh_tick: int = -1
+var _lut_last_due_tick: int = -1
+var _lut_stride: int = 1
+var _lut_phase: int = 0
+var _lut_pending_before_tick: bool = false
+var _lut_catchup_tick: bool = false
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
-		p_stride: int = 2, p_climate_profile = null, p_dirty_world = null,
+		p_stride: int = 1, p_climate_profile = null, p_dirty_world = null,
 		p_world_ext = null) -> void:
 	id = &"dynamic_visual_atlas_upload"
 	priority = 250
+	use_job_should_run = true
 	# 2026-05-19 方案 B：默认 budget 从 0.45 → 1.5ms，配合 MAX_CELLS_PER_TICK=4096
 	# 让一个 phase 在单 tick 内扫完。仍可被 climate_profile.sim_upload_slice_budget_ms 覆盖。
 	slice_budget_ms = 1.5
 	max_slices_per_tick = 1
+	# Fix #8B 已回退 (2026-06-15 v2)：must_run=true 是"绕过预算"而非"合理调度"，
+	# 跟玩家"用预算时间卡执行会发生逻辑漂移"的设计批评一致。改回 false 让
+	# frame_budget gate 生效，并配合 Fix #9 用 phase 错峰：让 dynamic_visual_atlas
+	# 跟 sea_ice_daily / weather_refresh 等同落在 climate 不跑的 phase=1 tick，
+	# 这样 SUS budget 2-4ms 在两 tick 之间均摊，单 tick 不再撞车。
 	must_run = false
-	starvation_threshold = 0
+	# Keep visual upload budgeted; starvation protection catches long stalls.
+	starvation_threshold = 8
 	baker = p_baker
 	map = p_map
 	world_data = p_world
@@ -181,7 +240,7 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	world_ext = p_world_ext
 	stride = max(1, p_stride)
 	climate_profile = p_climate_profile
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	_configure_lut_policy(stride, 0)
 	_rebuild_baker_callables()
 
 
@@ -207,10 +266,107 @@ func _rebuild_baker_callables() -> void:
 		}
 
 
-func tick(_ctx) -> Dictionary:
+func _configure_lut_policy(p_stride: int, p_phase: int) -> void:
+	stride = max(1, p_stride)
+	_lut_stride = stride
+	_lut_phase = p_phase
+	policy = SusPolicyScript.StridePolicy.new(_lut_stride, _lut_phase)
+
+
+func declare_reads() -> Array[StringName]:
+	return [
+		DCComponentIds.CELL_TEMP,
+		DCComponentIds.CELL_MOISTURE,
+		DCComponentIds.CELL_SNOW_COVER,
+		DCComponentIds.CELL_SEA_ICE_FRAC,
+		DCComponentIds.CELL_TERRAIN,
+		DCComponentIds.CELL_VEGETATION,
+		DCComponentIds.CELL_COVER,
+		DCComponentIds.CELL_VEGETATION_VITALITY,
+	]
+
+
+func declare_writes() -> Array[StringName]:
+	return []
+
+
+func _lut_due_for_tick(tick_index: int) -> bool:
+	return posmod(tick_index + _lut_phase, _lut_stride) == 0
+
+
+func _latest_lut_due_tick_at_or_before(tick_index: int) -> int:
+	return tick_index - posmod(tick_index + _lut_phase, _lut_stride)
+
+
+func _ctx_tick_index(ctx) -> int:
+	if ctx is Dictionary:
+		return int(ctx.get("tick_index", 0))
+	if ctx != null:
+		return int(ctx.get("tick_index"))
+	return 0
+
+
+func _mark_lut_due_from_ctx(ctx) -> void:
+	if not FeatureFlagsScript.cell_indirection_active():
+		return
+	var tick_index: int = _ctx_tick_index(ctx)
+	var latest_due_tick: int = _latest_lut_due_tick_at_or_before(tick_index)
+	if latest_due_tick < 0:
+		return
+	if _lut_last_refresh_tick < latest_due_tick:
+		_lut_refresh_pending = true
+		_lut_last_due_tick = max(_lut_last_due_tick, latest_due_tick)
+
+
+func tick(ctx) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
+	if not _cpp_commit_queue.is_empty():
+		return _drain_cpp_commit_queue(t_start_us)
+
+	# [cell-indirect single-path 2026-06-16] flag 开 → 主 shader 全量走 per-cell LUT，
+	# 旧逐像素动态 atlas（dynamic/ecology/smooth/ice）已无任何 shader 消费者。这里每
+	# stride 只全量重烘 enum/dyn/eco per-cell LUT（weather_lut 不在此发布），
+	# 随后直接结束本 tick：彻底跳过下方 C++ run_atlas_pipeline_step 与 4-phase 逐像素
+	# 上传，省每日 GPU 上传 + 4 张 derived RGBA8 显存。stride 节奏不变（StridePolicy
+	# 控制 tick 频率）。weather_lut 由 weather_refresh commit path 同步生成并发布。
+	# flag 关时本分支零触达，旧 per-pixel 路径（_tick_cpp_pipeline / 4-phase / _tick_oneshot）
+	# 行为完全不变，即 flag 充当 A/B fallback 开关（skill rule 11）。
+	if FeatureFlagsScript.cell_indirection_active():
+		_mark_lut_due_from_ctx(ctx)
+		var pending_before: bool = _lut_refresh_pending
+		var tick_index: int = _ctx_tick_index(ctx)
+		var due_this_tick: bool = _lut_due_for_tick(tick_index)
+		var due_tick: int = _lut_last_due_tick
+		var catchup: bool = pending_before and not due_this_tick
+		var lut_report: Dictionary = baker.refresh_cell_luts_daily(map, world_data)
+		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+		_lut_last_refresh_tick = tick_index
+		_lut_refresh_pending = false
+		_lut_pending_before_tick = pending_before
+		_lut_catchup_tick = catchup
+		var report: Dictionary = {
+			"done": true,
+			"work_done": map.cell_count() if map != null else 0,
+			"elapsed_ms": _lut_ms,
+			"progress_ratio": 1.0,
+			"path": "cell_indirection_lut",
+		}
+		report["lut_path"] = str(lut_report.get("path", ""))
+		report.merge(lut_report, true)
+		report["path"] = "cell_indirection_lut"
+		report["lut_refresh_ms"] = _lut_ms
+		report["lut_refresh_pending_before"] = pending_before
+		report["lut_refresh_pending_after"] = _lut_refresh_pending
+		report["lut_last_refresh_tick"] = _lut_last_refresh_tick
+		report["lut_last_due_tick"] = due_tick
+		report["lut_stride"] = _lut_stride
+		report["lut_phase"] = _lut_phase
+		report["lut_catchup"] = catchup
+		_last_breakdown = report.duplicate(true)
+		_last_breakdown["_tick_idx"] = current_fast_tick_idx
+		return report
 
 	# 紧急回退：走旧 one-shot 路径。
 	if not enable_time_slicing:
@@ -277,6 +433,21 @@ func tick(_ctx) -> Dictionary:
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
 	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return partial_report
+
+
+func should_run(ctx: SusTickContext) -> bool:
+	# F11 调试热键（2026-06-14）：force_disable meta 临时禁用整个 DVA pipeline。
+	# 用来对比关掉 atlas commit 后 FPS 改善多少，定位 GPU 瓶颈。
+	if Engine.has_meta(&"force_disable_dva_upload") and bool(Engine.get_meta(&"force_disable_dva_upload")):
+		return false
+	if not _cpp_commit_queue.is_empty() or _cpp_stride_in_progress:
+		return true
+	if FeatureFlagsScript.cell_indirection_active():
+		_mark_lut_due_from_ctx(ctx)
+		return _lut_refresh_pending
+	if policy == null:
+		return true
+	return policy.should_run(self, ctx)
 
 
 # ─── 状态机内部 helpers ───────────────────────────────────────────────────────
@@ -457,6 +628,190 @@ func _advance_current_phase(remaining_budget: int, deadline_us: int) -> bool:
 			return true
 
 
+func _abort_smooth_prep(reason: String) -> void:
+	if _smooth_prep_state.is_empty():
+		return
+	_smooth_prep_abort_count += 1
+	_aggregated_report["smooth_prep_abort_reason"] = reason
+	_aggregated_report["smooth_prep_abort_count"] = _smooth_prep_abort_count
+	_smooth_prep_generation += 1
+	_smooth_prep_state = {}
+
+
+func _start_smooth_prep(source: String, seed_cells: Array, decay_set: Dictionary = {}) -> void:
+	var n: int = map.cell_count() if map != null else 0
+	_smooth_prep_generation += 1
+	var seen: PackedByteArray = PackedByteArray()
+	seen.resize(maxi(0, n))
+	var seed_seen: PackedByteArray = PackedByteArray()
+	seed_seen.resize(maxi(0, n))
+	_smooth_prep_state = {
+		"generation": _smooth_prep_generation,
+		"stage": "merge_seed",
+		"source": source,
+		"input_cells": seed_cells if seed_cells != null else [],
+		"input_cursor": 0,
+		"decay_keys": decay_set.keys() if decay_set != null and not decay_set.is_empty() else [],
+		"decay_cursor": 0,
+		"seed_cells": [],
+		"dilate_cursor": 0,
+		"collect_cursor": 0,
+		"seen": seen,
+		"seed_seen": seed_seen,
+		"candidates": PackedInt32Array(),
+		"candidate_sorted": false,
+		"out": [],
+		"n": n,
+		"prepared": false,
+	}
+
+
+func _smooth_prep_push_candidate(idx: int) -> void:
+	var n: int = int(_smooth_prep_state.get("n", 0))
+	if idx < 0 or idx >= n:
+		return
+	var seen: PackedByteArray = _smooth_prep_state.get("seen", PackedByteArray())
+	if seen.size() < n or seen[idx] != 0:
+		return
+	seen[idx] = 1
+	_smooth_prep_state["seen"] = seen
+	var candidates: PackedInt32Array = _smooth_prep_state.get("candidates", PackedInt32Array())
+	candidates.append(idx)
+	_smooth_prep_state["candidates"] = candidates
+
+
+func _advance_smooth_prep(remaining_budget: int, deadline_us: int) -> bool:
+	if _smooth_prep_state.is_empty():
+		return true
+	if int(_smooth_prep_state.get("generation", -1)) != _smooth_prep_generation:
+		_abort_smooth_prep("stale_generation")
+		return false
+	var t_prep_us: int = Time.get_ticks_usec()
+	var budget: int = maxi(1, mini(SMOOTH_PREP_CELLS_PER_TICK, remaining_budget))
+	var seed_cells: Array = _smooth_prep_state.get("seed_cells", [])
+	var n: int = int(_smooth_prep_state.get("n", 0))
+	var nb_indices: PackedInt32Array = map.neighbor_indices_packed() if map != null and map.has_method("neighbor_indices_packed") else PackedInt32Array()
+	var fast_indexed: bool = nb_indices.size() >= n * 6
+	var worked: int = 0
+	while worked < budget:
+		if worked > 0 and Time.get_ticks_usec() >= deadline_us:
+			break
+		var stage: String = str(_smooth_prep_state.get("stage", "merge_seed"))
+		if stage == "merge_seed":
+			var input_cells: Array = _smooth_prep_state.get("input_cells", [])
+			var decay_keys: Array = _smooth_prep_state.get("decay_keys", [])
+			var input_cursor: int = int(_smooth_prep_state.get("input_cursor", 0))
+			var decay_cursor: int = int(_smooth_prep_state.get("decay_cursor", 0))
+			var merged_seed: Array = _smooth_prep_state.get("seed_cells", [])
+			var c = null
+			if input_cursor < input_cells.size():
+				c = input_cells[input_cursor]
+				_smooth_prep_state["input_cursor"] = input_cursor + 1
+			elif decay_cursor < decay_keys.size():
+				c = decay_keys[decay_cursor]
+				_smooth_prep_state["decay_cursor"] = decay_cursor + 1
+			else:
+				_smooth_prep_state["seed_cells"] = merged_seed
+				_smooth_prep_state["stage"] = "dilate_mark"
+				seed_cells = merged_seed
+				continue
+			if c != null:
+				var idx_seed: int = int(c.index)
+				var seed_seen: PackedByteArray = _smooth_prep_state.get("seed_seen", PackedByteArray())
+				if idx_seed >= 0 and idx_seed < n and seed_seen[idx_seed] == 0:
+					seed_seen[idx_seed] = 1
+					_smooth_prep_state["seed_seen"] = seed_seen
+					merged_seed.append(c)
+					_smooth_prep_state["seed_cells"] = merged_seed
+			worked += 1
+		elif stage == "dilate_mark":
+			var dilate_cursor: int = int(_smooth_prep_state.get("dilate_cursor", 0))
+			if dilate_cursor >= seed_cells.size():
+				_smooth_prep_state["stage"] = "collect_sorted"
+				continue
+			var c2 = seed_cells[dilate_cursor]
+			if c2 != null:
+				var idx2: int = int(c2.index)
+				if idx2 >= 0 and idx2 < n:
+					_smooth_prep_push_candidate(idx2)
+					if fast_indexed:
+						var base: int = idx2 * 6
+						for d in range(6):
+							_smooth_prep_push_candidate(nb_indices[base + d])
+					elif map.has_method("get_neighbors"):
+						for nb_cell in map.get_neighbors(c2):
+							if nb_cell != null:
+								_smooth_prep_push_candidate(int(nb_cell.index))
+			_smooth_prep_state["dilate_cursor"] = dilate_cursor + 1
+			worked += 1
+		elif stage == "collect_sorted":
+			var candidates: PackedInt32Array = _smooth_prep_state.get("candidates", PackedInt32Array())
+			if not bool(_smooth_prep_state.get("candidate_sorted", false)):
+				candidates.sort()
+				_smooth_prep_state["candidates"] = candidates
+				_smooth_prep_state["candidate_sorted"] = true
+			var collect_cursor: int = int(_smooth_prep_state.get("collect_cursor", 0))
+			if collect_cursor >= candidates.size():
+				_smooth_prep_state["stage"] = "done"
+				_smooth_prep_state["prepared"] = true
+				break
+			var collect_end: int = mini(candidates.size(), collect_cursor + (budget - worked))
+			var out: Array = _smooth_prep_state.get("out", [])
+			for i in range(collect_cursor, collect_end):
+				out.append(map.cell_at(candidates[i]))
+			_smooth_prep_state["out"] = out
+			_smooth_prep_state["collect_cursor"] = collect_end
+			worked += collect_end - collect_cursor
+		else:
+			break
+	_aggregated_report["smooth_prepare_ms"] = float(_aggregated_report.get("smooth_prepare_ms", 0.0)) \
+			+ float(Time.get_ticks_usec() - t_prep_us) / 1000.0
+	_aggregated_report["smooth_prep_stage"] = str(_smooth_prep_state.get("stage", ""))
+	_aggregated_report["smooth_prep_input_cursor"] = int(_smooth_prep_state.get("input_cursor", 0))
+	_aggregated_report["smooth_prep_decay_cursor"] = int(_smooth_prep_state.get("decay_cursor", 0))
+	_aggregated_report["smooth_prep_seed_count"] = int((_smooth_prep_state.get("seed_cells", []) as Array).size())
+	_aggregated_report["smooth_prep_dilate_cursor"] = int(_smooth_prep_state.get("dilate_cursor", 0))
+	_aggregated_report["smooth_prep_collect_cursor"] = int(_smooth_prep_state.get("collect_cursor", 0))
+	_aggregated_report["smooth_prep_candidates"] = int((_smooth_prep_state.get("candidates", PackedInt32Array()) as PackedInt32Array).size())
+	_aggregated_report["_cells_scanned_this_tick"] = int(_aggregated_report.get("_cells_scanned_this_tick", 0)) + worked
+	return bool(_smooth_prep_state.get("prepared", false))
+
+
+func _validate_smooth_prep_equivalence_if_small() -> void:
+	if _smooth_prep_state.is_empty() or map == null:
+		return
+	var input_cells: Array = _smooth_prep_state.get("input_cells", [])
+	var decay_keys: Array = _smooth_prep_state.get("decay_keys", [])
+	var total_input: int = input_cells.size() + decay_keys.size()
+	if total_input > 256:
+		return
+	_smooth_prep_equiv_checks += 1
+	var seed_expected: Array = BakerDirtyHelpersScript.merge_with_eco_decay(input_cells, {})
+	if not decay_keys.is_empty():
+		var decay_set: Dictionary = {}
+		for c in decay_keys:
+			if c != null:
+				decay_set[c] = true
+		seed_expected = BakerDirtyHelpersScript.merge_with_eco_decay(seed_expected, decay_set)
+	var expected: Array = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, seed_expected)
+	var actual: Array = _smooth_prep_state.get("out", [])
+	var equal: bool = expected.size() == actual.size()
+	if equal:
+		for i in range(expected.size()):
+			var e = expected[i]
+			var a = actual[i]
+			var ei: int = int(e.index) if e != null else -1
+			var ai: int = int(a.index) if a != null else -1
+			if ei != ai:
+				equal = false
+				break
+	if not equal:
+		_smooth_prep_equiv_failures += 1
+		push_warning("[dyn_atlas_smooth/prep] sliced dirty expansion mismatch expected=%d actual=%d" % [expected.size(), actual.size()])
+	_aggregated_report["smooth_prep_equiv_checks"] = _smooth_prep_equiv_checks
+	_aggregated_report["smooth_prep_equiv_failures"] = _smooth_prep_equiv_failures
+
+
 # Phase 1..4：通用 baker chunk 推进。
 # baker_key 决定调用哪组 chunk_begin/step/finalize；
 # agg_dirty_key / agg_ms_key 是 aggregated_report 里的累计字段名。
@@ -558,14 +913,25 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 					_phase_cells = []
 					source = "no_dirty"
 				else:
-					_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(
-							map, baker._eco_active_decay_set.keys())
-					source = "decay_one_hop"
+					source = "decay_one_hop_sliced"
+					if _smooth_prep_state.is_empty():
+						_start_smooth_prep(source, baker._eco_active_decay_set.keys())
+					if not _advance_smooth_prep(remaining_budget, deadline_us):
+						_aggregated_report[phase_key + "_source"] = source
+						return false
+					_validate_smooth_prep_equivalence_if_small()
+					_phase_cells = _smooth_prep_state.get("out", [])
+					_smooth_prep_state = {}
 			else:
-				var smooth_seed: Array = BakerDirtyHelpersScript.merge_with_eco_decay(
-						_stride_dirty_cells, baker._eco_active_decay_set)
-				_phase_cells = BakerDirtyHelpersScript.dilate_dirty_one_hop(map, smooth_seed)
-				source = "dirty_decay_one_hop"
+				source = "dirty_decay_one_hop_sliced"
+				if _smooth_prep_state.is_empty():
+					_start_smooth_prep(source, _stride_dirty_cells, baker._eco_active_decay_set)
+				if not _advance_smooth_prep(remaining_budget, deadline_us):
+					_aggregated_report[phase_key + "_source"] = source
+					return false
+				_validate_smooth_prep_equivalence_if_small()
+				_phase_cells = _smooth_prep_state.get("out", [])
+				_smooth_prep_state = {}
 		else:
 			_phase_cells = map.all_cells()
 		_phase_cursor = 0
@@ -704,6 +1070,12 @@ func _reset_state_machine() -> void:
 	_stride_dirty_path_used = false
 	_stride_dirty_noop = false
 	_stride_dirty_reason = ""
+	_smooth_prep_state = {}
+
+
+func _clear_cpp_commit_queue() -> void:
+	_cpp_commit_queue.clear()
+	_cpp_commit_context = {}
 
 
 # ─── plan/atlas-pipeline-cpp 薄壳路径 ─────────────────────────────────────
@@ -803,6 +1175,7 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"veg_none": int(VegetationTypeScript.VEG.NONE),
 		"enable_diag": true,
 		"phase_budget": CPP_PIPELINE_PHASE_BUDGET,
+		"max_smooth_cells_per_call": CPP_SMOOTH_CELLS_PER_CALL,
 	}
 	# dirty_indices 仅在 stride 起点传一次（mid-stride 时 C++ 从 stride snapshot 复用）。
 	# 任务 7 kill-switch：flag=false 时显式不传 dirty_indices 并设置 force_full_encode，
@@ -814,6 +1187,23 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 	var t_call_us: int = Time.get_ticks_usec()
 	var res: Dictionary = ext.call(&"run_atlas_pipeline_step", opts)
 	var call_ms: float = float(Time.get_ticks_usec() - t_call_us) / 1000.0
+	# [TEMP DIAG sea-ice cpp-res]
+	if not Engine.has_meta("_diag_cpp_res_dumped"):
+		Engine.set_meta("_diag_cpp_res_dumped", 0)
+	var _crd: int = int(Engine.get_meta("_diag_cpp_res_dumped"))
+	if _crd < 6:
+		var _ab: Dictionary = res.get("atlas_buffers", {})
+		var _sr: Dictionary = res.get("stride_real", {})
+		var _smo_buf: PackedByteArray = _ab.get("smo", PackedByteArray())
+		var _dyn_buf: PackedByteArray = _ab.get("dyn", PackedByteArray())
+		print("[CPP-RES] fallback=", res.get("fallback", "?"),
+			" done=", res.get("done", "?"),
+			" reason=", res.get("reason", ""),
+			" ab.keys=", _ab.keys(),
+			" smo.sz=", _smo_buf.size(), " dyn.sz=", _dyn_buf.size(),
+			" stride_real=", _sr,
+			" call_ms=", call_ms)
+		Engine.set_meta("_diag_cpp_res_dumped", _crd + 1)
 
 	if bool(res.get("fallback", true)):
 		# C++ 端在前置校验失败时会返回 fallback=true。退化为旧路径以保安全。
@@ -834,13 +1224,9 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 	var stride_done: bool = bool(res.get("done", true))
 	_cpp_stride_in_progress = not stride_done
 
-	# ── Step 4：4 次 ImageTexture.update（仅在 stride_done 时做；mid-stride 跳过）──
+	# ── Step 4：收集待提交 atlas（仅在 stride_done 时有 atlas_buffers）──
 	var atlas_buffers: Dictionary = res.get("atlas_buffers", {})
 	var stride_real: Dictionary = res.get("stride_real", {})
-	var pixels_written_total: int = 0
-	if stride_done:
-		pixels_written_total = _commit_atlas_buffers_to_gpu(
-				atlas_buffers, W, H, stride_real)
 
 	# ── Step 5：诊断与 report 组装 ──
 	# mid-stride 时只更新 max_tick_ms（用于诊断单 tick 抖动），不累加 stride 计数；
@@ -918,7 +1304,14 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"ecology_dirty_cells": int(stride_real.get("eco", 0)),
 		"smooth_dirty_cells": int(stride_real.get("smo", 0)),
 		"ice_dirty_cells": int(stride_real.get("ice", 0)),
-		"pixels_written": pixels_written_total,
+		"pixels_written": 0,
+		"commit_queue_total": 0,
+		"commit_queue_remaining": 0,
+		"commit_textures_done": 0,
+		"commit_pixels_written": 0,
+		"commit_ms": 0.0,
+		"commit_channel": "",
+		"commit_skipped_unchanged": 0,
 		"total_ticks_used": 1,
 		"mask_path": dirty_path_used,
 		"mask_dirty_count": dirty_indices.size(),
@@ -971,10 +1364,276 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		"opts_has_phase_budget": bool(res.get("opts_has_phase_budget", false)),
 		"opts_phase_budget_raw": int(res.get("opts_phase_budget_raw", -999)),
 	}
+	_begin_cpp_commit_queue(atlas_buffers, W, H, stride_real, report)
+	if not _cpp_commit_queue.is_empty():
+		return _drain_cpp_commit_queue(t_start_us)
 	_last_breakdown = report.duplicate(true)
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
 	_last_breakdown["_tick_idx"] = current_fast_tick_idx
 	return report
+
+
+func _begin_cpp_commit_queue(atlas_buffers: Dictionary, W: int, H: int,
+		stride_real: Dictionary, base_report: Dictionary) -> void:
+	_cpp_commit_queue.clear()
+	_cpp_commit_skip_count = 0
+	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
+		return
+	# [TEMP DIAG sea-ice begin-commit]
+	if not Engine.has_meta("_diag_begin_commit_dumped"):
+		Engine.set_meta("_diag_begin_commit_dumped", 0)
+	var _bcd: int = int(Engine.get_meta("_diag_begin_commit_dumped"))
+	if _bcd < 6:
+		var _bd: PackedByteArray = atlas_buffers.get("dyn", PackedByteArray())
+		var _bs: PackedByteArray = atlas_buffers.get("smo", PackedByteArray())
+		var _be: PackedByteArray = atlas_buffers.get("eco", PackedByteArray())
+		var _bi: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
+		print("[BEGIN-COMMIT] W=", W, " H=", H,
+			" dyn.sz=", _bd.size(), " smo.sz=", _bs.size(),
+			" eco.sz=", _be.size(), " ice.sz=", _bi.size(),
+			" stride_real=", stride_real)
+		Engine.set_meta("_diag_begin_commit_dumped", _bcd + 1)
+	var n_pix: int = W * H
+	# 方案A 修复（2026-05-26）：当 stride_done=true 进入此函数时，atlas_buffers 已是
+	# 完整全量图（C++ pipeline 跨 4 phase 累计写完后才会一次性返回）。但 stride_real
+	# 只反映当前最后一个 phase 的单次写入计数，因此 dyn/smo/eco 的 stride_real 常为 0。
+	# 必须用 force_commit=true 绕过单 phase stride 守卫，把 4 张图一次性入队。
+	_maybe_enqueue_cpp_commit_task("dyn", atlas_buffers.get("dyn", PackedByteArray()),
+			Image.FORMAT_RGBA8, 4, int(stride_real.get("dyn", 0)),
+			world_data.dynamic_cell_atlas_tex == null
+					or world_data.dynamic_cell_atlas_tex.get_size() != Vector2(float(W), float(H))
+					or world_data.dynamic_cell_atlas_buffer.size() != n_pix * 4,
+			W, H, n_pix, true)
+	_maybe_enqueue_cpp_commit_task("eco", atlas_buffers.get("eco", PackedByteArray()),
+			Image.FORMAT_RGBA8, 4, int(stride_real.get("eco", 0)),
+			world_data.ecology_visual_atlas_tex == null
+					or world_data.ecology_visual_atlas_tex.get_size() != Vector2(float(W), float(H))
+					or world_data.ecology_visual_atlas_buffer.size() != n_pix * 4,
+			W, H, n_pix, true)
+	_maybe_enqueue_cpp_commit_task("smo", atlas_buffers.get("smo", PackedByteArray()),
+			Image.FORMAT_RGBA8, 4, int(stride_real.get("smo", 0)),
+			world_data.dyn_atlas_smooth_tex == null
+					or world_data.dyn_atlas_smooth_tex.get_size() != Vector2(float(W), float(H))
+					or world_data.dyn_atlas_smooth_buffer.size() != n_pix * 4,
+			W, H, n_pix, true)
+	_maybe_enqueue_cpp_commit_task("ice", atlas_buffers.get("ice", PackedByteArray()),
+			Image.FORMAT_R8, 1, int(stride_real.get("ice", 0)),
+			world_data.ice_state_tex == null
+					or world_data.ice_state_tex.get_size() != Vector2(float(W), float(H))
+					or world_data.ice_state_buffer.size() != n_pix,
+			W, H, n_pix, true)
+	if _cpp_commit_queue.is_empty():
+		base_report["commit_skipped_unchanged"] = _cpp_commit_skip_count
+		return
+	_cpp_commit_context = base_report.duplicate(true)
+	_cpp_commit_context["path"] = "cpp_pipeline_commit_queue"
+	_cpp_commit_context["phase"] = "upload_commit"
+	_cpp_commit_context["commit_queue_total"] = _cpp_commit_queue.size()
+	_cpp_commit_context["commit_queue_remaining"] = _cpp_commit_queue.size()
+	_cpp_commit_context["commit_textures_done"] = 0
+	_cpp_commit_context["commit_pixels_written"] = 0
+	_cpp_commit_context["commit_ms"] = 0.0
+	_cpp_commit_context["commit_channel"] = ""
+	_cpp_commit_context["commit_skipped_unchanged"] = _cpp_commit_skip_count
+	_cpp_commit_context["commit_ticks_used"] = 0
+
+
+func _current_cpp_atlas_buffer(channel: String) -> PackedByteArray:
+	match channel:
+		"dyn":
+			return world_data.dynamic_cell_atlas_buffer
+		"eco":
+			return world_data.ecology_visual_atlas_buffer
+		"smo":
+			return world_data.dyn_atlas_smooth_buffer
+		"ice":
+			return world_data.ice_state_buffer
+		_:
+			return PackedByteArray()
+
+
+func _maybe_enqueue_cpp_commit_task(channel: String, buf: PackedByteArray,
+		image_format: int, bytes_per_pixel: int, stride_count: int,
+		need_init: bool, W: int, H: int, n_pix: int,
+		force_commit: bool = false) -> void:
+	var expected_size: int = n_pix * bytes_per_pixel
+	if buf.size() != expected_size:
+		return
+	if stride_count <= 0 and not need_init:
+		var current_buf: PackedByteArray = _current_cpp_atlas_buffer(channel)
+		if current_buf.size() == expected_size and current_buf == buf:
+			_cpp_commit_skip_count += 1
+			return
+		if not force_commit:
+			return
+	# force_commit 仍允许初始化或 buffer 真变化时上传；完全相同的全量图不再碰 GPU。
+	if not force_commit and stride_count <= 0 and not need_init:
+		return
+	_cpp_commit_queue.append({
+		"channel": channel,
+		"buffer": buf,
+		"format": image_format,
+		"stride_count": stride_count,
+		"need_init": need_init,
+		"W": W,
+		"H": H,
+		"pixels": n_pix,
+	})
+
+
+func _drain_cpp_commit_queue(t_start_us: int) -> Dictionary:
+	var report: Dictionary = _cpp_commit_context.duplicate(true)
+	# 移动端每 tick 只 commit 1 张 atlas，桌面 4 张。see CPP_COMMIT_TEXTURES_PER_TICK_*.
+	var textures_this_tick: int = mini(_cpp_commit_textures_per_tick(), _cpp_commit_queue.size())
+	var tick_commit_ms: float = 0.0
+	var tick_pixels: int = 0
+	var last_channel: String = ""
+	for _i in range(textures_this_tick):
+		var task: Dictionary = _cpp_commit_queue.pop_front()
+		var t_commit_us: int = Time.get_ticks_usec()
+		tick_pixels += _commit_cpp_atlas_task_to_gpu(task)
+		tick_commit_ms += float(Time.get_ticks_usec() - t_commit_us) / 1000.0
+		last_channel = str(task.get("channel", ""))
+	var committed: int = int(report.get("commit_textures_done", 0)) + textures_this_tick
+	var total: int = int(report.get("commit_queue_total", committed))
+	var pixels_done: int = int(report.get("commit_pixels_written", 0)) + tick_pixels
+	var commit_ticks: int = int(report.get("commit_ticks_used", 0)) + 1
+	var done: bool = _cpp_commit_queue.is_empty()
+	report["done"] = done
+	report["progress_ratio"] = 1.0 if total <= 0 else float(committed) / float(total)
+	report["elapsed_ms"] = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+	report["path"] = "cpp_pipeline_commit_queue"
+	report["phase"] = "upload_commit"
+	report["commit_channel"] = last_channel
+	report["commit_ms"] = tick_commit_ms
+	report["commit_queue_total"] = total
+	report["commit_queue_remaining"] = _cpp_commit_queue.size()
+	report["commit_textures_done"] = committed
+	report["commit_pixels_written"] = pixels_done
+	report["commit_skipped_unchanged"] = int(report.get("commit_skipped_unchanged", 0))
+	report["pixels_written"] = pixels_done
+	report["commit_ticks_used"] = commit_ticks
+	report["ticks_used"] = int(report.get("ticks_used", 1)) + commit_ticks - 1
+	report["total_ticks_used"] = int(report.get("total_ticks_used", 1)) + commit_ticks - 1
+	_dvas_diag_max_tick_ms = max(_dvas_diag_max_tick_ms, float(report["elapsed_ms"]))
+	if done:
+		_cpp_commit_context = {}
+	else:
+		_cpp_commit_context = report.duplicate(true)
+		_cpp_commit_context.erase("_tick_idx")
+	_last_breakdown = report.duplicate(true)
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
+	return report
+
+
+func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
+	var channel: String = str(task.get("channel", ""))
+	var buf: PackedByteArray = task.get("buffer", PackedByteArray())
+	var W: int = int(task.get("W", 0))
+	var H: int = int(task.get("H", 0))
+	var pixels: int = int(task.get("pixels", 0))
+	if W <= 0 or H <= 0 or pixels <= 0:
+		return 0
+	# [TEMP DIAG sea-ice cpp-commit]
+	if not Engine.has_meta("_diag_cpp_commit_dumped"):
+		Engine.set_meta("_diag_cpp_commit_dumped", 0)
+	var _ndump: int = int(Engine.get_meta("_diag_cpp_commit_dumped"))
+	if _ndump < 12:
+		var _samp_pxs: Array = [8584, 4586, 4843, 5091, 719]
+		var _samp: String = ""
+		for _px in _samp_pxs:
+			var _i: int = int(_px)
+			var _stride: int = 4 if channel != "ice" else 1
+			var _byte_off: int = _i * _stride + (3 if _stride == 4 else 0)
+			if _byte_off >= 0 and _byte_off < buf.size():
+				_samp += " px%d.A=%d" % [_i, int(buf[_byte_off])]
+		print("[CPP-COMMIT] ch=", channel, " buf.size=", buf.size(),
+			" expected=", pixels * (1 if channel == "ice" else 4),
+			" W=", W, " H=", H, _samp)
+		Engine.set_meta("_diag_cpp_commit_dumped", _ndump + 1)
+	var image_format: int = int(task.get("format", Image.FORMAT_RGBA8))
+	# Fix #3 (2026-06-15)：包 profile 到 GPU upload。frame=2587/3520 max=549.95ms /
+	# 521.18ms spike 与 ice atlas commit 时间对齐；嫌疑是
+	# ImageTexture.create_from_image() 首次为通道分配 VRAM 时的同步 stall
+	# （Adreno 830 GPU 内存 mapping）。打点确认 root cause 后再决定是否
+	# defer 到 RenderingServer 队列。
+	var _commit_t0_us: int = Time.get_ticks_usec()
+	var img := Image.create_from_data(
+			W, H, false,
+			Image.FORMAT_R8 if image_format == int(Image.FORMAT_R8) else Image.FORMAT_RGBA8,
+			buf)
+	var _img_create_ms: float = float(Time.get_ticks_usec() - _commit_t0_us) / 1000.0
+	var _create_from_image_path: bool = false
+	var _commit_t1_us: int = Time.get_ticks_usec()
+	match channel:
+		"dyn":
+			world_data.dynamic_cell_atlas_buffer = buf
+			if world_data.dynamic_cell_atlas_tex != null \
+					and world_data.dynamic_cell_atlas_tex.get_size() == Vector2(float(W), float(H)):
+				world_data.dynamic_cell_atlas_tex.update(img)
+			else:
+				world_data.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
+		"eco":
+			world_data.ecology_visual_atlas_buffer = buf
+			if world_data.ecology_visual_atlas_tex != null \
+					and world_data.ecology_visual_atlas_tex.get_size() == Vector2(float(W), float(H)):
+				world_data.ecology_visual_atlas_tex.update(img)
+			else:
+				world_data.ecology_visual_atlas_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
+		"smo":
+			world_data.dyn_atlas_smooth_buffer = buf
+			if world_data.dyn_atlas_smooth_tex != null \
+					and world_data.dyn_atlas_smooth_tex.get_size() == Vector2(float(W), float(H)):
+				world_data.dyn_atlas_smooth_tex.update(img)
+			else:
+				world_data.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
+		"ice":
+			world_data.ice_state_buffer = buf
+			if world_data.ice_state_tex != null \
+					and world_data.ice_state_tex.get_size() == Vector2(float(W), float(H)):
+				world_data.ice_state_tex.update(img)
+			else:
+				world_data.ice_state_tex = ImageTexture.create_from_image(img)
+				_create_from_image_path = true
+			_dvas_ice_commit_runs = int(_dvas_ice_commit_runs) + 1
+			if _dvas_ice_commit_runs <= 3 or (_dvas_ice_commit_runs % 60) == 0:
+				_log_ice_commit_sample(buf, bool(task.get("need_init", false)),
+						int(task.get("stride_count", 0)))
+		_:
+			return 0
+	var _tex_phase_ms: float = float(Time.get_ticks_usec() - _commit_t1_us) / 1000.0
+	var _total_commit_ms: float = float(Time.get_ticks_usec() - _commit_t0_us) / 1000.0
+	# Fix #3：高耗时直接打 warn，spike 时定位 root cause。25ms 阈值挑得偏严，
+	# 但 mobile commit 期望 ≤ 5ms，>25ms 就是真实问题。
+	if _total_commit_ms > 25.0:
+		push_warning("[atlas/commit-spike] ch=%s total=%.1fms img_create=%.1fms tex_%s=%.1fms W=%d H=%d buf=%dB path=%s" % [
+			channel, _total_commit_ms, _img_create_ms,
+			"create" if _create_from_image_path else "update",
+			_tex_phase_ms, W, H, buf.size(),
+			"ImageTexture.create_from_image" if _create_from_image_path else "ImageTexture.update",
+		])
+	return pixels
+
+
+func _log_ice_commit_sample(buf_ice: PackedByteArray, need_init: bool,
+		stride_count: int) -> void:
+	var ice_nonzero: int = 0
+	var ice_max: int = 0
+	var ice_n: int = buf_ice.size()
+	for bi in range(ice_n):
+		var bv: int = int(buf_ice[bi])
+		if bv > 0:
+			ice_nonzero += 1
+			if bv > ice_max:
+				ice_max = bv
+	print("[ice_atlas/COMMIT] run#%d need_init=%s stride=%d buf_n=%d nonzero=%d max=%d tex_rid=%s" % [
+		_dvas_ice_commit_runs, str(need_init), stride_count,
+		ice_n, ice_nonzero, ice_max,
+		str(world_data.ice_state_tex.get_rid()) if world_data.ice_state_tex != null else "<null>",
+	])
 
 
 # burn-in：把 baker 端 ecology 持久状态一次性灌到 C++ AtlasPipelineState。
@@ -1003,78 +1662,6 @@ func _burn_in_eco_state(ext: Object) -> void:
 		int(state.get("transition_age", PackedByteArray()).size()),
 		int(state.get("active_decay", PackedInt32Array()).size()),
 	])
-
-
-# 把 C++ 返回的 4 张 atlas PackedByteArray 上传到对应 ImageTexture。
-# 与 map_baker 旧路径完全等价（同 Image.create_from_data + .update 模式）。
-# 返回 4 张 atlas 的总写入像素数（用于 report.work_done 估算）。
-func _commit_atlas_buffers_to_gpu(atlas_buffers: Dictionary, W: int, H: int,
-		stride_real: Dictionary = {}) -> int:
-	if atlas_buffers.is_empty() or W <= 0 or H <= 0:
-		return 0
-	var n_pix: int = W * H
-	var total_pixels: int = 0
-	# dyn (RGBA8)
-	var buf_dyn: PackedByteArray = atlas_buffers.get("dyn", PackedByteArray())
-	var dyn_need_init: bool = world_data.dynamic_cell_atlas_tex == null \
-			or world_data.dynamic_cell_atlas_tex.get_size() != Vector2(float(W), float(H)) \
-			or world_data.dynamic_cell_atlas_buffer.size() != n_pix * 4
-	if buf_dyn.size() == n_pix * 4 \
-			and (int(stride_real.get("dyn", 0)) > 0 or dyn_need_init):
-		world_data.dynamic_cell_atlas_buffer = buf_dyn
-		var img_dyn := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_dyn)
-		if world_data.dynamic_cell_atlas_tex != null \
-				and world_data.dynamic_cell_atlas_tex.get_size() == Vector2(float(W), float(H)):
-			world_data.dynamic_cell_atlas_tex.update(img_dyn)
-		else:
-			world_data.dynamic_cell_atlas_tex = ImageTexture.create_from_image(img_dyn)
-		total_pixels += n_pix
-	# eco (RGBA8)
-	var buf_eco: PackedByteArray = atlas_buffers.get("eco", PackedByteArray())
-	var eco_need_init: bool = world_data.ecology_visual_atlas_tex == null \
-			or world_data.ecology_visual_atlas_tex.get_size() != Vector2(float(W), float(H)) \
-			or world_data.ecology_visual_atlas_buffer.size() != n_pix * 4
-	if buf_eco.size() == n_pix * 4 \
-			and (int(stride_real.get("eco", 0)) > 0 or eco_need_init):
-		world_data.ecology_visual_atlas_buffer = buf_eco
-		var img_eco := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_eco)
-		if world_data.ecology_visual_atlas_tex != null \
-				and world_data.ecology_visual_atlas_tex.get_size() == Vector2(float(W), float(H)):
-			world_data.ecology_visual_atlas_tex.update(img_eco)
-		else:
-			world_data.ecology_visual_atlas_tex = ImageTexture.create_from_image(img_eco)
-		total_pixels += n_pix
-	# smo (RGBA8)
-	var buf_smo: PackedByteArray = atlas_buffers.get("smo", PackedByteArray())
-	var smo_need_init: bool = world_data.dyn_atlas_smooth_tex == null \
-			or world_data.dyn_atlas_smooth_tex.get_size() != Vector2(float(W), float(H)) \
-			or world_data.dyn_atlas_smooth_buffer.size() != n_pix * 4
-	if buf_smo.size() == n_pix * 4 \
-			and (int(stride_real.get("smo", 0)) > 0 or smo_need_init):
-		world_data.dyn_atlas_smooth_buffer = buf_smo
-		var img_smo := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, buf_smo)
-		if world_data.dyn_atlas_smooth_tex != null \
-				and world_data.dyn_atlas_smooth_tex.get_size() == Vector2(float(W), float(H)):
-			world_data.dyn_atlas_smooth_tex.update(img_smo)
-		else:
-			world_data.dyn_atlas_smooth_tex = ImageTexture.create_from_image(img_smo)
-		total_pixels += n_pix
-	# ice (R8)
-	var buf_ice: PackedByteArray = atlas_buffers.get("ice", PackedByteArray())
-	var ice_need_init: bool = world_data.ice_state_tex == null \
-			or world_data.ice_state_tex.get_size() != Vector2(float(W), float(H)) \
-			or world_data.ice_state_buffer.size() != n_pix
-	if buf_ice.size() == n_pix \
-			and (int(stride_real.get("ice", 0)) > 0 or ice_need_init):
-		world_data.ice_state_buffer = buf_ice
-		var img_ice := Image.create_from_data(W, H, false, Image.FORMAT_R8, buf_ice)
-		if world_data.ice_state_tex != null \
-				and world_data.ice_state_tex.get_size() == Vector2(float(W), float(H)):
-			world_data.ice_state_tex.update(img_ice)
-		else:
-			world_data.ice_state_tex = ImageTexture.create_from_image(img_ice)
-		total_pixels += n_pix
-	return total_pixels
 
 
 # 复用 _finalize_stride 的 phase breakdown 打印格式（cpp_pipeline 路径同款 grep）。
@@ -1108,10 +1695,12 @@ func _print_phase_breakdown_window(path_tag: String) -> void:
 # 让下一次 _tick_cpp_pipeline 重新做 ecology burn-in。
 func notify_eco_burnin_pending() -> void:
 	_pending_burnin = true
+	_abort_smooth_prep("eco_burnin_pending")
 
 
 # ─── 紧急回退：one-shot 路径 ───────────────────────────────────────────────
 func _tick_oneshot(t_start_us: int) -> Dictionary:
+	_abort_smooth_prep("oneshot_fallback")
 	var dynamic_report: Dictionary = {}
 	if baker.has_method("rebake_dynamic_cell_atlas_only"):
 		dynamic_report = baker.rebake_dynamic_cell_atlas_only(map, world_data)
@@ -1154,9 +1743,28 @@ func _tick_oneshot(t_start_us: int) -> Dictionary:
 	return report
 
 
-func reconfigure(p_stride: int) -> void:
+func reconfigure(p_stride: int, p_phase: int = 0) -> void:
+	_abort_smooth_prep("reconfigure")
+	_reset_state_machine()
+	_clear_cpp_commit_queue()
+	_cpp_stride_in_progress = false
 	stride = max(1, p_stride)
-	policy = SusPolicyScript.StridePolicy.new(stride, 0)
+	_configure_lut_policy(stride, posmod(p_phase, stride))
+	_lut_refresh_pending = true
+	_lut_last_due_tick = -1
+
+
+func reset_progress() -> void:
+	super.reset_progress()
+	_abort_smooth_prep("reset_progress")
+	_reset_state_machine()
+	_clear_cpp_commit_queue()
+	_cpp_stride_in_progress = false
+	_lut_refresh_pending = false
+	_lut_last_refresh_tick = -1
+	_lut_last_due_tick = -1
+	_lut_pending_before_tick = false
+	_lut_catchup_tick = false
 
 
 func last_breakdown() -> Dictionary:
@@ -1209,6 +1817,9 @@ func _copy_phase_metrics(out: Dictionary, phase_key: String) -> void:
 		"cells_considered", "total_cells", "pixels_written",
 		"cpp_calls", "gd_calls", "empty_calls",
 		"source", "path", "fallback_reason",
+		"prep_stage", "prep_input_cursor", "prep_decay_cursor", "prep_seed_count",
+		"prep_seed_cursor", "prep_dilate_cursor", "prep_collect_cursor", "prep_candidates",
+		"prep_equiv_checks", "prep_equiv_failures", "prep_abort_reason", "prep_abort_count",
 	]:
 		var key: String = phase_key + "_" + suffix
 		if _aggregated_report.has(key):

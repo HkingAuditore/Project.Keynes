@@ -38,6 +38,8 @@ var _overlay_error_label: Label
 var _sim_checkboxes: Dictionary = {}
 # 视觉开关：key=ClimateProfile 无关，直接 main.gd.@export 字段名，value=CheckBox
 var _visual_checkboxes: Dictionary = {}
+# 性能 / 渲染实验 toggle 开关：key=get_debug_toggle_state 的 state key，value=CheckBox
+var _toggle_checkboxes: Dictionary = {}
 
 var _telemetry_vbox: VBoxContainer
 var _telemetry_labels: Dictionary = {}
@@ -62,22 +64,26 @@ var _topn_label: Label
 # 性能录制按钮 + 录制器实例（与 _pause_btn / _snapshot_btn 同行展示）。
 # _perf_recorder 在 set_main() 时创建并注入到 _main，避免与 main 自己生命周期解耦。
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+const TileDataRecorderScript = preload("res://scripts/ui/tile_data_recorder.gd")
 var _record_btn: Button
 var _perf_recorder: RefCounted = null
+var _tile_record_btn: Button
+var _tile_data_recorder: RefCounted = null
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
+var _tile_record_btn_toast_until_msec: int = 0
 
 
 # --- 布局常量 -------------------------------------------------------------
 const PANEL_WIDTH: float = 360.0
 
-# 5 个"涌现耦合"开关映射到 ClimateProfile 字段。下拉 / CheckBox 生成顺序与展示名一致。
+# "涌现耦合"开关映射到 ClimateProfile 字段。下拉 / CheckBox 生成顺序与展示名一致。
+# true_insolation_enabled 是兼容字段，运行时日照链条强制启用，不在这里提供回退开关。
 const SIM_SWITCHES: Array = [
 	["emergent_season_enabled", "涌现季节（Emergent Season）"],
 	["enable_local_climate_coupling", "本地气候耦合（Local Coupling）"],
 	["emergent_weather_coupling", "天气耦合（Weather Coupling）"],
 	["fast_slow_layering_enabled", "快慢分层（Fast/Slow Layering）"],
-	["true_insolation_enabled", "真日射驱动（True Insolation）"],
 ]
 
 # 视觉开关映射：main.gd 上的 @export 字段名 + HexRenderer 对应 setter。
@@ -122,6 +128,12 @@ func set_main(m: Node) -> void:
 		_perf_recorder.call("bind_main", m)
 	if m != null and m.has_method("set_perf_recorder"):
 		m.call("set_perf_recorder", _perf_recorder)
+	if _tile_data_recorder == null:
+		_tile_data_recorder = TileDataRecorderScript.new()
+	if _tile_data_recorder.has_method("bind_main"):
+		_tile_data_recorder.call("bind_main", m)
+	if m != null and m.has_method("set_tile_data_recorder"):
+		m.call("set_tile_data_recorder", _tile_data_recorder)
 	_refresh_from_state()
 
 # 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
@@ -180,6 +192,10 @@ func _build_ui() -> void:
 	vbox.add_child(HSeparator.new())
 	_build_diagnose_group(vbox)
 	vbox.add_child(HSeparator.new())
+	_build_experiments_group(vbox)
+	vbox.add_child(HSeparator.new())
+	_build_migration_group(vbox)
+	vbox.add_child(HSeparator.new())
 	_build_telemetry_group(vbox)
 
 func _build_overlay_group(parent: VBoxContainer) -> void:
@@ -228,7 +244,7 @@ func _build_overlay_group(parent: VBoxContainer) -> void:
 	parent.add_child(row_alpha)
 
 func _build_sim_group(parent: VBoxContainer) -> void:
-	parent.add_child(_make_section_header("模拟开关（F8 等价）"))
+	parent.add_child(_make_section_header("模拟开关（F8 等价，真日射常开）"))
 	for entry in SIM_SWITCHES:
 		var field: String = entry[0]
 		var label_text: String = entry[1]
@@ -254,7 +270,7 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("移动端调试动作"))
 	_add_action_button(parent, "重新生成地图（R）", &"regenerate_debug_map")
 	_add_action_button(parent, "适配视口（F）", &"fit_debug_map")
-	_add_action_button(parent, "切换 5 项涌现/日射（F8）", &"toggle_emergent_debug_switches")
+	_add_action_button(parent, "切换涌现耦合（F8）", &"toggle_emergent_debug_switches")
 	_add_action_button(parent, "切换洋流高对比（F6）", &"toggle_ocean_current_debug")
 
 	parent.add_child(_make_section_header("诊断打印"))
@@ -280,10 +296,7 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	_add_action_button(parent, "启动 Soak Dump 30 tick（F2）", &"start_soak_dump_debug")
 	_add_action_button(parent, "启动 Soak A/B SAME 30（F3）", &"start_soak_ab_same_source_debug")
 	_add_action_button(parent, "启动 Soak A/B Legacy（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
-	_add_action_button(parent, "Soak A/B B+ 矩阵（30+1000 tick）", &"start_soak_ab_season_round_batch_debug")
 	_add_action_button(parent, "Soak A/B Thread 矩阵（30+1000 tick）", &"start_soak_ab_thread_batch_debug")
-	_add_action_button(parent, "Soak C.4 全矩阵验收（约15分钟）", &"start_soak_ab_phase_c4_acceptance_debug")
-	_add_action_button(parent, "Soak SUS Scheduler 矩阵（30+1000 tick）", &"start_soak_ab_sus_scheduler_batch_debug")
 	_add_action_button(parent, "取消 Soak / Dump（Alt+F3）", &"cancel_soak_debug")
 
 	parent.add_child(_make_section_header("选择"))
@@ -292,6 +305,59 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	btn_clear.custom_minimum_size.y = 34.0
 	btn_clear.pressed.connect(_on_btn_clear_selection)
 	parent.add_child(btn_clear)
+
+# 性能 / 渲染实验开关：原 F3/F4/F5/F9/F10/F11/F12/L 热键的 UI 等价入口。
+# toggle 类用带状态回显的 CheckBox（勾选态 = 该开关当前真值，热键/按钮任意路径改动
+# 都会在面板下次同步时回显）；dump_render_profile 是一次性 dump，保留为按钮。
+# 每项 = [展示名, main 上的 toggle 方法名, get_debug_toggle_state 的 state key]
+const EXPERIMENT_TOGGLES: Array = [
+	["Perf Mini HUD 可见（F4）", "toggle_perf_mini_hud", "perf_mini_hud"],
+	["主地形 Shader 关闭（F9）", "toggle_world_shader_disabled", "world_shader_disabled"],
+	["Weather 层隐藏（F10）", "toggle_weather_layer_visible", "weather_hidden"],
+	["冻结 Overlay 每日重 bake（F5）", "toggle_overlay_refresh_disabled", "overlay_refresh_disabled"],
+	["禁用 Atlas 上传 Job（F11）", "toggle_dynamic_visual_atlas_upload", "atlas_upload_disabled"],
+	["Atlas 强制 256（否=512，F12，会重 bake）", "toggle_atlas_resolution", "atlas_quarter_size"],
+	["诊断日志 PKLog 启用（L）", "toggle_diagnostic_logging_debug", "diagnostic_logging"],
+]
+
+func _build_experiments_group(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_header("性能 / 渲染实验（原 60FPS 调查热键）"))
+	_add_action_button(parent, "Dump 渲染性能监视器（F3）", &"dump_render_profile")
+	_add_action_button(parent, "循环 Weather Debug View", &"cycle_weather_debug_view")
+	for entry in EXPERIMENT_TOGGLES:
+		var label_text: String = entry[0]
+		var method: String = entry[1]
+		var key: String = entry[2]
+		var cb := CheckBox.new()
+		cb.text = label_text
+		cb.toggled.connect(_on_experiment_toggle.bind(method, key))
+		parent.add_child(cb)
+		_toggle_checkboxes[key] = cb
+
+# CheckBox 翻转回调：调用 main 的 toggle 方法（翻转内部 flag），随后从权威真值
+# 回读并强制对齐勾选态——即使 toggle 翻转方向与 pressed 不符也能 snap 回真值。
+func _on_experiment_toggle(_pressed: bool, method: String, key: String) -> void:
+	if _suppress_sync_signals:
+		return
+	if _main == null or not _main.has_method(method):
+		push_warning("[DebugConsole] 实验开关方法缺失: %s" % method)
+		return
+	_main.call(method)
+	# 回读真值并对齐（toggle_atlas_resolution 等可能伴随 regenerate，状态以 main 为准）
+	var cb: CheckBox = _toggle_checkboxes.get(key, null)
+	if cb != null and _main.has_method("get_debug_toggle_state"):
+		_suppress_sync_signals = true
+		var truth: bool = bool(_main.call("get_debug_toggle_state", key))
+		if cb.button_pressed != truth:
+			cb.button_pressed = truth
+		_suppress_sync_signals = false
+
+# 生成迁移（C++ DOTS 化）验收：parity 逐字段对比 + 异步气候 bench。
+# 结果打到输出日志（[gen-parity] / [async/bench] 前缀）。
+func _build_migration_group(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_header("生成迁移 / DOTS 验收"))
+	_add_action_button(parent, "异步气候 Bench transp（B）", &"run_async_climate_bench_debug", ["transp"])
+	_add_action_button(parent, "异步气候 Bench pass_a（V）", &"run_async_climate_bench_debug", ["pass_a"])
 
 func _add_action_button(parent: VBoxContainer, text: String, method: StringName, args: Array = []) -> void:
 	var btn := Button.new()
@@ -336,6 +402,16 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)
 	parent.add_child(ctrl_row)
+
+	var tile_ctrl_row := HBoxContainer.new()
+	tile_ctrl_row.add_theme_constant_override("separation", 6)
+	_tile_record_btn = Button.new()
+	_tile_record_btn.text = "⏺ 开始地块全量录制"
+	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → ../../tmp/tile_data_record_<时间>.csv"
+	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
+	tile_ctrl_row.add_child(_tile_record_btn)
+	parent.add_child(tile_ctrl_row)
 
 	_telemetry_vbox = VBoxContainer.new()
 	_telemetry_vbox.add_theme_constant_override("separation", 4)
@@ -401,7 +477,7 @@ func _on_overlay_alpha_changed(v: float) -> void:
 	if _main != null and _main.has_method("_set_overlay_alpha"):
 		_main.call("_set_overlay_alpha", v)
 
-# 模拟开关：复用 main.gd 里 F8 的 5-开关同步路径，确保与 shader / WeatherSystem 一致。
+# 模拟开关：复用 main.gd 里 F8 的耦合同步语义，真日射链条保持常开。
 func _on_sim_switch_toggled(pressed: bool, field: String) -> void:
 	if _suppress_sync_signals:
 		return
@@ -413,11 +489,11 @@ func _on_sim_switch_toggled(pressed: bool, field: String) -> void:
 	if cp == null:
 		return
 	cp.set(field, pressed)
-	# 跟 F8 行为一致：emergent_* / true_insolation_enabled 任一变化都要推到 shader
-	# + WeatherSystem，才能让画面 / 天气/ 海冰 / 温度同步响应。
+	cp.set("true_insolation_enabled", true)
+	# 跟 F8 行为一致：emergent_* 变化推到 WeatherSystem；shader 始终保持真日射分支。
 	var renderer = _get_renderer()
 	if renderer != null and renderer.has_method("set_true_insolation_enabled"):
-		renderer.set_true_insolation_enabled(bool(cp.get("true_insolation_enabled")))
+		renderer.set_true_insolation_enabled(true)
 	if gen._weather_system != null and gen._weather_system.has_method("configure_emergent_coupling"):
 		gen._weather_system.configure_emergent_coupling(
 			bool(cp.get("emergent_weather_coupling")),
@@ -522,6 +598,15 @@ func _refresh_from_state() -> void:
 		if cb.button_pressed != val:
 			cb.button_pressed = val
 
+	# 性能 / 渲染实验 toggle：从 main.get_debug_toggle_state 读回真值回显
+	if _main != null and _main.has_method("get_debug_toggle_state"):
+		for key in _toggle_checkboxes.keys():
+			var tcb: CheckBox = _toggle_checkboxes.get(key, null)
+			if tcb == null:
+				continue
+			var truth: bool = bool(_main.call("get_debug_toggle_state", key))
+			if tcb.button_pressed != truth:
+				tcb.button_pressed = truth
 
 	# 未生成地图：置灰诊断动作相关（通过比对 get_current_map() 是否为 null）
 	var has_map: bool = _main != null \
@@ -692,6 +777,7 @@ func _refresh_sim_perf_lines() -> void:
 	# 录制中按钮文案随帧数刷新（"⏹ 停止并导出（已录 N 帧）"），
 	# 复用 _telemetry_timer，不新建 Timer。
 	_refresh_record_btn_text()
+	_refresh_tile_record_btn_text()
 
 
 # 2026-05-19：新增 ── 暂停 / 快照 / Top-N 工具函数
@@ -854,6 +940,84 @@ func _show_record_toast(msg: String, is_error: bool) -> void:
 		if _record_btn != null and is_instance_valid(_record_btn):
 			_record_btn.remove_theme_color_override("font_color")
 			_refresh_record_btn_text(true)
+	)
+
+
+# 地块数据录制按钮按下：
+#   - 未录制 → start：打开 CSV 并写 header
+#   - 录制中 → stop_and_export：关闭文件，按钮短暂显示导出结果
+func _on_btn_toggle_tile_record() -> void:
+	if _tile_data_recorder == null:
+		return
+	if _tile_data_recorder.has_method("is_recording") and bool(_tile_data_recorder.call("is_recording")):
+		var path: String = ""
+		if _tile_data_recorder.has_method("stop_and_export"):
+			path = String(_tile_data_recorder.call("stop_and_export"))
+		if path == "":
+			_show_tile_record_toast("导出失败（无数据或写盘失败）", true)
+		else:
+			_show_tile_record_toast("已导出 " + path.get_file(), false)
+	else:
+		if _tile_data_recorder.has_method("start"):
+			_tile_data_recorder.call("start")
+		_refresh_tile_record_btn_text(true)
+
+
+func _refresh_tile_record_btn_text(force: bool = false) -> void:
+	if _tile_record_btn == null or _tile_data_recorder == null:
+		return
+	if not force and Time.get_ticks_msec() < _tile_record_btn_toast_until_msec:
+		return
+	var recording: bool = false
+	if _tile_data_recorder.has_method("is_recording"):
+		recording = bool(_tile_data_recorder.call("is_recording"))
+	if recording:
+		var ticks: int = 0
+		var recorded_ticks: int = 0
+		var rows: int = 0
+		var stride_txt: String = ""
+		var last_ms: float = 0.0
+		var detail_txt: String = ""
+		if _tile_data_recorder.has_method("tick_count"):
+			ticks = int(_tile_data_recorder.call("tick_count"))
+		if _tile_data_recorder.has_method("recorded_tick_count"):
+			recorded_ticks = int(_tile_data_recorder.call("recorded_tick_count"))
+		if _tile_data_recorder.has_method("row_count"):
+			rows = int(_tile_data_recorder.call("row_count"))
+		if _tile_data_recorder.has_method("sampling_summary"):
+			var summary: Dictionary = _tile_data_recorder.call("sampling_summary")
+			stride_txt = " / t%d c%d" % [
+				int(summary.get("tick_stride", 1)),
+				int(summary.get("cell_stride", 1)),
+			]
+			last_ms = float(summary.get("last_tick_ms", 0.0))
+			detail_txt = " f%.1f/w%.1f" % [
+				float(summary.get("last_tick_format_ms", 0.0)),
+				float(summary.get("last_tick_flush_ms", 0.0)),
+			]
+		_tile_record_btn.text = "⏹ 停止并导出（全量 %d/%d tick / %d 行%s / %.1fms%s）" % [
+			recorded_ticks, ticks, rows, stride_txt, last_ms, detail_txt,
+		]
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
+	else:
+		_tile_record_btn.text = "⏺ 开始地块全量录制"
+		_tile_record_btn.remove_theme_color_override("font_color")
+
+
+func _show_tile_record_toast(msg: String, is_error: bool) -> void:
+	if _tile_record_btn == null:
+		return
+	_tile_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	if is_error:
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	else:
+		_tile_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	_tile_record_btn_toast_until_msec = Time.get_ticks_msec() + 2000
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(func() -> void:
+		if _tile_record_btn != null and is_instance_valid(_tile_record_btn):
+			_tile_record_btn.remove_theme_color_override("font_color")
+			_refresh_tile_record_btn_text(true)
 	)
 
 

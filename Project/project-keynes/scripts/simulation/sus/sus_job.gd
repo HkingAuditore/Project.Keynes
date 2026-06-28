@@ -17,6 +17,10 @@ var id: StringName = &""
 ## Scheduling policy. nil → AlwaysPolicy by default.
 var policy: SusPolicy = null
 
+## Native SUS normally evaluates the registered policy descriptor directly.
+## Enable this only when job-local state in should_run() changes eligibility.
+var use_job_should_run: bool = false
+
 ## Per-slice soft budget (ms). SUS uses this only as advisory; actual cutoff
 ## is enforced by the scheduler-wide frame_budget_ms.
 var slice_budget_ms: float = 4.0
@@ -43,7 +47,7 @@ var must_run: bool = false
 
 ## Starvation 防护（2026-05-11）：当 Job 被 frame_budget_exhausted 跳过的次数
 ## 累积达到该阈值时，下一次 should_run/policy 通过的 tick 会绕过 budget 守卫
-## 强制跑至少 1 slice，避免 sea_ice_atlas_upload / ocean_currents 这类低优先级
+## 强制跑至少 1 slice，避免 ocean_currents / visual upload 这类低优先级
 ## Job 长期饿死。must_run=true 的 Job 不需要它（本就绕过 budget）。
 ##  - <=0：禁用饥饿防护（保持旧行为）
 ##  - 推荐 5–10：约相当于 5–10 个 fast tick 后强制让步一次

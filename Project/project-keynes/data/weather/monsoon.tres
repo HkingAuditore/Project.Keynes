@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1")
 weather_type = 7
-display_name = "季风暴雨"
+display_name = "热带暴雨"
 moisture_delta = 0.40
 temp_delta = -0.04
 can_form_snow = false

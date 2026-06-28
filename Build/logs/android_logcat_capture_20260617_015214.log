@@ -1,0 +1,27 @@
+Project.Keynes Android logcat capture
+Started: 周三 2026/06/17  1:52:14.39
+Package: "com.projectkeynes.game"
+Output: "F:\Developent\Godot\Project.Keynes\Build\logs\android_logcat_20260617_015214.txt"
+Clear logcat: 1
+Launch app: 1
+Seconds: 1
+adb: "F:\Developent\platform-tools-latest-windows\platform-tools\adb.exe"
+
+
+> "F:\Developent\platform-tools-latest-windows\platform-tools\adb.exe" -s "84948c86" shell monkey -p "com.projectkeynes.game" -c android.intent.category.LAUNCHER 1
+  bash arg: -p
+  bash arg: com.projectkeynes.game
+  bash arg: -c
+  bash arg: android.intent.category.LAUNCHER
+  bash arg: 1
+args: [-p, com.projectkeynes.game, -c, android.intent.category.LAUNCHER, 1]
+ arg: "-p"
+ arg: "com.projectkeynes.game"
+ arg: "-c"
+ arg: "android.intent.category.LAUNCHER"
+ arg: "1"
+data="com.projectkeynes.game"
+data="android.intent.category.LAUNCHER"
+Events injected: 1
+## Network stats: elapsed time=17ms (0ms mobile, 0ms wifi, 17ms not connected)
+[exit_code] 0

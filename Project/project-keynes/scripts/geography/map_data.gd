@@ -63,7 +63,11 @@ var sea_ice_frac_arr_prev:  PackedFloat32Array = PackedFloat32Array()
 # float32 — 天气场
 var weather_intensity_arr:  PackedFloat32Array = PackedFloat32Array()
 var weather_cloud_arr:      PackedFloat32Array = PackedFloat32Array()
+var weather_cloud_water_arr: PackedFloat32Array = PackedFloat32Array()
 var weather_precip_arr:     PackedFloat32Array = PackedFloat32Array()
+var weather_transition_alpha_arr: PackedFloat32Array = PackedFloat32Array()
+var weather_classification_temp_arr: PackedFloat32Array = PackedFloat32Array()
+var weather_classification_moisture_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── B-full Step-2：weather hot loop 直读字段（写少读多） ────────────
 # 与 weather_intensity/cloud/precip 一组，由 weather_system.commit 写入。
@@ -75,9 +79,26 @@ var weather_field_init_arr:   PackedByteArray   = PackedByteArray()
 
 # ─── B-full Step-2：风温耦合 anomaly + 河流标志（write 少 / read 多） ───
 # air_mass_temp_anomaly_arr: 由 map_generator._climate_pass_b 写，weather hot loop 读。
-# has_river_arr: 仅地图生成期写一次，运行期纯读；通过 rebuild_soa_from_cells 同步。
+# has_river_arr / river_*: 仅地图生成期写一次，Baker 读取方向和径流宽度。
 var air_mass_temp_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 var has_river_arr:             PackedByteArray   = PackedByteArray()
+var river_flow_arr:            PackedFloat32Array = PackedFloat32Array()
+var river_downstream_arr:      PackedInt32Array   = PackedInt32Array()
+var has_volcano_arr:           PackedByteArray   = PackedByteArray()
+var is_lake_seed_arr:          PackedByteArray   = PackedByteArray()
+var hydro_parent_arr:          PackedInt32Array   = PackedInt32Array()
+var river_discharge_arr:       PackedFloat32Array = PackedFloat32Array()
+var river_discharge_30d_arr:   PackedFloat32Array = PackedFloat32Array()
+var river_storage_arr:         PackedFloat32Array = PackedFloat32Array()
+var groundwater_storage_arr:   PackedFloat32Array = PackedFloat32Array()
+var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
+
+# ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
+# ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
+# local_thermal_anomaly_arr: 由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）。
+# 二者由 _alloc_soa() 分配；不参与 rebuild_soa_from_cells（无 HexCell 镜像，纯运行期 SoA）。
+var ocean_thermal_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+var local_thermal_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段 ──────
 # ema_initialized_arr: 1 字节，0 / 1。冷启动判定（Pass-A 冷启动赋初值；后续
@@ -86,6 +107,13 @@ var has_river_arr:             PackedByteArray   = PackedByteArray()
 #   读 cell 字段，运行期纯 SoA 内部使用）。
 var ema_initialized_arr:       PackedByteArray   = PackedByteArray()
 var temp_season_offset_arr:    PackedFloat32Array = PackedFloat32Array()
+var insolation_now_arr:        PackedFloat32Array = PackedFloat32Array()
+var insolation_dev_arr:        PackedFloat32Array = PackedFloat32Array()
+var day_length_arr:            PackedFloat32Array = PackedFloat32Array()
+var heat_input_arr:            PackedFloat32Array = PackedFloat32Array()
+var thermal_energy_arr:        PackedFloat32Array = PackedFloat32Array()
+var snowpack_arr:              PackedFloat32Array = PackedFloat32Array()
+var water_balance_30d_arr:     PackedFloat32Array = PackedFloat32Array()
 
 # ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
 # 6 个字段（4 f32 + 2 i32），由 cpp run_stage_b_pass 在阶段 2 之后直读直写
@@ -100,6 +128,10 @@ var vitality_high_streak_arr:          PackedInt32Array   = PackedInt32Array()
 var soil_moisture_arr:                 PackedFloat32Array = PackedFloat32Array()
 var vegetation_growth_pressure_arr:    PackedFloat32Array = PackedFloat32Array()
 var temperature_transport_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
+var vegetation_heat_stress_arr:        PackedFloat32Array = PackedFloat32Array()
+var vegetation_drought_stress_arr:     PackedFloat32Array = PackedFloat32Array()
+var vegetation_cold_stress_arr:        PackedFloat32Array = PackedFloat32Array()
+var vegetation_regen_score_arr:        PackedFloat32Array = PackedFloat32Array()
 
 
 # ─── Reference-impl Pass #2 (demo-only, performance-charter §12.6) ──
@@ -130,7 +162,7 @@ var cell_pos_y_arr:         PackedFloat32Array = PackedFloat32Array()
 # 由 bake_lat_temp_year_lut(generator) 在 rebuild_soa_from_cells 完成后立即
 # bake 一次。运行期 Pass A 内层只是数组索引，彻底取消 _cube_row_norm 调用。
 #   cell_lat_norm_arr[i] = _cube_row_norm(cell_i, _last_cfg)              ∈ [0, 1]
-#   temp_baseline_year_arr[i] = pow(cos((ny-0.5)*π), 1.2)                  ∈ [0, 1]
+#   temp_baseline_year_arr[i] = DCClimateMath.lat_temp_bell_from_ny(ny)             ∈ [0, 1]
 # Pass A 当日温度 = clamp(temp_baseline_year_arr[i] - alt_penalty(elev), 0, 1) + season_offset
 #   alt_penalty(elev) = elev*0.55 + smoothstep(0.45, 1.0, elev) * 0.30  （2026-05-18 雪线修正）
 var cell_lat_norm_arr:        PackedFloat32Array = PackedFloat32Array()
@@ -146,6 +178,8 @@ var base_landform_arr:      PackedByteArray = PackedByteArray()
 var base_vegetation_arr:    PackedByteArray = PackedByteArray()
 var cover_arr:              PackedByteArray = PackedByteArray()
 var weather_type_arr:       PackedByteArray = PackedByteArray()
+var weather_prev_type_arr:  PackedByteArray = PackedByteArray()
+var weather_target_type_arr: PackedByteArray = PackedByteArray()
 var is_water_arr:           PackedByteArray = PackedByteArray()
 
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
@@ -191,9 +225,14 @@ func cell_count() -> int:
 func get_neighbors(cell: HexCell) -> Array:
 	var result: Array = []
 	for dir in HexUtils.CUBE_DIRECTIONS:
-		var nc := Vector3i(cell.q + dir.x, cell.r + dir.y, cell.s + dir.z)
-		var neighbor = _cells.get(nc, null)
-		if neighbor != null:
+		# [cylindrical-earth-daylight] 东西经度环绕（与 _build_indices 同规则）：
+		# 南北(row)越界跳过（两极硬边界），东西(col)用 posmod 绕回 → 最左/最右列互为邻居。
+		# 让冷路径（生成、refresh_seasonal、weather、循环 solver fallback）也物理东西连通。
+		var off := HexUtils.cube_to_offset(cell.q + dir.x, cell.r + dir.y)
+		if off.y < 0 or off.y >= height:
+			continue
+		var neighbor = _cells.get(HexUtils.offset_to_cube(posmod(off.x, width), off.y), null)
+		if neighbor != null and neighbor != cell:
 			result.append(neighbor)
 	return result
 
@@ -233,9 +272,19 @@ func _build_indices() -> void:
 		var base: int = j * 6
 		for d in range(6):
 			var dv: Vector3i = dirs[d]
-			var nb_key := Vector3i(c.q + dv.x, c.r + dv.y, c.s + dv.z)
-			var nb = _cells.get(nb_key, null)
-			if nb == null:
+			# [cylindrical-earth-daylight] 东西经度环绕（真·圆柱地球）：邻居先转 offset，
+			# 南北(row)越界仍 -1（两极是硬边界，不环绕），东西(col)用 posmod 绕回
+			# → 最左列与最右列互为邻居。这是运行时唯一邻居权威：洋流/风/温度/湿度/
+			# 海冰等 pass 都读 neighbor_indices，此处一改即让所有 pass 在东西方向物理连通。
+			var off := HexUtils.cube_to_offset(c.q + dv.x, c.r + dv.y)
+			var nrow: int = off.y
+			if nrow < 0 or nrow >= height:
+				_neighbor_indices[base + d] = -1
+				continue
+			var wrapped := HexUtils.offset_to_cube(posmod(off.x, width), nrow)
+			var nb = _cells.get(wrapped, null)
+			if nb == null or nb == c:
+				# nb==c 兜底：width 极小时 posmod 可能绕回自身，避免自环邻居
 				_neighbor_indices[base + d] = -1
 			else:
 				# 邻居一定已在 _cell_index 内（因为 _cells 是同源）
@@ -303,6 +352,60 @@ static func passable_sea_lut() -> PackedByteArray:
 	_passable_sea_lut_built = true
 	return lut
 
+# ─── terrain → physical water 静态 LUT ────────────────────────────────
+# cell.is_water 是气候/海洋系统的物理水体掩码，不是通行性掩码。
+# 不能用 `not passable_land` 推导：MOUNTAIN/SNOW/GLACIER 也不可陆行，但它们
+# 不是水体；SEA_ICE 可陆行，但底层仍是海域，必须视为 water。
+static var _is_water_lut_cache: PackedByteArray = PackedByteArray()
+static var _is_water_lut_built: bool = false
+
+static func terrain_is_water(t: int) -> bool:
+	return t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.OCEAN) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.COAST) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.LAKE) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.REEF) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.SEA_ICE) \
+			or t == int(_PassableSeaLUT_TerrainTypeScript.TERRAIN.KELP)
+
+static func terrain_is_water_u8(t: int) -> int:
+	return 1 if terrain_is_water(t) else 0
+
+## 256-byte LUT：lut[terrain_byte] = 1 if physical water body.
+static func is_water_lut() -> PackedByteArray:
+	if _is_water_lut_built:
+		return _is_water_lut_cache
+	var lut: PackedByteArray = PackedByteArray()
+	lut.resize(256)
+	for t_int in range(256):
+		lut[t_int] = terrain_is_water_u8(t_int)
+	_is_water_lut_cache = lut
+	_is_water_lut_built = true
+	return lut
+
+# ─── sea-ice-render-source-unify 阶段 D：渲染水陆判定 LUT ───────────────
+# 渲染管线与气候/海洋系统现在共享同一套物理水体语义：
+# OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP 为 water，其余地形为 land。不要用
+# passable_land/passable_sea 推导，否则山地、雪地、冰面会被错误归类。
+#
+# 重要：is_water_lut / is_water_render_lut 都是物理水体语义；通行性、寻路、
+#       AI 移动决策必须读 terrain profile 的 passable_land/passable_sea。
+static var _is_water_render_lut_cache: PackedByteArray = PackedByteArray()
+static var _is_water_render_lut_built: bool = false
+
+const _SEA_ICE_TERRAIN_INT: int = 20  # TerrainType.TERRAIN.SEA_ICE 的 int 值
+
+## 256-byte LUT：lut[terrain_byte] = 1 if 渲染上视为水（含 SEA_ICE）。
+static func is_water_render_lut() -> PackedByteArray:
+	if _is_water_render_lut_built:
+		return _is_water_render_lut_cache
+	var lut: PackedByteArray = PackedByteArray()
+	lut.resize(256)
+	for t_int in range(256):
+		lut[t_int] = terrain_is_water_u8(t_int)
+	_is_water_render_lut_cache = lut
+	_is_water_render_lut_built = true
+	return lut
+
 # ─── Climate-Weather 2ms Budget — Phase A.1：SoA 构造 / 同步 API ─────────
 # 调用关系（PR-2.4 之后）：
 #   - bake_world / 加载存档完成后调用 rebuild_soa_from_cells() 一次同步全部字段
@@ -317,6 +420,39 @@ func has_soa() -> bool:
 func soa_size() -> int:
 	return _cell_array.size()
 
+func sync_is_water_arr_from_terrain() -> void:
+	var n: int = mini(terrain_arr.size(), is_water_arr.size())
+	var lut: PackedByteArray = MapData.is_water_lut()
+	for i in range(n):
+		is_water_arr[i] = lut[int(terrain_arr[i])]
+
+func sync_runtime_terrain_facade_from_soa() -> int:
+	var n: int = mini(_cell_array.size(), terrain_arr.size())
+	var changed: int = 0
+	var lut: PackedByteArray = MapData.is_water_lut()
+	for i in range(n):
+		var terrain_byte: int = int(terrain_arr[i]) & 0xFF
+		if i < is_water_arr.size():
+			is_water_arr[i] = lut[terrain_byte]
+		var cell: HexCell = _cell_array[i]
+		if cell != null and int(cell.terrain) != terrain_byte:
+			cell.apply_terrain(terrain_byte)
+			changed += 1
+	return changed
+
+func set_runtime_terrain(idx: int, terrain_id: int, sync_cell: bool = true) -> void:
+	if idx < 0 or idx >= _cell_array.size():
+		return
+	var terrain_byte: int = terrain_id & 0xFF
+	if idx < terrain_arr.size():
+		terrain_arr[idx] = terrain_byte
+	if idx < is_water_arr.size():
+		is_water_arr[idx] = MapData.terrain_is_water_u8(terrain_byte)
+	if sync_cell:
+		var cell: HexCell = cell_at(idx)
+		if cell != null:
+			cell.apply_terrain(terrain_byte)
+
 ## 一次性按 _cell_array.size() 预分配所有 SoA 数组与 dirty mask。重复调用是安全的。
 func _alloc_soa(n: int) -> void:
 	temp_arr.resize(n);              temp_arr_prev.resize(n)
@@ -329,7 +465,11 @@ func _alloc_soa(n: int) -> void:
 	sea_ice_frac_arr.resize(n);      sea_ice_frac_arr_prev.resize(n)
 	weather_intensity_arr.resize(n)
 	weather_cloud_arr.resize(n)
+	weather_cloud_water_arr.resize(n)
 	weather_precip_arr.resize(n)
+	weather_transition_alpha_arr.resize(n)
+	weather_classification_temp_arr.resize(n)
+	weather_classification_moisture_arr.resize(n)
 	elevation_arr.resize(n)
 	base_moisture_arr.resize(n)
 	ocean_current_x_arr.resize(n)
@@ -353,6 +493,8 @@ func _alloc_soa(n: int) -> void:
 	base_vegetation_arr.resize(n)
 	cover_arr.resize(n)
 	weather_type_arr.resize(n)
+	weather_prev_type_arr.resize(n)
+	weather_target_type_arr.resize(n)
 	is_water_arr.resize(n)
 	climate_dirty_mask.resize(n)
 	weather_dirty_mask.resize(n)
@@ -363,9 +505,29 @@ func _alloc_soa(n: int) -> void:
 	weather_field_init_arr.resize(n)
 	air_mass_temp_anomaly_arr.resize(n)
 	has_river_arr.resize(n)
+	river_flow_arr.resize(n)
+	river_downstream_arr.resize(n)
+	has_volcano_arr.resize(n)
+	is_lake_seed_arr.resize(n)
+	hydro_parent_arr.resize(n)
+	river_discharge_arr.resize(n)
+	river_discharge_30d_arr.resize(n)
+	river_storage_arr.resize(n)
+	groundwater_storage_arr.resize(n)
+	surface_runoff_arr.resize(n)
+	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
+	ocean_thermal_anomaly_arr.resize(n)
+	local_thermal_anomaly_arr.resize(n)
 	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段
 	ema_initialized_arr.resize(n)
 	temp_season_offset_arr.resize(n)
+	insolation_now_arr.resize(n)
+	insolation_dev_arr.resize(n)
+	day_length_arr.resize(n)
+	heat_input_arr.resize(n)
+	thermal_energy_arr.resize(n)
+	snowpack_arr.resize(n)
+	water_balance_30d_arr.resize(n)
 	# B3b：植被动力学字段全量下沉 SoA（4 f32 + 2 i32）
 	vegetation_vitality_arr.resize(n)
 	vitality_low_streak_arr.resize(n)
@@ -373,6 +535,10 @@ func _alloc_soa(n: int) -> void:
 	soil_moisture_arr.resize(n)
 	vegetation_growth_pressure_arr.resize(n)
 	temperature_transport_anomaly_arr.resize(n)
+	vegetation_heat_stress_arr.resize(n)
+	vegetation_drought_stress_arr.resize(n)
+	vegetation_cold_stress_arr.resize(n)
+	vegetation_regen_score_arr.resize(n)
 
 ## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
 ## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。
@@ -393,6 +559,7 @@ func rebuild_soa_from_cells() -> void:
 	if not _indices_built:
 		_build_indices()
 	var n: int = _cell_array.size()
+	var hydro_parent_seed: PackedInt32Array = hydro_parent_arr.duplicate()
 	_alloc_soa(n)
 	# size=1 单位的 cube_to_world 缓存：内层循环用 dx/dy 相对位移，常量比例对方向判定无影响。
 	for i in range(n):
@@ -407,7 +574,11 @@ func rebuild_soa_from_cells() -> void:
 		sea_ice_frac_arr[i] = c.sea_ice_fraction
 		weather_intensity_arr[i] = c.weather_intensity
 		weather_cloud_arr[i] = c.weather_cloud
+		weather_cloud_water_arr[i] = c.weather_cloud * 0.5 if c.weather_field_initialized else 0.0
 		weather_precip_arr[i] = c.weather_precip
+		weather_transition_alpha_arr[i] = c.weather_transition_alpha
+		weather_classification_temp_arr[i] = c.temperature
+		weather_classification_moisture_arr[i] = c.moisture
 		elevation_arr[i] = c.elevation
 		base_moisture_arr[i] = c.base_moisture
 		ocean_current_x_arr[i] = c.ocean_current.x
@@ -430,7 +601,9 @@ func rebuild_soa_from_cells() -> void:
 		base_vegetation_arr[i] = c.base_vegetation & 0xFF
 		cover_arr[i] = c.cover & 0xFF
 		weather_type_arr[i] = c.weather_type & 0xFF
-		is_water_arr[i] = (1 if (not c.passable_land) else 0)
+		weather_prev_type_arr[i] = c.weather_prev_type & 0xFF
+		weather_target_type_arr[i] = c.weather_target_type & 0xFF
+		is_water_arr[i] = MapData.terrain_is_water_u8(int(terrain_arr[i]))
 		climate_dirty_mask[i] = 0
 		weather_dirty_mask[i] = 0
 		# B-full Step-2：6 个新字段 AoS → SoA 一次性镜像
@@ -440,16 +613,48 @@ func rebuild_soa_from_cells() -> void:
 		weather_field_init_arr[i] = (1 if c.weather_field_initialized else 0)
 		air_mass_temp_anomaly_arr[i] = c.air_mass_temp_anomaly
 		has_river_arr[i] = (1 if c.has_river else 0)
+		river_flow_arr[i] = c.river_flow
+		has_volcano_arr[i] = (1 if c.has_volcano else 0)
+		is_lake_seed_arr[i] = (1 if c.is_lake_seed else 0)
+		var downstream_idx: int = -1
+		if c.has_river_downstream:
+			var downstream_cell: HexCell = get_cell_by_cube(c.river_downstream)
+			downstream_idx = int(_cell_index.get(downstream_cell, -1)) if downstream_cell != null else -1
+		river_downstream_arr[i] = downstream_idx
+		var hydro_parent_idx: int = int(hydro_parent_seed[i]) if hydro_parent_seed.size() == n else -1
+		hydro_parent_arr[i] = hydro_parent_idx if hydro_parent_idx >= -1 and hydro_parent_idx < n else -1
+		river_discharge_arr[i] = maxf(0.0, river_flow_arr[i] if has_river_arr[i] != 0 else 0.0)
+		river_discharge_30d_arr[i] = river_discharge_arr[i]
+		river_storage_arr[i] = 0.0
+		groundwater_storage_arr[i] = 0.0
+		surface_runoff_arr[i] = 0.0
 		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
 		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
 		temp_season_offset_arr[i] = c.temp_season_offset
+		insolation_now_arr[i] = 0.0
+		insolation_dev_arr[i] = 0.0
+		day_length_arr[i] = 0.5
+		heat_input_arr[i] = 0.0
+		thermal_energy_arr[i] = c.temperature
+		snowpack_arr[i] = 0.8 if c.cover == CoverType.CV.GLACIER else clampf(c.snow_cover * 0.35, 0.0, 1.0)
+		water_balance_30d_arr[i] = 0.0
 		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
-		vegetation_vitality_arr[i] = c.vegetation_vitality
-		vitality_low_streak_arr[i] = c._vitality_low_streak
-		vitality_high_streak_arr[i] = c._vitality_high_streak
+		var has_live_vegetation: bool = is_water_arr[i] == 0 and int(c.vegetation) != int(VegetationType.VEG.NONE)
+		vegetation_vitality_arr[i] = c.vegetation_vitality if has_live_vegetation else 0.0
+		vitality_low_streak_arr[i] = c._vitality_low_streak if has_live_vegetation else 0
+		vitality_high_streak_arr[i] = c._vitality_high_streak if has_live_vegetation else 0
 		soil_moisture_arr[i] = c.soil_moisture
-		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure
+		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure if has_live_vegetation else 0.0
 		temperature_transport_anomaly_arr[i] = c.temperature_transport_anomaly
+		vegetation_heat_stress_arr[i] = c.vegetation_heat_stress if has_live_vegetation else 0.0
+		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress if has_live_vegetation else 0.0
+		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress if has_live_vegetation else 0.0
+		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
+	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成字段无 HexCell 镜像，
+	# 全图 fill 为 0（resize 已经填 0，这里显式 fill 防止后续手动 resize 残值）。
+	for i in range(n):
+		ocean_thermal_anomaly_arr[i] = 0.0
+		local_thermal_anomaly_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()
@@ -481,6 +686,12 @@ func init_soa_from_bake() -> void:
 ## generator 参数提供 _cube_row_norm / _compute_temperature 数值的权威来源——
 ## 我们直接借用其私有方法保证与 legacy 1:1 对齐（避免在 MapData 重复实现）。
 ## 重复调用是安全的；运行期不再变化。
+##
+## cpp-dots（temp-baseline-authority-2026-06）：cell_lat_norm 是几何量（依赖
+## cube_row_norm），始终由 GDScript 烤；temp_baseline_year 是 lat_temp_bell(lat_norm)
+## 的纯仿真量——其【权威计算】已上交 C++ run_temp_baseline_year_bake（pk_lat_temp_bell），
+## 由 map_generator._bake_temp_baseline_year_native 在 DCWorldExt bind 后调用并 flush 回本数组。
+## 本函数里的 temp_baseline_year 循环仅作 GDScript fallback（ext 未编译 / 未 bind 时兜底）。
 func bake_lat_temp_year_lut(generator) -> void:
 	if not _soa_built:
 		push_warning("[map_data] bake_lat_temp_year_lut: SoA not built; call rebuild_soa_from_cells() first")
@@ -495,9 +706,9 @@ func bake_lat_temp_year_lut(generator) -> void:
 		var c: HexCell = _cell_array[i]
 		var ny: float = float(generator.public_cube_row_norm(c))
 		cell_lat_norm_arr[i] = ny
-		# 与 _compute_temperature(ny, 0.0) 1:1 对齐：lat_temp = pow(cos(lat_signed*π/2), 1.2)
-		var lat_signed: float = (ny - 0.5) * 2.0
-		var lat_temp: float = pow(cos(lat_signed * PI * 0.5), 1.2)
+		# fallback only：权威值由 C++ run_temp_baseline_year_bake 写入（见函数顶部注释）。
+		# 公式统一走 DCClimateMath.lat_temp_bell（全工程单一来源），与 C++ pk_lat_temp_bell 同源。
+		var lat_temp: float = DCClimateMath.lat_temp_bell_from_ny(ny)
 		if lat_temp < 0.0:
 			lat_temp = 0.0
 		elif lat_temp > 1.0:
@@ -518,6 +729,11 @@ func soa_swap_double_buffer() -> void:
 	moisture_arr_prev = moisture_arr.duplicate()
 	snow_cover_arr_prev = snow_cover_arr.duplicate()
 	sea_ice_frac_arr_prev = sea_ice_frac_arr.duplicate()
+
+## 每日 climate round 开始前冻结上一个 committed 快照。weather/recorder/visual
+## 插值可以读 *_prev，避免切片期间看到一半旧值、一半新值。
+func soa_begin_climate_transaction() -> void:
+	soa_swap_double_buffer()
 
 # ─── Dirty Mask 操作 API（阶段 A.1 仅占位；阶段 A.2 正式投入使用） ──────────
 func mark_climate_dirty(idx: int) -> void:

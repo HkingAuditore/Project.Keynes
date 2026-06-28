@@ -34,6 +34,7 @@ vec3 apply_snow_cover(
 		float eco_valid,
 		float eco_stress,
 		float eco_foliage,
+		float river_flow,
 		vec4 pixel_noise) {
 	if (is_water) return base_col;
 
@@ -71,7 +72,7 @@ vec3 apply_snow_cover(
 	float snow_slope_mag = 0.0;
 	bool slope_ready = false;
 	float slope_shed = 0.0;
-	if (ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
+	if (raw_snow_signal > 0.01 && ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
 		vec2 snow_texel = 1.0 / hm_resolution;
 		float sl = decode_height_rg8(uv - vec2(snow_texel.x, 0.0));
 		float sr = decode_height_rg8(uv + vec2(snow_texel.x, 0.0));
@@ -88,6 +89,9 @@ vec3 apply_snow_cover(
 	snow_signal = clamp(snow_signal, 0.0, 1.0);
 	float snow_factor = mix(raw_snow_signal, snow_signal, snowline_visual_strength) * dynamic_snow_strength;
 	snow_factor = clamp(snow_factor, 0.0, 1.0);
+	float river_mask = smoothstep(river_threshold_low * 0.84, river_threshold_high, river_flow);
+	float cold_freeze = 1.0 - smoothstep(0.24, 0.46, current_temp);
+	float river_freeze_w = river_mask * clamp(max(snow_factor, cold_freeze * dyn_valid * 0.55), 0.0, 1.0);
 
 	// 5) 厚度色阶 + 边缘破碎。
 	// 2026-05-21 调整：阈值从 (0.10, 0.85) → (0.05, 0.60)。
@@ -98,14 +102,17 @@ vec3 apply_snow_cover(
 	float thick_low = pixel_noise.g;
 	float thick_hi = pixel_noise.r;
 	float thickness = clamp(smoothstep(0.05, 0.60, snow_factor) + (thick_low - 0.5) * 0.44, 0.0, 1.0);
-	vec3 thin_snow  = vec3(0.82, 0.86, 0.92);
-	vec3 thick_snow = vec3(0.96, 0.97, 0.99);
+	// [需求5 2026-06-19] 雪盖转暖白(原偏冷蓝白 0.82~0.96，与海冰冰蓝白难分)：
+	// thin 暖灰白、thick 暖白 → 陆地雪暖白 vs 海面冰冷蓝，二者拉开。
+	vec3 thin_snow  = vec3(0.90, 0.89, 0.86);
+	vec3 thick_snow = vec3(0.99, 0.985, 0.96);
 	vec3 snow_color = mix(thin_snow, thick_snow, thickness);
 	snow_color *= mix(0.94, 1.06, thick_hi);
 	float edge_noise = pixel_noise.a;
 	float edge_lo = mix(0.80, 0.66, snowline_visual_strength);
 	float edge_hi = mix(1.18, 1.34, snowline_visual_strength);
 	float snow_mix = clamp(snow_factor * mix(edge_lo, edge_hi, edge_noise), 0.0, 1.0);
+	snow_mix *= 1.0 - river_freeze_w * 0.86;
 	vec3 col = mix(base_col, snow_color, snow_mix);
 
 	// 6) BLIZZARD 新雪增强也收敛在雪函数内，主 shader 不再另起分支。
@@ -136,6 +143,10 @@ vec3 apply_snow_cover(
 			float w = blizz_mask * slope_w * veg_w;
 			col = mix(col, vec3(0.97, 0.98, 1.00), clamp(w, 0.0, 0.92));
 		}
+	}
+	if (river_freeze_w > 0.001) {
+		vec3 river_ice = mix(vec3(0.58, 0.76, 0.88), vec3(0.84, 0.93, 0.98), clamp(snow_factor + pixel_noise.r * 0.18, 0.0, 1.0));
+		col = mix(col, river_ice, clamp(river_freeze_w * 0.88, 0.0, 0.92));
 	}
 	return col;
 }

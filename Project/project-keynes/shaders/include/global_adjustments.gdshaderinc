@@ -4,12 +4,12 @@
 //   分支后全局视觉调整。
 //     1. 羊皮纸 tint + paper grain（sRGB 域 stylized）
 //     2. 半 PBR 后期：linear → ACES filmic tonemap → linear_to_srgb
-//        （仅在 USE_LINEAR_LIGHTING && day_night_enabled 时启用）
+//        （PBR 输出为 linear-HDR；与昼夜开关无关）
 //     3. 季节过渡 dissolve alpha
 //
 // 调用方（Who）
 //   - world_map.gdshader fragment() 的最后一步：
-//       COLOR = apply_global_adjustments(col, wp, pixel_noise, day_night_enabled);
+//       COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);
 //
 // 依赖（Why）
 //   - uniforms.gdshaderinc：parchment_* / paper_grain_strength / season_*
@@ -23,16 +23,16 @@
 //   - tonemap 仅在 USE_LINEAR_LIGHTING=true 时启用（约 6 ALU）
 // ─────────────────────────────────────────────────────────────────────────
 
-vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
+vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow) {
 	// ═══════════════════════════════════════════════════════════════════════
 	// GLOBAL 1：半 PBR 后期 —— Tonemap + linear→sRGB
 	// ───────────────────────────────────────────────────────────────────────
 	// land/water pipeline 在 USE_LINEAR_LIGHTING=true 时输出 linear-HDR 域；
 	// 这里统一收口做 tonemap + linear→sRGB，避免羊皮纸 / paper grain 再被
-	// gamma 二次扭曲。day_night_enabled=false 时整张图走 hillshade-only
-	// （sRGB），不应做 tonemap。
+	// gamma 二次扭曲。day_night_enabled=false 只是把 earth_daylight 退化为永昼；
+	// PBR 输出仍是 linear-HDR，必须继续 tonemap，避免关闭昼夜后整图过曝。
 	// ═══════════════════════════════════════════════════════════════════════
-	if (USE_LINEAR_LIGHTING && day_night_enabled) {
+	if (USE_LINEAR_LIGHTING && USE_PBR_BRDF) {
 		col = apply_tonemap(col);   // apply_tonemap 内部已乘 TONEMAP_EXPOSURE_BIAS
 		col = linear_to_srgb(col);
 	}
@@ -64,6 +64,8 @@ vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise) {
 		float threshold = 1.0 - edge;
 		alpha = 1.0 - smoothstep(threshold - soft, threshold + soft, dissolve_noise);
 		alpha *= 1.0 - smoothstep(0.88, 1.0, edge);
+		// 过渡层只负责旧地表颜色；当前雪盖由主层 dyn_lut.B 绘制，雪区不叠旧层。
+		alpha *= 1.0 - smoothstep(0.08, 0.22, dyn_snow);
 	}
 
 	return vec4(clamp(col, vec3(0.0), vec3(1.0)), alpha);

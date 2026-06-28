@@ -41,8 +41,12 @@ const CELL_SNOW_COVER: StringName = &"cell.snow_cover"
 const CELL_SEA_ICE_FRAC: StringName = &"cell.sea_ice_frac"
 const CELL_WEATHER_INTENSITY: StringName = &"cell.weather_intensity"
 const CELL_WEATHER_CLOUD: StringName = &"cell.weather_cloud"
+const CELL_WEATHER_CLOUD_WATER: StringName = &"cell.weather_cloud_water"
 const CELL_WEATHER_PRECIP: StringName = &"cell.weather_precip"
 const CELL_WEATHER_TYPE: StringName = &"cell.weather_type"
+const CELL_WEATHER_PREV_TYPE: StringName = &"cell.weather_prev_type"
+const CELL_WEATHER_TARGET_TYPE: StringName = &"cell.weather_target_type"
+const CELL_WEATHER_TRANSITION_ALPHA: StringName = &"cell.weather_transition_alpha"
 const CELL_ELEVATION: StringName = &"cell.elevation"
 const CELL_BASE_MOISTURE: StringName = &"cell.base_moisture"
 const CELL_OCEAN_CURRENT_X: StringName = &"cell.ocean_current_x"
@@ -52,6 +56,10 @@ const CELL_WIND_Y: StringName = &"cell.wind_y"
 const CELL_SLP: StringName = &"cell.slp"
 const CELL_WIND_SPEED: StringName = &"cell.wind_speed"
 const CELL_UPWELLING_STRENGTH: StringName = &"cell.upwelling_strength"
+# Fix #11 (2026-06-15): PSI 求解的中间诊断数组，schema 化以让 C++ run_psi_solver_pass
+# 直接 published_to_slot，跳过 GDScript 2400-loop 写回。
+const CELL_WIND_STRESS_CURL: StringName = &"cell.wind_stress_curl"
+const CELL_OCEAN_PSI: StringName = &"cell.ocean_psi"
 const CELL_POS_X: StringName = &"cell.pos_x"
 const CELL_POS_Y: StringName = &"cell.pos_y"
 const CELL_LAT_NORM: StringName = &"cell.lat_norm"
@@ -79,6 +87,22 @@ const CELL_WEATHER_INSTABILITY: StringName = &"cell.weather_instability"
 const CELL_WEATHER_FIELD_INIT: StringName = &"cell.weather_field_init"   # u8 0/1
 const CELL_AIR_MASS_TEMP_ANOMALY: StringName = &"cell.air_mass_temp_anomaly"
 const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/1
+const CELL_RIVER_FLOW: StringName = &"cell.river_flow"                   # f32 normalized generation flow/river width [0,1]
+
+# ─── A 修复（climate-temp-pingpong-fix-2026-06）— 显式 anomaly 合成新增 2 个 ──
+# 历史：在 2026-06-12 的 tile_data 分析中，pass_a / pass_b / ocean_water / ocean_land
+#       与 wind_surface 都在写 cell_temp，导致 stage 周期级 ping-pong（p99|ΔT|=0.11，
+#       max=0.28，52% cells 出现 sign flip）。
+# 修复架构：
+#   - pass_a → cell_temp_baseline（不再写 cell_temp；temp_baseline 含义改为
+#       "radiative + 热惯性后的瞬时 baseline"，每日重写）
+#   - ocean_water/land → cell.ocean_thermal_anomaly（不再写 cell_temp）
+#   - pass_b → cell.local_thermal_anomaly（不再写 cell_temp）
+#   - wind_air_mass → cell.air_mass_temp_anomaly（已合规，不动）
+#   - wind_surface → cell_temp = clamp(baseline + ocean_anom + local_anom + air_anom)
+#       唯一写者，下游 weather_field_solve 才读 cell_temp。
+const CELL_OCEAN_THERMAL_ANOMALY: StringName = &"cell.ocean_thermal_anomaly" # f32
+const CELL_LOCAL_THERMAL_ANOMALY: StringName = &"cell.local_thermal_anomaly" # f32
 
 # ─── Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个 component ──────
 # 写入侧：map_generator._climate_pass_a_soa（每天每 cell 写一次）。
@@ -86,6 +110,13 @@ const CELL_HAS_RIVER: StringName = &"cell.has_river"                     # u8 0/
 #         决定是否冷启动），UI breakdown（temp_season_offset，flush 后从 cell 读）。
 const CELL_EMA_INITIALIZED: StringName = &"cell.ema_initialized"             # u8 0/1
 const CELL_TEMP_SEASON_OFFSET: StringName = &"cell.temp_season_offset"       # f32
+const CELL_INSOLATION_NOW: StringName = &"cell.insolation_now"               # f32, [0,1]
+const CELL_INSOLATION_DEV: StringName = &"cell.insolation_dev"               # f32, normalized anomaly
+const CELL_DAY_LENGTH: StringName = &"cell.day_length"                       # f32, [0,1]
+const CELL_HEAT_INPUT: StringName = &"cell.heat_input"                       # f32, [0,1]
+const CELL_THERMAL_ENERGY: StringName = &"cell.thermal_energy"               # f32, [0,1]
+const CELL_SNOWPACK: StringName = &"cell.snowpack"                           # f32, normalized SWE [0,1]
+const CELL_WATER_BALANCE_30D: StringName = &"cell.water_balance_30d"          # f32, [-1,1]
 
 # ─── B3b：植被动力学字段全量下沉 SoA（消除 stage_b combined pack/unpack） ──
 # 历史：这 6 个字段原先只在 HexCell 上做强类型 var，stage_b combined pass
@@ -107,6 +138,18 @@ const CELL_VITALITY_HIGH_STREAK: StringName      = &"cell.vitality_high_streak" 
 const CELL_SOIL_MOISTURE: StringName             = &"cell.soil_moisture"              # f32
 const CELL_VEGETATION_GROWTH_PRESSURE: StringName = &"cell.vegetation_growth_pressure" # f32
 const CELL_TEMPERATURE_TRANSPORT_ANOMALY: StringName = &"cell.temperature_transport_anomaly" # f32
+const CELL_VEGETATION_HEAT_STRESS: StringName = &"cell.vegetation_heat_stress" # f32
+const CELL_VEGETATION_DROUGHT_STRESS: StringName = &"cell.vegetation_drought_stress" # f32
+const CELL_VEGETATION_COLD_STRESS: StringName = &"cell.vegetation_cold_stress" # f32
+const CELL_VEGETATION_REGEN_SCORE: StringName = &"cell.vegetation_regen_score" # f32
+
+# ─── Runtime hydrology：静态水文 parent + 日级动态径流 ───────────────
+const CELL_HYDRO_PARENT: StringName = &"cell.hydro_parent"                         # i32 downstream parent idx
+const CELL_RIVER_DISCHARGE: StringName = &"cell.river_discharge"                   # f32 raw daily discharge
+const CELL_RIVER_DISCHARGE_30D: StringName = &"cell.river_discharge_30d"           # f32 smoothed [0,1] discharge
+const CELL_RIVER_STORAGE: StringName = &"cell.river_storage"                       # f32 channel/lake storage
+const CELL_GROUNDWATER_STORAGE: StringName = &"cell.groundwater_storage"           # f32 slow reservoir
+const CELL_SURFACE_RUNOFF: StringName = &"cell.surface_runoff"                     # f32 local runoff debug
 
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────

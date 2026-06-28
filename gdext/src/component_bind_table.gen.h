@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 50
+// Schema entries: 75
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -41,7 +41,9 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_sea_ice_frac",                  "sea_ice_frac_arr",                  SlotDType::F32 },
     { "cell_weather_intensity",             "weather_intensity_arr",             SlotDType::F32 },
     { "cell_weather_cloud",                 "weather_cloud_arr",                 SlotDType::F32 },
+    { "cell_weather_cloud_water",           "weather_cloud_water_arr",           SlotDType::F32 },
     { "cell_weather_precip",                "weather_precip_arr",                SlotDType::F32 },
+    { "cell_weather_transition_alpha",      "weather_transition_alpha_arr",      SlotDType::F32 },
     { "cell_elevation",                     "elevation_arr",                     SlotDType::F32 },
     { "cell_base_moisture",                 "base_moisture_arr",                 SlotDType::F32 },
     { "cell_ocean_current_x",               "ocean_current_x_arr",               SlotDType::F32 },
@@ -51,6 +53,8 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_slp",                           "slp_arr",                           SlotDType::F32 },
     { "cell_wind_speed",                    "wind_speed_arr",                    SlotDType::F32 },
     { "cell_upwelling_strength",            "upwelling_strength_arr",            SlotDType::F32 },
+    { "cell_wind_stress_curl",              "wind_stress_curl_arr",              SlotDType::F32 },
+    { "cell_ocean_psi",                     "ocean_psi_arr",                     SlotDType::F32 },
     { "cell_pos_x",                         "cell_pos_x_arr",                    SlotDType::F32 },
     { "cell_pos_y",                         "cell_pos_y_arr",                    SlotDType::F32 },
     { "cell_lat_norm",                      "cell_lat_norm_arr",                 SlotDType::F32 },
@@ -63,6 +67,8 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_base_vegetation",               "base_vegetation_arr",               SlotDType::U8 },
     { "cell_cover",                         "cover_arr",                         SlotDType::U8 },
     { "cell_weather_type",                  "weather_type_arr",                  SlotDType::U8 },
+    { "cell_weather_prev_type",             "weather_prev_type_arr",             SlotDType::U8 },
+    { "cell_weather_target_type",           "weather_target_type_arr",           SlotDType::U8 },
     { "cell_is_water",                      "is_water_arr",                      SlotDType::U8 },
     { "cell_climate_dirty",                 "climate_dirty_mask",                SlotDType::U8 },
     { "cell_weather_dirty",                 "weather_dirty_mask",                SlotDType::U8 },
@@ -71,15 +77,35 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_weather_instability",           "weather_instability_arr",           SlotDType::F32 },
     { "cell_weather_field_init",            "weather_field_init_arr",            SlotDType::U8 },
     { "cell_air_mass_temp_anomaly",         "air_mass_temp_anomaly_arr",         SlotDType::F32 },
+    { "cell_ocean_thermal_anomaly",         "ocean_thermal_anomaly_arr",         SlotDType::F32 },
+    { "cell_local_thermal_anomaly",         "local_thermal_anomaly_arr",         SlotDType::F32 },
     { "cell_has_river",                     "has_river_arr",                     SlotDType::U8 },
+    { "cell_river_flow",                    "river_flow_arr",                    SlotDType::F32 },
     { "cell_ema_initialized",               "ema_initialized_arr",               SlotDType::U8 },
     { "cell_temp_season_offset",            "temp_season_offset_arr",            SlotDType::F32 },
+    { "cell_insolation_now",                "insolation_now_arr",                SlotDType::F32 },
+    { "cell_insolation_dev",                "insolation_dev_arr",                SlotDType::F32 },
+    { "cell_day_length",                    "day_length_arr",                    SlotDType::F32 },
+    { "cell_heat_input",                    "heat_input_arr",                    SlotDType::F32 },
+    { "cell_thermal_energy",                "thermal_energy_arr",                SlotDType::F32 },
+    { "cell_snowpack",                      "snowpack_arr",                      SlotDType::F32 },
+    { "cell_water_balance_30d",             "water_balance_30d_arr",             SlotDType::F32 },
     { "cell_vegetation_vitality",           "vegetation_vitality_arr",           SlotDType::F32 },
     { "cell_vitality_low_streak",           "vitality_low_streak_arr",           SlotDType::I32 },
     { "cell_vitality_high_streak",          "vitality_high_streak_arr",          SlotDType::I32 },
     { "cell_soil_moisture",                 "soil_moisture_arr",                 SlotDType::F32 },
     { "cell_vegetation_growth_pressure",    "vegetation_growth_pressure_arr",    SlotDType::F32 },
     { "cell_temperature_transport_anomaly", "temperature_transport_anomaly_arr", SlotDType::F32 },
+    { "cell_vegetation_heat_stress",        "vegetation_heat_stress_arr",        SlotDType::F32 },
+    { "cell_vegetation_drought_stress",     "vegetation_drought_stress_arr",     SlotDType::F32 },
+    { "cell_vegetation_cold_stress",        "vegetation_cold_stress_arr",        SlotDType::F32 },
+    { "cell_vegetation_regen_score",        "vegetation_regen_score_arr",        SlotDType::F32 },
+    { "cell_hydro_parent",                  "hydro_parent_arr",                  SlotDType::I32 },
+    { "cell_river_discharge",               "river_discharge_arr",               SlotDType::F32 },
+    { "cell_river_discharge_30d",           "river_discharge_30d_arr",           SlotDType::F32 },
+    { "cell_river_storage",                 "river_storage_arr",                 SlotDType::F32 },
+    { "cell_groundwater_storage",           "groundwater_storage_arr",           SlotDType::F32 },
+    { "cell_surface_runoff",                "surface_runoff_arr",                SlotDType::F32 },
     { "cell_demo_thermal_gradient",         "demo_thermal_gradient_arr",         SlotDType::F32 },  // demo-only (gated on ClimateProfile.demo_thermal_gradient_enabled)
 };
 

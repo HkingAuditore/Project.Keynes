@@ -7,7 +7,7 @@
 //                                + 能量守恒 (kD = (1-F)·(1-metallic))
 //                                + 线性空间运算 + ACES filmic tonemap
 //     - Legacy 路径 (USE_PBR_BRDF=0) ：v9 Blinn-Phong + Reinhard，单点回退用
-//     - hillshading 二光源旁路：day_night_enabled=false 时走 evaluate_hillshade_only
+//     - hillshading 二光源旁路：保留为 legacy/debug fallback；昼夜关闭时仍走永昼 PBR
 //
 // 调用方（Who）
 //   - land_pipeline.gdshaderinc::shade_land_surface
@@ -54,19 +54,36 @@ struct LightingContext {
 };
 
 // ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
-LightingContext make_lighting_context(float ambient_floor) {
+// [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线）驱动昼夜：昼夜系数 / 昼晨昏色
+//   统一由 earth_daylight.eval_earth_daylight() 给出（与水面、植被同一真源），
+//   tod_exposure 保留为全局曝光。直射光乘 local_day → 夜侧(太阳在地平线下)无方向光。
+LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
 	LightingContext lc;
-	lc.L = normalize(tod_sun_dir);
+	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
+
+	// [tod-latitude-sun 2026-06-25] 主光方向：默认使用逐像素物理太阳方向（近似点光源）。
+	// ed.sun_dir 的水平/垂直分量比 = cos(h)/sin(h)，因此纬度与时角不同 → 阴影方向与长度不同。
+	// 为保留正午高悬太阳下的地形立体起伏（避免太阳完全竖直把坡面打平、抹掉地形层次），
+	// 给一个温和的"最高仰角"下限 tod_sun_relief_max_up：把 up 分量截顶后重新归一化，
+	// 让水平分量保持足量，保证坡面仍有方向性明暗（默认 0.88，比旧 0.92 更偏水平、方向感更强）。
+	// day_night 关闭（永昼）或开关关闭 → lat_sun_w=0 → 回退全局 tod_sun_dir（旧的稳定光照）。
+	vec3 phys_sun = ed.sun_dir;
+	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
+	phys_sun = normalize(phys_sun);
+	float lat_sun_w = (tod_latitude_sun_enabled && day_night_enabled) ? 1.0 : 0.0;
+	lc.L = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
 	lc.V = VIEW_DIR_TOP_DOWN;
+
 	if (USE_LINEAR_LIGHTING) {
-		lc.sun_color_linear     = srgb_to_linear(tod_sun_color)     * SUN_INTENSITY_GAIN;
-		lc.ambient_color_linear = srgb_to_linear(tod_ambient_color);
+		// 直射光乘 local_day：夜侧(太阳在地平线下)无方向光 → 杜绝"夜里还有阳面"。
+		lc.sun_color_linear     = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day);
+		lc.ambient_color_linear = srgb_to_linear(ed.amb_col);
 	} else {
-		lc.sun_color_linear     = tod_sun_color * SUN_INTENSITY_GAIN;
-		lc.ambient_color_linear = tod_ambient_color;
+		lc.sun_color_linear     = ed.sun_col * (SUN_INTENSITY_GAIN * ed.local_day);
+		lc.ambient_color_linear = ed.amb_col;
 	}
 	lc.exposure = tod_exposure;
-	lc.night_factor = tod_night_factor;
+	lc.night_factor = ed.pixel_night;
 	lc.hillshade = hillshade_strength;
 	lc.ambient_floor = ambient_floor;
 	return lc;
@@ -102,11 +119,11 @@ vec3 F_Schlick(vec3 F0, float VdotH) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 三、Hillshade-Only 旁路（day_night_enabled=false 时使用）
+// 三、Hillshade-Only 旁路（legacy/debug fallback）
 // ═══════════════════════════════════════════════════════════════════════
-//   保留 v9 的 key+fill 双光源 hillshading 行为；不参与 BRDF / tonemap，避免
-//   debug 时的视觉跳变。仅 land 路径调用；water 路径在 day_night_enabled=false
-//   时走 evaluate_brdf_legacy_water 的简化分支（与 v9 一致）。
+//   保留 v9 的 key+fill 双光源 hillshading 行为，供将来 debug fallback 使用。
+//   注意：day_night_enabled=false 只表示"永昼 / 不跑晨昏线"，不再切到这条
+//   未 tonemap 的 sRGB 旁路，否则高 hillshade_strength 会把雪地/浅色地表打爆。
 // ─────────────────────────────────────────────────────────────────────
 vec3 evaluate_hillshade_only(SurfaceParams s) {
 	vec3 N = normalize(s.normal);
@@ -214,9 +231,6 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 vec3 evaluate_brdf(
 		SurfaceParams s, LightingContext lc,
 		float spec_max_legacy, float spec_min_legacy) {
-	if (!day_night_enabled) {
-		return evaluate_hillshade_only(s);
-	}
 	if (USE_PBR_BRDF) {
 		return evaluate_brdf_pbr(s, lc);
 	}

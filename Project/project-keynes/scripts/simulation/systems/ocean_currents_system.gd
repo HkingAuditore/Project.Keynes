@@ -31,9 +31,11 @@ class_name OceanCurrentsSystem
 ## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
 ##
 ## reads / writes 声明：
-##   - reads:  cell.elevation / cell.is_water / cell.terrain（baker 烘焙洋流时
-##             读这些慢层字段）
-##   - writes: cell.ocean_current_x / .ocean_current_y（per-cell 洋流向量）
+##   - reads:  仅声明同 tick 拓扑依赖所需的稳定慢层字段。温度/雪冰/上一帧风场与洋流
+##             是物理环流的时序反馈输入，按上一轮快照读取，不能声明为同 tick reads，
+##             否则会与 ClimateDaily/SeaIce 构成拓扑环。
+##   - writes: SLP、风向/风速、洋流、上升流。声明必须覆盖真实写集，确保
+##             weather/climate 读到本轮物理环流产物。
 ##
 ## feature_flag：留空（洋流是世界推进必跑流程）。
 
@@ -45,17 +47,18 @@ var _inner: _OceanCurrentsJobScript = null
 
 func _init(p_baker: _MapBakerScript, p_map: MapData, p_world: WorldData,
 		p_cfg: MapConfig, p_hex_size: float,
-		p_period_ticks: int, p_slice_count: int) -> void:
+		p_period_ticks: int, p_slice_count: int, p_ocean_period_ticks: int = -1) -> void:
 	# 委托给现有 OceanCurrentsJob 完成所有内部状态初始化（policy / 切片游标 /
 	# 锁定 phase 等）。本 wrapper 只暴露 DCSystem 接口。
 	_inner = _OceanCurrentsJobScript.new(p_baker, p_map, p_world, p_cfg, p_hex_size,
-		p_period_ticks, p_slice_count)
+		p_period_ticks, p_slice_count, p_ocean_period_ticks)
 	# 把内部 SusJob 的运行时字段 mirror 到本 system，让 SUS 兼容路径能直接读
 	id = _inner.id
 	priority = _inner.priority
 	slice_budget_ms = _inner.slice_budget_ms
 	max_slices_per_tick = _inner.max_slices_per_tick
 	must_run = _inner.must_run
+	use_job_should_run = _inner.use_job_should_run
 	starvation_threshold = _inner.starvation_threshold
 	policy = _inner.policy
 	depends_on = _inner.depends_on
@@ -66,14 +69,23 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_ELEVATION,
 		DCComponentIds.CELL_IS_WATER,
 		DCComponentIds.CELL_TERRAIN,
+		DCComponentIds.CELL_LANDFORM,
+		DCComponentIds.CELL_COVER,
 		DCComponentIds.CELL_LAT_NORM,
+		DCComponentIds.CELL_POS_X,
+		DCComponentIds.CELL_POS_Y,
 	]
 
 
 func declare_writes() -> Array[StringName]:
 	return [
+		DCComponentIds.CELL_SLP,
+		DCComponentIds.CELL_WIND_X,
+		DCComponentIds.CELL_WIND_Y,
+		DCComponentIds.CELL_WIND_SPEED,
 		DCComponentIds.CELL_OCEAN_CURRENT_X,
 		DCComponentIds.CELL_OCEAN_CURRENT_Y,
+		DCComponentIds.CELL_UPWELLING_STRENGTH,
 	]
 
 
@@ -107,7 +119,7 @@ func set_season_phase_getter(cb: Callable) -> void:
 	_inner.season_phase_getter = cb
 
 
-# 暴露内部 SusJob 给 map_generator 等需要直接调用 OceanCurrentsJob 强类型
-# API 的 caller。0.4.1 use_dc_system_scheduler=true 路径用。
+# 暴露内部 SusJob 给 map_generator 等仍需 OceanCurrentsJob 强类型 API 的 caller。
+# Production 注册已恒走 DCSystemScheduler；这是 wrapper inline 前的临时桥。
 func get_inner() -> _OceanCurrentsJobScript:
 	return _inner

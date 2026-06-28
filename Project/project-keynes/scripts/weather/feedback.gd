@@ -36,12 +36,19 @@ func _init(weather_system) -> void:
 	_weather_system = weather_system
 
 ## 主入口：把 weather_field 写回 cell。
-func distribute(_map: MapData) -> void:
-	pass
+##
+## 本阶段先把调用权从 WeatherSystem facade 切到子模块；为避免一次迁移
+## 数百行雪线/土壤水/DataCore 批量写逻辑时引入行为差异，实际循环仍复用
+## owner 中改名后的 legacy 实现。后续可逐段把 legacy 函数体搬入本类。
+func distribute(map: MapData) -> void:
+	if _weather_system == null or map == null:
+		return
+	_weather_system._distribute_weather_field_to_cells_legacy(map)
 
 ## 主入口：临时改写 cell.cover（BLIZZARD/MONSOON/STORM 触发）。
-func apply_cover_overrides(_map: MapData) -> void:
-	pass
+func apply_cover_overrides(map: MapData) -> void:
+	distribute(map)
+
 
 func describe() -> String:
 	return "DCWeatherFeedback(owner=%s)" % ("ws" if _weather_system != null else "(null)")

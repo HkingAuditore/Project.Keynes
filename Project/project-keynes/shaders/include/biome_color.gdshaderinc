@@ -23,60 +23,46 @@
 // 的像素画成陆地——结果就是海岸完全脱离 hex 形状，永远平滑曲线。
 vec3 water_depth_gradient(float offshore_t, float elev) {
 	float offshore_s = smoothstep(0.00, 1.00, clamp(offshore_t, 0.0, 1.0));
-	float near_surface = smoothstep(0.08, 1.00, clamp(elev / max(sea_level, 0.001), 0.0, 1.0));
+	float depth_t = 1.0 - clamp(elev / max(sea_level, 0.001), 0.0, 1.0);
+	float near_surface = 1.0 - smoothstep(0.04, 0.78, depth_t);
 	float contrast_t = clamp((deep_ocean_contrast - 0.5) / 2.5, 0.0, 1.0);
 
-	// Cartoon water palette: overlapping wide ramps, not isolated depth bands.
-	// Coast -> turquoise shelf -> teal sea -> cobalt basin -> soft indigo abyss.
-	float shelf_t = smoothstep(0.05, 0.46, offshore_s);
-	float mid_t = smoothstep(0.28, 0.78, offshore_s);
-	float basin_t = smoothstep(0.56, 1.00, offshore_s);
-	float abyss_t = smoothstep(0.76, 1.00, offshore_s);
+	// Depth bands: shore -> shelf -> mid sea -> basin -> abyss.
+	// 让浅海、中海、深海在亮度和色温上各有一档，不再像单一蓝块。
+	float shelf_t = smoothstep(0.04, 0.30, depth_t);
+	float mid_t = smoothstep(0.18, 0.54, depth_t);
+	float basin_t = smoothstep(0.42, 0.80, depth_t);
+	float abyss_t = smoothstep(0.72, 1.00, depth_t);
 
-	// Open Ocean Color Rebalance：把以下五个色阶的乘法系数往 vec3(1.0) 收敛，
-	// 去掉"加蓝压红"的塑料感。新基础调色板已自带合理冷暖差，无需再用大幅倍率。
-	// 旧值 / 新值 / 视觉影响：
-	//   coast_col  *(0.96,1.06,1.08) → *(1.00,1.04,1.04)  浅海保留蓝，但不再额外加蓝
-	//   shelf_col  *(0.82,1.16,1.18) → *(0.96,1.06,1.06)  陆架不再被推成纯青蓝
-	//   mid_col    *(0.88,1.05,1.18) → *(0.96,1.02,1.06)  中海域去过饱和
-	//   basin_tint mix(0.76,0.96,1.22)..(0.70,0.92,1.30) → mix(0.92,1.00,1.10)..(0.88,0.98,1.14)
-	//   abyss_warm *(0.86,0.98,1.24) → *(0.94,0.98,1.10)
-	//   abyss_cool mix(0.58,0.72,1.08)..(0.46,0.60,1.18) → mix(0.78,0.86,1.06)..(0.72,0.82,1.10)
-	vec3 coast_col = mix(color_shallow, color_coast_water, 0.88) * vec3(1.00, 1.04, 1.04);
-	vec3 shelf_col = mix(color_coast_water, color_mid_ocean, 0.24) * vec3(0.96, 1.06, 1.06);
-	vec3 mid_col = mix(color_mid_ocean, color_deep_ocean, 0.18) * vec3(0.96, 1.02, 1.06);
-	// Deep Ocean Layered Color: widen hue/sat span between basin and abyss so
-	// the deepest tiers read as "warm cobalt blue → cool indigo/violet" rather
-	// than a flat monochrome navy. basin pushes slightly warmer/bluer, abyss
-	// leans cooler with a violet bias.
+	vec3 coast_col = mix(color_shallow, color_coast_water, 0.82) * vec3(1.00, 1.05, 1.03);
+	vec3 shelf_col = mix(color_coast_water, color_mid_ocean, 0.30) * vec3(0.98, 1.04, 1.06);
+	vec3 mid_col = mix(color_mid_ocean, color_deep_ocean, 0.34) * vec3(0.96, 1.02, 1.08);
 	float richness_t = clamp(deep_ocean_color_richness, 0.0, 1.0);
-	vec3 basin_tint = mix(vec3(0.92, 1.00, 1.10), vec3(0.88, 0.98, 1.14), richness_t);
-	vec3 basin_col = mix(color_mid_ocean, color_deep_ocean, 0.50) * basin_tint;
-	vec3 abyss_warm = color_deep_ocean * vec3(0.94, 0.98, 1.10);
-	vec3 abyss_cool = color_deep_ocean * mix(vec3(0.78, 0.86, 1.06), vec3(0.72, 0.82, 1.10), richness_t);
+	vec3 basin_tint = mix(vec3(0.94, 1.00, 1.08), vec3(0.86, 0.96, 1.14), richness_t);
+	vec3 basin_col = mix(color_mid_ocean, color_deep_ocean, 0.68) * basin_tint;
+	vec3 abyss_warm = color_deep_ocean * vec3(0.96, 0.99, 1.08);
+	vec3 abyss_cool = color_deep_ocean * mix(vec3(0.88, 0.93, 1.08), vec3(0.82, 0.88, 1.12), richness_t);
 	vec3 abyss_col = mix(abyss_warm, abyss_cool, contrast_t);
 
 	vec3 ocean_col = coast_col;
-	ocean_col = mix(ocean_col, shelf_col, shelf_t * 0.92);
-	ocean_col = mix(ocean_col, mid_col, mid_t * 0.78);
-	ocean_col = mix(ocean_col, basin_col, basin_t * 0.68);
-	ocean_col = mix(ocean_col, abyss_col, abyss_t * 0.58);
+	ocean_col = mix(ocean_col, shelf_col, shelf_t * 0.86);
+	ocean_col = mix(ocean_col, mid_col, mid_t * 0.74);
+	ocean_col = mix(ocean_col, basin_col, basin_t * 0.70);
+	ocean_col = mix(ocean_col, abyss_col, abyss_t * 0.62);
 
-	// Broad deep-water chroma drift keeps large oceans layered while staying calm.
-	// Open Ocean Color Rebalance：blue_shift/violet_shift 整体压幅，避免 basin/abyss
-	// 被乘法叠加再次推成纯蓝。旧 0.20 / 0.12 → 新 0.12 / 0.07。
-	vec3 blue_shift = mix(vec3(0.98, 1.01, 1.06), vec3(0.90, 0.96, 1.12), basin_t);
-	vec3 violet_shift = mix(vec3(1.0), vec3(0.94, 0.92, 1.10), abyss_t);
-	ocean_col *= mix(vec3(1.0), blue_shift, 0.12 * smoothstep(0.26, 1.0, offshore_s));
-	ocean_col *= mix(vec3(1.0), violet_shift, 0.07 * abyss_t);
+	// 轻微色温漂移保留大尺度层次，但不把深水推成一整片纯蓝。
+	vec3 blue_shift = mix(vec3(0.99, 1.02, 1.05), vec3(0.88, 0.95, 1.10), basin_t);
+	vec3 violet_shift = mix(vec3(1.0), vec3(0.95, 0.92, 1.12), abyss_t);
+	ocean_col *= mix(vec3(1.0), blue_shift, 0.10 * smoothstep(0.20, 1.0, offshore_s));
+	ocean_col *= mix(vec3(1.0), violet_shift, 0.08 * abyss_t);
 
 	vec3 shallow_lift = mix(shelf_col, coast_col, near_surface);
-	vec3 result = mix(ocean_col, shallow_lift, (1.0 - smoothstep(0.12, 0.42, offshore_s)) * near_surface * 0.36);
+	vec3 result = mix(ocean_col, shallow_lift, (1.0 - smoothstep(0.10, 0.42, offshore_s)) * near_surface * 0.40);
 
 	// Safety band: gently pull extreme results back toward the deep-ocean base
 	// so newly-widened palette never drifts into a cartoony alien hue. Scales
 	// with richness_t so richness==0 is a no-op (旧视觉完全保留).
-	float pullback = 0.15 * richness_t * smoothstep(0.40, 1.0, offshore_s);
+	float pullback = 0.12 * richness_t * smoothstep(0.45, 1.0, offshore_s);
 	result = mix(result, color_deep_ocean, pullback);
 	return result;
 }
@@ -169,33 +155,36 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 // ─── biome 色相调制（高度负责亮度，biome 负责色相） ──────────────────────
 
 vec3 biome_hue_modulate(vec3 base, int biome) {
-	if (biome == B_FOREST)    return base * vec3(0.70, 1.05, 0.65);
-	if (biome == B_GRASSLAND) return base * vec3(0.85, 1.05, 0.78);
-	if (biome == B_DESERT)    return base * vec3(1.18, 1.02, 0.72);
-	if (biome == B_TUNDRA)    return base * vec3(0.92, 1.00, 1.00);
-	if (biome == B_SNOW)      return base * vec3(0.86, 0.90, 0.95);
-	if (biome == B_MOUNTAIN)  return base * vec3(1.00, 0.95, 0.95);
-	if (biome == B_HILL)      return base * vec3(1.05, 1.00, 0.90);
-	if (biome == B_SWAMP)     return base * vec3(0.55, 0.85, 0.62);
+	// 少一点统一绿，多一点橄榄、金黄、冷青和岩灰。
+	if (biome == B_FOREST)    return base * vec3(0.70, 1.00, 0.64);
+	if (biome == B_GRASSLAND) return base * vec3(0.92, 1.08, 0.72);
+	if (biome == B_DESERT)    return base * vec3(1.22, 1.00, 0.66);
+	if (biome == B_TUNDRA)    return base * vec3(0.88, 0.96, 1.05);
+	if (biome == B_SNOW)      return base * vec3(0.88, 0.92, 0.98);
+	if (biome == B_MOUNTAIN)  return base * vec3(1.00, 0.96, 0.96);
+	if (biome == B_HILL)      return base * vec3(1.06, 1.00, 0.92);
+	if (biome == B_SWAMP)     return base * vec3(0.60, 0.88, 0.70);
 	// Phase 10：Whittaker 4
 	// JUNGLE：极深饱和绿（雨林郁闭）
-	if (biome == B_JUNGLE)    return base * vec3(0.50, 1.00, 0.55);
-	if (biome == B_SAVANNA)   return base * vec3(1.10, 1.00, 0.62);
-	if (biome == B_TAIGA)     return base * vec3(0.62, 0.92, 0.78);
-	// STEPPE：浅黄绿，比 GRASSLAND 减半饱和
-	if (biome == B_STEPPE)    return base * vec3(1.00, 1.04, 0.82);
+	if (biome == B_JUNGLE)    return base * vec3(0.48, 0.98, 0.58);
+	if (biome == B_SAVANNA)   return base * vec3(1.12, 1.04, 0.60);
+	if (biome == B_TAIGA)     return base * vec3(0.60, 0.94, 0.80);
+	if (biome == B_STEPPE)    return base * vec3(1.00, 1.06, 0.76);
 	// Phase 11
 	// SHRUBLAND：灰绿带土黄（地中海干性灌丛）
-	if (biome == B_SHRUBLAND) return base * vec3(1.05, 0.98, 0.78);
-	if (biome == B_MANGROVE)  return base * vec3(0.50, 0.88, 0.65);
-	if (biome == B_GLACIER)   return base * vec3(0.92, 0.98, 1.05);
-	// DELTA：棕绿斑驳（湿润沉积带）
-	if (biome == B_DELTA)     return base * vec3(0.78, 1.00, 0.65);
-	// OASIS：鲜亮饱和绿（沙漠中的生命）
-	if (biome == B_OASIS)     return base * vec3(0.55, 1.10, 0.55);
-	// SALT_FLAT：极淡黄白（高反射）
-	if (biome == B_SALT_FLAT) return base * vec3(1.18, 1.15, 0.92);
-	// BADLANDS：橙红条纹（沉积层）
-	if (biome == B_BADLANDS)  return base * vec3(1.20, 0.85, 0.60);
+	if (biome == B_SHRUBLAND) return base * vec3(1.04, 0.98, 0.82);
+	if (biome == B_MANGROVE)  return base * vec3(0.58, 0.92, 0.76);
+	if (biome == B_GLACIER)   return base * vec3(0.94, 0.99, 1.04);
+	if (biome == B_DELTA)     return base * vec3(0.82, 1.02, 0.72);
+	if (biome == B_OASIS)     return base * vec3(0.62, 1.08, 0.62);
+	if (biome == B_SALT_FLAT) return base * vec3(1.16, 1.14, 0.94);
+	if (biome == B_BADLANDS)  return base * vec3(1.18, 0.88, 0.66);
+	// terrain-overhaul 新增地形配色
+	// COLD_DESERT：冷灰黄（寒漠，比热沙漠更灰、偏冷）
+	if (biome == B_COLD_DESERT) return base * vec3(1.04, 1.02, 0.90);
+	if (biome == B_CHAPARRAL)   return base * vec3(1.04, 1.02, 0.76);
+	if (biome == B_MOOR)        return base * vec3(0.84, 0.94, 0.72);
+	if (biome == B_FLOODPLAIN)  return base * vec3(0.80, 1.03, 0.70);
+	if (biome == B_MESA)        return base * vec3(1.22, 0.94, 0.70);
 	return base;
 }

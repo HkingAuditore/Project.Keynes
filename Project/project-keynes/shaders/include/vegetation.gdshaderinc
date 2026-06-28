@@ -132,6 +132,11 @@ vec3 vegetation_tint(int veg) {
 	if (veg == V_MANGROVE)            return vec3(0.78, 1.02, 0.80);
 	if (veg == V_SWAMP)               return vec3(0.84, 1.02, 0.80);
 	if (veg == V_MARSH)               return vec3(0.88, 1.04, 0.82);
+	// terrain-overhaul 新增植被轴 tint
+	if (veg == V_CLOUD_FOREST)        return vec3(0.78, 1.10, 0.82);
+	if (veg == V_MONSOON_FOREST)      return vec3(0.92, 1.06, 0.74);
+	if (veg == V_SEAGRASS)            return vec3(0.82, 1.02, 0.86);
+	if (veg == V_PEAT_BOG)            return vec3(0.86, 1.00, 0.78);
 	return vec3(1.0);
 }
 

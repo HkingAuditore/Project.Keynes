@@ -22,62 +22,53 @@
 // world_map.gdshader v9.atlas：高分辨率地理仿真渲染
 //   height_tex       (RG8 16-bit, hm_size, LINEAR)
 //                     归一化海拔 [0, 1]，解码 (R*256 + G) / 257
-//   enum_atlas       (RGB8, derived_size, NEAREST)
-//                     R = biome (TerrainType.TERRAIN id)
-//                     G = vegetation (VegetationType.VEG id)
-//                     B = cover (CoverType.CV id)
-//   scalar_atlas     (RGBA8, derived_size, LINEAR)
-//                     R = moisture
-//                     G = flow_accum (log-scaled)
-//                     B = latitude_norm ∈ [0, 1]
-//                     A = 0（保留）
-//   vector_atlas     (RGBA8, derived_size, LINEAR)
-//                     RG = ocean_current (-1..1 mapped from 0..1)
-//                     BA = wind_field    (-1..1 mapped from 0..1)
-//   dynamic_cell_atlas (RGBA8, derived_size, LINEAR)
-//                     R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality
-//   sea_ice_tex      (R8, derived_size, LINEAR)
-
-//                     兼容旧调试/数据通道；主视觉海冰由 shader 按水温实时派生。
-//
-// 不再有 hex 逻辑、不再做 domain warp。整张地图就是这 4 张连续纹理的合成。
+//   map_index_atlas  (RGBA8, derived_size, NEAREST)
+//                     R = biome id
+//                     G/B = cell.index low/high byte
+//                     A = reserved
+// scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
+// moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
-uniform sampler2D enum_atlas   : filter_nearest, repeat_disable;
-uniform sampler2D scalar_atlas : filter_linear,  repeat_disable;
-uniform sampler2D vector_atlas : filter_linear,  repeat_disable;
-// vector_atlas 是否已注入真实数据。bake_world / commit_ocean_buffers 完成时由 hex_renderer 置 true。
-// 未绑定时 Godot 默认 fallback 是白纹理（vec4(1)），错误地解码为 (1,1) 强洋流向；
-// 用此 flag 让 shader 在 false 时直接把 vects 当 0.5 中性值，等价于"没有洋流/风"。
-uniform bool vector_atlas_valid = false;
-// dynamic_cell_atlas RGBA8：R=temp, G=wetness/moisture, B=snow_cover, A=vegetation_vitality。
-// map-visual-overhaul-v1：主 shader 已切换到 `dyn_atlas_smooth_tex` 消费（消除 hex 阶梯）；
-// 本 uniform 保留给调试/info 面板（hex_renderer 仍按旧接口绑定），shader 自身不再读它。
-uniform sampler2D dynamic_cell_atlas : hint_default_black, filter_linear, repeat_disable;
-// map-visual-overhaul-v1：dyn_atlas_smooth_tex RGBA8 LINEAR（derived_size）。
-// dynamic_cell_atlas 的"沿 hex 邻接 box blur"产物，跨 cell 平滑——shader 单点采样
-// 即可得到连续场，彻底消除"颜色按 hex 块切"的硬阶梯（病灶 B 解药）。
-// hint_default_black 让纹理未绑定时采样为 (0,0,0,0)，触发 dyn_valid fallback。
-uniform sampler2D dyn_atlas_smooth_atlas : hint_default_black, filter_linear, repeat_disable;
-// map-visual-overhaul-v1：ice_state_atlas R8 LINEAR（derived_size）。
-// 每像素 = 该 cell.sea_ice_frac × 255 量化；仅水域 cell 写非零，陆地恒 0。
-// shader 据此替换原 lat-driven 静态 ice mask（病灶 A 解药）—— 海冰随温度真冻融、
-// 边缘由 fbm 撕碎，不再"极地海冰终年不化"。
-uniform sampler2D ice_state_atlas : hint_default_black, filter_linear, repeat_disable;
-// ecology_visual_atlas RGBA8: R=foliage_density, G=stress/dryness,
-// B=vegetation transition age, A=recent growth/damage.
-uniform sampler2D ecology_visual_atlas : hint_default_black, filter_linear, repeat_disable;
+// [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny ∈ [0,1] 映射 [-1,1]，
+// nz 在 shader 重建）。地形静态 → 运行期 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap。
+// terrain_normal_tex_bound=false（未烘焙/旧存档）时 compute_terrain_normal 回退到运行期宽半径差分。
+uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
+uniform bool terrain_normal_tex_bound = false;
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
+// [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
+// 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
+// 的 flow）。未绑定时采样得 0（无河），安全降级。
+uniform sampler2D flow_tex : filter_linear, repeat_disable;
+// [water-depth-tex 2026-06-26] 海/湖统一归一水深（R8, derived_size）：R = 水深 [0,1]，0=岸/陆、
+// 1=最深。C++ 生成期算好 per-cell（海洋 1-E/sea + 湖泊湖岸→湖心碗形），bake 经 pixel_to_cell_index
+// 扇出。water_pipeline 用它做深浅着色，单次采样取代旧"海洋 5×5 height 邻域 + 湖泊 16× biome 多半径"。
+// has_water_depth_tex=false（未烘焙/旧存档/fused 失败）时回退旧逐邻域估算。
+uniform sampler2D water_depth_tex : filter_linear, repeat_disable;
+uniform bool has_water_depth_tex = false;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的
 // 三层独立云（cirrus/cumulus/fog）承担——主地图保持"清爽地表"，不画云。
 // 历史 uniform：weather_field_tex / weather_field_ocean_enabled /
 //               weather_field_ocean_strength （已删除）。
-// 兼容旧调试/数据通道；主地图海冰视觉不采样它。
-uniform sampler2D sea_ice_tex : filter_linear, repeat_disable;
 // v10.noise-pack：共享 noise 贴图（256×256 RGBA8 tileable，由 MapBaker 烘焙）。
 // R=raw value_noise，G/B/A=2/3/4 octave fBM 预积分；fbm(p,N) 全局降为 1 次采样。
 uniform sampler2D noise_tex    : filter_linear_mipmap, repeat_enable;
 const float NOISE_TEX_SCALE = 256.0;
 
+// =========================================================================
+// 【Cell-index 间接寻址组（province-ID indirection）】
+// =========================================================================
+// cell-index indirection 是唯一动态视觉路径。
+// map_index_atlas.g/b：cell.index 低/高字节；0xFFFF=map 外哨兵。
+//   **必须 NEAREST**：索引插值会得到垃圾 cell。
+// enum_lut（RGB8 NEAREST）：per-cell R=biome G=veg B=cover。
+// dyn_lut（RGBA8 NEAREST）：per-cell R=temp G=wet B=snow A=ice|vitality。
+// eco_lut（RGBA8 NEAREST）：per-cell ecology。
+// lut_dims：(lut_w, lut_h) LUT 纹理网格尺寸，shader 据此把 cell.index → texel uv。
+uniform sampler2D enum_lut : filter_nearest, repeat_disable;
+uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
+uniform sampler2D eco_lut  : filter_nearest, repeat_disable;
+uniform vec2 lut_dims = vec2(1.0, 1.0);
 
 
 // =========================================================================
@@ -85,10 +76,32 @@ const float NOISE_TEX_SCALE = 256.0;
 // =========================================================================
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform vec2 derived_resolution = vec2(1024.0, 768.0);
 
 uniform float sea_level : hint_range(0.0, 1.0) = 0.42;
+
+float wrap_world_x(float x) {
+	if (wrap_period_x <= 0.0001) {
+		return x;
+	}
+	return wrap_origin_x + mod(x - wrap_origin_x, wrap_period_x);
+}
+
+vec2 wrap_world_pos(vec2 wp) {
+	return vec2(wrap_world_x(wp.x), wp.y);
+}
+
+vec2 wrap_map_uv(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return clamp(uv, vec2(0.0), vec2(1.0));
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	float wrapped_x = wrap_world_x(world_x);
+	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
+}
 
 
 // =========================================================================
@@ -124,6 +137,21 @@ uniform vec3  tod_ambient_color : source_color = vec3(0.65, 0.68, 0.75);
 uniform float tod_night_factor  : hint_range(0.0, 1.0) = 0.0;
 // tod_exposure：最终 tonemap 前的曝光倍率（艺术化调节用）
 uniform float tod_exposure      : hint_range(0.2, 2.5) = 1.0;
+
+// [tod-latitude-sun 2026-06-25] 逐像素太阳方向（近似点光源）总开关。
+// true（默认）：主光方向按球面天文逐像素求解，不同纬度/时角得到不同的阴影方向与长度
+//   （太阳高悬→短影弱方向；低垂→长影强方向）。配合昼夜晨昏线工作；夜侧无方向光。
+// false：回退到全局 tod_sun_dir 单一方向（旧行为，全图同向）。
+// 注：day_night_enabled=false（永昼）时本开关自动失效、同样回退全局方向，保持稳定。
+uniform bool tod_latitude_sun_enabled = true;
+
+// [tod 地形方向性 2026-06-25] 逐像素太阳移动在地形凹凸上的可读性增强。
+// tod_sun_relief_max_up：太阳方向 up 分量截顶上限（原硬编码 0.92）。越低 → 太阳越偏水平 →
+//   坡面方向性明暗越强、影子方向随时角旋转越明显。默认 0.88。
+// tod_terrain_relief_strength：陆地专属的方向性明暗叠加强度（仅作用于陆地 BRDF 之后，
+//   不影响水面反射）。朝阳坡变亮、背阳坡变暗，随太阳方位旋转 → 光源移动清晰可见。默认 0.35。
+uniform float tod_sun_relief_max_up        : hint_range(0.5, 1.0) = 0.88;
+uniform float tod_terrain_relief_strength  : hint_range(0.0, 1.0) = 0.35;
 
 // ─── Pass 2 新增开关（任务 4/6） ─────────────────────────────────────────
 // cloud_tod_tint_enabled：只给云阴影用；云本体渲染在 weather_overlay.gdshader。
@@ -197,7 +225,7 @@ uniform bool extreme_weather_ground_effect_enabled = true;
 // 此默认值仅在 shader 单独编译/调试时生效。
 uniform float season_temp_amp : hint_range(0.0, 0.4) = 0.32;
 // ─── True Insolation-Driven Climate（Phase F）: CPU/GPU 同源参数 ──────
-// 主开关 — 关闭时回退到 legacy hemi_phase + 余弦路径。
+// 兼容开关。运行时由 renderer 强制保持 true；false 仅用于旧材质/离线对比。
 uniform bool true_insolation_enabled = true;
 // 黄赤交角（弧度），23.5° ≈ 0.4101523
 uniform float axial_tilt_rad : hint_range(0.0, 0.7854) = 0.4101523;
@@ -291,18 +319,19 @@ uniform int weather_front_count = 0;
 // 【地形 Hypsometric 色阶组】
 // =========================================================================
 // ─── Hypsometric 色阶（海陆双向，等高线设色） ────────────────────────────
-// Open Ocean Color Rebalance v2：在 v1 基础上进一步收敛深/浅海亮度差。
-// 旧版 V 区间 0.30~0.66 (Δ=0.36) 在截图上观感是"浅海发亮、深海近黑"，
-// 现把 V 收敛到 0.34~0.56 (Δ=0.22)，对比柔化 ~39%，仍保持单调递增。
-// 旧值 (v1) / 新值 (v2) / 视觉影响：
-//   deep_ocean   (0.10, 0.18, 0.30) → (0.14, 0.22, 0.34)   深海抬亮，少几分黑洞感
-//   mid_ocean    (0.16, 0.28, 0.40) → (0.20, 0.30, 0.42)   中海域过渡更连续
-//   color_shallow(0.27, 0.45, 0.56) → (0.28, 0.42, 0.52)   浅海略压暗
-//   coast_water  (0.40, 0.62, 0.66) → (0.34, 0.50, 0.56)   海岸不再过亮、贴近浅海
-uniform vec3 color_deep_ocean   : source_color = vec3(0.14, 0.22, 0.34);
-uniform vec3 color_mid_ocean    : source_color = vec3(0.20, 0.30, 0.42);
-uniform vec3 color_shallow      : source_color = vec3(0.28, 0.42, 0.52);
-uniform vec3 color_coast_water  : source_color = vec3(0.34, 0.50, 0.56);
+// Open Ocean Color Rebalance v3：水体 BRDF 粗糙度抬高后（顶视镜面退化为柔和高光，
+// 不再过曝），深海少了镜面"提亮"，色板自带的深/浅对比重新暴露 → 用户反馈"浅海深海
+// 差距太大"。v3 进一步压缩：抬亮 deep/mid、轻压 coast，把浅↔深亮度比从 ~1.9x 收到 ~1.4x。
+// 注意：实际渲染值由 world_map_material.tres 覆盖，这里的默认值与 .tres 保持一致。
+// 旧值 (v2) / 新值 (v3) / 视觉影响：
+//   deep_ocean   (0.14, 0.22, 0.34) → (0.22, 0.31, 0.43)   深海明显抬亮，去黑洞感
+//   mid_ocean    (0.20, 0.30, 0.42) → (0.25, 0.35, 0.46)   中海域抬亮、过渡更连续
+//   color_shallow(0.28, 0.42, 0.52) → (0.27, 0.40, 0.49)   浅海略压暗
+//   coast_water  (0.34, 0.50, 0.56) → (0.30, 0.43, 0.51)   海岸再压一档、贴近浅海
+uniform vec3 color_deep_ocean   : source_color = vec3(0.22, 0.31, 0.43);
+uniform vec3 color_mid_ocean    : source_color = vec3(0.25, 0.35, 0.46);
+uniform vec3 color_shallow      : source_color = vec3(0.27, 0.40, 0.49);
+uniform vec3 color_coast_water  : source_color = vec3(0.30, 0.43, 0.51);
 uniform vec3 color_beach        : source_color = vec3(0.85, 0.78, 0.55);
 uniform vec3 color_lowland      : source_color = vec3(0.62, 0.68, 0.42);
 uniform vec3 color_hill         : source_color = vec3(0.66, 0.55, 0.32);
@@ -321,6 +350,25 @@ uniform float hillshade_strength : hint_range(0.0, 1.0) = 0.45;
 uniform float hillshade_slope_gain : hint_range(0.5, 24.0) = 8.0;
 uniform vec2  hillshade_dir      = vec2(-0.55, -0.55);
 uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
+// [terrain-normal 分层 2026-06-25] 粗法线（烘焙/宽半径）+ 细节法线（运行期，按 biome/性能档）分层控制。
+//   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
+//   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
+uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
+uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.6;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
+uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
+uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.5;  // 细节法线全局强度（再乘 biome 因子）
+// [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
+//   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。
+//   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。
+uniform float shore_detail_strength : hint_range(0.0, 1.0) = 0.45;       // 近岸滩坡细节强度(0=关)
+uniform float shore_band_height     : hint_range(0.001, 0.2) = 0.06;     // 近岸带高度(land_h 厚度，越小越贴岸)
+// [coast-smooth 2026-06-26] 平滑海岸线：水陆边界是 per-cell 六边形枚举硬边(阶梯)，河流是连续 SDF。
+// 这里在海岸一圈把陆/水颜色统一混向"水色与陆色的中间色"(mix(color_coast_water,color_lowland))做柔和
+// 过渡带，掩盖六边形硬边。定位/粗细由 shore_w(邻域水/陆接触度,已 smoothstep)×width 控制——对称、内陆
+// 与开阔水/浅湖 shore_w=0 → 不染(不发灰)。0=关(回退旧硬边)。
+uniform float coast_smooth_strength  : hint_range(0.0, 1.0) = 0.65;   // 过渡混合强度(0=关)
+uniform float coast_smooth_width     : hint_range(0.2, 4.0) = 1.8;    // 过渡带粗细(越大越粗)
+uniform float coast_shore_land_bias  : hint_range(0.0, 1.0) = 0.5;    // 过渡色偏向:0=全水色 1=全陆色(lowland)
 
 
 // =========================================================================
@@ -328,8 +376,8 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 // =========================================================================
 // ─── 河流（从 flow accumulation） ───────────────────────────────────────
 uniform float river_strength       : hint_range(0.0, 1.0) = 0.85;
-uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.55;
-uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.85;
+uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.62;
+uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.90;
 uniform vec3  river_color          : source_color = vec3(0.30, 0.50, 0.68);
 uniform vec3  river_outline_color  : source_color = vec3(0.16, 0.30, 0.45);
 
@@ -387,6 +435,12 @@ const int B_DELTA     = 22;
 const int B_OASIS     = 23;
 const int B_SALT_FLAT = 24;
 const int B_BADLANDS  = 25;
+// terrain-overhaul 新增地形（与 terrain_type.gd 尾部追加严格对齐）
+const int B_COLD_DESERT = 26;
+const int B_CHAPARRAL   = 27;
+const int B_MOOR        = 28;
+const int B_FLOODPLAIN  = 29;
+const int B_MESA        = 30;
 
 // ─── Milestone 2：VegetationType.VEG id ──────────────────────────────────
 // 与 scripts/vegetation_type.gd 严格按 enum 顺序对齐，shader 端按 id 直接 if-else 派色。
@@ -414,7 +468,12 @@ const int V_SWAMP               = 20;
 const int V_MARSH               = 21;
 const int V_KELP_FOREST         = 22;
 const int V_CORAL_REEF          = 23;
-const int V_COUNT               = 24;
+// terrain-overhaul 新增植被（与 vegetation_type.gd 尾部追加严格对齐）
+const int V_CLOUD_FOREST        = 24;
+const int V_MONSOON_FOREST      = 25;
+const int V_SEAGRASS            = 26;
+const int V_PEAT_BOG            = 27;
+const int V_COUNT               = 28;
 
 // ─── Milestone 2：CoverType.CV id ────────────────────────
 const int CV_NONE       = 0;
@@ -425,6 +484,24 @@ const int CV_PERMAFROST = 4;
 const int CV_FLOODING   = 5;
 // Systemic Ocean Currents：远洋华（浮游生物繁殖）
 const int CV_PELAGIC_BLOOM = 6;
+// ─── landform 轴可视化（LandformType.LF id，与 scripts/geography/landform_type.gd 严格对齐）──
+// 由 map_index_atlas.A 通道（per-pixel）承载。仅用于给 terrain 无法表达的地貌补充视觉特征。
+const int LF_DEEP_OCEAN  = 0;
+const int LF_OCEAN       = 1;
+const int LF_COAST       = 2;
+const int LF_LAKE        = 3;
+const int LF_PLAIN       = 4;
+const int LF_LOWLAND     = 5;
+const int LF_HILL        = 6;
+const int LF_MOUNTAIN    = 7;
+const int LF_PEAK        = 8;
+const int LF_DELTA       = 9;
+const int LF_BADLANDS    = 10;
+const int LF_SALT_FLAT   = 11;
+const int LF_VOLCANO     = 12;
+const int LF_PLATEAU     = 13;
+const int LF_RIFT_VALLEY = 14;
+const int LF_CANYON      = 15;
 // ─── Milestone 3：WeatherType.WT id ──────────────────────────────────────
 const int WT_CLEAR    = 0;
 // 与 scripts/weather_type.gd 严格按 enum 数值对齐；4(DROUGHT)/6(HEATWAVE) 的地表调色已删除。

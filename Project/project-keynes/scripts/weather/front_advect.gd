@@ -115,6 +115,17 @@ func tick_cyclone_wake(map) -> void:
 		# 仅海面 cell 注入
 		if not _is_water_terrain(int(cell.terrain)):
 			continue
+		var front_speed_norm: float = front.velocity.length() / maxf(hex_size, 0.001)
+		if cell.temperature < 0.58:
+			continue
+		if cell.weather_precip < 0.07:
+			continue
+		if cell.weather_cloud < 0.25:
+			continue
+		if cell.weather_instability < 0.55 and cell.weather_convergence < 0.34:
+			continue
+		if front_speed_norm < 0.20 and front.intensity < 0.88:
+			continue
 		# 扰动向量：风向顺时针旋 90° 得切向，按 intensity 缩放到 [-0.6, 0.6] 范围
 		var wind: Vector2 = front.velocity
 		if wind.length_squared() < 1e-4:

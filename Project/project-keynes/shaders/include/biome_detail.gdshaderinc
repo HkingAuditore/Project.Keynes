@@ -40,6 +40,29 @@
 // ─── 锐利程序化贴图（不依赖 hex，世界坐标连续） ─────────────────────────
 
 vec3 procedural_biome_detail(int biome, vec2 wp) {
+	// 60 FPS 优化（2026-06-15）：mobile 三档全跳 biome 内部纹理（1-3 fbm/voronoi 每 biome）
+	// 视觉损失：陆地 biome 内部纯色（无纹理颗粒），但 biome 间颜色区分仍清晰。
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	return vec3(1.0);  // 无 detail modulator
+#else
+	if (visual_quality <= 0) {
+		return vec3(1.0);
+	}
+	if (visual_quality == 1) {
+		float n = fbm(wp * 0.18, 2);
+		float amp = 0.060;
+		if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) {
+			amp = 0.095;
+		} else if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_GLACIER) {
+			amp = 0.085;
+		} else if (biome == B_DESERT || biome == B_SALT_FLAT) {
+			float bands = sin(dot(wp, vec2(0.85, 0.30)) * 0.040 + n * 4.0) * 0.5 + 0.5;
+			return vec3(mix(0.94, 1.07, bands));
+		} else if (biome == B_SWAMP || biome == B_DELTA || biome == B_OASIS) {
+			amp = 0.075;
+		}
+		return vec3(mix(1.0 - amp, 1.0 + amp, n));
+	}
 	if (biome == B_FOREST) {
 		float vor = voronoi_cell(wp * 0.30);
 		float n = fbm(wp * 0.40, 3);
@@ -63,15 +86,20 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 	if (biome == B_HILL) {
 		float n = fbm(wp * 0.20, 3);
 		float micro = fbm(wp * 0.45, 1);  // v9.fbm-opt
-		// v10.3：上限 1.06×1.04=1.10，配合 hillshade 最多 ×1.6
-		return vec3(mix(0.85, 1.06, n) * mix(0.95, 1.04, micro));
+		// 放大丘陵明暗纹理，让中海拔读起来更像连续坡面而不是一块均匀台面。
+		return vec3(mix(0.82, 1.12, n) * mix(0.93, 1.06, micro));
 	}
 	if (biome == B_MOUNTAIN) {
-		float n = fbm(wp * 0.30, 4);
-		float vor = voronoi_cell(wp * 0.16);
-		// v10.3：上限从 1.20×1.10=1.32 降到 1.05×1.03=1.08
-		// 配合 hillshade max 1.45 后总放大 ≤ 1.57，peak 色 (0.55) × 1.57 = 0.86 → 灰褐
-		return vec3(mix(0.72, 1.05, n) * mix(0.92, 1.03, smoothstep(0.05, 0.5, vor)));
+		// [山体去点阵 2026-06-25] 降频 + 降对比：用更大尺度的块面与岩体分区取代
+		// 高频细密岩点，避免"点阵噪声"观感，更接近真实连绵山脉的大面块。
+		//   freq 0.32→0.20 / oct 4→3   → 特征更大更柔
+		//   voronoi 0.14→0.095          → 岩体分区更宽
+		//   crag    0.62→0.38 / amp ↓   → 弱化高频岩脊
+		//   亮度对比 0.68~1.16 → 0.86~1.10（约 2.4×→1.28× 收窄）
+		float n = fbm(wp * 0.20, 3);
+		float vor = voronoi_cell(wp * 0.095);
+		float crag = fbm(wp * 0.38 + vec2(13.0, -7.0), 2);
+		return vec3(mix(0.86, 1.10, n) * mix(0.94, 1.05, smoothstep(0.06, 0.55, vor)) * mix(0.975, 1.03, crag));
 	}
 	if (biome == B_PLAIN) {
 		float n = fbm(wp * 0.12, 3);
@@ -184,5 +212,91 @@ vec3 procedural_biome_detail(int biome, vec2 wp) {
 		float sand = fbm(wp * 0.40, 3);
 		return vec3(mix(0.85, 1.18, bands) * mix(0.92, 1.06, sand));
 	}
+	// ── terrain-overhaul 新增地形 detail ──
+	if (biome == B_COLD_DESERT) {
+		// 寒漠：低对比砾漠斑驳 + 微风成纹理（比热沙漠更冷更碎）
+		float n = fbm(wp * 0.22, 3);
+		float grit = fbm(wp * 0.55, 1);
+		return vec3(mix(0.90, 1.08, n) * mix(0.96, 1.04, grit));
+	}
+	if (biome == B_CHAPARRAL) {
+		// 硬叶灌丛：中频灌木簇（voronoi）+ 干草微粒
+		float vor = voronoi_cell(wp * 0.40);
+		float n = fbm(wp * 0.32, 3);
+		return vec3(mix(0.84, 1.05, smoothstep(0.05, 0.55, vor)) * mix(0.94, 1.05, n));
+	}
+	if (biome == B_MOOR) {
+		// 泥炭湿原：低频水洼斑 + 苔藓微纹（偏暗、低对比）
+		float pools = fbm(wp * 0.45, 3);
+		float pool_factor = smoothstep(0.55, 0.40, pools);
+		float n = fbm(wp * 0.28, 2);
+		return vec3(mix(0.88, 1.04, n) * mix(1.0, 0.80, pool_factor));
+	}
+	if (biome == B_FLOODPLAIN) {
+		// 泛滥平原：曲流/牛轭斑（中频 fbm）+ 肥沃斑驳
+		float n = fbm(wp * 0.30, 3);
+		float ribbons = fbm(wp * 0.50 + vec2(9.0, -5.0), 2);
+		float ribbon_mod = mix(1.0, 0.85, smoothstep(0.55, 0.42, ribbons));
+		return vec3(mix(0.90, 1.08, n) * ribbon_mod);
+	}
+	if (biome == B_MESA) {
+		// 方山：平顶 + 陡壁横向岩层条带（比 BADLANDS 更规整、更暖）
+		float bands = sin(wp.y * 0.36 + fbm(wp * 0.10, 2) * 3.0) * 0.5 + 0.5;
+		float rock = fbm(wp * 0.34, 3);
+		return vec3(mix(0.88, 1.14, bands) * mix(0.94, 1.05, rock));
+	}
 	return vec3(1.0);
+#endif
+}
+
+// ─── [landform 轴可视化 2026-06-25] 地貌专属着色配方 ─────────────────────────
+// 职责：给"没有专属 terrain biome、仅靠高程无法辨识"的地貌补充视觉特征。
+// 只处理 terrain 表达不了的 5 种：VOLCANO / PLATEAU / CANYON / RIFT_VALLEY / PEAK；
+// 其余地貌（PLAIN/LOWLAND/HILL/MOUNTAIN/DELTA/BADLANDS/SALT_FLAT/水体）已由 terrain
+// 着色覆盖，直接返回原色（emission=0）。
+// 入参：landform id、世界坐标 wp、当前底色 col、坡度 slope_mag（=length(normal.xy)）。
+// 返回 vec4：rgb=调制后底色，a=自发光强度（仅火山口 > 0，caller 乘 lava 色写入 emission）。
+// 性能：仅匹配到的地貌像素才跑 voronoi/fbm；其余 early-return。mobile / q<1 走廉价纯色 tint。
+vec4 landform_visual(int landform, vec2 wp, vec3 col, float slope_mag) {
+	if (landform == LF_VOLCANO) {
+		// [volcano-crater 2026-06-25] 环形山改由生成期高度场(中心火山口下凹 + 第一环环脊抬升)
+		// 配合 hillshade 自然成形；着色仅压暗成深玄武岩并按坡度强调火山口内壁/环脊轮廓。
+		// 移除旧的多点 voronoi 橙斑与自发光 → 几乎无发光、完全融入地形（emission 恒 0）。
+		vec3 basalt = col * vec3(0.55, 0.52, 0.54);   // 压暗成深玄武岩
+		float wall = smoothstep(0.20, 0.58, slope_mag); // 高坡度(口壁/环脊)更暗，凸显环形轮廓
+		vec3 rgb = mix(basalt, basalt * vec3(0.78, 0.74, 0.72), wall);
+#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
+		if (visual_quality >= 1) {
+			float rock = fbm(wp * 0.22, 2);            // 玄武岩纹理，破除纯色
+			rgb *= mix(0.95, 1.06, rock);
+		}
+#endif
+		return vec4(rgb, 0.0);
+	}
+	if (landform == LF_PLATEAU) {
+		// 高原：平顶冷调微提亮 + 崖壁（高坡度）压暗描边，突出"抬升台地"轮廓
+		float wall = smoothstep(0.18, 0.55, slope_mag);
+		vec3 top = col * vec3(1.02, 1.02, 1.05);
+		vec3 wallc = col * vec3(0.80, 0.76, 0.70);
+		return vec4(mix(top, wallc, wall), 0.0);
+	}
+	if (landform == LF_CANYON || landform == LF_RIFT_VALLEY) {
+		// 峡谷 / 裂谷：暖褐岩壁（高坡度）+ 谷底压暗，强调线状深切地形
+		float depth = smoothstep(0.28, 0.60, slope_mag);
+		vec3 walls = col * vec3(1.10, 0.86, 0.64);
+		vec3 shade = col * vec3(0.68, 0.64, 0.64);
+		vec3 rgb = mix(shade, walls, depth);
+#if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
+		if (visual_quality >= 1) {
+			float band = fbm(wp * 0.20, 2);
+			rgb *= mix(0.94, 1.05, band);
+		}
+#endif
+		return vec4(rgb, 0.0);
+	}
+	if (landform == LF_PEAK) {
+		// 高峰：裸岩更冷亮（积雪由雪盖层负责，这里只轻微提冷调岩色）
+		return vec4(col * vec3(0.98, 1.00, 1.05), 0.0);
+	}
+	return vec4(col, 0.0);
 }

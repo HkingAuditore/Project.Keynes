@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="ProjectKeynes"
-run/main_scene="uid://dhf6euvov4vx"
+run/main_scene="res://scenes/world_setup.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
@@ -24,6 +24,10 @@ window/size/viewport_height=960
 
 run/main_run_args="--use_data_core --use_data_core_weather"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg")
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -32,3 +36,4 @@ run/main_run_args="--use_data_core --use_data_core_weather"
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
