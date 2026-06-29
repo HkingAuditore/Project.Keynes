@@ -49,6 +49,12 @@ struct LightingContext {
 	float night_factor;      // tod_night_factor [0,1]
 	float hillshade;         // hillshade_strength [0,1]，作为 stylized 乘子
 	float ambient_floor;     // 环境光下限（land=AMBIENT_FLOOR_LAND, water=AMBIENT_FLOOR_WATER）
+	// [sky-sh-ambient] L1 球谐天光所需的「色板域」原始量（未转线性、未乘增益）：
+	//   方向化环境光在 BRDF 内按本像素法线 earth_sky_sh(...) 求值，替换原平铺 ambient。
+	vec3 amb_palette;        // = ed.amb_col（色板域）
+	vec3 sun_palette;        // = ed.sun_col（色板域，未乘 gain/local_day）
+	vec3 sun_dir_px;         // = ed.sun_dir（逐像素太阳方向，单位向量）
+	float local_day;         // = ed.local_day（白昼系数，驱动方位散射淡入）
 	// TODO[future-IBL]: vec3 ibl_diffuse; vec3 ibl_specular;
 	// TODO[future-shadow]: float direct_shadow;
 };
@@ -86,7 +92,19 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	lc.night_factor = ed.pixel_night;
 	lc.hillshade = hillshade_strength;
 	lc.ambient_floor = ambient_floor;
+	// [sky-sh-ambient] 暂存色板域原始量，供 BRDF 内按法线求方向化天光（见 sky_sh_ambient_brdf）。
+	lc.amb_palette = ed.amb_col;
+	lc.sun_palette = ed.sun_col;
+	lc.sun_dir_px = ed.sun_dir;
+	lc.local_day = ed.local_day;
 	return lc;
+}
+
+// [sky-sh-ambient] 在 BRDF 域内求方向化天光：色板域 earth_sky_sh → 按需转线性。
+//   USE_LINEAR_LIGHTING 时与 albedo 同域（线性）；否则直接色板域，与 legacy 路径一致。
+vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
+	vec3 amb = earth_sky_sh(lc.amb_palette, lc.sun_palette, lc.sun_dir_px, lc.local_day, N);
+	return USE_LINEAR_LIGHTING ? srgb_to_linear(amb) : amb;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -183,8 +201,9 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	float hill_lift = lc.hillshade + HILLSHADE_BASE_LIFT;
 	vec3 direct = (diffuse + spec) * NdotL * lc.sun_color_linear * hill_lift;
 
-	// ── Ambient：环境光 · ao（带 ambient_floor 防止死黑） ───────────────
-	vec3 ambient = max(lc.ambient_color_linear, vec3(lc.ambient_floor)) * albedo * s.ao;
+	// ── Ambient：方向化天光（L1 球谐）· ao（带 ambient_floor 防止死黑） ──
+	// 用本像素法线求天光（坡面/天顶/太阳方位各异）→ 弱直射时仍有体积感；DC≈原平铺值。
+	vec3 ambient = max(sky_sh_ambient_brdf(lc, N), vec3(lc.ambient_floor)) * albedo * s.ao;
 
 	// ── Night atten + exposure ────────────────────────────────────────
 	vec3 lit = direct + ambient;
@@ -214,7 +233,9 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 	float spec_amp = mix(spec_max, spec_min, roughness) * (1.0 - s.metallic);
 
 	vec3 col = s.base_color;
-	vec3 diffuse = col * (lc.ambient_color_linear * s.ao * ambient_factor
+	// [sky-sh-ambient] legacy 路径同样改用方向化天光（替换平铺 ambient_color_linear）。
+	vec3 amb_dir = sky_sh_ambient_brdf(lc, N);
+	vec3 diffuse = col * (amb_dir * s.ao * ambient_factor
 						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor));
 	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp;
 	vec3 lit = diffuse + specular + s.emission;

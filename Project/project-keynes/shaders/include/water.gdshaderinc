@@ -67,14 +67,23 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 }
 
 // 低频、慢速的法线强度包络：只改斜率强弱，不改水面高度相位，用来打散整片水面一致的高光条纹。
+// [wave-patchiness 2026-06-29] 这层低频 fbm 同时充当"波浪强度乘子"：复用它（不新增采样），把波浪
+// 整体斜率（含细节法线，因为 detail 的 ds=normal_gain*strength 也吃这里）按空间做强弱分布，模拟
+// 风浪带——有的海域浪大、有的平。强弱对比由 water_wave_patch_strength 控制（0=均匀，原 0.72~1.32 行为）。
 float water_normal_strength_envelope(vec2 wp, float t, int quality) {
 	if (quality <= 0) {
 		return 1.0;
 	}
-	float slow = fbm(wp * 0.0055 + vec2(t * 0.009, -t * 0.006), 2);
-	float mid = fbm(wp * 0.0140 + vec2(-t * 0.016, t * 0.011) + vec2(19.0, -37.0), 1);
-	float env = smoothstep(0.18, 0.86, slow * 0.70 + mid * 0.30);
-	return mix(0.72, 1.32, env);
+	// [wave-patchiness tilling] 浪带频率乘 water_wave_patch_scale：大→浪带碎，小→浪带宽。
+	float pscl = water_wave_patch_scale;
+	float slow = fbm(wp * (0.0055 * pscl) + vec2(t * 0.009, -t * 0.006), 2);
+	float mid = fbm(wp * (0.0140 * pscl) + vec2(-t * 0.016, t * 0.011) + vec2(19.0, -37.0), 1);
+	// 对比窗口略放宽 + 0.5 居中，让 patch 强度更线性可控。
+	float env = smoothstep(0.10, 0.92, slow * 0.70 + mid * 0.30);
+	// patch>1 时 lo 会插值成负数（波浪斜率反向）→ clamp 到 0 防翻转；hi 可无限放大风浪海域。
+	float lo = max(mix(1.0, 0.28, water_wave_patch_strength), 0.0);  // 平静海域
+	float hi = mix(1.0, 1.90, water_wave_patch_strength);            // 风浪海域
+	return mix(lo, hi, env);
 }
 
 // 中心差分法线：eps 世界坐标单位下估 ∂h/∂x, ∂h/∂y，返回 z-up 归一化法线。
@@ -92,15 +101,55 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 		wpw = wp + vec2(wnx, wny) * 12.0;
 	}
 	float eps = 0.5;
-	float hx0 = water_surface_height(wpw - vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hx1 = water_surface_height(wpw + vec2(eps, 0.0), t, amp_scale, freq_scale, quality);
-	float hy0 = water_surface_height(wpw - vec2(0.0, eps), t, amp_scale, freq_scale, quality);
-	float hy1 = water_surface_height(wpw + vec2(0.0, eps), t, amp_scale, freq_scale, quality);
+	// [base-normal tilling] 宏观涌浪频率单独乘 water_base_normal_scale（细节法线那块仍用原 freq_scale，
+	// 两者 tilling 互不影响）。等价于缩放 3 个主波频率。
+	float base_fs = freq_scale * water_base_normal_scale;
+	float hx0 = water_surface_height(wpw - vec2(eps, 0.0), t, amp_scale, base_fs, quality);
+	float hx1 = water_surface_height(wpw + vec2(eps, 0.0), t, amp_scale, base_fs, quality);
+	float hy0 = water_surface_height(wpw - vec2(0.0, eps), t, amp_scale, base_fs, quality);
+	float hy1 = water_surface_height(wpw + vec2(0.0, eps), t, amp_scale, base_fs, quality);
 	// 差分斜率：dhx = ∂h/∂x，dhy = ∂h/∂y；法线 = normalize((-dhx, -dhy, 1))
 	// 中尺度波频率已回升，斜率增益略收，避免高光重新变成密集白线。
+	// normal_gain = 固定增益 8.5 × 低频强度包络（含 water_wave_patch_strength 浪带调制）。
+	// base 与 detail 共享这一项，所以 patch 对两者都生效；base 额外乘 water_base_normal_strength
+	// 单独控制"宏观涌浪法线"强度，detail 走 water_detail_normal_strength，互不干扰。
 	float normal_gain = 8.5 * water_normal_strength_envelope(wpw, t, quality);
-	float dhx = (hx1 - hx0) / (2.0 * eps) * normal_gain;
-	float dhy = (hy1 - hy0) / (2.0 * eps) * normal_gain;
+	float dhx = (hx1 - hx0) / (2.0 * eps) * normal_gain * water_base_normal_strength;
+	float dhy = (hy1 - hy0) / (2.0 * eps) * normal_gain * water_base_normal_strength;
+
+	// [water-detail-normal] 高频细节涟漪：直接用 analytic 梯度叠到坡度上（不增加 height 差分 tap）。
+	// [门控修复 2026-06-29] 原写 quality>=2，但本函数收到的 quality 参数被 caller 钳到最大 1
+	//   （wave_q = ctx.quality>=1?1:0，因 water_surface_height 无 q>=2 分支），导致 quality>=2 永不成立、
+	//   这块从未执行——这才是"细节法线参数调了没反应"的真因，与玩家选的画质档无关。
+	//   修复：改用全局 visual_quality 判定（脱离被钳的参数），保持高画质(>=2)专属语义不变。
+	if (visual_quality >= 2 && water_detail_normal_strength > 0.001) {
+		vec2 e1 = vec2(0.6, -0.8);   // 已是单位向量
+		vec2 e2 = vec2(-0.92, -0.39); // ≈单位向量
+		// [water-detail-normal 2026-06-29] tiling 由 water_detail_normal_scale 控制（拉远时旧的
+		// 0.62/0.95 频率几乎是亚像素 → 被平均掉看不见）。降频后用更大的振幅补回坡度（坡度≈k·a），
+		// 让"小波纹"在顶视拉远时也是几像素级、可见，而非糊成平面。
+		float k1 = 0.62 * freq_scale * water_detail_normal_scale;
+		float k2 = 0.95 * freq_scale * water_detail_normal_scale;
+		float a1 = 0.048 * amp_scale;
+		float a2 = 0.029 * amp_scale;
+		// [water-detail-normal break-tiling] 复用 ShaderToy p+=fbm(p)*warp 破 tiling 手法：
+		// 对细节坐标再叠一层"中频"域扭曲（频率≈细节的 0.35 倍、位移∝细节波长 TAU/k1），
+		// 让两条固定方向解析正弦不再呈规则平行条纹。warp 缓变（频率明显低于 k1），其导数远小于
+		// k1，沿用"忽略 warp 导数"近似（与上面宏观 wpw 同处理），细节法线梯度仍近似成立。
+		vec2 dwp = wpw;
+		if (water_detail_normal_warp > 0.001) {
+			float wf = k1 * 0.35;
+			float jx = fbm(wpw * wf + vec2(t * 0.05, 0.0), 1) - 0.5;
+			float jy = fbm(wpw * wf + vec2(0.0, t * 0.04) + vec2(53.0, -29.0), 1) - 0.5;
+			float warp_amp = water_detail_normal_warp * (6.2831853 / max(k1, 1e-4));
+			dwp = wpw + vec2(jx, jy) * warp_amp;
+		}
+		float c1 = cos(dot(dwp, e1) * k1 - t * 0.95);
+		float c2 = cos(dot(dwp, e2) * k2 - t * 1.35);
+		float ds = normal_gain * water_detail_normal_strength;
+		dhx += (c1 * k1 * e1.x * a1 + c2 * k2 * e2.x * a2) * ds;
+		dhy += (c1 * k1 * e1.y * a1 + c2 * k2 * e2.y * a2) * ds;
+	}
 	return normalize(vec3(-dhx, -dhy, 1.0));
 }
 
@@ -151,6 +200,8 @@ float water_shade_lines(vec2 wp, float t, float freq_scale, int quality) {
 // 用低频 fbm（空间缩放 0.010，单个斑块约 30~80 hex 跨度）代替旧 3 层 sin
 // 条纹；返回 [-1, 1]，caller 以 col *= 1.0 + calm * 0.08 形式叠加，即 ±8%
 // 亮度扰动，从而营造"淡淡的、像云影一样缓慢起伏"的观感。
+// [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_lf（与 base_ripple
+// 共享同一层低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
 float water_calm_brightness(vec2 wp, float t) {
 	float n = fbm(wp * 0.006 + vec2(t * 0.014, t * 0.008), 2);
 	// fbm 基本落在 [0, ~0.9]，线性重新映射到 [-1, 1]
@@ -160,6 +211,8 @@ float water_calm_brightness(vec2 wp, float t) {
 // ─── Water Calm Noise：低对比度色相扰动层 ──────────────────────────────
 // 更低频（0.006）、更慢的时间推进（1/2 亮度噪声速度）、相位反向，让色相变化
 // 与亮暗不同步，奉上"呼吸感"。octaves 由 quality 控制（≥ 2 提升到 3）。
+// [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_vlf（与 deep_ripple
+// 共享同一层极低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
 float water_calm_tint(vec2 wp, float t, int octaves) {
 	float n = fbm(wp * 0.0038 + vec2(-t * 0.008, t * 0.010), octaves);
 	return clamp(n * 1.15, 0.0, 1.0);

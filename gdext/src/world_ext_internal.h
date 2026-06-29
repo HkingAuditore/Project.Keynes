@@ -642,6 +642,99 @@ inline float wf_wind_convergence_idx(int idx, const godot::Vector2 *POS,
     return v;
 }
 
+// ─── perf P2: 邻域几何缓存版（bit-equal 加速变体）────────────────────────────
+// 与上方 wf_neighbor_aligned_idx / wf_upstream_vapor_idx_from_first /
+// wf_wind_convergence_idx 逐位等价，仅把热循环内每次重算的 self->nb wrapped
+// delta 与 1/sqrt(dl2) 换成调用方预算的缓存 NB_DX/NB_DY/NB_INVD（n*6，dir 序）。
+// NB_DX/NB_DY[base+d] == wf_wrapped_delta(self, POS[nb])（nb<0 处为 0）；
+// NB_INVD[base+d] == 1/sqrt(dl2)（dl2<=1e-4 或 nb<0 处为 0 哨兵）。
+inline int wf_neighbor_aligned_idx_cached(int idx, float dir_x, float dir_y,
+                                          const int32_t *NB,
+                                          const float *NB_DX, const float *NB_DY,
+                                          int n_cells, float cell_pos_scale) {
+    if (idx < 0 || idx >= n_cells) return -1;
+    const float dl2 = dir_x * dir_x + dir_y * dir_y;
+    if (dl2 <= 0.0001f) return -1;
+    const float inv_dl = 1.0f / Math::sqrt(dl2);
+    const float ndx = dir_x * inv_dl;
+    const float ndy = dir_y * inv_dl;
+    int   best_idx = -1;
+    const float pos_scale = (cell_pos_scale > 0.001f) ? cell_pos_scale : 1.0f;
+    float best_dot = pos_scale * 0.31176915f;
+    const int base = idx * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t nb_idx = NB[base + d];
+        if (nb_idx < 0) continue;
+        const float dot = NB_DX[base + d] * ndx + NB_DY[base + d] * ndy;
+        if (dot > best_dot) {
+            best_dot = dot;
+            best_idx = nb_idx;
+        }
+    }
+    return best_idx;
+}
+
+inline float wf_upstream_vapor_idx_from_first_cached(
+        int idx, int first_upstream_idx, const int32_t *NB,
+        const float *NB_DX, const float *NB_DY, const float *PV,
+        float wind_dx, float wind_dy, int n_cells, float cell_pos_scale,
+        int field_advect_steps) {
+    if (first_upstream_idx < 0 || field_advect_steps <= 0) {
+        return PV[idx];
+    }
+    int   current_idx = first_upstream_idx;
+    float sum_v   = PV[current_idx];
+    float weight  = 1.0f;
+    float w_decay = 0.75f;
+    for (int step = 1; step < field_advect_steps; ++step) {
+        const int upstream_idx = wf_neighbor_aligned_idx_cached(
+            current_idx, -wind_dx, -wind_dy, NB, NB_DX, NB_DY, n_cells,
+            cell_pos_scale);
+        if (upstream_idx < 0) break;
+        sum_v   += PV[upstream_idx] * w_decay;
+        weight  += w_decay;
+        w_decay *= 0.75f;
+        current_idx = upstream_idx;
+    }
+    return sum_v / weight;
+}
+
+inline float wf_wind_convergence_idx_cached(
+        int idx, const int32_t *NB,
+        const float *NB_DX, const float *NB_DY, const float *NB_INVD,
+        const float *WX, const float *WY, const float *WSPD) {
+    float incoming = 0.0f;
+    int   checked  = 0;
+    const int base = idx * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t nb_idx = NB[base + d];
+        if (nb_idx < 0) continue;
+        const float inv_d = NB_INVD[base + d];
+        if (inv_d <= 0.0f) continue;          // dl2<=1e-4 哨兵：与原 dl2 跳过等价
+        // 原版 dx,dy = wf_wrapped_delta(POS[nb], self) = self-nb = -(self->nb)。
+        const float dx = -NB_DX[base + d];
+        const float dy = -NB_DY[base + d];
+        const float wx = WX[nb_idx];
+        const float wy = WY[nb_idx];
+        const float wl2 = wx * wx + wy * wy;
+        if (wl2 <= 0.0001f) continue;
+        const float inv_w = 1.0f / Math::sqrt(wl2);
+        float cos_in = (dx * wx + dy * wy) * (inv_d * inv_w);
+        if (cos_in < 0.0f) cos_in = 0.0f;
+        const float wsp = (WSPD != nullptr) ? wf_wind_speed_norm(wx, wy, WSPD[nb_idx]) : Math::sqrt(wl2);
+        float speed_w = wsp / 1.2f;
+        if (speed_w < 0.20f) speed_w = 0.20f;
+        else if (speed_w > 1.25f) speed_w = 1.25f;
+        incoming += cos_in * speed_w;
+        checked  += 1;
+    }
+    if (checked == 0) return 0.0f;
+    float v = incoming / float(checked);
+    if (v < 0.0f) v = 0.0f;
+    else if (v > 1.0f) v = 1.0f;
+    return v;
+}
+
 // Mirror weather_system.gd::_classify_field_weather_at (line 1497).
 // WeatherType.WT enum values: CLEAR=0 RAIN=1 STORM=2 BLIZZARD=3 DROUGHT=4
 //                              FOG=5 HEATWAVE=6 MONSOON=7

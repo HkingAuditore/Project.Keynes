@@ -586,12 +586,20 @@ void fragment() {
 	if (!has_layer) {
 		COLOR = vec4(0.0);
 	} else {
-		// 主云（积云）：云显示只由 w.cloud 驱动；颜色不再按天气类型/降水/强度变化。
-		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
-		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, (q_weather >= 2) ? 1.08 : 0.72, ed.sun_col, ed.amb_col, ed.local_day);
+		// 局部云核/羽边（密度驱动）：先算，供压暗与亮度调制复用（cloud_core 后续阴影也用）。
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
+		// [storm-darken] 强对流（雷暴/强降水云）压暗：真实积雨云底遮光 → 接近铅灰，不应刺眼亮白。
+		// 用连续语义云量 w.cloud + 局部云核驱动（不按离散 weather_type，避免类型跳变频闪）；
+		// 薄云 / 晴空积云仍保留亮白银边。storm_shade ∈ [0,1]：0 薄云、1 厚雷暴云核。
+		float storm_shade = clamp(smoothstep(0.13, 0.32, w.cloud) * (0.40 + 0.60 * cloud_core), 0.0, 1.0);
+		// 主云（积云）：晴空亮白 → 雷暴铅灰，按 storm_shade 渐变云底色。
+		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
+		main_base = mix(main_base, vec3(0.26, 0.29, 0.35), storm_shade * 0.85);
+		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, (q_weather >= 2) ? 1.08 : 0.72, ed.sun_col, ed.amb_col, ed.local_day);
 		col *= mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
+		// 雷暴整体再压暗：在着色之后乘系数，绕过 compute_cloud_lighting 的环境光下限，确保"大幅压暗"生效。
+		col *= mix(1.0, 0.55, storm_shade);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.62, 0.58 * precip_alpha_factor));
 

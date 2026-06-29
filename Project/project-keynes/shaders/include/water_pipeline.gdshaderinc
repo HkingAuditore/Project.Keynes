@@ -45,6 +45,11 @@ struct WaterStageCtx {
 	float lake_shore_w;  // shader 端湖岸近似 SDF：1=靠岸，0=湖心
 	float lake_depth_proxy; // 湖泊没有海平面深度，使用湖岸距离近似深浅
 	float ice_frac;      // 海冰浓度（dyn_atlas_smooth.a；fragment 入口已采样，避免冗余 sample）
+	// [water-noise-reuse 2026-06-29] 共享低频 fbm：原 base_ripple/calm_brightness（~0.006~0.008）
+	// 与 deep_ripple/calm_tint（~0.0038~0.0039）各自独立采样，频率几乎一致 → 合并成两层共享噪声，
+	// 全 desktop 路径下省 2 个 fbm(2-oct)/像素。ctx 构造时算一次，多个 helper 复用。
+	float macro_lf;      // 低频共享（base_ripple + calm_brightness）
+	float macro_vlf;     // 极低频共享（deep_ripple + calm_tint）
 };
 
 // 软权重 + 派生标量
@@ -303,16 +308,16 @@ vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
 	// MID/HIGH: 跑 base_ripple fbm（1 sample）
 	// Desktop: 跑 base_ripple + deep_ripple + color_block（3 sample）
 #ifndef MOBILE_QUALITY_LOW
-	float base_ripple = fbm(ctx.wpw * 0.008 + vec2(31.0, 7.0), 2);
-	col *= 1.0 + (base_ripple - 0.5) * mix(0.050, 0.082, ctx.deep_layer_w);
+	// [water-noise-reuse 2026-06-29] 复用 ctx.macro_lf（与 calm_brightness 同源），不再单独采样。
+	col *= 1.0 + (ctx.macro_lf - 0.5) * mix(0.050, 0.082, ctx.deep_layer_w);
 #endif
 	vec3 cartoon_chroma = mix(vec3(0.78, 1.20, 1.18), vec3(0.70, 0.96, 1.38),
 								smoothstep(0.12, 1.0, ctx.offshore_depth));
 	col *= mix(vec3(1.0), cartoon_chroma, water_cartoon_color_strength * 0.26);
 	// deep_ripple + color_block 仅 desktop 跑
 #if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
-	float deep_ripple = fbm(ctx.wpw * 0.0038 + vec2(-47.0, 23.0), 2);
-	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), deep_ripple);
+	// [water-noise-reuse 2026-06-29] 复用 ctx.macro_vlf（与 calm_tint 同源）。
+	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), ctx.macro_vlf);
 	col *= mix(vec3(1.0), deep_variation, ctx.deep_layer_w * 0.115);
 	if (water_cartoon_color_strength > 0.001) {
 		float color_block = fbm(ctx.wpw * 0.0048 + vec2(world_time * 0.010, -world_time * 0.006), 2);
@@ -759,12 +764,14 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, float w_ice, inout
 		else if (ctx.biome == B_KELP)    calm_amp_mul = 0.28;
 		calm_amp_mul = mix(calm_amp_mul, 0.0, clamp(w_ice, 0.0, 1.0));
 
-		float calm = water_calm_brightness(wave_wp, world_time);
+		// [water-noise-reuse 2026-06-29] 复用 ctx.macro_lf（与 base_ripple 同源），remap 到 [-1,1]，
+		// 不再调用 water_calm_brightness 单独采样一次 fbm。
+		float calm = clamp(ctx.macro_lf * 1.9 - 0.95, -1.0, 1.0);
 		float bright_amp = water_wave_line_strength * water_calm_noise_brightness * calm_amp_mul;
 		col *= mix(1.0, 1.0 + calm * 0.045, clamp(bright_amp, 0.0, 1.0));
 
-		int tint_oct = (ctx.quality >= 2) ? 3 : 2;
-		float tint_mix = water_calm_tint(wave_wp, world_time, tint_oct);
+		// [water-noise-reuse 2026-06-29] 复用 ctx.macro_vlf（与 deep_ripple 同源），remap 到 [0,1]。
+		float tint_mix = clamp(ctx.macro_vlf * 1.15, 0.0, 1.0);
 		vec3 TINT_COLD = vec3(0.97, 0.99, 1.03);
 		vec3 TINT_WARM = vec3(1.03, 1.015, 0.97);
 		vec3 tint = mix(TINT_COLD, TINT_WARM, tint_mix);
@@ -812,6 +819,14 @@ SurfaceParams compute_water_base_surface(
 		float warp_for_water = water_domain_warp_strength * mix(0.45, 1.0, water_boundary_softness);
 		ctx.wpw = water_domain_warp(wp, world_time, warp_for_water);
 	}
+	// [water-noise-reuse 2026-06-29] 两层共享低频噪声只算一次（LOW 档两个消费者都不跑 → 跳过）。
+	// 原 base_ripple 静态、calm_brightness 慢飘；合并后统一带极慢时间漂移（±5% 亮度下不可察）。
+	ctx.macro_lf = 0.5;
+	ctx.macro_vlf = 0.5;
+#ifndef MOBILE_QUALITY_LOW
+	ctx.macro_lf  = fbm(ctx.wpw * 0.0072 + vec2(world_time * 0.012,  world_time * 0.007) + vec2(31.0, 7.0), 2);
+	ctx.macro_vlf = fbm(ctx.wpw * 0.0039 + vec2(-world_time * 0.008, world_time * 0.010) + vec2(-47.0, 23.0), 2);
+#endif
 
 	// ── SEA 1.1: 离岸度 + 深度梯度 ─────────────────────────────────────
 	compute_offshore_depth(ctx);
@@ -983,6 +998,37 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		col = mix(col, col + caustic_col * 0.24, caustics_mask * caustics_strength * day_factor);
 	}
 
+	// SEA 3.15：波浪天光明暗（hillshade，不依赖直射高光）─────────────────────
+	//   问题：顶视 + 低菲涅尔下，只有太阳直射的镜面 glint 处能看出波浪，背光/无直射水域
+	//   一片死蓝。这里给波浪法线沿「太阳方位」做一层漫反射明暗：迎光波坡提亮、背光波坡压暗，
+	//   全水面（含阴影侧）都显出起伏。平静/冰面 N≈+z → slope≈0 自动归零；夜侧整体减弱。
+	if (water_wave_shade_strength > 0.001) {
+		vec2 sun_h = sun_dir_px.xy;
+		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
+		float slope_lit = dot(N.xy, light_az);  // 波坡沿光方位投影：迎光 + / 背光 −
+		float shade = clamp(slope_lit * water_wave_shade_strength, -0.60, 0.60);
+		float amp = mix(0.45, 1.0, day_factor);  // 夜侧仍留一点天光起伏
+		col *= (1.0 + shade * amp);
+	}
+
+	// SEA 3.16：水体次表面散射（SSS，廉价近似）──────────────────────────────
+	//   低太阳/逆光时阳光穿过薄波层 → 迎光波坡透出青绿透亮（前向散射）。无需厚度纹理：
+	//   facing=波坡迎太阳方位，wave_act=(1-N.z) 波动强度（平静/冰面≈0 自动归零），
+	//   low_sun=掠射加权（日出日落更明显）。叠的是颜色(青绿)而非亮度，与 hillshade 区分。
+	//   mid+ 档(visual_quality>=1)启用。
+	if (visual_quality >= 1 && water_sss_strength > 0.001) {
+		vec2 sun_h = sun_dir_px.xy;
+		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
+		// [sss-calibration-fix 2026-06-29] 波浪法线很缓（|N.xy|≈0.1），旧版 pow(facing,3)×(1-N.z)*2.5
+		// 把信号压到 ~0.001 → 完全不可见。改：先用 gain 把迎光坡度放大到可用域再取幂；平静/冰面
+		// N≈+z → facing≈0 自动归零，不再需要会把信号压没的 wave_act。
+		float facing = clamp(dot(N.xy, light_az) * 5.0, 0.0, 1.0);
+		float low_sun = 1.0 - clamp(sun_dir_px.z, 0.0, 1.0);
+		float sss = pow(facing, water_sss_power) * water_sss_strength
+				* day_factor * mix(0.55, 1.0, low_sun);
+		col += water_sss_color * sss;
+	}
+
 	// SEA 3.2：菲涅尔天空反射（与 BRDF 的 F_Schlick 互补） ──────────────
 	if (water_fresnel_enabled) {
 		float F;
@@ -993,7 +1039,10 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		} else {
 			F = pow(1.0 - clamp(N.z, 0.0, 1.0), 5.0);
 		}
-		vec3 sky_tint = tod_ambient_color * mix(1.0, 0.70, pixel_night);
+		// [sky-sh-ambient] 天空反射用方向化 L1 球谐天光（按波浪法线 N 取样）：波面朝天顶/朝太阳
+		// 方位会反射不同天色 → 水面浮现随法线变化的光影（这才是球谐补光在水面的体现），
+		// 而非平铺一层 tod_ambient_color。flat 水面(N≈+z)≈原值，故无回归；波纹处显出体积。
+		vec3 sky_tint = earth_sky_sh(tod_ambient_color, tod_sun_color, sun_dir_px, 1.0 - pixel_night, N) * mix(1.0, 0.70, pixel_night);
 		col = mix(col, sky_tint, F * water_reflection_strength);
 	}
 

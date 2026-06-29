@@ -453,6 +453,14 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     std::vector<float> wind_delta(static_cast<size_t>(n_cells), 0.0f);
     std::vector<float> wind_dir_delta(static_cast<size_t>(n_cells), 0.0f);
     int wind_flip_count = 0;
+    // perf (2A): wind 逐 cell 独立（邻居只读 SLP/LF/TR，自身读写 WX/WY/WSP_SLOT/WSPD/
+    // wind_delta/wind_dir_delta[i]，唯一 cross-cell 共享是 flip 计数标量）→ thread-local
+    // emit + 串行 reduce 并行；flip 为整数加法、task 顺序无关 → bit-equal。
+    struct WindFlipEmit {
+        int flip = 0;
+        void merge_into(WindFlipEmit &dst) const { dst.flip += flip; }
+    };
+    WindFlipEmit wind_flip_emit;
 
     const double inv_bounds_h = 1.0 / bounds_size_y;
     const bool   ta = terrain_aware;
@@ -466,7 +474,10 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const double inv_bounds_w = 1.0 / std::max(0.001, bounds_max_x - bounds_pos_x);
     const uint32_t seed_bits = static_cast<uint32_t>(world_seed);
 
-    for (int i = 0; i < n_cells; ++i) {
+    pk::parallel_for_range_with_emit<WindFlipEmit>(
+        "pk_wind_field", n_cells, wind_flip_emit,
+        [&](int __wrb, int __wre, WindFlipEmit &__we) {
+    for (int i = __wrb; i < __wre; ++i) {
         // ny / ls / ls_abs（与 _ny_for_cell 等价：bounds.y → 0..1 clamp）
         double ny = (double(POSY[i]) - bounds_pos_y) * inv_bounds_h;
         if (ny < 0.0) ny = 0.0; else if (ny > 1.0) ny = 1.0;
@@ -631,7 +642,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             const double ds = spd - old_spd;
             const double dir_delta = std::sqrt(dx * dx + dy * dy);
             wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
-            if (dir_delta > 1.7320508075688772) ++wind_flip_count;
+            if (dir_delta > 1.7320508075688772) ++__we.flip;
             wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
             continue;
         }
@@ -772,9 +783,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         const double ds = final_spd - old_spd;
         const double dir_delta = std::sqrt(dx * dx + dy * dy);
         wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
-        if (dir_delta > 1.7320508075688772) ++wind_flip_count;
+        if (dir_delta > 1.7320508075688772) ++__we.flip;
         wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
     }
+        }); // pk_wind_field parallel_for_range_with_emit
+    wind_flip_count = wind_flip_emit.flip;
 
     // §11.2 flush: push CoW-detached cell_wind_x/y back to MapData
     _flush_slot_to_map(sid_wind_x);
@@ -929,8 +942,11 @@ godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs)
         return uint8_t(int(q));
     };
 
-    if (atlas_ok) {
-        for (int i = start_idx; i < end_idx; ++i) {
+    // perf (2B): per-pixel 完全独立（只读 P2C[i]/SoA[ci]，写 DCUR/DUP/ATLAS[i] 互不相交，
+    // 无标量累加器）→ 按像素区间并行、逐字节 bit-equal、无需 reduce。像素工作极轻
+    // (~3-5ns)，seq_threshold 设高，仅大 raster 切片才并行（小切片走串行免线程开销）。
+    auto raster_atlas = [&](int b, int e) {
+        for (int i = b; i < e; ++i) {
             const int32_t ci = P2C[i];
             float cur_x = 0.0f;
             float cur_y = 0.0f;
@@ -953,8 +969,9 @@ godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs)
             ATLAS[i * 4 + 1] = by;
             // ATLAS[i*4+2..+3] 由 wind 通道写，rasterize 不动
         }
-    } else {
-        for (int i = start_idx; i < end_idx; ++i) {
+    };
+    auto raster_plain = [&](int b, int e) {
+        for (int i = b; i < e; ++i) {
             const int32_t ci = P2C[i];
             float cur_x = 0.0f;
             float cur_y = 0.0f;
@@ -972,6 +989,16 @@ godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs)
             DCUR[i * 2 + 1] = quantize_signed(cur_y);
             DUP[i] = is_water ? quantize_upwelling(up_v) : uint8_t(128);
         }
+    };
+    const int range_n = end_idx - start_idx;
+    if (atlas_ok) {
+        pk::parallel_for_range("pk_ocean_raster_a", range_n, /*n_tasks_hint=*/0,
+            /*seq_threshold=*/16384,
+            [&](int b, int e) { raster_atlas(start_idx + b, start_idx + e); });
+    } else {
+        pk::parallel_for_range("pk_ocean_raster", range_n, /*n_tasks_hint=*/0,
+            /*seq_threshold=*/16384,
+            [&](int b, int e) { raster_plain(start_idx + b, start_idx + e); });
     }
     written = end_idx - start_idx;
 
@@ -1390,7 +1417,10 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.75;
     const double inv_bounds_h = 1.0 / bounds_size_y;
 
-    for (int i = 0; i < n_cells; ++i) {
+    // perf (2A): upwelling 逐 cell 独立（只读 POSY/TERR/WX/WY/WSPD/NB + 常量方向表，
+    // 写 UP[i]，无标量累加器）→ 按 cell 区间并行、bit-equal、无需 reduce。
+    auto upwelling_range = [&](int rb, int re) {
+    for (int i = rb; i < re; ++i) {
         if (!is_water_lut[TERR[i]]) {
             UP[i] = 0.0f;
             continue;
@@ -1444,6 +1474,8 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
         else if (up > 1.0) up = 1.0;
         UP[i] = float(up);
     }
+    };
+    pk::parallel_for_range("pk_ocean_upwelling", n_cells, upwelling_range);
 
     _flush_slot_to_map(sid_upwelling);
 
@@ -1701,7 +1733,10 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     }
 
     // ─── Pass A: per-cell baseline ────────────────────────────────────────
-    for (int i = 0; i < n_cells; ++i) {
+    // perf (2A): 逐 cell 独立（读 POSY/TR/NB/LUT/可选场 slot，写 slp_buf[i]/thermal_abs[i]，
+    // 无标量累加器；mobile_low/synoptic 均 cell-local）→ 按 cell 区间并行、bit-equal。
+    auto slp_passA_range = [&](int rb, int re) {
+    for (int i = rb; i < re; ++i) {
         // ny / lat_signed / lat_abs
         float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
         if (ny < 0.0f) ny = 0.0f;
@@ -1788,6 +1823,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
                 + std::fabs(mobile_low);
         }
     }
+    };
+    pk::parallel_for_range("pk_slp_passA", n_cells, slp_passA_range);
 
     // 埋点（plan/daily-wind-stage-split）：Pass A（逐 cell 三角/insolation/synoptic）
     // 通常是 SLP 的大头；t_slp_pa 标记 Pass A 结束。
@@ -1797,18 +1834,24 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (smooth_passes > 0) {
         std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
         for (int p = 0; p < smooth_passes; ++p) {
-            for (int i = 0; i < n_cells; ++i) {
-                float sum_slp = slp_buf[i];
-                int   cnt     = 1;
-                const int base_i = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int ni = NB[base_i + d];
-                    if (ni < 0 || ni >= n_cells) continue;
-                    sum_slp += slp_buf[ni];
-                    cnt += 1;
+            // perf (2A): Jacobi sweep 逐 cell 独立（读 SRC 邻域只读、写 DST[i]，无 cross-cell 写）
+            // → 按 cell 区间并行、bit-equal。SRC/DST 在每次 swap 后重取，保证读旧写新。
+            const float * const __restrict SRC = slp_buf.data();
+            float * const __restrict DST = tmp.data();
+            pk::parallel_for_range("pk_slp_passB", n_cells, [&](int rb, int re) {
+                for (int i = rb; i < re; ++i) {
+                    float sum_slp = SRC[i];
+                    int   cnt     = 1;
+                    const int base_i = i * 6;
+                    for (int d = 0; d < 6; ++d) {
+                        const int ni = NB[base_i + d];
+                        if (ni < 0 || ni >= n_cells) continue;
+                        sum_slp += SRC[ni];
+                        cnt += 1;
+                    }
+                    DST[i] = sum_slp / float(cnt);
                 }
-                tmp[i] = sum_slp / float(cnt);
-            }
+            });
             // Write back (one sweep).
             std::swap(slp_buf, tmp);
         }

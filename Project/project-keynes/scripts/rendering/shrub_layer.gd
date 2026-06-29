@@ -82,6 +82,25 @@ uniform float axial_tilt_rad = 0.41;     // 地轴倾角(rad)，与地形 axial_
 uniform bool day_night_enabled = true;   // 关闭时退化为永昼
 uniform float tod_exposure = 1.0;        // 全局曝光（TODProfile.exposure）
 
+// [veg-normal-shading] 法线辅助着色：复用地形烘焙宏观法线 + 高度图（与地形 brdf 同源数据），
+// 配合 billboard UV 伪法线做 NdotL 方向光 / 边缘光 / 接触 AO / 谷地 AO。
+// terrain_normal_tex / height_tex 与地形主 shader 同一套 [0,1] 世界 UV（solar_uv=本实例 cell uv）。
+uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
+uniform bool terrain_normal_tex_bound = false;  // 未烘焙时只用伪法线（退化）
+uniform sampler2D height_tex : filter_linear, repeat_disable;
+uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
+uniform int veg_shade_quality = 2;            // 0/1/2：q2 才采高度图邻域算谷地 AO
+uniform float shading_enabled = 1.0;          // 0=退化回旧"平直昼夜"着色
+uniform float terrain_normal_influence = 0.65;
+uniform float pseudo_normal_strength = 0.85;
+uniform float sun_shade_strength = 0.55;
+uniform float ambient_floor = 0.18;
+uniform float rim_light_strength = 0.12;
+uniform float contact_ao_strength = 0.42;
+uniform float contact_ao_height = 0.32;
+uniform float terrain_valley_ao_strength = 0.40;
+uniform float terrain_valley_ao_gain = 6.0;
+
 // [cylindrical-earth-daylight] 昼夜（晨昏线）核心与地形/水面同源：统一调用此 include。
 // 必须放在 season_phase / day_phase / axial_tilt_rad 三个 uniform 声明之后——其内函数
 // 引用这些全局量，GLSL 要求先声明后引用（名字须与 uniforms.gdshaderinc 一致）。
@@ -95,6 +114,20 @@ varying float shrub_dry_v;
 varying float shrub_wet_v;
 varying float shrub_snow_v;
 varying float shrub_vitality_v;
+// [veg-normal-shading] 地形宏观法线 xy（已含 influence 缩放）与谷地 AO 因子，逐顶点采样一次，
+// 整株近似常量（避免逐片元纹理 fetch）。伪法线由片元 UV 现算，叠加后求 NdotL。
+varying vec2 shrub_terrain_n;
+varying float shrub_terrain_ao;
+// [veg-instance-rotation 修正] 每实例世界正交基（MODEL_MATRIX 列向量去缩放）。植被放置带随机自旋转，
+// 伪法线必须按本实例旋转从局部 UV 帧转到世界帧，否则每株光影方向各异（不在同一光照方向上）。
+varying vec2 shrub_basis_x;
+varying vec2 shrub_basis_y;
+
+// height_tex：RG8 16-bit 归一化海拔，解码 (R*256+G)/257（与 height.gdshaderinc 同式）。
+float shrub_decode_height(vec2 uv) {
+	vec2 rg = texture(height_tex, uv).rg;
+	return (rg.r * 256.0 + rg.g) / 257.0;
+}
 
 int decode_cell_index(vec2 uv) {
 	vec2 gb = texture(map_index_atlas, uv).gb;
@@ -150,6 +183,14 @@ float compute_presence(vec4 dyn, vec4 eco) {
 
 void vertex() {
 	shrub_custom = INSTANCE_CUSTOM;
+	// [veg-instance-rotation 修正] 取本实例世界正交基：MODEL_MATRIX 列向量 = 该实例 transform 后的
+	// 局部 x/y 轴（含随机旋转+缩放），去缩放归一化 → 纯旋转基。供伪法线/风摆/投影把局部帧量转到世界帧。
+	vec2 inst_ax = vec2(MODEL_MATRIX[0].x, MODEL_MATRIX[0].y);
+	vec2 inst_ay = vec2(MODEL_MATRIX[1].x, MODEL_MATRIX[1].y);
+	float inst_axl = length(inst_ax);
+	float inst_ayl = length(inst_ay);
+	shrub_basis_x = (inst_axl > 1e-5) ? inst_ax / inst_axl : vec2(1.0, 0.0);
+	shrub_basis_y = (inst_ayl > 1e-5) ? inst_ay / inst_ayl : vec2(0.0, 1.0);
 	vec2 shrub_uv = clamp(INSTANCE_CUSTOM.rg, vec2(0.0), vec2(1.0));
 	shrub_dyn = sample_dyn_state(shrub_uv);
 	shrub_eco = sample_eco_state(shrub_uv);
@@ -178,25 +219,64 @@ void vertex() {
 	sway += weather_wind_boost * (0.9 * sin(world_time * 3.4 + seed * 5.13) + 0.5);
 	float amp = sway * sway_amp * (wind_strength + weather_wind_boost)
 		* top_weight * smoothstep(0.10, 0.75, shrub_presence_v);
-	// 方向风：沿全局盛行风方向摆动（而非固定 +x）。
+	// 方向风：沿全局盛行风方向摆动（而非固定 +x）。把世界风向转到本实例局部帧，
+	// 否则随机自旋转的植株会朝各自局部 +x 乱摆，而非统一盛行风方向。
 	vec2 wdir = normalize(wind_dir + vec2(0.0001, 0.0));
-	VERTEX += wdir * amp;
+	vec2 wdir_local = vec2(dot(wdir, shrub_basis_x), dot(wdir, shrub_basis_y));
+	VERTEX += wdir_local * amp;
 	// 雪埋：积雪越深，植株下沉（y 正为下）并缩矮，顶部更明显。
 	float bury = clamp(shrub_snow_v * snow_burial, 0.0, 0.85);
 	VERTEX.y += bury * 0.34 * top_weight;
 	VERTEX *= 1.0 - bury * 0.42 * top_weight;
+
+	// [veg-normal-shading] 地形宏观法线（整株站立坡面）：与地形 brdf 同源烘焙法线，1 次采样。
+	shrub_terrain_n = vec2(0.0);
+	if (terrain_normal_tex_bound) {
+		shrub_terrain_n = (texture(terrain_normal_tex, shrub_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
+	}
+	// 谷地 AO：仅高画质档用 height_tex 邻域差判断凹陷（中心低于四邻 → 谷/坑 → 压暗）。
+	shrub_terrain_ao = 0.0;
+	if (veg_shade_quality >= 2 && terrain_valley_ao_strength > 0.0) {
+		vec2 texel = 1.0 / hm_resolution;
+		float r = 3.0;
+		float hc = shrub_decode_height(shrub_uv);
+		float hn = (shrub_decode_height(shrub_uv + vec2(texel.x * r, 0.0))
+			+ shrub_decode_height(shrub_uv - vec2(texel.x * r, 0.0))
+			+ shrub_decode_height(shrub_uv + vec2(0.0, texel.y * r))
+			+ shrub_decode_height(shrub_uv - vec2(0.0, texel.y * r))) * 0.25;
+		shrub_terrain_ao = clamp((hn - hc) * terrain_valley_ao_gain, 0.0, 1.0);
+	}
+}
+
+// [veg-hemisphere-season] 半球季节相位 → (autumn, winter, spring) 三个季节量。fragment 会对
+// 本实例所在半球各算一次后软混合，修复"全图同步变红"（北半球秋红时南半球应为春绿）。
+vec3 shrub_season_amounts(float sp) {
+	float autumn = smoothstep(1.45, 2.08, sp) * (1.0 - smoothstep(2.55, 3.05, sp));
+	float winter = smoothstep(2.65, 3.15, sp) * (1.0 - smoothstep(3.65, 3.98, sp));
+	float spring = clamp(1.0 - abs(sp - 0.4) / 0.9, 0.0, 1.0);
+	return vec3(autumn, winter, spring);
 }
 
 void fragment() {
-	float sp = mod(season_phase, 4.0);
-	float winter = smoothstep(2.65, 3.15, sp) * (1.0 - smoothstep(3.65, 3.98, sp));
+	// [veg-hemisphere-season] 季节相位按本实例纬度做半球翻转，修复全图植被同步变红：北/南各算
+	// 一组季节量(相差半年)再用纬度 smoothstep 软混合(+seed 抖动破碎赤道带)。相位映射与地形
+	// land_pipeline N7 同源(north=mod(p+3,4)/south=mod(p+1,4))，保证同格植被与地形季节同向。
+	float season_lat = clamp(shrub_custom.g, 0.0, 1.0) * 2.0 - 1.0;
+	float north_phase = mod(season_phase + 3.0, 4.0);
+	float south_phase = mod(season_phase + 1.0, 4.0);
+	float north_w = clamp(smoothstep(-0.30, 0.30, season_lat)
+		+ (fract(shrub_custom.b * 41.3) - 0.5) * 0.45, 0.0, 1.0);
+	vec3 season_amt = mix(shrub_season_amounts(south_phase),
+		shrub_season_amounts(north_phase), north_w);
+	float autumn = season_amt.x;
+	float winter = season_amt.y;
+	float spring = season_amt.z;
 	float snow = clamp(shrub_snow_v, 0.0, 1.0);
 	float dyn_valid = step(0.02, shrub_dyn.r);
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
 	float vitality_n = vitality_norm(shrub_vitality_v);
 	float dry_hot = smoothstep(0.78, 0.98, temp) * (1.0 - smoothstep(0.18, 0.44, moisture));
-	float autumn = smoothstep(1.45, 2.08, sp) * (1.0 - smoothstep(2.55, 3.05, sp));
 	float low_vitality = pow(1.0 - vitality_n, 1.35);
 	float yellow_amount = smoothstep(0.18, 0.78, shrub_dry_v) * dry_yellow_strength * (1.0 - dry_hot * 0.42) * veg_response;
 	float heat_red_amount = dry_hot * smoothstep(0.35, 0.90, shrub_dry_v) * heat_red_strength * veg_response;
@@ -212,8 +292,7 @@ void fragment() {
 	rgb = mix(rgb, vec3(0.88, 0.34, 0.10), heat_red_amount);
 	rgb = mix(rgb, vec3(0.72, 0.11, 0.08), autumn_red_amount * (1.0 - snow_amount));
 	rgb = mix(rgb, vec3(0.08, 0.52, 0.18), shrub_wet_v * wet_green_strength * vitality_n * (1.0 - yellow_amount) * veg_response);
-	// 季节开花：春季给开花类一抹亮色（活力越高越盛，积雪覆盖时收敛）。
-	float spring = clamp(1.0 - abs(sp - 0.4) / 0.9, 0.0, 1.0);
+	// 季节开花：春季给开花类一抹亮色（活力越高越盛，积雪覆盖时收敛）。spring 已按半球软混合算好。
 	float bloom = bloom_strength * spring * vitality_n * (1.0 - snow_amount * 0.85);
 	rgb = mix(rgb, rgb * vec3(1.12, 1.0, 1.08) + vec3(0.10, 0.03, 0.08), bloom);
 	rgb = mix(rgb, vec3(0.69, 0.72, 0.63), winter * 0.16);
@@ -224,21 +303,159 @@ void fragment() {
 	float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
 	float ql = floor(luma * 3.0 + 0.5) / 3.0;
 	rgb *= (luma > 0.0015) ? mix(1.0, ql / luma, toon_shading * 0.55) : 1.0;
-	// [cylindrical-earth-daylight] 昼夜光照（最后一步）：与地形/水面统一调用 earth_daylight，
-	// 按本实例经纬度逐像素取昼夜/晨昏 + 同一色板，植被随晨昏线扫过明暗、夜侧偏冷蓝，不再常亮。
+	// [veg-normal-shading] 昼夜 + 法线辅助着色（最后一步）：与地形/水面统一调用 earth_daylight，
+	// 按本实例经纬度取昼夜/晨昏 + 同色板；再用「地形宏观法线 + billboard 伪法线」做 NdotL 方向光、
+	// 边缘光、接触 AO、谷地 AO，模拟真实场景光照（迎光面亮、背光面暗，随晨昏线/太阳方位变化）。
 	vec2 solar_uv = clamp(shrub_custom.rg, vec2(0.0), vec2(1.0));
 	float lat_signed = solar_uv.y * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(solar_uv, lat_signed, day_night_enabled);
-	// 平面顶视植被：环境光(带 0.18 floor=地形 AMBIENT_FLOOR_LAND) + 仅昼侧方向光；
-	// 再按夜侧整体压暗(0.55=地形 NIGHT_BRIGHTNESS_FLOOR)。日侧光≈1 保留 albedo。
-	vec3 light = max(ed.amb_col, vec3(0.18)) + ed.sun_col * (ed.local_day * 0.35);
-	rgb *= light;
+	if (shading_enabled > 0.5) {
+		// 伪法线：billboard UV → 局部体积法线（径向 dome，各向同性）。各向同性保证旋转不变：
+		// 旋转一个径向对称 dome 不改变其世界法线集合，叠加实例旋转后全图光照方向才真正一致。
+		// [veg-instance-rotation 修正] 按本实例旋转把局部法线 xy 转到世界帧，再叠加世界帧地形宏观法线，
+		// 否则随机自旋转的每株会得到各自旋转过的光照梯度 → 全图光影方向不一致。
+		vec2 pn_local = vec2((UV.x - 0.5) * 2.0, (0.5 - UV.y) * 2.0) * pseudo_normal_strength;
+		vec2 pn_world = pn_local.x * shrub_basis_x + pn_local.y * shrub_basis_y;
+		vec3 N = normalize(vec3(pn_world + shrub_terrain_n, 1.0));
+		vec3 L = ed.sun_dir;                       // 逐实例太阳方向（含纬度/时角，单位向量）
+		float ndotl = max(dot(N, L), 0.0);
+		float direct = ndotl * sun_shade_strength * ed.local_day;
+		float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 3.0) * rim_light_strength * ed.local_day;
+		// [sky-sh-ambient] 方向化天光（L1 球谐）替换平铺 amb_col：用植株法线 N 取天光 →
+		// 迎天顶/迎太阳方位面更亮、背向面更暗，弱直射(晨昏/夜)时也有体积感。与地形/水面同源。
+		vec3 light = max(eval_earth_sky_sh(ed, N), vec3(ambient_floor)) + ed.sun_col * (direct + rim);
+		rgb *= light;
+		// 接触阴影：近根部压暗（UV.y 低=贴地），让植株"扎进"地面而非漂浮。
+		float contact = smoothstep(contact_ao_height, 0.0, UV.y) * contact_ao_strength;
+		rgb *= 1.0 - contact;
+		// 谷地 AO（高画质档）：凹陷处整株压暗。
+		rgb *= 1.0 - shrub_terrain_ao * terrain_valley_ao_strength;
+	} else {
+		// 退化路径（shading 关）：旧"平直昼夜"着色，保持兼容。
+		vec3 light = max(ed.amb_col, vec3(ambient_floor)) + ed.sun_col * (ed.local_day * 0.35);
+		rgb *= light;
+	}
 	rgb *= mix(1.0, 0.55, ed.pixel_night);
 	rgb *= tod_exposure;
 	float alpha = COLOR.a * shrub_presence_v;
 	alpha *= 1.0 - snow * 0.32;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
 	COLOR = vec4(rgb, alpha);
+}
+"""
+
+# [veg-cast-shadow] 投影 pass（软边椭圆 blob）：网格是单位圆盘（VERTEX=单位圆坐标, UV 径向）。
+# 顶点把单位圆映射为「沿世界太阳背光方向拉伸的椭圆」——足部半径 shadow_foot_radius、随太阳低
+# 度数(sun 水平/竖直比)拉长 proj。片元用径向距离 shadow_r 做平滑 alpha → 柔边，无多边形硬边。
+# 实例 transform 自带随机自旋转，故把世界 sdir 先转到局部帧（乘回 MODEL_MATRIX 后方向统一）。
+# 夜侧(local_day=0)/枯死/积雪自动淡出。
+const _SHADOW_SHADER_CODE := """
+shader_type canvas_item;
+render_mode blend_mix, unshaded;
+
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
+uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
+uniform vec2 lut_dims = vec2(1.0, 1.0);
+uniform vec2 world_origin = vec2(0.0);
+uniform vec2 world_size = vec2(1.0);
+uniform float wrap_origin_x = 0.0;
+uniform float wrap_period_x = 0.0;
+
+uniform float season_phase = 1.0;
+uniform float day_phase = 0.25;
+uniform float axial_tilt_rad = 0.41;
+uniform bool day_night_enabled = true;
+
+uniform float vitality_dead_threshold = 0.12;
+uniform float vitality_healthy_threshold = 0.72;
+uniform float vitality_alpha_power = 1.10;
+uniform float snow_hide_strength = 0.62;
+uniform float aquatic_response = 0.0;
+
+uniform vec4 shadow_color = vec4(0.05, 0.06, 0.08, 1.0);
+uniform float shadow_strength = 0.28;
+uniform float shadow_length_scale = 1.0;
+uniform float shadow_max_len = 1.4;
+uniform float shadow_min_sun_elevation = 0.16;
+uniform float shadow_foot_radius = 0.55;   // 足部半径(局部单位; ×实例 size = 世界足印)
+uniform float shadow_edge_softness = 0.25;  // 0..1 软边起点(越小越柔; r<此值为实心核心)
+
+#include \"res://shaders/include/earth_daylight.gdshaderinc\"
+
+varying float shadow_alpha_v;
+varying float shadow_r;   // 单位径向 0(心)..1(缘)，用于柔边
+
+int sh_decode_cell_index(vec2 uv) {
+	vec2 gb = texture(map_index_atlas, uv).gb;
+	int lo = int(gb.r * 255.0 + 0.5);
+	int hi = int(gb.g * 255.0 + 0.5);
+	int cid = lo + hi * 256;
+	return (cid >= 65535) ? -1 : cid;
+}
+
+vec2 sh_cell_lut_uv(int cid) {
+	int lw = int(lut_dims.x + 0.5);
+	if (lw < 1) { lw = 1; }
+	int cx = cid % lw;
+	int cy = cid / lw;
+	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
+}
+
+float sh_vitality_norm(float vitality) {
+	float dead_t = min(vitality_dead_threshold, vitality_healthy_threshold - 0.001);
+	float healthy_t = max(vitality_healthy_threshold, dead_t + 0.001);
+	return clamp((clamp(vitality, 0.0, 1.0) - dead_t) / (healthy_t - dead_t), 0.0, 1.0);
+}
+
+void vertex() {
+	vec2 uv = clamp(INSTANCE_CUSTOM.rg, vec2(0.0), vec2(1.0));
+	float lat_signed = uv.y * 2.0 - 1.0;
+	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
+
+	// presence-lite：枯死 / 积雪覆盖时阴影一并消失（与植株 compute_presence 同向，省去 eco fetch）。
+	int cid = sh_decode_cell_index(uv);
+	vec4 dyn = (cid >= 0) ? texture(dyn_lut, sh_cell_lut_uv(cid)) : vec4(0.0);
+	float dyn_valid = step(0.02, dyn.r);
+	float vitality = mix(0.70, dyn.a, dyn_valid);
+	vitality = mix(vitality, 0.86, aquatic_response);
+	float snow = dyn.b * dyn_valid;
+	float presence = pow(sh_vitality_norm(vitality), vitality_alpha_power);
+	presence *= 1.0 - clamp(snow, 0.0, 1.0) * snow_hide_strength;
+
+	// 太阳水平分量 → 背光方向 sdir（世界帧）；低太阳(竖直分量小)→ proj 拉长。
+	vec2 sun_h = ed.sun_dir.xy;
+	float sun_len = length(sun_h);
+	float sun_up = max(ed.sun_dir.z, 0.0);
+	vec2 sdir = (sun_len > 1e-4) ? -sun_h / sun_len : vec2(0.0, 1.0);
+	float proj = clamp(sun_len / max(sun_up, shadow_min_sun_elevation), 0.0, shadow_max_len) * shadow_length_scale;
+
+	// 本实例正交基（去缩放归一化）：把世界 sdir 转到局部帧，乘回 MODEL_MATRIX(含随机旋转) 后方向统一。
+	vec2 inst_ax = vec2(MODEL_MATRIX[0].x, MODEL_MATRIX[0].y);
+	vec2 inst_ay = vec2(MODEL_MATRIX[1].x, MODEL_MATRIX[1].y);
+	float inst_axl = length(inst_ax);
+	float inst_ayl = length(inst_ay);
+	vec2 nax = (inst_axl > 1e-5) ? inst_ax / inst_axl : vec2(1.0, 0.0);
+	vec2 nay = (inst_ayl > 1e-5) ? inst_ay / inst_ayl : vec2(0.0, 1.0);
+	vec2 sdl = vec2(dot(sdir, nax), dot(sdir, nay));     // 局部帧背光方向
+	vec2 perp = vec2(-sdl.y, sdl.x);                      // 垂直方向(椭圆次轴)
+
+	// 单位圆 VERTEX → 椭圆：主轴沿 sdl(足印半径 + 投影一半)，中心前移 proj/2；次轴沿 perp(足印半径)。
+	// proj=0(太阳当顶) → 退化为足部圆盘(接触阴影)；proj 大(低太阳) → 长椭圆。
+	vec2 p = VERTEX;
+	float half_major = shadow_foot_radius + proj * 0.5;
+	float center_along = proj * 0.5;
+	VERTEX = sdl * (center_along + p.x * half_major) + perp * (p.y * shadow_foot_radius);
+
+	shadow_r = length(p);   // 网格本身 |p|<=1，传给片元做径向柔边
+	shadow_alpha_v = shadow_strength * ed.local_day * clamp(presence, 0.0, 1.0);
+}
+
+void fragment() {
+	// 径向平滑：核心(r<softness)实心，向边缘平滑淡出至 0 → 柔边、无多边形轮廓。
+	float edge = 1.0 - smoothstep(shadow_edge_softness, 1.0, shadow_r);
+	float a = shadow_alpha_v * edge;
+	a = (a < 0.003) ? 0.0 : a;
+	COLOR = vec4(shadow_color.rgb, a);
 }
 """
 
@@ -289,6 +506,22 @@ var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
 var _material: ShaderMaterial = null
 
+# [veg-cast-shadow] 投影 pass：专用「软边椭圆 blob」网格（不复用植株多裂片网格——复用会按各裂片
+# 高度剪切拉开 → 形状怪 + 硬边）。顶点把单位圆映射为沿太阳背光方向拉伸的椭圆，片元用径向 alpha
+# 柔边。分块模式用 _shadow_chunk_nodes 逐 chunk 镜像（见下）；单节点回退用下面这组。
+var _shadow_material: ShaderMaterial = null
+var _shadow_mmi: MultiMeshInstance2D = null
+var _shadow_multimesh: MultiMesh = null
+var _shadow_blob_mesh: ArrayMesh = null
+# [veg-cast-shadow perf] 投影与植株「逐 chunk 镜像」：每个植株 chunk 配一个 shadow chunk 节点
+# （blob 网格 + 低 z + shadow 材质），buffer 直接镜像对应植株 chunk。演替只重写「脏 chunk」的
+# buffer → 投影同步成本 = O(该 chunk)，与植株自身更新同阶（不再全图 O(total) 重传）。方向/长度/
+# 强度/尺寸全部在顶点着色器里按 TOD 太阳方位实时计算（GPU），CPU 不写这些量；太阳移动零 CPU 开销。
+# _shadow_multimesh/_shadow_mmi 仅用于「单节点(非分块)回退模式」。
+var _shadow_chunk_nodes: Dictionary = {}
+var _shadow_built_total: int = 0   # 单节点回退模式：上次镜像的实例数（用于按需重建）
+var _shadow_fraction: float = 1.0
+
 var _instance_cell_indices: PackedInt32Array = PackedInt32Array()
 var _instance_positions: PackedVector2Array = PackedVector2Array()
 var _instance_rotations: PackedFloat32Array = PackedFloat32Array()
@@ -333,6 +566,13 @@ func clear() -> void:
 	if _multimesh != null:
 		_multimesh.instance_count = 0
 		_multimesh.visible_instance_count = 0
+	if _shadow_multimesh != null:
+		_shadow_multimesh.instance_count = 0
+		_shadow_multimesh.visible_instance_count = 0
+	_shadow_built_total = 0
+	# _shadow_chunk_nodes 已由 _clear_chunk_nodes() 释放
+	if _shadow_mmi != null:
+		_shadow_mmi.visible = false
 	visible = false
 
 
@@ -344,11 +584,16 @@ func set_world_time(v: float) -> void:
 func set_season_phase(v: float) -> void:
 	if _material != null:
 		_material.set_shader_parameter("season_phase", v)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("season_phase", v)
 
 
 func set_day_phase(v: float) -> void:
+	var p := fposmod(v, 1.0)
 	if _material != null:
-		_material.set_shader_parameter("day_phase", fposmod(v, 1.0))
+		_material.set_shader_parameter("day_phase", p)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("day_phase", p)
 
 
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
@@ -371,12 +616,16 @@ func set_tod(_sun_color: Color, _ambient_color: Color, _night_factor: float, exp
 func set_axial_tilt_rad(v: float) -> void:
 	if _material != null:
 		_material.set_shader_parameter("axial_tilt_rad", v)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("axial_tilt_rad", v)
 
 
 # 昼夜总开关：关闭时植被退化为永昼（与地形 day_night_enabled 一致）。
 func set_day_night_enabled(v: bool) -> void:
 	if _material != null:
 		_material.set_shader_parameter("day_night_enabled", v)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("day_night_enabled", v)
 
 
 # 阶段 D：全局盛行风方向 + 实时天气附加风强（风暴/季风）。每帧由 hex_renderer 推送。
@@ -417,11 +666,12 @@ func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	if _map == null or _indices.is_empty():
 		return
 	if _chunked_multimesh_enabled and _refresh_chunked_for_succession(_indices):
-		return
+		return  # 分块：shadow chunk 已在 _apply_chunk_payload 内逐 chunk 镜像（O(脏chunk)）
 	_ensure_incremental_multimesh()
 	if _multimesh == null:
 		return
 	if _refresh_for_succession_native(_indices):
+		_sync_single_shadow()
 		return
 	var t0_us := Time.get_ticks_usec()
 	var cells_done := 0
@@ -465,6 +715,7 @@ func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
 	visible = _profile().enabled and _instance_count > 0
+	_sync_single_shadow()
 
 
 func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
@@ -651,6 +902,7 @@ func _apply_native_delta_payload(
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
 	visible = _profile().enabled and _instance_count > 0
+	_sync_single_shadow()
 
 
 func _set_slot_from_native_buffer(slot: int, buffer: PackedFloat32Array, src: int) -> void:
@@ -933,8 +1185,10 @@ func instance_count() -> int:
 
 func apply_visible_instance_fraction(fraction: float) -> void:
 	var f := clampf(fraction, 0.0, 1.0)
+	_shadow_fraction = f
 	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
 		var any_visible := false
+		var show_shadow := _shadow_should_render()
 		for chunk_id in _chunk_nodes.keys():
 			var node: MultiMeshInstance2D = _chunk_nodes[chunk_id]
 			if node == null or not is_instance_valid(node) or node.multimesh == null:
@@ -944,14 +1198,23 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 			node.multimesh.visible_instance_count = next_visible
 			node.visible = _profile().enabled and next_visible > 0
 			any_visible = any_visible or next_visible > 0
+			# 逐帧 LOD 内联同步对应 shadow chunk 的可见数（仅 visible_instance_count，无 buffer 操作）
+			var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+			if snode != null and is_instance_valid(snode) and snode.multimesh != null:
+				snode.multimesh.visible_instance_count = clampi(next_visible, 0, snode.multimesh.instance_count)
+				snode.visible = show_shadow and node.visible and next_visible > 0
 		visible = _profile().enabled and any_visible
+		if _shadow_mmi != null:
+			_shadow_mmi.visible = false
 		return
 	if _multimesh == null:
 		visible = false
+		_sync_single_shadow()
 		return
 	var next_visible := clampi(int(floor(float(_instance_count) * f)), 0, _instance_count)
 	_multimesh.visible_instance_count = next_visible
 	visible = _profile().enabled and next_visible > 0
+	_sync_single_shadow()
 
 
 func set_mobile_quality_tier(q: int) -> void:
@@ -980,6 +1243,34 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("axial_tilt_rad", 0.41)
 		_material.set_shader_parameter("day_night_enabled", true)
 		_mmi.material = _material
+	if _shadow_material == null:
+		var shadow_shader := Shader.new()
+		shadow_shader.code = _SHADOW_SHADER_CODE
+		_shadow_material = ShaderMaterial.new()
+		_shadow_material.shader = shadow_shader
+		_shadow_material.set_shader_parameter("season_phase", 1.0)
+		_shadow_material.set_shader_parameter("day_phase", 0.25)
+		_shadow_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_shadow_material.set_shader_parameter("day_night_enabled", true)
+	if _shadow_blob_mesh == null:
+		_shadow_blob_mesh = _build_shadow_blob_mesh()
+	if _shadow_multimesh == null:
+		_shadow_multimesh = MultiMesh.new()
+		_shadow_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+		_shadow_multimesh.use_colors = true
+		_shadow_multimesh.use_custom_data = true
+		_shadow_multimesh.mesh = _shadow_blob_mesh
+		_shadow_multimesh.instance_count = 0
+		_shadow_multimesh.visible_instance_count = 0
+	if _shadow_mmi == null:
+		_shadow_mmi = MultiMeshInstance2D.new()
+		_shadow_mmi.name = "ShrubShadowMultiMesh"
+		# 低 z（相对层 z 减 1）：渲染在地形之上、植株之下。
+		_shadow_mmi.z_index = -1
+		_shadow_mmi.material = _shadow_material
+		_shadow_mmi.multimesh = _shadow_multimesh
+		_shadow_mmi.visible = false
+		add_child(_shadow_mmi)
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
 
@@ -990,6 +1281,175 @@ func _clear_chunk_nodes() -> void:
 			node.queue_free()
 	_chunk_nodes.clear()
 	_chunk_instance_counts.clear()
+	for snode in _shadow_chunk_nodes.values():
+		if snode != null and is_instance_valid(snode):
+			snode.queue_free()
+	_shadow_chunk_nodes.clear()
+
+
+# 为某植株 chunk 准备/复用对应的 shadow chunk 节点（blob 网格 + shadow 材质 + 低 z）。
+func _ensure_shadow_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
+	var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+	if snode != null and is_instance_valid(snode):
+		return snode
+	if _shadow_material == null or _shadow_blob_mesh == null:
+		_ensure_resources()
+	snode = MultiMeshInstance2D.new()
+	snode.name = "DetailShadowChunk_%d" % chunk_id
+	snode.material = _shadow_material
+	snode.z_index = -1  # 地形之上、植株(z=0)之下
+	var smm := MultiMesh.new()
+	smm.transform_format = MultiMesh.TRANSFORM_2D
+	smm.use_colors = true
+	smm.use_custom_data = true
+	smm.mesh = _shadow_blob_mesh
+	smm.instance_count = 0
+	smm.visible_instance_count = 0
+	snode.multimesh = smm
+	snode.visible = false
+	add_child(snode)
+	_shadow_chunk_nodes[chunk_id] = snode
+	return snode
+
+
+# 把某植株 chunk 的 buffer/count 镜像到对应 shadow chunk（仅该 chunk，O(chunk)）。
+# 投影方向/长度/强度/尺寸由 shadow 顶点着色器按 TOD 太阳方位实时算，故这里只需共享 transform+uv。
+func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
+	if not _shadow_should_render():
+		var ex: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+		if ex != null and is_instance_valid(ex):
+			ex.visible = false
+		return
+	var snode := _ensure_shadow_chunk_node(chunk_id)
+	var smm := snode.multimesh
+	smm.instance_count = inst
+	if inst > 0:
+		smm.buffer = buffer
+		smm.visible_instance_count = inst
+	else:
+		smm.visible_instance_count = 0
+	snode.visible = visible and inst > 0
+
+
+# 门控/全量重建时：把所有植株 chunk 重新镜像到 shadow chunk；门控关则全部隐藏。
+func _refresh_all_shadow_chunks() -> void:
+	if _shadow_should_render():
+		for cid in _shadow_chunk_nodes.keys():
+			if not _chunk_nodes.has(cid):
+				var orphan: MultiMeshInstance2D = _shadow_chunk_nodes[cid]
+				if orphan != null and is_instance_valid(orphan):
+					orphan.queue_free()
+				_shadow_chunk_nodes.erase(cid)
+		for cid in _chunk_nodes.keys():
+			var pnode: MultiMeshInstance2D = _chunk_nodes[cid]
+			if pnode != null and is_instance_valid(pnode) and pnode.multimesh != null:
+				_mirror_shadow_chunk(int(cid), pnode.multimesh.buffer, pnode.multimesh.instance_count)
+	else:
+		for snode in _shadow_chunk_nodes.values():
+			if snode != null and is_instance_valid(snode):
+				snode.visible = false
+
+
+# 单节点(非分块)回退模式的投影同步：仅在实例数变化(或强制)时复制 _multimesh.buffer。
+func _sync_single_shadow(force_rebuild: bool = false) -> void:
+	if _shadow_mmi == null or _shadow_multimesh == null:
+		return
+	if not _shadow_should_render() or not visible:
+		_shadow_multimesh.visible_instance_count = 0
+		_shadow_mmi.visible = false
+		return
+	var total := (_multimesh.instance_count if _multimesh != null else 0)
+	if force_rebuild or total != _shadow_built_total:
+		if _multimesh != null and total > 0:
+			_shadow_multimesh.instance_count = total
+			_shadow_multimesh.buffer = _multimesh.buffer
+		else:
+			_shadow_multimesh.instance_count = 0
+		_shadow_built_total = total
+	if _shadow_built_total <= 0:
+		_shadow_multimesh.visible_instance_count = 0
+		_shadow_mmi.visible = false
+		return
+	var vis := clampi(int(floor(float(_shadow_built_total) * _shadow_fraction)), 0, _shadow_built_total)
+	_shadow_multimesh.visible_instance_count = vis
+	_shadow_mmi.visible = vis > 0
+
+
+# ─── [veg-cast-shadow] 投影 pass：blob 网格 + 单节点 buffer 复制 + 门控 ───────────
+# 单位圆盘扇形：中心顶点(0,0, UV 中心) + 边缘顶点(cos,sin, UV 在半径 0.5 圆上)。
+# VERTEX 直接是单位圆坐标(供 shader 拉成椭圆)；UV 仅备用。三角扇连接。
+func _build_shadow_blob_mesh() -> ArrayMesh:
+	var seg := 20
+	var verts := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	verts.append(Vector2.ZERO)
+	uvs.append(Vector2(0.5, 0.5))
+	cols.append(Color(1.0, 1.0, 1.0, 1.0))
+	for i in range(seg):
+		var a := TAU * float(i) / float(seg)
+		var p := Vector2(cos(a), sin(a))
+		verts.append(p)
+		uvs.append(Vector2(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5))
+		cols.append(Color(1.0, 1.0, 1.0, 1.0))
+	for i in range(seg):
+		idx.append(0)
+		idx.append(1 + i)
+		idx.append(1 + ((i + 1) % seg))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _archetype_casts_shadow() -> bool:
+	# 仅直立类 archetype 投影；随机旋转的点缀（岩石/草/雪堆）方向不稳、收益低，跳过。
+	match _detail_kind():
+		DETAIL_TREE, DETAIL_SHRUB, DETAIL_CONIFER, DETAIL_PALM, DETAIL_CACTUS, DETAIL_REED, DETAIL_DEAD_SNAG, DETAIL_ALPINE_FLOWER:
+			return true
+		_:
+			return false
+
+
+func _shadow_should_render() -> bool:
+	var cfg := _profile()
+	if not cfg.enabled:
+		return false
+	var on = cfg.get("cast_shadow_enabled")
+	if on != null and not bool(on):
+		return false
+	# 性能分档：桌面 q>=1 开启；移动端默认关（除非 profile 显式允许且 tier>=2）。
+	if OS.has_feature("mobile"):
+		var mob = cfg.get("cast_shadow_on_mobile")
+		if mob == null or not bool(mob):
+			return false
+		if _active_quality_tier() < 2:
+			return false
+	elif _active_quality_tier() < 1:
+		return false
+	return _archetype_casts_shadow()
+
+
+const _SHADOW_BUFFER_STRIDE := 16  # 2D transform(8) + color(4) + custom(4)
+
+
+# 投影层同步分发：分块模式下 buffer 已在 _apply_chunk_payload* 逐 chunk 镜像，这里只在 force
+# （门控/全量重建）时整体重镜像；单节点回退模式走 _sync_single_shadow。逐帧 LOD 在
+# apply_visible_instance_fraction 内联同步 shadow chunk 的 visible_instance_count（无 buffer 操作）。
+func _sync_shadow_layer(force_rebuild: bool = false) -> void:
+	if not _chunk_nodes.is_empty():
+		if _shadow_mmi != null:
+			_shadow_mmi.visible = false  # 分块模式不使用单节点投影
+		if force_rebuild:
+			_refresh_all_shadow_chunks()
+		return
+	_sync_single_shadow(force_rebuild)
 
 
 func _chunk_id_for_cell_idx(cell_idx: int) -> int:
@@ -1064,16 +1524,20 @@ func _apply_chunk_payload(chunk_id: int, buffer: PackedFloat32Array, src_indices
 			for k in range(16):
 				chunk_buffer[dst_b + k] = buffer[src_b + k]
 		mm.buffer = chunk_buffer
+		_mirror_shadow_chunk(chunk_id, chunk_buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
+		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
 func _apply_chunk_payload_direct(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
 	var mm := _prepare_chunk_multimesh(chunk_id, inst)
 	if inst > 0:
 		mm.buffer = buffer
+		_mirror_shadow_chunk(chunk_id, buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
+		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
 func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int) -> void:
@@ -1145,6 +1609,7 @@ func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, 
 	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else chunk_cells.size()
 	_last_dirty_chunks = 1
 	visible = _profile().enabled and _instance_count > 0
+	# 分块：shadow chunk 已在 _apply_chunk_payload_direct 内镜像（O(该chunk)）
 	return true
 
 
@@ -1235,6 +1700,7 @@ func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
 	_last_incremental_cells = indices.size()
 	_last_dirty_chunks = chunk_count
 	visible = _profile().enabled and _instance_count > 0
+	# 分块：各脏 chunk 的 shadow 已在 _apply_chunk_payload 内镜像（O(脏chunk)）
 	return true
 
 
@@ -1279,22 +1745,72 @@ func _apply_profile_uniforms() -> void:
 	# 卡通分层：所有 archetype 都受益于基部 AO，点缀类略弱以保持硬朗轮廓。
 	_material.set_shader_parameter("toon_shading", 0.22 if is_deco else 0.32)
 
+	# [veg-normal-shading] 法线辅助着色 uniform + 性能分档（q2 才采高度图邻域算谷地 AO）。
+	var tier := _active_quality_tier()
+	var shading_on: bool = bool(cfg.get("shading_enabled")) if cfg.get("shading_enabled") != null else true
+	_material.set_shader_parameter("shading_enabled", 1.0 if shading_on else 0.0)
+	_material.set_shader_parameter("veg_shade_quality", tier)
+	_material.set_shader_parameter("terrain_normal_influence", _profile_float(&"terrain_normal_influence", 0.65))
+	_material.set_shader_parameter("pseudo_normal_strength", _profile_float(&"pseudo_normal_strength", 0.85))
+	_material.set_shader_parameter("sun_shade_strength", _profile_float(&"sun_shade_strength", 0.55))
+	_material.set_shader_parameter("ambient_floor", _profile_float(&"ambient_floor", 0.18))
+	_material.set_shader_parameter("rim_light_strength", _profile_float(&"rim_light_strength", 0.12))
+	_material.set_shader_parameter("contact_ao_strength", _profile_float(&"contact_ao_strength", 0.42))
+	_material.set_shader_parameter("contact_ao_height", _profile_float(&"contact_ao_height", 0.32))
+	_material.set_shader_parameter("terrain_valley_ao_strength", _profile_float(&"terrain_valley_ao_strength", 0.40))
+	_material.set_shader_parameter("terrain_valley_ao_gain", _profile_float(&"terrain_valley_ao_gain", 6.0))
+
+	# [veg-cast-shadow] 投影 pass 外观/淡出 uniform（与植株共享活力/积雪阈值，保证一致淡出）。
+	if _shadow_material != null:
+		var sc = cfg.get("shadow_color")
+		_shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
+		_shadow_material.set_shader_parameter("shadow_strength", _profile_float(&"shadow_strength", 0.28))
+		_shadow_material.set_shader_parameter("shadow_length_scale", _profile_float(&"shadow_length_scale", 1.0))
+		_shadow_material.set_shader_parameter("shadow_max_len", _profile_float(&"shadow_max_length", 1.4))
+		_shadow_material.set_shader_parameter("shadow_min_sun_elevation", _profile_float(&"shadow_min_sun_elevation", 0.16))
+		_shadow_material.set_shader_parameter("shadow_foot_radius", _profile_float(&"shadow_foot_radius", 0.55))
+		_shadow_material.set_shader_parameter("shadow_edge_softness", _profile_float(&"shadow_edge_softness", 0.25))
+		_shadow_material.set_shader_parameter("vitality_dead_threshold", cfg.vitality_dead_threshold)
+		_shadow_material.set_shader_parameter("vitality_healthy_threshold", cfg.vitality_healthy_threshold)
+		_shadow_material.set_shader_parameter("vitality_alpha_power", cfg.vitality_alpha_power)
+		_shadow_material.set_shader_parameter("snow_hide_strength", cfg.snow_hide_strength)
+		_shadow_material.set_shader_parameter("aquatic_response", 1.0 if _spawn_domain() == SPAWN_WATER else 0.0)
+	_sync_shadow_layer(true)
+
 
 func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 	if _material == null:
 		return
 	var bounds := _bounds
+	var wrap_period := HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0
 	_material.set_shader_parameter("world_origin", bounds.position)
 	_material.set_shader_parameter("world_size", bounds.size)
 	_material.set_shader_parameter("wrap_origin_x", 0.0)
-	_material.set_shader_parameter("wrap_period_x", HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0)
+	_material.set_shader_parameter("wrap_period_x", wrap_period)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("world_origin", bounds.position)
+		_shadow_material.set_shader_parameter("world_size", bounds.size)
+		_shadow_material.set_shader_parameter("wrap_origin_x", 0.0)
+		_shadow_material.set_shader_parameter("wrap_period_x", wrap_period)
 	if _world == null:
 		_material.set_shader_parameter("lut_dims", Vector2.ONE)
+		if _shadow_material != null:
+			_shadow_material.set_shader_parameter("lut_dims", Vector2.ONE)
 		return
 	_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
 	_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	# [veg-normal-shading] 地形宏观法线 + 高度图（与地形 brdf 同源数据），植被 shader 用于 NdotL/谷地 AO。
+	_material.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+	_material.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
+	_material.set_shader_parameter("height_tex", _world.height_tex)
+	_material.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
+	# [veg-cast-shadow] 投影 pass 需要 cell 索引/动态态做夜侧与枯死/积雪淡出。
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+		_shadow_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
+		_shadow_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
 
 
 func _rebuild_instances() -> void:
@@ -1407,6 +1923,7 @@ func _rebuild_instances() -> void:
 			_instance_variants[i]
 		))
 	visible = cfg.enabled and _instance_count > 0
+	_sync_shadow_layer(true)
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	_last_candidate_count = _instance_scores.size()
 
@@ -1555,8 +2072,9 @@ func _rebuild_via_native(
 	if _chunked_multimesh_enabled:
 		_instance_count = inst
 		_instance_cell_indices = cell_indices
+		visible = cfg.enabled and inst > 0  # 先定 visible，使 _apply_chunk_payload 内的 shadow 镜像取到正确可见性
 		_apply_chunked_native_full(buffer, cell_indices, inst)
-		visible = cfg.enabled and inst > 0
+		# shadow chunk 已随每个 _apply_chunk_payload 镜像完成（_clear_chunk_nodes 已清旧，无孤儿）
 		_last_scatter_path = "gdext_chunked"
 		return true
 
@@ -1572,6 +2090,7 @@ func _rebuild_via_native(
 	_multimesh.visible_instance_count = inst
 	_mmi.multimesh = _multimesh
 	visible = cfg.enabled and inst > 0
+	_sync_shadow_layer(true)
 	return true
 
 

@@ -1077,7 +1077,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         int(boundary_contract.get("bundle_key_count", _native_daily_slice_bundle.size()));
     breakdown["tick_delta_key_count"] =
         Array(boundary_contract.get("tick_delta_keys", Array())).size();
-    breakdown["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    // perf(Tier1): runtime_config_report 此前在 breakdown 与 out 各做一次独立深拷贝（同源、
+    // 仅诊断只读）。改为本片单次深拷贝后共享同一 Variant，省掉每片第 2 次递归深拷贝。
+    Dictionary runtime_config_report = _native_runtime_config.duplicate(true);
+    breakdown["runtime_config_report"] = runtime_config_report;
     const bool active_default_ready =
         done &&
         String(breakdown["graph_coverage_state"]) == String("complete") &&
@@ -1138,7 +1141,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     out["boundary_contract"] = _native_daily_slice_bundle.get("native_daily_boundary_contract", Dictionary());
     out["bundle_key_count"] = breakdown["bundle_key_count"];
     out["tick_delta_key_count"] = breakdown["tick_delta_key_count"];
-    out["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    out["runtime_config_report"] = runtime_config_report;  // perf(Tier1): 共享上面的单次深拷贝
     out["native_daily_active_default_ready"] = active_default_ready;
     out["active_default_blockers"] = out["authority_blockers"];
     out["fallback_mode"] = breakdown["fallback_mode"];
@@ -1152,7 +1155,12 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
          int(breakdown.get("fronts_count", 0)) > 0);
     out["fronts"] = _native_fronts_snapshot;
     out["tick_count"] = _native_daily_tick_count;
-    _native_daily_report = out.duplicate(true);
+    // perf(Tier1): _native_daily_report 仅由 get_native_daily_report() 消费，而后者读时还会再做
+    // duplicate(true)；生产 native_daily_last_result() 走 GDScript 成员、不读此项，shadow 测试也走
+    // run_native_sim_tick 入口而非本切片路径。故此处改浅拷贝：免去每片对 breakdown/native_state_
+    // snapshot/authority_report/runtime_config/fronts 整棵树的递归深拷贝；顶层 dict 与返回的 out
+    // 隔离（不被上层 GDScript 顶层增键污染），嵌套只读共享、读路径再深拷贝保证隔离。
+    _native_daily_report = out.duplicate(false);
 
     if (done) {
         _native_daily_slice_active = false;

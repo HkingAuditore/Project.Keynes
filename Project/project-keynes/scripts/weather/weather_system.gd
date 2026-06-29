@@ -150,7 +150,7 @@ var _field_ocean_precip_suppression: float = 0.95
 var _field_precip_inertia: float = 0.58
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
 var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定弱雨，让降水更依赖移动动力触发
-var _field_cloud_reevap: float = 0.38      # 干空气云水再蒸发；加快雨云下完后的清空
+var _field_cloud_reevap: float = 0.28      # 干空气云水再蒸发；保留非降水薄云，避免清云过强
 var _field_cloud_inertia: float = 0.74     # cloud EMA 跟手系数；让云层随云水和平流更快移动/消退
 var _field_frontogenesis_gain: float = 0.42
 # [climate-zone-fix P3] 降水季节性旋钮镜像（默认与 C++ knob 默认 / field_solver const 一致；
@@ -2000,6 +2000,15 @@ func build_unified_fast_tick_weather_knobs(map: MapData, world: WorldData,
 		for k in stage_b_knobs.keys():
 			if not super_knobs.has(k):
 				super_knobs[k] = stage_b_knobs[k]
+	# weather_lut_w/h：合并 native-daily 路径里 C++ 的 field commit pass
+	# (run_weather_field_commit_pass) 用这两项把 weather LUT 字节按 lut_w*lut_h 编码。
+	# 缺失时 C++ 退回 n_cells 个 slot，产出的字节数与发布纹理 (world.lut_dims) 不符，
+	# 导致 publish_weather_lut_bytes_from_native 因 size 不匹配整段拒收 → 云/雨雪 LUT
+	# 永远停在世界生成时的全晴初始 bake（全 0），天气视觉全部消失。
+	# 与切片路径 _try_run_weather_field_commit_gdext 同源补齐。
+	if world != null and world.lut_dims.x > 0 and world.lut_dims.y > 0:
+		super_knobs["weather_lut_w"] = int(world.lut_dims.x)
+		super_knobs["weather_lut_h"] = int(world.lut_dims.y)
 	return super_knobs
 
 

@@ -489,6 +489,13 @@ var _b_plus_round_start_usec: int = 0
 # 构造时机：refresh_climate_daily 每次运行时按需初始化；axial_tilt 变动时清空重算。
 const _INSOL_MEAN_LUT_SIZE: int = 64                  # 65 桶，按 ny 离散，足够 80×60 图使用
 const _INSOL_ANNUAL_SAMPLES: int = 16                 # 一年取 16 个 phase 采样点求平均
+# OceanCurrentsJob 每日风预解（SLP+wind 权威源）的刷新节奏：每 N tick 跑一次，
+# 而非每 tick。降频削掉 daily_wind 的 5-7ms 尖刺帧；风场变化慢，consumers
+# （weather stride=8 / climate stride=2）对新鲜度要求宽松，3 tick 安全。
+# 同时配合 OceanCurrentsJob._daily_wind_stage_for 按 due 次数交替 SLP/wind，
+# 避免降频后 stage 被钉死在单一阶段导致风向冻结。两个注入点（初始 configure
+# 与运行时 reconfigure）共用此常量，防止漂移。
+const _OCEAN_DAILY_WIND_PERIOD_TICKS: int = 3
 var _insol_mean_lut: PackedFloat32Array = PackedFloat32Array()
 var _insol_mean_lut_tilt: float = -1.0                # 上次构表所用的 axial_tilt_deg，变化时失效
 var _insol_driven_path_logged: bool = false           # 首次进入 insolation 主路径时打一次启动日志
@@ -1541,7 +1548,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			dynamic_visual_atlas_stride = clampi(int(cp.dynamic_visual_atlas_upload_stride), 1, 8)
 	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
 	# 注册 OceanCurrentsJob。
-	var wind_period_ticks: int = 1
+	var wind_period_ticks: int = _OCEAN_DAILY_WIND_PERIOD_TICKS
 	var ocean_period_ticks: int = 30
 	var slice_count: int = 10
 	if cp != null:
@@ -1802,7 +1809,7 @@ func apply_simulation_cadence_from_profile() -> void:
 			and cp.get("ocean_currents_slice_count") != null:
 		var ocean_period_ticks: int = max(1, int(cp.ocean_currents_period_ticks))
 		_ocean_currents_job.reconfigure(
-				1,
+				_OCEAN_DAILY_WIND_PERIOD_TICKS,
 				max(1, int(cp.ocean_currents_slice_count)),
 				ocean_period_ticks)
 		_sus.apply_job_schedule(_ocean_currents_system, cp, &"ocean_currents", 1)
