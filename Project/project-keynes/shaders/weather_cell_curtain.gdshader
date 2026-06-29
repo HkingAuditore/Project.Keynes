@@ -103,9 +103,11 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	float line = 1.0 - smoothstep(width * 0.30, width * 3.7, dx);
 	float drop = 1.0 - smoothstep(len * 0.32, len, dy);
 	float noise_mask = smoothstep(0.22, 0.78, broad_noise) * mix(0.55, 1.18, fine_noise);
-	float gate = step(mix(0.72, 0.13, strength), rnd0);
-	float depth_shade = mix(0.78, 1.18, depth) * mix(0.90, 1.08, uv.y);
-	return clamp(line * drop * gate * noise_mask * mix(0.18, 1.55, strength) * depth_shade, 0.0, 1.0);
+	// [rain-uniform] 压缩雨幕动态范围：弱雨别太稀疏(gate 下限抬高)、强雨别冲亮白(strength 上限压低)，
+	// 并收窄 per-instance depth 的明暗摆动 → 各格雨幕亮度/可见度趋于一致，不再忽明忽暗。
+	float gate = step(mix(0.50, 0.18, strength), rnd0);
+	float depth_shade = mix(0.90, 1.10, depth) * mix(0.94, 1.06, uv.y);
+	return clamp(line * drop * gate * noise_mask * mix(0.68, 1.08, strength) * depth_shade, 0.0, 1.0);
 }
 
 float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, float strength) {
@@ -149,8 +151,10 @@ float lightning_flash(float seed, float intensity) {
 	float slot = floor(world_time * 2.2 + seed * 17.0);
 	float local_t = fract(world_time * 2.2 + seed * 17.0);
 	float chance = hash21(vec2(slot, seed * 91.7));
-	float pulse = exp(-local_t * 12.0) + exp(-abs(local_t - 0.12) * 28.0) * 0.45;
-	return step(0.965, chance) * pulse * intensity;
+	// 闪电"闪光"压暗+降频：提高触发阈值(少而精)，脉冲衰减更快、双闪更弱，
+	// 不再是刺眼的满屏亮白；只留偶发的克制微光。
+	float pulse = exp(-local_t * 18.0) + exp(-abs(local_t - 0.12) * 40.0) * 0.28;
+	return step(0.984, chance) * pulse * intensity;
 }
 
 void fragment() {
@@ -161,7 +165,7 @@ void fragment() {
 		vec4 wx = sample_weather(cid);
 		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
-		float precip = clamp(smoothstep(0.010, 0.48, wx.a) * 1.38, 0.0, 1.0);
+		float precip = clamp(smoothstep(0.010, 0.48, wx.g) * 1.38, 0.0, 1.0);
 		float wx_strength = clamp(max(precip, intensity * 0.82) * mix(0.68, 1.48, intensity), 0.0, 1.0);
 		int flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
 		float seed = v_custom.b;
@@ -173,18 +177,22 @@ void fragment() {
 		float fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
 		float flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
 
-		float alpha = (rain * 1.28 + snow * 1.22 + fog * 0.34 + flash * 0.70) * edge * weather_strength * mix(0.42, 1.58, wx_strength);
+		// [rain-uniform] wx_strength 对可见度的影响收窄(原 0.42~1.58 差 3.7×)：弱雨抬底、强雨压顶。
+		float alpha = (rain * 0.98 + snow * 1.22 + fog * 0.34 + flash * 0.30) * edge * weather_strength * mix(0.72, 1.28, wx_strength);
 		if (alpha <= 0.001) {
 			COLOR = vec4(0.0);
 		} else {
-			vec3 rain_col = vec3(0.72, 0.82, 0.96);
+			// 雨幕压暗：原 (0.72,0.82,0.96) 偏亮白，经 depth/wx_strength/曝光提亮后 B 通道冲到近纯白。
+			// 改成雾蒙钢灰蓝 → 雷雨雨幕是暗淡的一层斜纱，不再刺眼亮白。
+			vec3 rain_col = vec3(0.46, 0.53, 0.64);
 			vec3 snow_col = vec3(0.98, 1.00, 1.00);
 			vec3 fog_col = vec3(0.62, 0.68, 0.72);
-			vec3 flash_col = vec3(0.72, 0.84, 1.0);
+			vec3 flash_col = vec3(0.52, 0.62, 0.80);
 			vec3 col = rain_col * rain + snow_col * snow + fog_col * fog + flash_col * flash;
 			float weight = max(rain + snow + fog + flash, 0.001);
 			col = col / weight;
-			col *= mix(0.95, 1.34, depth) * mix(1.05, 1.22, wx_strength) * tod_exposure;
+			// [rain-uniform] 收窄颜色提亮的 per-instance(depth) 与 per-cell(wx_strength) 摆动，避免有的雨幕冲亮白。
+			col *= mix(1.0, 1.12, depth) * mix(1.04, 1.10, wx_strength) * tod_exposure;
 			COLOR = vec4(col, clamp(alpha, 0.0, 0.98));
 		}
 	}

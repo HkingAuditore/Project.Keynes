@@ -1491,22 +1491,22 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     const int sid_w_type = component_id(StringName("cell_weather_type"));
     const int sid_w_int = component_id(StringName("cell_weather_intensity"));
     const int sid_w_cloud = component_id(StringName("cell_weather_cloud"));
-    const int sid_w_precip = component_id(StringName("cell_weather_precip"));
+    const int sid_w_vapor = component_id(StringName("cell_weather_vapor"));
     const uint8_t * __restrict WTYPE = nullptr;
     const float * __restrict WINT = nullptr;
     const float * __restrict WCLOUD = nullptr;
-    const float * __restrict WPRECIP = nullptr;
-    if (sid_w_type >= 0 && sid_w_int >= 0 && sid_w_cloud >= 0 && sid_w_precip >= 0) {
+    const float * __restrict WVAPOR = nullptr;
+    if (sid_w_type >= 0 && sid_w_int >= 0 && sid_w_cloud >= 0 && sid_w_vapor >= 0) {
         Slot &s_wt = _slots.write[sid_w_type];
         Slot &s_wi = _slots.write[sid_w_int];
         Slot &s_wc = _slots.write[sid_w_cloud];
-        Slot &s_wp = _slots.write[sid_w_precip];
+        Slot &s_wv = _slots.write[sid_w_vapor];
         if (s_wt.arr_u8.size() >= n_cells && s_wi.arr_f32.size() >= n_cells &&
-            s_wc.arr_f32.size() >= n_cells && s_wp.arr_f32.size() >= n_cells) {
+            s_wc.arr_f32.size() >= n_cells && s_wv.arr_f32.size() >= n_cells) {
             WTYPE = s_wt.arr_u8.ptr();
             WINT = s_wi.arr_f32.ptr();
             WCLOUD = s_wc.arr_f32.ptr();
-            WPRECIP = s_wp.arr_f32.ptr();
+            WVAPOR = s_wv.arr_f32.ptr();
         }
     }
 
@@ -1610,14 +1610,14 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
         ECO[c4 + 2] = uint8_t((esig >> 16) & 0xFFu);
         ECO[c4 + 3] = uint8_t((esig >> 24) & 0xFFu);
 
-        // weather LUT：R=type(枚举), G=intensity, B=cloud, A=precip（[0,1]→byte）。
+        // weather LUT：R=type(枚举), G=intensity, B=cloud, A=vapor（[0,1]→byte）。
         // WTYPE==nullptr（weather 未就绪）时保持初始化的 0。
         if (WTYPE != nullptr) {
             const int w4 = ci * 4;
             WX[w4]     = WTYPE[ci];
             WX[w4 + 1] = uint8_t(pk_q01_byte(double(WINT[ci])));
             WX[w4 + 2] = uint8_t(pk_q01_byte(double(WCLOUD[ci])));
-            WX[w4 + 3] = uint8_t(pk_q01_byte(double(WPRECIP[ci])));
+            WX[w4 + 3] = uint8_t(pk_q01_byte(double(WVAPOR[ci])));
         }
 
         // 写回 prev 状态

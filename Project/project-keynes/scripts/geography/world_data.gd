@@ -52,7 +52,7 @@ var water_depth_buffer: PackedByteArray = PackedByteArray()  # R8
 # 按逐像素水温/纬度/水深派生，不再依赖此 buffer 上传。
 var sea_ice_fraction_buffer: PackedByteArray = PackedByteArray()  # R8
 # RGBA8 weather field texture, baked from per-cell weather state.
-# R=WeatherType id, G=intensity, B=cloud, A=precip.
+# R=WeatherType id, G=intensity, B=cloud, A=vapor.
 var weather_field_buffer: PackedByteArray = PackedByteArray()
 # RGBA8 dynamic cell atlas：把每日会变的真实 cell 状态喂给主地图材质。
 # R=temperature, G=moisture/wetness, B=snow_cover, A=vegetation_vitality。
@@ -156,7 +156,7 @@ var enum_lut_tex: ImageTexture
 var dyn_lut_tex: ImageTexture
 var eco_lut_tex: ImageTexture
 # weather_lut（cloud-from-field 2026-06-20）：per-cell 天气场 LUT，RGBA8 NEAREST，lut_dims。
-#   R=weather_type，G=intensity，B=cloud，A=precip。由 encode_cell_luts 与 enum/dyn/eco 同批
+#   R=weather_type，G=intensity，B=cloud，A=vapor。由 encode_cell_luts 与 enum/dyn/eco 同批
 #   产出（C++ 优先，GDScript fallback），weather_overlay.gdshader 经 cell-index 间接寻址逐格
 #   采样驱动云分布——天气云不再用 fronts 椭圆摘要，而是精确对应 HexCell.weather_*。
 var weather_lut_tex: ImageTexture

@@ -188,8 +188,8 @@ func _ready() -> void:
 	_curtain_root = Node2D.new()
 	_curtain_root.name = "CellWeatherCurtains"
 	_curtain_root.z_as_relative = true
-	# 先画在云 overlay 之上保证雨雪可读；后续若拆分云/降水 pass，再把它放回云下。
-	_curtain_root.z_index = 1
+	# 雨幕位于云层下、地表上；避免中等降水的雨线盖住云体，导致“只见雨不见云”。
+	_curtain_root.z_index = -1
 	add_child(_curtain_root)
 
 	_particles_root = Node2D.new()
