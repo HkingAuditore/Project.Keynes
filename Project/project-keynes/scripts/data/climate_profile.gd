@@ -794,9 +794,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 # precip_base_frac:autoconversion 背景成雨比例。原0.50→零动力区也有8%背景雨→海62.8%弥漫弱雨。降0.12让无动力
 #   区转晴、降水只在移动天气系统处爆发。注:陆地热力对流雨(THERMAL_CONV_PRECIP)旁路本项,内陆对流雨保留。
 @export_range(0.0, 1.0, 0.01) var weather_field_precip_base_frac: float = 0.08
-# cloud_reevap:干空气云水再蒸发率。2026-06-27 CSV 显示 cloud_water 几乎全图 >0.02；
-#   提到 0.38 并配合更低 clear_cap/marine_scour，让静稳非降水格清云更快。
-@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.38
+# cloud_reevap:干空气云水再蒸发率。2026-06-29 CSV 显示 90%+ 格为晴且低云水；
+#   0.38 + 低 clear_cap 会把静稳非降水薄云清得过快。降到 0.28，配合湿润非降水 cloud floor 保留层云/薄积云。
+@export_range(0.0, 0.5, 0.01) var weather_field_cloud_reevap: float = 0.28
 # cloud_inertia 是 cloud 视觉量 EMA 的跟手系数。0.74 比旧 0.42 更快贴近消退后的 cloud_water，
 # 避免 p95 run length 贴满整段记录，同时仍保留时间连续性。
 @export_range(0.05, 1.0, 0.01) var weather_field_cloud_inertia: float = 0.74

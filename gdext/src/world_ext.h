@@ -1994,6 +1994,18 @@ private:
     std::vector<float>             _wx_synoptic;
     std::vector<float>             _wx_synoptic_prev;
 
+    // ─── 天气邻域几何缓存（perf P2，2026-06-29）────────────────────────────
+    // run_weather_field_solve_pass 在每轮 start_idx==0 用 wf_wrapped_delta 预算
+    // 每 cell 6 邻居的 self->nb wrapped delta (dx,dy) 与 inv_dist=1/sqrt(|d|²)。
+    // 主循环 aligned_idx / upstream chain / convergence 改读缓存→消除热循环内
+    // 重复 wrapped_delta/sqrt。bit-equal：缓存值由相同 wf_wrapped_delta/Math::sqrt
+    // 同序算出。尺寸(换图)或 wrap 变化时由 build 逻辑重填。
+    std::vector<float>             _wf_nb_dx;            // n*6, self->nb wrapped delta x
+    std::vector<float>             _wf_nb_dy;            // n*6, self->nb wrapped delta y
+    std::vector<float>             _wf_nb_invd;          // n*6, 1/sqrt(|d|²) 或 0 (dl2<=1e-4 哨兵)
+    int                            _wf_nb_geom_n = 0;    // 已构建几何缓存的 n_cells（0=未填）
+    float                          _wf_nb_geom_wrap = -1.0f;  // 构建时的 wrap_width_x（变更→失效）
+
     // ─── 生成期河流拓扑缓存（dots-total-cpp step1，2026-06-25）────────────
     // run_native_world_generate_post_base_pass 末尾把 river 拓扑（by cell.index）暂存为 ext 成员，
     // 供同一 generation ext 实例的 run_bake_river_sdf_pass 直接 trace（零跨语言再传输）。

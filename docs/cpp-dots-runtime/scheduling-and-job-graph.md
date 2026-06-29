@@ -61,7 +61,7 @@ DCSystemScheduler
 
 | Job / bucket | 默认 stride | 默认 phase | 说明 |
 | --- | --- | --- | --- |
-| `ocean_currents` | `AlwaysPolicy` | n/a | 每日进入 job-local `should_run()`，daily SLP/wind 不 bucket-gate；慢层 PSI/ocean 由内部 `ContinuousSlicedPolicy` 控制。 |
+| `ocean_currents` | `AlwaysPolicy` | n/a | 每 tick 进入 job-local `should_run()`；daily SLP/wind 不 bucket-gate，但由内部 `wind_period_ticks`（默认 3）降频；慢层 PSI/ocean 由内部 `ContinuousSlicedPolicy` 控制。 |
 | `native_environment_runtime` | `sim_stagger_bucket_stride=8` | `0` | native environment 桶。 |
 | `refresh_climate_daily` / `native_daily_sim` | `sim_stagger_climate_stride=2` | `1` | climate 桶；native daily ACTIVE 用同一 climate cadence。 |
 | `dynamic_visual_atlas_upload` | `8` | `2` | dynamic visual 桶（**仅退役的逐像素 fallback 路径用此 stride**）。cell-indirection LUT 主路径的刷新 cadence 已与此错峰桶解耦：见下文 §Cell LUT Catch-Up（按 base stride，默认每 tick due）。 |
@@ -454,7 +454,13 @@ Expected daily reports:
 - `stage_name=daily_wind_prepass`, `path=gdext_daily_wind` (both kernels),
   `gdext_daily_wind_slp` (SLP-only day), or `gdext_daily_wind_wind` (wind-only
   day) depending on the 2-tick split (below).
-- `wind_period_ticks=1` for the daily wind prepass.
+- `wind_period_ticks=3` for the daily wind prepass — the prepass fires only on
+  `tick_index % 3 == 0`, not every tick. Injected from
+  `MapGenerator._OCEAN_DAILY_WIND_PERIOD_TICKS` at both the initial `configure`
+  and the runtime profile `reconfigure` paths (keep both in sync). Lowering the
+  cadence removes the recurring 5-7ms `daily_wind` spike frames; wind/SLP change
+  slowly and downstream consumers (weather stride 8, climate stride 2) tolerate
+  the staleness.
 - `ocean_period_ticks`, `slice_count`, and `ticks_per_slice` describe the slow
   ocean/raster chain, not the daily wind chain.
 - `daily_wind_sim_day` / `sim_day` should advance by one for each SUS daily
@@ -502,14 +508,19 @@ default `true`) staggers the two daily authority kernels across adjacent game
 days instead of running both every day:
 
 - `OceanCurrentsJob._daily_wind_stage_for(ctx)` picks the `stage` argument passed
-  to `run_daily_wind_field_update()`: `"slp"` on even `day_index`, `"wind"` on
-  odd `day_index`, and `"both"` for the first prepass after a reset (cold-start
-  safety net). A wind-only day whose `map.slp_arr` size is stale falls back to
+  to `run_daily_wind_field_update()`: it alternates by the actual due-occurrence
+  counter `_daily_wind_due_seq` (`"slp"` when even, `"wind"` when odd), with
+  `"both"` for the first prepass after a reset (cold-start safety net). The
+  counter increments once per real prepass run. **Do not** key the split on
+  `day_index` parity: with `wind_period_ticks>1` the due ticks land on a fixed
+  parity, which would pin the stage to a single kernel and freeze the other
+  field. A wind-only day whose `map.slp_arr` size is stale falls back to
   running SLP too (`stage_note=wind_only_slp_primed`).
-- The single-tick SUS peak drops from ~5ms (SLP+wind) to ~3ms (SLP day) / ~1ms
-  (wind day). SLP and wind each refresh every other day; at 20–50x this is
-  imperceptible. The prepass `path` becomes `gdext_daily_wind_slp` /
-  `gdext_daily_wind_wind` on split days, and `gdext_daily_wind` when both run.
+- The single-tick SUS peak drops from ~5ms (SLP+wind) to ~3ms (SLP run) / ~1ms
+  (wind run). Combined with `wind_period_ticks=3`, the prepass fires every 3rd
+  tick and alternates kernels, so SLP and wind each refresh every 6th tick; at
+  20–50x this is imperceptible. The prepass `path` becomes `gdext_daily_wind_slp`
+  / `gdext_daily_wind_wind` on split runs, and `gdext_daily_wind` when both run.
 - The report adds `stage_requested`, `slp_ran`, and `wind_ran` so logs can tell
   which kernel actually ran. On an SLP-only day `wind_ms=-1`; on a wind-only day
   `slp_ms=-1`. `dominant_stage` is the single stage that ran (or the larger when

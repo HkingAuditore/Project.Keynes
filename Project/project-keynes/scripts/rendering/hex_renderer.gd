@@ -214,6 +214,58 @@ extends Node2D
 @export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0
 @export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65
 
+# ─── 波浪可读性 / 细节法线（2026-06-29，类 UE 材质实例参数实时调） ──────────
+# 这几个字段用「内联 setter」直接把值推到 _shader_mat：运行时在远程检视器里选中
+# 本节点（WorldRoot/HexRenderer），展开 Inspector 拖动滑条即实时刷新画面，
+# 无需重编 shader / 重启游戏。_shader_mat 尚未创建时（.tscn 反序列化阶段）安全跳过，
+# 由 _apply_*（材质创建后）补推一次初值。
+@export_group("Water Waves (live-tunable)")
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
+	set(v):
+		water_wave_shade_strength = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_wave_shade_strength", v)
+@export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
+	set(v):
+		water_wave_patch_strength = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_wave_patch_strength", v)
+@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
+	set(v):
+		water_wave_patch_scale = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_wave_patch_scale", v)
+@export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
+	set(v):
+		water_base_normal_strength = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_base_normal_strength", v)
+@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_base_normal_scale: float = 0.93:
+	set(v):
+		water_base_normal_scale = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_base_normal_scale", v)
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
+	set(v):
+		water_detail_normal_strength = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_detail_normal_strength", v)
+@export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
+	set(v):
+		water_detail_normal_scale = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_detail_normal_scale", v)
+@export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
+	set(v):
+		water_detail_normal_warp = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_detail_normal_warp", v)
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_sss_strength: float = 0.18:
+	set(v):
+		water_sss_strength = v
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("water_sss_strength", v)
+
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
 @export_group("Legacy (Unused)")
 @export var hex_overscan: float = 1.45
@@ -1673,6 +1725,16 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("water_cartoon_color_strength", water_cartoon_color_strength)
 	sm.set_shader_parameter("water_transition_softness", water_transition_softness)
 	sm.set_shader_parameter("estuary_plume_strength", estuary_plume_strength)
+	# 波浪可读性 / 细节法线初值（材质创建后补推；之后由内联 setter 实时刷新）
+	sm.set_shader_parameter("water_wave_shade_strength", water_wave_shade_strength)
+	sm.set_shader_parameter("water_wave_patch_strength", water_wave_patch_strength)
+	sm.set_shader_parameter("water_wave_patch_scale", water_wave_patch_scale)
+	sm.set_shader_parameter("water_base_normal_strength", water_base_normal_strength)
+	sm.set_shader_parameter("water_base_normal_scale", water_base_normal_scale)
+	sm.set_shader_parameter("water_detail_normal_strength", water_detail_normal_strength)
+	sm.set_shader_parameter("water_detail_normal_scale", water_detail_normal_scale)
+	sm.set_shader_parameter("water_detail_normal_warp", water_detail_normal_warp)
+	sm.set_shader_parameter("water_sss_strength", water_sss_strength)
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:

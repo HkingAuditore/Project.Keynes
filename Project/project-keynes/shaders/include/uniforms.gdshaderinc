@@ -177,6 +177,40 @@ uniform bool  caustics_enabled               = true;
 uniform bool  shallow_transparency_enabled   = true;
 uniform float water_gloss                    : hint_range(4.0, 128.0) = 34.0;
 uniform float water_reflection_strength      : hint_range(0.0, 1.0) = 0.32;
+// [sky-sh-water 2026-06-29] 波浪天光明暗（hillshade）：沿太阳方位对波浪法线坡度做漫反射明暗，
+// 让没有直射高光的水域也能看出波纹起伏（方向化天光/球谐在波浪上的体现）。0=关闭。
+// 注：波浪法线坡度本身很缓（|N.xy|≈0.05~0.15），strength<0.5 时明暗≈2% 几乎不可见，
+// 故默认抬到 1.8（slope*strength≈12~25%），背光/无直射水域也能读出起伏。
+uniform float water_wave_shade_strength       : hint_range(0.0, 8.0) = 1.5;
+// [wave-patchiness 2026-06-29] 波浪强度空间不均：复用法线强度包络（低频 fbm，不新增采样）作为
+// 波浪整体斜率乘子，让海面有"浪带"——有的海域浪大、有的平。0=均匀；越大强弱对比越明显。
+// 上限放宽到 2（>1 时平静海域系数会被 clamp 防负），可拉更夸张的浪带对比。
+uniform float water_wave_patch_strength       : hint_range(0.0, 2.0) = 1.58;
+// [wave-patchiness tilling 2026-06-29] 浪带"瓦片密度"：乘到强度包络的低频 fbm 频率上。值越大=浪带
+// 越小越碎（强弱切换更频繁）；越小=浪带越大越宽（整片海慢慢起伏）。1.0=原尺度。
+uniform float water_wave_patch_scale          : hint_range(0.1, 4.0) = 2.69;
+// [base-normal 2026-06-29] 宏观涌浪（base normal）整体强度：单独控制差分法线主波的斜率增益，
+// 与 water_detail_normal_strength（细节）解耦；两者都仍受 patch 浪带调制。0=水面拍平。
+uniform float water_base_normal_strength      : hint_range(0.0, 6.0) = 1.17;
+// [base-normal tilling 2026-06-29] 宏观涌浪"瓦片密度"：乘到主波 3 个频率(FREQ_A/B/C)上，与细节法线
+// 的 tilling(water_detail_normal_scale)独立。值越大=涌浪越密越短；越小=涌浪越长越舒缓。1.0=原尺度。
+uniform float water_base_normal_scale         : hint_range(0.1, 4.0) = 0.93;
+// [water-detail-normal 2026-06-29] 细节法线（高频涟漪）：在宏观波浪法线上叠一层 analytic 高频
+// 斜率（零额外差分 tap），把"大涌浪"细化出"小波纹"。仅高画质档(visual_quality>=2)启用。0=关闭。
+// 上限放宽到 8，嫌弱可直接往上拉。
+uniform float water_detail_normal_strength    : hint_range(0.0, 8.0) = 0.75;
+// [water-detail-normal 2026-06-29] 细节法线"瓦片密度"：直接乘到细节频率上。值越小=瓦片越大、
+// 涟漪越粗（顶视拉远时才看得出来）；值越大=越细（拉近才合适）。用户反馈拉远时旧默认太细看不见。
+uniform float water_detail_normal_scale       : hint_range(0.02, 4.0) = 0.48;
+// [water-detail-normal break-tiling 2026-06-29] 细节法线"破 tiling"强度：复用 p+=fbm(p)*warp 域扭曲手法，
+// 对细节坐标叠一层中频 warp（频率随细节频率自适应、位移∝细节波长），把两条固定方向正弦搅成不规则涟漪。
+// 0=不破（规则平行条纹）；值越大条纹越被打散。用户反馈细节法线 tiling 感重。
+uniform float water_detail_normal_warp        : hint_range(0.0, 4.0) = 0.7;
+// [water-sss 2026-06-29] 水体次表面散射（廉价近似）：低太阳/逆光时波背透出青绿透亮，
+// 近似阳光穿过薄波层的前向散射。mid+ 档(visual_quality>=1)启用。strength=0 关闭。
+uniform float water_sss_strength             : hint_range(0.0, 3.0) = 0.18;
+uniform float water_sss_power                : hint_range(1.0, 8.0) = 2.0;
+uniform vec3  water_sss_color : source_color  = vec3(0.10, 0.52, 0.46);
 uniform float river_flow_speed               : hint_range(0.0, 4.0) = 0.75;
 uniform float river_flow_freq                : hint_range(0.02, 1.0) = 0.16;
 uniform float caustics_strength              : hint_range(0.0, 1.0) = 0.32;

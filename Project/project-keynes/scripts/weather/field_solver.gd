@@ -730,9 +730,9 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var pre_wt: int = _weather_system._classify_field_weather_at(temp, vapor, provisional_cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
 		var quiet_non_precip: bool = not _weather_system._is_precip_weather_type(pre_wt) and quiet_core > 0.0
 		if (precip < 0.003 or quiet_non_precip) and quiet_core > 0.0:
-			var clear_cap: float = 0.040 + dynamic_forcing * 0.10
+			var clear_cap: float = 0.065 + dynamic_forcing * 0.12
 			if on_water and ocean_drive < 0.20:
-				clear_cap = minf(clear_cap, 0.045 + ocean_drive * 0.20)
+				clear_cap = minf(clear_cap, 0.070 + ocean_drive * 0.18)
 			if cloud_water > clear_cap:
 				var excess_cloud_water: float = (cloud_water - clear_cap) * quiet_core
 				cloud_water -= excess_cloud_water
@@ -749,6 +749,10 @@ func run_slice(cell_budget: int) -> Dictionary:
 			cloud_floor = maxf(cloud_floor, 0.06 + convective * 0.18)
 		if ocean_convective > 0.0:
 			cloud_floor = maxf(cloud_floor, 0.10 + ocean_convective * 0.16)
+		if quiet_non_precip:
+			var fair_humid: float = smoothstep(0.34, 0.56, relative_humidity)
+			var fair_cloud_floor: float = fair_humid * quiet_core * (0.050 + fair_humid * 0.070)
+			cloud_floor = maxf(cloud_floor, fair_cloud_floor)
 		var cloud: float = clampf(maxf(cloud_water * 1.10 + condensation * 0.25, cloud_floor), 0.0, 1.0)
 		if prev_cloud_arr.size() == n_cells:
 			cloud = lerpf(prev_cloud_arr[i], cloud, _weather_system._field_cloud_inertia)  # Stage15 云量时间 EMA，镜像 C++ field_cloud_inertia

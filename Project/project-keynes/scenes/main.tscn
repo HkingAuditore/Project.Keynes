@@ -13,6 +13,7 @@
 
 [node name="Main" type="Node2D" unique_id=1962249106]
 script = ExtResource("1_main")
+visual_quality = 2
 
 [node name="WorldRoot" type="Node2D" parent="." unique_id=1656162754]
 

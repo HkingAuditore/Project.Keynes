@@ -134,6 +134,10 @@ var _last_phys_diag: Dictionary = {}
 var _last_daily_wind_tick: int = _NO_DAILY_WIND_TICK
 var _last_daily_wind_report: Dictionary = {}
 var _daily_wind_rt_diag_count: int = 0
+# 每次"真正跑了一次每日风预解"就 +1。daily_wind_split 路径用它的奇偶决定本次跑
+# SLP 还是 wind，确保两段都能被刷新——不能再用 day_index 奇偶，因为 wind_period_ticks>1
+# 时 due 的 tick 会固定落在同一奇偶日，导致某一段永远不跑、对应场冻结。
+var _daily_wind_due_seq: int = 0
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
@@ -295,6 +299,7 @@ func reset_progress() -> void:
 	_last_daily_wind_tick = _NO_DAILY_WIND_TICK
 	_last_daily_wind_report = {}
 	_daily_wind_rt_diag_count = 0
+	_daily_wind_due_seq = 0
 	_sync_legacy_round_state()
 	if _native_ocean_facade_available("reset_native_ocean_physical_state"):
 		_native_ocean_state = data_core_world_ext.reset_native_ocean_physical_state("ocean_job_reset")
@@ -600,7 +605,9 @@ func _daily_wind_stage_for(ctx: SusTickContext) -> String:
 		return "both"
 	if _last_daily_wind_tick == _NO_DAILY_WIND_TICK:
 		return "both"
-	return "slp" if (ctx.day_index % 2) == 0 else "wind"
+	# 按"已实际执行的 due 次数"交替，而非 day_index 奇偶：wind_period_ticks>1 时
+	# due 的 tick 会被钉在固定奇偶日，用 day_index 会让某一段永不刷新→风/SLP 冻结。
+	return "slp" if (_daily_wind_due_seq % 2) == 0 else "wind"
 
 
 func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
@@ -636,7 +643,9 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 	report["season_phase"] = phase_now
 	report["due"] = true
 	report["stage_requested"] = stage
+	report["due_seq"] = _daily_wind_due_seq
 	_last_daily_wind_tick = ctx.tick_index
+	_daily_wind_due_seq += 1
 	_last_daily_wind_report = report.duplicate(true)
 	if PKLog.enabled and _daily_wind_rt_diag_count < _ocean_rt_log_budget():
 		_daily_wind_rt_diag_count += 1

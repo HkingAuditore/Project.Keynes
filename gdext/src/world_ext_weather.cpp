@@ -517,7 +517,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // 冷季低温下 smoothstep≈0 致无水汽源→冷季锋面/层状无雨；地板给冷季基础水汽(补冬雨/降雪)。镜像 field_solver.gd。
     const float field_cool_season_vapor_floor = knobs.has("field_cool_season_vapor_floor")
                                         ? float(knobs["field_cool_season_vapor_floor"]) : 0.0f;
-    const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.38f;
+    const float field_cloud_reevap     = knobs.has("field_cloud_reevap")     ? float(knobs["field_cloud_reevap"])     : 0.28f;
     // 诊断式旧旋钮在平流式路径不再使用(caller 仍注入；显式吞掉避免 unused 告警)。
     (void)field_condensation_gain; (void)field_orographic_lift_gain; (void)field_convergence_gain;
     (void)field_vapor_transport_gain; (void)field_vapor_precip_sink; (void)field_precip_rh_threshold;
@@ -762,6 +762,73 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         }
     }
 
+    // ── perf P2: 邻域几何缓存构建（每轮 start_idx==0）──────────────────────
+    // self->nb wrapped delta(dx,dy) + inv_dist=1/sqrt(dl2)，供主循环 aligned/
+    // upstream/convergence 读取（bit-equal：同 wf_wrapped_delta/Math::sqrt 同序）。
+    if (start_idx == 0) {
+        const size_t need = (size_t)n_cells * 6;
+        if (_wf_nb_dx.size() != need) {
+            _wf_nb_dx.assign(need, 0.0f);
+            _wf_nb_dy.assign(need, 0.0f);
+            _wf_nb_invd.assign(need, 0.0f);
+        }
+        float * const __restrict GBX = _wf_nb_dx.data();
+        float * const __restrict GBY = _wf_nb_dy.data();
+        float * const __restrict GBI = _wf_nb_invd.data();
+        for (int p = 0; p < n_cells; ++p) {
+            const int b = p * 6;
+            const float sx = POS[p].x;
+            const float sy = POS[p].y;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t nb_idx = NB[b + d];
+                if (nb_idx < 0) {
+                    GBX[b + d] = 0.0f; GBY[b + d] = 0.0f; GBI[b + d] = 0.0f;
+                    continue;
+                }
+                float dx = 0.0f, dy = 0.0f;
+                wf_wrapped_delta(sx, sy, POS[nb_idx].x, POS[nb_idx].y,
+                                 weather_wrap_width_x, dx, dy);
+                GBX[b + d] = dx;
+                GBY[b + d] = dy;
+                const float dl2 = dx * dx + dy * dy;
+                GBI[b + d] = (dl2 > 0.0001f) ? (1.0f / Math::sqrt(dl2)) : 0.0f;
+            }
+        }
+        _wf_nb_geom_n = n_cells;
+        _wf_nb_geom_wrap = weather_wrap_width_x;
+    }
+    const bool use_geom_cache =
+        (_wf_nb_geom_n == n_cells && _wf_nb_geom_wrap == weather_wrap_width_x);
+    const float * const __restrict GEOM_DX   = use_geom_cache ? _wf_nb_dx.data()   : nullptr;
+    const float * const __restrict GEOM_DY   = use_geom_cache ? _wf_nb_dy.data()   : nullptr;
+    const float * const __restrict GEOM_INVD = use_geom_cache ? _wf_nb_invd.data() : nullptr;
+
+    // 几何缓存派发 wrapper（cache 命中走缓存变体，否则回退原 helper；两路 bit-equal）。
+    auto wx_aligned = [&](int idx, float dx, float dy) -> int {
+        return use_geom_cache
+            ? wf_neighbor_aligned_idx_cached(idx, dx, dy, NB, GEOM_DX, GEOM_DY,
+                                             n_cells, weather_cell_pos_scale)
+            : wf_neighbor_aligned_idx(idx, dx, dy, POS, NB, n_cells,
+                                      weather_cell_pos_scale, weather_wrap_width_x);
+    };
+    auto wx_upstream_avg = [&](int idx, int first_up, const float *FIELD,
+                               float wdx, float wdy) -> float {
+        return use_geom_cache
+            ? wf_upstream_vapor_idx_from_first_cached(
+                  idx, first_up, NB, GEOM_DX, GEOM_DY, FIELD, wdx, wdy, n_cells,
+                  weather_cell_pos_scale, field_advect_steps)
+            : wf_upstream_vapor_idx_from_first(
+                  idx, first_up, POS, NB, FIELD, wdx, wdy, n_cells,
+                  weather_cell_pos_scale, weather_wrap_width_x, field_advect_steps);
+    };
+    auto wx_convergence = [&](int idx) -> float {
+        return use_geom_cache
+            ? wf_wind_convergence_idx_cached(idx, NB, GEOM_DX, GEOM_DY, GEOM_INVD,
+                                             WX, WY, WSPD)
+            : wf_wind_convergence_idx(idx, POS, NB, WX, WY, WSPD,
+                                      weather_wrap_width_x);
+    };
+
     auto surface_vapor_source = [&](int src_idx, float src_temp, float src_base_m,
                                      float src_wind_mag, float src_ocean_an,
                                      bool src_on_water, bool src_is_lake,
@@ -814,7 +881,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // loop bit-equal with that fallback; run set_field_verify_mode(true) to A/B
     // check (tol 1e-4). NOTE: hot loop moved out of weather_system.gd (PR-1..7);
     // do not chase the old weather_system.gd:678-757 citation.
-    for (int i = start_idx; i < end_idx; ++i) {
+    // ── perf P1: 每 cell 输出互不依赖（仅写 OUT_*[i]/INHIB[i]/transition[i]，无标量累加器；
+    // staged 路径 OUT_* 与 prev 不同 buffer），故按 cell 区间并行、bit-equal、无需 reduce。
+    // direct(use_next_outputs==false) 路径 OUT_CNV 与 PREV_CNV 同 buffer 且读邻居→保持串行。
+    auto run_weather_cell_range = [&](int rb, int re) {
+    for (int i = rb; i < re; ++i) {
         float temp = TR[i] + climate_anomaly + AA[i];
         if (temp < 0.0f) temp = 0.0f;
         else if (temp > 1.0f) temp = 1.0f;
@@ -826,8 +897,39 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (vapor_capacity < 0.14f) vapor_capacity = 0.14f;
         else if (vapor_capacity > 1.0f) vapor_capacity = 1.0f;
 
-        const float ocean_an = wf_avg_ocean_anomaly_at_idx(i, TERR, NB, TA);
         const bool on_water = wf_is_water_terrain(TERR[i]);
+        // ── perf P3: 融合 3 个 6-邻域 gather 为一次遍历（逐 d 顺序与原版一致→bit-equal）──
+        //   ① ocean_an     = wf_avg_ocean_anomaly_at_idx(i, TERR, NB, TA)
+        //   ② neighbor_vapor= wf_neighbor_average_vapor_idx(i, NB, PV)
+        //   ③ temp_min/max  = 邻域温度极值（原下方 temp gradient 循环）
+        float ocean_an;
+        float neighbor_vapor;
+        float temp_min = temp;
+        float temp_max = temp;
+        {
+            const int fb = i * 6;
+            float vap_sum = PV[i];
+            int   vap_n   = 1;
+            float oa_sum  = 0.0f;
+            int   oa_n    = 0;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t nb_idx = NB[fb + d];
+                if (nb_idx < 0) continue;
+                vap_sum += PV[nb_idx];                // ② vapor 邻域均值（含 self）
+                vap_n   += 1;
+                float nb_temp = TR[nb_idx] + climate_anomaly + AA[nb_idx];  // ③ 温度梯度极值
+                if (nb_temp < 0.0f) nb_temp = 0.0f;
+                else if (nb_temp > 1.0f) nb_temp = 1.0f;
+                if (nb_temp < temp_min) temp_min = nb_temp;
+                if (nb_temp > temp_max) temp_max = nb_temp;
+                if (!on_water && wf_is_water_terrain(TERR[nb_idx])) {       // ① 陆格→水邻居 TA 均值
+                    oa_sum += TA[nb_idx];
+                    oa_n   += 1;
+                }
+            }
+            neighbor_vapor = vap_sum / float(vap_n);
+            ocean_an = on_water ? TA[i] : ((oa_n == 0) ? 0.0f : (oa_sum / float(oa_n)));
+        }
         const float local_sea_ice = (on_water && SICE != nullptr) ? dc_clampf(SICE[i], 0.0f, 1.0f) : 0.0f;
 
         float wind_x = WX[i];
@@ -848,15 +950,13 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         const float wind_len = wf_wind_speed_norm(wind_x, wind_y, WSPD[i]);
 
         const int upstream_idx = (field_advect_steps > 0)
-            ? wf_neighbor_aligned_idx(i, -wind_dx, -wind_dy, POS, NB, n_cells,
-                                      weather_cell_pos_scale, weather_wrap_width_x)
+            ? wx_aligned(i, -wind_dx, -wind_dy)
             : -1;
 
-        const float advected_vapor = wf_upstream_vapor_idx_from_first(
-            i, upstream_idx, POS, NB, PV, wind_dx, wind_dy, n_cells,
-            weather_cell_pos_scale, weather_wrap_width_x, field_advect_steps);
+        const float advected_vapor = wx_upstream_avg(
+            i, upstream_idx, PV, wind_dx, wind_dy);
 
-        const float neighbor_vapor = wf_neighbor_average_vapor_idx(i, NB, PV);
+        // neighbor_vapor 已在上方 P3 融合 gather 中算出。
 
         float wind_mag = wind_len / 1.2f;
         if (wind_mag < 0.0f) wind_mag = 0.0f;
@@ -866,8 +966,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             i, upstream_idx, ELEV);
         float convergence = PREV_CNV[i];
         if (refresh_convergence) {
-            convergence = wf_wind_convergence_idx(i, POS, NB, WX, WY, WSPD,
-                                                  weather_wrap_width_x);
+            convergence = wx_convergence(i);
         }
 
         float advect_w = 0.65f + wind_mag * 0.30f;
@@ -965,18 +1064,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
 
         // (背风焚风干燥已移入下方凝结/降水的 lift<0 抑制，避免对 vapor 重复扣减)
 
-        float temp_min = temp;
-        float temp_max = temp;
-        const int nb_base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nb_idx = NB[nb_base + d];
-            if (nb_idx < 0) continue;
-            float nb_temp = TR[nb_idx] + climate_anomaly + AA[nb_idx];
-            if (nb_temp < 0.0f) nb_temp = 0.0f;
-            else if (nb_temp > 1.0f) nb_temp = 1.0f;
-            if (nb_temp < temp_min) temp_min = nb_temp;
-            if (nb_temp > temp_max) temp_max = nb_temp;
-        }
+        // temp_min/temp_max 已在上方 P3 融合 gather 中算出。
         const float temp_gradient = temp_max - temp_min;
         // 斜压门(温度梯度大=锋面/中纬冷季)；Stage9 #5 用于把 ψ 致雨限定在斜压带(锋面雨)。
         const float baroclinic_gate = wf_smoothstep(0.04f, 0.16f, temp_gradient);
@@ -1038,9 +1126,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                                * wf_smoothstep(0.54f, 0.75f, temp);
             coastal_monsoon_flux = onshore_moist_flux;
         } else if (on_water && upstream_idx >= 0) {
-            const int downwind_idx = wf_neighbor_aligned_idx(
-                i, wind_dx, wind_dy, POS, NB, n_cells,
-                weather_cell_pos_scale, weather_wrap_width_x);
+            const int downwind_idx = wx_aligned(i, wind_dx, wind_dy);
             bool near_land = false;
             if (downwind_idx >= 0 && downwind_idx < n_cells) {
                 near_land = !wf_is_water_terrain(TERR[downwind_idx]);
@@ -1117,9 +1203,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // cloud_water 随风平流(搬运湿团) + 凝结加入 + 邻域扩散。复用 vapor 平流 helper(传 PCW)。
         float cloud_water = (PCW != nullptr) ? PCW[i] : 0.0f;
         if (PCW != nullptr && upstream_idx >= 0 && upstream_idx < n_cells) {
-            const float cw_upwind = wf_upstream_vapor_idx_from_first(
-                i, upstream_idx, POS, NB, PCW, wind_dx, wind_dy, n_cells,
-                weather_cell_pos_scale, weather_wrap_width_x, field_advect_steps);
+            const float cw_upwind = wx_upstream_avg(
+                i, upstream_idx, PCW, wind_dx, wind_dy);
             const float cw_neighbor = wf_neighbor_average_vapor_idx(i, NB, PCW);
             float adv_w_c = field_advect_cloud * (0.55f + 0.45f * wind_mag);
             if (adv_w_c > 0.98f) adv_w_c = 0.98f;
@@ -1279,9 +1364,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
         const bool quiet_non_precip = !wf_is_precip_weather_type(pre_wt) && quiet_core > 0.0f;
         if ((precip < 0.003f || quiet_non_precip) && quiet_core > 0.0f) {
-            float clear_cap = 0.040f + dynamic_forcing * 0.10f;
+            float clear_cap = 0.065f + dynamic_forcing * 0.12f;
             if (on_water && ocean_drive < 0.20f) {
-                const float ocean_cap = 0.045f + ocean_drive * 0.20f;
+                const float ocean_cap = 0.070f + ocean_drive * 0.18f;
                 if (ocean_cap < clear_cap) clear_cap = ocean_cap;
             }
             if (cloud_water > clear_cap) {
@@ -1310,6 +1395,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         if (ocean_convective > 0.0f) {
             const float ocean_cloud_floor = 0.10f + ocean_convective * 0.16f;
             if (ocean_cloud_floor > cloud_floor) cloud_floor = ocean_cloud_floor;
+        }
+        if (quiet_non_precip) {
+            const float fair_humid = wf_smoothstep(0.34f, 0.56f, relative_humidity);
+            const float fair_cloud_floor = fair_humid * quiet_core * (0.050f + fair_humid * 0.070f);
+            if (fair_cloud_floor > cloud_floor) cloud_floor = fair_cloud_floor;
         }
         float cloud = cloud_water * 1.10f + condensation * 0.25f;
         if (cloud < cloud_floor) cloud = cloud_floor;
@@ -1407,6 +1497,15 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             OUT_TYP[i] = display_wt;
             OUT_FIN[i] = 1; // weather_field_initialized = true
         }
+    }
+    }; // run_weather_cell_range
+
+    if (use_next_outputs && (end_idx - start_idx) >= 256) {
+        // staged 路径并行（native daily）。区间 [start_idx, end_idx) → 0-based n + 偏移。
+        pk::parallel_for_range("pk_weather_field", end_idx - start_idx,
+            [&](int b, int e) { run_weather_cell_range(start_idx + b, start_idx + e); });
+    } else {
+        run_weather_cell_range(start_idx, end_idx);
     }
 
     // §11.2 flush: push CoW-detached weather output slots back to MapData

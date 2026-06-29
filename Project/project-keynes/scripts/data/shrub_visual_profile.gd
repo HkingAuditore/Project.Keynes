@@ -127,3 +127,47 @@ enum SpawnDomain {
 @export_range(0.0, 1.0, 0.01) var vitality_low_color_strength: float = 0.72
 @export_range(0.0, 1.0, 0.01) var vitality_high_color_strength: float = 0.42
 @export_range(0.0, 1.0, 0.01) var vitality_dieback_noise_strength: float = 0.45
+
+# ─────────────────────────────────────────────────────────────────────────
+# Shading（法线辅助着色）：复用地形烘焙宏观法线 terrain_normal_tex + 高度图 height_tex，
+# 配合 billboard UV 推导的伪法线，做 NdotL 方向光 / 边缘光 / 接触 AO / 谷地 AO。
+# 全部在 shrub_layer 内嵌 shader 内材质驱动求解；与地形/水面同源调用 earth_daylight。
+# ─────────────────────────────────────────────────────────────────────────
+@export_group("Shading (Normal-assisted)")
+@export var shading_enabled: bool = true
+# 地形宏观法线对整株倾斜的影响（让站在坡上的植被随坡面受光），未烘焙法线时自动退化。
+@export_range(0.0, 1.5, 0.01) var terrain_normal_influence: float = 0.65
+# billboard 伪法线强度：越大左右/上下的体积明暗越强（迎光面亮、背光面暗）。
+@export_range(0.0, 2.0, 0.01) var pseudo_normal_strength: float = 0.85
+# 方向光（NdotL）直射贡献强度。
+@export_range(0.0, 1.5, 0.01) var sun_shade_strength: float = 0.55
+# 环境光下限（对齐地形 AMBIENT_FLOOR_LAND=0.18），避免背光面死黑。
+@export_range(0.0, 0.6, 0.01) var ambient_floor: float = 0.18
+# 边缘光（fresnel 风格）：背光轮廓轻微提亮，增加体积感。
+@export_range(0.0, 0.6, 0.01) var rim_light_strength: float = 0.12
+# 接触阴影：近根部（UV.y 低）压暗强度与作用高度。
+@export_range(0.0, 1.0, 0.01) var contact_ao_strength: float = 0.42
+@export_range(0.0, 0.8, 0.01) var contact_ao_height: float = 0.32
+# 谷地 AO：用 height_tex 邻域差判断凹陷（谷/坑）→ 压暗。仅高画质档采样邻域。
+@export_range(0.0, 1.0, 0.01) var terrain_valley_ao_strength: float = 0.40
+@export_range(0.5, 16.0, 0.1) var terrain_valley_ao_gain: float = 6.0
+
+# ─────────────────────────────────────────────────────────────────────────
+# Cast Shadow（投影）：独立低 z 的 shadow pass，用「软边椭圆 blob」网格（非复用植株网格）。
+# 顶点把单位圆映射为沿本实例经纬度太阳背光方向拉伸的椭圆（足印半径 + 随太阳低度数拉长）；
+# 片元用径向距离做柔边。夜侧/太阳高悬时自动收敛。每次重建一次 buffer 拷贝（非逐帧）；
+# 按画质分档（桌面 q>=1 开启；移动端默认关）。
+# ─────────────────────────────────────────────────────────────────────────
+@export_group("Cast Shadow")
+@export var cast_shadow_enabled: bool = true
+@export var cast_shadow_on_mobile: bool = false
+@export var shadow_color: Color = Color(0.05, 0.06, 0.08, 1.0)
+@export_range(0.0, 1.0, 0.01) var shadow_strength: float = 0.28
+@export_range(0.0, 4.0, 0.05) var shadow_length_scale: float = 1.0
+@export_range(0.1, 5.0, 0.05) var shadow_max_length: float = 1.4
+# 太阳高度角低于此值（近晨昏/夜）时阴影淡出，避免无限拉长。
+@export_range(0.02, 1.0, 0.01) var shadow_min_sun_elevation: float = 0.16
+# 足部半径（局部单位，×实例 size = 世界足印）：阴影根部的椭圆短轴/接触圆盘大小。
+@export_range(0.1, 1.5, 0.01) var shadow_foot_radius: float = 0.55
+# 软边起点（0..1 径向）：r 小于此值为实心核心，向边缘平滑淡出 → 越小越柔。
+@export_range(0.0, 0.95, 0.01) var shadow_edge_softness: float = 0.25

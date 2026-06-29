@@ -117,4 +117,42 @@ EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_nig
 	return ed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// [sky-sh-ambient] L1 球谐天光（次级方向化补光）— 地形/水面/植被统一真源。
+//   动机（Why）：原 amb_col 是「平铺」环境光（不随法线变化）→ 太阳低垂/夜侧时方向光衰减，
+//   场景失去体积感。天空本身是一块大面积低强度光源（天顶冷亮、近地暖暗、太阳方位更亮）。
+//   用 L1（线性）球谐近似该半球辐照：amb(N) = DC + 梯度·N。给坡面/植株/水波在弱直射时
+//   仍有方向性明暗 → 体积感。它【替换】平铺 amb_col（DC≈原值，保总亮度），不是额外叠加。
+//   成本（Cost）：纯 ALU（1 normalize + 几次 mix/dot），无纹理 fetch。
+//
+//   坐标约定：shader 空间 N=(东, 北[屏幕+y], 上[朝相机]) 与 sun_dir 同空间；+z=天顶。
+//   三段构成（即 L1 SH 的 DC + z 带 + 水平带）：
+//     1) 垂直色温梯度 tint：天顶偏冷、近地偏暖（乘子均值≈1，不改整体亮度）。
+//     2) 半球遮蔽 hemi：朝下面看到的天空更少 → 略暗（EARTH_SKY_GROUND_DIM）。
+//     3) 太阳方位散射：朝太阳水平方向的面获微弱暖补光（随 local_day 白昼淡入）。
+// ─────────────────────────────────────────────────────────────────────────
+const vec3  EARTH_SKY_ZENITH_TINT = vec3(0.88, 0.96, 1.12); // 天顶冷蓝乘子（均值≈1）
+const vec3  EARTH_SKY_NADIR_TINT  = vec3(1.12, 1.00, 0.86); // 近地暖反照乘子（均值≈1）
+const float EARTH_SKY_VERTICAL    = 0.16;  // 垂直色温梯度强度（0=回退平铺）
+const float EARTH_SKY_GROUND_DIM  = 0.86;  // 朝下面相对天顶的亮度下限（半球遮蔽）
+const float EARTH_SKY_SUNWRAP     = 0.10;  // 太阳方位散射补光强度（白昼）
+
+// 显式参数版（任意域可调用）：amb/sun 为色板域颜色，sun_dir 为单位向量，N 为表面法线。
+vec3 earth_sky_sh(vec3 amb_col, vec3 sun_col, vec3 sun_dir, float local_day, vec3 N) {
+	vec3 n = normalize(N);
+	float up = n.z * 0.5 + 0.5;                              // 0=朝下 1=天顶
+	vec3 tint = mix(EARTH_SKY_NADIR_TINT, EARTH_SKY_ZENITH_TINT, up);
+	tint = mix(vec3(1.0), tint, EARTH_SKY_VERTICAL);        // 强度=0 → 乘子退回 1（平铺）
+	float hemi = mix(EARTH_SKY_GROUND_DIM, 1.0, up);
+	vec3 amb = amb_col * tint * hemi;
+	float az = clamp(dot(n.xy, sun_dir.xy), -1.0, 1.0) * 0.5 + 0.5; // 朝太阳方位 →1
+	amb += sun_col * (az * EARTH_SKY_SUNWRAP * local_day);
+	return max(amb, vec3(0.0));
+}
+
+// 便捷版（消费方已有 EarthDaylight）：与 earth_sky_sh 同算法。
+vec3 eval_earth_sky_sh(EarthDaylight ed, vec3 N) {
+	return earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, N);
+}
+
 #endif // EARTH_DAYLIGHT_INC

@@ -6474,7 +6474,13 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						if _phys_last_wind_commit_ok:
 							var psi_cpp_expected: bool = solve_ocean and heat_transport \
 									and _world_ext != null and _world_ext.has_method("run_psi_solver_pass")
-							if not psi_cpp_expected:
+							# HexCell 写回仅在 facade 关闭（无 SoA）时需要。facade 恒启用时
+							# run_wind_field_pass 已直写 cell.wind_x/wind_y/wind_speed SoA slot
+							# （world_ext_physical.cpp:636-638/777-779），getter 也读 SoA，逐 cell
+							# setter 写回纯冗余——每 cell 3 次跨语言 write_f32 × n_cells，是 wind-only
+							# 物理轮（psi_cpp_expected=false）上 7-40ms 尖刺源。与 _PHYS_STAGE_SLP
+							# fallback 的 `if not map.has_soa()` 守门同源。
+							if not psi_cpp_expected and not map.has_soa():
 								for _i_w in range(n_wind):
 									var _c_w: HexCell = cells_for_wind[_i_w]
 									if _c_w != null:
