@@ -860,6 +860,7 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
   （简化涡度/斜压扰动），让风场自身涌现行波——但属大改，建议先验证 Stage 6。
 - **降水季节性多样化（climate-zone-fix P3，2026-06-28，导出旋钮 + 保守 rebalance）**：目标降低暖季对流主导（~76% 降水来自 `temp>0.48` 大陆对流）、增强冷季锋面/层状，使"雨热不同期/全年均匀"气候态（配合 P2 的 Cfb）可形成。把四个原 C++-only/`constexpr` 降水参数导出为 `ClimateProfile` 旋钮并双侧接线（C++ `world_ext_weather.cpp` 读 `knobs` ↔ GDScript `field_solver.gd` 读 `weather_system` 成员，`weather_system._sync_profile_weather_knobs` 从 profile 同步、`_build_field_knobs` 经 dynamic+fallback 两路注入）：① `weather_field_thermal_conv_precip`(暖季对流降水权重，0.30→默认 0.24)；② `weather_field_stratiform_gain`(冷季层状降水增益，1.0→1.15)；③ `weather_field_omega_ascent_gain`(`OMEGA_ASCENT_GAIN` 由 `constexpr 0.40`→knob，默认 0.34)；④ `weather_cool_season_vapor_floor`(冷季蒸发/水汽地板，`surface_vapor_source` 的 `temp_evap=max(floor, smoothstep(...))`，0→0.10，给冷季 stratiform 基础水汽)。同步修 `field_solver.gd` 的 `PRECIP_BASE_FRAC` 0.12↔C++ 0.08 漂移。A/B 验证（`tests/tmp_wx_eval.gd` 加 `p3off=1` 还原历史默认对照）：暖地 r(precip,temp) 0.286→0.258（对流偏置降）、never-change 59.1→57.8%、frozen 36.3→35.1% 均改善。**夏雨中位回落到≈0.5 + 出现 winter-wet 尾部需用户多轮 CSV 标定**（water budget 易级联）跑 `tmp/wx_koppen.py`+`tmp/wx_phase.py` 复核。
 - **非降水云量保留（2026-06-29）**：`tile_data_record_20260629_201247.csv` 显示 `weather_cloud_arr` 中位≈0.026、`cloud>0.14` 仅≈8.5%，且 90%+ 样本为晴且无降水；根因是 `weather_field_cloud_reevap=0.38` 与低 `clear_cap≈0.04` 把静稳非降水格云水清得过快。C++ 权威路径与 `field_solver.gd` fallback 同步改为：`weather_field_cloud_reevap` 默认 0.28，非降水清云 cap 提到 `0.065 + dynamic_forcing*0.12`（低动力海面 cap `0.070 + ocean_drive*0.18`），并在 `quiet_non_precip` 下加入 RH 驱动的 fair-weather cloud floor（`smoothstep(0.34,0.56,RH)`，最高约 0.12）。该 floor 只抬 `cloud` 可视/分类输入，不直接抬 `precip`，目标是恢复层云/薄积云而不回到弥漫弱雨。
+- **天气可视权重校准（2026-06-29）**：`tile_data_record_20260629_213350.csv` 复核显示原始 `cloud>0.14` 约 8.6%，但 shader 映射后 `w.cloud>0.14` 仅约 4.4%；同时 cell 雨幕曾位于云层之上，违反“云盖住雨”的层级契约。`weather_overlay.gdshader` 将 cloud 映射从 `cloud/0.72 + smoothstep(0.14,0.72)` 调为 `cloud/0.46 + smoothstep(0.07,0.46)`，让非降水薄云进入可见区；`WeatherLayer` 将 cell curtain 放到云层下方。该组只改视觉层级/云显形，不改变雨幕 alpha、`weather_precip`、distribute 或 hydrology。
 
 Stage-A 链路：
 
@@ -1442,7 +1443,7 @@ per-pixel GPU 上传。
 | `enum_lut_tex` | RGB8 / NEAREST / lut_dims | per-cell biome/veg/cover | daily 全量重烘（~0.1-0.3ms） |
 | `dyn_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell temp/wet/snow/(ice\|vitality) | daily |
 | `eco_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell foliage/stress/transition/growth | daily |
-| `weather_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell R=weather_type / G=intensity / B=cloud / A=precip | daily（软依赖：天气未就绪时整段 0 → 无云） |
+| `weather_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell R=weather_type / G=intensity / B=cloud / A=vapor；雨/雪视觉用 G=intensity 作为降水门控 | daily（软依赖：天气未就绪时整段 0 → 无云） |
 | `lut_dims` | Vector2i | `(min(n_cells,2048), ceil(n_cells/lut_w))` | bake_world |
 
 入口：
@@ -1466,8 +1467,8 @@ per-pixel GPU 上传。
 - shader：`shaders/include/cell_indirect.gdshaderinc`（`decode_cell_index` / `cell_lut_uv`
   / `sample_dyn_lut_smooth` / `sample_eco_lut_smooth`），由 `world_map.gdshader` SETUP 消费。
   `weather_overlay.gdshader` 内联同款 `decode_cell_index`/`cell_lut_uv`（避免引入 dyn/eco 依赖），
-  在 `sample_field_weather` 经 cell-index 间接寻址读 `weather_lut` 逐格驱动云分布（4-tap 双线性
-  柔化 intensity/cloud/precip，type 取中心 cell）；旧 `weather_front_*[]` 椭圆云通路已删除。
+  在 `sample_field_weather` 经 cell-index 间接寻址读 `weather_lut` 逐格驱动云分布（当前只做
+  prev/current 时间平滑：G=intensity、B=cloud、A=vapor，type 取中心 cell）；旧 `weather_front_*[]` 椭圆云通路已删除。
 - 绑定：`hex_renderer.gd::_apply_uniforms`（`map_index_atlas` + enum/dyn/eco LUT + `lut_dims`）；
   `weather_lut` + `lut_dims` 由 `_weather_layer.setup` 绑给 weather_overlay 材质。
 

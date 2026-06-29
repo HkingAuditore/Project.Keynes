@@ -1833,7 +1833,7 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
         WX[w4] = display_type;
         WX[w4 + 1] = q01_byte_commit(v_intensity);
         WX[w4 + 2] = q01_byte_commit(v_cloud);
-        WX[w4 + 3] = q01_byte_commit(v_precip);
+        WX[w4 + 3] = q01_byte_commit(v_vapor);
         if (W_PREV != nullptr) {
 
             W_PREV[i] = prev_type;

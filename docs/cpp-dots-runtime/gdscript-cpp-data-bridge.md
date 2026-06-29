@@ -158,8 +158,9 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
     （`cell_temp/cell_moisture/cell_snow_cover/cell_vegetation_vitality/cell_sea_ice_frac/
     cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 enum/dyn/eco 三张 LUT 的
     `PackedByteArray`；GDScript 只负责 `Image.create_from_data` + `ImageTexture.update`。
-  - `weather_lut`（RGBA8，R=type/G=intensity/B=cloud/A=precip）：另读 4 个 weather slot
-    （`cell_weather_type/cell_weather_intensity/cell_weather_cloud/cell_weather_precip`）逐格量化，
+  - `weather_lut`（RGBA8，R=type/G=intensity/B=cloud/A=vapor）：另读 4 个 weather slot
+    （`cell_weather_type/cell_weather_intensity/cell_weather_cloud/cell_weather_vapor`）逐格量化；
+    shader 中原先以 precip 驱动的雨雪/降水门控改读 G=intensity。
     供 `weather_overlay.gdshader` 经 cell-index 间接寻址驱动云分布。weather slot 是**软依赖**——
     天气未初始化（slot size < n_cells）时该段保持全 0（云不显示），enum/dyn/eco 不受影响、不整张回退。
     运行期发布由 `weather_refresh` 在 commit/merged/direct 完成点内联执行；

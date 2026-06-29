@@ -4788,12 +4788,12 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		eco_data[c4 + 1] = (esig >> 8) & 0xFF
 		eco_data[c4 + 2] = (esig >> 16) & 0xFF
 		eco_data[c4 + 3] = (esig >> 24) & 0xFF
-		# weather LUT：R=type, G=intensity, B=cloud, A=precip（与 C++ encode_cell_luts 同布局）
+		# weather LUT：R=type, G=intensity, B=cloud, A=vapor（与 C++ encode_cell_luts 同布局）
 		var w4: int = ci * 4
 		weather_data[w4]     = int(cell.weather_type) & 0xFF
 		weather_data[w4 + 1] = _q01_byte(float(cell.weather_intensity))
 		weather_data[w4 + 2] = _q01_byte(float(cell.weather_cloud))
-		weather_data[w4 + 3] = _q01_byte(float(cell.weather_precip))
+		weather_data[w4 + 3] = _q01_byte(float(cell.weather_vapor))
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
 	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
@@ -4901,10 +4901,10 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 	var type_arr: PackedByteArray = map.weather_type_arr
 	var intensity_arr: PackedFloat32Array = map.weather_intensity_arr
 	var cloud_arr: PackedFloat32Array = map.weather_cloud_arr
-	var precip_arr: PackedFloat32Array = map.weather_precip_arr
+	var vapor_arr: PackedFloat32Array = map.weather_vapor_arr
 	var dirty_mask: PackedByteArray = map.weather_dirty_mask
 	var has_soa: bool = type_arr.size() >= n_cells and intensity_arr.size() >= n_cells \
-			and cloud_arr.size() >= n_cells and precip_arr.size() >= n_cells
+			and cloud_arr.size() >= n_cells and vapor_arr.size() >= n_cells
 	if not has_soa:
 		full_rebuild = true
 		report.weather_lut_full_rebuild = true
@@ -4919,7 +4919,7 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 			var b0: int = int(type_arr[ci]) & 0xFF
 			var b1: int = _q01_byte(float(intensity_arr[ci]))
 			var b2: int = _q01_byte(float(cloud_arr[ci]))
-			var b3: int = _q01_byte(float(precip_arr[ci]))
+			var b3: int = _q01_byte(float(vapor_arr[ci]))
 			if _weather_lut_bytes_cache[w4] != b0 or _weather_lut_bytes_cache[w4 + 1] != b1 \
 					or _weather_lut_bytes_cache[w4 + 2] != b2 or _weather_lut_bytes_cache[w4 + 3] != b3:
 				changed = true
@@ -4939,7 +4939,7 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 			_weather_lut_bytes_cache[w4] = int(cell.weather_type) & 0xFF
 			_weather_lut_bytes_cache[w4 + 1] = _q01_byte(float(cell.weather_intensity))
 			_weather_lut_bytes_cache[w4 + 2] = _q01_byte(float(cell.weather_cloud))
-			_weather_lut_bytes_cache[w4 + 3] = _q01_byte(float(cell.weather_precip))
+			_weather_lut_bytes_cache[w4 + 3] = _q01_byte(float(cell.weather_vapor))
 	report.weather_lut_dirty_count = dirty_count
 	if not changed:
 		report.weather_lut_reason = "unchanged_dirty_subset"
@@ -5233,11 +5233,11 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 			var wt0: int = cell.weather_type if cell.weather_field_initialized else int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
 			var intensity0: float = cell.weather_intensity if cell.weather_field_initialized else float(cell.current_state.get("weather_intensity", 0.0))
 			var cloud0: float = cell.weather_cloud if cell.weather_field_initialized else float(cell.current_state.get("weather_cloud", 0.0))
-			var precip0: float = cell.weather_precip if cell.weather_field_initialized else float(cell.current_state.get("weather_precip", 0.0))
+			var vapor0: float = cell.weather_vapor if cell.weather_field_initialized else float(cell.current_state.get("weather_vapor", 0.0))
 			var b00: int = clampi(wt0, 0, 255)
 			var b10: int = clampi(int(round(clampf(intensity0, 0.0, 1.0) * 255.0)), 0, 255)
 			var b20: int = clampi(int(round(clampf(cloud0, 0.0, 1.0) * 255.0)), 0, 255)
-			var b30: int = clampi(int(round(clampf(precip0, 0.0, 1.0) * 255.0)), 0, 255)
+			var b30: int = clampi(int(round(clampf(vapor0, 0.0, 1.0) * 255.0)), 0, 255)
 			var sig0: int = b00 | (b10 << 8) | (b20 << 16) | (b30 << 24)
 			_last_weather_field_cell_sigs[cell] = sig0
 			var pixels0: PackedInt32Array = cell_lists[cell_key]
@@ -5276,11 +5276,11 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 		var wt: int = cell.weather_type if cell.weather_field_initialized else int(cell.current_state.get("weather", WeatherType.WT.CLEAR))
 		var intensity: float = cell.weather_intensity if cell.weather_field_initialized else float(cell.current_state.get("weather_intensity", 0.0))
 		var cloud: float = cell.weather_cloud if cell.weather_field_initialized else float(cell.current_state.get("weather_cloud", 0.0))
-		var precip: float = cell.weather_precip if cell.weather_field_initialized else float(cell.current_state.get("weather_precip", 0.0))
+		var vapor: float = cell.weather_vapor if cell.weather_field_initialized else float(cell.current_state.get("weather_vapor", 0.0))
 		var b0: int = clampi(wt, 0, 255)
 		var b1: int = clampi(int(round(clampf(intensity, 0.0, 1.0) * 255.0)), 0, 255)
 		var b2: int = clampi(int(round(clampf(cloud, 0.0, 1.0) * 255.0)), 0, 255)
-		var b3: int = clampi(int(round(clampf(precip, 0.0, 1.0) * 255.0)), 0, 255)
+		var b3: int = clampi(int(round(clampf(vapor, 0.0, 1.0) * 255.0)), 0, 255)
 		var sig: int = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 		var prev_sig_var = _last_weather_field_cell_sigs.get(cell, -1)
 		if int(prev_sig_var) == sig:

@@ -14,7 +14,7 @@ render_mode blend_mix;
 
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // R = biome id / 255 ; G/B = cell.index 低/高字节
 // cell-index 间接寻址（cloud-from-field 2026-06-20）：per-cell 天气场 LUT。
-//   R=weather_type, G=intensity, B=cloud, A=precip（与 encode_cell_luts 同布局）。
+//   R=weather_type, G=intensity, B=cloud, A=vapor（与 encode_cell_luts 同布局）。
 //   decode_cell_index(uv) 用 map_index_atlas.GB 取 cell.index，再 cell_lut_uv 采样本格天气。
 uniform sampler2D weather_lut : filter_nearest, repeat_disable;
 uniform sampler2D weather_lut_prev : filter_nearest, repeat_disable;  // 上一仿真帧 LUT(帧间插值减两次更新间横跳)
@@ -185,53 +185,44 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 		return 0.0;
 	}
 	int q = effective_weather_quality();
-	// 性能分档：q0=轮廓云(2 octave)；q1=主云+粗细节(3+1)；q2=轻量 warp + 细节(3+2+1)。
-	int lo_oct = (q >= 1) ? 3 : 2;
-	int hi_oct = (q >= 2) ? 2 : ((q >= 1) ? 1 : 0);
 	float t = world_time;
 
+	float cloud_mask = smoothstep(0.025, 0.18, coverage);
+	float amount = smoothstep(0.04, 0.3, coverage);
+
+	// Classic fBM cloud stack:
+	// 1) low-frequency fBM gives continuous cloud texture;
+	// 2) domain warp breaks circular/noisy repetition;
+	// 3) billow/detail fBM adds puffy internal contrast;
+	// 4) coverage remap controls how much texture survives.
 	vec2 warp = vec2(0.0);
 	if (q >= 2) {
-		vec2 warp_p = p * 0.0038 + vec2(seed * 0.23, -seed * 0.17);
-		warp = vec2(
-			cloud_fbm_evolve(warp_p + vec2(13.7, 2.9), 1, t * 0.18),
-			cloud_fbm_evolve(warp_p + vec2(-5.4, 19.1), 1, -t * 0.15)
-		) - vec2(0.5);
+		vec2 warp_p = p * 0.0012 + vec2(seed * 0.23, -seed * 0.17);
+		float wa = cloud_fbm_evolve(warp_p + vec2(13.7, 2.9), 2, t * 0.10);
+		float wb = cloud_fbm_evolve(warp_p + vec2(-5.4, 19.1), 2, -t * 0.09);
+		warp = (vec2(wa, wb) - vec2(0.5)) * mix(0.32, 0.78, amount);
 	}
 
 	// 噪声相位必须只由世界坐标/时间/seed 决定，不能由 coverage 决定；否则每次 weather_lut 刷新云量变化时，噪声坐标也会跳。
-	vec2 base_p = p * 0.0105 + warp * ((q >= 2) ? 0.42 : 0.0) + vec2(seed * 0.37, seed * 0.61);
-	float low = cloud_fbm_evolve(base_p, lo_oct, t * 0.34);
-	float mid = low;
-	if (hi_oct > 0) {
-		mid = cloud_fbm_evolve(base_p * 3.15 + vec2(11.7, 4.2), hi_oct, t * 0.72);
-	}
-	float fine = mid;
-	if (q >= 2) {
-		fine = cloud_grad_noise(base_p * 7.4 + vec2(-21.3, 15.8) + vec2(t * 0.47, -t * 0.31));
-	}
+	vec2 base_p = p * 0.0038 + warp + vec2(seed * 0.37, seed * 0.61);
+	int body_oct = (q >= 1) ? 4 : 3;
+	float body_noise = cloud_fbm_evolve(base_p, body_oct, t * 0.16);
+	float detail_noise = cloud_fbm_evolve(base_p * 2.35 + vec2(11.7, 4.2), (q >= 1) ? 3 : 2, t * 0.34);
+	float billow = 1.0 - abs(detail_noise * 2.0 - 1.0);
+	float fine_noise = (q >= 2)
+		? cloud_fbm_evolve(base_p * 5.10 + vec2(-21.3, 15.8), 2, t * 0.58)
+		: detail_noise;
+	float shape = clamp(body_noise * 0.68 + billow * 0.20 + fine_noise * 0.12, 0.0, 1.0);
 
-	float cover_gate = smoothstep(0.03, 0.22, coverage);
-
-	float coverage_solid = smoothstep(0.16, 0.86, coverage);
-	float core_gate = smoothstep(0.42, 0.78, low) * cover_gate;
-	float edge_gate = smoothstep(0.24, 0.58, low) * (1.0 - smoothstep(0.82, 0.98, low));
-	float detail_w = mix(0.14, 0.52, core_gate) + edge_gate * mix(0.07, 0.035, coverage_solid);
-	float fine_w = ((q >= 2) ? 0.24 : 0.09) * core_gate;
-	float detail_signal = (mid - 0.5) * detail_w + (fine - 0.5) * fine_w;
-	// 高云量处减少负向噪声挖空、保留正向噪声堆实；低云量处仍让噪声打散边缘。
-	float negative_carve = min(detail_signal, 0.0) * mix(1.0, 0.36, coverage_solid);
-	float positive_build = max(detail_signal, 0.0) * mix(0.72, 1.18, coverage_solid);
-	float shape = low + negative_carve + positive_build;
-
-	// coverage 同时控制阈值和实度：云量越高，阈值越低、核心越容易连成实体，但 feather 仍保留软边。
-	float thr = mix(0.58, 0.36, coverage_solid);
-	float feather = mix(0.48, 0.28, coverage_solid);
-	float body = smoothstep(thr - feather, thr + feather, shape);
-	float core = smoothstep(thr + feather * mix(0.18, 0.02, coverage_solid), thr + feather * mix(0.92, 0.58, coverage_solid), shape);
-	float internal_detail = ((mid - 0.5) * 0.20 + (fine - 0.5) * 0.12) * core_gate * mix(0.55, 1.15, coverage_solid);
-	float density = body * mix(0.56, 0.76, coverage_solid) + core * mix(0.18, 0.36, coverage_solid) + internal_detail;
-	return clamp(density * cover_gate, 0.0, 1.0);
+	// coverage=1 时保留连续 fBM 纹理，不再用高阈值把云挖成孤岛；
+	// coverage 较低时才提高 cutoff，形成云边界退缩。
+	float coverage_cut = mix(0.66, 0.26, amount);
+	float density = clamp((shape - coverage_cut) / max(1.0 - coverage_cut, 0.001), 0.0, 1.0);
+	float soft_texture = smoothstep(0.05, 0.88, density);
+	float cloud_core = smoothstep(0.66, 1.00, density);
+	float texture_cloud = clamp(soft_texture * 0.82 + cloud_core * 0.08, 0.0, 1.0);
+	float opacity = mix(0.38, 0.82, amount);
+	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
 }
 
 struct CloudLayerSample {
@@ -273,9 +264,9 @@ vec2 cumulus_advect(vec2 wp, vec2 axis) {
 
 float cloud_density_alpha(float density) {
 	// 可见度与遮挡度解耦：薄云更早显形，厚云不再把 alpha 顶满挡住地块。
-	float soft = smoothstep(0.010, 0.62, density);
-	float core = smoothstep(0.45, 1.00, density);
-	return clamp(pow(soft, 0.88) * 0.58 + core * 0.20, 0.0, 0.78);
+	float soft = smoothstep(0.020, 0.56, density);
+	float core = smoothstep(0.54, 1.00, density);
+	return clamp(pow(soft, 0.90) * 0.54 + core * 0.16, 0.0, 0.70);
 }
 
 // billboard 白云着色：以亮白为主，迎太阳侧更亮、背光侧 / 厚核略压暗形成体积感，薄边银边。
@@ -291,10 +282,11 @@ vec3 compute_cloud_lighting(CloudLayerSample layer, vec3 base_tint, int wt, floa
 	shade *= mix(1.0, 0.88, d * 0.6);            // 厚核轻压暗，出体积感
 	float rim = layer.edge * silver_gain * (0.4 + 0.6 * sun_facing);
 	vec3 sun_c = sun_col * local_day;            // 夜侧 local_day=0 → 无方向光
-	vec3 col = base_tint * (amb_col * 0.42 + sun_c * (shade * 0.74 + rim * 0.34));
+	float amb_w = mix(0.18, 0.34, local_day);
+	vec3 col = base_tint * (amb_col * amb_w + sun_c * (shade * 0.82 + rim * 0.40));
 	// 云层光照不按天气类型染色/压暗，保证同云量同显示。
 	// 夜侧地板由环境光（夜冷蓝）决定，不再用裸常数 → 与地面夜色同冷调。
-	return max(col * tod_exposure, amb_col * 0.42);
+	return max(col * tod_exposure, amb_col * mix(0.18, 0.28, local_day));
 }
 
 vec4 apply_cloud_layer(vec3 base_col, float base_alpha, CloudLayerSample layer, vec3 layer_col, float alpha_scale, float occlusion) {
@@ -320,7 +312,7 @@ float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
 	float t = world_time;
 	float u = dot(wp, dir);
 	float v = dot(wp, side);
-	vec2 sp = vec2(u * 0.010 + t * 0.9, v * 0.030);
+	vec2 sp = vec2(u * 0.004 + t * 0.9, v * 0.012);
 	int q = effective_weather_quality();
 	float band = cloud_fbm(sp, (q >= 2) ? 3 : 2);
 	float streak = smoothstep(mix(0.62, 0.42, coverage), 0.82, band);
@@ -387,7 +379,7 @@ FrontField empty_field() {
 float precip_cloud_bias(float precip) {
 	// 用连续降水量替代离散 weather_type 增强云量，避免类型跳变造成云层频闪。
 	float p = smoothstep(0.04, 0.72, precip);
-	return mix(1.0, 1.12, p);
+	return mix(1.0, 1.06, p);
 }
 
 float precip_cloud_opacity_bias(float precip) {
@@ -421,7 +413,7 @@ vec4 wx_sample_lut(int cid) {
 }
 
 // 逐格天气场采样（cloud-from-field 2026-06-20）：经 cell-index 间接寻址读 weather_lut。
-// type/intensity/cloud/precip 取中心 cell（枚举不可插值）；只做帧间(prev)时间平滑。
+// type/intensity/cloud/vapor 取中心 cell（枚举不可插值）；只做帧间(prev)时间平滑。
 // [dither-index 2026-06-25] 跨格空间柔化已由烘焙期 cell 索引 dither 接管，云端不再做双线性。
 // 替代旧 sample_fronts 椭圆摘要 → 云精确对应 HexCell.weather_*。
 FrontField sample_field_weather(vec2 wp) {
@@ -437,20 +429,23 @@ FrontField sample_field_weather(vec2 wp) {
 	// 大降(weather_lut 仅 center+prev 2 次)。云形的程序化噪声仍在。逐格值在 baker 端如需柔化另议。
 	float intensity_amount = center.g;
 	float cloud_amount = center.b;
-	float precip_amount = center.a;
+	float vapor_amount = center.a;
 	// 帧间插值(时间平滑)：两次仿真更新(commit)之间渲染每帧都画,直接显示会在更新瞬间横跳。把上一帧标量
 	// 按 weather_lerp(weather_layer 按 LUT 实际更新节奏推进 0→1)平滑过渡到当前帧 → 消时间横跳。type 离散不插。
 	if (weather_lerp < 0.999) {
 		vec4 prev_c = texture(weather_lut_prev, wx_cell_lut_uv(cid_c));
 		intensity_amount = mix(prev_c.g, intensity_amount, weather_lerp);
 		cloud_amount = mix(prev_c.b, cloud_amount, weather_lerp);
-		precip_amount = mix(prev_c.a, precip_amount, weather_lerp);
+		vapor_amount = mix(prev_c.a, vapor_amount, weather_lerp);
 	}
-	// 云层以连续 weather_cloud 为基础，再按本格降水量连续增强密度，避免 weather_type 离散跳变影响云显示。
-	float cloud_linear = clamp(cloud_amount / 0.72, 0.0, 1.0);
-	float cloud_shaped = smoothstep(0.14, 0.72, cloud_amount);
-	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.52) * precip_cloud_bias(precip_amount), 0.0, 1.0);
-	float precip_gate = clamp(precip_amount * 1.4, 0.0, 1.0);
+	float precip_amount = intensity_amount;
+	float visual_cloud_amount = clamp((cloud_amount + 0.6 * vapor_amount), 0.0, 1.0);
+	// 云层以 weather_cloud + weather_vapor 为基础。2026-06-29：水汽先进入可视云量，
+	// 显示端要让湿润区的层云/薄积云可见，避免只在降水核心处看见云。
+	float cloud_linear = clamp(visual_cloud_amount / 0.8, 0.0, 1.0);
+	float cloud_shaped = smoothstep(0.05, 0.8, visual_cloud_amount);
+	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.44) * precip_cloud_bias(precip_amount), 0.0, 1.0);
+	float precip_gate = clamp(precip_amount * 1.05, 0.0, 1.0);
 
 
 	best.color = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].rgb : vec3(0.0);
@@ -459,7 +454,7 @@ FrontField sample_field_weather(vec2 wp) {
 	best.cloud = cloud_cover;
 	best.precip = precip_gate;
 	best.shadow = clamp(cloud_cover * 0.6, 0.0, 1.0);
-	best.edge = 0.0;
+	best.edge = vapor_amount;
 	best.type = wt;
 	best.axis = vec2(1.0, 0.15); // 逐格无风向，用近似纬向漂移让 billboard 流动
 	return best;
@@ -589,19 +584,18 @@ void fragment() {
 		// 局部云核/羽边（密度驱动）：先算，供压暗与亮度调制复用（cloud_core 后续阴影也用）。
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
-		// [storm-darken] 强对流（雷暴/强降水云）压暗：真实积雨云底遮光 → 接近铅灰，不应刺眼亮白。
-		// 用连续语义云量 w.cloud + 局部云核驱动（不按离散 weather_type，避免类型跳变频闪）；
-		// 薄云 / 晴空积云仍保留亮白银边。storm_shade ∈ [0,1]：0 薄云、1 厚雷暴云核。
-		float storm_shade = clamp(smoothstep(0.13, 0.32, w.cloud) * (0.40 + 0.60 * cloud_core), 0.0, 1.0);
-		// 主云（积云）：晴空亮白 → 雷暴铅灰，按 storm_shade 渐变云底色。
+		// 强云区不再把整格底色压成灰片；只让云纹理本身更厚、更少银边。
+		float dense_cell = smoothstep(0.14, 0.32, w.cloud);
+		float dense_core = clamp(dense_cell * (0.35 + 0.65 * cloud_core), 0.0, 1.0);
 		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
-		main_base = mix(main_base, vec3(0.26, 0.29, 0.35), storm_shade * 0.85);
-		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, (q_weather >= 2) ? 1.08 : 0.72, ed.sun_col, ed.amb_col, ed.local_day);
-		col *= mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
-		// 雷暴整体再压暗：在着色之后乘系数，绕过 compute_cloud_lighting 的环境光下限，确保"大幅压暗"生效。
-		col *= mix(1.0, 0.55, storm_shade);
+		main_base = mix(main_base, vec3(0.82, 0.86, 0.92), dense_core * 0.28);
+		float silver = mix((q_weather >= 2) ? 1.08 : 0.72, 0.58, dense_core);
+		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, silver, ed.sun_col, ed.amb_col, ed.local_day);
+		// 边缘过亮项(>1)在强云核轻微收敛，避免羽边白点闪烁（但不压成暗块）。
+		float bright_mul = mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
+		col *= mix(bright_mul, min(bright_mul, 0.98), dense_core);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
-		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * precip_alpha_factor * weather_strength * 0.66, 0.0, min(0.62, 0.58 * precip_alpha_factor));
+		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));
 
 		// 云下假阴影 = 直接(云正下方,薄) + 偏移投影(沿背光方向偏移的云密度)。整体调弱：薄薄一层暗淡，
 		// 不再挡住下方地表。偏移投影即使本像素头顶无云也能落影 → 阴影与云分离、营造悬浮感；夜侧消隐。
@@ -616,7 +610,7 @@ void fragment() {
 		if (fog_layer.density > 0.001) {
 			vec3 fog_base = mix(vec3(0.80, 0.84, 0.88), vec3(0.62, 0.68, 0.74), ed.pixel_night);
 			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, WT_FOG, 0.0, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
-			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.54, 0.0);
+			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.95, 0.0);
 			col = fog_comp.rgb;
 			alpha = fog_comp.a;
 		}
@@ -626,12 +620,13 @@ void fragment() {
 			vec3 cirrus_base = mix(vec3(0.92, 0.94, 0.98), ed.sun_col, 0.28);
 			cirrus_base = mix(cirrus_base, vec3(0.72, 0.78, 0.88), ed.pixel_night);
 			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, w.type, cirrus_layer.edge * 0.18, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
-			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.20, layer_occlusion * 0.45);
+			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.42, layer_occlusion * 0.45);
 			col = cirrus_comp.rgb;
 			alpha = min(cirrus_comp.a, 0.94);
 		}
 
-		// 多层天气叠加时保留地块可读性，云的存在感交给形状/亮暗对比承担。
-		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), min(alpha, 0.82));
+		float tod_alpha = mix(0.65, 1.0, ed.local_day);
+		// 云层随 TOD 变暗/变薄，避免夜侧像白色贴片盖在地表上。
+		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), min(alpha * tod_alpha, 0.94));
 	}
 }
