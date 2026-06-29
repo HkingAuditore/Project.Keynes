@@ -234,7 +234,7 @@ lit    += emission
 
 ### 6.3 旁路：hillshade-only
 
-`day_night_enabled=false` 时调试模式，走 `evaluate_hillshade_only(s)`，保留 v9 key+fill 双光源体验。
+`evaluate_hillshade_only(s)` 仅保留为 legacy/debug helper。`day_night_enabled=false` 现在表示"关闭晨昏线但保留永昼全局平行光"，仍走主 BRDF 路径。
 
 ### 6.4 Legacy：Blinn-Phong
 
@@ -652,7 +652,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 
 ### 15.1 单独验证 BRDF
 
-把 `day_night_enabled=false`，shader 走 `evaluate_hillshade_only`，可单独定位 surface 是否构造正确（base_color/normal 是否对）。
+把 `day_night_enabled=false` 可去掉晨昏线影响，保留永昼全局平行光来验证 surface / BRDF（base_color/normal 是否对）。
 
 ### 15.2 单独验证 atlas 通道
 

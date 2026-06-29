@@ -15,7 +15,7 @@
 // 性能（Cost）
 //   主要 fetch：5×5 邻域 (visual_quality≥1) 用于 offshore，水侧 biome_weights；
 //   海冰来自 fragment 入口解码的 dyn_lut.a。BRDF 已抽到 brdf.gdshaderinc。
-//   apply_water_specials 在 day_night_enabled 关时被旁路。
+//   apply_water_specials 在 day_night_enabled 关时保留全局平行光永昼。
 // ─────────────────────────────────────────────────────────────────────────
 
 
@@ -982,10 +982,9 @@ SurfaceParams apply_water_overlay_surface(
 //                     （BRDF 给的是 albedo×F，这里给的是天空环境光反射）。
 //     - sparkle     : 高频颗粒高光，纯 stylized 风味。
 //
-//   day_night_enabled=false 时整体旁路（用户关闭 TOD 后不再叠太阳相关水面特效）。
+//   day_night_enabled=false 时保留全局平行光永昼：不再关闭波坡明暗 / 高光等方向性。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, int quality, float pixel_night, vec3 sun_dir_px) {
-	if (!day_night_enabled) return col;
 	vec3 N = normalize(surface.normal);
 	float day_factor = 1.0 - pixel_night;
 
@@ -1091,10 +1090,11 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 vec3 shade_water_surface(SurfaceParams surface, int biome, vec2 wp, int quality, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
-	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随逐像素太阳方向；永昼或开关关闭时回退全局方向。
-	vec3 sun_dir_px = ((tod_latitude_sun_enabled && day_night_enabled))
-			? compute_sun_dir_enu(uv, lat_signed)
-			: normalize(tod_sun_dir);
+	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
+	// 昼夜关闭时使用全图一致的季节性平行光，避免关闭 TOD 后水面方向光一起消失。
+	vec3 sun_dir_px = day_night_enabled
+			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
+			: compute_global_parallel_sun_dir();
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_WATER_LEGACY, SPEC_MIN_WATER_LEGACY);
 	// stylized water specials —— 在 BRDF 之后叠加（caustics / fresnel-sky / sparkle）

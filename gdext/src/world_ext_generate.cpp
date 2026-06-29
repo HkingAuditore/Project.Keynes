@@ -1515,8 +1515,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double rain_threshold = getd(profile, "rain_shadow_threshold", 0.13);
     const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
     const double river_percentile = getd(profile, "river_flow_percentile", 0.72);  // 干支流树状河网：0.80→0.72（绘出支流）
-    const int hydro_river_min_length = std::max(1, geti(profile, "hydro_river_min_length", 5));  // 最短河长：8→5
-    const int river_headwater_init = std::max(1, geti(profile, "river_headwater_init_cells", 6));
+    const int hydro_river_min_length_base = std::max(1, geti(profile, "hydro_river_min_length", 5));  // 最短河长：8→5
+    const int river_headwater_init_base = std::max(1, geti(profile, "river_headwater_init_cells", 6));
     const double river_headwater_min_land_h = getd(profile, "river_headwater_min_land_h", 0.30);
     const int hydro_lake_min_cells = std::max(1, geti(profile, "hydro_lake_min_cells", 8));  // 成湖最小面积：18→8
     const double hydro_lake_min_depth = std::max(0.0, getd(profile, "hydro_lake_min_depth", 0.018));
@@ -1538,6 +1538,19 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double peak_min_land_h = getd(profile, "peak_min_land_h", 0.74);
     const double peak_min_prominence = std::max(0.0, getd(profile, "peak_min_prominence", 0.035));
     const int peak_land_cells_per_peak = std::max(1, geti(profile, "peak_land_cells_per_peak", 120));
+    const int river_channel_init_base = std::max(2, geti(profile, "river_channel_init_cells", 16));
+    // 150x100 is the tuning baseline documented in ClimateProfile. Above that,
+    // fixed "upstream cell count" thresholds make every large basin sprout too
+    // many tributaries, so scale only upward and keep small/normal maps unchanged.
+    constexpr double river_map_reference_cells = 15000.0;
+    constexpr double river_map_scale_exponent = 0.65;
+    const double river_map_scale = std::pow(
+            std::max(1.0, double(n) / river_map_reference_cells),
+            river_map_scale_exponent);
+    const int channel_init = std::max(2, int(std::round(double(river_channel_init_base) * river_map_scale)));
+    const int river_headwater_init = std::max(1, int(std::round(double(river_headwater_init_base) * river_map_scale)));
+    const int hydro_river_min_length = std::max(1, int(std::round(
+            double(hydro_river_min_length_base) * std::pow(river_map_scale, 0.75))));
 
     PackedInt32Array q_arr = input.get("q_arr", PackedInt32Array());
     PackedInt32Array r_arr = input.get("r_arr", PackedInt32Array());
@@ -1995,11 +2008,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (connected[size_t(i)] != 0 && pk_is_water_terrain(TERR[i])) continue;
         flow[size_t(p)] += flow[size_t(i)];
     }
-    // ── 河道起始：按"上游汇水面积(汇水格数)"绝对阈值取河道 ───────────────────────
+    // ── 河道起始：按"上游汇水面积(汇水格数)"有效阈值取河道 ───────────────────────
     // [river-rework 2026-06-19] 旧法按 flow 分位选 top-X% 地块为源头再向下追踪 → 标出 land 的
     // 固定比例(实测分位 0.72→占全图 ~10% 成"填满大陆的网"；调高分位又退化成贴海岸的短段)。
     // 改用地貌学经典 channel-initiation：汇水面积≥阈值才成河 → 天然稀疏树状网：上游细流在累积
-    // 足够汇水后出现，向下汇成干流。汇水多→干流(宽)、汇水少→支流(细)，干支流层级分明。
+    // 足够汇水后出现，向下汇成干流。大图会按 cell 数温和放大阈值，避免固定格数阈值把超大
+    // 流域切出过密支流，同时保留 profile slider 的相对密度含义。
     std::vector<int> up_count(size_t(n), 0);
     for (int i : land) up_count[size_t(i)] = 1;
     for (auto it = hydro_order.rbegin(); it != hydro_order.rend(); ++it) {
@@ -2009,7 +2023,6 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (p < 0) continue;
         up_count[size_t(p)] += up_count[size_t(i)];
     }
-    const int channel_init = std::max(2, geti(profile, "river_channel_init_cells", 16));
     float river_threshold = std::numeric_limits<float>::infinity();
     for (int i : land) {
         if (up_count[size_t(i)] >= channel_init) {
@@ -3370,6 +3383,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["stage_counts"] = stage_counts;
 
 
+    out["river_map_reference_cells"] = river_map_reference_cells;
+    out["river_map_scale"] = river_map_scale;
+    out["river_map_scale_exponent"] = river_map_scale_exponent;
+    out["river_channel_init_base"] = river_channel_init_base;
+    out["river_channel_init_effective"] = channel_init;
+    out["river_headwater_init_base"] = river_headwater_init_base;
+    out["river_headwater_init_effective"] = river_headwater_init;
+    out["hydro_river_min_length_base"] = hydro_river_min_length_base;
+    out["hydro_river_min_length_effective"] = hydro_river_min_length;
     out["river_flow_threshold"] = double(river_threshold);
     out["river_lake_snap_count"] = river_lake_snap_touched;
     out["river_confluence_snap_count"] = river_confluence_snap_touched;

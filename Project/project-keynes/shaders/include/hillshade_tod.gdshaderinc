@@ -5,10 +5,10 @@
 //   【路径 A — 经典双光源 hillshading】
 //     - hillshading_two_lights(uv) → key + fill 两方向漫反射近似，结果会被
 //       fragment 直接乘到 col 上做"陆地阴影"。
-//   【路径 B — 旧版风格化日夜（legacy，仅在 day_night_enabled=false 时用）】
+//   【路径 B — 旧版风格化日夜（legacy，仅保留作 debug helper）】
 //     - get_sun_dir / get_sky_tint / get_day_brightness / apply_day_night：
 //       用 day_phase ∈ [0,1] 直接派生太阳位置 + 天色 tint + 整体亮度。
-//   【路径 C — 任务 3 TOD 驱动的 PBR（主路径，day_night_enabled=true）】
+//   【路径 C — 任务 3 TOD 驱动的 PBR（主路径；day_night_enabled=false 时为永昼）】
 //     - compute_terrain_normal(uv, quality, biome)：粗法线(烘焙 terrain_normal_tex / 宽半径回退)
 //       + 运行期细节法线(按 biome/性能档)，治"细节过强密密麻麻、山脉走向不清晰"。
 //     - biome_roughness(biome)：粗糙度查表。
@@ -126,7 +126,7 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 //   3. 高光 = Blinn-Phong NdotH，roughness 按 biome 分类（雪光滑、森林粗糙）
 //   4. 平地退化：|∇h| < epsilon 时跳过方向光（避免噪声伪影）
 //   5. 最终乘 tod_exposure 并做艺术化 tonemap
-//   6. day_night_enabled=false 时 caller 跳过本函数，回退到 apply_day_night 路径
+//   6. day_night_enabled=false 的主路径语义已改为永昼；本函数保留给 legacy/debug 调用
 //
 // 返回：PBR 染色后的 RGB（caller 负责 clamp）。
 // 从 height_tex 采样得到 tangent-space 法线（Sobel 3x3 或 4-tap 中心差分）
