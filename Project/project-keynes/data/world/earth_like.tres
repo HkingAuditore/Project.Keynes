@@ -9,6 +9,7 @@ dynamic_visual_atlas_upload_stride = 2
 native_daily_sim_mode = 2
 native_daily_perf_target_ms = 3.0
 native_daily_spread_across_ticks = true
+sim_frame_budget_ms = 8.0
 native_climate_round_active_owner_enabled = true
 native_weather_transaction_active_owner_enabled = true
 native_ocean_physical_active_owner_enabled = true

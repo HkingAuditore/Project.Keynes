@@ -61,8 +61,12 @@ public:
     // feature 决定 mobile 给 4.0 / desktop 给 2.0，C++ 这里只放开上界让上层
     // 的判定生效。Mobile 上 SUS p95=9-15ms 远超 2ms，旧上限让 atlas upload 等
     // 低优先级 job 80% 被饿死，雪线/海冰视觉延迟 2-3 秒。
+    // [2026-06-29] clamp 上限 4.0 → 16.0：慢机/大地图单 tick sim 5-9ms 远超 4ms，
+    // 视觉上传（dynamic/enum atlas）仍每 tick frame_budget_exhausted → 视觉滞后。
+    // C++ 这里只放开上界，实际值由 GDScript set_frame_budget_ms（desktop 上限 16.0 /
+    // mobile 4.0）与 ClimateProfile.sim_frame_budget_ms（earth_like.tres=8.0）决定。
     void   set_frame_budget_ms      (float v) {
-        _frame_budget_ms = v < 0.25f ? 0.25f : (v > 4.0f ? 4.0f : v);
+        _frame_budget_ms = v < 0.25f ? 0.25f : (v > 16.0f ? 16.0f : v);
     }
     float  get_frame_budget_ms      () const  { return _frame_budget_ms; }
     void   set_strict_budget_enabled(bool v)  { _strict_budget_enabled = v; }
