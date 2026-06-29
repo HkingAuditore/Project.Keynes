@@ -272,21 +272,24 @@ float cloud_density_alpha(float density) {
 // billboard 白云着色：以亮白为主，迎太阳侧更亮、背光侧 / 厚核略压暗形成体积感，薄边银边。
 // 光照走 earth_daylight：sun_col（晨昏暖橙↔正午暖白）、amb_col（夜冷蓝↔昼天空）、local_day（夜=0）。
 // 方向光乘 local_day → 夜侧无阳照（与 brdf.make_lighting_context 同源），云的明暗随晨昏线扫过。
-vec3 compute_cloud_lighting(CloudLayerSample layer, vec3 base_tint, int wt, float light_grad, float silver_gain, vec3 sun_col, vec3 amb_col, float local_day) {
+vec3 compute_cloud_lighting(CloudLayerSample layer, vec3 base_tint, int wt, float light_grad, float thickness, float silver_gain, vec3 sun_col, vec3 amb_col, float local_day) {
 	if (!cloud_tod_tint_enabled) {
 		return base_tint;
 	}
 	float d = layer.density;
-	float sun_facing = smoothstep(-0.5, 0.5, light_grad);
-	float shade = mix(0.76, 1.0, sun_facing);   // 背光侧偏灰、迎光侧全亮
-	shade *= mix(1.0, 0.88, d * 0.6);            // 厚核轻压暗，出体积感
-	float rim = layer.edge * silver_gain * (0.4 + 0.6 * sun_facing);
+	float thick = clamp(thickness, 0.0, 1.0);
+	float sun_facing = smoothstep(-0.52, 0.55, light_grad);
+	float shade = mix(0.72, 1.02, sun_facing);  // 背光侧柔和压暗、迎光侧略抬亮
+	shade *= mix(1.0, 0.86, d * 0.46);           // 厚核轻压暗，出体积感
+	shade *= mix(1.0, 0.74, thick * (1.0 - sun_facing) * 0.72); // 假厚度背光自阴影
+	float rim = layer.edge * silver_gain * (0.38 + 0.68 * sun_facing) * mix(1.0, 0.72, thick);
 	vec3 sun_c = sun_col * local_day;            // 夜侧 local_day=0 → 无方向光
-	float amb_w = mix(0.18, 0.34, local_day);
-	vec3 col = base_tint * (amb_col * amb_w + sun_c * (shade * 0.82 + rim * 0.40));
+	float amb_w = mix(0.18, 0.31, local_day);
+	vec3 col = base_tint * (amb_col * amb_w + sun_c * (shade * 0.84 + rim * 0.42));
+	col = mix(col, col * vec3(0.72, 0.75, 0.84), thick * (1.0 - sun_facing) * 0.20);
 	// 云层光照不按天气类型染色/压暗，保证同云量同显示。
 	// 夜侧地板由环境光（夜冷蓝）决定，不再用裸常数 → 与地面夜色同冷调。
-	return max(col * tod_exposure, amb_col * mix(0.18, 0.28, local_day));
+	return max(col * tod_exposure, amb_col * mix(0.17, 0.27, local_day));
 }
 
 vec4 apply_cloud_layer(vec3 base_col, float base_alpha, CloudLayerSample layer, vec3 layer_col, float alpha_scale, float occlusion) {
@@ -553,15 +556,31 @@ void fragment() {
 	vec2 sun_axis = (sun_horiz > 1e-4) ? sun_h / sun_horiz : normalize(vec2(0.62, -0.38));
 	float sun_up = max(ed.sun_dir.z, 0.0); // = sin(太阳高度角)
 
-	// 太阳方向密度梯度：q2 沿太阳水平方向取一次云密度（迎光侧朝太阳更薄→透光更亮，背光侧更厚→暗）。
-	// q<2 退化为廉价 edge/核心近似（沿用旧式）。梯度强度随 sun_horiz 加权 → 低日方向对比强、高日均匀。
+	// 主云 TOD 体积近似：
+	// q2: 4-tap 密度差分算法线 + 假厚度；q1: 单向太阳采样；q0: density/edge 近似。
 	float cumulus_light_grad = 0.0;
+	float cumulus_thickness = cumulus_layer.density;
 	if (q_weather >= 2 && cumulus > 0.001) {
+		float step_n = hex_world_diameter * 0.34;
+		float d_l = cloud_density_soft(cumulus_advect(wp - vec2(step_n, 0.0), cumulus_axis), cumulus_intensity, 13.0);
+		float d_r = cloud_density_soft(cumulus_advect(wp + vec2(step_n, 0.0), cumulus_axis), cumulus_intensity, 13.0);
+		float d_d = cloud_density_soft(cumulus_advect(wp - vec2(0.0, step_n), cumulus_axis), cumulus_intensity, 13.0);
+		float d_u = cloud_density_soft(cumulus_advect(wp + vec2(0.0, step_n), cumulus_axis), cumulus_intensity, 13.0);
+		vec2 grad_xy = vec2(d_r - d_l, d_u - d_d);
+		vec3 fake_normal = normalize(vec3(-grad_xy * 2.9, 0.92));
+		vec3 fake_sun = normalize(vec3(sun_axis * max(sun_horiz, 0.001), max(sun_up, 0.10)));
+		float normal_light = dot(fake_normal, fake_sun);
+		float directional_grad = dot(grad_xy, sun_axis);
+		cumulus_thickness = clamp(cumulus * (0.72 + 0.26 * cumulus_intensity) + (d_l + d_r + d_d + d_u) * 0.058, 0.0, 1.0);
+		cumulus_light_grad = clamp((normal_light - 0.52) * 2.25 + directional_grad * 0.82 - cumulus_thickness * 0.18, -1.0, 1.0) * (0.42 + 0.58 * sun_horiz);
+	} else if (q_weather >= 1) {
 		float step_l = hex_world_diameter * 0.5;
 		float d_toward = cloud_density_soft(cumulus_advect(wp + sun_axis * step_l, cumulus_axis), cumulus_intensity, 13.0);
-		cumulus_light_grad = clamp((cumulus - d_toward) * 1.7, -1.0, 1.0) * (0.45 + 0.55 * sun_horiz);
-	} else if (q_weather >= 1) {
-		cumulus_light_grad = clamp(cumulus_layer.edge * 0.55 + cumulus_layer.density * 0.22 - 0.32, -1.0, 1.0);
+		cumulus_thickness = clamp(cumulus * (0.78 + 0.22 * cumulus_intensity) + d_toward * 0.10, 0.0, 1.0);
+		cumulus_light_grad = clamp((cumulus - d_toward) * 1.65 + cumulus_layer.edge * 0.24 - cumulus_thickness * 0.11, -1.0, 1.0) * (0.45 + 0.55 * sun_horiz);
+	} else {
+		cumulus_thickness = clamp(cumulus_layer.density * (0.80 + 0.20 * cumulus_intensity), 0.0, 1.0);
+		cumulus_light_grad = clamp(cumulus_layer.edge * 0.45 + cumulus_layer.density * 0.18 - 0.30, -1.0, 1.0);
 	}
 
 	// [cloud-float] 偏移投影假阴影：把云沿背光方向投影到地面（offset = sun_axis*距离；距离 ∝ 云高·tan(天顶角)
@@ -590,10 +609,10 @@ void fragment() {
 		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
 		main_base = mix(main_base, vec3(0.82, 0.86, 0.92), dense_core * 0.28);
 		float silver = mix((q_weather >= 2) ? 1.08 : 0.72, 0.58, dense_core);
-		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, silver, ed.sun_col, ed.amb_col, ed.local_day);
+		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, cumulus_thickness, silver, ed.sun_col, ed.amb_col, ed.local_day);
 		// 边缘过亮项(>1)在强云核轻微收敛，避免羽边白点闪烁（但不压成暗块）。
-		float bright_mul = mix(1.07 + cloud_edge_soft * 0.05, 0.88, cloud_core * ((q_weather >= 2) ? 0.62 : 0.42));
-		col *= mix(bright_mul, min(bright_mul, 0.98), dense_core);
+		float bright_mul = mix(1.08 + cloud_edge_soft * 0.06, 0.82, cloud_core * ((q_weather >= 2) ? 0.54 : 0.38));
+		col *= mix(bright_mul, min(bright_mul, 1.02), dense_core);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));
 
@@ -609,7 +628,7 @@ void fragment() {
 		// 低雾（底层，介于地面与中云之间）。
 		if (fog_layer.density > 0.001) {
 			vec3 fog_base = mix(vec3(0.80, 0.84, 0.88), vec3(0.62, 0.68, 0.74), ed.pixel_night);
-			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, WT_FOG, 0.0, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
+			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, WT_FOG, 0.0, fog_layer.density * 0.55, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
 			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.95, 0.0);
 			col = fog_comp.rgb;
 			alpha = fog_comp.a;
@@ -619,7 +638,7 @@ void fragment() {
 		if (cirrus_layer.density > 0.001) {
 			vec3 cirrus_base = mix(vec3(0.92, 0.94, 0.98), ed.sun_col, 0.28);
 			cirrus_base = mix(cirrus_base, vec3(0.72, 0.78, 0.88), ed.pixel_night);
-			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, w.type, cirrus_layer.edge * 0.18, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
+			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, w.type, cirrus_layer.edge * 0.18, cirrus_layer.density * 0.28, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
 			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.42, layer_occlusion * 0.45);
 			col = cirrus_comp.rgb;
 			alpha = min(cirrus_comp.a, 0.94);
