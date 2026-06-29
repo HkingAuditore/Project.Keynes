@@ -86,6 +86,25 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
 
+// 关闭昼夜时使用的全局平行太阳方向。
+// 它不按像素计算晨昏线，而是把全图当作一块平面接受同一束平行光：
+//   - decl 来自 season_phase + axial_tilt_rad，保持太阳直射点在南北回归线间往复；
+//   - day_phase 仍驱动东西向方位扫掠；
+//   - up 分量折到地平线上方，保证"关闭昼夜"后不再出现夜侧无直射光。
+vec3 compute_global_parallel_sun_dir() {
+	float year_progress = mod(season_phase, 4.0) * 0.25;
+	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
+	float hour = (day_phase - 0.25) * EARTH_DAYLIGHT_TAU;
+	float sdec = sin(decl);
+	float cdec = cos(decl);
+	float east = -cdec * sin(hour);
+	float north = sdec;
+	float up = max(cdec * cos(hour), 0.38);
+	vec3 d = vec3(east, north, up);
+	float len = length(d);
+	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
+}
+
 // sinh → local_day ∈ [0,1]：1=白昼 0=夜晚 (0,1)=晨昏过渡带（band 控柔度）。
 float solar_day_factor(float sinh) {
 	return smoothstep(-0.14, 0.14, sinh);
@@ -101,11 +120,11 @@ struct EarthDaylight {
 	vec3 sun_dir;       // [tod-latitude-sun] 逐像素太阳方向（shader 空间单位向量，含纬度/时角）
 };
 
-// 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 退化为永昼。
+// 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 全局平行光永昼。
 // 各管线（PBR 地形 / 平面植被 / 水面）据此自行组装最终着色（线性 or sRGB、是否 tonemap）。
 // 注：参数名刻意避开 uniform day_night_enabled，否则在已声明该 uniform 的 shader 里会重定义。
 EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_night) {
-	vec3 sdir = compute_sun_dir_enu(uv, lat_signed);
+	vec3 sdir = enable_day_night ? compute_sun_dir_enu(uv, lat_signed) : compute_global_parallel_sun_dir();
 	float sinh = sdir.z;  // = sin(太阳高度角)，与 compute_solar_elevation 等价（同源公式）
 	EarthDaylight ed;
 	ed.sun_dir = sdir;

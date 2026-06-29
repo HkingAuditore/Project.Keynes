@@ -550,6 +550,7 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
     const double base_radius_px = double(knobs.get("base_radius_px", 0.0));
     const double sdf_max_dist_px = double(knobs.get("sdf_max_dist_px", 5.0));
     const double seam_dx = double(knobs.get("seam_dx", 0.0));
+    const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
     const int cr_step = std::max(1, int(knobs.get("cr_step", 12)));
     // [river-endpoint-taper 2026-06-26] 端点淡出：河源(headwater)与陆地死端(未入水、非汇流)的
     // 钝圆头是"断头河"观感的主因（stamp 半径有 0.40×base 下限 → 末端永远是个钝圆点）。这里沿链
@@ -595,6 +596,39 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
     std::vector<float> mask(size_t(n), MASK_INF);
 
     const float warp_amp = hex_size * 0.30f;
+    auto fposmodf = [](float a, float b) -> float {
+        float m = std::fmod(a, b);
+        if (m < 0.0f) m += b;
+        return m;
+    };
+    auto smooth01f = [](float edge0, float edge1, float x) -> float {
+        if (edge1 <= edge0) return x < edge0 ? 0.0f : 1.0f;
+        float t = (x - edge0) / (edge1 - edge0);
+        if (t < 0.0f) t = 0.0f;
+        else if (t > 1.0f) t = 1.0f;
+        return t * t * (3.0f - 2.0f * t);
+    };
+    auto river_cyl = [&](FastNoiseLite *nz, float x, float y, float phase_origin_x = 0.0f) -> float {
+        const float period = float(wrap_period_x);
+        if (period <= 0.0001f) return nz->get_noise_2d(x, y);
+        const float phase = fposmodf(x - phase_origin_x, period);
+        const float xw = phase_origin_x + phase;
+        const float base = nz->get_noise_2d(xw, y);
+        const float band = std::min(std::max(hex_size * 8.0f, 1.0f), period * 0.12f);
+        if (band <= 0.0001f) return base;
+        const float left = nz->get_noise_2d(phase_origin_x, y);
+        const float right = nz->get_noise_2d(phase_origin_x + period, y);
+        const float seam_avg = (left + right) * 0.5f;
+        if (phase < band) {
+            const float t = smooth01f(0.0f, band, phase);
+            return seam_avg + (base - seam_avg) * t;
+        }
+        if (phase > period - band) {
+            const float t = smooth01f(0.0f, band, period - phase);
+            return seam_avg + (base - seam_avg) * t;
+        }
+        return base;
+    };
 
     // catmull_rom（Vector2 real_t=float），镜像 map_baker.gd::_catmull_rom。
     auto catmull = [](float p0x, float p0y, float p1x, float p1y,
@@ -635,10 +669,10 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
                 float cxp, cyp;
                 catmull(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t, cxp, cyp);
                 // warp（镜像 _warp_river_chain）：noise 在 dense 点上采样
-                float wx_off = warp_lo->get_noise_2d(cxp, cyp) * warp_amp;
-                float wy_off = warp_lo->get_noise_2d(cxp + 31.7f, cyp - 17.3f) * warp_amp;
-                wx_off += warp_hi->get_noise_2d(cxp + 91.1f, cyp + 53.7f) * warp_amp * 0.30f;
-                wy_off += warp_hi->get_noise_2d(cxp - 41.5f, cyp + 23.9f) * warp_amp * 0.30f;
+                float wx_off = river_cyl(warp_lo.ptr(), cxp, cyp) * warp_amp;
+                float wy_off = river_cyl(warp_lo.ptr(), cxp + 31.7f, cyp - 17.3f, 31.7f) * warp_amp;
+                wx_off += river_cyl(warp_hi.ptr(), cxp + 91.1f, cyp + 53.7f, 91.1f) * warp_amp * 0.30f;
+                wy_off += river_cyl(warp_hi.ptr(), cxp - 41.5f, cyp + 23.9f, -41.5f) * warp_amp * 0.30f;
                 dpx.push_back(cxp + wx_off);
                 dpy.push_back(cyp + wy_off);
                 dwd.push_back(w1 + (w2 - w1) * t);
@@ -1570,22 +1604,27 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
         t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
         return t * t * (3.0 - 2.0 * t);
     };
-    // _cyl_noise：2D 接缝包裹（fposmod + band smoothstep lerp 到 seam 均值）
-    auto cyl = [&](FastNoiseLite *nz, double x, double y) -> double {
-        if (wrap_period_x <= 0.0001) return double(nz->get_noise_2d(x, y));
-        double xw = fposmodd(x, wrap_period_x);
+    // _cyl_noise：2D 接缝包裹（fposmod + band smoothstep lerp 到 seam 均值）。
+    // phase_origin_x 必须跟调用点的 x 偏移/缩放同相位，否则 x+91.1 这类采样会把
+    // 人造 fposmod seam 移进地图内部。
+    auto cyl = [&](FastNoiseLite *nz, double x, double y,
+                   double period_scale = 1.0, double phase_origin_x = 0.0) -> double {
+        const double period = wrap_period_x * std::max(period_scale, 0.0001);
+        if (period <= 0.0001) return double(nz->get_noise_2d(x, y));
+        const double phase = fposmodd(x - phase_origin_x, period);
+        double xw = phase_origin_x + phase;
         double base = double(nz->get_noise_2d(xw, y));
-        double band = std::min(std::max(hex_size * 8.0, 1.0), wrap_period_x * 0.12);
+        double band = std::min(std::max(hex_size * 8.0 * std::max(period_scale, 0.0001), 1.0), period * 0.12);
         if (band <= 0.0001) return base;
-        double left = double(nz->get_noise_2d(0.0, y));
-        double right = double(nz->get_noise_2d(wrap_period_x, y));
+        double left = double(nz->get_noise_2d(phase_origin_x, y));
+        double right = double(nz->get_noise_2d(phase_origin_x + period, y));
         double seam_avg = (left + right) * 0.5;
-        if (xw < band) {
-            double tl = smooth01(0.0, band, xw);
+        if (phase < band) {
+            double tl = smooth01(0.0, band, phase);
             return seam_avg + (base - seam_avg) * tl;
         }
-        if (xw > wrap_period_x - band) {
-            double tr = smooth01(0.0, band, wrap_period_x - xw);
+        if (phase > period - band) {
+            double tr = smooth01(0.0, band, period - phase);
             return seam_avg + (base - seam_avg) * tr;
         }
         return base;
@@ -1642,6 +1681,21 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double step_y = size_y / double(H);
     const double warp_scale = hex_size * WARP_AMP;
     const double PI = 3.14159265358979323846;
+    // Bayer 抖动不能直接用 atlas 的绝对 x 列：world_bounds 含 padding，且
+    // 经度周期对应的 texel 数不保证是 8 的倍数，直接 x&7 会在东西接缝处跳相位。
+    // 将一个 wrap period 量化到最接近的 8 倍数，让 dither 图案随圆柱经度闭合。
+    int dither_period_px = 0;
+    if (wrap_period_x > 0.0001 && step_x > 0.000001) {
+        dither_period_px = std::max(8, int(std::round((wrap_period_x / step_x) / 8.0)) * 8);
+    }
+    auto dither_x_phase = [&](double world_x, int fallback_x) -> int {
+        if (dither_period_px <= 0 || wrap_period_x <= 0.0001) return fallback_x & 7;
+        const double phase = fposmodd(world_x, wrap_period_x) / wrap_period_x;
+        int ix = int(std::floor(phase * double(dither_period_px)));
+        if (ix < 0) ix = 0;
+        else if (ix >= dither_period_px) ix = dither_period_px - 1;
+        return ix & 7;
+    };
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -1699,9 +1753,9 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
 
             // 1. warp（双频）
             const double warp_x = cyl(NW_LO, wx_base, wy_base);
-            const double warp_y = cyl(NW_LO, wx_base + 31.7, wy_base - 17.3);
-            const double hi_x = cyl(NW_HI, wx_base + 91.1, wy_base + 53.7) * WARP_HIGH_AMP_RATIO;
-            const double hi_y = cyl(NW_HI, wx_base - 41.5, wy_base + 23.9) * WARP_HIGH_AMP_RATIO;
+            const double warp_y = cyl(NW_LO, wx_base + 31.7, wy_base - 17.3, 1.0, 31.7);
+            const double hi_x = cyl(NW_HI, wx_base + 91.1, wy_base + 53.7, 1.0, 91.1) * WARP_HIGH_AMP_RATIO;
+            const double hi_y = cyl(NW_HI, wx_base - 41.5, wy_base + 23.9, 1.0, -41.5) * WARP_HIGH_AMP_RATIO;
             const double wx = wx_base + (warp_x + hi_x) * warp_scale;
             const double wy = wy_base + (warp_y + hi_y) * warp_scale;
 
@@ -1819,8 +1873,8 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                 // 沿脊线 3-tap smear（每 tap 经 cyl()，圆柱接缝安全）→ 沿等高线方向拉长山脊
                 const double L = hex_size * RIDGE_SMEAR_HEX;
                 const double r0 = cyl(NR, wx_base, wy_base);
-                const double rA = cyl(NR, wx_base + tx * L, wy_base + ty * L);
-                const double rB = cyl(NR, wx_base - tx * L, wy_base - ty * L);
+                const double rA = cyl(NR, wx_base + tx * L, wy_base + ty * L, 1.0, tx * L);
+                const double rB = cyl(NR, wx_base - tx * L, wy_base - ty * L, 1.0, -tx * L);
                 const double smeared = (r0 * 2.0 + rA + rB) * 0.25;
                 const double R = r0 + (smeared - r0) * gate;   // 低起伏→各向同性，高起伏→沿脊
                 double ridge01 = (R + 1.0) * 0.5;
@@ -1829,7 +1883,9 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                 const double amp = RELIEF_AMP * gate;
                 // 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
                 const double dryness = 1.0 - moist_blend;
-                const double crag = cyl(ND, wx_base * CRAG_FREQ_MUL + 17.9, wy_base * CRAG_FREQ_MUL - 11.3) * 0.5;
+                const double crag = cyl(ND, wx_base * CRAG_FREQ_MUL + 17.9,
+                                        wy_base * CRAG_FREQ_MUL - 11.3,
+                                        CRAG_FREQ_MUL, 17.9) * 0.5;
                 elev_final = elev_blend
                         + (shaped - VALLEY_BIAS) * amp
                         + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate;
@@ -1845,7 +1901,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                 const double w1 = (nb1_idx >= 0 && is_water(int(T[nb1_idx])) == self_water) ? w_nb1 : 0.0;
                 const double w2 = (nb2_idx >= 0 && is_water(int(T[nb2_idx])) == self_water) ? w_nb2 : 0.0;
                 if (w1 > 0.0 || w2 > 0.0) {
-                    const double t = double(BAYER8[by + (x & 7)]) / 64.0;
+                    const double t = double(BAYER8[by + dither_x_phase(wx_base, x)]) / 64.0;
                     if (t < w1) vis_idx = nb1_idx;
                     else if (t < w1 + w2) vis_idx = nb2_idx;
                 }

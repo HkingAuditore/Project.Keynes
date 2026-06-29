@@ -3197,9 +3197,9 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 		for x in range(W):
 			var wx_base := origin.x + (float(x) + 0.5) * step_x
 			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
-			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
-			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
-			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size, 1.0, 31.7)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size, 1.0, 91.1) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size, 1.0, -41.5) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
@@ -3405,9 +3405,9 @@ func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> v
 		for x in range(W):
 			var wx_base := origin.x + (float(x) + 0.5) * step_x
 			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
-			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
-			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
-			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size, 1.0, 31.7)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size, 1.0, 91.1) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size, 1.0, -41.5) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 			var cube_f := _world_to_cube_f(Vector2(wx, wy), hex_size)
@@ -3936,9 +3936,9 @@ func _bake_height_biome_moisture(
 
 			# 1. Warp（双频，让 hex 边界变弯曲 + 犬牙交错）
 			var warp_x := _cyl_noise(_warp_noise_lo, wx_base, wy_base, wrap_period_x, hex_size)
-			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size)
-			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
-			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size) * WARP_HIGH_AMP_RATIO
+			var warp_y := _cyl_noise(_warp_noise_lo, wx_base + 31.7, wy_base - 17.3, wrap_period_x, hex_size, 1.0, 31.7)
+			var hi_x := _cyl_noise(_warp_noise_hi, wx_base + 91.1, wy_base + 53.7, wrap_period_x, hex_size, 1.0, 91.1) * WARP_HIGH_AMP_RATIO
+			var hi_y := _cyl_noise(_warp_noise_hi, wx_base - 41.5, wy_base + 23.9, wrap_period_x, hex_size, 1.0, -41.5) * WARP_HIGH_AMP_RATIO
 			var wx := wx_base + (warp_x + hi_x) * warp_scale
 			var wy := wy_base + (warp_y + hi_y) * warp_scale
 
@@ -4041,8 +4041,8 @@ func _bake_height_biome_moisture(
 				# 沿脊线 3-tap smear（每 tap 经 _cyl_noise，圆柱接缝安全）→ 沿等高线方向拉长山脊
 				var smear_l := hex_size * RIDGE_SMEAR_HEX
 				var r0 := _cyl_noise(_ridge_noise, wx_base, wy_base, wrap_period_x, hex_size)
-				var rA := _cyl_noise(_ridge_noise, wx_base + tx * smear_l, wy_base + ty * smear_l, wrap_period_x, hex_size)
-				var rB := _cyl_noise(_ridge_noise, wx_base - tx * smear_l, wy_base - ty * smear_l, wrap_period_x, hex_size)
+				var rA := _cyl_noise(_ridge_noise, wx_base + tx * smear_l, wy_base + ty * smear_l, wrap_period_x, hex_size, 1.0, tx * smear_l)
+				var rB := _cyl_noise(_ridge_noise, wx_base - tx * smear_l, wy_base - ty * smear_l, wrap_period_x, hex_size, 1.0, -tx * smear_l)
 				var smeared := (r0 * 2.0 + rA + rB) * 0.25
 				var rr := r0 + (smeared - r0) * gate  # 低起伏→各向同性，高起伏→沿脊
 				var ridge01 := clampf((rr + 1.0) * 0.5, 0.0, 1.0)
@@ -4050,7 +4050,8 @@ func _bake_height_biome_moisture(
 				var amp := RELIEF_AMP * gate
 				# 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
 				var dryness := 1.0 - moist_blend
-				var crag := _cyl_noise(_detail_noise, wx_base * CRAG_FREQ_MUL + 17.9, wy_base * CRAG_FREQ_MUL - 11.3, wrap_period_x, hex_size) * 0.5
+				var crag := _cyl_noise(_detail_noise, wx_base * CRAG_FREQ_MUL + 17.9, wy_base * CRAG_FREQ_MUL - 11.3,
+						wrap_period_x, hex_size, CRAG_FREQ_MUL, 17.9) * 0.5
 				elev_final = elev_blend + (shaped - VALLEY_BIAS) * amp + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate
 
 			var idx := row + x
@@ -4133,24 +4134,26 @@ func _get_wrapped_cell_by_cube(map: MapData, cube: Vector3i) -> HexCell:
 	var wrapped := HexUtils.offset_to_cube(posmod(off.x, map.width), off.y)
 	return map.get_cell_by_cube(wrapped)
 
-func _cyl_noise(noise: FastNoiseLite, x: float, y: float, period_x: float, hex_size: float) -> float:
+func _cyl_noise(noise: FastNoiseLite, x: float, y: float, period_x: float, hex_size: float, period_scale: float = 1.0, phase_origin_x: float = 0.0) -> float:
 	if noise == null:
 		return 0.0
-	if period_x <= 0.0001:
+	var period := period_x * maxf(period_scale, 0.0001)
+	if period <= 0.0001:
 		return noise.get_noise_2d(x, y)
-	var xw := fposmod(x, period_x)
+	var phase := fposmod(x - phase_origin_x, period)
+	var xw := phase_origin_x + phase
 	var base := noise.get_noise_2d(xw, y)
-	var band := minf(maxf(hex_size * 8.0, 1.0), period_x * 0.12)
+	var band := minf(maxf(hex_size * 8.0 * maxf(period_scale, 0.0001), 1.0), period * 0.12)
 	if band <= 0.0001:
 		return base
-	var left := noise.get_noise_2d(0.0, y)
-	var right := noise.get_noise_2d(period_x, y)
+	var left := noise.get_noise_2d(phase_origin_x, y)
+	var right := noise.get_noise_2d(phase_origin_x + period, y)
 	var seam_avg := (left + right) * 0.5
-	if xw < band:
-		var t_left := smoothstep(0.0, band, xw)
+	if phase < band:
+		var t_left := smoothstep(0.0, band, phase)
 		return lerpf(seam_avg, base, t_left)
-	if xw > period_x - band:
-		var t_right := smoothstep(0.0, band, period_x - xw)
+	if phase > period - band:
+		var t_right := smoothstep(0.0, band, period - phase)
 		return lerpf(seam_avg, base, t_right)
 	return base
 
@@ -4319,6 +4322,7 @@ func _bake_river_sdf(_map: MapData, hex_size: float, bounds: Rect2, res: Vector2
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
 		"seam_dx": seam_dx,
 		"cr_step": RIVER_CR_STEP,
+		"wrap_period_x": HexUtils.wrap_period_x(_map.width, hex_size) if _map != null else 0.0,
 	})
 	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
 	var out: PackedFloat32Array = rep.get("out_buf", PackedFloat32Array()) if ok else PackedFloat32Array()

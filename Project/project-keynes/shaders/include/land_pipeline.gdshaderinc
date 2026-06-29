@@ -485,7 +485,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	//   ∈[-1,1]，与坡陡无关——朝阳坡满量程提亮、背阳坡满量程压暗；坡度量级只作"有没有起伏"的
 	//   软遮罩(slope_mask)，缓坡也响应、平地不响应（不引入噪声）。太阳水平方向 Ln 随时角/纬度/
 	//   季节旋转（含南北分量）→ aspect 符号随之翻转 → 光源移动一眼可见。
-	if (day_night_enabled && tod_terrain_relief_strength > 0.001) {
+	if (tod_terrain_relief_strength > 0.001) {
 		vec3 N = normalize(surface.normal);
 		vec2 Nh = N.xy;
 		float slope = length(Nh);
@@ -497,7 +497,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 			float aspect = dot(slope_face, Ln);          // +1 正朝阳, -1 正背阳
 			// 只要有可辨识的起伏就给足方向性；平地(slope→0)平滑淡出，避免高度图量化噪声闪烁。
 			float slope_mask = smoothstep(0.006, 0.05, slope);
-			float day_w = 1.0 - lc.night_factor;        // 夜侧淡出方向性
+			float day_w = lc.local_day;                 // 昼夜开启时夜侧淡出；关闭时永昼=1
 			float relief = aspect * slope_mask * tod_terrain_relief_strength * day_w;
 			lit *= clamp(1.0 + relief, 0.58, 1.50);
 		}

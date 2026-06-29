@@ -72,11 +72,12 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	// 为保留正午高悬太阳下的地形立体起伏（避免太阳完全竖直把坡面打平、抹掉地形层次），
 	// 给一个温和的"最高仰角"下限 tod_sun_relief_max_up：把 up 分量截顶后重新归一化，
 	// 让水平分量保持足量，保证坡面仍有方向性明暗（默认 0.88，比旧 0.92 更偏水平、方向感更强）。
-	// day_night 关闭（永昼）或开关关闭 → lat_sun_w=0 → 回退全局 tod_sun_dir（旧的稳定光照）。
+	// day_night 关闭（永昼）→ eval_earth_daylight 返回全局平行光；开启时可按 tod_latitude_sun_enabled
+	// 选择逐像素物理太阳或旧全局 tod_sun_dir。
 	vec3 phys_sun = ed.sun_dir;
 	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
 	phys_sun = normalize(phys_sun);
-	float lat_sun_w = (tod_latitude_sun_enabled && day_night_enabled) ? 1.0 : 0.0;
+	float lat_sun_w = (tod_latitude_sun_enabled || !day_night_enabled) ? 1.0 : 0.0;
 	lc.L = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
 	lc.V = VIEW_DIR_TOP_DOWN;
 

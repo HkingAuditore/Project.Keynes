@@ -99,6 +99,21 @@ vec2 wx_wrap_uv(vec2 uv) {
 	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
 }
 
+float wx_cloud_seam_weight(vec2 wp) {
+	if (wrap_period_x <= 0.0001) {
+		return 0.0;
+	}
+	vec2 wwp = wx_wrap_world_pos(wp);
+	float seam_width = min(max(hex_world_diameter * 3.0, 1.0), wrap_period_x * 0.25);
+	float seam_x = wrap_origin_x + wrap_period_x;
+	float dist_to_right = clamp(seam_x - wwp.x, 0.0, seam_width);
+	return 1.0 - smoothstep(0.0, seam_width, dist_to_right);
+}
+
+vec2 wx_cloud_seam_partner(vec2 wp) {
+	return wx_wrap_world_pos(wp) - vec2(wrap_period_x, 0.0);
+}
+
 int effective_weather_quality() {
 #if defined(MOBILE_QUALITY_LOW)
 	return 0;
@@ -306,7 +321,7 @@ vec4 apply_cloud_layer(vec3 base_col, float base_alpha, CloudLayerSample layer, 
 // ── 三层云采样 ──
 
 // 高云（卷云）：各向异性拉丝薄纱，沿风向延展。
-float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
+float sample_high_cloud_raw(vec2 wp, vec2 axis, float coverage) {
 	if (coverage <= 0.001) {
 		return 0.0;
 	}
@@ -326,9 +341,19 @@ float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
 	return clamp(streak * coverage, 0.0, 1.0);
 }
 
+float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
+	vec2 primary_wp = wx_wrap_world_pos(wp);
+	float base = sample_high_cloud_raw(primary_wp, axis, coverage);
+	float seam_w = wx_cloud_seam_weight(primary_wp);
+	if (seam_w <= 0.001) {
+		return base;
+	}
+	return mix(base, sample_high_cloud_raw(wx_cloud_seam_partner(primary_wp), axis, coverage), seam_w);
+}
+
 
 // 低云 / 山雾：贴地、慢漂，biome_weight（山地权重）调制可见度。
-float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
+float sample_low_fog_raw(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	if (biome_weight <= 0.001 || intensity <= 0.001) {
 		return 0.0;
 	}
@@ -339,13 +364,35 @@ float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	return clamp(fog * intensity * biome_weight, 0.0, 1.0);
 }
 
+float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
+	vec2 primary_wp = wx_wrap_world_pos(wp);
+	float base = sample_low_fog_raw(primary_wp, axis, intensity, biome_weight);
+	float seam_w = wx_cloud_seam_weight(primary_wp);
+	if (seam_w <= 0.001) {
+		return base;
+	}
+	return mix(base, sample_low_fog_raw(wx_cloud_seam_partner(primary_wp), axis, intensity, biome_weight), seam_w);
+}
+
+float sample_cumulus_density(vec2 wp, vec2 axis, float coverage) {
+	if (coverage <= 0.001) {
+		return 0.0;
+	}
+	vec2 primary_wp = wx_wrap_world_pos(wp);
+	float base = cloud_density_soft(cumulus_advect(primary_wp, axis), coverage, 13.0);
+	float seam_w = wx_cloud_seam_weight(primary_wp);
+	if (seam_w <= 0.001) {
+		return base;
+	}
+	return mix(base, cloud_density_soft(cumulus_advect(wx_cloud_seam_partner(primary_wp), axis), coverage, 13.0), seam_w);
+}
+
 // 中云（积云）：视觉主角，跟风漂移、内部持续翻卷。coverage 已是语义云量，单次取密度。
 CloudLayerSample sample_cumulus_layer(vec2 wp, vec2 axis, float coverage) {
 	if (coverage <= 0.001) {
 		return empty_cloud_layer();
 	}
-	vec2 cp = cumulus_advect(wp, axis);
-	float density = cloud_density_soft(cp, coverage, 13.0);
+	float density = sample_cumulus_density(wp, axis, coverage);
 	float feather = smoothstep(0.025, 0.30, density) * (1.0 - smoothstep(0.50, 0.86, density));
 	float rim = smoothstep(0.10, 0.46, density) * (1.0 - smoothstep(0.58, 0.98, density));
 	float edge = clamp(feather * 0.72 + rim * 0.42, 0.0, 1.0);
@@ -562,10 +609,10 @@ void fragment() {
 	float cumulus_thickness = cumulus_layer.density;
 	if (q_weather >= 2 && cumulus > 0.001) {
 		float step_n = hex_world_diameter * 0.34;
-		float d_l = cloud_density_soft(cumulus_advect(wp - vec2(step_n, 0.0), cumulus_axis), cumulus_intensity, 13.0);
-		float d_r = cloud_density_soft(cumulus_advect(wp + vec2(step_n, 0.0), cumulus_axis), cumulus_intensity, 13.0);
-		float d_d = cloud_density_soft(cumulus_advect(wp - vec2(0.0, step_n), cumulus_axis), cumulus_intensity, 13.0);
-		float d_u = cloud_density_soft(cumulus_advect(wp + vec2(0.0, step_n), cumulus_axis), cumulus_intensity, 13.0);
+		float d_l = sample_cumulus_density(wp - vec2(step_n, 0.0), cumulus_axis, cumulus_intensity);
+		float d_r = sample_cumulus_density(wp + vec2(step_n, 0.0), cumulus_axis, cumulus_intensity);
+		float d_d = sample_cumulus_density(wp - vec2(0.0, step_n), cumulus_axis, cumulus_intensity);
+		float d_u = sample_cumulus_density(wp + vec2(0.0, step_n), cumulus_axis, cumulus_intensity);
 		vec2 grad_xy = vec2(d_r - d_l, d_u - d_d);
 		vec3 fake_normal = normalize(vec3(-grad_xy * 2.9, 0.92));
 		vec3 fake_sun = normalize(vec3(sun_axis * max(sun_horiz, 0.001), max(sun_up, 0.10)));
@@ -575,7 +622,7 @@ void fragment() {
 		cumulus_light_grad = clamp((normal_light - 0.52) * 2.25 + directional_grad * 0.82 - cumulus_thickness * 0.18, -1.0, 1.0) * (0.42 + 0.58 * sun_horiz);
 	} else if (q_weather >= 1) {
 		float step_l = hex_world_diameter * 0.5;
-		float d_toward = cloud_density_soft(cumulus_advect(wp + sun_axis * step_l, cumulus_axis), cumulus_intensity, 13.0);
+		float d_toward = sample_cumulus_density(wp + sun_axis * step_l, cumulus_axis, cumulus_intensity);
 		cumulus_thickness = clamp(cumulus * (0.78 + 0.22 * cumulus_intensity) + d_toward * 0.10, 0.0, 1.0);
 		cumulus_light_grad = clamp((cumulus - d_toward) * 1.65 + cumulus_layer.edge * 0.24 - cumulus_thickness * 0.11, -1.0, 1.0) * (0.45 + 0.55 * sun_horiz);
 	} else {
@@ -588,7 +635,7 @@ void fragment() {
 	float offset_shadow = 0.0;
 	if (q_weather >= 1 && ed.local_day > 0.01 && cumulus_intensity > 0.02) {
 		float sd = hex_world_diameter * cloud_shadow_offset * clamp(sun_horiz / max(sun_up, 0.20), 0.0, 3.2);
-		float dsh = cloud_density_soft(cumulus_advect(wp + sun_axis * sd, cumulus_axis), cumulus_intensity, 13.0);
+		float dsh = sample_cumulus_density(wp + sun_axis * sd, cumulus_axis, cumulus_intensity);
 		offset_shadow = cloud_density_alpha(dsh) * ed.local_day;
 	}
 

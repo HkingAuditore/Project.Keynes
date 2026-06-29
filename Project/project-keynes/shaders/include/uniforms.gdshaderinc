@@ -141,8 +141,8 @@ uniform float tod_exposure      : hint_range(0.2, 2.5) = 1.0;
 // [tod-latitude-sun 2026-06-25] 逐像素太阳方向（近似点光源）总开关。
 // true（默认）：主光方向按球面天文逐像素求解，不同纬度/时角得到不同的阴影方向与长度
 //   （太阳高悬→短影弱方向；低垂→长影强方向）。配合昼夜晨昏线工作；夜侧无方向光。
-// false：回退到全局 tod_sun_dir 单一方向（旧行为，全图同向）。
-// 注：day_night_enabled=false（永昼）时本开关自动失效、同样回退全局方向，保持稳定。
+// false：昼夜开启时回退到全局 tod_sun_dir 单一方向（旧行为，全图同向）。
+// 注：day_night_enabled=false（永昼）时改用季节性全局平行光，保留方向性但不绘制晨昏线。
 uniform bool tod_latitude_sun_enabled = true;
 
 // [tod 地形方向性 2026-06-25] 逐像素太阳移动在地形凹凸上的可读性增强。
