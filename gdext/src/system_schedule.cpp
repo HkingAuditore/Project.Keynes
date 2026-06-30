@@ -56,7 +56,8 @@ bool DCWorldExt::_exec_node_climate_pass_a(Dictionary& bundle,
     Dictionary cp_struct = as_dict_local(bundle["climate_pass_a_struct"]);
     const double phase = double(tick_knobs.get("season_phase", 0.0));
     const double season_phase = double(tick_knobs.get("season_phase", phase));
-    const double ms = run_climate_pass_a(cp_struct, phase, season_phase);
+    // [climate-mt 2026-07] 多核：pass_a 纯 cell-local，_thread 逐位等价 scalar。
+    const double ms = run_climate_pass_a_thread(cp_struct, phase, season_phase, 0);
     if (ms < 0.0) return false;
     breakdown["pass_a_ms"] = ms;
     breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -95,7 +96,8 @@ bool DCWorldExt::_exec_node_ocean_land(Dictionary& bundle,
 bool DCWorldExt::_exec_node_climate_pass_b(Dictionary& bundle,
                                             const Dictionary& /*tick_knobs*/,
                                             Dictionary& breakdown) {
-    const double ms = run_climate_pass_b(as_dict_local(bundle["climate_pass_b_knobs"]));
+    // [climate-mt 2026-07] 多核：pass_b own-cell 写 + 只读快照邻居，_thread 逐位等价。
+    const double ms = run_climate_pass_b_thread(as_dict_local(bundle["climate_pass_b_knobs"]), 0);
     if (ms < 0.0) return false;
     breakdown["pass_b_ms"] = ms;
     breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;

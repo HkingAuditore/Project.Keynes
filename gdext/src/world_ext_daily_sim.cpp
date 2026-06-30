@@ -777,7 +777,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             Dictionary cp_struct = as_dict(_native_daily_slice_bundle["climate_pass_a_struct"]);
             const double phase = double(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
             const double season_phase = double(_native_daily_slice_tick_knobs.get("season_phase", phase));
-            const double ms = run_climate_pass_a(cp_struct, phase, season_phase);
+            // [climate-mt 2026-07] 多核：pass_a 纯 cell-local，_thread 与 scalar 逐位等价
+            //   （bench 实测 49k~110k ~4-5x；compute-bound，随核近线性）。n_tasks=0=自适应。
+            const double ms = run_climate_pass_a_thread(cp_struct, phase, season_phase, 0);
             if (ms < 0.0) return false;
             breakdown["pass_a_ms"] = ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -807,7 +809,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "climate_pass_b") == 0) {
-            const double ms = run_climate_pass_b(as_dict(_native_daily_slice_bundle["climate_pass_b_knobs"]));
+            // [climate-mt 2026-07] 多核：pass_b 写 own-cell（LANOM/M），邻居只读
+            //   round-start 快照（TTA/IW）+ 预拍 temp_snapshot → 逐位等价于 scalar
+            //   （_simd land 路径已在 legacy 路径生产验证）。n_tasks=0=自适应。
+            const double ms = run_climate_pass_b_thread(as_dict(_native_daily_slice_bundle["climate_pass_b_knobs"]), 0);
             if (ms < 0.0) return false;
             breakdown["pass_b_ms"] = ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -1970,14 +1975,16 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         Dictionary cp_struct = as_dict(bundle["climate_pass_a_struct"]);
         const double phase = double(tick_knobs.get("season_phase", 0.0));
         const double season_phase = double(tick_knobs.get("season_phase", phase));
-        const double ms = run_climate_pass_a(cp_struct, phase, season_phase);
+        // [climate-mt 2026-07] legacy if-chain（use_system_schedule=false 兜底，现已死路）
+        //   亦切多核 _thread，保持与 slice / system_schedule 三路 dispatch bit-equal。
+        const double ms = run_climate_pass_a_thread(cp_struct, phase, season_phase, 0);
         if (ms < 0.0) return finish_with_failure("climate_pass_a", "pass returned fallback");
         breakdown["pass_a_ms"] = ms;
         breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
         any_pass_ran = true;
 
     if (bundle.has("climate_pass_b_knobs")) {
-        const double ms = run_climate_pass_b(as_dict(bundle["climate_pass_b_knobs"]));
+        const double ms = run_climate_pass_b_thread(as_dict(bundle["climate_pass_b_knobs"]), 0);
         if (ms < 0.0) return finish_with_failure("climate_pass_b", "pass returned fallback");
         breakdown["pass_b_ms"] = ms;
         breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;

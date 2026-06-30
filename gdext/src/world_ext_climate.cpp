@@ -2093,7 +2093,10 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     };
 
     if (!_bound) { diag("not _bound"); return -1.0; }
-    if (n_tasks < 1) n_tasks = 1;
+    // n_tasks <= 0 → 自适应分块（交给 parallel_for_range / parallel_default_n_tasks，
+    //   公式 ceil(n_land/1024) clamp[1,16]）；与 pass_a_thread 约定一致，便于 daily
+    //   graph 直接传 0 取自适应多核。显式 >0 仍按 caller 指定（bench 用）。
+    if (n_tasks < 0) n_tasks = 0;
 
     const int sid_temp     = component_id(StringName("cell_temp"));
     const int sid_moist    = component_id(StringName("cell_moisture"));
@@ -2151,6 +2154,14 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     ctx.foliage_size = foliage_arr.size();
     if (ctx.foliage_size <= 0) { diag("foliage_table empty"); return -1.0; }
 
+    // [climate-mt 2026-07 bug-parity] 海冰反照率→温度水域尾循环：scalar / _simd 都有，
+    //   thread 变体此前漏写（sea_ice_albedo_cooling>0 时 water LANOM 与 scalar 分叉，
+    //   被 sim_2ms_ulp_tolerant_test A/B 捕获）。补齐以保证 thread 逐位等价。
+    const float sea_ice_albedo_cooling = knobs.has("sea_ice_albedo_cooling") ? float(knobs["sea_ice_albedo_cooling"]) : 0.0f;
+    PackedFloat32Array sif_arr_pb;
+    if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
+    const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_moist    = _slots.write[sid_moist];
     Slot &s_snowpack = _slots.write[sid_snowpack];
@@ -2205,6 +2216,16 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     const int n_land = static_cast<int>(land_idx.size());
 
     if (n_land == 0) {
+        // 全水图：跳过 land hot loop，但海冰反照率水域尾循环仍需执行（与 scalar / _simd 等价）。
+        if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
+            for (int i = 0; i < n_cells; ++i) {
+                if (ctx.IW[i] == 0) continue;
+                float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
+                if (water_local < -0.08f) water_local = -0.08f;
+                else if (water_local > 0.08f) water_local = 0.08f;
+                ctx.LANOM[i] = water_local;
+            }
+        }
         // A 修复（2026-06）：不再 flush cell_temp，改 flush local_anom。
         _flush_slot_to_map(sid_lanom);
         _flush_slot_to_map(sid_moist);
@@ -2223,6 +2244,18 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
         [&](int begin, int end) {
             pass_b_run_land_range(ctx, land_idx.data(), begin, end);
         });
+
+    // [climate-mt 2026-07 bug-parity] 海冰反照率→温度水域尾循环（仅水域，无跨 cell 依赖，
+    //   串行即可；与 scalar / _simd lines 2065-2073 逐位等价）。
+    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            if (ctx.IW[i] == 0) continue;
+            float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (water_local < -0.08f) water_local = -0.08f;
+            else if (water_local > 0.08f) water_local = 0.08f;
+            ctx.LANOM[i] = water_local;
+        }
+    }
 
     _flush_slot_to_map(sid_lanom);
     _flush_slot_to_map(sid_moist);

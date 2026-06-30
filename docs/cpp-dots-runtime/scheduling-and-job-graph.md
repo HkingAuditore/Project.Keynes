@@ -152,6 +152,24 @@ DCSystemScheduler
     `climate_pass_a` **1.7→0.38ms（−78%）**、per-tick p95 **4.33→3.19ms（−26%）**、均值 1.86→1.78；原子
     `round_native_call_ms` **3.69→2.37ms（−36%）**、原子 tick max 10.1→8.85ms。首轮付一次性 ~1.6ms 建缓存，
     之后常驻命中。bitequal + bootstrap(20/0) + graph-order(11) 全绿。
+  - **climate pass_a / pass_b 接入多核 _thread（2026-07，bit-equal）**：此前 native daily 图（slice
+    `exec_slice_node` + `system_schedule.cpp::SCHEDULE_GRAPH` + legacy if-chain）的 climate 节点调的是
+    **单线程标量** `run_climate_pass_a` / `run_climate_pass_b`——已实现并验证过的 `_thread` 多核变体
+    （`pk::parallel_for_range`，自适应 ceil(n/1024) clamp[1,16]）一直**绑定却未接图**。三路 exec 全部改调
+    `run_climate_pass_a_thread(...,0)` / `run_climate_pass_b_thread(...,0)`（`n_tasks<=0`=自适应；为此放宽
+    `pass_b_thread` 原 `n_tasks<1→1` 的钳制）。安全性：pass_a 纯 cell-local、无邻居；pass_b own-cell 写
+    `local_thermal_anomaly`/`moisture`，邻居只读 round-start 快照（`temp_transport_anomaly`/`is_water`）+ 预拍
+    `temp_snapshot` → 两者天然无跨 cell 写依赖，多核逐位等价。`tests/climate_pass_bench.gd` 基线（32 核 / MT≤16）：
+    49k cell `pass_a` 2.83→0.61ms（**4.7x**）、`pass_b` 1.72→0.34ms（**5.1x**）；110k 档 5.05x / 5.57x，
+    随 N 仍上升 → 两 pass compute-bound（~2–3 GB/s 远未触 DRAM 带宽），多核近线性。
+    **门槛**：`tests/sim_2ms_ulp_tolerant_test.gd`（A/B：scalar↔thread、scalar↔simd 逐 cell ulp）现 worst=0
+    全绿——该测试**捕获并修复了 `pass_b_thread` 漏写「海冰反照率水域尾循环」的潜在 bug**（`sea_ice_albedo_cooling>0`
+    时 water `local_thermal_anomaly` 与 scalar 分叉；因从未接图而长期休眠）。bootstrap(20/0) + graph-order(11) 全绿。
+    > 已评估但**未做**的两条（数据驱动 no-go，见 `tmp/climate_bench_phase0_summary.md`）：
+    > ① pass_a 手写 AVX2——pass_a compute 被 transcendental（insolation sin/cos、day_length acos、pow）主导，
+    >   矢量化到 ulp≤4 需 SVML 级超越函数，可向量化纯算术子段占比小、ROI 低；in-core 轴已由多核兜住。
+    > ② pass_a+pass_b 融合 / SFC 重排——两 pass 既是 compute-bound（非 memory/cache-bound），融合省内存流量、
+    >   SFC 改 cache 局部性的收益都≈0，且高风险，故不实施。
   - **附带：去掉 spread round-start 的 bundle 深拷（2026-06）**：`run_native_daily_slice` 轮首原 `bundle.duplicate(true)`
     + `tick_knobs.duplicate(true)`（后者把内嵌 bundle 又深拷一遍）改为：tick_knobs 浅拷并 `erase("native_daily_bundle")`，
     bundle 走 `native_daily_cow_structural_copy`（深拷字典/数组结构、CoW 共享 Packed 叶子缓冲）。C++ 只改字典层

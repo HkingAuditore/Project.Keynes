@@ -31,11 +31,18 @@
 //    - 失败约定：返回 false → caller finish_with_failure(node.fail_stage, ...)
 // 2. SCHEDULE_GRAPH 是 static const POD 数组（编译期初始化）：
 //    - 零运行期分配；C.3 job_graph 可直接基于这个数组做拓扑序 + 并行分组
-//    - 顺序 = 当前线性 if-chain 顺序（climate_pass_a → ocean_water →
-//      ocean_land → climate_pass_b → wind_air → wind_surface → sea_ice →
-//      transpiration → albedo → vegetation_dynamics → climate_feedback →
-//      stage_b → weather；当 bundle 含 runtime_hydrology_knobs 时，天气之后
-//      追加 runtime_hydrology → stage_b_after_hydrology。
+//    - 顺序 = climate_pass_a → climate_pass_b → ocean_water → ocean_land →
+//      wind_air → wind_surface → sea_ice → transpiration → albedo →
+//      vegetation_dynamics → climate_feedback → stage_b → weather；当 bundle 含
+//      runtime_hydrology_knobs 时，天气之后追加 runtime_hydrology →
+//      stage_b_after_hydrology。
+//      （注：pass_b 必须在 ocean_* 之前——它读 round-start 的 TTA 并写
+//      cell_moisture/local_thermal_anomaly；与 SCHEDULE_GRAPH 实际顺序一致，
+//      由 native_daily_graph_order_test.gd 锁定。旧注释里的 pass_a→ocean→pass_b
+//      已是陈旧描述，2026-07 修正。）
+//    - [climate-mt 2026-07] climate_pass_a / climate_pass_b 的 exec_fn 改调多核
+//      _thread 变体（pass_a 纯 cell-local；pass_b own-cell 写 + 只读快照邻居，
+//      二者与 scalar 逐位等价）。slice 图 / 本表 / legacy if-chain 三路一致。
 //    - runtime_hydrology 已接入本表，但只在 GDScript bundle 明确提供 knobs 时
 //      运行。hydrology 开启时 MapGenerator 会把 stage_b 从 weather combined pass
 //      拆出到 stage_b_after_hydrology，以对齐 legacy 的 weather summary →
