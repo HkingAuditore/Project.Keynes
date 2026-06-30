@@ -160,6 +160,7 @@ const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_sched
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
 const SeaIceDailySystemScript = preload("res://scripts/simulation/systems/sea_ice_daily_system.gd")
+const NaturalResourceDailySystemScript = preload("res://scripts/simulation/systems/natural_resource_daily_system.gd")
 const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocean_currents_system.gd")
 const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_system.gd")
 const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
@@ -995,6 +996,9 @@ var _ocean_currents_system = null
 # 继续复用 SusJob 面的 reset/run-flag/diagnostic API。
 var _refresh_climate_daily_job = null
 var _sea_ice_daily_job = null
+# `natural_resource_daily` 自然资源每日生成/衰减系统 + 缓存的 C++ pass knobs（系数恒定，仅 n_cells 每 tick 更新）。
+var _natural_resource_daily_job = null
+var _natural_resource_pass_knobs: Dictionary = {}
 var _weather_refresh_system = null
 var _weather_refresh_job: WeatherRefreshJob = null
 # 其余 upload/job 引用保持 untyped，因为 production 入口是 DCSystem 子类。
@@ -1328,6 +1332,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
+	# Natural resources：SoA 就位后写入每地块初始资源储量（按 temp/moisture/terrain 适宜度）。
+	# 必须在 init_soa_from_bake 之后（数组已 resize/置 0）、_setup_sus bind 之前。
+	_bootstrap_natural_resource_deposits(map, cfg)
 	var env_pixel_size: Vector2i = Vector2i.ZERO
 	if world != null and "derived_size" in world:
 		env_pixel_size = world.derived_size
@@ -1577,9 +1584,21 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_ocean_currents_job.data_core_world_ext = _data_core_world_ext
 		_ocean_currents_job.climate_ran_this_tick_getter = Callable(self, "did_refresh_climate_run_this_tick")
 		_ocean_currents_job.climate_slice_ms_getter = Callable(self, "last_refresh_climate_slice_ms")
+	# NaturalResourceDailySystem：自然资源每日生成/衰减（独立于气候的资源计算任务）。
+	# **必须在 native/legacy 分叉之前注册**，作为与 season_refresh / ocean_currents 同级
+	# 的"保留边界 job"——否则 native_daily ACTIVE 时下方 early-return 会跳过 legacy 段的
+	# 注册，资源 reserve 永不演化（玩家观察不到生物质变化）。
+	# reads cell.temp / cell.moisture（native_daily_sim 或 refresh_climate_daily 写）
+	# → build_topology 自动排在气候之后；不加硬 depends_on（避免切片 job 长期 dep_pending）。
+	var natural_resource_stride: int = 1
+	if cp != null and cp.get("natural_resource_daily_stride") != null:
+		natural_resource_stride = max(1, int(cp.natural_resource_daily_stride))
+	_natural_resource_daily_job = NaturalResourceDailySystemScript.new(self, map, natural_resource_stride)
+	_sus.configure_job_from_profile(_natural_resource_daily_job, cp, false, &"natural_resource_daily", natural_resource_stride)
+	_runtime_register_system(_natural_resource_daily_job)
 	if _try_register_native_daily_sim_job(map, world):
 		if OS.is_debug_build():
-			print("[native_daily] ACTIVE: registered native_daily_sim; retained season_refresh + ocean_currents boundary jobs")
+			print("[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs")
 		_register_visual_upload_jobs(map, world, hex_size, cp_sched)
 		_runtime_build_topology("native_daily path")
 		if _sus_bootstrap == null:
@@ -1607,6 +1626,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_sus.configure_job_from_profile(climate_sys, cp, false, &"refresh_climate_daily", climate_stride)
 	_sus.configure_job_from_profile(_refresh_climate_daily_job, cp, false, &"refresh_climate_daily", climate_stride)
 	_runtime_register_system(climate_sys)
+	# 注：natural_resource_daily 已在 native/legacy 分叉前作为保留边界 job 统一注册
+	# （见上方 _try_register_native_daily_sim_job 之前的段落），此处不再重复注册。
 	_sea_ice_daily_job = null
 	if cp != null and cp.get("sea_ice_independent_system_enabled") != null \
 			and bool(cp.sea_ice_independent_system_enabled):
@@ -4725,6 +4746,131 @@ func _ensure_climate_daily_round_slots_fresh() -> void:
 # _ensure_climate_daily_round_slots_fresh() 重新跑 refresh_slots_from_map()。
 func _mark_climate_daily_round_slots_stale() -> void:
 	_climate_daily_round_slots_fresh = false
+
+
+# ─── Natural resources（economy.resources）─────────────────────────────────
+# 缓存 C++ pass 的恒定系数 knobs（来自 ResourceProfileRegistry）；n_cells 每 tick 更新。
+func _ensure_natural_resource_knobs() -> void:
+	if _natural_resource_pass_knobs.is_empty():
+		_natural_resource_pass_knobs = ResourceProfileRegistry.build_pass_knobs()
+
+
+# 地图生成期一次性写入每地块初始资源储量。
+# suitability = clamp(init_base + init_temp*tn + init_moisture*m, 0, 1)；
+# reserve0 = capacity * suitability（land_only 时水面格为 0）。
+# 在 init_soa_from_bake 之后调用（temp_arr/moisture_arr/is_water_arr 已就位）。
+func _bootstrap_natural_resource_deposits(map_ref, _cfg) -> void:
+	if map_ref == null:
+		return
+	var n_cells: int = map_ref.cell_count()
+	if n_cells <= 0:
+		return
+	var temp_arr: PackedFloat32Array = map_ref.temp_arr
+	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
+	var water_arr: PackedByteArray = map_ref.is_water_arr
+	var have_water: bool = water_arr.size() >= n_cells
+	for p in ResourceProfileRegistry.ordered():
+		var field: String = ResourceProfileRegistry.reserve_map_field(p)
+		if field == "":
+			continue
+		var arr: PackedFloat32Array = map_ref.get(field)
+		if arr.size() < n_cells:
+			arr.resize(n_cells)
+		var cap: float = p.capacity
+		var lo: float = p.temp_lo
+		var hi: float = p.temp_hi
+		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
+		var land_gate: bool = bool(p.land_only) and have_water
+		for i in range(n_cells):
+			if land_gate and water_arr[i] != 0:
+				arr[i] = 0.0
+				continue
+			var temp_v: float = temp_arr[i] if i < temp_arr.size() else 0.0
+			var m: float = moist_arr[i] if i < moist_arr.size() else 0.0
+			var tn: float = clampf((temp_v - lo) * inv_span, 0.0, 1.0)
+			var suit: float = clampf(p.init_base + p.init_temp * tn + p.init_moisture * m, 0.0, 1.0)
+			arr[i] = cap * suit
+		map_ref.set(field, arr)
+
+
+# 每日资源 pass 入口（由 NaturalResourceDailySystem.tick 调）。
+# 优先 C++ run_natural_resource_pass（slot 权威 + flush 回 MapData）；
+# native 不可用 / 未发布时退回 GDScript fallback 同模板。
+func run_natural_resource_pass_native(map_ref) -> Dictionary:
+	var t_wall: int = Time.get_ticks_usec()
+	if map_ref == null:
+		return {"done": true, "path": "skip", "published_to_slot": false}
+	var n_cells: int = map_ref.cell_count()
+	if n_cells <= 0:
+		return {"done": true, "path": "skip", "published_to_slot": false}
+	_ensure_natural_resource_knobs()
+	if int(_natural_resource_pass_knobs.get("resource_count", 0)) <= 0:
+		return {"done": true, "path": "no_resources", "published_to_slot": false}
+
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("run_natural_resource_pass"):
+		if _data_core_world_ext.has_method("refresh_slots_from_map"):
+			_data_core_world_ext.refresh_slots_from_map()
+		_natural_resource_pass_knobs["n_cells"] = n_cells
+		var res: Dictionary = _data_core_world_ext.run_natural_resource_pass(_natural_resource_pass_knobs)
+		if bool(res.get("published_to_slot", false)):
+			return res
+		# native 跑了但没发布任何资源 → 落到 GDScript fallback。
+
+	return _run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall)
+
+
+# GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。
+func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int) -> Dictionary:
+	var temp_arr: PackedFloat32Array = map_ref.temp_arr
+	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
+	var water_arr: PackedByteArray = map_ref.is_water_arr
+	var have_water: bool = water_arr.size() >= n_cells
+	var total_delta: float = 0.0
+	var published: PackedStringArray = PackedStringArray()
+	for p in ResourceProfileRegistry.ordered():
+		var field: String = ResourceProfileRegistry.reserve_map_field(p)
+		if field == "":
+			continue
+		var arr: PackedFloat32Array = map_ref.get(field)
+		if arr.size() < n_cells:
+			continue
+		var cap: float = p.capacity
+		var lo: float = p.temp_lo
+		var hi: float = p.temp_hi
+		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
+		var land_gate: bool = bool(p.land_only) and have_water
+		for i in range(n_cells):
+			if land_gate and water_arr[i] != 0:
+				continue
+			var tn: float = clampf((temp_arr[i] - lo) * inv_span, 0.0, 1.0)
+			var m: float = moist_arr[i]
+			var reserve: float = arr[i]
+			# 半隐式（IMEX）：与 C++ run_natural_resource_pass 逐 op 同模板。
+			var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
+			var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
+			var P: float = gen_climate + p.gen_self - decay_climate
+			var L: float = ((p.gen_self + p.decay_self) / cap) if cap > 0.0 else 0.0
+			if L < 0.0:
+				L = 0.0
+			var v: float = (reserve + P) / (1.0 + L)
+			if cap > 0.0 and v > cap:
+				v = cap
+			if v < 0.0:
+				v = 0.0
+			arr[i] = v
+			total_delta += (v - reserve)
+		map_ref.set(field, arr)
+		published.append(field)
+	return {
+		"done": true,
+		"path": "gdscript",
+		"published_to_slot": published.size() > 0,
+		"published_slots": published,
+		"resource_count": published.size(),
+		"n_cells": n_cells,
+		"total_delta": total_delta,
+		"native_ms": (Time.get_ticks_usec() - t_wall) / 1000.0,
+	}
 
 
 # Soak 验收用：把 round 内 refresh/skip 计数打印出来。climate_daily_system 在

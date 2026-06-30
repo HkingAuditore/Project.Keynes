@@ -151,6 +151,26 @@ const CELL_RIVER_STORAGE: StringName = &"cell.river_storage"                    
 const CELL_GROUNDWATER_STORAGE: StringName = &"cell.groundwater_storage"           # f32 slow reservoir
 const CELL_SURFACE_RUNOFF: StringName = &"cell.surface_runoff"                     # f32 local runoff debug
 
+# ─── Natural resources：per-cell 资源储量（economy.resources）─────────
+# 每种资源一个 f32 储量字段 [0, capacity]，由 NaturalResourceDailySystem 每日
+# 经 run_natural_resource_pass 推进生成/衰减。新增资源需在此 + map_data + schema
+# 加字段并重跑 codegen / 重 build GDExtension（见 ResourceProfileRegistry SOP）。
+const CELL_RES_BIOMASS_RESERVE: StringName = &"cell.res_biomass_reserve"           # f32 可再生（生物质）
+const CELL_RES_IRON_ORE_RESERVE: StringName = &"cell.res_iron_ore_reserve"         # f32 不可再生（铁矿）
+# ── 性能压测用 10 种测试资源（economy.resources.test）：公式系数差异刻意拉大，
+#    含 land_only=false（无水面跳过 → 满 N 内循环更重）、极小/极大 capacity、
+#    饱和级 gen/decay 系数、负温度系数、窄温度带等极限配置。
+const CELL_RES_FRESHWATER_RESERVE: StringName = &"cell.res_freshwater_reserve"     # f32 全格·湿度驱动可再生
+const CELL_RES_TIMBER_RESERVE: StringName = &"cell.res_timber_reserve"             # f32 陆生·温湿慢再生·大容量
+const CELL_RES_COAL_RESERVE: StringName = &"cell.res_coal_reserve"                 # f32 全格·静态不可再生·超大容量
+const CELL_RES_OIL_RESERVE: StringName = &"cell.res_oil_reserve"                   # f32 陆生·极慢衰减·大容量
+const CELL_RES_CLAY_RESERVE: StringName = &"cell.res_clay_reserve"                 # f32 全格·饱和级系数·极小容量
+const CELL_RES_WILD_GAME_RESERVE: StringName = &"cell.res_wild_game_reserve"       # f32 陆生·高衰减·低均衡
+const CELL_RES_PEAT_RESERVE: StringName = &"cell.res_peat_reserve"                 # f32 陆生·负温度系数（冷湿偏好）
+const CELL_RES_STONE_RESERVE: StringName = &"cell.res_stone_reserve"               # f32 全格·静态·超大容量
+const CELL_RES_WILD_HERBS_RESERVE: StringName = &"cell.res_wild_herbs_reserve"     # f32 全格·极端 gen/decay 系数
+const CELL_RES_GEOTHERMAL_RESERVE: StringName = &"cell.res_geothermal_reserve"     # f32 全格·窄温度带·热偏好
+
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用

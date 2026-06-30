@@ -154,6 +154,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
+- `natural_resource_daily`：自然资源每日生成/衰减，per-cell 储量按「固定公式模板 + 每资源系数」结合 temp/moisture 演化；reads cell.temp/moisture → 拓扑排在气候之后。数据驱动配置 `ResourceProfile`（`scripts/data/resource_profile.gd` + `data/resources/*.tres`）+ `ResourceProfileRegistry`；计算权威在 C++ `run_natural_resource_pass`（`gdext/src/world_ext_resource.cpp`），GDScript fallback 同模板。详见 `docs/cpp-dots-runtime/computation-pipelines.md` "Natural resources" 节。
 - `sea_ice_daily`：独立海冰日更新，可按 profile gate 注册。
 - `ocean_currents`：SLP、wind、PSI、upwelling、ocean current、视觉 raster/commit。
 - `weather_refresh`：天气 field begin/solve/summary/hydrology/commit/stage-b。

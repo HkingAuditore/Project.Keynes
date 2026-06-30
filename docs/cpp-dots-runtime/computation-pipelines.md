@@ -19,6 +19,7 @@
 | Sea ice daily | C++ | `run_sea_ice_daily_pass` 等 native helper | terrain flip policy、job wrapper、atlas upload。 |
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
+| Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -506,6 +507,54 @@ Ocean land 算法概要：
 - GDScript wind fallback 仍是旧合成模型（直接在当前温度上加 anomaly，缺少 C++ 的
   `cell_wind_speed` 权重、shared transport budget 与冷水潜热门控）。当前修复策略是监控并降低
   fallback 命中，而不是在无 A/B 的情况下重写 fallback。
+
+## Natural resources（自然资源每日生成/衰减）
+
+主要入口：
+
+- `DCWorldExt::run_natural_resource_pass(knobs)`（C++ full-map pass，slot 权威 + flush 回 MapData）— [`gdext/src/world_ext_resource.cpp`](../../gdext/src/world_ext_resource.cpp)
+- `map_generator.gd::run_natural_resource_pass_native(map)`（守门员 refresh + native dispatch + GDScript fallback）
+- `map_generator.gd::_bootstrap_natural_resource_deposits(map, cfg)`（生成期一次性写初始储量）
+- `NaturalResourceDailySystem`（`natural_resource_daily`，每日 DCSystem，reads cell.temp/cell.moisture → 拓扑自动排在 climate 之后）— [`scripts/simulation/systems/natural_resource_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/natural_resource_daily_system.gd)
+- 数据驱动配置：`ResourceProfile`（.tres）+ `ResourceProfileRegistry`（`build_pass_knobs` 组装系数数组）。
+
+**模型（统一类型，系数区分可再生/不可再生）**：每 tick、每 cell、每资源 r 用固定模板。
+采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
+损失项隐式求解，故对任意系数（含极端自系数）都**无条件稳定**，单调趋近均衡、不过冲，
+不会在 0↔capacity 之间横跳：
+
+```text
+tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
+m             = moisture
+gen_climate   = gen_base[r]   + gen_temp[r]*tn   + gen_moisture[r]*m
+decay_climate = decay_base[r] + decay_temp[r]*tn + decay_moisture[r]*m
+P             = gen_climate + gen_self[r] - decay_climate                       # 净常数生产项（可负）
+L             = capacity[r] > 0 ? max(0, (gen_self[r] + decay_self[r]) / capacity[r]) : 0
+reserve'      = clamp((reserve + P) / (1 + L), 0, capacity[r])
+```
+
+均衡点 `reserve* = capacity[r]·P/(gen_self[r]+decay_self[r])`，与旧显式 Euler 一致；L 小时
+`1/(1+L) ≈ 1−L`，行为与旧式近似。**历史问题**：旧式 `reserve' = clamp(reserve + gen − decay)` 对
+`(gen_self+decay_self)/capacity ≥ 2` 的刚性配置会发散，被 clamp 在 0↔capacity 反复横跳（如测试
+资源「草药」「黏土」）；改半隐式后消除。
+
+`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。首批两种示例：`biomass`（gen_self>0 的 logistic 可再生）与 `iron_ore`（gen/decay 全 0，v1 静止，待后续开采系统消耗）。
+
+**输入 / 输出**：
+
+- 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water`（is_water 可缺失则视为全陆地）。
+- 写 slot：每个 `reserve_slots[r]`（如 `cell_res_biomass_reserve` / `cell_res_iron_ore_reserve`），逐资源 `_flush_slot_to_map`。
+- knobs：`n_cells`、`resource_count`、`reserve_slots`(PackedStringArray)、`capacity/land_only/temp_lo/temp_hi`、`gen_*`/`decay_*`（PackedFloat32Array，按资源索引对齐）。
+- 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, n_cells, total_delta, native_ms, compute_ms, fallback_reason? }`，契约同 `run_runtime_hydrology_pass`。
+
+**权威 / fallback**：native pass 是 reserve slot 权威。`published_to_slot=false`（含 native 不可用 / 无可发布资源）时 `run_natural_resource_pass_native` 退回 GDScript fallback（`_run_natural_resource_pass_gdscript`，同模板直接读写 `MapData.*_arr`）。两路逐 cell 逐资源 A/B 对拍一致（见 `tests/natural_resource_pass_test.gd`）。
+
+**新增一种资源 SOP**：component_ids.gd 常量 + map_data.gd 数组（`_alloc_soa` resize + `rebuild_soa_from_cells` 置 0）+ component_schema.gd 一行（`owner="economy.resources"`）→ 跑 codegen → 新建 .tres + 登记 `ResourceProfileRegistry._PROFILE_PATHS` → 重 build GDExtension。
+
+风险：
+
+- 储量字段进永久存档（`world.gd` 按 schema 序列化），新增资源后旧档加载缺该字段时按 0 处理 + bootstrap 不会回填运行期已存在的存档（仅生成期写一次）。
+- `path=gdscript` 说明 native 未发布；检查 `fallback_reason`（missing_climate_slot / knob_array_size_mismatch / no_publishable_resource）。
 
 ## Transpiration
 

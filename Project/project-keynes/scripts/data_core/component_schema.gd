@@ -145,6 +145,20 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.river_storage", cpp_name = "cell_river_storage", dtype = F32, track_prev = false, map_field = "river_storage_arr", prev_field = "", owner = "runtime.hydrology" },
 	{ name = &"cell.groundwater_storage", cpp_name = "cell_groundwater_storage", dtype = F32, track_prev = false, map_field = "groundwater_storage_arr", prev_field = "", owner = "runtime.hydrology" },
 	{ name = &"cell.surface_runoff", cpp_name = "cell_surface_runoff", dtype = F32, track_prev = false, map_field = "surface_runoff_arr", prev_field = "", owner = "runtime.hydrology" },
+	# ─── Natural resources：per-cell 资源储量（economy.resources）──────────
+	{ name = &"cell.res_biomass_reserve", cpp_name = "cell_res_biomass_reserve", dtype = F32, track_prev = false, map_field = "res_biomass_reserve_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_iron_ore_reserve", cpp_name = "cell_res_iron_ore_reserve", dtype = F32, track_prev = false, map_field = "res_iron_ore_reserve_arr", prev_field = "", owner = "economy.resources" },
+	# 性能压测用 10 种测试资源（economy.resources.test）
+	{ name = &"cell.res_freshwater_reserve", cpp_name = "cell_res_freshwater_reserve", dtype = F32, track_prev = false, map_field = "res_freshwater_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_timber_reserve", cpp_name = "cell_res_timber_reserve", dtype = F32, track_prev = false, map_field = "res_timber_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_coal_reserve", cpp_name = "cell_res_coal_reserve", dtype = F32, track_prev = false, map_field = "res_coal_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_oil_reserve", cpp_name = "cell_res_oil_reserve", dtype = F32, track_prev = false, map_field = "res_oil_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_clay_reserve", cpp_name = "cell_res_clay_reserve", dtype = F32, track_prev = false, map_field = "res_clay_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_wild_game_reserve", cpp_name = "cell_res_wild_game_reserve", dtype = F32, track_prev = false, map_field = "res_wild_game_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_peat_reserve", cpp_name = "cell_res_peat_reserve", dtype = F32, track_prev = false, map_field = "res_peat_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_stone_reserve", cpp_name = "cell_res_stone_reserve", dtype = F32, track_prev = false, map_field = "res_stone_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_wild_herbs_reserve", cpp_name = "cell_res_wild_herbs_reserve", dtype = F32, track_prev = false, map_field = "res_wild_herbs_reserve_arr", prev_field = "", owner = "economy.resources.test" },
+	{ name = &"cell.res_geothermal_reserve", cpp_name = "cell_res_geothermal_reserve", dtype = F32, track_prev = false, map_field = "res_geothermal_reserve_arr", prev_field = "", owner = "economy.resources.test" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

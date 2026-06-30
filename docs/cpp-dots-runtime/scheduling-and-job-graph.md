@@ -46,10 +46,13 @@ DCSystemScheduler
 1. 创建 `DCSystemScheduler`，并由 scheduler 读取 `ClimateProfile` 配置 frame/strict budget。
 2. 注册 `season_refresh`。
 3. 注册 `ocean_currents`。
-4. 当 native daily ACTIVE 可注册时，注册 `native_daily_sim` 并保留 visual upload jobs。
-5. 否则注册 `refresh_climate_daily`、可选 `sea_ice_daily`、`enum_atlas_upload`、`weather_refresh`、`dynamic_visual_atlas_upload`。
-6. 可能注册 native environment runtime 相关 job。
-7. 调用 topology/build step，使 depends graph 生效。
+4. 注册 `natural_resource_daily`（**保留边界 job**：在 native/legacy 分叉之前注册，与 `season_refresh`/`ocean_currents` 同级，两条路径都生效）。reads `cell.temp`/`cell.moisture`，`build_topology` 自动排序（不加硬 `depends_on`）；`must_run=true`，避免被 `native_daily_sim`（单 Job 即可超 frame budget）之后的 `frame_budget_exhausted` 守卫每日跳过 → reserve 永不演化。
+5. 当 native daily ACTIVE 可注册时，注册 `native_daily_sim` 并保留 visual upload jobs，然后 **early-return**（不再注册下面的 legacy 气候/天气 job）。
+6. 否则（legacy 路径）注册 `refresh_climate_daily`、可选 `sea_ice_daily`、`enum_atlas_upload`、`weather_refresh`、`dynamic_visual_atlas_upload`。
+7. 可能注册 native environment runtime 相关 job。
+8. 调用 topology/build step，使 depends graph 生效。
+
+> ⚠ 历史 bug（2026-06 修复）：`natural_resource_daily` 曾只在 legacy 分支注册（步骤 6 内），native daily ACTIVE 时被步骤 5 的 early-return 跳过，导致资源 reserve 永不更新。修复为提到分叉前作为保留边界 job + `must_run=true`。回归测试见 `tests/natural_resource_daily_schedule_test.gd`。
 
 `DCSystemScheduler.register_system(system, cp)` 负责 feature flag gating 和 descriptor 构造。底层如果存在 `SusSchedulerExt`，会把 job descriptor 注册到 C++ scheduler；否则保留 GDScript scheduler 行为。`MapGenerator` 只创建 job 并传入 map/world/baker/native ext 等上下文；profile 到 budget/policy 的解释在 `DCSystemScheduler.configure_from_profile()` 和 `DCSystemScheduler.configure_job_from_profile()` 内完成。
 
@@ -91,6 +94,7 @@ DCSystemScheduler
 | --- | --- | --- | --- |
 | `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速。 |
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
+| `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |

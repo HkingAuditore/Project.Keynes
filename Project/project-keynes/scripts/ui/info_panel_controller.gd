@@ -60,6 +60,11 @@ var _physical_ocean_label: Label = null
 var _physical_wind_label: Label = null
 var _physical_pressure_label: Label = null
 
+# 自然资源储量行（economy.resources）。懒创建单行多列 Label，挂到右侧面板 VBox 末尾。
+# 数据驱动：内容直接遍历 ResourceProfileRegistry，读 MapData 的 res_*_reserve_arr，
+# 新增一种资源 .tres 后无需改本面板即可显示。
+var _resource_label: Label = null
+
 # ─── 动态上下文 ─────────────────────────────────────────────────────
 var _selected_cell: HexCell = null
 var _view_adapter: DCViewAdapter = null
@@ -237,6 +242,8 @@ func refresh_info_panel() -> void:
 	# Emergent Climate Coupling：三行涌现耦合信息（温度分解 / 海冰覆盖度 / 反馈缓冲）
 	refresh_physical_lines()
 	refresh_emergent_lines()
+	# 自然资源储量（economy.resources）
+	refresh_resource_lines()
 
 
 # Milestone 3：单独刷新天气行，避免每天 tick 时重画整面板
@@ -285,6 +292,8 @@ func refresh_climate_line() -> void:
 			float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 		]
 	refresh_physical_lines()
+	# 资源储量随气候同日推进，piggyback 日级刷新让选中地块实时可见。
+	refresh_resource_lines()
 
 
 func _weather_field_snapshot(cell: HexCell, idx: int, ad: DCViewAdapter) -> Dictionary:
@@ -409,6 +418,55 @@ func refresh_physical_lines() -> void:
 	_physical_pressure_label.text = "压力/ψ：海平压力 %s  风应力旋度 %s  流函数 ψ %s" % [
 		_fmt_signed3(slp), curl_text, psi_text
 	]
+
+
+# 自然资源储量：懒创建单个多行 Label（首次刷新时挂到右侧面板 VBox 末尾，避免改 .tscn）。
+func ensure_resource_labels() -> void:
+	if _resource_label != null:
+		return
+	var vbox: Node = _history_label.get_parent() if _history_label != null else null
+	if vbox == null:
+		return
+	_resource_label = Label.new()
+	_resource_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_resource_label)
+
+
+# 刷新选中地块的自然资源储量行（与 weather/vitality 一样可按"日"高频刷新）。
+# 数据驱动：遍历 ResourceProfileRegistry，逐资源读 MapData 的 reserve 数组（由
+# run_natural_resource_pass / GDScript fallback 每 tick flush 回 MapData）。
+func refresh_resource_lines() -> void:
+	if _selected_cell == null or _current_map == null:
+		return
+	ensure_resource_labels()
+	if _resource_label == null:
+		return
+	ResourceProfileRegistry.ensure_loaded()
+	var profiles: Array = ResourceProfileRegistry.ordered()
+	if profiles.is_empty():
+		_resource_label.text = "自然资源：（未配置资源类型）"
+		return
+	var idx: int = int(_selected_cell.index)
+	var ad: DCViewAdapter = _view_adapter
+	var lf_v: int = ad.get_landform(idx) if ad != null else int(_selected_cell.landform)
+	var is_water: bool = LandformType.is_water(lf_v)
+	var lines := PackedStringArray()
+	lines.append("自然资源储量：")
+	for p in profiles:
+		var name_cn: String = String(p.display_name) if String(p.display_name) != "" else String(p.id)
+		if bool(p.land_only) and is_water:
+			lines.append("  %s：—（水域不可用）" % name_cn)
+			continue
+		var field: String = ResourceProfileRegistry.reserve_map_field(p)
+		var reserve: float = 0.0
+		if field != "":
+			var arr: PackedFloat32Array = _current_map.get(field)
+			if idx >= 0 and idx < arr.size():
+				reserve = float(arr[idx])
+		var cap: float = float(p.capacity)
+		var pct: float = (reserve / cap * 100.0) if cap > 0.0 else 0.0
+		lines.append("  %s：%.1f%%（%.3f / %.2f）" % [name_cn, pct, reserve, cap])
+	_resource_label.text = "\n".join(lines)
 
 
 # Emergent Climate Coupling：刷新三行"涌现耦合"信息：
