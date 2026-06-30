@@ -510,7 +510,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 #   12→~480 格(偏密)  16→~300 格(适中)  20→~200 格(稀疏)  24→~140 格(很稀疏)
 # 调小=河更多更密；调大=河更少更稀。配合 macro_relief 放大流域后，同阈值河会更长更分级。
 @export var river_channel_init_cells: int = 16
-@export_range(1, 64, 1) var river_headwater_init_cells: int = 6
+# [density-fix 2026-06-30] 6→10：原 headwater 阈值过低，用 1/2.67 的更低阈值主动 trace
+# 支流到主河道，加剧河网密集。上调后支流补充更克制（仍低于 channel_init=16）。
+@export_range(1, 64, 1) var river_headwater_init_cells: int = 10
 @export_range(0.0, 1.0, 0.01) var river_headwater_min_land_h: float = 0.30
 
 # Minimum accepted land cells in a rendered river path. Shorter runoff paths
@@ -1253,9 +1255,17 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 30, 1) var salt_flat_min_dist_ocean: int = 4
 # 硬叶灌丛(CHAPARRAL)仅在距海 ≤ 该格数的暖温带中等偏旱草/灌带生成（地中海式干夏）。
 @export_range(1, 20, 1) var chaparral_max_dist_ocean: int = 4
-@export_range(0.0, 1.0, 0.01) var plateau_min_land_h: float = 0.25
+# 高原(PLATEAU)：高海拔、低局部起伏、连通成片的陆地。以下三个为判定阈值。
+# [density-fix 2026-06-30] plateau_min_land_h 0.25→0.35：原区间过宽(land_h∈[0.25,0.90]
+# 对应 E∈[0.565,0.942]，覆盖陆地大部分中高段)，收紧下界排除低地"伪高原"。
+@export_range(0.0, 1.0, 0.01) var plateau_min_land_h: float = 0.35
 @export_range(0.0, 0.2, 0.005) var plateau_max_relief: float = 0.14
 @export_range(1, 80, 1) var plateau_min_cells: int = 3
+# [density-fix 2026-06-30] PLATEAU 面积占比上限：高原总面积不超过陆地的此比例。
+# 超出时按连通分量面积从大到小保留，较小连通分量降级为 HILL。
+# 此前 PLATEAU 是唯一没有密度上限的特征地貌(PEAK 按 land/120 限量、RIFT 按 land/140 限量)，
+# 导致大地图上所有满足阈值的平坦中高海拔区全部标为 PLATEAU。0.25≈陆地四分之一。
+@export_range(0.0, 1.0, 0.01) var plateau_max_land_ratio: float = 0.25
 @export_range(0.0, 1.0, 0.01) var mountain_min_land_h: float = 0.70
 @export_range(0.0, 0.2, 0.005) var mountain_min_relief: float = 0.115
 @export_range(0.0, 1.0, 0.01) var peak_min_land_h: float = 0.74
