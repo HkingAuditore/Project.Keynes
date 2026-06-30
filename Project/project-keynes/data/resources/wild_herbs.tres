@@ -21,4 +21,18 @@ decay_moisture = 0.0
 decay_self = 5.2
 init_base = 0.0
 init_temp = 0.0
-init_moisture = 0.0
+init_moisture = 0.2
+init_noise = 0.15
+init_noise_scale = 0.05
+init_vegetation_weights = {
+4: 0.35,
+9: 0.3,
+10: 0.25,
+11: 0.3,
+12: 0.15,
+13: 0.2,
+14: 0.2,
+18: 0.3,
+21: 0.2,
+25: 0.2
+}

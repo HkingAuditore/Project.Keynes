@@ -4755,11 +4755,15 @@ func _ensure_natural_resource_knobs() -> void:
 		_natural_resource_pass_knobs = ResourceProfileRegistry.build_pass_knobs()
 
 
-# 地图生成期一次性写入每地块初始资源储量。
-# suitability = clamp(init_base + init_temp*tn + init_moisture*m, 0, 1)；
-# reserve0 = capacity * suitability（land_only 时水面格为 0）。
-# 在 init_soa_from_bake 之后调用（temp_arr/moisture_arr/is_water_arr 已就位）。
-func _bootstrap_natural_resource_deposits(map_ref, _cfg) -> void:
+# 地图生成期一次性写入每地块初始资源储量（多因子「地块自身情况」适宜度）。
+# suit = init_base + init_temp*tn + init_moisture*m
+#      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
+#      + init_vegetation_weights[veg] + init_river*water_feature
+#      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
+# reserve0 = capacity * clamp(suit, 0, 1)（land_only 时水面格为 0）。
+# 在 init_soa_from_bake 之后调用（temp/moisture/water/elevation/landform/vegetation/
+# has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
+func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	if map_ref == null:
 		return
 	var n_cells: int = map_ref.cell_count()
@@ -4768,7 +4772,25 @@ func _bootstrap_natural_resource_deposits(map_ref, _cfg) -> void:
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
 	var water_arr: PackedByteArray = map_ref.is_water_arr
+	var elev_arr: PackedFloat32Array = map_ref.elevation_arr
+	var lf_arr: PackedByteArray = map_ref.landform_arr
+	var veg_arr: PackedByteArray = map_ref.vegetation_arr
+	var river_arr: PackedByteArray = map_ref.has_river_arr
+	var lake_arr: PackedByteArray = map_ref.is_lake_seed_arr
+	var volcano_arr: PackedByteArray = map_ref.has_volcano_arr
+	var posx_arr: PackedFloat32Array = map_ref.cell_pos_x_arr
+	var posy_arr: PackedFloat32Array = map_ref.cell_pos_y_arr
 	var have_water: bool = water_arr.size() >= n_cells
+	var have_elev: bool = elev_arr.size() >= n_cells
+	var have_lf: bool = lf_arr.size() >= n_cells
+	var have_veg: bool = veg_arr.size() >= n_cells
+	var have_river: bool = river_arr.size() >= n_cells
+	var have_lake: bool = lake_arr.size() >= n_cells
+	var have_volcano: bool = volcano_arr.size() >= n_cells
+	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
+	var base_seed: int = 0
+	if cfg != null and cfg.get("seed") != null:
+		base_seed = int(cfg.get("seed"))
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -4781,6 +4803,26 @@ func _bootstrap_natural_resource_deposits(map_ref, _cfg) -> void:
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
 		var land_gate: bool = bool(p.land_only) and have_water
+		# 数据驱动「地块自身情况」因子（缺省 0/{} → 该因子不参与）。
+		var w_elev: float = float(p.init_elevation)
+		var w_river: float = float(p.init_river)
+		var w_volc: float = float(p.init_volcano)
+		var w_noise: float = float(p.init_noise)
+		var lf_w: Dictionary = p.init_landform_weights
+		var veg_w: Dictionary = p.init_vegetation_weights
+		var use_elev: bool = have_elev and w_elev != 0.0
+		var use_lf: bool = have_lf and not lf_w.is_empty()
+		var use_veg: bool = have_veg and not veg_w.is_empty()
+		var use_river: bool = w_river != 0.0 and (have_river or have_lake)
+		var use_volc: bool = have_volcano and w_volc != 0.0
+		var use_noise: bool = have_pos and absf(w_noise) > 0.0
+		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
+		var noise: FastNoiseLite = null
+		if use_noise:
+			noise = FastNoiseLite.new()
+			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+			noise.seed = base_seed ^ int(hash(p.id))
+			noise.frequency = maxf(0.0001, float(p.init_noise_scale))
 		for i in range(n_cells):
 			if land_gate and water_arr[i] != 0:
 				arr[i] = 0.0
@@ -4788,8 +4830,22 @@ func _bootstrap_natural_resource_deposits(map_ref, _cfg) -> void:
 			var temp_v: float = temp_arr[i] if i < temp_arr.size() else 0.0
 			var m: float = moist_arr[i] if i < moist_arr.size() else 0.0
 			var tn: float = clampf((temp_v - lo) * inv_span, 0.0, 1.0)
-			var suit: float = clampf(p.init_base + p.init_temp * tn + p.init_moisture * m, 0.0, 1.0)
-			arr[i] = cap * suit
+			var suit: float = p.init_base + p.init_temp * tn + p.init_moisture * m
+			if use_elev:
+				suit += w_elev * clampf(elev_arr[i], 0.0, 1.0)
+			if use_lf:
+				suit += float(lf_w.get(int(lf_arr[i]), 0.0))
+			if use_veg:
+				suit += float(veg_w.get(int(veg_arr[i]), 0.0))
+			if use_river:
+				var water_feature: bool = (have_river and river_arr[i] != 0) or (have_lake and lake_arr[i] != 0)
+				if water_feature:
+					suit += w_river
+			if use_volc and volcano_arr[i] != 0:
+				suit += w_volc
+			if use_noise:
+				suit += w_noise * ((noise.get_noise_2d(posx_arr[i], posy_arr[i]) + 1.0) * 0.5)
+			arr[i] = cap * clampf(suit, 0.0, 1.0)
 		map_ref.set(field, arr)
 
 

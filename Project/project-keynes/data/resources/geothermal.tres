@@ -19,6 +19,15 @@ decay_base = 0.002
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.01
-init_base = 0.0
-init_temp = 0.5
+init_base = 0.05
+init_temp = 0.0
 init_moisture = 0.0
+init_volcano = 0.7
+init_noise = 0.2
+init_noise_scale = 0.04
+init_landform_weights = {
+7: 0.15,
+8: 0.2,
+12: 0.6,
+14: 0.5
+}

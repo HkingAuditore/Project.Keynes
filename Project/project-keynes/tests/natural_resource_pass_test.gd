@@ -89,18 +89,43 @@ func _test_native_pass() -> void:
 		_skip("run_natural_resource_pass not exported")
 		return
 
-	var n: int = 2
-	var map := MapData.new(2, 1)
-	# 仅 seed 本 pass 需要的字段（其余 schema 字段以 size 0 绑定，pass 不触碰）。
-	# cell 0：陆地（is_water=0），温暖湿润 → biomass 应增长。
-	# cell 1：水面（is_water=1，land_only）→ biomass 保持 0。
-	map.temp_arr = PackedFloat32Array([20.0, 10.0])
-	map.moisture_arr = PackedFloat32Array([0.6, 0.8])
-	map.is_water_arr = PackedByteArray([0, 1])
-	var biomass_init := PackedFloat32Array([0.2, 0.0])
-	var iron_init := PackedFloat32Array([0.5, 0.0])
-	map.res_biomass_reserve_arr = biomass_init.duplicate()
-	map.res_iron_ore_reserve_arr = iron_init.duplicate()
+	ResourceProfileRegistry.ensure_loaded()
+	var profiles: Array = ResourceProfileRegistry.ordered()
+	if profiles.size() < 2:
+		_skip("registry has <2 profiles")
+		return
+
+	# ≥20 cell：覆盖 AVX2 SIMD body(16) + 标量尾(4) + 陆/水混合（land_gate blendv）。
+	var n: int = 20
+	var map := MapData.new(n, 1)
+	var temp := PackedFloat32Array()
+	var moist := PackedFloat32Array()
+	var water := PackedByteArray()
+	temp.resize(n)
+	moist.resize(n)
+	water.resize(n)
+	for i in range(n):
+		temp[i] = -12.0 + 2.4 * float(i)                       # -12 .. 33.6 °C
+		moist[i] = clampf(float(i) / float(n - 1), 0.0, 1.0)
+		water[i] = 1 if (i % 4 == 3) else 0                    # 水面格散布在 body 与 tail 段
+	map.temp_arr = temp
+	map.moisture_arr = moist
+	map.is_water_arr = water
+
+	# 逐资源 seed 初值（[0,cap] 内、按 cell 变化，给生成/衰减双向余量）。
+	var fields: Array = []
+	var inits: Array = []
+	for idx in range(profiles.size()):
+		var p = profiles[idx]
+		var field: String = ResourceProfileRegistry.reserve_map_field(p)
+		var cap: float = float(p.capacity)
+		var arr := PackedFloat32Array()
+		arr.resize(n)
+		for i in range(n):
+			arr[i] = cap * (0.2 + 0.6 * (float(i % 5) / 4.0))
+		map.set(field, arr)
+		fields.append(field)
+		inits.append(arr.duplicate())
 
 	_expect("bind_map_data succeeds", bool(ext.bind_map_data(map)))
 	if _failures > 0:
@@ -109,27 +134,73 @@ func _test_native_pass() -> void:
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
 	knobs["n_cells"] = n
 
-	# GDScript 参考（同模板）：先算期望值，再跑 native 对拍。
-	var expected_biomass := _reference_step(0, biomass_init, map.temp_arr, map.moisture_arr, map.is_water_arr, n)
-	var expected_iron := _reference_step(1, iron_init, map.temp_arr, map.moisture_arr, map.is_water_arr, n)
+	# 先算每资源期望（GDScript 参考，同模板），再跑 native（多核 + SIMD）对拍。
+	var expected: Array = []
+	for idx in range(profiles.size()):
+		expected.append(_reference_step(idx, inits[idx], temp, moist, water, n))
 
 	var res: Dictionary = ext.run_natural_resource_pass(knobs)
 	_expect("pass done", bool(res.get("done", false)))
 	_expect("pass path=gdext", String(res.get("path", "")) == "gdext")
 	_expect("pass published_to_slot", bool(res.get("published_to_slot", false)))
-	_expect("pass resource_count==2", int(res.get("resource_count", 0)) == 2)
+	_expect("pass resource_count==registry", int(res.get("resource_count", 0)) == profiles.size())
 
-	var b: PackedFloat32Array = map.res_biomass_reserve_arr
-	var ir: PackedFloat32Array = map.res_iron_ore_reserve_arr
-	_expect("biomass land cell grew", b.size() == n and b[0] > biomass_init[0])
-	_expect("biomass water cell stays 0 (land_only)", b.size() == n and is_equal_approx(b[1], 0.0))
-	_expect("biomass within [0,capacity]", b.size() == n and b[0] >= 0.0 and b[0] <= 1.0)
-	_expect("iron static (no regen/decay)", ir.size() == n and is_equal_approx(ir[0], iron_init[0]) and is_equal_approx(ir[1], iron_init[1]))
+	# 逐资源、逐 cell A/B：native（多核 + AVX2 SIMD body/tail/water-blend）== GDScript 参考。
+	var ab_ok: bool = true
+	var ab_detail: String = ""
+	for idx in range(profiles.size()):
+		var p = profiles[idx]
+		var cap: float = float(p.capacity)
+		var tol: float = maxf(1e-4, cap * 1e-4)                # 大容量资源用相对容差
+		var got: PackedFloat32Array = map.get(fields[idx])
+		var exp: PackedFloat32Array = expected[idx]
+		if got.size() != n:
+			ab_ok = false
+			ab_detail = "%s size %d != %d" % [String(p.id), got.size(), n]
+			break
+		for i in range(n):
+			if absf(got[i] - exp[i]) > tol:
+				ab_ok = false
+				ab_detail = "%s[%d] native=%s ref=%s (tol=%s)" % [String(p.id), i, str(got[i]), str(exp[i]), str(tol)]
+				break
+		if not ab_ok:
+			break
+	if not ab_ok:
+		printerr("  [detail] %s" % ab_detail)
+	_expect("native==reference for all resources × cells (SIMD body+tail+water blend)", ab_ok)
 
-	# A/B：native 与 GDScript 参考逐 cell 一致（f32 容差）。
-	_expect("biomass native==reference[0]", b.size() == n and absf(b[0] - expected_biomass[0]) < 1e-4)
-	_expect("biomass native==reference[1]", b.size() == n and absf(b[1] - expected_biomass[1]) < 1e-4)
-	_expect("iron native==reference[0]", ir.size() == n and absf(ir[0] - expected_iron[0]) < 1e-4)
+	# 关键不变量抽查。
+	var bi: int = _profile_index(profiles, "biomass")
+	if bi >= 0:
+		var bgot: PackedFloat32Array = map.get(fields[bi])
+		var binit: PackedFloat32Array = inits[bi]
+		_expect("biomass land cell grew", bgot.size() == n and bgot[0] > binit[0])           # i=0 陆地
+		_expect("biomass water cell unchanged (land_only)", bgot.size() == n and is_equal_approx(bgot[3], binit[3]))  # i=3 水面
+		var b_clamped: bool = true
+		for i in range(n):
+			if bgot[i] < 0.0 or bgot[i] > 1.0:
+				b_clamped = false
+				break
+		_expect("biomass within [0,capacity]", b_clamped)
+
+	var ii: int = _profile_index(profiles, "iron_ore")
+	if ii >= 0:
+		var igot: PackedFloat32Array = map.get(fields[ii])
+		var iinit: PackedFloat32Array = inits[ii]
+		var static_ok: bool = igot.size() == n
+		if static_ok:
+			for i in range(n):
+				if not is_equal_approx(igot[i], iinit[i]):
+					static_ok = false
+					break
+		_expect("iron static (no regen/decay)", static_ok)
+
+
+func _profile_index(profiles: Array, id_name: String) -> int:
+	for i in range(profiles.size()):
+		if String(profiles[i].id) == id_name:
+			return i
+	return -1
 
 
 # GDScript 参考实现：与 C++ run_natural_resource_pass / map_generator fallback 同公式。

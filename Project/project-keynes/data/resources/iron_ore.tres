@@ -19,6 +19,19 @@ decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.0
-init_base = 0.2
+init_base = -0.35
 init_temp = 0.0
 init_moisture = 0.0
+init_elevation = 0.3
+init_noise = 0.6
+init_noise_scale = 0.08
+init_landform_weights = {
+6: 0.35,
+7: 0.6,
+8: 0.7,
+10: 0.4,
+12: 0.4,
+13: 0.3,
+14: 0.5,
+15: 0.45
+}
