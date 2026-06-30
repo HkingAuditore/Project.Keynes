@@ -1247,7 +1247,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             : (!has_bundle ? String("native_daily_bundle_missing")
                            : (!has_pass ? String("native_daily_bundle_no_passes")
                                         : String("native_daily_bundle_missing_required_passes")));
-        out["fallback_reason"] = authoritative_ready ? String() : out["fail_stage"];
+        out["fallback_reason"] = authoritative_ready ? Variant() : Variant(out["fail_stage"]);
         out["configured"] = true;
         out["cell_count"] = _native_world_cell_count;
         out["pass_keys"] = pass_keys;
@@ -1870,11 +1870,11 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         season_authority["cadence_policy_owner"] =
             season_cadence_policy.has("owner")
                 ? season_cadence_policy.get("owner", String("gdscript_retained"))
-                : String("gdscript_retained");
+                : Variant(String("gdscript_retained"));
         season_authority["cadence_policy_state"] =
             season_cadence_policy.has("policy_state")
                 ? season_cadence_policy.get("policy_state", String("gdscript_retained"))
-                : String("gdscript_retained");
+                : Variant(String("gdscript_retained"));
         season_authority["blockers"] =
             String(state["season_refresh_state_owner"]) == String("native_active")
                 ? Array()

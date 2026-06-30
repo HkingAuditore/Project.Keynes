@@ -1443,7 +1443,7 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     // coast SDF（离岸距离场，供调试/校验；carve 已就地作用于 height_final）
     out["coast_ok"] = coast_ok;
     out["coast_sdf_buffer"] = coast_ok ? PackedFloat32Array(coast.get("out_buf", PackedFloat32Array())) : PackedFloat32Array();
-    out["coast_ms"] = coast_ok ? coast.get("elapsed_ms", -1.0) : -1.0;
+    out["coast_ms"] = coast_ok ? coast.get("elapsed_ms", -1.0) : Variant(-1.0);
     out["coast_reason"] = coast.get("reason", String());
 
     // stage 诊断（GDScript 打印 / 校验用）
