@@ -356,6 +356,12 @@ GDScript 镜像（`map_generator._climate_pass_a` legacy 与 `_climate_pass_a_so
   ~1.7→0.38ms，原子 `round_native_call_ms` 3.69→2.37ms。worker 版纯核 `_async_pass_a_kernel_pure` 仍内联
   原算法（不碰成员缓存，线程安全；值相同不破坏 A/B）。剩余每日不变项（`dc_insolation_now`/`dc_day_length_norm`，
   ~13 trig/cell）随 season_phase 变，仍需逐日算。
+- **多核接图（2026-07，bit-equal）**：native daily 图（slice `exec_slice_node` + `SCHEDULE_GRAPH` +
+  legacy if-chain）此前调单线程 `run_climate_pass_a`，现统一改调 `run_climate_pass_a_thread(...,0)`（`pk::parallel_for_range`
+  自适应 task 数）。pass_a 纯 cell-local（无邻居 gather）→ 多核逐位等价。`tests/climate_pass_bench.gd`：
+  49k cell 2.83→0.61ms（4.7x）、110k cell 5.05x，随 N 仍升 → compute-bound、近线性。**手写 AVX2 评估为 no-go**：
+  pass_a compute 被 transcendental（insolation/day-length/pow）主导，矢量化到 ulp≤4 需 SVML 级超越函数、可向量化
+  纯算术子段占比小 ROI 低；in-core 轴由多核兜住（数据见 `tmp/climate_bench_phase0_summary.md`）。
 
 排查：
 
@@ -401,6 +407,20 @@ A-B 验证 hot key：游戏运行时按 `V` 键触发
   `sea_ice_albedo_cooling`、`sea_ice_frac`、`snowpack_cover_low/full`，缺省值 mirror
   `ClimateProfile`。不要依赖 C++ optional knobs 的 0 值兜底，否则水域海冰反照率反馈会在
   native/async 路径被静默关闭。
+
+性能：
+
+- **多核接图（2026-07，bit-equal）**：native daily 图三路（slice / `SCHEDULE_GRAPH` / legacy if-chain）
+  此前调单线程 `run_climate_pass_b`，现统一改调 `run_climate_pass_b_thread(...,0)`（为此放宽其原
+  `n_tasks<1→1` 钳制，使 `n_tasks<=0`=`pk::parallel_for_range` 自适应）。安全性：pass_b own-cell 写
+  `local_thermal_anomaly`/`moisture`，邻居只读 round-start 快照 + 预拍 `temp_snapshot` → 无跨 cell 写依赖、
+  多核逐位等价。`tests/climate_pass_bench.gd`：49k cell 1.72→0.34ms（5.1x）、110k cell 5.57x、compute-bound。
+- **`pass_b_thread` 海冰尾循环 bug 修复（2026-07）**：`run_climate_pass_b_thread` 此前**漏写**了 scalar/simd
+  版都有的「`sea_ice_albedo_cooling>0` 时 water cell 的反照率制冷尾循环」与对应 `sea_ice_frac` knob 读取——
+  因该变体一直未接图而长期休眠。`tests/sim_2ms_ulp_tolerant_test.gd`（scalar↔thread 逐 cell A/B）首次接图前
+  捕获此分叉（thread 0.0 vs scalar −0.00332）并修复，现 worst=0 逐位等价。
+- **融合 / SFC 评估为 no-go**：pass_b 与 pass_a 均 compute-bound（~2–3 GB/s 远未触 DRAM），融合省内存流量、
+  SFC 改 cache 局部性收益≈0 且高风险，故不实施（数据见 `tmp/climate_bench_phase0_summary.md`）。
 
 风险：
 

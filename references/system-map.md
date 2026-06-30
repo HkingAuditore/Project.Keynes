@@ -186,6 +186,8 @@ WorldClock.day_changed(day_idx)
 
 这些段由 GDScript 状态机调度，许多 hot loop 已在 `DCWorldExt` 中有 C++ pass。继续迁移时要区分“C++ 加速”和“DOTS 权威”：调用 C++ pass 不等于 native graph 拥有 tick/state/publish 全部权威。
 
+native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-07，`pk::parallel_for_range` 自适应，与 scalar 逐位等价；49k–110k cell 实测 ~4.7–5.6x）。两 pass 经 bench 确认 compute-bound，故未做手写 SIMD / 融合 / SFC（数据驱动 no-go，详见 `docs/cpp-dots-runtime/computation-pipelines.md` 与 `scheduling-and-job-graph.md`）。
+
 `OceanCurrentsJob` 把物理求解和视觉 raster 分离。模拟权威是 per-cell SLP、wind、PSI、ocean current、upwelling 等 SoA/slot；vector atlas、wind field buffer 和 pixel commit 是视觉产物，可以滞后或切片。
 
 `WeatherSystem` 仍是天气编排和配置中心。已拆出的 `weather/field_solver.gd` 承担天气场 slice hot loop，`weather/front_advect.gd` 承担 front 推进和 cyclone wake。`weather_system.gd` 仍负责 ClimateProfile 同步、C++ knobs、native/fallback 选择、distribute、summary、legacy fronts、查询 API。
