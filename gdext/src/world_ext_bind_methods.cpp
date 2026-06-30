@@ -212,6 +212,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_runtime_hydrology_pass", "knobs"),
         &DCWorldExt::run_runtime_hydrology_pass);
+    // ─── Natural resources（economy.resources）─────────────────────────
+    ClassDB::bind_method(
+        D_METHOD("run_natural_resource_pass", "knobs"),
+        &DCWorldExt::run_natural_resource_pass);
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）─────────────────
     ClassDB::bind_method(
         D_METHOD("run_albedo_pass", "knobs"),

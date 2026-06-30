@@ -38,6 +38,7 @@ Runtime hydrology 新增的契约：
 - `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
+- `cell.res_biomass_reserve`、`cell.res_iron_ore_reserve`：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。每资源一条（新增资源需加常量 + MapData 数组 + schema 行 + codegen + 重 build；登记 `ResourceProfileRegistry._PROFILE_PATHS`）。由 `run_natural_resource_pass` 写入并逐资源 `_flush_slot_to_map()` 回 `MapData`；初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在生成期写一次。`run_natural_resource_pass_native` 调 C++ 前先 `refresh_slots_from_map()`，确保 climate round 写到 `MapData` 的 `temp/moisture` 对 C++ 可见。knobs 由 `ResourceProfileRegistry.build_pass_knobs()` 组装（`reserve_slots`/`capacity`/`land_only`/`temp_lo`/`temp_hi`/`gen_*`/`decay_*` 平行数组）；返回 Dictionary 含 `published_to_slot`/`published_slots`/`total_delta`，契约同 `run_runtime_hydrology_pass`。
 
 ## PackedArray CoW 公理
 

@@ -93,6 +93,24 @@ var river_storage_arr:         PackedFloat32Array = PackedFloat32Array()
 var groundwater_storage_arr:   PackedFloat32Array = PackedFloat32Array()
 var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
 
+# ─── Natural resources：per-cell 资源储量（纯运行期 SoA，无 HexCell 镜像）──
+# 初值由 MapGenerator._bootstrap_natural_resource_deposits 在 init_soa_from_bake
+# 之后写入；运行期由 run_natural_resource_pass（C++）或 GDScript fallback 推进。
+# 与 ocean/local_thermal_anomaly 同类：rebuild_soa_from_cells 仅置 0，不从 HexCell 拷。
+var res_biomass_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_iron_ore_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+# 性能压测用 10 种测试资源储量（与上面同类：rebuild_soa_from_cells 仅置 0）。
+var res_freshwater_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_timber_reserve_arr:      PackedFloat32Array = PackedFloat32Array()
+var res_coal_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_oil_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_clay_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_wild_game_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_peat_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_stone_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_wild_herbs_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_geothermal_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
 # local_thermal_anomaly_arr: 由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）。
@@ -515,6 +533,20 @@ func _alloc_soa(n: int) -> void:
 	river_storage_arr.resize(n)
 	groundwater_storage_arr.resize(n)
 	surface_runoff_arr.resize(n)
+	# Natural resources：per-cell 资源储量字段
+	res_biomass_reserve_arr.resize(n)
+	res_iron_ore_reserve_arr.resize(n)
+	# 性能压测用 10 种测试资源
+	res_freshwater_reserve_arr.resize(n)
+	res_timber_reserve_arr.resize(n)
+	res_coal_reserve_arr.resize(n)
+	res_oil_reserve_arr.resize(n)
+	res_clay_reserve_arr.resize(n)
+	res_wild_game_reserve_arr.resize(n)
+	res_peat_reserve_arr.resize(n)
+	res_stone_reserve_arr.resize(n)
+	res_wild_herbs_reserve_arr.resize(n)
+	res_geothermal_reserve_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -652,9 +684,23 @@ func rebuild_soa_from_cells() -> void:
 		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成字段无 HexCell 镜像，
 	# 全图 fill 为 0（resize 已经填 0，这里显式 fill 防止后续手动 resize 残值）。
+	# Natural resources 储量同类（无 HexCell 镜像）：bake 时置 0，初值由
+	# _bootstrap_natural_resource_deposits 在 init_soa_from_bake 之后覆盖。
 	for i in range(n):
 		ocean_thermal_anomaly_arr[i] = 0.0
 		local_thermal_anomaly_arr[i] = 0.0
+		res_biomass_reserve_arr[i] = 0.0
+		res_iron_ore_reserve_arr[i] = 0.0
+		res_freshwater_reserve_arr[i] = 0.0
+		res_timber_reserve_arr[i] = 0.0
+		res_coal_reserve_arr[i] = 0.0
+		res_oil_reserve_arr[i] = 0.0
+		res_clay_reserve_arr[i] = 0.0
+		res_wild_game_reserve_arr[i] = 0.0
+		res_peat_reserve_arr[i] = 0.0
+		res_stone_reserve_arr[i] = 0.0
+		res_wild_herbs_reserve_arr[i] = 0.0
+		res_geothermal_reserve_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

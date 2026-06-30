@@ -559,6 +559,39 @@ public:
     // small riparian soil/water-balance boost to adjacent land cells.
     godot::Dictionary run_runtime_hydrology_pass(const godot::Dictionary &knobs);
 
+    // ─── Natural resources（economy.resources）──────────────────────────
+    //   GDScript wrapper：MapGenerator.run_natural_resource_pass_native
+    //   System：NaturalResourceDailySystem（每日，priority 排在 climate 之后）
+    //
+    //   每 tick（per cell，per resource r）固定模板 + 每资源系数。半隐式（IMEX）积分：
+    //   生成/衰减拆成常数生产项 P 与线性损失率 L（损失隐式），对任意系数无条件稳定
+    //   （不过冲、不在 0↔capacity 横跳）：
+    //     tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
+    //     m             = moisture
+    //     gen_climate   = gen_base[r]   + gen_temp[r]*tn   + gen_moisture[r]*m
+    //     decay_climate = decay_base[r] + decay_temp[r]*tn + decay_moisture[r]*m
+    //     P             = gen_climate + gen_self[r] - decay_climate
+    //     L             = capacity[r] > 0 ? max(0, (gen_self[r] + decay_self[r]) / capacity[r]) : 0
+    //     reserve'      = clamp((reserve + P) / (1 + L), 0, capacity[r])
+    //   均衡点 reserve* = capacity[r]·P/(gen_self[r]+decay_self[r])，与旧显式 Euler 一致。
+    //   land_only[r]==1 时水面格跳过（保持 0）。
+    //
+    //   knobs（GDScript 一次打包，ResourceProfileRegistry.build_pass_knobs + n_cells）：
+    //     标量： n_cells (int), resource_count (int)
+    //     PackedStringArray： reserve_slots（C++ slot 名，长度 resource_count）
+    //     PackedFloat32Array（长度 resource_count，按资源索引对齐）：
+    //       capacity, land_only, temp_lo, temp_hi,
+    //       gen_base/gen_temp/gen_moisture/gen_self,
+    //       decay_base/decay_temp/decay_moisture/decay_self
+    //
+    //   读：cell_temp / cell_moisture / cell_is_water
+    //   写：每个 reserve_slots[r]（clamp 后 flush 回 MapData）
+    //
+    //   返回 Dictionary：{ done, path, published_to_slot, published_slots,
+    //     resource_count, n_cells, total_delta, native_ms, compute_ms,
+    //     fallback_reason（失败时）}。
+    godot::Dictionary run_natural_resource_pass(const godot::Dictionary &knobs);
+
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
     //   ClimateProfile flag：use_gdext_albedo
