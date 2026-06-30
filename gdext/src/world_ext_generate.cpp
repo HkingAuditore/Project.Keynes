@@ -1516,7 +1516,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
     const double river_percentile = getd(profile, "river_flow_percentile", 0.72);  // 干支流树状河网：0.80→0.72（绘出支流）
     const int hydro_river_min_length_base = std::max(1, geti(profile, "hydro_river_min_length", 5));  // 最短河长：8→5
-    const int river_headwater_init_base = std::max(1, geti(profile, "river_headwater_init_cells", 6));
+    const int river_headwater_init_base = std::max(1, geti(profile, "river_headwater_init_cells", 10));  // [density-fix] 6→10
     const double river_headwater_min_land_h = getd(profile, "river_headwater_min_land_h", 0.30);
     const int hydro_lake_min_cells = std::max(1, geti(profile, "hydro_lake_min_cells", 8));  // 成湖最小面积：18→8
     const double hydro_lake_min_depth = std::max(0.0, getd(profile, "hydro_lake_min_depth", 0.018));
@@ -1530,9 +1530,26 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 其他 relief pass 的 0.035~0.115）：中心 cell 下凹成 caldera，第一环邻居抬升成环山脊。
     const double volcano_crater_depth = std::max(0.0, getd(profile, "volcano_crater_depth", 0.05));
     const double volcano_rim_height   = std::max(0.0, getd(profile, "volcano_rim_height", 0.07));
-    const double plateau_min_land_h = getd(profile, "plateau_min_land_h", 0.25);
-    const double plateau_max_relief = std::max(0.0, getd(profile, "plateau_max_relief", 0.14));
+    const double plateau_min_land_h = getd(profile, "plateau_min_land_h", 0.35);
+    const double plateau_max_relief_base = std::max(0.0, getd(profile, "plateau_max_relief", 0.14));
     const int plateau_min_cells = std::max(1, geti(profile, "plateau_min_cells", 3));
+    // [density-fix 2026-06-30] PLATEAU area-ratio cap: unlike PEAK (land/N count
+    // cap) and RIFT (land/N cap), PLATEAU previously had no density limit at all.
+    // Cap total plateau area to a fraction of land; when exceeded, keep the
+    // largest connected components and demote smaller ones to HILL.
+    const double plateau_max_land_ratio = std::max(0.0, std::min(1.0, getd(profile, "plateau_max_land_ratio", 0.25)));
+    // [density-fix] plateau_max_relief scales down for large maps: finer cell
+    // sampling makes per-cell relief naturally smaller (same gradient sampled at
+    // higher resolution → smaller per-cell deltas), so a fixed threshold admits
+    // too many plateau candidates on large maps. Tighten by (ref/N)^k; exponent
+    // 0.25 is a mild, conservative factor — the area-ratio cap above is the
+    // primary density control, this is a secondary nudge.
+    constexpr double plateau_relief_ref_cells = 15000.0;
+    constexpr double plateau_relief_scale_exp = 0.25;
+    const double plateau_relief_scale = std::pow(
+            std::min(1.0, plateau_relief_ref_cells / std::max(1.0, double(n))),
+            plateau_relief_scale_exp);
+    const double plateau_max_relief = plateau_max_relief_base * plateau_relief_scale;
     const double mountain_min_land_h = getd(profile, "mountain_min_land_h", 0.70);
     const double mountain_min_relief = std::max(0.0, getd(profile, "mountain_min_relief", 0.115));
     const double peak_min_land_h = getd(profile, "peak_min_land_h", 0.74);
@@ -1542,15 +1559,25 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 150x100 is the tuning baseline documented in ClimateProfile. Above that,
     // fixed "upstream cell count" thresholds make every large basin sprout too
     // many tributaries, so scale only upward and keep small/normal maps unchanged.
+    //
+    // [density-fix 2026-06-30] exponent 0.65→1.0: up_count grows ~linearly with
+    // N (sum(up_count) == land.size(), downstream cells accumulate proportionally),
+    // so the channel-init threshold must scale linearly too to keep relative
+    // river density constant across map sizes. 0.65 was sub-linear and let large
+    // maps grow denser. Linear scaling is mathematically equivalent to normalizing
+    // up_count by N — no explicit normalization pass needed.
     constexpr double river_map_reference_cells = 15000.0;
-    constexpr double river_map_scale_exponent = 0.65;
+    constexpr double river_map_scale_exponent = 1.0;
     const double river_map_scale = std::pow(
             std::max(1.0, double(n) / river_map_reference_cells),
             river_map_scale_exponent);
     const int channel_init = std::max(2, int(std::round(double(river_channel_init_base) * river_map_scale)));
     const int river_headwater_init = std::max(1, int(std::round(double(river_headwater_init_base) * river_map_scale)));
+    // [density-fix] min_length scale exponent 0.75→1.0: keep prune strength in
+    // lockstep with channel_init so large-map short tributaries are pruned
+    // proportionally rather than retained at a relatively weaker rate.
     const int hydro_river_min_length = std::max(1, int(std::round(
-            double(hydro_river_min_length_base) * std::pow(river_map_scale, 0.75))));
+            double(hydro_river_min_length_base) * std::pow(river_map_scale, 1.0))));
 
     PackedInt32Array q_arr = input.get("q_arr", PackedInt32Array());
     PackedInt32Array r_arr = input.get("r_arr", PackedInt32Array());
@@ -3057,6 +3084,48 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
     }
 
+    // ── [density-fix 2026-06-30] PLATEAU 面积占比上限剪裁 ──
+    // 高原此前无任何密度上限（PEAK 按 land/N 限量、RIFT 按 land/N 限量，唯独 PLATEAU 没有），
+    // 导致大地图上所有满足 land_h/relief 条件的平坦中高海拔区全部标为 PLATEAU。
+    // 现按连通分量面积从大到小累计，保留至 plateau_max_land_ratio × land 为止，
+    // 其余较小连通分量整体降级为 HILL（保留大高原、清理碎片）。
+    int plateau_demoted_to_hill = 0;
+    if (plateau_max_land_ratio < 1.0) {
+        std::vector<uint8_t> plat_seen(size_t(n), 0);
+        std::vector<std::vector<int>> plat_comps;
+        for (int i : land) {
+            if (LF[i] != 13 || plat_seen[size_t(i)]) continue;
+            std::vector<int> comp;
+            comp.push_back(i);
+            plat_seen[size_t(i)] = 1;
+            for (size_t qi = 0; qi < comp.size(); ++qi) {
+                const int cur = comp[qi];
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[size_t(cur) * 6 + d];
+                    if (ni < 0 || plat_seen[size_t(ni)] || LF[ni] != 13) continue;
+                    plat_seen[size_t(ni)] = 1;
+                    comp.push_back(ni);
+                }
+            }
+            plat_comps.push_back(std::move(comp));
+        }
+        std::sort(plat_comps.begin(), plat_comps.end(),
+                [](const std::vector<int> &a, const std::vector<int> &b){ return a.size() > b.size(); });
+        const int plateau_cap = std::max(0, int(double(land.size()) * plateau_max_land_ratio));
+        int plateau_kept = 0;
+        for (const auto &comp : plat_comps) {
+            if (plateau_kept < plateau_cap) {
+                plateau_kept += int(comp.size());
+            } else {
+                for (int v : comp) {
+                    LF[v] = 6;   // HILL
+                    BLF[v] = 6;
+                    ++plateau_demoted_to_hill;
+                }
+            }
+        }
+    }
+
     // ── 峰顶(PEAK) landform sparsify：山脉是主体，高峰只保留局部 summit ──
     // 基础 landform helper 只能按单格海拔分段，容易把高海拔山原整片判成 PEAK。
     // 这里先退回为 MOUNTAIN，再按局部相对高度、邻域落差和最小间距选出少量真正峰顶。
@@ -3369,6 +3438,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     stage_counts["moor"] = moor_touched;
     stage_counts["chaparral"] = chaparral_touched;
     stage_counts["plateau"] = plateau_touched;
+    stage_counts["plateau_demoted_to_hill"] = plateau_demoted_to_hill;
     stage_counts["mountain_demoted"] = mountain_demoted;
     stage_counts["mountain_to_plateau"] = mountain_to_plateau;
     stage_counts["peak_summit"] = peak_touched;

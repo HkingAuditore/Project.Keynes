@@ -31,6 +31,10 @@ const _FRONT_PARTICLES_ENABLED := false
 const _CURTAIN_LAYER_COUNT_DESKTOP := 3
 const _CURTAIN_LAYER_COUNT_MOBILE := 1
 const _CURTAIN_PATCH_SCALE := 1.45
+
+# [parallax-rain] 三层视差参数：每层独立的 z_offset（layer_depth 由层数自动计算）
+# 索引 0=近景(z 高) / 1=中景 / 2=远景(z 低)
+const _CURTAIN_PARALLAX_Z_OFFSETS := [2, 1, 0]
 # Weather simulation still advances by game day. The presentation layer follows
 # snapshots with a small lag so fronts keep moving between day ticks instead of
 # snapping once and then freezing until the next tick.
@@ -101,7 +105,10 @@ var _shadow_texture: ImageTexture        # 共享的 radial-fade alpha 圆盘
 var _shadow_material: CanvasItemMaterial # 共享的 BLEND_MUL 材质
 var _curtain_root: Node2D
 var _curtain_mesh: ArrayMesh
-var _curtain_mat: ShaderMaterial
+# [parallax-rain] 每层独立材质，支持 per-layer layer_depth uniform
+var _curtain_mats: Array[ShaderMaterial] = []
+# 兼容引用：指向 _curtain_mats[0]（供旧代码读取，不再用于推 uniform）
+var _curtain_mat: ShaderMaterial = null
 var _curtain_layers: Array[MultiMeshInstance2D] = []
 var _curtain_multimeshes: Array[MultiMesh] = []
 var _curtain_map: MapData = null
@@ -218,20 +225,21 @@ func _process(delta: float) -> void:
 	_world_time += delta * visual_time_scale
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("world_time", _world_time)
+	# [parallax-rain] 遍历所有 curtain 材质
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("world_time", _world_time)
 	if has_weather:
 		_update_weather_front_blend(delta)
 		if _overlay_mat != null and _world_ref != null:
 			if _world_ref.weather_lut_tex != null:
 				_weather_lut_tex = _world_ref.weather_lut_tex
 				_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
-				if _curtain_mat != null:
-					_curtain_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+				for mat in _curtain_mats:
+					mat.set_shader_parameter("weather_lut", _weather_lut_tex)
 			if _world_ref.weather_lut_prev_tex != null:
 				_overlay_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
-				if _curtain_mat != null:
-					_curtain_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+				for mat in _curtain_mats:
+					mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
 			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
 			var _now_us: int = Time.get_ticks_usec()
 			var _upd: int = int(_world_ref.weather_lut_update_usec)
@@ -246,8 +254,8 @@ func _process(delta: float) -> void:
 			if _wx_commit_interval_usec > 1.0:
 				_wlerp = clampf(float(_now_us - _wx_lut_t0_usec) / _wx_commit_interval_usec, 0.0, 1.0)
 			_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
-			if _curtain_mat != null:
-				_curtain_mat.set_shader_parameter("weather_lerp", _wlerp)
+			for mat in _curtain_mats:
+				mat.set_shader_parameter("weather_lerp", _wlerp)
 			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
 				_wx_lut_diag_count += 1
 				_wx_lut_diag_last_msec = _now_us / 1000
@@ -345,8 +353,8 @@ func set_weather_strength(v: float) -> void:
 	_strength = clampf(v, 0.0, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("weather_strength", _strength)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("weather_strength", _strength)
 
 # weather_field_tex 通路已退役（main.gd 始终传 null，云改由 weather_lut 驱动）；
 # 保留此 setter 让 main.gd / hex_renderer 的历史调用点安全退化。
@@ -385,8 +393,8 @@ func set_visual_quality(q: int) -> void:
 	_visual_quality = clampi(q, 0, 2)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
 	_update_curtain_visibility()
 
 func set_weather_debug_view(view: int) -> void:
@@ -432,8 +440,8 @@ func set_day_night_enabled(v: bool) -> void:
 	_day_night_enabled = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 
 # extreme_weather_ground_effect_enabled uniform 已在重写中移除；保留 setter 供外部安全调用。
 func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
@@ -452,24 +460,24 @@ func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_phase", _day_phase)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("day_phase", _day_phase)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("day_phase", _day_phase)
 
 # 季节相位：drive earth_daylight 的太阳赤纬（南/北半球长昼↔短昼）。由 HexRenderer.set_season_phase 转发。
 func set_season_phase(v: float) -> void:
 	_season_phase = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("season_phase", _season_phase)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("season_phase", _season_phase)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("season_phase", _season_phase)
 
 # 地轴倾角(rad)：drive earth_daylight 的季节赤纬幅度。由 HexRenderer 在 setup/spawn 时推入。
 func set_axial_tilt_rad(v: float) -> void:
 	_axial_tilt_rad = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -494,8 +502,8 @@ func apply_tod(profile: TODProfile) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
 		_overlay_mat.set_shader_parameter("tod_exposure", profile.exposure)
-	if _curtain_mat != null:
-		_curtain_mat.set_shader_parameter("tod_exposure", profile.exposure)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("tod_exposure", profile.exposure)
 	# 任务 5：粒子 modulate 随 TOD 重新染色。
 	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
 	# 具体到每个 slot 仍用 intensity 控制 alpha，这里只保存“当前色因子”
@@ -505,6 +513,30 @@ func apply_tod(profile: TODProfile) -> void:
 
 # 任务 5：开关——是否提升粒子密度（默认开，关闭后回到上一轮的 amount 下限）
 var _rain_density_boost_enabled: bool = true
+
+# [parallax-rain] 俯视投影参数：camera_pitch / wind
+# camera_pitch: 摄像机俯视角弧度。0=正视，π/2=纯俯视，默认 75°(1.309)
+# wind_dir: 世界空间风向（xy），默认微偏右下
+# wind_strength: 风强度 [-1,1]，影响雨滴倾斜程度
+var _camera_pitch: float = 1.309   # 默认 75°（v3 更贴近实际俯视角）
+var _wind_dir: Vector2 = Vector2(0.3, 1.0)
+var _wind_strength: float = 0.15
+
+func set_camera_pitch(pitch_rad: float) -> void:
+	_camera_pitch = clampf(pitch_rad, 0.0, PI * 0.5)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("camera_pitch", _camera_pitch)
+
+func set_wind(dir: Vector2, strength: float) -> void:
+	if dir.length_squared() > 0.0001:
+		_wind_dir = dir.normalized()
+	_wind_strength = clampf(strength, -1.0, 1.0)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("wind_dir", _wind_dir)
+		mat.set_shader_parameter("wind_strength", _wind_strength)
+
+func get_camera_pitch() -> float:
+	return _camera_pitch
 
 func set_rain_density_boost_enabled(v: bool) -> void:
 	_rain_density_boost_enabled = v
@@ -1134,23 +1166,28 @@ func _push_overlay_runtime_state() -> void:
 	_push_fronts_to_overlay(_front_visual_snapshots)
 
 func _push_curtain_runtime_state() -> void:
-	if _curtain_mat == null:
+	if _curtain_mats.is_empty():
 		return
-	if _weather_lut_tex != null:
-		_curtain_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
-	if _world_ref != null and _world_ref.weather_lut_prev_tex != null:
-		_curtain_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
-	_curtain_mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
-	_curtain_mat.set_shader_parameter("world_time", _world_time)
-	_curtain_mat.set_shader_parameter("weather_strength", _strength)
-	_curtain_mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
-	_curtain_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
-	_curtain_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
-	_curtain_mat.set_shader_parameter("season_phase", _season_phase)
-	_curtain_mat.set_shader_parameter("day_phase", _day_phase)
-	_curtain_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
-	_curtain_mat.set_shader_parameter("tod_exposure", _tod_exposure)
-	_curtain_mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
+	for mat in _curtain_mats:
+		if _weather_lut_tex != null:
+			mat.set_shader_parameter("weather_lut", _weather_lut_tex)
+		if _world_ref != null and _world_ref.weather_lut_prev_tex != null:
+			mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+		mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
+		mat.set_shader_parameter("world_time", _world_time)
+		mat.set_shader_parameter("weather_strength", _strength)
+		mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+		mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
+		mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
+		mat.set_shader_parameter("season_phase", _season_phase)
+		mat.set_shader_parameter("day_phase", _day_phase)
+		mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+		mat.set_shader_parameter("tod_exposure", _tod_exposure)
+		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
+		# [parallax-rain] 俯视投影参数
+		mat.set_shader_parameter("camera_pitch", _camera_pitch)
+		mat.set_shader_parameter("wind_dir", _wind_dir)
+		mat.set_shader_parameter("wind_strength", _wind_strength)
 
 func _load_overlay_shader() -> void:
 	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",
@@ -1181,11 +1218,26 @@ func _load_curtain_shader() -> void:
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader
 			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
-	_curtain_mat = ShaderMaterial.new()
-	_curtain_mat.shader = shader
-	for layer in _curtain_layers:
-		if layer != null:
-			layer.material = _curtain_mat
+	# [parallax-rain] 清空旧材质，按层数重建
+	_curtain_mats.clear()
+	var layer_count := _curtain_layer_capacity()
+	for layer_idx in range(layer_count):
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		# per-layer 的 layer_depth（0=近景，1=远景）
+		var depth_val: float = 0.0
+		if layer_count > 1:
+			depth_val = float(layer_idx) / float(layer_count - 1)
+		mat.set_shader_parameter("layer_depth", depth_val)
+		_curtain_mats.append(mat)
+	# 兼容旧引用：_curtain_mat 指向首个（移动端可能为空数组）
+	if not _curtain_mats.is_empty():
+		_curtain_mat = _curtain_mats[0]
+	# 重新绑定已存在的 layer 节点到新材质
+	for i in range(_curtain_layers.size()):
+		var layer: MultiMeshInstance2D = _curtain_layers[i]
+		if layer != null and i < _curtain_mats.size():
+			layer.material = _curtain_mats[i]
 	_push_curtain_runtime_state()
 
 func _weather_profile_flags() -> PackedInt32Array:
@@ -1271,8 +1323,16 @@ func _rebuild_curtain_layers(force: bool = false) -> void:
 		var mmi := MultiMeshInstance2D.new()
 		mmi.name = "CellCurtainLayer_%d" % layer_idx
 		mmi.z_as_relative = true
-		mmi.z_index = layer_idx
-		mmi.material = _curtain_mat
+		# [parallax-rain] z_index 按视差配置：近景 z 高，远景 z 低
+		var z_off: int = 0
+		if layer_idx < _CURTAIN_PARALLAX_Z_OFFSETS.size():
+			z_off = _CURTAIN_PARALLAX_Z_OFFSETS[layer_idx]
+		mmi.z_index = z_off
+		# 每层用独立材质（layer_depth 已在 _load_curtain_shader 中设置）
+		if layer_idx < _curtain_mats.size():
+			mmi.material = _curtain_mats[layer_idx]
+		elif not _curtain_mats.is_empty():
+			mmi.material = _curtain_mats[0]
 		_curtain_root.add_child(mmi)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_2D

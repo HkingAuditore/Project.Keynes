@@ -1329,12 +1329,16 @@ constexpr double PK_CONT_THRESH       = 0.19;   // 海陆阈值(对 dist_field)�
 constexpr double PK_CONT_MARGIN       = 0.05;   // 海陆过渡带宽（小→大陆坡越陡、海岸落差/法线越强）
 constexpr double PK_POLAR_OCEAN       = 0.85;   // 极地大陆性衰减（→两极偏海/冰盖）
 constexpr double PK_PLATFORM_H        = 0.07;   // 大陆地台高出海平面的平坦基面
-constexpr double PK_PLATFORM_UNDULATE = 0.03;   // 地台大尺度起伏(很小，保持地台平坦)
+constexpr double PK_PLATFORM_UNDULATE = 0.04;   // 地台大尺度起伏(很小，保持地台平坦)
+                                                // [density-fix 2026-06-30] 0.03→0.04：略增地台起伏，
+                                                // 减少完美平坦的中等海拔区（这些区域此前批量落入 PLATEAU）。
+                                                // platform_max 现 = 0.07+0.04+0.48 = 0.59，e_out_max = 0.42+0.59 = 1.01，
+                                                // 仅极少数最高内陆峰顶被 clamp 至 1.0（0.01 差异，视觉不可见）。
 constexpr double PK_OCEAN_DEPTH_FRAC  = 0.90;   // 深海平原深度 = sea_level × 此值（越大越深）
 constexpr double PK_OROGENY_AMP       = 0.48;   // 造山带最大抬升(山脉相对地台的高度)
                                                 // [water-tuning 2026-06-26] 0.42→0.48：与陆地占比(CONT_THRESH)解耦地增强山脉显眼度，
-                                                // 补偿 CONT_THRESH 调整对内陆抬升的影响。platform_max=PLATFORM_H+UNDULATE+AMP=0.58,
-                                                // e_out_max=sea_level(0.42)+lt(≤1)*0.58=1.0 恰好不触发 clamp 削峰(平顶)。
+                                                // 补偿 CONT_THRESH 调整对内陆抬升的影响。platform_max=PLATFORM_H+UNDULATE+AMP=0.59,
+                                                // e_out_max=sea_level(0.42)+lt(≤1)*0.59=1.01，仅极少数最高峰顶被 clamp 至 1.0（0.01 差异，可忽略）。
 constexpr double PK_OROG_SHARP        = 1.6;    // ridged 锐度(大→山脊更尖窄)
 constexpr double PK_OROG_BELT_LO      = 0.42;   // 造山带 belt 下阈(控制山系覆盖)
 constexpr double PK_OROG_BELT_HI      = 0.72;   // 造山带 belt 上阈

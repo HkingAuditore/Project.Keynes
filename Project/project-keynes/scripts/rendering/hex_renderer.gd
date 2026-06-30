@@ -128,6 +128,15 @@ extends Node2D
 @export_group("Weather (Milestone 3)")
 @export_range(0.0, 1.0, 0.01) var weather_strength: float = 1.0
 
+# [parallax-rain] 俯视雨幕参数：camera_pitch 控制雨滴侧投影长度收缩
+@export_range(0.0, 90.0, 1.0, "degrees") var camera_pitch_deg: float = 75.0
+@export var wind_dir: Vector2 = Vector2(0.3, 1.0)
+@export_range(-1.0, 1.0, 0.05) var wind_strength: float = 0.15
+
+var _camera_pitch: float = deg_to_rad(60.0)
+var _wind_dir: Vector2 = Vector2(0.3, 1.0)
+var _wind_strength: float = 0.15
+
 # ─── Visual Overhaul（任务 1）：视觉总开关 ────────────────────────
 # 这组变量由 main.gd 通过 set_*() 推进；shader 分支逐步在任务 3~9 中接入。
 # 默认值与 main.gd 一致，保证 renderer 被单独调试时也有合理初值。
@@ -394,6 +403,10 @@ class PerfSampler:
 var _perf_sampler: PerfSampler = null
 
 func _ready() -> void:
+	# [parallax-rain] 初始化俯视角度
+	_camera_pitch = deg_to_rad(camera_pitch_deg)
+	_wind_dir = wind_dir.normalized() if wind_dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
+	_wind_strength = wind_strength
 	_world_quad = MeshInstance2D.new()
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
@@ -1239,6 +1252,21 @@ func set_cloud_tod_tint_enabled(v: bool) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_cloud_tod_tint_enabled"):
 		_weather_layer.set_cloud_tod_tint_enabled(v)
 
+# [parallax-rain] 俯视雨幕参数 setter
+func set_camera_pitch_deg(deg: float) -> void:
+	camera_pitch_deg = clampf(deg, 0.0, 90.0)
+	_camera_pitch = deg_to_rad(camera_pitch_deg)
+	if _weather_layer != null and _weather_layer.has_method("set_camera_pitch"):
+		_weather_layer.set_camera_pitch(_camera_pitch)
+
+func set_wind(dir: Vector2, strength: float) -> void:
+	wind_dir = dir
+	wind_strength = clampf(strength, -1.0, 1.0)
+	_wind_dir = dir.normalized() if dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
+	_wind_strength = wind_strength
+	if _weather_layer != null and _weather_layer.has_method("set_wind"):
+		_weather_layer.set_wind(_wind_dir, _wind_strength)
+
 # ─── Water Visual Overhaul：子特性 setter 组 ──────────────────────────
 # 每个 setter 只做"字段写回 + shader uniform 同步"，让 main.gd 能逐个切换。
 func set_water_waves_enabled(v: bool) -> void:
@@ -1747,6 +1775,9 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)
+		# [parallax-rain] 俯视雨幕默认参数（可被外部 set_camera_pitch 覆盖）
+		_weather_layer.set_camera_pitch(_camera_pitch)
+		_weather_layer.set_wind(_wind_dir, _wind_strength)
 	set_weather_fronts([])
 
 	# Hypsometric 色阶
