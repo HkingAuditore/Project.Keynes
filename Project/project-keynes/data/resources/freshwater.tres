@@ -22,3 +22,9 @@ decay_self = 0.03
 init_base = 0.2
 init_temp = 0.0
 init_moisture = 0.6
+init_river = 0.5
+init_landform_weights = {
+2: 0.1,
+3: 0.6,
+9: 0.3
+}
