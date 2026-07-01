@@ -38,7 +38,7 @@ Runtime hydrology 新增的契约：
 - `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
-- `cell.res_biomass_reserve`、`cell.res_iron_ore_reserve`：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。每资源一条（新增资源需加常量 + MapData 数组 + schema 行 + codegen + 重 build；登记 `ResourceProfileRegistry._PROFILE_PATHS`）。由 `run_natural_resource_pass` 写入并逐资源 `_flush_slot_to_map()` 回 `MapData`；初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在生成期写一次。`run_natural_resource_pass_native` 调 C++ 前先 `refresh_slots_from_map()`，确保 climate round 写到 `MapData` 的 `temp/moisture` 对 C++ 可见。knobs 由 `ResourceProfileRegistry.build_pass_knobs()` 组装（`reserve_slots`/`capacity`/`land_only`/`temp_lo`/`temp_hi`/`gen_*`/`decay_*` 平行数组）；返回 Dictionary 含 `published_to_slot`/`published_slots`/`total_delta`，契约同 `run_runtime_hydrology_pass`。
+- `cell.res_biomass_reserve`、`cell.res_iron_ore_reserve`：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。每资源一条（新增资源需加常量 + MapData 数组 + schema 行 + codegen + 重 build；登记 `ResourceProfileRegistry._PROFILE_PATHS`）。由 `run_natural_resource_pass` 写入并逐资源 `_flush_slot_to_map()` 回 `MapData`；初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在生成期写一次。`run_natural_resource_pass_native` 调 C++ 前优先 `refresh_slots_from_map_keys(["cell_temp","cell_moisture","cell_is_water"])`（旧 DLL fallback 到全量 refresh），确保 climate round 写到 `MapData` 的 `temp/moisture/water` 对 C++ 可见，同时避免无关 slot 回拉。knobs 由 `ResourceProfileRegistry.build_pass_knobs()` 组装（`reserve_slots`/`capacity`/`land_only`/`temp_lo`/`temp_hi`/`gen_*`/`decay_*` 平行数组）；返回 Dictionary 含 `published_to_slot`/`published_slots`/`total_delta`，契约同 `run_runtime_hydrology_pass`。
 
 ## PackedArray CoW 公理
 
@@ -192,6 +192,12 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
 - 从当前 `MapData` / GDScript 侧镜像拉取数据到 C++ slot。
 - 让 C++ pass 看到 GDScript 自上次同步后的写入。
 
+`DCWorldExt.refresh_slots_from_map_keys(slot_names: PackedStringArray)` 是同一方向的白名单版本：
+
+- 只拉取传入的 `cpp_name` slots（如 `cell_temp` / `cell_moisture`），用于边界 pass 只依赖少量 `MapData` 字段的场景。
+- slot 名必须能通过 `component_id()` 解析，并且存在 `component_bind_table.gen.h` 的 `map_field` 绑定；未知 slot 会被跳过。
+- 新 DLL 可优先走该 API，旧 DLL fallback 到 `refresh_slots_from_map()`。
+
 使用规则：
 
 - 一轮 native chain 开始前调用一次通常足够。
@@ -202,6 +208,7 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
 常见优化：
 
 - `MapGenerator` 内有“round 启动时 refresh 一次”的缓存语义，用来避免每个 stage helper 都做一次 `refresh_slots_from_map()`。
+- 对 `natural_resource_daily`、`daily_wind` 这类只读少数输入 slot 的边界 job，优先用 `refresh_slots_from_map_keys()`，避免全量回拉所有绑定字段。
 - 日志里 `sync=...` 或 `refresh=...` 变大时，先检查是否重复 refresh。
 - Native daily bundle 现在包含 `native_daily_boundary_contract`，把
   `bootstrap_config_keys`、`tick_delta_keys`、`refresh_policy` 和 `flush_policy`

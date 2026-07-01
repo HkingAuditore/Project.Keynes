@@ -4,6 +4,7 @@
 // 每资源系数（由 GDScript ResourceProfileRegistry.build_pass_knobs 组装），结合
 // cell_temp / cell_moisture 计算每 tick reserve 变化，写回各资源 reserve slot 并
 // flush 到 MapData。可再生 / 不可再生 仅由系数区分（见 resource_profile.gd 模板）。
+// 系数全 0 的静态资源（如矿物储量）在每日 pass 中恒等不变，直接跳过全图 loop/flush。
 //
 // 数值积分采用半隐式（IMEX）：生成/衰减拆成常数生产项 P 与线性损失率 L（损失隐式）
 //   ⇒ reserve' = (reserve + P) / (1 + L)。L≥0 ⇒ 无条件稳定（不过冲/不横跳）。
@@ -133,6 +134,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         out["total_delta"] = 0.0;
         out["native_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
         out["compute_ms"] = 0.0;
+        out["setup_ms"] = out["native_ms"];
+        out["loop_ms"] = 0.0;
+        out["flush_ms"] = 0.0;
+        out["skipped_static_resources"] = 0;
         return out;
     };
 
@@ -199,6 +204,9 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     PackedStringArray published_slots;
     int published_count = 0;
+    int skipped_static_resources = 0;
+    double loop_ms = 0.0;
+    double flush_ms = 0.0;
     DeltaEmit delta_acc;  // total_delta 跨资源累加（reduce 目标）
 
     for (int r = 0; r < resource_count; ++r) {
@@ -217,6 +225,11 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         const bool land_gate = land_only[r] >= 0.5f && have_water;
         const float gb = gen_base[r], gt = gen_temp[r], gm = gen_moisture[r], gs = gen_self[r];
         const float db = decay_base[r], dt = decay_temp[r], dm = decay_moisture[r], ds = decay_self[r];
+        if (gb == 0.0f && gt == 0.0f && gm == 0.0f && gs == 0.0f &&
+            db == 0.0f && dt == 0.0f && dm == 0.0f && ds == 0.0f) {
+            ++skipped_static_resources;
+            continue;
+        }
 
         // ── 代数化简：把半隐式公式收成 P = C0 + C1*tn + C2*m, v = (reserve+P)*inv_denom ──
         const float c0 = gb + gs - db;
@@ -266,11 +279,17 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
             local.sum += seg;
         };
 
+        const auto t_loop0 = std::chrono::high_resolution_clock::now();
         pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource", n_cells,
                                                     n_tasks_hint, /*seq_threshold=*/256,
                                                     delta_acc, run_range);
+        const auto t_loop1 = std::chrono::high_resolution_clock::now();
+        loop_ms += std::chrono::duration<double, std::milli>(t_loop1 - t_loop0).count();
 
+        const auto t_flush0 = std::chrono::high_resolution_clock::now();
         _flush_slot_to_map(sid);
+        const auto t_flush1 = std::chrono::high_resolution_clock::now();
+        flush_ms += std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
         published_slots.append(reserve_slots[r]);
         ++published_count;
     }
@@ -278,14 +297,21 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     const auto t1 = std::chrono::high_resolution_clock::now();
     out["done"] = true;
     out["path"] = "gdext";
-    out["published_to_slot"] = published_count > 0;
+    const bool all_static = skipped_static_resources >= resource_count;
+    out["published_to_slot"] = published_count > 0 || all_static;
     out["published_slots"] = published_slots;
-    out["resource_count"] = published_count;
+    out["resource_count"] = resource_count;
+    out["published_resource_count"] = published_count;
+    out["input_resource_count"] = resource_count;
     out["n_cells"] = n_cells;
     out["total_delta"] = delta_acc.sum;
     out["native_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     out["compute_ms"] = std::chrono::duration<double, std::milli>(t1 - t_setup).count();
-    if (published_count == 0) out["fallback_reason"] = "no_publishable_resource";
+    out["setup_ms"] = std::chrono::duration<double, std::milli>(t_setup - t0).count();
+    out["loop_ms"] = loop_ms;
+    out["flush_ms"] = flush_ms;
+    out["skipped_static_resources"] = skipped_static_resources;
+    if (published_count == 0 && !all_static) out["fallback_reason"] = "no_publishable_resource";
     return out;
 }
 

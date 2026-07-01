@@ -273,6 +273,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
 @export var native_daily_spread_across_ticks: bool = false
 @export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
+@export_enum("dense", "sparse_safe", "sparse_perf") var native_daily_finalizer_write_mode: String = "sparse_perf"
+@export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_temp_epsilon: float = 0.0005
+@export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_tta_epsilon: float = 0.0005
+@export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_thermal_epsilon: float = 0.0005
+@export_range(0.0, 1.0, 0.01) var native_daily_finalizer_sparse_max_dirty_ratio: float = 0.45
 # 错峰执行的"让预算"门禁（2026-06）。spread 模式下 native_daily_sim 不再 must_run，
 # 而是遵守 frame_budget：当同 tick 更早跑的慢变量重算器（如 season_refresh 的
 # 11-stage round，priority 50 先跑且单 stage ~3ms 就吃满 2ms 预算）已耗尽预算时，
@@ -357,6 +362,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # （2026-05-22）随 hot-path 折叠一同删除——stage 1 (SLP) 与 stage 3+4+5
 # (PSI) 恒走 ext != null + has_method 探测分支，C++ 返回 fallback 时透明
 # fallback 到 GDScript。
+@export_enum("off", "balanced", "perf") var psi_early_exit_mode: String = "perf"
 
 # ─── Phase A.1（dots-total-cpp roadmap，已删除）：fronts SoA 路径 ───
 # use_gdext_fronts_soa 已随 hot-path 折叠一同删除——weather summary fronts

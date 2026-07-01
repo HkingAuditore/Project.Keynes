@@ -753,4 +753,24 @@ void DCWorldExt::refresh_slots_from_map() {
     }
 }
 
+void DCWorldExt::refresh_slots_from_map_keys(const PackedStringArray &slot_names) {
+    if (!_map_data) return;
+    for (int k = 0; k < slot_names.size(); ++k) {
+        const StringName requested(slot_names[k]);
+        const int sid = component_id(requested);
+        if (sid < 0 || sid >= _slots.size()) continue;
+        Slot &s = _slots.write[sid];
+        for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
+            if (requested != StringName(BIND_TABLE[i].slot_name)) continue;
+            Variant v = _map_data->get(StringName(BIND_TABLE[i].property_name));
+            switch (s.dtype) {
+                case SlotDType::F32: s.arr_f32 = v; break;
+                case SlotDType::I32: s.arr_i32 = v; break;
+                case SlotDType::U8:  s.arr_u8  = v; break;
+            }
+            break;
+        }
+    }
+}
+
 } // namespace pk

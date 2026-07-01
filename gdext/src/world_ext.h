@@ -31,6 +31,7 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
+#include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/vector2i.hpp>
@@ -226,6 +227,7 @@ public:
     // map.*_arr between C++ passes).
     void flush_slots_to_map();
     void refresh_slots_from_map();
+    void refresh_slots_from_map_keys(const godot::PackedStringArray &slot_names);
     // dirty-mark-batch-2026-06：把所有 pending 的 mark_dirty_all 信号一次性 emit
     // 到 _dirty_world。调用方（climate_daily_system 在 round 末尾）持锁主线程
     // 时调用即可。多次重复调用是幂等的（pending 清零）。

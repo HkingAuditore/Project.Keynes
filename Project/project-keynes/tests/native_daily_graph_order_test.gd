@@ -66,13 +66,20 @@ func _run() -> void:
 	var patch_builder: String = _section(generator_src,
 			"func _build_native_daily_slice_bundle_patch(",
 			"func _native_daily_bundle_pass_keys(")
-	_expect("slice patch refreshes ocean at node 2 then sea_ice at 6", _contains_in_order(patch_builder, [
+	_expect("slice patch refreshes deferred native daily nodes in graph order", _contains_in_order(patch_builder, [
 		"match next_node_index:",
+		"1:",
+		"climate_pass_b_knobs",
 		"2:",
 		"ocean_water_knobs",
 		"ocean_land_knobs",
+		"4:",
+		"wind_air_knobs",
+		"wind_surface_knobs",
 		"6:",
 		"sea_ice_knobs",
+		"7:",
+		"transpiration_knobs",
 	]))
 
 	# Node-batching contract is cadence-dependent (see _native_daily_effective_yield_nodes):
@@ -83,7 +90,8 @@ func _run() -> void:
 	#     bit-equal (extra checkpoints), and the finer granularity gives the lowest per-tick
 	#     peak (mean 3.14→1.95ms in tmp_native_spread_validate.gd). The {2,6} patch cases
 	#     still fire on those indices; no new patch case is required for the extra yields.
-	# The patch-builder match cases MUST stay a subset of whichever set is active.
+	# Deferred nodes are also added to C++ yield bits at round start, so atomic mode can
+	# keep its historical explicit yield constant while lazy knobs still get a patch.
 	_expect("atomic yield-set constant is the minimal {2,6}", _contains_in_order(generator_src, [
 		"const _NATIVE_DAILY_SLICE_YIELD_NODES: Array[int] = [2, 6]",
 	]))
@@ -92,11 +100,10 @@ func _run() -> void:
 		"func _native_daily_effective_yield_nodes(",
 		"native_daily_spread_across_ticks",
 	]))
-	_expect("patch builder dropped redundant cases 1/4/7", not (
-		_contains_in_order(patch_builder, ["climate_pass_b_knobs"])
-		or _contains_in_order(patch_builder, ["wind_air_knobs"])
-		or _contains_in_order(patch_builder, ["transpiration_knobs"])
-	))
+	_expect("deferred node declaration reaches C++", _contains_in_order(generator_src, [
+		"native_daily_deferred_nodes",
+		"deferred_node_count",
+	]))
 	_expect("C++ slice consumes the yield-node hint", _contains_in_order(daily_src, [
 		"native_daily_slice_yield_nodes",
 		"_native_daily_slice_yield_bits",

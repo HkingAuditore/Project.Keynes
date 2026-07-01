@@ -195,7 +195,7 @@ transp/native breakdown source=current diagnostic_wall_ms=0.35 refresh_ms=0.000 
 | `native_compute_ms` | C++ tight-loop 计算成本。 |
 | `native_apply_ms` | 应用结果到 slot/输出 buffer。 |
 | `native_flush_ms` | C++ slot flush 到 MapData。 |
-| `refresh_ms` | 调用前 `refresh_slots_from_map()`。 |
+| `refresh_ms` | 调用前 GDScript→C++ slot refresh；可能是全量 `refresh_slots_from_map()`，也可能是白名单 `refresh_slots_from_map_keys()`。 |
 | `sync_total_ms` | caller 侧同步、等待、snapshot 或其他 glue 成本。 |
 | `sync_write_ms` | GDScript DataCore write API 成本。 |
 | `sync_mark_ms` | dirty mark 成本。 |
@@ -206,26 +206,31 @@ transp/native breakdown source=current diagnostic_wall_ms=0.35 refresh_ms=0.000 
 - `native_compute_ms` 很低但 `diagnostic_wall_ms` 高：边界/同步问题。
 - `native_ms` 很低但 `largest=transp/apply path=gdscript_sliced`：多半是窗口旧 spike 或 fallback apply 仍偶发。
 - `sync_write_ms` / `sync_mark_ms` 高：检查是否又走了单点 setter 或全图 dirty。
-- `refresh_ms` / `sync_total_ms` 高：检查是否重复 `refresh_slots_from_map()` 或不必要 snapshot。
+- `refresh_ms` / `sync_total_ms` 高：检查是否重复 refresh、是否仍在全量 `refresh_slots_from_map()`、或是否有不必要 snapshot。
+
+`natural_resource_daily` 的 native report 额外给出 `loop_ms` / `flush_ms` /
+`skipped_static_resources`。若 `flush_ms` 接近总耗时，优先查资源 slot 发布数量；若
+`loop_ms` 高，才继续看资源数、SIMD/多核和 per-cell 公式。
 
 ## Climate wrapper breakdown
 
 `[fast tick WARN]` 会在 `refresh_climate_daily` 下额外打印：
 
 ```text
-climate wrapper breakdown round_start_total_ms=... round_start_terrain_sync_ms=... capture_start_state_ms=... pass_overhead_ms=... finalize_total_ms=... finalize_finalizer_ms=... finalizer_total_ms=... finalizer_cell_ms=... finalizer_temp_ms=... finalizer_tta_ms=... finalizer_thermal_ms=... finalizer_sort_ms=... finalizer_write_dense_ms=... tta_mirror=false/0 tta_clamped=0 thermal_init=0 temp_mirror=false
+climate wrapper breakdown round_start_total_ms=... round_start_terrain_sync_ms=... capture_start_state_ms=... pass_overhead_ms=... finalize_total_ms=... finalize_finalizer_ms=... finalizer_total_ms=... finalizer_cell_ms=... finalizer_temp_ms=... finalizer_tta_ms=... finalizer_thermal_ms=... finalizer_sort_ms=... finalizer_write_mode=sparse_perf finalizer_write_dense_ms=... finalizer_sparse_write_ms=... finalizer_dirty_ratio=... tta_mirror=false/0 tta_clamped=0 thermal_init=0 temp_mirror=false
 ```
 
 这行解释 `largest=refresh_climate_daily/...` 的外层墙钟。`pass_overhead_ms`
 是当前 slice 墙钟减去 pass report 的差值；`round_start_*` 是 round 入口锁相位、
 terrain sync、start-state capture、mark stale、SoA transaction 和 dirty mask；
 `finalize_*` 是 `_finalize_round()` wrapper；`finalizer_*` 是
-`_apply_daily_climate_finalizer()` 内部 cell loop、sort、sea ice、precip 和 dense write。
+`_apply_daily_climate_finalizer()` 内部 cell loop、sort、sea ice、precip 和 DataCore 可见写入。
 
 判断：
 
 - `transp/native diagnostic_wall_ms` 低但 `finalize_total_ms` 高：热点在 round 收尾，不在 transp C++。
-- `finalize_finalizer_ms` 高：继续看 `finalizer_cell_ms`、`finalizer_temp_ms`、`finalizer_tta_ms`、`finalizer_thermal_ms`、`finalizer_sort_ms`、`finalizer_write_dense_ms`。
+- `finalize_finalizer_ms` 高：继续看 `finalizer_cell_ms`、`finalizer_temp_ms`、`finalizer_tta_ms`、`finalizer_thermal_ms`、`finalizer_sort_ms`、`finalizer_write_mode`、`finalizer_write_dense_ms`、`finalizer_sparse_write_ms`。
+- `finalizer_write_mode=sparse_perf|sparse_safe` 表示 native finalizer 成功后只通过 `write_f32_indexed` 提交 temp/TTA/thermal 的 dirty index；`dense_fallback_dirty_ratio` 表示 dirty ratio 超过 `native_daily_finalizer_sparse_max_dirty_ratio` 自动退回 dense。
 - Android 默认跳过 round-start terrain facade 全图同步，`round_start_terrain_sync_ms` 应接近 0；sea-ice slice 后仍会同步，因为 terrain/water facade 可能真实变化。
 - facade 开启时 finalizer 不再把 `temperature` 或 TTA 逐 cell 镜像回 `HexCell`；TTA 兼容读者通过 `HexCell.temperature_transport_anomaly` facade 从 GDScript `DCWorld` 读取。`tta_mirror=true/N` 只应出现在 facade 关闭或 TTA clamp 需要修正 legacy backing 的场景。
 - `round_start_terrain_sync_ms` 或 `round_start_mark_stale_ms` 高：查 round boundary sync/stale 标记；如需临时恢复 round-start terrain sync，可显式设置 `climate_round_start_terrain_sync_enabled=true`。
@@ -240,7 +245,7 @@ terrain sync、start-state capture、mark stale、SoA transaction 和 dirty mask
 3. 如果 `path=data_core`，确认是否有 native 子项，例如 `ocean_water gdext runs=... fallbacks=0`。
 4. 如果出现 `native_or_gd`，查 caller 是否用同一字段同时承载 native/fallback timing。
 5. 查 `fallback_reason` 或 stale DLL warning。
-6. 查 `refresh_slots_from_map()` 是否在同一 round 多次重复。
+6. 查 `refresh_slots_from_map()` 是否在同一 round 多次重复；边界 job 若只读少数 slot，确认是否可改用 `refresh_slots_from_map_keys()`。
 7. 查 dirty mask 是否被全图标脏，导致 atlas upload 反过来吃预算。
 
 判断标准：
@@ -340,8 +345,9 @@ ocean_currents ran=3.10ms slices=1 progress=1.00
 
 If `dominant=daily_wind_slp` and `slp` keeps climbing, the SLP kernel/inputs are
 the next target; if `dominant=daily_wind_wind`, look at the wind kernel. A high
-`refresh` with low `slp`/`wind` means the cost is `refresh_slots_from_map()`, not
-the math kernels.
+`refresh` with low `slp`/`wind` means the cost is the GDScript→C++ slot refresh,
+not the math kernels. Current daily-wind uses a slot whitelist; if this regresses,
+check whether the loaded DLL exposes `refresh_slots_from_map_keys()`.
 
 ### 2-tick split + SLP-internal instrumentation
 
@@ -378,6 +384,10 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
 
 - Knob `psi_warm_start` (default `true`); `psi_total_iters` lowered `40 → 16`
   (`MapBaker._PHYS_PSI_TOTAL_ITERS`). Expected PSI stage cost drops ~1ms → ~0.3ms.
+- Knob `psi_early_exit_mode=off|balanced|perf` adds residual early exit on top
+  of warm-start. Reports: `phys_psi_iters_run`, `phys_psi_residual_final`,
+  `phys_psi_early_exit`, `phys_psi_mode`. Default `perf` uses min 6 iterations
+  and checks max `abs(new_psi-old_psi)` every 2 iterations.
 - Validate with `phys_slice`'s `ocean_delta_p95`: it should stay smooth. A sudden
   jump after the iteration cut means under-convergence → raise `psi_total_iters`
   or confirm warm-start is engaging (slot present, sized `n_cells`).

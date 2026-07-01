@@ -178,6 +178,22 @@ var _enum_atlas_throttle_pending_dirty: Dictionary = {}    # axis(String) → in
 var _enum_atlas_throttle_ticks_since_flush: Dictionary = {}# axis(String) → int
 const _ENUM_ATLAS_THROTTLE_DIRTY_THRESHOLD: int = 16
 const _ENUM_ATLAS_THROTTLE_SKIP_THRESHOLD: int = 4
+var _daily_wind_refresh_keys: PackedStringArray = PackedStringArray([
+	"cell_pos_x",
+	"cell_pos_y",
+	"cell_terrain",
+	"cell_landform",
+	"cell_temp",
+	"cell_temp_anomaly",
+	"cell_snow_cover",
+	"cell_sea_ice_frac",
+	"cell_weather_vapor",
+	"cell_weather_cloud",
+	"cell_slp",
+	"cell_wind_x",
+	"cell_wind_y",
+	"cell_wind_speed",
+])
 const _ENUM_ATLAS_THROTTLE_HEAL_TICKS: int = 64
 
 # Daily-sim perf opt：weather_field_tex 增量缓存。
@@ -461,6 +477,10 @@ var _psi_commit_diag_count: int = 0
 var _psi_first_run_logged: bool = false
 var _psi_native_ms_last: float = -1.0
 var _psi_path_str_last: String = "gdscript"
+var _psi_iters_run_last: int = 0
+var _psi_residual_final_last: float = 0.0
+var _psi_early_exit_last: bool = false
+var _psi_mode_last: String = "off"
 var _slp_thermal_p95_last: float = 0.0
 var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
@@ -5771,6 +5791,10 @@ func reset_physical_solve_state() -> void:
 	_slp_path_str_last = "gdscript"
 	_psi_native_ms_last = -1.0
 	_psi_path_str_last = "gdscript"
+	_psi_iters_run_last = 0
+	_psi_residual_final_last = 0.0
+	_psi_early_exit_last = false
+	_psi_mode_last = "off"
 	_slp_thermal_p95_last = 0.0
 	_slp_delta_p95_last = 0.0
 	_wind_delta_p95_last = 0.0
@@ -5808,6 +5832,14 @@ func get_psi_path_str() -> String:
 	return _psi_path_str_last
 func get_psi_native_ms() -> float:
 	return _psi_native_ms_last
+func get_psi_iters_run() -> int:
+	return _psi_iters_run_last
+func get_psi_residual_final() -> float:
+	return _psi_residual_final_last
+func get_psi_early_exit() -> bool:
+	return _psi_early_exit_last
+func get_psi_mode() -> String:
+	return _psi_mode_last
 func get_slp_thermal_p95() -> float:
 	return _slp_thermal_p95_last
 func get_slp_delta_p95() -> float:
@@ -5894,6 +5926,10 @@ func get_physical_circulation_diag() -> Dictionary:
 		"daily_wind_dir_flip_count": int(_daily_wind_diag_last.get("wind_dir_flip_count", 0)),
 		"psi_path": _psi_path_str_last,
 		"psi_native_ms": _psi_native_ms_last,
+		"psi_iters_run": _psi_iters_run_last,
+		"psi_residual_final": _psi_residual_final_last,
+		"psi_early_exit": _psi_early_exit_last,
+		"psi_mode": _psi_mode_last,
 		"ocean_delta_p95": _ocean_delta_p95_last,
 		"thermal_current_p95": _thermal_current_p95_last,
 		"ocean_current_preclamp_p95": _ocean_current_preclamp_p95_last,
@@ -5978,7 +6014,9 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		out["stage_note"] = "wind_only_slp_primed"
 
 	var t_refresh_us: int = Time.get_ticks_usec()
-	if _world_ext.has_method("refresh_slots_from_map"):
+	if _world_ext.has_method("refresh_slots_from_map_keys"):
+		_world_ext.refresh_slots_from_map_keys(_daily_wind_refresh_keys)
+	elif _world_ext.has_method("refresh_slots_from_map"):
 		_world_ext.refresh_slots_from_map()
 	out["refresh_ms"] = float(Time.get_ticks_usec() - t_refresh_us) / 1000.0
 
@@ -6613,6 +6651,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						# plan/psi-warm-start：SOR 用上一轮 cell_ocean_psi slot 作初值；
 						# 默认开，profile 可显式关闭做冷启动对照。
 						"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,
+						"psi_early_exit_mode": str(profile.psi_early_exit_mode) if profile != null and profile.get("psi_early_exit_mode") != null else "perf",
 						"psi_sor_omega": 1.4,
 						"psi_r_base": 0.18,
 						"psi_beta_floor": 0.05,
@@ -6664,6 +6703,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							_ocean_current_clamp_count_last = int(ret_psi.get("ocean_current_clamp_count", 0))
 							_ocean_current_clamp_ratio_last = float(ret_psi.get("ocean_current_clamp_ratio", 0.0))
 							_ocean_current_max_magnitude_last = float(ret_psi.get("ocean_current_max_magnitude", 0.0))
+							_psi_iters_run_last = int(ret_psi.get("psi_iters_run", _PHYS_PSI_TOTAL_ITERS))
+							_psi_residual_final_last = float(ret_psi.get("psi_residual_final", 0.0))
+							_psi_early_exit_last = bool(ret_psi.get("psi_early_exit", false))
+							_psi_mode_last = str(ret_psi.get("psi_mode", "off"))
 							var _has_psi_debug_arr: bool = map.wind_stress_curl_arr.size() == n_psi \
 									and map.ocean_psi_arr.size() == n_psi
 							# Fix #11 (2026-06-15)：published_to_slot=true 时 C++ 已写 slot + flush 到 map.*，
@@ -6708,7 +6751,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			if _psi_done_by_cpp:
 				# Skip stage 4 / 5: C++ pass did init+iters+finalize+commit.
 				_pending_psi_state = null
-				_phys_psi_iters_done = _PHYS_PSI_TOTAL_ITERS
+				_phys_psi_iters_done = maxi(0, _psi_iters_run_last)
 				_phys_stage = _PHYS_STAGE_UPWELLING
 			else:
 				if _psi_path_log_count > 0 and _psi_path_log_count <= 3:
@@ -7098,6 +7141,7 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		# PSI
 		"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
 		"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,
+		"psi_early_exit_mode": str(profile.psi_early_exit_mode) if profile != null and profile.get("psi_early_exit_mode") != null else "perf",
 		"psi_sor_omega": 1.4,
 		"psi_r_base": 0.18,
 		"psi_beta_floor": 0.05,
