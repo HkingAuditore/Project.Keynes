@@ -2829,7 +2829,7 @@ func _build_native_daily_bundle(
 					deferred_nodes.append(11)
 		bundle["season_cadence_policy"] = _native_daily_season_cadence_policy(
 			cp_now,
-			maxi(1, _weather_stage_b_call_index)
+			maxi(0, _weather_stage_b_call_index)
 		)
 		bundle["native_daily_deferred_nodes"] = deferred_nodes
 		bundle["deferred_node_count"] = deferred_nodes.size()
@@ -2870,11 +2870,11 @@ func _build_native_daily_bundle(
 	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 		map,
 		cp_now,
-		maxi(1, _weather_stage_b_call_index)
+		maxi(0, _weather_stage_b_call_index)
 	)
 	bundle["season_cadence_policy"] = _native_daily_season_cadence_policy(
 		cp_now,
-		maxi(1, _weather_stage_b_call_index)
+		maxi(0, _weather_stage_b_call_index)
 	)
 	var stage_b_embedded_in_weather: bool = false
 	var native_weather_readiness: Dictionary = weather_native_daily_readiness_report()
@@ -3047,7 +3047,7 @@ func _build_native_daily_slice_bundle_patch(
 			var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 				map,
 				cp_now,
-				maxi(1, _weather_stage_b_call_index)
+				maxi(0, _weather_stage_b_call_index)
 			)
 			patch["stage_b_knobs"] = stage_b_knobs
 		12:
@@ -3067,7 +3067,7 @@ func _build_native_daily_slice_bundle_patch(
 				var stage_b_knobs_for_weather: Dictionary = _build_native_daily_stage_b_knobs(
 					map,
 					cp_now,
-					maxi(1, _weather_stage_b_call_index)
+					maxi(0, _weather_stage_b_call_index)
 				)
 				var season_idx_local: int = 0
 				var anomaly_local: float = 0.0
@@ -3105,7 +3105,7 @@ func _build_native_daily_slice_bundle_patch(
 			var stage_b_after_hydrology_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 				map,
 				cp_now,
-				maxi(1, _weather_stage_b_call_index)
+				maxi(0, _weather_stage_b_call_index)
 			)
 			patch["stage_b_after_hydrology_knobs"] = stage_b_after_hydrology_knobs
 	return patch
@@ -12002,7 +12002,7 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 		map,
 		cp_now,
-		maxi(1, _weather_stage_b_call_index)
+		maxi(0, _weather_stage_b_call_index)
 	)
 
 	# Step 4：单次 cpp call。weather_system.try_run_refresh_daily_combined_gdext
