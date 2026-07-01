@@ -182,6 +182,24 @@ DCSystemScheduler
   slice 发轻量 continue knobs，并可携带 `native_daily_bundle_patch`。patch 只刷新当前即将执行
   节点所需的动态 knobs（如 pass-b / ocean / wind / sea-ice / transpiration），避免 graph round
   继续读取 round-start 的旧温度、TTA 或气团状态。
+- **Lazy knobs / deferred nodes（2026-07）**：production hot path 的 round-start
+  bundle 只携带首节点 `climate_pass_a_struct` 和调度/readiness 元数据；后续
+  `climate_pass_b`、`ocean_water/land`、`wind_air/surface`、`sea_ice`、
+  `transpiration`、以及 weather/hydrology/stage_b cadence-due 节点通过
+  `native_daily_deferred_nodes` 声明。C++ `run_native_daily_slice()` 会把这些
+  deferred 节点视为“未来存在”，不会因当前缺少 knobs 提前 `done=true`，并自动在
+  对应 node 前 yield 给 GDScript 构建 `native_daily_bundle_patch`。诊断字段包括
+  `deferred_node_count`、`jit_patch_build_ms`、`jit_patch_keys`、
+  `bundle_cache_hit`、`bundle_cache_rebuild_reason`、`bundle_static_ms`、
+  `bundle_dynamic_ms`。
+- **Finalizer sparse write（2026-07）**：native finalizer 仍是 temp/TTA/thermal
+  的生产计算边界；完成后 GDScript DataCore 可见写入按
+  `ClimateProfile.native_daily_finalizer_write_mode=dense|sparse_safe|sparse_perf`
+  选择 dense 或 `write_f32_indexed` 稀疏提交。默认 `sparse_perf`，epsilon 默认
+  `0.0005`，dirty ratio 超过 `native_daily_finalizer_sparse_max_dirty_ratio`
+  （默认 `0.45`）自动退回 dense。report 字段：
+  `finalizer_write_mode`、`finalizer_dirty_count_temp/tta/thermal`、
+  `finalizer_dirty_ratio`、`finalizer_sparse_write_ms`。
 - **GDScript 端热路径开销削减（2026-06，bit-equal）**：① 诊断快照
   `_native_daily_last_result` / `_last_weather_breakdown` / `_last_climate_breakdown` 以及
   `native_daily_last_result()` 取值改用**浅拷贝**（`Dictionary.duplicate()`）——只新建顶层

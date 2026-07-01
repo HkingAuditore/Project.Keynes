@@ -530,10 +530,26 @@ static Dictionary native_daily_collect_state_snapshot(const Dictionary &bundle_d
     return state;
 }
 
-static int native_daily_next_present_node(const Dictionary &bundle, int start_index) {
+static uint32_t native_daily_deferred_node_bits(const Dictionary &bundle) {
+    uint32_t bits = 0u;
+    if (!bundle.has("native_daily_deferred_nodes")) {
+        return bits;
+    }
+    PackedInt32Array nodes = bundle["native_daily_deferred_nodes"];
+    for (int i = 0; i < nodes.size(); ++i) {
+        const int idx = nodes[i];
+        if (idx >= 0 && idx < 32) {
+            bits |= (1u << idx);
+        }
+    }
+    return bits;
+}
+
+static int native_daily_next_present_node(const Dictionary &bundle, int start_index,
+                                          uint32_t deferred_bits = 0u) {
     for (int i = start_index; i < NATIVE_DAILY_SLICE_GRAPH_SIZE; ++i) {
         const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[i];
-        if (bundle.has(node.bundle_key)) {
+        if (bundle.has(node.bundle_key) || (i < 32 && ((deferred_bits >> i) & 1u))) {
             return i;
         }
     }
@@ -643,7 +659,8 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (bundle.is_empty()) {
             return finish_with_failure(String("native_daily_bundle"), String("empty native_daily_bundle"));
         }
-        if (native_daily_next_present_node(bundle, 0) < 0) {
+        const uint32_t deferred_bits = native_daily_deferred_node_bits(bundle);
+        if (native_daily_next_present_node(bundle, 0, deferred_bits) < 0) {
             return finish_with_failure(String("native_daily_bundle"), String("no pass knobs in native_daily_bundle"));
         }
 
@@ -667,6 +684,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 }
             }
         }
+        _native_daily_slice_yield_bits |= deferred_bits;
         _native_daily_slice_elapsed_accum_ms = 0.0;
         _native_daily_slice_any_pass_ran = false;
         // Shallow-copy tick_knobs (we only read scalars: day_index / season_phase) and
@@ -930,8 +948,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         }
         return false;
     };
+    const uint32_t deferred_bits_active = native_daily_deferred_node_bits(_native_daily_slice_bundle);
     int node_index = native_daily_next_present_node(_native_daily_slice_bundle,
-                                                    _native_daily_slice_node_index);
+                                                    _native_daily_slice_node_index,
+                                                    deferred_bits_active);
     if (node_index < 0) {
         if (!_native_daily_slice_any_pass_ran) {
             return finish_with_failure(String("native_daily_bundle"), String("no pass knobs in native_daily_bundle"));
@@ -944,6 +964,19 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         const int batch_start_index = node_index;
         while (node_index >= 0) {
             const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[node_index];
+            if (!_native_daily_slice_bundle.has(node.bundle_key)) {
+                const String node_name = node_name_string(node.name);
+                const String node_key = node_key_string(node.bundle_key);
+                breakdown["stage_name"] = node_name;
+                breakdown["substage"] = node_key;
+                breakdown["cursor_start"] = node_index;
+                breakdown["cursor_end"] = node_index;
+                breakdown["deferred_wait_node"] = node_name;
+                breakdown["deferred_wait_key"] = node_key;
+                _native_daily_slice_node_index = node_index;
+                _native_daily_slice_breakdown = breakdown;
+                break;
+            }
             const bool ok = exec_slice_node(node);
             if (!ok) {
                 _native_daily_slice_breakdown = breakdown;
@@ -980,7 +1013,8 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             _native_daily_slice_breakdown = breakdown;
 
             const int next = native_daily_next_present_node(_native_daily_slice_bundle,
-                                                            _native_daily_slice_node_index);
+                                                            _native_daily_slice_node_index,
+                                                            deferred_bits_active);
             if (next < 0) {
                 break;  // round complete
             }
@@ -992,7 +1026,8 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     }
 
     const int next_index = native_daily_next_present_node(_native_daily_slice_bundle,
-                                                          _native_daily_slice_node_index);
+                                                          _native_daily_slice_node_index,
+                                                          deferred_bits_active);
     const bool done = next_index < 0;
     if (done && bool(_native_daily_slice_bundle.get("flush_slots_to_map", true))) {
         const auto t_flush0 = std::chrono::high_resolution_clock::now();

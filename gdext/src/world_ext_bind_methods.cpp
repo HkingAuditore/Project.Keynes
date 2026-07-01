@@ -129,6 +129,8 @@ void DCWorldExt::_bind_methods() {
     // CoW flush / refresh (performance-charter §11.2)
     ClassDB::bind_method(D_METHOD("flush_slots_to_map"),    &DCWorldExt::flush_slots_to_map);
     ClassDB::bind_method(D_METHOD("refresh_slots_from_map"), &DCWorldExt::refresh_slots_from_map);
+    ClassDB::bind_method(D_METHOD("refresh_slots_from_map_keys", "slot_names"),
+                         &DCWorldExt::refresh_slots_from_map_keys);
     // dirty-mark-batch-2026-06
     ClassDB::bind_method(D_METHOD("flush_pending_mark_dirty_all"),
                          &DCWorldExt::flush_pending_mark_dirty_all);

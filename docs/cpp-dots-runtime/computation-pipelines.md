@@ -586,13 +586,15 @@ reserve0 = capacity[r] * clamp(suit, 0, 1)              # land_only 时水面格
 - 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water`（is_water 可缺失则视为全陆地）。
 - 写 slot：每个 `reserve_slots[r]`（如 `cell_res_biomass_reserve` / `cell_res_iron_ore_reserve`），逐资源 `_flush_slot_to_map`。
 - knobs：`n_cells`、`resource_count`、`reserve_slots`(PackedStringArray)、`capacity/land_only/temp_lo/temp_hi`、`gen_*`/`decay_*`（PackedFloat32Array，按资源索引对齐）。
-- 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, n_cells, total_delta, native_ms, compute_ms, fallback_reason? }`，契约同 `run_runtime_hydrology_pass`。
+- 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, published_resource_count, input_resource_count, n_cells, total_delta, native_ms, compute_ms, loop_ms, flush_ms, skipped_static_resources, fallback_reason? }`，其中 `resource_count` 保持为输入资源总数以兼容测试，`published_resource_count` 是实际 loop/flush 的动态资源数；其余契约同 `run_runtime_hydrology_pass`。
+- refresh 边界：`run_natural_resource_pass_native` 只把 `cell_temp` / `cell_moisture` / `cell_is_water` 从 `MapData` 回拉到 C++ slots；旧 DLL 无 `refresh_slots_from_map_keys()` 时才退回全量 refresh。
 
 **权威 / fallback**：native pass 是 reserve slot 权威。`published_to_slot=false`（含 native 不可用 / 无可发布资源）时 `run_natural_resource_pass_native` 退回 GDScript fallback（`_run_natural_resource_pass_gdscript`，同模板直接读写 `MapData.*_arr`）。两路逐 cell 逐资源 A/B 对拍一致（见 `tests/natural_resource_pass_test.gd`，≥20 cell 覆盖 SIMD body+尾段+陆/水混合）。
 
 **性能路径（多核 + SIMD）**：因 `L`、`inv_denom=1/(1+L)` 与 `P=C0+C1·tn+C2·m` 的系数都是「每资源常数」，per-cell 除法被提到资源外，内层只剩 clamp + 2×FMA + 1×乘。native pass 据此：
 - **多核**：按 cell 走 `pk::parallel_for_range_with_emit`（`WorkerThreadPool`，自适应每 task ~1024 cell、clamp [1,16]），`total_delta` 经 thread-local `DeltaEmit` 串行 reduce；小地图 / 无线程池自动降级为单线程，且与多线程 bit-equal。
 - **SIMD**：`PK_HAVE_AVX2` 构建下内层 8 cell/iter（`loadu`/`fmadd`/`min`/`max`；`land_only` 经 `blendv` 让水面格保持原值），尾段与非 AVX2 构建共用同一标量 helper，lane/tail/标量三路数值一致。数据天然 SoA（各 `*_arr` 连续）、无 cell 间依赖、无邻居 gather，是理想的向量化对象。
+- **静态资源跳过**：运行期系数 `gen_*` / `decay_*` 全为 0 的资源是恒等更新（例如静态矿物储量），C++ pass 不再每日全图 loop 或 flush 这些 reserve slots；它们仍保留 bootstrap 初值并可由后续开采系统显式修改。
 - **基准**：`tests/natural_resource_pass_bench.gd` 用 `bench_force_scalar` / `bench_force_seq` 两个旁路 knob（默认 false，生产不受影响）在同一构建上隔离两轴对比 scalar/SIMD × 单/多核，并先做四档等价性交叉校验。实测要点：小图（cache 内）SIMD 单线程收益最大（~4–5×）；大图（10⁶ 级）转为**内存带宽瓶颈**，SIMD 增益收窄、多核为主。后续若要在小图也让多核稳定为正收益，可把"逐资源各 dispatch 一次"改为"按 cell 分块一次、资源循环置于 task 内"以摊薄线程分发开销。
 
 **新增一种资源 SOP**：component_ids.gd 常量 + map_data.gd 数组（`_alloc_soa` resize + `rebuild_soa_from_cells` 置 0）+ component_schema.gd 一行（`owner="economy.resources"`）→ 跑 codegen → 新建 .tres + 登记 `ResourceProfileRegistry._PROFILE_PATHS` → 重 build GDExtension。
@@ -1379,6 +1381,10 @@ Cadence contract:
   sim_day, stage)` calls `run_slp_field_pass` and/or `run_wind_field_pass`,
   publishing `cell_slp`, `cell_wind_x/y`, and `cell_wind_speed` back to the C++
   slots / `MapData` mirror.
+- Before the prepass, `MapBaker` refreshes only the wind/SLP input slots
+  (`cell_pos_x/y`, terrain/landform, temp/anomaly/snow/sea-ice, vapor/cloud,
+  SLP and wind vectors). Older DLLs without `refresh_slots_from_map_keys()` fall
+  back to the full `refresh_slots_from_map()` path.
 - 2-tick SLP/wind split (`plan/daily-wind-stage-split`, profile flag
   `ClimateProfile.daily_wind_split_passes`, default `true`): the `stage`
   argument selects which kernels run this tick — `"slp"`, `"wind"`, or `"both"`.
@@ -2052,6 +2058,12 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   cutting the PSI stage from ~1ms to ~0.3ms while *improving* convergence
   quality versus a 40-iteration cold start. Set `psi_warm_start=false` (and
   raise iterations) only for cold-start A/B comparison.
+- Knob `psi_early_exit_mode=off|balanced|perf` gates residual early exit.
+  `balanced` uses `min_iters=8/residual_epsilon=0.00035`; `perf` uses
+  `min_iters=6/residual_epsilon=0.00075`; both check every 2 iterations and
+  cold-start adds 4 minimum iterations. The pass reports `psi_iters_run`,
+  `psi_residual_final`, `psi_early_exit`, and `psi_mode`, and still respects
+  `psi_total_iters` as the hard maximum.
 - Cold-start safety: on the very first solve (or whenever the slot is missing /
   size-mismatched / warm-start disabled) `PSI_PREV` is null and ψ falls back to
   the zero initial guess, so behavior degrades gracefully. The initial bake's

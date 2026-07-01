@@ -1303,6 +1303,10 @@ godot::Dictionary DCWorldExt::run_physical_solve_pass(godot::Dictionary knobs) {
         Dictionary psi_ret = run_psi_solver_pass(knobs);
         if (bool(psi_ret.get("fallback", true))) return fail("psi_fallback");
         out["psi_ms"] = psi_ret.get("elapsed_ms", -1.0);
+        out["psi_iters_run"] = psi_ret.get("psi_iters_run", -1);
+        out["psi_residual_final"] = psi_ret.get("psi_residual_final", -1.0);
+        out["psi_early_exit"] = psi_ret.get("psi_early_exit", false);
+        out["psi_mode"] = psi_ret.get("psi_mode", String());
         out["psi_ran"] = true;
     } else {
         // !heat_transport：GDScript 走 solve_ocean_current_fallback（纯 GDScript，无 C++ 等价），
@@ -2082,6 +2086,28 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     // 残差很小，少量迭代即可收敛（配合 psi_total_iters 下调）。默认 true；A/B 对照
     // 时传 psi_warm_start=false 退回冷启动。
     const bool PSI_WARM_START = bool(knobs.has("psi_warm_start") ? bool(knobs["psi_warm_start"]) : true);
+    const String PSI_EARLY_EXIT_MODE = String(knobs.has("psi_early_exit_mode")
+        ? String(knobs["psi_early_exit_mode"])
+        : String("perf"));
+    bool psi_early_exit_enabled = false;
+    int psi_min_iters = PSI_TOTAL_ITERS;
+    int psi_check_every = 2;
+    float psi_residual_epsilon = 0.0f;
+    if (PSI_EARLY_EXIT_MODE == String("balanced")) {
+        psi_early_exit_enabled = true;
+        psi_min_iters = 8;
+        psi_residual_epsilon = 0.00035f;
+    } else if (PSI_EARLY_EXIT_MODE == String("perf")) {
+        psi_early_exit_enabled = true;
+        psi_min_iters = 6;
+        psi_residual_epsilon = 0.00075f;
+    }
+    if (!PSI_WARM_START && psi_early_exit_enabled) {
+        psi_min_iters += 4;
+    }
+    if (psi_min_iters < 1) psi_min_iters = 1;
+    if (psi_min_iters > PSI_TOTAL_ITERS) psi_min_iters = PSI_TOTAL_ITERS;
+    if (psi_check_every < 1) psi_check_every = 1;
 
     PackedInt32Array nb_arr     = knobs["neighbor_indices"];
     PackedByteArray  water_ids  = knobs["water_terrain_ids"];
@@ -2281,7 +2307,11 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     }
 
     // ─── PSI iters: SOR Gauss-Seidel (in-place) ───────────────────────────
+    int psi_iters_run = 0;
+    float psi_residual_final = 0.0f;
+    bool psi_early_exit = false;
     for (int it = 0; it < PSI_TOTAL_ITERS; ++it) {
+        float iter_max_delta = 0.0f;
         for (int k = 0; k < n_water; ++k) {
             float sum_psi = 0.0f;
             float psi_e   = 0.0f;
@@ -2298,7 +2328,19 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
             const float adv     = r_factor[k] * (psi_e - psi_w) * 0.5f;
             const float target  = avg_nb - adv + source[k];
             const float old_v   = psi[k];
-            psi[k] = (1.0f - PSI_OMEGA) * old_v + PSI_OMEGA * target;
+            const float new_v   = (1.0f - PSI_OMEGA) * old_v + PSI_OMEGA * target;
+            const float delta   = std::fabs(new_v - old_v);
+            if (delta > iter_max_delta) iter_max_delta = delta;
+            psi[k] = new_v;
+        }
+        psi_iters_run = it + 1;
+        psi_residual_final = iter_max_delta;
+        if (psi_early_exit_enabled
+                && psi_iters_run >= psi_min_iters
+                && (psi_iters_run % psi_check_every) == 0
+                && iter_max_delta <= psi_residual_epsilon) {
+            psi_early_exit = true;
+            break;
         }
     }
 
@@ -2474,6 +2516,10 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     out["ocean_current_x_out"]  = ocx_out;
     out["ocean_current_y_out"]  = ocy_out;
     out["published_to_slot"]    = published_to_slot;
+    out["psi_iters_run"] = psi_iters_run;
+    out["psi_residual_final"] = double(psi_residual_final);
+    out["psi_early_exit"] = psi_early_exit;
+    out["psi_mode"] = PSI_EARLY_EXIT_MODE;
     if (!ocean_delta.empty()) {
         std::sort(ocean_delta.begin(), ocean_delta.end());
         const size_t p95_i = std::min(ocean_delta.size() - 1, size_t(std::floor(double(ocean_delta.size() - 1) * 0.95)));
