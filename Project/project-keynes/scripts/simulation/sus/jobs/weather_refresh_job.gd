@@ -768,6 +768,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	# 内部透明 fallback 到 stage_a + stage_b 老链，所以本 job 这里只需关心"成功提交"
 	# 后的状态同步：_last_fronts / _round_fronts / DataCore sync / soak dump / SUS timing publish。
 	if use_merged_native_weather:
+		generator.merge_weather_job_breakdown({"weather_job_path": "merged"})
 		var t_merged_us: int = Time.get_ticks_usec()
 		var merged_fronts: Array[WeatherFront] = generator.refresh_weather_daily(
 			map, world, season_idx, anomaly, season_phase
@@ -810,6 +811,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		return merged_report
 
 	if can_slice_field and not use_merged_native_weather:
+		generator.merge_weather_job_breakdown({"weather_job_path": "sliced"})
 		var cell_budget: int = 500
 		if generator.has_method("weather_field_slice_cells"):
 			cell_budget = int(generator.weather_field_slice_cells())
@@ -971,6 +973,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		return sliced_report
 
 	var t_direct_a_us: int = Time.get_ticks_usec()
+	generator.merge_weather_job_breakdown({"weather_job_path": "direct"})
 	var fronts: Array[WeatherFront] = generator.refresh_daily_stage_a(map, world, season_idx, anomaly, season_phase)
 	timing["stage_a_direct_ms"] = (Time.get_ticks_usec() - t_direct_a_us) / 1000.0
 	if generator.has_method("runtime_hydrology_enabled") and bool(generator.runtime_hydrology_enabled()):

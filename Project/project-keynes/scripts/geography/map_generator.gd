@@ -12777,6 +12777,12 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		"albedo_ran": run_albedo,
 		"veg_dyn_ran": run_veg_dyn,
 		"feedback_ran": run_feedback,
+		# ── stage_b 调度诊断（供 tile_data_recorder 写 CSV，定位 veg_dyn 为何不动）──
+		"stage_b_call_index": maxi(0, _weather_stage_b_call_index),
+		"stage_b_combined_done": stage_b_combined_done,
+		"stage_b_ext_ok": stage_b_ext_ok,
+		"stage_b_total_runs": _gdext_stage_b_runs,
+		"stage_b_total_fallbacks": _gdext_stage_b_fallbacks,
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
 		"_tick_idx": _current_fast_tick_idx,
 	}
