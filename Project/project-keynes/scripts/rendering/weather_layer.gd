@@ -1451,7 +1451,7 @@ func _init_shadow_pool() -> void:
 	# _init_shadow_pool 仍构造 16 个 Sprite2D + 1 张 256x256 alpha 圆盘贴图
 	# （~262KB VRAM）+ 添加到 SceneTree。mobile 跳过这些 setup 省启动 hitch
 	# + 16 个永久不可见节点的 culling 评估开销。
-	# _sync_shadow_pool 入口 `if _shadow_pool.is_empty(): return` 保证空池安全。
+	# _sync_shadow_pool 入口 'if _shadow_pool.is_empty(): return' 保证空池安全。
 	if OS.has_feature("mobile"):
 		_shadow_pool.clear()
 		return
@@ -1543,7 +1543,7 @@ func _init_particles_pool() -> void:
 	# Adreno 830 上 GPUParticles 内部 visibility_rect / process_material 切换
 	# 累积明显帧消耗。雨/雪视觉降级为 weather_overlay shader 内的 streak/grain
 	# effect（line 405-460 那段），mobile 玩家仍能看到天气表现。
-	# _sync_particles_pool 入口的 `if _particles_pool.is_empty(): return` 守卫
+	# _sync_particles_pool 入口的 'if _particles_pool.is_empty(): return' 守卫
 	# 保证空池不会触发 NPE。
 	if OS.has_feature("mobile"):
 		_fallback_particle_texture = _build_fallback_particle_texture()

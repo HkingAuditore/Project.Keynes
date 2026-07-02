@@ -873,6 +873,11 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 ? "stage_b_after_hydrology_knobs"
                 : "stage_b_knobs";
             Dictionary stage_b_knobs = as_dict(_native_daily_slice_bundle[key]);
+            // stage_b_knobs 为空（run_albedo/veg_dyn/feedback 全 false 的 stride tick）
+            // 时跳过，不算失败 —— 与 run_stage_b_pass 内部 early return 语义一致。
+            if (stage_b_knobs.is_empty()) {
+                return true;
+            }
             const double ms = run_stage_b_pass(stage_b_knobs);
             if (ms < 0.0) return false;
             breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
@@ -991,6 +996,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 } else {
                     reason = String("pass returned fallback");
                 }
+                // [DEBUG] 临时诊断：确认哪个节点失败
+                // godot::UtilityFunctions::print("[native_daily/FAIL] node=", node_name_string(node.name),
+                //     " fail_stage=", fail_stage, " reason=", reason);
                 _native_daily_slice_node_index = node_index;
                 return finish_with_failure(fail_stage, reason);
             }

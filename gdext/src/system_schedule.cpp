@@ -181,6 +181,11 @@ bool DCWorldExt::_exec_node_stage_b(Dictionary& bundle,
                                      const Dictionary& /*tick_knobs*/,
                                      Dictionary& breakdown) {
     Dictionary stage_b_knobs = as_dict_local(bundle["stage_b_knobs"]);
+    // stage_b_knobs 为空（run_albedo/veg_dyn/feedback 全 false 的 stride tick）
+    // 时跳过，不算失败。
+    if (stage_b_knobs.is_empty()) {
+        return true;
+    }
     const double ms = run_stage_b_pass(stage_b_knobs);
     if (ms < 0.0) return false;
     breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
@@ -202,6 +207,10 @@ bool DCWorldExt::_exec_node_stage_b_after_hydrology(Dictionary& bundle,
                                                      const Dictionary& /*tick_knobs*/,
                                                      Dictionary& breakdown) {
     Dictionary stage_b_knobs = as_dict_local(bundle["stage_b_after_hydrology_knobs"]);
+    // stage_b_knobs 为空时跳过（同 _exec_node_stage_b）。
+    if (stage_b_knobs.is_empty()) {
+        return true;
+    }
     const double ms = run_stage_b_pass(stage_b_knobs);
     if (ms < 0.0) return false;
     breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + ms;
