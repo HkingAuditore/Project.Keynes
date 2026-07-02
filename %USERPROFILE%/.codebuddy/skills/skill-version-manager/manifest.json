@@ -1,0 +1,15 @@
+{
+  "skill_name": "skill-version-manager",
+  "version": "4.4.1",
+  "author": "shunxliu",
+  "description": "Multi-IDE SVN manager for CodeBuddy/WorkBuddy/Cursor. Syncs and uploads skills, agents, commands, and rules with role-based partitioning (shared/art/ta/dev/user). Auto-detects IDE directory.",
+  "created_at": "2026-03-19T03:05:00Z",
+  "updated_at": "2026-04-17T10:00:00Z",
+  "changelog": "v4.4.1: Cross-IDE config fallback — load_local_config now probes other known IDE homes (.codebuddy/.workbuddy/.cursor) when the current one has no config, and auto-mirrors the first hit into the current IDE home so users migrating between IDEs no longer need to re-run init_repo.\nv4.4.0: Multi-IDE support — auto-detects .codebuddy, .workbuddy, .cursor directories. Env var SKILL_MANAGER_IDE_DIR for explicit override. All scripts now resolve IDE paths dynamically.",
+  "status": "approved",
+  "reviewed_by": "shunxliu",
+  "reviewed_at": "2026-04-07T09:10:00Z",
+  "reject_reason": null,
+  "dependencies": [],
+  "install_scope": "user"
+}

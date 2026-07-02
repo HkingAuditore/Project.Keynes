@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"D:/Godot/ProjectKeynes/.claude/skills/cpp-dots-runtime-development\")",
+      "Bash(cp \"D:/Godot/ProjectKeynes/Project.Keynes/.codex/skills/cpp-dots-runtime-development/SKILL.md\" \"D:/Godot/ProjectKeynes/.claude/skills/cpp-dots-runtime-development/SKILL.md\")",
+      "Bash(python *)",
+      "Bash(awk '/^double DCWorldExt::run_climate_pass_a\\\\\\(/{p=1} p{print NR\": \"$0; if\\($0 ~ /^}$/\\){exit}}' gdext/src/world_ext.cpp)",
+      "Bash(rg -n \"WeatherType\\\\.|WEATHER_CLEAR|CLEAR\\\\s*=\\\\s*0|WT_CLEAR\" Project/project-keynes/scripts/weather/*.gd)",
+      "Bash(awk '/^double DCWorldExt::run_weather_field_solve_pass/{p=1} p{print NR\": \"$0; if\\($0 ~ /^}$/\\){exit}}' gdext/src/world_ext.cpp)",
+      "Bash(awk 'NR>=3814 && NR<=4100' gdext/src/world_ext.cpp)",
+      "Bash(rg -n \"_wind_air_mass_pass_soa|_wind_surface_pass_soa|run_wind_air_mass_pass|run_wind_surface_pass\" Project/project-keynes/scripts/geography/map_generator.gd Project/project-keynes/scripts/simulation/climate/*.gd)",
+      "Bash(rg -n \"_field_solver|run_weather_field_solve|field_solver\" Project/project-keynes/scripts/weather/*.gd)",
+      "Bash(awk '{print $5}')",
+      "Bash(timeout 540 scons platform=windows target=template_debug dev_build=no -j8)",
+      "Bash(awk -F: '$1>3798 && $1<4180')",
+      "Bash(awk '{print $5, $6, $7, $8}')",
+      "Bash(PYTHONIOENCODING=utf-8 python -)"
+    ]
+  }
+}

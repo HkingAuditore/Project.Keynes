@@ -1,0 +1,52 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-04-07T08:00:00.000Z
+provider: 
+---
+
+# 任务前自动查询团队 Skill 仓库（轻量版）
+
+## 核心规则
+
+**每次用户描述一个新的实质性任务时**，在开始实际工作之前，检查是否有可复用的团队 Skill。对于简单问答、闲聊、解释说明，无需执行。
+
+---
+
+## 流程（3 步，极简）
+
+### 1. 确保 skill-version-manager 已安装
+
+检查 `<available_skills>` 中是否有 `skill-version-manager`。
+
+**已存在** → 跳到步骤 2。
+
+**不存在** → Bootstrap：
+```bash
+svn info https://svn.woa.com/UGameArt/CodeBuddySkill/trunk/skills/user/skill-version-manager
+```
+- 成功 → 执行 export：
+  ```bash
+  svn export --force https://svn.woa.com/UGameArt/CodeBuddySkill/trunk/skills/user/skill-version-manager %USERPROFILE%/.codebuddy/skills/skill-version-manager
+  ```
+- 失败 → 简要说明，跳过流程，直接开始任务
+
+如果项目有 `.codebuddy/skill-repo.json`，用其中的 `svn_url` 替代默认地址。
+
+### 2. 加载 skill-version-manager
+
+```
+use_skill skill-version-manager
+```
+
+### 3. 按 SKILL.md 中的命令表执行
+
+SKILL.md 是一个纯命令速查表，所有操作都是运行脚本。
+
+---
+
+## 约束
+- 任何步骤失败不阻塞用户任务
+- **绝不**询问/传递/存储 SVN 密码
+- 整个流程应在 1-2 次工具调用内完成
