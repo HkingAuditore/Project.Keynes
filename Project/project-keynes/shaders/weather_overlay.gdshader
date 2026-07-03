@@ -37,6 +37,9 @@ uniform float cloud_shadow_offset : hint_range(0.0, 3.0) = 1.15;
 // 与逐像素晨昏线的地面/水面/植被对不上）。此处仅保留：总开关、迎光屏幕方向（earth_daylight 不给
 // 2D 方向，云体积梯度需要它）、全局曝光、云染色开关。
 uniform bool day_night_enabled = true;
+uniform bool tod_debug_sun_position_enabled = false;
+uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
+uniform float tod_debug_sun_height_scale : hint_range(0.2, 1.5) = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure : hint_range(0.2, 2.5) = 1.0;
 uniform bool cloud_tod_tint_enabled = true;

@@ -1,4 +1,4 @@
-﻿# hex_renderer.gd v5
+# hex_renderer.gd v5
 # 单一全屏 quad mesh + WorldData 的 4 张高分辨率纹理 + world_map.gdshader v5。
 class_name HexRenderer
 extends Node2D
@@ -359,6 +359,10 @@ var _tod_sun_color: Color = Color(1.0, 0.97, 0.92)
 var _tod_ambient_color: Color = Color(0.70, 0.75, 0.82)
 var _tod_night_factor: float = 0.0
 var _tod_exposure: float = 1.0
+var _tod_sun_dir: Vector3 = Vector3(0.4, -0.7, 0.6).normalized()
+var _tod_debug_sun_position_enabled: bool = false
+var _tod_debug_sun_uv: Vector2 = Vector2(0.25, 0.5)
+var _tod_debug_sun_height_scale: float = 1.0
 var _shader_hot_reload_accum: float = 0.0
 var _active_material_source_path: String = ""
 var _active_shader_source_path: String = ""
@@ -892,8 +896,14 @@ func _spawn_detail_layers() -> void:
 		layer.set_day_phase(_day_phase)
 		layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
 		layer.set_day_night_enabled(day_night_enabled)
+		if layer.has_method("set_tod_debug_sun_position"):
+			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+		if layer.has_method("set_tod_debug_sun_height_scale"):
+			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 		if _tod_valid:
 			layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
+			if layer.has_method("set_tod_sun_dir"):
+				layer.set_tod_sun_dir(_tod_sun_dir)
 		_detail_layers.append(layer)
 
 
@@ -1069,6 +1079,35 @@ func set_day_phase(v: float) -> void:
 		_weather_layer.set_day_phase(_day_phase)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_phase(_day_phase)
+	)
+
+func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
+	_tod_debug_sun_position_enabled = enabled
+	_tod_debug_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		_shader_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	if _season_transition_mat != null:
+		_season_transition_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		_season_transition_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_position"):
+		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_tod_debug_sun_position"):
+			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+	)
+
+func set_tod_debug_sun_height_scale(v: float) -> void:
+	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	if _season_transition_mat != null:
+		_season_transition_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_height_scale"):
+		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_tod_debug_sun_height_scale"):
+			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	)
 
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
@@ -1413,9 +1452,12 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_ambient_color = profile.ambient_color
 	_tod_night_factor = profile.night_factor
 	_tod_exposure = profile.exposure
+	_tod_sun_dir = profile.sun_dir.normalized()
 	_tod_valid = true
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
+		if layer.has_method("set_tod_sun_dir"):
+			layer.set_tod_sun_dir(_tod_sun_dir)
 	)
 
 func set_water_sparkle_enabled(v: bool) -> void:
@@ -1877,6 +1919,9 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("world_time", _world_time)
 	# 任务 2：把当前 day_phase 同步到新创建的材质上
 	sm.set_shader_parameter("day_phase", _day_phase)
+	sm.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+	sm.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	sm.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	sm.set_shader_parameter("season_temp_amp", season_temp_amp)
 	# True Insolation-Driven：CPU / GPU 同源的四个参数输出到 shader
 	sm.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
@@ -1958,6 +2003,10 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_season_phase(_season_phase)
 		_weather_layer.set_day_phase(_day_phase)
 		_weather_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		if _weather_layer.has_method("set_tod_debug_sun_position"):
+			_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+		if _weather_layer.has_method("set_tod_debug_sun_height_scale"):
+			_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)

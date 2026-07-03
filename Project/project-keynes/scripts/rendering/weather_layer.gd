@@ -454,6 +454,9 @@ var _day_phase: float = 0.25
 # 需要 season_phase / day_phase / axial_tilt_rad 三个 per-material uniform。默认值同 uniforms.gdshaderinc。
 var _season_phase: float = 1.0
 var _axial_tilt_rad: float = 0.4101523
+var _tod_debug_sun_position_enabled: bool = false
+var _tod_debug_sun_uv: Vector2 = Vector2(0.25, 0.5)
+var _tod_debug_sun_height_scale: float = 1.0
 
 # 昼夜相位：drive earth_daylight 的正午经度（晨昏线东西扫过）。由 HexRenderer.set_day_phase 转发。
 func set_day_phase(v: float) -> void:
@@ -478,6 +481,23 @@ func set_axial_tilt_rad(v: float) -> void:
 		_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 	for mat in _curtain_mats:
 		mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+
+func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
+	_tod_debug_sun_position_enabled = enabled
+	_tod_debug_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		_overlay_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+
+func set_tod_debug_sun_height_scale(v: float) -> void:
+	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -1162,6 +1182,9 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("season_phase", _season_phase)
 	_overlay_mat.set_shader_parameter("day_phase", _day_phase)
 	_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+	_overlay_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+	_overlay_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 
@@ -1182,6 +1205,9 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("season_phase", _season_phase)
 		mat.set_shader_parameter("day_phase", _day_phase)
 		mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
+		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 		mat.set_shader_parameter("tod_exposure", _tod_exposure)
 		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
 		# [parallax-rain] 俯视投影参数

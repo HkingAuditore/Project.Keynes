@@ -38,16 +38,48 @@ float earth_daylight_longitude_u(vec2 uv) {
 	return fract((world_x - wrap_origin_x) / wrap_period_x);
 }
 
+float earth_daylight_declination() {
+	if (tod_debug_sun_position_enabled) {
+		return (clamp(tod_debug_sun_uv.y, 0.0, 1.0) * 2.0 - 1.0) * 1.5707963;
+	}
+	float year_progress = mod(season_phase, 4.0) * 0.25;
+	return axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
+}
+
+float earth_daylight_subsolar_lon() {
+	return (tod_debug_sun_position_enabled ? fract(tod_debug_sun_uv.x) : day_phase) * EARTH_DAYLIGHT_TAU;
+}
+
+float earth_daylight_scale_elevation_sin(float sinh) {
+	float scale = max(tod_debug_sun_height_scale, 0.01);
+	if (abs(scale - 1.0) <= 0.0001) {
+		return sinh;
+	}
+	float elev = asin(clamp(sinh, -1.0, 1.0));
+	return sin(clamp(elev * scale, -1.5707963, 1.5707963));
+}
+
+vec3 earth_daylight_scale_dir_elevation(vec3 d) {
+	float scale = max(tod_debug_sun_height_scale, 0.01);
+	if (abs(scale - 1.0) <= 0.0001) {
+		return d;
+	}
+	float horiz_len = length(d.xy);
+	float elev = atan(d.z, max(horiz_len, 1e-5));
+	float scaled_elev = clamp(elev * scale, -1.5707963, 1.5707963);
+	vec2 axis = (horiz_len > 1e-5) ? d.xy / horiz_len : vec2(1.0, 0.0);
+	return vec3(axis * cos(scaled_elev), sin(scaled_elev));
+}
+
 // sin(太阳高度角)：见文件头公式。经度周期量 → 东西 tile 边界处 cos(H) 相等，晨昏线无缝。
 float compute_solar_elevation(vec2 uv, float lat_signed) {
-	float year_progress = mod(season_phase, 4.0) * 0.25;
-	// 与 compute_insolation_shader 的 subsolar 同式：phase=0 → +tilt。
-	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
+	float decl = earth_daylight_declination();
 	float lat_rad = lat_signed * 1.5707963;            // 与 insolation lat_rad 同源
 	float lon = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU; // 经度（周期）→ 东西无缝
-	float subsolar_lon = day_phase * EARTH_DAYLIGHT_TAU; // 正午经度随视觉昼夜相位绕圈
+	float subsolar_lon = earth_daylight_subsolar_lon(); // 正午经度随视觉昼夜相位绕圈
 	float H = lon - subsolar_lon;
-	return sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(H);
+	float sinh = sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(H);
+	return earth_daylight_scale_elevation_sin(sinh);
 }
 
 // [tod-latitude-sun 2026-06-25] 逐像素太阳方向（近似点光源）。
@@ -61,11 +93,10 @@ float compute_solar_elevation(vec2 uv, float lat_signed) {
 // 不同纬度 φ 与时角 H 各异 → 各像素阴影方向与长度天然不同（这正是"点光源式太阳"诉求）。
 // up 分量与 compute_solar_elevation 完全相等（= sinh），昼夜/晨昏判定可直接复用 .z。
 vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
-	float year_progress = mod(season_phase, 4.0) * 0.25;
-	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
+	float decl = earth_daylight_declination();
 	float lat_rad = lat_signed * 1.5707963;
 	float lon = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU;
-	float subsolar_lon = day_phase * EARTH_DAYLIGHT_TAU;
+	float subsolar_lon = earth_daylight_subsolar_lon();
 	float H = lon - subsolar_lon;
 	float sphi = sin(lat_rad);
 	float cphi = cos(lat_rad);
@@ -81,26 +112,16 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 	//   即【屏幕 +y = 北】（与地形法线 N.y 同空间：N.y>0 也指向 +y=北）。
 	// 旧代码误以为 +y=南而把 north 取负塞进 .y → 太阳南北方向整体反向（太阳在北时北坡反而变暗）。
 	// 正确做法：north 直接进 .y（北 = +y），与地形法线、纬度日照保持同一约定。
-	vec3 d = vec3(east, north, up);
+	vec3 d = earth_daylight_scale_dir_elevation(vec3(east, north, up));
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
 
 // 关闭昼夜时使用的全局平行太阳方向。
-// 它不按像素计算晨昏线，而是把全图当作一块平面接受同一束平行光：
-//   - decl 来自 season_phase + axial_tilt_rad，保持太阳直射点在南北回归线间往复；
-//   - day_phase 仍驱动东西向方位扫掠；
-//   - up 分量折到地平线上方，保证"关闭昼夜"后不再出现夜侧无直射光。
+// 它不按像素计算晨昏线，而是把全图当作一块平面接受同一束平行光。
+// 方向由 TODProfile / debug UI 推入的 tod_sun_dir 控制，方便在永昼模式下直接调光线角度。
 vec3 compute_global_parallel_sun_dir() {
-	float year_progress = mod(season_phase, 4.0) * 0.25;
-	float decl = axial_tilt_rad * cos(EARTH_DAYLIGHT_TAU * year_progress);
-	float hour = (day_phase - 0.25) * EARTH_DAYLIGHT_TAU;
-	float sdec = sin(decl);
-	float cdec = cos(decl);
-	float east = -cdec * sin(hour);
-	float north = sdec;
-	float up = max(cdec * cos(hour), 0.38);
-	vec3 d = vec3(east, north, up);
+	vec3 d = vec3(tod_sun_dir.xy, max(tod_sun_dir.z, 0.08));
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
