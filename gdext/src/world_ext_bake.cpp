@@ -248,6 +248,12 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     const double texel_x = world_size_x / double(w);
     const double texel_y = world_size_y / double(h);
     const bool wrap_x = bool(knobs.get("wrap_x", true));
+    // [terrain-horizon-wrap 2026-07-03] 真正经度环绕周期（world units）。柱状地图东西连续，但
+    // height_tex 覆盖的 world_bounds 含 padding（world_size_x = wrap_period_x + 约 4.87·hex），
+    // 必须按此周期在世界经度空间折叠，才能与运行期 wrap_map_uv 对齐、接缝无缝。缺省(0)时退化为整图宽。
+    const double wrap_period_x_world = double(knobs.get("wrap_period_x", 0.0));
+    const double period_px = (wrap_period_x_world > 1e-6) ? (wrap_period_x_world / texel_x) : double(w);
+    const double period_world = period_px * texel_x;
 
     PackedByteArray data;
     data.resize(n * 4);
@@ -283,21 +289,31 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                     double best_slope_sq = 0.0;
                     for (int s = 1; s <= steps; ++s) {
                         const double dist_px = double(s) * step_px;
-                        int sx = int(std::floor(double(x) + dir_x[d] * dist_px + 0.5));
-                        int sy = int(std::floor(double(y) + dir_y[d] * dist_px + 0.5));
+                        const double sx_f = double(x) + dir_x[d] * dist_px;
+                        const int sy = int(std::floor(double(y) + dir_y[d] * dist_px + 0.5));
                         if (sy < 0 || sy >= h) break;
+                        int sx;
+                        double off_x_world;
                         if (wrap_x) {
-                            sx = ((sx % w) + w) % w;
-                        } else if (sx < 0 || sx >= w) {
-                            break;
+                            // 按真实经度周期 period_px 折回规范列（height 关于经度以 period 周期），
+                            // 并取圆柱最短经度距离；不可按整图宽 w 折叠，否则偏 world_bounds 的 padding。
+                            const double sxw = sx_f - period_px * std::floor(sx_f / period_px);  // [0, period_px)
+                            sx = int(std::floor(sxw + 0.5));
+                            if (sx >= w) sx -= w;   // period_px≈w 时进位兜底
+                            if (sx < 0) sx = 0;
+                            const double dxw = dir_x[d] * dist_px * texel_x;
+                            const double mm = std::fmod(std::abs(dxw), period_world);
+                            off_x_world = std::min(mm, period_world - mm);
+                        } else {
+                            sx = int(std::floor(sx_f + 0.5));
+                            if (sx < 0 || sx >= w) break;
+                            off_x_world = std::abs(double(sx - x)) * texel_x;
                         }
                         // dh<=0 的采样（海平面/下坡）占绝大多数，前置判断可跳过 world_dist 计算。
                         const double dh = double(SRC[sy * w + sx]) - h0 - bias;
                         if (dh <= 0.0) continue;
-                        const int off_x = wrap_x ? std::min(std::abs(sx - x), w - std::abs(sx - x)) : std::abs(sx - x);
-                        const int off_y = std::abs(sy - y);
-                        const double world_dist_sq = double(off_x * off_x) * texel_x * texel_x
-                                + double(off_y * off_y) * texel_y * texel_y;
+                        const double off_y_world = std::abs(double(sy - y)) * texel_y;
+                        const double world_dist_sq = off_x_world * off_x_world + off_y_world * off_y_world;
                         if (world_dist_sq <= 1e-12) continue;
                         const double num = dh * height_world_scale;  // dh>0 → num>0
                         const double slope_sq = (num * num) / world_dist_sq;

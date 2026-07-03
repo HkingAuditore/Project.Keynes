@@ -148,7 +148,7 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		world_size: Vector2, hex_size: float, existing: ImageTexture = null,
 		native_ext: Object = null, steps: int = 48, step_px: float = 2.0,
 		max_horizon_angle: float = 1.309, bias: float = 0.003,
-		height_world_scale: float = 0.0) -> ImageTexture:
+		height_world_scale: float = 0.0, wrap_period_x: float = 0.0) -> ImageTexture:
 	var W: int = size.x
 	var H: int = size.y
 	var hscale: float = height_world_scale if height_world_scale > 0.0 else maxf(hex_size * 8.0, 1.0)
@@ -159,6 +159,8 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		"world_size_x": world_size.x,
 		"world_size_y": world_size.y,
 		"wrap_x": true,
+		# 真正经度周期（world units）：柱状地图 marching 须按此折叠而非整图宽（含 padding）。
+		"wrap_period_x": wrap_period_x,
 		"steps": steps,
 		"step_px": step_px,
 		"max_horizon_angle": max_horizon_angle,

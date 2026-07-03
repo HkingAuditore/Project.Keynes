@@ -20,7 +20,9 @@ visual_quality = 2
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
-terrain_horizon_softness = 0.3
+terrain_horizon_strength = 0.8
+terrain_horizon_softness = 0.52
+terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
 
 [node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=56384315]
