@@ -141,6 +141,37 @@ static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
 	return _upload_rg8(data, W, H)
 
 
+# [terrain-horizon 2026-07-03] 生成期烘焙 8 方向 horizon angle。
+# C++ 输出 RGBA8，每个 byte 拆 high/low nibble 承载两个方向：E/NE, N/NW, W/SW, S/SE。
+# 这里不提供 GDScript 热循环 fallback：DLL 未 rebuild 时返回 existing/null，shader 自动关闭阴影。
+static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
+		world_size: Vector2, hex_size: float, existing: ImageTexture = null,
+		native_ext: Object = null, steps: int = 48, step_px: float = 2.0,
+		max_horizon_angle: float = 1.309, bias: float = 0.003,
+		height_world_scale: float = 0.0) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var hscale: float = height_world_scale if height_world_scale > 0.0 else maxf(hex_size * 8.0, 1.0)
+	var ret: Dictionary = _native_data(native_ext, &"encode_bake_horizon_tex_data", {
+		"height_buffer": buf,
+		"width": W,
+		"height": H,
+		"world_size_x": world_size.x,
+		"world_size_y": world_size.y,
+		"wrap_x": true,
+		"steps": steps,
+		"step_px": step_px,
+		"max_horizon_angle": max_horizon_angle,
+		"bias": bias,
+		"height_world_scale": hscale,
+	})
+	if not bool(ret.get("fallback", true)):
+		return _upload_rgba8(ret.get("data", PackedByteArray()), W, H, existing)
+	push_warning(("[terrain_horizon] encode_bake_horizon_tex_data unavailable/fallback (reason=%s). "
+		+ "Rebuild the GDExtension DLL to enable terrain cast shadows.") % String(ret.get("reason", "?")))
+	return null
+
+
 static func encode_enum_atlas_payload(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
 		_cover_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null, world: Object = null, native_ext: Object = null,

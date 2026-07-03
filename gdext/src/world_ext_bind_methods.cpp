@@ -333,6 +333,9 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("encode_bake_terrain_normal_tex_data", "knobs"),
         &DCWorldExt::encode_bake_terrain_normal_tex_data);
     ClassDB::bind_method(
+        D_METHOD("encode_bake_horizon_tex_data", "knobs"),
+        &DCWorldExt::encode_bake_horizon_tex_data);
+    ClassDB::bind_method(
         D_METHOD("encode_bake_r8_tex_data", "knobs"),
         &DCWorldExt::encode_bake_r8_tex_data);
     ClassDB::bind_method(
@@ -348,9 +351,6 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_bake_terrain_index_pass", "knobs"),
         &DCWorldExt::run_bake_terrain_index_pass);
     // 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
-    ClassDB::bind_method(
-        D_METHOD("run_bake_volcano_field_pass", "knobs"),
-        &DCWorldExt::run_bake_volcano_field_pass);
     ClassDB::bind_method(
         D_METHOD("run_bake_latitude_field_pass", "knobs"),
         &DCWorldExt::run_bake_latitude_field_pass);

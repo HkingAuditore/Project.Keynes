@@ -962,6 +962,7 @@ public:
     // 返回统一 Dictionary：{ fallback, reason, path, elapsed_ms, data, width, height, format }。
     godot::Dictionary encode_bake_height_tex_data(godot::Dictionary knobs);      // F32 [0,1] → RG8
     godot::Dictionary encode_bake_terrain_normal_tex_data(godot::Dictionary knobs); // F32 height → RG8 粗法线(nx,ny)
+    godot::Dictionary encode_bake_horizon_tex_data(godot::Dictionary knobs);      // F32 height → RGBA8 packed 8-dir horizon
     godot::Dictionary encode_bake_r8_tex_data(godot::Dictionary knobs);          // U8 → L8，default_byte 可选
     godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
     godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
@@ -975,10 +976,6 @@ public:
     // （同 encode_bake_* / run_bake_terrain_index_pass 范式，bake 期 bind 时机不定）。
     // GDScript 只发请求 + 收结果，O(n_pixels) 热循环全部在 C++。
     //
-    // run_bake_volcano_field_pass：复刻 map_baker.gd::_bake_volcano_field。逐像素累加到
-    //   最近火山中心的二次径向衰减 → L8。输入 w/h/origin_x/origin_y/step_x/step_y/inv_glow
-    //   + volcano_centers_x/y（world 坐标，PackedFloat32Array）。输出 data(L8 PackedByteArray)。
-    godot::Dictionary run_bake_volcano_field_pass(godot::Dictionary knobs);
     // run_bake_latitude_field_pass：复刻 map_baker.gd::_bake_latitude_buffer。逐像素
     //   ny = y / max(H-1,1)。输入 w/h。输出 latitude_buffer(F32 PackedFloat32Array)。
     godot::Dictionary run_bake_latitude_field_pass(godot::Dictionary knobs);
@@ -1007,14 +1004,14 @@ public:
 
     // run_bake_geometry_fields_pass（dots-total-cpp step2，2026-06-25）：bake 期几何场编排
     //   下沉 C++ 的单次驱动。GDScript 只发一次请求（一个 knobs Dictionary 含 terrain-index
-    //   所需 cell SoA + 几何参数 + erosion 常量 + volcano 中心），C++ 在进程内依次串起已验证的
-    //   terrain-index → erosion → river SDF → latitude → volcano 五个 sub-pass，中间 buffer
+    //   所需 cell SoA + 几何参数 + erosion 常量），C++ 在进程内依次串起已验证的
+    //   terrain-index → erosion → river SDF → latitude sub-pass，中间 buffer
     //   （尤其 height_buffer）全部留在 C++、不跨语言往返；一次返回完整几何 bundle。river 读
     //   post_base 暂存的 `_gen_river_*` 拓扑（零再传输），故前置仍需先跑 post_base。
     //   输出合并 bundle：height_buffer/biome_buffer/moisture_buffer/vegetation_buffer/
-    //   cover_buffer（terrain）+ flow_buffer（river out_buf）+ latitude_buffer + volcano_buffer
-    //   （volcano data，L8）+ CSR（cell_first_px/cell_px_count/flat_px_indices）+
-    //   pixel_to_cell_index + total_px + width/height + 各 stage 的 *_elapsed_ms 诊断。
+    //   cover_buffer（terrain）+ flow_buffer（river out_buf）+ latitude_buffer +
+    //   CSR（cell_first_px/cell_px_count/flat_px_indices）+ pixel_to_cell_index +
+    //   total_px + width/height + 各 stage 的 *_elapsed_ms 诊断。
     //   terrain sub-pass 失败 → 整体 fallback=true（caller 回退旧 per-pass / GDScript 路径）；
     //   erosion sub-pass 失败 → 用未侵蚀 height 续算（非致命），不令整体 fallback。
     godot::Dictionary run_bake_geometry_fields_pass(godot::Dictionary knobs);

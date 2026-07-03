@@ -203,6 +203,126 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
     return out;
 }
 
+// [terrain-horizon 2026-07-03] 生成期烘焙 8 方向 horizon angle：
+//   RGBA8，每个 byte 拆成 high/low nibble，方向顺序 E/NE, N/NW, W/SW, S/SE。
+//   运行期 shader 只采样一次并按 TOD 太阳方位插值，避免每帧 heightmap tracing。
+godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
+
+    PackedFloat32Array src = knobs.get("height_buffer", PackedFloat32Array());
+    if (src.size() < n) src = knobs.get("buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("height buffer too small");
+
+    int steps = int(knobs.get("steps", 48));
+    if (steps < 1) steps = 1;
+    else if (steps > 256) steps = 256;
+    const double step_px = std::max(0.25, double(knobs.get("step_px", 2.0)));
+    const double bias = std::max(0.0, double(knobs.get("bias", 0.003)));
+    double max_angle = double(knobs.get("max_horizon_angle", 1.309));
+    if (max_angle < 0.01) max_angle = 0.01;
+    else if (max_angle > M_PI * 0.5) max_angle = M_PI * 0.5;
+    const double height_world_scale = std::max(1e-4, double(knobs.get("height_world_scale", 176.0)));
+    double world_size_x = double(knobs.get("world_size_x", double(w)));
+    double world_size_y = double(knobs.get("world_size_y", double(h)));
+    if (world_size_x <= 1e-6) world_size_x = double(w);
+    if (world_size_y <= 1e-6) world_size_y = double(h);
+    const double texel_x = world_size_x / double(w);
+    const double texel_y = world_size_y / double(h);
+    const bool wrap_x = bool(knobs.get("wrap_x", true));
+
+    PackedByteArray data;
+    data.resize(n * 4);
+    const float * const __restrict SRC = src.ptr();
+    uint8_t * const __restrict DST = data.ptrw();
+
+    constexpr double INV_SQRT2 = 0.70710678118654752440;
+    const double dir_x[8] = { 1.0, INV_SQRT2, 0.0, -INV_SQRT2, -1.0, -INV_SQRT2, 0.0, INV_SQRT2 };
+    const double dir_y[8] = { 0.0, INV_SQRT2, 1.0, INV_SQRT2, 0.0, -INV_SQRT2, -1.0, -INV_SQRT2 };
+
+    auto q_horizon = [&](double angle) -> uint8_t {
+        double v = angle / max_angle;
+        if (v < 0.0) v = 0.0;
+        else if (v > 1.0) v = 1.0;
+        int q = int(std::round(v * 15.0));
+        if (q < 0) q = 0;
+        else if (q > 15) q = 15;
+        return uint8_t(q);
+    };
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    auto run_range = [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            const int row = y * w;
+            for (int x = 0; x < w; ++x) {
+                const int idx = row + x;
+                const double h0 = double(SRC[idx]);
+                uint8_t q[8] = {};
+                for (int d = 0; d < 8; ++d) {
+                    double max_a = 0.0;
+                    for (int s = 1; s <= steps; ++s) {
+                        const double dist_px = double(s) * step_px;
+                        int sx = int(std::floor(double(x) + dir_x[d] * dist_px + 0.5));
+                        int sy = int(std::floor(double(y) + dir_y[d] * dist_px + 0.5));
+                        if (sy < 0 || sy >= h) break;
+                        if (wrap_x) {
+                            sx = ((sx % w) + w) % w;
+                        } else if (sx < 0 || sx >= w) {
+                            break;
+                        }
+                        const int off_x = wrap_x ? std::min(std::abs(sx - x), w - std::abs(sx - x)) : std::abs(sx - x);
+                        const int off_y = std::abs(sy - y);
+                        const double world_dist = std::sqrt(double(off_x * off_x) * texel_x * texel_x
+                                + double(off_y * off_y) * texel_y * texel_y);
+                        if (world_dist <= 1e-6) continue;
+                        const double dh = double(SRC[sy * w + sx]) - h0 - bias;
+                        if (dh <= 0.0) continue;
+                        const double a = std::atan2(dh * height_world_scale, world_dist);
+                        if (a > max_a) max_a = a;
+                    }
+                    q[d] = q_horizon(max_a);
+                }
+                const int di = idx * 4;
+                DST[di]     = uint8_t((q[0] << 4) | q[1]);
+                DST[di + 1] = uint8_t((q[2] << 4) | q[3]);
+                DST[di + 2] = uint8_t((q[4] << 4) | q[5]);
+                DST[di + 3] = uint8_t((q[6] << 4) | q[7]);
+            }
+        }
+    };
+    pk::parallel_for_range("pk_bake_horizon_tex", h, /*n_tasks=*/0, /*seq_threshold=*/32, run_range);
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["data"] = data;
+    out["width"] = w;
+    out["height"] = h;
+    out["format"] = String("RGBA8");
+    out["directions"] = String("E,NE,N,NW,W,SW,S,SE");
+    return out;
+}
+
 godot::Dictionary DCWorldExt::encode_bake_r8_tex_data(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -386,84 +506,6 @@ godot::Dictionary DCWorldExt::encode_bake_enum_atlas_payload(godot::Dictionary k
 // 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）
 // 纯 buffer-encoder：不读 _slots / 不要求 _bound。GDScript 只发请求 + 收结果。
 // ─────────────────────────────────────────────────────────────────────────
-
-// run_bake_volcano_field_pass — 复刻 map_baker.gd::_bake_volcano_field
-// 逐像素累加到最近火山中心的二次径向衰减 contrib^2（contrib = 1 - dist*inv_glow > 0）→ L8。
-godot::Dictionary DCWorldExt::run_bake_volcano_field_pass(godot::Dictionary knobs) {
-    using godot::Dictionary;
-    using godot::PackedByteArray;
-    using godot::PackedFloat32Array;
-    using godot::String;
-
-    Dictionary out;
-    out["fallback"] = true;
-    out["reason"] = String();
-    out["path"] = String("gdscript");
-    out["elapsed_ms"] = -1.0;
-
-    auto fail = [&](const char *why) -> Dictionary {
-        out["reason"] = String(why);
-        return out;
-    };
-
-    const int w = int(knobs.get("width", knobs.get("w", 0)));
-    const int h = int(knobs.get("height", knobs.get("h", 0)));
-    const int n = w * h;
-    if (w <= 0 || h <= 0 || n <= 0) return fail("invalid size");
-
-    const double origin_x = double(knobs.get("origin_x", 0.0));
-    const double origin_y = double(knobs.get("origin_y", 0.0));
-    const double step_x = double(knobs.get("step_x", 0.0));
-    const double step_y = double(knobs.get("step_y", 0.0));
-    const double inv_glow = double(knobs.get("inv_glow", 0.0));
-    PackedFloat32Array cx = knobs.get("volcano_centers_x", PackedFloat32Array());
-    PackedFloat32Array cy = knobs.get("volcano_centers_y", PackedFloat32Array());
-    const int nc = cx.size();
-    if (cy.size() != nc) return fail("center x/y size mismatch");
-
-    PackedByteArray data;
-    data.resize(n);
-    uint8_t * const __restrict DST = data.ptrw();
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-    if (nc <= 0) {
-        for (int i = 0; i < n; ++i) DST[i] = 0;  // 全 0（无火山）
-    } else {
-        const float * const __restrict CX = cx.ptr();
-        const float * const __restrict CY = cy.ptr();
-        for (int y = 0; y < h; ++y) {
-            const double wy = origin_y + (double(y) + 0.5) * step_y;
-            const int row = y * w;
-            for (int x = 0; x < w; ++x) {
-                const double wx = origin_x + (double(x) + 0.5) * step_x;
-                double intensity = 0.0;
-                for (int c = 0; c < nc; ++c) {
-                    const double dx = wx - double(CX[c]);
-                    const double dy = wy - double(CY[c]);
-                    const double dist = std::sqrt(dx * dx + dy * dy);
-                    const double contrib = 1.0 - dist * inv_glow;
-                    if (contrib > 0.0) intensity += contrib * contrib;
-                }
-                double iv = intensity;
-                if (iv < 0.0) iv = 0.0; else if (iv > 1.0) iv = 1.0;
-                int q = int(iv * 255.0 + 0.5);  // GDScript round()（正值等价）
-                if (q < 0) q = 0; else if (q > 255) q = 255;
-                DST[row + x] = uint8_t(q);
-            }
-        }
-    }
-    auto t1 = std::chrono::high_resolution_clock::now();
-
-    out["fallback"] = false;
-    out["reason"] = String();
-    out["path"] = String("gdext");
-    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    out["data"] = data;
-    out["width"] = w;
-    out["height"] = h;
-    out["format"] = String("L8");
-    return out;
-}
 
 // run_bake_latitude_field_pass — 复刻 map_baker.gd::_bake_latitude_buffer
 // 逐像素 ny = y / max(H-1,1)（行常量）→ F32 buffer。
@@ -1246,8 +1288,8 @@ godot::Dictionary DCWorldExt::run_bake_coast_sdf_pass(godot::Dictionary knobs) {
 
 // ─────────────────────────────────────────────────────────────────────────
 // run_bake_geometry_fields_pass — bake 期几何场编排下沉 C++（dots-total-cpp step2）
-// GDScript 一次请求 → C++ 进程内串起 terrain-index → erosion → river → latitude →
-// volcano 五个 sub-pass，中间 buffer（尤其 height_buffer）不跨语言往返，一次返回完整 bundle。
+// GDScript 一次请求 → C++ 进程内串起 terrain-index → erosion → river → latitude，
+// 中间 buffer（尤其 height_buffer）不跨语言往返，一次返回完整 bundle。
 // ─────────────────────────────────────────────────────────────────────────
 godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -1298,10 +1340,6 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     // ④ latitude。
     Dictionary lat = run_bake_latitude_field_pass(knobs);
     const bool lat_ok = !bool(lat.get("fallback", true));
-
-    // ⑤ volcano。
-    Dictionary vol = run_bake_volcano_field_pass(knobs);
-    const bool vol_ok = !bool(vol.get("fallback", true));
 
     // [river-carve-bake 2026-06-25] #2a 河流切进 bake height_buffer（per-pixel，crisp 河岸法线）──
     // river SDF(flow_buffer：河心=1→远岸=0)算完后、bundle 前，按 flow 对 height_final 逐像素刻 V 形河谷。
@@ -1437,7 +1475,6 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     // 其余几何场（失败置空，由 GDScript 决定是否硬报错）
     out["flow_buffer"] = riv_ok ? PackedFloat32Array(riv.get("out_buf", PackedFloat32Array())) : PackedFloat32Array();
     out["latitude_buffer"] = lat_ok ? PackedFloat32Array(lat.get("latitude_buffer", PackedFloat32Array())) : PackedFloat32Array();
-    out["volcano_buffer"] = vol_ok ? PackedByteArray(vol.get("data", PackedByteArray())) : PackedByteArray();
     out["water_depth_buffer"] = water_depth_buf;  // [water-depth-tex] 海/湖统一 R8 深度（空=回退旧 shader 路径）
 
     // coast SDF（离岸距离场，供调试/校验；carve 已就地作用于 height_final）
@@ -1451,12 +1488,10 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     out["erosion_ok"] = ero_ok;
     out["river_ok"] = riv_ok;
     out["latitude_ok"] = lat_ok;
-    out["volcano_ok"] = vol_ok;
     out["terrain_ms"] = terr.get("elapsed_ms", -1.0);
     out["erosion_ms"] = ero.get("elapsed_ms", -1.0);
     out["river_ms"] = riv.get("elapsed_ms", -1.0);
     out["latitude_ms"] = lat.get("elapsed_ms", -1.0);
-    out["volcano_ms"] = vol.get("elapsed_ms", -1.0);
     out["river_reason"] = riv.get("reason", String());
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t_all1 - t_all0).count();
     return out;

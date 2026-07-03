@@ -147,6 +147,30 @@ var _wind_strength: float = 0.15
 @export var ocean_current_enabled: bool = true
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
+
+@export_group("Terrain Horizon Shadow")
+@export_range(0.0, 1.0, 0.01) var terrain_horizon_strength: float = 0.70:
+	set(value):
+		terrain_horizon_strength = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+@export_range(0.01, 0.30, 0.005) var terrain_horizon_softness: float = 0.16:
+	set(value):
+		terrain_horizon_softness = clampf(value, 0.01, 0.30)
+		_push_terrain_horizon_uniforms()
+@export_range(0.30, 1.5708, 0.01) var terrain_horizon_max_angle: float = 1.309:
+	set(value):
+		terrain_horizon_max_angle = clampf(value, 0.30, 1.5708)
+		_push_terrain_horizon_uniforms()
+@export_range(0.35, 1.0, 0.01) var terrain_horizon_cast_floor: float = 0.82:
+	set(value):
+		terrain_horizon_cast_floor = clampf(value, 0.35, 1.0)
+		_push_terrain_horizon_uniforms()
+@export_range(0, 2, 1) var terrain_horizon_debug_view: int = 0:
+	set(value):
+		terrain_horizon_debug_view = clampi(value, 0, 2)
+		_push_terrain_horizon_uniforms()
+
+@export_group("Visual Overhaul")
 @export var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
 	set(value):
 		shrub_visual_profile = value
@@ -1059,6 +1083,42 @@ func set_visual_quality(q: int) -> void:
 	_apply_detail_global_budget()
 
 
+func _push_terrain_horizon_uniforms() -> void:
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("terrain_horizon_strength", terrain_horizon_strength)
+		_shader_mat.set_shader_parameter("terrain_horizon_softness", terrain_horizon_softness)
+		_shader_mat.set_shader_parameter("terrain_horizon_max_angle", terrain_horizon_max_angle)
+		_shader_mat.set_shader_parameter("terrain_horizon_cast_floor", terrain_horizon_cast_floor)
+		_shader_mat.set_shader_parameter("terrain_horizon_debug_view", terrain_horizon_debug_view)
+	var horizon_tex: Texture2D = _world.terrain_horizon_tex if _world != null else null
+	var horizon_bound: bool = horizon_tex != null
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_terrain_horizon_inputs(horizon_tex, horizon_bound,
+			terrain_horizon_strength, terrain_horizon_softness, terrain_horizon_max_angle,
+			terrain_horizon_cast_floor, terrain_horizon_debug_view)
+	)
+
+
+func set_terrain_horizon_strength(v: float) -> void:
+	terrain_horizon_strength = v
+
+
+func set_terrain_horizon_softness(v: float) -> void:
+	terrain_horizon_softness = v
+
+
+func set_terrain_horizon_max_angle(v: float) -> void:
+	terrain_horizon_max_angle = v
+
+
+func set_terrain_horizon_cast_floor(v: float) -> void:
+	terrain_horizon_cast_floor = v
+
+
+func set_terrain_horizon_debug_view(v: int) -> void:
+	terrain_horizon_debug_view = v
+
+
 # 60 FPS 调查（2026-06-14）：完全禁用主地形 shader。
 # 把 _world_quad.material = null → fragment shader 不跑，只剩 GPU 清屏 + canvas
 # composite。用 ΔFPS 反推 hex_terrain/world_map shader 占多少 GPU 时间。
@@ -1648,6 +1708,9 @@ func _apply_uniforms() -> void:
 	# 走向；未绑定时 terrain_normal_tex_bound=false，shader 回退到运行期宽半径 4-tap。
 	sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
 	sm.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
+	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
+	sm.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
+	sm.set_shader_parameter("terrain_horizon_tex_bound", _world.terrain_horizon_tex != null)
 	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
 	sm.set_shader_parameter("flow_tex",     _world.flow_tex)
@@ -1711,6 +1774,7 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
 	sm.set_shader_parameter("foliage_density_strength", foliage_density_strength)
 	sm.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
+	_push_terrain_horizon_uniforms()
 	# Seasonal transition is only enabled on the temporary old-terrain overlay.
 	sm.set_shader_parameter("season_transition_overlay", false)
 	sm.set_shader_parameter("season_transition_progress", 1.0)

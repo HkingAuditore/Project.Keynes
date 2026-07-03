@@ -27,6 +27,7 @@ render_mode blend_mix;
 // fragment()（SETUP 解码 → LAND/SEA 分支调度 → GLOBAL 输出）。具体算法均下沉到 include。
 // 通道语义快速参考（详细请见 uniforms.gdshaderinc）：
 //   height_tex (RG8 LINEAR)        归一化海拔 [0,1]，解码 (R*256 + G)/257
+//   terrain_horizon_tex (RGBA8)    8 方向 horizon angle，high/low nibble packed
 //   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
 //   enum/dyn/eco LUT:
 //                                   per-cell enum / dynamic / ecology visual state
@@ -51,7 +52,8 @@ render_mode blend_mix;
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
 //   shore_common   依赖 uniforms + material_constants：sample_shore_neighborhood / compute_shore_halo。
-//   brdf           依赖 surface_params + material_constants + tonemap：Cook-Torrance / Blinn-Phong fallback。
+//   terrain_horizon 依赖 uniforms.wrap_map_uv：解码 8 方向 horizon angle，给 BRDF direct shadow。
+//   brdf           依赖 surface_params + material_constants + tonemap + terrain_horizon：Cook-Torrance / Blinn-Phong fallback。
 //   land/water/global pipelines  最后 include，封装 fragment 的陆地/水面/全局调度算法。
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ render_mode blend_mix;
 #include "res://shaders/include/surface_params.gdshaderinc"
 #include "res://shaders/include/tonemap.gdshaderinc"
 #include "res://shaders/include/shore_common.gdshaderinc"
+#include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/brdf.gdshaderinc"
 #include "res://shaders/include/land_pipeline.gdshaderinc"
 #include "res://shaders/include/water_pipeline.gdshaderinc"

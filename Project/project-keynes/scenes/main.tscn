@@ -9,7 +9,6 @@
 [ext_resource type="Script" uid="uid://cw5wodk76aaby" path="res://scripts/ui/debug_console.gd" id="7_console"]
 [ext_resource type="Script" uid="uid://bbdihyphoivd7" path="res://scripts/ui/overlay_legend.gd" id="8_legend"]
 [ext_resource type="Script" uid="uid://cfuiddnh2gobi" path="res://scripts/ui/perf_mini_hud.gd" id="9_perfhud"]
-[ext_resource type="Resource" uid="uid://ddec0man0wld0" path="res://data/visual/world_decoration_manifest.tres" id="10_decman"]
 
 [node name="Main" type="Node2D" unique_id=1962249106]
 script = ExtResource("1_main")
@@ -21,11 +20,8 @@ visual_quality = 2
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
-dynamic_snow_strength = 1.0
-dyn_atlas_upload_stride = 1
-snowline_visual_strength = 1.0
-decoration_manifest = ExtResource("10_decman")
-river_width_factor = 0.14
+terrain_horizon_softness = 0.3
+terrain_horizon_cast_floor = 0.41
 
 [node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=56384315]
 visible = false

@@ -131,6 +131,7 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 | Atlas | 格式 | 通道含义 |
 |---|---|---|
 | `height_tex` | RG8 LINEAR | `(R*256 + G)/257` ⇒ 海拔 [0,1] |
+| `terrain_horizon_tex` | RGBA8 NEAREST | 8方向 horizon angle：R=E/NE, G=N/NW, B=W/SW, A=S/SE，high/low nibble；shader 解码后手动双线性 |
 | `map_index_atlas` | RGBA8 NEAREST | R=biome, G/B=`cell.index` low/high, A=landform |
 | `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
 | `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |

@@ -22,10 +22,12 @@
 // world_map.gdshader v9.atlas：高分辨率地理仿真渲染
 //   height_tex       (RG8 16-bit, hm_size, LINEAR)
 //                     归一化海拔 [0, 1]，解码 (R*256 + G) / 257
+//   terrain_horizon_tex (RGBA8, hm_size, NEAREST)
+//                     8 directions horizon angle, high/low nibble packed; shader manually filters after unpack
 //   map_index_atlas  (RGBA8, derived_size, NEAREST)
 //                     R = biome id
 //                     G/B = cell.index low/high byte
-//                     A = reserved
+//                     A = landform id
 // scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
 // moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
 uniform sampler2D height_tex : filter_linear, repeat_disable;
@@ -34,6 +36,15 @@ uniform sampler2D height_tex : filter_linear, repeat_disable;
 // terrain_normal_tex_bound=false（未烘焙/旧存档）时 compute_terrain_normal 回退到运行期宽半径差分。
 uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
 uniform bool terrain_normal_tex_bound = false;
+// [terrain-horizon 2026-07-03] RGBA8 nibble-packed 8-direction horizon angle：
+// R=E/NE, G=N/NW, B=W/SW, A=S/SE（high/low nibble）。只用于遮蔽直射光。
+uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
+uniform bool terrain_horizon_tex_bound = false;
+uniform float terrain_horizon_max_angle = 1.309; // ~75 degrees
+uniform float terrain_horizon_softness = 0.16;
+uniform float terrain_horizon_strength = 0.70;
+uniform float terrain_horizon_cast_floor = 0.82;
+uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct visibility
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 // [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
 // 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline

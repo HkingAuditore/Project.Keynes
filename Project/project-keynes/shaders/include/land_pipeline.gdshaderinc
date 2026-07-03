@@ -473,6 +473,12 @@ SurfaceParams apply_land_material_overlays(
 vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
+	if (terrain_horizon_debug_view == 1) {
+		return vec3(clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0));
+	}
+	if (terrain_horizon_debug_view == 2) {
+		return vec3(lc.direct_shadow);
+	}
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 
 	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
@@ -501,6 +507,13 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 			float relief = aspect * slope_mask * tod_terrain_relief_strength * day_w;
 			lit *= clamp(1.0 + relief, 0.58, 1.50);
 		}
+	}
+	// [terrain-horizon 2026-07-03] BRDF 内只遮蔽 direct lighting，物理上正确但在当前强环境光/
+	// 方向性 relief 叠层下肉眼偏弱；这里给陆地追加一层温和的 cartographic cast-shadow，仍按
+	// lc.direct_shadow 与 local_day 门控，不影响水面和 emission，保证“投影”可读。
+	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
+	if (cast_shadow > 0.001) {
+		lit *= mix(1.0, terrain_horizon_cast_floor, cast_shadow);
 	}
 	return lit;
 }

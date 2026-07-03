@@ -1370,7 +1370,6 @@ map_baker.gd 内的纯函数 atlas 编码：
 | 行号 | 函数 |
 |---|---|
 | 2193 | `bake_weather_field_only` |
-| 2316 | `_bake_volcano_field` |
 | 2373 | `_bake_wind_field` |
 | 2410 | `_bake_ocean_currents` |
 | 2535 | `_bake_ocean_upwelling` |

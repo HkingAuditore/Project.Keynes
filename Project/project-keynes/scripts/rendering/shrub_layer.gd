@@ -90,6 +90,14 @@ uniform bool terrain_normal_tex_bound = false;  // 未烘焙时只用伪法线�
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform int veg_shade_quality = 2;            // 0/1/2：q2 才采高度图邻域算谷地 AO
+// [terrain-horizon 2026-07-03] 与地形同源的 8 方向 horizon shadow。同级性能档位：veg_shade_quality>=1 才采样。
+uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
+uniform bool terrain_horizon_tex_bound = false;
+uniform float terrain_horizon_max_angle = 1.309;
+uniform float terrain_horizon_softness = 0.16;
+uniform float terrain_horizon_strength = 0.70;
+uniform float terrain_horizon_cast_floor = 0.82;
+uniform int terrain_horizon_debug_view = 0;
 uniform float shading_enabled = 1.0;          // 0=退化回旧"平直昼夜"着色
 uniform float terrain_normal_influence = 0.65;
 uniform float pseudo_normal_strength = 0.85;
@@ -127,6 +135,80 @@ varying vec2 shrub_basis_y;
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = texture(height_tex, uv).rg;
 	return (rg.r * 256.0 + rg.g) / 257.0;
+}
+
+vec2 shrub_wrap_map_uv(vec2 uv) {
+	if (wrap_period_x <= 0.0001) {
+		return clamp(uv, vec2(0.0), vec2(1.0));
+	}
+	float world_x = world_origin.x + uv.x * world_size.x;
+	float wrapped_x = wrap_origin_x + mod(world_x - wrap_origin_x, wrap_period_x);
+	float ux = (wrapped_x - world_origin.x) / max(world_size.x, 1e-5);
+	return vec2(ux, clamp(uv.y, 0.0, 1.0));
+}
+
+float shrub_horizon_unpack_byte(vec4 packed, int channel_index) {
+	if (channel_index == 0) return floor(packed.r * 255.0 + 0.5);
+	if (channel_index == 1) return floor(packed.g * 255.0 + 0.5);
+	if (channel_index == 2) return floor(packed.b * 255.0 + 0.5);
+	return floor(packed.a * 255.0 + 0.5);
+}
+
+float shrub_horizon_unpack_nibble(vec4 packed, int dir_index) {
+	int ch = dir_index / 2;
+	float byte_v = shrub_horizon_unpack_byte(packed, ch);
+	float hi = floor(byte_v / 16.0);
+	float lo = byte_v - hi * 16.0;
+	return ((dir_index % 2) == 0) ? hi : lo;
+}
+
+float shrub_horizon_angle_by_index(vec4 packed, int dir_index) {
+	int idx = dir_index;
+	if (idx < 0) idx += 8;
+	if (idx >= 8) idx -= 8;
+	return (shrub_horizon_unpack_nibble(packed, idx) / 15.0) * terrain_horizon_max_angle;
+}
+
+float shrub_horizon_angle_from_packed(vec4 packed, float sector) {
+	int i0 = int(floor(sector));
+	float t = fract(sector);
+	return mix(shrub_horizon_angle_by_index(packed, i0), shrub_horizon_angle_by_index(packed, i0 + 1), t);
+}
+
+float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
+	float angle = atan(sun_xy.y, sun_xy.x);
+	if (angle < 0.0) angle += 6.2831853;
+	float sector = angle / 0.78539816;
+	vec2 dims = vec2(textureSize(terrain_horizon_tex, 0));
+	vec2 p = shrub_wrap_map_uv(uv) * dims - vec2(0.5);
+	vec2 b = floor(p);
+	vec2 f = fract(p);
+	vec2 inv_dims = 1.0 / max(dims, vec2(1.0));
+	vec2 uv00 = shrub_wrap_map_uv((b + vec2(0.5, 0.5)) * inv_dims);
+	vec2 uv10 = shrub_wrap_map_uv((b + vec2(1.5, 0.5)) * inv_dims);
+	vec2 uv01 = shrub_wrap_map_uv((b + vec2(0.5, 1.5)) * inv_dims);
+	vec2 uv11 = shrub_wrap_map_uv((b + vec2(1.5, 1.5)) * inv_dims);
+	float h00 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv00), sector);
+	float h10 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv10), sector);
+	float h01 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv01), sector);
+	float h11 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv11), sector);
+	return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+}
+
+float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
+	if (!terrain_horizon_tex_bound || veg_shade_quality < 1 || terrain_horizon_strength <= 0.0) {
+		return 1.0;
+	}
+	vec2 sun_xy = light_dir.xy;
+	float sun_h_len = length(sun_xy);
+	if (sun_h_len <= 1e-4) return 1.0;
+	sun_xy /= sun_h_len;
+	float horizon_angle = shrub_sample_horizon_angle(uv, sun_xy);
+	float sun_elev = atan(max(light_dir.z, 0.0) / max(sun_h_len, 1e-4));
+	float shadow = smoothstep(sun_elev - terrain_horizon_softness,
+		sun_elev + terrain_horizon_softness, horizon_angle);
+	float horizon_day_w = smoothstep(-0.14, 0.18, light_dir.z);
+	return clamp(1.0 - shadow * terrain_horizon_strength * horizon_day_w, 0.0, 1.0);
 }
 
 int decode_cell_index(vec2 uv) {
@@ -309,6 +391,11 @@ void fragment() {
 	vec2 solar_uv = clamp(shrub_custom.rg, vec2(0.0), vec2(1.0));
 	float lat_signed = solar_uv.y * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(solar_uv, lat_signed, day_night_enabled);
+	float horizon_vis = shrub_horizon_direct_visibility(solar_uv, ed.sun_dir);
+	bool horizon_debug_mode = terrain_horizon_debug_view == 1 || terrain_horizon_debug_view == 2;
+	vec3 horizon_debug_rgb = (terrain_horizon_debug_view == 1)
+		? vec3(clamp((1.0 - horizon_vis) * ed.local_day, 0.0, 1.0))
+		: vec3(horizon_vis);
 	if (shading_enabled > 0.5) {
 		// 伪法线：billboard UV → 局部体积法线（径向 dome，各向同性）。各向同性保证旋转不变：
 		// 旋转一个径向对称 dome 不改变其世界法线集合，叠加实例旋转后全图光照方向才真正一致。
@@ -319,8 +406,8 @@ void fragment() {
 		vec3 N = normalize(vec3(pn_world + shrub_terrain_n, 1.0));
 		vec3 L = ed.sun_dir;                       // 逐实例太阳方向（含纬度/时角，单位向量）
 		float ndotl = max(dot(N, L), 0.0);
-		float direct = ndotl * sun_shade_strength * ed.local_day;
-		float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 3.0) * rim_light_strength * ed.local_day;
+		float direct = ndotl * sun_shade_strength * ed.local_day * horizon_vis;
+		float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 3.0) * rim_light_strength * ed.local_day * horizon_vis;
 		// [sky-sh-ambient] 方向化天光（L1 球谐）替换平铺 amb_col：用植株法线 N 取天光 →
 		// 迎天顶/迎太阳方位面更亮、背向面更暗，弱直射(晨昏/夜)时也有体积感。与地形/水面同源。
 		vec3 light = max(eval_earth_sky_sh(ed, N), vec3(ambient_floor)) + ed.sun_col * (direct + rim);
@@ -332,11 +419,20 @@ void fragment() {
 		rgb *= 1.0 - shrub_terrain_ao * terrain_valley_ao_strength;
 	} else {
 		// 退化路径（shading 关）：旧"平直昼夜"着色，保持兼容。
-		vec3 light = max(ed.amb_col, vec3(ambient_floor)) + ed.sun_col * (ed.local_day * 0.35);
+		vec3 light = max(ed.amb_col, vec3(ambient_floor)) + ed.sun_col * (ed.local_day * 0.35 * horizon_vis);
 		rgb *= light;
+	}
+	// 与地形/水面同源的地形投影阴影；植被/点缀比陆地略轻，避免小物件在阴影中过黑。
+	float horizon_cast = clamp((1.0 - horizon_vis) * ed.local_day, 0.0, 1.0);
+	if (horizon_cast > 0.001) {
+		float veg_floor = mix(1.0, terrain_horizon_cast_floor, 0.70);
+		rgb *= mix(1.0, veg_floor, horizon_cast);
 	}
 	rgb *= mix(1.0, 0.55, ed.pixel_night);
 	rgb *= tod_exposure;
+	if (horizon_debug_mode) {
+		rgb = horizon_debug_rgb;
+	}
 	float alpha = COLOR.a * shrub_presence_v;
 	alpha *= 1.0 - snow * 0.32;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
@@ -635,6 +731,19 @@ func set_wind_field(dir: Vector2, boost: float) -> void:
 	var d := dir if dir.length() > 0.0001 else Vector2(1.0, 0.18)
 	_material.set_shader_parameter("wind_dir", d.normalized())
 	_material.set_shader_parameter("weather_wind_boost", maxf(boost, 0.0))
+
+
+func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, softness: float,
+		max_angle: float, cast_floor: float, debug_view: int) -> void:
+	if _material == null:
+		return
+	_material.set_shader_parameter("terrain_horizon_tex", tex)
+	_material.set_shader_parameter("terrain_horizon_tex_bound", bound)
+	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.0))
+	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 0.30))
+	_material.set_shader_parameter("terrain_horizon_max_angle", clampf(max_angle, 0.30, 1.5708))
+	_material.set_shader_parameter("terrain_horizon_cast_floor", clampf(cast_floor, 0.35, 1.0))
+	_material.set_shader_parameter("terrain_horizon_debug_view", clampi(debug_view, 0, 2))
 
 
 # 注入 C++ DCWorldExt。可传 null 关闭 native 路径（强制 GDScript fallback）。
@@ -1806,6 +1915,8 @@ func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 	_material.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
 	_material.set_shader_parameter("height_tex", _world.height_tex)
 	_material.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
+	_material.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
+	_material.set_shader_parameter("terrain_horizon_tex_bound", _world.terrain_horizon_tex != null)
 	# [veg-cast-shadow] 投影 pass 需要 cell 索引/动态态做夜侧与枯死/积雪淡出。
 	if _shadow_material != null:
 		_shadow_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
