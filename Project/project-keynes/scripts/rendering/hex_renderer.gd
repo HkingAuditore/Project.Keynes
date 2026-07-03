@@ -153,9 +153,9 @@ var _wind_strength: float = 0.15
 	set(value):
 		terrain_horizon_strength = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
-@export_range(0.01, 0.30, 0.005) var terrain_horizon_softness: float = 0.16:
+@export_range(0.01, 1.0, 0.005) var terrain_horizon_softness: float = 0.16:
 	set(value):
-		terrain_horizon_softness = clampf(value, 0.01, 0.30)
+		terrain_horizon_softness = clampf(value, 0.01, 1.0)
 		_push_terrain_horizon_uniforms()
 @export_range(0.30, 1.5708, 0.01) var terrain_horizon_max_angle: float = 1.309:
 	set(value):
@@ -971,6 +971,8 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 	_world = world
 	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
+	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
+	_maybe_bake_terrain_horizon_gpu()
 	if replacing_world:
 		_clear_season_transition()
 	if is_inside_tree():
@@ -1097,6 +1099,126 @@ func _push_terrain_horizon_uniforms() -> void:
 			terrain_horizon_strength, terrain_horizon_softness, terrain_horizon_max_angle,
 			terrain_horizon_cast_floor, terrain_horizon_debug_view)
 	)
+
+
+# ─── Terrain Horizon GPU 离屏烘焙（plan: terrain-horizon-gpu-bake 2026-07-03） ──────
+# map_baker 选 GPU 路径时只在 world 上登记 terrain_horizon_gpu_params；这里用一次性
+# SubViewport + canvas shader（res://shaders/bake/terrain_horizon_bake.gdshader）在场景树内
+# 并行烘出 8 方向 horizon RGBA8。走引擎材质管线（非 RenderingDevice .glsl），PC/移动端同一
+# 路径、规避 compute/SPIR-V 跨平台坑。SubViewport 需一帧渲染，故用 frame_post_draw 单次回读
+# （set_map 是同步的、不能 await），回读为 ImageTexture 赋给 world.terrain_horizon_tex 后推 uniform。
+const _HORIZON_BAKE_SHADER_PATH := "res://shaders/bake/terrain_horizon_bake.gdshader"
+var _horizon_bake_vp: SubViewport = null
+var _horizon_bake_world: WorldData = null
+var _horizon_bake_waited: int = 0
+
+func _maybe_bake_terrain_horizon_gpu() -> void:
+	if _world == null or not _world.terrain_horizon_gpu_pending:
+		return
+	if _world.height_tex == null or _world.hm_size.x <= 0 or _world.hm_size.y <= 0:
+		print("[terrain_horizon] GPU bake skipped: height_tex=%s hm_size=%s" % [
+			str(_world.height_tex != null), str(_world.hm_size)])
+		return
+	var params: Dictionary = _world.terrain_horizon_gpu_params
+	if params.is_empty():
+		return
+	_world.terrain_horizon_gpu_pending = false   # 防重入（regenerate 会重新置位）
+	print("[terrain_horizon] GPU bake start: hm_size=%s params=%s" % [str(_world.hm_size), str(params)])
+	_start_terrain_horizon_bake(_world, params)
+
+func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
+	var shader: Shader = load(_HORIZON_BAKE_SHADER_PATH)
+	if shader == null:
+		push_warning("[terrain_horizon] GPU bake shader missing (%s); no cast shadow this world." % _HORIZON_BAKE_SHADER_PATH)
+		return
+	# 清理上一次遗留的烘焙 viewport（快速连续 regenerate）。
+	_dispose_horizon_bake_vp()
+
+	var size: Vector2i = world.hm_size
+	var vp := SubViewport.new()
+	vp.size = size
+	vp.disable_3d = true
+	# transparent_bg=true 关键：A 通道承载方向 6/7（S/SE）的打包数据，非透明度。若 false，
+	# viewport 会把 alpha 强制为不透明 255 → S/SE 方向 horizon 恒为 max（15），阴影误判。
+	# 配合 shader 的 blend_disabled（不做 alpha 预乘/混合），get_image 回读得到原样 RGBA 字节。
+	vp.transparent_bg = true
+	vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ONCE
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+	var rect := ColorRect.new()
+	rect.position = Vector2.ZERO
+	rect.size = Vector2(size)
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("height_tex", world.height_tex)
+	mat.set_shader_parameter("tex_dims", Vector2(size))
+	mat.set_shader_parameter("steps", int(params.get("steps", 128)))
+	mat.set_shader_parameter("step_px", float(params.get("step_px", 8.0)))
+	mat.set_shader_parameter("max_horizon_angle", float(params.get("max_horizon_angle", 1.309)))
+	mat.set_shader_parameter("bias", float(params.get("bias", 0.004)))
+	mat.set_shader_parameter("height_world_scale", float(params.get("height_world_scale", 176.0)))
+	mat.set_shader_parameter("texel_x", float(params.get("texel_x", 1.0)))
+	mat.set_shader_parameter("texel_y", float(params.get("texel_y", 1.0)))
+	# 真正经度周期：柱状地图 x 环绕按此折叠，与运行期 wrap_map_uv 对齐，接缝无缝。
+	mat.set_shader_parameter("wrap_period_x", float(params.get("wrap_period_x", 0.0)))
+	rect.material = mat
+	vp.add_child(rect)
+	add_child(vp)
+
+	_horizon_bake_vp = vp
+	_horizon_bake_world = world
+	_horizon_bake_waited = 0
+	# UPDATE_ONCE 的 viewport 需一次完整绘制才有内容；用 frame_post_draw 单次回读。
+	RenderingServer.frame_post_draw.connect(_on_terrain_horizon_frame_drawn, CONNECT_ONE_SHOT)
+
+func _on_terrain_horizon_frame_drawn() -> void:
+	if _horizon_bake_vp == null or not is_instance_valid(_horizon_bake_vp):
+		_dispose_horizon_bake_vp()
+		return
+	# 时序保险：确保 SubViewport 至少经过一次完整绘制再回读（避免 UPDATE_ONCE 首帧时序空读）。
+	if _horizon_bake_waited < 1:
+		_horizon_bake_waited += 1
+		RenderingServer.frame_post_draw.connect(_on_terrain_horizon_frame_drawn, CONNECT_ONE_SHOT)
+		return
+	var vtex: ViewportTexture = _horizon_bake_vp.get_texture()
+	var img: Image = vtex.get_image() if vtex != null else null
+	if img == null:
+		push_warning("[terrain_horizon] GPU bake readback returned null image; no cast shadow this world.")
+		_dispose_horizon_bake_vp()
+		return
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	# 诊断：中心 + 一个偏移像素的字节，全 0 说明 vp 未渲染或采样坐标错。
+	var wx: int = img.get_width()
+	var hy: int = img.get_height()
+	var mid: Color = img.get_pixel(wx / 2, hy / 2)
+	var q1: Color = img.get_pixel(mini(wx / 3, wx - 1), mini(hy / 3, hy - 1))
+	print("[terrain_horizon] GPU readback %dx%d fmt=%d mid(rgba*255)=[%d,%d,%d,%d] q=[%d,%d,%d,%d]" % [
+		wx, hy, img.get_format(),
+		int(round(mid.r * 255.0)), int(round(mid.g * 255.0)), int(round(mid.b * 255.0)), int(round(mid.a * 255.0)),
+		int(round(q1.r * 255.0)), int(round(q1.g * 255.0)), int(round(q1.b * 255.0)), int(round(q1.a * 255.0))])
+	var tex := ImageTexture.create_from_image(img)
+	# 只回填当初发起烘焙的那个 world（避免 regenerate 竞态把旧图写到新 world）。
+	if _horizon_bake_world != null:
+		_horizon_bake_world.terrain_horizon_tex = tex
+	# 关键修复：延迟回读晚于生成期 _apply_uniforms，必须把纹理显式补推给主 shader，否则主地图
+	# 仍持 null → terrain_horizon_tex_bound=false → 运行期 terrain_horizon_direct_visibility 直接
+	# return 1.0（无阴影）。_push_terrain_horizon_uniforms 只推标量 + 植被层，不含主 shader tex。
+	var applied := false
+	if _world == _horizon_bake_world and _shader_mat != null:
+		_shader_mat.set_shader_parameter("terrain_horizon_tex", tex)
+		_shader_mat.set_shader_parameter("terrain_horizon_tex_bound", true)
+		applied = true
+	if _world == _horizon_bake_world:
+		_push_terrain_horizon_uniforms()   # 同步植被层的 horizon 输入
+	print("[terrain_horizon] GPU bake applied to main shader=%s (strength=%.2f)" % [str(applied), terrain_horizon_strength])
+	_dispose_horizon_bake_vp()
+
+func _dispose_horizon_bake_vp() -> void:
+	if _horizon_bake_vp != null and is_instance_valid(_horizon_bake_vp):
+		_horizon_bake_vp.queue_free()
+	_horizon_bake_vp = null
+	_horizon_bake_world = null
 
 
 func set_terrain_horizon_strength(v: float) -> void:

@@ -389,3 +389,22 @@ static func sea_ice_atlas_active() -> bool:
 ## 设置旧 sea_ice_tex 海冰贴图开关（main.gd @export → _generate_and_render 推送）。
 static func set_sea_ice_atlas(enabled: bool) -> void:
 	Engine.set_meta(SEA_ICE_ATLAS_META, false)
+
+
+# ─── Terrain Horizon GPU 离屏烘焙开关（plan: terrain-horizon-gpu-bake 2026-07-03） ──
+# 8 方向地平线阴影贴图默认走 GPU 离屏烘焙（SubViewport + canvas shader，PC/移动端同一
+# 路径）。桌面默认开（比 CPU C++ 快且省一次 GPU 上传）；移动端默认关（compute/驱动无关，
+# 但逐像素 8×steps marching 对低端 GPU 仍偏重，且移动端本就未开地形阴影），可显式开启。
+# 关（或 GPU 不可用/参数缺失）时 map_baker 回退到 CPU C++ encode_horizon_tex；C++ 也不可用
+# 时 shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。改后需重新生成地图才生效。
+const TERRAIN_HORIZON_GPU_META: StringName = &"terrain_horizon_gpu_bake_enabled"
+
+## 当前是否用 GPU 离屏烘焙 horizon（map_baker 读它决定登记 GPU 路径还是走 CPU）。
+static func terrain_horizon_gpu_bake_active() -> bool:
+	if Engine.has_meta(TERRAIN_HORIZON_GPU_META):
+		return bool(Engine.get_meta(TERRAIN_HORIZON_GPU_META))
+	return not OS.has_feature("mobile")   # 桌面默认开、移动端默认关（可显式覆盖）
+
+## 设置 GPU horizon 烘焙开关（debug console / 启动配置 / 性能档调用）。
+static func set_terrain_horizon_gpu_bake(enabled: bool) -> void:
+	Engine.set_meta(TERRAIN_HORIZON_GPU_META, enabled)

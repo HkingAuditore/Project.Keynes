@@ -92,8 +92,8 @@ const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
 # [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。移动端默认不烘焙，shader 走现有
 # normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
-const TERRAIN_HORIZON_STEPS := 512
-const TERRAIN_HORIZON_STEP_PX := 8.0
+const TERRAIN_HORIZON_STEPS := 4096
+const TERRAIN_HORIZON_STEP_PX := 4.0
 const TERRAIN_HORIZON_MAX_ANGLE := 1.309       # 约 75°，与 shader 默认保持一致
 const TERRAIN_HORIZON_BIAS := 0.004            # height 单位，抑制同高/高频 relief 自遮蔽
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0  # 归一高程 → world units 的视觉夸张倍率（×hex_size）
@@ -852,14 +852,38 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
 		world.height_buffer, world.hm_size,
 		TERRAIN_NORMAL_COARSE_RADIUS, TERRAIN_NORMAL_SLOPE_GAIN, true, _world_ext)
-	# [terrain-horizon] 桌面烘焙 8 方向 horizon angle；移动端保留 null，让 shader 0 额外采样回退。
-	if OS.has_feature("mobile"):
+	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条路径：
+	#   1. GPU 离屏（默认，DCFeatureFlags.terrain_horizon_gpu_bake_active）：这里只登记参数，
+	#      实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙（PC/移动端
+	#      同一路径）。生成期不阻塞、不占 CPU marching。
+	#   2. CPU C++（GPU 关时桌面 fallback）：DCAtlasEncoders.encode_horizon_tex（native SoA marching）。
+	#   3. 移动端且 GPU 关：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
+	world.terrain_horizon_gpu_pending = false
+	world.terrain_horizon_gpu_params = {}
+	if DCFeatureFlags.terrain_horizon_gpu_bake_active():
+		var wb: Vector2 = world.world_bounds.size
+		var tx: float = (wb.x / float(world.hm_size.x)) if world.hm_size.x > 0 else 1.0
+		var ty: float = (wb.y / float(world.hm_size.y)) if world.hm_size.y > 0 else 1.0
+		world.terrain_horizon_gpu_params = {
+			"steps": TERRAIN_HORIZON_STEPS,
+			"step_px": TERRAIN_HORIZON_STEP_PX,
+			"max_horizon_angle": TERRAIN_HORIZON_MAX_ANGLE,
+			"bias": TERRAIN_HORIZON_BIAS,
+			"height_world_scale": maxf(hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX, 1e-4),
+			"texel_x": tx,
+			"texel_y": ty,
+			# 真正经度周期：柱状地图东西连续，marching 须按此周期折叠（≠含 padding 的 world_bounds.x）。
+			"wrap_period_x": world.wrap_period_x,
+		}
+		world.terrain_horizon_gpu_pending = true
+		# 不清空 world.terrain_horizon_tex：regenerate 时旧图短暂沿用，GPU 烘完后回填，避免闪烁。
+	elif OS.has_feature("mobile"):
 		world.terrain_horizon_tex = null
 	else:
 		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
 			_world_ext, TERRAIN_HORIZON_STEPS, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
-			TERRAIN_HORIZON_BIAS, hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX)
+			TERRAIN_HORIZON_BIAS, hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX, world.wrap_period_x)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map

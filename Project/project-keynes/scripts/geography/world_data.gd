@@ -115,6 +115,11 @@ var terrain_normal_tex: ImageTexture
 # [terrain-horizon 2026-07-03] 生成期烘焙 8 方向 horizon angle（RGBA8，每通道拆 high/low
 # nibble 承载两个方向）。运行期按 TOD 太阳方位插值，只遮蔽 direct lighting；移动端可为空。
 var terrain_horizon_tex: ImageTexture
+# [terrain-horizon-gpu 2026-07-03] GPU 离屏烘焙登记位 + 参数。map_baker 选 GPU 路径时只置位
+# 并存参数（steps/step_px/max_horizon_angle/bias/height_world_scale/texel_x/texel_y），实际
+# 烘焙由 HexRenderer.set_map 在场景树内用 SubViewport + canvas shader 延迟完成后回填上面的 tex。
+var terrain_horizon_gpu_pending: bool = false
+var terrain_horizon_gpu_params: Dictionary = {}
 # 兼容旧调试/数据通道的海冰 R8 纹理。主地图海冰视觉不采样它；
 # sea_ice_atlas_upload 默认不再注册。
 var sea_ice_tex: ImageTexture

@@ -740,7 +740,7 @@ func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, so
 	_material.set_shader_parameter("terrain_horizon_tex", tex)
 	_material.set_shader_parameter("terrain_horizon_tex_bound", bound)
 	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.0))
-	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 0.30))
+	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 1.0))
 	_material.set_shader_parameter("terrain_horizon_max_angle", clampf(max_angle, 0.30, 1.5708))
 	_material.set_shader_parameter("terrain_horizon_cast_floor", clampf(cast_floor, 0.35, 1.0))
 	_material.set_shader_parameter("terrain_horizon_debug_view", clampi(debug_view, 0, 2))
