@@ -277,7 +277,10 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                 const double h0 = double(SRC[idx]);
                 uint8_t q[8] = {};
                 for (int d = 0; d < 8; ++d) {
-                    double max_a = 0.0;
+                    // [terrain-horizon perf 2026-07-03] 逐步只维护最大 slope² = (dh·scale)²/dist²。
+                    // atan2 对正 slope 单调 → argmax 不变；把每像素 8×steps 次 sqrt+atan2 降为每方向
+                    // 末尾 1 次 sqrt+atan。量化到 16 级后输出与旧 atan2 路径一致。
+                    double best_slope_sq = 0.0;
                     for (int s = 1; s <= steps; ++s) {
                         const double dist_px = double(s) * step_px;
                         int sx = int(std::floor(double(x) + dir_x[d] * dist_px + 0.5));
@@ -288,17 +291,19 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                         } else if (sx < 0 || sx >= w) {
                             break;
                         }
-                        const int off_x = wrap_x ? std::min(std::abs(sx - x), w - std::abs(sx - x)) : std::abs(sx - x);
-                        const int off_y = std::abs(sy - y);
-                        const double world_dist = std::sqrt(double(off_x * off_x) * texel_x * texel_x
-                                + double(off_y * off_y) * texel_y * texel_y);
-                        if (world_dist <= 1e-6) continue;
+                        // dh<=0 的采样（海平面/下坡）占绝大多数，前置判断可跳过 world_dist 计算。
                         const double dh = double(SRC[sy * w + sx]) - h0 - bias;
                         if (dh <= 0.0) continue;
-                        const double a = std::atan2(dh * height_world_scale, world_dist);
-                        if (a > max_a) max_a = a;
+                        const int off_x = wrap_x ? std::min(std::abs(sx - x), w - std::abs(sx - x)) : std::abs(sx - x);
+                        const int off_y = std::abs(sy - y);
+                        const double world_dist_sq = double(off_x * off_x) * texel_x * texel_x
+                                + double(off_y * off_y) * texel_y * texel_y;
+                        if (world_dist_sq <= 1e-12) continue;
+                        const double num = dh * height_world_scale;  // dh>0 → num>0
+                        const double slope_sq = (num * num) / world_dist_sq;
+                        if (slope_sq > best_slope_sq) best_slope_sq = slope_sq;
                     }
-                    q[d] = q_horizon(max_a);
+                    q[d] = q_horizon(std::atan(std::sqrt(best_slope_sq)));
                 }
                 const int di = idx * 4;
                 DST[di]     = uint8_t((q[0] << 4) | q[1]);

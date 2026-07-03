@@ -92,8 +92,8 @@ const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
 # [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。移动端默认不烘焙，shader 走现有
 # normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
-const TERRAIN_HORIZON_STEPS := 128
-const TERRAIN_HORIZON_STEP_PX := 4.0
+const TERRAIN_HORIZON_STEPS := 512
+const TERRAIN_HORIZON_STEP_PX := 8.0
 const TERRAIN_HORIZON_MAX_ANGLE := 1.309       # 约 75°，与 shader 默认保持一致
 const TERRAIN_HORIZON_BIAS := 0.004            # height 单位，抑制同高/高频 relief 自遮蔽
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0  # 归一高程 → world units 的视觉夸张倍率（×hex_size）

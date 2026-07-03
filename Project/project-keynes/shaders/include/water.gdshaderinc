@@ -40,6 +40,43 @@ const float WATER_WAVE_AMP_C  = 0.010;
 const float WATER_WAVE_SPEED_A = 0.18;
 const float WATER_WAVE_SPEED_B = 0.27;
 const float WATER_WAVE_SPEED_C = 0.39;
+const float WATER_WRAP_TAU = 6.2831853;
+
+float water_wrap_lon_angle(vec2 wp) {
+	if (wrap_period_x <= 0.0001) {
+		return 0.0;
+	}
+	float wx = wrap_world_x(wp.x);
+	return fract((wx - wrap_origin_x) / wrap_period_x) * WATER_WRAP_TAU;
+}
+
+vec2 water_cyl_noise_p(vec2 wp, float freq, vec2 ofs) {
+	if (wrap_period_x <= 0.0001) {
+		return wp * freq + ofs;
+	}
+	float theta = water_wrap_lon_angle(wp);
+	float radius = max(abs(freq) * wrap_period_x / WATER_WRAP_TAU, 1e-4);
+	return vec2(cos(theta) * radius, sin(theta) * radius + wp.y * freq) + ofs;
+}
+
+float water_fbm_cyl(vec2 wp, float freq, vec2 ofs, int octaves) {
+	return fbm(water_cyl_noise_p(wp, freq, ofs), octaves);
+}
+
+float water_value_noise_cyl(vec2 wp, float freq, vec2 ofs) {
+	return value_noise(water_cyl_noise_p(wp, freq, ofs));
+}
+
+float water_periodic_wave_phase(vec2 wp, vec2 dir, float k) {
+	if (wrap_period_x <= 0.0001) {
+		return dot(wp, dir) * k;
+	}
+	float theta = water_wrap_lon_angle(wp);
+	float desired_cycles = dir.x * k * wrap_period_x / WATER_WRAP_TAU;
+	float cycles = floor(abs(desired_cycles) + 0.5);
+	float phase_x = (cycles > 0.0) ? sign(desired_cycles) * cycles * theta : 0.0;
+	return phase_x + dir.y * wp.y * k;
+}
 
 // quality=0：只叠 1 个主方向（低端机）；quality>=1：叠 3 个方向。
 // amp_scale/freq_scale：caller 按水体类型传入（需求 1.5/1.6）。
@@ -49,18 +86,18 @@ const float WATER_WAVE_SPEED_C = 0.39;
 float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, int quality) {
 	vec2 dA = normalize(WATER_WAVE_DIR_A);
 	float kA = WATER_WAVE_FREQ_A * freq_scale;
-	float pA = dot(wp, dA) * kA - t * WATER_WAVE_SPEED_A;
+	float pA = water_periodic_wave_phase(wp, dA, kA) - t * WATER_WAVE_SPEED_A;
 	float h = sin(pA) * WATER_WAVE_AMP_A;
 	if (quality >= 1) {
 		vec2 dB = normalize(WATER_WAVE_DIR_B);
 		vec2 dC = normalize(WATER_WAVE_DIR_C);
 		float kB = WATER_WAVE_FREQ_B * freq_scale;
 		float kC = WATER_WAVE_FREQ_C * freq_scale;
-		float pB = dot(wp, dB) * kB - t * WATER_WAVE_SPEED_B;
-		float pC = dot(wp, dC) * kC - t * WATER_WAVE_SPEED_C;
+		float pB = water_periodic_wave_phase(wp, dB, kB) - t * WATER_WAVE_SPEED_B;
+		float pC = water_periodic_wave_phase(wp, dC, kC) - t * WATER_WAVE_SPEED_C;
 		h += sin(pB) * WATER_WAVE_AMP_B + sin(pC) * WATER_WAVE_AMP_C;
 		// 中低频碎波：补回波面细节，但频率仍明显低于旧版密集梳齿纹。
-		float detail = fbm(wp * 0.060 + vec2(-t * 0.055, t * 0.036), 2) - 0.5;
+		float detail = water_fbm_cyl(wp, 0.060, vec2(-t * 0.055, t * 0.036), 2) - 0.5;
 		h += detail * WATER_WAVE_AMP_A * 0.58;
 	}
 	return h * amp_scale;
@@ -76,8 +113,8 @@ float water_normal_strength_envelope(vec2 wp, float t, int quality) {
 	}
 	// [wave-patchiness tilling] 浪带频率乘 water_wave_patch_scale：大→浪带碎，小→浪带宽。
 	float pscl = water_wave_patch_scale;
-	float slow = fbm(wp * (0.0055 * pscl) + vec2(t * 0.009, -t * 0.006), 2);
-	float mid = fbm(wp * (0.0140 * pscl) + vec2(-t * 0.016, t * 0.011) + vec2(19.0, -37.0), 1);
+	float slow = water_fbm_cyl(wp, 0.0055 * pscl, vec2(t * 0.009, -t * 0.006), 2);
+	float mid = water_fbm_cyl(wp, 0.0140 * pscl, vec2(-t * 0.016, t * 0.011) + vec2(19.0, -37.0), 1);
 	// 对比窗口略放宽 + 0.5 居中，让 patch 强度更线性可控。
 	float env = smoothstep(0.10, 0.92, slow * 0.70 + mid * 0.30);
 	// patch>1 时 lo 会插值成负数（波浪斜率反向）→ clamp 到 0 防翻转；hi 可无限放大风浪海域。
@@ -96,8 +133,8 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	// 控制额外采样），让规则正弦条纹的走向随空间缓慢弯曲，不再是贯穿整屏的平行直线。
 	vec2 wpw = wp;
 	if (quality >= 1) {
-		float wnx = fbm(wp * 0.0135 + vec2(t * 0.034, 0.0), 1) - 0.5;
-		float wny = fbm(wp * 0.0135 + vec2(0.0, t * 0.030) + vec2(23.0, -11.0), 1) - 0.5;
+		float wnx = water_fbm_cyl(wp, 0.0135, vec2(t * 0.034, 0.0), 1) - 0.5;
+		float wny = water_fbm_cyl(wp, 0.0135, vec2(0.0, t * 0.030) + vec2(23.0, -11.0), 1) - 0.5;
 		wpw = wp + vec2(wnx, wny) * 12.0;
 	}
 	float eps = 0.5;
@@ -139,8 +176,8 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 		vec2 dwp = wpw;
 		if (water_detail_normal_warp > 0.001) {
 			float wf = k1 * 0.35;
-			float jx = fbm(wpw * wf + vec2(t * 0.05, 0.0), 1) - 0.5;
-			float jy = fbm(wpw * wf + vec2(0.0, t * 0.04) + vec2(53.0, -29.0), 1) - 0.5;
+			float jx = water_fbm_cyl(wpw, wf, vec2(t * 0.05, 0.0), 1) - 0.5;
+			float jy = water_fbm_cyl(wpw, wf, vec2(0.0, t * 0.04) + vec2(53.0, -29.0), 1) - 0.5;
 			float warp_amp = water_detail_normal_warp * (6.2831853 / max(k1, 1e-4));
 			dwp = wpw + vec2(jx, jy) * warp_amp;
 		}
@@ -165,8 +202,8 @@ vec2 water_domain_warp(vec2 wp, float t, float warp_strength) {
 		return wp;
 	}
 	// 两层速度不同的低频 fbm，方向互相正交，形成"旋转感"
-	float n1 = fbm(wp * 0.032 + vec2(t * 0.025,  t * 0.014), 2) - 0.5;
-	float n2 = fbm(wp * 0.032 + vec2(-t * 0.018, t * 0.022) + vec2(37.0, 13.0), 2) - 0.5;
+	float n1 = water_fbm_cyl(wp, 0.032, vec2(t * 0.025,  t * 0.014), 2) - 0.5;
+	float n2 = water_fbm_cyl(wp, 0.032, vec2(-t * 0.018, t * 0.022) + vec2(37.0, 13.0), 2) - 0.5;
 	return wp + vec2(n1, n2) * warp_strength;
 }
 
@@ -181,14 +218,14 @@ float water_shade_lines(vec2 wp, float t, float freq_scale, int quality) {
 	vec2 d2 = vec2(-0.55,  0.83);
 	vec2 d3 = vec2( 0.10, -0.99);
 	// 用 smoothstep 提带宽≈0.2 的亮条：sin 大于 0.6 的顶部形成浪峰亮线
-	float p1 = sin(dot(wp, d1) * 0.38 * freq_scale - t * 0.36);
+	float p1 = sin(water_periodic_wave_phase(wp, d1, 0.38 * freq_scale) - t * 0.36);
 	float b1 = smoothstep(0.70, 0.98, p1) - smoothstep(0.98, 1.00, p1) * 0.2;
 	if (quality <= 0) {
 		return (b1 - 0.5) * 0.6;
 	}
-	float p2 = sin(dot(wp, d2) * 0.62 * freq_scale - t * 0.48);
+	float p2 = sin(water_periodic_wave_phase(wp, d2, 0.62 * freq_scale) - t * 0.48);
 	float b2 = smoothstep(0.74, 0.96, p2) - smoothstep(0.96, 1.00, p2) * 0.2;
-	float p3 = sin(dot(wp, d3) * 0.92 * freq_scale - t * 0.62);
+	float p3 = sin(water_periodic_wave_phase(wp, d3, 0.92 * freq_scale) - t * 0.62);
 	float b3 = smoothstep(0.78, 0.94, p3) - smoothstep(0.94, 1.00, p3) * 0.2;
 	// 加权叠加：主条纹权重最大，细碎小条纹用于打碎规整感
 	float bands = b1 * 0.55 + b2 * 0.30 + b3 * 0.15;
@@ -203,7 +240,7 @@ float water_shade_lines(vec2 wp, float t, float freq_scale, int quality) {
 // [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_lf（与 base_ripple
 // 共享同一层低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
 float water_calm_brightness(vec2 wp, float t) {
-	float n = fbm(wp * 0.006 + vec2(t * 0.014, t * 0.008), 2);
+	float n = water_fbm_cyl(wp, 0.006, vec2(t * 0.014, t * 0.008), 2);
 	// fbm 基本落在 [0, ~0.9]，线性重新映射到 [-1, 1]
 	return clamp(n * 1.9 - 0.95, -1.0, 1.0);
 }
@@ -214,7 +251,7 @@ float water_calm_brightness(vec2 wp, float t) {
 // [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_vlf（与 deep_ripple
 // 共享同一层极低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
 float water_calm_tint(vec2 wp, float t, int octaves) {
-	float n = fbm(wp * 0.0038 + vec2(-t * 0.008, t * 0.010), octaves);
+	float n = water_fbm_cyl(wp, 0.0038, vec2(-t * 0.008, t * 0.010), octaves);
 	return clamp(n * 1.15, 0.0, 1.0);
 }
 

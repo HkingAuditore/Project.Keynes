@@ -320,7 +320,7 @@ vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
 	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), ctx.macro_vlf);
 	col *= mix(vec3(1.0), deep_variation, ctx.deep_layer_w * 0.115);
 	if (water_cartoon_color_strength > 0.001) {
-		float color_block = fbm(ctx.wpw * 0.0048 + vec2(world_time * 0.010, -world_time * 0.006), 2);
+		float color_block = water_fbm_cyl(ctx.wpw, 0.0048, vec2(world_time * 0.010, -world_time * 0.006), 2);
 		vec3 block_tint = mix(vec3(0.80, 1.16, 1.15), vec3(0.92, 0.93, 1.24), color_block);
 		col *= mix(vec3(1.0), block_tint, water_cartoon_color_strength * mix(0.10, 0.18, ctx.deep_layer_w));
 	}
@@ -384,7 +384,7 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	// 60 FPS 优化（2026-06-15）：mobile 三档全砍 ridge_n fbm（海冰边缘破碎扰动）。
 	float ridge_offset = 0.0;
 #if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
-	float ridge_n = fbm(ctx.wpw * 0.045 + vec2(-71.0, 23.0), 2);
+	float ridge_n = water_fbm_cyl(ctx.wpw, 0.045, vec2(-71.0, 23.0), 2);
 	ridge_offset = (ridge_n - 0.5) * 0.06;
 #endif
 	float lake_freeze = ww.w_lake * (1.0 - smoothstep(0.24, 0.44, ctx.current_temp));
@@ -422,10 +422,10 @@ vec3 apply_open_ocean_patch(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	return col;
 #else
 	int ocean_patch_oct = (ctx.quality >= 2) ? 3 : 2;
-	float gyre_a = fbm(ctx.wpw * 0.0056 + vec2(13.0, -31.0), ocean_patch_oct);
-	float gyre_b = fbm(ctx.wpw * 0.012  + vec2(-29.0, 47.0), 1);
+	float gyre_a = water_fbm_cyl(ctx.wpw, 0.0056, vec2(13.0, -31.0), ocean_patch_oct);
+	float gyre_b = water_fbm_cyl(ctx.wpw, 0.012, vec2(-29.0, 47.0), 1);
 	if (ctx.quality >= 1) {
-		gyre_b = fbm(ctx.wpw * 0.012 + vec2(world_time * 0.012, -world_time * 0.007), 2);
+		gyre_b = water_fbm_cyl(ctx.wpw, 0.012, vec2(world_time * 0.012, -world_time * 0.007), 2);
 	}
 	float gyre_mix = smoothstep(0.20, 0.86, gyre_a * 0.72 + gyre_b * 0.28);
 	float patch_boost = clamp(deep_ocean_patch_boost * deep_ocean_color_richness, 0.0, 1.0);
@@ -503,10 +503,10 @@ vec3 apply_lake_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float lake_glass = 0.5;
 	float lake_lines = 0.0;
 	if (ctx.quality >= 1) {
-		lake_ripple = fbm(ctx.wpw * 0.020 + vec2(world_time * 0.012, -19.0), ctx.detail_oct);
-		lake_mottle = fbm(ctx.wpw * 0.008 + vec2(-23.0, 11.0), ctx.detail_oct);
+		lake_ripple = water_fbm_cyl(ctx.wpw, 0.020, vec2(world_time * 0.012, -19.0), ctx.detail_oct);
+		lake_mottle = water_fbm_cyl(ctx.wpw, 0.008, vec2(-23.0, 11.0), ctx.detail_oct);
 		lake_lines = water_shade_lines(ctx.wpw + vec2(7.0, -5.0), world_time * 0.55, 0.58, 1);
-		lake_glass = fbm(ctx.wpw * 0.0042 + vec2(-world_time * 0.006, world_time * 0.004), ctx.detail_oct);
+		lake_glass = water_fbm_cyl(ctx.wpw, 0.0042, vec2(-world_time * 0.006, world_time * 0.004), ctx.detail_oct);
 	}
 	lake_col *= 1.0 + (lake_ripple - 0.5) * 0.050 + (lake_mottle - 0.5) * 0.032 + lake_lines * 0.055;
 	vec3 cool_lift = mix(vec3(0.96, 1.02, 1.04), vec3(1.03, 1.02, 0.96), lake_glass);
@@ -531,11 +531,11 @@ vec3 apply_reef_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float coral_soft = 0.5;
 	float reef_sheen = 0.5;
 	if (ctx.quality >= 1) {
-		float coral_spots = voronoi_cell(ctx.wpw * 0.24);
+		float coral_spots = voronoi_cell(water_cyl_noise_p(ctx.wpw, 0.24, vec2(0.0)));
 		coral_soft = smoothstep(0.04, 0.74, coral_spots);
 	}
 	if (ctx.quality >= 2) {
-		reef_sheen = fbm(ctx.wpw * 0.018 + vec2(17.0, 29.0), 2);
+		reef_sheen = water_fbm_cyl(ctx.wpw, 0.018, vec2(17.0, 29.0), 2);
 	}
 	vec3 coral_tint = mix(vec3(0.34, 0.56, 0.54), vec3(0.24, 0.46, 0.50),
 						   smoothstep(0.30, 0.88, ctx.offshore_depth));
@@ -560,13 +560,13 @@ vec3 apply_kelp_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	vec2 oc_k = ctx.ocean_current_v;
 	vec2 oc_norm = (length(oc_k) > 0.05) ? normalize(oc_k) : vec2(1.0, 0.0);
 	vec2 perp_k = vec2(-oc_norm.y, oc_norm.x);
-	float along_k = dot(ctx.wpw, oc_norm) * 0.030;
-	float across_k = dot(ctx.wpw, perp_k) * 0.095;
+	float along_k = water_periodic_wave_phase(ctx.wpw, oc_norm, 0.030);
+	float across_k = water_periodic_wave_phase(ctx.wpw, perp_k, 0.095);
 	float kelp_streak = 0.5;
 	if (ctx.quality >= 1) {
 		kelp_streak = fbm(vec2(along_k + world_time * 0.035, across_k), ctx.detail_oct);
 	}
-	float kelp_patch = fbm(ctx.wpw * 0.018 + vec2(5.0, -41.0), ctx.detail_oct);
+	float kelp_patch = water_fbm_cyl(ctx.wpw, 0.018, vec2(5.0, -41.0), ctx.detail_oct);
 	vec3 kelp_col = mix(kelp_base, vec3(0.05, 0.28, 0.23), kelp_patch * 0.26);
 	kelp_col *= mix(0.94, 1.045, kelp_streak);
 	col = mix(col, kelp_col, ww.w_kelp * 0.86);
@@ -594,10 +594,10 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 						 vec3(0.66, 0.81, 0.95), 0.84);
 	float crack_factor = 0.55;
 	if (ctx.quality >= 1) {
-		float crack = voronoi_cell(ctx.wpw * 0.34);
+		float crack = voronoi_cell(water_cyl_noise_p(ctx.wpw, 0.34, vec2(0.0)));
 		crack_factor = smoothstep(0.02, 0.16, crack);
 	}
-	float ice_noise = fbm(ctx.wpw * 0.12 + vec2(-9.0, 31.0), ctx.detail_oct);
+	float ice_noise = water_fbm_cyl(ctx.wpw, 0.12, vec2(-9.0, 31.0), ctx.detail_oct);
 	vec3 ice_col = mix(ice_base * 0.76, ice_base * 1.08, crack_factor);
 	ice_col *= mix(0.94, 1.055, ice_noise);
 	float ice_edge = smoothstep(0.18, 0.82, ww.w_ice);
@@ -649,8 +649,8 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float flow_mag = clamp(length(oc), 0.0, 1.0);
 	vec2 oc_dir = (flow_mag > 0.035) ? normalize(oc) : normalize(ctx.wind_v + vec2(0.0001, 0.0));
 	vec2 oc_side = vec2(-oc_dir.y, oc_dir.x);
-	float along = dot(ctx.wp, oc_dir) * mix(0.010, 0.024, water_cartoon_color_strength) + world_time * 0.035;
-	float across = dot(ctx.wp, oc_side) * mix(0.060, 0.105, water_cartoon_color_strength);
+	float along = water_periodic_wave_phase(ctx.wp, oc_dir, mix(0.010, 0.024, water_cartoon_color_strength)) + world_time * 0.035;
+	float across = water_periodic_wave_phase(ctx.wp, oc_side, mix(0.060, 0.105, water_cartoon_color_strength));
 	int current_oct = (ctx.quality >= 2) ? 2 : 1;
 	float lane_low = fbm(vec2(along, across), current_oct);
 	float lane_high = fbm(vec2(along * 2.8 + 17.0, across * 0.55 - 31.0), 1);
@@ -700,7 +700,7 @@ vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float plume_src = max(river_sdf_water, max(tail_a * 0.82, tail_b * 0.62));
 	float plume_noise = 0.5;
 	if (ctx.quality >= 1) {
-		plume_noise = fbm(ctx.wpw * 0.055 + plume_dir * world_time * 0.065, ctx.detail_oct);
+		plume_noise = water_fbm_cyl(ctx.wpw, 0.055, plume_dir * world_time * 0.065, ctx.detail_oct);
 	}
 	float plume = smoothstep(river_threshold_low * 0.72, river_threshold_high, plume_src);
 	plume *= mix(0.88, 1.14, plume_noise);
@@ -824,8 +824,8 @@ SurfaceParams compute_water_base_surface(
 	ctx.macro_lf = 0.5;
 	ctx.macro_vlf = 0.5;
 #ifndef MOBILE_QUALITY_LOW
-	ctx.macro_lf  = fbm(ctx.wpw * 0.0072 + vec2(world_time * 0.012,  world_time * 0.007) + vec2(31.0, 7.0), 2);
-	ctx.macro_vlf = fbm(ctx.wpw * 0.0039 + vec2(-world_time * 0.008, world_time * 0.010) + vec2(-47.0, 23.0), 2);
+	ctx.macro_lf  = water_fbm_cyl(ctx.wpw, 0.0072, vec2(world_time * 0.012,  world_time * 0.007) + vec2(31.0, 7.0), 2);
+	ctx.macro_vlf = water_fbm_cyl(ctx.wpw, 0.0039, vec2(-world_time * 0.008, world_time * 0.010) + vec2(-47.0, 23.0), 2);
 #endif
 
 	// ── SEA 1.1: 离岸度 + 深度梯度 ─────────────────────────────────────
@@ -934,7 +934,7 @@ SurfaceParams apply_water_overlay_surface(
 			float sub_wave = 0.5;
 			if (visual_quality >= 1) {
 				int foam_oct = (visual_quality >= 2) ? 2 : 1;
-				local_noise = fbm(wp * 0.10 + vec2(world_time * 0.08, -world_time * 0.06), foam_oct);
+				local_noise = water_fbm_cyl(wp, 0.10, vec2(world_time * 0.08, -world_time * 0.06), foam_oct);
 			}
 			float main_phase = coast_sdf * 130.0 - world_time * 1.10 + local_noise * 1.20;
 			float main_wave = sin(main_phase) * 0.5 + 0.5;
@@ -991,7 +991,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
 	if (biome == B_REEF && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
-		float caustics = fbm(wp * 0.35 + vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
+		float caustics = water_fbm_cyl(wp, 0.35, vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
 		float caustics_mask = smoothstep(0.55, 0.75, caustics);
 		vec3 caustic_col = mix(tod_sun_color, color_shallow, 0.32) * 1.05;
 		col = mix(col, col + caustic_col * 0.24, caustics_mask * caustics_strength * day_factor);
@@ -1054,7 +1054,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		float rough = clamp(surface.roughness, 0.04, 1.0);
 		float gloss_power = mix(18.0, 86.0, 1.0 - rough);
 		float sun_glint = pow(NdotH, gloss_power);
-		float glint_noise = fbm(wp * 0.055 + vec2(world_time * 0.18, -world_time * 0.11), sparkle_oct);
+		float glint_noise = water_fbm_cyl(wp, 0.055, vec2(world_time * 0.18, -world_time * 0.11), sparkle_oct);
 		float glint_mask = smoothstep(0.58, 0.94, glint_noise);
 		float rough_window = 1.0 - smoothstep(0.18, 0.68, rough);
 		vec3 glint_col = mix(tod_sun_color, vec3(1.0, 1.0, 0.92), 0.22);
@@ -1066,7 +1066,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 
 		float sparkle_freq = 0.085;
 		float sparkle_speed_day = 0.32;
-		float sparkle = fbm(wp * sparkle_freq + vec2(world_time * sparkle_speed_day, -world_time * 0.20), sparkle_oct);
+		float sparkle = water_fbm_cyl(wp, sparkle_freq, vec2(world_time * sparkle_speed_day, -world_time * 0.20), sparkle_oct);
 		float spark_mask = smoothstep(0.88, 0.985, sparkle);
 		vec3 day_sparkle_col = vec3(1.03, 1.02, 0.96);
 		vec3 night_sparkle_col = vec3(0.76, 0.86, 1.03);
@@ -1126,7 +1126,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, vec2 wp, int quality,
 // ═══════════════════════════════════════════════════════════════════════
 //   base surface (12 helper) → overlay surface → shade。
 // ─────────────────────────────────────────────────────────────────────
-vec3 render_water_pipeline(
+vec3 render_water_pipeline_raw(
 		int biome,
 		int cover,
 		float elev,
@@ -1147,7 +1147,7 @@ vec3 render_water_pipeline(
 		float bloom = 0.5;
 #ifndef MOBILE_QUALITY_LOW
 		if (visual_quality >= 1) {
-			bloom = fbm(wp * 0.014 + vec2(world_time * 0.010, -7.0), 2);
+			bloom = water_fbm_cyl(wp, 0.014, vec2(world_time * 0.010, -7.0), 2);
 		}
 #endif
 		vec3 bloom_col = vec3(0.18, 0.52, 0.40);
@@ -1156,4 +1156,20 @@ vec3 render_water_pipeline(
 	}
 	surface = apply_water_overlay_surface(surface, biome, elev, wp, uv, wind_v);
 	return shade_water_surface(surface, biome, wp, visual_quality, uv, lat_signed);
+}
+
+vec3 render_water_pipeline(
+		int biome,
+		int cover,
+		float elev,
+		vec2 wp,
+		vec2 uv,
+		vec4 scals,
+		float lat_signed,
+		float current_temp,
+		vec2 ocean_current_v,
+		vec2 wind_v,
+		float dyn_ice_frac) {
+	return render_water_pipeline_raw(
+		biome, cover, elev, wrap_world_pos(wp), uv, scals, lat_signed, current_temp, ocean_current_v, wind_v, dyn_ice_frac);
 }
