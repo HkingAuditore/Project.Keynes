@@ -55,8 +55,8 @@ struct LightingContext {
 	vec3 sun_palette;        // = ed.sun_col（色板域，未乘 gain/local_day）
 	vec3 sun_dir_px;         // = ed.sun_dir（逐像素太阳方向，单位向量）
 	float local_day;         // = ed.local_day（白昼系数，驱动方位散射淡入）
+	float direct_shadow;     // terrain horizon direct-light visibility, ambient/emission 不受影响
 	// TODO[future-IBL]: vec3 ibl_diffuse; vec3 ibl_specular;
-	// TODO[future-shadow]: float direct_shadow;
 };
 
 // ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
@@ -98,6 +98,7 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	lc.sun_palette = ed.sun_col;
 	lc.sun_dir_px = ed.sun_dir;
 	lc.local_day = ed.local_day;
+	lc.direct_shadow = terrain_horizon_direct_visibility(uv, lc.L);
 	return lc;
 }
 
@@ -200,7 +201,7 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	// ── Direct lighting：(diffuse + spec) · NdotL · sun_color ─────────
 	// Stylized 加成：hillshade 作为 direct 项的乘子（保留 v9 风味，让陡坡更暗）
 	float hill_lift = lc.hillshade + HILLSHADE_BASE_LIFT;
-	vec3 direct = (diffuse + spec) * NdotL * lc.sun_color_linear * hill_lift;
+	vec3 direct = (diffuse + spec) * NdotL * lc.sun_color_linear * hill_lift * lc.direct_shadow;
 
 	// ── Ambient：方向化天光（L1 球谐）· ao（带 ambient_floor 防止死黑） ──
 	// 用本像素法线求天光（坡面/天顶/太阳方位各异）→ 弱直射时仍有体积感；DC≈原平铺值。
@@ -237,8 +238,8 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 	// [sky-sh-ambient] legacy 路径同样改用方向化天光（替换平铺 ambient_color_linear）。
 	vec3 amb_dir = sky_sh_ambient_brdf(lc, N);
 	vec3 diffuse = col * (amb_dir * s.ao * ambient_factor
-						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor));
-	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp;
+						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor) * lc.direct_shadow);
+	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp * lc.direct_shadow;
 	vec3 lit = diffuse + specular + s.emission;
 	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, lc.night_factor);
 	lit *= lc.exposure;

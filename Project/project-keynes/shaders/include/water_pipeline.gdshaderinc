@@ -1096,8 +1096,26 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, vec2 wp, int quality,
 			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
 			: compute_global_parallel_sun_dir();
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
+	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
+	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影，因此在海冰 biome 上关闭底部 horizon。
+	if (biome == B_SEA_ICE) {
+		lc.direct_shadow = 1.0;
+	}
+	if (terrain_horizon_debug_view == 1) {
+		return vec3(clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0));
+	}
+	if (terrain_horizon_debug_view == 2) {
+		return vec3(lc.direct_shadow);
+	}
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_WATER_LEGACY, SPEC_MIN_WATER_LEGACY);
-	// stylized water specials —— 在 BRDF 之后叠加（caustics / fresnel-sky / sparkle）
+	// [terrain-horizon 2026-07-03] 水面阴影先压 BRDF 结果，再叠加 fresnel/caustics/sparkle，
+	// 让高光与波浪可以覆盖在阴影之上；强度比陆地轻，避免水面变脏。
+	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
+	if (cast_shadow > 0.001) {
+		float water_floor = mix(1.0, terrain_horizon_cast_floor, 0.38);
+		lit *= mix(1.0, water_floor, cast_shadow);
+	}
+	// stylized water specials —— 在阴影之后叠加（caustics / fresnel-sky / sparkle 覆盖阴影）
 	lit = apply_water_specials(lit, surface, biome, wp, quality, pixel_night, sun_dir_px);
 	return lit;
 }

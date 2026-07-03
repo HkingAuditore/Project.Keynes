@@ -196,11 +196,11 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 ## 渲染与视觉
 
-`MapBaker` 把 per-hex `MapData` 烘成高分辨率 `WorldData`。它负责 height/terrain/moisture/river SDF、物理环流初始场、volcano/water depth/normal、enum/dynamic/ecology/weather atlas 等。当前文件仍然很大，`rendering/bakers/*.gd` 里有部分目的地骨架。
+`MapBaker` 把 per-hex `MapData` 烘成高分辨率 `WorldData`。它负责 height/terrain/moisture/river SDF、物理环流初始场、water depth/normal、enum/dynamic/ecology/weather atlas 等。当前文件仍然很大，`rendering/bakers/*.gd` 里有部分目的地骨架。
 
 `WorldData` 保存 CPU buffer 和 GPU `ImageTexture`：
 
-- 静态/生成期：`height_tex`、`enum_atlas_tex`、`flow_tex`、`volcano_field_tex`、`water_depth_tex`、`terrain_normal_tex`。
+- 静态/生成期：`height_tex`、`terrain_horizon_tex`、`enum_atlas_tex`、`flow_tex`、`water_depth_tex`、`terrain_normal_tex`。
 - 运行期动态：`weather_field_tex`、`dynamic_cell_atlas_tex`、`ecology_visual_atlas_tex`、`dyn_lut_tex`、`eco_lut_tex`、`weather_lut_tex`。
 - 间接寻址：`enum_atlas_tex` 的 G/B 保存 `cell.index`，per-cell LUT 把每日更新从 pixel fan-out 降到 `n_cells` texel。
 

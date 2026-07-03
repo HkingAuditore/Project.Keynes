@@ -57,7 +57,6 @@ class_name MapBaker
 # stage 取值（按 emit 顺序）：
 #   "terrain"    — _bake_height_biome_moisture / erosion / river SDF / latitude
 #   "physical"   — _bake_initial_physical_circulation / vector buffers
-#   "volcano"    — _bake_volcano_field
 #   "atlas"      — dynamic / ecology / smooth / ice atlas 初始化
 #   "encode"     — _encode_*_tex / atlas 整体编码
 #   "done"       — bake_world 全部完成（fraction=1.0）
@@ -90,6 +89,14 @@ static func _hm_max_dim() -> int:
 # 兼容：保留旧常量名，值跟 desktop 一致。其它文件仍引用 HM_MAX_DIM 时不破坏；
 # 真正决定渲染分辨率的是 _resolve_hm_size() 里调 _hm_max_dim()。
 const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
+
+# [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。移动端默认不烘焙，shader 走现有
+# normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
+const TERRAIN_HORIZON_STEPS := 128
+const TERRAIN_HORIZON_STEP_PX := 4.0
+const TERRAIN_HORIZON_MAX_ANGLE := 1.309       # 约 75°，与 shader 默认保持一致
+const TERRAIN_HORIZON_BIAS := 0.004            # height 单位，抑制同高/高频 relief 自遮蔽
+const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0  # 归一高程 → world units 的视觉夸张倍率（×hex_size）
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -775,7 +782,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	# dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++——一次
 	# run_bake_geometry_fields_pass 在 C++ 进程内串起 terrain-index → erosion → river →
-	# latitude → volcano（中间 height buffer 不跨语言往返），GDScript 只解包。融合不可用 /
+	# latitude（中间 height buffer 不跨语言往返），GDScript 只解包。融合不可用 /
 	# 返回 fallback 时回退到下方旧 per-pass 编排（terrain-index native / GDScript ground-truth）。
 	var t := Time.get_ticks_msec()
 	var pix_count := world.hm_size.x * world.hm_size.y
@@ -825,14 +832,6 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
-	# Phase 14：火山强度场（R8），每像素 = 距最近 has_volcano cell 中心的径向衰减。
-	# fused 路径已在 C++ 内算好 world.volcano_field_buffer；仅回退路径需单独烘。
-	stage_progress.emit("volcano", 0.70)
-	if not fused:
-		t = Time.get_ticks_msec()
-		world.volcano_field_buffer = _bake_volcano_field(map, hex_size, world)
-		print("  volcano field: %dms" % (Time.get_ticks_msec() - t))
-
 	# Emergent Climate Coupling：sea_ice_fraction buffer 保持兼容数据通道。
 	# 主地图海冰视觉已改为 shader 直接按水温派生，不依赖此贴图光栅化。
 	# [sea-ice-atlas-skip 2026-06-16] flag 关（默认）→ 不再分配空 R8 buffer（无采样者，
@@ -853,6 +852,14 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
 		world.height_buffer, world.hm_size,
 		TERRAIN_NORMAL_COARSE_RADIUS, TERRAIN_NORMAL_SLOPE_GAIN, true, _world_ext)
+	# [terrain-horizon] 桌面烘焙 8 方向 horizon angle；移动端保留 null，让 shader 0 额外采样回退。
+	if OS.has_feature("mobile"):
+		world.terrain_horizon_tex = null
+	else:
+		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
+			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
+			_world_ext, TERRAIN_HORIZON_STEPS, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
+			TERRAIN_HORIZON_BIAS, hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map
@@ -863,7 +870,6 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
 	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex, _world_ext)
 	world.sea_ice_tex = null
-	world.volcano_field_tex = DCAtlasEncoders.encode_r8_tex(world.volcano_field_buffer, world.derived_size, world.volcano_field_tex, _world_ext)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 → shader 每水像素单次采样，取代旧"海洋 5×5 height
 	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
 	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
@@ -3242,7 +3248,7 @@ func _rebake_single_axis(map: MapData, world: WorldData, hex_size: float, axis: 
 		world.cell_pixel_lists.size(), 0, buffer_patch_ms, 0.0, 0.0, false)
 
 # Milestone 2 / J 增量：季节切换时同步重烘 biome / vegetation / cover 三张 R8 纹理。
-# height / moisture / flow / latitude / wind / ocean / volcano 全部不动。
+# height / moisture / flow / latitude / wind / ocean 全部不动。
 #
 # 旧路径（130ms / season）：完整 _rewrite_axis_buffers（620k 像素 × 3 byte）+
 # _encode_enum_atlas（620k 像素 × 3 byte 交错 + Image.create + tex.update）。
@@ -3506,8 +3512,8 @@ func _terrain_index_native_active() -> bool:
 
 # dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++。
 # 一次请求 run_bake_geometry_fields_pass → C++ 进程内串起 terrain-index → erosion →
-# river → latitude → volcano 五个 sub-pass（中间 height buffer 不跨语言往返），一次返回
-# 完整几何 bundle，GDScript 只解包到 world.* + 重建对象侧 lookup。
+# river → latitude sub-pass（中间 height buffer 不跨语言往返），一次返回完整几何 bundle，
+# GDScript 只解包到 world.* + 重建对象侧 lookup。
 # 返回 true=融合成功（world 所有几何场已填）；false=ext/方法缺失或返回 fallback → caller
 # 回退旧 per-pass 编排（_bake_terrain_index_native + 各单 pass / GDScript ground-truth）。
 func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldData, seed_val: int) -> bool:
@@ -3528,7 +3534,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	if n_cells <= 0:
 		return false
 
-	# ── cell SoA（by cell.index）+ offset→index + index→HexCell + 火山中心 ──
+	# ── cell SoA（by cell.index）+ offset→index + index→HexCell ──
 	var elev_arr := PackedFloat32Array(); elev_arr.resize(n_cells)
 	var moist_arr := PackedFloat32Array(); moist_arr.resize(n_cells)
 	var terr_arr := PackedByteArray(); terr_arr.resize(n_cells)
@@ -3537,8 +3543,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	var wd_arr := PackedFloat32Array(); wd_arr.resize(n_cells)  # [water-depth-tex] 海/湖统一归一水深
 	var o2i := PackedInt32Array(); o2i.resize(map.width * map.height); o2i.fill(-1)
 	var cells_by_index: Array = []; cells_by_index.resize(n_cells)
-	var volc_x := PackedFloat32Array()
-	var volc_y := PackedFloat32Array()
 	for cell in map.all_cells():
 		if cell == null:
 			continue
@@ -3555,20 +3559,13 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		var off: Vector2i = HexUtils.cube_to_offset(cell.q, cell.r)
 		if off.y >= 0 and off.y < map.height:
 			o2i[off.y * map.width + posmod(off.x, map.width)] = ci
-		if cell.has_volcano:
-			var vc := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
-			volc_x.append(vc.x)
-			volc_y.append(vc.y)
 
-	# ── 几何参数（合并 5 个 sub-pass 所需 knob，origin/hex_size/seed/W/H 共用）──
+	# ── 几何参数（合并 sub-pass 所需 knob，origin/hex_size/seed/W/H 共用）──
 	var origin := world.world_bounds.position
 	var size := world.world_bounds.size
 	var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
 	var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
 	var seam_dx := size.x * 0.5
-	var step_x := size.x / float(W)
-	var step_y := size.y / float(H)
-	var inv_glow := 1.0 / (hex_size * 3.0)
 
 	var knobs := {
 		# 共用
@@ -3606,11 +3603,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
 		"seam_dx": seam_dx,
 		"cr_step": RIVER_CR_STEP,
-		# volcano
-		"step_x": step_x, "step_y": step_y,
-		"inv_glow": inv_glow,
-		"volcano_centers_x": volc_x,
-		"volcano_centers_y": volc_y,
 		# coast SDF carve（water-bodies systemic：海/湖统一岸坡，river carve 之后作用于 height_final）
 		"shore_carve_amp": SHORE_CARVE_AMP,
 		"shore_carve_band": SHORE_CARVE_BAND,
@@ -3647,10 +3639,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	world.latitude_buffer = lat if lat.size() == pix_count else PackedFloat32Array()
 	if world.latitude_buffer.is_empty():
 		world.latitude_buffer.resize(pix_count)
-	var volc: PackedByteArray = rep.get("volcano_buffer", PackedByteArray())
-	world.volcano_field_buffer = volc if volc.size() == pix_count else PackedByteArray()
-	if world.volcano_field_buffer.is_empty():
-		world.volcano_field_buffer.resize(pix_count)
 	# [water-depth-tex] 海/湖统一水深 R8（空 = C++ 未产出 → encode 时退化为空 tex，shader 回退旧路径）。
 	var wd_buf: PackedByteArray = rep.get("water_depth_buffer", PackedByteArray())
 	world.water_depth_buffer = wd_buf if wd_buf.size() == pix_count else PackedByteArray()
@@ -3685,10 +3673,10 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 			lists[cell2] = flat.slice(st, st + cnt)
 	world.cell_pixel_lists = lists
 
-	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms volcano=%.1fms coast_sdf=%.1fms(ok=%s)" % [
+	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
 		float(rep.get("terrain_ms", -1.0)), float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
 		float(rep.get("river_ms", -1.0)), str(bool(rep.get("river_ok", false))),
-		float(rep.get("latitude_ms", -1.0)), float(rep.get("volcano_ms", -1.0)),
+		float(rep.get("latitude_ms", -1.0)),
 		float(rep.get("coast_ms", -1.0)), str(bool(rep.get("coast_ok", false)))])
 	if not bool(rep.get("river_ok", false)):
 		push_warning("[bake_geometry_fields] river sub-pass fallback（reason=%s）→ flow 置空（无河流或拓扑缺失）。"
@@ -4637,7 +4625,7 @@ func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture
 
 
 # ─── v9.atlas：合并通道编码 ─────────────────────────────────────────────
-# 把原先 9 张 derived 贴图（biome/veg/cover/moist/flow/lat/volcano/ocean/wind）
+# 把原先多张 derived 贴图（biome/veg/cover/moist/flow/lat/ocean/wind）
 # 按"采样模式 + 数据语义"分到 3 张 atlas，shader 端只需 3 次 texture() 即可
 # 拿到所有 derived 数据。height_tex 因分辨率/精度独立保留。
 
@@ -5343,55 +5331,6 @@ func bake_weather_field_only(map: MapData, world: WorldData) -> void:
 		world.weather_field_tex.update(img)
 	else:
 		world.weather_field_tex = ImageTexture.create_from_image(img)
-
-# ─── Phase 14：火山强度场（R8） ─────────────────────────────────────────────
-# 每像素 = sum_over_volcanoes( max(0, 1 - dist / glow_radius) )
-# glow_radius ≈ 3 × hex_size，让红光晕跨越自身 + 1-2 邻居。
-# 性能：O(W * H * N_volcanoes)，N ≤ 8，对 192×108 derived 来说 ~165k 操作，可忽略。
-
-func _bake_volcano_field(map: MapData, hex_size: float, world: WorldData) -> PackedByteArray:
-	var W := world.derived_size.x
-	var H := world.derived_size.y
-	var origin := world.world_bounds.position
-	var size := world.world_bounds.size
-	var step_x := size.x / float(W)
-	var step_y := size.y / float(H)
-	var glow_radius := hex_size * 3.0
-	var inv_glow := 1.0 / glow_radius
-
-	# 收集火山中心（极少数 cell → 极小传输；O(n_pixels) 热循环全部在 C++）
-	var centers_x := PackedFloat32Array()
-	var centers_y := PackedFloat32Array()
-	for cell: HexCell in map.all_cells():
-		if cell.has_volcano:
-			var c := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
-			centers_x.append(c.x)
-			centers_y.append(c.y)
-
-	# C++ 权威路径（dots-total-cpp：无 GDScript 计算 fallback）。
-	if _world_ext == null or not _world_ext.has_method("run_bake_volcano_field_pass"):
-		push_error("[bake_volcano_field] DCWorldExt.run_bake_volcano_field_pass 缺失（DLL 未 rebuild?）；"
-			+ "dots-total-cpp 已移除 GDScript 计算 fallback。返回空 volcano buffer。")
-		var empty := PackedByteArray()
-		empty.resize(W * H)
-		return empty
-	var rep: Dictionary = _world_ext.run_bake_volcano_field_pass({
-		"width": W, "height": H,
-		"origin_x": origin.x, "origin_y": origin.y,
-		"step_x": step_x, "step_y": step_y,
-		"inv_glow": inv_glow,
-		"volcano_centers_x": centers_x,
-		"volcano_centers_y": centers_y,
-	})
-	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
-	var data: PackedByteArray = rep.get("data", PackedByteArray()) if ok else PackedByteArray()
-	if not ok or data.size() != W * H:
-		push_error("[bake_volcano_field] run_bake_volcano_field_pass 返回 fallback/非法（reason=%s）；返回空 buffer。"
-			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
-		var empty2 := PackedByteArray()
-		empty2.resize(W * H)
-		return empty2
-	return data
 
 # ─── Phase 1：纬度 buffer（每像素 ny ∈ [0, 1]） ──────────────────────────
 # shader 用来算半球（lat_signed = ny * 2 - 1）以及纬度温度钟形曲线。

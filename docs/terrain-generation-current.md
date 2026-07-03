@@ -512,10 +512,9 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 6. `_bake_river_sdf()` 把 `cell.has_river` 链烘成河流 SDF。
 7. `_bake_latitude_buffer()` 生成每像素纬度。
 8. `_bake_initial_physical_circulation()` 和 `_bake_initial_vector_buffers()` 生成风、洋流、上升流相关 buffer。
-9. `_bake_volcano_field()` 根据 `has_volcano` 生成火山视觉场。
-10. 跳过已退役的 dynamic/ecology/smooth/ice per-pixel atlas。
-11. 编码 `height_tex / map_index_atlas(enum_atlas_tex) / volcano_field_tex`。
-12. 调用 `bake_cell_luts()` 生成 per-cell enum/dynamic/ecology LUT。
+9. 跳过已退役的 dynamic/ecology/smooth/ice per-pixel atlas。
+10. 编码 `height_tex / terrain_horizon_tex / map_index_atlas(enum_atlas_tex) / flow_tex / water_depth_tex / terrain_normal_tex`。
+11. 调用 `bake_cell_luts()` 生成 per-cell enum/dynamic/ecology LUT。
 
 ### 高度、biome、湿度上采样
 

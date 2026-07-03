@@ -12,7 +12,6 @@ class_name DCTerrainBaker
 ## 一次性烘焙（每次 generate 调一次）：
 ##   - `_bake_height_biome_moisture` (line 1315) — 高度场 / biome / moisture 主烘焙
 ##   - `bake_world` 中 terrain/landform/vegetation atlas 部分 (line 243-418 的 ~70%)
-##   - `_bake_volcano_field` (line 2281)
 ##   - `_bake_river_sdf` + 配套 `_trace_*` / `_warp_river_chain` / `_catmull_*`
 ##     / `_stamp_polyline_binary` / `_chamfer_sdt` (line 1651-1864)
 ##   - `_hydraulic_erosion` (line 1499)
