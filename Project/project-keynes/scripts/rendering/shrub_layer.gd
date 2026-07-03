@@ -80,6 +80,10 @@ uniform float toon_shading = 0.30;           // 卡通分层：基部 AO + 轻�
 // 让晨昏线扫过时植被随之明暗（地球式光照），而非全图同步开关常亮。
 uniform float axial_tilt_rad = 0.41;     // 地轴倾角(rad)，与地形 axial_tilt_rad 同源
 uniform bool day_night_enabled = true;   // 关闭时退化为永昼
+uniform bool tod_debug_sun_position_enabled = false;
+uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
+uniform float tod_debug_sun_height_scale = 1.0;
+uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;        // 全局曝光（TODProfile.exposure）
 
 // [veg-normal-shading] 法线辅助着色：复用地形烘焙宏观法线 + 高度图（与地形 brdf 同源数据），
@@ -461,6 +465,10 @@ uniform float season_phase = 1.0;
 uniform float day_phase = 0.25;
 uniform float axial_tilt_rad = 0.41;
 uniform bool day_night_enabled = true;
+uniform bool tod_debug_sun_position_enabled = false;
+uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
+uniform float tod_debug_sun_height_scale = 1.0;
+uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 
 uniform float vitality_dead_threshold = 0.12;
 uniform float vitality_healthy_threshold = 0.72;
@@ -706,6 +714,34 @@ func set_tod(_sun_color: Color, _ambient_color: Color, _night_factor: float, exp
 	if _material == null:
 		return
 	_material.set_shader_parameter("tod_exposure", exposure)
+
+
+func set_tod_sun_dir(dir: Vector3) -> void:
+	var d := dir.normalized()
+	if d.length_squared() <= 0.000001:
+		d = Vector3(0.4, -0.7, 0.6).normalized()
+	if _material != null:
+		_material.set_shader_parameter("tod_sun_dir", d)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("tod_sun_dir", d)
+
+
+func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
+	var p := Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	if _material != null:
+		_material.set_shader_parameter("tod_debug_sun_position_enabled", enabled)
+		_material.set_shader_parameter("tod_debug_sun_uv", p)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("tod_debug_sun_position_enabled", enabled)
+		_shadow_material.set_shader_parameter("tod_debug_sun_uv", p)
+
+
+func set_tod_debug_sun_height_scale(v: float) -> void:
+	var scale := clampf(v, 0.2, 1.5)
+	if _material != null:
+		_material.set_shader_parameter("tod_debug_sun_height_scale", scale)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("tod_debug_sun_height_scale", scale)
 
 
 # 地轴倾角(rad)：与地形 axial_tilt_rad 同源，驱动晨昏线的季节赤纬。

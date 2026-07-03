@@ -244,6 +244,15 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 # Pass 2：TOD 中枢（纯脚本对象，非场景节点）。启动时实例化一次，
 # 之后随 WorldClock.day_phase_changed 推动 recompute。
 var _tod_profile: TODProfile = null
+var _debug_tod_light_angle_deg: float = -60.0
+var _debug_tod_light_elevation_deg: float = 37.0
+var _debug_tod_sun_position: float = 0.25
+var _debug_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
+var _debug_tod_sun_height_scale: float = 1.0
+var _debug_tod_sun_uv_override_enabled: bool = false
+var _debug_tod_sun_handle_requested: bool = false
+var _tod_sun_handle_btn: Button = null
+var _tod_sun_handle_dragging: bool = false
 
 # Splash overlay：bake_world 期间显示加载提示，避免移动端开场 ~13s 黑屏体感。
 # 节点在 _ensure_splash_overlay() 里 lazy 创建，在 _generate_and_render 入口
@@ -510,6 +519,10 @@ func _ready() -> void:
 	_dots_bootstrap = DCDotsBootstrap.new(self)
 	_dots_bootstrap.bootstrap_flag_bus()
 	_visual_bootstrap = DCVisualBootstrap.new(self)
+
+func _process(_delta: float) -> void:
+	if _tod_sun_handle_btn != null and _tod_sun_handle_btn.visible and not _tod_sun_handle_dragging:
+		_position_tod_sun_handle()
 
 # 地块选择：由 MapCamera 的 tile_tapped 信号驱动。
 # camera 仅在"点按"（非拖拽/捏合）时发出该信号，且基于 UI 已消费过的输入做判定，
@@ -1885,6 +1898,7 @@ func _on_year_changed(_year_idx: int) -> void:
 # 任务 2：昼夜相位回调。把值转发给 renderer，并以逐帧 TOD 保证视觉平滑；
 # UI 小时位仅在显示小时变化时刷新，避免每帧重写 Label。
 func _on_day_phase_changed(day_phase: float) -> void:
+	_debug_tod_sun_position = fposmod(day_phase, 1.0)
 	if _renderer != null:
 		_renderer.set_day_phase(day_phase)
 	# Pass 2：同步重算 TOD 并广播给所有消费者
@@ -2194,8 +2208,215 @@ func _recompute_and_push_tod(day_phase: float) -> void:
 	if _tod_profile == null:
 		return
 	_tod_profile.recompute(day_phase, day_night_enabled)
+	if not day_night_enabled:
+		_tod_profile.sun_dir = _debug_tod_light_dir()
+	_push_tod_debug_sun_uv()
 	if _renderer != null and _renderer.has_method("apply_tod"):
 		_renderer.apply_tod(_tod_profile)
+
+
+func set_day_night_enabled(v: bool) -> void:
+	day_night_enabled = v
+	if _renderer != null:
+		_renderer.set_day_night_enabled(day_night_enabled)
+	_push_tod_debug_sun_uv()
+	_update_tod_sun_handle_visibility()
+	_recompute_and_push_tod(_current_visual_day_phase())
+	if _debug_console != null and _debug_console.has_method("request_state_sync"):
+		_debug_console.request_state_sync()
+
+
+func set_debug_tod_light_angle_deg(v: float) -> void:
+	_debug_tod_light_angle_deg = clampf(v, -180.0, 180.0)
+	if not day_night_enabled:
+		_recompute_and_push_tod(_current_visual_day_phase())
+
+
+func get_debug_tod_light_angle_deg() -> float:
+	return _debug_tod_light_angle_deg
+
+
+func set_debug_tod_light_elevation_deg(v: float) -> void:
+	_debug_tod_light_elevation_deg = clampf(v, 8.0, 85.0)
+	if not day_night_enabled:
+		_recompute_and_push_tod(_current_visual_day_phase())
+
+
+func get_debug_tod_light_elevation_deg() -> float:
+	return _debug_tod_light_elevation_deg
+
+
+func set_debug_tod_sun_position(v: float) -> void:
+	set_debug_tod_sun_uv(Vector2(v, get_debug_tod_sun_uv().y))
+
+
+func get_debug_tod_sun_position() -> float:
+	if _debug_tod_sun_uv_override_enabled:
+		_debug_tod_sun_position = _debug_tod_sun_uv.x
+	elif _world_clock != null:
+		_debug_tod_sun_position = _world_clock.visual_day_phase
+	return _debug_tod_sun_position
+
+
+func set_debug_tod_sun_uv(uv: Vector2) -> void:
+	_debug_tod_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	_debug_tod_sun_uv_override_enabled = true
+	_debug_tod_sun_position = _debug_tod_sun_uv.x
+	if _world_clock != null:
+		_world_clock.visual_day_phase = _debug_tod_sun_position
+	_on_day_phase_changed(_debug_tod_sun_position)
+	_push_tod_debug_sun_uv()
+	_position_tod_sun_handle()
+	if _debug_console != null and _debug_console.has_method("request_state_sync"):
+		_debug_console.request_state_sync()
+
+
+func get_debug_tod_sun_uv() -> Vector2:
+	if _debug_tod_sun_uv_override_enabled:
+		return _debug_tod_sun_uv
+	return _current_tod_sun_uv()
+
+
+func set_debug_tod_sun_height_scale(v: float) -> void:
+	_debug_tod_sun_height_scale = clampf(v, 0.2, 1.5)
+	if _renderer != null and _renderer.has_method("set_tod_debug_sun_height_scale"):
+		_renderer.set_tod_debug_sun_height_scale(_debug_tod_sun_height_scale)
+
+
+func get_debug_tod_sun_height_scale() -> float:
+	return _debug_tod_sun_height_scale
+
+
+func set_debug_tod_sun_handle_visible(v: bool) -> void:
+	_debug_tod_sun_handle_requested = v
+	if v and not _debug_tod_sun_uv_override_enabled:
+		_debug_tod_sun_uv = _current_tod_sun_uv()
+	if _renderer != null and _renderer.has_method("set_tod_debug_sun_height_scale"):
+		_renderer.set_tod_debug_sun_height_scale(_debug_tod_sun_height_scale)
+	_push_tod_debug_sun_uv()
+	_update_tod_sun_handle_visibility()
+
+
+func _current_visual_day_phase() -> float:
+	if _world_clock != null:
+		return _world_clock.visual_day_phase
+	return _debug_tod_sun_position
+
+
+func _debug_tod_light_dir() -> Vector3:
+	var azimuth: float = deg_to_rad(_debug_tod_light_angle_deg)
+	var elevation: float = deg_to_rad(_debug_tod_light_elevation_deg)
+	var horiz: float = cos(elevation)
+	return Vector3(cos(azimuth) * horiz, sin(azimuth) * horiz, sin(elevation)).normalized()
+
+
+func _push_tod_debug_sun_uv() -> void:
+	if _renderer != null and _renderer.has_method("set_tod_debug_sun_position"):
+		_renderer.set_tod_debug_sun_position(
+			day_night_enabled and _debug_tod_sun_uv_override_enabled,
+			get_debug_tod_sun_uv()
+		)
+
+
+func _current_tod_sun_uv() -> Vector2:
+	var phase: float = _current_visual_day_phase()
+	var tilt: float = deg_to_rad(23.5)
+	if _renderer != null:
+		tilt = deg_to_rad(float(_renderer.axial_tilt_deg))
+	var season_phase: float = _world_clock.season_phase() if _world_clock != null else 1.0
+	var year_progress: float = fposmod(season_phase, 4.0) * 0.25
+	var decl: float = tilt * cos(TAU * year_progress)
+	var lat_signed: float = clampf(decl / (PI * 0.5), -1.0, 1.0)
+	return Vector2(fposmod(phase, 1.0), lat_signed * 0.5 + 0.5)
+
+
+func _ensure_tod_sun_handle() -> void:
+	if _tod_sun_handle_btn != null and is_instance_valid(_tod_sun_handle_btn):
+		return
+	var ui_layer: CanvasLayer = get_node_or_null("UI") as CanvasLayer
+	if ui_layer == null:
+		return
+	_tod_sun_handle_btn = Button.new()
+	_tod_sun_handle_btn.name = "TODSunHandle"
+	_tod_sun_handle_btn.text = "☀"
+	_tod_sun_handle_btn.tooltip_text = "拖动太阳位置"
+	_tod_sun_handle_btn.custom_minimum_size = Vector2(38, 38)
+	_tod_sun_handle_btn.size = Vector2(38, 38)
+	_tod_sun_handle_btn.mouse_filter = Control.MouseFilter.MOUSE_FILTER_STOP
+	_tod_sun_handle_btn.focus_mode = Control.FOCUS_NONE
+	_tod_sun_handle_btn.visible = false
+	_tod_sun_handle_btn.gui_input.connect(_on_tod_sun_handle_gui_input)
+	ui_layer.add_child(_tod_sun_handle_btn)
+
+
+func _update_tod_sun_handle_visibility() -> void:
+	_ensure_tod_sun_handle()
+	if _tod_sun_handle_btn == null:
+		return
+	_tod_sun_handle_btn.visible = _debug_tod_sun_handle_requested and day_night_enabled
+	if _tod_sun_handle_btn.visible:
+		_position_tod_sun_handle()
+
+
+func _position_tod_sun_handle() -> void:
+	if _tod_sun_handle_btn == null or _renderer == null or _camera == null:
+		return
+	var bounds: Rect2 = _renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return
+	var uv: Vector2 = get_debug_tod_sun_uv()
+	var world_pos := bounds.position + Vector2(uv.x * bounds.size.x, uv.y * bounds.size.y)
+	var screen_pos := _world_to_screen(world_pos)
+	_tod_sun_handle_btn.position = screen_pos - _tod_sun_handle_btn.size * 0.5
+
+
+func _on_tod_sun_handle_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			_tod_sun_handle_dragging = mb.pressed
+			if mb.pressed:
+				set_debug_tod_sun_uv(_screen_to_sun_uv(get_viewport().get_mouse_position()))
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _tod_sun_handle_dragging:
+		set_debug_tod_sun_uv(_screen_to_sun_uv(get_viewport().get_mouse_position()))
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		_tod_sun_handle_dragging = touch.pressed
+		if touch.pressed:
+			set_debug_tod_sun_uv(_screen_to_sun_uv(touch.position))
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag and _tod_sun_handle_dragging:
+		var drag := event as InputEventScreenDrag
+		set_debug_tod_sun_uv(_screen_to_sun_uv(drag.position))
+		get_viewport().set_input_as_handled()
+
+
+func _screen_to_sun_uv(screen_pos: Vector2) -> Vector2:
+	if _renderer == null or _camera == null:
+		return get_debug_tod_sun_uv()
+	var bounds: Rect2 = _renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return get_debug_tod_sun_uv()
+	var world_pos := _screen_to_world(screen_pos)
+	var u := (world_pos.x - bounds.position.x) / bounds.size.x
+	var v := (world_pos.y - bounds.position.y) / bounds.size.y
+	return Vector2(fposmod(u, 1.0), clampf(v, 0.0, 1.0))
+
+
+func _screen_to_world(screen_pos: Vector2) -> Vector2:
+	if _camera == null:
+		return Vector2.ZERO
+	var vp_center := get_viewport().get_visible_rect().size * 0.5
+	return _camera.position + (screen_pos - vp_center) / _camera.zoom.x
+
+
+func _world_to_screen(world_pos: Vector2) -> Vector2:
+	if _camera == null:
+		return Vector2.ZERO
+	var vp_center := get_viewport().get_visible_rect().size * 0.5
+	return vp_center + (world_pos - _camera.position) * _camera.zoom.x
 
 # ─── 地块选择 / 信息面板 ─────────────────────────────────────────────────
 

@@ -134,6 +134,9 @@ uniform float world_time = 0.0;
 // 由 WorldClock.day_phase_changed → HexRenderer.set_day_phase 推入；默认逐帧更新，
 uniform float day_phase : hint_range(0.0, 1.0) = 0.25;
 uniform bool day_night_enabled = true;
+uniform bool tod_debug_sun_position_enabled = false;
+uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
+uniform float tod_debug_sun_height_scale : hint_range(0.2, 1.5) = 1.0;
 // 夜晚整体亮度压到白天的 [min, max]；默认 0.35~0.55（需求 3.4）
 uniform float night_brightness_min : hint_range(0.0, 1.0) = 0.35;
 uniform float night_brightness_max : hint_range(0.0, 1.0) = 0.55;

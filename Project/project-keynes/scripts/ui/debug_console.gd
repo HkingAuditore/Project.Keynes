@@ -33,6 +33,14 @@ var _overlay_option_btn: OptionButton
 var _overlay_alpha_slider: HSlider
 var _overlay_alpha_label: Label
 var _overlay_error_label: Label
+var _tod_mode_label: Label
+var _tod_light_angle_slider: HSlider
+var _tod_light_angle_label: Label
+var _tod_light_elevation_slider: HSlider
+var _tod_light_elevation_label: Label
+var _tod_sun_height_scale_slider: HSlider
+var _tod_sun_height_scale_label: Label
+var _tod_sun_position_label: Label
 
 # 模拟开关：key=ClimateProfile 字段名，value=CheckBox
 var _sim_checkboxes: Dictionary = {}
@@ -190,6 +198,8 @@ func _build_ui() -> void:
 	vbox.add_child(HSeparator.new())
 	_build_visual_group(vbox)
 	vbox.add_child(HSeparator.new())
+	_build_tod_group(vbox)
+	vbox.add_child(HSeparator.new())
 	_build_diagnose_group(vbox)
 	vbox.add_child(HSeparator.new())
 	_build_experiments_group(vbox)
@@ -265,6 +275,59 @@ func _build_visual_group(parent: VBoxContainer) -> void:
 		cb.toggled.connect(_on_visual_switch_toggled.bind(field, setter))
 		parent.add_child(cb)
 		_visual_checkboxes[field] = cb
+
+func _build_tod_group(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_header("TOD 调试"))
+	_tod_mode_label = Label.new()
+	_tod_mode_label.text = "模式：—"
+	parent.add_child(_tod_mode_label)
+
+	var row_angle := HBoxContainer.new()
+	_tod_light_angle_label = Label.new()
+	_tod_light_angle_label.text = "光线方位 -60°"
+	_tod_light_angle_label.custom_minimum_size.x = 118.0
+	row_angle.add_child(_tod_light_angle_label)
+	_tod_light_angle_slider = HSlider.new()
+	_tod_light_angle_slider.min_value = -180.0
+	_tod_light_angle_slider.max_value = 180.0
+	_tod_light_angle_slider.step = 1.0
+	_tod_light_angle_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tod_light_angle_slider.value_changed.connect(_on_tod_light_angle_changed)
+	row_angle.add_child(_tod_light_angle_slider)
+	parent.add_child(row_angle)
+
+	var row_elevation := HBoxContainer.new()
+	_tod_light_elevation_label = Label.new()
+	_tod_light_elevation_label.text = "光线高度 37°"
+	_tod_light_elevation_label.custom_minimum_size.x = 118.0
+	row_elevation.add_child(_tod_light_elevation_label)
+	_tod_light_elevation_slider = HSlider.new()
+	_tod_light_elevation_slider.min_value = 8.0
+	_tod_light_elevation_slider.max_value = 85.0
+	_tod_light_elevation_slider.step = 1.0
+	_tod_light_elevation_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tod_light_elevation_slider.value_changed.connect(_on_tod_light_elevation_changed)
+	row_elevation.add_child(_tod_light_elevation_slider)
+	parent.add_child(row_elevation)
+
+	_tod_sun_position_label = Label.new()
+	_tod_sun_position_label.text = "太阳位置：拖动地图上的太阳按钮"
+	_tod_sun_position_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_tod_sun_position_label)
+
+	var row_height := HBoxContainer.new()
+	_tod_sun_height_scale_label = Label.new()
+	_tod_sun_height_scale_label.text = "太阳高度 x1.00"
+	_tod_sun_height_scale_label.custom_minimum_size.x = 118.0
+	row_height.add_child(_tod_sun_height_scale_label)
+	_tod_sun_height_scale_slider = HSlider.new()
+	_tod_sun_height_scale_slider.min_value = 0.2
+	_tod_sun_height_scale_slider.max_value = 1.5
+	_tod_sun_height_scale_slider.step = 0.01
+	_tod_sun_height_scale_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tod_sun_height_scale_slider.value_changed.connect(_on_tod_sun_height_scale_changed)
+	row_height.add_child(_tod_sun_height_scale_slider)
+	parent.add_child(row_height)
 
 func _build_diagnose_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("移动端调试动作"))
@@ -459,6 +522,8 @@ func _on_visibility_changed() -> void:
 	else:
 		if _telemetry_timer != null:
 			_telemetry_timer.stop()
+	if _main != null and _main.has_method("set_debug_tod_sun_handle_visible"):
+		_main.call("set_debug_tod_sun_handle_visible", visible)
 
 func _on_overlay_option_selected(idx: int) -> void:
 	if _suppress_sync_signals:
@@ -515,11 +580,37 @@ func _on_visual_switch_toggled(pressed: bool, field: String, setter: String) -> 
 	# main.gd 上的 @export 字段统一同步（保证 regenerate 后也能还原）
 	if _main != null and _main.has_method("set"):
 		_main.set(field, pressed)
+	if setter != "" and _main != null and _main.has_method(setter):
+		_main.call(setter, pressed)
+		_refresh_tod_controls()
+		return
 	var renderer = _get_renderer()
 	if renderer == null:
 		return
 	if setter != "" and renderer.has_method(setter):
 		renderer.call(setter, pressed)
+	_refresh_tod_controls()
+
+func _on_tod_light_angle_changed(v: float) -> void:
+	if _suppress_sync_signals:
+		return
+	_tod_light_angle_label.text = "光线方位 %d°" % int(round(v))
+	if _main != null and _main.has_method("set_debug_tod_light_angle_deg"):
+		_main.call("set_debug_tod_light_angle_deg", v)
+
+func _on_tod_light_elevation_changed(v: float) -> void:
+	if _suppress_sync_signals:
+		return
+	_tod_light_elevation_label.text = "光线高度 %d°" % int(round(v))
+	if _main != null and _main.has_method("set_debug_tod_light_elevation_deg"):
+		_main.call("set_debug_tod_light_elevation_deg", v)
+
+func _on_tod_sun_height_scale_changed(v: float) -> void:
+	if _suppress_sync_signals:
+		return
+	_tod_sun_height_scale_label.text = "太阳高度 x%.2f" % v
+	if _main != null and _main.has_method("set_debug_tod_sun_height_scale"):
+		_main.call("set_debug_tod_sun_height_scale", v)
 
 func _on_btn_diagnose_ocean() -> void:
 	if _main != null and _main.has_method("diagnose_ocean_heat"):
@@ -598,6 +689,8 @@ func _refresh_from_state() -> void:
 		if cb.button_pressed != val:
 			cb.button_pressed = val
 
+	_refresh_tod_controls()
+
 	# 性能 / 渲染实验 toggle：从 main.get_debug_toggle_state 读回真值回显
 	if _main != null and _main.has_method("get_debug_toggle_state"):
 		for key in _toggle_checkboxes.keys():
@@ -616,6 +709,70 @@ func _refresh_from_state() -> void:
 	# 这里通过 tooltip 提示而不强制禁用——避免打开控制台时一片灰色看不清
 
 	_suppress_sync_signals = false
+
+func _refresh_tod_controls() -> void:
+	if _tod_mode_label == null:
+		return
+	var day_night: bool = false
+	if _main != null:
+		day_night = bool(_main.get("day_night_enabled"))
+	_tod_mode_label.text = "模式：%s" % ("昼夜太阳位置" if day_night else "永昼光线角度")
+
+	var angle: float = 0.0
+	if _main != null and _main.has_method("get_debug_tod_light_angle_deg"):
+		angle = float(_main.call("get_debug_tod_light_angle_deg"))
+	if _tod_light_angle_slider != null and not is_equal_approx(float(_tod_light_angle_slider.value), angle):
+		_tod_light_angle_slider.value = angle
+	if _tod_light_angle_label != null:
+		_tod_light_angle_label.text = "光线方位 %d°" % int(round(angle))
+
+	var elevation: float = 0.0
+	if _main != null and _main.has_method("get_debug_tod_light_elevation_deg"):
+		elevation = float(_main.call("get_debug_tod_light_elevation_deg"))
+	if _tod_light_elevation_slider != null and not is_equal_approx(float(_tod_light_elevation_slider.value), elevation):
+		_tod_light_elevation_slider.value = elevation
+	if _tod_light_elevation_label != null:
+		_tod_light_elevation_label.text = "光线高度 %d°" % int(round(elevation))
+
+	if _tod_sun_position_label != null:
+		if day_night:
+			var sun_uv := Vector2(0.25, 0.5)
+			if _main != null and _main.has_method("get_debug_tod_sun_uv"):
+				sun_uv = _main.call("get_debug_tod_sun_uv")
+			_tod_sun_position_label.text = _format_tod_sun_uv(sun_uv)
+		else:
+			_tod_sun_position_label.text = "太阳位置：启用昼夜后可拖动地图上的太阳按钮"
+
+	var height_scale: float = 1.0
+	if _main != null and _main.has_method("get_debug_tod_sun_height_scale"):
+		height_scale = float(_main.call("get_debug_tod_sun_height_scale"))
+	if _tod_sun_height_scale_slider != null and not is_equal_approx(float(_tod_sun_height_scale_slider.value), height_scale):
+		_tod_sun_height_scale_slider.value = height_scale
+	if _tod_sun_height_scale_label != null:
+		_tod_sun_height_scale_label.text = "太阳高度 x%.2f" % height_scale
+
+	if _tod_light_angle_slider != null:
+		_tod_light_angle_slider.editable = not day_night
+	if _tod_light_elevation_slider != null:
+		_tod_light_elevation_slider.editable = not day_night
+	if _tod_sun_height_scale_slider != null:
+		_tod_sun_height_scale_slider.editable = day_night
+	if _main != null and _main.has_method("set_debug_tod_sun_handle_visible"):
+		_main.call("set_debug_tod_sun_handle_visible", visible and day_night)
+
+func _format_tod_sun_uv(uv: Vector2) -> String:
+	var phase: float = fposmod(uv.x, 1.0)
+	var lat: float = clampf(uv.y * 2.0 - 1.0, -1.0, 1.0) * 90.0
+	var name := "日出"
+	if phase >= 0.125 and phase < 0.375:
+		name = "正午"
+	elif phase >= 0.375 and phase < 0.625:
+		name = "日落"
+	elif phase >= 0.625 and phase < 0.875:
+		name = "午夜"
+	var lat_i := int(round(lat))
+	var lat_text := "+%d" % lat_i if lat_i >= 0 else "%d" % lat_i
+	return "太阳位置：地图按钮 %.3f / 纬度 %s°（%s）" % [phase, lat_text, name]
 
 func _refresh_overlay_error_line() -> void:
 	if _overlay_error_label == null:
