@@ -74,9 +74,33 @@ const CLIMATE_GROUPS := [
 var _preset_option: OptionButton
 var _cell_count_label: Label
 var _base_controls: Dictionary = {}
+var _render_controls: Dictionary = {}
 var _climate_controls: Dictionary = {}
 var _syncing := false
 var _mobile_layout := false
+
+const RENDER_FIELDS := [
+	{
+		"name": "render_quality_mode",
+		"label": "渲染质量",
+		"hint": "自动：沿用平台默认；低/中/高会手动指定 visual quality，移动端也同步指定 shader quality tier。",
+		"type": "option",
+		"default": -1,
+		"options": [
+			{"label": "自动", "value": -1},
+			{"label": "低", "value": 0},
+			{"label": "中", "value": 1},
+			{"label": "高", "value": 2},
+		],
+	},
+	{
+		"name": "mobile_terrain_horizon_enabled",
+		"label": "移动端地形阴影",
+		"hint": "移动端默认关闭；开启后会启用 terrain horizon 烘焙和高质量 shader，画面更有地形投影但更耗 GPU。",
+		"type": "bool",
+		"default": false,
+	},
+]
 
 
 func _ready() -> void:
@@ -172,6 +196,7 @@ func _build_ui() -> void:
 		scroll.add_child(content)
 
 		_build_base_panel(content)
+		_build_render_panel(content)
 		_build_climate_panel(content)
 	else:
 		var body := HSplitContainer.new()
@@ -195,6 +220,7 @@ func _build_ui() -> void:
 		advanced_scroll.add_child(advanced)
 
 		_build_base_panel(left_panel)
+		_build_render_panel(left_panel)
 		_build_climate_panel(advanced)
 
 
@@ -229,6 +255,18 @@ func _build_base_panel(parent: VBoxContainer) -> void:
 	_cell_count_label = Label.new()
 	_cell_count_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(_cell_count_label)
+
+
+func _build_render_panel(parent: VBoxContainer) -> void:
+	var render_title := Label.new()
+	render_title.text = "渲染选项"
+	render_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
+	parent.add_child(render_title)
+
+	for field in RENDER_FIELDS:
+		var control := _create_field_control(field)
+		_render_controls[String(field["name"])] = control
+		parent.add_child(_row_with_label(String(field["label"]), control, String(field.get("hint", ""))))
 
 
 func _build_climate_panel(parent: VBoxContainer) -> void:
@@ -311,6 +349,21 @@ func _row_with_label(label_text: String, control: Control, hint_text: String = "
 
 func _create_field_control(field: Dictionary) -> Control:
 	var field_type := String(field["type"])
+	if field_type == "option":
+		var option := OptionButton.new()
+		option.custom_minimum_size = _control_min_size(0.0, DESKTOP_CONTROL_HEIGHT)
+		var selected_id := int(field.get("default", 0))
+		var selected_index := 0
+		var opts: Array = field.get("options", [])
+		for i in range(opts.size()):
+			var opt := opts[i] as Dictionary
+			var id := int(opt.get("value", i))
+			option.add_item(String(opt.get("label", str(id))), id)
+			if id == selected_id:
+				selected_index = i
+		option.select(selected_index)
+		option.item_selected.connect(func(_index: int) -> void: _on_field_changed())
+		return option
 	if field_type == "bool":
 		var check := CheckBox.new()
 		check.text = "启用"
@@ -384,6 +437,8 @@ func _apply_default_values() -> void:
 	_preset_option.select(1)
 	for field in BASE_FIELDS:
 		_set_control_value(_base_controls[String(field["name"])], field.get("default"))
+	for field in RENDER_FIELDS:
+		_set_control_value(_render_controls[String(field["name"])], field.get("default"))
 	for group in CLIMATE_GROUPS:
 		for field in group["fields"]:
 			_set_control_value(_climate_controls[String(field["name"])], field.get("default"))
@@ -410,6 +465,12 @@ func _apply_config(config: Dictionary) -> void:
 			var name := String(field["name"])
 			if (base as Dictionary).has(name):
 				_set_control_value(_base_controls[name], (base as Dictionary)[name])
+	var render = config.get("render", {})
+	if render is Dictionary:
+		for field in RENDER_FIELDS:
+			var name := String(field["name"])
+			if (render as Dictionary).has(name):
+				_set_control_value(_render_controls[name], (render as Dictionary)[name])
 	var controls = config.get("controls", {})
 	if not (controls is Dictionary):
 		controls = {}
@@ -430,6 +491,13 @@ func _set_control_value(control: Control, value) -> void:
 		(control as SpinBox).value = float(value)
 	elif control is CheckBox:
 		(control as CheckBox).button_pressed = bool(value)
+	elif control is OptionButton:
+		var option := control as OptionButton
+		var target_id := int(value)
+		for i in range(option.get_item_count()):
+			if option.get_item_id(i) == target_id:
+				option.select(i)
+				return
 	elif control is HBoxContainer:
 		for child in (control as HBoxContainer).get_children():
 			if child is HSlider:
@@ -444,6 +512,8 @@ func _control_value(control: Control, field_type: String):
 		return int(round(v)) if field_type == "int" else float(v)
 	if control is CheckBox:
 		return (control as CheckBox).button_pressed
+	if control is OptionButton:
+		return (control as OptionButton).get_selected_id()
 	if control is HBoxContainer:
 		for child in (control as HBoxContainer).get_children():
 			if child is SpinBox:
@@ -572,6 +642,11 @@ func _build_config() -> Dictionary:
 		var name := String(field["name"])
 		base[name] = _control_value(_base_controls[name], String(field["type"]))
 
+	var render := {}
+	for field in RENDER_FIELDS:
+		var name := String(field["name"])
+		render[name] = _control_value(_render_controls[name], String(field["type"]))
+
 	var controls := {}
 	for group in CLIMATE_GROUPS:
 		for field in group["fields"]:
@@ -579,9 +654,10 @@ func _build_config() -> Dictionary:
 			controls[name] = _control_value(_climate_controls[name], String(field["type"]))
 
 	return {
-		"version": 2,
+		"version": 3,
 		"source": "world_setup",
 		"base": base,
+		"render": render,
 		"controls": controls,
 		"climate": _build_climate_overrides(controls),
 	}

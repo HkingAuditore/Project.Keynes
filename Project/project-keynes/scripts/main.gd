@@ -133,6 +133,11 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 #   2 = HIGH  ≤9 sample/像素，加 vector_atlas（洋流）+ plus-pattern offshore
 # 桌面端不受此控制，走原 shader 代码（无 MOBILE_QUALITY_* define）。
 @export_range(0, 2, 1) var mobile_quality_tier: int = 1
+# -1=自动；0/1/2=启动页手动指定低/中/高。移动端自动档仍会优先 60 FPS。
+@export_range(-1, 2, 1) var render_quality_mode: int = -1
+# 移动端 terrain horizon 是可选高成本路径：默认关闭以保持 60 FPS。
+# 启用后会打开 GPU horizon bake，并把移动端 shader 变体提升到 HIGH。
+@export var mobile_terrain_horizon_enabled: bool = false
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
 @export var ocean_current_enabled: bool = true
@@ -1021,6 +1026,17 @@ func _apply_world_setup_base_config() -> void:
 	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
 	continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
 	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
+	var render = config.get("render", {})
+	if render is Dictionary:
+		render_quality_mode = clampi(int((render as Dictionary).get(
+			"render_quality_mode", render_quality_mode
+		)), -1, 2)
+		if render_quality_mode >= 0:
+			visual_quality = render_quality_mode
+			mobile_quality_tier = render_quality_mode
+		mobile_terrain_horizon_enabled = bool((render as Dictionary).get(
+			"mobile_terrain_horizon_enabled", mobile_terrain_horizon_enabled
+		))
 
 
 func _apply_world_setup_climate_overrides(generator: MapGenerator) -> void:
@@ -1961,6 +1977,11 @@ func _generate_and_render(seed_val: int) -> void:
 	# 旧 sea_ice_tex 逐像素海冰贴图开关（同样必须在 bake_world 前推送）。默认关 → bake
 	# 不再产出那张死贴图，prepare/upload no-op；主海冰视觉走 shader 派生不受影响。
 	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
+	# Terrain horizon 在移动端默认关闭；启动页开关启用时走 GPU 离屏烘焙，并在
+	# _push_visual_toggles_legacy 里提升移动 shader quality，确保运行期不被 LOW/MID 剪掉。
+	DCFeatureFlags.set_terrain_horizon_gpu_bake(
+		mobile_terrain_horizon_enabled if OS.has_feature("mobile") else true
+	)
 
 	var cfg := MapConfig.make(map_width, map_height)
 	cfg.num_continents = num_continents
@@ -2109,9 +2130,17 @@ func _push_visual_toggles_legacy() -> void:
 	#   fbm octave / 多层云 / day_night / 部分 hillshade。预期 frame ms 12-16ms
 	#   → 60 FPS 可达（vsync_mode=1 锁 60Hz/120Hz）。
 	# 桌面端继续走 @export default visual_quality=1。
-	if OS.has_feature("mobile") and visual_quality > 0:
-		visual_quality = 0
-		print("[mobile/visual-quality] 强制 visual_quality=0 (60 FPS 优化；shader 主导 70%% 帧时间)")
+	if OS.has_feature("mobile"):
+		if mobile_terrain_horizon_enabled:
+			if mobile_quality_tier < 2:
+				mobile_quality_tier = 2
+				print("[mobile/terrain-horizon] 启用后强制 mobile_quality_tier=2 (HIGH)")
+			if visual_quality < 1:
+				visual_quality = 1
+				print("[mobile/terrain-horizon] 启用后保持 visual_quality>=1")
+		elif render_quality_mode < 0 and visual_quality > 0:
+			visual_quality = 0
+			print("[mobile/visual-quality] 强制 visual_quality=0 (60 FPS 优化；shader 主导 70%% 帧时间)")
 	if _renderer != null:
 		# Mobile quality tier 推送（2026-06-15）：必须在 set_visual_quality 之前，
 		# 这样 set_mobile_quality_tier 触发的 _load_shader() 就能拿到正确 tier。

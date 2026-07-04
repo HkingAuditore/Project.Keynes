@@ -394,7 +394,7 @@ static func set_sea_ice_atlas(enabled: bool) -> void:
 # ─── Terrain Horizon GPU 离屏烘焙开关（plan: terrain-horizon-gpu-bake 2026-07-03） ──
 # 8 方向地平线阴影贴图默认走 GPU 离屏烘焙（SubViewport + canvas shader，PC/移动端同一
 # 路径）。桌面默认开（比 CPU C++ 快且省一次 GPU 上传）；移动端默认关（compute/驱动无关，
-# 但逐像素 8×steps marching 对低端 GPU 仍偏重，且移动端本就未开地形阴影），可显式开启。
+# 但逐像素 8×steps marching 对低端 GPU 仍偏重，且移动端默认不启用地形阴影），启动页可显式开启。
 # 关（或 GPU 不可用/参数缺失）时 map_baker 回退到 CPU C++ encode_horizon_tex；C++ 也不可用
 # 时 shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。改后需重新生成地图才生效。
 const TERRAIN_HORIZON_GPU_META: StringName = &"terrain_horizon_gpu_bake_enabled"

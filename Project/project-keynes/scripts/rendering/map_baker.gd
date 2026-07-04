@@ -94,7 +94,7 @@ const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 # normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
-const TERRAIN_HORIZON_MAX_ANGLE := 1.57       # 约 75°，与 shader 默认保持一致
+const TERRAIN_HORIZON_MAX_ANGLE := 1.57       # 约 90°，与 shader 默认保持一致
 const TERRAIN_HORIZON_BIAS := 0.01            # height 单位，抑制同高/高频 relief 自遮蔽
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 100.0  # 归一高程 → world units 的视觉夸张倍率（×hex_size）
 

@@ -74,7 +74,6 @@ void fragment() {
 	// 经度环绕周期（像素 / world）。wrap_period_x 缺省(0)时退化为整图宽（旧行为）。
 	// period_px 通常略小于 W（≈978 vs 1024），差值即 world_bounds 的 padding。
 	float period_px = (wrap_period_x > 1e-6) ? (wrap_period_x / texel_x) : tex_dims.x;
-	float period_world = period_px * texel_x;
 
 	float q[8];
 	for (int d = 0; d < 8; d++) {
@@ -97,10 +96,10 @@ void fragment() {
 			if (dh <= 0.0) {
 				continue;                    // 下坡/同高不构成遮挡
 			}
-			// 水平距离：原始水平位移(world) 取圆柱最短经度距离 min(m, P-m)，与采样列一致。
-			float dxw = dir.x * dist_px * texel_x;
-			float m = mod(abs(dxw), period_world);
-			float off_x_world = min(m, period_world - m);
+			// 水平距离按射线实际行进距离计算，而不是按圆柱最短经度距离折回。
+			// 采样列可以 wrap；遮挡物距离不能 wrap，否则正东/正西扫线绕一圈时 dist≈0，
+			// slope 会被放大到饱和，形成 ±180° 附近的异常条带阴影。
+			float off_x_world = abs(dir.x * dist_px * texel_x);
 			float off_y_world = abs(float(sy - y)) * texel_y;
 			float wdist_sq = off_x_world * off_x_world + off_y_world * off_y_world;
 			if (wdist_sq <= 1e-12) {
