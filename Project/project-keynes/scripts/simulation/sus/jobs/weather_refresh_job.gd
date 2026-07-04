@@ -23,6 +23,8 @@ class_name WeatherRefreshJob
 ## fronts from the last unsuppressed run. Behavior equivalent.
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+const _SOAK_DUMP_SCRIPT_PATH := "res://scripts/tools/dots_soak_dump.gd"
+var _soak_dump_script = null
 # Extreme performance mode：weather 避免叠在任何已明显超 1ms 的 climate
 # slice 后面。允许最多连续 defer 4 次，防止天气完全饿死。
 const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
@@ -66,6 +68,16 @@ var _round_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
 var _climate_defer_streak: int = 0
 var _merged_native_first_log_done: bool = false
 var _weather_rt_diag_count: int = 0
+
+
+func _get_soak_dump_instance():
+	if _soak_dump_script == null:
+		if not ResourceLoader.exists(_SOAK_DUMP_SCRIPT_PATH):
+			return null
+		_soak_dump_script = load(_SOAK_DUMP_SCRIPT_PATH) as GDScript
+	if _soak_dump_script == null:
+		return null
+	return _soak_dump_script.instance
 
 
 func _publish_fronts_if_changed(fronts: Array[WeatherFront]) -> bool:
@@ -1022,7 +1034,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 # climate phase 行成对，可在 SUMMARY 中按 phase_kind 列分桶 diff。
 # is_active() 失败时本函数是 nop。
 func _soak_dump_weather_phase(ctx: SusTickContext, fronts_count: int) -> void:
-	if DCSoakDump.instance == null or not DCSoakDump.instance.is_active():
+	var soak_dump = _get_soak_dump_instance()
+	if soak_dump == null or not soak_dump.is_active():
 		return
 	if map == null:
 		return
@@ -1030,7 +1043,7 @@ func _soak_dump_weather_phase(ctx: SusTickContext, fronts_count: int) -> void:
 	if generator != null and "_daily_climate_call_count" in generator:
 		sim_day = int(generator._daily_climate_call_count)
 	var sphase: float = ctx.season_phase
-	DCSoakDump.instance.record_tick("weather", sim_day, sphase, map, {"fronts_count": fronts_count})
+	soak_dump.record_tick("weather", sim_day, sphase, map, {"fronts_count": fronts_count})
 
 
 ## Read-only accessor for main.gd; cheap, no SUS state mutation.

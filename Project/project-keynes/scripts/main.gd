@@ -50,6 +50,15 @@ extends Node2D
 #   * preload 常量在编辑器和运行时都立刻可用，不依赖任何全局扫描。
 const DCEcsScheduler := preload("res://scripts/ecs/dc_ecs_scheduler.gd")
 const DCEcsJob := preload("res://scripts/ecs/dc_ecs_job.gd")
+const SOAK_DUMP_SCRIPT_PATH := "res://scripts/tools/dots_soak_dump.gd"
+const SOAK_DUMP_MODE_SUMMARY := 0
+const SOAK_AB_RUNNER_SCRIPT_PATH := "res://scripts/tools/dots_soak_ab_runner.gd"
+const SOAK_AB_MODE_SAME_SOURCE := 0
+const SOAK_AB_MODE_VS_LEGACY := 1
+var _soak_dump_script = null
+var _soak_dump_load_attempted: bool = false
+var _soak_ab_runner_script = null
+var _soak_ab_runner_load_attempted: bool = false
 
 # 0.4.2 — InfoPanelController 抽出（main.gd 拆分推荐顺序 step 1）。
 # ~340 行右侧地块信息面板（_refresh_info_panel 系列 + 5 个文字档位 helper +
@@ -61,6 +70,7 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 const WORLD_SETUP_META := &"world_setup_config"
 const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
+const MOBILE_COMPLEX_CLIMATE_PROFILE_PATH := "res://data/world/earth_like_mobile_complex.tres"
 const WORLD_SETUP_CLIMATE_FIELDS := {
 	"continent_warp_amp": true,
 	"main_radius_min": true,
@@ -960,10 +970,10 @@ func start_soak_dump_debug() -> void:
 	_soak_dump_hotkey_start()
 
 func start_soak_ab_same_source_debug(n_ticks: int = 30) -> void:
-	_soak_ab_hotkey_start(DCSoakABRunner.Mode.SAME_SOURCE, n_ticks)
+	_soak_ab_hotkey_start(SOAK_AB_MODE_SAME_SOURCE, n_ticks)
 
 func start_soak_ab_vs_legacy_debug() -> void:
-	_soak_ab_hotkey_start(DCSoakABRunner.Mode.VS_LEGACY)
+	_soak_ab_hotkey_start(SOAK_AB_MODE_VS_LEGACY)
 
 # ─── 已删除验收入口（dots-flag-prune-pr1，2026-05-22）──────────────────────
 # 以下 debug 入口随 ClimateProfile flag 一同删除：
@@ -979,13 +989,16 @@ func start_soak_ab_vs_legacy_debug() -> void:
 ## 预期：bit-equal（reduce 严格按 task_idx 升序，无 race），N≥2400 + WTP 可用时
 ## thread on 略快或持平。
 func start_soak_ab_thread_batch_debug() -> void:
-	if DCSoakABRunner.instance != null \
-			and (DCSoakABRunner.instance.is_running() or DCSoakABRunner.instance.is_batch_active()):
+	var runner_script = _get_soak_ab_runner_script()
+	if runner_script == null:
+		print("[main] thread batch ignored: A/B runner script unavailable")
+		return
+	if runner_script.instance != null and (runner_script.instance.is_running() or runner_script.instance.is_batch_active()):
 		print("[main] thread batch ignored: A/B runner already running")
 		return
-	if DCSoakABRunner.instance == null:
-		DCSoakABRunner.instance = DCSoakABRunner.new()
-	var ok: bool = DCSoakABRunner.instance.start_thread_batch(self)
+	if runner_script.instance == null:
+		runner_script.instance = runner_script.new()
+	var ok: bool = runner_script.instance.start_thread_batch(self)
 	if not ok:
 		print("[main] start_thread_batch failed (generator not ready?)")
 
@@ -1039,32 +1052,56 @@ func _apply_world_setup_base_config() -> void:
 		))
 
 
-func _apply_world_setup_climate_overrides(generator: MapGenerator) -> void:
-	if generator == null:
-		return
-	var config := _world_setup_config()
-	if config.is_empty():
-		return
-	var climate = config.get("climate", {})
-	if not (climate is Dictionary):
-		return
-	var profile := ResourceLoader.load(DEFAULT_CLIMATE_PROFILE_PATH, "Resource") as ClimateProfile
+func _default_climate_profile_path() -> String:
+	return MOBILE_COMPLEX_CLIMATE_PROFILE_PATH if OS.has_feature("mobile") else DEFAULT_CLIMATE_PROFILE_PATH
+
+
+func _load_runtime_climate_profile() -> ClimateProfile:
+	var profile_path := _default_climate_profile_path()
+	var profile := ResourceLoader.load(profile_path, "Resource") as ClimateProfile
+	if profile == null and profile_path != DEFAULT_CLIMATE_PROFILE_PATH:
+		push_warning("[WorldSetup] ClimateProfile '%s' missing; falling back to '%s'."
+			% [profile_path, DEFAULT_CLIMATE_PROFILE_PATH])
+		profile_path = DEFAULT_CLIMATE_PROFILE_PATH
+		profile = ResourceLoader.load(profile_path, "Resource") as ClimateProfile
 	if profile != null:
 		profile = profile.duplicate(true) as ClimateProfile
 	else:
+		push_warning("[WorldSetup] default ClimateProfile missing; using in-memory defaults.")
 		profile = ClimateProfile.new()
-	var profile_props := {}
-	for prop in profile.get_property_list():
-		profile_props[String(prop.get("name", ""))] = true
-	for name in (climate as Dictionary).keys():
-		var key := String(name)
-		if not WORLD_SETUP_CLIMATE_FIELDS.has(key):
-			continue
-		if not profile_props.has(key):
-			push_warning("[WorldSetup] ClimateProfile has no property '%s'; skipped." % key)
-			continue
-		profile.set(key, (climate as Dictionary)[name])
+	profile.set_meta(&"source_path", profile_path)
+	return profile
+
+
+func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
+	if generator == null:
+		return
+	var profile := _load_runtime_climate_profile()
+	var config := _world_setup_config()
+	if not config.is_empty():
+		var climate = config.get("climate", {})
+		if climate is Dictionary:
+			var profile_props := {}
+			for prop in profile.get_property_list():
+				profile_props[String(prop.get("name", ""))] = true
+			for name in (climate as Dictionary).keys():
+				var key := String(name)
+				if not WORLD_SETUP_CLIMATE_FIELDS.has(key):
+					continue
+				if not profile_props.has(key):
+					push_warning("[WorldSetup] ClimateProfile has no property '%s'; skipped." % key)
+					continue
+				profile.set(key, (climate as Dictionary)[name])
 	generator.climate_profile = profile
+	var split_weather := false
+	if profile.get("native_daily_split_weather_node_enabled") != null:
+		split_weather = bool(profile.native_daily_split_weather_node_enabled)
+	var wind_period := -1
+	if profile.get("ocean_daily_wind_period_ticks") != null:
+		wind_period = int(profile.ocean_daily_wind_period_ticks)
+	print("[WorldSetup] ClimateProfile path=%s mobile=%s split_weather=%s wind_period=%d"
+		% [String(profile.get_meta(&"source_path", "<in-memory>")), str(OS.has_feature("mobile")),
+			str(split_weather), wind_period])
 
 
 func _return_to_world_setup() -> void:
@@ -1992,7 +2029,7 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
-	_apply_world_setup_climate_overrides(_generator)
+	_apply_runtime_climate_profile(_generator)
 	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
 	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。
 	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
@@ -3317,9 +3354,13 @@ func _apply_data_core_cli_to_profile() -> void:
 	# generator 已经 _generate_and_render 完成，map / world 都就绪；hot path
 	# 第一次跑（climate_daily_system._finalize_round）就会写第一条记录。
 	if _cli_soak_dump_arg != "":
-		if DCSoakDump.instance == null:
-			DCSoakDump.instance = DCSoakDump.new()
-		var ok: bool = DCSoakDump.instance.start_from_arg(_cli_soak_dump_arg, _generator)
+		var dump_script = _get_soak_dump_script()
+		if dump_script == null:
+			push_warning("[main] --soak-dump=%s ignored: DCSoakDump script unavailable" % _cli_soak_dump_arg)
+			return
+		if dump_script.instance == null:
+			dump_script.instance = dump_script.new()
+		var ok: bool = dump_script.instance.start_from_arg(_cli_soak_dump_arg, _generator)
 		if not ok:
 			push_warning("[main] --soak-dump=%s failed to start (see prior errors)" % _cli_soak_dump_arg)
 
@@ -3351,18 +3392,55 @@ func _soak_dump_hotkey_start() -> void:
 	if _generator == null:
 		print("[soak-dump] F2: generator not ready, ignored.")
 		return
-	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
-		print("[soak-dump] F2: already running, ignored. (active=%s)" % str(DCSoakDump.instance.is_active()))
+	var dump_script = _get_soak_dump_script()
+	if dump_script == null:
+		push_warning("[soak-dump] F2 ignored: DCSoakDump script unavailable")
 		return
-	if DCSoakDump.instance == null:
-		DCSoakDump.instance = DCSoakDump.new()
+	if dump_script.instance != null and dump_script.instance.is_active():
+		print("[soak-dump] F2: already running, ignored. (active=%s)" % str(dump_script.instance.is_active()))
+		return
+	if dump_script.instance == null:
+		dump_script.instance = dump_script.new()
 	var ts: String = Time.get_datetime_string_from_system().replace(":", "-")
 	var path: String = "user://soak/manual_%s.tsv" % ts
-	var ok: bool = DCSoakDump.instance.start(30, DCSoakDump.Mode.SUMMARY, path, _generator)
+	var ok: bool = dump_script.instance.start(30, SOAK_DUMP_MODE_SUMMARY, path, _generator)
 	if ok:
 		print("[soak-dump] F2 started: 30 ticks → %s" % path)
 	else:
 		push_warning("[soak-dump] F2 start failed (see prior errors)")
+
+
+func _get_soak_dump_script() -> GDScript:
+	if _soak_dump_script != null:
+		return _soak_dump_script
+	if _soak_dump_load_attempted:
+		return null
+	_soak_dump_load_attempted = true
+	if not ResourceLoader.exists(SOAK_DUMP_SCRIPT_PATH):
+		push_warning("[soak-dump] script missing: %s; dump tools disabled." % SOAK_DUMP_SCRIPT_PATH)
+		return null
+	_soak_dump_script = load(SOAK_DUMP_SCRIPT_PATH) as GDScript
+	if _soak_dump_script == null:
+		push_warning("[soak-dump] script failed to load: %s; dump tools disabled." % SOAK_DUMP_SCRIPT_PATH)
+	return _soak_dump_script
+
+
+func _get_soak_ab_runner_script():
+	if _soak_ab_runner_script != null:
+		return _soak_ab_runner_script
+	if _soak_ab_runner_load_attempted:
+		return null
+	_soak_ab_runner_load_attempted = true
+	if _get_soak_dump_script() == null:
+		push_warning("[soak-ab] runner disabled: DCSoakDump script unavailable.")
+		return null
+	if not ResourceLoader.exists(SOAK_AB_RUNNER_SCRIPT_PATH):
+		push_warning("[soak-ab] runner script missing: %s; A/B tools disabled." % SOAK_AB_RUNNER_SCRIPT_PATH)
+		return null
+	_soak_ab_runner_script = load(SOAK_AB_RUNNER_SCRIPT_PATH) as GDScript
+	if _soak_ab_runner_script == null:
+		push_warning("[soak-ab] runner script failed to load: %s; A/B tools disabled." % SOAK_AB_RUNNER_SCRIPT_PATH)
+	return _soak_ab_runner_script
 
 
 # ─── DCSoakABRunner Hotkey (F3) ──────────────────────────────────────────
@@ -3375,17 +3453,21 @@ func _soak_dump_hotkey_start() -> void:
 # 已在跑则忽略；建议在游戏速度 ≥ x5 时按以缩短总耗时。
 #
 # B3b 阶段 3 收工长期验收用 Ctrl+F3 → n_ticks=1000；在 x20 速度下 ≈ 100s。
-func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE,
+func _soak_ab_hotkey_start(mode: int = SOAK_AB_MODE_SAME_SOURCE,
 		n_ticks: int = 30) -> void:
 	if _generator == null:
 		print("[soak-ab] F3: generator not ready, ignored.")
 		return
-	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
+	var runner_script = _get_soak_ab_runner_script()
+	if runner_script == null:
+		push_warning("[soak-ab] F3 ignored: A/B runner script unavailable")
+		return
+	if runner_script.instance != null and runner_script.instance.is_running():
 		print("[soak-ab] F3: already running, ignored. (Alt+F3 取消当前流程)")
 		return
-	if DCSoakABRunner.instance == null:
-		DCSoakABRunner.instance = DCSoakABRunner.new()
-	var ok: bool = DCSoakABRunner.instance.start(self, n_ticks, mode)
+	if runner_script.instance == null:
+		runner_script.instance = runner_script.new()
+	var ok: bool = runner_script.instance.start(self, n_ticks, mode)
 	if not ok:
 		push_warning("[soak-ab] F3 start failed (see prior errors)")
 
@@ -3396,12 +3478,14 @@ func _soak_ab_hotkey_start(mode: int = DCSoakABRunner.Mode.SAME_SOURCE,
 ## 用户可按 Alt+F3 强制解卡。同时 dump 内置 stall 守门会在 200 次同 day record 后
 ## 自动 abort（约 8s @ 40ms/tick），Alt+F3 是更快的手动出口。
 func _soak_ab_hotkey_cancel() -> void:
-	if DCSoakABRunner.instance != null and DCSoakABRunner.instance.is_running():
-		DCSoakABRunner.instance.cancel()
+	var runner_script = _get_soak_ab_runner_script()
+	if runner_script != null and runner_script.instance != null and runner_script.instance.is_running():
+		runner_script.instance.cancel()
 		print("[soak-ab] Alt+F3: A/B runner cancelled by user")
 		return
-	if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
-		DCSoakDump.instance.stop()
+	var dump_script = _get_soak_dump_script()
+	if dump_script != null and dump_script.instance != null and dump_script.instance.is_active():
+		dump_script.instance.stop()
 		print("[soak-ab] Alt+F3: standalone DCSoakDump stopped by user")
 		return
 	print("[soak-ab] Alt+F3: nothing active to cancel")

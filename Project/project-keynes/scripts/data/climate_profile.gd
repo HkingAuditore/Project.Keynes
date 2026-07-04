@@ -273,6 +273,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
 @export var native_daily_spread_across_ticks: bool = false
 @export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
+# Mobile P2 perf gate: split native_daily weather into schedule-visible C++ subnodes.
+# Default false keeps the historical monolithic weather pass as the normal path.
+@export var native_daily_split_weather_node_enabled: bool = false
 @export_enum("dense", "sparse_safe", "sparse_perf") var native_daily_finalizer_write_mode: String = "sparse_perf"
 @export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_temp_epsilon: float = 0.0005
 @export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_tta_epsilon: float = 0.0005
@@ -891,11 +894,15 @@ const NATIVE_MODE_ACTIVE: int = 2
 #    用于回归对照与低端硬件 fallback。默认 true。
 @export var physical_circulation_enabled: bool = true
 @export_range(1, 60, 1) var wind_circulation_period_ticks: int = 1
-# plan/daily-wind-stage-split（2026-06-17）：把每日 SLP/wind 两段权威错峰到相邻
-# 游戏日（偶数日只跑 SLP ~3ms、奇数日只跑 wind ~1ms），单 tick SUS 峰值从 ~5ms
-# 降到 ~3ms，把 wind 日的预算让给被饿死的 atlas 上传。代价：SLP/wind 各自刷新
-# 周期从每日变每 2 日（错峰），20–50x 高倍速下气压/风场无感。false → 保留每日
-# 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
+# OceanCurrentsJob daily SLP/wind authority prepass cadence. Default 3 preserves
+# the current runtime balance; mobile/perf profiles can raise this because the
+# split SLP/wind stages already alternate by due occurrence, not day parity.
+@export_range(1, 60, 1) var ocean_daily_wind_period_ticks: int = 3
+# plan/daily-wind-stage-split（2026-06-17）：把 SLP/wind 两段权威错峰到相邻
+# due occurrence（一次 due 跑 SLP ~3ms，下一次 due 跑 wind ~1ms），单 tick SUS
+# 峰值从 ~5ms 降到 ~3ms，把 wind 日的预算让给被饿死的 atlas 上传。代价：
+# SLP/wind 各自刷新周期为 2 * ocean_daily_wind_period_ticks。false → 保留每次
+# due 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
 @export var daily_wind_split_passes: bool = true
 @export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
 @export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.18

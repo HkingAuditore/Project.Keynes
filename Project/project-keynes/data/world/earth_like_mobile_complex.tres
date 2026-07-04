@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" uid="uid://c8gt72y6lui8l" path="res://scripts/data/climate_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weather_refresh_auto_stride_by_speed = false
+dynamic_visual_atlas_upload_stride = 3
+native_daily_sim_mode = 2
+native_daily_sim_stride = 2
+native_daily_perf_target_ms = 1.5
+native_daily_spread_across_ticks = true
+native_daily_max_slices_per_tick = 1
+native_daily_split_weather_node_enabled = true
+native_daily_spread_starve_ticks = 16
+sim_frame_budget_ms = 8.0
+sim_stagger_bucket_stride = 16
+sim_stagger_climate_phase = 1
+sim_stagger_ocean_phase = 0
+sim_stagger_native_environment_phase = 0
+sim_stagger_dynamic_visual_phase = 5
+sim_stagger_weather_phase = 9
+sim_stagger_enum_atlas_phase = 13
+sim_stagger_sea_ice_phase = 6
+season_refresh_period_ticks = 60
+sea_ice_daily_stride = 2
+weather_albedo_stride = 20
+weather_vegetation_dynamics_stride = 10
+weather_feedback_stride = 20
+native_climate_round_active_owner_enabled = true
+native_weather_transaction_active_owner_enabled = true
+native_ocean_physical_active_owner_enabled = true
+native_season_refresh_active_owner_enabled = true
+native_daily_legacy_daily_production_retired = true
+ocean_daily_wind_period_ticks = 6
+ocean_currents_period_ticks = 60
+ocean_currents_slice_count = 16
+ocean_pixel_subslice_count = 16
+succession_upgrade_days = 91
+weather_condensation_gain = 0.3
+weather_ocean_evap_gain = 0.45
+runtime_hydrology_enabled = true
+demo_thermal_gradient_path = 1

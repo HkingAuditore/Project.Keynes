@@ -46,6 +46,18 @@ class_name ClimateDailySystem
 ## 否则 round 卡在某段、weather/ocean_currents 等下游读到半套数据。
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+const _SOAK_DUMP_SCRIPT_PATH := "res://scripts/tools/dots_soak_dump.gd"
+var _soak_dump_script = null
+
+func _get_soak_dump_instance():
+	if _soak_dump_script == null:
+		if not ResourceLoader.exists(_SOAK_DUMP_SCRIPT_PATH):
+			return null
+		_soak_dump_script = load(_SOAK_DUMP_SCRIPT_PATH) as GDScript
+	if _soak_dump_script == null:
+		return null
+	return _soak_dump_script.instance
+
 
 # Sub-pass 编号常量（保持与 _PASS_NAMES 索引对齐，便于日志可读）
 const _PASS_A: int = 0
@@ -1584,11 +1596,12 @@ func _execute_finalize_tail_boundary_intents(
 						pass
 				_last_finalize_diag["finalize_soa_noop_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"soak_dump":
-				if DCSoakDump.instance != null and DCSoakDump.instance.is_active():
+				var soak_dump = _get_soak_dump_instance()
+				if soak_dump != null and soak_dump.is_active():
 					var sim_day: int = 0
 					if generator != null and "_daily_climate_call_count" in generator:
 						sim_day = int(generator._daily_climate_call_count)
-					DCSoakDump.instance.record_tick("climate", sim_day, _phase_locked, map)
+					soak_dump.record_tick("climate", sim_day, _phase_locked, map)
 				_last_finalize_diag["finalize_soak_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"integrity_check":
 				_debug_climate_integrity("round_done")

@@ -195,6 +195,13 @@ func _c() -> ClimateProfile:
 		climate_profile = loaded
 	return climate_profile
 
+
+func _ocean_daily_wind_period_ticks_for(cp: ClimateProfile) -> int:
+	if cp != null and cp.get("ocean_daily_wind_period_ticks") != null:
+		return clampi(int(cp.ocean_daily_wind_period_ticks), 1, 60)
+	return _OCEAN_DAILY_WIND_PERIOD_TICKS_DEFAULT
+
+
 func _calendar_days_per_year() -> int:
 	if _world_clock_ref != null and _world_clock_ref.has_method("days_per_year"):
 		return clampi(int(_world_clock_ref.days_per_year()), 1, 3660)
@@ -490,13 +497,10 @@ var _b_plus_round_start_usec: int = 0
 # 构造时机：refresh_climate_daily 每次运行时按需初始化；axial_tilt 变动时清空重算。
 const _INSOL_MEAN_LUT_SIZE: int = 64                  # 65 桶，按 ny 离散，足够 80×60 图使用
 const _INSOL_ANNUAL_SAMPLES: int = 16                 # 一年取 16 个 phase 采样点求平均
-# OceanCurrentsJob 每日风预解（SLP+wind 权威源）的刷新节奏：每 N tick 跑一次，
-# 而非每 tick。降频削掉 daily_wind 的 5-7ms 尖刺帧；风场变化慢，consumers
-# （weather stride=8 / climate stride=2）对新鲜度要求宽松，3 tick 安全。
-# 同时配合 OceanCurrentsJob._daily_wind_stage_for 按 due 次数交替 SLP/wind，
-# 避免降频后 stage 被钉死在单一阶段导致风向冻结。两个注入点（初始 configure
-# 与运行时 reconfigure）共用此常量，防止漂移。
-const _OCEAN_DAILY_WIND_PERIOD_TICKS: int = 3
+# OceanCurrentsJob 每日风预解（SLP+wind 权威源）的默认刷新节奏。实际运行值
+# 由 ClimateProfile.ocean_daily_wind_period_ticks 控制；此常量只作为旧 profile
+# / in-memory profile 缺字段时的兼容 fallback。
+const _OCEAN_DAILY_WIND_PERIOD_TICKS_DEFAULT: int = 3
 var _insol_mean_lut: PackedFloat32Array = PackedFloat32Array()
 var _insol_mean_lut_tilt: float = -1.0                # 上次构表所用的 axial_tilt_deg，变化时失效
 var _insol_driven_path_logged: bool = false           # 首次进入 insolation 主路径时打一次启动日志
@@ -1561,7 +1565,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			dynamic_visual_atlas_stride = clampi(int(cp.dynamic_visual_atlas_upload_stride), 1, 8)
 	_dyn_atlas_upload_stride = dynamic_visual_atlas_stride
 	# 注册 OceanCurrentsJob。
-	var wind_period_ticks: int = _OCEAN_DAILY_WIND_PERIOD_TICKS
+	var wind_period_ticks: int = _ocean_daily_wind_period_ticks_for(cp)
 	var ocean_period_ticks: int = 30
 	var slice_count: int = 10
 	if cp != null:
@@ -1834,9 +1838,10 @@ func apply_simulation_cadence_from_profile() -> void:
 	if _ocean_currents_job != null and _ocean_currents_job.has_method("reconfigure") \
 			and cp.get("ocean_currents_period_ticks") != null \
 			and cp.get("ocean_currents_slice_count") != null:
+		var wind_period_ticks: int = _ocean_daily_wind_period_ticks_for(cp)
 		var ocean_period_ticks: int = max(1, int(cp.ocean_currents_period_ticks))
 		_ocean_currents_job.reconfigure(
-				_OCEAN_DAILY_WIND_PERIOD_TICKS,
+				wind_period_ticks,
 				max(1, int(cp.ocean_currents_slice_count)),
 				ocean_period_ticks)
 		_sus.apply_job_schedule(_ocean_currents_system, cp, &"ocean_currents", 1)
@@ -2729,6 +2734,12 @@ func _native_daily_weather_cadence_due(cp_now, ctx: SusTickContext) -> bool:
 	return (day - _native_daily_last_weather_embed_day) >= stride
 
 
+func _native_daily_split_weather_node_enabled(cp_now) -> bool:
+	return cp_now != null \
+		and cp_now.get("native_daily_split_weather_node_enabled") != null \
+		and bool(cp_now.native_daily_split_weather_node_enabled)
+
+
 func _native_daily_boundary_contract(bundle: Dictionary, commit_side_effects: bool) -> Dictionary:
 	var bootstrap_keys: Array[String] = []
 	var tick_delta_keys: Array[String] = []
@@ -2785,6 +2796,7 @@ func _build_native_daily_bundle(
 		"runtime_hydrology_requested": bool(cp_now.runtime_hydrology_enabled) if cp_now.get("runtime_hydrology_enabled") != null else false,
 		"legacy_sus_fallback_enabled": not legacy_daily_retired,
 		"native_daily_legacy_daily_production_retired": legacy_daily_retired,
+		"native_daily_split_weather_node_enabled": _native_daily_split_weather_node_enabled(cp_now),
 	}
 	# Phase C.1（dots-total-cpp roadmap）：System schedule graph 双轨入口。
 	# dots-flag-prune-pr1 (2026-05-22)：use_gdext_system_schedule flag 已删除，
@@ -2800,6 +2812,7 @@ func _build_native_daily_bundle(
 		bundle["climate_pass_a_struct"] = pass_a_struct
 	if defer_heavy_pass_knobs:
 		var deferred_nodes: PackedInt32Array = PackedInt32Array([1, 2, 4, 6, 7])
+		var weather_split_enabled: bool = _native_daily_split_weather_node_enabled(cp_now)
 		var native_weather_readiness: Dictionary = weather_native_daily_readiness_report()
 		var native_weather_active_bootstrap: bool = _native_daily_weather_active_bootstrap_allowed(native_weather_readiness)
 		if native_weather_active_bootstrap and not bool(native_weather_readiness.get("ready", false)):
@@ -2818,9 +2831,9 @@ func _build_native_daily_bundle(
 					and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 				deferred_nodes.append(12)
 				if runtime_hydrology_active:
-					deferred_nodes.append(13)
-					deferred_nodes.append(14)
-				else:
+					deferred_nodes.append(19)
+					deferred_nodes.append(20)
+				elif not weather_split_enabled:
 					deferred_nodes.append(11)
 			elif _weather_system != null and _world != null and not native_weather_daily_allowed:
 				bundle["weather_native_daily_blocked"] = true
@@ -2923,6 +2936,8 @@ func _build_native_daily_bundle(
 			map, _world, season_idx_local, anomaly_local, season_phase_local, weather_stage_b_knobs
 		)
 		if not weather_super.is_empty():
+			weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
+				and not weather_stage_b_knobs.is_empty()
 			bundle["weather_knobs"] = weather_super
 			stage_b_embedded_in_weather = not runtime_hydrology_active
 			# 记录本次 weather 推进的模拟日，驱动下次 cadence 判定。probe
@@ -2983,13 +2998,14 @@ const _NATIVE_DAILY_SLICE_YIELD_NODES: Array[int] = [2, 6]
 # per-tick peak (mean 3.14→1.95ms in spread-validate). Yielding more nodes is purely
 # bit-equal — it only adds C++<->GDScript checkpoints; the round-start bundle knobs
 # already satisfy every non-patched node, so no JIT repack is needed (the {2,6}/sea_ice
-# patches still fire on those indices). Covers all 15 NATIVE_DAILY_SLICE_GRAPH nodes
+# patches still fire on those indices). Covers all 21 NATIVE_DAILY_SLICE_GRAPH nodes
 # (world_ext_daily_sim.cpp); C++ skips indices whose bundle knobs are absent on a given
-# day, so a typical round lands in ~5 ticks, not 15. Trade-off vs atomic: a sim-day now
+# day, so a typical round lands in ~5 ticks, not 21. Trade-off vs atomic: a sim-day now
 # spans ~5 ticks at maxslices=1 (sim advance ~2.5x slower), which the spread design
 # explicitly accepts.
 const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+	11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 ]
 
 
@@ -2998,8 +3014,13 @@ const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [
 func _native_daily_effective_yield_nodes(cp) -> PackedInt32Array:
 	var spread: bool = cp != null and cp.get("native_daily_spread_across_ticks") != null \
 		and bool(cp.native_daily_spread_across_ticks)
-	return PackedInt32Array(_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD) if spread \
-		else PackedInt32Array(_NATIVE_DAILY_SLICE_YIELD_NODES)
+	var nodes: Array[int] = _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD.duplicate() if spread \
+		else _NATIVE_DAILY_SLICE_YIELD_NODES.duplicate()
+	if _native_daily_split_weather_node_enabled(cp):
+		for idx in [13, 14, 15, 16, 17, 18]:
+			if not nodes.has(idx):
+				nodes.append(idx)
+	return PackedInt32Array(nodes)
 
 
 func _build_native_daily_slice_bundle_patch(
@@ -3088,6 +3109,8 @@ func _build_native_daily_slice_bundle_patch(
 					map, world, season_idx_local, anomaly_local, season_phase_local, weather_stage_b_knobs
 				)
 				if not weather_super.is_empty():
+					weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
+						and not weather_stage_b_knobs.is_empty()
 					patch["weather_knobs"] = weather_super
 					if not runtime_hydrology_active and not stage_b_knobs_for_weather.is_empty():
 						# Weather embeds stage_b in this mode; keep no standalone node patch.
@@ -3098,10 +3121,10 @@ func _build_native_daily_slice_bundle_patch(
 					patch["weather_knobs"] = {}
 			else:
 				patch["weather_knobs"] = {}
-		13:
+		19:
 			var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(map, cp_now)
 			patch["runtime_hydrology_knobs"] = runtime_hydrology_knobs
-		14:
+		20:
 			var stage_b_after_hydrology_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 				map,
 				cp_now,
@@ -3527,6 +3550,7 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 		"weather_vegetation_dynamics_stride": int(cp.weather_vegetation_dynamics_stride) if cp != null else 10,
 		"weather_feedback_stride": int(cp.weather_feedback_stride) if cp != null else 10,
 		"season_refresh_period_ticks": int(cp.season_refresh_period_ticks) if cp != null and cp.get("season_refresh_period_ticks") != null else 1,
+		"ocean_daily_wind_period_ticks": _ocean_daily_wind_period_ticks_for(cp),
 		"ocean_currents_period_ticks": int(cp.ocean_currents_period_ticks) if cp != null else 30,
 		"ocean_currents_slice_count": int(cp.ocean_currents_slice_count) if cp != null else 10,
 		"native_climate_round_active_owner_enabled": bool(cp.native_climate_round_active_owner_enabled) if cp != null and cp.get("native_climate_round_active_owner_enabled") != null else false,
@@ -3915,8 +3939,10 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		if rc_int == 0 and done:
 			if not _unified_fast_tick_first_log_done:
 				_unified_fast_tick_first_log_done = true
-				print("[native_daily/unified] native slice ACTIVE — weather_knobs embedded; slice_ms=%.2f round_ms=%.2f weather_ms=%.2f"
-						% [float(breakdown.get("total_ms", 0.0)), float(breakdown.get("round_native_ms", res.get("round_native_ms", 0.0))), float(breakdown.get("weather_ms", 0.0))])
+				var weather_split_enabled := bool(breakdown.get("weather_split_enabled", false))
+				var weather_split_skipped_monolithic := bool(breakdown.get("weather_split_skipped_monolithic", false))
+				print("[native_daily/unified] native slice ACTIVE — weather_knobs embedded split=%s split_skipped_monolithic=%s; slice_ms=%.2f round_ms=%.2f weather_ms=%.2f"
+						% [str(weather_split_enabled), str(weather_split_skipped_monolithic), float(breakdown.get("total_ms", 0.0)), float(breakdown.get("round_native_ms", res.get("round_native_ms", 0.0))), float(breakdown.get("weather_ms", 0.0))])
 			if _weather_system.has_method("apply_unified_fast_tick_result"):
 				var fronts_out: Array[WeatherFront] = _weather_system.apply_unified_fast_tick_result(breakdown)
 				_apply_native_daily_visual_intents(res, breakdown, fronts_out, _map, _world)
