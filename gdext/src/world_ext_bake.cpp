@@ -253,7 +253,6 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     // 必须按此周期在世界经度空间折叠，才能与运行期 wrap_map_uv 对齐、接缝无缝。缺省(0)时退化为整图宽。
     const double wrap_period_x_world = double(knobs.get("wrap_period_x", 0.0));
     const double period_px = (wrap_period_x_world > 1e-6) ? (wrap_period_x_world / texel_x) : double(w);
-    const double period_world = period_px * texel_x;
 
     PackedByteArray data;
     data.resize(n * 4);
@@ -296,14 +295,13 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                         double off_x_world;
                         if (wrap_x) {
                             // 按真实经度周期 period_px 折回规范列（height 关于经度以 period 周期），
-                            // 并取圆柱最短经度距离；不可按整图宽 w 折叠，否则偏 world_bounds 的 padding。
+                            // 但遮挡距离必须按射线实际行进距离算，不能取圆柱最短经度距离。
+                            // 否则正东/正西扫线绕一圈后 dist 接近 0，会把 horizon angle 打满。
                             const double sxw = sx_f - period_px * std::floor(sx_f / period_px);  // [0, period_px)
                             sx = int(std::floor(sxw + 0.5));
                             if (sx >= w) sx -= w;   // period_px≈w 时进位兜底
                             if (sx < 0) sx = 0;
-                            const double dxw = dir_x[d] * dist_px * texel_x;
-                            const double mm = std::fmod(std::abs(dxw), period_world);
-                            off_x_world = std::min(mm, period_world - mm);
+                            off_x_world = std::abs(dir_x[d] * dist_px * texel_x);
                         } else {
                             sx = int(std::floor(sx_f + 0.5));
                             if (sx < 0 || sx >= w) break;
