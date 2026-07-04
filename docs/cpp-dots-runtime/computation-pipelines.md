@@ -591,10 +591,10 @@ reserve0 = capacity[r] * clamp(suit, 0, 1)              # land_only 时水面格
 **权威 / fallback**：native pass 是 reserve slot 权威。`published_to_slot=false`（含 native 不可用 / 无可发布资源）时 `run_natural_resource_pass_native` 退回 GDScript fallback（`_run_natural_resource_pass_gdscript`，同模板直接读写 `MapData.*_arr`）。两路逐 cell 逐资源 A/B 对拍一致（见 `tests/natural_resource_pass_test.gd`，≥20 cell 覆盖 SIMD body+尾段+陆/水混合）。
 
 **性能路径（多核 + SIMD）**：因 `L`、`inv_denom=1/(1+L)` 与 `P=C0+C1·tn+C2·m` 的系数都是「每资源常数」，per-cell 除法被提到资源外，内层只剩 clamp + 2×FMA + 1×乘。native pass 据此：
-- **多核**：按 cell 走 `pk::parallel_for_range_with_emit`（`WorkerThreadPool`，自适应每 task ~1024 cell、clamp [1,16]），`total_delta` 经 thread-local `DeltaEmit` 串行 reduce；小地图 / 无线程池自动降级为单线程，且与多线程 bit-equal。
+- **多核**：先预筛动态资源，再走一次 `pk::parallel_for_range_with_emit`（`WorkerThreadPool`，自适应每 task ~1024 cell、clamp [1,16]）按 cell range 分块；每个 task 内循环全部动态资源，避免 2400-cell 小图上“每资源一次 WTP dispatch”的固定开销。小图继续走同一 fused body 的 single-thread SIMD（当前阈值 `n_cells < 100000`），大图才进 WTP。`total_delta` 经 thread-local `DeltaEmit` 串行 reduce；无线程池自动降级为单线程，且与多线程 bit-equal。
 - **SIMD**：`PK_HAVE_AVX2` 构建下内层 8 cell/iter（`loadu`/`fmadd`/`min`/`max`；`land_only` 经 `blendv` 让水面格保持原值），尾段与非 AVX2 构建共用同一标量 helper，lane/tail/标量三路数值一致。数据天然 SoA（各 `*_arr` 连续）、无 cell 间依赖、无邻居 gather，是理想的向量化对象。
 - **静态资源跳过**：运行期系数 `gen_*` / `decay_*` 全为 0 的资源是恒等更新（例如静态矿物储量），C++ pass 不再每日全图 loop 或 flush 这些 reserve slots；它们仍保留 bootstrap 初值并可由后续开采系统显式修改。
-- **基准**：`tests/natural_resource_pass_bench.gd` 用 `bench_force_scalar` / `bench_force_seq` 两个旁路 knob（默认 false，生产不受影响）在同一构建上隔离两轴对比 scalar/SIMD × 单/多核，并先做四档等价性交叉校验。实测要点：小图（cache 内）SIMD 单线程收益最大（~4–5×）；大图（10⁶ 级）转为**内存带宽瓶颈**，SIMD 增益收窄、多核为主。后续若要在小图也让多核稳定为正收益，可把"逐资源各 dispatch 一次"改为"按 cell 分块一次、资源循环置于 task 内"以摊薄线程分发开销。
+- **基准**：`tests/natural_resource_pass_bench.gd` 用 `bench_force_scalar` / `bench_force_seq` 两个旁路 knob（默认 false，生产不受影响）在同一构建上隔离两轴对比 scalar/SIMD × 单/多核，并先做四档等价性交叉校验。当前生产路径返回 `loop_layout=cell_range_fused_seq|cell_range_fused_mt`、`loop_dispatches=0|1`；2400-cell 移动图预期走 `cell_range_fused_seq`，大图才走 `cell_range_fused_mt`。
 
 **新增一种资源 SOP**：component_ids.gd 常量 + map_data.gd 数组（`_alloc_soa` resize + `rebuild_soa_from_cells` 置 0）+ component_schema.gd 一行（`owner="economy.resources"`）→ 跑 codegen → 新建 .tres + 登记 `ResourceProfileRegistry._PROFILE_PATHS` → 重 build GDExtension。
 

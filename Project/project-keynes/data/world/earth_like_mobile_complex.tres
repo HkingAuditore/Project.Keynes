@@ -37,6 +37,7 @@ ocean_currents_period_ticks = 60
 ocean_currents_slice_count = 16
 ocean_pixel_subslice_count = 16
 succession_upgrade_days = 91
+weather_field_advect_steps = 6
 weather_condensation_gain = 0.3
 weather_ocean_evap_gain = 0.45
 runtime_hydrology_enabled = true

@@ -15,8 +15,9 @@
 // 也适合 AVX2 向量化。
 //
 // 性能路径（与 pass_a / ocean / weather 同范式）：
-//   - 多核：pk::parallel_for_range_with_emit 按 cell 分块（WorkerThreadPool），
-//           total_delta 走 thread-local DeltaEmit 串行 reduce；单线程 fallback bit-equal。
+//   - 多核：先预筛动态资源，再用一次 pk::parallel_for_range_with_emit 按 cell
+//           分块；每个 task 内循环全部动态资源，避免"每资源一次 WTP dispatch"的
+//           小图固定开销。total_delta 走 thread-local DeltaEmit 串行 reduce。
 //   - SIMD：PK_HAVE_AVX2 时内层 8 cell/iter（loadu/fmadd/min/max + land_gate blendv），
 //           尾段与非 AVX2 构建走同一标量 helper，保证 lane/tail/标量三者数值一致。
 //
@@ -32,6 +33,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <chrono>
+#include <vector>
 
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
 #  include <immintrin.h>
@@ -47,6 +49,20 @@ namespace {
 struct DeltaEmit {
     double sum = 0.0;
     void merge_into(DeltaEmit &dst) const { dst.sum += sum; }
+};
+
+struct NatResRuntime {
+    int sid = -1;
+    int resource_index = -1;
+    float *R = nullptr;
+    float lo = 0.0f;
+    float inv_span = 0.0f;
+    bool land_gate = false;
+    float c0 = 0.0f;
+    float c1 = 0.0f;
+    float c2 = 0.0f;
+    float inv_denom = 1.0f;
+    float cap_upper = FLT_MAX;
 };
 
 // 单 cell 半隐式更新（化简形式）。SIMD 尾段 + 非 AVX2 构建共用，保证三路一致。
@@ -208,6 +224,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     double loop_ms = 0.0;
     double flush_ms = 0.0;
     DeltaEmit delta_acc;  // total_delta 跨资源累加（reduce 目标）
+    std::vector<NatResRuntime> dynamic_resources;
+    dynamic_resources.reserve(static_cast<size_t>(resource_count));
+    constexpr int NATRES_PARALLEL_SEQ_THRESHOLD = 100000;
+    bool mt_candidate = false;
 
     for (int r = 0; r < resource_count; ++r) {
         const int sid = component_id(StringName(reserve_slots[r]));
@@ -215,8 +235,6 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
             // schema 缺失或尺寸不符：跳过该资源，但不整体失败（其余资源仍可发布）。
             continue;
         }
-
-        float * const __restrict R = _slots.write[sid].arr_f32.ptrw();
 
         const float cap = capacity[r];
         const float lo = temp_lo[r];
@@ -232,66 +250,88 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         }
 
         // ── 代数化简：把半隐式公式收成 P = C0 + C1*tn + C2*m, v = (reserve+P)*inv_denom ──
-        const float c0 = gb + gs - db;
-        const float c1 = gt - dt;
-        const float c2 = gm - dm;
         float L = (cap > 0.0f) ? ((gs + ds) / cap) : 0.0f;
         if (L < 0.0f) L = 0.0f;  // 负自系数（误配）兜底，保持无条件稳定
-        const float inv_denom = 1.0f / (1.0f + L);
-        const float cap_upper = (cap > 0.0f) ? cap : FLT_MAX;
+        NatResRuntime rr;
+        rr.sid = sid;
+        rr.resource_index = r;
+        rr.R = _slots.write[sid].arr_f32.ptrw();
+        rr.lo = lo;
+        rr.inv_span = inv_span;
+        rr.land_gate = land_gate;
+        rr.c0 = gb + gs - db;
+        rr.c1 = gt - dt;
+        rr.c2 = gm - dm;
+        rr.inv_denom = 1.0f / (1.0f + L);
+        rr.cap_upper = (cap > 0.0f) ? cap : FLT_MAX;
+        dynamic_resources.push_back(rr);
+    }
 
-#if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
-        const __m256 vlo = _mm256_set1_ps(lo);
-        const __m256 vinv_span = _mm256_set1_ps(inv_span);
-        const __m256 vc0 = _mm256_set1_ps(c0);
-        const __m256 vc1 = _mm256_set1_ps(c1);
-        const __m256 vc2 = _mm256_set1_ps(c2);
-        const __m256 vinv_denom = _mm256_set1_ps(inv_denom);
-        const __m256 vcap_upper = _mm256_set1_ps(cap_upper);
-        const __m256 vzero = _mm256_setzero_ps();
-        const __m256 vone = _mm256_set1_ps(1.0f);
-#endif
-
-        // 多核：按 cell 分块；total_delta 走 thread-local DeltaEmit 串行 reduce。
+    if (!dynamic_resources.empty()) {
+        mt_candidate = !force_seq
+                && n_cells >= NATRES_PARALLEL_SEQ_THRESHOLD
+                && pk::parallel_default_n_tasks(n_cells) > 1;
+        // 多核：只 dispatch 一次，按 cell range 分块；task 内循环所有动态资源。
+        // 旧实现每个资源各 dispatch 一次，2400 cell × 9 resource 会产生 9 轮
+        // WorkerThreadPool 固定开销。融合后仍按资源内 8-cell SIMD，结果数组一致。
         auto run_range = [&](int begin, int end, DeltaEmit &local) {
             double seg = 0.0;
-            int i = begin;
+            for (const NatResRuntime &rr : dynamic_resources) {
+                float * const __restrict R = rr.R;
+                int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
-            if (!force_scalar) {
-                __m256 vacc = _mm256_setzero_ps();
-                const int simd_end = end - ((end - begin) % 8);
-                for (; i + 8 <= simd_end; i += 8) {
-                    natres_simd_block(R, T, M, WATER, land_gate, i,
-                                      vlo, vinv_span, vc0, vc1, vc2, vinv_denom, vcap_upper,
-                                      vzero, vone, vacc);
+                if (!force_scalar) {
+                    const __m256 vlo = _mm256_set1_ps(rr.lo);
+                    const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
+                    const __m256 vc0 = _mm256_set1_ps(rr.c0);
+                    const __m256 vc1 = _mm256_set1_ps(rr.c1);
+                    const __m256 vc2 = _mm256_set1_ps(rr.c2);
+                    const __m256 vinv_denom = _mm256_set1_ps(rr.inv_denom);
+                    const __m256 vcap_upper = _mm256_set1_ps(rr.cap_upper);
+                    const __m256 vzero = _mm256_setzero_ps();
+                    const __m256 vone = _mm256_set1_ps(1.0f);
+                    __m256 vacc = _mm256_setzero_ps();
+                    const int simd_end = end - ((end - begin) % 8);
+                    for (; i + 8 <= simd_end; i += 8) {
+                        natres_simd_block(R, T, M, WATER, rr.land_gate, i,
+                                          vlo, vinv_span, vc0, vc1, vc2,
+                                          vinv_denom, vcap_upper, vzero, vone, vacc);
+                    }
+                    seg += double(natres_hsum256(vacc));
                 }
-                seg += double(natres_hsum256(vacc));
-            }
 #endif
-            for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
-                if (land_gate && WATER[i] != 0) continue;  // 水面格保持原值，delta 0
-                const float reserve = R[i];
-                const float v = natres_step_scalar(T[i], M[i], reserve, lo, inv_span,
-                                                   c0, c1, c2, inv_denom, cap_upper);
-                seg += double(v - reserve);
-                R[i] = v;
+                for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
+                    if (rr.land_gate && WATER[i] != 0) continue;  // 水面格保持原值，delta 0
+                    const float reserve = R[i];
+                    const float v = natres_step_scalar(T[i], M[i], reserve,
+                                                       rr.lo, rr.inv_span,
+                                                       rr.c0, rr.c1, rr.c2,
+                                                       rr.inv_denom, rr.cap_upper);
+                    seg += double(v - reserve);
+                    R[i] = v;
+                }
             }
             local.sum += seg;
         };
 
         const auto t_loop0 = std::chrono::high_resolution_clock::now();
-        pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource", n_cells,
-                                                    n_tasks_hint, /*seq_threshold=*/256,
+        // 2400-cell mobile maps are too small for WTP to win even after fusion:
+        // SIMD+1T beats SIMD+MT because dispatch/wait dominates the math. Keep
+        // the same fused body, but let only larger maps cross into WTP.
+        pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource_fused", n_cells,
+                                                    n_tasks_hint, NATRES_PARALLEL_SEQ_THRESHOLD,
                                                     delta_acc, run_range);
         const auto t_loop1 = std::chrono::high_resolution_clock::now();
-        loop_ms += std::chrono::duration<double, std::milli>(t_loop1 - t_loop0).count();
+        loop_ms = std::chrono::duration<double, std::milli>(t_loop1 - t_loop0).count();
 
-        const auto t_flush0 = std::chrono::high_resolution_clock::now();
-        _flush_slot_to_map(sid);
-        const auto t_flush1 = std::chrono::high_resolution_clock::now();
-        flush_ms += std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
-        published_slots.append(reserve_slots[r]);
-        ++published_count;
+        for (const NatResRuntime &rr : dynamic_resources) {
+            const auto t_flush0 = std::chrono::high_resolution_clock::now();
+            _flush_slot_to_map(rr.sid);
+            const auto t_flush1 = std::chrono::high_resolution_clock::now();
+            flush_ms += std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
+            published_slots.append(reserve_slots[rr.resource_index]);
+            ++published_count;
+        }
     }
 
     const auto t1 = std::chrono::high_resolution_clock::now();
@@ -310,6 +350,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     out["setup_ms"] = std::chrono::duration<double, std::milli>(t_setup - t0).count();
     out["loop_ms"] = loop_ms;
     out["flush_ms"] = flush_ms;
+    out["loop_layout"] = mt_candidate ? "cell_range_fused_mt" : "cell_range_fused_seq";
+    out["loop_dispatches"] = mt_candidate ? 1 : 0;
     out["skipped_static_resources"] = skipped_static_resources;
     if (published_count == 0 && !all_static) out["fallback_reason"] = "no_publishable_resource";
     return out;

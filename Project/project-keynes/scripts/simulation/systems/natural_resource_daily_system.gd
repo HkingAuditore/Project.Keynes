@@ -99,6 +99,8 @@ func tick(_ctx) -> Dictionary:
 		"kernel_compute_ms": float(res.get("compute_ms", 0.0)),
 		"kernel_loop_ms": float(res.get("loop_ms", 0.0)),
 		"kernel_flush_ms": float(res.get("flush_ms", 0.0)),
+		"kernel_loop_layout": str(res.get("loop_layout", "")),
+		"kernel_loop_dispatches": int(res.get("loop_dispatches", 0)),
 		"skipped_static_resources": int(res.get("skipped_static_resources", 0)),
 		"published_resource_count": int(res.get("published_resource_count", res.get("resource_count", 0))),
 		"input_resource_count": int(res.get("input_resource_count", res.get("resource_count", 0))),

@@ -5,10 +5,11 @@ extends SceneTree
 #   scalar+1T  : 纯标量 + 单线程（基线）
 #   scalar+MT  : 纯标量 + 多核（WorkerThreadPool）
 #   SIMD+1T    : AVX2 SIMD + 单线程
-#   SIMD+MT    : AVX2 SIMD + 多核（= 生产路径）
+#   SIMD+MT    : AVX2 SIMD + 生产自适应路径（小图保持 1T，大图才进 WorkerThreadPool）
 # 通过 run_natural_resource_pass 的 bench_force_scalar / bench_force_seq 旁路开关切换
 # （默认 false，生产路径不受影响）。报告各档 compute_ms（取多次最优）+ 相对基线加速比
-# + 吞吐（M updates/s，update = cell × resource）。
+# + 吞吐（M updates/s，update = cell × resource）。注意：MT 行表示未设置
+# bench_force_seq 的生产路径请求；当前 C++ 会对小图自适应走 single-thread SIMD。
 #
 # 先做一次小图等价性交叉校验（四档结果必须一致），再做多尺寸计时。
 #
@@ -49,7 +50,7 @@ func _run() -> void:
 
 	_verify_equivalence(ext, profiles, configs)
 
-	for n in [50_000, 250_000, 1_000_000]:
+	for n in [2_400, 50_000, 250_000, 1_000_000]:
 		_bench_size(ext, profiles, n, configs)
 
 	print("=== benchmark done (%s) ===" % ("OK" if _ok else "EQUIV-CHECK FAILED"))

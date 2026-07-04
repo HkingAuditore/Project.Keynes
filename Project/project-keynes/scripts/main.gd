@@ -1637,6 +1637,32 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 		else:
 			print("    %s ran=%.2fms slices=%d progress=%.2f"
 				% [str(job_id), elapsed_ms, slices, float(r.get("progress_ratio", 0.0))])
+			if job_id == &"natural_resource_daily":
+				var nr: Dictionary = r
+				if not nr.has("kernel_ms") and not nr.has("native_ms") and _generator != null \
+						and _generator.has_method("natural_resource_last_result"):
+					var nr_last: Dictionary = _generator.natural_resource_last_result()
+					if not nr_last.is_empty():
+						nr = nr_last
+				var nr_kernel_ms: float = float(nr.get("kernel_ms", nr.get("native_ms", 0.0)))
+				var nr_wall_ms: float = float(nr.get("wrapper_wall_ms", elapsed_ms))
+				var nr_wrapper_ms: float = float(nr.get("wrapper_overhead_ms", max(0.0, nr_wall_ms - nr_kernel_ms)))
+				print("        natural_resource path=%s wall=%.2f cpp=%.3f compute=%.3f loop=%.3f flush=%.3f wrapper=%.3f layout=%s dispatches=%d resources=%d/%d skipped_static=%d published_to_slot=%s total_delta=%.5f" % [
+					str(nr.get("path", r.get("path", ""))),
+					nr_wall_ms,
+					nr_kernel_ms,
+					float(nr.get("kernel_compute_ms", nr.get("compute_ms", 0.0))),
+					float(nr.get("kernel_loop_ms", nr.get("loop_ms", 0.0))),
+					float(nr.get("kernel_flush_ms", nr.get("flush_ms", 0.0))),
+					nr_wrapper_ms,
+					str(nr.get("kernel_loop_layout", nr.get("loop_layout", ""))),
+					int(nr.get("kernel_loop_dispatches", nr.get("loop_dispatches", 0))),
+					int(nr.get("published_resource_count", nr.get("resource_count", 0))),
+					int(nr.get("input_resource_count", nr.get("resource_count", 0))),
+					int(nr.get("skipped_static_resources", 0)),
+					str(nr.get("published_to_slot", false)),
+					float(nr.get("total_delta", 0.0)),
+				])
 			# Daily-sim perf instrumentation：refresh_climate_daily 内部 6 段拆解
 			# （Pass A / Pass B / ocean / sea_ice / ice_bake / transp）
 			if job_id == &"refresh_climate_daily" and _generator != null \
@@ -1895,6 +1921,9 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						])
 			if job_id == &"native_daily_sim":
 				var nd: Dictionary = r.get("native_daily_report", {})
+				if nd.is_empty() and _generator != null \
+						and _generator.has_method("native_daily_last_result"):
+					nd = _generator.native_daily_last_result()
 				if not nd.is_empty():
 					var nd_breakdown: Dictionary = nd.get("breakdown", {})
 					var nd_pass_keys = nd.get("bundle_pass_keys", [])
@@ -1910,6 +1939,38 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 						float(nd_breakdown.get("weather_ms", 0.0)),
 						int(nd_pass_keys.size()),
 					])
+					var nd_finalizer_total: float = float(nd.get("finalizer_total_ms", nd_breakdown.get("finalizer_total_ms", 0.0)))
+					if is_warn and (nd_finalizer_total > 0.0 or bool(nd.get("thermal_finalizer_applied", nd_breakdown.get("thermal_finalizer_applied", false)))):
+						print("        native_daily/finalizer path=%s total=%.3f cell=%.3f temp=%.3f tta=%.3f thermal=%.3f sort=%.3f sea_ice=%.3f precip=%.3f write_mode=%s dense=%.3f sparse=%.3f dirty_collect=%.3f comps_dense=%s comps_sparse=%s dirty_ratio=%.3f dirty=%d/%d/%d cells=%d temp_clamped=%d tta_clamped=%d thermal_init=%d temp_mirror=%s tta_mirror=%s/%d max_dt=%.5f pre_max_dt=%.5f" % [
+							str(nd.get("finalizer_path", nd_breakdown.get("finalizer_path", ""))),
+							nd_finalizer_total,
+							float(nd.get("finalizer_cell_ms", nd_breakdown.get("finalizer_cell_ms", 0.0))),
+							float(nd.get("finalizer_temp_ms", nd_breakdown.get("finalizer_temp_ms", 0.0))),
+							float(nd.get("finalizer_tta_ms", nd_breakdown.get("finalizer_tta_ms", 0.0))),
+							float(nd.get("finalizer_thermal_ms", nd_breakdown.get("finalizer_thermal_ms", 0.0))),
+							float(nd.get("finalizer_sort_ms", nd_breakdown.get("finalizer_sort_ms", 0.0))),
+							float(nd.get("finalizer_sea_ice_ms", nd_breakdown.get("finalizer_sea_ice_ms", 0.0))),
+							float(nd.get("finalizer_precip_ms", nd_breakdown.get("finalizer_precip_ms", 0.0))),
+							str(nd.get("finalizer_write_mode", nd_breakdown.get("finalizer_write_mode", ""))),
+							float(nd.get("finalizer_write_dense_ms", nd_breakdown.get("finalizer_write_dense_ms", 0.0))),
+							float(nd.get("finalizer_sparse_write_ms", nd_breakdown.get("finalizer_sparse_write_ms", 0.0))),
+							float(nd.get("finalizer_dirty_collect_ms", nd_breakdown.get("finalizer_dirty_collect_ms", 0.0))),
+							str(nd.get("finalizer_dense_components", nd_breakdown.get("finalizer_dense_components", []))),
+							str(nd.get("finalizer_sparse_components", nd_breakdown.get("finalizer_sparse_components", []))),
+							float(nd.get("finalizer_dirty_ratio", nd_breakdown.get("finalizer_dirty_ratio", 0.0))),
+							int(nd.get("finalizer_dirty_count_temp", nd_breakdown.get("finalizer_dirty_count_temp", 0))),
+							int(nd.get("finalizer_dirty_count_tta", nd_breakdown.get("finalizer_dirty_count_tta", 0))),
+							int(nd.get("finalizer_dirty_count_thermal", nd_breakdown.get("finalizer_dirty_count_thermal", 0))),
+							int(nd.get("finalizer_cells_seen", nd_breakdown.get("finalizer_cells_seen", 0))),
+							int(nd.get("temp_delta_clamped_count", nd_breakdown.get("temp_delta_clamped_count", 0))),
+							int(nd.get("finalizer_tta_clamped_count", nd_breakdown.get("finalizer_tta_clamped_count", 0))),
+							int(nd.get("finalizer_thermal_init_count", nd_breakdown.get("finalizer_thermal_init_count", 0))),
+							str(nd.get("finalizer_temperature_cell_mirror", nd_breakdown.get("finalizer_temperature_cell_mirror", false))),
+							str(nd.get("finalizer_tta_cell_mirror", nd_breakdown.get("finalizer_tta_cell_mirror", false))),
+							int(nd.get("finalizer_tta_cell_mirror_count", nd_breakdown.get("finalizer_tta_cell_mirror_count", 0))),
+							float(nd.get("max_temp_delta", nd_breakdown.get("max_temp_delta", 0.0))),
+							float(nd.get("preclamp_max_temp_delta", nd_breakdown.get("preclamp_max_temp_delta", 0.0))),
+						])
 
 func _on_season_changed(_season_idx: int) -> void:
 	_refresh_time_label()
