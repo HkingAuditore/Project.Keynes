@@ -88,6 +88,19 @@ static const NativeDailySliceNode NATIVE_DAILY_SLICE_GRAPH[] = {
      SYS_MASK_CLIMATE | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B, SYS_MASK_CLIMATE | SYS_MASK_STAGE_B},
     {"weather", "weather_knobs", "weather",
      SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER | SYS_MASK_STAGE_B},
+    {"weather_field", "weather_knobs", "weather_field",
+     SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER},
+    {"weather_commit", "weather_knobs", "weather_commit",
+     SYS_MASK_WEATHER, SYS_MASK_WEATHER},
+    {"weather_distribute", "weather_knobs", "weather_distribute",
+     SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER | SYS_MASK_STAGE_B},
+    {"weather_summary", "weather_knobs", "weather_summary",
+     SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER},
+    {"weather_cyclone", "weather_knobs", "weather_cyclone",
+     SYS_MASK_WEATHER | SYS_MASK_TERRAIN, SYS_MASK_WEATHER},
+    {"weather_stage_b", "weather_knobs", "weather_stage_b",
+     SYS_MASK_CLIMATE | SYS_MASK_WEATHER | SYS_MASK_TERRAIN | SYS_MASK_STAGE_B,
+     SYS_MASK_CLIMATE | SYS_MASK_STAGE_B},
     {"runtime_hydrology", "runtime_hydrology_knobs", "runtime_hydrology",
      SYS_MASK_WEATHER | SYS_MASK_TERRAIN | SYS_MASK_HYDROLOGY, SYS_MASK_HYDROLOGY | SYS_MASK_STAGE_B},
     {"stage_b_after_hydrology", "stage_b_after_hydrology_knobs", "stage_b",
@@ -545,10 +558,30 @@ static uint32_t native_daily_deferred_node_bits(const Dictionary &bundle) {
     return bits;
 }
 
+static bool native_daily_is_weather_split_node(const char *name) {
+    return std::strcmp(name, "weather_field") == 0 ||
+           std::strcmp(name, "weather_commit") == 0 ||
+           std::strcmp(name, "weather_distribute") == 0 ||
+           std::strcmp(name, "weather_summary") == 0 ||
+           std::strcmp(name, "weather_cyclone") == 0 ||
+           std::strcmp(name, "weather_stage_b") == 0;
+}
+
+static bool native_daily_node_enabled_for_bundle(const Dictionary &bundle,
+                                                 const NativeDailySliceNode &node) {
+    if (native_daily_is_weather_split_node(node.name)) {
+        return bool(bundle.get("native_daily_split_weather_node_enabled", false));
+    }
+    return true;
+}
+
 static int native_daily_next_present_node(const Dictionary &bundle, int start_index,
                                           uint32_t deferred_bits = 0u) {
     for (int i = start_index; i < NATIVE_DAILY_SLICE_GRAPH_SIZE; ++i) {
         const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[i];
+        if (!native_daily_node_enabled_for_bundle(bundle, node)) {
+            continue;
+        }
         if (bundle.has(node.bundle_key) || (i < 32 && ((deferred_bits >> i) & 1u))) {
             return i;
         }
@@ -768,6 +801,12 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (std::strcmp(name, "climate_feedback") == 0) return String("climate_feedback");
         if (std::strcmp(name, "stage_b") == 0) return String("stage_b");
         if (std::strcmp(name, "weather") == 0) return String("weather");
+        if (std::strcmp(name, "weather_field") == 0) return String("weather_field");
+        if (std::strcmp(name, "weather_commit") == 0) return String("weather_commit");
+        if (std::strcmp(name, "weather_distribute") == 0) return String("weather_distribute");
+        if (std::strcmp(name, "weather_summary") == 0) return String("weather_summary");
+        if (std::strcmp(name, "weather_cyclone") == 0) return String("weather_cyclone");
+        if (std::strcmp(name, "weather_stage_b") == 0) return String("weather_stage_b");
         if (std::strcmp(name, "runtime_hydrology") == 0) return String("runtime_hydrology");
         if (std::strcmp(name, "stage_b_after_hydrology") == 0) return String("stage_b_after_hydrology");
         return String("unknown");
@@ -789,6 +828,15 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (std::strcmp(key, "runtime_hydrology_knobs") == 0) return String("runtime_hydrology_knobs");
         if (std::strcmp(key, "stage_b_after_hydrology_knobs") == 0) return String("stage_b_after_hydrology_knobs");
         return String("unknown");
+    };
+    auto weather_split_enabled = [&]() -> bool {
+        return bool(_native_daily_slice_bundle.get("native_daily_split_weather_node_enabled", false));
+    };
+    auto add_weather_timing = [&](const char *field, const double ms) {
+        breakdown[field] = ms;
+        const double weather_ms = double(breakdown.get("weather_ms", 0.0)) + ms;
+        breakdown["weather_ms"] = weather_ms;
+        breakdown["weather_tick_ms"] = weather_ms;
     };
     auto exec_slice_node = [&](const NativeDailySliceNode &node) -> bool {
         if (std::strcmp(node.name, "climate_pass_a") == 0) {
@@ -913,6 +961,15 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "weather") == 0) {
+            if (weather_split_enabled()) {
+                breakdown["weather_split_enabled"] = true;
+                breakdown["weather_split_skipped_monolithic"] = true;
+                breakdown["weather_ms"] = double(breakdown.get("weather_ms", 0.0));
+                breakdown["weather_tick_ms"] = double(breakdown.get("weather_tick_ms", breakdown.get("weather_ms", 0.0)));
+                return true;
+            }
+            breakdown["weather_split_enabled"] = false;
+            breakdown["weather_split_skipped_monolithic"] = false;
             Dictionary weather = run_weather_refresh_daily_pass(as_dict(_native_daily_slice_bundle["weather_knobs"]));
             if (int(weather.get("rc", -1)) != 0) {
                 breakdown["__weather_fail_stage_dyn"] = weather.get("fail_stage", "unknown");
@@ -927,6 +984,153 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             if (weather.has("fronts")) {
                 _native_fronts_snapshot = weather["fronts"];
             }
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_field") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            const double field_ms = run_weather_field_solve_pass(weather_knobs);
+            if (field_ms < 0.0) {
+                breakdown["__weather_fail_stage_dyn"] = String("field_solve");
+                return false;
+            }
+            breakdown["advance_ms"] = field_ms;
+            add_weather_timing("weather_field_ms", field_ms);
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_commit") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            if (weather_knobs.has("out_vapor") && weather_knobs.has("out_cloud") &&
+                weather_knobs.has("out_precip") && weather_knobs.has("out_instability") &&
+                weather_knobs.has("out_intensity") && weather_knobs.has("out_convergence") &&
+                weather_knobs.has("out_type")) {
+                Dictionary commit = run_weather_field_commit_pass(weather_knobs);
+                const double commit_ms = double(commit.get("elapsed_ms", -1.0));
+                if (commit_ms < 0.0) {
+                    breakdown["__weather_fail_stage_dyn"] = String("field_commit");
+                    return false;
+                }
+                breakdown["field_commit_total_ms"] = commit_ms;
+                breakdown["field_commit_loop_ms"] = double(commit.get("commit_loop_ms", commit_ms));
+                breakdown["field_commit_path"] = commit.get("path", String("gdext_commit"));
+                breakdown["field_commit_publish_verified"] = true;
+                breakdown["field_commit_publish_repaired"] = false;
+                breakdown["field_commit_init_count"] = int(weather_knobs.get("n_cells", 0));
+                breakdown["field_commit_publish_reason"] = String("ok_native_combined_commit");
+                breakdown["weather_dirty_count"] = int(commit.get("weather_dirty_count", 0));
+                breakdown["water_budget_error"] = double(commit.get("water_budget_error", 0.0));
+                breakdown["active_weather_ratio"] = double(commit.get("active_weather_ratio", 0.0));
+                breakdown["weather_convergence_dirty_count"] = int(commit.get("weather_convergence_dirty_count", 0));
+                breakdown["weather_convergence_deltas"] = commit.get("weather_convergence_deltas", PackedFloat32Array());
+                breakdown["convergence_published"] = bool(commit.get("convergence_published", false));
+                breakdown["weather_lut"] = commit.get("weather_lut", PackedByteArray());
+                breakdown["weather_lut_changed"] = bool(commit.get("weather_lut_changed", false));
+                breakdown["weather_lut_dirty_count"] = int(commit.get("weather_lut_dirty_count", 0));
+                breakdown["weather_lut_full_rebuild"] = bool(commit.get("weather_lut_full_rebuild", false));
+                add_weather_timing("weather_commit_ms", commit_ms);
+            } else {
+                breakdown["field_commit_path"] = String("direct_solve_publish");
+                breakdown["field_commit_publish_verified"] = true;
+                breakdown["field_commit_publish_repaired"] = false;
+                breakdown["field_commit_init_count"] = int(weather_knobs.get("n_cells", 0));
+                breakdown["field_commit_publish_reason"] = String("ok_direct_solve_publish");
+                add_weather_timing("weather_commit_ms", 0.0);
+            }
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_distribute") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            const Dictionary r_dist = run_weather_distribute_pass(weather_knobs);
+            const double dist_ms = double(r_dist.get("elapsed_ms", -1.0));
+            if (dist_ms < 0.0) {
+                breakdown["__weather_fail_stage_dyn"] = String("distribute");
+                return false;
+            }
+            breakdown["distribute_ms"] = dist_ms;
+            breakdown["cover_dirty"] = r_dist.get("cover_dirty", false);
+            add_weather_timing("weather_distribute_ms", dist_ms);
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_summary") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            const Dictionary r_summary = run_weather_summary_fronts_pass(weather_knobs);
+            const double summary_ms = double(r_summary.get("elapsed_ms", -1.0));
+            if (summary_ms < 0.0) {
+                breakdown["__weather_fail_stage_dyn"] = String("summary");
+                return false;
+            }
+            const Array fronts_arr = r_summary.get("fronts", Array());
+            breakdown["summary_ms"] = summary_ms;
+            breakdown["fronts_count"] = fronts_arr.size();
+            breakdown["fronts"] = fronts_arr;
+            int cold_front_count = 0;
+            int warm_front_count = 0;
+            for (int i = 0; i < fronts_arr.size(); ++i) {
+                const Variant v = fronts_arr[i];
+                if (v.get_type() != Variant::DICTIONARY) continue;
+                const Dictionary fd = v;
+                const int diag_kind = int(fd.get("front_diagnostic_kind", 0));
+                if (diag_kind == 1) {
+                    ++cold_front_count;
+                } else if (diag_kind == 2) {
+                    ++warm_front_count;
+                }
+            }
+            breakdown["weather_cold_front_count"] = cold_front_count;
+            breakdown["weather_warm_front_count"] = warm_front_count;
+            _native_fronts_snapshot = fronts_arr;
+            _native_daily_slice_bundle["weather_fronts"] = fronts_arr;
+            add_weather_timing("weather_summary_ms", summary_ms);
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_cyclone") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            Array fronts_arr;
+            if (_native_daily_slice_bundle.has("weather_fronts") &&
+                _native_daily_slice_bundle["weather_fronts"].get_type() == Variant::ARRAY) {
+                fronts_arr = _native_daily_slice_bundle["weather_fronts"];
+            }
+            Dictionary cyclone_knobs = weather_knobs;
+            const double cyclone_ms = cyclone_wake_step(cyclone_knobs, fronts_arr);
+            breakdown["cyclone_ms"] = cyclone_ms;
+            breakdown["cyclone_phase1_decay_ms"] = cyclone_knobs.get("cyclone_phase1_decay_ms", 0.0);
+            breakdown["cyclone_phase2_inject_ms"] = cyclone_knobs.get("cyclone_phase2_inject_ms", 0.0);
+            breakdown["cyclone_n_decayed"] = cyclone_knobs.get("cyclone_n_decayed", 0);
+            breakdown["cyclone_n_evicted"] = cyclone_knobs.get("cyclone_n_evicted", 0);
+            breakdown["cyclone_n_replaced"] = cyclone_knobs.get("cyclone_n_replaced", 0);
+            breakdown["cyclone_n_injected"] = cyclone_knobs.get("cyclone_n_injected", 0);
+            breakdown["cyclone_pool_size"] = int(_cyclone_perturbations.size());
+            add_weather_timing("weather_cyclone_ms", cyclone_ms);
+            return true;
+        }
+        if (std::strcmp(node.name, "weather_stage_b") == 0) {
+            if (!weather_split_enabled()) return true;
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            if (!bool(weather_knobs.get("native_daily_weather_stage_b_embedded", false))) {
+                breakdown["weather_stage_b_ms"] = 0.0;
+                return true;
+            }
+            Dictionary stage_b_knobs = weather_knobs;
+            const double stage_b_ms = run_stage_b_pass(stage_b_knobs);
+            if (stage_b_ms < 0.0) {
+                breakdown["__weather_fail_stage_dyn"] = String("stage_b");
+                return false;
+            }
+            breakdown["weather_stage_b_ms"] = stage_b_ms;
+            breakdown["stage_b_ms"] = double(breakdown.get("stage_b_ms", 0.0)) + stage_b_ms;
+            breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
+            breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
+            breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+            if (stage_b_knobs.has("succession_indices")) {
+                breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
+                breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
+                breakdown["stat_succession_count"] = stage_b_knobs.get("stat_succession_count", 0);
+            }
+            add_weather_timing("weather_stage_b_ms", stage_b_ms);
             return true;
         }
         if (std::strcmp(node.name, "runtime_hydrology") == 0) {
@@ -987,7 +1191,13 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 _native_daily_slice_breakdown = breakdown;
                 String reason;
                 const String fail_stage = node_name_string(node.fail_stage);
-                if (fail_stage == String("weather")) {
+                if (fail_stage == String("weather") ||
+                    fail_stage == String("weather_field") ||
+                    fail_stage == String("weather_commit") ||
+                    fail_stage == String("weather_distribute") ||
+                    fail_stage == String("weather_summary") ||
+                    fail_stage == String("weather_cyclone") ||
+                    fail_stage == String("weather_stage_b")) {
                     reason = String(breakdown.get("__weather_fail_stage_dyn", "unknown"));
                     breakdown.erase("__weather_fail_stage_dyn");
                 } else if (fail_stage == String("runtime_hydrology")) {

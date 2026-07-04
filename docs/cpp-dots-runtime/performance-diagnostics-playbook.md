@@ -128,7 +128,9 @@ native_daily_sim ran=... progress=0.46
   in/loop/flush 三段计时。2026-06 的 `climate_pass_a` ~1.7ms 隐藏热点（逐日重算 `dc_insolation_annual_mean`
   年均日照积分）就是这样被找出来的。
 - `done=false` 表示 C++ continuation 仍在推进，下个 SUS tick 会绕过 stride 继续执行；这不是失败。
-- `stage_name` 应稳定对应 `SCHEDULE_GRAPH` node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。
+- `stage_name` 应稳定对应 native daily slice node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。当 `native_daily_split_weather_node_enabled=true` 时，`weather` 是跳板节点，实际耗时会拆到 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b`。
+- Split weather report 会同时保留旧聚合字段 `weather_ms` / `weather_tick_ms`，并新增 `weather_field_ms`、`weather_commit_ms`、`weather_distribute_ms`、`weather_summary_ms`、`weather_cyclone_ms`、`weather_stage_b_ms`；`weather_split_skipped_monolithic=true` 表示本轮没有调用旧的一体化 `run_weather_refresh_daily_pass`。失败时 `fail_stage` 会落在对应 split stage，`fallback_reason` 给出 `field_solve`、`field_commit`、`distribute`、`summary` 或 `stage_b` 等具体原因。
+- 移动端主场景应先出现 `[WorldSetup] ClimateProfile path=res://data/world/earth_like_mobile_complex.tres mobile=true split_weather=true wind_period=6`，随后首个 native slice 日志应包含 `split=true split_skipped_monolithic=true`，并在 breakdown / largest 中出现 `weather_field` 等 split 节点。`weather_knobs embedded` 只表示 bundle 仍携带天气输入，不单独代表 monolithic；如果小米/Android log 仍显示 `wind_period=3`、`split=false` 或完全没有 split 节点，先查 profile 是否未加载；如果 profile 日志已经是 split=true 但 native slice 仍没有 split 字段，再查 Android GDExtension `.so` 是否旧、是否已重建并重启应用。
 - 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。
 - `published_slots`、scheduler-level `published_to_slot` 和 `visual_dirty_intents` 只应在 round 完成 slice 上出现；中间 slice 为空是正常的。graph-level `published_to_slot=true` 不替代具体 pass 的 visible flush 证据。
 - `authority_blockers` 只看 simulation authority 和 production fallback；`retained_boundaries` 才看 `visual_uploads`、front objects、ImageTexture/LUT upload、sea-ice atlas、ocean texture commit、season detail scatter、CSV/debug。`graph_coverage_state=complete` 不要求这些 Godot presentation boundaries 消失。
@@ -301,10 +303,13 @@ Dynamic visual atlas：
 When validating the physical wind cadence from tile-data CSV or fast-tick
 samples, the expected daily C++ path is:
 
-- `phys_wind_period_ticks=1`
-- `phys_daily_wind_due=true`
-- `phys_daily_wind_ran=true`
-- `phys_daily_wind_path=gdext_daily_wind`
+- `phys_wind_period_ticks` equals
+  `ClimateProfile.ocean_daily_wind_period_ticks` (default 3; mobile profiles may
+  raise it).
+- `phys_daily_wind_due=true` only on ticks matching that cadence.
+- `phys_daily_wind_ran=true` on due ticks.
+- `phys_daily_wind_path=gdext_daily_wind`, `gdext_daily_wind_slp`, or
+  `gdext_daily_wind_wind`
 - `phys_sim_day` advances by one per recorded SUS daily tick
 - `phys_daily_wind_delta_p95` is normally non-zero but should remain smooth
 - `phys_daily_wind_dir_delta_p95` isolates direction-only movement. Use it for
@@ -316,12 +321,13 @@ samples, the expected daily C++ path is:
 - `phys_ticks_per_slice` may be greater than 1; that describes the slow
   ocean/raster chain and should not prevent daily wind updates
 
-If `phys_daily_wind_ran=false`, read `phys_daily_wind_fallback_reason` first.
+If a due tick reports `phys_daily_wind_ran=false`, read
+`phys_daily_wind_fallback_reason` first.
 Common causes are `physical_disabled`, `missing_world_ext`, `missing_cpp_method`,
-or missing indexed map data. If `phys_daily_wind_path=gdext_daily_wind` but the
-visual wind overlay looks stale, check the raster/atlas upload path separately:
-the simulation authority is `cell_wind_x/y` and `cell_wind_speed`, while the BA
-channels in the vector atlas are a visual copy.
+or missing indexed map data. If `phys_daily_wind_path` is one of the gdext daily
+wind paths but the visual wind overlay looks stale, check the raster/atlas
+upload path separately: the simulation authority is `cell_wind_x/y` and
+`cell_wind_speed`, while the BA channels in the vector atlas are a visual copy.
 
 ### SLP vs wind attribution
 

@@ -40,6 +40,17 @@ func _run() -> void:
 		"\"wind_air\"",
 		"\"wind_surface\"",
 	]))
+	_expect("slice graph splits weather before hydrology", _contains_in_order(slice_graph, [
+		"\"weather\"",
+		"\"weather_field\"",
+		"\"weather_commit\"",
+		"\"weather_distribute\"",
+		"\"weather_summary\"",
+		"\"weather_cyclone\"",
+		"\"weather_stage_b\"",
+		"\"runtime_hydrology\"",
+		"\"stage_b_after_hydrology\"",
+	]))
 
 	var full_run: String = _section(daily_src,
 			"Dictionary cp_struct = as_dict(bundle[\"climate_pass_a_struct\"])",
@@ -80,16 +91,27 @@ func _run() -> void:
 		"sea_ice_knobs",
 		"7:",
 		"transpiration_knobs",
+		"11:",
+		"stage_b_knobs",
+		"12:",
+		"weather_knobs",
+		"19:",
+		"runtime_hydrology_knobs",
+		"20:",
+		"stage_b_after_hydrology_knobs",
 	]))
 
 	# Node-batching contract is cadence-dependent (see _native_daily_effective_yield_nodes):
 	#   - ATOMIC (default): minimal {2,6} — only ocean_water/sea_ice repack data upstream
 	#     passes changed; every other node runs bit-equal with its round-start knobs
 	#     (validated by tmp_native_batch_bitequal_test.gd). Fewest round-trips/round.
-	#   - SPREAD (native_daily_spread_across_ticks): full {0..14} — yielding more is purely
+	#   - SPREAD (native_daily_spread_across_ticks): full {0..20} — yielding more is purely
 	#     bit-equal (extra checkpoints), and the finer granularity gives the lowest per-tick
 	#     peak (mean 3.14→1.95ms in tmp_native_spread_validate.gd). The {2,6} patch cases
 	#     still fire on those indices; no new patch case is required for the extra yields.
+	#   - When native_daily_split_weather_node_enabled=true, atomic mode also appends the
+	#     weather subnode yields {13..18}; C++ skips those subnodes entirely when the flag
+	#     is false, so default/monolithic profiles do not pay empty slices.
 	# Deferred nodes are also added to C++ yield bits at round start, so atomic mode can
 	# keep its historical explicit yield constant while lazy knobs still get a patch.
 	_expect("atomic yield-set constant is the minimal {2,6}", _contains_in_order(generator_src, [
@@ -97,8 +119,10 @@ func _run() -> void:
 	]))
 	_expect("spread yield-set + mode selector exist", _contains_in_order(generator_src, [
 		"const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [",
+		"18, 19, 20",
 		"func _native_daily_effective_yield_nodes(",
 		"native_daily_spread_across_ticks",
+		"native_daily_split_weather_node_enabled",
 	]))
 	_expect("deferred node declaration reaches C++", _contains_in_order(generator_src, [
 		"native_daily_deferred_nodes",

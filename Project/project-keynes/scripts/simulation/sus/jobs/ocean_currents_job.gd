@@ -600,7 +600,7 @@ func _daily_wind_split_active() -> bool:
 
 func _daily_wind_stage_for(ctx: SusTickContext) -> String:
 	# 首次 prepass（或 reset 后）跑 "both"，保证 SLP+wind 都有一套新场作基线，
-	# 之后按游戏日 parity 错峰：偶数日只跑 SLP、奇数日只跑 wind。
+	# 之后按实际 due occurrence 错峰：一次只跑 SLP，下一次只跑 wind。
 	if not _daily_wind_split_active():
 		return "both"
 	if _last_daily_wind_tick == _NO_DAILY_WIND_TICK:

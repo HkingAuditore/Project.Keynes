@@ -1375,7 +1375,8 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 Cadence contract:
 - One tick is one game day. `OceanCurrentsJob` keeps the registered SUS policy
   always-on so the job can enter every day.
-- Each day starts with a lightweight C++ wind prepass:
+- On due ticks selected by `ocean_daily_wind_period_ticks`, the job starts with
+  a lightweight C++ wind prepass:
   `MapBaker.run_daily_wind_field_update(map, world, cfg, hex_size, season_phase,
   sim_day, stage)` calls `run_slp_field_pass` and/or `run_wind_field_pass`,
   publishing `cell_slp`, `cell_wind_x/y`, and `cell_wind_speed` back to the C++
@@ -1387,14 +1388,13 @@ Cadence contract:
 - 2-tick SLP/wind split (`plan/daily-wind-stage-split`, profile flag
   `ClimateProfile.daily_wind_split_passes`, default `true`): the `stage`
   argument selects which kernels run this tick — `"slp"`, `"wind"`, or `"both"`.
-  `OceanCurrentsJob` alternates by game-day parity (`day_index % 2`): even days
-  run SLP only (~3ms), odd days run wind only (~1ms). The first prepass after a
-  reset (and any cold start where `map.slp_arr` size is stale) runs `"both"` as a
-  safety net so wind never reads an empty/old SLP. This drops the single-tick SUS
-  peak from ~5ms (SLP+wind together) to ~3ms, freeing budget for the starved
-  atlas upload. Each kernel still refreshes daily-but-staggered; at 20–50x the
-  every-other-day cadence is imperceptible. Set the flag `false` to restore the
-  merged every-day path (regression / low-speed precision).
+  `OceanCurrentsJob` alternates by the actual due-occurrence counter, not
+  calendar-day parity, so `wind_period_ticks>1` cannot pin the split to only one
+  kernel. The first prepass after a reset (and any cold start where
+  `map.slp_arr` size is stale) runs `"both"` as a safety net so wind never reads
+  an empty/old SLP. This drops the single-tick SUS peak from ~5ms (SLP+wind
+  together) to ~3ms, freeing budget for the starved atlas upload. Set the flag
+  `false` to restore the merged path (regression / low-speed precision).
 - The prepass report splits the two kernels for attribution: `slp_ms` /
   `wind_ms` plus `slp_stage_name=daily_wind_slp` / `wind_stage_name=
   daily_wind_wind`, `slp_ran` / `wind_ran`, `stage_requested`, and
@@ -1446,8 +1446,10 @@ Cadence contract:
   final `WorldClock.day_index()`, so catch-up ticks still advance wind one day
   at a time.
 - `wind_circulation_period_ticks` is not used to slow this daily wind prepass;
-  `MapGenerator` configures `wind_period_ticks=1`. Deliberately changing that
-  value means accepting non-daily wind evolution.
+  `MapGenerator` configures the job from
+  `ClimateProfile.ocean_daily_wind_period_ticks` (default 3). Raising that value
+  means accepting lower-frequency SLP/wind authority updates in exchange for
+  fewer spike frames.
 - The heavier ocean chain remains sliced: `PSI -> upwelling -> raster -> GPU
   commit` is gated inside the job by the internal continuous slice policy and
   by `ocean_currents_period_ticks` / `ocean_currents_slice_count`.
@@ -1653,10 +1655,10 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 状态：
 
 - 当前是 partial ACTIVE continuation，不是所有 legacy/Godot 边界的完全替代。
-- ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 `SCHEDULE_GRAPH` node cursor、progress 和累计 breakdown；每个 SUS tick 只执行一个存在的 native node，返回 `done=false` 让下个 tick 继续。
+- ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 lightweight slice graph node cursor、progress 和累计 breakdown；每个 SUS tick 执行一个或一批存在的 native node，返回 `done=false` 让下个 tick 继续。`ClimateProfile.native_daily_split_weather_node_enabled` 可把 native daily 的 weather transaction 从旧的一体化 `run_weather_refresh_daily_pass` 拆为 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b` 六个 graph 子节点；默认 false 保留 monolithic pass，移动复杂 profile 开启以压低单帧 weather 峰值。
 - GDScript 只在 round 起点构建 `native_daily_bundle`，后续 continuation tick 发轻量 knobs。`total_ms/native_ms` 表示当前 slice 墙钟，`round_native_ms` 表示 round 累计墙钟。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。
-- `runtime_hydrology_enabled=true` 不再是 ACTIVE 硬阻断条件。`MapGenerator` 必须在 native daily bundle 中提供 `weather_knobs` 与 `runtime_hydrology_knobs`；`SCHEDULE_GRAPH` 会按 `weather -> runtime_hydrology -> stage_b_after_hydrology` 执行（stage-b 仍按 cadence 可选）。如果 probe 缺少必需 key、hydrology slots 不可发布、或 weather readiness 未通过，则 `native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS 注册。
+- `runtime_hydrology_enabled=true` 不再是 ACTIVE 硬阻断条件。`MapGenerator` 必须在 native daily bundle 中提供 `weather_knobs` 与 `runtime_hydrology_knobs`；slice graph 会按 `weather -> weather split subnodes(optional) -> runtime_hydrology -> stage_b_after_hydrology` 执行（stage-b 仍按 cadence 可选）。如果 probe 缺少必需 key、hydrology slots 不可发布、或 weather readiness 未通过，则 `native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS 注册。
 - 当 weather field 启用且 `MapGenerator.weather_native_daily_available()`
   返回 `false` 时，`native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS job
   注册，确保独立 `weather_refresh` staged path 仍然运行。`native_daily_bundle`

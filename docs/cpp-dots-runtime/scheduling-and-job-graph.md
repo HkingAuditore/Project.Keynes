@@ -64,7 +64,7 @@ DCSystemScheduler
 
 | Job / bucket | 默认 stride | 默认 phase | 说明 |
 | --- | --- | --- | --- |
-| `ocean_currents` | `AlwaysPolicy` | n/a | 每 tick 进入 job-local `should_run()`；daily SLP/wind 不 bucket-gate，但由内部 `wind_period_ticks`（默认 3）降频；慢层 PSI/ocean 由内部 `ContinuousSlicedPolicy` 控制。 |
+| `ocean_currents` | `AlwaysPolicy` | n/a | 每 tick 进入 job-local `should_run()`；daily SLP/wind 不 bucket-gate，但由 `ClimateProfile.ocean_daily_wind_period_ticks`（默认 3）降频；慢层 PSI/ocean 由内部 `ContinuousSlicedPolicy` 控制。 |
 | `native_environment_runtime` | `sim_stagger_bucket_stride=8` | `0` | native environment 桶。 |
 | `refresh_climate_daily` / `native_daily_sim` | `sim_stagger_climate_stride=2` | `1` | climate 桶；native daily ACTIVE 用同一 climate cadence。 |
 | `dynamic_visual_atlas_upload` | `8` | `2` | dynamic visual 桶（**仅退役的逐像素 fallback 路径用此 stride**）。cell-indirection LUT 主路径的刷新 cadence 已与此错峰桶解耦：见下文 §Cell LUT Catch-Up（按 base stride，默认每 tick due）。 |
@@ -125,9 +125,12 @@ DCSystemScheduler
   - **yield 粒度随模式自适应（2026-06）**：spread 模式与原子模式的最优 yield 集相反，由
     `_native_daily_effective_yield_nodes(cp)` 选择。原子要**粗批**（少 round-trip、低整轮成本）→ `{2,6}`；
     spread 要**细切**（每 tick 跑最小批、低 per-tick 峰值）→ `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD`
-    = 全部 15 个节点 `[0..14]`。多设 yield 点是**纯 bit-equal**的（只加 C++↔GDScript 断点；非 patch 节点
+    = 全部 21 个节点 `[0..20]`。多设 yield 点是**纯 bit-equal**的（只加 C++↔GDScript 断点；非 patch 节点
     的 round-start knob 已满足，`{2,6}` 的 patch 仍在那两个索引照常触发）。C++ 当天缺 knob 的索引会跳过，
-    所以典型一轮落在 ~5 个 tick（而非 15）。实测 spread `maxslices=1` per-tick：均值 **3.14→1.9ms（−40%）**、
+    所以典型一轮落在 ~5 个 tick（而非 21）。`native_daily_split_weather_node_enabled=true` 时，weather transaction
+    会进一步拆成 `weather_field -> weather_commit -> weather_distribute -> weather_summary -> weather_cyclone -> weather_stage_b`
+    六个可调度子节点；原子模式也会额外在这些子节点前 yield，避免单个 monolithic weather C++ call 撑爆一帧。split
+    关闭时 C++ 会把这些子节点视为不存在，默认/桌面 profile 不支付空 slice 成本。实测 spread `maxslices=1` per-tick：均值 **3.14→1.9ms（−40%）**、
     p95 **5.0→4.3ms**；代价是一仿真日跨 ~5 tick（推进 ~2.5× 慢，spread 设计本就接受）。
   - **保留作业错峰（`must_run=false` + budget-yield，2026-06）**：spread 早期 per-tick max ≈ 5.8ms 的真凶
     经逐 job 归因（修正 `tmp_native_spread_validate.gd` 的 worst-tick 字段 bug 后）证明是
@@ -223,12 +226,12 @@ DCSystemScheduler
   `climate_pass_b` 会写 `cell_moisture` 并读取上一日/round-start 的
   `temperature_transport_anomaly`，不能放到 `ocean_*` 之后。
 - C++ 在 `DCWorldExt` 内保存 `round_active`、`current_node`、`round_id`、累计 breakdown、bundle pass keys 和 state snapshot。
-- `run_native_daily_slice()` 采用**节点批处理**（2026-06，bit-equal perf）：C++ 在一次调用里连跑**连续的非 yield 节点**，直到下一个节点属于 yield 集才返回 `done=false`，把控制权交回 GDScript。yield 集**随 cadence 模式自适应**（`_native_daily_effective_yield_nodes(cp)`，2026-06）：原子模式经**实测最小化** = `_NATIVE_DAILY_SLICE_YIELD_NODES` = `{2,6}`（仅 `ocean_water`、`sea_ice` 两个节点真正需要在运行前重打 temp patch，少 round-trip）；spread 模式改用 `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD` = 全部 `[0..14]`（最细切、最低 per-tick 峰值，详见上文「yield 粒度随模式自适应」）。两者都由 round-start 通过 `native_daily_slice_yield_nodes` 传给 C++（`native_daily_slice_yield_nodes_override` 非空时优先，供 A/B 测试用；缺省覆盖 = yield 全部 = 旧的每次一个节点）。patch 的 `match next_node_index` 分支只需是**当前生效 yield 集的子集**（spread 全切时 `{2,6}` patch 照常在那两个索引触发，其余索引收空 patch）——由 `native_daily_graph_order_test.gd` 锁定（同时校验 `{2,6}` 常量、spread 常量与 selector 函数都在）。曾经的 `climate_pass_b`(1)/`wind_air`(4)/`transpiration`(7) 已从 yield 集移除：双进程 bit-equal A/B（40-round soak）证明它们的 round-start knob 与"上游 pass 跑完后重打"逐 bit 相同——`pass_b`/`transp` 的动态输入直接从 C++ slot 读、`wind` 用缓存的静态 baseline，所以重打是纯冗余 round-trip。其余非 yield 节点（`ocean_land`/`wind_surface`/`weather`/`runtime_hydrology`/`stage_b`）同理收到空 patch、读相同 bundle 状态，故批处理与"每次一个节点"逐 bit 相等——已用 `native_daily_active_bootstrap_test.gd` + 双进程 A/B（同 seed 跑 40 round，全部 38 个 SoA 数组逐元素一致）验证。效果：每 round 的 GDScript↔C++ round-trip 从 ~9.1 次降到 **~3 次（−67%）**，`apply` −43%、`native_call` −40%、`bundle` 也随 slice 数下降，且 native round 现在能在单 tick 内跑完整轮（不再跨 tick spill）。返回值仍含 `progress_ratio`、`stage_name`、`substage`、`cursor_start/cursor_end`（批处理下 `cursor_start` 为该批首节点）和 `node_report`。SUS 会在同一个 job tick 内继续调用下一 slice，直到 native round 完成或 transaction budget 用尽。ACTIVE slice 使用 `world_ext_daily_sim.cpp` 内的 lightweight slice graph（顺序与 `system_schedule.cpp::SCHEDULE_GRAPH` 保持一致），避免 hot path 依赖跨编译单元的 `SystemNode` 成员函数指针表；`run_native_daily_tick()` debug/full-run helper 仍使用 `SCHEDULE_GRAPH` dispatcher。
+- `run_native_daily_slice()` 采用**节点批处理**（2026-06，bit-equal perf）：C++ 在一次调用里连跑**连续的非 yield 节点**，直到下一个节点属于 yield 集才返回 `done=false`，把控制权交回 GDScript。yield 集**随 cadence 模式自适应**（`_native_daily_effective_yield_nodes(cp)`）：原子模式经**实测最小化** = `_NATIVE_DAILY_SLICE_YIELD_NODES` = `{2,6}`；spread 模式改用 `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD` = 全部 `[0..20]`。当 `native_daily_split_weather_node_enabled=true`，原子模式也会追加 weather 子节点 `{13..18}` 的 yield，split 关闭时 C++ 直接跳过这些子节点。patch 的 `match next_node_index` 分支只需覆盖真正要 JIT 构建 knobs 的节点：`1/2/4/6/7/11/12/19/20`，其中 hydrology 与 hydrology 后 stage-b 已因 weather split 插入而移动到 `19/20`。返回值仍含 `progress_ratio`、`stage_name`、`substage`、`cursor_start/cursor_end`（批处理下 `cursor_start` 为该批首节点）和 `node_report`。ACTIVE slice 使用 `world_ext_daily_sim.cpp` 内的 lightweight slice graph；`run_native_daily_tick()` debug/full-run helper 仍使用 `SCHEDULE_GRAPH` dispatcher。
 - Sea ice 在 native sliced ACTIVE 中仍按每日松弛语义推进：`sea_ice_knobs.dt_days` 会消费并推进 `_last_sea_ice_pass_day`，但上限压到 1 天。这个上限现在用于防止异常跨 tick continuation 折叠成批量融化/冻结；正常 ACTIVE 不应让一个 climate/sea-ice round 跨过多日。
 - 最后一个 native node 完成后，`MapGenerator` 会先发布 native 返回的 TTA，再执行 climate finalizer（复用旧 `thermal_daily_delta_cap` / `temperature_transport_anomaly_daily_cap` 语义，写回 `MapData` 和 GDScript `DCWorld`），然后才把 `published_slots` / `visual_dirty_intents` / finalizer diagnostics 暴露给 scheduler、CSV 和 debug。
 - `total_ms` / `native_ms` 是**最后一个 slice** 墙钟，供 SUS largest 归因；`round_native_ms` 是当前 native round 累计墙钟，也是判断 daily transaction 实际成本的主指标。
 - 如果 `runtime_hydrology_enabled=true`，`MapGenerator` 必须构造 `runtime_hydrology_knobs`，并且 probe 的 `required_pass_keys` 必须同时看到 `weather_knobs` 与 `runtime_hydrology_knobs`。旧的 “hydrology 直接拒绝 ACTIVE” gate 已移除；现在由 bundle/probe/graph report 决定是否能注册 ACTIVE。
-- Hydrology 开启时 native daily bundle 不把 stage-b 平铺进 `weather_knobs`；C++ graph 顺序变为 `weather -> runtime_hydrology -> stage_b_after_hydrology`（stage-b 仍按 cadence 可选）。Hydrology 关闭时保留既有 `stage_b -> weather` bundle 形态，减少默认路径变更。
+- Hydrology 开启时 native daily bundle 不把 stage-b 平铺进 `weather_knobs`；C++ graph 顺序变为 `weather -> [weather_* split nodes when enabled] -> runtime_hydrology -> stage_b_after_hydrology`（stage-b 仍按 cadence 可选）。Hydrology 关闭且 split 开启时，embedded stage-b 只在 `weather_stage_b` 节点运行；split 关闭时仍保留既有 monolithic weather/stage-b 行为。
 
 `run_native_daily_tick()` 保留为 debug/full-run helper，`run_native_sim_tick()` 保留给 SHADOW/A-B/hash diff，不是普通 ACTIVE hot path。
 
@@ -338,7 +341,9 @@ weather_begin -> weather_solve -> weather_summary
 native daily ACTIVE 使用同一依赖顺序，但不单独注册 `HydrologyDischargeSystem`：
 
 ```text
-weather -> runtime_hydrology -> stage_b_after_hydrology
+weather -> [weather_field -> weather_commit -> weather_distribute
+  -> weather_summary -> weather_cyclone -> weather_stage_b, when split enabled]
+  -> runtime_hydrology -> stage_b_after_hydrology
 ```
 
 `runtime_hydrology` 是 `system_schedule.cpp::SCHEDULE_GRAPH` 节点，只有 bundle 含 `runtime_hydrology_knobs` 时运行。它依赖当天 weather node 发布的 `weather_precip`，并且要在 stage-b 植被动态读取 `soil_moisture/water_balance_30d` 前完成。report 字段包括 `hydrology_ms`、`runtime_hydrology_ms`、`hydrology_native_ms`、`hydrology_compute_ms`、`hydrology_flush_ms`、`hydrology_water_budget_error`、`hydrology_river_discharge_p95/max`、`hydrology_flood_count`、`hydrology_published_to_slot`；legacy staged path 仍使用 `stage_name=hydrology_discharge` / `substage=route_full`。
@@ -494,13 +499,12 @@ Expected daily reports:
 - `stage_name=daily_wind_prepass`, `path=gdext_daily_wind` (both kernels),
   `gdext_daily_wind_slp` (SLP-only day), or `gdext_daily_wind_wind` (wind-only
   day) depending on the 2-tick split (below).
-- `wind_period_ticks=3` for the daily wind prepass — the prepass fires only on
-  `tick_index % 3 == 0`, not every tick. Injected from
-  `MapGenerator._OCEAN_DAILY_WIND_PERIOD_TICKS` at both the initial `configure`
-  and the runtime profile `reconfigure` paths (keep both in sync). Lowering the
-  cadence removes the recurring 5-7ms `daily_wind` spike frames; wind/SLP change
-  slowly and downstream consumers (weather stride 8, climate stride 2) tolerate
-  the staleness.
+- `wind_period_ticks=ClimateProfile.ocean_daily_wind_period_ticks` for the
+  daily wind prepass — default 3 means the prepass fires only on
+  `tick_index % 3 == 0`, not every tick. `MapGenerator` injects the same profile
+  value on both the initial `configure` and runtime `reconfigure` paths. Raising
+  the cadence removes recurring `daily_wind` spike frames; wind/SLP change
+  slowly, and mobile profiles may trade freshness for lower single-frame cost.
 - `ocean_period_ticks`, `slice_count`, and `ticks_per_slice` describe the slow
   ocean/raster chain, not the daily wind chain.
 - `daily_wind_sim_day` / `sim_day` should advance by one for each SUS daily
@@ -544,8 +548,8 @@ ocean-current fields appear frozen under native daily ACTIVE.
 ### 2-tick SLP/wind split
 
 `plan/daily-wind-stage-split` (profile flag `ClimateProfile.daily_wind_split_passes`,
-default `true`) staggers the two daily authority kernels across adjacent game
-days instead of running both every day:
+default `true`) staggers the two daily authority kernels across adjacent due
+occurrences instead of running both on every due tick:
 
 - `OceanCurrentsJob._daily_wind_stage_for(ctx)` picks the `stage` argument passed
   to `run_daily_wind_field_update()`: it alternates by the actual due-occurrence
@@ -557,9 +561,10 @@ days instead of running both every day:
   field. A wind-only day whose `map.slp_arr` size is stale falls back to
   running SLP too (`stage_note=wind_only_slp_primed`).
 - The single-tick SUS peak drops from ~5ms (SLP+wind) to ~3ms (SLP run) / ~1ms
-  (wind run). Combined with `wind_period_ticks=3`, the prepass fires every 3rd
-  tick and alternates kernels, so SLP and wind each refresh every 6th tick; at
-  20–50x this is imperceptible. The prepass `path` becomes `gdext_daily_wind_slp`
+  (wind run). Combined with the default `wind_period_ticks=3`, the prepass fires
+  every 3rd tick and alternates kernels, so SLP and wind each refresh every 6th
+  tick; a mobile profile can raise `ocean_daily_wind_period_ticks` to widen that
+  interval. The prepass `path` becomes `gdext_daily_wind_slp`
   / `gdext_daily_wind_wind` on split runs, and `gdext_daily_wind` when both run.
 - The report adds `stage_requested`, `slp_ran`, and `wind_ran` so logs can tell
   which kernel actually ran. On an SLP-only day `wind_ms=-1`; on a wind-only day

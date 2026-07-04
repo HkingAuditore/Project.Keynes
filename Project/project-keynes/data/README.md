@@ -83,6 +83,15 @@
 
 世界预设是一份 `ClimateProfile` 资源，描述一整套世界生成参数。切换预设**无需改任何代码**。
 
+### 内置预设
+
+| 文件 | 用途 |
+|---|---|
+| `res://data/world/earth_like.tres` | 默认地球类世界；保留桌面/基准配置，用于 A/B 对照。 |
+| `res://data/world/earth_like_mobile_complex.tres` | 移动端复杂气候性能档；降低高成本气候/SLP 风场/洋流/反馈更新频率，通过更宽的 stagger bucket 避免同帧聚集，并开启 native daily weather split 以压低单帧天气峰值。 |
+
+运行时入口 `main.gd` 会在 `OS.has_feature("mobile")` 为 true 时默认加载 `earth_like_mobile_complex.tres`，桌面仍默认 `earth_like.tres`；启动日志会打印 `[WorldSetup] ClimateProfile path=... split_weather=... wind_period=...` 方便确认。WorldSetup 中的气候覆盖项会叠加到该平台默认 profile 上；直接 new `MapGenerator` 且不赋值时仍用 `earth_like.tres` 作为类内兜底。
+
 ### 步骤
 
 1. **复制 `earth_like.tres`**：在 `res://data/world/` 下复制并重命名（如 `ice_age.tres`）。
@@ -102,7 +111,7 @@
    | `vitality_change_rate` | `0.015` | `0.010` | 植被适应更慢 |
    | `succession_degrade_days` | `30` | `20` | 退化更快 |
 
-3. **在 `MapGenerator.climate_profile` 指向新 `.tres`**：在 Godot 场景树中选中持有 `MapGenerator` 的节点，在 Inspector 的 `climate_profile` 字段拖入 `ice_age.tres`。或在代码里：
+3. **在 `MapGenerator.climate_profile` 指向新 `.tres`**：在 Godot 场景树中选中持有 `MapGenerator` 的节点，在 Inspector 的 `climate_profile` 字段拖入 `ice_age.tres`。若走主场景启动，也可以在 `main.gd` 的 profile 选择逻辑中加入新平台/模式分支。或在代码里：
    ```gdscript
    _generator.climate_profile = load("res://data/world/ice_age.tres")
    ```
