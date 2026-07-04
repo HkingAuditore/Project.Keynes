@@ -131,6 +131,8 @@ native_daily_sim ran=... progress=0.46
 - `stage_name` 应稳定对应 native daily slice node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。当 `native_daily_split_weather_node_enabled=true` 时，`weather` 是跳板节点，实际耗时会拆到 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b`。
 - Split weather report 会同时保留旧聚合字段 `weather_ms` / `weather_tick_ms`，并新增 `weather_field_ms`、`weather_commit_ms`、`weather_distribute_ms`、`weather_summary_ms`、`weather_cyclone_ms`、`weather_stage_b_ms`；`weather_split_skipped_monolithic=true` 表示本轮没有调用旧的一体化 `run_weather_refresh_daily_pass`。失败时 `fail_stage` 会落在对应 split stage，`fallback_reason` 给出 `field_solve`、`field_commit`、`distribute`、`summary` 或 `stage_b` 等具体原因。
 - 移动端主场景应先出现 `[WorldSetup] ClimateProfile path=res://data/world/earth_like_mobile_complex.tres mobile=true split_weather=true wind_period=6`，随后首个 native slice 日志应包含 `split=true split_skipped_monolithic=true`，并在 breakdown / largest 中出现 `weather_field` 等 split 节点。`weather_knobs embedded` 只表示 bundle 仍携带天气输入，不单独代表 monolithic；如果小米/Android log 仍显示 `wind_period=3`、`split=false` 或完全没有 split 节点，先查 profile 是否未加载；如果 profile 日志已经是 split=true 但 native slice 仍没有 split 字段，再查 Android GDExtension `.so` 是否旧、是否已重建并重启应用。
+- 移动端复杂 profile 还把 `weather_field_advect_steps` 覆盖为 `6`（桌面默认仍为 `8`），用更短上风采样降低 `weather_field/weather_knobs` 的单节点峰值。若天气场尖峰仍高，先看 slow dump 里的 `adv=...` 是否继续主导，再决定是否继续降到 5 或拆 field solve。
+- `[fast tick WARN]` 中 `native_daily/finalizer ...` 只在 native daily round 完成并执行 finalizer 时打印。它用于解释 `largest=native_daily_sim/native_daily_complete/round_complete`：`cell/temp/tta/thermal/sort/sea_ice/precip` 定位计算段，`write_mode/dense/sparse/dirty_collect/dirty_ratio/dirty=temp/tta/thermal/comps_dense/comps_sparse` 定位 DataCore 可见写入，`temp_clamped/tta_clamped/thermal_init/max_dt/pre_max_dt` 定位稳定性 clamp。`main.gd` 优先读 scheduler report 的 `native_daily_report`，旧/裁剪 report 缺嵌套字段时回退读 `MapGenerator.native_daily_last_result()`。若 `finalizer_total_ms` 高但 `cell_ms` 低，优先查 sparse/dense 写入和 dirty ratio；`mixed_sparse_dense` 表示每个 component 独立选择 sparse/dense，常见于 temp/thermal dirty 高但 TTA dirty 低的移动端 round；若 `cell_ms` 高，继续区分 native finalizer path 与 temp/TTA/thermal 子段。
 - 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。
 - `published_slots`、scheduler-level `published_to_slot` 和 `visual_dirty_intents` 只应在 round 完成 slice 上出现；中间 slice 为空是正常的。graph-level `published_to_slot=true` 不替代具体 pass 的 visible flush 证据。
 - `authority_blockers` 只看 simulation authority 和 production fallback；`retained_boundaries` 才看 `visual_uploads`、front objects、ImageTexture/LUT upload、sea-ice atlas、ocean texture commit、season detail scatter、CSV/debug。`graph_coverage_state=complete` 不要求这些 Godot presentation boundaries 消失。
@@ -214,6 +216,21 @@ transp/native breakdown source=current diagnostic_wall_ms=0.35 refresh_ms=0.000 
 `skipped_static_resources`。若 `flush_ms` 接近总耗时，优先查资源 slot 发布数量；若
 `loop_ms` 高，才继续看资源数、SIMD/多核和 per-cell 公式。
 
+`[fast tick WARN]` / periodic breakdown 会在 `natural_resource_daily` 下打印：
+
+```text
+natural_resource path=gdext wall=... cpp=... compute=... loop=... flush=... wrapper=... layout=cell_range_fused_seq dispatches=0 resources=published/input skipped_static=... published_to_slot=true total_delta=...
+```
+
+其中 `wall` 是 job 外层耗时，`cpp` 是 C++ pass 返回的 native 总耗时，
+`wrapper ~= wall - cpp`。若 `loop` 低但 `flush` 或 `wrapper` 高，优先查
+slot flush / MapData publication / refresh 边界；若 `loop` 高，优先查资源数量和
+每资源 per-cell 公式。`layout=cell_range_fused_seq dispatches=0` 表示小图走
+single-thread SIMD fused body；`layout=cell_range_fused_mt dispatches=1` 表示大图
+才进入 WorkerThreadPool。若仍慢，用 `tests/natural_resource_pass_bench.gd` 对比
+`SIMD+1T` / `SIMD+MT` 判断 WTP dispatch 是否超过收益。`main.gd` 会优先读 scheduler report；若 SUS 摘要裁掉
+自定义字段，则回读 `MapGenerator.natural_resource_last_result()` 的原始 pass report。
+
 ## Climate wrapper breakdown
 
 `[fast tick WARN]` 会在 `refresh_climate_daily` 下额外打印：
@@ -232,7 +249,7 @@ terrain sync、start-state capture、mark stale、SoA transaction 和 dirty mask
 
 - `transp/native diagnostic_wall_ms` 低但 `finalize_total_ms` 高：热点在 round 收尾，不在 transp C++。
 - `finalize_finalizer_ms` 高：继续看 `finalizer_cell_ms`、`finalizer_temp_ms`、`finalizer_tta_ms`、`finalizer_thermal_ms`、`finalizer_sort_ms`、`finalizer_write_mode`、`finalizer_write_dense_ms`、`finalizer_sparse_write_ms`。
-- `finalizer_write_mode=sparse_perf|sparse_safe` 表示 native finalizer 成功后只通过 `write_f32_indexed` 提交 temp/TTA/thermal 的 dirty index；`dense_fallback_dirty_ratio` 表示 dirty ratio 超过 `native_daily_finalizer_sparse_max_dirty_ratio` 自动退回 dense。
+- `finalizer_write_mode=sparse_perf|sparse_safe` 表示 native finalizer 成功后只通过 `write_f32_indexed` 提交 temp/TTA/thermal 的 dirty index；`mixed_sparse_dense` 表示部分 component 超过 `native_daily_finalizer_sparse_max_dirty_ratio` 后单独 dense，其他 component 仍 sparse；`dense_fallback_dirty_ratio` 表示所有需写 component 都因 dirty ratio 过高退回 dense。
 - Android 默认跳过 round-start terrain facade 全图同步，`round_start_terrain_sync_ms` 应接近 0；sea-ice slice 后仍会同步，因为 terrain/water facade 可能真实变化。
 - facade 开启时 finalizer 不再把 `temperature` 或 TTA 逐 cell 镜像回 `HexCell`；TTA 兼容读者通过 `HexCell.temperature_transport_anomaly` facade 从 GDScript `DCWorld` 读取。`tta_mirror=true/N` 只应出现在 facade 关闭或 TTA clamp 需要修正 legacy backing 的场景。
 - `round_start_terrain_sync_ms` 或 `round_start_mark_stale_ms` 高：查 round boundary sync/stale 标记；如需临时恢复 round-start terrain sync，可显式设置 `climate_round_start_terrain_sync_enabled=true`。

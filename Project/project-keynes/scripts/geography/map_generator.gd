@@ -1003,6 +1003,7 @@ var _sea_ice_daily_job = null
 # `natural_resource_daily` 自然资源每日生成/衰减系统 + 缓存的 C++ pass knobs（系数恒定，仅 n_cells 每 tick 更新）。
 var _natural_resource_daily_job = null
 var _natural_resource_pass_knobs: Dictionary = {}
+var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
 	"cell_temp",
 	"cell_moisture",
@@ -3217,6 +3218,9 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		"finalizer_precip_ms": 0.0,
 		"finalizer_write_dense_ms": 0.0,
 		"finalizer_write_mode": "dense",
+		"finalizer_dirty_collect_ms": 0.0,
+		"finalizer_sparse_components": PackedStringArray(),
+		"finalizer_dense_components": PackedStringArray(),
 		"finalizer_dirty_count_temp": 0,
 		"finalizer_dirty_count_tta": 0,
 		"finalizer_dirty_count_thermal": 0,
@@ -3418,7 +3422,6 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		diag["precip_p95"] = _native_daily_percentile_from_sorted(precip_vals, 0.95)
 	diag["finalizer_precip_ms"] = float(Time.get_ticks_usec() - t_precip_us) / 1000.0
 	if _data_core_world != null:
-		var t_write_us: int = Time.get_ticks_usec()
 		var cid_temp: int = _data_core_world.component_id(DCComponentIds.CELL_TEMP)
 		var cid_tta: int = _data_core_world.component_id(DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY)
 		var cid_heat: int = _data_core_world.component_id(DCComponentIds.CELL_THERMAL_ENERGY)
@@ -3441,6 +3444,10 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		var max_dirty_ratio: float = float(cp_now.native_daily_finalizer_sparse_max_dirty_ratio) \
 				if cp_now.get("native_daily_finalizer_sparse_max_dirty_ratio") != null else 0.45
 		max_dirty_ratio = clampf(max_dirty_ratio, 0.0, 1.0)
+		var sparse_components: PackedStringArray = PackedStringArray()
+		var dense_components: PackedStringArray = PackedStringArray()
+		var dense_write_ms: float = 0.0
+		var sparse_write_ms: float = 0.0
 		if can_sparse:
 			var temp_cur: PackedFloat32Array = _data_core_world.view_f32(cid_temp)
 			var tta_cur: PackedFloat32Array = _data_core_world.view_f32(cid_tta)
@@ -3451,9 +3458,11 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 				tta_cur = _native_daily_slice_tta_start_arr
 			if _native_daily_slice_thermal_start_arr.size() == n:
 				heat_cur = _native_daily_slice_thermal_start_arr
+			var t_collect_us: int = Time.get_ticks_usec()
 			var temp_dirty: Dictionary = _native_daily_collect_f32_dirty(temp_cur, temp_a, n, temp_eps)
 			var tta_dirty: Dictionary = _native_daily_collect_f32_dirty(tta_cur, tta_a, n, tta_eps)
 			var heat_dirty: Dictionary = _native_daily_collect_f32_dirty(heat_cur, thermal_a, n, thermal_eps)
+			diag["finalizer_dirty_collect_ms"] = float(Time.get_ticks_usec() - t_collect_us) / 1000.0
 			var temp_count: int = int(temp_dirty.get("count", -1))
 			var tta_count: int = int(tta_dirty.get("count", -1))
 			var heat_count: int = int(heat_dirty.get("count", -1))
@@ -3465,35 +3474,76 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 				diag["finalizer_dirty_count_tta"] = tta_count
 				diag["finalizer_dirty_count_thermal"] = heat_count
 				diag["finalizer_dirty_ratio"] = dirty_ratio
-				if dirty_ratio <= max_dirty_ratio:
-					var t_sparse_us: int = Time.get_ticks_usec()
+				var temp_sparse_ok: bool = float(temp_count) / float(maxi(1, n)) <= max_dirty_ratio
+				var tta_sparse_ok: bool = float(tta_count) / float(maxi(1, n)) <= max_dirty_ratio
+				var heat_sparse_ok: bool = float(heat_count) / float(maxi(1, n)) <= max_dirty_ratio
+				if temp_sparse_ok:
 					if temp_count > 0:
+						var t_sparse_us: int = Time.get_ticks_usec()
 						_data_core_world.write_f32_indexed(cid_temp,
 							temp_dirty.get("indices", PackedInt32Array()),
 							temp_dirty.get("values", PackedFloat32Array()))
+						sparse_write_ms += float(Time.get_ticks_usec() - t_sparse_us) / 1000.0
+						sparse_components.append("temp")
+				else:
+					var t_dense_us: int = Time.get_ticks_usec()
+					_data_core_world.write_f32_dense(cid_temp, temp_a)
+					dense_write_ms += float(Time.get_ticks_usec() - t_dense_us) / 1000.0
+					dense_components.append("temp")
+				if tta_sparse_ok:
 					if tta_count > 0:
+						var t_sparse_us: int = Time.get_ticks_usec()
 						_data_core_world.write_f32_indexed(cid_tta,
 							tta_dirty.get("indices", PackedInt32Array()),
 							tta_dirty.get("values", PackedFloat32Array()))
+						sparse_write_ms += float(Time.get_ticks_usec() - t_sparse_us) / 1000.0
+						sparse_components.append("tta")
+				else:
+					var t_dense_us: int = Time.get_ticks_usec()
+					_data_core_world.write_f32_dense(cid_tta, tta_a)
+					dense_write_ms += float(Time.get_ticks_usec() - t_dense_us) / 1000.0
+					dense_components.append("tta")
+				if heat_sparse_ok:
 					if heat_count > 0:
+						var t_sparse_us: int = Time.get_ticks_usec()
 						_data_core_world.write_f32_indexed(cid_heat,
 							heat_dirty.get("indices", PackedInt32Array()),
 							heat_dirty.get("values", PackedFloat32Array()))
-					diag["finalizer_sparse_write_ms"] = float(Time.get_ticks_usec() - t_sparse_us) / 1000.0
+						sparse_write_ms += float(Time.get_ticks_usec() - t_sparse_us) / 1000.0
+						sparse_components.append("thermal")
 				else:
-					can_sparse = false
+					var t_dense_us: int = Time.get_ticks_usec()
+					_data_core_world.write_f32_dense(cid_heat, thermal_a)
+					dense_write_ms += float(Time.get_ticks_usec() - t_dense_us) / 1000.0
+					dense_components.append("thermal")
+				if dense_components.size() > 0 and sparse_components.size() > 0:
+					write_mode = "mixed_sparse_dense"
+				elif dense_components.size() > 0:
 					write_mode = "dense_fallback_dirty_ratio"
+				elif sparse_components.size() > 0:
+					write_mode = requested_write_mode
+				else:
+					write_mode = "sparse_noop"
+				diag["finalizer_sparse_write_ms"] = sparse_write_ms
+				diag["finalizer_write_dense_ms"] = dense_write_ms
 		if not can_sparse:
 			if requested_write_mode != "dense" and write_mode == requested_write_mode:
 				write_mode = "dense_fallback_unavailable"
+			var t_dense_us: int = Time.get_ticks_usec()
 			if cid_temp >= 0 and _data_core_world.has_method("write_f32_dense"):
 				_data_core_world.write_f32_dense(cid_temp, temp_a)
 			if cid_tta >= 0 and _data_core_world.has_method("write_f32_dense"):
 				_data_core_world.write_f32_dense(cid_tta, tta_a)
 			if cid_heat >= 0 and thermal_a.size() == n and _data_core_world.has_method("write_f32_dense"):
 				_data_core_world.write_f32_dense(cid_heat, thermal_a)
-			diag["finalizer_write_dense_ms"] = float(Time.get_ticks_usec() - t_write_us) / 1000.0
+			dense_write_ms = float(Time.get_ticks_usec() - t_dense_us) / 1000.0
+			diag["finalizer_write_dense_ms"] = dense_write_ms
+			dense_components.append("temp")
+			dense_components.append("tta")
+			dense_components.append("thermal")
 		diag["finalizer_write_mode"] = write_mode
+		diag["finalizer_sparse_components"] = sparse_components
+		diag["finalizer_dense_components"] = dense_components
 	_gdext_ocean_anomaly_buf_cached = tta_a
 	diag["thermal_finalizer_applied"] = true
 	diag["finalizer_total_ms"] = float(Time.get_ticks_usec() - t_total_us) / 1000.0
@@ -5036,6 +5086,16 @@ func _ensure_natural_resource_knobs() -> void:
 		_natural_resource_pass_knobs = ResourceProfileRegistry.build_pass_knobs()
 
 
+func _remember_natural_resource_report(report: Dictionary) -> Dictionary:
+	_last_natural_resource_report = report.duplicate(true)
+	_last_natural_resource_report["_tick_idx"] = _current_fast_tick_idx
+	return report
+
+
+func natural_resource_last_result() -> Dictionary:
+	return _last_natural_resource_report.duplicate(true)
+
+
 # 地图生成期一次性写入每地块初始资源储量（多因子「地块自身情况」适宜度）。
 # suit = init_base + init_temp*tn + init_moisture*m
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
@@ -5136,13 +5196,13 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 func run_natural_resource_pass_native(map_ref) -> Dictionary:
 	var t_wall: int = Time.get_ticks_usec()
 	if map_ref == null:
-		return {"done": true, "path": "skip", "published_to_slot": false}
+		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	var n_cells: int = map_ref.cell_count()
 	if n_cells <= 0:
-		return {"done": true, "path": "skip", "published_to_slot": false}
+		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	_ensure_natural_resource_knobs()
 	if int(_natural_resource_pass_knobs.get("resource_count", 0)) <= 0:
-		return {"done": true, "path": "no_resources", "published_to_slot": false}
+		return _remember_natural_resource_report({"done": true, "path": "no_resources", "published_to_slot": false})
 
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("run_natural_resource_pass"):
 		if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
@@ -5152,10 +5212,12 @@ func run_natural_resource_pass_native(map_ref) -> Dictionary:
 		_natural_resource_pass_knobs["n_cells"] = n_cells
 		var res: Dictionary = _data_core_world_ext.run_natural_resource_pass(_natural_resource_pass_knobs)
 		if bool(res.get("published_to_slot", false)):
-			return res
+			res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
+			res["wrapper_overhead_ms"] = max(0.0, float(res.get("wrapper_wall_ms", 0.0)) - float(res.get("native_ms", 0.0)))
+			return _remember_natural_resource_report(res)
 		# native 跑了但没发布任何资源 → 落到 GDScript fallback。
 
-	return _run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall)
+	return _remember_natural_resource_report(_run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall))
 
 
 # GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。

@@ -200,9 +200,16 @@ DCSystemScheduler
   `ClimateProfile.native_daily_finalizer_write_mode=dense|sparse_safe|sparse_perf`
   选择 dense 或 `write_f32_indexed` 稀疏提交。默认 `sparse_perf`，epsilon 默认
   `0.0005`，dirty ratio 超过 `native_daily_finalizer_sparse_max_dirty_ratio`
-  （默认 `0.45`）自动退回 dense。report 字段：
+  （默认 `0.45`）的 component 自动退回 dense，其他低 dirty component 仍走 sparse。
+  因此 report 可能出现 `finalizer_write_mode=mixed_sparse_dense`。report 字段：
   `finalizer_write_mode`、`finalizer_dirty_count_temp/tta/thermal`、
-  `finalizer_dirty_ratio`、`finalizer_sparse_write_ms`。
+  `finalizer_dirty_ratio`、`finalizer_sparse_write_ms`、`finalizer_write_dense_ms`、
+  `finalizer_dirty_collect_ms`、`finalizer_sparse_components`、
+  `finalizer_dense_components`。这些字段会从
+  `MapGenerator.run_native_daily_slice_from_job()` 的 `res/breakdown` 继续提升到
+  `NativeDailySimJob` scheduler report；`main.gd` 在 `[fast tick WARN]` 下打印
+  `native_daily/finalizer ...`，用于定位 `native_daily_complete/round_complete`
+  尖峰到底来自 cell loop、clamp、sort 还是 dense/sparse DataCore 写回。
 - **GDScript 端热路径开销削减（2026-06，bit-equal）**：① 诊断快照
   `_native_daily_last_result` / `_last_weather_breakdown` / `_last_climate_breakdown` 以及
   `native_daily_last_result()` 取值改用**浅拷贝**（`Dictionary.duplicate()`）——只新建顶层

@@ -79,7 +79,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	var published_slot_count: int = 0
 	if published_slots is Array or published_slots is PackedStringArray:
 		published_slot_count = published_slots.size()
-	return {
+	var report := {
 		"done": bool(res.get("done", true)),
 		"work_done": 1 if _did_run_last_tick else 0,
 		"elapsed_ms": elapsed_ms,
@@ -110,6 +110,46 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"native_state_snapshot": res.get("native_state_snapshot", breakdown.get("native_state_snapshot", {})),
 		"native_daily_report": res,
 	}
+	var finalizer_fields: Array[String] = [
+		"thermal_finalizer_applied",
+		"finalizer_path",
+		"finalizer_total_ms",
+		"finalizer_cell_ms",
+		"finalizer_temp_ms",
+		"finalizer_tta_ms",
+		"finalizer_thermal_ms",
+		"finalizer_sort_ms",
+		"finalizer_sea_ice_ms",
+		"finalizer_precip_ms",
+		"finalizer_write_dense_ms",
+		"finalizer_write_mode",
+		"finalizer_dirty_collect_ms",
+		"finalizer_sparse_components",
+		"finalizer_dense_components",
+		"finalizer_dirty_count_temp",
+		"finalizer_dirty_count_tta",
+		"finalizer_dirty_count_thermal",
+		"finalizer_dirty_ratio",
+		"finalizer_sparse_write_ms",
+		"finalizer_cells_seen",
+		"finalizer_temperature_cell_mirror",
+		"finalizer_tta_cell_mirror",
+		"finalizer_tta_cell_mirror_count",
+		"finalizer_tta_clamped_count",
+		"finalizer_thermal_init_count",
+		"temp_delta_clamped_count",
+		"max_temp_delta",
+		"preclamp_max_temp_delta",
+		"temp_delta_gt_005_count",
+		"temp_delta_gt_010_count",
+		"temp_delta_gt_020_count",
+	]
+	for key in finalizer_fields:
+		if res.has(key):
+			report[key] = res[key]
+		elif breakdown.has(key):
+			report[key] = breakdown[key]
+	return report
 
 
 func reset_progress() -> void:
