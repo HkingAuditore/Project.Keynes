@@ -6372,7 +6372,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			#       Windows stdout flush 每行 ~12-15ms → call#1 wall 会被污染 ~50-60ms。
 			#       真实 stage wall ≈ call#1_wall - 15ms × (该 call 同 stage 内已打印的 print 行数)。
 			#       call#2+ 后 path-decision / commit-diag 命中前 3 次封顶，wall 才反映真实开销。
-			if _slp_path_log_count <= 3 or _slp_stage_total_ms >= 5.0:
+			if PKLog.enabled and (_slp_path_log_count <= 3 or _slp_stage_total_ms >= 5.0):
 				print("[slp_field/STAGE-TOTAL] call#%d wall=%.2fms native=%.2fms path=%s commit_ok=%s (call#1 wall pollution: ~15ms/print × 4 prints; trust call#4+ or wall>=5ms warn)" % [
 					_slp_path_log_count, _slp_stage_total_ms,
 					float(_slp_native_ms),
@@ -6507,7 +6507,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					print("[wind_field/B] FALLBACK to GDScript solve_wind_field (call#%d) — see preceding path-decision / commit-diag for reason" % _wind_b_path_log_count)
 				PhysCircSolverScript.solve_wind_field(map, hex_size, bounds, season_phase, terrain_aware, profile)
 			var _wind_stage_total_ms: float = float(Time.get_ticks_usec() - _wind_stage_t0_us) / 1000.0
-			if _wind_b_path_log_count <= 3 or _wind_stage_total_ms >= 5.0:
+			if PKLog.enabled and (_wind_b_path_log_count <= 3 or _wind_stage_total_ms >= 5.0):
 				print("[wind_field/STAGE-TOTAL] call#%d wall=%.2fms native=%.2fms path=%s commit_ok=%s" % [
 					_wind_b_path_log_count, _wind_stage_total_ms,
 					float(_phys_last_wind_rc_ms),
@@ -6870,7 +6870,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			# 但 STAGE >= 5ms 的异常应该一直报。补一行 warn-only 路径，与 _diag_active 解耦。
 			if not _diag_active:
 				var _ms_stage_warn: float = float(Time.get_ticks_usec() - _t_stage_us) / 1000.0
-				if _ms_stage_warn >= 5.0:
+				if PKLog.enabled and _ms_stage_warn >= 5.0:
 					print("[upwelling/STAGE-TOTAL] warn wall=%.2fms cpp=%s (>= 5ms threshold; mobile ocean candidate hotspot)" % [
 						_ms_stage_warn, str(_upwelling_done_by_cpp),
 					])
@@ -6943,7 +6943,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			_rasterize_wind_slice_from_hex(world, _pending_wind_buf, s_idx, e_idx)
 			_phys_wind_raster_idx = e_idx
 			var _wr_slice_total_ms: float = float(Time.get_ticks_usec() - _wr_stage_t0_us) / 1000.0
-			if _wr_slice_total_ms >= 5.0:
+			if PKLog.enabled and _wr_slice_total_ms >= 5.0:
 				print("[wind_raster/STAGE-TOTAL] warn slice wall=%.2fms (pix %d..%d / %d) [GDScript slice path; mobile Fix #1 expected to skip this stage entirely]" % [
 					_wr_slice_total_ms, s_idx, e_idx, pix_total,
 				])
