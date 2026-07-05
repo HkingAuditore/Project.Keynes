@@ -54,7 +54,7 @@ SurfaceParams compute_land_base_surface(
 
 	// LAND 1.1：底色 = hypsometric × biome hue × procedural detail
 	vec3 hyps = hypsometric_tint(elev, false);
-	col = biome_hue_modulate(hyps, biome) * procedural_biome_detail(biome, wp);
+	col = biome_hue_modulate(hyps, biome) * procedural_biome_detail(biome, wp, uv);
 
 	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 flow_tex（scals.g）。
 	float flow = scals.g;
@@ -62,10 +62,12 @@ SurfaceParams compute_land_base_surface(
 	float river_t = river_t_raw;
 	float outline_t = smoothstep(river_threshold_low * 0.78, river_threshold_low, flow)
 			* (1.0 - smoothstep(river_threshold_high, min(river_threshold_high + 0.22, 1.0), flow));
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 	if (river_t > 0.001 && river_flow_enabled && river_flow_speed > 0.001 && visual_quality >= 1) {
 		float pulse = 1.0 + 0.055 * sin(dot(wp, vec2(0.35, 0.42)) - world_time * 0.55);
 		river_t = clamp(river_t * pulse, 0.0, 1.0);
 	}
+#endif
 	// [需求1 2026-06-19] 增强径流量视觉差：深浅系数 0.42→0.60、深水段更接近深海色 → 宽阔干流呈
 	// 深蓝厚重、细窄支流浅青，配合烘焙端幂律宽度对比，让"大河 vs 小河"在视觉上拉开。
 	float river_depth_w = smoothstep(0.18, 1.0, river_t_raw);
@@ -77,6 +79,7 @@ SurfaceParams compute_land_base_surface(
 	col = mix(col, river_body, river_t * river_strength);
 
 	// LAND 1.3：河流顺坡流动明暗（Water Visual Overhaul）
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 	if (river_t > 0.001
 			&& river_flow_enabled
 			&& river_flow_speed > 0.001
@@ -104,6 +107,7 @@ SurfaceParams compute_land_base_surface(
 			col = mix(col, flow_tint, river_t * river_strength * 0.28);
 		}
 	}
+#endif
 
 	// LAND 1.4：等高线 basecolor（仅 contour_enabled）
 	if (contour_enabled) {
@@ -124,12 +128,16 @@ SurfaceParams compute_land_base_surface(
 	// （细河道权重小但仍可读），不会让所有 flow 边缘发白。桌面走水波法线，低画质退化为平滑水面。
 	if (river_t > 0.001) {
 		float river_w = clamp(river_t * river_strength, 0.0, 1.0);
+#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+		normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
+#else
 		if (visual_quality >= 1 && water_waves_enabled) {
 			vec3 river_wn = sample_water_normal(wp, world_time, 0.40, 1.15, 1, true);
 			normal = normalize(mix(normal, river_wn, river_w * 0.70));
 		} else {
 			normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
 		}
+#endif
 		roughness = mix(roughness, 0.16, river_w);
 		metallic = mix(metallic, DEFAULT_METALLIC_WATER, river_w);
 		ao = mix(ao, 0.98, river_w * 0.5);
@@ -405,10 +413,15 @@ SurfaceParams apply_land_color_overlays(
 	if (cover_axis_strength > 0.001) {
 		vec4 ov = cover_overlay(cover);
 		if (ov.a > 0.001) {
+#ifdef PK_MOBILE_ANY
+			float cov_amp = 1.0;
+			vec3  cov_rgb = ov.rgb;
+#else
 			float cov_low = fbm(wp * 0.055 + vec2(-13.0, 41.0), 2);
 			float cov_hi  = fbm(wp * 0.26  + vec2(73.0, -19.0), 1);
 			float cov_amp = mix(0.55, 1.20, cov_low);
 			vec3  cov_rgb = ov.rgb * mix(0.94, 1.06, cov_hi);
+#endif
 			float cov_a   = clamp(ov.a * cov_amp, 0.0, 1.0);
 			col = mix(col, cov_rgb, cov_a * cover_axis_strength);
 		}

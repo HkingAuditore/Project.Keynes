@@ -89,6 +89,7 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 	float pA = water_periodic_wave_phase(wp, dA, kA) - t * WATER_WAVE_SPEED_A;
 	float h = sin(pA) * WATER_WAVE_AMP_A;
 	if (quality >= 1) {
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 		vec2 dB = normalize(WATER_WAVE_DIR_B);
 		vec2 dC = normalize(WATER_WAVE_DIR_C);
 		float kB = WATER_WAVE_FREQ_B * freq_scale;
@@ -99,6 +100,7 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 		// 中低频碎波：补回波面细节，但频率仍明显低于旧版密集梳齿纹。
 		float detail = water_fbm_cyl(wp, 0.060, vec2(-t * 0.055, t * 0.036), 2) - 0.5;
 		h += detail * WATER_WAVE_AMP_A * 0.58;
+#endif
 	}
 	return h * amp_scale;
 }
@@ -133,9 +135,11 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	// 控制额外采样），让规则正弦条纹的走向随空间缓慢弯曲，不再是贯穿整屏的平行直线。
 	vec2 wpw = wp;
 	if (quality >= 1) {
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 		float wnx = water_fbm_cyl(wp, 0.0135, vec2(t * 0.034, 0.0), 1) - 0.5;
 		float wny = water_fbm_cyl(wp, 0.0135, vec2(0.0, t * 0.030) + vec2(23.0, -11.0), 1) - 0.5;
 		wpw = wp + vec2(wnx, wny) * 12.0;
+#endif
 	}
 	float eps = 0.5;
 	// [base-normal tilling] 宏观涌浪频率单独乘 water_base_normal_scale（细节法线那块仍用原 freq_scale，
@@ -159,6 +163,7 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	//   （wave_q = ctx.quality>=1?1:0，因 water_surface_height 无 q>=2 分支），导致 quality>=2 永不成立、
 	//   这块从未执行——这才是"细节法线参数调了没反应"的真因，与玩家选的画质档无关。
 	//   修复：改用全局 visual_quality 判定（脱离被钳的参数），保持高画质(>=2)专属语义不变。
+#if !defined(PK_MOBILE_ANY)
 	if (visual_quality >= 2 && water_detail_normal_strength > 0.001) {
 		vec2 e1 = vec2(0.6, -0.8);   // 已是单位向量
 		vec2 e2 = vec2(-0.92, -0.39); // ≈单位向量
@@ -187,6 +192,7 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 		dhx += (c1 * k1 * e1.x * a1 + c2 * k2 * e2.x * a2) * ds;
 		dhy += (c1 * k1 * e1.y * a1 + c2 * k2 * e2.y * a2) * ds;
 	}
+#endif
 	return normalize(vec3(-dhx, -dhy, 1.0));
 }
 

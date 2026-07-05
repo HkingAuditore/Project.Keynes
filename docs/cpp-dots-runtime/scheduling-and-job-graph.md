@@ -195,16 +195,26 @@ DCSystemScheduler
   `deferred_node_count`、`jit_patch_build_ms`、`jit_patch_keys`、
   `bundle_cache_hit`、`bundle_cache_rebuild_reason`、`bundle_static_ms`、
   `bundle_dynamic_ms`。
+- **Ocean knobs hot-path cache（2026-07）**：`ocean_water/land` 仍必须在
+  Pass-A/B 之后 JIT 构建，因为它读取最新 `temp` / TTA；但构建器不再无条件
+  `map.iter_cells()` 或逐格重建 baseline。生成期 EMA 已全初始化后，baseline 直接复用
+  `temp_baseline_arr` / DataCore view，只有冷启动/修复路径才回到 HexCell facade。
+  这保持动态输入时序不变，同时减少 `ocean_water/ocean_water_knobs` slice 的
+  GDScript 打包与 PackedArray 往返成本。
 - **Finalizer sparse write（2026-07）**：native finalizer 仍是 temp/TTA/thermal
   的生产计算边界；完成后 GDScript DataCore 可见写入按
   `ClimateProfile.native_daily_finalizer_write_mode=dense|sparse_safe|sparse_perf`
   选择 dense 或 `write_f32_indexed` 稀疏提交。默认 `sparse_perf`，epsilon 默认
   `0.0005`，dirty ratio 超过 `native_daily_finalizer_sparse_max_dirty_ratio`
   （默认 `0.45`）的 component 自动退回 dense，其他低 dirty component 仍走 sparse。
-  因此 report 可能出现 `finalizer_write_mode=mixed_sparse_dense`。report 字段：
+  `sparse_perf` 还会记录上一轮各 component 的 dirty ratio；若上一轮已明显超过
+  阈值（阈值 + 0.10），下一轮会直接 dense 写该 component，并每 8 轮强制采样一次，
+  避免在移动端高 dirty 天气轮重复做三数组 GDScript dirty collect。因此 report
+  可能出现 `finalizer_write_mode=mixed_sparse_dense`。report 字段：
   `finalizer_write_mode`、`finalizer_dirty_count_temp/tta/thermal`、
   `finalizer_dirty_ratio`、`finalizer_sparse_write_ms`、`finalizer_write_dense_ms`、
-  `finalizer_dirty_collect_ms`、`finalizer_sparse_components`、
+  `finalizer_dirty_collect_ms`、`finalizer_dirty_collect_skipped`、
+  `finalizer_dirty_collect_skip_components`、`finalizer_sparse_components`、
   `finalizer_dense_components`。这些字段会从
   `MapGenerator.run_native_daily_slice_from_job()` 的 `res/breakdown` 继续提升到
   `NativeDailySimJob` scheduler report；`main.gd` 在 `[fast tick WARN]` 下打印
@@ -216,9 +226,13 @@ DCSystemScheduler
   dict（顶层加 key 仍隔离），嵌套 PackedArray 走 CoW 共享而非每 slice 逐字节深拷上千浮点。
   ② `_build_native_daily_ocean_knobs` / `_build_native_daily_wind_knobs` 内 per-cell 循环
   内联 NaN/inf 守卫（消除每 cell 一次函数调用）、ocean anomaly 直接就地填 work buf（去掉
-  `_prepare_*` 的额外分配 + 第二遍 copy）。实测：`round_apply_ms` −32%、`round_bundle_ms`
-  −47%（ocean_knobs −60% / wind_knobs −68%）；spread `maxslices=1` per-tick 均值 3.89→3.13ms、
-  max 7.15→5.99ms。三项 bit-equal A/B（40-round）+ bootstrap 全绿。
+  `_prepare_*` 的额外分配 + 第二遍 copy）。后续 wind-air 又加入 slot-temp 输入路径：
+  新 DLL 通过 `supports_wind_air_slot_temp()` 让 `_build_native_daily_wind_knobs` 省略
+  `temp_before_arr`，C++ `run_wind_air_mass_pass` 直接读 `cell_temp` slot 并用 `baseline_arr`
+  做非有限值兜底；旧 DLL 仍回退到历史数组快照。实测：`round_apply_ms` −32%、`round_bundle_ms`
+  −47%（ocean_knobs −60% / wind_knobs −68%，slot-temp 进一步降低 wind_air JIT 打包）；spread
+  `maxslices=1` per-tick 均值 3.89→3.13ms、max 7.15→5.99ms。三项 bit-equal A/B（40-round）
+  + bootstrap 全绿。
   ③ **finalizer 重诊断门禁（2026-06，bit-equal）**：`_native_daily_apply_finalizer` 里的百分位机器
   （per-cell `temp_deltas`/`preclamp_temp_deltas` 数组填充 + 两次 `sort` 求 p95/p99、`sea_ice_delta_max`
   全格扫描、`precip_p95` 排序）由 `_native_daily_finalizer_heavy_diag`（默认 **false**）门禁——**clamp
@@ -234,6 +248,7 @@ DCSystemScheduler
   `temperature_transport_anomaly`，不能放到 `ocean_*` 之后。
 - C++ 在 `DCWorldExt` 内保存 `round_active`、`current_node`、`round_id`、累计 breakdown、bundle pass keys 和 state snapshot。
 - `run_native_daily_slice()` 采用**节点批处理**（2026-06，bit-equal perf）：C++ 在一次调用里连跑**连续的非 yield 节点**，直到下一个节点属于 yield 集才返回 `done=false`，把控制权交回 GDScript。yield 集**随 cadence 模式自适应**（`_native_daily_effective_yield_nodes(cp)`）：原子模式经**实测最小化** = `_NATIVE_DAILY_SLICE_YIELD_NODES` = `{2,6}`；spread 模式改用 `_NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD` = 全部 `[0..20]`。当 `native_daily_split_weather_node_enabled=true`，原子模式也会追加 weather 子节点 `{13..18}` 的 yield，split 关闭时 C++ 直接跳过这些子节点。patch 的 `match next_node_index` 分支只需覆盖真正要 JIT 构建 knobs 的节点：`1/2/4/6/7/11/12/19/20`，其中 hydrology 与 hydrology 后 stage-b 已因 weather split 插入而移动到 `19/20`。返回值仍含 `progress_ratio`、`stage_name`、`substage`、`cursor_start/cursor_end`（批处理下 `cursor_start` 为该批首节点）和 `node_report`。ACTIVE slice 使用 `world_ext_daily_sim.cpp` 内的 lightweight slice graph；`run_native_daily_tick()` debug/full-run helper 仍使用 `SCHEDULE_GRAPH` dispatcher。
+- **Weather knobs prebuild（2026-07）**：ACTIVE slice 的 deferred round-start 现在会在 weather cadence 到期时预构建 `weather_knobs`，并保留 node 12 作为执行/yield 边界。这样 `weather/weather_knobs` slice 不再在执行帧支付 `build_unified_fast_tick_weather_knobs()` 的 GDScript 打包成本；report/breakdown 字段 `weather_knobs_prebuilt=true` 表示 node 12 的 JIT patch 已短路复用 round-start bundle。
 - Sea ice 在 native sliced ACTIVE 中仍按每日松弛语义推进：`sea_ice_knobs.dt_days` 会消费并推进 `_last_sea_ice_pass_day`，但上限压到 1 天。这个上限现在用于防止异常跨 tick continuation 折叠成批量融化/冻结；正常 ACTIVE 不应让一个 climate/sea-ice round 跨过多日。
 - 最后一个 native node 完成后，`MapGenerator` 会先发布 native 返回的 TTA，再执行 climate finalizer（复用旧 `thermal_daily_delta_cap` / `temperature_transport_anomaly_daily_cap` 语义，写回 `MapData` 和 GDScript `DCWorld`），然后才把 `published_slots` / `visual_dirty_intents` / finalizer diagnostics 暴露给 scheduler、CSV 和 debug。
 - `total_ms` / `native_ms` 是**最后一个 slice** 墙钟，供 SUS largest 归因；`round_native_ms` 是当前 native round 累计墙钟，也是判断 daily transaction 实际成本的主指标。

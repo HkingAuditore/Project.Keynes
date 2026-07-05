@@ -436,6 +436,16 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_push_curtain_runtime_state()
 	_update_curtain_visibility()
 
+
+func _shader_quality_define_prefix(tier_define: String) -> String:
+	match tier_define:
+		"MOBILE_QUALITY_LOW":
+			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+		"MOBILE_QUALITY_HIGH":
+			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
+		_:
+			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+
 func set_day_night_enabled(v: bool) -> void:
 	_day_night_enabled = v
 	if _overlay_mat != null:
@@ -1225,7 +1235,7 @@ func _load_overlay_shader() -> void:
 		var src: String = shader.code
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader
-			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
 			print("[weather-layer/quality] prepended #define %s to %s" % [
 				_mobile_quality_tier_define, OVERLAY_SHADER_PATH
 			])
@@ -1243,7 +1253,7 @@ func _load_curtain_shader() -> void:
 		var src: String = shader.code
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader
-			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
 	# [parallax-rain] 清空旧材质，按层数重建
 	_curtain_mats.clear()
 	var layer_count := _curtain_layer_capacity()

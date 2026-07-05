@@ -1,6 +1,8 @@
 shader_type canvas_item;
 render_mode blend_mix;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 // ════════════════════════════════════════════════════════════════════════
 // weather_overlay.gdshader — 天气云 overlay（2026-06-19 精简重写）
 //
@@ -208,6 +210,11 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	float cloud_mask = smoothstep(0.025, 0.18, coverage);
 	float amount = smoothstep(0.04, 0.3, coverage);
 
+#ifdef PK_QUALITY_LOW
+	float low_pulse = 0.92 + 0.08 * sin(t * 0.09 + seed * 1.7);
+	return clamp(cloud_mask * mix(0.22, 0.58, amount) * low_pulse, 0.0, 1.0);
+#else
+
 	// Classic fBM cloud stack:
 	// 1) low-frequency fBM gives continuous cloud texture;
 	// 2) domain warp breaks circular/noisy repetition;
@@ -241,6 +248,7 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	float texture_cloud = clamp(soft_texture * 0.82 + cloud_core * 0.08, 0.0, 1.0);
 	float opacity = mix(0.38, 0.82, amount);
 	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
+#endif
 }
 
 struct CloudLayerSample {
@@ -531,7 +539,10 @@ void fragment() {
 	FrontField w = sample_field_weather(wp);
 
 	int q_weather = effective_weather_quality();
-	int biome = int(texture(map_index_atlas, wx_wrap_uv(uv)).r * 255.0 + 0.5);
+	int biome = 0;
+#ifndef PK_QUALITY_LOW
+	biome = int(texture(map_index_atlas, wx_wrap_uv(uv)).r * 255.0 + 0.5);
+#endif
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
 

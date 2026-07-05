@@ -1,6 +1,6 @@
 # Project.Keynes 地形 Shader 开发文档
 
-> 版本：v10.semi-pbr（2026-05-19 重构后）
+> 版本：v10.semi-pbr（2026-07-05 性能变体分档）
 > 主入口：`shaders/world_map.gdshader`
 > 适用范围：本文档覆盖 `world_map.gdshader` + `shaders/include/*.gdshaderinc` 共 1 主 + 19 支模块。
 > 兼容标记：本套 shader 同时存在 `world_map.legacy.gdshader.bak`（v9 baseline，用于 A/B 对照）。
@@ -100,25 +100,26 @@ void fragment() {
 
 | # | 模块 | 依赖项 | 角色 |
 |---|---|---|---|
-| 1 | `uniforms.gdshaderinc` | – | 叶子，所有 sampler / 常量 / 枚举 ID 入口 |
-| 2 | `material_constants.gdshaderinc` | uniforms | 叶子，magic number / F0 / 特性开关 |
-| 3 | `common_noise.gdshaderinc` | uniforms | 叶子，`fbm` / `voronoi_cell` / `derive_independent_noise4` |
-| 4 | `height.gdshaderinc` | uniforms | 叶子，`decode_height_rg8` |
-| 5 | `climate_season.gdshaderinc` | uniforms | 叶子，`hemi_phase` / `season_offset_unified` / `compute_current_temp` |
-| 6 | `biome_color.gdshaderinc` | uniforms, B_* | 叶子，按 biome 取基础色 |
-| 7 | `vegetation.gdshaderinc` | common_noise + uniforms.V_* | 叶子，植被季节色 |
-| 8 | `weather_front.gdshaderinc` | common_noise + uniforms.WT_* | 叶子，极端天气掩码 |
-| 9 | `snow_cover.gdshaderinc` | common_noise + height + weather_front | 雪盖判定与色化 |
-| 10 | `biome_detail.gdshaderinc` | common_noise + B_* | biome 内部纹理变化 |
-| 11 | `hillshade_tod.gdshaderinc` | uniforms + height | 山影 + 时间昼夜 |
-| 12 | `water.gdshaderinc` | common_noise + uniforms.B_* | 水共享细节（波纹/平静面） |
-| 13 | `surface_params.gdshaderinc` | material_constants | 半 PBR 容器 |
-| 14 | `tonemap.gdshaderinc` | material_constants | sRGB↔Linear / ACES |
-| 15 | `shore_common.gdshaderinc` | uniforms + material_constants | 海岸 3×3 邻域 + halo |
-| 16 | `brdf.gdshaderinc` | surface_params + tonemap + material_constants + uniforms.tod_* | 光照核心 |
-| 17 | `land_pipeline.gdshaderinc` | 全部上游 | 陆地总调度 |
-| 18 | `water_pipeline.gdshaderinc` | 全部上游 | 水面总调度 |
-| 19 | `global_adjustments.gdshaderinc` | tonemap + uniforms | 末端调整（羊皮纸/季节过渡/tonemap/sRGB） |
+| 1 | `shader_quality.gdshaderinc` | – | 编译期性能变体宏：`PK_QUALITY_*` / `PK_SKIP_*` |
+| 2 | `uniforms.gdshaderinc` | – | 叶子，所有 sampler / 常量 / 枚举 ID 入口 |
+| 3 | `material_constants.gdshaderinc` | uniforms | 叶子，magic number / F0 / 特性开关 |
+| 4 | `common_noise.gdshaderinc` | uniforms | 叶子，`fbm` / `voronoi_cell` / `derive_independent_noise4` |
+| 5 | `height.gdshaderinc` | uniforms | 叶子，`decode_height_rg8` |
+| 6 | `climate_season.gdshaderinc` | uniforms | 叶子，`hemi_phase` / `season_offset_unified` / `compute_current_temp` |
+| 7 | `biome_color.gdshaderinc` | uniforms, B_* | 叶子，按 biome 取基础色 |
+| 8 | `vegetation.gdshaderinc` | common_noise + uniforms.V_* | 叶子，植被季节色 |
+| 9 | `weather_front.gdshaderinc` | common_noise + uniforms.WT_* | 叶子，极端天气掩码 |
+| 10 | `snow_cover.gdshaderinc` | common_noise + height + weather_front | 雪盖判定与色化 |
+| 11 | `biome_detail.gdshaderinc` | common_noise + B_* | biome 内部纹理变化 |
+| 12 | `hillshade_tod.gdshaderinc` | uniforms + height | 山影 + 时间昼夜 |
+| 13 | `water.gdshaderinc` | common_noise + uniforms.B_* | 水共享细节（波纹/平静面） |
+| 14 | `surface_params.gdshaderinc` | material_constants | 半 PBR 容器 |
+| 15 | `tonemap.gdshaderinc` | material_constants | sRGB↔Linear / ACES |
+| 16 | `shore_common.gdshaderinc` | uniforms + material_constants | 海岸 3×3 邻域 + halo |
+| 17 | `brdf.gdshaderinc` | surface_params + tonemap + material_constants + uniforms.tod_* | 光照核心 |
+| 18 | `land_pipeline.gdshaderinc` | 全部上游 | 陆地总调度 |
+| 19 | `water_pipeline.gdshaderinc` | 全部上游 | 水面总调度 |
+| 20 | `global_adjustments.gdshaderinc` | tonemap + uniforms | 末端调整（羊皮纸/季节过渡/tonemap/sRGB） |
 
 > **新增 inc 时**：只能放在自己依赖的最后一个 inc 之后；如果新模块给多个下游用，应同时更新本表。
 
@@ -630,22 +631,49 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 
 ## 14. 性能预算
 
-> 以 1920×1080 全屏 1× 渲染、`visual_quality=2` 估算
+> 以 1920×1080 全屏 1× 渲染、高画质变体估算。移动端低/中画质必须依靠 shader variant 在编译期裁剪。
 
 | 阶段 | 纹理 fetch | ALU（约） |
 |---|---|---|
-| SETUP（atlas 解码 + pixel_noise） | 7 | 30 |
+| SETUP（atlas 解码 + pixel_noise） | 7；LOW 跳过 `flow_tex`，并可禁用部分 debug/天气 atlas 读取 | 30 |
 | 陆地 base + modifier + overlay | 4-6（noise/biome_detail） | ~120 |
 | 水面 base（14 helper 全开） | 3-5 | ~180 |
 | BRDF 主路径（Cook-Torrance） | 0 | ~32 |
 | BRDF legacy（Blinn-Phong） | 0 | ~14 |
 | global_adjustments | 0 | ~25 |
 
-**优化原则**：
+### 14.1 变体分档规则
 
-1. `visual_quality` 三档（0/1/2）控制 octave / 高代价 helper 是否启用
-2. 编译期常量分支（`USE_*`）必死代码消除；运行期 uniform 分支使用 `if` 即可，Godot 4 GLSL 编译器会做 wave-coherent 优化
-3. 禁止在 fragment 内写循环变长边界——所有 `for (int i = 0; i < CONST; i++)` 必须用编译期常量
+| 档位 | 编译宏 | 目标 |
+|---|---|---|
+| Low | `PK_SHADER_TIER_LOW` / `MOBILE_QUALITY_LOW` → `PK_QUALITY_LOW` | 移动端保帧优先；取消大部分贴图采样、噪声、细节法线、植被阴影和天气细节 |
+| Mid | `PK_SHADER_TIER_MID` / `MOBILE_QUALITY_MID` → `PK_QUALITY_MID` | 移动端平衡档；保留主色、主要形态和少量动态，跳过高频细节 |
+| High | `PK_SHADER_TIER_HIGH` / `MOBILE_QUALITY_HIGH` → `PK_QUALITY_HIGH` | 移动端高档；尽量接近桌面，但仍使用独立 variant |
+| Desktop | 无移动宏 → `PK_QUALITY_DESKTOP` | 桌面默认完整路径，继续允许 `visual_quality` 做用户可调细节 |
+
+所有运行时 shader 入口必须 include `res://shaders/include/shader_quality.gdshaderinc`。GDScript 侧创建移动端材质时必须 prepend `PK_SHADER_TIER_*`，并可兼容保留旧的 `MOBILE_QUALITY_*` 宏。`visual_quality` / `weather_overlay_quality` / `cell_curtain_quality` 只允许做同一编译档内的强度、octave 或密度微调；移动端低档不能只靠 uniform `if`“关掉”高成本路径。
+
+### 14.2 当前裁剪点
+
+| 模块 | Low | Mid |
+|---|---|---|
+| `world_map.gdshader` | 跳过 `flow_tex`；像素级细节噪声由下游宏裁剪 | 保留主 atlas，跳过部分高频路径 |
+| `biome_detail.gdshaderinc` | 不采样，不跑内部纹理 | 读 `terrain_detail_tex` 单次采样，替代每像素 `fbm/voronoi` |
+| `snow_cover.gdshaderinc` | 跳过 cosmetic fbm 与暴雪新雪增强 | 保留 |
+| `land_pipeline.gdshaderinc` | 跳过河流 pulse、顺坡流动、cover fbm、水面法线细节 | 同 Low 的水/河流高频裁剪 |
+| `water.gdshaderinc` / `water_pipeline.gdshaderinc` | 跳过 domain warp、额外水噪声、kelp/ice fbm、coast foam、暴雪薄冰、caustics、波坡明暗、SSS、sparkle | 取消高细节法线与额外 domain warp，保留主波形 |
+| `weather_overlay.gdshader` | 云层使用廉价密度，不采 biome atlas | overlay quality 钳到 1 |
+| `weather_cell_curtain.gdshader` | 雨雪帘跳过 broad/fine noise、fog veil、lightning | curtain quality 钳到 1 |
+| `shrub_layer.gd` 内联 shader | 跳过生态 LUT、地形法线/高度贴图 shading、horizon shadow，阴影 pass 输出透明 | 跳过 horizon shadow 与细节 shading |
+| `hex_terrain.gdshader` / `hex_edge_overlay.gdshader` | 跳过 erosion warp、边缘噪声、地/水内部细节 | 保留旧行为 |
+
+### 14.3 优化原则
+
+1. 性能分档优先使用编译期宏：`#ifdef PK_QUALITY_LOW`、`#ifndef PK_SKIP_*`，让低档源码不包含昂贵采样和噪声。
+2. 运行期 uniform 分支只用于同档内开关、强度或 debug，不作为移动端低画质的主要性能手段。
+3. 禁止在 fragment 内写循环变长边界；所有 `for (int i = 0; i < CONST; i++)` 必须用编译期常量。
+4. 新增 fragment 贴图采样、`fbm`、`value_noise`、`voronoi_cell`、多 tap 高度/法线计算时，必须同步给 Low/Mid 写裁剪路径，并更新本节表格。
+5. 与时间无关、只随地图/biome 变化的视觉细节优先烘进 atlas；当前 `terrain_detail_tex` 由 `MapBaker` 初次 bake 和 biome 轴重烘维护。
 
 ---
 
@@ -664,7 +692,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | 维度 | 验证步骤 |
 |---|---|
 | 6 类 biome 基色 | 在 `main.tscn` 切换 OCEAN/COAST/LAKE/REEF/KELP/SEA_ICE 的视图，对照 `world_map.legacy.gdshader.bak` |
-| 3 档 visual_quality | `0=低/1=中/2=高`，确认低档不爆 caustics、不丢 sparkle |
+| 3 档 shader variant | 通过 `PK_SHADER_TIER_LOW/MID/HIGH` 各编译一次，确认低档不编译 caustics/sparkle/天气细节，画面仍保主色和主形态 |
 | 4 个季节 | `season_phase ∈ {0,1,2,3}`，对照植被色与雪线 |
 | 一键回退 | 改 `USE_PBR_BRDF=false` 重编译，确认与 v9 视觉等价 |
 | 昼夜循环 | `day_phase ∈ [0,1]`，确认夜间 night_factor 不爆黑、日出日落色温过渡顺滑 |
@@ -720,4 +748,4 @@ Godot 监视器 → Visual → "FPS in Game" 与 "Frame Time"。1920×1080 60FPS
 ---
 
 > 文档维护：每次改动主结构（新加 inc / 改 BRDF 接口 / 改 SurfaceParams 字段）需同步更新本文件。
-> 最后更新：2026-05-19（半 PBR 重构完工）
+> 最后更新：2026-07-05（shader 性能变体分档）

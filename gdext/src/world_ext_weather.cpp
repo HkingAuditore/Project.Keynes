@@ -1913,9 +1913,10 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         return -1.0;
     }
 
+    const bool read_temp_from_slot = knobs.has("read_temp_from_slot") && bool(knobs["read_temp_from_slot"]);
     if (!knobs.has("n_cells") || !knobs.has("advect_steps") ||
         !knobs.has("heat_mix") || !knobs.has("neighbor_indices") ||
-        !knobs.has("baseline_arr") || !knobs.has("temp_before_arr")) {
+        !knobs.has("baseline_arr") || (!read_temp_from_slot && !knobs.has("temp_before_arr"))) {
         diag("knobs missing required keys");
         return -1.0;
     }
@@ -1931,10 +1932,16 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
 
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
     PackedFloat32Array baseline_arr = knobs["baseline_arr"];
-    PackedFloat32Array temp_before_arr = knobs["temp_before_arr"];
+    PackedFloat32Array temp_before_arr;
+    if (!read_temp_from_slot) {
+        temp_before_arr = knobs["temp_before_arr"];
+    }
     if (nb_arr.size() < n_cells * 6) { diag("neighbor_indices size < n_cells*6"); return -1.0; }
     if (baseline_arr.size() != n_cells) { diag("baseline_arr size mismatch"); return -1.0; }
-    if (temp_before_arr.size() != n_cells) { diag("temp_before_arr size mismatch"); return -1.0; }
+    if (!read_temp_from_slot && temp_before_arr.size() != n_cells) {
+        diag("temp_before_arr size mismatch");
+        return -1.0;
+    }
 
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_wind_x   = _slots.write[sid_wind_x];
@@ -1959,7 +1966,9 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     float * const __restrict A = s_air_anom.arr_f32.ptrw();
     const int32_t * const __restrict NB = nb_arr.ptr();
     const float * const __restrict BL = baseline_arr.ptr();
-    const float * const __restrict TB = temp_before_arr.ptr();
+    const float * const __restrict TB = read_temp_from_slot
+        ? s_temp.arr_f32.ptr()
+        : temp_before_arr.ptr();
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -2002,8 +2011,10 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
             upstream_idx = best_idx;
         }
 
-        const float temp_self = TB[i];
-        const float temp_up = TB[upstream_idx];
+        const float temp_self_raw = TB[i];
+        const float temp_up_raw = TB[upstream_idx];
+        const float temp_self = std::isfinite(temp_self_raw) ? temp_self_raw : BL[i];
+        const float temp_up = std::isfinite(temp_up_raw) ? temp_up_raw : BL[upstream_idx];
         float speed_mix = wf_wind_speed_norm(wind_x, wind_y, WSP[i]) / 1.2f;
         if (speed_mix < 0.25f) speed_mix = 0.25f;
         else if (speed_mix > 1.35f) speed_mix = 1.35f;

@@ -166,6 +166,9 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_ocean_land_pass", "knobs"),
         &DCWorldExt::run_ocean_land_pass);
     ClassDB::bind_method(
+        D_METHOD("supports_wind_air_slot_temp"),
+        &DCWorldExt::supports_wind_air_slot_temp);
+    ClassDB::bind_method(
         D_METHOD("run_wind_air_mass_pass", "knobs"),
         &DCWorldExt::run_wind_air_mass_pass);
     ClassDB::bind_method(

@@ -56,6 +56,10 @@ uniform sampler2D flow_tex : filter_linear, repeat_disable;
 // has_water_depth_tex=false（未烘焙/旧存档/fused 失败）时回退旧逐邻域估算。
 uniform sampler2D water_depth_tex : filter_linear, repeat_disable;
 uniform bool has_water_depth_tex = false;
+// [terrain-detail-bake 2026-07-05] 静态 biome 内部细节调制图（L8）。
+// 移动端中/高档与桌面中档用它替代每像素 fbm/voronoi；LOW 档不采样。
+uniform sampler2D terrain_detail_tex : filter_linear, repeat_disable;
+uniform bool has_terrain_detail_tex = false;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的
 // 三层独立云（cirrus/cumulus/fog）承担——主地图保持"清爽地表"，不画云。

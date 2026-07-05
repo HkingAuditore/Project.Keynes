@@ -57,6 +57,7 @@ render_mode blend_mix;
 //   land/water/global pipelines  最后 include，封装 fragment 的陆地/水面/全局调度算法。
 
 // ─────────────────────────────────────────────────────────────────────────
+#include "res://shaders/include/shader_quality.gdshaderinc"
 #include "res://shaders/include/uniforms.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
@@ -108,7 +109,7 @@ void fragment() {
 	// 谱形不同但仍是同坐标采样，对"独立 RV"的要求是软约束。下游若需严格独立
 	// 随机数，应另调 derive_independent_noise4(wp + offset)。
 	// 60 FPS 优化（2026-06-18）：scalar/vector 和 per-pixel dynamic atlas 已退役。
-#ifdef MOBILE_QUALITY_LOW
+#ifdef PK_SKIP_PIXEL_NOISE
 	vec4 pixel_noise = vec4(0.5);  // 中性灰值，不调 fbm 也不影响
 #else
 	vec4 pixel_noise = texture(noise_tex, (wp * 0.071 + vec2(19.0, -23.0)) / NOISE_TEX_SCALE);
@@ -122,7 +123,11 @@ void fragment() {
 	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
 	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
 	// 未绑定纹理时 texture() 返回 0 → 无河，安全。land/water pipeline 读 scals.g 画河网。
+#ifdef PK_QUALITY_LOW
+	scals.g = 0.0;
+#else
 	scals.g = texture(flow_tex, uv).r;
+#endif
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。

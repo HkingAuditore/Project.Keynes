@@ -515,6 +515,11 @@ Ocean land 算法概要：
   `run_wind_surface_pass` / `_wind_surface_pass` 是 **climate-daily 链条中 `cell_temp` 唯一的写者**
   （A 修复 2026-06），通过 baseline + shared lateral transport(ocean+air) + local_anom 的合成把全部贡献汇总成单点写。
   排查局部温度 ping-pong 时先确认 pass_a / pass_b / ocean_* 都没再获得 `cell_temp` 写权。
+- native daily wind-air 节点在新 DLL 上优先走 `read_temp_from_slot=true`：
+  `run_wind_air_mass_pass` 直接读取 `cell_temp` slot 作为 `temp_before` 快照来源，并只把静态
+  `baseline_arr` 作为非有限值兜底传入。旧 DLL 没有 `supports_wind_air_slot_temp()` 时，
+  `MapGenerator` 才回退到构建 `temp_before_arr` 的兼容路径。该优化不改风热输运公式，
+  只消除每轮 wind-air JIT patch 里的全图当前温度打包。
 - `enable_wind_heat_transport=false` 时，sync/native daily/async 都必须跳过 wind_air 与
   wind_surface。async `passes_mask` 需要清掉 bit 4/5，避免 worker 继续写
   `cell_air_mass_temp_anomaly` 或最终 `cell_temp`。

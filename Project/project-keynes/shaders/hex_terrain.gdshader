@@ -1,5 +1,7 @@
 shader_type canvas_item;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 // 纸质地图册风格地形 shader (Atlas v1)
 // 设计原则：
 //   - 不画方向性光照，不画庄稼行/沙丘等周期性图案
@@ -127,6 +129,9 @@ ivec3 cube_round(vec3 c) {
 
 // 低频侵蚀式扰动：让 hex 间分界看起来像被流水/风化推出来的缓弯，而不是 60° 直线
 vec2 erosion_boundary_warp(vec2 wp) {
+#ifdef PK_QUALITY_LOW
+	return vec2(0.0);
+#else
 	vec2 p = wp * domain_warp_freq;
 
 	vec2 pre = vec2(
@@ -152,6 +157,7 @@ vec2 erosion_boundary_warp(vec2 wp) {
 
 	vec2 warp_dir = broad * 0.70 + flow * 0.82 + mid * 0.34;
 	return warp_dir * hex_size * domain_warp_amp * 1.35;
+#endif
 }
 
 // 地图册调色板：参考国家地理 / Times Atlas 的柔和印刷色
@@ -177,11 +183,15 @@ vec3 land_colored(int tid, vec2 wp) {
 	vec3 base = terrain_base_color(tid);
 
 	// 大区低频亮度（跨多个 hex 连续），±~5%
+#ifdef PK_QUALITY_LOW
+	return base;
+#else
 	float regional = fbm(wp * 0.012 + vec2(17.0, -23.0), 3);
 	float micro = fbm(wp * 0.045 + vec2(-9.0, 11.0), 2);
 	float light = 1.0 + (regional - 0.5) * 0.08 * texture_strength
 					+ (micro - 0.5) * 0.035 * texture_strength;
 	return base * light;
+#endif
 }
 
 // 水体：深 → 浅两阶 + 低频亮度变化，不再画水波
@@ -192,9 +202,13 @@ vec3 water_colored(int tid, vec2 wp, float elevation) {
 	float depth_factor = (tid == T_COAST) ? 0.80 : sat(elevation * 1.6);
 	vec3 base = mix(deep, shallow_col, depth_factor);
 
+#ifdef PK_QUALITY_LOW
+	return base;
+#else
 	float regional = fbm(wp * 0.010 + vec2(31.0, 7.0), 3);
 	float light = 1.0 + (regional - 0.5) * 0.06;
 	return base * light;
+#endif
 }
 
 vec3 terrain_shade(int tid, vec2 wp, float elevation) {
@@ -255,7 +269,10 @@ void fragment() {
 	// 极薄外圈混合带（默认仅外 8% 区域）
 	float edge_t = smoothstep(blend_edge_start, blend_edge_end, hex_m);
 
-	float n_a = fbm(wp * 0.045 + vec2(7.0, -13.0), 2);
+	float n_a = 0.5;
+#ifndef PK_QUALITY_LOW
+	n_a = fbm(wp * 0.045 + vec2(7.0, -13.0), 2);
+#endif
 	float bias = (n_a - 0.5);
 
 	float dir_signal = clamp(v_cust1.z - v_cust1.w, -1.0, 1.0);
