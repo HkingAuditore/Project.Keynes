@@ -377,6 +377,13 @@ buffer encoder，不是 slot pass：
 slot 供后续 surface pass 读取。它们不发布 `cell_temp`，也不应调用
 `_flush_slot_to_map(cell_temp)`。
 
+新 DLL 暴露 `supports_wind_air_slot_temp()` 后，GDScript wind-air knobs 会设置
+`read_temp_from_slot=true` 并省略 `temp_before_arr`；C++ 直接读当前 `cell_temp`
+slot 作为 air-mass 上风采样输入，非有限值仍用同一 `baseline_arr` 兜底。旧 DLL
+没有能力探针时保持历史兼容路径：GDScript 构建完整 `temp_before_arr` 后传入
+`run_wind_air_mass_pass`。这样 native daily 的 wind 节点不再为当前温度做一次
+`MapData -> PackedArray knob -> C++` 的全图往返。
+
 `run_wind_surface_pass` / `_wind_surface_pass` 是气团异常写入 `cell_temp` 的
 唯一阶段。这个边界用于避免同一 climate round 内先由 air-mass 覆盖当前温度、
 再由 surface pass 二次注入造成局部温度 ping-pong。

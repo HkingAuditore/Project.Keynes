@@ -23,6 +23,10 @@ var generator = null
 var map: MapData = null
 var stride: int = 1
 var _last_path: String = "none"
+var _slow_dump_last_tick: int = -100000
+
+const _SLOW_DUMP_MS: float = 1.5
+const _SLOW_DUMP_MIN_INTERVAL_TICKS: int = 60
 
 
 func _init(p_generator, p_map: MapData, p_stride: int = 1) -> void:
@@ -77,7 +81,7 @@ func feature_flag() -> StringName:
 	return &""
 
 
-func tick(_ctx) -> Dictionary:
+func tick(ctx) -> Dictionary:
 	var t0: int = Time.get_ticks_usec()
 	if generator == null or map == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
@@ -88,6 +92,7 @@ func tick(_ctx) -> Dictionary:
 	_last_path = str(res.get("path", "gdscript"))
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
+	_maybe_dump_slow(ctx, res, elapsed_ms)
 	return {
 		"done": true,
 		"work_done": map.cell_count(),
@@ -107,3 +112,35 @@ func tick(_ctx) -> Dictionary:
 		"published_to_slot": bool(res.get("published_to_slot", false)),
 		"total_delta": float(res.get("total_delta", 0.0)),
 	}
+
+
+func _maybe_dump_slow(ctx, res: Dictionary, elapsed_ms: float) -> void:
+	if elapsed_ms < _SLOW_DUMP_MS:
+		return
+	var tick_idx: int = -1
+	var day_idx: int = -1
+	if ctx != null:
+		tick_idx = int(ctx.tick_index)
+		day_idx = int(ctx.day_index)
+	if tick_idx >= 0 and tick_idx - _slow_dump_last_tick < _SLOW_DUMP_MIN_INTERVAL_TICKS:
+		return
+	_slow_dump_last_tick = tick_idx
+	var kernel_ms: float = float(res.get("native_ms", 0.0))
+	var wrapper_ms: float = float(res.get("wrapper_overhead_ms", max(0.0, elapsed_ms - kernel_ms)))
+	print("[natural_resource/slow-dump] tick=%d day=%d wall=%.2f cpp=%.3f compute=%.3f loop=%.3f flush=%.3f wrapper=%.3f layout=%s dispatches=%d resources=%d/%d skipped_static=%d published=%s total_delta=%.5f" % [
+		tick_idx,
+		day_idx,
+		elapsed_ms,
+		kernel_ms,
+		float(res.get("compute_ms", 0.0)),
+		float(res.get("loop_ms", 0.0)),
+		float(res.get("flush_ms", 0.0)),
+		wrapper_ms,
+		str(res.get("loop_layout", "")),
+		int(res.get("loop_dispatches", 0)),
+		int(res.get("published_resource_count", res.get("resource_count", 0))),
+		int(res.get("input_resource_count", res.get("resource_count", 0))),
+		int(res.get("skipped_static_resources", 0)),
+		str(bool(res.get("published_to_slot", false))),
+		float(res.get("total_delta", 0.0)),
+	])

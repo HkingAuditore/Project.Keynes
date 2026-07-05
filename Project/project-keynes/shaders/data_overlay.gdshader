@@ -16,6 +16,8 @@
 shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 uniform sampler2D overlay_tex : filter_nearest, repeat_disable;
 uniform vec2 world_origin = vec2(0.0, 0.0);
 uniform vec2 world_size   = vec2(1.0, 1.0);

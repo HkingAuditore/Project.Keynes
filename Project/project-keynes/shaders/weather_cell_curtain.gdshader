@@ -1,6 +1,8 @@
 shader_type canvas_item;
 render_mode blend_mix;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 // Cell 级天气雨幕/雪幕。每个 MultiMesh instance 直接携带 cell_id，
 // 避免通过 dither 后的 map_index_atlas 反查而混入邻格天气。
 //
@@ -37,6 +39,16 @@ const int FLAG_FOG_BREATHE = 16;
 
 varying vec4 v_custom;
 varying vec2 v_world;
+
+int effective_cell_curtain_quality() {
+#if defined(PK_QUALITY_LOW)
+	return 0;
+#elif defined(PK_QUALITY_MID)
+	return min(cell_curtain_quality, 1);
+#else
+	return cell_curtain_quality;
+#endif
+}
 
 void vertex() {
 	v_custom = INSTANCE_CUSTOM;
@@ -104,6 +116,7 @@ float edge_fade(vec2 uv) {
 // ════════════════════════════════════════════════════════════
 float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, float strength) {
 	float scale = max(hex_world_diameter, 1.0);
+	int quality_tier = effective_cell_curtain_quality();
 
 	// ── 风向量 ──
 	vec2 wind_n = normalize(wind_dir + vec2(0.0001));
@@ -134,9 +147,9 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	float along_static = dot(wp, fall_dir) / scale * depth_density + seed * 5.3;
 	float along = along_static - world_time * fall_speed;
 
-	float drop_cols = (mix(6.0, 14.0, depth) + float(cell_curtain_quality) * 2.5) * depth_density;
+	float drop_cols = (mix(6.0, 14.0, depth) + float(quality_tier) * 2.5) * depth_density;
 	// 行数被俯视压缩：pitch 越大行数越少（每根雨线越短）
-	float drop_rows = (mix(1.8, 3.2, depth) + float(cell_curtain_quality) * 0.40) * vertical_compress;
+	float drop_rows = (mix(1.8, 3.2, depth) + float(quality_tier) * 0.40) * vertical_compress;
 
 	vec2 q = vec2(across * drop_cols, along * drop_rows);
 	vec2 cell = floor(q);
@@ -148,8 +161,12 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 
 	// ── 噪声遮罩 ──
 	vec2 noise_domain = vec2(across, along_static);
-	float broad_noise = value_noise(noise_domain * 0.72 + seed * 3.1);
-	float fine_noise = value_noise(noise_domain * 3.4 + seed * 9.7);
+	float broad_noise = 1.0;
+	float fine_noise = 0.5;
+#ifndef PK_QUALITY_LOW
+	broad_noise = value_noise(noise_domain * 0.72 + seed * 3.1);
+	fine_noise = value_noise(noise_domain * 3.4 + seed * 9.7);
+#endif
 
 	// ── 单根雨线形状 ──
 	vec2 center = vec2(0.18 + rnd0 * 0.64, 0.16 + rnd1 * 0.68);
@@ -170,7 +187,11 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	float drop = 1.0 - smoothstep(len * 0.28, len, dy);
 
 	// noise_mask：让雨分布不均匀（自然感）
+#ifdef PK_QUALITY_LOW
+	float noise_mask = 1.0;
+#else
 	float noise_mask = smoothstep(0.22, 0.78, broad_noise) * mix(0.55, 1.20, fine_noise);
+#endif
 
 	// gate：随机决定某些格子没有雨（控制密度下限）
 	float gate = step(mix(0.52, 0.15, strength), rnd0);
@@ -222,10 +243,13 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	vec2 p_raw = wp * density_mult / scale + drift + vec2(seed * 11.3, seed * 5.7);
 
 	// [去规律化] 域扭曲：用低频噪声偏移网格坐标，打破均匀排列
-	vec2 warp = vec2(
+	vec2 warp = vec2(0.0);
+#ifndef PK_QUALITY_LOW
+	warp = vec2(
 		value_noise(p_raw * 0.42 + seed * 3.1) * 0.55,
 		value_noise(p_raw * 0.38 - seed * 5.7) * 0.55
 	);
+#endif
 	vec2 p = p_raw + warp;
 
 	vec2 cell_id = floor(p);
@@ -239,7 +263,10 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 
 	// [去规律化] 子格随机偏移：每个格子内的 flake 不在中心，
 	// 而是在格子内随机分布（打破"每个格子正中间一颗"的棋盘感）
-	vec2 sub_jitter = vec2(rnd_tilt * 0.37, hash21(cell_id + 31.3) * 0.37);
+	vec2 sub_jitter = vec2(0.0);
+#ifndef PK_QUALITY_LOW
+	sub_jitter = vec2(rnd_tilt * 0.37, hash21(cell_id + 31.3) * 0.37);
+#endif
 
 	// 雪花中心：微颤 + 子格偏移
 	vec2 center = vec2(
@@ -308,8 +335,12 @@ void fragment() {
 
 		float rain = ((flags & FLAG_RAIN_STREAK) != 0) ? rain_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
 		float snow = ((flags & FLAG_SNOW_GRAIN) != 0) ? snow_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
-		float fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
-		float flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
+		float fog = 0.0;
+		float flash = 0.0;
+#ifndef PK_QUALITY_LOW
+		fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
+		flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
+#endif
 
 		// alpha 合成：雪权重适中，不过曝
 		float alpha = (rain * 0.98 + snow * 1.30 + fog * 0.34 + flash * 0.30) * edge * weather_strength * mix(0.72, 1.28, wx_strength);

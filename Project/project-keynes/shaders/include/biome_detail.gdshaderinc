@@ -10,9 +10,8 @@
 // 性能（PERF）：本函数是 fragment 内单像素 fbm 调用的最大集中地。最差路径
 //                （B_JUNGLE）：1 次 voronoi + 3 次 fbm（octaves 3/3/1）≈ 8 个
 //                octave 的噪声 fetch。其他 biome 通常 1~2 次 fbm + 0~1 次
-//                voronoi。如做性能优化，可考虑：a) 把 fbm octaves 跟 visual_quality
-//                联动；b) 把 voronoi/fbm 烘成 detail_atlas 由单次采样查表。
-//                本轮不动。
+//                voronoi。移动端 MID/HIGH 与桌面 visual_quality==1 改读
+//                terrain_detail_tex（bake-time L8），LOW 直接跳过采样。
 //
 // 每个 biome 的噪声配方一览（方便手动调整某一种地表）：
 //   B_FOREST   : voronoi(0.30) + fbm(0.40, oct=3)             — 林冠斑驳
@@ -39,12 +38,26 @@
 
 // ─── 锐利程序化贴图（不依赖 hex，世界坐标连续） ─────────────────────────
 
-vec3 procedural_biome_detail(int biome, vec2 wp) {
-	// 60 FPS 优化（2026-06-15）：mobile 三档全跳 biome 内部纹理（1-3 fbm/voronoi 每 biome）
-	// 视觉损失：陆地 biome 内部纯色（无纹理颗粒），但 biome 间颜色区分仍清晰。
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
-	return vec3(1.0);  // 无 detail modulator
+const float TERRAIN_DETAIL_BAKE_MIN = 0.70;
+const float TERRAIN_DETAIL_BAKE_MAX = 1.30;
+
+vec3 baked_biome_detail(vec2 uv) {
+	float d = texture(terrain_detail_tex, wrap_map_uv(uv)).r;
+	return vec3(mix(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX, d));
+}
+
+vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
+#if defined(PK_QUALITY_LOW)
+	return vec3(1.0);
+#elif defined(PK_MOBILE_ANY)
+	if (has_terrain_detail_tex) {
+		return baked_biome_detail(uv);
+	}
+	return vec3(1.0);
 #else
+	if (visual_quality == 1 && has_terrain_detail_tex) {
+		return baked_biome_detail(uv);
+	}
 	if (visual_quality <= 0) {
 		return vec3(1.0);
 	}

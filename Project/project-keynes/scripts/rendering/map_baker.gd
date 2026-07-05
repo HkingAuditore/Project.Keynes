@@ -109,6 +109,8 @@ const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 100.0  # 归一高程 → world units 
 const NOISE_TEX_SIZE := 256
 const NOISE_TEX_SEED := 0xC0DECAFE
 static var _shared_noise_tex: ImageTexture = null
+const TERRAIN_DETAIL_BAKE_MIN := 0.70
+const TERRAIN_DETAIL_BAKE_MAX := 1.30
 
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传从 scalar_atlas.a 拆出到独立 sea_ice_tex（R8）。
 # 拆分前每日要传整张 RGBA8（2400×?，~7MB），其中 RGB 三通道是地形烘焙后的恒定值，
@@ -898,6 +900,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
 	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
 	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
+	_rebake_terrain_detail_tex(world, hex_size)
 
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -3291,6 +3294,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 	var H := world.derived_size.y
 	var pix_count := W * H
 	if _try_cpp_enum_axes_patch(map, world, report_t0_us):
+		_rebake_terrain_detail_tex(world, hex_size)
 		return
 	var has_lookup: bool = world.pixel_to_cell_lookup.size() == pix_count
 	var has_cell_lists: bool = not world.cell_pixel_lists.is_empty()
@@ -3322,6 +3326,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		)
 		var upload_ms: float = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 		prewarm_dynamic_axis_caches(map, world)
+		_rebake_terrain_detail_tex(world, hex_size)
 		_record_enum_atlas_upload_report("biome", "fallback_full_rewrite",
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			world.cell_pixel_lists.size(), pix_count, buffer_patch_ms, 0.0, upload_ms, false)
@@ -3407,6 +3412,7 @@ func rebake_biome_axes_only(map: MapData, world: WorldData, hex_size: float) -> 
 		_record_enum_atlas_upload_report("biome", "fallback_full_rewrite",
 			float(Time.get_ticks_usec() - report_t0_us) / 1000.0,
 			dirty_cells, dirty_pixels, buffer_patch_ms, 0.0, upload_ms, false)
+	_rebake_terrain_detail_tex(world, hex_size)
 
 # 重写 biome / vegetation / cover 三个 buffer，但保持 height/moisture/flow 不动
 func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> void:
@@ -4646,6 +4652,113 @@ func _chamfer_sdt(mask: PackedFloat32Array, W: int, H: int) -> void:
 
 func _encode_height_tex(buf: PackedFloat32Array, size: Vector2i) -> ImageTexture:
 	return DCAtlasEncoders.encode_height_tex(buf, size, _world_ext)
+
+
+func _rebake_terrain_detail_tex(world: WorldData, hex_size: float) -> void:
+	if world == null or world.biome_buffer.is_empty() or world.derived_size.x <= 0 or world.derived_size.y <= 0:
+		return
+	if _detail_noise == null or _ridge_noise == null:
+		_init_noise(world.bake_seed)
+	var W: int = world.derived_size.x
+	var H: int = world.derived_size.y
+	var n: int = W * H
+	if world.biome_buffer.size() < n:
+		return
+	var origin: Vector2 = world.world_bounds.position
+	var size: Vector2 = world.world_bounds.size
+	var step_x: float = size.x / float(W)
+	var step_y: float = size.y / float(H)
+	var wrap_period_x: float = world.wrap_period_x
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(n)
+	for y in range(H):
+		var wy: float = origin.y + (float(y) + 0.5) * step_y
+		var row: int = y * W
+		for x in range(W):
+			var idx: int = row + x
+			var wx: float = origin.x + (float(x) + 0.5) * step_x
+			var biome: int = int(world.biome_buffer[idx])
+			var detail: float = _terrain_detail_bake_scalar(biome, wx, wy, wrap_period_x, hex_size)
+			data[idx] = _terrain_detail_to_byte(detail)
+	world.terrain_detail_tex = DCAtlasEncoders.encode_r8_tex(data, world.derived_size, world.terrain_detail_tex, _world_ext)
+
+
+func _terrain_detail_noise01(noise: FastNoiseLite, wx: float, wy: float,
+		wrap_period_x: float, hex_size: float, freq: float,
+		off_x: float = 0.0, off_y: float = 0.0) -> float:
+	var n: float = _cyl_noise(noise, wx * freq + off_x, wy * freq + off_y,
+		wrap_period_x, hex_size, freq, off_x)
+	return clampf(n * 0.5 + 0.5, 0.0, 1.0)
+
+
+func _terrain_detail_bake_scalar(biome: int, wx: float, wy: float,
+		wrap_period_x: float, hex_size: float) -> float:
+	if _is_water_biome_id(biome):
+		return 1.0
+	var n: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.18)
+	var micro: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.45, 13.0, -7.0)
+	var ridge: float = _terrain_detail_noise01(_ridge_noise, wx, wy, wrap_period_x, hex_size, 0.22, -19.0, 31.0)
+	if _terrain_detail_is_forest_like(biome):
+		return lerpf(0.86, 1.12, n) * lerpf(0.96, 1.05, micro)
+	if _terrain_detail_is_rock_like(biome):
+		return lerpf(0.84, 1.12, ridge) * lerpf(0.97, 1.04, micro)
+	if _terrain_detail_is_desert_like(biome):
+		var bands: float = sin(wx * 0.034 + wy * 0.012 + n * 4.0) * 0.5 + 0.5
+		return lerpf(0.90, 1.10, bands) * lerpf(0.97, 1.04, micro)
+	if _terrain_detail_is_wetland_like(biome):
+		var pools: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.36, 23.0, 11.0)
+		var pool_w: float = 1.0 - smoothstep(0.38, 0.58, pools)
+		return lerpf(0.90, 1.08, n) * lerpf(1.0, 0.82, pool_w)
+	if biome == int(TerrainType.TERRAIN.SNOW) or biome == int(TerrainType.TERRAIN.GLACIER):
+		return lerpf(0.90, 1.05, n) * lerpf(0.96, 1.02, micro)
+	return lerpf(0.92, 1.08, n) * lerpf(0.98, 1.03, micro)
+
+
+func _terrain_detail_to_byte(detail: float) -> int:
+	var t: float = inverse_lerp(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX,
+		clampf(detail, TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX))
+	return clampi(int(round(t * 255.0)), 0, 255)
+
+
+func _is_water_biome_id(biome: int) -> bool:
+	return biome == int(TerrainType.TERRAIN.OCEAN) \
+		or biome == int(TerrainType.TERRAIN.COAST) \
+		or biome == int(TerrainType.TERRAIN.LAKE) \
+		or biome == int(TerrainType.TERRAIN.REEF) \
+		or biome == int(TerrainType.TERRAIN.SEA_ICE) \
+		or biome == int(TerrainType.TERRAIN.KELP)
+
+
+func _terrain_detail_is_forest_like(biome: int) -> bool:
+	return biome == int(TerrainType.TERRAIN.FOREST) \
+		or biome == int(TerrainType.TERRAIN.JUNGLE) \
+		or biome == int(TerrainType.TERRAIN.TAIGA) \
+		or biome == int(TerrainType.TERRAIN.SAVANNA) \
+		or biome == int(TerrainType.TERRAIN.SHRUBLAND) \
+		or biome == int(TerrainType.TERRAIN.MANGROVE) \
+		or biome == int(TerrainType.TERRAIN.CHAPARRAL)
+
+
+func _terrain_detail_is_rock_like(biome: int) -> bool:
+	return biome == int(TerrainType.TERRAIN.HILL) \
+		or biome == int(TerrainType.TERRAIN.MOUNTAIN) \
+		or biome == int(TerrainType.TERRAIN.BADLANDS) \
+		or biome == int(TerrainType.TERRAIN.MESA) \
+		or biome == int(TerrainType.TERRAIN.GLACIER)
+
+
+func _terrain_detail_is_desert_like(biome: int) -> bool:
+	return biome == int(TerrainType.TERRAIN.DESERT) \
+		or biome == int(TerrainType.TERRAIN.COLD_DESERT) \
+		or biome == int(TerrainType.TERRAIN.SALT_FLAT)
+
+
+func _terrain_detail_is_wetland_like(biome: int) -> bool:
+	return biome == int(TerrainType.TERRAIN.SWAMP) \
+		or biome == int(TerrainType.TERRAIN.DELTA) \
+		or biome == int(TerrainType.TERRAIN.OASIS) \
+		or biome == int(TerrainType.TERRAIN.MOOR) \
+		or biome == int(TerrainType.TERRAIN.FLOODPLAIN)
 
 
 # ─── v9.atlas：合并通道编码 ─────────────────────────────────────────────

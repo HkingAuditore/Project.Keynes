@@ -9,6 +9,10 @@ var world: WorldData = null
 var _did_run_last_tick: bool = false
 var _native_round_active: bool = false
 var _last_result: Dictionary = {}
+var _slow_dump_last_tick: int = -100000
+
+const _SLOW_DUMP_MS: float = 5.0
+const _SLOW_DUMP_MIN_INTERVAL_TICKS: int = 30
 
 
 func _init(p_generator, p_map: MapData, p_world: WorldData, p_stride: int = 1) -> void:
@@ -149,7 +153,92 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			report[key] = res[key]
 		elif breakdown.has(key):
 			report[key] = breakdown[key]
+	_maybe_dump_slow_slice(ctx, res, report, breakdown, elapsed_ms)
 	return report
+
+
+func _maybe_dump_slow_slice(ctx: SusTickContext, res: Dictionary, report: Dictionary,
+		breakdown: Dictionary, elapsed_ms: float) -> void:
+	var tick_idx: int = ctx.tick_index if ctx != null else -1
+	if elapsed_ms < _SLOW_DUMP_MS:
+		return
+	if tick_idx >= 0 and tick_idx - _slow_dump_last_tick < _SLOW_DUMP_MIN_INTERVAL_TICKS:
+		return
+	_slow_dump_last_tick = tick_idx
+	var stage: String = str(report.get("stage_name", res.get("stage_name", "")))
+	var substage: String = str(report.get("substage", res.get("substage", "")))
+	var cursor_start: int = int(res.get("cursor_start", breakdown.get("cursor_start", -1)))
+	var cursor_end: int = int(res.get("cursor_end", breakdown.get("cursor_end", -1)))
+	var node_report: Dictionary = breakdown.get("node_report", {})
+	var node_name: String = str(node_report.get("name", breakdown.get("last_completed_node", "")))
+	var node_key: String = str(node_report.get("bundle_key", substage))
+	print("[native_daily/slow-dump] tick=%d day=%d stage=%s/%s node=%s/%s cursor=%d-%d done=%s progress=%.2f wall=%.2f bundle=%.2f jit=%.2f keys=%s native_call=%.2f cpp=%.2f compute=%.2f refresh=%.2f flush=%.2f apply=%.2f round=%.2f weather=%.2f prebuilt=%s path=%s" % [
+		tick_idx,
+		ctx.day_index if ctx != null else -1,
+		stage,
+		substage,
+		node_name,
+		node_key,
+		cursor_start,
+		cursor_end,
+		str(bool(res.get("done", report.get("done", true)))),
+		float(report.get("progress_ratio", res.get("progress_ratio", 1.0))),
+		elapsed_ms,
+		float(report.get("bundle_ms", res.get("bundle_ms", 0.0))),
+		float(report.get("jit_patch_build_ms", res.get("jit_patch_build_ms", breakdown.get("jit_patch_build_ms", 0.0)))),
+		str(report.get("jit_patch_keys", res.get("jit_patch_keys", breakdown.get("jit_patch_keys", PackedStringArray())))),
+		float(report.get("native_call_ms", res.get("native_call_ms", 0.0))),
+		float(report.get("native_ms", res.get("native_ms", 0.0))),
+		float(report.get("compute_ms", res.get("compute_ms", breakdown.get("compute_ms", 0.0)))),
+		float(report.get("refresh_ms", res.get("refresh_ms", breakdown.get("refresh_ms", 0.0)))),
+		float(report.get("flush_ms", res.get("flush_ms", breakdown.get("flush_ms", 0.0)))),
+		float(report.get("apply_ms", res.get("apply_ms", 0.0))),
+		float(report.get("round_native_ms", res.get("round_native_ms", 0.0))),
+		float(breakdown.get("weather_ms", breakdown.get("weather_tick_ms", 0.0))),
+		str(report.get("weather_knobs_prebuilt", breakdown.get("weather_knobs_prebuilt", false))),
+		str(report.get("path", res.get("path", ""))),
+	])
+	if breakdown.has("weather_field_ms") or breakdown.has("weather_commit_ms") \
+			or breakdown.has("weather_distribute_ms") or breakdown.has("weather_stage_b_ms"):
+		print("[native_daily/slow-dump/weather] tick=%d field=%.2f commit=%.2f commit_loop=%.2f dist=%.2f summary=%.2f cyclone=%.2f stage_b=%.2f adv=%.2f fronts=%d active=%.3f lut_dirty=%d conv_dirty=%d" % [
+			tick_idx,
+			float(breakdown.get("weather_field_ms", 0.0)),
+			float(breakdown.get("weather_commit_ms", breakdown.get("field_commit_total_ms", 0.0))),
+			float(breakdown.get("field_commit_loop_ms", 0.0)),
+			float(breakdown.get("weather_distribute_ms", breakdown.get("distribute_ms", 0.0))),
+			float(breakdown.get("weather_summary_ms", breakdown.get("summary_ms", 0.0))),
+			float(breakdown.get("weather_cyclone_ms", breakdown.get("cyclone_ms", 0.0))),
+			float(breakdown.get("weather_stage_b_ms", 0.0)),
+			float(breakdown.get("advance_ms", 0.0)),
+			int(breakdown.get("fronts_count", 0)),
+			float(breakdown.get("active_weather_ratio", 0.0)),
+			int(breakdown.get("weather_lut_dirty_count", 0)),
+			int(breakdown.get("weather_convergence_dirty_count", 0)),
+		])
+	var finalizer_total: float = float(report.get("finalizer_total_ms", breakdown.get("finalizer_total_ms", 0.0)))
+	if finalizer_total > 0.0 or stage == "native_daily_complete":
+		print("[native_daily/slow-dump/finalizer] tick=%d total=%.3f cell=%.3f temp=%.3f tta=%.3f thermal=%.3f sea_ice=%.3f precip=%.3f write_mode=%s dense=%.3f sparse=%.3f dirty_collect=%.3f dirty_skip=%s skip_comps=%s dirty_ratio=%.3f dirty=%d/%d/%d comps_dense=%s comps_sparse=%s" % [
+			tick_idx,
+			finalizer_total,
+			float(report.get("finalizer_cell_ms", breakdown.get("finalizer_cell_ms", 0.0))),
+			float(report.get("finalizer_temp_ms", breakdown.get("finalizer_temp_ms", 0.0))),
+			float(report.get("finalizer_tta_ms", breakdown.get("finalizer_tta_ms", 0.0))),
+			float(report.get("finalizer_thermal_ms", breakdown.get("finalizer_thermal_ms", 0.0))),
+			float(report.get("finalizer_sea_ice_ms", breakdown.get("finalizer_sea_ice_ms", 0.0))),
+			float(report.get("finalizer_precip_ms", breakdown.get("finalizer_precip_ms", 0.0))),
+			str(report.get("finalizer_write_mode", breakdown.get("finalizer_write_mode", ""))),
+			float(report.get("finalizer_write_dense_ms", breakdown.get("finalizer_write_dense_ms", 0.0))),
+			float(report.get("finalizer_sparse_write_ms", breakdown.get("finalizer_sparse_write_ms", 0.0))),
+			float(report.get("finalizer_dirty_collect_ms", breakdown.get("finalizer_dirty_collect_ms", 0.0))),
+			str(report.get("finalizer_dirty_collect_skipped", breakdown.get("finalizer_dirty_collect_skipped", false))),
+			str(report.get("finalizer_dirty_collect_skip_components", breakdown.get("finalizer_dirty_collect_skip_components", []))),
+			float(report.get("finalizer_dirty_ratio", breakdown.get("finalizer_dirty_ratio", 0.0))),
+			int(report.get("finalizer_dirty_count_temp", breakdown.get("finalizer_dirty_count_temp", 0))),
+			int(report.get("finalizer_dirty_count_tta", breakdown.get("finalizer_dirty_count_tta", 0))),
+			int(report.get("finalizer_dirty_count_thermal", breakdown.get("finalizer_dirty_count_thermal", 0))),
+			str(report.get("finalizer_dense_components", breakdown.get("finalizer_dense_components", []))),
+			str(report.get("finalizer_sparse_components", breakdown.get("finalizer_sparse_components", []))),
+		])
 
 
 func reset_progress() -> void:

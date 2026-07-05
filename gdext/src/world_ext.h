@@ -372,6 +372,7 @@ public:
     // Wind heat transport, split to match ClimateDailySystem ordering:
     // air mass writes only cell_air_mass_temp_anomaly; surface reads that
     // anomaly and is the sole wind-air stage that injects heat into cell_temp.
+    bool supports_wind_air_slot_temp() { return true; }
     double run_wind_air_mass_pass(godot::Dictionary knobs);
     double run_wind_surface_pass(godot::Dictionary knobs);
 

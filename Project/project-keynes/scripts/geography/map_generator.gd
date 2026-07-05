@@ -857,6 +857,9 @@ var _gdext_wind_temp_before_work_buf: PackedFloat32Array = PackedFloat32Array()
 # wind pass 仅读 baseline_arr，不写）。
 var _native_wind_baseline_cache: PackedFloat32Array = PackedFloat32Array()
 var _native_wind_baseline_cache_map: MapData = null
+var _native_daily_ema_all_initialized_cache_map: MapData = null
+var _native_daily_ema_all_initialized_cache_size: int = 0
+var _native_daily_ema_all_initialized_cache_true: bool = false
 var _climate_ocean_slice_state: Dictionary = {}
 
 # Generic climate chunk API：统一管理 pass 生命周期、token、游标与 abort。
@@ -1045,6 +1048,12 @@ var _native_daily_finalizer_heavy_diag: bool = false
 # when the method is unavailable, heavy_diag is on, or HexCell mirroring is required. Public
 # so the A/B bit-equal harness can force the GDScript path (set false) for comparison.
 var native_daily_finalizer_native_enabled: bool = true
+const _NATIVE_DAILY_FINALIZER_DENSE_HINT_MARGIN: float = 0.10
+const _NATIVE_DAILY_FINALIZER_DENSE_HINT_SAMPLE_PERIOD: int = 8
+var _native_daily_finalizer_dense_hint_round: int = 0
+var _native_daily_finalizer_prev_dirty_ratio_temp: float = -1.0
+var _native_daily_finalizer_prev_dirty_ratio_tta: float = -1.0
+var _native_daily_finalizer_prev_dirty_ratio_thermal: float = -1.0
 # 阶段 2 perf 仪表：把整轮（跨 slice）的 GDScript wrapper 子耗时累加起来，done
 # slice 写进 breakdown，便于 playbook 定位 bundle/native/apply 三段的真实占比。
 var _native_daily_round_bundle_accum_ms: float = 0.0
@@ -1142,6 +1151,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 阶段 2：新一代地图的纬度/海拔变了，静态 wind baseline 缓存必须失效重算。
 	_native_wind_baseline_cache = PackedFloat32Array()
 	_native_wind_baseline_cache_map = null
+	_native_daily_ema_all_initialized_cache_map = null
+	_native_daily_ema_all_initialized_cache_size = 0
+	_native_daily_ema_all_initialized_cache_true = false
 	_enum_atlas_biome_dirty = false
 	_enum_atlas_cover_dirty = false
 	_enum_atlas_vegetation_dirty = false
@@ -2236,23 +2248,27 @@ func _build_native_daily_wind_knobs(map: MapData, cp_now) -> Dictionary:
 	var baseline: PackedFloat32Array = _build_native_wind_baseline(map)
 	if baseline.size() != n:
 		return {}
-	if _gdext_wind_temp_before_work_buf.size() != n:
-		_gdext_wind_temp_before_work_buf.resize(n)
-	var temp_before: PackedFloat32Array = _gdext_wind_temp_before_work_buf
-	var temp_a: PackedFloat32Array = map.temp_arr
-	# Inline the NaN/inf guard (was a per-cell function call) on this hot loop.
-	for i in range(n):
-		var t0: float = temp_a[i]
-		temp_before[i] = baseline[i] if (is_nan(t0) or is_inf(t0)) else t0
+	var air_knobs: Dictionary = {
+		"n_cells": n,
+		"advect_steps": max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS),
+		"heat_mix": clampf(_last_cfg.WIND_HEAT_MIX, 0.0, 1.0),
+		"neighbor_indices": nb_idx,
+		"baseline_arr": baseline,
+	}
+	if _supports_wind_air_slot_temp():
+		air_knobs["read_temp_from_slot"] = true
+	else:
+		if _gdext_wind_temp_before_work_buf.size() != n:
+			_gdext_wind_temp_before_work_buf.resize(n)
+		var temp_before: PackedFloat32Array = _gdext_wind_temp_before_work_buf
+		var temp_a: PackedFloat32Array = map.temp_arr
+		# Inline the NaN/inf guard (was a per-cell function call) on this hot loop.
+		for i in range(n):
+			var t0: float = temp_a[i]
+			temp_before[i] = baseline[i] if (is_nan(t0) or is_inf(t0)) else t0
+		air_knobs["temp_before_arr"] = temp_before
 	return {
-		"air": {
-			"n_cells": n,
-			"advect_steps": max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS),
-			"heat_mix": clampf(_last_cfg.WIND_HEAT_MIX, 0.0, 1.0),
-			"neighbor_indices": nb_idx,
-			"baseline_arr": baseline,
-			"temp_before_arr": temp_before,
-		},
+		"air": air_knobs,
 		"surface": {
 			"n_cells": n,
 			"air_leak": float(_last_cfg.AIR_MASS_HEAT_LEAK),
@@ -2334,6 +2350,25 @@ func _valid_runtime_temp_or_baseline(temp_value: float, baseline: float) -> floa
 	return baseline if is_nan(temp_value) or is_inf(temp_value) else temp_value
 
 
+func _native_daily_ema_all_initialized(map: MapData, ema_init: PackedByteArray, n: int) -> bool:
+	if map == null or n <= 0 or ema_init.size() < n:
+		return false
+	if _native_daily_ema_all_initialized_cache_true \
+			and _native_daily_ema_all_initialized_cache_map == map \
+			and _native_daily_ema_all_initialized_cache_size == n:
+		return true
+	for i in range(n):
+		if ema_init[i] == 0:
+			_native_daily_ema_all_initialized_cache_map = map
+			_native_daily_ema_all_initialized_cache_size = n
+			_native_daily_ema_all_initialized_cache_true = false
+			return false
+	_native_daily_ema_all_initialized_cache_map = map
+	_native_daily_ema_all_initialized_cache_size = n
+	_native_daily_ema_all_initialized_cache_true = true
+	return true
+
+
 func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null or not bool(_last_cfg.enable_ocean_heat_transport):
 		return {}
@@ -2341,7 +2376,6 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
 	if n <= 0 or nb_idx.size() < n * 6:
 		return {}
-	var cells: Array = map.iter_cells()
 	var dc_views: Dictionary = _climate_views_from_world(cp_now)
 	var use_dc: bool = not dc_views.is_empty()
 	var temp_a: PackedFloat32Array = dc_views["temp"] if use_dc else map.temp_arr
@@ -2353,29 +2387,41 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 	var ocy_a: PackedFloat32Array = dc_views["ocean_current_y"] if use_dc else map.ocean_current_y_arr
 	if temp_a.size() < n or elev_a.size() < n:
 		return {}
-	if _gdext_ocean_baseline_work_buf.size() != n:
-		_gdext_ocean_baseline_work_buf.resize(n)
 	if _gdext_ocean_temp_before_work_buf.size() != n:
 		_gdext_ocean_temp_before_work_buf.resize(n)
 	if _gdext_ocean_anomaly_work_buf.size() != n:
 		_gdext_ocean_anomaly_work_buf.resize(n)
-	var baseline: PackedFloat32Array = _gdext_ocean_baseline_work_buf
+	var baseline_direct: bool = _native_daily_ema_all_initialized(map, ema_init_a, n) \
+			and temp_baseline_a.size() >= n
+	var baseline: PackedFloat32Array = temp_baseline_a if baseline_direct else _gdext_ocean_baseline_work_buf
+	if not baseline_direct and _gdext_ocean_baseline_work_buf.size() != n:
+		_gdext_ocean_baseline_work_buf.resize(n)
+		baseline = _gdext_ocean_baseline_work_buf
 	var temp_before: PackedFloat32Array = _gdext_ocean_temp_before_work_buf
-	# Hoist sizes + inline the NaN/inf guard so this hot per-cell loop avoids ~n
-	# GDScript function calls and repeated PackedArray.size() probes per round.
-	var ema_n: int = ema_init_a.size()
-	var tb_n: int = temp_baseline_a.size()
-	var lat_n: int = lat_a.size()
-	for i in range(n):
-		var bi: float
-		if i < ema_n and ema_init_a[i] != 0 and i < tb_n:
-			bi = temp_baseline_a[i]
-		else:
-			var ny: float = lat_a[i] if i < lat_n else _cube_row_norm(cells[i], _last_cfg)
-			bi = _compute_temperature(ny, elev_a[i])
-		baseline[i] = bi
-		var t0: float = temp_a[i]
-		temp_before[i] = bi if (is_nan(t0) or is_inf(t0)) else t0
+	var cells: Array = []
+	if not baseline_direct:
+		# Cold/repair path only. Steady native generation initializes EMA for every
+		# cell, so the hot path can reuse temp_baseline_a directly and avoid both
+		# HexCell facade allocation and a full baseline rebuild loop.
+		cells = map.iter_cells()
+		var ema_n: int = ema_init_a.size()
+		var tb_n: int = temp_baseline_a.size()
+		var lat_n: int = lat_a.size()
+		for i in range(n):
+			var bi: float
+			if i < ema_n and ema_init_a[i] != 0 and i < tb_n:
+				bi = temp_baseline_a[i]
+			else:
+				var ny: float = lat_a[i] if i < lat_n else _cube_row_norm(cells[i], _last_cfg)
+				bi = _compute_temperature(ny, elev_a[i])
+			baseline[i] = bi
+			var t0: float = temp_a[i]
+			temp_before[i] = bi if (is_nan(t0) or is_inf(t0)) else t0
+	else:
+		for i in range(n):
+			var bi: float = baseline[i]
+			var t0: float = temp_a[i]
+			temp_before[i] = bi if (is_nan(t0) or is_inf(t0)) else t0
 	# Fill the anomaly work buffer in place from the prev-TTA source, mirroring
 	# _prepare_temperature_transport_anomaly_state(prefer_cached=false) priority
 	# (map > cached > cells) but without its extra allocation + second copy loop.
@@ -2388,13 +2434,16 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 		var cached_tta: PackedFloat32Array = _gdext_ocean_anomaly_buf_cached
 		for ai in range(n):
 			anomaly[ai] = cached_tta[ai]
-	elif cells.size() == n:
-		for ai in range(n):
-			var cell = cells[ai]
-			anomaly[ai] = float((cell as HexCell).temperature_transport_anomaly) if cell != null else 0.0
 	else:
-		for ai in range(n):
-			anomaly[ai] = 0.0
+		if cells.is_empty():
+			cells = map.iter_cells()
+		if cells.size() == n:
+			for ai in range(n):
+				var cell = cells[ai]
+				anomaly[ai] = float((cell as HexCell).temperature_transport_anomaly) if cell != null else 0.0
+		else:
+			for ai in range(n):
+				anomaly[ai] = 0.0
 	var winter_boost: float = 1.0
 	var tta: Dictionary = _temperature_transport_anomaly_knobs(cp_now)
 	var water_knobs: Dictionary = {
@@ -2741,6 +2790,60 @@ func _native_daily_split_weather_node_enabled(cp_now) -> bool:
 		and bool(cp_now.native_daily_split_weather_node_enabled)
 
 
+func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
+	var values: Dictionary = {
+		"season_idx": 0,
+		"anomaly": 0.0,
+		"season_phase": default_phase,
+	}
+	if _world_clock_ref != null:
+		if _world_clock_ref.has_method("season_index"):
+			values["season_idx"] = int(_world_clock_ref.season_index())
+		var v_anom = _world_clock_ref.get("climate_anomaly")
+		if v_anom != null:
+			values["anomaly"] = float(v_anom)
+		if _world_clock_ref.has_method("season_phase"):
+			values["season_phase"] = float(_world_clock_ref.season_phase())
+	return values
+
+
+func _build_native_daily_weather_super_knobs(
+		ctx: SusTickContext,
+		map: MapData,
+		world: WorldData,
+		phase_default: float,
+		stage_b_knobs: Dictionary,
+		runtime_hydrology_active: bool,
+		commit_side_effects: bool,
+		force_weather_embed: bool) -> Dictionary:
+	if _weather_system == null or world == null \
+			or not _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
+		return {}
+	var clock_values: Dictionary = _native_daily_weather_clock_values(phase_default)
+	if commit_side_effects:
+		_weather_stage_b_call_index += 1
+	if _weather_system.has_method("set_weather_transition_dt_days"):
+		_weather_system.set_weather_transition_dt_days(_consume_weather_dt_days() if commit_side_effects else 1.0)
+	var weather_stage_b_knobs: Dictionary = {} if runtime_hydrology_active else stage_b_knobs
+	var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
+		map,
+		world,
+		int(clock_values.get("season_idx", 0)),
+		float(clock_values.get("anomaly", 0.0)),
+		float(clock_values.get("season_phase", phase_default)),
+		weather_stage_b_knobs
+	)
+	if not weather_super.is_empty():
+		weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
+			and not weather_stage_b_knobs.is_empty()
+		if commit_side_effects and not force_weather_embed and ctx != null:
+			_native_daily_last_weather_embed_day = int(ctx.day_index)
+		return weather_super
+	if commit_side_effects:
+		_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
+	return {}
+
+
 func _native_daily_boundary_contract(bundle: Dictionary, commit_side_effects: bool) -> Dictionary:
 	var bootstrap_keys: Array[String] = []
 	var tick_delta_keys: Array[String] = []
@@ -2830,6 +2933,24 @@ func _build_native_daily_bundle(
 		if weather_due_this_tick:
 			if native_weather_daily_allowed and _weather_system != null and _world != null \
 					and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
+				var stage_b_knobs_prebuilt: Dictionary = _build_native_daily_stage_b_knobs(
+					map,
+					cp_now,
+					maxi(0, _weather_stage_b_call_index)
+				)
+				var weather_super_prebuilt: Dictionary = _build_native_daily_weather_super_knobs(
+					ctx,
+					map,
+					_world,
+					ctx.season_phase,
+					stage_b_knobs_prebuilt,
+					runtime_hydrology_active,
+					commit_side_effects,
+					force_weather_embed
+				)
+				if not weather_super_prebuilt.is_empty():
+					bundle["weather_knobs"] = weather_super_prebuilt
+					bundle["weather_knobs_prebuilt"] = true
 				deferred_nodes.append(12)
 				if runtime_hydrology_active:
 					deferred_nodes.append(19)
@@ -2911,44 +3032,20 @@ func _build_native_daily_bundle(
 			and native_weather_daily_allowed \
 			and weather_due_this_tick \
 			and _weather_system.has_method("build_unified_fast_tick_weather_knobs"):
-		var season_idx_local: int = 0
-		var anomaly_local: float = 0.0
-		var season_phase_local: float = ctx.season_phase
-		if _world_clock_ref != null:
-			if _world_clock_ref.has_method("season_index"):
-				season_idx_local = int(_world_clock_ref.season_index())
-			var v_anom = _world_clock_ref.get("climate_anomaly")
-			if v_anom != null:
-				anomaly_local = float(v_anom)
-			if _world_clock_ref.has_method("season_phase"):
-				season_phase_local = float(_world_clock_ref.season_phase())
-		# 同步推进 stage_b call_index：unified 路径完全绕过 weather_refresh_job /
-		# refresh_weather_daily facade，stride 计数必须自己 ++（与 facade line 8448 等价）。
-		# failure（caller 端 res.rc!=0）情形会回滚。
-		if commit_side_effects:
-			_weather_stage_b_call_index += 1
-		# [dt-aware transition 2026-06-28] 注入"上次到本次天气求解的真实游戏天数差"，让过渡 alpha
-		# 按游戏天数推进（加速档下避免吞掉 STORM/FOG/MONSOON 等短暂天气）。probe（commit_side_effects=false）
-		# 用 1.0 不推进游标，避免污染节奏。
-		if _weather_system.has_method("set_weather_transition_dt_days"):
-			_weather_system.set_weather_transition_dt_days(_consume_weather_dt_days() if commit_side_effects else 1.0)
-		var weather_stage_b_knobs: Dictionary = {} if runtime_hydrology_active else stage_b_knobs
-		var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
-			map, _world, season_idx_local, anomaly_local, season_phase_local, weather_stage_b_knobs
+		var weather_super: Dictionary = _build_native_daily_weather_super_knobs(
+			ctx,
+			map,
+			_world,
+			ctx.season_phase,
+			stage_b_knobs,
+			runtime_hydrology_active,
+			commit_side_effects,
+			force_weather_embed
 		)
 		if not weather_super.is_empty():
-			weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
-				and not weather_stage_b_knobs.is_empty()
 			bundle["weather_knobs"] = weather_super
+			bundle["weather_knobs_prebuilt"] = false
 			stage_b_embedded_in_weather = not runtime_hydrology_active
-			# 记录本次 weather 推进的模拟日，驱动下次 cadence 判定。probe
-			# （commit_side_effects=false / force_weather_embed）不更新，避免污染节奏。
-			if commit_side_effects and not force_weather_embed:
-				_native_daily_last_weather_embed_day = int(ctx.day_index)
-		else:
-			# fast_indexed 缺失等前置失败 → 回滚 stage_b call_index，weather 段不嵌入。
-			if commit_side_effects:
-				_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 	elif _weather_system != null and _world != null and not native_weather_daily_allowed:
 		bundle["weather_native_daily_blocked"] = true
 		bundle["weather_native_daily_block_reason"] = str(native_weather_readiness.get("reason", "not_ready"))
@@ -3073,6 +3170,8 @@ func _build_native_daily_slice_bundle_patch(
 			)
 			patch["stage_b_knobs"] = stage_b_knobs
 		12:
+			if _native_daily_slice_active_bundle.has("weather_knobs"):
+				return patch
 			var native_weather_readiness: Dictionary = weather_native_daily_readiness_report()
 			var native_weather_active_bootstrap: bool = _native_daily_weather_active_bootstrap_allowed(native_weather_readiness)
 			if native_weather_active_bootstrap and not bool(native_weather_readiness.get("ready", false)):
@@ -3091,34 +3190,22 @@ func _build_native_daily_slice_bundle_patch(
 					cp_now,
 					maxi(0, _weather_stage_b_call_index)
 				)
-				var season_idx_local: int = 0
-				var anomaly_local: float = 0.0
-				var season_phase_local: float = phase_locked
-				if _world_clock_ref != null:
-					if _world_clock_ref.has_method("season_index"):
-						season_idx_local = int(_world_clock_ref.season_index())
-					var v_anom = _world_clock_ref.get("climate_anomaly")
-					if v_anom != null:
-						anomaly_local = float(v_anom)
-					if _world_clock_ref.has_method("season_phase"):
-						season_phase_local = float(_world_clock_ref.season_phase())
-				_weather_stage_b_call_index += 1
-				if _weather_system.has_method("set_weather_transition_dt_days"):
-					_weather_system.set_weather_transition_dt_days(_consume_weather_dt_days())
-				var weather_stage_b_knobs: Dictionary = {} if runtime_hydrology_active else stage_b_knobs_for_weather
-				var weather_super: Dictionary = _weather_system.build_unified_fast_tick_weather_knobs(
-					map, world, season_idx_local, anomaly_local, season_phase_local, weather_stage_b_knobs
+				var weather_super: Dictionary = _build_native_daily_weather_super_knobs(
+					ctx,
+					map,
+					world,
+					phase_locked,
+					stage_b_knobs_for_weather,
+					runtime_hydrology_active,
+					true,
+					false
 				)
 				if not weather_super.is_empty():
-					weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
-						and not weather_stage_b_knobs.is_empty()
 					patch["weather_knobs"] = weather_super
 					if not runtime_hydrology_active and not stage_b_knobs_for_weather.is_empty():
 						# Weather embeds stage_b in this mode; keep no standalone node patch.
 						pass
-					_native_daily_last_weather_embed_day = int(ctx.day_index)
 				else:
-					_weather_stage_b_call_index = maxi(0, _weather_stage_b_call_index - 1)
 					patch["weather_knobs"] = {}
 			else:
 				patch["weather_knobs"] = {}
@@ -3225,6 +3312,8 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		"finalizer_dirty_count_tta": 0,
 		"finalizer_dirty_count_thermal": 0,
 		"finalizer_dirty_ratio": 0.0,
+		"finalizer_dirty_collect_skipped": false,
+		"finalizer_dirty_collect_skip_components": PackedStringArray(),
 		"finalizer_sparse_write_ms": 0.0,
 		"finalizer_cells_seen": 0,
 		"finalizer_temperature_cell_mirror": false,
@@ -3458,25 +3547,68 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 				tta_cur = _native_daily_slice_tta_start_arr
 			if _native_daily_slice_thermal_start_arr.size() == n:
 				heat_cur = _native_daily_slice_thermal_start_arr
+			var dense_hint_enabled: bool = requested_write_mode == "sparse_perf"
+			var dense_hint_sample_round: bool = false
+			if _NATIVE_DAILY_FINALIZER_DENSE_HINT_SAMPLE_PERIOD > 0:
+				dense_hint_sample_round = (_native_daily_finalizer_dense_hint_round % _NATIVE_DAILY_FINALIZER_DENSE_HINT_SAMPLE_PERIOD) == 0
+			_native_daily_finalizer_dense_hint_round += 1
+			var dense_hint_threshold: float = clampf(
+				max_dirty_ratio + _NATIVE_DAILY_FINALIZER_DENSE_HINT_MARGIN,
+				0.0,
+				1.0
+			)
+			var skip_components: PackedStringArray = PackedStringArray()
+			var skip_temp_collect: bool = dense_hint_enabled \
+					and not dense_hint_sample_round \
+					and _native_daily_finalizer_prev_dirty_ratio_temp >= dense_hint_threshold
+			var skip_tta_collect: bool = dense_hint_enabled \
+					and not dense_hint_sample_round \
+					and _native_daily_finalizer_prev_dirty_ratio_tta >= dense_hint_threshold
+			var skip_heat_collect: bool = dense_hint_enabled \
+					and not dense_hint_sample_round \
+					and _native_daily_finalizer_prev_dirty_ratio_thermal >= dense_hint_threshold
 			var t_collect_us: int = Time.get_ticks_usec()
-			var temp_dirty: Dictionary = _native_daily_collect_f32_dirty(temp_cur, temp_a, n, temp_eps)
-			var tta_dirty: Dictionary = _native_daily_collect_f32_dirty(tta_cur, tta_a, n, tta_eps)
-			var heat_dirty: Dictionary = _native_daily_collect_f32_dirty(heat_cur, thermal_a, n, thermal_eps)
+			var temp_dirty: Dictionary = {}
+			var tta_dirty: Dictionary = {}
+			var heat_dirty: Dictionary = {}
+			if skip_temp_collect:
+				skip_components.append("temp")
+			else:
+				temp_dirty = _native_daily_collect_f32_dirty(temp_cur, temp_a, n, temp_eps)
+			if skip_tta_collect:
+				skip_components.append("tta")
+			else:
+				tta_dirty = _native_daily_collect_f32_dirty(tta_cur, tta_a, n, tta_eps)
+			if skip_heat_collect:
+				skip_components.append("thermal")
+			else:
+				heat_dirty = _native_daily_collect_f32_dirty(heat_cur, thermal_a, n, thermal_eps)
 			diag["finalizer_dirty_collect_ms"] = float(Time.get_ticks_usec() - t_collect_us) / 1000.0
-			var temp_count: int = int(temp_dirty.get("count", -1))
-			var tta_count: int = int(tta_dirty.get("count", -1))
-			var heat_count: int = int(heat_dirty.get("count", -1))
+			diag["finalizer_dirty_collect_skipped"] = skip_components.size() > 0
+			diag["finalizer_dirty_collect_skip_components"] = skip_components
+			var temp_count: int = n if skip_temp_collect else int(temp_dirty.get("count", -1))
+			var tta_count: int = n if skip_tta_collect else int(tta_dirty.get("count", -1))
+			var heat_count: int = n if skip_heat_collect else int(heat_dirty.get("count", -1))
 			can_sparse = temp_count >= 0 and tta_count >= 0 and heat_count >= 0
 			if can_sparse:
+				var temp_ratio: float = float(temp_count) / float(maxi(1, n))
+				var tta_ratio: float = float(tta_count) / float(maxi(1, n))
+				var heat_ratio: float = float(heat_count) / float(maxi(1, n))
+				if not skip_temp_collect:
+					_native_daily_finalizer_prev_dirty_ratio_temp = temp_ratio
+				if not skip_tta_collect:
+					_native_daily_finalizer_prev_dirty_ratio_tta = tta_ratio
+				if not skip_heat_collect:
+					_native_daily_finalizer_prev_dirty_ratio_thermal = heat_ratio
 				var dirty_max: int = maxi(temp_count, maxi(tta_count, heat_count))
 				var dirty_ratio: float = float(dirty_max) / float(maxi(1, n))
 				diag["finalizer_dirty_count_temp"] = temp_count
 				diag["finalizer_dirty_count_tta"] = tta_count
 				diag["finalizer_dirty_count_thermal"] = heat_count
 				diag["finalizer_dirty_ratio"] = dirty_ratio
-				var temp_sparse_ok: bool = float(temp_count) / float(maxi(1, n)) <= max_dirty_ratio
-				var tta_sparse_ok: bool = float(tta_count) / float(maxi(1, n)) <= max_dirty_ratio
-				var heat_sparse_ok: bool = float(heat_count) / float(maxi(1, n)) <= max_dirty_ratio
+				var temp_sparse_ok: bool = not skip_temp_collect and temp_ratio <= max_dirty_ratio
+				var tta_sparse_ok: bool = not skip_tta_collect and tta_ratio <= max_dirty_ratio
+				var heat_sparse_ok: bool = not skip_heat_collect and heat_ratio <= max_dirty_ratio
 				if temp_sparse_ok:
 					if temp_count > 0:
 						var t_sparse_us: int = Time.get_ticks_usec()
@@ -4019,6 +4151,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	var active_bundle_cache_rebuild_reason: String = str(_native_daily_slice_active_bundle.get("bundle_cache_rebuild_reason", ""))
 	var active_bundle_static_ms: float = float(_native_daily_slice_active_bundle.get("bundle_static_ms", 0.0))
 	var active_bundle_dynamic_ms: float = float(_native_daily_slice_active_bundle.get("bundle_dynamic_ms", bundle_ms))
+	var active_weather_knobs_prebuilt: bool = bool(_native_daily_slice_active_bundle.get("weather_knobs_prebuilt", false))
 	if not _native_daily_slice_round_active:
 		_native_daily_slice_unified_weather_embedded = false
 		_native_daily_slice_bundle_pass_keys = []
@@ -4047,6 +4180,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	res["bundle_cache_rebuild_reason"] = active_bundle_cache_rebuild_reason
 	res["bundle_static_ms"] = active_bundle_static_ms
 	res["bundle_dynamic_ms"] = active_bundle_dynamic_ms
+	res["weather_knobs_prebuilt"] = active_weather_knobs_prebuilt
 	res["native_call_ms"] = native_call_ms
 	res["apply_ms"] = apply_ms
 	res["wrapper_wall_ms"] = wrapper_wall_ms
@@ -4058,6 +4192,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	breakdown["bundle_cache_rebuild_reason"] = res["bundle_cache_rebuild_reason"]
 	breakdown["bundle_static_ms"] = res["bundle_static_ms"]
 	breakdown["bundle_dynamic_ms"] = res["bundle_dynamic_ms"]
+	breakdown["weather_knobs_prebuilt"] = res["weather_knobs_prebuilt"]
 	breakdown["native_call_ms"] = native_call_ms
 	breakdown["apply_ms"] = apply_ms
 	breakdown["wrapper_wall_ms"] = wrapper_wall_ms
@@ -14326,6 +14461,12 @@ func _build_native_wind_baseline(map: MapData) -> PackedFloat32Array:
 	return _native_wind_baseline_cache
 
 
+func _supports_wind_air_slot_temp() -> bool:
+	return _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("supports_wind_air_slot_temp") \
+			and bool(_data_core_world_ext.supports_wind_air_slot_temp())
+
+
 func _publish_wind_heat_native_outputs(map: MapData) -> void:
 	if _data_core_world == null:
 		return
@@ -14367,21 +14508,24 @@ func run_wind_air_mass_pass_native(map: MapData, season_phase: float) -> Diction
 	if n <= 0 or nb_idx.size() < n * 6 or map.temp_arr.size() < n:
 		return _fallback_wind_air_mass_pass_result(map, season_phase, "missing_soa")
 	var baseline: PackedFloat32Array = _build_native_wind_baseline(map)
-	if _gdext_wind_temp_before_work_buf.size() != n:
-		_gdext_wind_temp_before_work_buf.resize(n)
-	var temp_before: PackedFloat32Array = _gdext_wind_temp_before_work_buf
-	var temp_a: PackedFloat32Array = map.temp_arr
-	for i in range(n):
-		var t0: float = temp_a[i]
-		temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
 	var knobs: Dictionary = {
 		"n_cells": n,
 		"advect_steps": max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS),
 		"heat_mix": clampf(_last_cfg.WIND_HEAT_MIX, 0.0, 1.0),
 		"neighbor_indices": nb_idx,
 		"baseline_arr": baseline,
-		"temp_before_arr": temp_before,
 	}
+	if _supports_wind_air_slot_temp():
+		knobs["read_temp_from_slot"] = true
+	else:
+		if _gdext_wind_temp_before_work_buf.size() != n:
+			_gdext_wind_temp_before_work_buf.resize(n)
+		var temp_before: PackedFloat32Array = _gdext_wind_temp_before_work_buf
+		var temp_a: PackedFloat32Array = map.temp_arr
+		for i in range(n):
+			var t0: float = temp_a[i]
+			temp_before[i] = _valid_runtime_temp_or_baseline(t0, baseline[i])
+		knobs["temp_before_arr"] = temp_before
 	# refresh-consolidation-2026-06：climate_daily round 守门员。wind_air 通常无须
 	# 真实 refresh —— 它读温度 temp_arr，前序 ocean_land flush 了 ocean_anom 但
 	# climate_daily_system 会在跨 pass 边界 mark stale，这里 ensure 时会按需 refresh。

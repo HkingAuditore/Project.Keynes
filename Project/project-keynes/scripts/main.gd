@@ -1621,7 +1621,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 	if _generator.has_method("sus_report_last_tick_summary"):
 		var summary: Dictionary = _generator.sus_report_last_tick_summary()
 		if not summary.is_empty():
-			print("    sus_window p95=%.2fms max=%.2fms over1ms=%d largest=%s/%s/%s path=%s %.2fms" % [
+			print("    sus_window p95=%.2fms max=%.2fms over1ms=%d largest=%s/%s/%s path=%s %.2fms cursor=%d-%d" % [
 				float(summary.get("sus_sim_p95_300", 0.0)),
 				float(summary.get("sus_sim_max_300", 0.0)),
 				int(summary.get("over_1ms_count_300", 0)),
@@ -1630,6 +1630,8 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 				str(summary.get("largest_slice_substage", "")),
 				str(summary.get("largest_slice_path", "")),
 				float(summary.get("largest_slice_ms", 0.0)),
+				int(summary.get("largest_slice_cursor_start", -1)),
+				int(summary.get("largest_slice_cursor_end", -1)),
 			])
 	var report: Dictionary = _generator.sus_report_last_tick()
 	if report.is_empty():
@@ -1949,7 +1951,7 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 					])
 					var nd_finalizer_total: float = float(nd.get("finalizer_total_ms", nd_breakdown.get("finalizer_total_ms", 0.0)))
 					if is_warn and (nd_finalizer_total > 0.0 or bool(nd.get("thermal_finalizer_applied", nd_breakdown.get("thermal_finalizer_applied", false)))):
-						print("        native_daily/finalizer path=%s total=%.3f cell=%.3f temp=%.3f tta=%.3f thermal=%.3f sort=%.3f sea_ice=%.3f precip=%.3f write_mode=%s dense=%.3f sparse=%.3f dirty_collect=%.3f comps_dense=%s comps_sparse=%s dirty_ratio=%.3f dirty=%d/%d/%d cells=%d temp_clamped=%d tta_clamped=%d thermal_init=%d temp_mirror=%s tta_mirror=%s/%d max_dt=%.5f pre_max_dt=%.5f" % [
+						print("        native_daily/finalizer path=%s total=%.3f cell=%.3f temp=%.3f tta=%.3f thermal=%.3f sort=%.3f sea_ice=%.3f precip=%.3f write_mode=%s dense=%.3f sparse=%.3f dirty_collect=%.3f dirty_skip=%s skip_comps=%s comps_dense=%s comps_sparse=%s dirty_ratio=%.3f dirty=%d/%d/%d cells=%d temp_clamped=%d tta_clamped=%d thermal_init=%d temp_mirror=%s tta_mirror=%s/%d max_dt=%.5f pre_max_dt=%.5f" % [
 							str(nd.get("finalizer_path", nd_breakdown.get("finalizer_path", ""))),
 							nd_finalizer_total,
 							float(nd.get("finalizer_cell_ms", nd_breakdown.get("finalizer_cell_ms", 0.0))),
@@ -1963,6 +1965,8 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 							float(nd.get("finalizer_write_dense_ms", nd_breakdown.get("finalizer_write_dense_ms", 0.0))),
 							float(nd.get("finalizer_sparse_write_ms", nd_breakdown.get("finalizer_sparse_write_ms", 0.0))),
 							float(nd.get("finalizer_dirty_collect_ms", nd_breakdown.get("finalizer_dirty_collect_ms", 0.0))),
+							str(nd.get("finalizer_dirty_collect_skipped", nd_breakdown.get("finalizer_dirty_collect_skipped", false))),
+							str(nd.get("finalizer_dirty_collect_skip_components", nd_breakdown.get("finalizer_dirty_collect_skip_components", []))),
 							str(nd.get("finalizer_dense_components", nd_breakdown.get("finalizer_dense_components", []))),
 							str(nd.get("finalizer_sparse_components", nd_breakdown.get("finalizer_sparse_components", []))),
 							float(nd.get("finalizer_dirty_ratio", nd_breakdown.get("finalizer_dirty_ratio", 0.0))),

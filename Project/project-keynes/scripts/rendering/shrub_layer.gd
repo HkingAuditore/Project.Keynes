@@ -36,6 +36,8 @@ const _SHADER_CODE := """
 shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
@@ -200,6 +202,9 @@ float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
 }
 
 float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
+#ifdef PK_SKIP_HORIZON_SHADOWS
+	return 1.0;
+#else
 	if (!terrain_horizon_tex_bound || veg_shade_quality < 1 || terrain_horizon_strength <= 0.0) {
 		return 1.0;
 	}
@@ -213,6 +218,7 @@ float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
 		sun_elev + terrain_horizon_softness, horizon_angle);
 	float horizon_day_w = smoothstep(-0.14, 0.18, light_dir.z);
 	return clamp(1.0 - shadow * terrain_horizon_strength * horizon_day_w, 0.0, 1.0);
+#endif
 }
 
 int decode_cell_index(vec2 uv) {
@@ -239,8 +245,12 @@ vec4 sample_dyn_state(vec2 uv) {
 }
 
 vec4 sample_eco_state(vec2 uv) {
+#ifdef PK_QUALITY_LOW
+	return vec4(0.0);
+#else
 	int cid = decode_cell_index(uv);
 	return (cid >= 0) ? texture(eco_lut, cell_lut_uv(cid)) : vec4(0.0);
+#endif
 }
 
 float vitality_norm(float vitality) {
@@ -317,11 +327,14 @@ void vertex() {
 
 	// [veg-normal-shading] 地形宏观法线（整株站立坡面）：与地形 brdf 同源烘焙法线，1 次采样。
 	shrub_terrain_n = vec2(0.0);
+#ifndef PK_SKIP_VEGETATION_SHADING
 	if (terrain_normal_tex_bound) {
 		shrub_terrain_n = (texture(terrain_normal_tex, shrub_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
 	}
+#endif
 	// 谷地 AO：仅高画质档用 height_tex 邻域差判断凹陷（中心低于四邻 → 谷/坑 → 压暗）。
 	shrub_terrain_ao = 0.0;
+#ifndef PK_SKIP_VEGETATION_SHADING
 	if (veg_shade_quality >= 2 && terrain_valley_ao_strength > 0.0) {
 		vec2 texel = 1.0 / hm_resolution;
 		float r = 3.0;
@@ -332,6 +345,7 @@ void vertex() {
 			+ shrub_decode_height(shrub_uv - vec2(0.0, texel.y * r))) * 0.25;
 		shrub_terrain_ao = clamp((hn - hc) * terrain_valley_ao_gain, 0.0, 1.0);
 	}
+#endif
 }
 
 // [veg-hemisphere-season] 半球季节相位 → (autumn, winter, spring) 三个季节量。fragment 会对
@@ -400,7 +414,11 @@ void fragment() {
 	vec3 horizon_debug_rgb = (terrain_horizon_debug_view == 1)
 		? vec3(clamp((1.0 - horizon_vis) * ed.local_day, 0.0, 1.0))
 		: vec3(horizon_vis);
-	if (shading_enabled > 0.5) {
+	bool use_expensive_shading = shading_enabled > 0.5;
+#ifdef PK_SKIP_VEGETATION_SHADING
+	use_expensive_shading = false;
+#endif
+	if (use_expensive_shading) {
 		// 伪法线：billboard UV → 局部体积法线（径向 dome，各向同性）。各向同性保证旋转不变：
 		// 旋转一个径向对称 dome 不改变其世界法线集合，叠加实例旋转后全图光照方向才真正一致。
 		// [veg-instance-rotation 修正] 按本实例旋转把局部法线 xy 转到世界帧，再叠加世界帧地形宏观法线，
@@ -452,6 +470,8 @@ void fragment() {
 const _SHADOW_SHADER_CODE := """
 shader_type canvas_item;
 render_mode blend_mix, unshaded;
+
+#include "res://shaders/include/shader_quality.gdshaderinc"
 
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
@@ -513,6 +533,11 @@ float sh_vitality_norm(float vitality) {
 
 void vertex() {
 	vec2 uv = clamp(INSTANCE_CUSTOM.rg, vec2(0.0), vec2(1.0));
+#ifdef PK_QUALITY_LOW
+	VERTEX = vec2(0.0);
+	shadow_r = 1.0;
+	shadow_alpha_v = 0.0;
+#else
 	float lat_signed = uv.y * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
 
@@ -552,6 +577,7 @@ void vertex() {
 
 	shadow_r = length(p);   // 网格本身 |p|<=1，传给片元做径向柔边
 	shadow_alpha_v = shadow_strength * ed.local_day * clamp(presence, 0.0, 1.0);
+#endif
 }
 
 void fragment() {
@@ -1368,6 +1394,7 @@ func set_mobile_quality_tier(q: int) -> void:
 		return
 	_mobile_quality_tier = next_q
 	_native_delta_common_knobs = {}
+	_refresh_shader_variants()
 	if OS.has_feature("mobile") and _map != null:
 		_rebuild_instances()
 
@@ -1379,7 +1406,7 @@ func _ensure_resources() -> void:
 		add_child(_mmi)
 	if _material == null:
 		var shader := Shader.new()
-		shader.code = _SHADER_CODE
+		shader.code = _shader_quality_define_prefix() + _SHADER_CODE
 		_material = ShaderMaterial.new()
 		_material.shader = shader
 		_material.set_shader_parameter("world_time", 0.0)
@@ -1390,7 +1417,7 @@ func _ensure_resources() -> void:
 		_mmi.material = _material
 	if _shadow_material == null:
 		var shadow_shader := Shader.new()
-		shadow_shader.code = _SHADOW_SHADER_CODE
+		shadow_shader.code = _shader_quality_define_prefix() + _SHADOW_SHADER_CODE
 		_shadow_material = ShaderMaterial.new()
 		_shadow_material.shader = shadow_shader
 		_shadow_material.set_shader_parameter("season_phase", 1.0)
@@ -1416,6 +1443,38 @@ func _ensure_resources() -> void:
 		_shadow_mmi.multimesh = _shadow_multimesh
 		_shadow_mmi.visible = false
 		add_child(_shadow_mmi)
+	_apply_profile_uniforms()
+	_sync_world_material_inputs(false)
+
+
+func _shader_quality_define_prefix() -> String:
+	if not OS.has_feature("mobile"):
+		return ""
+	match _mobile_quality_tier:
+		0:
+			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+		2:
+			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
+		_:
+			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+
+
+func _refresh_shader_variants() -> void:
+	if _material == null and _shadow_material == null:
+		return
+	var prefix := _shader_quality_define_prefix()
+	if _material != null:
+		var shader := Shader.new()
+		shader.code = prefix + _SHADER_CODE
+		_material.shader = shader
+		if _mmi != null:
+			_mmi.material = _material
+	if _shadow_material != null:
+		var shadow_shader := Shader.new()
+		shadow_shader.code = prefix + _SHADOW_SHADER_CODE
+		_shadow_material.shader = shadow_shader
+		if _shadow_mmi != null:
+			_shadow_mmi.material = _shadow_material
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
 

@@ -540,7 +540,7 @@ func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 		# 检查是否已经 prepend 过（避免热重载重复加）
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader
-			shader.code = "#define %s\n%s" % [_mobile_quality_tier_define, src]
+			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
 			print("[hex_renderer/quality] prepended #define %s to %s" % [
 				_mobile_quality_tier_define, source_path
 			])
@@ -581,6 +581,16 @@ func _mobile_quality_tier_from_define(tier_define: String) -> int:
 			return 2
 		_:
 			return 1
+
+
+func _shader_quality_define_prefix(tier_define: String) -> String:
+	match tier_define:
+		"MOBILE_QUALITY_LOW":
+			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+		"MOBILE_QUALITY_HIGH":
+			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
+		_:
+			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
 
 
 func _for_each_vegetation_layer(callable: Callable) -> void:
@@ -1883,6 +1893,9 @@ func _apply_uniforms() -> void:
 	# water_pipeline 回退旧逐邻域算法。
 	sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
 	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
+	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。
+	sm.set_shader_parameter("terrain_detail_tex", _world.terrain_detail_tex)
+	sm.set_shader_parameter("has_terrain_detail_tex", _world.terrain_detail_tex != null)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:

@@ -566,7 +566,10 @@ vec3 apply_kelp_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (ctx.quality >= 1) {
 		kelp_streak = fbm(vec2(along_k + world_time * 0.035, across_k), ctx.detail_oct);
 	}
-	float kelp_patch = water_fbm_cyl(ctx.wpw, 0.018, vec2(5.0, -41.0), ctx.detail_oct);
+	float kelp_patch = 0.5;
+#ifndef PK_QUALITY_LOW
+	kelp_patch = water_fbm_cyl(ctx.wpw, 0.018, vec2(5.0, -41.0), ctx.detail_oct);
+#endif
 	vec3 kelp_col = mix(kelp_base, vec3(0.05, 0.28, 0.23), kelp_patch * 0.26);
 	kelp_col *= mix(0.94, 1.045, kelp_streak);
 	col = mix(col, kelp_col, ww.w_kelp * 0.86);
@@ -597,7 +600,10 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 		float crack = voronoi_cell(water_cyl_noise_p(ctx.wpw, 0.34, vec2(0.0)));
 		crack_factor = smoothstep(0.02, 0.16, crack);
 	}
-	float ice_noise = water_fbm_cyl(ctx.wpw, 0.12, vec2(-9.0, 31.0), ctx.detail_oct);
+	float ice_noise = 0.5;
+#ifndef PK_QUALITY_LOW
+	ice_noise = water_fbm_cyl(ctx.wpw, 0.12, vec2(-9.0, 31.0), ctx.detail_oct);
+#endif
 	vec3 ice_col = mix(ice_base * 0.76, ice_base * 1.08, crack_factor);
 	ice_col *= mix(0.94, 1.055, ice_noise);
 	float ice_edge = smoothstep(0.18, 0.82, ww.w_ice);
@@ -743,7 +749,11 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, float w_ice, inout
 		float current_push = current_align_w * mix(0.85, 1.45, ocean_current_strength);
 		wave_wp = ctx.wp + current_dir * current_push + ctx.ocean_current_v * current_align_w * 0.80;
 	}
+#ifdef PK_QUALITY_LOW
+	bool waves_on = false;
+#else
 	bool waves_on = water_waves_enabled && wave_amp_scale > 0.001;
+#endif
 	N_out = sample_water_normal(wave_wp, world_time, wave_amp_scale, wave_freq_scale, wave_q, waves_on);
 
 	// 近岸法线放大
@@ -811,13 +821,23 @@ SurfaceParams compute_water_base_surface(
 	ctx.current_temp = current_temp;
 	ctx.ocean_current_v = ocean_current_v;
 	ctx.wind_v = wind_v;
+#ifdef PK_QUALITY_LOW
+	ctx.quality = 0;
+#elif defined(PK_QUALITY_MID)
+	ctx.quality = min(visual_quality, 1);
+#else
 	ctx.quality = visual_quality;
+#endif
 	ctx.ice_frac = dyn_ice_frac;
-	ctx.detail_oct = (visual_quality >= 2) ? 2 : 1;
+	ctx.detail_oct = (ctx.quality >= 2) ? 2 : 1;
 	{
+#ifdef PK_QUALITY_LOW
+		ctx.wpw = wp;
+#else
 		float water_boundary_softness = clamp(water_biome_blend_radius / 2.2, 0.0, 1.0);
 		float warp_for_water = water_domain_warp_strength * mix(0.45, 1.0, water_boundary_softness);
 		ctx.wpw = water_domain_warp(wp, world_time, warp_for_water);
+#endif
 	}
 	// [water-noise-reuse 2026-06-29] 两层共享低频噪声只算一次（LOW 档两个消费者都不跑 → 跳过）。
 	// 原 base_ripple 静态、calm_brightness 慢飘；合并后统一带极慢时间漂移（±5% 亮度下不可察）。
@@ -926,6 +946,7 @@ SurfaceParams apply_water_overlay_surface(
 	// [reef 浪花修复 2026-06-25] 把 B_REEF 纳入近岸浪花判断：珊瑚礁多贴岸，原来只覆盖
 	// COAST/OCEAN 会在 reef 水格处出现浪花断裂空隙（用户截图红圈）。reef 浪花用稍弱权重
 	// （礁盘消浪、白沫较碎），与 coast 自然衔接、消除空隙。
+#ifndef PK_QUALITY_LOW
 	if (biome == B_COAST || biome == B_OCEAN || biome == B_REEF || biome == B_KELP) {
 		float reef_foam_scale = (biome == B_REEF) ? 0.72 : ((biome == B_KELP) ? 0.50 : 1.0);
 		float foam_mask_raw = 1.0 - smoothstep(0.0, 0.045, coast_sdf);
@@ -954,8 +975,10 @@ SurfaceParams apply_water_overlay_surface(
 			surface.ao = mix(surface.ao, 1.0, foam_w);
 		}
 	}
+#endif
 
 	// SEA 2.3：BLIZZARD 薄冰 ──────────────────────────────────────────
+#ifndef PK_QUALITY_LOW
 	if (extreme_weather_ground_effect_enabled && weather_front_count > 0) {
 		float ice_mask = compute_extreme_weather_mask(wp, WT_BLIZZARD);
 		if (ice_mask > 0.001) {
@@ -966,6 +989,7 @@ SurfaceParams apply_water_overlay_surface(
 			surface.roughness = mix(surface.roughness, 0.28, thin_ice_w);
 		}
 	}
+#endif
 	surface.base_color = col;
 	return surface;
 }
@@ -989,6 +1013,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	float day_factor = 1.0 - pixel_night;
 
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
+#ifndef PK_QUALITY_LOW
 	if (biome == B_REEF && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
 		float caustics = water_fbm_cyl(wp, 0.35, vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
@@ -996,11 +1021,13 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		vec3 caustic_col = mix(tod_sun_color, color_shallow, 0.32) * 1.05;
 		col = mix(col, col + caustic_col * 0.24, caustics_mask * caustics_strength * day_factor);
 	}
+#endif
 
 	// SEA 3.15：波浪天光明暗（hillshade，不依赖直射高光）─────────────────────
 	//   问题：顶视 + 低菲涅尔下，只有太阳直射的镜面 glint 处能看出波浪，背光/无直射水域
 	//   一片死蓝。这里给波浪法线沿「太阳方位」做一层漫反射明暗：迎光波坡提亮、背光波坡压暗，
 	//   全水面（含阴影侧）都显出起伏。平静/冰面 N≈+z → slope≈0 自动归零；夜侧整体减弱。
+#ifndef PK_QUALITY_LOW
 	if (water_wave_shade_strength > 0.001) {
 		vec2 sun_h = sun_dir_px.xy;
 		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
@@ -1009,13 +1036,15 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		float amp = mix(0.45, 1.0, day_factor);  // 夜侧仍留一点天光起伏
 		col *= (1.0 + shade * amp);
 	}
+#endif
 
 	// SEA 3.16：水体次表面散射（SSS，廉价近似）──────────────────────────────
 	//   低太阳/逆光时阳光穿过薄波层 → 迎光波坡透出青绿透亮（前向散射）。无需厚度纹理：
 	//   facing=波坡迎太阳方位，wave_act=(1-N.z) 波动强度（平静/冰面≈0 自动归零），
 	//   low_sun=掠射加权（日出日落更明显）。叠的是颜色(青绿)而非亮度，与 hillshade 区分。
 	//   mid+ 档(visual_quality>=1)启用。
-	if (visual_quality >= 1 && water_sss_strength > 0.001) {
+#ifndef PK_QUALITY_LOW
+	if (quality >= 1 && water_sss_strength > 0.001) {
 		vec2 sun_h = sun_dir_px.xy;
 		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
 		// [sss-calibration-fix 2026-06-29] 波浪法线很缓（|N.xy|≈0.1），旧版 pow(facing,3)×(1-N.z)*2.5
@@ -1027,6 +1056,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 				* day_factor * mix(0.55, 1.0, low_sun);
 		col += water_sss_color * sss;
 	}
+#endif
 
 	// SEA 3.2：菲涅尔天空反射（与 BRDF 的 F_Schlick 互补） ──────────────
 	if (water_fresnel_enabled) {
@@ -1046,6 +1076,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	}
 
 	// SEA 3.3：sparkle 高频颗粒高光 ────────────────────────────────────
+#ifndef PK_QUALITY_LOW
 	if (quality >= 1 && water_sparkle_enabled) {
 		int sparkle_oct = (quality >= 2) ? 2 : 1;
 		vec3 L = sun_dir_px;
@@ -1077,6 +1108,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 		spark_mask *= night_freq_scale;
 		col = mix(col, col * sparkle_col, spark_mask * intensity);
 	}
+#endif
 	return col;
 }
 

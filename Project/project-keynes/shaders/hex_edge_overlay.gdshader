@@ -1,6 +1,8 @@
 shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
+#include "res://shaders/include/shader_quality.gdshaderinc"
+
 // 地形交界覆盖层 shader v4.8
 // 核心：低透明宽晕染 + 连续噪声溶解，弱化六边形硬分界。
 // COLOR.rgb = 覆盖色，COLOR.a = 中心线透明度（两侧顶点为 0 自动渐隐）
@@ -60,10 +62,16 @@ void fragment() {
 	vec2 p = v_pos / max(hex_size, 1.0) * 26.0 + vec2(seed * 197.0, seed * -131.0);
 
 	// 低频噪声生成柔和断续边，不再叠加强高频锯齿。
-	float n1 = fbm(p * noise_scale, 3);
-	float n2 = fbm((p + vec2(seed * 43.0, seed * -29.0)) * noise_scale * 1.35, 2);
-	float n3 = fbm((p * 0.7 + vec2(seed * -71.0, seed * 53.0)) * noise_scale * 1.9, 2);
-	float fine_grain = value_noise(p * noise_scale * 2.2 + vec2(seed * 83.0, seed * -47.0));
+	float n1 = 0.58;
+	float n2 = 0.52;
+	float n3 = 0.50;
+	float fine_grain = 0.5;
+#ifndef PK_QUALITY_LOW
+	n1 = fbm(p * noise_scale, 3);
+	n2 = fbm((p + vec2(seed * 43.0, seed * -29.0)) * noise_scale * 1.35, 2);
+	n3 = fbm((p * 0.7 + vec2(seed * -71.0, seed * 53.0)) * noise_scale * 1.9, 2);
+	fine_grain = value_noise(p * noise_scale * 2.2 + vec2(seed * 83.0, seed * -47.0));
+#endif
 
 	float cut1 = smoothstep(0.16, 0.58, n1);
 	float cut2 = smoothstep(0.14, 0.62, n2);
