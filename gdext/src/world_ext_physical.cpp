@@ -1684,6 +1684,37 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const int LUT_BINS = slp_lat_lut_bins;
     std::vector<float> lut_base_lat(static_cast<size_t>(LUT_BINS), 0.0f);
     std::vector<float> lut_solar_heat(static_cast<size_t>(LUT_BINS), 0.0f);
+    // perf (Item 5b, 2026-07-05): dc_insolation_annual_mean(ny_b, axial_tilt, daylen)
+    // 是本 LUT 里唯一 season-无关的项（16×9 trig/bin），每 pass 重算纯冗余。缓存该年均
+    // 子 LUT，指纹 = FNV-1a(LUT_BINS, axial_tilt bits, daylen bits)。命中即逐位复用
+    // → bit-equal（insol_now/solar_dev/base_lat 仍每 pass 重建，因 season_phase 变化）。
+    {
+        uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
+        auto mix = [&fp](uint32_t bits) {
+            fp ^= uint64_t(bits);
+            fp *= 1099511628211ull; // FNV-1a prime
+        };
+        mix(uint32_t(LUT_BINS));
+        {
+            uint32_t b;
+            std::memcpy(&b, &axial_tilt_deg, sizeof(b));
+            mix(b);
+            std::memcpy(&b, &daylen_amp, sizeof(b));
+            mix(b);
+        }
+        if (!(_slp_insol_mean_lut_valid && _slp_insol_mean_lut_fp == fp &&
+              int(_slp_insol_mean_lut.size()) == LUT_BINS)) {
+            _slp_insol_mean_lut.resize(static_cast<size_t>(LUT_BINS));
+            for (int b = 0; b < LUT_BINS; ++b) {
+                const float ny_b = float(b) / float(LUT_BINS - 1);
+                _slp_insol_mean_lut[static_cast<size_t>(b)] =
+                    dc_insolation_annual_mean(ny_b, axial_tilt_deg, daylen_amp);
+            }
+            _slp_insol_mean_lut_fp = fp;
+            _slp_insol_mean_lut_valid = true;
+        }
+    }
+    const float * const __restrict LUT_INSOL_MEAN = _slp_insol_mean_lut.data();
     for (int b = 0; b < LUT_BINS; ++b) {
         const float ny_b = float(b) / float(LUT_BINS - 1);
         const float ls_abs_b = std::fabs((ny_b - 0.5f) * 2.0f);
@@ -1691,7 +1722,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         const float s_lat_b = std::sin(ls_abs_b * PI_F);
         const float lat_temp_factor_b = s_lat_b * s_lat_b;
         const float insol_now_b = dc_insolation_now(ny_b, float(season_phase), axial_tilt_deg, daylen_amp);
-        const float insol_mean_b = dc_insolation_annual_mean(ny_b, axial_tilt_deg, daylen_amp);
+        const float insol_mean_b = LUT_INSOL_MEAN[b];
         const float solar_dev_b = dc_insolation_season_dev(ny_b, insol_now_b, insol_mean_b);
         lut_solar_heat[b] = solar_dev_b * lat_temp_factor_b;
     }
@@ -1739,6 +1770,15 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // ─── Pass A: per-cell baseline ────────────────────────────────────────
     // perf (2A): 逐 cell 独立（读 POSY/TR/NB/LUT/可选场 slot，写 slp_buf[i]/thermal_abs[i]，
     // 无标量累加器；mobile_low/synoptic 均 cell-local）→ 按 cell 区间并行、bit-equal。
+    // perf (Item 5a, 2026-07-05): synoptic 波数 sa/sb/k1x..k2y 只依赖 world_seed，
+    // 原在 cell 循环内每 cell 重算 4 次 sin/cos。外提到循环外一次算好 → bit-equal
+    // (逐 cell 值不变，只是不再重复 6400 次三角)。
+    const double slp_syn_sa  = double(world_seed) * 0.00011;
+    const double slp_syn_sb  = double(world_seed) * 0.00017;
+    const double slp_syn_k1x = 0.90 + 0.40 * std::sin(slp_syn_sa);
+    const double slp_syn_k1y = 0.70 + 0.40 * std::cos(slp_syn_sa);
+    const double slp_syn_k2x = 1.10 - 0.35 * std::cos(slp_syn_sb);
+    const double slp_syn_k2y = 0.85 + 0.35 * std::sin(slp_syn_sb);
     auto slp_passA_range = [&](int rb, int re) {
     for (int i = rb; i < re; ++i) {
         // ny / lat_signed / lat_abs
@@ -1790,12 +1830,12 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             // 时间项 slp_syn_phase(2π/period_days) 让波整体漂移；纬向调制弱化(避免纬度高频)。
             const double px = std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0);
             const double py = double(ny);
-            const double sa = double(world_seed) * 0.00011;
-            const double sb = double(world_seed) * 0.00017;
-            const double k1x = 0.90 + 0.40 * std::sin(sa);
-            const double k1y = 0.70 + 0.40 * std::cos(sa);
-            const double k2x = 1.10 - 0.35 * std::cos(sb);
-            const double k2y = 0.85 + 0.35 * std::sin(sb);
+            const double sa = slp_syn_sa;
+            const double sb = slp_syn_sb;
+            const double k1x = slp_syn_k1x;
+            const double k1y = slp_syn_k1y;
+            const double k2x = slp_syn_k2x;
+            const double k2y = slp_syn_k2y;
             const double TWO_PI = 6.283185307179586;
             synoptic = SLP_SYNOPTIC_AMP * float(
                 0.65 * std::sin(TWO_PI * (k1x * px + k1y * py) + slp_syn_phase + double(ls) * 0.6) +
@@ -2182,22 +2222,69 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
 
     // ─── PSI init ─────────────────────────────────────────────────────────
     // Build water_to_cell[] in cell-index ascending order; cell_to_water[] is
-    // the inverse map (-1 for land cells).
-    std::vector<int> cell_to_water(static_cast<size_t>(n_cells), -1);
-    std::vector<int> water_to_cell;
-    water_to_cell.reserve(static_cast<size_t>(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (is_water_lut[TR[i]]) {
-            cell_to_water[i] = static_cast<int>(water_to_cell.size());
-            water_to_cell.push_back(i);
+    // the inverse map (-1 for land cells); nb_w[] maps each water cell's 6
+    // neighbors to water-domain indices (-1 = land/out-of-domain).
+    // perf (Item 6, 2026-07-05): 这三者纯由水掩膜(TR+water_ids)与邻接(NB)决定，与风/温
+    // 无关，对静态地图逐 tick 恒等。海冰是独立 slot，不改 terrain id → 掩膜生成后静态。
+    // 缓存进成员，自校验指纹 = FNV-1a(n_cells, water_ids, 全 TR, 全 NB)；命中即逐位复用
+    // (nb_w/water_to_cell/cell_to_water bit-identical)，跳过重建与三次堆分配。地形/邻接
+    // 任何变化指纹即失配、自动重建 → 无需外部失效钩子（消除最易漏的失效点）。
+    {
+        uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
+        auto mix = [&fp](uint32_t bits) {
+            fp ^= uint64_t(bits);
+            fp *= 1099511628211ull; // FNV-1a prime
+        };
+        mix(uint32_t(n_cells));
+        for (int k = 0; k < water_ids.size(); ++k) {
+            mix(uint32_t(int(water_ids[k])));
+        }
+        for (int i = 0; i < n_cells; ++i) {
+            mix(uint32_t(TR[i]));
+        }
+        for (int i = 0; i < n_cells * 6; ++i) {
+            mix(uint32_t(NB[i]));
+        }
+        if (!(_psi_topo_valid && _psi_topo_fp == fp &&
+              int(_psi_cell_to_water.size()) == n_cells)) {
+            _psi_cell_to_water.assign(static_cast<size_t>(n_cells), -1);
+            _psi_water_to_cell.clear();
+            _psi_water_to_cell.reserve(static_cast<size_t>(n_cells));
+            for (int i = 0; i < n_cells; ++i) {
+                if (is_water_lut[TR[i]]) {
+                    _psi_cell_to_water[i] = static_cast<int>(_psi_water_to_cell.size());
+                    _psi_water_to_cell.push_back(i);
+                }
+            }
+            _psi_topo_n_water = static_cast<int>(_psi_water_to_cell.size());
+            // nb_w：每水 cell 的 6 邻接映射到水域索引（依赖 cell_to_water，与 NB_DIR 无关）。
+            _psi_nb_w.assign(static_cast<size_t>(_psi_topo_n_water) * 6, -1);
+            for (int k = 0; k < _psi_topo_n_water; ++k) {
+                const int i = _psi_water_to_cell[static_cast<size_t>(k)];
+                const int base_i = i * 6;
+                const int base_k = k * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB[base_i + d];
+                    int kw = -1;
+                    if (ni >= 0 && ni < n_cells) {
+                        kw = _psi_cell_to_water[static_cast<size_t>(ni)];
+                    }
+                    _psi_nb_w[static_cast<size_t>(base_k + d)] = kw;
+                }
+            }
+            _psi_topo_fp = fp;
+            _psi_topo_valid = true;
         }
     }
-    const int n_water = static_cast<int>(water_to_cell.size());
+    const std::vector<int> &cell_to_water = _psi_cell_to_water;
+    const std::vector<int> &water_to_cell = _psi_water_to_cell;
+    const std::vector<int> &nb_w = _psi_nb_w;
+    const int n_water = _psi_topo_n_water;
 
     // Per-water-cell: nb_idx (to water-domain index, -1 = land/out-of-domain),
     // wind stress (= wind_vector * wind_speed), curl_tau, beta_abs, r_factor,
     // source, psi.
-    std::vector<int>   nb_w(static_cast<size_t>(n_water * 6), -1);
+    // 注：nb_w 已在上方拓扑缓存块构建（member 别名），此处不再声明。
     std::vector<float> tau_x(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> tau_y(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> ny_w(static_cast<size_t>(n_water), 0.5f);
@@ -2237,21 +2324,11 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         1.5f,                //  5  SE
     };
 
-    // Build nb_w + tau (= wind_stress = wind_vector * wind_speed; here
-    // wind_x_arr / wind_y_arr already encode wind_vector, so multiply by speed
-    // to get wind_stress 1:1 with GDScript).
+    // Build tau (= wind_stress = wind_vector * wind_speed; here wind_x_arr /
+    // wind_y_arr already encode wind_vector, so multiply by speed to get
+    // wind_stress 1:1 with GDScript) + per-tick ny/ls. nb_w 已在拓扑缓存块建好。
     for (int k = 0; k < n_water; ++k) {
         const int i = water_to_cell[k];
-        const int base_i = i * 6;
-        const int base_k = k * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int ni = NB[base_i + d];
-            int kw = -1;
-            if (ni >= 0 && ni < n_cells) {
-                kw = cell_to_water[ni];
-            }
-            nb_w[base_k + d] = kw;
-        }
         tau_x[k] = WX[i] * WSP[i];
         tau_y[k] = WY[i] * WSP[i];
 

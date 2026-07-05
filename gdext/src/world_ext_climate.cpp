@@ -6762,6 +6762,13 @@ struct ClimateInputBuf {
     // pass_a 用它对陆地缩小季节振幅，形成沿海小年较差（温带海洋性 Cfb）。缺省空→不调温。
     std::vector<float>   maritime;         // pass_a 读（静态）
     std::vector<float>   temp_baseline_year; // pass_a 读（静态 LUT）
+    // pass_a 年均日照缓存（perf 2026-07-05, Item 4）：dc_insolation_annual_mean(clamp01(ny),
+    // axial_tilt, daylen) 只依赖 lat + 两个行星常数，与 season 无关，故对每 cell 逐 tick 恒等。
+    // async pass_a kernel 是 static free function、跑在 worker thread，无法安全触碰 member
+    // 缓存 _insol_annual_mean_cache（会 data race）。改由主线程在 kick 快照时（持锁）预计算填此
+    // 字段，worker 直接读 → bit-equal（同一 dc_insolation_annual_mean(dc_clamp01f(ny),...)）。
+    // 空 → worker 回退 inline 重算（旧行为，向后兼容）。
+    std::vector<float>   insol_annual_mean;  // pass_a 读（主线程预烘焙）
     std::vector<float>   temp;             // pass_a 读 prev_temp；pass_b 读 temp_snapshot
     std::vector<float>   temp_30d;         // pass_a 读：EMA prev
     std::vector<float>   temp_365d;        // pass_a 读：EMA prev
@@ -7073,6 +7080,9 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float *PE = in.elevation.data();
     const float *PBM = in.base_moisture.data();
     const float *PLN = in.lat_norm.data();
+    // Item 4：主线程预烘焙的年均日照 LUT（尺寸匹配才启用，否则 null → inline 回退）。
+    const float *INSOL_MEAN_BAKED =
+        ((int)in.insol_annual_mean.size() == n) ? in.insol_annual_mean.data() : nullptr;
     const float *PTY = in.temp_baseline_year.data();
     const float *PT_IN = in.temp.data();
     const float *P30_IN = in.temp_30d.data();
@@ -7110,7 +7120,13 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         // (a) dev_today + insolation
         const float ny_clamped = dc_clamp01f(ny);
         const float insol_now = dc_insolation_now(ny_clamped, season_phase, axial_tilt_deg, daylen_amp);
-        const float insol_mean = dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+        // perf (Item 4, 2026-07-05): insol_mean 是年均、season-无关。主线程 kick 时已把
+        // dc_insolation_annual_mean(dc_clamp01f(ny),...) 预烘焙进 in.insol_annual_mean（持锁、
+        // 主线程算，避免 worker 触 member 缓存的 data race）。命中即读 → bit-equal；字段缺失/
+        // 尺寸不符时回退 inline 重算（旧行为，向后兼容旧调用方）。
+        const float insol_mean = INSOL_MEAN_BAKED
+            ? INSOL_MEAN_BAKED[i]
+            : dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
         float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
         if (dev_today < insol_dev_min) dev_today = insol_dev_min;
         else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
@@ -9060,6 +9076,25 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
 
         // passes_mask（默认 0x1FF 含 finalizer bit）
         t->in_buf.scalars.passes_mask = int(input.get("passes_mask", 0x1FF));
+
+        // ─── Item 4 (perf 2026-07-05)：主线程预烘焙年均日照 LUT ────────────────
+        // pass_a worker 每 cell 需 dc_insolation_annual_mean(clamp01(ny), axial_tilt, daylen)，
+        // 该值 season-无关（16×9 trig/cell）。async kernel 跑在 worker thread、无法安全用 member
+        // 缓存，故在此（持锁、主线程）按 lat_norm 逐 cell 预算好，worker 直接读 → bit-equal。
+        // 仅 pass_a 参与时（passes_mask & 0x01）才烘焙，省无谓开销；否则清空退回 inline。
+        if ((t->in_buf.scalars.passes_mask & 0x01) != 0 &&
+            (int)t->in_buf.lat_norm.size() == n_cells) {
+            const float ax_tilt = float(t->in_buf.scalars.axial_tilt_deg);
+            const float dl_amp  = float(t->in_buf.scalars.day_length_gain);
+            t->in_buf.insol_annual_mean.resize(static_cast<size_t>(n_cells));
+            for (int i = 0; i < n_cells; ++i) {
+                t->in_buf.insol_annual_mean[static_cast<size_t>(i)] =
+                    dc_insolation_annual_mean(dc_clamp01f(t->in_buf.lat_norm[static_cast<size_t>(i)]),
+                                              ax_tilt, dl_amp);
+            }
+        } else {
+            t->in_buf.insol_annual_mean.clear();
+        }
 
         t->request_pending.store(true, std::memory_order_release);
     }

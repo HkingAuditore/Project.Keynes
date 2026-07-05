@@ -417,6 +417,14 @@ var _overlay_last_bake_wall_ms: int = 0
 var _overlay_refresh_disabled: bool = false
 
 func _ready() -> void:
+	# Fix #11 third pass (2026-07-05)：mobile 上 PKLog 默认关。
+	# 根因：PKLog.enabled 静态默认 true，且启动时未按 mobile 置关；同时
+	# slp_field/wind_field STAGE-TOTAL 的 `>=5ms` warn 分支未走 PKLog 守门，
+	# 慢帧下每 tick 触发 → logcat 每行 ~0.1-1ms、call#1 pollution ~15ms/print，
+	# 直接吃掉 mobile frame budget。桌面保持默认开（true）不变。
+	# 需要调试时按 F10 / mobile BtnLog 打开（C++ 镜像也会在切换时同步）。
+	if OS.has_feature("mobile"):
+		PKLog.enabled = false
 	_apply_world_setup_base_config()
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
@@ -3843,7 +3851,8 @@ func _ensure_mobile_debug_overlay() -> void:
 	# 镜像到 DCWorldExt + SusSchedulerExt 的 set_diag_logs_enabled。
 	var btn_log: Button = Button.new()
 	btn_log.name = "BtnLog"
-	btn_log.text = "Log: ON"
+	# mobile 默认关（见 _ready() Fix #11 third pass），按钮初始文本随之。
+	btn_log.text = "Log: ON" if PKLog.enabled else "Log: OFF"
 	btn_log.toggle_mode = true
 	btn_log.custom_minimum_size = Vector2(148.0, MOBILE_BUTTON_HEIGHT)
 	btn_log.pressed.connect(_on_mobile_log_btn_pressed)

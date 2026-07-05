@@ -1892,6 +1892,31 @@ private:
     uint64_t                                  _insol_cache_fingerprint = 0;
     bool                                      _insol_cache_valid = false;
 
+    // ---- SLP lat-LUT annual-mean sub-cache (perf 2026-07-05, Item 5) ----
+    // run_slp_field_pass 每 pass 按 ny 预建 LUT_BINS 档 lut_solar_heat，其中
+    // dc_insolation_annual_mean(ny_b, axial_tilt, daylen)（16×9 trig/bin）与 season 无关，
+    // 每 pass 重算纯属冗余。缓存该年均 LUT，指纹 = FNV-1a(LUT_BINS, axial_tilt bits,
+    // daylen bits)。insol_now / solar_dev / base_lat 仍每 pass 重建（season-dependent）。
+    // 命中即逐位复用存储值 → bit-equal；仅在 bins/planet 常数变化时重建（≈一次）。
+    std::vector<float>                        _slp_insol_mean_lut;
+    uint64_t                                  _slp_insol_mean_lut_fp = 0;
+    bool                                      _slp_insol_mean_lut_valid = false;
+
+    // ---- PSI water-topology cache (perf 2026-07-05, Item 6) ----
+    // run_psi_solver_pass 每 tick 重建 cell_to_water / water_to_cell / nb_w（水域邻接
+    // 域内索引），这三者纯由水掩膜(TR+water_ids)与邻接表(NB)决定，与风/温度无关，故对
+    // 静态地图逐 tick 恒等。海冰是独立 cell_sea_ice_frac F32 slot，**不改 terrain id**，
+    // 所以水掩膜生成后即静态。缓存拓扑，指纹 = FNV-1a(n_cells, water_ids, 全 TR 字节,
+    // 全 NB 整型) —— 自校验：地形或邻接一旦变化指纹即失配、自动重建，无需外部失效钩子。
+    // 命中即逐位复用 → nb_w/water_to_cell/cell_to_water bit-identical。仅在 map regen /
+    // 地形 flip 时重建（≈生成期一次）。主线程同步调用，成员存储线程安全。
+    std::vector<int>                          _psi_cell_to_water;
+    std::vector<int>                          _psi_water_to_cell;
+    std::vector<int>                          _psi_nb_w;
+    int                                       _psi_topo_n_water = 0;
+    uint64_t                                  _psi_topo_fp = 0;
+    bool                                      _psi_topo_valid = false;
+
     // ---- entity / pool ----
     int                                       _entity_count = 0;
 
