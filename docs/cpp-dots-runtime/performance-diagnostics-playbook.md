@@ -133,9 +133,10 @@ native_daily_sim ran=... progress=0.46
 - Split weather report 会同时保留旧聚合字段 `weather_ms` / `weather_tick_ms`，并新增 `weather_field_ms`、`weather_commit_ms`、`weather_distribute_ms`、`weather_summary_ms`、`weather_cyclone_ms`、`weather_stage_b_ms`；`weather_split_skipped_monolithic=true` 表示本轮没有调用旧的一体化 `run_weather_refresh_daily_pass`。失败时 `fail_stage` 会落在对应 split stage，`fallback_reason` 给出 `field_solve`、`field_commit`、`distribute`、`summary` 或 `stage_b` 等具体原因。
 - `native_daily/slow-dump ... prebuilt=true` 表示 weather cadence 到期时 `weather_knobs` 已在 round-start bundle 中预构建，node 12 的 JIT patch 会短路；若仍看到 `stage=weather/weather_knobs bundle=4-6ms prebuilt=false`，优先查 Android 包是否未更新或 weather prebuild 前置条件失败。
 - `bundle=... jit=... keys=[...]` 用于区分 round-start bundle 和 deferred JIT patch。`jit` 高且 `keys=["ocean_water_knobs", "ocean_land_knobs"]` 时，热点在最新温度/TTA 的 GDScript knobs 构建；`jit` 高且包含 `wind_air_knobs` 时，先确认 Android/Windows DLL 是否已有 `supports_wind_air_slot_temp()`：新 DLL 应让 wind-air 直接读 `cell_temp` slot，只保留静态 `baseline_arr`，不再构建 `temp_before_arr`。`jit≈0` 但 `bundle` 高时，优先查 round-start bundle 或 report 聚合。`ocean_water/land` 的 baseline 热路径会复用 `temp_baseline_arr`，若仍高，下一步看 TTA copy 或把对应动态输入继续迁入 C++ slot。
+- `native_daily_coarse_spread_yield_enabled=true` 时，spread yield 会从全节点 checkpoint 收缩到 `[2,6,12,19,20]`。它用于验证降低 C++/GDScript round-trip 的均值收益；开启后必须同时检查 `largest_slice_ms`、`stage_name` 和 weather split 字段，确认没有把多个重节点重新堆到同一 tick。
 - 移动端主场景应先出现 `[WorldSetup] ClimateProfile path=res://data/world/earth_like_mobile_complex.tres mobile=true split_weather=true wind_period=6`，随后首个 native slice 日志应包含 `split=true split_skipped_monolithic=true`，并在 breakdown / largest 中出现 `weather_field` 等 split 节点。`weather_knobs embedded` 只表示 bundle 仍携带天气输入，不单独代表 monolithic；如果小米/Android log 仍显示 `wind_period=3`、`split=false` 或完全没有 split 节点，先查 profile 是否未加载；如果 profile 日志已经是 split=true 但 native slice 仍没有 split 字段，再查 Android GDExtension `.so` 是否旧、是否已重建并重启应用。
 - 移动端复杂 profile 还把 `weather_field_advect_steps` 覆盖为 `4`（桌面默认仍为 `8`），用更短上风采样降低 `weather_field/weather_knobs` 的单节点峰值。若天气场尖峰仍高，先看 slow dump 里的 `adv=...` 是否继续主导，再决定是否继续拆 field solve。
-- `[fast tick WARN]` 中 `native_daily/finalizer ...` 只在 native daily round 完成并执行 finalizer 时打印。它用于解释 `largest=native_daily_sim/native_daily_complete/round_complete`：`cell/temp/tta/thermal/sort/sea_ice/precip` 定位计算段，`write_mode/dense/sparse/dirty_collect/dirty_ratio/dirty=temp/tta/thermal/comps_dense/comps_sparse` 定位 DataCore 可见写入，`temp_clamped/tta_clamped/thermal_init/max_dt/pre_max_dt` 定位稳定性 clamp。`main.gd` 优先读 scheduler report 的 `native_daily_report`，旧/裁剪 report 缺嵌套字段时回退读 `MapGenerator.native_daily_last_result()`。若 `finalizer_total_ms` 高但 `cell_ms` 低，优先查 sparse/dense 写入和 dirty ratio；`mixed_sparse_dense` 表示每个 component 独立选择 sparse/dense，常见于 temp/thermal dirty 高但 TTA dirty 低的移动端 round；`dirty_skip=true` / `skip_comps=[...]` 表示 `sparse_perf` 命中上一轮高 dirty hint，本轮跳过对应 component 的 GDScript dirty collect 并直接 dense 写；若 `cell_ms` 高，继续区分 native finalizer path 与 temp/TTA/thermal 子段。
+- `[fast tick WARN]` 中 `native_daily/finalizer ...` 只在 native daily round 完成并执行 finalizer 时打印。它用于解释 `largest=native_daily_sim/native_daily_complete/round_complete`：`cell/temp/tta/thermal/sort/sea_ice/precip` 定位计算段，`write_mode/dense/sparse/dirty_collect/dirty_ratio/dirty=temp/tta/thermal/comps_dense/comps_sparse` 定位 DataCore 可见写入，`temp_clamped/tta_clamped/thermal_init/max_dt/pre_max_dt` 定位稳定性 clamp。`NativeDailySimJob` 的 scheduler report 为降低热路径成本不再嵌完整 `native_daily_report`；`main.gd` 会回退读 `MapGenerator.native_daily_last_result()` 获取完整 native result。若 `finalizer_total_ms` 高但 `cell_ms` 低，优先查 sparse/dense 写入和 dirty ratio；`mixed_sparse_dense` 表示每个 component 独立选择 sparse/dense，常见于 temp/thermal dirty 高但 TTA dirty 低的移动端 round；`dirty_skip=true` / `skip_comps=[...]` 表示 `sparse_perf` 命中上一轮高 dirty hint，本轮跳过对应 component 的 GDScript dirty collect 并直接 dense 写；若 `cell_ms` 高，继续区分 native finalizer path 与 temp/TTA/thermal 子段。
 - `native_daily_complete` 的 `apply_ms` 是完成 slice 的 GDScript 可见收尾墙钟，已经拆出 `complete_apply_*` 子字段：`publish_tta` 是 raw/clamped TTA 发布到 `MapData`/DataCore 的 wrapper 成本；`weather_result` 是 `WeatherSystem.apply_unified_fast_tick_result()`；`visual_intents` 是 fronts/LUT/atlas dirty intent 应用；`finalizer` 是 `_native_daily_apply_finalizer()` 外层调用墙钟；`finalizer_merge` 是 finalizer diag 合并；`result_patch` 是把最终输出重新挂回 result；`observed` 是这些子段求和；`other = apply_ms - observed`，用于定位清理状态、字典写入或尚未细分的 GDScript glue。
 - 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。
 - `published_slots`、scheduler-level `published_to_slot` 和 `visual_dirty_intents` 只应在 round 完成 slice 上出现；中间 slice 为空是正常的。graph-level `published_to_slot=true` 不替代具体 pass 的 visible flush 证据。
@@ -413,6 +414,14 @@ the next target; if `dominant=daily_wind_wind`, look at the wind kernel. A high
 `refresh` with low `slp`/`wind` means the cost is the GDScript→C++ slot refresh,
 not the math kernels. Current daily-wind uses a slot whitelist; if this regresses,
 check whether the loaded DLL exposes `refresh_slots_from_map_keys()`.
+
+When `daily_wind_wind_ran=true` and the physical chain is already at `phys_wind`,
+`ocean_currents` reuses the same-tick wind via `prime_physical_solve_from_current_wind()`
+and yields before PSI. The slice report then contains `phys_wind_dedupe_applied=true`,
+`phys_wind_skipped_reason=daily_wind_reused`, `stage_local_ms` for the attribution
+owner, and `job_elapsed_ms` for the full run_slice wall clock. If a `phys_wind`
+largest spike still includes daily prepass cost, check whether these fields are missing
+or whether the daily tick was SLP-only (`daily_wind_wind_ran=false`).
 
 ### 2-tick split + SLP-internal instrumentation
 
@@ -1062,6 +1071,10 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
 `use_job_should_run=true` 使用 job-local LUT catch-up 状态。诊断时看
 `lut_last_due_tick`、`lut_last_refresh_tick`、`lut_refresh_pending_before` 和
 `lut_catchup`：如果 stride 到期 tick 被 `frame_budget_exhausted` 跳过，下一次运行
+会以 catch-up 方式补刷。cell-indirection 主路径新增 no-dirty skip：当 dirty mask
+可读且 `mask_dirty_count=0`、LUT 纹理已存在、没有 ecology transition 待推进且不是
+catch-up 时，报告 `path=cell_indirection_lut_skip`、`lut_skip_no_dirty=true`、
+`dirty_reason=no_dirty`，用于把“该 tick DVA 被调度”与“真的重烘 LUT”区分开。
 应出现 `lut_catchup=true` 并刷新 `dyn_lut`，雪盖/海冰视觉不应一直停在旧状态。
 - C++ 改动需要 rebuild arm64 .so（已完成）
 - 副作用：Android NDK 严格编译时 `world_ext.cpp` 暴露了 `smoothstep_fn` 跨函数引用 bug（Windows 编译时 dead-code 优化吃掉了），顺手在原地用 `smoothstep_local` lambda 修复（不影响功能）。

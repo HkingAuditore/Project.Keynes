@@ -585,6 +585,18 @@ var _prev_weather_lut_bytes: PackedByteArray = PackedByteArray()  # 帧间插值
 var _weather_lut_bytes_cache: PackedByteArray = PackedByteArray()  # weather-only 增量发布缓存
 
 
+func _physical_cell_slice_enabled(profile: ClimateProfile) -> bool:
+	if profile != null and profile.get("physical_cell_slice_enabled") != null:
+		return bool(profile.physical_cell_slice_enabled)
+	return _phys_cell_slice_enabled
+
+
+func _physical_cell_slice_divisor(profile: ClimateProfile) -> int:
+	if profile != null and profile.get("physical_cell_slice_divisor") != null:
+		return clampi(int(profile.physical_cell_slice_divisor), 1, 32)
+	return clampi(_phys_cell_slice_divisor, 1, 32)
+
+
 func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> void:
 	_initial_physical_deferred = false
 	if not _use_physical_circulation(cfg):
@@ -5986,6 +5998,8 @@ func get_physical_circulation_diag() -> Dictionary:
 		"sim_day": _phys_last_sim_day,
 		"phys_stage": _phys_stage,
 		"phys_stage_name": _physical_stage_name(_phys_stage),
+		"phys_cell_slice_enabled": _phys_cell_slice_enabled,
+		"phys_cell_slice_divisor": _phys_cell_slice_divisor,
 		"slp_path": _slp_path_str_last,
 		"slp_native_ms": _slp_native_ms_last,
 		"slp_rc_ms": _phys_last_slp_rc_ms,
@@ -6476,6 +6490,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 		_phys_upwelling_cursor = 0
 
 	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
+	var phys_cell_slice_enabled: bool = _physical_cell_slice_enabled(profile)
+	var phys_cell_slice_divisor: int = _physical_cell_slice_divisor(profile)
+	_phys_cell_slice_enabled = phys_cell_slice_enabled
+	_phys_cell_slice_divisor = phys_cell_slice_divisor
 	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
 	var heat_transport: bool = profile.enable_ocean_heat_transport if profile != null else true
 	var slp_wind_gdscript_required: bool = profile != null and (
@@ -6540,9 +6558,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					knobs_slp["world_seed"] = world_seed_phys
 					knobs_slp["prev_slp_arr"] = map.slp_arr
 					# Item 2b: cell-range 切片（默认关闭）。拆成 divisor 段，传 start_idx/end_idx。
-					_slp_slicing = _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1
+					_slp_slicing = phys_cell_slice_enabled and phys_cell_slice_divisor > 1
 					if _slp_slicing:
-						var _slp_chunk: int = int(ceil(float(n_slp) / float(_phys_cell_slice_divisor)))
+						var _slp_chunk: int = int(ceil(float(n_slp) / float(phys_cell_slice_divisor)))
 						if _slp_chunk < 1:
 							_slp_chunk = 1
 						var _slp_start: int = _phys_slp_cursor
@@ -6693,9 +6711,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					knobs_wind["world_seed"] = world_seed_phys
 					knobs_wind["slp_arr"] = slp_arr
 					# Item 2b: cell-range 切片
-					_wind_slicing = _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1
+					_wind_slicing = phys_cell_slice_enabled and phys_cell_slice_divisor > 1
 					if _wind_slicing:
-						var _wind_chunk: int = int(ceil(float(n_wind) / float(_phys_cell_slice_divisor)))
+						var _wind_chunk: int = int(ceil(float(n_wind) / float(phys_cell_slice_divisor)))
 						if _wind_chunk < 1:
 							_wind_chunk = 1
 						var _wind_start: int = _phys_wind_cursor
@@ -7027,8 +7045,8 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					var _t2_us: int = Time.get_ticks_usec()
 					var knobs_up: Dictionary = _phys_knobs_base_up.duplicate()
 					# Item 2b: cell-range 切片（upwelling 直写 slot，逐 cell 独立，无需 C++ 侧 gating）。
-					if _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1 and n_up > 0:
-						var _up_chunk: int = int(ceil(float(n_up) / float(_phys_cell_slice_divisor)))
+					if phys_cell_slice_enabled and phys_cell_slice_divisor > 1 and n_up > 0:
+						var _up_chunk: int = int(ceil(float(n_up) / float(phys_cell_slice_divisor)))
 						if _up_chunk < 1:
 							_up_chunk = 1
 						var _up_start: int = _phys_upwelling_cursor
@@ -7059,7 +7077,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					if typeof(ret_up) == TYPE_DICTIONARY and not bool(ret_up.get("fallback", true)):
 						_upwelling_done_by_cpp = true
 						# Item 2b: UPWELLING 切片未到末片 → 推进游标、停留 UPWELLING、续帧。
-						if _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1 and n_up > 0:
+						if phys_cell_slice_enabled and phys_cell_slice_divisor > 1 and n_up > 0:
 							var _end2: int = int(knobs_up.get("end_idx", n_up))
 							if _end2 < n_up:
 								_phys_upwelling_cursor = _end2

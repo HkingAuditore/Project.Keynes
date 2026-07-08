@@ -134,21 +134,25 @@ html = f"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <p class="note">Main-thread items sum to ~ fast_ms mean {f(R['fast_mean'])}ms, far below the 8ms sim-frame budget - not the bottleneck; listed to locate future cuts.</p>
 
 <h2>5 - Optimization opportunities</h2>
+<div class="panel" style="border-color:#3a4a2a">
+<p style="margin:0"><b>与既有结论对齐（对比 2026-07-08 15:01 capture 的同口径分析）：</b>早前分析已确认 <code>ocean_currents</code> 四 leaf pass 切片（Item 1/2）基本到位、单 pass 已 &lt;3ms、<b>非主瓶颈</b>；当时真正的 fps 杠杆被定位为 <b><code>native_daily_sim</code> 节点级 cell-range（cutting_native_daily_ocean.md &sect;7）</b>——即本报告中 climate/weather 原生图这一整块。本 CSV 的细分进一步坐实：原生图内 <b>ocean pass 占均值 ~65%</b>、<b>weather pass 是最大单次激活尖峰</b>，因此 &sect;7 的节点级切片应优先覆盖 ocean pass（压均值）与 weather/climate_pass_a 峰值。独立 <code>ocean_currents</code> job 的 6.3ms 尖峰属次要、可顺带收口。</p>
+</div>
 <ol>
-<li><b>Ocean is the only bottleneck worth attacking</b> (~65% of native graph, plus a separate ocean_currents job with 6.3ms spikes). The project already designed <code>Ocean physics cell-range slicing</code> (SLP/WIND/PSI/UPWELLING four leaf-pass slicing + GDScript cursor); it is currently design-state, disabled by default, pending local verification. Enabling and verifying it should spread the 6.3ms spikes across ticks and flatten sus_sim P95/max.</li>
-<li><b>PSI full sweep is the spike root cause</b>: PSI currently does no cell-range, full Gauss-Seidel sweep. Samples show psi_iters_run=16, psi_residual_final=0.056. Introducing slicing or a higher early-exit residual threshold for PSI would sharply cut the 6.3ms peak.</li>
-<li><b>Wind physics inside the native-graph ocean pass (~{f(wind_sum)}ms)</b>: if cell-range slicing covers this pass, the baseline compute (mean 2.45ms) can be pushed further toward budget, bringing steady state into compliance too.</li>
-<li><b>Stagger weather-pass spikes</b>: weather active 1.7ms (duty ~25%) stacked with ocean spikes in the same tick amplifies the total peak; consider offsetting their cadences.</li>
-<li><b>Main-thread j_native_daily_sim shell at 1.44ms/tick is high</b> for a "shell". Check marshalling/refresh overhead (native_call 0.27 + apply 0.33 + refresh 0.06). Main thread has headroom, but lowering this would cut fast_ms P95 (currently 6ms, max 10ms).</li>
-<li><b>dynamic_visual_atlas_upload 0.83ms @50% duty</b>: visual upload boundary, can be batched/throttled to lower duty.</li>
+<li><b>主杠杆：原生图（native_daily_sim）节点级 cell-range（&sect;7）</b>。这是既有结论认定的真正瓶颈（早前占 sim ~51.5%、7.44ms 段落尖峰）。本数据把它拆开：ocean pass 摊销 ~1.60ms（均值 65%），weather pass 活跃 1.7ms（占空比 ~25%，为最大单次激活），climate_pass_a 峰值亦显著。对该原生图做节点级切片，优先级 ocean &gt; weather &gt; climate，可同时压低均值与 P95/峰值。</li>
+<li><b>顺带收口 ocean_currents job 的 6.3ms 尖峰</b>（160/327 的最大切片来源）。项目已设计该 job 的 cell-range 切片（SLP/WIND/PSI/UPWELLING + GDScript 游标），但默认关闭、待本地验收；当前该 job 仍近乎单切片运行。按验收门槛（bit-equal + fallback==0 + 每切片 p95/max&lt;1ms）启用验证后，可削平这些尖峰。注意：既有结论认为此 job 已非主瓶颈，故它是"顺手优化"而非首要目标。</li>
+<li><b>PSI 全扫掠是 ocean_currents 尖峰主因</b>：PSI 当前不做 cell-range、Gauss-Seidel 全扫掠。采样显示 <code>psi_iters_run=16</code>、<code>psi_residual_final=0.056</code>。对 PSI 引入切片或提高早退残差阈值，可显著削减 6.3ms 峰值。这与 &sect;7 节点级切片的思路一致。</li>
+<li><b>风场物理（原生图 ocean pass 内 wind+wind_air+wind_surface ~{f(wind_sum)}ms）</b>：若 &sect;7 节点级切片覆盖该 pass，基线 compute（均值 2.45ms）可进一步压向 3ms 预算，使稳态也达标。</li>
+<li><b>weather pass 尖峰错峰</b>：weather 活跃 1.7ms（占空比 ~25%），与原生图其余尖峰同 tick 叠加会放大总峰；考虑错开其 cadence，避免峰值堆叠。</li>
+<li><b>主线程 j_native_daily_sim 调度壳 1.44ms/tick 偏高</b>（相对"壳"角色）。检查 marshalling/refresh 开销（native_call 0.27 + apply 0.33 + refresh 0.06）。主线程有余量，但降低它可压低 <code>fast_ms</code> P95（当前 6ms、峰 10ms）。</li>
+<li><b>dynamic_visual_atlas_upload 0.83ms @50% 占空比</b>：视觉上传边界，可批量/节流以降低占空比。</li>
 </ol>
 
 <h2>6 - Quantified optimization potential</h2>
 <div class="panel">
 <ul style="margin:0">
-<li>If ocean_currents 6.3ms spikes are spread to <=3ms via slicing: sus_sim max {f(R['sus_max'])}->~3.5ms, P95 {f(R['sus_p95'])}->~3.3ms, back near budget.</li>
-<li>If native-graph ocean pass drops 30% (slicing + PSI early-exit): baseline compute {f(R['comp_mean'])}->~2.0ms, steady-state compliant, ticks over 3ms {f(R['comp_over'],0)}%->near 0.</li>
-<li>Just these two Ocean items turn "over budget" from chronic (mean already over) to occasional, without touching fps (already 60).</li>
+<li><b>主杠杆 &sect;7 节点级切片（覆盖原生图 ocean+weather）</b>：把原生图 compute 峰值 {f(R['comp_max'])}ms / P95 {f(R['comp_p95'])}ms 摊薄到预算内，可使超 3ms 的 tick 占比从 {f(R['comp_over'],0)}% 降到接近 0，sus_sim P95 {f(R['sus_p95'])}→~3.x ms。这是既有结论认定的真正 fps 杠杆。</li>
+<li><b>顺带：ocean_currents job 切片启用</b>：若该 job 6.3ms 尖峰经切片摊薄至 &le;3ms，sus_sim 峰值 {f(R['sus_max'])}→~3.5ms，但按既有结论此 job 已非主瓶颈，收益次于 &sect;7。</li>
+<li><b>组合效果</b>：仅 &sect;7 一项即可把"超预算"从常态化（均值即超）变为偶发，且不损 fps（本就 60）。PSI 早退 / weather 错峰作为 &sect;7 内部的低风险的子优化，可进一步压峰值。</li>
 </ul>
 </div>
 

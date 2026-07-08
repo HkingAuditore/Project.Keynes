@@ -726,7 +726,7 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	_physical_round_id += 1
 	if not _phys_solve_done:
 		var primed_from_daily_wind: bool = false
-		if not daily_report.is_empty() and bool(daily_report.get("ran", false)) \
+		if _daily_wind_report_has_wind(daily_report) \
 				and baker.has_method("prime_physical_solve_from_current_wind"):
 			primed_from_daily_wind = baker.prime_physical_solve_from_current_wind(map, _phys_phase_locked)
 		if not primed_from_daily_wind and baker.has_method("reset_physical_solve_state"):
@@ -774,13 +774,50 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	return {"ok": true}
 
 
-func _run_physical_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
+func _daily_wind_report_has_wind(daily_report: Dictionary) -> bool:
+	return not daily_report.is_empty() \
+			and bool(daily_report.get("ran", false)) \
+			and bool(daily_report.get("wind_ran", false)) \
+			and str(daily_report.get("fallback_reason", "")) == ""
+
+
+func _try_prime_physical_wind_from_daily(daily_report: Dictionary, phys_stage_before: int) -> Dictionary:
+	var diag: Dictionary = {
+		"phys_wind_dedupe_attempted": false,
+		"phys_wind_dedupe_applied": false,
+		"phys_wind_skipped_reason": "",
+	}
+	if phys_stage_before != 2:
+		return diag
+	if not _daily_wind_report_has_wind(daily_report):
+		diag["phys_wind_skipped_reason"] = "daily_wind_not_available"
+		return diag
+	diag["phys_wind_dedupe_attempted"] = true
+	if baker == null or not baker.has_method("prime_physical_solve_from_current_wind"):
+		diag["phys_wind_skipped_reason"] = "missing_prime_method"
+		return diag
+	if not baker.prime_physical_solve_from_current_wind(map, _phys_phase_locked):
+		diag["phys_wind_skipped_reason"] = "prime_failed"
+		return diag
+	diag["phys_wind_dedupe_applied"] = true
+	diag["phys_wind_skipped_reason"] = "daily_wind_reused"
+	return diag
+
+
+func _run_physical_slice(ctx: SusTickContext, t_start_us: int, daily_report: Dictionary = {}) -> Dictionary:
 	if not _phys_round_active:
 		return {}
 	if not _phys_solve_done:
 		var phys_stage_before: int = _baker_phys_stage_id()
-		_phys_solve_done = baker._physical_solve_step_one(
-				map, world, hex_size, cfg, _phys_phase_locked, _phys_run_ocean_this_round)
+		var stage_t0_us: int = Time.get_ticks_usec()
+		var dedupe_diag: Dictionary = _try_prime_physical_wind_from_daily(daily_report, phys_stage_before)
+		if bool(dedupe_diag.get("phys_wind_dedupe_applied", false)):
+			# Reuse the wind field produced by the same-tick daily prepass, then yield.
+			# The next ocean slice starts at PSI_INIT, so its timing is not misattributed to phys_wind.
+			_phys_solve_done = false
+		else:
+			_phys_solve_done = baker._physical_solve_step_one(
+					map, world, hex_size, cfg, _phys_phase_locked, _phys_run_ocean_this_round)
 		if not _phys_solve_done and not _phys_need_visual \
 				and baker.has_method("_use_physical_circulation") \
 				and "_phys_stage" in baker \
@@ -791,8 +828,18 @@ func _run_physical_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
 			if "_pending_phys_solved_phase" in baker:
 				baker._pending_phys_solved_phase = _phys_phase_locked
 			_phys_solve_done = true
-		var elapsed_solve_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		var elapsed_solve_ms: float = (Time.get_ticks_usec() - stage_t0_us) / 1000.0
+		var elapsed_total_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		var phys_report: Dictionary = _current_phys_stage_report(phys_stage_before, elapsed_solve_ms)
+		phys_report["stage_local_ms"] = elapsed_solve_ms
+		phys_report["job_elapsed_ms"] = elapsed_total_ms
+		phys_report["phys_stage_before"] = phys_stage_before
+		phys_report["phys_stage_after"] = _baker_phys_stage_id()
+		phys_report["daily_wind_ran"] = bool(daily_report.get("ran", false))
+		phys_report["daily_wind_wind_ran"] = bool(daily_report.get("wind_ran", false))
+		phys_report["daily_wind_stage_requested"] = str(daily_report.get("stage_requested", ""))
+		for k in dedupe_diag.keys():
+			phys_report[k] = dedupe_diag[k]
 		# Fix #11 (2026-06-15) stage-level diag：前 3 次每 stage 必打，之后只在 >= 5ms 时打。
 		# stage_id 取自 phys_report.stage（_phys_stage_name 已映射好）。每个 stage 独立 budget，
 		# 不与 _ocean_rt_diag_count 24 上限互相吃。配合 mobile 60FPS bench 用：哪个 stage 在
@@ -1134,7 +1181,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 
 	if _phys_round_active:
 		_climate_defer_streak = 0
-		return _run_physical_slice(ctx, t_start_us)
+		return _run_physical_slice(ctx, t_start_us, daily_report)
 
 	if _visual_pending_commit or _visual_round_active:
 		return _run_visual_slice(ctx, t_start_us)
