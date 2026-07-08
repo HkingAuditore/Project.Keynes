@@ -74,7 +74,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"fail_stage": "missing_run_native_daily_slice_from_job",
 			"fallback_reason": "missing_run_native_daily_slice_from_job",
 		}
-	_last_result = res.duplicate(true)
+	var job_shell_after_wrapper_ms: float = float(Time.get_ticks_usec() - t0) / 1000.0
 	_did_run_last_tick = int(res.get("rc", -1)) == 0
 	_native_round_active = _did_run_last_tick and not bool(res.get("done", true))
 	var elapsed_ms: float = float(res.get("wrapper_wall_ms", (Time.get_ticks_usec() - t0) / 1000.0))
@@ -88,6 +88,7 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"work_done": 1 if _did_run_last_tick else 0,
 		"elapsed_ms": elapsed_ms,
 		"progress_ratio": float(res.get("progress_ratio", 1.0)),
+		"stage": str(res.get("stage_name", "native_daily")),
 		"stage_name": str(res.get("stage_name", "native_daily")),
 		"substage": str(res.get("substage", "ok" if _did_run_last_tick else str(res.get("fail_stage", "failed")))),
 		"path": str(res.get("path", "gdext_native_daily_slice")),
@@ -114,6 +115,42 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"native_state_snapshot": res.get("native_state_snapshot", breakdown.get("native_state_snapshot", {})),
 		"native_daily_report": res,
 	}
+	var diagnostic_fields: Array[String] = [
+		"node_index",
+		"next_node_index",
+		"last_completed_node",
+		"processed_nodes",
+		"deferred_wait_node",
+		"deferred_wait_key",
+		"jit_patch_build_ms",
+		"jit_patch_keys",
+		"bundle_cache_hit",
+		"bundle_cache_rebuild_reason",
+		"bundle_static_ms",
+		"bundle_dynamic_ms",
+		"deferred_node_count",
+		"weather_knobs_prebuilt",
+		"node_range_enabled",
+		"node_range_active",
+		"node_range_done",
+		"node_range_budget",
+		"node_range_node",
+		"node_cell_cursor_start",
+		"node_cell_cursor_end",
+		"node_cell_count",
+		"node_cell_processed",
+	]
+	for key in diagnostic_fields:
+		if res.has(key):
+			report[key] = res[key]
+		elif breakdown.has(key):
+			report[key] = breakdown[key]
+	report["last_slice_processed_cells"] = int(report.get("node_cell_processed",
+			res.get("processed_cells", breakdown.get("processed_cells", 0))))
+	report["last_slice_cursor_start"] = int(report.get("node_cell_cursor_start",
+			res.get("cursor_start", breakdown.get("cursor_start", -1))))
+	report["last_slice_cursor_end"] = int(report.get("node_cell_cursor_end",
+			res.get("cursor_end", breakdown.get("cursor_end", -1))))
 	var finalizer_fields: Array[String] = [
 		"thermal_finalizer_applied",
 		"finalizer_path",
@@ -134,6 +171,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"finalizer_dirty_count_tta",
 		"finalizer_dirty_count_thermal",
 		"finalizer_dirty_ratio",
+		"finalizer_dirty_collect_skipped",
+		"finalizer_dirty_collect_skip_components",
 		"finalizer_sparse_write_ms",
 		"finalizer_cells_seen",
 		"finalizer_temperature_cell_mirror",
@@ -153,6 +192,37 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			report[key] = res[key]
 		elif breakdown.has(key):
 			report[key] = breakdown[key]
+	var complete_apply_fields: Array[String] = [
+		"complete_apply_total_ms",
+		"complete_apply_observed_ms",
+		"complete_apply_other_ms",
+		"complete_apply_publish_tta_ms",
+		"complete_apply_weather_result_ms",
+		"complete_apply_visual_intents_ms",
+		"complete_apply_finalizer_ms",
+		"complete_apply_finalizer_merge_ms",
+		"complete_apply_result_patch_ms",
+	]
+	for key in complete_apply_fields:
+		if res.has(key):
+			report[key] = res[key]
+		elif breakdown.has(key):
+			report[key] = breakdown[key]
+	var job_shell_wall_ms: float = float(Time.get_ticks_usec() - t0) / 1000.0
+	var wrapper_wall_ms: float = float(report.get("wrapper_wall_ms", elapsed_ms))
+	report["job_shell_wall_ms"] = job_shell_wall_ms
+	report["job_shell_wrapper_gap_ms"] = maxf(0.0, job_shell_wall_ms - wrapper_wall_ms)
+	report["job_shell_report_build_ms"] = maxf(0.0, job_shell_wall_ms - job_shell_after_wrapper_ms)
+	res["job_shell_wall_ms"] = job_shell_wall_ms
+	res["job_shell_wrapper_gap_ms"] = report["job_shell_wrapper_gap_ms"]
+	res["job_shell_report_build_ms"] = report["job_shell_report_build_ms"]
+	if generator != null and generator.has_method("_record_native_daily_job_shell_diag"):
+		generator._record_native_daily_job_shell_diag({
+			"job_shell_wall_ms": job_shell_wall_ms,
+			"job_shell_wrapper_gap_ms": report["job_shell_wrapper_gap_ms"],
+			"job_shell_report_build_ms": report["job_shell_report_build_ms"],
+		})
+	_last_result = res.duplicate(true)
 	_maybe_dump_slow_slice(ctx, res, report, breakdown, elapsed_ms)
 	return report
 
@@ -169,10 +239,13 @@ func _maybe_dump_slow_slice(ctx: SusTickContext, res: Dictionary, report: Dictio
 	var substage: String = str(report.get("substage", res.get("substage", "")))
 	var cursor_start: int = int(res.get("cursor_start", breakdown.get("cursor_start", -1)))
 	var cursor_end: int = int(res.get("cursor_end", breakdown.get("cursor_end", -1)))
+	var cell_start: int = int(report.get("node_cell_cursor_start", breakdown.get("node_cell_cursor_start", -1)))
+	var cell_end: int = int(report.get("node_cell_cursor_end", breakdown.get("node_cell_cursor_end", -1)))
+	var cell_count: int = int(report.get("node_cell_count", breakdown.get("node_cell_count", 0)))
 	var node_report: Dictionary = breakdown.get("node_report", {})
 	var node_name: String = str(node_report.get("name", breakdown.get("last_completed_node", "")))
 	var node_key: String = str(node_report.get("bundle_key", substage))
-	print("[native_daily/slow-dump] tick=%d day=%d stage=%s/%s node=%s/%s cursor=%d-%d done=%s progress=%.2f wall=%.2f bundle=%.2f jit=%.2f keys=%s native_call=%.2f cpp=%.2f compute=%.2f refresh=%.2f flush=%.2f apply=%.2f round=%.2f weather=%.2f prebuilt=%s path=%s" % [
+	print("[native_daily/slow-dump] tick=%d day=%d stage=%s/%s node=%s/%s cursor=%d-%d cells=%d-%d/%d done=%s progress=%.2f wall=%.2f shell=%.2f shell_gap=%.2f bundle=%.2f jit=%.2f keys=%s native_call=%.2f cpp=%.2f compute=%.2f refresh=%.2f flush=%.2f apply=%.2f round=%.2f weather=%.2f prebuilt=%s path=%s" % [
 		tick_idx,
 		ctx.day_index if ctx != null else -1,
 		stage,
@@ -181,9 +254,14 @@ func _maybe_dump_slow_slice(ctx: SusTickContext, res: Dictionary, report: Dictio
 		node_key,
 		cursor_start,
 		cursor_end,
+		cell_start,
+		cell_end,
+		cell_count,
 		str(bool(res.get("done", report.get("done", true)))),
 		float(report.get("progress_ratio", res.get("progress_ratio", 1.0))),
 		elapsed_ms,
+		float(report.get("job_shell_wall_ms", res.get("job_shell_wall_ms", elapsed_ms))),
+		float(report.get("job_shell_wrapper_gap_ms", res.get("job_shell_wrapper_gap_ms", 0.0))),
 		float(report.get("bundle_ms", res.get("bundle_ms", 0.0))),
 		float(report.get("jit_patch_build_ms", res.get("jit_patch_build_ms", breakdown.get("jit_patch_build_ms", 0.0)))),
 		str(report.get("jit_patch_keys", res.get("jit_patch_keys", breakdown.get("jit_patch_keys", PackedStringArray())))),
@@ -214,6 +292,20 @@ func _maybe_dump_slow_slice(ctx: SusTickContext, res: Dictionary, report: Dictio
 			float(breakdown.get("active_weather_ratio", 0.0)),
 			int(breakdown.get("weather_lut_dirty_count", 0)),
 			int(breakdown.get("weather_convergence_dirty_count", 0)),
+		])
+	var complete_apply_total: float = float(report.get("complete_apply_total_ms", breakdown.get("complete_apply_total_ms", 0.0)))
+	if complete_apply_total > 0.0 or stage == "native_daily_complete":
+		print("[native_daily/slow-dump/complete-apply] tick=%d total=%.3f observed=%.3f other=%.3f publish_tta=%.3f weather_result=%.3f visual=%.3f finalizer=%.3f merge=%.3f result_patch=%.3f" % [
+			tick_idx,
+			complete_apply_total,
+			float(report.get("complete_apply_observed_ms", breakdown.get("complete_apply_observed_ms", 0.0))),
+			float(report.get("complete_apply_other_ms", breakdown.get("complete_apply_other_ms", 0.0))),
+			float(report.get("complete_apply_publish_tta_ms", breakdown.get("complete_apply_publish_tta_ms", 0.0))),
+			float(report.get("complete_apply_weather_result_ms", breakdown.get("complete_apply_weather_result_ms", 0.0))),
+			float(report.get("complete_apply_visual_intents_ms", breakdown.get("complete_apply_visual_intents_ms", 0.0))),
+			float(report.get("complete_apply_finalizer_ms", breakdown.get("complete_apply_finalizer_ms", 0.0))),
+			float(report.get("complete_apply_finalizer_merge_ms", breakdown.get("complete_apply_finalizer_merge_ms", 0.0))),
+			float(report.get("complete_apply_result_patch_ms", breakdown.get("complete_apply_result_patch_ms", 0.0))),
 		])
 	var finalizer_total: float = float(report.get("finalizer_total_ms", breakdown.get("finalizer_total_ms", 0.0)))
 	if finalizer_total > 0.0 or stage == "native_daily_complete":

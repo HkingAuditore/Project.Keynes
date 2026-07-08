@@ -254,11 +254,6 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                                     : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
     const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
                                     : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
-    const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
-                                    ? (1.0f / (1.0f - sea_level)) : 0.0f;
-    (void)sea_level;
-    (void)inv_above_sea;
-
     // ─── 5. Acquire array views & validate sizes ────────────────────────
     // arr_*.ptrw() on the *internal* slot data is the legitimate write
     // path — bind_map_data shared CoW with GDScript so writes propagate.
@@ -434,14 +429,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             }
 
             // (c) temperature
-            // alt_penalty 双段式（0.55→0.40, 0.30→0.22：降低海拔效应，让季节温差占主导）。
-            //   lin = elev * 0.40；hi = smoothstep(0.45, 1.0, elev) * 0.22
-            const float alt_pen_lin = elevation * 0.40f;
-            float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
-            if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
-            else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
-            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.22f;
-            float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
+            // alt_penalty 输入为 sea_level 以上 land_h，避免海平面附近陆地被绝对 elevation 过度扣温。
+            float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
@@ -700,11 +689,6 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                                     : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
     const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
                                     : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
-    const float  inv_above_sea  = (1.0f - sea_level) > 1e-6f
-                                    ? (1.0f / (1.0f - sea_level)) : 0.0f;
-    (void)sea_level;
-    (void)inv_above_sea;
-
     // ─── 5. Acquire array views & validate sizes ────────────────────────
     PackedFloat32Array &temp_a          = _slots.write[sid_temp].arr_f32;
     PackedFloat32Array &moist_a         = _slots.write[sid_moisture].arr_f32;
@@ -865,12 +849,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 else if (moisture_now < 0.0f) moisture_now = 0.0f;
             }
 
-            const float alt_pen_lin = elevation * 0.40f;
-            float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
-            if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
-            else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
-            const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.22f;
-            float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
+            float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
             if (temp_year < 0.0f) temp_year = 0.0f;
             else if (temp_year > 1.0f) temp_year = 1.0f;
             // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
@@ -1169,7 +1148,11 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     knobs["processed_cells"] = end_idx - start_idx;
 
     // §11.2 flush: A 修复后只 flush ocean anomaly slot（不再写 cell_temp）。
-    _flush_slot_to_map(sid_oanom);
+    // Native daily node-range slicing keeps intermediate chunks inside C++ slots; only
+    // the last chunk publishes to MapData so we do not pay the boundary cost per chunk.
+    if (!bool(knobs.get("defer_flush", false))) {
+        _flush_slot_to_map(sid_oanom);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -1331,7 +1314,9 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     knobs["processed_cells"] = end_idx - start_idx;
 
     // §11.2 flush: A 修复后只 flush ocean anomaly slot（不再写 cell_temp）。
-    _flush_slot_to_map(sid_oanom);
+    if (!bool(knobs.get("defer_flush", false))) {
+        _flush_slot_to_map(sid_oanom);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -7043,6 +7028,7 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
     const float snowpack_cover_low  = (float)in.scalars.snowpack_cover_low;
     const float snowpack_cover_full = (float)in.scalars.snowpack_cover_full;
+    const float sea_level = (float)in.scalars.sea_level;
     int days_per_year = in.scalars.days_per_year;
     if (days_per_year < 1) days_per_year = 1;
     else if (days_per_year > 3660) days_per_year = 3660;
@@ -7146,12 +7132,7 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         }
 
         // (c) temperature
-        const float alt_pen_lin = elevation * 0.40f;
-        float alt_pen_hi_t = (elevation - 0.45f) / (1.0f - 0.45f);
-        if (alt_pen_hi_t < 0.0f) alt_pen_hi_t = 0.0f;
-        else if (alt_pen_hi_t > 1.0f) alt_pen_hi_t = 1.0f;
-        const float alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0f - 2.0f * alt_pen_hi_t) * 0.22f;
-        float temp_year = temp_year_lat - (alt_pen_lin + alt_pen_hi);
+        float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
         if (temp_year < 0.0f) temp_year = 0.0f;
         else if (temp_year > 1.0f) temp_year = 1.0f;
         // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。

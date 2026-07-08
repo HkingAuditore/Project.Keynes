@@ -73,7 +73,7 @@ bind 后仍保留 `run_native_world_generate_pass` publish 层：在 `MapData.in
 输出 slot：
 
 - `cell_temp_baseline_year`：`pk_lat_temp_bell((ny - 0.5) * 2)`。
-- `cell_temp` / `cell_temp_baseline` / `cell_temp_30d` / `cell_temp_365d` / `cell_thermal_energy`：`pk_compute_temperature(ny, elevation)` 冷启动值。
+- `cell_temp` / `cell_temp_baseline` / `cell_temp_30d` / `cell_temp_365d` / `cell_thermal_energy`：`pk_compute_temperature(ny, elevation, sea_level)` 冷启动值，海拔惩罚基于 `lerp(land_h, elevation, 0.25)`。
 - `cell_temp_anomaly`：0。
 - `cell_ema_initialized`：1。
 - `cell_is_water`：由 `pk_is_water_terrain(cell_terrain)` 派生。
@@ -1473,6 +1473,26 @@ Stage 概览：
 | 7 | Wind/ocean raster | `gdext_raster` / pixel slices。 |
 | 8 | Pixel commit | GDScript/Godot image/atlas commit。 |
 
+> **Cell-range slicing（2026-07，inert-by-default）**：四个 leaf pass（`run_slp_field_pass`
+> / `run_wind_field_pass` / `run_psi_solver_pass` / `run_physical_circulation_pass` 的 upwelling
+> 部分）现接受 `start_idx`/`end_idx` knob，主循环在 `[start_idx, end_idx)` 区间执行；省略时默认
+> `0`/`n_cells`，行为与旧版整图调用**完全等价**。SLP 的 Pass A 写入持久化缓冲 `_phys_slp_buf`
+> （外加 `_phys_slp_thermal_abs` 供末切片诊断），recenter/p95/response-rate 融合/slot 发布等
+> **全局归约只在末切片（`end_idx == n_cells`）执行**，中间切片只写 `slp_buf` 对应区间；每次调用
+> 仍返回全长 `slp_out`（中间切片为缓冲当前部分态），保证 GDScript 的 `size == n_cells` 写回门控始终成立。
+> WIND 的 coast/sea BFS 经 `_phys_ensure_wind_coast`（FNV-1a 指纹失效）缓存进成员，per-cell 风场体
+> 依赖完整 `slp_arr` + 完整 coast 距离、无扩散，可直接切片无 halo，`wind_speed_out` 在末切片重建为全长数组。
+> UPWELLING 直接按区间写 `upwelling` slot，无归约故无 gating。**PSI 的 Gauss-Seidel 迭代需全扫掠，
+> 按设计不做 cell-range 切片**，沿用既有 GDScript INIT/ITERS/FINALIZE 迭代切片 + Item 1 的 slot-id/LUT 缓存。
+> 此外四个 leaf pass 顶部经 `_phys_resolve_static` 把 `cell_*` slot id、`is_water_lut[256]`、
+> `neighbor_indices` 指纹缓存进 `DCWorldExt` 成员（Item 1），砍掉每调用固定开销，零接口变更、fallback 不变。
+> 运行期 `OceanCurrentsJob._physical_solve_step_one` 增加 stage 内 cell cursor（`_phys_slp_cursor`
+> / `_phys_wind_cursor` / `_phys_upwelling_cursor`），开启后把每 stage 摊到多 tick；cursor 仅在每轮
+> solve 的 `_PHYS_STAGE_NONE → SLP` 边界归零，stage 名与全部 `fail()` fallback 路径不变。该切片
+> **默认关闭**（`_phys_cell_slice_enabled = false`），开启前须本地 rebuild DLL 并跑 30+ tick PROBE：
+> ①切片开/关最终 `cell_slp`/`cell_wind_*`/`cell_ocean_current_*` 场 bit-equal；②任意切片 `fallback`
+> 计数恒为 0；③每切片 p95/max < 1ms；④连续多轮 solve 无轨迹漂移。
+
 **生成期一次性 C++ orchestrator（dots-total-cpp step3，2026-06-25）**：`_physical_solve_for_phase`（原子完成入口：`bake_world` 初始物理、deferred refresh、`rebake_ocean_currents` 都走它）现**优先调用 `DCWorldExt::run_physical_solve_pass`**——单次 C++ 调用在进程内按序串起 SLP → wind → PSI → upwelling 四个已验证 kernel（均读 bound slot + `published_to_slot`），中间量在 C++ 内串联（SLP `slp_out` → wind 的 `slp_arr`；wind 写 `cell_wind_x/y/speed` slot → orchestrator 读出注入 PSI 的 `wind_x_arr/y/speed`；upwelling 直接读 wind slot），**stage 间零跨语言往返**。GDScript wrapper `_physical_solve_native_oneshot` 只构造一次 combined knobs（四 stage 输入并集 + `heat_transport/solve_ocean/terrain_aware` 标志；chained 键 `slp_arr/wind_*_arr/stage` 由 C++ 注入），调用后用 `phys_field_nan_guard` 复刻 WIND_RASTER 的 NaN 守门；风场 RG8 光栅化仍由后续 `_bake_initial_vector_buffers` 完成。任一 sub-pass fallback / `!heat_transport`（需 GDScript ocean fallback）/ 未 bind / NaN → 整体 fallback，回退到原 `_physical_solve_step_one` 逐 stage loop。**仅迁生成期（A1）**：运行期季节切换的逐帧分摊路径（`ocean_currents_job.gd` 驱动 `_physical_solve_step_one`）**完全不动**，零运行期回归。
 
 `ocean_currents_job.gd` 维护 `_phys_stage`，每次 `run_slice()` 推进一个 stage 或 pixel range。日志可能出现：
@@ -1661,6 +1681,8 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 - 当前是 partial ACTIVE continuation，不是所有 legacy/Godot 边界的完全替代。
 - ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 lightweight slice graph node cursor、progress 和累计 breakdown；每个 SUS tick 执行一个或一批存在的 native node，返回 `done=false` 让下个 tick 继续。`ClimateProfile.native_daily_split_weather_node_enabled` 可把 native daily 的 weather transaction 从旧的一体化 `run_weather_refresh_daily_pass` 拆为 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b` 六个 graph 子节点；默认 false 保留 monolithic pass，移动复杂 profile 开启以压低单帧 weather 峰值。
+- `ClimateProfile.native_daily_node_range_enabled` 默认 false；打开后 `native_daily_node_range_cells` 控制每次 C++ call 最多处理的 cell 数，`native_daily_node_range_nodes` 控制白名单。C++ 只接受已经有 `start_idx/end_idx` 语义的节点：`ocean_water`、`ocean_land`、`wind_air`、`wind_surface`、split weather 下的 `weather_field`。首批 profile 默认列表只含 `ocean_water/ocean_land`；wind/weather field 应在 bit-equal 与 perf 数据确认后再加入 profile。中间 chunk 注入 `defer_flush=true`，只写 C++ slots；末 chunk 才 flush 到 `MapData`，因此后续 graph node 不会读到半发布状态。
+- `native_daily_finalizer_slice_enabled` 默认 false；打开后 round completion 先返回 `native_daily_finalizer/pending done=false`，下一次 SUS slice 运行 `_native_daily_apply_finalizer()` 并返回 `native_daily_complete`。这是低风险 pseudo-node：先把 finalizer 从 C++ graph done slice 中拆出，若 `finalizer_write_dense_ms` / `finalizer_sparse_write_ms` 仍超预算，再继续把 DataCore 写回细切。
 - GDScript 只在 round 起点构建 `native_daily_bundle`，后续 continuation tick 发轻量 knobs。`total_ms/native_ms` 表示当前 slice 墙钟，`round_native_ms` 表示 round 累计墙钟。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。
 - `runtime_hydrology_enabled=true` 不再是 ACTIVE 硬阻断条件。`MapGenerator` 必须在 native daily bundle 中提供 `weather_knobs` 与 `runtime_hydrology_knobs`；slice graph 会按 `weather -> weather split subnodes(optional) -> runtime_hydrology -> stage_b_after_hydrology` 执行（stage-b 仍按 cadence 可选）。如果 probe 缺少必需 key、hydrology slots 不可发布、或 weather readiness 未通过，则 `native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS 注册。

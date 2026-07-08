@@ -33,6 +33,10 @@
 #include <condition_variable>
 #include <cstring>
 #include <limits>
+
+// 海岸/海洋 BFS 距离上界（见 _phys_ensure_wind_coast / run_wind_field_pass 海风逻辑）。
+// 文件级常量，供两个函数共享（run_wind_field_pass 用其判等 coast/sea 距离是否已达无穷）。
+static constexpr int8_t COAST_INF = 127;
 #include <memory>
 #include <mutex>
 #include <functional>
@@ -224,19 +228,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
 
     if (!_bound) { diag("not _bound"); return -1.0; }
 
-    // ─── Resolve all 4 slot ids ONCE ───────────────────────────────────
-    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
-    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    const int sid_terrain  = component_id(StringName("cell_terrain"));
-    const int sid_landform = component_id(StringName("cell_landform"));
-    const int sid_wind_x   = component_id(StringName("cell_wind_x"));
-    const int sid_wind_y   = component_id(StringName("cell_wind_y"));
-    const int sid_wind_spd = component_id(StringName("cell_wind_speed"));
-    if (sid_pos_x < 0 || sid_pos_y < 0 || sid_terrain < 0 || sid_landform < 0 ||
-        sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0) {
-        diag("missing slot id (cell_pos_x/cell_pos_y/terrain/landform/wind_x/wind_y/wind_speed)");
-        return -1.0;
-    }
+    // ─── slot id resolution moved below (after water_ids, via _phys_resolve_static cache) ──
 
     // ─── knobs validation ──────────────────────────────────────────────
     static const char *required_keys[] = {
@@ -295,13 +287,31 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     if (slp_arr.size() < n_cells)     { diag("slp_arr size < n_cells");              return -1.0; }
     if (water_ids.size() <= 0)        { diag("water_terrain_ids empty");             return -1.0; }
 
-    // 256-entry is_water LUT（与 F.4 同模式）
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < water_ids.size(); ++k) {
-        const int wid = int(water_ids[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
+    // Slot id resolution (cached via _phys_resolve_static; FNV 指纹失效，地图 regen 自动重建)。
+    _phys_resolve_static(n_cells, water_ids);
+    const int sid_pos_x    = _phys_sid_pos_x;
+    const int sid_pos_y    = _phys_sid_pos_y;
+    const int sid_terrain  = _phys_sid_terrain;
+    const int sid_landform = _phys_sid_landform;
+    const int sid_wind_x   = _phys_sid_wind_x;
+    const int sid_wind_y   = _phys_sid_wind_y;
+    const int sid_wind_spd = _phys_sid_wind_spd;
+    if (sid_pos_x < 0 || sid_pos_y < 0 || sid_terrain < 0 || sid_landform < 0 ||
+        sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0) {
+        diag("missing slot id (cell_pos_x/cell_pos_y/terrain/landform/wind_x/wind_y/wind_speed)");
+        return -1.0;
     }
+
+    // 256-entry is_water LUT（cached via _phys_resolve_static, 同指纹随 slot 一起重建）。
+    const bool *is_water_lut = _phys_is_water_lut;
+
+    // Item 2: cell-range 切片（默认全量，逐位等价；GDScript 游标驱动时传 start_idx/end_idx）。
+    int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
+    int end_idx   = knobs.has("end_idx")   ? int(knobs["end_idx"])   : n_cells;
+    if (start_idx < 0)       start_idx = 0;
+    if (end_idx > n_cells)   end_idx = n_cells;
+    if (start_idx > end_idx) start_idx = end_idx;
+    const int slice_n = end_idx - start_idx;
 
     // ─── Acquire slot arrays + validate sizes ───────────────────────────
     Slot &s_pos_x    = _slots.write[sid_pos_x];
@@ -335,115 +345,15 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ─── Pass 0: coast BFS (≤ WIND_COAST_THERMAL_MAX_DIST 步) ──────────
-    // coast_dist[i]：陆地 cell i 距最近海岸的格数；INT8_MAX 表示远内陆。
-    // coast_sea_x/y[i]：朝海洋的单位向量（从最近海岸继承）。
-    constexpr int8_t COAST_INF = 127;
-    std::vector<int8_t> coast_dist(n_cells, COAST_INF);
-    std::vector<float>  coast_sea_x(n_cells, 0.0f);
-    std::vector<float>  coast_sea_y(n_cells, 0.0f);
-    std::vector<int32_t> bfs_queue;
-    bfs_queue.reserve(n_cells);
-
-    // 第一遍：识别沿海陆地（任一邻居是水）+ 计算 sea_dir_sum
-    for (int i = 0; i < n_cells; ++i) {
-        if (is_water_lut[TR[i]]) continue;
-        double sea_dx = 0.0, sea_dy = 0.0;
-        bool is_coast = false;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR[ni]]) continue;
-            // 邻居 d 在 NEIGHBOR_DIRS 中已经是已知索引（顺序对齐）
-            sea_dx += NB_DIR_X[d];
-            sea_dy += NB_DIR_Y[d];
-            is_coast = true;
-        }
-        if (is_coast) {
-            const double len2 = sea_dx * sea_dx + sea_dy * sea_dy;
-            if (len2 > 0.0001) {
-                const double inv = 1.0 / std::sqrt(len2);
-                coast_dist[i] = 0;
-                coast_sea_x[i] = float(sea_dx * inv);
-                coast_sea_y[i] = float(sea_dy * inv);
-                bfs_queue.push_back(i);
-            }
-        }
-    }
-
-    // BFS 层扩展，最远 WIND_COAST_THERMAL_MAX_DIST（=5）
-    size_t bfs_head = 0;
-    while (bfs_head < bfs_queue.size()) {
-        const int32_t cur = bfs_queue[bfs_head++];
-        const int cur_d = coast_dist[cur];
-        if (cur_d >= WIND_COAST_THERMAL_MAX_DIST) continue;
-        const float cur_sx = coast_sea_x[cur];
-        const float cur_sy = coast_sea_y[cur];
-        const int base = cur * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (is_water_lut[TR[ni]]) continue;
-            if (coast_dist[ni] != COAST_INF) continue; // already visited
-            coast_dist[ni]  = static_cast<int8_t>(cur_d + 1);
-            coast_sea_x[ni] = cur_sx; // 继承最近海岸的方向
-            coast_sea_y[ni] = cur_sy;
-            bfs_queue.push_back(ni);
-        }
-    }
-
-    // ─── Pass 0b: 海洋侧 BFS (≤ SEA_BREEZE_SEA_MAX_DIST 步) ─────────────
-    // sea_dist[i]：海洋 cell 距最近陆地格数；sea_land_x/y[i]：朝陆单位向量(从沿岸继承)。
-    // 用于海洋侧几何海风(朝陆)，与陆地侧拼成海陆连续 onshore，修复"海洋水汽补不进沿海"断链。
-    std::vector<int8_t> sea_dist(n_cells, COAST_INF);
-    std::vector<float>  sea_land_x(n_cells, 0.0f);
-    std::vector<float>  sea_land_y(n_cells, 0.0f);
-    std::vector<int32_t> sea_queue;
-    sea_queue.reserve(n_cells);
-    for (int i = 0; i < n_cells; ++i) {
-        if (!is_water_lut[TR[i]]) continue;        // 只处理海洋 cell
-        double land_dx = 0.0, land_dy = 0.0;
-        bool is_shore = false;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (is_water_lut[TR[ni]]) continue;    // 找陆地邻居
-            land_dx += NB_DIR_X[d];                // 朝陆方向
-            land_dy += NB_DIR_Y[d];
-            is_shore = true;
-        }
-        if (is_shore) {
-            const double len2 = land_dx * land_dx + land_dy * land_dy;
-            if (len2 > 0.0001) {
-                const double inv = 1.0 / std::sqrt(len2);
-                sea_dist[i] = 0;
-                sea_land_x[i] = float(land_dx * inv);
-                sea_land_y[i] = float(land_dy * inv);
-                sea_queue.push_back(i);
-            }
-        }
-    }
-    size_t sea_head = 0;
-    while (sea_head < sea_queue.size()) {
-        const int32_t cur = sea_queue[sea_head++];
-        const int cur_d = sea_dist[cur];
-        if (cur_d >= SEA_BREEZE_SEA_MAX_DIST) continue;
-        const float cur_lx = sea_land_x[cur];
-        const float cur_ly = sea_land_y[cur];
-        const int base = cur * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR[ni]]) continue;   // 只向海洋扩展
-            if (sea_dist[ni] != COAST_INF) continue;
-            sea_dist[ni] = static_cast<int8_t>(cur_d + 1);
-            sea_land_x[ni] = cur_lx;               // 继承朝陆方向
-            sea_land_y[ni] = cur_ly;
-            sea_queue.push_back(ni);
-        }
-    }
+    // ─── Pass 0 / 0b: coast/sea BFS（缓存到成员，指纹失配才重建；见 _phys_ensure_wind_coast）──
+    // 主循环读 coast_dist/sea_dist 等指针（指向成员缓存），不再每调用重建全图 vector。
+    _phys_ensure_wind_coast(n_cells, TR, NB, is_water_lut, water_ids);
+    const int8_t  *coast_dist  = _phys_wind_coast_dist.data();
+    const float   *coast_sea_x = _phys_wind_coast_sea_x.data();
+    const float   *coast_sea_y = _phys_wind_coast_sea_y.data();
+    const int8_t  *sea_dist    = _phys_wind_sea_dist.data();
+    const float   *sea_land_x  = _phys_wind_sea_land_x.data();
+    const float   *sea_land_y  = _phys_wind_sea_land_y.data();
 
     // ─── 主循环 ────────────────────────────────────────────────────────
     // wind_speed_out 写入 knobs；caller 拿来同步到 cell.wind_speed
@@ -475,9 +385,10 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const uint32_t seed_bits = static_cast<uint32_t>(world_seed);
 
     pk::parallel_for_range_with_emit<WindFlipEmit>(
-        "pk_wind_field", n_cells, wind_flip_emit,
+        "pk_wind_field", slice_n, wind_flip_emit,
         [&](int __wrb, int __wre, WindFlipEmit &__we) {
-    for (int i = __wrb; i < __wre; ++i) {
+    for (int ii = __wrb; ii < __wre; ++ii) {
+        const int i = start_idx + ii;
         // ny / ls / ls_abs（与 _ny_for_cell 等价：bounds.y → 0..1 clamp）
         double ny = (double(POSY[i]) - bounds_pos_y) * inv_bounds_h;
         if (ny < 0.0) ny = 0.0; else if (ny > 1.0) ny = 1.0;
@@ -788,6 +699,14 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     }
         }); // pk_wind_field parallel_for_range_with_emit
     wind_flip_count = wind_flip_emit.flip;
+
+    // Item 2: 重建完整 wind_speed_out（GDScript 整图写回 cell.wind_speed；切片外 cell
+    // 取 slot 上一 tick 值，切片内 cell 取本 tick 新值 → 整图一致、无 0 污染）。
+    {
+        const float *src = s_wind_spd.arr_f32.ptr();
+        float *dst = wind_speed_out.ptrw();
+        for (int i = 0; i < n_cells; ++i) dst[i] = src[i];
+    }
 
     // §11.2 flush: push CoW-detached cell_wind_x/y back to MapData
     _flush_slot_to_map(sid_wind_x);
@@ -1372,12 +1291,13 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     if (nb_arr.size() < n_cells * 6) return fail("neighbor_indices size < n_cells * 6");
     if (water_ids.size() <= 0) return fail("water_terrain_ids empty");
 
-    const int sid_pos_y = component_id(StringName("cell_pos_y"));
-    const int sid_terrain = component_id(StringName("cell_terrain"));
-    const int sid_wind_x = component_id(StringName("cell_wind_x"));
-    const int sid_wind_y = component_id(StringName("cell_wind_y"));
-    const int sid_wind_speed = component_id(StringName("cell_wind_speed"));
-    const int sid_upwelling = component_id(StringName("cell_upwelling_strength"));
+    _phys_resolve_static(n_cells, water_ids);
+    const int sid_pos_y = _phys_sid_pos_y;
+    const int sid_terrain = _phys_sid_terrain;
+    const int sid_wind_x = _phys_sid_wind_x;
+    const int sid_wind_y = _phys_sid_wind_y;
+    const int sid_wind_speed = _phys_sid_wind_spd;
+    const int sid_upwelling = _phys_sid_upwelling;
     if (sid_pos_y < 0 || sid_terrain < 0 || sid_wind_x < 0 || sid_wind_y < 0 ||
         sid_wind_speed < 0 || sid_upwelling < 0) {
         return fail("missing slot id (pos_y/terrain/wind/upwelling)");
@@ -1398,12 +1318,15 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
         return fail("slot array size mismatch");
     }
 
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < water_ids.size(); ++k) {
-        const int wid = int(water_ids[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
-    }
+    const bool *is_water_lut = _phys_is_water_lut;
+
+    // Item 2: cell-range 切片（默认全量，逐位等价；GDScript 游标驱动时传 start_idx/end_idx）。
+    int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
+    int end_idx   = knobs.has("end_idx")   ? int(knobs["end_idx"])   : n_cells;
+    if (start_idx < 0)       start_idx = 0;
+    if (end_idx > n_cells)   end_idx = n_cells;
+    if (start_idx > end_idx) start_idx = end_idx;
+    const int slice_n = end_idx - start_idx;
 
     const float * const __restrict POSY = s_pos_y.arr_f32.ptr();
     const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
@@ -1424,7 +1347,7 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     // perf (2A): upwelling 逐 cell 独立（只读 POSY/TERR/WX/WY/WSPD/NB + 常量方向表，
     // 写 UP[i]，无标量累加器）→ 按 cell 区间并行、bit-equal、无需 reduce。
     auto upwelling_range = [&](int rb, int re) {
-    for (int i = rb; i < re; ++i) {
+    for (int i = start_idx + rb; i < start_idx + re; ++i) {
         if (!is_water_lut[TERR[i]]) {
             UP[i] = 0.0f;
             continue;
@@ -1479,7 +1402,7 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
         UP[i] = float(up);
     }
     };
-    pk::parallel_for_range("pk_ocean_upwelling", n_cells, upwelling_range);
+    pk::parallel_for_range("pk_ocean_upwelling", slice_n, upwelling_range);
 
     _flush_slot_to_map(sid_upwelling);
 
@@ -1503,6 +1426,180 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
 //   `season_phase` is only the year/orbital phase used to compute solar
 //   declination/insolation; it is not used as an independent season sign.
 //   Pass B applies smooth_passes rounds of 6-neighbor Jacobi smoothing.
+
+// ─── perf 2026-07-08, Item 1：phys pass 每调用固定开销缓存 ───────────
+// 解析四个 phys pass 共用的 cell_* slot id + 重建 is_water_lut，按
+// FNV-1a(n_cells, water_terrain_ids) 指纹失效（地图 regen / 水掩膜变化即重建，
+// 不挂 _bound 钩子，仿 PSI 拓扑缓存 line 2228）。命中后各 pass 直接读成员，
+// 省掉重复 component_id(StringName) 与 256 字节 LUT 重建。邻居索引仍由 knob
+// 传入（保留 fallback）。slot 缺失时 _phys_sid_* 为 -1，pass 内 sid<0 守卫仍触发。
+void DCWorldExt::_phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids) {
+    uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
+    auto mix = [&fp](uint32_t bits) {
+        fp ^= uint64_t(bits);
+        fp *= 1099511628211ull; // FNV-1a prime
+    };
+    mix(uint32_t(n_cells));
+    for (int k = 0; k < water_ids.size(); ++k) {
+        mix(uint32_t(int(water_ids[k])));
+    }
+    if (_phys_static_valid && _phys_static_fp == fp) return;
+
+    _phys_sid_pos_x     = component_id(StringName("cell_pos_x"));
+    _phys_sid_pos_y     = component_id(StringName("cell_pos_y"));
+    _phys_sid_terrain   = component_id(StringName("cell_terrain"));
+    _phys_sid_landform  = component_id(StringName("cell_landform"));
+    _phys_sid_wind_x    = component_id(StringName("cell_wind_x"));
+    _phys_sid_wind_y    = component_id(StringName("cell_wind_y"));
+    _phys_sid_wind_spd  = component_id(StringName("cell_wind_speed"));
+    _phys_sid_slp       = component_id(StringName("cell_slp"));
+    _phys_sid_temp      = component_id(StringName("cell_temp"));
+    _phys_sid_temp_an   = component_id(StringName("cell_temp_anomaly"));
+    _phys_sid_snow      = component_id(StringName("cell_snow_cover"));
+    _phys_sid_ice       = component_id(StringName("cell_sea_ice_frac"));
+    _phys_sid_wvap      = component_id(StringName("cell_weather_vapor"));
+    _phys_sid_wcld      = component_id(StringName("cell_weather_cloud"));
+    _phys_sid_ocx       = component_id(StringName("cell_ocean_current_x"));
+    _phys_sid_ocy       = component_id(StringName("cell_ocean_current_y"));
+    _phys_sid_psi_prev  = component_id(StringName("cell_ocean_psi"));
+    _phys_sid_upwelling = component_id(StringName("cell_upwelling_strength"));
+
+    for (int i = 0; i < 256; ++i) _phys_is_water_lut[i] = false;
+    for (int k = 0; k < water_ids.size(); ++k) {
+        const int wid = int(water_ids[k]);
+        if (wid >= 0 && wid < 256) _phys_is_water_lut[wid] = true;
+    }
+
+    _phys_static_fp = fp;
+    _phys_static_valid = true;
+}
+
+// ─── perf 2026-07-08, Item 2：WIND coast/sea BFS 缓存 ──────────────────
+// run_wind_field_pass 每调用重建 coast_dist/sea_dist 全图 vector（Pass 0 + 0b），是全局
+// 状态、与 cell 内容无关、对静态地图逐调用恒等。缓存进成员，指纹 = FNV(TR 字节 +
+// water_ids + NB 整型) —— 地图 regen / 地形 flip 即失配自动重建（≈地图期一次）。
+// 命中即 coast_dist/sea_dist 等逐位复用 → bit-equal；主线程同步调用，成员存储线程安全。
+// 注：NB_DIR_X/Y、WIND_COAST_THERMAL_MAX_DIST、SEA_BREEZE_SEA_MAX_DIST 为本 TU 常量。
+void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
+                                         const bool *is_water_lut, const godot::PackedByteArray &water_ids) {
+    uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
+    auto mix = [&fp](uint32_t bits) {
+        fp ^= uint64_t(bits);
+        fp *= 1099511628211ull; // FNV-1a prime
+    };
+    mix(uint32_t(n_cells));
+    for (int i = 0; i < n_cells; ++i) mix(uint32_t(TR[i]));
+    mix(uint32_t(water_ids.size()));
+    for (int k = 0; k < water_ids.size(); ++k) mix(uint32_t(int(water_ids[k])));
+    for (int i = 0; i < n_cells * 6; ++i) mix(uint32_t(NB[i]));
+    if (_phys_wind_coast_valid && _phys_wind_coast_fp == fp) return;
+
+    constexpr int8_t COAST_INF = 127;
+    _phys_wind_coast_dist.assign(static_cast<size_t>(n_cells), COAST_INF);
+    _phys_wind_coast_sea_x.assign(static_cast<size_t>(n_cells), 0.0f);
+    _phys_wind_coast_sea_y.assign(static_cast<size_t>(n_cells), 0.0f);
+    _phys_wind_sea_dist.assign(static_cast<size_t>(n_cells), COAST_INF);
+    _phys_wind_sea_land_x.assign(static_cast<size_t>(n_cells), 0.0f);
+    _phys_wind_sea_land_y.assign(static_cast<size_t>(n_cells), 0.0f);
+    std::vector<int32_t> bfs_queue;
+    bfs_queue.reserve(n_cells);
+
+    // Pass 0: coast BFS（≤ WIND_COAST_THERMAL_MAX_DIST 步）
+    for (int i = 0; i < n_cells; ++i) {
+        if (is_water_lut[TR[i]]) continue;
+        double sea_dx = 0.0, sea_dy = 0.0;
+        bool is_coast = false;
+        const int base = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[base + d];
+            if (ni < 0) continue;
+            if (!is_water_lut[TR[ni]]) continue;
+            sea_dx += NB_DIR_X[d];
+            sea_dy += NB_DIR_Y[d];
+            is_coast = true;
+        }
+        if (is_coast) {
+            const double len2 = sea_dx * sea_dx + sea_dy * sea_dy;
+            if (len2 > 0.0001) {
+                const double inv = 1.0 / std::sqrt(len2);
+                _phys_wind_coast_dist[i] = 0;
+                _phys_wind_coast_sea_x[i] = float(sea_dx * inv);
+                _phys_wind_coast_sea_y[i] = float(sea_dy * inv);
+                bfs_queue.push_back(i);
+            }
+        }
+    }
+    size_t bfs_head = 0;
+    while (bfs_head < bfs_queue.size()) {
+        const int32_t cur = bfs_queue[bfs_head++];
+        const int cur_d = _phys_wind_coast_dist[cur];
+        if (cur_d >= WIND_COAST_THERMAL_MAX_DIST) continue;
+        const float cur_sx = _phys_wind_coast_sea_x[cur];
+        const float cur_sy = _phys_wind_coast_sea_y[cur];
+        const int base = cur * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[base + d];
+            if (ni < 0) continue;
+            if (is_water_lut[TR[ni]]) continue;
+            if (_phys_wind_coast_dist[ni] != COAST_INF) continue;
+            _phys_wind_coast_dist[ni] = static_cast<int8_t>(cur_d + 1);
+            _phys_wind_coast_sea_x[ni] = cur_sx;
+            _phys_wind_coast_sea_y[ni] = cur_sy;
+            bfs_queue.push_back(ni);
+        }
+    }
+
+    // Pass 0b: 海洋侧 BFS（≤ SEA_BREEZE_SEA_MAX_DIST 步）
+    std::vector<int32_t> sea_queue;
+    sea_queue.reserve(n_cells);
+    for (int i = 0; i < n_cells; ++i) {
+        if (!is_water_lut[TR[i]]) continue;
+        double land_dx = 0.0, land_dy = 0.0;
+        bool is_shore = false;
+        const int base = i * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[base + d];
+            if (ni < 0) continue;
+            if (is_water_lut[TR[ni]]) continue;
+            land_dx += NB_DIR_X[d];
+            land_dy += NB_DIR_Y[d];
+            is_shore = true;
+        }
+        if (is_shore) {
+            const double len2 = land_dx * land_dx + land_dy * land_dy;
+            if (len2 > 0.0001) {
+                const double inv = 1.0 / std::sqrt(len2);
+                _phys_wind_sea_dist[i] = 0;
+                _phys_wind_sea_land_x[i] = float(land_dx * inv);
+                _phys_wind_sea_land_y[i] = float(land_dy * inv);
+                sea_queue.push_back(i);
+            }
+        }
+    }
+    size_t sea_head = 0;
+    while (sea_head < sea_queue.size()) {
+        const int32_t cur = sea_queue[sea_head++];
+        const int cur_d = _phys_wind_sea_dist[cur];
+        if (cur_d >= SEA_BREEZE_SEA_MAX_DIST) continue;
+        const float cur_lx = _phys_wind_sea_land_x[cur];
+        const float cur_ly = _phys_wind_sea_land_y[cur];
+        const int base = cur * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = NB[base + d];
+            if (ni < 0) continue;
+            if (!is_water_lut[TR[ni]]) continue;
+            if (_phys_wind_sea_dist[ni] != COAST_INF) continue;
+            _phys_wind_sea_dist[ni] = static_cast<int8_t>(cur_d + 1);
+            _phys_wind_sea_land_x[ni] = cur_lx;
+            _phys_wind_sea_land_y[ni] = cur_ly;
+            sea_queue.push_back(ni);
+        }
+    }
+
+    _phys_wind_coast_fp = fp;
+    _phys_wind_coast_valid = true;
+}
+
 godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
     using godot::PackedByteArray;
@@ -1601,15 +1698,16 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         return fail("prev_slp_arr size mismatch");
     }
 
-    // Slot resolution: cell_pos_y + cell_terrain plus optional closed-loop fields.
-    const int sid_pos_y   = component_id(StringName("cell_pos_y"));
-    const int sid_pos_x   = component_id(StringName("cell_pos_x"));  // 让天气流动: SLP synoptic 二维空间波(optional)
-    const int sid_terrain = component_id(StringName("cell_terrain"));
-    const int sid_temp_an = component_id(StringName("cell_temp_anomaly"));
-    const int sid_snow    = component_id(StringName("cell_snow_cover"));
-    const int sid_ice     = component_id(StringName("cell_sea_ice_frac"));
-    const int sid_w_vapor = component_id(StringName("cell_weather_vapor"));
-    const int sid_w_cloud = component_id(StringName("cell_weather_cloud"));
+    // Slot resolution (cached via _phys_resolve_static; FNV 指纹失效，地图 regen 自动重建)。
+    _phys_resolve_static(n_cells, water_ids);
+    const int sid_pos_y   = _phys_sid_pos_y;
+    const int sid_pos_x   = _phys_sid_pos_x;  // 让天气流动: SLP synoptic 二维空间波(optional)
+    const int sid_terrain = _phys_sid_terrain;
+    const int sid_temp_an = _phys_sid_temp_an;
+    const int sid_snow    = _phys_sid_snow;
+    const int sid_ice     = _phys_sid_ice;
+    const int sid_w_vapor = _phys_sid_wvap;
+    const int sid_w_cloud = _phys_sid_wcld;
     if (sid_pos_y < 0 || sid_terrain < 0) {
         return fail("missing slot id (cell_pos_y/cell_terrain)");
     }
@@ -1620,13 +1718,19 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         return fail("slot array size mismatch (re-bind needed?)");
     }
 
-    // Build is_water LUT (256-entry, same pattern as F.4 / wind_field_pass).
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < water_ids.size(); ++k) {
-        const int wid = int(water_ids[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
-    }
+    // is_water LUT (cached via _phys_resolve_static, 同指纹随 slot 一起重建)。
+    const bool *is_water_lut = _phys_is_water_lut;
+
+    // perf (Item 2a, 2026-07-07): cell-range 切片旋钮。默认 start_idx=0 / end_idx=n_cells
+    // → 单次全量 pass（与历史逐位等价，向后兼容）。GDScript 游标可传子区间把 Pass A 拆成
+    // 多次调用；Pass B/norm/融合/发布只在末切片 end_idx==n_cells 跑，跨切片靠 _phys_slp_buf
+    // 累积 Pass A 结果。切片外不触碰 slot，避免部分数据污染 cell_slp。
+    int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
+    int end_idx   = knobs.has("end_idx")   ? int(knobs["end_idx"])   : n_cells;
+    if (start_idx < 0)            start_idx = 0;
+    if (end_idx > n_cells)        end_idx   = n_cells;
+    if (start_idx > end_idx)      start_idx = end_idx;
+    const int slice_n = end_idx - start_idx;
 
     const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
     const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
@@ -1663,11 +1767,22 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const float daylen_amp = float(knobs.has("insolation_daylen_amp") ? double(knobs["insolation_daylen_amp"]) : 0.35);
 
     // Output buffer (n_cells floats); will become slp_out PackedFloat32Array.
-    std::vector<float> slp_buf(static_cast<size_t>(n_cells), 0.0f);
+    // perf (Item 2a, 2026-07-07): slp_buf 改为 _phys_slp_buf 引用——持久、跨切片累积 Pass A。
+    // Pass A 对每 cell 用 '=' 全量覆写，切片区间外无依赖，故无需清零；仅 size 失配时 resize。
+    if (_phys_slp_buf.size() != static_cast<size_t>(n_cells)) {
+        _phys_slp_buf.assign(static_cast<size_t>(n_cells), 0.0f);
+    }
+    std::vector<float> &slp_buf = _phys_slp_buf;
     std::vector<float> slp_delta(static_cast<size_t>(n_cells), 0.0f);
-    std::vector<float> thermal_abs;
+    // perf (Item 2a): thermal_abs 同样持久化（仅在权重非 0 时保留 size，否则 clear），
+    // 使末切片 slp_thermal_p95 基于完整场（各切片 Pass A 均已写入其区间）。
+    std::vector<float> &thermal_abs = _phys_slp_thermal_abs;
     if (A_LAND != 0.0f || THERMAL_WEIGHT != 0.0f || ICE_HIGH_WEIGHT != 0.0f || SNOW_HIGH_WEIGHT != 0.0f) {
-        thermal_abs.resize(static_cast<size_t>(n_cells), 0.0f);
+        if (thermal_abs.size() != static_cast<size_t>(n_cells)) {
+            thermal_abs.assign(static_cast<size_t>(n_cells), 0.0f);
+        }
+    } else {
+        thermal_abs.clear();
     }
 
     // ─── Latitude LUT (plan/slp-lat-lut, 2026-06-17) ──────────────────────
@@ -1780,7 +1895,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const double slp_syn_k2x = 1.10 - 0.35 * std::cos(slp_syn_sb);
     const double slp_syn_k2y = 0.85 + 0.35 * std::sin(slp_syn_sb);
     auto slp_passA_range = [&](int rb, int re) {
-    for (int i = rb; i < re; ++i) {
+    for (int ii = rb; ii < re; ++ii) {
+        const int i = start_idx + ii;
         // ny / lat_signed / lat_abs
         float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
         if (ny < 0.0f) ny = 0.0f;
@@ -1868,12 +1984,23 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         }
     }
     };
-    pk::parallel_for_range("pk_slp_passA", n_cells, slp_passA_range);
+    pk::parallel_for_range("pk_slp_passA", slice_n, slp_passA_range);
 
     // 埋点（plan/daily-wind-stage-split）：Pass A（逐 cell 三角/insolation/synoptic）
     // 通常是 SLP 的大头；t_slp_pa 标记 Pass A 结束。
     auto t_slp_pa = std::chrono::high_resolution_clock::now();
 
+    // ─── 全图归约段：仅最终切片(end_idx==n_cells)执行 ───────────────────────
+    // Pass B 平滑 / recenter+p95 / 融合 / slot 发布 均依赖完整 slp_buf 才能逐位等价；
+    // 中间切片只把 Pass A 结果累积进 _phys_slp_buf，构造 full-size slp_out 供 GDScript
+    // size-gate 通过（但不会被用作地图值），且不触碰 cell_slp slot。GDScript 游标须保证
+    // 末切片 end_idx==n_cells 覆盖全图，使 _phys_slp_buf 在末切片时已是完整 Pass A 场。
+    bool published_to_slot = false;
+    PackedFloat32Array slp_out;
+    slp_out.resize(n_cells);
+    auto t_slp_pb   = t_slp_pa;
+    auto t_slp_norm = t_slp_pa;
+    if (end_idx == n_cells) {
     // ─── Pass B: 6-neighbor Jacobi smoothing ──────────────────────────────
     if (smooth_passes > 0) {
         std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
@@ -1902,7 +2029,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     }
 
     // 埋点：t_slp_pb 标记 Pass B（邻域平滑）结束。
-    auto t_slp_pb = std::chrono::high_resolution_clock::now();
+    t_slp_pb = std::chrono::high_resolution_clock::now();
 
     if (SLP_RECENTER && n_cells > 1) {
         double mean = 0.0;
@@ -1929,7 +2056,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     }
 
     // 埋点：t_slp_norm 标记 recenter + p95 排序 + 缩放（norm 段）结束。
-    auto t_slp_norm = std::chrono::high_resolution_clock::now();
+    t_slp_norm = std::chrono::high_resolution_clock::now();
 
     // ─── Marshall slp_out ─────────────────────────────────────────────────
     if (PREV_SLP != nullptr) {
@@ -1959,21 +2086,23 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         }
     }
 
-    PackedFloat32Array slp_out;
-    slp_out.resize(n_cells);
     {
         float *dst = slp_out.ptrw();
         std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
     }
-    knobs["slp_out"] = slp_out;
 
-    bool published_to_slot = false;
     const int sid_slp = component_id(StringName("cell_slp"));
     if (sid_slp >= 0 && _slots.write[sid_slp].arr_f32.size() == n_cells) {
         float *dst = _slots.write[sid_slp].arr_f32.ptrw();
         std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
         _flush_slot_to_map(sid_slp);
         published_to_slot = true;
+    }
+    } else {
+        // 中间切片：仅构造 full-size slp_out（GDScript size-gate 通过；不会被用作地图值），
+        // 不发布到 cell_slp slot、不计算 stats。Pass A 结果已写入 _phys_slp_buf 对应区间。
+        float *dst = slp_out.ptrw();
+        std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
     }
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -1982,6 +2111,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     out["reason"]     = String();
     out["slp_out"]    = slp_out;
     out["published_to_slot"] = published_to_slot;
+    knobs["slp_out"]  = slp_out;
     // 埋点 surface（plan/daily-wind-stage-split）：把 SLP 内部 4 段耗时返回给
     // GDScript，定位每日 ~3ms 花在 Pass A(三角)/Pass B(平滑)/norm(排序)/marshall(发布)。
     // 注意 elapsed_ms = t1-t0 不含末尾 stats 排序段（与历史一致）。
@@ -1989,6 +2119,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     out["slp_passB_ms"]    = std::chrono::duration<double, std::milli>(t_slp_pb - t_slp_pa).count();
     out["slp_norm_ms"]     = std::chrono::duration<double, std::milli>(t_slp_norm - t_slp_pb).count();
     out["slp_marshall_ms"] = std::chrono::duration<double, std::milli>(t1 - t_slp_norm).count();
+    // stats 仅在末切片（完整场）计算；中间切片跳过，避免发出误导性的 partial 统计量。
+    if (end_idx == n_cells) {
     if (!thermal_abs.empty()) {
         std::sort(thermal_abs.begin(), thermal_abs.end());
         const size_t p95_i = thermal_abs.empty() ? 0 : std::min(thermal_abs.size() - 1, size_t(std::floor(double(thermal_abs.size() - 1) * 0.95)));
@@ -2017,6 +2149,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         std::sort(slp_delta.begin(), slp_delta.end());
         const size_t p95_i = std::min(slp_delta.size() - 1, size_t(std::floor(double(slp_delta.size() - 1) * 0.95)));
         out["slp_delta_p95"] = double(slp_delta[p95_i]);
+    }
     }
     return out;
 }
@@ -2160,13 +2293,14 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     if (wind_y.size()   < n_cells)      return fail("wind_y_arr size < n_cells");
     if (wind_spd.size() < n_cells)      return fail("wind_speed_arr size < n_cells");
 
-    const int sid_pos_y   = component_id(StringName("cell_pos_y"));
-    const int sid_terrain = component_id(StringName("cell_terrain"));
-    const int sid_temp    = component_id(StringName("cell_temp"));
-    const int sid_temp_an = component_id(StringName("cell_temp_anomaly"));
-    const int sid_ice     = component_id(StringName("cell_sea_ice_frac"));
-    const int sid_ocx     = component_id(StringName("cell_ocean_current_x"));
-    const int sid_ocy     = component_id(StringName("cell_ocean_current_y"));
+    _phys_resolve_static(n_cells, water_ids);
+    const int sid_pos_y   = _phys_sid_pos_y;
+    const int sid_terrain = _phys_sid_terrain;
+    const int sid_temp    = _phys_sid_temp;
+    const int sid_temp_an = _phys_sid_temp_an;
+    const int sid_ice     = _phys_sid_ice;
+    const int sid_ocx     = _phys_sid_ocx;
+    const int sid_ocy     = _phys_sid_ocy;
     if (sid_pos_y < 0 || sid_terrain < 0) {
         return fail("missing slot id (cell_pos_y/cell_terrain)");
     }
@@ -2177,12 +2311,7 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         return fail("slot array size mismatch (re-bind needed?)");
     }
 
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < water_ids.size(); ++k) {
-        const int wid = int(water_ids[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
-    }
+    const bool *is_water_lut = _phys_is_water_lut;
 
     const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
     const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
@@ -2212,7 +2341,7 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     }
     // warm-start：上一轮 ψ 已发布到 cell_ocean_psi slot；读它作 SOR 初值。
     // 冷启动 / slot 不可用 / 显式关闭时为 null → 退回 0 初值。
-    const int sid_psi_prev = component_id(StringName("cell_ocean_psi"));
+    const int sid_psi_prev = _phys_sid_psi_prev;
     const float *PSI_PREV = nullptr;
     if (PSI_WARM_START && sid_psi_prev >= 0 && _slots.write[sid_psi_prev].arr_f32.size() == n_cells) {
         PSI_PREV = _slots.write[sid_psi_prev].arr_f32.ptr();

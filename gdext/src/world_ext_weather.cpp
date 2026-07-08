@@ -1526,19 +1526,21 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
 
-    _flush_slot_to_map(sid_w_vapor);
-    _flush_slot_to_map(sid_w_cloud);
-    _flush_slot_to_map(sid_w_precip);
-    _flush_slot_to_map(sid_w_inst);
-    _flush_slot_to_map(sid_w_intens);
-    _flush_slot_to_map(sid_w_conv);
-    _flush_slot_to_map(sid_w_type);
-    if (weather_transition_enabled) {
-        _flush_slot_to_map(sid_w_prev_type);
-        _flush_slot_to_map(sid_w_target_type);
-        _flush_slot_to_map(sid_w_transition_alpha);
+    if (!bool(knobs.get("defer_flush", false))) {
+        _flush_slot_to_map(sid_w_vapor);
+        _flush_slot_to_map(sid_w_cloud);
+        _flush_slot_to_map(sid_w_precip);
+        _flush_slot_to_map(sid_w_inst);
+        _flush_slot_to_map(sid_w_intens);
+        _flush_slot_to_map(sid_w_conv);
+        _flush_slot_to_map(sid_w_type);
+        if (weather_transition_enabled) {
+            _flush_slot_to_map(sid_w_prev_type);
+            _flush_slot_to_map(sid_w_target_type);
+            _flush_slot_to_map(sid_w_transition_alpha);
+        }
+        _flush_slot_to_map(sid_w_finit);
     }
-    _flush_slot_to_map(sid_w_finit);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -2026,7 +2028,9 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
 
-    _flush_slot_to_map(sid_air_anom);
+    if (!bool(knobs.get("defer_flush", false))) {
+        _flush_slot_to_map(sid_air_anom);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -2202,8 +2206,10 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
 
-    _flush_slot_to_map(sid_temp);
-    _flush_slot_to_map(sid_air_anom);
+    if (!bool(knobs.get("defer_flush", false))) {
+        _flush_slot_to_map(sid_temp);
+        _flush_slot_to_map(sid_air_anom);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();

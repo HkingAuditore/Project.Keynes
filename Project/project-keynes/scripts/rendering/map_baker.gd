@@ -457,6 +457,22 @@ var _wind_b_commit_diag_count: int = 0
 # 日志显示 path=gdscript 但 climate_profile default 是 true ——
 # 必须暴露 use_native 判定中四个条件分别命中情况，定位真正 false 的那一项。
 var _sea_ice_path_logged: bool = false
+# ── Phys Solve wrapper 开销削减缓存（2026-07-07）────────────────────────
+# 拓扑/几何/配置在 sim 期固定，故把各 stage knob 的「常量字段」预建成 base
+# dict（按 map+profile+hex_size 失效），每调用只 .duplicate() 一次 + 覆盖变化
+# 字段（season_phase / sim_day / world_seed / prev_slp_arr / wind 数组），
+# 替代原先每 stage 每调用重建 27/22/25/7 字段 Dictionary（含 7 次 profile
+# 属性读取 + 多次 int() 枚举转换）与 4 字节常量 water_ids 数组。
+# 零接口变更、无需重建 DLL，fallback 路径完全保留。PROBE 验收见
+# tmp/cutting_native_daily_ocean.md §7.5。
+var _phys_knob_cache_map = null
+var _phys_knob_cache_profile = null
+var _phys_knob_cache_hex: float = NAN
+var _phys_water_ids_cache: PackedByteArray = PackedByteArray()
+var _phys_knobs_base_slp: Dictionary = {}
+var _phys_knobs_base_wind: Dictionary = {}
+var _phys_knobs_base_psi: Dictionary = {}
+var _phys_knobs_base_up: Dictionary = {}
 # DOTS-Final-Push 任务 6.2：upwelling C++ 路径选择诊断（once-only）。
 # stage 6 GDScript fallback ~92ms 是当前最大瓶颈。原因可能是 _phys_wind_done_by_cpp
 # 没翻 true（wind C++ 路径失败），或 use_gdext_physical_circulation 没生效。
@@ -547,6 +563,18 @@ var _phys_psi_iters_done: int = 0
 var _phys_wind_raster_idx: int = 0
 var _phys_wind_done_by_cpp: bool = false
 var _initial_physical_deferred: bool = false
+
+# Item 2b (2026-07-07)：phys leaf pass cell-range 切片游标 + 总开关。
+# 默认 _phys_cell_slice_enabled=false → 完全 inert（与历史逐位等价）。开启后把 SLP/WIND/
+# UPWELLING 各自拆成 _phys_cell_slice_divisor 段 cell-range 子调用，降低单帧尖刺。
+# 约定：每个 leaf pass 内部用 end_idx==n_cells 判定末片 —— SLP 末片才写回 map.slp_arr，
+# WIND/UPWELLING 末片才做 commit 检查；中间切片只推进游标、停留当前 stage、return false 续帧。
+# 切片正确性依赖 GDScript 游标保证覆盖全 [0,n_cells)；C++ 侧 _phys_slp_buf 跨切片累积 Pass A。
+var _phys_cell_slice_enabled: bool = false
+var _phys_cell_slice_divisor: int = 8
+var _phys_slp_cursor: int = 0
+var _phys_wind_cursor: int = 0
+var _phys_upwelling_cursor: int = 0
 
 # ─── 公开接口 ─────────────────────────────────────────────────────────────
 
@@ -6297,6 +6325,124 @@ func prime_physical_solve_from_current_wind(map: MapData, season_phase: float) -
 #   UPWELLING  ~3ms     —— 沿岸 Ekman + 高纬冷沉
 #   WIND_RASTER ~5ms    —— NaN 守门 + 风场 RG8 写盘
 # 第一片最坏 ~5ms（远低于一次性路径的 ~200ms 毛刺）。
+# ── Phys Solve wrapper 开销削减 ────────────────────────────────────────
+# 预建四个 stage 的「常量字段」base knob dict（SLP/WIND/PSI/UPWELLING）与共享的
+# 4 字节 water_terrain_ids。拓扑/几何/配置在 sim 期固定，故按
+# (map, profile, hex_size) 失效：仅在引用变化（地图重建）时重建，否则零成本返回。
+# 每调用由对应 stage 用 base.duplicate() + 覆盖变化字段，省去 27/22/25/7 字面
+# 构造 + 7 次 profile 属性读取 + 多次 int() 枚举转换。C++ 同步读取 base 中的
+# PackedArray（neighbor_indices / water_ids）引用，不复制。
+# 注意：若后续给某 stage 增加新的常量 knob 字段，必须同步加到此处的 base，
+# 否则该字段会在缓存命中时被遗漏（变化字段由 stage 内显式设置，不受影响）。
+func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
+		profile: ClimateProfile, cfg: MapConfig) -> void:
+	if _phys_knob_cache_map == map and _phys_knob_cache_profile == profile \
+			and _phys_knob_cache_hex == hex_size:
+		return
+	_phys_knob_cache_map = map
+	_phys_knob_cache_profile = profile
+	_phys_knob_cache_hex = hex_size
+	# 4 字节常量 water_terrain_ids（OCEAN/COAST/REEF/KELP），四个 stage 共用。
+	_phys_water_ids_cache = PackedByteArray()
+	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.OCEAN))
+	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.COAST))
+	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.REEF))
+	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.KELP))
+	var nb: PackedInt32Array = map.neighbor_indices_packed()
+	var n_cells: int = map.soa_size()
+	var days_per_year: int = _calendar_days_per_year(profile)
+	var axial_tilt: float = profile.axial_tilt_deg if profile != null else 23.5
+	var insolation_amp: float = profile.insolation_daylen_amp if profile != null else 0.35
+	var terrain_aware_i: int = 1 if (profile == null or profile.enable_terrain_aware_wind) else 0
+	var cold_sink_temp: float = -0.05
+	if cfg != null and "COLD_SINK_TEMP" in cfg:
+		cold_sink_temp = float(cfg.COLD_SINK_TEMP)
+	# ── SLP base（变化字段：season_phase / sim_day / world_seed / prev_slp_arr）
+	_phys_knobs_base_slp = {
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"smooth_passes": 1,  # mirrors PhysCircSolverScript._SLP_SMOOTH_PASSES
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb,
+		"water_terrain_ids": _phys_water_ids_cache,
+		"slp_lat_amp": 0.16,
+		"slp_land_amp": 0.55,
+		"slp_water_damp": 0.20,
+		"slp_interior_boost": 1.30,
+		"slp_coast_damp": 0.60,
+		"slp_target_p95": 0.18,
+		"days_per_year": days_per_year,
+		"axial_tilt_deg": axial_tilt,
+		"insolation_daylen_amp": insolation_amp,
+	}
+	if profile != null:
+		_phys_knobs_base_slp["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
+		_phys_knobs_base_slp["slp_ice_high_weight"] = profile.slp_ice_high_weight
+		_phys_knobs_base_slp["slp_snow_high_weight"] = profile.slp_snow_high_weight
+		_phys_knobs_base_slp["slp_response_rate"] = profile.slp_response_rate
+		_phys_knobs_base_slp["slp_synoptic_amp"] = profile.slp_synoptic_amp
+		_phys_knobs_base_slp["slp_moist_low_weight"] = profile.slp_moist_low_weight
+		_phys_knobs_base_slp["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
+	# ── WIND base（变化：season_phase / sim_day / world_seed / slp_arr）
+	_phys_knobs_base_wind = {
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"terrain_aware": terrain_aware_i,
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb,
+		"water_terrain_ids": _phys_water_ids_cache,
+		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
+		"land_lf_peak": int(LandformType.LF.PEAK),
+		"land_lf_hill": int(LandformType.LF.HILL),
+		"days_per_year": days_per_year,
+		"axial_tilt_deg": axial_tilt,
+	}
+	if profile != null:
+		_phys_knobs_base_wind["wind_response_rate"] = profile.wind_response_rate
+		_phys_knobs_base_wind["wind_max_turn_deg_per_day"] = profile.wind_max_turn_deg_per_day
+		_phys_knobs_base_wind["wind_min_flux_for_dir_update"] = profile.wind_min_flux_for_dir_update
+		_phys_knobs_base_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
+		_phys_knobs_base_wind["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
+		_phys_knobs_base_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
+	# ── PSI base（变化：wind_x_arr / wind_y_arr / wind_speed_arr）
+	_phys_knobs_base_psi = {
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"neighbor_indices": nb,
+		"water_terrain_ids": _phys_water_ids_cache,
+		"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
+		"psi_warm_start": bool(profile.get("psi_warm_start")) if profile != null and profile.get("psi_warm_start") != null else true,
+		"psi_early_exit_mode": str(profile.get("psi_early_exit_mode")) if profile != null and profile.get("psi_early_exit_mode") != null else "perf",
+		"psi_sor_omega": 1.4,
+		"psi_r_base": 0.18,
+		"psi_beta_floor": 0.05,
+		"psi_source_scale": float(profile.get("ocean_psi_source_scale")) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.06,
+		"ocean_current_scale": float(profile.get("ocean_current_scale")) if profile != null and profile.get("ocean_current_scale") != null else 0.13,
+		"ocean_current_max_magnitude": float(profile.get("ocean_current_max_magnitude")) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65,
+		"thermohaline_weight": 0.12,
+		"upwelling_highlat_abs": 0.75,
+		"cold_sink_temp": cold_sink_temp,
+	}
+	if profile != null:
+		_phys_knobs_base_psi["ocean_current_response_rate"] = profile.ocean_current_response_rate
+		_phys_knobs_base_psi["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
+		_phys_knobs_base_psi["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
+		_phys_knobs_base_psi["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
+	# ── UPWELLING base（全常量，可直接复用，无需 duplicate）
+	_phys_knobs_base_up = {
+		"stage": "upwelling",
+		"n_cells": n_cells,
+		"neighbor_indices": nb,
+		"water_terrain_ids": _phys_water_ids_cache,
+		"world_bounds_pos_y": bounds.position.y,
+		"world_bounds_size_y": bounds.size.y,
+		"cold_sink_temp": cold_sink_temp,
+	}
+
 func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 		cfg: MapConfig, season_phase: float, solve_ocean: bool = true) -> bool:
 	if world == null or map == null:
@@ -6324,6 +6470,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 		_phys_psi_iters_done = 0
 		_phys_wind_done_by_cpp = false
 		_pending_psi_state = null
+		# Item 2b: 新一轮求解起点清零切片游标（中途续帧不会经过此分支，游标得以保留）。
+		_phys_slp_cursor = 0
+		_phys_wind_cursor = 0
+		_phys_upwelling_cursor = 0
 
 	var profile: ClimateProfile = cfg.climate_profile if cfg != null else null
 	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
@@ -6344,6 +6494,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
 	_phys_last_season_phase = season_phase
 	_phys_last_sim_day = sim_day_phys
+	# 预建常量 knob base（按 map+profile+hex_size 失效），削减每 stage 每调用重建
+	# Dictionary 的 GDScript wrapper 开销。详见 _phys_ensure_knob_cache。
+	_phys_ensure_knob_cache(map, hex_size, bounds, profile, cfg)
 
 	match _phys_stage:
 		_PHYS_STAGE_SLP:
@@ -6357,6 +6510,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			# pflag_val 恒为 true 仅作为诊断记录。
 			var _slp_done_by_cpp: bool = false
 			var _slp_native_ms: float = -1.0
+			# Item 2b: 切片状态（case 级，供写回 gate 与续帧 return 共用）。
+			var _slp_slicing: bool = false
+			var _slp_final: bool = true
+			var _slp_end: int = 0
 			if _slp_path_log_count < 3:
 				_slp_path_log_count += 1
 				var _s_prof_ok: bool = profile != null
@@ -6377,41 +6534,23 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				var n_slp: int = cells_for_slp_cpp.size()
 				var nb_idx_for_slp: PackedInt32Array = map.neighbor_indices_packed()
 				if n_slp > 0 and nb_idx_for_slp.size() >= n_slp * 6:
-					var water_ids_slp := PackedByteArray()
-					water_ids_slp.append(int(TerrainType.TERRAIN.OCEAN))
-					water_ids_slp.append(int(TerrainType.TERRAIN.COAST))
-					water_ids_slp.append(int(TerrainType.TERRAIN.REEF))
-					water_ids_slp.append(int(TerrainType.TERRAIN.KELP))
-					var knobs_slp := {
-						"n_cells": n_slp,
-						"hex_size": hex_size,
-						"season_phase": season_phase,
-						"smooth_passes": 1,  # mirrors PhysCircSolverScript._SLP_SMOOTH_PASSES
-						"world_bounds_pos_y": bounds.position.y,
-						"world_bounds_size_y": bounds.size.y,
-						"neighbor_indices": nb_idx_for_slp,
-						"water_terrain_ids": water_ids_slp,
-						"prev_slp_arr": map.slp_arr,
-						"slp_lat_amp": 0.16,
-						"slp_land_amp": 0.55,
-						"slp_water_damp": 0.20,
-						"slp_interior_boost": 1.30,
-						"slp_coast_damp": 0.60,
-						"slp_target_p95": 0.18,
-						"days_per_year": days_per_year_phys,
-						"sim_day": sim_day_phys,
-						"world_seed": world_seed_phys,
-						"axial_tilt_deg": profile.axial_tilt_deg if profile != null else 23.5,
-						"insolation_daylen_amp": profile.insolation_daylen_amp if profile != null else 0.35,
-					}
-					if profile != null:
-						knobs_slp["wind_thermal_slp_weight"] = profile.wind_thermal_slp_weight
-						knobs_slp["slp_ice_high_weight"] = profile.slp_ice_high_weight
-						knobs_slp["slp_snow_high_weight"] = profile.slp_snow_high_weight
-						knobs_slp["slp_response_rate"] = profile.slp_response_rate
-						knobs_slp["slp_synoptic_amp"] = profile.slp_synoptic_amp
-						knobs_slp["slp_moist_low_weight"] = profile.slp_moist_low_weight
-						knobs_slp["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
+					var knobs_slp: Dictionary = _phys_knobs_base_slp.duplicate()
+					knobs_slp["season_phase"] = season_phase
+					knobs_slp["sim_day"] = sim_day_phys
+					knobs_slp["world_seed"] = world_seed_phys
+					knobs_slp["prev_slp_arr"] = map.slp_arr
+					# Item 2b: cell-range 切片（默认关闭）。拆成 divisor 段，传 start_idx/end_idx。
+					_slp_slicing = _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1
+					if _slp_slicing:
+						var _slp_chunk: int = int(ceil(float(n_slp) / float(_phys_cell_slice_divisor)))
+						if _slp_chunk < 1:
+							_slp_chunk = 1
+						var _slp_start: int = _phys_slp_cursor
+						var _slp_range_end: int = mini(_slp_start + _slp_chunk, n_slp)
+						knobs_slp["start_idx"] = _slp_start
+						knobs_slp["end_idx"] = _slp_range_end
+						_slp_final = (_slp_range_end >= n_slp)
+						_slp_end = _slp_range_end
 					var ret_slp = _world_ext.run_slp_field_pass(knobs_slp)
 					if ret_slp != null and typeof(ret_slp) == TYPE_DICTIONARY:
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
@@ -6443,14 +6582,21 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
 							_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
 							_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
-							if not slp_published_to_slot:
-								for _i_slp_arr in range(n_slp):
-									map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
-							_slp_done_by_cpp = true
-							_slp_native_ms = rc_slp
-							if not _slp_first_run_logged:
-								_slp_first_run_logged = true
-								print("[slp_field] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ~36ms; target < 3ms)" % rc_slp)
+							# Item 2b: 仅末片（或关闭切片时）写回 map.slp_arr；中间切片跳过
+							# 避免把 partial slp_out（非切片区为上一 tick 残值）写进地图。
+							if _slp_final:
+								if not slp_published_to_slot:
+									for _i_slp_arr in range(n_slp):
+										map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
+								_slp_done_by_cpp = true
+								_slp_native_ms = rc_slp
+								if not _slp_first_run_logged:
+									_slp_first_run_logged = true
+									print("[slp_field] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ~36ms; target < 3ms)" % rc_slp)
+			# Item 2b: SLP 切片未到末片 → 推进游标、停留 SLP、续帧（本 tick SLP 仍未完成）。
+			if _slp_slicing and not _slp_final and _phys_last_slp_commit_ok:
+				_phys_slp_cursor = _slp_end
+				return false
 			if not _slp_done_by_cpp:
 				_phys_last_slp_rc_ms = -1.0
 				_phys_last_slp_out_size = -1
@@ -6492,6 +6638,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					_slp_path_str_last,
 					str(_phys_last_slp_commit_ok),
 				])
+			_phys_slp_cursor = 0
 			_phys_stage = _PHYS_STAGE_WIND
 		_PHYS_STAGE_WIND:
 			# Fix #11 (2026-06-15) STAGE-TOTAL 埋点：见 _PHYS_STAGE_SLP。
@@ -6501,6 +6648,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			# has_method(run_wind_field_pass) 探测分支（C++ 返回 fallback 或 ext 未 bind 时
 			# 透明 fallback 到 GDScript solve_wind_field）。DIAG 块保留原状。
 			var _wind_done_by_cpp: bool = false
+			# Item 2b: 切片状态（case 级）。
+			var _wind_slicing: bool = false
+			var _wind_final: bool = true
 			_phys_last_wind_rc_ms = -1.0
 			_phys_last_wind_wx_size = -1
 			_phys_last_wind_wy_size = -1
@@ -6537,39 +6687,25 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							var _c_slp: HexCell = cells_for_wind[_i_slp]
 							slp_arr[_i_slp] = _c_slp.slp if _c_slp != null else 0.0
 					# water_terrain_ids：与 PhysicalCirculationSolver._is_water_terrain 1:1
-					var water_ids := PackedByteArray()
-					water_ids.append(int(TerrainType.TERRAIN.OCEAN))
-					water_ids.append(int(TerrainType.TERRAIN.COAST))
-					water_ids.append(int(TerrainType.TERRAIN.REEF))
-					water_ids.append(int(TerrainType.TERRAIN.KELP))
-					var knobs_wind := {
-						"n_cells": n_wind,
-						"hex_size": hex_size,
-						"season_phase": season_phase,
-						"terrain_aware": (1 if terrain_aware else 0),
-						"world_bounds_pos_y": bounds.position.y,
-						"world_bounds_size_y": bounds.size.y,
-						"neighbor_indices": nb_idx_for_wind,
-						"slp_arr": slp_arr,
-						"water_terrain_ids": water_ids,
-						"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
-						"land_lf_peak": int(LandformType.LF.PEAK),
-						"land_lf_hill": int(LandformType.LF.HILL),
-						"days_per_year": days_per_year_phys,
-						"sim_day": sim_day_phys,
-						"world_seed": world_seed_phys,
-						"axial_tilt_deg": profile.axial_tilt_deg if profile != null else 23.5,
-					}
-					if profile != null:
-						knobs_wind["wind_response_rate"] = profile.wind_response_rate
-						knobs_wind["wind_max_turn_deg_per_day"] = profile.wind_max_turn_deg_per_day
-						knobs_wind["wind_min_flux_for_dir_update"] = profile.wind_min_flux_for_dir_update
-						knobs_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
-						knobs_wind["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
-						knobs_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
+					var knobs_wind: Dictionary = _phys_knobs_base_wind.duplicate()
+					knobs_wind["season_phase"] = season_phase
+					knobs_wind["sim_day"] = sim_day_phys
+					knobs_wind["world_seed"] = world_seed_phys
+					knobs_wind["slp_arr"] = slp_arr
+					# Item 2b: cell-range 切片
+					_wind_slicing = _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1
+					if _wind_slicing:
+						var _wind_chunk: int = int(ceil(float(n_wind) / float(_phys_cell_slice_divisor)))
+						if _wind_chunk < 1:
+							_wind_chunk = 1
+						var _wind_start: int = _phys_wind_cursor
+						var _wind_end: int = mini(_wind_start + _wind_chunk, n_wind)
+						knobs_wind["start_idx"] = _wind_start
+						knobs_wind["end_idx"] = _wind_end
+						_wind_final = (_wind_end >= n_wind)
 					var _rc_wind = _world_ext.run_wind_field_pass(knobs_wind)
 					_phys_last_wind_rc_ms = float(_rc_wind) if _rc_wind != null else -1.0
-					if _rc_wind != null and float(_rc_wind) >= 0.0:
+					if _rc_wind != null and float(_rc_wind) >= 0.0 and _wind_final:
 						# C++ 已写入并 flush wind_x/y/speed；这里保留 size gate 与
 						# 非 PSI fallback 的 HexCell 同步，避免成功路径重复写 PackedArray。
 						var wx_arr: PackedFloat32Array = map.wind_x_arr
@@ -6612,6 +6748,11 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							if not _wind_b_first_run_logged:
 								_wind_b_first_run_logged = true
 								print("[wind_field/B] gdext path ACTIVE — first run elapsed=%.2fms (legacy GDScript baseline ≈ 35ms; charter §7 / dots-wind-validation.md target < 5ms)" % float(_rc_wind))
+					elif _rc_wind != null and float(_rc_wind) >= 0.0 and _wind_slicing and not _wind_final:
+						# Item 2b: 中间切片 —— C++ 已更新本段 wind_x/y/speed slots，无需 commit
+						# 检查 / HexCell 写回，推进游标续帧（避免回退 GDScript 求解）。
+						_phys_wind_cursor = int(knobs_wind.get("end_idx", n_wind))
+						return false
 			if not _wind_done_by_cpp:
 				_phys_wind_done_by_cpp = false
 				# DOTS-Final-Push 后续诊断：fallback 分支也打前 3 次，配合 path-decision /
@@ -6705,44 +6846,10 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				if n_psi > 0 and nb_idx_for_psi.size() >= n_psi * 6:
 					var _psi_t1_ms: float = float(Time.get_ticks_usec() - _psi_t1_us) / 1000.0
 					var _psi_t2_us: int = Time.get_ticks_usec()
-					var water_ids_psi := PackedByteArray()
-					water_ids_psi.append(int(TerrainType.TERRAIN.OCEAN))
-					water_ids_psi.append(int(TerrainType.TERRAIN.COAST))
-					water_ids_psi.append(int(TerrainType.TERRAIN.REEF))
-					water_ids_psi.append(int(TerrainType.TERRAIN.KELP))
-					var cold_sink_temp: float = -0.05
-					if cfg != null and "COLD_SINK_TEMP" in cfg:
-						cold_sink_temp = float(cfg.COLD_SINK_TEMP)
-					var knobs_psi := {
-						"n_cells": n_psi,
-						"hex_size": hex_size,
-						"world_bounds_pos_y": bounds.position.y,
-						"world_bounds_size_y": bounds.size.y,
-						"neighbor_indices": nb_idx_for_psi,
-						"water_terrain_ids": water_ids_psi,
-						"wind_x_arr": wx_arr_psi,
-						"wind_y_arr": wy_arr_psi,
-						"wind_speed_arr": wspd_arr_psi,
-						"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
-						# plan/psi-warm-start：SOR 用上一轮 cell_ocean_psi slot 作初值；
-						# 默认开，profile 可显式关闭做冷启动对照。
-						"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,
-						"psi_early_exit_mode": str(profile.psi_early_exit_mode) if profile != null and profile.get("psi_early_exit_mode") != null else "perf",
-						"psi_sor_omega": 1.4,
-						"psi_r_base": 0.18,
-						"psi_beta_floor": 0.05,
-						"psi_source_scale": float(profile.ocean_psi_source_scale) if profile != null and profile.get("ocean_psi_source_scale") != null else 0.06,
-						"ocean_current_scale": float(profile.ocean_current_scale) if profile != null and profile.get("ocean_current_scale") != null else 0.13,
-						"ocean_current_max_magnitude": float(profile.ocean_current_max_magnitude) if profile != null and profile.get("ocean_current_max_magnitude") != null else 0.65,
-						"thermohaline_weight": 0.12,
-						"upwelling_highlat_abs": 0.75,
-						"cold_sink_temp": cold_sink_temp,
-					}
-					if profile != null:
-						knobs_psi["ocean_current_response_rate"] = profile.ocean_current_response_rate
-						knobs_psi["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
-						knobs_psi["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
-						knobs_psi["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
+					var knobs_psi: Dictionary = _phys_knobs_base_psi.duplicate()
+					knobs_psi["wind_x_arr"] = wx_arr_psi
+					knobs_psi["wind_y_arr"] = wy_arr_psi
+					knobs_psi["wind_speed_arr"] = wspd_arr_psi
 					var _psi_t2_ms: float = float(Time.get_ticks_usec() - _psi_t2_us) / 1000.0
 					var _psi_t3_us: int = Time.get_ticks_usec()
 					var ret_psi = _world_ext.run_psi_solver_pass(knobs_psi)
@@ -6918,20 +7025,16 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 				if n_up > 0 and nb_idx_up.size() >= n_up * 6:
 					# T2: 准备 knobs（PackedByteArray + Dictionary）
 					var _t2_us: int = Time.get_ticks_usec()
-					var water_ids_up := PackedByteArray()
-					water_ids_up.append(int(TerrainType.TERRAIN.OCEAN))
-					water_ids_up.append(int(TerrainType.TERRAIN.COAST))
-					water_ids_up.append(int(TerrainType.TERRAIN.REEF))
-					water_ids_up.append(int(TerrainType.TERRAIN.KELP))
-					var knobs_up := {
-						"stage": "upwelling",
-						"n_cells": n_up,
-						"neighbor_indices": nb_idx_up,
-						"water_terrain_ids": water_ids_up,
-						"world_bounds_pos_y": bounds.position.y,
-						"world_bounds_size_y": bounds.size.y,
-						"cold_sink_temp": (cfg.COLD_SINK_TEMP if cfg != null else -0.05),
-					}
+					var knobs_up: Dictionary = _phys_knobs_base_up.duplicate()
+					# Item 2b: cell-range 切片（upwelling 直写 slot，逐 cell 独立，无需 C++ 侧 gating）。
+					if _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1 and n_up > 0:
+						var _up_chunk: int = int(ceil(float(n_up) / float(_phys_cell_slice_divisor)))
+						if _up_chunk < 1:
+							_up_chunk = 1
+						var _up_start: int = _phys_upwelling_cursor
+						var _up_end: int = mini(_up_start + _up_chunk, n_up)
+						knobs_up["start_idx"] = _up_start
+						knobs_up["end_idx"] = _up_end
 					var _ms_t2: float = float(Time.get_ticks_usec() - _t2_us) / 1000.0
 					# T3: refresh_slots_from_map
 					var _t3_us: int = Time.get_ticks_usec()
@@ -6955,6 +7058,13 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						])
 					if typeof(ret_up) == TYPE_DICTIONARY and not bool(ret_up.get("fallback", true)):
 						_upwelling_done_by_cpp = true
+						# Item 2b: UPWELLING 切片未到末片 → 推进游标、停留 UPWELLING、续帧。
+						if _phys_cell_slice_enabled and _phys_cell_slice_divisor > 1 and n_up > 0:
+							var _end2: int = int(knobs_up.get("end_idx", n_up))
+							if _end2 < n_up:
+								_phys_upwelling_cursor = _end2
+								return false
+							_phys_upwelling_cursor = 0
 				else:
 					if _diag_active:
 						print("[upwelling/DIAG#%d] inner-skip: n_cells=%d nb_idx_size=%d (need >= %d)" % [

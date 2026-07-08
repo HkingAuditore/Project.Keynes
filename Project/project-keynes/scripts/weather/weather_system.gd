@@ -2027,6 +2027,7 @@ func apply_unified_fast_tick_result(weather_rc: Dictionary) -> Array[WeatherFron
 		_clear_weather_field_slice_state()
 		_current_map_for_tick = null
 		return [] as Array[WeatherFront]
+	var t_us0: int = Time.get_ticks_usec()
 
 	# Step 4：解包 fronts，写 _active_fronts。
 	var fronts_out: Array[WeatherFront] = _build_fronts_from_rc(weather_rc)
@@ -2047,9 +2048,49 @@ func apply_unified_fast_tick_result(weather_rc: Dictionary) -> Array[WeatherFron
 	# Step 8：runs/total_ms 统计（与 combined path 共享计数器）。
 	_gdext_combined_runs += 1
 	_gdext_combined_total_ms += float(weather_rc.get("total_ms", 0.0))
-	var br: Dictionary = weather_rc.duplicate(true)
+	# Native daily breakdown may contain large PackedArrays and nested reports; keep the
+	# weather-facing snapshot scalar-only except for the explicit fields consumers need.
+	var br: Dictionary = {
+		"advance_ms": float(weather_rc.get("advance_ms", weather_rc.get("weather_field_ms", 0.0))),
+		"field_commit_total_ms": float(weather_rc.get("field_commit_total_ms", weather_rc.get("weather_commit_ms", 0.0))),
+		"field_commit_loop_ms": float(weather_rc.get("field_commit_loop_ms", 0.0)),
+		"distribute_ms": float(weather_rc.get("distribute_ms", weather_rc.get("weather_distribute_ms", 0.0))),
+		"summary_ms": float(weather_rc.get("summary_ms", weather_rc.get("weather_summary_ms", 0.0))),
+		"cyclone_ms": float(weather_rc.get("cyclone_ms", weather_rc.get("weather_cyclone_ms", 0.0))),
+		"stage_b_ms": float(weather_rc.get("stage_b_ms", weather_rc.get("weather_stage_b_ms", 0.0))),
+		"weather_field_ms": float(weather_rc.get("weather_field_ms", weather_rc.get("advance_ms", 0.0))),
+		"weather_commit_ms": float(weather_rc.get("weather_commit_ms", weather_rc.get("field_commit_total_ms", 0.0))),
+		"weather_distribute_ms": float(weather_rc.get("weather_distribute_ms", weather_rc.get("distribute_ms", 0.0))),
+		"weather_summary_ms": float(weather_rc.get("weather_summary_ms", weather_rc.get("summary_ms", 0.0))),
+		"weather_cyclone_ms": float(weather_rc.get("weather_cyclone_ms", weather_rc.get("cyclone_ms", 0.0))),
+		"weather_stage_b_ms": float(weather_rc.get("weather_stage_b_ms", 0.0)),
+		"albedo_ms": float(weather_rc.get("albedo_ms", 0.0)),
+		"veg_dyn_ms": float(weather_rc.get("veg_dyn_ms", 0.0)),
+		"feedback_ms": float(weather_rc.get("feedback_ms", 0.0)),
+		"weather_tick_ms": float(weather_rc.get("weather_tick_ms", weather_rc.get("weather_ms", weather_rc.get("total_ms", 0.0)))),
+		"total_ms": float(weather_rc.get("total_ms", weather_rc.get("weather_ms", 0.0))),
+		"fronts": fronts_out.size(),
+		"fronts_count": int(weather_rc.get("fronts_count", fronts_out.size())),
+		"cover_dirty": bool(weather_rc.get("cover_dirty", false)),
+		"active_weather_ratio": float(weather_rc.get("active_weather_ratio", 0.0)),
+		"weather_dirty_count": int(weather_rc.get("weather_dirty_count", 0)),
+		"weather_lut_changed": bool(weather_rc.get("weather_lut_changed", false)),
+		"weather_lut_dirty_count": int(weather_rc.get("weather_lut_dirty_count", 0)),
+		"weather_lut_full_rebuild": bool(weather_rc.get("weather_lut_full_rebuild", false)),
+		"weather_convergence_dirty_count": int(weather_rc.get("weather_convergence_dirty_count", 0)),
+		"path": "gdext_native_daily_apply",
+	}
+	if weather_rc.has("fronts_signature"):
+		br["fronts_signature"] = str(weather_rc.get("fronts_signature", ""))
+	if weather_rc.has("visual_dirty_intents"):
+		br["visual_dirty_intents"] = weather_rc["visual_dirty_intents"]
+	if weather_rc.has("succession_indices"):
+		br["succession_indices"] = weather_rc["succession_indices"]
+		br["succession_to_veg"] = weather_rc.get("succession_to_veg", PackedByteArray())
+		br["stat_succession_count"] = int(weather_rc.get("stat_succession_count", 0))
 	br.merge(_front_diagnostic_counts(fronts_out), true)
 	br.merge(_mark_weather_commit_tick(), true)
+	br["result_apply_ms"] = float(Time.get_ticks_usec() - t_us0) / 1000.0
 	_last_breakdown = br
 	return fronts_out
 

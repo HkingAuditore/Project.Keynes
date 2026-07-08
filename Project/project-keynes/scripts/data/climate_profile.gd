@@ -276,6 +276,19 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Mobile P2 perf gate: split native_daily weather into schedule-visible C++ subnodes.
 # Default false keeps the historical monolithic weather pass as the normal path.
 @export var native_daily_split_weather_node_enabled: bool = false
+# Native daily node-level cell range slicing. Default off: C++ graph continuation keeps
+# historical full-node execution unless a profile explicitly opts in. The node allow-list
+# is intentionally narrow and report-driven; start with already range-aware passes, then
+# expand after bit-equal/perf validation.
+@export var native_daily_node_range_enabled: bool = false
+@export_range(128, 4096, 64) var native_daily_node_range_cells: int = 768
+@export var native_daily_node_range_nodes: PackedStringArray = PackedStringArray(["ocean_water", "ocean_land"])
+@export var native_daily_ocean_thread_variant_enabled: bool = false
+@export_range(0, 16, 1) var native_daily_ocean_thread_tasks: int = 0
+@export_range(1.0, 30.0, 0.5) var native_daily_sea_ice_spread_dt_cap_days: float = 2.0
+@export var native_daily_finalizer_slice_enabled: bool = false
+@export_range(128, 4096, 64) var native_daily_finalizer_slice_cells: int = 768
+@export var native_daily_finalizer_native_publish_enabled: bool = false
 @export_enum("dense", "sparse_safe", "sparse_perf") var native_daily_finalizer_write_mode: String = "sparse_perf"
 @export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_temp_epsilon: float = 0.0005
 @export_range(0.0, 0.01, 0.0001) var native_daily_finalizer_tta_epsilon: float = 0.0005
@@ -500,6 +513,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 注意：sub-slice 仅在 _need_pixel_this_round=true 的轮次生效（每季最多一轮），
 # 不影响 phys_solve 的 7 stage 切片节奏。
 @export_range(1, 16, 1) var ocean_pixel_subslice_count: int = 4
+
+# 弱机/移动端物理解周期缩放（item ④「架构·弱机」）。
+# ocean_currents_job._apply_device_period_scale() 读取：>1 时把 wind_period_ticks /
+# ocean_period_ticks / period_ticks 整体放大该倍率（每 2–3 日而非每日跑一轮物理），
+# 降低单帧物理尖峰出现的频率。仅改变"多久跑一轮"，不改变单阶段工作量（单片 magnitude
+# 由 per-cell 切片负责，那是需持久化中间状态的 native 重构，本字段不动）。
+# 移动端自动 ×2；弱 PC 可在 profile 设 2.0~3.0。默认 1.0（桌面不动）。
+@export_range(1.0, 4.0, 0.5) var ocean_period_scale_weak: float = 1.0
 
 # ══════════════════════════════════════════════════════════════════════
 # [Hydrology]

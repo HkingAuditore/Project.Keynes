@@ -1264,12 +1264,32 @@ static inline double pk_smoothstep(double a, double b, double x) {
     return t * t * (3.0 - 2.0 * t);
 }
 
-// SAME_SOURCE: map_generator.gd::_alt_penalty (line 3059).
-//   ALT_PEN_LINEAR=0.40, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.22
-static inline double pk_alt_penalty(double e) {
-    const double lin = e * 0.40;
-    const double hi = pk_smoothstep(0.45, 1.00, e) * 0.22;
+static constexpr double PK_ALT_PEN_ABS_ELEV_BLEND = 0.25;
+
+// SAME_SOURCE: map_generator.gd::_alt_penalty.
+//   ALT_PEN_LINEAR=0.40, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.22.
+//   输入先从绝对 elevation 转为 sea_level 以上的 land_h，再混入少量绝对 elevation。
+//   这样海平面附近不被过度扣温，同时中高海拔仍保留一部分冷却锚点。
+static inline double pk_alt_penalty_from_height(double height_norm) {
+    const double h = pk_clamp01(height_norm);
+    const double lin = h * 0.40;
+    const double hi = pk_smoothstep(0.45, 1.00, h) * 0.22;
     return lin + hi;
+}
+
+static inline double pk_land_height_for_temperature(double elevation, double sea_level) {
+    const double denom = (1.0 - sea_level) > 0.001 ? (1.0 - sea_level) : 0.001;
+    return pk_clamp01((elevation - sea_level) / denom);
+}
+
+static inline double pk_temperature_height_for_penalty(double elevation, double sea_level) {
+    const double land_h = pk_land_height_for_temperature(elevation, sea_level);
+    const double elev = pk_clamp01(elevation);
+    return land_h + (elev - land_h) * PK_ALT_PEN_ABS_ELEV_BLEND;
+}
+
+static inline double pk_alt_penalty(double elevation, double sea_level) {
+    return pk_alt_penalty_from_height(pk_temperature_height_for_penalty(elevation, sea_level));
 }
 
 // SAME_SOURCE（C++ 镜像）: DCClimateMath.LAT_TEMP_CURVE_EXP —— 纬度温度钟形曲线指数的
@@ -1293,10 +1313,10 @@ static inline double pk_lat_temp_bell(double lat_signed) {
     return std::pow(c < 0.0 ? 0.0 : c, PK_LAT_TEMP_CURVE_EXP);
 }
 
-// SAME_SOURCE: map_generator.gd::_compute_temperature —— 钟形 - 海拔惩罚，clamp[0,1]。
-static inline float pk_compute_temperature(double ny, double elevation) {
+// SAME_SOURCE: map_generator.gd::_compute_temperature —— 钟形 - 海平面相对海拔惩罚，clamp[0,1]。
+static inline float pk_compute_temperature(double ny, double elevation, double sea_level) {
     const double lat_temp = pk_lat_temp_bell((ny - 0.5) * 2.0);
-    return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation)));
+    return float(pk_clamp01(lat_temp - pk_alt_penalty(elevation, sea_level)));
 }
 
 // ─── [P1 hypsometric remap 2026-06-25] 高程分段重映射（治平原/阶梯）─────────────────

@@ -427,6 +427,12 @@ func tick(ctx: SusTickContext) -> void:
 		var last_slice_cursor_start: int = -1
 		var last_slice_cursor_end: int = -1
 		var last_slice_fallback_path: String = ""
+		var last_slice_actual_ms: float = 0.0
+		var last_slice_reported_ms: float = 0.0
+		var last_slice_reported_gap_ms: float = 0.0
+		var last_slice_wrapper_wall_ms: float = 0.0
+		var last_slice_job_shell_wall_ms: float = 0.0
+		var last_slice_job_shell_wrapper_gap_ms: float = 0.0
 		job._in_flight = true
 
 		while true:
@@ -459,6 +465,12 @@ func tick(ctx: SusTickContext) -> void:
 
 			var slice_reported_ms: float = float(slice_result.get("elapsed_ms", slice_actual_ms))
 			var slice_ms: float = maxf(slice_actual_ms, slice_reported_ms)
+			last_slice_actual_ms = slice_actual_ms
+			last_slice_reported_ms = slice_reported_ms
+			last_slice_reported_gap_ms = maxf(0.0, slice_actual_ms - slice_reported_ms)
+			last_slice_wrapper_wall_ms = float(slice_result.get("wrapper_wall_ms", 0.0))
+			last_slice_job_shell_wall_ms = float(slice_result.get("job_shell_wall_ms", 0.0))
+			last_slice_job_shell_wrapper_gap_ms = float(slice_result.get("job_shell_wrapper_gap_ms", 0.0))
 			last_slice_stage = _slice_stage_name(slice_result)
 			last_slice_substage = _slice_substage_name(slice_result)
 			last_slice_path = str(slice_result.get("path", ""))
@@ -518,6 +530,13 @@ func tick(ctx: SusTickContext) -> void:
 		report["last_slice_cursor_start"] = last_slice_cursor_start
 		report["last_slice_cursor_end"] = last_slice_cursor_end
 		report["last_slice_fallback_path"] = last_slice_fallback_path
+		report["last_slice_actual_ms"] = last_slice_actual_ms
+		report["last_slice_reported_ms"] = last_slice_reported_ms
+		report["last_slice_reported_gap_ms"] = last_slice_reported_gap_ms
+		report["last_slice_wrapper_wall_ms"] = last_slice_wrapper_wall_ms
+		report["last_slice_job_shell_wall_ms"] = last_slice_job_shell_wall_ms
+		report["last_slice_job_shell_wrapper_gap_ms"] = last_slice_job_shell_wrapper_gap_ms
+		report["job_wrapper_gap_ms"] = maxf(0.0, job_elapsed_ms - last_slice_wrapper_wall_ms)
 		_last_report[job.id] = report
 		_record_stats(job.id, job_elapsed_ms, slices_run)
 		if not _is_upload_job(job.id):

@@ -1504,6 +1504,18 @@ public:
     //   elapsed_ms < 0 -> caller falls back to GDScript path.
     godot::Dictionary run_slp_field_pass(godot::Dictionary knobs);
 
+    // ─── perf 2026-07-08, Item 1：phys pass 每调用固定开销缓存 ───────────
+    // 解析四个 phys pass 共用的 cell_* slot id + 重建 is_water_lut，按
+    // FNV-1a(n_cells, water_terrain_ids) 指纹失效。命中后各 pass 直接读
+    // _phys_sid_* / _phys_is_water_lut 成员，省掉重复 component_id(StringName)
+    // 与 256 字节 LUT 重建。邻居索引仍由 knob 传入（保留 fallback）。
+    // 仅在指纹失配时重算（地图 regen / 水掩膜变化），主线程同步调用。
+    void _phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids);
+    // 缓存 WIND coast/sea BFS 结果（coast_dist/sea_dist 等）到成员；指纹失配才重建。
+    // TR/NB/water_ids 来自当前 pass 已解析的 slot/knob（调用方传入）。
+    void _phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
+                                 const bool *is_water_lut, const godot::PackedByteArray &water_ids);
+
     // ─── plan/dots-slp-psi-cpp: PSI ocean stream-function solver ─────────
     // Fused stage 3 + 4 + 5 (init + SOR iters + finalize) in one C++ call:
     //   init     : enumerate water cells in cell-index order (1:1 with
@@ -1918,6 +1930,48 @@ private:
     uint64_t                                  _psi_topo_fp = 0;
     bool                                      _psi_topo_valid = false;
 
+    // ---- phys pass 每调用固定开销缓存 (perf 2026-07-08, Item 1) ----
+    // run_slp_field_pass / run_wind_field_pass / run_psi_solver_pass /
+    // run_physical_circulation_pass 每个调用都会 component_id(StringName("cell_*"))
+    // 解析 7~13 次 slot id + 重建 256 字节 is_water_lut + 解包 neighbor_indices，
+    // 这部分与 cell 内容无关、对静态地图逐调用恒等。统一在此缓存，指纹 =
+    // FNV-1a(n_cells, water_ids) —— 地图 regen / 水掩膜变化即失配自动重建，不挂 _bound 钩子。
+    // 命中后四个 pass 直接用成员，省掉重复 StringName 解析与 LUT 重建。
+    // 注意：neighbor_indices 仍由 knob 传入（保留 fallback 路径），此处只缓存 slot id + LUT。
+    int _phys_sid_pos_x = -1, _phys_sid_pos_y = -1, _phys_sid_terrain = -1;
+    int _phys_sid_landform = -1;
+    int _phys_sid_wind_x = -1, _phys_sid_wind_y = -1, _phys_sid_wind_spd = -1;
+    int _phys_sid_slp = -1;
+    int _phys_sid_temp = -1, _phys_sid_temp_an = -1;
+    int _phys_sid_snow = -1, _phys_sid_ice = -1;
+    int _phys_sid_wvap = -1, _phys_sid_wcld = -1;
+    int _phys_sid_ocx = -1, _phys_sid_ocy = -1, _phys_sid_psi_prev = -1;
+    int _phys_sid_upwelling = -1;
+    bool     _phys_is_water_lut[256];
+    bool     _phys_is_water_valid = false;
+    uint64_t _phys_static_fp = 0;
+    bool     _phys_static_valid = false;
+
+    // ---- phys pass cell-range 切片缓存 (perf 2026-07-08, Item 2) ----
+    // SLP Pass A 结果跨切片累加的持久 buffer；Pass B 平滑 + recenter/p95/融合/发布
+    // 只在末切片(end_idx==n_cells)对完整 buffer 跑一次 → 切片开启仍逐位等价全量 pass。
+    // 大小随 n_cells 变化（无指纹，size 失配即 resize；solve 内被 Pass A 全量覆盖）。
+    std::vector<float> _phys_slp_buf;
+    // SLP thermal_abs（仅在 A_LAND/THERMAL_WEIGHT/ICE/SNOW 权重非 0 时填充；用于末切片
+    // slp_thermal_p95 诊断）。同样持久化，使切片开启时末切片统计基于完整场而非末切片局部。
+    std::vector<float> _phys_slp_thermal_abs;
+    // WIND coast/sea BFS 结果缓存（指纹 = FNV(TR 字节 + water_ids + NB 整型)，
+    // 地图静态恒等；与 _psi_topo 同套路，主线程同步调用、成员存储线程安全）。
+    // 命中即 coast_dist/sea_dist 等逐位复用，免去每切片重建 BFS（≈地图期一次）。
+    std::vector<int8_t>  _phys_wind_coast_dist;
+    std::vector<float>   _phys_wind_coast_sea_x;
+    std::vector<float>   _phys_wind_coast_sea_y;
+    std::vector<int8_t>  _phys_wind_sea_dist;
+    std::vector<float>   _phys_wind_sea_land_x;
+    std::vector<float>   _phys_wind_sea_land_y;
+    uint64_t _phys_wind_coast_fp = 0;
+    bool     _phys_wind_coast_valid = false;
+
     // ---- entity / pool ----
     int                                       _entity_count = 0;
 
@@ -1956,6 +2010,10 @@ private:
     godot::Dictionary                        _native_shadow_diff_report;
     bool                                      _native_daily_slice_active = false;
     int                                       _native_daily_slice_node_index = 0;
+    int                                       _native_daily_slice_cell_cursor = 0;
+    int                                       _native_daily_slice_range_node_index = -1;
+    int                                       _native_daily_slice_cell_budget = 0;
+    uint32_t                                  _native_daily_slice_range_node_bits = 0u;
     // Bitmask of slice-graph node indices GDScript must JIT-patch before they run
     // (temp-dependent passes). C++ batches consecutive non-yield nodes in one call.
     // Default 0xFFFFFFFF = yield before every node (legacy one-node-per-call).

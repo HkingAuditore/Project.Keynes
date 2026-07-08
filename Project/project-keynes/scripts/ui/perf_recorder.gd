@@ -80,7 +80,21 @@ const JOB_COL_INDICES_SUFFIX: String = "_processed_indices"
 const JOB_COL_CURSOR_START_SUFFIX: String = "_cursor_start"
 const JOB_COL_CURSOR_END_SUFFIX: String = "_cursor_end"
 const JOB_COL_FALLBACK_SUFFIX: String = "_fallback"
+const JOB_COL_SLICE_ACTUAL_SUFFIX: String = "_slice_actual_ms"
+const JOB_COL_SLICE_REPORTED_SUFFIX: String = "_slice_reported_ms"
+const JOB_COL_SLICE_REPORTED_GAP_SUFFIX: String = "_slice_reported_gap_ms"
+const JOB_COL_SLICE_WRAPPER_WALL_SUFFIX: String = "_slice_wrapper_wall_ms"
+const JOB_COL_SLICE_JOB_SHELL_SUFFIX: String = "_slice_job_shell_wall_ms"
+const JOB_COL_SLICE_JOB_SHELL_GAP_SUFFIX: String = "_slice_job_shell_wrapper_gap_ms"
+const JOB_COL_JOB_WRAPPER_GAP_SUFFIX: String = "_job_wrapper_gap_ms"
 const JOB_SUFFIXES: Array = [
+	JOB_COL_SLICE_REPORTED_GAP_SUFFIX,
+	JOB_COL_SLICE_WRAPPER_WALL_SUFFIX,
+	JOB_COL_SLICE_JOB_SHELL_GAP_SUFFIX,
+	JOB_COL_SLICE_JOB_SHELL_SUFFIX,
+	JOB_COL_SLICE_REPORTED_SUFFIX,
+	JOB_COL_SLICE_ACTUAL_SUFFIX,
+	JOB_COL_JOB_WRAPPER_GAP_SUFFIX,
 	JOB_COL_FALLBACK_SUFFIX,
 	JOB_COL_CURSOR_START_SUFFIX,
 	JOB_COL_CURSOR_END_SUFFIX,
@@ -264,6 +278,13 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 		var key_cursor_start: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_CURSOR_START_SUFFIX
 		var key_cursor_end: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_CURSOR_END_SUFFIX
 		var key_fallback: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_FALLBACK_SUFFIX
+		var key_slice_actual: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_ACTUAL_SUFFIX
+		var key_slice_reported: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_REPORTED_SUFFIX
+		var key_slice_reported_gap: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_REPORTED_GAP_SUFFIX
+		var key_slice_wrapper_wall: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_WRAPPER_WALL_SUFFIX
+		var key_slice_job_shell: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_JOB_SHELL_SUFFIX
+		var key_slice_job_shell_gap: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_SLICE_JOB_SHELL_GAP_SUFFIX
+		var key_job_wrapper_gap: String = JOB_COL_PREFIX + str(job_id) + JOB_COL_JOB_WRAPPER_GAP_SUFFIX
 		row[key_ms] = float(r.get("elapsed_ms", 0.0))
 		row[key_slices] = int(r.get("slices_run", 0))
 		row[key_skip] = str(r.get("skipped_reason", ""))
@@ -278,6 +299,13 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 		row[key_cursor_start] = int(r.get("last_slice_cursor_start", -1))
 		row[key_cursor_end] = int(r.get("last_slice_cursor_end", -1))
 		row[key_fallback] = str(r.get("last_slice_fallback_path", ""))
+		row[key_slice_actual] = float(r.get("last_slice_actual_ms", 0.0))
+		row[key_slice_reported] = float(r.get("last_slice_reported_ms", 0.0))
+		row[key_slice_reported_gap] = float(r.get("last_slice_reported_gap_ms", 0.0))
+		row[key_slice_wrapper_wall] = float(r.get("last_slice_wrapper_wall_ms", 0.0))
+		row[key_slice_job_shell] = float(r.get("last_slice_job_shell_wall_ms", 0.0))
+		row[key_slice_job_shell_gap] = float(r.get("last_slice_job_shell_wrapper_gap_ms", 0.0))
+		row[key_job_wrapper_gap] = float(r.get("job_wrapper_gap_ms", 0.0))
 
 
 # breakdowns = { "climate": {...}, "weather": {...}, "enum_atlas": {...}, "sea_ice_atlas": {...} }
@@ -370,6 +398,13 @@ static func _collect_columns(rows: Array) -> PackedStringArray:
 		out.append(base + JOB_COL_CURSOR_START_SUFFIX)
 		out.append(base + JOB_COL_CURSOR_END_SUFFIX)
 		out.append(base + JOB_COL_FALLBACK_SUFFIX)
+		out.append(base + JOB_COL_SLICE_ACTUAL_SUFFIX)
+		out.append(base + JOB_COL_SLICE_REPORTED_SUFFIX)
+		out.append(base + JOB_COL_SLICE_REPORTED_GAP_SUFFIX)
+		out.append(base + JOB_COL_SLICE_WRAPPER_WALL_SUFFIX)
+		out.append(base + JOB_COL_SLICE_JOB_SHELL_SUFFIX)
+		out.append(base + JOB_COL_SLICE_JOB_SHELL_GAP_SUFFIX)
+		out.append(base + JOB_COL_JOB_WRAPPER_GAP_SUFFIX)
 
 	# Phase 4：bd 列
 	for k in bd_keys:

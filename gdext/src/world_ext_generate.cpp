@@ -1267,11 +1267,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (dd < 0) return 0.0; // 全陆地(无海)→极内陆
         return std::exp(-double(dd) / std::max(coastal_temp_scale, 0.5));
     };
-    // 生成期温度：纬度钟形 - 海拔惩罚，再按海洋邻近度拉向温带(沿海冬暖夏凉)。仅用于
-    // 生成期地形/biome 分类；运行时温度场仍走 pk_compute_temperature(纬度+海拔)不受影响。
+    // 生成期温度：纬度钟形 - 海平面相对海拔惩罚，再按海洋邻近度拉向温带(沿海冬暖夏凉)。仅用于
+    // 生成期地形/biome 分类；运行时温度场同样走 pk_compute_temperature(ny, elevation, sea_level)。
     auto gen_temp = [&](int i) -> double {
         const double ny = double(R[i]) * inv_h;
-        const double base = pk_lat_temp_bell((ny - 0.5) * 2.0) - pk_alt_penalty(double(E[i]));
+        const double base = pk_lat_temp_bell((ny - 0.5) * 2.0) - pk_alt_penalty(double(E[i]), sea_level);
         const double infl = ocean_influence(i);
         return pk_clamp01(base + infl * coastal_temp_moderation * (0.5 - base));
     };
@@ -1373,7 +1373,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // ── 8. 初始仿真字段 + base 快照 + 轴派生（中间值，post_base 末尾会重算 landform/veg/cover）──
     for (int i = 0; i < n; ++i) {
         const double ny = double(LAT[i]);
-        const float temp = pk_compute_temperature(ny, double(E[i]));
+        const float temp = pk_compute_temperature(ny, double(E[i]), sea_level);
         const uint8_t terrain = TERR[i];
         BTERR[i] = terrain;
         IW[i] = pk_is_water_terrain(terrain) ? uint8_t(1) : uint8_t(0);
@@ -1618,7 +1618,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const float *E = elevation_arr.ptr();
         const int32_t *R = r_arr.ptr();
         const double inv_h = 1.0 / double(std::max(height - 1, 1));
-        for (int i = 0; i < n; ++i) T[i] = pk_compute_temperature(double(R[i]) * inv_h, E[i]);
+        for (int i = 0; i < n; ++i) T[i] = pk_compute_temperature(double(R[i]) * inv_h, E[i], sea_level);
     }
     if (temp_baseline_arr.size() != n) temp_baseline_arr = temp_arr.duplicate();
     if (temp_30d_arr.size() != n) temp_30d_arr = temp_arr.duplicate();
@@ -1767,7 +1767,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 生成期分类温度：纬度钟形 - 海拔惩罚，再按海洋邻近度拉向温带。与 base pass gen_temp 一致，
     // 保证 base/post_base 同一套温度→biome 判定（gen_once）。运行时温度场 TEMP[] 不受影响。
     auto gen_temp = [&](int i) -> double {
-        const double base = pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(double(E[i]));
+        const double base = pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(double(E[i]), sea_level);
         const double infl = ocean_influence(i);
         return pk_clamp01(base + infl * coastal_temp_moderation * (0.5 - base));
     };
@@ -2518,7 +2518,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (pk_is_water_terrain(t) || t == 6 || t == 9 || t == 8) continue;
         if (pk_is_permanent_landform(t)) continue;
         if (land_h(i) > 0.10 || M[i] < 0.75f) continue;
-        const double temp = pk_clamp01(pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(E[i]));
+        const double temp = pk_clamp01(pk_lat_temp_bell((row_norm(i) - 0.5) * 2.0) - pk_alt_penalty(E[i], sea_level));
         if (temp < 0.30) continue;
         bool has_water = (RIV[i] != 0);
         if (!has_water) {
@@ -2763,7 +2763,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     for (int i = 0; i < n; ++i) {
         const uint8_t t = TERR[i];
         if (t != 0 && t != 1) continue;
-        const double temp = pk_compute_temperature(row_norm(i), E[i]);
+        const double temp = pk_compute_temperature(row_norm(i), E[i], sea_level);
         bool has_land_neighbor = false;
         bool has_river_outlet_neighbor = false;
         bool has_water_neighbor = false;
@@ -3580,6 +3580,7 @@ Dictionary DCWorldExt::_run_native_generation_publish_pass(
         return fail("not_bound", "bind_map_data");
     }
 
+    const double sea_level = double(cfg.get("sea_level", 0.5));
     int n_cells = int(cfg.get("cell_count", 0));
     if (n_cells <= 0) {
         n_cells = _native_world_cell_count;
@@ -3676,7 +3677,7 @@ Dictionary DCWorldExt::_run_native_generation_publish_pass(
         const float ny = LAT[i];
         const float elev = ELEV[i];
         const float year = float(pk_clamp01(pk_lat_temp_bell((double(ny) - 0.5) * 2.0)));
-        const float boot_temp = pk_compute_temperature(double(ny), double(elev));
+        const float boot_temp = pk_compute_temperature(double(ny), double(elev), sea_level);
         const uint8_t water = pk_is_water_terrain(TERR[i]) ? uint8_t(1) : uint8_t(0);
 
         TEMP_YEAR[i] = year;
@@ -4098,7 +4099,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
                 else if (row > max_row) row = max_row;
                 const double lat_temp = double(LATT[row]);
                 const double e = double(ELEV[i]);
-                const double temp_year = pk_clamp01(lat_temp - pk_alt_penalty(e));
+                const double temp_year = pk_clamp01(lat_temp - pk_alt_penalty(e, double(sea_level)));
                 const double temp_now = pk_clamp01(temp_year + double(OFFT[row]));
                 new_t = pk_decide_terrain(e, temp_now, double(MOIST[i]),
                                           double(sea_level));
@@ -4205,7 +4206,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (row < 0) row = 0;
             else if (row > max_row) row = max_row;
             const double ny = double(row) * inv_max_row;
-            const double temp = double(pk_compute_temperature(ny, double(ELEV[i])));
+            const double temp = double(pk_compute_temperature(ny, double(ELEV[i]), double(sea_level)));
             const double inv_above_sea = 1.0 / std::max(1.0 - double(sea_level), 0.001);
             const double lh = (double(ELEV[i]) - double(sea_level)) * inv_above_sea;
             const bool strong_river = RFLOW[i] >= 0.55f;
@@ -4340,7 +4341,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             else if (row > max_row) row = max_row;
             const double lat_temp = double(LATT[row]);
             const double e = double(ELEV[i]);
-            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e));
+            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e, double(sea_level)));
             uint8_t new_t = pk_decide_terrain(e, temp, double(M[i]),
                                               double(sea_level));
             if (pk_is_water_terrain(new_t) && !pk_is_water_terrain(cur)) {
@@ -4425,7 +4426,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (row < 0) row = 0;
             else if (row > max_row) row = max_row;
             const double ny = double(row) * inv_max_row;
-            const double temp = double(pk_compute_temperature(ny, e));
+            const double temp = double(pk_compute_temperature(ny, e, double(sea_level)));
             // [climate-zone-fix P1] 与生成期 shrubland pass 同步：限真·暖温带地中海生态位
             // （temp 上限 0.58 排除热带/亚热带；湿度上沿收窄至 0.44）。
             if (temp < 0.42 || temp > 0.58) continue;
@@ -4517,7 +4518,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (row < 0) row = 0;
             else if (row > max_row) row = max_row;
             const double ny = double(row) * inv_max_row;
-            const double temp = double(pk_compute_temperature(ny, e));
+            const double temp = double(pk_compute_temperature(ny, e, double(sea_level)));
             if (temp < 0.60) continue;
             bool coast_nb = false;
             bool swamp_nb = false;
@@ -4599,7 +4600,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (row < 0) row = 0;
             else if (row > max_row) row = max_row;
             const double ny = double(row) * inv_max_row;
-            const double temp = double(pk_compute_temperature(ny, e));
+            const double temp = double(pk_compute_temperature(ny, e, double(sea_level)));
             if (temp >= 0.05) continue;
             bool coastal_glacier = false;
             if (land_h < 0.20) {
@@ -4699,7 +4700,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             if (row < 0) row = 0;
             else if (row > max_row) row = max_row;
             const double lat_temp = double(LATT[row]);
-            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e));
+            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e, double(sea_level)));
             if (temp < 0.30) continue;
             bool has_water = (RIV[i] != 0);
             if (!has_water) {
@@ -4793,14 +4794,9 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         int row = int(std::round(pk_clamp01(double(LAT[i])) * double(max_row)));
         if (row < 0) row = 0;
         else if (row > max_row) row = max_row;
-        // 2026-05-18 雪线修正：alt_penalty 双段式 + 雪线新公式（与 GDScript SAME_SOURCE）。
+        // 2026-07-08：海拔惩罚基于 sea_level 以上 land_h，与 GDScript / shader SAME_SOURCE。
         const double e = double(ELEV[i]);
-        const double alt_pen_lin = e * 0.40;
-        double alt_pen_hi_t = (e - 0.45) / (1.0 - 0.45);
-        if (alt_pen_hi_t < 0.0) alt_pen_hi_t = 0.0;
-        else if (alt_pen_hi_t > 1.0) alt_pen_hi_t = 1.0;
-        const double alt_pen_hi = alt_pen_hi_t * alt_pen_hi_t * (3.0 - 2.0 * alt_pen_hi_t) * 0.22;
-        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - (alt_pen_lin + alt_pen_hi));
+        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - pk_alt_penalty(e, double(sea_level)));
         const float temp_now = float(pk_clamp01(temp_year + double(ROW_OFF[row])));
         float snow = 0.0f;
         if (!pk_is_water_terrain(TERR[i])) {
