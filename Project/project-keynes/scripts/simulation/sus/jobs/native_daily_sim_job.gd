@@ -40,7 +40,7 @@ func did_run_last_tick() -> bool:
 
 
 func last_result() -> Dictionary:
-	return _last_result.duplicate(true)
+	return _last_result.duplicate()
 
 
 func declare_reads() -> Array[StringName]:
@@ -113,7 +113,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"authority_report": res.get("authority_report", breakdown.get("authority_report", {})),
 		"authority_blockers": res.get("authority_blockers", breakdown.get("authority_blockers", [])),
 		"native_state_snapshot": res.get("native_state_snapshot", breakdown.get("native_state_snapshot", {})),
-		"native_daily_report": res,
 	}
 	var diagnostic_fields: Array[String] = [
 		"node_index",
@@ -222,7 +221,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"job_shell_wrapper_gap_ms": report["job_shell_wrapper_gap_ms"],
 			"job_shell_report_build_ms": report["job_shell_report_build_ms"],
 		})
-	_last_result = res.duplicate(true)
+	# Keep only a shallow top-level copy in the job. Large nested arrays/dicts are immutable
+	# for this diagnostic path and can be read from MapGenerator.native_daily_last_result().
+	_last_result = res.duplicate()
 	_maybe_dump_slow_slice(ctx, res, report, breakdown, elapsed_ms)
 	return report
 

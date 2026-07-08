@@ -3166,15 +3166,29 @@ const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [
 	11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 ]
 
+# Coarse spread keeps the slice round budgeted across ticks, but removes pure checkpoint
+# nodes that do not need GDScript patching. Weather split subnodes remain inside the same
+# C++ call unless another dynamic boundary is needed.
+const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD_COARSE: Array[int] = [2, 6, 12, 19, 20]
+
 
 # Pick the slice yield set for the current cadence mode: spread → max granularity
 # (lowest per-tick peak), atomic → coarse {2,6} batching (fewest round-trips/round).
 func _native_daily_effective_yield_nodes(cp) -> PackedInt32Array:
 	var spread: bool = cp != null and cp.get("native_daily_spread_across_ticks") != null \
 		and bool(cp.native_daily_spread_across_ticks)
-	var nodes: Array[int] = _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD.duplicate() if spread \
-		else _NATIVE_DAILY_SLICE_YIELD_NODES.duplicate()
-	if _native_daily_split_weather_node_enabled(cp):
+	var coarse_spread: bool = spread \
+			and cp != null \
+			and cp.get("native_daily_coarse_spread_yield_enabled") != null \
+			and bool(cp.native_daily_coarse_spread_yield_enabled)
+	var nodes: Array[int] = []
+	if coarse_spread:
+		nodes = _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD_COARSE.duplicate()
+	elif spread:
+		nodes = _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD.duplicate()
+	else:
+		nodes = _NATIVE_DAILY_SLICE_YIELD_NODES.duplicate()
+	if _native_daily_split_weather_node_enabled(cp) and not coarse_spread:
 		for idx in [13, 14, 15, 16, 17, 18]:
 			if not nodes.has(idx):
 				nodes.append(idx)

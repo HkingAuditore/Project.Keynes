@@ -336,6 +336,68 @@ func _ctx_tick_index(ctx) -> int:
 	return 0
 
 
+func _lut_dirty_source():
+	return dirty_world if dirty_world != null else world_data
+
+
+func _lut_peek_dirty_count() -> int:
+	var source = _lut_dirty_source()
+	if source == null or not source.has_method("peek_dirty_count"):
+		return -1
+	if "dirty_mask_enabled" in source and not bool(source.dirty_mask_enabled):
+		return -1
+	if source.has_method("dirty_mask_size") and int(source.dirty_mask_size()) <= 0:
+		return -1
+	return int(source.peek_dirty_count())
+
+
+func _lut_textures_ready() -> bool:
+	return world_data != null \
+			and world_data.enum_lut_tex != null \
+			and world_data.dyn_lut_tex != null \
+			and world_data.eco_lut_tex != null
+
+
+func _lut_active_decay_pending() -> bool:
+	return baker != null \
+			and "_eco_active_decay_set" in baker \
+			and not baker._eco_active_decay_set.is_empty()
+
+
+func _build_lut_skip_report(t_start_us: int, tick_index: int, pending_before: bool,
+		due_this_tick: bool, due_tick: int, dirty_count: int) -> Dictionary:
+	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+	_lut_last_refresh_tick = tick_index
+	_lut_refresh_pending = false
+	_lut_pending_before_tick = pending_before
+	_lut_catchup_tick = false
+	var report: Dictionary = {
+		"done": true,
+		"work_done": 0,
+		"processed_cells": 0,
+		"elapsed_ms": elapsed_ms,
+		"progress_ratio": 1.0,
+		"path": "cell_indirection_lut_skip",
+		"lut_path": "skip_no_dirty",
+		"lut_refresh_ms": 0.0,
+		"lut_skip_no_dirty": true,
+		"lut_refresh_due": due_this_tick,
+		"lut_refresh_pending_before": pending_before,
+		"lut_refresh_pending_after": _lut_refresh_pending,
+		"lut_last_refresh_tick": _lut_last_refresh_tick,
+		"lut_last_due_tick": due_tick,
+		"lut_stride": _lut_stride,
+		"lut_phase": _lut_phase,
+		"lut_catchup": false,
+		"mask_dirty_count": dirty_count,
+		"dirty_reason": "no_dirty",
+		"dirty_noop": true,
+	}
+	_last_breakdown = report.duplicate(true)
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
+	return report
+
+
 func _mark_lut_due_from_ctx(ctx) -> void:
 	if not FeatureFlagsScript.cell_indirection_active():
 		return
@@ -370,6 +432,10 @@ func tick(ctx) -> Dictionary:
 		var due_this_tick: bool = _lut_due_for_tick(tick_index)
 		var due_tick: int = _lut_last_due_tick
 		var catchup: bool = pending_before and not due_this_tick
+		var dirty_count: int = _lut_peek_dirty_count()
+		if dirty_count == 0 and not catchup and _lut_textures_ready() and not _lut_active_decay_pending():
+			return _build_lut_skip_report(t_start_us, tick_index, pending_before,
+					due_this_tick, due_tick, dirty_count)
 		var lut_report: Dictionary = baker.refresh_cell_luts_daily(map, world_data)
 		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
 		_lut_last_refresh_tick = tick_index
@@ -394,6 +460,9 @@ func tick(ctx) -> Dictionary:
 		report["lut_stride"] = _lut_stride
 		report["lut_phase"] = _lut_phase
 		report["lut_catchup"] = catchup
+		report["lut_skip_no_dirty"] = false
+		report["lut_refresh_due"] = due_this_tick
+		report["mask_dirty_count"] = dirty_count
 		_last_breakdown = report.duplicate(true)
 		_last_breakdown["_tick_idx"] = current_fast_tick_idx
 		return report

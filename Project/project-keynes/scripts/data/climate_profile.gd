@@ -273,6 +273,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
 @export var native_daily_spread_across_ticks: bool = false
 @export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
+# Optional spread-mode optimization: keep only true dynamic/JIT boundaries as yield nodes
+# and let C++ batch more adjacent native graph nodes. Default off until perf/bitequal soak.
+@export var native_daily_coarse_spread_yield_enabled: bool = false
 # Mobile P2 perf gate: split native_daily weather into schedule-visible C++ subnodes.
 # Default false keeps the historical monolithic weather pass as the normal path.
 @export var native_daily_split_weather_node_enabled: bool = false
@@ -925,6 +928,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # SLP/wind 各自刷新周期为 2 * ocean_daily_wind_period_ticks。false → 保留每次
 # due 两段一起跑的合并路径（回归对照 / 低倍速精度优先）。
 @export var daily_wind_split_passes: bool = true
+# Physical leaf pass cell-range slicing gate. Default false keeps historical full-stage
+# execution; enable per profile for PROBE/A-B runs after checking stage p95/max and fallback.
+@export var physical_cell_slice_enabled: bool = false
+@export_range(1, 32, 1) var physical_cell_slice_divisor: int = 8
 @export_range(0.0, 1.0, 0.01) var slp_response_rate: float = 0.55
 @export_range(0.0, 0.20, 0.005) var slp_synoptic_amp: float = 0.18
 @export_range(0.0, 0.20, 0.005) var slp_moist_low_weight: float = 0.12

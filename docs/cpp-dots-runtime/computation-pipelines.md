@@ -361,6 +361,10 @@ GDScript 镜像（`map_generator._climate_pass_a` legacy 与 `_climate_pass_a_so
   49k cell 2.83→0.61ms（4.7x）、110k cell 5.05x，随 N 仍升 → compute-bound、近线性。**手写 AVX2 评估为 no-go**：
   pass_a compute 被 transcendental（insolation/day-length/pow）主导，矢量化到 ulp≤4 需 SVML 级超越函数、可向量化
   纯算术子段占比小 ROI 低；in-core 轴由多核兜住（数据见 `tmp/climate_bench_phase0_summary.md`）。
+- `climate_pass_a` node-range 不是低风险配置项：它一次写 temp/baseline/EMA/thermal/snow 等多组 slots，
+  中间 chunk 需要 `defer_flush` 并保证后续节点绝不读到半发布状态。若 perf 继续显示
+  `native_daily_sim/climate_pass_a` 是单片 p95 owner，应先补真实内部分段计时，再做 PROBE
+  range 实现和 SAME_SOURCE/A-B，而不是直接加入默认 `native_daily_node_range_nodes`。
 
 排查：
 
@@ -472,6 +476,10 @@ Ocean land 算法概要：
 - GDScript fallback 仍是旧语义风险面：若 C++ ocean pass 失败，fallback 可能直接写
   `cell_temp` 而不是 `cell_ocean_thermal_anomaly`。生产目标是 fallback 命中率趋近 0；
   真要保留 fallback parity，需要单独 A/B 后改写 fallback。
+- 后续 `ocean_water` slot-input 优化只应以 PROBE 方式推进：当前 perf 显示 compute 很低、
+  slice wall 更像 knobs/边界税，但 `ocean_water` 必须读取 pass-A/B 之后的最新温度/TTA。
+  直接把所有 PackedArray 输入替换为 slot 读取前，要先证明 slot freshness、fallback flush
+  和 `MapData` 可见性与现有 JIT patch bit-equal。
 
 ## Wind / air mass
 

@@ -98,9 +98,9 @@ DCSystemScheduler
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
-| `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。各 physical stage 内部现支持**按 cell 区间切片**（`start_idx`/`end_idx` knob，由 `MapBaker` 的 stage 内 cell cursor 驱动），进一步打散单帧尖峰；stage 名与全部 `fail()` fallback 路径不变，且**默认关闭（inert-by-default）**，需本地验收通过后才可开启。 |
-| `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
-| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript 只做 SUS shell、bundle round-start、fallback/debug 和 Godot visual boundary。 |
+| `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。同 tick daily wind 若已成功跑 `wind` 段且 physical stage 正在 `phys_wind`，job 会复用该 wind 并让出到下一 tick，避免 daily/physical wind 双跑；`elapsed_ms` 现在按 physical stage-local 计时，`job_elapsed_ms` 保留整 job 墙钟。各 physical stage 内部支持**按 cell 区间切片**（`start_idx`/`end_idx` knob，由 `MapBaker` 的 stage 内 cell cursor 驱动），由 `ClimateProfile.physical_cell_slice_enabled` / `physical_cell_slice_divisor` profile-gate 控制，默认关闭。 |
+| `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。cell-indirection 主路径会在 dirty mask 明确为 0、LUT 纹理已存在且无生态 transition 待推进时返回 `path=cell_indirection_lut_skip`，避免无效全量 LUT refresh；`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
+| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript 只做 SUS shell、bundle round-start、fallback/debug 和 Godot visual boundary。Scheduler report 只提升关键字段，不再嵌完整 `native_daily_report` 大字典；slow dump/debug 可回读 `MapGenerator.native_daily_last_result()`。 |
 
 ### Native daily report contract
 
@@ -130,7 +130,10 @@ DCSystemScheduler
     所以典型一轮落在 ~5 个 tick（而非 21）。`native_daily_split_weather_node_enabled=true` 时，weather transaction
     会进一步拆成 `weather_field -> weather_commit -> weather_distribute -> weather_summary -> weather_cyclone -> weather_stage_b`
     六个可调度子节点；原子模式也会额外在这些子节点前 yield，避免单个 monolithic weather C++ call 撑爆一帧。split
-    关闭时 C++ 会把这些子节点视为不存在，默认/桌面 profile 不支付空 slice 成本。实测 spread `maxslices=1` per-tick：均值 **3.14→1.9ms（−40%）**、
+    关闭时 C++ 会把这些子节点视为不存在，默认/桌面 profile 不支付空 slice 成本。`native_daily_coarse_spread_yield_enabled`
+    是可选 PROBE gate：spread 仍跨 tick，但 yield 集收缩到 `[2,6,12,19,20]`，用于验证减少
+    C++/GDScript round-trip 是否能降低均值；默认关闭，开启后必须同时看 `largest_slice_ms` p95/max，
+    防止把多个 weather/native 子节点重新堆到同一 tick。实测 spread `maxslices=1` per-tick：均值 **3.14→1.9ms（−40%）**、
     p95 **5.0→4.3ms**；代价是一仿真日跨 ~5 tick（推进 ~2.5× 慢，spread 设计本就接受）。
   - **保留作业错峰（`must_run=false` + budget-yield，2026-06）**：spread 早期 per-tick max ≈ 5.8ms 的真凶
     经逐 job 归因（修正 `tmp_native_spread_validate.gd` 的 worst-tick 字段 bug 后）证明是
