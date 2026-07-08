@@ -28,3 +28,11 @@
 - 变量集：temp/moist/elev/lat/river_flow/soil_moist/reserve/season/tick + terrain/landform/vegetation/cover/has_river/is_water
 - plan 文件：`C:\Users\hkinghuang\.workbuddy\plans\blazing-forging-darwin.md`
 - 待用户确认 plan 后再实现
+
+## Ocean 物理 cell-range 切片（2026-07-07，设计态待本地验收）
+- 范围：ocean_currents(32.5%) 四 leaf pass（SLP/WIND/PSI/UPWELLING）的 cell-range 切片 + GDScript stage 内游标。
+- 状态：Item1(C++ 缓存 slot-id/LUT/邻居) + Item2a(C++ 切片) + Item2b(GDScript 游标,默认关) + Item3(文档同步) 全部已落代码/文档，但**本环境无法 rebuild/PROBE，均设计态**。
+- 关键设计：SLP 持久 `_phys_slp_buf` 跨切片累积，全局归约 gate 在 `end_idx==n_cells`；WIND coast/sea BFS 抽 `_phys_ensure_wind_coast` 指纹缓存；**PSI 不做 cell-range**（Gauss-Seidel 全扫掠）；游标仅 `_PHYS_STAGE_NONE→SLP` 归零，stage 名/fallback 不变。
+- 验收门槛（用户本地）：rebuild + bit-equal + 零 fallback + 每切片 p95/max<1ms + 轨迹无漂移；未达前 `_phys_cell_slice_enabled=false`。
+- 不在范围：native_daily_sim(51.5%) 的节点级 cell-range 属 §7 后续；weather 节点 7.77ms 全局最大尖峰是其目标。
+- 权威设计：`tmp/cutting_native_daily_ocean.md` §7.7.1–§7.7.5。

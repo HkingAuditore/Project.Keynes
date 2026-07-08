@@ -1,0 +1,115 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<style>
+body{background:#14161a;color:#e6e6e6;font-family:system-ui,'Segoe UI',sans-serif;margin:0;padding:24px;}
+h1{font-size:22px;margin:0 0 4px} h2{font-size:17px;margin:28px 0 10px;color:#9ecbff;border-bottom:1px solid #2a2e35;padding-bottom:6px}
+.sub{color:#8b93a0;font-size:13px;margin-bottom:18px}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.card{background:#1c2026;border:1px solid #2a2e35;border-radius:8px;padding:12px 16px;min-width:120px}
+.card .v{font-size:24px;font-weight:600}
+.card .l{font-size:12px;color:#8b93a0;margin-top:3px}
+.warn{color:#ffb454}.bad{color:#ff6b6b}.good{color:#5fd98a}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}
+th,td{text-align:right;padding:5px 8px;border-bottom:1px solid #23272e}
+th:first-child,td:first-child{text-align:left}
+th{color:#9aa3b0;font-weight:500}
+.hist{display:flex;align-items:flex-end;gap:2px;height:120px;margin-top:8px}
+.hb{flex:1;background:#4aa3ff;border-radius:2px 2px 0 0;position:relative}
+.hb.o{background:#ff6b6b}
+.note{background:#1c2026;border:1px solid #2a2e35;border-radius:8px;padding:14px 18px;margin-top:10px;line-height:1.6;font-size:13.5px}
+.note b{color:#ffd479}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;margin-right:4px}
+.tag.d{background:#23314a;color:#9ecbff}.tag.o{background:#3a2a1a;color:#ffb454}
+</style></head><body>
+<h1>Project.Keynes 性能分析 · 新数据</h1>
+<div class="sub">数据源：tmp/perf_record_20260707_215611.csv · 686 ticks · 帧预算 8 ms · 生成于分析脚本</div>
+<div class="cards">
+<div class="card"><div class="v">4.68</div><div class="l">t_sus 均值 ms</div></div>
+<div class="card"><div class="v">6.85</div><div class="l">t_sus p95 ms</div></div>
+<div class="card"><div class="v">8.07</div><div class="l">t_sus p99 ms</div></div>
+<div class="card"><div class="v bad">8.78</div><div class="l">t_sus 最大 ms</div></div>
+<div class="card"><div class="v">59.6</div><div class="l">fps 均值 (min 54)</div></div>
+<div class="card"><div class="v warn">1.2%</div><div class="l">tick 超 8 ms 预算</div></div>
+</div>
+<h2>每帧仿真耗时分布 (t_sus_ms)</h2>
+<div class="hist">
+<div class="hb" style="height:0%" title="0–0.5 ms: 0 ticks"></div>
+<div class="hb" style="height:0%" title="0.5–1 ms: 0 ticks"></div>
+<div class="hb" style="height:0%" title="1–1.5 ms: 0 ticks"></div>
+<div class="hb" style="height:0%" title="1.5–2 ms: 0 ticks"></div>
+<div class="hb" style="height:15.7895%" title="2–2.5 ms: 24 ticks"></div>
+<div class="hb" style="height:35.5263%" title="2.5–3 ms: 54 ticks"></div>
+<div class="hb" style="height:38.8158%" title="3–3.5 ms: 59 ticks"></div>
+<div class="hb" style="height:17.7632%" title="3.5–4 ms: 27 ticks"></div>
+<div class="hb" style="height:100%" title="4–4.5 ms: 152 ticks"></div>
+<div class="hb" style="height:70.3947%" title="4.5–5 ms: 107 ticks"></div>
+<div class="hb" style="height:63.8158%" title="5–5.5 ms: 97 ticks"></div>
+<div class="hb" style="height:44.7368%" title="5.5–6 ms: 68 ticks"></div>
+<div class="hb" style="height:30.9211%" title="6–6.5 ms: 47 ticks"></div>
+<div class="hb" style="height:15.1316%" title="6.5–7 ms: 23 ticks"></div>
+<div class="hb" style="height:9.21053%" title="7–7.5 ms: 14 ticks"></div>
+<div class="hb" style="height:3.94737%" title="7.5–8 ms: 6 ticks"></div>
+<div class="hb o" style="height:3.28947%" title="8–8.5 ms: 5 ticks"></div>
+<div class="hb o" style="height:1.97368%" title="8.5–9 ms: 3 ticks"></div>
+<div class="hb o" style="height:0%" title="9–9.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="9.5–10 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="10–10.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="10.5–11 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="11–11.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="11.5–12 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="12–12.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="12.5–13 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="13–13.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="13.5–14 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="14–14.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="14.5–15 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="15–15.5 ms: 0 ticks"></div>
+<div class="hb o" style="height:0%" title="15.5–16 ms: 0 ticks"></div>
+</div>
+<div class="sub">横轴 0.5ms/桶；红桶 = 超过 8 ms 帧预算。>8ms: 8 ticks (1.2%)，无 >12ms。</div>
+<h2>各作业耗时占比 (占 job-ms 总量)</h2>
+<table><tr><th>作业</th><th>均摊/帧 ms</th><th>运行均值 ms</th><th>p95</th><th>max</th><th>占比</th></tr>
+<tr><td>native_daily_sim</td><td>1.833</td><td>1.999</td><td>3.649</td><td>6.439</td><td>51.5% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:51.49597320686572%"></div></td></tr>
+<tr><td>ocean_currents</td><td>1.158</td><td>1.738</td><td>2.578</td><td>3.490</td><td>32.5% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:32.53897877593516%"></div></td></tr>
+<tr><td>natural_resource_daily</td><td>0.255</td><td>0.255</td><td>0.362</td><td>0.503</td><td>7.2% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:7.161437480980095%"></div></td></tr>
+<tr><td>dynamic_visual_atlas_upload</td><td>0.173</td><td>0.346</td><td>0.471</td><td>0.930</td><td>4.9% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:4.857955348325901%"></div></td></tr>
+<tr><td>enum_atlas_upload</td><td>0.102</td><td>0.812</td><td>1.292</td><td>1.706</td><td>2.9% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:2.8611263224850414%"></div></td></tr>
+<tr><td>season_refresh</td><td>0.039</td><td>0.039</td><td>0.053</td><td>0.236</td><td>1.1% <div style="background:#4aa3ff;height:14px;border-radius:3px;width:1.0845288654080796%"></div></td></tr>
+</table>
+<h2>单帧最大切片归属 (largest_slice)</h2>
+<div class="note">
+每帧最重切片的作业分布：
+<div>ocean_currents — 384 ticks (56.0%)</div>
+<div>native_daily_sim — 302 ticks (44.0%)</div>
+<div style="margin-top:6px">全局最重单切片：<b class="bad">6.412 ms</b>（native_daily_sim / native_daily_complete）</div>
+<div>trailing-300 窗口内 &gt;1ms 切片数：均值 252.7 / 最大 258（≈每 tick 都有 &gt;1ms 切片）</div>
+</div>
+<h2>native_daily_sim · 各阶段耗时 (ms, 仅运行行)</h2>
+<table><tr><th>阶段</th><th>n</th><th>均值</th><th>p95</th><th>max</th><th>占比</th><th></th></tr>
+<tr><td>native_daily_complete</td><td>57</td><td>3.638</td><td>5.568</td><td>6.439</td><td>16.5%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:100%"></div></td></tr>
+<tr><td>climate_pass_a</td><td>57</td><td>3.314</td><td>4.191</td><td>4.685</td><td>15.0%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:72.75974530206553%"></div></td></tr>
+<tr><td>weather</td><td>57</td><td>2.976</td><td>3.533</td><td>4.134</td><td>13.5%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:64.2025159186209%"></div></td></tr>
+<tr><td>ocean_water</td><td>58</td><td>2.218</td><td>2.869</td><td>4.306</td><td>10.2%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:66.87373815809909%"></div></td></tr>
+<tr><td>runtime_hydrology</td><td>57</td><td>1.679</td><td>2.092</td><td>2.480</td><td>7.6%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:38.51529740642957%"></div></td></tr>
+<tr><td>wind_air</td><td>57</td><td>1.581</td><td>2.406</td><td>2.927</td><td>7.2%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:45.45736915670135%"></div></td></tr>
+<tr><td>sea_ice</td><td>57</td><td>1.462</td><td>2.053</td><td>2.466</td><td>6.6%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:38.297872340425535%"></div></td></tr>
+<tr><td>wind_surface</td><td>57</td><td>1.420</td><td>1.844</td><td>2.213</td><td>6.4%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:34.36869079049542%"></div></td></tr>
+<tr><td>ocean_land</td><td>57</td><td>1.290</td><td>1.707</td><td>1.912</td><td>5.8%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:29.6940518714086%"></div></td></tr>
+<tr><td>transpiration</td><td>57</td><td>1.244</td><td>1.794</td><td>2.074</td><td>5.6%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:32.209970492312465%"></div></td></tr>
+<tr><td>climate_pass_b</td><td>58</td><td>1.177</td><td>1.422</td><td>1.775</td><td>5.4%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:27.566392296940517%"></div></td></tr>
+</table>
+<h2>ocean_currents · 各阶段耗时 (ms, 仅运行行)</h2>
+<table><tr><th>阶段</th><th>n</th><th>均值</th><th>p95</th><th>max</th><th>占比</th><th></th></tr>
+<tr><td>phys_psi_init</td><td>57</td><td>2.211</td><td>2.693</td><td>3.490</td><td>15.9%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:100%"></div></td></tr>
+<tr><td>phys_wind</td><td>114</td><td>2.029</td><td>2.816</td><td>3.105</td><td>29.1%</td><td style="width:160px"><div style="background:#ffb454;height:14px;border-radius:3px;width:88.96848137535817%"></div></td></tr>
+<tr><td>phys_slp</td><td>115</td><td>1.828</td><td>2.124</td><td>2.430</td><td>26.5%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:69.62750716332378%"></div></td></tr>
+<tr><td>daily_wind_prepass</td><td>114</td><td>1.666</td><td>1.966</td><td>2.109</td><td>23.9%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:60.429799426934096%"></div></td></tr>
+<tr><td>phys_upwelling</td><td>57</td><td>0.649</td><td>0.890</td><td>0.988</td><td>4.7%</td><td style="width:160px"><div style="background:#4aa3ff;height:14px;border-radius:3px;width:28.30945558739255%"></div></td></tr>
+</table>
+<h2>对比上一轮 (20260707_202818) 与优化指向</h2>
+<div class="note">
+<p><span class="tag d">修复</span> <b>enum_atlas_upload 的 7.5ms 偶发尖峰已消失</b>（本轮 max 仅 1.7ms，运行 86 次）——上一轮最大的尾部风险已修复。但基线被新系统抬高：<b>natural_resource_daily 每 tick 跑 0.255ms（占 7.2%）</b>、dynamic_visual_atlas_upload 0.173ms，两者是上一轮没有的常驻负载。</p>
+<p><span class="tag o">变化</span> native_daily_sim 的 <b>weather 尖峰从 7.79→4.13ms 收敛</b>，但 <b>native_daily_complete 收尾片反而变重（3.89→6.44ms max）</b>，成为新的全局最重单切片。ocean_currents 各阶段基本不变（phys_wind 1.88→2.03、phys_slp 1.71→1.83）——符合预期：本轮为桌面捕获，period-scale 改动默认 scale=1.0 为 no-op（仅移动端 / ocean_period_scale_weak&gt;1 生效）。</p>
+<p><b>结论：</b>两作业仍占 job-ms 的 <b>84%%</b>（native 51.5%% + ocean 32.5%%），且每个阶段切片 1.1–3.6ms 全部 &gt;&gt; 1.0ms 切片预算，仍是「节点/阶段粒度、不可抢占」的老问题。真正杠杆仍是 <b>cutting_native_daily_ocean.md §7</b> 的：① 削 native_daily_complete 收尾 flush/publish；② 削 GDScript wrapper 开销（复用 knob dict / 缓存 neighbor / 直接 slot 写）；③ 弱机/移动端 period-scale（已落地，待你本地构建后 PROBE 验收）。</p>
+<p class="sub">上一轮参考：t_sus 均值 4.23 / p95 5.88 / max 11.29；native 均摊 1.65；ocean 均摊 1.06；enum_atlas max 7.5×61tick。</p>
+</div>
+</body></html>

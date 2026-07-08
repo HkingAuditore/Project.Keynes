@@ -98,7 +98,7 @@ DCSystemScheduler
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
-| `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。 |
+| `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。各 physical stage 内部现支持**按 cell 区间切片**（`start_idx`/`end_idx` knob，由 `MapBaker` 的 stage 内 cell cursor 驱动），进一步打散单帧尖峰；stage 名与全部 `fail()` fallback 路径不变，且**默认关闭（inert-by-default）**，需本地验收通过后才可开启。 |
 | `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
 | `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript 只做 SUS shell、bundle round-start、fallback/debug 和 Godot visual boundary。 |
 
@@ -185,6 +185,23 @@ DCSystemScheduler
   slice 发轻量 continue knobs，并可携带 `native_daily_bundle_patch`。patch 只刷新当前即将执行
   节点所需的动态 knobs（如 pass-b / ocean / wind / sea-ice / transpiration），避免 graph round
   继续读取 round-start 的旧温度、TTA 或气团状态。
+- **Node-range slicing（2026-07，默认关闭）**：`ClimateProfile.native_daily_node_range_enabled`
+  打开后，GDScript 会把 `native_daily_node_range_cells` 和
+  `native_daily_node_range_nodes` 传给 `DCWorldExt::run_native_daily_slice()`。C++ 在同一个
+  graph node 内持有 cell cursor；白名单节点每次只执行 `[start_idx,end_idx)`，未完成时保持
+  `_native_daily_slice_node_index` 不变并返回 `done=false`，下一 SUS slice 继续同一节点且不重复
+  JIT patch。节点完整处理后才沿用既有 yield / deferred / graph cursor 规则。首批支持节点是
+  `ocean_water`、`ocean_land`、`wind_air`、`wind_surface` 和 split weather 下的
+  `weather_field`；`stage_b`、`runtime_hydrology`、`weather_summary`、`weather_cyclone`
+  仍保持整节点。中间 chunk 通过 `defer_flush=true` 留在 C++ slots，末 chunk 才 flush 到
+  `MapData`，避免把边界成本乘以 chunk 数。report 字段包括
+  `node_range_active`、`node_range_node`、`node_cell_cursor_start/end/count/processed`。
+- **Finalizer pseudo-node（2026-07，默认关闭）**：
+  `native_daily_finalizer_slice_enabled=true` 时，C++ graph 完成的 slice 先返回
+  `stage=native_daily_finalizer substage=pending done=false`，下一次 `NativeDailySimJob`
+  slice 专门执行 `_native_daily_apply_finalizer()`，再发布 round completion。它先把
+  `native_daily_complete` 与 graph done 片拆开，后续若 finalizer 自身仍超预算，再继续做
+  DataCore 写回/range finalizer 细切。
 - **Lazy knobs / deferred nodes（2026-07）**：production hot path 的 round-start
   bundle 只携带首节点 `climate_pass_a_struct` 和调度/readiness 元数据；后续
   `climate_pass_b`、`ocean_water/land`、`wind_air/surface`、`sea_ice`、
@@ -455,6 +472,7 @@ legacy `SusJob` 和 C++ `SusSchedulerExt` 都维护 skip 统计。长期 `frame_
 - `run_slice()` 必须返回结构化 report，至少包含 `done`、`elapsed_ms`、`progress_ratio`、`stage_name`。
 - C++/fallback path 必须写进 report，不能只写日志。
 - 长 pass 要拆 stage 或 cell/pixel range，不要依赖 scheduler 抢占。
+  - ocean physical stage 已落地该规则：`run_slp_field_pass` / `run_wind_field_pass` / `run_physical_circulation_pass` 现接受 cell-range knob，由 `OceanCurrentsJob._physical_solve_step_one` 的 stage 内 cursor 把 SLP/wind/upwelling 各自摊到多 tick；全局归约（SLP recenter/p95/融合/发布、WIND coast BFS）只在末切片执行，沿用文档既定 `start_idx==0`（一轮首切片）/`end_idx==n_cells`（末切片）idiom。PSI 因 Gauss-Seidel 全扫掠按设计不做 cell-range 切片。默认关闭，开启前须 bit-equal + 零 fallback + 每切片 <1ms 验收。
 - `must_run` 只用于物理/气候等不能冻结的系统，不用于普通上传。
 - 上传类 job 可以被 budget skip，但要有 starvation 保护或 dirty queue 机制。
 - job 内部调用 C++ pass 后，必须把 native breakdown 合并进 report，供 `main.gd` 输出。
@@ -551,7 +569,22 @@ daily_wind_prepass/<daily_wind_slp|daily_wind_wind>` points straight at the
 sub-stage that ate the budget. The slice report also surfaces
 `daily_wind_slp_ms`, `daily_wind_wind_ms`, `daily_wind_dominant_stage`, and
 `daily_wind_dominant_stage_ms` directly (independent of the
-`_record_phys_diag` `daily_wind_*` prefix merge).
+  `_record_phys_diag` `daily_wind_*` prefix merge).
+
+### Physical stage 内 cell 切片游标（inert-by-default，2026-07）
+
+`ocean_currents` 的 slow chain（SLP → wind → upwelling；PSI 沿用既有迭代切片）除既有
+`ocean_currents_period_ticks` / `ocean_currents_slice_count` 的**跨 tick 切片**外，现新增
+**stage 内 cell-range 切片**：`MapBaker` 持 `_phys_cell_slice_enabled`（默认 `false`，关闭时
+游标不写入 knob、C++ 退化为整图 `start_idx=0/end_idx=n_cells` 调用，行为完全等价）、
+`_phys_cell_slice_divisor` 与三枚游标 `_phys_slp_cursor` / `_phys_wind_cursor` /
+`_phys_upwelling_cursor`。开启后每个 physical stage 被切成多 tick：调用 C++ pass 时注入
+`start_idx=cursor, end_idx=min(cursor+cells_per_tick, n_cells)`，推进 cursor，末切片
+（`end_idx == n_cells`）才写回 `map.slp_arr` / commit WIND / 复位游标并进入下一 stage。游标
+仅在每轮 solve 的 `_PHYS_STAGE_NONE → SLP` 边界归零，stage 名（`phys_slp`/`phys_wind`/
+`phys_psi_*`/`phys_upwelling`）稳定，全部 `fail()` fallback 路径保留。该能力须本地 rebuild DLL
+并跑 30+ tick PROBE（bit-equal、零 fallback、每切片 p95/max < 1ms、轨迹无漂移）后才可设
+`_phys_cell_slice_enabled = true`，否则保持关闭即历史行为。
 
 `main.gd._print_daily_breakdown()` prints a dedicated `daily_wind stage=… path=…
 slp=… wind=… total=… refresh=… dominant=…/… slp_dp95=… wind_dp95=… commit=…

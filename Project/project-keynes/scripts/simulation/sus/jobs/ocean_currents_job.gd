@@ -163,6 +163,8 @@ func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
 	period_ticks = ocean_period_ticks
 	slice_count = max(1, p_slice_count)
 	_slow_slice_policy = SusPolicyScript.ContinuousSlicedPolicy.new(ocean_period_ticks, slice_count)
+	# 弱机/移动端：拉长物理解周期（见 _apply_device_period_scale）。
+	_apply_device_period_scale()
 	# Keep this job policy-forwarded. Stateful should_run() gates require
 	# use_job_should_run=true, but the slow ocean/pixel chain is intentionally
 	# gated inside run_slice() while the daily wind prepass stays eligible.
@@ -596,6 +598,31 @@ func _daily_wind_split_active() -> bool:
 	if "daily_wind_split_passes" in cp:
 		return bool(cp.daily_wind_split_passes)
 	return false
+
+
+# 弱机/移动端物理解周期缩放（item ④）。
+# 把 ocean_currents / wind 物理解的周期拉长（每 2–3 日而非每日），降低单帧物理尖峰
+# 出现的频率。注意：
+#   - wind/ocean_current/upwelling 仍由 ContinuousSlicedPolicy 节奏更新，不会整体冻结；
+#     weather 与 ocean heat transport 仍按节奏读到新鲜 per-cell 场（注释见 should_run）。
+#   - 每日风预解继续走 daily_wind_split_passes 错峰 SLP/wind，而非停更。
+#   - 仅改变"多久跑一轮"，不改变单阶段工作量（单片 magnitude 由 per-cell 切片负责，
+#     那是需要持久化中间状态的 native 重构，需重建 GDExtension + PROBE/A-B，本改动不动）。
+# 触发：移动端默认 ×2；或 ClimateProfile.ocean_period_scale_weak > 1 时按该值缩放
+# （弱 PC 可在 profile 设 2.0~3.0）。字段缺失视为 1.0（桌面不动）。
+func _apply_device_period_scale() -> void:
+	var scale: float = 1.0
+	if OS.has_feature("mobile"):
+		scale = 2.0
+	if cfg != null and cfg.climate_profile != null \
+			and cfg.climate_profile.get("ocean_period_scale_weak") != null:
+		scale = max(1.0, float(cfg.climate_profile.ocean_period_scale_weak))
+	if scale <= 1.0:
+		return
+	wind_period_ticks = max(1, int(round(float(wind_period_ticks) * scale)))
+	ocean_period_ticks = max(1, int(round(float(ocean_period_ticks) * scale)))
+	period_ticks = ocean_period_ticks
+	_slow_slice_policy = SusPolicyScript.ContinuousSlicedPolicy.new(ocean_period_ticks, slice_count)
 
 
 func _daily_wind_stage_for(ctx: SusTickContext) -> String:
@@ -1234,5 +1261,7 @@ func reconfigure(p_period_ticks: int, p_slice_count: int, p_ocean_period_ticks: 
 	period_ticks = ocean_period_ticks
 	slice_count = max(1, p_slice_count)
 	_slow_slice_policy = SusPolicyScript.ContinuousSlicedPolicy.new(ocean_period_ticks, slice_count)
+	# 弱机/移动端：拉长物理解周期（见 _apply_device_period_scale）。
+	_apply_device_period_scale()
 	policy = SusPolicyScript.AlwaysPolicy.new()
 	# A round mid-flight stays as-is — only future rounds use the new pace.

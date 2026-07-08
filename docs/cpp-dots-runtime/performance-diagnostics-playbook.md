@@ -136,6 +136,7 @@ native_daily_sim ran=... progress=0.46
 - 移动端主场景应先出现 `[WorldSetup] ClimateProfile path=res://data/world/earth_like_mobile_complex.tres mobile=true split_weather=true wind_period=6`，随后首个 native slice 日志应包含 `split=true split_skipped_monolithic=true`，并在 breakdown / largest 中出现 `weather_field` 等 split 节点。`weather_knobs embedded` 只表示 bundle 仍携带天气输入，不单独代表 monolithic；如果小米/Android log 仍显示 `wind_period=3`、`split=false` 或完全没有 split 节点，先查 profile 是否未加载；如果 profile 日志已经是 split=true 但 native slice 仍没有 split 字段，再查 Android GDExtension `.so` 是否旧、是否已重建并重启应用。
 - 移动端复杂 profile 还把 `weather_field_advect_steps` 覆盖为 `4`（桌面默认仍为 `8`），用更短上风采样降低 `weather_field/weather_knobs` 的单节点峰值。若天气场尖峰仍高，先看 slow dump 里的 `adv=...` 是否继续主导，再决定是否继续拆 field solve。
 - `[fast tick WARN]` 中 `native_daily/finalizer ...` 只在 native daily round 完成并执行 finalizer 时打印。它用于解释 `largest=native_daily_sim/native_daily_complete/round_complete`：`cell/temp/tta/thermal/sort/sea_ice/precip` 定位计算段，`write_mode/dense/sparse/dirty_collect/dirty_ratio/dirty=temp/tta/thermal/comps_dense/comps_sparse` 定位 DataCore 可见写入，`temp_clamped/tta_clamped/thermal_init/max_dt/pre_max_dt` 定位稳定性 clamp。`main.gd` 优先读 scheduler report 的 `native_daily_report`，旧/裁剪 report 缺嵌套字段时回退读 `MapGenerator.native_daily_last_result()`。若 `finalizer_total_ms` 高但 `cell_ms` 低，优先查 sparse/dense 写入和 dirty ratio；`mixed_sparse_dense` 表示每个 component 独立选择 sparse/dense，常见于 temp/thermal dirty 高但 TTA dirty 低的移动端 round；`dirty_skip=true` / `skip_comps=[...]` 表示 `sparse_perf` 命中上一轮高 dirty hint，本轮跳过对应 component 的 GDScript dirty collect 并直接 dense 写；若 `cell_ms` 高，继续区分 native finalizer path 与 temp/TTA/thermal 子段。
+- `native_daily_complete` 的 `apply_ms` 是完成 slice 的 GDScript 可见收尾墙钟，已经拆出 `complete_apply_*` 子字段：`publish_tta` 是 raw/clamped TTA 发布到 `MapData`/DataCore 的 wrapper 成本；`weather_result` 是 `WeatherSystem.apply_unified_fast_tick_result()`；`visual_intents` 是 fronts/LUT/atlas dirty intent 应用；`finalizer` 是 `_native_daily_apply_finalizer()` 外层调用墙钟；`finalizer_merge` 是 finalizer diag 合并；`result_patch` 是把最终输出重新挂回 result；`observed` 是这些子段求和；`other = apply_ms - observed`，用于定位清理状态、字典写入或尚未细分的 GDScript glue。
 - 如果又看到 `native_daily_sim/native_daily path=gdext_native_daily` 单片 9-11ms，说明当前不是 production `NativeDailySimJob` slice hot path；优先查是否手动调用 debug/full-run helper、DLL 是否旧，或 ACTIVE 注册是否被拒绝后走了别的测试入口。
 - `published_slots`、scheduler-level `published_to_slot` 和 `visual_dirty_intents` 只应在 round 完成 slice 上出现；中间 slice 为空是正常的。graph-level `published_to_slot=true` 不替代具体 pass 的 visible flush 证据。
 - `authority_blockers` 只看 simulation authority 和 production fallback；`retained_boundaries` 才看 `visual_uploads`、front objects、ImageTexture/LUT upload、sea-ice atlas、ocean texture commit、season detail scatter、CSV/debug。`graph_coverage_state=complete` 不要求这些 Godot presentation boundaries 消失。
@@ -146,6 +147,7 @@ Slow native daily slices now print independently of `[fast tick WARN]`:
 ```text
 [native_daily/slow-dump] tick=... stage=.../... node=.../... cursor=... done=... wall=... bundle=... jit=... keys=... native_call=... cpp=... compute=... refresh=... flush=... apply=... round=... weather=... prebuilt=...
 [native_daily/slow-dump/weather] field=... commit=... commit_loop=... dist=... summary=... cyclone=... stage_b=... adv=... fronts=... active=... lut_dirty=... conv_dirty=...
+[native_daily/slow-dump/complete-apply] total=... observed=... other=... publish_tta=... weather_result=... visual=... finalizer=... merge=... result_patch=...
 [native_daily/slow-dump/finalizer] total=... cell=... temp=... tta=... thermal=... sea_ice=... precip=... write_mode=... dense=... sparse=... dirty_collect=... dirty_skip=... skip_comps=... dirty_ratio=...
 ```
 
@@ -353,6 +355,30 @@ samples, the expected daily C++ path is:
   should be rare and tied to real fronts/terrain, not broad near-zero flux noise.
 - `phys_ticks_per_slice` may be greater than 1; that describes the slow
   ocean/raster chain and should not prevent daily wind updates
+- `phys_slp_cell_cursor` / `phys_wind_cell_cursor` / `phys_psi_cell_cursor`：stage 内
+  cell 切片游标；末切片时 `== n_cells`，用于确认切片按预期推进、无中途 stall。仅在
+  cell-range 切片开启（默认关闭）时出现。
+- `phys_cell_slice_enabled`：是否启用 stage 内 cell 切片（默认 `false`，inert-by-default）。
+- `j_native_daily_sim_*` 与 `bd_climate_*` 的 native daily 诊断现在会透出
+  `node_index`、`next_node_index`、`last_completed_node`、`processed_nodes`、
+  `jit_patch_build_ms`、`jit_patch_keys`、`deferred_wait_node/key`、finalizer dirty-collect
+  skip 字段，以及 node-range 字段 `node_range_active`、`node_range_node`、
+  `node_cell_cursor_start/end/count/processed`。若 slow dump 显示
+  `cells=start-end/count`，说明尖峰来自同一 graph node 内的 cell chunk，而非 bundle/JIT
+  或 finalizer。
+- 若 `j_native_daily_sim_ms` 明显大于 `bd_climate_wrapper_wall_ms`，先看
+  `j_native_daily_sim_slice_actual_ms`、`j_native_daily_sim_slice_reported_ms`、
+  `j_native_daily_sim_slice_reported_gap_ms`、`j_native_daily_sim_slice_wrapper_wall_ms`、
+  `j_native_daily_sim_slice_job_shell_wall_ms` 和 `j_native_daily_sim_job_wrapper_gap_ms`：
+  `slice_actual` 是 SUS 外层调用 `run_slice()` 的墙钟，`slice_reported` 是 job 返回的
+  `elapsed_ms`，`slice_reported_gap` 表示 GDExtension/GDScript 调用壳、report 构造或字段对齐
+  没有被 wrapper breakdown 覆盖。`bd_climate_job_shell_*` 是 `NativeDailySimJob` 内部同口径
+  自测，可用于区分 C++ SUS 外层开销和 job 内 report 构造开销。
+- `native_daily_finalizer_slice_enabled=true` 时，CSV 会先出现
+  `stage=native_daily_finalizer substage=pending done=false`，下一片才是
+  `native_daily_complete`。判断是否还要继续细切 finalizer，应看完成片的
+  `finalizer_cell_ms`、`finalizer_write_dense_ms`、`finalizer_sparse_write_ms` 和
+  `finalizer_dirty_collect_ms`，不要把 pending 片误读成一次完整 round。
 
 If a due tick reports `phys_daily_wind_ran=false`, read
 `phys_daily_wind_fallback_reason` first.

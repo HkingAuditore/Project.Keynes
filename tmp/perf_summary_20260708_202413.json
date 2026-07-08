@@ -1,0 +1,7549 @@
+{
+  "source": "d:\\Godot\\ProjectKeynes\\Project.Keynes\\tmp\\perf_record_20260708_202413.csv",
+  "rows": 327,
+  "fields": 562,
+  "tick_start": 1390,
+  "tick_end": 1716,
+  "frame": {
+    "fast_ms": {
+      "n": 327,
+      "avg": 4.253822629969419,
+      "p50": 4.0,
+      "p90": 6.0,
+      "p95": 6.0,
+      "p99": 7.0,
+      "max": 10.0
+    },
+    "t_sus_ms": {
+      "n": 327,
+      "avg": 4.234223241590214,
+      "p50": 4.348,
+      "p90": 5.602,
+      "p95": 5.874,
+      "p99": 6.781,
+      "max": 9.709
+    },
+    "t_render_ms": {
+      "n": 327,
+      "avg": 0.02359633027522936,
+      "p50": 0.008,
+      "p90": 0.01,
+      "p95": 0.01,
+      "p99": 0.561,
+      "max": 0.609
+    },
+    "t_ui_ms": {
+      "n": 327,
+      "avg": 0.00020489296636085627,
+      "p50": 0.0,
+      "p90": 0.001,
+      "p95": 0.001,
+      "p99": 0.001,
+      "max": 0.001
+    },
+    "largest_slice_ms": {
+      "n": 327,
+      "avg": 1.6666146788990823,
+      "p50": 1.552,
+      "p90": 2.201,
+      "p95": 2.341,
+      "p99": 3.031,
+      "max": 6.278
+    },
+    "sus_sim_avg_300": {
+      "n": 327,
+      "avg": 3.149977152905199,
+      "p50": 3.144934,
+      "p90": 3.188774,
+      "p95": 3.19156,
+      "p99": 3.192126,
+      "max": 3.19321
+    },
+    "sus_sim_p95_300": {
+      "n": 327,
+      "avg": 4.736941896024465,
+      "p50": 4.755,
+      "p90": 4.757,
+      "p95": 4.757,
+      "p99": 4.759,
+      "max": 4.759
+    },
+    "sus_sim_max_300": {
+      "n": 327,
+      "avg": 6.849314984709481,
+      "p50": 6.887,
+      "p90": 7.832,
+      "p95": 7.832,
+      "p99": 7.832,
+      "max": 7.832
+    }
+  },
+  "top_ticks": {
+    "fast_ms": [
+      {
+        "tick": 1596,
+        "metric": 10.0,
+        "fast_ms": 10.0,
+        "sus_ms": 9.709,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 6.278,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1494,
+        "metric": 8.0,
+        "fast_ms": 8.0,
+        "sus_ms": 8.196,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.907,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1492,
+        "metric": 7.0,
+        "fast_ms": 7.0,
+        "sus_ms": 6.995,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.337,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1548,
+        "metric": 7.0,
+        "fast_ms": 7.0,
+        "sus_ms": 6.822,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.674,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      },
+      {
+        "tick": 1590,
+        "metric": 7.0,
+        "fast_ms": 7.0,
+        "sus_ms": 5.581,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 1.929,
+        "native_stage": "native_daily_complete",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "native_daily_complete"
+      },
+      {
+        "tick": 1632,
+        "metric": 7.0,
+        "fast_ms": 7.0,
+        "sus_ms": 6.528,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.058,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1650,
+        "metric": 7.0,
+        "fast_ms": 7.0,
+        "sus_ms": 6.359,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 2.068,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      },
+      {
+        "tick": 1392,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 5.658,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.201,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1404,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 5.939,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.285,
+        "native_stage": "ocean_land",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_land"
+      },
+      {
+        "tick": 1414,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 5.307,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_slp",
+        "largest_substage": "next_phys_wind",
+        "largest_path": "gdext",
+        "largest_ms": 1.61,
+        "native_stage": "weather_distribute",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_distribute"
+      },
+      {
+        "tick": 1416,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 6.0,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.139,
+        "native_stage": "weather_cyclone",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_cyclone"
+      },
+      {
+        "tick": 1420,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 4.849,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "native_daily_complete",
+        "largest_substage": "round_complete",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 1.585,
+        "native_stage": "native_daily_complete",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "native_daily_complete"
+      },
+      {
+        "tick": 1428,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 6.043,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.053,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1440,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 5.431,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.111,
+        "native_stage": "ocean_land",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_land"
+      },
+      {
+        "tick": 1446,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 5.857,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 1.915,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      }
+    ],
+    "t_sus_ms": [
+      {
+        "tick": 1596,
+        "metric": 9.709,
+        "fast_ms": 10.0,
+        "sus_ms": 9.709,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 6.278,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1494,
+        "metric": 8.196,
+        "fast_ms": 8.0,
+        "sus_ms": 8.196,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.907,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1492,
+        "metric": 6.995,
+        "fast_ms": 7.0,
+        "sus_ms": 6.995,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.337,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1548,
+        "metric": 6.822,
+        "fast_ms": 7.0,
+        "sus_ms": 6.822,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.674,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      },
+      {
+        "tick": 1452,
+        "metric": 6.781,
+        "fast_ms": 6.0,
+        "sus_ms": 6.781,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.511,
+        "native_stage": "runtime_hydrology",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "runtime_hydrology"
+      },
+      {
+        "tick": 1632,
+        "metric": 6.528,
+        "fast_ms": 7.0,
+        "sus_ms": 6.528,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.058,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1524,
+        "metric": 6.45,
+        "fast_ms": 6.0,
+        "sus_ms": 6.45,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.369,
+        "native_stage": "climate_pass_b",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_b"
+      },
+      {
+        "tick": 1650,
+        "metric": 6.359,
+        "fast_ms": 7.0,
+        "sus_ms": 6.359,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 2.068,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      },
+      {
+        "tick": 1659,
+        "metric": 6.157,
+        "fast_ms": 6.0,
+        "sus_ms": 6.157,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.189,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1470,
+        "metric": 6.077,
+        "fast_ms": 6.0,
+        "sus_ms": 6.077,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 2.019,
+        "native_stage": "ocean_land",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_land"
+      },
+      {
+        "tick": 1557,
+        "metric": 6.058,
+        "fast_ms": 6.0,
+        "sus_ms": 6.058,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.223,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1428,
+        "metric": 6.043,
+        "fast_ms": 6.0,
+        "sus_ms": 6.043,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.053,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1416,
+        "metric": 6.0,
+        "fast_ms": 6.0,
+        "sus_ms": 6.0,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.139,
+        "native_stage": "weather_cyclone",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_cyclone"
+      },
+      {
+        "tick": 1656,
+        "metric": 5.983,
+        "fast_ms": 6.0,
+        "sus_ms": 5.983,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.242,
+        "native_stage": "runtime_hydrology",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "runtime_hydrology"
+      },
+      {
+        "tick": 1530,
+        "metric": 5.952,
+        "fast_ms": 6.0,
+        "sus_ms": 5.952,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_psi_init",
+        "largest_substage": "next_phys_upwelling",
+        "largest_path": "gdext",
+        "largest_ms": 2.072,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      }
+    ],
+    "largest_slice_ms": [
+      {
+        "tick": 1596,
+        "metric": 6.278,
+        "fast_ms": 10.0,
+        "sus_ms": 9.709,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 6.278,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1557,
+        "metric": 3.223,
+        "fast_ms": 6.0,
+        "sus_ms": 6.058,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.223,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1659,
+        "metric": 3.189,
+        "fast_ms": 6.0,
+        "sus_ms": 6.157,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.189,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1693,
+        "metric": 3.035,
+        "fast_ms": 4.0,
+        "sus_ms": 4.285,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.035,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1421,
+        "metric": 3.031,
+        "fast_ms": 4.0,
+        "sus_ms": 4.234,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.031,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1455,
+        "metric": 3.014,
+        "fast_ms": 6.0,
+        "sus_ms": 5.745,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 3.014,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1591,
+        "metric": 2.958,
+        "fast_ms": 4.0,
+        "sus_ms": 4.156,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.958,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1494,
+        "metric": 2.907,
+        "fast_ms": 8.0,
+        "sus_ms": 8.196,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.907,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1523,
+        "metric": 2.891,
+        "fast_ms": 4.0,
+        "sus_ms": 4.123,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.891,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1489,
+        "metric": 2.877,
+        "fast_ms": 4.0,
+        "sus_ms": 4.091,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.877,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1625,
+        "metric": 2.84,
+        "fast_ms": 5.0,
+        "sus_ms": 4.076,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "climate_pass_a",
+        "largest_substage": "climate_pass_a_struct",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.84,
+        "native_stage": "climate_pass_a",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "climate_pass_a"
+      },
+      {
+        "tick": 1493,
+        "metric": 2.7,
+        "fast_ms": 4.0,
+        "sus_ms": 4.041,
+        "largest_job": "native_daily_sim",
+        "largest_stage": "ocean_water",
+        "largest_substage": "ocean_water_knobs",
+        "largest_path": "gdext_native_daily_slice",
+        "largest_ms": 2.7,
+        "native_stage": "ocean_water",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "ocean_water"
+      },
+      {
+        "tick": 1548,
+        "metric": 2.674,
+        "fast_ms": 7.0,
+        "sus_ms": 6.822,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.674,
+        "native_stage": "weather_field",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "weather_field"
+      },
+      {
+        "tick": 1452,
+        "metric": 2.511,
+        "fast_ms": 6.0,
+        "sus_ms": 6.781,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.511,
+        "native_stage": "runtime_hydrology",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "runtime_hydrology"
+      },
+      {
+        "tick": 1716,
+        "metric": 2.386,
+        "fast_ms": 6.0,
+        "sus_ms": 5.871,
+        "largest_job": "ocean_currents",
+        "largest_stage": "phys_wind",
+        "largest_substage": "next_phys_done",
+        "largest_path": "gdext",
+        "largest_ms": 2.386,
+        "native_stage": "transpiration",
+        "native_path": "gdext_native_daily_slice",
+        "bd_stage": "transpiration"
+      }
+    ]
+  },
+  "largest_groups": [
+    {
+      "job": "native_daily_sim",
+      "stage": "climate_pass_a",
+      "path": "gdext_native_daily_slice",
+      "n": 9,
+      "avg": 3.0064444444444445,
+      "p50": 3.014,
+      "p90": 3.189,
+      "p95": 3.189,
+      "p99": 3.189,
+      "max": 3.223
+    },
+    {
+      "job": "ocean_currents",
+      "stage": "phys_wind",
+      "path": "gdext",
+      "n": 40,
+      "avg": 2.0722,
+      "p50": 2.129,
+      "p90": 2.369,
+      "p95": 2.511,
+      "p99": 2.674,
+      "max": 6.278
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "ocean_water",
+      "path": "gdext_native_daily_slice",
+      "n": 47,
+      "avg": 1.661468085106383,
+      "p50": 1.494,
+      "p90": 2.08,
+      "p95": 2.337,
+      "p99": 2.7,
+      "max": 2.907
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_field",
+      "path": "gdext_native_daily_slice",
+      "n": 6,
+      "avg": 2.0495,
+      "p50": 2.035,
+      "p90": 2.102,
+      "p95": 2.102,
+      "p99": 2.102,
+      "max": 2.15
+    },
+    {
+      "job": "ocean_currents",
+      "stage": "phys_psi_init",
+      "path": "gdext",
+      "n": 26,
+      "avg": 2.005576923076923,
+      "p50": 2.019,
+      "p90": 2.08,
+      "p95": 2.086,
+      "p99": 2.215,
+      "max": 2.264
+    },
+    {
+      "job": "ocean_currents",
+      "stage": "daily_wind_prepass",
+      "path": "gdext_daily_wind_slp",
+      "n": 43,
+      "avg": 1.5660232558139535,
+      "p50": 1.518,
+      "p90": 1.771,
+      "p95": 1.836,
+      "p99": 1.927,
+      "max": 1.979
+    },
+    {
+      "job": "ocean_currents",
+      "stage": "phys_slp",
+      "path": "gdext",
+      "n": 51,
+      "avg": 1.6328039215686274,
+      "p50": 1.607,
+      "p90": 1.744,
+      "p95": 1.808,
+      "p99": 1.978,
+      "max": 2.126
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "wind_air",
+      "path": "gdext_native_daily_slice",
+      "n": 9,
+      "avg": 1.6243333333333334,
+      "p50": 1.569,
+      "p90": 1.67,
+      "p95": 1.67,
+      "p99": 1.67,
+      "max": 2.211
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "runtime_hydrology",
+      "path": "gdext_native_daily_slice",
+      "n": 4,
+      "avg": 1.62075,
+      "p50": 1.583,
+      "p90": 1.649,
+      "p95": 1.649,
+      "p99": 1.649,
+      "max": 1.767
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "ocean_land",
+      "path": "gdext_native_daily_slice",
+      "n": 41,
+      "avg": 1.3209268292682927,
+      "p50": 1.302,
+      "p90": 1.513,
+      "p95": 1.593,
+      "p99": 1.617,
+      "max": 1.631
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_commit",
+      "path": "gdext_native_daily_slice",
+      "n": 8,
+      "avg": 1.485375,
+      "p50": 1.482,
+      "p90": 1.565,
+      "p95": 1.565,
+      "p99": 1.565,
+      "max": 1.574
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_summary",
+      "path": "gdext_native_daily_slice",
+      "n": 6,
+      "avg": 1.4593333333333334,
+      "p50": 1.442,
+      "p90": 1.472,
+      "p95": 1.472,
+      "p99": 1.472,
+      "max": 1.52
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "sea_ice",
+      "path": "gdext_native_daily_slice",
+      "n": 7,
+      "avg": 1.3805714285714286,
+      "p50": 1.354,
+      "p90": 1.425,
+      "p95": 1.425,
+      "p99": 1.425,
+      "max": 1.515
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_distribute",
+      "path": "gdext_native_daily_slice",
+      "n": 2,
+      "avg": 1.5150000000000001,
+      "p50": 1.409,
+      "p90": 1.409,
+      "p95": 1.409,
+      "p99": 1.409,
+      "max": 1.621
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "native_daily_complete",
+      "path": "gdext_native_daily_slice",
+      "n": 3,
+      "avg": 1.4483333333333333,
+      "p50": 1.402,
+      "p90": 1.402,
+      "p95": 1.402,
+      "p99": 1.402,
+      "max": 1.585
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "wind_surface",
+      "path": "gdext_native_daily_slice",
+      "n": 3,
+      "avg": 1.344,
+      "p50": 1.339,
+      "p90": 1.339,
+      "p95": 1.339,
+      "p99": 1.339,
+      "max": 1.397
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_stage_b",
+      "path": "gdext_native_daily_slice",
+      "n": 6,
+      "avg": 1.1896666666666667,
+      "p50": 1.165,
+      "p90": 1.258,
+      "p95": 1.258,
+      "p99": 1.258,
+      "max": 1.307
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "transpiration",
+      "path": "gdext_native_daily_slice",
+      "n": 1,
+      "avg": 1.221,
+      "p50": 1.221,
+      "p90": 1.221,
+      "p95": 1.221,
+      "p99": 1.221,
+      "max": 1.221
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather",
+      "path": "gdext_native_daily_slice",
+      "n": 6,
+      "avg": 1.1335,
+      "p50": 1.122,
+      "p90": 1.181,
+      "p95": 1.181,
+      "p99": 1.181,
+      "max": 1.193
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "native_daily_finalizer",
+      "path": "gdext_native_daily_slice",
+      "n": 6,
+      "avg": 1.1064999999999998,
+      "p50": 1.077,
+      "p90": 1.121,
+      "p95": 1.121,
+      "p99": 1.121,
+      "max": 1.297
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "weather_cyclone",
+      "path": "gdext_native_daily_slice",
+      "n": 2,
+      "avg": 1.0535,
+      "p50": 1.019,
+      "p90": 1.019,
+      "p95": 1.019,
+      "p99": 1.019,
+      "max": 1.088
+    },
+    {
+      "job": "native_daily_sim",
+      "stage": "climate_pass_b",
+      "path": "gdext_native_daily_slice",
+      "n": 1,
+      "avg": 1.018,
+      "p50": 1.018,
+      "p90": 1.018,
+      "p95": 1.018,
+      "p99": 1.018,
+      "max": 1.018
+    }
+  ],
+  "jobs": [
+    {
+      "job": "season_refresh",
+      "all": {
+        "n": 327,
+        "avg": 0.03493577981651376,
+        "p50": 0.034,
+        "p90": 0.037,
+        "p95": 0.039,
+        "p99": 0.045,
+        "max": 0.078
+      },
+      "active": {
+        "n": 327,
+        "avg": 0.03493577981651376,
+        "p50": 0.034,
+        "p90": 0.037,
+        "p95": 0.039,
+        "p99": 0.045,
+        "max": 0.078
+      },
+      "paths": [
+        [
+          "b_plus",
+          327
+        ]
+      ],
+      "stages": [
+        [
+          "b_plus_round",
+          327
+        ]
+      ],
+      "skips": []
+    },
+    {
+      "job": "natural_resource_daily",
+      "all": {
+        "n": 327,
+        "avg": 0.22228746177370032,
+        "p50": 0.219,
+        "p90": 0.253,
+        "p95": 0.266,
+        "p99": 0.295,
+        "max": 0.383
+      },
+      "active": {
+        "n": 327,
+        "avg": 0.22228746177370032,
+        "p50": 0.219,
+        "p90": 0.253,
+        "p95": 0.266,
+        "p99": 0.295,
+        "max": 0.383
+      },
+      "paths": [
+        [
+          "gdext",
+          327
+        ]
+      ],
+      "stages": [
+        [
+          "natural_resource_daily",
+          327
+        ]
+      ],
+      "skips": []
+    },
+    {
+      "job": "enum_atlas_upload",
+      "all": {
+        "n": 327,
+        "avg": 0.027957186544342507,
+        "p50": 0.0,
+        "p90": 0.027,
+        "p95": 0.03,
+        "p99": 0.759,
+        "max": 0.897
+      },
+      "active": {
+        "n": 41,
+        "avg": 0.22297560975609754,
+        "p50": 0.029,
+        "p90": 0.759,
+        "p95": 0.81,
+        "p99": 0.856,
+        "max": 0.897
+      },
+      "paths": [
+        [
+          "cpp_skipped_no_dirty",
+          41
+        ]
+      ],
+      "stages": [
+        [
+          "atlas_noop",
+          30
+        ],
+        [
+          "atlas_cover",
+          9
+        ],
+        [
+          "atlas_vegetation",
+          2
+        ]
+      ],
+      "skips": [
+        [
+          "policy_gated",
+          286
+        ]
+      ]
+    },
+    {
+      "job": "ocean_currents",
+      "all": {
+        "n": 327,
+        "avg": 1.070085626911315,
+        "p50": 1.439,
+        "p90": 2.072,
+        "p95": 2.233,
+        "p99": 2.399,
+        "max": 6.293
+      },
+      "active": {
+        "n": 218,
+        "avg": 1.6051284403669726,
+        "p50": 1.598,
+        "p90": 2.151,
+        "p95": 2.292,
+        "p99": 2.4,
+        "max": 6.293
+      },
+      "paths": [
+        [
+          "gdext",
+          137
+        ],
+        [
+          "gdext_daily_wind_slp",
+          54
+        ],
+        [
+          "physical_circulation",
+          27
+        ]
+      ],
+      "stages": [
+        [
+          "phys_slp",
+          55
+        ],
+        [
+          "phys_wind",
+          55
+        ],
+        [
+          "daily_wind_prepass",
+          54
+        ],
+        [
+          "phys_psi_init",
+          27
+        ],
+        [
+          "phys_upwelling",
+          27
+        ]
+      ],
+      "skips": [
+        [
+          "policy_gated",
+          109
+        ]
+      ]
+    },
+    {
+      "job": "native_daily_sim",
+      "all": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      },
+      "active": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      },
+      "paths": [
+        [
+          "gdext_native_daily_slice",
+          327
+        ]
+      ],
+      "stages": [
+        [
+          "ocean_land",
+          90
+        ],
+        [
+          "ocean_water",
+          89
+        ],
+        [
+          "wind_air",
+          10
+        ],
+        [
+          "wind_surface",
+          10
+        ],
+        [
+          "sea_ice",
+          10
+        ],
+        [
+          "transpiration",
+          10
+        ],
+        [
+          "weather",
+          9
+        ],
+        [
+          "weather_field",
+          9
+        ],
+        [
+          "weather_commit",
+          9
+        ],
+        [
+          "weather_distribute",
+          9
+        ],
+        [
+          "weather_summary",
+          9
+        ],
+        [
+          "weather_cyclone",
+          9
+        ]
+      ],
+      "skips": []
+    },
+    {
+      "job": "dynamic_visual_atlas_upload",
+      "all": {
+        "n": 327,
+        "avg": 0.41863608562691135,
+        "p50": 0.768,
+        "p90": 0.843,
+        "p95": 0.864,
+        "p99": 1.014,
+        "max": 1.291
+      },
+      "active": {
+        "n": 164,
+        "avg": 0.834719512195122,
+        "p50": 0.82,
+        "p90": 0.864,
+        "p95": 0.898,
+        "p99": 1.143,
+        "max": 1.291
+      },
+      "paths": [
+        [
+          "cell_indirection_lut",
+          164
+        ]
+      ],
+      "stages": [
+        [
+          "",
+          164
+        ]
+      ],
+      "skips": [
+        [
+          "policy_gated",
+          162
+        ],
+        [
+          "frame_budget_exhausted",
+          1
+        ]
+      ]
+    }
+  ],
+  "top_ms_by_active_avg": [
+    {
+      "col": "timestamp_ms",
+      "active": {
+        "n": 327,
+        "avg": 40592.36391437309,
+        "p50": 40597.0,
+        "p90": 43195.0,
+        "p95": 43510.0,
+        "p99": 43779.0,
+        "max": 43847.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 40592.36391437309,
+        "p50": 40597.0,
+        "p90": 43195.0,
+        "p95": 43510.0,
+        "p99": 43779.0,
+        "max": 43847.0
+      }
+    },
+    {
+      "col": "largest_slice_processed_per_ms",
+      "active": {
+        "n": 210,
+        "avg": 843.4526715142857,
+        "p50": 0.739645,
+        "p90": 4216.073763,
+        "p95": 4315.576417,
+        "p99": 4456.824545,
+        "max": 4678.362469
+      },
+      "all": {
+        "n": 327,
+        "avg": 541.6668532660551,
+        "p50": 0.637349,
+        "p90": 3914.373112,
+        "p95": 4260.985426,
+        "p99": 4422.94394,
+        "max": 4678.362469
+      }
+    },
+    {
+      "col": "bd_climate_round_apply_ms",
+      "active": {
+        "n": 9,
+        "avg": 11.313222222222223,
+        "p50": 11.129,
+        "p90": 11.88,
+        "p95": 11.88,
+        "p99": 11.88,
+        "max": 12.11
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.3113730886850153,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 11.129,
+        "max": 12.11
+      }
+    },
+    {
+      "col": "bd_climate_round_native_call_ms",
+      "active": {
+        "n": 9,
+        "avg": 9.181555555555555,
+        "p50": 9.082,
+        "p90": 9.429,
+        "p95": 9.429,
+        "p99": 9.429,
+        "max": 10.126
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.2527033639143731,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 9.082,
+        "max": 10.126
+      }
+    },
+    {
+      "col": "economy_reserved_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 8.666,
+        "p50": 8.666,
+        "p90": 8.666,
+        "p95": 8.666,
+        "p99": 8.666,
+        "max": 8.666
+      },
+      "all": {
+        "n": 327,
+        "avg": 8.666,
+        "p50": 8.666,
+        "p90": 8.666,
+        "p95": 8.666,
+        "p99": 8.666,
+        "max": 8.666
+      }
+    },
+    {
+      "col": "sim_frame_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 8.0,
+        "p50": 8.0,
+        "p90": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 8.0,
+        "p50": 8.0,
+        "p90": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      }
+    },
+    {
+      "col": "fast_ms",
+      "active": {
+        "n": 327,
+        "avg": 4.253822629969419,
+        "p50": 4.0,
+        "p90": 6.0,
+        "p95": 6.0,
+        "p99": 7.0,
+        "max": 10.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 4.253822629969419,
+        "p50": 4.0,
+        "p90": 6.0,
+        "p95": 6.0,
+        "p99": 7.0,
+        "max": 10.0
+      }
+    },
+    {
+      "col": "t_sus_ms",
+      "active": {
+        "n": 327,
+        "avg": 4.234223241590214,
+        "p50": 4.348,
+        "p90": 5.602,
+        "p95": 5.874,
+        "p99": 6.781,
+        "max": 9.709
+      },
+      "all": {
+        "n": 327,
+        "avg": 4.234223241590214,
+        "p50": 4.348,
+        "p90": 5.602,
+        "p95": 5.874,
+        "p99": 6.781,
+        "max": 9.709
+      }
+    },
+    {
+      "col": "bd_climate_round_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "bd_weather_round_native_ms",
+      "active": {
+        "n": 318,
+        "avg": 3.7168817610062894,
+        "p50": 3.4327,
+        "p90": 6.5862,
+        "p95": 6.9793,
+        "p99": 7.3712,
+        "max": 7.8298
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.614582262996942,
+        "p50": 3.3734,
+        "p90": 6.5782,
+        "p95": 6.9649,
+        "p99": 7.3712,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "sim_slice_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.0,
+        "p50": 3.0,
+        "p90": 3.0,
+        "p95": 3.0,
+        "p99": 3.0,
+        "max": 3.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.0,
+        "p50": 3.0,
+        "p90": 3.0,
+        "p95": 3.0,
+        "p99": 3.0,
+        "max": 3.0
+      }
+    },
+    {
+      "col": "bd_climate_compute_ms",
+      "active": {
+        "n": 318,
+        "avg": 2.5224276729559745,
+        "p50": 2.1703,
+        "p90": 4.8325,
+        "p95": 5.0213,
+        "p99": 5.3416,
+        "max": 5.7285
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.4530030581039752,
+        "p50": 2.1362,
+        "p90": 4.8325,
+        "p95": 5.0088,
+        "p99": 5.3416,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_weather_compute_ms",
+      "active": {
+        "n": 309,
+        "avg": 2.4465770226537216,
+        "p50": 2.1362,
+        "p90": 4.6836,
+        "p95": 4.9834,
+        "p99": 5.3251,
+        "max": 5.7285
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.3119030581039755,
+        "p50": 2.037,
+        "p90": 4.635,
+        "p95": 4.9638,
+        "p99": 5.3251,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_climate_round_bundle_ms",
+      "active": {
+        "n": 9,
+        "avg": 2.292,
+        "p50": 2.247,
+        "p90": 2.446,
+        "p95": 2.446,
+        "p99": 2.446,
+        "max": 2.573
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06308256880733945,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 2.247,
+        "max": 2.573
+      }
+    },
+    {
+      "col": "sim_budget_warn_ms",
+      "active": {
+        "n": 327,
+        "avg": 2.0,
+        "p50": 2.0,
+        "p90": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "max": 2.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.0,
+        "p50": 2.0,
+        "p90": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "max": 2.0
+      }
+    },
+    {
+      "col": "bd_climate_ocean_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.6906715210355987,
+        "p50": 1.8639,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5976070336391437,
+        "p50": 1.8343,
+        "p90": 2.514,
+        "p95": 2.6523,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_weather_ocean_ms",
+      "active": {
+        "n": 300,
+        "avg": 1.6749580000000002,
+        "p50": 1.8343,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5366587155963305,
+        "p50": 1.8187,
+        "p90": 2.3657,
+        "p95": 2.5222,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "largest_slice_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.6666146788990823,
+        "p50": 1.552,
+        "p90": 2.201,
+        "p95": 2.341,
+        "p99": 3.031,
+        "max": 6.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.6666146788990823,
+        "p50": 1.552,
+        "p90": 2.201,
+        "p95": 2.341,
+        "p99": 3.031,
+        "max": 6.278
+      }
+    },
+    {
+      "col": "j_ocean_currents_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.6051284403669726,
+        "p50": 1.598,
+        "p90": 2.151,
+        "p95": 2.292,
+        "p99": 2.4,
+        "max": 6.293
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.070085626911315,
+        "p50": 1.439,
+        "p90": 2.072,
+        "p95": 2.233,
+        "p99": 2.399,
+        "max": 6.293
+      }
+    },
+    {
+      "col": "j_ocean_currents_job_wrapper_gap_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.6051284403669726,
+        "p50": 1.598,
+        "p90": 2.151,
+        "p95": 2.292,
+        "p99": 2.4,
+        "max": 6.293
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.070085626911315,
+        "p50": 1.439,
+        "p90": 2.072,
+        "p95": 2.233,
+        "p99": 2.399,
+        "max": 6.293
+      }
+    },
+    {
+      "col": "j_ocean_currents_slice_actual_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.5921330275229357,
+        "p50": 1.585,
+        "p90": 2.139,
+        "p95": 2.279,
+        "p99": 2.386,
+        "max": 6.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.0614220183486238,
+        "p50": 1.426,
+        "p90": 2.053,
+        "p95": 2.221,
+        "p99": 2.385,
+        "max": 6.278
+      }
+    },
+    {
+      "col": "sim_upload_slice_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.5,
+        "p50": 1.5,
+        "p90": 1.5,
+        "p95": 1.5,
+        "p99": 1.5,
+        "max": 1.5
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5,
+        "p50": 1.5,
+        "p90": 1.5,
+        "p95": 1.5,
+        "p99": 1.5,
+        "max": 1.5
+      }
+    },
+    {
+      "col": "j_native_daily_sim_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_actual_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4284403669724772,
+        "p50": 1.334,
+        "p90": 1.885,
+        "p95": 2.084,
+        "p99": 3.014,
+        "max": 3.223
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4284403669724772,
+        "p50": 1.334,
+        "p90": 1.885,
+        "p95": 2.084,
+        "p99": 3.014,
+        "max": 3.223
+      }
+    },
+    {
+      "col": "bd_climate_bundle_dynamic_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_weather_bundle_dynamic_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.427601941747573,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.3490183486238532,
+        "p50": 1.389,
+        "p90": 1.582,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_climate_weather_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_weather_tick_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_weather_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.30383149847094804,
+        "p50": 0.0,
+        "p90": 1.495,
+        "p95": 1.5801,
+        "p99": 1.6735,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_weather_tick_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.30383149847094804,
+        "p50": 0.0,
+        "p90": 1.495,
+        "p95": 1.5801,
+        "p99": 1.6735,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "j_ocean_currents_slice_reported_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.3291605504587156,
+        "p50": 1.358,
+        "p90": 1.866,
+        "p95": 1.984,
+        "p99": 2.098,
+        "max": 5.936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.8861070336391438,
+        "p50": 1.189,
+        "p90": 1.814,
+        "p95": 1.954,
+        "p99": 2.07,
+        "max": 5.936
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.834719512195122,
+        "p50": 0.82,
+        "p90": 0.864,
+        "p95": 0.898,
+        "p99": 1.143,
+        "max": 1.291
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.41863608562691135,
+        "p50": 0.768,
+        "p90": 0.843,
+        "p95": 0.864,
+        "p99": 1.014,
+        "max": 1.291
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_job_wrapper_gap_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.834719512195122,
+        "p50": 0.82,
+        "p90": 0.864,
+        "p95": 0.898,
+        "p99": 1.143,
+        "max": 1.291
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.41863608562691135,
+        "p50": 0.768,
+        "p90": 0.843,
+        "p95": 0.864,
+        "p99": 1.014,
+        "max": 1.291
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_slice_actual_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.8273231707317074,
+        "p50": 0.813,
+        "p90": 0.857,
+        "p95": 0.89,
+        "p99": 1.132,
+        "max": 1.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.4149266055045872,
+        "p50": 0.762,
+        "p90": 0.836,
+        "p95": 0.857,
+        "p99": 1.004,
+        "max": 1.278
+      }
+    },
+    {
+      "col": "bd_climate_advance_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_weather_field_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_advance_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1808978593272171,
+        "p50": 0.0,
+        "p90": 0.8324,
+        "p95": 0.874,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_weather_field_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1808978593272171,
+        "p50": 0.0,
+        "p90": 0.8324,
+        "p95": 0.874,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_dynamic_visual_atlas_lut_refresh_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.8093597560975611,
+        "p50": 0.795,
+        "p90": 0.839,
+        "p95": 0.864,
+        "p99": 1.108,
+        "max": 1.253
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.4059174311926606,
+        "p50": 0.747,
+        "p90": 0.818,
+        "p95": 0.839,
+        "p99": 0.975,
+        "max": 1.253
+      }
+    },
+    {
+      "col": "j_native_daily_sim_job_wrapper_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7770672782874618,
+        "p50": 0.763,
+        "p90": 0.869,
+        "p95": 0.91,
+        "p99": 1.156,
+        "max": 1.67
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7770672782874618,
+        "p50": 0.763,
+        "p90": 0.869,
+        "p95": 0.91,
+        "p99": 1.156,
+        "max": 1.67
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_reported_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7629785932721712,
+        "p50": 0.749,
+        "p90": 0.855,
+        "p95": 0.892,
+        "p99": 1.137,
+        "max": 1.648
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7629785932721712,
+        "p50": 0.749,
+        "p90": 0.855,
+        "p95": 0.892,
+        "p99": 1.137,
+        "max": 1.648
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_slice_reported_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.6921231707317074,
+        "p50": 0.6803,
+        "p90": 0.7152,
+        "p95": 0.7296,
+        "p99": 0.947,
+        "max": 1.0563
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34711987767584096,
+        "p50": 0.656,
+        "p90": 0.6964,
+        "p95": 0.7152,
+        "p99": 0.7998,
+        "max": 1.0563
+      }
+    },
+    {
+      "col": "bd_dynamic_visual_atlas_elapsed_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.6921231707317074,
+        "p50": 0.6803,
+        "p90": 0.7152,
+        "p95": 0.7296,
+        "p99": 0.947,
+        "max": 1.0563
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34711987767584096,
+        "p50": 0.656,
+        "p90": 0.6964,
+        "p95": 0.7152,
+        "p99": 0.7998,
+        "max": 1.0563
+      }
+    },
+    {
+      "col": "bd_weather_wrapper_wall_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.6813106796116505,
+        "p50": 0.595,
+        "p90": 1.134,
+        "p95": 1.295,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6438073394495413,
+        "p50": 0.589,
+        "p90": 1.037,
+        "p95": 1.277,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_reported_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5893333333333334,
+        "p50": 0.581,
+        "p90": 0.63,
+        "p95": 0.63,
+        "p99": 0.63,
+        "max": 0.664
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.01622018348623853,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.581,
+        "max": 0.664
+      }
+    },
+    {
+      "col": "bd_enum_atlas_buffer_patch_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.5825121951219513,
+        "p50": 0.557,
+        "p90": 0.729,
+        "p95": 0.729,
+        "p99": 0.729,
+        "max": 0.729
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.07303669724770644,
+        "p50": 0.0,
+        "p90": 0.524,
+        "p95": 0.557,
+        "p99": 0.729,
+        "max": 0.729
+      }
+    },
+    {
+      "col": "bd_climate_wind_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.5396992307692308,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21455932721712537,
+        "p50": 0.0,
+        "p90": 0.563,
+        "p95": 0.5941,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_weather_wind_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.5385214876033058,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1992694189602446,
+        "p50": 0.0,
+        "p90": 0.563,
+        "p95": 0.5941,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_observed_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5364444444444445,
+        "p50": 0.528,
+        "p90": 0.577,
+        "p95": 0.577,
+        "p99": 0.577,
+        "max": 0.604
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.014764525993883794,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.528,
+        "max": 0.604
+      }
+    },
+    {
+      "col": "bd_climate_climate_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.48828930817610067,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.47485015290519883,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_weather_climate_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.47563398058252426,
+        "p50": 0.2631,
+        "p90": 0.9293,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.44945229357798167,
+        "p50": 0.2499,
+        "p90": 0.9293,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_runtime_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_native_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_runtime_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_native_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_wind_air_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.3539430769230769,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.14071131498470948,
+        "p50": 0.0,
+        "p90": 0.3551,
+        "p95": 0.3897,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_weather_wind_air_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.3539,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1309538226299694,
+        "p50": 0.0,
+        "p90": 0.3551,
+        "p95": 0.3897,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_climate_apply_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_weather_apply_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.33243365695792876,
+        "p50": 0.323,
+        "p90": 0.405,
+        "p95": 0.462,
+        "p99": 0.605,
+        "max": 0.761
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.3141345565749235,
+        "p50": 0.32,
+        "p90": 0.4,
+        "p95": 0.456,
+        "p99": 0.605,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_weather_bundle_ms",
+      "active": {
+        "n": 66,
+        "avg": 0.32307575757575757,
+        "p50": 0.026,
+        "p90": 1.432,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06520795107033639,
+        "p50": 0.0,
+        "p90": 0.026,
+        "p95": 0.568,
+        "p99": 1.459,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_weather_field_commit_total_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.05724801223241591,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_weather_field_commit_loop_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.05724801223241591,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_weather_weather_commit_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.05724801223241591,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_total_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_loop_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_weather_commit_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_compute_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.2917777777777778,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.024091743119266054,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.2705,
+        "p99": 0.2991,
+        "max": 0.4119
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_compute_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.29177777777777775,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.016061162079510704,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.2633,
+        "p99": 0.2932,
+        "max": 0.4119
+      }
+    },
+    {
+      "col": "bd_weather_native_call_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.27987055016181234,
+        "p50": 0.232,
+        "p90": 0.447,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.2644648318042814,
+        "p50": 0.222,
+        "p90": 0.441,
+        "p95": 0.653,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_climate_bundle_ms",
+      "active": {
+        "n": 75,
+        "avg": 0.27831999999999996,
+        "p50": 0.023,
+        "p90": 1.426,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0638348623853211,
+        "p50": 0.0,
+        "p90": 0.028,
+        "p95": 0.567,
+        "p99": 1.459,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_climate_native_call_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2758081761006289,
+        "p50": 0.226,
+        "p90": 0.445,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.268217125382263,
+        "p50": 0.223,
+        "p90": 0.441,
+        "p95": 0.653,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "j_ocean_currents_slice_reported_gap_ms",
+      "active": {
+        "n": 218,
+        "avg": 0.2629724770642202,
+        "p50": 0.248,
+        "p90": 0.338,
+        "p95": 0.398,
+        "p99": 0.441,
+        "max": 0.527
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.17531498470948012,
+        "p50": 0.215,
+        "p90": 0.318,
+        "p95": 0.356,
+        "p99": 0.437,
+        "max": 0.527
+      }
+    },
+    {
+      "col": "bd_climate_summary_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.042554128440366976,
+        "p50": 0.0,
+        "p90": 0.2389,
+        "p95": 0.2657,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    }
+  ],
+  "top_ms_by_active_p95": [
+    {
+      "col": "timestamp_ms",
+      "active": {
+        "n": 327,
+        "avg": 40592.36391437309,
+        "p50": 40597.0,
+        "p90": 43195.0,
+        "p95": 43510.0,
+        "p99": 43779.0,
+        "max": 43847.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 40592.36391437309,
+        "p50": 40597.0,
+        "p90": 43195.0,
+        "p95": 43510.0,
+        "p99": 43779.0,
+        "max": 43847.0
+      }
+    },
+    {
+      "col": "largest_slice_processed_per_ms",
+      "active": {
+        "n": 210,
+        "avg": 843.4526715142857,
+        "p50": 0.739645,
+        "p90": 4216.073763,
+        "p95": 4315.576417,
+        "p99": 4456.824545,
+        "max": 4678.362469
+      },
+      "all": {
+        "n": 327,
+        "avg": 541.6668532660551,
+        "p50": 0.637349,
+        "p90": 3914.373112,
+        "p95": 4260.985426,
+        "p99": 4422.94394,
+        "max": 4678.362469
+      }
+    },
+    {
+      "col": "bd_climate_round_apply_ms",
+      "active": {
+        "n": 9,
+        "avg": 11.313222222222223,
+        "p50": 11.129,
+        "p90": 11.88,
+        "p95": 11.88,
+        "p99": 11.88,
+        "max": 12.11
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.3113730886850153,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 11.129,
+        "max": 12.11
+      }
+    },
+    {
+      "col": "bd_climate_round_native_call_ms",
+      "active": {
+        "n": 9,
+        "avg": 9.181555555555555,
+        "p50": 9.082,
+        "p90": 9.429,
+        "p95": 9.429,
+        "p99": 9.429,
+        "max": 10.126
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.2527033639143731,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 9.082,
+        "max": 10.126
+      }
+    },
+    {
+      "col": "economy_reserved_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 8.666,
+        "p50": 8.666,
+        "p90": 8.666,
+        "p95": 8.666,
+        "p99": 8.666,
+        "max": 8.666
+      },
+      "all": {
+        "n": 327,
+        "avg": 8.666,
+        "p50": 8.666,
+        "p90": 8.666,
+        "p95": 8.666,
+        "p99": 8.666,
+        "max": 8.666
+      }
+    },
+    {
+      "col": "sim_frame_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 8.0,
+        "p50": 8.0,
+        "p90": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 8.0,
+        "p50": 8.0,
+        "p90": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      }
+    },
+    {
+      "col": "bd_climate_round_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "bd_weather_round_native_ms",
+      "active": {
+        "n": 318,
+        "avg": 3.7168817610062894,
+        "p50": 3.4327,
+        "p90": 6.5862,
+        "p95": 6.9793,
+        "p99": 7.3712,
+        "max": 7.8298
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.614582262996942,
+        "p50": 3.3734,
+        "p90": 6.5782,
+        "p95": 6.9649,
+        "p99": 7.3712,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "fast_ms",
+      "active": {
+        "n": 327,
+        "avg": 4.253822629969419,
+        "p50": 4.0,
+        "p90": 6.0,
+        "p95": 6.0,
+        "p99": 7.0,
+        "max": 10.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 4.253822629969419,
+        "p50": 4.0,
+        "p90": 6.0,
+        "p95": 6.0,
+        "p99": 7.0,
+        "max": 10.0
+      }
+    },
+    {
+      "col": "t_sus_ms",
+      "active": {
+        "n": 327,
+        "avg": 4.234223241590214,
+        "p50": 4.348,
+        "p90": 5.602,
+        "p95": 5.874,
+        "p99": 6.781,
+        "max": 9.709
+      },
+      "all": {
+        "n": 327,
+        "avg": 4.234223241590214,
+        "p50": 4.348,
+        "p90": 5.602,
+        "p95": 5.874,
+        "p99": 6.781,
+        "max": 9.709
+      }
+    },
+    {
+      "col": "bd_climate_compute_ms",
+      "active": {
+        "n": 318,
+        "avg": 2.5224276729559745,
+        "p50": 2.1703,
+        "p90": 4.8325,
+        "p95": 5.0213,
+        "p99": 5.3416,
+        "max": 5.7285
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.4530030581039752,
+        "p50": 2.1362,
+        "p90": 4.8325,
+        "p95": 5.0088,
+        "p99": 5.3416,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_weather_compute_ms",
+      "active": {
+        "n": 309,
+        "avg": 2.4465770226537216,
+        "p50": 2.1362,
+        "p90": 4.6836,
+        "p95": 4.9834,
+        "p99": 5.3251,
+        "max": 5.7285
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.3119030581039755,
+        "p50": 2.037,
+        "p90": 4.635,
+        "p95": 4.9638,
+        "p99": 5.3251,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "sim_slice_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.0,
+        "p50": 3.0,
+        "p90": 3.0,
+        "p95": 3.0,
+        "p99": 3.0,
+        "max": 3.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.0,
+        "p50": 3.0,
+        "p90": 3.0,
+        "p95": 3.0,
+        "p99": 3.0,
+        "max": 3.0
+      }
+    },
+    {
+      "col": "bd_climate_ocean_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.6906715210355987,
+        "p50": 1.8639,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5976070336391437,
+        "p50": 1.8343,
+        "p90": 2.514,
+        "p95": 2.6523,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_weather_ocean_ms",
+      "active": {
+        "n": 300,
+        "avg": 1.6749580000000002,
+        "p50": 1.8343,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5366587155963305,
+        "p50": 1.8187,
+        "p90": 2.3657,
+        "p95": 2.5222,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_climate_round_bundle_ms",
+      "active": {
+        "n": 9,
+        "avg": 2.292,
+        "p50": 2.247,
+        "p90": 2.446,
+        "p95": 2.446,
+        "p99": 2.446,
+        "max": 2.573
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06308256880733945,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 2.247,
+        "max": 2.573
+      }
+    },
+    {
+      "col": "largest_slice_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.6666146788990823,
+        "p50": 1.552,
+        "p90": 2.201,
+        "p95": 2.341,
+        "p99": 3.031,
+        "max": 6.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.6666146788990823,
+        "p50": 1.552,
+        "p90": 2.201,
+        "p95": 2.341,
+        "p99": 3.031,
+        "max": 6.278
+      }
+    },
+    {
+      "col": "j_ocean_currents_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.6051284403669726,
+        "p50": 1.598,
+        "p90": 2.151,
+        "p95": 2.292,
+        "p99": 2.4,
+        "max": 6.293
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.070085626911315,
+        "p50": 1.439,
+        "p90": 2.072,
+        "p95": 2.233,
+        "p99": 2.399,
+        "max": 6.293
+      }
+    },
+    {
+      "col": "j_ocean_currents_job_wrapper_gap_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.6051284403669726,
+        "p50": 1.598,
+        "p90": 2.151,
+        "p95": 2.292,
+        "p99": 2.4,
+        "max": 6.293
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.070085626911315,
+        "p50": 1.439,
+        "p90": 2.072,
+        "p95": 2.233,
+        "p99": 2.399,
+        "max": 6.293
+      }
+    },
+    {
+      "col": "j_ocean_currents_slice_actual_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.5921330275229357,
+        "p50": 1.585,
+        "p90": 2.139,
+        "p95": 2.279,
+        "p99": 2.386,
+        "max": 6.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.0614220183486238,
+        "p50": 1.426,
+        "p90": 2.053,
+        "p95": 2.221,
+        "p99": 2.385,
+        "max": 6.278
+      }
+    },
+    {
+      "col": "j_native_daily_sim_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4425290519877676,
+        "p50": 1.35,
+        "p90": 1.898,
+        "p95": 2.108,
+        "p99": 3.028,
+        "max": 3.24
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_actual_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4284403669724772,
+        "p50": 1.334,
+        "p90": 1.885,
+        "p95": 2.084,
+        "p99": 3.014,
+        "max": 3.223
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4284403669724772,
+        "p50": 1.334,
+        "p90": 1.885,
+        "p95": 2.084,
+        "p99": 3.014,
+        "max": 3.223
+      }
+    },
+    {
+      "col": "sim_budget_warn_ms",
+      "active": {
+        "n": 327,
+        "avg": 2.0,
+        "p50": 2.0,
+        "p90": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "max": 2.0
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.0,
+        "p50": 2.0,
+        "p90": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "max": 2.0
+      }
+    },
+    {
+      "col": "j_ocean_currents_slice_reported_ms",
+      "active": {
+        "n": 218,
+        "avg": 1.3291605504587156,
+        "p50": 1.358,
+        "p90": 1.866,
+        "p95": 1.984,
+        "p99": 2.098,
+        "max": 5.936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.8861070336391438,
+        "p50": 1.189,
+        "p90": 1.814,
+        "p95": 1.954,
+        "p99": 2.07,
+        "max": 5.936
+      }
+    },
+    {
+      "col": "bd_climate_weather_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_weather_tick_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_weather_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.30383149847094804,
+        "p50": 0.0,
+        "p90": 1.495,
+        "p95": 1.5801,
+        "p99": 1.6735,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_weather_tick_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.30383149847094804,
+        "p50": 0.0,
+        "p90": 1.495,
+        "p95": 1.5801,
+        "p99": 1.6735,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_bundle_dynamic_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_weather_bundle_dynamic_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.427601941747573,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.3490183486238532,
+        "p50": 1.389,
+        "p90": 1.582,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "sim_upload_slice_budget_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.5,
+        "p50": 1.5,
+        "p90": 1.5,
+        "p95": 1.5,
+        "p99": 1.5,
+        "max": 1.5
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5,
+        "p50": 1.5,
+        "p90": 1.5,
+        "p95": 1.5,
+        "p99": 1.5,
+        "max": 1.5
+      }
+    },
+    {
+      "col": "bd_climate_bundle_ms",
+      "active": {
+        "n": 75,
+        "avg": 0.27831999999999996,
+        "p50": 0.023,
+        "p90": 1.426,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0638348623853211,
+        "p50": 0.0,
+        "p90": 0.028,
+        "p95": 0.567,
+        "p99": 1.459,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_weather_bundle_ms",
+      "active": {
+        "n": 66,
+        "avg": 0.32307575757575757,
+        "p50": 0.026,
+        "p90": 1.432,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06520795107033639,
+        "p50": 0.0,
+        "p90": 0.026,
+        "p95": 0.568,
+        "p99": 1.459,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "bd_weather_wrapper_wall_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.6813106796116505,
+        "p50": 0.595,
+        "p90": 1.134,
+        "p95": 1.295,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6438073394495413,
+        "p50": 0.589,
+        "p90": 1.037,
+        "p95": 1.277,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_reported_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_climate_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.48828930817610067,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.47485015290519883,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_weather_climate_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.47563398058252426,
+        "p50": 0.2631,
+        "p90": 0.9293,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.44945229357798167,
+        "p50": 0.2499,
+        "p90": 0.9293,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_climate_advance_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_weather_field_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_advance_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1808978593272171,
+        "p50": 0.0,
+        "p90": 0.8324,
+        "p95": 0.874,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_weather_field_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1808978593272171,
+        "p50": 0.0,
+        "p90": 0.8324,
+        "p95": 0.874,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "j_native_daily_sim_job_wrapper_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7770672782874618,
+        "p50": 0.763,
+        "p90": 0.869,
+        "p95": 0.91,
+        "p99": 1.156,
+        "max": 1.67
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7770672782874618,
+        "p50": 0.763,
+        "p90": 0.869,
+        "p95": 0.91,
+        "p99": 1.156,
+        "max": 1.67
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.834719512195122,
+        "p50": 0.82,
+        "p90": 0.864,
+        "p95": 0.898,
+        "p99": 1.143,
+        "max": 1.291
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.41863608562691135,
+        "p50": 0.768,
+        "p90": 0.843,
+        "p95": 0.864,
+        "p99": 1.014,
+        "max": 1.291
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_job_wrapper_gap_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.834719512195122,
+        "p50": 0.82,
+        "p90": 0.864,
+        "p95": 0.898,
+        "p99": 1.143,
+        "max": 1.291
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.41863608562691135,
+        "p50": 0.768,
+        "p90": 0.843,
+        "p95": 0.864,
+        "p99": 1.014,
+        "max": 1.291
+      }
+    },
+    {
+      "col": "j_native_daily_sim_slice_reported_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7629785932721712,
+        "p50": 0.749,
+        "p90": 0.855,
+        "p95": 0.892,
+        "p99": 1.137,
+        "max": 1.648
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7629785932721712,
+        "p50": 0.749,
+        "p90": 0.855,
+        "p95": 0.892,
+        "p99": 1.137,
+        "max": 1.648
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_slice_actual_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.8273231707317074,
+        "p50": 0.813,
+        "p90": 0.857,
+        "p95": 0.89,
+        "p99": 1.132,
+        "max": 1.278
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.4149266055045872,
+        "p50": 0.762,
+        "p90": 0.836,
+        "p95": 0.857,
+        "p99": 1.004,
+        "max": 1.278
+      }
+    },
+    {
+      "col": "bd_dynamic_visual_atlas_lut_refresh_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.8093597560975611,
+        "p50": 0.795,
+        "p90": 0.839,
+        "p95": 0.864,
+        "p99": 1.108,
+        "max": 1.253
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.4059174311926606,
+        "p50": 0.747,
+        "p90": 0.818,
+        "p95": 0.839,
+        "p99": 0.975,
+        "max": 1.253
+      }
+    },
+    {
+      "col": "j_enum_atlas_upload_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.22297560975609754,
+        "p50": 0.029,
+        "p90": 0.759,
+        "p95": 0.81,
+        "p99": 0.856,
+        "max": 0.897
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.027957186544342507,
+        "p50": 0.0,
+        "p90": 0.027,
+        "p95": 0.03,
+        "p99": 0.759,
+        "max": 0.897
+      }
+    },
+    {
+      "col": "j_enum_atlas_upload_job_wrapper_gap_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.22297560975609754,
+        "p50": 0.029,
+        "p90": 0.759,
+        "p95": 0.81,
+        "p99": 0.856,
+        "max": 0.897
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.027957186544342507,
+        "p50": 0.0,
+        "p90": 0.027,
+        "p95": 0.03,
+        "p99": 0.759,
+        "max": 0.897
+      }
+    },
+    {
+      "col": "j_enum_atlas_upload_slice_actual_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.21653658536585366,
+        "p50": 0.023,
+        "p90": 0.75,
+        "p95": 0.803,
+        "p99": 0.843,
+        "max": 0.889
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.027149847094801224,
+        "p50": 0.0,
+        "p90": 0.021,
+        "p95": 0.024,
+        "p99": 0.75,
+        "max": 0.889
+      }
+    },
+    {
+      "col": "j_enum_atlas_upload_slice_reported_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.1958048780487805,
+        "p50": 0.006,
+        "p90": 0.689,
+        "p95": 0.779,
+        "p99": 0.78,
+        "max": 0.864
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.024550458715596333,
+        "p50": 0.0,
+        "p90": 0.006,
+        "p95": 0.006,
+        "p99": 0.689,
+        "max": 0.864
+      }
+    },
+    {
+      "col": "bd_enum_atlas_elapsed_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.1958048780487805,
+        "p50": 0.006,
+        "p90": 0.689,
+        "p95": 0.779,
+        "p99": 0.78,
+        "max": 0.864
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.024550458715596333,
+        "p50": 0.0,
+        "p90": 0.006,
+        "p95": 0.006,
+        "p99": 0.689,
+        "max": 0.864
+      }
+    },
+    {
+      "col": "j_dynamic_visual_atlas_upload_slice_reported_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.6921231707317074,
+        "p50": 0.6803,
+        "p90": 0.7152,
+        "p95": 0.7296,
+        "p99": 0.947,
+        "max": 1.0563
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34711987767584096,
+        "p50": 0.656,
+        "p90": 0.6964,
+        "p95": 0.7152,
+        "p99": 0.7998,
+        "max": 1.0563
+      }
+    },
+    {
+      "col": "bd_dynamic_visual_atlas_elapsed_ms",
+      "active": {
+        "n": 164,
+        "avg": 0.6921231707317074,
+        "p50": 0.6803,
+        "p90": 0.7152,
+        "p95": 0.7296,
+        "p99": 0.947,
+        "max": 1.0563
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34711987767584096,
+        "p50": 0.656,
+        "p90": 0.6964,
+        "p95": 0.7152,
+        "p99": 0.7998,
+        "max": 1.0563
+      }
+    },
+    {
+      "col": "bd_enum_atlas_buffer_patch_ms",
+      "active": {
+        "n": 41,
+        "avg": 0.5825121951219513,
+        "p50": 0.557,
+        "p90": 0.729,
+        "p95": 0.729,
+        "p99": 0.729,
+        "max": 0.729
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.07303669724770644,
+        "p50": 0.0,
+        "p90": 0.524,
+        "p95": 0.557,
+        "p99": 0.729,
+        "max": 0.729
+      }
+    },
+    {
+      "col": "bd_climate_native_call_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2758081761006289,
+        "p50": 0.226,
+        "p90": 0.445,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.268217125382263,
+        "p50": 0.223,
+        "p90": 0.441,
+        "p95": 0.653,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_weather_native_call_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.27987055016181234,
+        "p50": 0.232,
+        "p90": 0.447,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.2644648318042814,
+        "p50": 0.222,
+        "p90": 0.441,
+        "p95": 0.653,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5893333333333334,
+        "p50": 0.581,
+        "p90": 0.63,
+        "p95": 0.63,
+        "p99": 0.63,
+        "max": 0.664
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.01622018348623853,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.581,
+        "max": 0.664
+      }
+    },
+    {
+      "col": "bd_climate_wind_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.5396992307692308,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21455932721712537,
+        "p50": 0.0,
+        "p90": 0.563,
+        "p95": 0.5941,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_weather_wind_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.5385214876033058,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1992694189602446,
+        "p50": 0.0,
+        "p90": 0.563,
+        "p95": 0.5941,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_weather_total_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.21403647798742137,
+        "p50": 0.1616,
+        "p90": 0.3878,
+        "p95": 0.6043,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20814556574923546,
+        "p50": 0.1591,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_weather_native_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.21403647798742137,
+        "p50": 0.1616,
+        "p90": 0.3878,
+        "p95": 0.6043,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20814556574923546,
+        "p50": 0.1591,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_total_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_observed_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5364444444444445,
+        "p50": 0.528,
+        "p90": 0.577,
+        "p95": 0.577,
+        "p99": 0.577,
+        "max": 0.604
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.014764525993883794,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.528,
+        "max": 0.604
+      }
+    },
+    {
+      "col": "bd_climate_apply_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_runtime_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_native_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_runtime_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_native_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.020643425076452598,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3252,
+        "p99": 0.3869,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_apply_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.33243365695792876,
+        "p50": 0.323,
+        "p90": 0.405,
+        "p95": 0.462,
+        "p99": 0.605,
+        "max": 0.761
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.3141345565749235,
+        "p50": 0.32,
+        "p90": 0.4,
+        "p95": 0.456,
+        "p99": 0.605,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_climate_wind_air_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.3539430769230769,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.14071131498470948,
+        "p50": 0.0,
+        "p90": 0.3551,
+        "p95": 0.3897,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_weather_wind_air_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.3539,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.1309538226299694,
+        "p50": 0.0,
+        "p90": 0.3551,
+        "p95": 0.3897,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_compute_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.2917777777777778,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.024091743119266054,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.2705,
+        "p99": 0.2991,
+        "max": 0.4119
+      }
+    }
+  ],
+  "native_daily_ms_top": [
+    {
+      "col": "bd_climate_round_apply_ms",
+      "active": {
+        "n": 9,
+        "avg": 11.313222222222223,
+        "p50": 11.129,
+        "p90": 11.88,
+        "p95": 11.88,
+        "p99": 11.88,
+        "max": 12.11
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.3113730886850153,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 11.129,
+        "max": 12.11
+      }
+    },
+    {
+      "col": "bd_climate_round_native_call_ms",
+      "active": {
+        "n": 9,
+        "avg": 9.181555555555555,
+        "p50": 9.082,
+        "p90": 9.429,
+        "p95": 9.429,
+        "p99": 9.429,
+        "max": 10.126
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.2527033639143731,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 9.082,
+        "max": 10.126
+      }
+    },
+    {
+      "col": "bd_climate_round_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      },
+      "all": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "bd_climate_compute_ms",
+      "active": {
+        "n": 318,
+        "avg": 2.5224276729559745,
+        "p50": 2.1703,
+        "p90": 4.8325,
+        "p95": 5.0213,
+        "p99": 5.3416,
+        "max": 5.7285
+      },
+      "all": {
+        "n": 327,
+        "avg": 2.4530030581039752,
+        "p50": 2.1362,
+        "p90": 4.8325,
+        "p95": 5.0088,
+        "p99": 5.3416,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_climate_round_bundle_ms",
+      "active": {
+        "n": 9,
+        "avg": 2.292,
+        "p50": 2.247,
+        "p90": 2.446,
+        "p95": 2.446,
+        "p99": 2.446,
+        "max": 2.573
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06308256880733945,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 2.247,
+        "max": 2.573
+      }
+    },
+    {
+      "col": "bd_climate_ocean_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.6906715210355987,
+        "p50": 1.8639,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.5976070336391437,
+        "p50": 1.8343,
+        "p90": 2.514,
+        "p95": 2.6523,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_climate_bundle_dynamic_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      },
+      "all": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_climate_weather_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_weather_tick_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.34694648318042814,
+        "p50": 0.0,
+        "p90": 1.5424,
+        "p95": 1.6168,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_advance_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_weather_field_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.20351009174311926,
+        "p50": 0.0,
+        "p90": 0.8396,
+        "p95": 0.8743,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "bd_climate_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5893333333333334,
+        "p50": 0.581,
+        "p90": 0.63,
+        "p95": 0.63,
+        "p99": 0.63,
+        "max": 0.664
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.01622018348623853,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.581,
+        "max": 0.664
+      }
+    },
+    {
+      "col": "bd_climate_wind_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.5396992307692308,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21455932721712537,
+        "p50": 0.0,
+        "p90": 0.563,
+        "p95": 0.5941,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_observed_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5364444444444445,
+        "p50": 0.528,
+        "p90": 0.577,
+        "p95": 0.577,
+        "p99": 0.577,
+        "max": 0.604
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.014764525993883794,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.528,
+        "max": 0.604
+      }
+    },
+    {
+      "col": "bd_climate_climate_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.48828930817610067,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.47485015290519883,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_runtime_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_native_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030965137614678902,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.3386,
+        "p99": 0.4381,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_wind_air_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.3539430769230769,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.14071131498470948,
+        "p50": 0.0,
+        "p90": 0.3551,
+        "p95": 0.3897,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_climate_apply_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_total_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_loop_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_weather_commit_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0654262996941896,
+        "p50": 0.0,
+        "p90": 0.2953,
+        "p95": 0.3018,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_compute_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.2917777777777778,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.024091743119266054,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.2705,
+        "p99": 0.2991,
+        "max": 0.4119
+      }
+    },
+    {
+      "col": "bd_climate_bundle_ms",
+      "active": {
+        "n": 75,
+        "avg": 0.27831999999999996,
+        "p50": 0.023,
+        "p90": 1.426,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0638348623853211,
+        "p50": 0.0,
+        "p90": 0.028,
+        "p95": 0.567,
+        "p99": 1.459,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_climate_native_call_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2758081761006289,
+        "p50": 0.226,
+        "p90": 0.445,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.268217125382263,
+        "p50": 0.223,
+        "p90": 0.441,
+        "p95": 0.653,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_climate_summary_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.042554128440366976,
+        "p50": 0.0,
+        "p90": 0.2389,
+        "p95": 0.2657,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_climate_weather_summary_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.042554128440366976,
+        "p50": 0.0,
+        "p90": 0.2389,
+        "p95": 0.2657,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_finalizer_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.22822222222222222,
+        "p50": 0.229,
+        "p90": 0.235,
+        "p95": 0.235,
+        "p99": 0.235,
+        "max": 0.251
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.006281345565749235,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.229,
+        "max": 0.251
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.2258888888888889,
+        "p50": 0.226,
+        "p90": 0.232,
+        "p95": 0.232,
+        "p99": 0.232,
+        "max": 0.249
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.006217125382262997,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.226,
+        "max": 0.249
+      }
+    },
+    {
+      "col": "bd_climate_pass_b_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2192261006289308,
+        "p50": 0.2359,
+        "p90": 0.3094,
+        "p95": 0.3094,
+        "p99": 0.3094,
+        "max": 0.3094
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21319235474006115,
+        "p50": 0.2359,
+        "p90": 0.2631,
+        "p95": 0.3094,
+        "p99": 0.3094,
+        "max": 0.3094
+      }
+    },
+    {
+      "col": "bd_climate_stage_b_ms",
+      "active": {
+        "n": 4,
+        "avg": 0.21534999999999999,
+        "p50": 0.1837,
+        "p90": 0.247,
+        "p95": 0.247,
+        "p99": 0.247,
+        "max": 0.247
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0026342507645259936,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.247
+      }
+    },
+    {
+      "col": "bd_climate_total_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_wind_surface_ms",
+      "active": {
+        "n": 120,
+        "avg": 0.20123583333333334,
+        "p50": 0.2024,
+        "p90": 0.213,
+        "p95": 0.213,
+        "p99": 0.213,
+        "max": 0.213
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0738480122324159,
+        "p50": 0.0,
+        "p90": 0.2079,
+        "p95": 0.2087,
+        "p99": 0.213,
+        "max": 0.213
+      }
+    },
+    {
+      "col": "bd_climate_distribute_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.03253394495412844,
+        "p50": 0.0,
+        "p90": 0.1754,
+        "p95": 0.1769,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_climate_weather_distribute_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.03253394495412844,
+        "p50": 0.0,
+        "p90": 0.1754,
+        "p95": 0.1769,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_weather_result_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.15244444444444444,
+        "p50": 0.143,
+        "p90": 0.193,
+        "p95": 0.193,
+        "p99": 0.193,
+        "max": 0.204
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.00419571865443425,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.143,
+        "max": 0.204
+      }
+    },
+    {
+      "col": "bd_climate_ocean_water_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.13893430420711975,
+        "p50": 0.1327,
+        "p90": 0.1945,
+        "p95": 0.1945,
+        "p99": 0.2789,
+        "max": 0.4628
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.13128654434250764,
+        "p50": 0.1327,
+        "p90": 0.1945,
+        "p95": 0.1945,
+        "p99": 0.2789,
+        "max": 0.4628
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_visual_intents_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.12233333333333334,
+        "p50": 0.122,
+        "p90": 0.131,
+        "p95": 0.131,
+        "p99": 0.131,
+        "max": 0.131
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.00336697247706422,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.122,
+        "max": 0.131
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_native_dirty_mark_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.11033333333333334,
+        "p50": 0.11,
+        "p90": 0.113,
+        "p95": 0.113,
+        "p99": 0.113,
+        "max": 0.115
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.003036697247706422,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.11,
+        "max": 0.115
+      }
+    },
+    {
+      "col": "bd_climate_veg_dyn_ms",
+      "active": {
+        "n": 4,
+        "avg": 0.1099,
+        "p50": 0.1077,
+        "p90": 0.1121,
+        "p95": 0.1121,
+        "p99": 0.1121,
+        "max": 0.1121
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.00134434250764526,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.1121
+      }
+    },
+    {
+      "col": "bd_climate_ocean_land_ms",
+      "active": {
+        "n": 220,
+        "avg": 0.09503772727272727,
+        "p50": 0.0802,
+        "p90": 0.1383,
+        "p95": 0.1826,
+        "p99": 0.1826,
+        "max": 0.3496
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06393975535168196,
+        "p50": 0.0698,
+        "p90": 0.1201,
+        "p95": 0.1655,
+        "p99": 0.1826,
+        "max": 0.3496
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_cell_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.0928888888888889,
+        "p50": 0.09,
+        "p90": 0.099,
+        "p95": 0.099,
+        "p99": 0.099,
+        "max": 0.117
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0025565749235474007,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.09,
+        "max": 0.117
+      }
+    },
+    {
+      "col": "bd_climate_sea_ice_ms",
+      "active": {
+        "n": 110,
+        "avg": 0.08963454545454545,
+        "p50": 0.0862,
+        "p90": 0.1187,
+        "p95": 0.1187,
+        "p99": 0.1187,
+        "max": 0.1187
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.030152293577981652,
+        "p50": 0.0,
+        "p90": 0.0887,
+        "p95": 0.0931,
+        "p99": 0.1187,
+        "max": 0.1187
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wrapper_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.08660244648318043,
+        "p50": 0.08,
+        "p90": 0.105,
+        "p95": 0.133,
+        "p99": 0.176,
+        "max": 0.222
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.08660244648318043,
+        "p50": 0.08,
+        "p90": 0.105,
+        "p95": 0.133,
+        "p99": 0.176,
+        "max": 0.222
+      }
+    },
+    {
+      "col": "bd_climate_native_context_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    },
+    {
+      "col": "bd_climate_refresh_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    },
+    {
+      "col": "bd_climate_transp_ms",
+      "active": {
+        "n": 100,
+        "avg": 0.055414000000000005,
+        "p50": 0.054,
+        "p90": 0.0723,
+        "p95": 0.0723,
+        "p99": 0.0723,
+        "max": 0.0723
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.016946177370030582,
+        "p50": 0.0,
+        "p90": 0.0549,
+        "p95": 0.0554,
+        "p99": 0.0723,
+        "max": 0.0723
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_other_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.05288888888888889,
+        "p50": 0.052,
+        "p90": 0.058,
+        "p95": 0.058,
+        "p99": 0.058,
+        "max": 0.06
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.00145565749235474,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.052,
+        "max": 0.06
+      }
+    },
+    {
+      "col": "bd_climate_jit_patch_build_ms",
+      "active": {
+        "n": 193,
+        "avg": 0.04024870466321243,
+        "p50": 0.004,
+        "p90": 0.033,
+        "p95": 0.106,
+        "p99": 0.636,
+        "max": 0.705
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.023755351681957186,
+        "p50": 0.001,
+        "p90": 0.021,
+        "p95": 0.092,
+        "p99": 0.589,
+        "max": 0.705
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_flush_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.035555555555555556,
+        "p50": 0.0328,
+        "p90": 0.0419,
+        "p95": 0.0551,
+        "p99": 0.0551,
+        "max": 0.0551
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.0029357798165137615,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0319,
+        "p99": 0.0419,
+        "max": 0.0551
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_report_build_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.03306422018348624,
+        "p50": 0.031,
+        "p90": 0.036,
+        "p95": 0.043,
+        "p99": 0.063,
+        "max": 0.099
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.03306422018348624,
+        "p50": 0.031,
+        "p90": 0.036,
+        "p95": 0.043,
+        "p99": 0.063,
+        "max": 0.099
+      }
+    },
+    {
+      "col": "bd_climate_feedback_ms",
+      "active": {
+        "n": 2,
+        "avg": 0.0297,
+        "p50": 0.0297,
+        "p90": 0.0297,
+        "p95": 0.0297,
+        "p99": 0.0297,
+        "max": 0.0297
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.000181651376146789,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0297
+      }
+    },
+    {
+      "col": "bd_climate_bundle_static_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.023409785932721715,
+        "p50": 0.022,
+        "p90": 0.025,
+        "p95": 0.026,
+        "p99": 0.026,
+        "max": 0.026
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.023409785932721715,
+        "p50": 0.022,
+        "p90": 0.025,
+        "p95": 0.026,
+        "p99": 0.026,
+        "max": 0.026
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_finalizer_merge_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.022555555555555554,
+        "p50": 0.022,
+        "p90": 0.024,
+        "p95": 0.024,
+        "p99": 0.024,
+        "max": 0.024
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.000620795107033639,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.022,
+        "max": 0.024
+      }
+    },
+    {
+      "col": "bd_climate_cyclone_ms",
+      "active": {
+        "n": 45,
+        "avg": 0.021233333333333333,
+        "p50": 0.0201,
+        "p90": 0.0242,
+        "p95": 0.0272,
+        "p99": 0.0272,
+        "max": 0.0272
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.002922018348623853,
+        "p50": 0.0,
+        "p90": 0.0194,
+        "p95": 0.0209,
+        "p99": 0.0272,
+        "max": 0.0272
+      }
+    },
+    {
+      "col": "bd_climate_weather_cyclone_ms",
+      "active": {
+        "n": 45,
+        "avg": 0.021233333333333333,
+        "p50": 0.0201,
+        "p90": 0.0242,
+        "p95": 0.0272,
+        "p99": 0.0272,
+        "max": 0.0272
+      },
+      "all": {
+        "n": 327,
+        "avg": 0.002922018348623853,
+        "p50": 0.0,
+        "p90": 0.0194,
+        "p95": 0.0209,
+        "p99": 0.0272,
+        "max": 0.0272
+      }
+    }
+  ],
+  "bd_climate_stage_name": [
+    [
+      "ocean_land",
+      90
+    ],
+    [
+      "ocean_water",
+      89
+    ],
+    [
+      "wind_air",
+      10
+    ],
+    [
+      "wind_surface",
+      10
+    ],
+    [
+      "sea_ice",
+      10
+    ],
+    [
+      "transpiration",
+      10
+    ],
+    [
+      "weather",
+      9
+    ],
+    [
+      "weather_field",
+      9
+    ],
+    [
+      "weather_commit",
+      9
+    ],
+    [
+      "weather_distribute",
+      9
+    ],
+    [
+      "weather_summary",
+      9
+    ],
+    [
+      "weather_cyclone",
+      9
+    ],
+    [
+      "weather_stage_b",
+      9
+    ],
+    [
+      "runtime_hydrology",
+      9
+    ],
+    [
+      "native_daily_finalizer",
+      9
+    ],
+    [
+      "native_daily_complete",
+      9
+    ],
+    [
+      "climate_pass_a",
+      9
+    ],
+    [
+      "climate_pass_b",
+      9
+    ]
+  ],
+  "bd_climate_current_pass": [
+    [
+      "ocean_land",
+      90
+    ],
+    [
+      "ocean_water",
+      89
+    ],
+    [
+      "wind_air",
+      10
+    ],
+    [
+      "wind_surface",
+      10
+    ],
+    [
+      "sea_ice",
+      10
+    ],
+    [
+      "transpiration",
+      10
+    ],
+    [
+      "weather",
+      9
+    ],
+    [
+      "weather_field",
+      9
+    ],
+    [
+      "weather_commit",
+      9
+    ],
+    [
+      "weather_distribute",
+      9
+    ],
+    [
+      "weather_summary",
+      9
+    ],
+    [
+      "weather_cyclone",
+      9
+    ],
+    [
+      "weather_stage_b",
+      9
+    ],
+    [
+      "runtime_hydrology",
+      9
+    ],
+    [
+      "native_daily_finalizer",
+      9
+    ],
+    [
+      "done",
+      9
+    ],
+    [
+      "climate_pass_a",
+      9
+    ],
+    [
+      "climate_pass_b",
+      9
+    ]
+  ],
+  "bd_climate_pass_status": [
+    [
+      "partial",
+      318
+    ],
+    [
+      "done",
+      9
+    ]
+  ],
+  "bd_climate_path": [
+    [
+      "gdext_native_daily_slice",
+      327
+    ]
+  ],
+  "bd_climate_ocean_water_variant": [
+    [
+      "thread",
+      309
+    ],
+    [
+      "",
+      18
+    ]
+  ],
+  "bd_climate_finalizer_write_mode": [
+    [
+      "",
+      318
+    ],
+    [
+      "native_publish",
+      9
+    ]
+  ],
+  "bd_climate_finalizer_native_published": [
+    [
+      "",
+      318
+    ],
+    [
+      "true",
+      9
+    ]
+  ],
+  "bd_climate_bundle_cache_hit": [
+    [
+      "true",
+      327
+    ]
+  ],
+  "bd_climate_node_range_active": [
+    [
+      "false",
+      168
+    ],
+    [
+      "true",
+      159
+    ]
+  ],
+  "bd_weather_ms_top": [
+    {
+      "col": "bd_weather_round_native_ms",
+      "active": {
+        "n": 318,
+        "avg": 3.7168817610062894,
+        "p50": 3.4327,
+        "p90": 6.5862,
+        "p95": 6.9793,
+        "p99": 7.3712,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "bd_weather_compute_ms",
+      "active": {
+        "n": 309,
+        "avg": 2.4465770226537216,
+        "p50": 2.1362,
+        "p90": 4.6836,
+        "p95": 4.9834,
+        "p99": 5.3251,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_weather_ocean_ms",
+      "active": {
+        "n": 300,
+        "avg": 1.6749580000000002,
+        "p50": 1.8343,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_weather_bundle_dynamic_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.427601941747573,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_weather_weather_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_weather_tick_ms",
+      "active": {
+        "n": 72,
+        "avg": 1.379901388888889,
+        "p50": 1.4887,
+        "p90": 1.6713,
+        "p95": 1.6735,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_weather_advance_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_weather_field_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.8743,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_weather_wrapper_wall_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.6813106796116505,
+        "p50": 0.595,
+        "p90": 1.134,
+        "p95": 1.295,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_weather_wind_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.5385214876033058,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_weather_climate_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.47563398058252426,
+        "p50": 0.2631,
+        "p90": 0.9293,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_runtime_hydrology_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_native_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.3750222222222222,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_weather_wind_air_ms",
+      "active": {
+        "n": 121,
+        "avg": 0.3539,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_weather_apply_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.33243365695792876,
+        "p50": 0.323,
+        "p90": 0.405,
+        "p95": 0.462,
+        "p99": 0.605,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_weather_bundle_ms",
+      "active": {
+        "n": 66,
+        "avg": 0.32307575757575757,
+        "p50": 0.026,
+        "p90": 1.432,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_weather_field_commit_total_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_weather_field_commit_loop_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_weather_weather_commit_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.2971444444444445,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_compute_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.29177777777777775,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      }
+    },
+    {
+      "col": "bd_weather_native_call_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.27987055016181234,
+        "p50": 0.232,
+        "p90": 0.447,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_weather_summary_ms",
+      "active": {
+        "n": 45,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_weather_weather_summary_ms",
+      "active": {
+        "n": 45,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_weather_pass_b_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.21913592233009707,
+        "p50": 0.2359,
+        "p90": 0.3094,
+        "p95": 0.3094,
+        "p99": 0.3094,
+        "max": 0.3094
+      }
+    },
+    {
+      "col": "bd_weather_stage_b_ms",
+      "active": {
+        "n": 2,
+        "avg": 0.21534999999999999,
+        "p50": 0.1837,
+        "p90": 0.1837,
+        "p95": 0.1837,
+        "p99": 0.1837,
+        "max": 0.247
+      }
+    },
+    {
+      "col": "bd_weather_total_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.21403647798742137,
+        "p50": 0.1616,
+        "p90": 0.3878,
+        "p95": 0.6043,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_weather_native_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.21403647798742137,
+        "p50": 0.1616,
+        "p90": 0.3878,
+        "p95": 0.6043,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_weather_wind_surface_ms",
+      "active": {
+        "n": 111,
+        "avg": 0.20125405405405403,
+        "p50": 0.2024,
+        "p90": 0.213,
+        "p95": 0.213,
+        "p99": 0.213,
+        "max": 0.213
+      }
+    },
+    {
+      "col": "bd_weather_distribute_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_weather_weather_distribute_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_weather_ocean_water_ms",
+      "active": {
+        "n": 300,
+        "avg": 0.13909633333333335,
+        "p50": 0.1327,
+        "p90": 0.1945,
+        "p95": 0.1945,
+        "p99": 0.2864,
+        "max": 0.4628
+      }
+    },
+    {
+      "col": "bd_weather_veg_dyn_ms",
+      "active": {
+        "n": 2,
+        "avg": 0.1099,
+        "p50": 0.1077,
+        "p90": 0.1077,
+        "p95": 0.1077,
+        "p99": 0.1077,
+        "max": 0.1121
+      }
+    },
+    {
+      "col": "bd_weather_ocean_land_ms",
+      "active": {
+        "n": 211,
+        "avg": 0.09507298578199053,
+        "p50": 0.0814,
+        "p90": 0.1383,
+        "p95": 0.1826,
+        "p99": 0.1826,
+        "max": 0.3496
+      }
+    },
+    {
+      "col": "bd_weather_sea_ice_ms",
+      "active": {
+        "n": 101,
+        "avg": 0.08964851485148516,
+        "p50": 0.0862,
+        "p90": 0.1187,
+        "p95": 0.1187,
+        "p99": 0.1187,
+        "max": 0.1187
+      }
+    },
+    {
+      "col": "bd_weather_native_context_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.06440188679245283,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    },
+    {
+      "col": "bd_weather_refresh_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.06440188679245283,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    },
+    {
+      "col": "bd_weather_transp_ms",
+      "active": {
+        "n": 91,
+        "avg": 0.05540989010989011,
+        "p50": 0.054,
+        "p90": 0.0723,
+        "p95": 0.0723,
+        "p99": 0.0723,
+        "max": 0.0723
+      }
+    },
+    {
+      "col": "bd_weather_jit_patch_build_ms",
+      "active": {
+        "n": 184,
+        "avg": 0.044657608695652176,
+        "p50": 0.004,
+        "p90": 0.088,
+        "p95": 0.108,
+        "p99": 0.636,
+        "max": 0.705
+      }
+    },
+    {
+      "col": "bd_weather_hydrology_flush_ms",
+      "active": {
+        "n": 18,
+        "avg": 0.035555555555555556,
+        "p50": 0.0328,
+        "p90": 0.0419,
+        "p95": 0.0551,
+        "p99": 0.0551,
+        "max": 0.0551
+      }
+    },
+    {
+      "col": "bd_weather_feedback_ms",
+      "active": {
+        "n": 1,
+        "avg": 0.0297,
+        "p50": 0.0297,
+        "p90": 0.0297,
+        "p95": 0.0297,
+        "p99": 0.0297,
+        "max": 0.0297
+      }
+    },
+    {
+      "col": "bd_weather_bundle_static_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.023417475728155338,
+        "p50": 0.022,
+        "p90": 0.025,
+        "p95": 0.026,
+        "p99": 0.026,
+        "max": 0.026
+      }
+    },
+    {
+      "col": "bd_weather_cyclone_ms",
+      "active": {
+        "n": 36,
+        "avg": 0.021233333333333333,
+        "p50": 0.0201,
+        "p90": 0.0242,
+        "p95": 0.0272,
+        "p99": 0.0272,
+        "max": 0.0272
+      }
+    },
+    {
+      "col": "bd_weather_weather_cyclone_ms",
+      "active": {
+        "n": 36,
+        "avg": 0.021233333333333333,
+        "p50": 0.0201,
+        "p90": 0.0242,
+        "p95": 0.0272,
+        "p99": 0.0272,
+        "max": 0.0272
+      }
+    },
+    {
+      "col": "bd_weather_cyclone_phase2_inject_ms",
+      "active": {
+        "n": 36,
+        "avg": 0.0095,
+        "p50": 0.0093,
+        "p90": 0.0104,
+        "p95": 0.0154,
+        "p99": 0.0154,
+        "max": 0.0154
+      }
+    },
+    {
+      "col": "bd_weather_albedo_ms",
+      "active": {
+        "n": 1,
+        "avg": 0.009,
+        "p50": 0.009,
+        "p90": 0.009,
+        "p95": 0.009,
+        "p99": 0.009,
+        "max": 0.009
+      }
+    },
+    {
+      "col": "bd_weather_cyclone_phase1_decay_ms",
+      "active": {
+        "n": 32,
+        "avg": 0.0001,
+        "p50": 0.0001,
+        "p90": 0.0001,
+        "p95": 0.0001,
+        "p99": 0.0001,
+        "max": 0.0001
+      }
+    }
+  ],
+  "bd_climate_ms_top": [
+    {
+      "col": "bd_climate_round_apply_ms",
+      "active": {
+        "n": 9,
+        "avg": 11.313222222222223,
+        "p50": 11.129,
+        "p90": 11.88,
+        "p95": 11.88,
+        "p99": 11.88,
+        "max": 12.11
+      }
+    },
+    {
+      "col": "bd_climate_round_native_call_ms",
+      "active": {
+        "n": 9,
+        "avg": 9.181555555555555,
+        "p50": 9.082,
+        "p90": 9.429,
+        "p95": 9.429,
+        "p99": 9.429,
+        "max": 10.126
+      }
+    },
+    {
+      "col": "bd_climate_round_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 3.811118960244648,
+        "p50": 3.4775,
+        "p90": 6.794,
+        "p95": 7.0039,
+        "p99": 7.3938,
+        "max": 7.8298
+      }
+    },
+    {
+      "col": "bd_climate_compute_ms",
+      "active": {
+        "n": 318,
+        "avg": 2.5224276729559745,
+        "p50": 2.1703,
+        "p90": 4.8325,
+        "p95": 5.0213,
+        "p99": 5.3416,
+        "max": 5.7285
+      }
+    },
+    {
+      "col": "bd_climate_round_bundle_ms",
+      "active": {
+        "n": 9,
+        "avg": 2.292,
+        "p50": 2.247,
+        "p90": 2.446,
+        "p95": 2.446,
+        "p99": 2.446,
+        "max": 2.573
+      }
+    },
+    {
+      "col": "bd_climate_ocean_ms",
+      "active": {
+        "n": 309,
+        "avg": 1.6906715210355987,
+        "p50": 1.8639,
+        "p90": 2.5222,
+        "p95": 2.7325,
+        "p99": 2.9203,
+        "max": 2.9203
+      }
+    },
+    {
+      "col": "bd_climate_bundle_dynamic_ms",
+      "active": {
+        "n": 327,
+        "avg": 1.4277247706422018,
+        "p50": 1.389,
+        "p90": 1.612,
+        "p95": 1.612,
+        "p99": 1.612,
+        "max": 1.612
+      }
+    },
+    {
+      "col": "bd_climate_weather_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_weather_tick_ms",
+      "active": {
+        "n": 81,
+        "avg": 1.4006358024691357,
+        "p50": 1.495,
+        "p90": 1.6713,
+        "p95": 1.6936,
+        "p99": 1.6936,
+        "max": 1.6936
+      }
+    },
+    {
+      "col": "bd_climate_advance_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_weather_field_ms",
+      "active": {
+        "n": 81,
+        "avg": 0.8215777777777777,
+        "p50": 0.8324,
+        "p90": 0.9229,
+        "p95": 0.9229,
+        "p99": 0.9229,
+        "max": 0.9229
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.7520642201834863,
+        "p50": 0.674,
+        "p90": 1.084,
+        "p95": 1.382,
+        "p99": 2.312,
+        "max": 2.593
+      }
+    },
+    {
+      "col": "bd_climate_wrapper_wall_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.6654617737003058,
+        "p50": 0.589,
+        "p90": 0.935,
+        "p95": 1.276,
+        "p99": 2.211,
+        "max": 2.494
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5893333333333334,
+        "p50": 0.581,
+        "p90": 0.63,
+        "p95": 0.63,
+        "p99": 0.63,
+        "max": 0.664
+      }
+    },
+    {
+      "col": "bd_climate_wind_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.5396992307692308,
+        "p50": 0.5457,
+        "p90": 0.5941,
+        "p95": 0.6162,
+        "p99": 0.6162,
+        "max": 0.6162
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_observed_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.5364444444444445,
+        "p50": 0.528,
+        "p90": 0.577,
+        "p95": 0.577,
+        "p99": 0.577,
+        "max": 0.604
+      }
+    },
+    {
+      "col": "bd_climate_climate_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.48828930817610067,
+        "p50": 0.2631,
+        "p90": 0.9326,
+        "p95": 0.9351,
+        "p99": 1.038,
+        "max": 1.038
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_runtime_hydrology_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_native_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.37502222222222226,
+        "p50": 0.3442,
+        "p90": 0.4381,
+        "p95": 0.5209,
+        "p99": 0.5209,
+        "max": 0.5209
+      }
+    },
+    {
+      "col": "bd_climate_wind_air_ms",
+      "active": {
+        "n": 130,
+        "avg": 0.3539430769230769,
+        "p50": 0.3439,
+        "p90": 0.4236,
+        "p95": 0.4236,
+        "p99": 0.4236,
+        "max": 0.4236
+      }
+    },
+    {
+      "col": "bd_climate_apply_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.33340978593272175,
+        "p50": 0.323,
+        "p90": 0.424,
+        "p95": 0.541,
+        "p99": 0.634,
+        "max": 0.761
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_total_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_field_commit_loop_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_weather_commit_ms",
+      "active": {
+        "n": 72,
+        "avg": 0.29714444444444443,
+        "p50": 0.2953,
+        "p90": 0.3159,
+        "p95": 0.3201,
+        "p99": 0.3201,
+        "max": 0.3201
+      }
+    },
+    {
+      "col": "bd_climate_hydrology_compute_ms",
+      "active": {
+        "n": 27,
+        "avg": 0.2917777777777778,
+        "p50": 0.276,
+        "p90": 0.2991,
+        "p95": 0.4119,
+        "p99": 0.4119,
+        "max": 0.4119
+      }
+    },
+    {
+      "col": "bd_climate_bundle_ms",
+      "active": {
+        "n": 75,
+        "avg": 0.27831999999999996,
+        "p50": 0.023,
+        "p90": 1.426,
+        "p95": 1.459,
+        "p99": 1.658,
+        "max": 1.687
+      }
+    },
+    {
+      "col": "bd_climate_native_call_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2758081761006289,
+        "p50": 0.226,
+        "p90": 0.445,
+        "p95": 0.658,
+        "p99": 1.01,
+        "max": 1.073
+      }
+    },
+    {
+      "col": "bd_climate_summary_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_climate_weather_summary_ms",
+      "active": {
+        "n": 54,
+        "avg": 0.2576888888888889,
+        "p50": 0.2557,
+        "p90": 0.2828,
+        "p95": 0.3407,
+        "p99": 0.3407,
+        "max": 0.3407
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_finalizer_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.22822222222222222,
+        "p50": 0.229,
+        "p90": 0.235,
+        "p95": 0.235,
+        "p99": 0.235,
+        "max": 0.251
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_total_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.2258888888888889,
+        "p50": 0.226,
+        "p90": 0.232,
+        "p95": 0.232,
+        "p99": 0.232,
+        "max": 0.249
+      }
+    },
+    {
+      "col": "bd_climate_pass_b_ms",
+      "active": {
+        "n": 318,
+        "avg": 0.2192261006289308,
+        "p50": 0.2359,
+        "p90": 0.3094,
+        "p95": 0.3094,
+        "p99": 0.3094,
+        "max": 0.3094
+      }
+    },
+    {
+      "col": "bd_climate_stage_b_ms",
+      "active": {
+        "n": 4,
+        "avg": 0.21534999999999999,
+        "p50": 0.1837,
+        "p90": 0.247,
+        "p95": 0.247,
+        "p99": 0.247,
+        "max": 0.247
+      }
+    },
+    {
+      "col": "bd_climate_total_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_native_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.21029724770642202,
+        "p50": 0.1608,
+        "p90": 0.3825,
+        "p95": 0.5882,
+        "p99": 0.9502,
+        "max": 1.0153
+      }
+    },
+    {
+      "col": "bd_climate_wind_surface_ms",
+      "active": {
+        "n": 120,
+        "avg": 0.20123583333333334,
+        "p50": 0.2024,
+        "p90": 0.213,
+        "p95": 0.213,
+        "p99": 0.213,
+        "max": 0.213
+      }
+    },
+    {
+      "col": "bd_climate_distribute_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_climate_weather_distribute_ms",
+      "active": {
+        "n": 63,
+        "avg": 0.16886666666666666,
+        "p50": 0.1754,
+        "p90": 0.1826,
+        "p95": 0.1861,
+        "p99": 0.1861,
+        "max": 0.1861
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_weather_result_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.15244444444444444,
+        "p50": 0.143,
+        "p90": 0.193,
+        "p95": 0.193,
+        "p99": 0.193,
+        "max": 0.204
+      }
+    },
+    {
+      "col": "bd_climate_ocean_water_ms",
+      "active": {
+        "n": 309,
+        "avg": 0.13893430420711975,
+        "p50": 0.1327,
+        "p90": 0.1945,
+        "p95": 0.1945,
+        "p99": 0.2789,
+        "max": 0.4628
+      }
+    },
+    {
+      "col": "bd_climate_complete_apply_visual_intents_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.12233333333333334,
+        "p50": 0.122,
+        "p90": 0.131,
+        "p95": 0.131,
+        "p99": 0.131,
+        "max": 0.131
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_native_dirty_mark_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.11033333333333334,
+        "p50": 0.11,
+        "p90": 0.113,
+        "p95": 0.113,
+        "p99": 0.113,
+        "max": 0.115
+      }
+    },
+    {
+      "col": "bd_climate_veg_dyn_ms",
+      "active": {
+        "n": 4,
+        "avg": 0.1099,
+        "p50": 0.1077,
+        "p90": 0.1121,
+        "p95": 0.1121,
+        "p99": 0.1121,
+        "max": 0.1121
+      }
+    },
+    {
+      "col": "bd_climate_ocean_land_ms",
+      "active": {
+        "n": 220,
+        "avg": 0.09503772727272727,
+        "p50": 0.0802,
+        "p90": 0.1383,
+        "p95": 0.1826,
+        "p99": 0.1826,
+        "max": 0.3496
+      }
+    },
+    {
+      "col": "bd_climate_finalizer_cell_ms",
+      "active": {
+        "n": 9,
+        "avg": 0.0928888888888889,
+        "p50": 0.09,
+        "p90": 0.099,
+        "p95": 0.099,
+        "p99": 0.099,
+        "max": 0.117
+      }
+    },
+    {
+      "col": "bd_climate_sea_ice_ms",
+      "active": {
+        "n": 110,
+        "avg": 0.08963454545454545,
+        "p50": 0.0862,
+        "p90": 0.1187,
+        "p95": 0.1187,
+        "p99": 0.1187,
+        "max": 0.1187
+      }
+    },
+    {
+      "col": "bd_climate_job_shell_wrapper_gap_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.08660244648318043,
+        "p50": 0.08,
+        "p90": 0.105,
+        "p95": 0.133,
+        "p99": 0.176,
+        "max": 0.222
+      }
+    },
+    {
+      "col": "bd_climate_native_context_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    },
+    {
+      "col": "bd_climate_refresh_ms",
+      "active": {
+        "n": 327,
+        "avg": 0.06439388379204893,
+        "p50": 0.0626,
+        "p90": 0.0842,
+        "p95": 0.0842,
+        "p99": 0.0842,
+        "max": 0.0842
+      }
+    }
+  ],
+  "counters": {
+    "largest_slice_job": [
+      [
+        "native_daily_sim",
+        167
+      ],
+      [
+        "ocean_currents",
+        160
+      ]
+    ],
+    "largest_slice_stage": [
+      [
+        "phys_slp",
+        51
+      ],
+      [
+        "ocean_water",
+        47
+      ],
+      [
+        "daily_wind_prepass",
+        43
+      ],
+      [
+        "ocean_land",
+        41
+      ],
+      [
+        "phys_wind",
+        40
+      ],
+      [
+        "phys_psi_init",
+        26
+      ],
+      [
+        "climate_pass_a",
+        9
+      ],
+      [
+        "wind_air",
+        9
+      ],
+      [
+        "weather_commit",
+        8
+      ],
+      [
+        "sea_ice",
+        7
+      ],
+      [
+        "weather",
+        6
+      ],
+      [
+        "weather_field",
+        6
+      ],
+      [
+        "weather_summary",
+        6
+      ],
+      [
+        "weather_stage_b",
+        6
+      ],
+      [
+        "native_daily_finalizer",
+        6
+      ],
+      [
+        "runtime_hydrology",
+        4
+      ],
+      [
+        "wind_surface",
+        3
+      ],
+      [
+        "native_daily_complete",
+        3
+      ],
+      [
+        "weather_distribute",
+        2
+      ],
+      [
+        "weather_cyclone",
+        2
+      ]
+    ],
+    "largest_slice_path": [
+      [
+        "gdext_native_daily_slice",
+        167
+      ],
+      [
+        "gdext",
+        117
+      ],
+      [
+        "gdext_daily_wind_slp",
+        43
+      ]
+    ],
+    "j_native_daily_sim_path": [
+      [
+        "gdext_native_daily_slice",
+        327
+      ]
+    ],
+    "j_ocean_currents_path": [
+      [
+        "gdext",
+        137
+      ],
+      [
+        "",
+        109
+      ],
+      [
+        "gdext_daily_wind_slp",
+        54
+      ],
+      [
+        "physical_circulation",
+        27
+      ]
+    ],
+    "j_dynamic_visual_atlas_upload_path": [
+      [
+        "cell_indirection_lut",
+        164
+      ],
+      [
+        "",
+        163
+      ]
+    ],
+    "j_enum_atlas_upload_path": [
+      [
+        "",
+        286
+      ],
+      [
+        "cpp_skipped_no_dirty",
+        41
+      ]
+    ],
+    "j_season_refresh_path": [
+      [
+        "b_plus",
+        327
+      ]
+    ],
+    "j_natural_resource_daily_path": [
+      [
+        "gdext",
+        327
+      ]
+    ],
+    "bd_climate_fallback_reason": [
+      [
+        "",
+        327
+      ]
+    ],
+    "bd_weather_fallback_reason": [
+      [
+        "",
+        327
+      ]
+    ],
+    "bd_climate_field_commit_path": [
+      [
+        "",
+        255
+      ],
+      [
+        "gdext_commit",
+        72
+      ]
+    ],
+    "bd_weather_field_commit_path": [
+      [
+        "",
+        264
+      ],
+      [
+        "gdext_commit",
+        63
+      ]
+    ],
+    "bd_climate_field_commit_publish_verified": [
+      [
+        "",
+        255
+      ],
+      [
+        "true",
+        72
+      ]
+    ],
+    "bd_weather_field_commit_publish_verified": [
+      [
+        "",
+        264
+      ],
+      [
+        "true",
+        63
+      ]
+    ],
+    "bd_climate_finalizer_native_published": [
+      [
+        "",
+        318
+      ],
+      [
+        "true",
+        9
+      ]
+    ],
+    "bd_climate_finalizer_native_publish_fail_reason": [
+      [
+        "",
+        327
+      ]
+    ]
+  },
+  "skips": {
+    "j_season_refresh_skip": [],
+    "j_natural_resource_daily_skip": [],
+    "j_enum_atlas_upload_skip": [
+      [
+        "policy_gated",
+        286
+      ]
+    ],
+    "j_ocean_currents_skip": [
+      [
+        "policy_gated",
+        109
+      ]
+    ],
+    "j_native_daily_sim_skip": [],
+    "j_dynamic_visual_atlas_upload_skip": [
+      [
+        "policy_gated",
+        162
+      ],
+      [
+        "frame_budget_exhausted",
+        1
+      ]
+    ]
+  }
+}

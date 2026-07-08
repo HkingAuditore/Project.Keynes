@@ -110,6 +110,47 @@ static const NativeDailySliceNode NATIVE_DAILY_SLICE_GRAPH[] = {
 static const int NATIVE_DAILY_SLICE_GRAPH_SIZE =
     sizeof(NATIVE_DAILY_SLICE_GRAPH) / sizeof(NativeDailySliceNode);
 
+static int native_daily_node_index_by_name(const String &name) {
+    for (int i = 0; i < NATIVE_DAILY_SLICE_GRAPH_SIZE; ++i) {
+        if (name == String(NATIVE_DAILY_SLICE_GRAPH[i].name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static bool native_daily_node_has_builtin_range(const char *name) {
+    return std::strcmp(name, "ocean_water") == 0 ||
+           std::strcmp(name, "ocean_land") == 0 ||
+           std::strcmp(name, "wind_air") == 0 ||
+           std::strcmp(name, "wind_surface") == 0 ||
+           std::strcmp(name, "weather_field") == 0;
+}
+
+static uint32_t native_daily_parse_range_node_bits(const Variant &value) {
+    uint32_t bits = 0u;
+    auto add_name = [&](const String &name) {
+        const int idx = native_daily_node_index_by_name(name);
+        if (idx >= 0 && idx < 32 && native_daily_node_has_builtin_range(NATIVE_DAILY_SLICE_GRAPH[idx].name)) {
+            bits |= (1u << idx);
+        }
+    };
+    if (value.get_type() == Variant::PACKED_STRING_ARRAY) {
+        PackedStringArray names = value;
+        for (int i = 0; i < names.size(); ++i) {
+            add_name(names[i]);
+        }
+    } else if (value.get_type() == Variant::ARRAY) {
+        Array names = value;
+        for (int i = 0; i < names.size(); ++i) {
+            add_name(String(names[i]));
+        }
+    } else if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
+        add_name(String(value));
+    }
+    return bits;
+}
+
 // Perf (2026-06): the spread round-start slice (climate_pass_a) was dominated by a
 // full `bundle.duplicate(true)` deep copy (~1.5ms): ~10 knob dicts each holding several
 // 2464-cell PackedFloat32Arrays, copied byte-for-byte every round. The deep copy exists
@@ -681,6 +722,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         out["tick_count"] = _native_daily_tick_count;
         _native_daily_report = out.duplicate(true);
         _native_daily_slice_active = false;
+        _native_daily_slice_cell_cursor = 0;
+        _native_daily_slice_range_node_index = -1;
+        _native_daily_slice_range_node_bits = 0u;
         return out;
     };
 
@@ -701,6 +745,17 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         ++_native_daily_slice_round_id;
         _native_daily_slice_active = true;
         _native_daily_slice_node_index = 0;
+        _native_daily_slice_cell_cursor = 0;
+        _native_daily_slice_range_node_index = -1;
+        _native_daily_slice_cell_budget = 0;
+        _native_daily_slice_range_node_bits = 0u;
+        if (tick_knobs.has("native_daily_node_range_cells")) {
+            _native_daily_slice_cell_budget = std::max(0, int(tick_knobs["native_daily_node_range_cells"]));
+        }
+        if (_native_daily_slice_cell_budget > 0 && tick_knobs.has("native_daily_node_range_nodes")) {
+            _native_daily_slice_range_node_bits =
+                native_daily_parse_range_node_bits(tick_knobs["native_daily_node_range_nodes"]);
+        }
         // Node batching (bit-equal perf): GDScript injects a fresh JIT knob patch only
         // before the nodes listed in `native_daily_slice_yield_nodes` (the temp-dependent
         // passes). C++ may therefore run consecutive non-yield nodes within a single call,
@@ -853,7 +908,16 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         }
         if (std::strcmp(node.name, "ocean_water") == 0) {
             Dictionary water_knobs = as_dict(_native_daily_slice_bundle["ocean_water_knobs"]);
-            const double ms = run_ocean_water_pass(water_knobs);
+            const bool use_thread = bool(water_knobs.get("native_daily_thread_variant_enabled", false));
+            const int thread_tasks = int(water_knobs.get("native_daily_thread_tasks", 0));
+            double ms = use_thread
+                ? run_ocean_water_pass_thread(water_knobs, thread_tasks)
+                : run_ocean_water_pass(water_knobs);
+            String variant = use_thread ? String("thread") : String("scalar");
+            if (ms < 0.0 && use_thread) {
+                ms = run_ocean_water_pass(water_knobs);
+                variant = String("thread_fallback_scalar");
+            }
             if (ms < 0.0) return false;
             _native_daily_slice_bundle["ocean_water_knobs"] = water_knobs;
             if (water_knobs.has("anomaly_out") && _native_daily_slice_bundle.has("ocean_land_knobs")) {
@@ -862,15 +926,28 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 _native_daily_slice_bundle["ocean_land_knobs"] = land_knobs;
             }
             breakdown["ocean_water_ms"] = ms;
+            breakdown["ocean_water_variant"] = variant;
+            breakdown["ocean_water_thread_tasks"] = thread_tasks;
             breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
             return true;
         }
         if (std::strcmp(node.name, "ocean_land") == 0) {
             Dictionary land_knobs = as_dict(_native_daily_slice_bundle["ocean_land_knobs"]);
-            const double ms = run_ocean_land_pass(land_knobs);
+            const bool use_thread = bool(land_knobs.get("native_daily_thread_variant_enabled", false));
+            const int thread_tasks = int(land_knobs.get("native_daily_thread_tasks", 0));
+            double ms = use_thread
+                ? run_ocean_land_pass_thread(land_knobs, thread_tasks)
+                : run_ocean_land_pass(land_knobs);
+            String variant = use_thread ? String("thread") : String("scalar");
+            if (ms < 0.0 && use_thread) {
+                ms = run_ocean_land_pass(land_knobs);
+                variant = String("thread_fallback_scalar");
+            }
             if (ms < 0.0) return false;
             _native_daily_slice_bundle["ocean_land_knobs"] = land_knobs;
             breakdown["ocean_land_ms"] = ms;
+            breakdown["ocean_land_variant"] = variant;
+            breakdown["ocean_land_thread_tasks"] = thread_tasks;
             breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
             return true;
         }
@@ -885,16 +962,20 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "wind_air") == 0) {
-            const double ms = run_wind_air_mass_pass(as_dict(_native_daily_slice_bundle["wind_air_knobs"]));
+            Dictionary wind_knobs = as_dict(_native_daily_slice_bundle["wind_air_knobs"]);
+            const double ms = run_wind_air_mass_pass(wind_knobs);
             if (ms < 0.0) return false;
+            _native_daily_slice_bundle["wind_air_knobs"] = wind_knobs;
             breakdown["wind_air_ms"] = ms;
             breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
             return true;
         }
         if (std::strcmp(node.name, "wind_surface") == 0) {
-            const double ms = run_wind_surface_pass(as_dict(_native_daily_slice_bundle["wind_surface_knobs"]));
+            Dictionary wind_knobs = as_dict(_native_daily_slice_bundle["wind_surface_knobs"]);
+            const double ms = run_wind_surface_pass(wind_knobs);
             if (ms < 0.0) return false;
+            _native_daily_slice_bundle["wind_surface_knobs"] = wind_knobs;
             breakdown["wind_surface_ms"] = ms;
             breakdown["wind_ms"] = double(breakdown.get("wind_ms", 0.0)) + ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -902,9 +983,11 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         }
         if (std::strcmp(node.name, "sea_ice") == 0) {
             const float phase = float(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
-            const double ms = run_sea_ice_daily_pass(as_dict(_native_daily_slice_bundle["sea_ice_knobs"]), phase);
+            Dictionary sea_ice_knobs = as_dict(_native_daily_slice_bundle["sea_ice_knobs"]);
+            const double ms = run_sea_ice_daily_pass(sea_ice_knobs, phase);
             if (ms < 0.0) return false;
             breakdown["sea_ice_ms"] = ms;
+            breakdown["sea_ice_dt_days"] = double(sea_ice_knobs.get("dt_days", 1.0));
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
             return true;
         }
@@ -1173,6 +1256,18 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         const int batch_start_index = node_index;
         while (node_index >= 0) {
             const NativeDailySliceNode &node = NATIVE_DAILY_SLICE_GRAPH[node_index];
+            // Reset per-slice range diagnostics before each node. The breakdown dict
+            // accumulates across a round, so without this non-range nodes can inherit
+            // the previous range node's cursor and make CSV attribution misleading.
+            breakdown["node_range_enabled"] = false;
+            breakdown["node_range_active"] = false;
+            breakdown["node_range_done"] = true;
+            breakdown["node_range_budget"] = _native_daily_slice_cell_budget;
+            breakdown["node_range_node"] = String();
+            breakdown["node_cell_cursor_start"] = -1;
+            breakdown["node_cell_cursor_end"] = -1;
+            breakdown["node_cell_count"] = 0;
+            breakdown["node_cell_processed"] = 0;
             if (!_native_daily_slice_bundle.has(node.bundle_key)) {
                 const String node_name = node_name_string(node.name);
                 const String node_key = node_key_string(node.bundle_key);
@@ -1185,6 +1280,35 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 _native_daily_slice_node_index = node_index;
                 _native_daily_slice_breakdown = breakdown;
                 break;
+            }
+            bool range_active = false;
+            bool range_done = true;
+            int range_start = 0;
+            int range_end = 0;
+            int range_count = 0;
+            if (_native_daily_slice_cell_budget > 0 &&
+                node_index < 32 &&
+                ((_native_daily_slice_range_node_bits >> node_index) & 1u) &&
+                native_daily_node_has_builtin_range(node.name)) {
+                Dictionary range_knobs = as_dict(_native_daily_slice_bundle[node.bundle_key]);
+                range_count = int(range_knobs.get("n_cells", _native_world_cell_count));
+                if (range_count > 0) {
+                    if (_native_daily_slice_range_node_index != node_index) {
+                        _native_daily_slice_range_node_index = node_index;
+                        _native_daily_slice_cell_cursor = 0;
+                    }
+                    range_start = std::max(0, std::min(_native_daily_slice_cell_cursor, range_count));
+                    range_end = std::min(range_count, range_start + _native_daily_slice_cell_budget);
+                    if (range_end > range_start) {
+                        range_done = range_end >= range_count;
+                        range_active = true;
+                        range_knobs["start_idx"] = range_start;
+                        range_knobs["end_idx"] = range_end;
+                        range_knobs["defer_flush"] = !range_done;
+                        range_knobs["flush_on_end"] = range_done;
+                        _native_daily_slice_bundle[node.bundle_key] = range_knobs;
+                    }
+                }
             }
             const bool ok = exec_slice_node(node);
             if (!ok) {
@@ -1213,6 +1337,37 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                 return finish_with_failure(fail_stage, reason);
             }
             _native_daily_slice_any_pass_ran = true;
+            if (range_active) {
+                const String node_name = node_name_string(node.name);
+                const String node_key = node_key_string(node.bundle_key);
+                breakdown["stage_name"] = node_name;
+                breakdown["substage"] = node_key;
+                breakdown["cursor_start"] = node_index;
+                breakdown["cursor_end"] = node_index;
+                breakdown["node_range_enabled"] = true;
+                breakdown["node_range_active"] = !range_done;
+                breakdown["node_range_done"] = range_done;
+                breakdown["node_range_budget"] = _native_daily_slice_cell_budget;
+                breakdown["node_range_node"] = node_name;
+                breakdown["node_cell_cursor_start"] = range_start;
+                breakdown["node_cell_cursor_end"] = range_end;
+                breakdown["node_cell_count"] = range_count;
+                breakdown["node_cell_processed"] = range_end - range_start;
+                Dictionary node_report;
+                node_report["name"] = node_name;
+                node_report["bundle_key"] = node_key;
+                node_report["read_mask"] = int64_t(node.read_mask);
+                node_report["write_mask"] = int64_t(node.write_mask);
+                breakdown["node_report"] = node_report;
+                if (!range_done) {
+                    _native_daily_slice_cell_cursor = range_end;
+                    _native_daily_slice_node_index = node_index;
+                    _native_daily_slice_breakdown = breakdown;
+                    break;
+                }
+                _native_daily_slice_cell_cursor = 0;
+                _native_daily_slice_range_node_index = -1;
+            }
             _native_daily_slice_node_index = node_index + 1;
             const String node_name = node_name_string(node.name);
             const String node_key = node_key_string(node.bundle_key);
@@ -1267,11 +1422,18 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     const Array visual_dirty_intents = done
         ? native_daily_collect_visual_dirty_intents(_native_daily_slice_bundle, breakdown, _native_dirty_report)
         : Array();
-    const double progress_ratio = done
+    double progress_ratio = done
         ? 1.0
         : (NATIVE_DAILY_SLICE_GRAPH_SIZE > 0
                ? double(_native_daily_slice_node_index) / double(NATIVE_DAILY_SLICE_GRAPH_SIZE)
                : 1.0);
+    if (!done && bool(breakdown.get("node_range_active", false)) && NATIVE_DAILY_SLICE_GRAPH_SIZE > 0) {
+        const int cell_end = int(breakdown.get("node_cell_cursor_end", 0));
+        const int cell_count = std::max(1, int(breakdown.get("node_cell_count", 1)));
+        const double node_frac = std::max(0.0, std::min(1.0, double(cell_end) / double(cell_count)));
+        progress_ratio =
+            (double(_native_daily_slice_node_index) + node_frac) / double(NATIVE_DAILY_SLICE_GRAPH_SIZE);
+    }
 
     breakdown["total_ms"] = slice_ms;
     breakdown["native_ms"] = slice_ms;
@@ -1375,6 +1537,15 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     out["cursor_end"] = breakdown.get("cursor_end", _native_daily_slice_node_index);
     out["node_index"] = _native_daily_slice_node_index;
     out["next_node_index"] = done ? -1 : next_index;
+    out["node_range_enabled"] = breakdown.get("node_range_enabled", false);
+    out["node_range_active"] = breakdown.get("node_range_active", false);
+    out["node_range_done"] = breakdown.get("node_range_done", true);
+    out["node_range_budget"] = breakdown.get("node_range_budget", _native_daily_slice_cell_budget);
+    out["node_range_node"] = breakdown.get("node_range_node", String());
+    out["node_cell_cursor_start"] = breakdown.get("node_cell_cursor_start", -1);
+    out["node_cell_cursor_end"] = breakdown.get("node_cell_cursor_end", -1);
+    out["node_cell_count"] = breakdown.get("node_cell_count", 0);
+    out["node_cell_processed"] = breakdown.get("node_cell_processed", 0);
     out["round_id"] = _native_daily_slice_round_id;
     out["total_ms"] = slice_ms;
     out["native_ms"] = slice_ms;
@@ -1422,6 +1593,8 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
 
     if (done) {
         _native_daily_slice_active = false;
+        _native_daily_slice_cell_cursor = 0;
+        _native_daily_slice_range_node_index = -1;
     }
 
     return out;
@@ -2246,7 +2419,16 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
 
     if (bundle.has("ocean_water_knobs")) {
         Dictionary water_knobs = as_dict(bundle["ocean_water_knobs"]);
-        const double ms = run_ocean_water_pass(water_knobs);
+        const bool use_thread = bool(water_knobs.get("native_daily_thread_variant_enabled", false));
+        const int thread_tasks = int(water_knobs.get("native_daily_thread_tasks", 0));
+        double ms = use_thread
+            ? run_ocean_water_pass_thread(water_knobs, thread_tasks)
+            : run_ocean_water_pass(water_knobs);
+        String variant = use_thread ? String("thread") : String("scalar");
+        if (ms < 0.0 && use_thread) {
+            ms = run_ocean_water_pass(water_knobs);
+            variant = String("thread_fallback_scalar");
+        }
         if (ms < 0.0) return finish_with_failure("ocean_water", "pass returned fallback");
         bundle["ocean_water_knobs"] = water_knobs;
         if (water_knobs.has("anomaly_out") && bundle.has("ocean_land_knobs")) {
@@ -2255,16 +2437,29 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             bundle["ocean_land_knobs"] = land_knobs;
         }
         breakdown["ocean_water_ms"] = ms;
+        breakdown["ocean_water_variant"] = variant;
+        breakdown["ocean_water_thread_tasks"] = thread_tasks;
         breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
 
     if (bundle.has("ocean_land_knobs")) {
         Dictionary land_knobs = as_dict(bundle["ocean_land_knobs"]);
-        const double ms = run_ocean_land_pass(land_knobs);
+        const bool use_thread = bool(land_knobs.get("native_daily_thread_variant_enabled", false));
+        const int thread_tasks = int(land_knobs.get("native_daily_thread_tasks", 0));
+        double ms = use_thread
+            ? run_ocean_land_pass_thread(land_knobs, thread_tasks)
+            : run_ocean_land_pass(land_knobs);
+        String variant = use_thread ? String("thread") : String("scalar");
+        if (ms < 0.0 && use_thread) {
+            ms = run_ocean_land_pass(land_knobs);
+            variant = String("thread_fallback_scalar");
+        }
         if (ms < 0.0) return finish_with_failure("ocean_land", "pass returned fallback");
         bundle["ocean_land_knobs"] = land_knobs;
         breakdown["ocean_land_ms"] = ms;
+        breakdown["ocean_land_variant"] = variant;
+        breakdown["ocean_land_thread_tasks"] = thread_tasks;
         breakdown["ocean_ms"] = double(breakdown.get("ocean_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
@@ -2289,9 +2484,11 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
 
     if (bundle.has("sea_ice_knobs")) {
         const float phase = float(tick_knobs.get("season_phase", 0.0));
-        const double ms = run_sea_ice_daily_pass(as_dict(bundle["sea_ice_knobs"]), phase);
+        Dictionary sea_ice_knobs = as_dict(bundle["sea_ice_knobs"]);
+        const double ms = run_sea_ice_daily_pass(sea_ice_knobs, phase);
         if (ms < 0.0) return finish_with_failure("sea_ice", "pass returned fallback");
         breakdown["sea_ice_ms"] = ms;
+        breakdown["sea_ice_dt_days"] = double(sea_ice_knobs.get("dt_days", 1.0));
         breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
         any_pass_ran = true;
     }
@@ -2839,6 +3036,54 @@ Dictionary DCWorldExt::run_native_daily_finalizer(Dictionary knobs) {
     out["max_transport_anomaly"] = (double)max_transport;
     out["finalizer_tta_clamped_count"] = tta_clamped;
     out["finalizer_thermal_init_count"] = thermal_init;
+    const bool native_publish = (bool)knobs.get("native_publish", false);
+    bool native_published = false;
+    String native_publish_fail_reason;
+    Array native_published_slots;
+    double native_write_ms = 0.0;
+    if (native_publish) {
+        const auto t_native_write0 = std::chrono::high_resolution_clock::now();
+        if (!_bound || !_map_data) {
+            native_publish_fail_reason = "world_not_bound";
+        } else {
+            const int sid_temp = component_id(StringName("cell_temp"));
+            const int sid_tta = component_id(StringName("cell_temperature_transport_anomaly"));
+            const int sid_thermal = component_id(StringName("cell_thermal_energy"));
+            auto publish_f32_slot = [&](int sid,
+                                        const PackedFloat32Array &arr,
+                                        bool written,
+                                        const String &slot_name) -> bool {
+                if (!written) {
+                    return true;
+                }
+                if (sid < 0 || sid >= _slots.size()) {
+                    native_publish_fail_reason = String("missing_slot:") + slot_name;
+                    return false;
+                }
+                Slot &slot = _slots.write[sid];
+                if (slot.dtype != SlotDType::F32 || arr.size() != n) {
+                    native_publish_fail_reason = String("slot_shape_mismatch:") + slot_name;
+                    return false;
+                }
+                slot.arr_f32 = arr;
+                _flush_slot_to_map(sid);
+                native_published_slots.push_back(slot_name);
+                return true;
+            };
+            const bool ok = publish_f32_slot(sid_temp, temp_out, bool(out.get("temp_written", false)), String("cell_temp")) &&
+                            publish_f32_slot(sid_tta, tta_out, bool(out.get("tta_written", false)), String("cell_temperature_transport_anomaly")) &&
+                            publish_f32_slot(sid_thermal, thermal_out, bool(out.get("thermal_written", false)), String("cell_thermal_energy"));
+            native_published = ok;
+        }
+        const auto t_native_write1 = std::chrono::high_resolution_clock::now();
+        native_write_ms = std::chrono::duration<double, std::milli>(t_native_write1 - t_native_write0).count();
+    }
+    out["native_publish_requested"] = native_publish;
+    out["native_published"] = native_published;
+    out["native_publish_fail_reason"] = native_publish_fail_reason;
+    out["native_published_slots"] = native_published_slots;
+    out["finalizer_native_write_ms"] = native_write_ms;
+    out["finalizer_native_dirty_mark_ms"] = 0.0;
     return out;
 }
 

@@ -108,13 +108,15 @@ float lat_temp_bell(float lat_signed) {
 // 与 alt_penalty。注意：本函数仅在 dyn 数据无效时作 fallback（主路径用仿真 dyn_temp）。
 // SAME_SOURCE（Shader 镜像）: map_generator.gd::_alt_penalty（ALT_PEN_LINEAR=0.40 /
 //   ALT_PEN_HIGH_LO=0.45 / ALT_PEN_HIGH_HI=1.00 / ALT_PEN_HIGH_AMP=0.22）+ world_ext.cpp::pk_alt_penalty。
-//   alt_penalty = elev*0.40 + smoothstep(0.45,1.0,elev)*0.22（高山顶 elev=0.85 总扣减 ≈ 0.52）。
-//   2026-06-16：从旧值 0.55/0.30 校正到与 GDScript/C++ 权威一致——此前 GDScript+C++ 已调成 0.40/0.22，
-//   shader 漏改导致 fallback 路径高海拔偏冷。改本数值须同步上面两处。
+//   先把 elev 转为 sea_level 以上 land_h，再混入 25% 绝对 elevation 后套双段海拔惩罚。
+//   改本数值/公式须同步 GDScript 与 C++。
+const float ALT_PEN_ABS_ELEV_BLEND = 0.25;
 float compute_current_temp(float elev, float lat_signed, float season_offset) {
 	float lat_temp = lat_temp_bell(lat_signed);
-	float alt_pen_lin = elev * 0.40;
-	float alt_pen_hi = smoothstep(0.45, 1.0, elev) * 0.22;
+	float land_h = clamp((elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
+	float temp_height = mix(land_h, clamp(elev, 0.0, 1.0), ALT_PEN_ABS_ELEV_BLEND);
+	float alt_pen_lin = temp_height * 0.40;
+	float alt_pen_hi = smoothstep(0.45, 1.0, temp_height) * 0.22;
 	float alt_penalty = alt_pen_lin + alt_pen_hi;
 	return clamp(lat_temp + season_offset + climate_anomaly - alt_penalty, 0.0, 1.0);
 }

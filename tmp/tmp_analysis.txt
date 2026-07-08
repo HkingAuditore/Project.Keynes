@@ -1,0 +1,56 @@
+
+===== FRAME =====
+  fps:  n=327 mean= 60.0000 p50= 60.0000 p95= 60.0000 p99= 60.0000 max= 60.0000 | active_n=327 act_mean= 60.0000 act_p95= 60.0000 act_max= 60.0000 duty=100.0%
+  fast_ms:  n=327 mean=  4.2538 p50=  4.0000 p95=  6.0000 p99=  7.0000 max= 10.0000 | active_n=327 act_mean=  4.2538 act_p95=  6.0000 act_max= 10.0000 duty=100.0%
+  t_sus_ms:  n=327 mean=  4.2342 p50=  4.3480 p95=  5.8950 p99=  6.8220 max=  9.7090 | active_n=327 act_mean=  4.2342 act_p95=  5.8950 act_max=  9.7090 duty=100.0%
+  t_render_ms:  n=327 mean=  0.0236 p50=  0.0080 p95=  0.0110 p99=  0.5650 max=  0.6090 | active_n=327 act_mean=  0.0236 act_p95=  0.0110 act_max=  0.6090 duty=100.0%
+  t_ui_ms:  n=327 mean=  0.0002 p50=  0.0000 p95=  0.0010 p99=  0.0010 max=  0.0010 | active_n= 67 act_mean=  0.0010 act_p95=  0.0010 act_max=  0.0010 duty= 20.5%
+  largest_slice_ms:  n=327 mean=  1.6666 p50=  1.5520 p95=  2.3690 p99=  3.0350 max=  6.2780 | active_n=327 act_mean=  1.6666 act_p95=  2.3690 act_max=  6.2780 duty=100.0%
+  sus_sim_avg_300:  n=327 mean=  3.1500 p50=  3.1449 p95=  3.1916 p99=  3.1926 max=  3.1932 | active_n=327 act_mean=  3.1500 act_p95=  3.1916 act_max=  3.1932 duty=100.0%
+  sus_sim_p95_300:  n=327 mean=  4.7369 p50=  4.7550 p95=  4.7570 p99=  4.7590 max=  4.7590 | active_n=327 act_mean=  4.7369 act_p95=  4.7570 act_max=  4.7590 duty=100.0%
+  sus_sim_max_300:  n=327 mean=  6.8493 p50=  6.8870 p95=  7.8320 p99=  7.8320 max=  7.8320 | active_n=327 act_mean=  6.8493 act_p95=  7.8320 act_max=  7.8320 duty=100.0%
+  over_1ms_count_300:  n=327 mean=217.0979 p50=217.0000 p95=219.0000 p99=219.0000 max=219.0000 | active_n=327 act_mean=217.0979 act_p95=219.0000 act_max=219.0000 duty=100.0%
+
+===== JOBS =====
+  j_native_daily_sim_ms:  n=327 mean=  1.4425 p50=  1.3500 p95=  2.1160 p99=  3.0440 max=  3.2400 | active_n=327 act_mean=  1.4425 act_p95=  2.1160 act_max=  3.2400 duty=100.0%
+  j_season_refresh_ms:  n=327 mean=  0.0349 p50=  0.0340 p95=  0.0390 p99=  0.0480 max=  0.0780 | active_n=327 act_mean=  0.0349 act_p95=  0.0390 act_max=  0.0780 duty=100.0%
+  j_natural_resource_daily_ms:  n=327 mean=  0.2223 p50=  0.2190 p95=  0.2660 p99=  0.2980 max=  0.3830 | active_n=327 act_mean=  0.2223 act_p95=  0.2660 act_max=  0.3830 duty=100.0%
+  j_ocean_currents_ms:  n=327 mean=  1.0701 p50=  1.4390 p95=  2.2540 p99=  2.4000 max=  6.2930 | active_n=218 act_mean=  1.6051 act_p95=  2.2990 act_max=  6.2930 duty= 66.7%
+  j_enum_atlas_upload_ms:  n=327 mean=  0.0280 p50=  0.0000 p95=  0.0300 p99=  0.7930 max=  0.8970 | active_n= 41 act_mean=  0.2230 act_p95=  0.8100 act_max=  0.8970 duty= 12.5%
+  j_dynamic_visual_atlas_upload_ms:  n=327 mean=  0.4186 p50=  0.7680 p95=  0.8660 p99=  1.0410 max=  1.2910 | active_n=164 act_mean=  0.8347 act_p95=  0.9000 act_max=  1.2910 duty= 50.2%
+
+===== CLIMATE_BUNDLE =====
+  bd_climate_total_ms:  n=327 mean=  0.2103 p50=  0.1608 p95=  0.6043 p99=  0.9587 max=  1.0153 | active_n=327 act_mean=  0.2103 act_p95=  0.6043 act_max=  1.0153 duty=100.0%
+  bd_climate_native_ms:  n=327 mean=  0.2103 p50=  0.1608 p95=  0.6043 p99=  0.9587 max=  1.0153 | active_n=327 act_mean=  0.2103 act_p95=  0.6043 act_max=  1.0153 duty=100.0%
+  bd_climate_compute_ms:  n=327 mean=  2.4530 p50=  2.1362 p95=  5.0213 p99=  5.3416 max=  5.7285 | active_n=318 act_mean=  2.5224 act_p95=  5.0213 act_max=  5.7285 duty= 97.2%
+  bd_climate_refresh_ms:  n=327 mean=  0.0644 p50=  0.0626 p95=  0.0842 p99=  0.0842 max=  0.0842 | active_n=327 act_mean=  0.0644 act_p95=  0.0842 act_max=  0.0842 duty=100.0%
+  bd_climate_flush_ms:  n=327 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_climate_season_ms:  n=327 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_climate_climate_ms:  n=327 mean=  0.4749 p50=  0.2631 p95=  0.9351 p99=  1.0380 max=  1.0380 | active_n=318 act_mean=  0.4883 act_p95=  0.9351 act_max=  1.0380 duty= 97.2%
+  bd_climate_weather_ms:  n=327 mean=  0.3469 p50=  0.0000 p95=  1.6362 p99=  1.6936 max=  1.6936 | active_n= 81 act_mean=  1.4006 act_p95=  1.6936 act_max=  1.6936 duty= 24.8%
+  bd_climate_hydrology_ms:  n=327 mean=  0.0310 p50=  0.0000 p95=  0.3386 p99=  0.4381 max=  0.5209 | active_n= 27 act_mean=  0.3750 act_p95=  0.5209 act_max=  0.5209 duty=  8.3%
+  bd_climate_ocean_ms:  n=327 mean=  1.5976 p50=  1.8343 p95=  2.7325 p99=  2.9203 max=  2.9203 | active_n=309 act_mean=  1.6907 act_p95=  2.8511 act_max=  2.9203 duty= 94.5%
+  bd_climate_stage_b_ms:  n=327 mean=  0.0026 p50=  0.0000 p95=  0.0000 p99=  0.1837 max=  0.2470 | active_n=  4 act_mean=  0.2153 act_p95=  0.2470 act_max=  0.2470 duty=  1.2%
+  bd_climate_render_prepare_ms:  n=327 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_climate_bundle_ms:  n=327 mean=  0.0638 p50=  0.0000 p95=  0.5680 p99=  1.4700 max=  1.6870 | active_n= 75 act_mean=  0.2783 act_p95=  1.4700 act_max=  1.6870 duty= 22.9%
+  bd_climate_native_call_ms:  n=327 mean=  0.2682 p50=  0.2230 p95=  0.6580 p99=  1.0150 max=  1.0730 | active_n=318 act_mean=  0.2758 act_p95=  0.6700 act_max=  1.0730 duty= 97.2%
+  bd_climate_apply_ms:  n=327 mean=  0.3334 p50=  0.3230 p95=  0.5470 p99=  0.6640 max=  0.7610 | active_n=327 act_mean=  0.3334 act_p95=  0.5470 act_max=  0.7610 duty=100.0%
+  bd_climate_finalizer_total_ms:  n=  9 mean=  0.2259 p50=  0.2260 p95=  0.2490 p99=  0.2490 max=  0.2490 | active_n=  9 act_mean=  0.2259 act_p95=  0.2490 act_max=  0.2490 duty=  2.8%
+
+===== WEATHER_BUNDLE =====
+  bd_weather_total_ms:  n=318 mean=  0.2140 p50=  0.1618 p95=  0.6123 p99=  0.9587 max=  1.0153 | active_n=318 act_mean=  0.2140 act_p95=  0.6123 act_max=  1.0153 duty= 97.2%
+  bd_weather_native_ms:  n=318 mean=  0.2140 p50=  0.1618 p95=  0.6123 p99=  0.9587 max=  1.0153 | active_n=318 act_mean=  0.2140 act_p95=  0.6123 act_max=  1.0153 duty= 97.2%
+  bd_weather_compute_ms:  n=318 mean=  2.3773 p50=  2.0842 p95=  4.9834 p99=  5.3416 max=  5.7285 | active_n=309 act_mean=  2.4466 act_p95=  4.9834 act_max=  5.7285 duty= 94.5%
+  bd_weather_refresh_ms:  n=318 mean=  0.0644 p50=  0.0626 p95=  0.0842 p99=  0.0842 max=  0.0842 | active_n=318 act_mean=  0.0644 act_p95=  0.0842 act_max=  0.0842 duty= 97.2%
+  bd_weather_flush_ms:  n=318 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_weather_season_ms:  n=318 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_weather_climate_ms:  n=318 mean=  0.4622 p50=  0.2565 p95=  0.9351 p99=  1.0380 max=  1.0380 | active_n=309 act_mean=  0.4756 act_p95=  0.9351 act_max=  1.0380 duty= 94.5%
+  bd_weather_weather_ms:  n=318 mean=  0.3124 p50=  0.0000 p95=  1.5801 p99=  1.6936 max=  1.6936 | active_n= 72 act_mean=  1.3799 act_p95=  1.6936 act_max=  1.6936 duty= 22.0%
+  bd_weather_hydrology_ms:  n=318 mean=  0.0212 p50=  0.0000 p95=  0.3288 p99=  0.4381 max=  0.5209 | active_n= 18 act_mean=  0.3750 act_p95=  0.5209 act_max=  0.5209 duty=  5.5%
+  bd_weather_ocean_ms:  n=318 mean=  1.5801 p50=  1.8343 p95=  2.7325 p99=  2.9203 max=  2.9203 | active_n=300 act_mean=  1.6750 act_p95=  2.8511 act_max=  2.9203 duty= 91.7%
+  bd_weather_stage_b_ms:  n=318 mean=  0.0014 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.2470 | active_n=  2 act_mean=  0.2153 act_p95=  0.2470 act_max=  0.2470 duty=  0.6%
+  bd_weather_render_prepare_ms:  n=318 mean=  0.0000 p50=  0.0000 p95=  0.0000 p99=  0.0000 max=  0.0000
+  bd_weather_bundle_ms:  n=309 mean=  0.0690 p50=  0.0000 p95=  0.5770 p99=  1.4700 max=  1.6870 | active_n= 66 act_mean=  0.3231 act_p95=  1.4700 act_max=  1.6870 duty= 20.2%
+  bd_weather_native_call_ms:  n=309 mean=  0.2799 p50=  0.2320 p95=  0.6700 p99=  1.0150 max=  1.0730 | active_n=309 act_mean=  0.2799 act_p95=  0.6700 act_max=  1.0730 duty= 94.5%
+  bd_weather_apply_ms:  n=309 mean=  0.3324 p50=  0.3230 p95=  0.4730 p99=  0.6340 max=  0.7610 | active_n=309 act_mean=  0.3324 act_p95=  0.4730 act_max=  0.7610 duty= 94.5%
+  bd_weather_finalizer_total_ms: MISSING COL

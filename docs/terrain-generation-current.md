@@ -203,11 +203,13 @@ small = (moisture_noise(nx*400+79, ny*400-31) + 1) * 0.5
 moisture = clamp(large*0.65 + small*0.35, 0, 1)
 ```
 
-温度由 `pk_compute_temperature(ny, elevation)` 计算：
+温度由 `pk_compute_temperature(ny, elevation, sea_level)` 计算：
 
-1. `pk_lat_temp_bell((ny - 0.5) * 2)` 得到纬度钟形温度，当前指数 `PK_LAT_TEMP_CURVE_EXP = 1.6`。
-2. `pk_alt_penalty(elevation)` 扣海拔降温：线性项 `elevation*0.40`，高山项 `smoothstep(0.45, 1.00, elevation)*0.22`。
-3. `temperature = clamp(lat_temp - alt_penalty, 0, 1)`。
+1. `pk_lat_temp_bell((ny - 0.5) * 2)` 得到纬度钟形温度，当前指数 `PK_LAT_TEMP_CURVE_EXP = 1.3`。
+2. `land_h = clamp((elevation - sea_level) / (1 - sea_level), 0, 1)`，先得到海平面以上的相对高度。
+3. `temp_height = lerp(land_h, clamp(elevation, 0, 1), 0.25)`，保留少量绝对海拔冷却锚点，避免纯 `land_h` 过热。
+4. `pk_alt_penalty(temp_height)` 扣海拔降温：线性项 `temp_height*0.40`，高山项 `smoothstep(0.45, 1.00, temp_height)*0.22`。
+5. `temperature = clamp(lat_temp - alt_penalty, 0, 1)`。
 
 初步地形由 `pk_decide_terrain_ex(elevation, temperature, moisture, sea_level, permanent_only=true)` 决定：
 

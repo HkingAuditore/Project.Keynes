@@ -1,0 +1,68 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<style>
+body{background:#14161a;color:#e6e6e6;font-family:system-ui,'Segoe UI',sans-serif;margin:0;padding:24px;}
+h1{font-size:22px;margin:0 0 4px} h2{font-size:17px;margin:28px 0 10px;color:#9ecbff;border-bottom:1px solid #2a2e35;padding-bottom:6px}
+.sub{color:#8b93a0;font-size:13px;margin-bottom:18px}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.card{background:#1c2026;border:1px solid #2a2e35;border-radius:8px;padding:12px 16px;min-width:118px}
+.card .v{font-size:22px;font-weight:600} .card .l{font-size:12px;color:#8b93a0;margin-top:3px}
+.warn{color:#ffb454}.bad{color:#ff6b6b}.good{color:#5fd98a}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}
+th,td{text-align:right;padding:5px 8px;border-bottom:1px solid #23272e}
+th:first-child,td:first-child{text-align:left}
+th{color:#9aa3b0;font-weight:500}
+.note{background:#1c2026;border:1px solid #2a2e35;border-radius:8px;padding:14px 18px;margin-top:10px;line-height:1.65;font-size:13.5px}
+.note b{color:#ffd479}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;margin-right:4px}
+.tag.n{background:#23262b;color:#9aa3b0}.tag.w{background:#3a2a1a;color:#ffb454}.tag.g{background:#23314a;color:#9ecbff}
+</style></head><body>
+<h1>Project.Keynes 性能 A/B · wrapper 削减验证</h1>
+<div class="sub">基线 215611.csv（改之前，686 ticks） → 对照 222750.csv（改之后，1475 ticks） · 帧预算 8 ms</div>
+<div class="cards">
+<div class="card"><div class="v">4.68→4.79</div><div class="l">t_sus 均值 ms</div></div>
+<div class="card"><div class="v">6.85→6.57</div><div class="l">t_sus p95 ms</div></div>
+<div class="card"><div class="v">8.07→7.24</div><div class="l">t_sus p99 ms</div></div>
+<div class="card"><div class="v bad">8.78→9.28</div><div class="l">t_sus 最大 ms</div></div>
+<div class="card"><div class="v warn">1.2%→0.3%</div><div class="l">tick 超 8 ms</div></div>
+</div>
+<h2>各作业耗时：基线 vs 对照（均值/帧 ms，占比）</h2>
+<table><tr><th>作业</th><th>改前 ms</th><th>改后 ms</th><th>Δ%</th><th>改前占比</th><th>改后占比</th></tr>
+<tr><td>native_daily_sim</td><td>1.833</td><td>1.777</td><td style="color:#5fd98a">-3.1%</td><td>51.5%</td><td>47.5%</td></tr>
+<tr><td>ocean_currents</td><td>1.158</td><td>1.132</td><td style="color:#5fd98a">-2.3%</td><td>32.5%</td><td>30.2%</td></tr>
+<tr><td>dynamic_visual_atlas_upload <span class="tag w">新增大涨</span></td><td>0.173</td><td>0.421</td><td style="color:#ff6b6b">143.3%</td><td>4.9%</td><td>11.2%</td></tr>
+<tr><td>natural_resource_daily</td><td>0.255</td><td>0.277</td><td style="color:#ff6b6b">8.6%</td><td>7.2%</td><td>7.4%</td></tr>
+<tr><td>enum_atlas_upload</td><td>0.102</td><td>0.101</td><td style="color:#5fd98a">-1.0%</td><td>2.9%</td><td>2.7%</td></tr>
+<tr><td>season_refresh</td><td>0.039</td><td>0.037</td><td style="color:#5fd98a">-3.3%</td><td>1.1%</td><td>1.0%</td></tr>
+</table>
+<h2>ocean_currents 各阶段 A/B（本次优化目标作业）</h2>
+<table><tr><th>阶段</th><th>改前均值</th><th>改后均值</th><th>Δ%</th><th>判定</th></tr>
+<tr><td>phys_psi_init</td><td>2.211</td><td>2.193</td><td style="color:#9aa3b0">-0.81%</td><td style="color:#9aa3b0">≈ 噪声</td></tr>
+<tr><td>phys_wind</td><td>2.029</td><td>1.992</td><td style="color:#5fd98a">-1.82%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>phys_slp</td><td>1.828</td><td>1.771</td><td style="color:#5fd98a">-3.14%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>daily_wind_prepass</td><td>1.666</td><td>1.627</td><td style="color:#5fd98a">-2.36%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>phys_upwelling</td><td>0.649</td><td>0.619</td><td style="color:#5fd98a">-4.65%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+</table>
+<h2>native_daily_sim 各阶段 A/B（对照组 · 未改动）</h2>
+<table><tr><th>阶段</th><th>改前均值</th><th>改后均值</th><th>Δ%</th><th>判定</th></tr>
+<tr><td>native_daily_complete</td><td>3.638</td><td>3.361</td><td style="color:#5fd98a">-7.61%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>climate_pass_a</td><td>3.314</td><td>3.246</td><td style="color:#5fd98a">-2.08%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>weather</td><td>2.976</td><td>3.200</td><td style="color:#ff6b6b">7.54%</td><td style="color:#ff6b6b">↑ 变差</td></tr>
+<tr><td>ocean_water</td><td>2.218</td><td>2.036</td><td style="color:#5fd98a">-8.19%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>runtime_hydrology</td><td>1.679</td><td>1.611</td><td style="color:#5fd98a">-4.03%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>wind_air</td><td>1.581</td><td>1.530</td><td style="color:#5fd98a">-3.23%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>sea_ice</td><td>1.462</td><td>1.416</td><td style="color:#5fd98a">-3.11%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>wind_surface</td><td>1.420</td><td>1.387</td><td style="color:#5fd98a">-2.36%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>ocean_land</td><td>1.290</td><td>1.156</td><td style="color:#5fd98a">-10.39%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+<tr><td>transpiration</td><td>1.244</td><td>1.234</td><td style="color:#9aa3b0">-0.76%</td><td style="color:#9aa3b0">≈ 噪声</td></tr>
+<tr><td>climate_pass_b</td><td>1.177</td><td>1.138</td><td style="color:#5fd98a">-3.35%</td><td style="color:#5fd98a">↓ 改善</td></tr>
+</table>
+<h2>结论：wrapper 削减是否有效？</h2>
+<div class="note">
+<p><span class="tag n">事实</span> ocean_currents 五阶段均值全微降（phys_psi_init -0.8%%、phys_wind -1.8%%、phys_slp -3.1%%、daily_wind_prepass -2.3%%、phys_upwelling -4.6%%），作业均摊 1.158→1.132ms（-2.2%%）。</p>
+<p><span class="tag n">对照</span> 但<b>未改动的</b> native_daily_sim 同样整体下移：各阶段波动 <b>-10.4%% ~ +7.5%%</b>（ocean_land -10.4%%、ocean_water -8.2%%、weather +7.5%%），作业均摊 1.833→1.777ms（-3.1%%）。</p>
+<p><span class="tag w">判定</span> 优化作业的 -0~4.6%% 完全落在<b>未改作业的噪声带</b>内。即：<b>本次 wrapper 削减没有可归因的实测收益</b>——它安全、无回归，但也几乎没有省钱。</p>
+<p><span class="tag g">根因</span> 这印证了动手前的判断：耗时大头是 <b>C++ kernel + GDExtension 边界 marshaling 的固定成本</b>，不是 GDScript dict 构造。knob 字典缓存削掉的只是其中极薄一层（25 个 int/float 字段 + 一次 duplicate，约 μs 级），且本就被 run-to-run 噪声淹没。</p>
+<p><b>下一步（真正能动的杠杆）</b>：要把 ocean_currents 的 1.5–2.0ms 阶段压下去，必须走 <b>cutting_native_daily_ocean.md §7.3 的 C++ cell-range 重构</b>（让 phys_wind/phys_slp/phys_psi 接受 start_idx/end_idx，把单阶段摊到多 tick），或削减 C++ 内核本身——而非继续在 GDScript wrapper 上做文章。</p>
+<p><span class="tag w">新目标</span> <b>dynamic_visual_atlas_upload 从 4.9%%→11.2%% 占比、0.173→0.421ms/帧、运行 343→737 次（2.4×）</b>，已成第 3 大作业。它不是 sim 作业、与本次优化无关，但是下一处值得砍的常驻负载。</p>
+</div>
+</body></html>

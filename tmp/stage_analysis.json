@@ -1,0 +1,234 @@
+{
+  "nrows": 491,
+  "native_daily_stage_counts": {
+    "weather": 41,
+    "runtime_hydrology": 41,
+    "native_daily_complete": 41,
+    "": 41,
+    "climate_pass_a": 41,
+    "climate_pass_b": 41,
+    "ocean_water": 41,
+    "ocean_land": 41,
+    "wind_air": 41,
+    "wind_surface": 41,
+    "sea_ice": 41,
+    "transpiration": 40
+  },
+  "native_daily_substage_counts": {
+    "weather_knobs": 41,
+    "runtime_hydrology_knobs": 41,
+    "round_complete": 41,
+    "": 41,
+    "climate_pass_a_struct": 41,
+    "climate_pass_b_knobs": 41,
+    "ocean_water_knobs": 41,
+    "ocean_land_knobs": 41,
+    "wind_air_knobs": 41,
+    "wind_surface_knobs": 41,
+    "sea_ice_knobs": 41,
+    "transpiration_knobs": 40
+  },
+  "native_daily_path_counts": {
+    "gdext_native_daily_slice": 450,
+    "": 41
+  },
+  "native_daily_ms_by_stage": {
+    "weather": {
+      "mean": 2.909,
+      "p95": 3.059,
+      "max": 7.792,
+      "n": 41
+    },
+    "runtime_hydrology": {
+      "mean": 1.515,
+      "p95": 1.68,
+      "max": 2.022,
+      "n": 41
+    },
+    "native_daily_complete": {
+      "mean": 3.123,
+      "p95": 3.64,
+      "max": 3.893,
+      "n": 41
+    },
+    "": {
+      "mean": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "n": 41
+    },
+    "climate_pass_a": {
+      "mean": 3.017,
+      "p95": 3.656,
+      "max": 3.905,
+      "n": 41
+    },
+    "climate_pass_b": {
+      "mean": 1.195,
+      "p95": 1.498,
+      "max": 1.821,
+      "n": 41
+    },
+    "ocean_water": {
+      "mean": 1.815,
+      "p95": 2.034,
+      "max": 2.089,
+      "n": 41
+    },
+    "ocean_land": {
+      "mean": 1.102,
+      "p95": 1.375,
+      "max": 1.588,
+      "n": 41
+    },
+    "wind_air": {
+      "mean": 1.338,
+      "p95": 1.46,
+      "max": 1.665,
+      "n": 41
+    },
+    "wind_surface": {
+      "mean": 1.318,
+      "p95": 1.496,
+      "max": 1.712,
+      "n": 41
+    },
+    "sea_ice": {
+      "mean": 1.27,
+      "p95": 1.413,
+      "max": 1.508,
+      "n": 41
+    },
+    "transpiration": {
+      "mean": 1.206,
+      "p95": 1.44,
+      "max": 1.576,
+      "n": 40
+    }
+  },
+  "ocean_stage_counts": {
+    "": 164,
+    "daily_wind_prepass": 82,
+    "phys_slp": 82,
+    "phys_wind": 81,
+    "phys_psi_init": 41,
+    "phys_upwelling": 41
+  },
+  "ocean_substage_counts": {
+    "": 164,
+    "next_phys_done": 122,
+    "daily_wind_slp": 82,
+    "next_phys_wind": 82,
+    "next_phys_upwelling": 41
+  },
+  "ocean_path_counts": {
+    "gdext": 204,
+    "": 164,
+    "gdext_daily_wind_slp": 82,
+    "physical_circulation": 41
+  },
+  "ocean_ms_by_stage": {
+    "": {
+      "mean": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "n": 164
+    },
+    "phys_psi_init": {
+      "mean": 1.759,
+      "p95": 1.949,
+      "max": 2.107,
+      "n": 41
+    },
+    "phys_upwelling": {
+      "mean": 0.624,
+      "p95": 0.761,
+      "max": 0.846,
+      "n": 41
+    },
+    "daily_wind_prepass": {
+      "mean": 1.571,
+      "p95": 1.739,
+      "max": 2.421,
+      "n": 82
+    },
+    "phys_slp": {
+      "mean": 1.711,
+      "p95": 1.936,
+      "max": 2.056,
+      "n": 82
+    },
+    "phys_wind": {
+      "mean": 1.884,
+      "p95": 2.562,
+      "max": 2.613,
+      "n": 81
+    }
+  },
+  "bd_climate_node_ms": {
+    "ocean": {
+      "mean": 0.084,
+      "p95": 0.12,
+      "max": 0.123,
+      "n": 450
+    },
+    "ocean_water": {
+      "mean": 0.066,
+      "p95": 0.073,
+      "max": 0.079,
+      "n": 368
+    },
+    "ocean_land": {
+      "mean": 0.042,
+      "p95": 0.052,
+      "max": 0.057,
+      "n": 327
+    },
+    "wind_air": {
+      "mean": 0.234,
+      "p95": 0.26,
+      "max": 0.331,
+      "n": 286
+    },
+    "wind": {
+      "mean": 0.421,
+      "p95": 0.54,
+      "max": 0.598,
+      "n": 286
+    },
+    "wind_surface": {
+      "mean": 0.218,
+      "p95": 0.263,
+      "max": 0.378,
+      "n": 245
+    },
+    "stage_b": {
+      "mean": 0.005,
+      "p95": 0.0,
+      "max": 0.325,
+      "n": 450
+    }
+  },
+  "native_daily_ms_total": {
+    "mean": 1.652,
+    "p95": 3.127,
+    "max": 7.792,
+    "n": 491
+  },
+  "ocean_ms_total": {
+    "mean": 1.058,
+    "p95": 2.346,
+    "max": 2.613,
+    "n": 491
+  },
+  "native_daily_round_slice_count": {
+    "mean": 11.0,
+    "p95": 11.0,
+    "max": 11.0,
+    "n": 41
+  },
+  "native_daily_active_ready": {
+    "false": 450,
+    "": 41
+  }
+}
