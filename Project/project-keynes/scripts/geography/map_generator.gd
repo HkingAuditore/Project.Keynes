@@ -1034,6 +1034,10 @@ var _native_daily_slice_range_active: bool = false
 var _native_daily_finalizer_pending: bool = false
 var _native_daily_finalizer_pending_res: Dictionary = {}
 var _native_daily_finalizer_pending_breakdown: Dictionary = {}
+var _native_daily_contract_round_seq: int = 0
+var _native_daily_contract_sample_day: int = -1
+var _native_daily_contract_sample_tick: int = -1
+var _native_daily_contract_warned_over_budget: bool = false
 # A/B validation hook ONLY (empty in production → uses _NATIVE_DAILY_SLICE_YIELD_NODES).
 # Set to all graph indices to force legacy one-node-per-call; used by the bit-equal test.
 var native_daily_slice_yield_nodes_override: PackedInt32Array = PackedInt32Array()
@@ -1871,7 +1875,7 @@ func apply_simulation_cadence_from_profile() -> void:
 		set_dyn_atlas_upload_stride(int(cp.dynamic_visual_atlas_upload_stride))
 	if _native_daily_sim_job != null and cp.get("native_daily_sim_stride") != null:
 		_sus.apply_job_schedule(_native_daily_sim_job, cp, &"native_daily_sim",
-				clampi(int(cp.native_daily_sim_stride), 1, 8))
+				clampi(int(cp.native_daily_sim_stride), 1, 30))
 	if _native_environment_runtime_job != null and cp.get("native_environment_runtime_stride") != null:
 		_sus.apply_job_schedule(_native_environment_runtime_job, cp, &"native_environment_runtime",
 				clampi(int(cp.native_environment_runtime_stride), 1, 8))
@@ -3947,7 +3951,7 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 		return false
 	var native_stride: int = 1
 	if cp != null and cp.get("native_daily_sim_stride") != null:
-		native_stride = clampi(int(cp.native_daily_sim_stride), 1, 8)
+		native_stride = clampi(int(cp.native_daily_sim_stride), 1, 30)
 	_native_daily_sim_job = NativeDailySimJobScript.new(self, map, world, native_stride)
 	_sus.configure_job_from_profile(_native_daily_sim_job, cp, false, &"native_daily_sim", native_stride)
 	_configure_native_daily_transaction_budget(_native_daily_sim_job, cp)
@@ -4220,6 +4224,73 @@ func _record_native_daily_job_shell_diag(diag: Dictionary) -> void:
 		_last_climate_breakdown[key] = diag[key]
 
 
+func _native_daily_contract_stride_days() -> int:
+	var cp := _c()
+	if cp != null and cp.get("native_daily_sim_stride") != null:
+		return clampi(int(cp.native_daily_sim_stride), 1, 30)
+	return 1
+
+
+func _native_daily_contract_budget_days() -> int:
+	var cp := _c()
+	if cp != null and cp.get("native_daily_commit_lag_budget_days") != null:
+		return clampi(int(cp.native_daily_commit_lag_budget_days), 1, 30)
+	return _native_daily_contract_stride_days()
+
+
+func _native_daily_begin_contract_round(ctx: SusTickContext) -> void:
+	_native_daily_contract_round_seq += 1
+	_native_daily_contract_sample_day = ctx.day_index if ctx != null else -1
+	_native_daily_contract_sample_tick = ctx.tick_index if ctx != null else -1
+	_native_daily_contract_warned_over_budget = false
+
+
+func _native_daily_reset_contract_round() -> void:
+	_native_daily_contract_sample_day = -1
+	_native_daily_contract_sample_tick = -1
+	_native_daily_contract_warned_over_budget = false
+
+
+func _native_daily_stamp_contract(res: Dictionary, breakdown: Dictionary,
+		ctx: SusTickContext, committed: bool, state: String) -> void:
+	if _native_daily_contract_sample_day < 0 and ctx != null:
+		_native_daily_begin_contract_round(ctx)
+	var current_day: int = ctx.day_index if ctx != null else _native_daily_contract_sample_day
+	var current_tick: int = ctx.tick_index if ctx != null else _native_daily_contract_sample_tick
+	var sample_day: int = _native_daily_contract_sample_day
+	var sample_tick: int = _native_daily_contract_sample_tick
+	var age_days: int = maxi(0, current_day - sample_day) if sample_day >= 0 and current_day >= 0 else 0
+	var age_ticks: int = maxi(0, current_tick - sample_tick) if sample_tick >= 0 and current_tick >= 0 else age_days
+	var budget_days: int = _native_daily_contract_budget_days()
+	var over_budget: bool = age_days > budget_days
+	var commit_day: int = current_day if committed else -1
+	var commit_tick: int = current_tick if committed else -1
+	var fields := {
+		"native_daily_contract_version": 1,
+		"native_daily_contract_state": state,
+		"native_daily_round_seq": _native_daily_contract_round_seq,
+		"native_daily_stride_days": _native_daily_contract_stride_days(),
+		"native_daily_commit_lag_budget_days": budget_days,
+		"native_daily_sample_day": sample_day,
+		"native_daily_sample_tick": sample_tick,
+		"native_daily_current_day": current_day,
+		"native_daily_current_tick": current_tick,
+		"native_daily_commit_day": commit_day,
+		"native_daily_commit_tick": commit_tick,
+		"native_daily_age_days": age_days,
+		"native_daily_age_ticks": age_ticks,
+		"native_daily_commit_over_budget": over_budget,
+		"native_daily_finalizer_pending": _native_daily_finalizer_pending,
+	}
+	for key in fields.keys():
+		res[key] = fields[key]
+		breakdown[key] = fields[key]
+	if over_budget and not _native_daily_contract_warned_over_budget:
+		_native_daily_contract_warned_over_budget = true
+		push_warning("[native_daily/contract] round=%d sample_day=%d current_day=%d age=%d budget=%d state=%s exceeded freshness contract"
+				% [_native_daily_contract_round_seq, sample_day, current_day, age_days, budget_days, state])
+
+
 func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
 	if not _native_daily_slice_available():
 		return _native_daily_missing_slice_report()
@@ -4316,9 +4387,11 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		breakdown["round_native_call_ms"] = _native_daily_round_native_accum_ms
 		breakdown["round_apply_ms"] = _native_daily_round_apply_accum_ms
 		breakdown["round_slice_count"] = _native_daily_round_slice_count
+		_native_daily_stamp_contract(res, breakdown, ctx, rc_int == 0, "complete" if rc_int == 0 else "failed")
 		res["breakdown"] = breakdown
 		_record_native_daily_slice_climate_breakdown(res, breakdown, _map, true, rc_int)
 		_native_daily_last_result = res.duplicate()
+		_native_daily_reset_contract_round()
 		_native_daily_slice_unified_weather_embedded = false
 		_native_daily_slice_bundle_pass_keys = []
 		_native_daily_slice_active_bundle = {}
@@ -4351,6 +4424,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		_native_daily_slice_next_node_index = 0
 		_native_daily_slice_range_active = false
 		_native_daily_slice_phase_locked = ctx.season_phase
+		_native_daily_begin_contract_round(ctx)
 		tick_knobs["native_daily_bundle"] = bundle
 		# Tell C++ which nodes need a GDScript JIT patch so it can batch the rest
 		# (non-yield consecutive nodes) into a single call → fewer round-trips.
@@ -4553,6 +4627,16 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		res["round_native_call_ms"] = _native_daily_round_native_accum_ms
 		res["round_apply_ms"] = _native_daily_round_apply_accum_ms
 		res["round_slice_count"] = _native_daily_round_slice_count
+	var contract_state: String = "active"
+	var contract_committed: bool = false
+	if rc_int != 0:
+		contract_state = "failed"
+	elif done:
+		contract_state = "complete"
+		contract_committed = true
+	elif _native_daily_finalizer_pending:
+		contract_state = "pending_finalizer"
+	_native_daily_stamp_contract(res, breakdown, ctx, contract_committed, contract_state)
 	res["breakdown"] = breakdown
 	_record_native_daily_slice_climate_breakdown(res, breakdown, _map, done, rc_int)
 	# Shallow copy (CoW-safe): the scheduler/diagnostics read scalars + the fronts
@@ -4560,6 +4644,8 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	# are shared by ref, not deep-copied each slice. native_daily_last_result() also
 	# returns a shallow copy.
 	_native_daily_last_result = res.duplicate()
+	if rc_int != 0 or done:
+		_native_daily_reset_contract_round()
 	return res
 
 

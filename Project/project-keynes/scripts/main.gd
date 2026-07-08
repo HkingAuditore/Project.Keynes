@@ -70,7 +70,6 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 const WORLD_SETUP_META := &"world_setup_config"
 const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
-const MOBILE_COMPLEX_CLIMATE_PROFILE_PATH := "res://data/world/earth_like_mobile_complex.tres"
 const WORLD_SETUP_CLIMATE_FIELDS := {
 	"continent_warp_amp": true,
 	"main_radius_min": true,
@@ -117,6 +116,8 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 	"max_volcanoes": true,
 	"volcano_min_dist": true,
 	"volcano_min_land_h": true,
+	"native_daily_sim_stride": true,
+	"native_daily_commit_lag_budget_days": true,
 }
 
 @export var map_width: int = 60
@@ -1061,7 +1062,7 @@ func _apply_world_setup_base_config() -> void:
 
 
 func _default_climate_profile_path() -> String:
-	return MOBILE_COMPLEX_CLIMATE_PROFILE_PATH if OS.has_feature("mobile") else DEFAULT_CLIMATE_PROFILE_PATH
+	return DEFAULT_CLIMATE_PROFILE_PATH
 
 
 func _load_runtime_climate_profile() -> ClimateProfile:
@@ -1107,9 +1108,15 @@ func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
 	var wind_period := -1
 	if profile.get("ocean_daily_wind_period_ticks") != null:
 		wind_period = int(profile.ocean_daily_wind_period_ticks)
-	print("[WorldSetup] ClimateProfile path=%s mobile=%s split_weather=%s wind_period=%d"
+	var native_stride := -1
+	if profile.get("native_daily_sim_stride") != null:
+		native_stride = int(profile.native_daily_sim_stride)
+	var native_budget := -1
+	if profile.get("native_daily_commit_lag_budget_days") != null:
+		native_budget = int(profile.native_daily_commit_lag_budget_days)
+	print("[WorldSetup] ClimateProfile path=%s mobile=%s split_weather=%s wind_period=%d native_stride=%d native_budget=%d"
 		% [String(profile.get_meta(&"source_path", "<in-memory>")), str(OS.has_feature("mobile")),
-			str(split_weather), wind_period])
+			str(split_weather), wind_period, native_stride, native_budget])
 
 
 func _return_to_world_setup() -> void:
@@ -1937,7 +1944,13 @@ func _print_daily_breakdown(tick_no: int, sus_ms: float, render_ms: float,
 				if not nd.is_empty():
 					var nd_breakdown: Dictionary = nd.get("breakdown", {})
 					var nd_pass_keys = nd.get("bundle_pass_keys", [])
-					print("        native_daily wall=%.2f bundle=%.2f native_call=%.2f cpp_total=%.2f apply=%.2f compute=%.2f refresh=%.2f flush=%.2f weather=%.2f passes=%d" % [
+					print("        native_daily sample=%d commit=%d age=%d/%d over=%s state=%s wall=%.2f bundle=%.2f native_call=%.2f cpp_total=%.2f apply=%.2f compute=%.2f refresh=%.2f flush=%.2f weather=%.2f passes=%d" % [
+						int(nd.get("native_daily_sample_day", nd_breakdown.get("native_daily_sample_day", -1))),
+						int(nd.get("native_daily_commit_day", nd_breakdown.get("native_daily_commit_day", -1))),
+						int(nd.get("native_daily_age_days", nd_breakdown.get("native_daily_age_days", 0))),
+						int(nd.get("native_daily_commit_lag_budget_days", nd_breakdown.get("native_daily_commit_lag_budget_days", 0))),
+						str(nd.get("native_daily_commit_over_budget", nd_breakdown.get("native_daily_commit_over_budget", false))),
+						str(nd.get("native_daily_contract_state", nd_breakdown.get("native_daily_contract_state", ""))),
 						float(nd.get("wrapper_wall_ms", elapsed_ms)),
 						float(nd.get("bundle_ms", 0.0)),
 						float(nd.get("native_call_ms", nd.get("native_ms", 0.0))),

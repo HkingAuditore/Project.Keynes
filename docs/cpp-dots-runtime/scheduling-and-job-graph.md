@@ -112,6 +112,16 @@ DCSystemScheduler
   `native_daily_perf_target_ms`，当前 clamp 上限同为 8ms）的本地 transaction budget；默认 ACTIVE
   路径应在同一 SUS tick 内连续推进 native slice 直到 round `done=true`。只有异常超时、失败或
   显式低预算 profile 才应把 round 留到后续 tick。
+- **有界降频契约（2026-07）**：移动端允许把 native daily 从“每天权威提交”改为
+  “每 `native_daily_sim_stride=N` 天采样一次权威 round，并在
+  `native_daily_commit_lag_budget_days` 天内提交”。这不是无约束的 budget skip：
+  round start 记录 `native_daily_sample_day/sample_tick`，每个 slice/report/CSV 都带
+  `native_daily_current_day`、`native_daily_commit_day`、`native_daily_age_days`、
+  `native_daily_commit_lag_budget_days`、`native_daily_commit_over_budget` 和
+  `native_daily_contract_state`。`commit_over_budget=true` 会触发
+  `[native_daily/contract]` warn；该状态表示调度契约违约，必须降低 N/加 slices/放宽
+  budget 或继续拆热点，而不是接受静默漂移。中间 N 天可以读取上一轮权威状态或轻量插值；
+  更新日必须用真实 `dt_days`（例如 sea-ice cap 随 N 放宽）推进，避免误差跨周期累积。
 - **错峰执行（`native_daily_spread_across_ticks`，2026-06，默认 false）**：打开后
   `_configure_native_daily_transaction_budget` 改走 spread 分支——`max_slices_per_tick` 压到
   `native_daily_max_slices_per_tick`（默认 1，即"每 tick 跑一个 slice batch、A→B→C→A 轮转"），
@@ -323,7 +333,7 @@ DCSystemScheduler
 
 ### `frame_budget_ms`
 
-scheduler-wide 总预算。`SusSchedulerExt` 默认会把它 clamp 在安全范围内。每 tick 中，非 `must_run` job 会在预算耗尽后被 skip，并记录 `frame_budget_exhausted`。
+scheduler-wide 总预算。`ClimateProfile.sim_frame_budget_ms` 是当前权威配置；GDScript SUS fallback 与 `SusSchedulerExt` 使用同一套全平台安全上限（当前 16ms），不再按 `OS.has_feature("mobile")` 把移动端压到 4ms。每 tick 中，非 `must_run` job 会在预算耗尽后被 skip，并记录 `frame_budget_exhausted`。
 
 注意：
 

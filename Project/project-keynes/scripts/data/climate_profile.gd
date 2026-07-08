@@ -260,18 +260,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
 @export var native_environment_runtime_enabled: bool = false
-@export_range(1, 8, 1) var native_daily_sim_stride: int = 1
+@export_range(1, 30, 1) var native_daily_sim_stride: int = 1
 @export_range(1, 8, 1) var native_environment_runtime_stride: int = 1
 @export_range(0.25, 8.0, 0.05) var native_daily_perf_target_ms: float = 1.0
-# Native daily round 跨 tick 错峰执行（2026-06）。默认 false：整轮在同一个
-# day_changed tick 内原子跑完（per-tick 峰值 ~8ms，下游永远读到完整数据）。
+# Native daily round 跨 tick 错峰执行。默认 false：整轮在同一个 day_changed
+# tick 内原子跑完（per-tick 峰值高，下游永远读到完整数据）。
 # 设 true：让一轮的 slice batch 摊到多个 tick，每 tick 只跑
 # native_daily_max_slices_per_tick 个 batch（默认 1，即"A→B→C→A…"轮转），
-# 把 per-tick 峰值压到 ~2-3ms，给其它系统让出帧预算。代价：一个仿真日要跨
-# 几个 tick 才落地（仿真推进按比例变慢），且渲染/retained 下游在 round 跑一半
-# 时会短暂读到中间态 temp（anomaly 尚未合成回，偏差 ≤±0.16，约 1-2 tick）。
-# 每轮"完成态"与一-tick 模式逐 bit 相等（slice 机制本就 bit-equal）。
+# 把 per-tick 峰值压低，给其它系统让出帧预算。代价：采样日的权威结果会在
+# 后续 tick 才提交。该延迟必须由 native_daily_commit_lag_budget_days 约束并记录
+# 到 report/CSV；超过预算视为契约违约，而不是悄悄累积误差。
 @export var native_daily_spread_across_ticks: bool = false
+@export_range(1, 30, 1) var native_daily_commit_lag_budget_days: int = 10
 @export_range(1, 32, 1) var native_daily_max_slices_per_tick: int = 1
 # Optional spread-mode optimization: keep only true dynamic/JIT boundaries as yield nodes
 # and let C++ batch more adjacent native graph nodes. Default off until perf/bitequal soak.

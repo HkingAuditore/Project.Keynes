@@ -457,10 +457,11 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_snapshot_btn.pressed.connect(_on_btn_snapshot)
 	ctrl_row.add_child(_snapshot_btn)
 	# Plan: perf-recording-csv-export
-	# 录制按钮：再次点击触发 stop_and_export，CSV 落盘到 ../../tmp/perf_record_*.csv
+	# 录制按钮：再次点击触发 stop_and_export，CSV 桌面落盘到 ../../tmp，
+	# mobile 落盘到 user://perf，避免 Android APK 资源目录不可写。
 	_record_btn = Button.new()
 	_record_btn.text = "⏺ 开始录制"
-	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ ../../tmp/perf_record_<时间>.csv"
+	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ 桌面 ../../tmp；手机 user://perf"
 	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)
@@ -470,7 +471,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	tile_ctrl_row.add_theme_constant_override("separation", 6)
 	_tile_record_btn = Button.new()
 	_tile_record_btn.text = "⏺ 开始地块全量录制"
-	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → ../../tmp/tile_data_record_<时间>.csv"
+	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → 桌面 ../../tmp；手机 user://tile_data"
 	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
 	tile_ctrl_row.add_child(_tile_record_btn)

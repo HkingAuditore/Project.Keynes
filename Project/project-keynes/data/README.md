@@ -87,10 +87,10 @@
 
 | 文件 | 用途 |
 |---|---|
-| `res://data/world/earth_like.tres` | 默认地球类世界；保留桌面/基准配置，用于 A/B 对照。 |
-| `res://data/world/earth_like_mobile_complex.tres` | 移动端复杂气候性能档；降低高成本气候/SLP 风场/洋流/反馈更新频率，通过更宽的 stagger bucket 避免同帧聚集，并开启 native daily weather split 以压低单帧天气峰值。该档还把 `weather_field_advect_steps` 降到 `6`，用略低的天气平流精度换取小米 15 等移动端更低的 `weather_field` 单帧尖峰。 |
+| `res://data/world/earth_like.tres` | 默认地球类世界；运行时统一加载的主 profile。当前 native daily 采用 10 天权威采样 + 10 天提交延迟预算，spread/finalizer 延迟会写入 report/CSV。 |
+| `res://data/world/earth_like_mobile_complex.tres` | 移动端复杂气候性能档；降低高成本气候/SLP 风场/洋流/反馈更新频率，通过更宽的 stagger bucket 避免同帧聚集，并开启 native daily weather split 以压低单帧天气峰值。当前不再作为移动端默认 profile，仅保留为可手动选择/回归对照的性能档。 |
 
-运行时入口 `main.gd` 会在 `OS.has_feature("mobile")` 为 true 时默认加载 `earth_like_mobile_complex.tres`，桌面仍默认 `earth_like.tres`；启动日志会打印 `[WorldSetup] ClimateProfile path=... split_weather=... wind_period=...` 方便确认。WorldSetup 中的气候覆盖项会叠加到该平台默认 profile 上；直接 new `MapGenerator` 且不赋值时仍用 `earth_like.tres` 作为类内兜底。
+运行时入口 `main.gd` 默认统一加载 `earth_like.tres`；启动日志会打印 `[WorldSetup] ClimateProfile path=... split_weather=... wind_period=... native_stride=... native_budget=...` 方便确认。WorldSetup 中的气候覆盖项会叠加到该默认 profile 上；直接 new `MapGenerator` 且不赋值时仍用 `earth_like.tres` 作为类内兜底。
 
 ### 步骤
 

@@ -105,15 +105,9 @@ var _ext = null
 
 
 func set_frame_budget_ms(v: float) -> void:
-	# Fix #8A (2026-06-15): mobile 上限 4.0ms（log_next.txt 实测 SUS p95=9-15ms 远超
-	# 老上限 2.0ms，导致 dynamic_visual_atlas_upload 80% 被饿死）。
-	# [2026-06-29] 桌面上限从 2.0 → 16.0：慢机上单 tick sim 5-9ms 远超 2ms，optional
-	# 视觉上传（dynamic/enum atlas）每 tick frame_budget_exhausted，只能靠 starvation
-	# 零星刷新 → 视觉滞后/卡顿。放宽上限让 ClimateProfile.sim_frame_budget_ms 能真正抬高；
-	# 实际值仍由 profile 决定（默认 2.0，earth_like.tres 现设 8.0）。mobile 维持 4.0。
-	var max_budget: float = 4.0 if OS.has_feature("mobile") else 16.0
-	if OS.has_feature("mobile") and v < max_budget:
-		v = max_budget
+	# The profile owns the runtime budget. Keep one generous safety clamp across
+	# desktop/mobile so earth_like.tres behaves the same on both platforms.
+	var max_budget: float = 16.0
 	frame_budget_ms = clampf(v, 0.25, max_budget)
 	if _ext != null:
 		_ext.set_frame_budget_ms(frame_budget_ms)
@@ -126,9 +120,7 @@ func set_strict_budget_enabled(v: bool) -> void:
 
 
 func set_sim_budget_warn_ms(v: float) -> void:
-	var max_budget: float = 4.0 if OS.has_feature("mobile") else 2.0
-	if OS.has_feature("mobile") and v < max_budget:
-		v = max_budget
+	var max_budget: float = 16.0
 	sim_budget_warn_ms = clampf(v, 0.25, max_budget)
 	if _ext != null:
 		_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
