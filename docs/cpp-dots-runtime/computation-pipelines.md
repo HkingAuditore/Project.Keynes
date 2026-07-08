@@ -813,11 +813,12 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
   正值表示南半球。`dc_insolation_now` / `DCClimateMath.compute_daily_insolation`
   按这个契约计算，因此北半球 6-7 月日照高、南半球 1 月日照高。若 CSV 中看似南北反相，
   先确认分析脚本是否把 `cell_lat_norm_arr > 0.5` 误当北半球。
-- `dt_days` 是 pass 调用间隔补偿。legacy `sea_ice_daily` 和 debug/full-run helper
-  默认允许最多 30 天补偿；native daily sliced ACTIVE 把 sea-ice `dt_days` 上限压到 1 天，
-  并要求 `native_daily_sim` 默认在同一个 `day_changed` 内完成 graph round。若 CSV 中看到
+- `dt_days` 是 pass 调用间隔补偿。legacy `sea_ice_daily`、debug/full-run helper 和
+  native daily sliced ACTIVE 都允许最多 30 天补偿。原因是移动端或大地图上
+  `native_daily_sim` 可能被 `frame_budget_exhausted` 拖过多个 game day；如果 sea-ice
+  节点仍压到 1 天，`sea_ice_frac` 会按真实日历显著慢跑。若 CSV 中看到
   `sea_ice_frac` 只在十几天一次的 `sea_ice` 节点成批台阶变化，优先检查 native daily
-  transaction budget / `max_slices_per_tick`，不要先调冻结或融化公式。
+  transaction budget / `max_slices_per_tick` 和 `skipped[frame_budget_exhausted]`，不要先调冻结或融化公式。
 - 太阳融化项会按当前 `sea_ice_frac` 做厚冰/高反照率保护：低浓度薄冰仍可被夏季日照快速清退，
   厚冰仍受保护但最小太阳曝光由 `sea_ice_min_thick_ice_solar_exposure` 控制，默认 32%。
   2026-06-27 `tile_data_record_20260627_201214.csv` 显示 25% shielding、0.03 反照率冷却和
@@ -1690,7 +1691,7 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 - 当前是 partial ACTIVE continuation，不是所有 legacy/Godot 边界的完全替代。
 - ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 lightweight slice graph node cursor、progress 和累计 breakdown；每个 SUS tick 执行一个或一批存在的 native node，返回 `done=false` 让下个 tick 继续。`ClimateProfile.native_daily_split_weather_node_enabled` 可把 native daily 的 weather transaction 从旧的一体化 `run_weather_refresh_daily_pass` 拆为 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b` 六个 graph 子节点；默认 false 保留 monolithic pass，移动复杂 profile 开启以压低单帧 weather 峰值。
 - `ClimateProfile.native_daily_node_range_enabled` 默认 false；打开后 `native_daily_node_range_cells` 控制每次 C++ call 最多处理的 cell 数，`native_daily_node_range_nodes` 控制白名单。C++ 只接受已经有 `start_idx/end_idx` 语义的节点：`ocean_water`、`ocean_land`、`wind_air`、`wind_surface`、split weather 下的 `weather_field`。首批 profile 默认列表只含 `ocean_water/ocean_land`；wind/weather field 应在 bit-equal 与 perf 数据确认后再加入 profile。中间 chunk 注入 `defer_flush=true`，只写 C++ slots；末 chunk 才 flush 到 `MapData`，因此后续 graph node 不会读到半发布状态。
-- `native_daily_finalizer_slice_enabled` 默认 false；打开后 round completion 先返回 `native_daily_finalizer/pending done=false`，下一次 SUS slice 运行 `_native_daily_apply_finalizer()` 并返回 `native_daily_complete`。这是低风险 pseudo-node：先把 finalizer 从 C++ graph done slice 中拆出，若 `finalizer_write_dense_ms` / `finalizer_sparse_write_ms` 仍超预算，再继续把 DataCore 写回细切。
+- `native_daily_finalizer_slice_enabled` 默认 false；打开后 round completion 先返回 `native_daily_finalizer/pending done=false`，下一次 SUS slice 运行 `_native_daily_apply_finalizer()` 并返回 `native_daily_complete`。这是低风险 pseudo-node：先把 finalizer 从 C++ graph done slice 中拆出，若 `finalizer_write_dense_ms` / `finalizer_sparse_write_ms` 仍超预算，再继续把 DataCore 写回细切。移动端若配合 `native_daily_sim_stride=N` 做 N 日权威采样，finalizer slice 必须计入 `native_daily_commit_lag_budget_days`；提交延迟通过 `native_daily_sample_day/current_day/commit_day/age_days/commit_over_budget` report 字段公开，不能隐式跨周期累积。
 - GDScript 只在 round 起点构建 `native_daily_bundle`，后续 continuation tick 发轻量 knobs。`total_ms/native_ms` 表示当前 slice 墙钟，`round_native_ms` 表示 round 累计墙钟。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。
 - `runtime_hydrology_enabled=true` 不再是 ACTIVE 硬阻断条件。`MapGenerator` 必须在 native daily bundle 中提供 `weather_knobs` 与 `runtime_hydrology_knobs`；slice graph 会按 `weather -> weather split subnodes(optional) -> runtime_hydrology -> stage_b_after_hydrology` 执行（stage-b 仍按 cadence 可选）。如果 probe 缺少必需 key、hydrology slots 不可发布、或 weather readiness 未通过，则 `native_daily_sim_mode=ACTIVE` 必须回落到 legacy SUS 注册。

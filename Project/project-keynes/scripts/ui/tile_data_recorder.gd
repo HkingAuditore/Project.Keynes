@@ -276,7 +276,8 @@ const SOA_FIELD_CANDIDATES: Array = [
 	"weather_dirty_mask",
 ]
 
-const EXPORT_DIR_RELATIVE: String = "../../tmp"
+const DESKTOP_EXPORT_DIR_RELATIVE: String = "../../tmp"
+const MOBILE_EXPORT_DIR: String = "user://tile_data"
 const HARD_ROW_LIMIT: int = 5000000
 const DEFAULT_TICK_STRIDE: int = 1
 const DEFAULT_CELL_STRIDE: int = 1
@@ -659,7 +660,9 @@ func on_fast_tick(sample: Dictionary) -> Dictionary:
 
 
 static func _export_dir_absolute() -> String:
-	return ProjectSettings.globalize_path("res://").path_join(EXPORT_DIR_RELATIVE).simplify_path()
+	if OS.has_feature("mobile"):
+		return ProjectSettings.globalize_path(MOBILE_EXPORT_DIR).simplify_path()
+	return ProjectSettings.globalize_path("res://").path_join(DESKTOP_EXPORT_DIR_RELATIVE).simplify_path()
 
 
 static func _collect_soa_fields(map_data, cell_count: int, compact_fields: bool = DEFAULT_COMPACT_FIELDS) -> PackedStringArray:

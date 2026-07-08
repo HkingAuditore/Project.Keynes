@@ -111,7 +111,8 @@ const JOB_SUFFIXES: Array = [
 	JOB_COL_MS_SUFFIX,
 ]
 const BD_COL_PREFIX: String = "bd_"
-const EXPORT_DIR_RELATIVE: String = "../../tmp"
+const DESKTOP_EXPORT_DIR_RELATIVE: String = "../../tmp"
+const MOBILE_EXPORT_DIR: String = "user://perf"
 
 
 var _main = null  # 鸭子类型（运行时只 has_method/call 调用）；
@@ -202,7 +203,9 @@ func stop_and_export() -> String:
 
 
 static func _export_dir_absolute() -> String:
-	return ProjectSettings.globalize_path("res://").path_join(EXPORT_DIR_RELATIVE).simplify_path()
+	if OS.has_feature("mobile"):
+		return ProjectSettings.globalize_path(MOBILE_EXPORT_DIR).simplify_path()
+	return ProjectSettings.globalize_path("res://").path_join(DESKTOP_EXPORT_DIR_RELATIVE).simplify_path()
 
 
 # main.gd._run_fast_tick() 末尾调用。recorder 自己拉 SUS 数据，sample 只承载

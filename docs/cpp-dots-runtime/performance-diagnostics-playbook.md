@@ -128,6 +128,13 @@ native_daily_sim ran=... progress=0.46
   in/loop/flush 三段计时。2026-06 的 `climate_pass_a` ~1.7ms 隐藏热点（逐日重算 `dc_insolation_annual_mean`
   年均日照积分）就是这样被找出来的。
 - `done=false` 表示 C++ continuation 仍在推进，下个 SUS tick 会绕过 stride 继续执行；这不是失败。
+- 有界降频契约字段用于判断“低频计算是否可控”，而不是只看 `done=false`：
+  `native_daily_sample_day` 是本轮权威采样日，`native_daily_commit_day=-1` 表示尚未提交，
+  `native_daily_age_days` 是当前日相对采样日的年龄，`native_daily_commit_lag_budget_days`
+  是本 profile 允许的最大提交延迟，`native_daily_commit_over_budget=true` 表示已经违反契约。
+  同一组字段会出现在 `native_daily/slow-dump`、fast tick breakdown、`NativeDailySimJob`
+  report 和 perf CSV 的 `bd_climate_native_daily_*` 列中。移动端 N 日降频验收时，先筛
+  `bd_climate_native_daily_commit_over_budget=true`；理想结果应为 0 行。
 - `stage_name` 应稳定对应 native daily slice node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。当 `native_daily_split_weather_node_enabled=true` 时，`weather` 是跳板节点，实际耗时会拆到 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b`。
 - `sus_window ... largest=... cursor=A-B` 中的 cursor 来自 scheduler summary 的 largest slice cursor。native daily graph 下它对应本 slice 处理的 node 区间，可与 `native_daily/slow-dump node=... cursor=...` 对齐。
 - Split weather report 会同时保留旧聚合字段 `weather_ms` / `weather_tick_ms`，并新增 `weather_field_ms`、`weather_commit_ms`、`weather_distribute_ms`、`weather_summary_ms`、`weather_cyclone_ms`、`weather_stage_b_ms`；`weather_split_skipped_monolithic=true` 表示本轮没有调用旧的一体化 `run_weather_refresh_daily_pass`。失败时 `fail_stage` 会落在对应 split stage，`fallback_reason` 给出 `field_solve`、`field_commit`、`distribute`、`summary` 或 `stage_b` 等具体原因。
@@ -1054,6 +1061,10 @@ log_next.txt（2026-06-15 20:01）暴露**真正的视觉延迟瓶颈**：玩家
 |---|---|---|
 | **#8A** | `dc_system_scheduler.gd::configure_from_profile` + `sus_scheduler.gd::set_frame_budget_ms` + `gdext/sus_scheduler_ext.h::set_frame_budget_ms` | Scheduler 层统一解释 profile budget；SUS clamp 上限从 2.0ms 改 4.0ms（C++ 端无条件放开上界）。Mobile 启动时强制 `frame_ms = max(profile, 4.0)`，desktop 仍 clamp 到 2.0ms。SUS 总预算 +2ms 给所有 job 上车机会。|
 | **#8B** | `dynamic_visual_atlas_upload_system.gd::_init` | `must_run = false` → `must_run = true`。绕过 frame_budget gate，每 SUS tick 都跑 1 个 phase。slice_budget_ms=1.5 单 phase 完成单层 atlas，4 phase（dyn/eco/smo/ice）共 ~6ms 跨 4 tick 完成完整 commit。|
+
+> 2026-07 更新：运行时 profile 已统一走 `earth_like.tres`，`SusScheduler.gd` 不再按 mobile
+> 把 `sim_frame_budget_ms` 压到 4ms；当前 GDScript/C++ scheduler mirror 使用同一 16ms
+> 安全上限，实际预算由 profile 决定。
 
 预期收益：
 

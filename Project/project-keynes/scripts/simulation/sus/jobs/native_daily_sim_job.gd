@@ -138,6 +138,21 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 		"node_cell_cursor_end",
 		"node_cell_count",
 		"node_cell_processed",
+		"native_daily_contract_version",
+		"native_daily_contract_state",
+		"native_daily_round_seq",
+		"native_daily_stride_days",
+		"native_daily_commit_lag_budget_days",
+		"native_daily_sample_day",
+		"native_daily_sample_tick",
+		"native_daily_current_day",
+		"native_daily_current_tick",
+		"native_daily_commit_day",
+		"native_daily_commit_tick",
+		"native_daily_age_days",
+		"native_daily_age_ticks",
+		"native_daily_commit_over_budget",
+		"native_daily_finalizer_pending",
 	]
 	for key in diagnostic_fields:
 		if res.has(key):
@@ -246,9 +261,15 @@ func _maybe_dump_slow_slice(ctx: SusTickContext, res: Dictionary, report: Dictio
 	var node_report: Dictionary = breakdown.get("node_report", {})
 	var node_name: String = str(node_report.get("name", breakdown.get("last_completed_node", "")))
 	var node_key: String = str(node_report.get("bundle_key", substage))
-	print("[native_daily/slow-dump] tick=%d day=%d stage=%s/%s node=%s/%s cursor=%d-%d cells=%d-%d/%d done=%s progress=%.2f wall=%.2f shell=%.2f shell_gap=%.2f bundle=%.2f jit=%.2f keys=%s native_call=%.2f cpp=%.2f compute=%.2f refresh=%.2f flush=%.2f apply=%.2f round=%.2f weather=%.2f prebuilt=%s path=%s" % [
+	print("[native_daily/slow-dump] tick=%d day=%d sample=%d commit=%d age=%d/%d over=%s state=%s stage=%s/%s node=%s/%s cursor=%d-%d cells=%d-%d/%d done=%s progress=%.2f wall=%.2f shell=%.2f shell_gap=%.2f bundle=%.2f jit=%.2f keys=%s native_call=%.2f cpp=%.2f compute=%.2f refresh=%.2f flush=%.2f apply=%.2f round=%.2f weather=%.2f prebuilt=%s path=%s" % [
 		tick_idx,
 		ctx.day_index if ctx != null else -1,
+		int(report.get("native_daily_sample_day", res.get("native_daily_sample_day", -1))),
+		int(report.get("native_daily_commit_day", res.get("native_daily_commit_day", -1))),
+		int(report.get("native_daily_age_days", res.get("native_daily_age_days", 0))),
+		int(report.get("native_daily_commit_lag_budget_days", res.get("native_daily_commit_lag_budget_days", 0))),
+		str(report.get("native_daily_commit_over_budget", res.get("native_daily_commit_over_budget", false))),
+		str(report.get("native_daily_contract_state", res.get("native_daily_contract_state", ""))),
 		stage,
 		substage,
 		node_name,
