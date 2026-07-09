@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cotton"
+display_name = "棉花"
+reserve_component = &"cell.res_cotton_reserve"
+land_only = true
+temp_lo = 8.0
+temp_hi = 42.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.95
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.011
+init_base = -52.0
+init_temp = 0.0
+init_moisture = 10.0
+init_elevation = -8.0
+init_climate_fit = 88.0
+init_noise = 16.0
+init_noise_scale = 0.075
+init_landform_weights = {
+4: 32.0,
+5: 26.0,
+9: 20.0,
+11: 18.0,
+13: 16.0
+}
+init_vegetation_weights = {
+7: 10.0,
+9: 20.0,
+11: 24.0,
+12: 18.0,
+13: 22.0,
+16: 16.0,
+17: 14.0
+}
+climate_temp_opt = 0.66
+climate_temp_tol = 0.28
+climate_moisture_opt = 0.46
+climate_moisture_tol = 0.30
+runtime_climate_fit_weight = 0.92
+decay_stress = 0.9

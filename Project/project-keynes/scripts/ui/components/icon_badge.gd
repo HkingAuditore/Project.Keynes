@@ -39,9 +39,15 @@ func _draw() -> void:
 
 
 func _normalize_icon(icon: String) -> String:
+	return normalize_icon(icon)
+
+
+static func normalize_icon(icon: String) -> String:
 	match icon:
 		"☼", "太阳", "sun", "climate":
 			return "sun"
+		"overview", "summary", "总览":
+			return "overview"
 		"♣", "↟", "tree", "eco", "leaf":
 			return "eco"
 		"≈", "☁", "☂", "water", "hydrology":
@@ -56,6 +62,8 @@ func _normalize_icon(icon: String) -> String:
 			return "snow"
 		"♥", "heart", "life":
 			return "heart"
+		"history", "record", "记录":
+			return "history"
 		"", "—":
 			return ""
 		_:
@@ -63,6 +71,10 @@ func _normalize_icon(icon: String) -> String:
 
 
 func _glyph_for_key(key: String) -> String:
+	return glyph_for_key(key)
+
+
+static func glyph_for_key(key: String) -> String:
 	match key:
 		"sun":
 			return "\uf185" # sun
@@ -80,5 +92,9 @@ func _glyph_for_key(key: String) -> String:
 			return "\uf2dc" # snowflake
 		"heart":
 			return "\uf004" # heart
+		"overview":
+			return "\uf0ca" # list
+		"history":
+			return "\uf1da" # rotate-left/history
 		_:
 			return "\uf6fc" # mountain

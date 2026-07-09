@@ -176,6 +176,14 @@ const CELL_RES_SALTPETER_RESERVE: StringName = &"cell.res_saltpeter_reserve"    
 const CELL_RES_RARE_EARTH_RESERVE: StringName = &"cell.res_rare_earth_reserve"     # f32 稀土
 const CELL_RES_CLAY_RESERVE: StringName = &"cell.res_clay_reserve"                 # f32 黏土
 const CELL_RES_HORSES_RESERVE: StringName = &"cell.res_horses_reserve"             # f32 马匹
+const CELL_RES_WILD_GAME_RESERVE: StringName = &"cell.res_wild_game_reserve"       # f32 野生动物
+const CELL_RES_SPICE_PLANTS_RESERVE: StringName = &"cell.res_spice_plants_reserve" # f32 香料植物
+const CELL_RES_FLAX_RESERVE: StringName = &"cell.res_flax_reserve"                 # f32 亚麻
+const CELL_RES_COTTON_RESERVE: StringName = &"cell.res_cotton_reserve"             # f32 棉花
+const CELL_RES_CATTLE_RESERVE: StringName = &"cell.res_cattle_reserve"             # f32 牛
+const CELL_RES_SHEEP_RESERVE: StringName = &"cell.res_sheep_reserve"               # f32 羊
+const CELL_RES_PIGS_RESERVE: StringName = &"cell.res_pigs_reserve"                 # f32 猪
+const CELL_RES_MEDICINAL_HERBS_RESERVE: StringName = &"cell.res_medicinal_herbs_reserve" # f32 草药
 const CELL_RES_TIMBER_EXTRA_CHANGE: StringName = &"cell.res_timber_extra_change"             # f32 外部一次性增减
 const CELL_RES_STONE_EXTRA_CHANGE: StringName = &"cell.res_stone_extra_change"               # f32 外部一次性增减
 const CELL_RES_FERTILE_SOIL_EXTRA_CHANGE: StringName = &"cell.res_fertile_soil_extra_change" # f32 外部一次性增减
@@ -196,6 +204,14 @@ const CELL_RES_SALTPETER_EXTRA_CHANGE: StringName = &"cell.res_saltpeter_extra_c
 const CELL_RES_RARE_EARTH_EXTRA_CHANGE: StringName = &"cell.res_rare_earth_extra_change"     # f32 外部一次性增减
 const CELL_RES_CLAY_EXTRA_CHANGE: StringName = &"cell.res_clay_extra_change"                 # f32 外部一次性增减
 const CELL_RES_HORSES_EXTRA_CHANGE: StringName = &"cell.res_horses_extra_change"             # f32 外部一次性增减
+const CELL_RES_WILD_GAME_EXTRA_CHANGE: StringName = &"cell.res_wild_game_extra_change"       # f32 外部一次性增减
+const CELL_RES_SPICE_PLANTS_EXTRA_CHANGE: StringName = &"cell.res_spice_plants_extra_change" # f32 外部一次性增减
+const CELL_RES_FLAX_EXTRA_CHANGE: StringName = &"cell.res_flax_extra_change"                 # f32 外部一次性增减
+const CELL_RES_COTTON_EXTRA_CHANGE: StringName = &"cell.res_cotton_extra_change"             # f32 外部一次性增减
+const CELL_RES_CATTLE_EXTRA_CHANGE: StringName = &"cell.res_cattle_extra_change"             # f32 外部一次性增减
+const CELL_RES_SHEEP_EXTRA_CHANGE: StringName = &"cell.res_sheep_extra_change"               # f32 外部一次性增减
+const CELL_RES_PIGS_EXTRA_CHANGE: StringName = &"cell.res_pigs_extra_change"                 # f32 外部一次性增减
+const CELL_RES_MEDICINAL_HERBS_EXTRA_CHANGE: StringName = &"cell.res_medicinal_herbs_extra_change" # f32 外部一次性增减
 
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────

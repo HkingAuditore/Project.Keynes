@@ -31,7 +31,7 @@ func _ready() -> void:
 
 	var root := VBoxContainer.new()
 	root.name = "InspectorRoot"
-	root.add_theme_constant_override("separation", UITokens.SPACE_MD)
+	root.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	margin.add_child(root)
 
 	var header := HBoxContainer.new()
@@ -71,20 +71,48 @@ func _ready() -> void:
 	_summary_grid.add_theme_constant_override("v_separation", UITokens.SPACE_XS)
 	summary.add_child(_summary_grid)
 
-	_tabs = CategoryTabs.new()
-	_tabs.tab_selected.connect(_on_tab_selected)
-	root.add_child(_tabs)
+	var content_shell := Control.new()
+	content_shell.name = "ContentShell"
+	content_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(content_shell)
 
-	var sep := HSeparator.new()
-	root.add_child(sep)
+	var tab_rail := PanelContainer.new()
+	tab_rail.name = "ExternalTabRail"
+	tab_rail.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	tab_rail.offset_left = -82.0
+	tab_rail.offset_right = -12.0
+	tab_rail.offset_top = 0.0
+	tab_rail.offset_bottom = 0.0
+	var tab_rail_style := UITokens.panel_style(Color(0.052, 0.040, 0.030, 0.94), UITokens.RADIUS_MD, Color(0.45, 0.33, 0.18, 0.64))
+	tab_rail_style.content_margin_left = 0
+	tab_rail_style.content_margin_top = 0
+	tab_rail_style.content_margin_right = 0
+	tab_rail_style.content_margin_bottom = 0
+	tab_rail.add_theme_stylebox_override("panel", tab_rail_style)
+	content_shell.add_child(tab_rail)
+
+	var tab_margin := MarginContainer.new()
+	tab_margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
+	tab_margin.add_theme_constant_override("margin_top", UITokens.SPACE_SM)
+	tab_margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
+	tab_margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_SM)
+	tab_rail.add_child(tab_margin)
+
+	_tabs = CategoryTabs.new()
+	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_tabs.tab_selected.connect(_on_tab_selected)
+	tab_margin.add_child(_tabs)
 
 	var scroll := ScrollContainer.new()
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(scroll)
+	content_shell.add_child(scroll)
 
 	_content_box = VBoxContainer.new()
-	_content_box.add_theme_constant_override("separation", UITokens.SPACE_MD)
+	_content_box.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	_content_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_content_box)
 
@@ -147,6 +175,13 @@ func _render_content() -> void:
 		var list := InsightList.new()
 		list.set_items(insights)
 		_content_box.add_child(list)
+	var resource_rows: Array = data.get("resource_rows", [])
+	if not resource_rows.is_empty():
+		_add_section_title("资源清单")
+		var resource_list := ResourceList.new()
+		resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		resource_list.set_rows(resource_rows)
+		_content_box.add_child(resource_list)
 	var metrics: Array = data.get("metrics", [])
 	if not metrics.is_empty():
 		_add_section_title("档案")
@@ -158,7 +193,7 @@ func _render_content() -> void:
 		for raw in metrics:
 			var metric: Dictionary = raw
 			var card := MetricCard.new()
-			card.custom_minimum_size = Vector2(188.0, 54.0)
+			card.custom_minimum_size = Vector2(188.0, 50.0)
 			grid.add_child(card)
 			card.set_data(
 				String(metric.get("title", "")),
@@ -183,7 +218,8 @@ func _render_content() -> void:
 				String(gauge.get("max_label", "")),
 				gauge.get("accent", UITokens.ACCENT),
 				float(gauge.get("marker", -1.0)),
-				String(gauge.get("status_label", ""))
+				String(gauge.get("status_label", "")),
+				String(gauge.get("value_text", ""))
 			)
 	var charts: Array = data.get("charts", [])
 	if not charts.is_empty():

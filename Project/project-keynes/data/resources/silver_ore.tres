@@ -18,20 +18,20 @@ decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.0
-init_base = -0.58
+init_base = -46400.0
 init_temp = 0.0
 init_moisture = 0.0
-init_elevation = 0.24
-init_volcano = 0.18
-init_noise = 0.78
+init_elevation = 19200.0
+init_volcano = 14400.0
+init_noise = 62400.0
 init_noise_scale = 0.09
 init_landform_weights = {
-6: 0.18,
-7: 0.45,
-8: 0.45,
-10: 0.24,
-12: 0.38,
-13: 0.18,
-14: 0.42,
-15: 0.32
+6: 14400.0,
+7: 36000.0,
+8: 36000.0,
+10: 19200.0,
+12: 30400.0,
+13: 14400.0,
+14: 33600.0,
+15: 25600.0
 }

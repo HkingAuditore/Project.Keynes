@@ -55,6 +55,7 @@ func _test_registry_knobs() -> void:
 	ResourceProfileRegistry.ensure_loaded()
 	var count: int = ResourceProfileRegistry.count()
 	_expect("registry loaded >=2 profiles", count >= 2)
+	_expect("registry loaded 28 profiles", count == 28)
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
 	_expect("knobs resource_count matches registry count", int(knobs.get("resource_count", 0)) == count)
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
@@ -62,8 +63,12 @@ func _test_registry_knobs() -> void:
 	var gen_self: PackedFloat32Array = knobs.get("gen_self", PackedFloat32Array())
 	var wi: int = _slot_index(slots, "cell_res_wheat_reserve")
 	var ii: int = _slot_index(slots, "cell_res_iron_ore_reserve")
+	var gi: int = _slot_index(slots, "cell_res_wild_game_reserve")
+	var hi: int = _slot_index(slots, "cell_res_medicinal_herbs_reserve")
 	_expect("reserve_slots has wheat", wi >= 0)
 	_expect("reserve_slots has iron_ore", ii >= 0)
+	_expect("reserve_slots has wild_game", gi >= 0)
+	_expect("reserve_slots has medicinal_herbs", hi >= 0)
 	_expect("knobs has no capacity array", not knobs.has("capacity"))
 	_expect("extra_change_slots count matches reserve_slots", extra_slots.size() == slots.size())
 	if wi >= 0:
@@ -72,6 +77,10 @@ func _test_registry_knobs() -> void:
 	if ii >= 0:
 		_expect("iron extra slot", ii < extra_slots.size() and extra_slots[ii] == "cell_res_iron_ore_extra_change")
 		_expect("iron gen_self==0 (non-renewable)", is_equal_approx(gen_self[ii], 0.0))
+	if gi >= 0:
+		_expect("wild_game extra slot", gi < extra_slots.size() and extra_slots[gi] == "cell_res_wild_game_extra_change")
+	if hi >= 0:
+		_expect("medicinal_herbs extra slot", hi < extra_slots.size() and extra_slots[hi] == "cell_res_medicinal_herbs_extra_change")
 
 
 func _slot_index(slots: PackedStringArray, name: String) -> int:

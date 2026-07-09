@@ -26,7 +26,8 @@
 # 当 P > 0 且 decay_self > 0 时，均衡点 reserve* = P / decay_self。extra_change 为
 # 每地块每资源的外部一次性增减量；自然资源 pass 消费后清零，避免重复生效。
 #
-# 初始储量（map generation，仅 bake 时一次）—— 多因子「地块自身情况」适宜度。
+# 初始储量（map generation，仅 bake 时一次）—— 多因子「地块自身情况」直接资源量。
+# `init_*` 系数不是 0..1 百分比；它们直接相加成每 cell 的资源储量单位。
 # 由 MapGenerator._bootstrap_natural_resource_deposits 计算（仅 GDScript，无 C++ 副本）：
 #   suit = init_base + init_temp*tn + init_moisture*m
 #        + init_elevation * clamp(elevation, 0, 1)

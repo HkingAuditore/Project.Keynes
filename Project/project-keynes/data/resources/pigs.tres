@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"pigs"
+display_name = "猪"
+reserve_component = &"cell.res_pigs_reserve"
+land_only = true
+temp_lo = 0.0
+temp_hi = 38.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.24
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.005
+init_base = -34.0
+init_temp = 0.0
+init_moisture = 10.0
+init_river = 14.0
+init_climate_fit = 36.0
+init_noise = 10.0
+init_noise_scale = 0.055
+init_landform_weights = {
+4: 8.0,
+5: 16.0,
+9: 18.0,
+14: 12.0
+}
+init_vegetation_weights = {
+7: 18.0,
+12: 22.0,
+13: 16.0,
+14: 34.0,
+15: 30.0,
+20: 20.0,
+21: 24.0,
+24: 22.0,
+25: 26.0
+}
+climate_temp_opt = 0.56
+climate_temp_tol = 0.36
+climate_moisture_opt = 0.68
+climate_moisture_tol = 0.30
+runtime_climate_fit_weight = 0.88
+decay_stress = 0.38

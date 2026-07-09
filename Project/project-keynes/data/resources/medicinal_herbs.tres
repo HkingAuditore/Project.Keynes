@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"medicinal_herbs"
+display_name = "草药"
+reserve_component = &"cell.res_medicinal_herbs_reserve"
+land_only = true
+temp_lo = -5.0
+temp_hi = 36.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.32
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.014
+init_base = -24.0
+init_temp = 0.0
+init_moisture = 8.0
+init_elevation = 7.0
+init_river = 5.0
+init_climate_fit = 24.0
+init_noise = 14.0
+init_noise_scale = 0.11
+init_landform_weights = {
+5: 8.0,
+6: 12.0,
+7: 14.0,
+10: 16.0,
+13: 12.0,
+14: 14.0,
+15: 16.0
+}
+init_vegetation_weights = {
+7: 14.0,
+9: 10.0,
+10: 12.0,
+12: 16.0,
+13: 18.0,
+14: 24.0,
+15: 22.0,
+20: 18.0,
+21: 20.0,
+24: 16.0,
+25: 18.0
+}
+climate_temp_opt = 0.50
+climate_temp_tol = 0.38
+climate_moisture_opt = 0.62
+climate_moisture_tol = 0.34
+runtime_climate_fit_weight = 0.82
+decay_stress = 0.38

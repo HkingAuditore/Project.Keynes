@@ -13,36 +13,36 @@ temp_hi = 38.0
 gen_base = 0.0
 gen_temp = 0.0
 gen_moisture = 0.0
-gen_self = 0.021
+gen_self = 1.5
 decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
-decay_self = 0.006
-init_base = -0.2
+decay_self = 0.01
+init_base = -30.0
 init_temp = 0.0
-init_moisture = 0.08
-init_elevation = -0.04
-init_climate_fit = 0.68
-init_noise = 0.08
+init_moisture = 12.0
+init_elevation = -6.0
+init_climate_fit = 102.0
+init_noise = 12.0
 init_noise_scale = 0.07
 init_landform_weights = {
-4: 0.26,
-5: 0.22,
-6: 0.08,
-9: 0.16
+4: 39.0,
+5: 33.0,
+6: 12.0,
+9: 24.0
 }
 init_vegetation_weights = {
-7: 0.08,
-9: 0.18,
-11: 0.12,
-12: 0.2,
-13: 0.22,
-15: 0.16,
-25: 0.12
+7: 12.0,
+9: 27.0,
+11: 18.0,
+12: 30.0,
+13: 33.0,
+15: 24.0,
+25: 18.0
 }
 climate_temp_opt = 0.62
 climate_temp_tol = 0.3
 climate_moisture_opt = 0.58
 climate_moisture_tol = 0.3
 runtime_climate_fit_weight = 0.9
-decay_stress = 0.018
+decay_stress = 1.5

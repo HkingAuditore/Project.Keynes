@@ -4,7 +4,7 @@
 #
 # 顺序即权威：`_PROFILE_PATHS` 的下标 = C++ run_natural_resource_pass 的资源索引。
 # 新增一种资源的 SOP：
-#   1) 在 component_ids.gd / map_data.gd / component_schema.gd 加对应 cell.<res>_reserve 字段；
+#   1) 在 component_ids.gd / map_data.gd / component_schema.gd 加对应 reserve + extra_change 字段；
 #   2) 跑 tools/codegen/gen_cpp_bind_table.py 重新生成 C++ bind table；
 #   3) 新建 data/resources/<res>.tres（reserve_component 指向该字段）；
 #   4) 在本文件 _PROFILE_PATHS 追加路径；
@@ -39,6 +39,14 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/rare_earth.tres",
 	"res://data/resources/clay.tres",
 	"res://data/resources/horses.tres",
+	"res://data/resources/wild_game.tres",
+	"res://data/resources/spice_plants.tres",
+	"res://data/resources/flax.tres",
+	"res://data/resources/cotton.tres",
+	"res://data/resources/cattle.tres",
+	"res://data/resources/sheep.tres",
+	"res://data/resources/pigs.tres",
+	"res://data/resources/medicinal_herbs.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序

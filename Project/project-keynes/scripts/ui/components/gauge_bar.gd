@@ -6,6 +6,7 @@ var value: float = 0.0
 var min_label: String = ""
 var max_label: String = ""
 var status_label: String = ""
+var value_text: String = ""
 var accent: Color = UITokens.ACCENT
 var marker: float = -1.0
 
@@ -34,7 +35,7 @@ func _ready() -> void:
 	_refresh_labels()
 
 
-func set_data(p_label: String, p_value: float, p_min_label: String = "", p_max_label: String = "", p_accent: Color = UITokens.ACCENT, p_marker: float = -1.0, p_status_label: String = "") -> void:
+func set_data(p_label: String, p_value: float, p_min_label: String = "", p_max_label: String = "", p_accent: Color = UITokens.ACCENT, p_marker: float = -1.0, p_status_label: String = "", p_value_text: String = "") -> void:
 	label = p_label
 	value = clampf(p_value, 0.0, 1.0)
 	min_label = p_min_label
@@ -42,6 +43,7 @@ func set_data(p_label: String, p_value: float, p_min_label: String = "", p_max_l
 	accent = p_accent
 	marker = p_marker
 	status_label = p_status_label
+	value_text = p_value_text
 	if _title_label == null:
 		_ready()
 	_refresh_labels()
@@ -58,7 +60,10 @@ func _refresh_labels() -> void:
 	if _title_label == null:
 		return
 	_title_label.text = label
-	_value_label.text = "%d%% · %s" % [int(round(value * 100.0)), status_label] if status_label != "" else "%d%%" % int(round(value * 100.0))
+	if value_text != "":
+		_value_label.text = "%s · %s" % [value_text, status_label] if status_label != "" else value_text
+	else:
+		_value_label.text = "%d%% · %s" % [int(round(value * 100.0)), status_label] if status_label != "" else "%d%%" % int(round(value * 100.0))
 
 
 func _draw() -> void:

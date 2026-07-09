@@ -11,7 +11,8 @@ extends SceneTree
 #      - copper_ore：火山格（init_volcano）> 非火山。
 #      - clay：有河流（init_river）> 无河流（其余条件相同）。
 #      - timber：森林植被（init_vegetation_weights）> 裸地。
-#   3. 不变量：所有资源所有格有限非负；land_only 资源水面格为 0。
+#      - wild_game / cattle / cotton / spice_plants 等新增资源有各自偏向。
+#   3. 不变量：所有资源所有格有限非负；land_only 资源水面格为 0；不存在陆地格集齐全部资源。
 #
 # Headless execution:
 #   godot --headless --script tests/natural_resource_init_deposit_test.gd --quit
@@ -19,7 +20,7 @@ extends SceneTree
 var _checks: int = 0
 var _failures: int = 0
 
-# cell 布局（n=8）：
+# cell 布局（n=12）：
 const C_PLAIN: int = 0       # 平原 / 裸地 / 无水无火山（参照基准）
 const C_MOUNTAIN: int = 1    # 山地 + 高海拔（iron 高）
 const C_PEAK: int = 2        # 高峰 + 更高海拔
@@ -28,6 +29,10 @@ const C_RIVER: int = 4       # 平原 + 河流（clay 高）
 const C_NORIVER: int = 5     # 平原 + 无河流（与 C_RIVER 配对，仅差河流）
 const C_WATER: int = 6       # 水面格（land_only 资源应为 0）
 const C_FOREST: int = 7      # 丘陵 + 温带阔叶林（timber 高）
+const C_GRASS: int = 8       # 平原 + 温带草原（牛/野生动物高）
+const C_DRY_PLAIN: int = 9   # 暖干平原 / 稀树草原（棉花高）
+const C_WET_FOREST: int = 10 # 湿热低地森林（香料/猪高）
+const C_COOL_HILL: int = 11  # 凉爽丘陵草甸（羊/草药高）
 
 
 func _init() -> void:
@@ -44,7 +49,7 @@ func _run() -> void:
 		print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 		return
 
-	var n: int = 8
+	var n: int = 12
 	var map := _build_map(n)
 	var gen := MapGenerator.new()
 	gen._bootstrap_natural_resource_deposits(map, null)
@@ -52,6 +57,7 @@ func _run() -> void:
 	_test_factor_directions(map, profiles)
 	_test_differentiation(map, profiles, n)
 	_test_invariants(map, profiles, n)
+	_test_quantity_scale(map, profiles, n)
 
 	print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -98,6 +104,10 @@ func _build_map(n: int) -> MapData:
 	river[C_RIVER] = 1                                       # 仅此项区别于 C_NORIVER
 	water[C_WATER] = 1;            lf[C_WATER] = LF.OCEAN
 	lf[C_FOREST] = LF.HILL;        veg[C_FOREST] = VEG.TEMPERATE_DECIDUOUS;  elev[C_FOREST] = 0.40
+	veg[C_GRASS] = VEG.TEMPERATE_GRASSLAND
+	temp[C_DRY_PLAIN] = 24.0;      moist[C_DRY_PLAIN] = 0.36; veg[C_DRY_PLAIN] = VEG.SAVANNA
+	temp[C_WET_FOREST] = 27.0;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST
+	temp[C_COOL_HILL] = 8.0;       moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW
 
 	map.temp_arr = temp
 	map.moisture_arr = moist
@@ -132,6 +142,38 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var timber := _res_arr(map, profiles, "timber")
 	if timber.size() >= 8:
 		_expect("timber: 森林 > 裸地（init_vegetation_weights）", timber[C_FOREST] > timber[C_PLAIN])
+
+	var wild_game := _res_arr(map, profiles, "wild_game")
+	if wild_game.size() >= 12:
+		_expect("wild_game: 森林/草地 > 裸地", maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > wild_game[C_PLAIN])
+
+	var cattle := _res_arr(map, profiles, "cattle")
+	if cattle.size() >= 12:
+		_expect("cattle: 草地 > 裸地", cattle[C_GRASS] > cattle[C_PLAIN])
+
+	var sheep := _res_arr(map, profiles, "sheep")
+	if sheep.size() >= 12:
+		_expect("sheep: 凉爽丘陵草甸 > 湿热森林", sheep[C_COOL_HILL] > sheep[C_WET_FOREST])
+
+	var pigs := _res_arr(map, profiles, "pigs")
+	if pigs.size() >= 12:
+		_expect("pigs: 湿热森林 > 裸地", pigs[C_WET_FOREST] > pigs[C_PLAIN])
+
+	var spice := _res_arr(map, profiles, "spice_plants")
+	if spice.size() >= 12:
+		_expect("spice_plants: 湿热森林 > 裸地", spice[C_WET_FOREST] > spice[C_PLAIN])
+
+	var cotton := _res_arr(map, profiles, "cotton")
+	if cotton.size() >= 12:
+		_expect("cotton: 暖干平原 > 凉爽丘陵", cotton[C_DRY_PLAIN] > cotton[C_COOL_HILL])
+
+	var flax := _res_arr(map, profiles, "flax")
+	if flax.size() >= 12:
+		_expect("flax: 河岸平原 > 暖干平原", flax[C_RIVER] > flax[C_DRY_PLAIN])
+
+	var herbs := _res_arr(map, profiles, "medicinal_herbs")
+	if herbs.size() >= 12:
+		_expect("medicinal_herbs: 凉爽丘陵/森林 > 裸地", maxf(herbs[C_COOL_HILL], herbs[C_FOREST]) > herbs[C_PLAIN])
 
 
 # ─── 整体差异化（非全图统一）──────────────────────────────────────
@@ -181,6 +223,31 @@ func _test_invariants(map: MapData, profiles: Array, n: int) -> void:
 	if not all_ok:
 		printerr("  [detail] %s" % detail)
 	_expect("所有资源所有格有限非负，land_only 水面格为 0", all_ok)
+	_expect("至少一个陆地格缺少多数资源（稀疏分布）", _has_sparse_land_cell(map, profiles, n))
+
+
+func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
+	var max_value: float = 0.0
+	for p in profiles:
+		var arr: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(p))
+		for i in range(mini(n, arr.size())):
+			max_value = maxf(max_value, arr[i])
+	_expect("自然资源初值使用直接资源量级（max > 1）", max_value > 1.0)
+
+
+func _has_sparse_land_cell(map: MapData, profiles: Array, n: int) -> bool:
+	var water: PackedByteArray = map.is_water_arr
+	for i in range(n):
+		if water.size() > i and water[i] != 0:
+			continue
+		var present: int = 0
+		for p in profiles:
+			var arr: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(p))
+			if arr.size() > i and arr[i] > 0.0001:
+				present += 1
+		if present < profiles.size() / 2:
+			return true
+	return false
 
 
 # ─── 工具 ───────────────────────────────────────────────────────
