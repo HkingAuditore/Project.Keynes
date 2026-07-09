@@ -20,6 +20,7 @@
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
+| Goods storage（物资库存/价格，仅数据层） | DataCore persistent slots, no pass yet | 无 | `GoodProfileRegistry` 加载 profile、初始化 per-cell 数量/价格默认值；未来经济系统读写 `cell_goods_*` slots。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -620,6 +621,19 @@ reserve0 = max(0, suit)                                 # land_only 时水面格
 
 - 储量字段进永久存档（`world.gd` 按 schema 序列化），新增资源后旧档加载缺该字段时按 0 处理 + bootstrap 不会回填运行期已存在的存档（仅生成期写一次）。
 - `path=gdscript` 说明 native 未发布；检查 `fallback_reason`（missing_climate_slot / knob_array_size_mismatch / no_publishable_resource）。
+
+## Goods storage（物资库存/价格，无计算 pass）
+
+本节只描述数据层。物资（goods）不是自然资源，不从地块条件自然生成，也不由 `NaturalResourceDailySystem` 或 `ResourceProfileRegistry` 推进。当前起始物资为 `fur/mutton/coal/grain`，定义在 `data/goods/*.tres`，由 `GoodProfileRegistry` 按固定顺序加载。
+
+每种物资占两条 per-cell F32 SoA：
+
+- 数量：`cell.goods_<id>_qty` → `cell_goods_<id>_qty` → `goods_<id>_qty_arr`。
+- 价格：`cell.goods_<id>_price` → `cell_goods_<id>_price` → `goods_<id>_price_arr`。
+
+同一 cell index 在多条数量 slot 上非零即表示该地块储存多种物资；没有 per-cell Object/Dictionary/list。`MapData._alloc_soa()` 只 resize，`rebuild_soa_from_cells()` 清零数量和价格，`MapGenerator.generate()` 在 `init_soa_from_bake()` 后调用 `GoodProfileRegistry.initialize_map_storage_defaults(map)`，把数量保持 0、价格填为 `GoodProfile.default_price`。未来生产、消费、贸易或价格系统应通过 `DCWorld.write_f32_indexed/write_f32_dense` 或 C++ pass 批量写 `cell_goods_*` slots；UI/debug 冷路径用 `GoodProfileRegistry.cell_goods_snapshot()`。
+
+本轮不注册 scheduler job，不修改 daily graph，不实现自然资源加工到物资。新增物资 SOP：新增 `GoodProfile` `.tres` + 在 `component_ids.gd` / `map_data.gd` / `component_schema.gd` 增加 qty/price 字段 → 跑 `tools/codegen/gen_cpp_bind_table.py` → 重 build GDExtension。
 
 ## Transpiration
 

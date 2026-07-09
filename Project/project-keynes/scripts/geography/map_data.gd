@@ -154,6 +154,18 @@ var res_sheep_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_pigs_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_medicinal_herbs_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 
+# ─── Goods：per-cell 物资库存与价格（纯运行期 SoA，无 HexCell 镜像）──────
+# 同一 cell index 可在多条 goods_*_qty_arr 上非零，表示该地块储存多种物资。
+# 价格由 GoodProfileRegistry.initialize_map_storage_defaults 在 bake 初始化为默认值。
+var goods_fur_qty_arr:         PackedFloat32Array = PackedFloat32Array()
+var goods_fur_price_arr:       PackedFloat32Array = PackedFloat32Array()
+var goods_mutton_qty_arr:      PackedFloat32Array = PackedFloat32Array()
+var goods_mutton_price_arr:    PackedFloat32Array = PackedFloat32Array()
+var goods_coal_qty_arr:        PackedFloat32Array = PackedFloat32Array()
+var goods_coal_price_arr:      PackedFloat32Array = PackedFloat32Array()
+var goods_grain_qty_arr:       PackedFloat32Array = PackedFloat32Array()
+var goods_grain_price_arr:     PackedFloat32Array = PackedFloat32Array()
+
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
 # local_thermal_anomaly_arr: 由 climate pass_b 写（albedo + coastal + landform + sea_ice 反馈）。
@@ -635,6 +647,15 @@ func _alloc_soa(n: int) -> void:
 	res_sheep_extra_change_arr.resize(n)
 	res_pigs_extra_change_arr.resize(n)
 	res_medicinal_herbs_extra_change_arr.resize(n)
+	# Goods：per-cell 物资库存与价格字段
+	goods_fur_qty_arr.resize(n)
+	goods_fur_price_arr.resize(n)
+	goods_mutton_qty_arr.resize(n)
+	goods_mutton_price_arr.resize(n)
+	goods_coal_qty_arr.resize(n)
+	goods_coal_price_arr.resize(n)
+	goods_grain_qty_arr.resize(n)
+	goods_grain_price_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -774,6 +795,8 @@ func rebuild_soa_from_cells() -> void:
 	# 全图 fill 为 0（resize 已经填 0，这里显式 fill 防止后续手动 resize 残值）。
 	# Natural resources 储量同类（无 HexCell 镜像）：bake 时置 0，初值由
 	# _bootstrap_natural_resource_deposits 在 init_soa_from_bake 之后覆盖。
+	# Goods 库存/价格也没有 HexCell 镜像；价格默认值由 GoodProfileRegistry
+	# 在 init_soa_from_bake 之后、DataCore bind 之前写入。
 	for i in range(n):
 		ocean_thermal_anomaly_arr[i] = 0.0
 		local_thermal_anomaly_arr[i] = 0.0
@@ -833,6 +856,14 @@ func rebuild_soa_from_cells() -> void:
 		res_sheep_extra_change_arr[i] = 0.0
 		res_pigs_extra_change_arr[i] = 0.0
 		res_medicinal_herbs_extra_change_arr[i] = 0.0
+		goods_fur_qty_arr[i] = 0.0
+		goods_fur_price_arr[i] = 0.0
+		goods_mutton_qty_arr[i] = 0.0
+		goods_mutton_price_arr[i] = 0.0
+		goods_coal_qty_arr[i] = 0.0
+		goods_coal_price_arr[i] = 0.0
+		goods_grain_qty_arr[i] = 0.0
+		goods_grain_price_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

@@ -148,6 +148,7 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 # 尚未拾取，这里显式 preload 迫使先加载该脚本，避免
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
+const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -1366,6 +1367,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
+	# Goods：SoA 就位后初始化物资库存/价格默认值。物资不从自然资源自然生成，
+	# 这里只写 qty=0 与 GoodProfile.default_price。
+	GoodProfileRegistryScript.initialize_map_storage_defaults(map)
 	# Natural resources：SoA 就位后写入每地块初始资源储量（按 temp/moisture/terrain 适宜度）。
 	# 必须在 init_soa_from_bake 之后（数组已 resize/置 0）、_setup_sus bind 之前。
 	_bootstrap_natural_resource_deposits(map, cfg)

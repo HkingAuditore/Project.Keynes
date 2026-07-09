@@ -160,6 +160,7 @@ WorldClock.day_changed(day_idx)
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
 - `natural_resource_daily`：自然资源每日生成/衰减，per-cell 储量按「固定公式模板 + 每资源系数」结合 temp/moisture 演化；reads cell.temp/moisture → 拓扑排在气候之后。数据驱动配置 `ResourceProfile`（`scripts/data/resource_profile.gd` + `data/resources/*.tres`）+ `ResourceProfileRegistry`；计算权威在 C++ `run_natural_resource_pass`（`gdext/src/world_ext_resource.cpp`），GDScript fallback 同模板。详见 `docs/cpp-dots-runtime/computation-pipelines.md` "Natural resources" 节。
+- 物资（goods）数据层已接入 DataCore，但尚无 job：`GoodProfile` / `GoodProfileRegistry` 加载 `data/goods/*.tres`，每种物资用 `cell.goods_<id>_qty` 与 `cell.goods_<id>_price` 两条 per-cell F32 slot 表达库存和价格，owner 为 `economy.goods`。它与自然资源不是一一对应关系，不由 `natural_resource_daily` 生成或演化；未来经济系统应批量写 `cell_goods_*` slots。
 - `sea_ice_daily`：独立海冰日更新，可按 profile gate 注册。
 - `ocean_currents`：SLP、wind、PSI、upwelling、ocean current、视觉 raster/commit。
 - `weather_refresh`：天气 field begin/solve/summary/hydrology/commit/stage-b。
@@ -295,4 +296,4 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 ## 当前非目标
 
-仓库当前核心是地理生成、气候、天气、海洋、渲染和 DOTS/C++ 运行时。尚未看到稳定的生产/消费/价格/工资/税收/贸易等经济系统入口。后续如果加入经济玩法，应先定义 component schema、tick cadence、UI/debug 和持久化边界，不要把经济状态混入现有 climate/weather/visual buffer。
+仓库当前核心是地理生成、气候、天气、海洋、渲染和 DOTS/C++ 运行时。物资库存/价格的 DataCore 持久 slot 已存在，但尚未看到稳定的生产/消费/工资/税收/贸易等经济系统入口。后续如果加入经济玩法，应复用 `economy.goods` slot 家族并先定义 tick cadence、UI/debug 和持久化边界，不要把经济状态混入现有 climate/weather/visual buffer。
