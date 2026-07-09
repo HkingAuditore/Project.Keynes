@@ -123,7 +123,9 @@ int effective_weather_quality() {
 #if defined(MOBILE_QUALITY_LOW)
 	return 0;
 #elif defined(MOBILE_QUALITY_MID)
-	return min(weather_overlay_quality, 1);
+	return 0;
+#elif defined(MOBILE_QUALITY_HIGH)
+	return 0;
 #else
 	return weather_overlay_quality;
 #endif
@@ -210,7 +212,7 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	float cloud_mask = smoothstep(0.025, 0.18, coverage);
 	float amount = smoothstep(0.04, 0.3, coverage);
 
-#ifdef PK_QUALITY_LOW
+#if defined(PK_MOBILE_ANY)
 	float low_pulse = 0.92 + 0.08 * sin(t * 0.09 + seed * 1.7);
 	return clamp(cloud_mask * mix(0.22, 0.58, amount) * low_pulse, 0.0, 1.0);
 #else
@@ -221,12 +223,14 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	// 3) billow/detail fBM adds puffy internal contrast;
 	// 4) coverage remap controls how much texture survives.
 	vec2 warp = vec2(0.0);
+#if !defined(PK_MOBILE_HIGH_SLIM)
 	if (q >= 2) {
 		vec2 warp_p = p * 0.0012 + vec2(seed * 0.23, -seed * 0.17);
 		float wa = cloud_fbm_evolve(warp_p + vec2(13.7, 2.9), 2, t * 0.10);
 		float wb = cloud_fbm_evolve(warp_p + vec2(-5.4, 19.1), 2, -t * 0.09);
 		warp = (vec2(wa, wb) - vec2(0.5)) * mix(0.32, 0.78, amount);
 	}
+#endif
 
 	// 噪声相位必须只由世界坐标/时间/seed 决定，不能由 coverage 决定；否则每次 weather_lut 刷新云量变化时，噪声坐标也会跳。
 	vec2 base_p = p * 0.0038 + warp + vec2(seed * 0.37, seed * 0.61);
@@ -540,7 +544,7 @@ void fragment() {
 
 	int q_weather = effective_weather_quality();
 	int biome = 0;
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	biome = int(texture(map_index_atlas, wx_wrap_uv(uv)).r * 255.0 + 0.5);
 #endif
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)

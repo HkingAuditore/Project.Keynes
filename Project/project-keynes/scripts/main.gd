@@ -72,6 +72,9 @@ const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
 const MOBILE_NATIVE_DAILY_STRIDE_DAYS: int = 20
 const MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS: int = 20
+const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
+const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
+const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 const WORLD_SETUP_CLIMATE_FIELDS := {
 	"continent_warp_amp": true,
 	"main_radius_min": true,
@@ -143,10 +146,10 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 # `#define MOBILE_QUALITY_HIGH/MID/LOW` 到 shader code，让 GPU 实际编译三种
 # 二进制变体。runtime `if` 无效（GPU warp 编译所有分支）。
 #   0 = LOW   ≤4 sample/像素，纯 atlas 颜色 + 海陆判断
-#   1 = MID   ≤6 sample/像素，加 base_ripple + 单方向 hillshade
-#   2 = HIGH  ≤9 sample/像素，加 vector_atlas（洋流）+ plus-pattern offshore
+#   1 = MID   移动端瘦身：接近 LOW 成本，保留手动提档入口
+#   2 = HIGH  移动端瘦身高档：保留手动提档入口，但不再跑桌面级水面/天气特效
 # 桌面端不受此控制，走原 shader 代码（无 MOBILE_QUALITY_* define）。
-@export_range(0, 2, 1) var mobile_quality_tier: int = 1
+@export_range(0, 2, 1) var mobile_quality_tier: int = 0
 # -1=自动；0/1/2=启动页手动指定低/中/高。移动端自动档仍会优先 60 FPS。
 @export_range(-1, 2, 1) var render_quality_mode: int = -1
 # 移动端 terrain horizon 是可选高成本路径：默认关闭以保持 60 FPS。
@@ -1116,6 +1119,24 @@ func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
 		if not climate_overrides.has("native_daily_sea_ice_spread_dt_cap_days") \
 				and profile.get("native_daily_sea_ice_spread_dt_cap_days") != null:
 			profile.native_daily_sea_ice_spread_dt_cap_days = float(MOBILE_NATIVE_DAILY_STRIDE_DAYS)
+		if not climate_overrides.has("natural_resource_daily_stride") \
+				and profile.get("natural_resource_daily_stride") != null:
+			profile.natural_resource_daily_stride = maxi(
+				int(profile.natural_resource_daily_stride),
+				MOBILE_NATURAL_RESOURCE_STRIDE_DAYS
+			)
+		if not climate_overrides.has("dynamic_visual_atlas_upload_stride") \
+				and profile.get("dynamic_visual_atlas_upload_stride") != null:
+			profile.dynamic_visual_atlas_upload_stride = maxi(
+				int(profile.dynamic_visual_atlas_upload_stride),
+				MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE
+			)
+		if not climate_overrides.has("weather_field_advect_steps") \
+				and profile.get("weather_field_advect_steps") != null:
+			profile.weather_field_advect_steps = mini(
+				int(profile.weather_field_advect_steps),
+				MOBILE_WEATHER_FIELD_ADVECT_STEPS
+			)
 	generator.climate_profile = profile
 	var split_weather := false
 	if profile.get("native_daily_split_weather_node_enabled") != null:
@@ -1129,9 +1150,19 @@ func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
 	var native_budget := -1
 	if profile.get("native_daily_commit_lag_budget_days") != null:
 		native_budget = int(profile.native_daily_commit_lag_budget_days)
-	print("[WorldSetup] ClimateProfile path=%s mobile=%s split_weather=%s wind_period=%d native_stride=%d native_budget=%d"
+	var natural_resource_stride := -1
+	if profile.get("natural_resource_daily_stride") != null:
+		natural_resource_stride = int(profile.natural_resource_daily_stride)
+	var dynamic_visual_stride := -1
+	if profile.get("dynamic_visual_atlas_upload_stride") != null:
+		dynamic_visual_stride = int(profile.dynamic_visual_atlas_upload_stride)
+	var weather_advect_steps := -1
+	if profile.get("weather_field_advect_steps") != null:
+		weather_advect_steps = int(profile.weather_field_advect_steps)
+	print("[WorldSetup] ClimateProfile path=%s mobile=%s split_weather=%s wind_period=%d native_stride=%d native_budget=%d natres_stride=%d dyn_visual_stride=%d weather_advect_steps=%d"
 		% [String(profile.get_meta(&"source_path", "<in-memory>")), str(OS.has_feature("mobile")),
-			str(split_weather), wind_period, native_stride, native_budget])
+			str(split_weather), wind_period, native_stride, native_budget,
+			natural_resource_stride, dynamic_visual_stride, weather_advect_steps])
 
 
 func _return_to_world_setup() -> void:

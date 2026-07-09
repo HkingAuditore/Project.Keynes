@@ -55,7 +55,7 @@ vec3 apply_snow_cover(
 	// ─────────────────────────────────────────────────────────────────────
 
 	// 仅作 cosmetic 边缘破碎用——基础雪量来自 CPU dyn_snow。
-#ifdef PK_QUALITY_LOW
+#ifdef PK_MOBILE_ANY
 	float amount_jitter = 1.0;
 #else
 	float amount_n = fbm(wp * 0.18 + vec2(63.0, -29.0), 1);
@@ -120,7 +120,7 @@ vec3 apply_snow_cover(
 	vec3 col = mix(base_col, snow_color, snow_mix);
 
 	// 6) BLIZZARD 新雪增强也收敛在雪函数内，主 shader 不再另起分支。
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (extreme_weather_ground_effect_enabled && weather_front_count > 0) {
 		float blizz_mask = compute_extreme_weather_mask(wp, WT_BLIZZARD);
 		if (blizz_mask > 0.001) {

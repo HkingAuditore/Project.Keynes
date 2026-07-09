@@ -88,7 +88,7 @@ func tick(ctx) -> Dictionary:
 
 	var res: Dictionary = {}
 	if generator.has_method("run_natural_resource_pass_native"):
-		res = generator.run_natural_resource_pass_native(map)
+		res = generator.run_natural_resource_pass_native(map, stride)
 	_last_path = str(res.get("path", "gdscript"))
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
@@ -110,6 +110,7 @@ func tick(ctx) -> Dictionary:
 		"published_resource_count": int(res.get("published_resource_count", res.get("resource_count", 0))),
 		"input_resource_count": int(res.get("input_resource_count", res.get("resource_count", 0))),
 		"published_to_slot": bool(res.get("published_to_slot", false)),
+		"dt_days": int(res.get("dt_days", stride)),
 		"total_delta": float(res.get("total_delta", 0.0)),
 	}
 

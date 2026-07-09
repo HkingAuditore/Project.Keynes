@@ -1062,6 +1062,7 @@ var _native_daily_finalizer_dense_hint_round: int = 0
 var _native_daily_finalizer_prev_dirty_ratio_temp: float = -1.0
 var _native_daily_finalizer_prev_dirty_ratio_tta: float = -1.0
 var _native_daily_finalizer_prev_dirty_ratio_thermal: float = -1.0
+const _NATIVE_DAILY_CONTRACT_FIXED_SLICE_ESTIMATE: int = 8
 # 阶段 2 perf 仪表：把整轮（跨 slice）的 GDScript wrapper 子耗时累加起来，done
 # slice 写进 breakdown，便于 playbook 定位 bundle/native/apply 三段的真实占比。
 var _native_daily_round_bundle_accum_ms: float = 0.0
@@ -4192,6 +4193,11 @@ func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Di
 	diag["node_cell_cursor_end"] = int(res.get("node_cell_cursor_end", breakdown.get("node_cell_cursor_end", -1)))
 	diag["node_cell_count"] = int(res.get("node_cell_count", breakdown.get("node_cell_count", 0)))
 	diag["node_cell_processed"] = int(res.get("node_cell_processed", breakdown.get("node_cell_processed", 0)))
+	diag["contract_catchup_active"] = bool(res.get("contract_catchup_active", breakdown.get("contract_catchup_active", false)))
+	diag["contract_catchup_reason"] = str(res.get("contract_catchup_reason", breakdown.get("contract_catchup_reason", "")))
+	diag["contract_range_base_cells"] = int(res.get("contract_range_base_cells", breakdown.get("contract_range_base_cells", 0)))
+	diag["contract_range_effective_cells"] = int(res.get("contract_range_effective_cells", breakdown.get("contract_range_effective_cells", 0)))
+	diag["contract_estimated_slices"] = int(res.get("contract_estimated_slices", breakdown.get("contract_estimated_slices", 0)))
 	diag["pass_status"] = "done" if rc_int == 0 and done else ("partial" if rc_int == 0 else "failed")
 	diag["path"] = str(res.get("path", breakdown.get("path", "gdext_native_daily_slice")))
 	if not done:
@@ -4236,6 +4242,51 @@ func _native_daily_contract_budget_days() -> int:
 	if cp != null and cp.get("native_daily_commit_lag_budget_days") != null:
 		return clampi(int(cp.native_daily_commit_lag_budget_days), 1, 30)
 	return _native_daily_contract_stride_days()
+
+
+func _native_daily_contract_age_days_for(ctx: SusTickContext) -> int:
+	if _native_daily_contract_sample_day < 0 or ctx == null:
+		return 0
+	return maxi(0, int(ctx.day_index) - _native_daily_contract_sample_day)
+
+
+func _native_daily_effective_node_range_config(cp, ctx: SusTickContext, map_ref: MapData) -> Dictionary:
+	var base_cells: int = 768
+	if cp != null and cp.get("native_daily_node_range_cells") != null:
+		base_cells = maxi(1, int(cp.native_daily_node_range_cells))
+	var n_cells: int = map_ref.soa_size() if map_ref != null else 0
+	var range_nodes: PackedStringArray = PackedStringArray()
+	if cp != null and cp.get("native_daily_node_range_nodes") != null:
+		range_nodes = cp.native_daily_node_range_nodes
+	var range_node_count: int = maxi(1, range_nodes.size())
+	var budget_days: int = _native_daily_contract_budget_days()
+	var age_days: int = _native_daily_contract_age_days_for(ctx)
+	var effective_cells: int = base_cells
+	var catchup_active: bool = false
+	var catchup_reason: String = "none"
+	var estimated_slices: int = _NATIVE_DAILY_CONTRACT_FIXED_SLICE_ESTIMATE
+	if n_cells > 0:
+		estimated_slices += int(ceil(float(n_cells) / float(base_cells))) * range_node_count
+	if n_cells > 0 and estimated_slices > budget_days:
+		var range_slice_budget: int = maxi(range_node_count, budget_days - _NATIVE_DAILY_CONTRACT_FIXED_SLICE_ESTIMATE)
+		var chunks_per_node: int = maxi(1, int(floor(float(range_slice_budget) / float(range_node_count))))
+		effective_cells = maxi(base_cells, int(ceil(float(n_cells) / float(chunks_per_node))))
+		catchup_active = effective_cells > base_cells
+		catchup_reason = "fit_contract_budget" if catchup_active else "base_fits_contract"
+	elif n_cells > 0 and age_days >= budget_days - 1:
+		effective_cells = maxi(base_cells, n_cells)
+		catchup_active = effective_cells > base_cells
+		catchup_reason = "near_contract_deadline" if catchup_active else "base_at_deadline"
+	return {
+		"base_cells": base_cells,
+		"effective_cells": effective_cells,
+		"catchup_active": catchup_active,
+		"catchup_reason": catchup_reason,
+		"estimated_slices": estimated_slices,
+		"budget_days": budget_days,
+		"age_days": age_days,
+		"range_node_count": range_node_count,
+	}
 
 
 func _native_daily_begin_contract_round(ctx: SusTickContext) -> void:
@@ -4403,10 +4454,11 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		return res
 	var tick_knobs: Dictionary = _native_daily_base_tick_knobs(ctx)
 	var cp_range := _c()
+	var range_contract: Dictionary = {}
 	if cp_range != null and cp_range.get("native_daily_node_range_enabled") != null \
 			and bool(cp_range.native_daily_node_range_enabled):
-		tick_knobs["native_daily_node_range_cells"] = maxi(1, int(cp_range.native_daily_node_range_cells)) \
-				if cp_range.get("native_daily_node_range_cells") != null else 768
+		range_contract = _native_daily_effective_node_range_config(cp_range, ctx, _map)
+		tick_knobs["native_daily_node_range_cells"] = int(range_contract.get("effective_cells", 768))
 		tick_knobs["native_daily_node_range_nodes"] = cp_range.native_daily_node_range_nodes \
 				if cp_range.get("native_daily_node_range_nodes") != null else PackedStringArray()
 	var starting_round: bool = not _native_daily_slice_round_active
@@ -4455,6 +4507,17 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
 	res["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys
 	var breakdown: Dictionary = res.get("breakdown", {})
+	if not range_contract.is_empty():
+		var catchup_fields := {
+			"contract_catchup_active": bool(range_contract.get("catchup_active", false)),
+			"contract_catchup_reason": str(range_contract.get("catchup_reason", "")),
+			"contract_range_base_cells": int(range_contract.get("base_cells", 0)),
+			"contract_range_effective_cells": int(range_contract.get("effective_cells", 0)),
+			"contract_estimated_slices": int(range_contract.get("estimated_slices", 0)),
+		}
+		for key in catchup_fields.keys():
+			res[key] = catchup_fields[key]
+			breakdown[key] = catchup_fields[key]
 	var complete_apply_diag: Dictionary = {}
 	breakdown["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys
 	# Shallow copy (CoW-safe): only top-level keys are added; nested PackedArrays
@@ -5762,8 +5825,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 # 每日资源 pass 入口（由 NaturalResourceDailySystem.tick 调）。
 # 优先 C++ run_natural_resource_pass（slot 权威 + flush 回 MapData）；
 # native 不可用 / 未发布时退回 GDScript fallback 同模板。
-func run_natural_resource_pass_native(map_ref) -> Dictionary:
+func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 	var t_wall: int = Time.get_ticks_usec()
+	dt_days = clampi(dt_days, 1, 30)
 	if map_ref == null:
 		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	var n_cells: int = map_ref.cell_count()
@@ -5779,18 +5843,20 @@ func run_natural_resource_pass_native(map_ref) -> Dictionary:
 		elif _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		_natural_resource_pass_knobs["n_cells"] = n_cells
+		_natural_resource_pass_knobs["dt_days"] = dt_days
 		var res: Dictionary = _data_core_world_ext.run_natural_resource_pass(_natural_resource_pass_knobs)
 		if bool(res.get("published_to_slot", false)):
+			res["dt_days"] = dt_days
 			res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
 			res["wrapper_overhead_ms"] = max(0.0, float(res.get("wrapper_wall_ms", 0.0)) - float(res.get("native_ms", 0.0)))
 			return _remember_natural_resource_report(res)
 		# native 跑了但没发布任何资源 → 落到 GDScript fallback。
 
-	return _remember_natural_resource_report(_run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall))
+	return _remember_natural_resource_report(_run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall, dt_days))
 
 
 # GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。
-func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int) -> Dictionary:
+func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_days: int = 1) -> Dictionary:
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
 	var water_arr: PackedByteArray = map_ref.is_water_arr
@@ -5822,7 +5888,16 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int) -> 
 			var L: float = ((p.gen_self + p.decay_self) / cap) if cap > 0.0 else 0.0
 			if L < 0.0:
 				L = 0.0
-			var v: float = (reserve + P) / (1.0 + L)
+			var inv_denom: float = 1.0 / (1.0 + L)
+			var v: float
+			if dt_days <= 1:
+				v = (reserve + P) * inv_denom
+			elif absf(1.0 - inv_denom) < 0.000001:
+				v = reserve + P * float(dt_days)
+			else:
+				var a_pow: float = pow(inv_denom, float(dt_days))
+				var b: float = P * inv_denom
+				v = a_pow * reserve + b * (1.0 - a_pow) / (1.0 - inv_denom)
 			if cap > 0.0 and v > cap:
 				v = cap
 			if v < 0.0:
@@ -5838,6 +5913,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int) -> 
 		"published_slots": published,
 		"resource_count": published.size(),
 		"n_cells": n_cells,
+		"dt_days": dt_days,
 		"total_delta": total_delta,
 		"native_ms": (Time.get_ticks_usec() - t_wall) / 1000.0,
 	}

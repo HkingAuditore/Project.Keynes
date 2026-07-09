@@ -29,16 +29,17 @@
 #elif defined(MOBILE_QUALITY_HIGH)
 #define PK_QUALITY_HIGH
 #define PK_MOBILE_ANY
+#define PK_MOBILE_HIGH_SLIM
 #else
 #define PK_QUALITY_DESKTOP
 #endif
 
-#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+#if defined(PK_MOBILE_ANY)
 #define PK_SKIP_DETAIL_NORMALS
 #define PK_SKIP_HORIZON_SHADOWS
 #endif
 
-#if defined(PK_QUALITY_LOW)
+#if defined(PK_MOBILE_ANY)
 #define PK_SKIP_PIXEL_NOISE
 #define PK_SKIP_PROCEDURAL_DETAIL
 #define PK_SKIP_EXTRA_WATER_NOISE

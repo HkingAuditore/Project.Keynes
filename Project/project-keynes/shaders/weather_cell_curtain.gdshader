@@ -44,7 +44,9 @@ int effective_cell_curtain_quality() {
 #if defined(PK_QUALITY_LOW)
 	return 0;
 #elif defined(PK_QUALITY_MID)
-	return min(cell_curtain_quality, 1);
+	return 0;
+#elif defined(PK_QUALITY_HIGH)
+	return 0;
 #else
 	return cell_curtain_quality;
 #endif
@@ -163,7 +165,7 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	vec2 noise_domain = vec2(across, along_static);
 	float broad_noise = 1.0;
 	float fine_noise = 0.5;
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	broad_noise = value_noise(noise_domain * 0.72 + seed * 3.1);
 	fine_noise = value_noise(noise_domain * 3.4 + seed * 9.7);
 #endif
@@ -187,7 +189,7 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	float drop = 1.0 - smoothstep(len * 0.28, len, dy);
 
 	// noise_mask：让雨分布不均匀（自然感）
-#ifdef PK_QUALITY_LOW
+#if defined(PK_MOBILE_ANY)
 	float noise_mask = 1.0;
 #else
 	float noise_mask = smoothstep(0.22, 0.78, broad_noise) * mix(0.55, 1.20, fine_noise);
@@ -244,7 +246,7 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 
 	// [去规律化] 域扭曲：用低频噪声偏移网格坐标，打破均匀排列
 	vec2 warp = vec2(0.0);
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	warp = vec2(
 		value_noise(p_raw * 0.42 + seed * 3.1) * 0.55,
 		value_noise(p_raw * 0.38 - seed * 5.7) * 0.55
@@ -264,7 +266,7 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	// [去规律化] 子格随机偏移：每个格子内的 flake 不在中心，
 	// 而是在格子内随机分布（打破"每个格子正中间一颗"的棋盘感）
 	vec2 sub_jitter = vec2(0.0);
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	sub_jitter = vec2(rnd_tilt * 0.37, hash21(cell_id + 31.3) * 0.37);
 #endif
 
@@ -337,7 +339,7 @@ void fragment() {
 		float snow = ((flags & FLAG_SNOW_GRAIN) != 0) ? snow_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
 		float fog = 0.0;
 		float flash = 0.0;
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 		fog = ((flags & FLAG_FOG_BREATHE) != 0) ? fog_veil(UV, seed, intensity) * 0.45 : 0.0;
 		flash = ((flags & FLAG_LIGHTNING) != 0) ? lightning_flash(seed, max(intensity, precip)) : 0.0;
 #endif

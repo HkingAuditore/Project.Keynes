@@ -47,12 +47,7 @@ vec3 baked_biome_detail(vec2 uv) {
 }
 
 vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
-#if defined(PK_QUALITY_LOW)
-	return vec3(1.0);
-#elif defined(PK_MOBILE_ANY)
-	if (has_terrain_detail_tex) {
-		return baked_biome_detail(uv);
-	}
+#if defined(PK_MOBILE_ANY)
 	return vec3(1.0);
 #else
 	if (visual_quality == 1 && has_terrain_detail_tex) {
