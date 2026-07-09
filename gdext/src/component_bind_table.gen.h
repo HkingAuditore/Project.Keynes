@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 88
+// Schema entries: 116
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -106,18 +106,46 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_river_storage",                 "river_storage_arr",                 SlotDType::F32 },
     { "cell_groundwater_storage",           "groundwater_storage_arr",           SlotDType::F32 },
     { "cell_surface_runoff",                "surface_runoff_arr",                SlotDType::F32 },
-    { "cell_res_biomass_reserve",           "res_biomass_reserve_arr",           SlotDType::F32 },
-    { "cell_res_iron_ore_reserve",          "res_iron_ore_reserve_arr",          SlotDType::F32 },
-    { "cell_res_freshwater_reserve",        "res_freshwater_reserve_arr",        SlotDType::F32 },
     { "cell_res_timber_reserve",            "res_timber_reserve_arr",            SlotDType::F32 },
+    { "cell_res_stone_reserve",             "res_stone_reserve_arr",             SlotDType::F32 },
+    { "cell_res_fertile_soil_reserve",      "res_fertile_soil_reserve_arr",      SlotDType::F32 },
+    { "cell_res_wheat_reserve",             "res_wheat_reserve_arr",             SlotDType::F32 },
+    { "cell_res_rice_reserve",              "res_rice_reserve_arr",              SlotDType::F32 },
+    { "cell_res_corn_reserve",              "res_corn_reserve_arr",              SlotDType::F32 },
+    { "cell_res_potato_reserve",            "res_potato_reserve_arr",            SlotDType::F32 },
     { "cell_res_coal_reserve",              "res_coal_reserve_arr",              SlotDType::F32 },
     { "cell_res_oil_reserve",               "res_oil_reserve_arr",               SlotDType::F32 },
+    { "cell_res_natural_gas_reserve",       "res_natural_gas_reserve_arr",       SlotDType::F32 },
+    { "cell_res_copper_ore_reserve",        "res_copper_ore_reserve_arr",        SlotDType::F32 },
+    { "cell_res_iron_ore_reserve",          "res_iron_ore_reserve_arr",          SlotDType::F32 },
+    { "cell_res_gold_ore_reserve",          "res_gold_ore_reserve_arr",          SlotDType::F32 },
+    { "cell_res_silver_ore_reserve",        "res_silver_ore_reserve_arr",        SlotDType::F32 },
+    { "cell_res_salt_reserve",              "res_salt_reserve_arr",              SlotDType::F32 },
+    { "cell_res_rubber_tree_reserve",       "res_rubber_tree_reserve_arr",       SlotDType::F32 },
+    { "cell_res_saltpeter_reserve",         "res_saltpeter_reserve_arr",         SlotDType::F32 },
+    { "cell_res_rare_earth_reserve",        "res_rare_earth_reserve_arr",        SlotDType::F32 },
     { "cell_res_clay_reserve",              "res_clay_reserve_arr",              SlotDType::F32 },
-    { "cell_res_wild_game_reserve",         "res_wild_game_reserve_arr",         SlotDType::F32 },
-    { "cell_res_peat_reserve",              "res_peat_reserve_arr",              SlotDType::F32 },
-    { "cell_res_stone_reserve",             "res_stone_reserve_arr",             SlotDType::F32 },
-    { "cell_res_wild_herbs_reserve",        "res_wild_herbs_reserve_arr",        SlotDType::F32 },
-    { "cell_res_geothermal_reserve",        "res_geothermal_reserve_arr",        SlotDType::F32 },
+    { "cell_res_horses_reserve",            "res_horses_reserve_arr",            SlotDType::F32 },
+    { "cell_res_timber_extra_change",       "res_timber_extra_change_arr",       SlotDType::F32 },
+    { "cell_res_stone_extra_change",        "res_stone_extra_change_arr",        SlotDType::F32 },
+    { "cell_res_fertile_soil_extra_change", "res_fertile_soil_extra_change_arr", SlotDType::F32 },
+    { "cell_res_wheat_extra_change",        "res_wheat_extra_change_arr",        SlotDType::F32 },
+    { "cell_res_rice_extra_change",         "res_rice_extra_change_arr",         SlotDType::F32 },
+    { "cell_res_corn_extra_change",         "res_corn_extra_change_arr",         SlotDType::F32 },
+    { "cell_res_potato_extra_change",       "res_potato_extra_change_arr",       SlotDType::F32 },
+    { "cell_res_coal_extra_change",         "res_coal_extra_change_arr",         SlotDType::F32 },
+    { "cell_res_oil_extra_change",          "res_oil_extra_change_arr",          SlotDType::F32 },
+    { "cell_res_natural_gas_extra_change",  "res_natural_gas_extra_change_arr",  SlotDType::F32 },
+    { "cell_res_copper_ore_extra_change",   "res_copper_ore_extra_change_arr",   SlotDType::F32 },
+    { "cell_res_iron_ore_extra_change",     "res_iron_ore_extra_change_arr",     SlotDType::F32 },
+    { "cell_res_gold_ore_extra_change",     "res_gold_ore_extra_change_arr",     SlotDType::F32 },
+    { "cell_res_silver_ore_extra_change",   "res_silver_ore_extra_change_arr",   SlotDType::F32 },
+    { "cell_res_salt_extra_change",         "res_salt_extra_change_arr",         SlotDType::F32 },
+    { "cell_res_rubber_tree_extra_change",  "res_rubber_tree_extra_change_arr",  SlotDType::F32 },
+    { "cell_res_saltpeter_extra_change",    "res_saltpeter_extra_change_arr",    SlotDType::F32 },
+    { "cell_res_rare_earth_extra_change",   "res_rare_earth_extra_change_arr",   SlotDType::F32 },
+    { "cell_res_clay_extra_change",         "res_clay_extra_change_arr",         SlotDType::F32 },
+    { "cell_res_horses_extra_change",       "res_horses_extra_change_arr",       SlotDType::F32 },
     { "cell_demo_thermal_gradient",         "demo_thermal_gradient_arr",         SlotDType::F32 },  // demo-only (gated on ClimateProfile.demo_thermal_gradient_enabled)
 };
 

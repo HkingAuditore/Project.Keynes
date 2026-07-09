@@ -5716,6 +5716,15 @@ func _mark_climate_daily_round_slots_stale() -> void:
 func _ensure_natural_resource_knobs() -> void:
 	if _natural_resource_pass_knobs.is_empty():
 		_natural_resource_pass_knobs = ResourceProfileRegistry.build_pass_knobs()
+		_natural_resource_refresh_keys = PackedStringArray([
+			"cell_temp",
+			"cell_moisture",
+			"cell_is_water",
+		])
+		var extra_slots: PackedStringArray = _natural_resource_pass_knobs.get("extra_change_slots", PackedStringArray())
+		for slot in extra_slots:
+			if slot != "":
+				_natural_resource_refresh_keys.append(slot)
 
 
 func _remember_natural_resource_report(report: Dictionary) -> Dictionary:
@@ -5733,7 +5742,7 @@ func natural_resource_last_result() -> Dictionary:
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
 #      + init_vegetation_weights[veg] + init_river*water_feature
 #      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
-# reserve0 = capacity * clamp(suit, 0, 1)（land_only 时水面格为 0）。
+# reserve0 = max(0, suit)（land_only 时水面格为 0）。
 # 在 init_soa_from_bake 之后调用（temp/moisture/water/elevation/landform/vegetation/
 # has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
 func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
@@ -5771,7 +5780,6 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var arr: PackedFloat32Array = map_ref.get(field)
 		if arr.size() < n_cells:
 			arr.resize(n_cells)
-		var cap: float = p.capacity
 		var lo: float = p.temp_lo
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
@@ -5781,6 +5789,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var w_river: float = float(p.init_river)
 		var w_volc: float = float(p.init_volcano)
 		var w_noise: float = float(p.init_noise)
+		var w_climate_fit: float = float(p.init_climate_fit)
 		var lf_w: Dictionary = p.init_landform_weights
 		var veg_w: Dictionary = p.init_vegetation_weights
 		var use_elev: bool = have_elev and w_elev != 0.0
@@ -5804,6 +5813,10 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			var m: float = moist_arr[i] if i < moist_arr.size() else 0.0
 			var tn: float = clampf((temp_v - lo) * inv_span, 0.0, 1.0)
 			var suit: float = p.init_base + p.init_temp * tn + p.init_moisture * m
+			if w_climate_fit != 0.0:
+				var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
+				var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
+				suit += w_climate_fit * temp_fit * moisture_fit
 			if use_elev:
 				suit += w_elev * clampf(elev_arr[i], 0.0, 1.0)
 			if use_lf:
@@ -5818,7 +5831,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				suit += w_volc
 			if use_noise:
 				suit += w_noise * ((noise.get_noise_2d(posx_arr[i], posy_arr[i]) + 1.0) * 0.5)
-			arr[i] = cap * clampf(suit, 0.0, 1.0)
+			arr[i] = maxf(0.0, suit)
 		map_ref.set(field, arr)
 
 
@@ -5863,6 +5876,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 	var have_water: bool = water_arr.size() >= n_cells
 	var total_delta: float = 0.0
 	var published: PackedStringArray = PackedStringArray()
+	var published_resources: int = 0
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -5870,22 +5884,34 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		var arr: PackedFloat32Array = map_ref.get(field)
 		if arr.size() < n_cells:
 			continue
-		var cap: float = p.capacity
+		var extra_field: String = ResourceProfileRegistry.extra_change_map_field(p)
+		var extra_arr: PackedFloat32Array = map_ref.get(extra_field) if extra_field != "" else PackedFloat32Array()
+		var have_extra: bool = extra_arr.size() >= n_cells
 		var lo: float = p.temp_lo
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
 		var land_gate: bool = bool(p.land_only) and have_water
 		for i in range(n_cells):
 			if land_gate and water_arr[i] != 0:
+				if have_extra:
+					extra_arr[i] = 0.0
 				continue
 			var tn: float = clampf((temp_arr[i] - lo) * inv_span, 0.0, 1.0)
 			var m: float = moist_arr[i]
 			var reserve: float = arr[i]
+			var extra_change: float = extra_arr[i] if have_extra else 0.0
 			# 半隐式（IMEX）：与 C++ run_natural_resource_pass 逐 op 同模板。
+			var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
+			var runtime_fit: float = 1.0
+			if fit_weight != 0.0 or p.decay_stress != 0.0:
+				var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
+				var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
+				runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
 			var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
 			var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
-			var P: float = gen_climate + p.gen_self - decay_climate
-			var L: float = ((p.gen_self + p.decay_self) / cap) if cap > 0.0 else 0.0
+			var gen_self_eff: float = p.gen_self * runtime_fit
+			var P: float = gen_climate + gen_self_eff + extra_change - decay_climate - p.decay_stress * (1.0 - runtime_fit)
+			var L: float = p.decay_self
 			if L < 0.0:
 				L = 0.0
 			var inv_denom: float = 1.0 / (1.0 + L)
@@ -5898,20 +5924,27 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 				var a_pow: float = pow(inv_denom, float(dt_days))
 				var b: float = P * inv_denom
 				v = a_pow * reserve + b * (1.0 - a_pow) / (1.0 - inv_denom)
-			if cap > 0.0 and v > cap:
-				v = cap
 			if v < 0.0:
 				v = 0.0
 			arr[i] = v
+			if have_extra:
+				extra_arr[i] = 0.0
 			total_delta += (v - reserve)
 		map_ref.set(field, arr)
+		if have_extra:
+			map_ref.set(extra_field, extra_arr)
 		published.append(field)
+		if have_extra:
+			published.append(extra_field)
+		published_resources += 1
 	return {
 		"done": true,
 		"path": "gdscript",
 		"published_to_slot": published.size() > 0,
 		"published_slots": published,
-		"resource_count": published.size(),
+		"resource_count": ResourceProfileRegistry.count(),
+		"published_resource_count": published_resources,
+		"input_resource_count": ResourceProfileRegistry.count(),
 		"n_cells": n_cells,
 		"dt_days": dt_days,
 		"total_delta": total_delta,

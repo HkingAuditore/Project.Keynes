@@ -12,8 +12,8 @@ class_name NaturalResourceDailySystem
 ## 自动把本 system 排在气候之后；不加硬 depends_on（避免 weather 那类长期 dep_pending）。
 ##
 ## reads / writes：
-##   reads:  cell.temp / cell.moisture / cell.is_water（公式输入 + land_only gate）
-##   writes: 各资源 reserve component（economy.resources）
+##   reads:  cell.temp / cell.moisture / cell.is_water + 各资源 extra_change
+##   writes: 各资源 reserve component + 已消费的 extra_change 清零（economy.resources）
 ##
 ## feature_flag：留空（常驻；若资源表为空则 pass 自身 no-op）。
 
@@ -50,26 +50,73 @@ func declare_reads() -> Array[StringName]:
 		DCComponentIds.CELL_TEMP,
 		DCComponentIds.CELL_MOISTURE,
 		DCComponentIds.CELL_IS_WATER,
+		DCComponentIds.CELL_RES_TIMBER_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_STONE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_FERTILE_SOIL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_WHEAT_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RICE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_CORN_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_POTATO_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_COAL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_OIL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_NATURAL_GAS_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_COPPER_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_IRON_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_GOLD_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SILVER_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SALT_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RUBBER_TREE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SALTPETER_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RARE_EARTH_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_CLAY_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_HORSES_EXTRA_CHANGE,
 	]
 
 
 func declare_writes() -> Array[StringName]:
-	# economy.resources：每种资源的 reserve 字段（顺序与 ResourceProfileRegistry 对齐）。
+	# economy.resources：每种资源的 reserve + extra_change 字段（顺序与 ResourceProfileRegistry 对齐）。
 	# 新增资源时同步更新此表，让调度器拓扑与写权限校验正确。
 	return [
-		DCComponentIds.CELL_RES_BIOMASS_RESERVE,
-		DCComponentIds.CELL_RES_IRON_ORE_RESERVE,
-		# 性能压测用 10 种测试资源
-		DCComponentIds.CELL_RES_FRESHWATER_RESERVE,
 		DCComponentIds.CELL_RES_TIMBER_RESERVE,
+		DCComponentIds.CELL_RES_STONE_RESERVE,
+		DCComponentIds.CELL_RES_FERTILE_SOIL_RESERVE,
+		DCComponentIds.CELL_RES_WHEAT_RESERVE,
+		DCComponentIds.CELL_RES_RICE_RESERVE,
+		DCComponentIds.CELL_RES_CORN_RESERVE,
+		DCComponentIds.CELL_RES_POTATO_RESERVE,
 		DCComponentIds.CELL_RES_COAL_RESERVE,
 		DCComponentIds.CELL_RES_OIL_RESERVE,
+		DCComponentIds.CELL_RES_NATURAL_GAS_RESERVE,
+		DCComponentIds.CELL_RES_COPPER_ORE_RESERVE,
+		DCComponentIds.CELL_RES_IRON_ORE_RESERVE,
+		DCComponentIds.CELL_RES_GOLD_ORE_RESERVE,
+		DCComponentIds.CELL_RES_SILVER_ORE_RESERVE,
+		DCComponentIds.CELL_RES_SALT_RESERVE,
+		DCComponentIds.CELL_RES_RUBBER_TREE_RESERVE,
+		DCComponentIds.CELL_RES_SALTPETER_RESERVE,
+		DCComponentIds.CELL_RES_RARE_EARTH_RESERVE,
 		DCComponentIds.CELL_RES_CLAY_RESERVE,
-		DCComponentIds.CELL_RES_WILD_GAME_RESERVE,
-		DCComponentIds.CELL_RES_PEAT_RESERVE,
-		DCComponentIds.CELL_RES_STONE_RESERVE,
-		DCComponentIds.CELL_RES_WILD_HERBS_RESERVE,
-		DCComponentIds.CELL_RES_GEOTHERMAL_RESERVE,
+		DCComponentIds.CELL_RES_HORSES_RESERVE,
+		DCComponentIds.CELL_RES_TIMBER_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_STONE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_FERTILE_SOIL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_WHEAT_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RICE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_CORN_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_POTATO_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_COAL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_OIL_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_NATURAL_GAS_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_COPPER_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_IRON_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_GOLD_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SILVER_ORE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SALT_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RUBBER_TREE_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_SALTPETER_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_RARE_EARTH_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_CLAY_EXTRA_CHANGE,
+		DCComponentIds.CELL_RES_HORSES_EXTRA_CHANGE,
 	]
 
 

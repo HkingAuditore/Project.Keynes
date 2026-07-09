@@ -4,30 +4,32 @@
 
 [resource]
 script = ExtResource("1")
-id = &"geothermal"
-display_name = "地热能"
-reserve_component = &"cell.res_geothermal_reserve"
-capacity = 100.0
+id = &"natural_gas"
+display_name = "天然气"
+reserve_component = &"cell.res_natural_gas_reserve"
 land_only = false
-temp_lo = 10.0
-temp_hi = 15.0
+temp_lo = -30.0
+temp_hi = 40.0
 gen_base = 0.0
-gen_temp = 0.03
+gen_temp = 0.0
 gen_moisture = 0.0
-gen_self = 0.02
-decay_base = 0.002
+gen_self = 0.0
+decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
-decay_self = 0.01
-init_base = 0.05
+decay_self = 0.0
+init_base = -0.55
 init_temp = 0.0
 init_moisture = 0.0
-init_volcano = 0.7
-init_noise = 0.2
-init_noise_scale = 0.04
+init_elevation = -0.16
+init_noise = 0.72
+init_noise_scale = 0.05
 init_landform_weights = {
-7: 0.15,
-8: 0.2,
-12: 0.6,
+1: 0.22,
+2: 0.32,
+4: 0.28,
+5: 0.45,
+9: 0.48,
+11: 0.28,
 14: 0.5
 }

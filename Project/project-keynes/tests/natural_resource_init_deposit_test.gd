@@ -8,10 +8,10 @@ extends SceneTree
 #      而非全图统一。
 #   2. 各因子方向正确：
 #      - iron_ore：山地（地貌+海拔权重）> 平原（斑块矿脉负 base + 噪声）。
-#      - geothermal：火山格（init_volcano）> 非火山。
-#      - freshwater：有河流（init_river）> 无河流（其余条件相同）。
+#      - copper_ore：火山格（init_volcano）> 非火山。
+#      - clay：有河流（init_river）> 无河流（其余条件相同）。
 #      - timber：森林植被（init_vegetation_weights）> 裸地。
-#   3. 不变量：所有资源所有格 clamp 到 [0, capacity]；land_only 资源水面格为 0。
+#   3. 不变量：所有资源所有格有限非负；land_only 资源水面格为 0。
 #
 # Headless execution:
 #   godot --headless --script tests/natural_resource_init_deposit_test.gd --quit
@@ -23,11 +23,11 @@ var _failures: int = 0
 const C_PLAIN: int = 0       # 平原 / 裸地 / 无水无火山（参照基准）
 const C_MOUNTAIN: int = 1    # 山地 + 高海拔（iron 高）
 const C_PEAK: int = 2        # 高峰 + 更高海拔
-const C_VOLCANO: int = 3     # 火山格（geothermal 高）
-const C_RIVER: int = 4       # 平原 + 河流（freshwater 高）
+const C_VOLCANO: int = 3     # 火山格（copper_ore 高）
+const C_RIVER: int = 4       # 平原 + 河流（clay 高）
 const C_NORIVER: int = 5     # 平原 + 无河流（与 C_RIVER 配对，仅差河流）
 const C_WATER: int = 6       # 水面格（land_only 资源应为 0）
-const C_FOREST: int = 7      # 丘陵 + 温带阔叶林（timber/biomass 高）
+const C_FOREST: int = 7      # 丘陵 + 温带阔叶林（timber 高）
 
 
 func _init() -> void:
@@ -78,7 +78,7 @@ func _build_map(n: int) -> MapData:
 	var posx := PackedFloat32Array();    posx.resize(n)
 	var posy := PackedFloat32Array();    posy.resize(n)
 
-	# 统一气候（让差异只来自新因子；freshwater 配对格也需完全一致的气候）。
+	# 统一气候（让差异只来自新因子；河流配对格也需完全一致的气候）。
 	for i in range(n):
 		temp[i] = 15.0
 		moist[i] = 0.5
@@ -121,13 +121,13 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 		_expect("iron_ore: 高峰 > 平原", iron[C_PEAK] > iron[C_PLAIN])
 		_expect("iron_ore: 水面格=0（land_only）", is_equal_approx(iron[C_WATER], 0.0))
 
-	var geo := _res_arr(map, profiles, "geothermal")
-	if geo.size() >= 8:
-		_expect("geothermal: 火山 > 平原（init_volcano）", geo[C_VOLCANO] > geo[C_PLAIN])
+	var copper := _res_arr(map, profiles, "copper_ore")
+	if copper.size() >= 8:
+		_expect("copper_ore: 火山 > 平原（init_volcano）", copper[C_VOLCANO] > copper[C_PLAIN])
 
-	var fresh := _res_arr(map, profiles, "freshwater")
-	if fresh.size() >= 8:
-		_expect("freshwater: 有河流 > 无河流（仅差 init_river）", fresh[C_RIVER] > fresh[C_NORIVER])
+	var clay := _res_arr(map, profiles, "clay")
+	if clay.size() >= 8:
+		_expect("clay: 有河流 > 无河流（仅差 init_river）", clay[C_RIVER] > clay[C_NORIVER])
 
 	var timber := _res_arr(map, profiles, "timber")
 	if timber.size() >= 8:
@@ -148,7 +148,7 @@ func _test_differentiation(map: MapData, profiles: Array, n: int) -> void:
 		for c in land_cells:
 			lo = minf(lo, arr[c])
 			hi = maxf(hi, arr[c])
-		if hi - lo > maxf(1e-6, float(p.capacity) * 1e-4):
+		if hi - lo > 1e-6:
 			varied_count += 1
 			any_varied = true
 	_expect("至少一种资源在陆地格间出现差异（非统一）", any_varied)
@@ -157,27 +157,30 @@ func _test_differentiation(map: MapData, profiles: Array, n: int) -> void:
 			varied_count * 2 >= profiles.size())
 
 
-# ─── 不变量：clamp 到 [0, capacity] ─────────────────────────────
+# ─── 不变量：有限非负，land_only 水面格为 0 ────────────────────────
 func _test_invariants(map: MapData, profiles: Array, n: int) -> void:
 	var all_ok: bool = true
 	var detail: String = ""
 	for p in profiles:
-		var cap: float = float(p.capacity)
 		var arr: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(p))
 		if arr.size() != n:
 			all_ok = false
 			detail = "%s size %d != %d" % [String(p.id), arr.size(), n]
 			break
 		for i in range(n):
-			if arr[i] < -1e-4 or arr[i] > cap + maxf(1e-4, cap * 1e-4):
+			if not is_finite(arr[i]) or arr[i] < -1e-4:
 				all_ok = false
-				detail = "%s[%d]=%s out of [0,%s]" % [String(p.id), i, str(arr[i]), str(cap)]
+				detail = "%s[%d]=%s" % [String(p.id), i, str(arr[i])]
+				break
+			if bool(p.land_only) and i == C_WATER and not is_equal_approx(arr[i], 0.0):
+				all_ok = false
+				detail = "%s water=%s expected 0" % [String(p.id), str(arr[i])]
 				break
 		if not all_ok:
 			break
 	if not all_ok:
 		printerr("  [detail] %s" % detail)
-	_expect("所有资源所有格 clamp 到 [0, capacity]", all_ok)
+	_expect("所有资源所有格有限非负，land_only 水面格为 0", all_ok)
 
 
 # ─── 工具 ───────────────────────────────────────────────────────

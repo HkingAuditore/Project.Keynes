@@ -54,16 +54,33 @@ struct DeltaEmit {
 
 struct NatResRuntime {
     int sid = -1;
+    int sid_extra = -1;
     int resource_index = -1;
     float *R = nullptr;
+    float *X = nullptr;
     float lo = 0.0f;
     float inv_span = 0.0f;
     bool land_gate = false;
+    bool use_extra = false;
     float c0 = 0.0f;
     float c1 = 0.0f;
     float c2 = 0.0f;
     float inv_denom = 1.0f;
-    float cap_upper = FLT_MAX;
+    bool use_climate_fit = false;
+    float gb = 0.0f;
+    float gt = 0.0f;
+    float gm = 0.0f;
+    float gs = 0.0f;
+    float db = 0.0f;
+    float dt = 0.0f;
+    float dm = 0.0f;
+    float ds = 0.0f;
+    float climate_temp_opt = 0.5f;
+    float climate_temp_tol = 1.0f;
+    float climate_moisture_opt = 0.5f;
+    float climate_moisture_tol = 1.0f;
+    float runtime_fit_weight = 0.0f;
+    float decay_stress = 0.0f;
 };
 
 // 单 cell 半隐式更新（化简形式）。SIMD 尾段 + 非 AVX2 构建共用，保证三路一致。
@@ -71,11 +88,10 @@ struct NatResRuntime {
 inline float natres_step_scalar(float t_val, float m_val, float reserve,
                                 float lo, float inv_span,
                                 float c0, float c1, float c2,
-                                float inv_denom, float cap_upper) {
+                                float inv_denom) {
     const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
     const float p = c0 + c1 * tn + c2 * m_val;
     float v = (reserve + p) * inv_denom;
-    if (v > cap_upper) v = cap_upper;
     if (v < 0.0f) v = 0.0f;
     return v;
 }
@@ -83,14 +99,17 @@ inline float natres_step_scalar(float t_val, float m_val, float reserve,
 inline float natres_step_scalar_dt(float t_val, float m_val, float reserve,
                                    float lo, float inv_span,
                                    float c0, float c1, float c2,
-                                   float inv_denom, float cap_upper,
+                                   float inv_denom, float extra_change,
                                    int dt_days) {
     if (dt_days <= 1) {
-        return natres_step_scalar(t_val, m_val, reserve,
-                                  lo, inv_span, c0, c1, c2, inv_denom, cap_upper);
+        const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
+        const float p = c0 + c1 * tn + c2 * m_val + extra_change;
+        float v = (reserve + p) * inv_denom;
+        if (v < 0.0f) v = 0.0f;
+        return v;
     }
     const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
-    const float p = c0 + c1 * tn + c2 * m_val;
+    const float p = c0 + c1 * tn + c2 * m_val + extra_change;
     float v = reserve;
     if (std::fabs(1.0f - inv_denom) < 1e-6f) {
         v = reserve + p * float(dt_days);
@@ -99,7 +118,46 @@ inline float natres_step_scalar_dt(float t_val, float m_val, float reserve,
         const float b = p * inv_denom;
         v = a_pow * reserve + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }
-    if (v > cap_upper) v = cap_upper;
+    if (v < 0.0f) v = 0.0f;
+    return v;
+}
+
+inline float natres_fit_factor(float tn, float m_val,
+                               float temp_opt, float temp_tol,
+                               float moisture_opt, float moisture_tol) {
+    const float safe_temp_tol = std::max(temp_tol, 0.0001f);
+    const float safe_moisture_tol = std::max(moisture_tol, 0.0001f);
+    const float temp_fit = 1.0f - dc_clampf(std::fabs(tn - temp_opt) / safe_temp_tol, 0.0f, 1.0f);
+    const float moisture_fit = 1.0f - dc_clampf(std::fabs(m_val - moisture_opt) / safe_moisture_tol, 0.0f, 1.0f);
+    return temp_fit * moisture_fit;
+}
+
+inline float natres_step_scalar_fit_dt(float t_val, float m_val, float reserve,
+                                       float extra_change,
+                                       const NatResRuntime &rr, int dt_days) {
+    const float tn = dc_clampf((t_val - rr.lo) * rr.inv_span, 0.0f, 1.0f);
+    const float climate_fit = natres_fit_factor(tn, m_val,
+                                                rr.climate_temp_opt, rr.climate_temp_tol,
+                                                rr.climate_moisture_opt, rr.climate_moisture_tol);
+    const float fit_w = dc_clampf(rr.runtime_fit_weight, 0.0f, 1.0f);
+    const float runtime_fit = 1.0f + (climate_fit - 1.0f) * fit_w;
+    const float gen_self_eff = rr.gs * runtime_fit;
+    const float gen_climate = rr.gb + rr.gt * tn + rr.gm * m_val;
+    const float decay_climate = rr.db + rr.dt * tn + rr.dm * m_val;
+    const float p = gen_climate + gen_self_eff + extra_change - decay_climate - rr.decay_stress * (1.0f - runtime_fit);
+    float L = rr.ds;
+    if (L < 0.0f) L = 0.0f;
+    const float inv_denom = 1.0f / (1.0f + L);
+    float v = reserve;
+    if (dt_days <= 1) {
+        v = (reserve + p) * inv_denom;
+    } else if (std::fabs(1.0f - inv_denom) < 1e-6f) {
+        v = reserve + p * float(dt_days);
+    } else {
+        const float a_pow = std::pow(inv_denom, float(dt_days));
+        const float b = p * inv_denom;
+        v = a_pow * reserve + b * (1.0f - a_pow) / (1.0f - inv_denom);
+    }
     if (v < 0.0f) v = 0.0f;
     return v;
 }
@@ -123,7 +181,7 @@ inline void natres_simd_block(float *__restrict R, const float *__restrict T,
                               bool land_gate, int i,
                               __m256 vlo, __m256 vinv_span,
                               __m256 vc0, __m256 vc1, __m256 vc2,
-                              __m256 vinv_denom, __m256 vcap_upper,
+                              __m256 vinv_denom,
                               const __m256 vzero, const __m256 vone,
                               __m256 &vacc) {
     const __m256 vt = _mm256_loadu_ps(T + i);
@@ -137,7 +195,6 @@ inline void natres_simd_block(float *__restrict R, const float *__restrict T,
     p = _mm256_fmadd_ps(vc2, vm, p);           // C2*m  + (C1*tn+C0)
 
     __m256 v = _mm256_mul_ps(_mm256_add_ps(vr, p), vinv_denom);
-    v = _mm256_min_ps(v, vcap_upper);
     v = _mm256_max_ps(v, vzero);
 
     if (land_gate) {
@@ -197,15 +254,18 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     if (resource_count <= 0) return fail("no_resources");
     const int dt_days = std::max(1, std::min(30, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
 
-    if (!knobs.has("reserve_slots") || !knobs.has("capacity") || !knobs.has("land_only") ||
+    if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("land_only") ||
         !knobs.has("temp_lo") || !knobs.has("temp_hi") ||
         !knobs.has("gen_base") || !knobs.has("gen_temp") || !knobs.has("gen_moisture") || !knobs.has("gen_self") ||
-        !knobs.has("decay_base") || !knobs.has("decay_temp") || !knobs.has("decay_moisture") || !knobs.has("decay_self")) {
+        !knobs.has("decay_base") || !knobs.has("decay_temp") || !knobs.has("decay_moisture") || !knobs.has("decay_self") ||
+        !knobs.has("climate_temp_opt") || !knobs.has("climate_temp_tol") ||
+        !knobs.has("climate_moisture_opt") || !knobs.has("climate_moisture_tol") ||
+        !knobs.has("runtime_climate_fit_weight") || !knobs.has("decay_stress")) {
         return fail("knobs_missing_keys");
     }
 
     PackedStringArray reserve_slots = knobs["reserve_slots"];
-    PackedFloat32Array capacity = knobs["capacity"];
+    PackedStringArray extra_change_slots = knobs["extra_change_slots"];
     PackedFloat32Array land_only = knobs["land_only"];
     PackedFloat32Array temp_lo = knobs["temp_lo"];
     PackedFloat32Array temp_hi = knobs["temp_hi"];
@@ -217,13 +277,22 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     PackedFloat32Array decay_temp = knobs["decay_temp"];
     PackedFloat32Array decay_moisture = knobs["decay_moisture"];
     PackedFloat32Array decay_self = knobs["decay_self"];
+    PackedFloat32Array climate_temp_opt = knobs["climate_temp_opt"];
+    PackedFloat32Array climate_temp_tol = knobs["climate_temp_tol"];
+    PackedFloat32Array climate_moisture_opt = knobs["climate_moisture_opt"];
+    PackedFloat32Array climate_moisture_tol = knobs["climate_moisture_tol"];
+    PackedFloat32Array runtime_climate_fit_weight = knobs["runtime_climate_fit_weight"];
+    PackedFloat32Array decay_stress = knobs["decay_stress"];
 
-    if (reserve_slots.size() < resource_count || capacity.size() < resource_count ||
+    if (reserve_slots.size() < resource_count || extra_change_slots.size() < resource_count ||
         land_only.size() < resource_count || temp_lo.size() < resource_count || temp_hi.size() < resource_count ||
         gen_base.size() < resource_count || gen_temp.size() < resource_count ||
         gen_moisture.size() < resource_count || gen_self.size() < resource_count ||
         decay_base.size() < resource_count || decay_temp.size() < resource_count ||
-        decay_moisture.size() < resource_count || decay_self.size() < resource_count) {
+        decay_moisture.size() < resource_count || decay_self.size() < resource_count ||
+        climate_temp_opt.size() < resource_count || climate_temp_tol.size() < resource_count ||
+        climate_moisture_opt.size() < resource_count || climate_moisture_tol.size() < resource_count ||
+        runtime_climate_fit_weight.size() < resource_count || decay_stress.size() < resource_count) {
         return fail("knob_array_size_mismatch");
     }
 
@@ -257,39 +326,66 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     for (int r = 0; r < resource_count; ++r) {
         const int sid = component_id(StringName(reserve_slots[r]));
-        if (sid < 0 || !slot_ok_f32(sid)) {
+        const int sid_extra = component_id(StringName(extra_change_slots[r]));
+        if (sid < 0 || sid_extra < 0 || !slot_ok_f32(sid) || !slot_ok_f32(sid_extra)) {
             // schema 缺失或尺寸不符：跳过该资源，但不整体失败（其余资源仍可发布）。
             continue;
         }
 
-        const float cap = capacity[r];
         const float lo = temp_lo[r];
         const float hi = temp_hi[r];
         const float inv_span = (hi > lo) ? (1.0f / (hi - lo)) : 0.0f;
         const bool land_gate = land_only[r] >= 0.5f && have_water;
         const float gb = gen_base[r], gt = gen_temp[r], gm = gen_moisture[r], gs = gen_self[r];
         const float db = decay_base[r], dt = decay_temp[r], dm = decay_moisture[r], ds = decay_self[r];
-        if (gb == 0.0f && gt == 0.0f && gm == 0.0f && gs == 0.0f &&
-            db == 0.0f && dt == 0.0f && dm == 0.0f && ds == 0.0f) {
+        const float stress = decay_stress[r];
+        float * const X = _slots.write[sid_extra].arr_f32.ptrw();
+        bool has_extra_change = false;
+        for (int i = 0; i < n_cells; ++i) {
+            if (X[i] != 0.0f) {
+                has_extra_change = true;
+                break;
+            }
+        }
+        const bool has_natural_dynamics = gb != 0.0f || gt != 0.0f || gm != 0.0f || gs != 0.0f ||
+                db != 0.0f || dt != 0.0f || dm != 0.0f || ds != 0.0f || stress != 0.0f;
+        if (!has_natural_dynamics && !has_extra_change) {
             ++skipped_static_resources;
             continue;
         }
 
-        // ── 代数化简：把半隐式公式收成 P = C0 + C1*tn + C2*m, v = (reserve+P)*inv_denom ──
-        float L = (cap > 0.0f) ? ((gs + ds) / cap) : 0.0f;
+        // ── 代数化简：把无适宜度/无 extra 的公式收成 P = C0 + C1*tn + C2*m ──
+        float L = ds;
         if (L < 0.0f) L = 0.0f;  // 负自系数（误配）兜底，保持无条件稳定
         NatResRuntime rr;
         rr.sid = sid;
+        rr.sid_extra = sid_extra;
         rr.resource_index = r;
         rr.R = _slots.write[sid].arr_f32.ptrw();
+        rr.X = X;
         rr.lo = lo;
         rr.inv_span = inv_span;
         rr.land_gate = land_gate;
+        rr.use_extra = has_extra_change;
         rr.c0 = gb + gs - db;
         rr.c1 = gt - dt;
         rr.c2 = gm - dm;
         rr.inv_denom = 1.0f / (1.0f + L);
-        rr.cap_upper = (cap > 0.0f) ? cap : FLT_MAX;
+        rr.use_climate_fit = runtime_climate_fit_weight[r] != 0.0f || stress != 0.0f;
+        rr.gb = gb;
+        rr.gt = gt;
+        rr.gm = gm;
+        rr.gs = gs;
+        rr.db = db;
+        rr.dt = dt;
+        rr.dm = dm;
+        rr.ds = ds;
+        rr.climate_temp_opt = climate_temp_opt[r];
+        rr.climate_temp_tol = climate_temp_tol[r];
+        rr.climate_moisture_opt = climate_moisture_opt[r];
+        rr.climate_moisture_tol = climate_moisture_tol[r];
+        rr.runtime_fit_weight = runtime_climate_fit_weight[r];
+        rr.decay_stress = stress;
         dynamic_resources.push_back(rr);
     }
 
@@ -306,14 +402,13 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 float * const __restrict R = rr.R;
                 int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
-                if (!force_scalar && dt_days <= 1) {
+                if (!force_scalar && dt_days <= 1 && !rr.use_climate_fit && !rr.use_extra) {
                     const __m256 vlo = _mm256_set1_ps(rr.lo);
                     const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
                     const __m256 vc0 = _mm256_set1_ps(rr.c0);
                     const __m256 vc1 = _mm256_set1_ps(rr.c1);
                     const __m256 vc2 = _mm256_set1_ps(rr.c2);
                     const __m256 vinv_denom = _mm256_set1_ps(rr.inv_denom);
-                    const __m256 vcap_upper = _mm256_set1_ps(rr.cap_upper);
                     const __m256 vzero = _mm256_setzero_ps();
                     const __m256 vone = _mm256_set1_ps(1.0f);
                     __m256 vacc = _mm256_setzero_ps();
@@ -321,21 +416,28 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                     for (; i + 8 <= simd_end; i += 8) {
                         natres_simd_block(R, T, M, WATER, rr.land_gate, i,
                                           vlo, vinv_span, vc0, vc1, vc2,
-                                          vinv_denom, vcap_upper, vzero, vone, vacc);
+                                          vinv_denom, vzero, vone, vacc);
                     }
                     seg += double(natres_hsum256(vacc));
                 }
 #endif
                 for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
-                    if (rr.land_gate && WATER[i] != 0) continue;  // 水面格保持原值，delta 0
+                    if (rr.land_gate && WATER[i] != 0) {
+                        if (rr.use_extra) rr.X[i] = 0.0f;
+                        continue;  // 水面格保持原值，delta 0
+                    }
                     const float reserve = R[i];
-                    const float v = natres_step_scalar_dt(T[i], M[i], reserve,
-                                                          rr.lo, rr.inv_span,
-                                                          rr.c0, rr.c1, rr.c2,
-                                                          rr.inv_denom, rr.cap_upper,
-                                                          dt_days);
+                    const float extra_change = rr.use_extra ? rr.X[i] : 0.0f;
+                    const float v = rr.use_climate_fit
+                            ? natres_step_scalar_fit_dt(T[i], M[i], reserve, extra_change, rr, dt_days)
+                            : natres_step_scalar_dt(T[i], M[i], reserve,
+                                                    rr.lo, rr.inv_span,
+                                                    rr.c0, rr.c1, rr.c2,
+                                                    rr.inv_denom, extra_change,
+                                                    dt_days);
                     seg += double(v - reserve);
                     R[i] = v;
+                    if (rr.use_extra) rr.X[i] = 0.0f;
                 }
             }
             local.sum += seg;
@@ -354,9 +456,11 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         for (const NatResRuntime &rr : dynamic_resources) {
             const auto t_flush0 = std::chrono::high_resolution_clock::now();
             _flush_slot_to_map(rr.sid);
+            if (rr.use_extra) _flush_slot_to_map(rr.sid_extra);
             const auto t_flush1 = std::chrono::high_resolution_clock::now();
             flush_ms += std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
             published_slots.append(reserve_slots[rr.resource_index]);
+            if (rr.use_extra) published_slots.append(extra_change_slots[rr.resource_index]);
             ++published_count;
         }
     }

@@ -61,7 +61,7 @@ var _physical_wind_label: Label = null
 var _physical_pressure_label: Label = null
 
 # 自然资源储量行（economy.resources）。懒创建单行多列 Label，挂到右侧面板 VBox 末尾。
-# 数据驱动：内容直接遍历 ResourceProfileRegistry，读 MapData 的 res_*_reserve_arr，
+# 数据驱动：内容直接遍历 ResourceProfileRegistry，读 MapData 的 reserve / extra_change 数组，
 # 新增一种资源 .tres 后无需改本面板即可显示。
 var _resource_label: Label = null
 
@@ -433,7 +433,7 @@ func ensure_resource_labels() -> void:
 
 
 # 刷新选中地块的自然资源储量行（与 weather/vitality 一样可按"日"高频刷新）。
-# 数据驱动：遍历 ResourceProfileRegistry，逐资源读 MapData 的 reserve 数组（由
+# 数据驱动：遍历 ResourceProfileRegistry，逐资源读 MapData 的 reserve / extra_change 数组（由
 # run_natural_resource_pass / GDScript fallback 每 tick flush 回 MapData）。
 func refresh_resource_lines() -> void:
 	if _selected_cell == null or _current_map == null:
@@ -463,9 +463,16 @@ func refresh_resource_lines() -> void:
 			var arr: PackedFloat32Array = _current_map.get(field)
 			if idx >= 0 and idx < arr.size():
 				reserve = float(arr[idx])
-		var cap: float = float(p.capacity)
-		var pct: float = (reserve / cap * 100.0) if cap > 0.0 else 0.0
-		lines.append("  %s：%.1f%%（%.3f / %.2f）" % [name_cn, pct, reserve, cap])
+		var extra_field: String = ResourceProfileRegistry.extra_change_map_field(p)
+		var extra_change: float = 0.0
+		if extra_field != "":
+			var extra_arr: PackedFloat32Array = _current_map.get(extra_field)
+			if idx >= 0 and idx < extra_arr.size():
+				extra_change = float(extra_arr[idx])
+		if absf(extra_change) > 0.000001:
+			lines.append("  %s：储量 %.3f（额外变化 %+.3f）" % [name_cn, reserve, extra_change])
+		else:
+			lines.append("  %s：储量 %.3f" % [name_cn, reserve])
 	_resource_label.text = "\n".join(lines)
 
 

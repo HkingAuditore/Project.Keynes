@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"silver_ore"
+display_name = "银矿"
+reserve_component = &"cell.res_silver_ore_reserve"
+land_only = true
+temp_lo = -30.0
+temp_hi = 40.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.0
+init_base = -0.58
+init_temp = 0.0
+init_moisture = 0.0
+init_elevation = 0.24
+init_volcano = 0.18
+init_noise = 0.78
+init_noise_scale = 0.09
+init_landform_weights = {
+6: 0.18,
+7: 0.45,
+8: 0.45,
+10: 0.24,
+12: 0.38,
+13: 0.18,
+14: 0.42,
+15: 0.32
+}

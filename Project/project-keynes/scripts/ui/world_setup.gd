@@ -1,6 +1,7 @@
 extends Control
 
-const MAIN_SCENE_PATH := "res://scenes/main.tscn"
+const MAIN_SCENE_PATH := "res://scenes/player_game.tscn"
+const DEBUG_SCENE_PATH := "res://scenes/main.tscn"
 const SETTINGS_PATH := "user://world_setup_settings.json"
 const WORLD_SETUP_META := &"world_setup_config"
 const MOBILE_LAYOUT_MAX_WIDTH := 900.0
@@ -183,6 +184,13 @@ func _build_ui() -> void:
 	start_btn.size_flags_horizontal = _button_h_size_flags()
 	start_btn.pressed.connect(_on_start_pressed)
 	actions.add_child(start_btn)
+
+	var debug_btn := Button.new()
+	debug_btn.text = "调试场景"
+	debug_btn.custom_minimum_size = _button_min_size(120.0)
+	debug_btn.size_flags_horizontal = _button_h_size_flags()
+	debug_btn.pressed.connect(_on_debug_pressed)
+	actions.add_child(debug_btn)
 
 	if _mobile_layout:
 		var scroll := ScrollContainer.new()
@@ -634,6 +642,13 @@ func _on_start_pressed() -> void:
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
 	get_tree().change_scene_to_file(MAIN_SCENE_PATH)
+
+
+func _on_debug_pressed() -> void:
+	var config := _build_config()
+	Engine.set_meta(WORLD_SETUP_META, config)
+	_save_settings(config)
+	get_tree().change_scene_to_file(DEBUG_SCENE_PATH)
 
 
 func _build_config() -> Dictionary:

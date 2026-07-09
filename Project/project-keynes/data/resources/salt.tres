@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"salt"
+display_name = "盐"
+reserve_component = &"cell.res_salt_reserve"
+land_only = true
+temp_lo = -10.0
+temp_hi = 45.0
+gen_base = 0.0004
+gen_temp = 0.0004
+gen_moisture = -0.0005
+gen_self = 0.001
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.001
+decay_self = 0.0005
+init_base = -0.2
+init_temp = 0.12
+init_moisture = -0.25
+init_elevation = -0.08
+init_noise = 0.18
+init_noise_scale = 0.06
+init_landform_weights = {
+2: 0.12,
+5: 0.1,
+10: 0.18,
+11: 0.75,
+15: 0.16
+}
+init_vegetation_weights = {
+0: 0.18,
+16: 0.18,
+17: 0.26,
+18: 0.16
+}
+climate_temp_opt = 0.72
+climate_temp_tol = 0.45
+climate_moisture_opt = 0.18
+climate_moisture_tol = 0.28
+init_climate_fit = 0.22
+runtime_climate_fit_weight = 0.45
+decay_stress = 0.0006
