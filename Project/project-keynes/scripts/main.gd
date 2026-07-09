@@ -70,6 +70,8 @@ const InfoPanelControllerScript = preload("res://scripts/ui/info_panel_controlle
 const WORLD_SETUP_META := &"world_setup_config"
 const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
+const MOBILE_NATIVE_DAILY_STRIDE_DAYS: int = 20
+const MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS: int = 20
 const WORLD_SETUP_CLIMATE_FIELDS := {
 	"continent_warp_amp": true,
 	"main_radius_min": true,
@@ -118,6 +120,7 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 	"volcano_min_land_h": true,
 	"native_daily_sim_stride": true,
 	"native_daily_commit_lag_budget_days": true,
+	"native_daily_sea_ice_spread_dt_cap_days": true,
 }
 
 @export var map_width: int = 60
@@ -1087,6 +1090,7 @@ func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
 		return
 	var profile := _load_runtime_climate_profile()
 	var config := _world_setup_config()
+	var climate_overrides: Dictionary = {}
 	if not config.is_empty():
 		var climate = config.get("climate", {})
 		if climate is Dictionary:
@@ -1101,6 +1105,17 @@ func _apply_runtime_climate_profile(generator: MapGenerator) -> void:
 					push_warning("[WorldSetup] ClimateProfile has no property '%s'; skipped." % key)
 					continue
 				profile.set(key, (climate as Dictionary)[name])
+				climate_overrides[key] = true
+	if OS.has_feature("mobile"):
+		if not climate_overrides.has("native_daily_sim_stride") \
+				and profile.get("native_daily_sim_stride") != null:
+			profile.native_daily_sim_stride = MOBILE_NATIVE_DAILY_STRIDE_DAYS
+		if not climate_overrides.has("native_daily_commit_lag_budget_days") \
+				and profile.get("native_daily_commit_lag_budget_days") != null:
+			profile.native_daily_commit_lag_budget_days = MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS
+		if not climate_overrides.has("native_daily_sea_ice_spread_dt_cap_days") \
+				and profile.get("native_daily_sea_ice_spread_dt_cap_days") != null:
+			profile.native_daily_sea_ice_spread_dt_cap_days = float(MOBILE_NATIVE_DAILY_STRIDE_DAYS)
 	generator.climate_profile = profile
 	var split_weather := false
 	if profile.get("native_daily_split_weather_node_enabled") != null:

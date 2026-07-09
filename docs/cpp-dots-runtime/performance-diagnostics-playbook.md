@@ -135,6 +135,8 @@ native_daily_sim ran=... progress=0.46
   同一组字段会出现在 `native_daily/slow-dump`、fast tick breakdown、`NativeDailySimJob`
   report 和 perf CSV 的 `bd_climate_native_daily_*` 列中。移动端 N 日降频验收时，先筛
   `bd_climate_native_daily_commit_over_budget=true`；理想结果应为 0 行。
+  启动日志中的 `native_stride` / `native_budget` 是最终运行值；移动端默认应为 20/20，
+  除非 WorldSetup 显式覆盖。
 - `stage_name` 应稳定对应 native daily slice node，例如 `climate_pass_a`、`ocean_water`、`wind_surface`、`stage_b`、`weather`、`runtime_hydrology`、`stage_b_after_hydrology`。当 `native_daily_split_weather_node_enabled=true` 时，`weather` 是跳板节点，实际耗时会拆到 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b`。
 - `sus_window ... largest=... cursor=A-B` 中的 cursor 来自 scheduler summary 的 largest slice cursor。native daily graph 下它对应本 slice 处理的 node 区间，可与 `native_daily/slow-dump node=... cursor=...` 对齐。
 - Split weather report 会同时保留旧聚合字段 `weather_ms` / `weather_tick_ms`，并新增 `weather_field_ms`、`weather_commit_ms`、`weather_distribute_ms`、`weather_summary_ms`、`weather_cyclone_ms`、`weather_stage_b_ms`；`weather_split_skipped_monolithic=true` 表示本轮没有调用旧的一体化 `run_weather_refresh_daily_pass`。失败时 `fail_stage` 会落在对应 split stage，`fallback_reason` 给出 `field_solve`、`field_commit`、`distribute`、`summary` 或 `stage_b` 等具体原因。
