@@ -87,10 +87,10 @@
 
 | 文件 | 用途 |
 |---|---|
-| `res://data/world/earth_like.tres` | 默认地球类世界；运行时统一加载的主 profile。当前 native daily 采用 10 天权威采样 + 10 天提交延迟预算，spread/finalizer 延迟会写入 report/CSV。 |
-| `res://data/world/earth_like_mobile_complex.tres` | 移动端复杂气候性能档；降低高成本气候/SLP 风场/洋流/反馈更新频率，通过更宽的 stagger bucket 避免同帧聚集，并开启 native daily weather split 以压低单帧天气峰值。当前不再作为移动端默认 profile，仅保留为可手动选择/回归对照的性能档。 |
+| `res://data/world/earth_like.tres` | 默认地球类世界；运行时统一加载的主 profile。资源本身保留 10 天权威采样 + 10 天提交延迟预算，spread/finalizer 延迟会写入 report/CSV。 |
+| `res://data/world/earth_like_mobile_complex.tres` | 移动端复杂气候性能档；native daily 采用 20 天权威采样 + 20 天提交延迟预算，并降低高成本气候/SLP 风场/洋流/反馈更新频率。当前不再作为移动端默认 profile，仅保留为可手动选择/回归对照的性能档。 |
 
-运行时入口 `main.gd` 默认统一加载 `earth_like.tres`；启动日志会打印 `[WorldSetup] ClimateProfile path=... split_weather=... wind_period=... native_stride=... native_budget=...` 方便确认。WorldSetup 中的气候覆盖项会叠加到该默认 profile 上；直接 new `MapGenerator` 且不赋值时仍用 `earth_like.tres` 作为类内兜底。
+运行时入口 `main.gd` 默认统一加载 `earth_like.tres`；移动端若 WorldSetup 没有显式覆盖 `native_daily_sim_stride` / `native_daily_commit_lag_budget_days`，会在运行时把二者提升到 20 天，并同步 `native_daily_sea_ice_spread_dt_cap_days=20`。启动日志会打印 `[WorldSetup] ClimateProfile path=... split_weather=... wind_period=... native_stride=... native_budget=...` 方便确认。WorldSetup 中的气候覆盖项会叠加到该默认 profile 上；直接 new `MapGenerator` 且不赋值时仍用 `earth_like.tres` 作为类内兜底。
 
 ### 步骤
 

@@ -122,6 +122,8 @@ DCSystemScheduler
   `[native_daily/contract]` warn；该状态表示调度契约违约，必须降低 N/加 slices/放宽
   budget 或继续拆热点，而不是接受静默漂移。中间 N 天可以读取上一轮权威状态或轻量插值；
   更新日必须用真实 `dt_days`（例如 sea-ice cap 随 N 放宽）推进，避免误差跨周期累积。
+  `earth_like.tres` 资源保留 10/10 作为基准；`main.gd` 在移动端未被 WorldSetup 显式覆盖时
+  会运行时提升为 20/20，并同步 `native_daily_sea_ice_spread_dt_cap_days=20`。
 - **错峰执行（`native_daily_spread_across_ticks`，2026-06，默认 false）**：打开后
   `_configure_native_daily_transaction_budget` 改走 spread 分支——`max_slices_per_tick` 压到
   `native_daily_max_slices_per_tick`（默认 1，即"每 tick 跑一个 slice batch、A→B→C→A 轮转"），
