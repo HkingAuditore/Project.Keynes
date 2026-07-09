@@ -89,7 +89,7 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 	float pA = water_periodic_wave_phase(wp, dA, kA) - t * WATER_WAVE_SPEED_A;
 	float h = sin(pA) * WATER_WAVE_AMP_A;
 	if (quality >= 1) {
-#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
+#if !defined(PK_MOBILE_ANY)
 		vec2 dB = normalize(WATER_WAVE_DIR_B);
 		vec2 dC = normalize(WATER_WAVE_DIR_C);
 		float kB = WATER_WAVE_FREQ_B * freq_scale;
@@ -135,7 +135,7 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	// 控制额外采样），让规则正弦条纹的走向随空间缓慢弯曲，不再是贯穿整屏的平行直线。
 	vec2 wpw = wp;
 	if (quality >= 1) {
-#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
+#if !defined(PK_MOBILE_ANY)
 		float wnx = water_fbm_cyl(wp, 0.0135, vec2(t * 0.034, 0.0), 1) - 0.5;
 		float wny = water_fbm_cyl(wp, 0.0135, vec2(0.0, t * 0.030) + vec2(23.0, -11.0), 1) - 0.5;
 		wpw = wp + vec2(wnx, wny) * 12.0;

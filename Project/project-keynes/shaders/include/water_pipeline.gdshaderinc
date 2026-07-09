@@ -213,26 +213,12 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	}
 	vec2 tx = 1.0 / hm_resolution;
 	float deep_cnt = 0.0;
-	// 60 FPS 优化（2026-06-15 三档变体）：mobile 三档分别走不同 sample 路径。
-	// LOW (≤4 sample/像素)：直接用已有 ctx.elev 判断海陆，0 个额外 sample
-	// MID (≤6)：center 1 个 sample（实际只用 ctx.elev，跟 LOW 等价但保留 hook）
-	// HIGH (≤9)：plus pattern 4 个邻居 + center = 5 sample
+	// 60 FPS 优化：mobile 全档位直接用已有 ctx.elev 判断海陆，0 个额外 sample。
 	// Desktop：原 5×5 / 3×3 邻域 runtime if 路径不动
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
-	// LOW/MID：跳过邻域 sample，直接根据 ctx.elev 阈值估计 offshore
+#if defined(PK_MOBILE_ANY)
 	// 视觉损失：offshore_depth 在 cell 边界有阶梯，看起来海岸线变硬切
+	// 但能避免 HIGH 在手机上每水像素额外采 5 次 height_tex。
 	ctx.offshore = step(ctx.elev, sea_level - 0.02);
-#elif defined(MOBILE_QUALITY_HIGH)
-	// HIGH：plus pattern 5 sample（center + 4 邻居），无对角
-	float c  = decode_height_rg8(ctx.uv);
-	float l  = decode_height_rg8(ctx.uv + vec2(-tx.x, 0.0));
-	float r  = decode_height_rg8(ctx.uv + vec2( tx.x, 0.0));
-	float u  = decode_height_rg8(ctx.uv + vec2(0.0, -tx.y));
-	float d  = decode_height_rg8(ctx.uv + vec2(0.0,  tx.y));
-	deep_cnt = step(c, sea_level - 0.02) + step(l, sea_level - 0.02)
-			+ step(r, sea_level - 0.02) + step(u, sea_level - 0.02)
-			+ step(d, sea_level - 0.02);
-	ctx.offshore = clamp(deep_cnt / 5.0, 0.0, 1.0);
 #else
 	// Desktop：q2 用 3x3，q1 用 plus pattern，q0 直接用中心高度。
 	if (ctx.quality >= 2) {
@@ -307,7 +293,7 @@ vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
 	// LOW: 完全跳过（0 sample）→ 海面纯色
 	// MID/HIGH: 跑 base_ripple fbm（1 sample）
 	// Desktop: 跑 base_ripple + deep_ripple + color_block（3 sample）
-#ifndef MOBILE_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	// [water-noise-reuse 2026-06-29] 复用 ctx.macro_lf（与 calm_brightness 同源），不再单独采样。
 	col *= 1.0 + (ctx.macro_lf - 0.5) * mix(0.050, 0.082, ctx.deep_layer_w);
 #endif
@@ -567,7 +553,7 @@ vec3 apply_kelp_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 		kelp_streak = fbm(vec2(along_k + world_time * 0.035, across_k), ctx.detail_oct);
 	}
 	float kelp_patch = 0.5;
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	kelp_patch = water_fbm_cyl(ctx.wpw, 0.018, vec2(5.0, -41.0), ctx.detail_oct);
 #endif
 	vec3 kelp_col = mix(kelp_base, vec3(0.05, 0.28, 0.23), kelp_patch * 0.26);
@@ -601,7 +587,7 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 		crack_factor = smoothstep(0.02, 0.16, crack);
 	}
 	float ice_noise = 0.5;
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	ice_noise = water_fbm_cyl(ctx.wpw, 0.12, vec2(-9.0, 31.0), ctx.detail_oct);
 #endif
 	vec3 ice_col = mix(ice_base * 0.76, ice_base * 1.08, crack_factor);
@@ -825,13 +811,15 @@ SurfaceParams compute_water_base_surface(
 	ctx.quality = 0;
 #elif defined(PK_QUALITY_MID)
 	ctx.quality = min(visual_quality, 1);
+#elif defined(PK_QUALITY_HIGH)
+	ctx.quality = 0;
 #else
 	ctx.quality = visual_quality;
 #endif
 	ctx.ice_frac = dyn_ice_frac;
 	ctx.detail_oct = (ctx.quality >= 2) ? 2 : 1;
 	{
-#ifdef PK_QUALITY_LOW
+#if defined(PK_MOBILE_ANY)
 		ctx.wpw = wp;
 #else
 		float water_boundary_softness = clamp(water_biome_blend_radius / 2.2, 0.0, 1.0);
@@ -843,7 +831,7 @@ SurfaceParams compute_water_base_surface(
 	// 原 base_ripple 静态、calm_brightness 慢飘；合并后统一带极慢时间漂移（±5% 亮度下不可察）。
 	ctx.macro_lf = 0.5;
 	ctx.macro_vlf = 0.5;
-#ifndef MOBILE_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	ctx.macro_lf  = water_fbm_cyl(ctx.wpw, 0.0072, vec2(world_time * 0.012,  world_time * 0.007) + vec2(31.0, 7.0), 2);
 	ctx.macro_vlf = water_fbm_cyl(ctx.wpw, 0.0039, vec2(-world_time * 0.008, world_time * 0.010) + vec2(-47.0, 23.0), 2);
 #endif
@@ -922,9 +910,8 @@ SurfaceParams apply_water_overlay_surface(
 	}
 
 	// SEA 2.1：海岸 / 湖岸 halo ───────────────────────────────────────
-	// 60 FPS 优化（2026-06-15）：mobile LOW/MID 跳过 shore_neighborhood 邻域 sample。
-	// LOW (4 sample 上限) 完全无 halo；MID 跳过；HIGH 仅 q=0 4-tap = 4 sample。
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	// 60 FPS 优化：mobile 全档位跳过 shore_neighborhood 邻域 sample。
+#if defined(PK_MOBILE_ANY)
 	// 无 halo —— 海面/陆面边界硬切（视觉上海岸线略硬，但不影响功能）
 #else
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
@@ -946,7 +933,7 @@ SurfaceParams apply_water_overlay_surface(
 	// [reef 浪花修复 2026-06-25] 把 B_REEF 纳入近岸浪花判断：珊瑚礁多贴岸，原来只覆盖
 	// COAST/OCEAN 会在 reef 水格处出现浪花断裂空隙（用户截图红圈）。reef 浪花用稍弱权重
 	// （礁盘消浪、白沫较碎），与 coast 自然衔接、消除空隙。
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (biome == B_COAST || biome == B_OCEAN || biome == B_REEF || biome == B_KELP) {
 		float reef_foam_scale = (biome == B_REEF) ? 0.72 : ((biome == B_KELP) ? 0.50 : 1.0);
 		float foam_mask_raw = 1.0 - smoothstep(0.0, 0.045, coast_sdf);
@@ -978,7 +965,7 @@ SurfaceParams apply_water_overlay_surface(
 #endif
 
 	// SEA 2.3：BLIZZARD 薄冰 ──────────────────────────────────────────
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (extreme_weather_ground_effect_enabled && weather_front_count > 0) {
 		float ice_mask = compute_extreme_weather_mask(wp, WT_BLIZZARD);
 		if (ice_mask > 0.001) {
@@ -1013,7 +1000,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	float day_factor = 1.0 - pixel_night;
 
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (biome == B_REEF && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
 		float caustics = water_fbm_cyl(wp, 0.35, vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
@@ -1027,7 +1014,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	//   问题：顶视 + 低菲涅尔下，只有太阳直射的镜面 glint 处能看出波浪，背光/无直射水域
 	//   一片死蓝。这里给波浪法线沿「太阳方位」做一层漫反射明暗：迎光波坡提亮、背光波坡压暗，
 	//   全水面（含阴影侧）都显出起伏。平静/冰面 N≈+z → slope≈0 自动归零；夜侧整体减弱。
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (water_wave_shade_strength > 0.001) {
 		vec2 sun_h = sun_dir_px.xy;
 		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
@@ -1043,7 +1030,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	//   facing=波坡迎太阳方位，wave_act=(1-N.z) 波动强度（平静/冰面≈0 自动归零），
 	//   low_sun=掠射加权（日出日落更明显）。叠的是颜色(青绿)而非亮度，与 hillshade 区分。
 	//   mid+ 档(visual_quality>=1)启用。
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (quality >= 1 && water_sss_strength > 0.001) {
 		vec2 sun_h = sun_dir_px.xy;
 		vec2 light_az = (length(sun_h) > 1e-4) ? normalize(sun_h) : vec2(0.0, 1.0);
@@ -1076,7 +1063,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 	}
 
 	// SEA 3.3：sparkle 高频颗粒高光 ────────────────────────────────────
-#ifndef PK_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 	if (quality >= 1 && water_sparkle_enabled) {
 		int sparkle_oct = (quality >= 2) ? 2 : 1;
 		vec3 L = sun_dir_px;
@@ -1177,7 +1164,7 @@ vec3 render_water_pipeline_raw(
 	// 这里在水管线补回。
 	if (cover == CV_PELAGIC_BLOOM) {
 		float bloom = 0.5;
-#ifndef MOBILE_QUALITY_LOW
+#if !defined(PK_MOBILE_ANY)
 		if (visual_quality >= 1) {
 			bloom = water_fbm_cyl(wp, 0.014, vec2(world_time * 0.010, -7.0), 2);
 		}

@@ -62,7 +62,7 @@ SurfaceParams compute_land_base_surface(
 	float river_t = river_t_raw;
 	float outline_t = smoothstep(river_threshold_low * 0.78, river_threshold_low, flow)
 			* (1.0 - smoothstep(river_threshold_high, min(river_threshold_high + 0.22, 1.0), flow));
-#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
+#if !defined(PK_MOBILE_ANY)
 	if (river_t > 0.001 && river_flow_enabled && river_flow_speed > 0.001 && visual_quality >= 1) {
 		float pulse = 1.0 + 0.055 * sin(dot(wp, vec2(0.35, 0.42)) - world_time * 0.55);
 		river_t = clamp(river_t * pulse, 0.0, 1.0);
@@ -79,7 +79,7 @@ SurfaceParams compute_land_base_surface(
 	col = mix(col, river_body, river_t * river_strength);
 
 	// LAND 1.3：河流顺坡流动明暗（Water Visual Overhaul）
-#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
+#if !defined(PK_MOBILE_ANY)
 	if (river_t > 0.001
 			&& river_flow_enabled
 			&& river_flow_speed > 0.001
@@ -128,7 +128,7 @@ SurfaceParams compute_land_base_surface(
 	// （细河道权重小但仍可读），不会让所有 flow 边缘发白。桌面走水波法线，低画质退化为平滑水面。
 	if (river_t > 0.001) {
 		float river_w = clamp(river_t * river_strength, 0.0, 1.0);
-#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+#if defined(PK_MOBILE_ANY)
 		normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
 #else
 		if (visual_quality >= 1 && water_waves_enabled) {
@@ -385,8 +385,8 @@ SurfaceParams apply_land_color_overlays(
 	vec3 col = surface.base_color;
 
 	// LAND 3.1.a：海岸 / 湖岸 / 河口柔和过渡（shore_common 共享）
-	// 60 FPS 优化（2026-06-15）：mobile LOW/MID 跳过 shore neighborhood 邻域 sample
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+	// 60 FPS 优化：mobile 全档位跳过 shore neighborhood 邻域 sample
+#if defined(PK_MOBILE_ANY)
 	// 无 halo
 #else
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv);

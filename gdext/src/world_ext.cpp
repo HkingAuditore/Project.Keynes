@@ -666,6 +666,23 @@ void DCWorldExt::assign_archetype(int idx, int arch_id) {
 // flush_slots_to_map / refresh_slots_from_map: bulk versions that iterate
 //   all bound slots.
 
+static bool pk_slot_affects_visual_dirty(const godot::StringName &slot_name) {
+    const godot::String s(slot_name);
+    return s.begins_with("cell_temp") ||
+           s.begins_with("cell_moisture") ||
+           s.begins_with("cell_base_moisture") ||
+           s.begins_with("cell_snow") ||
+           s.begins_with("cell_sea_ice") ||
+           s.begins_with("cell_terrain") ||
+           s.begins_with("cell_landform") ||
+           s.begins_with("cell_vegetation") ||
+           s.begins_with("cell_cover") ||
+           s.begins_with("cell_weather") ||
+           s.begins_with("cell_ocean_thermal") ||
+           s.begins_with("cell_local_thermal") ||
+           s == godot::String("cell_thermal_energy");
+}
+
 void DCWorldExt::bind_dirty_world(godot::Object *dirty_world) {
     // sea-ice-snow-visual-fix-2026-06：从 GDScript 接收 DCWorld 句柄。
     // 之后 _flush_slot_to_map 末尾会 call("mark_dirty_all") 把 atlas pipeline
@@ -699,7 +716,16 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
             // pass_a 16 slot flush = 16 次跨界开销 ~1.6-4.8ms。改为仅置 pending 标志，
             // 由 climate_daily_system 在 round 末尾调 flush_pending_mark_dirty_all()
             // 合并为 1 次跨界 call。atlas pipeline 在下个 stride 仍能拿到 dirty 信号。
-            _pending_mark_dirty_all = true;
+            if (pk_slot_affects_visual_dirty(s.name)) {
+                _pending_mark_dirty_all = true;
+                _native_dirty_report["flush_dirty_reason"] = String("visual_slot:") + String(s.name);
+                _native_dirty_report["flush_dirty_slot"] = String(s.name);
+                _native_dirty_report["flush_dirty_all_pending"] = true;
+            } else {
+                _native_dirty_report["flush_dirty_filtered_count"] =
+                        int(_native_dirty_report.get("flush_dirty_filtered_count", 0)) + 1;
+                _native_dirty_report["flush_dirty_last_filtered_slot"] = String(s.name);
+            }
             return;
         }
     }
@@ -709,8 +735,10 @@ void DCWorldExt::flush_pending_mark_dirty_all() {
     // 主线程调用：把累积的 mark_dirty_all 合并 emit 一次。多次调用幂等。
     if (_pending_mark_dirty_all && _dirty_world) {
         _dirty_world->call(StringName("mark_dirty_all"));
+        _native_dirty_report["flush_dirty_all_emitted"] = true;
     }
     _pending_mark_dirty_all = false;
+    _native_dirty_report["flush_dirty_all_pending"] = false;
 }
 
 void DCWorldExt::flush_slots_to_map() {
@@ -732,8 +760,11 @@ void DCWorldExt::flush_slots_to_map() {
     // 的 flush_pending_mark_dirty_all() 重复发布。
     if (_dirty_world) {
         _dirty_world->call(StringName("mark_dirty_all"));
+        _native_dirty_report["flush_dirty_reason"] = "bulk_flush_slots_to_map";
+        _native_dirty_report["flush_dirty_all_emitted"] = true;
     }
     _pending_mark_dirty_all = false;
+    _native_dirty_report["flush_dirty_all_pending"] = false;
 }
 
 void DCWorldExt::refresh_slots_from_map() {

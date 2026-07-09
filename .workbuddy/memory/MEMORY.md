@@ -36,3 +36,8 @@
 - 验收门槛（用户本地）：rebuild + bit-equal + 零 fallback + 每切片 p95/max<1ms + 轨迹无漂移；未达前 `_phys_cell_slice_enabled=false`。
 - 不在范围：native_daily_sim(51.5%) 的节点级 cell-range 属 §7 后续；weather 节点 7.77ms 全局最大尖峰是其目标。
 - 权威设计：`tmp/cutting_native_daily_ocean.md` §7.7.1–§7.7.5。
+
+## Git 工作流注意（2026-07-09）
+- **Godot 锁 dll**：Godot 编辑器运行时会锁定 `addons/dots_ext/bin/windows/*.dll`，导致 `git pull/checkout/reset` 触碰这些文件时报 `unable to unlink old ... Invalid argument`。更新仓库前必须完全退出 Godot 进程（tasklist 中的 `Godot_v4*`）。
+- **误提交 ~ 临时文件**：远程误提交了 `bin/windows/~dots_ext.windows.template_debug.x86_64.dll`（Godot 生成的 `~` 备份 dll，被 git 跟踪）。这是垃圾文件，应在远程清理、本地避免提交；Godot 退出后才可删/写。
+- **本地改动==远程时的安全同步**：当本地未提交改动内容哈希已 == 远程最新（同源工作），`git pull` 仍会被 `local changes would be overwritten` 保护拒绝。已验证 work==remote 后可直接 `git reset --hard origin/master`（不丢真实改动）；或 stash→pull→stash pop。本次即此路径完成 master 快进到 60c3cb0。

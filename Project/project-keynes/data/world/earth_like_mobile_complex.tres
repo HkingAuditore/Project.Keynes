@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 weather_refresh_auto_stride_by_speed = false
-dynamic_visual_atlas_upload_stride = 3
+dynamic_visual_atlas_upload_stride = 8
 native_daily_sim_mode = 2
 native_daily_sim_stride = 20
 native_daily_perf_target_ms = 1.5
@@ -43,5 +43,6 @@ succession_upgrade_days = 91
 weather_field_advect_steps = 4
 weather_condensation_gain = 0.3
 weather_ocean_evap_gain = 0.45
+natural_resource_daily_stride = 10
 runtime_hydrology_enabled = true
 demo_thermal_gradient_path = 1

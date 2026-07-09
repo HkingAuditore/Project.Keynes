@@ -225,6 +225,7 @@ extends Resource
 # 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
 @export_range(1, 30, 1) var weather_vegetation_dynamics_stride: int = 5
 @export_range(1, 30, 1) var weather_feedback_stride: int = 10
+@export_range(1, 30, 1) var natural_resource_daily_stride: int = 1
 
 @export_subgroup("视觉上传频率")
 # Enum atlas upload updates terrain/biome/cover/vegetation lookup textures after

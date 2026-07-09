@@ -27,9 +27,17 @@
 //   USE_FILMIC_TONEMAP：1 = ACES Approx 替代旧的 x/(1+0.35x)
 //                       0 = 走 tonemap_reinhard_legacy
 // ─────────────────────────────────────────────────────────────────────
+#if defined(PK_MOBILE_ANY)
+// 移动端全档位需要优先稳帧：保留 stylized 光照，但跳过手机 GPU 上发热明显的
+// Cook-Torrance + linear/filmic 路径。
+const bool USE_PBR_BRDF        = false;
+const bool USE_LINEAR_LIGHTING = false;
+const bool USE_FILMIC_TONEMAP  = false;
+#else
 const bool USE_PBR_BRDF        = true;
 const bool USE_LINEAR_LIGHTING = true;
 const bool USE_FILMIC_TONEMAP  = true;
+#endif
 
 // ═══════════════════════════════════════════════════════════════════════
 // 二、视图模型

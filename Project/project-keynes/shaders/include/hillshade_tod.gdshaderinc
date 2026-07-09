@@ -179,8 +179,8 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 
 	// ── 2. 细节量：性能分档 + biome 门控 ────────────────────────────────
 	float detail_amt = 0.0;
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
-	detail_amt = 0.0;                                            // 低/中端机：仅粗法线
+#if defined(PK_MOBILE_ANY)
+	detail_amt = 0.0;                                            // 移动端全档位：仅粗法线
 #else
 	if (hillshade_detail_enabled && quality >= 1) {
 		float qf = (quality >= 2) ? 1.0 : 0.5;                  // q==1 半量、q>=2 全量

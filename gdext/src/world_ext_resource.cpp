@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <chrono>
+#include <cmath>
 #include <vector>
 
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
@@ -74,6 +75,30 @@ inline float natres_step_scalar(float t_val, float m_val, float reserve,
     const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
     const float p = c0 + c1 * tn + c2 * m_val;
     float v = (reserve + p) * inv_denom;
+    if (v > cap_upper) v = cap_upper;
+    if (v < 0.0f) v = 0.0f;
+    return v;
+}
+
+inline float natres_step_scalar_dt(float t_val, float m_val, float reserve,
+                                   float lo, float inv_span,
+                                   float c0, float c1, float c2,
+                                   float inv_denom, float cap_upper,
+                                   int dt_days) {
+    if (dt_days <= 1) {
+        return natres_step_scalar(t_val, m_val, reserve,
+                                  lo, inv_span, c0, c1, c2, inv_denom, cap_upper);
+    }
+    const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
+    const float p = c0 + c1 * tn + c2 * m_val;
+    float v = reserve;
+    if (std::fabs(1.0f - inv_denom) < 1e-6f) {
+        v = reserve + p * float(dt_days);
+    } else {
+        const float a_pow = std::pow(inv_denom, float(dt_days));
+        const float b = p * inv_denom;
+        v = a_pow * reserve + b * (1.0f - a_pow) / (1.0f - inv_denom);
+    }
     if (v > cap_upper) v = cap_upper;
     if (v < 0.0f) v = 0.0f;
     return v;
@@ -170,6 +195,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     const int resource_count = knobs.has("resource_count") ? int(knobs["resource_count"]) : 0;
     if (resource_count <= 0) return fail("no_resources");
+    const int dt_days = std::max(1, std::min(30, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
 
     if (!knobs.has("reserve_slots") || !knobs.has("capacity") || !knobs.has("land_only") ||
         !knobs.has("temp_lo") || !knobs.has("temp_hi") ||
@@ -280,7 +306,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 float * const __restrict R = rr.R;
                 int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
-                if (!force_scalar) {
+                if (!force_scalar && dt_days <= 1) {
                     const __m256 vlo = _mm256_set1_ps(rr.lo);
                     const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
                     const __m256 vc0 = _mm256_set1_ps(rr.c0);
@@ -303,10 +329,11 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
                     if (rr.land_gate && WATER[i] != 0) continue;  // 水面格保持原值，delta 0
                     const float reserve = R[i];
-                    const float v = natres_step_scalar(T[i], M[i], reserve,
-                                                       rr.lo, rr.inv_span,
-                                                       rr.c0, rr.c1, rr.c2,
-                                                       rr.inv_denom, rr.cap_upper);
+                    const float v = natres_step_scalar_dt(T[i], M[i], reserve,
+                                                          rr.lo, rr.inv_span,
+                                                          rr.c0, rr.c1, rr.c2,
+                                                          rr.inv_denom, rr.cap_upper,
+                                                          dt_days);
                     seg += double(v - reserve);
                     R[i] = v;
                 }
@@ -344,13 +371,14 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     out["published_resource_count"] = published_count;
     out["input_resource_count"] = resource_count;
     out["n_cells"] = n_cells;
+    out["dt_days"] = dt_days;
     out["total_delta"] = delta_acc.sum;
     out["native_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     out["compute_ms"] = std::chrono::duration<double, std::milli>(t1 - t_setup).count();
     out["setup_ms"] = std::chrono::duration<double, std::milli>(t_setup - t0).count();
     out["loop_ms"] = loop_ms;
     out["flush_ms"] = flush_ms;
-    out["loop_layout"] = mt_candidate ? "cell_range_fused_mt" : "cell_range_fused_seq";
+    out["loop_layout"] = mt_candidate ? "cell_range_fused_mt" : (dt_days > 1 ? "cell_range_fused_seq_dt" : "cell_range_fused_seq");
     out["loop_dispatches"] = mt_candidate ? 1 : 0;
     out["skipped_static_resources"] = skipped_static_resources;
     if (published_count == 0 && !all_static) out["fallback_reason"] = "no_publishable_resource";
