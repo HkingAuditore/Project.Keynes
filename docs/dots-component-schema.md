@@ -140,7 +140,7 @@ scons platform=windows target=template_debug
 
 完成。新字段在两端自动注册，C++ pass 可立刻 `component_id("cell_soil_carbon")`，GDScript 可立刻 `world.view_f32(world.component_id(&"cell.soil_carbon"))`。
 
-> **真实示例（economy.resources，2026-06-30）**：自然资源储量字段 `cell.res_biomass_reserve` / `cell.res_iron_ore_reserve`（`F32`，`track_prev=false`，`owner="economy.resources"`）按本 SOP 加入。区别于上面的模板：这两个字段在 `MapData` 是**纯运行期 SoA（无 HexCell 镜像）**，所以 `rebuild_soa_from_cells` 只在末尾把它们 `=0.0`（参照 `ocean_thermal_anomaly_arr`），初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在 `init_soa_from_bake` 之后写。每新增一种资源，除本 5 步外还要在 `ResourceProfileRegistry._PROFILE_PATHS` 登记对应 `.tres`（详见 computation-pipelines.md "Natural resources" 节）。
+> **真实示例（economy.resources）**：自然资源字段如 `cell.res_timber_reserve` / `cell.res_timber_extra_change` / `cell.res_iron_ore_reserve`（`F32`，`track_prev=false`，`owner="economy.resources"`）按本 SOP 加入。区别于上面的模板：这些字段在 `MapData` 是**纯运行期 SoA（无 HexCell 镜像）**，所以 `rebuild_soa_from_cells` 只在末尾把它们 `=0.0`（参照 `ocean_thermal_anomaly_arr`）；reserve 初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在 `init_soa_from_bake` 之后写，extra_change 默认 0 并由自然资源 pass 消费后清零。每新增一种资源，除本 5 步外还要在 `ResourceProfileRegistry._PROFILE_PATHS` 登记对应 `.tres`（详见 computation-pipelines.md "Natural resources" 节）。
 
 ---
 

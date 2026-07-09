@@ -7,7 +7,7 @@ extends SceneTree
 # 否则 reserve 永不演化（玩家观察不到生物质变化）。本测试用真实 MapGenerator 引导一个
 # 小世界（强制 native ACTIVE），推进若干日，断言：
 #   1) natural_resource_daily job 每日都跑（report 无 frame_budget_exhausted 跳过）；
-#   2) 至少一个陆地格的 biomass reserve 随日增长。
+#   2) 至少一个可再生资源的适宜陆地格 reserve 随日增长。
 
 var _checks: int = 0
 var _failures: int = 0
@@ -42,39 +42,33 @@ func _run() -> void:
 		return
 
 	var n: int = map.cell_count()
-	var biomass: PackedFloat32Array = map.res_biomass_reserve_arr
 	var water: PackedByteArray = map.is_water_arr
-	_expect("biomass reserve array sized to N", biomass.size() == n and n > 0)
-	if biomass.size() != n or n == 0:
+	_expect("map has cells", n > 0)
+	if n == 0:
 		_finish()
 		return
 
-	# 选一个有增长空间的陆地格（初值 < 0.8）。
-	var probe_idx: int = -1
-	for i in range(n):
-		var is_water: bool = water.size() > i and water[i] != 0
-		if not is_water and biomass[i] < 0.8:
-			probe_idx = i
-			break
-	_expect("found a land cell with growth headroom", probe_idx >= 0)
-	if probe_idx < 0:
+	var probe: Dictionary = _find_growth_probe(map, n)
+	_expect("found a renewable resource land cell with growth headroom", not probe.is_empty())
+	if probe.is_empty():
 		_finish()
 		return
 
-	var before: float = biomass[probe_idx]
+	var probe_idx: int = int(probe.get("idx", -1))
+	var probe_field: String = String(probe.get("field", ""))
+	var probe_id: String = String(probe.get("id", ""))
+	var before_arr: PackedFloat32Array = map.get(probe_field)
+	var before: float = before_arr[probe_idx]
 	# 记录全图陆地总储量，作为整体演化信号。
 	var land_sum_before: float = 0.0
 	for i in range(n):
 		if not (water.size() > i and water[i] != 0):
-			land_sum_before += biomass[i]
+			land_sum_before += before_arr[i]
 
-	# 半隐式稳定性回归：跟踪刚性资源（草药/黏土）在 probe 格的逐日序列，断言收敛后
-	# 不再 0↔capacity 横跳（旧显式 Euler 会发散）。
-	var herbs_field: String = _field_for("wild_herbs")
+	# 半隐式稳定性回归：跟踪两个动态资源在 probe 格的逐日序列，断言尾段不会爆炸横跳。
+	var saltpeter_field: String = _field_for("saltpeter")
 	var clay_field: String = _field_for("clay")
-	var herbs_cap: float = _cap_for("wild_herbs")
-	var clay_cap: float = _cap_for("clay")
-	var herbs_seq: PackedFloat32Array = PackedFloat32Array()
+	var saltpeter_seq: PackedFloat32Array = PackedFloat32Array()
 	var clay_seq: PackedFloat32Array = PackedFloat32Array()
 
 	# 推进若干日。
@@ -91,89 +85,123 @@ func _run() -> void:
 				ran_days += 1
 			elif reason.begins_with("frame_budget"):
 				skipped_budget_days += 1
-		if herbs_field != "":
-			var ha: PackedFloat32Array = map.get(herbs_field)
+		if saltpeter_field != "":
+			var ha: PackedFloat32Array = map.get(saltpeter_field)
 			if ha.size() > probe_idx:
-				herbs_seq.append(ha[probe_idx])
+				saltpeter_seq.append(ha[probe_idx])
 		if clay_field != "":
 			var ca: PackedFloat32Array = map.get(clay_field)
 			if ca.size() > probe_idx:
 				clay_seq.append(ca[probe_idx])
 
 	# 重新取数组（flush 回 MapData 后是新值）。
-	var after_arr: PackedFloat32Array = map.res_biomass_reserve_arr
+	var after_arr: PackedFloat32Array = map.get(probe_field)
 	var after: float = after_arr[probe_idx]
 	var land_sum_after: float = 0.0
 	for i in range(n):
 		if not (water.size() > i and water[i] != 0):
 			land_sum_after += after_arr[i]
 
-	print("  probe cell %d: biomass %.4f → %.4f (Δ=%+.4f) over %d days" % [
-		probe_idx, before, after, after - before, DAYS])
-	print("  land biomass sum: %.3f → %.3f (Δ=%+.3f); job ran %d/%d days, budget-skipped %d" % [
+	print("  probe cell %d: %s %.4f → %.4f (Δ=%+.4f) over %d days" % [
+		probe_idx, probe_id, before, after, after - before, DAYS])
+	print("  land %s sum: %.3f → %.3f (Δ=%+.3f); job ran %d/%d days, budget-skipped %d" % [
+		probe_id,
 		land_sum_before, land_sum_after, land_sum_after - land_sum_before, ran_days, DAYS, skipped_budget_days])
 
 	_expect("natural_resource_daily ran every day (no budget skip)", ran_days >= DAYS and skipped_budget_days == 0)
-	_expect("probe land cell biomass increased over time", after > before + 0.002)
-	_expect("total land biomass increased over time", land_sum_after > land_sum_before + 0.01)
+	_expect("probe land cell reserve increased over time", after > before + 0.002)
+	_expect("total land reserve increased over time", land_sum_after > land_sum_before + 0.01)
 
-	# ── 极限公式鲁棒性：全部 12 种资源在多日演化后必须有限且严格 clamp 到 [0, capacity]，
-	#    包含极小容量(clay=0.001)/超大容量(coal,stone=1e6)/饱和级系数(wild_herbs gen5.0)等极端配置。
+	# ── 公式鲁棒性：全部 20 种资源在多日演化后必须有限且非负。
 	var profiles: Array = ResourceProfileRegistry.ordered()
-	_expect("registry loaded 12 resources", profiles.size() == 12)
-	var all_finite_clamped: bool = true
+	_expect("registry loaded 20 resources", profiles.size() == 20)
+	var all_finite_nonnegative: bool = true
 	var bad_detail: String = ""
 	for p in profiles:
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
-			all_finite_clamped = false
+			all_finite_nonnegative = false
 			bad_detail = "%s: no map_field" % String(p.id)
 			break
 		var arr: PackedFloat32Array = map.get(field)
 		if arr.size() != n:
-			all_finite_clamped = false
+			all_finite_nonnegative = false
 			bad_detail = "%s: array size %d != %d" % [String(p.id), arr.size(), n]
 			break
-		var cap: float = float(p.capacity)
-		var hi_tol: float = cap * 1.0001 + 1e-6
 		for i in range(n):
 			var v: float = arr[i]
-			if not is_finite(v) or v < -1e-6 or v > hi_tol:
-				all_finite_clamped = false
-				bad_detail = "%s[%d]=%s (cap=%s)" % [String(p.id), i, str(v), str(cap)]
+			if not is_finite(v) or v < -1e-6:
+				all_finite_nonnegative = false
+				bad_detail = "%s[%d]=%s" % [String(p.id), i, str(v)]
 				break
-		if not all_finite_clamped:
+		if not all_finite_nonnegative:
 			break
-	if not all_finite_clamped:
+	if not all_finite_nonnegative:
 		printerr("  [detail] %s" % bad_detail)
-	_expect("all 12 resources finite & clamped to [0,capacity]", all_finite_clamped)
+	_expect("all 20 resources finite & nonnegative", all_finite_nonnegative)
 
-	# 横跳回归：收敛尾段（最后 5 日）的逐日变化必须远小于 capacity。旧显式 Euler 对
-	# 草药(gen+decay_self=10.2)/黏土((2+1)/0.001=3000) 会每日跳 ≈±capacity；半隐式则趋稳。
-	var herbs_tail: float = _tail_max_step(herbs_seq, 5)
+	# 横跳回归：尾段（最后 5 日）的逐日变化必须小于当前量级的合理比例。
+	var saltpeter_tail: float = _tail_max_step(saltpeter_seq, 5)
 	var clay_tail: float = _tail_max_step(clay_seq, 5)
-	print("  tail max |Δ/day| (last 5d): wild_herbs=%.5f (cap=%.5f), clay=%.6f (cap=%.6f)" % [
-		herbs_tail, herbs_cap, clay_tail, clay_cap])
-	if herbs_seq.size() >= 6 and herbs_cap > 0.0:
-		_expect("wild_herbs settled, no 0↔cap 横跳 (tail Δ < 5%% cap)", herbs_tail < 0.05 * herbs_cap)
-	if clay_seq.size() >= 6 and clay_cap > 0.0:
-		_expect("clay settled, no 0↔cap 横跳 (tail Δ < 5%% cap)", clay_tail < 0.05 * clay_cap)
+	print("  tail max |Δ/day| (last 5d): saltpeter=%.5f, clay=%.6f" % [
+		saltpeter_tail, clay_tail])
+	if saltpeter_seq.size() >= 6:
+		_expect("saltpeter tail Δ stable", _tail_stable(saltpeter_seq, saltpeter_tail))
+	if clay_seq.size() >= 6:
+		_expect("clay tail Δ stable", _tail_stable(clay_seq, clay_tail))
 	_finish()
 
 
-# 资源 id → MapData reserve 字段名 / capacity。
+# 选择一个当前气候下按参考公式会自然增长的陆地格。
+func _find_growth_probe(map: MapData, n: int) -> Dictionary:
+	var water: PackedByteArray = map.is_water_arr
+	var temp: PackedFloat32Array = map.temp_arr
+	var moist: PackedFloat32Array = map.moisture_arr
+	for p in ResourceProfileRegistry.ordered():
+		if float(p.gen_self) <= 0.0:
+			continue
+		var field: String = ResourceProfileRegistry.reserve_map_field(p)
+		if field == "":
+			continue
+		var arr: PackedFloat32Array = map.get(field)
+		if arr.size() != n:
+			continue
+		for i in range(n):
+			if bool(p.land_only) and water.size() > i and water[i] != 0:
+				continue
+			var next_v: float = _reference_step_value(p, arr[i], temp[i], moist[i])
+			if next_v > arr[i] + 0.0001:
+				return {"id": String(p.id), "field": field, "idx": i}
+	return {}
+
+
+func _reference_step_value(p: ResourceProfile, reserve: float, temp_v: float, moist_v: float) -> float:
+	var inv_span: float = (1.0 / (p.temp_hi - p.temp_lo)) if p.temp_hi > p.temp_lo else 0.0
+	var tn: float = clampf((temp_v - p.temp_lo) * inv_span, 0.0, 1.0)
+	var m: float = moist_v
+	var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
+	var runtime_fit: float = 1.0
+	if fit_weight != 0.0 or p.decay_stress != 0.0:
+		var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
+		var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
+		runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
+	var gen_self_eff: float = p.gen_self * runtime_fit
+	var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
+	var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
+	var P: float = gen_climate + gen_self_eff - decay_climate - p.decay_stress * (1.0 - runtime_fit)
+	var L: float = p.decay_self
+	if L < 0.0:
+		L = 0.0
+	var v: float = (reserve + P) / (1.0 + L)
+	return maxf(v, 0.0)
+
+
+# 资源 id → MapData reserve 字段名。
 func _field_for(id_name: String) -> String:
 	for p in ResourceProfileRegistry.ordered():
 		if String(p.id) == id_name:
 			return ResourceProfileRegistry.reserve_map_field(p)
 	return ""
-
-
-func _cap_for(id_name: String) -> float:
-	for p in ResourceProfileRegistry.ordered():
-		if String(p.id) == id_name:
-			return float(p.capacity)
-	return 0.0
 
 
 # 序列尾段（最后 window 个值）相邻日的最大绝对变化，用于检测收敛 / 横跳。
@@ -183,6 +211,13 @@ func _tail_max_step(seq: PackedFloat32Array, window: int) -> float:
 	for i in range(start, seq.size()):
 		m = maxf(m, absf(seq[i] - seq[i - 1]))
 	return m
+
+
+func _tail_stable(seq: PackedFloat32Array, tail_delta: float) -> bool:
+	if seq.is_empty():
+		return true
+	var scale: float = maxf(0.05, absf(seq[seq.size() - 1]) * 0.25)
+	return is_finite(tail_delta) and tail_delta <= scale + 1e-6
 
 
 func _make_profile() -> ClimateProfile:

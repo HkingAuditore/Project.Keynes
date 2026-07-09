@@ -152,24 +152,50 @@ const CELL_GROUNDWATER_STORAGE: StringName = &"cell.groundwater_storage"        
 const CELL_SURFACE_RUNOFF: StringName = &"cell.surface_runoff"                     # f32 local runoff debug
 
 # ─── Natural resources：per-cell 资源储量（economy.resources）─────────
-# 每种资源一个 f32 储量字段 [0, capacity]，由 NaturalResourceDailySystem 每日
-# 经 run_natural_resource_pass 推进生成/衰减。新增资源需在此 + map_data + schema
-# 加字段并重跑 codegen / 重 build GDExtension（见 ResourceProfileRegistry SOP）。
-const CELL_RES_BIOMASS_RESERVE: StringName = &"cell.res_biomass_reserve"           # f32 可再生（生物质）
-const CELL_RES_IRON_ORE_RESERVE: StringName = &"cell.res_iron_ore_reserve"         # f32 不可再生（铁矿）
-# ── 性能压测用 10 种测试资源（economy.resources.test）：公式系数差异刻意拉大，
-#    含 land_only=false（无水面跳过 → 满 N 内循环更重）、极小/极大 capacity、
-#    饱和级 gen/decay 系数、负温度系数、窄温度带等极限配置。
-const CELL_RES_FRESHWATER_RESERVE: StringName = &"cell.res_freshwater_reserve"     # f32 全格·湿度驱动可再生
-const CELL_RES_TIMBER_RESERVE: StringName = &"cell.res_timber_reserve"             # f32 陆生·温湿慢再生·大容量
-const CELL_RES_COAL_RESERVE: StringName = &"cell.res_coal_reserve"                 # f32 全格·静态不可再生·超大容量
-const CELL_RES_OIL_RESERVE: StringName = &"cell.res_oil_reserve"                   # f32 陆生·极慢衰减·大容量
-const CELL_RES_CLAY_RESERVE: StringName = &"cell.res_clay_reserve"                 # f32 全格·饱和级系数·极小容量
-const CELL_RES_WILD_GAME_RESERVE: StringName = &"cell.res_wild_game_reserve"       # f32 陆生·高衰减·低均衡
-const CELL_RES_PEAT_RESERVE: StringName = &"cell.res_peat_reserve"                 # f32 陆生·负温度系数（冷湿偏好）
-const CELL_RES_STONE_RESERVE: StringName = &"cell.res_stone_reserve"               # f32 全格·静态·超大容量
-const CELL_RES_WILD_HERBS_RESERVE: StringName = &"cell.res_wild_herbs_reserve"     # f32 全格·极端 gen/decay 系数
-const CELL_RES_GEOTHERMAL_RESERVE: StringName = &"cell.res_geothermal_reserve"     # f32 全格·窄温度带·热偏好
+# 每种资源一个 f32 储量字段（非负、无硬上限）+ 一个 f32 extra_change 字段。
+# NaturalResourceDailySystem 每日经 run_natural_resource_pass 推进生成/衰减，并消费
+# extra_change 后清零。新增资源需在此 + map_data + schema 加字段并重跑 codegen /
+# 重 build GDExtension（见 ResourceProfileRegistry SOP）。
+const CELL_RES_TIMBER_RESERVE: StringName = &"cell.res_timber_reserve"             # f32 木材
+const CELL_RES_STONE_RESERVE: StringName = &"cell.res_stone_reserve"               # f32 石料
+const CELL_RES_FERTILE_SOIL_RESERVE: StringName = &"cell.res_fertile_soil_reserve" # f32 肥沃土壤
+const CELL_RES_WHEAT_RESERVE: StringName = &"cell.res_wheat_reserve"               # f32 小麦
+const CELL_RES_RICE_RESERVE: StringName = &"cell.res_rice_reserve"                 # f32 水稻
+const CELL_RES_CORN_RESERVE: StringName = &"cell.res_corn_reserve"                 # f32 玉米
+const CELL_RES_POTATO_RESERVE: StringName = &"cell.res_potato_reserve"             # f32 土豆
+const CELL_RES_COAL_RESERVE: StringName = &"cell.res_coal_reserve"                 # f32 煤炭
+const CELL_RES_OIL_RESERVE: StringName = &"cell.res_oil_reserve"                   # f32 石油
+const CELL_RES_NATURAL_GAS_RESERVE: StringName = &"cell.res_natural_gas_reserve"   # f32 天然气
+const CELL_RES_COPPER_ORE_RESERVE: StringName = &"cell.res_copper_ore_reserve"     # f32 铜矿
+const CELL_RES_IRON_ORE_RESERVE: StringName = &"cell.res_iron_ore_reserve"         # f32 铁矿
+const CELL_RES_GOLD_ORE_RESERVE: StringName = &"cell.res_gold_ore_reserve"         # f32 金矿
+const CELL_RES_SILVER_ORE_RESERVE: StringName = &"cell.res_silver_ore_reserve"     # f32 银矿
+const CELL_RES_SALT_RESERVE: StringName = &"cell.res_salt_reserve"                 # f32 盐
+const CELL_RES_RUBBER_TREE_RESERVE: StringName = &"cell.res_rubber_tree_reserve"   # f32 橡胶树
+const CELL_RES_SALTPETER_RESERVE: StringName = &"cell.res_saltpeter_reserve"       # f32 硝石
+const CELL_RES_RARE_EARTH_RESERVE: StringName = &"cell.res_rare_earth_reserve"     # f32 稀土
+const CELL_RES_CLAY_RESERVE: StringName = &"cell.res_clay_reserve"                 # f32 黏土
+const CELL_RES_HORSES_RESERVE: StringName = &"cell.res_horses_reserve"             # f32 马匹
+const CELL_RES_TIMBER_EXTRA_CHANGE: StringName = &"cell.res_timber_extra_change"             # f32 外部一次性增减
+const CELL_RES_STONE_EXTRA_CHANGE: StringName = &"cell.res_stone_extra_change"               # f32 外部一次性增减
+const CELL_RES_FERTILE_SOIL_EXTRA_CHANGE: StringName = &"cell.res_fertile_soil_extra_change" # f32 外部一次性增减
+const CELL_RES_WHEAT_EXTRA_CHANGE: StringName = &"cell.res_wheat_extra_change"               # f32 外部一次性增减
+const CELL_RES_RICE_EXTRA_CHANGE: StringName = &"cell.res_rice_extra_change"                 # f32 外部一次性增减
+const CELL_RES_CORN_EXTRA_CHANGE: StringName = &"cell.res_corn_extra_change"                 # f32 外部一次性增减
+const CELL_RES_POTATO_EXTRA_CHANGE: StringName = &"cell.res_potato_extra_change"             # f32 外部一次性增减
+const CELL_RES_COAL_EXTRA_CHANGE: StringName = &"cell.res_coal_extra_change"                 # f32 外部一次性增减
+const CELL_RES_OIL_EXTRA_CHANGE: StringName = &"cell.res_oil_extra_change"                   # f32 外部一次性增减
+const CELL_RES_NATURAL_GAS_EXTRA_CHANGE: StringName = &"cell.res_natural_gas_extra_change"   # f32 外部一次性增减
+const CELL_RES_COPPER_ORE_EXTRA_CHANGE: StringName = &"cell.res_copper_ore_extra_change"     # f32 外部一次性增减
+const CELL_RES_IRON_ORE_EXTRA_CHANGE: StringName = &"cell.res_iron_ore_extra_change"         # f32 外部一次性增减
+const CELL_RES_GOLD_ORE_EXTRA_CHANGE: StringName = &"cell.res_gold_ore_extra_change"         # f32 外部一次性增减
+const CELL_RES_SILVER_ORE_EXTRA_CHANGE: StringName = &"cell.res_silver_ore_extra_change"     # f32 外部一次性增减
+const CELL_RES_SALT_EXTRA_CHANGE: StringName = &"cell.res_salt_extra_change"                 # f32 外部一次性增减
+const CELL_RES_RUBBER_TREE_EXTRA_CHANGE: StringName = &"cell.res_rubber_tree_extra_change"   # f32 外部一次性增减
+const CELL_RES_SALTPETER_EXTRA_CHANGE: StringName = &"cell.res_saltpeter_extra_change"       # f32 外部一次性增减
+const CELL_RES_RARE_EARTH_EXTRA_CHANGE: StringName = &"cell.res_rare_earth_extra_change"     # f32 外部一次性增减
+const CELL_RES_CLAY_EXTRA_CHANGE: StringName = &"cell.res_clay_extra_change"                 # f32 外部一次性增减
+const CELL_RES_HORSES_EXTRA_CHANGE: StringName = &"cell.res_horses_extra_change"             # f32 外部一次性增减
 
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────

@@ -4,14 +4,14 @@ extends SceneTree
 # 自然资源系统（per-cell 储量 + 每日生成/衰减）验收。
 #
 # 验证：
-#   1. DCComponentSchema 含 biomass / iron reserve 字段（cpp_name / map_field 正确）。
-#   2. ResourceProfileRegistry 至少加载 biomass / iron（数量随测试资源浮动）；
+#   1. DCComponentSchema 含 timber / iron reserve 字段（cpp_name / map_field 正确）。
+#   2. ResourceProfileRegistry 至少加载 timber / iron（数量随测试资源浮动）；
 #      build_pass_knobs resource_count == registry.count()，按 slot 名定位系数与 .tres 对齐。
 #   3. DCWorldExt 导出 run_natural_resource_pass。
 #   4. 原生 pass 在小地图上行为正确，且与 GDScript 公式模板逐资源逐 cell A/B 对拍一致：
-#      - biomass（可再生，land_only）：陆地格趋向 capacity 增长（delta>0）；水面格保持 0。
-#      - iron_ore（不可再生，全 0 系数）：保持不变。
-#      - clamp 到 [0, capacity]。
+#      - wheat（可再生，land_only）：适宜陆地格增长；水面格保持 0。
+#      - iron_ore（不可再生，全 0 系数）：无 extra 时保持不变，extra 单 tick 生效并清零。
+#      - reserve 保持非负。
 #
 # Headless execution:
 #   godot --headless --script tests/natural_resource_pass_test.gd --quit
@@ -35,21 +35,21 @@ func _run() -> void:
 
 # ─── 1. schema 字段 ─────────────────────────────────────────────
 func _test_schema_entries() -> void:
-	var biomass: Dictionary = DCComponentSchema.find_by_name(&"cell.res_biomass_reserve")
+	var timber: Dictionary = DCComponentSchema.find_by_name(&"cell.res_timber_reserve")
 	var iron: Dictionary = DCComponentSchema.find_by_name(&"cell.res_iron_ore_reserve")
-	_expect("schema has cell.res_biomass_reserve", not biomass.is_empty())
+	_expect("schema has cell.res_timber_reserve", not timber.is_empty())
 	_expect("schema has cell.res_iron_ore_reserve", not iron.is_empty())
-	if not biomass.is_empty():
-		_expect("biomass cpp_name", String(biomass.get("cpp_name", "")) == "cell_res_biomass_reserve")
-		_expect("biomass map_field", String(biomass.get("map_field", "")) == "res_biomass_reserve_arr")
-		_expect("biomass dtype F32", int(biomass.get("dtype", -1)) == DCComponentIds.F32)
+	if not timber.is_empty():
+		_expect("timber cpp_name", String(timber.get("cpp_name", "")) == "cell_res_timber_reserve")
+		_expect("timber map_field", String(timber.get("map_field", "")) == "res_timber_reserve_arr")
+		_expect("timber dtype F32", int(timber.get("dtype", -1)) == DCComponentIds.F32)
 	if not iron.is_empty():
 		_expect("iron cpp_name", String(iron.get("cpp_name", "")) == "cell_res_iron_ore_reserve")
 		_expect("iron map_field", String(iron.get("map_field", "")) == "res_iron_ore_reserve_arr")
 
 
 # ─── 2. registry / knobs ────────────────────────────────────────
-# count-agnostic：注册表里资源数量会随测试资源增减，这里按 slot 名定位 biomass/iron，
+# count-agnostic：注册表里资源数量会随测试资源增减，这里按 slot 名定位 wheat/iron，
 # 不再假设恰好 2 个或固定下标。
 func _test_registry_knobs() -> void:
 	ResourceProfileRegistry.ensure_loaded()
@@ -58,17 +58,19 @@ func _test_registry_knobs() -> void:
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
 	_expect("knobs resource_count matches registry count", int(knobs.get("resource_count", 0)) == count)
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
-	var caps: PackedFloat32Array = knobs.get("capacity", PackedFloat32Array())
+	var extra_slots: PackedStringArray = knobs.get("extra_change_slots", PackedStringArray())
 	var gen_self: PackedFloat32Array = knobs.get("gen_self", PackedFloat32Array())
-	var bi: int = _slot_index(slots, "cell_res_biomass_reserve")
+	var wi: int = _slot_index(slots, "cell_res_wheat_reserve")
 	var ii: int = _slot_index(slots, "cell_res_iron_ore_reserve")
-	_expect("reserve_slots has biomass", bi >= 0)
+	_expect("reserve_slots has wheat", wi >= 0)
 	_expect("reserve_slots has iron_ore", ii >= 0)
-	if bi >= 0:
-		_expect("biomass capacity 1.0", is_equal_approx(caps[bi], 1.0))
-		_expect("biomass gen_self>0 (renewable)", gen_self[bi] > 0.0)
+	_expect("knobs has no capacity array", not knobs.has("capacity"))
+	_expect("extra_change_slots count matches reserve_slots", extra_slots.size() == slots.size())
+	if wi >= 0:
+		_expect("wheat extra slot", wi < extra_slots.size() and extra_slots[wi] == "cell_res_wheat_extra_change")
+		_expect("wheat gen_self>0 (renewable)", gen_self[wi] > 0.0)
 	if ii >= 0:
-		_expect("iron capacity 1.0", is_equal_approx(caps[ii], 1.0))
+		_expect("iron extra slot", ii < extra_slots.size() and extra_slots[ii] == "cell_res_iron_ore_extra_change")
 		_expect("iron gen_self==0 (non-renewable)", is_equal_approx(gen_self[ii], 0.0))
 
 
@@ -112,20 +114,33 @@ func _test_native_pass() -> void:
 	map.moisture_arr = moist
 	map.is_water_arr = water
 
-	# 逐资源 seed 初值（[0,cap] 内、按 cell 变化，给生成/衰减双向余量）。
+	# 逐资源 seed 初值（直接资源量、按 cell 变化，给生成/衰减双向余量）。
 	var fields: Array = []
+	var extra_fields: Array = []
 	var inits: Array = []
+	var extra_inits: Array = []
 	for idx in range(profiles.size()):
 		var p = profiles[idx]
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
-		var cap: float = float(p.capacity)
 		var arr := PackedFloat32Array()
 		arr.resize(n)
 		for i in range(n):
-			arr[i] = cap * (0.2 + 0.6 * (float(i % 5) / 4.0))
+			arr[i] = 0.2 + 0.6 * (float(i % 5) / 4.0)
 		map.set(field, arr)
 		fields.append(field)
 		inits.append(arr.duplicate())
+		var extra_field: String = ResourceProfileRegistry.extra_change_map_field(p)
+		var extra_arr := PackedFloat32Array()
+		extra_arr.resize(n)
+		for i in range(n):
+			extra_arr[i] = 0.0
+		if String(p.id) == "wheat":
+			extra_arr[12] = 0.25
+		elif String(p.id) == "iron_ore":
+			extra_arr[0] = 0.5
+		map.set(extra_field, extra_arr)
+		extra_fields.append(extra_field)
+		extra_inits.append(extra_arr.duplicate())
 
 	_expect("bind_map_data succeeds", bool(ext.bind_map_data(map)))
 	if _failures > 0:
@@ -137,7 +152,7 @@ func _test_native_pass() -> void:
 	# 先算每资源期望（GDScript 参考，同模板），再跑 native（多核 + SIMD）对拍。
 	var expected: Array = []
 	for idx in range(profiles.size()):
-		expected.append(_reference_step(idx, inits[idx], temp, moist, water, n))
+		expected.append(_reference_step(idx, inits[idx], extra_inits[idx], temp, moist, water, n))
 
 	var res: Dictionary = ext.run_natural_resource_pass(knobs)
 	_expect("pass done", bool(res.get("done", false)))
@@ -150,8 +165,7 @@ func _test_native_pass() -> void:
 	var ab_detail: String = ""
 	for idx in range(profiles.size()):
 		var p = profiles[idx]
-		var cap: float = float(p.capacity)
-		var tol: float = maxf(1e-4, cap * 1e-4)                # 大容量资源用相对容差
+		var tol: float = 1e-4
 		var got: PackedFloat32Array = map.get(fields[idx])
 		var exp: PackedFloat32Array = expected[idx]
 		if got.size() != n:
@@ -170,30 +184,34 @@ func _test_native_pass() -> void:
 	_expect("native==reference for all resources × cells (SIMD body+tail+water blend)", ab_ok)
 
 	# 关键不变量抽查。
-	var bi: int = _profile_index(profiles, "biomass")
-	if bi >= 0:
-		var bgot: PackedFloat32Array = map.get(fields[bi])
-		var binit: PackedFloat32Array = inits[bi]
-		_expect("biomass land cell grew", bgot.size() == n and bgot[0] > binit[0])           # i=0 陆地
-		_expect("biomass water cell unchanged (land_only)", bgot.size() == n and is_equal_approx(bgot[3], binit[3]))  # i=3 水面
-		var b_clamped: bool = true
+	var wi: int = _profile_index(profiles, "wheat")
+	if wi >= 0:
+		var wgot: PackedFloat32Array = map.get(fields[wi])
+		var winit: PackedFloat32Array = inits[wi]
+		_expect("wheat suitable land cell grew", wgot.size() == n and wgot[12] > winit[12])   # i=12 温和半湿陆地
+		_expect("wheat water cell unchanged (land_only)", wgot.size() == n and is_equal_approx(wgot[3], winit[3]))  # i=3 水面
+		var w_nonnegative: bool = true
 		for i in range(n):
-			if bgot[i] < 0.0 or bgot[i] > 1.0:
-				b_clamped = false
+			if wgot[i] < 0.0:
+				w_nonnegative = false
 				break
-		_expect("biomass within [0,capacity]", b_clamped)
+		_expect("wheat reserve nonnegative", w_nonnegative)
+		var wextra: PackedFloat32Array = map.get(extra_fields[wi])
+		_expect("wheat extra_change consumed and cleared", wextra.size() == n and is_equal_approx(wextra[12], 0.0))
 
 	var ii: int = _profile_index(profiles, "iron_ore")
 	if ii >= 0:
 		var igot: PackedFloat32Array = map.get(fields[ii])
 		var iinit: PackedFloat32Array = inits[ii]
-		var static_ok: bool = igot.size() == n
+		var static_ok: bool = igot.size() == n and igot[0] > iinit[0]
 		if static_ok:
-			for i in range(n):
+			for i in range(1, n):
 				if not is_equal_approx(igot[i], iinit[i]):
 					static_ok = false
 					break
-		_expect("iron static (no regen/decay)", static_ok)
+		_expect("iron static except one tick extra_change", static_ok)
+		var iextra: PackedFloat32Array = map.get(extra_fields[ii])
+		_expect("iron extra_change consumed and cleared", iextra.size() == n and is_equal_approx(iextra[0], 0.0))
 
 
 func _profile_index(profiles: Array, id_name: String) -> int:
@@ -204,12 +222,11 @@ func _profile_index(profiles: Array, id_name: String) -> int:
 
 
 # GDScript 参考实现：与 C++ run_natural_resource_pass / map_generator fallback 同公式。
-func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, temp: PackedFloat32Array,
+func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, extra_in: PackedFloat32Array, temp: PackedFloat32Array,
 		moist: PackedFloat32Array, water: PackedByteArray, n: int) -> PackedFloat32Array:
 	var profiles: Array = ResourceProfileRegistry.ordered()
 	var p = profiles[res_idx]
 	var out := reserve_in.duplicate()
-	var cap: float = p.capacity
 	var lo: float = p.temp_lo
 	var hi: float = p.temp_hi
 	var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
@@ -220,16 +237,22 @@ func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, temp: PackedF
 		var tn: float = clampf((temp[i] - lo) * inv_span, 0.0, 1.0)
 		var m: float = moist[i]
 		var reserve: float = out[i]
+		var extra_change: float = extra_in[i] if i < extra_in.size() else 0.0
 		# 半隐式（IMEX）：与 C++ run_natural_resource_pass / fallback 同模板。
+		var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
+		var runtime_fit: float = 1.0
+		if fit_weight != 0.0 or p.decay_stress != 0.0:
+			var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
+			var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
+			runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
 		var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
 		var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
-		var P: float = gen_climate + p.gen_self - decay_climate
-		var L: float = ((p.gen_self + p.decay_self) / cap) if cap > 0.0 else 0.0
+		var gen_self_eff: float = p.gen_self * runtime_fit
+		var P: float = gen_climate + gen_self_eff + extra_change - decay_climate - p.decay_stress * (1.0 - runtime_fit)
+		var L: float = p.decay_self
 		if L < 0.0:
 			L = 0.0
 		var v: float = (reserve + P) / (1.0 + L)
-		if cap > 0.0 and v > cap:
-			v = cap
 		if v < 0.0:
 			v = 0.0
 		out[i] = v

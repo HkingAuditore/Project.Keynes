@@ -82,8 +82,7 @@ func _verify_equivalence(ext, profiles: Array, configs: Array) -> void:
 				ref_snapshots[field] = got.duplicate()
 			else:
 				var ref: PackedFloat32Array = ref_snapshots[field]
-				var cap: float = float(p.capacity)
-				var tol: float = maxf(1e-4, cap * 1e-3)
+				var tol: float = 1e-4
 				for i in range(n):
 					worst = maxf(worst, absf(got[i] - ref[i]))
 					if absf(got[i] - ref[i]) > tol:
@@ -149,12 +148,18 @@ func _seed_climate(map: MapData, n: int) -> void:
 func _seed_reserves(map: MapData, profiles: Array, n: int) -> void:
 	for p in profiles:
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
-		var cap: float = float(p.capacity)
 		var arr := PackedFloat32Array()
 		arr.resize(n)
 		for i in range(n):
-			arr[i] = cap * (0.2 + 0.6 * (float(i % 5) / 4.0))
+			arr[i] = 0.2 + 0.6 * (float(i % 5) / 4.0)
 		map.set(field, arr)
+		var extra_field: String = ResourceProfileRegistry.extra_change_map_field(p)
+		if extra_field != "":
+			var extra := PackedFloat32Array()
+			extra.resize(n)
+			for i in range(n):
+				extra[i] = 0.0
+			map.set(extra_field, extra)
 
 
 func _commas(v: int) -> String:

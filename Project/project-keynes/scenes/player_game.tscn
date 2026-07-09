@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://c6x8q3wvfm8sh"]
+
+[ext_resource type="Script" path="res://scripts/game/player_game.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
+[ext_resource type="Script" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
+[ext_resource type="Script" path="res://scripts/geography/world_clock.gd" id="4_clock"]
+[ext_resource type="Script" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
+[ext_resource type="Script" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
+[ext_resource type="Script" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
+[ext_resource type="Script" path="res://scripts/game/map_interaction_controller.gd" id="8_map_input"]
+[ext_resource type="Script" path="res://scripts/game/selection_controller.gd" id="9_selection"]
+[ext_resource type="Script" path="res://scripts/game/time_controls_controller.gd" id="10_time"]
+
+[node name="PlayerGame" type="Node2D"]
+script = ExtResource("1_player")
+
+[node name="WorldRoot" type="Node2D" parent="."]
+
+[node name="HexRenderer" type="Node2D" parent="WorldRoot"]
+show_behind_parent = true
+top_level = true
+script = ExtResource("2_renderer")
+weather_strength = 0.5
+terrain_horizon_strength = 0.8
+terrain_horizon_softness = 0.52
+terrain_horizon_max_angle = 1.5708
+terrain_horizon_cast_floor = 0.41
+
+[node name="CellHighlight" type="Node2D" parent="WorldRoot"]
+top_level = true
+z_index = 10
+script = ExtResource("5_highlight")
+
+[node name="MapCamera" type="Camera2D" parent="."]
+script = ExtResource("3_camera")
+
+[node name="WorldClock" type="Node" parent="."]
+script = ExtResource("4_clock")
+debug_step_log = false
+
+[node name="RuntimeHost" type="Node" parent="."]
+script = ExtResource("6_runtime")
+
+[node name="UI" type="CanvasLayer" parent="."]
+script = ExtResource("7_ui")
+
+[node name="Controllers" type="Node" parent="."]
+
+[node name="MapInteractionController" type="Node" parent="Controllers"]
+script = ExtResource("8_map_input")
+
+[node name="SelectionController" type="Node" parent="Controllers"]
+script = ExtResource("9_selection")
+
+[node name="TimeControlsController" type="Node" parent="Controllers"]
+script = ExtResource("10_time")

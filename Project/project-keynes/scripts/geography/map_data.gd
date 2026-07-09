@@ -97,19 +97,46 @@ var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
 # 初值由 MapGenerator._bootstrap_natural_resource_deposits 在 init_soa_from_bake
 # 之后写入；运行期由 run_natural_resource_pass（C++）或 GDScript fallback 推进。
 # 与 ocean/local_thermal_anomaly 同类：rebuild_soa_from_cells 仅置 0，不从 HexCell 拷。
-var res_biomass_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
-var res_iron_ore_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
-# 性能压测用 10 种测试资源储量（与上面同类：rebuild_soa_from_cells 仅置 0）。
-var res_freshwater_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
-var res_timber_reserve_arr:      PackedFloat32Array = PackedFloat32Array()
-var res_coal_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
-var res_oil_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_clay_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
-var res_wild_game_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
-var res_peat_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
-var res_stone_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
-var res_wild_herbs_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
-var res_geothermal_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_timber_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_stone_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_fertile_soil_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_wheat_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_rice_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_corn_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_potato_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_coal_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_oil_reserve_arr:          PackedFloat32Array = PackedFloat32Array()
+var res_natural_gas_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_copper_ore_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_iron_ore_reserve_arr:     PackedFloat32Array = PackedFloat32Array()
+var res_gold_ore_reserve_arr:     PackedFloat32Array = PackedFloat32Array()
+var res_silver_ore_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_salt_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_rubber_tree_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_saltpeter_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
+var res_rare_earth_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_clay_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_horses_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_timber_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_stone_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_fertile_soil_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_wheat_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_rice_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_corn_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_potato_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_coal_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_oil_extra_change_arr:          PackedFloat32Array = PackedFloat32Array()
+var res_natural_gas_extra_change_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_copper_ore_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_iron_ore_extra_change_arr:     PackedFloat32Array = PackedFloat32Array()
+var res_gold_ore_extra_change_arr:     PackedFloat32Array = PackedFloat32Array()
+var res_silver_ore_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_salt_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_rubber_tree_extra_change_arr:  PackedFloat32Array = PackedFloat32Array()
+var res_saltpeter_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
+var res_rare_earth_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
+var res_clay_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_horses_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
@@ -536,19 +563,46 @@ func _alloc_soa(n: int) -> void:
 	groundwater_storage_arr.resize(n)
 	surface_runoff_arr.resize(n)
 	# Natural resources：per-cell 资源储量字段
-	res_biomass_reserve_arr.resize(n)
-	res_iron_ore_reserve_arr.resize(n)
-	# 性能压测用 10 种测试资源
-	res_freshwater_reserve_arr.resize(n)
 	res_timber_reserve_arr.resize(n)
+	res_stone_reserve_arr.resize(n)
+	res_fertile_soil_reserve_arr.resize(n)
+	res_wheat_reserve_arr.resize(n)
+	res_rice_reserve_arr.resize(n)
+	res_corn_reserve_arr.resize(n)
+	res_potato_reserve_arr.resize(n)
 	res_coal_reserve_arr.resize(n)
 	res_oil_reserve_arr.resize(n)
+	res_natural_gas_reserve_arr.resize(n)
+	res_copper_ore_reserve_arr.resize(n)
+	res_iron_ore_reserve_arr.resize(n)
+	res_gold_ore_reserve_arr.resize(n)
+	res_silver_ore_reserve_arr.resize(n)
+	res_salt_reserve_arr.resize(n)
+	res_rubber_tree_reserve_arr.resize(n)
+	res_saltpeter_reserve_arr.resize(n)
+	res_rare_earth_reserve_arr.resize(n)
 	res_clay_reserve_arr.resize(n)
-	res_wild_game_reserve_arr.resize(n)
-	res_peat_reserve_arr.resize(n)
-	res_stone_reserve_arr.resize(n)
-	res_wild_herbs_reserve_arr.resize(n)
-	res_geothermal_reserve_arr.resize(n)
+	res_horses_reserve_arr.resize(n)
+	res_timber_extra_change_arr.resize(n)
+	res_stone_extra_change_arr.resize(n)
+	res_fertile_soil_extra_change_arr.resize(n)
+	res_wheat_extra_change_arr.resize(n)
+	res_rice_extra_change_arr.resize(n)
+	res_corn_extra_change_arr.resize(n)
+	res_potato_extra_change_arr.resize(n)
+	res_coal_extra_change_arr.resize(n)
+	res_oil_extra_change_arr.resize(n)
+	res_natural_gas_extra_change_arr.resize(n)
+	res_copper_ore_extra_change_arr.resize(n)
+	res_iron_ore_extra_change_arr.resize(n)
+	res_gold_ore_extra_change_arr.resize(n)
+	res_silver_ore_extra_change_arr.resize(n)
+	res_salt_extra_change_arr.resize(n)
+	res_rubber_tree_extra_change_arr.resize(n)
+	res_saltpeter_extra_change_arr.resize(n)
+	res_rare_earth_extra_change_arr.resize(n)
+	res_clay_extra_change_arr.resize(n)
+	res_horses_extra_change_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -691,18 +745,46 @@ func rebuild_soa_from_cells() -> void:
 	for i in range(n):
 		ocean_thermal_anomaly_arr[i] = 0.0
 		local_thermal_anomaly_arr[i] = 0.0
-		res_biomass_reserve_arr[i] = 0.0
-		res_iron_ore_reserve_arr[i] = 0.0
-		res_freshwater_reserve_arr[i] = 0.0
 		res_timber_reserve_arr[i] = 0.0
+		res_stone_reserve_arr[i] = 0.0
+		res_fertile_soil_reserve_arr[i] = 0.0
+		res_wheat_reserve_arr[i] = 0.0
+		res_rice_reserve_arr[i] = 0.0
+		res_corn_reserve_arr[i] = 0.0
+		res_potato_reserve_arr[i] = 0.0
 		res_coal_reserve_arr[i] = 0.0
 		res_oil_reserve_arr[i] = 0.0
+		res_natural_gas_reserve_arr[i] = 0.0
+		res_copper_ore_reserve_arr[i] = 0.0
+		res_iron_ore_reserve_arr[i] = 0.0
+		res_gold_ore_reserve_arr[i] = 0.0
+		res_silver_ore_reserve_arr[i] = 0.0
+		res_salt_reserve_arr[i] = 0.0
+		res_rubber_tree_reserve_arr[i] = 0.0
+		res_saltpeter_reserve_arr[i] = 0.0
+		res_rare_earth_reserve_arr[i] = 0.0
 		res_clay_reserve_arr[i] = 0.0
-		res_wild_game_reserve_arr[i] = 0.0
-		res_peat_reserve_arr[i] = 0.0
-		res_stone_reserve_arr[i] = 0.0
-		res_wild_herbs_reserve_arr[i] = 0.0
-		res_geothermal_reserve_arr[i] = 0.0
+		res_horses_reserve_arr[i] = 0.0
+		res_timber_extra_change_arr[i] = 0.0
+		res_stone_extra_change_arr[i] = 0.0
+		res_fertile_soil_extra_change_arr[i] = 0.0
+		res_wheat_extra_change_arr[i] = 0.0
+		res_rice_extra_change_arr[i] = 0.0
+		res_corn_extra_change_arr[i] = 0.0
+		res_potato_extra_change_arr[i] = 0.0
+		res_coal_extra_change_arr[i] = 0.0
+		res_oil_extra_change_arr[i] = 0.0
+		res_natural_gas_extra_change_arr[i] = 0.0
+		res_copper_ore_extra_change_arr[i] = 0.0
+		res_iron_ore_extra_change_arr[i] = 0.0
+		res_gold_ore_extra_change_arr[i] = 0.0
+		res_silver_ore_extra_change_arr[i] = 0.0
+		res_salt_extra_change_arr[i] = 0.0
+		res_rubber_tree_extra_change_arr[i] = 0.0
+		res_saltpeter_extra_change_arr[i] = 0.0
+		res_rare_earth_extra_change_arr[i] = 0.0
+		res_clay_extra_change_arr[i] = 0.0
+		res_horses_extra_change_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

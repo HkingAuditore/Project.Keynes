@@ -19,19 +19,26 @@ class_name ResourceProfileRegistry
 const _ResourceProfileScript = preload("res://scripts/data/resource_profile.gd")
 
 const _PROFILE_PATHS: Array = [
-	"res://data/resources/biomass.tres",
-	"res://data/resources/iron_ore.tres",
-	# 性能压测用 10 种测试资源（公式差异刻意拉大；删除时同步清 schema/map_data/component_ids）。
-	"res://data/resources/freshwater.tres",
 	"res://data/resources/timber.tres",
+	"res://data/resources/stone.tres",
+	"res://data/resources/fertile_soil.tres",
+	"res://data/resources/wheat.tres",
+	"res://data/resources/rice.tres",
+	"res://data/resources/corn.tres",
+	"res://data/resources/potato.tres",
 	"res://data/resources/coal.tres",
 	"res://data/resources/oil.tres",
+	"res://data/resources/natural_gas.tres",
+	"res://data/resources/copper_ore.tres",
+	"res://data/resources/iron_ore.tres",
+	"res://data/resources/gold_ore.tres",
+	"res://data/resources/silver_ore.tres",
+	"res://data/resources/salt.tres",
+	"res://data/resources/rubber_tree.tres",
+	"res://data/resources/saltpeter.tres",
+	"res://data/resources/rare_earth.tres",
 	"res://data/resources/clay.tres",
-	"res://data/resources/wild_game.tres",
-	"res://data/resources/peat.tres",
-	"res://data/resources/stone.tres",
-	"res://data/resources/wild_herbs.tres",
-	"res://data/resources/geothermal.tres",
+	"res://data/resources/horses.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序
@@ -63,7 +70,7 @@ static func count() -> int:
 	return _ordered.size()
 
 
-# 某 profile 储量字段对应的 MapData 属性名（map_field，如 "res_biomass_reserve_arr"）。
+# 某 profile 储量字段对应的 MapData 属性名（map_field，如 "res_timber_reserve_arr"）。
 # 经 component_schema 查表，避免 .tres 重复维护。
 static func reserve_map_field(p: ResourceProfile) -> String:
 	if p == null:
@@ -72,7 +79,7 @@ static func reserve_map_field(p: ResourceProfile) -> String:
 	return String(e.get("map_field", "")) if not e.is_empty() else ""
 
 
-# 某 profile 储量字段对应的 C++ slot 名（cpp_name，如 "cell_res_biomass_reserve"）。
+# 某 profile 储量字段对应的 C++ slot 名（cpp_name，如 "cell_res_timber_reserve"）。
 static func reserve_cpp_name(p: ResourceProfile) -> String:
 	if p == null:
 		return ""
@@ -80,12 +87,31 @@ static func reserve_cpp_name(p: ResourceProfile) -> String:
 	return String(e.get("cpp_name", "")) if not e.is_empty() else ""
 
 
+# 某 profile 对应的额外变化 C++ slot 名（如 "cell_res_timber_extra_change"）。
+# 命名从 reserve_component 派生，避免每个 .tres 重复维护。
+static func extra_change_cpp_name(p: ResourceProfile) -> String:
+	if p == null:
+		return ""
+	var extra_name := StringName(String(p.reserve_component).replace("_reserve", "_extra_change"))
+	var e: Dictionary = DCComponentSchema.find_by_name(extra_name)
+	return String(e.get("cpp_name", "")) if not e.is_empty() else ""
+
+
+# 某 profile 对应的额外变化 MapData 字段名（如 "res_timber_extra_change_arr"）。
+static func extra_change_map_field(p: ResourceProfile) -> String:
+	if p == null:
+		return ""
+	var extra_name := StringName(String(p.reserve_component).replace("_reserve", "_extra_change"))
+	var e: Dictionary = DCComponentSchema.find_by_name(extra_name)
+	return String(e.get("map_field", "")) if not e.is_empty() else ""
+
+
 # 组装 DCWorldExt.run_natural_resource_pass 的 knobs（不含 n_cells，由调用方补）。
 # 所有平行数组按资源索引对齐；schema 缺失（cpp_name 为空）的资源会被整体跳过。
 static func build_pass_knobs() -> Dictionary:
 	ensure_loaded()
 	var reserve_slots := PackedStringArray()
-	var capacity := PackedFloat32Array()
+	var extra_change_slots := PackedStringArray()
 	var land_only := PackedFloat32Array()
 	var temp_lo := PackedFloat32Array()
 	var temp_hi := PackedFloat32Array()
@@ -97,14 +123,21 @@ static func build_pass_knobs() -> Dictionary:
 	var decay_temp := PackedFloat32Array()
 	var decay_moisture := PackedFloat32Array()
 	var decay_self := PackedFloat32Array()
+	var climate_temp_opt := PackedFloat32Array()
+	var climate_temp_tol := PackedFloat32Array()
+	var climate_moisture_opt := PackedFloat32Array()
+	var climate_moisture_tol := PackedFloat32Array()
+	var runtime_climate_fit_weight := PackedFloat32Array()
+	var decay_stress := PackedFloat32Array()
 	for p in _ordered:
 		var cpp_name: String = reserve_cpp_name(p)
-		if cpp_name == "":
-			push_warning("ResourceProfileRegistry: resource '%s' has no schema entry for %s; skipped" % [
+		var extra_cpp_name: String = extra_change_cpp_name(p)
+		if cpp_name == "" or extra_cpp_name == "":
+			push_warning("ResourceProfileRegistry: resource '%s' has incomplete schema entry for %s; skipped" % [
 				String(p.id), String(p.reserve_component)])
 			continue
 		reserve_slots.append(cpp_name)
-		capacity.append(p.capacity)
+		extra_change_slots.append(extra_cpp_name)
 		land_only.append(1.0 if p.land_only else 0.0)
 		temp_lo.append(p.temp_lo)
 		temp_hi.append(p.temp_hi)
@@ -116,10 +149,16 @@ static func build_pass_knobs() -> Dictionary:
 		decay_temp.append(p.decay_temp)
 		decay_moisture.append(p.decay_moisture)
 		decay_self.append(p.decay_self)
+		climate_temp_opt.append(p.climate_temp_opt)
+		climate_temp_tol.append(p.climate_temp_tol)
+		climate_moisture_opt.append(p.climate_moisture_opt)
+		climate_moisture_tol.append(p.climate_moisture_tol)
+		runtime_climate_fit_weight.append(p.runtime_climate_fit_weight)
+		decay_stress.append(p.decay_stress)
 	return {
 		"resource_count": reserve_slots.size(),
 		"reserve_slots": reserve_slots,
-		"capacity": capacity,
+		"extra_change_slots": extra_change_slots,
 		"land_only": land_only,
 		"temp_lo": temp_lo,
 		"temp_hi": temp_hi,
@@ -131,4 +170,10 @@ static func build_pass_knobs() -> Dictionary:
 		"decay_temp": decay_temp,
 		"decay_moisture": decay_moisture,
 		"decay_self": decay_self,
+		"climate_temp_opt": climate_temp_opt,
+		"climate_temp_tol": climate_temp_tol,
+		"climate_moisture_opt": climate_moisture_opt,
+		"climate_moisture_tol": climate_moisture_tol,
+		"runtime_climate_fit_weight": runtime_climate_fit_weight,
+		"decay_stress": decay_stress,
 	}

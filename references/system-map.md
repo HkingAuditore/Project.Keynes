@@ -28,9 +28,11 @@
 
 ## 运行入口
 
-Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后进入 `res://scenes/main.tscn`，并通过 meta/settings 把 setup 配置交给 `main.gd`。
+Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后默认进入 `res://scenes/player_game.tscn`，并通过 meta/settings 把 setup 配置交给 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd`。启动页的「调试场景」按钮仍进入 `res://scenes/main.tscn`，保留旧 debug/runtime lab。
 
-`main.gd` 是当前主场景协调者，仍然很大。它负责：
+`player_game.gd` 是面向玩家的轻量场景装配层。它只连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景不挂 `DebugConsole`、`PerfMiniHUD`、`DataOverlayLayer`、soak/A-B 热键或 CSV 录制器。
+
+`main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
 - 初始化 UI、相机、DebugConsole、InfoPanel、PerfMiniHUD、TODProfile。
 - 创建 `MapGenerator` 并调用 `generate()`。
@@ -45,7 +47,8 @@ Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `r
 ```text
 world_setup.tscn
   -> world_setup.gd builds config/meta
-  -> main.tscn/main.gd
+  -> player_game.tscn/player_game.gd
+  -> WorldRuntimeHost.generate_world()
   -> MapGenerator.generate(cfg, hex_size)
   -> DCWorldExt native world generation base/post-base
   -> MapData + HexCell assembly
@@ -55,6 +58,8 @@ world_setup.tscn
   -> DCWorldExt.bind_map_data(map)
   -> MapGenerator._setup_sus()
   -> WorldClock.day_changed
+  -> TimeControlsController
+  -> WorldRuntimeHost.run_daily_tick()
   -> MapGenerator.sus_tick_daily()
   -> DCSystemScheduler / SUS / SusSchedulerExt
   -> DCSystem or SusJob run_slice()
@@ -236,7 +241,11 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 主要 UI：
 
 - `world_setup.gd`：生成前参数界面。
-- `main.gd`：TopBar、时间、速度、overlay、快捷键、splash、状态推送。
+- `player_game.gd`：玩家主场景装配层，只做 runtime/UI/controller wiring 和基础玩家热键。
+- `game_ui_manager.gd`：玩家 HUD、加载遮罩、右侧地块面板、safe area、暂停/速度/设置/重生成/适配按钮。
+- `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
+- `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
+- `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
 - `info_panel_controller.gd`：右侧地块信息面板。
 - `debug_console.gd`：overlay、模拟开关、视觉开关、诊断动作、Telemetry。
 - `perf_mini_hud.gd`：常驻小型性能 HUD。

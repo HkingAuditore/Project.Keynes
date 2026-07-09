@@ -552,29 +552,31 @@ Ocean land 算法概要：
 
 **模型（统一类型，系数区分可再生/不可再生）**：每 tick、每 cell、每资源 r 用固定模板。
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
-损失项隐式求解，故对任意系数（含极端自系数）都**无条件稳定**，单调趋近均衡、不过冲，
-不会在 0↔capacity 之间横跳：
+损失项隐式求解，故对任意系数（含极端自系数）都**无条件稳定**，单调趋近均衡、不过冲：
 
 ```text
 tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
 m             = moisture
+climate_fit   = temp_fit * moisture_fit
+runtime_fit   = lerp(1.0, climate_fit, runtime_climate_fit_weight[r])
 gen_climate   = gen_base[r]   + gen_temp[r]*tn   + gen_moisture[r]*m
 decay_climate = decay_base[r] + decay_temp[r]*tn + decay_moisture[r]*m
-P             = gen_climate + gen_self[r] - decay_climate                       # 净常数生产项（可负）
-L             = capacity[r] > 0 ? max(0, (gen_self[r] + decay_self[r]) / capacity[r]) : 0
-reserve'      = clamp((reserve + P) / (1 + L), 0, capacity[r])
+P             = gen_climate + gen_self[r]*runtime_fit + extra_change[r,i]
+              - decay_climate - decay_stress[r]*(1-runtime_fit)
+L             = max(0, decay_self[r])
+reserve'      = max(0, (reserve + P) / (1 + L))
 ```
 
-均衡点 `reserve* = capacity[r]·P/(gen_self[r]+decay_self[r])`，与旧显式 Euler 一致；L 小时
-`1/(1+L) ≈ 1−L`，行为与旧式近似。**历史问题**：旧式 `reserve' = clamp(reserve + gen − decay)` 对
-`(gen_self+decay_self)/capacity ≥ 2` 的刚性配置会发散，被 clamp 在 0↔capacity 反复横跳（如测试
-资源「草药」「黏土」）；改半隐式后消除。
+当 `P > 0` 且 `decay_self > 0` 时，动态平衡点 `reserve* = P/decay_self`。`extra_change`
+是每 cell 每资源的一次性外部增减量；pass 消费后清零。**历史问题**：旧式
+`reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
+clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
-`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。首批两种示例：`biomass`（gen_self>0 的 logistic 可再生）与 `iron_ore`（gen/decay 全 0，v1 静止，待后续开采系统消耗）。
+`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。当前资源集为：木材、石料、肥沃土壤、小麦、水稻、玉米、土豆、煤炭、石油、天然气、铜矿、铁矿、金矿、银矿、盐、橡胶树、硝石、稀土、黏土、马匹。矿产类通常 `gen_* / decay_* = 0`，在游戏日尺度上保持静态；作物、林木、土壤、马匹等通过 `gen_self`、适宜度和压力衰减表达自然增长/自然消失。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
-每资源、每 cell 算一个适宜度 `suit`，乘 capacity 得初值。所有因子均**数据驱动**（`ResourceProfile`），
+每资源、每 cell 算一个适宜度 `suit`，直接作为无上限初值。所有因子均**数据驱动**（`ResourceProfile`），
 缺省 0 / `{}` 即不参与 ⇒ 不配置时与旧「仅温度+湿度」公式逐位一致（向后兼容）：
 
 ```text
@@ -586,30 +588,33 @@ suit = init_base[r] + init_temp[r]*tn + init_moisture[r]*m
      + init_river[r]   * (has_river 或 is_lake_seed ? 1 : 0)
      + init_volcano[r] * (has_volcano ? 1 : 0)
      + init_noise[r]   * noise01(cell_pos, init_noise_scale[r])   # noise01 ∈ [0,1]
-reserve0 = capacity[r] * clamp(suit, 0, 1)              # land_only 时水面格为 0
+     + init_climate_fit[r] * climate_fit                # 可选最适温湿区间
+reserve0 = max(0, suit)                                 # land_only 时水面格为 0
 ```
 
 - 数据源全部来自 bake 后已就位的 SoA：`temp/moisture/is_water/elevation/landform/vegetation/has_river/is_lake_seed/has_volcano/cell_pos_x,y`。
 - **斑块化（矿脉/油田）**：用**负的 `init_base` + 正的 `init_noise`** → 只在噪声峰值出露稀疏矿脉。噪声按「资源」独立 `FastNoiseLite`（`seed = cfg.seed ⊕ hash(id)`，可复现、各资源斑块互不重合），`init_noise_scale` 调斑块粒度。
-- 现有 .tres 调参示例：`iron_ore/coal/oil` 走负 base+地貌+噪声的斑块矿脉；`geothermal` 主走 `init_volcano`+裂谷地貌；`clay` 偏三角洲/河流；`timber/biomass` 跟森林植被权重；`freshwater` 跟河/湖；`stone` 跟山地+海拔。
+- 可选最适区间：
+  `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日 `gen_self` 受适宜度削弱；`decay_stress` 控制不适宜气候下的自然衰退。默认全 0，旧资源行为不变。
+- 现有 .tres 调参示例：`iron_ore/coal/oil/natural_gas/copper_ore/gold_ore/silver_ore/rare_earth` 走负 base+地貌+噪声的斑块矿脉；`clay` 偏三角洲/河流；`timber/rubber_tree` 跟森林植被和温湿适宜度；`wheat/rice/corn/potato/fertile_soil/horses` 主要由平原/低地/草地或湿地权重 + 最适温湿区间控制；`salt/saltpeter` 偏干热、盐滩、荒地并在湿润环境中衰退。
 
 **输入 / 输出**：
 
-- 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water`（is_water 可缺失则视为全陆地）。
-- 写 slot：每个 `reserve_slots[r]`（如 `cell_res_biomass_reserve` / `cell_res_iron_ore_reserve`），逐资源 `_flush_slot_to_map`。
-- knobs：`n_cells`、`resource_count`、`reserve_slots`(PackedStringArray)、`capacity/land_only/temp_lo/temp_hi`、`gen_*`/`decay_*`（PackedFloat32Array，按资源索引对齐）。
+- 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water`（is_water 可缺失则视为全陆地）以及每个 `extra_change_slots[r]`。
+- 写 slot：每个 `reserve_slots[r]`（如 `cell_res_timber_reserve` / `cell_res_iron_ore_reserve`）与被消费的 `extra_change_slots[r]`，逐资源 `_flush_slot_to_map`。
+- knobs：`n_cells`、`resource_count`、`reserve_slots`/`extra_change_slots`(PackedStringArray)、`land_only/temp_lo/temp_hi`、`gen_*`/`decay_*`、`climate_*_opt/tol`、`runtime_climate_fit_weight`、`decay_stress`（PackedFloat32Array，按资源索引对齐）。
 - 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, published_resource_count, input_resource_count, n_cells, total_delta, native_ms, compute_ms, loop_ms, flush_ms, skipped_static_resources, fallback_reason? }`，其中 `resource_count` 保持为输入资源总数以兼容测试，`published_resource_count` 是实际 loop/flush 的动态资源数；其余契约同 `run_runtime_hydrology_pass`。
-- refresh 边界：`run_natural_resource_pass_native` 只把 `cell_temp` / `cell_moisture` / `cell_is_water` 从 `MapData` 回拉到 C++ slots；旧 DLL 无 `refresh_slots_from_map_keys()` 时才退回全量 refresh。
+- refresh 边界：`run_natural_resource_pass_native` 把 `cell_temp` / `cell_moisture` / `cell_is_water` 与 `extra_change_slots` 从 `MapData` 回拉到 C++ slots；旧 DLL 无 `refresh_slots_from_map_keys()` 时才退回全量 refresh。
 
 **权威 / fallback**：native pass 是 reserve slot 权威。`published_to_slot=false`（含 native 不可用 / 无可发布资源）时 `run_natural_resource_pass_native` 退回 GDScript fallback（`_run_natural_resource_pass_gdscript`，同模板直接读写 `MapData.*_arr`）。两路逐 cell 逐资源 A/B 对拍一致（见 `tests/natural_resource_pass_test.gd`，≥20 cell 覆盖 SIMD body+尾段+陆/水混合）。
 
 **性能路径（多核 + SIMD）**：因 `L`、`inv_denom=1/(1+L)` 与 `P=C0+C1·tn+C2·m` 的系数都是「每资源常数」，per-cell 除法被提到资源外，内层只剩 clamp + 2×FMA + 1×乘。native pass 据此：
 - **多核**：先预筛动态资源，再走一次 `pk::parallel_for_range_with_emit`（`WorkerThreadPool`，自适应每 task ~1024 cell、clamp [1,16]）按 cell range 分块；每个 task 内循环全部动态资源，避免 2400-cell 小图上“每资源一次 WTP dispatch”的固定开销。小图继续走同一 fused body 的 single-thread SIMD（当前阈值 `n_cells < 100000`），大图才进 WTP。`total_delta` 经 thread-local `DeltaEmit` 串行 reduce；无线程池自动降级为单线程，且与多线程 bit-equal。
-- **SIMD**：`PK_HAVE_AVX2` 构建下内层 8 cell/iter（`loadu`/`fmadd`/`min`/`max`；`land_only` 经 `blendv` 让水面格保持原值），尾段与非 AVX2 构建共用同一标量 helper，lane/tail/标量三路数值一致。数据天然 SoA（各 `*_arr` 连续）、无 cell 间依赖、无邻居 gather，是理想的向量化对象。
-- **静态资源跳过**：运行期系数 `gen_*` / `decay_*` 全为 0 的资源是恒等更新（例如静态矿物储量），C++ pass 不再每日全图 loop 或 flush 这些 reserve slots；它们仍保留 bootstrap 初值并可由后续开采系统显式修改。
+- **SIMD**：`PK_HAVE_AVX2` 构建下内层 8 cell/iter（`loadu`/`fmadd`/`max`；`land_only` 经 `blendv` 让水面格保持原值），尾段与非 AVX2 构建共用同一标量 helper，lane/tail/标量三路数值一致。带 `extra_change` 或气候适宜度的资源走标量精确路径以便逐 cell 读取并清零。数据天然 SoA（各 `*_arr` 连续）、无 cell 间依赖、无邻居 gather，是理想的向量化对象。
+- **静态资源跳过**：运行期系数 `gen_*` / `decay_*` 全为 0 且 `extra_change` 全为 0 的资源是恒等更新（例如静态矿物储量），C++ pass 不再每日全图 loop 或 flush 这些 reserve slots；若外部系统写入 `extra_change`，该资源会进入本 tick 热循环并在消费后清零。
 - **基准**：`tests/natural_resource_pass_bench.gd` 用 `bench_force_scalar` / `bench_force_seq` 两个旁路 knob（默认 false，生产不受影响）在同一构建上隔离两轴对比 scalar/SIMD × 单/多核，并先做四档等价性交叉校验。当前生产路径返回 `loop_layout=cell_range_fused_seq|cell_range_fused_mt`、`loop_dispatches=0|1`；2400-cell 移动图预期走 `cell_range_fused_seq`，大图才走 `cell_range_fused_mt`。
 
-**新增一种资源 SOP**：component_ids.gd 常量 + map_data.gd 数组（`_alloc_soa` resize + `rebuild_soa_from_cells` 置 0）+ component_schema.gd 一行（`owner="economy.resources"`）→ 跑 codegen → 新建 .tres + 登记 `ResourceProfileRegistry._PROFILE_PATHS` → 重 build GDExtension。
+**新增一种资源 SOP**：component_ids.gd reserve/extra 常量 + map_data.gd reserve/extra 数组（`_alloc_soa` resize + `rebuild_soa_from_cells` 置 0）+ component_schema.gd 两行（`owner="economy.resources"`）→ 跑 codegen → 新建 .tres + 登记 `ResourceProfileRegistry._PROFILE_PATHS` → 重 build GDExtension。
 
 风险：
 
