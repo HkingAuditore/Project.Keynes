@@ -32,16 +32,16 @@ func _run() -> void:
 	# 2. 创建一个 world，注册若干 production 字段
 	var world: DCWorld = DCWorld.new()
 	var cid_temp: int = world.register_component(DCComponentIds.CELL_TEMP, DCComponentIds.F32, 1, false)
-	var cid_lf: int = world.register_component(DCComponentIds.CELL_LANDFORM, DCComponentIds.I32, 1, false)
+	var cid_parent: int = world.register_component(DCComponentIds.CELL_HYDRO_PARENT, DCComponentIds.I32, 1, false)
 	var cid_terr: int = world.register_component(DCComponentIds.CELL_TERRAIN, DCComponentIds.U8, 1, false)
 	world.create_entities(8)
 
 	# 3. 写入测试数据
 	var temps: PackedFloat32Array = PackedFloat32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
-	var lfs: PackedInt32Array = PackedInt32Array([1, 2, 3, 4, 5, 6, 7, 8])
+	var parents: PackedInt32Array = PackedInt32Array([-1, 0, 1, 2, 3, 4, 5, 6])
 	var terrs: PackedByteArray = PackedByteArray([10, 20, 30, 40, 50, 60, 70, 80])
 	world.write_f32_range(cid_temp, 0, temps)
-	world.write_i32_range(cid_lf, 0, lfs)
+	world.write_i32_range(cid_parent, 0, parents)
 	world.write_u8_range(cid_terr, 0, terrs)
 
 	# 4. serialize
@@ -57,7 +57,7 @@ func _run() -> void:
 	# 6. 创建第二个 world，复刻同样 n_cells
 	var w2: DCWorld = DCWorld.new()
 	var c2_temp: int = w2.register_component(DCComponentIds.CELL_TEMP, DCComponentIds.F32, 1, false)
-	var c2_lf: int = w2.register_component(DCComponentIds.CELL_LANDFORM, DCComponentIds.I32, 1, false)
+	var c2_parent: int = w2.register_component(DCComponentIds.CELL_HYDRO_PARENT, DCComponentIds.I32, 1, false)
 	var c2_terr: int = w2.register_component(DCComponentIds.CELL_TERRAIN, DCComponentIds.U8, 1, false)
 	w2.create_entities(8)
 	w2.deserialize(snap)
@@ -72,7 +72,7 @@ func _run() -> void:
 
 	var ok_i32: bool = true
 	for i in range(8):
-		if w2.read_i32(c2_lf, i) != lfs[i]:
+		if w2.read_i32(c2_parent, i) != parents[i]:
 			ok_i32 = false
 			break
 	_expect("i32 round-trip bit-equal", ok_i32)

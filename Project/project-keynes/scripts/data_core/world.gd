@@ -1664,8 +1664,7 @@ func _serialize_cells_dict() -> Dictionary:
 	# 按 component_schema.gd 自动遍历 production entries（跳过 demo 字段）。
 	for e in DCComponentSchema.entries_production():
 		var cpp_name: String = String(e.cpp_name)
-		var sn: StringName = StringName(cpp_name)
-		var cid: int = component_id(sn)
+		var cid: int = component_id(e.name)
 		if cid < 0:
 			continue
 		var dt: int = int(e.dtype)
@@ -1686,8 +1685,7 @@ func _deserialize_cells_dict(cells: Dictionary) -> void:
 		var cpp_name: String = String(e.cpp_name)
 		if not cells.has(cpp_name):
 			continue
-		var sn: StringName = StringName(cpp_name)
-		var cid: int = component_id(sn)
+		var cid: int = component_id(e.name)
 		if cid < 0:
 			continue
 		var dt: int = int(e.dtype)
