@@ -13,31 +13,31 @@ temp_hi = 35.0
 gen_base = 0.0
 gen_temp = 0.0
 gen_moisture = 0.0
-gen_self = 1.5
+gen_self = 1.2
 decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
-decay_self = 0.4
-init_base = -0.05
+decay_self = 0.004
+init_base = -220.0
 init_temp = 0.0
-init_moisture = 0.15
-init_climate_fit = 0.35
-init_noise = 0.08
+init_moisture = 50.0
+init_climate_fit = 120.0
+init_noise = 30.0
 init_noise_scale = 0.06
 init_vegetation_weights = {
-5: 0.3,
-6: 0.1,
-7: 0.35,
-8: 0.35,
-12: 0.3,
-14: 0.4,
-15: 0.25,
-24: 0.3,
-25: 0.3
+5: 150.0,
+6: 50.0,
+7: 175.0,
+8: 175.0,
+12: 150.0,
+14: 200.0,
+15: 125.0,
+24: 150.0,
+25: 150.0
 }
 climate_temp_opt = 0.55
 climate_temp_tol = 0.45
 climate_moisture_opt = 0.65
 climate_moisture_tol = 0.45
 runtime_climate_fit_weight = 0.85
-decay_stress = 1.0
+decay_stress = 1.2

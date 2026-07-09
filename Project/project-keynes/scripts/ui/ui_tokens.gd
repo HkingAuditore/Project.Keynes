@@ -57,6 +57,27 @@ static func accent_for_key(key: String) -> Color:
 			return ACCENT
 
 
+static func format_compact_number_cn(value: float, decimals: int = 2) -> String:
+	var sign := "-" if value < 0.0 else ""
+	var abs_value := absf(value)
+	if abs_value >= 100000000.0:
+		return "%s%s亿" % [sign, _trim_number(abs_value / 100000000.0, decimals)]
+	if abs_value >= 10000.0:
+		return "%s%s万" % [sign, _trim_number(abs_value / 10000.0, decimals)]
+	return "%s%s" % [sign, _trim_number(abs_value, decimals)]
+
+
+static func _trim_number(value: float, decimals: int) -> String:
+	var places := clampi(decimals, 0, 6)
+	var text := "%.*f" % [places, value]
+	if text.find(".") >= 0:
+		while text.ends_with("0"):
+			text = text.substr(0, text.length() - 1)
+		if text.ends_with("."):
+			text = text.substr(0, text.length() - 1)
+	return text
+
+
 static func panel_style(bg: Color = PANEL_BG, radius: int = RADIUS_MD, border: Color = PANEL_BORDER) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = bg

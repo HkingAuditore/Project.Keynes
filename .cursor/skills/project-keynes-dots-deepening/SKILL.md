@@ -24,25 +24,25 @@ Before implementation, read the current code path being changed. Never proceed f
 
 For native daily / system graph work, inspect:
 
-- `docs/plans/dots-deepening-roadmap.md`
-- `docs/cpp-dots-runtime/architecture-overview.md`
-- `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
-- `Project/project-keynes/scripts/geography/map_generator.gd`
-- `Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
-- `Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
-- `gdext/src/world_ext.cpp`
-- `gdext/src/world_ext_bind_methods.cpp`
-- `gdext/src/system_schedule.cpp`
-- `gdext/src/sus_scheduler_ext.cpp`
+- `Project.Keynes/docs/plans/dots-deepening-roadmap.md`
+- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
+- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
+- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
+- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
+- `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd`
+- `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
+- `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
+- `Project.Keynes/gdext/src/world_ext.cpp`
+- `Project.Keynes/gdext/src/world_ext_bind_methods.cpp`
+- `Project.Keynes/gdext/src/system_schedule.cpp`
+- `Project.Keynes/gdext/src/sus_scheduler_ext.cpp`
 
 For authority boundaries, also inspect the relevant GDScript job/system:
 
-- climate: `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`
-- weather: `Project/project-keynes/scripts/simulation/sus/jobs/weather_refresh_job.gd`, `Project/project-keynes/scripts/weather/weather_system.gd`, `Project/project-keynes/scripts/weather/field_solver.gd`
-- ocean: `Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`, `Project/project-keynes/scripts/rendering/map_baker.gd`
-- DataCore/schema: `Project/project-keynes/scripts/data_core/component_schema.gd`, `gdext/src/component_bind_table.gen.h`
+- climate: `Project.Keynes/Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`
+- weather: `Project.Keynes/Project/project-keynes/scripts/simulation/sus/jobs/weather_refresh_job.gd`, `Project.Keynes/Project/project-keynes/scripts/weather/weather_system.gd`, `Project.Keynes/Project/project-keynes/scripts/weather/field_solver.gd`
+- ocean: `Project.Keynes/Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`, `Project.Keynes/Project/project-keynes/scripts/rendering/map_baker.gd`
+- DataCore/schema: `Project.Keynes/Project/project-keynes/scripts/data_core/component_schema.gd`, `Project.Keynes/gdext/src/component_bind_table.gen.h`
 
 ## First Question
 

@@ -112,9 +112,9 @@ func _run() -> void:
 	_expect("probe land cell reserve increased over time", after > before + 0.002)
 	_expect("total land reserve increased over time", land_sum_after > land_sum_before + 0.01)
 
-	# ── 公式鲁棒性：全部 20 种资源在多日演化后必须有限且非负。
+	# ── 公式鲁棒性：全部 28 种资源在多日演化后必须有限且非负。
 	var profiles: Array = ResourceProfileRegistry.ordered()
-	_expect("registry loaded 20 resources", profiles.size() == 20)
+	_expect("registry loaded 28 resources", profiles.size() == 28)
 	var all_finite_nonnegative: bool = true
 	var bad_detail: String = ""
 	for p in profiles:
@@ -138,7 +138,7 @@ func _run() -> void:
 			break
 	if not all_finite_nonnegative:
 		printerr("  [detail] %s" % bad_detail)
-	_expect("all 20 resources finite & nonnegative", all_finite_nonnegative)
+	_expect("all 28 resources finite & nonnegative", all_finite_nonnegative)
 
 	# 横跳回归：尾段（最后 5 日）的逐日变化必须小于当前量级的合理比例。
 	var saltpeter_tail: float = _tail_max_step(saltpeter_seq, 5)

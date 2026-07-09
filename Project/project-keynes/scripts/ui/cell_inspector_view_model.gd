@@ -45,13 +45,13 @@ func build(cell: HexCell) -> Dictionary:
 	var resource_label := String(resource_summary.get("label", "—"))
 	var weather_label := _weather_name(cell, idx)
 	var tabs := [
-		{"id": "overview", "label": "总览"},
-		{"id": "geography", "label": "地势"},
-		{"id": "climate", "label": "气候"},
-		{"id": "hydrology", "label": "水文"},
-		{"id": "ecology", "label": "生态"},
-		{"id": "resources", "label": "资源"},
-		{"id": "history", "label": "记录"},
+		{"id": "overview", "label": "总览", "icon": "overview"},
+		{"id": "geography", "label": "地势", "icon": "geo"},
+		{"id": "climate", "label": "气候", "icon": "sun"},
+		{"id": "hydrology", "label": "水文", "icon": "water"},
+		{"id": "ecology", "label": "生态", "icon": "eco"},
+		{"id": "resources", "label": "资源", "icon": "resource"},
+		{"id": "history", "label": "记录", "icon": "history"},
 	]
 	return {
 		"header": {
@@ -66,8 +66,8 @@ func build(cell: HexCell) -> Dictionary:
 			"accent": _score_color(habitability),
 		},
 		"summary_cards": [
-			{"title": "地势", "value": _elevation_band(elev, _sea_level), "subtitle": "%d%%" % int(round(elev * 100.0)), "accent": UITokens.GEO, "icon": "△"},
-			{"title": "气候", "value": "%s/%s" % [_temperature_band(temp), _moisture_band(moist)], "subtitle": "%d%% · %d%%" % [int(round(temp * 100.0)), int(round(moist * 100.0))], "accent": UITokens.CLIMATE, "icon": "☼"},
+			{"title": "地势", "value": _elevation_band(elev, _sea_level), "subtitle": _elevation_index_text(elev), "accent": UITokens.GEO, "icon": "geo"},
+			{"title": "气候", "value": "%s/%s" % [_temperature_band(temp), _moisture_band(moist)], "subtitle": "T=%.2f · M=%.2f" % [temp, moist], "accent": UITokens.CLIMATE, "icon": "☼"},
 			{"title": "生态", "value": ecology_label, "subtitle": VegetationType.name_cn(vegetation_v), "accent": UITokens.ECO, "icon": "♣"},
 			{"title": "资源", "value": resource_label, "subtitle": String(resource_summary.get("subtitle", "")), "accent": UITokens.RESOURCE, "trend": String(resource_summary.get("trend", "")), "icon": "◆"},
 		],
@@ -86,7 +86,6 @@ func build(cell: HexCell) -> Dictionary:
 
 func _overview_category(cell: HexCell, idx: int, habitability: float, risk: float, resource_summary: Dictionary, terrain_v: int, landform_v: int, vegetation_v: int, cover_v: int, temp: float, moist: float, wf: Dictionary, vitality: float, is_water: bool) -> Dictionary:
 	var insights := [
-		{"text": "适宜 %d%% · %s" % [int(round(habitability * 100.0)), _score_caption(habitability)], "accent": _score_color(habitability)},
 		{"text": "风险 %d%% · %s" % [int(round(risk * 100.0)), _risk_caption(risk)], "accent": _risk_color(risk)},
 		{"text": "资源 · %s" % String(resource_summary.get("label", "—")), "accent": UITokens.RESOURCE},
 	]
@@ -94,15 +93,9 @@ func _overview_category(cell: HexCell, idx: int, habitability: float, risk: floa
 		"insights": insights,
 		"metrics": [
 			{"title": "地表", "value": LandformType.name_cn(landform_v), "subtitle": TerrainType.terrain_name_cn(terrain_v), "accent": UITokens.GEO, "icon": "▰"},
-			{"title": "天气", "value": _weather_name(cell, idx), "subtitle": "%.0f%%" % (_weather_intensity(cell, idx) * 100.0), "accent": UITokens.WATER, "icon": "☁"},
-			{"title": "植被", "value": VegetationType.name_cn(vegetation_v), "subtitle": "%.0f%%" % (vitality * 100.0), "accent": UITokens.ECO, "icon": "♣"},
-			{"title": "覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "雪 %.0f%%" % (_snow_cover(cell, idx) * 100.0), "accent": UITokens.WATER, "icon": "✦"},
-		],
-		"gauges": [
-			{"label": "适宜", "value": habitability, "accent": _score_color(habitability), "status_label": _score_caption(habitability)},
-			{"label": "风险", "value": risk, "accent": _risk_color(risk), "status_label": _risk_caption(risk)},
-			{"label": "温度", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp)},
-			{"label": "湿度", "value": moist, "accent": UITokens.WATER, "status_label": _moisture_band(moist)},
+			{"title": "天气", "value": _weather_name(cell, idx), "subtitle": "I=%.2f" % _weather_intensity(cell, idx), "accent": UITokens.WATER, "icon": "☁"},
+			{"title": "植被", "value": VegetationType.name_cn(vegetation_v), "subtitle": "V=%.2f" % vitality, "accent": UITokens.ECO, "icon": "♣"},
+			{"title": "覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "雪 S=%.2f" % _snow_cover(cell, idx), "accent": UITokens.WATER, "icon": "✦"},
 		],
 		"badges": _header_badges(terrain_v, landform_v, vegetation_v, cover_v, _weather_name(cell, idx)),
 		"charts": [{"title": "近期生态轨迹", "values": _history_values(cell), "accent": UITokens.ECO}],
@@ -110,25 +103,23 @@ func _overview_category(cell: HexCell, idx: int, habitability: float, risk: floa
 
 
 func _geography_category(cell: HexCell, idx: int, off: Vector2i, terrain_v: int, landform_v: int, elev: float, passable_land: bool) -> Dictionary:
-	var land_h := (elev - _sea_level) / maxf(1.0 - _sea_level, 0.001)
 	var feats := PackedStringArray()
 	if _has_river(cell, idx): feats.append("河流")
 	if cell.has_volcano: feats.append("火山")
 	if cell.is_lake_seed: feats.append("湖泊种子")
 	return {
 		"insights": [
-			{"text": "海拔 %d%% · %s" % [int(round(elev * 100.0)), _elevation_band(elev, _sea_level)], "accent": UITokens.GEO},
+			{"text": "%s · %s · %s" % [_elevation_index_text(elev), _relative_sea_level_text(elev, _sea_level), _elevation_band(elev, _sea_level)], "accent": UITokens.GEO},
 			{"text": "陆 %s · 海 %s · 移动 %d" % ["可通" if passable_land else "阻断", "可通" if cell.passable_sea else "阻断", TerrainType.get_move_cost(terrain_v)], "accent": UITokens.ACCENT},
 		],
 		"metrics": [
 			{"title": "地形", "value": TerrainType.terrain_name_cn(terrain_v), "subtitle": LandformType.name_cn(landform_v), "accent": UITokens.GEO, "icon": "▰"},
 			{"title": "特征", "value": "无" if feats.is_empty() else ", ".join(feats), "subtitle": "", "accent": UITokens.WATER, "icon": "✦"},
-			{"title": "陆高", "value": "%+.0f%%" % (land_h * 100.0), "subtitle": "海平面", "accent": UITokens.GEO, "icon": "△"},
+			{"title": "高程", "value": _elevation_index_text(elev), "subtitle": _relative_sea_level_text(elev, _sea_level), "accent": UITokens.GEO, "icon": "geo"},
 			{"title": "坐标", "value": "%d,%d,%d" % [cell.q, cell.r, cell.s], "subtitle": "cube", "accent": UITokens.ACCENT, "icon": "⌖"},
 		],
 		"gauges": [
-			{"label": "海拔", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": _elevation_band(elev, _sea_level)},
-			{"label": "陆上高度", "value": clampf(land_h, 0.0, 1.0), "accent": UITokens.GEO, "status_label": "%+d%%" % int(round(land_h * 100.0))},
+			{"label": "高程剖面", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": _elevation_band(elev, _sea_level), "value_text": _relative_sea_level_text(elev, _sea_level)},
 		],
 	}
 
@@ -138,21 +129,18 @@ func _climate_category(cell: HexCell, idx: int, temp: float, moist: float, base_
 	var sun_text := _sun_text(cell)
 	return {
 		"insights": [
-			{"text": "温 %d%% · %s" % [int(round(temp * 100.0)), _temperature_band(temp)], "accent": UITokens.CLIMATE},
-			{"text": "湿 %d%% · %s" % [int(round(moist * 100.0)), _moisture_band(moist)], "accent": UITokens.WATER},
 			{"text": sun_text, "accent": UITokens.CLIMATE},
+			{"text": "全球异常 %+.2f" % anomaly, "accent": UITokens.CLIMATE},
 		],
 		"metrics": [
-			{"title": "温度", "value": "%d%%" % int(round(temp * 100.0)), "subtitle": _temperature_band(temp), "accent": UITokens.CLIMATE, "icon": "☼"},
-			{"title": "湿度", "value": "%d%%" % int(round(moist * 100.0)), "subtitle": _moisture_band(moist), "accent": UITokens.WATER, "icon": "≈"},
-			{"title": "降水", "value": "%d%%" % int(round(float(wf["precip"]) * 100.0)), "subtitle": "云 %d%%" % int(round(float(wf["cloud"]) * 100.0)), "accent": UITokens.WATER, "icon": "☂"},
-			{"title": "异常", "value": "%+.2f" % anomaly, "subtitle": "全球", "accent": UITokens.CLIMATE, "icon": "±"},
+			{"title": "气候型", "value": "%s/%s" % [_temperature_band(temp), _moisture_band(moist)], "subtitle": "归一气候指数", "accent": UITokens.CLIMATE, "icon": "sun"},
+			{"title": "降水型", "value": _precip_band(float(wf["precip"])), "subtitle": _cloud_band(float(wf["cloud"])), "accent": UITokens.WATER, "icon": "water"},
 		],
 		"gauges": [
-			{"label": "温度", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp)},
-			{"label": "湿度", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": _moisture_band(moist)},
-			{"label": "云量", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"]))},
-			{"label": "降水", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"]))},
+			{"label": "温度指数", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp), "value_text": "T=%.2f" % temp},
+			{"label": "湿度指数", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": _moisture_band(moist), "value_text": "M=%.2f" % moist},
+			{"label": "云量指数", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"])), "value_text": "C=%.2f" % float(wf["cloud"])},
+			{"label": "降水指数", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"])), "value_text": "P=%.2f" % float(wf["precip"])},
 		],
 		"charts": [{"title": "温度记忆", "values": _temperature_memory(cell, idx, temp), "accent": UITokens.CLIMATE}],
 	}
@@ -164,20 +152,18 @@ func _hydrology_category(cell: HexCell, idx: int, wf: Dictionary, snow: float, i
 	var upwelling := _upwelling(cell, idx)
 	return {
 		"insights": [
-			{"text": "水汽 %d%% · 云 %d%% · 雨 %d%%" % [int(round(float(wf["vapor"]) * 100.0)), int(round(float(wf["cloud"]) * 100.0)), int(round(float(wf["precip"]) * 100.0))], "accent": UITokens.WATER},
 			{"text": "风 %s · 洋流 %s" % [_dir_degrees_text(wind), _dir_degrees_text(ocean)], "accent": UITokens.ACCENT},
 		],
 		"metrics": [
-			{"title": "冰雪", "value": "%.0f%%" % (snow * 100.0), "subtitle": _cover_intensity_band(snow), "accent": UITokens.WATER, "icon": "✦"},
 			{"title": "洋流", "value": "%.3f" % ocean.length() if is_water else "—", "subtitle": _dir_degrees_text(ocean), "accent": UITokens.WATER, "icon": "≈"},
 			{"title": "风", "value": "%.3f" % _wind_speed(cell, idx), "subtitle": _dir_degrees_text(wind), "accent": UITokens.ACCENT, "icon": "↗"},
 			{"title": "上升流", "value": "%+.3f" % upwelling if is_water else "—", "subtitle": "", "accent": UITokens.WATER, "icon": "↑"},
 		],
 		"gauges": [
-			{"label": "水汽", "value": float(wf["vapor"]), "accent": UITokens.WATER, "status_label": _moisture_band(float(wf["vapor"]))},
-			{"label": "云量", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"]))},
-			{"label": "降水", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"]))},
-			{"label": "雪盖/海冰", "value": snow, "accent": UITokens.WATER, "status_label": _cover_intensity_band(snow)},
+			{"label": "水汽指数", "value": float(wf["vapor"]), "accent": UITokens.WATER, "status_label": _moisture_band(float(wf["vapor"])), "value_text": "V=%.2f" % float(wf["vapor"])},
+			{"label": "云量指数", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"])), "value_text": "C=%.2f" % float(wf["cloud"])},
+			{"label": "降水指数", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"])), "value_text": "P=%.2f" % float(wf["precip"])},
+			{"label": "雪盖/海冰", "value": snow, "accent": UITokens.WATER, "status_label": _cover_intensity_band(snow), "value_text": "S=%.2f" % snow},
 		],
 	}
 
@@ -191,27 +177,24 @@ func _ecology_category(cell: HexCell, idx: int, vegetation_v: int, cover_v: int,
 	return {
 		"insights": [
 			{"text": "%s · %s" % [VegetationType.name_cn(vegetation_v), CoverType.name_cn(cover_v)], "accent": UITokens.ECO},
-			{"text": "生命 %s · %s" % ["—" if is_water else "%d%%" % int(round(vitality * 100.0)), countdown], "accent": UITokens.ECO if vitality >= 0.45 else UITokens.RISK},
+			{"text": "生命 %s · %s" % ["—" if is_water else "V=%.2f" % vitality, countdown], "accent": UITokens.ECO if vitality >= 0.45 else UITokens.RISK},
 		],
 		"metrics": [
 			{"title": "植被", "value": VegetationType.name_cn(vegetation_v), "subtitle": VegetationType.name_cn(cell.base_vegetation), "accent": UITokens.ECO, "icon": "♣"},
-			{"title": "生命", "value": "—" if is_water else "%.0f%%" % (vitality * 100.0), "subtitle": _vitality_band(vitality), "accent": UITokens.ECO, "icon": "♥"},
-			{"title": "覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "雪 %.0f%%" % (_snow_cover(cell, idx) * 100.0), "accent": UITokens.WATER, "icon": "✦"},
+			{"title": "覆盖", "value": CoverType.name_cn(cover_v), "subtitle": _cover_intensity_band(_snow_cover(cell, idx)), "accent": UITokens.WATER, "icon": "✦"},
 			{"title": "再生", "value": "%.2f" % regen, "subtitle": "", "accent": UITokens.ECO, "icon": "↟"},
 		],
 		"gauges": [
-			{"label": "生命值", "value": vitality, "accent": UITokens.ECO, "status_label": _vitality_band(vitality)},
-			{"label": "热胁迫", "value": stress_heat, "accent": UITokens.CLIMATE, "status_label": _stress_band(stress_heat)},
-			{"label": "旱胁迫", "value": stress_drought, "accent": UITokens.WARN, "status_label": _stress_band(stress_drought)},
-			{"label": "冷胁迫", "value": stress_cold, "accent": UITokens.WATER, "status_label": _stress_band(stress_cold)},
+			{"label": "热胁迫", "value": stress_heat, "accent": UITokens.CLIMATE, "status_label": _stress_band(stress_heat), "value_text": "H=%.2f" % stress_heat},
+			{"label": "旱胁迫", "value": stress_drought, "accent": UITokens.WARN, "status_label": _stress_band(stress_drought), "value_text": "D=%.2f" % stress_drought},
+			{"label": "冷胁迫", "value": stress_cold, "accent": UITokens.WATER, "status_label": _stress_band(stress_cold), "value_text": "C=%.2f" % stress_cold},
 		],
 		"charts": [{"title": "植被历史", "values": _history_values(cell), "accent": UITokens.ECO}],
 	}
 
 
 func _resources_category(resource_state: Array) -> Dictionary:
-	var metrics := []
-	var gauges := []
+	var rows := []
 	var insights := []
 	if resource_state.is_empty():
 		return {"insights": [{"text": "尚未配置自然资源类型。", "accent": UITokens.TEXT_MUTED}]}
@@ -219,37 +202,32 @@ func _resources_category(resource_state: Array) -> Dictionary:
 	sorted.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("rank", 0.0)) > float(b.get("rank", 0.0))
 	)
-	var shown := 0
+	var notable_count := 0
 	for data in sorted:
 		var item: Dictionary = data
 		if not bool(item.get("available", true)):
 			continue
 		var reserve := float(item.get("reserve", 0.0))
 		var delta := float(item.get("delta", 0.0))
-		if reserve < 0.02 and absf(delta) < 0.0001 and shown >= 4:
+		if reserve <= 0.000001:
 			continue
-		metrics.append({
-			"title": String(item.get("name", "资源")),
-			"value": "%d%%" % int(round(reserve * 100.0)),
-			"subtitle": _resource_density_band(reserve),
+		var density := _resource_density_band(reserve)
+		rows.append({
+			"name": String(item.get("name", "资源")),
+			"value": _resource_index_text(reserve),
+			"density": density,
+			"delta": _daily_delta_text(delta),
 			"accent": UITokens.RESOURCE,
-			"trend": _trend_arrow(delta),
 			"icon": _resource_icon(String(item.get("name", ""))),
 		})
-		gauges.append({
-			"label": String(item.get("name", "资源")),
-			"value": clampf(reserve, 0.0, 1.0),
-			"accent": UITokens.RESOURCE,
-			"status_label": _resource_density_band(reserve),
-		})
-		if reserve > 0.65 or absf(delta) > 0.0005:
-			insights.append({"text": "%s · %s · %s" % [String(item.get("name", "资源")), _resource_density_band(reserve), _delta_text(delta)], "accent": UITokens.RESOURCE})
-		shown += 1
-		if shown >= 8:
-			break
+		if notable_count < 3 and (reserve > 0.65 or absf(delta) > 0.0005):
+			insights.append({"text": "%s · %s · %s" % [String(item.get("name", "资源")), density, _daily_delta_text(delta)], "accent": UITokens.RESOURCE})
+			notable_count += 1
+	if rows.is_empty():
+		return {"insights": [{"text": "此地块无可显示自然资源。", "accent": UITokens.TEXT_MUTED}]}
 	if insights.is_empty():
 		insights.append({"text": "资源平缓", "accent": UITokens.TEXT_MUTED})
-	return {"insights": insights, "metrics": metrics, "gauges": gauges}
+	return {"insights": insights, "resource_rows": rows}
 
 
 func _history_category(cell: HexCell) -> Dictionary:
@@ -326,7 +304,7 @@ func _resource_summary(resource_state: Array) -> Dictionary:
 	var delta := float(best.get("delta", 0.0))
 	return {
 		"label": String(best.get("name", "资源")),
-		"subtitle": "%s · %d%%" % [_resource_density_band(reserve), int(round(reserve * 100.0))],
+		"subtitle": "%s · %s" % [_resource_density_band(reserve), _resource_index_text(reserve)],
 		"trend": _trend_arrow(delta),
 	}
 
@@ -516,10 +494,23 @@ func _trend_arrow(v: float) -> String:
 	return "→"
 
 
-func _delta_text(v: float) -> String:
+func _daily_delta_text(v: float) -> String:
 	if absf(v) < 0.0001:
-		return "持平"
-	return "%s%d‰" % ["+" if v > 0.0 else "", int(round(v * 1000.0))]
+		return "日变 约0"
+	return "日变 %s%s" % ["+" if v > 0.0 else "", UITokens.format_compact_number_cn(absf(v), 2)]
+
+
+func _elevation_index_text(elev: float) -> String:
+	return "h=%.2f" % elev
+
+
+func _relative_sea_level_text(elev: float, sea: float) -> String:
+	var delta := elev - sea
+	return "Δ海面 %+.2f" % delta
+
+
+func _resource_index_text(v: float) -> String:
+	return "储量 %s" % UITokens.format_compact_number_cn(v, 2)
 
 
 func _risk_caption(v: float) -> String:

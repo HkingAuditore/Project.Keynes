@@ -572,7 +572,7 @@ reserve'      = max(0, (reserve + P) / (1 + L))
 `reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
 clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
-`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。当前资源集为：木材、石料、肥沃土壤、小麦、水稻、玉米、土豆、煤炭、石油、天然气、铜矿、铁矿、金矿、银矿、盐、橡胶树、硝石、稀土、黏土、马匹。矿产类通常 `gen_* / decay_* = 0`，在游戏日尺度上保持静态；作物、林木、土壤、马匹等通过 `gen_self`、适宜度和压力衰减表达自然增长/自然消失。
+`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。当前资源集为：木材、石料、肥沃土壤、小麦、水稻、玉米、土豆、煤炭、石油、天然气、铜矿、铁矿、金矿、银矿、盐、橡胶树、硝石、稀土、黏土、马匹、野生动物、香料植物、亚麻、棉花、牛、羊、猪、草药。矿产类通常 `gen_* / decay_* = 0`，在游戏日尺度上保持静态；作物、林木、土壤、野生/半野生动物等通过 `gen_self`、适宜度和压力衰减表达自然增长/自然消失。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
@@ -593,10 +593,10 @@ reserve0 = max(0, suit)                                 # land_only 时水面格
 ```
 
 - 数据源全部来自 bake 后已就位的 SoA：`temp/moisture/is_water/elevation/landform/vegetation/has_river/is_lake_seed/has_volcano/cell_pos_x,y`。
-- **斑块化（矿脉/油田）**：用**负的 `init_base` + 正的 `init_noise`** → 只在噪声峰值出露稀疏矿脉。噪声按「资源」独立 `FastNoiseLite`（`seed = cfg.seed ⊕ hash(id)`，可复现、各资源斑块互不重合），`init_noise_scale` 调斑块粒度。
+- **斑块化 / 稀疏化**：用**负的 `init_base` + 明确地貌/植被/气候正权重 + 正的 `init_noise`** → 只在适宜生态位或噪声峰值出现资源。噪声按「资源」独立 `FastNoiseLite`（`seed = cfg.seed ⊕ hash(id)`，可复现、各资源斑块互不重合），`init_noise_scale` 调斑块粒度。
 - 可选最适区间：
   `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日 `gen_self` 受适宜度削弱；`decay_stress` 控制不适宜气候下的自然衰退。默认全 0，旧资源行为不变。
-- 现有 .tres 调参示例：`iron_ore/coal/oil/natural_gas/copper_ore/gold_ore/silver_ore/rare_earth` 走负 base+地貌+噪声的斑块矿脉；`clay` 偏三角洲/河流；`timber/rubber_tree` 跟森林植被和温湿适宜度；`wheat/rice/corn/potato/fertile_soil/horses` 主要由平原/低地/草地或湿地权重 + 最适温湿区间控制；`salt/saltpeter` 偏干热、盐滩、荒地并在湿润环境中衰退。
+- 现有 .tres 调参示例：`iron_ore/coal/oil/natural_gas/copper_ore/gold_ore/silver_ore/rare_earth` 走负 base+地貌+噪声的斑块矿脉；`clay` 偏三角洲/河流；`timber/rubber_tree/spice_plants/medicinal_herbs` 跟森林植被和温湿适宜度；`wheat/rice/corn/potato/flax/cotton/fertile_soil` 主要由平原/低地/草地或湿地权重 + 最适温湿区间控制；`wild_game/cattle/sheep/pigs/horses` 表达野生/半野生种群，偏草地、森林、水边或丘陵；`salt/saltpeter` 偏干热、盐滩、荒地并在湿润环境中衰退。
 
 **输入 / 输出**：
 

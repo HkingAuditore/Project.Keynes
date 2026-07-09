@@ -28,6 +28,13 @@
 - 变量集：temp/moist/elev/lat/river_flow/soil_moist/reserve/season/tick + terrain/landform/vegetation/cover/has_river/is_water
 - plan 文件：`C:\Users\hkinghuang\.workbuddy\plans\blazing-forging-darwin.md`
 - 待用户确认 plan 后再实现
+- 注：截至 2026-07-09 实际已实现（28 种资源 + SoA + C++ pass + ResourceProfile/Registry），上述"未实现"状态已过时。
+
+## 物资系统（2026-07-09 GDScript 方案已撤回，待重新设计为 C++ DOTS 架构）
+- 撤回原因：用户要求物资必须进 C++ 参与 DOTS 计算，经济计算会频繁使用，需高性能架构；GDScript 离散容器方案（Array[MaterialStack]，不进 SoA）方向错误，已全部删除。
+- 待重新设计：物资进 component_schema SoA slot + C++ pass；需解决"每格多种物资、种类动态"与 SoA"固定槽位连续值"的张力；价格 per-cell 浮动。
+- 流程教训：写完 plan 必须先向用户展示并明确等待确认，不能依赖审批工具自动信号进入实现。
+- 旧 plan 文件（已废弃）：`C:\Users\hkinghuang\.workbuddy\plans\cosmic-aurora-einstein.md`
 
 ## Ocean 物理 cell-range 切片（2026-07-07，设计态待本地验收）
 - 范围：ocean_currents(32.5%) 四 leaf pass（SLP/WIND/PSI/UPWELLING）的 cell-range 切片 + GDScript stage 内游标。

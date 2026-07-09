@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"spice_plants"
+display_name = "香料植物"
+reserve_component = &"cell.res_spice_plants_reserve"
+land_only = true
+temp_lo = 12.0
+temp_hi = 42.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.28
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.012
+init_base = -70.0
+init_temp = 0.0
+init_moisture = 18.0
+init_elevation = -4.0
+init_climate_fit = 82.0
+init_noise = 28.0
+init_noise_scale = 0.095
+init_landform_weights = {
+4: 8.0,
+5: 15.0,
+9: 12.0,
+14: 18.0,
+15: 14.0
+}
+init_vegetation_weights = {
+12: 18.0,
+14: 42.0,
+15: 34.0,
+19: 22.0,
+20: 18.0,
+21: 20.0,
+24: 30.0,
+25: 38.0
+}
+climate_temp_opt = 0.62
+climate_temp_tol = 0.22
+climate_moisture_opt = 0.76
+climate_moisture_tol = 0.22
+runtime_climate_fit_weight = 0.96
+decay_stress = 0.55

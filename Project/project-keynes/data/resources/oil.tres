@@ -14,22 +14,22 @@ gen_base = 0.0
 gen_temp = 0.0
 gen_moisture = 0.0
 gen_self = 0.0
-decay_base = 0.00001
+decay_base = 0.05
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.0
-init_base = -0.55
+init_base = -55000.0
 init_temp = 0.0
 init_moisture = 0.0
-init_elevation = -0.2
-init_noise = 0.75
+init_elevation = -20000.0
+init_noise = 75000.0
 init_noise_scale = 0.05
 init_landform_weights = {
-1: 0.25,
-2: 0.4,
-4: 0.35,
-5: 0.5,
-9: 0.6,
-11: 0.3,
-14: 0.55
+1: 25000.0,
+2: 40000.0,
+4: 35000.0,
+5: 50000.0,
+9: 60000.0,
+11: 30000.0,
+14: 55000.0
 }

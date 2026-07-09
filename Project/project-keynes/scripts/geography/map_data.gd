@@ -117,6 +117,14 @@ var res_saltpeter_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_rare_earth_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_horses_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_wild_game_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
+var res_spice_plants_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_flax_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_cotton_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_cattle_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_sheep_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_pigs_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_medicinal_herbs_reserve_arr: PackedFloat32Array = PackedFloat32Array()
 var res_timber_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_stone_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_fertile_soil_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
@@ -137,6 +145,14 @@ var res_saltpeter_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_rare_earth_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_horses_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_wild_game_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
+var res_spice_plants_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_flax_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_cotton_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_cattle_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
+var res_sheep_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
+var res_pigs_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
+var res_medicinal_herbs_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
@@ -583,6 +599,14 @@ func _alloc_soa(n: int) -> void:
 	res_rare_earth_reserve_arr.resize(n)
 	res_clay_reserve_arr.resize(n)
 	res_horses_reserve_arr.resize(n)
+	res_wild_game_reserve_arr.resize(n)
+	res_spice_plants_reserve_arr.resize(n)
+	res_flax_reserve_arr.resize(n)
+	res_cotton_reserve_arr.resize(n)
+	res_cattle_reserve_arr.resize(n)
+	res_sheep_reserve_arr.resize(n)
+	res_pigs_reserve_arr.resize(n)
+	res_medicinal_herbs_reserve_arr.resize(n)
 	res_timber_extra_change_arr.resize(n)
 	res_stone_extra_change_arr.resize(n)
 	res_fertile_soil_extra_change_arr.resize(n)
@@ -603,6 +627,14 @@ func _alloc_soa(n: int) -> void:
 	res_rare_earth_extra_change_arr.resize(n)
 	res_clay_extra_change_arr.resize(n)
 	res_horses_extra_change_arr.resize(n)
+	res_wild_game_extra_change_arr.resize(n)
+	res_spice_plants_extra_change_arr.resize(n)
+	res_flax_extra_change_arr.resize(n)
+	res_cotton_extra_change_arr.resize(n)
+	res_cattle_extra_change_arr.resize(n)
+	res_sheep_extra_change_arr.resize(n)
+	res_pigs_extra_change_arr.resize(n)
+	res_medicinal_herbs_extra_change_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -765,6 +797,14 @@ func rebuild_soa_from_cells() -> void:
 		res_rare_earth_reserve_arr[i] = 0.0
 		res_clay_reserve_arr[i] = 0.0
 		res_horses_reserve_arr[i] = 0.0
+		res_wild_game_reserve_arr[i] = 0.0
+		res_spice_plants_reserve_arr[i] = 0.0
+		res_flax_reserve_arr[i] = 0.0
+		res_cotton_reserve_arr[i] = 0.0
+		res_cattle_reserve_arr[i] = 0.0
+		res_sheep_reserve_arr[i] = 0.0
+		res_pigs_reserve_arr[i] = 0.0
+		res_medicinal_herbs_reserve_arr[i] = 0.0
 		res_timber_extra_change_arr[i] = 0.0
 		res_stone_extra_change_arr[i] = 0.0
 		res_fertile_soil_extra_change_arr[i] = 0.0
@@ -785,6 +825,14 @@ func rebuild_soa_from_cells() -> void:
 		res_rare_earth_extra_change_arr[i] = 0.0
 		res_clay_extra_change_arr[i] = 0.0
 		res_horses_extra_change_arr[i] = 0.0
+		res_wild_game_extra_change_arr[i] = 0.0
+		res_spice_plants_extra_change_arr[i] = 0.0
+		res_flax_extra_change_arr[i] = 0.0
+		res_cotton_extra_change_arr[i] = 0.0
+		res_cattle_extra_change_arr[i] = 0.0
+		res_sheep_extra_change_arr[i] = 0.0
+		res_pigs_extra_change_arr[i] = 0.0
+		res_medicinal_herbs_extra_change_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()
