@@ -13,6 +13,7 @@ var marker: float = -1.0
 var _display_value: float = 0.0
 var _title_label: Label
 var _value_label: Label
+var _value_tween: Tween
 
 
 func _ready() -> void:
@@ -24,12 +25,15 @@ func _ready() -> void:
 	top.offset_bottom = 22.0
 	add_child(top)
 	_title_label = Label.new()
+	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	top.add_child(_title_label)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
 	_value_label = Label.new()
+	_value_label.add_theme_font_override("font", UITokens.font_with_weight(650))
+	_value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	_value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	top.add_child(_value_label)
 	_refresh_labels()
@@ -47,10 +51,15 @@ func set_data(p_label: String, p_value: float, p_min_label: String = "", p_max_l
 	if _title_label == null:
 		_ready()
 	_refresh_labels()
+	if is_equal_approx(_display_value, value):
+		queue_redraw()
+		return
+	if _value_tween != null and _value_tween.is_valid():
+		_value_tween.kill()
 	var from := _display_value
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(func(v: float) -> void:
+	_value_tween = create_tween()
+	_value_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_value_tween.tween_method(func(v: float) -> void:
 		_display_value = v
 		queue_redraw()
 	, from, value, UITokens.ANIM_MED)
@@ -69,10 +78,10 @@ func _refresh_labels() -> void:
 func _draw() -> void:
 	var y := 30.0
 	var bar_rect := Rect2(Vector2(0.0, y), Vector2(size.x, 9.0))
-	draw_rect(bar_rect, Color(0.10, 0.080, 0.056, 0.88), true)
+	draw_rect(bar_rect, Color(0.035, 0.032, 0.028, 0.94), true)
 	draw_rect(Rect2(bar_rect.position, Vector2(bar_rect.size.x * clampf(_display_value, 0.0, 1.0), bar_rect.size.y)), Color(accent.r, accent.g, accent.b, 0.92), true)
-	draw_rect(Rect2(bar_rect.position, Vector2(bar_rect.size.x * clampf(_display_value, 0.0, 1.0), 2.0)), Color(1.0, 0.92, 0.74, 0.14), true)
-	draw_rect(bar_rect, Color(UITokens.PANEL_BORDER.r, UITokens.PANEL_BORDER.g, UITokens.PANEL_BORDER.b, 0.44), false, 1.0)
+	draw_rect(Rect2(bar_rect.position, Vector2(bar_rect.size.x * clampf(_display_value, 0.0, 1.0), 2.0)), Color(1.0, 0.92, 0.74, 0.24), true)
+	draw_rect(bar_rect, UITokens.PANEL_BORDER_SOFT, false, 1.0)
 	if marker >= 0.0:
 		var mx := bar_rect.position.x + bar_rect.size.x * clampf(marker, 0.0, 1.0)
 		draw_line(Vector2(mx, y - 3.0), Vector2(mx, y + bar_rect.size.y + 3.0), Color(1.0, 1.0, 1.0, 0.70), 1.0)

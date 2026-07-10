@@ -9,15 +9,17 @@
 class_name CellHighlight
 extends Node2D
 
-@export var line_color: Color = Color(1.0, 0.95, 0.4, 0.95)
-@export var line_width: float = 2.5
-@export var inner_color: Color = Color(0.0, 0.0, 0.0, 0.55)
+@export var line_color: Color = Color(0.91, 0.72, 0.38, 0.98)
+@export var line_width: float = 2.2
+@export var inner_color: Color = Color(0.96, 0.91, 0.76, 0.72)
+@export var fill_color: Color = Color(0.75, 0.55, 0.25, 0.075)
 
 var _center: Vector2 = Vector2.ZERO
 var _hex_size: float = 22.0
 var _wrap_period_x: float = 0.0
 var _active: bool = false
 var _pulse_scale: float = 1.0
+var _pulse_tween: Tween = null
 
 func set_cell(cell: HexCell, hex_size: float) -> void:
 	if cell == null:
@@ -54,17 +56,22 @@ func _draw_hex_outline(center: Vector2) -> void:
 	for i in range(6):
 		var ang: float = deg_to_rad(60.0 * float(i) - 30.0)
 		pts.append(center + Vector2(cos(ang), sin(ang)) * _hex_size * _pulse_scale)
+	draw_colored_polygon(pts, fill_color)
 	pts.append(pts[0])
-	# 外圈描黑加宽，给高亮轮廓做衬底
-	draw_polyline(pts, inner_color, line_width + 2.0, true)
+	draw_polyline(pts, Color(0.0, 0.0, 0.0, 0.64), line_width + 3.4, true)
 	draw_polyline(pts, line_color, line_width, true)
+	draw_polyline(pts, inner_color, 0.8, true)
+	for i in range(6):
+		draw_circle(pts[i], 1.55, line_color)
 
 
 func _pulse_once() -> void:
-	_pulse_scale = 1.16
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(func(v: float) -> void:
+	if _pulse_tween != null and _pulse_tween.is_valid():
+		_pulse_tween.kill()
+	_pulse_scale = 1.10
+	_pulse_tween = create_tween()
+	_pulse_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_pulse_tween.tween_method(func(v: float) -> void:
 		_pulse_scale = v
 		queue_redraw()
-	, 1.16, 1.0, 0.22)
+	, 1.10, 1.0, 0.22)

@@ -29,7 +29,7 @@ func _draw() -> void:
 	var glyph := _glyph_for_key(icon_key)
 	draw_circle(center + Vector2(0.0, 1.0), radius + 2.0, Color(0.0, 0.0, 0.0, 0.28))
 	draw_circle(center, radius + 1.4, Color(edge.r, edge.g, edge.b, 0.62))
-	draw_circle(center, radius, Color(0.085, 0.065, 0.043, 0.96))
+	draw_circle(center, radius, UITokens.WALNUT)
 	draw_arc(center, radius - 1.0, deg_to_rad(205.0), deg_to_rad(335.0), 18, Color(1.0, 0.90, 0.66, 0.16), 1.2, true)
 	var font_size := 13
 	var text_size := FA_SOLID_FONT.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
@@ -48,26 +48,68 @@ static func normalize_icon(icon: String) -> String:
 			return "sun"
 		"overview", "summary", "总览":
 			return "overview"
-		"♣", "↟", "tree", "eco", "leaf":
+		"♣", "tree", "eco", "leaf", "forest", "timber":
 			return "eco"
-		"≈", "☁", "☂", "water", "hydrology":
+		"↟", "regen", "growth":
+			return "growth"
+		"≈", "☁", "☂", "water", "hydrology", "river", "ocean":
 			return "water"
-		"◆", "◇", "◈", "resource", "ore":
+		"◆", "◇", "resource", "ore", "mineral", "stone":
 			return "resource"
+		"◈", "oil", "gas", "fuel":
+			return "fuel"
+		"crop", "grain", "wheat", "rice", "corn", "potato", "soil", "cotton", "flax":
+			return "crop"
+		"horse", "livestock", "cattle", "sheep", "pigs", "game":
+			return "livestock"
 		"⌖", "coord", "target":
 			return "target"
-		"↗", "↑", "wind", "arrow":
-			return "arrow"
+		"↗", "wind":
+			return "wind"
+		"↑", "up", "trend_up":
+			return "trend_up"
+		"↓", "down", "trend_down":
+			return "trend_down"
+		"→", "flat", "trend_flat":
+			return "trend_flat"
 		"✦", "snow", "ice":
 			return "snow"
 		"♥", "heart", "life":
 			return "heart"
 		"history", "record", "记录":
 			return "history"
+		"geo", "terrain", "landform", "mountain":
+			return "geo"
+		"surface", "cover":
+			return "surface"
+		"weather", "cloud":
+			return "weather"
+		"settings", "setup":
+			return "settings"
+		"fit", "frame":
+			return "fit"
+		"regenerate", "refresh":
+			return "regenerate"
+		"pause":
+			return "pause"
+		"play":
+			return "play"
+		"close":
+			return "close"
+		"world", "globe":
+			return "world"
+		"clock", "time":
+			return "clock"
+		"calendar", "date":
+			return "calendar"
+		"seed":
+			return "seed"
+		"warning", "risk":
+			return "warning"
 		"", "—":
 			return ""
 		_:
-			return "geo"
+			return "unknown"
 
 
 func _glyph_for_key(key: String) -> String:
@@ -84,10 +126,24 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf773" # water
 		"resource":
 			return "\uf3a5" # gem
+		"fuel":
+			return "\uf043" # droplet
+		"crop":
+			return "\uf722" # wheat-awn
+		"livestock":
+			return "\uf6f0" # horse-head
 		"target":
 			return "\uf05b" # crosshairs
-		"arrow":
+		"wind":
 			return "\uf72e" # wind
+		"trend_up":
+			return "\uf062" # arrow-up
+		"trend_down":
+			return "\uf063" # arrow-down
+		"trend_flat":
+			return "\uf061" # arrow-right
+		"growth":
+			return "\uf4d8" # seedling
 		"snow":
 			return "\uf2dc" # snowflake
 		"heart":
@@ -96,5 +152,42 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf0ca" # list
 		"history":
 			return "\uf1da" # rotate-left/history
-		_:
+		"surface":
+			return "\uf5fd" # layer-group
+		"weather":
+			return "\uf0c2" # cloud
+		"settings":
+			return "\uf013" # gear
+		"fit":
+			return "\uf065" # expand
+		"regenerate":
+			return "\uf2f1" # rotate
+		"pause":
+			return "\uf04c"
+		"play":
+			return "\uf04b"
+		"close":
+			return "\uf00d"
+		"world":
+			return "\uf0ac" # globe
+		"clock":
+			return "\uf017"
+		"calendar":
+			return "\uf133"
+		"seed":
+			return "\uf1ec" # calculator/hash-like
+		"warning":
+			return "\uf071"
+		"geo":
 			return "\uf6fc" # mountain
+		_:
+			return "\uf128" # question
+
+
+static func apply_to_button(button: Button, icon: String, font_size: int = 16) -> void:
+	if button == null:
+		return
+	var normalized := normalize_icon(icon)
+	button.text = glyph_for_key(normalized)
+	button.add_theme_font_override("font", FA_SOLID_FONT)
+	button.add_theme_font_size_override("font_size", font_size)

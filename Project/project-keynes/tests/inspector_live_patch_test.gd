@@ -1,0 +1,178 @@
+extends SceneTree
+
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	var failures := PackedStringArray()
+	var root := Control.new()
+	root.size = Vector2(1280.0, 720.0)
+	root.theme = UITokens.make_player_theme()
+	get_root().add_child(root)
+
+	var top_bar := PlayerTopBar.new()
+	top_bar.position = Vector2.ZERO
+	top_bar.size = Vector2(1280.0, PlayerTopBar.BAR_HEIGHT)
+	root.add_child(top_bar)
+	top_bar.set_world_summary(60, 40, 2400, 123456)
+	top_bar.update_time_state(9, 6, 18, false, 20.0)
+	if top_bar._date_label.text != "第10年 · 6月18日":
+		failures.append("top bar did not display the current year and calendar date")
+
+	var panel := InspectorPanel.new()
+	panel.position = Vector2(820.0, 60.0)
+	panel.size = Vector2(460.0, 648.0)
+	root.add_child(panel)
+	await process_frame
+
+	var model := _make_model()
+	panel.set_model_for_selection(model)
+	await process_frame
+	var overview_count := panel.visible_node_count()
+	var overview_patch := _make_patch("overview")
+	panel.apply_live_patch(overview_patch)
+	await process_frame
+	if panel.visible_node_count() != overview_count:
+		failures.append("overview live patch changed inspector node count")
+	if panel.current_tab() != "overview":
+		failures.append("overview live patch changed current tab")
+
+	panel.select_tab("resources")
+	await process_frame
+	panel._scroll.scroll_vertical = 96
+	var resource_scroll := panel._scroll.scroll_vertical
+	var resource_count := panel.visible_node_count()
+	for i in range(120):
+		panel.apply_live_patch(_make_patch("resources", float(i)))
+		if i % 20 == 0:
+			await process_frame
+	if panel.visible_node_count() != resource_count:
+		failures.append("120 high-speed resource patches changed inspector node count")
+	if panel.current_tab() != "resources":
+		failures.append("resource live patch changed current tab")
+	if panel._scroll.scroll_vertical != resource_scroll:
+		failures.append("resource live patch changed scroll position")
+
+	if top_bar.get_combined_minimum_size().x > 1280.0:
+		failures.append("top bar minimum width exceeds 1280px")
+	if top_bar.get_combined_minimum_size().y > PlayerTopBar.BAR_HEIGHT:
+		failures.append("top bar minimum height exceeds configured bar height")
+	if panel.get_combined_minimum_size().x > 460.0:
+		failures.append("inspector minimum width exceeds 460px")
+
+	var loading := WorldLoadingOverlay.new()
+	loading.size = Vector2(1280.0, 720.0)
+	root.add_child(loading)
+	loading.show_message("正在生成世界")
+	loading.set_progress("正在校准水文资料", 0.65)
+	loading.hide_completed()
+	await create_timer(0.55).timeout
+	if loading.visible:
+		failures.append("loading completion animation did not release the map")
+
+	if failures.is_empty():
+		print("[inspector-live-patch] PASS")
+		quit(0)
+	else:
+		for failure in failures:
+			push_error("[inspector-live-patch] FAIL: %s" % failure)
+		quit(1)
+
+
+func _make_model() -> Dictionary:
+	return {
+		"header": {
+			"title": "低地 · 平原",
+			"subtitle": "区域 12-8 · 地块档案 #42",
+			"badges": _badges(),
+		},
+		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.72, "caption": "可发展", "accent": UITokens.GOOD},
+		"summary_cards": _summary_cards(0.0),
+		"tabs": [
+			{"id": "overview", "label": "总览", "icon": "overview"},
+			{"id": "geography", "label": "地势", "icon": "geo"},
+			{"id": "climate", "label": "气候", "icon": "sun"},
+			{"id": "hydrology", "label": "水文", "icon": "water"},
+			{"id": "ecology", "label": "生态", "icon": "eco"},
+			{"id": "resources", "label": "资源", "icon": "resource"},
+			{"id": "history", "label": "记录", "icon": "history"},
+		],
+		"categories": {
+			"overview": _overview_category(0.72),
+			"resources": _resource_category(0.0),
+		},
+	}
+
+
+func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
+	return {
+		"header": {
+			"title": "低地 · 平原",
+			"subtitle": "区域 12-8 · 地块档案 #42",
+			"badges": _badges(),
+		},
+		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.76, "caption": "可发展", "accent": UITokens.GOOD},
+		"summary_cards": _summary_cards(step),
+		"tab_id": tab_id,
+		"category": _resource_category(step) if tab_id == "resources" else _overview_category(0.76),
+	}
+
+
+func _badges() -> Array:
+	return [
+		{"text": "平原", "accent": UITokens.GEO},
+		{"text": "低地", "accent": UITokens.GEO},
+		{"text": "温带草原", "accent": UITokens.ECO},
+		{"text": "无覆盖", "accent": UITokens.WATER},
+		{"text": "晴朗", "accent": UITokens.WATER},
+	]
+
+
+func _summary_cards(step: float) -> Array:
+	return [
+		{"id": "summary_climate", "title": "气候", "value": "温暖 · 适中", "subtitle": "当前环境状态", "accent": UITokens.CLIMATE, "icon": "sun"},
+		{"id": "summary_ecology", "title": "生态", "value": "健康", "subtitle": "温带草原", "accent": UITokens.ECO, "icon": "eco"},
+		{"id": "summary_resource", "title": "资源", "value": "木材", "subtitle": "富集 · 储量1.25万", "accent": UITokens.RESOURCE, "trend": "trend_up" if step > 0.0 else "trend_flat", "icon": "resource"},
+	]
+
+
+func _overview_category(value: float) -> Dictionary:
+	return {
+		"insights": [
+			{"id": "overview_passage", "text": "陆路可通 · 移动成本 1", "accent": UITokens.GOOD, "icon": "target"},
+			{"id": "overview_resource", "text": "主要资源 · 木材", "accent": UITokens.RESOURCE, "icon": "resource"},
+		],
+		"metrics": [
+			{"id": "overview_surface", "title": "地表", "value": "低地", "subtitle": "平原", "accent": UITokens.GEO, "icon": "surface"},
+			{"id": "overview_weather", "title": "天气", "value": "晴朗", "subtitle": "强度轻微", "accent": UITokens.WATER, "icon": "weather"},
+		],
+		"gauges": [
+			{"id": "overview_test_gauge", "label": "环境指数", "value": value, "accent": UITokens.GOOD, "status_label": "稳定", "value_text": "%.2f" % value},
+		],
+		"charts": [
+			{"id": "overview_ecology_history", "title": "近期生态轨迹", "values": [0.4, 0.5, value], "accent": UITokens.ECO},
+		],
+	}
+
+
+func _resource_category(step: float) -> Dictionary:
+	var rows := []
+	for i in range(18):
+		rows.append({
+			"id": "resource_%d" % i,
+			"name": "资源样本 %02d" % (i + 1),
+			"value": "储量 %s" % UITokens.format_compact_number_cn(12000.0 + i * 100.0 + step, 2),
+			"density": "富集",
+			"delta": "日变 +1",
+			"accent": UITokens.RESOURCE,
+			"icon": "resource",
+			"visible": i != 17 or step <= 0.0,
+		})
+	return {
+		"insights": [
+			{"id": "resource_notable", "text": "木材 · 富集 · 日变 +1", "accent": UITokens.RESOURCE, "icon": "resource"},
+		],
+		"resource_rows": rows,
+	}
