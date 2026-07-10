@@ -45,8 +45,6 @@ func _connect_ui() -> void:
 		_ui_manager.pause_toggled.connect(_on_pause_toggled)
 	if not _ui_manager.speed_selected.is_connected(_on_speed_selected):
 		_ui_manager.speed_selected.connect(_on_speed_selected)
-	if _runtime_host != null and not _runtime_host.daily_tick_completed.is_connected(_on_daily_tick_completed):
-		_runtime_host.daily_tick_completed.connect(_on_daily_tick_completed)
 
 
 func _on_day_changed(day_idx: int) -> void:
@@ -54,6 +52,8 @@ func _on_day_changed(day_idx: int) -> void:
 		return
 	var season_phase := _world_clock.season_phase_for_day(day_idx)
 	_runtime_host.run_daily_tick(day_idx, season_phase)
+	if _ui_manager != null:
+		_ui_manager.refresh_selected_daily_lines(false, day_idx)
 	_sync_ui()
 
 
@@ -98,11 +98,6 @@ func _on_speed_selected(speed: float) -> void:
 	_world_clock.set_speed(speed)
 	_world_clock.pause(false)
 	_sync_ui()
-
-
-func _on_daily_tick_completed(_report: Dictionary) -> void:
-	if _ui_manager != null:
-		_ui_manager.refresh_selected_daily_lines()
 
 
 func _sync_ui() -> void:

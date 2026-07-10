@@ -6,9 +6,17 @@ class_name ChartAdapter
 ## 只需要在这里替换具体控件，不让业务 UI 依赖插件 API。
 
 
-static func make_sparkline(title: String, values: Array, accent: Color = UITokens.ACCENT) -> Control:
+static func make_sparkline(
+		title: String,
+		values: Array,
+		accent: Color = UITokens.ACCENT,
+		min_value: float = NAN,
+		max_value: float = NAN,
+		window_size: int = 0,
+		value_text: String = ""
+) -> Control:
 	var chart := SparklineChart.new()
-	chart.set_data(title, values, accent)
+	chart.set_data(title, values, accent, min_value, max_value, window_size, value_text)
 	return chart
 
 

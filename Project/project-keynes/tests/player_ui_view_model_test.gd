@@ -60,6 +60,15 @@ func _initialize() -> void:
 	var climate: Dictionary = categories.get("climate", {})
 	if (climate.get("gauges", []) as Array).size() != 2:
 		failures.append("climate should keep only temperature and moisture gauges")
+	var initial_temp_chart := _find_by_id(climate.get("charts", []), "climate_temperature")
+	var initial_temp_values: Array = initial_temp_chart.get("values", [])
+	if initial_temp_values.size() != 1 or not is_equal_approx(float(initial_temp_values[0]), 0.52):
+		failures.append("temperature chart did not start from the actual observed value")
+	if float(initial_temp_chart.get("min_value", -1.0)) != 0.0 \
+			or float(initial_temp_chart.get("max_value", -1.0)) != 1.0:
+		failures.append("temperature chart did not keep a stable normalized axis")
+	if int(initial_temp_chart.get("window_size", 0)) != CellInspectorViewModel.TEMPERATURE_HISTORY_CAPACITY:
+		failures.append("temperature chart is missing its fixed right-growing window")
 	for tab_id in categories.keys():
 		var category: Dictionary = categories[tab_id]
 		for raw in category.get("metrics", []):
@@ -99,6 +108,19 @@ func _initialize() -> void:
 	var changed_card := _find_by_id(changed.get("summary_cards", []), "summary_resource")
 	if String(changed_card.get("trend", "")) != "trend_up":
 		failures.append("resource increase did not produce semantic trend_up")
+
+	cell.temperature = 0.64
+	view_model.observe_temperature(cell, 1)
+	var climate_patch := view_model.build_live_patch(cell, "climate")
+	var updated_temp_chart := _find_by_id(
+		(climate_patch.get("category", {}) as Dictionary).get("charts", []),
+		"climate_temperature"
+	)
+	var updated_temp_values: Array = updated_temp_chart.get("values", [])
+	if updated_temp_values.size() != 2 \
+			or not is_equal_approx(float(updated_temp_values[0]), 0.52) \
+			or not is_equal_approx(float(updated_temp_values[1]), 0.64):
+		failures.append("temperature chart rewrote its history instead of appending the new day")
 
 	view_model.set_context(map, null, null, null, 0.42, 22.0)
 	var reset := view_model.build_live_patch(cell, "resources")
