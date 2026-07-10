@@ -1,4 +1,4 @@
-extends VBoxContainer
+extends HBoxContainer
 class_name CategoryTabs
 
 signal tab_selected(tab_id: String)
@@ -8,11 +8,9 @@ var _buttons: Dictionary = {}
 
 
 func set_tabs(tabs: Array, current_tab: String = "") -> void:
-	for child in get_children():
-		child.queue_free()
-	_buttons.clear()
-	custom_minimum_size = Vector2(58.0, 0.0)
-	add_theme_constant_override("separation", 10)
+	clear_tabs()
+	custom_minimum_size = Vector2(0.0, 36.0)
+	add_theme_constant_override("separation", 2)
 	if tabs.is_empty():
 		return
 	_current_tab = current_tab if current_tab != "" else String(tabs[0].get("id", ""))
@@ -27,16 +25,16 @@ func set_tabs(tabs: Array, current_tab: String = "") -> void:
 		btn.toggle_mode = true
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		btn.custom_minimum_size = Vector2(52.0, 48.0)
+		btn.custom_minimum_size = Vector2(46.0, 34.0)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
-		btn.add_theme_font_size_override("font_size", 19)
+		btn.add_theme_font_size_override("font_size", 15)
 		btn.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.74, 1.0))
 		btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.86, 0.48, 1.0))
-		btn.add_theme_stylebox_override("normal", UITokens.button_style(Color(0.080, 0.060, 0.040, 0.96), Color(0.42, 0.31, 0.17, 0.70), UITokens.RADIUS_MD))
-		btn.add_theme_stylebox_override("hover", UITokens.button_style(Color(0.135, 0.094, 0.052, 0.98), Color(0.82, 0.62, 0.32, 0.92), UITokens.RADIUS_MD))
-		btn.add_theme_stylebox_override("pressed", UITokens.button_style(Color(0.255, 0.175, 0.085, 0.98), Color(1.00, 0.76, 0.36, 0.98), UITokens.RADIUS_MD))
+		btn.add_theme_stylebox_override("normal", _tab_style(Color(0.035, 0.033, 0.029, 0.56), UITokens.PANEL_BORDER_SOFT, 1))
+		btn.add_theme_stylebox_override("hover", _tab_style(UITokens.WALNUT, UITokens.PANEL_BORDER, 2))
+		btn.add_theme_stylebox_override("pressed", _tab_style(Color(0.18, 0.125, 0.065, 0.98), UITokens.BRASS_HIGHLIGHT, 3))
 		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		btn.set_pressed_no_signal(id == _current_tab)
 		btn.pressed.connect(_on_tab_pressed.bind(id))
@@ -48,9 +46,38 @@ func current_tab() -> String:
 	return _current_tab
 
 
-func _on_tab_pressed(tab_id: String) -> void:
+func select_tab(tab_id: String) -> void:
+	if not _buttons.has(tab_id):
+		return
 	_current_tab = tab_id
 	for key in _buttons.keys():
-		var btn: Button = _buttons[key]
-		btn.set_pressed_no_signal(String(key) == tab_id)
+		var button := _buttons[key] as Button
+		if button != null:
+			button.set_pressed_no_signal(String(key) == tab_id)
+
+
+func clear_tabs() -> void:
+	for child in get_children():
+		child.queue_free()
+	_buttons.clear()
+	_current_tab = ""
+
+
+func _on_tab_pressed(tab_id: String) -> void:
+	select_tab(tab_id)
 	tab_selected.emit(tab_id)
+
+
+func _tab_style(bg: Color, edge: Color, bottom_width: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg
+	style.border_color = edge
+	style.border_width_bottom = bottom_width
+	style.corner_radius_top_left = UITokens.RADIUS_SM
+	style.corner_radius_top_right = UITokens.RADIUS_SM
+	style.content_margin_left = UITokens.SPACE_SM
+	style.content_margin_right = UITokens.SPACE_SM
+	style.content_margin_top = 5
+	style.content_margin_bottom = 5
+	style.anti_aliasing = true
+	return style

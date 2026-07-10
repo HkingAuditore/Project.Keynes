@@ -216,6 +216,7 @@ Resource UI:
 - Read reserve arrays via `ResourceProfileRegistry.reserve_map_field(profile)`.
 - Read extra change arrays via `ResourceProfileRegistry.extra_change_map_field(profile)`.
 - Respect `profile.land_only` and water/land state.
+- Resource tab must show the full available natural-resource list with non-zero reserves. Hide zero-reserve rows. Do not hide non-zero resources through Top-N truncation; use compact rows, scrolling, grouping, or filters to manage density.
 
 Time UI:
 

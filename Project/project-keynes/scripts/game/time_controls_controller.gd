@@ -61,7 +61,7 @@ func _on_season_changed(season_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_season_changed(season_idx)
 	if _ui_manager != null:
-		_ui_manager.refresh_selected_panel()
+		_ui_manager.refresh_selected_daily_lines(true)
 	_sync_ui()
 
 
@@ -69,7 +69,7 @@ func _on_year_changed(year_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_year_changed(year_idx)
 	if _ui_manager != null:
-		_ui_manager.refresh_selected_panel()
+		_ui_manager.refresh_selected_daily_lines(true)
 	_sync_ui()
 
 
@@ -108,13 +108,11 @@ func _on_daily_tick_completed(_report: Dictionary) -> void:
 func _sync_ui() -> void:
 	if _ui_manager == null or _world_clock == null:
 		return
+	var calendar_date := _world_clock.calendar_date()
 	_ui_manager.update_time_state(
-		_world_clock.day_index(),
 		_world_clock.year_index(),
-		_world_clock.season_index(),
-		_world_clock.season_phase(),
-		_world_clock.visual_day_phase,
-		_world_clock.climate_anomaly,
+		int(calendar_date.month),
+		int(calendar_date.day_of_month),
 		_world_clock.paused,
 		_world_clock.speed_multiplier
 	)

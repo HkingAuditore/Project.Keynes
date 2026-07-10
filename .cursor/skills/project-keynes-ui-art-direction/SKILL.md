@@ -116,7 +116,7 @@ For numeric values, choose a visual grammar:
 - Small set of key facts: `MetricCard`.
 - Recent history: `SparklineChart` or timeline.
 - Complex causal explanation: `InsightList` with at most 2-4 high-signal lines.
-- Resource collection: per-resource rows/cards with reserve, change, availability, and trend arrow.
+- Resource collection: show the full available natural-resource list with non-zero reserves. Hide zero-reserve rows. Do not use Top-N truncation for the resource tab; solve density with compact rows, scroll, grouping, or filters.
 
 Never show more than the current decision requires. Move raw diagnostics to debug UI, not player UI.
 

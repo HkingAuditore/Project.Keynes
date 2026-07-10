@@ -243,7 +243,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 - `world_setup.gd`：生成前参数界面。
 - `player_game.gd`：玩家主场景装配层，只做 runtime/UI/controller wiring 和基础玩家热键。
-- `game_ui_manager.gd`：玩家 HUD、加载遮罩、右侧地块面板、safe area、暂停/速度/设置/重生成/适配按钮。
+- `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、safe area 和控制信号；不直接承担逐字段渲染。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地块选择或切换 Tab 时可重建当前内容；每日 tick 只走 750ms 节流的 stable-id live patch，保持节点树、当前 Tab 与滚动位置稳定。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
