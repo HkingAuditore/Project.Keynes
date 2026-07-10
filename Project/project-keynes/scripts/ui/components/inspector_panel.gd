@@ -248,7 +248,7 @@ func _build_summary() -> Control:
 	_summary_grid.columns = 1
 	_summary_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_summary_grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
-	_summary_grid.add_theme_constant_override("v_separation", UITokens.SPACE_SM)
+	_summary_grid.add_theme_constant_override("v_separation", UITokens.SPACE_XS)
 	summary.add_child(_summary_grid)
 	return shell
 
@@ -266,7 +266,8 @@ func _render_summary(score: Dictionary, cards: Array) -> void:
 	for raw in cards:
 		var data: Dictionary = raw
 		var card := MetricCard.new()
-		card.custom_minimum_size = Vector2(0.0, 46.0)
+		card.custom_minimum_size = Vector2(0.0, 42.0)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_summary_grid.add_child(card)
 		_apply_metric_card(card, data)
 		var card_id := String(data.get("id", "summary_%d" % _summary_cards.size()))
@@ -337,6 +338,7 @@ func _build_category_content(data: Dictionary) -> void:
 		_add_group_separator()
 		var grid := GridContainer.new()
 		grid.columns = 2
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
 		grid.add_theme_constant_override("v_separation", UITokens.SPACE_SM)
 		_content_box.add_child(grid)
@@ -344,6 +346,7 @@ func _build_category_content(data: Dictionary) -> void:
 			var metric: Dictionary = raw
 			var card := MetricCard.new()
 			card.custom_minimum_size = Vector2(184.0, 56.0)
+			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(card)
 			_apply_metric_card(card, metric)
 			_metric_controls[String(metric.get("id", "metric_%d" % _metric_controls.size()))] = card
@@ -367,7 +370,11 @@ func _build_category_content(data: Dictionary) -> void:
 			var spark := ChartAdapter.make_sparkline(
 				String(chart.get("title", "")),
 				chart.get("values", []),
-				chart.get("accent", UITokens.ACCENT)
+				chart.get("accent", UITokens.ACCENT),
+				float(chart.get("min_value", NAN)),
+				float(chart.get("max_value", NAN)),
+				int(chart.get("window_size", 0)),
+				String(chart.get("value_text", ""))
 			)
 			spark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			_content_box.add_child(spark)
@@ -403,7 +410,11 @@ func _apply_category_patch(data: Dictionary) -> void:
 			spark.set_data(
 				String(chart.get("title", "")),
 				chart.get("values", []),
-				chart.get("accent", UITokens.ACCENT)
+				chart.get("accent", UITokens.ACCENT),
+				float(chart.get("min_value", NAN)),
+				float(chart.get("max_value", NAN)),
+				int(chart.get("window_size", 0)),
+				String(chart.get("value_text", ""))
 			)
 
 

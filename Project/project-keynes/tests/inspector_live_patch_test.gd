@@ -30,6 +30,10 @@ func _run() -> void:
 	var model := _make_model()
 	panel.set_model_for_selection(model)
 	await process_frame
+	for raw_card in panel._summary_cards.values():
+		var summary_card := raw_card as MetricCard
+		if summary_card != null and summary_card.size.x < 220.0:
+			failures.append("summary cards did not expand into full-width dossier rows")
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("overview")
 	panel.apply_live_patch(overview_patch)
@@ -38,6 +42,11 @@ func _run() -> void:
 		failures.append("overview live patch changed inspector node count")
 	if panel.current_tab() != "overview":
 		failures.append("overview live patch changed current tab")
+	var overview_chart := panel._chart_controls.get("overview_ecology_history") as SparklineChart
+	if overview_chart == null or overview_chart.window_size != 32 \
+			or not is_equal_approx(overview_chart.min_value, 0.0) \
+			or not is_equal_approx(overview_chart.max_value, 1.0):
+		failures.append("live patch did not preserve the chart's fixed plotting window")
 
 	panel.select_tab("resources")
 	await process_frame
@@ -132,9 +141,9 @@ func _badges() -> Array:
 
 func _summary_cards(step: float) -> Array:
 	return [
-		{"id": "summary_climate", "title": "气候", "value": "温暖 · 适中", "subtitle": "当前环境状态", "accent": UITokens.CLIMATE, "icon": "sun"},
-		{"id": "summary_ecology", "title": "生态", "value": "健康", "subtitle": "温带草原", "accent": UITokens.ECO, "icon": "eco"},
-		{"id": "summary_resource", "title": "资源", "value": "木材", "subtitle": "富集 · 储量1.25万", "accent": UITokens.RESOURCE, "trend": "trend_up" if step > 0.0 else "trend_flat", "icon": "resource"},
+		{"id": "summary_climate", "title": "气候", "value": "温暖 · 适中", "subtitle": "", "accent": UITokens.CLIMATE, "icon": "sun"},
+		{"id": "summary_ecology", "title": "生态", "value": "健康 · 温带草原", "subtitle": "", "accent": UITokens.ECO, "icon": "eco"},
+		{"id": "summary_resource", "title": "资源", "value": "木材 · 富集", "subtitle": "", "accent": UITokens.RESOURCE, "trend": "trend_up" if step > 0.0 else "trend_flat", "icon": "resource"},
 	]
 
 
@@ -152,7 +161,16 @@ func _overview_category(value: float) -> Dictionary:
 			{"id": "overview_test_gauge", "label": "环境指数", "value": value, "accent": UITokens.GOOD, "status_label": "稳定", "value_text": "%.2f" % value},
 		],
 		"charts": [
-			{"id": "overview_ecology_history", "title": "近期生态轨迹", "values": [0.4, 0.5, value], "accent": UITokens.ECO},
+			{
+				"id": "overview_ecology_history",
+				"title": "近期生态轨迹",
+				"values": [0.4, 0.5, value],
+				"accent": UITokens.ECO,
+				"min_value": 0.0,
+				"max_value": 1.0,
+				"window_size": 32,
+				"value_text": "现值 %.2f" % value,
+			},
 		],
 	}
 

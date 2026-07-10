@@ -58,9 +58,10 @@ func hide_cell_panel() -> void:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
 
-func refresh_selected_daily_lines(force: bool = false) -> void:
+func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
+	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
 	var now_ms := Time.get_ticks_msec()
 	if not force and now_ms - _last_cached_panel_ms < 750:
 		return

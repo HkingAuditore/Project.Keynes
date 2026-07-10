@@ -1,6 +1,9 @@
 extends RefCounted
 class_name CellInspectorViewModel
 
+const TEMPERATURE_HISTORY_CAPACITY := 32
+const TEMPERATURE_HISTORY_CACHE_LIMIT := 64
+
 var _map: MapData
 var _generator
 var _view_adapter: DCViewAdapter
@@ -8,6 +11,8 @@ var _world_clock: WorldClock
 var _sea_level: float = 0.42
 var _hex_size: float = 22.0
 var _resource_prev_reserves: Dictionary = {}
+var _temperature_histories: Dictionary = {}
+var _temperature_history_order: Array[int] = []
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -18,6 +23,19 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_sea_level = sea_level
 	_hex_size = hex_size
 	_resource_prev_reserves.clear()
+	_temperature_histories.clear()
+	_temperature_history_order.clear()
+
+
+func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
+	if cell == null or _map == null:
+		return
+	var idx := int(cell.index)
+	_record_temperature_sample(
+		idx,
+		day_idx if day_idx >= 0 else _current_sample_day(),
+		_temp(cell, idx)
+	)
 
 
 func build(cell: HexCell) -> Dictionary:
@@ -30,6 +48,7 @@ func build(cell: HexCell) -> Dictionary:
 	var vegetation_v := _vegetation(cell, idx)
 	var cover_v := _cover(cell, idx)
 	var temp := _temp(cell, idx)
+	_record_temperature_sample(idx, _current_sample_day(), temp)
 	var moist := _moisture(cell, idx)
 	var base_moist := _base_moisture(cell, idx)
 	var elev := _elevation(cell, idx)
@@ -92,6 +111,7 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var vegetation_v := _vegetation(cell, idx)
 	var cover_v := _cover(cell, idx)
 	var temp := _temp(cell, idx)
+	_record_temperature_sample(idx, _current_sample_day(), temp)
 	var moist := _moisture(cell, idx)
 	var base_moist := _base_moisture(cell, idx)
 	var elev := _elevation(cell, idx)
@@ -176,16 +196,16 @@ func _summary_cards(
 		{
 			"id": "summary_ecology",
 			"title": "生态",
-			"value": ecology_label,
-			"subtitle": VegetationType.name_cn(vegetation_v),
+			"value": "%s · %s" % [ecology_label, VegetationType.name_cn(vegetation_v)],
+			"subtitle": "",
 			"accent": UITokens.ECO,
 			"icon": "eco",
 		},
 		{
 			"id": "summary_resource",
 			"title": "资源",
-			"value": resource_label,
-			"subtitle": String(resource_summary.get("subtitle", "")),
+			"value": String(resource_summary.get("summary_value", resource_label)),
+			"subtitle": "",
 			"accent": UITokens.RESOURCE,
 			"trend": String(resource_summary.get("trend", "")),
 			"icon": "resource",
@@ -237,7 +257,7 @@ func _climate_category(cell: HexCell, idx: int, temp: float, moist: float, base_
 			{"id": "climate_temp_gauge", "label": "温度指数", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp), "value_text": "%.2f" % temp},
 			{"id": "climate_moisture_gauge", "label": "湿度指数", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": _moisture_band(moist), "value_text": "%.2f" % moist},
 		],
-		"charts": [{"id": "climate_temp_memory", "title": "温度记忆", "values": _temperature_memory(cell, idx, temp), "accent": UITokens.CLIMATE}],
+		"charts": [_temperature_chart("climate_temperature", "近期温度变化", idx, temp)],
 	}
 
 
@@ -345,7 +365,7 @@ func _history_category(cell: HexCell) -> Dictionary:
 		"insights": [{"id": "history_summary", "text": _history_sentence(cell), "accent": UITokens.ECO, "icon": "history"}],
 		"charts": [
 			{"id": "history_vegetation", "title": "近期植被序列", "values": _history_values(cell), "accent": UITokens.ECO},
-			{"id": "history_temperature", "title": "温度记忆", "values": _temperature_memory(cell, int(cell.index), _temp(cell, int(cell.index))), "accent": UITokens.CLIMATE},
+			_temperature_chart("history_temperature", "近期温度变化", int(cell.index), _temp(cell, int(cell.index))),
 		],
 		"badges": _history_badges(cell),
 	}
@@ -417,13 +437,15 @@ func _resource_summary(resource_state: Array) -> Dictionary:
 		if best.is_empty() or float(item.get("rank", 0.0)) > float(best.get("rank", 0.0)):
 			best = item
 	if best.is_empty():
-		return {"label": "—", "subtitle": "无可用资源", "trend": ""}
+		return {"label": "—", "summary_value": "无可用资源", "subtitle": "无可用资源", "trend": ""}
 	var reserve := float(best.get("reserve", 0.0))
 	var delta := float(best.get("delta", 0.0))
 	var density_ratio := float(best.get("density_ratio", 0.0))
+	var density := _resource_density_band(density_ratio)
 	return {
 		"label": String(best.get("name", "资源")),
-		"subtitle": "%s · %s" % [_resource_density_band(density_ratio), _resource_index_text(reserve)],
+		"summary_value": "%s · %s" % [String(best.get("name", "资源")), density],
+		"subtitle": "%s · %s" % [density, _resource_index_text(reserve)],
 		"trend": _trend_arrow(delta),
 	}
 
@@ -607,10 +629,59 @@ func _history_sentence(cell: HexCell) -> String:
 	return " → ".join(names)
 
 
-func _temperature_memory(cell: HexCell, idx: int, current_temp: float) -> Array:
-	var t30: float = _view_adapter.get_temp_30d(idx) if _view_adapter != null else float(cell.temp_30d_mean)
-	var t365: float = _view_adapter.get_temp_365d(idx) if _view_adapter != null else float(cell.temp_365d_mean)
-	return _densify_series([t365, (t365 + t30) * 0.5, t30, current_temp], 9)
+func _temperature_chart(chart_id: String, title: String, idx: int, current_temp: float) -> Dictionary:
+	return {
+		"id": chart_id,
+		"title": title,
+		"values": _temperature_memory(idx, current_temp),
+		"accent": UITokens.CLIMATE,
+		"min_value": 0.0,
+		"max_value": 1.0,
+		"window_size": TEMPERATURE_HISTORY_CAPACITY,
+		"value_text": "现值 %.2f" % current_temp,
+	}
+
+
+func _temperature_memory(idx: int, current_temp: float) -> Array:
+	var series: Dictionary = _temperature_histories.get(idx, {})
+	if series.is_empty():
+		return [current_temp]
+	return (series.get("values", []) as Array).duplicate()
+
+
+func _record_temperature_sample(idx: int, day_idx: int, value: float) -> void:
+	if not _temperature_histories.has(idx):
+		if _temperature_history_order.size() >= TEMPERATURE_HISTORY_CACHE_LIMIT:
+			var evicted_idx: int = int(_temperature_history_order.pop_front())
+			_temperature_histories.erase(evicted_idx)
+		_temperature_history_order.append(idx)
+		_temperature_histories[idx] = {"days": [], "values": []}
+	var series: Dictionary = _temperature_histories[idx]
+	var days: Array = series.get("days", [])
+	var samples: Array = series.get("values", [])
+	var sample_value := clampf(value, 0.0, 1.0)
+	if not days.is_empty():
+		var last_idx := days.size() - 1
+		var last_day := int(days[last_idx])
+		if day_idx < last_day:
+			return
+		if day_idx == last_day:
+			samples[last_idx] = sample_value
+			series["values"] = samples
+			_temperature_histories[idx] = series
+			return
+	days.append(day_idx)
+	samples.append(sample_value)
+	while samples.size() > TEMPERATURE_HISTORY_CAPACITY:
+		days.pop_front()
+		samples.pop_front()
+	series["days"] = days
+	series["values"] = samples
+	_temperature_histories[idx] = series
+
+
+func _current_sample_day() -> int:
+	return _world_clock.day_index() if _world_clock != null else 0
 
 
 func _trend_arrow(v: float) -> String:
