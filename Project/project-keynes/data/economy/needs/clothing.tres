@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="NeedProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/need_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"clothing"
+display_name = "衣着与保暖"
+use_tags = PackedStringArray("clothing", "insulation")

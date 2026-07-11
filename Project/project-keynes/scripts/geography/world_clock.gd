@@ -31,6 +31,8 @@ signal visual_day_phase_changed(visual_day_phase: float)
 # Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
 # 实现 stride 自动调档、phase 节流自动调档等。
 signal speed_changed(new_speed: float)
+signal simulation_backpressure_changed(active: bool, sources: PackedStringArray)
+signal simulation_backpressure_pulse(day_idx: int)
 
 # ─── 可调参数 ────────────────────────────────────────────────────────────
 # 一年多少天。默认 365；如果调试时压缩年份，也应只改这里这一处。
@@ -103,6 +105,7 @@ var _last_day: int = -1
 var _last_season: int = -1
 var _last_year: int = -1
 var _rng: RandomNumberGenerator
+var _simulation_backpressure_sources: Dictionary = {}
 const _MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 const _MONTH_NAMES_SHORT: Array[String] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -172,7 +175,16 @@ func _process(delta: float) -> void:
 	# best-effort 吞吐模型（plan/best-effort-sim-stepping）：倍速 = 目标天/秒。
 	# 本帧目标推进量先按硬上限封顶——即便上一帧卡顿导致 delta 巨大，也不会把
 	# 成百天一次性灌进来点燃死亡螺旋。
-	var target: float = delta * speed_multiplier
+	# Generic native backpressure clamps to x1 so ordinary continuations keep
+	# receiving day ticks. The economy hard barrier is different: it is raised
+	# only at a frozen cycle's settlement deadline, stops new days, and emits a
+	# real-frame pulse so same-day catchup can finish without deadlock.
+	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier")
+	if hard_day_barrier:
+		simulation_backpressure_pulse.emit(_last_day)
+	var effective_speed := 0.0 if hard_day_barrier else (
+		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
+	var target: float = delta * effective_speed
 	if target > float(max_sim_days_per_frame):
 		target = float(max_sim_days_per_frame)
 	_day_carry += target
@@ -182,7 +194,7 @@ func _process(delta: float) -> void:
 	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
 	var t0_us: int = Time.get_ticks_usec()
 	var ran: int = 0
-	while _day_carry >= 1.0 and ran < max_sim_days_per_frame:
+	while not hard_day_barrier and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
 		if ran > 0 and float(Time.get_ticks_usec() - t0_us) / 1000.0 >= sim_frame_budget_ms:
 			break
 		_day_carry -= 1.0
@@ -401,3 +413,22 @@ func toggle_pause() -> void:
 
 func pause(v: bool) -> void:
 	paused = v
+
+func request_simulation_backpressure(source: StringName, active: bool) -> void:
+	if String(source) == "":
+		return
+	var was_active := has_simulation_backpressure()
+	if active:
+		_simulation_backpressure_sources[source] = true
+	else:
+		_simulation_backpressure_sources.erase(source)
+	var is_active := has_simulation_backpressure()
+	if was_active != is_active:
+		var sources := PackedStringArray()
+		for key in _simulation_backpressure_sources.keys():
+			sources.append(String(key))
+		sources.sort()
+		simulation_backpressure_changed.emit(is_active, sources)
+
+func has_simulation_backpressure() -> bool:
+	return not _simulation_backpressure_sources.is_empty()

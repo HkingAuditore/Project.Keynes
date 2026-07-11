@@ -95,6 +95,7 @@ DCSystemScheduler
 | `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速。 |
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
+| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取 temp/moisture/snow/weather，按地块/cohort 预算错峰 N 日累计交易。 | native/legacy 环境分叉前统一注册；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。周期内允许跨日；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
@@ -711,3 +712,9 @@ refreshes went **42 → 127 / 380 ticks** (≈ every 8 → every 3), and the chr
 "always pending, 0 caught-up" pattern (0 `policy_gated`, 338 `frame_budget_exhausted`)
 resolved. Small/medium refresh ≈ every 2 ticks. `must_run` stays `false`
 throughout (no budget bypass / logical drift).
+## Economy building stages
+
+`economy_daily` 继续保持 `must_run=false`、一 tick 一 slice 和 deadline-only barrier。它新增地理
+与自然资源 reserve reads，使 sample snapshot 排在 natural-resource 更新之后。建筑状态本身不是
+DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调度 active-cell CSR，阶段名固定
+为 `building_employment`、`building_production`、`building_commit`。

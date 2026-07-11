@@ -143,7 +143,7 @@ Summary
   metric cards: terrain, climate, ecology, resource
 
 Tabs
-  overview, geography, climate, hydrology, ecology, resources, history
+  地理信息, 人口信息, 市场信息, 自然资源
 
 Content
   insights
@@ -155,13 +155,14 @@ Content
 
 Each tab must answer one player-facing question:
 
-- Overview: What matters most?
-- Geography: Where is it and how traversable is it?
-- Climate: How does temperature/moisture/sun shape it?
-- Hydrology: What is water, cloud, snow, ocean, wind doing?
-- Ecology: Is life stable, stressed, degrading, or recovering?
-- Resources: What is valuable, available, growing, or blocked?
-- History: What has changed recently?
+- 地理信息：地形、地貌、海拔、气候、水文与生态如何塑造此地？
+- 人口信息：这里住着哪些 cohort，他们有多少人、多少人均财富、需要什么？
+- 市场信息：本地市场有哪些物资、库存、价格与短缺压力？
+- 自然资源：此地有哪些非零自然资源及其储量？
+
+Population rows may expand into per-good daily demand, but their node tree must remain stable under
+live patch. Market rows always retain every catalog good, including zero stock; natural resources
+retain stable hidden zero rows but only show non-zero reserves.
 
 Layout constraints:
 
@@ -401,6 +402,11 @@ Recommended pattern:
 - `refresh_selected_daily_lines()`: throttle and update cached data; do not recreate buttons, tabs, scroll containers, or card grids.
 - `set_model(model, rebuild_visible=false)`: preserve current tab, scroll position, and interactable controls.
 - `tab_selected`: rebuild visible tab only.
+
+Economy detail exception: when a cell is first selected during an in-flight native epoch, show a
+pending committed-detail state rather than an empty-state claim. The next committed live patch may
+materialize missing stable cohort/good rows once; subsequent patches must return to value-only
+updates and preserve expansion, tab, and scroll state.
 
 ### Allocation Control
 

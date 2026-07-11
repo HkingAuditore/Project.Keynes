@@ -23,6 +23,7 @@ const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 @export var river_count: int = 8
 @export var hex_size: float = 22.0
 @export var initial_seed: int = 0
+@export var generate_test_economy_data: bool = false
 
 @export var cell_indirection_enabled: bool = true
 @export var ocean_current_visual_enabled: bool = false
@@ -89,6 +90,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	cfg.seed = seed_override if seed_override >= 0 else initial_seed
 
 	_generator = MapGenerator.new()
+	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
 	_apply_runtime_climate_profile(_generator)
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
@@ -274,6 +276,8 @@ func _apply_world_setup_base_config() -> void:
 		num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
 		continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
 		river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
+		generate_test_economy_data = bool((base as Dictionary).get(
+			"generate_test_economy_data", generate_test_economy_data))
 	var render = config.get("render", {})
 	if render is Dictionary:
 		mobile_terrain_horizon_enabled = bool((render as Dictionary).get(

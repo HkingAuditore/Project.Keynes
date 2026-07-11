@@ -32,6 +32,26 @@
    - 解释 `[SUS-cpp]`、`[fast tick WARN]`、`largest=... path=...`、`published=true`、`psi_path=gdscript`、`transp/native breakdown ...` 等日志。
    - 用于根据用户贴回的 runtime log 判断当前输出是否符合预期。
 
+8. [Native Economy Runtime](./native-economy-runtime.md)
+   - PopulationCohort chunk、MarketStore、handle、并行边界和公共 API。
+
+9. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
+   - 定点 ABI、守恒、命令和原生 batch 公式规范。
+
+10. [Economy Graph / Scheduling](./economy-graph-scheduling.md)
+    - 冻结周期、按 cohort 预算的地块错峰、wait-commit、截止日 catchup 与 reference 误差。
+
+11. [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
+    - PKEC 流式存档、catalog migration 和新增内容流程。
+
+## 可复用 Economy Skill
+
+仓库内 Skill 位于
+[`project-keynes-economy-runtime`](../../.codex/skills/project-keynes-economy-runtime/SKILL.md)，
+将上述经济架构、数据结构、算法、调度、性能/误差契约和扩展验证流程组织为渐进披露的
+Codex 工作流。修改经济运行时文档或默认机制时，必须同步更新该 Skill 的对应 reference，
+再重新安装到 `$CODEX_HOME/skills/project-keynes-economy-runtime`。
+
 ## 与现有文档的关系
 
 | 文档 | 本目录如何使用 |
@@ -55,6 +75,7 @@
 | System wrappers | `Project/project-keynes/scripts/simulation/systems/*.gd` | DataCore/DCSystem 版 runtime jobs。 |
 | Legacy jobs | `Project/project-keynes/scripts/simulation/sus/jobs/*.gd` | 兼容 jobs，部分仍被 wrapper 委托。 |
 | Runtime orchestration | `Project/project-keynes/scripts/geography/map_generator.gd` | `_setup_sus()` 注册系统，调度 climate/ocean/weather pass。 |
+| Native economy | `gdext/src/economy_runtime.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`、catalog/facade 与 committed UI bridge。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
 
 ## 维护规则

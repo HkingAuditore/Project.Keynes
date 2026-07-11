@@ -32,8 +32,15 @@ func _initialize() -> void:
 		failures.append("player header still exposes debug cube text")
 	if String(model.get("header", {}).get("subtitle", "")).contains("档案 #"):
 		failures.append("player header still exposes a redundant dossier number")
-	if (model.get("tabs", []) as Array).size() != 7:
-		failures.append("expected seven dossier tabs")
+	var tabs: Array = model.get("tabs", [])
+	if tabs.size() != 4:
+		failures.append("expected four dossier tabs")
+	var expected_tabs := ["geography", "population", "market", "natural_resources"]
+	var expected_labels := ["地理信息", "人口信息", "市场信息", "自然资源"]
+	for i in range(expected_tabs.size()):
+		if i >= tabs.size() or String(tabs[i].get("id", "")) != expected_tabs[i] \
+				or String(tabs[i].get("label", "")) != expected_labels[i]:
+			failures.append("dossier tab order or label mismatch at %d" % i)
 	if UITokens.format_compact_number_cn(12500.0, 2) != "1.25万":
 		failures.append("Chinese compact number formatting regressed")
 
@@ -47,19 +54,27 @@ func _initialize() -> void:
 		failures.append("summary still repeats terrain already shown in the title")
 	if not _find_by_id(model.get("summary_cards", []), "summary_risk").is_empty():
 		failures.append("summary still exposes the presentation-only risk heuristic")
-	if (model.get("summary_cards", []) as Array).size() != 3:
-		failures.append("summary should contain only climate, ecology, and resources")
+	if (model.get("summary_cards", []) as Array).size() != 4:
+		failures.append("summary should contain climate, population, market, and resources")
+	for summary_id in ["summary_climate", "summary_population", "summary_market", "summary_resource"]:
+		if _find_by_id(model.get("summary_cards", []), summary_id).is_empty():
+			failures.append("summary missing %s" % summary_id)
 
 	var categories: Dictionary = model.get("categories", {})
-	var overview: Dictionary = categories.get("overview", {})
-	if overview.has("badges") or overview.has("charts"):
-		failures.append("overview still contains redundant badge or history sections")
 	var geography: Dictionary = categories.get("geography", {})
-	if not _find_by_id(geography.get("metrics", []), "geography_coord").is_empty():
-		failures.append("geography still exposes debug cube coordinates")
-	var climate: Dictionary = categories.get("climate", {})
+	var physical: Dictionary = _find_section(geography.get("sections", []), "physical_geography")
+	var climate: Dictionary = _find_section(geography.get("sections", []), "climate_hydrology")
+	var ecology: Dictionary = _find_section(geography.get("sections", []), "vegetation_ecology")
+	if physical.is_empty() or climate.is_empty() or ecology.is_empty():
+		failures.append("geography tab is missing grouped sections")
+	if _find_by_id(physical.get("metrics", []), "geography_terrain").is_empty() \
+			or _find_by_id(physical.get("metrics", []), "geography_landform").is_empty():
+		failures.append("geography tab is missing terrain or landform")
 	if (climate.get("gauges", []) as Array).size() != 2:
-		failures.append("climate should keep only temperature and moisture gauges")
+		# Climate and hydrology are intentionally merged; require at least temp/moisture.
+		if _find_by_id(climate.get("gauges", []), "climate_temp_gauge").is_empty() \
+				or _find_by_id(climate.get("gauges", []), "climate_moisture_gauge").is_empty():
+			failures.append("geography climate section is missing temperature or moisture")
 	var initial_temp_chart := _find_by_id(climate.get("charts", []), "climate_temperature")
 	var initial_temp_values: Array = initial_temp_chart.get("values", [])
 	if initial_temp_values.size() != 1 or not is_equal_approx(float(initial_temp_values[0]), 0.52):
@@ -84,7 +99,7 @@ func _initialize() -> void:
 			if String((raw as Dictionary).get("id", "")).is_empty():
 				failures.append("%s chart missing stable id" % tab_id)
 
-	var resource_rows: Array = (categories.get("resources", {}) as Dictionary).get("resource_rows", [])
+	var resource_rows: Array = (categories.get("natural_resources", {}) as Dictionary).get("resource_rows", [])
 	if resource_rows.size() != ResourceProfileRegistry.count():
 		failures.append("resource dossier must retain all registry rows for stable live updates")
 	for raw in resource_rows:
@@ -103,17 +118,74 @@ func _initialize() -> void:
 	if String(sheep_row.get("density", "")) != "稀少":
 		failures.append("sheep density did not use its resource-specific reference scale")
 
+	var population_category: Dictionary = view_model._population_category({
+		"ok": true,
+		"population": 100,
+		"funds": 40000000,
+		"cohort_count": 1,
+		"handles": PackedInt64Array([1]),
+		"profession_ids": PackedInt32Array([0]),
+		"ethnicity_ids": PackedInt32Array([0]),
+		"profession_stable_ids": PackedStringArray(["worker"]),
+		"ethnicity_stable_ids": PackedStringArray(["default"]),
+		"profession_display_names": PackedStringArray(["工人"]),
+		"ethnicity_display_names": PackedStringArray(["本地人口"]),
+		"populations": PackedInt64Array([100]),
+		"funds_by_cohort": PackedInt64Array([40000000]),
+		"satisfaction_by_cohort_q16": PackedInt32Array([52428]),
+		"merchant_flags": PackedByteArray([0]),
+		"demand_good_offsets": PackedInt32Array([0, 2]),
+		"demand_good_indices": PackedInt32Array([0, 1]),
+		"demand_per_capita_daily": PackedInt64Array([800, 40]),
+		"demand_good_stable_ids": PackedStringArray(["grain", "cloth"]),
+		"demand_preview_environment_ready": true,
+	})
+	var cohort_rows: Array = population_category.get("cohort_rows", [])
+	if cohort_rows.size() != 1 or not String(cohort_rows[0].get("wealth", "")).contains("40"):
+		failures.append("population dossier did not calculate per-capita wealth")
+	elif (cohort_rows[0].get("demand_rows", []) as Array).filter(
+		func(row: Dictionary) -> bool: return bool(row.get("visible", false))
+	).size() != 2:
+		failures.append("population dossier did not expose all non-zero per-capita demands")
+
+	var pending_population: Dictionary = view_model._population_category({
+		"ok": true,
+		"busy": true,
+		"details_pending": true,
+		"population": 1000,
+		"funds": 400000000,
+		"cohort_count": 4,
+	})
+	var pending_population_insights: Array = pending_population.get("insights", [])
+	if _find_by_id(pending_population_insights, "population_details_pending").is_empty():
+		failures.append("busy population snapshot did not expose pending-detail state")
+	if not _find_by_id(pending_population_insights, "population_empty").is_empty():
+		failures.append("busy population snapshot was incorrectly presented as empty")
+
+	var pending_market: Dictionary = view_model._market_category({
+		"ok": true,
+		"busy": true,
+		"details_pending": true,
+		"market_id": 0,
+	})
+	if _find_by_id(pending_market.get("insights", []), "market_details_pending").is_empty():
+		failures.append("busy market snapshot did not expose pending-detail state")
+
 	map.res_timber_reserve_arr[0] = 12600.0
-	var changed := view_model.build_live_patch(cell, "resources")
+	var changed := view_model.build_live_patch(cell, "natural_resources")
 	var changed_card := _find_by_id(changed.get("summary_cards", []), "summary_resource")
 	if String(changed_card.get("trend", "")) != "trend_up":
 		failures.append("resource increase did not produce semantic trend_up")
 
 	cell.temperature = 0.64
 	view_model.observe_temperature(cell, 1)
-	var climate_patch := view_model.build_live_patch(cell, "climate")
+	var climate_patch := view_model.build_live_patch(cell, "geography")
+	var climate_patch_section := _find_section(
+		(climate_patch.get("category", {}) as Dictionary).get("sections", []),
+		"climate_hydrology"
+	)
 	var updated_temp_chart := _find_by_id(
-		(climate_patch.get("category", {}) as Dictionary).get("charts", []),
+		climate_patch_section.get("charts", []),
 		"climate_temperature"
 	)
 	var updated_temp_values: Array = updated_temp_chart.get("values", [])
@@ -123,7 +195,7 @@ func _initialize() -> void:
 		failures.append("temperature chart rewrote its history instead of appending the new day")
 
 	view_model.set_context(map, null, null, null, 0.42, 22.0)
-	var reset := view_model.build_live_patch(cell, "resources")
+	var reset := view_model.build_live_patch(cell, "natural_resources")
 	var reset_card := _find_by_id(reset.get("summary_cards", []), "summary_resource")
 	if String(reset_card.get("trend", "")) != "trend_flat":
 		failures.append("world context reset did not clear resource delta cache")
@@ -147,6 +219,10 @@ func _find_by_id(items: Array, target_id: String) -> Dictionary:
 		if String(item.get("id", "")) == target_id:
 			return item
 	return {}
+
+
+func _find_section(items: Array, target_id: String) -> Dictionary:
+	return _find_by_id(items, target_id)
 
 
 func _is_legacy_icon(icon: String) -> bool:

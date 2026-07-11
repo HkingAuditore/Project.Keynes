@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ConsumptionPlanProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/consumption_plan_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"subsistence_household"
+display_name = "自耕农家庭消费"
+need_ids = PackedStringArray("food", "protein")
+priorities = PackedInt32Array(0, 1)
+base_qty_per_person = PackedInt64Array(700, 100)
+wealth_elasticity_q16 = PackedInt32Array(4096, 16384)
+wealth_min_q16 = PackedInt32Array(57344, 16384)
+wealth_max_q16 = PackedInt32Array(73728, 98304)
+quantity_env_curve_ids = PackedStringArray("", "")
+need_variant_offsets = PackedInt32Array(0, 1, 2)
+variant_ids = PackedStringArray("grain_food", "mutton_protein")
+variant_preference_q16 = PackedInt32Array(65536, 65536)
+variant_price_elasticity_q16 = PackedInt32Array(32768, 65536)
+variant_preference_env_curve_ids = PackedStringArray("", "")
+variant_component_offsets = PackedInt32Array(0, 1, 2)
+component_good_ids = PackedStringArray("grain", "mutton")
+component_qty_per_need = PackedInt64Array(1000, 1000)

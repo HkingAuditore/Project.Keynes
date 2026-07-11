@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"merchant"
+display_name = "商人"
+default_consumption_plan_id = &"merchant_household"

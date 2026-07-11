@@ -6,6 +6,8 @@
 script = ExtResource("1")
 id = &"fur"
 display_name = "皮毛"
-quantity_component = &"cell.goods_fur_qty"
-price_component = &"cell.goods_fur_price"
-default_price = 1.0
+default_price = 30000
+initial_stock = 0
+min_price = 4000
+max_price = 300000
+price_adjust_q16 = 3072

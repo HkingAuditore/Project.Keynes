@@ -202,15 +202,6 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.res_sheep_extra_change", cpp_name = "cell_res_sheep_extra_change", dtype = F32, track_prev = false, map_field = "res_sheep_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_pigs_extra_change", cpp_name = "cell_res_pigs_extra_change", dtype = F32, track_prev = false, map_field = "res_pigs_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_medicinal_herbs_extra_change", cpp_name = "cell_res_medicinal_herbs_extra_change", dtype = F32, track_prev = false, map_field = "res_medicinal_herbs_extra_change_arr", prev_field = "", owner = "economy.resources" },
-	# ─── Goods：per-cell 物资库存与价格（economy.goods）───────────────────
-	{ name = &"cell.goods_fur_qty", cpp_name = "cell_goods_fur_qty", dtype = F32, track_prev = false, map_field = "goods_fur_qty_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_fur_price", cpp_name = "cell_goods_fur_price", dtype = F32, track_prev = false, map_field = "goods_fur_price_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_mutton_qty", cpp_name = "cell_goods_mutton_qty", dtype = F32, track_prev = false, map_field = "goods_mutton_qty_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_mutton_price", cpp_name = "cell_goods_mutton_price", dtype = F32, track_prev = false, map_field = "goods_mutton_price_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_coal_qty", cpp_name = "cell_goods_coal_qty", dtype = F32, track_prev = false, map_field = "goods_coal_qty_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_coal_price", cpp_name = "cell_goods_coal_price", dtype = F32, track_prev = false, map_field = "goods_coal_price_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_grain_qty", cpp_name = "cell_goods_grain_qty", dtype = F32, track_prev = false, map_field = "goods_grain_qty_arr", prev_field = "", owner = "economy.goods" },
-	{ name = &"cell.goods_grain_price", cpp_name = "cell_goods_grain_price", dtype = F32, track_prev = false, map_field = "goods_grain_price_arr", prev_field = "", owner = "economy.goods" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

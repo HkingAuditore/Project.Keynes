@@ -6,6 +6,8 @@
 script = ExtResource("1")
 id = &"mutton"
 display_name = "羊肉"
-quantity_component = &"cell.goods_mutton_qty"
-price_component = &"cell.goods_mutton_price"
-default_price = 1.0
+default_price = 22000
+initial_stock = 0
+min_price = 3000
+max_price = 220000
+price_adjust_q16 = 2560

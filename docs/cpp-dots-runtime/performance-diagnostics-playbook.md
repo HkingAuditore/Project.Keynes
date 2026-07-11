@@ -1154,3 +1154,42 @@ catch-up 时，报告 `path=cell_indirection_lut_skip`、`lut_skip_no_dirty=true
 - 不再用 `must_run = true` 绕过 budget（这种"硬性兜底"等于设计错误的事后补救）
 - phase 错峰是 SUS 调度的合理用法，每个 job 在自己的 tick 上跑完整 slice 而不被截断
 - starvation_threshold 仍是兜底，但希望永远不触发
+
+## ECONOMY_GRAPH 诊断
+
+先看 `fatal` 与三条 `*_error`。任一守恒误差非 0 都是正确性故障，不应通过放宽
+epsilon 解决。`saturation_count>0` 表示输入规模/参数接近数值上限；即使审计仍为
+0，也要检查公式参数、异常账户和库存。
+
+stage 判断：
+
+- `ledger_apply` 长：命令 range 太大，查 `processed_commands/pending_commands`。
+- `household_market` 长：比较 `processed_cohorts/needs/variants/components`、
+  `formula_ms/clear_ms/fallback_ms/merchant_settle_ms/price_ms` 与
+  `worker_tasks`；`worker_tasks=1` 可能是小 range 或 WTP 不可用。
+- `structural_commit` 长：迁移/转职/归零事件过多，查 ECB 来源，不能在此全局 compact。
+- `wait_commit`：计算已提前完成，正在等周期截止日；这是冻结结算隔离，不是卡死。
+- `aggregate_publish` 长：cell summary 或审计扫描异常；不得改成全世界 Dictionary。
+
+上述 stage ms 在 worker 路径是 task CPU 时间之和，slice `elapsed_ms` 才是墙钟。
+正常冻结周期中 `epoch_active=true/commit_due=false` 时不得出现屏障；世界日应继续推进。
+只有 `commit_due=true && done=false` 才应看到 `economy_day_barrier`，此时模拟日不前进，
+real-frame pulse 令 `continuation_slices` 增加并最终解除。周期边界出现全量尖峰时，检查
+是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。
+
+误差排障同时记录 `market_cycle_days/approximation_model`。消费/价格异常首先用较短强制
+周期复现；如果 N=1 正常而长周期偏差大，这是近似调参问题，不是守恒错误。
+
+UI 看到 `committed=false/busy=true` 不是丢数据：Inspector 应继续显示 facade 缓存的
+上一轮 committed cell snapshot。save 返回 `save_requires_committed_boundary` 也属于
+正常隔离，不应绕过。
+## BUILDING_GRAPH 诊断
+
+- `building_employment` 长：比较 active building cells、group count、owner/employee filled；不应出现
+  `cell_count × group_count` 扫描。
+- `building_production` 长：检查 processed groups、input/resource/output edge 数，以及高价 offer 排序。
+- `production_output_discarded>0`：商人正资金不足，不是库存 publish 失败。
+- `building_resource_delta_cells=0` 且产量非零：检查 behavior/resource columns 和 extra slot；reserve
+  存在而 extra slot 缺失应直接 fatal，不能静默生成资源产出。
+- committed 后 population/money/goods error 仍必须精确为 0；`building_wages_unpaid>0` 表示业主
+  现金不足，先检查固定工资、产出收入和商人购买力，不能用铸币掩盖。

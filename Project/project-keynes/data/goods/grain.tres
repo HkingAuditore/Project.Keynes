@@ -6,6 +6,8 @@
 script = ExtResource("1")
 id = &"grain"
 display_name = "谷物"
-quantity_component = &"cell.goods_grain_qty"
-price_component = &"cell.goods_grain_price"
-default_price = 1.0
+default_price = 10000
+initial_stock = 0
+min_price = 1000
+max_price = 100000
+price_adjust_q16 = 2048

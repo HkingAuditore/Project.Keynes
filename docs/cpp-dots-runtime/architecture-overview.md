@@ -114,6 +114,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 | component schema | `component_schema.gd` | 单一源，C++ mirror 由 `component_bind_table.gen.h` 生成。 |
 | GDScript runtime state | `MapData` / `DCWorld` | UI、debug、部分 baker 和 fallback 仍读取这些镜像。 |
 | C++ hot-loop 中间数据 | `DCWorldExt` slot | pass 执行期间的权威计算 buffer。 |
+| 阶层/市场/经济账本 | `DCWorldExt::NativeEconomyRuntime` | 独立 chunk/market store，不进入 per-cell slots；只发布 committed summary/snapshot。 |
 | C++ pass 输出 | slot + publish/flush/snapshot | 输出必须显式发布到 GDScript 可见层。 |
 | 调度报告 | scheduler report Dictionary | `main.gd` 和 debug console 消费。 |
 | feature gates | `ClimateProfile` / `FeatureFlags` | 由 GDScript 决定 native/fallback 路径。 |

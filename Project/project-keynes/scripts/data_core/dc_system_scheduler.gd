@@ -147,7 +147,8 @@ func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
 		if upload_job or job_id == &"season_refresh" \
 				or job_id == &"refresh_climate_daily" \
 				or job_id == &"sea_ice_daily" \
-				or job_id == &"ocean_currents":
+				or job_id == &"ocean_currents" \
+				or job_id == &"economy_daily":
 			job.max_slices_per_tick = 1
 		else:
 			job.max_slices_per_tick = 1 if strict_on else 0
@@ -165,6 +166,8 @@ func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
 			# 8 天才刷一次，慢地图上看起来"完全不变"。中小地图 climate 不撑爆预算、本 job 每 tick
 			# 跑得上故正常。把阈值降到 2：廉价 LUT 最多滞后 ~3 tick 追平数值，按设计原则仍不绕过
 			# 预算（保留 must_run=false 不漂移），单 tick 代价可忽略。
+			job.starvation_threshold = 2
+		elif starvation_job_id == &"economy_daily":
 			job.starvation_threshold = 2
 		elif upload_job:
 			job.starvation_threshold = 0
@@ -220,6 +223,10 @@ func _schedule_policy(schedule_group: StringName, cp, base_stride: int):
 	if _stagger_enabled(cp):
 		var bucket_stride: int = _stagger_bucket_stride(cp)
 		match schedule_group:
+			&"economy_daily":
+				# Epoch eligibility is owned by EconomyDailySystem.should_run(); the
+				# outer SUS policy must not bucket-gate an in-flight continuation.
+				return _SusPolicyScript.AlwaysPolicy.new()
 			&"refresh_climate_daily":
 				stride = clampi(
 						int(cp.sim_stagger_climate_stride) if cp.get("sim_stagger_climate_stride") != null else 2,
@@ -256,7 +263,7 @@ func _schedule_policy(schedule_group: StringName, cp, base_stride: int):
 			_:
 				phase = 0
 	else:
-		if schedule_group == &"ocean_currents":
+		if schedule_group == &"ocean_currents" or schedule_group == &"economy_daily":
 			return _SusPolicyScript.AlwaysPolicy.new()
 	return _SusPolicyScript.StridePolicy.new(stride, phase)
 
@@ -403,6 +410,23 @@ func tick(ctx) -> void:
 	_log_ocean_scheduler_report(ctx)
 	if OS.is_debug_build() and _world != null and _world.has_method("_debug_end_pass"):
 		_world._debug_end_pass(&"dc_system_scheduler.tick")
+
+
+## Continue one already-started stateful system without emitting another
+## simulation day. Used by the Market V2 day barrier. The scheduler remains
+## the only caller of run_slice and preserves the debug read/write contract;
+## the native slice itself is cooperative and bounded by the job descriptor.
+func continue_system(system_id: StringName, ctx: SusTickContext) -> Dictionary:
+	if not _topology_built:
+		return {"done": true, "fatal": true, "fatal_reason": "topology_not_built"}
+	for system in _systems:
+		if system.id != system_id:
+			continue
+		system._scheduler_debug_pass_begin()
+		var result: Dictionary = system.run_slice(ctx)
+		system._scheduler_debug_pass_end()
+		return result
+	return {"done": true, "fatal": true, "fatal_reason": "continuation_system_missing"}
 
 
 ## 透传 SUS reset。

@@ -22,6 +22,7 @@
 | `Project/project-keynes/scripts/simulation/systems/sea_ice_atlas_upload_system.gd` | Immediate delete | Deleted | No production registration; the system preload was removed from `MapGenerator`. | disabled sea-ice atlas report + `DynamicVisualAtlasUploadSystem` retained visual boundary | `rg "SeaIceAtlasUploadSystem|sea_ice_atlas_upload_system.gd" Project/project-keynes/scripts docs/cpp-dots-runtime references/system-map.md` should only show historical references. |
 | `_use_dc_system_scheduler` flag / branch tree in `map_generator.gd` | Immediate delete | Deleted from production entry | Code already set it to true unconditionally; else branches were unreachable. | `DCSystemScheduler.register_system()` single path | `rg "_use_dc_system_scheduler"` should not find production code. |
 | `NativeDailySimJob` full-run ACTIVE shortcut | Immediate delete | Deleted from hot path | Plan requires `run_native_daily_slice()` as only ACTIVE hot path. | `run_native_daily_slice_from_job()` | `native_daily_sim` report path should be `gdext_native_daily_slice` in ACTIVE. |
+| `cell.goods_*_(qty|price)` schema / `MapData.goods_*` / `CELL_GOODS_*` | Immediate delete after MarketStore migration | Deleted | `MarketStore` is configured/bootstraped before `economy_daily` registration；focused native test replaces old slot schema test. | `NativeEconomyRuntime::MarketStore` + committed market snapshot | `rg "cell\.goods_|goods_fur_qty_arr|CELL_GOODS"` only finds retirement tests/docs；generated bind table has no goods rows. |
 
 ## Isolated Or Pending
 

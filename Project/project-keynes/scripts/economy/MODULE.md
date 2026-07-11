@@ -1,65 +1,57 @@
-# economy — 经济模块（物资数据层已接入 / 系统待开工）
+# economy — 原生阶层与本地市场模块
 
-> 状态：**经济系统未实现**；物资（goods）数据层已接入 DataCore。
-> 当前已有 `GoodProfile` / `GoodProfileRegistry`、`data/goods/*.tres`，以及 `economy.goods` owner 的 per-cell 库存/价格 F32 slots。
+> 状态：Market V2 ACTIVE（`frozen_sample_linear_v1`）。功能、守恒、确定性与
+> 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH 与 PKEC v3 流式存档；不含税、
+> 贸易、政治和人口自然变化。
 
-## 设计目标
+## 权威与禁止事项
 
-将"地理事实"转译为"经济产能"，建模：
-- 资源：可耕地、水源、林木、矿藏、洋流渔场
-- 生产：每地块的食物/物资产出
-- 人口与城市：定居点的承载力、增长、衰退
-- 贸易：城市间的物资流动与价格
+- C++ `NativeEconomyRuntime` 拥有全部可变经济状态和 hot loop。
+- `DCWorldExt` 只组合 runtime 并暴露粗粒度 API 与周期 sample-day 环境快照。
+- `EconomyCatalog` 冷启动编译 stable ID/CSR/PackedArrays；`EconomyFacade` 只打包命令和查询。
+- `EconomyDailySystem` 是 SUS/WorldClock 薄壳；UI 只读选中 cell committed snapshot。
+- 人口 snapshot 用 cohort-major CSR 返回原生计算的预计单位/人/日；查询不持久化
+  cohort×good 矩阵，也不修改 state hash。
+- 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
+- 建筑生产和临时固定工资由 BUILDING_GRAPH 直接维护守恒账本；未来税收仍必须走原生守恒边界。
 
-## 边界声明（开工前先写在这里以约束实现）
+## V2 资源
 
-### 允许依赖
+- `GoodProfile`：价格、EMA、目标库存、短缺/库存权重、日涨跌幅。
+- `ProfessionProfile`：职业 stable ID 与默认 consumption plan；人口地块必须能解析 merchant。
+- `EthnicityProfile`：稀疏 need 数量修正。
+- `NeedProfile`：优先级、基础数量、连续财富函数、环境数量曲线、替代 variants 与互补 components。
+- `ConsumptionPlanProfile`：按稳定 need ID 组合消费计划。
+- `EnvironmentDemandCurveProfile`：temp/moisture/snow/weather 的 17 点 Q16 曲线。
+- `EconomyProfile`：尺度、slice/worker、自动/强制市场周期、每片 cohort 预算、商人职业、财富参考值和 OFF/PROBE/ACTIVE。
 
-- `geography/`：通过 `HexCell` 只读字段 + `WorldData.sample_*()` 接口读取地理事实
-- `weather/`：通过 `HexCell.weather_now`、`cell.cover` 读天气**结果**（不读内部状态）
-- `data/`：读取 `GoodProfile.tres` / 未来 `BuildingProfile.tres` 等资源；自然资源仍通过 `ResourceProfile` 管理
-- `data_core/`：通过 `DCWorld.write_f32_indexed/write_f32_dense` 或未来 C++ pass 批量读写 `cell_goods_*` slots
-- `simulation/`：注册自己的 SUS Job 做周期更新
-- `ui/`：自定义经济面板
+## 行为契约
 
-### 不允许依赖
+- 一地块一市场；库存由该地块全部商人 cohort 按人口共同持有。
+- 人口非零但无商人时，从最大非商人 cohort 转 1 人并按比例转资金。
+- 购买资金直接进入商人 cohort，无 `market_cash`。
+- 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
+- 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
+- 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
+- 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
+- 世界设置中的测试经济 fixture 默认关闭；启用时在可通行陆地同步生成 cohort、市场库存和
+  四类压缩建筑组。生成顺序固定为建筑 owner-lot → catalog 岗位汇总 → cohort → 市场库存，
+  仅用于开发测试，不能作为正式历史人口来源。
 
-- 直接 import `weather/weather_system.gd` 内部方法
-- 写 `HexCell` 中归 geography/weather 维护的字段（见各自 MODULE.md 的契约）
-- 给 `HexCell` 增加动态 goods Dictionary/Object/list；每地块物资库存必须走 SoA slots
+## 调度
 
-## 计划模块组件（草案）
+周期 sample day 捕获四类环境 slots，并从冻结资金/人口/价格计算 N 日交易总量。地块
+在 N 日内按 cohort 数错峰，提前完成后等待结算日统一发布；只有结算日仍未完成才开启
+WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入环境 native round。
 
-```
-economy/
-  MODULE.md
-  goods_catalog.gd          # 可选薄壳；底层复用 GoodProfileRegistry
-  resource_yield.gd         # 给 HexCell 算每种资源的基线产能
-  city.gd                   # class_name City
-  city_registry.gd          # 全局城市集合
-  trade_network.gd          # 城市之间的可达性 + 流动
-  economy_system.gd         # class_name EconomySystem，主入口
-  jobs/
-	economy_tick_job.gd     # 注册到 SUS，每 N 天更新
-```
+完整规范见：`native-economy-runtime.md`、`economy-fixed-point-ledger-formulas.md`、
+`economy-graph-scheduling.md` 与 `economy-save-migration-sop.md`。
+# Building runtime
 
-## 第一版 MVP 建议范围
-
-1. 给每个地块计算若干物资的产出/消费 delta，并批量写入 `cell_goods_*_qty`
-2. 加一个 `City` 类，含位置 + 人口 + 仓储
-3. 选定 1~3 个起始城市，让人口按周边地块物资供给增长
-4. UI 加一个城市/地块物资面板，冷路径读取 `GoodProfileRegistry.cell_goods_snapshot()`
-
-可暂时跳过：贸易网络、动态定价、科技、政治。价格 slot 已存在并按 `GoodProfile.default_price` 初始化，但尚无价格计算系统。
-
-## 与 geography/ 的对接清单（实现时填）
-
-| 需要的输入 | 来源 | 备注 |
-|---|---|---|
-| 地块地形/landform/植被 | `cell.terrain` / `.landform` / `.vegetation` | 直接读 |
-| 是否河流 / 是否海岸 | `cell.has_river` / `cell.terrain == COAST` | |
-| 海拔 / 湿度 / 温度 | `cell.elevation` / `.moisture` / `.temperature` | 标量 [0,1] |
-| 气候带 / 季节 | `WorldClock` + `cell.latitude` | 派生 |
-| 当前天气 / 雪盖 / 洪涝 | `cell.weather_now` / `.cover` | 短期扰动 |
-
-> 实现时若发现 geography 缺少需要的查询，**优先在 geography 里加纯函数**而不是把推导塞进 economy。
+`BuildingProfile` 位于 `data/economy/buildings/`，由 `EconomyCatalog` 编译进 native catalog。
+`EconomyFacade.build/demolish/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
+份额和账本只由 C++ 修改。当前 `fixed` 工资按实际到岗人数和周期天数从业主转给雇员，
+业主现金不足时记录 `building_wages_unpaid`。
+`EconomyFacade.building_job_spec` 只用于生成期冷路径，把 dense catalog 岗位列还原为 stable
+profession ID；运行期就业和工资仍完全由 C++ 权威计算。

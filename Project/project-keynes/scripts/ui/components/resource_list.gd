@@ -25,8 +25,10 @@ func update_rows(rows: Array) -> void:
 	for raw in rows:
 		var data: Dictionary = raw
 		var row_id := String(data.get("id", ""))
-		if not _row_refs.has(row_id):
+		if row_id.is_empty():
 			continue
+		if not _row_refs.has(row_id):
+			_row_refs[row_id] = _create_row(data)
 		_apply_row(_row_refs[row_id], data)
 
 

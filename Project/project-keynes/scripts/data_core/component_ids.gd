@@ -213,18 +213,6 @@ const CELL_RES_SHEEP_EXTRA_CHANGE: StringName = &"cell.res_sheep_extra_change"  
 const CELL_RES_PIGS_EXTRA_CHANGE: StringName = &"cell.res_pigs_extra_change"                 # f32 外部一次性增减
 const CELL_RES_MEDICINAL_HERBS_EXTRA_CHANGE: StringName = &"cell.res_medicinal_herbs_extra_change" # f32 外部一次性增减
 
-# ─── Goods：per-cell 物资库存与价格（economy.goods）───────────────
-# 每种物资两条 f32 SoA：qty 表示当前地块库存，price 表示该地块当前价格。
-# 物资不会自然生成；未来经济系统通过 DataCore indexed/dense 写入或 C++ pass 批量改写。
-const CELL_GOODS_FUR_QTY: StringName = &"cell.goods_fur_qty"         # f32 皮毛库存
-const CELL_GOODS_FUR_PRICE: StringName = &"cell.goods_fur_price"     # f32 皮毛价格
-const CELL_GOODS_MUTTON_QTY: StringName = &"cell.goods_mutton_qty"   # f32 羊肉库存
-const CELL_GOODS_MUTTON_PRICE: StringName = &"cell.goods_mutton_price" # f32 羊肉价格
-const CELL_GOODS_COAL_QTY: StringName = &"cell.goods_coal_qty"       # f32 煤炭库存
-const CELL_GOODS_COAL_PRICE: StringName = &"cell.goods_coal_price"   # f32 煤炭价格
-const CELL_GOODS_GRAIN_QTY: StringName = &"cell.goods_grain_qty"     # f32 谷物库存
-const CELL_GOODS_GRAIN_PRICE: StringName = &"cell.goods_grain_price" # f32 谷物价格
-
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用
 #   命名空间。任何真实游戏机制（climate / weather / biome / vegetation / UI

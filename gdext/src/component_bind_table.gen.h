@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 140
+// Schema entries: 132
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -162,14 +162,6 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_res_sheep_extra_change",           "res_sheep_extra_change_arr",           SlotDType::F32 },
     { "cell_res_pigs_extra_change",            "res_pigs_extra_change_arr",            SlotDType::F32 },
     { "cell_res_medicinal_herbs_extra_change", "res_medicinal_herbs_extra_change_arr", SlotDType::F32 },
-    { "cell_goods_fur_qty",                    "goods_fur_qty_arr",                    SlotDType::F32 },
-    { "cell_goods_fur_price",                  "goods_fur_price_arr",                  SlotDType::F32 },
-    { "cell_goods_mutton_qty",                 "goods_mutton_qty_arr",                 SlotDType::F32 },
-    { "cell_goods_mutton_price",               "goods_mutton_price_arr",               SlotDType::F32 },
-    { "cell_goods_coal_qty",                   "goods_coal_qty_arr",                   SlotDType::F32 },
-    { "cell_goods_coal_price",                 "goods_coal_price_arr",                 SlotDType::F32 },
-    { "cell_goods_grain_qty",                  "goods_grain_qty_arr",                  SlotDType::F32 },
-    { "cell_goods_grain_price",                "goods_grain_price_arr",                SlotDType::F32 },
     { "cell_demo_thermal_gradient",            "demo_thermal_gradient_arr",            SlotDType::F32 },  // demo-only (gated on ClimateProfile.demo_thermal_gradient_enabled)
 };
 
