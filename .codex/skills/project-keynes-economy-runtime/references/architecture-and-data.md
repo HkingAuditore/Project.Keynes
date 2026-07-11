@@ -137,12 +137,12 @@ PKEC schema v2 streams 4–16MB chunks: header, pages, market rows, cell/environ
 commands, end. Save only at a committed boundary. The header stores numeric scales, catalog identity,
 cycle length, committed day, environment identity, treasury, and submit sequence.
 
-During `household_market`, `structural_commit`, or `wait_commit`, UI and save must not observe
-internal mutation. `EconomyFacade` retains the last committed selected-cell snapshot. If a cell is
-first selected while an epoch is in flight, native returns only its committed aggregate summary;
-the facade marks it `details_pending=true` instead of treating missing cohort/good arrays as empty.
-At the next committed boundary the selected-cell live patch materializes the stable cohort/good
-rows once, then resumes value-only patching.
+During `household_market`, `structural_commit`, or `wait_commit`, save and gameplay systems must not
+observe internal mutation. The selected-cell Inspector is the bounded exception: synchronous native
+queries between slices return complete current population, market, and building arrays with
+`snapshot_source=live_slice` and `committed=false`. At a boundary they return
+`snapshot_source=committed`. Queries are read-only, never expose a global live matrix, and never show
+a normal "details pending" UI state.
 
 The optional world-setup test bootstrap is OFF by default. When explicitly enabled it creates four
 compressed farm/workshop/estate/stall owner-lots on passable land first, derives profession cohorts

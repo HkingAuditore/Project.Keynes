@@ -163,6 +163,17 @@ func _test_cycle_approximation(compiled: Dictionary) -> void:
 		if day == 0:
 			_expect("N-day cycle freezes committed visibility", not bool(result.get("done", true)) and
 				String(result.get("stage", "")) == "wait_commit")
+			var live_hash_before: int = approximate.get_economy_state_hash()
+			var live_population: Dictionary = approximate.get_population_cell_snapshot(0)
+			var live_market: Dictionary = approximate.get_market_cell_snapshot(0)
+			_expect("active cycle exposes latest selected-cell population", \
+				String(live_population.get("snapshot_source", "")) == "live_slice" and \
+				(live_population.get("populations", PackedInt64Array()) as PackedInt64Array).size() > 0)
+			_expect("active cycle exposes latest selected-cell market", \
+				String(live_market.get("snapshot_source", "")) == "live_slice" and \
+				(live_market.get("good_ids", PackedStringArray()) as PackedStringArray).size() == goods.size())
+			_expect("live selected-cell queries are read-only", \
+				live_hash_before == approximate.get_economy_state_hash())
 	var approx_report: Dictionary = approximate.get_economy_report()
 	_expect("N-day cycle settles on deadline", not bool(approx_report.get("epoch_active", true)) and
 		int(approx_report.get("commit_day", -1)) == DAYS - 1)

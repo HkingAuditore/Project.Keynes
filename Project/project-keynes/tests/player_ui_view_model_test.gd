@@ -148,28 +148,25 @@ func _initialize() -> void:
 	).size() != 2:
 		failures.append("population dossier did not expose all non-zero per-capita demands")
 
-	var pending_population: Dictionary = view_model._population_category({
+	var unavailable_population: Dictionary = view_model._population_category({
 		"ok": true,
 		"busy": true,
-		"details_pending": true,
 		"population": 1000,
 		"funds": 400000000,
 		"cohort_count": 4,
 	})
-	var pending_population_insights: Array = pending_population.get("insights", [])
-	if _find_by_id(pending_population_insights, "population_details_pending").is_empty():
-		failures.append("busy population snapshot did not expose pending-detail state")
-	if not _find_by_id(pending_population_insights, "population_empty").is_empty():
-		failures.append("busy population snapshot was incorrectly presented as empty")
+	if _find_by_id(unavailable_population.get("insights", []),
+			"population_details_unavailable").is_empty():
+		failures.append("incomplete population snapshot did not report a query failure")
 
-	var pending_market: Dictionary = view_model._market_category({
+	var unavailable_market: Dictionary = view_model._market_category({
 		"ok": true,
 		"busy": true,
-		"details_pending": true,
 		"market_id": 0,
 	})
-	if _find_by_id(pending_market.get("insights", []), "market_details_pending").is_empty():
-		failures.append("busy market snapshot did not expose pending-detail state")
+	if _find_by_id(unavailable_market.get("insights", []),
+			"market_details_unavailable").is_empty():
+		failures.append("incomplete market snapshot did not report a query failure")
 
 	map.res_timber_reserve_arr[0] = 12600.0
 	var changed := view_model.build_live_patch(cell, "natural_resources")

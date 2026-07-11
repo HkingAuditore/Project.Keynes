@@ -59,7 +59,9 @@ Never add a parallel GDScript economy implementation.
 - Keep hot loops free of Dictionary, Callable, Object access, string lookup, allocation, and exceptions.
 - Keep money, goods, population, ratios, rates, and rounding deterministic and saturating.
 - Keep population, money, and goods audit error exactly zero.
-- Keep in-flight state invisible; save and UI may read only committed boundaries.
+- Keep in-flight state invisible to gameplay writers and save. Selected-cell inspector queries may
+  read the latest slice-complete native state, must report `snapshot_source`, and must stay bounded;
+  never copy or publish a global cohort-by-good live snapshot.
 - Keep production, employment, wages, tax, trade, politics, and natural demography outside Market V2.
 
 ## Follow the implementation workflow
