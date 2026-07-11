@@ -1180,8 +1180,10 @@ real-frame pulse 令 `continuation_slices` 增加并最终解除。周期边界�
 误差排障同时记录 `market_cycle_days/approximation_model`。消费/价格异常首先用较短强制
 周期复现；如果 N=1 正常而长周期偏差大，这是近似调参问题，不是守恒错误。
 
-UI 看到 `committed=false/busy=true` 不是丢数据：Inspector 应继续显示 facade 缓存的
-上一轮 committed cell snapshot。save 返回 `save_requires_committed_boundary` 也属于
+UI 看到 `committed=false/busy=true` 时应同时收到 `snapshot_source=live_slice` 的完整选中
+地块数组；若只有聚合摘要，说明 DLL/API 版本不匹配或查询契约回退，而不是正常等待。
+Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapshot。save 返回
+`save_requires_committed_boundary` 仍属于
 正常隔离，不应绕过。
 ## BUILDING_GRAPH 诊断
 

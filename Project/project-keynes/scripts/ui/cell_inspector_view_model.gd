@@ -457,6 +457,8 @@ func _market_snapshot(cell_idx: int) -> Dictionary:
 func _population_category(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "population_unavailable", "text": "阶层运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
+	if not snapshot.has("populations"):
+		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新阶层明细。", "accent": UITokens.RISK, "icon": "growth"}]}
 	var rows := []
 	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
 	var profession_indices: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
@@ -521,11 +523,7 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 			"visible": true,
 		})
 	var insights := []
-	var details_pending := bool(snapshot.get("details_pending", false)) \
-		or (bool(snapshot.get("busy", false)) and not snapshot.has("populations"))
-	if details_pending and int(snapshot.get("population", 0)) > 0:
-		insights.append({"id": "population_details_pending", "text": "经济结算进行中，阶层总量已提交；详细名单将在本轮结算完成后显示。", "accent": UITokens.WARN, "icon": "growth"})
-	elif rows.is_empty():
+	if rows.is_empty():
 		insights.append({"id": "population_empty", "text": "此地块尚无人口。可在世界生成页启用测试人口，或由正式数据源导入。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
 	elif not bool(snapshot.get("demand_preview_environment_ready", false)):
 		insights.append({"id": "population_demand_neutral_environment", "text": "环境快照暂不可用，预计需求使用最近冻结或中性环境。", "accent": UITokens.WARN, "icon": "weather"})
@@ -542,6 +540,8 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 func _market_category(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "market_unavailable", "text": "市场运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
+	if not snapshot.has("good_ids"):
+		return {"insights": [{"id": "market_details_unavailable", "text": "无法读取最新市场明细。", "accent": UITokens.RISK, "icon": "resource"}]}
 	var rows := []
 	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
@@ -565,13 +565,8 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"icon": "resource",
 			"visible": true,
 		})
-	var insights := []
-	var details_pending := bool(snapshot.get("details_pending", false)) \
-		or (bool(snapshot.get("busy", false)) and not snapshot.has("good_ids"))
-	if details_pending:
-		insights.append({"id": "market_details_pending", "text": "经济结算进行中，市场明细将在本轮结算完成后显示。", "accent": UITokens.WARN, "icon": "resource"})
 	return {
-		"insights": insights,
+		"insights": [],
 		"metrics": [
 			{"id": "market_id", "title": "本地市场", "value": "#%d" % int(snapshot.get("market_id", -1)), "subtitle": "原生 MarketStore", "accent": UITokens.RESOURCE, "icon": "resource"},
 			{"id": "merchant_funds", "title": "商人资金", "value": _money_text(_sum_i64(snapshot.get("merchant_funds", PackedInt64Array()))), "subtitle": "%s 人共同持有库存" % UITokens.format_compact_number_cn(float(_sum_i64(snapshot.get("merchant_population", PackedInt64Array()))), 1), "accent": UITokens.ACCENT, "icon": "resource"},

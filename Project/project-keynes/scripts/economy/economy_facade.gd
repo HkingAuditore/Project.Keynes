@@ -115,16 +115,18 @@ func population_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
 	var snapshot: Dictionary = _world_ext.get_population_cell_snapshot(cell_idx)
-	if bool(snapshot.get("committed", false)):
+	var has_details := snapshot.has("populations")
+	if has_details:
 		_attach_population_display_metadata(snapshot)
 		snapshot["details_available"] = true
 		snapshot["details_pending"] = false
 		_population_cache[cell_idx] = snapshot.duplicate(true)
+		return snapshot.duplicate(true)
 	if _population_cache.has(cell_idx):
 		var cached := (_population_cache[cell_idx] as Dictionary).duplicate(true)
 		cached["stale_while_busy"] = bool(snapshot.get("busy", false))
 		return cached
-	snapshot["details_available"] = snapshot.has("populations")
+	snapshot["details_available"] = false
 	snapshot["details_pending"] = bool(snapshot.get("busy", false)) \
 		and not bool(snapshot.get("details_available", false))
 	return snapshot.duplicate(true)
@@ -133,15 +135,17 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
 	var snapshot: Dictionary = _world_ext.get_market_cell_snapshot(cell_idx)
-	if bool(snapshot.get("committed", false)):
+	var has_details := snapshot.has("good_ids")
+	if has_details:
 		snapshot["details_available"] = true
 		snapshot["details_pending"] = false
 		_market_cache[cell_idx] = snapshot.duplicate(true)
+		return snapshot.duplicate(true)
 	if _market_cache.has(cell_idx):
 		var cached := (_market_cache[cell_idx] as Dictionary).duplicate(true)
 		cached["stale_while_busy"] = bool(snapshot.get("busy", false))
 		return cached
-	snapshot["details_available"] = snapshot.has("good_ids")
+	snapshot["details_available"] = false
 	snapshot["details_pending"] = bool(snapshot.get("busy", false)) \
 		and not bool(snapshot.get("details_available", false))
 	return snapshot.duplicate(true)
@@ -150,8 +154,9 @@ func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
 	var snapshot: Dictionary = _world_ext.get_building_cell_snapshot(cell_idx)
-	if bool(snapshot.get("committed", false)):
+	if snapshot.has("building_type_ids"):
 		_building_cache[cell_idx] = snapshot.duplicate(true)
+		return snapshot.duplicate(true)
 	return (_building_cache.get(cell_idx, snapshot) as Dictionary).duplicate(true)
 
 func building_type_id(building_id: StringName) -> int:

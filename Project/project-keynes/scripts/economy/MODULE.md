@@ -10,7 +10,8 @@
 - C++ `NativeEconomyRuntime` 拥有全部可变经济状态和 hot loop。
 - `DCWorldExt` 只组合 runtime 并暴露粗粒度 API 与周期 sample-day 环境快照。
 - `EconomyCatalog` 冷启动编译 stable ID/CSR/PackedArrays；`EconomyFacade` 只打包命令和查询。
-- `EconomyDailySystem` 是 SUS/WorldClock 薄壳；UI 只读选中 cell committed snapshot。
+- `EconomyDailySystem` 是 SUS/WorldClock 薄壳；gameplay/save 只读 committed，Inspector 的选中
+  cell 冷查询可读取切片间最新完整 snapshot，并以 `snapshot_source` 标记来源。
 - 人口 snapshot 用 cohort-major CSR 返回原生计算的预计单位/人/日；查询不持久化
   cohort×good 矩阵，也不修改 state hash。
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。

@@ -3868,12 +3868,17 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     Dictionary out;
     out["cell_idx"] = cell_idx;
     out["committed"] = !_epoch_active && !_fatal;
+    out["busy"] = _epoch_active;
+    out["snapshot_source"] = _epoch_active ? "live_slice" : "committed";
     if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
     }
-    const CellSummary &summary = _committed_cells[cell_idx];
+    // Selected-cell queries run synchronously between native slices. Build the
+    // bounded cell summary from the current SoA so UI never needs a global
+    // cohort snapshot or waits for the next commit boundary.
+    const CellSummary summary = build_cell_summary(cell_idx);
     out["ok"] = true;
     out["population"] = summary.population;
     out["funds"] = summary.funds;
@@ -3882,10 +3887,6 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["cohort_count"] = summary.cohort_count;
     out["satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
-    if (_epoch_active || _fatal) {
-        out["busy"] = _epoch_active;
-        return out;
-    }
     PackedInt64Array handles;
     PackedInt32Array signatures;
     PackedInt32Array professions;
@@ -4016,7 +4017,9 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["demand_good_indices"] = demand_good_indices;
     out["demand_per_capita_daily"] = demand_per_capita_daily;
     out["demand_good_stable_ids"] = demand_good_stable_ids;
-    out["demand_preview_basis"] = "committed_economy_current_environment_daily";
+    out["demand_preview_basis"] = _epoch_active
+        ? "live_slice_economy_current_environment_daily"
+        : "committed_economy_current_environment_daily";
     out["demand_preview_environment_ready"] = sample.ready;
     out["demand_preview_saturation_count"] = preview_saturation_count;
     return out;
@@ -4026,6 +4029,8 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
     out["committed"] = !_epoch_active && !_fatal;
+    out["busy"] = _epoch_active;
+    out["snapshot_source"] = _epoch_active ? "live_slice" : "committed";
     if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
@@ -4035,10 +4040,6 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["ok"] = true;
     out["market_id"] = market;
     out["epoch_id"] = _epoch_id;
-    if (_epoch_active || _fatal) {
-        out["busy"] = _epoch_active;
-        return out;
-    }
     PackedStringArray good_ids;
     PackedInt64Array stock;
     PackedInt64Array demand_ema;
@@ -4059,12 +4060,14 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedInt64Array merchant_handles;
     PackedInt64Array merchant_population;
     PackedInt64Array merchant_funds;
-    for (int32_t k = _merchant_offsets[cell_idx]; k < _merchant_offsets[cell_idx + 1]; ++k) {
-        const int32_t slot = _merchant_slots[k];
+    // Merchant CSR is rebuilt only after structural commit. Scan this one
+    // selected cell so a live query remains valid between structural slices.
+    _population.for_each_in_cell(cell_idx, [&](int32_t slot) {
+        if (!is_merchant_slot(slot)) return;
         merchant_handles.push_back(static_cast<int64_t>(_population.handle_for_slot(slot)));
         merchant_population.push_back(_population.population[slot]);
         merchant_funds.push_back(_population.funds[slot]);
-    }
+    });
     out["merchant_handles"] = merchant_handles;
     out["merchant_population"] = merchant_population;
     out["merchant_funds"] = merchant_funds;
@@ -4075,6 +4078,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     Dictionary out;
     out["cell_idx"] = cell_idx;
     out["committed"] = !_epoch_active && !_fatal;
+    out["busy"] = _epoch_active;
+    out["snapshot_source"] = _epoch_active ? "live_slice" : "committed";
     if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
@@ -4082,10 +4087,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     }
     out["ok"] = true;
     out["epoch_id"] = _epoch_id;
-    if (_epoch_active || _fatal) {
-        out["busy"] = _epoch_active;
-        return out;
-    }
     PackedStringArray type_ids;
     PackedInt64Array type_counts;
     PackedInt64Array wage_per_employee_per_day;

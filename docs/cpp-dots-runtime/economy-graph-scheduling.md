@@ -37,7 +37,8 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 5. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
 6. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出和守恒审计。
 
-周期内 UI/save/其他经济写者只观察上一 committed state。`epoch_income/expense` 在发布后
+周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
+地块查询可观察最近完成 native slice 的完整状态，并明确标记为 `live_slice`。`epoch_income/expense` 在发布后
 表示整个周期总额，不是单日值。
 
 ## 惰性会计清零与结构索引

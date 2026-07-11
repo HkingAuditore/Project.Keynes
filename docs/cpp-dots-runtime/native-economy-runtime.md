@@ -18,7 +18,7 @@
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
 | 调度和结算屏障 | `EconomyDailySystem`/`WorldClock` | 周期内正常跨日；仅截止日未完成时 same-day catchup。 |
-| 查询与存档 I/O | GDScript 薄壳 | 只读 committed snapshot，4–16MB byte chunks。 |
+| 查询与存档 I/O | GDScript 薄壳 | Inspector 只读 selected-cell slice-complete snapshot；存档只读 committed boundary，4–16MB byte chunks。 |
 
 不存在大规模 GDScript fallback。原生 ABI 不可用时经济显式 disabled；PROBE 模式
 保留 catalog/bootstrap/查询和显式测试能力，但不进入生产 scheduler。
