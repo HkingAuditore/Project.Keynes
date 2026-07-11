@@ -134,6 +134,7 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 @export var river_count: int = 8
 @export var hex_size: float = 22.0
 @export var initial_seed: int = 0   # 0 = 随机
+@export var generate_test_economy_data: bool = false
 
 # ─── Visual Presentation Overhaul（任务 1）：视觉总开关 ─────────────────
 # 六个开关一起组成"可回退的分层视觉系统"：任何一项关闭都应退化到对应基线效果。
@@ -1054,6 +1055,8 @@ func _apply_world_setup_base_config() -> void:
 	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
 	continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
 	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
+	generate_test_economy_data = bool((base as Dictionary).get(
+		"generate_test_economy_data", generate_test_economy_data))
 	var render = config.get("render", {})
 	if render is Dictionary:
 		render_quality_mode = clampi(int((render as Dictionary).get(
@@ -2161,6 +2164,7 @@ func _generate_and_render(seed_val: int) -> void:
 
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
+	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
 	_apply_runtime_climate_profile(_generator)
 	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
 	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。

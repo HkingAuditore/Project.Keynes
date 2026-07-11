@@ -25,6 +25,7 @@
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
+- 阶层与市场：读 `gdext/src/economy_runtime.{h,cpp}`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd` 和 `docs/cpp-dots-runtime/native-economy-runtime.md`。
 
 ## 运行入口
 
@@ -160,7 +161,9 @@ WorldClock.day_changed(day_idx)
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
 - `natural_resource_daily`：自然资源每日生成/衰减，per-cell 储量按「固定公式模板 + 每资源系数」结合 temp/moisture 演化；reads cell.temp/moisture → 拓扑排在气候之后。数据驱动配置 `ResourceProfile`（`scripts/data/resource_profile.gd` + `data/resources/*.tres`）+ `ResourceProfileRegistry`；计算权威在 C++ `run_natural_resource_pass`（`gdext/src/world_ext_resource.cpp`），GDScript fallback 同模板。详见 `docs/cpp-dots-runtime/computation-pipelines.md` "Natural resources" 节。
-- 物资（goods）数据层已接入 DataCore，但尚无 job：`GoodProfile` / `GoodProfileRegistry` 加载 `data/goods/*.tres`，每种物资用 `cell.goods_<id>_qty` 与 `cell.goods_<id>_price` 两条 per-cell F32 slot 表达库存和价格，owner 为 `economy.goods`。它与自然资源不是一一对应关系，不由 `natural_resource_daily` 生成或演化；未来经济系统应批量写 `cell_goods_*` slots。
+- 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
+  `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
+  它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。
 - `sea_ice_daily`：独立海冰日更新，可按 profile gate 注册。
 - `ocean_currents`：SLP、wind、PSI、upwelling、ocean current、视觉 raster/commit。
 - `weather_refresh`：天气 field begin/solve/summary/hydrology/commit/stage-b。
@@ -244,7 +247,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `world_setup.gd`：生成前参数界面。
 - `player_game.gd`：玩家主场景装配层，只做 runtime/UI/controller wiring 和基础玩家热键。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、safe area 和控制信号；不直接承担逐字段渲染。
-- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地块选择或切换 Tab 时可重建当前内容；每日 tick 只走 750ms 节流的 stable-id live patch，保持节点树、当前 Tab 与滚动位置稳定。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地块档案固定为地理、人口、市场、自然资源四页；`CohortList` 可展开查看预计人均日需求。地块选择或切换 Tab 时可重建当前内容；每日 tick 只走 750ms 节流的 stable-id live patch，保持节点树、展开态、当前 Tab 与滚动位置稳定。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
@@ -295,6 +298,30 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - 修改 bridge/publish 行为时同步更新 `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`。
 - 修改 job graph/budget/report 时同步更新 `docs/cpp-dots-runtime/scheduling-and-job-graph.md` 和 `performance-diagnostics-playbook.md`。
 
+## 经济运行时
+
+`MapGenerator._setup_sus()` 在环境 native/legacy 分叉前配置 `EconomyFacade`，默认以空的
+数据驱动人口 packet bootstrap 本地市场，并注册 `EconomyDailySystem`。世界设置可显式
+启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成建筑 owner-lot，再从
+catalog owner/employee 岗位容量派生 cohort，最后生成市场库存。状态实现位于
+`DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
+所有的 MarketStore、need/bundle 清算、账本、冻结周期 continuation、审计和 PKEC v2
+存档全部在 C++。默认模式是 ACTIVE、固定 5 日周期；设 `market_cycle_days=0` 时才按
+4k/12k/30k cohort slice 自动选择 N。在 N 日内错峰计算并于截止日统一发布；未按时
+完成才冻结日历 catchup。Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
+人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
+cohort×good 矩阵。
+
+旧 `cell.goods_*` / `MapData.goods_*` 已删除；新增 good 是 `.tres` 数据操作。自然资源
+`cell.res_*` 仍是 cell schema，未来生产系统通过经济 command 入库，不直接修改市场。
+
 ## 当前非目标
 
-仓库当前核心是地理生成、气候、天气、海洋、渲染和 DOTS/C++ 运行时。物资库存/价格的 DataCore 持久 slot 已存在，但尚未看到稳定的生产/消费/工资/税收/贸易等经济系统入口。后续如果加入经济玩法，应复用 `economy.goods` slot 家族并先定义 tick cadence、UI/debug 和持久化边界，不要把经济状态混入现有 climate/weather/visual buffer。
+Market V2 清算本身不包含生产建筑、就业或工资；这些行为已由同一 C++ 权威中的后置
+BUILDING_GRAPH 承担。税制、贸易网络、政治系统和人口自然变化仍是非目标，不能另建平行
+GDScript 经济状态。
+## Building / employment / production
+
+`BuildingProfile + GoodProfile producer factor → EconomyCatalog → DCWorldExt economy bridge →
+NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
+sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。

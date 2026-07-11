@@ -1,19 +1,12 @@
 # good_profile_registry.gd
-# Single-point accessor for all GoodProfile definitions.
-#
-# 顺序即权威：`_PROFILE_PATHS` 的下标是未来经济 C++ pass 的物资索引。
-# 本文件只提供数据层访问、默认库存/价格初始化和冷路径 snapshot。
+# Single-point accessor for GoodProfile definitions. Stable IDs are sorted at
+# load time; file names and discovery order are never persisted as identity.
 
 class_name GoodProfileRegistry
 
 const _GoodProfileScript = preload("res://scripts/data/good_profile.gd")
 
-const _PROFILE_PATHS: Array = [
-	"res://data/goods/fur.tres",
-	"res://data/goods/mutton.tres",
-	"res://data/goods/coal.tres",
-	"res://data/goods/grain.tres",
-]
+const _PROFILE_DIR := "res://data/goods"
 
 static var _ordered: Array = [] # Array[GoodProfile]
 static var _by_id: Dictionary = {}
@@ -26,7 +19,12 @@ static func ensure_loaded() -> void:
 	_loaded = true
 	_ordered.clear()
 	_by_id.clear()
-	for path in _PROFILE_PATHS:
+	var paths := PackedStringArray()
+	for file_name in DirAccess.get_files_at(_PROFILE_DIR):
+		if file_name.get_extension().to_lower() == "tres":
+			paths.append("%s/%s" % [_PROFILE_DIR, file_name])
+	paths.sort()
+	for path in paths:
 		var res = ResourceLoader.load(path, "Resource")
 		if res == null:
 			push_warning("GoodProfileRegistry: failed to load %s" % path)
@@ -37,6 +35,7 @@ static func ensure_loaded() -> void:
 			continue
 		_ordered.append(res)
 		_by_id[id_value] = res
+	_ordered.sort_custom(func(a, b) -> bool: return String(a.id) < String(b.id))
 
 
 static func ordered() -> Array:
@@ -55,108 +54,50 @@ static func profile_by_id(id_value):
 	return _by_id.get(id_key, null)
 
 
-static func quantity_map_field(p) -> String:
-	if p == null:
-		return ""
-	var e: Dictionary = DCComponentSchema.find_by_name(p.get("quantity_component"))
-	return String(e.get("map_field", "")) if not e.is_empty() else ""
-
-
-static func price_map_field(p) -> String:
-	if p == null:
-		return ""
-	var e: Dictionary = DCComponentSchema.find_by_name(p.get("price_component"))
-	return String(e.get("map_field", "")) if not e.is_empty() else ""
-
-
-static func quantity_cpp_name(p) -> String:
-	if p == null:
-		return ""
-	var e: Dictionary = DCComponentSchema.find_by_name(p.get("quantity_component"))
-	return String(e.get("cpp_name", "")) if not e.is_empty() else ""
-
-
-static func price_cpp_name(p) -> String:
-	if p == null:
-		return ""
-	var e: Dictionary = DCComponentSchema.find_by_name(p.get("price_component"))
-	return String(e.get("cpp_name", "")) if not e.is_empty() else ""
-
-
-static func build_storage_knobs() -> Dictionary:
+static func compile_native_columns() -> Dictionary:
 	ensure_loaded()
-	var quantity_slots := PackedStringArray()
-	var price_slots := PackedStringArray()
-	var default_prices := PackedFloat32Array()
 	var ids := PackedStringArray()
+	var default_prices := PackedInt32Array()
+	var initial_stock := PackedInt64Array()
+	var min_prices := PackedInt32Array()
+	var max_prices := PackedInt32Array()
+	var adjust_q16 := PackedInt32Array()
+	var demand_elasticity := PackedInt32Array()
+	var demand_ema_alpha := PackedInt32Array()
+	var target_inventory_days := PackedInt32Array()
+	var inventory_weight := PackedInt32Array()
+	var shortage_weight := PackedInt32Array()
+	var max_price_rise := PackedInt32Array()
+	var max_price_fall := PackedInt32Array()
+	var merchant_buy_factor := PackedInt32Array()
 	for p in _ordered:
-		var qty_cpp: String = quantity_cpp_name(p)
-		var price_cpp: String = price_cpp_name(p)
-		if qty_cpp == "" or price_cpp == "":
-			push_warning("GoodProfileRegistry: good '%s' has incomplete schema entry; skipped" % String(p.get("id")))
-			continue
 		ids.append(String(p.get("id")))
-		quantity_slots.append(qty_cpp)
-		price_slots.append(price_cpp)
-		default_prices.append(float(p.get("default_price")))
+		default_prices.append(int(p.get("default_price")))
+		initial_stock.append(int(p.get("initial_stock")))
+		min_prices.append(int(p.get("min_price")))
+		max_prices.append(int(p.get("max_price")))
+		adjust_q16.append(int(p.get("price_adjust_q16")))
+		demand_elasticity.append(int(p.get("demand_price_elasticity_q16")))
+		demand_ema_alpha.append(int(p.get("demand_ema_alpha_q16")))
+		target_inventory_days.append(int(p.get("target_inventory_days_q16")))
+		inventory_weight.append(int(p.get("inventory_weight_q16")))
+		shortage_weight.append(int(p.get("shortage_weight_q16")))
+		max_price_rise.append(int(p.get("max_price_rise_q16")))
+		max_price_fall.append(int(p.get("max_price_fall_q16")))
+		merchant_buy_factor.append(int(p.get("merchant_buy_price_factor_q16")))
 	return {
-		"good_count": quantity_slots.size(),
-		"ids": ids,
-		"quantity_slots": quantity_slots,
-		"price_slots": price_slots,
-		"default_prices": default_prices,
+		"good_ids": ids,
+		"good_default_price": default_prices,
+		"good_initial_stock": initial_stock,
+		"good_min_price": min_prices,
+		"good_max_price": max_prices,
+		"good_price_adjust_q16": adjust_q16,
+		"good_demand_price_elasticity_q16": demand_elasticity,
+		"good_demand_ema_alpha_q16": demand_ema_alpha,
+		"good_target_inventory_days_q16": target_inventory_days,
+		"good_inventory_weight_q16": inventory_weight,
+		"good_shortage_weight_q16": shortage_weight,
+		"good_max_price_rise_q16": max_price_rise,
+		"good_max_price_fall_q16": max_price_fall,
+		"good_merchant_buy_factor_q16": merchant_buy_factor,
 	}
-
-
-static func initialize_map_storage_defaults(map_ref) -> void:
-	if map_ref == null:
-		return
-	ensure_loaded()
-	var n: int = map_ref.cell_count() if map_ref.has_method("cell_count") else 0
-	for p in _ordered:
-		var qty_field: String = quantity_map_field(p)
-		var price_field: String = price_map_field(p)
-		if qty_field != "":
-			var qty_arr: PackedFloat32Array = _get_f32_array(map_ref, qty_field)
-			if qty_arr.size() != n:
-				qty_arr.resize(n)
-			qty_arr.fill(0.0)
-			map_ref.set(qty_field, qty_arr)
-		if price_field != "":
-			var price_arr: PackedFloat32Array = _get_f32_array(map_ref, price_field)
-			if price_arr.size() != n:
-				price_arr.resize(n)
-			price_arr.fill(float(p.get("default_price")))
-			map_ref.set(price_field, price_arr)
-
-
-static func cell_goods_snapshot(map_ref, cell_idx: int, include_zero: bool = false) -> Array:
-	var out: Array = []
-	if map_ref == null or cell_idx < 0:
-		return out
-	var n: int = map_ref.cell_count() if map_ref.has_method("cell_count") else 0
-	if cell_idx >= n:
-		return out
-	ensure_loaded()
-	for p in _ordered:
-		var qty_arr: PackedFloat32Array = _get_f32_array(map_ref, quantity_map_field(p))
-		var price_arr: PackedFloat32Array = _get_f32_array(map_ref, price_map_field(p))
-		var qty: float = qty_arr[cell_idx] if cell_idx < qty_arr.size() else 0.0
-		if not include_zero and is_equal_approx(qty, 0.0):
-			continue
-		var price: float = price_arr[cell_idx] if cell_idx < price_arr.size() else float(p.get("default_price"))
-		out.append({
-			"id": p.get("id"),
-			"display_name": p.get("display_name"),
-			"icon": p.get("icon"),
-			"quantity": qty,
-			"price": price,
-		})
-	return out
-
-
-static func _get_f32_array(map_ref, field: String) -> PackedFloat32Array:
-	if field == "" or map_ref == null:
-		return PackedFloat32Array()
-	var v: Variant = map_ref.get(field)
-	return v if v is PackedFloat32Array else PackedFloat32Array()

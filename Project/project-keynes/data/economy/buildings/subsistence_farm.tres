@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"subsistence_farm"
+display_name = "自耕农场"
+owner_profession_id = &"subsistence_farmer"
+owner_slots_per_building = 1
+output_good_ids = PackedStringArray("grain")
+output_quantities_per_day = PackedInt64Array(1000)
+condition_opcodes = PackedInt32Array(1)
+condition_signals = PackedInt32Array(8)
+condition_compares = PackedInt32Array(0)
+condition_reference_ids = PackedStringArray("")
+condition_values = PackedInt64Array(0)

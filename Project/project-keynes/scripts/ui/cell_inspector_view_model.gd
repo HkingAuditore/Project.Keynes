@@ -59,17 +59,15 @@ func build(cell: HexCell) -> Dictionary:
 	var passable_land := TerrainType.is_passable_land(terrain_v)
 	var resource_state := _resource_state(idx, is_water)
 	var resource_summary := _resource_summary(resource_state)
+	var population_snapshot := _population_snapshot(idx)
+	var market_snapshot := _market_snapshot(idx)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var ecology_label := _vitality_band(vitality) if not is_water else "水域"
 	var resource_label := String(resource_summary.get("label", "—"))
 	var tabs := [
-		{"id": "overview", "label": "总览", "icon": "overview"},
-		{"id": "geography", "label": "地势", "icon": "geo"},
-		{"id": "climate", "label": "气候", "icon": "sun"},
-		{"id": "hydrology", "label": "水文", "icon": "water"},
-		{"id": "ecology", "label": "生态", "icon": "eco"},
-		{"id": "resources", "label": "资源", "icon": "resource"},
-		{"id": "history", "label": "记录", "icon": "history"},
+		{"id": "geography", "label": "地理信息", "icon": "geo"},
+		{"id": "population", "label": "人口信息", "icon": "growth"},
+		{"id": "market", "label": "市场信息", "icon": "resource"},
+		{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 	]
 	return {
 		"header": _build_header(off, terrain_v, landform_v),
@@ -80,23 +78,16 @@ func build(cell: HexCell) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(
-			temp,
-			moist,
-			ecology_label,
-			vegetation_v,
-			resource_label,
-			resource_summary
-		),
+		"summary_cards": _summary_cards(temp, moist, population_snapshot,
+			market_snapshot, resource_label, resource_summary),
 		"tabs": tabs,
 		"categories": {
-			"overview": _overview_category(cell, idx, cover_v),
-			"geography": _geography_category(cell, idx, terrain_v, elev, passable_land),
-			"climate": _climate_category(cell, idx, temp, moist, base_moist, wf),
-			"hydrology": _hydrology_category(cell, idx, wf, snow, is_water),
-			"ecology": _ecology_category(cell, idx, vegetation_v, vitality),
-			"resources": _resources_category(resource_state),
-			"history": _history_category(cell),
+			"geography": _geography_information_category(cell, idx, terrain_v,
+				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+				wf, snow, vitality, passable_land, is_water),
+			"population": _population_category(population_snapshot),
+			"market": _market_category(market_snapshot),
+			"natural_resources": _resources_category(resource_state),
 		},
 	}
 
@@ -122,27 +113,28 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var passable_land := TerrainType.is_passable_land(terrain_v)
 	var resource_state := _resource_state(idx, is_water)
 	var resource_summary := _resource_summary(resource_state)
+	var population_snapshot := _population_snapshot(idx)
+	var market_snapshot := _market_snapshot(idx)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var ecology_label := _vitality_band(vitality) if not is_water else "水域"
 	var resource_label := String(resource_summary.get("label", "—"))
-	var tab_id := current_tab if current_tab != "" else "overview"
+	var tab_id := current_tab if current_tab != "" else "geography"
 	var category: Dictionary
 	match tab_id:
 		"geography":
-			category = _geography_category(cell, idx, terrain_v, elev, passable_land)
-		"climate":
-			category = _climate_category(cell, idx, temp, moist, base_moist, wf)
-		"hydrology":
-			category = _hydrology_category(cell, idx, wf, snow, is_water)
-		"ecology":
-			category = _ecology_category(cell, idx, vegetation_v, vitality)
-		"resources":
+			category = _geography_information_category(cell, idx, terrain_v,
+				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+				wf, snow, vitality, passable_land, is_water)
+		"natural_resources":
 			category = _resources_category(resource_state)
-		"history":
-			category = _history_category(cell)
+		"population":
+			category = _population_category(population_snapshot)
+		"market":
+			category = _market_category(market_snapshot)
 		_:
-			tab_id = "overview"
-			category = _overview_category(cell, idx, cover_v)
+			tab_id = "geography"
+			category = _geography_information_category(cell, idx, terrain_v,
+				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+				wf, snow, vitality, passable_land, is_water)
 	return {
 		"header": _build_header(off, terrain_v, landform_v),
 		"score": {
@@ -152,14 +144,8 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(
-			temp,
-			moist,
-			ecology_label,
-			vegetation_v,
-			resource_label,
-			resource_summary
-		),
+		"summary_cards": _summary_cards(temp, moist, population_snapshot,
+			market_snapshot, resource_label, resource_summary),
 		"tab_id": tab_id,
 		"category": category,
 	}
@@ -179,11 +165,18 @@ func _build_header(
 func _summary_cards(
 		temp: float,
 		moist: float,
-		ecology_label: String,
-		vegetation_v: int,
+		population_snapshot: Dictionary,
+		market_snapshot: Dictionary,
 		resource_label: String,
 		resource_summary: Dictionary
 ) -> Array:
+	var population_ready := bool(population_snapshot.get("ok", false))
+	var population_value := "%s 人" % UITokens.format_compact_number_cn(
+		float(population_snapshot.get("population", 0)), 1) if population_ready else "未就绪"
+	var stock_total := _sum_i64(market_snapshot.get("stock", PackedInt64Array()))
+	var market_ready := bool(market_snapshot.get("ok", false))
+	var market_value := "%s 单位" % UITokens.format_compact_number_cn(
+		float(stock_total) / 1000.0, 1) if market_ready else "未就绪"
 	return [
 		{
 			"id": "summary_climate",
@@ -194,12 +187,20 @@ func _summary_cards(
 			"icon": "sun",
 		},
 		{
-			"id": "summary_ecology",
-			"title": "生态",
-			"value": "%s · %s" % [ecology_label, VegetationType.name_cn(vegetation_v)],
-			"subtitle": "",
-			"accent": UITokens.ECO,
-			"icon": "eco",
+			"id": "summary_population",
+			"title": "人口",
+			"value": population_value,
+			"subtitle": "%d 个阶层" % int(population_snapshot.get("cohort_count", 0)) if population_ready else "未生成测试或正式人口",
+			"accent": UITokens.ACCENT,
+			"icon": "growth",
+		},
+		{
+			"id": "summary_market",
+			"title": "市场",
+			"value": market_value,
+			"subtitle": "%d 种物资" % int((market_snapshot.get("good_ids", PackedStringArray()) as PackedStringArray).size()) if market_ready else "原生市场未就绪",
+			"accent": UITokens.RESOURCE,
+			"icon": "resource",
 		},
 		{
 			"id": "summary_resource",
@@ -218,6 +219,70 @@ func _overview_category(cell: HexCell, idx: int, cover_v: int) -> Dictionary:
 		"metrics": [
 			{"id": "overview_weather", "title": "当前天气", "value": _weather_name(cell, idx), "subtitle": _intensity_text(_weather_intensity(cell, idx)), "accent": UITokens.WATER, "icon": "weather"},
 			{"id": "overview_cover", "title": "地表覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "", "accent": UITokens.GEO, "icon": "surface"},
+		],
+	}
+
+
+func _geography_information_category(
+		cell: HexCell,
+		idx: int,
+		terrain_v: int,
+		landform_v: int,
+		vegetation_v: int,
+		cover_v: int,
+		elev: float,
+		temp: float,
+		moist: float,
+		base_moist: float,
+		wf: Dictionary,
+		snow: float,
+		vitality: float,
+		passable_land: bool,
+		is_water: bool
+) -> Dictionary:
+	var geography := _geography_category(cell, idx, terrain_v, elev, passable_land)
+	var climate := _climate_category(cell, idx, temp, moist, base_moist, wf)
+	var hydrology := _hydrology_category(cell, idx, wf, snow, is_water)
+	var ecology := _ecology_category(cell, idx, vegetation_v, vitality)
+	var physical_metrics := [
+		{"id": "geography_terrain", "title": "地形", "value": TerrainType.terrain_name_cn(terrain_v), "subtitle": "移动成本 %d" % TerrainType.get_move_cost(terrain_v), "accent": UITokens.GEO, "icon": "surface"},
+		{"id": "geography_landform", "title": "地貌", "value": LandformType.name_cn(landform_v), "subtitle": "陆路%s" % ("可通" if passable_land else "阻断"), "accent": UITokens.GEO, "icon": "geo"},
+		{"id": "geography_cover", "title": "地表覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "", "accent": UITokens.WATER, "icon": "surface"},
+	]
+	physical_metrics.append_array(geography.get("metrics", []))
+	var climate_metrics: Array = climate.get("metrics", []).duplicate()
+	climate_metrics.append_array(hydrology.get("metrics", []))
+	climate_metrics.append({"id": "climate_weather", "title": "当前天气", "value": _weather_name(cell, idx), "subtitle": _intensity_text(_weather_intensity(cell, idx)), "accent": UITokens.WATER, "icon": "weather"})
+	var climate_gauges: Array = climate.get("gauges", []).duplicate()
+	climate_gauges.append_array(hydrology.get("gauges", []))
+	return {
+		"sections": [
+			{
+				"id": "physical_geography",
+				"title": "地形与地貌",
+				"icon": "geo",
+				"accent": UITokens.GEO,
+				"metrics": physical_metrics,
+				"gauges": geography.get("gauges", []),
+			},
+			{
+				"id": "climate_hydrology",
+				"title": "气候与水文",
+				"icon": "water",
+				"accent": UITokens.WATER,
+				"metrics": climate_metrics,
+				"gauges": climate_gauges,
+				"charts": climate.get("charts", []),
+			},
+			{
+				"id": "vegetation_ecology",
+				"title": "植被与生态",
+				"icon": "eco",
+				"accent": UITokens.ECO,
+				"metrics": ecology.get("metrics", []),
+				"gauges": ecology.get("gauges", []),
+				"charts": ecology.get("charts", []),
+			},
 		],
 	}
 
@@ -369,6 +434,161 @@ func _history_category(cell: HexCell) -> Dictionary:
 		],
 		"badges": _history_badges(cell),
 	}
+
+
+func _population_snapshot(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {}
+	var facade = _generator.get_economy_facade()
+	if facade == null or not facade.has_method("population_cell_snapshot"):
+		return {}
+	return facade.population_cell_snapshot(cell_idx)
+
+
+func _market_snapshot(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {}
+	var facade = _generator.get_economy_facade()
+	if facade == null or not facade.has_method("market_cell_snapshot"):
+		return {}
+	return facade.market_cell_snapshot(cell_idx)
+
+
+func _population_category(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		return {"insights": [{"id": "population_unavailable", "text": "阶层运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
+	var rows := []
+	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
+	var profession_indices: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
+	var ethnicity_indices: PackedInt32Array = snapshot.get("ethnicity_ids", PackedInt32Array())
+	var profession_ids: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
+	var ethnicity_ids: PackedStringArray = snapshot.get("ethnicity_stable_ids", PackedStringArray())
+	var profession_names: PackedStringArray = snapshot.get("profession_display_names", PackedStringArray())
+	var ethnicity_names: PackedStringArray = snapshot.get("ethnicity_display_names", PackedStringArray())
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var funds: PackedInt64Array = snapshot.get("funds_by_cohort", PackedInt64Array())
+	var satisfaction: PackedInt32Array = snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array())
+	var merchant_flags: PackedByteArray = snapshot.get("merchant_flags", PackedByteArray())
+	var owner_employed: PackedInt64Array = snapshot.get("owner_employed_by_cohort", PackedInt64Array())
+	var employee_employed: PackedInt64Array = snapshot.get("employee_employed_by_cohort", PackedInt64Array())
+	var demand_offsets: PackedInt32Array = snapshot.get("demand_good_offsets", PackedInt32Array())
+	var demand_good_indices: PackedInt32Array = snapshot.get("demand_good_indices", PackedInt32Array())
+	var demand_quantities: PackedInt64Array = snapshot.get("demand_per_capita_daily", PackedInt64Array())
+	var demand_good_ids: PackedStringArray = snapshot.get("demand_good_stable_ids", PackedStringArray())
+	for i in range(populations.size()):
+		var profession_id := String(profession_ids[profession_indices[i]]) if profession_indices[i] >= 0 and profession_indices[i] < profession_ids.size() else "unknown"
+		var ethnicity_id := String(ethnicity_ids[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_ids.size() else "unknown"
+		var profession_name := String(profession_names[profession_indices[i]]) if profession_indices[i] >= 0 and profession_indices[i] < profession_names.size() else profession_id
+		var ethnicity_name := String(ethnicity_names[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_names.size() else ethnicity_id
+		var sat := float(satisfaction[i]) / 65536.0 if i < satisfaction.size() else 0.0
+		var population := int(populations[i])
+		var cohort_funds := int(funds[i]) if i < funds.size() else 0
+		var wealth_pc := cohort_funds / maxi(population, 1)
+		var owners := int(owner_employed[i]) if i < owner_employed.size() else 0
+		var employees := int(employee_employed[i]) if i < employee_employed.size() else 0
+		var demand_by_good := {}
+		if demand_offsets.size() == populations.size() + 1:
+			var begin := clampi(int(demand_offsets[i]), 0, demand_good_indices.size())
+			var end := clampi(int(demand_offsets[i + 1]), begin, demand_good_indices.size())
+			for cursor in range(begin, end):
+				var good_idx := int(demand_good_indices[cursor])
+				if good_idx >= 0 and good_idx < demand_good_ids.size() and cursor < demand_quantities.size():
+					demand_by_good[good_idx] = int(demand_quantities[cursor])
+		var demand_rows := []
+		for good_idx in range(demand_good_ids.size()):
+			var stable_id := String(demand_good_ids[good_idx])
+			var profile = GoodProfileRegistry.profile_by_id(stable_id)
+			var display_name := String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
+			var quantity := int(demand_by_good.get(good_idx, 0))
+			demand_rows.append({
+				"id": "demand_%s" % stable_id,
+				"name": display_name,
+				"value": "%.3f 单位/人/日" % (float(quantity) / 1000.0),
+				"icon": "resource",
+				"visible": quantity > 0,
+			})
+		rows.append({
+			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
+			"name": "%s · %s" % [profession_name, ethnicity_name],
+			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
+			"wealth": "人均 %s" % _money_text(wealth_pc),
+			"status": "%s就业 %s · 满足 %.1f%%" % [
+				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
+				UITokens.format_compact_number_cn(float(owners + employees), 1), sat * 100.0],
+			"accent": UITokens.ACCENT,
+			"icon": "growth",
+			"demand_rows": demand_rows,
+			"visible": true,
+		})
+	var insights := []
+	var details_pending := bool(snapshot.get("details_pending", false)) \
+		or (bool(snapshot.get("busy", false)) and not snapshot.has("populations"))
+	if details_pending and int(snapshot.get("population", 0)) > 0:
+		insights.append({"id": "population_details_pending", "text": "经济结算进行中，阶层总量已提交；详细名单将在本轮结算完成后显示。", "accent": UITokens.WARN, "icon": "growth"})
+	elif rows.is_empty():
+		insights.append({"id": "population_empty", "text": "此地块尚无人口。可在世界生成页启用测试人口，或由正式数据源导入。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
+	elif not bool(snapshot.get("demand_preview_environment_ready", false)):
+		insights.append({"id": "population_demand_neutral_environment", "text": "环境快照暂不可用，预计需求使用最近冻结或中性环境。", "accent": UITokens.WARN, "icon": "weather"})
+	return {
+		"insights": insights,
+		"metrics": [
+			{"id": "population_total", "title": "总人口", "value": "%s 人" % UITokens.format_compact_number_cn(float(snapshot.get("population", 0)), 1), "subtitle": "%d 个阶层" % int(snapshot.get("cohort_count", 0)), "accent": UITokens.ACCENT, "icon": "growth"},
+			{"id": "population_funds", "title": "总资金", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "收入 %s · 支出 %s" % [_money_text(int(snapshot.get("epoch_income", 0))), _money_text(int(snapshot.get("epoch_expense", 0)))], "accent": UITokens.RESOURCE, "icon": "resource"},
+		],
+		"cohort_rows": rows,
+	}
+
+
+func _market_category(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		return {"insights": [{"id": "market_unavailable", "text": "市场运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
+	var rows := []
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
+	var prices: PackedInt32Array = snapshot.get("price", PackedInt32Array())
+	var demand_ema: PackedInt64Array = snapshot.get("demand_ema", PackedInt64Array())
+	var shortage_q16: PackedInt32Array = snapshot.get("shortage_q16", PackedInt32Array())
+	for i in range(good_ids.size()):
+		var stable_id := String(good_ids[i])
+		var profile = GoodProfileRegistry.profile_by_id(stable_id)
+		var display_name := String(profile.display_name) if profile != null else stable_id
+		rows.append({
+			"id": "market_%s" % stable_id,
+			"name": display_name,
+			"value": "%s 单位" % UITokens.format_compact_number_cn(float(stock[i]) / 1000.0, 2),
+			"density": "价格 %s" % _money_text(prices[i] if i < prices.size() else 0),
+			"delta": "需求EMA %s · 短缺 %.1f%%" % [
+				UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0",
+				float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0,
+			],
+			"accent": UITokens.RESOURCE,
+			"icon": "resource",
+			"visible": true,
+		})
+	var insights := []
+	var details_pending := bool(snapshot.get("details_pending", false)) \
+		or (bool(snapshot.get("busy", false)) and not snapshot.has("good_ids"))
+	if details_pending:
+		insights.append({"id": "market_details_pending", "text": "经济结算进行中，市场明细将在本轮结算完成后显示。", "accent": UITokens.WARN, "icon": "resource"})
+	return {
+		"insights": insights,
+		"metrics": [
+			{"id": "market_id", "title": "本地市场", "value": "#%d" % int(snapshot.get("market_id", -1)), "subtitle": "原生 MarketStore", "accent": UITokens.RESOURCE, "icon": "resource"},
+			{"id": "merchant_funds", "title": "商人资金", "value": _money_text(_sum_i64(snapshot.get("merchant_funds", PackedInt64Array()))), "subtitle": "%s 人共同持有库存" % UITokens.format_compact_number_cn(float(_sum_i64(snapshot.get("merchant_population", PackedInt64Array()))), 1), "accent": UITokens.ACCENT, "icon": "resource"},
+		],
+		"resource_rows": rows,
+	}
+
+
+func _sum_i64(values: PackedInt64Array) -> int:
+	var total := 0
+	for value in values:
+		total += int(value)
+	return total
+
+
+func _money_text(subunits: int) -> String:
+	return UITokens.format_compact_number_cn(float(subunits) / 10000.0, 2)
 
 
 func _weather_field(cell: HexCell, idx: int) -> Dictionary:

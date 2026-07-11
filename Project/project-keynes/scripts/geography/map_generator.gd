@@ -148,7 +148,8 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 # 尚未拾取，这里显式 preload 迫使先加载该脚本，避免
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
-const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
+const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
+const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -168,6 +169,7 @@ const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/seas
 const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/enum_atlas_upload_system.gd")
 const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
 const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
+const EconomyDailySystemScript = preload("res://scripts/simulation/systems/economy_daily_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1006,6 +1008,9 @@ var _refresh_climate_daily_job = null
 var _sea_ice_daily_job = null
 # `natural_resource_daily` 自然资源每日生成/衰减系统 + 缓存的 C++ pass knobs（系数恒定，仅 n_cells 每 tick 更新）。
 var _natural_resource_daily_job = null
+var _economy_facade = null
+var _economy_daily_job = null
+var _test_economy_bootstrap_enabled: bool = false
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
@@ -1367,9 +1372,6 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
-	# Goods：SoA 就位后初始化物资库存/价格默认值。物资不从自然资源自然生成，
-	# 这里只写 qty=0 与 GoodProfile.default_price。
-	GoodProfileRegistryScript.initialize_map_storage_defaults(map)
 	# Natural resources：SoA 就位后写入每地块初始资源储量（按 temp/moisture/terrain 适宜度）。
 	# 必须在 init_soa_from_bake 之后（数组已 resize/置 0）、_setup_sus bind 之前。
 	_bootstrap_natural_resource_deposits(map, cfg)
@@ -1416,6 +1418,95 @@ func _runtime_build_topology(context: String) -> bool:
 	if not ok:
 		push_error("[map_generator] DCSystemScheduler.build_topology() failed (%s)" % context)
 	return ok
+
+
+func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> void:
+	_economy_facade = null
+	_economy_daily_job = null
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_economy"):
+		# No large GDScript fallback: an unavailable native authority leaves the
+		# economy explicitly disabled while environmental simulation continues.
+		print("[economy] native DCWorldExt economy API unavailable; economy disabled")
+		return
+	_economy_facade = EconomyFacadeScript.new()
+	var seed_value := int(cfg.seed) if cfg != null else 0
+	var configured: Dictionary = _economy_facade.configure(
+		_data_core_world_ext, map.cell_count(), seed_value)
+	if not bool(configured.get("ok", false)):
+		push_error("[economy] configure failed: %s" % String(configured.get("reason", "unknown")))
+		_economy_facade = null
+		return
+	# Production bootstrap remains empty. The explicit test fixture is a
+	# generation-time cold path and never becomes a historical population source.
+	var population_packet: Dictionary = {}
+	var market_packet: Dictionary = {}
+	var building_packet: Dictionary = {}
+	var test_bootstrap_report: Dictionary = {}
+	if _test_economy_bootstrap_enabled:
+		test_bootstrap_report = EconomyTestBootstrapScript.build(map, _economy_facade, seed_value)
+		if not bool(test_bootstrap_report.get("ok", false)):
+			push_error("[economy] test bootstrap failed: %s" % String(
+				test_bootstrap_report.get("reason", "unknown")))
+			_economy_facade = null
+			return
+		population_packet = test_bootstrap_report.get("population_packet", {})
+		market_packet = test_bootstrap_report.get("market_packet", {})
+		building_packet = test_bootstrap_report.get("building_packet", {})
+	var bootstrapped: Dictionary = _economy_facade.bootstrap(
+		population_packet, market_packet, building_packet)
+	if not bool(bootstrapped.get("ok", false)):
+		push_error("[economy] bootstrap failed: %s" % String(bootstrapped.get("reason", "unknown")))
+		_economy_facade = null
+		return
+	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref)
+	_sus.configure_job_from_profile(_economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
+	_runtime_register_system(_economy_daily_job)
+	if _world_clock_ref != null and _world_clock_ref.has_signal("simulation_backpressure_pulse"):
+		var continuation_cb := Callable(self, "_continue_economy_inflight")
+		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
+			_world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
+	var economy_report: Dictionary = _economy_facade.report()
+	print("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d" % [
+		String(economy_report.get("market_runtime_mode", "OFF")),
+		map.cell_count(),
+		int(bootstrapped.get("good_count", 0)),
+		int(bootstrapped.get("cohort_count", 0)),
+		int(bootstrapped.get("epoch_days", 1)),
+	])
+	if _test_economy_bootstrap_enabled:
+		print("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d buildings=%d goods=%d" % [
+			int(test_bootstrap_report.get("populated_cells", 0)),
+			int(test_bootstrap_report.get("total_population", 0)),
+			int(test_bootstrap_report.get("cohort_count", 0)),
+			int(test_bootstrap_report.get("building_group_count", 0)),
+			int(test_bootstrap_report.get("good_count", 0)),
+		])
+
+
+func get_economy_facade():
+	return _economy_facade
+
+
+func get_economy_report() -> Dictionary:
+	return _economy_facade.report() if _economy_facade != null else {"configured": false}
+
+
+func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
+	_test_economy_bootstrap_enabled = enabled
+
+
+func _continue_economy_inflight(day_index: int) -> void:
+	if _economy_daily_job == null or _sus == null:
+		return
+	var report: Dictionary = _economy_facade.report() if _economy_facade != null else {}
+	if not bool(report.get("epoch_active", false)) and not bool(report.get("fatal", false)):
+		if _world_clock_ref != null:
+			_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+		return
+	var speed: float = float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
+	var season: float = float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
+	var ctx: SusTickContext = SusTickContext.make(day_index, day_index, speed, season, &"economy_continuation")
+	_sus.continue_system(&"economy_daily", ctx)
 
 
 func _native_daily_slice_available() -> bool:
@@ -1577,6 +1668,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _weather_system != null and _weather_system.has_method("configure_gdext_acceleration"):
 		var cp_f1 := _c()
 		_weather_system.configure_gdext_acceleration(_data_core_world_ext, true, cp_f1, _data_core_world)
+	# Independent ECONOMY_GRAPH is registered before the native/legacy daily
+	# fork, so both environmental authority modes share one economy schedule.
+	_setup_economy_runtime(map, cfg, cp_sched)
 	_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
 	_sus.configure_job_from_profile(_season_refresh_job, cp_sched)
 	_runtime_register_system(_season_refresh_job)

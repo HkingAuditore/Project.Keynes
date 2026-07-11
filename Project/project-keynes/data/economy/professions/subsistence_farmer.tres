@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"subsistence_farmer"
+display_name = "自耕农"
+default_consumption_plan_id = &"subsistence_household"
+birth_rate_q32 = 260000
+death_rate_q32 = 145000
+satisfaction_birth_weight_q16 = 65536
+

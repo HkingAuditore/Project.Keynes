@@ -20,7 +20,7 @@
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
-| Goods storage（物资库存/价格，仅数据层） | DataCore persistent slots, no pass yet | 无 | `GoodProfileRegistry` 加载 profile、初始化 per-cell 数量/价格默认值；未来经济系统读写 `cell_goods_*` slots。 |
+| PopulationCohort / MarketStore | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结周期 N 日 need/bundle 清算、商人结算、价格和审计；按 cohort 预算错峰，截止日统一 publish，不进入 cell slots。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -622,18 +622,38 @@ reserve0 = max(0, suit)                                 # land_only 时水面格
 - 储量字段进永久存档（`world.gd` 按 schema 序列化），新增资源后旧档加载缺该字段时按 0 处理 + bootstrap 不会回填运行期已存在的存档（仅生成期写一次）。
 - `path=gdscript` 说明 native 未发布；检查 `fallback_reason`（missing_climate_slot / knob_array_size_mismatch / no_publishable_resource）。
 
-## Goods storage（物资库存/价格，无计算 pass）
+## Native PopulationCohort / MarketStore
 
-本节只描述数据层。物资（goods）不是自然资源，不从地块条件自然生成，也不由 `NaturalResourceDailySystem` 或 `ResourceProfileRegistry` 推进。当前起始物资为 `fur/mutton/coal/grain`，定义在 `data/goods/*.tres`，由 `GoodProfileRegistry` 按固定顺序加载。
+Goods 已退出 per-cell component schema。当前链路：
 
-每种物资占两条 per-cell F32 SoA：
+```text
+EconomyDailySystem (SUS shell)
+  -> DCWorldExt.run_economy_slice
+  -> ECONOMY_GRAPH
+  -> PopulationStore pages + MarketStore matrix
+  -> need/wealth/environment demand + budget
+  -> bundle clear + one substitution fallback + merchant settlement
+  -> demand EMA / next-day price
+  -> structural ECB
+  -> committed cell summary + audit report
+```
 
-- 数量：`cell.goods_<id>_qty` → `cell_goods_<id>_qty` → `goods_<id>_qty_arr`。
-- 价格：`cell.goods_<id>_price` → `cell_goods_<id>_price` → `goods_<id>_price_arr`。
+Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天气 Q16 snapshot，
+按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
+variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
+买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
+WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-同一 cell index 在多条数量 slot 上非零即表示该地块储存多种物资；没有 per-cell Object/Dictionary/list。`MapData._alloc_soa()` 只 resize，`rebuild_soa_from_cells()` 清零数量和价格，`MapGenerator.generate()` 在 `init_soa_from_bake()` 后调用 `GoodProfileRegistry.initialize_map_storage_defaults(map)`，把数量保持 0、价格填为 `GoodProfile.default_price`。未来生产、消费、贸易或价格系统应通过 `DCWorld.write_f32_indexed/write_f32_dense` 或 C++ pass 批量写 `cell_goods_*` slots；UI/debug 冷路径用 `GoodProfileRegistry.cell_goods_snapshot()`。
+输入/输出、定点尺度、账本和存档详见：
 
-本轮不注册 scheduler job，不修改 daily graph，不实现自然资源加工到物资。新增物资 SOP：新增 `GoodProfile` `.tres` + 在 `component_ids.gd` / `map_data.gd` / `component_schema.gd` 增加 qty/price 字段 → 跑 `tools/codegen/gen_cpp_bind_table.py` → 重 build GDExtension。
+- [Native Economy Runtime](./native-economy-runtime.md)
+- [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
+- [Economy Graph / Scheduling](./economy-graph-scheduling.md)
+- [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
+
+V2 不包含生产、就业、工资、税、贸易或人口自然变化。未来系统只能通过批量 ledger/stock command
+供货或转账，不得直接写 MarketStore vector。自然资源 `cell.res_*` 仍由
+`NaturalResourceDailySystem` 独立推进。
 
 ## Transpiration
 
@@ -2160,3 +2180,17 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   Climate/ocean/wind paths must only fall back to geometric baseline when a
   temperature is NaN or infinite; using `temp > 0.0` as a validity check creates
   discontinuous jumps near the lower clamp.
+## 建筑生产管线
+
+`BuildingProfile → EconomyCatalog CSR → NativeEconomyRuntime BUILDING_GRAPH → committed building/
+population/market snapshots`。岗位按本地 profession 匹配，owner lot 先占 owner job，employee
+需求按 profession 使用稳定 prefix quotient 分配。生产容量取 owner/各 employee role 的最小
+到岗比例，再受输入库存、业主资金和 sample-day resource reserve 限制。
+
+employee role 使用建筑类的 `wage_per_employee_per_day` 在同一截止日结算。业主资金按应付
+工资封顶，已付金额按本地同职业 `employee_employed` 权重稳定分配；工资只在 cohort funds
+之间转账，`building_wages_paid/unpaid` 用于诊断临时工资循环。
+
+生产 output 先形成 cell-local offers，按当前 retail price 降序稳定排序；商人只用正 cohort funds
+按 good-specific producer factor 付款，成交量进入 MarketStore，未成交量计入 discarded。所有热
+循环只访问 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。

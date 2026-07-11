@@ -20,15 +20,14 @@ func set_tabs(tabs: Array, current_tab: String = "") -> void:
 		var label := String(data.get("label", id))
 		var icon_key := IconBadge.normalize_icon(String(data.get("icon", id)))
 		var btn := Button.new()
-		btn.text = IconBadge.glyph_for_key(icon_key)
+		btn.text = label
 		btn.tooltip_text = label
 		btn.toggle_mode = true
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		btn.custom_minimum_size = Vector2(46.0, 34.0)
+		btn.custom_minimum_size = Vector2(92.0, 34.0)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
-		btn.add_theme_font_size_override("font_size", 15)
+		btn.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		btn.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.74, 1.0))
 		btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.86, 0.48, 1.0))
@@ -36,6 +35,13 @@ func set_tabs(tabs: Array, current_tab: String = "") -> void:
 		btn.add_theme_stylebox_override("hover", _tab_style(UITokens.WALNUT, UITokens.PANEL_BORDER, 2))
 		btn.add_theme_stylebox_override("pressed", _tab_style(Color(0.18, 0.125, 0.065, 0.98), UITokens.BRASS_HIGHLIGHT, 3))
 		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		var icon := IconBadge.new()
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(icon)
+		icon.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+		icon.position = Vector2(7.0, -9.0)
+		icon.size = Vector2(18.0, 18.0)
+		icon.set_icon(icon_key, UITokens.ACCENT)
 		btn.set_pressed_no_signal(id == _current_tab)
 		btn.pressed.connect(_on_tab_pressed.bind(id))
 		add_child(btn)
@@ -75,8 +81,8 @@ func _tab_style(bg: Color, edge: Color, bottom_width: int) -> StyleBoxFlat:
 	style.border_width_bottom = bottom_width
 	style.corner_radius_top_left = UITokens.RADIUS_SM
 	style.corner_radius_top_right = UITokens.RADIUS_SM
-	style.content_margin_left = UITokens.SPACE_SM
-	style.content_margin_right = UITokens.SPACE_SM
+	style.content_margin_left = 26
+	style.content_margin_right = 6
 	style.content_margin_top = 5
 	style.content_margin_bottom = 5
 	style.anti_aliasing = true

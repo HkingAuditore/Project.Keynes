@@ -87,6 +87,43 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::reset_native_ocean_physical_state);
     ClassDB::bind_method(D_METHOD("get_native_ocean_physical_state_report"),
                          &DCWorldExt::get_native_ocean_physical_state_report);
+    // Independent native PopulationCohort + local-market authority.
+    ClassDB::bind_method(D_METHOD("configure_economy", "catalog", "profile", "cell_count", "seed"),
+                         &DCWorldExt::configure_economy);
+    ClassDB::bind_method(D_METHOD("bootstrap_economy", "population_packet", "market_packet"),
+                         &DCWorldExt::bootstrap_economy);
+    ClassDB::bind_method(D_METHOD("submit_economy_commands", "packed_batch"),
+                         &DCWorldExt::submit_economy_commands);
+    ClassDB::bind_method(D_METHOD("run_economy_slice", "ctx"),
+                         &DCWorldExt::run_economy_slice);
+    ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
+                         &DCWorldExt::economy_should_run);
+    ClassDB::bind_method(D_METHOD("get_economy_report"),
+                         &DCWorldExt::get_economy_report);
+    ClassDB::bind_method(D_METHOD("get_population_cell_snapshot", "cell_idx"),
+                         &DCWorldExt::get_population_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
+                         &DCWorldExt::get_market_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
+                         &DCWorldExt::get_building_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),
+                         &DCWorldExt::run_economy_fixed_math_probe);
+    ClassDB::bind_method(D_METHOD("get_economy_state_hash"),
+                         &DCWorldExt::get_economy_state_hash);
+    ClassDB::bind_method(D_METHOD("reset_economy", "reason"),
+                         &DCWorldExt::reset_economy);
+    ClassDB::bind_method(D_METHOD("begin_economy_save", "chunk_bytes"),
+                         &DCWorldExt::begin_economy_save, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("read_economy_save_chunk", "max_bytes"),
+                         &DCWorldExt::read_economy_save_chunk, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("end_economy_save"),
+                         &DCWorldExt::end_economy_save);
+    ClassDB::bind_method(D_METHOD("begin_economy_restore"),
+                         &DCWorldExt::begin_economy_restore);
+    ClassDB::bind_method(D_METHOD("feed_economy_restore_chunk", "chunk"),
+                         &DCWorldExt::feed_economy_restore_chunk);
+    ClassDB::bind_method(D_METHOD("end_economy_restore"),
+                         &DCWorldExt::end_economy_restore);
     ClassDB::bind_method(D_METHOD("get_gameplay_event_schema"),
                          &DCWorldExt::get_gameplay_event_schema);
     ClassDB::bind_method(D_METHOD("publish_gameplay_events", "batch"),

@@ -39,7 +39,9 @@ Runtime hydrology 新增的契约：
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
 - `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_fertile_soil_reserve` 等 28 个自然资源储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段，`map_field=res_*_extra_change_arr`，供未来开采/繁育/畜牧系统写入本 tick 一次性增减量。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。由 `run_natural_resource_pass` 写入 reserve，并在消费后清零 extra，再逐 slot `_flush_slot_to_map()` 回 `MapData`；reserve 初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在生成期写一次。`run_natural_resource_pass_native` 调 C++ 前优先 `refresh_slots_from_map_keys(["cell_temp","cell_moisture","cell_is_water", ...extra slots])`（旧 DLL fallback 到全量 refresh），确保 climate round 与外部 extra 写入对 C++ 可见。knobs 由 `ResourceProfileRegistry.build_pass_knobs()` 组装（`reserve_slots`/`extra_change_slots`/`land_only`/`temp_lo`/`temp_hi`/`gen_*`/`decay_*`/`climate_*_opt/tol`/`runtime_climate_fit_weight`/`decay_stress` 平行数组）；返回 Dictionary 含 `published_to_slot`/`published_slots`/`total_delta`，契约同 `run_runtime_hydrology_pass`。
-- `cell.goods_fur_qty`、`cell.goods_fur_price` 等物资库存/价格字段：`F32`，owner 为 `economy.goods`，`map_field=goods_*_(qty|price)_arr`。物资与自然资源不同：不会在地块上自然生成，也没有本轮 daily pass；同一 cell index 在多条 `goods_*_qty_arr` 上非零即表示该地块储存多种物资。`MapData.rebuild_soa_from_cells()` 只负责清零；`GoodProfileRegistry.initialize_map_storage_defaults(map)` 在 `init_soa_from_bake()` 之后、DataCore/SUS bind 之前把数量置 0、价格置 `GoodProfile.default_price`。未来生产/消费/贸易热路径应直接用 `DCWorld.write_f32_indexed/write_f32_dense` 或 C++ pass 写 `cell_goods_*` slots；UI/debug 冷路径可用 `GoodProfileRegistry.cell_goods_snapshot()`，不要给 `HexCell` 增加 per-cell Dictionary/Object/list。存档仍按 schema 以 `cpp_name` key 序列化；旧快照缺 goods 字段时 deserialize 跳过并保留当前默认数组。
+- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v2 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
+
+Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。`get_population_cell_snapshot` / `get_market_cell_snapshot` 只返回 committed boundary，`wait_commit`/in-flight 期间 facade 保留上一轮 cell cache。若地块首次在 in-flight 期间被选中，native 只给 committed 聚合摘要，facade 以 `details_pending=true` 明示 cohort/goods 数组尚不可用；UI 不得把它解释为空人口/空市场，并在下一 committed boundary 低频补建稳定行。人口查询另从选中 cell 的当前四个环境 slot 取一个冷路径样本，交给同一原生需求内核生成 cohort-major CSR 预计人均日需求；它不刷新全图、不修改 slot，也不进入 state hash/存档。详见 [Native Economy Runtime](./native-economy-runtime.md)。
 
 ## PackedArray CoW 公理
 
@@ -527,3 +529,13 @@ bridge surfaces and component slots.
   `sample["weather"]`. `weather_dirty_count`, `weather_convergence_dirty_count`,
   and `weather_convergence_delta_p95` must be interpreted as weather commit
   report fields, not as climate pass fields.
+## Building graph bridge
+
+建筑目录、owner-lot、岗位和生产账本不进入 component schema。`world_ext_economy.cpp` 在周期
+sample day 从已有 static/climate slots 捕获地理条件，并只为建筑目录实际引用的自然资源复制
+reserve 快照。周期发布后，native resource-major 定点 delta 被一次性写入对应
+`cell_res_*_extra_change` C++ slot 并 `_flush_slot_to_map()`。
+
+该 delta 是“下一次自然资源 pass 的外部变化”，因此 `economy_daily` 声明读取 reserve，但不把
+extra_change 声明为同 tick write：natural-resource job 同时读取 extra/write reserve，若建立当日
+双向 DAG 会形成环。报告中的 `building_resource_delta_cells` 与 `published_to_slot` 用于确认发布。

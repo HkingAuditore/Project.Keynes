@@ -594,7 +594,7 @@ class SystemRefreshJob extends RefreshJob:
 - N < 1000 且 tick 频率 ≤ 1 Hz → GDScript SoA 即可
 - agent 决策需要调用大量 GDScript 业务逻辑 → 评估跨界开销，可能 GDScript 反而更划算
 
-### 5.3 模板 C：market / economy 系统（N = 10-1000，分钟级 tick）
+### 5.3 模板 C：小型 market / economy 系统（N = 10-1000，分钟级 tick）
 
 适用：trade / economy / market / production-chains
 
@@ -604,7 +604,9 @@ class SystemRefreshJob extends RefreshJob:
 - 只有当 SUS 日志显示 > 2ms 才考虑 C++
 
 **反模式警告**：
-> 经济系统 N 小且业务逻辑复杂多变（rebalance 频繁），过早 C++ 化会让
+> 本模板只适用于确实为小 N 的经营系统。Project.Keynes 的 cohort 市场达到
+> 200k–10m cohort，不适用本模板，必须遵守 §13 原生经济域约束。
+> 小型经济系统业务逻辑复杂多变（rebalance 频繁），过早 C++ 化会让
 > 数值策划无法直接改代码，得不偿失。
 
 ### 5.4 模板 D：地图生成 / 离线计算（一次性，N 任意）
@@ -1264,5 +1266,24 @@ func thermal_gradient_pass_gdscript(map: MiniMap, w: int, h: int,
 两节缺一不可：理解 §11 才能尊重 §12 的纪律；不抄 §12 模板就会重新踩 §11 列出的坑。
 
 ---
+
+## 13. 千万 cohort 经济域补充约束
+
+- cohort 是独立 chunk-SoA，不得塞进 cell slot、HexCell、Dictionary 或 Object 列表。
+- 经济跨界只能是 configure/bootstrap/command batch/slice/report/cell snapshot/save chunk。
+- need/variant/component 必须编译成 native CSR/版本化定点 kernel；禁止 GDScript Callable 和逐 cohort ABI 调用。
+- market 是并行边界。worker 只写独占 market row 和其 cohort，所有 ECB/计数按 market
+  index 串行 reduce，保持 scalar/worker state hash 一致。
+- 定点饱和与守恒是正确性契约；浮点性能更高不能成为破坏 replay 的理由。
+- 4–16MB 流式存档直接遍历原生页和矩阵，不得先构造全量 Dictionary/bytes。
+- 任何宣称达到 mobile/desktop 目标的提交都必须附 300+ slice avg/p95/max、峰值内存、
+  worker/scalar hash 和 fallback count=0；目标值见
+  [`cpp-dots-runtime/economy-graph-scheduling.md`](./cpp-dots-runtime/economy-graph-scheduling.md)。
+- 未通过任一 ACTIVE 硬门槛时，默认 profile 必须保持 PROBE，生产 scheduler 不得修改
+  committed 市场；不能以“功能正确”替代性能授权。
+- 允许冻结输入的 N 日累计近似与地块错峰，但必须报告 N、sample/deadline、命令最大
+  延迟、逐日 reference 误差和 period transaction 语义。周期内不得发布半成品。
+- 周期起点禁止 O(total cohorts) 会计清零；使用 lane 惰性 epoch tag。merchant/handle
+  索引只在结构变化后重建，普通周期不得出现全量边界扫描。
 
 **END of charter.**

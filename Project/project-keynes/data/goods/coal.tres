@@ -6,6 +6,8 @@
 script = ExtResource("1")
 id = &"coal"
 display_name = "煤炭"
-quantity_component = &"cell.goods_coal_qty"
-price_component = &"cell.goods_coal_price"
-default_price = 1.0
+default_price = 16000
+initial_stock = 0
+min_price = 2000
+max_price = 160000
+price_adjust_q16 = 2048

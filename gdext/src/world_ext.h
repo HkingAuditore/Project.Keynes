@@ -175,6 +175,33 @@ public:
     godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
     godot::Dictionary get_native_ocean_physical_state_report() const;
 
+    // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
+    // Economy owns dynamic PopulationCohort pages, local-market matrices,
+    // deterministic formula execution and committed publication. It is
+    // deliberately independent from the per-cell component slots above.
+    godot::Dictionary configure_economy(const godot::Dictionary &catalog,
+                                        const godot::Dictionary &profile,
+                                        int cell_count,
+                                        int64_t seed);
+    godot::Dictionary bootstrap_economy(const godot::Dictionary &population_packet,
+                                        const godot::Dictionary &market_packet);
+    godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
+    godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
+    bool economy_should_run(int64_t day_index) const;
+    godot::Dictionary get_economy_report() const;
+    godot::Dictionary get_population_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
+    int64_t get_economy_state_hash() const;
+    godot::Dictionary reset_economy(const godot::String &reason);
+    godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
+    godot::Dictionary end_economy_save();
+    godot::Dictionary begin_economy_restore();
+    godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
+    godot::Dictionary end_economy_restore();
+
     // ─── Gameplay event bus（2026-06-26）────────────────────────────────
     // 通用、可持久化/可回放的 gameplay event log。C++ pass 和 GDScript 都通过
     // 同一 columnar schema 发布事件；消费者用独立 cursor poll/ack，避免视觉、
@@ -2069,6 +2096,11 @@ private:
     // run_atlas_pipeline_step 首次调用；析构走 PackedArray RAII。与
     // _summary_state 同模式（void* opaque pointer）。
     void                                     *_atlas_state            = nullptr;
+
+    // Independent native economy authority. Concrete type lives in
+    // economy_runtime.{h,cpp}; opaque here so the existing world header does
+    // not expose the large chunk/market implementation to every pass TU.
+    void                                     *_economy_runtime        = nullptr;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation

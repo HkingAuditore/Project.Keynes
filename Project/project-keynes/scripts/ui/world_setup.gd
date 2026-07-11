@@ -23,6 +23,7 @@ const BASE_FIELDS := [
 	{"name": "sea_level", "label": "海洋多少", "hint": "调大：海洋更多、陆地更少", "type": "float", "default": 0.42, "min": 0.1, "max": 0.8, "step": 0.01},
 	{"name": "num_continents", "label": "大陆块数", "hint": "调大：大陆核心更多、更分散", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
 	{"name": "continent_size", "label": "大陆整体大小", "hint": "调大：每块大陆更大、更容易连成片", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
+	{"name": "generate_test_economy_data", "label": "生成测试经济数据", "hint": "仅用于开发测试：在可通行陆地生成临时 cohort、市场库存和建筑岗位，不是正式历史人口。", "type": "bool", "default": false},
 ]
 
 const CLIMATE_GROUPS := [
@@ -669,7 +670,7 @@ func _build_config() -> Dictionary:
 			controls[name] = _control_value(_climate_controls[name], String(field["type"]))
 
 	return {
-		"version": 3,
+		"version": 4,
 		"source": "world_setup",
 		"base": base,
 		"render": render,

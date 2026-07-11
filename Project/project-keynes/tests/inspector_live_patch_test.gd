@@ -35,12 +35,12 @@ func _run() -> void:
 		if summary_card != null and summary_card.size.x < 220.0:
 			failures.append("summary cards did not expand into full-width dossier rows")
 	var overview_count := panel.visible_node_count()
-	var overview_patch := _make_patch("overview")
+	var overview_patch := _make_patch("geography")
 	panel.apply_live_patch(overview_patch)
 	await process_frame
 	if panel.visible_node_count() != overview_count:
 		failures.append("overview live patch changed inspector node count")
-	if panel.current_tab() != "overview":
+	if panel.current_tab() != "geography":
 		failures.append("overview live patch changed current tab")
 	var overview_chart := panel._chart_controls.get("overview_ecology_history") as SparklineChart
 	if overview_chart == null or overview_chart.window_size != 32 \
@@ -48,21 +48,48 @@ func _run() -> void:
 			or not is_equal_approx(overview_chart.max_value, 1.0):
 		failures.append("live patch did not preserve the chart's fixed plotting window")
 
-	panel.select_tab("resources")
+	panel.select_tab("natural_resources")
 	await process_frame
 	panel._scroll.scroll_vertical = 96
 	var resource_scroll := panel._scroll.scroll_vertical
 	var resource_count := panel.visible_node_count()
 	for i in range(120):
-		panel.apply_live_patch(_make_patch("resources", float(i)))
+		panel.apply_live_patch(_make_patch("natural_resources", float(i)))
 		if i % 20 == 0:
 			await process_frame
 	if panel.visible_node_count() != resource_count:
 		failures.append("120 high-speed resource patches changed inspector node count")
-	if panel.current_tab() != "resources":
+	if panel.current_tab() != "natural_resources":
 		failures.append("resource live patch changed current tab")
 	if panel._scroll.scroll_vertical != resource_scroll:
 		failures.append("resource live patch changed scroll position")
+
+	panel.select_tab("population")
+	await process_frame
+	var cohort_list = panel._cohort_list
+	cohort_list.set_expanded("cohort_1", true)
+	var cohort_count := panel.visible_node_count()
+	for i in range(120):
+		panel.apply_live_patch(_make_patch("population", float(i)))
+		if i % 20 == 0:
+			await process_frame
+	if panel.visible_node_count() != cohort_count:
+		failures.append("120 population patches changed inspector node count")
+	if not cohort_list.is_expanded("cohort_1"):
+		failures.append("population live patch lost cohort expansion state")
+
+	var deferred_cohorts := CohortList.new()
+	root.add_child(deferred_cohorts)
+	deferred_cohorts.set_rows([])
+	deferred_cohorts.update_rows(_population_category(0.0).get("cohort_rows", []))
+	if deferred_cohorts._row_refs.size() != 2:
+		failures.append("committed cohort rows were not created after an initially partial snapshot")
+	var deferred_resources := ResourceList.new()
+	root.add_child(deferred_resources)
+	deferred_resources.set_rows([])
+	deferred_resources.update_rows(_resource_category(0.0).get("resource_rows", []))
+	if deferred_resources._row_refs.size() != 18:
+		failures.append("committed market rows were not created after an initially partial snapshot")
 
 	if top_bar.get_combined_minimum_size().x > 1280.0:
 		failures.append("top bar minimum width exceeds 1280px")
@@ -100,17 +127,16 @@ func _make_model() -> Dictionary:
 		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.72, "caption": "可发展", "accent": UITokens.GOOD},
 		"summary_cards": _summary_cards(0.0),
 		"tabs": [
-			{"id": "overview", "label": "总览", "icon": "overview"},
-			{"id": "geography", "label": "地势", "icon": "geo"},
-			{"id": "climate", "label": "气候", "icon": "sun"},
-			{"id": "hydrology", "label": "水文", "icon": "water"},
-			{"id": "ecology", "label": "生态", "icon": "eco"},
-			{"id": "resources", "label": "资源", "icon": "resource"},
-			{"id": "history", "label": "记录", "icon": "history"},
+			{"id": "geography", "label": "地理信息", "icon": "geo"},
+			{"id": "population", "label": "人口信息", "icon": "growth"},
+			{"id": "market", "label": "市场信息", "icon": "resource"},
+			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 		],
 		"categories": {
-			"overview": _overview_category(0.72),
-			"resources": _resource_category(0.0),
+			"geography": _overview_category(0.72),
+			"population": _population_category(0.0),
+			"market": _resource_category(0.0),
+			"natural_resources": _resource_category(0.0),
 		},
 	}
 
@@ -125,7 +151,7 @@ func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
 		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.76, "caption": "可发展", "accent": UITokens.GOOD},
 		"summary_cards": _summary_cards(step),
 		"tab_id": tab_id,
-		"category": _resource_category(step) if tab_id == "resources" else _overview_category(0.76),
+		"category": _resource_category(step) if tab_id in ["market", "natural_resources"] else (_population_category(step) if tab_id == "population" else _overview_category(0.76)),
 	}
 
 
@@ -193,4 +219,17 @@ func _resource_category(step: float) -> Dictionary:
 			{"id": "resource_notable", "text": "木材 · 富集 · 日变 +1", "accent": UITokens.RESOURCE, "icon": "resource"},
 		],
 		"resource_rows": rows,
+	}
+
+
+func _population_category(step: float) -> Dictionary:
+	var demand_rows := [
+		{"id": "demand_grain", "name": "谷物", "value": "%.3f 单位/人/日" % (0.8 + step * 0.0001), "icon": "resource", "visible": true},
+		{"id": "demand_cloth", "name": "布料", "value": "0.040 单位/人/日", "icon": "resource", "visible": true},
+	]
+	return {
+		"cohort_rows": [
+			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "status": "需求满足 80%", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "demand_rows": demand_rows},
+			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "status": "商人 · 需求满足 90%", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "demand_rows": demand_rows},
+		],
 	}

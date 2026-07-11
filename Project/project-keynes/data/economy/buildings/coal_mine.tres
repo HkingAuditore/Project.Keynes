@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"coal_mine"
+display_name = "煤矿"
+construction_days = 0
+construction_good_ids = PackedStringArray("cloth")
+construction_quantities = PackedInt64Array(10000)
+owner_profession_id = &"landlord"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("worker")
+employee_slots_per_building = PackedInt64Array(20)
+output_good_ids = PackedStringArray("coal")
+output_quantities_per_day = PackedInt64Array(10000)
+resource_ids = PackedStringArray("coal")
+resource_quantities_per_day = PackedInt64Array(10000)
+behavior_id = "consume_local_resources"
+wage_policy_id = "fixed"
+wage_per_employee_per_day = 5000
+condition_opcodes = PackedInt32Array(1, 1, 2)
+condition_signals = PackedInt32Array(8, 10, 0)
+condition_compares = PackedInt32Array(0, 5, 0)
+condition_reference_ids = PackedStringArray("", "coal", "")
+condition_values = PackedInt64Array(0, 10000, 0)

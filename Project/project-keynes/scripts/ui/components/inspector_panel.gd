@@ -1,10 +1,12 @@
 extends PanelContainer
 class_name InspectorPanel
 
+const CohortListScript = preload("res://scripts/ui/components/cohort_list.gd")
+
 signal close_requested()
 
 var _model: Dictionary = {}
-var _current_tab := "overview"
+var _current_tab := "geography"
 var _tabs_ready := false
 
 var _title_label: Label
@@ -18,6 +20,7 @@ var _content_box: VBoxContainer
 
 var _insight_list: InsightList
 var _resource_list: ResourceList
+var _cohort_list
 var _metric_controls: Dictionary = {}
 var _gauge_controls: Dictionary = {}
 var _chart_controls: Dictionary = {}
@@ -111,7 +114,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 	_render_summary(_model.get("score", {}), _model.get("summary_cards", []))
 	var tabs: Array = _model.get("tabs", [])
 	if not _has_tab(tabs, _current_tab):
-		_current_tab = "overview"
+		_current_tab = "geography"
 	if not _tabs_ready:
 		_tabs.set_tabs(tabs, _current_tab)
 		_tabs_ready = true
@@ -154,7 +157,7 @@ func select_tab(tab_id: String) -> void:
 
 func reset_for_world() -> void:
 	_model.clear()
-	_current_tab = "overview"
+	_current_tab = "geography"
 	_tabs_ready = false
 	_last_score_band = -1
 	_summary_cards.clear()
@@ -296,17 +299,28 @@ func _render_content() -> void:
 		child.queue_free()
 	_insight_list = null
 	_resource_list = null
+	_cohort_list = null
 	_metric_controls.clear()
 	_gauge_controls.clear()
 	_chart_controls.clear()
 	var categories: Dictionary = _model.get("categories", {})
-	var data: Dictionary = categories.get(_current_tab, categories.get("overview", {}))
+	var data: Dictionary = categories.get(_current_tab, categories.get("geography", {}))
 	_build_category_content(data)
 	if _scroll != null:
 		_scroll.scroll_vertical = 0
 
 
 func _build_category_content(data: Dictionary) -> void:
+	var root_data := data.duplicate(false)
+	root_data.erase("sections")
+	_build_category_block(root_data)
+	for raw_section in data.get("sections", []):
+		var section: Dictionary = raw_section
+		_add_section_header(section)
+		_build_category_block(section)
+
+
+func _build_category_block(data: Dictionary) -> void:
 	var insights: Array = data.get("insights", [])
 	if not insights.is_empty():
 		var insight_shell := PanelContainer.new()
@@ -325,8 +339,16 @@ func _build_category_content(data: Dictionary) -> void:
 		_insight_list.set_items(insights)
 		insight_shell.add_child(_insight_list)
 
+	var cohort_rows: Array = data.get("cohort_rows", [])
+	if data.has("cohort_rows"):
+		_add_group_separator()
+		_cohort_list = CohortListScript.new()
+		_cohort_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_cohort_list.set_rows(cohort_rows)
+		_content_box.add_child(_cohort_list)
+
 	var resource_rows: Array = data.get("resource_rows", [])
-	if not resource_rows.is_empty():
+	if data.has("resource_rows"):
 		_add_group_separator()
 		_resource_list = ResourceList.new()
 		_resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -389,8 +411,16 @@ func _build_category_content(data: Dictionary) -> void:
 
 
 func _apply_category_patch(data: Dictionary) -> void:
+	_apply_category_block_patch(data)
+	for raw_section in data.get("sections", []):
+		_apply_category_block_patch(raw_section as Dictionary)
+
+
+func _apply_category_block_patch(data: Dictionary) -> void:
 	if _insight_list != null:
 		_insight_list.update_items(data.get("insights", []))
+	if _cohort_list != null and data.has("cohort_rows"):
+		_cohort_list.update_rows(data.get("cohort_rows", []))
 	if _resource_list != null:
 		_resource_list.update_rows(data.get("resource_rows", []))
 	for raw in data.get("metrics", []):
@@ -416,6 +446,25 @@ func _apply_category_patch(data: Dictionary) -> void:
 				int(chart.get("window_size", 0)),
 				String(chart.get("value_text", ""))
 			)
+
+
+func _add_section_header(section: Dictionary) -> void:
+	if _content_box.get_child_count() > 0:
+		_add_group_separator()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var icon := IconBadge.new()
+	icon.custom_minimum_size = Vector2(20.0, 20.0)
+	icon.set_icon(String(section.get("icon", "overview")), section.get("accent", UITokens.ACCENT))
+	row.add_child(icon)
+	var label := Label.new()
+	label.text = String(section.get("title", "资料"))
+	label.add_theme_font_override("font", UITokens.font_with_weight(650))
+	label.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
+	label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+	row.add_child(label)
+	_content_box.add_child(row)
 
 
 func _apply_metric_card(card: MetricCard, data: Dictionary) -> void:

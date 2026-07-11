@@ -157,6 +157,8 @@ func _find_growth_probe(map: MapData, n: int) -> Dictionary:
 	var water: PackedByteArray = map.is_water_arr
 	var temp: PackedFloat32Array = map.temp_arr
 	var moist: PackedFloat32Array = map.moisture_arr
+	var best: Dictionary = {}
+	var best_growth: float = 0.0001
 	for p in ResourceProfileRegistry.ordered():
 		if float(p.gen_self) <= 0.0:
 			continue
@@ -170,9 +172,11 @@ func _find_growth_probe(map: MapData, n: int) -> Dictionary:
 			if bool(p.land_only) and water.size() > i and water[i] != 0:
 				continue
 			var next_v: float = _reference_step_value(p, arr[i], temp[i], moist[i])
-			if next_v > arr[i] + 0.0001:
-				return {"id": String(p.id), "field": field, "idx": i}
-	return {}
+			var growth: float = next_v - arr[i]
+			if growth > best_growth:
+				best_growth = growth
+				best = {"id": String(p.id), "field": field, "idx": i}
+	return best
 
 
 func _reference_step_value(p: ResourceProfile, reserve: float, temp_v: float, moist_v: float) -> float:
@@ -230,6 +234,9 @@ func _make_profile() -> ClimateProfile:
 	profile.native_weather_transaction_active_owner_enabled = true
 	profile.native_ocean_physical_active_owner_enabled = true
 	profile.weather_field_enabled = true
+	# This regression verifies the daily registration path independently from
+	# the production profile's intentionally coarser resource cadence.
+	profile.natural_resource_daily_stride = 1
 	profile.runtime_hydrology_enabled = false
 	profile.native_environment_runtime_enabled = false
 	return profile

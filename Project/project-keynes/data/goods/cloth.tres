@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cloth"
+display_name = "布料"
+default_price = 18000
+initial_stock = 0
+min_price = 2000
+max_price = 180000
+price_adjust_q16 = 2560
+demand_price_elasticity_q16 = 65536
+demand_ema_alpha_q16 = 16384
+target_inventory_days_q16 = 196608
+inventory_weight_q16 = 32768
+shortage_weight_q16 = 65536
+max_price_rise_q16 = 8192
+max_price_fall_q16 = 4096
